@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.15`（cleaner 擴展 `collapseGridWithHiddenCell` 新增「grid underfill」觸發條件：主文內 `display: grid` 容器即使**沒有 hidden sibling**，若 visible children 全在同一 row 但寬度總和 < container × 70%，仍退化成 block 並清 grid-template、override children 的 `grid-column/width/max-width`。修 BBC 類用 N-column design system（`grid-template-columns: repeat(24, 1fr)`）、child 明確 `grid-column: 6 / span 12` 只佔中間 12/24 欄、沒 sibling 佔剩餘欄位時主文被壓在中間 50% 寬度的問題）
+`0.6.16`（styler 的 user override 分支 font-size / font-family / line-height rule 的 selector list 擴展到 body text descendant：除 `[data-jread-active="1"]` 本身外，額外包含 `p / li / blockquote / figcaption / dd / dt`。heading h1-h6 刻意不含（保留原站標題大小分級）。修 BBC / NYT / Guardian 類站點把 font-size 用 class rule 鎖在 `<p>` 身上（例：BBC `.HooNV { font-size: 18px }`）、只對 article 本身下 rule 時 inheritance 被站點 class rule 截斷、override 失效的問題。v0.6.0 baseline 精神「預設值不動原站」仍保留：DEFAULT 分支不注入任何 override rule）
 
 ---
 
