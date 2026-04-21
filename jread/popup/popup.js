@@ -14,6 +14,37 @@ async function getActiveTabId() {
   return tab ? tab.id : null;
 }
 
+// MV3 的 content_scripts 只會自動注入「新載入的分頁」，
+// extension 安裝/更新前就打開的既有分頁不會自動注入。
+// 因此 sendMessage 丟錯時先嘗試主動注入再重試一次。
+// 這是通用限制的結構性解法，不綁站點。
+const CONTENT_SCRIPT_FILES = [
+  'content/namespace.js',
+  'content/detector.js',
+  'content/cleaner.js',
+  'content/styler.js',
+  'content/main.js'
+];
+
+async function injectContentScripts(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: CONTENT_SCRIPT_FILES
+  });
+}
+
+async function sendToggle(tabId) {
+  return chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_READER_MODE' });
+}
+
+function renderToggleResult(res) {
+  if (res && res.active) {
+    statusEl.textContent = '閱讀模式：開';
+  } else {
+    statusEl.textContent = '閱讀模式：關';
+  }
+}
+
 toggleBtn.addEventListener('click', async () => {
   const tabId = await getActiveTabId();
   if (!tabId) {
@@ -21,14 +52,19 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
   try {
-    const res = await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_READER_MODE' });
-    if (res && res.active) {
-      statusEl.textContent = '閱讀模式：開';
-    } else {
-      statusEl.textContent = '閱讀模式：關';
-    }
+    const res = await sendToggle(tabId);
+    renderToggleResult(res);
   } catch (err) {
-    statusEl.textContent = '此頁面無法啟動閱讀模式';
+    // 最常見是 "Could not establish connection. Receiving end does not exist."
+    // 代表 content script 尚未注入這個分頁。主動注入後重試一次。
+    try {
+      await injectContentScripts(tabId);
+      const res = await sendToggle(tabId);
+      renderToggleResult(res);
+    } catch (err2) {
+      // 注入或 retry 仍失敗：多半是 chrome:// / 應用商店 / PDF 檢視器這類禁止注入的頁面
+      statusEl.textContent = '此頁面無法啟動閱讀模式';
+    }
   }
 });
 
