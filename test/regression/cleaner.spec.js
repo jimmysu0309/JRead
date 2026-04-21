@@ -468,6 +468,62 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 <aside> tag sidebar（條件 B）：textLen < main × 50% + rectH > 400 → hide；pull-quote（短高度）保留（修 Engadget 類 aside 含廣告 placeholder + footer link 稀釋 ld 到 < 0.5 條件 A 命中不了）', () => {
+    // Engadget 實測：article > div(grid) > [col-main(7433 chars), aside.col-right(858 chars), ...]。
+    // aside.col-right 是 HTML5 語意 sidebar tag，裡面塞廣告 placeholder +
+    // Terms/Privacy/About links，textLen 剛好超過 main × 10%=743（858），
+    // linkDensity 0.057（placeholder 文字稀釋），條件 A 兩條都差一點不中。
+    // 但 aside rectH 5706px，明顯是滿版 sidebar 不是 pull-quote——新條件 B
+    // 用 aside tag + textLen < main × 50% + rectH > 400 直接命中。
+    // 同 fixture 另放一個 pull-quote aside（簡單 blockquote 結構 + stub 短高
+    // < 400），驗 rectH 閾值保護 pull-quote 不被誤殺。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'engadget-aside-sidebar.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+
+    const sidebar = w.document.getElementById('aside-sidebar');
+    const pullquote = w.document.getElementById('aside-pullquote');
+    const mainCol = w.document.getElementById('main-col');
+    assert.ok(sidebar && pullquote && mainCol);
+
+    // stub rect：sidebar 高 5000（>400 命中），pull-quote 高 200（<400 保留）
+    stubRect(sidebar, { top: 100, width: 528, height: 5000 });
+    stubRect(pullquote, { top: 5200, width: 528, height: 200 });
+    // main-col 也給 rect，確保 rectH 讀得到（其他 children 不 stub，jsdom 回 0 即可）
+    stubRect(mainCol, { top: 100, width: 528, height: 5000 });
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：aside.col-right（高 sidebar）被 hide
+      assert.strictEqual(sidebar.dataset.jreadHidden, '1',
+        'aside tag + textLen < main × 50% + rectH > 400 應被條件 B 命中 hide');
+
+      // 核心斷言 2：pull-quote aside（短高度）保留
+      assert.notStrictEqual(pullquote.dataset.jreadHidden, '1',
+        'pull-quote aside（rectH < 400 模擬）不得被誤殺——保留內文 aside');
+
+      // 核心斷言 3：main-col 未被動
+      assert.notStrictEqual(mainCol.dataset.jreadHidden, '1',
+        '主欄不得被 hide');
+      assert.ok(mainCol.textContent.includes('ENGADGET_MAIN_MARK'));
+
+      // 核心斷言 4：pull-quote 內容仍在 visible tree
+      assert.ok(pullquote.textContent.includes('PULLQUOTE_MARK'));
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 sidebar column：主欄文字 < 500 時不觸發（避免短文誤判）', () => {
     // 若主欄文字量不足 500 字，視為文章本身就短（非實際 2-col 主文），不觸發。
     // 避免把「作者 header + 短 byline row」這類 flex layout 誤判成 sidebar。
