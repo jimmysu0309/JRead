@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.17（cleaner `hideInsideArticleSidebarColumns` 新增條件 B：`<aside>` tag + textLen < main × 50% + rectH > 400 → hide；修 Engadget 類 `<aside class="col-right">` 含廣告 placeholder 稀釋 ld 到既有條件 A（10%+ld 0.5）兩條都差一點不命中的 sidebar 場景；pull-quote aside 靠 rectH > 400 閾值保護不被誤殺）
+**目前版本**：v0.6.18（cleaner 新增 `hideInsideArticleButtonClusters`：容器 textLen ≤ 80 + ≥ 2 個 button/role=button + 無內容元素 + button 外文字 ≤ 10 → hide。修 BBC 類現代 CSS-in-JS 把 button 用 `display: contents` 包 div 導致既有 action-row 規則命中不了的盲點（Share/Save/Add as preferred 按鈕組）；ChinaTalk byline 靠 button 外文字閾值保護）
 
 ---
 

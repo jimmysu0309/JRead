@@ -524,6 +524,96 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 button cluster（現代 CSS-in-JS 把 button 用 display:contents 包層層 div 的 BBC 類 pattern）→ 專門 hide 該 cluster，保留作者/日期', () => {
+    // BBC 文章頭部 byline row 實測：cSUzvu 內 3 個 button（Share/Save/
+    // Add as preferred on Google）每個都被 div + display:contents 層層包
+    // 起來——direct children 全是 div → 既有 hideInsideArticleActionRows
+    // 的「interactive ratio < 50% 且 selfText ≥ 20 字」排除會跳過，盲點。
+    // 新 hideInsideArticleButtonClusters 遞迴找 button 數、檢 textLen 上限
+    // + button 外文字 < 10 字 → hide 純 cluster，ChinaTalk byline 的
+    // meta-group（作者/日期在 button 外 > 10 字）保留。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'bbc-byline-button-cluster.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：button cluster 被 hide
+      const cluster = w.document.getElementById('button-cluster');
+      assert.ok(cluster);
+      assert.strictEqual(cluster.dataset.jreadHidden, '1',
+        'BBC 類 button cluster（純 Share/Save/Add buttons 包 display:contents）' +
+        '應被 hideInsideArticleButtonClusters 命中 hide');
+
+      // 核心斷言 2：byline row 外層（含日期 + 作者文字 > 10 chars）保留
+      const row = w.document.getElementById('byline-row');
+      assert.ok(row);
+      assert.notStrictEqual(row.dataset.jreadHidden, '1',
+        'byline row 外層（button 外有日期 + 作者 > 10 chars）不得被誤殺');
+
+      // 核心斷言 3：日期、作者 meta 保留
+      const dateCol = w.document.getElementById('date-col');
+      const authorCol = w.document.getElementById('author-col');
+      assert.ok(dateCol && authorCol);
+      assert.notStrictEqual(dateCol.dataset.jreadHidden, '1', '日期不得被 hide');
+      assert.notStrictEqual(authorCol.dataset.jreadHidden, '1', '作者不得被 hide');
+      assert.ok(authorCol.textContent.includes('James Gallagher'));
+      assert.ok(dateCol.textContent.includes('3 days ago'));
+
+      // 核心斷言 4：主文內容保留
+      const body = w.document.querySelector('p');
+      assert.ok(body.textContent.includes('BBC_BODY_MARK'));
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('button cluster 規則對「button 外文字 > 10 chars」的容器不命中（保護 ChinaTalk byline+btn 混合 wrapper）', () => {
+    // 額外 forcing function：直接構造「container 含 >= 2 button + 短 textLen
+    // 但 button 外文字（作者名 + 日期）> 10 chars」，確保新規則不會誤殺。
+    // 這保護 v0.6.2 baseline（byline+actions wrapper 不被砍）。
+    const html = `<!DOCTYPE html><html><head>
+      <title>byline mixed</title><meta property="og:title" content="byline mixed"></head>
+      <body>
+        <article>
+          <h1>Byline mixed test</h1>
+          <div class="byline-mixed" id="byline-mixed">
+            <div class="meta"><a>Jordan Schneider</a> · <span>Apr 21, 2026</span></div>
+            <div class="btns">
+              <button aria-label="like">Like</button>
+              <button aria-label="share">Share</button>
+            </div>
+          </div>
+          <p>BODY_MARK Main body paragraph padding padding padding padding padding
+          padding padding padding padding padding padding padding padding padding.</p>
+        </article>
+      </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const byline = w.document.getElementById('byline-mixed');
+      assert.ok(byline);
+      assert.notStrictEqual(byline.dataset.jreadHidden, '1',
+        'byline 混合 wrapper（button 外文字 > 10 chars）不得被新 button cluster 規則誤殺');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 sidebar column：主欄文字 < 500 時不觸發（避免短文誤判）', () => {
     // 若主欄文字量不足 500 字，視為文章本身就短（非實際 2-col 主文），不觸發。
     // 避免把「作者 header + 短 byline row」這類 flex layout 誤判成 sidebar。
