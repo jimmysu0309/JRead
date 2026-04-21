@@ -205,6 +205,22 @@
       const hasParagraphChild = Array.from(el.children).some(c => c.tagName === 'P');
       if (hasParagraphChild) continue;
 
+      // 排除：直接子中「互動元素」（button / [role=button] / svg）比例 < 50%
+      // 的容器。理由：action row 本質是多個互動元素排成一列。若直接子主要
+      // 是 sub-container（div），代表這是「內容 wrapper」不是 row。
+      // ChinaTalk 作者列外層：直接子是 2 個 DIV（meta group + button group），
+      // 0% 互動比例——若不排除會整塊 hide、把作者/日期一起藏掉；加此排除後
+      // 外層不 hide，內層 button group（直接子多為 button）仍會被正確命中
+      // 單獨 hide，作者/日期保留。
+      const directChildren = Array.from(el.children);
+      if (directChildren.length > 0) {
+        const interactiveCount = directChildren.filter(c =>
+          c.tagName === 'BUTTON' || c.tagName === 'SVG' ||
+          (c.getAttribute && c.getAttribute('role') === 'button')
+        ).length;
+        if (interactiveCount / directChildren.length < 0.5) continue;
+      }
+
       const text = (el.textContent || '').trim();
       if (text.length > ACTION_TEXT_MAX) continue;
 
