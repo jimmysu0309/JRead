@@ -69,7 +69,10 @@ JRead/
 │   │   ├── fixtures/
 │   │   └── *.spec.js
 │   └── PENDING_REGRESSION.md
-├── .backups/                    # Cowork 快照備份
+├── tools/
+│   └── debug-harness.js         # Playwright 自動化除錯 harness
+├── docs/
+│   └── CHROME_EXTENSION_DEBUG.md # 自動化除錯完整指南
 ├── CLAUDE.md
 ├── SPEC.md                      # 本檔
 ├── README.md
@@ -166,7 +169,7 @@ JRead/
 
 ---
 
-## 已驗證站點（Chrome MCP 實測）
+## 已驗證站點
 
 實測過主文偵測策略在真實頁面上可否命中、雜訊隱藏規則是否會誤殺內文。每條紀錄包含測試日期、頁面類型、主文容器 selector、特殊注意事項。
 
