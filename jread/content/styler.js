@@ -43,6 +43,15 @@
 
     // ---- 骨架：頁面 reset + 祖先鏈 reset + 卡片容器（永遠注入）----
     const base = `
+/* 補 cleaner hide 漏洞：cleaner 只設 inline style.display = 'none' 無
+   !important，站點 JS（例如商周 .postnav.fixed 的 scroll handler 主動
+   el.style.display = 'block'）會把 inline display 整個覆寫掉、priority
+   被清除。stylesheet 的 !important 優先級 > inline 無 priority 值，是
+   browser 層級的勝利機制，擋得住 JS 再次覆寫。通則對付任何站點
+   scroll / resize / timer 類 handler 重設 hide 過元素 display 的情境。 */
+[data-jread-hidden="1"] {
+  display: none !important;
+}
 html.${HTML_CLASS} {
   background: ${theme.pageBg} !important;
 }

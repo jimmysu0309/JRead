@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.10（styler 新增 `figure` / `picture` 強制 `width: auto` + `max-width: 100%` rule，修商周 `figure.articlephoto` 封面圖在 reader mode 下被壓成 31px 寬幾乎看不見。動 styler 需 Jimmy 明確授權——已獲授權）
+**目前版本**：v0.6.11（styler 注入 `[data-jread-hidden="1"] { display: none !important }` stylesheet rule，擋站點 JS scroll/timer 主動覆寫 cleaner hide 過元素的 inline display。修商周文章底部 `.postnav.fixed` 上下一篇 pager 滾動後被 re-show。動 styler 已獲 Jimmy 授權）
 
 ---
 
