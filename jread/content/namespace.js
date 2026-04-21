@@ -22,13 +22,15 @@
     detector: null,
     cleaner: null,
     styler: null,
+    toast: null,
 
     // 訊息常數（與 popup / background 對齊）
     MSG: {
       TOGGLE_READER_MODE: 'TOGGLE_READER_MODE',
       REPORT_DETECTION_RESULT: 'REPORT_DETECTION_RESULT',
       GET_SETTINGS: 'GET_SETTINGS',
-      UPDATE_SETTINGS: 'UPDATE_SETTINGS'
+      UPDATE_SETTINGS: 'UPDATE_SETTINGS',
+      SHOW_TOAST: 'SHOW_TOAST'
     }
   };
 })();

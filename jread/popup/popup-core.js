@@ -44,6 +44,10 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
-    window.__JReadPopup = api;
+    // 瀏覽器端 window / MV3 service worker 的 self 都可讀 globalThis
+    const g = (typeof globalThis !== 'undefined') ? globalThis
+            : (typeof window !== 'undefined') ? window
+            : self;
+    g.__JReadPopup = api;
   }
 })();
