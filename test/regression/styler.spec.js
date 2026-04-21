@@ -146,6 +146,22 @@ describe('styler — 骨架與可逆性', () => {
     }
   });
 
+  // v0.6.11 修法：cleaner.hide 只設 inline `style.display = 'none'` 無
+  // !important，站點 JS（商周 .postnav.fixed scroll handler）主動
+  // `el.style.display = 'block'` 會清掉 inline priority + 覆寫 value。
+  // 擋不住 inline 對 inline 的對抗——唯一可靠方法是 stylesheet 層 !important，
+  // 優先級 > inline 無 priority 值，browser 層級勝出。
+  it('[data-jread-hidden="1"] 有 stylesheet 層 display: none !important rule（擋站點 JS scroll 覆寫 hide）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/\[data-jread-hidden="1"\]\s*\{([^}]*)\}/);
+    assert.ok(m, 'CSS 必須有 [data-jread-hidden="1"] rule block');
+    const body = m[1];
+    assert.ok(/display\s*:\s*none\s*!important/.test(body),
+      'rule 必須含 display: none !important（擋 inline 無 priority 覆寫）');
+  });
+
   // v0.6.10 修法：reader mode 下某些站（例如商周 figure.articlephoto）原站
   // 靠「width: 800px」類固定寬 CSS 給 figure 顯式寬度的 rule 失效後（我們
   // 動了 ancestor reset / body layout），figure 退化成 shrink-to-fit + min-
