@@ -12,6 +12,7 @@
   const HTML_CLASS = '__jread-active';
   const ARTICLE_ATTR = 'data-jread-active';
   const ANCESTOR_ATTR = 'data-jread-ancestor';
+  const STRUCTURAL_LINK_ATTR = 'data-jread-structural-link';
 
   // Theme 配色：pageBg = 頁面底色，articleBg = 主文容器底色，
   // text = 主文字色，link = 連結色（須在各 theme 下有足夠對比）
@@ -188,6 +189,14 @@ html.${HTML_CLASS} body {
   color: ${t.link} !important;
   text-decoration: underline !important;
 }
+/* 結構性連結（heading 包 a、或 parent 只含此 a 作為文字）繼承父層色。
+   避免 WordPress / Medium / Substack 類 CMS 把 post-title、category
+   meta 包成 <a>，閱讀模式下整行變連結樣式。標記由 styler.apply() 掃描
+   主文內所有 <a> 後掛上；真 inline link（parent 還有其他文字）不被標。 */
+[${ARTICLE_ATTR}="1"] a[${STRUCTURAL_LINK_ATTR}="1"] {
+  color: inherit !important;
+  text-decoration: none !important;
+}
 [${ARTICLE_ATTR}="1"] blockquote {
   border-left: 4px solid ${t.link} !important;
   margin: 1.5em 0 !important;
@@ -245,6 +254,36 @@ html.${HTML_CLASS} body {
     return ancestors;
   }
 
+  // 標記結構性連結。兩條通則（非站點特判）：
+  //   A. <a> 位於 h1-h6 內——WordPress / Medium / Substack 把 post-title
+  //      包成連結（點標題跳 permalink），此 <a> 應該繼承 heading 色。
+  //   B. <a> 的 parent textContent 等於 <a> textContent——即整個 parent
+  //      只有這一個連結作為文字（分類標籤、作者 meta line、nav item）。
+  //      真 inline link（"點此<a>設定</a>頁"）parent 必有其他文字，不命中。
+  function markStructuralLinks(articleEl) {
+    const marked = [];
+    const anchors = articleEl.querySelectorAll('a');
+    for (const a of anchors) {
+      const aText = (a.textContent || '').trim();
+      if (!aText) continue;
+      let hit = false;
+      // 條件 A
+      if (a.closest('h1, h2, h3, h4, h5, h6')) hit = true;
+      // 條件 B
+      if (!hit) {
+        const parent = a.parentElement;
+        if (parent) {
+          const parentText = (parent.textContent || '').trim();
+          if (parentText === aText) hit = true;
+        }
+      }
+      if (!hit) continue;
+      a.setAttribute(STRUCTURAL_LINK_ATTR, '1');
+      marked.push(a);
+    }
+    return marked;
+  }
+
   const styler = {
     /**
      * 套用閱讀模式排版。
@@ -275,6 +314,7 @@ html.${HTML_CLASS} body {
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
       const ancestors = markAncestors(articleEl);
+      const structuralLinks = markStructuralLinks(articleEl);
 
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
       document.documentElement.classList.add(HTML_CLASS);
@@ -294,7 +334,7 @@ html.${HTML_CLASS} body {
         firstInk.style.setProperty('margin-top', '0', 'important');
       }
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority };
+      return { articleEl, ancestors, structuralLinks, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority };
     },
 
     /**
@@ -313,6 +353,11 @@ html.${HTML_CLASS} body {
       if (Array.isArray(snapshot.ancestors)) {
         for (const a of snapshot.ancestors) {
           if (a && a.removeAttribute) a.removeAttribute(ANCESTOR_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.structuralLinks)) {
+        for (const a of snapshot.structuralLinks) {
+          if (a && a.removeAttribute) a.removeAttribute(STRUCTURAL_LINK_ATTR);
         }
       }
       if (!snapshot.htmlHadClass) {
