@@ -176,7 +176,8 @@
 
     if (confidence < MIN_CONFIDENCE) return null;
 
-    return { el: promoteForTitle(best), confidence, strategy: 'heuristic' };
+    // title promote 由 detect() 統一處理，不在此重複
+    return { el: best, confidence, strategy: 'heuristic' };
   }
 
   // ---- 主文容器 promote：保留文章標題 -----------------------------------
@@ -247,9 +248,16 @@
      *
      * 順序原則：語意明確者優先。main-tag 放最後兜底，避免在多欄 layout 的
      * <main> 上吞 sidebar（WordPress wp-block-columns 這類結構）。
+     *
+     * Title promote：對所有「非兜底」策略結果（article-tag / schema-org /
+     * heuristic）統一呼叫 promoteForTitle。必要場景：某些站點（anthropic
+     * engineering blog）有 <article> 但文章 <h1> 放在 article 的兄弟
+     * <section> 裡，策略 1 命中 article 後，若不 promote 標題就會被
+     * hideAncestorSiblings 當 chrome 清掉。main-tag 是兜底，本身已經是
+     * 最外層不需 promote。
      */
     detect() {
-      return (
+      const result = (
         detectByArticleTag() ||
         detectBySchemaOrg() ||
         // 策略 3（OpenGraph）本輪未實作
@@ -257,6 +265,10 @@
         detectByMainTag() ||
         null
       );
+      if (result && result.strategy !== 'main-tag') {
+        result.el = promoteForTitle(result.el);
+      }
+      return result;
     }
   };
 

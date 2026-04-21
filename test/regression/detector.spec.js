@@ -148,3 +148,54 @@ describe('detector — stratechery-columns-layout（多欄 layout，無 <article
     );
   });
 });
+
+// -----------------------------------------------------------------------------
+// 對應 fixture：test/regression/fixtures/anthropic-hero-sibling.html
+// Bug 來源：anthropic.com/engineering/advanced-tool-use 有 <article> 但文章
+// <h1> 放在 article 的**兄弟** <section> 裡。detector 策略 1（article-tag）
+// 會直接選中 <article>，若 title promote 僅作用於 heuristic（v0.5.1 行為），
+// 則 article-tag 結果的祖兄 h1 不會被救起——hideAncestorSiblings 會把整個
+// hero section 當 chrome 清掉，標題消失。
+// 修法為結構性通則：對所有「非兜底」策略結果（article-tag / schema-org /
+// heuristic）統一在 detect() 出口套 promoteForTitle，不分策略。
+// -----------------------------------------------------------------------------
+describe('detector — anthropic-hero-sibling（article-tag 策略下的 title promote）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('anthropic-hero-sibling.html').result;
+  });
+
+  it('偵測成功，回傳物件而非 null', () => {
+    assert.ok(result, '偵測應成功（不得 no-op）');
+  });
+
+  it('策略從 article-tag 起步', () => {
+    // fixture 中有單一 <article>，策略 1 首先命中
+    assert.strictEqual(result.strategy, 'article-tag');
+  });
+
+  it('主文容器被 promote 到 <main>（共同 parent，包住 hero + article）', () => {
+    // article 的祖兄 section.hero 裡的 h1 文字匹配 og:title → 升級到共同
+    // parent = <main>
+    assert.strictEqual(
+      result.el.tagName.toLowerCase(), 'main',
+      `article-tag 遇祖兄 h1 匹配 og:title 時應 promote 到 main，實際 tag=${result.el.tagName}`
+    );
+  });
+
+  it('主文容器必須包含文章標題 H1', () => {
+    const h1 = result.el.querySelector('h1');
+    assert.ok(h1, '主文容器內應有 H1');
+    assert.ok(
+      (h1.textContent || '').includes('Introducing advanced tool use'),
+      `H1 應含標題文字，實際="${h1?.textContent || ''}"`
+    );
+  });
+
+  it('主文容器必須包含內文（ANTHROPIC_MAINTEXT_MARK）', () => {
+    assert.ok(
+      (result.el.textContent || '').includes('ANTHROPIC_MAINTEXT_MARK'),
+      '主文容器應包含 article 內文'
+    );
+  });
+});

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Introducing advanced tool use on the Claude Developer Platform \ Anthropic</title>
+  <meta property="og:title" content="Introducing advanced tool use on the Claude Developer Platform">
+</head>
+<body>
+  <header class="site-header">
+    <nav>Site nav</nav>
+  </header>
+
+  <main id="main-content">
+    <!-- Hero 區塊：標題 h1 放在 <section>，是 <article> 的兄弟。
+         detector 策略 1（article-tag）會選中 <article>，若不做 title promote，
+         hideAncestorSiblings 會把此 section 整塊當 chrome 清掉、標題跟著消失。 -->
+    <section class="page-wrapper hero">
+      <a class="breadcrumb" href="/engineering">Engineering at Anthropic</a>
+      <div class="hero-content">
+        <div class="hero-header"><h1 class="headline-1">Introducing advanced tool use on the Claude Developer Platform</h1></div>
+        <div class="hero-subtitle"><p>We've added three new beta features that let Claude discover, learn, and execute tools dynamically. Here's how they work.</p></div>
+      </div>
+      <div class="hero-meta">
+        <span>Published Nov 24, 2025</span>
+      </div>
+    </section>
+
+    <div class="page-wrapper">
+      <article>
+        <p>ANTHROPIC_MAINTEXT_MARK The future of AI agents is one where models work seamlessly across hundreds or thousands of tools. An IDE assistant that integrates git operations, file manipulation, package managers, testing frameworks, and deployment pipelines.</p>
+        <p>To build effective agents, they need to work with unlimited tool libraries without stuffing every definition into context upfront. Our blog article on using code execution with MCP discussed how tool results and definitions can sometimes consume 50,000+ tokens before an agent reads a request.</p>
+        <p>Agents also need the ability to call tools from code. When using natural language tool calling, each invocation requires a full inference pass, and intermediate results pile up in context whether they're useful or not.</p>
+        <h2>A new approach</h2>
+        <p>In this blog post, we'll walk through three beta features: tool search, programmatic tool calling, and tool use examples. Each one targets a specific bottleneck in how agents discover and invoke tools.</p>
+        <p>The combination of these features enables agents to operate at scale across thousands of tools without the context explosion that previously limited how many tools a single agent could meaningfully use.</p>
+      </article>
+    </div>
+  </main>
+
+  <footer>site footer</footer>
+</body>
+</html>

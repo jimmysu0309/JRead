@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.2`（cleaner action-row 再加「直接子互動元素比例 ≥ 50%」排除條件，修 ChinaTalk/Substack 類 byline+actions 外層 wrapper 被整塊誤殺導致作者/日期遺失）
+`0.6.3`（detector title promote 從 heuristic-only 擴展到所有非兜底策略，修 anthropic.com 類「有 article 但 h1 在祖兄 section」結構標題遺失）
 
 ---
 
@@ -91,9 +91,9 @@ JRead/
 5. 兜底：`<main>` 本身作為主文（順序最後，避免多欄 layout 的 `<main>` 吞 sidebar）
 6. 降級：若分數低於閾值，**不啟動閱讀模式**（no-op），不硬套
 
-### Title promote（heuristic 專用）
+### Title promote（所有非兜底策略）
 
-Stratechery / Medium / Substack 等 CMS 常把 post-title 跟 post-content 放兄弟層，bubble-up 會只選中 content、title 被漏掉。heuristic 回傳前做一步 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。僅作用於 heuristic 策略；article-tag / schema-org 已有明確語意邊界，不再 promote。
+Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
 
 ### 內文保留特例（避免誤殺內容）
 
