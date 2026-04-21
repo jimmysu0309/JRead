@@ -38,6 +38,21 @@
         <p>INTENTIONAL_RIGHT_MARK right column paragraph text also with real content.</p>
       </div>
     </div>
+
+    <!-- Bootstrap 類 row + col-md-8 / col-md-4 情境（Lawfaremedia 實測）：
+         row 是 flex-row；col-md-8 內聯 flex/max-width 限制 66.67%，col-md-4
+         內聯 max-width 33.33%。AdBlocker hide 掉 col-md-4（subscribe widget
+         等）後，collapseGridWithHiddenCell 要把 row 轉成 block，而且要清掉
+         col-md-8 的 flex/max-width，否則 col-md-8 仍佔父 66.67% 寬度、主文
+         還是靠左半邊。 -->
+    <div class="row" id="bootstrap-row" style="display: flex; flex-direction: row;">
+      <div class="col-md-8" id="col-md-8" style="flex: 0 0 66.67%; max-width: 66.67%;">
+        <p>LAWFARE_BODY_MARK Main content paragraph which should span full card width after collapse (was being squeezed into left 2/3).</p>
+      </div>
+      <div class="col-md-4 sidebar-ad-widget" id="col-md-4" style="flex: 0 0 33.33%; max-width: 33.33%;">
+        <p>Ad widget content</p>
+      </div>
+    </div>
   </article>
 </body>
 </html>

@@ -404,9 +404,10 @@
         if (ccs.display === 'none' || ccs.visibility === 'hidden') { hasHiddenChild = true; break; }
       }
       if (!hasHiddenChild) continue;
-      // 記下原 inline style 以便 restore
-      collapsed.push({
+      // 記下 container 的原 inline style 以便 restore
+      const containerSnap = {
         el,
+        kind: 'container',
         prevDisplay: el.style.display,
         prevDisplayPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('display')) || '',
         prevGridTemplateColumns: el.style.gridTemplateColumns,
@@ -417,7 +418,8 @@
         prevGridTemplateAreasPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('grid-template-areas')) || '',
         prevFlexDirection: el.style.flexDirection,
         prevFlexDirectionPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('flex-direction')) || ''
-      });
+      };
+      collapsed.push(containerSnap);
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
       // 等 class 本身 specificity 不是 !important，但多欄定義 rule 可能
       // 有 utility 特殊 priority；保險起見用 important）
@@ -429,6 +431,44 @@
         el.style.setProperty('flex-direction', 'column', 'important');
       }
       if (el.dataset) el.dataset.jreadCollapsed = '1';
+
+      // 關鍵：collapse container 只改了父的 display，但 children 身上的
+      // Bootstrap `col-md-8` 類 class（`flex: 0 0 66.67%; max-width: 66.67%`）
+      // 或 Tailwind `col-span-*` 等 utility 寬度定義**仍會生效**——child 會
+      // 維持原來的 N/12 欄寬度，collapse 等於沒做。Lawfaremedia 實測：
+      // `.row` 被 collapse 後 `.col-md-8` 仍 405px wide（608 × 66.67%），
+      // 主文被擠在左 2/3、右邊 200px 空白。
+      // 修法：對 visible 的 direct children 強制 `flex: initial` + `max-width:
+      // none` + `width: auto`，讓 children 恢復 block 預設「撐滿父寬度」。
+      for (const c of children) {
+        if (c.dataset && c.dataset.jreadHidden === '1') continue;
+        if (!c.style) continue;
+        collapsed.push({
+          el: c,
+          kind: 'child',
+          prevFlexGrow: c.style.flexGrow,
+          prevFlexGrowPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('flex-grow')) || '',
+          prevFlexShrink: c.style.flexShrink,
+          prevFlexShrinkPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('flex-shrink')) || '',
+          prevFlexBasis: c.style.flexBasis,
+          prevFlexBasisPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('flex-basis')) || '',
+          prevWidth: c.style.width,
+          prevWidthPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('width')) || '',
+          prevMaxWidth: c.style.maxWidth,
+          prevMaxWidthPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('max-width')) || '',
+          prevGridColumn: c.style.gridColumn,
+          prevGridColumnPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('grid-column')) || ''
+        });
+        // 只用 longhand，避免 shorthand serialization 在不同瀏覽器 / jsdom
+        // 不一致。longhand !important inline 能贏過 Bootstrap 的
+        // `flex: 0 0 66.67%` shorthand stylesheet rule。
+        c.style.setProperty('flex-grow', '0', 'important');
+        c.style.setProperty('flex-shrink', '0', 'important');
+        c.style.setProperty('flex-basis', 'auto', 'important');
+        c.style.setProperty('width', 'auto', 'important');
+        c.style.setProperty('max-width', 'none', 'important');
+        c.style.setProperty('grid-column', 'auto', 'important');
+      }
     }
     // 把 collapsed 紀錄接到 hidden 陣列尾（共享 restore）——但格式不同，
     // restore 流程要能識別。為了不動 restore 簽章，存到 hidden.__collapsed
@@ -441,20 +481,31 @@
     if (!Array.isArray(collapsed)) return;
     for (const item of collapsed) {
       if (!item || !item.el) continue;
-      const { el } = item;
-      // 把每個 property 恢復到原 inline value + priority（若原本沒設就 removeProperty）
-      const props = [
-        ['display', item.prevDisplay, item.prevDisplayPriority],
-        ['grid-template-columns', item.prevGridTemplateColumns, item.prevGridTemplateColumnsPriority],
-        ['grid-template-rows', item.prevGridTemplateRows, item.prevGridTemplateRowsPriority],
-        ['grid-template-areas', item.prevGridTemplateAreas, item.prevGridTemplateAreasPriority],
-        ['flex-direction', item.prevFlexDirection, item.prevFlexDirectionPriority]
-      ];
+      const { el, kind } = item;
+      let props;
+      if (kind === 'child') {
+        props = [
+          ['flex-grow', item.prevFlexGrow, item.prevFlexGrowPriority],
+          ['flex-shrink', item.prevFlexShrink, item.prevFlexShrinkPriority],
+          ['flex-basis', item.prevFlexBasis, item.prevFlexBasisPriority],
+          ['width', item.prevWidth, item.prevWidthPriority],
+          ['max-width', item.prevMaxWidth, item.prevMaxWidthPriority],
+          ['grid-column', item.prevGridColumn, item.prevGridColumnPriority]
+        ];
+      } else {
+        props = [
+          ['display', item.prevDisplay, item.prevDisplayPriority],
+          ['grid-template-columns', item.prevGridTemplateColumns, item.prevGridTemplateColumnsPriority],
+          ['grid-template-rows', item.prevGridTemplateRows, item.prevGridTemplateRowsPriority],
+          ['grid-template-areas', item.prevGridTemplateAreas, item.prevGridTemplateAreasPriority],
+          ['flex-direction', item.prevFlexDirection, item.prevFlexDirectionPriority]
+        ];
+      }
       for (const [name, value, priority] of props) {
         el.style.removeProperty(name);
         if (value) el.style.setProperty(name, value, priority || '');
       }
-      if (el.dataset) delete el.dataset.jreadCollapsed;
+      if (kind === 'container' && el.dataset) delete el.dataset.jreadCollapsed;
     }
   }
 
