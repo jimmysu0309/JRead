@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.3`（detector title promote 從 heuristic-only 擴展到所有非兜底策略，修 anthropic.com 類「有 article 但 h1 在祖兄 section」結構標題遺失）
+`0.6.4`（styler iframe 特例：拆出獨立 rule 不套 `height: auto`，修 WordPress wp-embed / Substack / Medium 類 YouTube 嵌入在閱讀模式下被壓成 150px 高的 bug）
 
 ---
 
