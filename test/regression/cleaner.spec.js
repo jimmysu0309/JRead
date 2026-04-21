@@ -577,6 +577,87 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 button cluster 含「純 a[href] 視覺按鈕 + 真 button」混合（Engadget 類）→ interactive 擴展到 a[href] + 仍需 ≥ 1 真 button 才命中', () => {
+    // Engadget 實測結構：byline 右側 cluster 3 direct children：
+    //   [<a href="google.com/preferences">Add Engadget on Google</a>,
+    //    <button aria-label="Share">, <button>(chat)</button>]
+    // a 沒有 role=button（視覺按鈕 但 DOM 是 link）——v0.6.18 原 interactive
+    // 定義（button/role=button）不算它、outsideText = 22 > 10 跳過。
+    // v0.6.19 擴展 interactive 到 a[href] 命中；同時加「≥ 1 真 button」保護
+    // 避免純 a[href] link rail 誤中。
+    const html = `<!DOCTYPE html><html><head>
+      <title>engadget byline</title><meta property="og:title" content="engadget byline"></head>
+      <body>
+        <article>
+          <header>
+            <h1>Engadget article title here about something</h1>
+            <div class="byline-buttons" id="byline-buttons">
+              <div class="wrap"><a href="https://www.google.com/preferences/source?q=engadget.com">Add Engadget on Google</a></div>
+              <div class="wrap"><button aria-label="Share"><svg></svg></button></div>
+              <div class="wrap"><button aria-label="Chat"><svg></svg></button></div>
+            </div>
+          </header>
+          <p>ENGADGET_BODY_MARK The article body padding padding padding padding
+          padding padding padding padding padding padding padding padding padding.</p>
+        </article>
+      </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const cluster = w.document.getElementById('byline-buttons');
+      assert.ok(cluster);
+      assert.strictEqual(cluster.dataset.jreadHidden, '1',
+        'Engadget 類「a[href]+button 混合 cluster」應被命中 hide');
+      // 標題 + 內文保留
+      const h1 = w.document.querySelector('h1');
+      const body = w.document.querySelector('p');
+      assert.notStrictEqual(h1.dataset.jreadHidden, '1', '標題保留');
+      assert.ok(body.textContent.includes('ENGADGET_BODY_MARK'));
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('button cluster 規則對「純 a[href] link rail」（無任何 button / role=button）不命中（保護導覽列 / 相關閱讀列表）', () => {
+    // 擴展 interactive 到 a[href] 後新風險：3 條 link 堆在 div 裡被誤中。
+    // 用「必須至少 1 個真 button / role=button」保護。純 link rail 交給
+    // ancestor-sibling / share cluster / keyword heuristic 規則處理。
+    const html = `<!DOCTYPE html><html><head>
+      <title>link rail</title><meta property="og:title" content="link rail"></head>
+      <body>
+        <article>
+          <h1>Article with link rail</h1>
+          <div class="link-rail" id="link-rail">
+            <a href="#1">Link 1</a>
+            <a href="#2">Link 2</a>
+            <a href="#3">Link 3</a>
+          </div>
+          <p>RAIL_BODY_MARK Article body content padding padding padding padding
+          padding padding padding padding padding padding padding padding padding.</p>
+        </article>
+      </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const rail = w.document.getElementById('link-rail');
+      assert.ok(rail);
+      assert.notStrictEqual(rail.dataset.jreadHidden, '1',
+        '純 a[href] link rail（無真 button）不得被 button cluster 規則誤命中');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('button cluster 規則對「button 外文字 > 10 chars」的容器不命中（保護 ChinaTalk byline+btn 混合 wrapper）', () => {
     // 額外 forcing function：直接構造「container 含 >= 2 button + 短 textLen
     // 但 button 外文字（作者名 + 日期）> 10 chars」，確保新規則不會誤殺。
