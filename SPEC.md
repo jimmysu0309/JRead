@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.20`（cleaner 新增 `hideInsideArticleHorizontalRules`：主文內所有 `<hr>` 元素一律 hide。HTML5 `<hr>` 是「thematic break」，reader mode 卡片排版下段落 margin 已提供足夠分節視覺，殘留 hr 通常造成多餘橫線 artifact（Medium 類 post-meta 下方接 1-2 條 hr 再接首圖，在 reader mode 下就是「照片上方多出橫線」視覺）。已驗證 baseline fixtures 零含 hr，無 regression 風險）
+`0.6.21`（`hideInsideArticleButtonClusters` 的 「排除 p/h1-h6/媒體」保護條件從簡單 `querySelector` 改為「**路徑判斷**」——只有「從 container 到該 p/heading 的路徑上不經過 interactive 節點」才算真內文保護觸發。修 Medium 類 clap/Listen/Share/More action bar 把每個 button label 包成 `<p>Listen</p>` / `<p>More</p>`，原 `querySelector('p')` 遞迴找到 button 內部 p 誤觸發內文保護跳過；新 path-check 讓 action bar 本體被命中 hide——修「照片上方兩條橫線」artifact。正文段落 wrapper 含直接 `<p>` child 仍被保護）
 
 ---
 

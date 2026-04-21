@@ -695,6 +695,106 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('button cluster 規則：button 內部的 <p>/heading（Medium 把 button label 包成 <p>Listen</p>）不得觸發內文保護', () => {
+    // Medium 實測（clyepyy82kxo + Monochrome Dreams）：clap+Listen+Share+More
+    // action bar 用 1px solid #f2f2f2 上下 border 殘留兩條橫線，textLen 20、
+    // 7 個 button、outsideText 0——button cluster 規則本該命中，但每個
+    // button label 被包成 `<p>Listen</p>` / `<p>Share</p>` / `<p>More</p>`，
+    // 遞迴 querySelector('p') 找到這些深層 p 誤觸發內文保護跳過。修法：
+    // 保護條件改成「p/heading/媒體**從 el 到它的路徑上不經過 interactive
+    // 節點**」才算真內文——button 內的 p 不算，整個 cluster 仍被命中。
+    const html = `<!DOCTYPE html><html><head>
+      <title>medium action bar</title><meta property="og:title" content="medium"></head>
+      <body>
+        <article>
+          <h1>Medium article title here</h1>
+          <div class="subtitle-wrap"><p>Subtitle paragraph</p></div>
+          <div class="action-bar" id="action-bar">
+            <div class="clap-wrap">
+              <button aria-label="clap"><svg></svg></button>
+              <button><p>442</p></button>
+              <button><p>10</p></button>
+            </div>
+            <div class="misc-wrap">
+              <button aria-label="listen"><svg></svg></button>
+              <button><p>Listen</p></button>
+              <button><p>Share</p></button>
+              <button><p>More</p></button>
+            </div>
+          </div>
+          <p>MEDIUM_BODY_MARK Article body content padding padding padding padding
+          padding padding padding padding padding padding padding padding padding.</p>
+        </article>
+      </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const bar = w.document.getElementById('action-bar');
+      assert.ok(bar);
+      assert.strictEqual(bar.dataset.jreadHidden, '1',
+        'Medium 類 action bar（label 用 <p> 包）應被 button cluster 規則命中 hide');
+
+      // 主文內容保留
+      const body = w.document.querySelector('p.body, article > p');
+      const allP = w.document.querySelectorAll('article > p');
+      let bodyFound = false;
+      for (const p of allP) {
+        if (p.textContent.includes('MEDIUM_BODY_MARK')) bodyFound = true;
+      }
+      assert.ok(bodyFound, '主文內容 MEDIUM_BODY_MARK 必須保留');
+
+      // 標題保留
+      const h1 = w.document.querySelector('h1');
+      assert.notStrictEqual(h1.dataset.jreadHidden, '1', '標題不得被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('button cluster 規則：非 interactive 內的 <p>（正文段落）仍觸發保護，不得誤殺內文容器', () => {
+    // forcing function：若保護條件放得太寬（不論 p 在哪都不算內文），
+    // 會誤殺任何「含 p + 2 個 button」的正文 wrapper（例如段落末尾附
+    // 「like / share」inline button）。這條確保「p 在 interactive **外**」
+    // 仍觸發保護、正文 wrapper 安全。
+    const html = `<!DOCTYPE html><html><head>
+      <title>body with inline buttons</title>
+      <meta property="og:title" content="body"></head>
+      <body>
+        <article>
+          <h1>Article with inline buttons</h1>
+          <div class="paragraph-wrap" id="paragraph-wrap">
+            <p>This is a body paragraph. It contains real body content padding
+            padding padding. At the end there are inline like / share buttons.</p>
+            <button aria-label="like"><svg></svg></button>
+            <button aria-label="share"><svg></svg></button>
+          </div>
+          <p>Another body paragraph padding padding padding padding padding
+          padding padding padding padding padding padding padding.</p>
+        </article>
+      </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const wrap = w.document.getElementById('paragraph-wrap');
+      assert.ok(wrap);
+      assert.notStrictEqual(wrap.dataset.jreadHidden, '1',
+        '正文 wrapper 含直接 p direct child + inline buttons 不得被誤殺' +
+        '（p 在 interactive 外、應觸發保護）');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內所有 <hr> 元素一律 hide（修 Medium 類 post-header 下方「照片上方多出兩條線」artifact）', () => {
     // Medium 實測：post-header（Member-only 標籤 + 標題 + 副標 + 作者 meta）
     // 下方接 1-2 條 <hr> 分隔線，再接首圖 figure——reader mode 卡片排版下
