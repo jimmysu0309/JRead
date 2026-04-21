@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.5.2`（styler 加結構性連結標記：heading 包 a / parent-only-text a 不套 link 色，真 inline link 保留，修 WordPress 類 CMS 標題整行變藍底線的視覺問題）
+`0.6.0`（styler 瘦身重構——c 路線：盡量不動原站內文排版，只套卡片容器 + 必要 reset + 使用者 override；移除 heading/p/list/link 等 ~50 條過度激進 rule）
 
 ---
 
@@ -128,6 +128,33 @@ Stratechery / Medium / Substack 等 CMS 常把 post-title 跟 post-content 放�
 - `share`、`social`（配合結構判斷，避免誤殺有意義的 share 圖示）
 
 **這不是站點特判**：這些字詞是跨站通用的 CSS 命名習慣，在 Business Weekly、Medium、紐約時報、Substack 上都會命中對應區塊。實作時如果發現某個 keyword 容易誤殺，再逐條評估調整。
+
+---
+
+## 排版樣式策略（v0.6.0 瘦身版）
+
+styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者卡片容器、接使用者 override**。不動原站的 heading margin / p margin / list style / font-family / font-size / line-height / link color / blockquote border 等——原站怎麼排就怎麼排。
+
+### 永遠注入的骨架
+
+1. 頁面 reset：`html` / `body` 背景 + 清 max-width / margin / padding（讓閱讀模式的卡片能置中於整個 viewport）
+2. 祖先鏈 reset：`[data-jread-ancestor="1"]` 清 max-width / margin / padding / background / position / transform 等（讓主文脫離原站的多欄 layout 或 sticky 限制）
+3. 讀者卡片：`[data-jread-active="1"]` 設 max-width（版心）/ margin auto / padding / background / border-radius / box-shadow——**刻意不設 font-family / font-size / line-height / color**
+4. 第一個子元素 margin-top: 0（消頂端留白，配合 JS 對深層 firstInk 的 inline margin-top 覆寫）
+5. 圖片 / 影片 max-width: 100%（避免超出卡片寬度）
+6. aspect-ratio placeholder 破解：含 `<img>` / `<picture>` / `<video>` 的容器清 padding-bottom 與 aspect-ratio（專門破 Substack / Medium 的 `padding-bottom: 56.25%` hack）
+
+### 僅在「使用者改過預設值」時才注入的 override
+
+| 欄位 | 預設 | 改過後注入 |
+| --- | --- | --- |
+| `theme` | `'light'` | dark / sepia → 覆寫文字色 + 頁面/卡片底色 |
+| `fontSize` | `18` | 非 18 → `[data-jread-active] { font-size: Npx !important }` |
+| `fontFamily` | `'system-ui'` | 改過 → 注入 font-family |
+| `lineHeight` | `1.7` | 非 1.7 → 注入 line-height |
+| `contentWidth` | `720` | 永遠注入（卡片骨架不可缺） |
+
+這樣「開啟閱讀模式但不改設定」＝ 原站字體 / 字級 / 行高 / 排版 + 讀者卡片容器。最貼近原站視覺。
 
 ---
 
