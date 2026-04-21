@@ -285,21 +285,41 @@
   // 為何最小 button 數 = 2：單一 button（例如 toggle 按鈕）可能是合法 CTA，
   // 多個才是 cluster 特徵。
   //
-  // 為何再加「button 外文字 < 10」保護：
+  // 為何再加「interactive 外文字 < 10」保護：
   // ChinaTalk byline-actions-wrapper fixture 實測：
   //   <div.meta-group><a>Jordan Schneider</a><span>Apr 21, 2026</span></div>
   //   <div.btn-group><button>like</button><span>41</span><button>comment</button>...</div>
   // textLen 只有 ~31（< 80）、button >= 3（>= 2）、無 p/h/媒體 → 上列 3 條件
   // 全中！會整塊砍掉作者+日期（v0.6.2 baseline 保護面）。差別在 ChinaTalk
-  // 的 meta-group 把作者/日期文字放在 button **之外**（純 a + span），BBC
-  // cSUzvu 的所有文字（Share/Save/Add as preferred on Google）全部在
-  // `<button>` 或 `a[role=button]` **裡面**。計算 "非 button 文字量"——
-  // 在 button/role=button 外仍有 ≥ 10 chars → 視為 byline meta 保護。
-  // BBC cSUzvu: text 35 chars 全在 button 內 → outside = 0 → 命中 hide
-  // ChinaTalk: meta-group 文字（Jordan + date）~30 chars 在 button 外 → 保留
+  // 的 meta-group 把作者/日期文字放在 interactive **之外**（span 日期），
+  // BBC cSUzvu 的所有文字全部在 `<button>` 或 `<a>` **裡面**。
+  //
+  // Interactive 定義（v0.6.19 擴展）：button + [role=button] + a[href]。
+  // a[href] 也算是因為 Engadget 類站點把 "Add Engadget on Google" 做成
+  // 純 `<a href="google.com/preferences">` 沒 button tag、沒 role=button——
+  // 視覺上是按鈕但 DOM 是 link，舊定義（只含 button / role=button）漏算。
+  // 擴展後 Engadget cluster 3 direct children 的全部文字都在 interactive
+  // 裡（Add link + 2 button），outsideText = 0 → 命中。ChinaTalk meta-group
+  // 只有 1 個 a[href]（作者）——buttonCount < 2 跳過保留；byline-actions-
+  // wrapper 外層有 a[href]+button 共 4 個 interactive（滿足 >= 2），但作者
+  // 在 a 內（算 interactive）+ 日期在 span 外 12 chars > 10 → outsideText 仍
+  // 滿足保護（12 > 10），跳過保留。
+  //
+  // 為何要過濾 nested interactive：若 a > button（或 button > a），原始
+  // querySelectorAll 兩個都收，其 textContent 在累加時會重複計到、outside
+  // 被壓負。改成只取最外層 interactive 節點（祖先非 interactive），避免重疊。
   const BUTTON_CLUSTER_TEXT_MAX = 80;
   const BUTTON_CLUSTER_MIN_BUTTONS = 2;
   const BUTTON_CLUSTER_MAX_OUTSIDE_TEXT = 10;
+
+  function isInteractiveLeaf(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.tagName === 'BUTTON') return true;
+    if (node.tagName === 'A' && node.hasAttribute('href')) return true;
+    const role = node.getAttribute && node.getAttribute('role');
+    if (role === 'button') return true;
+    return false;
+  }
 
   function hideInsideArticleButtonClusters(articleEl, hidden) {
     // whitespace-normalize：jsdom textContent 把 HTML 縮排 `\n    ` 算進去，
@@ -320,15 +340,34 @@
       const text = norm(el.textContent);
       if (text.length > BUTTON_CLUSTER_TEXT_MAX) continue;
 
-      const buttonNodes = el.querySelectorAll('button, a[role="button"], [role="button"]');
-      if (buttonNodes.length < BUTTON_CLUSTER_MIN_BUTTONS) continue;
+      // 遞迴收集所有 interactive 節點（button / [role=button] / a[href]），
+      // 過濾掉「被另一個 interactive 祖先覆蓋」的 nested 節點——只取最外層，
+      // 避免 textContent 在累加時重複計（例如 `<a><button>X</button></a>`
+      // 會把 X 算兩次、outsideText 被壓成負值失去保護作用）。
+      const allInteractive = el.querySelectorAll('button, [role="button"], a[href]');
+      const topInteractive = [];
+      for (const n of allInteractive) {
+        let nested = false;
+        let p = n.parentElement;
+        while (p && p !== el) {
+          if (isInteractiveLeaf(p)) { nested = true; break; }
+          p = p.parentElement;
+        }
+        if (!nested) topInteractive.push(n);
+      }
+      if (topInteractive.length < BUTTON_CLUSTER_MIN_BUTTONS) continue;
 
-      // 計算 button 外的文字量：總文字 - 所有 button 內文字總和
-      // （nested button 會被重複計，但這裡只要 outside > 10 就保留，nested
-      //  情境多算反而讓 outside 偏小——判斷更嚴格，更不易誤殺 cluster 外文字）
-      let buttonText = 0;
-      for (const b of buttonNodes) buttonText += norm(b.textContent).length;
-      const outsideText = text.length - buttonText;
+      // 至少 1 個真正的 button / role=button（遞迴查、不限 topInteractive）：
+      // 排除純 link cluster（3 條 a[href] 堆在一起的導覽 rail）——那類由
+      // ancestor-sibling / share cluster / keyword 規則處理。BBC 類
+      // `<a href><button></button></a>` 因 button 被 a[href] 覆蓋而不在
+      // topInteractive 裡，但仍存在於 DOM descendant 中，這裡遞迴查保留命中。
+      if (!el.querySelector('button, [role="button"]')) continue;
+
+      // interactive 外的文字量：總文字 - 最外層 interactive 節點文字之和
+      let interactiveText = 0;
+      for (const n of topInteractive) interactiveText += norm(n.textContent).length;
+      const outsideText = text.length - interactiveText;
       if (outsideText > BUTTON_CLUSTER_MAX_OUTSIDE_TEXT) continue;
 
       hide(el, hidden);

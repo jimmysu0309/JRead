@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.18`（cleaner 新增 `hideInsideArticleButtonClusters` 規則：container 自身 normalize textLen ≤ 80 + 遞迴含 ≥ 2 個 `button`/`a[role=button]` + 無 `p`/`h1-h6`/媒體 + button 外文字 ≤ 10 chars → hide。修 BBC 類現代 CSS-in-JS 把 button 用 `display: contents` 層層包 div 導致 direct interactive ratio = 0、既有 `hideInsideArticleActionRows` 的「ratio < 50% 且 selfText ≥ 20 字」排除條件跳過的盲點——BBC byline 內 Share / Save / Add as preferred on Google 按鈕組。「button 外文字 ≤ 10 chars」保護條件確保 ChinaTalk byline+actions wrapper（meta-group 含作者+日期在 button 外）不被誤殺）
+`0.6.19`（`hideInsideArticleButtonClusters` interactive 定義從「button / [role=button]」擴展到「button / [role=button] / a[href]」，並過濾 nested interactive（避免 `<a><button></button></a>` 文字雙倍計算）。新增保護條件「容器遞迴須至少含 1 個真 button / [role=button]」排除純 a[href] 導覽列。修 Engadget 類「Add Engadget on Google」做成純 `<a href="google.com/preferences">`（無 button tag、無 role=button）的視覺按鈕與 Share/chat button 混合 cluster 命中不了的場景。保護「純 a[href] link rail」與「ChinaTalk byline meta 混合 wrapper」仍有效）
 
 ---
 
