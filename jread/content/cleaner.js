@@ -193,6 +193,15 @@
       // 的 zoom / loading svg，會誤觸 iconCount 門檻被隱藏
       if (el.querySelector('img, picture, video, audio')) continue;
 
+      // 排除：含 heading 直接子（h1-h6）的容器
+      // 理由：action row 本質上是圖示互動列，絕不會包含文章 heading。
+      // ChinaTalk/Substack 的 div.post-header 包 <h1 post-title> + 作者/
+      // 日期 meta + like/comment/share/more buttons——特徵剛好命中 action
+      // -row 條件（無 p、無媒體、短文字、多 icon），若不排除 heading 就
+      // 會砍掉整個標題區塊（quantum-101 實測觸發）。
+      const hasHeadingChild = Array.from(el.children).some(c => /^H[1-6]$/.test(c.tagName));
+      if (hasHeadingChild) continue;
+
       const hasParagraphChild = Array.from(el.children).some(c => c.tagName === 'P');
       if (hasParagraphChild) continue;
 

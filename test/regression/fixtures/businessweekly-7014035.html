@@ -82,6 +82,14 @@
           <button aria-label="更多"><svg></svg></button>
         </div>
 
+        <!-- 模擬 ChinaTalk/Substack 的 post-header：容器含 <h1> 文章標題 +
+             作者/日期 meta + 多個互動 button/svg（like / comment / share /
+             more）。特徵剛好命中 action-row 的「無 p、無媒體、短文字、多 icon」
+             四條件——但容器內有 <h1>，若因 action-row 規則被隱藏會砍掉整個
+             標題區塊（ChinaTalk quantum-101 實測觸發此 bug）。
+             通則：action row 是圖示互動列，絕不會包含文章 heading。 -->
+        <div class="post-header"><h1 class="post-title">Quantum 101</h1><span>Jordan Schneider</span><span>Apr 21, 2026</span><button aria-label="like"><svg></svg></button><span>41</span><button aria-label="comment"><svg></svg></button><button aria-label="share"><svg></svg></button><button aria-label="more"><svg></svg></button></div>
+
         <!-- 模擬 Substack 的 captioned-image-container：含 <img> + 多個 svg
              （zoom / loading icon）+ 文字短；不該被 action-toolbar 規則誤殺 -->
         <div class="captioned-image-container">
