@@ -345,6 +345,61 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       '主文內部新 append 的節點不得被 observer remove');
   });
 
+  // 不是 MutationObserver 分組的一部分，但與 cleaner 流程相關，放在此分組尾
+  it('action-bar shell short-circuit：direct children 全 wrapper + textContent 短 → hide', () => {
+    // 離題 describe，用獨立 fixture setup 驗（避免 LTN fixture 干擾）
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'medium-action-bar-shell.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中主文');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const shell = w.document.querySelector('.action-bar-outer');
+      assert.ok(shell, 'fixture 必須有 .action-bar-outer');
+      assert.strictEqual(shell.dataset.jreadHidden, '1',
+        'Medium action-bar outer shell（direct children 全 wrapper、textContent < 20 chars、deep button+svg ≥ 2）必須被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('ChinaTalk 類 byline+actions wrapper 不得因 shell short-circuit 誤殺（textContent 含作者+日期 ≥ 20 chars）', () => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'medium-action-bar-shell.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const byline = w.document.querySelector('.byline-actions-wrapper');
+      assert.ok(byline, 'fixture 必須有 .byline-actions-wrapper');
+      assert.notStrictEqual(byline.dataset.jreadHidden, '1',
+        'ChinaTalk byline wrapper 的 textContent ~30 chars ≥ 20，shell short-circuit 的 escape hatch 不觸發，outer 應保留');
+      // 保留期間，CHINATALK_BYLINE_MARK 必須仍可 querySelector 找到
+      const metaTxt = byline.querySelector('.meta-group')?.textContent || '';
+      assert.ok(metaTxt.includes('CHINATALK_BYLINE_MARK'),
+        '作者/日期 meta 文字必須保留');
+      // 內層 btn-group（direct children 100% button）仍應被原 action-row hide
+      const btnGroup = w.document.querySelector('.btn-group');
+      assert.strictEqual(btnGroup.dataset.jreadHidden, '1',
+        '內層 .btn-group（direct children 全 button）仍應由原 action-row 規則 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('restore() 後 observer disconnect，新 append 不再被攔截', async () => {
     NS.cleaner.restore(hidden);
     hidden = [];  // 避免 afterEach 重複 restore
