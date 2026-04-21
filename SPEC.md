@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.5.0`（styler 完成、cleaner 新增 dialog / action-row / spacer / ancestor-sibling 四條通則、popup 設定面板重設計、自動化除錯 harness）
+`0.5.1`（detector heuristic 改 Readability-style bubble-up + title promote，修正多欄 layout 且無 `<article>` tag 的站點被吞進 sidebar 的問題）
 
 ---
 
@@ -84,11 +84,16 @@ JRead/
 
 ## 主文偵測策略（優先序）
 
-1. 語意標籤：`<article>`、`<main>` 中包含 `<article>`
+1. 語意標籤：`<article>`（單一或明顯最長者；多個相近篇幅判為列表頁而降級）
 2. Schema.org：`[itemtype*="Article"]`、`[itemtype*="NewsArticle"]`、`[itemtype*="BlogPosting"]`
-3. OpenGraph：`meta[property="og:type"][content="article"]` 搭配啟發式
-4. 內容密度啟發式：參考 Readability.js（段落密度、連結密度、文字長度）
-5. 降級：若分數低於閾值，**不啟動閱讀模式**（no-op），不硬套
+3. OpenGraph：`meta[property="og:type"][content="article"]` 搭配啟發式（暫未實作）
+4. 內容密度啟發式（Readability-style bubble-up）：對 `<p>` / `<li>` / `<h2-4>` / `<blockquote>` / `<pre>` 算 contentScore（文字長 + 逗號數），向 parent 100% / grandparent 50% 累加；容器型元素以累積分勝出。此法避免「站體外殼因後代 p 總數多而贏過真主文容器」
+5. 兜底：`<main>` 本身作為主文（順序最後，避免多欄 layout 的 `<main>` 吞 sidebar）
+6. 降級：若分數低於閾值，**不啟動閱讀模式**（no-op），不硬套
+
+### Title promote（heuristic 專用）
+
+Stratechery / Medium / Substack 等 CMS 常把 post-title 跟 post-content 放兄弟層，bubble-up 會只選中 content、title 被漏掉。heuristic 回傳前做一步 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。僅作用於 heuristic 策略；article-tag / schema-org 已有明確語意邊界，不再 promote。
 
 ### 內文保留特例（避免誤殺內容）
 
@@ -188,6 +193,20 @@ JRead/
   - `figure.articlephoto`（主圖 + figcaption）
   - `div.articlbox`（「小檔案」可摺疊資訊卡，強制展開即可，不需保留 JS 互動）
 - **付費文章**：內文只有免費摘要 ~540 字，偵測正常不代表擷取到完整文章——這是站點本質，不是偵測失敗
+
+### Stratechery（stratechery.com）
+
+- **測試日期**：2026-04-21
+- **測試頁面**：`/2026/please-listen-to-my-podcast/`
+- **主文容器**：`div.wp-block-column`（左欄）——由 heuristic bubble-up 選中 `div.entry-content` 後，title promote 升級到左欄共同 parent
+- **DOM 結構**：整頁**完全沒有 `<article>` tag**，WordPress 用 `<main>` > `div.wp-block-columns` 做 2 欄 layout，左欄含 `h2.wp-block-post-title` + `div.entry-content` + related/prev-next，右欄含 `div.wp-block-column.stratechery-sidebar` > `<aside>`
+- **雜訊清單**：
+  - 右欄 sidebar 全欄（search、Strategy Plus、UPDATES、PODCASTS、INTERVIEWS 列表）→ 由 cleaner 的 ancestor-sibling 規則清除
+  - 頁面外：site `<header>` / `<footer>` / site-level nav → 語意標籤通則命中
+- **觸發新規則**：
+  - heuristic bubble-up（取代原「計後代 p 總數」）——避免站體外殼贏過主文
+  - title promote——Stratechery 把 post-title 放在 entry-content 兄弟層，需把主文升級到共同 parent 保留標題
+- **需要保留的特殊元素**：`h2.wp-block-post-title` 文章標題、主圖 `<figure>` + figcaption
 
 ---
 
