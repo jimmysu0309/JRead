@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.2.1`（主文偵測已實作策略 1/2/4；popup 對既有分頁主動注入 content script）
+`0.2.2`（主文偵測已實作策略 1/2/4；popup 拆出 popup-core.js 可測試層，補回歸測試）
 
 ---
 
