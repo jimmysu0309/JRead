@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.19（`hideInsideArticleButtonClusters` interactive 定義擴展到 `a[href]` 並過濾 nested、新增「≥ 1 真 button」保護排除純 link rail；修 Engadget 類「Add on Google」做成純 `<a>` + Share/chat button 混合 cluster 命中不了的場景；純 link rail 與 ChinaTalk byline meta 保護仍有效）
+**目前版本**：v0.6.20（cleaner 新增 `hideInsideArticleHorizontalRules`：主文內所有 `<hr>` 一律 hide，修 Medium 類 post-header 下方 hr 殘留「照片上方多出兩條橫線」artifact；baseline fixtures 零 hr、零 regression 風險）
 
 ---
 
