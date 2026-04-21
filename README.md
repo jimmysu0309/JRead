@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.15（cleaner 擴展 `collapseGridWithHiddenCell` 加「grid underfill」條件：主文內 grid 容器即使無 hidden sibling，若 visible children 全同一 row 但寬度總和 < container × 70% 仍退化成 block，修 BBC 24-column design system 主文被擠在中間 50% 寬度的問題）
+**目前版本**：v0.6.16（styler user override 分支 font-size / font-family / line-height rule 擴展 selector 到 body text descendant（p / li / blockquote / figcaption / dd / dt）；修 BBC / NYT 類站點把 font-size 用 class rule 鎖在 `<p>` 身上、override 被 inheritance 截斷失效的問題。heading 保留原站分級）
 
 ---
 

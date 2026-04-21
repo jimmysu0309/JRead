@@ -308,6 +308,45 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(/line-height:\s*2/.test(css));
   });
 
+  it('非預設 fontSize / fontFamily / lineHeight 的 rule 必須含 body text descendant selector（穿透 BBC / NYT 類站點 class rule）', () => {
+    // BBC `.HooNV`、NYT article body class 等把 font-size / line-height /
+    // font-family 鎖死在 `<p>` 身上——只對 `[data-jread-active="1"]` 自己下
+    // rule 會被後代的 class rule 截斷 inheritance，override 失效。override
+    // rule 必須列舉常見 body text 元素（p / li / blockquote / figcaption /
+    // dd / dt）才能穿透站點 class specificity。heading h1-h6 不含（保留
+    // 原站標題大小分級）。
+    const { document, NS, articleEl } = setup();
+    // 同時改三項：一次驗完
+    NS.styler.apply(articleEl, {
+      ...DEFAULT_SETTINGS, fontSize: 22, fontFamily: 'Georgia', lineHeight: 2.0
+    });
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 切出「使用者 override block」（第一個含 font-size/family/line-height
+    // 的 rule 群）驗證它含 descendant selector 列表
+    for (const prop of ['font-size', 'font-family', 'line-height']) {
+      // 找出該 property rule 所在 block（selector { ... prop: ... })；
+      // 粗略抓 rule 前的 selector list
+      const re = new RegExp('([^}]*)\\{[^}]*' + prop + '\\s*:', 'i');
+      const m = css.match(re);
+      assert.ok(m, `CSS 應包含 ${prop} rule`);
+      const selectorList = m[1];
+      // 核心 descendant：必含 [data-jread-active="1"] p
+      assert.ok(/\[data-jread-active="1"\]\s+p\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] p（穿透站點 p class rule）`);
+      assert.ok(/\[data-jread-active="1"\]\s+li\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] li`);
+      assert.ok(/\[data-jread-active="1"\]\s+blockquote\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] blockquote`);
+      assert.ok(/\[data-jread-active="1"\]\s+figcaption\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] figcaption`);
+    }
+
+    // 不得對 h1-h6 下 rule（保留原站標題分級）
+    assert.ok(!/\[data-jread-active="1"\]\s+h[1-6]\b/.test(css),
+      'override rule 不得包含 h1-h6 descendant（保留原站標題大小分級）');
+  });
+
   it('light theme（預設）→ 頁面底色 #ececec、不注入強制文字色', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);

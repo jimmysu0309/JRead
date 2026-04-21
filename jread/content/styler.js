@@ -145,22 +145,38 @@ html.${HTML_CLASS} body {
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
+    // body text selector list（不含 heading h1-h6——保留原站標題大小分級；
+    // v0.6.0 baseline 精神「預設值保留原站」在此仍成立：DEFAULT 分支完全
+    // 不走到這裡）。descendant 展開必要性：BBC / NYT / Guardian 等站點給
+    // `<p>`、`<li>`、`<blockquote>` 用 class rule 直接鎖死 font-size /
+    // line-height / font-family（例：BBC `.HooNV { font-size: 18px;
+    // line-height: 26px; font-family: "BBC Reith Serif" }`）——只對 article
+    // 本身設 font-size 會被後代自己的 rule 截斷 inheritance、override 失效。
+    // 列舉常見 body text 元素才能穿透站點 class rule 的 specificity。
+    const BODY_TEXT_SEL =
+      `[${ARTICLE_ATTR}="1"],` +
+      `[${ARTICLE_ATTR}="1"] p,` +
+      `[${ARTICLE_ATTR}="1"] li,` +
+      `[${ARTICLE_ATTR}="1"] blockquote,` +
+      `[${ARTICLE_ATTR}="1"] figcaption,` +
+      `[${ARTICLE_ATTR}="1"] dd,` +
+      `[${ARTICLE_ATTR}="1"] dt`;
     let userOverrides = '';
     if (overrides.fontSize) {
       userOverrides += `
-[${ARTICLE_ATTR}="1"] {
+${BODY_TEXT_SEL} {
   font-size: ${opts.fontSize}px !important;
 }`;
     }
     if (overrides.fontFamily) {
       userOverrides += `
-[${ARTICLE_ATTR}="1"] {
+${BODY_TEXT_SEL} {
   font-family: ${opts.fontFamily}, -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
 }`;
     }
     if (overrides.lineHeight) {
       userOverrides += `
-[${ARTICLE_ATTR}="1"] {
+${BODY_TEXT_SEL} {
   line-height: ${opts.lineHeight} !important;
 }`;
     }
