@@ -243,3 +243,124 @@ describe('cleaner — businessweekly-7014035', () => {
     }
   });
 });
+
+// -----------------------------------------------------------------------------
+// Reader mode 下凍結主文祖先鏈：MutationObserver 攔截 dynamic append
+// 對應 fixture：test/regression/fixtures/ltn-multi-article-siblings.html
+// Bug 來源：news.ltn.com.tw 用 popIn Discovery 在 scroll 時把「下一篇」從
+// .template 元素 clone 後 append 到主文 parent（section.content-list）。
+// cleaner.clean() 是 one-shot snapshot，只 hide 當下存在的節點；新 append
+// 的節點沒經過流程 → 混入使用者視野。且 popIn 的 template clone 帶有
+// cleaner 之前 hide 的 dataset.jreadHidden，傳統 hide() 的 early-return
+// 會 skip；即使 hide 成功 popIn 也會主動設 display:block 覆蓋。
+// 修法：cleaner.clean() 結束時啟動 MutationObserver 觀察主文祖先鏈上每一
+// 層 parent 的 childList，新 addedNodes（非主文相關、非 structural、非保留）
+// 直接 remove。cleaner.restore() 時 disconnect。
+// -----------------------------------------------------------------------------
+describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', () => {
+  let window, document, articleEl, NS, hidden;
+
+  beforeEach(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'ltn-multi-article-siblings.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    NS = window.__JRead;
+    const detected = NS.detector.detect();
+    assert.ok(detected, 'detector 必須命中主文');
+    articleEl = detected.el;
+    hidden = NS.cleaner.clean(articleEl);
+  });
+
+  afterEach(() => {
+    // 確保 observer disconnected，避免影響下個測試（保險）
+    try { NS.cleaner.restore(hidden); } catch {}
+  });
+
+  // 模擬 popIn template clone：新節點帶 dataset.jreadHidden（從被 hide 的
+  // template 繼承而來），且主動設 display:block。觀察者必須忽略這些殘留
+  // attribute 直接 remove。
+  async function appendFakePopInArticle(parent, h1Text) {
+    const div = document.createElement('div');
+    div.className = 'whitecon article template';
+    div.dataset.jreadHidden = '1';  // 模擬從 hidden .template clone 來
+    div.style.display = 'block';    // popIn 主動設的
+    const h1 = document.createElement('h1');
+    h1.textContent = h1Text;
+    div.appendChild(h1);
+    parent.appendChild(div);
+    // MutationObserver callback 是 microtask，用 setTimeout 讓它跑
+    await new Promise(r => setTimeout(r, 0));
+    return div;
+  }
+
+  it('主文 parent 新 append 的節點會被 remove（popIn infinite-scroll 攔截）', async () => {
+    const parent = articleEl.parentElement;
+    assert.ok(parent, '主文必須有 parent');
+    const countBefore = parent.children.length;
+
+    await appendFakePopInArticle(parent, 'DYNAMIC_NEXT_ARTICLE_MARK 偷載飛彈推進劑原料？');
+
+    assert.strictEqual(
+      parent.children.length, countBefore,
+      `新 append 的節點應被 observer remove，parent.children 應回到 ${countBefore}，實際 ${parent.children.length}`
+    );
+    const txt = parent.textContent || '';
+    assert.ok(!txt.includes('DYNAMIC_NEXT_ARTICLE_MARK'),
+      '主文 parent 不得殘留新 append 的文字');
+  });
+
+  it('主文祖先鏈更外層新 append 也會被 remove（多層 parent 都觀察）', async () => {
+    // fixture 結構：body > section.content-list > first-article(articleEl)
+    // 觀察鏈應涵蓋 section.content-list + body
+    const body = document.body;
+    const countBefore = body.children.length;
+
+    const div = document.createElement('div');
+    div.className = 'injected-footer-ad';
+    div.textContent = 'LATE_AD_MARK';
+    body.appendChild(div);
+    await new Promise(r => setTimeout(r, 0));
+
+    assert.strictEqual(body.children.length, countBefore,
+      '祖先鏈更外層（body）新 append 的節點也應被 remove');
+  });
+
+  it('append 到主文內部的節點不受影響（observer 只管祖先鏈，不管主文後代）', async () => {
+    // reader mode 下主文內部的 DOM 改動（例如圖片 lazy-load swap src、
+    // 互動元件 state 變化、使用者 copy/paste 自製 HTML）不得被 observer 當
+    // 雜訊 remove——只有主文**祖先鏈上**的 childList 才攔截。
+    const p = document.createElement('p');
+    p.textContent = 'INSIDE_MAIN_TEXT_MARK';
+    articleEl.appendChild(p);
+    await new Promise(r => setTimeout(r, 0));
+
+    assert.ok(articleEl.contains(p),
+      '主文內部新 append 的節點不得被 observer remove');
+  });
+
+  it('restore() 後 observer disconnect，新 append 不再被攔截', async () => {
+    NS.cleaner.restore(hidden);
+    hidden = [];  // 避免 afterEach 重複 restore
+
+    const parent = articleEl.parentElement;
+    const countBefore = parent.children.length;
+
+    const div = document.createElement('div');
+    div.className = 'post-reader-mode-append';
+    div.textContent = 'POST_RESTORE_MARK';
+    parent.appendChild(div);
+    await new Promise(r => setTimeout(r, 0));
+
+    assert.strictEqual(parent.children.length, countBefore + 1,
+      'reader mode 退出後新 append 應保留（observer 已 disconnect）');
+    assert.ok(parent.contains(div),
+      'restore() 後新節點不得被誤 remove');
+  });
+});

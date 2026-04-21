@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.5（detector `narrowToFirstArticleBlock`：多篇 article 兄弟結構時限縮到第一個含 h1 的直系子，修自由時報類 infinite-scroll 站點多篇文章混入主文的 bug）
+**目前版本**：v0.6.6（cleaner 加 MutationObserver 凍結主文祖先鏈，reader mode 下新 append 到祖先鏈的節點一律 remove，補 v0.6.5 只處理 snapshot 留下的 infinite-scroll 捲動後新篇 append 缺口）
 
 ---
 

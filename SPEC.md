@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.5`（detector 加 `narrowToFirstArticleBlock`：多篇 article 兄弟 structure（容器直系子有 ≥ 2 個獨立子樹各含 h1）時限縮到第一個含 h1 的直系子，修自由時報 news.ltn.com.tw 類 infinite-scroll 站點多篇文章混入閱讀模式主文的 bug）
+`0.6.6`（cleaner 加 MutationObserver 凍結主文祖先鏈：reader mode 下新 append 到祖先鏈的節點一律 remove，補 v0.6.5 detector narrow 只處理初始 snapshot 而 infinite-scroll 捲動後新篇仍被 popIn append 的缺口）
 
 ---
 
