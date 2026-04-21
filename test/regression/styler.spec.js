@@ -232,3 +232,103 @@ describe('styler — businessweekly-7014035', () => {
     assert.doesNotThrow(() => NS.styler.restore(articleEl, null));
   });
 });
+
+// -----------------------------------------------------------------------------
+// 結構性連結（heading 包 a、parent 只含此 a 作為文字）：不套 link 色
+// -----------------------------------------------------------------------------
+// 根因：WordPress / Medium / Substack 類 CMS 的 post-title 與 category label
+// 常包成 <a>（點標題跳 permalink）。閱讀模式原本無差別對「主文內所有 <a>」
+// 套藍色 + underline，導致標題整行變連結樣式（見 Stratechery 2026-04-21 截圖）。
+// 修法為結構性通則：styler.apply() 掃描主文內所有 <a>，若 (A) 位於 h1-h6 內，
+// 或 (B) parent 的 textContent 等於 a 的 textContent（parent 沒有其他文字），
+// 標 data-jread-structural-link="1"；CSS 對此 attribute 改用繼承色 + 無底線。
+// 真 inline link（parent 還有其他文字，例如 "在 <a>設定頁</a> 修改"）不受影響。
+// -----------------------------------------------------------------------------
+describe('styler — structural link（heading 包 a / parent-only-text a）', () => {
+  const STRATECHERY_FIXTURE = path.join(__dirname, 'fixtures', 'stratechery-columns-layout.html');
+
+  function setupStratechery() {
+    const html = fs.readFileSync(STRATECHERY_FIXTURE, 'utf8');
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const { window } = dom;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(STYLER_SRC);
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'detector 必須命中 stratechery 主文');
+    return { window, document: window.document, NS: window.__JRead, articleEl: detected.el };
+  }
+
+  it('heading (h1-h6) 內的 <a> 套 data-jread-structural-link="1"', () => {
+    const { NS, articleEl } = setupStratechery();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const h2a = articleEl.querySelector('h2.wp-block-post-title a');
+    assert.ok(h2a, 'fixture 必須有 h2 內的 <a>');
+    assert.strictEqual(
+      h2a.getAttribute('data-jread-structural-link'),
+      '1',
+      'h2 內的 a 必須被標記為 structural link'
+    );
+  });
+
+  it('parent 只含此 a 作為文字內容的 <a> 被標記（category 標籤 pattern）', () => {
+    const { NS, articleEl } = setupStratechery();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const catA = articleEl.querySelector('p.stratechery-display-categories a');
+    assert.ok(catA, 'fixture 必須有 category p 內的 <a>');
+    assert.strictEqual(
+      catA.getAttribute('data-jread-structural-link'),
+      '1',
+      'parent 只含此 a 為文字的連結必須被標記'
+    );
+  });
+
+  it('真 inline link（parent 還有其他文字）不被標記', () => {
+    const { NS, articleEl } = setupStratechery();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    // fixture 的 "your delivery settings" <a> 在 <p> 裡但 p 還有其他文字
+    let inlineA = null;
+    for (const a of articleEl.querySelectorAll('a')) {
+      if ((a.textContent || '').includes('your delivery settings')) { inlineA = a; break; }
+    }
+    assert.ok(inlineA, 'fixture 必須含一個真 inline link（your delivery settings）');
+    assert.strictEqual(
+      inlineA.getAttribute('data-jread-structural-link'),
+      null,
+      '真 inline link 不得被誤標為 structural'
+    );
+  });
+
+  it('CSS 含對 [data-jread-structural-link] 的繼承色規則', () => {
+    const { document, NS, articleEl } = setupStratechery();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(
+      /\[data-jread-structural-link="1"\]/.test(css),
+      'CSS 必須含 [data-jread-structural-link="1"] selector'
+    );
+    assert.ok(
+      /data-jread-structural-link[^}]*color:\s*inherit/.test(css),
+      'structural link 規則必須包含 color: inherit'
+    );
+    assert.ok(
+      /data-jread-structural-link[^}]*text-decoration:\s*none/.test(css),
+      'structural link 規則必須包含 text-decoration: none'
+    );
+  });
+
+  it('restore() 清除所有 data-jread-structural-link 標記', () => {
+    const { NS, articleEl } = setupStratechery();
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    assert.ok(
+      articleEl.querySelector('[data-jread-structural-link="1"]'),
+      'apply() 後至少有一個 structural link 標記'
+    );
+    NS.styler.restore(articleEl, snap);
+    assert.strictEqual(
+      articleEl.querySelector('[data-jread-structural-link="1"]'),
+      null,
+      'restore() 後必須清除所有 structural link 標記'
+    );
+  });
+});

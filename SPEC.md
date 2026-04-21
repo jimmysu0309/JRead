@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.5.1`（detector heuristic 改 Readability-style bubble-up + title promote，修正多欄 layout 且無 `<article>` tag 的站點被吞進 sidebar 的問題）
+`0.5.2`（styler 加結構性連結標記：heading 包 a / parent-only-text a 不套 link 色，真 inline link 保留，修 WordPress 類 CMS 標題整行變藍底線的視覺問題）
 
 ---
 
