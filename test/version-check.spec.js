@@ -1,0 +1,47 @@
+// JRead — 版本號 forcing function
+// 此常數是刻意設計的強制同步點：每次 bump 版本號必須同步改這裡，否則此測試 fail。
+// 連動清單見 CLAUDE.md 硬規則 1。
+
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+
+const EXPECTED_VERSION = '0.1.0';
+
+describe('version-check', () => {
+  it('manifest.json 的 version 必須等於 EXPECTED_VERSION', () => {
+    const manifestPath = path.join(__dirname, '..', 'jread', 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.strictEqual(
+      manifest.version,
+      EXPECTED_VERSION,
+      `manifest.json version (${manifest.version}) 與 EXPECTED_VERSION (${EXPECTED_VERSION}) 不一致——bump 版本號時請同步更新兩邊`
+    );
+  });
+
+  it('version 必須是三段式 x.y.z（避免 Chrome 前導零被吃掉）', () => {
+    assert.match(
+      EXPECTED_VERSION,
+      /^\d+\.\d+\.\d+$/,
+      `EXPECTED_VERSION (${EXPECTED_VERSION}) 必須是三段式數字，如 1.0.0`
+    );
+  });
+
+  it('SPEC.md 的目前 Extension 版本段落必須包含 EXPECTED_VERSION', () => {
+    const specPath = path.join(__dirname, '..', 'SPEC.md');
+    const spec = fs.readFileSync(specPath, 'utf8');
+    assert.ok(
+      spec.includes(EXPECTED_VERSION),
+      `SPEC.md 找不到字串 "${EXPECTED_VERSION}"——bump 版本號時請同步更新 SPEC.md 的「目前 Extension 版本」段落`
+    );
+  });
+
+  it('CHANGELOG.md 頂部必須有 EXPECTED_VERSION 條目', () => {
+    const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
+    const changelog = fs.readFileSync(changelogPath, 'utf8');
+    assert.ok(
+      changelog.includes(`v${EXPECTED_VERSION}`),
+      `CHANGELOG.md 找不到 "v${EXPECTED_VERSION}" 條目——bump 版本號時請在 CHANGELOG.md 頂部新增對應條目`
+    );
+  });
+});

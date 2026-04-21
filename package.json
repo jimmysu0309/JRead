@@ -1,0 +1,12 @@
+{
+  "name": "jread",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JRead — Chrome Extension 純閱讀模式。開發端 package.json，僅用於測試。",
+  "scripts": {
+    "test": "mocha \"test/**/*.spec.js\""
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0"
+  }
+}

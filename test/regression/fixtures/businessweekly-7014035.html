@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!--
+  Regression fixture：商業周刊 Article 頁最小可重現結構
+  來源：businessweekly.com.tw/Archive/Article?StrId=7014035（2026-04-21 實測）
+  依 SPEC.md「已驗證站點 > 商業周刊」段落與 CLAUDE.md 硬規則 4。
+
+  保留重點：
+  - article.article > div.postbody 主文容器結構
+  - <summary>（editor bullets，絕不可外移到 outline）
+  - figure.articlephoto（主圖 + figcaption）
+  - div.articlbox（可摺疊小檔案）
+  - div.postbody.paywall / #Epaper-subscribe（主文內雜訊，keyword 命中）
+  - 頁面外 header / nav / footer（語意標籤通則命中）
+  - fixed/sticky 元素：.postnav.fixed / #progress-wrapper / #gdrp-el / .Floating-Setting / #shortModel
+-->
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>測試文章標題 | 商業周刊</title>
+  <meta property="og:type" content="article">
+</head>
+<body>
+  <header id="header">
+    <nav class="nav">
+      <a href="/">首頁</a>
+    </nav>
+    <nav id="burger-nav">漢堡選單</nav>
+  </header>
+
+  <div class="postnav fixed" style="position: fixed; top: 0; width: 100%; height: 50px;">固定頂部導覽</div>
+  <div id="progress-wrapper" style="position: fixed; top: 0; width: 100%; height: 4px;">進度條</div>
+
+  <main>
+    <article class="article">
+      <h1>測試文章標題</h1>
+      <div class="postbody">
+        <summary>
+          <ul>
+            <li>editor bullet 第一點，這是文章提要，不可被砍</li>
+            <li>editor bullet 第二點</li>
+          </ul>
+        </summary>
+
+        <figure class="articlephoto">
+          <img src="/cover.jpg" alt="主圖">
+          <figcaption>主圖圖說</figcaption>
+        </figure>
+
+        <p>第一段內文。純閱讀模式的目標是把這種段落以乾淨排版呈現，隱藏周遭雜訊。</p>
+        <p>第二段內文。段落密度與連結密度是 Readability.js 風格啟發式的主要訊號。</p>
+
+        <div class="articlbox">
+          <h3>小檔案</h3>
+          <p>可摺疊資訊卡內容</p>
+        </div>
+
+        <p>第三段內文。</p>
+
+        <div id="DivArticleIndexGetMore">
+          <p>更多段落（非同步載入）。</p>
+        </div>
+
+        <div class="postbody paywall">
+          <p>付費牆提示：訂閱看完整內容（keyword: paywall 應命中隱藏）</p>
+        </div>
+
+        <div id="Epaper-subscribe">
+          <p>電子報訂閱 CTA（keyword: subscribe 應命中隱藏）</p>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <div id="gdrp-el" style="position: fixed; bottom: 0; width: 100%; height: 80px;">Cookie 同意橫幅</div>
+  <div class="Floating-Setting" style="position: fixed; right: 0; top: 40%; width: 60px; height: 240px;">側邊浮動工具列</div>
+  <div id="shortModel" style="position: fixed; bottom: 20%; right: 20%;">彈窗</div>
+
+  <footer class="footer-wrap">
+    <p>版權宣告</p>
+  </footer>
+</body>
+</html>
