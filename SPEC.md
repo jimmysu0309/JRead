@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.21`（`hideInsideArticleButtonClusters` 的 「排除 p/h1-h6/媒體」保護條件從簡單 `querySelector` 改為「**路徑判斷**」——只有「從 container 到該 p/heading 的路徑上不經過 interactive 節點」才算真內文保護觸發。修 Medium 類 clap/Listen/Share/More action bar 把每個 button label 包成 `<p>Listen</p>` / `<p>More</p>`，原 `querySelector('p')` 遞迴找到 button 內部 p 誤觸發內文保護跳過；新 path-check 讓 action bar 本體被命中 hide——修「照片上方兩條橫線」artifact。正文段落 wrapper 含直接 `<p>` child 仍被保護）
+`0.6.22`（`hideDialogs` 的 `DIALOG_SEL` 擴展加入 `[role="tooltip"]`——ARIA 規範語意為「懸停/聚焦時顯示的輔助說明」純 UI chrome、非正文。修 Medium 文章頂部「Member-only story」付費徽章用 `<div role="tooltip">` 包裝導致現有 keyword/ancestor-sibling 規則全漏網的場景。通則延伸既有 dialog/alertdialog/aria-modal 同質路徑，零 baseline regression 風險）
 
 ---
 

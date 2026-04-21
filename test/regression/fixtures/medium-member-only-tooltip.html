@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Medium Member-only story tooltip fixture</title>
+  <meta property="og:title" content="[1988] Monochrome Dreams">
+</head>
+<body>
+  <article id="medium-article">
+    <!-- Medium Member-only 徽章：多層包裝，最外層是 `role="tooltip"`——
+         ARIA 規範的「輔助懸停提示」UI chrome 語意，非正文。里面是
+         inline-flex 雙 border 徽章（svg sparkle + p "Member-only story"）。 -->
+    <div class="speechify-ignore e">
+      <div class="v cf">
+        <div class="cm bd hk hl hm hn">
+          <div class="cu v fa">
+            <div>
+              <div class="bi" role="tooltip" id="member-only-tooltip">
+                <div class="ba">
+                  <div class="hy j hz hp ia fa ak" id="member-only-badge">
+                    <svg width="16" height="16"><path d="M0 0 L16 16"/></svg>
+                    <p class="bb b bc u eb">Member-only story</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h1>[1988] Monochrome Dreams: How the Apple Macintosh Changed Computing</h1>
+    <h2 class="subtitle">After an early stutter, the Macintosh created the future.</h2>
+
+    <div class="post-meta">
+      <span>Retro Tech Show</span>
+      <span>11 min read</span>
+      <span>Apr 12, 2026</span>
+    </div>
+
+    <figure id="hero-figure">
+      <img src="mac.jpg" alt="Apple Macintosh">
+    </figure>
+
+    <p>MEDIUM_MEMBER_BODY_MARK The Apple Macintosh launched on January 24, 1984,
+    but it wasn't until the late 1980s that the machine really found its footing.
+    Padding padding padding padding padding padding padding padding padding padding.</p>
+  </article>
+</body>
+</html>
