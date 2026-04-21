@@ -4,6 +4,26 @@
 
 ---
 
+## Baseline 宣告（v0.6.3 — 2026-04-21 起）
+
+**當前 baseline：v0.6.3**。此版本在 Stratechery / ChinaTalk / anthropic 三站實測通過，Jimmy 明確確認「非常理想」。往後 edge case 維修以這個視覺成果為不可退讓底線：
+- **字型 / heading margin / p margin / list style / link color / blockquote border 全部保留原站樣式**（v0.6.0 瘦身後不再覆寫）
+- **標題正確顯示**（v0.5.1 + v0.6.3 title promote；涵蓋 WordPress / anthropic 類「h1 在祖兄 section」結構）
+- **作者 / 日期保留**（v0.6.1 + v0.6.2 action-row 加 heading / interactive-ratio 排除）
+
+### 修 edge case 時的硬規則
+
+1. **優先順序**：detector → cleaner → styler（最後手段）
+2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法
+3. 每次修法後 harness 迴歸三站（Stratechery / ChinaTalk / anthropic）確認無 regress
+4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
+
+v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實有視覺副作用（標題變藍底線、category 間距過大、條列項樣式跑掉），**不要再走回頭路**。
+
+以下是版本歷程（倒序）。
+
+---
+
 **v0.6.3**——修 anthropic.com engineering blog 類站點標題遺失。根因：頁面有 `<article>` 但文章 `<h1 class="headline-1">` 放在 `<section class="hero">` 裡，section 是 article 的兄弟。detector 策略 1（article-tag）直接選中 article，v0.5.1 起的 title promote 僅作用於 heuristic 策略——article-tag 結果不做 promote——hideAncestorSiblings 把 hero section 當 chrome 清掉，標題隨之消失。修法（detector 層通則）：把 title promote 從 heuristic-only 擴展到 detect() 出口統一處理，對 article-tag / schema-org / heuristic 所有非兜底策略結果都套 promoteForTitle（main-tag 兜底已是最外層、不做 promote 避免無止盡向上擴散）。新 fixture `anthropic-hero-sibling.html` + detector.spec 5 條斷言（偵測成功 / 策略起點是 article-tag / 主文容器被 promote 到 `<main>` / 含標題 h1 / 含內文），sanity check 走過。harness 驗證：anthropic.com/engineering/advanced-tool-use 標題「Introducing advanced tool use on the Claude Developer Platform」回來，含 category「Engineering at Anthropic」+ 「Published Nov 24, 2025」+ 副標；Stratechery 迴歸無 regress；71 測試全過。**styler.js 仍未動，v0.6.0 baseline 完整保留**（依 memory `feedback_preserve_v060_baseline` 規則：edge case 走 detector 層，不碰 styler）。
 
 **v0.6.2**——修 ChinaTalk / Substack 類站點作者 + 日期遺失。根因：v0.6.1 修好標題後發現作者 / 日期仍然被隱藏——被 post-header **下一個** wrapper 容器連帶 hide（Substack 結構：`<div>` 包 `<div.meta-group>Author · Date</div>` + `<div.btn-group>button button button</div>` 兩個 sub-div）。外層 wrapper 自身 textLen=52、iconCount=9、無 p/h/media，命中 action-row 四條件被整塊 hide，作者 div 藉 display:none ancestor 繼承跟著消失。修法為結構性通則（非站點特判）：**action row 本質是多個互動元素排成一列，直接子中互動元素（button / [role=button] / svg）比例必須 ≥ 50%**，否則視為「內容 wrapper」不 hide。外層 wrapper 直接子是 2 個 DIV（0% 互動）→ 不 hide；內層 btn-group 直接子多為 button（≥ 50%）→ 仍正確 hide；商周 fixture 的 xp-1a2b3c 純 buttons（80%）→ 仍正確 hide。cleaner.spec 新增一條三段式斷言（wrapper 不得 hide / meta group 不得 hide / btn-group 仍須 hide），sanity check 走過。harness 在 ChinaTalk quantum-101 驗證作者「JORDAN SCHNEIDER AND PHOEBE CHOW」+ 日期「APR 21, 2026」回來；Stratechery 迴歸無 regress。**styler.js 仍未動，v0.6.0 baseline 完整保留**。
