@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dwarkesh Podcast YouTube embed</title>
+  <meta property="og:title" content="Jensen Huang Podcast with YouTube embed">
+</head>
+<body>
+  <article>
+    <h1>Jensen Huang Podcast with YouTube embed</h1>
+    <p>Intro paragraph with enough text to let detector pass MIN_TEXT_LEN threshold. This fixture is deliberately minimal so the iframe-related spec is not contaminated by other rules. The iframe is wrapped the way Substack renders YouTube embeds: youtube-wrap > youtube-inner > iframe src="youtube-nocookie.com/embed/...". DWARKESH_YT_INTRO_MARK</p>
+
+    <div class="youtube-wrap">
+      <div class="youtube-inner">
+        <!-- YouTube iframe：cross-origin、jsdom textContent 空、querySelector
+             讀不到內部。在真實 Chrome 下 rect.height > 400px。若沒 early-skip，
+             hideInsideArticleEmptySpacers 會把它當空殼誤殺。 -->
+        <iframe src="https://www.youtube-nocookie.com/embed/Hrbq66XqtCo" allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <p>Body paragraph after the embed so article structure is realistic. DWARKESH_YT_AFTER_MARK. More filler to make sure the article has enough density.</p>
+  </article>
+</body>
+</html>

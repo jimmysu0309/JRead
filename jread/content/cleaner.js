@@ -187,6 +187,9 @@
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      // iframe / video / audio 本身是媒體內容，不是互動列——即使 cross-origin
+      // iframe 讀不到 textContent 與內部 DOM，也絕對不能當 action-row 候選。
+      if (el.tagName === 'IFRAME' || el.tagName === 'VIDEO' || el.tagName === 'AUDIO') continue;
 
       // 排除：含圖片/影片/嵌入內容的容器（是內容容器，不是互動列）
       // 理由：Substack 的 captioned-image-container 含 <img> + 2 個以上
@@ -262,6 +265,10 @@
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      // iframe / video / audio 本身是媒體，不是 spacer。cross-origin iframe
+      // 的 textContent 空、querySelector 讀不到內部 DOM，rect 又有高度——三條
+      // spacer 條件全命中，會被誤殺（2026-04-21 Dwarkesh YouTube embed 實測）。
+      if (el.tagName === 'IFRAME' || el.tagName === 'VIDEO' || el.tagName === 'AUDIO') continue;
       if (el.querySelector('img, picture, video, iframe, svg, button, input, select, textarea')) continue;
 
       const text = (el.textContent || '').trim();
@@ -283,6 +290,68 @@
       if (isInPreserved(el)) continue;           // 保留元素內部/本身跳過
       if (!shouldHideByKeyword(el)) continue;
       hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：sidebar column（高 linkDensity + 低文字量 vs 兄弟）--------
+  // 結構特徵（非站點特判）：主文容器內任一 container，其 direct children
+  // 中某個 child Cs 滿足：
+  //   - Cs.textLen < 主要 sibling 的 10%
+  //   - Cs linkDensity > 0.5
+  // → Cs 為 sidebar column（導覽/相關列表/訂閱/Listen-on 卡片等），隱藏之。
+  //
+  // 場景（Substack podcast-post / Dwarkesh）：`<article>` tag 把整個
+  // main-content-and-sidebar flex 2-col 包進來，sidebar 身為 article 後代
+  // 躲過 outside-article / ancestor-sibling 所有規則。單欄文章不觸發（主欄
+  // 本身還沒 500 字就 continue）。
+  //
+  // 為何不檢查 display: flex / grid：
+  //   - 判斷重心是「content ratio + link density」，layout 方式不影響是否該清
+  //   - 省去 jsdom 對 computed style display / flex-direction 的相容性麻煩
+  //
+  // 為何保留元素 scope：article 內自帶 <figure><figcaption> 時，figcaption
+  // 若 linkDensity 高也不該砍——PRESERVE_SEL closest() 已擋掉。
+  const SIDEBAR_COLUMN_TEXT_RATIO = 0.1;
+  const SIDEBAR_COLUMN_MIN_LINK_DENSITY = 0.5;
+  const SIDEBAR_COLUMN_MIN_MAIN_TEXT = 500;
+
+  function hideInsideArticleSidebarColumns(articleEl, hidden) {
+    // whitespace-normalize：真實 Chrome 的 innerText 會 collapse 排版空白，
+    // 但 jsdom 的 textContent 把 HTML 縮排/換行全算進去；為了讓 testfixture
+    // 與真實頁面量測到同一個 textLen（與 linkDensity 的分母），兩端統一
+    // collapse `\s+` 再比對。
+    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+    for (const el of containers) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      const children = Array.from(el.children);
+      if (children.length < 2) continue;
+
+      const stats = children.map(c => {
+        const text = norm(c.textContent);
+        let linkLen = 0;
+        if (c.querySelectorAll) {
+          for (const a of c.querySelectorAll('a')) {
+            linkLen += norm(a.textContent).length;
+          }
+        }
+        return { el: c, textLen: text.length, ld: text.length ? linkLen / text.length : 0 };
+      });
+
+      // 找主欄：文字量最大者
+      let main = stats[0];
+      for (const s of stats) if (s.textLen > main.textLen) main = s;
+      if (main.textLen < SIDEBAR_COLUMN_MIN_MAIN_TEXT) continue;
+
+      for (const s of stats) {
+        if (s === main) continue;
+        if (isInPreserved(s.el)) continue;
+        if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
+            s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
+          hide(s.el, hidden);
+        }
+      }
     }
   }
 
@@ -359,6 +428,7 @@
       hideInsideArticleByKeyword(articleEl, hidden);
       hideInsideArticleActionRows(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden);
+      hideInsideArticleSidebarColumns(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
