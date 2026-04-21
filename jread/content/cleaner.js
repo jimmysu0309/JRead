@@ -355,7 +355,25 @@
       if (el.contains(articleEl)) continue; // 不砍主文祖先
 
       // 排除內容元素：含 p / h1-h6 / 媒體 → 不是純按鈕 cluster
-      if (el.querySelector('p, h1, h2, h3, h4, h5, h6, img, picture, video, iframe')) continue;
+      // 但 **button / a[href] / [role=button] 內部**的 p/h1-h6 不算——
+      // Medium 類站點把 button label 包成 `<p>Listen</p>`、`<p>Share</p>`
+      // 等，遞迴 querySelector 找到這些深層 p 會誤觸發內文保護、讓
+      // action bar 本體逃過規則。只要 p/heading 從 el 到它的路徑上「不經過」
+      // interactive 節點，才算真正的內文——命中保護跳過；否則（都在
+      // interactive 內部）不觸發保護、繼續走後面判斷。
+      const contentCandidates = el.querySelectorAll(
+        'p, h1, h2, h3, h4, h5, h6, img, picture, video, iframe');
+      let hasContentOutsideInteractive = false;
+      for (const n of contentCandidates) {
+        let p = n.parentElement;
+        let wrappedByInteractive = false;
+        while (p && p !== el) {
+          if (isInteractiveLeaf(p)) { wrappedByInteractive = true; break; }
+          p = p.parentElement;
+        }
+        if (!wrappedByInteractive) { hasContentOutsideInteractive = true; break; }
+      }
+      if (hasContentOutsideInteractive) continue;
 
       const text = norm(el.textContent);
       if (text.length > BUTTON_CLUSTER_TEXT_MAX) continue;
