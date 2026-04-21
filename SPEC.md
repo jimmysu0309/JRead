@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.22`（`hideDialogs` 的 `DIALOG_SEL` 擴展加入 `[role="tooltip"]`——ARIA 規範語意為「懸停/聚焦時顯示的輔助說明」純 UI chrome、非正文。修 Medium 文章頂部「Member-only story」付費徽章用 `<div role="tooltip">` 包裝導致現有 keyword/ancestor-sibling 規則全漏網的場景。通則延伸既有 dialog/alertdialog/aria-modal 同質路徑，零 baseline regression 風險）
+`0.6.23`（`hideInsideArticleButtonClusters` 的 path-check 把「已被 `data-jread-hidden="1"` 標記的祖先」等同 interactive 處理、不算真內文。修 Medium 類 clap count `<p>` 包在 `<div role="tooltip">` 內、tooltip 雖被 hideDialogs 先 hide 但 button cluster 規則 path-check 仍視此 p 為真內文、誤跳過 action bar 的場景——v0.6.21/22 兩條修法疊加效果未達到但此處補上）
 
 ---
 
