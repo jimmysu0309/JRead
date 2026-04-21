@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.4.0`（主文偵測 + 雜訊隱藏 + toast + 快捷鍵；排版 styler 尚未實作）
+`0.4.1`（修復 v0.4.0 service worker 註冊失敗；排版 styler 尚未實作）
 
 ---
 

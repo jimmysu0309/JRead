@@ -18,6 +18,26 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
+## [2026-04-21] service-worker importScripts 相對路徑解析錯誤
+
+- 觸發情境：載入或重新載入 extension
+- 症狀：Chrome 回報 `Service worker registration failed. Status code: 15`
+  + `Uncaught NetworkError: Failed to execute 'importScripts' on
+  'WorkerGlobalScope': The script at
+  'chrome-extension://.../background/popup/popup-core.js' failed to load.`
+  整個 extension 無法啟動
+- 根因：MV3 service worker 的 `importScripts()` 相對路徑是相對
+  service worker 自己的所在目錄（`background/`），不是 extension root
+- 修法（已在 v0.4.1 進 service-worker.js）：改用絕對路徑
+  `/popup/popup-core.js`
+- 未補 spec 原因：importScripts 路徑解析只能在真實 MV3 service
+  worker 環境觀察。Node 無 importScripts 全域；jsdom 不模擬 service
+  worker context。要寫 automated test 需要 Chrome extension harness
+  （例如 Puppeteer 啟動 Chrome 載入真 extension），投入與單一路徑
+  bug 不符
+- 責任人/目標日期：Jimmy，之後若導入 Puppeteer / Playwright
+  e2e 一併納入
+
 ## [2026-04-21] service-worker：快捷鍵 command handler 未補 spec
 
 - 觸發情境：使用者按 `Ctrl/Command+Shift+R` 或到

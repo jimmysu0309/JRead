@@ -3,8 +3,9 @@
 // 所有需要跨請求保留的資料一律走 chrome.storage。
 
 // 共用 popup 端已測試過的注入 fallback 核心函式。
-// 路徑相對 extension root。
-importScripts('popup/popup-core.js');
+// 注意：importScripts 的相對路徑是相對 service worker 自己的所在目錄
+// （background/），而非 extension root。必須用絕對路徑（前置斜線）。
+importScripts('/popup/popup-core.js');
 
 const DEFAULT_SETTINGS = {
   theme: 'light',
