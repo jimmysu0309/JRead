@@ -1,12 +1,11 @@
-// JRead — Popup
-// 顯示版本號（動態讀 manifest）、切換閱讀模式、顯示偵測結果。
+// JRead — Popup entry
+// 綁 DOM 事件、呼叫 chrome API、委派核心邏輯給 popup-core.js。
 
 const versionEl = document.getElementById('version');
 const statusEl = document.getElementById('status');
 const toggleBtn = document.getElementById('toggle-btn');
 const openOptionsLink = document.getElementById('open-options');
 
-// 版本號一律從 manifest 動態讀取，不寫死
 versionEl.textContent = chrome.runtime.getManifest().version;
 
 async function getActiveTabId() {
@@ -14,35 +13,8 @@ async function getActiveTabId() {
   return tab ? tab.id : null;
 }
 
-// MV3 的 content_scripts 只會自動注入「新載入的分頁」，
-// extension 安裝/更新前就打開的既有分頁不會自動注入。
-// 因此 sendMessage 丟錯時先嘗試主動注入再重試一次。
-// 這是通用限制的結構性解法，不綁站點。
-const CONTENT_SCRIPT_FILES = [
-  'content/namespace.js',
-  'content/detector.js',
-  'content/cleaner.js',
-  'content/styler.js',
-  'content/main.js'
-];
-
-async function injectContentScripts(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: CONTENT_SCRIPT_FILES
-  });
-}
-
-async function sendToggle(tabId) {
-  return chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_READER_MODE' });
-}
-
 function renderToggleResult(res) {
-  if (res && res.active) {
-    statusEl.textContent = '閱讀模式：開';
-  } else {
-    statusEl.textContent = '閱讀模式：關';
-  }
+  statusEl.textContent = (res && res.active) ? '閱讀模式：開' : '閱讀模式：關';
 }
 
 toggleBtn.addEventListener('click', async () => {
@@ -51,24 +23,21 @@ toggleBtn.addEventListener('click', async () => {
     statusEl.textContent = '無法取得當前分頁';
     return;
   }
-  try {
-    const res = await sendToggle(tabId);
-    renderToggleResult(res);
-  } catch (err) {
-    // 最常見是 "Could not establish connection. Receiving end does not exist."
-    // 代表 content script 尚未注入這個分頁。主動注入後重試一次。
-    try {
-      await injectContentScripts(tabId);
-      const res = await sendToggle(tabId);
-      renderToggleResult(res);
-    } catch (err2) {
-      // 注入或 retry 仍失敗：多半是 chrome:// / 應用商店 / PDF 檢視器這類禁止注入的頁面
-      statusEl.textContent = '此頁面無法啟動閱讀模式';
-    }
+
+  const { toggleWithInjectionFallback } = window.__JReadPopup;
+  const result = await toggleWithInjectionFallback(tabId, {
+    sendMessage: (id, msg) => chrome.tabs.sendMessage(id, msg),
+    executeScript: (opts) => chrome.scripting.executeScript(opts)
+  });
+
+  if (result.ok) {
+    renderToggleResult(result.res);
+  } else {
+    // chrome:// / 應用商店 / PDF 檢視器等禁止注入的頁面會走到這裡
+    statusEl.textContent = '此頁面無法啟動閱讀模式';
   }
 });
 
-// 接收 content 回報的偵測結果
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg || msg.type !== 'REPORT_DETECTION_RESULT') return;
   const p = msg.payload || {};
@@ -84,5 +53,4 @@ openOptionsLink.addEventListener('click', (e) => {
   chrome.runtime.openOptionsPage();
 });
 
-// 初始狀態顯示
 statusEl.textContent = '按下按鈕以切換閱讀模式';
