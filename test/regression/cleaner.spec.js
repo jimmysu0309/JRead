@@ -169,6 +169,26 @@ describe('cleaner — businessweekly-7014035', () => {
     assert.strictEqual(el.dataset.jreadHidden, '1', 'action toolbar 必須被隱藏');
   });
 
+  it('含 h1-h6 直接子的容器即使符合 action-row 其他條件也不得隱藏（保留 post-header 標題區塊）', () => {
+    // ChinaTalk (Substack) quantum-101 實測：div.post-header 包 <h1 post-title>
+    // + 作者/日期 meta + 多個 like/comment/share/more button，命中 action-row
+    // 的「無 p、無媒體、短文字、多 icon」條件但含 <h1>。若規則不排除，會砍
+    // 掉整個標題區塊。通則：action row 是圖示互動列，絕不會包含 heading。
+    const el = document.querySelector('.post-header');
+    assert.ok(el, 'fixture 必須有 post-header 模擬元素');
+    assert.notStrictEqual(
+      el.dataset.jreadHidden, '1',
+      '含 <h1> 的容器不得被 action-row 規則隱藏'
+    );
+    // 內部 h1 亦不得被隱藏（容器未隱藏，其子元素 inline display 也不會被改）
+    const h1 = el.querySelector('h1.post-title');
+    assert.ok(h1, 'fixture post-header 內必須有 h1.post-title');
+    assert.notStrictEqual(
+      h1.dataset.jreadHidden, '1',
+      'h1.post-title 不得被隱藏'
+    );
+  });
+
   it('主文內 role="dialog" 元素被隱藏（ARIA 語意 dialog 絕非正文內容）', () => {
     // Substack .subscribeDialog：position:absolute、在 article 內、class 被混淆、
     // 無 keyword、非 fixed——僅 role="dialog" 能命中

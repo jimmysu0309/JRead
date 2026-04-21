@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.0（styler 瘦身重構——盡量不動原站內文排版，只提供讀者卡片容器與使用者 override）
+**目前版本**：v0.6.1（cleaner action-row 加 heading 排除，修 ChinaTalk/Substack 類 post-header 整塊被誤殺導致標題遺失）
 
 ---
 

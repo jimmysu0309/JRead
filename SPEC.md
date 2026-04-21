@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.0`（styler 瘦身重構——c 路線：盡量不動原站內文排版，只套卡片容器 + 必要 reset + 使用者 override；移除 heading/p/list/link 等 ~50 條過度激進 rule）
+`0.6.1`（cleaner action-row 規則加「含 h1-h6 直接子則跳過」排除條件，修 ChinaTalk/Substack 類 post-header（h1 + meta + buttons）被整塊誤殺導致標題遺失）
 
 ---
 
