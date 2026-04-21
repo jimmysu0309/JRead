@@ -80,5 +80,24 @@
     }
   });
 
+  // 設定變更即時套用：popup 的加減/切換動作會寫入 chrome.storage.sync，
+  // 這裡監聽變更，若閱讀模式正在開啟就 restore + 重新 apply styler。
+  // 走 storage.onChanged 而非訊息，好處是即使同時有多個分頁開啟閱讀模式，
+  // 每個 tab 的 content script 都會收到事件、各自更新。
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync') return;
+      if (!NS.state.active || !NS.state.articleEl || !NS.styler) return;
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'lineHeight'];
+      const hasRelevant = relevantKeys.some(k => k in changes);
+      if (!hasRelevant) return;
+      (async () => {
+        NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
+        const settings = await getSettings();
+        NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
+      })();
+    });
+  }
+
   // TODO: SPA 導航偵測（MutationObserver on <title> / history API hook）
 })();

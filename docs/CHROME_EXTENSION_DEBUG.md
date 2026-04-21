@@ -1,0 +1,274 @@
+# Chrome Extension 自動化除錯指南
+
+> 給 Claude Code（或其他 LLM agent）讀的操作手冊。目的：讓 Claude 在開發 Chrome Extension 時，能**自己**打開真實瀏覽器、載入 unpacked extension、觸發行為、讀取 DOM 結果，**不用請使用者貼 console 或截圖**。
+
+本指南以 JRead 為樣板，但方法適用任何 MV3 Chrome Extension。把這個流程複製到新專案時，大部分結構可直接套用。
+
+---
+
+## 為什麼需要這套流程
+
+Chrome Extension 開發有三個 LLM 痛點：
+
+1. **content script 的 `window.*` 在 isolated world**，不會出現在 DevTools 的頁面 console 或 `page.evaluate` 預設環境。讓使用者貼 `window.__YourExt` 永遠回 undefined，把 Claude 帶往錯誤方向。
+2. **Chrome Stable 從 137+ 擋掉 `--load-extension` flag**（Google 不希望 unpacked extension 方便被濫用）。Microsoft Edge 也擋。這讓很多「用 Chrome + CDP 連 9222 port」的文章失效。
+3. **MV3 service worker 會被隨時終止**。連得到、幾秒後又斷，診斷訊息漏拿。
+
+正確組合：
+
+| 元件 | 選擇 | 理由 |
+|---|---|---|
+| 自動化 framework | Playwright | 官方支援 extension loading、API 穩定 |
+| 瀏覽器 | **Playwright 內建的 Chromium** | 沒擋 `--load-extension`；Google Chrome 擋 |
+| 連線模式 | `launchPersistentContext` | MV3 extension 必須 persistent context |
+| headless | `false` | extension 僅 headed 可用 |
+| 驗證管道 | SW 端 `chrome.tabs.sendMessage` → content script | 正確處理 world 隔離 |
+
+---
+
+## 必要條件
+
+1. **Node.js** ≥ 18（Playwright 需要）
+2. **專案用 MV3**（`manifest_version: 3`）
+3. **專案有可從 SW 觸發的訊息 API**（如 `TOGGLE_READER_MODE`）。如果沒有，請先加上，否則自動化只能看靜態狀態。
+
+---
+
+## Step 1：安裝 Playwright
+
+在專案 root：
+
+```bash
+npm install --save-dev playwright
+npx playwright install chromium
+```
+
+注意：`npx playwright install chromium` 會下載 bundled Chromium（幾百 MB，放在 `~/Library/Caches/ms-playwright/`）。這是關鍵——**不是**你系統裝的 Google Chrome。
+
+---
+
+## Step 2：專案目錄結構
+
+```
+<project-root>/
+├─ <extension-folder>/        # manifest.json 與 extension 原始碼（JRead 的叫 jread/）
+├─ tools/
+│  └─ debug-harness.js        # ← 本指南的主角
+├─ docs/
+│  └─ CHROME_EXTENSION_DEBUG.md  # 本文
+├─ package.json               # 加一行 "debug": "node tools/debug-harness.js"
+└─ ...
+```
+
+---
+
+## Step 3：debug-harness.js 範本
+
+核心結構（以 JRead 為例，見 `tools/debug-harness.js` 完整版）：
+
+```js
+const { chromium } = require('playwright');
+const path = require('path');
+const fs = require('fs');
+
+const EXT_PATH = path.join(__dirname, '..', '<extension-folder>');
+const PROFILE_DIR = '/tmp/<your-ext>-pw-profile';
+const URL = process.env.TARGET_URL || 'https://example.com';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+(async () => {
+  if (process.argv.includes('--fresh')) {
+    fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
+  }
+  fs.mkdirSync(PROFILE_DIR, { recursive: true });
+
+  // 1. 啟動 persistent context + 載 extension
+  const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
+    channel: 'chromium',        // 必須
+    headless: false,            // 必須
+    viewport: { width: 1280, height: 900 },
+    args: [
+      `--disable-extensions-except=${EXT_PATH}`,
+      `--load-extension=${EXT_PATH}`,
+      '--no-first-run',
+      '--no-default-browser-check'
+    ]
+  });
+
+  // 2. 等 service worker 起來（MV3 背景是 SW）
+  let sw = ctx.serviceWorkers()[0];
+  if (!sw) sw = await ctx.waitForEvent('serviceworker', { timeout: 10000 });
+  sw.on('console', m => console.log('SW', m.type(), m.text().slice(0, 300)));
+
+  // 3. 關 about:blank，新開 tab（舊 tab 在 extension 載入前已存在，content script 不會補）
+  for (const p of ctx.pages()) { try { await p.close(); } catch {} }
+  const page = await ctx.newPage();
+  page.on('console', m => console.log('PAGE', m.type(), m.text().slice(0, 200)));
+  page.on('pageerror', e => console.log('PAGE ERROR:', e.message));
+
+  // 4. Navigate + 等 content script 注入（document_idle）
+  await page.goto(URL, { waitUntil: 'load' });
+  await sleep(2500);
+
+  // 5. 找該 tab 的 id（從 SW 端查——content script 讀不到 tab id）
+  const tabId = await sw.evaluate(async (u) => {
+    const ts = await chrome.tabs.query({});
+    return (ts.find(t => t.url === u) || ts.find(t => t.url && !t.url.startsWith('chrome')))?.id;
+  }, URL);
+
+  // 6. SW 傳訊息給 content script 觸發行為
+  const result = await sw.evaluate(async (id) => {
+    try {
+      const res = await chrome.tabs.sendMessage(id, { type: 'TOGGLE_READER_MODE' });
+      return { ok: true, res };
+    } catch (e) {
+      return { ok: false, err: e.message };
+    }
+  }, tabId);
+  console.log('toggle:', result);
+
+  await sleep(1200);
+
+  // 7. 驗證 DOM（用 shared DOM 觀察，不碰 isolated world 變數）
+  const state = await page.evaluate(() => ({
+    hasActiveArticle: !!document.querySelector('[data-your-ext-active="1"]'),
+    injectedStyle: !!document.getElementById('__your-ext-style'),
+  }));
+  console.log('state:', state);
+
+  // 8. 截圖給 Claude 肉眼驗
+  await page.screenshot({ path: '/tmp/ext-debug.png' });
+
+  if (!process.argv.includes('--keep')) await ctx.close();
+})().catch(e => { console.error(e.message, e.stack); process.exit(1); });
+```
+
+---
+
+## Step 4：LLM 呼叫流程
+
+Claude 在 Claude Code 裡面使用這個 harness 的典型流程：
+
+```
+1. 改 extension 程式碼
+2. npm test（regression pass）
+3. node tools/debug-harness.js --fresh
+   → 讀 stdout 的 SW/PAGE log、DOM state、gap 數據
+4. Read /tmp/ext-debug.png（或專案 .playwright-mcp/screenshot.png）
+   → 肉眼確認視覺
+5. 若有問題，改 code，重複 3–4
+6. OK 後請 Jimmy 手動 Chrome reload 驗證 → commit/bump/release
+```
+
+關鍵：**步驟 3 可以多次跑，不用 Jimmy 介入**。
+
+---
+
+## 七個最容易踩的坑
+
+### 1. `page.evaluate(() => !!window.__MyExt)` 永遠 false
+
+**原因**：content script 在 isolated world，`page.evaluate` 在 page main world，兩個 window 不同。
+
+**修法**：
+
+- 不要驗 `window.__MyExt` 本身。
+- 改驗「副作用」——content script 改了 DOM / inject 了 `<style>` / 加了 `data-*` attribute，這些**都在共享 DOM**，`page.evaluate` 看得到。
+- 或用 `chrome.scripting.executeScript({ world: 'MAIN' })` 把驗證邏輯注入主世界（極少需要）。
+
+### 2. `--load-extension` 無效
+
+**原因**：如果你用的是 `channel: 'chrome'` 或系統安裝的 Google Chrome，新版 Chrome 把這 flag 擋掉了。
+
+**修法**：一定要 `channel: 'chromium'`，用 Playwright 內建的 Chromium。
+
+### 3. 擴充功能頁面顯示 extension 空的 / 開發人員模式灰掉
+
+**原因**：你用了 Playwright MCP，它不支援 persistent context（2026/04 為止），見 [microsoft/playwright#39569](https://github.com/microsoft/playwright/issues/39569)。
+
+**修法**：**不要**用 Playwright MCP 來載 extension。寫 standalone node script 用 `chromium.launchPersistentContext`。
+
+### 4. 第一個分頁 content script 不注入
+
+**原因**：Playwright 啟動時先開了 `about:blank`，那時 extension 還沒完成註冊，content script 不會回頭補注入。
+
+**修法**：在 `ctx.pages()[0]` 上 `.close()`，再 `ctx.newPage()` 才 navigate。
+
+### 5. `waitUntil: 'networkidle'` 卡住
+
+**原因**：現代網頁有長效 WebSocket / analytics beacon / ads SDK，永遠沒 idle。
+
+**修法**：用 `'load'` 就好，再加 `sleep(2500)` 等 document_idle 的 content script。
+
+### 6. SW 看起來載入卻沒印任何 log
+
+**原因**：Playwright 的 console listener 綁太慢、或 SW 已經跑完。
+
+**修法**：SW 起來後立刻 `sw.on('console', ...)` 再 `sw.evaluate(() => 'ping')`，確保 CDP 綁上；之後 SW 有任何 `console.log/warn/error` 都會進 listener。
+
+### 7. `chrome.tabs.sendMessage(id, ...)` 拋 `Could not establish connection`
+
+**原因**：content script 還沒注入完成、或這個 tab 根本沒注入（chrome://、extension 頁面、部分 CSP 站點）。
+
+**修法**：navigate 後至少等 2.5 秒；用 try/catch 吞錯誤回傳 ok:false；需要時 SW 端 fallback `chrome.scripting.executeScript` 主動注入（popup 的標準做法）。
+
+---
+
+## 怎麼讓 Claude 知道這套能力
+
+把下面這段放在專案 CLAUDE.md（或類似的 agent instruction 檔）：
+
+```markdown
+## 自動化除錯
+
+本專案有 `tools/debug-harness.js`，可以自動載 extension、打開目標頁、觸發閱讀模式、
+讀 DOM 狀態、截圖到 `.playwright-mcp/jread-viewport.png`。
+
+當你需要：
+- 驗證 content script 的 DOM 變更是否符合預期
+- 量測元素 layout（gap、computed style）
+- 產生截圖比對視覺
+
+請自己跑：
+  node tools/debug-harness.js --fresh
+  # 或針對特定網址
+  JREAD_URL=https://example.com node tools/debug-harness.js --fresh
+
+然後 Read `.playwright-mcp/jread-viewport.png`、分析 stdout log。
+不需要請 Jimmy 貼 console 或截圖——這是自助的工具。
+
+注意：`window.__JRead` 在 isolated world，`page.evaluate` 讀不到。
+驗證一律走 shared DOM 的副作用（data-* / injected style / getBoundingClientRect）。
+```
+
+---
+
+## 移植到其他 Chrome Extension 專案時要改的地方
+
+複製 `tools/debug-harness.js` 到新專案後，改以下幾個地方：
+
+| 位置 | 原 JRead 值 | 要改成 |
+|---|---|---|
+| `EXT_PATH` | `jread` | 你的 extension 資料夾名 |
+| `PROFILE_DIR` | `/tmp/jread-pw-profile` | `/tmp/<your-ext>-pw-profile` |
+| `URL` 預設 | ChinaTalk 文章 | 你的測試頁 |
+| `chrome.tabs.sendMessage` 的 `type` | `TOGGLE_READER_MODE` | 你的 extension 支援的訊息 type |
+| DOM 驗證的 selector | `[data-jread-active="1"]` / `#__jread-style` | 你的 extension 加的 attribute / id |
+| 環境變數名 | `JREAD_URL` | `<YOUR_EXT>_URL` |
+
+其他（persistent context 設定、args、關 about:blank、SW console listener 等）**照抄即可**。
+
+---
+
+## 最小可行 checklist（新專案套用時）
+
+- [ ] 專案內裝了 `playwright` devDependency
+- [ ] `npx playwright install chromium` 跑過
+- [ ] `tools/debug-harness.js` 改過 `EXT_PATH` / 訊息 type / 驗證 selector
+- [ ] Extension 的 manifest 有 `"permissions": ["tabs"]` 或 `"activeTab"` + `"scripting"`（SW 才能 `chrome.tabs.sendMessage`）
+- [ ] Extension 有可從 SW 觸發的訊息協定（TOGGLE / APPLY / 等）
+- [ ] `package.json` 加了 `"debug": "node tools/debug-harness.js"` script
+- [ ] CLAUDE.md（或 AGENTS.md 等）加了「可以自己跑 debug-harness」的指示
+- [ ] 用一個真實測試頁跑過 `npm run debug -- --fresh` 確認 DOM state 正確印出
+
+符合全部 → 下次 Claude 跟你改 extension 時，它可以**自己驗證視覺**，你只需要在最終 commit 前手動 Chrome reload 確認一次。

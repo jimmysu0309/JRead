@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.4.1（主文偵測 + 雜訊隱藏 + toast + 快捷鍵；排版尚未實作）
+**目前版本**：v0.5.0（主文偵測 + 雜訊隱藏 + 排版 + toast + 快捷鍵 + popup 設定面板 + 自動化除錯 harness）
 
 ---
 
@@ -43,6 +43,16 @@ npm test
 ```
 
 `test/version-check.spec.js` 是版本號 forcing function，每次 bump 版本號必須同步更新 `EXPECTED_VERSION`。
+
+### 自動化除錯
+
+```bash
+npm install
+npx playwright install chromium   # 首次：下載 bundled Chromium
+npm run debug                     # 或 node tools/debug-harness.js --fresh
+```
+
+會用 Playwright 內建 Chromium 載入 `jread/` 為 unpacked extension，打開目標頁（預設 ChinaTalk，可用 `JREAD_URL` 環境變數覆蓋），觸發閱讀模式，讀 DOM 狀態 + 量測 gap + 截圖到 `.playwright-mcp/jread-viewport.png`。詳見 [docs/CHROME_EXTENSION_DEBUG.md](docs/CHROME_EXTENSION_DEBUG.md)。
 
 ### 發佈
 

@@ -144,6 +144,47 @@ describe('cleaner — businessweekly-7014035', () => {
     }
   });
 
+  it('含 <img>/<picture>/<video> 的容器即使符合其他 action-toolbar 條件也不隱藏', () => {
+    // Substack 的 captioned-image-container：含 img + 多個 svg（zoom / loading）
+    // + 短文字，符合 action-toolbar 的 iconCount / text / no-<p> 條件，但它
+    // 是內容容器；加 img 排除條件避免誤殺
+    const el = document.querySelector('.captioned-image-container');
+    assert.ok(el, 'fixture 必須有 .captioned-image-container');
+    assert.notStrictEqual(
+      el.dataset.jreadHidden, '1',
+      '含 <img> 的容器不該被 action-toolbar 規則隱藏'
+    );
+    const img = el.querySelector('img');
+    assert.notStrictEqual(
+      img.dataset.jreadHidden, '1',
+      '其內的 <img> 不該被隱藏'
+    );
+  });
+
+  it('主文內 action toolbar 被隱藏（含多個 button/svg、自身文字短、無 <p> 子）', () => {
+    // Medium / Substack 類的 post footer：拍手/回應/收藏/更多
+    // class 被混淆（xp-1a2b3c）、無 keyword、無法用既有規則命中
+    const el = document.querySelector('.xp-1a2b3c');
+    assert.ok(el, 'fixture 必須有 action toolbar 模擬元素');
+    assert.strictEqual(el.dataset.jreadHidden, '1', 'action toolbar 必須被隱藏');
+  });
+
+  it('主文內 role="dialog" 元素被隱藏（ARIA 語意 dialog 絕非正文內容）', () => {
+    // Substack .subscribeDialog：position:absolute、在 article 內、class 被混淆、
+    // 無 keyword、非 fixed——僅 role="dialog" 能命中
+    const el = document.querySelector('.subscribeDialog-ApxQJS');
+    assert.ok(el, 'fixture 必須有 subscribe dialog 模擬元素');
+    assert.strictEqual(el.dataset.jreadHidden, '1', 'role="dialog" 必須被隱藏');
+  });
+
+  it('ancestor-siblings 規則命中非語意/非 fixed/無 keyword 的 brand rail', () => {
+    // 模擬 Medium / Substack 上方站名 header——舊三條規則全漏，
+    // 僅 ancestor-siblings 能命中
+    const el = document.querySelector('.brand-rail');
+    assert.ok(el, 'fixture 必須有 .brand-rail');
+    assert.strictEqual(el.dataset.jreadHidden, '1', '.brand-rail 必須被隱藏');
+  });
+
   it('restore() 移除所有 jreadHidden 標記並還原 display', () => {
     window.__JRead.cleaner.restore(hidden);
     const stillHidden = document.querySelectorAll('[data-jread-hidden="1"]');

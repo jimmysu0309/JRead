@@ -10,7 +10,7 @@
       color: #222;
     }
     body {
-      width: 280px;
+      width: 300px;
       margin: 0;
       padding: 16px;
     }
@@ -31,7 +31,7 @@
       margin-bottom: 12px;
       font-size: 13px;
     }
-    button {
+    #toggle-btn {
       width: 100%;
       padding: 10px;
       font-size: 14px;
@@ -41,9 +41,93 @@
       color: #fff;
       cursor: pointer;
     }
-    button:hover { background: #2c5282; }
+    #toggle-btn:hover { background: #2c5282; }
+
+    .settings {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+    .settings h2 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      margin: 0 0 10px;
+      letter-spacing: 0.04em;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .setting-row > label {
+      font-size: 13px;
+      color: #444;
+    }
+
+    /* Theme 切換按鈕群 */
+    .theme-group {
+      display: flex;
+      gap: 4px;
+    }
+    .theme-btn {
+      width: 34px;
+      height: 28px;
+      border: 1px solid #ccc;
+      background: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #444;
+      padding: 0;
+    }
+    .theme-btn:hover { background: #f0f0f0; }
+    .theme-btn.active {
+      border-color: #2b6cb0;
+      background: #ebf4ff;
+      color: #2b6cb0;
+      font-weight: 600;
+    }
+
+    /* 加減 stepper */
+    .stepper {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .stepper button {
+      width: 28px;
+      height: 28px;
+      border: 0;
+      background: #fafafa;
+      cursor: pointer;
+      font-size: 16px;
+      color: #444;
+      padding: 0;
+      line-height: 1;
+    }
+    .stepper button:hover { background: #eee; }
+    .stepper button:disabled {
+      color: #bbb;
+      cursor: not-allowed;
+    }
+    .stepper .val {
+      min-width: 44px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      border-left: 1px solid #ccc;
+      border-right: 1px solid #ccc;
+      padding: 0 6px;
+      height: 28px;
+      line-height: 28px;
+    }
+
     .hint {
-      margin-top: 10px;
+      margin-top: 12px;
       font-size: 12px;
       color: #888;
       text-align: center;
@@ -56,7 +140,7 @@
     }
     .options-link {
       display: block;
-      margin-top: 10px;
+      margin-top: 8px;
       font-size: 12px;
       color: #2b6cb0;
       text-decoration: none;
@@ -69,8 +153,40 @@
   <div class="version">v<span id="version"></span></div>
   <div id="status" hidden></div>
   <button id="toggle-btn">切換閱讀模式</button>
+
+  <section class="settings">
+    <h2>頁面設定</h2>
+
+    <div class="setting-row">
+      <label>主題</label>
+      <div class="theme-group" role="group" aria-label="主題">
+        <button class="theme-btn" data-theme="light" title="亮色">亮</button>
+        <button class="theme-btn" data-theme="dark"  title="暗色">暗</button>
+        <button class="theme-btn" data-theme="sepia" title="米色">米</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <label>字級</label>
+      <div class="stepper">
+        <button data-action="font-dec" aria-label="字級減小">－</button>
+        <span class="val" id="font-size-val">18</span>
+        <button data-action="font-inc" aria-label="字級放大">＋</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <label>版心寬度</label>
+      <div class="stepper">
+        <button data-action="width-dec" aria-label="版心變窄">－</button>
+        <span class="val" id="content-width-val">720</span>
+        <button data-action="width-inc" aria-label="版心變寬">＋</button>
+      </div>
+    </div>
+  </section>
+
   <div class="hint" id="shortcut-hint"></div>
-  <a href="#" class="options-link" id="open-options">偏好設定</a>
+  <a href="#" class="options-link" id="open-options">進階設定</a>
   <script src="popup-core.js"></script>
   <script src="popup.js"></script>
 </body>
