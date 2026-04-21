@@ -43,31 +43,46 @@
 
 ## 環境分工（硬規則）
 
-**Cowork** 負責所有 UI/DOM 相關 bug 的 code 修改——動到 content script / injector / detector 這類渲染相關檔的修正，一律在 Cowork 做。判斷標準：若 bug 的根因需要「實地看真實頁面 DOM」才能確定，就是 Cowork 的工作。
+**Claude Code** 是**實作主力**——所有程式碼的新增/修改（含 UI/DOM / content script / detector / cleaner / styler / popup / background / manifest）、git、`npm test`、regression spec、fixture、文件同步、release 一律在 Claude Code 做。拿到新功能需求或 bug 報告時，**直接開始寫 code**，不要把需求轉手給 Cowork。
 
-**Claude Code** 負責 git / `npm test` / regression spec / fixture / 文件同步 / release。也含純邏輯模組修正（background service worker 的非渲染路徑、API 呼叫層、快取層、儲存層等）。
+**Cowork** 是**Chrome MCP 驗證工具**——唯一目的是做 Claude Code 做不到的事：用 `mcp__Claude_in_Chrome__*` navigate 到真實頁面、觀察 DOM、執行 JS、肉眼看樣式效果。Cowork **不寫程式碼、不動 extension 檔案**。
 
-**Claude Code 碰到 UI bug 不准自己改**——必須直接跟 Jimmy 說「這要切 Cowork 實地診斷」，不要試圖純推理找結構性通則。
+### 什麼時候需要切 Cowork
 
-### Cowork 環境（UI/DOM bug 修復主力）
+切到 Cowork 的唯一理由是「需要實地看真實頁面才能回答某個問題」。典型情境：
 
-必須切到 Cowork 的情境：
+- 我實作的改動需要在多個真實站點上**驗證視覺/行為正確**（Claude Code 端只能跑 jsdom 測，看不到真實 layout / CSS / font rendering）
+- 某個 bug 只有在真實頁面重現，我需要當場讀其 DOM 結構 / computed styles / 事件流才能找到根因
+- 使用者給的截圖不夠，需要我實地去看該頁的 HTML 結構
 
-- 任何 UI/DOM 相關 bug 的 code 修改
-- 在真實頁面上排版爆掉、某類元素沒處理、某類元素誤處理
-- SPA 導航異常（例如 Medium、Substack 的前端路由切換）
-- 主文偵測抓錯內容（把 sidebar、評論區當主文）
-- 任何判斷標準是「實地看真實頁面就知道」的問題
+Cowork 的產出是**觀察報告**（DOM 片段、computed style、行為描述），不是 code diff。觀察報告帶回 Claude Code 後，我在這裡改 code。
 
-Cowork 有 `mcp__Claude_in_Chrome__*` 可以 navigate / 讀 DOM / 跑 JS，Claude Code 端沒有。
+### Cowork 絕對不可以
 
-**Cowork 絕對不可以**：
-
+- 自己改 `jread/` 下任何檔案
 - 自己 bump `manifest.json` 的 version
-- 自己改 SPEC.md / README.md / CHANGELOG.md / docs / 測試期望值常數的版本號
+- 自己改 SPEC.md / README.md / CHANGELOG.md / docs / 測試期望值常數
 - 碰 git（sandbox 的 `.git/` 受保護，`git add` / `commit` / `tag` 會失敗，不要嘗試）
 
-### Claude Code 環境（git / test / release / 文件 / 非渲染邏輯）
+### Claude Code 實作的 Chrome 驗證責任
+
+因為 Claude Code 沒有 Chrome MCP，動到下列類別的程式碼時，**commit + release 前**必須先請 Jimmy 到 `chrome://extensions/` 重新載入 extension 並回報有無錯誤，才繼續 commit / bump / release：
+
+- `jread/background/service-worker.js`
+- `jread/manifest.json`（特別是 `background` / `commands` / `content_scripts` / `permissions` 區塊）
+- `jread/popup/*`（任何動到 chrome.* API 呼叫或載入結構的改動）
+- 任何用到 `importScripts` / `chrome.scripting.executeScript` 的檔案
+- 影響真實頁面排版的 styler / CSS 注入（視覺效果要 Jimmy 肉眼驗）
+
+這類改動的典型流程：
+1. Claude Code 寫 code + `npm test` 過 + `git status` 乾淨
+2. **停下來，先請 Jimmy 手動驗 Chrome**（reload extension、看錯誤 tab、跑核心流程）
+3. Jimmy 回報 OK → `git add` + commit + bump + release
+4. Jimmy 回報有問題 → 帶觀察結果回來修 code，回到步驟 1
+
+若 Jimmy 手動驗還不夠（例如需要多個站點 side-by-side 比對、或 DOM 要逐元素讀），再切 Cowork 做 MCP 驗證。
+
+### Claude Code 環境雜項
 
 - **啟動方式**：shell alias `cc` = `claude --dangerously-skip-permissions`（視 Jimmy 實際慣用而定）
 - **改 extension 資料夾前先確認 working tree 乾淨**：若有未 commit 的變更先 commit 或 stash
@@ -90,17 +105,9 @@ Cowork 有 `mcp__Claude_in_Chrome__*` 可以 navigate / 讀 DOM / 跑 JS，Claud
   4. `test/version-check.spec.js` 的 `EXPECTED_VERSION` 常數（此常數是 forcing function，刻意設計成 bump 後不改就 fail）
   5. `README.md` 若有提到版本號的段落
 
-### 1.5 版本快照備份
+### 1.5 版本還原
 
-**Cowork 環境**：動手改程式碼前必須先快照：
-
-```
-cp -a jread .backups/jread-v<當前 manifest 版本>
-```
-
-冪等：已存在則略過。
-
-**Claude Code 環境**：不需要手動複製，`git checkout v<版本號> -- jread` 即可還原。
+Claude Code 端：`git checkout v<版本號> -- jread` 即可還原到任一歷史版本。不需要手動快照（git tag 本身就是快照）。`.backups/` 為遺留資料夾，Cowork 不再寫入。
 
 ### 2. 文件同步
 
@@ -123,31 +130,22 @@ cp -a jread .backups/jread-v<當前 manifest 版本>
 - JRead 是「Unclutter clone」——針對全網通用，**站點特判只能放在 site-overrides 這類明確隔離的檔案**，不能混進主偵測邏輯
 - 找不到通用規則時的正確反應：**停下來追問根因**，不要先加一個可以矇過當下測試頁的特判
 
-### 4. 修 bug 必須同步寫 regression 測試（不可累積技術債）
+### 4. 修 bug / 加功能必須同步寫 regression 測試（不可累積技術債）
 
-每次在 extension 資料夾修 bug + bump 版本號的同一輪對話，**必須**選下面其中一條路徑：
+每次在 extension 資料夾修 bug 或加功能 + bump 版本號的同一輪對話，**必須**選下面其中一條路徑：
 
-**路徑 A（首選）**，分兩階段：
+**路徑 A（首選）**：
 
-第一階段（Cowork）：
-
-1. 用 Chrome MCP navigate 到真實 bug 頁面、看 DOM
-2. 找結構性根因（見硬規則 3）
-3. 改 extension 程式碼
-4. `cp -a ...` 快照（冪等）
-5. **在 Chrome MCP 上驗**：reload extension → navigate 到原 bug 頁面 → 實地確認修好（不可跳過）
-6. 回報 root cause + diff 給 Jimmy，告訴他切回 Claude Code 繼續
-
-第二階段（Claude Code）：
-
-1. 跑 `git status` 確認 Cowork 的改動都在 working tree
-2. 在 `test/regression/fixtures/` 建 fixture HTML（擷取當時 bug 頁面最小可重現結構）
-3. 在 `test/regression/` 建對應 spec
-4. sanity check：暫時破壞修法 → 確認 fail → 還原 fix → 確認 pass
+1. Claude Code 改 extension 程式碼（結構性根因，見硬規則 3）
+2. 在 `test/regression/fixtures/` 建或擴充 fixture HTML（若為 bug，擷取最小可重現結構）
+3. 在 `test/regression/` 建或擴充對應 spec
+4. sanity check：暫時破壞修法 → 確認 fail → 還原 → 確認 pass
 5. 跑完整 `npm test` 確認沒踩既有 spec
-6. bump 版本號 + 更新同步清單 + `./release.sh`
+6. 若改動影響 Chrome 實際行為（見「Claude Code 實作的 Chrome 驗證責任」清單）→ 先請 Jimmy 手動 reload extension 驗 → OK 後再 bump
+7. bump 版本號 + 更新同步清單 + `./release.sh`
+8. 若需要多站點視覺比對或 DOM 細讀，切 Cowork 做 MCP 驗證；回來後依結果決定是否追加修正
 
-**路徑 B（fallback）**：若當下抽不出最小重現結構，在 `test/PENDING_REGRESSION.md` 加一筆條目。
+**路徑 B（fallback）**：若當下抽不出最小重現結構（例如純 entry script、wire-up、importScripts 路徑解析、chrome.* API 行為這類只能在真實 Chrome 觀察的問題），在 `test/PENDING_REGRESSION.md` 加一筆條目，註明未補 spec 的技術原因與將來如何補。
 
 **絕對不可以兩條都不做**。
 
@@ -156,7 +154,6 @@ cp -a jread .backups/jread-v<當前 manifest 版本>
 - 每次準備 commit 之前，必須先跑完整 `git status`，把 staged / unstaged / untracked 三欄全部看過
 - 若有本次任務沒在改的檔案出現，**必須停下來追問「這個檔案為什麼會在這？」**
 - 不可以默默把無關的變更一起 `git add` 混進當前 commit
-- Cowork 改完的 UI fix 最常以 unstaged 狀態躺在 working tree 等待，切回 Claude Code 要主動處理
 
 ### 6. 禁止破壞性 git 操作
 
@@ -300,5 +297,7 @@ new Promise(r => {
 - ❌ 不要過度使用 emoji
 - ❌ 不要用破壞性 git 操作（見硬規則 6）
 - ❌ 不要在 Cowork 端碰 git
+- ❌ 不要在 Cowork 端動 `jread/` 任何檔案（Cowork 只做 Chrome MCP 驗證）
+- ❌ 不要把新功能或 UI 修改轉手給 Cowork 去寫——程式碼一律在 Claude Code 端實作
 - ❌ 不要用站點 hostname / class selector 做特判（見硬規則 3）；必要時放到明確隔離的 site-overrides
 - ❌ 不要在主文偵測失敗時硬套排版——直接 no-op，不要誤傷原頁面
