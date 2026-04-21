@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -27,6 +27,7 @@
       "matches": ["<all_urls>"],
       "js": [
         "content/namespace.js",
+        "content/toast.js",
         "content/detector.js",
         "content/cleaner.js",
         "content/styler.js",
@@ -35,6 +36,15 @@
       "run_at": "document_idle"
     }
   ],
+  "commands": {
+    "toggle-reader-mode": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+R",
+        "mac": "Command+Shift+R"
+      },
+      "description": "切換純閱讀模式"
+    }
+  },
   "web_accessible_resources": [
     {
       "resources": ["assets/*"],

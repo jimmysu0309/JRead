@@ -23,13 +23,13 @@
       font-size: 12px;
       margin-bottom: 12px;
     }
-    .status {
-      background: #f4f4f4;
+    #status {
+      background: #fff5f5;
+      color: #c53030;
       padding: 8px 10px;
       border-radius: 6px;
       margin-bottom: 12px;
       font-size: 13px;
-      color: #555;
     }
     button {
       width: 100%;
@@ -42,6 +42,18 @@
       cursor: pointer;
     }
     button:hover { background: #2c5282; }
+    .hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+    }
+    .hint code {
+      font-family: ui-monospace, Menlo, monospace;
+      background: #f0f0f0;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
     .options-link {
       display: block;
       margin-top: 10px;
@@ -55,8 +67,9 @@
 <body>
   <h1>JRead</h1>
   <div class="version">v<span id="version"></span></div>
-  <div class="status" id="status">準備中⋯</div>
+  <div id="status" hidden></div>
   <button id="toggle-btn">切換閱讀模式</button>
+  <div class="hint" id="shortcut-hint"></div>
   <a href="#" class="options-link" id="open-options">偏好設定</a>
   <script src="popup-core.js"></script>
   <script src="popup.js"></script>
