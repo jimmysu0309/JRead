@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BBC article - grid underfill case</title>
+  <meta property="og:title" content="BBC article">
+</head>
+<body>
+  <article id="bbc-article">
+    <header>
+      <h1>BBC article title about ChatGPT medical advice</h1>
+    </header>
+
+    <!-- 第一類段落 wrapper（對照組）：不走 24-col grid，簡單 block wrapper -->
+    <div class="wrapper-normal" id="wrapper-normal">
+      <p>BBC_NORMAL_MARK When she thought she had a urinary tract infection, ChatGPT looked at her symptoms and recommended she go to the pharmacist. After a consultation she was prescribed an antibiotic. Padding padding padding padding padding padding content content content content.</p>
+      <p>Abi says the chatbot got her the care she needed without feeling like she was taking up NHS time. Padding padding more text more text more text more text more text more text more text.</p>
+    </div>
+
+    <!-- 第二類段落 wrapper（bug 組）：BBC 24-col CSS grid design system。
+         child 明確 grid-column: 6 / span 12，只佔中間 12/24 欄，沒 sibling
+         佔剩餘 12 欄——原站設計預期右側放東西（圖/廣告/引文）但這段
+         本來就沒放，閱讀模式下主文被壓在中間 50% 寬度。
+         新 collapseGridWithHiddenCell「grid underfill」條件應命中：
+         visible children 全在同一 row（只有 1 個 child）、sum width < 70%
+         container width → container 退化成 block、清 grid-template、child
+         的 grid-column 清為 auto，讓主文恢復 block 自然寬度。 -->
+    <div class="grid-underfill" id="grid-underfill"
+         style="display: grid; grid-template-columns: repeat(24, 1fr);">
+      <div class="main-col-span12" id="main-col-span12"
+           style="grid-column: 6 / span 12;">
+        <p>BBC_UNDERFILL_MARK But then in January, Abi slipped and fully decked it while out hiking. She smacked her back on a rock and had insane pressure across her back. Padding padding padding padding padding padding padding padding.</p>
+        <p>Chat GPT told me that I'd punctured an organ and I needed to go to A and E straight away, says Abi. Padding padding padding padding padding padding padding.</p>
+        <p>After sitting in an emergency department for three hours the pain was easing and Abi realised she was not critically ill and went home. The AI had clearly got it wrong.</p>
+      </div>
+    </div>
+  </article>
+</body>
+</html>

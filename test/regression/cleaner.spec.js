@@ -675,6 +675,132 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore 後 col-md-8 原 inline max-width 應恢復');
   });
 
+  it('主文內 grid container 無 hidden sibling 但 visible children 寬度總和 < 70% container（grid underfill）→ 仍退化成 block（修 BBC 24-col design system 主文被擠在中間 50% 寬度）', () => {
+    // BBC 文章頁實測：<article> 內某些段落 wrapper 用 `display: grid;
+    // grid-template-columns: repeat(24, 1fr)`，唯一 direct child 明確
+    // `grid-column: 6 / span 12` 只佔中間 12/24 欄——原 design system 預期
+    // 右側 6-span 有圖 / 廣告 / 引文，但這段沒放。沒有 hidden sibling，
+    // 既有 collapseGridWithHiddenCell 的 hasHiddenChild 條件命中不了；
+    // 新 underfill 條件：grid visible children 全在同一 row 但寬度總和
+    // < container × 70% → 仍退化成 block、清 grid-template、child 的
+    // grid-column 清為 auto，讓主文恢復 block 自然全寬。
+    // 通則：針對任何「用 N-column design system 但本頁 children 只佔部分
+    // track」的站點，非 BBC 特判。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'bbc-grid-underfill.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+
+    // jsdom 無 layout engine（getBoundingClientRect 全回 0），必須 stub rect
+    // 才能驗證 underfill 條件（container 寬度、child 寬度比例、same-row 判斷）
+    const grid = w.document.getElementById('grid-underfill');
+    const mainCol = w.document.getElementById('main-col-span12');
+    const wrapperNormal = w.document.getElementById('wrapper-normal');
+    assert.ok(grid && mainCol && wrapperNormal, 'fixture 元素齊全');
+    stubRect(grid, { top: 100, width: 608, height: 300 });
+    stubRect(mainCol, { top: 100, width: 296, height: 300 });
+    stubRect(wrapperNormal, { top: 0, width: 608, height: 100 });
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：grid-underfill 被 underfill 條件命中、collapse
+      assert.strictEqual(grid.dataset.jreadCollapsed, '1',
+        'grid underfill（visible children 寬度 296 < 608 × 0.7）應命中並 collapse');
+      assert.strictEqual(grid.style.getPropertyValue('display'), 'block',
+        'underfill collapse 後 display 應為 block');
+      assert.strictEqual(grid.style.getPropertyPriority('display'), 'important',
+        'display:block 應 !important（贏過 inline display:grid）');
+      assert.strictEqual(grid.style.getPropertyValue('grid-template-columns'), 'none',
+        'underfill collapse 後 grid-template-columns 應清為 none');
+
+      // 核心斷言 2：visible child 的 grid-column / width / max-width 被 force override
+      //（讓 child 脫離「grid-column: 6/span 12」的中間 12 欄限制，恢復全寬）
+      assert.strictEqual(mainCol.style.getPropertyValue('grid-column'), 'auto',
+        'visible child 的 grid-column 應 force 成 auto（覆寫 inline 6/span 12）');
+      assert.strictEqual(mainCol.style.getPropertyPriority('grid-column'), 'important',
+        'grid-column:auto 應 !important');
+      assert.strictEqual(mainCol.style.getPropertyValue('width'), 'auto',
+        'visible child 的 width 應 force 成 auto');
+      assert.strictEqual(mainCol.style.getPropertyValue('max-width'), 'none',
+        'visible child 的 max-width 應 force 成 none');
+
+      // 核心斷言 3：wrapper-normal 非 grid，不得被誤動
+      assert.notStrictEqual(wrapperNormal.dataset.jreadCollapsed, '1',
+        '非 grid 的 wrapper 不得被 underfill 規則誤觸');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 核心斷言 4：restore 後 container 的 display / dataset 恢復、child 的
+    // force override 已清除（priority 不再 important）
+    assert.strictEqual(grid.style.getPropertyValue('display'), 'grid',
+      'restore 後原 inline display:grid 應恢復');
+    assert.strictEqual(grid.dataset.jreadCollapsed, undefined,
+      'restore 後 data-jread-collapsed attribute 應被移除');
+    assert.notStrictEqual(mainCol.style.getPropertyPriority('grid-column'), 'important',
+      'restore 後 child 的 grid-column !important 覆寫應清除（回到原 shorthand 或空）');
+    assert.notStrictEqual(mainCol.style.getPropertyValue('grid-column'), 'auto',
+      'restore 後 child 的 grid-column value 不應為 auto（應回到 fixture 原值）');
+  });
+
+  it('主文內 grid container 單 child 且 child 寬度 ≈ container（無 underfill）→ 不得被誤 collapse', () => {
+    // 邊界測試：grid underfill 新條件有 70% 閾值，確保「grid 有一個 child
+    // 撐滿容器」（例如 Substack post 內容用 `display: grid` 1-col layout）
+    // 不會被誤命中。若誤命中會把正常 block 化的 child 改動 style，
+    // restore 時恐有殘餘。
+    const html = `<!DOCTYPE html><html><head>
+      <title>normal grid single child</title>
+      <meta property="og:title" content="normal grid single child">
+    </head><body>
+      <article id="art">
+        <h1>normal grid single child test</h1>
+        <div class="grid-full" id="grid-full"
+             style="display: grid; grid-template-columns: 1fr;">
+          <div id="only-child">
+            <p>NORMAL_GRID_MARK This child is spanning the full container width
+            in a 1-col grid. Lots of padding text padding text padding text
+            padding text padding text padding text padding text to pass detector.</p>
+          </div>
+        </div>
+      </article>
+    </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    const grid = w.document.getElementById('grid-full');
+    const child = w.document.getElementById('only-child');
+    // container = 608, child = 608（100% 佔滿，不觸發 underfill）
+    stubRect(grid, { top: 0, width: 608, height: 200 });
+    stubRect(child, { top: 0, width: 608, height: 200 });
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      assert.notStrictEqual(grid.dataset.jreadCollapsed, '1',
+        '單 child 且 child 寬度 ≈ container 的 grid 不得被誤 collapse');
+      // inline display 應保持原 grid 不加 !important
+      assert.strictEqual(grid.style.getPropertyValue('display'), 'grid',
+        '未觸發 collapse 的 grid 原 inline display 應保持');
+      assert.strictEqual(grid.style.getPropertyPriority('display'), '',
+        '未觸發 collapse 的 grid 原 inline display 不應有 !important');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {
     // Dwarkesh (Substack) YouTube embed 實測：cross-origin iframe 的
     // textContent = ""（跨域讀不到內部 DOM）+ querySelector 讀不到內部媒體
