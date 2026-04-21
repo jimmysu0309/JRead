@@ -1,7 +1,11 @@
-// JRead — styler regression spec
+// JRead — styler regression spec（v0.6.0 瘦身版）
 // jsdom 不算 layout 與 CSS，所以本 spec 驗的是「注入結構」與「可逆性」，
-// 不驗視覺效果。視覺效果由 Jimmy 在 Chrome 上手動驗（見 CLAUDE.md
-// 「Claude Code 實作的 Chrome 驗證責任」）。
+// 不驗視覺效果。視覺效果由 Chrome harness 驗（見 CLAUDE.md）。
+//
+// v0.6.0 重構目標：styler 盡量不動原站內文排版（font / margin / heading /
+// list / link 等），只套卡片容器 + 必要 reset + 使用者 override。因此本 spec
+// 大量砍掉舊版對「CSS 內容細節」的斷言（font-size inherit / heading margin /
+// link 色 / 媒體容器 margin / structural-link 標記等），改以行為斷言為主。
 
 const fs = require('fs');
 const path = require('path');
@@ -38,7 +42,7 @@ const DEFAULT_SETTINGS = {
   lineHeight: 1.7
 };
 
-describe('styler — businessweekly-7014035', () => {
+describe('styler — 骨架與可逆性', () => {
   it('apply() 注入 <style id="__jread-style"> 到 head', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
@@ -57,12 +61,11 @@ describe('styler — businessweekly-7014035', () => {
   it('apply() 替主文容器的祖先鏈標 data-jread-ancestor="1"（到 body 為止）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
-    // fixture 中 article.article 的祖先是 <main>（再上去就是 body）
     const main = document.querySelector('main');
     assert.ok(main, 'fixture 應有 <main>');
     assert.strictEqual(main.getAttribute('data-jread-ancestor'), '1');
-    // body 不應被標（祖先鏈到 body 為止）
-    assert.strictEqual(document.body.getAttribute('data-jread-ancestor'), null);
+    assert.strictEqual(document.body.getAttribute('data-jread-ancestor'), null,
+      'body 不應被標（祖先鏈到 body 為止）');
   });
 
   it('apply() 替 <html> 加 class __jread-active（觸發頁面底色 reset）', () => {
@@ -71,82 +74,44 @@ describe('styler — businessweekly-7014035', () => {
     assert.ok(document.documentElement.classList.contains('__jread-active'));
   });
 
-  it('CSS 含各 theme 預期底色（light / dark / sepia）', () => {
-    for (const theme of ['light', 'dark', 'sepia']) {
-      const { document, NS, articleEl } = setup();
-      NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme });
-      const css = document.getElementById('__jread-style').textContent;
-      const expectedBg = {
-        light: '#ececec',
-        dark:  '#0b0b0b',
-        sepia: '#cdb891'
-      }[theme];
-      assert.ok(
-        css.includes(expectedBg),
-        `${theme} theme 的 CSS 應含頁面底色 ${expectedBg}`
-      );
-    }
-  });
-
-  it('CSS 含 :has(img/picture/video) padding-bottom reset（破 aspect-ratio placeholder 留白）', () => {
+  it('CSS 含卡片容器骨架（max-width / background / border-radius）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(css.includes(':has(img)'), 'CSS 必須含 :has(img)');
-    assert.ok(css.includes(':has(picture)'), 'CSS 必須含 :has(picture)');
-    assert.ok(css.includes(':has(video)'), 'CSS 必須含 :has(video)');
-    assert.ok(
-      /:has\(img\)[^{]*\{[^}]*padding:\s*0\s*!important/.test(css),
-      ':has(img) 規則必須含 padding: 0 !important（清 padding-top 與 padding-bottom placeholder）'
-    );
+    assert.ok(/max-width:\s*720px/.test(css), 'CSS 必須含 contentWidth 的 max-width');
+    assert.ok(/background:\s*#ffffff/.test(css), 'CSS 必須含 light theme 的 articleBg');
+    assert.ok(/border-radius:\s*8px/.test(css), 'CSS 必須含卡片 border-radius');
+    assert.ok(/box-shadow:/.test(css), 'CSS 必須含卡片 box-shadow');
   });
 
-  it('CSS 的媒體容器 margin 規則包含 :has(> figure)（修 Substack captioned-image-container 留白）', () => {
-    // Substack 的 .captioned-image-container > figure > a > div > picture > img
-    // 結構裡，<a> 不是 container 的直接子，舊 :has(> a > img) 無法命中外層
-    // container，站點 CSS 的 32px margin 勝出造成圖文間不自然留白。
-    // 必須有 :has(> figure) 這條才能讓 container 繼承 1.2em margin。
+  it('CSS 含祖先鏈 reset（[data-jread-ancestor="1"] 清 max-width / margin / position）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(
-      css.includes(':has(> figure)'),
-      'CSS 必須含 :has(> figure) 以命中 Substack 類的 figure wrapper container'
-    );
-    assert.ok(
-      /:has\(> figure\)[^{]*\{[^}]*margin-top:\s*1\.2em/.test(css) ||
-      /figure[\s\S]{0,800}:has\(> figure\)[\s\S]{0,200}\{[^}]*margin-top:\s*1\.2em/.test(css),
-      ':has(> figure) 所在的規則區塊必須套 margin-top: 1.2em'
-    );
+    assert.ok(/\[data-jread-ancestor="1"\][^}]*\{[^}]*max-width:\s*none/.test(css));
+    assert.ok(/\[data-jread-ancestor="1"\][^}]*\{[^}]*margin:\s*0/.test(css));
+    assert.ok(/\[data-jread-ancestor="1"\][^}]*\{[^}]*position:\s*static/.test(css));
   });
 
-  it('CSS 強制非 heading 後代繼承 font-size（避免站點 <p> 寫死 px 無視 article fontSize）', () => {
+  it('CSS 含 aspect-ratio placeholder 破解（:has(> img/picture/video) padding-bottom:0）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
+    assert.ok(css.includes(':has(> img)'), 'CSS 必須含 :has(> img)');
+    assert.ok(css.includes(':has(> picture)'));
+    assert.ok(css.includes(':has(> video)'));
     assert.ok(
-      /\*:not\(h1\)[^{]*\{\s*font-size:\s*inherit\s*!important/.test(css),
-      'CSS 必須含 *:not(h1):... { font-size: inherit !important } 規則'
+      /:has\(>\s*img\)[\s\S]*?\{[^}]*padding-bottom:\s*0/.test(css) ||
+      /:has\(>\s*img\)[\s\S]*?\{[^}]*aspect-ratio:\s*auto/.test(css),
+      'aspect-ratio placeholder 破解規則必須套 padding-bottom: 0 與 aspect-ratio: auto'
     );
   });
 
-  it('CSS 注入 settings 指定的 fontSize / contentWidth / lineHeight', () => {
+  it('CSS 圖片容器限寬：img/video/iframe/picture max-width: 100%', () => {
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 21, contentWidth: 880, lineHeight: 1.9 });
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(css.includes('font-size: 21px'));
-    assert.ok(css.includes('max-width: 880px'));
-    assert.ok(css.includes('line-height: 1.9'));
-  });
-
-  it('未指定 settings 時使用預設值（18 / 720 / system-ui / 1.7 / light）', () => {
-    const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, {});
-    const css = document.getElementById('__jread-style').textContent;
-    assert.ok(css.includes('font-size: 18px'));
-    assert.ok(css.includes('max-width: 720px'));
-    assert.ok(css.includes('line-height: 1.7'));
-    assert.ok(css.includes('#ececec'), '預設 theme 為 light → 頁面底色 #ececec');
+    assert.ok(/img[\s\S]*?\{[^}]*max-width:\s*100%/.test(css));
   });
 
   it('apply() 把主文內第一個 h1/h2/h3/h4/p 的 margin-top 設為 0 !important（消除頂端留白）', () => {
@@ -154,7 +119,6 @@ describe('styler — businessweekly-7014035', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
     assert.ok(firstInk, 'fixture 主文內必須有 h1/h2/h3/h4/p');
-    // jsdom 把 '0' 正規化為 '0px'
     assert.strictEqual(firstInk.style.getPropertyValue('margin-top'), '0px');
     assert.strictEqual(firstInk.style.getPropertyPriority('margin-top'), 'important');
   });
@@ -184,28 +148,21 @@ describe('styler — businessweekly-7014035', () => {
     const snapshot = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     NS.styler.restore(articleEl, snapshot);
 
-    assert.strictEqual(document.getElementById('__jread-style'), null,
-      'style 元素應被移除');
-    assert.strictEqual(articleEl.getAttribute('data-jread-active'), null,
-      'article 的 data-jread-active 應被移除');
-    const remainingAncestors = document.querySelectorAll('[data-jread-ancestor="1"]');
-    assert.strictEqual(remainingAncestors.length, 0,
-      '所有祖先的 data-jread-ancestor 應被移除');
+    assert.strictEqual(document.getElementById('__jread-style'), null);
+    assert.strictEqual(articleEl.getAttribute('data-jread-active'), null);
+    assert.strictEqual(document.querySelectorAll('[data-jread-ancestor="1"]').length, 0);
     assert.strictEqual(
       document.documentElement.classList.contains('__jread-active'),
-      false,
-      'html 的 __jread-active class 應被移除'
+      false
     );
   });
 
   it('重複 apply() 不重複注入 style 元素（更新同一個）', () => {
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 18 });
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 22 });
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const allStyles = document.querySelectorAll('#__jread-style');
     assert.strictEqual(allStyles.length, 1, '只能有一個 __jread-style 元素');
-    assert.ok(allStyles[0].textContent.includes('font-size: 22px'),
-      '第二次 apply 的 fontSize 應覆蓋第一次');
   });
 
   it('apply / restore / apply 循環不累積殘留', () => {
@@ -234,101 +191,105 @@ describe('styler — businessweekly-7014035', () => {
 });
 
 // -----------------------------------------------------------------------------
-// 結構性連結（heading 包 a、parent 只含此 a 作為文字）：不套 link 色
+// v0.6.0 核心行為：使用者設定 override——「改過才套，預設值不動原站」
 // -----------------------------------------------------------------------------
-// 根因：WordPress / Medium / Substack 類 CMS 的 post-title 與 category label
-// 常包成 <a>（點標題跳 permalink）。閱讀模式原本無差別對「主文內所有 <a>」
-// 套藍色 + underline，導致標題整行變連結樣式（見 Stratechery 2026-04-21 截圖）。
-// 修法為結構性通則：styler.apply() 掃描主文內所有 <a>，若 (A) 位於 h1-h6 內，
-// 或 (B) parent 的 textContent 等於 a 的 textContent（parent 沒有其他文字），
-// 標 data-jread-structural-link="1"；CSS 對此 attribute 改用繼承色 + 無底線。
-// 真 inline link（parent 還有其他文字，例如 "在 <a>設定頁</a> 修改"）不受影響。
+// 設計理由：styler 目標是「盡量貼近原站點」（c 路線）。預設值等於「未設定」，
+// 不注入對應 CSS，原站的 font / line-height / theme 色仍然生效。使用者主動
+// 改過後才套 override。避免「使用者只想關雜訊、沒想換字體」卻被強制換字體。
 // -----------------------------------------------------------------------------
-describe('styler — structural link（heading 包 a / parent-only-text a）', () => {
-  const STRATECHERY_FIXTURE = path.join(__dirname, 'fixtures', 'stratechery-columns-layout.html');
-
-  function setupStratechery() {
-    const html = fs.readFileSync(STRATECHERY_FIXTURE, 'utf8');
-    const dom = new JSDOM(html, { runScripts: 'outside-only' });
-    const { window } = dom;
-    window.__JRead = { state: {}, MSG: {} };
-    window.eval(DETECTOR_SRC);
-    window.eval(STYLER_SRC);
-    const detected = window.__JRead.detector.detect();
-    assert.ok(detected, 'detector 必須命中 stratechery 主文');
-    return { window, document: window.document, NS: window.__JRead, articleEl: detected.el };
-  }
-
-  it('heading (h1-h6) 內的 <a> 套 data-jread-structural-link="1"', () => {
-    const { NS, articleEl } = setupStratechery();
-    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
-    const h2a = articleEl.querySelector('h2.wp-block-post-title a');
-    assert.ok(h2a, 'fixture 必須有 h2 內的 <a>');
-    assert.strictEqual(
-      h2a.getAttribute('data-jread-structural-link'),
-      '1',
-      'h2 內的 a 必須被標記為 structural link'
-    );
-  });
-
-  it('parent 只含此 a 作為文字內容的 <a> 被標記（category 標籤 pattern）', () => {
-    const { NS, articleEl } = setupStratechery();
-    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
-    const catA = articleEl.querySelector('p.stratechery-display-categories a');
-    assert.ok(catA, 'fixture 必須有 category p 內的 <a>');
-    assert.strictEqual(
-      catA.getAttribute('data-jread-structural-link'),
-      '1',
-      'parent 只含此 a 為文字的連結必須被標記'
-    );
-  });
-
-  it('真 inline link（parent 還有其他文字）不被標記', () => {
-    const { NS, articleEl } = setupStratechery();
-    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
-    // fixture 的 "your delivery settings" <a> 在 <p> 裡但 p 還有其他文字
-    let inlineA = null;
-    for (const a of articleEl.querySelectorAll('a')) {
-      if ((a.textContent || '').includes('your delivery settings')) { inlineA = a; break; }
-    }
-    assert.ok(inlineA, 'fixture 必須含一個真 inline link（your delivery settings）');
-    assert.strictEqual(
-      inlineA.getAttribute('data-jread-structural-link'),
-      null,
-      '真 inline link 不得被誤標為 structural'
-    );
-  });
-
-  it('CSS 含對 [data-jread-structural-link] 的繼承色規則', () => {
-    const { document, NS, articleEl } = setupStratechery();
+describe('styler — 使用者設定 override（預設值不動原站）', () => {
+  it('預設設定 → CSS 不注入 font-size / font-family / line-height 覆寫', () => {
+    const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
+    // 卡片 rule 不得含這些 property（整個 CSS 都不得含）
+    assert.ok(!/font-size:\s*\d+px/.test(css),
+      '預設 fontSize 時不得注入 font-size（保留原站字級）');
+    assert.ok(!/font-family:/.test(css),
+      '預設 fontFamily 時不得注入 font-family（保留原站字體）');
+    assert.ok(!/line-height:/.test(css),
+      '預設 lineHeight 時不得注入 line-height（保留原站行高）');
+  });
+
+  it('非預設 fontSize → 注入 font-size', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 22 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/font-size:\s*22px/.test(css));
+  });
+
+  it('非預設 fontFamily → 注入 font-family', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontFamily: 'Georgia' });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/font-family:\s*Georgia/.test(css));
+  });
+
+  it('非預設 lineHeight → 注入 line-height', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, lineHeight: 2.0 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/line-height:\s*2/.test(css));
+  });
+
+  it('light theme（預設）→ 頁面底色 #ececec、不注入強制文字色', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(css.includes('#ececec'), 'light 頁面底色應為 #ececec');
+    // light 預設 theme.text 為 null，不得注入 color override 到 body / article *
     assert.ok(
-      /\[data-jread-structural-link="1"\]/.test(css),
-      'CSS 必須含 [data-jread-structural-link="1"] selector'
-    );
-    assert.ok(
-      /data-jread-structural-link[^}]*color:\s*inherit/.test(css),
-      'structural link 規則必須包含 color: inherit'
-    );
-    assert.ok(
-      /data-jread-structural-link[^}]*text-decoration:\s*none/.test(css),
-      'structural link 規則必須包含 text-decoration: none'
+      !/color:\s*#1a1a1a/.test(css),
+      'light theme 不得強制覆寫文字色（保留原站 color）'
     );
   });
 
-  it('restore() 清除所有 data-jread-structural-link 標記', () => {
-    const { NS, articleEl } = setupStratechery();
-    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
-    assert.ok(
-      articleEl.querySelector('[data-jread-structural-link="1"]'),
-      'apply() 後至少有一個 structural link 標記'
-    );
-    NS.styler.restore(articleEl, snap);
-    assert.strictEqual(
-      articleEl.querySelector('[data-jread-structural-link="1"]'),
-      null,
-      'restore() 後必須清除所有 structural link 標記'
-    );
+  it('dark theme → 注入文字色 + 卡片底色', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(css.includes('#0b0b0b'), 'dark 頁面底色');
+    assert.ok(css.includes('#1a1a1a'), 'dark 卡片底色');
+    assert.ok(/color:\s*#d4d4d4/.test(css), 'dark 文字色必須注入（覆蓋原站色）');
+  });
+
+  it('sepia theme → 注入文字色 + 卡片底色', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'sepia' });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(css.includes('#cdb891'), 'sepia 頁面底色');
+    assert.ok(css.includes('#f4ecd8'), 'sepia 卡片底色');
+    assert.ok(/color:\s*#5b4636/.test(css), 'sepia 文字色');
+  });
+
+  it('contentWidth 永遠注入（卡片骨架不可缺）', () => {
+    // contentWidth 是卡片的 max-width——不注入卡片會散掉。因此不走
+    // 「改過才套」邏輯，預設 720 也注入。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css720 = document.getElementById('__jread-style').textContent;
+    assert.ok(/max-width:\s*720px/.test(css720));
+
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, contentWidth: 880 });
+    const css880 = document.getElementById('__jread-style').textContent;
+    assert.ok(/max-width:\s*880px/.test(css880));
+  });
+
+  it('CSS 不得套 heading / p / ul / ol / li / blockquote / a 的排版 rule', () => {
+    // v0.6.0 設計：這些 rule 在 v0.5.x 過度激進、互相打架，全部移除。
+    // 原站的 heading margin / list style / link color / blockquote border 等
+    // 由站點 CSS 自己生效。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(!/\]\s*h1\s*[,{]/.test(css), '不得對 h1 下 rule');
+    assert.ok(!/\]\s*h2\s*[,{]/.test(css), '不得對 h2 下 rule');
+    assert.ok(!/\]\s*p\s*\{/.test(css), '不得對 p 下 rule');
+    assert.ok(!/\]\s*ul\s*[,{]/.test(css), '不得對 ul 下 rule');
+    assert.ok(!/\]\s*ol\s*[,{]/.test(css), '不得對 ol 下 rule');
+    assert.ok(!/\]\s*li\s*\{/.test(css), '不得對 li 下 rule');
+    assert.ok(!/\]\s*blockquote\s*\{/.test(css), '不得對 blockquote 下 rule');
+    assert.ok(!/\]\s*a\s*\{/.test(css), '不得對 a 下 rule（連結色保留原站）');
+    assert.ok(!/font-size:\s*inherit/.test(css), '不得強制後代 font-size: inherit');
   });
 });
