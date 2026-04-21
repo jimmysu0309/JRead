@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>JRead 偏好設定</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      font-size: 15px;
+      color: #222;
+    }
+    body {
+      max-width: 560px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+    .version {
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+    .field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .field label {
+      font-weight: 500;
+    }
+    .field .desc {
+      display: block;
+      font-weight: normal;
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+    }
+    select, input[type="number"] {
+      padding: 6px 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      min-width: 120px;
+    }
+    #save-status {
+      margin-top: 16px;
+      color: #2b6cb0;
+      font-size: 13px;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1>JRead 偏好設定</h1>
+  <div class="version">v<span id="version"></span></div>
+
+  <div class="field">
+    <label>
+      主題
+      <span class="desc">日/夜間 / 米色</span>
+    </label>
+    <select id="theme">
+      <option value="light">亮色</option>
+      <option value="dark">暗色</option>
+      <option value="sepia">米色</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>
+      字級（px）
+      <span class="desc">主文字體大小</span>
+    </label>
+    <input type="number" id="fontSize" min="12" max="32" step="1">
+  </div>
+
+  <div class="field">
+    <label>
+      版心寬度（px）
+      <span class="desc">主文欄寬</span>
+    </label>
+    <input type="number" id="contentWidth" min="480" max="1200" step="20">
+  </div>
+
+  <div id="save-status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>
