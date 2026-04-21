@@ -30,6 +30,10 @@
   <div class="postnav fixed" style="position: fixed; top: 0; width: 100%; height: 50px;">固定頂部導覽</div>
   <div id="progress-wrapper" style="position: fixed; top: 0; width: 100%; height: 4px;">進度條</div>
 
+  <!-- 模擬 Medium / Substack 類的 brand header：非 header/nav 語意、
+       非 fixed、class 不含 keyword。舊規則全都漏，ancestor-siblings 規則命中。 -->
+  <div class="brand-rail"><a href="/">賽拉維的秋天 — ddsakura.blog</a></div>
+
   <main>
     <article class="article">
       <h1>測試文章標題</h1>
@@ -66,6 +70,34 @@
 
         <div id="Epaper-subscribe">
           <p>電子報訂閱 CTA（keyword: subscribe 應命中隱藏）</p>
+        </div>
+
+        <!-- 模擬 Medium 主文底部的 post action toolbar（拍手/回應/收藏/更多）
+             class 被混淆、無 keyword、無 <p> 子、多個 button + svg、文字短 -->
+        <div class="xp-1a2b3c">
+          <button aria-label="拍手"><svg></svg></button>
+          <span>10</span>
+          <button aria-label="回應"><svg></svg></button>
+          <button aria-label="收藏"><svg></svg></button>
+          <button aria-label="更多"><svg></svg></button>
+        </div>
+
+        <!-- 模擬 Substack 的 captioned-image-container：含 <img> + 多個 svg
+             （zoom / loading icon）+ 文字短；不該被 action-toolbar 規則誤殺 -->
+        <div class="captioned-image-container">
+          <a href="/image-full"><img src="/inline-image.jpg" alt=""></a>
+          <svg aria-label="zoom"></svg>
+          <svg aria-label="loading"></svg>
+          <div class="caption">書影</div>
+        </div>
+
+        <!-- 模擬 Substack 的 subscribe dialog：主文內 role="dialog"、
+             position:absolute，傳統 fixed/ancestor-sibling 規則全漏，
+             僅 ARIA dialog 規則能命中 -->
+        <div class="subscribeDialog-ApxQJS" role="dialog">
+          <h3>Discover more from ChinaTalk</h3>
+          <p>Deep coverage of technology, China, US policy, and war.</p>
+          <button>Subscribe</button>
         </div>
       </div>
     </article>

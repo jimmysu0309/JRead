@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.4.1`（修復 v0.4.0 service worker 註冊失敗；排版 styler 尚未實作）
+`0.5.0`（styler 完成、cleaner 新增 dialog / action-row / spacer / ancestor-sibling 四條通則、popup 設定面板重設計、自動化除錯 harness）
 
 ---
 

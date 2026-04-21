@@ -2,3 +2,8 @@ node_modules/
 .backups/
 .claude/settings.local.json
 .DS_Store
+
+# 自動化除錯 harness 輸出（screenshot 等）
+.playwright-mcp/
+# 舊 Playwright MCP 設定檔（目前已改用 tools/debug-harness.js 不再需要）
+.playwright-mcp.json

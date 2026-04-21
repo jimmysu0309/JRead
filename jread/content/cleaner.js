@@ -77,6 +77,25 @@
     el.style.display = 'none';
   }
 
+  // ---- 任何位置：ARIA dialog / modal -------------------------------------
+  // 結構性通則：W3C ARIA 定義 role="dialog" / "alertdialog" 與 aria-modal="true"
+  // 是「對話框/彈窗」的語意標記，依規範**絕不會**出現在正文流程裡——凡帶此語意
+  // 都是訂閱彈窗、登入提示、cookie 同意、付費牆 overlay 等雜訊。
+  // Substack 的 .subscribeDialog 就是帶 role="dialog" 的 position:absolute 元素，
+  // 嵌在 <article> 內部，傳統 fixed/ancestor-sibling 規則都漏掉。
+  const DIALOG_SEL = '[role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+
+  function hideDialogs(articleEl, hidden) {
+    const dialogs = document.querySelectorAll(DIALOG_SEL);
+    for (const el of dialogs) {
+      if (el === articleEl) continue;
+      if (el.contains(articleEl)) continue; // 不砍到主文祖先
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文外：語意標籤 --------------------------------------------------
   function hideOutsideArticleSemantic(articleEl, hidden) {
     const els = document.querySelectorAll('header, nav, footer, aside');
@@ -128,6 +147,94 @@
     }
   }
 
+  // ---- 主文外：祖先兄弟（lift article out） ------------------------------
+  // 通則：從主文容器沿 parent 鏈往 body 走，每一層把「當前元素的兄弟」
+  // 全部隱藏（style/script 等無視覺元素、保留元素、已隱藏者除外）。
+  // 效果等同於把主文從複雜的 layout 容器中「拔出來」，解決以下 pattern：
+  //   - Medium / Substack 的上方 brand header（非 <header>、非 fixed、
+  //     class 不含 keyword，舊規則都漏掉）
+  //   - 文章外的相關閱讀 rail、推薦文章、作者卡片
+  //   - 版心左右的空白占位容器
+  // 前提是 detector 有信心分數門檻，選錯主文的風險可控。
+  const STRUCTURAL_TAGS = new Set(['style', 'script', 'link', 'noscript', 'meta', 'title']);
+
+  function hideAncestorSiblings(articleEl, hidden) {
+    let cur = articleEl;
+    while (cur && cur.parentElement && cur !== document.body) {
+      const parent = cur.parentElement;
+      for (const sib of parent.children) {
+        if (sib === cur) continue;
+        if (STRUCTURAL_TAGS.has(sib.tagName.toLowerCase())) continue;
+        if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(sib)) continue;
+        hide(sib, hidden);
+      }
+      cur = parent;
+    }
+  }
+
+  // ---- 主文內：action toolbar（拍手/回應/收藏/分享等互動列）----------------
+  // 結構特徵：容器本身無 <p> 直接子、自身文字短、含多個按鈕/圖示元素。
+  // Medium / Substack / 部分新聞站的 post footer 互動列都命中此 pattern。
+  // 為何限制「自身文字短」：避免誤殺正當的 CTA 卡片（有較長說明文字）。
+  // 為何不含 <p> 直接子：避免誤殺內文段落容器。
+  const ACTION_TEXT_MAX = 80;
+  const ACTION_MIN_ICONS = 2;
+
+  function hideInsideArticleActionRows(articleEl, hidden) {
+    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+    for (const el of containers) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+
+      // 排除：含圖片/影片/嵌入內容的容器（是內容容器，不是互動列）
+      // 理由：Substack 的 captioned-image-container 含 <img> + 2 個以上
+      // 的 zoom / loading svg，會誤觸 iconCount 門檻被隱藏
+      if (el.querySelector('img, picture, video, audio')) continue;
+
+      const hasParagraphChild = Array.from(el.children).some(c => c.tagName === 'P');
+      if (hasParagraphChild) continue;
+
+      const text = (el.textContent || '').trim();
+      if (text.length > ACTION_TEXT_MAX) continue;
+
+      const iconCount =
+        el.querySelectorAll('button').length +
+        el.querySelectorAll('[role="button"]').length +
+        el.querySelectorAll('svg').length;
+      if (iconCount < ACTION_MIN_ICONS) continue;
+
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：視覺性空白 spacer ------------------------------------------
+  // 結構特徵：容器型元素 + 高度 > 60px + 文字 < 10 字 + 不含任何媒體/互動圖示
+  // （img/picture/video/iframe/svg/button）。通常是 Substack / 現代 CSS-in-JS
+  // layout 的 visual separator / spacer div，會造成段落與圖片間不自然留白。
+  // jsdom 沒 layout，此規則不在 jsdom 測試中生效；真實 Chrome 才命中。
+  const SPACER_MIN_HEIGHT = 60;
+  const SPACER_TEXT_MAX = 10;
+
+  function hideInsideArticleEmptySpacers(articleEl, hidden) {
+    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+    for (const el of containers) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.querySelector('img, picture, video, iframe, svg, button, input, select, textarea')) continue;
+
+      const text = (el.textContent || '').trim();
+      if (text.length > SPACER_TEXT_MAX) continue;
+
+      const rect = el.getBoundingClientRect();
+      if (rect.height < SPACER_MIN_HEIGHT) continue;
+
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：keyword heuristic ----------------------------------------
   function hideInsideArticleByKeyword(articleEl, hidden) {
     // 限定容器型元素；避免誤殺內文標題/段落/圖片
@@ -151,10 +258,16 @@
     clean(articleEl) {
       const hidden = [];
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
+      // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
+      hideDialogs(articleEl, hidden);
       hideOutsideArticleSemantic(articleEl, hidden);
       hideFixedOutsideArticle(articleEl, hidden);
       hideSocialShareClusters(articleEl, hidden);
       hideInsideArticleByKeyword(articleEl, hidden);
+      hideInsideArticleActionRows(articleEl, hidden);
+      hideInsideArticleEmptySpacers(articleEl, hidden);
+      // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
+      hideAncestorSiblings(articleEl, hidden);
       return hidden;
     },
 
