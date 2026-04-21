@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.4`（styler iframe 特例：拆出獨立 rule 不套 `height: auto`，修 WordPress wp-embed / Substack / Medium 類 YouTube 嵌入在閱讀模式下被壓成 150px 高的 bug）
+`0.6.5`（detector 加 `narrowToFirstArticleBlock`：多篇 article 兄弟 structure（容器直系子有 ≥ 2 個獨立子樹各含 h1）時限縮到第一個含 h1 的直系子，修自由時報 news.ltn.com.tw 類 infinite-scroll 站點多篇文章混入閱讀模式主文的 bug）
 
 ---
 

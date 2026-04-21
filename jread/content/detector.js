@@ -214,6 +214,37 @@
     return false;
   }
 
+  // ---- 邊界修正：多篇 article 兄弟時限縮到第一個 ----------------------
+  // 場景：infinite-scroll 新聞站（news.ltn.com.tw 自由時報）、部分 archive
+  // / tag 列表頁、少數把多篇 article 塞進同一個 container 的 CMS。Heuristic
+  // bubble-up 或 main-tag 兜底容易選到「多篇 article 的共同 parent」，讀者
+  // 進閱讀模式時會看到第一篇 + 第二篇 + ... 全部混在一起。
+  //
+  // 通則（非站點特判）：h1 每頁慣例唯一；若主文容器的直系子中有 ≥ 2 個
+  // 獨立子樹各含 h1，即認定為「多篇 article 兄弟」結構，限縮到第一個
+  // 含 h1 的直系子。單篇文章（0 或 1 個 h1）不動。
+  //
+  // 放在 promoteForTitle 之後：promote 負責「往外升級包住標題」，narrow
+  // 負責「往內收縮到第一篇」——兩者方向相反，先 promote 後 narrow 能處理
+  // 「promote 選到的 parent 裡其實有多篇」的邊界情況。
+  function narrowToFirstArticleBlock(articleEl) {
+    if (!articleEl || !articleEl.children || articleEl.children.length < 2) {
+      return articleEl;
+    }
+    const blocksWithH1 = [];
+    for (const child of articleEl.children) {
+      const hasH1 = (child.matches && child.matches('h1')) ||
+        (child.querySelector && !!child.querySelector('h1'));
+      if (hasH1) blocksWithH1.push(child);
+    }
+    if (blocksWithH1.length < 2) return articleEl;
+
+    const first = blocksWithH1[0];
+    const firstText = (first.innerText || first.textContent || '').trim();
+    if (firstText.length < MIN_TEXT_LEN) return articleEl;
+    return first;
+  }
+
   function promoteForTitle(articleEl) {
     const target = getCanonicalTitle();
     if (!target) return articleEl;
@@ -267,6 +298,9 @@
       );
       if (result && result.strategy !== 'main-tag') {
         result.el = promoteForTitle(result.el);
+      }
+      if (result) {
+        result.el = narrowToFirstArticleBlock(result.el);
       }
       return result;
     }

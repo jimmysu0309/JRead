@@ -199,3 +199,62 @@ describe('detector — anthropic-hero-sibling（article-tag 策略下的 title p
     );
   });
 });
+
+// -----------------------------------------------------------------------------
+// 對應 fixture：test/regression/fixtures/ltn-multi-article-siblings.html
+// Bug 來源：news.ltn.com.tw 自由時報類「infinite-scroll archive」頁把多篇
+// article 塞進同一個 `<section>` 裡（每篇是 section 的直系子），popIn
+// Discovery 再 scroll 時 append 新一篇。detector heuristic bubble-up 因
+// section 是所有 p 的 grandparent、拿到最高累積分，選中 section 作主文；
+// 若不做 narrow，讀者閱讀模式下會同時看到第一篇 + 第二篇 + 第三篇的標題
+// 與內文混雜。
+// 修法為結構性通則（非站點特判）：detect() 出口對選中的容器做
+// narrowToFirstArticleBlock——若容器的直系子中有 ≥ 2 個獨立子樹各含 h1，
+// 認定為多篇 article 兄弟，限縮到第一個含 h1 的直系子。h1 每頁慣例唯一，
+// 多 h1 兄弟即為 multi-article 特徵。
+// -----------------------------------------------------------------------------
+describe('detector — ltn-multi-article-siblings（infinite-scroll 多篇 article 兄弟）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('ltn-multi-article-siblings.html').result;
+  });
+
+  it('偵測成功，回傳物件而非 null', () => {
+    assert.ok(result, '偵測應成功（不得 no-op）');
+  });
+
+  it('主文容器必須包含第一篇標題 + 內文（FIRST_ARTICLE_MARK / FIRST_BODY_MARK）', () => {
+    const txt = result.el.textContent || '';
+    assert.ok(txt.includes('FIRST_ARTICLE_MARK'),
+      '主文必須含第一篇標題（FIRST_ARTICLE_MARK）');
+    assert.ok(txt.includes('FIRST_BODY_MARK'),
+      '主文必須含第一篇內文（FIRST_BODY_MARK）');
+  });
+
+  it('主文容器絕不可包含第二篇（NEXT_ARTICLE_MARK / NEXT_BODY_MARK）', () => {
+    // 核心斷言：narrow 必須把主文限縮到第一篇；infinite-scroll append 的
+    // 下一篇若被混入，讀者閱讀模式會看到「第一篇 + 第二篇 + ...」。
+    const txt = result.el.textContent || '';
+    assert.ok(!txt.includes('NEXT_ARTICLE_MARK'),
+      `主文不得含下一篇標題（NEXT_ARTICLE_MARK）；表示 narrow 未觸發`);
+    assert.ok(!txt.includes('NEXT_BODY_MARK'),
+      `主文不得含下一篇內文（NEXT_BODY_MARK）`);
+  });
+
+  it('主文容器必須是第一篇 article wrapper，不是含多篇的 section', () => {
+    // narrow 把主文從 section.content-list 限縮到第一個 article.first-article。
+    // 以 class 驗證結構：縮完的容器必須有 first-article class（fixture 明標），
+    // 且不是 section.content-list。
+    const cls = (result.el.className || '').toString();
+    assert.ok(!cls.includes('content-list'),
+      `主文不得仍是含多篇的 section.content-list，實際 className="${cls}"`);
+    assert.ok(cls.includes('first-article'),
+      `主文應限縮到第一篇 wrapper（first-article），實際 className="${cls}"`);
+  });
+
+  it('主文容器內只剩一個 h1（下一篇的 h1 已被切掉）', () => {
+    const h1s = result.el.querySelectorAll('h1');
+    assert.strictEqual(h1s.length, 1,
+      `主文內應只剩 1 個 h1（narrow 後），實際 ${h1s.length} 個`);
+  });
+});
