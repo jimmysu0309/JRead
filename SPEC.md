@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.17`（cleaner 的 `hideInsideArticleSidebarColumns` 新增條件 B：container 內某 direct child 是 `<aside>` tag **且** textLen < main × 50% **且** `getBoundingClientRect().height > 400px` → 直接 hide。既有條件 A（`textLen < main × 10% AND linkDensity > 0.5`）維持——為 OR 關係追加，不改既有路徑。修 Engadget 類 `<aside class="col-right">` 內含廣告 placeholder + 導覽 link 稀釋 textLen/linkDensity 到兩條件都差一點不命中的 sidebar 場景；pull-quote aside（簡單 blockquote 結構、rectH 短）靠 `> 400px` 閾值保護不被誤殺）
+`0.6.18`（cleaner 新增 `hideInsideArticleButtonClusters` 規則：container 自身 normalize textLen ≤ 80 + 遞迴含 ≥ 2 個 `button`/`a[role=button]` + 無 `p`/`h1-h6`/媒體 + button 外文字 ≤ 10 chars → hide。修 BBC 類現代 CSS-in-JS 把 button 用 `display: contents` 層層包 div 導致 direct interactive ratio = 0、既有 `hideInsideArticleActionRows` 的「ratio < 50% 且 selfText ≥ 20 字」排除條件跳過的盲點——BBC byline 內 Share / Save / Add as preferred on Google 按鈕組。「button 外文字 ≤ 10 chars」保護條件確保 ChinaTalk byline+actions wrapper（meta-group 含作者+日期在 button 外）不被誤殺）
 
 ---
 

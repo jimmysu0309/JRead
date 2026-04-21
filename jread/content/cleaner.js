@@ -251,6 +251,90 @@
     }
   }
 
+  // ---- 主文內：button cluster（byline 區塊裡的 Share/Save/Add-as-preferred）
+  // 結構特徵（非站點特判）：container 自身短文字（≤ 80 chars）+ 遞迴含 ≥ 2 個
+  // `<button>` 或 `a[role="button"]` + 不含任何 p/h1-h6/媒體元素。專門對付
+  // 現代 CSS-in-JS（styled-components、BBC kKqaMX/cSUzvu 類）把 button 用
+  // `display: contents` 層層包 div 的 pattern——
+  //   <div class="cSUzvu"> (textLen 35)
+  //     <div class="dkgDie" display:contents>  ← 每個 direct child 都是 div
+  //       <div><a><button>Share</button></a></div>
+  //     </div>
+  //     <div class="dkgDie" display:contents>
+  //       <div><a><button>Save</button></a></div>
+  //     </div>
+  //     <div class="dkgDie" display:contents>
+  //       <div><a><button>Add as preferred on Google</button></a></div>
+  //     </div>
+  //   </div>
+  //
+  // 現有 `hideInsideArticleActionRows` 對此失靈：direct children 全是 div
+  // → interactive ratio = 0% → 觸發排除條件 1「ratio < 50% 且 selfText ≥ 20」
+  // → continue 跳過。那個排除條件是用來保護 ChinaTalk byline+actions wrapper
+  // 不被整塊誤殺（v0.6.2 baseline）——不能放寬。所以用獨立規則遞迴找 button
+  // 數量，補 action-row 規則的盲點。
+  //
+  // 保護設計（避免誤殺 byline row 本身或 post-header）：
+  // - 自身 textLen ≤ 80：BBC cSUzvu 僅 35（Share/Save/Add），jXywqM 整個
+  //   byline row 96（含作者+日期）→ 不命中，只動按鈕 cluster 這層。
+  //   ChinaTalk byline+actions wrapper 含作者+日期+meta 遠 > 80 → 不命中
+  // - 排除含 `<p>` / h1-h6：post-header 含 `<h1>` 必跳過（同 action-row）
+  // - 排除含媒體：figure / picture / video / iframe 跳過
+  // - 排除主文祖先（contains articleEl）：不砍到卡片層
+  //
+  // 為何最小 button 數 = 2：單一 button（例如 toggle 按鈕）可能是合法 CTA，
+  // 多個才是 cluster 特徵。
+  //
+  // 為何再加「button 外文字 < 10」保護：
+  // ChinaTalk byline-actions-wrapper fixture 實測：
+  //   <div.meta-group><a>Jordan Schneider</a><span>Apr 21, 2026</span></div>
+  //   <div.btn-group><button>like</button><span>41</span><button>comment</button>...</div>
+  // textLen 只有 ~31（< 80）、button >= 3（>= 2）、無 p/h/媒體 → 上列 3 條件
+  // 全中！會整塊砍掉作者+日期（v0.6.2 baseline 保護面）。差別在 ChinaTalk
+  // 的 meta-group 把作者/日期文字放在 button **之外**（純 a + span），BBC
+  // cSUzvu 的所有文字（Share/Save/Add as preferred on Google）全部在
+  // `<button>` 或 `a[role=button]` **裡面**。計算 "非 button 文字量"——
+  // 在 button/role=button 外仍有 ≥ 10 chars → 視為 byline meta 保護。
+  // BBC cSUzvu: text 35 chars 全在 button 內 → outside = 0 → 命中 hide
+  // ChinaTalk: meta-group 文字（Jordan + date）~30 chars 在 button 外 → 保留
+  const BUTTON_CLUSTER_TEXT_MAX = 80;
+  const BUTTON_CLUSTER_MIN_BUTTONS = 2;
+  const BUTTON_CLUSTER_MAX_OUTSIDE_TEXT = 10;
+
+  function hideInsideArticleButtonClusters(articleEl, hidden) {
+    // whitespace-normalize：jsdom textContent 把 HTML 縮排 `\n    ` 算進去，
+    // 真實 Chrome innerText 會 collapse——兩端統一 collapse 才能讓 fixture
+    // 與真實站點量到同一個 text.length 與 buttonText。
+    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+    for (const el of containers) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.tagName === 'IFRAME' || el.tagName === 'VIDEO' || el.tagName === 'AUDIO') continue;
+      if (el.contains(articleEl)) continue; // 不砍主文祖先
+
+      // 排除內容元素：含 p / h1-h6 / 媒體 → 不是純按鈕 cluster
+      if (el.querySelector('p, h1, h2, h3, h4, h5, h6, img, picture, video, iframe')) continue;
+
+      const text = norm(el.textContent);
+      if (text.length > BUTTON_CLUSTER_TEXT_MAX) continue;
+
+      const buttonNodes = el.querySelectorAll('button, a[role="button"], [role="button"]');
+      if (buttonNodes.length < BUTTON_CLUSTER_MIN_BUTTONS) continue;
+
+      // 計算 button 外的文字量：總文字 - 所有 button 內文字總和
+      // （nested button 會被重複計，但這裡只要 outside > 10 就保留，nested
+      //  情境多算反而讓 outside 偏小——判斷更嚴格，更不易誤殺 cluster 外文字）
+      let buttonText = 0;
+      for (const b of buttonNodes) buttonText += norm(b.textContent).length;
+      const outsideText = text.length - buttonText;
+      if (outsideText > BUTTON_CLUSTER_MAX_OUTSIDE_TEXT) continue;
+
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：視覺性空白 spacer ------------------------------------------
   // 結構特徵：容器型元素 + 高度 > 60px + 文字 < 10 字 + 不含任何媒體/互動圖示
   // （img/picture/video/iframe/svg/button）。通常是 Substack / 現代 CSS-in-JS
@@ -744,6 +828,7 @@
       hideSocialShareClusters(articleEl, hidden);
       hideInsideArticleByKeyword(articleEl, hidden);
       hideInsideArticleActionRows(articleEl, hidden);
+      hideInsideArticleButtonClusters(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden);
       hideInsideArticleSidebarColumns(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
