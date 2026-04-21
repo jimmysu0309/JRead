@@ -720,6 +720,93 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('純 aspect-ratio 容器（Engadget pattern）不得被 reset，padding-hack（Substack pattern）必須被 reset', () => {
+    // v0.6.14 修法：CSS `:has(> img)` 無法區分兩種 pattern，搬到 cleaner
+    // runtime 以 padding-bottom / width 比例判斷：
+    //   A) padding-bottom: 56.25% → reset（img absolute → static）
+    //   B) aspect-ratio: 16/9 且 padding-bottom: 0 → 不動
+    const engadgetHtml = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'engadget-aspect-ratio-image.html'),
+      'utf8'
+    );
+    const engadgetDom = new JSDOM(engadgetHtml, { runScripts: 'outside-only' });
+    const ew = engadgetDom.window;
+    ew.__JRead = { state: {}, MSG: {} };
+    ew.eval(DETECTOR_SRC);
+    ew.eval(CLEANER_SRC);
+    const engDet = ew.__JRead.detector.detect();
+    assert.ok(engDet, 'Engadget 主文必須被偵測到');
+    const engWrap = ew.document.querySelector('.aspect-ratio-wrapper');
+    const engImg = ew.document.querySelector('.aspect-ratio-wrapper > img');
+    assert.ok(engWrap && engImg);
+    // 進閱讀模式前原 inline style snapshot
+    const engWrapBefore = engWrap.getAttribute('style');
+    const engImgBefore = engImg.getAttribute('style');
+
+    const engHidden = ew.__JRead.cleaner.clean(engDet.el);
+    try {
+      // 核心斷言：純 aspect-ratio 容器的 padding-bottom、img 的 position 都不得被動
+      assert.notStrictEqual(engWrap.style.getPropertyPriority('padding-bottom'), 'important',
+        '純 aspect-ratio 容器（padding-bottom: 0）不得被 reset');
+      assert.notStrictEqual(engImg.style.getPropertyValue('position'), 'static',
+        '純 aspect-ratio 容器內的 img 不得被改成 static（會破壞 absolute inset:0 layout）');
+    } finally {
+      ew.__JRead.cleaner.restore(engHidden);
+    }
+    assert.strictEqual(engWrap.getAttribute('style'), engWrapBefore,
+      'restore 後 aspect-ratio 容器的 inline style 必須完全還原');
+    assert.strictEqual(engImg.getAttribute('style'), engImgBefore,
+      'restore 後 img 的 inline style 必須完全還原');
+
+    // --- padding-hack 這邊必須被 reset ---
+    const hackHtml = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'substack-padding-hack-image.html'),
+      'utf8'
+    );
+    const hackDom = new JSDOM(hackHtml, { runScripts: 'outside-only' });
+    const hw = hackDom.window;
+    hw.__JRead = { state: {}, MSG: {} };
+    hw.eval(DETECTOR_SRC);
+    hw.eval(CLEANER_SRC);
+    const hackDet = hw.__JRead.detector.detect();
+    assert.ok(hackDet);
+    const hackWrap = hw.document.querySelector('.padding-hack-wrapper');
+    const hackImg = hw.document.querySelector('.hack-img');
+    assert.ok(hackWrap && hackImg);
+    const hackWrapBefore = hackWrap.getAttribute('style');
+    const hackImgBefore = hackImg.getAttribute('style');
+
+    const hackHidden = hw.__JRead.cleaner.clean(hackDet.el);
+    try {
+      // padding-hack container：padding-bottom 被 reset 成 0（jsdom 可能 serialize 為 "0" 或 "0px"）
+      assert.match(hackWrap.style.getPropertyValue('padding-bottom'), /^0(?:px)?$/,
+        'padding-hack container 的 padding-bottom 應被 reset 為 0 / 0px');
+      assert.strictEqual(hackWrap.style.getPropertyPriority('padding-bottom'), 'important',
+        'padding-bottom reset 必須帶 !important（贏過原站 stylesheet）');
+      // img 被改成 static，不再佔 absolute
+      assert.strictEqual(hackImg.style.getPropertyValue('position'), 'static',
+        'padding-hack 內的 img 應被改成 static，讓它依 intrinsic size 自然流版');
+      assert.strictEqual(hackImg.style.getPropertyPriority('position'), 'important',
+        'position: static 必須帶 !important');
+      // top/left/right/bottom 被清
+      assert.strictEqual(hackImg.style.top, '', 'img top 應被清');
+      assert.strictEqual(hackImg.style.left, '', 'img left 應被清');
+    } finally {
+      hw.__JRead.cleaner.restore(hackHidden);
+    }
+    // 還原後 container padding-bottom 回到 56.25%，img position 回到 absolute
+    // （字串比較太嚴——jsdom 會把 `top: 0` serialize 成 `top: 0px`、property 順序也可能重排，
+    // 所以只驗語意等價而非完整字串）
+    assert.strictEqual(hackWrap.style.paddingBottom, '56.25%',
+      'restore 後 padding-hack 容器 padding-bottom 應回到 56.25%');
+    assert.strictEqual(hackWrap.style.getPropertyPriority('padding-bottom'), '',
+      'restore 後 padding-bottom 不應殘留 !important');
+    assert.strictEqual(hackImg.style.position, 'absolute',
+      'restore 後 img position 應回到 absolute');
+    assert.strictEqual(hackImg.style.getPropertyPriority('position'), '',
+      'restore 後 img position 不應殘留 !important');
+  });
+
   it('restore() 後 observer disconnect，新 append 不再被攔截', async () => {
     NS.cleaner.restore(hidden);
     hidden = [];  // 避免 afterEach 重複 restore

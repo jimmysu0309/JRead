@@ -509,6 +509,108 @@
     }
   }
 
+  // ---- 媒體 placeholder pattern：區分 padding-hack vs 正規 aspect-ratio ---
+  // 兩種常見媒體容器模式：
+  //   A) padding-hack（Substack / Medium）：
+  //      `<div style="position:relative; padding-bottom: 56.25%;">
+  //         <img style="position:absolute; inset:0; width:100%; height:100%;">`
+  //      用 padding-bottom 撐 16:9 空間，img 絕對覆蓋。閱讀模式下我們重排版、
+  //      img 可能脫離原本的布局邏輯，padding 留著 = 主圖下方一大片空白。
+  //   B) 純 aspect-ratio（Engadget / 新世代 CSS）：
+  //      `<div style="aspect-ratio: 16/9;"><img style="position:absolute; inset:0; w/h:100%">`
+  //      容器 padding-bottom 為 0，完全靠 `aspect-ratio` 撐高度，img 一樣
+  //      絕對覆蓋。閱讀模式下若強行 reset `aspect-ratio: auto`，容器高度
+  //      歸零、img 雖然仍 absolute 渲染但 flow 內看不到 → 主圖消失（v0.6.13
+  //      在 Engadget 實測到）。
+  //
+  // v0.6.13 之前 styler 有一條 `*:has(> img) { padding-bottom: 0; aspect-ratio: auto }`
+  // 對 A 沒問題、對 B 會破。CSS :has() 看不到 computed padding 值，無法在樣式
+  // 層區分兩者——搬到 cleaner runtime：
+  //   - 計算 parent 的 computed padding-bottom 與 width 比例
+  //   - 比例 > 20% 才視為 hack、reset padding-bottom 並把 media 從 absolute
+  //     解放為 static
+  //   - 否則（包含純 aspect-ratio 容器）完全不碰
+  //
+  // 通則性：僅以「padding-bottom / width 比例」為結構特徵，不綁任何 hostname
+  // 或 class。
+  function resetMediaPlaceholderPadding(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const resets = [];
+    const visited = new WeakSet();
+    for (const media of articleEl.querySelectorAll('img, picture, video')) {
+      const parent = media.parentElement;
+      if (!parent || parent === articleEl) continue;
+      if (visited.has(parent)) continue;
+      visited.add(parent);
+      if (isInPreserved(parent) && parent.matches && parent.matches('figcaption')) continue;
+
+      const mediaCs = window.getComputedStyle(media);
+      if (mediaCs.position !== 'absolute') continue;
+
+      const pCs = window.getComputedStyle(parent);
+      // 先讀 inline string（jsdom 不解析 % → px，但原站多半走 stylesheet、
+      // 少數 hack 寫在 inline）。real Chrome 下 computed 已 resolve 成 px。
+      let isHack = false;
+      const inlinePb = parent.style && parent.style.paddingBottom;
+      if (inlinePb && /%$/.test(inlinePb) && parseFloat(inlinePb) > 20) isHack = true;
+      if (!isHack) {
+        const pbPx = parseFloat(pCs.paddingBottom) || 0;
+        const wPx = parseFloat(pCs.width) || 0;
+        if (pbPx > 0 && wPx > 0 && pbPx / wPx > 0.2) isHack = true;
+      }
+      if (!isHack) continue;
+
+      resets.push({
+        kind: 'placeholder-parent',
+        el: parent,
+        prevPaddingBottom: parent.style.paddingBottom,
+        prevPaddingBottomPriority: (parent.style.getPropertyPriority && parent.style.getPropertyPriority('padding-bottom')) || ''
+      });
+      parent.style.setProperty('padding-bottom', '0', 'important');
+
+      resets.push({
+        kind: 'placeholder-media',
+        el: media,
+        prevPosition: media.style.position,
+        prevPositionPriority: (media.style.getPropertyPriority && media.style.getPropertyPriority('position')) || '',
+        prevTop: media.style.top,
+        prevLeft: media.style.left,
+        prevRight: media.style.right,
+        prevBottom: media.style.bottom
+      });
+      // 把 media 從 absolute 解放，讓它照自己的 intrinsic 尺寸流在原位
+      // （styler 那邊會套 max-width:100% + height:auto）
+      media.style.setProperty('position', 'static', 'important');
+      media.style.removeProperty('top');
+      media.style.removeProperty('left');
+      media.style.removeProperty('right');
+      media.style.removeProperty('bottom');
+    }
+    hidden.__mediaResets = resets;
+  }
+
+  function restoreMediaResets(hiddenEls) {
+    const resets = hiddenEls && hiddenEls.__mediaResets;
+    if (!Array.isArray(resets)) return;
+    for (const item of resets) {
+      const { el, kind } = item;
+      if (!el || !el.style) continue;
+      if (kind === 'placeholder-parent') {
+        el.style.removeProperty('padding-bottom');
+        if (item.prevPaddingBottom) {
+          el.style.setProperty('padding-bottom', item.prevPaddingBottom, item.prevPaddingBottomPriority || '');
+        }
+      } else if (kind === 'placeholder-media') {
+        el.style.removeProperty('position');
+        if (item.prevPosition) el.style.setProperty('position', item.prevPosition, item.prevPositionPriority || '');
+        if (item.prevTop) el.style.top = item.prevTop;
+        if (item.prevLeft) el.style.left = item.prevLeft;
+        if (item.prevRight) el.style.right = item.prevRight;
+        if (item.prevBottom) el.style.bottom = item.prevBottom;
+      }
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -588,6 +690,8 @@
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
       // 偵測到「某 child 已被 hide」的條件
       collapseGridWithHiddenCell(articleEl, hidden);
+      // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
+      resetMediaPlaceholderPadding(articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
       startWatchingDynamicAppends(articleEl);
       return hidden;
@@ -599,6 +703,7 @@
      */
     restore(hiddenEls) {
       stopWatchingDynamicAppends();
+      restoreMediaResets(hiddenEls);
       restoreCollapsed(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {

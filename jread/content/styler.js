@@ -135,17 +135,13 @@ html.${HTML_CLASS} body {
   width: auto !important;
   max-width: 100% !important;
 }
-/* 破 aspect-ratio placeholder hack：Substack / Medium 用
-   'position: relative; padding-bottom: 56.25%' 為圖片預留空間（img absolute
-   覆蓋）。閱讀模式下 img 變 static，padding 留著 = 視覺留白。
-   只 reset 含 img/picture/video 的容器的 padding-bottom / aspect-ratio，
-   其他樣式不動。 */
-[${ARTICLE_ATTR}="1"] *:has(> img),
-[${ARTICLE_ATTR}="1"] *:has(> picture),
-[${ARTICLE_ATTR}="1"] *:has(> video) {
-  padding-bottom: 0 !important;
-  aspect-ratio: auto !important;
-}
+/* 注意：aspect-ratio / padding-bottom 的 placeholder hack 破解改由
+   cleaner.resetMediaPlaceholderPadding 在 runtime 處理——因為 CSS :has() 無法
+   區分「padding-bottom hack（Substack/Medium 類）」與「純 aspect-ratio
+   容器（Engadget 類 aspect-ratio: 16/9 + img absolute inset:0）」：前者
+   padding 留著會造成空白、需 reset；後者 aspect-ratio 是容器撐高的唯一來源、
+   被 reset 就會把圖壓成 0 高度。runtime 檢查 computed padding-bottom 比例才
+   分得出來，CSS level 做不到。 */
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
