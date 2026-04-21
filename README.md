@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.21（`hideInsideArticleButtonClusters` 內文保護改為「路徑判斷」——button 內部的 `<p>` 不算內文。修 Medium action bar（clap/Listen/Share/More）把 button label 包成 `<p>` 誤觸發保護跳過的漏網，真正解決「照片上方兩條橫線」artifact；正文段落 wrapper 仍保護）
+**目前版本**：v0.6.22（`hideDialogs` 的 `DIALOG_SEL` 加入 `[role="tooltip"]`——ARIA UI chrome 語意非正文；修 Medium「Member-only story」付費徽章用 `role="tooltip"` 包裝的場景；既有 dialog/alertdialog/aria-modal 同質延伸）
 
 ---
 

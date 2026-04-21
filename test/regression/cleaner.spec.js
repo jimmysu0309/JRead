@@ -795,6 +795,56 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 role="tooltip" 元素被 hide（ARIA UI-chrome 語意非正文；修 Medium Member-only 徽章）', () => {
+    // Medium 實測：Member-only 徽章（svg sparkle + "Member-only story" 文字）
+    // 最外層包 `<div class="bi" role="tooltip">`——ARIA 規範語意為「懸停/
+    // 聚焦時顯示的輔助說明」純 UI chrome，不屬於正文。hideDialogs 擴展
+    // DIALOG_SEL 加入 `role="tooltip"`——既有 dialog / alertdialog / aria-
+    // modal 路徑同質延伸、整個 tooltip wrapper 一次 hide。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'medium-member-only-tooltip.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：role="tooltip" 外層整塊被 hide
+      const tooltip = w.document.getElementById('member-only-tooltip');
+      assert.ok(tooltip);
+      assert.strictEqual(tooltip.dataset.jreadHidden, '1',
+        'role="tooltip" 外層 wrapper 應被 hideDialogs 命中 hide');
+
+      // 核心斷言 2：標題 / 副標 / 作者 meta / 主圖 / 主文內容保留
+      const h1 = w.document.querySelector('h1');
+      const h2 = w.document.querySelector('.subtitle');
+      const meta = w.document.querySelector('.post-meta');
+      const fig = w.document.getElementById('hero-figure');
+      assert.notStrictEqual(h1.dataset.jreadHidden, '1', '標題保留');
+      assert.notStrictEqual(h2.dataset.jreadHidden, '1', '副標保留');
+      assert.notStrictEqual(meta.dataset.jreadHidden, '1', '作者 meta 保留');
+      assert.notStrictEqual(fig.dataset.jreadHidden, '1', '主圖保留');
+      assert.ok(h1.textContent.includes('Monochrome Dreams'), '標題文字完整');
+      assert.ok(meta.textContent.includes('Retro Tech Show'), '作者名完整');
+
+      // 主文標記
+      const allP = w.document.querySelectorAll('article > p');
+      let bodyFound = false;
+      for (const p of allP) {
+        if (p.textContent.includes('MEDIUM_MEMBER_BODY_MARK')) bodyFound = true;
+      }
+      assert.ok(bodyFound, '主文內容 MEDIUM_MEMBER_BODY_MARK 必須保留');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內所有 <hr> 元素一律 hide（修 Medium 類 post-header 下方「照片上方多出兩條線」artifact）', () => {
     // Medium 實測：post-header（Member-only 標籤 + 標題 + 副標 + 作者 meta）
     // 下方接 1-2 條 <hr> 分隔線，再接首圖 figure——reader mode 卡片排版下

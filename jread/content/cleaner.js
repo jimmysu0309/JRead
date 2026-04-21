@@ -77,13 +77,20 @@
     el.style.display = 'none';
   }
 
-  // ---- 任何位置：ARIA dialog / modal -------------------------------------
-  // 結構性通則：W3C ARIA 定義 role="dialog" / "alertdialog" 與 aria-modal="true"
-  // 是「對話框/彈窗」的語意標記，依規範**絕不會**出現在正文流程裡——凡帶此語意
-  // 都是訂閱彈窗、登入提示、cookie 同意、付費牆 overlay 等雜訊。
-  // Substack 的 .subscribeDialog 就是帶 role="dialog" 的 position:absolute 元素，
-  // 嵌在 <article> 內部，傳統 fixed/ancestor-sibling 規則都漏掉。
-  const DIALOG_SEL = '[role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+  // ---- 任何位置：ARIA UI-chrome roles ------------------------------------
+  // 結構性通則：W3C ARIA 定義的 UI chrome 語意標記，依規範**絕不會**出現在
+  // 正文流程裡——凡帶此語意都是對話框/彈窗/懸停提示等 UI chrome 雜訊。
+  //   - role="dialog" / "alertdialog" / aria-modal="true"：訂閱彈窗、登入
+  //     提示、cookie 同意、付費牆 overlay。Substack 的 .subscribeDialog 就是
+  //     嵌在 <article> 內部的 role="dialog"，傳統 fixed/ancestor-sibling 漏掉。
+  //   - role="tooltip"：ARIA 規範語意為「懸停/聚焦時顯示的輔助說明」，純
+  //     UI chrome、非正文。Medium 的「Member-only story」付費徽章就包在
+  //     `<div role="tooltip">` 裡，外觀是 inline-flex 雙 border 徽章——
+  //     在 reader mode 下屬於不提供閱讀價值的訂閱提示，hide 之。若有站點
+  //     把正文縮寫/術語說明包在 role=tooltip（ARIA 允許但少見），閱讀模式
+  //     下損失僅輔助說明、主文仍完整，可接受。
+  const DIALOG_SEL =
+    '[role="dialog"], [role="alertdialog"], [role="tooltip"], [aria-modal="true"]';
 
   function hideDialogs(articleEl, hidden) {
     const dialogs = document.querySelectorAll(DIALOG_SEL);
