@@ -11,7 +11,7 @@
   // ---- Keyword 名單（主文內雜訊 heuristic） -----------------------------
   // 邊界檢查：class/id 通常是 kebab-case 或 snake_case，用非字母數字作邊界，
   // 避免 sharepoint / headset 這類誤殺。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|newsletter|signup|promo|promotion|advertisement|sponsored|call-to-action|cta|related-articles|recommended|read-more|share|social)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|newsletter|signup|promo|promotion|advertisement|sponsored|call-to-action|cta|related-articles|recommended|read-more|share|social|comment|comments|discussion|disqus)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
