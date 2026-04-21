@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+  Engadget 主圖 pattern 最小重現：
+    <figure>
+      <div style="aspect-ratio: 16/9;">    ← 純 aspect-ratio、無 padding-bottom
+        <img style="position:absolute; inset:0; width:100%; height:100%;">
+      </div>
+      <figcaption>NASA</figcaption>
+    </figure>
+
+  v0.6.13 之前 styler 有 `:has(> img) { aspect-ratio: auto }` 一律清 aspect-ratio，
+  結果 Engadget 主圖容器高度歸零、img 絕對覆蓋看不到 → 主圖消失。
+  v0.6.14 修法：cleaner runtime 用 padding-bottom 比例區分兩種 pattern，純
+  aspect-ratio 容器不動、只有 padding-bottom > 20% 的 hack 才 reset。
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>Artemis II commander shares a remarkable video</title></head>
+<body>
+  <article>
+    <h1>Artemis II commander shares a remarkable video of Earth vanishing behind the Moon</h1>
+    <p>Reid Wiseman can be forgiven for not just putting his iPhone 17 Pro Max away and enjoying the view.</p>
+    <figure class="relative col-body mb-4">
+      <div class="aspect-ratio-wrapper" style="position: relative; aspect-ratio: 1.7777777777777777; padding-bottom: 0;">
+        <img class="object-cover object-center"
+             src="https://example.test/nasa-earthset.jpg"
+             style="position: absolute; height: 100%; width: 100%; left: 0; top: 0; right: 0; bottom: 0;">
+      </div>
+      <figcaption>NASA</figcaption>
+    </figure>
+    <p>We've seen some astonishing photos of an Earthset — the Earth setting behind the Moon — from the Artemis II crew's history-making trip around our planet's closest neighbor.</p>
+    <p>While mission specialist Christina Koch was using a Nikon camera to snap photos, Reid Wiseman, the mission's commander, shared a remarkable video of that same phenomenon.</p>
+    <p>The short clip offers a mesmerizing perspective of our home planet from the far side of the Moon.</p>
+  </article>
+</body>
+</html>

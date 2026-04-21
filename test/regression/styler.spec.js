@@ -93,18 +93,19 @@ describe('styler — 骨架與可逆性', () => {
     assert.ok(/\[data-jread-ancestor="1"\][^}]*\{[^}]*position:\s*static/.test(css));
   });
 
-  it('CSS 含 aspect-ratio placeholder 破解（:has(> img/picture/video) padding-bottom:0）', () => {
+  // v0.6.14 起 styler **不再**有 `*:has(> img/picture/video)` 這條 blanket
+  // reset——CSS level 無法區分「padding-bottom hack（Substack/Medium）」與
+  // 「純 aspect-ratio 容器（Engadget 類 `aspect-ratio: 16/9` + img absolute
+  // inset:0）」，誤傷後者會把主圖高度歸零。改由 cleaner.resetMediaPlaceholderPadding
+  // 於 runtime 用 padding-bottom / width 比例判別再決定是否 reset。
+  it('CSS 不得含 *:has(> img) padding-bottom:0 blanket rule（會誤傷純 aspect-ratio 容器）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(css.includes(':has(> img)'), 'CSS 必須含 :has(> img)');
-    assert.ok(css.includes(':has(> picture)'));
-    assert.ok(css.includes(':has(> video)'));
-    assert.ok(
-      /:has\(>\s*img\)[\s\S]*?\{[^}]*padding-bottom:\s*0/.test(css) ||
-      /:has\(>\s*img\)[\s\S]*?\{[^}]*aspect-ratio:\s*auto/.test(css),
-      'aspect-ratio placeholder 破解規則必須套 padding-bottom: 0 與 aspect-ratio: auto'
-    );
+    assert.ok(!/:has\(>\s*img\)[\s\S]{0,120}padding-bottom:\s*0/.test(css),
+      'styler 不可注入針對 :has(> img) 的 padding-bottom: 0 blanket rule——會把 Engadget 類純 aspect-ratio 容器壓成 0 高度');
+    assert.ok(!/:has\(>\s*img\)[\s\S]{0,120}aspect-ratio:\s*auto/.test(css),
+      'styler 不可注入針對 :has(> img) 的 aspect-ratio: auto blanket rule——同樣會把純 aspect-ratio 容器打壞');
   });
 
   it('CSS 圖片容器限寬：img/video/picture max-width: 100% 且 height: auto', () => {

@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.13`（cleaner `collapseGridWithHiddenCell` 擴展：collapse container 後，對 visible direct children 強制 `flex-grow:0; flex-shrink:0; flex-basis:auto; width:auto; max-width:none; grid-column:auto` 清除 Bootstrap `col-md-*` / Tailwind `col-span-*` 等 utility class 殘留的 flex/width 限制。修 Lawfaremedia 類 Bootstrap row + col-md-8/col-md-4 pattern 下，row collapse 後 col-md-8 仍套 `flex:0 0 66.67%; max-width:66.67%` 把主文擠在左半邊的問題）
+`0.6.14`（styler 移除過激的 `*:has(> img/picture/video) { padding-bottom:0; aspect-ratio:auto }` blanket rule；改由 cleaner 新增 `resetMediaPlaceholderPadding`，於 runtime 用 padding-bottom/width 比例區分「padding-bottom hack」（Substack/Medium，> 20% 才 reset）與「純 aspect-ratio 容器」（Engadget 類 `aspect-ratio: 16/9` + img absolute inset:0，不動）。修 Engadget 類純 aspect-ratio 容器被誤 reset 為 `aspect-ratio: auto` 後容器高歸零、主圖消失的問題）
 
 ---
 
