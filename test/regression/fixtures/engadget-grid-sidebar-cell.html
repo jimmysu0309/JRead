@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Artemis II commander shares remarkable video - Engadget</title>
+  <meta property="og:title" content="Artemis II commander shares remarkable video">
+</head>
+<body>
+  <article id="engadget-article">
+    <!-- header + hero（非 grid，正常 block） -->
+    <header>
+      <h1>Artemis II commander shares a remarkable video of Earth vanishing behind the Moon</h1>
+      <h2>Reid Wiseman can be forgiven for not just putting his iPhone 17 Pro Max away and enjoying the view.</h2>
+    </header>
+
+    <!-- 主文 + 廣告側欄的 2-col grid。AdBlocker（或 cleaner keyword）
+         hide 掉右欄廣告後，grid cell 的 300px 寬度仍強制保留，主文被
+         擠成窄欄。修法：collapseGridWithHiddenCell 偵測到有 hidden child
+         後把 container 退成 block + 清 grid-template-columns。 -->
+    <div class="grid-layout" id="layout-grid" style="display: grid; grid-template-columns: [main-start] 1fr [main-end right-start] 300px [right-end];">
+      <div class="col-main" id="main-col">
+        <p>ENGADGET_MAINTEXT_MARK We've seen some astonishing photos of an Earthset — the Earth setting behind the Moon — from the Artemis II crew's history-making trip around our planet's closest neighbor. Now, Reid Wiseman, the mission's commander, has shared a remarkable video of that same phenomenon.</p>
+        <p>More body text padding padding padding to make sure article passes detector thresholds.</p>
+      </div>
+      <!-- 右欄廣告：class 含 `-ad` pattern，被 cleaner hideInsideArticleByKeyword 命中 -->
+      <div class="col-right sidebar-ad-box" id="right-col">
+        <div>Ad Content (will be hidden by keyword heuristic)</div>
+      </div>
+    </div>
+
+    <!-- 對照：intentional 兩欄圖文 grid，沒有 hidden child。collapse
+         規則不得誤觸——保留 grid 讓圖文並排。 -->
+    <div class="intentional-grid" id="intentional-grid" style="display: grid; grid-template-columns: 1fr 1fr;">
+      <div class="col-a" id="intentional-col-a">
+        <p>INTENTIONAL_LEFT_MARK left column paragraph text with enough length to look like real content.</p>
+      </div>
+      <div class="col-b" id="intentional-col-b">
+        <p>INTENTIONAL_RIGHT_MARK right column paragraph text also with real content.</p>
+      </div>
+    </div>
+  </article>
+</body>
+</html>
