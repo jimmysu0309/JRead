@@ -559,6 +559,82 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 grid / flex-row container 若有 child 被 hide → 退化成 block 並清 grid-template（修 AdBlocker 擋廣告後殘留的空欄位壓擠主文）', () => {
+    // Engadget 實測：`<article>` 內有個 display:grid 2-col container，
+    // grid-template-columns: `[main-start] 1fr [main-end right-start] 300px`。
+    // AdBlocker（或 cleaner 的 ad- keyword heuristic）hide 掉右欄廣告後，
+    // grid cell 的 300px 寬度硬性保留，主文被擠成 196px 窄欄。修法：進
+    // reader mode 時掃 article 內 display:grid / flex-row container，若有
+    // direct child 被 hide（data-jread-hidden="1" 或 display:none），給
+    // container 加 inline `display:block; grid-template-columns:none` 退化
+    // 成自然 block layout，主文回到卡片自然寬度。通則對付任何站點用 grid/
+    // flex 做「主文+廣告側欄」layout 的情境，非站點特判。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'engadget-grid-sidebar-cell.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 必須命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      // 前提斷言：右欄廣告（class 含 ad-）被 keyword heuristic hide
+      const rightCol = w.document.getElementById('right-col');
+      assert.ok(rightCol);
+      assert.strictEqual(rightCol.dataset.jreadHidden, '1',
+        '右欄廣告（class 含 ad- pattern）應被 hideInsideArticleByKeyword hide');
+
+      // 核心斷言 1：有 hidden child 的 grid container 被 collapse
+      const adGrid = w.document.getElementById('layout-grid');
+      assert.ok(adGrid);
+      assert.strictEqual(adGrid.dataset.jreadCollapsed, '1',
+        'grid container 有 hidden child 時應被標 data-jread-collapsed="1"');
+      assert.strictEqual(adGrid.style.getPropertyValue('display'), 'block',
+        'collapsed container 的 inline display 應為 block');
+      assert.strictEqual(adGrid.style.getPropertyPriority('display'), 'important',
+        'inline display:block 應 !important（贏過原站 grid rule）');
+      assert.strictEqual(adGrid.style.getPropertyValue('grid-template-columns'), 'none',
+        'collapsed container 的 grid-template-columns 應清為 none');
+
+      // 核心斷言 2：主欄未被動
+      const mainCol = w.document.getElementById('main-col');
+      assert.ok(mainCol);
+      assert.notStrictEqual(mainCol.dataset.jreadHidden, '1',
+        '主欄不得被 hide');
+      assert.ok(mainCol.textContent.includes('ENGADGET_MAINTEXT_MARK'));
+
+      // 核心斷言 3：intentional 多欄 grid（無 hidden child）不被 collapse
+      const intentional = w.document.getElementById('intentional-grid');
+      assert.ok(intentional);
+      assert.notStrictEqual(intentional.dataset.jreadCollapsed, '1',
+        'intentional 多欄 grid（無 hidden child）不得被誤 collapse');
+      // fixture 原本 inline 就設 display:grid / grid-template-columns: 1fr 1fr
+      // 未觸發 collapse 時應保持原值（沒被改動）
+      assert.strictEqual(intentional.style.getPropertyValue('display'), 'grid',
+        '未觸發 collapse 的 grid 原 inline display 應保持為 grid');
+      assert.strictEqual(intentional.style.getPropertyPriority('display'), '',
+        '未觸發 collapse 的 grid 原 inline display 不得被加 !important priority');
+      assert.strictEqual(intentional.style.getPropertyValue('grid-template-columns'), '1fr 1fr',
+        '未觸發 collapse 的 grid-template-columns 應保持原值');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+
+      // 核心斷言 4：restore 後所有 inline style 都被 revert
+      const adGrid = w.document.getElementById('layout-grid');
+      assert.strictEqual(adGrid.style.getPropertyValue('display'), 'grid',
+        'restore 後原 inline display:grid 應恢復');
+      assert.strictEqual(adGrid.style.getPropertyValue('grid-template-columns'),
+        '[main-start] 1fr [main-end right-start] 300px [right-end]',
+        'restore 後原 inline grid-template-columns 應恢復');
+      assert.strictEqual(adGrid.dataset.jreadCollapsed, undefined,
+        'restore 後 data-jread-collapsed attribute 應被移除');
+    }
+  });
+
   it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {
     // Dwarkesh (Substack) YouTube embed 實測：cross-origin iframe 的
     // textContent = ""（跨域讀不到內部 DOM）+ querySelector 讀不到內部媒體

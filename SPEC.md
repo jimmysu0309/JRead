@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.11`（styler 注入 `[data-jread-hidden="1"] { display: none !important }` stylesheet rule，擋站點 JS scroll/timer handler 主動 `el.style.display = 'block'` 覆寫 cleaner hide 過元素的 inline display。修商周文章底部 `.postnav.fixed` / `.postnav.bottom` 上下一篇 pager 在滾動後被 re-show 的問題）
+`0.6.12`（cleaner 新增 `collapseGridWithHiddenCell`：主文內 display:grid / flex-row container 若有 direct child 被 hide → 給 container 加 inline `display:block; grid-template-columns:none`，退化成自然 block。修 Engadget 類「主文 + 廣告側欄」CSS Grid layout 下 AdBlocker 清掉廣告內容但 grid cell 300px 寬度仍保留、主文被擠成 196px 窄欄的問題）
 
 ---
 
@@ -116,6 +116,10 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
   - 固定在 viewport 下半區 → 多半是底部彈窗 / cookie / 訂閱 CTA
 - `iframe` 中包含第三方廣告網域來源 → 隱藏
 - 已知社群分享按鈕模式：連續 3+ 個 `a[href*="twitter.com|facebook.com|linkedin.com..."]` → 摺疊
+
+### 主文內 layout 殘留空欄（結構性通則）
+
+主文內若有 `display: grid` 或 `display: flex; flex-direction: row` 的容器，且其 direct children 中有 ≥ 1 個被 hide（`data-jread-hidden="1"` 或 `display: none` / `visibility: hidden`），代表原站 layout 設計了 N 欄但其中一欄內容已被清空——cleaner 給 container 加 inline `display: block !important; grid-template-columns: none !important` 等規則退化成自然 block。典型場景：Engadget / NYT / 許多新聞站用 CSS Grid 做「主文 + 廣告側欄」layout，AdBlocker 清廣告後殘留的 grid cell 空間壓擠主文。intentional 多欄圖文（無 hidden child）不會觸發。
 
 ### 主文內雜訊（跨站通用 keyword heuristic）
 

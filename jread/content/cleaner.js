@@ -355,6 +355,109 @@
     }
   }
 
+  // ---- 主文內：廣告位 grid / flex cell 被 AdBlocker 清後殘留的欄位寬度 ----
+  // 結構特徵（非站點特判）：原站用 CSS Grid / Flex 做「主文 + 廣告側欄」多
+  // 欄 layout，AdBlocker（或站點自身）把廣告元素 hide 後，**grid cell / flex
+  // child 佔的寬度還在**——grid-template-columns 仍定義 300px 給右欄，主文
+  // 被擠成窄欄。Engadget 實測：article 內 grid-template-columns = `[main-
+  // start] 196px [main-end right-start] 300px [right-end]`，右欄 ad 被擋、
+  // 但 300px 硬性保留，主文只剩 196px。
+  //
+  // 通則：若 display: grid / flex 的 container 有「某個 direct child 被隱藏
+  // （data-jread-hidden="1" 或 rect 0×0）」，代表原設計中的某一欄空了——
+  // 把 container 退化成 block + 清 grid-template-columns，讓主文回到自然
+  // block 寬度。
+  //
+  // 為何必須走 JS 而非 CSS：
+  // - CSS selector 無法條件性判斷 computed display:grid（沒有 pseudo-class
+  //   on computed style）
+  // - `*:has(> [data-jread-hidden="1"])` 太廣（所有 container 都中），且 CSS
+  //   無法分辨那是「側欄被清」還是「有意 hide 的 inline decoration」
+  //
+  // 邊界保護（避免誤殺 intentional 多欄）：
+  // - 只處理 grid 或 flex-row container（flex-column / inline 不動）
+  // - 要求 hidden child 的 rect.width / rect.height 反映它「曾佔 layout 空間」
+  //   （rect.width > 0 或者 dataset.jreadHidden="1"）
+  // - 保留 container 原 inline display / grid-template 讓 restore 還原
+  const COLLAPSE_ATTR = 'data-jread-collapsed';
+
+  function collapseGridWithHiddenCell(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const collapsed = [];
+    // 掃 article 內所有可能的 grid / flex-row container
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      const cs = window.getComputedStyle(el);
+      const isGrid = cs.display === 'grid' || cs.display === 'inline-grid';
+      const isFlexRow = (cs.display === 'flex' || cs.display === 'inline-flex') &&
+        (cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse');
+      if (!isGrid && !isFlexRow) continue;
+      const children = Array.from(el.children);
+      if (children.length < 2) continue;
+      // 檢查是否有 direct child 被 hide（我們或 AdBlocker）
+      let hasHiddenChild = false;
+      for (const c of children) {
+        if (c.dataset && c.dataset.jreadHidden === '1') { hasHiddenChild = true; break; }
+        const ccs = window.getComputedStyle(c);
+        if (ccs.display === 'none' || ccs.visibility === 'hidden') { hasHiddenChild = true; break; }
+      }
+      if (!hasHiddenChild) continue;
+      // 記下原 inline style 以便 restore
+      collapsed.push({
+        el,
+        prevDisplay: el.style.display,
+        prevDisplayPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('display')) || '',
+        prevGridTemplateColumns: el.style.gridTemplateColumns,
+        prevGridTemplateColumnsPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('grid-template-columns')) || '',
+        prevGridTemplateRows: el.style.gridTemplateRows,
+        prevGridTemplateRowsPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('grid-template-rows')) || '',
+        prevGridTemplateAreas: el.style.gridTemplateAreas,
+        prevGridTemplateAreasPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('grid-template-areas')) || '',
+        prevFlexDirection: el.style.flexDirection,
+        prevFlexDirectionPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('flex-direction')) || ''
+      });
+      // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
+      // 等 class 本身 specificity 不是 !important，但多欄定義 rule 可能
+      // 有 utility 特殊 priority；保險起見用 important）
+      el.style.setProperty('display', 'block', 'important');
+      el.style.setProperty('grid-template-columns', 'none', 'important');
+      el.style.setProperty('grid-template-rows', 'none', 'important');
+      el.style.setProperty('grid-template-areas', 'none', 'important');
+      if (isFlexRow) {
+        el.style.setProperty('flex-direction', 'column', 'important');
+      }
+      if (el.dataset) el.dataset.jreadCollapsed = '1';
+    }
+    // 把 collapsed 紀錄接到 hidden 陣列尾（共享 restore）——但格式不同，
+    // restore 流程要能識別。為了不動 restore 簽章，存到 hidden.__collapsed
+    // （sidecar array，不是正常 item）。
+    hidden.__collapsed = collapsed;
+  }
+
+  function restoreCollapsed(hiddenEls) {
+    const collapsed = hiddenEls && hiddenEls.__collapsed;
+    if (!Array.isArray(collapsed)) return;
+    for (const item of collapsed) {
+      if (!item || !item.el) continue;
+      const { el } = item;
+      // 把每個 property 恢復到原 inline value + priority（若原本沒設就 removeProperty）
+      const props = [
+        ['display', item.prevDisplay, item.prevDisplayPriority],
+        ['grid-template-columns', item.prevGridTemplateColumns, item.prevGridTemplateColumnsPriority],
+        ['grid-template-rows', item.prevGridTemplateRows, item.prevGridTemplateRowsPriority],
+        ['grid-template-areas', item.prevGridTemplateAreas, item.prevGridTemplateAreasPriority],
+        ['flex-direction', item.prevFlexDirection, item.prevFlexDirectionPriority]
+      ];
+      for (const [name, value, priority] of props) {
+        el.style.removeProperty(name);
+        if (value) el.style.setProperty(name, value, priority || '');
+      }
+      if (el.dataset) delete el.dataset.jreadCollapsed;
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -431,6 +534,9 @@
       hideInsideArticleSidebarColumns(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
+      // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
+      // 偵測到「某 child 已被 hide」的條件
+      collapseGridWithHiddenCell(articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
       startWatchingDynamicAppends(articleEl);
       return hidden;
@@ -442,6 +548,7 @@
      */
     restore(hiddenEls) {
       stopWatchingDynamicAppends();
+      restoreCollapsed(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;
