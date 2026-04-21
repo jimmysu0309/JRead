@@ -756,6 +756,73 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('button cluster 規則：path-check 把「已 jread hide 的祖先」視為 interactive—Medium clap count <p> 包在 role=tooltip 內、tooltip 已被 hideDialogs hide、該 p 不得觸發內文保護', () => {
+    // Medium clyepyy82kxo 實測：clap/Listen/Share/More action bar 內，clap
+    // count "442" 是 `<p>` 外層包 `<div role="tooltip">`（Medium 的 tooltip
+    // wrapper 展示 clap 數字）——v0.6.22 hideDialogs 已 hide tooltip，但
+    // button cluster 規則 querySelector 仍抓到此 p、path-check 沿祖先到
+    // tooltip（不是 interactive）就停 → 過去視為真內文、action bar 被誤
+    // 跳過。修法：路徑經 `data-jread-hidden="1"` 祖先也視為「非真內文」。
+    const html = `<!DOCTYPE html><html><head>
+      <title>medium clap tooltip</title><meta property="og:title" content="medium"></head>
+      <body>
+        <article>
+          <h1>Medium article</h1>
+          <p>Opening paragraph padding padding padding padding padding padding padding padding padding.</p>
+          <div class="action-bar" id="action-bar">
+            <div class="clap-wrap">
+              <button aria-label="clap"><svg></svg></button>
+              <div role="tooltip" id="clap-tooltip">
+                <div class="ba">
+                  <p class="bb">442</p>
+                </div>
+              </div>
+              <button aria-label="responses"><p>10</p></button>
+            </div>
+            <div class="misc-wrap">
+              <button><p>Listen</p></button>
+              <button><p>Share</p></button>
+              <button><p>More</p></button>
+            </div>
+          </div>
+          <p>MEDIUM_CLAP_BODY_MARK Body content padding padding padding padding
+          padding padding padding padding padding padding padding padding padding.</p>
+        </article>
+      </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      // 前提：tooltip 被 hideDialogs 先 hide
+      const tooltip = w.document.getElementById('clap-tooltip');
+      assert.ok(tooltip);
+      assert.strictEqual(tooltip.dataset.jreadHidden, '1',
+        'role="tooltip" 應被 hideDialogs 先命中 hide');
+
+      // 核心：action bar 本體被 hide（path-check 把經 tooltip 的 p 視為非真內文）
+      const bar = w.document.getElementById('action-bar');
+      assert.ok(bar);
+      assert.strictEqual(bar.dataset.jreadHidden, '1',
+        'action bar 應被 button cluster 命中 hide');
+
+      // 主文保留
+      const allP = w.document.querySelectorAll('article > p');
+      let bodyFound = false;
+      for (const p of allP) {
+        if (p.textContent.includes('MEDIUM_CLAP_BODY_MARK')) bodyFound = true;
+      }
+      assert.ok(bodyFound, '主文 MEDIUM_CLAP_BODY_MARK 保留');
+      const h1 = w.document.querySelector('h1');
+      assert.notStrictEqual(h1.dataset.jreadHidden, '1', '標題保留');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('button cluster 規則：非 interactive 內的 <p>（正文段落）仍觸發保護，不得誤殺內文容器', () => {
     // forcing function：若保護條件放得太寬（不論 p 在哪都不算內文），
     // 會誤殺任何「含 p + 2 個 button」的正文 wrapper（例如段落末尾附

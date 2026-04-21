@@ -366,19 +366,32 @@
       // Medium 類站點把 button label 包成 `<p>Listen</p>`、`<p>Share</p>`
       // 等，遞迴 querySelector 找到這些深層 p 會誤觸發內文保護、讓
       // action bar 本體逃過規則。只要 p/heading 從 el 到它的路徑上「不經過」
-      // interactive 節點，才算真正的內文——命中保護跳過；否則（都在
-      // interactive 內部）不觸發保護、繼續走後面判斷。
+      // interactive 或 **已 jread hide 的祖先**，才算真正的內文。
+      //
+      // v0.6.23 加「已 hide 祖先」條件：Medium 的 clap count "442" 包在
+      // `<p>` 外層是 `<div class="bi" role="tooltip">`（同 Member-only
+      // badge pattern）——v0.6.22 hideDialogs 已 hide tooltip，但此 p 仍
+      // 被 querySelector 抓到；path-check 沿祖先鏈只到 tooltip 就停（不是
+      // interactive、但已 hide）→ 過去會把此 p 當真內文、action bar 被誤
+      // 跳過。修法：路徑經過 `data-jread-hidden="1"` 的祖先也視為「已
+      // 處理、不算真內文」，繼續掃下一個候選。
       const contentCandidates = el.querySelectorAll(
         'p, h1, h2, h3, h4, h5, h6, img, picture, video, iframe');
       let hasContentOutsideInteractive = false;
       for (const n of contentCandidates) {
         let p = n.parentElement;
-        let wrappedByInteractive = false;
+        let wrappedByInteractiveOrHidden = false;
         while (p && p !== el) {
-          if (isInteractiveLeaf(p)) { wrappedByInteractive = true; break; }
+          if (isInteractiveLeaf(p)) { wrappedByInteractiveOrHidden = true; break; }
+          if (p.dataset && p.dataset.jreadHidden === '1') {
+            wrappedByInteractiveOrHidden = true; break;
+          }
           p = p.parentElement;
         }
-        if (!wrappedByInteractive) { hasContentOutsideInteractive = true; break; }
+        if (!wrappedByInteractiveOrHidden) {
+          hasContentOutsideInteractive = true;
+          break;
+        }
       }
       if (hasContentOutsideInteractive) continue;
 
