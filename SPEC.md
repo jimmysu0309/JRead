@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.9`（cleaner 擴展 NOISE_KEYWORD_RE 加入 `comment` / `comments` / `discussion` / `disqus` 跨站 CMS 留言區 anchor 慣例，修 Substack / WordPress / Ghost / Disqus 類頁面主文結尾後 `#discussion` 留言區塊未被清掉，reader mode 多出 Discussion heading + 留言表單 + 留言列表）
+`0.6.10`（styler 新增 `figure` / `picture` 強制 `width: auto !important` + `max-width: 100% !important` rule，修商周 `figure.articlephoto` 在 reader mode 下退化成 shrink-to-fit 被 figcaption 單字寬度夾死成 31px、封面圖幾乎看不見）
 
 ---
 
@@ -144,6 +144,7 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 4. 第一個子元素 margin-top: 0（消頂端留白，配合 JS 對深層 firstInk 的 inline margin-top 覆寫）
 5. 圖片 / 影片 max-width: 100%（避免超出卡片寬度）
 6. aspect-ratio placeholder 破解：含 `<img>` / `<picture>` / `<video>` 的容器清 padding-bottom 與 aspect-ratio（專門破 Substack / Medium 的 `padding-bottom: 56.25%` hack）
+7. `figure` / `picture` 強制 `width: auto !important` + `max-width: 100% !important`（v0.6.10 修商周類原站給 figure 固定寬 CSS 在 reader mode 下失效、figure 退化成 shrink-to-fit 被 figcaption 夾死的場景）
 
 ### 僅在「使用者改過預設值」時才注入的 override
 
