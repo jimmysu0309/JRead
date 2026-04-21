@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.14`（styler 移除過激的 `*:has(> img/picture/video) { padding-bottom:0; aspect-ratio:auto }` blanket rule；改由 cleaner 新增 `resetMediaPlaceholderPadding`，於 runtime 用 padding-bottom/width 比例區分「padding-bottom hack」（Substack/Medium，> 20% 才 reset）與「純 aspect-ratio 容器」（Engadget 類 `aspect-ratio: 16/9` + img absolute inset:0，不動）。修 Engadget 類純 aspect-ratio 容器被誤 reset 為 `aspect-ratio: auto` 後容器高歸零、主圖消失的問題）
+`0.6.15`（cleaner 擴展 `collapseGridWithHiddenCell` 新增「grid underfill」觸發條件：主文內 `display: grid` 容器即使**沒有 hidden sibling**，若 visible children 全在同一 row 但寬度總和 < container × 70%，仍退化成 block 並清 grid-template、override children 的 `grid-column/width/max-width`。修 BBC 類用 N-column design system（`grid-template-columns: repeat(24, 1fr)`）、child 明確 `grid-column: 6 / span 12` 只佔中間 12/24 欄、沒 sibling 佔剩餘欄位時主文被壓在中間 50% 寬度的問題）
 
 ---
 

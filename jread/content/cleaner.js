@@ -395,15 +395,54 @@
         (cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse');
       if (!isGrid && !isFlexRow) continue;
       const children = Array.from(el.children);
-      if (children.length < 2) continue;
-      // 檢查是否有 direct child 被 hide（我們或 AdBlocker）
+      if (children.length < 1) continue;
+      // 分類 children：hidden vs visible
       let hasHiddenChild = false;
+      const visibleChildren = [];
       for (const c of children) {
-        if (c.dataset && c.dataset.jreadHidden === '1') { hasHiddenChild = true; break; }
-        const ccs = window.getComputedStyle(c);
-        if (ccs.display === 'none' || ccs.visibility === 'hidden') { hasHiddenChild = true; break; }
+        const isHidden = (c.dataset && c.dataset.jreadHidden === '1') ||
+          (() => {
+            const ccs = window.getComputedStyle(c);
+            return ccs.display === 'none' || ccs.visibility === 'hidden';
+          })();
+        if (isHidden) hasHiddenChild = true;
+        else visibleChildren.push(c);
       }
-      if (!hasHiddenChild) continue;
+      // 條件 A（既有 v0.6.12）：有 hidden sibling → 退化
+      //   要求 children.length >= 2，避免「單 child 的 container 正好 display:none」
+      //   這種無意義情境誤動
+      const triggerHiddenSibling = hasHiddenChild && children.length >= 2 &&
+        visibleChildren.length >= 1;
+      // 條件 B（新）：grid underfill——visible children 全在同一 row 但寬度
+      // 總和 < container 70%，代表 grid 保留大片空白欄位壓擠主文
+      // （BBC 24-col design system 場景：container 用 repeat(24, ...) grid，
+      //  child 明確 `grid-column: 6 / span 12` 只佔中間 12 欄，沒 sibling
+      //  佔剩餘 12 欄——原站設計預期右側放東西但這篇沒放，導致主文被壓窄）
+      //
+      // 僅對 grid 做、不對 flex-row 做：flex-row child 寬度未撐滿 container
+      // 通常是 `justify-content: center/flex-start` 的自然寬度流，不是被
+      // layout 鎖死；grid 則是被 grid-template-columns 明確分配 track。
+      //
+      // 額外保護：
+      // - 只處理單 row grid（visible children top 都相同）——2D grid（gallery
+      //   等）child 跨多 row 時 sum < container 是正常的，不該 collapse
+      // - container 寬度 >= 100 才處理——jsdom 等無 layout engine 環境 rect 全 0
+      //   會自動 skip；極窄 container 也避免雜訊
+      let triggerGridUnderfill = false;
+      if (!triggerHiddenSibling && isGrid && visibleChildren.length >= 1) {
+        const containerRect = el.getBoundingClientRect();
+        if (containerRect.width >= 100) {
+          const firstTop = visibleChildren[0].getBoundingClientRect().top;
+          const allSameRow = visibleChildren.every(c =>
+            Math.abs(c.getBoundingClientRect().top - firstTop) < 5);
+          if (allSameRow) {
+            let sumWidth = 0;
+            for (const c of visibleChildren) sumWidth += c.getBoundingClientRect().width;
+            if (sumWidth < containerRect.width * 0.7) triggerGridUnderfill = true;
+          }
+        }
+      }
+      if (!triggerHiddenSibling && !triggerGridUnderfill) continue;
       // 記下 container 的原 inline style 以便 restore
       const containerSnap = {
         el,
@@ -440,8 +479,7 @@
       // 主文被擠在左 2/3、右邊 200px 空白。
       // 修法：對 visible 的 direct children 強制 `flex: initial` + `max-width:
       // none` + `width: auto`，讓 children 恢復 block 預設「撐滿父寬度」。
-      for (const c of children) {
-        if (c.dataset && c.dataset.jreadHidden === '1') continue;
+      for (const c of visibleChildren) {
         if (!c.style) continue;
         collapsed.push({
           el: c,
