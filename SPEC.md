@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.6`（cleaner 加 MutationObserver 凍結主文祖先鏈：reader mode 下新 append 到祖先鏈的節點一律 remove，補 v0.6.5 detector narrow 只處理初始 snapshot 而 infinite-scroll 捲動後新篇仍被 popIn append 的缺口）
+`0.6.7`（cleaner action-row shell short-circuit：direct children 全 wrapper 但自身 textContent < 20 chars 時不走 v0.6.2 ratio 排除，修 Medium 類「兩條橫線夾空圖示殼」artifact；ChinaTalk byline 因作者+日期文字 ≥ 20 仍保留）
 
 ---
 

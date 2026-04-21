@@ -212,13 +212,27 @@
       // 0% 互動比例——若不排除會整塊 hide、把作者/日期一起藏掉；加此排除後
       // 外層不 hide，內層 button group（直接子多為 button）仍會被正確命中
       // 單獨 hide，作者/日期保留。
+      //
+      // Shell short-circuit（v0.6.7）：若自身 textContent < 20 chars，仍視為
+      // 空殼 action-bar、不跳過。理由：Medium 把 clap / comment / bookmark /
+      // more 各包一層 div，外層 action-bar direct children 全是 0% interactive
+      // 的 wrapper，但 textContent 幾乎空（純 icon、clap count 可能 0 / 未
+      // 登入不顯示）；這類「border-top + border-bottom 的空殼」在閱讀模式下
+      // 遺留兩條橫線夾圖示的 artifact（2026-04-21 ddsakura medium 實測）。
+      // 差異點：ChinaTalk byline wrapper 含 author+date 文字 ~30 chars ≥ 20，
+      // 走原排除保留不動；Medium outer shell textContent 短，放行走後續 hide
+      // 邏輯（iconCount、textLen 等仍會把關）。
       const directChildren = Array.from(el.children);
       if (directChildren.length > 0) {
         const interactiveCount = directChildren.filter(c =>
           c.tagName === 'BUTTON' || c.tagName === 'SVG' ||
           (c.getAttribute && c.getAttribute('role') === 'button')
         ).length;
-        if (interactiveCount / directChildren.length < 0.5) continue;
+        if (interactiveCount / directChildren.length < 0.5) {
+          const selfText = (el.textContent || '').trim();
+          if (selfText.length >= 20) continue;
+          // 文字極短：shell short-circuit，繼續走後面 iconCount/textLen 檢查
+        }
       }
 
       const text = (el.textContent || '').trim();
