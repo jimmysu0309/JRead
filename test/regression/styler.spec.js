@@ -107,11 +107,43 @@ describe('styler — 骨架與可逆性', () => {
     );
   });
 
-  it('CSS 圖片容器限寬：img/video/iframe/picture max-width: 100%', () => {
+  it('CSS 圖片容器限寬：img/video/picture max-width: 100% 且 height: auto', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(/img[\s\S]*?\{[^}]*max-width:\s*100%/.test(css));
+    assert.ok(/img[\s\S]*?\{[^}]*height:\s*auto/.test(css),
+      'img/video/picture 有 intrinsic 尺寸，height: auto 能按比例算');
+  });
+
+  // v0.6.4 修法：iframe 無 intrinsic 尺寸，height: auto 會掉回 HTML spec
+  // 預設 150px、打壞 wp-embed / Substack / Medium 等 aspect-ratio wrapper
+  // 模式（wrapper 維 16:9，iframe position:absolute 填滿）。因此 iframe 單獨
+  // 一條 rule，只 cap 寬度、絕不設 height。
+  it('iframe 有獨立 rule：max-width: 100% 且絕不設 height: auto', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    const m = css.match(/\[data-jread-active="1"\]\s+iframe\s*\{([^}]*)\}/);
+    assert.ok(m, 'iframe 必須有獨立 rule block（不得與 img/video/picture 共用 height: auto）');
+    const body = m[1];
+    assert.ok(/max-width:\s*100%/.test(body), 'iframe rule 必須 cap 寬度');
+    assert.ok(!/height\s*:/.test(body),
+      'iframe rule 絕不得設 height（auto 會掉回 150px、打壞 aspect-ratio wrapper）');
+  });
+
+  it('iframe 不得出現在 img/video/picture 的共用 selector list（會連帶套 height: auto）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 找含 height: auto 的 rule block，確認其 selector list 不含 iframe
+    const matches = [...css.matchAll(/([^{}]+)\{([^}]*height\s*:\s*auto[^}]*)\}/g)];
+    for (const m of matches) {
+      const selectors = m[1];
+      assert.ok(!/\biframe\b/.test(selectors),
+        `含 height: auto 的 rule 不得把 iframe 列入 selector（找到：${selectors.trim()}）`);
+    }
   });
 
   it('apply() 把主文內第一個 h1/h2/h3/h4/p 的 margin-top 設為 0 !important（消除頂端留白）', () => {

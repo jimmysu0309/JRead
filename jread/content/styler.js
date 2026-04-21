@@ -102,10 +102,16 @@ html.${HTML_CLASS} body {
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure） */
 [${ARTICLE_ATTR}="1"] img,
 [${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] iframe,
 [${ARTICLE_ATTR}="1"] picture {
   max-width: 100% !important;
   height: auto !important;
+}
+/* iframe 特例：有 intrinsic 高度這件事對 iframe 不成立——height: auto 會
+   掉回 HTML spec 預設的 150px，打壞 aspect-ratio wrapper（WP wp-embed /
+   Substack / Medium 等「wrapper 維 16:9 + iframe position:absolute 填滿」
+   模式）。只 cap 寬度、不動高度。 */
+[${ARTICLE_ATTR}="1"] iframe {
+  max-width: 100% !important;
 }
 /* 破 aspect-ratio placeholder hack：Substack / Medium 用
    'position: relative; padding-bottom: 56.25%' 為圖片預留空間（img absolute
