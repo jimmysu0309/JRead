@@ -55,6 +55,21 @@
 
 完整流程與常見坑見 `docs/CHROME_EXTENSION_DEBUG.md`。
 
+### 假設驗證順序（硬性要求）
+
+**修 detector / cleaner / styler 這類跟真實網站 DOM 互動的 bug 時，必須先在 harness 上驗證假設、再動 extension code**。jsdom fixture **不是**假設驗證工具——fixture 是你自己寫的最小重現，會漏掉真實站點 candidate 列表裡的元素（例如整站 wrapper、WordPress block wrappers、CMS 自動生成的無 class div），用 fixture 驗「新演算法會選到哪個元素」通常會得到 false positive。
+
+**正確順序**：
+1. 在 `tools/` 下寫一次性 probe 腳本（例：`tools/probe-<site>.js`），把**假設的評分/判斷邏輯**直接注入 `page.evaluate` 跑**真實站點 DOM**
+2. 列出 top-N 候選 + 各項分數/中間變數 → **肉眼驗證這條演算法會選到正確元素**
+3. 假設確認後，才改 detector / cleaner / styler
+4. 寫 fixture + spec（forcing function），sanity check 破壞修法驗 fail → 還原驗 pass
+5. 跑 `npm test` 全過
+6. 再跑 harness 驗實際視覺結果
+7. probe 腳本用完就刪（一次性），commit 只留 extension code + fixture + spec
+
+**錯誤順序的代價**：若順序是「改 code → npm test 過 → 才跑 harness → 發現真實 DOM 跟 fixture 不一致」，等於要重改一次。2026-04-21 Stratechery 修 detector 就踩過這個坑——jsdom fixture 裡「多分支懲罰」規則看似夠用，真實頁面卻因 `div.wp-site-blocks`（整站 wrapper）後代 p 數太多而贏過真主文，得重寫成 Readability-style bubble-up。
+
 ### 什麼時候還需要 Jimmy 手動 Chrome reload
 
 harness 覆蓋率很高（service worker 啟動、manifest 解析、content script 注入、DOM 操作、CSS 算出值），但以下情境 harness 模擬不到，**commit + release 前**仍需請 Jimmy 到 `chrome://extensions/` reload extension 確認：
@@ -126,14 +141,15 @@ harness 覆蓋率很高（service worker 啟動、manifest 解析、content scri
 
 **路徑 A（首選）**：
 
-1. 改 extension 程式碼（結構性根因，見硬規則 3）
-2. 在 `test/regression/fixtures/` 建或擴充 fixture HTML（若為 bug，擷取最小可重現結構）
-3. 在 `test/regression/` 建或擴充對應 spec
-4. sanity check：暫時破壞修法 → 確認 fail → 還原 → 確認 pass
-5. 跑完整 `npm test` 確認沒踩既有 spec
-6. 若改動影響真實 Chrome 行為 → `npm run debug` 跑 Playwright harness 自驗（讀 stdout + 看截圖）
-7. 若命中「仍需 Jimmy 手動驗」清單（見「視覺/行為驗證」章節）→ 停下來請 Jimmy reload 驗
-8. bump 版本號 + 更新同步清單 + `./release.sh`
+1. **若是 detector / cleaner / styler 類與真實 DOM 互動的修改：先在 harness 上驗假設（見「假設驗證順序」章節）**，確認新演算法/規則會選到正確元素**再**動 code
+2. 改 extension 程式碼（結構性根因，見硬規則 3）
+3. 在 `test/regression/fixtures/` 建或擴充 fixture HTML（若為 bug，擷取最小可重現結構）
+4. 在 `test/regression/` 建或擴充對應 spec
+5. sanity check：暫時破壞修法 → 確認 fail → 還原 → 確認 pass
+6. 跑完整 `npm test` 確認沒踩既有 spec
+7. 若改動影響真實 Chrome 行為 → `npm run debug` 跑 Playwright harness 自驗（讀 stdout + 看截圖）
+8. 若命中「仍需 Jimmy 手動驗」清單（見「視覺/行為驗證」章節）→ 停下來請 Jimmy reload 驗
+9. bump 版本號 + 更新同步清單 + `./release.sh`
 
 **路徑 B（fallback）**：若當下抽不出最小重現結構（例如純 entry script、wire-up、importScripts 路徑解析、Chrome 鍵盤對映這類只能在 Jimmy 本機 Chrome 觀察的問題），在 `test/PENDING_REGRESSION.md` 加一筆條目，註明未補 spec 的技術原因與將來如何補。
 

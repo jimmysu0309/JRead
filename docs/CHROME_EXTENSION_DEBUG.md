@@ -157,10 +157,63 @@ Claude 在 Claude Code 裡面使用這個 harness 的典型流程：
 4. Read /tmp/ext-debug.png（或專案 .playwright-mcp/screenshot.png）
    → 肉眼確認視覺
 5. 若有問題，改 code，重複 3–4
-6. OK 後請 Jimmy 手動 Chrome reload 驗證 → commit/bump/release
+6. OK 後請使用者手動 Chrome reload 驗證 → commit/bump/release
 ```
 
-關鍵：**步驟 3 可以多次跑，不用 Jimmy 介入**。
+關鍵：**步驟 3 可以多次跑，不用使用者介入**。
+
+---
+
+## Step 4.5：假設驗證順序（修 detector / cleaner / styler 時的硬性要求）
+
+**在動 extension code 之前，必須先用 harness 在真實站點驗證你的修法假設。** 這是跟很多 LLM 習慣相反的流程——不是「改 code → 跑 unit test → 跑 harness」，而是「probe 真實 DOM 驗假設 → 改 code → fixture + spec 鎖行為 → harness 驗視覺」。
+
+### 為什麼 unit test / fixture 不能當假設驗證工具
+
+fixture 是**你自己寫的最小重現**，會漏掉真實站點 candidate 列表裡的元素——整站 wrapper、CMS 自動生成的無 class div、第三方廣告容器、隱藏但有文字的 meta 區塊等。在 fixture 上驗過的演算法，到真實站點跑會得到不同的 top-N 候選，常常選錯。
+
+fixture 的正確定位是**forcing function（鎖住行為不回歸）**，不是假設探索工具。
+
+### 正確順序
+
+1. **寫一次性 probe 腳本**（`tools/probe-<site>.js`），直接把候選的評分/判斷邏輯注入 `page.evaluate` 跑真實站點 DOM：
+
+    ```js
+    const top = await page.evaluate(() => {
+      // 你正在考慮的新演算法——直接寫在這裡，還沒改到 extension code
+      const scoreMap = new Map();
+      for (const el of document.querySelectorAll('p, li, h2, h3')) {
+        const base = calcContentScore(el);
+        bumpParentAndGrandparent(el, base, scoreMap);
+      }
+      const results = [];
+      for (const [el, raw] of scoreMap) {
+        results.push({ tag: el.tagName, cls: el.className, score: raw, ... });
+      }
+      return results.sort((a, b) => b.score - a.score).slice(0, 15);
+    });
+    console.table(top);
+    ```
+
+2. **肉眼驗證 top-N**：確認第一名是你預期的主文容器、其他站點 chrome / sidebar / 列表項都沒擠進前段。分數差距是否夠穩（第一名 47 分、第二名 17 分 → 穩；第一名 24 分、第二名 22 分 → 不穩，容易被雜訊翻轉）。
+
+3. **假設成立才改 extension code**。假設不成立回到 step 1 換假設——此時成本極低，因為 extension code / fixture / spec 都還沒動。
+
+4. **把假設鎖成 fixture + spec**。fixture 要含足夠的真實結構（不只主文，還要把競爭的 candidate 也放進去，例如你 probe 發現的整站 wrapper），讓 spec 真的驗得到「新演算法會選對而非選到競爭者」。
+
+5. **sanity check**：暫時破壞修法跑 spec 驗 fail → 還原驗 pass。
+
+6. **harness 驗真實視覺**。
+
+7. **probe 腳本用完就刪**（一次性，不進 commit）。
+
+### 反例：錯序的代價
+
+2026-04-21 修 JRead detector 時踩過：
+- 錯序：在 jsdom fixture 上設計「多分支懲罰」規則 → npm test 過 → 才跑 harness → 發現真實 Stratechery 頁面有 `div.wp-site-blocks`（整站 wrapper，後代 p 數多達 32）這個 fixture 沒涵蓋的競爭者 → 多分支懲罰不夠力 → 得**整條重寫**成 Readability-style bubble-up
+- 正序：直接在真實站點跑 probe 列 top-15 → 看到整站 wrapper 排第一 → 換假設跑 probe 看 bubble-up 結果 → 真主文 47 分 vs 第二名 17 分 → 假設確認 → 才動 detector code，一次到位
+
+成本差異：錯序多花一輪 code 改寫 + fixture 擴充；正序只需一個 probe 腳本（跑完就刪）。
 
 ---
 
@@ -235,10 +288,25 @@ Claude 在 Claude Code 裡面使用這個 harness 的典型流程：
   JREAD_URL=https://example.com node tools/debug-harness.js --fresh
 
 然後 Read `.playwright-mcp/jread-viewport.png`、分析 stdout log。
-不需要請 Jimmy 貼 console 或截圖——這是自助的工具。
+不需要請使用者貼 console 或截圖——這是自助的工具。
 
 注意：`window.__JRead` 在 isolated world，`page.evaluate` 讀不到。
 驗證一律走 shared DOM 的副作用（data-* / injected style / getBoundingClientRect）。
+
+## 假設驗證順序（硬性要求）
+
+修 detector / cleaner / styler 這類跟真實 DOM 互動的 bug 時，**必須先在
+harness 寫一次性 probe 腳本（tools/probe-<site>.js）把假設的演算法注入
+page.evaluate 跑真實站點 DOM、驗證 top-N 候選正確，再動 extension code**。
+
+fixture 是 forcing function，不是假設探索工具——fixture 會漏掉真實站點的
+競爭 candidate（整站 wrapper、CMS 自動生成的無 class div 等）。在 fixture
+上驗過的演算法到真實站點跑常會選錯，導致「改 code → 跑 npm test 過 → 才
+跑 harness → 發現不對 → 重寫」的反模式。
+
+正確順序：probe 驗假設 → 改 code → fixture + spec 鎖行為 → sanity check
+→ harness 驗視覺 → probe 腳本刪除（一次性）。完整細節見
+`docs/CHROME_EXTENSION_DEBUG.md` 的「假設驗證順序」章節。
 ```
 
 ---
