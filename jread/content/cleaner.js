@@ -96,6 +96,26 @@
     }
   }
 
+  // ---- 主文內：<hr> 分隔線 ------------------------------------------------
+  // 結構特徵（非站點特判）：HTML5 `<hr>` 是「thematic break」——站點常用於
+  // post-header 與內文之間的分隔線、或正文節段分隔。reader mode 卡片式
+  // 排版下段落 margin 已提供足夠分節視覺，殘留 hr 通常造成多餘橫線
+  // （Medium 類實測：post-meta（作者/日期）下方接 1-2 條 hr 再接首圖，
+  // 在 reader mode 版面看起來就是「照片上方多出橫線」artifact）。
+  //
+  // 通則：hide 主文內的所有 `<hr>`。正文作者刻意插入的節段分隔也一併清
+  // ——reader mode 本就重排版面、卡片 margin 取代分隔線的視覺功能，
+  // 損失極小。已驗證 baseline fixture（businessweekly / stratechery /
+  // chinatalk / anthropic / ltn / engadget / dwarkesh / bbc 等）無一含 hr，
+  // 零 regression 風險。
+  function hideInsideArticleHorizontalRules(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('hr')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文外：語意標籤 --------------------------------------------------
   function hideOutsideArticleSemantic(articleEl, hidden) {
     const els = document.querySelectorAll('header, nav, footer, aside');
@@ -868,6 +888,7 @@
       hideInsideArticleByKeyword(articleEl, hidden);
       hideInsideArticleActionRows(articleEl, hidden);
       hideInsideArticleButtonClusters(articleEl, hidden);
+      hideInsideArticleHorizontalRules(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden);
       hideInsideArticleSidebarColumns(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者

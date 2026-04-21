@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.19`（`hideInsideArticleButtonClusters` interactive 定義從「button / [role=button]」擴展到「button / [role=button] / a[href]」，並過濾 nested interactive（避免 `<a><button></button></a>` 文字雙倍計算）。新增保護條件「容器遞迴須至少含 1 個真 button / [role=button]」排除純 a[href] 導覽列。修 Engadget 類「Add Engadget on Google」做成純 `<a href="google.com/preferences">`（無 button tag、無 role=button）的視覺按鈕與 Share/chat button 混合 cluster 命中不了的場景。保護「純 a[href] link rail」與「ChinaTalk byline meta 混合 wrapper」仍有效）
+`0.6.20`（cleaner 新增 `hideInsideArticleHorizontalRules`：主文內所有 `<hr>` 元素一律 hide。HTML5 `<hr>` 是「thematic break」，reader mode 卡片排版下段落 margin 已提供足夠分節視覺，殘留 hr 通常造成多餘橫線 artifact（Medium 類 post-meta 下方接 1-2 條 hr 再接首圖，在 reader mode 下就是「照片上方多出橫線」視覺）。已驗證 baseline fixtures 零含 hr，無 regression 風險）
 
 ---
 

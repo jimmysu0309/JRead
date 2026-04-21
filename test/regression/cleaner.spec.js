@@ -695,6 +695,53 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內所有 <hr> 元素一律 hide（修 Medium 類 post-header 下方「照片上方多出兩條線」artifact）', () => {
+    // Medium 實測：post-header（Member-only 標籤 + 標題 + 副標 + 作者 meta）
+    // 下方接 1-2 條 <hr> 分隔線，再接首圖 figure——reader mode 卡片排版下
+    // 造成「照片上方多出橫線」視覺 artifact。正文中間作者刻意插入的 <hr>
+    // 節段分隔也一併 hide（卡片段落 margin 已提供足夠分節視覺）。
+    // 所有 baseline fixture（bw / stratechery / chinatalk / anthropic / ltn /
+    // engadget / dwarkesh / bbc）皆無 hr，此規則零 regression 風險。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'medium-post-header-hr.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：post-header 下方兩條 hr 皆被 hide
+      const hr1 = w.document.getElementById('hr-divider-1');
+      const hr2 = w.document.getElementById('hr-divider-2');
+      assert.ok(hr1 && hr2);
+      assert.strictEqual(hr1.dataset.jreadHidden, '1',
+        'post-header 下方第一條 hr 應被 hide');
+      assert.strictEqual(hr2.dataset.jreadHidden, '1',
+        'post-header 下方第二條 hr 應被 hide');
+
+      // 核心斷言 2：正文中間作者插入的 hr 也被 hide
+      const hrSection = w.document.getElementById('hr-section-break');
+      assert.ok(hrSection);
+      assert.strictEqual(hrSection.dataset.jreadHidden, '1',
+        '正文中間的 hr（節段分隔）也應被 hide');
+
+      // 核心斷言 3：主圖 figure + 內文保留
+      const fig = w.document.getElementById('hero-figure');
+      assert.ok(fig);
+      assert.notStrictEqual(fig.dataset.jreadHidden, '1', 'figure 不得被 hide');
+      const body = w.document.querySelector('p');
+      assert.ok(body.textContent.includes('MEDIUM_BODY_MARK'));
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 sidebar column：主欄文字 < 500 時不觸發（避免短文誤判）', () => {
     // 若主欄文字量不足 500 字，視為文章本身就短（非實際 2-col 主文），不觸發。
     // 避免把「作者 header + 短 byline row」這類 flex layout 誤判成 sidebar。
