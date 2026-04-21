@@ -400,6 +400,155 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 sidebar column：Substack podcast-post 2-col flex wrapper 中，高 linkDensity + 低文字量的欄必須被 hide', () => {
+    // Dwarkesh (Substack podcast-post) 實測：<article> tag 包住整個
+    // main-content-and-sidebar 2-col flex，sidebar（Listen on / Recent
+    // Episodes 連結堆）身為 article 後代躲過 outside / ancestor / keyword
+    // 所有規則。通則：articleEl 內任一 container 的 direct children 中，
+    // 某個 child 文字量 < 主欄 10% + linkDensity > 0.5 → 視為 sidebar column。
+    // 不綁 hostname / class，純結構特徵。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'dwarkesh-substack-sidebar-column.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 Dwarkesh 主文');
+    assert.strictEqual(detected.strategy, 'article-tag',
+      'detector 應走 article-tag 策略（單一 <article> 直接採用）');
+    assert.strictEqual(detected.el.tagName, 'ARTICLE',
+      '主文容器應為 article 本身（不改 detector，不 narrow 掉 video wrapper）');
+
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      // 核心斷言 1：sidebar column 被 hide
+      const sidebar = w.document.querySelector('.border-left-detail-the');
+      assert.ok(sidebar, 'fixture 必須有 sidebar column');
+      assert.strictEqual(sidebar.dataset.jreadHidden, '1',
+        'sidebar column（高 linkDensity + 低文字量）必須被 hide');
+
+      // 核心斷言 2：主欄未被 hide（主文內容保留）
+      const mainCol = w.document.querySelector('.main-content-qKkUCg');
+      assert.ok(mainCol, 'fixture 必須有 main column');
+      assert.notStrictEqual(mainCol.dataset.jreadHidden, '1',
+        '主欄（長文字、低 linkDensity）不得被 hide');
+
+      // 核心斷言 3：主文內容標記在主欄內可見
+      assert.ok(mainCol.textContent.includes('DWARKESH_BODY_MARK'),
+        '主欄應含主文內容標記');
+
+      // 核心斷言 4：article 本身不被 hide
+      assert.notStrictEqual(detected.el.dataset.jreadHidden, '1',
+        'article 本身不得被 hide');
+
+      // 核心斷言 5：video/audio 播放器容器不被誤殺
+      // container-dlhqPD 是 flex-row，direct children 含 video-wrapper-lforaE 一個 div
+      // children.length < 2 → early-skip，不會觸發 sidebar 規則
+      const playerContainer = w.document.querySelector('.container-dlhqPD');
+      assert.ok(playerContainer, 'fixture 必須有 video player 容器');
+      assert.notStrictEqual(playerContainer.dataset.jreadHidden, '1',
+        'video player 容器不得被 sidebar column 規則誤殺');
+      // 其內 video-wrapper 也不得被誤殺——其 children 中雖有 3 個 div 但
+      // 皆低 linkDensity，不符合 sidebar 條件
+      const videoWrapper = w.document.querySelector('.video-wrapper-lforaE');
+      assert.ok(videoWrapper);
+      assert.notStrictEqual(videoWrapper.dataset.jreadHidden, '1',
+        'video wrapper 不得被誤殺（其 children 皆低 linkDensity）');
+
+      // 核心斷言 6：sidebar 標記文字在 visible tree 外（因祖父被 hide）
+      // 視覺上 sidebar 消失——DOM 上仍存在但 display: none
+      assert.strictEqual(sidebar.style.display, 'none',
+        'sidebar column display 必須為 none');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('主文內 sidebar column：主欄文字 < 500 時不觸發（避免短文誤判）', () => {
+    // 若主欄文字量不足 500 字，視為文章本身就短（非實際 2-col 主文），不觸發。
+    // 避免把「作者 header + 短 byline row」這類 flex layout 誤判成 sidebar。
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <body>
+        <article>
+          <div style="display: flex; flex-direction: row">
+            <div class="a-col"><p>Short paragraph maybe 50 chars of body text.</p></div>
+            <div class="b-col">
+              <a href="#1">Link 1</a> <a href="#2">Link 2</a> <a href="#3">Link 3</a>
+            </div>
+          </div>
+          <p>More body content so article passes MIN_TEXT_LEN detector threshold. This paragraph intentionally contains enough text to cross 200 chars. Filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler filler.</p>
+        </article>
+      </body>
+      </html>
+    `;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const bCol = w.document.querySelector('.b-col');
+      assert.ok(bCol);
+      assert.notStrictEqual(bCol.dataset.jreadHidden, '1',
+        '主欄文字 < 500 時不觸發 sidebar 規則，.b-col 不得被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {
+    // Dwarkesh (Substack) YouTube embed 實測：cross-origin iframe 的
+    // textContent = ""（跨域讀不到內部 DOM）+ querySelector 讀不到內部媒體
+    // + rect.height > 60 → 三條 empty-spacer 條件全命中、被錯殺。iframe
+    // 本身就是媒體內容，必須在 empty-spacer / action-row 規則前 early-skip。
+    // 通則：iframe / video / audio 這三個「媒體元素 tag」本身是內容不是容器，
+    // cleaner 的容器型規則永遠跳過。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'dwarkesh-youtube-embed.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    // stub iframe rect 模擬真實 Chrome 下有 600px 高度——這樣 empty-spacer 的
+    // rect.height >= 60 條件會命中，唯一能保住 iframe 的就是 tag-name early-skip
+    const iframe = w.document.querySelector('iframe');
+    assert.ok(iframe, 'fixture 必須含 YouTube iframe');
+    iframe.getBoundingClientRect = () => ({
+      top: 200, bottom: 800, left: 0, right: 600, width: 600, height: 600, x: 0, y: 200
+    });
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected);
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      assert.notStrictEqual(iframe.dataset.jreadHidden, '1',
+        'YouTube iframe（cross-origin、textContent 空、高 > 60px）絕不可被 empty-spacer 規則 hide');
+      assert.notStrictEqual(iframe.style.display, 'none',
+        'YouTube iframe 的 inline display 不得被 cleaner 設為 none');
+      // 包住 iframe 的 youtube-inner / youtube-wrap 不該被誤殺
+      const inner = w.document.querySelector('.youtube-inner');
+      const wrap = w.document.querySelector('.youtube-wrap');
+      assert.notStrictEqual(inner.dataset.jreadHidden, '1',
+        '.youtube-inner（含 iframe）不得被 hide');
+      assert.notStrictEqual(wrap.dataset.jreadHidden, '1',
+        '.youtube-wrap（含 iframe 子孫）不得被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('restore() 後 observer disconnect，新 append 不再被攔截', async () => {
     NS.cleaner.restore(hidden);
     hidden = [];  // 避免 afterEach 重複 restore

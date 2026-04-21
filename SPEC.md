@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.7`（cleaner action-row shell short-circuit：direct children 全 wrapper 但自身 textContent < 20 chars 時不走 v0.6.2 ratio 排除，修 Medium 類「兩條橫線夾空圖示殼」artifact；ChinaTalk byline 因作者+日期文字 ≥ 20 仍保留）
+`0.6.8`（cleaner 兩條通則：主文內 sidebar column 偵測（direct-child 文字量 < 主欄 10% + linkDensity > 0.5 → hide），修 Dwarkesh / Substack podcast-post 類 `<article>` 包住 2-col layout 時右欄 sidebar 躲過所有規則；empty-spacer / action-row 對 `iframe`/`video`/`audio` tag early-skip，修 YouTube cross-origin iframe 被當空殼錯殺）
 
 ---
 
@@ -234,6 +234,23 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
   - heuristic bubble-up（取代原「計後代 p 總數」）——避免站體外殼贏過主文
   - title promote——Stratechery 把 post-title 放在 entry-content 兄弟層，需把主文升級到共同 parent 保留標題
 - **需要保留的特殊元素**：`h2.wp-block-post-title` 文章標題、主圖 `<figure>` + figcaption
+
+### Dwarkesh Podcast（dwarkesh.com，Substack podcast-post）
+
+- **測試日期**：2026-04-21
+- **測試頁面**：`/p/jensen-huang`
+- **主文容器**：`<article class="typography podcast-post post shows-post">`（article-tag 策略直接命中，不 narrow）
+- **DOM 結構**：Substack 把 `<article>` 包住整個 2-col layout：`article > div > { container-dlhqPD (video-wrapper), main-content-and-sidebar-fw1PHW }`；後者是 `display: flex; flex-direction: row` 的左欄主文 + 右欄 sidebar
+- **觸發新規則**：
+  - `hideInsideArticleSidebarColumns`（v0.6.8）——主欄文字 2212 / linkDensity 0.013 vs sidebar 文字 155 / linkDensity 0.67，結構性 2-col 特徵命中
+  - `hideInsideArticleEmptySpacers` / `hideInsideArticleActionRows` 對 `iframe`/`video`/`audio` tag early-skip（v0.6.8）——避免 cross-origin YouTube iframe 被當空殼誤殺
+- **雜訊清單**：
+  - 右欄 sidebar（Dwarkesh Podcast 卡片 + Listen on 連結堆 + Appears in episode + Recent Episodes 連結堆）→ 由 v0.6.8 新規則清除
+  - 頁面外：site `<header>` / `<footer>` / site-level nav → 語意標籤通則命中
+- **需要保留的特殊元素**：
+  - `.container-dlhqPD > .video-wrapper-lforaE` 內的 `<video>`（Substack 原生 podcast player）
+  - `.youtube-wrap > .youtube-inner > iframe[src*="youtube-nocookie.com/embed"]`（YouTube 縮圖 embed，點了才 load 真正播放器）
+  - 標題 / 副標 / 作者 / 日期 / 贊助商段落 / 內文段落
 
 ---
 
