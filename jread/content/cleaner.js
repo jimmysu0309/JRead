@@ -272,6 +272,60 @@
     }
   }
 
+  // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
+  // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
+  // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
+  // cleaner.clean() 是 one-shot snapshot——只 hide 當下存在的節點。reader
+  // mode 下若使用者捲動觸發新內容 append（例如 popIn template clone 塞新篇
+  // 到主文 parent），新節點沒經過 cleaner 流程 → 混入使用者視野。
+  //
+  // 通則（非站點特判）：reader mode 的不變量是「進入當下的 DOM snapshot 凍
+  // 結」，主文祖先鏈（articleEl.parentElement → ... → body）上任何新 append
+  // 的節點都是雜訊（真正的主文不會在 reader mode 途中突然擴張）。用
+  // MutationObserver 觀察每一層祖先的 childList，新 addedNodes 直接
+  // remove。restore 時 disconnect；dynamic 節點不還原（使用者退出 reader
+  // mode 重捲會觸發 site 自己的 lazy-load 邏輯重新 inject）。
+  //
+  // 為何 remove 而非 hide：popIn 從 cleaner 已經 hide 過的 .template 元素
+  // clone 時，新節點繼承舊 `data-jread-hidden="1"` attribute，cleaner.hide
+  // 的 early-return 會 skip；且 popIn 之後會主動設 display:block 覆蓋任何
+  // inline `display: none`。直接 remove 最徹底、最小狀態管理、不跟 popIn
+  // 搶 style property。
+  let activeObserver = null;
+
+  function startWatchingDynamicAppends(articleEl) {
+    if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
+    if (!articleEl || !articleEl.parentElement) return;
+
+    const mo = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (isRelated(articleEl, node)) continue;
+          if (STRUCTURAL_TAGS.has(node.tagName.toLowerCase())) continue;
+          if (isInPreserved(node)) continue;
+          if (node.parentNode) node.parentNode.removeChild(node);
+        }
+      }
+    });
+
+    // 觀察主文祖先鏈上每一層 parent 的 childList（到 body 為止，含 body）
+    let cur = articleEl.parentElement;
+    while (cur) {
+      mo.observe(cur, { childList: true });
+      if (cur === document.body) break;
+      cur = cur.parentElement;
+    }
+    activeObserver = mo;
+  }
+
+  function stopWatchingDynamicAppends() {
+    if (activeObserver) {
+      activeObserver.disconnect();
+      activeObserver = null;
+    }
+  }
+
   // ---- 對外介面 ---------------------------------------------------------
   const cleaner = {
     /**
@@ -293,6 +347,8 @@
       hideInsideArticleEmptySpacers(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
+      // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
+      startWatchingDynamicAppends(articleEl);
       return hidden;
     },
 
@@ -301,6 +357,7 @@
      * @param {Array<{el: Element, prevDisplay: string}>} hiddenEls
      */
     restore(hiddenEls) {
+      stopWatchingDynamicAppends();
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;
