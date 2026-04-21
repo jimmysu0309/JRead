@@ -1,0 +1,159 @@
+// JRead — cleaner regression spec
+// 對應 fixture：test/regression/fixtures/businessweekly-7014035.html
+// 涵蓋四條路徑：語意標籤 / fixed-sticky / 社群分享 cluster / 主文內 keyword。
+//
+// jsdom 不算 layout（getBoundingClientRect 全回 0），所以對 fixture 中帶
+// position:fixed/sticky 的元素我們 stub rect，讓 fixed 分支能被覆蓋到。
+// 這是測試環境限制的妥協，不是真實世界邏輯變形。
+
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+const { JSDOM } = require('jsdom');
+
+const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'businessweekly-7014035.html');
+const CLEANER_SRC = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
+  'utf8'
+);
+const DETECTOR_SRC = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
+  'utf8'
+);
+
+// viewport 模擬
+const VW = 1000;
+const VH = 600;
+
+// 手動對應 fixture 中帶 inline position:fixed 的元素預期 rect（px）。
+// 原因：fixture 用 100% / 百分比表達寬高與位置，jsdom 不解析，只能預設結果。
+const FIXED_RECTS = {
+  '.postnav.fixed':      { top: 0,        width: VW, height: 50  }, // top bar
+  '#progress-wrapper':   { top: 0,        width: VW, height: 4   }, // progress bar
+  '#gdrp-el':            { top: VH - 80,  width: VW, height: 80  }, // bottom popup
+  '.Floating-Setting':   { top: VH * 0.4, width: 60, height: 240 }, // side tool
+  '#shortModel':         { top: VH * 0.8, width: 120, height: 80 }  // bottom popup
+};
+
+function stubRect(el, rect) {
+  el.getBoundingClientRect = () => ({
+    top: rect.top,
+    bottom: rect.top + rect.height,
+    left: 0,
+    right: rect.width,
+    width: rect.width,
+    height: rect.height,
+    x: 0,
+    y: rect.top
+  });
+}
+
+function loadFixture() {
+  const html = fs.readFileSync(FIXTURE_PATH, 'utf8');
+  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const { window } = dom;
+
+  // stub viewport
+  Object.defineProperty(window, 'innerWidth',  { value: VW, configurable: true });
+  Object.defineProperty(window, 'innerHeight', { value: VH, configurable: true });
+
+  // stub fixed/sticky 元素的 rect
+  for (const [sel, rect] of Object.entries(FIXED_RECTS)) {
+    const el = window.document.querySelector(sel);
+    assert.ok(el, `fixture 中應存在 ${sel}`);
+    stubRect(el, rect);
+  }
+
+  // 最小 NS
+  window.__JRead = { state: {}, MSG: {} };
+  window.eval(DETECTOR_SRC);
+  window.eval(CLEANER_SRC);
+  return window;
+}
+
+describe('cleaner — businessweekly-7014035', () => {
+  let window, document, articleEl, hidden;
+
+  before(() => {
+    window = loadFixture();
+    document = window.document;
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應成功命中商周主文');
+    articleEl = detected.el;
+    hidden = window.__JRead.cleaner.clean(articleEl);
+  });
+
+  it('隱藏總數 ≥ 10（語意 + fixed + keyword 合計）', () => {
+    assert.ok(
+      hidden.length >= 10,
+      `實際隱藏 ${hidden.length} 個元素（期望 ≥ 10）。` +
+      `清單：${hidden.map(h => h.el.id || h.el.className || h.el.tagName).join(', ')}`
+    );
+  });
+
+  it('保留元素一律未被隱藏（summary / figure / figcaption / blockquote）', () => {
+    const preserveSel = 'summary, figure, figcaption, blockquote';
+    const preserved = document.querySelectorAll(preserveSel);
+    assert.ok(preserved.length > 0, 'fixture 中必須有保留元素以供驗證');
+
+    for (const el of preserved) {
+      assert.notStrictEqual(
+        el.dataset.jreadHidden, '1',
+        `保留元素 <${el.tagName.toLowerCase()}> 不應被標記隱藏`
+      );
+      assert.notStrictEqual(
+        el.style.display, 'none',
+        `保留元素 <${el.tagName.toLowerCase()}> 的 display 不應為 none`
+      );
+    }
+  });
+
+  it('<summary> 仍可被 querySelector 找到且文字內容保留', () => {
+    const summary = document.querySelector('summary');
+    assert.ok(summary, '<summary> 必須存在');
+    assert.ok(
+      summary.textContent.includes('editor bullet'),
+      'summary 內 editor bullets 文字必須保留（Unclutter 在商周踩過這坑）'
+    );
+  });
+
+  it('主文內 paywall 區塊被標記隱藏（keyword: paywall）', () => {
+    const el = document.querySelector('.postbody.paywall');
+    assert.ok(el, 'fixture 中應有 .postbody.paywall');
+    assert.strictEqual(el.dataset.jreadHidden, '1');
+  });
+
+  it('#Epaper-subscribe 被標記隱藏（keyword: subscribe）', () => {
+    const el = document.getElementById('Epaper-subscribe');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1');
+  });
+
+  it('主文外語意標籤被隱藏（header / footer）', () => {
+    assert.strictEqual(document.getElementById('header').dataset.jreadHidden, '1');
+    assert.strictEqual(document.querySelector('footer.footer-wrap').dataset.jreadHidden, '1');
+  });
+
+  it('fixed/sticky 元素全部被隱藏（top bar / side tool / bottom popup）', () => {
+    for (const sel of Object.keys(FIXED_RECTS)) {
+      const el = document.querySelector(sel);
+      assert.strictEqual(
+        el.dataset.jreadHidden, '1',
+        `${sel} 應被 fixed/sticky 規則命中隱藏`
+      );
+    }
+  });
+
+  it('restore() 移除所有 jreadHidden 標記並還原 display', () => {
+    window.__JRead.cleaner.restore(hidden);
+    const stillHidden = document.querySelectorAll('[data-jread-hidden="1"]');
+    assert.strictEqual(stillHidden.length, 0, '還原後不應有任何元素仍帶 data-jread-hidden');
+
+    for (const item of hidden) {
+      assert.notStrictEqual(
+        item.el.style.display, 'none',
+        '還原後 display 不應留在 none'
+      );
+    }
+  });
+});
