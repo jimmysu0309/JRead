@@ -113,6 +113,19 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] iframe {
   max-width: 100% !important;
 }
+/* figure / picture 媒體容器撐滿父寬度：reader mode 下原站 DOM 結構被我們
+   改動（ancestor reset / body 解除原 layout），某些站（例如商周
+   figure.articlephoto）原本靠「width: 800px」類固定寬 CSS 給 figure
+   顯式寬度的 rule 失效後，figure 退化成 shrink-to-fit + min-width:0 →
+   被 figcaption 中文單字寬度夾死成 ~31px、img 跟著縮到幾乎看不見。
+   通則：display:block 的媒體容器預設行為就是 100% of parent，reader
+   mode 下強制明示這個預設、不依賴原站殘留 CSS。picture 同理避免類似
+   退化。不碰字體/字級/行高，只處理媒體容器的寬度退化。 */
+[${ARTICLE_ATTR}="1"] figure,
+[${ARTICLE_ATTR}="1"] picture {
+  width: auto !important;
+  max-width: 100% !important;
+}
 /* 破 aspect-ratio placeholder hack：Substack / Medium 用
    'position: relative; padding-bottom: 56.25%' 為圖片預留空間（img absolute
    覆蓋）。閱讀模式下 img 變 static，padding 留著 = 視覺留白。

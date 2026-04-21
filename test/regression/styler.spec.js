@@ -146,6 +146,33 @@ describe('styler — 骨架與可逆性', () => {
     }
   });
 
+  // v0.6.10 修法：reader mode 下某些站（例如商周 figure.articlephoto）原站
+  // 靠「width: 800px」類固定寬 CSS 給 figure 顯式寬度的 rule 失效後（我們
+  // 動了 ancestor reset / body layout），figure 退化成 shrink-to-fit + min-
+  // width:0 → 被 figcaption 中文單字寬度夾死成 ~31px、img 跟著縮到幾乎看
+  // 不見。修法：明示 figure / picture 為 block 預設寬度（100% of parent）。
+  it('figure / picture 有強制 width: auto + max-width: 100% rule（修媒體容器塌縮）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 必須存在一個 rule 其 selector list 同時涵蓋 figure 與 picture（可
+    // 以是共用 block 也可以是分開兩條），body 必須同時有 width: auto
+    // !important 與 max-width: 100% !important。
+    // 先取任一含 figure 的 rule block 驗內容。
+    const m = css.match(/\[data-jread-active="1"\]\s+figure\s*(?:,\s*\[data-jread-active="1"\]\s+picture\s*)?\{([^}]*)\}/);
+    assert.ok(m, 'figure 必須有 rule block（修商周封面圖被壓成 31px）');
+    const body = m[1];
+    assert.ok(/width\s*:\s*auto\s*!important/.test(body),
+      'figure rule 必須含 width: auto !important（block 預設行為 = 100% of parent）');
+    assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
+      'figure rule 必須含 max-width: 100% !important');
+
+    // picture 也必須有同等 rule
+    const mp = css.match(/\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}|,\s*\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}/);
+    assert.ok(/picture/.test(css), 'CSS 必須包含 picture selector');
+  });
+
   it('apply() 把主文內第一個 h1/h2/h3/h4/p 的 margin-top 設為 0 !important（消除頂端留白）', () => {
     const { NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
