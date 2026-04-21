@@ -620,19 +620,59 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
         '未觸發 collapse 的 grid 原 inline display 不得被加 !important priority');
       assert.strictEqual(intentional.style.getPropertyValue('grid-template-columns'), '1fr 1fr',
         '未觸發 collapse 的 grid-template-columns 應保持原值');
+
+      // 核心斷言 4：Bootstrap row + col-md-8/col-md-4 情境（Lawfaremedia pattern）
+      // flex-row collapse 後，Bootstrap col-md-* class 的 `flex: 0 0 66.67%;
+      // max-width: 66.67%` 仍會生效讓 visible child 保持原寬度——必須連 children
+      // 的 flex / max-width / width 一起清掉才能讓主欄撐滿卡片。
+      const bootstrapRow = w.document.getElementById('bootstrap-row');
+      const colMd8 = w.document.getElementById('col-md-8');
+      const colMd4 = w.document.getElementById('col-md-4');
+      assert.ok(bootstrapRow && colMd8 && colMd4);
+      assert.strictEqual(colMd4.dataset.jreadHidden, '1',
+        'col-md-4 含 sidebar-ad-widget 應被 keyword 命中 hide');
+      assert.strictEqual(bootstrapRow.dataset.jreadCollapsed, '1',
+        'bootstrap row（flex-row 有 hidden child）應被 collapse');
+      assert.strictEqual(bootstrapRow.style.getPropertyValue('display'), 'block',
+        'bootstrap row collapse 後 display 應為 block');
+      assert.strictEqual(bootstrapRow.style.getPropertyValue('flex-direction'), 'column',
+        'flex-row collapse 後 flex-direction 應設 column');
+      // 關鍵斷言：col-md-8（visible child）的 flex longhand / max-width 應被清掉
+      // 用 longhand 避免 shorthand serialization 在不同 engine 不一致
+      assert.strictEqual(colMd8.style.getPropertyValue('flex-basis'), 'auto',
+        'visible col-md-8 的 flex-basis 應被 force 成 auto（清 flex-basis:66.67%）');
+      assert.strictEqual(colMd8.style.getPropertyValue('flex-grow'), '0',
+        'visible col-md-8 的 flex-grow 應被 force 成 0');
+      assert.strictEqual(colMd8.style.getPropertyValue('flex-shrink'), '0',
+        'visible col-md-8 的 flex-shrink 應被 force 成 0');
+      assert.strictEqual(colMd8.style.getPropertyValue('max-width'), 'none',
+        'visible col-md-8 的 max-width 應被 force 成 none（清 max-width:66.67%）');
+      assert.strictEqual(colMd8.style.getPropertyValue('width'), 'auto',
+        'visible col-md-8 的 width 應被 force 成 auto');
+      // hidden child 不動它的 inline width（反正它 display:none 不顯示）
+      // 但它也不該被加上我們的 flex 覆寫
+      assert.notStrictEqual(colMd4.style.getPropertyValue('flex-basis'), 'auto',
+        'hidden child 的 flex-basis 不該被我們改（只處理 visible children）');
     } finally {
       w.__JRead.cleaner.restore(localHidden);
-
-      // 核心斷言 4：restore 後所有 inline style 都被 revert
-      const adGrid = w.document.getElementById('layout-grid');
-      assert.strictEqual(adGrid.style.getPropertyValue('display'), 'grid',
-        'restore 後原 inline display:grid 應恢復');
-      assert.strictEqual(adGrid.style.getPropertyValue('grid-template-columns'),
-        '[main-start] 1fr [main-end right-start] 300px [right-end]',
-        'restore 後原 inline grid-template-columns 應恢復');
-      assert.strictEqual(adGrid.dataset.jreadCollapsed, undefined,
-        'restore 後 data-jread-collapsed attribute 應被移除');
     }
+
+    // 核心斷言 5：restore 後所有 inline style 都被 revert（container + children）
+    const adGridAfter = w.document.getElementById('layout-grid');
+    assert.strictEqual(adGridAfter.style.getPropertyValue('display'), 'grid',
+      'restore 後原 inline display:grid 應恢復');
+    assert.strictEqual(adGridAfter.style.getPropertyValue('grid-template-columns'),
+      '[main-start] 1fr [main-end right-start] 300px [right-end]',
+      'restore 後原 inline grid-template-columns 應恢復');
+    assert.strictEqual(adGridAfter.dataset.jreadCollapsed, undefined,
+      'restore 後 data-jread-collapsed attribute 應被移除');
+    const colMd8After = w.document.getElementById('col-md-8');
+    // restore 後 inline flex-basis / max-width 應回到 fixture 原設值
+    // （66.67% longhand，或 shorthand 對應展開）
+    assert.strictEqual(colMd8After.style.getPropertyValue('flex-basis'), '66.67%',
+      'restore 後 col-md-8 的 flex-basis 應恢復 66.67%');
+    assert.strictEqual(colMd8After.style.getPropertyValue('max-width'), '66.67%',
+      'restore 後 col-md-8 原 inline max-width 應恢復');
   });
 
   it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {

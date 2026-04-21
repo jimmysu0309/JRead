@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.12`（cleaner 新增 `collapseGridWithHiddenCell`：主文內 display:grid / flex-row container 若有 direct child 被 hide → 給 container 加 inline `display:block; grid-template-columns:none`，退化成自然 block。修 Engadget 類「主文 + 廣告側欄」CSS Grid layout 下 AdBlocker 清掉廣告內容但 grid cell 300px 寬度仍保留、主文被擠成 196px 窄欄的問題）
+`0.6.13`（cleaner `collapseGridWithHiddenCell` 擴展：collapse container 後，對 visible direct children 強制 `flex-grow:0; flex-shrink:0; flex-basis:auto; width:auto; max-width:none; grid-column:auto` 清除 Bootstrap `col-md-*` / Tailwind `col-span-*` 等 utility class 殘留的 flex/width 限制。修 Lawfaremedia 類 Bootstrap row + col-md-8/col-md-4 pattern 下，row collapse 後 col-md-8 仍套 `flex:0 0 66.67%; max-width:66.67%` 把主文擠在左半邊的問題）
 
 ---
 

@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.12（cleaner 新增 `collapseGridWithHiddenCell`：主文內 display:grid / flex-row container 若有 direct child 被 hide → 退化成 block + 清 grid-template。修 Engadget 類「主文 + 廣告側欄」CSS Grid layout 下 AdBlocker 清廣告後殘留空欄位壓擠主文成窄欄的問題）
+**目前版本**：v0.6.13（cleaner `collapseGridWithHiddenCell` 擴展至 visible direct children：清除 Bootstrap `col-md-*` / Tailwind `col-span-*` 等 utility class 的 flex/max-width/width 限制，修 Lawfaremedia Bootstrap row + col-md-8 pattern 下主文仍被擠在左半邊的問題）
 
 ---
 
