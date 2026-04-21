@@ -169,6 +169,31 @@ describe('cleaner — businessweekly-7014035', () => {
     assert.strictEqual(el.dataset.jreadHidden, '1', 'action toolbar 必須被隱藏');
   });
 
+  it('外層 byline+actions wrapper（直接子主要是 sub-containers）不得被 action-row 整塊誤殺', () => {
+    // ChinaTalk (Substack) quantum-101 實測：作者/日期外層是一個 flex-column
+    // wrapper，直接子是兩個 sub-div（meta group + button group），容器自身
+    // 符合 action-row 條件但直接子幾乎沒互動元素（2 個 DIV）。若不排除，整
+    // 塊 hide 會連帶把作者/日期 sub-div 藉 display:none ancestor 繼承也藏掉。
+    // 通則：action row 的直接子必須多數（>= 50%）是互動元素（button / [role=
+    // button] / svg），否則視為內容 wrapper。
+    const wrapper = document.querySelector('.byline-actions-wrapper');
+    assert.ok(wrapper, 'fixture 必須有 byline-actions-wrapper');
+    assert.notStrictEqual(
+      wrapper.dataset.jreadHidden, '1',
+      '外層 byline+actions wrapper 不得被 hide（作者/日期應保留顯示）'
+    );
+    // meta group 不得被直接 hide
+    const metaGroup = wrapper.querySelector('.meta-group');
+    assert.ok(metaGroup);
+    assert.notStrictEqual(metaGroup.dataset.jreadHidden, '1',
+      'meta group（作者/日期）不得被 hide');
+    // 內層 btn-group（純 buttons）應該被正確命中 hide
+    const btnGroup = wrapper.querySelector('.btn-group');
+    assert.ok(btnGroup);
+    assert.strictEqual(btnGroup.dataset.jreadHidden, '1',
+      '內層 btn-group（純互動列）仍應被 action-row 規則 hide');
+  });
+
   it('含 h1-h6 直接子的容器即使符合 action-row 其他條件也不得隱藏（保留 post-header 標題區塊）', () => {
     // ChinaTalk (Substack) quantum-101 實測：div.post-header 包 <h1 post-title>
     // + 作者/日期 meta + 多個 like/comment/share/more button，命中 action-row

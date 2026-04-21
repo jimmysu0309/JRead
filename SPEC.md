@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.1`（cleaner action-row 規則加「含 h1-h6 直接子則跳過」排除條件，修 ChinaTalk/Substack 類 post-header（h1 + meta + buttons）被整塊誤殺導致標題遺失）
+`0.6.2`（cleaner action-row 再加「直接子互動元素比例 ≥ 50%」排除條件，修 ChinaTalk/Substack 類 byline+actions 外層 wrapper 被整塊誤殺導致作者/日期遺失）
 
 ---
 

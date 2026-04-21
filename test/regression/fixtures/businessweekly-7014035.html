@@ -90,6 +90,16 @@
              通則：action row 是圖示互動列，絕不會包含文章 heading。 -->
         <div class="post-header"><h1 class="post-title">Quantum 101</h1><span>Jordan Schneider</span><span>Apr 21, 2026</span><button aria-label="like"><svg></svg></button><span>41</span><button aria-label="comment"><svg></svg></button><button aria-label="share"><svg></svg></button><button aria-label="more"><svg></svg></button></div>
 
+        <!-- 模擬 ChinaTalk / Substack 作者列外層 flex-column wrapper：直接
+             子是兩個 sub-div（meta group + button group）。容器自身 textLen
+             < 80、iconCount >= 2、無 h/p/media——命中 action-row 四條件被
+             整塊誤殺，連帶把作者/日期子 div 一起 hide（CSS display:none
+             ancestor 繼承）。通則：action row 的直接子必須多數是互動元素
+             （button/[role=button]/svg）；若子容器主導代表這是內容 wrapper
+             不是互動列，外層不 hide；內層的純 button 子容器仍會被正確命中
+             hide（符合閱讀模式目的）。 -->
+        <div class="byline-actions-wrapper"><div class="meta-group"><a href="/author">Jordan Schneider</a><span>Apr 21, 2026</span></div><div class="btn-group"><button aria-label="like"><svg></svg></button><span>41</span><button aria-label="comment"><svg></svg></button><button aria-label="share"><svg></svg></button></div></div>
+
         <!-- 模擬 Substack 的 captioned-image-container：含 <img> + 多個 svg
              （zoom / loading icon）+ 文字短；不該被 action-toolbar 規則誤殺 -->
         <div class="captioned-image-container">
