@@ -41,52 +41,42 @@
 
 ---
 
-## 環境分工（硬規則）
+## 實作流程（硬規則）
 
-**Claude Code** 是**實作主力**——所有程式碼的新增/修改（含 UI/DOM / content script / detector / cleaner / styler / popup / background / manifest）、git、`npm test`、regression spec、fixture、文件同步、release 一律在 Claude Code 做。拿到新功能需求或 bug 報告時，**直接開始寫 code**，不要把需求轉手給 Cowork。
+所有工作——程式碼新增/修改（含 UI/DOM / content script / detector / cleaner / styler / popup / background / manifest）、git、`npm test`、regression spec、fixture、文件同步、視覺驗證、release——**一律在 Claude Code 端完成**。拿到新功能需求或 bug 報告時，直接開始寫 code，不轉手給其他環境。
 
-**Cowork** 是**Chrome MCP 驗證工具**——唯一目的是做 Claude Code 做不到的事：用 `mcp__Claude_in_Chrome__*` navigate 到真實頁面、觀察 DOM、執行 JS、肉眼看樣式效果。Cowork **不寫程式碼、不動 extension 檔案**。
+### 視覺/行為驗證（自動化優先）
 
-### 什麼時候需要切 Cowork
+程式碼改完後，驗證分兩層：
 
-切到 Cowork 的唯一理由是「需要實地看真實頁面才能回答某個問題」。典型情境：
+**第一層：jsdom regression**（`npm test`）——驗邏輯正確、API 結構、可逆性。DOM attribute、CSS 字串內容、還原流程等。跑得快（< 1s）、不需瀏覽器。
 
-- 我實作的改動需要在多個真實站點上**驗證視覺/行為正確**（Claude Code 端只能跑 jsdom 測，看不到真實 layout / CSS / font rendering）
-- 某個 bug 只有在真實頁面重現，我需要當場讀其 DOM 結構 / computed styles / 事件流才能找到根因
-- 使用者給的截圖不夠，需要我實地去看該頁的 HTML 結構
+**第二層：Playwright harness**（`npm run debug` 或 `node tools/debug-harness.js`）——驗真實 Chrome 行為。用 Playwright 內建 Chromium + `launchPersistentContext` 載入 `jread/` 為 unpacked extension，開啟目標頁、透過 SW `chrome.tabs.sendMessage` 觸發閱讀模式，讀 DOM 副作用（`data-jread-active` / injected `<style>` / `getBoundingClientRect`）、算元素間 gap、截圖到 `.playwright-mcp/jread-viewport.png`。Claude 讀 stdout log + 用 Read tool 看截圖即可**自驗**視覺結果，**不用請 Jimmy 貼 console 或截圖**。
 
-Cowork 的產出是**觀察報告**（DOM 片段、computed style、行為描述），不是 code diff。觀察報告帶回 Claude Code 後，我在這裡改 code。
+完整流程與常見坑見 `docs/CHROME_EXTENSION_DEBUG.md`。
 
-### Cowork 絕對不可以
+### 什麼時候還需要 Jimmy 手動 Chrome reload
 
-- 自己改 `jread/` 下任何檔案
-- 自己 bump `manifest.json` 的 version
-- 自己改 SPEC.md / README.md / CHANGELOG.md / docs / 測試期望值常數
-- 碰 git（sandbox 的 `.git/` 受保護，`git add` / `commit` / `tag` 會失敗，不要嘗試）
+harness 覆蓋率很高（service worker 啟動、manifest 解析、content script 注入、DOM 操作、CSS 算出值），但以下情境 harness 模擬不到，**commit + release 前**仍需請 Jimmy 到 `chrome://extensions/` reload extension 確認：
 
-### Claude Code 實作的 Chrome 驗證責任
+- **keyboard shortcut**：Playwright Chromium 的鍵盤對映可能與 Jimmy 本機 Chrome 不同；`chrome://extensions/shortcuts` 的衝突（例如 `Cmd+Shift+R` 撞 Chrome 內建強制重載）只有在 Jimmy 本機才顯現
+- **popup 的使用者互動**：harness 只跑 `chrome.tabs.sendMessage` 後端觸發；popup 的點擊、即時 setting 更動需 Jimmy 用實機 popup 操作驗
+- **使用體感問題**：字體渲染、配色對比、動畫順暢度等主觀感受
 
-因為 Claude Code 沒有 Chrome MCP，動到下列類別的程式碼時，**commit + release 前**必須先請 Jimmy 到 `chrome://extensions/` 重新載入 extension 並回報有無錯誤，才繼續 commit / bump / release：
+其餘類別（styler 排版、cleaner 隱藏規則、detector 命中、storage listener 觸發、SW 訊息協定）harness 都驗得到，**不用再煩 Jimmy**。
 
-- `jread/background/service-worker.js`
-- `jread/manifest.json`（特別是 `background` / `commands` / `content_scripts` / `permissions` 區塊）
-- `jread/popup/*`（任何動到 chrome.* API 呼叫或載入結構的改動）
-- 任何用到 `importScripts` / `chrome.scripting.executeScript` 的檔案
-- 影響真實頁面排版的 styler / CSS 注入（視覺效果要 Jimmy 肉眼驗）
+典型流程：
+1. 改 code → `npm test` 過
+2. `npm run debug` 自驗（讀 stdout + 看 `.playwright-mcp/jread-viewport.png`）
+3. 若命中「仍需 Jimmy 手動驗」清單 → 停下來請 Jimmy reload 驗
+4. OK → `git status` 全看過 → commit + bump + release
 
-這類改動的典型流程：
-1. Claude Code 寫 code + `npm test` 過 + `git status` 乾淨
-2. **停下來，先請 Jimmy 手動驗 Chrome**（reload extension、看錯誤 tab、跑核心流程）
-3. Jimmy 回報 OK → `git add` + commit + bump + release
-4. Jimmy 回報有問題 → 帶觀察結果回來修 code，回到步驟 1
-
-若 Jimmy 手動驗還不夠（例如需要多個站點 side-by-side 比對、或 DOM 要逐元素讀），再切 Cowork 做 MCP 驗證。
-
-### Claude Code 環境雜項
+### 環境雜項
 
 - **啟動方式**：shell alias `cc` = `claude --dangerously-skip-permissions`（視 Jimmy 實際慣用而定）
 - **改 extension 資料夾前先確認 working tree 乾淨**：若有未 commit 的變更先 commit 或 stash
 - **bump 版本號後必須立刻 `git tag v<新版本>`**
+- **harness 首次使用**：`npm install` + `npx playwright install chromium`（下載 bundled Chromium，幾百 MB）
 
 ---
 
@@ -97,17 +87,17 @@ Cowork 的產出是**觀察報告**（DOM 片段、computed style、行為描述
 - 每次修改 Extension 功能、UI、設定結構，**必須** bump `manifest.json` 的 `version`
 - 格式：**三段式** `1.0.0`（Chrome 會把 `1.01` 解析成 `1.1`，前導零會被吃掉）
 - Popup 顯示的版本號必須用 `chrome.runtime.getManifest().version` 動態讀取，**絕對不可寫死在 HTML**
-- **bump 版本號是 Claude Code 端的責任**：Cowork 端只改程式碼，不動版本號
 - **版本 bump 同步清單**（每次 bump 都必須全部更新，少一個測試就會 fail）：
   1. `jread/manifest.json` 的 `version`
-  2. `SPEC.md` 的「目前 Extension 版本」標頭
-  3. `CHANGELOG.md` 頂部新增一條 `**vX.Y.Z**——` 條目
-  4. `test/version-check.spec.js` 的 `EXPECTED_VERSION` 常數（此常數是 forcing function，刻意設計成 bump 後不改就 fail）
-  5. `README.md` 若有提到版本號的段落
+  2. `package.json` 的 `version`
+  3. `SPEC.md` 的「目前 Extension 版本」標頭
+  4. `CHANGELOG.md` 頂部新增一條 `**vX.Y.Z**——` 條目
+  5. `test/version-check.spec.js` 的 `EXPECTED_VERSION` 常數（此常數是 forcing function，刻意設計成 bump 後不改就 fail）
+  6. `README.md` 若有提到版本號的段落
 
 ### 1.5 版本還原
 
-Claude Code 端：`git checkout v<版本號> -- jread` 即可還原到任一歷史版本。不需要手動快照（git tag 本身就是快照）。`.backups/` 為遺留資料夾，Cowork 不再寫入。
+`git checkout v<版本號> -- jread` 即可還原到任一歷史版本。不需要手動快照（git tag 本身就是快照）。`.backups/` 為遺留資料夾，不再使用。
 
 ### 2. 文件同步
 
@@ -136,16 +126,16 @@ Claude Code 端：`git checkout v<版本號> -- jread` 即可還原到任一歷�
 
 **路徑 A（首選）**：
 
-1. Claude Code 改 extension 程式碼（結構性根因，見硬規則 3）
+1. 改 extension 程式碼（結構性根因，見硬規則 3）
 2. 在 `test/regression/fixtures/` 建或擴充 fixture HTML（若為 bug，擷取最小可重現結構）
 3. 在 `test/regression/` 建或擴充對應 spec
 4. sanity check：暫時破壞修法 → 確認 fail → 還原 → 確認 pass
 5. 跑完整 `npm test` 確認沒踩既有 spec
-6. 若改動影響 Chrome 實際行為（見「Claude Code 實作的 Chrome 驗證責任」清單）→ 先請 Jimmy 手動 reload extension 驗 → OK 後再 bump
-7. bump 版本號 + 更新同步清單 + `./release.sh`
-8. 若需要多站點視覺比對或 DOM 細讀，切 Cowork 做 MCP 驗證；回來後依結果決定是否追加修正
+6. 若改動影響真實 Chrome 行為 → `npm run debug` 跑 Playwright harness 自驗（讀 stdout + 看截圖）
+7. 若命中「仍需 Jimmy 手動驗」清單（見「視覺/行為驗證」章節）→ 停下來請 Jimmy reload 驗
+8. bump 版本號 + 更新同步清單 + `./release.sh`
 
-**路徑 B（fallback）**：若當下抽不出最小重現結構（例如純 entry script、wire-up、importScripts 路徑解析、chrome.* API 行為這類只能在真實 Chrome 觀察的問題），在 `test/PENDING_REGRESSION.md` 加一筆條目，註明未補 spec 的技術原因與將來如何補。
+**路徑 B（fallback）**：若當下抽不出最小重現結構（例如純 entry script、wire-up、importScripts 路徑解析、Chrome 鍵盤對映這類只能在 Jimmy 本機 Chrome 觀察的問題），在 `test/PENDING_REGRESSION.md` 加一筆條目，註明未補 spec 的技術原因與將來如何補。
 
 **絕對不可以兩條都不做**。
 
@@ -211,39 +201,16 @@ JRead 的核心是「從一堆雜訊 DOM 中找出主文」，這件事沒有銀
 
 ---
 
-## Debug Bridge 模式（可選，視專案需要建立）
+## 自動化除錯 harness
 
-如果 JRead 的 content script 有內建 debug log 系統（例如「主文偵測器挑中的元素」、「被隱藏的雜訊數」），可以透過 CustomEvent 橋接讓 Cowork 的 Chrome MCP 讀取 log，省去請使用者截圖的步驟。
+`tools/debug-harness.js` 是主要自驗工具。關鍵細節：
 
-參考做法（isolated world ↔ main world）：
+- **為什麼 `page.evaluate(() => !!window.__JRead)` 永遠 false**：content script 在 isolated world，`page.evaluate` 在 main world，兩個 window 互不相通。驗證 content script 的效果必須看「shared DOM 的副作用」——`data-jread-active` / injected `<style id="__jread-style">` / `getBoundingClientRect` 等。
+- **為什麼用 Playwright 內建 Chromium、不用系統 Chrome**：Google Chrome 137+ 擋掉 `--load-extension` flag。Playwright bundled Chromium 沒擋。必須 `channel: 'chromium'` + `launchPersistentContext` + `headless: false`。
+- **觸發閱讀模式**：不能靠 `page.evaluate` 呼叫 `window.__JRead.enterReaderMode`（isolated world 看不到）。要走 `sw.evaluate(() => chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_READER_MODE' }))` 讓 SW 傳訊息給 content script。
+- **DOM 診斷範例**：找相鄰區塊元素間 `getBoundingClientRect` 垂直 gap > 40px 的位置、列出其前後元素，定位「留白哪來」。
 
-```js
-// content script 監聽 main world 的請求
-window.addEventListener('__jread-debug-request', e => {
-  const { action, afterSeq } = e.detail;
-  // 回傳 log buffer
-  window.dispatchEvent(new CustomEvent('__jread-debug-response', { detail: logs }));
-});
-```
-
-```js
-// Chrome MCP 在 main world 查詢 log
-new Promise(r => {
-  window.addEventListener('__jread-debug-response', e => r(e.detail), { once: true });
-  window.dispatchEvent(new CustomEvent('__jread-debug-request', { detail: { action: 'GET_LOGS', afterSeq: 0 } }));
-  setTimeout(() => r('TIMEOUT'), 5000);
-});
-```
-
-**自動除錯循環**：
-
-1. Chrome MCP navigate 到目標頁面
-2. Bridge 清快取（若有）
-3. Bridge 清 log
-4. Bridge 觸發「開啟閱讀模式」
-5. 輪詢等待完成
-6. Bridge 拉 log，分析 warn / error（例如「偵測到 0 個候選主文」）
-7. 有 bug → 改 code → 請使用者 reload extension → 回到步驟 1 驗證
+完整坑表與移植指南見 `docs/CHROME_EXTENSION_DEBUG.md`（可複製給其他 extension 專案的 Claude Code 套用）。
 
 ---
 
@@ -296,8 +263,7 @@ new Promise(r => {
 - ❌ 不要用簡體字或中國大陸用語
 - ❌ 不要過度使用 emoji
 - ❌ 不要用破壞性 git 操作（見硬規則 6）
-- ❌ 不要在 Cowork 端碰 git
-- ❌ 不要在 Cowork 端動 `jread/` 任何檔案（Cowork 只做 Chrome MCP 驗證）
-- ❌ 不要把新功能或 UI 修改轉手給 Cowork 去寫——程式碼一律在 Claude Code 端實作
+- ❌ 不要跳過自動化驗證直接 commit 有視覺風險的改動——`npm run debug` 是 release 流程的一部分
+- ❌ 不要在驗證時叫 Jimmy 貼 console 或截圖——harness 讀 stdout + 截圖就夠了，少數 harness 驗不到的情境（見「什麼時候還需要 Jimmy 手動 Chrome reload」清單）才請他 reload
 - ❌ 不要用站點 hostname / class selector 做特判（見硬規則 3）；必要時放到明確隔離的 site-overrides
 - ❌ 不要在主文偵測失敗時硬套排版——直接 no-op，不要誤傷原頁面

@@ -8,11 +8,11 @@
 
 ## 使用者資料
 
-- **名字**：Jimmy
-- **語言/文化**：台灣使用者，**一律使用繁體中文 + 台灣用語**，絕不使用簡體字或中國大陸用語（例如：軟體不是「軟件」、資料夾不是「文件夾」、影片不是「視頻」、程式不是「程序」、介面不是「界面」、滑鼠不是「鼠標」、網路不是「網絡」）
-- **技術背景**：理解概念、會看截圖、會操作 Chrome 擴充功能，非專業開發者
-- **環境**：macOS、Chrome 最新版
-- **心態**：把 Claude 當協作者，會提供清楚的 bug 回報與方向指引
+- **名字**：【TODO: 使用者名字】
+- **語言/文化**：【TODO: 例如「台灣使用者，一律使用繁體中文 + 台灣用語」】
+- **技術背景**：【TODO: 例如「理解概念、會看截圖、會操作 Chrome 擴充功能，非專業開發者」】
+- **環境**：【TODO: OS、Chrome 版本等】
+- **心態**：【TODO: 使用者期望的協作方式】
 
 ---
 
@@ -39,34 +39,42 @@
 
 ---
 
-## 環境分工（硬規則）
+## 實作流程（硬規則）
 
-**Cowork** 負責所有 UI/DOM 相關 bug 的 code 修改——動到 content script / injector / detector 這類渲染相關檔的修正，一律在 Cowork 做。判斷標準：若 bug 的根因需要「實地看真實頁面 DOM」才能確定，就是 Cowork 的工作。
+所有工作——程式碼新增/修改（含 UI/DOM / content script / detector / popup / background / manifest）、git、`npm test`、regression spec、fixture、文件同步、視覺驗證、release——**一律在 Claude Code 端完成**。拿到新功能需求或 bug 報告時，直接開始寫 code。
 
-**Claude Code** 負責 git / `npm test` / regression spec / fixture / 文件同步 / release。也含純邏輯模組修正（background service worker 的非渲染路徑、API 呼叫層、快取層、儲存層等）。
+### 視覺/行為驗證（自動化優先）
 
-**Claude Code 碰到 UI bug 不准自己改**——必須直接跟 Jimmy 說「這要切 Cowork 實地診斷」，不要試圖純推理找結構性通則。
+程式碼改完後，驗證分兩層：
 
-### Cowork 環境（UI/DOM bug 修復主力）
+**第一層：jsdom regression**（`npm test`）——驗邏輯正確、API 結構、可逆性。跑得快、不需瀏覽器。
 
-必須切到 Cowork 的情境：
-- 任何 UI/DOM 相關 bug 的 code 修改
-- 在真實頁面上排版爆掉、某類元素沒處理、某類元素誤處理
-- SPA 導航異常
-- 任何判斷標準是「實地看真實頁面就知道」的問題
+**第二層：Playwright harness**（`npm run debug` 或 `node tools/debug-harness.js`）——驗真實 Chrome 行為。用 Playwright **內建 Chromium**（不是系統 Chrome，見下方「harness 關鍵坑」）+ `launchPersistentContext` 載入 unpacked extension，透過 SW `chrome.tabs.sendMessage` 觸發功能，讀 DOM 副作用、量測 layout、截圖。Claude 讀 stdout + 用 Read tool 看截圖即可**自驗**視覺結果，**不用請使用者貼 console 或截圖**。
 
-Cowork 有 `mcp__Claude_in_Chrome__*` 可以 navigate / 讀 DOM / 跑 JS，Claude Code 端沒有。
+完整流程、七個常見坑、移植到其他 extension 專案的清單見 `docs/CHROME_EXTENSION_DEBUG.md`。
 
-**Cowork 絕對不可以**：
-- 自己 bump `manifest.json` 的 version
-- 自己改 SPEC.md / README.md / CHANGELOG.md / docs / 測試期望值常數的版本號
-- 碰 git（sandbox 的 `.git/` 受保護，`git add` / `commit` / `tag` 會失敗，不要嘗試）
+### 什麼時候還需要使用者手動 Chrome reload
 
-### Claude Code 環境（git / test / release / 文件 / 非渲染邏輯）
+harness 覆蓋率很高（service worker 啟動、manifest 解析、content script 注入、DOM 操作、CSS 算出值），但以下情境 harness 模擬不到，**commit + release 前**仍需請使用者到 `chrome://extensions/` reload extension 確認：
+
+- **keyboard shortcut**：Playwright Chromium 的鍵盤對映可能與使用者本機 Chrome 不同；`chrome://extensions/shortcuts` 的衝突只有在實機才顯現
+- **popup 的使用者互動**：harness 只跑 SW 後端觸發；popup 的點擊、即時 setting 更動需實機操作驗
+- **使用體感問題**：字體渲染、配色對比、動畫順暢度等主觀感受
+
+其餘類別（排版、隱藏規則、偵測、storage listener、SW 訊息協定）harness 都驗得到，**不用再煩使用者**。
+
+典型流程：
+1. 改 code → `npm test` 過
+2. `npm run debug` 自驗（讀 stdout + 看截圖）
+3. 若命中「仍需使用者手動驗」清單 → 停下來請使用者 reload 驗
+4. OK → `git status` 全看過 → commit + bump + release
+
+### 環境雜項
 
 - **啟動方式**：【TODO: 你慣用的啟動方式，例如 shell alias `cc` = `claude --dangerously-skip-permissions`】
 - **改 extension 資料夾前先確認 working tree 乾淨**：若有未 commit 的變更先 commit 或 stash
 - **bump 版本號後必須立刻 `git tag v<新版本>`**
+- **harness 首次使用**：`npm install` + `npx playwright install chromium`（下載 bundled Chromium，幾百 MB）
 
 ---
 
@@ -77,23 +85,17 @@ Cowork 有 `mcp__Claude_in_Chrome__*` 可以 navigate / 讀 DOM / 跑 JS，Claud
 - 每次修改 Extension 功能、UI、設定結構，**必須** bump `manifest.json` 的 `version`
 - 格式：**三段式** `1.0.0`（Chrome 會把 `1.01` 解析成 `1.1`，前導零會被吃掉）
 - Popup 顯示的版本號必須用 `chrome.runtime.getManifest().version` 動態讀取，**絕對不可寫死在 HTML**
-- **bump 版本號是 Claude Code 端的責任**：Cowork 端只改程式碼，不動版本號
 - **版本 bump 同步清單**（每次 bump 都必須全部更新，少一個測試就會 fail）：
   1. `【TODO: extension 資料夾】/manifest.json` 的 `version`
-  2. `SPEC.md` 的「目前 Extension 版本」標頭
-  3. `CHANGELOG.md` 頂部新增一條 `**vX.Y.Z**——` 條目
-  4. `test/version-check.spec.js` 的 `EXPECTED_VERSION` 常數（此常數是 forcing function，刻意設計成 bump 後不改就 fail）
-  5. 【TODO: 其他需要同步的地方，例如 Landing Page、README...】
+  2. `package.json` 的 `version`
+  3. `SPEC.md` 的「目前 Extension 版本」標頭
+  4. `CHANGELOG.md` 頂部新增一條 `**vX.Y.Z**——` 條目
+  5. `test/version-check.spec.js` 的 `EXPECTED_VERSION` 常數（此常數是 forcing function，刻意設計成 bump 後不改就 fail）
+  6. 【TODO: 其他需要同步的地方，例如 Landing Page、README...】
 
-### 1.5 版本快照備份
+### 1.5 版本還原
 
-**Cowork 環境**：動手改程式碼前必須先快照：
-```
-cp -a 【TODO: extension 資料夾】 .backups/【資料夾名稱】-v<當前 manifest 版本>
-```
-冪等：已存在則略過。
-
-**Claude Code 環境**：不需要手動複製，`git checkout v<版本號> -- 【TODO: extension 資料夾】` 即可還原。
+`git checkout v<版本號> -- 【TODO: extension 資料夾】` 即可還原到任一歷史版本。不需要手動快照（git tag 本身就是快照）。
 
 ### 2. 文件同步
 
@@ -110,7 +112,7 @@ cp -a 【TODO: extension 資料夾】 .backups/【資料夾名稱】-v<當前 ma
 ### 3. Bug 修法必須是「結構性通則」，不可以是特判
 
 - 判斷標準：問自己「這條規則描述的是 DOM / CSS 的結構特徵，還是某個網站 / class / selector 的身份？」
-  - ✅ 可以：描述 DOM 結構特徵、CSS 特性
+  - ✅ 可以：描述 DOM 結構特徵、CSS 特性、ARIA 語意 role 等
   - ❌ 不可以：`if (location.hostname === 'example.com')` 綁定站點
   - ❌ 不可以：`el.matches('.some-class')` 綁定特定 class
 - 找不到通用規則時的正確反應：**停下來追問根因**，不要先加一個可以矇過當下測試頁的特判
@@ -119,25 +121,18 @@ cp -a 【TODO: extension 資料夾】 .backups/【資料夾名稱】-v<當前 ma
 
 每次在 extension 資料夾修 bug + bump 版本號的同一輪對話，**必須**選下面其中一條路徑：
 
-**路徑 A（首選）**，分兩階段：
+**路徑 A（首選）**：
 
-第一階段（Cowork）：
-1. 用 Chrome MCP navigate 到真實 bug 頁面、看 DOM
-2. 找結構性根因（見硬規則 3）
-3. 改 extension 程式碼
-4. `cp -a ...` 快照（冪等）
-5. **在 Chrome MCP 上驗**：reload extension → navigate 到原 bug 頁面 → 實地確認修好（不可跳過）
-6. 回報 root cause + diff 給 Jimmy，告訴他切回 Claude Code 繼續
-
-第二階段（Claude Code）：
-1. 跑 `git status` 確認 Cowork 的改動都在 working tree
-2. 在 `test/regression/fixtures/` 建 fixture HTML
-3. 在 `test/regression/` 建對應 spec
-4. sanity check：暫時破壞修法 → 確認 fail → 還原 fix → 確認 pass
+1. 改 extension 程式碼（結構性根因，見硬規則 3）
+2. 在 `test/regression/fixtures/` 建或擴充 fixture HTML（若為 bug，擷取最小可重現結構）
+3. 在 `test/regression/` 建或擴充對應 spec
+4. sanity check：暫時破壞修法 → 確認 fail → 還原 → 確認 pass
 5. 跑完整 `npm test` 確認沒踩既有 spec
-6. bump 版本號 + 更新同步清單 + `./release.sh`
+6. 若改動影響真實 Chrome 行為 → `npm run debug` 跑 Playwright harness 自驗（讀 stdout + 看截圖）
+7. 若命中「仍需使用者手動驗」清單 → 停下來請使用者 reload 驗
+8. bump 版本號 + 更新同步清單 + `./release.sh`
 
-**路徑 B（fallback）**：若當下抽不出最小重現結構，在 `test/PENDING_REGRESSION.md` 加一筆條目。
+**路徑 B（fallback）**：若當下抽不出最小重現結構（例如純 entry script、wire-up、鍵盤對映這類只能在使用者本機 Chrome 觀察的問題），在 `test/PENDING_REGRESSION.md` 加一筆條目，註明未補 spec 的技術原因與將來如何補。
 
 **絕對不可以兩條都不做**。
 
@@ -146,7 +141,6 @@ cp -a 【TODO: extension 資料夾】 .backups/【資料夾名稱】-v<當前 ma
 - 每次準備 commit 之前，必須先跑完整 `git status`，把 staged / unstaged / untracked 三欄全部看過
 - 若有本次任務沒在改的檔案出現，**必須停下來追問「這個檔案為什麼會在這？」**
 - 不可以默默把無關的變更一起 `git add` 混進當前 commit
-- Cowork 改完的 UI fix 最常以 unstaged 狀態躺在 working tree 等待，切回 Claude Code 要主動處理
 
 ### 6. 禁止破壞性 git 操作
 
@@ -176,18 +170,21 @@ cp -a 【TODO: extension 資料夾】 .backups/【資料夾名稱】-v<當前 ma
 - 子模組間用 `window.__<命名空間>` 或 IIFE 模式共用狀態
 - `manifest.json` 的 `content_scripts.js` 陣列需按載入順序列出所有 content script 檔案
 - Content script 讀不到 background service worker 的記憶體狀態，通訊必須走 `chrome.runtime.sendMessage`
+- Content script 在 **isolated world**，page 的 `window` 看不到 content script 的變數。驗證時要看 DOM 副作用而非 JS 變數
 
 ### Background Service Worker
 
 - Manifest V3 的 background 是 service worker，不是持續運行的 background page
 - 不可依賴全域變數在請求之間保存狀態——用 `chrome.storage` 持久化
 - service worker 可能隨時被 Chrome 終止，設計時要考慮重啟後的恢復邏輯
+- `importScripts()` 的相對路徑是相對 SW 自己所在目錄，不是 extension root——跨目錄請用絕對路徑（前置斜線）
 
 ### 儲存
 
 - `chrome.storage.local`：本機持久化，容量較大
 - `chrome.storage.sync`：跨裝置同步，有嚴格的配額限制（`QUOTA_BYTES_PER_ITEM` 8KB）
 - 快取類資料放 `storage.local`，使用者偏好設定放 `storage.sync`
+- 跨分頁即時同步用 `chrome.storage.onChanged` listener，不必自建訊息協定
 
 ### Popup / Options
 
@@ -195,38 +192,18 @@ cp -a 【TODO: extension 資料夾】 .backups/【資料夾名稱】-v<當前 ma
 
 ---
 
-## Debug Bridge 模式（可選，視專案需要建立）
+## 自動化除錯 harness 關鍵坑
 
-如果 extension 的 content script 有內建 debug log 系統，可以透過 CustomEvent 橋接讓 Cowork 的 Chrome MCP 讀取 log，省去請使用者截圖的步驟。
+以下是 `tools/debug-harness.js` 設計時踩過的坑，移植到新專案時先看一遍省時間：
 
-參考做法（isolated world ↔ main world）：
+- **`page.evaluate(() => !!window.__MyExt)` 永遠 false**：content script 在 isolated world，page.evaluate 在 main world。驗證要看 DOM 副作用（attribute / injected style / computed value）。
+- **Chrome 137+ 擋 `--load-extension`**：必須用 Playwright 內建 Chromium（`channel: 'chromium'`），不是 Google Chrome / Edge。
+- **Playwright MCP 不支援 unpacked extension**：MCP server 層不暴露 persistent context 設定（[issue #39569](https://github.com/microsoft/playwright/issues/39569)）。寫 standalone node script 用 `chromium.launchPersistentContext`。
+- **第一個 about:blank 分頁 content script 不注入**：Playwright 啟動時 extension 還沒註冊。SW 起來後先 `ctx.pages()[0].close()` 再 `ctx.newPage()`。
+- **`waitUntil: 'networkidle'` 卡住**：現代網站永遠沒 idle。用 `'load'` + `sleep(2500)` 等 document_idle。
+- **`chrome.tabs.sendMessage` 拋 `Could not establish connection`**：content script 還沒注入，navigate 後至少等 2.5 秒；try/catch 包住。
 
-```js
-// content script 監聽 main world 的請求
-window.addEventListener('__ext-debug-request', e => {
-  const { action, afterSeq } = e.detail;
-  // 回傳 log buffer
-  window.dispatchEvent(new CustomEvent('__ext-debug-response', { detail: logs }));
-});
-```
-
-```js
-// Chrome MCP 在 main world 查詢 log
-new Promise(r => {
-  window.addEventListener('__ext-debug-response', e => r(e.detail), { once: true });
-  window.dispatchEvent(new CustomEvent('__ext-debug-request', { detail: { action: 'GET_LOGS', afterSeq: 0 } }));
-  setTimeout(() => r('TIMEOUT'), 5000);
-});
-```
-
-**自動除錯循環**：
-1. Chrome MCP navigate 到目標頁面
-2. Bridge 清快取（若有）
-3. Bridge 清 log
-4. Bridge 觸發主要功能
-5. 輪詢等待完成
-6. Bridge 拉 log，分析 warn / error
-7. 有 bug → 改 code → 請使用者 reload extension → 回到步驟 1 驗證
+完整指南見 `docs/CHROME_EXTENSION_DEBUG.md`。
 
 ---
 
@@ -234,18 +211,16 @@ new Promise(r => {
 
 ### 除錯方向優先序
 
-1. 送給 API / 服務的輸入是否有噪音
-2. 資料擷取邏輯是否抓到正確單位
-3. 分批、對齊、邊界是否正確
-4. background ↔ content 訊息傳遞是否正確
-5. 快取是否殘留舊結果
-6. 最後才考慮調整 prompt / 模型參數
+1. 【TODO: 專案特有的除錯優先序】
+2. background ↔ content 訊息傳遞是否正確
+3. 快取是否殘留舊結果
+4. 最後才考慮調整 CSS 樣式細節 / prompt / 模型參數
 
 ### 程式碼風格
 
 - Content script 用 IIFE + `window.__<命名空間>` 模式
 - Background / popup / options 可以用 ES module
-- 註解用繁體中文
+- 註解用【TODO: 語言】
 - 不要亂加功能或過度工程；MVP 優先
 - 要動沒要求的檔案前先詢問
 
@@ -276,8 +251,10 @@ new Promise(r => {
 - ❌ 不要寫死版本號到 Popup HTML
 - ❌ 不要在沒同步更新 SPEC.md 的情況下結束任務
 - ❌ 不要在沒 bump 版本號的情況下結束任務
-- ❌ 不要用簡體字或中國大陸用語
+- ❌ 不要用【TODO: 禁用的語言/用語，例如簡體字】
 - ❌ 不要過度使用 emoji
 - ❌ 不要用破壞性 git 操作（見硬規則 6）
-- ❌ 不要在 Cowork 端碰 git
+- ❌ 不要跳過自動化驗證直接 commit 有視覺風險的改動——`npm run debug` 是 release 流程的一部分
+- ❌ 不要在驗證時叫使用者貼 console 或截圖——harness 讀 stdout + 截圖就夠了，少數 harness 驗不到的情境才請他 reload
+- ❌ 不要用站點 hostname / class selector 做特判（見硬規則 3）
 - ❌ 【TODO: 你這個專案特有的禁止事項】
