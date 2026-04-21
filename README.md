@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.8（cleaner 兩條通則：主文內 2-col layout 下 sidebar column 偵測（direct-child 文字量 < 主欄 10% + linkDensity > 0.5 → hide）；`iframe`/`video`/`audio` tag 本身對 empty-spacer / action-row 規則 early-skip。修 Dwarkesh / Substack podcast-post 右欄 sidebar 沒隱藏 + YouTube cross-origin iframe 被當空殼誤殺）
+**目前版本**：v0.6.9（cleaner 擴展留言區 keyword：`comment` / `comments` / `discussion` / `disqus` 加入 NOISE_KEYWORD_RE，與 share / social 慣例同性質的跨站 CMS anchor 命名識別。修 Dwarkesh / Substack podcast 類頁面主文結尾後 `<div id="discussion">` 留言區塊沒被清掉）
 
 ---
 

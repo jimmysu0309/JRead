@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.8`（cleaner 兩條通則：主文內 sidebar column 偵測（direct-child 文字量 < 主欄 10% + linkDensity > 0.5 → hide），修 Dwarkesh / Substack podcast-post 類 `<article>` 包住 2-col layout 時右欄 sidebar 躲過所有規則；empty-spacer / action-row 對 `iframe`/`video`/`audio` tag early-skip，修 YouTube cross-origin iframe 被當空殼錯殺）
+`0.6.9`（cleaner 擴展 NOISE_KEYWORD_RE 加入 `comment` / `comments` / `discussion` / `disqus` 跨站 CMS 留言區 anchor 慣例，修 Substack / WordPress / Ghost / Disqus 類頁面主文結尾後 `#discussion` 留言區塊未被清掉，reader mode 多出 Discussion heading + 留言表單 + 留言列表）
 
 ---
 
@@ -126,6 +126,7 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
 - `cta`、`call-to-action`
 - `related-articles`、`recommended`、`read-more`
 - `share`、`social`（配合結構判斷，避免誤殺有意義的 share 圖示）
+- `comment`、`comments`、`discussion`、`disqus`（跨站 CMS 留言區 anchor 慣例：Substack `#discussion`、WordPress `.comments-page`、Disqus `#disqus_thread`、Ghost `#comments`）
 
 **這不是站點特判**：這些字詞是跨站通用的 CSS 命名習慣，在 Business Weekly、Medium、紐約時報、Substack 上都會命中對應區塊。實作時如果發現某個 keyword 容易誤殺，再逐條評估調整。
 
@@ -251,6 +252,7 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
   - `.container-dlhqPD > .video-wrapper-lforaE` 內的 `<video>`（Substack 原生 podcast player）
   - `.youtube-wrap > .youtube-inner > iframe[src*="youtube-nocookie.com/embed"]`（YouTube 縮圖 embed，點了才 load 真正播放器）
   - 標題 / 副標 / 作者 / 日期 / 贊助商段落 / 內文段落
+- **切斷點**：主文在「Me too.」對話結尾後乾淨結束。`<div id="discussion">` 包住的整塊留言區（含 H4「Discussion about this video」+ `<textarea>` 留言表單 + `.comment-list-items`）由 v0.6.9 keyword heuristic 命中 hide（`#discussion` id 含 `discussion` 字樣）
 
 ---
 

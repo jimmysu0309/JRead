@@ -504,6 +504,61 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 CMS 留言區（#discussion / #comments-for-scroll / .comments-page）被 keyword heuristic 命中 hide', () => {
+    // Dwarkesh / Substack 實測：主文結尾後緊跟 `<div id="discussion">` 區塊，
+    // 內含 H4「Discussion about this video」+ 留言表單 + 留言列表。這塊不是
+    // 原頁面 sidebar（在主文 main-content 內），不是 fixed/sticky、不是 article
+    // 兄弟——靠擴展的跨站 CMS 留言 keyword（discussion / comment / comments /
+    // disqus）hit `hideInsideArticleByKeyword` 被清掉。通則等同 share / social
+    // 慣例：id="discussion" 是 Substack anchor、#disqus_thread 是 Disqus、
+    // .comments-page 是 Substack comment 頁、#comments 是 Ghost/WordPress。
+    // 這四個 keyword 不是任一站點特判，是跨 CMS 的 anchor 命名慣例。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'substack-discussion-comments.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 article');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      // 核心斷言 1：#discussion 根容器被 hide（id keyword 命中）
+      const discussion = w.document.querySelector('#discussion');
+      assert.ok(discussion, 'fixture 必須有 #discussion 容器');
+      assert.strictEqual(discussion.dataset.jreadHidden, '1',
+        '#discussion 必須被 keyword heuristic hide（id 含 discussion）');
+
+      // 核心斷言 2：主文最後一段（Me too.）保留——切斷點正確
+      const lastMain = Array.from(w.document.querySelectorAll('p'))
+        .find(p => p.textContent.includes('LAST_MAINTEXT_MARK'));
+      assert.ok(lastMain, '主文最後段必須存在');
+      assert.notStrictEqual(lastMain.dataset.jreadHidden, '1',
+        '主文最後段（LAST_MAINTEXT_MARK Me too.）不得被誤殺——切斷點正確');
+
+      // 核心斷言 3：留言內容因祖先 #discussion 被 hide 而視覺上消失
+      // （#discussion display:none 繼承；個別 .comment 不需要獨立 hide）
+      const commentEl = Array.from(w.document.querySelectorAll('.comment-body'))
+        .find(el => el.textContent.includes('DWARKESH_COMMENT_MARK'));
+      assert.ok(commentEl, 'fixture 必須有留言內容節點');
+      // 祖先 #discussion 已 display:none，個別 comment 不用自己 hidden；驗證
+      // 任一祖先 jreadHidden = '1' 即可
+      let cur = commentEl;
+      let foundHidden = false;
+      while (cur) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { foundHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(foundHidden,
+        '留言內容的祖先鏈上必須有一個元素被 hide（#discussion 或其下 wrapper）');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {
     // Dwarkesh (Substack) YouTube embed 實測：cross-origin iframe 的
     // textContent = ""（跨域讀不到內部 DOM）+ querySelector 讀不到內部媒體
