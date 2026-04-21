@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.16`（styler 的 user override 分支 font-size / font-family / line-height rule 的 selector list 擴展到 body text descendant：除 `[data-jread-active="1"]` 本身外，額外包含 `p / li / blockquote / figcaption / dd / dt`。heading h1-h6 刻意不含（保留原站標題大小分級）。修 BBC / NYT / Guardian 類站點把 font-size 用 class rule 鎖在 `<p>` 身上（例：BBC `.HooNV { font-size: 18px }`）、只對 article 本身下 rule 時 inheritance 被站點 class rule 截斷、override 失效的問題。v0.6.0 baseline 精神「預設值不動原站」仍保留：DEFAULT 分支不注入任何 override rule）
+`0.6.17`（cleaner 的 `hideInsideArticleSidebarColumns` 新增條件 B：container 內某 direct child 是 `<aside>` tag **且** textLen < main × 50% **且** `getBoundingClientRect().height > 400px` → 直接 hide。既有條件 A（`textLen < main × 10% AND linkDensity > 0.5`）維持——為 OR 關係追加，不改既有路徑。修 Engadget 類 `<aside class="col-right">` 內含廣告 placeholder + 導覽 link 稀釋 textLen/linkDensity 到兩條件都差一點不命中的 sidebar 場景；pull-quote aside（簡單 blockquote 結構、rectH 短）靠 `> 400px` 閾值保護不被誤殺）
 
 ---
 

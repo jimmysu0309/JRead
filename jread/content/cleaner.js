@@ -314,6 +314,15 @@
   const SIDEBAR_COLUMN_TEXT_RATIO = 0.1;
   const SIDEBAR_COLUMN_MIN_LINK_DENSITY = 0.5;
   const SIDEBAR_COLUMN_MIN_MAIN_TEXT = 500;
+  // 條件 B（<aside> tag）——sidebar column 的 `<aside>` tag 特判閾值：
+  // `<aside>` 是 HTML5 語意「次要內容」tag。article 內 aside 若高度顯著
+  // 排除 pull-quote（通常 < 300px）、且文字量未超過主欄一半，直接視為
+  // sidebar（導覽 / 廣告 / 相關列表）hide。Engadget 實測 aside 含廣告
+  // placeholder + footer link 稀釋到 textLen 剛好超過 main×10% 且
+  // linkDensity 0.057 遠低於 0.5，條件 A 兩條都不中——但 `<aside>` tag
+  // + rectH 5706px 結構上顯然是 sidebar 不是 pull-quote。
+  const SIDEBAR_ASIDE_TEXT_RATIO = 0.5;
+  const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
 
   function hideInsideArticleSidebarColumns(articleEl, hidden) {
     // whitespace-normalize：真實 Chrome 的 innerText 會 collapse 排版空白，
@@ -347,9 +356,23 @@
       for (const s of stats) {
         if (s === main) continue;
         if (isInPreserved(s.el)) continue;
+        // 條件 A：textLen < main × 10% AND linkDensity > 0.5
+        // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
           hide(s.el, hidden);
+          continue;
+        }
+        // 條件 B：child 是 <aside> tag + textLen < main × 50% + rectH > 400
+        // 排除 pull-quote（通常 < 300px 簡單結構），命中 Engadget 類
+        // 「aside 內塞廣告 placeholder 稀釋 ld 到 < 0.5」的 sidebar
+        if (s.el.tagName === 'ASIDE' &&
+            s.textLen < main.textLen * SIDEBAR_ASIDE_TEXT_RATIO) {
+          const r = s.el.getBoundingClientRect &&
+            s.el.getBoundingClientRect();
+          if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) {
+            hide(s.el, hidden);
+          }
         }
       }
     }
