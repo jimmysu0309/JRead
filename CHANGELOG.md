@@ -24,6 +24,26 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.1**——bugfix：上報 icon-link 巨大化（Jimmy 2026-04-22 回報 upmedia.mg 政治版三個 icon「新聞摘要」「辭」「AI 新聞關鍵字詞查詢」在閱讀模式下被放大成巨型版）。
+
+根因：styler 的 `[data-jread-active="1"] img { max-width: 100% !important; height: auto !important; }` 規則本意是維持主圖 aspect ratio，但這條對 `<a><img>` icon-link 結構反向傷害——原站常用 `height: 32px` 類 CSS 鎖 icon 高度、沒明確設 width，依賴 browser 的 intrinsic aspect-ratio 自動算 width。`height: auto !important` 吃掉原站 height 後，img 退回 naturalWidth x naturalHeight（upmedia 實測 `#toggleImg` 從 32x32 被拉成 250x250 natural size）。
+
+通則修法（結構特徵、非站點特判）：
+- 裸 `a > img` 視為 icon-link 結構（logo / UI 按鈕圖）——獨立 rule 只 cap 寬度、**絕不設 height**，保留原站對 icon 的合法尺寸限制
+- 其他 wrapper（figure / picture / p / div）下的 img 視為內文配圖——維持舊規則 `max-width: 100%` + `height: auto` 的 shrink-fit 行為
+
+為何不用 runtime JS 判別：主圖用 `<figure><img>` 或 `<p><img>` 包是 HTML5 慣例；icon 用 `<a><img></a>` 讓 icon 可點擊也是普遍設計。DOM 結構本身已提供語意區分，CSS selector 精準化（`img:not(a > img)`）即可涵蓋兩者，不需 img load 完成後算 naturalSize。
+
+驗證：
+- fixture `test/regression/fixtures/upmedia-icon-link-oversize.html` 擷取最小重現結構（`<div class="publish-img"><a><img id="toggleImg"></a></div>` + 內文 `<figure><img>`）
+- 新增 2 條 forcing function spec（`styler.spec.js`）：(1) `a > img` 必須有獨立 rule、`max-width: 100%` 但絕不設 height（2）含 `height: auto` 的 img selector 必須帶 `:not(a > img)`，不得有 naked img
+- Sanity check：把 styler 暫時改回 naked img selector，兩條 spec 如預期 fail
+- Playwright harness 在 upmedia.mg `/tw/focus/politics/256168` 實測：三個 icon 從被放大的 276x60 / 250x250 / 147x32 回到原站尺寸 147x32 / 32x32 / 22x22；主新聞圖仍正確 shrink-fit 到 article 寬 608x405
+- Dwarkesh / ChinaTalk Substack 等既有 baseline 站的主圖與 byline avatar 皆無 regression
+- 110 spec 全過（108 + 2 新）
+
+---
+
 **v0.7.0**——視覺大改版：全站 Design System 落地（Jimmy 2026-04-22 多輪迭代）。工作分為四大塊：
 
 **A. Popup UI refresh**（Jimmy 授權動 popup；jsdom spec 不受影響全數 pass）

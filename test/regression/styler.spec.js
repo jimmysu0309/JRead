@@ -117,6 +117,49 @@ describe('styler — 骨架與可逆性', () => {
       'img/video/picture 有 intrinsic 尺寸，height: auto 能按比例算');
   });
 
+  // v0.7.1 修法：a > img（link-wrapped icon / logo / UI 按鈕圖）不套
+  // height: auto——原站常用 height: 32px 類 CSS 鎖 icon 高度、沒明確設
+  // width，依賴 intrinsic aspect ratio 自動算 width。舊規則 height: auto
+  // !important 吃掉原站 height 後，img 退回 naturalWidth x naturalHeight
+  // 的大尺寸（upmedia 實測「辭」icon 從 32x32 被拉成 250x250），主文裡
+  // 出現巨大 UI icon。
+  //
+  // 通則區分：`[data-jread-active] a > img` 只 cap 寬度、保留原站 height；
+  // 其他 wrapper（figure / picture / p / div 等）下的 img 維持 shrink-fit
+  // 行為（`img:not(a > img)` 繼續含 height: auto）。
+  it('a > img 有獨立 rule：max-width: 100% 且絕不設 height: auto（icon-link 保留原站 height）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    const m = css.match(/\[data-jread-active="1"\]\s+a\s*>\s*img\s*\{([^}]*)\}/);
+    assert.ok(m, 'a > img 必須有獨立 rule block（不得與 img:not(a > img) 共用 height: auto）');
+    const body = m[1];
+    assert.ok(/max-width:\s*100%/.test(body), 'a > img rule 必須 cap 寬度');
+    assert.ok(!/height\s*:/.test(body),
+      'a > img rule 絕不得設 height（會吃掉原站對 icon 設的合法 height，造成 icon 退回 natural size）');
+  });
+
+  it('img selector 必須排除 a > img（img:not(a > img)），否則 height: auto 會誤傷 icon-link', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找含 height: auto 的 rule block
+    const matches = [...css.matchAll(/([^{}]+)\{([^}]*height\s*:\s*auto[^}]*)\}/g)];
+    let hasImgNotRule = false;
+    for (const m of matches) {
+      const selectors = m[1];
+      // naked img selector：img 前面不是 `:` 或 `(`（排除 `:not(a > img)` 裡的 img 與 `> img)` 的 img）、
+      // img 後面是 `,`、`{` 或 selector 串結尾。naked img 會連 a > img 一起套 height:auto，
+      // 重現 upmedia icon-link 被放大 bug。
+      assert.ok(!/(?:^|[^(:])\bimg\s*(?:,|$)/m.test(selectors),
+        `含 height: auto 的 rule 不得含 naked img selector（會誤傷 a > img 類 icon-link；找到：${selectors.trim()}）`);
+      if (/img:not\(a\s*>\s*img\)/.test(selectors)) hasImgNotRule = true;
+    }
+    assert.ok(hasImgNotRule, '必須有一條 img:not(a > img) rule 帶 height: auto（figure/picture/p 下的 img 維持 shrink-fit）');
+  });
+
   // v0.6.4 修法：iframe 無 intrinsic 尺寸，height: auto 會掉回 HTML spec
   // 預設 150px、打壞 wp-embed / Substack / Medium 等 aspect-ratio wrapper
   // 模式（wrapper 維 16:9，iframe position:absolute 填滿）。因此 iframe 單獨
