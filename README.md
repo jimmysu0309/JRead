@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.25（popup 字級新增「自動」按鈕——`fontSize = 0` sentinel，styler 不注入 font-size override、每站保留原字級。解決 JRead 全局字級覆蓋各站 typography 差異大的取捨——可選 Auto / 預設 18 / 自訂 12-32）
+**目前版本**：v0.6.26（refactor：cleaner.js 內部重構——`norm()` 抽頂層 helper、5 條 CONTAINER_SEL 規則共用同一次 querySelectorAll 結果（5 次掃描合併為 1 次）、CHANGELOG 歸檔 v0.3–v0.5 到 `CHANGELOG-archive.md`。行為零變化、108 spec 全過）
 
 ---
 

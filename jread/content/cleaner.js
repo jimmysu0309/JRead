@@ -60,6 +60,13 @@
     return NOISE_KEYWORD_RE.test(m) || AD_BOUNDARY_RE.test(m);
   }
 
+  // whitespace-normalize：jsdom textContent 保留 HTML 縮排 `\n    `，真實
+  // Chrome innerText 會 collapse——兩端統一 collapse `\s+` → 單一空格並 trim，
+  // 讓 fixture 與真實站點量到同一個 textLen。sidebar / button-cluster 規則共用。
+  function norm(s) {
+    return (s || '').replace(/\s+/g, ' ').trim();
+  }
+
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
   }
@@ -208,8 +215,8 @@
   const ACTION_TEXT_MAX = 80;
   const ACTION_MIN_ICONS = 2;
 
-  function hideInsideArticleActionRows(articleEl, hidden) {
-    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+  function hideInsideArticleActionRows(articleEl, hidden, containers) {
+    containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of containers) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
@@ -348,12 +355,8 @@
     return false;
   }
 
-  function hideInsideArticleButtonClusters(articleEl, hidden) {
-    // whitespace-normalize：jsdom textContent 把 HTML 縮排 `\n    ` 算進去，
-    // 真實 Chrome innerText 會 collapse——兩端統一 collapse 才能讓 fixture
-    // 與真實站點量到同一個 text.length 與 buttonText。
-    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+  function hideInsideArticleButtonClusters(articleEl, hidden, containers) {
+    containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of containers) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
@@ -440,8 +443,8 @@
   const SPACER_MIN_HEIGHT = 60;
   const SPACER_TEXT_MAX = 10;
 
-  function hideInsideArticleEmptySpacers(articleEl, hidden) {
-    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+  function hideInsideArticleEmptySpacers(articleEl, hidden, containers) {
+    containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of containers) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
@@ -463,9 +466,9 @@
   }
 
   // ---- 主文內：keyword heuristic ----------------------------------------
-  function hideInsideArticleByKeyword(articleEl, hidden) {
+  function hideInsideArticleByKeyword(articleEl, hidden, containers) {
     // 限定容器型元素；避免誤殺內文標題/段落/圖片
-    const candidates = articleEl.querySelectorAll(CONTAINER_SEL);
+    const candidates = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of candidates) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;           // 保留元素內部/本身跳過
@@ -505,13 +508,8 @@
   const SIDEBAR_ASIDE_TEXT_RATIO = 0.5;
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
 
-  function hideInsideArticleSidebarColumns(articleEl, hidden) {
-    // whitespace-normalize：真實 Chrome 的 innerText 會 collapse 排版空白，
-    // 但 jsdom 的 textContent 把 HTML 縮排/換行全算進去；為了讓 testfixture
-    // 與真實頁面量測到同一個 textLen（與 linkDensity 的分母），兩端統一
-    // collapse `\s+` 再比對。
-    const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-    const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+  function hideInsideArticleSidebarColumns(articleEl, hidden, containers) {
+    containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of containers) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
@@ -923,12 +921,17 @@
       hideOutsideArticleSemantic(articleEl, hidden);
       hideFixedOutsideArticle(articleEl, hidden);
       hideSocialShareClusters(articleEl, hidden);
-      hideInsideArticleByKeyword(articleEl, hidden);
-      hideInsideArticleActionRows(articleEl, hidden);
-      hideInsideArticleButtonClusters(articleEl, hidden);
+      // 5 條 CONTAINER_SEL 規則共用同一次掃描結果（v0.6.26 效能重構）——
+      // 原本各 rule 獨立 querySelectorAll 5 次 article descendant，合併成 1 次。
+      // 規則內仍有 `continue` 排除 & `if (dataset.jreadHidden === '1') continue;`
+      // 共享 hidden 標記，等同前後鏈接。
+      const containers = articleEl.querySelectorAll(CONTAINER_SEL);
+      hideInsideArticleByKeyword(articleEl, hidden, containers);
+      hideInsideArticleActionRows(articleEl, hidden, containers);
+      hideInsideArticleButtonClusters(articleEl, hidden, containers);
       hideInsideArticleHorizontalRules(articleEl, hidden);
-      hideInsideArticleEmptySpacers(articleEl, hidden);
-      hideInsideArticleSidebarColumns(articleEl, hidden);
+      hideInsideArticleEmptySpacers(articleEl, hidden, containers);
+      hideInsideArticleSidebarColumns(articleEl, hidden, containers);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
