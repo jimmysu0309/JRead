@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.1（bugfix：icon-link 巨大化——`<a><img>` 結構的 icon / logo / UI 按鈕圖被 styler 的 `height: auto !important` 誤傷退回 naturalSize，修成 `img:not(a > img)` 精準化：icon-link 只 cap 寬度、其他 img 維持 shrink-fit。110 spec 全過）
+**目前版本**：v0.7.2（bugfix：detector 三層防護——modal signal 排除（ARIA / 隱藏狀態祖先鏈）+ heuristic textLen bonus + promoteForTitle hops 上限，解決 upmedia 國際版整頁被當主文 bug。115 spec 全過）
 
 ---
 
