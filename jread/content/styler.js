@@ -228,18 +228,25 @@ html.${HTML_CLASS} body {
       if (!articleEl || articleEl.nodeType !== 1) return null;
 
       const s = settings || {};
+      // fontSize 特殊值 0 = "Auto / 原站字級"，代表使用者明確選擇不注入
+      // 任何 font-size override（每站保留原字級）。Number(0) || DEFAULT 會把
+      // 0 轉成 DEFAULT、sentinel 失效——需用 Number.isFinite + >= 0 判斷保留 0。
+      const rawFs = Number(s.fontSize);
       const opts = {
-        fontSize: Number(s.fontSize) || DEFAULTS.fontSize,
+        fontSize: Number.isFinite(rawFs) && rawFs >= 0 ? rawFs : DEFAULTS.fontSize,
         contentWidth: Number(s.contentWidth) || DEFAULTS.contentWidth,
         fontFamily: s.fontFamily || DEFAULTS.fontFamily,
         lineHeight: Number(s.lineHeight) || DEFAULTS.lineHeight
       };
       const theme = themeOf(s.theme);
 
-      // 判斷哪些是「使用者改過」→ 需要 override；預設值不動原站
+      // 判斷哪些是「使用者改過」→ 需要 override；預設值 / Auto 不動原站
+      //   fontSize = 0 (Auto) → 不注入（跟 DEFAULT 行為一致，都保留原站）
+      //   fontSize = DEFAULT (18) → 不注入
+      //   fontSize = 其他數字（12~32） → 注入 px 值
       const overrides = {
         theme: (s.theme || DEFAULTS.theme) !== DEFAULTS.theme,
-        fontSize: opts.fontSize !== DEFAULTS.fontSize,
+        fontSize: opts.fontSize > 0 && opts.fontSize !== DEFAULTS.fontSize,
         fontFamily: opts.fontFamily !== DEFAULTS.fontFamily,
         lineHeight: opts.lineHeight !== DEFAULTS.lineHeight
       };

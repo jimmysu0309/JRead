@@ -347,6 +347,20 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
       'override rule 不得包含 h1-h6 descendant（保留原站標題大小分級）');
   });
 
+  it('fontSize = 0（Auto / 原站字級）→ CSS 不注入 font-size 也不注入 line-height（每站保留原字級與行高）', () => {
+    // popup「自動」按鈕用 sentinel 0 代表「使用者明確選擇保留原站字級」。
+    // styler 需: (1) 保留 0 值不被 `Number(0) || DEFAULT` 轉回 18；(2) override
+    // 判斷加 `> 0` 保護、0 不視為「改過 DEFAULT」→ 不注入任何 font-size /
+    // line-height 連帶 rule。每開一個站點都走原站原 typography。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 0 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(!/font-size:\s*\d+px\s*!important/.test(css),
+      'fontSize = 0 (Auto) 不得注入 font-size override');
+    assert.ok(!/line-height:\s*[\d.]+\s*!important/.test(css),
+      'fontSize = 0 (Auto) 不得連帶注入 line-height（baseline 預設完全不動原站）');
+  });
+
   it('非預設 fontSize 必須連帶注入 line-height（即使 lineHeight 是預設值）', () => {
     // Medium 實測：`.pi / .pc { line-height: 32px }` 把 p 行高鎖在 32px（原為
     // 20px 字級設計、ratio 1.6）。使用者把 fontSize 從 18 調到 16 時，若只
