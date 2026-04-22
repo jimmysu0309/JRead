@@ -3,16 +3,17 @@
 > 這份文件給 Claude 讀。每次在這個 Project 內開始新對話時，請先讀本檔與 `SPEC.md`，再動手。
 >
 > **使用說明**：把所有 `【TODO: ...】` 標記換成你的專案實際內容，再刪掉這段說明。
+>
+> **全域規則**：跨所有專案的協作規則（使用者資料、台灣用語、UI 設計指引、視覺素材分工、git 安全、回覆風格）已在 `~/.claude/CLAUDE.md`，那份會自動套用、這裡不重複。**這份模板只收 Chrome Extension 專屬的規則與踩坑經驗**。
 
 ---
 
-## 使用者資料
+## 使用者資料（專案特有調整）
 
-- **名字**：【TODO: 使用者名字】
-- **語言/文化**：【TODO: 例如「台灣使用者，一律使用繁體中文 + 台灣用語」】
-- **技術背景**：【TODO: 例如「理解概念、會看截圖、會操作 Chrome 擴充功能，非專業開發者」】
-- **環境**：【TODO: OS、Chrome 版本等】
-- **心態**：【TODO: 使用者期望的協作方式】
+> 通用使用者資料在 `~/.claude/CLAUDE.md`。這裡只寫專案特有的。
+
+- **專案中的角色**：【TODO: 例如「此 extension 的主要測試者與設計 stakeholder」】
+- **本專案相關技術熟悉度**：【TODO: 例如「熟悉 Gmail API / 曾用過 Notion API 但未用過 Chrome Storage」】
 
 ---
 
@@ -189,12 +190,41 @@ harness 覆蓋率很高（service worker 啟動、manifest 解析、content scri
 ### Popup / Options
 
 - 版本號必須用 `chrome.runtime.getManifest().version` 動態讀取，絕不寫死在 HTML
+- Popup 寬度典型 300px——高密度 UI，**全域 CLAUDE.md 的「UI 對齊 grid」與「高密度 UI 空間哲學」全面適用**；兄弟元件（stepper / button group / toggle）左右邊緣與內部分隔線必須對齊、刪除純裝飾 heading、form 控制項設固定寬不讓瀏覽器撐
+- **Popup 與 Options 共用 Design System tokens**（`--jr-primary-*` / `--jr-neutral-*` / `--jr-radius-*` / `--jr-space-*`）；options 頁是 popup 的「延伸」不是獨立風格
+
+### 快速鍵（manifest commands）
+
+- **避開與 Chrome 內建衝突的組合**：`Cmd/Ctrl+Shift+R` 撞強制重載、`Cmd+T` 撞新分頁等；衝突時 Chrome 會靜默忽略 `suggested_key`、使用者看到 shortcut 欄位空白
+- **推薦組合**：`Alt+<letter>`（Mac 上 Alt = Option，不吃單字母 macOS 特殊字元衝突是小成本換單手觸發效率）
+- **Chrome 機制坑**：`suggested_key` **只在首次安裝時套用**，extension reload 不會重套；既有使用者升級後若 shortcut 欄位仍空，必須手動去 `chrome://extensions/shortcuts` 指派。發佈時在 release notes 說明這件事
+
+### Icon family（manifest icons / action.default_icon）
+
+- 4 種尺寸：**16 / 32 / 48 / 128**（工具列 / Windows HiDPI / Extensions 管理頁 / Store listing + 安裝對話框）
+- `action.default_icon` 與 `icons` 可以用同一組，但如果要做「active / idle 兩態 icon」：
+  - `default_icon` → idle（灰階）
+  - SW 在 enter / exit reader mode（或 enable / disable state）時用 `chrome.action.setIcon({tabId, path})` 切彩色
+  - `chrome.tabs.onUpdated` status='loading' 時重置為 idle，處理導航後的 per-tab state 殘留
+- **Icon 設計本身**：依全域 CLAUDE.md 的「視覺素材分工」，brand-critical → Claude Design；Claude Code 只寫 `tools/generate-icons.js` 當草稿生成器
 
 ---
 
 ## 自動化除錯 harness 關鍵坑
 
-以下是 `tools/debug-harness.js` 設計時踩過的坑，移植到新專案時先看一遍省時間：
+### 修 DOM 演算法前先 harness 驗假設
+
+改 detector / cleaner / styler / 任何跟真實網站 DOM 互動的邏輯時，**必須先在 harness 上用一次性 probe 腳本驗證假設、再動 extension code**。jsdom fixture 是 forcing function（防止未來 regress），**不是**假設探索工具——fixture 是你自己寫的最小重現，會漏掉真實站點 candidate 列表裡的元素（整站 wrapper、WP block wrapper、CMS 無 class div）。
+
+**正確順序**：
+1. `tools/probe-<site>.js` 把**假設的評分/判斷邏輯**注入 `page.evaluate` 跑真實站點
+2. 列出 top-N 候選 + 各項分數，**肉眼驗證演算法會選到正確元素**
+3. 假設確認後才改 extension code + 補 fixture + spec
+4. probe 跑完刪掉（一次性），commit 只留 extension code + fixture + spec
+
+### 常見踩坑（移植到新專案時先看一遍）
+
+以下是 `tools/debug-harness.js` 設計時踩過的坑：
 
 - **`page.evaluate(() => !!window.__MyExt)` 永遠 false**：content script 在 isolated world，page.evaluate 在 main world。驗證要看 DOM 副作用（attribute / injected style / computed value）。
 - **Chrome 137+ 擋 `--load-extension`**：必須用 Playwright 內建 Chromium（`channel: 'chromium'`），不是 Google Chrome / Edge。
@@ -234,27 +264,24 @@ harness 覆蓋率很高（service worker 啟動、manifest 解析、content scri
 
 ---
 
-## 回覆風格
+## 回覆風格（Chrome Extension 專案補充）
 
-- 簡潔直接，不要過度鋪陳
-- 數字用 K / M 縮寫（`1K`、`4M`），不要寫一大串零
-- 技術術語可用但要解釋清楚
-- 遇到不確定的狀況寧可問一句，不要瞎猜亂改
-- 修完 bug 後要告訴使用者具體操作步驟（例如「到 chrome://extensions/ 按 reload」）
-- 不要在每次回應後加長篇總結
+> 通用回覆風格在 `~/.claude/CLAUDE.md`，此處只補 Chrome Extension 專屬的：
+
+- 修完 bug 後要告訴使用者具體操作步驟（例如「到 `chrome://extensions/` 按 reload」或「到 `chrome://extensions/shortcuts` 指派快速鍵」）
+- 提醒「Chrome 只在首次安裝才套用 `suggested_key`」這類 Chrome 機制特性時講明白、不要讓使用者自己猜
 
 ---
 
-## 不要做的事
+## 不要做的事（Chrome Extension 專案專屬）
 
-- ❌ 不要自行執行財務交易、下單、轉帳
-- ❌ 不要寫死版本號到 Popup HTML
+> 通用禁止事項（繁中/台灣用語、破壞性 git、寧可問一句等）在 `~/.claude/CLAUDE.md`。此處只列 Chrome Extension 專屬：
+
+- ❌ 不要寫死版本號到 Popup HTML——必須 `chrome.runtime.getManifest().version` 動態讀取
 - ❌ 不要在沒同步更新 SPEC.md 的情況下結束任務
 - ❌ 不要在沒 bump 版本號的情況下結束任務
-- ❌ 不要用【TODO: 禁用的語言/用語，例如簡體字】
-- ❌ 不要過度使用 emoji
-- ❌ 不要用破壞性 git 操作（見硬規則 6）
 - ❌ 不要跳過自動化驗證直接 commit 有視覺風險的改動——`npm run debug` 是 release 流程的一部分
-- ❌ 不要在驗證時叫使用者貼 console 或截圖——harness 讀 stdout + 截圖就夠了，少數 harness 驗不到的情境才請他 reload
-- ❌ 不要用站點 hostname / class selector 做特判（見硬規則 3）
+- ❌ 不要在驗證時叫使用者貼 console 或截圖——harness 讀 stdout + 截圖就夠了，少數 harness 驗不到的情境才請使用者 reload
+- ❌ 不要用站點 hostname / class selector 做特判（見硬規則 3）——必須結構性通則
+- ❌ 不要自己設計出 brand-critical icon / logo / store promo 當最終版——這些交 Claude Design（見 `~/.claude/CLAUDE.md`）
 - ❌ 【TODO: 你這個專案特有的禁止事項】
