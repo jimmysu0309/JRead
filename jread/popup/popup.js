@@ -11,11 +11,13 @@ const toggleBtn = document.getElementById('toggle-btn');
 const openOptionsLink = document.getElementById('open-options');
 const shortcutEl = document.getElementById('shortcut-hint');
 const fontSizeValEl = document.getElementById('font-size-val');
+const fontAutoBtn = document.getElementById('font-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
 const themeBtns = document.querySelectorAll('.theme-btn');
 
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
-const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18 };
+// fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
+const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
 const CONTENT_WIDTH = { min: 480, max: 1200, step: 40, default: 720 };
 const DEFAULT_SETTINGS = {
   theme: 'light',
@@ -41,16 +43,22 @@ chrome.commands.getAll((commands) => {
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
 function render(settings) {
-  fontSizeValEl.textContent = String(settings.fontSize);
+  const isAuto = settings.fontSize === FONT_SIZE.auto;
+  fontSizeValEl.textContent = isAuto ? 'Auto' : String(settings.fontSize);
   contentWidthValEl.textContent = String(settings.contentWidth);
   for (const btn of themeBtns) {
     btn.classList.toggle('active', btn.dataset.theme === settings.theme);
   }
   // 邊界 disable
-  document.querySelector('[data-action="font-dec"]').disabled = settings.fontSize <= FONT_SIZE.min;
-  document.querySelector('[data-action="font-inc"]').disabled = settings.fontSize >= FONT_SIZE.max;
+  // 字級 Auto 模式下 - 按鈕 disable、+ 按鈕從 Auto 跳到 DEFAULT
+  document.querySelector('[data-action="font-dec"]').disabled =
+    isAuto || settings.fontSize <= FONT_SIZE.min;
+  document.querySelector('[data-action="font-inc"]').disabled =
+    !isAuto && settings.fontSize >= FONT_SIZE.max;
   document.querySelector('[data-action="width-dec"]').disabled = settings.contentWidth <= CONTENT_WIDTH.min;
   document.querySelector('[data-action="width-inc"]').disabled = settings.contentWidth >= CONTENT_WIDTH.max;
+  // Auto 按鈕 active 狀態
+  if (fontAutoBtn) fontAutoBtn.classList.toggle('active', isAuto);
 }
 
 let current = { ...DEFAULT_SETTINGS };
@@ -72,11 +80,27 @@ for (const btn of themeBtns) {
 }
 
 document.querySelector('[data-action="font-dec"]').addEventListener('click', () => {
+  // Auto 模式下 - 不做事（按鈕 disabled，這裡只是 fallback）
+  if (current.fontSize === FONT_SIZE.auto) return;
   save({ fontSize: clamp(current.fontSize - FONT_SIZE.step, FONT_SIZE.min, FONT_SIZE.max) });
 });
 document.querySelector('[data-action="font-inc"]').addEventListener('click', () => {
+  // 從 Auto 按 + 直接跳到 DEFAULT（使用者從「保留原站」想回到手動控制）
+  if (current.fontSize === FONT_SIZE.auto) {
+    save({ fontSize: FONT_SIZE.default });
+    return;
+  }
   save({ fontSize: clamp(current.fontSize + FONT_SIZE.step, FONT_SIZE.min, FONT_SIZE.max) });
 });
+if (fontAutoBtn) {
+  fontAutoBtn.addEventListener('click', () => {
+    // toggle：Auto ↔ DEFAULT。按 "自動" 切到 Auto（0）；已在 Auto 再按切回 DEFAULT
+    const next = current.fontSize === FONT_SIZE.auto
+      ? FONT_SIZE.default
+      : FONT_SIZE.auto;
+    save({ fontSize: next });
+  });
+}
 document.querySelector('[data-action="width-dec"]').addEventListener('click', () => {
   save({ contentWidth: clamp(current.contentWidth - CONTENT_WIDTH.step, CONTENT_WIDTH.min, CONTENT_WIDTH.max) });
 });

@@ -115,7 +115,7 @@
       cursor: not-allowed;
     }
     .stepper .val {
-      min-width: 44px;
+      min-width: 48px;
       text-align: center;
       font-variant-numeric: tabular-nums;
       font-size: 13px;
@@ -124,6 +124,26 @@
       padding: 0 6px;
       height: 28px;
       line-height: 28px;
+    }
+
+    /* 字級 row 的 Auto toggle */
+    .auto-btn {
+      margin-left: 6px;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid #ccc;
+      background: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #444;
+    }
+    .auto-btn:hover { background: #f0f0f0; }
+    .auto-btn.active {
+      border-color: #2b6cb0;
+      background: #ebf4ff;
+      color: #2b6cb0;
+      font-weight: 600;
     }
 
     .hint {
@@ -168,10 +188,14 @@
 
     <div class="setting-row">
       <label>字級</label>
-      <div class="stepper">
-        <button data-action="font-dec" aria-label="字級減小">－</button>
-        <span class="val" id="font-size-val">18</span>
-        <button data-action="font-inc" aria-label="字級放大">＋</button>
+      <div style="display: flex; align-items: center;">
+        <div class="stepper">
+          <button data-action="font-dec" aria-label="字級減小">－</button>
+          <span class="val" id="font-size-val">18</span>
+          <button data-action="font-inc" aria-label="字級放大">＋</button>
+        </div>
+        <button class="auto-btn" id="font-auto-btn"
+          title="保留各站點原本的字級（不覆寫）">自動</button>
       </div>
     </div>
 

@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.24（styler user override 的 fontSize 分支連帶注入 `line-height: ${opts.lineHeight}` !important；修字級被調小後行高仍鎖在原站 px 值導致行距過寬的比例問題。baseline「預設值完全不動原站」精神保留）
+**目前版本**：v0.6.25（popup 字級新增「自動」按鈕——`fontSize = 0` sentinel，styler 不注入 font-size override、每站保留原字級。解決 JRead 全局字級覆蓋各站 typography 差異大的取捨——可選 Auto / 預設 18 / 自訂 12-32）
 
 ---
 

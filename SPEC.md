@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.24`（styler user override 的 fontSize 分支連帶注入 `line-height: ${opts.lineHeight}` !important 到相同 body text descendant selector list——字級改過時行高必須跟著縮放，否則原站用 px 鎖死行高（Medium `.pi/.pc { line-height: 32px }`）在字級被調小後變成過寬行距比例。獨立 lineHeight 分支改為 `!overrides.fontSize` 避免重複 rule。v0.6.0 baseline「預設值完全不動原站」精神保留——使用者完全沒改任何 override 時 userOverrides 仍為空）
+`0.6.25`（popup 字級新增「自動」按鈕——設定 `fontSize = 0` sentinel，styler 不注入任何 font-size / line-height override、每站保留原字級。styler 的 `Number(0) || DEFAULT` 陷阱用 `Number.isFinite + >= 0` 判斷保留 0；overrides.fontSize 判斷加 `> 0` 保護——0 視同 DEFAULT 不觸發注入。解決「JRead 全局強制字級、但各站原 typography 差異大」的取捨問題——使用者可選：Auto（保留原站）/ 預設 18 / 自訂 12-32）
 
 ---
 
