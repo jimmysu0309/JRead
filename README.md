@@ -2,7 +2,7 @@
 
 Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.23（button cluster path-check 擴展——「已被 jread hide 的祖先」也視為 interactive、不算真內文。修 Medium clap count p 包在 role=tooltip 內、tooltip 先被 hide 但 button cluster 規則仍把此 p 當真內文、action bar 被誤跳過的 regression 連鎖）
+**目前版本**：v0.6.24（styler user override 的 fontSize 分支連帶注入 `line-height: ${opts.lineHeight}` !important；修字級被調小後行高仍鎖在原站 px 值導致行距過寬的比例問題。baseline「預設值完全不動原站」精神保留）
 
 ---
 

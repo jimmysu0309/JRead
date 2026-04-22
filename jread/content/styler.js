@@ -163,9 +163,17 @@ html.${HTML_CLASS} body {
       `[${ARTICLE_ATTR}="1"] dt`;
     let userOverrides = '';
     if (overrides.fontSize) {
+      // 同步注入 line-height：字級改了行高必須跟著縮放，否則原站用 px 鎖死的
+      // 行高（例：Medium `.pi { line-height: 32px }` 配 20px 字級 = 1.6 倍）
+      // 在字級被調小後變成過寬行距（32/16 = 2.0）。使用 opts.lineHeight
+      // （預設 1.7 或使用者自調值），unitless 相對字級自動縮放。v0.6.0
+      // baseline 「預設值不動原站」精神仍保留——使用者**完全沒改任何
+      // override** 時 userOverrides 為空、DEFAULT 分支不走此路徑；只有
+      // 使用者主動改字級才連帶動行高。
       userOverrides += `
 ${BODY_TEXT_SEL} {
   font-size: ${opts.fontSize}px !important;
+  line-height: ${opts.lineHeight} !important;
 }`;
     }
     if (overrides.fontFamily) {
@@ -174,7 +182,9 @@ ${BODY_TEXT_SEL} {
   font-family: ${opts.fontFamily}, -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
 }`;
     }
-    if (overrides.lineHeight) {
+    if (overrides.lineHeight && !overrides.fontSize) {
+      // fontSize 已改過時 line-height 已連帶注入；這裡只處理「只改 lineHeight
+      // 沒改 fontSize」的獨立分支，避免 CSS 重複 rule。
       userOverrides += `
 ${BODY_TEXT_SEL} {
   line-height: ${opts.lineHeight} !important;

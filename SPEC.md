@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.23`（`hideInsideArticleButtonClusters` 的 path-check 把「已被 `data-jread-hidden="1"` 標記的祖先」等同 interactive 處理、不算真內文。修 Medium 類 clap count `<p>` 包在 `<div role="tooltip">` 內、tooltip 雖被 hideDialogs 先 hide 但 button cluster 規則 path-check 仍視此 p 為真內文、誤跳過 action bar 的場景——v0.6.21/22 兩條修法疊加效果未達到但此處補上）
+`0.6.24`（styler user override 的 fontSize 分支連帶注入 `line-height: ${opts.lineHeight}` !important 到相同 body text descendant selector list——字級改過時行高必須跟著縮放，否則原站用 px 鎖死行高（Medium `.pi/.pc { line-height: 32px }`）在字級被調小後變成過寬行距比例。獨立 lineHeight 分支改為 `!overrides.fontSize` 避免重複 rule。v0.6.0 baseline「預設值完全不動原站」精神保留——使用者完全沒改任何 override 時 userOverrides 仍為空）
 
 ---
 
