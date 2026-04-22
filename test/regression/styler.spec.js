@@ -347,6 +347,42 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
       'override rule 不得包含 h1-h6 descendant（保留原站標題大小分級）');
   });
 
+  it('非預設 fontSize 必須連帶注入 line-height（即使 lineHeight 是預設值）', () => {
+    // Medium 實測：`.pi / .pc { line-height: 32px }` 把 p 行高鎖在 32px（原為
+    // 20px 字級設計、ratio 1.6）。使用者把 fontSize 從 18 調到 16 時，若只
+    // 覆寫 font-size 不動 line-height，行距變成 32/16 = 2.0（過寬）。
+    // 修法：字級改過時連帶注入 `line-height: ${opts.lineHeight}` !important
+    // （unitless，相對字級自動縮放）。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 16 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/font-size:\s*16px/.test(css),
+      '非預設 fontSize → 注入 font-size（前提）');
+    assert.ok(/line-height:\s*1\.7/.test(css),
+      '非預設 fontSize 必須連帶注入 line-height（使用 opts.lineHeight 預設 1.7）' +
+      '——否則站點用 px 鎖死的行高在字級被調小後變過寬行距');
+    // 同時確認 line-height rule 命中 p descendant（v0.6.16 擴展）
+    const re = /([^}]*)\{[^}]*line-height\s*:\s*1\.7/;
+    const m = css.match(re);
+    assert.ok(m, '應能找到 line-height: 1.7 的 rule block');
+    assert.ok(/\[data-jread-active="1"\]\s+p\b/.test(m[1]),
+      'line-height rule 必含 p descendant selector（穿透 Medium .pi/.pc class rule）');
+  });
+
+  it('非預設 fontSize + 非預設 lineHeight：line-height 只注入一次（避免 CSS 重複 rule）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 16, lineHeight: 2.0 });
+    const css = document.getElementById('__jread-style').textContent;
+    // 使用者自設 lineHeight=2.0 應生效
+    assert.ok(/line-height:\s*2/.test(css),
+      '非預設 lineHeight=2.0 應生效');
+    // line-height rule 只出現一次
+    const matches = css.match(/line-height:/g) || [];
+    assert.strictEqual(matches.length, 1,
+      `line-height rule 應只注入一次（實際出現 ${matches.length} 次）` +
+      '—— fontSize 已改時 lineHeight 連帶 inline 在同一 block，不走獨立分支避免重複');
+  });
+
   it('light theme（預設）→ 頁面底色 #ececec、不注入強制文字色', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
