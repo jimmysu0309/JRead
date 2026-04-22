@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.25`（popup 字級新增「自動」按鈕——設定 `fontSize = 0` sentinel，styler 不注入任何 font-size / line-height override、每站保留原字級。styler 的 `Number(0) || DEFAULT` 陷阱用 `Number.isFinite + >= 0` 判斷保留 0；overrides.fontSize 判斷加 `> 0` 保護——0 視同 DEFAULT 不觸發注入。解決「JRead 全局強制字級、但各站原 typography 差異大」的取捨問題——使用者可選：Auto（保留原站）/ 預設 18 / 自訂 12-32）
+`0.6.26`（refactor：cleaner.js 內部重構，行為零變化）。(1) `norm()` whitespace-normalize helper 從 `hideInsideArticleSidebarColumns` / `hideInsideArticleButtonClusters` 內重複宣告 2 處抽成 module 頂層 helper；(2) `clean()` entry point 將 `articleEl.querySelectorAll(CONTAINER_SEL)` 結果 cache 一次，5 條 CONTAINER_SEL 規則（Keyword / ActionRows / ButtonClusters / EmptySpacers / SidebarColumns）共用——DOM iterate 次數從 5 次降為 1 次，function signature 加可選 `containers` 參數（向後相容單獨呼叫）；(3) CHANGELOG.md 歸檔 v0.3.x–v0.5.x 到 `CHANGELOG-archive.md`，主檔只保留 v0.6.0 baseline 及之後）
 
 ---
 
