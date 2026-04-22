@@ -24,6 +24,36 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.2**——bugfix：detector modal signal 污染 + heuristic 外殼誤選 + promote 失控（Jimmy 2026-04-22 回報上報國際版 /tw/international/headlines/256941）。
+
+症狀：reader mode 開啟後整頁 #wrapper 被當主文；top bar 站內 email、社群 icon、header logo、「快訊」列、「美伊開戰/最新/生活」分類列、右欄推薦文章列表等全部殘留。cleaner 的 outside-article 規則跳過這些元素——因為它們都是 #wrapper（article）的「後代」。
+
+根因鏈（三層疊加）：
+
+1. **Bootstrap modal signal 污染**：`<div class="modal fade" id="myModal"> > .modal-dialog > .modal-content > .modal-box` 內塞了 2700+ 字雜訊（天氣 / 日期 / 推薦連結）。modal 預設 CSS `.modal { display: none }` 生效，但 `detector.getText` 走 `innerText || textContent`——display:none 元素 innerText 空、fallback 到 textContent 讀到全文。`.modal-box` finalScore 11.9 擊敗真主文 `.news-box-text` 2.4。
+
+2. **heuristic bubble-up 對深層主文不利**：`.news-box-text > 中間 wrapper div > p` 結構下，signal 的 parent = 中間 div（100%）、gp = `.news-box-text`（50%）——`.news-box-text` 本身只拿到 50% 折扣的 signal 累計分數（raw 2）。輸給 `.row` UI chrome（signal 直接 parent，100% 貢獻，raw 7）。
+
+3. **`promoteForTitle` 無層數上限**：heuristic 選錯 anchor（UI chrome `.row`）後，沿祖先鏈找 h1/h2 matching canonical title，一路升到主文跟 chrome 的共同 parent = `#wrapper`。整頁 top bar / header / 右欄全被吞進 article scope。
+
+通則修法（非站點特判，三層 defense）：
+
+A. **heuristic `isSignalExcluded`**：祖先鏈含 ARIA `role=dialog / alertdialog / tooltip / aria-modal=true / aria-hidden=true` 或 inline / computed `display:none` 的 signal 不計分。ARIA 標記是 W3C 規範「不在正文流程」的語意；隱藏狀態是 author-declared「明確不渲染」。檢查 inline + ARIA 跨 jsdom/browser；stylesheet-only 隱藏（upmedia 這種非標準 markup）靠 `getComputedStyle` 在真 Chrome resolve。
+
+B. **heuristic textLen bonus**：`score += min(textLen/200, 10) * (1 - linkDensity)`。Readability.js 的「內文 = 大量有意義文字 + 低連結密度」核心特徵——靠容器自身 textLen 拉開 UI chrome 與主文的分數差，補 bubble-up 對深層主文不利的盲點。
+
+C. **`promoteForTitle` `MAX_HOPS=2`**：合理場景中 post-title 是 articleEl 的兄弟或祖父的兄弟（WordPress / Stratechery / Anthropic 實測）、不該往上升 5+ 層。上限後即使 heuristic 選錯 anchor，promote 也不會把整頁外殼吃進來。
+
+驗證：
+
+- fixture `test/regression/fixtures/upmedia-intl-modal-signals.html` 擷取最小重現結構（Bootstrap modal 含 10 個高密度 p、主文 p 埋兩層深、另有 `.container.px24.bg-white > .row` UI chrome 干擾）；用 `aria-hidden="true"` 觸發 (A) 的 ARIA 支路
+- `detector.spec.js` 新增 5 條 spec：偵測成功 / 不得選 #wrapper / 主文 scope 不含 modal 雜訊 / 不含 header/footer / strategy=heuristic
+- Sanity check：關掉 (A) 造成 2 spec fail（forcing function 成立）；(B)(C) 在 jsdom 下 (A) 已擋住 modal 後 forcing function 失效、由 harness 驗真 upmedia stylesheet-only modal 情境——已記入 `test/PENDING_REGRESSION.md` 2026-04-22 條目
+- Playwright harness 實測：upmedia.mg 國際版 256941 從選 #wrapper → 選 `.news-box`（真主文）；政治版 256168 無 regression（一直是 `.col-lg-9`）；ChinaTalk / Dwarkesh Substack 等既有 baseline 的 article-tag 策略無受影響
+- 115 spec 全過（110 + 5 新）
+
+---
+
 **v0.7.1**——bugfix：上報 icon-link 巨大化（Jimmy 2026-04-22 回報 upmedia.mg 政治版三個 icon「新聞摘要」「辭」「AI 新聞關鍵字詞查詢」在閱讀模式下被放大成巨型版）。
 
 根因：styler 的 `[data-jread-active="1"] img { max-width: 100% !important; height: auto !important; }` 規則本意是維持主圖 aspect ratio，但這條對 `<a><img>` icon-link 結構反向傷害——原站常用 `height: 32px` 類 CSS 鎖 icon 高度、沒明確設 width，依賴 browser 的 intrinsic aspect-ratio 自動算 width。`height: auto !important` 吃掉原站 height 後，img 退回 naturalWidth x naturalHeight（upmedia 實測 `#toggleImg` 從 32x32 被拉成 250x250 natural size）。

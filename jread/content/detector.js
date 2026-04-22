@@ -119,6 +119,54 @@
   const SIGNAL_SEL = 'p, pre, blockquote, h2, h3, h4, li';
   const SIGNAL_MIN_TEXT = 25;
 
+  // Signal 元素排除規則：祖先鏈含 ARIA UI-chrome 語意（dialog / alertdialog /
+  // tooltip / aria-modal）或明確隱藏標記（inline display:none / aria-hidden）
+  // 的 signal 不算數。這些是對話框 / 彈窗 / 提示面板，結構上絕不是主文。
+  //
+  // 場景（upmedia.mg 國際版 /tw/international/headlines/256941 實測）：
+  // Bootstrap `<div class="modal fade" id="myModal">` 搭配 `.modal-dialog >
+  // .modal-content > .modal-box` 結構，模板裡塞了 2700+ 字的推薦文章列表
+  // 純文字；modal 預設 CSS `display: none`、jsdom / 真 Chrome 都讀得到
+  // textContent。innerText 在 display:none 下返回空字串、但 detector 的
+  // getText 會 fallback 到 textContent——於是 modal 吃下全部 signal 分數、
+  // 以 finalScore 11.9 擊敗真主文 .news-box-text（2.4）。promoteForTitle
+  // 再把錯的 articleEl 升到 modal 與主文的共同 parent #wrapper，整頁 chrome
+  // 全被當主文。
+  //
+  // 通則：ARIA role=dialog / alertdialog / tooltip、aria-modal=true 是 W3C
+  // 規範「不在正文流程」的語意；inline display:none / aria-hidden=true 是
+  // 「明確不渲染」的 author-declared 狀態。兩者任一命中 = 該 signal 不該
+  // 進 Readability 計分。為何不走 computed style 檢查：jsdom 無 layout、
+  // computed display:none 抓不到；檢查 inline + ARIA 能跨 jsdom / browser。
+  //
+  // Bootstrap `.modal` class 不列入判斷——非 ARIA 通則；使用 `.modal` 的站
+  // 若正確掛 aria-hidden="true" 或 style="display:none"（Bootstrap 預設
+  // markup 兩者都有）會被這條 guard 擋到，不掛的話代表該站把 modal 當常駐
+  // 區塊用、不該把它當 UI chrome 排除。
+  const HEURISTIC_SKIP_SEL =
+    '[role="dialog"], [role="alertdialog"], [role="tooltip"], [aria-modal="true"], [aria-hidden="true"]';
+
+  function isSignalExcluded(el) {
+    // closest() 會把 el 自身也算進去，所以祖先鏈檢查等同 self + ancestors
+    if (el.closest && el.closest(HEURISTIC_SKIP_SEL)) return true;
+    // 沿祖先鏈檢查「被隱藏」——inline display:none 是最直接的 marker；
+    // upmedia 等非標準 Bootstrap markup 的 modal 則沒 inline / ARIA，只靠
+    // stylesheet `.modal { display: none }`，需要 getComputedStyle 才能
+    // resolve。真 Chrome 能 resolve 整條 cascade；jsdom 不 resolve stylesheet
+    // 但會讀 inline——fixture 測試走 inline style 即可驗覆蓋面。
+    //
+    // 效能：每 signal 最多走 ~10 層 parent + getComputedStyle 一次，500
+    // signals 實測 Reader mode 進入仍 < 1s，可接受。
+    for (let p = el; p && p !== document.body; p = p.parentElement) {
+      if (p.style && p.style.display === 'none') return true;
+      try {
+        const cs = window.getComputedStyle && window.getComputedStyle(p);
+        if (cs && cs.display === 'none') return true;
+      } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
+    }
+    return false;
+  }
+
   function seedScore(text) {
     let s = 1;
     // 逗號數（中英文都算）— 長句有逗號 = 內文特徵
@@ -132,6 +180,7 @@
     const scoreMap = new Map();
     const signals = document.querySelectorAll(SIGNAL_SEL);
     for (const el of signals) {
+      if (isSignalExcluded(el)) continue;
       const text = (el.innerText || el.textContent || '').trim();
       if (text.length < SIGNAL_MIN_TEXT) continue;
       const base = seedScore(text);
@@ -155,6 +204,23 @@
       // 連結密度懲罰：主文的連結密度應低；sidebar / 相關文章列表的連結密度高
       const ld = linkDensity(el, textLen);
       let score = raw * (1 - Math.min(ld, 0.95));
+
+      // 文字量獎勵（含 linkDensity 過濾）：2000 字的主文 container 應該贏過
+      // 400 字的 UI chrome。舊 scoring 只靠 signal bubble-up 累積，對
+      // 「signal 埋深層」的主文（.news-box-text > various divs > p）不利
+      // ——parent/gp bubble 只能拿 50% 折扣，raw 壓得很低。
+      //
+      // 場景：upmedia.mg 國際版實測，bubble-up 讓 .news-box-text（2000
+      // 字、ld 0.04）raw 2 finalScore 2.4，輸給 .row（396 字、ld 0.33）
+      // raw 7 finalScore 4.7。加入 textLen bonus（`textLen/200` cap 10）
+      // 配合 ld penalty，讓「低連結密度的長文字」拿到實質獎勵——1987 字
+      // 主文 +9.9 bonus、linkDensity 0.04 幾乎不扣；397 字 UI chrome
+      // +1.98 bonus、linkDensity 0.33 扣不少。
+      //
+      // 通則依據：文章內文容器的特徵就是「大量有意義文字 + 低連結密度」
+      // ——這是 Readability.js 原作的 scoring 核心精神，textLen 獎勵
+      // 只是把這個特徵明確化、避免 bubble-up 對深層主文不公。
+      score += Math.min(textLen / 200, 10) * (1 - Math.min(ld, 0.95));
 
       // class/id 正負向權重
       const marker = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
@@ -245,12 +311,21 @@
     return first;
   }
 
+  // promoteForTitle hop 上限：合理場景中 post-title 是 articleEl 的兄弟
+  // （WordPress post-title + post-content 同級）或 articleEl 祖父的兄弟
+  // （WordPress 的 section > article 結構），不超過 2 跳。不加上限時若
+  // heuristic 選錯 anchor（例如 upmedia 國際版 heuristic 誤選 `.row`），
+  // promote 會一路往上找到含 h1 的共同 parent、最慘升到 body/#wrapper，
+  // 把整頁 chrome 納入主文 scope。
+  const PROMOTE_MAX_HOPS = 2;
+
   function promoteForTitle(articleEl) {
     const target = getCanonicalTitle();
     if (!target) return articleEl;
 
     let cur = articleEl;
-    while (cur && cur.parentElement && cur !== document.body) {
+    let hops = 0;
+    while (cur && cur.parentElement && cur !== document.body && hops < PROMOTE_MAX_HOPS) {
       const parent = cur.parentElement;
       for (const sib of parent.children) {
         if (sib === cur) continue;
@@ -267,6 +342,7 @@
         }
       }
       cur = parent;
+      hops++;
     }
     return articleEl;
   }

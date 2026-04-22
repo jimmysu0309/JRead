@@ -258,3 +258,48 @@ describe('detector — ltn-multi-article-siblings（infinite-scroll 多篇 artic
       `主文內應只剩 1 個 h1（narrow 後），實際 ${h1s.length} 個`);
   });
 });
+
+// v0.7.2 修法：heuristic skip modal signal + textLen bonus + promote MAX_HOPS
+// 對應 fixture：upmedia-intl-modal-signals.html（場景說明見 fixture 檔頭）
+describe('detector — upmedia-intl-modal-signals（modal 偽信號 + 深層主文 + promote 防失控）', () => {
+  let result, window;
+  before(() => {
+    const loaded = loadFixtureAndRunDetector('upmedia-intl-modal-signals.html');
+    result = loaded.result;
+    window = loaded.window;
+  });
+
+  it('偵測成功，不得 no-op', () => {
+    assert.ok(result, 'detector 應命中（heuristic）');
+  });
+
+  it('選到真主文 .news-box（或其後代），不得選到 #wrapper 整頁容器', () => {
+    assert.ok(result.el);
+    const tag = result.el.tagName;
+    const id = result.el.id || '';
+    const cls = (result.el.className || '').toString();
+    assert.notStrictEqual(id, 'wrapper',
+      `主文不得是 #wrapper 整頁外殼（id="${id}" cls="${cls}" tag=${tag}）`);
+    // 主文 scope 應該包含 h1
+    const h1 = result.el.querySelector('h1');
+    assert.ok(h1, '主文 scope 內必須含 h1');
+    assert.ok(/艦砲|伊朗/.test(h1.textContent),
+      `h1 應為文章標題，實際 text="${h1.textContent.slice(0, 40)}"`);
+  });
+
+  it('主文 scope 不得含 modal 雜訊文字（modal signals 已被 skip）', () => {
+    const txt = (result.el.textContent || '').toString();
+    assert.ok(!/氣象預報|今日氣象|台積電造晶片|射程破2000/.test(txt),
+      `主文不得含 modal 裡的天氣/推薦文字，表示 isSignalExcluded 沒生效或 promote 升太多`);
+  });
+
+  it('主文 scope 不得含 top-level header / footer（promote hops 限制生效）', () => {
+    const txt = (result.el.textContent || '').toString();
+    assert.ok(!/歡迎來信提供新聞|版權所有 上報/.test(txt),
+      `主文不得含 header/footer——表示 promote 一路升到 #wrapper、把站體 chrome 吃進來`);
+  });
+
+  it('strategy = heuristic（有 signal bubble-up + textLen bonus 後才選到主文）', () => {
+    assert.strictEqual(result.strategy, 'heuristic');
+  });
+});
