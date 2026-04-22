@@ -113,12 +113,25 @@ html.${HTML_CLASS} body {
   margin-top: 0 !important;
   padding-top: 0 !important;
 }
-/* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure） */
-[${ARTICLE_ATTR}="1"] img,
+/* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
+   height: auto 的作用是「原站 CSS 鎖死 height、不讓 max-width 觸發 aspect-
+   ratio 自動縮放」時強制按比例算——但這條對 a > img 結構（link-
+   wrapped icon / logo / UI 按鈕圖，例：upmedia「新聞摘要」「辭」AI 查詢
+   入口）反向傷害：原站常用「height: 32px」類小尺寸 CSS 壓縮 icon、沒
+   明確設 width，height:auto !important 吃掉 height 後 img 退回
+   naturalWidth×naturalHeight（例：250×250 icon 圖被拉成 naturalSize），
+   主文裡出現巨大 UI icon。
+   通則區分：裸 a > img 視為 icon-link 結構，只 cap 寬度、保留原站
+   height；其他 wrapper（figure / picture / p / div 等）下的 img 視為
+   內文配圖，維持 shrink-fit 行為。 */
+[${ARTICLE_ATTR}="1"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] video,
 [${ARTICLE_ATTR}="1"] picture {
   max-width: 100% !important;
   height: auto !important;
+}
+[${ARTICLE_ATTR}="1"] a > img {
+  max-width: 100% !important;
 }
 /* iframe 特例：有 intrinsic 高度這件事對 iframe 不成立——height: auto 會
    掉回 HTML spec 預設的 150px，打壞 aspect-ratio wrapper（WP wp-embed /

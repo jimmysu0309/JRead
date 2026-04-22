@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.0（視覺大改版：全站 Design System 落地——popup UI refresh、options page refactor、icon family 16/32/48/128、landing page、Chrome Web Store 素材、預設快速鍵改 `Alt+R` / `Option+R`、dark/sepia 主題 link 色修復。108 spec 全過、v0.6.3 content-script baseline 零變動）
+**目前版本**：v0.7.1（bugfix：icon-link 巨大化——`<a><img>` 結構的 icon / logo / UI 按鈕圖被 styler 的 `height: auto !important` 誤傷退回 naturalSize，修成 `img:not(a > img)` 精準化：icon-link 只 cap 寬度、其他 img 維持 shrink-fit。110 spec 全過）
 
 ---
 
