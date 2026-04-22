@@ -27,15 +27,15 @@ const DEFAULT_SETTINGS = {
 
 versionEl.textContent = chrome.runtime.getManifest().version;
 
-// ---- 快捷鍵提示 --------------------------------------------------------
+// ---- 快速鍵提示 --------------------------------------------------------
 chrome.commands.getAll((commands) => {
   if (!shortcutEl) return;
   const cmd = (commands || []).find(c => c.name === 'toggle-reader-mode');
   const shortcut = cmd && cmd.shortcut;
   if (shortcut) {
-    shortcutEl.textContent = `快捷鍵：${shortcut}`;
+    shortcutEl.textContent = `快速鍵：${shortcut}`;
   } else {
-    shortcutEl.innerHTML = '快捷鍵未設定，請到 <code>chrome://extensions/shortcuts</code> 指派';
+    shortcutEl.innerHTML = '快速鍵未設定，請到 <code>chrome://extensions/shortcuts</code> 指派';
   }
 });
 

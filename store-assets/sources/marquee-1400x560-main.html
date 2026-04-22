@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>JRead — Chrome Web Store Marquee (Main)</title>
+<style>
+:root {
+  --jr-primary-50:  #ebf4ff;
+  --jr-primary-600: #2b6cb0;
+  --jr-primary-700: #2c5282;
+  --jr-neutral-50:  #fafafa;
+  --jr-neutral-100: #f0f0f0;
+  --jr-neutral-300: #cccccc;
+  --jr-neutral-500: #888888;
+  --jr-neutral-700: #444444;
+  --jr-neutral-900: #222222;
+  --jr-surface:     #ffffff;
+  --jr-danger-text: #c53030;
+  --jr-danger-bg:   #fff5f5;
+  --jr-read-light-bg:   #ffffff;
+  --jr-read-light-fg:   #222222;
+  --jr-read-dark-bg:    #1a1a1a;
+  --jr-read-dark-fg:    #e4e4e4;
+  --jr-read-sepia-bg:   #f4ecd8;
+  --jr-read-sepia-fg:   #3a3226;
+  --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+  --jr-font-reading: "Noto Serif TC", Georgia, "Times New Roman", serif;
+  --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+  --jr-space-1: 4px;  --jr-space-2: 8px;  --jr-space-3: 12px;
+  --jr-space-4: 16px; --jr-space-6: 24px; --jr-space-8: 32px;
+  --jr-radius-sm: 4px; --jr-radius-md: 6px;
+  --jr-border: 1px solid var(--jr-neutral-300);
+}
+</style>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--jr-neutral-100); }
+  body {
+    font-family: var(--jr-font-ui);
+    color: var(--jr-neutral-900);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* -------------------------------------------------------------
+     Canvas: exactly 1400 × 560. Safe area 1200 × 440 centered.
+     Left 40%  ≈ 560px   |  Right 60% ≈ 840px
+  ------------------------------------------------------------- */
+  .marquee {
+    width: 1400px;
+    height: 560px;
+    background: var(--jr-surface);
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 520px 880px;
+    box-sizing: border-box;
+  }
+
+  /* Hairline that splits left/right */
+  .marquee::before {
+    content: "";
+    position: absolute;
+    top: 60px; bottom: 60px;
+    left: 520px;
+    width: 1px;
+    background: var(--jr-neutral-100);
+  }
+
+  /* Safe-area indicator — invisible, kept for documentation */
+  .safe {
+    position: absolute;
+    left: 100px; top: 60px;
+    width: 1200px; height: 440px;
+    pointer-events: none;
+  }
+
+  /* ----------------------------- LEFT ----------------------------- */
+  .left {
+    padding: 60px 48px 60px 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .brand .mark {
+    width: 44px; height: 44px;
+    border-radius: var(--jr-radius-md);
+    background: var(--jr-primary-600);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--jr-font-reading);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    padding-bottom: 2px;
+    box-sizing: border-box;
+  }
+  .brand .wordmark {
+    font-family: var(--jr-font-reading);
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--jr-neutral-900);
+    line-height: 1;
+  }
+  .brand .wordmark em { color: var(--jr-primary-600); font-style: normal; }
+
+  .eyebrow {
+    margin-top: 56px;
+    font-family: var(--jr-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--jr-neutral-500);
+  }
+
+  .headline {
+    margin: 16px 0 0;
+    font-family: var(--jr-font-reading);
+    font-size: 44px;
+    line-height: 1.18;
+    letter-spacing: -0.02em;
+    color: var(--jr-neutral-900);
+    text-wrap: balance;
+    font-weight: 600;
+  }
+
+  .sub-en {
+    margin-top: 24px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--jr-neutral-700);
+    max-width: 360px;
+    letter-spacing: -0.005em;
+  }
+
+  .left-footer {
+    margin-top: auto;
+    font-family: var(--jr-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--jr-neutral-500);
+  }
+
+  /* ----------------------------- RIGHT ----------------------------- */
+  .right {
+    position: relative;
+    padding: 60px 100px 60px 80px;
+    display: grid;
+    grid-template-columns: 1fr 56px 1fr;
+    gap: 0;
+    align-items: stretch;
+    box-sizing: border-box;
+  }
+
+  /* Shared mockup shell */
+  .mock {
+    background: var(--jr-surface);
+    border: var(--jr-border);
+    border-radius: var(--jr-radius-md);
+    height: 440px;
+    overflow: hidden;
+    position: relative;
+    box-sizing: border-box;
+  }
+  .mock .chrome {
+    height: 22px;
+    background: var(--jr-neutral-50);
+    border-bottom: 1px solid var(--jr-neutral-100);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+  }
+  .mock .chrome i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--jr-neutral-300);
+    display: inline-block;
+  }
+  .mock .chrome .url {
+    margin-left: 12px;
+    height: 11px;
+    flex: 1;
+    background: var(--jr-neutral-100);
+    border-radius: 2px;
+  }
+
+  .mock-label {
+    position: absolute;
+    top: -26px;
+    left: 0;
+    font-family: var(--jr-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--jr-neutral-500);
+  }
+
+  /* -------- BEFORE (noisy news site) -------- */
+  .before .body {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    height: calc(100% - 22px);
+    position: relative;
+  }
+  .before .site-header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 34px;
+    background: #2a2a2a;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 10px;
+  }
+  .before .site-header .logo {
+    width: 46px; height: 10px; background: #fff; border-radius: 1px;
+  }
+  .before .site-header .nav {
+    display: flex; gap: 8px; margin-left: auto;
+  }
+  .before .site-header .nav span {
+    width: 24px; height: 6px; background: #555; border-radius: 1px;
+  }
+
+  .before .side {
+    border-right: 1px solid var(--jr-neutral-100);
+    padding: 44px 10px 10px;
+    background: var(--jr-neutral-50);
+  }
+  .before .side .ad {
+    width: 100%;
+    height: 140px;
+    background: repeating-linear-gradient(
+      45deg,
+      #ffe8a8 0 6px,
+      #ffd96b 6px 12px
+    );
+    border: 1px solid #e5b83a;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--jr-font-mono);
+    font-size: 9px;
+    color: #6b4e00;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+  .before .side .widget {
+    padding: 8px;
+    border: 1px solid var(--jr-neutral-100);
+    border-radius: 2px;
+    background: #fff;
+  }
+  .before .side .widget div {
+    height: 6px; background: var(--jr-neutral-100); border-radius: 1px;
+    margin-bottom: 5px;
+  }
+  .before .side .widget div:nth-child(2) { width: 80%; }
+  .before .side .widget div:nth-child(3) { width: 65%; }
+  .before .side .widget div:nth-child(4) { width: 72%; }
+
+  .before .main {
+    padding: 44px 14px 10px;
+    position: relative;
+    overflow: hidden;
+  }
+  .before .main .title {
+    height: 12px; background: var(--jr-neutral-900); width: 80%; border-radius: 1px;
+  }
+  .before .main .title2 { height: 12px; background: var(--jr-neutral-900); width: 55%; border-radius: 1px; margin-top: 5px; }
+  .before .main .byline {
+    height: 5px; width: 30%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 10px;
+  }
+  .before .main .banner-ad {
+    margin-top: 12px;
+    height: 54px;
+    background:
+      linear-gradient(90deg, #ff6b6b 0 35%, #ff9f43 35% 70%, #4ecdc4 70% 100%);
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--jr-font-mono);
+    font-size: 9px;
+    color: #fff;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .before .main .para {
+    margin-top: 10px;
+  }
+  .before .main .para div {
+    height: 4px; background: var(--jr-neutral-300); border-radius: 1px; margin-bottom: 5px;
+  }
+  .before .main .para div:nth-child(1) { width: 96%; }
+  .before .main .para div:nth-child(2) { width: 92%; }
+  .before .main .para div:nth-child(3) { width: 88%; }
+  .before .main .para div:nth-child(4) { width: 94%; }
+  .before .main .para div:nth-child(5) { width: 70%; }
+
+  /* Popup overlay */
+  .before .scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(30, 30, 30, 0.55);
+  }
+  .before .popup {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 78%;
+    background: #fff;
+    border-radius: 3px;
+    padding: 14px 14px 12px;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.04);
+  }
+  .before .popup .x {
+    position: absolute;
+    top: 6px; right: 8px;
+    font-family: var(--jr-font-mono);
+    font-size: 11px;
+    color: var(--jr-neutral-500);
+    line-height: 1;
+  }
+  .before .popup .h {
+    height: 9px; width: 70%; background: var(--jr-neutral-900); border-radius: 1px;
+  }
+  .before .popup .l1 {
+    height: 4px; width: 92%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 8px;
+  }
+  .before .popup .l2 { height: 4px; width: 80%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 4px; }
+  .before .popup .btn {
+    margin-top: 10px;
+    height: 18px; width: 70px;
+    background: var(--jr-primary-600);
+    border-radius: 2px;
+  }
+
+  /* -------- ARROW -------- */
+  .arrow {
+    align-self: center;
+    justify-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .arrow .chev {
+    font-family: var(--jr-font-reading);
+    color: var(--jr-primary-600);
+    font-size: 32px;
+    line-height: 1;
+    font-weight: 600;
+  }
+  .arrow .tag {
+    font-family: var(--jr-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    color: var(--jr-neutral-500);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* -------- AFTER (reading mode) -------- */
+  .after .body {
+    padding: 32px 36px 24px;
+    height: calc(100% - 22px);
+    box-sizing: border-box;
+    background: var(--jr-read-light-bg);
+  }
+  .after .kicker {
+    font-family: var(--jr-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--jr-neutral-500);
+  }
+  .after .title {
+    font-family: var(--jr-font-reading);
+    font-size: 22px;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: var(--jr-neutral-900);
+    margin: 10px 0 0;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  .after .byline {
+    font-family: var(--jr-font-mono);
+    font-size: 10px;
+    color: var(--jr-neutral-500);
+    margin-top: 12px;
+    letter-spacing: 0.04em;
+  }
+  .after .rule {
+    height: 1px;
+    background: var(--jr-neutral-100);
+    margin: 14px 0 16px;
+  }
+  .after .prose {
+    font-family: var(--jr-font-reading);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--jr-neutral-700);
+    letter-spacing: 0.005em;
+  }
+  .after .prose p { margin: 0 0 10px; }
+  .after .prose p:last-child { margin-bottom: 0; }
+
+  /* -------------------------------------------------------------
+     Bottom caption — full width, thin, centered under both halves
+  ------------------------------------------------------------- */
+  .footnote {
+    position: absolute;
+    left: 100px; right: 100px;
+    bottom: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--jr-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--jr-neutral-500);
+    text-transform: uppercase;
+  }
+  .footnote .dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--jr-neutral-300);
+    display: inline-block;
+    margin: 0 10px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<div class="marquee" data-screen-label="01 Main — Before/After">
+  <div class="safe"></div>
+
+  <!-- LEFT -->
+  <section class="left">
+    <div class="brand">
+      <div class="mark">J</div>
+      <div class="wordmark">J<em>Read</em></div>
+    </div>
+
+    <div class="eyebrow">Reader mode · Chrome extension</div>
+
+    <h1 class="headline">一鍵純閱讀<br>還你乾淨文字</h1>
+
+    <p class="sub-en">
+      One click to quiet the web.<br>
+      Strip ads, popups, and sidebars from any article.
+    </p>
+
+  </section>
+
+  <!-- RIGHT -->
+  <section class="right">
+    <!-- BEFORE -->
+    <div class="mock before">
+      <div class="mock-label">Before</div>
+      <div class="chrome">
+        <i></i><i></i><i></i>
+        <div class="url"></div>
+      </div>
+      <div class="body">
+        <div class="site-header">
+          <div class="logo"></div>
+          <div class="nav"><span></span><span></span><span></span><span></span></div>
+        </div>
+        <aside class="side">
+          <div class="ad">AD · 300×250</div>
+          <div class="widget">
+            <div style="width:55%"></div>
+            <div></div>
+            <div></div>
+            <div></div>
+          </div>
+        </aside>
+        <div class="main">
+          <div class="title"></div>
+          <div class="title2"></div>
+          <div class="byline"></div>
+          <div class="banner-ad">SPONSORED</div>
+          <div class="para">
+            <div></div><div></div><div></div><div></div><div></div>
+          </div>
+        </div>
+
+        <!-- Popup overlay -->
+        <div class="scrim"></div>
+        <div class="popup">
+          <span class="x">✕</span>
+          <div class="h"></div>
+          <div class="l1"></div>
+          <div class="l2"></div>
+          <div class="btn"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ARROW -->
+    <div class="arrow" aria-hidden="true">
+      <div class="chev">→</div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="mock after">
+      <div class="mock-label">After</div>
+      <div class="chrome">
+        <i></i><i></i><i></i>
+        <div class="url"></div>
+      </div>
+      <div class="body">
+        <div class="kicker">Essay · 8 min read</div>
+        <h2 class="title">The quiet return of long-form reading.</h2>
+        <div class="byline">By E. Tanaka — Mar 2026</div>
+        <div class="rule"></div>
+        <div class="prose">
+          <p>In a web designed to interrupt, the simplest act of finishing an article has become a small, deliberate decision — one made against a tide of sidebars, autoplay, and scrolling promotions.</p>
+          <p>The writing itself hasn't changed. What changed is the room it arrives in. Strip away the room, and the sentence is allowed to do its work again.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>

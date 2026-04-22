@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>JRead — Chrome Web Store Marquee (Alt · Three Themes)</title>
+<style>
+:root {
+  --jr-primary-50:  #ebf4ff;
+  --jr-primary-600: #2b6cb0;
+  --jr-primary-700: #2c5282;
+  --jr-neutral-50:  #fafafa;
+  --jr-neutral-100: #f0f0f0;
+  --jr-neutral-300: #cccccc;
+  --jr-neutral-500: #888888;
+  --jr-neutral-700: #444444;
+  --jr-neutral-900: #222222;
+  --jr-surface:     #ffffff;
+  --jr-read-light-bg:   #ffffff;
+  --jr-read-light-fg:   #222222;
+  --jr-read-dark-bg:    #1a1a1a;
+  --jr-read-dark-fg:    #e4e4e4;
+  --jr-read-sepia-bg:   #f4ecd8;
+  --jr-read-sepia-fg:   #3a3226;
+  --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+  --jr-font-reading: "Noto Serif TC", Georgia, "Times New Roman", serif;
+  --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+  --jr-radius-sm: 4px; --jr-radius-md: 6px;
+  --jr-border: 1px solid var(--jr-neutral-300);
+}
+</style>
+<style>
+  html, body { margin: 0; padding: 0; background: var(--jr-neutral-100); }
+  body {
+    font-family: var(--jr-font-ui);
+    color: var(--jr-neutral-900);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* 1400 × 560 canvas, safe 1200 × 440 centered */
+  .marquee {
+    width: 1400px;
+    height: 560px;
+    background: var(--jr-surface);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  /* --------------- TOP BAND: brand + headline --------------- */
+  .band {
+    position: absolute;
+    top: 60px; left: 100px; right: 100px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 48px;
+  }
+
+  .brand-block {
+    max-width: 520px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .brand .mark {
+    width: 40px; height: 40px;
+    border-radius: var(--jr-radius-md);
+    background: var(--jr-primary-600);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--jr-font-reading);
+    font-weight: 600;
+    font-size: 24px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    padding-bottom: 2px;
+    box-sizing: border-box;
+  }
+  .brand .wordmark {
+    font-family: var(--jr-font-reading);
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--jr-neutral-900);
+    line-height: 1;
+  }
+  .brand .wordmark em { color: var(--jr-primary-600); font-style: normal; }
+
+  .headline {
+    margin: 18px 0 0;
+    font-family: var(--jr-font-reading);
+    font-size: 34px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--jr-neutral-900);
+    font-weight: 600;
+    text-wrap: balance;
+  }
+
+  .sub-en {
+    margin-top: 12px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--jr-neutral-700);
+    letter-spacing: -0.005em;
+  }
+
+  .band-right {
+    text-align: right;
+    padding-bottom: 6px;
+  }
+  .band-right .eyebrow {
+    font-family: var(--jr-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--jr-neutral-500);
+  }
+  .band-right .kicker {
+    margin-top: 10px;
+    font-family: var(--jr-font-reading);
+    font-size: 18px;
+    color: var(--jr-neutral-700);
+    letter-spacing: -0.005em;
+    line-height: 1.35;
+  }
+
+  /* --------------- THEME STRIP --------------- */
+  .strip {
+    position: absolute;
+    left: 100px; right: 100px;
+    bottom: 60px;
+    height: 280px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+  }
+
+  .card {
+    position: relative;
+    border: var(--jr-border);
+    border-radius: var(--jr-radius-md);
+    overflow: hidden;
+    padding: 22px 22px 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card .tag {
+    position: absolute;
+    top: 14px; right: 16px;
+    font-family: var(--jr-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .card .kicker {
+    font-family: var(--jr-font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+  .card h3 {
+    font-family: var(--jr-font-reading);
+    font-size: 20px;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+    margin: 8px 0 0;
+    text-wrap: balance;
+  }
+  .card .byline {
+    font-family: var(--jr-font-mono);
+    font-size: 10px;
+    margin-top: 10px;
+    opacity: 0.7;
+    letter-spacing: 0.04em;
+  }
+  .card .rule {
+    height: 1px;
+    margin: 12px 0 12px;
+    opacity: 0.5;
+  }
+  .card .prose {
+    font-family: var(--jr-font-reading);
+    font-size: 12px;
+    line-height: 1.7;
+    letter-spacing: 0.005em;
+  }
+  .card .prose p { margin: 0 0 8px; }
+
+  /* Theme variants */
+  .card.light {
+    background: var(--jr-read-light-bg);
+    color: var(--jr-read-light-fg);
+  }
+  .card.light .rule { background: var(--jr-neutral-100); opacity: 1; }
+  .card.light .prose { color: var(--jr-neutral-700); }
+  .card.light .tag { color: var(--jr-neutral-500); }
+
+  .card.sepia {
+    background: var(--jr-read-sepia-bg);
+    color: var(--jr-read-sepia-fg);
+    border-color: #e6dcc1;
+  }
+  .card.sepia .rule { background: #d9cead; opacity: 1; }
+  .card.sepia .prose { color: #5b4e33; }
+  .card.sepia .tag { color: #8a7a56; }
+
+  .card.dark {
+    background: var(--jr-read-dark-bg);
+    color: var(--jr-read-dark-fg);
+    border-color: #2d2d2d;
+  }
+  .card.dark .rule { background: #2d2d2d; opacity: 1; }
+  .card.dark .prose { color: #b8b8b8; }
+  .card.dark .tag { color: #888; }
+
+  /* --------------- BOTTOM FOOTNOTE --------------- */
+  .footnote {
+    position: absolute;
+    left: 100px; right: 100px;
+    bottom: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--jr-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--jr-neutral-500);
+    text-transform: uppercase;
+  }
+  .footnote .dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--jr-neutral-300);
+    display: inline-block;
+    margin: 0 10px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<div class="marquee" data-screen-label="02 Alt — Three Themes">
+
+  <!-- TOP BAND -->
+  <div class="band">
+    <div class="brand-block">
+      <div class="brand">
+        <div class="mark">J</div>
+        <div class="wordmark">J<em>Read</em></div>
+      </div>
+      <h1 class="headline">一篇文章，三種讀法。</h1>
+      <p class="sub-en">One article, three ways to read it. Light, sepia, and dark — your eyes pick.</p>
+    </div>
+    <div class="band-right">
+      <div class="eyebrow">Reading themes</div>
+      <div class="kicker">Light &nbsp;·&nbsp; Sepia &nbsp;·&nbsp; Dark</div>
+    </div>
+  </div>
+
+  <!-- THEME STRIP -->
+  <div class="strip">
+    <!-- LIGHT -->
+    <article class="card light">
+      <span class="tag">01 · Light</span>
+      <div class="kicker">Essay · 8 min read</div>
+      <h3>The quiet return of long-form reading.</h3>
+      <div class="byline">By E. Tanaka — Mar 2026</div>
+      <div class="rule"></div>
+      <div class="prose">
+        <p>In a web designed to interrupt, finishing an article has become a small, deliberate decision made against a tide of sidebars and autoplay.</p>
+        <p>The writing itself hasn't changed. What changed is the room it arrives in.</p>
+      </div>
+    </article>
+
+    <!-- SEPIA -->
+    <article class="card sepia">
+      <span class="tag">02 · Sepia</span>
+      <div class="kicker">Essay · 8 min read</div>
+      <h3>The quiet return of long-form reading.</h3>
+      <div class="byline">By E. Tanaka — Mar 2026</div>
+      <div class="rule"></div>
+      <div class="prose">
+        <p>In a web designed to interrupt, finishing an article has become a small, deliberate decision made against a tide of sidebars and autoplay.</p>
+        <p>The writing itself hasn't changed. What changed is the room it arrives in.</p>
+      </div>
+    </article>
+
+    <!-- DARK -->
+    <article class="card dark">
+      <span class="tag">03 · Dark</span>
+      <div class="kicker">Essay · 8 min read</div>
+      <h3>The quiet return of long-form reading.</h3>
+      <div class="byline">By E. Tanaka — Mar 2026</div>
+      <div class="rule"></div>
+      <div class="prose">
+        <p>In a web designed to interrupt, finishing an article has become a small, deliberate decision made against a tide of sidebars and autoplay.</p>
+        <p>The writing itself hasn't changed. What changed is the room it arrives in.</p>
+      </div>
+    </article>
+  </div>
+
+</div>
+
+</body>
+</html>

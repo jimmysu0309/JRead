@@ -28,10 +28,15 @@
   };
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
+  //   link：dark / sepia 下因 `* { color: X }` 吞掉原站 link 顏色，導致內文連結
+  //   跟正文完全同色無法辨識。必須回補一個在該 theme 下夠對比的 link 色。
+  //   light 不注入（light 連文字色都不注入，保留原站 link 色）。
+  //   dark #7fb5e6：在 #1a1a1a 底對比 > 7:1
+  //   sepia #2c5282（JRead primary-700）：在 #f4ecd8 底對比 > 6:1
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null },
-    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4' },
-    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636' }
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null },
+    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6' },
+    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282' }
   };
 
   function themeOf(name) {
@@ -199,6 +204,19 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] * {
   color: ${theme.text} !important;
+}`;
+      // 連結色回補：上面 `* { color: X }` 會吞掉原站 link 色。在 dark / sepia
+      // 底下若沒有針對性 a 規則，連結跟正文完全同色無法辨識。加粗底線做雙通道
+      // 差異化（顏色 + underline），連 a 內包的 <em>/<strong>/<code> 也要補。
+      userOverrides += `
+[${ARTICLE_ATTR}="1"] a,
+[${ARTICLE_ATTR}="1"] a * {
+  color: ${theme.link} !important;
+}
+[${ARTICLE_ATTR}="1"] a {
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  text-decoration-thickness: 1px !important;
 }`;
     }
 
