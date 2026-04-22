@@ -16,6 +16,22 @@ const DEFAULT_SETTINGS = {
   autoEnableDomains: []
 };
 
+// Icon 路徑 map：閱讀模式 active = 彩色、待機 = 灰階。manifest `default_icon`
+// 指向灰階版，content main.js 在 enter/exit reader mode 時發 SET_ACTIVE_ICON
+// 訊息、SW 針對 sender tab 呼叫 chrome.action.setIcon 切換。
+const ICONS_ACTIVE = {
+  16:  'assets/icons/icon-16.png',
+  32:  'assets/icons/icon-32.png',
+  48:  'assets/icons/icon-48.png',
+  128: 'assets/icons/icon-128.png'
+};
+const ICONS_IDLE = {
+  16:  'assets/icons/icon-16-disabled.png',
+  32:  'assets/icons/icon-32-disabled.png',
+  48:  'assets/icons/icon-48-disabled.png',
+  128: 'assets/icons/icon-128-disabled.png'
+};
+
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(null);
@@ -36,12 +52,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.storage.sync.set(patch).then(() => sendResponse({ ok: true }));
       return true;
     }
+    case 'SET_ACTIVE_ICON': {
+      // content main.js 在 enter/exit reader mode 時呼叫，切 action icon 彩色/灰階
+      const tabId = sender && sender.tab && sender.tab.id;
+      if (typeof tabId !== 'number') return;
+      const active = !!(msg.payload && msg.payload.active);
+      chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE });
+      return;
+    }
     default:
       return;
   }
 });
 
-// 快捷鍵：manifest 的 commands 觸發後走與 popup 相同的 toggle + inject fallback。
+// 導航到新 URL 時重置 icon 回灰階——content script 會在新頁重新載入、預設
+// state 也是 inactive，但 setIcon 的 per-tab 設定會跨 navigation 殘留，
+// 需主動清空。監聽 tab.onUpdated 的 status === 'loading' 是新頁載入最早
+// 的訊號點。
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading') {
+    chrome.action.setIcon({ tabId, path: ICONS_IDLE });
+  }
+});
+
+// 快速鍵：manifest 的 commands 觸發後走與 popup 相同的 toggle + inject fallback。
 // 失敗時（chrome:// / 禁止注入頁面）回傳 ok=false，但 service worker 無 UI 可以
 // 提示；使用者會發現頁面沒反應，這是 MV3 的侷限。
 chrome.commands.onCommand.addListener(async (command) => {

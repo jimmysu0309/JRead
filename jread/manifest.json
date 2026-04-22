@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "0.6.26",
+  "version": "0.7.0",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -16,7 +16,19 @@
   },
   "action": {
     "default_title": "JRead",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16-disabled.png",
+      "32": "assets/icons/icon-32-disabled.png",
+      "48": "assets/icons/icon-48-disabled.png",
+      "128": "assets/icons/icon-128-disabled.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
   },
   "options_ui": {
     "page": "options/options.html",
@@ -39,8 +51,8 @@
   "commands": {
     "toggle-reader-mode": {
       "suggested_key": {
-        "default": "Ctrl+Shift+R",
-        "mac": "Command+Shift+R"
+        "default": "Alt+R",
+        "mac": "Alt+R"
       },
       "description": "切換純閱讀模式"
     }

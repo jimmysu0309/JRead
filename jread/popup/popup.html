@@ -4,179 +4,348 @@
   <meta charset="UTF-8">
   <title>JRead</title>
   <style>
+    /* ==========================================================
+       JRead Design Tokens (inlined — standalone popup)
+       ========================================================== */
     :root {
-      font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
-      font-size: 14px;
-      color: #222;
+      /* Brand blue — the only chromatic accent */
+      --jr-primary-50:  #ebf4ff;
+      --jr-primary-600: #2b6cb0;
+      --jr-primary-700: #2c5282;
+
+      /* Neutrals */
+      --jr-neutral-50:  #fafafa;
+      --jr-neutral-100: #f0f0f0;
+      --jr-neutral-300: #cccccc;
+      --jr-neutral-500: #888888;
+      --jr-neutral-700: #444444;
+      --jr-neutral-900: #222222;
+
+      --jr-surface:     #ffffff;
+
+      /* Danger */
+      --jr-danger-text: #c53030;
+      --jr-danger-bg:   #fff5f5;
+
+      /* Reading themes — WYSIWYG swatches */
+      --jr-read-light-bg:   #ffffff;
+      --jr-read-light-fg:   #222222;
+      --jr-read-dark-bg:    #1a1a1a;
+      --jr-read-dark-fg:    #e4e4e4;
+      --jr-read-sepia-bg:   #f4ecd8;
+      --jr-read-sepia-fg:   #3a3226;
+
+      /* Type stacks */
+      --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      --jr-font-reading: "Noto Serif TC", Georgia, "Times New Roman", serif;
+      --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+
+      /* Spacing */
+      --jr-space-1: 4px;
+      --jr-space-2: 8px;
+      --jr-space-3: 12px;
+      --jr-space-4: 16px;
+      --jr-space-6: 24px;
+
+      /* Radius */
+      --jr-radius-sm: 4px;
+      --jr-radius-md: 6px;
     }
+
+    /* ==========================================================
+       Base
+       ========================================================== */
+    * { box-sizing: border-box; }
+    html { font-family: var(--jr-font-ui); font-size: 14px; color: var(--jr-neutral-900); }
     body {
       width: 300px;
       margin: 0;
-      padding: 16px;
+      padding: var(--jr-space-4);
+      background: var(--jr-surface);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ==========================================================
+       Header — logomark + wordmark + version
+       ========================================================== */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: var(--jr-space-3);
+    }
+    .logo {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      background: var(--jr-primary-600);
+      border-radius: var(--jr-radius-md);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-family: var(--jr-font-reading);
+      font-weight: 600;
+      font-size: 18px;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      /* tiny optical shift so the J sits centered */
+      padding-right: 2px;
     }
     h1 {
-      font-size: 16px;
-      margin: 0 0 4px;
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: -0.005em;
+      color: var(--jr-neutral-900);
     }
     .version {
-      color: #888;
-      font-size: 12px;
-      margin-bottom: 12px;
+      margin-left: auto;
+      font-family: var(--jr-font-mono);
+      font-size: 10px;
+      color: var(--jr-neutral-500);
+      letter-spacing: 0.04em;
+      padding-top: 1px;
     }
+
+    /* ==========================================================
+       Status (error)
+       ========================================================== */
     #status {
-      background: #fff5f5;
-      color: #c53030;
-      padding: 8px 10px;
-      border-radius: 6px;
-      margin-bottom: 12px;
-      font-size: 13px;
+      background: var(--jr-danger-bg);
+      color: var(--jr-danger-text);
+      padding: var(--jr-space-2) var(--jr-space-3);
+      border-radius: var(--jr-radius-sm);
+      margin-bottom: var(--jr-space-3);
+      font-size: 12px;
+      line-height: 1.5;
     }
+
+    /* ==========================================================
+       Primary CTA — toggle
+       ========================================================== */
     #toggle-btn {
       width: 100%;
-      padding: 10px;
-      font-size: 14px;
-      border: 0;
-      border-radius: 6px;
-      background: #2b6cb0;
+      padding: 10px 14px;
+      font-family: var(--jr-font-ui);
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--jr-primary-600);
+      border-radius: var(--jr-radius-md);
+      background: var(--jr-primary-600);
       color: #fff;
       cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+      letter-spacing: 0.01em;
     }
-    #toggle-btn:hover { background: #2c5282; }
+    #toggle-btn:hover {
+      background: var(--jr-primary-700);
+      border-color: var(--jr-primary-700);
+    }
+    #toggle-btn:active { transform: translateY(0.5px); }
+    #toggle-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
 
+    /* ==========================================================
+       Settings section
+       ========================================================== */
     .settings {
-      margin-top: 16px;
-      padding-top: 12px;
-      border-top: 1px solid #eee;
-    }
-    .settings h2 {
-      font-size: 12px;
-      font-weight: 600;
-      color: #666;
-      margin: 0 0 10px;
-      letter-spacing: 0.04em;
+      margin-top: var(--jr-space-4);
+      padding-top: var(--jr-space-3);
+      border-top: 1px solid var(--jr-neutral-100);
     }
     .setting-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 10px;
+      margin-bottom: var(--jr-space-3);
+      min-height: 28px;
     }
+    .setting-row:last-child { margin-bottom: 0; }
     .setting-row > label {
       font-size: 13px;
-      color: #444;
+      color: var(--jr-neutral-700);
     }
 
-    /* Theme 切換按鈕群 */
+    /* ==========================================================
+       Theme group — WYSIWYG
+       ========================================================== */
     .theme-group {
       display: flex;
-      gap: 4px;
+      /* 對齊下方 stepper 總寬（26 + 56 + 26 + 2 border = 110px），使用
+         space-between 讓三顆按鈕自動撐開到同寬 row。 */
+      width: 110px;
+      justify-content: space-between;
     }
     .theme-btn {
-      width: 34px;
+      width: 32px;
       height: 28px;
-      border: 1px solid #ccc;
-      background: #fff;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      color: #444;
       padding: 0;
+      border-radius: var(--jr-radius-sm);
+      cursor: pointer;
+      font-family: var(--jr-font-ui);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1;
+      transition: transform 0.1s ease, box-shadow 0.12s ease;
+      /* outer "ring" area reserved so active state lands on-grid */
+      border: 1px solid var(--jr-neutral-300);
     }
-    .theme-btn:hover { background: #f0f0f0; }
+    .theme-btn[data-theme="light"] { background: var(--jr-read-light-bg); color: var(--jr-read-light-fg); }
+    .theme-btn[data-theme="dark"]  { background: var(--jr-read-dark-bg);  color: var(--jr-read-dark-fg);  border-color: var(--jr-read-dark-bg); }
+    .theme-btn[data-theme="sepia"] { background: var(--jr-read-sepia-bg); color: var(--jr-read-sepia-fg); border-color: #e4d9bf; }
+
+    .theme-btn:hover { transform: translateY(-0.5px); }
+    .theme-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
+
     .theme-btn.active {
-      border-color: #2b6cb0;
-      background: #ebf4ff;
-      color: #2b6cb0;
-      font-weight: 600;
+      box-shadow: 0 0 0 2px var(--jr-primary-600);
+      border-color: transparent;
     }
 
-    /* 加減 stepper */
+    /* ==========================================================
+       Stepper (− value +) — shared
+       ========================================================== */
     .stepper {
       display: inline-flex;
-      align-items: center;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      align-items: stretch;
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      background: var(--jr-surface);
       overflow: hidden;
+      height: 28px;
     }
     .stepper button {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 100%;
       border: 0;
-      background: #fafafa;
+      background: var(--jr-neutral-50);
       cursor: pointer;
-      font-size: 16px;
-      color: #444;
-      padding: 0;
+      font-family: var(--jr-font-ui);
+      font-size: 14px;
       line-height: 1;
+      color: var(--jr-neutral-700);
+      padding: 0;
+      transition: background 0.1s ease, color 0.1s ease;
     }
-    .stepper button:hover { background: #eee; }
+    .stepper button:hover { background: var(--jr-neutral-100); color: var(--jr-neutral-900); }
+    .stepper button:active { background: var(--jr-neutral-300); }
+    .stepper button:focus-visible {
+      outline: none;
+      background: var(--jr-primary-50);
+      color: var(--jr-primary-700);
+    }
     .stepper button:disabled {
-      color: #bbb;
+      color: var(--jr-neutral-300);
+      background: var(--jr-neutral-50);
       cursor: not-allowed;
     }
     .stepper .val {
-      min-width: 48px;
+      width: 56px;
+      padding: 0;
       text-align: center;
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
       font-variant-numeric: tabular-nums;
-      font-size: 13px;
-      border-left: 1px solid #ccc;
-      border-right: 1px solid #ccc;
-      padding: 0 6px;
-      height: 28px;
-      line-height: 28px;
+      line-height: 26px;
+      color: var(--jr-neutral-900);
+      border-left: 1px solid var(--jr-neutral-300);
+      border-right: 1px solid var(--jr-neutral-300);
+      background: var(--jr-surface);
+      flex: 0 0 auto;
     }
 
-    /* 字級 row 的 Auto toggle */
+    /* ==========================================================
+       Auto toggle — off = ghost, on = filled blue
+       ========================================================== */
+    .font-controls { display: inline-flex; align-items: center; gap: 6px; }
     .auto-btn {
-      margin-left: 6px;
       height: 28px;
-      padding: 0 8px;
-      border: 1px solid #ccc;
-      background: #fff;
-      border-radius: 4px;
-      cursor: pointer;
+      padding: 0 10px;
+      border-radius: var(--jr-radius-sm);
+      border: 1px solid var(--jr-neutral-300);
+      background: var(--jr-neutral-50);
+      color: var(--jr-neutral-700);
+      font-family: var(--jr-font-ui);
       font-size: 12px;
-      color: #444;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+      line-height: 1;
     }
-    .auto-btn:hover { background: #f0f0f0; }
+    .auto-btn:hover { background: var(--jr-neutral-100); color: var(--jr-neutral-900); }
+    .auto-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
     .auto-btn.active {
-      border-color: #2b6cb0;
-      background: #ebf4ff;
-      color: #2b6cb0;
-      font-weight: 600;
+      background: var(--jr-primary-600);
+      border-color: var(--jr-primary-600);
+      color: #fff;
+    }
+    .auto-btn.active:hover {
+      background: var(--jr-primary-700);
+      border-color: var(--jr-primary-700);
     }
 
+    /* ==========================================================
+       Footer: shortcut hint + options link（同一 row 左右分配）
+       ========================================================== */
+    .footer {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--jr-space-2);
+      margin-top: var(--jr-space-4);
+      padding-top: var(--jr-space-3);
+      border-top: 1px solid var(--jr-neutral-100);
+    }
     .hint {
-      margin-top: 12px;
+      font-family: var(--jr-font-ui);
       font-size: 12px;
-      color: #888;
-      text-align: center;
+      font-weight: 400;
+      color: var(--jr-neutral-500);
+      line-height: 1.5;
     }
     .hint code {
-      font-family: ui-monospace, Menlo, monospace;
-      background: #f0f0f0;
-      padding: 1px 4px;
-      border-radius: 3px;
+      display: inline-block;
+      font-family: var(--jr-font-mono);
+      font-size: 10px;
+      padding: 2px 5px;
+      border: 1px solid var(--jr-neutral-300);
+      border-bottom-width: 2px;
+      border-radius: var(--jr-radius-sm);
+      background: var(--jr-neutral-50);
+      color: var(--jr-neutral-900);
+      line-height: 1;
+      letter-spacing: 0.02em;
+      margin: 0 1px;
     }
+
     .options-link {
-      display: block;
-      margin-top: 8px;
+      font-family: var(--jr-font-ui);
       font-size: 12px;
-      color: #2b6cb0;
+      font-weight: 400;
+      line-height: 1.5;
+      color: var(--jr-primary-600);
       text-decoration: none;
-      text-align: center;
+      border-radius: var(--jr-radius-sm);
+      transition: color 0.1s ease;
+      white-space: nowrap;
     }
+    .options-link:hover { color: var(--jr-primary-700); text-decoration: underline; text-underline-offset: 3px; }
+    .options-link:focus-visible { outline: none; color: var(--jr-primary-700); box-shadow: 0 0 0 3px var(--jr-primary-50); }
   </style>
 </head>
 <body>
-  <h1>JRead</h1>
-  <div class="version">v<span id="version"></span></div>
+  <div class="brand">
+    <div class="logo" aria-hidden="true">J</div>
+    <h1>JRead</h1>
+    <div class="version">v<span id="version"></span></div>
+  </div>
+
   <div id="status" hidden></div>
   <button id="toggle-btn">切換閱讀模式</button>
 
   <section class="settings">
-    <h2>頁面設定</h2>
-
     <div class="setting-row">
       <label>主題</label>
       <div class="theme-group" role="group" aria-label="主題">
@@ -188,29 +357,34 @@
 
     <div class="setting-row">
       <label>字級</label>
-      <div style="display: flex; align-items: center;">
-        <div class="stepper">
-          <button data-action="font-dec" aria-label="字級減小">－</button>
-          <span class="val" id="font-size-val">18</span>
-          <button data-action="font-inc" aria-label="字級放大">＋</button>
-        </div>
+      <div class="font-controls">
         <button class="auto-btn" id="font-auto-btn"
           title="保留各站點原本的字級（不覆寫）">自動</button>
+        <div class="stepper">
+          <button data-action="font-dec" aria-label="字級減小">−</button>
+          <span class="val" id="font-size-val">18</span>
+          <button data-action="font-inc" aria-label="字級放大">+</button>
+        </div>
       </div>
     </div>
 
     <div class="setting-row">
       <label>版心寬度</label>
       <div class="stepper">
-        <button data-action="width-dec" aria-label="版心變窄">－</button>
+        <button data-action="width-dec" aria-label="版心變窄">−</button>
         <span class="val" id="content-width-val">720</span>
-        <button data-action="width-inc" aria-label="版心變寬">＋</button>
+        <button data-action="width-inc" aria-label="版心變寬">+</button>
       </div>
     </div>
   </section>
 
-  <div class="hint" id="shortcut-hint"></div>
-  <a href="#" class="options-link" id="open-options">進階設定</a>
+  <div class="footer">
+    <div class="hint" id="shortcut-hint">
+      <code>⌥</code><code>R</code> 切換純閱讀
+    </div>
+    <a href="#" class="options-link" id="open-options">進階設定 →</a>
+  </div>
+
   <script src="popup-core.js"></script>
   <script src="popup.js"></script>
 </body>

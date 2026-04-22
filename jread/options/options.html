@@ -4,54 +4,186 @@
   <meta charset="UTF-8">
   <title>JRead 偏好設定</title>
   <style>
+    /* ==========================================================
+       JRead Design Tokens
+       ========================================================== */
     :root {
-      font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      --jr-primary-50:  #ebf4ff;
+      --jr-primary-600: #2b6cb0;
+      --jr-primary-700: #2c5282;
+
+      --jr-neutral-50:  #fafafa;
+      --jr-neutral-100: #f0f0f0;
+      --jr-neutral-300: #cccccc;
+      --jr-neutral-500: #888888;
+      --jr-neutral-700: #444444;
+      --jr-neutral-900: #222222;
+
+      --jr-surface:     #ffffff;
+
+      --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+
+      --jr-radius-sm: 4px;
+      --jr-radius-md: 6px;
+
+      --jr-control-w: 140px;
+    }
+
+    * { box-sizing: border-box; }
+    html {
+      font-family: var(--jr-font-ui);
       font-size: 15px;
-      color: #222;
+      color: var(--jr-neutral-900);
+      -webkit-font-smoothing: antialiased;
     }
     body {
       max-width: 560px;
       margin: 40px auto;
-      padding: 0 20px;
+      padding: 0 24px;
+      background: var(--jr-surface);
+      line-height: 1.5;
     }
+
+    /* ==========================================================
+       Header
+       ========================================================== */
     h1 {
       font-size: 20px;
-      margin-bottom: 4px;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+      margin: 0 0 4px;
     }
     .version {
-      color: #888;
-      font-size: 13px;
+      color: var(--jr-neutral-500);
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
       margin-bottom: 24px;
     }
+
+    /* ==========================================================
+       Field rows
+       ========================================================== */
     .field {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 0;
-      border-bottom: 1px solid #eee;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--jr-neutral-100);
     }
     .field label {
       font-weight: 500;
+      color: var(--jr-neutral-900);
+      font-size: 14px;
     }
     .field .desc {
       display: block;
-      font-weight: normal;
+      font-weight: 400;
       font-size: 12px;
-      color: #888;
+      color: var(--jr-neutral-500);
       margin-top: 2px;
     }
-    select, input[type="number"] {
-      padding: 6px 8px;
-      font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      min-width: 120px;
+    .field .desc strong {
+      color: var(--jr-primary-600);
+      font-weight: 600;
     }
+
+    /* ==========================================================
+       Form controls — compact, aligned, tokenized
+       ========================================================== */
+    select,
+    input[type="number"] {
+      width: var(--jr-control-w);
+      height: 32px;
+      padding: 0 10px;
+      font-family: var(--jr-font-ui);
+      font-size: 13px;
+      color: var(--jr-neutral-900);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    input[type="number"] {
+      font-family: var(--jr-font-mono);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      padding-right: 12px;
+    }
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+    select:hover,
+    input[type="number"]:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    select:focus,
+    input[type="number"]:focus {
+      outline: none;
+      border-color: var(--jr-primary-600);
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+
+    /* ==========================================================
+       Save status
+       ========================================================== */
     #save-status {
       margin-top: 16px;
-      color: #2b6cb0;
-      font-size: 13px;
+      color: var(--jr-primary-600);
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
       min-height: 18px;
+      letter-spacing: 0.02em;
+    }
+
+    /* ==========================================================
+       License section
+       ========================================================== */
+    .license {
+      margin-top: 40px;
+    }
+    .license h2 {
+      color: var(--jr-primary-600);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.005em;
+      margin: 0 0 12px;
+    }
+    .license hr {
+      border: 0;
+      border-top: 1px solid var(--jr-neutral-100);
+      margin: 0 0 16px;
+    }
+    .license p {
+      margin: 0 0 12px;
+      line-height: 1.7;
+      font-size: 14px;
+      color: var(--jr-neutral-900);
+    }
+    .license .note,
+    .license .author {
+      color: var(--jr-neutral-500);
+      font-size: 13px;
+    }
+    .license a {
+      color: var(--jr-primary-600);
+      text-decoration: none;
+    }
+    .license a:hover {
+      color: var(--jr-primary-700);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .license strong {
+      font-weight: 700;
+      color: var(--jr-neutral-900);
     }
   </style>
 </head>
@@ -74,9 +206,9 @@
   <div class="field">
     <label>
       字級（px）
-      <span class="desc">主文字體大小</span>
+      <span class="desc">主文字體大小；<strong>0 = 自動</strong>（保留原站字級，不覆寫）</span>
     </label>
-    <input type="number" id="fontSize" min="12" max="32" step="1">
+    <input type="number" id="fontSize" min="0" max="32" step="1">
   </div>
 
   <div class="field">
@@ -88,6 +220,15 @@
   </div>
 
   <div id="save-status"></div>
+
+  <section class="license">
+    <h2>授權資訊</h2>
+    <hr>
+    <p>JRead 採用 <strong>Elastic License 2.0 (ELv2)</strong> 授權。</p>
+    <p>你可以自由查看原始碼、學習、修改、自己使用，但<strong>不能把 JRead（或改寫版本）包成服務拿去賣</strong>。</p>
+    <p class="note">完整條款請見擴充功能目錄內的 LICENSE 檔案，或參閱 <a href="https://www.elastic.co/licensing/elastic-license" target="_blank" rel="noopener">Elastic License 2.0 官方全文</a>。</p>
+    <p class="author">作者：Jimmy Su　・　Twitter (X)：<a href="https://x.com/jimmy_su" target="_blank" rel="noopener">@jimmy_su</a></p>
+  </section>
 
   <script src="options.js"></script>
 </body>

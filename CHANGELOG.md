@@ -24,6 +24,42 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.0**——視覺大改版：全站 Design System 落地（Jimmy 2026-04-22 多輪迭代）。工作分為四大塊：
+
+**A. Popup UI refresh**（Jimmy 授權動 popup；jsdom spec 不受影響全數 pass）
+- 套用 JRead Design System tokens（`--jr-primary-{50,600,700}` / `--jr-neutral-{50,100,300,500,700,900}` / `--jr-surface` / `--jr-font-ui,mono` / `--jr-radius-{sm,md}` / spacing 4-8-12-16-24）
+- Header 加 logomark：28px 藍方塊 + 白色 serif J（Noto Serif TC/Georgia）+ 右側 mono 版本號
+- 主題按鈕三顆 WYSIWYG：底色即該主題實際背景色（亮 #fff / 暗 #1a1a1a / 米 #f4ecd8），active 以 2px primary-600 outer ring 標示（**不**填充藍色、保留 WYSIWYG 語意）
+- 字級 row：Auto 按鈕 + stepper 打包成 `.font-controls` 放 row 右側；Auto 按鈕 off=灰底灰字、on=藍底白字（一眼分得出）
+- Stepper `.val` 從 `min-width: 42px` 改為**固定 `width: 56px`**：不論內容是 Auto / 18 / 840 / 1200 都同寬，兩條 stepper 左右邊緣 + 中央分隔線 100% 對齊
+- 主題按鈕群寬度固定 110px = stepper 總寬：三 row 右邊緣（theme / font-controls / width-stepper）完美對齊
+- Footer 重排：快速鍵提示與「進階設定 →」原本上下堆疊、改為同一 row（`.footer { flex; justify-content: space-between; align-items: baseline }`）；兩側字型字級完全一致（12px ui font weight 400）
+- 拿掉「頁面設定」h2（使用者回報浪費空間）
+- 拿掉 `.font-label-group`（label 放回 `.setting-row > label` 直接子層、字型字級與主題/版心寬度 row 一致）
+
+**B. Options page refactor**（`jread/options/options.html`）
+- 全面套 Design System tokens（與 popup 同步）
+- 三個 form 控制項統一：`width: 140px; height: 32px`、number input 用 mono + tabular-nums + 右對齊、select 自製 SVG 下拉箭頭（取代作業系統預設大箭頭）
+- Hover/Focus：neutral-500 邊框 → primary-600 邊框 + `0 0 0 3px primary-50` ring
+- 新增「授權資訊」section（品牌藍 h2、ELv2 宣告、作者 Jimmy Su + Twitter @jimmy_su 連結）
+- 字級 desc 加「**0 = 自動**」藍字強調；`<input type="number">` 的 `min="12"` 改為 `min="0"` 修 options 頁無法存 Auto（= 0 sentinel）的既有 bug
+
+**C. 素材生產**（全由 Claude Design 設計 + Playwright 精確截圖）
+- Icon family：`jread/assets/icons/icon-{16,32,48,128}.png`，比例 100% 對齊 popup logomark（radius 21.4% / font-size 64.3% / padding-right 7.1%）；`tools/generate-icons.js` 供日後重生
+- Manifest 註冊 `icons` + `action.default_icon` 四尺寸齊備（工具列 / Extensions 管理頁 / Store listing 皆有對應）
+- Landing page：`docs/index.html`（GitHub Pages 用；AdGuard 注入 script 已清除）
+- Chrome Web Store promo：`store-assets/promo-440x280-{a,b}.png`（small promo tile 雙備選）+ `marquee-1400x560-{main,alt}.png`（marquee 雙備選）+ `icon-128-store.png`；四張 HTML source 備存於 `store-assets/sources/`；`tools/export-promo-tiles.js` 供日後重生
+- `Claude design/` 原始下載資料夾加入 `.gitignore`
+
+**D. 功能/修復**
+- **預設快速鍵改為 `Alt+R`**（Mac 即 `Option+R`）：解掉 `Cmd+Shift+R` 撞 Chrome 強制重載導致 suggested_key 被 Chrome 忽略、安裝後 shortcut 欄位空白的長年問題。⚠️ Chrome 不會在 extension reload 時重套 suggested_key（只在**首次安裝**套用），既有使用者需到 `chrome://extensions/shortcuts` 手動指派一次；新安裝自動綁定
+- **Icon family 擴充 + active/idle 切換**（Jimmy 2026-04-22 另外設計，置換我自動產的版本）：`jread/assets/icons/` 新增 disabled 灰階變體（16/32/48/128）+ 512 高解析 master；manifest `default_icon` 指向灰階版（待機狀態），content main.js 在 enter/exit reader mode 時發 `SET_ACTIVE_ICON` 訊息，SW 呼叫 `chrome.action.setIcon({tabId, path})` 切彩色；`tabs.onUpdated` status=loading 時重置為灰階，處理導航後的 per-tab icon state 殘留。新增 `NS.MSG.SET_ACTIVE_ICON` 常數；icon swap wire-up 走 PENDING_REGRESSION（chrome.action.setIcon / tabs.onUpdated 只能在真 extension 環境驗）
+- **Link 色修復**（styler.js，Jimmy 授權動 styler）：dark/sepia 主題下 `[data-jread-active="1"] * { color: X !important }` 吞掉原站連結色、導致連結與正文同色無法辨識（Jimmy 在 Idée Fixe Substack 回報）。THEMES 表新增 `link` 欄位（dark `#7fb5e6` / sepia `#2c5282` / light `null`）；buildCss 在 `overrides.theme && theme.text` 分支加注入 `a / a * { color: theme.link !important }` + `a { text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px }`（**顏色 + 底線雙通道差異化**，照顧色盲/低對比環境）。**light theme 完全不變**（light.link 為 null、light.text 為 null → `overrides.theme && theme.text` 條件不觸發、不注入任何 a 規則、保留原站 link 色）。styler.spec dark/sepia 擴充 link 色 + underline 斷言；light 加 forcing function「不得注入任何 a 規則」守住 v0.6.0 baseline「link color 保留原站」精神；既有「CSS 不得套 a 下 rule」的 light baseline guard（line 457）保留
+- 全專案 **「快捷鍵」→「快速鍵」**（SPEC / CHANGELOG-archive / PENDING_REGRESSION / service-worker.js 註解 / popup.js 使用者提示字 3 處）
+- `LICENSE`（Elastic License 2.0 + Copyright 2026 Jimmy Su）rooted 並 mirror 進 `jread/` 讓「擴充功能目錄內的 LICENSE 檔案」敘述為真
+
+108 spec 全過（styler theme spec 擴充 link 色斷言、未增 `it()` blocks）；`cleaner.js` / `detector.js` / `main.js` / `toast.js` 等 content-script 核心行為完全未動——v0.6.3 主文偵測 / 雜訊隱藏 baseline 零變動。
+
 **v0.6.26**——refactor：cleaner.js 內部重構、行為零變化（Jimmy 2026-04-22 要求）。(1) `norm()` whitespace-normalize helper 從 `hideInsideArticleSidebarColumns` / `hideInsideArticleButtonClusters` 內重複宣告 2 處抽成 module 頂層 helper（`(s || '').replace(/\s+/g, ' ').trim()`），未來新規則直接 reuse。(2) 5 條 CONTAINER_SEL 規則（`hideInsideArticleByKeyword` / `hideInsideArticleActionRows` / `hideInsideArticleButtonClusters` / `hideInsideArticleEmptySpacers` / `hideInsideArticleSidebarColumns`）原本各自呼叫 `articleEl.querySelectorAll(CONTAINER_SEL)`——article 內 descendant 被重複掃 5 次。改為 `clean()` entry point 掃一次、把結果當可選 `containers` 參數傳給各規則；規則 signature 加可選參數 `containers`（未傳時 fallback 呼叫 querySelectorAll，向後相容單獨呼叫）。對大站點（如 Engadget 長文 + 廣告 div 多）的 DOM iterate 次數降到 1/5。(3) CHANGELOG.md 歸檔 v0.3.x–v0.5.x 共 10 條舊條目到新建 `CHANGELOG-archive.md`，主 CHANGELOG 只保留 v0.6.0 baseline 及之後的 v0.6.1–v0.6.26（共 27 條）——日常維護讀起來更精簡，歷史仍完整保存。108 spec 全過、零 regression、baseline 完整保留：所有 cleaner 規則的行為、執行順序、結果一致；只有內部實作細節變化。重構未動 styler.js / detector.js / popup / main.js / toast.js / service-worker.js。
 
 **v0.6.25**——popup 新增「自動」字級選項（觸發情境：Jimmy 2026-04-22 發現 storage 殘留 16 的 fontSize 在 Medium 上看起來比原站 20px 小、但又不想每次切站手動調；且各站原 typography 字級差異大，單一 px 設定難以對每站都合適）。UX 設計：popup 的「字級」row 的 stepper 右側新增「自動」按鈕（active 狀態 = 藍色高亮）——點擊切換 `fontSize = 0`（sentinel）↔ `fontSize = 18`（DEFAULT）。`fontSize = 0` 語意為「Auto / 原站字級」、styler 不注入任何 font-size override、每站保留原 typography。使用者三種模式：(1) Auto = 完全保留各站字級、(2) 預設 18 = 不動原站（跟 Auto 行為相同但明確「手動選擇預設值」）、(3) 自訂 12~32 = 強制注入 px。從 Auto 按「+」直接跳到 DEFAULT 18、不需再按 Auto toggle；Auto 模式下「-」按鈕 disabled。styler 層關鍵修法：(a) `Number(s.fontSize) || DEFAULTS.fontSize` 會把 0 轉成 DEFAULT 失效 sentinel——改用 `Number.isFinite(rawFs) && rawFs >= 0 ? rawFs : DEFAULTS.fontSize` 保留 0；(b) `overrides.fontSize` 判斷加 `> 0` 保護：`opts.fontSize > 0 && opts.fontSize !== DEFAULTS.fontSize`——0 不視為「改過 DEFAULT」、不觸發 font-size/line-height 連帶注入。popup 層：`FONT_SIZE.auto = 0` 常數、`render()` 檢測 `isAuto` 顯示 "Auto" 字樣 + 「-」disabled + 「+」從 Auto 跳 DEFAULT + 「自動」按鈕 active 高亮。storage sync 舊資料（fontSize = 16/18/20 等 legacy number 值）自動相容——非 0 值走原有判斷、行為不變。新 styler.spec 1 條：fontSize = 0 時 CSS 不含 `font-size: Npx !important` 也不含 `line-height: N !important`（連帶注入也不觸發）。sanity check 走過——拿掉 `> 0` 保護時新 spec 正確 fail、既有「預設設定不注入」「非預設 fontSize 注入」等 baseline 斷言仍 pass（證明新條件是補丁非重寫）。108 spec 全過（原 107 + 新 1），v0.6.24 baseline 完整保留——baseline「預設值完全不動原站」精神不變，新增的 Auto 模式也遵守此精神（且更積極保留原站）。popup.js / popup.html 新增 UI 元件（「自動」button + CSS `.auto-btn.active` 樣式）。**未動 cleaner.js / detector.js**。

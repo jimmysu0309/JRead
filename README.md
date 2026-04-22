@@ -1,8 +1,8 @@
 # JRead
 
-Chrome Extension「Unclutter」的 clone——純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
+純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.6.26（refactor：cleaner.js 內部重構——`norm()` 抽頂層 helper、5 條 CONTAINER_SEL 規則共用同一次 querySelectorAll 結果（5 次掃描合併為 1 次）、CHANGELOG 歸檔 v0.3–v0.5 到 `CHANGELOG-archive.md`。行為零變化、108 spec 全過）
+**目前版本**：v0.7.0（視覺大改版：全站 Design System 落地——popup UI refresh、options page refactor、icon family 16/32/48/128、landing page、Chrome Web Store 素材、預設快速鍵改 `Alt+R` / `Option+R`、dark/sepia 主題 link 色修復。108 spec 全過、v0.6.3 content-script baseline 零變動）
 
 ---
 

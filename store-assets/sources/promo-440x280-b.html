@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>JRead — Promo Tile (Alt)</title>
+<style>
+  :root {
+    --jr-primary-600: #2b6cb0;
+    --jr-neutral-100: #f0f0f0;
+    --jr-neutral-300: #cccccc;
+    --jr-neutral-500: #888888;
+    --jr-neutral-700: #444444;
+    --jr-neutral-900: #222222;
+    --jr-bg:          #faf8f3;
+    --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+    --jr-font-reading: "Noto Serif TC", Georgia, "Times New Roman", serif;
+    --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+  }
+  html, body { margin: 0; padding: 0; background: #e5e5e5; font-family: var(--jr-font-ui); }
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; }
+
+  .tile {
+    width: 440px;
+    height: 280px;
+    box-sizing: border-box;
+    background: var(--jr-bg);
+    position: relative;
+    overflow: hidden;
+    color: var(--jr-neutral-900);
+    -webkit-font-smoothing: antialiased;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 10px 30px rgba(0,0,0,0.08);
+  }
+
+  .safe {
+    position: absolute;
+    left: 60px;
+    top: 40px;
+    width: 320px;
+    height: 200px;
+  }
+
+  /* Title row: logomark + big wordmark on one line */
+  .titlerow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 6px;
+  }
+  .mark {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    background: var(--jr-primary-600);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--jr-font-reading);
+    font-weight: 600;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    padding-bottom: 2px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+  .wordmark {
+    font-family: var(--jr-font-reading);
+    font-weight: 600;
+    font-size: 48px;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    color: var(--jr-neutral-900);
+    margin: 0;
+  }
+  .wordmark em {
+    color: var(--jr-primary-600);
+    font-style: normal;
+  }
+
+  .tagline-zh {
+    font-family: var(--jr-font-reading);
+    font-size: 22px;
+    line-height: 1.3;
+    letter-spacing: -0.005em;
+    color: var(--jr-neutral-900);
+    margin: 0 0 4px;
+    font-weight: 500;
+  }
+  .tagline-en {
+    font-family: var(--jr-font-ui);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--jr-neutral-500);
+    margin: 0 0 0;
+    letter-spacing: 0.01em;
+  }
+
+  /* The visual: a single "page" whose left half is messy & right half is clean,
+     cleanly split by a vertical rule — before/after within one frame */
+  .page {
+    height: 70px;
+    margin-top: 8px;
+    background: #fff;
+    border: 1px solid var(--jr-neutral-300);
+    border-radius: 4px;
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    overflow: hidden;
+    position: relative;
+  }
+  .pagelabels {
+    margin-top: 6px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    font-family: var(--jr-font-mono);
+    font-size: 9px;
+    color: var(--jr-neutral-500);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .pagelabels span { text-align: center; }
+  .rule { background: var(--jr-neutral-300); }
+
+  .half {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: relative;
+  }
+  .half .tag {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-family: var(--jr-font-mono);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--jr-neutral-500);
+  }
+  .half.before .tag { color: #b08a8a; }
+
+  /* messy half — colored rectangles = ads, over grey base lines */
+  .half.before {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 3px;
+    padding: 8px;
+  }
+  .half.before span {
+    background: var(--jr-neutral-300);
+    border-radius: 1.5px;
+  }
+  .half.before span.a { background: #e9b8b8; }
+  .half.before span.b { background: #e9d6b8; }
+  .half.before span.c { background: #c8dcc0; }
+  .half.before span.d { background: #bccfe3; }
+  .half.before span.e { background: #d9c8e3; }
+  .half.before span.w2 { grid-column: span 2; }
+  .half.before span.w3 { grid-column: span 3; }
+  .half.before span.h2 { grid-row: span 2; }
+
+  /* clean half — orderly text lines */
+  .half.after {
+    justify-content: center;
+    gap: 5px;
+    padding: 9px 12px;
+  }
+  .half.after .line {
+    height: 2.5px;
+    background: var(--jr-neutral-300);
+    border-radius: 2px;
+  }
+  .half.after .line.title { height: 4px; background: var(--jr-neutral-700); width: 55%; margin-bottom: 3px; }
+  .half.after .line.w95 { width: 95%; }
+  .half.after .line.w85 { width: 85%; }
+  .half.after .line.w75 { width: 75%; }
+  .half.after .line.w65 { width: 65%; }
+
+  /* Arrow glyph sitting on the rule */
+  .pagearrow {
+    position: absolute;
+    left: calc(60px + 320px / 2 - 11px);
+    top: calc(151px + 35px - 11px); /* page center */
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--jr-bg);
+    border: 1px solid var(--jr-neutral-300);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--jr-font-mono);
+    font-size: 12px;
+    color: var(--jr-neutral-700);
+    font-weight: 600;
+    line-height: 1;
+  }
+</style>
+</head>
+<body>
+  <div class="tile">
+    <div class="safe">
+      <div class="titlerow">
+        <div class="mark">J</div>
+        <div class="wordmark">J<em>Read</em></div>
+      </div>
+
+      <div class="tagline-zh">一鍵純閱讀</div>
+      <div class="tagline-en">Quiet the web. Read the text.</div>
+
+      <div class="page">
+        <div class="half before">
+          <span class="a w2"></span><span class="b"></span><span class="w2"></span><span class="c"></span>
+          <span class="d h2"></span><span class="w2"></span><span class="e"></span><span class="a"></span>
+          <span class="w2"></span><span class="c"></span><span class="w2"></span>
+          <span class="b w3"></span><span class="d"></span><span class="w2"></span>
+        </div>
+        <div class="rule"></div>
+        <div class="half after">
+          <div class="line title"></div>
+          <div class="line w95"></div>
+          <div class="line w85"></div>
+          <div class="line w95"></div>
+          <div class="line w75"></div>
+          <div class="line w65"></div>
+        </div>
+      </div>
+      <div class="pagelabels"><span>web</span><span>jread</span></div>
+    </div>
+    <div class="pagearrow">→</div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,1070 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JRead — 一鍵純閱讀，還你乾淨文字</title>
+<meta name="description" content="JRead is a Chrome extension that strips ads, sidebars and popups from any article — leaving only words, arranged for reading.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------- JRead tokens ---------- */
+:root {
+  --jr-primary-50:  #ebf4ff;
+  --jr-primary-600: #2b6cb0;
+  --jr-primary-700: #2c5282;
+
+  --jr-neutral-50:  #fafafa;
+  --jr-neutral-100: #f0f0f0;
+  --jr-neutral-300: #cccccc;
+  --jr-neutral-500: #888888;
+  --jr-neutral-700: #444444;
+  --jr-neutral-900: #222222;
+
+  --jr-surface:     #ffffff;
+
+  --jr-read-light-bg:   #ffffff;
+  --jr-read-light-fg:   #222222;
+  --jr-read-dark-bg:    #1a1a1a;
+  --jr-read-dark-fg:    #e4e4e4;
+  --jr-read-sepia-bg:   #f4ecd8;
+  --jr-read-sepia-fg:   #3a3226;
+
+  --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+  --jr-font-reading: "Noto Serif TC", Georgia, "Times New Roman", serif;
+  --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+
+  --jr-radius-sm: 4px;
+  --jr-radius-md: 6px;
+
+  --jr-border: 1px solid var(--jr-neutral-300);
+  --jr-border-soft: 1px solid var(--jr-neutral-100);
+
+  --page-max: 1200px;
+  --page-pad: 56px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--jr-font-ui);
+  color: var(--jr-neutral-900);
+  background: var(--jr-surface);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
+}
+a { color: inherit; text-decoration: none; }
+
+.wrap {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 var(--page-pad);
+}
+
+/* ---------- Nav ---------- */
+.nav {
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: var(--jr-border-soft);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand .mark {
+  width: 28px; height: 28px;
+  background: var(--jr-primary-600);
+  color: #fff;
+  border-radius: var(--jr-radius-sm);
+  display: grid; place-items: center;
+  font-family: var(--jr-font-reading);
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+.brand .word {
+  font-family: var(--jr-font-reading);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.brand .word em { color: var(--jr-primary-600); font-style: normal; }
+
+.nav .right {
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 13px;
+  color: var(--jr-neutral-700);
+}
+.nav .right a:hover { color: var(--jr-neutral-900); }
+.nav .ver {
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--jr-neutral-500);
+}
+
+/* ---------- Shared ---------- */
+.eyebrow {
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--jr-neutral-500);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  font-family: var(--jr-font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px 18px;
+  border-radius: var(--jr-radius-md);
+  border: 1px solid transparent;
+  line-height: 1.2;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn.primary { background: var(--jr-primary-600); color: #fff; border-color: var(--jr-primary-600); }
+.btn.primary:hover { background: var(--jr-primary-700); border-color: var(--jr-primary-700); }
+.btn.ghost { background: var(--jr-surface); color: var(--jr-neutral-900); border-color: var(--jr-neutral-300); }
+.btn.ghost:hover { background: var(--jr-neutral-50); }
+.btn .chevron { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+/* ---------- Hero ---------- */
+.hero {
+  padding: 88px 0 96px;
+  border-bottom: var(--jr-border-soft);
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 80px;
+  align-items: center;
+}
+.hero h1 {
+  font-family: var(--jr-font-reading);
+  font-size: 60px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  margin: 20px 0 20px;
+  color: var(--jr-neutral-900);
+  text-wrap: balance;
+}
+.hero h1 em { color: var(--jr-primary-600); font-style: normal; }
+.hero .sub-en {
+  font-family: var(--jr-font-reading);
+  font-size: 19px;
+  font-style: italic;
+  color: var(--jr-neutral-500);
+  letter-spacing: -0.005em;
+  margin: 0 0 12px;
+}
+.hero .lede {
+  font-size: 16px;
+  color: var(--jr-neutral-700);
+  line-height: 1.6;
+  max-width: 44ch;
+  margin: 0 0 32px;
+}
+.hero .ctas {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.hero .meta-row {
+  margin-top: 28px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--jr-neutral-500);
+  text-transform: uppercase;
+}
+.hero .meta-row .dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--jr-neutral-300);
+}
+
+/* ---------- Before / After (Marquee style) ---------- */
+.ba {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 32px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.ba .mock-cell {
+  position: relative;
+  padding-top: 28px;
+}
+.ba .arrow {
+  align-self: center;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--jr-primary-600);
+  font-family: var(--jr-font-reading);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  padding-top: 28px;
+}
+
+/* Shared mockup shell */
+.mock {
+  background: var(--jr-surface);
+  border: var(--jr-border);
+  border-radius: var(--jr-radius-md);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+.mock .chrome {
+  height: 22px;
+  background: var(--jr-neutral-50);
+  border-bottom: 1px solid var(--jr-neutral-100);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+}
+.mock .chrome i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--jr-neutral-300);
+  display: inline-block;
+}
+.mock .chrome .url {
+  margin-left: 12px;
+  height: 11px;
+  flex: 1;
+  background: var(--jr-neutral-100);
+  border-radius: 2px;
+}
+.mock-label {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  font-family: var(--jr-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--jr-neutral-500);
+}
+.mock-cell:has(.mock.after) .mock-label { left: auto; right: 0; color: var(--jr-primary-600); }
+
+/* -------- BEFORE (noisy news site) -------- */
+.mock.before .body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  height: calc(100% - 22px);
+  position: relative;
+}
+.mock.before .site-header {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 34px;
+  background: #2a2a2a;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 10px;
+  z-index: 1;
+}
+.mock.before .site-header .logo {
+  width: 46px; height: 10px; background: #fff; border-radius: 1px;
+}
+.mock.before .site-header .nav {
+  display: flex; gap: 8px; margin-left: auto;
+}
+.mock.before .site-header .nav span {
+  width: 24px; height: 6px; background: #555; border-radius: 1px;
+}
+.mock.before .side {
+  border-right: 1px solid var(--jr-neutral-100);
+  padding: 44px 10px 10px;
+  background: var(--jr-neutral-50);
+}
+.mock.before .side .ad {
+  width: 100%;
+  height: 140px;
+  background: repeating-linear-gradient(
+    45deg,
+    #ffe8a8 0 6px,
+    #ffd96b 6px 12px
+  );
+  border: 1px solid #e5b83a;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--jr-font-mono);
+  font-size: 9px;
+  color: #6b4e00;
+  letter-spacing: 0.1em;
+  margin-bottom: 10px;
+}
+.mock.before .side .widget {
+  padding: 8px;
+  border: 1px solid var(--jr-neutral-100);
+  border-radius: 2px;
+  background: #fff;
+}
+.mock.before .side .widget div {
+  height: 6px; background: var(--jr-neutral-100); border-radius: 1px;
+  margin-bottom: 5px;
+}
+.mock.before .side .widget div:nth-child(2) { width: 80%; }
+.mock.before .side .widget div:nth-child(3) { width: 65%; }
+.mock.before .side .widget div:nth-child(4) { width: 72%; }
+
+.mock.before .main {
+  padding: 44px 14px 10px;
+  position: relative;
+  overflow: hidden;
+}
+.mock.before .main .title {
+  height: 12px; background: var(--jr-neutral-900); width: 80%; border-radius: 1px;
+}
+.mock.before .main .title2 { height: 12px; background: var(--jr-neutral-900); width: 55%; border-radius: 1px; margin-top: 5px; }
+.mock.before .main .byline {
+  height: 5px; width: 30%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 10px;
+}
+.mock.before .main .banner-ad {
+  margin-top: 12px;
+  height: 54px;
+  background:
+    linear-gradient(90deg, #c53030 0 35%, #b7791f 35% 70%, #2c7a7b 70% 100%);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--jr-font-mono);
+  font-size: 9px;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.mock.before .main .para {
+  margin-top: 10px;
+}
+.mock.before .main .para div {
+  height: 4px; background: var(--jr-neutral-300); border-radius: 1px; margin-bottom: 5px;
+}
+.mock.before .main .para div:nth-child(1) { width: 96%; }
+.mock.before .main .para div:nth-child(2) { width: 92%; }
+.mock.before .main .para div:nth-child(3) { width: 88%; }
+.mock.before .main .para div:nth-child(4) { width: 94%; }
+.mock.before .main .para div:nth-child(5) { width: 70%; }
+
+/* Popup overlay */
+.mock.before .scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(30, 30, 30, 0.55);
+  z-index: 2;
+}
+.mock.before .popup {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 78%;
+  background: #fff;
+  border-radius: 3px;
+  padding: 14px 14px 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  z-index: 3;
+}
+.mock.before .popup .x {
+  position: absolute;
+  top: 6px; right: 8px;
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  color: var(--jr-neutral-500);
+  line-height: 1;
+}
+.mock.before .popup .h {
+  height: 9px; width: 70%; background: var(--jr-neutral-900); border-radius: 1px;
+}
+.mock.before .popup .l1 {
+  height: 4px; width: 92%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 8px;
+}
+.mock.before .popup .l2 { height: 4px; width: 80%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 4px; }
+.mock.before .popup .btn {
+  margin-top: 10px;
+  height: 18px; width: 70px;
+  background: var(--jr-primary-600);
+  border-radius: 2px;
+}
+
+/* -------- AFTER (reading mode) -------- */
+.mock.after .body {
+  padding: 32px 36px 24px;
+  height: calc(100% - 22px);
+  box-sizing: border-box;
+  background: var(--jr-read-light-bg);
+}
+.mock.after .kicker {
+  font-family: var(--jr-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--jr-neutral-500);
+}
+.mock.after .title {
+  font-family: var(--jr-font-reading);
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--jr-neutral-900);
+  margin: 10px 0 0;
+  font-weight: 600;
+  text-wrap: balance;
+}
+.mock.after .byline {
+  font-family: var(--jr-font-mono);
+  font-size: 10px;
+  color: var(--jr-neutral-500);
+  margin-top: 12px;
+  letter-spacing: 0.04em;
+}
+.mock.after .rule {
+  height: 1px;
+  background: var(--jr-neutral-100);
+  margin: 14px 0 16px;
+}
+.mock.after .prose {
+  font-family: var(--jr-font-reading);
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--jr-neutral-700);
+  letter-spacing: 0.005em;
+}
+.mock.after .prose p { margin: 0 0 10px; }
+.mock.after .prose p:last-child { margin-bottom: 0; }
+
+/* ---------- Problem section ---------- */
+section.problem {
+  padding: 112px 0 96px;
+  border-bottom: var(--jr-border-soft);
+}
+.section-head { max-width: 640px; margin-bottom: 64px; }
+.section-head h2 {
+  font-family: var(--jr-font-reading);
+  font-size: 40px;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 16px 0 12px;
+  text-wrap: balance;
+}
+.section-head .dek {
+  font-size: 16px;
+  color: var(--jr-neutral-700);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 52ch;
+}
+
+.three-up {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: var(--jr-border);
+}
+.three-up .cell {
+  padding: 40px 32px 40px 0;
+  border-right: var(--jr-border);
+}
+.three-up .cell:last-child { border-right: 0; padding-right: 0; }
+.three-up .cell + .cell { padding-left: 32px; }
+.three-up .num {
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--jr-primary-600);
+}
+.three-up .ico {
+  width: 44px; height: 44px;
+  margin: 20px 0 24px;
+  display: grid; place-items: center;
+  border: var(--jr-border);
+  border-radius: var(--jr-radius-md);
+  color: var(--jr-neutral-900);
+}
+.three-up .ico svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.three-up h3 {
+  font-family: var(--jr-font-reading);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 0 0 10px;
+  line-height: 1.3;
+}
+.three-up p {
+  font-size: 14px;
+  color: var(--jr-neutral-700);
+  line-height: 1.65;
+  margin: 0;
+  max-width: 32ch;
+}
+
+/* ---------- Themes preview ---------- */
+section.themes {
+  padding: 112px 0 96px;
+  border-bottom: var(--jr-border-soft);
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.theme {
+  border: var(--jr-border);
+  border-radius: var(--jr-radius-md);
+  overflow: hidden;
+  background: var(--jr-surface);
+  display: flex;
+  flex-direction: column;
+}
+.theme .tab {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: var(--jr-border);
+  background: var(--jr-surface);
+}
+.theme .name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.theme .swatches { display: inline-flex; gap: 4px; }
+.theme .sw {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.theme .canvas {
+  padding: 28px 28px 30px;
+  font-family: var(--jr-font-reading);
+  flex: 1;
+}
+.theme .kicker {
+  font-family: var(--jr-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 10px;
+}
+.theme .canvas h4 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  margin: 0 0 6px;
+  text-wrap: balance;
+}
+.theme .canvas .by {
+  font-family: var(--jr-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  margin-bottom: 16px;
+}
+.theme .canvas p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0 0 6px;
+}
+.theme.light .canvas { background: var(--jr-read-light-bg); color: var(--jr-read-light-fg); }
+.theme.dark .canvas { background: var(--jr-read-dark-bg); color: var(--jr-read-dark-fg); }
+.theme.sepia .canvas { background: var(--jr-read-sepia-bg); color: var(--jr-read-sepia-fg); }
+
+.theme .meta {
+  padding: 10px 16px;
+  border-top: var(--jr-border);
+  background: var(--jr-neutral-50);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--jr-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--jr-neutral-500);
+  text-transform: uppercase;
+}
+.theme .meta .val { color: var(--jr-neutral-700); }
+
+/* ---------- Steps ---------- */
+section.steps { padding: 112px 0 104px; border-bottom: var(--jr-border-soft); }
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 56px;
+}
+.step {
+  position: relative;
+  padding: 0 28px;
+  display: flex;
+  flex-direction: column;
+}
+.step:first-child { padding-left: 0; }
+.step:last-child { padding-right: 0; }
+.step + .step { border-left: var(--jr-border); }
+.step .circle {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  border: 1px solid var(--jr-neutral-300);
+  display: grid; place-items: center;
+  font-family: var(--jr-font-reading);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--jr-neutral-900);
+  background: var(--jr-surface);
+  margin-bottom: 24px;
+  letter-spacing: -0.01em;
+}
+.step.active .circle {
+  background: var(--jr-primary-600);
+  border-color: var(--jr-primary-600);
+  color: #fff;
+}
+.step h3 {
+  font-family: var(--jr-font-reading);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 0 0 10px;
+  line-height: 1.3;
+}
+.step p {
+  font-size: 14px;
+  color: var(--jr-neutral-700);
+  line-height: 1.65;
+  margin: 0 0 14px;
+  max-width: 32ch;
+}
+.step > .kbd-label,
+.step > .kbd-row { margin-top: auto; }
+.kbd-row { display: inline-flex; gap: 4px; align-items: center; }
+.kbd {
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  padding: 3px 7px;
+  border: 1px solid var(--jr-neutral-300);
+  border-bottom-width: 2px;
+  border-radius: var(--jr-radius-sm);
+  background: var(--jr-neutral-50);
+  color: var(--jr-neutral-900);
+  line-height: 1;
+}
+.kbd-label {
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--jr-neutral-500);
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+
+/* ---------- Footer ---------- */
+footer {
+  padding: 56px 0 72px;
+  font-family: var(--jr-font-ui);
+}
+.foot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.foot-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  font-family: var(--jr-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--jr-neutral-500);
+  text-transform: uppercase;
+}
+.foot-left .sep { width: 4px; height: 4px; border-radius: 50%; background: var(--jr-neutral-300); }
+.foot-right {
+  display: inline-flex;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--jr-neutral-700);
+}
+.foot-right a:hover { color: var(--jr-neutral-900); }
+.foot-tag {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--jr-neutral-500);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  :root { --page-pad: 24px; }
+
+  .nav .right .link-text { display: none; }
+
+  .hero { padding: 56px 0 64px; }
+  .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+  .hero h1 { font-size: 40px; }
+  .hero .sub-en { font-size: 16px; }
+  .hero .lede { font-size: 15px; }
+
+  .ba { grid-template-columns: 1fr; gap: 40px; padding-top: 28px; }
+  .ba .arrow { transform: rotate(90deg); }
+  .mock { aspect-ratio: 4 / 3; }
+  .mock.after .body { padding: 24px; }
+  .mock.after .title { font-size: 17px; }
+  .mock.after .prose { font-size: 11px; line-height: 1.8; }
+
+  section.problem, section.themes, section.steps { padding: 72px 0 64px; }
+  .section-head h2 { font-size: 28px; }
+  .section-head .dek { font-size: 15px; }
+
+  .three-up { grid-template-columns: 1fr; }
+  .three-up .cell {
+    padding: 32px 0;
+    border-right: 0;
+    border-bottom: var(--jr-border);
+  }
+  .three-up .cell:last-child { border-bottom: 0; }
+  .three-up .cell + .cell { padding-left: 0; }
+
+  .theme-grid { grid-template-columns: 1fr; gap: 16px; }
+
+  .steps-grid { grid-template-columns: 1fr; gap: 16px; margin-top: 40px; }
+  .step { padding-right: 0; padding-bottom: 24px; border-bottom: var(--jr-border); }
+  .step + .step { padding-left: 0; border-left: 0; padding-top: 24px; }
+  .step:last-child { border-bottom: 0; }
+
+  .foot-row { flex-direction: column; align-items: flex-start; }
+
+  .hero .ctas { width: 100%; }
+  .hero .ctas .btn { flex: 1; justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<div class="wrap">
+  <div class="nav">
+    <a class="brand" href="#">
+      <div class="mark">J</div>
+      <div class="word">J<em>Read</em></div>
+    </a>
+    <div class="right">
+      <a class="link-text" href="#problem">功能</a>
+      <a class="link-text" href="#themes">主題</a>
+      <a class="link-text" href="#steps">使用</a>
+      <span class="ver">v0.6.26</span>
+      <a class="btn primary" href="#" aria-label="加入 Chrome">加入 Chrome</a>
+    </div>
+  </div>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <div class="eyebrow">Reader Mode Chrome Extension</div>
+        <h1>一鍵純閱讀<br>還你乾淨文字</h1>
+        <p class="sub-en" style="margin-bottom: 32px;">One click to quiet the web.</p>
+        <div class="ctas">
+          <a class="btn primary" href="#">
+            加入 Chrome
+            <svg class="chevron" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>
+          </a>
+          <a class="btn ghost" href="#">
+            在 GitHub 看原始碼
+            <svg class="chevron" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+          </a>
+        </div>
+        <div class="meta-row">
+          <span>FREE · OPEN SOURCE · PRIVACY</span>
+        </div>
+      </div>
+
+      <!-- BEFORE / AFTER ILLUSTRATION -->
+      <div class="ba" role="img" aria-label="Before and after comparison: a cluttered webpage on the left, and a clean JRead reading view on the right.">
+        <!-- BEFORE -->
+        <div class="mock-cell">
+          <span class="mock-label">Before</span>
+          <div class="mock before">
+          <div class="chrome">
+            <i></i><i></i><i></i>
+            <div class="url"></div>
+          </div>
+          <div class="body">
+            <div class="site-header">
+              <div class="logo"></div>
+              <div class="nav"><span></span><span></span><span></span><span></span></div>
+            </div>
+            <aside class="side">
+              <div class="ad">AD · 300×250</div>
+              <div class="widget">
+                <div style="width:55%"></div>
+                <div></div>
+                <div></div>
+                <div></div>
+              </div>
+            </aside>
+            <div class="main">
+              <div class="title"></div>
+              <div class="title2"></div>
+              <div class="byline"></div>
+              <div class="banner-ad">SPONSORED</div>
+              <div class="para">
+                <div></div><div></div><div></div><div></div><div></div>
+              </div>
+            </div>
+            <!-- Popup overlay -->
+            <div class="scrim"></div>
+            <div class="popup">
+              <span class="x">✕</span>
+              <div class="h"></div>
+              <div class="l1"></div>
+              <div class="l2"></div>
+              <div class="btn"></div>
+            </div>
+          </div>
+          </div>
+        </div>
+
+        <!-- ARROW -->
+        <div class="arrow" aria-hidden="true">→</div>
+
+        <!-- AFTER -->
+        <div class="mock-cell">
+          <span class="mock-label">After JRead</span>
+          <div class="mock after">
+          <div class="chrome">
+            <i></i><i></i><i></i>
+            <div class="url"></div>
+          </div>
+          <div class="body">
+            <div class="kicker">Essay · 12 min read</div>
+            <h3 class="title">論專注：為什麼我們越來越讀不完一篇長文</h3>
+            <div class="byline">By 林書宇 — Mar 2026</div>
+            <div class="rule"></div>
+            <div class="prose">
+              <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力：橫幅、側欄、彈窗、訂閱框</p>
+              <p>JRead 的做法很簡單——把它們通通移走，只留下文字、段落與留白</p>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="problem" id="problem">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>把雜訊滿滿的網頁<br>變成乾淨可讀的文章</h2>
+    </div>
+
+    <div class="three-up">
+      <div class="cell">
+        <div class="num">01</div>
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="4" width="18" height="16" rx="1.5"/>
+            <line x1="3" y1="20" x2="21" y2="4"/>
+          </svg>
+        </div>
+        <h3>隱藏廣告與側邊欄</h3>
+        <p>橫幅、彈窗、"你可能也喜歡"，一次全部移除。資料都在本機處理，完全不傳給第三方</p>
+      </div>
+
+      <div class="cell">
+        <div class="num">02</div>
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <line x1="4" y1="7" x2="20" y2="7"/>
+            <line x1="4" y1="12" x2="16" y2="12"/>
+            <line x1="4" y1="17" x2="18" y2="17"/>
+          </svg>
+        </div>
+        <h3>乾淨排版</h3>
+        <p>Noto Serif TC 襯線字、1.75 行高、58–66 字的版心，中英文都讀得舒服</p>
+      </div>
+
+      <div class="cell">
+        <div class="num">03</div>
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="8"/>
+            <path d="M12 4 A8 8 0 0 1 12 20 Z" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <h3>三種閱讀主題</h3>
+        <p>Light、Dark、Sepia，OLED 夜間友善</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- THEMES -->
+<section class="themes" id="themes">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>同一段文字<br>三種閱讀心情</h2>
+    </div>
+
+    <div class="theme-grid">
+      <div class="theme light">
+        <div class="tab">
+          <span class="name">Light</span>
+          <div class="swatches" aria-hidden="true">
+            <span class="sw" style="background:#ffffff;"></span>
+            <span class="sw" style="background:#222222;"></span>
+          </div>
+        </div>
+        <div class="canvas">
+          <div class="kicker">Essay · 2026</div>
+          <h4>論專注：為什麼我們越來越讀不完一篇長文</h4>
+          <div class="by">林 書 宇 · 12 min read</div>
+          <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
+          <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
+        </div>
+        <div class="meta">
+          <span>日間 · default</span>
+          <span class="val">AAA · 16.1:1</span>
+        </div>
+      </div>
+
+      <div class="theme dark">
+        <div class="tab">
+          <span class="name">Dark</span>
+          <div class="swatches" aria-hidden="true">
+            <span class="sw" style="background:#1a1a1a;"></span>
+            <span class="sw" style="background:#e4e4e4;"></span>
+          </div>
+        </div>
+        <div class="canvas">
+          <div class="kicker">Essay · 2026</div>
+          <h4>論專注：為什麼我們越來越讀不完一篇長文</h4>
+          <div class="by">林 書 宇 · 12 min read</div>
+          <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
+          <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
+        </div>
+        <div class="meta" style="background: #111; color: #888; border-top-color: #222;">
+          <span>夜間 · OLED-safe</span>
+          <span class="val" style="color: #ccc;">AAA · 14.8:1</span>
+        </div>
+      </div>
+
+      <div class="theme sepia">
+        <div class="tab">
+          <span class="name">Sepia</span>
+          <div class="swatches" aria-hidden="true">
+            <span class="sw" style="background:#f4ecd8;"></span>
+            <span class="sw" style="background:#3a3226;"></span>
+          </div>
+        </div>
+        <div class="canvas">
+          <div class="kicker">Essay · 2026</div>
+          <h4>論專注：為什麼我們越來越讀不完一篇長文</h4>
+          <div class="by">林 書 宇 · 12 min read</div>
+          <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
+          <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
+        </div>
+        <div class="meta" style="background: #efe6cf; color: #8a7a5a; border-top-color: #e2d6b8;">
+          <span>長時間閱讀 · paper</span>
+          <span class="val" style="color: #3a3226;">AAA · 10.3:1</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STEPS -->
+<section class="steps" id="steps">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>三步驟移除雜訊開始閱讀</h2>
+    </div>
+
+    <div class="steps-grid">
+      <div class="step">
+        <div class="circle">1</div>
+        <h3>安裝</h3>
+        <p>在 Chrome Web Store 點一下「加入 Chrome」，工具列就會出現 J 圖示</p>
+        <span class="kbd-label">~ 10s</span>
+      </div>
+      <div class="step">
+        <div class="circle">2</div>
+        <h3>打開任一文章</h3>
+        <p>新聞、部落格、論文、Medium、Substack，任何以文字為主的頁面</p>
+        <span class="kbd-label">any article</span>
+      </div>
+      <div class="step active">
+        <div class="circle">3</div>
+        <h3>按 JRead 圖示</h3>
+        <p>點工具列的 J，雜訊消失</p>
+        <span class="kbd-row">
+          <span class="kbd-label">shortcut</span>
+          <span class="kbd">⌥</span>
+          <span class="kbd">R</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <div class="foot-left">
+        <a class="brand" href="#" style="gap: 8px;">
+          <div class="mark" style="width: 22px; height: 22px; font-size: 13px;">J</div>
+          <span style="font-family: var(--jr-font-reading); font-size: 15px; font-weight: 600; color: var(--jr-neutral-900); letter-spacing: -0.01em; text-transform: none;">JRead</span>
+        </a>
+        <span class="sep"></span>
+        <span>v0.6.26</span>
+        <span class="sep"></span>
+        <span>© 2026</span>
+      </div>
+      <div class="foot-right">
+        <a href="#">GitHub</a>
+        <a href="#">Chrome Web Store</a>
+        <a href="#">Changelog</a>
+        <a href="#">Privacy</a>
+      </div>
+    </div>
+    <div class="foot-tag">No coding skills were harmed in the making of this.</div>
+  </div>
+</footer>
+
+</body>
+</html>

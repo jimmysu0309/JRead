@@ -41,6 +41,7 @@
       type: NS.MSG.REPORT_DETECTION_RESULT,
       payload: { ok: true, confidence: result.confidence, strategy: result.strategy }
     });
+    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
     showToast('已進入閱讀模式', 'success');
     return true;
   }
@@ -53,6 +54,7 @@
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
     NS.state.originalStyles = null;
+    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
     showToast('已離開閱讀模式', 'info');
   }
 

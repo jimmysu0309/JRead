@@ -7,3 +7,6 @@ node_modules/
 .playwright-mcp/
 # 舊 Playwright MCP 設定檔（目前已改用 tools/debug-harness.js 不再需要）
 .playwright-mcp.json
+
+# Claude Design 原始下載（HTML/zip/uploads），已抽取必要 source 至 store-assets/sources/
+Claude design/

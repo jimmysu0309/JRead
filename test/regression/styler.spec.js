@@ -407,24 +407,35 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
       !/color:\s*#1a1a1a/.test(css),
       'light theme 不得強制覆寫文字色（保留原站 color）'
     );
+    // light 也不得動 link 色（保留原站 link 色）
+    assert.ok(
+      !/\]\s*a\s*[,{]/.test(css),
+      'light theme 不得注入任何 a 規則'
+    );
   });
 
-  it('dark theme → 注入文字色 + 卡片底色', () => {
+  it('dark theme → 注入文字色 + 卡片底色 + 可讀 link 色（避免連結與正文同色無法辨識）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(css.includes('#0b0b0b'), 'dark 頁面底色');
     assert.ok(css.includes('#1a1a1a'), 'dark 卡片底色');
     assert.ok(/color:\s*#d4d4d4/.test(css), 'dark 文字色必須注入（覆蓋原站色）');
+    // 必須回補 link 色——否則 `* { color: X }` 會吞掉原站 link 色
+    assert.ok(/\]\s*a,\s*\[data-jread-active="1"\]\s*a\s*\*/.test(css), 'dark 必須有 a / a * 規則');
+    assert.ok(/color:\s*#7fb5e6/.test(css), 'dark link 色必須是 #7fb5e6');
+    assert.ok(/text-decoration:\s*underline/.test(css), 'dark link 必須有 underline（色 + 線雙通道差異化）');
   });
 
-  it('sepia theme → 注入文字色 + 卡片底色', () => {
+  it('sepia theme → 注入文字色 + 卡片底色 + 可讀 link 色', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'sepia' });
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(css.includes('#cdb891'), 'sepia 頁面底色');
     assert.ok(css.includes('#f4ecd8'), 'sepia 卡片底色');
     assert.ok(/color:\s*#5b4636/.test(css), 'sepia 文字色');
+    assert.ok(/color:\s*#2c5282/.test(css), 'sepia link 色必須是 #2c5282（JRead primary-700）');
+    assert.ok(/text-decoration:\s*underline/.test(css), 'sepia link 必須有 underline');
   });
 
   it('contentWidth 永遠注入（卡片骨架不可缺）', () => {

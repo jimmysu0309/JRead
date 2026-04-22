@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-`0.6.26`（refactor：cleaner.js 內部重構，行為零變化）。(1) `norm()` whitespace-normalize helper 從 `hideInsideArticleSidebarColumns` / `hideInsideArticleButtonClusters` 內重複宣告 2 處抽成 module 頂層 helper；(2) `clean()` entry point 將 `articleEl.querySelectorAll(CONTAINER_SEL)` 結果 cache 一次，5 條 CONTAINER_SEL 規則（Keyword / ActionRows / ButtonClusters / EmptySpacers / SidebarColumns）共用——DOM iterate 次數從 5 次降為 1 次，function signature 加可選 `containers` 參數（向後相容單獨呼叫）；(3) CHANGELOG.md 歸檔 v0.3.x–v0.5.x 到 `CHANGELOG-archive.md`，主檔只保留 v0.6.0 baseline 及之後）
+`0.7.0`（視覺大改版：全站 Design System 落地）。(1) **Popup UI refresh**——套用 JRead Design System tokens（品牌藍 #2b6cb0、neutral 階、radius 4/6、spacing 4/8/12/16/24 節奏）；header 加 logomark（藍方塊 + 白色 serif J）；主題按鈕三顆 WYSIWYG（底色即主題色、active 用 2px 藍環）；字級/寬度 stepper 規範化（`.val` 固定 56px、兩條 stepper 左右邊緣完全對齊）；主題按鈕群寬度 = stepper 寬度 = 110px；footer 快速鍵與「進階設定 →」同一 row baseline 對齊；拿掉「頁面設定」h2。(2) **Options page refactor**——全面套 Design System；三個控制項（select + 2 number input）統一 140×32；select 自製 SVG 下拉箭頭；新增授權資訊 section（ELv2、Jimmy Su、Twitter 連結）；字級 desc 加「0 = 自動」藍字標注、input min 放寬至 0。(3) **Icon family**——`jread/assets/icons/icon-{16,32,48,128}.png`，比例完全對齊 popup logomark；manifest `icons` + `action.default_icon` 四尺寸齊備；store-assets/ 另存 128 給 Chrome Web Store listing。(4) **預設快速鍵**改為 `Alt+R`（Mac 即 `Option+R`），解掉 `Cmd+Shift+R` 撞 Chrome 強制重載的問題；新安裝自動綁定、既有安裝需到 `chrome://extensions/shortcuts` 手動指派一次。(5) **Landing page**（`docs/index.html`）+ **Chrome Web Store 素材**（`store-assets/promo-440x280-{a,b}.png`、`marquee-1400x560-{main,alt}.png`）皆由 Claude Design 設計 + Playwright 精確截圖生成。(6) **Link 色修復**（styler.js）——dark/sepia 主題下 `* { color: X !important }` 原本吞掉原站連結色導致連結與正文同色無法辨識；新增 `a / a *` 專屬 link 色（dark: `#7fb5e6`、sepia: `#2c5282`）+ underline 雙通道差異化；light theme baseline 完全不變（保留原站 link 色）。(7) 全專案「快捷鍵」→「**快速鍵**」。LICENSE（Elastic License 2.0）rooted 並 mirror 進 `jread/` 使「擴充功能目錄內的 LICENSE」成真。styler theme spec 擴充 link 色斷言（dark/sepia 必須 inject link 色 + underline、light 不得 inject 任何 a 規則）；108 spec 全過
 
 ---
 
@@ -22,13 +22,13 @@ JRead 是 Chrome Extension「Unclutter」的 clone——提供純閱讀模式，
 | 功能 | 說明 | 狀態 |
 | --- | --- | --- |
 | 主文偵測 | 從 DOM 中找出主要文章內容元素 | ◐ 進行中（策略 1/2/4 已實作；策略 3 OpenGraph 未實作） |
-| 閱讀模式切換 | 一鍵開/關閱讀模式 | ✅ v0.4.0（popup 按鈕 + 快捷鍵） |
+| 閱讀模式切換 | 一鍵開/關閱讀模式 | ✅ v0.4.0（popup 按鈕 + 快速鍵） |
 | 乾淨排版 | 套用可讀性佳的字體、字級、行高、版心寬度 | ☐ 未開始 |
 | 雜訊隱藏 | 隱藏廣告、sticky header、彈窗、側邊欄、相關文章列表 | ✅ v0.3.0（主文外語意 + fixed/sticky + 社群 cluster + 主文內 keyword） |
 | 偏好設定 | 字體、字級、主題色（亮/暗）、行高、版心寬度 | ☐ 未開始 |
 | Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作；狀態提示改走 toast） |
 | Toast 提示 | 頁面右下角提示閱讀模式狀態（Shadow DOM 封裝） | ✅ v0.4.0 |
-| 快捷鍵 | 預設 `Cmd/Ctrl+Shift+R`（與瀏覽器 hard reload 衝突，需使用者至 `chrome://extensions/shortcuts` 手動指派才生效） | ✅ v0.4.0 |
+| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）；若未生效可至 `chrome://extensions/shortcuts` 手動指派 | ✅ v0.4.0 |
 
 ---
 
