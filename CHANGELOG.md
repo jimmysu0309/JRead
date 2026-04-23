@@ -24,6 +24,25 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**Engineering note（2026-04-23，無版本變動）**——Fanboy social / newsletter / notifications cosmetic list spike 結論。Jimmy 續問「有沒有專門攔社群 widget / 訂閱 popup / 通知等『惱人事物』的 list 可參考」，評估三個候選：
+
+1. **Fanboy's `_general_hide.txt` 三份**（social / newsletter / notifications、EasyList 家族、GPL-3.0）——格式同上輪 EasyList、fetcher/parser 可複用
+2. **uBO uAssets/filters/annoyances.txt**——uBO extended syntax（`:has-text()` / `:has()` / `:matches-path()`），純 CSS `querySelectorAll` 吃不下
+3. **[Web Annoyances Ultralist](https://github.com/yourduskquibbles/webannoyances)**（CC-BY-SA-4.0）——分類（sticky headers / dickbars / floating boxes / social share bars）高度符合 JRead 目標，但同樣 extended syntax
+
+**spike 執行**：抓 Fanboy 三份 `_general_hide.txt` + 兩份 `_specific_hide.txt`，萃取 11264 條 unique generic cosmetic selector；probe 在六站跑（Jimmy 上輪四站 line today / udn / chinatimes / upmedia + bbc + theverge）。
+
+**結果**：五站（theverge timeout 未計）reader mode 內 articleEl scope **全數 0 命中**。baseline（全頁 body）命中的少數元素（udn `.footer-social` x2、udn `.fb-share-button` x1、chinatimes `.social-share` x2、chinatimes `.facebook-page-plugin` x1、chinatimes `.social-share-wrapper` x1）都在**頁面 footer / sidebar**，根本不會被 detector 選進 articleEl。比上輪 EasyList ad spike 結論還徹底——上輪至少還能抽 14 條跨站第三方廣告 selector 進 cleaner，這輪 fanboy 連一條跨站通則都抽不出。
+
+**根因**：cleaner 現有 `NOISE_KEYWORD_RE`（含 `social` / `social-share` / `share` / `subscribe` / `newsletter` 詞根）透過 `markerOf` 走 class+id 比對，已完整代理 fanboy list 的跨站通用 pattern。fanboy 剩下的 9000+ 條 generic 是 WordPress / CMS plugin 站點特定 class（`.post-share-twitter` / `.entry-social-buttons` / `.wp-social-login-*` 類），reader mode 架構本身就不會讓這些進 articleEl。
+
+**決策**：不引入任何 list / 不動 extension code / 不 bump 版本。spike 產物（fetcher、probe、抓下來的 fanboy json）全刪，符合 CLAUDE.md「probe 腳本用完就刪」硬規則。結論記入 CHANGELOG + SPEC engineering note 段落，供未來對話避免重跑相同 spike。
+
+**硬教訓補（第 13 條，留給後續對話）**：
+> **連續兩個 spike 同結論：reader mode 架構本身就是最強的 ad/annoyance blocker。** 廣告容器、社群 widget、newsletter popup、cookie banner 這些東西的共同特徵是「不在主文 DOM 子樹內」——detector 選 articleEl 時本來就不會選到它們。上輪 EasyList 40984 條 → 四站 articleEl 內僅命中 3；這輪 fanboy 11264 條 → 五站全 0。**想借 ad-blocker / annoyance-list 時先問一句：這批 selector 瞄準的雜訊，有多少比例會進 articleEl？**若答案是「幾乎都在 article 外」，就不必引入整包，cleaner 既有 NOISE_KEYWORD_RE + ancestor-sibling / fixed / dialog rule 已經代理。真正要花力氣的是「進得了 articleEl 的殘留雜訊」——這類 bug 由使用者 spot check 回報 + harness residual audit 驗收，走結構性 rule 修法，沒有 filter list 能一次解決。
+
+---
+
 **v0.7.4**——廣告對應強化：EasyList spike 結論 + 第三方廣告服務標識符新 rule（Jimmy 2026-04-23 詢問「能否借現成 ad-blocker 避免重複造輪子」）。
 
 **Spike 結論**：嘗試引入 EasyList（社群維護 10+ 年的 ad filter list）整包前先做驗證。`tools/fetch-easylist.js` 抓 easylist.txt + fanboy-annoyance.txt 萃取 40984 條 generic cosmetic selector（786 KB lite 版）；`tools/probe-easylist.js` 在 Jimmy 提供的四個真實 URL（line today / udn / chinatimes / upmedia）分別測「reader mode OFF / 全頁 body」vs「reader mode ON / articleEl」兩個 scope。結果：四站 reader mode 內合計僅命中 3 個元素（udn 的 `.udn-ads` x2 + google_ads_iframe x1），其餘三站 articleEl 內命中 0。**結論：EasyList 整包對 JRead 邊際效益極低——reader mode 架構（detector 精確選 articleEl + cleaner 結構性 rule）已把大部分廣告容器「自然繞過」**，廣告容器在 detector 階段根本不會被選進 articleEl。Spike 腳本 + 抓下來的 list 用完即刪（符合 CLAUDE.md「probe 腳本用完就刪」硬規則）。
