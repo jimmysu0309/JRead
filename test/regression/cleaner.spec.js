@@ -1673,3 +1673,109 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore() 後新節點不得被誤 remove');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.5 Readability.js `_fixLazyImages` 精神借鑑：進 reader mode 時補
+// placeholder `<img>` 的 src（data-src / data-original / data-lazy-src /
+// data-lazy / data-srcset / srcset），restore 時還原為原 src。
+// -----------------------------------------------------------------------------
+describe('cleaner — lazy-image-hydration（placeholder img src 補正 + 還原）', () => {
+  let window, document, articleEl, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'lazy-image-hydration.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'fixture 應有足夠主文信號讓 detector 命中');
+    articleEl = detected.el;
+    hidden = window.__JRead.cleaner.clean(articleEl);
+  });
+
+  after(() => {
+    // restore 統一放 after，不干擾 it 順序
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('case 1 — data:image placeholder + data-src：src 被替換成 data-src 值', () => {
+    const img = document.getElementById('case-placeholder-gif');
+    assert.ok(img);
+    assert.strictEqual(img.getAttribute('src'), 'https://example.com/case1-real.jpg',
+      'placeholder gif 應被 data-src 取代');
+    // data-src 屬性本身不動
+    assert.strictEqual(img.getAttribute('data-src'), 'https://example.com/case1-real.jpg',
+      'data-src 本身不應被改動');
+  });
+
+  it('case 2 — 空 src + data-original：src 補成 data-original 值', () => {
+    const img = document.getElementById('case-empty-data-original');
+    assert.strictEqual(img.getAttribute('src'), 'https://example.com/case2-real.jpg',
+      '空 src 應被 data-original 取代');
+  });
+
+  it('case 3 — 正常 src + data-src 並存：src 不得被替換', () => {
+    const img = document.getElementById('case-valid-src');
+    assert.strictEqual(img.getAttribute('src'), 'https://example.com/case3-actual.jpg',
+      'src 已是正常 URL，不得被 data-src 覆蓋');
+  });
+
+  it('case 4 — 空 src + srcset：src 補成 srcset 第一個 URL（忽略 descriptor）', () => {
+    const img = document.getElementById('case-srcset-fallback');
+    assert.strictEqual(img.getAttribute('src'), 'https://example.com/case4-small.jpg',
+      'srcset 第一個 URL 應被補到 src，且不含 `300w` descriptor');
+  });
+
+  it('case 5 — 全空 fallback：src 保持空字串（不可誤設其他值）', () => {
+    const img = document.getElementById('case-all-empty');
+    assert.strictEqual(img.getAttribute('src'), '',
+      '無任何 fallback 時 src 應保持空字串');
+  });
+});
+
+describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', () => {
+  it('clean → restore 後 src 回到原值（data:image placeholder 或空字串）', () => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'lazy-image-hydration.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected);
+
+    const doc = w.document;
+    const case1 = doc.getElementById('case-placeholder-gif');
+    const case2 = doc.getElementById('case-empty-data-original');
+    const case4 = doc.getElementById('case-srcset-fallback');
+    const origCase1 = case1.getAttribute('src');
+    const origCase2 = case2.getAttribute('src');
+    const origCase4 = case4.getAttribute('src');
+
+    const hiddenLocal = w.__JRead.cleaner.clean(detected.el);
+
+    // clean 後 src 應已變動
+    assert.notStrictEqual(case1.getAttribute('src'), origCase1,
+      'clean 後 case1 的 src 應已被替換（否則 hydration 未生效）');
+
+    // restore
+    w.__JRead.cleaner.restore(hiddenLocal);
+
+    // 還原後 src 回到原值
+    assert.strictEqual(case1.getAttribute('src'), origCase1,
+      'restore 後 case1 src 應回到原 data:image placeholder');
+    assert.strictEqual(case2.getAttribute('src'), origCase2,
+      'restore 後 case2 src 應回到原空字串');
+    assert.strictEqual(case4.getAttribute('src'), origCase4,
+      'restore 後 case4 src 應回到原空字串');
+  });
+});

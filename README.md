@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.4（廣告對應強化：EasyList spike 結論 + 第三方廣告服務標識符新 rule。四站實測證實 EasyList 整包對 JRead 邊際效益極低——reader mode 架構已自然繞過多數廣告容器；spike 萃取跨站業界通用的 14 條第三方廣告命名 selector（Google Ad Manager / Taboola / popIn / Outbrain / 通用 ad- prefix）作保險絲層。131 spec 全過）
+**目前版本**：v0.7.5（Readability.js 演算法借鑑三項：POSITIVE/NEGATIVE class-weight regex 擴充、nbTopCandidates 競爭分析、lazy-image hydration。研究 Mozilla Readability.js / Postlight Parser / Trafilatura / DOM Distiller 四個主流主文抽取專案，結論：架構不同無法整包引入，但借鑑演算法細節成本極低——extension code 僅 detector 3 行 regex 擴充 + heuristic 改收 top-5 candidates + cleaner 新增 hydrate/restore 兩個函式。145 spec 全過）
 
 ---
 

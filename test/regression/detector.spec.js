@@ -338,6 +338,103 @@ describe('detector — linetoday-ogtitle-suffix（og:title 帶三段尾綴的 pr
   });
 });
 
+// -----------------------------------------------------------------------------
+// v0.7.5 Readability.js 借鑑：POSITIVE_RE / NEGATIVE_RE 擴充 forcing
+// POSITIVE 新增 `blog|hentry|h-entry`（microformats + 部落格 CMS 常見）
+// NEGATIVE 新增 `gdpr|outbrain|related|sponsor|shoutbox|widget|skyscraper`
+//   （跨 CMS 廣告 / 相關推薦 / 側欄元件慣用命名）
+// -----------------------------------------------------------------------------
+describe('detector — readability-class-weights（POSITIVE/NEGATIVE regex 擴充 forcing）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('readability-class-weights.html').result;
+  });
+
+  it('偵測成功，回傳 heuristic 結果', () => {
+    assert.ok(result, '偵測應成功（不得 no-op）');
+    assert.strictEqual(result.strategy, 'heuristic');
+  });
+
+  it('選到真主文 .blog-entry-hentry，不得選到 .outbrain-related-widget', () => {
+    assert.ok(result.el);
+    const cls = (result.el.className || '').toString();
+    assert.ok(
+      cls.includes('blog-entry-hentry'),
+      `主文應為 .blog-entry-hentry，實際 class="${cls}"`
+    );
+    assert.ok(
+      !cls.includes('outbrain-related-widget'),
+      `不得選到 sidebar widget—— NEGATIVE_RE 應對 outbrain/related/widget 三詞任一命中 ×0.5`
+    );
+  });
+
+  it('主文 scope 含 READABILITY_MAIN_MARK 段落', () => {
+    const txt = (result.el.textContent || '').toString();
+    assert.ok(txt.includes('READABILITY_MAIN_MARK'),
+      '主文必須含 READABILITY_MAIN_MARK 段落');
+  });
+
+  it('POSITIVE_RE 必須涵蓋 `blog` 與 `hentry` 詞根（forcing：退回舊名單 → spec fail）', () => {
+    // 此條為「字面 regex」的 forcing function，避免未來有人誤改回舊名單
+    const detectorSrc = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
+      'utf8'
+    );
+    const m = detectorSrc.match(/const POSITIVE_RE = \/([^\/]+)\/i;/);
+    assert.ok(m, '必須能抓到 POSITIVE_RE');
+    const pattern = m[1];
+    assert.ok(/\bblog\b/.test(pattern), `POSITIVE_RE 必須含 \`blog\`；實際 pattern=${pattern}`);
+    assert.ok(/hentry/.test(pattern), `POSITIVE_RE 必須含 \`hentry\`；實際 pattern=${pattern}`);
+  });
+
+  it('NEGATIVE_RE 必須涵蓋 `outbrain` / `related` / `widget` / `gdpr` / `sponsor` / `shoutbox` / `skyscraper` 詞', () => {
+    const detectorSrc = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
+      'utf8'
+    );
+    const m = detectorSrc.match(/const NEGATIVE_RE = \/([^\/]+)\/i;/);
+    assert.ok(m, '必須能抓到 NEGATIVE_RE');
+    const pattern = m[1];
+    for (const word of ['outbrain', 'related', 'widget', 'gdpr', 'sponsor', 'shoutbox', 'skyscraper']) {
+      assert.ok(new RegExp(`\\b${word}\\b`).test(pattern),
+        `NEGATIVE_RE 必須含 \`${word}\`；實際 pattern=${pattern}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.5 Readability.js 借鑑：nbTopCandidates 競爭分析
+// detector 從「只挑 top 1」改為「收前 5 名、比較 top1/top2 分數」，膠著
+// 區（比值 < 1.25）→ result.ambiguous=true + confidence 打折 + promote
+// hops 收緊到 1，避免 top1 是誤選 anchor 時 promote 升到 common ancestor
+// 把兩個候選都吞進主文。
+// -----------------------------------------------------------------------------
+describe('detector — readability-ambiguous-candidates（nbTopCandidates 競爭分析）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('readability-ambiguous-candidates.html').result;
+  });
+
+  it('偵測成功，命中 heuristic 策略', () => {
+    assert.ok(result, '偵測應成功');
+    assert.strictEqual(result.strategy, 'heuristic');
+  });
+
+  it('result.ambiguous === true（top1/top2 分數比值 < 1.25 → 膠著區）', () => {
+    assert.strictEqual(result.ambiguous, true,
+      '兩個候選分數接近時必須回報 ambiguous=true，forcing：拿掉 `const ambiguous = ...` 判定 → fail');
+  });
+
+  it('ambiguous 時 confidence 應被打折（×0.85），不應達到非模糊時的高信心', () => {
+    // confidence 打折後仍應 >= MIN_CONFIDENCE（0.30），否則會回 null
+    assert.ok(result.confidence >= 0.30,
+      `confidence (${result.confidence}) 應 >= 0.30 才不會被回 null`);
+    // 打折上限：0.70 × 0.85 = 0.595
+    assert.ok(result.confidence <= 0.60,
+      `confidence (${result.confidence}) 應 <= 0.60——模糊區打折後的上限`);
+  });
+});
+
 describe('cleaner — linetoday tail noise sections（heading text heuristic）', () => {
   // 把 cleaner 接起來驗 heading-text rule 能清 line today 文末推薦 sections。
   // line today SPA 站 class 全是 emotion-style hash（css-xxx），NOISE_KEYWORD_RE

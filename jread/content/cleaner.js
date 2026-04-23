@@ -1071,6 +1071,69 @@
     }
   }
 
+  // ---- 主文內：lazy-load 圖片 src 補正 ------------------------------------
+  // 場景：Medium / WordPress / CMS 類站點常用 IntersectionObserver 做 lazy
+  // image load，未進視窗的 <img> 的 `src` 是 1x1 透明 gif、base64 placeholder
+  // 或空字串，真圖 URL 存在 `data-src` / `data-original` / `data-lazy-src`。
+  // 進 reader mode 時整個 DOM 被標 active + 套排版，**使用者捲動時不會觸發
+  // 原站的 lazy-load observer**（可能是原 observer 被 style 變動影響、可能
+  // 是原本的 root margin 以 viewport 為基準跟不上新排版），導致圖片一片空白。
+  //
+  // 修法：進 reader mode 時主動把 `data-src` / `data-original` / `data-lazy-src`
+  // / `data-lazy` / `data-srcset` / `srcset` 的 URL 補到 `src`，瀏覽器就會正
+  // 常載入。restore 時把 src 還原成原值，不破壞原站的 lazy-load 邏輯。
+  //
+  // 通則依據：對標 Readability.js 的 `_fixLazyImages`——Readability 是「parse
+  // HTML 後修」情境、我們是「瀏覽器已載但 observer 沒跑」情境，attribute 名單
+  // 與補救邏輯一樣，記 prevSrc 做還原是 JRead 架構的延伸。
+  const LAZY_SRC_ATTRS = ['data-src', 'data-original', 'data-lazy-src', 'data-lazy'];
+  // placeholder 判定：empty / about:blank / data:image URL 視為「未 hydrate」
+  // 常見 placeholder：`data:image/gif;base64,R0lGOD...`（1x1 透明 gif）、
+  // `data:image/svg+xml;base64,...`（低解析度佔位 svg）
+  const LAZY_PLACEHOLDER_RE = /^\s*$|^about:blank$|^data:image\//i;
+
+  function hydrateLazyImages(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const hydrations = [];
+    for (const img of articleEl.querySelectorAll('img')) {
+      // 區分「沒有 src attribute」 vs 「src 空字串」——restore 要 round-trip
+      // 回原狀態，兩者不同（原站若 `<img>` 沒 src attribute，我們補完後要
+      // removeAttribute 才能還原；若原站 `src=""` 則要 setAttribute('src','')）
+      const hadSrcAttr = img.hasAttribute('src');
+      const prevSrc = hadSrcAttr ? img.getAttribute('src') : '';
+      if (!LAZY_PLACEHOLDER_RE.test(prevSrc)) continue;
+
+      let newSrc = null;
+      for (const attr of LAZY_SRC_ATTRS) {
+        const v = img.getAttribute(attr);
+        if (v && !LAZY_PLACEHOLDER_RE.test(v)) { newSrc = v; break; }
+      }
+      // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）
+      if (!newSrc) {
+        const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
+        if (srcset) {
+          const first = srcset.split(',')[0].trim().split(/\s+/)[0];
+          if (first && !LAZY_PLACEHOLDER_RE.test(first)) newSrc = first;
+        }
+      }
+      if (!newSrc) continue;
+
+      hydrations.push({ el: img, prevSrc, hadSrcAttr });
+      img.setAttribute('src', newSrc);
+    }
+    hidden.__lazyImages = hydrations;
+  }
+
+  function restoreLazyImages(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__lazyImages;
+    if (!Array.isArray(arr)) return;
+    for (const { el, prevSrc, hadSrcAttr } of arr) {
+      if (!el || !el.setAttribute) continue;
+      if (hadSrcAttr) el.setAttribute('src', prevSrc);
+      else el.removeAttribute('src');
+    }
+  }
+
   // ---- 主文內：所有 interactive button 一律 hide --------------------------
   // Jimmy 2026-04-23 明確要求：reader mode 下不需要任何按鈕（分享 / 訂閱 /
   // 追蹤 / 讚 / 收藏 / 播放 / 展開 / 任何 CTA / 任何 interactive）。
@@ -1387,6 +1450,10 @@
       collapseGridWithHiddenCell(articleEl, hidden);
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
       resetMediaPlaceholderPadding(articleEl, hidden);
+      // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
+      // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
+      // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
+      hydrateLazyImages(articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
       startWatchingDynamicAppends(articleEl, hidden);
       return hidden;
@@ -1398,6 +1465,7 @@
      */
     restore(hiddenEls) {
       stopWatchingDynamicAppends();
+      restoreLazyImages(hiddenEls);
       restoreMediaResets(hiddenEls);
       restoreCollapsed(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
