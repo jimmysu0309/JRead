@@ -264,10 +264,12 @@
 
       // class/id 正負向權重
       const marker = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
-      if (POSITIVE_RE.test(marker)) score *= 1.25;
-      if (NEGATIVE_RE.test(marker)) score *= 0.5;
+      const posHit = POSITIVE_RE.test(marker);
+      const negHit = NEGATIVE_RE.test(marker);
+      if (posHit) score *= 1.25;
+      if (negHit) score *= 0.5;
 
-      candidates.push({ el, score, textLen, ld });
+      candidates.push({ el, score, textLen, ld, posHit, negHit });
     }
 
     if (candidates.length === 0) return null;
@@ -285,20 +287,31 @@
     //   告訴上層「這個 pick 的確定性不高、別硬 promote」。
     candidates.sort((a, b) => b.score - a.score);
     const top = candidates.slice(0, 5);
-    const best = top[0].el;
-    const bestScore = top[0].score;
     const runnerUpScore = top[1] ? top[1].score : 0;
     // 比值界定「模糊區」：top1 不足 top2 的 1.25 倍視為膠著
-    const ambiguous = runnerUpScore > 0 && (bestScore / runnerUpScore) < 1.25;
+    const ambiguous = runnerUpScore > 0 && (top[0].score / runnerUpScore) < 1.25;
+
+    // 模糊區 → 優先從 top-5 裡挑「POSITIVE 命中 + NEGATIVE 沒命中」者，
+    // 貼近 Readability.js `nbTopCandidates` 精神：top-N 裡 class weight 最好
+    // 的勝出。v0.7.5 → v0.7.7 修法：回滾原本 `confidence *= 0.85` 的打折，
+    // 改動「選哪個」而非「打折」。打折在 score 10~10.5 邊界會把剛通過
+    // 0.30 門檻的 confidence 打到 0.25~0.28，讓整個 detector 回 null。
+    // upmedia.mg /tw/focus/comprehensive/256956 實測：真主文 `.news-box-text`
+    // score 10.17（POSITIVE 命中）vs wrapper DIV score 10.26（無命中），
+    // 新邏輯挑 `.news-box-text` = 主文，舊邏輯 top1 是 wrapper DIV + 打折
+    // → 回 null 無法進閱讀模式。
+    let chosen = top[0];
+    if (ambiguous) {
+      const preferred = top.find(c => c.posHit && !c.negHit);
+      if (preferred) chosen = preferred;
+    }
+    const best = chosen.el;
+    const bestScore = chosen.score;
 
     // 分數 → confidence 線性縮放：bubble-up 的典型主文分數在 20–60 範圍。
     // 10 分以下 → 0.30（門檻邊緣），50 分以上 → 0.70（高信心上限）
     const raw = (bestScore - 10) / 40 * 0.4 + 0.30;
-    let confidence = Math.max(0.30, Math.min(0.70, raw));
-    // 模糊區 → confidence 打折。這不是「把 top2 選出來」——top1 仍是高分者，
-    // 只是通知上層此結果不穩、避免後續硬 promote（sidebar 被誤選時，promote
-    // 會沿祖先升到共同 parent 把整頁吞進主文）。
-    if (ambiguous) confidence *= 0.85;
+    const confidence = Math.max(0.30, Math.min(0.70, raw));
 
     if (confidence < MIN_CONFIDENCE) return null;
 
