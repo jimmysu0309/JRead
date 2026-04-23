@@ -24,6 +24,47 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.5**——Readability.js 演算法借鑑三項：POSITIVE/NEGATIVE regex 擴充 + nbTopCandidates 競爭分析 + lazy-image hydration（Jimmy 2026-04-23 續問「是否有受推崇的主文偵測/雜訊清理專案可參考」）。
+
+**研究四個主流**：Mozilla Readability.js（Apache 2.0、Firefox Reader View 引擎、業界 benchmark median F-score 0.970 / recall 0.929）、Postlight Parser（前身 Mercury Parser、MIT、120+ 站點 custom parser）、Trafilatura（Python、F-score 0.937）、DOM Distiller（Chromium 內建、Java 為主）。結論：**架構不同無法直接引入**——Readability 風格是「parse → 重建 clean DOM tree → 替換原頁面」、JRead 是「覆蓋原 DOM、標 `data-jread-active` + `data-jread-hidden` + 可還原」。硬引入整包等於拋棄 JRead 核心定位。但**借鑑演算法細節**成本極低、可直接落實。
+
+**三項借鑑**：
+
+1. **POSITIVE_RE / NEGATIVE_RE 擴充**（detector.js class-weight multiplier）
+   - POSITIVE 補：`hentry|h-entry`（microformats 標記）+ `blog`（部落格 CMS class `.blog-post` / `#blog-content` 常見）
+   - NEGATIVE 補：`gdpr|outbrain|related|sponsor|shoutbox|widget|skyscraper`（跨 CMS 廣告 / 相關推薦 / 側欄元件慣用命名）
+   - **刻意不收 Readability 原版的 `page|pagination`**——`#page-wrapper` 是整站 wrapper 的常見命名，命中會讓 detector 把 top bar + nav + footer 全當主文；`pagination` 在 Readability 自己的 unlikelyCandidates 也是負面訊號（內部矛盾，歷史包袱）
+   - **刻意不收 `hidden|hid|contact|scroll|shopping|tags|media|meta`**——這些詞在正文結構裡也常出現（`.article-meta` / `.category-tags` / `.media-object`），命中會讓真主文的 multiplier 被砍半、誤判
+
+2. **nbTopCandidates 競爭分析**（detector.js `detectByHeuristic` 改寫）
+   - 原本：`let best = null; let bestScore = 0` 只挑 top 1
+   - 改成：收 `candidates` array、`sort((a,b) => b.score - a.score)`、取前 5
+   - `runnerUpScore` = top[1].score；`ambiguous = top1/top2 < 1.25`
+   - `ambiguous=true` 時：confidence ×0.85 + `result.ambiguous` flag
+   - `detect()` 依 `result.ambiguous` 傳 `hopLimit=1` 給 `promoteForTitle`，避免 heuristic 選錯 anchor 時 promote 沿祖先升到 common ancestor、把整頁 chrome 吞進主文（v0.7.2 upmedia 國際版踩過的坑的結構化一般化防守）
+   - 不把 top2 取代 top1——top1 仍是「最高分者」，只是告訴上層「這個 pick 不穩、別硬 promote」
+
+3. **lazy-image hydration**（cleaner.js `hydrateLazyImages` + `restoreLazyImages` 新增）
+   - 場景：Medium / WordPress / CMS 類站點用 IntersectionObserver 做 lazy image load，未進視窗的 `<img>` 的 `src` 是 1x1 透明 gif、base64 placeholder 或空字串，真圖 URL 存 `data-src` / `data-original` / `data-lazy-src`。進 reader mode 時 DOM 被大幅改造、排版重置，**原站 lazy observer 常常跟不上新 viewport 定位**，圖片保持空白
+   - 修法：進 reader mode 時掃 articleEl 內 `<img>`，`src` match `/^\s*$|^about:blank$|^data:image\//i` 視為 placeholder；依序嘗試 `data-src` / `data-original` / `data-lazy-src` / `data-lazy` 屬性、再 fallback 到 `srcset` / `data-srcset` 第一個 URL，補進 `src`
+   - restore：以 `hadSrcAttr` 區分「原站無 `src` attribute」vs「原站 `src=""`」做 round-trip 還原。前者 removeAttribute、後者 setAttribute('src','')
+   - 對標 Readability.js `_fixLazyImages` 精神——Readability 是「parse HTML 後修」情境、我們是「瀏覽器已載但 observer 沒跑」情境，attribute 名單與補救邏輯一致
+
+**驗收**：
+- 三條 fixture：`readability-class-weights.html`（POSITIVE/NEGATIVE 擴充）、`readability-ambiguous-candidates.html`（ambiguous flag）、`lazy-image-hydration.html`（5 種 lazy case）
+- 9 條新 spec：2 條字面 regex forcing（防止未來誤刪名單）+ 3 條行為 assertion（主文選對 / ambiguous flag / confidence 打折）+ 5 條 lazy case 涵蓋 + 1 條 round-trip restore
+- Sanity check 三輪：退回舊 regex / `ambiguous=false` / 註釋 `hydrateLazyImages` 呼叫——各自對應的 assertion fail、其他不動，forcing function 有效
+- `npm test` 145 passing
+- harness 三站（line today / chinatimes / udn）residual audit 三次全 `✅ 無殘留雜訊`，無 regression
+
+**不做的**：
+- 硬引入 Readability.js 整包（要拋棄 `data-jread-active` / restore 機制）
+- unlikelyCandidates regex 早期排除（detector 目前已有 `isSignalExcluded` 處理 modal/dialog；大規模 class keyword pre-filter 太激進、風險是真主文被誤排除）
+- `_unwrapNoscriptImages`（JRead 架構保留原 DOM 結構、不需 unwrap）
+- Readability 分數縮放係數 `+=25` 直接照抄（我們是 `*= 1.25`/`*= 0.5` multiplier，內部 scale 不同，照搬會破壞既有 confidence 曲線）
+
+---
+
 **Engineering note（2026-04-23，無版本變動）**——Fanboy social / newsletter / notifications cosmetic list spike 結論。Jimmy 續問「有沒有專門攔社群 widget / 訂閱 popup / 通知等『惱人事物』的 list 可參考」，評估三個候選：
 
 1. **Fanboy's `_general_hide.txt` 三份**（social / newsletter / notifications、EasyList 家族、GPL-3.0）——格式同上輪 EasyList、fetcher/parser 可複用

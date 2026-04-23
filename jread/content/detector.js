@@ -18,9 +18,22 @@
   // 低於此 confidence 視為偵測失敗，回傳 null。
   const MIN_CONFIDENCE = 0.30;
 
-  // class/id 權重用的 regex（Readability.js 的經典名單）
-  const POSITIVE_RE = /article|content|body|post|entry|main|story|text/i;
-  const NEGATIVE_RE = /comment|sidebar|footer|nav|menu|header|promo|banner|ad[-_]|[-_]ad|combx|disqus|foot|masthead|popup|share|social/i;
+  // class/id 權重用的 regex（Readability.js 的經典名單，安全子集）
+  //
+  // 正向：對標 Readability.js 的 POSITIVE_RE，補 `hentry|h-entry`（microformats
+  // 標記）+ `blog`（部落格 CMS 類 class `.blog-post` / `#blog-content`）。
+  // 刻意不收 Readability 原版的 `page|pagination` —— `#page-wrapper` 是整站
+  // wrapper 的常見命名，命中會讓 detector 把 top bar + nav + footer 全當主文；
+  // `pagination` 本身在 Readability 的 unlikelyCandidates 也是負面訊號（內部
+  // 矛盾，歷史包袱），我們一併略。
+  //
+  // 負向：對標 Readability.js 的 NEGATIVE_RE，補 `gdpr|outbrain|related|sponsor|
+  // shoutbox|widget|skyscraper|combx` —— 都是跨 CMS 廣告 / 相關推薦 / 側欄元件
+  // 的慣用命名。刻意不收 `hidden|hid|contact|scroll|shopping|tags|media|meta`
+  // —— 這些詞在正文結構裡也常出現（`.article-meta` / `.category-tags` /
+  // `.media-object` 這類），命中會讓真主文的 multiplier 被砍半、detector 誤判。
+  const POSITIVE_RE = /article|content|body|post|entry|hentry|h-entry|main|story|text|blog/i;
+  const NEGATIVE_RE = /comment|sidebar|footer|nav|menu|header|promo|banner|ad[-_]|[-_]ad|combx|disqus|foot|masthead|popup|share|social|gdpr|outbrain|related|sponsor|shoutbox|widget|skyscraper/i;
 
   // ---- 工具 -----------------------------------------------------------
   function getText(el) {
@@ -190,8 +203,9 @@
       if (gp) scoreMap.set(gp, (scoreMap.get(gp) || 0) + base / 2);
     }
 
-    let best = null;
-    let bestScore = 0;
+    // 收集所有「過基本門檻」的候選（容器型 tag + textLen > MIN_TEXT_LEN）
+    // 後統一計分，改走 top-N 競爭分析取代舊「只挑 top 1」邏輯。
+    const candidates = [];
 
     for (const [el, raw] of scoreMap.entries()) {
       // 限定「容器型」元素（避免 li / p 自己也被選為主文）
@@ -227,23 +241,43 @@
       if (POSITIVE_RE.test(marker)) score *= 1.25;
       if (NEGATIVE_RE.test(marker)) score *= 0.5;
 
-      if (score > bestScore) {
-        bestScore = score;
-        best = el;
-      }
+      candidates.push({ el, score, textLen, ld });
     }
 
-    if (!best) return null;
+    if (candidates.length === 0) return null;
+
+    // top-N 競爭分析（Readability.js `nbTopCandidates` 精神）：
+    // 只挑 top 1 在「top1 vs top2 分數差距小」的場景很危險——舊 heuristic
+    // 的 scoring 有時把主文跟 UI chrome 算得太接近（例：主文 28 分、sidebar
+    // 26 分），top 1 可能是 sidebar，而 top 2 才是真主文。
+    //
+    // 通則：收前 N 名（N=5，與 Readability 一致），比較 top1.score/top2.score。
+    // 若比值 >= 1.25：top1 明顯勝出，confidence 照舊線性縮放。
+    // 若比值 <  1.25：模糊區，confidence 打折（×0.85），讓下游 detect() 知道
+    //   此 heuristic 結果不穩，必要時降到 MIN_CONFIDENCE 以下回傳 null、
+    //   改走 detectByMainTag 兜底。不直接選 top2——top1 仍是高分者，只是
+    //   告訴上層「這個 pick 的確定性不高、別硬 promote」。
+    candidates.sort((a, b) => b.score - a.score);
+    const top = candidates.slice(0, 5);
+    const best = top[0].el;
+    const bestScore = top[0].score;
+    const runnerUpScore = top[1] ? top[1].score : 0;
+    // 比值界定「模糊區」：top1 不足 top2 的 1.25 倍視為膠著
+    const ambiguous = runnerUpScore > 0 && (bestScore / runnerUpScore) < 1.25;
 
     // 分數 → confidence 線性縮放：bubble-up 的典型主文分數在 20–60 範圍。
     // 10 分以下 → 0.30（門檻邊緣），50 分以上 → 0.70（高信心上限）
     const raw = (bestScore - 10) / 40 * 0.4 + 0.30;
-    const confidence = Math.max(0.30, Math.min(0.70, raw));
+    let confidence = Math.max(0.30, Math.min(0.70, raw));
+    // 模糊區 → confidence 打折。這不是「把 top2 選出來」——top1 仍是高分者，
+    // 只是通知上層此結果不穩、避免後續硬 promote（sidebar 被誤選時，promote
+    // 會沿祖先升到共同 parent 把整頁吞進主文）。
+    if (ambiguous) confidence *= 0.85;
 
     if (confidence < MIN_CONFIDENCE) return null;
 
     // title promote 由 detect() 統一處理，不在此重複
-    return { el: best, confidence, strategy: 'heuristic' };
+    return { el: best, confidence, strategy: 'heuristic', ambiguous };
   }
 
   // ---- 主文容器 promote：保留文章標題 -----------------------------------
@@ -330,13 +364,16 @@
   // 防止（不再進 promote 路徑），3 hops 仍比到 body/#wrapper 安全。
   const PROMOTE_MAX_HOPS = 3;
 
-  function promoteForTitle(articleEl) {
+  // maxHops 可由呼叫端覆寫（例：heuristic ambiguous 時走更嚴 limit，
+  // 避免 heuristic 選錯 anchor 時 promote 沿祖先一路升把整頁吞進主文）。
+  function promoteForTitle(articleEl, maxHops) {
     const target = getCanonicalTitle();
     if (!target) return articleEl;
+    const limit = typeof maxHops === 'number' ? maxHops : PROMOTE_MAX_HOPS;
 
     let cur = articleEl;
     let hops = 0;
-    while (cur && cur.parentElement && cur !== document.body && hops < PROMOTE_MAX_HOPS) {
+    while (cur && cur.parentElement && cur !== document.body && hops < limit) {
       const parent = cur.parentElement;
       for (const sib of parent.children) {
         if (sib === cur) continue;
@@ -384,7 +421,12 @@
         null
       );
       if (result && result.strategy !== 'main-tag') {
-        result.el = promoteForTitle(result.el);
+        // heuristic 在 top-N 競爭膠著時（top1/top2 < 1.25 倍）傳回
+        // ambiguous=true；promote 收緊 hops 上限到 1，避免 top1 是誤選 anchor
+        // 時一路升到 body/#wrapper 吞整頁。非 ambiguous 走預設 3 hops
+        // （line today 類多層 styled-component wrapper 需要的上限）。
+        const hopLimit = result.ambiguous ? 1 : undefined;
+        result.el = promoteForTitle(result.el, hopLimit);
       }
       if (result) {
         result.el = narrowToFirstArticleBlock(result.el);
