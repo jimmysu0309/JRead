@@ -404,12 +404,12 @@ describe('detector — readability-class-weights（POSITIVE/NEGATIVE regex 擴�
 
 // -----------------------------------------------------------------------------
 // v0.7.5 Readability.js 借鑑：nbTopCandidates 競爭分析
-// detector 從「只挑 top 1」改為「收前 5 名、比較 top1/top2 分數」，膠著
-// 區（比值 < 1.25）→ result.ambiguous=true + confidence 打折 + promote
-// hops 收緊到 1，避免 top1 是誤選 anchor 時 promote 升到 common ancestor
-// 把兩個候選都吞進主文。
+// v0.7.7 修法：回滾 `confidence *= 0.85` 打折、改動「選哪個」。
+// 本 fixture 兩個候選 class 都不含 POSITIVE 詞根，觸發「ambiguous 但找不到
+// POSITIVE 命中者 → fallback 到 top[0]」分支；另一個分支（POSITIVE 勝出）
+// 由 upmedia-heuristic-ambiguous-positive-wins.html 覆蓋。
 // -----------------------------------------------------------------------------
-describe('detector — readability-ambiguous-candidates（nbTopCandidates 競爭分析）', () => {
+describe('detector — readability-ambiguous-candidates（ambiguous 無 POSITIVE 候選時 fallback top[0]）', () => {
   let result;
   before(() => {
     result = loadFixtureAndRunDetector('readability-ambiguous-candidates.html').result;
@@ -425,13 +425,70 @@ describe('detector — readability-ambiguous-candidates（nbTopCandidates 競爭
       '兩個候選分數接近時必須回報 ambiguous=true，forcing：拿掉 `const ambiguous = ...` 判定 → fail');
   });
 
-  it('ambiguous 時 confidence 應被打折（×0.85），不應達到非模糊時的高信心', () => {
-    // confidence 打折後仍應 >= MIN_CONFIDENCE（0.30），否則會回 null
+  it('confidence 不被打折（v0.7.7 拿掉 `× 0.85`）→ 仍過 MIN_CONFIDENCE', () => {
     assert.ok(result.confidence >= 0.30,
-      `confidence (${result.confidence}) 應 >= 0.30 才不會被回 null`);
-    // 打折上限：0.70 × 0.85 = 0.595
-    assert.ok(result.confidence <= 0.60,
-      `confidence (${result.confidence}) 應 <= 0.60——模糊區打折後的上限`);
+      `confidence (${result.confidence}) 必須 >= 0.30——若舊的 × 0.85 邏輯復活，邊界場景（score 10~10.5）會被壓到 < 0.30 → detector 回 null（v0.7.5 upmedia regression 根因）`);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.7 regression fixture：upmedia.mg /tw/focus/comprehensive/256956 實測
+// 根因重現——ambiguous 時 top1 是無 POSITIVE class 的 wrapper DIV（score
+// 10.26）、top2 才是真主文（POSITIVE 命中、score 10.17）。v0.7.5 打折
+// 邏輯在此場景把 confidence 0.3026 打到 0.2572 → detector 回 null 整個網頁
+// 無法進閱讀模式。v0.7.7 修法：ambiguous 時優先從 top-5 挑 POSITIVE 命中
+// + NEGATIVE 沒命中者，貼近 Readability.js 精神且保住 confidence。
+// -----------------------------------------------------------------------------
+describe('detector — upmedia-heuristic-ambiguous-positive-wins（ambiguous 時 POSITIVE 命中者勝出）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('upmedia-heuristic-ambiguous-positive-wins.html').result;
+  });
+
+  it('偵測成功（v0.7.5 會回 null；v0.7.7 必須命中）', () => {
+    assert.ok(result,
+      '偵測應成功——forcing：若 confidence × 0.85 邏輯復活，邊界 score 會被壓到 < 0.30、detector 回 null');
+    assert.strictEqual(result.strategy, 'heuristic');
+  });
+
+  it('ambiguous = true（fixture 設計兩候選 score 比值 < 1.25）', () => {
+    assert.strictEqual(result.ambiguous, true,
+      'fixture 設計為兩候選分數接近，必須命中 ambiguous');
+  });
+
+  it('chosen.el 是 POSITIVE 命中的 `.news-box-text`，不是無 class 的 wrapper DIV', () => {
+    assert.ok(result.el);
+    const cls = (result.el.className || '').toString();
+    assert.ok(
+      cls.includes('news-box-text'),
+      `ambiguous 時必須從 top-5 挑 POSITIVE 命中者；實際 class="${cls}"`
+    );
+  });
+
+  it('主文 UPMEDIA_MAIN_MARK 段落在 detected.el 內', () => {
+    const txt = (result.el.textContent || '').toString();
+    assert.ok(txt.includes('UPMEDIA_MAIN_MARK'),
+      '主文必須保留');
+  });
+
+  it('detector.js 源碼含「top.find(c => c.posHit」選擇邏輯（字面 forcing，防回退）', () => {
+    // 字面 forcing：任何人誤刪 v0.7.7 的「ambiguous 時從 top-5 挑 POSITIVE
+    // 命中者」邏輯會讓此 assertion fail。單靠 fixture 行為 assertion 無法
+    // 完整 forcing——v0.7.5 舊「confidence × 0.85」邏輯如果被加回來、
+    // 此 fixture 的 score 曲線下仍會 detect 成功（只是 confidence 較低），
+    // 但實機 upmedia 會 fail。字面檢查保證不會退回 × 0.85 打折實作。
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
+      'utf8'
+    );
+    assert.ok(
+      /top\.find\s*\(\s*c\s*=>\s*c\.posHit/.test(src),
+      'detector.js 必須含「ambiguous 時從 top-5 挑 POSITIVE 命中者」邏輯；不可退回 v0.7.5 × 0.85 confidence 打折'
+    );
+    assert.ok(
+      !/if\s*\(\s*ambiguous\s*\)\s*confidence\s*\*=\s*0\.85/.test(src),
+      'detector.js 不得再包含 v0.7.5 的 `if (ambiguous) confidence *= 0.85` 打折邏輯（會在邊界 score 導致 detector null）'
+    );
   });
 });
 

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>upmedia heuristic ambiguous POSITIVE 勝出 forcing</title>
+  <meta property="og:title" content="馬鈴薯之亂聲量調查">
+</head>
+<body>
+  <!-- v0.7.7 regression fixture。upmedia.mg /tw/focus/comprehensive/256956
+       實測根因：v0.7.5 ambiguous confidence × 0.85 在 score 10 邊界把真
+       主文打到 < 0.30 → detector null → 無法進閱讀模式。
+
+       Fixture 精確設計（seedScore 公式：1 + commas + min(3, floor(len/100))）：
+       - wrapper 3 段 each 1 comma + >=100 字 → seedScore 3, raw 9
+       - news-box-text 3 段 each 0 comma + >=100 字 → seedScore 2, raw 6
+       - 兩者 tl ~300
+       - wrapper score = 9+1.5 = 10.5（無 POSITIVE）
+       - news score = (6+1.5) × 1.25 = 9.375（POSITIVE 命中）
+       - ratio 10.5/9.375 = 1.12 < 1.25 → ambiguous=true
+       - v0.7.5：top1 wrapper, conf=0.305, × 0.85 = 0.259 < 0.30 → null ✗
+       - v0.7.7：ambig 分支挑 news-box-text, conf clip 到 0.30 ✓
+       - h2 放 .news-box-text 裡避免 promote 升 body -->
+  <div class="outer-group-xyz">
+    <p>wrapper 第一段內容。本段用句號分句避開過多逗號。文字量需超過一百字以拿到 textLen bonus +1 的加分，signal 累積中，段落夠長過 25 字門檻。raw 累積 wrapper 無 POSITIVE 命中。</p>
+    <p>wrapper 第二段內容。本段用句號分句。文字量同樣超過一百字以拿到 textLen bonus，段落夠長過門檻。raw 累積中。signal 密度穩定。句號比逗號多。</p>
+    <p>wrapper 第三段收尾。本段用句號分句。文字量超過一百字拿到 textLen bonus。累積完成後 raw 接近九分，score 達到約十點五。</p>
+  </div>
+
+  <div class="news-box-text">
+    <h2>UPMEDIA_MAIN_MARK 馬鈴薯之亂聲量調查</h2>
+    <p>UPMEDIA_MAIN_MARK 主文第一段 命中 POSITIVE text 詞根 × 1.25 倍。本段以句號分句。文字量需超過一百字以拿到 textLen bonus。reader mode 真主文容器。v0.7.7 ambig 分支挑此者。</p>
+    <p>UPMEDIA_MAIN_MARK 主文第二段 繼續填充文字量以讓 textLen bonus 生效。本段同樣用句號分句。signal 累積中但密度低於 wrapper。</p>
+    <p>UPMEDIA_MAIN_MARK 主文第三段收尾 填充文字量超過一百字拿到 textLen bonus。本段用句號分句。raw 累積六分 乘以 POSITIVE × 1.25 後 score 九點三七五。</p>
+  </div>
+</body>
+</html>

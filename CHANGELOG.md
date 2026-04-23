@@ -24,6 +24,39 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.7**——修 v0.7.5 regression：ambiguous confidence penalty 改「從 top-5 挑 POSITIVE 命中者」（Jimmy 2026-04-23 回報 upmedia.mg /tw/focus/comprehensive/256956 從 v0.7.5 起無法偵測主文）。
+
+**根因**：Probe 擷取真實頁面 detector 各階段：`<article>` / `[itemtype]` / `[itemprop]` / `<main>` 四個策略全 miss、只剩 heuristic。heuristic 計分：
+- top1 = 無 class 的 wrapper DIV（raw 7、textLen 717、score 10.26、無 POSITIVE/NEGATIVE）
+- top2 = `.news-box-text` 真主文（raw 3.5、textLen 988、POSITIVE 命中、score 10.17）
+- top1/top2 = 1.009 < 1.25 → ambiguous=true
+- v0.7.5 邏輯 `confidence *= 0.85`：raw confidence = (10.26-10)/40*0.4+0.30 = 0.3026 → 打折 0.2572 < MIN_CONFIDENCE 0.30 → `return null`
+- detector 回 null → 整個網頁無法進閱讀模式
+
+**修法**：回滾 `confidence *= 0.85` 打折邏輯、改動「選哪個」而非「打折 confidence」。`detectByHeuristic` 在 ambiguous 分支從 top-5 裡優先挑 **POSITIVE 命中且 NEGATIVE 沒命中** 的候選：
+```js
+let chosen = top[0];
+if (ambiguous) {
+  const preferred = top.find(c => c.posHit && !c.negHit);
+  if (preferred) chosen = preferred;
+}
+```
+貼近 Readability.js `nbTopCandidates` 的真實精神（top-N 裡 class weight 最好者勝出）。candidates 物件加 `posHit` / `negHit` flag。保留 `result.ambiguous` 作為 `detect()` → `promoteForTitle` 的 hops 收緊信號（避免誤選 anchor 時 promote 升 common ancestor 吞整頁）。
+
+**驗收**：
+- Fixture `upmedia-heuristic-ambiguous-positive-wins.html` 精確設計 seedScore 公式（1+commas+min(3, floor(len/100))）讓 wrapper score 10.5 vs news-box-text POSITIVE 後 9.72、比值 1.03 < 1.25 觸發 ambiguous
+- 舊邏輯：conf 0.30 × 0.85 = 0.255 < 0.30 → null fail；新邏輯挑 POSITIVE 勝出、conf 0.30 pass
+- **字面 regex forcing**（`top.find\s*\(\s*c\s*=>\s*c\.posHit`）防未來回退
+- **字面 regex forcing**（不得包含 `if\s*\(\s*ambiguous\s*\)\s*confidence\s*\*=\s*0\.85`）防打折邏輯被加回
+- sanity check：回滾修法 → 5 條 upmedia fixture assertion 全 fail（偵測 / ambig / POSITIVE 勝出 / 主文保留 / 字面 forcing）
+- `npm test` 154 passing
+- harness 四站全過：upmedia articleFound=true 恢復；line today / chinatimes / udn 無殘留雜訊
+
+**硬教訓補第 15 條（留給後續對話）**：
+> **confidence 數值打折是 anti-pattern，應動「選哪個」而非「打折信心」。** v0.7.5 引入的 `if (ambiguous) confidence *= 0.85` 表面上是「降低不確定結果的信心」，實際上在邊界 score 區間（10.0~10.5）會把剛過 MIN_CONFIDENCE 的 heuristic 結果直接殺掉整個偵測。正確模式：根據新資訊（ambiguous flag）**改變決策過程**（從 top-5 挑更可信者），不要事後 scale numerical 信心——那會把「信心不足」變成「完全放棄」，造成比選錯更糟的「無偵測」。Readability.js 的 `nbTopCandidates` 一直是「挑 class weight 最好者」的設計，v0.7.5 只借鑑了 flag 計算、沒借鑑選擇邏輯，本輪補齊。
+
+---
+
 **v0.7.6**——Postlight Parser 研究產物：Schema.org `itemprop="articleBody"` 策略（Jimmy 2026-04-23 第二輪研究）。
 
 **研究範圍**：盤點 [postlight/parser](https://github.com/postlight/parser) `src/extractors/custom/` 120+ 站點 parser，抽樣讀 9 個具代表性的（NYT / Medium / Engadget / CNN / Ars Technica / CNET / Twitter / Blogspot / Wikipedia / BuzzFeed）找跨站通則。

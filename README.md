@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.6（Postlight Parser 研究：Schema.org `itemprop="articleBody"` 雙層策略）。盤點 Postlight Parser 120+ 站點 custom parser，抽樣 9 個讀結論：clean selector 全是站點特判不可抽，transforms 架構不相容，唯一跨站通則是 Schema.org microdata `itemprop="articleBody"`——多家新聞站（NYT / CNN / Ars）即便外層沒 itemtype 也標內層 itemprop。detector 策略 2 加 Layer B fallback 直接吃這條。149 spec 全過
+**目前版本**：v0.7.7（修 v0.7.5 regression：ambiguous confidence penalty 改「從 top-5 挑 POSITIVE 命中者」）。upmedia.mg 政論文從 v0.7.5 起無法偵測主文；probe 擷取根因是 `confidence *= 0.85` 在邊界 score 區間（10.0~10.5）把剛過 0.30 門檻的 heuristic 結果直接殺到 null。回滾打折邏輯、改動「選哪個」而非「打折信心」，貼近 Readability.js `nbTopCandidates` 真實精神。字面 regex forcing 防未來回退。154 spec 全過
 
 ---
 
