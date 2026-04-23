@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Schema.org itemprop=articleBody — forcing fixture</title>
+  <meta property="og:title" content="Schema.org itemprop articleBody test">
+</head>
+<body>
+  <!-- v0.7.6 Postlight Parser 借鑑：Schema.org microdata `itemprop="articleBody"`
+       策略。
+
+       Forcing 設計：
+       - 整頁無任何 `<article>` tag（讓策略 1 miss）
+       - 整頁無 `[itemtype*="Article"]`（讓策略 2 Layer A miss）
+       - 主文 div 掛 `itemprop="articleBody"`（Layer B 命中）
+       - 其他同層 div 也有足夠文字但無 itemprop（避免 heuristic 先搶）
+
+       此 fixture 不把 `itemtype` 掛在容器上，模擬 NYT / CNN / Ars 類
+       站點「只在 content 內層標 itemprop，外層未掛 itemtype」的真實慣例。
+
+       若拿掉 Layer B，detector 會 fallback 到 heuristic 策略；heuristic 可能
+       選到任一長 div——spec 明確要求 strategy === 'schema-org-body' 才通過，
+       拿掉 Layer B 必 fail。 -->
+  <div class="page-wrapper">
+    <div class="sidebar-recent">
+      <h3>Recent</h3>
+      <p>Sidebar 第一條。這段純文字，無 itemprop 標記。內容包含多個逗號與合理長度，避免 heuristic 的 signal 過門檻太低。為了避免 heuristic 率先選到 sidebar，這段仍刻意保持比主文稍短的文字量。</p>
+      <p>Sidebar 第二條，繼續填充合理長度的次要內容。這段落僅存在於確保 detector 測試的對比基礎——真正要命中的是下方 itemprop 容器。</p>
+    </div>
+
+    <div itemprop="articleBody" class="article-content">
+      <p>SCHEMA_BODY_MARK 主文第一段。這是以 Schema.org microdata 的 `itemprop="articleBody"` 屬性標記的主文內容。跨站慣例是即使外層沒掛 itemtype，SEO 友善的新聞站仍會在 content 內層標 itemprop，讓搜尋引擎能精確抽出正文。</p>
+      <p>主文第二段。reader mode 下使用者期望看到這段、以及其他主文段落。此段文字密度遠高於 sidebar，bubble-up 後 heuristic 也會選中這裡，但 Layer B 優先——strategy 標記應為 schema-org-body 而非 heuristic。</p>
+      <p>主文第三段。包含多個逗號與有意義文字，提供合理的閱讀內容。為確保 textLen 超過 MIN_TEXT_LEN=200 門檻、Layer B 才會命中，此段刻意填充足夠長度。</p>
+      <p>主文第四段收尾。SCHEMA_BODY_MARK 再次出現，用於 spec 的文字保留驗證。reader mode 進入後主文範圍必須包含所有 SCHEMA_BODY_MARK 段落。</p>
+    </div>
+  </div>
+</body>
+</html>

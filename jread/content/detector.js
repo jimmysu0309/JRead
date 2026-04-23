@@ -98,13 +98,27 @@
   }
 
   // ---- 策略 2：Schema.org --------------------------------------------
+  // 雙層：先看 `[itemtype]`（整個 article 容器），fallback 到 `[itemprop="articleBody"]`
+  //（內層 content element）。兩者是 Schema.org microdata 同族語意：
+  //   - itemtype：整個 Article/NewsArticle/BlogPosting 容器
+  //   - itemprop="articleBody"：該容器內「內文正體」的 property 標記
+  //
+  // Postlight Parser 的 NYT / CNN / Ars Technica 等大型新聞站 parser 都用
+  // `div[itemprop="articleBody"]` / `section[name="articleBody"]` 當主文
+  // selector—— 許多站即便沒在容器掛 `itemtype="Article"`，內層仍標了
+  // `itemprop="articleBody"`（SEO 慣例、Google 結構化資料爬取依據）。
+  //
+  // 通則依據：Schema.org 的 itemprop 是 W3C 規範的 microdata property 標記，
+  // 跨站通用，非站點特判（硬規則 3）。itemprop 元素的 textLen 通常較緊湊
+  // （僅 content 主體、不含 byline / meta），命中即主文。
   function detectBySchemaOrg() {
-    const selectors = [
+    // Layer A：容器型 itemtype（最精確）
+    const typeSelectors = [
       '[itemtype*="NewsArticle" i]',
       '[itemtype*="BlogPosting" i]',
       '[itemtype*="Article" i]'
     ];
-    for (const sel of selectors) {
+    for (const sel of typeSelectors) {
       const candidates = Array.from(document.querySelectorAll(sel));
       // 頁面可能多個（例如相關文章 list 也標 Article），取最長
       const best = candidates
@@ -115,6 +129,18 @@
         return { el: best.el, confidence: 0.85, strategy: 'schema-org' };
       }
     }
+
+    // Layer B：itemprop="articleBody" fallback（多家站點未掛 itemtype、
+    // 但內層 content element 掛了 itemprop）
+    const bodyCandidates = Array.from(document.querySelectorAll('[itemprop="articleBody"]'));
+    const bestBody = bodyCandidates
+      .map(el => ({ el, len: getText(el).length }))
+      .filter(x => x.len >= MIN_TEXT_LEN)
+      .sort((a, b) => b.len - a.len)[0];
+    if (bestBody) {
+      return { el: bestBody.el, confidence: 0.85, strategy: 'schema-org-body' };
+    }
+
     return null;
   }
 

@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.5（Readability.js 演算法借鑑三項：POSITIVE/NEGATIVE class-weight regex 擴充、nbTopCandidates 競爭分析、lazy-image hydration。研究 Mozilla Readability.js / Postlight Parser / Trafilatura / DOM Distiller 四個主流主文抽取專案，結論：架構不同無法整包引入，但借鑑演算法細節成本極低——extension code 僅 detector 3 行 regex 擴充 + heuristic 改收 top-5 candidates + cleaner 新增 hydrate/restore 兩個函式。145 spec 全過）
+**目前版本**：v0.7.6（Postlight Parser 研究：Schema.org `itemprop="articleBody"` 雙層策略）。盤點 Postlight Parser 120+ 站點 custom parser，抽樣 9 個讀結論：clean selector 全是站點特判不可抽，transforms 架構不相容，唯一跨站通則是 Schema.org microdata `itemprop="articleBody"`——多家新聞站（NYT / CNN / Ars）即便外層沒 itemtype 也標內層 itemprop。detector 策略 2 加 Layer B fallback 直接吃這條。149 spec 全過
 
 ---
 

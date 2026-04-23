@@ -24,6 +24,38 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.6**——Postlight Parser 研究產物：Schema.org `itemprop="articleBody"` 策略（Jimmy 2026-04-23 第二輪研究）。
+
+**研究範圍**：盤點 [postlight/parser](https://github.com/postlight/parser) `src/extractors/custom/` 120+ 站點 parser，抽樣讀 9 個具代表性的（NYT / Medium / Engadget / CNN / Ars Technica / CNET / Twitter / Blogspot / Wikipedia / BuzzFeed）找跨站通則。
+
+**三類發現**：
+- **content selector**：跨站 `article` tag / `[itemtype*="Article"]` JRead 已涵蓋；少數站自訂 class `.zn-body-text` / `.g-blocks` / `.article-text` 等屬 POSITIVE_RE 詞根已 cover；**唯一新增可抽的是 `itemprop="articleBody"`**，多個新聞站（NYT / CNN / Ars Technica）的 parser 用這個 selector
+- **clean selector**：Medium `svg` / Wikipedia `.mw-editsection` / BuzzFeed `.js-ad-placement` / Twitter `.stream-item-footer`——**全是站點特判**，違反硬規則 3 不收
+- **transforms**：Postlight 改 DOM 結構（`noscript → div` / `h2 → b` / padding-hack img 重排）——JRead 架構保留原 DOM、僅 hide + 覆蓋樣式，**類型不相容**全 skip
+
+**修法**：detector 策略 2 雙層（`detectBySchemaOrg`）
+- Layer A（原邏輯保留）：`[itemtype*="NewsArticle" i]` / `[itemtype*="BlogPosting" i]` / `[itemtype*="Article" i]` 容器型，命中 confidence 0.85、strategy `schema-org`
+- **Layer B（新增）**：fallback 到 `[itemprop="articleBody"]`，命中 confidence 0.85、strategy `schema-org-body`
+
+**通則依據**：Schema.org 的 `itemprop` 是 W3C 規範的 microdata property 標記，跨站通用、非站點特判（硬規則 3）。`itemprop="articleBody"` 元素的 textLen 通常較緊湊（僅 content 主體、不含 byline / meta），命中即主文。許多站即便外層沒掛 itemtype（SEO 配置較舊），內層仍標了 itemprop——這是 Google 結構化資料爬取依據，SEO 慣例。
+
+**驗收**：
+- fixture `schema-org-articlebody.html`：刻意建構「無 `<article>` tag + 無 `[itemtype*="Article"]`、僅內層 `div[itemprop="articleBody"]`」的真實 NYT/CNN 類結構，forcing Layer B 必須觸發才通過
+- 4 條 spec：偵測成功 / strategy === 'schema-org-body' / confidence === 0.85 / itemprop 元素命中（含 SCHEMA_BODY_MARK 段落、不含 sidebar）
+- sanity check：註釋 Layer B → strategy + confidence assertion fail（heuristic fallback 仍能選到 itemprop 容器，但 strategy 不再是 schema-org-body）
+- `npm test` 149 spec passing
+
+**不做的**：
+- 各站 clean selector（`.mw-editsection` / `.js-ad-placement` 類全是站點特判、違反硬規則 3）
+- 填充 `jread/site-overrides/`（工程量大、reader mode 架構已覆蓋大部分、ROI 低）
+- Postlight 的 transforms 類 DOM 重建操作（架構不相容）
+- Medium `clean: ['svg']`（其他站點的 SVG 可能是正文圖表——站點特判）
+
+**硬教訓補第 14 條（留給後續對話）**：
+> **從 Postlight Parser 120+ 站點 parser 中抽跨站通則的產出極低——9 個樣本僅抽出 1 條（`itemprop="articleBody"`）**。原因：Postlight 架構鼓勵為每站寫客製 parser（`.zn-body-text` 是 CNN 自訂、`.g-blocks` 是 NYT 自訂），跨站通則都已被 Schema.org microdata / ARIA / HTML5 semantic tag 這類 W3C 標準涵蓋。未來若有類似「是否借用 X 個站點 parser 專案」的問題，預期也會得到類似結論：**大部分的 selector 知識屬於各站 CMS 特定，而跨站通則往往能用 Schema.org / W3C 標準找齊**。Schema.org 的 `itemprop` 族還有 `author` / `datePublished` / `headline` 等，未來若 JRead 要抽 byline / 發布日期，同樣可直接走 microdata 通則。
+
+---
+
 **v0.7.5**——Readability.js 演算法借鑑三項：POSITIVE/NEGATIVE regex 擴充 + nbTopCandidates 競爭分析 + lazy-image hydration（Jimmy 2026-04-23 續問「是否有受推崇的主文偵測/雜訊清理專案可參考」）。
 
 **研究四個主流**：Mozilla Readability.js（Apache 2.0、Firefox Reader View 引擎、業界 benchmark median F-score 0.970 / recall 0.929）、Postlight Parser（前身 Mercury Parser、MIT、120+ 站點 custom parser）、Trafilatura（Python、F-score 0.937）、DOM Distiller（Chromium 內建、Java 為主）。結論：**架構不同無法直接引入**——Readability 風格是「parse → 重建 clean DOM tree → 替換原頁面」、JRead 是「覆蓋原 DOM、標 `data-jread-active` + `data-jread-hidden` + 可還原」。硬引入整包等於拋棄 JRead 核心定位。但**借鑑演算法細節**成本極低、可直接落實。

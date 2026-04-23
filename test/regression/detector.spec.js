@@ -435,6 +435,45 @@ describe('detector — readability-ambiguous-candidates（nbTopCandidates 競爭
   });
 });
 
+// -----------------------------------------------------------------------------
+// v0.7.6 Postlight Parser 借鑑：Schema.org microdata `itemprop="articleBody"`
+// 策略。detectBySchemaOrg 雙層：Layer A itemtype（原邏輯）→ Layer B itemprop
+// fallback（新增）。NYT / CNN / Ars Technica 等新聞站 Postlight parser 都走
+// itemprop selector，說明許多站即便沒在容器掛 itemtype，內層仍標了
+// itemprop="articleBody"（SEO 慣例）。
+// -----------------------------------------------------------------------------
+describe('detector — schema-org-articlebody（itemprop="articleBody" Layer B fallback）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('schema-org-articlebody.html').result;
+  });
+
+  it('偵測成功', () => {
+    assert.ok(result, '偵測應成功（Layer B 命中 itemprop="articleBody"）');
+  });
+
+  it('strategy === "schema-org-body"（走 Layer B，非 heuristic 或 article-tag）', () => {
+    assert.strictEqual(result.strategy, 'schema-org-body',
+      'fixture 無 <article> tag + 無 itemtype，必須走 itemprop fallback—— forcing：拿掉 Layer B，detector 會退回 heuristic 策略，此 assertion fail');
+  });
+
+  it('confidence === 0.85（與 itemtype 策略同等信心）', () => {
+    assert.strictEqual(result.confidence, 0.85);
+  });
+
+  it('選中 itemprop="articleBody" 元素、主文 SCHEMA_BODY_MARK 保留', () => {
+    assert.ok(result.el);
+    assert.strictEqual(result.el.getAttribute('itemprop'), 'articleBody',
+      '選中的 el 必須掛 itemprop="articleBody"');
+    const txt = (result.el.textContent || '').toString();
+    assert.ok(txt.includes('SCHEMA_BODY_MARK'),
+      '主文必須保留所有 SCHEMA_BODY_MARK 段落');
+    // sidebar 不得被選進（itemprop 容器僅包主文，不含 sidebar）
+    assert.ok(!txt.includes('Sidebar'),
+      'sidebar 文字不得進入 detected.el（itemprop 容器是 sidebar 的兄弟，範圍精準）');
+  });
+});
+
 describe('cleaner — linetoday tail noise sections（heading text heuristic）', () => {
   // 把 cleaner 接起來驗 heading-text rule 能清 line today 文末推薦 sections。
   // line today SPA 站 class 全是 emotion-style hash（css-xxx），NOISE_KEYWORD_RE
