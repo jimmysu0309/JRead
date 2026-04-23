@@ -24,6 +24,35 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.4**——廣告對應強化：EasyList spike 結論 + 第三方廣告服務標識符新 rule（Jimmy 2026-04-23 詢問「能否借現成 ad-blocker 避免重複造輪子」）。
+
+**Spike 結論**：嘗試引入 EasyList（社群維護 10+ 年的 ad filter list）整包前先做驗證。`tools/fetch-easylist.js` 抓 easylist.txt + fanboy-annoyance.txt 萃取 40984 條 generic cosmetic selector（786 KB lite 版）；`tools/probe-easylist.js` 在 Jimmy 提供的四個真實 URL（line today / udn / chinatimes / upmedia）分別測「reader mode OFF / 全頁 body」vs「reader mode ON / articleEl」兩個 scope。結果：四站 reader mode 內合計僅命中 3 個元素（udn 的 `.udn-ads` x2 + google_ads_iframe x1），其餘三站 articleEl 內命中 0。**結論：EasyList 整包對 JRead 邊際效益極低——reader mode 架構（detector 精確選 articleEl + cleaner 結構性 rule）已把大部分廣告容器「自然繞過」**，廣告容器在 detector 階段根本不會被選進 articleEl。Spike 腳本 + 抓下來的 list 用完即刪（符合 CLAUDE.md「probe 腳本用完就刪」硬規則）。
+
+**Spike 增量**：baseline（全頁 body）命中揭露**跨站第三方廣告服務的業界標準命名**：
+- **Google Ad Manager (GPT)**：`[id^="div-gpt-ad"]`、`[name^="google_ads_iframe"]`、`iframe[src*="googlesyndication.com"]`、`iframe[src*="doubleclick.net"]`——四站都有，是 GAM 官方推薦 id / name 命名
+- **Taboola**：`[class*="trc_"]`（`.trc_excludable` / `.trc_rbox*` / `.trc_related_container`）、`[id*="taboola"]`——udn 大量命中（100 個視覺單位裡 60+ 個）
+- **popIn Discovery**（日系推薦平台）：`[class*="_popIn_"]`——chinatimes / upmedia 大量命中
+- **Outbrain**：`[class*="OUTBRAIN"]` / `[data-widget-id*="outbrain"]`
+- **通用 ad- prefix**：`[id^="ad-"]` / `[class^="ad-"]` / `[id^="ads_"]`
+
+這些屬結構性通則（第三方廣告 platform 官方命名），不是站點 hostname / 特定 class 特判，符合硬規則 3。
+
+**修法**：
+1. **cleaner 新 rule `hideInsideArticleByThirdPartyAds(articleEl, hidden)`**——在 articleEl 作用域一次 `querySelectorAll(THIRD_PARTY_AD_SEL)` 命中 14 條 selector branch 全 hide。放在 `hideInsideArticleByKeyword` 之後、`hideInsideArticleByHeadingText` 之前，作為第三方廣告的保險絲層（當 detector 不小心把 ad wrapper 選進 articleEl、或 ad 動態注入到 articleEl 內時擋下）
+2. **NOISE_KEYWORD_RE 擴充 `trc_[a-z_]+` + `popin`**——markerOf 走 class+id，Taboola 的 `.trc_excludable` 不含 `taboola` 字樣、原 alternation 漏網；popIn 的 `_popIn_*` 雖已被 `AD_BOUNDARY_RE` 擋（尾端 `_ad` 匹配），加 `popin` 作雙保險
+
+**驗收**：
+- `test/regression/fixtures/third-party-ads-inside-article.html` 涵蓋全部 14 條 selector branch + 頭尾 2 段 THIRDPARTY_MAIN_MARK 主文保留 forcing
+- `test/regression/cleaner.spec.js` 新增對應 it()，移除 rule 14 條 assertion 同時 fail、主文保留
+- Sanity check：註釋掉 `hideInsideArticleByThirdPartyAds(articleEl, hidden)` → 此 spec fail 其他 130 全過，驗證沒踩既有規則
+- `npm test` 131 spec 全過
+- Playwright harness 三站驗收：chinatimes / line today / udn residual audit 三次 `✅ 無殘留雜訊`
+
+**硬教訓追加（第 12 條，留給後續對話）**：
+> **引入外部資料 / 函式庫前先做 spike 驗證 ROI，別先引入再評估。** 本輪差點把 786 KB EasyList lite 塞進 extension runtime 才發現對 reader mode 邊際效益近零。正確順序：(1) 用 fetcher 抓外部資料一次性入手（不 commit）、(2) 寫 probe 腳本在真實目標站點跑對照組（baseline vs 加功能後）、(3) 看 baseline 命中分佈找出真正可借用的**通則**（不是整包）、(4) 只抄通則進 extension、(5) 刪 spike 產物。EasyList 這次給我們的不是「list 本身」，而是「哪些第三方廣告服務命名跨站通用」——這個認知收進 14 條 selector 就夠了。
+
+---
+
 **v0.7.3**——bugfix 八層（cleaner / detector / SW / heuristic 全套）+ harness residual audit 升級（Jimmy 2026-04-23 回報 chinatimes 即時新聞 /realtimenews/20260423000917-260410）。
 
 症狀鏈：

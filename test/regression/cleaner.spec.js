@@ -651,6 +651,109 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內第三方廣告服務標識符（GAM div-gpt-ad / google_ads_iframe / Taboola trc_*  / popIn _popIn_* / Outbrain / ad-*）→ hideInsideArticleByThirdPartyAds 各 selector branch 全命中，主文保留', () => {
+    // 2026-04-23 v0.7.4 EasyList spike 結論：Jimmy 四站實測（line today / udn
+    // / chinatimes / upmedia）reader mode 內的殘留廣告指向第三方廣告服務
+    // 標準識別（Google Ad Manager 官方推薦命名 `div-gpt-ad-*`、Taboola 官方
+    // widget class prefix `trc_*`、popIn 官方 class `_popIn_*`、Outbrain
+    // `OUTBRAIN` class）。這些是跨站業界慣例、結構性通則，非站點特判（硬
+    // 規則 3）。cleaner 新增 hideInsideArticleByThirdPartyAds 一次解決。
+    // Forcing function 設計：每個 selector branch 對應一個 fixture 元素，
+    // 移除任一 selector → 對應 assertion fail。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'third-party-ads-inside-article.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // Google Ad Manager / GPT
+      const gptAd = w.document.getElementById('div-gpt-ad-1234567890-0');
+      assert.ok(gptAd);
+      assert.strictEqual(gptAd.dataset.jreadHidden, '1',
+        '`[id^="div-gpt-ad"]` selector 必須命中 hide（Google Ad Manager 官方推薦 id 命名）');
+
+      // google_ads_iframe name / id
+      const gaIframe = w.document.getElementById('google_ads_iframe_article_0');
+      assert.ok(gaIframe);
+      assert.strictEqual(gaIframe.dataset.jreadHidden, '1',
+        '`iframe[name^="google_ads_iframe"]` / `iframe[id^="google_ads_iframe"]` 必須命中 hide');
+
+      // googlesyndication / doubleclick iframe src
+      const iframes = w.document.querySelectorAll('iframe');
+      let synIframe = null, dcIframe = null;
+      for (const f of iframes) {
+        const src = f.getAttribute('src') || '';
+        if (src.includes('googlesyndication.com')) synIframe = f;
+        if (src.includes('doubleclick.net')) dcIframe = f;
+      }
+      assert.ok(synIframe && dcIframe);
+      assert.strictEqual(synIframe.dataset.jreadHidden, '1',
+        'googlesyndication.com iframe 必須命中 hide');
+      assert.strictEqual(dcIframe.dataset.jreadHidden, '1',
+        'doubleclick.net iframe 必須命中 hide');
+
+      // Taboola class prefix trc_
+      const trcExcl = w.document.querySelector('.trc_excludable');
+      const trcRbox = w.document.querySelector('.trc_rbox');
+      assert.ok(trcExcl && trcRbox);
+      assert.strictEqual(trcExcl.dataset.jreadHidden, '1',
+        '`[class*="trc_"]` selector 必須命中 Taboola trc_excludable widget');
+      assert.strictEqual(trcRbox.dataset.jreadHidden, '1',
+        '`[class*="trc_"]` selector 必須命中 Taboola trc_rbox widget');
+
+      // Taboola id
+      const trcId = w.document.getElementById('taboola-below-article-thumbnails');
+      assert.ok(trcId);
+      assert.strictEqual(trcId.dataset.jreadHidden, '1',
+        '`[id*="taboola"]` selector 必須命中 Taboola thumbnails widget');
+
+      // popIn
+      const popIn = w.document.querySelector('._popIn_recommend_article');
+      assert.ok(popIn);
+      assert.strictEqual(popIn.dataset.jreadHidden, '1',
+        '`[class*="_popIn_"]` selector 必須命中 popIn Discovery 推薦 widget');
+
+      // Outbrain
+      const outbrain = w.document.querySelector('.OUTBRAIN');
+      assert.ok(outbrain);
+      assert.strictEqual(outbrain.dataset.jreadHidden, '1',
+        '`[class*="OUTBRAIN"]` selector 必須命中 Outbrain widget');
+
+      // 通用 ad- prefix id
+      const adId = w.document.getElementById('ad-leaderboard-top');
+      assert.ok(adId);
+      assert.strictEqual(adId.dataset.jreadHidden, '1',
+        '`[id^="ad-"]` selector 必須命中通用 ad- prefix id');
+
+      // 通用 ad- prefix class
+      const adClass = w.document.querySelector('.ad-detail');
+      assert.ok(adClass);
+      assert.strictEqual(adClass.dataset.jreadHidden, '1',
+        '`[class^="ad-"]` selector 必須命中通用 ad- prefix class');
+
+      // 主文段落保留（forcing：若 THIRD_PARTY_AD_SEL 寫錯誤殺 <p> 會 fail）
+      const mainPs = Array.from(w.document.querySelectorAll('p')).filter(
+        p => p.textContent.includes('THIRDPARTY_MAIN_MARK'));
+      assert.ok(mainPs.length >= 2,
+        'fixture 應含至少 2 個 THIRDPARTY_MAIN_MARK 段落（頭尾）');
+      for (const p of mainPs) {
+        assert.notStrictEqual(p.dataset.jreadHidden, '1',
+          `主文段落「${p.textContent.slice(0, 30)}...」不得被任何第三方廣告 selector 誤殺`);
+      }
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 button cluster（現代 CSS-in-JS 把 button 用 display:contents 包層層 div 的 BBC 類 pattern）→ 專門 hide 該 cluster，保留作者/日期', () => {
     // BBC 文章頭部 byline row 實測：cSUzvu 內 3 個 button（Share/Save/
     // Add as preferred on Google）每個都被 div + display:contents 層層包

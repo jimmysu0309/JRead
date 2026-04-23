@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.3（bugfix 九層 + harness residual audit 升級 + 中英雜訊 heuristic 全套 + `CLAUDE.md` 8 條經驗傳承：sidebar 條件 B + float layout collapse + NOISE_KEYWORD_RE 擴充 + og:title 取首段 + PROMOTE_MAX_HOPS 2→3 + SW icon path 改絕對路徑 + cleaner heading/link text heuristic + MutationObserver articleEl subtree——chinatimes sidebar + udn 文末 5 塊雜訊 + line today 標題漏掉 + reload extension icon fetch 錯誤 + line today 文末推薦 section + AI 摘要 widget + LINE 官方帳號 CTA + 查看原始文章外連全部修好。130 spec 全過）
+**目前版本**：v0.7.4（廣告對應強化：EasyList spike 結論 + 第三方廣告服務標識符新 rule。四站實測證實 EasyList 整包對 JRead 邊際效益極低——reader mode 架構已自然繞過多數廣告容器；spike 萃取跨站業界通用的 14 條第三方廣告命名 selector（Google Ad Manager / Taboola / popIn / Outbrain / 通用 ad- prefix）作保險絲層。131 spec 全過）
 
 ---
 
