@@ -19,17 +19,24 @@ const DEFAULT_SETTINGS = {
 // Icon 路徑 map：閱讀模式 active = 彩色、待機 = 灰階。manifest `default_icon`
 // 指向灰階版，content main.js 在 enter/exit reader mode 時發 SET_ACTIVE_ICON
 // 訊息、SW 針對 sender tab 呼叫 chrome.action.setIcon 切換。
+//
+// 路徑**必須以 `/` 開頭**——SW 的 relative path 是相對 SW 所在目錄
+// （`/background/`），不是 extension root。寫 `'assets/...'` 會被解析成
+// `/background/assets/...` 不存在，reload extension 時 tabs.onUpdated
+// handler 對每個既有 tab 呼叫 setIcon 全部 fail，Chrome 通知中心堆
+// `Failed to set icon 'assets/icons/...' : Failed to fetch` 錯誤。
+// 與 v0.4.1 importScripts 相對路徑 bug 同類型（SW 相對路徑陷阱）。
 const ICONS_ACTIVE = {
-  16:  'assets/icons/icon-16.png',
-  32:  'assets/icons/icon-32.png',
-  48:  'assets/icons/icon-48.png',
-  128: 'assets/icons/icon-128.png'
+  16:  '/assets/icons/icon-16.png',
+  32:  '/assets/icons/icon-32.png',
+  48:  '/assets/icons/icon-48.png',
+  128: '/assets/icons/icon-128.png'
 };
 const ICONS_IDLE = {
-  16:  'assets/icons/icon-16-disabled.png',
-  32:  'assets/icons/icon-32-disabled.png',
-  48:  'assets/icons/icon-48-disabled.png',
-  128: 'assets/icons/icon-128-disabled.png'
+  16:  '/assets/icons/icon-16-disabled.png',
+  32:  '/assets/icons/icon-32-disabled.png',
+  48:  '/assets/icons/icon-48-disabled.png',
+  128: '/assets/icons/icon-128-disabled.png'
 };
 
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋

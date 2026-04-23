@@ -7,6 +7,8 @@
 
 ## 目前 Extension 版本
 
+`0.7.3`（bugfix 七層：cleaner sidebar 條件 B 拿掉 textLen 比值 + collapse 擴展至傳統 float layout + NOISE_KEYWORD_RE 擴充跨 CMS 雜訊 family + detector `getCanonicalTitle` 對 og:title 取 `|/–/—` 分隔首段 + `PROMOTE_MAX_HOPS` 2→3 + SW `ICONS_*` path 改絕對路徑 + cleaner 新增 heading text heuristic（`hideInsideArticleByHeadingText`，跨站通用文末推薦 section 標題字樣 regex：延伸閱讀 / 相關新聞 / 更多...文章 / 其他人也看 / 查看更多 / 最新消息 等，hide heading closest `<section>/<aside>`；專治 SPA 類站點 emotion-style hash class 無語意命中的場景）。上報三站實測：chinatimes 即時新聞 sidebar + 「也許您會感興趣」塊、udn 文章尾端「延伸閱讀 / 相關新聞 / taboola / sponsor-ads / discuss-board」5 塊雜訊、line today 標題漏掉（og:title 帶「| 自由電子報 | LINE TODAY」三段尾綴 + h1 佔 og 57% < 60% titleMatches 門檻 → promote 失敗漏 h1；連帶 article textLen 501 太短 scroll 空間縮到 500px，user 覺得「無法往下捲動」——取首段後 og = h1、title match 成功 + real line today 結構要求共同祖先 3 hops、MAX_HOPS 2 不夠放寬到 3、promote 升級到 div.swipe-back、整頁 scrollHeight 5553 scroll 空間恢復）。上報 chinatimes 即時新聞 /realtimenews/20260423000917-260410 實測：reader mode 開啟後右欄「財經熱門新聞」10 條編號列表整塊殘留（aside.column-right 在 article.article-box > column-wrapper 內同層）、且移除後右側空白沒還給主文。根因鏈兩層：(1) `hideInsideArticleSidebarColumns` 條件 B 對 `<aside>` tag 的判定是 `textLen < main × 0.5 + rectH > 400`；harness 時序 race 下主文 column-left textLen 約 2457（相關閱讀未 lazy-load 完時偏低）、aside textLen 1389（10 條 hot-news + section header），aside/main 比值 0.565 打在 0.5 門檻上方漏網；(2) aside 即便被清掉，`.column-wrapper.clear-fix` 內是**傳統 float + 固定 width 多欄 layout**（column-left: float:left width:308px + aside: float:right width:300px），而 `collapseGridWithHiddenCell` 只處理 grid / flex-row、不處理 float，主文 column-left 仍被鎖 308px 寬、右側 300px 空白殘留。通則修法：(A) cleaner 條件 B 拿掉 `s.textLen < main.textLen * 0.5` 檢查，只保留「`<aside>` tag + rectH > 400」絕對結構特徵——rectH 門檻已排除 pull-quote，textLen 比值只會把邊緣場景當 false negative 放過；(B) `collapseGridWithHiddenCell` 新增 float layout 觸發條件——container 非 grid / flex-row 但 direct children 有 `computed float !== 'none'` 且存在 hidden sibling 時，對 visible 的 direct children 強制 `float: none !important`（配合既有的 `width: auto` + `max-width: none`），restore 流程一併記下 `prevFloat` / `prevFloatPriority` 做還原。fixture `chinatimes-aside-high-text-ratio.html` 雙層 forcing：main 593/aside 339 驗條件 B + column-left inline `float: left` 驗 float collapse。sanity check 驗過兩條：拿掉 textLen 檢查或拿掉 float reset 都會 fail。116 spec 全過。
+
 `0.7.2`（bugfix：detector modal signal 污染 + heuristic 外殼誤選 + promote 失控三層防護）。上報國際版 /tw/international/headlines/256941 實測：reader mode 把整頁 #wrapper 當主文、top bar / header / 快訊列 / 分類列 / 右欄推薦列全殘留。根因三層：(1) Bootstrap modal（2700+ 字雜訊 + stylesheet-only `display: none`）的 p 被 detector.getText fallback 到 textContent 讀入計分；(2) heuristic bubble-up 對 signal 埋深層的主文不利，短文字高連結密度的 UI chrome `.row` finalScore 贏過真主文；(3) promoteForTitle 無層數上限、選錯 anchor 時一路升到 body 或 #wrapper 吞整頁 chrome。通則修法：(A) heuristic 加 `isSignalExcluded`——祖先鏈含 ARIA dialog/alertdialog/tooltip/aria-modal、aria-hidden 或 inline/computed `display:none` 的 signal 不計分；(B) heuristic 加 `textLen/200 cap 10 * (1-ld)` 獎勵，讓長文字低連結密度主文贏過短文字 UI chrome；(C) `promoteForTitle` 加 `MAX_HOPS=2` 上限。fixture `upmedia-intl-modal-signals.html` 用 Bootstrap 標準 `aria-hidden="true"` markup 驗 (A)；(B)(C) 由 Playwright harness 對真 upmedia 國際版驗（jsdom 對 stylesheet-only modal 無法 resolve、已記入 PENDING_REGRESSION）。115 spec 全過。
 
 `0.7.1`（bugfix：上報 icon-link 巨大化）。styler `[data-jread-active] img` rule 的 `height: auto !important` 吃掉原站用 `height: 32px` 類 CSS 鎖小尺寸的 icon（沒明確設 width、依賴 intrinsic aspect-ratio 自動算），導致 img 退回 naturalSize（例：upmedia `#toggleImg` 250x250 icon 被拉成巨大化、「新聞摘要」「辭」「AI 新聞關鍵字詞查詢」都中）。通則區分：`[data-jread-active] a > img`（link-wrapped icon / logo / UI 按鈕圖）獨立 rule 只 cap 寬度、不設 height；其他 wrapper（figure / picture / p / div）下的 img 維持 shrink-fit `height: auto`。fixture `upmedia-icon-link-oversize.html` 擷取最小重現結構；styler spec 新增 2 條 forcing function（a > img rule 不得含 height、含 height:auto 的 img selector 必須帶 :not(a > img)）；110 spec 全過。本次修法後 icon 圖保留原站尺寸、主圖仍正確 shrink-fit。
@@ -130,11 +132,26 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
 主文容器內出現以下 class / id 關鍵字的區塊視為雜訊（不分大小寫）：
 
 - `paywall`、`subscribe`、`newsletter`、`signup`
-- `promo`、`promotion`、`advertisement`、`sponsored`、`ad-`、`-ad`
+- `promo`、`promotion`、`advertisement`、`sponsored`、`sponsor`（動詞詞根覆蓋 udn `.sponsor-ads` 類）、`ad-`、`-ad`
 - `cta`、`call-to-action`
-- `related-articles`、`recommended`、`read-more`
+- `related-(articles|news|posts|stories)`、`more-(news|stories|posts|articles)`、`recommended`、`recommend`、`recommendation`、`read-more`、`read-next`、`up-next`、`taboola`、`outbrain`、`zergnet`、`revcontent`
+- `breadcrumb(s)`、`pagination`、`page-nav`、`pager`、`author-(bio|card|info|box|meta|widget)`
+- `follow`、`follow-us`、`subscribe`、`subscription`、`newsletter-(signup|form|cta)`、`email-(signup|capture|subscribe)`
+- `cookie-(banner|notice|consent|bar)`、`gdpr`、`consent`、`privacy-(banner|notice)`
+- `popup`、`overlay`、`modal-(content|dialog|box|wrapper)`、`floating-(bar|cta|widget)`、`sticky-(bar|cta|banner|subscribe)`、`toast`、`snackbar`、`notification-(bar|banner)`
+- `audio-(player|widget)`、`postlisting`、`post-listing`、`thread(s)`、`reposted`、`repost`
+- `social-(bar|links|icons|share|media)`、`share`、`social`
+- `comment`、`comments`、`comment-form`、`discussion`、`discuss`、`disqus`、`livefyre`、`hyvor`（跨站 CMS 留言區 anchor 慣例：Substack `#discussion`、WordPress `.comments-page`、Disqus `#disqus_thread`、Ghost `#comments`）
+
+**英文網頁 heading 文字慣用語**（`NOISE_HEADING_TEXT_RE`）：Related Articles / Recommended for you / More from X / You may also like / Read more / Up next / Continue reading / See also / Further reading / Editor's Picks / Sponsored content / Comments(N) / Discussion(N) / Responses / Replies / Newsletter / Subscribe / Follow us / Trending / Popular / Top Stories / AI Summary / AI Digest / Hot / New / Top
+
+**英文網頁 link/button 文字慣用語**（`NOISE_LINK_TEXT_RE`）：View original / Read the full article / Back to top / Show more / Load more / Learn more / Get the app / Download app / Open in app / Subscribe / Follow / Like / Share / Repost / Reply / Comment / Save / Bookmark / Sign up / Log in / Clap / Join our newsletter / Follow us on Twitter / Subscribe to our newsletter / N hours ago / N minutes ago
+
+### 主文內所有 interactive button 一律清除（無保留）
+
+Reader mode 定位為「純閱讀」——**所有** `<button>` / `[role="button"]` / `<input type="button|submit|reset">` 一律 hide，不看 class、不看文字、不受 `PRESERVE_SEL` 保護（figure/summary/figcaption/blockquote 內的 expand/zoom/play 按鈕也清）。規則 `hideInsideArticleAllButtons` 獨立於 NOISE_LINK_TEXT_RE / NOISE_KEYWORD_RE，對所有 interactive button 無條件 hide——包含分享 / 訂閱 / 追蹤 / 讚 / 收藏 / 播放 / 展開 / 任何 CTA。`<a>` 連結不屬此規則範圍（保留主文內超連結 / 引用 / 人名 wiki 連結），僅由 NOISE_LINK_TEXT_RE 對特定 CTA 文字匹配清除。
 - `share`、`social`（配合結構判斷，避免誤殺有意義的 share 圖示）
-- `comment`、`comments`、`discussion`、`disqus`（跨站 CMS 留言區 anchor 慣例：Substack `#discussion`、WordPress `.comments-page`、Disqus `#disqus_thread`、Ghost `#comments`）
+- `comment`、`comments`、`discussion`、`discuss`（動詞詞根覆蓋 udn `.discuss-board` 類）、`disqus`（跨站 CMS 留言區 anchor 慣例：Substack `#discussion`、WordPress `.comments-page`、Disqus `#disqus_thread`、Ghost `#comments`）
 
 **這不是站點特判**：這些字詞是跨站通用的 CSS 命名習慣，在 Business Weekly、Medium、紐約時報、Substack 上都會命中對應區塊。實作時如果發現某個 keyword 容易誤殺，再逐條評估調整。
 

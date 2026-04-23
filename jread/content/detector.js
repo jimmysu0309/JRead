@@ -261,11 +261,18 @@
   }
 
   function getCanonicalTitle() {
+    // og:title 與 document.title 都常含站名尾綴（「文章 | 作者 | 站名」或
+    // 「文章 – 站名」）；取 `|` / `–` / `—` 加空格分隔後的首段。避免 h1
+    // 僅寫純標題、而 og 加了站名尾綴，使 titleMatches 的 60% 長度比較
+    // 誤判 false（line today 實測：og 47 chars / h1 27 chars，比值 57% <
+    // 60% 門檻漏網——改取 og 首段後 og 等於 h1，直接 match）。
     const og = normalizeTitle(
       document.querySelector('meta[property="og:title"]')?.content || ''
     );
-    if (og.length >= 4) return og;
-    // document.title 常含站名尾綴（"文章 – 站名"），只取首段
+    if (og.length >= 4) {
+      const ogHead = og.split(/\s+[–—|]\s+/)[0];
+      return ogHead.length >= 4 ? ogHead : og;
+    }
     const t = normalizeTitle(document.title || '');
     const head = t.split(/\s+[–—|]\s+/)[0];
     return head.length >= 4 ? head : t;
@@ -312,12 +319,16 @@
   }
 
   // promoteForTitle hop 上限：合理場景中 post-title 是 articleEl 的兄弟
-  // （WordPress post-title + post-content 同級）或 articleEl 祖父的兄弟
-  // （WordPress 的 section > article 結構），不超過 2 跳。不加上限時若
-  // heuristic 選錯 anchor（例如 upmedia 國際版 heuristic 誤選 `.row`），
+  // （WordPress post-title + post-content 同級）、祖父的兄弟（WordPress 的
+  // section > article 結構）或 SPA 框架多層 styled-component wrapper 分隔
+  // article 與 h1（line today Next.js 實測：article / h1 common ancestor
+  // 需從 article 爬 3 hops 到達 `div.swipe-back`），不超過 3 跳。不加上限時
+  // 若 heuristic 選錯 anchor（例如 upmedia 國際版 heuristic 誤選 `.row`），
   // promote 會一路往上找到含 h1 的共同 parent、最慘升到 body/#wrapper，
-  // 把整頁 chrome 納入主文 scope。
-  const PROMOTE_MAX_HOPS = 2;
+  // 把整頁 chrome 納入主文 scope。v0.7.3 放寬 2→3：對 line today 修標題漏掉；
+  // upmedia 的 heuristic 誤選已由 modal signal 排除 + textLen bonus 前置
+  // 防止（不再進 promote 路徑），3 hops 仍比到 body/#wrapper 安全。
+  const PROMOTE_MAX_HOPS = 3;
 
   function promoteForTitle(articleEl) {
     const target = getCanonicalTitle();

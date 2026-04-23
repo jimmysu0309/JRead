@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.2（bugfix：detector 三層防護——modal signal 排除（ARIA / 隱藏狀態祖先鏈）+ heuristic textLen bonus + promoteForTitle hops 上限，解決 upmedia 國際版整頁被當主文 bug。115 spec 全過）
+**目前版本**：v0.7.3（bugfix 九層 + harness residual audit 升級 + 中英雜訊 heuristic 全套 + `CLAUDE.md` 8 條經驗傳承：sidebar 條件 B + float layout collapse + NOISE_KEYWORD_RE 擴充 + og:title 取首段 + PROMOTE_MAX_HOPS 2→3 + SW icon path 改絕對路徑 + cleaner heading/link text heuristic + MutationObserver articleEl subtree——chinatimes sidebar + udn 文末 5 塊雜訊 + line today 標題漏掉 + reload extension icon fetch 錯誤 + line today 文末推薦 section + AI 摘要 widget + LINE 官方帳號 CTA + 查看原始文章外連全部修好。130 spec 全過）
 
 ---
 
