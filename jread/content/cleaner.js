@@ -29,7 +29,7 @@
   // alternation 順序不影響：regex 會依 boundary `(^|[^a-z0-9])...([^a-z0-9]|$)`
   // 逐一 try。動詞詞根不會誤殺既有的形容詞 `recommended` / `sponsored` /
   // `discussion`——後者各自有自己的 alternation 先行。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|outbrain|zergnet|revcontent|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner))([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner))([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -1143,6 +1143,53 @@
     }
   }
 
+  // ---- 主文內：第三方廣告服務標識符 ------------------------------------
+  // v0.7.4 EasyList spike 結論：Jimmy 四站實測（line today / udn /
+  // chinatimes / upmedia）在 reader mode 內的廣告殘留，幾乎都指向**第三
+  // 方廣告服務的標準標識符**，而非站點自訂 class。這些標識符是跨站業界
+  // 慣例（Google Ad Manager 的 `div-gpt-ad-*` 是 GAM 官方推薦命名、
+  // Taboola 的 `trc_*` 是 Taboola 官方 widget prefix、popIn 的
+  // `_popIn_*` 是 popIn recommendation 官方 class），屬結構性通則，
+  // 不是站點特判（硬規則 3）。
+  //
+  // 為何仍要加：NOISE_KEYWORD_RE 的 markerOf 只看 class/id 是否含關鍵詞
+  // 片段，對「`div` 只有 id / 無 class」（`div-gpt-ad` 是 id prefix）
+  // 或 iframe 的 name 屬性（`google_ads_iframe_*`）無法命中；加精確
+  // selector 作為保險絲。實測命中不多（reader mode 架構已代理大部分），
+  // 但成本是 8 個 CSS selector 的 `querySelectorAll`，效能可忽略。
+  const THIRD_PARTY_AD_SEL = [
+    // Google Ad Manager / GPT（業界最大 ad server，標準命名）
+    '[id^="div-gpt-ad"]',
+    '[id^="google_ads_"]',
+    'iframe[name^="google_ads_iframe"]',
+    'iframe[id^="google_ads_iframe"]',
+    'iframe[src*="googlesyndication.com"]',
+    'iframe[src*="doubleclick.net"]',
+    // Taboola（跨站「推薦 / 相關內容」廣告平台）
+    '[class*="trc_"]',
+    '[id*="taboola"]',
+    '[class*="taboola"]',
+    // popIn Discovery（日系廣告平台，台灣新聞站常用）
+    '[class*="_popIn_"]',
+    '[id*="_popIn_"]',
+    // Outbrain（Taboola 同類競品）
+    '[class*="OUTBRAIN"]',
+    '[data-widget-id*="outbrain"]',
+    // 通用 ad container class/id prefix（跨站命名慣例，非站點特判）
+    '[id^="ad-"]', '[id^="ads-"]', '[id^="ad_"]', '[id^="ads_"]',
+    '[class^="ad-"]', '[class^="ads-"]',
+  ].join(', ');
+
+  function hideInsideArticleByThirdPartyAds(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll(THIRD_PARTY_AD_SEL)) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.contains(articleEl)) continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：inline 廣告插播文字 heuristic ---------------------------
   // 自由時報 / 聯合 / ETtoday 等台灣新聞站在主文段落中段插播「廣告（請
   // 繼續閱讀本文）」類 placeholder 短文字，無可識別 class、不成 section
@@ -1321,6 +1368,7 @@
       // 共享 hidden 標記，等同前後鏈接。
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
       hideInsideArticleByKeyword(articleEl, hidden, containers);
+      hideInsideArticleByThirdPartyAds(articleEl, hidden);
       hideInsideArticleByHeadingText(articleEl, hidden);
       hideInsideArticleByLinkText(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);
