@@ -25,6 +25,24 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 const EXT_PATH = path.join(PROJECT_ROOT, 'jread');
 const PROFILE_DIR = '/tmp/jread-pw-profile';
 const SCREENSHOT_OUT = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-viewport.png');
+const FULLPAGE_OUT = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-reader-fullpage.png');
+
+// 殘留偵測名單：reader card 內若出現這些字樣 = cleaner rule 漏網（雜訊殘留）。
+// 規則：跨站常見的「推薦 / 相關 / 社群 / CTA / 訂閱 / 留言」等非主文字樣。
+// 新增字樣請同步維護 cleaner.js 的 NOISE_*_RE regex；此清單是 forcing
+// function—— harness 每次驗收必跑、任一命中都印 WARNING。
+const NOISE_AUDIT_KEYWORDS = [
+  '更多', '相關', '其他人', '推薦', '最新', '延伸', '查看原始', '看更多', '看原文',
+  '加入', '訂閱', 'LINE 官方', 'LINE官方', '官方帳號', '粉絲專頁', '好友',
+  'AI 摘要', 'AI摘要', '網友貼文', '貼文',
+  '轉發', '留言', '建立貼文', '熱門', '繼續看下去', '貼文', '回覆',
+  '廣告', '贊助', '業配',
+  '登入', '註冊',
+  '原始文章',
+  '追蹤', '關注', '訂閱',
+  'Google新聞', 'Google 新聞', '透過',
+  '聽新聞', '聽書', '想成為', '玩問答', '拿課程', '抽獎', '免費領'
+];
 
 const URL = process.env.JREAD_URL || 'https://www.chinatalk.media/p/best-books-q1-2026';
 const FRESH = process.argv.includes('--fresh');
@@ -150,11 +168,204 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       return out;
     });
     console.log('gaps:', JSON.stringify(gaps, null, 2));
+
+    // ---- Residual audit：列出 reader card 內所有可見 heading + 連結的文字 ----
+    // 抓 reader card 內每個 visible h1-h6 + a + button + top-level section/p
+    // 的 text，檢查有沒有落在 NOISE_AUDIT_KEYWORDS 名單裡。這是 forcing
+    // function：cleaner rule 跑完若仍有雜訊可見，這裡一定報 WARNING——
+    // 避免之前「grep 沒命中 = 清乾淨」的偽陰性驗收。
+    const residual = await page.evaluate((keywords) => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      if (!art) return { error: 'no article' };
+
+      function isVisible(el) {
+        if (el.dataset && el.dataset.jreadHidden === '1') return false;
+        let cur = el;
+        while (cur) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+          const cs = window.getComputedStyle(cur);
+          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+          if (cur === document.body) break;
+          cur = cur.parentElement;
+        }
+        return true;
+      }
+
+      function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+
+      const items = [];
+      // 掃 articleEl 內所有 element，列出「自身直接 textNode 有內容 <= 60 chars」
+      // 的 element——這些是 heading / button / span / tag / meta 類短文字，
+      // 最容易是非主文雜訊。p 含長段落會被 > 60 門檻過濾掉，不會污染 outline。
+      for (const el of art.querySelectorAll('*')) {
+        if (!isVisible(el)) continue;
+        // SVG <title> / <desc> 是 accessibility 補充文字（tooltip），肉眼不
+        // 可見，audit 不列。HTML <style> / <script> 同理。
+        const tag = el.tagName;
+        const tagUpper = tag.toUpperCase();
+        if (tagUpper === 'TITLE' || tagUpper === 'DESC' || tagUpper === 'STYLE' ||
+            tagUpper === 'SCRIPT' || tagUpper === 'NOSCRIPT') continue;
+        // 只看 direct text（不抓子孫的），避免「包了主文的 wrapper」產生假 outline
+        const direct = Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent).join('');
+        const text = norm(direct);
+        if (!text || text.length > 60) continue;
+        if (text.length < 2) continue;
+        const hitKws = keywords.filter(kw => text.includes(kw));
+        items.push({
+          tag: tag,
+          text: text.slice(0, 60),
+          hitKeywords: hitKws,
+          elCls: (el.className || '').toString().slice(0, 80),
+          parents: hitKws.length > 0 ? (() => {
+            const out = [];
+            let p = el.parentElement;
+            for (let i = 0; i < 3 && p; i++) {
+              const c = ((p.className || '').toString().split(/\s+/).slice(0, 2).join('.')) || '(anon)';
+              out.push(`${p.tagName}.${c}`);
+              p = p.parentElement;
+            }
+            return out.join(' > ');
+          })() : null
+        });
+        if (items.length >= 200) break;
+      }
+
+      const warnings = items.filter(it => it.hitKeywords.length > 0);
+      return { total: items.length, warnings, items: items.slice(0, 60) };
+    }, NOISE_AUDIT_KEYWORDS);
+
+    function printAudit(label, r) {
+      console.log(`\n===== RESIDUAL AUDIT (${label}) =====`);
+      console.log(`reader card 內 visible heading/a/button 總數: ${r.total}`);
+      if (r.warnings && r.warnings.length > 0) {
+        console.log(`\n⚠️  殘留雜訊 ${r.warnings.length} 項（cleaner rule 漏網）：`);
+        for (const w of r.warnings) {
+          console.log(`   ${w.tag}.${w.elCls || '(anon)'} [${w.hitKeywords.join(', ')}] "${w.text}"`);
+          if (w.parents) console.log(`     ancestors: ${w.parents}`);
+        }
+      } else {
+        console.log('✅ 無殘留雜訊命中 NOISE_AUDIT_KEYWORDS');
+      }
+      console.log('\nvisible items outline (前 40)：');
+      if (r.items) {
+        for (const it of r.items) {
+          console.log(`   ${it.tag.padEnd(8)} "${it.text}"`);
+        }
+      }
+      console.log('==========================\n');
+    }
+    printAudit('initial, 1.2s post-toggle', residual);
+
+    // 第 2 次 audit（+3s，捕 Jimmy 回報的「文章出現後約 3 秒按鈕才注入」
+    // 時機）。LINE Today 類 SPA 站點 lazy-inject 常在 toggle 後 2-4s 發
+    // 生，這個時間點最接近使用者眼見為實的「突然跳出雜訊」瞬間。
+    await sleep(3000);
+    const residual3s = await page.evaluate((keywords) => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      if (!art) return { error: 'no article' };
+      function isVisible(el) {
+        let cur = el;
+        while (cur) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+          const cs = window.getComputedStyle(cur);
+          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+          if (cur === document.body) break;
+          cur = cur.parentElement;
+        }
+        return true;
+      }
+      function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+      const items = [];
+      // 擴掃：任何 visible a/button（含空 direct text 的 icon button），
+      // 用 textContent（整棵子樹的 text）作判定——LINE 分享這類
+      // `<a><svg/><span>分享</span></a>` 才不會漏
+      for (const btn of art.querySelectorAll('a, button, [role="button"]')) {
+        if (!isVisible(btn)) continue;
+        const text = norm(btn.textContent).slice(0, 60);
+        const cls = (btn.className || '').toString().slice(0, 60);
+        const href = btn.getAttribute ? (btn.getAttribute('href') || '') : '';
+        items.push({
+          tag: btn.tagName,
+          text: text || '(no text)',
+          cls, href: href.slice(0, 40),
+          hitKeywords: keywords.filter(kw => text.includes(kw) || cls.toLowerCase().includes(kw.toLowerCase()))
+        });
+        if (items.length >= 200) break;
+      }
+      return { total: items.length, warnings: items.filter(i => i.hitKeywords.length > 0 || /share|social|subscribe|follow/i.test(i.cls) || /line\.me|twitter|facebook|x\.com/.test(i.href)), items: items.slice(0, 60) };
+    }, NOISE_AUDIT_KEYWORDS);
+    console.log('\n===== RESIDUAL AUDIT (+3s all a/button) =====');
+    console.log(`reader card 內 visible a/button/role=button 總數: ${residual3s.total}`);
+    if (residual3s.warnings && residual3s.warnings.length > 0) {
+      console.log(`\n⚠️  殘留 a/button ${residual3s.warnings.length} 項（cleaner rule 漏網）：`);
+      for (const w of residual3s.warnings) {
+        console.log(`   ${w.tag}.${w.cls || '(anon)'} text="${w.text}" href="${w.href}" hits=[${w.hitKeywords.join(', ')}]`);
+      }
+    } else {
+      console.log('✅ 無可疑 a/button');
+    }
+    console.log('==========================\n');
+
+    // 第 2 次 audit：scroll 到底 + 等更久 (15s) 抓 lazy-load 後才注入的雜訊
+    // （SPA 站點常見留言面板 / 轉發按鈕 / 推薦文章 widget 都是延遲注入，
+    // 有些要 user scroll 到底才 API fetch）。若 MutationObserver articleEl
+    // subtree 正常工作，這時 visible outline 應與第 1 次相同。
+    // Jimmy 2026-04-23 回報 line today 留言面板 / 繼續看下去 5 筆推薦在
+    // 實機 Chrome 看到、harness 5s 卻看不到——證實 lazy-load 時機遠於 5s，
+    // 拉到 15s + scroll trigger 更接近 Jimmy 實際情境。
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await sleep(3000);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await sleep(10000);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(2000);
+    const residualDelayed = await page.evaluate((keywords) => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      if (!art) return { error: 'no article' };
+      function isVisible(el) {
+        let cur = el;
+        while (cur) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+          const cs = window.getComputedStyle(cur);
+          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+          if (cur === document.body) break;
+          cur = cur.parentElement;
+        }
+        return true;
+      }
+      function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+      const items = [];
+      for (const el of art.querySelectorAll('*')) {
+        if (!isVisible(el)) continue;
+        const tagUpper = el.tagName.toUpperCase();
+        if (tagUpper === 'TITLE' || tagUpper === 'DESC' || tagUpper === 'STYLE' ||
+            tagUpper === 'SCRIPT' || tagUpper === 'NOSCRIPT') continue;
+        const direct = Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent).join('');
+        const text = norm(direct);
+        if (!text || text.length > 60 || text.length < 2) continue;
+        items.push({
+          tag: el.tagName,
+          text: text.slice(0, 60),
+          hitKeywords: keywords.filter(kw => text.includes(kw))
+        });
+        if (items.length >= 200) break;
+      }
+      return { total: items.length, warnings: items.filter(i => i.hitKeywords.length > 0), items: items.slice(0, 60) };
+    }, NOISE_AUDIT_KEYWORDS);
+    printAudit('delayed +scroll +15s', residualDelayed);
   }
 
   fs.mkdirSync(path.dirname(SCREENSHOT_OUT), { recursive: true });
   await page.screenshot({ path: SCREENSHOT_OUT });
-  console.log('saved', SCREENSHOT_OUT);
+  console.log('saved viewport:', SCREENSHOT_OUT);
+  // Full-page 截圖：拍完整 reader card（含 scroll 下方殘留）。視窗截圖漏掉
+  // 文末雜訊的情況（之前一直踩這個坑）靠這張不再發生。
+  await page.screenshot({ path: FULLPAGE_OUT, fullPage: true });
+  console.log('saved fullpage:', FULLPAGE_OUT);
 
   if (!KEEP) await ctx.close();
   else console.log('--keep, leaving open');

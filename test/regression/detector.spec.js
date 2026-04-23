@@ -303,3 +303,133 @@ describe('detector — upmedia-intl-modal-signals（modal 偽信號 + 深層主�
     assert.strictEqual(result.strategy, 'heuristic');
   });
 });
+
+describe('detector — linetoday-ogtitle-suffix（og:title 帶三段尾綴的 promote 修法）', () => {
+  let result, window;
+  before(() => {
+    const out = loadFixtureAndRunDetector('linetoday-ogtitle-suffix.html');
+    result = out.result;
+    window = out.window;
+  });
+
+  it('偵測成功', () => {
+    assert.ok(result, '偵測應成功');
+  });
+
+  it('article 命中後 promoteForTitle 應升級到含 h1 的共同祖先（不能卡在 `<article>` 本身）', () => {
+    // forcing function：若 getCanonicalTitle 沒對 og:title 取首段，target 47
+    // chars / h1 27 chars 比值 57% < titleMatches 60% 門檻 → match 失敗、
+    // promote 不升級。spec 要求 detected.el 內必須含 h1，等同驗 promote
+    // 確實升級了。
+    const h1 = result.el.querySelector('h1');
+    assert.ok(h1, 'detected.el 必須含 h1 — og:title 取首段後 titleMatches 命中 → promote 升級');
+    assert.ok(h1.textContent.includes('台鐵新左營車站'),
+      'h1 內文必須是原站主文標題');
+  });
+
+  it('promote 升級後主文仍含 LINETODAY_MAIN_MARK 段落（沒被升級範圍遺漏）', () => {
+    assert.ok(result.el.textContent.includes('LINETODAY_MAIN_MARK'),
+      '升級後的 detected.el 必須仍包含原主文段落');
+  });
+
+  it('promote 不會升過頭到 body（PROMOTE_MAX_HOPS 限制 3 跳內合理升級）', () => {
+    assert.notStrictEqual(result.el.tagName, 'BODY',
+      'promote 不得直接升級到 body（那意味著 MAX_HOPS 失控）');
+  });
+});
+
+describe('cleaner — linetoday tail noise sections（heading text heuristic）', () => {
+  // 把 cleaner 接起來驗 heading-text rule 能清 line today 文末推薦 sections。
+  // line today SPA 站 class 全是 emotion-style hash（css-xxx），NOISE_KEYWORD_RE
+  // 無法命中；靠新 heading-text rule 找 h2/h3/h4 文字 match 跨站通用文末
+  // 推薦 section 標題字樣（延伸閱讀 / 更多相關文章 / 其他人也看 / 查看更多 /
+  // 最新消息 等），hide heading closest `<section>`。
+  const CLEANER_SRC = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
+    'utf8'
+  );
+
+  let window, detected, hidden;
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(FIXTURE_DIR, 'linetoday-ogtitle-suffix.html'), 'utf8');
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    detected = window.__JRead.detector.detect();
+    hidden = window.__JRead.cleaner.clean(detected.el);
+  });
+
+  after(() => {
+    if (window && window.__JRead && window.__JRead.cleaner) {
+      window.__JRead.cleaner.restore(hidden);
+    }
+  });
+
+  const tailIds = [
+    ['tail-more-related', '更多國內相關文章'],
+    ['tail-also-read', '其他人也看了'],
+    ['tail-latest-news', '最新消息'],
+    ['tail-see-more', '查看更多自由電子報'],
+    ['tail-ai-summary', '網友貼文AI摘要']
+  ];
+
+  for (const [id, heading] of tailIds) {
+    it(`文末 section #${id}（heading「${heading}」）必須被 heading text heuristic hide`, () => {
+      const sec = window.document.getElementById(id);
+      assert.ok(sec, `fixture 應含 section#${id}`);
+      assert.strictEqual(sec.dataset.jreadHidden, '1',
+        `heading「${heading}」符合 NOISE_HEADING_TEXT_RE、其 closest('section, aside') 必須被 hide`);
+    });
+  }
+
+  it('「查看原始文章」link（class ltcp-link，無 heading）必須被 link-text heuristic hide', () => {
+    // text「查看原始文章」6 chars，match NOISE_LINK_TEXT_RE。該 <a> 是
+    // swipe-back 的 direct descendant、沒被 <p> / <div> 包住，target 只
+    // hide a 本身。
+    const a = window.document.getElementById('tail-view-original');
+    assert.ok(a, 'fixture 應含 #tail-view-original 連結');
+    assert.strictEqual(a.dataset.jreadHidden, '1',
+      'a text「查看原始文章」符合 NOISE_LINK_TEXT_RE 應被 hide');
+  });
+
+  it('主文內 LINE 官方帳號訂閱 CTA（<p><a>）必須被 link-text heuristic hide 整段 p', () => {
+    // text「點開加入自由電子報LINE官方帳號，新聞脈動隨時掌握！」命中
+    // `加入.{0,10}(LINE|官方帳號)` alternation。a 文字占 p 文字 100%
+    // → 應 hide 整個 <p>。
+    const p = window.document.getElementById('cta-line-subscribe');
+    assert.ok(p, 'fixture 應含 #cta-line-subscribe CTA 段落');
+    assert.strictEqual(p.dataset.jreadHidden, '1',
+      'a 文字占 <p> 100%，命中 NOISE_LINK_TEXT_RE 應 hide 整個 <p>');
+  });
+
+  it('主文段落（LINETODAY_MAIN_MARK）保留不被 hide', () => {
+    const mainP = Array.from(window.document.querySelectorAll('p')).find(
+      p => p.textContent.includes('LINETODAY_MAIN_MARK'));
+    assert.ok(mainP, 'fixture 應含 LINETODAY_MAIN_MARK 段落');
+    assert.notStrictEqual(mainP.dataset.jreadHidden, '1',
+      '主文段落不得被 heading-text rule 誤殺');
+  });
+
+  it('動態 append 到 articleEl 內的「其他人也看了」section 會被 MutationObserver 攔截 hide（SPA lazy-load 場景）', async () => {
+    // 模擬 LINE Today 類 SPA：clean() 跑完之後，站點 JS 才 lazy-load 注入
+    // 推薦 section 到 articleEl 內（div.swipe-back）。舊 observer 只看主文
+    // 祖先鏈、articleEl 內部新 append 被 isRelated 當 legit 跳過——漏網。
+    // 新 observer 對 articleEl 內部 append 跑雜訊特徵檢查（heading text /
+    // keyword），命中才 hide。
+    const lazyInject = window.document.createElement('section');
+    lazyInject.id = 'lazy-injected-suggest';
+    lazyInject.className = 'moduleContainer css-abc123'; // emotion-hash class
+    lazyInject.innerHTML = '<h2>其他人也看了</h2><ul><li><a href="/x">測試連結</a></li></ul>';
+    detected.el.appendChild(lazyInject);
+
+    // 等 MutationObserver callback 跑完（microtask）
+    await new Promise(r => setTimeout(r, 0));
+
+    const sec = window.document.getElementById('lazy-injected-suggest');
+    assert.strictEqual(sec.dataset.jreadHidden, '1',
+      '動態 append 的「其他人也看了」section 必須被 observer 攔截 hide');
+  });
+});

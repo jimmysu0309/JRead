@@ -51,7 +51,18 @@
 
 **第一層：jsdom regression**（`npm test`）——驗邏輯正確、API 結構、可逆性。DOM attribute、CSS 字串內容、還原流程等。跑得快（< 1s）、不需瀏覽器。
 
-**第二層：Playwright harness**（`npm run debug` 或 `node tools/debug-harness.js`）——驗真實 Chrome 行為。用 Playwright 內建 Chromium + `launchPersistentContext` 載入 `jread/` 為 unpacked extension，開啟目標頁、透過 SW `chrome.tabs.sendMessage` 觸發閱讀模式，讀 DOM 副作用（`data-jread-active` / injected `<style>` / `getBoundingClientRect`）、算元素間 gap、截圖到 `.playwright-mcp/jread-viewport.png`。Claude 讀 stdout log + 用 Read tool 看截圖即可**自驗**視覺結果，**不用請 Jimmy 貼 console 或截圖**。
+**第二層：Playwright harness**（`npm run debug` 或 `node tools/debug-harness.js`）——驗真實 Chrome 行為。用 Playwright 內建 Chromium + `launchPersistentContext` 載入 `jread/` 為 unpacked extension，開啟目標頁、透過 SW `chrome.tabs.sendMessage` 觸發閱讀模式，讀 DOM 副作用（`data-jread-active` / injected `<style>` / `getBoundingClientRect`）、算元素間 gap、截圖 `.playwright-mcp/jread-viewport.png`（viewport 第一屏）+ `.playwright-mcp/jread-reader-fullpage.png`（整個 reader card）。Claude 讀 stdout log + 用 Read tool 看截圖即可**自驗**視覺結果，**不用請 Jimmy 貼 console 或截圖**。
+
+### Harness residual audit（硬性驗收——禁止偽陰性驗收）
+
+**動 cleaner / detector 類 rule 後的 harness 驗收**必須用 residual audit mode——`tools/debug-harness.js` 會在 post-toggle 後印出：
+1. reader card 內所有 visible h1-h6 / a / button / span / figcaption 的 direct text outline（前 60 項，過濾 SVG `<title>` / `<script>` 等肉眼不可見 tag）
+2. 命中 `NOISE_AUDIT_KEYWORDS` 的⚠️ warning 清單（含 parent class，方便辨識 DOM 結構）
+3. 初始 1.2s 後 + delayed 5s 後**兩次 audit**（捕捉 SPA 站晚到的 lazy-load 注入）
+
+**禁止僅用 grep 特定 keyword 判定「清乾淨」** —— 那是**偽陰性驗收**（grep 沒命中 ≠ 不在，可能是 harness 沒 dump 該段 DOM）。殘留雜訊必須由 `RESIDUAL AUDIT` 產生 `✅ 無殘留雜訊` 標示，且 visible outline 無明顯非主文內容，才算驗收過。
+
+Jimmy 連續回報「內文以下殘留」的歷史教訓（chinatimes sidebar / udn 延伸閱讀 / line today 「其他人也看」+「網友AI摘要」+「訂閱」+「廣告（請繼續）」+「贊助本文章」+「Google新聞」+「追蹤中時新聞網」+「聽新聞」+「要聞 breadcrumb」）都是舊 harness 只看 `gaps` / grep 少數 keyword 判定，實際雜訊在 visible outline 裡長期躲過驗收。residual audit 是這個教訓的 forcing function，保留用。
 
 完整流程與常見坑見 `docs/CHROME_EXTENSION_DEBUG.md`。
 
@@ -69,6 +80,60 @@
 7. probe 腳本用完就刪（一次性），commit 只留 extension code + fixture + spec
 
 **錯誤順序的代價**：若順序是「改 code → npm test 過 → 才跑 harness → 發現真實 DOM 跟 fixture 不一致」，等於要重改一次。2026-04-21 Stratechery 修 detector 就踩過這個坑——jsdom fixture 裡「多分支懲罰」規則看似夠用，真實頁面卻因 `div.wp-site-blocks`（整站 wrapper）後代 p 數太多而贏過真主文，得重寫成 Readability-style bubble-up。
+
+### v0.7.3 整輪 cleaner 大量修法累積的教訓（2026-04-23，chinatimes + udn + line today 三站反覆驗收）
+
+**硬教訓一：Playwright harness 的 lazy-load 速度 ≠ 使用者實機 Chrome**
+LINE Today 類 SPA 站點，留言面板 / 推薦 widget 是 API 異步注入。Playwright Chromium 在 bot detection 或 CSP 下**根本沒 load** 這些 widget，但 Jimmy 實機 Chrome 看得到。我反覆「harness audit 無 warning」判定清乾淨、Jimmy 反覆「看！還有」—— 因為 harness 當下 DOM 根本沒那些 node。對策：harness audit 必須 `scrollTo(0, document.body.scrollHeight)` 兩次 + 等 15s 才做第二次 audit，逼 lazy-load 跑完；即便如此仍可能抓不到（比如需要 user interaction）。遇到「Jimmy 看到 / 我看不到」時，**相信 Jimmy 的截圖，別信 harness silence**。
+
+**硬教訓二：NOISE_KEYWORD_RE 只掃 CONTAINER_SEL、`<button>` 漏網**
+`CONTAINER_SEL = 'div, section, aside, iframe, form, nav, header, footer'`——`<button>` 不在。但 button 的 class 常含 `subscribe / follow / donation / share / repost` 等 keyword（典型 CTA button 命名），漏掃。對策：`hideInsideArticleByKeyword` 另掃一輪 `articleEl.querySelectorAll('button')`，直接對 button tag 做 keyword match。
+
+**硬教訓三：heading text rule 掃 h2-h4 不夠，要掃 div/span**
+Next.js / emotion-style SPA 站點（LINE Today 代表）把 section header 做成 `<div>` / `<span>`（不用 semantic heading tag）。「貼文 (166)」「熱門」「最新」「繼續看下去」都是 div/span。對策：heading rule 同時掃 `div, span` 但限制 direct-text length <= 20（避免誤殺主文段落）；`textContent` 對 heading tag 用、direct textNode 對 div/span 用（不抓子孫）。
+
+**硬教訓四：heading rule 只找 `closest('section, aside')` 對 div-only 站失靈**
+line today 整棵留言面板全是 div，`closest` 返 null 就放棄 hide—— 但這些 div 確實是雜訊。對策：fallback 升級到 heading 所在 articleEl 的 direct child sub-branch，**但該 sub-branch 不含 >= 100 chars 的主文 p 才 hide**。這條「含主文長段落才保護」guard 是 chinatimes「也許您會感興趣」h4 深埋 column-wrapper 的鉤子——拿掉會誤殺主文。
+
+**硬教訓五：留言面板用「相對時間戳 count」辨識最穩**
+留言/社群 widget 跨站結構特徵：每則留言一個相對時間戳（「2 小時前」/「3 分鐘前」/「hours ago」）。主文作者資訊最多 1 個。`hideInsideArticleCommentPanels` 用 `/\d+\s*(分鐘前|小時前|天前|週前|個月前|年前|hours? ago|minutes? ago|days? ago|weeks? ago)/g` 數配額 >= 3 判定 panel，配合「含主文長 p 保護」避免誤殺。這個結構特徵跨 LINE Today / Facebook / Twitter / Reddit / Disqus / Medium 都通用。
+
+**硬教訓六：WYSIWYG 文字 heuristic 比 class heuristic 更 portable**
+SPA 站 class 全是 emotion hash（`css-1pq3e9u` 等），**class-based keyword 完全失效**。只能靠**文字 heuristic**：
+- `NOISE_HEADING_TEXT_RE`：heading 文字慣用語（延伸閱讀 / 相關新聞 / 更多文章 / 其他人也看 / 最新消息 / 繼續看下去 / AI 摘要 / 網友貼文 等）
+- `NOISE_LINK_TEXT_RE`：連結/按鈕文字（查看原始文章 / 加入 LINE 官方帳號 / 訂閱 / 追蹤 / 建立貼文 / 轉發 / 留言 等）
+- `NOISE_INLINE_AD_TEXT_RE`：內文插播（廣告（請繼續閱讀本文） / AD（please continue）等）
+- `relative time regex`：留言/社群面板
+
+新站點若又出現 class hash、先加文字 heuristic 最快見效；遇到語意 class（`breadcrumb` / `audio-player` / `postListing` / `reposted`）再補 NOISE_KEYWORD_RE。**動詞詞根 + 形容詞變體都要加**：`recommend` vs `recommended` / `sponsor` vs `sponsored` / `discuss` vs `discussion` / `promote` vs `promotion` / `donate` vs `donation` —— 只加形容詞會漏動詞命名的 class（本輪三站都踩過）。
+
+**硬教訓七：harness 驗收禁止「grep STDOUT 判定無命中 = 清乾淨」**
+舊 harness 只 grep PAGE log / SW log 等 STDOUT 內容，但 reader card 內的 DOM text 根本沒被 dump 出來—— grep 沒命中只代表 harness 沒 print，不代表實際不在。**偽陰性驗收是本輪最大的時間浪費**（反覆「確認清乾淨」後被 Jimmy 截圖打臉 5+ 輪）。對策已實作：`debug-harness.js` 的 `RESIDUAL AUDIT` 直接遍歷 `[data-jread-active]` 的 visible element、dump outline + warning，**reader card 實際可見 text** 才是驗收基準。
+
+**硬教訓八：中文 / 全形字元 regex 邊界與 case sensitivity**
+NOISE_KEYWORD_RE 用 `/i` flag（camelCase class 如 `postListing` 能被 `postlisting` alternation 命中）；中文字沒 case 問題但注意**全形 vs 半形括號**（「廣告（請繼續」/「廣告(請繼續」），NOISE_INLINE_AD_TEXT_RE 用 `[（(]` character class 兩種都吃。SVG `<title>` 的 `.tagName` 是小寫（SVG element 保留原 case）、HTML element 大寫；audit filter 用 `.toUpperCase()` 統一比較。
+
+**硬教訓十一：delayed lazy-inject（toggle 後 N 秒才注入）+ 遞迴 checkDynamicNoise 陷阱**
+Jimmy 2026-04-23 回報 udn LINE 分享按鈕「reader mode 啟動後約 3 秒才出現」。這是典型 SPA 站 delayed lazy-inject：
+1. content script 在 document_idle 跑 cleaner.clean() 時、按鈕尚未注入
+2. 2-4 秒後原站 JS 透過 API 拉社群 widget 注入進 articleEl
+3. MutationObserver 攔到 addedNodes 但**舊版 checkDynamicNoise 只檢查 node 自己的 class keyword + node 內的 h2-h4 heading**，漏掉「wrapper 本身無 keyword、內部 button/a 才有 keyword」的情境
+修法：`checkDynamicNoise` 加兩條：
+- **遞迴 `node.querySelectorAll('button, [role="button"], input[type=button|submit|reset]')` 全 hide**（Jimmy 硬規則：所有 interactive button 一律清，不看 class）
+- **遞迴 `node.querySelectorAll('a, button')` 逐一跑 `shouldHideByKeyword`**，class 命中 noise keyword 的直接 hide（即使 wrapper 本身無 keyword）
+搭配 `hide()` 用 inline `!important`（第十教訓）—— 即使原站後續 JS 再用 stylesheet `display: flex !important` 試圖重顯示也贏不過 inline !important。兩條合體對 delayed lazy-inject 才有效。
+harness 限制提醒：Playwright Chromium 的 lazy-inject 時序可能跟 Jimmy 實機 Chrome 不同步，「我 audit 看不到」不代表「Jimmy 看不到」——修法要靠**邏輯完整性**（MutationObserver subtree + 遞迴 check + inline !important 三者齊備）保證，不能靠「harness 無 warning」判定。遇到「Jimmy 看到 / 我看不到」的差異直接相信 Jimmy 截圖。
+
+**硬教訓十：`hide()` 必須用 inline `!important`，不能靠 stylesheet `!important`**
+原本 `el.style.display = 'none'`（inline 無 priority）+ styler 注入 stylesheet `[data-jread-hidden="1"] { display: none !important }`—— 看似穩妥，但 **CSS specificity 仍有勝負**。原站若有 `aside.article-content__social { display: flex !important }` (specificity 0,2,1)，會贏過 jread stylesheet `[data-jread-hidden="1"]` (specificity 0,1,0)。兩邊都 `!important` 時，specificity 高的勝——**原站贏**、被 hide 的元素重新顯示。
+修法：`hide()` 改成 `el.style.setProperty('display', 'none', 'important')`——inline !important 是 CSS 優先級最高層（高於任何 stylesheet `!important`），沒有任何 stylesheet rule 能打敗它。restore() 時用 `removeProperty('display')` + 還原原始 `prevDisplayPriority`（原本 inline 若有 `!important` 也要還原）。
+2026-04-23 udn 的 LINE 分享按鈕實測：祖先 `aside.article-content__social` 已被 cleaner hide（`data-jread-hidden="1"`）+ stylesheet rule 設 display:none !important，但 Jimmy 實機 reload 後按鈕仍顯示。probe 看到 aside 的 `computedDisplay: "none"` 但祖先的 specificity 鬥爭在某些 DOM 層級可能失效；用 inline !important 保底最穩。
+
+**硬教訓九：reader mode「純閱讀」定位下所有 button 一律清（無保留）**
+Jimmy 明確表示：分享 / 訂閱 / 追蹤 / 讚 / 收藏 / 播放 / 展開 / 任何 CTA 等**所有** interactive button，reader mode 下都不需要。不要設「保留常用按鈕」這類 heuristic；`hideInsideArticleAllButtons` 對 `<button>` / `[role="button"]` / `<input type="button|submit|reset">` **無條件 hide**，不看 class、不看 text、不受 `PRESERVE_SEL`（figure/summary/figcaption/blockquote）保護——figure 內的 zoom 按鈕也清。
+`<a>` 不屬此 rule（連結是主文引用/參考的一部分，全清會破壞閱讀體驗），僅 NOISE_LINK_TEXT_RE 對 CTA 文字匹配清特定外連/訂閱 `<a>`。
+`hideInsideArticleActionRows` / `hideInsideArticleButtonClusters` 的「不 hide 外層 wrapper」保護是為了**保留作者/日期 meta**（避免把 byline+button group 整塊砍），不是為了保留 button 本身——這條保護仍保留；新 rule 清掉 wrapper 內的 button，作者日期留下。
+新站 debug 時若看到使用者回報「button 沒清」**不需要考慮保留**——直接加新 rule 的 scope 或讓現有 rule 更激進。使用者**想要的是閱讀內容，不是互動功能**。
 
 ### 什麼時候還需要 Jimmy 手動 Chrome reload
 

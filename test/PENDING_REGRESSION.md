@@ -18,7 +18,7 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
-## [2026-04-22] detector textLen bonus / promote MAX_HOPS 無 jsdom forcing function
+## [2026-04-22] detector textLen bonus 無 jsdom forcing function
 
 - 觸發頁面：https://www.upmedia.mg/tw/international/headlines/256941
 - 症狀：reader mode 把整頁 #wrapper 當主文，top bar / header / 右欄推薦
@@ -29,25 +29,22 @@
       inline/computed `display:none` 祖先鏈 skip signal
   (B) heuristic 加 `textLen/200 cap 10 * (1-ld)` bonus，讓長文字低
       連結密度主文贏過短文字 UI chrome
-  (C) `promoteForTitle` 加 MAX_HOPS=2 上限，防止選錯 anchor 時一路
-      升到 body/#wrapper
-- 已補的 spec：`detector.spec.js` 的 upmedia-intl-modal-signals 4 條
-  （fixture 用 `aria-hidden="true"` 觸發 A 的 ARIA 路徑）。Sanity check
-  驗過：關掉 (A) 會造成 2 spec fail，forcing function 成立
+  (C) ~~`promoteForTitle` 加 MAX_HOPS 上限~~（v0.7.3 已 forcing function
+      化，見 `linetoday-ogtitle-suffix.html` fixture——3 層 wrapper 分支
+      結構驗 MAX_HOPS=3 必要性，revert 成 2 會讓 spec fail）
+- 已補的 spec：
+  - `detector.spec.js` 的 upmedia-intl-modal-signals 4 條 驗 (A)
+  - `detector.spec.js` 的 linetoday-ogtitle-suffix 4 條 驗 (C) `PROMOTE_MAX_HOPS=3`
 - 未補 spec 原因：
   (B) **textLen bonus**：若 (A) 擋住 modal signal，主文本身的 raw 已夠贏
       UI chrome，jsdom fixture 下無 bonus 也選對；要 forcing function 就
       得關 (A) 再驗 (B)，但 spec 一次只能測一個 path。harness 已在真實
       upmedia (stylesheet-only modal，A 的 ARIA 支路失效、靠 computed
       style) 實測 (B) 的貢獻
-  (C) **MAX_HOPS**：同理，(A) 生效後 heuristic 選對主文，promote 從主文
-      的 h1 在自己 child 內、沒兄弟，根本不 promote，MAX_HOPS 用不上。
-      要 forcing function 得構造「heuristic 選錯、h1 在遠祖兄弟分支」
-      的 fixture——但那等於複製 upmedia 結構 + 關掉 (A)，太人工
-- 驗證方式：(B)(C) 由 harness 對真實站實測；任一條被 revert 都會在
-  upmedia 國際版重現整頁被當主文 bug
+- 驗證方式：(B) 由 harness 對真實站實測；revert 會在 upmedia 國際版
+  重現整頁被當主文 bug
 - 責任人/目標日期：Jimmy，下次導入真 Chrome e2e（Playwright harness 的
-  regression 版）時把這三條 defense 個別 forcing function 化
+  regression 版）時把 (B) defense forcing function 化
 
 ## [2026-04-21] service-worker importScripts 相對路徑解析錯誤
 
@@ -93,11 +90,17 @@
   `SET_ACTIVE_ICON` → `chrome.action.setIcon({tabId, path: ACTIVE|IDLE})`；
   (b) `tabs.onUpdated` status=loading → 重置為 IDLE；(c) content main.js
   的 enterReaderMode / exitReaderMode 結尾發 `SET_ACTIVE_ICON` 訊息
+- v0.7.3 修正：ICONS_ACTIVE / ICONS_IDLE path 必須用 `/` 開頭的絕對路徑
+  （`'/assets/icons/...'`），不能用 relative `'assets/icons/...'`——SW
+  relative path 是相對 SW 所在目錄（`/background/`）解析，reload extension
+  時 `tabs.onUpdated` handler 對每個既有 tab 呼叫 setIcon 全部 fail
+  （`Failed to fetch`）。與 v0.4.1 importScripts 相對路徑 bug 同類型
 - 未補 spec 原因：純 wire-up——依賴 `chrome.action.setIcon` 與
   `chrome.tabs.onUpdated` 兩個 Chrome API、在真實 extension 環境才驗得
   到效果（Node / jsdom 無 action API）。三條 wire 的邏輯都是單行 `if /
   dispatch`，沒有可測的演算法分支
 - 驗證方式：Jimmy 手動 reload extension，觀察工具列 icon 在
   進入/離開閱讀模式時切彩色 ↔ 灰、切換分頁時 icon 狀態跟著 tab 走、
-  重新載入頁面時 icon 回到灰
+  重新載入頁面時 icon 回到灰；開 `chrome://extensions/` 確認沒有
+  `Failed to set icon ... : Failed to fetch` 錯誤
 - 責任人/目標日期：Jimmy，下次導入 Puppeteer/Playwright e2e 時一併補

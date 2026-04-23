@@ -524,6 +524,133 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 <aside> tag sidebar（條件 B，chinatimes 類）：即使 aside textLen > main × 50%（hot-news 列表 10 條超過主文一半）仍應 hide——條件 B 不檢查 textLen 比值，僅靠「aside tag + rectH > 400」絕對結構特徵命中', () => {
+    // 2026-04-23 chinatimes.com/realtimenews/20260423000917-260410 實測：
+    // article.article-box > column-wrapper > [header, column-left(main),
+    // aside.column-right(hot-news), column-left(secondary)]。harness 時序
+    // race 下 aside textLen 1389、main column-left textLen 2457，aside/main
+    // 比值 0.565，超過原 SIDEBAR_ASIDE_TEXT_RATIO=0.5 門檻漏網，reader
+    // mode 下整塊財經熱門新聞 sidebar 殘留。修法：拿掉 condition B 的
+    // textLen 比值檢查，只保留「aside tag + rectH > 400」。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'chinatimes-aside-high-text-ratio.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+
+    const aside = w.document.querySelector('aside.column-right');
+    const mainCol = w.document.querySelector('div.column-left.main');
+    assert.ok(aside && mainCol);
+
+    // stub rect：aside 高 1349（> 400 命中），main 高 1500
+    stubRect(aside, { top: 100, width: 300, height: 1349 });
+    stubRect(mainCol, { top: 100, width: 600, height: 1500 });
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // forcing function：若 cleaner 恢復「s.textLen < main.textLen * 0.5」
+      // 檢查，chinatimes 這類 aside textLen 超過 main × 50% 的 case 會漏網。
+      const mainLen = (mainCol.textContent || '').replace(/\s+/g, ' ').trim().length;
+      const asideLen = (aside.textContent || '').replace(/\s+/g, ' ').trim().length;
+      assert.ok(asideLen > mainLen * 0.5,
+        `fixture 設計要求 aside textLen (${asideLen}) > main × 50% (${mainLen * 0.5}) 才能 forcing——否則修法失效也會過`);
+
+      // 核心斷言 1：aside.column-right 被 hide（新條件 B 只看 rectH > 400）
+      assert.strictEqual(aside.dataset.jreadHidden, '1',
+        'aside tag + rectH > 400 應被條件 B 命中 hide，不管 textLen 相對比值');
+
+      // 核心斷言 2：主欄 column-left.main 保留
+      assert.notStrictEqual(mainCol.dataset.jreadHidden, '1',
+        '主欄不得被 hide');
+      assert.ok(mainCol.textContent.includes('CHINATIMES_MAIN_MARK'));
+
+      // 核心斷言：文末「也許您會感興趣」第三方推薦 widget section 被 keyword
+      // heuristic 命中 hide（class `.dable-recommend .popin-recommend
+      // .taboola-recommend` 三個都是動詞詞根 `recommend`，舊名單只有
+      // `recommended` 形容詞會漏網）。
+      const recommendSection = w.document.querySelector('section.dable-recommend');
+      assert.ok(recommendSection, 'fixture 應含 dable-recommend section');
+      assert.strictEqual(recommendSection.dataset.jreadHidden, '1',
+        'section.dable-recommend.popin-recommend.taboola-recommend 必須被 NOISE_KEYWORD_RE 命中 hide——cleaner 關鍵字名單需含 `recommend` 動詞詞根，不只 `recommended` 形容詞');
+
+      // 核心斷言 3：aside 被 hide 後 column-wrapper 觸發 float-layout collapse
+      // —— column-left 身上的 `float: left` 必須被清除，否則主欄仍維持
+      // 308px 固定寬、右側空白殘留（本次 bug 的核心症狀）。
+      assert.strictEqual(mainCol.style.getPropertyPriority('float'), 'important',
+        'float-layout collapse 應對 visible column-left 強制 float: none !important');
+      assert.strictEqual(mainCol.style.float, 'none',
+        'column-left 的 float 必須被 reset 成 none，才能撐滿整個 column-wrapper');
+      assert.strictEqual(mainCol.style.getPropertyPriority('width'), 'important',
+        'column-left 的 width 必須 auto !important（配合 float: none 後撐滿 container）');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+
+      // 核心斷言 4：restore 後 float / width 必須還原（本 fixture 原 inline
+      // `float: left; width: 308px;` 應該保留不被吃掉）
+      assert.strictEqual(mainCol.style.float, 'left',
+        'restore 後 column-left 的 float 必須還原成原 inline 值 left');
+      assert.strictEqual(mainCol.style.width, '308px',
+        'restore 後 column-left 的 width 必須還原成原 inline 值 308px');
+    }
+  });
+
+  it('udn 類 wrapper-promoted article 後方 5 個雜訊 sibling sections 被 NOISE_KEYWORD_RE 擴充名單命中 hide：more-news / related-news / sponsor / discuss / taboola', () => {
+    // 2026-04-23 udn.com/news/story/124844/9460037 實測：detector promote 到
+    // section.article-content__wrapper（納入 h1 + cover figure），其下 5 個
+    // sibling sections（article 之後）靠主文內 keyword heuristic 清。既有
+    // 名單缺 more-news / related-news / sponsor / discuss / taboola，全部漏網。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'udn-article-siblings-noise.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 article / wrapper');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 逐一驗每個 sibling section 都被 keyword hide
+      const more = w.document.querySelector('section.more-news');
+      const related = w.document.querySelector('section.related-news');
+      const taboola = w.document.querySelector('#taboola-below-article-thumbnails');
+      const sponsor = w.document.querySelector('section.sponsor-ads');
+      const discuss = w.document.querySelector('section.discuss-board');
+
+      assert.strictEqual(more.dataset.jreadHidden, '1',
+        'section.more-news 必須被 NOISE_KEYWORD_RE 的 `more-news` alternation 命中 hide（udn 延伸閱讀）');
+      assert.strictEqual(related.dataset.jreadHidden, '1',
+        'section.related-news 必須被 `related-news` alternation 命中 hide（原 `related-articles` 不 match `related-news`）');
+      assert.strictEqual(taboola.dataset.jreadHidden, '1',
+        'div#taboola-below-article-thumbnails 必須被 `taboola` 命中 hide');
+      assert.strictEqual(sponsor.dataset.jreadHidden, '1',
+        'section.sponsor-ads 必須被 `sponsor` 動詞詞根命中 hide（既有 `sponsored` 不 match `sponsor-ads`）');
+      assert.strictEqual(discuss.dataset.jreadHidden, '1',
+        'section.discuss-board 必須被 `discuss` 動詞詞根命中 hide（既有 `discussion` 不 match `discuss-board`）');
+
+      // 主文保留（UDN_MAIN_MARK 段落所在的 <p> 不得被 hide）
+      const mainP = Array.from(w.document.querySelectorAll('p')).find(
+        p => p.textContent.includes('UDN_MAIN_MARK'));
+      assert.ok(mainP, 'fixture 應含 UDN_MAIN_MARK 段落');
+      assert.notStrictEqual(mainP.dataset.jreadHidden, '1',
+        '主文段落不得被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 button cluster（現代 CSS-in-JS 把 button 用 display:contents 包層層 div 的 BBC 類 pattern）→ 專門 hide 該 cluster，保留作者/日期', () => {
     // BBC 文章頭部 byline row 實測：cSUzvu 內 3 個 button（Share/Save/
     // Add as preferred on Google）每個都被 div + display:contents 層層包

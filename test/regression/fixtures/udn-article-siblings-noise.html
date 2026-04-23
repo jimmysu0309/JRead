@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>聯合新聞網 — article 內雜訊 sections (keyword heuristic forcing)</title>
+  <meta property="og:title" content="賴總統出訪行程暫緩">
+</head>
+<body>
+  <!-- 2026-04-23 udn.com/news/story/124844/9460037 實測：detector 選到
+       section.article-content__wrapper，內含 article 後跟 5 個雜訊 sections：
+         - section.more-news.article-section.context-box        延伸閱讀
+         - section.related-news.more-news.context-box           相關新聞
+         - div#taboola-below-article-thumbnails                 Taboola widget
+         - section.sponsor-ads.article-section.context-box      贊助廣告
+         - section.discuss-board.article-section.context-box    留言板
+       這些 section 以 class/id 字樣命名雜訊 family，舊 NOISE_KEYWORD_RE 名單
+       全數漏網：`related-articles` 不 match `related-news`；`sponsored` 名詞
+       不 match `sponsor-ads`；`discussion` 名詞不 match `discuss-board`；
+       `more-news` / `taboola` 未收入。通則修法：alternation 擴充
+         - related-(articles|news|posts|stories)
+         - more-(news|stories|posts|articles)
+         - sponsor (動詞詞根)
+         - discuss (動詞詞根)
+         - taboola
+
+       Forcing function 設計：
+       - 所有雜訊 sections 放在 `<article>` 內（`hideAncestorSiblings` 只動
+         祖兄、不動後代）
+       - 主文 textLen < 500，避免觸發 `hideInsideArticleSidebarColumns`（該
+         rule 要求 main >= 500 才進 inner loop）
+       - sibling sections 含純文字段落（非 link-heavy），condA 的 ld > 0.5
+         也無機會觸發
+       → 只有主文內 keyword heuristic 能 hide 這些 section。退回舊名單會讓
+         所有 5 條 assertion 同時 fail。 -->
+  <article class="article-content">
+    <p>UDN_MAIN_MARK 總統府今（23）日證實，賴清德總統原定下週啟程的中美洲友邦訪問行程將暫緩，改期至六月再啟程。</p>
+    <p>陸委會下午表示對岸沒有資格為台灣定義兩岸現實；外交部補充六月改期細節將於下月初對外說明。</p>
+
+    <section class="more-news article-section context-box">
+      <header><h2 id="extends">延伸閱讀</h2></header>
+      <p>這段純文字段落刻意不放 `<a>` 連結，讓 link density 接近零，確保 sidebar-column rule 的 condA（ld > 0.5）不觸發。同時主文文字量已控制在 500 字門檻以下，sidebar-column rule 的 main 門檻也不過，整個 rule 對此 fixture 不動作。這樣 `.more-news` 只能靠 NOISE_KEYWORD_RE 的 `more-news` alternation 命中 hide，是純 keyword forcing。</p>
+    </section>
+
+    <section class="related-news more-news context-box article-section">
+      <header><h2>相關新聞</h2></header>
+      <p>這段同上——純文字、無連結、不依賴 sidebar-column rule。驗 related-news keyword 能 match（舊名單 `related-articles` 不 match `related-news`）。</p>
+    </section>
+
+    <div id="taboola-below-article-thumbnails" class="trc_related_container">
+      <p>Taboola widget 預留位，由第三方 JS 注入推薦內容。id 含 `taboola` 關鍵字，驗 NOISE_KEYWORD_RE 新加的 `taboola` 詞。</p>
+    </div>
+
+    <section class="sponsor-ads article-section context-box">
+      <header><h2>贊助廣告</h2></header>
+      <p>▶孩子教育金不夠？這幾種方法很多人不知道 PR（業配純文字連結；舊名單 `sponsored` 形容詞不 match `sponsor-ads`，需要 `sponsor` 詞根）。</p>
+    </section>
+
+    <section class="discuss-board article-section context-box">
+      <header><h2>留言板</h2></header>
+      <p>留言區純文字（實際會有 textarea + 送出按鈕；舊名單 `discussion` 名詞不 match `discuss-board`，需要 `discuss` 詞根）。</p>
+    </section>
+  </article>
+</body>
+</html>

@@ -24,6 +24,253 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.3**——bugfix 八層（cleaner / detector / SW / heuristic 全套）+ harness residual audit 升級（Jimmy 2026-04-23 回報 chinatimes 即時新聞 /realtimenews/20260423000917-260410）。
+
+症狀鏈：
+1. reader mode 開啟後右欄「財經熱門新聞」10 條編號列表整塊殘留（aside.column-right）
+2. aside 清掉後 column-left 仍鎖 308px 寬、右側 300px 空白沒還給主文
+3. 文末「也許您會感興趣」第三方推薦 widget 堆（popIn / dable.io / Taboola）整塊殘留
+
+根因鏈三層：
+1. **sidebar 規則 false negative**——`hideInsideArticleSidebarColumns` 條件 B 對 `<aside>` tag 的判定是 `textLen < main × 0.5 + rectH > 400`。harness 時序 race 下主文 column-left textLen 約 2457（相關閱讀未 lazy-load 完時主文文字偏低）、aside textLen 1389（10 條 hot-news + section header），aside/main 比值 0.565 打在保守 0.5 門檻上方漏網，條件 B 整個 early return 沒進 rectH 檢查。
+2. **float layout 沒 collapse**——aside 即便被清掉，`.column-wrapper.clear-fix` 內是傳統 float + 固定 width 多欄 layout（column-left: float:left width:308px + aside: float:right width:300px），而 `collapseGridWithHiddenCell` 只處理 grid / flex-row、不處理 float，主文 column-left 仍被鎖 308px 寬、右側 300px 空白殘留。
+3. **keyword 名單缺 base form**——文末 `<section class="dable-recommend popin-recommend taboola-recommend">`（含「也許您會感興趣」+ popIn Discovery / dable.io / Taboola 三個第三方推薦 widget iframe）的 class 命名全用 `recommend` 動詞詞根，但 NOISE_KEYWORD_RE 只有 `recommended` 形容詞（覆蓋 `#recommended-article` 類），`recommend` 結尾的 class 全部漏網。
+
+修法（結構性通則、非 hostname / class 特判）：
+- **(A) 條件 B 簡化**：cleaner.js `hideInsideArticleSidebarColumns` 條件 B 拿掉 `s.textLen < main.textLen * 0.5` 檢查，只保留「`<aside>` tag + rectH > 400」的絕對結構特徵。aside 是 HTML5 語意「次要內容」tag；rectH > 400 已排除 pull-quote（通常 < 300px 簡單結構）；textLen 相對比值只會把這類邊緣場景當 false negative 放過。Engadget 的條件 B 命中原本也不依賴 textLen ratio（aside 被廣告 placeholder 稀釋 textLen 接近 0），兼容保留。
+- **(B) float layout collapse**：`collapseGridWithHiddenCell` 新增 float layout 觸發條件——container 非 grid / flex-row 但 direct children 有 `computed float !== 'none'` 且存在 hidden sibling 時，走既有 hidden-sibling 分支。child loop 加 `float: none !important` 清 float，配合既有的 `width: auto` + `max-width: none` 讓 visible float children 回到自然 block 流、撐滿 container。`prevFloat` / `prevFloatPriority` 記入 collapsed，restore 時復原。
+- **(C) NOISE_KEYWORD_RE 全面擴充跨 CMS 雜訊 family keyword**：alternation 加入以下跨站點 CMS 命名慣例 family——
+  - `recommend`（動詞詞根）涵蓋 `.dable-recommend` / `.popin-recommend` / `.taboola-recommend` 第三方推薦 widget
+  - `more-(news|stories|posts|articles)` 涵蓋 udn `section.more-news`（「延伸閱讀」section）+ 聯合 / 中時 / 各種新聞 CMS 的相應命名
+  - `related-(articles|news|posts|stories)` 擴大既有 `related-articles` alternation，涵蓋 udn `section.related-news`（「相關新聞」）
+  - `sponsor`（動詞詞根）涵蓋 udn `section.sponsor-ads` / `sponsor-links`——既有 `sponsored` 形容詞不 match `sponsor-ads`
+  - `discuss`（動詞詞根）涵蓋 udn `section.discuss-board` / `discuss-form`——既有 `discussion` 名詞不 match `discuss-board`
+  - `taboola` 涵蓋 Taboola 第三方 widget `taboola-below-article-thumbnails` 等跨站 embed 慣例命名
+
+  regex boundary 設計（`(^|[^a-z0-9])...([^a-z0-9]|$)`）保證動詞詞根不誤殺既有形容詞—alternation 會依序 try，`recommended` / `sponsored` / `discussion` 各自有自己的 alternation 先行。SPEC.md 的 keyword 名單對應更新。
+
+Regression spec：
+- `test/regression/fixtures/chinatimes-aside-high-text-ratio.html` 三層 forcing：(1) main textLen 593（> 500 門檻）+ aside textLen 339（> main × 50% = 296.5 邊界），驗條件 B 簡化；(2) column-left / aside inline `float: left/right`，驗 float collapse 對 visible column-left 強制 `float: none !important` 且 restore 還原；(3) `<section class="dable-recommend popin-recommend taboola-recommend">` 驗 recommend keyword 命中 hide。
+- `test/regression/fixtures/udn-article-siblings-noise.html` 5 條 forcing：article 內含雜訊 sections（more-news / related-news / taboola / sponsor-ads / discuss-board），主文 textLen 刻意 < 500 讓 sidebar-column rule 整個 skip，sibling 純文字無連結讓 link-density rule 也不觸發——keyword heuristic 成為唯一命中路徑。退回舊 alternation 任一條 assertion 即 fail。
+
+sanity check 所有修法都驗過（任一 revert 都 fail）。harness 對真實站實測：chinatimes aside hide + column-wrapper collapse + 文末 recommend widget 清除；udn 文末 5 塊雜訊全部清除。117 spec 全過。
+
+---
+
+同一版本另加 line today 標題漏掉 + scroll 鎖修法（第 5 層，Jimmy 2026-04-23 回報 today.line.me/tw/v3/article/l2G8KyL）：
+
+症狀：reader mode 下（1）文章標題沒納入卡片；（2）無法往下捲動（user 感受）。
+
+根因鏈：
+1. **title matches 60% 門檻漏網**：line today 的 og:title 帶三段尾綴「台鐵...為 | 自由電子報 | LINE TODAY」（47 chars）；h1 僅寫純標題 27 chars。`titleMatches` 要求 text.length >= target.length × 0.6 → 27 / 47 = 57% < 60% → match 失敗、`promoteForTitle` 沒升級、h1 不在主文 scope。
+2. **PROMOTE_MAX_HOPS=2 不夠**：real line today 結構下 article 跟 h1 分別在 `div.swipe-back` 下的兩個獨立 wrapper 分支（article 爬 3 hops 到共同祖先 swipe-back），MAX_HOPS=2 在 hop 0/1 找不到含 matching h1 的兄弟、return 原 article。
+3. **「scroll 鎖」是連動副作用**：promote 失敗 → 主文僅剩 article.entityBodyModule textLen 501（極短）→ reader card 內容少 → document scrollHeight 1409、可 scroll 空間僅 500px，user 感覺滾兩下就到底。實測 touchAction / overscrollBehavior / body listeners 皆正常，無 JS 鎖。
+
+修法（結構性通則、非 hostname / class 特判）：
+- **(1) `getCanonicalTitle` 對 og:title 取首段**：既有邏輯只對 document.title 分隔 `\s+[–—|]\s+` 取首段，og:title 分支直接整段回傳。line today 類「文章 | 媒體 | 品牌」三段尾綴是跨站 meta title 慣例（udn / 聯合 / BBC / NYT 類似），對 og:title 也取首段才穩健。
+- **(2) `PROMOTE_MAX_HOPS` 2→3**：line today Next.js SPA styled-component 多層 wrapper 要 3 hops 才到共同祖先。upmedia 的 heuristic 誤選（v0.7.2 根因）已由 modal signal 排除 + textLen bonus 前置防止進入 promote 路徑，3 hops 仍比升到 body / #wrapper 安全。PENDING_REGRESSION 原「MAX_HOPS 無 forcing function」條目現被 line today fixture 覆蓋（實作 3 層 wrapper 分支重現真實站結構）。
+
+Regression spec：`test/regression/fixtures/linetoday-ogtitle-suffix.html` 雙 forcing：og:title 有三段尾綴 + article / h1 共同祖先距 article 3 hops。sanity check 任一 revert（getCanonicalTitle 不取首段 / MAX_HOPS 退回 2）都會讓 spec fail。harness 對真實 line today 實測：post-toggle article 升級到 div.swipe-back，textLen 1119（含 h1 + cover + meta），documentHeight 從 1409 膨脹到 5553，scroll 空間恢復。121 spec 全過。
+
+---
+
+同一版本另加 service-worker icon path 修法（第 6 層，Jimmy 2026-04-23 reload extension 時 `chrome://extensions/` 跳出錯誤通知實測）：
+
+症狀：Jimmy reload extension 後 `chrome://extensions/` 通知中心冒出多條 `Uncaught (in promise) Error: Failed to set icon 'assets/icons/icon-16-disabled.png': Failed to fetch`，每個既有 tab 各一條。
+
+根因：service-worker.js 的 `ICONS_ACTIVE` / `ICONS_IDLE` 用 relative path `'assets/icons/icon-*.png'`。SW 的 relative path 是相對 SW 所在目錄（`/background/`）而非 extension root → Chrome 嘗試 fetch `/background/assets/icons/...` 檔案不存在。reload extension 時 `tabs.onUpdated` 對每個既有 tab 觸發、handler 呼叫 `chrome.action.setIcon({ tabId, path: ICONS_IDLE })` 全部 fail。與 v0.4.1 importScripts 路徑 bug 完全同類型（見 PENDING_REGRESSION.md 該條 lore）。
+
+修法：`ICONS_ACTIVE` / `ICONS_IDLE` path 改為 `/` 開頭絕對路徑 `'/assets/icons/...'`——Chrome 解析成 extension root 相對，能正確 fetch。
+
+路徑 B（依 CLAUDE.md 硬規則 4）：純 SW wire-up + 實際 setIcon 呼叫依賴真實 Chrome action API，jsdom 無 chrome.action，無法寫 automated spec。已在 PENDING_REGRESSION 的「service-worker icon swap wire-up 未補 spec」條目補上此路徑修正 lore + 驗證方式（reload 後 chrome://extensions/ 不得有 Failed to fetch 錯誤）。
+
+---
+
+同一版本另加 cleaner heading text heuristic（第 7 層，Jimmy 2026-04-23 回報 line today 內文以下「更多國內相關文章 / 其他人也看了 / 最新消息 / 查看更多」等 section 殘留）。
+
+症狀：line today reader mode 下，detector 雖然 promote 到 `div.swipe-back` 正確含標題與主文，但 swipe-back 內還有 4 個以上文末 section（`section.moduleContainer`，heading 分別為「更多國內相關文章」「其他人也看了」「最新消息」「查看更多自由電子報」+ 各自 ul 列表）全部殘留在 reader card 尾部。
+
+根因：LINE Today 是 Next.js SPA、全部 class 走 emotion-style hash（`css-xxx`）—— 這些 hash 對 reader 來說**毫無語意資訊**，NOISE_KEYWORD_RE（跨 CMS class 命名）完全無法命中。而 hideAncestorSiblings 只處理主文 scope 外的祖兄，這些 section 在 articleEl（swipe-back）scope 內就失靈。
+
+修法（結構性通則、非站點特判）：cleaner 新增 `hideInsideArticleByHeadingText`——
+- 掃 articleEl 內所有 h2/h3/h4
+- 文字長度 <= 20（主文副標通常不會剛好命中規則字）
+- 匹配跨站通用文末推薦 / 相關 / 列表 section 標題字樣 regex：
+  - 延伸閱讀 / 相關新聞 / 相關文章 / 相關報導
+  - 推薦閱讀 / 推薦文章
+  - 最新消息 / 最新新聞
+  - 更多相關 / 更多xx文章 / 更多xx新聞 / 更多xx報導
+  - 看更多 / 查看更多
+  - 其他人也看 / 你可能（也）（喜歡 | 感興趣）
+  - 也許您（會）（感興趣 | 喜歡）
+- 命中後 hide heading 的 `closest('section, aside')`——精確命中 section-level 容器。**不** hide articleEl 的 direct child，因為 chinatimes fixture 類結構下「也許您會感興趣」h4 深層埋在 column-wrapper 內，direct-child 式 hide 會連同主文一起砍
+- 若 heading 沒有 section/aside 祖先，放棄 hide（conservative，避免 over-hide）
+
+通則性討論：這是**內容 heuristic**而非 class heuristic——LINE Today / Next.js / React SPA 類站點放棄了語意化 class 命名，唯一能跨站穩定 match 的信號就是 heading 文字本身。跨站通用性高：這些字樣是中文新聞 / 部落格 / Medium 中文化等站點的標準文末 section 命名，用十幾年了都沒變過。
+
+保護：原有主文副標（例「案情分析」「後續發展」「法律評析」）不會 match 這組字樣；規則執行後不誤殺 chinatimes「財經熱門新聞」aside 的 column-wrapper 主文容器（已從 regex 移除「財經熱門」後實證）、不誤殺 fixture 主文（LINETODAY_MAIN_MARK 段落驗證保留）。
+
+Regression spec：`test/regression/fixtures/linetoday-ogtitle-suffix.html` 擴展加 4 個文末 section（`#tail-more-related` / `#tail-also-read` / `#tail-latest-news` / `#tail-see-more`），spec 逐一驗 `dataset.jreadHidden === '1'`。sanity check 驗過：`clean()` 內拿掉 `hideInsideArticleByHeadingText` 呼叫 → 4 條 tail spec 同時 fail。harness 對真實 line today 實測：reader card 文末乾淨，無「更多 / 相關 / 其他人 / 查看更多」字樣殘留。126 spec 全過。
+
+**同層 follow-up**——Jimmy 再次回報 line today「其他人也看了」section 仍殘留（文末的一個特定 moduleContainer）。probe 發現這塊在 `cleaner.clean()` 跑完之後才 lazy-load inject 進 articleEl（`div.swipe-back`）—— 舊 `startWatchingDynamicAppends` 的 MutationObserver 只觀察主文祖先鏈，且 articleEl 內部新節點被 isRelated guard 當 legit update 放行漏網。
+
+擴展修法（通則）：
+- MutationObserver 新增 `observe(articleEl, { childList: true, subtree: true })`——接 SPA 晚到的 lazy-load widget
+- 新 helper `checkDynamicNoise`：對 articleEl 內新 appended node 跑雜訊特徵判定——
+  - class/id 命中 NOISE_KEYWORD_RE（既有 CMS 命名慣例） → hide 整個 node
+  - 節點本身或 descendant 含 h2/h3/h4 文字命中 NOISE_HEADING_TEXT_RE → hide heading 的 closest `<section>/<aside>`
+  - 不動 legit 主文 update（SPA 段落追加 / typo 修正 / lazy 圖片 load）——只匹配雜訊特徵才 hide
+- 祖先鏈上 append 維持舊邏輯（直接 remove 整塊）
+
+Regression spec：detector.spec.js 的 linetoday describe 新增 async spec，模擬 clean() 後 `articleEl.appendChild(lazyInject)`（含「其他人也看了」h2），await MutationObserver microtask，斷言 `lazy-injected-suggest` 被 hide。sanity check：拿掉 `mo.observe(articleEl, { subtree: true })` spec fail。127 spec 全過。
+
+**同層 follow-up #2**——Jimmy 再次回報 line today 內文以下仍殘留三塊：「網友貼文AI摘要」卡片 + 主文內「點開加入自由電子報LINE官方帳號」訂閱 CTA + 「查看原始文章」外連按鈕。
+
+根因分別：
+- AI 摘要 section 的 h2 是「網友貼文AI摘要」（8 chars），原 NOISE_HEADING_TEXT_RE 無此字樣
+- LINE 官方帳號 CTA 是主文 `<article>` 內的 `<p><a>`，class 是 emotion-hash、a 文字「點開加入自由電子報LINE官方帳號，新聞脈動隨時掌握！」不含任何既有 keyword
+- 「查看原始文章」是 `a.ltcp-link`（LINE Today Content Provider link），text 只 6 chars 沒 heading、class `ltcp-link` 是站點特定
+
+擴展修法：
+- **(A) NOISE_HEADING_TEXT_RE 擴充**：新增 `網友貼文.{0,4}AI` / `AI.{0,4}(摘要|總結|整理|生成)` / `.{0,6}AI摘要` alternation，涵蓋 LINE Today / 各種 AI 摘要 widget 的 heading 命名
+- **(B) 新增 `hideInsideArticleByLinkText`**：對主文內 `<a>` 元素的 text content 跑 `NOISE_LINK_TEXT_RE` 匹配——
+  - `查看原始文章 / 看原文 / 回到原文 / 閱讀原文 / 原文連結`（新聞聚合站外連回原發布站的慣用按鈕）
+  - `加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)` / `(LINE|官方帳號).{0,10}(加入|訂閱)`（LINE / FB 粉專訂閱 CTA）
+  - `訂閱.{0,4}(電子報|本報|我們|粉絲團)`
+  - 命中後 hide 目標：若 a 的 parent 是 p/div 且 a 文字占 parent 80%+，hide 整個 parent（整段 CTA 清掉）；否則只 hide a 本身（不誤殺內文中的順帶 link）
+
+通則性：兩條都是跨站文字 heuristic，不依賴 class/id——LINE Today / Yahoo News / Google News / 各種台灣新聞站的文末 CTA + 外連按鈕文字用語都在這 family 內。
+
+Regression spec：fixture 擴展加 `#tail-ai-summary`（AI 摘要 section）+ `#tail-view-original`（ltcp-link `<a>`）+ `#cta-line-subscribe`（`<article>` 內 p><a CTA）三個節點，spec 逐一驗 `dataset.jreadHidden === '1'`。sanity check：拿掉 `hideInsideArticleByLinkText` 呼叫 → 查看原始文章 + LINE CTA 兩條 spec 同時 fail。harness 對真實 line today 實測：文末 AI 摘要 + 「查看原始文章」+ 主文 LINE 官方帳號 CTA 全部清除。130 spec 全過。
+
+---
+
+**同層 follow-up #3**——Jimmy 連續回報殘留雜訊（「轉發 / 貼文 / 建立貼文 / 繼續看下去 / 訂閱 button / 廣告（請繼續閱讀）/ 贊助本文章 / 透過【Google新聞】/ 追蹤中時新聞網 / 聽新聞 / 要聞 breadcrumb / 🎮想成為超強飼主...」等）且要求「檢討並改進未來」。
+
+**根因檢討**：舊 harness 驗收只看 `gap` log（相鄰 block 垂直 gap > 40px）+ grep 少數 hardcoded keyword（STDOUT 搜尋）。問題：
+- viewport 截圖只拍第一屏，文末雜訊要 scroll 才看到，截圖根本照不出來
+- gap log 只看頭 8 個 gap，文末多數 hidden 後 gap 消失，規則不觸發
+- grep 只比對 stdout，但 stdout 主要是 PAGE log / SW log，reader card 內真實 DOM text 沒被 dump 出來 → **grep 沒命中 ≠ 不在**（偽陰性驗收）
+
+**改進修法**：
+- **`tools/debug-harness.js` 新增 residual audit**：post-toggle 後兩次 audit（1.2s + 5s，捕捉 SPA lazy-load），列出 reader card 內所有 visible element（過濾 SVG `<title>` / `<script>` / `<style>` / `<desc>` / `<noscript>` 等不可見 tag）的 direct text outline，與 `NOISE_AUDIT_KEYWORDS` 名單比對、命中者顯示 ⚠️ warning（含 tag、elCls、hit keywords、parent chain）
+- 加 full-page 截圖 `.playwright-mcp/jread-reader-fullpage.png` 取代單張 viewport
+- **CLAUDE.md 新增硬規則**：動 cleaner/detector 後禁止僅用 grep 驗收，必須跑 residual audit 看 `✅ 無殘留` 才算過
+
+**cleaner rule 擴充**（用新 audit 掃三站抓出漏網）：
+- NOISE_KEYWORD_RE 擴 `promote` / `donation` / `donate` / `breadcrumb` / `audio-player`：chinatimes `div.google-news-promote` / `div.donation-container` + udn `nav.article-content__breadcrumb` / `div.audio-player`
+- `hideInsideArticleByKeyword` 另掃 `<button>`（原本只掃 CONTAINER_SEL）：line today `button.subscribe-button` 的 class 含 `subscribe`，但 button 不在 CONTAINER_SEL 漏網
+- NOISE_LINK_TEXT_RE 擴 `^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中)$`：單字 CTA button（line today 訂閱按鈕 text 含 CSS 多-state wrapper「已訂閱訂閱訂閱」整體不 match 但 class 走 keyword rule）
+- `hideInsideArticleByLinkText` query 擴 `a, button`（原本只 `a`）
+- 新 rule `hideInsideArticleByInlineAdText`：span / p / div 的 direct textNode（不抓子孫）match `^(廣告|AD|業配|促銷|贊助|廣編)\s*[（(]\s*.{0,20}?(請繼續|繼續|接下來|以下內容|下方)` → hide 該 element。自由時報 / 聯合 / ETtoday 主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
+- 新 rule `hideInsideArticleFontTags`：主文內所有 `<font>` tag hide——HTML4 老式 tag 現代幾乎只在 inline 廣告 / PR 推廣用（udn 實測：`<font><a>🎮想成為超強飼主？玩問答遊戲拿課程金</a></font>` inline PR）
+
+驗收：三站 audit（`line today` / `chinatimes` / `udn`）全部 `✅ 無殘留雜訊`——line today reader card 只剩主標 + 發行 + 時間 + 圖說 4 項；chinatimes 剩主標/作者/時間/主文段落/tag 連結；udn 剩主標/時間/作者/主文段落。130 spec 全過（原 spec 保留，新增 rule 對既有 fixture 無 regression）。
+
+---
+
+**同層 follow-up #4**——Jimmy 回報 line today 實機 Chrome 下仍看到「轉發 (N) / 貼文 (N) / 熱門 / 最新 / 建立貼文 / 留言作者+時間+讚數 / 繼續看下去 / 5 筆推薦」—— harness audit 無 warning、但 Jimmy 截圖明確有。根因：Playwright bundled Chromium 在 bot detection 或 API CSP 限制下這些 widget 沒 inject 進 DOM，audit 以「harness 看不到」當「使用者看不到」偽陰性驗收。
+
+改進修法：
+- **harness audit 加 scroll trigger + 15s wait**：post-toggle 後 `scrollTo(0, scrollHeight)` 兩次 + sleep 15s，接近 Jimmy 實機載入速度
+- **heading rule scope 擴 div/span**：LINE Today 用 `div`/`span` 做 header（「貼文 (166)」「熱門」「最新」），原本只掃 h2-h4 漏網
+- **heading rule fallback**：若 heading 無 `<section>/<aside>` 祖先，fallback 升級到 articleEl 的 direct child sub-branch——但只在該 sub-branch **不含 >= 100 chars 主文 p** 才 hide（chinatimes「也許您會感興趣」h4 在 column-wrapper 深層、column-wrapper 自身含主文 p 保護成立）
+- **NOISE_HEADING_TEXT_RE 擴**：`繼續看下去` / `^貼文\s*\(\d+\)?$` / `^(熱門|最新)$`
+- **NOISE_LINK_TEXT_RE 擴**：單字互動 CTA（`建立貼文 / 轉發 / 轉貼 / 留言 / 分享 / 收藏 / 檢舉 / 回覆 / 讚 / 已讚` 等）+ `^轉發\s*\(\d+\)$` / `^貼文\s*\(\d+\)$`
+- **NOISE_KEYWORD_RE 擴**：`postlisting / post-listing / thread / threads / reposted / repost`（LINE Today `div.postListing` 留言面板 wrapper + `a.reposted` 轉發 widget CMS class）
+- **新 rule `hideInsideArticleCommentPanels`**：articleEl 的 descendant div/section 含 ≥ 3 個相對時間戳（`\d+\s*(分鐘前|小時前|天前|週前|個月前|年前|hours ago|...)`）且**不含 >= 300 chars 主文 p** → 視為 comment/social panel hide。通則結構：留言面板每則留言一個相對時間戳，主文作者資訊最多 1 個
+
+驗收：audit 升級後 initial → delayed（+scroll + 15s）兩次 report；line today / chinatimes / udn 三站 audit 全 `✅ 無殘留雜訊`；line today 從原本 7 項 warning + 24 visible items → 1 項 warning + 5 items → 0 warning + 4 items（每層修完再跑 audit）。130 spec 全過。
+
+---
+
+**同層 follow-up #5（英文國際化擴充 + 經驗傳承）**——Jimmy 確認中文清光後要求「關鍵字是否足夠包含清除英文網頁的垃圾？加入」+「這輪經驗寫入文件傳承」。
+
+**英文 regex 擴充**（`NOISE_HEADING_TEXT_RE` / `NOISE_LINK_TEXT_RE` / `NOISE_INLINE_AD_TEXT_RE` / `NOISE_KEYWORD_RE`）：
+
+- `NOISE_HEADING_TEXT_RE` 加：`Related (Articles|...)`、`Recommended for you`、`More from X`、`You may/might also like/enjoy/be interested`、`Read more/next/also`、`Up next`、`Continue reading`、`See also`、`Further reading`、`Editor's/Editor’s Picks`（支援 ASCII + curly apostrophe）、`Sponsored content/stories/posts`、`Comments(N)`、`Discussion(N)`、`Responses(N)`、`Replies(N)`、`Newsletter`、`Subscribe`、`Follow us`、`Trending`、`Popular`、`Top Stories`、`AI Summary/Digest/Overview/Takeaways`、`Hot/New/Top`
+- `NOISE_LINK_TEXT_RE` 加：`View original/source`、`Read (the) original/full article/more/next/on X`、`Back to top/article/original`、`Visit original/source/site`、`Show more/less`、`Load more`、`See more`、`Learn more`、`Get started/the app`、`Download (the) app`、`Open in app`、`Subscribe(d)`、`Follow(ing)/Unfollow`、`Like(d)/Dislike`、`Share/Repost/Retweet`、`Reply/Comment/Save(d)/Bookmark(ed)`、`Report/Flag`、`Join(ed)/Sign in/up/out`、`Log in/out`、`Register`、`Create (an) account`、`New post/Post/Reblog`、`Upvote/Downvote`、`Clap/Applaud`、`Join our newsletter/mailing list/community/telegram/discord/slack`、`Follow us on Twitter/X/Facebook/Instagram/TikTok/YouTube/LinkedIn/Threads/Line/Google News`、`Subscribe to our newsletter/channel/podcast/feed/email`、`N (minutes/hours/days/weeks/months/years) ago`（相對時間戳英文版）
+- `NOISE_INLINE_AD_TEXT_RE` 加：`advertisement/sponsored/promotion/advertorial` + 中英分隔符 + `continue/please/below/article continues/story continues/more below`
+- `NOISE_KEYWORD_RE` 加：`subscription`、`sign-up/signin/sign-in/login/register`、`recommendation`、`read-next/up-next`、`outbrain/zergnet/revcontent`（Taboola 同類第三方推薦 widget）、`callout`、`social-(bar|links|icons|share|media)`、`comment-form`、`livefyre/hyvor`（Disqus 同類留言平台）、`follow/follow-us/following`、`cookie-(banner|notice|consent|bar|message)`、`gdpr`、`consent`、`privacy-(banner|notice)`、`newsletter-(signup|form|cta)`、`email-(signup|capture|subscribe)`、`pagination/page-nav/pager/page-navigation`、`author-(bio|card|info|box|meta|widget)`、`about-author`、`popup/overlay/modal-(content|dialog|box|wrapper)`、`floating-(bar|cta|widget)`、`sticky-(bar|cta|banner|subscribe)`、`toast/snackbar/notification-(bar|banner)`
+
+regex 設計原則：
+- heading 用 anchor `^...$` 避免誤殺主文段落內含這些字的句子（`Discussion of methods in research`、`A Popular Science Article` 等 NOT match）
+- 允許 0-3 個 trailing word（`Related Articles`、`More from NYT`、`Recommended for you` 都 match）
+- curly quote `'`/`’` 用 character class `['’]?` 兩種都吃
+- `/i` flag 處理 camelCase（`postListing`、`ReadMore` 等）
+
+自動化驗證：node 寫 27 條英文正向案例 + 6 條反向（主文副標）案例，全正向 ✓ + 全反向 safe（0 false positive）。三站（line today / chinatimes / udn）再跑 audit 確認英文擴充後中文仍 `✅ 無殘留雜訊`。
+
+**經驗傳承**：`CLAUDE.md` 新增「v0.7.3 整輪 cleaner 大量修法累積的教訓」8 條硬教訓 + 動詞詞根 vs 形容詞變體、SVG title filter、全形 vs 半形括號等陷阱，專供後續對話 / 新站點 debug 時參照，避免重複踩本輪十多次 audit 迭代的坑。130 spec 全過。
+
+---
+
+**同層 follow-up #6（所有 interactive button 一律清除，不保留）**——Jimmy 2026-04-23 明確要求：「規則是不是有刻意保留『分享』『訂閱』這類的按鈕？其實我不需要，包括其他按鈕都不需要」。
+
+新規則 `hideInsideArticleAllButtons`：對主文內所有 `<button>` / `[role="button"]` / `<input type="button|submit|reset">` **無條件 hide**。特點：
+- **不看 class / 不看文字 / 不設排除**（獨立於 NOISE_LINK_TEXT_RE / NOISE_KEYWORD_RE 的 text/keyword 匹配）
+- **不受 PRESERVE_SEL 保護**——figure / summary / figcaption / blockquote 內的 expand / zoom / play / 展開 / 播放 等按鈕也一律清除
+- 主文祖先 guard（`btn.contains(articleEl)`）仍保留，避免誤 hide 整個 reader card
+
+風險與取捨：極少數 code sandbox / interactive demo widget 會被一併清除，但 reader mode 本就不適合跑 interactive 操作——這是使用者明確表達的設計意圖。
+
+**其他「保留」邏輯評估後保留不動**：
+- `PRESERVE_SEL = 'summary, figure, figcaption, blockquote'`——這是**正文語意元素保留**（`<summary>` editor bullets / 主圖+說明 / 引言 blockquote），不是「保留按鈕」。新 rule 已繞過它處理 button 範圍。
+- `hideInsideArticleActionRows` 的 interactive ratio 排除 / `hideInsideArticleButtonClusters` 的 heading / 媒體排除——這是「**不 hide 外層 wrapper**」的保護（避免把 byline+button group wrapper 整塊砍，連作者日期一起丟）；外層 wrapper 保留後，新 rule 會清掉其內部 button，結果「作者/日期保留 + button 清除」——符合需求
+- 主文祖先 `contains(articleEl)` guard——結構保護（避免 hide 主文容器本身），必要保留
+
+驗收：三站 audit 全 `✅`——line today 4 items（H1 / 發行 / 時間 / FIGCAPTION）；chinatimes 16 items（H1 / 時間 / 發行 / 作者 / FIGCAPTION / 字級 label / 主文 P / tag `<a>`）；udn 8 items（H1 / TIME / 作者 / STRONG / 主文 P）。130 spec 全過（舊 spec 不驗「button 保留」故無 regression）。
+
+---
+
+**同層 follow-up #7（`<a>` 分享連結也納入 keyword 掃描）**——Jimmy 2026-04-23 回報 udn 文末仍有「LINE 分享」按鈕。
+
+probe 顯示該按鈕是 `<a class="btn btn-social btn-social--line" href="#">`（href 非 social platform URL、是純 class-based 分享 link），parent `div.social-wrapper > aside.article-content__social`。兩個祖先的 class 含 `social` 被 NOISE_KEYWORD_RE 的 `social` alternation 命中已 hide——但 Jimmy 視覺仍看到，懷疑 reload extension 時序問題或 MutationObserver 在 real Chrome 某瞬間未及時攔截。
+
+更 robust 的保險：**`hideInsideArticleByKeyword` 的額外 scope 從 `<button>` 擴到 `<button>, <a>`**，讓 class 命中 noise keyword 的 `<a>` 自己直接被 hide（不依賴祖先被 hide）。
+
+場景覆蓋：
+- `a.btn-social--line`（udn LINE 分享，class 含 `social`）
+- `a.share-facebook` / `a.social-link` / `a.comment-btn`（跨站常見 social / comment CTA `<a>`）
+- `a.subscribe-link` / `a.follow-btn`（訂閱 / 追蹤 CTA `<a>`）
+
+風險：極低——主文超連結（文章引用 / wiki 連結 / 人名 ref）的 class 命名幾乎不用 noise keyword；實際被命中的 `<a>` 幾乎都是雜訊（社群分享 / 訂閱 / 留言 / CTA / 廣告 link）。
+
+驗收：三站 audit 再跑 `✅ 無殘留雜訊`；chinatimes / line today 維持原乾淨狀態；udn 文末 LINE 分享按鈕結構已 hide。130 spec 全過。
+
+---
+
+**同層 follow-up #8（`hide()` 改 inline `!important`，解 CSS specificity 戰）**——Jimmy 2026-04-23 reload extension 後仍看到 udn LINE 分享按鈕。
+
+根因：`hide()` 原本 `el.style.display = 'none'`（inline 無 priority）+ styler 注入 stylesheet `[data-jread-hidden="1"] { display: none !important }`。CSS specificity 戰：原站若有 `aside.article-content__social { display: flex !important }`（specificity 0,2,1）**贏過** jread stylesheet `[data-jread-hidden="1"]`（specificity 0,1,0）。兩邊都 `!important`、specificity 高的勝——元素被重新顯示。
+
+修法：`hide()` 改 `el.style.setProperty('display', 'none', 'important')`——inline !important 是 CSS 優先級最高層（勝過任何 stylesheet `!important`），無 stylesheet rule 能打敗。`restore()` 用 `removeProperty('display')` + 還原 `prevDisplayPriority`（原 inline 若含 `!important` 也還原）。
+
+通則：未來任何需要強制 hide 的 rule 都走 inline `!important`，不依賴 stylesheet。`hide()` helper 改完自動影響所有 hide 呼叫場景（sidebar / dialog / keyword / heading-text / link-text / comment-panel / all-buttons 等 10+ rules 全部受惠）。
+
+風險：極低——inline !important 覆蓋任何 stylesheet；restore 時還原 inline 的 priority 保持一致。
+
+CLAUDE.md 加第 10 條硬教訓，記錄 CSS specificity 戰陷阱供未來參照。驗收：udn audit `✅ 無殘留雜訊`；130 spec 全過（無 regression）。
+
+---
+
+**同層 follow-up #9（delayed lazy-inject + checkDynamicNoise 遞迴 button/a）**——Jimmy 2026-04-23 反覆 reload 後仍看到 udn LINE 分享按鈕，並補充「reader mode 啟動後**約 3 秒**按鈕才出現」。
+
+根因：這是典型 **delayed lazy-inject** SPA pattern——
+1. content script 在 `document_idle` 跑 `cleaner.clean()` 時，分享按鈕**尚未注入** DOM
+2. 2-4 秒後原站 JS 透過 API 拉 social widget 注入進 articleEl（udn 的 `aside.article-content__social` 是晚注入的，跟我之前 pre-toggle probe 看到的 pre-inject 版本是不同 DOM node instance）
+3. MutationObserver 攔到 `addedNodes`，`checkDynamicNoise` 檢查——但**舊版只看 node 自己的 class keyword + node 內的 h2-h4 heading text**，漏了「wrapper 自己無 keyword、內部 button/a 才有 keyword」的情境
+
+修法（`checkDynamicNoise` 遞迴擴展）：
+- **一律 hide** `node.querySelectorAll('button, [role="button"], input[type="button|submit|reset"]')`（符合 Jimmy 「所有 interactive button 都不需要」硬規則，不看 class）
+- **遞迴** `node.querySelectorAll('a, button')` 逐一跑 `shouldHideByKeyword`，class 命中 noise keyword 的直接 hide
+
+搭配第 10 修法（`hide()` 用 inline `!important`）—— 即使原站後續 JS 用 stylesheet `display: flex !important` 試圖重顯示，jread 的 inline !important 永遠贏。兩條合體才能徹底治住 delayed lazy-inject。
+
+harness 驗證限制提醒：Playwright Chromium 的 lazy-inject 時序可能跟 Jimmy 實機 Chrome 不同步—— udn audit 三階段（+1.2s / +3s / +15s + scroll）全 `✅`，但本地 harness 不保證重現 Jimmy 實機看到的瞬間。修法靠**邏輯完整性**（MutationObserver subtree + 遞迴 check + inline !important 三者齊備）保證。CLAUDE.md 加第 11 條硬教訓記錄此陷阱。
+
+驗收：130 spec 全過；udn harness audit 三階段全 `✅`。
+
 **v0.7.2**——bugfix：detector modal signal 污染 + heuristic 外殼誤選 + promote 失控（Jimmy 2026-04-22 回報上報國際版 /tw/international/headlines/256941）。
 
 症狀：reader mode 開啟後整頁 #wrapper 被當主文；top bar 站內 email、社群 icon、header logo、「快訊」列、「美伊開戰/最新/生活」分類列、右欄推薦文章列表等全部殘留。cleaner 的 outside-article 規則跳過這些元素——因為它們都是 #wrapper（article）的「後代」。

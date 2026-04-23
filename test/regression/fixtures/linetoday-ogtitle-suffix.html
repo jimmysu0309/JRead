@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <!-- 2026-04-23 today.line.me/tw/v3/article/l2G8KyL 實測：line today 的
+       og:title 帶三段式尾綴「標題 | 媒體名 | LINE TODAY」。h1 純寫主文標題
+       （不含尾綴）。舊 getCanonicalTitle 對 og:title 不做分隔處理，整個
+       47 chars 都當 target；h1 僅 27 chars，比值 57% < titleMatches 的 60%
+       門檻 → match 失敗、promoteForTitle 沒觸發、h1 沒納入主文 scope。
+
+       連帶副作用：article.entityBodyModule textLen 僅 501（主文 body 短），
+       reader mode 下整頁可 scroll 高度壓到 1409px、user 覺得「無法往下
+       捲動」。實際是 promote 沒把標題 / cover figure / meta 納入主文、卡片
+       內容少、scroll 空間自然窄。
+
+       修法：getCanonicalTitle 對 og:title 也用 `\s+[–—|]\s+` 分隔取首段（跨
+       站 meta title 尾綴 convention，既有 document.title 分支已這樣處理）。
+       取首段後 og = h1，`target === text` 直接 match、promote 升級到 h1
+       / article 的 common ancestor、標題納入主文。
+
+       forcing function 結構：article 與 h1 common ancestor 距離 ≥ 1 hop
+       （在 PROMOTE_MAX_HOPS=3 內），og:title 帶「| 站名 | 品牌」尾綴 → h1
+       長度 < og 長度 × 60%，舊邏輯 titleMatches 必 fail。新邏輯取 og 首段
+       後直接等於 h1 → match。 -->
+  <meta property="og:title" content="台鐵新左營車站男廁驚見偷拍針孔！高鐵公司證實是員工所為 | 自由電子報 | LINE TODAY">
+  <title>台鐵新左營車站男廁驚見偷拍針孔！高鐵公司證實是員工所為 | 自由電子報 | LINE TODAY</title>
+</head>
+<body>
+  <!-- real line today 結構：article 跟 h1 分別在 div.swipe-back 下不同的
+       3 層 wrapper 分支。article 爬 3 hops 才到共同祖先 div.swipe-back。
+       舊 PROMOTE_MAX_HOPS=2 在 hop 0/1 都找不到含 matching h1 的兄弟 →
+       return 原 article（不 promote）。MAX_HOPS=3 才能爬到 swipe-back、
+       檢查 h1 分支 → 升級。 -->
+  <div class="swipe-back">
+    <div class="header-branch">
+      <div>
+        <div>
+          <h1 class="header">台鐵新左營車站男廁驚見偷拍針孔！高鐵公司證實是員工所為</h1>
+        </div>
+      </div>
+    </div>
+    <div class="content-branch">
+      <div>
+        <article class="entityBodyModule">
+          <p>LINETODAY_MAIN_MARK 自由時報記者報導：高鐵公司證實台鐵新左營車站男廁被發現偷拍針孔，為高鐵員工所為。高鐵公司表示已於第一時間報警並啟動內部調查程序，涉案員工已遭停職處分。警方調閱監視器畫面後鎖定嫌疑人身分，將依違反個人資料保護法與妨害秘密罪嫌移送法辦。</p>
+          <p>高鐵公司發言人進一步說明，車站男廁所清潔與保全工作原本委外承包，本次事件涉及的員工實際上是承包清潔公司的成員，而非高鐵公司正職人員；然而由於該員工在執行職務時發生此類行為，高鐵公司仍須負起督導不周的責任，並已與承包公司協調全面檢討廁所巡檢機制。</p>
+          <p>法務部表示，類似案件若依違反個人資料保護法處理，最高可處五年以下有期徒刑，得併科新台幣一百萬元以下罰金；若以妨害秘密罪論處，則最高可處三年以下有期徒刑。警方將視蒐證結果決定移送罪嫌。</p>
+          <!-- 原站主文尾端常塞 LINE 官方帳號 CTA：整個 `<p>` 內容就是一個
+               `<a>` 訂閱連結。走 NOISE_LINK_TEXT_RE 命中 `<a>` 後、因 a
+               文字占 p 文字 100% → hide 整個 `<p>`。 -->
+          <p id="cta-line-subscribe" class="css-1itks1j">
+            <a class="css-uexnnu" href="//line.me/R/ti/p/foo">點開加入自由電子報LINE官方帳號，新聞脈動隨時掌握！</a>
+          </p>
+        </article>
+      </div>
+    </div>
+
+    <!-- AI 摘要 widget（LINE Today 實測）：section 的 class 全是 emotion-hash，
+         heading「網友貼文AI摘要」原 regex 無此字樣 → 靠擴充 regex 命中。 -->
+    <section class="moduleContainer css-p5iqxl" id="tail-ai-summary">
+      <div class="summary-card-header-area">
+        <h2 class="header">網友貼文AI摘要</h2>
+      </div>
+      <ul>
+        <li>網友對偷拍行為的厭惡</li>
+        <li>對男性受害者的社會反應</li>
+        <li>偷拍行為引發對性別的討論</li>
+      </ul>
+    </section>
+
+    <!-- 「查看原始文章」外連：class ltcp-link（LINE Today Content Provider），
+         text 6 chars 太短無 heading → 靠 NOISE_LINK_TEXT_RE 命中 `<a>` 清。 -->
+    <a class="ltcp-link css-a7rwer" href="//www.ltn.com.tw/news/x" id="tail-view-original">
+      <span class="css-1sbvd79">查看原始文章</span>
+    </a>
+
+    <!-- 文末推薦 / 相關 / 最新消息 sections：class 全是 emotion-style hash，
+         NOISE_KEYWORD_RE 無法命中，靠 heading text heuristic 清。 -->
+    <section class="moduleContainer css-j9lgwv" id="tail-more-related">
+      <div class="moduleHeader css-1m93ycy">
+        <h2 class="title header css-il0dir">更多國內相關文章</h2>
+      </div>
+      <ul>
+        <li><a href="/t/1">鹿野高台飛行傘驚魂！婦人起飛失敗墜15米 左腿開放性骨折送醫</a></li>
+        <li><a href="/t/2">銀行高層淪詐團幫兇！幫開人頭帳戶、調高轉帳額度</a></li>
+      </ul>
+    </section>
+
+    <section class="moduleContainer css-j9lgwv" id="tail-also-read">
+      <div class="moduleHeader">
+        <h2 class="title header">其他人也看了</h2>
+      </div>
+      <ul>
+        <li><a href="/t/3">亡妹遺產到手姊急拋繼承 銀行追債受阻提告</a></li>
+      </ul>
+    </section>
+
+    <section class="moduleContainer css-j9lgwv" id="tail-latest-news">
+      <div class="moduleHeader">
+        <h2 class="title header">最新消息</h2>
+      </div>
+      <ul>
+        <li><a href="/t/4">性侵殺害馬國女大生 凶手無期徒刑定讞</a></li>
+      </ul>
+    </section>
+
+    <section class="moduleContainer css-j9lgwv" id="tail-see-more">
+      <div class="moduleHeader">
+        <h2 class="title header">查看更多自由電子報</h2>
+      </div>
+      <ul>
+        <li><a href="/t/5">百萬YTR宣布離開南韓！定居越南「健康原因」</a></li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

@@ -11,12 +11,71 @@
   // ---- Keyword 名單（主文內雜訊 heuristic） -----------------------------
   // 邊界檢查：class/id 通常是 kebab-case 或 snake_case，用非字母數字作邊界，
   // 避免 sharepoint / headset 這類誤殺。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|newsletter|signup|promo|promotion|advertisement|sponsored|call-to-action|cta|related-articles|recommended|read-more|share|social|comment|comments|discussion|disqus)([^a-z0-9]|$)/i;
+  // 跨 CMS 命名慣例的雜訊 class/id keyword 名單。每組為語意 family：
+  //   paywall / subscribe / newsletter / signup：訂閱 / 付費牆
+  //   promo / promotion / advertisement / sponsor(ed) / cta / call-to-action：廣告 / 贊助
+  //     - sponsored（形容詞，覆蓋 sponsored-content 類）+ sponsor（動詞詞根，
+  //       覆蓋 udn `.sponsor-ads` / `.sponsor-links` 類——實測）
+  //   related-(articles|news|posts|stories)：相關閱讀 section family
+  //   more-(news|stories|posts|articles)：「延伸閱讀」section family（udn
+  //     `section.more-news` 實測，跨聯合 / 中時 / 各種新聞 CMS 的慣例命名）
+  //   recommend(ed) / read-more：推薦 / 更多（popIn / dable / Taboola widget 命名）
+  //   taboola：Taboola 第三方推薦 widget 的 id / class 前綴
+  //     （`taboola-below-article-thumbnails` 等跨站 embed 命名）
+  //   share / social：分享按鈕
+  //   comment(s) / discuss(ion) / disqus：留言 / 討論（udn `.discuss-board`
+  //     實測——`discussion` 名詞不 match `discuss-board`；加 `discuss` 動詞
+  //     詞根覆蓋 board / form 類 CMS module）
+  // alternation 順序不影響：regex 會依 boundary `(^|[^a-z0-9])...([^a-z0-9]|$)`
+  // 逐一 try。動詞詞根不會誤殺既有的形容詞 `recommended` / `sponsored` /
+  // `discussion`——後者各自有自己的 alternation 先行。
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|outbrain|zergnet|revcontent|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner))([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
   // 永不隱藏的保留元素 selector（即使命中 keyword 也跳過，避免 Unclutter 把 <summary> 外移的坑）
   const PRESERVE_SEL = 'summary, figure, figcaption, blockquote';
+
+  // Heading 文字 heuristic：跨站點文末列表 / 推薦 / 延伸閱讀 section 的 h2/h3
+  // 標題字樣命名極固定（中文新聞站、部落格、Medium 中文化等通用）。SPA
+  // 框架站點（LINE Today / Next.js emotion-style hash class）的 class 全無
+  // 語意命名、NOISE_KEYWORD_RE 無法命中，只能靠 heading content 匹配。
+  // 字詞 family：
+  //   延伸閱讀 / 相關新聞 / 相關文章 / 相關報導 / 推薦閱讀 / 推薦文章
+  //   熱門新聞 / 熱門文章 / 最新消息 / 最新新聞
+  //   更多相關 / 更多...文章 / 更多...新聞 / 查看更多 / 看更多
+  //   其他人也看 / 你可能也喜歡 / 也許您(會|也會)(感興趣|喜歡)
+  // 為避免誤殺主文的正當副標題（例如「案情分析」「後續發展」），要求：
+  //   - heading text 長度 <= 20 chars（推薦 section 標題通常短）
+  //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
+  // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
+  // 是 section wrapper，整塊清掉。
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成)|.{0,6}AI摘要|繼續看下去|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_MAX_LEN = 20;
+
+  // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
+  // 站在文末常塞「查看原始文章」（連回發布站）、主文中段塞「點開加入…LINE
+  // 官方帳號」（訂閱推廣）—— class 都是 emotion-style hash / 跨 SPA 命名，
+  // keyword / heading rule 都攔不到。走 `<a>` text 跨站通用慣用語匹配 hide。
+  // 字詞 family：
+  //   查看原始文章 / 看原文 / 回到原文 / 閱讀原文 / 原文連結
+  //   加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)
+  //   (LINE|官方帳號).{0,10}(加入|訂閱)
+  //   訂閱(我們|本報|電子報)
+  // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
+  // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
+  // 的 legit p 誤殺。
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_MAX_LEN = 60;
+
+  // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
+  // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
+  // 文字——單獨 span 內文、無可識別 class。keyword / heading rule 都攔不到，
+  // 走 inline text 匹配：
+  //   廣告 / AD / 業配 + 各種變體括號 + 「請繼續 / 接下來 / 以下內容」等
+  //   續文指示字樣
+  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)/i;
+  const NOISE_INLINE_AD_MAX_LEN = 40;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
   // 理由：真實世界的廣告/paywall/subscribe 區塊都是容器包裝，
@@ -79,9 +138,18 @@
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
-    hidden.push({ el, prevDisplay: el.style.display });
+    const prevDisplay = el.style.display;
+    const prevDisplayPriority = (el.style.getPropertyPriority &&
+      el.style.getPropertyPriority('display')) || '';
+    hidden.push({ el, prevDisplay, prevDisplayPriority });
     if (el.dataset) el.dataset.jreadHidden = '1';
-    el.style.display = 'none';
+    // inline `!important` —— 勝過任何 stylesheet rule（包括原站自己的
+    // `display: flex !important`）。原本 `el.style.display = 'none'`（inline
+    // 無 priority）在 stylesheet !important 戰中會輸 — udn LINE 分享按鈕
+    // 的 `aside.article-content__social` 原站規則 specificity 高於 jread
+    // 的 `[data-jread-hidden="1"] { display: none !important }`，戰勝後
+    // 按鈕重新顯示。改用 inline !important 後就完全贏過任何 stylesheet。
+    el.style.setProperty('display', 'none', 'important');
   }
 
   // ---- 任何位置：ARIA UI-chrome roles ------------------------------------
@@ -475,6 +543,133 @@
       if (!shouldHideByKeyword(el)) continue;
       hide(el, hidden);
     }
+    // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在
+    // class 命名帶 subscribe / follow / share / social / comment / sponsor 等
+    // keyword。button / a 不在 CONTAINER_SEL（會影響 action-row / button-
+    // cluster 等規則判定），但 class keyword 命中的 button / a 就是雜訊、
+    // 直接 hide。
+    //
+    // 實測場景：
+    //   - line today `button.subscribe-button`（class 含 subscribe）
+    //   - udn `a.btn btn-social btn-social--line`（LINE 分享連結，href="#"
+    //     不含 social platform URL；class 含 social 才命中）
+    //   - 各種 `a.share-facebook` / `a.social-link` / `a.comment-btn` 等
+    //
+    // 風險：主文連結（超連結 / wiki / 引用 / 人名）class 命名極少用 noise
+    // keyword，實際會命中的 `<a>` 幾乎都是雜訊。
+    for (const el of articleEl.querySelectorAll('button, a')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (!shouldHideByKeyword(el)) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：heading text heuristic ----------------------------------
+  // 跨站 SPA 類站點（LINE Today / Next.js 類 emotion-style css-hash class）
+  // 的 class 無語意，NOISE_KEYWORD_RE 無法命中文末推薦 / 相關列表 section。
+  // 靠 heading 文字 match 跨站通用的 section 標題字樣（延伸閱讀 / 相關新聞 /
+  // 更多文章 / 其他人也看 / 查看更多 等），hide 其所在的 `<section>` / `<aside>`
+  // 容器。
+  //
+  // 為何 hide `closest('section, aside')` 而非 articleEl 的 direct child：
+  // 前者精確命中「heading 所在的 section-level 容器」，只清該 section；
+  // 後者會把 articleEl 下整個 direct child（如 column-wrapper）連同主文
+  // 一起砍（chinatimes fixture 有「也許您會感興趣」h4 在 column-wrapper 的
+  // 深層後代，direct-child 式 hide 會誤殺 column-wrapper 整個主文）。
+  //
+  // 保護：
+  //   - heading text 長度 <= 20（主文副標不會這麼短剛好命中規則字）
+  //   - 只 match h2/h3/h4（h1 是主標、h5/h6 罕用為推薦 section heading）
+  //   - closest 結果為 null 時放棄 hide（conservative）
+  //   - 不 hide 主文本身、主文祖先、PRESERVE_SEL 內部
+  function hideInsideArticleByHeadingText(articleEl, hidden) {
+    // 擴掃 h2-h4 + div/span（SPA 站如 LINE Today 用 div/span 做 header
+    // 而非 semantic heading tag——「貼文 (166)」「熱門」「最新」「繼續看
+    // 下去」都是 div/span）。對 div/span 只看 direct text（不抓子孫），
+    // 且長度要 <= NOISE_HEADING_MAX_LEN，避免誤殺主文段落。
+    const semanticHeadings = Array.from(articleEl.querySelectorAll('h2, h3, h4'));
+    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span'))
+      .filter(el => {
+        const direct = Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent).join('');
+        const text = norm(direct);
+        return text && text.length <= NOISE_HEADING_MAX_LEN;
+      });
+    const headings = semanticHeadings.concat(divSpanCandidates);
+    for (const h of headings) {
+      // 對 div/span 只用 direct text（heading tag 用 textContent）
+      const isSemanticHeading = /^H[234]$/.test(h.tagName);
+      const text = isSemanticHeading
+        ? norm(h.textContent)
+        : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+      if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
+      if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
+      if (isInPreserved(h)) continue;
+      let target = h.closest('section, aside');
+      // Fallback：若沒 section/aside 祖先（SPA 類 div-only 結構），改升級到
+      // heading 所在 articleEl 的 direct child sub-branch——但僅當該 sub-
+      // branch **不含主文長段落**（無 p 的 textLen > 100）才動，避免誤殺
+      // 主文（chinatimes「也許您會感興趣」h4 在 column-wrapper 深層後代，
+      // column-wrapper 自身含主文 p > 100，保護成立）。
+      if (!target || target === articleEl || target.contains(articleEl)) {
+        let cur = h;
+        while (cur.parentElement && cur.parentElement !== articleEl) {
+          cur = cur.parentElement;
+        }
+        if (!cur.parentElement || cur === articleEl) continue;
+        // 檢查此 sub-branch 是否含主文長段落——有即跳過（保護主文）
+        let hasLongParagraph = false;
+        for (const p of cur.querySelectorAll('p')) {
+          const pText = norm(p.textContent);
+          if (pText.length >= 100) { hasLongParagraph = true; break; }
+        }
+        if (hasLongParagraph) continue;
+        target = cur;
+      }
+      if (!target) continue;
+      if (target === articleEl) continue;
+      if (!articleEl.contains(target)) continue;
+      if (target.contains(articleEl)) continue;
+      if (target.dataset && target.dataset.jreadHidden === '1') continue;
+      hide(target, hidden);
+    }
+  }
+
+  // ---- 主文內：link text heuristic（CTA / 外連 / 訂閱推廣）-----------------
+  // 對主文內 `<a>` 元素：text 命中 NOISE_LINK_TEXT_RE 則 hide。若 `<a>` 的
+  // parent 是 `<p>` / `<div>` 且 a 文字占 parent 文字 80% 以上，hide parent
+  // 整個段落；否則只 hide a 本身。
+  function hideInsideArticleByLinkText(articleEl, hidden) {
+    // 掃 `<a>` + `<button>`——CTA 按鈕類（訂閱 / 追蹤 / 關注）通常是 button
+    // 而非 a，舊版只掃 a 漏網
+    const links = articleEl.querySelectorAll('a, button');
+    for (const a of links) {
+      const text = norm(a.textContent);
+      if (!text || text.length > NOISE_LINK_TEXT_MAX_LEN) continue;
+      if (!NOISE_LINK_TEXT_RE.test(text)) continue;
+      if (isInPreserved(a)) continue;
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      // 嘗試 hide parent p / div 若 a 文字占 parent 文字 80% 以上（整個段
+      // 落都是 CTA）
+      const parent = a.parentElement;
+      let target = a;
+      if (parent && (parent.tagName === 'P' || parent.tagName === 'DIV')) {
+        if (parent === articleEl) { /* 不升級 */ }
+        else if (parent.contains(articleEl)) { /* 不 hide 主文祖先 */ }
+        else {
+          const parentText = norm(parent.textContent);
+          if (parentText.length > 0 && text.length / parentText.length >= 0.8) {
+            target = parent;
+          }
+        }
+      }
+      if (target.dataset && target.dataset.jreadHidden === '1') continue;
+      if (target === articleEl) continue;
+      if (target.contains && target.contains(articleEl)) continue;
+      hide(target, hidden);
+    }
   }
 
   // ---- 主文內：sidebar column（高 linkDensity + 低文字量 vs 兄弟）--------
@@ -499,13 +694,13 @@
   const SIDEBAR_COLUMN_MIN_LINK_DENSITY = 0.5;
   const SIDEBAR_COLUMN_MIN_MAIN_TEXT = 500;
   // 條件 B（<aside> tag）——sidebar column 的 `<aside>` tag 特判閾值：
-  // `<aside>` 是 HTML5 語意「次要內容」tag。article 內 aside 若高度顯著
-  // 排除 pull-quote（通常 < 300px）、且文字量未超過主欄一半，直接視為
-  // sidebar（導覽 / 廣告 / 相關列表）hide。Engadget 實測 aside 含廣告
-  // placeholder + footer link 稀釋到 textLen 剛好超過 main×10% 且
-  // linkDensity 0.057 遠低於 0.5，條件 A 兩條都不中——但 `<aside>` tag
-  // + rectH 5706px 結構上顯然是 sidebar 不是 pull-quote。
-  const SIDEBAR_ASIDE_TEXT_RATIO = 0.5;
+  // `<aside>` 是 HTML5 語意「次要內容」tag。article 內 aside 只要
+  // rectH > 400 即視為 sidebar（導覽 / 廣告 / 相關列表）hide——rectH 門檻
+  // 已排除 pull-quote（通常 < 300px 簡單結構）。不做 textLen 相對比值：
+  // chinatimes 實測 aside 含 10 條熱門新聞 ~1389 chars vs 主文當下 2457
+  // chars（時序 race：推薦閱讀未 lazy-load 完時 main 偏低）打在 0.5
+  // ratio 上漏網；Engadget 過往靠此條 B 命中也不依賴 ratio，因為 aside
+  // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
 
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers) {
@@ -542,11 +737,17 @@
           hide(s.el, hidden);
           continue;
         }
-        // 條件 B：child 是 <aside> tag + textLen < main × 50% + rectH > 400
-        // 排除 pull-quote（通常 < 300px 簡單結構），命中 Engadget 類
-        // 「aside 內塞廣告 placeholder 稀釋 ld 到 < 0.5」的 sidebar
-        if (s.el.tagName === 'ASIDE' &&
-            s.textLen < main.textLen * SIDEBAR_ASIDE_TEXT_RATIO) {
+        // 條件 B：child 是 <aside> tag + rectH > 400
+        // `<aside>` 是 HTML5 語意「次要內容」tag；若 rectH > 400 已排除
+        // pull-quote（通常簡單結構 < 300px）。不再檢查 textLen 比值——
+        // chinatimes 實測 aside 含 10 條熱門新聞 + section header 約 1389
+        // chars，主文當下 2457 chars（時序 race：相關閱讀還沒 lazy-load 完
+        // 時 main 文字量偏低），aside/main = 0.565 打在保守 0.5 ratio 上
+        // 漏網。aside tag + rectH > 400 的**絕對結構特徵**夠強，textLen
+        // 相對比值只會把這類邊緣場景當 false negative 放過。
+        // Wikipedia 類 infobox 多用 `<table class="infobox">` 非 <aside>；
+        // NYT pull-quote 用 <aside> 但 rectH < 300——通則安全。
+        if (s.el.tagName === 'ASIDE') {
           const r = s.el.getBoundingClientRect &&
             s.el.getBoundingClientRect();
           if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) {
@@ -595,24 +796,35 @@
       const isGrid = cs.display === 'grid' || cs.display === 'inline-grid';
       const isFlexRow = (cs.display === 'flex' || cs.display === 'inline-flex') &&
         (cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse');
-      if (!isGrid && !isFlexRow) continue;
       const children = Array.from(el.children);
       if (children.length < 1) continue;
-      // 分類 children：hidden vs visible
+      // 分類 children：hidden vs visible；同時記下是否有 visible float child
+      // （判斷是否為傳統 float 多欄 layout）
       let hasHiddenChild = false;
+      let hasVisibleFloatChild = false;
       const visibleChildren = [];
       for (const c of children) {
+        const ccs = window.getComputedStyle(c);
         const isHidden = (c.dataset && c.dataset.jreadHidden === '1') ||
-          (() => {
-            const ccs = window.getComputedStyle(c);
-            return ccs.display === 'none' || ccs.visibility === 'hidden';
-          })();
-        if (isHidden) hasHiddenChild = true;
-        else visibleChildren.push(c);
+          ccs.display === 'none' || ccs.visibility === 'hidden';
+        if (isHidden) { hasHiddenChild = true; continue; }
+        visibleChildren.push(c);
+        if (ccs.float && ccs.float !== 'none') hasVisibleFloatChild = true;
       }
+      // 條件 C（新，傳統 float layout + hidden sibling）：container 不是
+      // grid / flex-row 但 direct children 用 `float: left/right` + 固定
+      // width 做多欄 layout（chinatimes `.column-wrapper.clear-fix` 實測：
+      // column-left float:left width:308px + aside.column-right float:right
+      // width:300px）。aside 被 cleaner hide 後 column-left 仍鎖寬、右側
+      // 空白殘留。通則：float + hidden sibling 代表原設計某欄已空、剩下
+      // visible float child 該撐滿 container——清 float + width 讓它回到
+      // 自然 block 流。
+      const isFloatLayout = !isGrid && !isFlexRow && hasVisibleFloatChild;
+      if (!isGrid && !isFlexRow && !isFloatLayout) continue;
       // 條件 A（既有 v0.6.12）：有 hidden sibling → 退化
       //   要求 children.length >= 2，避免「單 child 的 container 正好 display:none」
       //   這種無意義情境誤動
+      //   條件 C 的 float 場景也走這條：hidden sibling + visible child 就退化
       const triggerHiddenSibling = hasHiddenChild && children.length >= 2 &&
         visibleChildren.length >= 1;
       // 條件 B（新）：grid underfill——visible children 全在同一 row 但寬度
@@ -697,7 +909,9 @@
           prevMaxWidth: c.style.maxWidth,
           prevMaxWidthPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('max-width')) || '',
           prevGridColumn: c.style.gridColumn,
-          prevGridColumnPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('grid-column')) || ''
+          prevGridColumnPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('grid-column')) || '',
+          prevFloat: c.style.float,
+          prevFloatPriority: (c.style.getPropertyPriority && c.style.getPropertyPriority('float')) || ''
         });
         // 只用 longhand，避免 shorthand serialization 在不同瀏覽器 / jsdom
         // 不一致。longhand !important inline 能贏過 Bootstrap 的
@@ -708,6 +922,11 @@
         c.style.setProperty('width', 'auto', 'important');
         c.style.setProperty('max-width', 'none', 'important');
         c.style.setProperty('grid-column', 'auto', 'important');
+        // float 清零：chinatimes 類傳統多欄 float layout，aside 被 hide 後
+        // 剩下 float: left 的 column-left 仍會維持 308px 固定寬、不撐滿
+        // container。強制 float: none 讓它回到自然 block 流；width: auto
+        // 已在上面設，配合 float 清零後就會撐滿父容器。
+        c.style.setProperty('float', 'none', 'important');
       }
     }
     // 把 collapsed 紀錄接到 hidden 陣列尾（共享 restore）——但格式不同，
@@ -730,7 +949,8 @@
           ['flex-basis', item.prevFlexBasis, item.prevFlexBasisPriority],
           ['width', item.prevWidth, item.prevWidthPriority],
           ['max-width', item.prevMaxWidth, item.prevMaxWidthPriority],
-          ['grid-column', item.prevGridColumn, item.prevGridColumnPriority]
+          ['grid-column', item.prevGridColumn, item.prevGridColumnPriority],
+          ['float', item.prevFloat, item.prevFloatPriority]
         ];
       } else {
         props = [
@@ -851,6 +1071,105 @@
     }
   }
 
+  // ---- 主文內：所有 interactive button 一律 hide --------------------------
+  // Jimmy 2026-04-23 明確要求：reader mode 下不需要任何按鈕（分享 / 訂閱 /
+  // 追蹤 / 讚 / 收藏 / 播放 / 展開 / 任何 CTA / 任何 interactive）。
+  // reader mode 的定位是「純閱讀」——所有 button 類 interactive 都是雜訊。
+  //
+  // 範圍：`<button>` + `[role="button"]` + `<input type="button|submit|reset">`。
+  // 不受 `PRESERVE_SEL`（summary/figure/figcaption/blockquote）保護影響——
+  // figure 內的 expand/zoom 按鈕、figcaption 內的展開按鈕也一律清掉。
+  //
+  // 風險評估：極低。reader mode 下使用者只閱讀、不會操作按鈕；主文正文
+  // 從不用 `<button>` 排版文字。極少數 code demo / interactive widget 會
+  // 被誤殺，但 reader mode 本就不適合跑 interactive demo（應該回原站）。
+  function hideInsideArticleAllButtons(articleEl, hidden) {
+    const sel = 'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]';
+    for (const btn of articleEl.querySelectorAll(sel)) {
+      if (btn === articleEl) continue;
+      if (btn.contains && btn.contains(articleEl)) continue;
+      if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
+      hide(btn, hidden);
+    }
+  }
+
+  // ---- 主文內：<font> tag heuristic ------------------------------------
+  // `<font>` 是 HTML4 老式樣式 tag，HTML5 已 deprecated。現代網站幾乎只在
+  // **inline 廣告 / PR 推廣**插播時用它（改字色 / 加 emoji 吸睛），正文排
+  // 版都改走 CSS class。udn 實測：主文段落中插入 `<font><a>🎮想成為超強
+  // 飼主？玩問答遊戲拿課程金</a></font>` PR 連結，無 class / id、沒祖先
+  // section，既有 rule 全攔不到。直接 hide 主文內所有 `<font>` tag——損失
+  // 風險極低（現代主文不該有 font tag）。
+  function hideInsideArticleFontTags(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('font')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：留言 / 社群面板 structural rule ---------------------------
+  // 跨站通用的結構特徵：comment / social widget 必含多個「N 分鐘/小時/天前」
+  // 相對時間戳（每則留言一個）。主文作者資訊最多 1 個相對時間戳（發布
+  // 時間），超過 3 個就是留言面板或社群 feed。
+  //
+  // LINE Today 實測：留言面板跟主文在同一個 swipe-back direct child
+  // wrapper 下（heading rule 升級會誤殺主文），但留言 cluster 本身是
+  // 獨立 sub-tree，可透過「relative time marker count」定位。
+  //
+  // 掃 articleEl 的 descendants（div / section），若其 textContent 含
+  // >=3 個相對時間戳 pattern 且「自身 textLen < 父 textLen 的 80%」
+  // （避免命中主文容器），hide 之。
+  const RELATIVE_TIME_RE = /\d+\s*(分鐘前|小時前|天前|週前|個月前|年前|hours?\s*ago|minutes?\s*ago|days?\s*ago|weeks?\s*ago)/g;
+  const COMMENT_PANEL_MIN_TIMESTAMPS = 3;
+
+  function hideInsideArticleCommentPanels(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('div, section, aside, ul, ol')) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.contains(articleEl)) continue;
+      const text = el.textContent || '';
+      const matches = text.match(RELATIVE_TIME_RE);
+      if (!matches || matches.length < COMMENT_PANEL_MIN_TIMESTAMPS) continue;
+      // 保護主文：若此 el 含主文長段落（>= 300 chars 的 p），跳過
+      let hasMainParagraph = false;
+      for (const p of el.querySelectorAll('p')) {
+        const pText = norm(p.textContent);
+        if (pText.length >= 300) { hasMainParagraph = true; break; }
+      }
+      if (hasMainParagraph) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：inline 廣告插播文字 heuristic ---------------------------
+  // 自由時報 / 聯合 / ETtoday 等台灣新聞站在主文段落中段插播「廣告（請
+  // 繼續閱讀本文）」類 placeholder 短文字，無可識別 class、不成 section
+  // —— keyword / heading / link 規則都攔不到。走 inline text 匹配：對
+  // 主文內 span / p / div 的 direct textNode 內容，若 text 整體命中
+  // NOISE_INLINE_AD_TEXT_RE 則 hide 該 element。
+  //
+  // 為何用 direct textNode 而非 textContent：textContent 會把子孫文字全
+  // 算進來，「廣告」字樣的主文段落（如「政府廣告預算」）會被誤殺。
+  // direct textNode 確保只 match「element 自己直接的文字」，span/p 本
+  // 身就是 placeholder 插播 leaf（無子 element）才命中。
+  function hideInsideArticleByInlineAdText(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('span, p, div')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const direct = Array.from(el.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent).join('');
+      const text = norm(direct);
+      if (!text || text.length > NOISE_INLINE_AD_MAX_LEN) continue;
+      if (!NOISE_INLINE_AD_TEXT_RE.test(text)) continue;
+      if (el === articleEl) continue;
+      if (el.contains && el.contains(articleEl)) continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -872,7 +1191,64 @@
   // 搶 style property。
   let activeObserver = null;
 
-  function startWatchingDynamicAppends(articleEl) {
+  // articleEl 內部動態 inject 的檢查：只對命中「雜訊特徵」的 node hide，
+  // 不動 legit 主文 update（SPA 段落追加 / typo 修正 / lazy 圖片 load）。
+  // 雜訊特徵判定：
+  //   - class/id 命中 NOISE_KEYWORD_RE（CMS 命名慣例）
+  //   - 含 h2/h3/h4 文字命中 NOISE_HEADING_TEXT_RE（跨站 section 標題慣用語）
+  function checkDynamicNoise(articleEl, node, hiddenList) {
+    if (isInPreserved(node)) return;
+    // 雜訊 class/id 直接 hide 整個 node
+    if (shouldHideByKeyword(node)) {
+      if (node.dataset && node.dataset.jreadHidden === '1') return;
+      hide(node, hiddenList);
+      return;
+    }
+    // **所有** interactive button 一律 hide（Jimmy 要求：reader mode 下
+    // 任何按鈕都不需要）。delayed lazy-inject 的按鈕走這條。
+    if (node.matches && node.matches(
+        'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]')) {
+      if (node.dataset && node.dataset.jreadHidden === '1') return;
+      hide(node, hiddenList);
+      return;
+    }
+    // 遞迴檢查 node 內的 button / a / role=button——new node 可能是包了
+    // 雜訊的 wrapper，其內部的 button/a 才帶 class keyword。udn LINE
+    // 分享按鈕是 reader mode toggle 後約 3s lazy-inject 的 `<a class=
+    // "btn-social--line">`，包在某個 wrapper div 內、wrapper 自己 class
+    // 沒命中 keyword，但內部 a 命中——要遞迴檢查。
+    if (node.querySelectorAll) {
+      for (const btn of node.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]')) {
+        if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
+        hide(btn, hiddenList);
+      }
+      for (const a of node.querySelectorAll('a, button')) {
+        if (a.dataset && a.dataset.jreadHidden === '1') continue;
+        if (!shouldHideByKeyword(a)) continue;
+        hide(a, hiddenList);
+      }
+    }
+    // heading text 命中：hide closest section/aside
+    const headings = node.matches && node.matches('h2, h3, h4')
+      ? [node]
+      : (node.querySelectorAll ? Array.from(node.querySelectorAll('h2, h3, h4')) : []);
+    for (const h of headings) {
+      const text = norm(h.textContent);
+      if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
+      if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
+      if (isInPreserved(h)) continue;
+      const section = h.closest('section, aside');
+      if (!section) continue;
+      if (section === articleEl) continue;
+      if (!articleEl.contains(section)) continue;
+      if (section.contains(articleEl)) continue;
+      if (section.dataset && section.dataset.jreadHidden === '1') continue;
+      hide(section, hiddenList);
+      return;
+    }
+  }
+
+  function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
     if (!articleEl || !articleEl.parentElement) return;
 
@@ -880,10 +1256,24 @@
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
-          if (isRelated(articleEl, node)) continue;
           if (STRUCTURAL_TAGS.has(node.tagName.toLowerCase())) continue;
           if (isInPreserved(node)) continue;
-          if (node.parentNode) node.parentNode.removeChild(node);
+
+          // 祖先鏈上 append 的 node（articleEl scope 外）：直接 remove 整塊
+          // ——那裡不該有任何新內容，全是雜訊（popIn 相似文章 / lazy header
+          // / cookie banner 等）。
+          if (!articleEl.contains(node)) {
+            if (node === articleEl) continue;
+            if (node.contains && node.contains(articleEl)) continue;
+            if (node.parentNode) node.parentNode.removeChild(node);
+            continue;
+          }
+
+          // articleEl 內部 append：只對雜訊特徵 node hide，legit 主文 update
+          // 保留。場景：LINE Today「其他人也看了」section 在 clean() 之後
+          // 才 lazy-load inject 進 swipe-back 內、被 isRelated 放行漏網——
+          // 現改成 heading / keyword 特徵判定 hide。
+          checkDynamicNoise(articleEl, node, hiddenList);
         }
       }
     });
@@ -895,6 +1285,10 @@
       if (cur === document.body) break;
       cur = cur.parentElement;
     }
+    // 新增：觀察 articleEl 本身的 subtree——接 SPA 站晚到的 lazy-load 推薦
+    // widget。subtree 涵蓋整棵內部樹；只對新 addedNodes 走雜訊判定不遞迴
+    // scan 全樹，效能可控。
+    mo.observe(articleEl, { childList: true, subtree: true });
     activeObserver = mo;
   }
 
@@ -927,6 +1321,12 @@
       // 共享 hidden 標記，等同前後鏈接。
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
       hideInsideArticleByKeyword(articleEl, hidden, containers);
+      hideInsideArticleByHeadingText(articleEl, hidden);
+      hideInsideArticleByLinkText(articleEl, hidden);
+      hideInsideArticleByInlineAdText(articleEl, hidden);
+      hideInsideArticleFontTags(articleEl, hidden);
+      hideInsideArticleCommentPanels(articleEl, hidden);
+      hideInsideArticleAllButtons(articleEl, hidden);
       hideInsideArticleActionRows(articleEl, hidden, containers);
       hideInsideArticleButtonClusters(articleEl, hidden, containers);
       hideInsideArticleHorizontalRules(articleEl, hidden);
@@ -940,7 +1340,7 @@
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
       resetMediaPlaceholderPadding(articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
-      startWatchingDynamicAppends(articleEl);
+      startWatchingDynamicAppends(articleEl, hidden);
       return hidden;
     },
 
@@ -955,9 +1355,14 @@
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;
-        const { el, prevDisplay } = item;
-        // 寫回原始 inline display（原本是空字串代表走 CSS 預設，維持空字串即可）
-        el.style.display = prevDisplay || '';
+        const { el, prevDisplay, prevDisplayPriority } = item;
+        // 還原原始 inline display + priority（`!important` 也要還原，
+        // 否則原站的 `display: flex !important` 若原本寫在 inline，
+        // reader mode 退出後會變成無 priority）。
+        el.style.removeProperty('display');
+        if (prevDisplay) {
+          el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
+        }
         if (el.dataset) delete el.dataset.jreadHidden;
       }
     }
