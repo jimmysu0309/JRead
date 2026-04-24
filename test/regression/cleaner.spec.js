@@ -1800,6 +1800,78 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.11 Medium click-to-zoom button wrapper 修法
+// hideInsideArticleAllButtons 加 media guard：button/role="button" wrapper
+// 內含 img/picture/video 時保留（Medium 把主文 picture 嵌在 role="button"
+// 的 wrapper 裡）。
+// -----------------------------------------------------------------------------
+describe('cleaner — medium-click-to-zoom-button（button 含媒體時保留 wrapper）', () => {
+  let window, document, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'medium-click-to-zoom-button.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    hidden = window.__JRead.cleaner.clean(detected.el);
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('含 picture 的 `#zoom-btn` wrapper 保留（guard 生效）', () => {
+    const el = document.getElementById('zoom-btn');
+    assert.ok(el);
+    assert.notStrictEqual(el.dataset.jreadHidden, '1',
+      'role="button" 內含 picture 的 wrapper 必須保留；forcing：拿掉 `btn.querySelector("img, picture, video")` guard → 整個 wrapper 被 hide、img 連帶不可見');
+  });
+
+  it('主文 img 不可被祖先連帶 hide（祖先鏈上任一層 data-jread-hidden 即 fail）', () => {
+    const img = document.getElementById('main-img');
+    assert.ok(img);
+    let cur = img;
+    while (cur) {
+      assert.notStrictEqual(cur.dataset && cur.dataset.jreadHidden, '1',
+        `img 祖先 <${cur.tagName}#${cur.id || ''}.${(cur.className || '').toString().slice(0, 40)}> 不得被 hide`);
+      cur = cur.parentElement;
+      if (!cur || cur.tagName === 'BODY') break;
+    }
+  });
+
+  it('純 CTA `#share-btn`（無媒體）仍被 hide', () => {
+    const el = document.getElementById('share-btn');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      '純 CTA button 應保持 hide（guard 只保護含媒體的 button）');
+  });
+
+  it('含 svg icon 的 `#icon-btn` 仍被 hide（svg 不算媒體保護範圍）', () => {
+    const el = document.getElementById('icon-btn');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      'button 含 svg 不在 guard 範圍（svg 多為 icon、非主文媒體）');
+  });
+
+  it('主文 MARK 段落保留', () => {
+    const marks = Array.from(document.querySelectorAll('p'))
+      .filter(p => p.textContent.includes('MEDIUM_MAIN_MARK'));
+    assert.ok(marks.length >= 2, '至少 2 段 MEDIUM_MAIN_MARK');
+    for (const p of marks) {
+      assert.notStrictEqual(p.dataset.jreadHidden, '1');
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.10 BBC /news/articles/clyepyy82kxo 實測根因：articleEl 內部多層
 // grid container、`grid-template-columns: 386px` 固定 px 寬鎖住主文 p。
 // 既有 `collapseGridWithHiddenCell` 只在有 hidden child 時 collapse、
