@@ -24,6 +24,40 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.21**——Stratechery h2 post-title 被 narrow 誤殺修法（Jimmy 2026-04-24 實測截圖回報；Stratechery 是 v0.6.3 baseline 三站之一、此 bug 屬嚴重 regression）。
+
+**症狀**：stratechery.com/2026/please-listen-to-my-podcast/ 進閱讀模式後主標題「2026.12: Please Listen to My Podcast」完全消失，reader card 第一個 visible item 是 figcaption（photo credit）而非標題。
+
+**根因**（harness probe 診斷）：
+- detector 走 heuristic、原選中 `DIV.entry-content`（主文容器）、promote 升一層到共同 parent `DIV.wp-block-column`（articleEl）
+- `H2.wp-block-post-title`（標題）是 articleEl 的 direct child、entry-content 的 sibling
+- `narrowPromotedSiblings`（v0.7.12 ebc 修法引入）的 h1-only guard（`sib.tagName === 'H1'` + `sib.querySelector('h1')`）不認 H2——Stratechery 的 `<h2 class="wp-block-post-title">` 是 **WordPress block theme 慣例**（h1 是站名、post-title 預設是 h2），被當 sibling chrome hide 掉
+
+**修法**（結構性通則，非站點特判）：
+- `detector.js` `promoteForTitle` 返回 `{ el, titleHead }` 而非單一 el——titleHead 是 promote 實際命中 `titleMatches` 的 heading element；candidate 搜索範圍從 `h1, h2` 擴到 `h1, h2, h3, h4`（跨 CMS 各種 tag 慣例：WordPress h2 預設、部分 Medium 主題 h1、少數新聞站 h3/h4）
+- `detect()` 把 `promotedTitleHead` 加進 result、隨 `promotedFrom` 一起傳給 cleaner
+- `main.js` 呼叫 `cleaner.clean(el, { promotedFrom, promotedTitleHead })` 傳入兩項
+- `cleaner.narrowPromotedSiblings` 新增第 4 個參數 `promotedTitleHead`、guard 加一條**精準白名單**：`sib === promotedTitleHead || sib.contains(promotedTitleHead) → continue`。不放寬成「所有 H2」避免 sidebar 每個 related-card h2 都當主標題保護
+- 既有 H1 fallback guard 保留——某些站點走策略 1（article-tag）沒 promote、但 article 內可能含 h1
+
+**為何不是站點特判**：
+- `wp-block-post-title` 預設 h2 是 WordPress block theme 的**跨 CMS 通用**命名（至少 Stratechery / 多數新版 WordPress 主題）
+- titleMatches 嚴格比對 og:title / document.title 首段，heading tag 擴到 h1-h4 誤命中風險低——fixture `stratechery-h2-post-title.html` 測試 sidebar 內的 related-card h2 不會被誤保護（只有 titleMatches 真正命中的那一個 heading 才進 guard）
+
+**新 fixture + spec**：
+- `test/regression/fixtures/stratechery-h2-post-title.html`：完整重現 Stratechery WordPress block theme DOM（articleEl = wp-block-column、promoted from entry-content、h2.wp-block-post-title 是 direct child、sidebar 含 related-card h2）
+- `cleaner.spec.js` 新增 6 條 assertion：(1) detector 升級 articleEl + 紀錄 promotedFrom；(2) detect() 返回 promotedTitleHead API；(3) **h2 post-title 保留（核心 bug forcing）**；(4) sidebar 仍被 narrow hide（精準保護、不過度放寬）；(5) STRATECHERY_MAIN_MARK 段落全保留；(6) sidebar 內 related-card h2 隨 sidebar hide（guard 不誤保）
+- **sanity check 通過**：拿掉 guard → assertion (3) fail（h2 被 hide）；還原 → pass
+
+**驗收**：
+- `npm test` → 199 passing（原 193 + Stratechery 新 6 條）
+- harness 對真實 stratechery.com/2026/please-listen-to-my-podcast/ 驗：reader card 第一項 outline 從 `FIGCAPTION` 變回 `A "2026.12: Please Listen to My Podcast"`（h2 > a 結構、direct text 在 a 裡），標題完整顯示、整頁排版正常
+- ChinaTalk baseline 站 regression 驗 → 主標題 H1「Media Diet Q1 2026」仍在第一項（舊 H1 fallback guard 仍生效）
+
+**未動**：styler.js / 其他 cleaner rule / popup / service-worker / options 全部零變化；修法只動 detector `promoteForTitle` + `detect()`、main.js 呼叫、cleaner `narrowPromotedSiblings` + `clean()` 四處，API 擴展而非重寫。
+
+---
+
 **v0.7.20**——清 PENDING_REGRESSION 4 條（條目 2/3/4/5），PENDING queue 從 5 條剩 1 條（theverge styled-components 視覺 bug）。本版新建 e2e harness 架構作為長期基礎設施，未來所有「只能在真實 MV3 Chrome 環境驗」的 wire-up bug 都可在這層補 forcing function。
 
 **條目 2**（detector textLen bonus jsdom forcing function）：
