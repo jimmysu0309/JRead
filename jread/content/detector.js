@@ -395,15 +395,20 @@
   // （WordPress post-title + post-content 同級）、祖父的兄弟（WordPress 的
   // section > article 結構）或 SPA 框架多層 styled-component wrapper 分隔
   // article 與 h1（line today Next.js 實測：article / h1 common ancestor
-  // 需從 article 爬 3 hops 到達 `div.swipe-back`），v0.7.12 放寬到 4 跳。
-  // v0.7.3 2→3：修 line today 標題漏掉
-  // v0.7.8 嘗試 3→4 修 ebc 後回滾：#main_content 含 sibling chrome 會殘留
-  // v0.7.12 3→4 + promote+narrow 聯動：detect() 記錄 promotedFrom、cleaner
-  // 跑 narrowPromotedSiblings 把 articleEl 直接子中「不含 content 分支 +
-  // 不含 h1 分支」的其他 sibling block（相關新聞列表 / 聽新聞 / 更多 link）
-  // 全 hide。配合 ambiguous hopLimit=1 保護（v0.7.2），4 hops 只在 non-
-  // ambiguous 高信心場景發生、有 narrow 兜底不會殘留。
-  const PROMOTE_MAX_HOPS = 4;
+  // v0.7.13 放寬到 5 跳：esmchina.com /news/14116.html 實測 article_text
+  // 到共同祖先 container 需 5 hops（article_text > article-words-ar >
+  // article-cnt > unnamed div > col-md-9 > container）。
+  //
+  // 演進紀錄：
+  //   v0.7.3 2→3：修 line today 標題漏掉
+  //   v0.7.8 嘗試 3→4 修 ebc 後回滾：#main_content sibling chrome 殘留
+  //   v0.7.12 3→4 + promote+narrow 聯動：detect() 記錄 promotedFrom、
+  //     cleaner narrowPromotedSiblings 沿祖先鏈清 sibling chrome
+  //   v0.7.13 4→5：esmchina 需要；narrow 兜底保證 scope 擴大不殘留
+  //
+  // 配合 ambiguous hopLimit=1 保護（v0.7.2），5 hops 只在 non-ambiguous
+  // 高信心場景發生、有 narrow 兜底不會吞 page chrome。
+  const PROMOTE_MAX_HOPS = 5;
 
   // maxHops 可由呼叫端覆寫（例：heuristic ambiguous 時走更嚴 limit，
   // 避免 heuristic 選錯 anchor 時 promote 沿祖先一路升把整頁吞進主文）。

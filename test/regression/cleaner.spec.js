@@ -1800,6 +1800,80 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.13 esmchina 5 層深 single-child wrapper + partner-content sibling
+// PROMOTE_MAX_HOPS 4→5、NOISE_KEYWORD_RE 加 `partner` 詞
+// -----------------------------------------------------------------------------
+describe('cleaner — esmchina-promote-5-hops（5 層深結構 + partner 詞清 sidebar）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'esmchina-promote-5-hops.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, { promotedFrom: result.promotedFrom });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('promote 升到 .container（PROMOTE_MAX_HOPS 5）', () => {
+    assert.ok(result.el.classList.contains('container'),
+      `promote 應升 5 hops 到 .container；實際 cls="${result.el.className}"`);
+    assert.ok(result.promotedFrom,
+      'promotedFrom 紀錄存在');
+  });
+
+  it('h1「三安光電並購遇挫」保留（祖先鏈無 hidden）', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1');
+    let cur = h1.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `h1 祖先 <${cur.tagName}.${cur.className}> 不得 hide`);
+      cur = cur.parentElement;
+    }
+  });
+
+  it('partner-content-article sidebar 被 NOISE_KEYWORD_RE 清（`partner` 詞）', () => {
+    const el = document.querySelector('.partner-content-article');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      '`partner` 詞應命中 NOISE_KEYWORD_RE；forcing：拿掉 partner → 此 assertion fail');
+  });
+
+  it('主文 ESM_CONTENT_MARK 段落保留', () => {
+    const marks = Array.from(document.querySelectorAll('p'))
+      .filter(p => p.textContent.includes('ESM_CONTENT_MARK'));
+    assert.ok(marks.length >= 4, '至少 4 段 ESM_CONTENT_MARK');
+    for (const p of marks) {
+      assert.notStrictEqual(p.dataset.jreadHidden, '1');
+    }
+  });
+
+  it('NOISE_KEYWORD_RE 字面必含 `partner` 詞', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
+      'utf8'
+    );
+    const m = src.match(/const NOISE_KEYWORD_RE = \/([^\/]+)\/i;/);
+    assert.ok(m);
+    assert.ok(/\bpartner\b/.test(m[1]),
+      `NOISE_KEYWORD_RE 必須含 \`partner\`；實際 pattern=${m[1]}`);
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.12 ebc 深層 single-child wrapper + 橫向 sibling chrome 修法
 // detector PROMOTE_MAX_HOPS 3→4 + cleaner narrowPromotedSiblings 聯動
 // -----------------------------------------------------------------------------
@@ -1878,13 +1952,15 @@ describe('cleaner — ebc-promote-narrow-sibling-chrome（promote+narrow 聯動�
     }
   });
 
-  it('PROMOTE_MAX_HOPS 字面必須為 4（forcing：退回 3 → promote 升不到 #main_content）', () => {
+  it('PROMOTE_MAX_HOPS 字面必須 >= 4（forcing：退回 3 或以下 → promote 升不到 #main_content）', () => {
     const src = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
       'utf8'
     );
-    assert.ok(/const PROMOTE_MAX_HOPS = 4;/.test(src),
-      'detector.js 必須含 `const PROMOTE_MAX_HOPS = 4;`（支援 ebc 類 4 層深結構）');
+    const m = src.match(/const PROMOTE_MAX_HOPS = (\d+);/);
+    assert.ok(m, 'detector.js 必須含 `const PROMOTE_MAX_HOPS = N;` 常數宣告');
+    const n = parseInt(m[1], 10);
+    assert.ok(n >= 4, `PROMOTE_MAX_HOPS 必須 >= 4（支援 ebc 類 4 層深結構）；實際值 ${n}`);
   });
 });
 

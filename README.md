@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.12（ebc 深層 single-child wrapper + 橫向 sibling chrome 修法：promote+narrow 聯動）。v0.7.8 記入 PENDING 的 ebc h1 missing 問題本輪完整修：detector `PROMOTE_MAX_HOPS` 3→4 讓 4 層深結構能升共同祖先；detect() 記 `result.promotedFrom`；cleaner 新 `narrowPromotedSiblings` 從 promotedFrom 沿祖先鏈到 articleEl、每層 hide 非 content 非 h1 的 sibling chrome。配既有 `hideAncestorSiblings` 雙向互補。順手 NOISE_KEYWORD_RE 加 `controls` 詞（ebc `article_controls` UI 殘留）。177 spec 全過
+**目前版本**：v0.7.13（esmchina 5 層深結構支援 + partner keyword）。esmchina.com 標題消失——主文 5 層 single-child wrapper、`PROMOTE_MAX_HOPS=4` 不夠。v0.7.12 硬教訓 19 已預測「narrow 機制兜底 → 放寬 hops 通常安全」，本輪直接放寬 4→5。順手 `NOISE_KEYWORD_RE` 加 `partner` 詞（`.partner-content-article` sidebar 殘留）。182 spec 全過
 
 ---
 

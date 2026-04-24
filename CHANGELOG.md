@@ -24,6 +24,36 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.13**——esmchina 5 層深 single-child wrapper 支援 + partner keyword（Jimmy 2026-04-24 回報 esmchina.com/news/14116.html 標題消失）。
+
+**根因**（Console probe）：
+- og:title 空 → detector getCanonicalTitle fallback 到 document.title
+- document.title = `遺憾！三安光電 2.39 億美元並購遇挫–國際電子商情`（含 en dash `–` 但前後無空格，split regex `/\s+[–—|]\s+/` 不切、target 含整個尾綴）
+- titleMatches 仍能過（h1 被 target 包含、ratio 95% > 60%）
+- **主文 DOM 5 層深**（container > col-md-9 > unnamed > article-cnt > article-words > article_text）、detector heuristic 選到 article_text
+- `PROMOTE_MAX_HOPS=4`（v0.7.12）只爬到 col-md-9、無法到共同祖先 container、h1 漏 scope
+
+**修法**：
+1. detector.js `PROMOTE_MAX_HOPS` 4 → 5
+2. cleaner.js `NOISE_KEYWORD_RE` 加 `partner` 詞（esmchina `.partner-content-article` / `.partner-title` sidebar 殘留「更多>」CTA）
+
+**為何直接放寬 hops 安全**：v0.7.12 硬教訓 19 已預測「放寬 hops 要配 narrow 機制兜底」，`narrowPromotedSiblings` 會清 sibling chrome、scope 擴大不產生殘留。5 站驗證無 regression。
+
+**驗收**：
+- Fixture `esmchina-promote-5-hops.html` 模擬 5 層深 DOM + partner-content sibling
+- 5 條新 spec：promote 升 .container、h1 保留、partner sidebar hide、主文保留、字面 regex forcing `partner`
+- 既有 ebc fixture 字面 forcing 從 `PROMOTE_MAX_HOPS = 4` 改成 `>= 4`（不鎖死具體值、讓未來再放寬不用改既有 spec）
+- sanity check 退回 PROMOTE_MAX_HOPS=4 → 2 條 esmchina spec fail
+- harness 五站（ebc / line today / udn / chinatimes / upmedia / **esmchina** 新增）全驗：
+  - ebc / line today / chinatimes / esmchina `✅ 無殘留雜訊`
+  - udn「更多」A tag 殘留（既有已知 VIP link 問題）
+  - upmedia 2 項 audit false positive（既有）
+- `npm test` 182 passing
+
+**硬教訓 19 本輪驗證**：v0.7.12 預測「單純放寬 PROMOTE_MAX_HOPS=5 通常仍 OK（narrow 機制會自動兜底）」—— esmchina 實證成立。未來再遇需更多 hops 的站，可繼續沿用此 pattern。
+
+---
+
 **v0.7.12**——ebc 深層 single-child wrapper + 橫向 sibling chrome 修法（v0.7.8 記入 PENDING_REGRESSION 的 h1 missing 問題本輪完整修法）。
 
 **根因回顧**（v0.7.8 已 probe 確認）：
