@@ -238,7 +238,24 @@
 
   // ---- 主文外：語意標籤 --------------------------------------------------
   function hideOutsideArticleSemantic(articleEl, hidden) {
-    const els = document.querySelectorAll('header, nav, footer, aside');
+    // 補 id/class 慣用命名（v0.7.23 newtalk.tw 修法）：newtalk 等舊 CMS /
+    // 客製模板用 `<div id="footer">` / `<div class="site-footer">` 而不是
+    // HTML5 `<footer>` tag，僅掃 semantic tag 會漏網。這些 id/class 是跨
+    // CMS site-level chrome 的慣用命名（WordPress 預設主題、Drupal、
+    // Bootstrap-based 模板），主文外一律視為 chrome。isRelated guard 擋
+    // 主文內/祖先誤殺——若站點把 `.site-footer` 當文章內元件 class 也不
+    // 會被清（極罕見場景）。
+    //
+    // 此修法補洞：v0.7.22 hideAncestorSiblings 能走到 DIV.main 層清
+    // `<div id="footer">` 的 harness 驗過——但 Jimmy 實機 Chrome 下仍
+    // 看到 footer，是 Playwright vs 實機 DOM 時序差異導致祖先鏈遍歷漏
+    // 這個 node。改用「全頁掃 id/class 命中」不依賴祖先鏈、邏輯完整性
+    // 保證跨環境一致。
+    const els = document.querySelectorAll(
+      'header, nav, footer, aside, ' +
+      '#header, #footer, #site-header, #site-footer, #page-header, #page-footer, ' +
+      '[class~="site-header"], [class~="site-footer"], [class~="page-header"], [class~="page-footer"]'
+    );
     for (const el of els) {
       if (isRelated(articleEl, el)) continue;
       hide(el, hidden);
@@ -1534,6 +1551,66 @@
     }
   }
 
+  // ---- inline style 覆寫攔截（v0.7.23 newtalk.tw 修法）---------------------
+  //
+  // 場景：cleaner.hide() 用 `el.style.setProperty('display', 'none', 'important')`
+  // 打 inline `!important`，理論上贏過任何 stylesheet rule（含原站 `!important`）。
+  // 但 probe 實測 newtalk.tw 上 `<div id="footer" class="has-comment">` 被標
+  // `data-jread-hidden="1"` 後，inline `style.cssText` 竟被清成 `display: none`
+  // （priority 空字串、!important 被拔掉）——原站某個 JS handler 在 jread 之後
+  // 把 element.style 重新賦值清掉 priority。此時原站 stylesheet 的
+  // `#footer { display: block !important }`（ID selector specificity 1,0,0）贏過
+  // jread stylesheet `[data-jread-hidden="1"] { display: none !important }`
+  // （attr selector specificity 0,1,0），footer 重新 visible。
+  //
+  // 通則（非站點特判）：任何站的 scroll / resize / timer handler 都可能重新
+  // assign style，尤其常見於響應式 UI。對策——開 MutationObserver watch 每個
+  // hidden element 的 `style` attribute 變動，一旦 priority 不是 `important`
+  // 就立即重新 setProperty。self-trigger 不會無限循環：下一次 mutation callback
+  // 來時 priority 已正確、不再 re-set。
+  //
+  // 性能：hidden list 典型 50-200 個 element、observer 只對 attributeFilter:
+  // ['style'] 觸發，原站 JS 高頻 scroll handler 下可能每秒 10 次 mutation、
+  // callback 內做輕量 check + 必要時一次 setProperty，不足以影響 UX。
+  let styleRestoreObserver = null;
+  let hiddenElsRef = null;
+
+  function watchHiddenInlineRestyle(hidden) {
+    if (styleRestoreObserver) { styleRestoreObserver.disconnect(); styleRestoreObserver = null; }
+    if (!Array.isArray(hidden) || hidden.length === 0) return;
+    hiddenElsRef = new WeakSet(hidden.map(h => h.el).filter(Boolean));
+
+    styleRestoreObserver = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        if (m.attributeName !== 'style') continue;
+        const el = m.target;
+        if (!el || el.nodeType !== 1) continue;
+        if (!hiddenElsRef.has(el)) continue;
+        // element 仍應保持 jread hide 狀態
+        if (!el.dataset || el.dataset.jreadHidden !== '1') continue;
+        // 檢查 inline display 是否仍是 `none !important`；若被清掉就補回
+        const pri = el.style.getPropertyPriority && el.style.getPropertyPriority('display');
+        const dsp = el.style.display;
+        if (dsp !== 'none' || pri !== 'important') {
+          el.style.setProperty('display', 'none', 'important');
+        }
+      }
+    });
+
+    for (const item of hidden) {
+      if (!item || !item.el || item.el.nodeType !== 1) continue;
+      styleRestoreObserver.observe(item.el, { attributes: true, attributeFilter: ['style'] });
+    }
+  }
+
+  function stopWatchingHiddenInlineRestyle() {
+    if (styleRestoreObserver) {
+      styleRestoreObserver.disconnect();
+      styleRestoreObserver = null;
+    }
+    hiddenElsRef = null;
+  }
+
   // ---- 對外介面 ---------------------------------------------------------
   const cleaner = {
     /**
@@ -1600,6 +1677,9 @@
       hydrateLazyImages(articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
       startWatchingDynamicAppends(articleEl, hidden);
+      // v0.7.23 newtalk.tw 修法：watch hidden el 的 inline style 被原站 JS
+      // 覆寫清掉 !important priority，被清就立刻補回
+      watchHiddenInlineRestyle(hidden);
       return hidden;
     },
 
@@ -1609,6 +1689,7 @@
      */
     restore(hiddenEls) {
       stopWatchingDynamicAppends();
+      stopWatchingHiddenInlineRestyle();
       restoreLazyImages(hiddenEls);
       restoreMediaResets(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
