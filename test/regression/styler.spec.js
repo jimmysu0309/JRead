@@ -276,6 +276,35 @@ describe('styler — 骨架與可逆性', () => {
     );
   });
 
+  it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 涵蓋 col-xs / col-sm / col-md / col-lg / col-xl 的 attribute selector
+    const selectors = ['col-xs-', 'col-sm-', 'col-md-', 'col-lg-', 'col-xl-'];
+    for (const s of selectors) {
+      assert.ok(
+        css.includes(`[class*="${s}"]`),
+        `styler CSS 必須含 [class*="${s}"] selector（Bootstrap col-${s.split('-')[1]} reset）`
+      );
+    }
+
+    // 驗 declarations：width auto + max-width none + float none + flex initial
+    // 用 regex 找任一 col-X- selector 後面的 block
+    const m = css.match(/\[class\*="col-md-"\][^\{]*\{([^\}]*)\}/);
+    assert.ok(m, 'col-md- selector 必須有 rule block');
+    const body = m[1];
+    assert.ok(/width\s*:\s*auto\s*!important/.test(body),
+      'col-* reset 必須含 width: auto !important');
+    assert.ok(/max-width\s*:\s*none\s*!important/.test(body),
+      'col-* reset 必須含 max-width: none !important');
+    assert.ok(/float\s*:\s*none\s*!important/.test(body),
+      'col-* reset 必須含 float: none !important（Bootstrap col 常帶 float）');
+    assert.ok(/flex\s*:\s*initial\s*!important/.test(body),
+      'col-* reset 必須含 flex: initial !important（Bootstrap 4+ 用 flex）');
+  });
+
   it('重複 apply() 不重複注入 style 元素（更新同一個）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);

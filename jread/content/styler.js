@@ -160,6 +160,26 @@ html.${HTML_CLASS} body {
    padding 留著會造成空白、需 reset；後者 aspect-ratio 是容器撐高的唯一來源、
    被 reset 就會把圖壓成 0 高度。runtime 檢查 computed padding-bottom 比例才
    分得出來，CSS level 做不到。 */
+/* Bootstrap col-* 系列 column wrapper reset：原站用 col-md-9 / col-lg-6
+   等 class 把內容鎖在固定寬度欄位（".col-md-9 { width: 75%; }" 或類似 CSS
+   class rule）。Reader mode 下 single-column 視覺、這些 column constraint
+   該拔掉讓主文撐滿 card 寬度。
+   esmchina.com /news/14116.html 實測：主文 p 所在 col-md-9.article-left
+   width 被鎖 288px、card 寬 720px 下主文只占 40%。
+   通則依據：Bootstrap grid class 是跨 CMS 標準（WordPress / Django / Rails
+   普遍用）、非站點特判。attribute selector [class*="col-X-"] 精準命中
+   col-xs-* / col-sm-* / col-md-* / col-lg-* / col-xl-*，不誤殺 .color-X /
+   .collapse 等無 "-" 分隔的類命名。 */
+[${ARTICLE_ATTR}="1"] [class*="col-xs-"],
+[${ARTICLE_ATTR}="1"] [class*="col-sm-"],
+[${ARTICLE_ATTR}="1"] [class*="col-md-"],
+[${ARTICLE_ATTR}="1"] [class*="col-lg-"],
+[${ARTICLE_ATTR}="1"] [class*="col-xl-"] {
+  width: auto !important;
+  max-width: none !important;
+  float: none !important;
+  flex: initial !important;
+}
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
