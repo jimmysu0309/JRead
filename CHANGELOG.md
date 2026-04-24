@@ -24,6 +24,34 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.8**——ebc 媽祖廣告清除 + 主文標題 wrapper 保護 guard（Jimmy 2026-04-24 回報 ebc news.ebc.net.tw /news/society/548318 兩個 bug + bbc /news/articles/clyepyy82kxo 右側廣告占位殘留）。
+
+**修法 (1)：NOISE_KEYWORD_RE 擴充 `marker` 詞**
+- 場景：ebc 文末「與媽祖同行！2026 遶境全攻略看東森」行銷插播，wrapper class 是 `.inline_text.has_marker`。class 中 `marker` 詞跨 CMS 幾乎都指「標註 / 插播 / 推薦」特殊內容、非主文
+- 通則依據：`marker` 在 class 命名裡的語意幾乎不會是主文結構（主文內容不需要「被標記」），常見於推薦 / 廣告 / 特殊內容標註 wrapper
+- Fixture `ebc-inline-marker-ad.html` 驗行為 + 字面 regex forcing（NOISE_KEYWORD_RE 必含 `\bmarker\b`）
+
+**修法 (2)：`hideInsideArticleByKeyword` 加 h1-wrapper guard**
+- 通則：article 內含 h1（主文標題）的 wrapper **一律保留**，即使 class 命中 NOISE_KEYWORD_RE
+- 場景：許多 CMS 把 share / social / author / comment 等 keyword 與 post header 混在同一 class（例：`.share-header` / `.social-post-header` / `.author-header`），wrapper 本身命中 NOISE_KEYWORD_RE 但實際包主文 h1，hide 會讓 h1 連帶不可見
+- 實作：`if (el.querySelector && el.querySelector('h1')) continue;` 簡短一行
+- 風險評估：極低。wrapper 內部真正的 share / nav / button 各項由 `hideInsideArticleAllButtons` / `hideInsideArticleByKeyword`（對子 container）各自處理，guard 只保護 wrapper 本身
+- Fixture `h1-wrapper-header-keyword-guard.html` 用 `.share-header` wrapper（`share` 詞在 NOISE_KEYWORD_RE 明確命中）forcing：有 guard → wrapper 保留 + h1 可見 + 內部 `.share_bar` 仍 hide；無 guard → share-header 被 hide → h1 祖先 hidden → 2 條 assertion fail
+
+**未修 → PENDING_REGRESSION**：
+- **ebc h1 漏 scope**：真實根因是深層 single-child wrapper 結構（4 層 `#main_content > article_container > article_main_box > article_main > article_content`），`PROMOTE_MAX_HOPS=3` 不夠、放寬 4 又讓 scope 擴大吃進其他 sibling（相關新聞列表 / 聽新聞 controls / 更多 link）。需 promote+narrow 聯動架構升級。暫記 `test/PENDING_REGRESSION.md`
+- **bbc 右側廣告占位殘留**：Playwright bundled Chromium 下 bbc 廣告 JS 不 inject（bot detection / geo），probe 即便等 18 秒 + 門檻降到 50×50 仍 0 殘留，無法在 harness 重現 → 無最小 fixture。等 Jimmy 實機提供殘留元素的 DOM 結構（class/id/tag）才能寫通則 rule
+
+**驗收**：
+- `npm test` 160 passing（+ 6 新 assertion：ebc marker fixture 2 + h1-wrapper fixture 4）
+- sanity check：拿掉 marker 詞 → 字面 forcing fail；拿掉 h1 guard → share-header + h1 祖先 2 條 assertion fail
+- harness ebc 實測：媽祖廣告 `.inline_text.has_marker` 被 hide、`✅ 無殘留雜訊`
+
+**硬教訓補第 16 條（留給後續對話）**：
+> **spec 不 fail 不代表 guard 有效、可能是 forcing 沒觸發。** v0.7.8 寫第一版 h1-wrapper guard spec 時用 `.article_header` 當 wrapper class（模仿 ebc 實測），spec 全過 + sanity 拿掉 guard 也全過——這時該警覺 forcing 沒觸發，不是 guard 的功勞。Node regex test 證實 `header` 詞根本**不在 NOISE_KEYWORD_RE alternation 裡**（只有 `cookie-` / `newsletter-` 等複合詞，沒 bare `header`）、`article_header` 本來就不會被 keyword hit。修正：fixture wrapper class 改用 `share-header`（`share` 在 NOISE_KEYWORD_RE 明確命中），forcing 才真正生效、sanity 才 fail。**修 guard 類 spec 的 sanity check 要拿掉 guard 看 assertion 是否 fail——不 fail 代表 forcing 本身無效**，要改 fixture。
+
+---
+
 **v0.7.7**——修 v0.7.5 regression：ambiguous confidence penalty 改「從 top-5 挑 POSITIVE 命中者」（Jimmy 2026-04-23 回報 upmedia.mg /tw/focus/comprehensive/256956 從 v0.7.5 起無法偵測主文）。
 
 **根因**：Probe 擷取真實頁面 detector 各階段：`<article>` / `[itemtype]` / `[itemprop]` / `<main>` 四個策略全 miss、只剩 heuristic。heuristic 計分：

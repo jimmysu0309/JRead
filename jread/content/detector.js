@@ -401,6 +401,15 @@
   // 把整頁 chrome 納入主文 scope。v0.7.3 放寬 2→3：對 line today 修標題漏掉；
   // upmedia 的 heuristic 誤選已由 modal signal 排除 + textLen bonus 前置
   // 防止（不再進 promote 路徑），3 hops 仍比到 body/#wrapper 安全。
+  //
+  // v0.7.8 嘗試放寬 3→4 修 ebc /news/society/548318（單 child 深層 wrapper
+  // 結構 4 層 `article_container > article_main_box > article_main >
+  // article_content`）後回滾：promote 升到 #main_content 雖讓 h1 進 scope，
+  // 但同時把 `#main_content` 下另外 5-6 個 sibling block（相關新聞列表 /
+  // 聽新聞 controls / 更多 link）全部納入 scope、cleaner 擋不住產生更嚴重
+  // regression。此類「深層 single-child wrapper + 橫向 sibling chrome」
+  // 結構需要 promote+narrow 聯動機制才能正確處理，單改 MAX_HOPS 不夠。
+  // 暫記 test/PENDING_REGRESSION.md，等結構性通則修法。
   const PROMOTE_MAX_HOPS = 3;
 
   // maxHops 可由呼叫端覆寫（例：heuristic ambiguous 時走更嚴 limit，
