@@ -123,5 +123,39 @@
     </div>
   </div>
 </div>
+
+<!-- site-wide footer：用 <div id="footer"> 而非 <footer> tag。
+     fixture 刻意把 footer 放到 `.main_content` 之外（body direct child）——這
+     模擬實機 Chrome SPA 延後注入 footer 到 layout 外層 / site template 把 footer
+     放在 article container 兄弟層以外的場景，驗證 hideOutsideArticleSemantic
+     的全頁 selector 不依賴祖先鏈遍歷也能清。這條 forcing 跟 hideAncestorSiblings
+     的路徑完全無關：若 selector 漏 `#footer`，無論祖先鏈走法如何都清不掉。 -->
+<div id="footer" class="has-comment">
+  <div class="sitemap">
+    <div class="group">
+      <div class="group-head">更多互動</div>
+      <div class="list">
+        <a>SITE_FOOTER_MARK 討論區</a>
+        <a>SITE_FOOTER_MARK Talk新聞</a>
+      </div>
+    </div>
+    <div class="group">
+      <div class="group-head">更多服務</div>
+      <div class="list">
+        <a>關於我們</a>
+        <a>RSS訂閱</a>
+        <a>隱私權聲明</a>
+      </div>
+    </div>
+    <div class="group">
+      <div class="group-head">更多關注</div>
+      <div class="list">
+        <a>Facebook</a>
+        <a>LINE</a>
+      </div>
+    </div>
+  </div>
+  <div class="copyright">先驅媒體社會企業股份有限公司 版權所有 © 2022 All Rights Reserved</div>
+</div>
 </body>
 </html>

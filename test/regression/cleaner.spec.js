@@ -2256,6 +2256,58 @@ describe('cleaner — newtalk-p-class-title（p 標題 + 非 figure 主圖雙修
     assert.strictEqual(sidebar.dataset.jreadHidden, '1',
       '右欄 sidebar 必須被 hide');
   });
+
+  it('hidden element 的 inline !important priority 被清後會被 observer 自動補回（v0.7.23 newtalk 真正根因）', async () => {
+    // newtalk 的 JS handler 在 reader mode 啟動後清掉 jread hide 的 inline
+    // !important priority（probe 實測 inline `display: none` 無 priority）、
+    // 導致原站 stylesheet `#footer { display: block !important }` 贏回來、
+    // footer 重新 visible。修法：MutationObserver watch hidden el 的 style
+    // attribute 變動，priority 被清就重新 setProperty。
+    const footer = document.querySelector('#footer');
+    assert.ok(footer);
+    // 模擬 newtalk JS 清掉 !important：直接 assign inline display（無 priority）
+    footer.style.display = 'none';  // 這會清掉 !important flag
+    assert.strictEqual(footer.style.getPropertyPriority('display'), '',
+      '模擬覆寫後 priority 應該是空字串');
+
+    // 等 MutationObserver callback（microtask + 1 frame）
+    await new Promise(r => setTimeout(r, 10));
+
+    // observer 應該已經補回 !important
+    assert.strictEqual(footer.style.getPropertyPriority('display'), 'important',
+      'style-attribute observer 必須把 !important priority 補回；' +
+      'forcing：拿掉 watchHiddenInlineRestyle 呼叫 → 此 assertion fail');
+    assert.strictEqual(footer.style.display, 'none',
+      'display 值仍應為 none');
+  });
+
+  it('site-wide footer（<div id="footer">，非 <footer> tag）必須被 hide（v0.7.23 修法 forcing）', () => {
+    // newtalk 用 `<div id="footer">` 而非 HTML5 `<footer>` tag。v0.7.22 僅靠
+    // hideAncestorSiblings 祖先鏈遍歷理論上能清（footer 是 DIV.main 的 child、
+    // articleEl 走到 DIV.main 那層 sibling iteration 會掃到），但 Jimmy 實機
+    // 回報漏網——可能 Playwright vs 實機 Chrome 的 DOM 時序差異。v0.7.23 改
+    // 用全頁掃描補洞。
+    const footer = document.querySelector('#footer');
+    assert.ok(footer, 'fixture 必須含 <div id="footer">');
+    assert.strictEqual(footer.dataset.jreadHidden, '1',
+      'site-wide footer（id="footer"）必須被 hideOutsideArticleSemantic hide；' +
+      'forcing：拿掉 `#footer` 的全頁 selector → 此 assertion fail（jsdom 環境 ' +
+      'hideAncestorSiblings 走到 DIV.main 還能清，但實機 Chrome 下漏；全頁 ' +
+      'selector 補洞後兩邊都能清）');
+    // footer 內所有 SITE_FOOTER_MARK 連結都在 hidden 祖先內
+    const marks = Array.from(document.querySelectorAll('a'))
+      .filter(a => a.textContent.includes('SITE_FOOTER_MARK'));
+    assert.ok(marks.length >= 2, 'fixture 應含至少 2 個 SITE_FOOTER_MARK 連結');
+    for (const a of marks) {
+      let cur = a;
+      let inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden, `SITE_FOOTER_MARK 必須在 hidden 祖先內：${a.textContent}`);
+    }
+  });
 });
 
 // -----------------------------------------------------------------------------

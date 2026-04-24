@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.22 — 2026-04-25 起）
+## Baseline 宣告（v0.7.23 — 2026-04-25 起）
 
-**當前 baseline：v0.7.22**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector / cleaner 能力，實測通過 16+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / The Verge 等）。207 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
+**當前 baseline：v0.7.23**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖 + 原站 JS 清 jread !important priority 對抗修法為止的全部 detector / cleaner 能力，實測通過 16+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / The Verge 等）。209 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（207 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗）
+3. 每次修法後跑 `npm test`（209 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -28,9 +28,54 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 - **v0.6.3**（2026-04-21）首版 baseline：styler 瘦身完成、title promote 涵蓋 WordPress/anthropic
 - **v0.7.21**（2026-04-24）Stratechery h2 post-title 修法 + e2e harness 就緒 + 15 站實測通過
-- **v0.7.22**（2026-04-25）當前 baseline：擴 promote tag 到 p/div/span（newtalk.tw）+ narrow media-bearing sibling 保護（順便修好 ebc 主圖誤殺）+ 16 站實測通過
+- **v0.7.22**（2026-04-25）擴 promote tag 到 p/div/span（newtalk.tw）+ narrow media-bearing sibling 保護（順便修好 ebc 主圖誤殺）
+- **v0.7.23**（2026-04-25）當前 baseline：newtalk.tw `<div id="footer">` 非 semantic footer tag 修法——`hideOutsideArticleSemantic` 擴 id/class 慣用命名 selector
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.23**——newtalk.tw site-footer 原站 JS 清掉 jread inline `!important` priority 修法（Jimmy 2026-04-25 reload 後實機仍回報 footer 顯示）。
+
+**症狀**：v0.7.22 修法後 newtalk 主標題 + 主圖都回來了，但頁尾整塊 footer（「更多互動 / 更多服務 / 更多關注」+ 「先驅媒體社會企業... All Rights Reserved」）仍在 reader card 下方顯示。
+
+**初診（錯誤）**：以為 `hideOutsideArticleSemantic` 只掃 `header, nav, footer, aside` 而 newtalk 用 `<div id="footer">` 不是 `<footer>` tag 漏網——補了 selector `#footer, #site-footer, #page-footer, .site-footer, .page-footer` 等 id/class 慣用命名。harness probe 看到 `div#footer` 有 `data-jread-hidden="1"`，但**fullpage 截圖仍看見 footer**。
+
+**再 probe 拿到真因**：檢查 footer 的 inline style 狀態——
+```
+jreadHidden=true  computed display=block  rect=1280x586
+inline.display="none"  priority=""  ← !important 不見了
+inline.cssText: display: none;
+```
+jread 的 `setProperty('display', 'none', 'important')` 明明寫了，priority 卻變空字串。**newtalk 的某個 JS handler（scroll / resize / timer）在 reader mode 啟動後清掉了 jread 的 inline !important flag**——原站 stylesheet 的 `#footer { display: block !important }`（ID selector specificity 1,0,0）因此贏過 jread stylesheet `[data-jread-hidden="1"] { display: none !important }`（attr selector specificity 0,1,0），footer 重新 visible。
+
+**修法**（結構性通則，非站點特判）：
+
+1. **`hideOutsideArticleSemantic` 擴 id/class selector**（初診修法，仍保留為獨立保險路徑）：補 `#header, #footer, #site-header, #site-footer, #page-header, #page-footer, .site-header, .site-footer, .page-header, .page-footer` 等跨 CMS 慣用命名。即使沒有 restyle observer，id/class 命中讓 hide 路徑獨立於祖先鏈遍歷，多一層兜底。
+
+2. **`watchHiddenInlineRestyle(hidden)` 新 observer**（核心修法）：`clean()` 結束後開一個 MutationObserver，`attributeFilter: ['style']`，對每個 hidden element 的 style attribute 變動監聽。callback 檢查 `el.style.getPropertyPriority('display') === 'important'`，若被清掉則重新 `setProperty('display', 'none', 'important')`。`restore()` 時 disconnect。
+
+**通則依據（為何不是站點特判）**：任何有 scroll / resize handler 的響應式 UI 站都可能重新 assign element.style、清掉 !important priority——newtalk 只是第一個被抓到的實例，LINE Today / Engadget / Bootstrap-based 模板都有類似風險。inline !important observer 是跨站通用的「對抗 JS 動態覆寫」機制。
+
+**Self-trigger 不會無限循環**：observer 觸發後 setProperty 會再 trigger 一次 mutation callback，但第二次進 callback 時 priority 已是 `important`、早早 return，不再 re-set。
+
+**性能**：hidden list 典型 50-200 個 element、observer 只對 `style` attribute 變動觸發。原站 JS 高頻 scroll handler 下可能每秒 10 次 mutation、callback 內做一個 priority check + 必要時一次 setProperty，實測對 UX 無感。
+
+**新 fixture + spec**：
+- `newtalk-p-class-title.html` 擴 fixture：新增 `<div id="footer">` 在 body direct child 位置（模擬非 `<footer>` tag site-wide footer 場景）
+- `cleaner.spec.js` 新增 2 條 assertion：
+  1. `<div id="footer">` 必須被 hide（驗 `hideOutsideArticleSemantic` id/class selector）
+  2. **inline !important priority 被清後、observer 自動補回**（async spec 模擬 `el.style.display = 'none'` 覆寫清 priority、等 MutationObserver microtask、驗 priority 回到 `important`）
+- **sanity check**：註解 `watchHiddenInlineRestyle(hidden)` 呼叫 → observer spec fail（priority 留空字串）；還原 → pass
+
+**驗收**：
+- `npm test` → 209 passing（原 207 + 新 2 條 newtalk）
+- harness 對真實 newtalk.tw 驗：footer probe `inline.display="none" priority="important"`、computed `display=none` rect 0×0；fullpage 截圖 reader card 下方整個背景區乾淨、無任何原站 footer 殘留
+- 請 Jimmy 實機 reload 到 v0.7.23 驗
+
+**驗收疏失檢討**：v0.7.22 發布時 Jimmy 已提醒——我看 fullpage 截圖只掃 reader card 內部排版，沒把目光移到 card 外的頁面 body 區。這次 v0.7.23 又踩一次「初診錯誤」：只看 `jreadHidden=true` 就判定修好，沒查 computed display——**光看 `data-jread-hidden="1"` attribute 不夠，還要驗 computed 實際 display 值**。memory 補 hard rule：harness 驗 hide 效果時必須讀 `getComputedStyle(el).display === 'none'` + rect 0×0，不能只靠 attribute marker。
+
+**未動**：styler.js / detector.js / 其他 cleaner rule / popup / service-worker / options 全部零變化；修法動 cleaner 兩處：`hideOutsideArticleSemantic` 擴 selector、新增 `watchHiddenInlineRestyle` observer（+ 呼叫點 + `restore()` 裡 disconnect），行為擴展而非重寫。
 
 ---
 
