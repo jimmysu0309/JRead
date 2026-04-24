@@ -423,6 +423,18 @@
   // （2026-04-24 Jimmy 回報、v0.7.12 引入 narrow 機制時留的坑）。修法改為
   // 讓 cleaner 拿到 promote 實際命中的那個 heading、精準白名單保護——不
   // 放寬成「所有 H2」避免 sidebar 每個 article card 的 H2 都被當主標題。
+  // title head tag 白名單：
+  //   heading：h1-h4 無 text 長度限制（傳統 semantic title 慣例）
+  //   非 heading（p / div / span）：v0.7.22 newtalk.tw 修法——少數新聞站
+  //     不用 heading tag 包標題（newtalk 用 `<p class="name">` 在 `div.title`
+  //     裡；聯合新聞、中時等早期 CMS 也見過用 div/span），擴展 tag 白名單
+  //     但加 text 長度上限（TITLE_TEXT_MAX），避免把含標題字樣的內文段落
+  //     或長區塊誤認成 title。titleMatches 本身已是嚴格字串比對，配長度
+  //     上限雙重保護。
+  const TITLE_TAG_SEL = 'h1, h2, h3, h4, p, div, span';
+  const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4']);
+  const TITLE_TEXT_MAX = 120;  // og:title 典型 20-50 字（中）或 60-120 字（英）
+
   function promoteForTitle(articleEl, maxHops) {
     const target = getCanonicalTitle();
     if (!target) return { el: articleEl, titleHead: null };
@@ -434,14 +446,19 @@
       const parent = cur.parentElement;
       for (const sib of parent.children) {
         if (sib === cur) continue;
-        // 擴到 h1-h4：post-title 跨 CMS 各種 tag 慣例（WordPress h2 預設、
-        // 部分 Medium 主題 h1、少數新聞站 h3/h4）。仍需 titleMatches 嚴格
-        // 比對 og:title / document.title，誤殺風險低。
-        const heads = (sib.matches && sib.matches('h1, h2, h3, h4'))
-          ? [sib]
-          : Array.from(sib.querySelectorAll ? sib.querySelectorAll('h1, h2, h3, h4') : []);
+        // heads 同時包含 sib 自己（若 match）+ 所有子孫。不能只二選一
+        // ——當 sib 是 `<div class="news_info">` 這類 wrapper（match p/div/span
+        // 白名單），舊邏輯「sib match → 只看 sib 自己」會吃下整塊 wrapper
+        // textContent，長度超過 TITLE_TEXT_MAX 被 skip，錯過內部真 title node。
+        const heads = [];
+        if (sib.matches && sib.matches(TITLE_TAG_SEL)) heads.push(sib);
+        if (sib.querySelectorAll) heads.push(...sib.querySelectorAll(TITLE_TAG_SEL));
         for (const h of heads) {
           const text = normalizeTitle(h.innerText || h.textContent || '');
+          // 非 heading tag 加 120 char 上限：防止含標題字串的正文段落（例：
+          // 「根據 og:title，...」這類引用）或整塊 wrapper textContent 被當
+          // titleHead。heading tag 維持原行為（無上限），避免某些站長標題被擋。
+          if (!HEADING_TAGS.has(h.tagName) && text.length > TITLE_TEXT_MAX) continue;
           if (titleMatches(target, text)) {
             // 升級到 articleEl 與 h 的共同 parent = 當前 parent
             return { el: parent, titleHead: h };

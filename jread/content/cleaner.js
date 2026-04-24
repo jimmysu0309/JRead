@@ -359,6 +359,15 @@
         // 走策略 1（article-tag）時沒 promote、但 article 內可能已含 h1。
         if (sib.tagName === 'H1') continue;
         if (sib.querySelector && sib.querySelector('h1')) continue;
+        // 媒體分支（v0.7.22 newtalk.tw 修法）：sibling 含 `<img>` / `<picture>` /
+        // `<video>` 視為主文媒體分支保留（跨 CMS 慣例：hero image / 內嵌多媒體
+        // 跟文字內容常在兄弟 div 不同層，舊站沒把主圖包進 figure 時尤其如此）。
+        // 若該 sibling 其實是廣告／chrome／推薦縮圖（含 img 但也含 noise keyword），
+        // 後續 hideInsideArticleByKeyword / hideInsideArticleThirdPartyAds 會補抓；
+        // 反之錯殺主圖沒辦法回收。通則依據非站點特判——凡是 narrow scope 內含視
+        // 覺媒體的 sibling，保留比砍安全（figure 走 isInPreserved、這條補非 figure
+        // 情境）。
+        if (sib.querySelector && sib.querySelector('img, picture, video')) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);
