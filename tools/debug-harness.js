@@ -366,12 +366,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   }
 
   fs.mkdirSync(path.dirname(SCREENSHOT_OUT), { recursive: true });
+  // 截圖前縮放整頁到 50%（Jimmy 硬規則 2026-04-24）：同一張 fullpage 能看
+  // 更多內容、Claude Read 截圖做整頁排版巡視時一次吃進更多 vertical 空間。
+  // 用 document.body.style.zoom 保留清晰度（不是縮 DPR），只壓縮 layout。
+  await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+  await sleep(300); // 等 reflow
   await page.screenshot({ path: SCREENSHOT_OUT });
-  console.log('saved viewport:', SCREENSHOT_OUT);
+  console.log('saved viewport (zoom 0.5):', SCREENSHOT_OUT);
   // Full-page 截圖：拍完整 reader card（含 scroll 下方殘留）。視窗截圖漏掉
   // 文末雜訊的情況（之前一直踩這個坑）靠這張不再發生。
   await page.screenshot({ path: FULLPAGE_OUT, fullPage: true });
-  console.log('saved fullpage:', FULLPAGE_OUT);
+  console.log('saved fullpage (zoom 0.5):', FULLPAGE_OUT);
 
   if (!KEEP) await ctx.close();
   else console.log('--keep, leaving open');
