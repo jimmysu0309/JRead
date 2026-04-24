@@ -979,6 +979,79 @@
     }
   }
 
+  // ---- articleEl 內部 grid/flex container 強制 block ---------------------
+  //
+  // 場景：BBC /news/articles/clyepyy82kxo 實測——即便廣告 wrapper 已 hide、
+  // 主文 `<p>` 仍被鎖在 386px 欄位（grid-template-columns: 386px 的單欄
+  // 固定寬 grid container）。祖先鏈 reset（`data-jread-ancestor`）只處理
+  // articleEl **外部**祖先、沒管內部；`collapseGridWithHiddenCell` 只在
+  // grid/flex container 有 hidden child 時 collapse。兩者都漏掉「內部
+  // 沒 hidden sibling 但 grid-template 固定鎖寬」的 container。
+  //
+  // 通則：reader mode 精神是「內文撐滿 card」，articleEl 內的任何 grid/
+  // flex layout container（除保留元素 figure/figcaption/summary/blockquote
+  // 內部）都強制 `display: block` + 清 `grid-template-columns/rows`。
+  // children 回歸 block flow、繼承 parent 寬度。
+  //
+  // 排除保留範圍：
+  // (1) preserved 元素（summary/figure/figcaption/blockquote）內部不動
+  // (2) grid-template-columns 非 hard-coded px 值（`1fr 1fr` / `auto` /
+  //     `minmax(0, 1fr)` 等彈性單位）保留——這類通常是 intentional 多欄
+  //     設計（主文內雙欄引述 / 圖片並列），reader mode 下仍合理
+  // (3) flex container 不動——Bootstrap row/col 類 layout 由
+  //     `collapseGridWithHiddenCell` 針對 hidden child 場景處理，
+  //     無 hidden 的 flex 保留（避免誤殺主文內設計的 flex 排版）
+  //
+  // 只處理 `display: grid|inline-grid` + `grid-template-columns` 含 `\d+px`
+  // —— hard-coded 固定寬度是 pathological case（BBC styled-components
+  // 把主文鎖在 386px 單欄），reader mode 下明確該 reset。
+  function collapseInnerGridFlex(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const resets = [];
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs) continue;
+      if (!/^(grid|inline-grid)$/.test(cs.display)) continue;
+      // 只 collapse hard-coded px 的 grid（固定欄寬）；彈性單位保留
+      if (!/\d+px/.test(cs.gridTemplateColumns || '')) continue;
+      resets.push({
+        el,
+        prevDisplay: el.style.display,
+        prevDisplayPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('display')) || '',
+        prevGridTemplateColumns: el.style.gridTemplateColumns,
+        prevGridTemplateColumnsPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('grid-template-columns')) || '',
+        prevGridTemplateRows: el.style.gridTemplateRows,
+        prevGridTemplateRowsPriority: (el.style.getPropertyPriority && el.style.getPropertyPriority('grid-template-rows')) || '',
+      });
+      el.style.setProperty('display', 'block', 'important');
+      el.style.setProperty('grid-template-columns', 'none', 'important');
+      el.style.setProperty('grid-template-rows', 'none', 'important');
+    }
+    hidden.__innerGridFlex = resets;
+  }
+
+  function restoreInnerGridFlex(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__innerGridFlex;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      const { el } = item;
+      if (!el || !el.style) continue;
+      const props = [
+        ['display', item.prevDisplay, item.prevDisplayPriority],
+        ['grid-template-columns', item.prevGridTemplateColumns, item.prevGridTemplateColumnsPriority],
+        ['grid-template-rows', item.prevGridTemplateRows, item.prevGridTemplateRowsPriority],
+      ];
+      for (const [name, value, priority] of props) {
+        el.style.removeProperty(name);
+        if (value) el.style.setProperty(name, value, priority || '');
+      }
+    }
+  }
+
   // ---- 媒體 placeholder pattern：區分 padding-hack vs 正規 aspect-ratio ---
   // 兩種常見媒體容器模式：
   //   A) padding-hack（Substack / Medium）：
@@ -1469,6 +1542,9 @@
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
       // 偵測到「某 child 已被 hide」的條件
       collapseGridWithHiddenCell(articleEl, hidden);
+      // articleEl 內部所有 grid/flex container 強制 block + 清 grid-template
+      // （BBC 類 styled-components 主文被鎖在固定寬 grid 欄位內）
+      collapseInnerGridFlex(articleEl, hidden);
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
       resetMediaPlaceholderPadding(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
@@ -1488,6 +1564,7 @@
       stopWatchingDynamicAppends();
       restoreLazyImages(hiddenEls);
       restoreMediaResets(hiddenEls);
+      restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {

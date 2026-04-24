@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.9（BBC React styled-components 廣告 wrapper 清除）。Jimmy DevTools 實機抓出 BBC 結構 `<div data-testid="ad-unit" data-component="ad-slot" class="sc-66bf5539-0 euXOeE">`——class 是 styled-components hash 無 keyword、內層已 hide 但外層 React wrapper 靠 min-height CSS 撐 540×1100 占位。`THIRD_PARTY_AD_SEL` 擴充 `[data-testid="ad-unit"]` / `[data-testid="ad-slot"]` / `[data-component="ad-slot"]` / `[data-component="ad-unit"]` 四條跨站 React 廣告 component 標準 selector。160 spec 全過
+**目前版本**：v0.7.10（BBC pathological 固定 px grid container 強制 block reset）。v0.7.9 清廣告後主文仍鎖窄欄；Console probe 揭露 articleEl 內部多層 grid container 中一層 `grid-template-columns: 386px` 固定單欄鎖死主文 p。新 `collapseInnerGridFlex`：articleEl 內含 `\d+px` 的 grid container 強制 block；彈性單位 `1fr 1fr` / `minmax` 保留（intentional 多欄設計）；flex container + preserved figure/figcaption 內部不動。165 spec 全過
 
 ---
 
