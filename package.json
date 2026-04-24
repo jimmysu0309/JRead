@@ -1,10 +1,11 @@
 {
   "name": "jread",
-  "version": "0.7.19",
+  "version": "0.7.20",
   "private": true,
   "description": "JRead — Chrome Extension 純閱讀模式。開發端 package.json，僅用於測試。",
   "scripts": {
-    "test": "mocha \"test/**/*.spec.js\"",
+    "test": "mocha \"test/**/*.spec.js\" --ignore \"test/e2e/**\"",
+    "test:e2e": "mocha \"test/e2e/**/*.spec.js\" --timeout 60000",
     "debug": "node tools/debug-harness.js"
   },
   "devDependencies": {
