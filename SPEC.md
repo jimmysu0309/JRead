@@ -11,9 +11,24 @@
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-- **v0.6.3**（2026-04-21 起）：Stratechery / ChinaTalk / anthropic 三站 Jimmy 明確確認「非常理想」。字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；標題正確顯示（title promote）；作者/日期保留（action-row 規則加 heading / interactive-ratio 排除）。
-- **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法。
+**當前 baseline：v0.7.21**（2026-04-24 起，承接 v0.6.3 的 styler 瘦身精神 + 累積到 Stratechery h2 post-title 修法為止的全部 detector/cleaner 能力）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+
+**v0.7.21 baseline 包含**：
+
+1. **styler 瘦身不變**（承接 v0.6.0 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack（Bootstrap col-* reset / 裝飾 background transparent / aspect-ratio placeholder）+ 使用者 override。
+2. **detector 策略完整**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B fallback）→ heuristic（Readability-style bubble-up + POSITIVE/NEGATIVE regex + textLen bonus + top-5 ambiguous 競爭分析）→ main-tag 兜底。title promote 支援 h1-h4 heading、返回 `promotedTitleHead` 給 cleaner 做白名單保護。
+3. **cleaner 規則完整**：16 條 `hideInsideArticle*` rule（keyword / heading text / link text / inline ad / third-party ads / comment panels / font tags / button clusters / action rows / sidebar columns / hr / buttons / spacers）+ dialog/tooltip ARIA + 祖先鏈 sibling + **promote+narrow 聯動（含 promotedTitleHead 白名單）** + grid/flex collapse + media placeholder reset + lazy image hydrate + MutationObserver 動態攔截。
+4. **使用者可調設定**：theme（light/dark/sepia）、fontSize（含 0 = Auto 保留原站）、contentWidth。
+5. **測試覆蓋**：199 jsdom spec（含 38 條 fixture 重現站點 bug）+ 5 e2e spec（SW wire-up 真 Chrome 驗證）+ e2e harness 基礎設施（`tools/e2e-harness.js` + `test/e2e/`）。
+6. **實測通過站**：Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh（Substack podcast）/ Medium / BBC / udn / 中時（chinatimes）/ 自由時報（ltn）/ Engadget / 上報（upmedia）/ EBC 東森新聞 / LINE Today / ESM China / The Verge（視覺微瑕疵待修，見 PENDING_REGRESSION）。
+
+### 硬規則（繼承）
+
+- **styler.js 仍視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法。改 styler 類 typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）。
 - **優先順序**：detector → cleaner → styler（最後手段）。
+- **修 detector/cleaner/styler 類 DOM 互動 bug 必須先在 harness 驗假設再動 code**（見 CLAUDE.md「假設驗證順序」）。
+- **所有 interactive button 一律清**（reader mode = 純閱讀，例外只有 button 內含主文媒體如 img/picture/video 的 wrapper）。
+- **hide() 用 inline `!important`**（贏過原站 stylesheet `!important`，見硬教訓十）。
 
 ### 跨版本硬教訓（長期適用於未來修法）
 

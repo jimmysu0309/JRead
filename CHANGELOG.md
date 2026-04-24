@@ -4,21 +4,30 @@
 
 ---
 
-## Baseline 宣告（v0.6.3 — 2026-04-21 起）
+## Baseline 宣告（v0.7.21 — 2026-04-24 起）
 
-**當前 baseline：v0.6.3**。此版本在 Stratechery / ChinaTalk / anthropic 三站實測通過，Jimmy 明確確認「非常理想」。往後 edge case 維修以這個視覺成果為不可退讓底線：
-- **字型 / heading margin / p margin / list style / link color / blockquote border 全部保留原站樣式**（v0.6.0 瘦身後不再覆寫）
-- **標題正確顯示**（v0.5.1 + v0.6.3 title promote；涵蓋 WordPress / anthropic 類「h1 在祖兄 section」結構）
-- **作者 / 日期保留**（v0.6.1 + v0.6.2 action-row 加 heading / interactive-ratio 排除）
+**當前 baseline：v0.7.21**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 Stratechery h2 post-title 修法為止的全部 detector / cleaner 能力，實測通過 15+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / The Verge 等）。199 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
+
+**baseline 含括的能力**：
+
+- **styler**（瘦身不變）：讀者卡片容器 + 祖先鏈 reset + Bootstrap col-* reset + 裝飾 background transparent + aspect-ratio placeholder 破解 + 使用者 override（theme/fontSize 含 Auto=0/contentWidth）。**不覆寫原站字型、heading margin、p margin、list style、link color、blockquote border**。
+- **detector**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B）→ heuristic（Readability bubble-up + POSITIVE/NEGATIVE + textLen bonus + top-5 ambiguous）→ main-tag 兜底；title promote 支援 h1-h4 + 返回 `promotedTitleHead`。
+- **cleaner**：16 條 `hideInsideArticle*` rule、dialog/tooltip ARIA、ancestor sibling、**promote+narrow 聯動（含 h1-h4 白名單）**、grid/flex collapse、media placeholder reset、lazy image hydrate、MutationObserver 動態攔截、inline `!important` hide。
 
 ### 修 edge case 時的硬規則
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
-2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法
-3. 每次修法後 harness 迴歸三站（Stratechery / ChinaTalk / anthropic）確認無 regress
+2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
+3. 每次修法後跑 `npm test`（199 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
+5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
 v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實有視覺副作用（標題變藍底線、category 間距過大、條列項樣式跑掉），**不要再走回頭路**。
+
+### 歷代 baseline 升級點
+
+- **v0.6.3**（2026-04-21）首版 baseline：styler 瘦身完成、title promote 涵蓋 WordPress/anthropic
+- **v0.7.21**（2026-04-24）當前 baseline：累積 detector + cleaner 所有能力，Stratechery h2 post-title 修法 + e2e harness 就緒 + 15 站實測通過
 
 以下是版本歷程（倒序）。
 
