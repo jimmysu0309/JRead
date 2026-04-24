@@ -10,16 +10,12 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { JSDOM } = require('jsdom');
+const { loadFixtureWithScripts, SRC } = require('../helpers');
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'businessweekly-7014035.html');
-const CLEANER_SRC = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
-  'utf8'
-);
-const DETECTOR_SRC = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
-  'utf8'
-);
+// 同時保留 SRC 常數，供部分 test 直接 `window.eval(DETECTOR_SRC)` 用（ad-hoc fixtures 如 inline HTML）。
+const DETECTOR_SRC = SRC.detector;
+const CLEANER_SRC = SRC.cleaner;
 
 // viewport 模擬
 const VW = 1000;
@@ -49,26 +45,19 @@ function stubRect(el, rect) {
 }
 
 function loadFixture() {
-  const html = fs.readFileSync(FIXTURE_PATH, 'utf8');
-  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
-  const { window } = dom;
-
-  // stub viewport
-  Object.defineProperty(window, 'innerWidth',  { value: VW, configurable: true });
-  Object.defineProperty(window, 'innerHeight', { value: VH, configurable: true });
-
+  const env = loadFixtureWithScripts({
+    fixturePath: FIXTURE_PATH,
+    scripts: ['detector', 'cleaner'],
+    viewport: { width: VW, height: VH },
+    pretendToBeVisual: true
+  });
   // stub fixed/sticky 元素的 rect
   for (const [sel, rect] of Object.entries(FIXED_RECTS)) {
-    const el = window.document.querySelector(sel);
+    const el = env.document.querySelector(sel);
     assert.ok(el, `fixture 中應存在 ${sel}`);
     stubRect(el, rect);
   }
-
-  // 最小 NS
-  window.__JRead = { state: {}, MSG: {} };
-  window.eval(DETECTOR_SRC);
-  window.eval(CLEANER_SRC);
-  return window;
+  return env.window;
 }
 
 describe('cleaner — businessweekly-7014035', () => {

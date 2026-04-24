@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const EXPECTED_VERSION = '0.7.18';
+const EXPECTED_VERSION = '0.7.19';
 
 describe('version-check', () => {
   it('manifest.json 的 version 必須等於 EXPECTED_VERSION', () => {
@@ -42,6 +42,16 @@ describe('version-check', () => {
     assert.ok(
       changelog.includes(`v${EXPECTED_VERSION}`),
       `CHANGELOG.md 找不到 "v${EXPECTED_VERSION}" 條目——bump 版本號時請在 CHANGELOG.md 頂部新增對應條目`
+    );
+  });
+
+  it('package.json 的 version 必須等於 EXPECTED_VERSION', () => {
+    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    assert.strictEqual(
+      pkg.version,
+      EXPECTED_VERSION,
+      `package.json version (${pkg.version}) 與 EXPECTED_VERSION (${EXPECTED_VERSION}) 不一致——bump 版本號時請同步更新`
     );
   });
 });

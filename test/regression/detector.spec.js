@@ -6,21 +6,18 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { JSDOM } = require('jsdom');
+const { loadFixtureWithScripts, SRC } = require('../helpers');
 
 const FIXTURE_DIR = path.join(__dirname, 'fixtures');
-const DETECTOR_SRC = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
-  'utf8'
-);
+// 保留舊引用給「字面 regex forcing」類 test（它們直接讀 source 做字串比對）。
+const DETECTOR_SRC = SRC.detector;
 
 function loadFixtureAndRunDetector(fileName) {
-  const html = fs.readFileSync(path.join(FIXTURE_DIR, fileName), 'utf8');
-  const dom = new JSDOM(html, { runScripts: 'outside-only' });
-  const { window } = dom;
-  // 最小 NS 環境（detector.js 只依賴 window.__JRead 的存在）
-  window.__JRead = { state: {}, MSG: {} };
-  window.eval(DETECTOR_SRC);
-  return { window, result: window.__JRead.detector.detect() };
+  const env = loadFixtureWithScripts({
+    fixturePath: path.join(FIXTURE_DIR, fileName),
+    scripts: ['detector']
+  });
+  return { window: env.window, result: env.NS.detector.detect() };
 }
 
 describe('detector — businessweekly-7014035', () => {
@@ -376,10 +373,7 @@ describe('detector — readability-class-weights（POSITIVE/NEGATIVE regex 擴�
 
   it('POSITIVE_RE 必須涵蓋 `blog` 與 `hentry` 詞根（forcing：退回舊名單 → spec fail）', () => {
     // 此條為「字面 regex」的 forcing function，避免未來有人誤改回舊名單
-    const detectorSrc = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
-      'utf8'
-    );
+    const detectorSrc = DETECTOR_SRC;
     const m = detectorSrc.match(/const POSITIVE_RE = \/([^\/]+)\/i;/);
     assert.ok(m, '必須能抓到 POSITIVE_RE');
     const pattern = m[1];
@@ -388,10 +382,7 @@ describe('detector — readability-class-weights（POSITIVE/NEGATIVE regex 擴�
   });
 
   it('NEGATIVE_RE 必須涵蓋 `outbrain` / `related` / `widget` / `gdpr` / `sponsor` / `shoutbox` / `skyscraper` 詞', () => {
-    const detectorSrc = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
-      'utf8'
-    );
+    const detectorSrc = DETECTOR_SRC;
     const m = detectorSrc.match(/const NEGATIVE_RE = \/([^\/]+)\/i;/);
     assert.ok(m, '必須能抓到 NEGATIVE_RE');
     const pattern = m[1];
@@ -477,10 +468,7 @@ describe('detector — upmedia-heuristic-ambiguous-positive-wins（ambiguous 時
     // 完整 forcing——v0.7.5 舊「confidence × 0.85」邏輯如果被加回來、
     // 此 fixture 的 score 曲線下仍會 detect 成功（只是 confidence 較低），
     // 但實機 upmedia 會 fail。字面檢查保證不會退回 × 0.85 打折實作。
-    const src = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
-      'utf8'
-    );
+    const src = DETECTOR_SRC;
     assert.ok(
       /top\.find\s*\(\s*c\s*=>\s*c\.posHit/.test(src),
       'detector.js 必須含「ambiguous 時從 top-5 挑 POSITIVE 命中者」邏輯；不可退回 v0.7.5 × 0.85 confidence 打折'
@@ -537,22 +525,15 @@ describe('cleaner — linetoday tail noise sections（heading text heuristic）'
   // 無法命中；靠新 heading-text rule 找 h2/h3/h4 文字 match 跨站通用文末
   // 推薦 section 標題字樣（延伸閱讀 / 更多相關文章 / 其他人也看 / 查看更多 /
   // 最新消息 等），hide heading closest `<section>`。
-  const CLEANER_SRC = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
-    'utf8'
-  );
-
   let window, detected, hidden;
   before(() => {
-    const html = fs.readFileSync(
-      path.join(FIXTURE_DIR, 'linetoday-ogtitle-suffix.html'), 'utf8');
-    const dom = new JSDOM(html, { runScripts: 'outside-only' });
-    window = dom.window;
-    window.__JRead = { state: {}, MSG: {} };
-    window.eval(DETECTOR_SRC);
-    window.eval(CLEANER_SRC);
-    detected = window.__JRead.detector.detect();
-    hidden = window.__JRead.cleaner.clean(detected.el);
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(FIXTURE_DIR, 'linetoday-ogtitle-suffix.html'),
+      scripts: ['detector', 'cleaner']
+    });
+    window = env.window;
+    detected = env.NS.detector.detect();
+    hidden = env.NS.cleaner.clean(detected.el);
   });
 
   after(() => {
