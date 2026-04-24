@@ -194,8 +194,6 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
   background-color: transparent !important;
   background-image: none !important;
-  width: auto !important;
-  max-width: 100% !important;
 }
 `;
 
