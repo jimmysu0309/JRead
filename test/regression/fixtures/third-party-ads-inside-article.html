@@ -68,6 +68,25 @@
       <p>inline ad block</p>
     </div>
 
+    <!-- BBC / React component pattern：class 是 styled-components hash
+         (sc-XXXXXX) 無 keyword、id 刻意也不含 ad 邊界詞、只有 data-testid
+         / data-component 能識別。forcing 必須靠 [data-testid="ad-unit"] 等
+         新 selector 才命中；AD_BOUNDARY_RE / NOISE_KEYWORD_RE 都無路下手。
+         v0.7.8 Jimmy 實測 bbc.com/news/articles/clyepyy82kxo 右側 540×1100
+         灰色占位就是此結構的 wrapper（內層 .dotcom-ad 已被 AD_BOUNDARY_RE
+         hide 但外層 styled-components wrapper 靠 min-height CSS 撐空間）。 -->
+    <div data-testid="ad-unit" data-component="ad-slot" class="sc-66bf5539-0 euXOeE" id="bbc-react-slot-1">
+      <div class="scwrap-inner" style="background-color: #f8f8f8">
+        <p>empty react ad wrapper placeholder</p>
+      </div>
+    </div>
+    <div data-testid="ad-slot" class="sc-aaa-0 abc" id="bbc-react-slot-2">
+      <p>ad slot placeholder</p>
+    </div>
+    <div data-component="ad-unit" class="sc-bbb-0 xyz" id="bbc-react-slot-3">
+      <p>ad unit placeholder</p>
+    </div>
+
     <p>THIRDPARTY_MAIN_MARK_TAIL 主文尾段——也應被保留，證明主文段落不受任何 selector 誤殺。</p>
   </article>
 </body>

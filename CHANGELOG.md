@@ -24,6 +24,44 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.9**——BBC React styled-components 廣告 wrapper 清除（Jimmy 2026-04-24 實測 bbc.com/news/articles/clyepyy82kxo 右側 540×1100 灰色占位，DevTools 抓 DOM 確認結構）。
+
+**根因結構**：
+```html
+<div data-testid="ad-unit" data-component="ad-slot" class="sc-66bf5539-0 euXOeE">
+  <div class="dotcom-ad" style="background-color: #f8f8f8">
+    <div class="dotcom-ad-inner" data-jread-hidden="1"
+         style="display: none !important;">...</div>
+  </div>
+</div>
+```
+- 內層 `.dotcom-ad-inner` 已被 AD_BOUNDARY_RE hide（`-ad-` 邊界命中）
+- 外層 React wrapper class 是 styled-components hash（`sc-66bf5539-0 euXOeE`）無 keyword 可命中
+- 既有 cleaner markerOf 只讀 class + id、看不到 data-* attributes
+- 但外層靠 styled-components min-height CSS 仍撐 540×1100 占位空間 → 灰色方塊殘留
+
+**修法**：`THIRD_PARTY_AD_SEL` 擴充 4 條 React component data attribute selector：
+- `[data-testid="ad-unit"]`
+- `[data-testid="ad-slot"]`
+- `[data-component="ad-slot"]`
+- `[data-component="ad-unit"]`
+
+**通則依據**：`data-testid="ad-unit"` / `data-component="ad-slot"` 是 **Google Ad Manager + React 新聞站跨站業界標準命名**（BBC / Vox / Vice / Insider / 任何使用 styled-components + GAM 的 React 新聞站皆用此命名慣例），屬結構性通則、非站點特判（硬規則 3）。data-testid 原本是 React 測試工具識別 ID，但社群轉而當廣告 component 的語意標記使用。
+
+**驗收**：
+- Fixture `third-party-ads-inside-article.html` 新增 3 條 React wrapper：
+  - `<div data-testid="ad-unit" data-component="ad-slot" class="sc-66bf5539-0 euXOeE" id="bbc-react-slot-1">` 模擬 BBC 實際結構
+  - 另兩條獨立驗 `[data-testid="ad-slot"]` 與 `[data-component="ad-unit"]`
+  - id 刻意改 `bbc-react-slot-1/2/3`（不含 `-ad-` 邊界）、class 是 sc-hash，**只能**靠新 data attribute selector 命中
+- 3 條對應 assertion 驗 dataset.jreadHidden === '1'
+- **Sanity check 關鍵**：第一版 id 用 `bbc-ad-unit` 含 `-ad-` 邊界、sanity 拿掉 data attribute selector 後 **AD_BOUNDARY_RE 誤救援仍通過**（偽陽性）——這是 v0.7.8 硬教訓第 16 條的延伸實例。改用 `bbc-react-slot-N` id 後 sanity 正確 fail 3 條
+- `npm test` 160 passing
+
+**硬教訓追加（第 17 條，延伸第 16 條）**：
+> **fixture id / class 裡只要含 `-ad-`、`-ad`、`ad-` 等邊界詞，AD_BOUNDARY_RE 就會誤救援。** 寫第三方廣告相關 fixture 時，**所有 id / class 都要刻意避開 ad 邊界**，才能讓真正的 forcing（`[data-testid="..."]` / `[id^="..."]` 這類 selector）成為唯一命中路徑。第 16 條教訓是「spec 不 fail 不代表 guard 有效」，本條是「sanity 仍 pass 不代表新 selector 沒作用——可能是既有其他 rule 誤救援」。修 ad 相關 rule 的 sanity check 要留意 fixture 裡不能有邊界詞。
+
+---
+
 **v0.7.8**——ebc 媽祖廣告清除 + 主文標題 wrapper 保護 guard（Jimmy 2026-04-24 回報 ebc news.ebc.net.tw /news/society/548318 兩個 bug + bbc /news/articles/clyepyy82kxo 右側廣告占位殘留）。
 
 **修法 (1)：NOISE_KEYWORD_RE 擴充 `marker` 詞**

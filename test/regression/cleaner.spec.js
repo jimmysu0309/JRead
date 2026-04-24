@@ -740,6 +740,25 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       assert.strictEqual(adClass.dataset.jreadHidden, '1',
         '`[class^="ad-"]` selector 必須命中通用 ad- prefix class');
 
+      // BBC / React component data-testid / data-component pattern
+      // （v0.7.8 Jimmy 實測 bbc.com/news/articles/clyepyy82kxo 右側占位）
+      // fixture id 刻意無 ad 邊界、class 是 sc-hash，只能靠 data attribute
+      // 命中——forcing 退回 THIRD_PARTY_AD_SEL 前版本 → 這三條 assertion fail
+      const bbcAdUnit = w.document.getElementById('bbc-react-slot-1');
+      assert.ok(bbcAdUnit);
+      assert.strictEqual(bbcAdUnit.dataset.jreadHidden, '1',
+        '`[data-testid="ad-unit"]` selector 必須命中 BBC styled-components 廣告 wrapper（class 是 sc-hash、id 無 ad 邊界、只有 data-testid="ad-unit" 可識別）');
+
+      const bbcAdSlotTestid = w.document.getElementById('bbc-react-slot-2');
+      assert.ok(bbcAdSlotTestid);
+      assert.strictEqual(bbcAdSlotTestid.dataset.jreadHidden, '1',
+        '`[data-testid="ad-slot"]` selector 必須命中');
+
+      const bbcAdUnitComponent = w.document.getElementById('bbc-react-slot-3');
+      assert.ok(bbcAdUnitComponent);
+      assert.strictEqual(bbcAdUnitComponent.dataset.jreadHidden, '1',
+        '`[data-component="ad-unit"]` selector 必須命中');
+
       // 主文段落保留（forcing：若 THIRD_PARTY_AD_SEL 寫錯誤殺 <p> 會 fail）
       const mainPs = Array.from(w.document.querySelectorAll('p')).filter(
         p => p.textContent.includes('THIRDPARTY_MAIN_MARK'));

@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.8（ebc 媽祖廣告清除 + 主文標題 wrapper 保護 guard）。NOISE_KEYWORD_RE 擴充 `marker` 詞（ebc `.inline_text.has_marker` 等跨 CMS 插播廣告）；`hideInsideArticleByKeyword` 加 h1-wrapper guard（含 h1 的 wrapper 即便 class 命中 keyword 也保留，防主文標題被連帶 hide）。ebc h1 漏 scope（深層 single-child wrapper + 橫向 sibling chrome 結構、需 promote+narrow 聯動架構升級）+ bbc 廣告占位（Playwright 重現不到）入 PENDING_REGRESSION。160 spec 全過
+**目前版本**：v0.7.9（BBC React styled-components 廣告 wrapper 清除）。Jimmy DevTools 實機抓出 BBC 結構 `<div data-testid="ad-unit" data-component="ad-slot" class="sc-66bf5539-0 euXOeE">`——class 是 styled-components hash 無 keyword、內層已 hide 但外層 React wrapper 靠 min-height CSS 撐 540×1100 占位。`THIRD_PARTY_AD_SEL` 擴充 `[data-testid="ad-unit"]` / `[data-testid="ad-slot"]` / `[data-component="ad-slot"]` / `[data-component="ad-unit"]` 四條跨站 React 廣告 component 標準 selector。160 spec 全過
 
 ---
 

@@ -26,15 +26,6 @@
 - 未補 spec 原因：v0.7.8 嘗試把 `PROMOTE_MAX_HOPS` 放寬 3→4 修此 bug，但 scope 升到 `#main_content` 會把其他 6 個 sibling block（相關新聞列表 / 聽新聞 controls / 更多 link）全部吃進 scope → 產生更嚴重殘留 regression。此類「深層 single-child wrapper + 橫向 sibling chrome」需 **promote+narrow 聯動**機制：promote 到 common ancestor 後，narrow 收縮到「只含 h1 + content 兩個分支」。單改 MAX_HOPS 不夠，需新架構
 - 責任人/目標日期：Jimmy，下次動 detector 架構時處理（設計 promote/narrow 聯動通則）
 
-## [2026-04-24] bbc 廣告占位殘留只在實機出現（Playwright 重現不到）
-
-- 觸發頁面：https://www.bbc.com/news/articles/clyepyy82kxo
-- 症狀：Jimmy 實機 Chrome 看到 reader card 右邊有廣告占位空白區（廣告延遲注入、card 右側有看似側欄的灰/米色空白）
-- 推測根因：bbc 廣告 JS 在網頁載入後一段時間才 inject iframe/widget；viewport 寬時 reader card（默認 ~720px）右側留大量空間，廣告容器若在 reader card 外的 body 層級且未被 `hideOutsideArticleSemantic` / `hideFixedOutsideArticle` 命中則殘留
-- 未補 spec 原因：Playwright bundled Chromium 下 bbc 的廣告 JS 不 inject（bot detection / CSP / geo），probe `residualsRightOfCard` 即便等 18 秒 + 門檻降到 50×50 仍 0 殘留。無法在 harness 重現 → 無法抽最小 fixture
-- 驗證方式：Jimmy 實機到 news.bbc 開 reader mode、等 20-30 秒、在 DevTools Elements panel 抓右側空白元素的 class/id/tag 結構回報，才能寫通則 rule
-- 責任人/目標日期：Jimmy，下次回報此站點時提供 DOM 結構 dump
-
 ## [2026-04-22] detector textLen bonus 無 jsdom forcing function
 
 - 觸發頁面：https://www.upmedia.mg/tw/international/headlines/256941
