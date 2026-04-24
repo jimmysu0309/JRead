@@ -29,7 +29,7 @@
   // alternation 順序不影響：regex 會依 boundary `(^|[^a-z0-9])...([^a-z0-9]|$)`
   // 逐一 try。動詞詞根不會誤殺既有的形容詞 `recommended` / `sponsored` /
   // `discussion`——後者各自有自己的 alternation 先行。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -271,6 +271,50 @@
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);
       }
+      cur = parent;
+    }
+  }
+
+  // ---- promote+narrow 聯動：sibling chrome 全清 ------------------------
+  //
+  // 場景：detector heuristic 選到深層 content container（例：ebc 的
+  // `article_content`，DOM 4-5 層深），promoteForTitle 爬多 hops 升到含
+  // h1 的共同祖先（例：`#main_content`）。從 promotedFrom 沿祖先鏈到
+  // articleEl 的每一層、除 content 分支外的 sibling 都是 page-level
+  // chrome（ebc: 相關新聞 article_relevant、聽新聞 article_controls、
+  // 更多 link、article_cover 圖片 overlay、share_box 分享列 etc.），
+  // 都不該留在 scope 內。
+  //
+  // 演算法（與 `hideAncestorSiblings` 方向相反——那條從 articleEl 往 body
+  // 走、這條從 promotedFrom 往 articleEl 走）：
+  //   cur = promotedFrom
+  //   while cur !== articleEl:
+  //     parent = cur.parentElement
+  //     for sib of parent.children:
+  //       if sib === cur: 保留 (content 分支)
+  //       if sib 含 h1: 保留 (h1 分支)
+  //       else: hide
+  //     cur = parent
+  //
+  // 不動深層後代（各 rule 由 hideInsideArticle* 處理）。isInPreserved
+  // 保護仍生效（figure/figcaption/blockquote/summary 內部不動）。
+  function narrowPromotedSiblings(articleEl, promotedFrom, hidden) {
+    if (!articleEl || !promotedFrom) return;
+    if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
+    let cur = promotedFrom;
+    // 最多走 10 hops，防萬一 DOM 詭異
+    for (let hops = 0; hops < 10 && cur && cur !== articleEl; hops++) {
+      const parent = cur.parentElement;
+      if (!parent) break;
+      for (const sib of parent.children) {
+        if (sib === cur) continue;
+        if (sib.contains && sib.contains(promotedFrom)) continue;  // content 分支
+        if (sib.querySelector && sib.querySelector('h1')) continue; // h1 分支
+        if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(sib)) continue;
+        hide(sib, hidden);
+      }
+      if (parent === articleEl) break;
       cur = parent;
     }
   }
@@ -1519,11 +1563,23 @@
      * 隱藏主文外與主文內的雜訊，回傳還原用的清單。
      * 規則順序：語意標籤 → fixed/sticky → 社群分享 cluster → 主文內 keyword。
      * @param {Element} articleEl 主文容器（必要）
+     * @param {Object} [opts] 可選參數
+     * @param {Element} [opts.promotedFrom] detector promote 升級前的 el；
+     *   若有、跑 narrowPromotedSiblings 把 articleEl 直接子中「不含 content
+     *   分支 + 不含 h1 分支」的 sibling chrome hide（ebc 類深層 single-child
+     *   wrapper + 橫向 sibling chrome 結構修法）
      * @returns {Array<{el: Element, prevDisplay: string}>} 被隱藏的元素清單
      */
-    clean(articleEl) {
+    clean(articleEl, opts) {
       const hidden = [];
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
+      // narrow 放最前：promote 升級後 articleEl 變大、需要先把 sibling chrome
+      // 清掉、再跑其他 rule。否則後續 hideInsideArticle* 會對 chrome 子樹做
+      // 全套檢查、浪費且產生誤殺風險（chrome 裡的 nav / button / list 等 UI
+      // 元件可能命中各種 keyword rule、標成 hidden，但本該整塊清掉）。
+      if (opts && opts.promotedFrom && opts.promotedFrom !== articleEl) {
+        narrowPromotedSiblings(articleEl, opts.promotedFrom, hidden);
+      }
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
       hideDialogs(articleEl, hidden);
       hideOutsideArticleSemantic(articleEl, hidden);

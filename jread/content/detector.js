@@ -395,22 +395,15 @@
   // （WordPress post-title + post-content 同級）、祖父的兄弟（WordPress 的
   // section > article 結構）或 SPA 框架多層 styled-component wrapper 分隔
   // article 與 h1（line today Next.js 實測：article / h1 common ancestor
-  // 需從 article 爬 3 hops 到達 `div.swipe-back`），不超過 3 跳。不加上限時
-  // 若 heuristic 選錯 anchor（例如 upmedia 國際版 heuristic 誤選 `.row`），
-  // promote 會一路往上找到含 h1 的共同 parent、最慘升到 body/#wrapper，
-  // 把整頁 chrome 納入主文 scope。v0.7.3 放寬 2→3：對 line today 修標題漏掉；
-  // upmedia 的 heuristic 誤選已由 modal signal 排除 + textLen bonus 前置
-  // 防止（不再進 promote 路徑），3 hops 仍比到 body/#wrapper 安全。
-  //
-  // v0.7.8 嘗試放寬 3→4 修 ebc /news/society/548318（單 child 深層 wrapper
-  // 結構 4 層 `article_container > article_main_box > article_main >
-  // article_content`）後回滾：promote 升到 #main_content 雖讓 h1 進 scope，
-  // 但同時把 `#main_content` 下另外 5-6 個 sibling block（相關新聞列表 /
-  // 聽新聞 controls / 更多 link）全部納入 scope、cleaner 擋不住產生更嚴重
-  // regression。此類「深層 single-child wrapper + 橫向 sibling chrome」
-  // 結構需要 promote+narrow 聯動機制才能正確處理，單改 MAX_HOPS 不夠。
-  // 暫記 test/PENDING_REGRESSION.md，等結構性通則修法。
-  const PROMOTE_MAX_HOPS = 3;
+  // 需從 article 爬 3 hops 到達 `div.swipe-back`），v0.7.12 放寬到 4 跳。
+  // v0.7.3 2→3：修 line today 標題漏掉
+  // v0.7.8 嘗試 3→4 修 ebc 後回滾：#main_content 含 sibling chrome 會殘留
+  // v0.7.12 3→4 + promote+narrow 聯動：detect() 記錄 promotedFrom、cleaner
+  // 跑 narrowPromotedSiblings 把 articleEl 直接子中「不含 content 分支 +
+  // 不含 h1 分支」的其他 sibling block（相關新聞列表 / 聽新聞 / 更多 link）
+  // 全 hide。配合 ambiguous hopLimit=1 保護（v0.7.2），4 hops 只在 non-
+  // ambiguous 高信心場景發生、有 narrow 兜底不會殘留。
+  const PROMOTE_MAX_HOPS = 4;
 
   // maxHops 可由呼叫端覆寫（例：heuristic ambiguous 時走更嚴 limit，
   // 避免 heuristic 選錯 anchor 時 promote 沿祖先一路升把整頁吞進主文）。
@@ -471,10 +464,17 @@
       if (result && result.strategy !== 'main-tag') {
         // heuristic 在 top-N 競爭膠著時（top1/top2 < 1.25 倍）傳回
         // ambiguous=true；promote 收緊 hops 上限到 1，避免 top1 是誤選 anchor
-        // 時一路升到 body/#wrapper 吞整頁。非 ambiguous 走預設 3 hops
-        // （line today 類多層 styled-component wrapper 需要的上限）。
+        // 時一路升到 body/#wrapper 吞整頁。非 ambiguous 走預設 4 hops
+        // （line today 類多層 styled-component wrapper、ebc 類深層 single-
+        // child wrapper 需要的上限，配 narrowPromotedSiblings 兜底）。
         const hopLimit = result.ambiguous ? 1 : undefined;
+        const originalEl = result.el;
         result.el = promoteForTitle(result.el, hopLimit);
+        // 若 promote 真的升級、紀錄升級前 el 給 cleaner narrowPromotedSiblings
+        // 用來「只保留 content 分支 + h1 分支」、hide 其他 sibling chrome。
+        if (result.el !== originalEl) {
+          result.promotedFrom = originalEl;
+        }
       }
       if (result) {
         result.el = narrowToFirstArticleBlock(result.el);

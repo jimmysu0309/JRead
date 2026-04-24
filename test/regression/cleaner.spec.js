@@ -1800,6 +1800,95 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.12 ebc 深層 single-child wrapper + 橫向 sibling chrome 修法
+// detector PROMOTE_MAX_HOPS 3→4 + cleaner narrowPromotedSiblings 聯動
+// -----------------------------------------------------------------------------
+describe('cleaner — ebc-promote-narrow-sibling-chrome（promote+narrow 聯動清 sibling chrome）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'ebc-promote-narrow-sibling-chrome.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中（heuristic）');
+    hidden = window.__JRead.cleaner.clean(result.el, { promotedFrom: result.promotedFrom });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('detector promote 升到 #main_content（PROMOTE_MAX_HOPS 4）+ result.promotedFrom 紀錄', () => {
+    assert.strictEqual(result.el.id, 'main_content',
+      'promote 應升 4 hops 到 #main_content；forcing：PROMOTE_MAX_HOPS 退回 3 → promote 失敗、此 assertion fail');
+    assert.ok(result.promotedFrom,
+      'promotedFrom 應存在（detector 升級了 el）');
+    assert.ok(result.el.contains(result.promotedFrom),
+      'promotedFrom 必須是 promoted el 的後代');
+  });
+
+  it('h1 主文標題保留（article_header + 內含 h1 → narrow 保護）', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1');
+    // 祖先鏈不得有 hidden
+    let cur = h1.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `h1 祖先 <${cur.tagName}.${cur.className}> 不得 hide`);
+      cur = cur.parentElement;
+    }
+  });
+
+  it('article_relevant（hop 1 sibling）被 narrow hide', () => {
+    const el = document.querySelector('.article_relevant');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      'article_main 的 sibling article_relevant 必須被 narrowPromotedSiblings hide；forcing：註釋 narrowPromotedSiblings 呼叫 → 此 assertion fail');
+  });
+
+  it('share_box（hop 2 sibling）被 narrow hide', () => {
+    const el = document.querySelector('.share_box');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      'article_main_box 的 sibling share_box 必須被 narrow hide');
+  });
+
+  it('article_cover（hop 3 sibling）被 narrow hide', () => {
+    const el = document.querySelector('.article_cover');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      'article_container 的 sibling article_cover 必須被 narrow hide');
+  });
+
+  it('主文 EBC_CONTENT_MARK 段落保留', () => {
+    const marks = Array.from(document.querySelectorAll('p'))
+      .filter(p => p.textContent.includes('EBC_CONTENT_MARK'));
+    assert.ok(marks.length >= 4, '至少 4 段 EBC_CONTENT_MARK');
+    for (const p of marks) {
+      assert.notStrictEqual(p.dataset.jreadHidden, '1');
+    }
+  });
+
+  it('PROMOTE_MAX_HOPS 字面必須為 4（forcing：退回 3 → promote 升不到 #main_content）', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
+      'utf8'
+    );
+    assert.ok(/const PROMOTE_MAX_HOPS = 4;/.test(src),
+      'detector.js 必須含 `const PROMOTE_MAX_HOPS = 4;`（支援 ebc 類 4 層深結構）');
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.11 Medium click-to-zoom button wrapper 修法
 // hideInsideArticleAllButtons 加 media guard：button/role="button" wrapper
 // 內含 img/picture/video 時保留（Medium 把主文 picture 嵌在 role="button"

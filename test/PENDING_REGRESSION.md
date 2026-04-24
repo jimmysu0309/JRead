@@ -18,14 +18,6 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
-## [2026-04-24] ebc 深層 single-child wrapper 結構 h1 漏掉 scope
-
-- 觸發頁面：https://news.ebc.net.tw/news/society/548318
-- 症狀：reader mode 下主文標題 h1「新／台鐵新左營站男廁...」不可見，只從第二段內文「台鐵新左營站驚傳偷拍案！」開始
-- 推測根因：DOM 結構 `#main_content > article_container > article_main_box > article_main > article_content`，detector heuristic 選到 `article_content`（POSITIVE 命中 `content`），h1 在兄弟 `article_header > h1`，促成 h1 進 scope 需 `promoteForTitle` hops 4 才能升到共同祖先 `#main_content`。但 `PROMOTE_MAX_HOPS=3` 不夠
-- 未補 spec 原因：v0.7.8 嘗試把 `PROMOTE_MAX_HOPS` 放寬 3→4 修此 bug，但 scope 升到 `#main_content` 會把其他 6 個 sibling block（相關新聞列表 / 聽新聞 controls / 更多 link）全部吃進 scope → 產生更嚴重殘留 regression。此類「深層 single-child wrapper + 橫向 sibling chrome」需 **promote+narrow 聯動**機制：promote 到 common ancestor 後，narrow 收縮到「只含 h1 + content 兩個分支」。單改 MAX_HOPS 不夠，需新架構
-- 責任人/目標日期：Jimmy，下次動 detector 架構時處理（設計 promote/narrow 聯動通則）
-
 ## [2026-04-22] detector textLen bonus 無 jsdom forcing function
 
 - 觸發頁面：https://www.upmedia.mg/tw/international/headlines/256941

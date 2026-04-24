@@ -24,6 +24,85 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.12**——ebc 深層 single-child wrapper + 橫向 sibling chrome 修法（v0.7.8 記入 PENDING_REGRESSION 的 h1 missing 問題本輪完整修法）。
+
+**根因回顧**（v0.7.8 已 probe 確認）：
+- ebc news.ebc.net.tw /news/society/548318 DOM 結構：
+  ```
+  #main_content
+    article_header (含 h1)
+    article_container
+      article_cover
+      article_main_box
+        share_box
+        article_main
+          article_relevant (相關新聞列表)
+          article_content (← detector heuristic 命中 POSITIVE `content`)
+  ```
+- detector 選到 `article_content`，h1 在兄弟 `article_header` 內
+- 共同祖先是 `#main_content`、從 article_content 上走需要 4 hops
+- v0.7.3 `PROMOTE_MAX_HOPS=3` 不夠 → h1 漏 scope（使用者截圖看不到標題）
+- v0.7.8 嘗試放寬 3→4 後回滾——scope 升到 #main_content 把其他 sibling chrome（相關新聞 / share_box / article_cover）全部納入 → 殘留 regression
+- 結論：需 **promote+narrow 聯動**機制
+
+**本輪完整修法三處聯動**：
+
+**(1) detector.js**：
+- `PROMOTE_MAX_HOPS` 3 → 4
+- `detect()` 記錄 `result.promotedFrom`：
+  ```js
+  const originalEl = result.el;
+  result.el = promoteForTitle(result.el, hopLimit);
+  if (result.el !== originalEl) {
+    result.promotedFrom = originalEl;
+  }
+  ```
+
+**(2) cleaner.js** 新 rule `narrowPromotedSiblings(articleEl, promotedFrom, hidden)`：
+```js
+let cur = promotedFrom;
+for (let hops = 0; hops < 10 && cur && cur !== articleEl; hops++) {
+  const parent = cur.parentElement;
+  for (const sib of parent.children) {
+    if (sib === cur) continue;
+    if (sib.contains(promotedFrom)) continue;  // content 分支
+    if (sib.querySelector('h1')) continue;     // h1 分支
+    // ... isInPreserved / jreadHidden guards
+    hide(sib, hidden);
+  }
+  if (parent === articleEl) break;
+  cur = parent;
+}
+```
+與既有 `hideAncestorSiblings` 方向相反——那條從 articleEl 往 body 走、此條從 promotedFrom 往 articleEl 走，作用層不重疊互補。
+
+**(3) cleaner.clean()** 簽章擴充 `(articleEl, opts)`、opts.promotedFrom 觸發 narrow。main.js 把 detect() 的 `promotedFrom` 傳進 `cleaner.clean()`。
+
+**順手修**：`NOISE_KEYWORD_RE` 加 `controls` 詞——ebc `article_controls` 內「聽新聞」UI 殘留；`controls` 是 UI 控制列的語意詞、主文不會用。
+
+**驗收**：
+- Fixture `ebc-promote-narrow-sibling-chrome.html` 模擬 ebc 實際 DOM（4 層深 content 路徑 + 3 層橫向 sibling chrome + h1 在 hop 4 兄弟）
+- 7 條 spec：
+  - promote 升到 `#main_content` + `result.promotedFrom` 紀錄
+  - h1 保留（祖先鏈無 hidden）
+  - article_relevant / share_box / article_cover（hop 1/2/3 sibling）被 narrow hide
+  - 主文 EBC_CONTENT_MARK 段落保留
+  - 字面 regex forcing `PROMOTE_MAX_HOPS = 4`
+- Sanity check：註釋 `narrowPromotedSiblings` 呼叫 → 2 條 sibling hide assertion fail
+- Harness 四站全過：
+  - ebc ✅ articlePreview 含 h1 標題 + `✅ 無殘留雜訊`
+  - line today / chinatimes / udn ✅ 無殘留
+  - upmedia audit false positive（「關注」在主文內容、「延伸閱讀」括號引述）與本輪無關
+- `npm test` 177 passing
+- 從 `test/PENDING_REGRESSION.md` 移除 ebc h1 條目
+
+**硬教訓追加第 19 條（留給後續對話）**：
+> **promote 放寬 hops 上限時、必須**同時**配備 narrow 機制清 sibling chrome。** v0.7.3 `PROMOTE_MAX_HOPS` 2→3 + v0.7.12 3→4 是 **hop 數放寬的演進**，每次都伴隨新場景：line today 需要 3 hops、ebc 需要 4 hops。但放寬 hops 意味 scope 擴大——upper bound 跟「單 child wrapper 深度」相關、只會越來越深（未來可能出現需要 5 hops 的站）。**正確架構不是無限放寬 hops、是放寬 hops + 收緊 scope 雙管齊下**：promote 到 common ancestor（允許最大範圍）+ narrow 沿 content 路徑清 sibling chrome（精準 scope）。v0.7.12 的 promotedFrom + narrowPromotedSiblings 就是這個架構。未來若再遇需要 5 hops 的站、單純放寬 PROMOTE_MAX_HOPS=5 通常仍 OK（narrow 機制會自動兜底）。
+
+**Fixture 設計硬教訓**：h1 text 前不能加 MARK prefix——fixture 第一版 h1 text = `"EBC_H1_MARK 台鐵新左營站男廁小便斗驚見針孔！嫌犯竟是高鐵男員工"`，titleMatches 比 og:title 首段分割結果（~12 chars），比值 35% < 60% 門檻、match 失敗、promote 沒升級。修正：h1 用 `id="ebc-h1"` 當驗證標記、text 保持乾淨。**驗 title-based 功能的 fixture 永遠不該在 h1 text 加 forcing prefix**。
+
+---
+
 **v0.7.11**——Medium click-to-zoom button wrapper 保留主文圖片（Jimmy 2026-04-24 回報 Medium 文章圖片不見）。
 
 **根因**（Console probe 揭露）：Medium 把主文 `<picture>/<img>` 嵌在 `<div role="button" tabindex="0">` wrapper 裡讓使用者點擊查看大圖：
