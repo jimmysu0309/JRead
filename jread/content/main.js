@@ -33,7 +33,9 @@
     const settings = await getSettings();
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
-    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(result.el) : [];
+    // promotedFrom 傳給 cleaner 做 narrowPromotedSiblings（v0.7.12 ebc
+    // 深層 single-child wrapper + 橫向 sibling chrome 修法）
+    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(result.el, { promotedFrom: result.promotedFrom }) : [];
     NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
     NS.state.active = true;
 
