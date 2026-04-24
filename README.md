@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.16（theverge 裝飾 background 清除）。theverge 用 styled-components 裝飾 wrapper（entry-body-container 白底 / `_1wu3rm1` 白色 inset box / `qnnwq1` 綠色 accent bar / `tly2fw0` 紫色 newsletter box）造成 reader card 內嵌 card + 色塊雜亂。styler CSS 加 universal selector：`*:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table)...` 強制 transparent background。preserve 清單涵蓋 W3C 語意 + 視覺慣例需要背景區隔的 tag（code/pre/table/mark/kbd）。188 spec 全過
+**目前版本**：v0.7.17（theverge p 鎖寬修法）。theverge styled-components class 設 p `width: 588px` 固定值、img 608px 更寬、造成段落偏右不對齊。擴 v0.7.16 universal rule 加 `width: auto !important + max-width: 100% !important` 覆寫固定 px。不違反 v0.6.0 baseline（禁的是 typography 字面 rule、width reset 非 typography）。188 spec 全過
 
 ---
 

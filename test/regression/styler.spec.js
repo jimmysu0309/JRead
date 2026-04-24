@@ -299,6 +299,13 @@ describe('styler — 骨架與可逆性', () => {
       'body 必須含 background-color: transparent !important');
     assert.ok(/background-image\s*:\s*none\s*!important/.test(body),
       'body 必須含 background-image: none !important');
+    // v0.7.17 擴充：加 width / max-width 修 theverge p 鎖寬 + img full-bleed
+    // 偏移（styled-components class 設 width: 588px 造成段落左右留白跟圖片
+    // 不對齊）
+    assert.ok(/width\s*:\s*auto\s*!important/.test(body),
+      'body 必須含 width: auto !important（覆寫 styled-components 固定 px width）');
+    assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
+      'body 必須含 max-width: 100% !important');
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
