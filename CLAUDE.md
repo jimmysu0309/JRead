@@ -53,6 +53,8 @@
 
 **第二層：Playwright harness**（`npm run debug` 或 `node tools/debug-harness.js`）——驗真實 Chrome 行為。用 Playwright 內建 Chromium + `launchPersistentContext` 載入 `jread/` 為 unpacked extension，開啟目標頁、透過 SW `chrome.tabs.sendMessage` 觸發閱讀模式，讀 DOM 副作用（`data-jread-active` / injected `<style>` / `getBoundingClientRect`）、算元素間 gap、截圖 `.playwright-mcp/jread-viewport.png`（viewport 第一屏）+ `.playwright-mcp/jread-reader-fullpage.png`（整個 reader card）。Claude 讀 stdout log + 用 Read tool 看截圖即可**自驗**視覺結果，**不用請 Jimmy 貼 console 或截圖**。
 
+**截圖前一律套 `document.body.style.zoom = '0.5'`**（Jimmy 2026-04-24 硬規則）：同一張 fullpage 能看更多內容、Claude Read 巡整頁排版時一次吃進更多 vertical 空間；`zoom` 只縮 layout、不降 screenshot 解析度，文字仍清晰。新寫 harness 類 script 都照這個 pattern 加。
+
 ### Harness residual audit（硬性驗收——禁止偽陰性驗收）
 
 **動 cleaner / detector 類 rule 後的 harness 驗收**必須用 residual audit mode——`tools/debug-harness.js` 會在 post-toggle 後印出：
