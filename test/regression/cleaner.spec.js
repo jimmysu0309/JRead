@@ -1800,6 +1800,67 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.14 udn h1 作為 articleEl direct child 時被誤 hide
+// narrowPromotedSiblings guard 需加 `sib.tagName === 'H1'`（querySelector
+// 不含 sib 自己、sib 自己是 h1 時保留邏輯漏掉）
+// -----------------------------------------------------------------------------
+describe('cleaner — udn-h1-direct-child-narrow-guard（h1 作為 sibling 時保留）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'udn-h1-direct-child-narrow-guard.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, { promotedFrom: result.promotedFrom });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('detector 命中 article-tag、promote 升到 article-content__wrapper', () => {
+    assert.ok(result.el.classList.contains('article-content__wrapper'),
+      `promote 應升到 section.article-content__wrapper；實際 cls="${result.el.className}"`);
+    assert.ok(result.promotedFrom,
+      'promotedFrom 應紀錄');
+    assert.ok(result.promotedFrom.classList.contains('article-content'),
+      'promotedFrom 應為 article.article-content');
+  });
+
+  it('h1（articleEl direct child）保留，不被 narrow 誤 hide', () => {
+    const h1 = document.getElementById('udn-h1');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1',
+      'h1 作為 sibling（articleEl direct child）時必須保留；forcing：拿掉 `sib.tagName === "H1"` guard → 此 assertion fail');
+  });
+
+  it('主文 UDN_CONTENT_MARK 段落保留', () => {
+    const marks = Array.from(document.querySelectorAll('p'))
+      .filter(p => p.textContent.includes('UDN_CONTENT_MARK'));
+    assert.ok(marks.length >= 4);
+    for (const p of marks) {
+      assert.notStrictEqual(p.dataset.jreadHidden, '1');
+    }
+  });
+
+  it('non-h1 sibling（related-articles aside）仍被 narrow hide', () => {
+    const el = document.querySelector('.related-articles');
+    assert.ok(el);
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      'related-articles sibling chrome 仍由 narrow hide（guard 只保 h1 / h1-containing）');
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.13 esmchina 5 層深 single-child wrapper + partner-content sibling
 // PROMOTE_MAX_HOPS 4→5、NOISE_KEYWORD_RE 加 `partner` 詞
 // -----------------------------------------------------------------------------

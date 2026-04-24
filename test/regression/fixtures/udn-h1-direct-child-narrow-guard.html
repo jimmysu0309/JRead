@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>udn h1 as articleEl direct child — narrow guard forcing</title>
+  <meta property="og:title" content="【重磅快評】美中一中交集 賴總統走不出去也不見了">
+</head>
+<body>
+  <!-- v0.7.14 udn /news/story/124844/9460037 實測 repro：
+       - article-tag 策略命中 article.article-content
+       - promoteForTitle 升到 section.article-content__wrapper（h1 的 parent）
+       - promotedFrom = article.article-content、articleEl = section
+       - articleEl.children 含 h1.article-content__title 作為 direct child
+       - narrowPromotedSiblings hop 0 parent === articleEl、掃 children：
+         * sib === cur (promotedFrom article) → 保留
+         * sib.contains(promotedFrom)? no
+         * sib.tagName === 'H1'? 舊版沒這條 guard
+         * sib.querySelector('h1')? **H1.querySelector('h1') 回 null**
+           （querySelector 找後代、不含自己）→ 舊版 hide h1 ✗
+       - v0.7.14 加 sib.tagName === 'H1' guard → h1 保留 ✓ -->
+  <section class="article-content__wrapper">
+    <h1 class="article-content__title" id="udn-h1">【重磅快評】美中一中交集 賴總統走不出去也不見了</h1>
+    <div class="article-content__meta">
+      <span>2026-04-23 15:07</span>
+      <span>聯合報／主筆室</span>
+    </div>
+    <article class="article-content">
+      <p>UDN_CONTENT_MARK 賴清德總統出訪受挫，美國國務院官方回應不見「the president Lai」，改以「Taiwan officials」替代。</p>
+      <p>UDN_CONTENT_MARK 第二段。本 fixture 重現 udn 結構——h1 作為 articleEl 的 direct child（h1 的 parent = articleEl、與 promotedFrom article 是兄弟關係）。</p>
+      <p>UDN_CONTENT_MARK 第三段。narrowPromotedSiblings 漏處理「sibling 自己是 h1」case 時會把 h1 hide（querySelector('h1') 對 h1 自己不 match 後代）。</p>
+      <p>UDN_CONTENT_MARK 第四段收尾。保證 detector heuristic 有足夠文字命中。</p>
+    </article>
+    <aside class="related-articles">
+      <h3>相關新聞</h3>
+      <a href="#related">延伸閱讀</a>
+    </aside>
+  </section>
+</body>
+</html>
