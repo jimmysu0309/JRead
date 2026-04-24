@@ -24,6 +24,45 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.14**——udn `narrowPromotedSiblings` 漏 h1-self guard 修法（Jimmy 2026-04-24 回報 udn.com/news/story/124844/9460037 標題消失）。
+
+**根因**（harness probe）：
+- detector strategy = `article-tag`（udn 有 `<article class="article-content">`）
+- promoteForTitle 升到 `<section class="article-content__wrapper">`（h1 的 parent）
+- promotedFrom = `article.article-content`、articleEl = section
+- h1 是 articleEl 的 direct child（跟 promotedFrom article 是兄弟）
+- v0.7.12 `narrowPromotedSiblings` hop 0（parent === articleEl）掃 children：
+  - `sib === cur` (promotedFrom article) → 保留 ✓
+  - `sib.contains(promotedFrom)`? no
+  - `sib.querySelector('h1')`? **H1.querySelector('h1') 回 null**（querySelector 只找後代、不含 sib 自己）
+  - 其他 guard 都不命中 → **h1 被 hide**
+
+**修法一行**：guard 前加 `if (sib.tagName === 'H1') continue;` 處理「sibling 自己就是 h1」case。
+
+**通則**：h1 是主文標題的明確語意 element、即使作為 sibling 也應該保留（與 h1 wrapper 保留同精神）。
+
+**驗收**：
+- Fixture `udn-h1-direct-child-narrow-guard.html` 精確重現 udn DOM：
+  ```
+  section.article-content__wrapper
+    h1.article-content__title            ← direct child、sibling
+    div.article-content__meta            ← meta bar、narrow 會 hide
+    article.article-content (promotedFrom)
+      p 主文...
+    aside.related-articles              ← sibling chrome、narrow 會 hide
+  ```
+- 4 條 spec：detector 命中 + promote 升級 + h1 保留 + non-h1 sibling（related-articles aside）仍 hide
+- sanity check：註釋 `sib.tagName === 'H1'` guard → 1 條 h1 assertion fail
+- harness 五站全驗（ebc / line today / udn / chinatimes / esmchina）`✅ 無殘留雜訊`
+- `npm test` 186 passing
+
+**硬教訓追加第 20 條（留給後續對話）**：
+> **`querySelector(sel)` 不含 element 自己、只找後代**。寫 guard「sibling 含 X」時、若 sibling 自己就是 X，`querySelector(X)` 回 null、guard 漏 case。正確 pattern：`sib.tagName === 'X'.toUpperCase() || sib.querySelector(X)` 兩個都要檢查。此 pattern 跟 v0.7.8 `hideInsideArticleByKeyword` h1 wrapper guard 相似但有差異——那條 guard 的 wrapper 是 div，一定不會 tagName === H1、所以只靠 querySelector 可（sibling case 會是 h1 本身）。未來寫類似 guard 時要先問：「sibling / wrapper 自己有沒有可能就是目標 tag？」
+
+**另一個觀察**：Jimmy 的回饋「你自己看不到嗎」——提醒我 harness 能直接 probe 的站（Playwright 不被擋的）不該讓使用者每次 DevTools 貼 Console 指令。本輪改用 probe script 自動跑，省了一輪手動往返。未來 bug 回報優先 harness probe、Playwright 被擋才 fallback DevTools。
+
+---
+
 **v0.7.13**——esmchina 5 層深 single-child wrapper 支援 + partner keyword（Jimmy 2026-04-24 回報 esmchina.com/news/14116.html 標題消失）。
 
 **根因**（Console probe）：

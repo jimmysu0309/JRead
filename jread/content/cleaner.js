@@ -309,7 +309,11 @@
       for (const sib of parent.children) {
         if (sib === cur) continue;
         if (sib.contains && sib.contains(promotedFrom)) continue;  // content 分支
-        if (sib.querySelector && sib.querySelector('h1')) continue; // h1 分支
+        // h1 分支：sibling 自己是 H1 或含 h1 後代都保留
+        // （v0.7.14 udn 修法：h1 是 articleEl direct child 時、
+        // querySelector('h1') 不含 sib 自己、sib.tagName === 'H1' 補 guard）
+        if (sib.tagName === 'H1') continue;
+        if (sib.querySelector && sib.querySelector('h1')) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);

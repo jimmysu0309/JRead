@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.13（esmchina 5 層深結構支援 + partner keyword）。esmchina.com 標題消失——主文 5 層 single-child wrapper、`PROMOTE_MAX_HOPS=4` 不夠。v0.7.12 硬教訓 19 已預測「narrow 機制兜底 → 放寬 hops 通常安全」，本輪直接放寬 4→5。順手 `NOISE_KEYWORD_RE` 加 `partner` 詞（`.partner-content-article` sidebar 殘留）。182 spec 全過
+**目前版本**：v0.7.14（udn narrowPromotedSiblings 漏 h1-self guard 修法）。udn 標題消失——h1 是 articleEl 的 direct child、與 promotedFrom article 是兄弟。v0.7.12 narrow rule 的 guard `sib.querySelector('h1')` 只找後代、不含 sib 自己 → h1 被誤 hide。修法一行加 `if (sib.tagName === 'H1') continue;`。186 spec 全過
 
 ---
 
