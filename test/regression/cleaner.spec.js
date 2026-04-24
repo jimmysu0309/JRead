@@ -1779,3 +1779,119 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
       'restore 後 case4 src 應回到原空字串');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.8 ebc 行銷插播 class `marker` keyword 擴充 forcing
+// -----------------------------------------------------------------------------
+describe('cleaner — ebc-inline-marker-ad（`marker` keyword 擴充清行銷插播）', () => {
+  it('wrapper class 含 `marker` 被 hide（NOISE_KEYWORD_RE 擴充 `marker` 詞）', () => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'ebc-inline-marker-ad.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      const ad = w.document.getElementById('mazu-ad');
+      assert.ok(ad);
+      assert.strictEqual(ad.dataset.jreadHidden, '1',
+        '`.inline_text.has_marker` 必須被 `marker` keyword 命中 hide（舊 NOISE_KEYWORD_RE 無 marker 詞，漏網；forcing：拿掉 marker → fail）');
+
+      // 主文段落保留
+      const ps = w.document.querySelectorAll('p');
+      for (const p of ps) {
+        if (!p.textContent.includes('EBC_MAIN_MARK')) continue;
+        assert.notStrictEqual(p.dataset.jreadHidden, '1',
+          '主文段落不得被誤殺');
+      }
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('NOISE_KEYWORD_RE 字面必含 `marker` 詞（forcing：退回舊名單此 spec fail）', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
+      'utf8'
+    );
+    const m = src.match(/const NOISE_KEYWORD_RE = \/([^\/]+)\/i;/);
+    assert.ok(m, '必須能抓到 NOISE_KEYWORD_RE');
+    assert.ok(/\bmarker\b/.test(m[1]),
+      `NOISE_KEYWORD_RE 必須含 \`marker\`；實際 pattern=${m[1]}`);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.8 含 h1 的 wrapper（article_header / post-header 類）保護 guard
+// 場景：wrapper class 含 `header` keyword 原本會被 hide、h1 連帶不可見。
+// 修法：hideInsideArticleByKeyword 對含 h1 的 wrapper 跳過不 hide。
+// -----------------------------------------------------------------------------
+describe('cleaner — h1-wrapper-header-keyword-guard（保護主文標題 wrapper）', () => {
+  let window, document, articleEl, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'h1-wrapper-header-keyword-guard.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    articleEl = detected.el;
+    hidden = window.__JRead.cleaner.clean(articleEl);
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('`.share-header` 含 h1 → 不得被 hide（guard 生效；若無 guard 會被 `share` keyword hit）', () => {
+    const header = document.querySelector('.share-header');
+    assert.ok(header);
+    assert.notStrictEqual(header.dataset.jreadHidden, '1',
+      '含 h1 的 wrapper 必須被 guard 保護；forcing：拿掉 querySelector(h1) guard → `share-header` 會被 share keyword 命中 hide');
+  });
+
+  it('h1 必須可見（dataset 不帶 jreadHidden，祖先也不帶）', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1');
+    // 祖先鏈不得有 hidden
+    let cur = h1.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `h1 祖先 <${cur.tagName}.${cur.className}> 不得被 hide`);
+      cur = cur.parentElement;
+    }
+  });
+
+  it('wrapper 內部的 `.share_bar` 仍被 share keyword 命中 hide（guard 只保 wrapper 本身）', () => {
+    const share = document.querySelector('.share_bar');
+    assert.ok(share);
+    assert.strictEqual(share.dataset.jreadHidden, '1',
+      'wrapper 內部的分享 bar 應該被 `share` keyword 命中 hide——guard 只保護 header wrapper 本身、內部各 rule 仍 hide');
+  });
+
+  it('主文段落保留', () => {
+    const ps = document.querySelectorAll('p');
+    let found = 0;
+    for (const p of ps) {
+      if (p.textContent.includes('GUARD_BODY_MARK')) {
+        assert.notStrictEqual(p.dataset.jreadHidden, '1');
+        found++;
+      }
+    }
+    assert.ok(found >= 2, '至少保留 2 段主文');
+  });
+});

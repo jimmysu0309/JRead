@@ -29,7 +29,7 @@
   // alternation 順序不影響：regex 會依 boundary `(^|[^a-z0-9])...([^a-z0-9]|$)`
   // 逐一 try。動詞詞根不會誤殺既有的形容詞 `recommended` / `sponsored` /
   // `discussion`——後者各自有自己的 alternation 先行。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner))([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -541,6 +541,16 @@
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;           // 保留元素內部/本身跳過
       if (!shouldHideByKeyword(el)) continue;
+      // 保護含 h1 的 wrapper（`article_header` / `post-header` / `entry-header`
+      // 類 CMS 命名，class 含 `header` keyword 但實際包主文 h1 標題）。
+      // 場景：ebc news.ebc.net.tw /news/society/548318 實測——detector promote
+      // 升到 `#main_content` 含 `article_header` 為 scope 內子元素，但
+      // `article_header` class 命中 NOISE_KEYWORD_RE 的 `header` 詞被 hide，
+      // 連帶 h1 主標題消失。通則：article 內含 h1 的 wrapper 一律保留。
+      // 內部的 controls / nav / share（article_header 內的 article_nav /
+      // 聽新聞 button 等）由其他 rule（hideInsideArticleByKeyword 對子層
+      // article_nav、hideInsideArticleAllButtons 對 buttons）各自處理。
+      if (el.querySelector && el.querySelector('h1')) continue;
       hide(el, hidden);
     }
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在
