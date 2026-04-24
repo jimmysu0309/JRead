@@ -24,6 +24,51 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.15**——esmchina Bootstrap col-* 鎖窄欄寬修法（Jimmy 2026-04-24 回報 esmchina.com/news/14116.html 內文寬度不對）。
+
+**根因**（harness probe）：
+- articleEl = `DIV.container`（styler 給 width: 720px card 寬）
+- 主文 `<p>` 祖先鏈含 `DIV.col-md-9.article-left`
+- col-md-9 computed `width: 288px`（Bootstrap `.col-md-9 { width: 75% }` CSS class rule 在 container inner ~384px 下的計算值）
+- 主文被鎖 288px 寬、card 外框 720px、內文只占 40% 寬
+
+**既有 rule 無法處理**：
+- v0.7.10 `collapseInnerGridFlex` 只處理 `display: grid|inline-grid` 容器
+- 這裡是普通 `display: block` element、含 stylesheet `width: 75%` CSS class rule
+- `data-jread-ancestor` reset 只作用 articleEl **外部**祖先、不管內部
+
+**修法**：styler CSS 加 5 條 Bootstrap col-* attribute selector reset：
+```css
+[data-jread-active="1"] [class*="col-xs-"],
+[data-jread-active="1"] [class*="col-sm-"],
+[data-jread-active="1"] [class*="col-md-"],
+[data-jread-active="1"] [class*="col-lg-"],
+[data-jread-active="1"] [class*="col-xl-"] {
+  width: auto !important;
+  max-width: none !important;
+  float: none !important;
+  flex: initial !important;
+}
+```
+
+**通則依據**：Bootstrap grid class 是跨 CMS 標準（WordPress / Django / Rails 專案普遍用）、非站點特判（硬規則 3）。attribute selector `[class*="col-X-"]` 精準命中 col-xs-1 / col-sm-6 / col-md-9 / col-lg-12 / col-xl-* 等；不誤殺 `.color-primary` / `.collapse` / `.collapsible` 等無 `-` 分隔的類命名。
+
+**精準度設計**：
+- `width: auto` + `max-width: none`：回到 block element 預設行為（100% of parent）
+- `float: none`：Bootstrap 3 的 col 用 `float: left`，清掉避免多欄並排
+- `flex: initial`：Bootstrap 4+ 的 col 在 flex row 內用 `flex: 0 0 75%`，清掉避免固定比例撐開
+
+**驗收**：
+- spec 驗 CSS 含 5 條 attribute selector + 4 條 declarations
+- harness probe 確認 `.col-md-9.article-left` width 288px → 608px（container 內寬）
+- 五站全驗（esmchina / ebc / line today / udn / chinatimes）`✅ 無殘留雜訊`
+- `npm test` 187 passing
+
+**實作硬教訓（本輪踩過的坑）**：
+> **JS template literal 內的 CSS 註解不能含 backtick `** ——第一版 CSS 註解含 `.col-md-9` 這種 markdown-style 反引號包 class 名稱，backtick 直接**中斷 template literal**、引發大量 SyntaxError（35 spec 全 fail）。改用雙引號 `"col-md-9"` 即修。未來在 template literal 裡寫 CSS 註解時：**反引號禁用**、class 名用 `.` 前綴或雙引號包。
+
+---
+
 **v0.7.14**——udn `narrowPromotedSiblings` 漏 h1-self guard 修法（Jimmy 2026-04-24 回報 udn.com/news/story/124844/9460037 標題消失）。
 
 **根因**（harness probe）：

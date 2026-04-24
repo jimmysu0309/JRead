@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.14（udn narrowPromotedSiblings 漏 h1-self guard 修法）。udn 標題消失——h1 是 articleEl 的 direct child、與 promotedFrom article 是兄弟。v0.7.12 narrow rule 的 guard `sib.querySelector('h1')` 只找後代、不含 sib 自己 → h1 被誤 hide。修法一行加 `if (sib.tagName === 'H1') continue;`。186 spec 全過
+**目前版本**：v0.7.15（esmchina Bootstrap col-* 鎖窄欄寬修法）。主文 p 祖先 `.col-md-9` width 被 Bootstrap 75% 規則鎖 288px、card 720px 內容只占 40%。v0.7.10 collapseInnerGridFlex 只處理 grid 容器、不處理 block element width CSS。styler CSS 加 `[class*="col-md-"]` 等 5 條 Bootstrap col attribute selector reset（width: auto + max-width: none + float: none + flex: initial），是跨 CMS 標準通則。187 spec 全過
 
 ---
 
