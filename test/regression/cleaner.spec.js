@@ -1986,11 +1986,20 @@ describe('cleaner — ebc-promote-narrow-sibling-chrome（promote+narrow 聯動�
       'article_main_box 的 sibling share_box 必須被 narrow hide');
   });
 
-  it('article_cover（hop 3 sibling）被 narrow hide', () => {
+  it('article_cover（hop 3 sibling、含 <img>）被 narrow 保留（v0.7.22 media-bearing guard）', () => {
+    // v0.7.22 修法：實機 probe 確認 ebc article_cover 是**文章主圖**
+    // （810×424 hero image + figcaption），不是裝飾 overlay。v0.7.12 當初
+    // 寫這條 fixture 時誤判了 article_cover 的角色、把真主圖當 chrome
+    // hide。narrow 加 media-bearing sibling 保護（sib.querySelector(img/
+    // picture/video) → keep）後，ebc 主圖得以保留（跟 newtalk div.news_img
+    // 同一條通則修好）。
     const el = document.querySelector('.article_cover');
     assert.ok(el);
-    assert.strictEqual(el.dataset.jreadHidden, '1',
-      'article_container 的 sibling article_cover 必須被 narrow hide');
+    assert.notStrictEqual(el.dataset.jreadHidden, '1',
+      'article_cover 含 <img> 為主文 hero image，narrow media-bearing guard 應保留；' +
+      'forcing：拿掉 narrow 的 `sib.querySelector("img,picture,video")` guard → 主圖誤殺、此 assertion fail');
+    assert.ok(el.querySelector('img'),
+      'article_cover 必須含 <img>（forcing media guard 的前提）');
   });
 
   it('主文 EBC_CONTENT_MARK 段落保留', () => {
@@ -2110,6 +2119,142 @@ describe('cleaner — stratechery-h2-post-title（promote+narrow h2 白名單保
       }
       assert.ok(inHidden, `related card h2 "${h.textContent.slice(0, 30)}" 應在 hidden 祖先內`);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.22 newtalk.tw 標題不是 heading tag + 主圖非 figure 修法
+// 兩處修法：
+//   detector.promoteForTitle 擴 title tag 白名單到 h1-h4 + p + div + span
+//     （非 heading 加 120 char text 上限、heads 同時掃 sib 自己 + 子孫）
+//   cleaner.narrowPromotedSiblings 保留含 <img>/<picture>/<video> 的 sibling
+//     （跨 CMS 通則：主圖與內文常在兄弟層、舊站沒把主圖包進 figure 時）
+// Jimmy 2026-04-24 回報：newtalk 新聞閱讀模式標題不見。
+// -----------------------------------------------------------------------------
+describe('cleaner — newtalk-p-class-title（p 標題 + 非 figure 主圖雙修法）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'newtalk-p-class-title.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('detector schema-org-body 命中 div.articleBody', () => {
+    assert.strictEqual(result.strategy, 'schema-org-body',
+      'fixture 無 <article> tag + 掛 itemprop="articleBody"，應走 schema-org-body');
+  });
+
+  it('promoteForTitle 升級到 div.left_column（含 title + 主圖 + 內文）', () => {
+    assert.ok(result.el.className.includes('left_column'),
+      `articleEl 應升級到 div.left_column；實際 class: ${result.el.className}`);
+    assert.ok(result.promotedFrom,
+      'promotedFrom 必須存在（detector 有升級）');
+  });
+
+  it('promoteForTitle 返回 titleHead（命中 <p class="name"> 或 <div class="title">）— 擴 tag 白名單 forcing', () => {
+    assert.ok(result.promotedTitleHead,
+      '擴 title tag 白名單到 p/div/span 後、<p class="name"> 應被 promoteForTitle 命中並回傳；' +
+      'forcing：若只掃 h1-h4（舊邏輯）會漏、titleHead 為 null、此 assertion fail');
+    const tag = result.promotedTitleHead.tagName;
+    assert.ok(tag === 'P' || tag === 'DIV' || tag === 'SPAN',
+      `titleHead 應為 p/div/span 其中之一；實際 ${tag}`);
+    assert.ok(result.promotedTitleHead.textContent.includes('川普下達佈雷快艇擊沉令'),
+      `titleHead 必須含文章標題；實際 text: ${result.promotedTitleHead.textContent.slice(0, 60)}`);
+  });
+
+  it('<p class="name"> 文章標題保留不被 narrow hide（核心 bug forcing）', () => {
+    const titleP = document.querySelector('p.name');
+    assert.ok(titleP, 'fixture 必須含 p.name');
+    // p.name 在 div.news_info > div.title > p.name。narrow 要保留整個 news_info 分支（contains titleHead）。
+    let cur = titleP;
+    let inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden,
+      'p.name 及其祖先不得被 hide；forcing：拿掉 promoteForTitle 對 p tag 的擴展 → titleHead=null → narrow 把 news_info 當 sibling chrome hide → 此 assertion fail');
+  });
+
+  it('主圖 div.news_img 保留不被 narrow hide（media-bearing sibling 保護 forcing）', () => {
+    const newsImg = document.querySelector('.news_img');
+    assert.ok(newsImg, 'fixture 必須含 div.news_img');
+    assert.notStrictEqual(newsImg.dataset.jreadHidden, '1',
+      'div.news_img 含 <img> 為後代，narrow 應保留；forcing：拿掉 narrow 的 ' +
+      '`sib.querySelector("img,picture,video")` guard → 主圖會被當 sibling chrome hide、此 assertion fail');
+    // 驗主圖 <img> 自己也未被 hide
+    const img = newsImg.querySelector('img');
+    assert.ok(img, 'news_img 內應含 <img>');
+  });
+
+  it('主文內容保留（NEWTALK_MAIN_MARK 全留）', () => {
+    const paras = document.querySelectorAll('p');
+    let mainPs = 0;
+    for (const p of paras) {
+      if (p.textContent.includes('NEWTALK_MAIN_MARK')) {
+        // 檢查祖先鏈沒被 hide
+        let cur = p;
+        let inHidden = false;
+        while (cur && cur !== document.body) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        assert.ok(!inHidden, `NEWTALK_MAIN_MARK 段落不得在 hidden 祖先內：${p.textContent.slice(0, 40)}`);
+        mainPs++;
+      }
+    }
+    assert.ok(mainPs >= 5, `fixture 應含 5 個主文段落；實際 ${mainPs}`);
+  });
+
+  it('chrome sibling 仍被清除（延伸閱讀 / 推薦）', () => {
+    // 延伸閱讀：class extend_news_url 含 NOISE_KEYWORD_RE 命中（keyword heuristic）
+    // 或被 narrow hide（sibling chrome 不含 img）
+    const extList = document.querySelector('.extend_news_url');
+    assert.ok(extList);
+    let cur = extList;
+    let inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, '延伸閱讀 chrome 必須被 hide');
+
+    // popIn 推薦：id _popIn_recommend 含 `recommend` keyword
+    const popin = document.querySelector('#_popIn_recommend');
+    assert.ok(popin);
+    cur = popin;
+    inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'popIn 推薦 chrome 必須被 hide');
+  });
+
+  it('右欄 sidebar（right_column）在 articleEl 外、由 hideAncestorSiblings hide', () => {
+    const sidebar = document.querySelector('#right_column');
+    assert.ok(sidebar);
+    // right_column 是 articleEl (left_column) 的 sibling，ancestorSiblings 清
+    assert.strictEqual(sidebar.dataset.jreadHidden, '1',
+      '右欄 sidebar 必須被 hide');
   });
 });
 

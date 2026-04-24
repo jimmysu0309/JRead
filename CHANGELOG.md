@@ -4,21 +4,21 @@
 
 ---
 
-## Baseline 宣告（v0.7.21 — 2026-04-24 起）
+## Baseline 宣告（v0.7.22 — 2026-04-25 起）
 
-**當前 baseline：v0.7.21**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 Stratechery h2 post-title 修法為止的全部 detector / cleaner 能力，實測通過 15+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / The Verge 等）。199 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
+**當前 baseline：v0.7.22**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector / cleaner 能力，實測通過 16+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / The Verge 等）。207 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
 
 **baseline 含括的能力**：
 
 - **styler**（瘦身不變）：讀者卡片容器 + 祖先鏈 reset + Bootstrap col-* reset + 裝飾 background transparent + aspect-ratio placeholder 破解 + 使用者 override（theme/fontSize 含 Auto=0/contentWidth）。**不覆寫原站字型、heading margin、p margin、list style、link color、blockquote border**。
-- **detector**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B）→ heuristic（Readability bubble-up + POSITIVE/NEGATIVE + textLen bonus + top-5 ambiguous）→ main-tag 兜底；title promote 支援 h1-h4 + 返回 `promotedTitleHead`。
-- **cleaner**：16 條 `hideInsideArticle*` rule、dialog/tooltip ARIA、ancestor sibling、**promote+narrow 聯動（含 h1-h4 白名單）**、grid/flex collapse、media placeholder reset、lazy image hydrate、MutationObserver 動態攔截、inline `!important` hide。
+- **detector**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B）→ heuristic（Readability bubble-up + POSITIVE/NEGATIVE + textLen bonus + top-5 ambiguous）→ main-tag 兜底；title promote 支援 h1-h4 heading + p/div/span 非 heading tag 包標題（v0.7.22，非 heading 加 120 char text 上限）+ 返回 `promotedTitleHead`。
+- **cleaner**：16 條 `hideInsideArticle*` rule、dialog/tooltip ARIA、ancestor sibling、**promote+narrow 聯動（含 h1-h4 白名單 + media-bearing sibling 保護 v0.7.22）**、grid/flex collapse、media placeholder reset、lazy image hydrate、MutationObserver 動態攔截、inline `!important` hide。
 
 ### 修 edge case 時的硬規則
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（199 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗）
+3. 每次修法後跑 `npm test`（207 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -27,9 +27,49 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 ### 歷代 baseline 升級點
 
 - **v0.6.3**（2026-04-21）首版 baseline：styler 瘦身完成、title promote 涵蓋 WordPress/anthropic
-- **v0.7.21**（2026-04-24）當前 baseline：累積 detector + cleaner 所有能力，Stratechery h2 post-title 修法 + e2e harness 就緒 + 15 站實測通過
+- **v0.7.21**（2026-04-24）Stratechery h2 post-title 修法 + e2e harness 就緒 + 15 站實測通過
+- **v0.7.22**（2026-04-25）當前 baseline：擴 promote tag 到 p/div/span（newtalk.tw）+ narrow media-bearing sibling 保護（順便修好 ebc 主圖誤殺）+ 16 站實測通過
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.22**——newtalk.tw 標題不是 heading tag（`<p class="name">`）+ 主圖非 figure（`<div class="news_img">`）雙修法（Jimmy 2026-04-24 實測截圖回報 newtalk 新聞閱讀模式標題消失；同一條 narrow media guard 順便修好 ebc `article_cover` 主圖被誤殺的潛伏 bug）。
+
+**症狀**：newtalk.tw/news/view/2026-04-24/1031506 進閱讀模式，reader card 第一項直接是「美國總統川普 23 日在社交媒體發文...」，主標題「川普下達佈雷快艇擊沉令! 以稱要把伊朗打回石器時代 伊祭7反擊方案」完全消失。
+
+**根因**（harness probe 診斷）：
+- 整頁無 `<article>` tag，detector 走 `schema-org-body` 命中 `div[itemprop="articleBody"]`（純內文段落，不含標題）
+- 文章標題不是 heading tag——newtalk 用 `<p class="name">` 包在 `div.title > div.news_info` 裡（可能是早期 CMS 設計遺留）
+- 舊 `promoteForTitle` 只掃 `h1-h4` tag、對 `<p>` 包標題漏防 → 主文容器停在 `div.articleBody`、沒升級
+- `hideAncestorSiblings` 沿祖先鏈把 `div.news_info`（含標題）當 chrome 清掉 → 標題不見
+- 連帶發現：主圖 `div.news_img > img`（非 figure、`isInPreserved` 不覆蓋），即使修好 promote 讓 articleEl 升到 `div.left_column`，`narrowPromotedSiblings` 從 `articleBody` 走到 articleEl 時仍會誤殺 `news_img`
+
+**修法**（結構性通則，非站點特判）：
+
+1. **detector.js `promoteForTitle` 擴 title tag 白名單**：`TITLE_TAG_SEL` 從 `'h1, h2, h3, h4'` 擴到 `'h1, h2, h3, h4, p, div, span'`；非 heading tag 加 `TITLE_TEXT_MAX = 120` text 長度上限（防含標題字串的正文段落誤配；heading tag 維持無上限）。同時修一個既有 bug：`heads` 現在同時掃 sib 自己 + 子孫（舊邏輯「sib match 白名單 → 只看 sib 自己」會吃下整塊 wrapper textContent、漏內部真 title node；擴到 div/span 後此 bug 必須修）。
+2. **cleaner.js `narrowPromotedSiblings` 加 media-bearing sibling 保護**：新增 guard `if (sib.querySelector('img, picture, video')) continue`——跨 CMS 通則：主圖與內文常在兄弟層，舊站或某些 CMS（WordPress 某些 theme 未把 `<img>` 升級成 `<figure>`、Next.js 新聞站手寫 `<div><img></div>` 主圖）沒把主圖包進 figure 時尤其如此。若該 sibling 其實是含 img 的廣告（class/id 命中 noise keyword），後續 `hideInsideArticleByKeyword` / `hideInsideArticleThirdPartyAds` 會補抓；反之錯殺主圖沒辦法回收。
+
+**為何不是站點特判**：
+- `<p class="name">` 包標題在聯合新聞、部分中時早期 CMS 也見過；v0.7.22 後所有「非 heading tag 但內含 og:title 精確匹配文字」都能被 promote 覆蓋（titleMatches 本身已是嚴格字串比對，雙重保護）
+- `<div><img></div>` 主圖結構 ebc (`article_cover`) 與 newtalk (`news_img`) 完全同構，修法同時修好兩站
+
+**連帶修好既有 bug（ebc 主圖誤殺）**：
+- 原 `ebc-promote-narrow-sibling-chrome` spec 斷言「`article_cover` 必須被 narrow hide」——harness probe 實機確認 ebc `article_cover` 是**文章主圖**（810×424 hero image + figcaption），v0.7.12 當初寫 spec 時誤判了 article_cover 的角色
+- v0.7.22 媒體 guard 讓 ebc 主圖回來、spec 斷言更新為「必須保留」
+
+**新 fixture + spec**：
+- `test/regression/fixtures/newtalk-p-class-title.html`：完整重現 newtalk DOM（`div.left_column` → `news_info` 含 `p.name` title / `news_content` 含 `news_img` 主圖 + `articleBody` 內文 / `gray_box extend_news_url` / `news_tools` / `_popIn_recommend` / 兄弟 `right_column` sidebar）
+- `cleaner.spec.js` 新增 7 條 assertion：(1) schema-org-body 命中 articleBody；(2) promote 升到 left_column；(3) **titleHead 命中 `<p class="name">`—— 擴 tag forcing**；(4) **p.name 及祖先不被 hide—— 核心 bug forcing**；(5) **主圖 `div.news_img` 保留—— media-bearing guard forcing**；(6) 主文 5 段保留；(7) chrome（延伸閱讀 / popIn）+ 右欄 sidebar hide
+- `cleaner.spec.js` ebc spec 更新：`article_cover` 從「必須 hide」改成「必須保留」+ 註解說明 v0.7.22 修正原 spec 的誤判
+- **sanity check 兩輪**：(a) `TITLE_TAG_SEL` 改回 `'h1, h2, h3, h4'` → newtalk 4 條 fail；還原 → pass。(b) 註解掉 narrow media guard → ebc article_cover + newtalk news_img 共 2 條 fail；還原 → pass
+
+**驗收**：
+- `npm test` → 207 passing（原 199 + 新 7 條 newtalk + 1 條 ebc 更新）
+- harness 對真實 newtalk.tw/news/view/2026-04-24/1031506 驗：reader card 第一項變回 `P "川普下達佈雷快艇擊沉令!..."`，主圖 3 張 hero image 顯示正常、跑馬燈 / 延伸閱讀 / 分享列 / 留言 / 推薦全部清除、fullpage 截圖整頁乾淨
+- ebc 類（`article_cover` 主圖）潛伏 bug 同時修好
+
+**未動**：styler.js / 其他 cleaner rule / popup / service-worker / options 全部零變化；修法只動 detector `promoteForTitle`（擴 tag + text 上限 + heads 邏輯修 bug）+ cleaner `narrowPromotedSiblings`（加 media guard 1 行），行為擴展而非重寫。
 
 ---
 
