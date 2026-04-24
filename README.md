@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.10（BBC pathological 固定 px grid container 強制 block reset）。v0.7.9 清廣告後主文仍鎖窄欄；Console probe 揭露 articleEl 內部多層 grid container 中一層 `grid-template-columns: 386px` 固定單欄鎖死主文 p。新 `collapseInnerGridFlex`：articleEl 內含 `\d+px` 的 grid container 強制 block；彈性單位 `1fr 1fr` / `minmax` 保留（intentional 多欄設計）；flex container + preserved figure/figcaption 內部不動。165 spec 全過
+**目前版本**：v0.7.11（Medium click-to-zoom button wrapper 保留主文圖片）。Medium 把主文 `<picture>/<img>` 嵌在 `<div role="button">` wrapper 裡，v0.7.3「所有 button 無條件清」rule 誤殺連帶圖片消失。`hideInsideArticleAllButtons` 加 media guard：button 內含 img/picture/video 時保留 wrapper（與 v0.7.8 h1 wrapper guard 同精神——「多角色 wrapper 內含主文載體」一律保留）。svg 不在保護範圍。170 spec 全過
 
 ---
 

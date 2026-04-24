@@ -24,6 +24,47 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.11**——Medium click-to-zoom button wrapper 保留主文圖片（Jimmy 2026-04-24 回報 Medium 文章圖片不見）。
+
+**根因**（Console probe 揭露）：Medium 把主文 `<picture>/<img>` 嵌在 `<div role="button" tabindex="0">` wrapper 裡讓使用者點擊查看大圖：
+```html
+<figure class="paragraph-image">
+  <div role="button" tabindex="0" class="oi oj ek">
+    <span>Press enter or click to view image in full size</span>
+    <div>
+      <picture>
+        <source srcset="..."/>
+        <img src="..." width="700" height="472"/>
+      </picture>
+    </div>
+  </div>
+</figure>
+```
+v0.7.3 `hideInsideArticleAllButtons`「所有 button / [role="button"] 無條件清」rule 把這個 wrapper 當純 CTA 給 hide（`display: none !important`）、連帶內部 picture/img 都不可見、`rectW/H = 0×0`。
+
+**修法**：`hideInsideArticleAllButtons` 加 media guard：
+```js
+if (btn.querySelector && btn.querySelector('img, picture, video')) continue;
+```
+
+**通則依據**：button 內含 img/picture/video = 主文載體（不是純 CTA）、保留 wrapper 才能保留主文內容。修法精神與 v0.7.8 的 h1 wrapper guard 一致：button 內含「主文載體」時保留 wrapper、純 CTA 照清。
+
+**精準度設計**：svg 不在 guard 範圍——svg 多為 icon（share / like / comment 常用 svg 圖示），作者 avatar 用 img、有可能誤保留含 avatar 的 button，但主文中這類 case 罕見、trade-off 正向（保主文圖 >> 讓少數 avatar button 殘留）。
+
+**驗收**：
+- Fixture `medium-click-to-zoom-button.html` 三條 forcing：
+  - `#zoom-btn`（`role="button"` 含 picture）→ 保留
+  - `#share-btn`（純 CTA `"Share this article"`）→ hide
+  - `#icon-btn`（`role="button"` 含 svg icon）→ hide
+- 主文 img 祖先鏈全無 `data-jread-hidden="1"`
+- sanity check：註釋 `btn.querySelector` guard → 2 條 assertion fail（zoom-btn 被 hide、img 祖先 hidden）
+- `npm test` 170 passing
+
+**硬教訓追加第 18 條（留給後續對話）**：
+> **「無條件清」類 rule 遇到「多角色 wrapper」時必然需要 guard。** v0.7.3 `hideInsideArticleAllButtons` 設計時的假設是「button = 純 CTA（分享 / 訂閱 / 追蹤）」，但現代 CMS（Medium / BBC / Vox 等 React 站）常把 `role="button"` 當 **互動式容器**（click-to-zoom / click-to-expand），內含主文 picture / video / heading 等**主文載體**。這類 wrapper 有雙重角色——**互動 + 主文容器**。無條件 hide 會連主文一起消失。guard pattern：`if (el.querySelector(<主文載體 selector>)) continue`。v0.7.8 h1 wrapper guard + v0.7.11 media guard 都是此 pattern 的實例。未來若有新「無條件清 X tag」rule，先問：「X 有沒有可能是多角色 wrapper？內部是否可能含主文載體？」
+
+---
+
 **v0.7.10**——BBC pathological 固定 px grid container 強制 block reset（Jimmy 2026-04-24 v0.7.9 後回報 BBC 主文仍鎖窄欄寬度）。
 
 **根因**：v0.7.9 清掉廣告 wrapper 後，Console probe 揭露 articleEl 內部多層 grid container：

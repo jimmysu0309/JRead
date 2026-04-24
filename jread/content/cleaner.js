@@ -1235,6 +1235,16 @@
       if (btn === articleEl) continue;
       if (btn.contains && btn.contains(articleEl)) continue;
       if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
+      // 保護含主文媒體的 button wrapper（v0.7.11 Medium click-to-zoom 修法）：
+      // Medium 把主文 <picture>/<img> 嵌在 <div role="button" tabindex="0">
+      // 的 wrapper 裡、點擊看大圖（a11y 同時有 span「Press enter or click
+      // to view image in full size」）。btn 內含 img/picture/video 時保留
+      // 整個 wrapper——這是 v0.7.3「所有 button 無條件清」rule 的例外：
+      // button wrapper 雙重角色（click-to-zoom + 主文媒體容器），hide 掉
+      // 連圖片都看不見。通則依據：button 內含媒體元素 = 主文載體、非純
+      // CTA。share / subscribe / follow button 一般用 svg（不在保護範圍內）
+      // 或完全無圖、保留判定不影響。
+      if (btn.querySelector && btn.querySelector('img, picture, video')) continue;
       hide(btn, hidden);
     }
   }
