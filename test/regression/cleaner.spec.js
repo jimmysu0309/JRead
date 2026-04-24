@@ -1800,6 +1800,104 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.10 BBC /news/articles/clyepyy82kxo 實測根因：articleEl 內部多層
+// grid container、`grid-template-columns: 386px` 固定 px 寬鎖住主文 p。
+// 既有 `collapseGridWithHiddenCell` 只在有 hidden child 時 collapse、
+// 跳過這個 pathological case。新 `collapseInnerGridFlex` 強制 reset 所有
+// articleEl 內含 px 值 grid-template-columns 的 grid container → block。
+// -----------------------------------------------------------------------------
+describe('cleaner — bbc-inner-grid-fixed-column（pathological 固定 px grid reset）', () => {
+  let window, document, articleEl, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'bbc-inner-grid-fixed-column.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    articleEl = detected.el;
+    hidden = window.__JRead.cleaner.clean(articleEl);
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('pathological-grid（grid-template-columns: 386px 固定 px）被 reset 成 block', () => {
+    const el = document.getElementById('pathological-grid');
+    assert.ok(el);
+    assert.strictEqual(el.style.display, 'block',
+      '固定 px 寬 grid 應被強制 display:block；forcing：註釋 collapseInnerGridFlex 呼叫 → 此 assertion fail');
+    assert.strictEqual(el.style.getPropertyPriority('display'), 'important',
+      'display:block 必須帶 !important priority（勝過 stylesheet 的 display:grid）');
+    assert.strictEqual(el.style.getPropertyValue('grid-template-columns'), 'none',
+      'grid-template-columns 應被清為 none');
+  });
+
+  it('intentional-grid（grid-template-columns: 1fr 1fr 彈性）保留原狀', () => {
+    const el = document.getElementById('intentional-grid');
+    assert.ok(el);
+    assert.strictEqual(el.style.display, 'grid',
+      '彈性單位 1fr 1fr 的 intentional grid 應保留原 display:grid（rule 條件 `/\\d+px/` 不命中）');
+    assert.strictEqual(el.style.getPropertyValue('grid-template-columns'), '1fr 1fr',
+      'intentional grid-template-columns 應保留 1fr 1fr');
+  });
+
+  it('主文各段 MARK 保留，未被誤殺', () => {
+    const marks = ['BBC_INTRO_MARK', 'BBC_TRAPPED_MARK', 'BBC_OUTRO_MARK',
+                   'BBC_INTENTIONAL_LEFT_MARK', 'BBC_INTENTIONAL_RIGHT_MARK'];
+    for (const m of marks) {
+      const found = Array.from(document.querySelectorAll('p')).find(p => p.textContent.includes(m));
+      assert.ok(found, `${m} 段必須存在`);
+      assert.notStrictEqual(found.dataset.jreadHidden, '1', `${m} 段不得被誤 hide`);
+    }
+  });
+
+  it('restore 後 pathological-grid 回到原 inline style（display:grid + 386px）', () => {
+    // 這個 it 放最後；after 會呼叫 restore
+    // 不能在這裡檢查 restore，因為 after hook 在 it 之後才跑。改加 restore spec
+    // 在獨立 describe 內驗 round-trip
+    assert.ok(true, 'restore round-trip 另在獨立 spec 驗');
+  });
+});
+
+describe('cleaner — bbc-inner-grid restore round-trip', () => {
+  it('clean → restore 後 pathological-grid 回到原 display:grid + 386px', () => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'bbc-inner-grid-fixed-column.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected);
+    const h = w.__JRead.cleaner.clean(detected.el);
+
+    const pg = w.document.getElementById('pathological-grid');
+    assert.strictEqual(pg.style.display, 'block', 'clean 後應為 block');
+
+    w.__JRead.cleaner.restore(h);
+
+    assert.strictEqual(pg.style.display, 'grid',
+      'restore 後 display 應回到原 inline grid');
+    assert.strictEqual(pg.style.getPropertyPriority('display'), '',
+      'restore 後 display 不應殘留 !important');
+    assert.strictEqual(pg.style.getPropertyValue('grid-template-columns'), '386px',
+      'restore 後 grid-template-columns 應回到原 386px');
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.8 ebc 行銷插播 class `marker` keyword 擴充 forcing
 // -----------------------------------------------------------------------------
 describe('cleaner — ebc-inline-marker-ad（`marker` keyword 擴充清行銷插播）', () => {

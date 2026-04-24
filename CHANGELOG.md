@@ -24,6 +24,46 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.10**——BBC pathological 固定 px grid container 強制 block reset（Jimmy 2026-04-24 v0.7.9 後回報 BBC 主文仍鎖窄欄寬度）。
+
+**根因**：v0.7.9 清掉廣告 wrapper 後，Console probe 揭露 articleEl 內部多層 grid container：
+```
+p (386px)
+  DIV (display: grid, grid-template-columns: 386px) ← 瓶頸
+    DIV (block 386px)
+      DIV (display: grid, 12 columns)
+        DIV (display: grid, ...)
+          ARTICLE (block 817px)
+```
+單欄固定 386px 的 grid container 鎖死主文 p 寬度。既有 cleaner 兩條 rule 都漏網：
+- `data-jread-ancestor` CSS reset 只處理 articleEl **外部**祖先
+- `collapseGridWithHiddenCell` 只在有 hidden child 時觸發
+
+**修法**：cleaner 新 `collapseInnerGridFlex(articleEl, hidden)` 函式
+- 掃 articleEl 內所有 element
+- 條件：`display: grid|inline-grid` + `grid-template-columns` 含 `\d+px`
+- 操作：強制 `display: block !important` + `grid-template-columns: none !important` + `grid-template-rows: none !important`
+- `restoreInnerGridFlex(hidden)` 逆向還原 inline display / grid-template
+
+**精準度設計**：
+- `/\d+px/` 只 collapse **hard-coded 固定寬度**（BBC 的 `386px` 是 styled-components JS 計算後的固定值，reader mode 下明顯過窄）
+- `1fr 1fr` / `auto` / `minmax(0, 1fr)` 等彈性單位**保留**——這類是 intentional 多欄設計（主文內雙欄引述 / 圖片並列）
+- **不動 flex container**——Bootstrap row/col 類 layout 由 `collapseGridWithHiddenCell` 在 hidden child 場景處理，避免誤殺主文中的 flex 排版
+- `isInPreserved` 跳過 figure/figcaption/summary/blockquote 內部（figure image gallery 的 grid layout 保留）
+
+**通則依據**：reader mode 精神是「內文撐滿 card」。hard-coded px 固定寬 grid（特別是 styled-components JS 動態算出的）違反此精神——強制 block 化是 reader mode 通則、非站點特判。
+
+**驗收**：
+- Fixture `bbc-inner-grid-fixed-column.html`：
+  - `#pathological-grid`（`grid-template-columns: 386px` 固定 px）→ 驗被 reset
+  - `#intentional-grid`（`1fr 1fr` 彈性）→ 驗保留原 grid
+  - 5 個 MARK 段落（INTRO / TRAPPED / OUTRO / INTENTIONAL_LEFT / INTENTIONAL_RIGHT）驗主文保留
+- 獨立 round-trip spec：clean → restore 後 pathological grid 回到原 `display:grid` + `386px`
+- sanity check：註釋 `collapseInnerGridFlex` 呼叫 → 2 條 assertion fail（pathological 保持 grid、grid-template-columns 未清）
+- `npm test` 165 passing
+
+---
+
 **v0.7.9**——BBC React styled-components 廣告 wrapper 清除（Jimmy 2026-04-24 實測 bbc.com/news/articles/clyepyy82kxo 右側 540×1100 灰色占位，DevTools 抓 DOM 確認結構）。
 
 **根因結構**：
