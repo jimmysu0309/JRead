@@ -24,6 +24,31 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.18**——revert v0.7.17：universal `width/max-width` 打破 theverge drop cap + figure 排版（Jimmy 2026-04-24 截圖打臉）。
+
+**Regression 症狀**（Jimmy 實測 theverge 全頁截圖）：
+- Drop cap `D` float:left 與首段文字重疊——原 drop cap 靠內嵌 style 的固定 width 讓文字繞排、`width: auto !important` 強制破壞 intrinsic width
+- Figure 內 img 部分溢出 card 邊界——styled-components 原設計 figure `max-width: none` 允許滿版 bleed，universal `max-width: 100% !important` 打破 full-bleed 意圖
+- p/img 4-10px 偏移雖修好，但整體排版崩壞（drop cap overlap 視覺衝擊遠大於 4-10px 偏移）
+
+**Jimmy 硬教訓 20**：「你自己改完都不看一下嗎？請改完務必檢查整個網頁，確保從上到下的排版皆正常。」
+- 改 styler 類影響視覺的 rule 後，**必須用 harness 截圖 + Read 該截圖自驗**整頁排版
+- 光靠 `✅ 無殘留雜訊` 的 residual audit 只覆蓋 cleaner 層的雜訊清除、不保證 styler 的排版正確
+- Universal selector `*:not(...)` 是「全站掃地雷」動詞——連 figure/figcaption 以外的 inline `<style>` 在 p/img/div/span 上都會被強制覆寫，副作用遠大於預期
+
+**通則教訓**（寫進 SPEC）：**typography-affecting universal rule（width / max-width / margin / padding 等影響版面的幾何屬性）必須用 scoped selector**（例 `[data-jread-active] > article > p` 或 styled-components hash class attribute selector 精準命中）。v0.7.16 的 background transparent universal rule 沒此問題是因 background 屬性副作用只有「變透明」不影響 layout。
+
+**本版變更**：
+- `jread/content/styler.js` universal rule 移除 `width: auto !important` + `max-width: 100% !important`（純 revert v0.7.17 的兩行）
+- `test/regression/styler.spec.js` 移除對應 2 條 assertion
+- `tools/debug-harness.js` 保留 goto timeout 30s→60s + fallback `domcontentloaded`（theverge 類重站 30s 不夠；跟 revert 無關但本輪一併 commit、未來除錯更順）
+
+**未修**：theverge styled-components `width: 588px` 造成 p/img 4-10px 偏移（入 `test/PENDING_REGRESSION.md`；將來用 scoped selector 精準 target p element 而非 universal rule）。
+
+**驗收**：188 spec 全過（移除 2 條 `assert.ok` 在同一 `it()` block 裡，test case 數不變）；harness 跑 theverge `✅ 無殘留雜訊` + viewport 截圖確認無 drop cap overlap / figure overflow。
+
+---
+
 **v0.7.17**——theverge p 鎖寬修法：universal rule 加 width/max-width（Jimmy 2026-04-24 回報 theverge 圖片偏左、段落偏右不對齊）。
 
 **根因**（harness probe）：

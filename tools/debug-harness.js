@@ -85,7 +85,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   page.on('pageerror', e => console.log('PAGE ERROR:', e.message));
 
   console.log('nav', URL);
-  await page.goto(URL, { waitUntil: 'load', timeout: 30000 });
+  // timeout 60s：theverge / nytimes 類重站 30s 不夠。waitUntil load 若超時 fallback domcontentloaded 不中斷驗收。
+  try {
+    await page.goto(URL, { waitUntil: 'load', timeout: 60000 });
+  } catch (e) {
+    console.log('goto load timeout，fallback domcontentloaded:', e.message.slice(0, 80));
+    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  }
   await sleep(2500); // 等 content script 於 document_idle 注入
 
   // 找 tab id
