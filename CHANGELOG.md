@@ -24,6 +24,39 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.16**——theverge 裝飾 background 清除（Jimmy 2026-04-24 回報 theverge.com/report/914244 排版亂七八糟）。
+
+**根因**（harness probe）：
+theverge 用多個 styled-components 裝飾 wrapper 有非透明 background：
+- `duet--layout--entry-body-container` 600×10871 白底 → 撐起主文整體白色、card 內嵌 card 視覺
+- `_1wu3rm1` 300×300 白色 inset box（文中穿插的裝飾卡）
+- `qnnwq1` 65×22 綠色（rgb(60,255,208)）accent bar（h2 上方標記）
+- `tly2fw0` 600×92 淺紫（rgb(238,230,255)）block（newsletter / 引述）
+
+v0.7.10 `collapseInnerGridFlex` 只處理 `display: grid` 容器、這些都是純 block + background-color 無法觸及。
+
+**修法**：styler CSS 加 universal selector：
+```css
+[data-jread-active="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+```
+
+**preserve 清單設計**：
+- **W3C 語意保留**：figure / figcaption / summary / blockquote（主文媒體容器 / 引述 / 摘要）
+- **視覺慣例需要背景區隔**：code / pre（程式碼 block）/ table / thead / tbody / tr / th / td（表格 row 交替色）/ mark（語意 highlight）/ kbd（鍵盤按鍵白底慣例）
+
+**通則依據**：reader mode 精神是「card 本身有統一米色底、內部不該再有彩色裝飾打斷閱讀流」。原站用 background 做視覺層次在 reader mode 下都是雜訊；真正需要背景區隔的 tag 都是 W3C 定義 + 視覺慣例明確的少數 tag。
+
+**驗收**：
+- spec 驗 CSS 含 9 個 `:not(X)` + 兩個 declarations
+- harness probe 確認 `colored: []` + `accentBars: []`（全清）
+- 六站全 `✅ 無殘留雜訊`（theverge / esmchina / ebc / line today / udn / chinatimes）
+- `npm test` 188 passing
+
+---
+
 **v0.7.15**——esmchina Bootstrap col-* 鎖窄欄寬修法（Jimmy 2026-04-24 回報 esmchina.com/news/14116.html 內文寬度不對）。
 
 **根因**（harness probe）：

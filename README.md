@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.15（esmchina Bootstrap col-* 鎖窄欄寬修法）。主文 p 祖先 `.col-md-9` width 被 Bootstrap 75% 規則鎖 288px、card 720px 內容只占 40%。v0.7.10 collapseInnerGridFlex 只處理 grid 容器、不處理 block element width CSS。styler CSS 加 `[class*="col-md-"]` 等 5 條 Bootstrap col attribute selector reset（width: auto + max-width: none + float: none + flex: initial），是跨 CMS 標準通則。187 spec 全過
+**目前版本**：v0.7.16（theverge 裝飾 background 清除）。theverge 用 styled-components 裝飾 wrapper（entry-body-container 白底 / `_1wu3rm1` 白色 inset box / `qnnwq1` 綠色 accent bar / `tly2fw0` 紫色 newsletter box）造成 reader card 內嵌 card + 色塊雜亂。styler CSS 加 universal selector：`*:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table)...` 強制 transparent background。preserve 清單涵蓋 W3C 語意 + 視覺慣例需要背景區隔的 tag（code/pre/table/mark/kbd）。188 spec 全過
 
 ---
 

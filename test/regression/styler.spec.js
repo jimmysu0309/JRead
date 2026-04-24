@@ -276,6 +276,31 @@ describe('styler — 骨架與可逆性', () => {
     );
   });
 
+  it('CSS 清 articleEl 內 block 裝飾 background（v0.7.16 theverge 修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找 `*:not(...)` universal selector rule
+    const m = css.match(/\[data-jread-active="1"\]\s+\*:not\([^)]+\)(?::not\([^)]+\))*\s*\{([^\}]*)\}/);
+    assert.ok(m, 'CSS 必須含 articleEl 內 `*:not(...)` background reset rule');
+    const selector = m[0].split('{')[0];
+    const body = m[1];
+
+    // 必須含的 preserve 語意 tag
+    const preserveTags = ['figure', 'figcaption', 'summary', 'blockquote', 'code', 'pre', 'table', 'th', 'td'];
+    for (const tag of preserveTags) {
+      assert.ok(selector.includes(`:not(${tag})`),
+        `selector 必須 :not(${tag})——該 tag 的背景需保留（${tag} 視覺慣例需要背景區隔）`);
+    }
+
+    // declarations
+    assert.ok(/background-color\s*:\s*transparent\s*!important/.test(body),
+      'body 必須含 background-color: transparent !important');
+    assert.ok(/background-image\s*:\s*none\s*!important/.test(body),
+      'body 必須含 background-image: none !important');
+  });
+
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
