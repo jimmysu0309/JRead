@@ -7,31 +7,20 @@
 // 大量砍掉舊版對「CSS 內容細節」的斷言（font-size inherit / heading margin /
 // link 色 / 媒體容器 margin / structural-link 標記等），改以行為斷言為主。
 
-const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { JSDOM } = require('jsdom');
+const { loadFixtureWithScripts } = require('../helpers');
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'businessweekly-7014035.html');
-const STYLER_SRC = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'jread', 'content', 'styler.js'),
-  'utf8'
-);
-const DETECTOR_SRC = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'jread', 'content', 'detector.js'),
-  'utf8'
-);
 
 function setup() {
-  const html = fs.readFileSync(FIXTURE_PATH, 'utf8');
-  const dom = new JSDOM(html, { runScripts: 'outside-only' });
-  const { window } = dom;
-  window.__JRead = { state: {}, MSG: {} };
-  window.eval(DETECTOR_SRC);
-  window.eval(STYLER_SRC);
-  const detected = window.__JRead.detector.detect();
+  const env = loadFixtureWithScripts({
+    fixturePath: FIXTURE_PATH,
+    scripts: ['detector', 'styler']
+  });
+  const detected = env.NS.detector.detect();
   assert.ok(detected, 'detector 必須命中商周主文');
-  return { window, document: window.document, NS: window.__JRead, articleEl: detected.el };
+  return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
 }
 
 const DEFAULT_SETTINGS = {

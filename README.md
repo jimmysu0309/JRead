@@ -2,7 +2,7 @@
 
 純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
 
-**目前版本**：v0.7.18（revert v0.7.17：universal width/max-width 打破 theverge drop cap + figure 排版）。Jimmy 截圖打臉：`width: auto !important` 讓 drop cap `D` 與首段文字重疊、`max-width: 100%` 打破 figure full-bleed 意圖。硬教訓 20：typography-affecting universal rule（width / max-width / margin / padding）必須用 scoped selector；universal 只適合 background 這類不影響 layout 的屬性。改 styler 後必須 harness 截圖 + Read 自驗整頁排版。theverge p 4-10px 偏移入 PENDING_REGRESSION。188 spec 全過
+**目前版本**：見 [CHANGELOG.md](CHANGELOG.md) 頂部條目。
 
 ---
 

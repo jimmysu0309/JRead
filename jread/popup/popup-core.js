@@ -6,9 +6,14 @@
   'use strict';
 
   // MV3 content_scripts 只自動注入「新載入的分頁」。extension 安裝/重新載入
-  // 前已開著的分頁必須主動注入。載入順序與 manifest 的 content_scripts.js 對齊。
+  // 前已開著的分頁必須主動注入。**順序與完整清單必須與 manifest.json 的
+  // content_scripts[0].js 完全一致**——test/regression/popup-inject-retry.spec.js
+  // 有 forcing function 讀 manifest 比對，任一檔案漏掉或順序錯會 fail。
+  // （歷史教訓：v0.4.0 新增 toast.js 後此清單漏補、inject fallback 後
+  // NS.toast=null 使 toast 提示靜默失效；v0.7.19 補上並加 spec 防呆。）
   const CONTENT_SCRIPT_FILES = [
     'content/namespace.js',
+    'content/toast.js',
     'content/detector.js',
     'content/cleaner.js',
     'content/styler.js',
