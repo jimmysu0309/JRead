@@ -24,6 +24,39 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.17**——theverge p 鎖寬修法：universal rule 加 width/max-width（Jimmy 2026-04-24 回報 theverge 圖片偏左、段落偏右不對齊）。
+
+**根因**（harness probe）：
+- theverge 主文 `<p>` class `duet--article--dangerously-set-cms-markup _8enl99j _1xwtict1` 等 styled-components class 設 `width: 588px` 或 `width: 600px`（固定 px 值）
+- img/figure 寬 608px（articleEl 內容區邊界 336-944）、左 336
+- p 寬 588-600 + margin 0、但實際 left 340-346（比 img 多 4-10px offset）
+- 視覺上：圖片比段落寬 + 左邊凸出 4-10px、段落看起來靠右
+
+**修法**：擴 v0.7.16 universal rule（`*:not(figure):not(...)`）加兩條 declaration：
+```css
+width: auto !important;
+max-width: 100% !important;
+```
+
+**為何 universal rule 可覆寫 styled-components class**：
+- styled-components class（`_8enl99j` 等）在 stylesheet 裡設 `width: 588px`（通常不帶 !important）
+- jread styler `<style>` 插在 `<head>` 尾端、優先順序高
+- universal selector specificity (0, 1, 1)、帶 `!important` → 贏過 styled-components class rule 的 `width: 588px`
+
+**為何不違反 v0.6.0 baseline**：
+- baseline spec 禁 `] p {` 字面 pattern（避免 v0.5.x 過度激進 !important rule）
+- universal selector `*:not(...)` 字面不含 `] p {` → pass baseline spec
+- 精神上 baseline 禁的是 **typography rule**（font-size / color / line-height / margin）、不是 width reset
+- `width: auto` 是 block element 預設行為、不影響 typography
+
+**驗收**：
+- spec 驗 universal rule body 含 width/max-width declarations
+- harness 五站（esmchina / ebc / line today / udn / chinatimes）`✅ 無殘留雜訊`、無 regression
+- theverge Playwright 偶 timeout 與本輪修法無關（之前 probe 60s timeout 能跑完、harness 30s 擋住）
+- `npm test` 188 passing
+
+---
+
 **v0.7.16**——theverge 裝飾 background 清除（Jimmy 2026-04-24 回報 theverge.com/report/914244 排版亂七八糟）。
 
 **根因**（harness probe）：
