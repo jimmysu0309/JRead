@@ -180,6 +180,21 @@ html.${HTML_CLASS} body {
   float: none !important;
   flex: initial !important;
 }
+/* articleEl 內 block 裝飾 background 清除：原站常用彩色 wrapper
+   block（accent bar、inset box、newsletter box、feature card）作為
+   視覺裝飾。reader mode 下 card 本身已有統一底色，內部不該再有彩色
+   block 打斷閱讀流。
+   theverge.com 實測：duet--layout--entry-body-container 白底、
+   _1wu3rm1 白色 inset、qnnwq1 綠色 accent、tly2fw0 紫色 block 等
+   styled-components 裝飾 wrapper 全部清掉。
+   preserve 清單：figure/figcaption/summary/blockquote 是 W3C 保留
+   語意（主文媒體容器、引述）；code/pre/table/th/td 需要背景區隔
+   （程式碼 block / 表格 row 交替色）；mark 是語意 highlight；kbd
+   鍵盤按鍵視覺慣例白底。這些 tag 的原站背景保留。 */
+[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
