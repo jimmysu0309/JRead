@@ -33,9 +33,13 @@
     const settings = await getSettings();
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
-    // promotedFrom 傳給 cleaner 做 narrowPromotedSiblings（v0.7.12 ebc
-    // 深層 single-child wrapper + 橫向 sibling chrome 修法）
-    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(result.el, { promotedFrom: result.promotedFrom }) : [];
+    // promotedFrom + promotedTitleHead 傳給 cleaner 做 narrowPromotedSiblings
+    // （v0.7.12 ebc 深層 single-child wrapper 修法 + v0.7.21 Stratechery h2
+    // post-title 白名單保護，讓 WordPress block theme h2 不被 narrow 誤殺）
+    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    }) : [];
     NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
     NS.state.active = true;
 

@@ -412,9 +412,20 @@
 
   // maxHops 可由呼叫端覆寫（例：heuristic ambiguous 時走更嚴 limit，
   // 避免 heuristic 選錯 anchor 時 promote 沿祖先一路升把整頁吞進主文）。
+  // 返回 { el, titleHead }：el 是升級後容器（若無命中則原 articleEl），
+  // titleHead 是 promote 實際 match 到的 heading element（給 cleaner
+  // narrowPromotedSiblings 做白名單保護；不分 h1/h2/h3/h4）。
+  //
+  // 為何回傳 titleHead：WordPress block theme（Stratechery 實測）post-title
+  // 是 <h2>（class `wp-block-post-title` 預設是 h2、h1 是站名）。narrow 的
+  // sibling guard 之前只寫 `sib.tagName === 'H1'` + `querySelector('h1')`，
+  // 對 h2 的 post-title 漏防、整塊主標題被當 sibling chrome 連帶 hide
+  // （2026-04-24 Jimmy 回報、v0.7.12 引入 narrow 機制時留的坑）。修法改為
+  // 讓 cleaner 拿到 promote 實際命中的那個 heading、精準白名單保護——不
+  // 放寬成「所有 H2」避免 sidebar 每個 article card 的 H2 都被當主標題。
   function promoteForTitle(articleEl, maxHops) {
     const target = getCanonicalTitle();
-    if (!target) return articleEl;
+    if (!target) return { el: articleEl, titleHead: null };
     const limit = typeof maxHops === 'number' ? maxHops : PROMOTE_MAX_HOPS;
 
     let cur = articleEl;
@@ -423,22 +434,24 @@
       const parent = cur.parentElement;
       for (const sib of parent.children) {
         if (sib === cur) continue;
-        // 直接是 h1/h2
-        const heads = (sib.matches && sib.matches('h1, h2'))
+        // 擴到 h1-h4：post-title 跨 CMS 各種 tag 慣例（WordPress h2 預設、
+        // 部分 Medium 主題 h1、少數新聞站 h3/h4）。仍需 titleMatches 嚴格
+        // 比對 og:title / document.title，誤殺風險低。
+        const heads = (sib.matches && sib.matches('h1, h2, h3, h4'))
           ? [sib]
-          : Array.from(sib.querySelectorAll ? sib.querySelectorAll('h1, h2') : []);
+          : Array.from(sib.querySelectorAll ? sib.querySelectorAll('h1, h2, h3, h4') : []);
         for (const h of heads) {
           const text = normalizeTitle(h.innerText || h.textContent || '');
           if (titleMatches(target, text)) {
             // 升級到 articleEl 與 h 的共同 parent = 當前 parent
-            return parent;
+            return { el: parent, titleHead: h };
           }
         }
       }
       cur = parent;
       hops++;
     }
-    return articleEl;
+    return { el: articleEl, titleHead: null };
   }
 
   // ---- 主函式 ---------------------------------------------------------
@@ -469,16 +482,22 @@
       if (result && result.strategy !== 'main-tag') {
         // heuristic 在 top-N 競爭膠著時（top1/top2 < 1.25 倍）傳回
         // ambiguous=true；promote 收緊 hops 上限到 1，避免 top1 是誤選 anchor
-        // 時一路升到 body/#wrapper 吞整頁。非 ambiguous 走預設 4 hops
+        // 時一路升到 body/#wrapper 吞整頁。非 ambiguous 走預設 5 hops
         // （line today 類多層 styled-component wrapper、ebc 類深層 single-
         // child wrapper 需要的上限，配 narrowPromotedSiblings 兜底）。
         const hopLimit = result.ambiguous ? 1 : undefined;
         const originalEl = result.el;
-        result.el = promoteForTitle(result.el, hopLimit);
+        const promoted = promoteForTitle(result.el, hopLimit);
+        result.el = promoted.el;
         // 若 promote 真的升級、紀錄升級前 el 給 cleaner narrowPromotedSiblings
-        // 用來「只保留 content 分支 + h1 分支」、hide 其他 sibling chrome。
+        // 用來「只保留 content 分支 + title heading 分支」、hide 其他 sibling chrome。
         if (result.el !== originalEl) {
           result.promotedFrom = originalEl;
+          // promoted.titleHead = promote 實際命中的 heading（h1/h2/h3/h4 任一）
+          // 傳給 cleaner 做 sibling guard 的白名單；不分 tagName 精準保留該
+          // heading 及含該 heading 的 sibling（Stratechery 的 h2 post-title 會
+          // 落在這個 guard 裡、不再被 narrow 連帶 hide）。
+          result.promotedTitleHead = promoted.titleHead;
         }
       }
       if (result) {

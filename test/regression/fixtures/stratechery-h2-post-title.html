@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<!--
+  Fixture：Stratechery（WordPress block theme）post-title 是 <h2> 不是 <h1>，
+  narrowPromotedSiblings 的 h1-only guard 漏 h2 把主標題整塊 hide。
+
+  真實 DOM 結構（harness probe 自 stratechery.com/2026/please-listen-to-my-podcast/）：
+    DIV.wp-site-blocks
+      MAIN
+        DIV.wp-block-columns.alignwide
+          DIV.wp-block-column.is-layout-flow          ← heuristic 升級後選這個（articleEl）
+            H2.wp-block-post-title                     ← 主標題（bug: 被 narrow hide）
+            DIV.entry-content.wp-block-post-content    ← heuristic 原選中（promotedFrom）
+              <多段主文 p>
+              <figure><img></figure>
+            DIV.wp-block-column.stratechery-sidebar   ← 可能 sibling（sidebar-ish chrome）
+              UL.wp-block-post-template
+                LI.wp-block-post
+                  H2 Related Article 1
+                LI.wp-block-post
+                  H2 Related Article 2
+
+  v0.7.12 narrowPromotedSiblings 爬從 promotedFrom → articleEl，對 articleEl
+  的 children 中除 promotedFrom（content 分支）外每個 sibling 都 hide，但
+  h1-self guard 與 querySelector('h1') guard 都不認 h2、h2 被當 sibling chrome
+  整個消失。Stratechery 是 baseline 三站之一（v0.6.3 Jimmy 確認「非常理想」）、
+  此 bug 屬嚴重 regression。
+
+  通則修法：detect() 把 promote 實際命中的 title heading element 傳給 cleaner
+  （不分 h1/h2/h3/h4），narrow guard 保留該 heading 及其含該 heading 的 sibling。
+  不綁 tagName（避免放寬成「所有 H2」使 sidebar 各 article card 的 H2 也當主
+  標題保護）、精準指向 promote 命中的那一個 heading。
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Please Listen to My Podcast – Stratechery by Ben Thompson</title>
+  <meta property="og:title" content="2026.12: Please Listen to My Podcast">
+</head>
+<body>
+<div class="wp-site-blocks">
+  <header>
+    <h1>Stratechery</h1>
+  </header>
+  <main id="wp--skip-link--target" class="wp-block-group">
+    <div class="wp-block-columns alignwide">
+      <div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow">
+
+        <!-- post-title 是 H2（WordPress block theme 慣例）、articleEl 的 direct child -->
+        <h2 class="wp-block-post-title has-xxxx-large-font-size">2026.12: Please Listen to My Podcast</h2>
+
+        <!-- 主文容器：heuristic 最先選中，promote 升一層到 wp-block-column -->
+        <div class="entry-content wp-block-post-content has-global-padding is-layout-constrained wp-block-post-content-is-layout-constrained">
+          <figure class="wp-block-image">
+            <img src="#" alt="">
+            <figcaption>(Photo by Benjamin Fanjoy/Getty Images)</figcaption>
+          </figure>
+          <p>STRATECHERY_MAIN_MARK Welcome back to This Week in Stratechery! As a reminder, each week, every Friday, we're sending out this overview of content in the Stratechery bundle; highlighted links are free for everyone. Additionally, you have complete control over what we send to you. If you don't want to receive This Week in Stratechery emails, please uncheck the box in your delivery settings.</p>
+          <p>STRATECHERY_MAIN_MARK On that note, here were a few of our favorites this week. This is a long paragraph with plenty of words to make sure the heuristic gives this container (entry-content) the highest score so detector correctly picks it as the initial candidate before promote. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+          <p>STRATECHERY_MAIN_MARK Third paragraph with more content density, commas here, and more text to strengthen the heuristic signal bubble-up. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+          <p>STRATECHERY_MAIN_MARK Fourth paragraph continuing the content density for bubble-up. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+          <p>STRATECHERY_MAIN_MARK Fifth paragraph for additional signal weight. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        </div>
+
+        <!-- sidebar-like chrome：narrow 應該要 hide 這塊；主文標題 h2 不能被連帶 hide -->
+        <div class="wp-block-column stratechery-sidebar">
+          <aside class="wp-block-template-part">
+            <div class="wp-block-group">
+              <ul class="wp-block-post-template">
+                <li class="wp-block-post">
+                  <h2 class="is-style-stratechery-hover-underline wp-block-post-title">RELATED_CARD_MARK An Interview with Thomas Kurian</h2>
+                </li>
+                <li class="wp-block-post">
+                  <h2 class="is-style-stratechery-hover-underline wp-block-post-title">RELATED_CARD_MARK TSMC Earnings</h2>
+                </li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

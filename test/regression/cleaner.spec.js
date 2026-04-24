@@ -2015,6 +2015,105 @@ describe('cleaner — ebc-promote-narrow-sibling-chrome（promote+narrow 聯動�
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.21 Stratechery h2 post-title 修法
+// WordPress block theme（Stratechery 實測）post-title 預設是 <h2>，narrow
+// 的 h1-only guard 漏防、h2 被當 sibling chrome 連帶 hide。修法：
+// promoteForTitle 返回命中的 title heading element（h1-h4 任一）、cleaner
+// narrowPromotedSiblings 加一條精準白名單（sib === promotedTitleHead 或
+// sib 包含 promotedTitleHead → 保留）。
+// -----------------------------------------------------------------------------
+describe('cleaner — stratechery-h2-post-title（promote+narrow h2 白名單保護）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'stratechery-h2-post-title.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 heuristic');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('detector promote 升到 wp-block-column（包含 h2 post-title）+ 紀錄 promotedFrom', () => {
+    assert.ok(result.el.className.includes('wp-block-column'),
+      `articleEl 應升級到 wp-block-column；實際 class: ${result.el.className}`);
+    assert.ok(result.promotedFrom,
+      'promotedFrom 必須存在（detector 有升級）');
+    assert.ok(result.promotedFrom.className.includes('entry-content'),
+      `promotedFrom 應為 entry-content；實際: ${result.promotedFrom.className}`);
+  });
+
+  it('detector 返回 promotedTitleHead（命中的 h2 post-title）— 新 API forcing', () => {
+    assert.ok(result.promotedTitleHead,
+      'promoteForTitle 升級成功必須返回 titleHead element（Stratechery h2 post-title 會在此命中）');
+    assert.strictEqual(result.promotedTitleHead.tagName, 'H2',
+      'Stratechery 主標題是 h2 tag（WordPress block theme `wp-block-post-title` 預設 h2）');
+    assert.ok(result.promotedTitleHead.textContent.includes('Please Listen to My Podcast'),
+      `promotedTitleHead 必須是實際 title heading；實際 text: ${result.promotedTitleHead.textContent}`);
+  });
+
+  it('h2 post-title 保留（核心 bug forcing）— 主標題不再被 narrow 誤殺', () => {
+    const h2 = document.querySelector('h2.wp-block-post-title');
+    assert.ok(h2, 'fixture 必須含 h2.wp-block-post-title');
+    assert.notStrictEqual(h2.dataset.jreadHidden, '1',
+      'h2 主標題必須保留；forcing：narrow 的 promotedTitleHead guard 被移除 → h2 會被當 sibling chrome hide、此 assertion fail（這是 Jimmy 2026-04-24 實測回報的 baseline regression）');
+    assert.ok(h2.textContent.includes('Please Listen to My Podcast'),
+      '主標題文字完整保留');
+  });
+
+  it('sidebar（stratechery-sidebar）仍被 narrow hide（不過度放寬）', () => {
+    const sidebar = document.querySelector('.stratechery-sidebar');
+    assert.ok(sidebar);
+    assert.strictEqual(sidebar.dataset.jreadHidden, '1',
+      'sidebar 必須被 narrow hide——forcing：如果 guard 放寬成「所有 H2 sibling 都保護」，' +
+      'sidebar 內含 h2.wp-block-post-title (related card) 會被誤當主標題保護，此 assertion fail');
+  });
+
+  it('主文內容保留（STRATECHERY_MAIN_MARK 全留）', () => {
+    const paras = document.querySelectorAll('p');
+    let mainPs = 0;
+    for (const p of paras) {
+      if (p.textContent.includes('STRATECHERY_MAIN_MARK')) {
+        assert.notStrictEqual(p.dataset.jreadHidden, '1',
+          `STRATECHERY_MAIN_MARK 段落不得被 hide：${p.textContent.slice(0, 40)}`);
+        mainPs++;
+      }
+    }
+    assert.ok(mainPs >= 5, `fixture 應含 5 個主文段落；實際 ${mainPs}`);
+  });
+
+  it('sidebar 內的 related card h2（不是 promotedTitleHead）被隨 sidebar hide', () => {
+    const relatedCards = Array.from(document.querySelectorAll('h2'))
+      .filter(h => h.textContent.includes('RELATED_CARD_MARK'));
+    assert.ok(relatedCards.length >= 2, `fixture 應含至少 2 個 RELATED_CARD_MARK h2；實際 ${relatedCards.length}`);
+    for (const h of relatedCards) {
+      // h2 自己未必直接 hSelfHidden，但祖先（sidebar）已 hide
+      let cur = h;
+      let inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden, `related card h2 "${h.textContent.slice(0, 30)}" 應在 hidden 祖先內`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.11 Medium click-to-zoom button wrapper 修法
 // hideInsideArticleAllButtons 加 media guard：button/role="button" wrapper
 // 內含 img/picture/video 時保留（Medium 把主文 picture 嵌在 role="button"

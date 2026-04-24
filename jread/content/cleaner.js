@@ -336,7 +336,7 @@
   //
   // 不動深層後代（各 rule 由 hideInsideArticle* 處理）。isInPreserved
   // 保護仍生效（figure/figcaption/blockquote/summary 內部不動）。
-  function narrowPromotedSiblings(articleEl, promotedFrom, hidden) {
+  function narrowPromotedSiblings(articleEl, promotedFrom, hidden, promotedTitleHead) {
     if (!articleEl || !promotedFrom) return;
     if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
     let cur = promotedFrom;
@@ -347,9 +347,16 @@
       for (const sib of parent.children) {
         if (sib === cur) continue;
         if (sib.contains && sib.contains(promotedFrom)) continue;  // content 分支
-        // h1 分支：sibling 自己是 H1 或含 h1 後代都保留
-        // （v0.7.14 udn 修法：h1 是 articleEl direct child 時、
-        // querySelector('h1') 不含 sib 自己、sib.tagName === 'H1' 補 guard）
+        // promoted title heading 分支（v0.7.21 Stratechery 修法）：detector
+        // promote 實際命中的那個 heading，可能是 h1/h2/h3/h4 任一 tag；
+        // 精準白名單保護，不放寬成「所有 H2」避免 sidebar card 的 H2 被誤保。
+        if (promotedTitleHead) {
+          if (sib === promotedTitleHead) continue;
+          if (sib.contains && sib.contains(promotedTitleHead)) continue;
+        }
+        // 回落 h1 分支（v0.7.14 udn 修法）：沒 promotedTitleHead 資訊時
+        // 仍保留「sibling 自己是 H1 或含 h1 後代」作為 fallback——某些站點
+        // 走策略 1（article-tag）時沒 promote、但 article 內可能已含 h1。
         if (sib.tagName === 'H1') continue;
         if (sib.querySelector && sib.querySelector('h1')) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
@@ -1538,8 +1545,12 @@
       // 清掉、再跑其他 rule。否則後續 hideInsideArticle* 會對 chrome 子樹做
       // 全套檢查、浪費且產生誤殺風險（chrome 裡的 nav / button / list 等 UI
       // 元件可能命中各種 keyword rule、標成 hidden，但本該整塊清掉）。
+      // opts.promotedTitleHead（v0.7.21）：detector promote 實際命中的 title
+      // heading element（跨 tag h1-h4），narrow guard 會精準保留它的 sibling
+      // 分支——Stratechery WordPress block theme 的 h2.wp-block-post-title
+      // 在此獲得保護、不被誤認 sibling chrome 清掉。
       if (opts && opts.promotedFrom && opts.promotedFrom !== articleEl) {
-        narrowPromotedSiblings(articleEl, opts.promotedFrom, hidden);
+        narrowPromotedSiblings(articleEl, opts.promotedFrom, hidden, opts.promotedTitleHead);
       }
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
       hideDialogs(articleEl, hidden);
