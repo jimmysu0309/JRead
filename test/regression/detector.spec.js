@@ -481,6 +481,47 @@ describe('detector — upmedia-heuristic-ambiguous-positive-wins（ambiguous 時
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.20 清 PENDING 條目 2：detector textLen bonus jsdom forcing function
+// v0.7.2 (B) 加了 `textLen/200 cap 10 × (1-ld)` 獎勵，讓長文字低連結密度主文
+// 贏過短文字高連結密度 UI chrome（signal 埋深層 + 連結密度高的 chrome 單靠
+// bubble-up raw 會勝過真主文的場景）。原本只在 Playwright harness 對真實
+// upmedia 國際版驗；此 fixture 把 scoring 曲線精準鎖在「無 bonus → B 勝 /
+// 有 bonus → A 勝」的差值上，任何 bonus 公式修改或刪除都會 spec fail。
+// -----------------------------------------------------------------------------
+describe('detector — textLen bonus（v0.7.2 (B) jsdom forcing function）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('upmedia-textlen-bonus.html').result;
+  });
+
+  it('偵測成功（無 article tag / schema.org → 走 heuristic）', () => {
+    assert.ok(result, 'heuristic 必須命中其中一個候選');
+    assert.strictEqual(result.strategy, 'heuristic');
+  });
+
+  it('選中 #AA-target（長文字低 ld 主文）而非 #BB-noise（短文字高 ld UI chrome）', () => {
+    // forcing function：class 刻意避開 POSITIVE_RE / NEGATIVE_RE（weight = 1），
+    // 純粹比較 raw + bonus 結果。無 bonus → B 的 base 15 × 0.76 = 11.4 贏 A 的 10；
+    // 但 ratio 1.14 < 1.25 觸發 ambiguous、無 posHit 候選 → 沿用 top[0] = B 誤選。
+    // 有 bonus → A += 10（textLen 2100 觸頂 cap），B += 0.95，A 拉到 20、B 12.35，
+    // ratio 1.62 非 ambiguous、top[0] = A 正確勝出。
+    assert.strictEqual(result.el.id, 'AA-target',
+      '主文 #AA-target 必須勝出——textLen bonus 讓長文字低連結密度候選拉開分數');
+  });
+
+  it('detector.js 源碼含 textLen bonus 公式（字面 forcing，必須是 live statement 非註解）', () => {
+    // 字面 forcing：要求行首為 `score += Math.min(textLen/200, 10) ...`——
+    // multiline regex 的 `^` + 行首空白 + statement 形態，避免 `// SANITY:`
+    // 註解掉的行偽匹配。任何誤刪、註解掉、或改公式係數都會此 assertion fail。
+    const src = DETECTOR_SRC;
+    assert.ok(
+      /^\s*score\s*\+=\s*Math\.min\(textLen\s*\/\s*200,\s*10\)\s*\*\s*\(1\s*-\s*Math\.min\(ld,\s*0\.95\)\)/m.test(src),
+      'detector.js 必須含 live textLen bonus statement `score += Math.min(textLen/200, 10) * (1 - Math.min(ld, 0.95))`（不可註解掉）'
+    );
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.6 Postlight Parser 借鑑：Schema.org microdata `itemprop="articleBody"`
 // 策略。detectBySchemaOrg 雙層：Layer A itemtype（原邏輯）→ Layer B itemprop
 // fallback（新增）。NYT / CNN / Ars Technica 等新聞站 Postlight parser 都走

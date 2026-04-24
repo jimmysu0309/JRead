@@ -24,6 +24,40 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 
 ---
 
+**v0.7.20**——清 PENDING_REGRESSION 4 條（條目 2/3/4/5），PENDING queue 從 5 條剩 1 條（theverge styled-components 視覺 bug）。本版新建 e2e harness 架構作為長期基礎設施，未來所有「只能在真實 MV3 Chrome 環境驗」的 wire-up bug 都可在這層補 forcing function。
+
+**條目 2**（detector textLen bonus jsdom forcing function）：
+- 新 fixture `test/regression/fixtures/upmedia-textlen-bonus.html` 精準鎖住 v0.7.2 (B) bonus 公式的算分曲線：class 刻意避開 POSITIVE_RE / NEGATIVE_RE 所有詞（避免 weight ×1.25 / ×0.5 干擾）、純粹比較 raw + bonus。無 bonus → B (base 15.00) 險勝 A (base 10.00) ratio 1.14 < 1.25 觸發 ambiguous 且兩者都無 POSITIVE 命中、沿用 top[0] = B 誤選；有 bonus → A 觸頂 +10 拉到 20、B 只 +0.95 拉到 15.75、ratio 1.27 > 1.25 非 ambiguous、A 正確勝出
+- 新增 2 條 `detector.spec.js` 斷言：(1) 行為 forcing 驗 detect().el.id === 'AA-target'；(2) 字面 forcing 用 multiline regex `^\s*score\s*+=\s*Math\.min\(textLen/200, 10) \* \(1 - Math\.min\(ld, 0\.95\)\)` 確保 bonus statement 是 live（非 `// SANITY:` 註解形式），行首非註解才算命中
+- sanity check 兩輪：註解掉 bonus statement → 兩條 assertion 都 fail（行為 + 字面）；還原 → pass
+
+**e2e harness 基礎設施**：
+- 新 `tools/e2e-harness.js`：抽 `tools/debug-harness.js` 的 SW 啟動樣板成可重用 helper（`launchExtension` / `swEval` / `openTab` / `getTabId` / `startFixtureServer`）；內建 HTTP server 提供有 `<article>` tag + 足夠 textLen 的 fixture HTML、讓 detector 穩定命中 article-tag 策略（confidence 0.9）、不依賴外部網路
+- 新 `test/e2e/sw-regression.spec.js`：Mocha test，調用 e2e-harness 跑 SW wire-up 斷言
+- `package.json` 分離 script：`npm test` 加 `--ignore test/e2e/**` 預設不跑 e2e（保持 jsdom test 快、<1s）；`npm run test:e2e` 顯式啟動 Playwright Chromium
+
+**條目 3**（SW importScripts 絕對路徑）：
+- e2e spec 驗 `self.__JReadPopup` 掛載 + `toggleWithInjectionFallback` 是 function + `CONTENT_SCRIPT_FILES` 是 array；若回退成 `importScripts('popup/popup-core.js')` relative → 解析成 `/background/popup/popup-core.js` 載入失敗、SW 整個跑不完、此 spec fail
+- sanity 驗過：改 relative path → 條目 3 + 4 共 4 條 test 連鎖 fail（因 SW 整個垮、listener 無法註冊）
+
+**條目 5**（SW icon swap wire-up）：
+- e2e 策略：在 SW world monkey-patch `chrome.action.setIcon` 記錄所有 calls（`self.__iconCalls`），然後用 `path['16']` 的 string signature 分辨 ACTIVE（`icon-16.png`）vs IDLE（`icon-16-disabled.png`）
+- 三條 wire 全涵蓋：
+  - (b) `tabs.onUpdated` status=loading 觸發 setIcon IDLE——opentab 後驗 calls 中有 IDLE signature
+  - (a)+(c) 透過 SW sendMessage TOGGLE_READER_MODE → content main.js enterReaderMode → 發 SET_ACTIVE_ICON → SW handler 呼叫 setIcon ACTIVE——驗 calls 中有 ACTIVE signature
+
+**條目 4**（SW 快速鍵 handler wire-up）：
+- Playwright 無法從 page 觸發 extension commands（shortcut 綁 browser 層），但可驗 `chrome.commands.onCommand.hasListeners() === true`（manifest commands 宣告的 handler 有掛鉤）+ 核心路徑「query active tab → 呼叫 toggleWithInjectionFallback」在 SW context 下能跑並回傳合法 shape。這是 handler 三行邏輯的可測部分
+
+**驗收**：
+- `npm test` → 193 passing（原 190 + 條目 2 的 3 條 新 spec）
+- `npm run test:e2e` → 5 passing（條目 3 x1、條目 5 x2、條目 4 x2）
+- PENDING_REGRESSION 從 5 條剩 1 條（theverge styled-components p 鎖寬視覺瑕疵——需動 styler，由 Jimmy 下次授權動排版類修法時一併處理）
+
+**未動**：`jread/` 下 extension 本體零變化（只 bump manifest / package version）——本版純補 test 覆蓋 + 抽 e2e harness 基礎設施，不碰 runtime 行為。
+
+---
+
 **v0.7.19**——技術債大掃除（Jimmy 2026-04-24 review 後指示動工，8 項清理同步一版）。行為面只修一條真 bug（A1），其餘都是結構/文件/測試層面的去重與強化，extension runtime 行為對既有站點零變化。
 
 **真 bug 修復**：

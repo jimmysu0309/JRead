@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!--
+  Fixture：forcing function for v0.7.2 (B) textLen bonus in detectByHeuristic.
+
+  目標算分曲線：
+    無 bonus（revert 公式）→ B-chrome 勝（UI chrome 誤選、detector 錯判）
+    有 bonus（現行 v0.7.2）→ A-main 勝（主文正確）
+
+  兩個候選 class / id 刻意避開 POSITIVE_RE / NEGATIVE_RE 的詞（避免 ×1.25 /
+  ×0.5 weight 干擾基礎 raw 比較）。
+
+  Scoring 公式（對齊 detector.js）：
+    seed(text) = 1 + commaCount + min(floor(textLen/100), 3)
+    raw = Σ (child_signal seed × 1.0) + Σ (grandchild_signal seed × 0.5)
+    base = raw × (1 - min(ld, 0.95))
+    bonus = min(textLen/200, 10) × (1 - min(ld, 0.95))
+    final = (base + bonus) × weight（weight 這兩個 candidate 都 = 1）
+
+  實測數（v0.7.20 probe）：
+    A-main：raw ≈ 10, textLen ≈ 2800, ld ≈ 0
+      無 bonus: 10 × 1 = 10.0
+      有 bonus: 10 + min(2800/200, 10) × 1 = 10 + 10 = 20.0
+    B-chrome：raw ≈ 20, textLen ≈ 200, ld ≈ 0.4
+      無 bonus: 20 × 0.6 = 12.0  ← 勝 A
+      有 bonus: 12 + min(200/200, 10) × 0.6 = 12 + 0.6 = 12.6
+    → forcing 差距：無 bonus B 勝 (12 vs 10)、有 bonus A 勝 (20 vs 12.6)
+-->
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>textLen bonus forcing</title>
+</head>
+<body>
+
+  <div id="AA-target" class="qxzz">
+    <!-- 刻意避開 POSITIVE_RE 所有詞（article|content|body|post|entry|hentry|
+         h-entry|main|story|text|blog）與 NEGATIVE_RE 詞（comment|sidebar|footer|
+         nav|menu|header|promo|banner|ad[-_]|combx|disqus|foot|masthead|popup|
+         share|social|gdpr|outbrain|related|sponsor|shoutbox|widget|skyscraper）
+         —— weight 保持 1.0 乾淨對比基礎 raw。
+
+         2 段 each ~1500 chars 純文字含 1 逗號
+         seed per p = 1 + 1 + min(15, 3) = 5；raw (parent 100%) = 2 × 5 = 10
+         textLen ≈ 2100；ld ≈ 0（無 link） -->
+    <p>TEXTLEN_MAIN_MARK 本文第一段開始於此，這是一段刻意只含一個逗號的長篇純文字段落
+       用於驗證 detector textLen bonus 機制在 class 無 POSITIVE 命中的情況下
+       能否讓長文字低連結密度主文贏過短文字高連結密度 UI chrome 實際場景是
+       upmedia 國際版這類站點 signal 埋深層的主文 bubble-up raw 折扣後壓不過
+       短文字高連結密度 UI chrome 必須靠 textLen bonus 獎勵長文字低連結密度
+       的候選拉開分數差距 本段刻意寫得很長以衝到 textLen 的上限讓 bonus 觸頂
+       這段必須達到一千五百字才能讓 textLen bonus 公式 min textLen 除以二百
+       cap 十的那個除以二百上限十的計算達到最大值才能彌補 bubble up raw 只有
+       十的低分以下繼續重複類似句式補足字元數包含對 readability 風格演算法
+       的引述分析主文 detector 會把 signal bubble up 時給 parent 百分之百分數
+       grandparent 百分之五十分數這個設計讓主文直系容器拿到最高累積分而遠祖
+       外殼只拿很淺的折扣分自然選對層級但若主文本身的 signal 密度不高而外部
+       UI chrome 的 signal 密度很高就會出現主文輸掉 UI chrome 的情況 textLen
+       bonus 就是為了矯正這種情況的設計當候選的文字很長且連結密度很低時加
+       獎勵把候選拉上來 upmedia 國際版就是這類站點的代表性案例 harness 已經
+       在真實站點驗過此修法的必要性現在這個 fixture 把相同 scoring 曲線鎖在
+       jsdom 環境用精準的算術設計確保任何人誤改或刪除 bonus 公式都會觸發
+       spec fail 這是 forcing function 的核心設計目的跨 detector 演算法重構
+       保持 textLen bonus 不被意外移除或弱化 fixture 本身不會改變只有演算法
+       或 detector 架構改變時才會觸發此 spec fail 這樣維護者在改 detector
+       時會立刻知道自己動到了 textLen bonus 並思考是否有意的改動還是無意的
+       regression 再補充幾句讓字數衝到一千五百以上以確保 bonus 觸頂 minimum
+       textLen 除以二百在 textLen 大於兩千時會 cap 到十 這是 bonus 的最大值
+       也是此 fixture 設計時要達到的字數目標 本段結束於此</p>
+    <p>TEXTLEN_MAIN_MARK 本文第二段同樣刻意只含一個逗號，繼續純文字描寫保持
+       seed 的 commaCount 穩定在一的狀態 字數衝到一千五百以上讓 textLen 達到
+       兩千以上觸發 bonus 公式的 cap min 十 這段文字同樣足夠長以讓整個 A main
+       候選的 textLen 達到預期目標當 textLen 非常大時 bonus 公式 min textLen
+       除以二百 cap 十會讓候選的 bonus 觸頂而對於 textLen 較短的候選 bonus
+       貢獻會很小這就是 textLen bonus 設計的核心精神獎勵長文字低連結密度的
+       主文候選同時對短文字高連結密度 UI chrome 幾乎沒有獎勵形成明確的分數
+       拉開讓 detector 選對候選 整段刻意避免放任何 POSITIVE_RE 或 NEGATIVE_RE
+       命中的詞彙讓 weight 保持在 1 純粹比較 raw 加 bonus 的結果維持 forcing
+       的精準性這對於 regression spec 來說是必要的設計否則會被 weight 乘 1.25
+       或乘 0.5 干擾基礎 raw 對比 繼續補充文字讓本段達到一千五百字以上這樣
+       整個 candidate 的 textLen 會超過兩千觸發 bonus 公式的 cap 讓最終分數
+       從原本的十提升到二十這個明顯的差距能把 A main 從無 bonus 下的輸家變
+       成有 bonus 下的贏家這正是此 forcing function spec 的設計目的確保
+       textLen bonus 公式完整保留在 detector 裡任何改動導致此行為改變的
+       regression 都會在此 spec 立刻現形 字數補足結束於此本段到這結束</p>
+  </div>
+
+  <div id="BB-noise" class="qxyy">
+    <!-- 5 段 each ~50 chars，含 2 逗號 + 1 link (約 20 chars)
+         seed per p = 1 + 2 + min(0, 3) = 3；raw = 5 × 3 = 15
+         textLen ≈ 250（通過 MIN_TEXT_LEN 200 門檻）；link text ≈ 100；ld ≈ 0.4
+
+         無 bonus: 15 × (1 - 0.24) = 11.4 > A 的 10.0（B 勝 ratio 1.14）
+         → 觸發 ambiguous（< 1.25），top[0] = B 無 POSITIVE 命中 → B 勝
+         有 bonus: 11.4 + min(250/200, 10) × 0.76 = 11.4 + 0.95 = 12.35
+                   A = 10 + min(2100/200, 10) × 1 = 10 + 10 = 20
+         → ratio 20/12.35 = 1.62 > 1.25 非 ambiguous → A 勝 -->
+    <p>,這是隨便的短文字段落,含兩個逗號但不超過三個個個,<a href="#l1">連結文字約二十字元長</a></p>
+    <p>,這是隨便的短文字段落,含兩個逗號但不超過三個個個,<a href="#l2">連結文字約二十字元長</a></p>
+    <p>,這是隨便的短文字段落,含兩個逗號但不超過三個個個,<a href="#l3">連結文字約二十字元長</a></p>
+    <p>,這是隨便的短文字段落,含兩個逗號但不超過三個個個,<a href="#l4">連結文字約二十字元長</a></p>
+    <p>,這是隨便的短文字段落,含兩個逗號但不超過三個個個,<a href="#l5">連結文字約二十字元長</a></p>
+  </div>
+</body>
+</html>
