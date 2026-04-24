@@ -1251,6 +1251,17 @@
     // 通用 ad container class/id prefix（跨站命名慣例，非站點特判）
     '[id^="ad-"]', '[id^="ads-"]', '[id^="ad_"]', '[id^="ads_"]',
     '[class^="ad-"]', '[class^="ads-"]',
+    // React component data attribute（跨站標準，BBC / Vox / React 新聞站慣例）
+    // class 是 styled-components hash（`sc-XXXXXX`）無 keyword 可命中，但
+    // React 廣告 component 統一用 data-testid / data-component 標記：
+    //   <div data-testid="ad-unit" data-component="ad-slot" class="sc-...">
+    // BBC 實測 /news/articles/clyepyy82kxo 右側廣告占位——內層 dotcom-ad
+    // 已被 AD_BOUNDARY_RE hide、但外層 styled-components wrapper 有 min-height
+    // CSS 仍撐 540×1100 灰色占位，必須靠 data attribute 才能識別。
+    '[data-testid="ad-unit"]',
+    '[data-testid="ad-slot"]',
+    '[data-component="ad-slot"]',
+    '[data-component="ad-unit"]',
   ].join(', ');
 
   function hideInsideArticleByThirdPartyAds(articleEl, hidden) {
