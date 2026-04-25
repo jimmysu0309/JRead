@@ -8,6 +8,8 @@
 const versionEl = document.getElementById('version');
 const statusEl = document.getElementById('status');
 const toggleBtn = document.getElementById('toggle-btn');
+const readwiseBtn = document.getElementById('readwise-btn');
+const readwiseStatusEl = document.getElementById('readwise-status');
 const openOptionsLink = document.getElementById('open-options');
 const shortcutEl = document.getElementById('shortcut-hint');
 const fontSizeValEl = document.getElementById('font-size-val');
@@ -140,3 +142,86 @@ openOptionsLink.addEventListener('click', (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
+
+// ---- Readwise Reader 整合 ----------------------------------------------
+// popup 開啟時查 reader mode 是否啟動，沒啟動就把按鈕 disable。
+// 沒注入 content script 的頁面（chrome://、Web Store 等）sendMessage 會 reject，
+// 同樣 disable。
+function setReadwiseStatus(text, kind) {
+  if (!text) {
+    readwiseStatusEl.hidden = true;
+    readwiseStatusEl.textContent = '';
+    readwiseStatusEl.className = '';
+    return;
+  }
+  readwiseStatusEl.hidden = false;
+  readwiseStatusEl.textContent = text;
+  readwiseStatusEl.className = kind || 'info';
+}
+
+async function refreshReadwiseButton() {
+  const tabId = await getActiveTabId();
+  if (!tabId) {
+    readwiseBtn.disabled = true;
+    return;
+  }
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
+    readwiseBtn.disabled = !(res && res.active);
+    if (!(res && res.active)) {
+      readwiseBtn.title = '先啟動閱讀模式才能送出';
+    } else {
+      readwiseBtn.title = '把當前 reader card 內容送到 Readwise Reader';
+    }
+  } catch (_) {
+    readwiseBtn.disabled = true;
+    readwiseBtn.title = '此頁面無法啟動閱讀模式';
+  }
+}
+
+readwiseBtn.addEventListener('click', async () => {
+  readwiseBtn.disabled = true;
+  setReadwiseStatus('送出中…', 'info');
+
+  const tabId = await getActiveTabId();
+  if (!tabId) {
+    setReadwiseStatus('無法取得當前分頁', 'err');
+    readwiseBtn.disabled = false;
+    return;
+  }
+
+  let extracted;
+  try {
+    extracted = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
+  } catch (e) {
+    setReadwiseStatus('無法取得頁面內容（請重新啟動閱讀模式）', 'err');
+    readwiseBtn.disabled = false;
+    return;
+  }
+  if (!extracted || !extracted.ok) {
+    setReadwiseStatus('閱讀模式未啟動', 'err');
+    readwiseBtn.disabled = false;
+    return;
+  }
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'SAVE_TO_READWISE',
+    payload: extracted.payload
+  });
+
+  if (result && result.ok) {
+    setReadwiseStatus(result.status === 200 ? '已存在於 Readwise Reader' : '已送到 Readwise Reader', 'ok');
+  } else if (result && result.error === 'NO_TOKEN') {
+    setReadwiseStatus('尚未設定 Readwise token，請到「進階設定」填入', 'err');
+  } else if (result && result.error === 'AUTH') {
+    setReadwiseStatus('Readwise token 無效或已過期', 'err');
+  } else if (result && result.error === 'NETWORK') {
+    setReadwiseStatus('網路錯誤，請稍後再試', 'err');
+  } else {
+    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    setReadwiseStatus(`送出失敗${detail}`, 'err');
+  }
+  readwiseBtn.disabled = false;
+});
+
+refreshReadwiseButton();

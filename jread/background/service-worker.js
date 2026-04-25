@@ -13,7 +13,9 @@ const DEFAULT_SETTINGS = {
   contentWidth: 720,
   fontFamily: 'system-ui',
   lineHeight: 1.7,
-  autoEnableDomains: []
+  autoEnableDomains: [],
+  // Readwise Reader integration（v0.7.33）。空字串 = 未設定，popup 會擋下送出。
+  readwiseToken: ''
 };
 
 // Icon 路徑 map：閱讀模式 active = 彩色、待機 = 灰階。manifest `default_icon`
@@ -66,6 +68,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const active = !!(msg.payload && msg.payload.active);
       chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE });
       return;
+    }
+    case 'SAVE_TO_READWISE': {
+      // popup → SW：把 reader card 內容 POST 到 Readwise Reader API。
+      // payload 由 content script 的 EXTRACT_READER_HTML 產生（{ url, html, title }）。
+      // 在 SW fetch 而非 popup fetch 的理由：popup 關閉後 fetch 會中斷；SW 即便 popup 關了
+      // 也能跑完並透過 sendResponse 回給 popup（若 popup 已關則 silently drop，但 fetch
+      // 已成功觸發）。
+      (async () => {
+        const { readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' });
+        const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
+        let body;
+        try {
+          body = buildReadwisePayload(msg.payload || {});
+        } catch (e) {
+          sendResponse({ ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) });
+          return;
+        }
+        const result = await saveToReadwise({ token: readwiseToken, payload: body });
+        sendResponse(result);
+      })();
+      return true; // async sendResponse
     }
     default:
       return;

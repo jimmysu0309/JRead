@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.33**——Readwise Reader 整合：popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨 reader card outerHTML + url + title 透過官方 API（`POST https://readwise.io/api/v3/save/`）送出。Token 在 options 設定（`chrome.storage.sync.readwiseToken`），button 在 reader mode 未啟動時 disabled。新訊息 `GET_READER_STATE` / `EXTRACT_READER_HTML` / `SAVE_TO_READWISE`；fetch 在 SW 跑（popup 關了也能跑完）。`buildReadwisePayload` / `saveToReadwise` 抽到 `popup-core.js` 純函式 + 14 條 jsdom regression spec 覆蓋 NO_TOKEN / AUTH(401) / HTTP / NETWORK / 成功 200/201 / payload 結構與訊息協定 forcing function。Readwise extension 對某些頁面失效時可改用 JRead 走後門。
+
+---
+
 ## Baseline 宣告（v0.7.32 — 2026-04-25 起）
 
 **當前 baseline：v0.7.32**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 articleEl 內第三方 iframe 預設 hide（cnyes anue 討論區根因）為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤。232 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning + paginated screenshots 守住行為不變式。

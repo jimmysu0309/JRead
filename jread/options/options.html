@@ -94,7 +94,9 @@
        Form controls — compact, aligned, tokenized
        ========================================================== */
     select,
-    input[type="number"] {
+    input[type="number"],
+    input[type="password"],
+    input[type="text"] {
       width: var(--jr-control-w);
       height: 32px;
       padding: 0 10px;
@@ -105,6 +107,12 @@
       border: 1px solid var(--jr-neutral-300);
       border-radius: var(--jr-radius-sm);
       transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    /* Readwise token 欄位較長，撐到區塊右緣 */
+    input#readwiseToken {
+      width: 280px;
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
     }
     input[type="number"] {
       font-family: var(--jr-font-mono);
@@ -121,14 +129,44 @@
       padding-right: 28px;
     }
     select:hover,
-    input[type="number"]:hover {
+    input[type="number"]:hover,
+    input[type="password"]:hover,
+    input[type="text"]:hover {
       border-color: var(--jr-neutral-500);
     }
     select:focus,
-    input[type="number"]:focus {
+    input[type="number"]:focus,
+    input[type="password"]:focus,
+    input[type="text"]:focus {
       outline: none;
       border-color: var(--jr-primary-600);
       box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+
+    /* ==========================================================
+       Section heading（Readwise 整合區塊）
+       ========================================================== */
+    .section-heading {
+      margin: 32px 0 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--jr-neutral-900);
+      letter-spacing: -0.005em;
+    }
+    .section-desc {
+      font-size: 13px;
+      color: var(--jr-neutral-500);
+      line-height: 1.6;
+      margin: 0 0 12px;
+    }
+    .section-desc a {
+      color: var(--jr-primary-600);
+      text-decoration: none;
+    }
+    .section-desc a:hover {
+      color: var(--jr-primary-700);
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
 
     /* ==========================================================
@@ -220,6 +258,19 @@
   </div>
 
   <div id="save-status"></div>
+
+  <h2 class="section-heading">Readwise Reader 整合</h2>
+  <p class="section-desc">
+    在 popup 點「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
+    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器。
+  </p>
+  <div class="field">
+    <label>
+      Readwise Access Token
+      <span class="desc">空白 = 不啟用</span>
+    </label>
+    <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
+  </div>
 
   <section class="license">
     <h2>授權資訊</h2>

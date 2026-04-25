@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.32**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.33**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -230,9 +230,46 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 
 待實作時補上。目前已知需要：
 
-- `popup → content`：`TOGGLE_READER_MODE`
+- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）
 - `content → popup`：`REPORT_DETECTION_RESULT`（偵測到/沒偵測到、信心分數）
-- `popup → background`：`GET_SETTINGS` / `UPDATE_SETTINGS`
+- `popup → background`：`GET_SETTINGS` / `UPDATE_SETTINGS` / `SAVE_TO_READWISE`（v0.7.33）
+
+---
+
+## Readwise Reader 整合（v0.7.33）
+
+popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文 outerHTML 送到使用者的 Readwise Reader 帳號。動機：Readwise 的官方 extension 在某些難解析的頁面（重 JS、奇異 DOM）會失效，而那些頁面 JRead 多半已經處理乾淨。
+
+### API
+
+- Endpoint：`POST https://readwise.io/api/v3/save/`
+- Header：`Authorization: Token <user_access_token>`
+- Body：`{ url, html?, title? }`（html / title 可省，Readwise 會自抓，但帶上 JRead 處理過的 html 才能繞過原站 parser 問題）
+- 回傳：`200`（已存在）/ `201`（新建）
+
+### 設定
+
+- 欄位：`readwiseToken`（string，預設 `''`），存於 `chrome.storage.sync`
+- 取得方式：`https://readwise.io/access_token`
+- 設定位置：options 頁「Readwise Reader 整合」區塊（password input）
+
+### Popup UI 行為
+
+- 「送到 Readwise Reader」按鈕放在「切換閱讀模式」下方，次級樣式（白底灰邊）
+- popup 開啟時透過 `GET_READER_STATE` 查 reader mode 狀態：
+  - 未啟動 → button disabled，title `先啟動閱讀模式才能送出`
+  - 已啟動 → button enabled
+  - 頁面不支援（chrome:// 等 sendMessage reject）→ button disabled
+- 點擊：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ popup → SW（`SAVE_TO_READWISE` 帶 payload）→ SW 讀 token + fetch + 回結果
+- 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`
+
+### 為何 fetch 放 SW 而非 popup
+
+popup 關閉後其 fetch 會中斷；放 SW 即便使用者立刻關掉 popup，fetch 仍會跑完。SW 透過 `sendResponse` 回 popup（若 popup 已關則 silently drop，但伺服器端已收到）。
+
+### 純函式抽離
+
+`jread/popup/popup-core.js` 暴露 `buildReadwisePayload` / `saveToReadwise`（依賴注入 fetchImpl），可被 popup（瀏覽器端）與 SW（importScripts）共用、Node 端直接 require 做單測。`test/regression/readwise-save.spec.js` 14 條 spec 覆蓋 payload 結構 / NO_TOKEN / AUTH(401) / HTTP(500) / NETWORK / 成功 200/201 + forcing function 比對 namespace.js / SW 訊息協定常數。
 
 ---
 
