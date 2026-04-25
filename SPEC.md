@@ -7,19 +7,19 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.29**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.30**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-**當前 baseline：v0.7.29**（2026-04-25 起，承接 v0.6.3 的 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector/cleaner 能力）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+**當前 baseline：v0.7.30**（2026-04-25 起，承接 v0.6.3 的 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector/cleaner 能力）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
 
-**v0.7.29 baseline 包含**：
+**v0.7.30 baseline 包含**：
 
 1. **styler 瘦身不變**（承接 v0.6.0 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack（Bootstrap col-* reset / 裝飾 background transparent / aspect-ratio placeholder）+ 使用者 override。
 2. **detector 策略完整**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B fallback）→ heuristic（Readability-style bubble-up + POSITIVE/NEGATIVE regex + textLen bonus + top-5 ambiguous 競爭分析）→ main-tag 兜底。title promote 支援 h1-h4 heading + p/div/span 非 heading tag 包標題（v0.7.22 newtalk.tw 修法，非 heading 加 120 char text 上限）、返回 `promotedTitleHead` 給 cleaner 做白名單保護。
 3. **cleaner 規則完整**：16 條 `hideInsideArticle*` rule（keyword / heading text / link text / inline ad / third-party ads / comment panels / font tags / button clusters / action rows / sidebar columns / hr / buttons / spacers）+ dialog/tooltip ARIA + 祖先鏈 sibling + **promote+narrow 聯動（含 promotedTitleHead 白名單 + media-bearing sibling 保護 v0.7.22 / v0.7.24 精修 img-not-in-a）** + grid/flex collapse（articleEl 自身也處理 v0.7.24）+ media placeholder reset + figure/picture 強制 block（v0.7.24） + style-attribute observer 抵禦原站 JS 覆寫 !important priority（v0.7.23） + lazy image hydrate + MutationObserver 動態攔截。
 4. **使用者可調設定**：theme（light/dark/sepia）、fontSize（含 0 = Auto 保留原站）、contentWidth。
-5. **測試覆蓋**：229 jsdom spec（含 43 條 fixture 重現站點 bug）+ 5 e2e spec（SW wire-up 真 Chrome 驗證）+ e2e harness 基礎設施（`tools/e2e-harness.js` + `test/e2e/`，harness 額外內建 gap audit 警告 >= 80px 可疑留白）。
+5. **測試覆蓋**：230 jsdom spec（含 43 條 fixture 重現站點 bug）+ 5 e2e spec（SW wire-up 真 Chrome 驗證）+ e2e harness 基礎設施（`tools/e2e-harness.js` + `test/e2e/`，harness 額外內建 gap audit 警告 >= 80px 可疑留白）。
 6. **實測通過站**：Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh（Substack podcast）/ Medium / BBC / udn / 中時（chinatimes）/ 自由時報（ltn）/ Engadget / 上報（upmedia）/ EBC 東森新聞（v0.7.22 同步修好 article_cover 主圖誤殺）/ LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / cnyes 鉅亨網 / The Verge（視覺微瑕疵待修，見 PENDING_REGRESSION）。
 
 ### 硬規則（繼承）
@@ -57,7 +57,7 @@ JRead 是 Chrome Extension「Unclutter」的 clone——提供純閱讀模式，
 | 雜訊隱藏 | 隱藏廣告、sticky header、彈窗、側邊欄、相關文章列表 | ✅ v0.3.0（主文外語意 + fixed/sticky + 社群 cluster + 主文內 keyword） |
 | 偏好設定 | 字體、字級、主題色（亮/暗）、行高、版心寬度 | ☐ 未開始 |
 | Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作） |
-| Toast 提示 | **僅** 主文偵測失敗時顯示「此頁無法偵測主文」錯誤 toast；reader mode on/off 不再彈 toast（v0.7.29 Jimmy 要求簡化）。Shadow DOM 封裝 | ✅ v0.4.0 / 縮限 v0.7.29 |
+| Toast 提示 | **僅** 主文偵測失敗時顯示「此頁無法偵測主文」錯誤 toast；reader mode on/off 不再彈 toast（v0.7.30 Jimmy 要求簡化）。Shadow DOM 封裝 | ✅ v0.4.0 / 縮限 v0.7.30 |
 | 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）；若未生效可至 `chrome://extensions/shortcuts` 手動指派 | ✅ v0.4.0 |
 
 ---
