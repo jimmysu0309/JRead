@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.26 — 2026-04-25 起）
+## Baseline 宣告（v0.7.27 — 2026-04-25 起）
 
-**當前 baseline：v0.7.26**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 techbang content-top empty spacer + harness gap audit 建立為止的全部 detector / cleaner 能力，實測通過 18+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / The Verge 等）。220 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
+**當前 baseline：v0.7.27**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 techbang content-top empty spacer + harness gap audit 建立為止的全部 detector / cleaner 能力，**toast 縮限到僅顯示主文偵測失敗錯誤**（v0.7.27 Jimmy 要求簡化），實測通過 18+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / The Verge 等）。220 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -32,9 +32,28 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.23**（2026-04-25）newtalk.tw 原站 JS 清 jread !important priority 對抗修法 + `hideOutsideArticleSemantic` 擴 id/class selector
 - **v0.7.24**（2026-04-25）ttv.com.tw 三處聯動修法——narrow media guard 改「img 不在 a 內才保留」+ collapseGridWithHiddenCell 掃 articleEl 自身 + forceMediaContainerBlock figure/picture 強制 block
 - **v0.7.25**（2026-04-25）techbang 主文中段空白修法——`newsletter[\w-]*` 吃數字後綴 + `dfp-` id prefix / `.google-dfp` class 補進 THIRD_PARTY_AD_SEL
-- **v0.7.26**（2026-04-25）當前 baseline：techbang byline 下 115px 空白修法——spacer rule blocker check 加「祖先已 jread-hidden 不算 visible blocker」；harness 擴 gap audit（>= 80px 警告）
+- **v0.7.26**（2026-04-25）techbang byline 下 115px 空白修法——spacer rule blocker check 加「祖先已 jread-hidden 不算 visible blocker」；harness 擴 gap audit（>= 80px 警告）
+- **v0.7.27**（2026-04-25）當前 baseline：toast 縮限到僅顯示主文偵測失敗錯誤——「已進入/離開閱讀模式」狀態 toast 移除（Jimmy 要求簡化、卡片出現本身已是回饋）
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.27**——toast 範圍縮限：除主文偵測失敗外不再彈 toast（Jimmy 2026-04-25 要求）。
+
+**動作**：
+- `main.js::enterReaderMode` 移除 `showToast('已進入閱讀模式', 'success')`（reader card 出現本身就是回饋、不再雙重通知）
+- `main.js::exitReaderMode` 移除 `showToast('已離開閱讀模式', 'info')`（卡片消失本身就是回饋）
+- **保留** `enterReaderMode` 開頭 `showToast('此頁無法偵測主文', 'error')`——這是「畫面沒任何視覺變化」的唯一情境，必須有明確錯誤回饋
+- 移除 `main.js` 的 `SHOW_TOAST` message handler（沒人 send，是預留 hook）
+- `namespace.js` 移除 `MSG.SHOW_TOAST` 常數
+- 模組層級**未動**：`content/toast.js` / manifest content_scripts list / popup-core CONTENT_SCRIPT_FILES / popup-inject-retry.spec.js / toast.spec.js 全部保留——主文偵測失敗那條 toast 仍需 module 撐著
+
+**驗收**：
+- `npm test` → 220 passing（toast.spec.js 仍跑、未動）
+- 行為差異：使用者按下 popup toggle 或快速鍵啟動 reader mode 時，**不再**看到右下角綠色「已進入閱讀模式」或藍色「已離開閱讀模式」氣泡；偵測失敗仍會顯示紅色「此頁無法偵測主文」氣泡
+
+**未動**：detector / cleaner / styler / popup / service-worker / options / toast.js module 本體 / content_scripts 注入清單 / 任何測試 fixture / spec 全部零變化；修法只動 main.js（刪 2 個 showToast 呼叫 + 1 個 message handler）+ namespace.js（刪 1 個 MSG 常數），純減量。
 
 ---
 

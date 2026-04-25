@@ -7,13 +7,13 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.26**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.27**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-**當前 baseline：v0.7.26**（2026-04-25 起，承接 v0.6.3 的 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector/cleaner 能力）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+**當前 baseline：v0.7.27**（2026-04-25 起，承接 v0.6.3 的 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector/cleaner 能力）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
 
-**v0.7.26 baseline 包含**：
+**v0.7.27 baseline 包含**：
 
 1. **styler 瘦身不變**（承接 v0.6.0 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack（Bootstrap col-* reset / 裝飾 background transparent / aspect-ratio placeholder）+ 使用者 override。
 2. **detector 策略完整**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B fallback）→ heuristic（Readability-style bubble-up + POSITIVE/NEGATIVE regex + textLen bonus + top-5 ambiguous 競爭分析）→ main-tag 兜底。title promote 支援 h1-h4 heading + p/div/span 非 heading tag 包標題（v0.7.22 newtalk.tw 修法，非 heading 加 120 char text 上限）、返回 `promotedTitleHead` 給 cleaner 做白名單保護。
@@ -56,8 +56,8 @@ JRead 是 Chrome Extension「Unclutter」的 clone——提供純閱讀模式，
 | 乾淨排版 | 套用可讀性佳的字體、字級、行高、版心寬度 | ☐ 未開始 |
 | 雜訊隱藏 | 隱藏廣告、sticky header、彈窗、側邊欄、相關文章列表 | ✅ v0.3.0（主文外語意 + fixed/sticky + 社群 cluster + 主文內 keyword） |
 | 偏好設定 | 字體、字級、主題色（亮/暗）、行高、版心寬度 | ☐ 未開始 |
-| Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作；狀態提示改走 toast） |
-| Toast 提示 | 頁面右下角提示閱讀模式狀態（Shadow DOM 封裝） | ✅ v0.4.0 |
+| Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作） |
+| Toast 提示 | **僅** 主文偵測失敗時顯示「此頁無法偵測主文」錯誤 toast；reader mode on/off 不再彈 toast（v0.7.27 Jimmy 要求簡化）。Shadow DOM 封裝 | ✅ v0.4.0 / 縮限 v0.7.27 |
 | 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）；若未生效可至 `chrome://extensions/shortcuts` 手動指派 | ✅ v0.4.0 |
 
 ---
