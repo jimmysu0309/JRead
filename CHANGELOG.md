@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.25 — 2026-04-25 起）
+## Baseline 宣告（v0.7.26 — 2026-04-25 起）
 
-**當前 baseline：v0.7.25**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 techbang newsletter/DFP 廣告 wrapper 清除修法為止的全部 detector / cleaner 能力，實測通過 18+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / The Verge 等）。217 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
+**當前 baseline：v0.7.26**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 techbang content-top empty spacer + harness gap audit 建立為止的全部 detector / cleaner 能力，實測通過 18+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / The Verge 等）。220 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（217 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker）
+3. 每次修法後跑 `npm test`（220 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -31,9 +31,60 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.22**（2026-04-25）擴 promote tag 到 p/div/span（newtalk.tw）+ narrow media-bearing sibling 保護（順便修好 ebc 主圖誤殺）
 - **v0.7.23**（2026-04-25）newtalk.tw 原站 JS 清 jread !important priority 對抗修法 + `hideOutsideArticleSemantic` 擴 id/class selector
 - **v0.7.24**（2026-04-25）ttv.com.tw 三處聯動修法——narrow media guard 改「img 不在 a 內才保留」+ collapseGridWithHiddenCell 掃 articleEl 自身 + forceMediaContainerBlock figure/picture 強制 block
-- **v0.7.25**（2026-04-25）當前 baseline：techbang 主文中段空白修法——`newsletter[\w-]*` 吃數字後綴（handle `newsletter2in1`）+ `dfp-` id prefix / `.google-dfp` class 補進 THIRD_PARTY_AD_SEL
+- **v0.7.25**（2026-04-25）techbang 主文中段空白修法——`newsletter[\w-]*` 吃數字後綴 + `dfp-` id prefix / `.google-dfp` class 補進 THIRD_PARTY_AD_SEL
+- **v0.7.26**（2026-04-25）當前 baseline：techbang byline 下 115px 空白修法——spacer rule blocker check 加「祖先已 jread-hidden 不算 visible blocker」；harness 擴 gap audit（>= 80px 警告）
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.26**——techbang byline 下方 `<div class="content-top">` CSS min-height 115px 空白修法（Jimmy 2026-04-25 第三輪回報、harness gap audit 標 126px warning）。
+
+**症狀**：v0.7.25 修法後 techbang 主文中段 262px 空白已解，但 byline「洪詩詩 發表於 2026年4月24日 12:30」下、主圖上仍有 115px 空白。
+
+**根因**（harness probe）：
+- byline 下有 `<div class="content-top" style="min-height: 115px">`、CSS 撐高度
+- 裡面嵌 `<div class="ad-banner"><div class="google-dfp" id="dfp-middle_techbang_desktop_2"><div><iframe>` 多層 DFP 廣告
+- 前置 rule 跑完後 DFP 全被 hide（`[data-jread-hidden="1"] + display:none !important`），內層 iframe rect 0×0
+- 但 `DIV.content-top` wrapper 本身沒 hide：`hideInsideArticleEmptySpacers` 的 blocker check `el.querySelector('img, picture, video, iframe, svg, button, input, select, textarea')` **不管 blocker 是否已 hide**——看到 iframe 就 match、spacer rule skip、wrapper 留下
+- wrapper 自己 CSS `min-height: 115px` 撐著、視覺 115px 空白
+
+**修法**（結構性通則，非站點特判）：
+
+`hideInsideArticleEmptySpacers` blocker check 從簡單 `querySelector` 改成 loop：
+```js
+const blockers = el.querySelectorAll('img, picture, video, iframe, svg, button, input, select, textarea');
+let hasVisibleBlocker = false;
+for (const b of blockers) {
+  // 沿 b 祖先鏈到 el（或 articleEl）check 有無 jread-hidden
+  let cur = b, inHidden = false;
+  while (cur && cur !== el && cur !== articleEl) {
+    if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+    cur = cur.parentElement;
+  }
+  if (!inHidden) { hasVisibleBlocker = true; break; }
+}
+if (hasVisibleBlocker) continue;
+```
+
+全部 blocker 祖先鏈都已 jread-hidden → 視同 empty wrapper、可清。
+
+**通則依據**：已 jread-hidden element 視覺上 rect 0×0 / display:none，不佔空間；若某 wrapper 的所有「看似 blocker」子孫全是這類 hidden element，wrapper 本身就是 CSS 撐高度的 empty spacer——跨站通用（任何站 ad slot 清完後的外層 wrapper 都符合）、非 techbang 特有。
+
+**harness 擴 gap audit**：`tools/debug-harness.js` 的 residual audit 加一層「reader card 內相鄰 p/h*/figure/img/ul/ol/blockquote anchor 間 gap >= 80px 警告」。initial + delayed 兩個時機各跑一次。非 forcing function（某些段落間合法大 margin 會誤報），只讓 Claude 修法後自動看到可疑 y 位置、對照 fullpage 截圖巡視。此 audit 發現本次 techbang 修法前的 126px gap @ y=218、也會在未來攔到類似「未清 empty wrapper / 廣告 placeholder / 塌陷 figure」的視覺空白 bug（現有 attribute-based jsdom spec 對這類純視覺 bug 無感）。
+
+**新 fixture + spec**：
+- `test/regression/fixtures/techbang-empty-spacer-hidden-blocker.html`：最小重現 `.content-top` + 內嵌 4 層 DFP（class `google-dfp` + `dfp-*` id + `google_ads_iframe_*` + iframe）+ 主文段落
+- `cleaner.spec.js` 新增 3 條 assertion：(1) DFP 先被 hide（前置條件）；(2) `.content-top` spacer 被 hide（**核心 forcing**）；(3) 主文 TECHBANG_MAIN_MARK 保留
+- **jsdom 無 layout 限制**：`.content-top` 在 jsdom 下 rect.height 恆為 0、spacer rule 本來就 skip。spec 用 `Object.defineProperty(el, 'getBoundingClientRect', { value: () => ({ height: 115, ... }) })` stub rect，讓 spacer rule 的 `rect.height >= 60` 條件成立、能進入 blocker check
+- **sanity check**：回退 blocker check 到 `el.querySelector('iframe')` 原版 → spec fail；還原 → pass
+
+**驗收**：
+- `npm test` → 220 passing（原 217 + 新 3 條 techbang spacer）
+- harness gap audit 對真實 techbang：`126px @ y=218 byline → IMG` gap 消失、仍剩一段 `162px @ y=2150 IMG → H2` 為下一輪處理範圍
+- fullpage 截圖 byline 下方主圖緊接出現、無殘留空白
+
+**未動**：styler.js / detector.js / 其他 cleaner rule / popup / service-worker / options 全部零變化；修法只動 cleaner `hideInsideArticleEmptySpacers` 一條 blocker check 邏輯，行為擴展而非重寫。harness tool 擴 gap audit 為獨立 infrastructure（不影響 extension 本體）。
 
 ---
 
