@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.37**——cleaner.js 內部重構（行為不變、技術債清理）：(A) 抽出 `findSafeWrapperForHeading(h, articleEl)` helper，原本 `hideInsideArticleByHeadingText` 的 walk-up fallback (line 879-906) 與 `checkDynamicNoise` 的 dynamic heading walk-up (line 1864-1885) 兩處邏輯完全相同（hasLongP / totalPText >= 300 / hasArticleTitleAnchor 三道保護），併為單一 helper、兩處共用約 30 行 → 各 1 行呼叫，未來新增 walk-up 保護條件只需改一處。(B) `hideInsideArticleActionRows` 內 `el.querySelectorAll('button')` + `('[role="button"]')` + `('svg')` 三次掃描合併為單次 `('button, [role="button"], svg')`，每個 candidate 從 3 次 DOM traversal 降至 1 次。重構觸發於整 repo tech debt audit；audit 也檢視了 SPEC drift / 拆檔 / regex multi-line / 文件 typo 等可能改動，全部評估後選擇不動（純美化或會增加複雜度）。262 jsdom spec 全過 + harness 抽驗 newtalk / cna 真實站點行為一致。
+
+---
+
 **v0.7.36**——cna.com.tw 中央社新聞兩大 bug 修法（Jimmy 2026-04-25 回報）：閱讀模式啟動後 (1) 整篇內文消失 (2) 標題下方 5 個社群按鈕 + 「支持中央社」推廣 widget 殘留。**Bug 1 根因**：`hideInsideArticleByHeadingText` walk-up fallback 的 `hasLongP` 保護以「單一 p ≥ 100 chars」為門檻，中央社新聞每段 60-90 字普遍 < 100 chars，主文 p 全沒觸發 → 「延伸閱讀」DIV 觸發 walk-up 升到外層 `DIV.paragraph`（包整篇主文）整塊 hide。修法：walk-up 加「累計 p textLen ≥ 300」保護，主文容器特徵是「累計多 p、總文量大」，跨中文短段 / 西文長段都通用（兩處 walk-up loop 同步）。**Bug 2 修法**：(A) 新 rule `hideInsideArticleJsLinks` 清 `a[href^="javascript:"]`——主文不會用 javascript: pseudo-protocol、純 JS handler 的 a 都是 widget interactive button（cna 的 btn_audio/btn_fb/btn_line/btn_copy/btn_support 全清）；(B) `NOISE_LINK_TEXT_RE` 加 `^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$` 中港台繁簡 alias；(C) `NOISE_KEYWORD_RE` 加 `app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner` token（`DIV.paragraph.appDownload` 推廣 widget 整塊 hide）。新增 `cna-short-paragraphs-walkup` fixture + 6 條 spec forcing function（fixture 加 sanity 確認）；harness 自驗 cna 主文段落齊全 + 標題下方 toolbar 全清 + 「支持中央社」widget 清乾淨。262 jsdom spec 全過。
 
 ---
