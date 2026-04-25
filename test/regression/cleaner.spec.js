@@ -2510,6 +2510,16 @@ describe('cleaner — cnyes-nav-widgets-walkup（社交 nav + 末段 widget 通�
       '(b) 拿掉 `下一篇` token → 不命中');
   });
 
+  it('「討論區」widget 整塊被 hide（v0.7.29 cnyes lazy-load 對抗修法 forcing）', () => {
+    // cnyes 文末 lazy-load 注入「討論區」widget（h3 討論區 + span 回應(0) +
+    // 留言輸入 placeholder + 發佈 button）。NOISE_HEADING_TEXT_RE 加
+    // `^討論區$` / `^(回應|回覆|留言)\s*\(\d+\)$` token、walk-up 升到 wrapper hide。
+    const wrapper = document.querySelector('.d4xfe2k1');
+    assert.ok(wrapper);
+    assert.strictEqual(wrapper.dataset.jreadHidden, '1',
+      '討論區 wrapper 必須被 hide；forcing：拿掉 `^討論區$` token → 不命中、wrapper 留下');
+  });
+
   it('「點我下載APP」a 被 link-text 命中清（規則 4 forcing）', () => {
     const a = document.querySelector('a');
     // 確認某個 a 的 text 是「點我下載APP」、且自己被 hide
