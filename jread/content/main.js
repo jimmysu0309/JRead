@@ -1,6 +1,7 @@
 // JRead — Content Script 進入點
 // 負責：監聽 popup / background 訊息、串接 detector → cleaner → styler、
-// 顯示 toast、SPA 導航偵測（TODO）。
+// 僅在主文偵測失敗時顯示 toast（v0.7.27 Jimmy 要求移除「已進入/離開
+// 閱讀模式」等狀態通知，圖示 + 卡片出現本身就是回饋）、SPA 導航偵測（TODO）。
 (function () {
   'use strict';
 
@@ -48,7 +49,6 @@
       payload: { ok: true, confidence: result.confidence, strategy: result.strategy }
     });
     chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
-    showToast('已進入閱讀模式', 'success');
     return true;
   }
 
@@ -61,7 +61,6 @@
     NS.state.hiddenEls = [];
     NS.state.originalStyles = null;
     chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
-    showToast('已離開閱讀模式', 'info');
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -80,12 +79,6 @@
       return true;
     }
 
-    if (msg.type === NS.MSG.SHOW_TOAST) {
-      const p = msg.payload || {};
-      showToast(p.message || '', p.kind || 'info');
-      sendResponse({ ok: true });
-      return;
-    }
   });
 
   // 設定變更即時套用：popup 的加減/切換動作會寫入 chrome.storage.sync，
