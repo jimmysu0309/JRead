@@ -555,3 +555,54 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(!/font-size:\s*inherit/.test(css), '不得強制後代 font-size: inherit');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.38 macstories.net icon container 修法
+// Jimmy 2026-04-25 回報：reader mode 啟動後 PixyCAD app icon 從 160x160 變超大
+// 圖（撐滿 reader card 寬度）。根因：原站對 .media-wrapper-icon 設 width:160
+// + img 設 width/height:100% 達成小 icon 顯示；jread 的 img:not(a>img)
+// { height: auto !important } 把 height:100% 蓋掉、img 退到 naturalSize（512x512）
+// + wrapper shrink-to-fit 跟著膨脹。
+// 修法：styler 加新 rule 對含「wrapper-icon / media-icon / app-icon / icon-wrapper」
+// 等 CMS 命名 pattern 的 wrapper 內 img 套 max-width/max-height: 200px。
+// -----------------------------------------------------------------------------
+describe('styler — v0.7.38 icon container 限縮（macstories app icon 修法）', () => {
+  it('CSS 必須含 [class*="wrapper-icon"] / [class*="app-icon"] / [class*="icon-wrapper"] 等 selector', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/\[class\*="wrapper-icon"\]\s+img/.test(css),
+      'CSS 必須含 [class*="wrapper-icon"] img selector—— 命中 macstories media-wrapper-icon');
+    assert.ok(/\[class\*="app-icon"\]\s+img/.test(css),
+      'CSS 必須含 [class*="app-icon"] img selector—— 跨站 CMS 命名 pattern');
+    assert.ok(/\[class\*="icon-wrapper"\]\s+img/.test(css),
+      'CSS 必須含 [class*="icon-wrapper"] img selector—— 反向命名 pattern');
+  });
+
+  it('icon container rule 必須含 max-width / max-height: 200px（限縮 icon 不退到 naturalSize）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 找含 wrapper-icon 的 rule block
+    const m = css.match(/\[class\*="wrapper-icon"\][^{]*\{([^}]*)\}/);
+    assert.ok(m, '應有 wrapper-icon rule block');
+    const body = m[1];
+    assert.ok(/max-width:\s*200px/.test(body),
+      'icon container rule 必須含 max-width: 200px；forcing：拿掉此限制 → macstories icon 仍變超大');
+    assert.ok(/max-height:\s*200px/.test(body),
+      'icon container rule 必須含 max-height: 200px');
+  });
+
+  it('icon container rule selector 必須用 :not(a > img) 排除 link-wrapped icon', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 抓含 wrapper-icon 的 selector list
+    const m = css.match(/(\[data-jread-active="1"\]\s+\[class\*="wrapper-icon"\][^{]*)\{/);
+    assert.ok(m, '應找到 wrapper-icon selector');
+    const sel = m[1];
+    assert.ok(/img:not\(a\s*>\s*img\)/.test(sel),
+      'icon container selector 必須用 img:not(a > img)（與既有 a > img icon-link 例外協調）；' +
+      'forcing：用 naked img 會誤打到 link-wrapped icon、且踩到 styler spec line 145 forcing');
+  });
+});

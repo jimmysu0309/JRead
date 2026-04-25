@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.38**——macstories.net app icon 變超大修法（Jimmy 2026-04-25 回報）：reader mode 啟動後 `<div class="media-wrapper media-wrapper-icon"><img></div>` 結構的 icon img 從 160×160 變超大圖（撐滿 reader card 寬）。根因：原站對 wrapper 設 `width:160 + float:left`、img 設 `width/height:100%` 達成小 icon 顯示；reader mode 下 jread 的 `img:not(a>img) { height: auto !important }` 把原站 height:100% 蓋掉、img 退到 naturalSize（512×512）+ wrapper shrink-to-fit 跟著膨脹。修法（結構性通則）：styler 加新 rule 對含 `wrapper-icon` / `media-icon` / `app-icon` / `icon-wrapper` / `thumb-icon` 等跨站 CMS 命名 pattern 的 wrapper 內 `img:not(a > img)` 套 `max-width/max-height: 200px`——一般 icon < 200px、超過視為配圖不該套此規則；selector 用 `img:not(a > img)` 與既有 `a > img` icon-link 例外（v0.6.x 慣例 + spec line 145 forcing）協調。新增 `macstories-icon-wrapper` fixture + 3 條 spec forcing function（含 sanity check 驗證）。265 jsdom spec 全過。
+
+---
+
 **v0.7.37**——cleaner.js 內部重構（行為不變、技術債清理）：(A) 抽出 `findSafeWrapperForHeading(h, articleEl)` helper，原本 `hideInsideArticleByHeadingText` 的 walk-up fallback (line 879-906) 與 `checkDynamicNoise` 的 dynamic heading walk-up (line 1864-1885) 兩處邏輯完全相同（hasLongP / totalPText >= 300 / hasArticleTitleAnchor 三道保護），併為單一 helper、兩處共用約 30 行 → 各 1 行呼叫，未來新增 walk-up 保護條件只需改一處。(B) `hideInsideArticleActionRows` 內 `el.querySelectorAll('button')` + `('[role="button"]')` + `('svg')` 三次掃描合併為單次 `('button, [role="button"], svg')`，每個 candidate 從 3 次 DOM traversal 降至 1 次。重構觸發於整 repo tech debt audit；audit 也檢視了 SPEC drift / 拆檔 / regex multi-line / 文件 typo 等可能改動，全部評估後選擇不動（純美化或會增加複雜度）。262 jsdom spec 全過 + harness 抽驗 newtalk / cna 真實站點行為一致。
 
 ---
