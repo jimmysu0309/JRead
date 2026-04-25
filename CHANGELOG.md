@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.23 — 2026-04-25 起）
+## Baseline 宣告（v0.7.24 — 2026-04-25 起）
 
-**當前 baseline：v0.7.23**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖 + 原站 JS 清 jread !important priority 對抗修法為止的全部 detector / cleaner 能力，實測通過 16+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / The Verge 等）。209 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
+**當前 baseline：v0.7.24**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 ttv.com.tw 雙層 figure flex + sidebar img-in-a guard + articleEl 本身 flex collapse 修法為止的全部 detector / cleaner 能力，實測通過 17+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / The Verge 等）。214 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（209 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker）
+3. 每次修法後跑 `npm test`（214 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -29,9 +29,48 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.6.3**（2026-04-21）首版 baseline：styler 瘦身完成、title promote 涵蓋 WordPress/anthropic
 - **v0.7.21**（2026-04-24）Stratechery h2 post-title 修法 + e2e harness 就緒 + 15 站實測通過
 - **v0.7.22**（2026-04-25）擴 promote tag 到 p/div/span（newtalk.tw）+ narrow media-bearing sibling 保護（順便修好 ebc 主圖誤殺）
-- **v0.7.23**（2026-04-25）當前 baseline：newtalk.tw `<div id="footer">` 非 semantic footer tag 修法——`hideOutsideArticleSemantic` 擴 id/class 慣用命名 selector
+- **v0.7.23**（2026-04-25）newtalk.tw 原站 JS 清 jread !important priority 對抗修法 + `hideOutsideArticleSemantic` 擴 id/class selector
+- **v0.7.24**（2026-04-25）當前 baseline：ttv.com.tw 三處聯動修法——narrow media guard 改「img 不在 a 內才保留」+ collapseGridWithHiddenCell 掃 articleEl 自身 + forceMediaContainerBlock figure/picture 強制 block
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.24**——ttv.com.tw 主圖消失 + sidebar 漏清三處聯動修法（Jimmy 2026-04-25 實機回報）。
+
+**症狀**：news.ttv.com.tw/news/11504240003200W 進閱讀模式後：(1) 標題大圖（柯文哲+ECMO 照片）消失、只剩圖的 figcaption；(2) 右側 sidebar「熱門新聞」+ 縮圖清單整塊留在 reader card 旁。
+
+**根因**（harness probe 三層剝洋蔥）：
+
+1. **sidebar 沒清**：v0.7.22 為修 newtalk/ebc 主圖加的 narrow media-bearing guard (`sib.querySelector('img, picture, video') → keep`) 太寬。ttv 的 `<div class="sidebox">` 內有熱門新聞縮圖 `<li><a href><img></a>`，`querySelector('img')` 命中 → sidebox 被誤保留整塊。
+
+2. **articleEl 本身 flex 壓扁 article-body**：ttv 的 `<div class="news-article fitVids">` 用 `display: flex` 做「左主文 + 右 sidebar」2 欄 layout。detector 選 `<article id="contentarea">` 後 promote 升到 news-article（因 h1 在 article 外、與 article-body 是 sibling）。sidebar narrow hide 掉後，article-body 是唯一 visible flex child、沒 `flex: 1` → shrink-to-fit 壓到 288px、article 224px。`collapseGridWithHiddenCell` 只掃 `articleEl.querySelectorAll('*')`（不含 articleEl 自己）、漏處理。
+
+3. **雙層 figure 外層 flex 壓扁 img**：ttv 主圖結構 `<figure class="cover img" style="display: flex"><figure><img></figure></figure>`——外層 figure 用 flex，唯一 child 是內層 figure、沒 flex-grow → 被壓到 0×0、img 跟著 0×0。styler `figure { width: auto; max-width: 100% }` 規則不覆蓋 display、reader mode 下原站 flex 行為維持、img 永遠塌陷。
+
+**修法**（三處結構性通則，全部非站點特判）：
+
+1. **narrow media guard 精修**（cleaner.js `narrowPromotedSiblings`）：從「sibling 含 `<img>/<picture>/<video>` → 保留」改成「**sibling 含『非連結包裹』的媒體 → 保留**」——媒體 element 的 `closest('a')` 要是 null 才算 standalone。
+   - 依據：hero image 是內容本身、不作為連結（`<div><img>` 或 `<figure><img>`）；sidebar 縮圖是「點擊跳到其他文章」的連結 affordance（`<a><img>`）。這個結構特徵跨 CMS 通用。
+   - ebc `article_cover` / newtalk `news_img` 主圖的 img 不在 a 內 → 仍保留 ✓
+   - ttv sidebox / 類似縮圖列表 → 正確 hide ✓
+
+2. **collapseGridWithHiddenCell 掃入 articleEl 自身**（cleaner.js）：原 for-loop `articleEl.querySelectorAll('*')` 天生不含 articleEl 自己。改成 `[articleEl, ...articleEl.querySelectorAll('*')]` 把 articleEl 也納入 candidate list（articleEl 自己跳過 jreadHidden / isInPreserved check）。articleEl 若是 flex-row/grid + 有 hidden direct child 時退化成 block、釋放 article-body 拉滿寬度。
+
+3. **forceMediaContainerBlock 新規則**（cleaner.js）：掃 `articleEl.querySelectorAll('figure, picture')`、若 computed display 是 flex/grid/inline-* → inline `display: block !important` 強制回歸 HTML5 UA 預設。restore() 同步還原。
+   - 依據：`<figure>` / `<picture>` HTML5 spec UA 預設 display 就是 `block`。原站改成 flex/grid 是站點 custom layout（如左右並排圖說、多欄 gallery），reader mode 下脫離原 context 常失效、留下 shrink 陷阱。
+   - 為何放 cleaner 不放 styler：styler 視為動不得（需 Jimmy 明確授權）；cleaner 用 inline !important + snapshot restore 跟 v0.6.13 `resetMediaPlaceholderPadding` 同層級（runtime media 校正）。
+
+**新 fixture + spec**：
+- `test/regression/fixtures/ttv-flex-layout-hero-figure.html` 重現 ttv 實機 DOM：`DIV.news-article.fitVids` (flex) > [H1, `DIV.article-body > ARTICLE#contentarea > FIGURE.cover.img (flex) > FIGURE > IMG + p 主文`, `DIV.sidebox > UL > LI > A > IMG`]
+- `cleaner.spec.js` 新增 5 條 assertion：(1) promote 升到 news-article；(2) sidebox 被 narrow hide；(3) 外層 figure.cover 被 forceMediaContainerBlock 強制 block；(4) 主圖 img 及祖先 figure 不被誤 hide；(5) TTV_MAIN_MARK 段落全保留
+- **sanity check 兩輪**：(a) 回退 narrow media guard 到 v0.7.22 舊版 → ttv sidebar spec fail；還原 → pass。(b) 註解 `forceMediaContainerBlock` 呼叫 → figure block spec fail；還原 → pass
+
+**驗收**：
+- `npm test` → 214 passing（原 209 + 新 5 條 ttv）
+- harness 對真實 ttv 驗：`DIV.news-article.fitVids` display 從 flex → block、article-body 288px → 608px、外層 figure rect 0×0 → 528×297、主圖 natural 1024×576 正確顯示；residual audit 無命中；fullpage 截圖 reader card 乾淨、sidebar / footer / 熱門新聞全清
+
+**未動**：styler.js / detector.js / popup / service-worker / options 全部零變化；修法只動 cleaner 三處——`narrowPromotedSiblings` media guard 精修、`collapseGridWithHiddenCell` 擴 candidate、新增 `forceMediaContainerBlock`（+ `restoreMediaContainerBlock`），行為擴展而非重寫。
 
 ---
 

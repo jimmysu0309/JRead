@@ -2281,6 +2281,7 @@ describe('cleaner — newtalk-p-class-title（p 標題 + 非 figure 主圖雙修
       'display 值仍應為 none');
   });
 
+  // (spec reserved above; ttv describe block added after newtalk block)
   it('site-wide footer（<div id="footer">，非 <footer> tag）必須被 hide（v0.7.23 修法 forcing）', () => {
     // newtalk 用 `<div id="footer">` 而非 HTML5 `<footer>` tag。v0.7.22 僅靠
     // hideAncestorSiblings 祖先鏈遍歷理論上能清（footer 是 DIV.main 的 child、
@@ -2306,6 +2307,110 @@ describe('cleaner — newtalk-p-class-title（p 標題 + 非 figure 主圖雙修
         cur = cur.parentElement;
       }
       assert.ok(inHidden, `SITE_FOOTER_MARK 必須在 hidden 祖先內：${a.textContent}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.24 ttv.com.tw 雙層 figure + 外層 flex 主圖塌 0×0 + sidebar 縮圖列表漏清
+// 三處修法：
+//   1. narrow media-bearing sibling guard：改成「img 不在 <a> 內才保留」
+//      （sidebar 縮圖的 img 都包在 <a>，不再誤保）
+//   2. collapseGridWithHiddenCell 掃進 articleEl 自己（articleEl 本身是 flex
+//      + 有 hidden sibling child 時退化到 block）
+//   3. forceMediaContainerBlock 新規則：figure/picture 若是 flex/grid/inline-*
+//      → 強制 block（HTML5 spec 預設就是 block，原站 custom flex layout 在
+//      reader mode 下脫離原 context 常失效、壓扁 img）
+// Jimmy 2026-04-25 實測回報：ttv 主圖消失 + sidebar 還在。
+// -----------------------------------------------------------------------------
+describe('cleaner — ttv-flex-layout-hero-figure（三處聯動修法）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'ttv-flex-layout-hero-figure.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 <article> tag');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('detector 命中 <article> 後 promote 升到 DIV.news-article（含 sidebar + 主文的共同 parent）', () => {
+    // h1 在 article 內，promote 機制會升到含 article-body 的上層（因 h1 match）
+    // 這是 fixture 設計的觸發——articleEl 升到 news-article 後變成含 sidebar 的 flex
+    assert.ok(result.el);
+    // 升級後的 articleEl 必須含 sidebar（fixture forcing：若 promote 沒升、
+    // sidebar 是 articleEl 外部 sibling，後續 narrow 不處理）
+    assert.ok(result.el.querySelector('.sidebox'),
+      'articleEl 必須包含 sidebox（驗 promote 升級的場景）');
+    assert.ok(result.el.querySelector('#contentarea'),
+      'articleEl 必須仍包含 <article>');
+  });
+
+  it('sidebar（img 包在 <a> 內的縮圖列表）必須被 narrow hide（v0.7.24 guard 修法 forcing）', () => {
+    const sidebox = document.querySelector('.sidebox');
+    assert.ok(sidebox);
+    assert.strictEqual(sidebox.dataset.jreadHidden, '1',
+      'sidebar 必須被 narrow hide；forcing：舊版 media guard `sib.querySelector("img")` 會誤保（sidebox 內有 img），' +
+      '新版「img 不在 <a> 內才保留」應正確識別 sidebar 縮圖連結、清掉整塊。此 assertion 拿掉 `m.closest("a")` 條件 → fail');
+    // sidebar 內的 SIDEBAR_MARK 文字都在 hidden 祖先內
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('SIDEBAR_MARK'));
+    assert.ok(marks.length >= 3, 'fixture 應含至少 3 個 SIDEBAR_MARK');
+    for (const p of marks) {
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden, `SIDEBAR_MARK 段落必須在 hidden 祖先內：${p.textContent.slice(0, 30)}`);
+    }
+  });
+
+  it('forceMediaContainerBlock：外層 figure.cover.img（display:flex）被強制 block（v0.7.24 forcing）', () => {
+    const outerFigure = document.querySelector('figure.cover');
+    assert.ok(outerFigure, 'fixture 必須含 figure.cover（外層雙 class figure）');
+    // inline !important display: block 被強制套上
+    assert.strictEqual(outerFigure.style.getPropertyPriority('display'), 'important',
+      'figure 的 inline display 必須帶 !important priority；forcing：拿掉 forceMediaContainerBlock 呼叫 → fail');
+    assert.strictEqual(outerFigure.style.display, 'block',
+      'figure display 必須是 block');
+  });
+
+  it('主圖 <img> 及祖先 figure 不被任何 rule 誤 hide', () => {
+    const heroImg = document.querySelector('article#contentarea img');
+    assert.ok(heroImg, 'fixture 必須含主圖 img');
+    let cur = heroImg, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden, '主圖祖先鏈（figure + article + article-body）都不得被 hide');
+  });
+
+  it('主文 TTV_MAIN_MARK 段落全保留', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('TTV_MAIN_MARK'));
+    assert.ok(marks.length >= 5, `fixture 應含 5 段主文；實際 ${marks.length}`);
+    for (const p of marks) {
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `TTV_MAIN_MARK 段落不得被 hide：${p.textContent.slice(0, 40)}`);
     }
   });
 });

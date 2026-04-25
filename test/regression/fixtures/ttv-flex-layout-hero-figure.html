@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<!--
+  Fixture：ttv.com.tw (台視新聞) 的三個 bug 同時驗
+  Jimmy 2026-04-25 回報：1) 主圖消失 2) sidebar 沒清
+
+  真實 DOM 結構（harness probe 自 news.ttv.com.tw/news/11504240003200W）：
+    MAIN#container
+      FORM#form1
+        DIV.news-article.fitVids   ← display: flex（左主文 + 右 sidebar）
+          DIV.article-body          ← 左主文 container
+            ARTICLE#contentarea     ← <article> tag（detector 策略 1 命中）
+              H1 標題
+              FIGURE.cover img      ← **外層 figure, display: flex**
+                FIGURE              ← 內層 figure
+                  IMG                ← 主圖（v0.7.23 塌 0×0 消失）
+              <多段 p>
+          DIV.sidebox               ← 右 sidebar（熱門新聞 + 推薦）
+            DIV.popnews-list
+              DIV.heading
+                H4 熱門新聞
+              UL
+                LI
+                  A href="..."      ← **img 包在 a 內**（縮圖連結）
+                    IMG
+                LI ... (更多熱門新聞)
+
+  三個 bug:
+
+  A. promoteForTitle 從 `<article>` 升到 `DIV.news-article.fitVids`
+     （因 h1 match + common ancestor），articleEl 變成含 sidebar 的外層 wrapper。
+
+  B. v0.7.22 narrow media-bearing guard 太寬——`sib.querySelector('img')`
+     讓 sidebar 縮圖（img 在 a 內）視為媒體保留，整塊 sidebar 沒清。
+     v0.7.24 修法：改成「img 不在 a 內」才保留。
+
+  C. articleEl 本身 `display: flex`，sidebar 被 narrow hide 後 article-body
+     是唯一 visible flex child、shrink-to-fit 壓到 288px → figure 塌 0×0 →
+     img 0×0 → 主圖消失。v0.7.24 修法：collapseGridWithHiddenCell 掃進
+     articleEl 自己；forceMediaContainerBlock 強制 figure/picture block。
+-->
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>被爆夜赴醫院看病歷「電人」 柯文哲：給建議，安慰家屬我盡可能去做</title>
+  <meta property="og:title" content="被爆夜赴醫院看病歷「電人」 柯文哲：給建議，安慰家屬我盡可能去做">
+</head>
+<body>
+<main id="container">
+  <form id="form1">
+    <div class="news-article fitVids" style="display: flex; flex-direction: row;">
+
+      <!-- H1 在 news-article direct child（ttv 實機真實位置）——
+           detector 命中 <article> 後 promote 升一層到 news-article 含此 h1 -->
+      <h1 class="mb-ht-hf">被爆夜赴醫院看病歷「電人」 柯文哲：給建議，安慰家屬我盡可能去做</h1>
+
+      <!-- 左主文 -->
+      <div class="article-body">
+        <article id="contentarea">
+          <div class="tags">
+            <span>#柯文哲</span><span>#電人</span><span>#新光醫院</span>
+          </div>
+
+          <!-- 雙層 figure + 外層 flex（正是 ttv pathological 結構） -->
+          <figure class="cover img" style="display: flex;">
+            <figure>
+              <img src="hero.jpg" alt="柯文哲深夜到醫院看病歷熱惹議。圖／翻攝自Facebook@柯文哲">
+              <figcaption>▲ 柯文哲深夜到醫院看病歷熱惹議。圖／翻攝自Facebook@柯文哲</figcaption>
+            </figure>
+          </figure>
+
+          <p>TTV_MAIN_MARK 有醫護人員在社群上爆料，有病患家屬是「前台北市長」的員工，就把前市長請到醫院一起了解家人病況，照片雖是背影，但網友一下就認出他就是柯文哲。</p>
+          <p>TTV_MAIN_MARK 醫護人員指出，家屬永遠覺得醫療端不夠積極，把前市長請來「電人」，晚上10點還要求病情解釋，「這裡也不是台大，到底憑什麼？」</p>
+          <p>TTV_MAIN_MARK 柯文哲證實就是他本人，並解釋員工的媽媽手術後第二天，打止痛藥有出現低血氧症、心律不整，員工希望找一個他認為很厲害的醫生去幫忙看一下。</p>
+          <p>TTV_MAIN_MARK 這件事情原本是個醫療溝通問題，但因為柯文哲的特殊身份與夜赴醫院的舉動，迅速在社群媒體上引發熱烈討論。醫界內部也有不同聲音。</p>
+          <p>TTV_MAIN_MARK 新光醫院方面暫未對此事件正式回應。柯文哲則強調，他只是盡可能給予家屬建議與安慰，並非干預醫療決策。</p>
+        </article>
+      </div>
+
+      <!-- 右 sidebar：img 都包在 a 內（連結縮圖） -->
+      <div class="sidebox">
+        <div class="popnews-list">
+          <div class="heading">
+            <div class="underline"><h4>熱門新聞</h4></div>
+          </div>
+          <ul>
+            <li>
+              <a href="/news/1">
+                <div class="img"><img src="thumb1.jpg" alt=""></div>
+                <p>SIDEBAR_MARK 綠委宣傳沈伯洋懂巴哈、莫札特</p>
+              </a>
+            </li>
+            <li>
+              <a href="/news/2">
+                <div class="img"><img src="thumb2.jpg" alt=""></div>
+                <p>SIDEBAR_MARK 血壓高怎麼吃？營養師大推「5食物」</p>
+              </a>
+            </li>
+            <li>
+              <a href="/news/3">
+                <div class="img"><img src="thumb3.jpg" alt=""></div>
+                <p>SIDEBAR_MARK 第三則推薦新聞</p>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </form>
+</main>
+</body>
+</html>

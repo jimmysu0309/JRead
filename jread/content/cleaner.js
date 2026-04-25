@@ -376,15 +376,27 @@
         // 走策略 1（article-tag）時沒 promote、但 article 內可能已含 h1。
         if (sib.tagName === 'H1') continue;
         if (sib.querySelector && sib.querySelector('h1')) continue;
-        // 媒體分支（v0.7.22 newtalk.tw 修法）：sibling 含 `<img>` / `<picture>` /
-        // `<video>` 視為主文媒體分支保留（跨 CMS 慣例：hero image / 內嵌多媒體
-        // 跟文字內容常在兄弟 div 不同層，舊站沒把主圖包進 figure 時尤其如此）。
-        // 若該 sibling 其實是廣告／chrome／推薦縮圖（含 img 但也含 noise keyword），
-        // 後續 hideInsideArticleByKeyword / hideInsideArticleThirdPartyAds 會補抓；
-        // 反之錯殺主圖沒辦法回收。通則依據非站點特判——凡是 narrow scope 內含視
-        // 覺媒體的 sibling，保留比砍安全（figure 走 isInPreserved、這條補非 figure
-        // 情境）。
-        if (sib.querySelector && sib.querySelector('img, picture, video')) continue;
+        // 媒體分支（v0.7.22 newtalk.tw 修法 → v0.7.24 ttv 精修）：sibling 含
+        // 「非連結包裹」的 `<img>` / `<picture>` / `<video>` 才視為主文媒體保留。
+        //
+        // 為何加 `<a>` 不能包：單純的 `sib.querySelector('img')` 太寬——ttv
+        // 類站點 `<div class="sidebox"><ul><li><a href="..."><img></a></li>...</ul>`
+        // 的 sidebar 列表（熱門新聞縮圖）每個 img 都在 `<a>` 內，舊 guard 會
+        // 誤保整塊 sidebar。而主圖慣例（ebc article_cover / newtalk news_img /
+        // 多數新聞站 hero image）是 `<div><img>` 或 `<figure><img>`，img 直接
+        // 露出不在 `<a>` 內。此區分同時精準保留主圖 + 清 sidebar 縮圖列表。
+        //
+        // 通則依據：hero image 是內容本身、不作為連結；sidebar 縮圖是「點擊
+        // 跳到其他文章」的連結 affordance。這個「img 是否包在 a 裡」的結構
+        // 特徵跨 CMS 通用（不限 ttv）。
+        if (sib.querySelectorAll) {
+          const medias = sib.querySelectorAll('img, picture, video');
+          let hasStandaloneMedia = false;
+          for (const m of medias) {
+            if (!m.closest || !m.closest('a')) { hasStandaloneMedia = true; break; }
+          }
+          if (hasStandaloneMedia) continue;
+        }
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);
@@ -916,11 +928,20 @@
   function collapseGridWithHiddenCell(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const collapsed = [];
-    // 掃 article 內所有可能的 grid / flex-row container
-    for (const el of articleEl.querySelectorAll('*')) {
-      if (el === articleEl) continue;
-      if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (isInPreserved(el)) continue;
+    // 掃 article 內所有可能的 grid / flex-row container，**含 articleEl 自己**
+    // （v0.7.24 ttv.com.tw 修法）：ttv 的 `DIV.news-article.fitVids` 本身是
+    // `display: flex`（左主文 + 右 sidebar 兩欄 layout），sidebar 被 narrow
+    // hide 後 article-body 是唯一 flex child、沒 `flex: 1` → 維持 shrink-to-
+    // fit 被壓到 288px、figure 塌到 0×0 → 主圖消失。舊版 for-loop 只掃
+    // `articleEl.querySelectorAll('*')` 天生不含 articleEl 自己、漏處理。
+    // 通則：articleEl 若是 flex-row/grid + 有 hidden child、直接 children 間
+    // 失衡 → 退化。
+    const candidates = [articleEl, ...articleEl.querySelectorAll('*')];
+    for (const el of candidates) {
+      if (el !== articleEl) {
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(el)) continue;
+      }
       const cs = window.getComputedStyle(el);
       const isGrid = cs.display === 'grid' || cs.display === 'inline-grid';
       const isFlexRow = (cs.display === 'flex' || cs.display === 'inline-flex') &&
@@ -1102,6 +1123,53 @@
 
   function restoreInnerGridFlex(hiddenEls) {
     const arr = hiddenEls && hiddenEls.__innerGridFlex;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+    }
+  }
+
+  // ---- figure / picture 容器強制 block（v0.7.24 ttv.com.tw 修法）----------
+  //
+  // 場景：ttv 主圖包在 `<figure class="cover img"><figure><img></figure></figure>`
+  // 雙層 figure，外層 class 含 flex layout CSS（`display: flex`）。child 是
+  // 單一 `<figure>`、沒 `flex: 1`，shrink-to-fit 被壓扁 → rect 0×0、img 跟
+  // 著 0×0 → 主圖消失。
+  //
+  // 通則依據：`<figure>` / `<picture>` 在 HTML5 spec 的 UA 預設 display 是
+  // `block`。原站把它改成 `flex` / `grid` / `inline-*` 是站點 custom layout
+  // 需求（如左右並排圖說 / 多欄 gallery）——但 reader mode 脫離原站上下文後
+  // 這些 custom layout 常失效（因 ancestor 的 layout reset），留下 shrink
+  // 陷阱。強制回歸 HTML5 預設 block 安全且符合「貼近原站語意」哲學。
+  //
+  // 為何不在 styler 加 `display: block`：styler 視為動不得、需 Jimmy 授權；
+  // 放 cleaner 用 inline !important + restore 機制跟 v0.6.13 的
+  // resetMediaPlaceholderPadding 同層級。
+  const MEDIA_CONTAINER_PROPS = ['display'];
+
+  function forceMediaContainerBlock(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const resets = [];
+    const candidates = articleEl.querySelectorAll('figure, picture');
+    for (const el of candidates) {
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs) continue;
+      const d = cs.display;
+      // 只改 flex / grid / inline-*（非預設 block 行為）；原本就 block
+      // 或 table / list-item 等其他 layout 不動
+      if (d === 'block' || d === 'none') continue;
+      if (!/^(flex|inline-flex|grid|inline-grid|inline-block|inline)$/.test(d)) continue;
+      resets.push({ el, prev: snapshotStyles(el, MEDIA_CONTAINER_PROPS) });
+      applyImportant(el, { display: 'block' });
+    }
+    hidden.__mediaContainerBlock = resets;
+  }
+
+  function restoreMediaContainerBlock(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__mediaContainerBlock;
     if (!Array.isArray(arr)) return;
     for (const item of arr) {
       if (!item || !item.el) continue;
@@ -1671,6 +1739,9 @@
       collapseInnerGridFlex(articleEl, hidden);
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
       resetMediaPlaceholderPadding(articleEl, hidden);
+      // figure/picture 容器強制 block：ttv 類雙層 figure + 外層 flex 把 img
+      // 壓到 0×0 的場景（v0.7.24）
+      forceMediaContainerBlock(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
@@ -1691,6 +1762,7 @@
       stopWatchingDynamicAppends();
       stopWatchingHiddenInlineRestyle();
       restoreLazyImages(hiddenEls);
+      restoreMediaContainerBlock(hiddenEls);
       restoreMediaResets(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);
