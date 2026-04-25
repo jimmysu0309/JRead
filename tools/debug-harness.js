@@ -264,6 +264,81 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     }
     printAudit('initial, 1.2s post-toggle', residual);
 
+    // ---- Gap audit：reader card 內相鄰 visible block 間 gap > 80px 警告 ----
+    // Jimmy 2026-04-25 要求加的第二層 residual：以前 residual 只抓
+    // NOISE_AUDIT_KEYWORDS 命中的雜訊文字、對「未清的 empty wrapper / 廣告
+    // placeholder / 塌陷的 figure」這類 visible 不在但佔高度的 bug 完全
+    // 漏抓。techbang 262px 空白就是這種 case——靠 Jimmy 實機截圖才發現。
+    // 現在對 p/h*/figure/img/ul/ol/blockquote 等 content anchor 按 y 位置
+    // 排序、量連續兩個 block 間 gap，>= 80px 印警告。非 forcing function
+    // （某些段落間合法大 margin 例如 h2 前 60-80px），只提醒 Claude 修法
+    // 後自動巡視這些位置。threshold 80 是「正常段落 margin」（line-height
+    // 1.7 × 18px ≈ 30px，h2 margin-top 多站慣例 40-60px）與 techbang 實測
+    // 262px 案例間取的中位，可未來調整。
+    async function runGapAudit() {
+      return await page.evaluate(() => {
+        const art = document.querySelector('[data-jread-active="1"]');
+        if (!art) return { error: 'no article' };
+        function isVisible(el) {
+          let cur = el;
+          while (cur) {
+            if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+            const cs = window.getComputedStyle(cur);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            if (cur === document.body) break;
+            cur = cur.parentElement;
+          }
+          return true;
+        }
+        function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+        const blocks = [];
+        // content anchor：主文常見的「一段內容」元素。div 故意不收——div 太
+        // 通用、會納入 wrapper 造成 double-count。figure / img 含圖片 / ul /
+        // ol 含列表、都是 Jimmy 視覺上會記住「上個區塊結束」的點。
+        for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, blockquote, pre')) {
+          if (!isVisible(el)) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 10 || r.height < 10) continue;
+          blocks.push({
+            top: r.top, bottom: r.bottom,
+            tag: el.tagName,
+            text: norm(el.innerText || el.textContent || '').slice(0, 40)
+          });
+        }
+        blocks.sort((a, b) => a.top - b.top);
+        const gaps = [];
+        for (let i = 1; i < blocks.length; i++) {
+          const gap = blocks[i].top - blocks[i - 1].bottom;
+          if (gap >= 80) {
+            gaps.push({
+              gap: Math.round(gap),
+              prev: `${blocks[i-1].tag} "${blocks[i-1].text}"`,
+              next: `${blocks[i].tag} "${blocks[i].text}"`,
+              y: Math.round(blocks[i-1].bottom)
+            });
+          }
+        }
+        return { gaps, blockCount: blocks.length };
+      });
+    }
+
+    function printGapAudit(label, g) {
+      console.log(`\n===== GAP AUDIT (${label}) =====`);
+      if (g.error) { console.log(g.error); console.log('==========================\n'); return; }
+      if (!g.gaps || g.gaps.length === 0) {
+        console.log(`✅ 無 >= 80px gap（reader card 內 ${g.blockCount} 個 content block、consecutive gap 皆正常）`);
+      } else {
+        console.log(`⚠️  ${g.gaps.length} 段 >= 80px gap（疑似未清的 empty wrapper / 廣告 placeholder / 塌陷 figure、看 fullpage 截圖對應位置）：`);
+        for (const x of g.gaps) {
+          console.log(`   ${String(x.gap).padStart(4)}px @ y=${x.y}  ${x.prev} → ${x.next}`);
+        }
+      }
+      console.log('==========================\n');
+    }
+
+    const gapInitial = await runGapAudit();
+    printGapAudit('initial, 1.2s post-toggle', gapInitial);
+
     // 第 2 次 audit（+3s，捕 Jimmy 回報的「文章出現後約 3 秒按鈕才注入」
     // 時機）。LINE Today 類 SPA 站點 lazy-inject 常在 toggle 後 2-4s 發
     // 生，這個時間點最接近使用者眼見為實的「突然跳出雜訊」瞬間。
@@ -363,6 +438,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       return { total: items.length, warnings: items.filter(i => i.hitKeywords.length > 0), items: items.slice(0, 60) };
     }, NOISE_AUDIT_KEYWORDS);
     printAudit('delayed +scroll +15s', residualDelayed);
+
+    // delayed 時機再跑一次 gap audit（lazy-load / late inject 的 placeholder
+    // 都已展開，這張最接近實機使用者看到的狀態）
+    const gapDelayed = await runGapAudit();
+    printGapAudit('delayed +scroll +15s', gapDelayed);
   }
 
   fs.mkdirSync(path.dirname(SCREENSHOT_OUT), { recursive: true });
