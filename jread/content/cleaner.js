@@ -133,6 +133,44 @@
     return (s || '').replace(/\s+/g, ' ').trim();
   }
 
+  // 「主文標題級」class anchor token list。命中於 wrapper 子樹則該 wrapper
+  // 視為「含主文標題」、hideInsideArticleByHeadingText 的 walk-up fallback
+  // 必須停（不再升級 hide），避免把含主標的 article-header wrapper 誤殺。
+  // 通則：CMS / news 站慣例 class 命名（不含 widget-title / sub-title /
+  // card-title 這類 widget 用途的 token）。
+  const TITLE_ANCHOR_TOKENS = new Set([
+    'title', 'headline', 'heading',
+    'article-title', 'articletitle',
+    'post-title', 'posttitle',
+    'entry-title', 'entrytitle',
+    'news-title', 'newstitle',
+    'story-title', 'storytitle',
+    'page-title', 'pagetitle',
+    'main-title', 'maintitle',
+    'article-headline', 'articleheadline',
+    'post-headline', 'postheadline'
+  ]);
+  function hasArticleTitleAnchor(wrapper, exclude) {
+    // 含 h1 一律保護（已是 hideInsideArticleByKeyword 慣例）
+    if (wrapper.querySelector && wrapper.querySelector('h1')) return true;
+    // class token 命中 TITLE_ANCHOR_TOKENS + 內含 textLen 介於 10-200 chars
+    // （主文標題長度區間，排除 widget 內 sub-title 通常 < 10 chars）
+    if (!wrapper.querySelectorAll) return false;
+    for (const el of wrapper.querySelectorAll('[class]')) {
+      if (el === exclude) continue;
+      const cls = (el.className || '').toString();
+      if (!cls) continue;
+      let hit = false;
+      for (const tok of cls.split(/\s+/)) {
+        if (TITLE_ANCHOR_TOKENS.has(tok.toLowerCase())) { hit = true; break; }
+      }
+      if (!hit) continue;
+      const t = norm(el.textContent || '');
+      if (t.length >= 10 && t.length <= 200) return true;
+    }
+    return false;
+  }
+
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
   }
@@ -838,6 +876,12 @@
             if (pt.length >= 100) { hasLongP = true; break; }
           }
           if (hasLongP) break;
+          // v0.7.34 newtalk 修法：含主文標題級 anchor 的 wrapper 也保護。
+          // 場景：news_info 內含 `<div class="title"><p class="name">標題</p></div>`，
+          // 標題 27 chars 不滿足「>= 100 chars long p」protection；末段分享列
+          // `<button><span>留言</span></button>` 命中 `^留言$` 觸發 walk-up，
+          // 一路升到 news_info 把整個含標題 wrapper hide 掉。
+          if (hasArticleTitleAnchor(pp, h)) break;
           lastSafeWrapper = pp;
           cur = pp;
         }
