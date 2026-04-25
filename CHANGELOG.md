@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.29 — 2026-04-25 起）
+## Baseline 宣告（v0.7.30 — 2026-04-25 起）
 
-**當前 baseline：v0.7.29**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes 討論區 widget 中文 token 修法為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤，實測通過 19+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / cnyes 鉅亨網 / The Verge 等）。229 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
+**當前 baseline：v0.7.30**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes 討論區 boundary 放寬 + 內層 box-shadow 清除為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤，實測通過 19+ 站。230 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（229 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
+3. 每次修法後跑 `npm test`（230 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -35,9 +35,38 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.26**（2026-04-25）techbang byline 下 115px 空白修法——spacer rule blocker check 加「祖先已 jread-hidden 不算 visible blocker」；harness 擴 gap audit（>= 80px 警告）
 - **v0.7.27**（2026-04-25）toast 縮限到僅顯示主文偵測失敗錯誤——「已進入/離開閱讀模式」狀態 toast 移除
 - **v0.7.28**（2026-04-25）cnyes 五處聯動修法——hideInsideArticleNav 新規則 + heading-text walk-up fallback 改良 + heading/link/keyword 多項 token 擴增
-- **v0.7.29**（2026-04-25）當前 baseline：cnyes 文末「討論區」widget 中文 token 補洞——`^討論區$` / `^(回應|回覆|留言)\s*\(\d+\)$` / `^我要(登入|留言|分享|看法)` / `^發佈$` / `^標記股票$`
+- **v0.7.29**（2026-04-25）cnyes 文末「討論區」widget 中文 token 補洞
+- **v0.7.30**（2026-04-25）當前 baseline：cnyes「討論區 回應 看更多」h3 boundary 放寬（`^討論區(\s|$)`） + 內層 ARTICLE 殘留 box-shadow 清除（clearDescendantBoxShadow）
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.30**——cnyes 兩處續修（Jimmy 2026-04-25 第三輪 cnyes 回報）：(a) v0.7.29 token `^討論區$` 沒命中（h3 textContent 是「討論區 回應(0) 看更多」串聯文字、嚴格 = 比較不命中）；(b) reader card 內側「淡淡外框」是 cnyes 內層 `<article class="mfxje1x">` 殘留 `box-shadow: rgba(0, 65, 143, 0.1) 0px 0px 6px 0px` 藍色淡陰影。
+
+**修法**：
+
+1. **`NOISE_HEADING_TEXT_RE` `^討論區$` 放寬到 `^討論區(\s|$)`**：boundary 改成「討論區」後接空白或字串結尾、能 match「討論區 回應(0) 看更多」這類 h3 textContent 串聯（cnyes lazy-load 注入 widget 的 heading 結構：h3 + 多個 inline span 組成一行）。`(\s|$)` boundary 仍能擋住「討論區開放討論之...」這類正文連續文字（「開」非空白字元）。
+
+2. **新規則 `clearDescendantBoxShadow`**：掃 articleEl 內 container tags（div / section / article / aside / nav / main / header / footer），computed boxShadow 非 'none' → inline `box-shadow: none !important` override + snapshot restore。
+   - 為何 scope 限 container tags：blockquote / figure / table / pre / code 等內文結構元素跨站可能用 box-shadow 做引言/表格/code-frame 設計，保留原站樣式
+   - 為何放 cleaner 不放 styler：styler 動不得；cleaner 用 inline !important + snapshot 跟 forceMediaContainerBlock / collapseInnerGridFlex 同層級
+   - 通則依據：reader card 已有自己的 box-shadow 視覺骨架（styler 設）、內層 container 的 box-shadow 都是原站 layout 裝飾、reader mode 下脫離原 context 變「框中框」雜訊
+
+**新 fixture + spec**：
+- `cnyes-nav-widgets-walkup.html` 兩處更新：
+  - widget 7 改成「討論區 後綴文字」h3 + 純 placeholder p（**故意不放**「我要登入 / 發佈 / 標記股票 / 回應(0)」其他 token），forcing 純靠 boundary 放寬命中
+  - 新 widget 8：`<article style="box-shadow: rgba(0,65,143,0.1) 0 0 6px 0">` 內層殘留陰影
+- `cleaner.spec.js` 新增 2 條 assertion：
+  - 「討論區 後綴文字」widget hide（boundary 放寬 forcing）
+  - 內層 article 的 inline `style.boxShadow === 'none'` + priority `important`（clearDescendantBoxShadow forcing）
+- **sanity check 兩輪**：(a) 退回 `^討論區$` → widget spec fail；還原 → pass。(b) 註解 clearDescendantBoxShadow 呼叫 → priority 為空 spec fail；還原 → pass
+
+**驗收**：
+- `npm test` → 230 passing（原 229 + 新 2 條 cnyes）
+- 實機驗證須 Jimmy reload 到 v0.7.30 後確認
+
+**未動**：detector / styler / popup / service-worker / options 全部零變化；修法只動 cleaner 兩處——`NOISE_HEADING_TEXT_RE` 一條 token 放寬 + 新規則 `clearDescendantBoxShadow`（+ `restoreDescendantBoxShadow`）。
 
 ---
 

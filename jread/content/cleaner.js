@@ -57,7 +57,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|.{2,4}號貼文|^討論區$|^(回應|回覆|留言)(\s*\(\d+\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|.{2,4}號貼文|^討論區(\s|$)|^(回應|回覆|留言)(\s*\(\d+\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -1252,6 +1252,49 @@
     }
   }
 
+  // ---- 後代 container 殘留 box-shadow 清除（v0.7.30 cnyes.com 修法）-----
+  //
+  // 場景：cnyes 內層 `<article class="mfxje1x">` 自帶
+  // `box-shadow: rgba(0, 65, 143, 0.1) 0px 0px 6px 0px`——reader card 已有
+  // 自己的 box-shadow，內層再來一層淡藍陰影、視覺像「卡片裡再一層淡淡外框」
+  // （Jimmy 2026-04-25 指認）。styler 的 ancestor reset 只清主文祖先鏈、
+  // 沒處理 articleEl 後代。
+  //
+  // 通則：reader mode 下卡片視覺骨架由 styler 統一管（外卡 box-shadow），
+  // 內層 container 不該再有自己的 box-shadow——這些都是原站 layout 用裝飾，
+  // 在 reader mode 重新 layout 後失去語意、變成「框中框」雜訊。掃 articleEl
+  // 後代的 container 類 element（div/section/article/aside/nav/main/header/
+  // footer），box-shadow 非 none 就 inline override 'none'。
+  //
+  // scope 限制 container tags 不掃 blockquote / figure / table / pre / code
+  // 等內文結構元素——這些在某些站確實用 box-shadow 做引言/表格設計，保留。
+  const DECOR_BOX_SHADOW_SEL = 'div, section, article, aside, nav, main, header, footer';
+  const DECOR_BOX_SHADOW_PROPS = ['box-shadow'];
+
+  function clearDescendantBoxShadow(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const resets = [];
+    for (const el of articleEl.querySelectorAll(DECOR_BOX_SHADOW_SEL)) {
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || cs.boxShadow === 'none') continue;
+      resets.push({ el, prev: snapshotStyles(el, DECOR_BOX_SHADOW_PROPS) });
+      applyImportant(el, { 'box-shadow': 'none' });
+    }
+    hidden.__descendantBoxShadow = resets;
+  }
+
+  function restoreDescendantBoxShadow(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__descendantBoxShadow;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+    }
+  }
+
   // ---- 媒體 placeholder pattern：區分 padding-hack vs 正規 aspect-ratio ---
   // 兩種常見媒體容器模式：
   //   A) padding-hack（Substack / Medium）：
@@ -1820,6 +1863,9 @@
       // figure/picture 容器強制 block：ttv 類雙層 figure + 外層 flex 把 img
       // 壓到 0×0 的場景（v0.7.24）
       forceMediaContainerBlock(articleEl, hidden);
+      // 清 articleEl 後代殘留 box-shadow（v0.7.30 cnyes 內層 article 殘留
+      // 淡藍陰影、看起來像「卡中卡」框）
+      clearDescendantBoxShadow(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
@@ -1841,6 +1887,7 @@
       stopWatchingHiddenInlineRestyle();
       restoreLazyImages(hiddenEls);
       restoreMediaContainerBlock(hiddenEls);
+      restoreDescendantBoxShadow(hiddenEls);
       restoreMediaResets(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);

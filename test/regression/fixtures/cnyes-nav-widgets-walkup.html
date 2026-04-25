@@ -95,18 +95,26 @@
     </li>
   </ul>
 
-  <!-- widget 7：討論區（v0.7.29 cnyes lazy-load 漏網修法）。class 故意用
-       emotion-hash 風格、不含 NOISE_KEYWORD_RE 任何 token、forcing「討論區」
-       中文 heading text + walk-up fallback 命中（cnyes 實機 class 都是 hash） -->
+  <!-- widget 7：討論區（v0.7.29 cnyes lazy-load 漏網修法 / v0.7.30 boundary
+       放寬）。class 用 emotion-hash 不含 NOISE_KEYWORD_RE 任何 token；h3
+       用 inline span 把「討論區 回應(0) 看更多」串成一行 textContent，
+       forcing `^討論區(\s|$)` boundary（v0.7.30 從 `^討論區$` 改放寬，
+       否則 textContent="討論區 回應(0) 看更多" 不命中嚴格 = 比較） -->
   <div class="d4xfe2k1">
-    <h3>討論區</h3>
-    <span>回應(0)</span>
-    <div class="c8jh3p9">
-      <p>DISCUSS_PLACEHOLDER 我要登入分享看法...</p>
-      <button>$ 標記股票</button>
-      <button>發佈</button>
-    </div>
+    <!-- direct text 全在 h3、forcing `^討論區(\s|$)` boundary 放寬。
+         widget 內**刻意不放**「我要登入」/「發佈」/「標記股票」/「回應(0)」
+         等其他 cnyes-token 字串，避免 sanity 失準（其他 token 也會命中）。
+         h3 textContent="討論區某某文字"、舊 `^討論區$` 不命中、新 boundary 命中 -->
+    <h3>討論區 後綴文字</h3>
+    <p>DISCUSS_BODY_MARK 留言面板的 placeholder text，故意不含其他 noise token 以維持純粹 forcing</p>
   </div>
+
+  <!-- widget 8：內層 article 殘留 box-shadow（v0.7.30 修法 forcing）
+       cnyes 內層 `<article class="mfxje1x">` 自帶藍色淡陰影、reader card
+       已有自己的 box-shadow，看起來像「卡中卡」雙層框 -->
+  <article class="inner-article" style="box-shadow: rgba(0, 65, 143, 0.1) 0px 0px 6px 0px;">
+    <p>SHADOW_INNER_MARK 內層 article 殘留 box-shadow，需被 clearDescendantBoxShadow 清成 none</p>
+  </article>
 </article>
 </body>
 </html>

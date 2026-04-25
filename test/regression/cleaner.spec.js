@@ -2510,14 +2510,25 @@ describe('cleaner — cnyes-nav-widgets-walkup（社交 nav + 末段 widget 通�
       '(b) 拿掉 `下一篇` token → 不命中');
   });
 
-  it('「討論區」widget 整塊被 hide（v0.7.29 cnyes lazy-load 對抗修法 forcing）', () => {
-    // cnyes 文末 lazy-load 注入「討論區」widget（h3 討論區 + span 回應(0) +
-    // 留言輸入 placeholder + 發佈 button）。NOISE_HEADING_TEXT_RE 加
-    // `^討論區$` / `^(回應|回覆|留言)\s*\(\d+\)$` token、walk-up 升到 wrapper hide。
+  it('「討論區 回應(0) 看更多」h3 多 inline span 結構 widget 被 hide（v0.7.30 boundary 放寬 forcing）', () => {
+    // h3 textContent = "討論區 回應(0) 看更多"，舊 `^討論區$` 不命中（嚴格 =）；
+    // v0.7.30 放寬到 `^討論區(\s|$)` 才能 match 後面接空白的串聯文字。
     const wrapper = document.querySelector('.d4xfe2k1');
     assert.ok(wrapper);
     assert.strictEqual(wrapper.dataset.jreadHidden, '1',
-      '討論區 wrapper 必須被 hide；forcing：拿掉 `^討論區$` token → 不命中、wrapper 留下');
+      '討論區 wrapper 必須被 hide；forcing：(a) 把 `^討論區(\\s|$)` 退回 `^討論區$` → 不命中、(b) 拿掉整條 token → 不命中');
+  });
+
+  it('內層 article 殘留 box-shadow 被 clearDescendantBoxShadow 清成 none（v0.7.30 forcing）', () => {
+    const inner = document.querySelector('.inner-article');
+    assert.ok(inner);
+    // 取 inline style.boxShadow（jsdom 沒 layout 但 inline style 可讀）。
+    // v0.7.30 修法用 `applyImportant` 在 inline 寫 box-shadow: none !important，
+    // 應 override 原本 inline 的藍色 shadow
+    assert.strictEqual(inner.style.getPropertyPriority('box-shadow'), 'important',
+      'cleaner 應在 inline 寫 box-shadow: none !important；forcing：拿掉 clearDescendantBoxShadow 呼叫 → priority 為空');
+    assert.strictEqual(inner.style.boxShadow, 'none',
+      '應為 none、不是原 rgba(0, 65, 143, 0.1) 0px 0px 6px 0px');
   });
 
   it('「點我下載APP」a 被 link-text 命中清（規則 4 forcing）', () => {
