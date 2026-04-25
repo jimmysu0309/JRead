@@ -63,6 +63,53 @@
     chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
   }
 
+  // 抽 reader card 的 outerHTML 給 popup 送 Readwise（v0.7.33）。
+  // 取 [data-jread-active] 容器後 clone 一份，把 cleaner 標記為 hidden 的節點
+  // 從 clone 裡刪掉（直接送 outerHTML 會帶進雜訊節點——cleaner 只 inline display:none、
+  // Readwise parser 不認 jread 的 stylesheet rule 會把那些節點重新渲染出來）；
+  // 同時剝掉 jread 內部用的 data-jread-* attribute 和 jread 注入的 style 元素。
+  // 抓 document.title 的分隔前首段當 title——多數站把站名接在「| Site Name」之後，
+  // 切掉避免 Readwise 顯示「文章標題 | 中央社 CNA」這種尾巴。
+  function buildCleanHtml(rootEl) {
+    const clone = rootEl.cloneNode(true);
+    // 1. 移除被 cleaner 標記隱藏的節點
+    const hidden = clone.querySelectorAll('[data-jread-hidden="1"]');
+    hidden.forEach(n => n.remove());
+    // 2. 移除 jread 注入的 style 元素（避免汙染 Readwise 端）
+    const injected = clone.querySelectorAll('style#__jread-style, style[data-jread]');
+    injected.forEach(n => n.remove());
+    // 3. 剝掉所有 data-jread-* attribute
+    function stripDataAttrs(node) {
+      if (node.attributes) {
+        const toRemove = [];
+        for (const attr of node.attributes) {
+          if (attr.name.startsWith('data-jread')) toRemove.push(attr.name);
+        }
+        toRemove.forEach(name => node.removeAttribute(name));
+      }
+      for (const child of node.children) stripDataAttrs(child);
+    }
+    stripDataAttrs(clone);
+    return clone.outerHTML;
+  }
+
+  function extractReaderPayload() {
+    if (!NS.state.active || !NS.state.articleEl) {
+      return { ok: false, reason: 'NOT_ACTIVE' };
+    }
+    const html = buildCleanHtml(NS.state.articleEl);
+    const rawTitle = (document.title || '').trim();
+    const title = rawTitle.split(/\s+[|\-—–·]\s+/)[0].trim() || rawTitle;
+    return {
+      ok: true,
+      payload: {
+        url: location.href,
+        html,
+        title
+      }
+    };
+  }
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg.type !== 'string') return;
 
@@ -77,6 +124,16 @@
         }
       })();
       return true;
+    }
+
+    if (msg.type === NS.MSG.GET_READER_STATE) {
+      sendResponse({ active: !!NS.state.active });
+      return; // sync
+    }
+
+    if (msg.type === NS.MSG.EXTRACT_READER_HTML) {
+      sendResponse(extractReaderPayload());
+      return; // sync
     }
 
   });

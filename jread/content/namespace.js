@@ -30,7 +30,11 @@
       REPORT_DETECTION_RESULT: 'REPORT_DETECTION_RESULT',
       GET_SETTINGS: 'GET_SETTINGS',
       UPDATE_SETTINGS: 'UPDATE_SETTINGS',
-      SET_ACTIVE_ICON: 'SET_ACTIVE_ICON'
+      SET_ACTIVE_ICON: 'SET_ACTIVE_ICON',
+      // Readwise integration（v0.7.33）
+      GET_READER_STATE: 'GET_READER_STATE',         // popup → content：reader mode 是否啟動，決定 popup 按鈕 disable 狀態
+      EXTRACT_READER_HTML: 'EXTRACT_READER_HTML',   // popup → content：抽 reader card outerHTML + url + title
+      SAVE_TO_READWISE: 'SAVE_TO_READWISE'          // popup → SW：把抽出的內容送 Readwise Reader API
     }
   };
 })();

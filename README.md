@@ -13,6 +13,7 @@
 - 乾淨排版（字體、字級、行高、版心寬度）
 - 雜訊隱藏（廣告、sticky header、彈窗、相關文章列表）
 - 偏好設定：主題（亮/暗/米色）、字級、版心寬度
+- Readwise Reader 整合（v0.7.33）：把 JRead 處理過的乾淨主文一鍵送到 Readwise Reader，繞過原站 parser 問題
 
 詳細規格見 [SPEC.md](SPEC.md)。
 

@@ -44,7 +44,61 @@
     }
   }
 
-  const api = { toggleWithInjectionFallback, CONTENT_SCRIPT_FILES };
+  // ---- Readwise Reader integration（v0.7.33）-----------------------------
+  // 依官方 API（https://readwise.io/reader_api）：
+  //   POST https://readwise.io/api/v3/save/
+  //   Header: Authorization: Token <access_token>
+  //   Body:   { url, html?, title?, author?, summary?, location? }
+  // 200 = 已存在、201 = 新建。
+  const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
+
+  function buildReadwisePayload({ url, html, title } = {}) {
+    if (!url || typeof url !== 'string') {
+      throw new Error('buildReadwisePayload: url 必填');
+    }
+    const body = { url };
+    if (html && typeof html === 'string') body.html = html;
+    if (title && typeof title === 'string') body.title = title;
+    return body;
+  }
+
+  async function saveToReadwise({ token, payload, fetchImpl } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return { ok: false, error: 'NO_TOKEN' };
+    }
+    let res;
+    try {
+      res = await f(READWISE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch (networkErr) {
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* 非 JSON response 忽略 */ }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, error: 'AUTH', data };
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: 'HTTP', data };
+    }
+    return { ok: true, status: res.status, data };
+  }
+
+  const api = {
+    toggleWithInjectionFallback,
+    CONTENT_SCRIPT_FILES,
+    buildReadwisePayload,
+    saveToReadwise,
+    READWISE_API_URL
+  };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

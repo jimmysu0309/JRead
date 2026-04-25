@@ -148,6 +148,58 @@
     }
 
     /* ==========================================================
+       Secondary CTA — Readwise
+       ========================================================== */
+    #readwise-btn {
+      width: 100%;
+      margin-top: var(--jr-space-2);
+      padding: 9px 14px;
+      font-family: var(--jr-font-ui);
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-md);
+      background: var(--jr-surface);
+      color: var(--jr-neutral-900);
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+      letter-spacing: 0.01em;
+    }
+    #readwise-btn:hover:not(:disabled) {
+      background: var(--jr-neutral-50);
+      border-color: var(--jr-neutral-500);
+    }
+    #readwise-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+    #readwise-btn:disabled {
+      color: var(--jr-neutral-500);
+      background: var(--jr-neutral-50);
+      border-color: var(--jr-neutral-100);
+      cursor: not-allowed;
+    }
+    #readwise-status {
+      margin-top: var(--jr-space-2);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: var(--jr-space-2) var(--jr-space-3);
+      border-radius: var(--jr-radius-sm);
+    }
+    #readwise-status.ok {
+      background: #f0fff4;
+      color: #2f855a;
+    }
+    #readwise-status.err {
+      background: var(--jr-danger-bg);
+      color: var(--jr-danger-text);
+    }
+    #readwise-status.info {
+      background: var(--jr-primary-50);
+      color: var(--jr-primary-700);
+    }
+
+    /* ==========================================================
        Settings section
        ========================================================== */
     .settings {
@@ -344,6 +396,8 @@
 
   <div id="status" hidden></div>
   <button id="toggle-btn">切換閱讀模式</button>
+  <button id="readwise-btn" disabled title="先啟動閱讀模式才能送出">送到 Readwise Reader</button>
+  <div id="readwise-status" hidden></div>
 
   <section class="settings">
     <div class="setting-row">
