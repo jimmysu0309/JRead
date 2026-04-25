@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!--
+  Fixture：macstories.net 文章內 app icon 變超大（Jimmy 2026-04-25 回報）。
+  原始 URL：https://www.macstories.net/club/macstories-weekly-issue-510/
+
+  原站結構（probe console 拿到）：
+    <article class="club-issue-section club-app-debuts">
+      <section class="post-content">
+        <div class="media-wrapper media-wrapper-icon">    ← width:160px float:left（原站 stylesheet）
+          <img src="pixycad-icon.png">                    ← natural 512x512、原站 width/height:100%
+                                                            （撐滿 wrapper 160x160）
+        </div>
+      </section>
+    </article>
+
+  Bug：reader mode 啟動後 wrapper 失去 width:160 / float:left（cssW=661 float=none）+
+  img 退到 naturalSize 512x512（jread 的 `img:not(a>img) { height: auto !important }`
+  把原站 height:100% 蓋掉）→ 小 icon 變超大圖。
+
+  v0.7.38 修法（結構性通則）：styler 加新 rule 對含「wrapper-icon / media-icon /
+  app-icon / icon-wrapper」等 CMS 命名 pattern 的 wrapper 內 img 套
+  max-width/max-height: 200px——一般 icon < 200px、超過視為配圖不該套此規則。
+  selector 用 `img:not(a > img)` 配合既有 a > img icon-link 例外（v0.6.x 慣例
+  + spec line 145 forcing）。
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MacStories Weekly Issue 510</title>
+</head>
+<body>
+<main class="site-main">
+  <div class="main-content">
+    <div class="posts">
+      <section class="post post-196925 club">
+        <section class="post-content">
+
+          <h1>MacStories Weekly: Issue 510</h1>
+
+          <article class="club-issue-section club-app-debuts">
+            <h2>App Debuts</h2>
+            <p><em>Noteworthy new app releases and updates, handpicked by the MacStories team.</em></p>
+
+            <section>
+              <!-- 核心 bug 結構：icon container with `wrapper-icon` class -->
+              <div class="media-wrapper media-wrapper-icon">
+                <img id="pixycad-icon" src="pixycad.png" alt="">
+              </div>
+              <h3><a href="https://example.com/pixycad">PixyCAD</a></h3>
+              <p>MAIN_MARK PixyCAD is a new 3D CAD app designed specifically for 3D printing that aims to strike a balance between power and simplicity. The app runs entirely on device with Metal integration, which means you can rotate, pan, and edit models without any lag or need for cloud services.</p>
+            </section>
+
+            <!-- 對照組：普通內文配圖（非 icon），仍應由 styler 既有 img:not(a>img) rule 處理、不受新 rule 限制 -->
+            <section>
+              <div class="media-wrapper">
+                <img id="normal-photo" src="normal.png" alt="">
+              </div>
+              <p>MAIN_MARK 普通內文配圖應撐滿 reader card 寬，不被新 rule 限制 200px。</p>
+            </section>
+
+            <!-- 對照組：a > img icon link（v0.6.x icon-link 例外），不應被新 rule 加 height:auto -->
+            <section>
+              <div class="media-wrapper media-wrapper-icon">
+                <a href="https://example.com">
+                  <img id="link-icon" src="link-icon.png" alt="">
+                </a>
+              </div>
+              <p>MAIN_MARK link-wrapped icon 走既有 a > img 例外、新 rule 用 :not(a > img) 排除。</p>
+            </section>
+          </article>
+
+        </section>
+      </section>
+    </div>
+  </div>
+</main>
+</body>
+</html>

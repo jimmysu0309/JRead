@@ -133,6 +133,30 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }
+/* Icon container wrapper 內的 img 限縮到合理 icon 尺寸：原站常用 wrapper-icon
+   / media-icon / app-icon / thumb-icon 等 CMS 命名作為「inline 小圖容器」，
+   靠 stylesheet 對 wrapper 設 width:160px + img 設 width/height:100% 達成
+   小尺寸顯示。reader mode 下 jread 對 img 套 height:auto !important 會把
+   原站的 height:100% 蓋掉，img 退到 naturalWidth×naturalHeight（icon 通常
+   512×512）+ wrapper shrink-to-fit 跟著撐大 → 小 icon 變超大圖。
+   通則依據：「wrapper-icon / media-icon / app-icon」是跨站 CMS 命名 pattern
+   （WordPress block themes / Squarespace / 自製 design system 普遍用），用
+   attribute substring selector 命中含此 token 的 wrapper、對其內 img 限縮
+   max-width/max-height 200px（一般 icon < 200px、超過視為配圖不該套此規則）。
+   實測：macstories.net 的 PixyCAD app icon 從 512px 壓回 < 200px 顯示。 */
+[${ARTICLE_ATTR}="1"] [class*="wrapper-icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="wrapper_icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="media-icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="media_icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="app-icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="app_icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="thumb-icon"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] [class*="icon-wrapper"] img:not(a > img) {
+  width: auto !important;
+  height: auto !important;
+  max-width: 200px !important;
+  max-height: 200px !important;
+}
 /* iframe 特例：有 intrinsic 高度這件事對 iframe 不成立——height: auto 會
    掉回 HTML spec 預設的 150px，打壞 aspect-ratio wrapper（WP wp-embed /
    Substack / Medium 等「wrapper 維 16:9 + iframe position:absolute 填滿」
