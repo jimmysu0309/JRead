@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.30 — 2026-04-25 起）
+## Baseline 宣告（v0.7.31 — 2026-04-25 起）
 
-**當前 baseline：v0.7.30**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes 討論區 boundary 放寬 + 內層 box-shadow 清除為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤，實測通過 19+ 站。230 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
+**當前 baseline：v0.7.31**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes 討論區四處對抗修法（boundary 放寬到 prefix / checkDynamicNoise walk-up + tail-cleanup / MutationObserver removeChild → hide / harness 分頁滾動截圖）為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤。230 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning + paginated screenshots（v0.7.31 新增）守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -36,9 +36,35 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.27**（2026-04-25）toast 縮限到僅顯示主文偵測失敗錯誤——「已進入/離開閱讀模式」狀態 toast 移除
 - **v0.7.28**（2026-04-25）cnyes 五處聯動修法——hideInsideArticleNav 新規則 + heading-text walk-up fallback 改良 + heading/link/keyword 多項 token 擴增
 - **v0.7.29**（2026-04-25）cnyes 文末「討論區」widget 中文 token 補洞
-- **v0.7.30**（2026-04-25）當前 baseline：cnyes「討論區 回應 看更多」h3 boundary 放寬（`^討論區(\s|$)`） + 內層 ARTICLE 殘留 box-shadow 清除（clearDescendantBoxShadow）
+- **v0.7.30**（2026-04-25）cnyes「討論區 回應 看更多」h3 boundary 放寬 + 內層 ARTICLE box-shadow 清除
+- **v0.7.31**（2026-04-25）當前 baseline：cnyes 討論區四處對抗修法（Jimmy 提示「截圖只截第一頁不看下面」打臉後改良）
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.31**——cnyes 討論區清除四處對抗 + harness 分頁截圖（Jimmy 2026-04-25 第四輪 cnyes 回報「討論區還在、為什麼你截圖看不到」）。
+
+**驗收疏失檢討**：前三輪 cnyes 修法（v0.7.28-v0.7.30）我**沒實際 Read 過 fullpage 截圖**——只看 probe stdout、probe 因 Playwright 環境 widget 不 render 永遠回 `found (0)`、就 commit。Jimmy 第四輪明確點出「你截圖的方法有問題、只截第一頁、沒往下捲動每頁檢查」。實際看 fullpage 也是空白（cnyes 在 reader mode 下 React reconciliation 跟 jread `removeChild` 競賽、整個 DOM layout 崩潰、document.height 縮成 viewport 等高）。
+
+**四處修法**：
+
+1. **MutationObserver `removeChild` → `hide`**（cleaner.js）：`startWatchingDynamicAppends` 對 articleEl 外 added node 從 `node.parentNode.removeChild(node)` 改成 `hide(node, hiddenList)`。React/Next.js（cnyes 用 Next.js）的 client-side reconciliation 持續操作 DOM、jread 主動 `removeChild` 的 node 在 React vdom 裡仍存在、下次 reconcile 找不到 child 觸發 `Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.`、整個 React tree 崩潰、頁面 layout 變空白。改 hide 後 DOM node 仍在、React reconciliation 不打斷、cnyes docHeight 從 900（崩）→ 1444（正常）。
+   - 對 popIn template clone（dataset.jreadHidden 殘留 + display:block 主動覆蓋）的情境 hide() early-return 會跳過——加分支：pre-existing `data-jread-hidden="1"` 的 node 直接 `setProperty('display', 'none', 'important')` bypass early-return。
+
+2. **`checkDynamicNoise` 同步 `hideInsideArticleByHeadingText` 的 walk-up fallback**（cleaner.js）：原本 lazy-inject 處理只掃 h2-h4 + closest('section, aside')、漏 v0.7.28 加的 p/div/span 候選 + walk-up「不含主文長段落」最深 wrapper fallback。對 cnyes lazy-inject 「討論區」widget（h3 結構、無 section 祖先、整篇主文+widget 同 ARTICLE）漏網。同步擴展。
+
+3. **`hideInsideArticleByHeadingText` walk-up 失敗時 tail-cleanup fallback**（cleaner.js）：當 heading 是 articleEl 的 direct child（無 wrapper、walk-up 第一層即 articleEl break）、檢查 heading 之後的所有 sibling—— 若全為 widget（無主文長 p、textLen >= 100）→ hide heading 自己 + 後續所有 sibling。安全 guard：若 next sibling 任一含主文長 p 立即 abort、保護主文不被誤殺。
+
+4. **NOISE_HEADING_TEXT_RE `^討論區$` → `^討論區(\s|$)` → `^討論區`（prefix anchor）**（cleaner.js）：放寬到任意「討論區」開頭（包括「討論區(0)」黏連括號 / 「討論區 回應 看更多」串聯、各種 inline span 結構）。NOISE_HEADING_MAX_LEN=20 + heading-text rule 對 candidate 的 length 限制提供 fallback 保護（主文段落 length > 20 不會誤命中）。
+
+5. **harness 分頁滾動截圖**（debug-harness.js）：Playwright `page.screenshot({ fullPage: true })` 對某些 SPA 站（cnyes 實測）拍出整張白圖，fullpage 不可靠作為唯一視覺驗證。新增分頁機制：每滾 viewport × 0.9 高度截一張 `jread-page-NN.png` 直到 docHeight 到底，Claude Read 每張依序看、覆蓋整篇 reader card 不漏網。**memory 同步補硬規則**：harness 驗收必須 Read 所有 jread-page-*.png（不只 jread-viewport.png 跟 fullpage）。
+
+**未動**：detector / styler / popup / service-worker / options / 任何既有 fixture / spec 的核心 forcing 邏輯——僅修 main.js / cleaner.js 的行為 + harness。所有 230 jsdom spec 仍過。
+
+**驗收限制**：cnyes 「討論區」widget 在 Playwright Chromium 環境下 lazy-inject 行為跟實機 Chrome 不同（probe + textContent 全文檔搜全找不到，但截圖卻看得到——Playwright screenshot 觸發 paint 期間 React 才 mount）。**最終驗證須等 Jimmy reload 到 v0.7.31 實機確認**。
+
+**memory 補硬規則**：feedback_styler_fullpage_selfverify.md 加「harness 驗收必須 Read 所有 jread-page-NN.png 分頁截圖、不只 fullpage」。
 
 ---
 

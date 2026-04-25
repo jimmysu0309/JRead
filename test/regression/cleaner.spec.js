@@ -289,27 +289,27 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     return div;
   }
 
-  it('主文 parent 新 append 的節點會被 remove（popIn infinite-scroll 攔截）', async () => {
+  it('主文 parent 新 append 的節點會被 hide（v0.7.31 popIn infinite-scroll 攔截 改 hide 不 remove）', async () => {
+    // v0.7.31 cnyes 修法：MutationObserver 對 articleEl 外 added node 從
+    // `removeChild` 改成 `hide()`——避免跟 React/Next.js reconciliation 競賽
+    // 觸發 NotFoundError、整個 SPA layout 崩潰。視覺結果等同（display:none）。
     const parent = articleEl.parentElement;
     assert.ok(parent, '主文必須有 parent');
-    const countBefore = parent.children.length;
 
-    await appendFakePopInArticle(parent, 'DYNAMIC_NEXT_ARTICLE_MARK 偷載飛彈推進劑原料？');
+    const div = await appendFakePopInArticle(parent, 'DYNAMIC_NEXT_ARTICLE_MARK 偷載飛彈推進劑原料？');
 
-    assert.strictEqual(
-      parent.children.length, countBefore,
-      `新 append 的節點應被 observer remove，parent.children 應回到 ${countBefore}，實際 ${parent.children.length}`
-    );
-    const txt = parent.textContent || '';
-    assert.ok(!txt.includes('DYNAMIC_NEXT_ARTICLE_MARK'),
-      '主文 parent 不得殘留新 append 的文字');
+    // node 仍在 DOM、但被 hide
+    assert.ok(parent.contains(div), 'append 的節點應仍在 DOM（不再 removeChild）');
+    assert.strictEqual(div.dataset.jreadHidden, '1',
+      '新 append 的節點應被 observer hide；forcing：拿掉 hide(node, hiddenList) 呼叫 → fail');
+    assert.strictEqual(div.style.display, 'none',
+      'inline display 應為 none');
+    assert.strictEqual(div.style.getPropertyPriority('display'), 'important',
+      'inline !important priority（贏過原站 stylesheet）');
   });
 
-  it('主文祖先鏈更外層新 append 也會被 remove（多層 parent 都觀察）', async () => {
-    // fixture 結構：body > section.content-list > first-article(articleEl)
-    // 觀察鏈應涵蓋 section.content-list + body
+  it('主文祖先鏈更外層新 append 也會被 hide（多層 parent 都觀察）', async () => {
     const body = document.body;
-    const countBefore = body.children.length;
 
     const div = document.createElement('div');
     div.className = 'injected-footer-ad';
@@ -317,8 +317,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     body.appendChild(div);
     await new Promise(r => setTimeout(r, 0));
 
-    assert.strictEqual(body.children.length, countBefore,
-      '祖先鏈更外層（body）新 append 的節點也應被 remove');
+    assert.ok(body.contains(div), 'append 的節點仍在 DOM');
+    assert.strictEqual(div.dataset.jreadHidden, '1',
+      '祖先鏈更外層（body）新 append 的節點也應被 hide');
   });
 
   it('append 到主文內部的節點不受影響（observer 只管祖先鏈，不管主文後代）', async () => {
