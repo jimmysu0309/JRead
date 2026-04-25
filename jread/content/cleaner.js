@@ -659,7 +659,26 @@
       // 的 textContent 空、querySelector 讀不到內部 DOM，rect 又有高度——三條
       // spacer 條件全命中，會被誤殺（2026-04-21 Dwarkesh YouTube embed 實測）。
       if (el.tagName === 'IFRAME' || el.tagName === 'VIDEO' || el.tagName === 'AUDIO') continue;
-      if (el.querySelector('img, picture, video, iframe, svg, button, input, select, textarea')) continue;
+
+      // blocker 檢查：若 wrapper 內含 visible 的媒體 / 互動元素就不算 empty
+      // spacer。v0.7.26 techbang 修法：blocker 本身或祖先已被 jread-hidden
+      // 的不算 visible blocker——否則 `DIV.content-top` 這類 wrapper 雖然
+      // inner 全是已 hide 的 DFP 廣告 iframe，但 `querySelector('iframe')`
+      // 仍 match、spacer rule skip，留下 CSS min-height 撐起的空白（Jimmy
+      // 實測 techbang byline 下方 115px 空白）。通則：hidden element 已
+      // 視覺上不佔空間、不該阻止 spacer rule 清其 wrapper。
+      const blockers = el.querySelectorAll('img, picture, video, iframe, svg, button, input, select, textarea');
+      let hasVisibleBlocker = false;
+      for (const b of blockers) {
+        let cur = b;
+        let inHidden = false;
+        while (cur && cur !== el && cur !== articleEl) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        if (!inHidden) { hasVisibleBlocker = true; break; }
+      }
+      if (hasVisibleBlocker) continue;
 
       const text = (el.textContent || '').trim();
       if (text.length > SPACER_TEXT_MAX) continue;

@@ -2416,6 +2416,80 @@ describe('cleaner — ttv-flex-layout-hero-figure（三處聯動修法）', () =
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.26 techbang.com byline 下方 `<div class="content-top">` 空 wrapper 115px
+// 殘留空白修法。spacer rule 的 blocker check 不考慮 hidden 狀態——wrapper 內
+// DFP 廣告 iframe 雖已被 hideInsideArticleByThirdPartyAds 清掉、仍 match
+// `querySelector('iframe')`、spacer rule skip、留下 CSS min-height 撐的 115px
+// 可見空白。修法：blocker check 改用 loop，祖先鏈已 jread-hidden 的不算 visible
+// blocker、整個 wrapper 可當 empty spacer 清。
+// Jimmy 2026-04-25 第二輪回報 + harness gap audit 標 126px warning。
+// -----------------------------------------------------------------------------
+describe('cleaner — techbang-empty-spacer-hidden-blocker（blocker 已 hide → spacer 可清）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'techbang-empty-spacer-hidden-blocker.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    // jsdom 無 layout，stub `.content-top` 的 rect 到 115px 讓 spacer rule
+    // 的 `rect.height >= 60` 條件成立（真實 Chrome 下 CSS min-height 會直接
+    // 反映在 rect）
+    const contentTop = document.querySelector('.content-top');
+    Object.defineProperty(contentTop, 'getBoundingClientRect', {
+      value: () => ({ width: 500, height: 115, top: 0, bottom: 115, left: 0, right: 500, x: 0, y: 0 }),
+      configurable: true
+    });
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 <article>');
+    hidden = window.__JRead.cleaner.clean(result.el);
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('DFP iframe 先被 hideInsideArticleByThirdPartyAds 清（前提條件）', () => {
+    const dfp = document.querySelector('.google-dfp');
+    assert.ok(dfp);
+    let cur = dfp, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'DFP 廣告應先被 THIRD_PARTY_AD_SEL hide（spacer rule 前置條件）');
+  });
+
+  it('`<div class="content-top">` empty wrapper 被 spacer rule hide（v0.7.26 blocker hidden check forcing）', () => {
+    const ct = document.querySelector('.content-top');
+    assert.ok(ct);
+    assert.strictEqual(ct.dataset.jreadHidden, '1',
+      '.content-top 內 iframe 已被 hide、應視為空 spacer 被清；forcing：若 spacer rule 的 blocker selector ' +
+      '仍用 `el.querySelector("iframe")` 而不 check hidden 祖先，會直接 match hidden iframe 然後 skip、' +
+      '.content-top 留下 CSS min-height 115px 可見空白、此 assertion fail');
+  });
+
+  it('主文 TECHBANG_MAIN_MARK 段落保留', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('TECHBANG_MAIN_MARK'));
+    assert.ok(marks.length >= 4);
+    for (const p of marks) {
+      let cur = p, inH = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inH = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inH, `TECHBANG_MAIN_MARK 段落不得被 hide：${p.textContent.slice(0, 30)}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.25 techbang.com 主文內嵌「訂閱表單 + DFP 廣告」wrapper 未清殘留 262px 空白
 // 兩處修法：
 //   1. NOISE_KEYWORD_RE `newsletter` → `newsletter[\w-]*`（吃任意後綴，handle
