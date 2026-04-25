@@ -3006,3 +3006,106 @@ describe('cleaner — h1-wrapper-header-keyword-guard（保護主文標題 wrapp
     assert.ok(found >= 2, '至少保留 2 段主文');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.35 esmchina.com 文末三類雜訊修法
+// Jimmy 2026-04-25 回報：esmchina 主文後出現 Keysight 活動推廣 + 兩個 QR
+// code（微信分享）+ 评论(0)區。三條結構性通則修法：
+//   A. NOISE_KEYWORD_RE 加 weixin/wechat/weibo/qrcode + ul/ol 進 CONTAINER_SEL
+//   B. NOISE_LINK_TEXT_STRICT_RE 強 CTA token（立即报名 等）不受 60 chars 上限限制
+//   C. NOISE_HEADING_TEXT_RE 加簡體 alias「评论」「回复」+ 寬化括號 \([^)]*\)
+// -----------------------------------------------------------------------------
+describe('cleaner — esmchina-tail-widgets（QR 分享 widget + Keysight CTA + 评论區）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'esmchina-tail-widgets.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('UL.article-weixin（微信 QR 分享 widget）整塊被 hide（forcing：weixin keyword + ul 入 CONTAINER_SEL）', () => {
+    const ul = document.querySelector('ul.article-weixin');
+    assert.ok(ul, 'fixture 必須含 ul.article-weixin');
+    assert.strictEqual(ul.dataset.jreadHidden, '1',
+      'ul.article-weixin 必須被 hide；forcing：拿掉 NOISE_KEYWORD_RE 的 weixin token 或 ul 從 CONTAINER_SEL 移除 → 此 assertion fail');
+  });
+
+  it('Keysight 活動推廣 <a>（80+ chars 超 NOISE_LINK_TEXT_MAX_LEN）被 strict CTA hide（forcing：「立即报名」strict token）', () => {
+    const adLinks = document.querySelectorAll('p.adlink-paragraph a');
+    assert.ok(adLinks.length >= 1, 'fixture 必須含 adlink-paragraph 內的廣告 a');
+    let hiddenCount = 0;
+    for (const a of adLinks) {
+      // a 自身或祖先 wrapper 被 hide 都算（hideInsideArticleByLinkText 對 a 含
+      // CTA + parent 80% text 比例會 hide parent <p>）
+      let cur = a;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { hiddenCount++; break; }
+        cur = cur.parentElement;
+      }
+    }
+    assert.strictEqual(hiddenCount, adLinks.length,
+      `所有 ${adLinks.length} 個 Keysight CTA <a> 都應被 hide（自身或祖先）；實際 ${hiddenCount}；` +
+      'forcing：拿掉 NOISE_LINK_TEXT_STRICT_RE 或在 hideInsideArticleByLinkText 不對 strict 跳過 length cap → 此 assertion fail');
+  });
+
+  it('评论(0) 區塊（DIV.pl-520am）被 walk-up hide（forcing：簡體「评论」alias + 括號內容寬化）', () => {
+    const plDiv = document.querySelector('.pl-520am');
+    assert.ok(plDiv, 'fixture 必須含 .pl-520am');
+    let cur = plDiv;
+    let inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      '.pl-520am 評論區必須被 hide；forcing：NOISE_HEADING_TEXT_RE 沒「评论」alias 或 \\([^)]*\\) 寬化 → 此 assertion fail');
+  });
+
+  it('主文段落（NEWS_MAIN_MARK）保留', () => {
+    const ps = document.querySelectorAll('p');
+    let mainPs = 0;
+    for (const p of ps) {
+      if (p.textContent.includes('NEWS_MAIN_MARK')) {
+        let cur = p;
+        let inHidden = false;
+        while (cur && cur !== document.body) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        assert.ok(!inHidden, `NEWS_MAIN_MARK 段落不得在 hidden 祖先內：${p.textContent.slice(0, 40)}`);
+        mainPs++;
+      }
+    }
+    assert.ok(mainPs >= 3, `fixture 應含 3 段主文；實際 ${mainPs}`);
+  });
+
+  it('主標 H1 保留', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1');
+    let cur = h1.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `h1 祖先 <${cur.tagName}.${cur.className}> 不得被 hide`);
+      cur = cur.parentElement;
+    }
+  });
+});

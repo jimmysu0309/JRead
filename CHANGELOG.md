@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.35**——esmchina.com 文末三類雜訊修法（Jimmy 2026-04-25 回報）：主文後出現 Keysight 活動推廣 `<a><strong>...立即报名>></strong></a>`、兩個 QR code（微信分享 widget）、评论(0) 區。三條結構性通則修法：(A) `NOISE_KEYWORD_RE` 加 `weixin/wechat/weibo/qrcode` token + `ul/ol` 進 `CONTAINER_SEL`（中國 SNS 分享 widget 跨站通用命名 + 廣告 widget 常用 ul 包裝）→ 整塊 `ul.article-weixin` hide。(B) 拆出 `NOISE_LINK_TEXT_STRICT_RE` 強 CTA token 名單（立即报名 / 立即下载 / 點擊報名 等），主文新聞極少自然出現此類 CTA、命中即清不受 `NOISE_LINK_TEXT_MAX_LEN=60` 限制，繞過 a 整段 80+ chars 的長度上限。(C) `NOISE_HEADING_TEXT_RE` 加簡體 alias「评论」「回复」+ 寬化括號 `\([^)]*\)` 接受空括號（Playwright SPA inject 時序差異 0/N 都吃）→ walk-up 清 `DIV.pl-520am` 評論區。新增 `esmchina-tail-widgets` fixture 含 5 條 spec forcing function。已知遺留：`<div class="executive-editor">责编：Lefeng.shao</div>` 編輯署名單行未處理（要擴 `hideInsideArticleByHeadingText` 加 hide-self mode 給強 widget anchor 弱 candidate，下次處理）。256 jsdom spec 全過 + harness 確認 esmchina visible outline 從 7 塊雜訊降到 1 行。
+
+---
+
 **v0.7.34**——newtalk.tw 標題消失修法（Jimmy 2026-04-25 回報）：`hideInsideArticleByHeadingText` 的 walk-up fallback 過去只用「wrapper 含 ≥ 100 chars 主文長 p」當保護 anchor。newtalk 的標題在 `<p class="name">川普下達佈雷快艇擊沉令...</p>` 只有 27 chars 不滿足；末段分享列 `<button class="goMessage"><span>留言</span></button>` 命中 `^留言$` regex 後 walk-up 一路升到 `div.news_info`（含主標的 wrapper）整塊 hide → 標題消失。新增結構性通則 `hasArticleTitleAnchor` helper：wrapper 子樹含 `<h1>` 或含 class token 為 title-anchor（title / headline / heading / article-title / post-title / entry-title 等）+ textLen 10-200 chars 的元素，視為「含主文標題」並在 walk-up loop 加 break 條件。fixture 更新重現真實 DOM（news_tools 移進 news_info）作為 forcing function，sanity check 已驗證。251 jsdom spec 全過 + harness 確認標題回到 visible outline 第一項。
 
 ---
