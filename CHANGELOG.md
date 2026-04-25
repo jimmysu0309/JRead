@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.34**——newtalk.tw 標題消失修法（Jimmy 2026-04-25 回報）：`hideInsideArticleByHeadingText` 的 walk-up fallback 過去只用「wrapper 含 ≥ 100 chars 主文長 p」當保護 anchor。newtalk 的標題在 `<p class="name">川普下達佈雷快艇擊沉令...</p>` 只有 27 chars 不滿足；末段分享列 `<button class="goMessage"><span>留言</span></button>` 命中 `^留言$` regex 後 walk-up 一路升到 `div.news_info`（含主標的 wrapper）整塊 hide → 標題消失。新增結構性通則 `hasArticleTitleAnchor` helper：wrapper 子樹含 `<h1>` 或含 class token 為 title-anchor（title / headline / heading / article-title / post-title / entry-title 等）+ textLen 10-200 chars 的元素，視為「含主文標題」並在 walk-up loop 加 break 條件。fixture 更新重現真實 DOM（news_tools 移進 news_info）作為 forcing function，sanity check 已驗證。251 jsdom spec 全過 + harness 確認標題回到 visible outline 第一項。
+
+---
+
 **v0.7.33**——Readwise Reader 整合：popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨 reader card outerHTML + url + title 透過官方 API（`POST https://readwise.io/api/v3/save/`）送出。Token 在 options 設定（`chrome.storage.sync.readwiseToken`），button 在 reader mode 未啟動時 disabled。新訊息 `GET_READER_STATE` / `EXTRACT_READER_HTML` / `SAVE_TO_READWISE`；fetch 在 SW 跑（popup 關了也能跑完）。`buildReadwisePayload` / `saveToReadwise` 抽到 `popup-core.js` 純函式 + 14 條 jsdom regression spec 覆蓋 NO_TOKEN / AUTH(401) / HTTP / NETWORK / 成功 200/201 / payload 結構與訊息協定 forcing function。Readwise extension 對某些頁面失效時可改用 JRead 走後門。
 
 ---

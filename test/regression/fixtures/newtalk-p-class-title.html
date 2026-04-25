@@ -59,16 +59,29 @@
         <p>俄空軍獲今年首批蘇-35S戰機! 總數超過150架</p>
       </section>
 
-      <!-- 標題區塊：核心 bug forcing —— p.name 而非 heading tag -->
+      <!-- 標題區塊：核心 bug forcing —— p.name 而非 heading tag。
+           真實 newtalk DOM：news_info 內含 title + box，box 同時含 breadcrumb
+           meta 與分享/留言按鈕列（news_tools）。v0.7.34 之前 hideInsideArticle-
+           ByHeadingText 對 `<button><span>留言</span></button>` 的 span（命中
+           `^留言$`）做 fallback walk-up，因 news_info 內無 `>= 100 chars` 主文
+           長 p（標題只 27 chars）→ 一路升到 news_info hide 整塊（標題消失）。 -->
       <div class="news_info">
         <div class="title">
           <span class="media">[Newtalk新聞]</span>
           <p class="name">川普下達佈雷快艇擊沉令! 以稱要把伊朗打回石器時代 伊祭7反擊方案</p>
         </div>
-        <nav class="Breadcrumb">
-          <h2 class="hidden">Breadcrumb</h2>
-          <a>國際</a>
-        </nav>
+        <div class="box">
+          <nav class="Breadcrumb">
+            <h2 class="hidden">Breadcrumb</h2>
+            <a>國際</a>
+          </nav>
+          <!-- 分享/留言工具列：button > span 留言 觸發 walk-up bug forcing -->
+          <div class="news_tools text_bottom">
+            <button class="btn goMessage"><span>留言</span></button>
+            <a>Facebook</a>
+            <a>LINE</a>
+          </div>
+        </div>
       </div>
 
       <!-- 內文容器 -->
@@ -98,14 +111,6 @@
         <h2 class="name">延伸閱讀</h2>
         <a class="title">EXT_LINK_MARK 俄核轟炸機突飛越波羅的海</a>
         <a class="title">EXT_LINK_MARK 全球第一個進入緊急狀態</a>
-      </div>
-
-      <!-- chrome：分享/留言工具列 -->
-      <div class="news_tools text_bottom">
-        <span>分享</span>
-        <a>Facebook</a>
-        <a>LINE</a>
-        <a>留言7</a>
       </div>
 
       <!-- chrome：推薦 -->
