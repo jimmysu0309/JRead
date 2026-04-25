@@ -115,6 +115,19 @@
   <article class="inner-article" style="box-shadow: rgba(0, 65, 143, 0.1) 0px 0px 6px 0px;">
     <p>SHADOW_INNER_MARK 內層 article 殘留 box-shadow，需被 clearDescendantBoxShadow 清成 none</p>
   </article>
+
+  <!-- widget 9：anue 討論區 iframe（v0.7.32 cnyes 修法 forcing）
+       cnyes 「討論區」widget 整個包在 cross-origin iframe、parent document
+       看不到內部 textContent、所有 heading-text / keyword 規則漏網。靠
+       hideInsideArticleThirdPartyIframes 清——不在 KNOWN_MEDIA_IFRAME_SEL
+       whitelist（youtube/vimeo/twitter 等）的 iframe 都 hide -->
+  <iframe class="i9zk2x4" src="https://example-anue.test/embed/widget"></iframe>
+
+  <!-- 對照組：主文嵌的 YouTube embed 必須保留（已知媒體 whitelist） -->
+  <figure>
+    <iframe class="yt-embed" src="https://www.youtube-nocookie.com/embed/abc123"></iframe>
+    <figcaption>YT_EMBED_MARK 主文影片 embed</figcaption>
+  </figure>
 </article>
 </body>
 </html>
