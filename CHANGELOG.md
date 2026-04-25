@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.36**——cna.com.tw 中央社新聞兩大 bug 修法（Jimmy 2026-04-25 回報）：閱讀模式啟動後 (1) 整篇內文消失 (2) 標題下方 5 個社群按鈕 + 「支持中央社」推廣 widget 殘留。**Bug 1 根因**：`hideInsideArticleByHeadingText` walk-up fallback 的 `hasLongP` 保護以「單一 p ≥ 100 chars」為門檻，中央社新聞每段 60-90 字普遍 < 100 chars，主文 p 全沒觸發 → 「延伸閱讀」DIV 觸發 walk-up 升到外層 `DIV.paragraph`（包整篇主文）整塊 hide。修法：walk-up 加「累計 p textLen ≥ 300」保護，主文容器特徵是「累計多 p、總文量大」，跨中文短段 / 西文長段都通用（兩處 walk-up loop 同步）。**Bug 2 修法**：(A) 新 rule `hideInsideArticleJsLinks` 清 `a[href^="javascript:"]`——主文不會用 javascript: pseudo-protocol、純 JS handler 的 a 都是 widget interactive button（cna 的 btn_audio/btn_fb/btn_line/btn_copy/btn_support 全清）；(B) `NOISE_LINK_TEXT_RE` 加 `^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$` 中港台繁簡 alias；(C) `NOISE_KEYWORD_RE` 加 `app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner` token（`DIV.paragraph.appDownload` 推廣 widget 整塊 hide）。新增 `cna-short-paragraphs-walkup` fixture + 6 條 spec forcing function（fixture 加 sanity 確認）；harness 自驗 cna 主文段落齊全 + 標題下方 toolbar 全清 + 「支持中央社」widget 清乾淨。262 jsdom spec 全過。
+
+---
+
 **v0.7.35**——esmchina.com 文末三類雜訊修法（Jimmy 2026-04-25 回報）：主文後出現 Keysight 活動推廣 `<a><strong>...立即报名>></strong></a>`、兩個 QR code（微信分享 widget）、评论(0) 區。三條結構性通則修法：(A) `NOISE_KEYWORD_RE` 加 `weixin/wechat/weibo/qrcode` token + `ul/ol` 進 `CONTAINER_SEL`（中國 SNS 分享 widget 跨站通用命名 + 廣告 widget 常用 ul 包裝）→ 整塊 `ul.article-weixin` hide。(B) 拆出 `NOISE_LINK_TEXT_STRICT_RE` 強 CTA token 名單（立即报名 / 立即下载 / 點擊報名 等），主文新聞極少自然出現此類 CTA、命中即清不受 `NOISE_LINK_TEXT_MAX_LEN=60` 限制，繞過 a 整段 80+ chars 的長度上限。(C) `NOISE_HEADING_TEXT_RE` 加簡體 alias「评论」「回复」+ 寬化括號 `\([^)]*\)` 接受空括號（Playwright SPA inject 時序差異 0/N 都吃）→ walk-up 清 `DIV.pl-520am` 評論區。新增 `esmchina-tail-widgets` fixture 含 5 條 spec forcing function。已知遺留：`<div class="executive-editor">责编：Lefeng.shao</div>` 編輯署名單行未處理（要擴 `hideInsideArticleByHeadingText` 加 hide-self mode 給強 widget anchor 弱 candidate，下次處理）。256 jsdom spec 全過 + harness 確認 esmchina visible outline 從 7 塊雜訊降到 1 行。
 
 ---

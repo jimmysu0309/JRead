@@ -3109,3 +3109,117 @@ describe('cleaner — esmchina-tail-widgets（QR 分享 widget + Keysight CTA + 
     }
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.36 cna.com.tw 中央社新聞兩大 bug
+// Jimmy 2026-04-25 回報：閱讀模式啟動後 (1) 內文消失 (2) 標題下方社群按鈕殘留。
+//   修法 A：walk-up 加「累計 p textLen >= 300」保護（中文短段累計門檻）
+//   修法 B：新 rule hideInsideArticleJsLinks 清 a[href^="javascript:"]
+//   修法 C：NOISE_LINK_TEXT_RE 加「^(小額)?(贊助|赞助|...)$」
+//   修法 D：NOISE_KEYWORD_RE 加 app-?download/app-?promo/app-?banner
+// -----------------------------------------------------------------------------
+describe('cleaner — cna-short-paragraphs-walkup（中文短段 + javascript: a + appDownload widget）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'cna-short-paragraphs-walkup.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('主文 5 段（CNA_MAIN_MARK）保留——walk-up 累計 textLen 保護生效（核心 bug 1 forcing）', () => {
+    const ps = document.querySelectorAll('p');
+    let mainPs = 0;
+    for (const p of ps) {
+      if (p.textContent.includes('CNA_MAIN_MARK')) {
+        let cur = p, inHidden = false;
+        while (cur && cur !== document.body) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        assert.ok(!inHidden, `CNA_MAIN_MARK 段不得在 hidden 祖先內：${p.textContent.slice(0, 40)}`);
+        mainPs++;
+      }
+    }
+    assert.strictEqual(mainPs, 5,
+      `fixture 含 5 段主文短段（每段 < 100 chars），全部應保留；實際 ${mainPs}；` +
+      'forcing：拿掉 walk-up 的「totalPText >= 300」保護 → 外層 DIV.paragraph 整塊 hide → 全部消失');
+  });
+
+  it('「延伸閱讀」widget 仍被 hide（walk-up 修法不影響合法清雜訊）', () => {
+    const more = document.querySelector('.moreArticl');
+    assert.ok(more);
+    let cur = more, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, '.moreArticl 必須被 hide（heading text walk-up 對「延伸閱讀」應命中）');
+  });
+
+  it('5 個 javascript: a 全部被 hide（forcing：hideInsideArticleJsLinks rule）', () => {
+    const jsLinks = document.querySelectorAll('a[href^="javascript:"]');
+    assert.strictEqual(jsLinks.length, 4, 'fixture 應含 4 個 javascript: a');
+    let hiddenCount = 0;
+    for (const a of jsLinks) {
+      let cur = a;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { hiddenCount++; break; }
+        cur = cur.parentElement;
+      }
+    }
+    assert.strictEqual(hiddenCount, 4,
+      `所有 4 個 javascript: a 都應被 hide；實際 ${hiddenCount}；` +
+      'forcing：拿掉 hideInsideArticleJsLinks 呼叫 → 此 assertion fail');
+  });
+
+  it('「小額贊助」a 被 NOISE_LINK_TEXT_RE 命中 hide（forcing：贊助 alias）', () => {
+    const supportLinks = Array.from(document.querySelectorAll('a')).filter(a =>
+      (a.textContent || '').trim() === '小額贊助'
+    );
+    assert.ok(supportLinks.length >= 1, 'fixture 應含「小額贊助」a');
+    for (const a of supportLinks) {
+      let cur = a, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden, '「小額贊助」a 必須被 hide');
+    }
+  });
+
+  it('「支持中央社」appDownload widget 整塊被 hide（forcing：app-?download keyword）', () => {
+    const appDl = document.querySelector('.paragraph.appDownload');
+    assert.ok(appDl);
+    let cur = appDl, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      '.appDownload widget 必須被 hide；forcing：拿掉 NOISE_KEYWORD_RE 的 app-?download token → 此 assertion fail');
+  });
+
+  it('主標 H1 保留', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1');
+  });
+});
