@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<!--
+  Fixture：techbang.com 主文內嵌廣告 + 訂閱表單 wrapper，移除後留下 262px 空白。
+  Jimmy 2026-04-25 回報：reader mode 下兩段文字中間出現大段空白。
+
+  真實結構（harness probe）：
+    <article>
+      <p>第一段內文</p>
+      <div class="newsletter2in1">        ← 訂閱表單 wrapper（舊 NOISE_KEYWORD_RE 漏）
+        訂閱 T 客邦電子日報
+      </div>
+      <div class="techbang_Desktop_posts_inline_video">  ← 外層 wrapper（站點自訂 class）
+        <div class="google-dfp" id="dfp-techbang_Desktop_posts_inline_video">  ← DFP 廣告
+          (廣告內容)
+        </div>
+      </div>
+      <p>第二段內文</p>
+
+  根因：
+  A. `newsletter2in1` 的 `newsletter` 後面接 `2`（數字），舊 NOISE_KEYWORD_RE
+     用 boundary `([^a-z0-9]|$)` 要求 newsletter 後為非字母數字或字串結束 →
+     不命中、wrapper 沒被 hide。
+  B. `google-dfp` class + `dfp-*` id 是 Google Ad Manager (Google DFP =
+     DoubleClick for Publishers) 的跨 CMS 慣用命名，但舊 THIRD_PARTY_AD_SEL
+     只有 `[id^="div-gpt-ad"]` / `[id^="google_ads_"]`，漏這兩個慣例。
+
+  修法（v0.7.25）：
+  1. NOISE_KEYWORD_RE `newsletter` 改成 `newsletter[\w-]*`——吃任意 word
+     字元後綴，`newsletter2in1` / `newsletter-form` / `newsletterBox` 都命中。
+  2. THIRD_PARTY_AD_SEL 加 `[id^="dfp-"]` + `[class~="google-dfp"]` selector。
+-->
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>台灣大哥大開賣 MacBook Neo、M5 系列 Mac</title>
+</head>
+<body>
+<article>
+  <h1>台灣大哥大開賣 MacBook Neo、M5 系列 Mac</h1>
+  <p>TECHBANG_MAIN_MARK 台灣大哥大今日宣布開賣包含 MacBook Neo、搭載 M5 晶片的 MacBook Air 與 MacBook Pro，以及 Mac mini 等多款 Apple 電腦產品，結合 5G 熱點分享、家用 WiFi 寬頻、門市購機方案及各類加值服務，提供使用者整合性的連線與裝置應用解決方案。</p>
+
+  <!-- 訂閱表單 wrapper：class `newsletter2in1`（v0.7.25 NOISE_KEYWORD_RE 修法 forcing） -->
+  <div class="newsletter2in1">
+    <h3>訂閱 T 客邦電子日報</h3>
+    <p>掌握最熱門的科技話題、網路動態，升級你的科技原力！</p>
+    <form>
+      <input type="email" placeholder="請輸入您的 Email">
+      <button type="submit">立即訂閱</button>
+    </form>
+  </div>
+
+  <!-- 內嵌影片位置廣告 wrapper：外層站點自訂 class、內層是 DFP 廣告 -->
+  <div class="techbang_Desktop_posts_inline_video">
+    <div class="google-dfp" id="dfp-techbang_Desktop_posts_inline_video"
+         style="min-width: 1px; min-height: 1px; width: 100%; height: 100%;">
+      <!-- DFP 廣告 placeholder -->
+    </div>
+  </div>
+
+  <p>TECHBANG_MAIN_MARK 在門市服務方面，台灣大哥大將旗下 100 間直營門市調整為科技體驗入口，設置專屬體驗展示區，店內配置超過 1,000 位人員，協助用戶了解不同 Apple 裝置間的連接方式，並提供相關設備使用與技術諮詢。</p>
+  <p>TECHBANG_MAIN_MARK 此次合作展現台灣大哥大在 5G 應用領域的深耕，也呼應 Apple 在台灣市場的持續投入。消費者可透過台灣大哥大的門市取得完整的 Apple 產品體驗。</p>
+  <p>TECHBANG_MAIN_MARK 台灣大哥大表示未來將持續擴大與 Apple 的合作範圍，並引進更多創新服務與產品組合，滿足不同使用者的需求。</p>
+  <p>TECHBANG_MAIN_MARK 業界分析師認為此舉將強化台灣大哥大在電信通路整合 Apple 生態系的優勢，也為 Apple 在台灣的通路佈局提供更多可能性。</p>
+</article>
+</body>
+</html>

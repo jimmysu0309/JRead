@@ -29,7 +29,14 @@
   // alternation 順序不影響：regex 會依 boundary `(^|[^a-z0-9])...([^a-z0-9]|$)`
   // 逐一 try。動詞詞根不會誤殺既有的形容詞 `recommended` / `sponsored` /
   // `discussion`——後者各自有自己的 alternation 先行。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|newsletter-(?:signup|form|cta)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
+  // `newsletter[\w-]*`（v0.7.25 techbang 修法）：原本 `newsletter` 要求後綴 word
+  // boundary，對 techbang 的 `<div class="newsletter2in1">` 失效——`newsletter2in1`
+  // 中 `newsletter` 後面接 `2`（數字），boundary `[^a-z0-9]|$` 要求非字母數字
+  // 或字串結束都不滿足。改成 `newsletter` 後接任意 word 字元（含數字 / 連字元），
+  // 配合外層的 `[^a-z0-9]|$` boundary 對整個匹配 token 的末尾做檢查——能吃
+  // `newsletter` / `newsletter2in1` / `newsletter-form` / `newsletterBox` 等所有
+  // 以 `newsletter` 開頭的 class 變體。
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -1423,6 +1430,8 @@
     // Google Ad Manager / GPT（業界最大 ad server，標準命名）
     '[id^="div-gpt-ad"]',
     '[id^="google_ads_"]',
+    '[id^="dfp-"]',              // v0.7.25 techbang 修法：Google DFP (Ad Manager)
+    '[class~="google-dfp"]',     //   id prefix + class 慣用命名（跨 CMS DFP 接入慣例）
     'iframe[name^="google_ads_iframe"]',
     'iframe[id^="google_ads_iframe"]',
     'iframe[src*="googlesyndication.com"]',

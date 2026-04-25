@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.24 — 2026-04-25 起）
+## Baseline 宣告（v0.7.25 — 2026-04-25 起）
 
-**當前 baseline：v0.7.24**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 ttv.com.tw 雙層 figure flex + sidebar img-in-a guard + articleEl 本身 flex collapse 修法為止的全部 detector / cleaner 能力，實測通過 17+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / The Verge 等）。214 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
+**當前 baseline：v0.7.25**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 techbang newsletter/DFP 廣告 wrapper 清除修法為止的全部 detector / cleaner 能力，實測通過 18+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / The Verge 等）。217 jsdom spec + 5 e2e spec + e2e harness 基礎設施守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（214 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker）
+3. 每次修法後跑 `npm test`（217 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -30,9 +30,42 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.21**（2026-04-24）Stratechery h2 post-title 修法 + e2e harness 就緒 + 15 站實測通過
 - **v0.7.22**（2026-04-25）擴 promote tag 到 p/div/span（newtalk.tw）+ narrow media-bearing sibling 保護（順便修好 ebc 主圖誤殺）
 - **v0.7.23**（2026-04-25）newtalk.tw 原站 JS 清 jread !important priority 對抗修法 + `hideOutsideArticleSemantic` 擴 id/class selector
-- **v0.7.24**（2026-04-25）當前 baseline：ttv.com.tw 三處聯動修法——narrow media guard 改「img 不在 a 內才保留」+ collapseGridWithHiddenCell 掃 articleEl 自身 + forceMediaContainerBlock figure/picture 強制 block
+- **v0.7.24**（2026-04-25）ttv.com.tw 三處聯動修法——narrow media guard 改「img 不在 a 內才保留」+ collapseGridWithHiddenCell 掃 articleEl 自身 + forceMediaContainerBlock figure/picture 強制 block
+- **v0.7.25**（2026-04-25）當前 baseline：techbang 主文中段空白修法——`newsletter[\w-]*` 吃數字後綴（handle `newsletter2in1`）+ `dfp-` id prefix / `.google-dfp` class 補進 THIRD_PARTY_AD_SEL
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.25**——techbang.com 主文中段廣告移除後殘留 262px 空白修法（Jimmy 2026-04-25 實機回報）。
+
+**症狀**：news.techbang.com/posts/129017-* reader mode 下第一段文字（「台灣大哥大今日宣布...解決方案。」）與第二段文字（「在門市服務方面...」）之間出現整屏高度空白，原本該是訂閱表單 + 影片內嵌廣告位置的殘留。
+
+**根因**（harness probe 量 gap 262px、列出 3 個 visible element）：
+
+1. **訂閱表單 `<div class="newsletter2in1">` 漏網**：class 含 `newsletter` keyword 但後面接數字 `2`，舊 NOISE_KEYWORD_RE 的 word boundary `([^a-z0-9]|$)` 要求後面是非字母非數字或字串結束——`newsletter` 後面接 `2` 不滿足，match 失敗。整塊訂閱 wrapper 留下（有 height 200px + padding + margin）。
+
+2. **Google DFP 廣告 `<div class="google-dfp" id="dfp-techbang_Desktop_posts_inline_video">` 漏網**：舊 `THIRD_PARTY_AD_SEL` 只有 `[id^="div-gpt-ad"]` / `[id^="google_ads_"]` / iframe selectors 等——不認 `[id^="dfp-"]` 與 `[class~="google-dfp"]` 這兩個 DoubleClick for Publishers (Google Ad Manager 舊名) 的跨 CMS 慣用命名。廣告 wrapper 整塊留著（height 200px）。
+
+3. 兩塊 wrapper 加 padding/margin 累積 → 主文中段出現 262px 空白。
+
+**修法**（結構性通則，非站點特判）：
+
+1. **NOISE_KEYWORD_RE `newsletter` 擴成 `newsletter[\w-]*`**（cleaner.js）：匹配 `newsletter` 後接任意 word 字元（含數字 / 底線 / 連字元）的所有變體——`newsletter` / `newsletter2in1` / `newsletter-form` / `newsletterBox` / `newsletter_cta` 都命中。同時移除 duplicated `newsletter-(?:signup|form|cta)` alternation（被新 pattern 覆蓋）。
+   - 為何不對其他 keyword（subscribe/signup 等）一併擴：只有 techbang 實測遇到 `newsletter2in1` 這種數字 suffix 命名，其他 keyword 暫無 observed case；保守只動 forcing 的那一條。
+
+2. **THIRD_PARTY_AD_SEL 加 `[id^="dfp-"]` + `[class~="google-dfp"]`**（cleaner.js）：Google Ad Manager 的 DFP (DoubleClick for Publishers) 接入慣例有兩種命名風格——一種用 `div-gpt-ad-*` id prefix（已有 selector）、另一種站點自己前綴 `dfp-*` + class `google-dfp`（techbang 採用）。跨 CMS 通用命名、非站點特判。
+
+**新 fixture + spec**：
+- `test/regression/fixtures/techbang-newsletter-dfp-inline.html` 最小重現：`<article>` 含兩段主文 + 中間訂閱表單 `.newsletter2in1` + DFP 廣告 wrapper
+- `cleaner.spec.js` 新增 3 條 assertion：(1) `.newsletter2in1` 命中 NOISE_KEYWORD_RE 被 hide；(2) `.google-dfp` 被 THIRD_PARTY_AD_SEL hide；(3) TECHBANG_MAIN_MARK 主文段落保留
+- **sanity check 兩輪**：(a) 回退 `newsletter[\w-]*` → `newsletter` → newsletter2in1 spec fail；還原 → pass。(b) 註解 dfp selector 兩條 → DFP spec fail；還原 → pass
+
+**驗收**：
+- `npm test` → 217 passing（原 214 + 新 3 條 techbang）
+- harness 對真實 techbang 驗：兩段文字間 gap 從 262px → 16px（normal paragraph margin）、訂閱表單 + DFP 廣告 wrapper 消失
+
+**未動**：styler.js / detector.js / 其他 cleaner rule / popup / service-worker / options 全部零變化；修法只動 cleaner 兩處——`NOISE_KEYWORD_RE` 單一 alternation 調整 + `THIRD_PARTY_AD_SEL` 加兩條 selector，行為擴展而非重寫。
 
 ---
 

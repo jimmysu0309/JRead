@@ -2416,6 +2416,76 @@ describe('cleaner — ttv-flex-layout-hero-figure（三處聯動修法）', () =
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.25 techbang.com 主文內嵌「訂閱表單 + DFP 廣告」wrapper 未清殘留 262px 空白
+// 兩處修法：
+//   1. NOISE_KEYWORD_RE `newsletter` → `newsletter[\w-]*`（吃任意後綴，handle
+//      `newsletter2in1` 等 class 變體）
+//   2. THIRD_PARTY_AD_SEL 加 `[id^="dfp-"]` + `[class~="google-dfp"]`（Google
+//      Ad Manager DFP 跨 CMS 慣用命名）
+// Jimmy 2026-04-25 實機回報：主文中段廣告移除後留大段空白。
+// -----------------------------------------------------------------------------
+describe('cleaner — techbang-newsletter-dfp-inline（newsletter 變體 + DFP 廣告 wrapper）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'techbang-newsletter-dfp-inline.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 <article>');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('訂閱表單 wrapper `<div class="newsletter2in1">` 被 hide（v0.7.25 NOISE_KEYWORD_RE 修法 forcing）', () => {
+    const el = document.querySelector('.newsletter2in1');
+    assert.ok(el, 'fixture 必須含 .newsletter2in1');
+    assert.strictEqual(el.dataset.jreadHidden, '1',
+      'newsletter2in1 必須命中 NOISE_KEYWORD_RE 被 hide；forcing：若 regex 仍寫 `newsletter` 單詞 + suffix boundary，' +
+      '`newsletter` 後面接數字 `2` 不滿足 `[^a-z0-9]|$`、match 失敗。此 assertion 拿掉 `[\\w-]*` 後綴 → fail');
+  });
+
+  it('DFP 廣告 `<div class="google-dfp" id="dfp-*">` 被 hide（v0.7.25 THIRD_PARTY_AD_SEL 修法 forcing）', () => {
+    const el = document.querySelector('.google-dfp');
+    assert.ok(el, 'fixture 必須含 .google-dfp');
+    let cur = el, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      'DFP 廣告或其祖先必須被 hide；forcing：若 THIRD_PARTY_AD_SEL 漏 `[id^="dfp-"]` 與 `[class~="google-dfp"]`，' +
+      'Google Ad Manager 非 `div-gpt-ad-*` 命名的 DFP slot 漏網、此 assertion fail');
+  });
+
+  it('主文 TECHBANG_MAIN_MARK 段落全保留', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('TECHBANG_MAIN_MARK'));
+    assert.ok(marks.length >= 5, `fixture 應含 5 段主文；實際 ${marks.length}`);
+    for (const p of marks) {
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `TECHBANG_MAIN_MARK 段落不得被 hide：${p.textContent.slice(0, 40)}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.11 Medium click-to-zoom button wrapper 修法
 // hideInsideArticleAllButtons 加 media guard：button/role="button" wrapper
 // 內含 img/picture/video 時保留（Medium 把主文 picture 嵌在 role="button"
