@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.28 — 2026-04-25 起）
+## Baseline 宣告（v0.7.29 — 2026-04-25 起）
 
-**當前 baseline：v0.7.28**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes nav rail + 末段 widget walk-up 五處修法為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤，實測通過 19+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / cnyes 鉅亨網 / The Verge 等）。228 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
+**當前 baseline：v0.7.29**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes 討論區 widget 中文 token 修法為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤，實測通過 19+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / cnyes 鉅亨網 / The Verge 等）。229 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（228 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
+3. 每次修法後跑 `npm test`（229 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -34,9 +34,47 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.25**（2026-04-25）techbang 主文中段空白修法——`newsletter[\w-]*` 吃數字後綴 + `dfp-` id prefix / `.google-dfp` class 補進 THIRD_PARTY_AD_SEL
 - **v0.7.26**（2026-04-25）techbang byline 下 115px 空白修法——spacer rule blocker check 加「祖先已 jread-hidden 不算 visible blocker」；harness 擴 gap audit（>= 80px 警告）
 - **v0.7.27**（2026-04-25）toast 縮限到僅顯示主文偵測失敗錯誤——「已進入/離開閱讀模式」狀態 toast 移除
-- **v0.7.28**（2026-04-25）當前 baseline：cnyes 五處聯動修法——hideInsideArticleNav 新規則 + heading-text walk-up fallback 改良 + heading/link/keyword 多項 token 擴增
+- **v0.7.28**（2026-04-25）cnyes 五處聯動修法——hideInsideArticleNav 新規則 + heading-text walk-up fallback 改良 + heading/link/keyword 多項 token 擴增
+- **v0.7.29**（2026-04-25）當前 baseline：cnyes 文末「討論區」widget 中文 token 補洞——`^討論區$` / `^(回應|回覆|留言)\s*\(\d+\)$` / `^我要(登入|留言|分享|看法)` / `^發佈$` / `^標記股票$`
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.29**——cnyes 文末「討論區」widget 漏網修法（Jimmy 2026-04-25 第二輪 cnyes 回報）。
+
+**症狀**：v0.7.28 修了大部分 cnyes 文末雜訊，但「討論區 / 回應(0) / 看更多 / 我要登入分享看法 / $ 標記股票 / 發佈」整塊留言面板 widget 仍在主文末端顯示。
+
+**根因**：
+- harness probe 此 widget 無 lazy-load 不到（Playwright Chromium 跟實機 Chrome 時序差），**不能依賴實機驗證**——必須靠邏輯完整性 token 覆蓋
+- 「討論區 / 回應 / 我要登入 / 發佈 / 標記股票」全是 cnyes 中文用詞、未在既有 NOISE_*_RE 範圍
+- widget 的 wrapper class 是 emotion-hash（`.d4xfe2k1` 類）、無 keyword anchor
+- 唯一能命中的 anchor 是 `<h3>討論區</h3>` heading text → 由 v0.7.28 walk-up fallback 升級到 wrapper hide
+
+**修法**（結構性通則，非站點特判）：
+
+1. **`NOISE_HEADING_TEXT_RE` 加 token**：
+   - `^討論區$` 中文 discussion widget heading 慣例
+   - `^(回應|回覆|留言)(\s*\(\d+\))?$` 中文 comment count（與英文 `^comments?(\s*\(\d+\))?$` 對應）
+   - `^我要(登入|留言|分享|看法)` placeholder 文字慣例（cnyes 用、Disqus / Hyvor 等其他中文留言系統也類似 phrasing）
+
+2. **`NOISE_LINK_TEXT_RE` 加 token**：
+   - `^我要(登入|留言|分享)` 同上 placeholder 也常被當 button 文字
+   - `^發佈$` post button
+   - `^標記股票$` cnyes 留言面板的 「$ 標記股票」chip button（少見、屬於財經類站才會用、但加進去成本極低）
+
+**通則依據**：「討論區 / 回應 / 留言」在中文新聞站留言面板的命名跨站通用（蘋果 / 中時 / 自由 / udn / cnyes 等都用過某種變體）；只是各站經常 lazy-load 注入、harness 抓不到——靠邏輯保證 forcing function。
+
+**新 fixture + spec**：
+- `cnyes-nav-widgets-walkup.html` 擴 fixture：新增 widget 7 「討論區」結構（h3 + span 回應(0) + p 我要登入分享看法 + button 發佈 / 標記股票）；class 用 emotion-hash 風格（不含 NOISE_KEYWORD_RE 任何 token），forcing 純靠中文 heading text + walk-up 命中
+- `cleaner.spec.js` 新增 1 條 assertion：discussion wrapper 必須 hide
+- **sanity check**：拿掉 `^討論區$` token → spec fail（驗 fixture 真的不靠其他 keyword 命中）；還原 → pass
+
+**驗收**：
+- `npm test` → 229 passing（原 228 + 新 1 條 cnyes discussion）
+- 實機驗證須等 Jimmy reload 到 v0.7.29 後確認（Playwright 環境此 widget 不 lazy-load）
+
+**未動**：detector / styler / popup / service-worker / options 全部零變化；修法只動 cleaner 兩處 regex（NOISE_HEADING_TEXT_RE + NOISE_LINK_TEXT_RE 各加 alternation）、純擴增 token、無邏輯變更。
 
 ---
 
