@@ -36,7 +36,7 @@
   // 配合外層的 `[^a-z0-9]|$` boundary 對整個匹配 token 的末尾做檢查——能吃
   // `newsletter` / `newsletter2in1` / `newsletter-form` / `newsletterBox` 等所有
   // 以 `newsletter` 開頭的 class 變體。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -72,7 +72,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|點我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|點我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -882,11 +882,19 @@
                articleEl.contains(cur.parentElement)) {
           const pp = cur.parentElement;
           let hasLongP = false;
+          let totalPText = 0;
           for (const para of pp.querySelectorAll('p')) {
             const pt = norm(para.textContent);
             if (pt.length >= 100) { hasLongP = true; break; }
+            totalPText += pt.length;
           }
           if (hasLongP) break;
+          // v0.7.36 cna 修法：累計 p textLen >= 300 也視為主文容器、保護。
+          // 場景：中央社新聞每段 60-90 字普遍 < 100 chars 不滿足 hasLongP；
+          // 「延伸閱讀」div walk-up 升到外層 DIV.paragraph（包整篇主文 p），
+          // hasLongP 不觸發 → 整塊 hide → 內文消失。改用累計 textLen 通則：
+          // 主文容器特徵是「累計多 p、總文量大」，跨中文短段 / 西文長段都通用。
+          if (totalPText >= 300) break;
           // v0.7.34 newtalk 修法：含主文標題級 anchor 的 wrapper 也保護。
           // 場景：news_info 內含 `<div class="title"><p class="name">標題</p></div>`，
           // 標題 27 chars 不滿足「>= 100 chars long p」protection；末段分享列
@@ -1567,6 +1575,22 @@
     }
   }
 
+  // ---- 主文內：a[href^="javascript:"] heuristic --------------------------
+  // 結構性通則：href 為 `javascript:` 的 `<a>` 是 JS handler trigger（分享 /
+  // 聽新聞 / 複製連結 / 收藏 / open modal 等），不是主文引用連結——主文
+  // 不會用 javascript: pseudo-protocol 連結。reader mode 下這類 a 一律清。
+  // 場景：cna.com.tw 標題下方 5 個社群按鈕（btn_audio / btn_fb / btn_line /
+  // btn_copy / btn_support）都是 a[href^="javascript:"]，class 命名特殊
+  // （btn_*）NOISE_KEYWORD_RE 不命中，textContent 空（icon-only）NOISE_LINK_
+  // TEXT_RE 也不命中——靠 href pseudo-protocol 統一識別。
+  function hideInsideArticleJsLinks(articleEl, hidden) {
+    for (const a of articleEl.querySelectorAll('a[href^="javascript:"]')) {
+      if (isInPreserved(a)) continue;
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      hide(a, hidden);
+    }
+  }
+
   // ---- 主文內：<font> tag heuristic ------------------------------------
   // `<font>` 是 HTML4 老式樣式 tag，HTML5 已 deprecated。現代網站幾乎只在
   // **inline 廣告 / PR 推廣**插播時用它（改字色 / 加 emoji 吸睛），正文排
@@ -1845,10 +1869,15 @@
                articleEl.contains(cur.parentElement)) {
           const pp = cur.parentElement;
           let hasLongP = false;
+          let totalPText = 0;
           for (const para of pp.querySelectorAll('p')) {
-            if (norm(para.textContent).length >= 100) { hasLongP = true; break; }
+            const pt = norm(para.textContent);
+            if (pt.length >= 100) { hasLongP = true; break; }
+            totalPText += pt.length;
           }
           if (hasLongP) break;
+          if (totalPText >= 300) break;  // v0.7.36 cna 中文短段累計保護
+          if (hasArticleTitleAnchor(pp, h)) break;
           lastSafeWrapper = pp;
           cur = pp;
         }
@@ -2042,6 +2071,7 @@
       hideInsideArticleFontTags(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);
       hideInsideArticleAllButtons(articleEl, hidden);
+      hideInsideArticleJsLinks(articleEl, hidden);
       hideInsideArticleActionRows(articleEl, hidden, containers);
       hideInsideArticleButtonClusters(articleEl, hidden, containers);
       hideInsideArticleHorizontalRules(articleEl, hidden);
