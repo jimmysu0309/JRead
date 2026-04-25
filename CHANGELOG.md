@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.27 — 2026-04-25 起）
+## Baseline 宣告（v0.7.28 — 2026-04-25 起）
 
-**當前 baseline：v0.7.27**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 techbang content-top empty spacer + harness gap audit 建立為止的全部 detector / cleaner 能力，**toast 縮限到僅顯示主文偵測失敗錯誤**（v0.7.27 Jimmy 要求簡化），實測通過 18+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / The Verge 等）。220 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
+**當前 baseline：v0.7.28**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes nav rail + 末段 widget walk-up 五處修法為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤，實測通過 19+ 站（Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh / Medium / BBC / udn / chinatimes / ltn / Engadget / upmedia / EBC / LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / cnyes 鉅亨網 / The Verge 等）。228 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning（>= 80px 可疑留白）守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -18,7 +18,7 @@
 
 1. **優先順序**：detector → cleaner → styler（最後手段）
 2. **styler.js 視為動不得**——要動需 Jimmy 明確授權；禁止恢復 v0.5.x 對 h1-h6 / p / ul / ol / li / blockquote / a 下 rule 的做法；typography-affecting universal rule 必須用 scoped selector（硬教訓 20，v0.7.17→v0.7.18）
-3. 每次修法後跑 `npm test`（220 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
+3. 每次修法後跑 `npm test`（228 jsdom spec）+ 視覺風險高的改動跑 `npm run debug`（harness + Read fullpage 截圖自驗，**包含 reader card 以外的頁面區**；驗 hide 效果要讀 `getComputedStyle(el).display` 不能只靠 attribute marker；**看 GAP AUDIT 警告列表判斷是否有未清的 empty wrapper**）
 4. 結構性通則、非站點特判（CLAUDE.md 硬規則 3）
 5. 修 detector/cleaner/styler 類 DOM 互動 bug 必須先 harness 驗假設再動 code（CLAUDE.md「假設驗證順序」）
 
@@ -33,9 +33,54 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.24**（2026-04-25）ttv.com.tw 三處聯動修法——narrow media guard 改「img 不在 a 內才保留」+ collapseGridWithHiddenCell 掃 articleEl 自身 + forceMediaContainerBlock figure/picture 強制 block
 - **v0.7.25**（2026-04-25）techbang 主文中段空白修法——`newsletter[\w-]*` 吃數字後綴 + `dfp-` id prefix / `.google-dfp` class 補進 THIRD_PARTY_AD_SEL
 - **v0.7.26**（2026-04-25）techbang byline 下 115px 空白修法——spacer rule blocker check 加「祖先已 jread-hidden 不算 visible blocker」；harness 擴 gap audit（>= 80px 警告）
-- **v0.7.27**（2026-04-25）當前 baseline：toast 縮限到僅顯示主文偵測失敗錯誤——「已進入/離開閱讀模式」狀態 toast 移除（Jimmy 要求簡化、卡片出現本身已是回饋）
+- **v0.7.27**（2026-04-25）toast 縮限到僅顯示主文偵測失敗錯誤——「已進入/離開閱讀模式」狀態 toast 移除
+- **v0.7.28**（2026-04-25）當前 baseline：cnyes 五處聯動修法——hideInsideArticleNav 新規則 + heading-text walk-up fallback 改良 + heading/link/keyword 多項 token 擴增
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.28**——cnyes.com 左側社交 nav rail + 文末多 widget 漏清五處聯動修法（Jimmy 2026-04-25 實機回報）。
+
+**症狀**：news.cnyes.com/news/id/6429386 進閱讀模式後：(1) 左側社交 sidebar（FB / LINE / 連結 / 其他 / 字級 / 列印 / 收藏 / 留言）整條 rail 留下；(2) 文末「文章標籤 / 相關行情 / 想知道更多? AI來回答 / 延伸閱讀 / 鉅亨號貼文 / 下一篇 / 點我下載APP」widget 全部漏網。
+
+**根因**（harness probe 三層剝洋蔥）：
+
+1. **左側社交 rail 用 `<nav class="social-rail">` + `position: absolute`**：`hideFixedOutsideArticle` 規則只看 fixed/sticky 不認 absolute；`hideOutsideArticleSemantic` 對 articleEl 內部 nav 不處理；nav 嵌在 articleEl 內、無規則處理。
+
+2. **末段 widget 結構特殊**：cnyes 把整篇主文 + 多個末段 widget 全包進 `<div class="c9ky432"> > <article class="mfxje1x">` 同一個 wrapper，且 heading 結構是 `<h3 class="t1mmzjbz"><div class="t1thwy6j">延伸閱讀</div></h3>`（真標題在 div 裡）。
+   - `closest('section, aside')` 找不到（純 div-only DOM）
+   - 舊 fallback 升級到 articleEl direct child = ARTICLE.mfxje1x、含主文 p > 100 → skip
+   - 「延伸閱讀」/「文章標籤」/「相關行情」h3 全被原 fallback 跳過
+
+3. **多項末段 widget heading text 不在 NOISE_HEADING_TEXT_RE / NOISE_LINK_TEXT_RE 範圍**：「文章標籤 / 相關行情 / 想知道更多 / AI來回答 / 鉅亨號貼文 / 下一篇 / 點我下載APP / 看更多 / 下載APP」全是新詞；`Powered by` 慣例也沒涵蓋。
+
+**修法**（七處結構性通則，全部非站點特判）：
+
+1. **新規則 `hideInsideArticleNav`**：`articleEl.querySelectorAll('nav')` 不含主文長段落（textLen >= 100 的 p）→ hide。reader mode 下 navigation 元素一律是 chrome、不是主文（目錄 / breadcrumb / share rail / TOC 等）。
+
+2. **`hideInsideArticleByHeadingText` walk-up fallback 改良**：原本只試 articleEl 的 direct child；改成從 heading 往上 walk、找「不含主文長段落」的最深 wrapper 當 target、停在含主文 p 的祖先前一層。對 cnyes「延伸閱讀」h3：往上 div.card → div.widget-wrapper → ARTICLE 含主文 break → target=widget-wrapper hide ✓。對「想知道更多 AI來回答」h2 同理 → 升到 ai-question-wrapper hide ✓。
+
+3. **`NOISE_HEADING_TEXT_RE` 擴 token**：`文章標籤` / `相關行情` / `想知道更多` / `AI.{0,4}(來回答|回答)` / `^(下一篇|上一篇)$` / `^(prev(ious)?|next)\s*(article|post|story)?$` / `.{2,4}號貼文`（涵蓋鉅亨號貼文 / 公眾號貼文 / 頭條號貼文等中國互聯網平台 widget 慣例）。
+
+4. **`NOISE_LINK_TEXT_RE` 擴 token**：`點我.{0,8}(下載|訂閱|加入|看|了解|查看)` / `下載\s*(APP|app)` / `^(看更多|查看更多)$`。
+
+5. **`NOISE_KEYWORD_RE` 擴 alternation**：加 `powered[-_]?by`（跨站 widget 標識慣例：「Powered by Mlytics / Algolia / Disqus / Spotlight」等）。
+
+6. **`hideInsideArticleByHeadingText` 候選擴含 `<p>`**：原本只掃 `h2-h4 + div + span`；加 `p`（限 direct text <= 20，避免主文長段誤命中）。對 cnyes `<p>下一篇</p>` 命中。
+
+7. **`hideInsideArticleByLinkText` walk-up parent 加 `LI`**：原本只升級 `P` / `DIV`；加 `LI`——廣告 list 常用 `<ul><li><a>CTA</a></li></ul>` 結構，命中後若 a 占 LI 80%+ 升級到 LI hide（避免只 hide a 留下 LI 殘文字）。
+
+**新 fixture + spec**：
+- `cnyes-nav-widgets-walkup.html` 重現實機結構：`<article>` 含 nav.social-rail + 主文 p + 6 個末段 widget（延伸閱讀 / 想知道更多 / 鉅亨號貼文 / powered_by / 下一篇 / 點我下載APP）
+- `cleaner.spec.js` 新增 8 條 assertion 對應 7 處修法 + 主文保留 forcing
+
+**驗收**：
+- `npm test` → 228 passing（原 220 + 新 8 條 cnyes）
+- harness 對真實 cnyes：visible-after-tail elements 從 30 項降到 3 項（剩 1 個 65px 廣告 LI、不影響閱讀）；residual audit ✅；gap audit 仍標 1 段 80+ gap 但無大塊雜訊
+- harness fullpage 截圖：reader card 內無社交 rail / 無 widget 殘留、主文段落到「核心癥結仍在戰爭本身」乾淨結束
+
+**未動**：styler.js / detector.js / popup / service-worker / options 全部零變化；修法只動 cleaner 七處——`NOISE_KEYWORD_RE` / `NOISE_HEADING_TEXT_RE` / `NOISE_LINK_TEXT_RE` 三條 regex 擴 token + `hideInsideArticleByHeadingText` 候選擴 + walk-up fallback 重寫 + `hideInsideArticleByLinkText` walk-up 加 LI + 新規則 `hideInsideArticleNav`，行為擴展而非重寫。
 
 ---
 

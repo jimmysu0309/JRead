@@ -36,7 +36,7 @@
   // 配合外層的 `[^a-z0-9]|$` boundary 對整個匹配 token 的末尾做檢查——能吃
   // `newsletter` / `newsletter2in1` / `newsletter-form` / `newsletterBox` 等所有
   // 以 `newsletter` 開頭的 class 變體。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -57,7 +57,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成)|.{0,6}AI摘要|繼續看下去|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|.{2,4}號貼文|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -72,7 +72,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|點我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
@@ -239,6 +239,40 @@
     for (const el of articleEl.querySelectorAll('hr')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：<nav> element（v0.7.28 cnyes.com 修法）-------------------
+  // semantic `<nav>` 在 articleEl 之外由 hideOutsideArticleSemantic 處理，
+  // 但若 `<nav>` 嵌在 articleEl 內 — 多半是 share toolbar / floating tool
+  // rail / breadcrumb / table-of-contents。reader mode 下這些都是 chrome、
+  // 不是主文。
+  //
+  // 觸發場景（cnyes news.cnyes.com/news/id/6429386 實測）：
+  //   `<article class="mfxje1x">
+  //      <nav class="s155wao3">  ← 左側 fixed 社交 rail（FB/LINE/連結/字級/列印/收藏/留言）
+  //        position: absolute、4076×36、跨整篇主文高度
+  //      <div>主文 p 段落...</div>`
+  //
+  // hideFixedOutsideArticle 因 position: absolute 不命中（規則只看 fixed/
+  // sticky）；hideOutsideArticleSemantic 對 articleEl 內部不處理。靠新規則。
+  //
+  // 通則：主文 scope 內的 `<nav>` 不含主文長段落（textLen >= 100 的 p）→
+  // 視為 chrome 清。若某站把目錄 / breadcrumb 嵌在 article 內（少見）也會
+  // 被清——閱讀模式不需 navigation 元素，這個損失合理。
+  //
+  // 主文長段落保護：若 nav 內含 textLen >= 100 的 p，跳過（極罕見、避免
+  // 將「文章內含 nav 結構的主文容器」誤殺）。
+  function hideInsideArticleNav(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('nav')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      let hasLongP = false;
+      for (const p of el.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
+      }
+      if (hasLongP) continue;
       hide(el, hidden);
     }
   }
@@ -756,7 +790,11 @@
     // 下去」都是 div/span）。對 div/span 只看 direct text（不抓子孫），
     // 且長度要 <= NOISE_HEADING_MAX_LEN，避免誤殺主文段落。
     const semanticHeadings = Array.from(articleEl.querySelectorAll('h2, h3, h4'));
-    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span'))
+    // div / span / p 候選（v0.7.28 加 p：cnyes 用 `<p>下一篇</p>` 當
+    // navigation header；line today 用 div/span 包 section title）。對 p
+    // 的 direct text 仍套 NOISE_HEADING_MAX_LEN <= 20 過濾，避免主文長段
+    // 落誤命中（主文 p 通常 > 20 字）。
+    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span, p'))
       .filter(el => {
         const direct = Array.from(el.childNodes)
           .filter(n => n.nodeType === 3)
@@ -780,20 +818,31 @@
       // branch **不含主文長段落**（無 p 的 textLen > 100）才動，避免誤殺
       // 主文（chinatimes「也許您會感興趣」h4 在 column-wrapper 深層後代，
       // column-wrapper 自身含主文 p > 100，保護成立）。
+      //
+      // v0.7.28 cnyes 修法：原 fallback 只試 articleEl 的 direct child；若
+      // 站點把整篇主文跟末段 widget 全包進 articleEl 的同一個直接子（cnyes
+      // 是 `DIV.c9ky432 > ARTICLE.mfxje1x` 內含主文 p + 多個 widget），
+      // direct child 含主文 → skip → widget 全留下。改進：從 heading 往上
+      // walk、找「不含主文長段落」的最深 wrapper 當 target。停止條件：parent
+      // 含主文 p（>= 100）或到 articleEl 邊界。這樣 cnyes 的 H3「延伸閱讀」
+      // 會 walk 到 `DIV.c1ciwb2s`（不含主文）後 break、target 設為它。
       if (!target || target === articleEl || target.contains(articleEl)) {
         let cur = h;
-        while (cur.parentElement && cur.parentElement !== articleEl) {
-          cur = cur.parentElement;
+        let lastSafeWrapper = null;
+        while (cur.parentElement && cur.parentElement !== articleEl &&
+               articleEl.contains(cur.parentElement)) {
+          const pp = cur.parentElement;
+          let hasLongP = false;
+          for (const para of pp.querySelectorAll('p')) {
+            const pt = norm(para.textContent);
+            if (pt.length >= 100) { hasLongP = true; break; }
+          }
+          if (hasLongP) break;
+          lastSafeWrapper = pp;
+          cur = pp;
         }
-        if (!cur.parentElement || cur === articleEl) continue;
-        // 檢查此 sub-branch 是否含主文長段落——有即跳過（保護主文）
-        let hasLongParagraph = false;
-        for (const p of cur.querySelectorAll('p')) {
-          const pText = norm(p.textContent);
-          if (pText.length >= 100) { hasLongParagraph = true; break; }
-        }
-        if (hasLongParagraph) continue;
-        target = cur;
+        if (!lastSafeWrapper) continue;
+        target = lastSafeWrapper;
       }
       if (!target) continue;
       if (target === articleEl) continue;
@@ -822,7 +871,7 @@
       // 落都是 CTA）
       const parent = a.parentElement;
       let target = a;
-      if (parent && (parent.tagName === 'P' || parent.tagName === 'DIV')) {
+      if (parent && (parent.tagName === 'P' || parent.tagName === 'DIV' || parent.tagName === 'LI')) {
         if (parent === articleEl) { /* 不升級 */ }
         else if (parent.contains(articleEl)) { /* 不 hide 主文祖先 */ }
         else {
@@ -1755,6 +1804,7 @@
       hideInsideArticleActionRows(articleEl, hidden, containers);
       hideInsideArticleButtonClusters(articleEl, hidden, containers);
       hideInsideArticleHorizontalRules(articleEl, hidden);
+      hideInsideArticleNav(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
