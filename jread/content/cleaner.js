@@ -1618,6 +1618,61 @@
     }
   }
 
+  // ---- 主文內：第三方 iframe（v0.7.32 cnyes 討論區修法）----------------
+  //
+  // cnyes news.cnyes.com 的「討論區」widget（anue 留言系統）整個包在
+  // <iframe> 裡：probe + textContent 全文檔搜都找不到「討論區」字串
+  // （因為 iframe 跨 origin、parent document 看不到內部）、但 screenshot
+  // 看得到 visible widget。Jimmy 連續 4 輪實機回報「討論區還在」、所有
+  // heading-text / keyword 規則都漏網——根因就是 iframe 包裝。
+  //
+  // 通則：reader mode 是純閱讀、articleEl 內的 cross-origin iframe 99%
+  // 都是廣告 / 留言 widget / share button / poll / chatroom 等 chrome、
+  // 不是主文。例外是已知媒體 embed（YouTube / Vimeo / Twitter 引文 /
+  // Spotify / SoundCloud / Bilibili 等）—— 主文常嵌的影片 / 音訊 /
+  // 推文引用屬於正文一部分、保留。
+  //
+  // whitelist 用 src 子字串 match（embed 域名跨多種子網域 / mobile
+  // variant，hostname 嚴格對比會漏）。新增已知媒體 embed 平台時補進此
+  // 清單即可。
+  //
+  // PRESERVE_SEL（figure/figcaption/blockquote/summary）內的 iframe
+  // 由 isInPreserved 保護——主文 figure 內含 iframe（例如 figure 包
+  // 影片 embed）不被誤殺。
+  const KNOWN_MEDIA_IFRAME_SEL = [
+    'iframe[src*="youtube.com"]',
+    'iframe[src*="youtube-nocookie.com"]',
+    'iframe[src*="youtu.be"]',
+    'iframe[src*="vimeo.com"]',
+    'iframe[src*="player.vimeo"]',
+    'iframe[src*="twitter.com"]',
+    'iframe[src*="x.com/embed"]',
+    'iframe[src*="platform.twitter"]',
+    'iframe[src*="instagram.com"]',
+    'iframe[src*="facebook.com/plugins/post"]',  // 嵌入貼文
+    'iframe[src*="facebook.com/plugins/video"]',
+    'iframe[src*="spotify.com"]',
+    'iframe[src*="soundcloud.com"]',
+    'iframe[src*="wistia.com"]',
+    'iframe[src*="vidyard.com"]',
+    'iframe[src*="bilibili.com"]',
+    'iframe[src*="dailymotion.com"]',
+    'iframe[src*="ted.com"]',
+    'iframe[src*="codepen.io"]',
+    'iframe[src*="codesandbox.io"]',
+    'iframe[src*="jsfiddle.net"]',
+    'iframe[src*="github.com"]'
+  ].join(', ');
+
+  function hideInsideArticleThirdPartyIframes(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('iframe')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.matches && el.matches(KNOWN_MEDIA_IFRAME_SEL)) continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：inline 廣告插播文字 heuristic ---------------------------
   // 自由時報 / 聯合 / ETtoday 等台灣新聞站在主文段落中段插播「廣告（請
   // 繼續閱讀本文）」類 placeholder 短文字，無可識別 class、不成 section
@@ -1921,6 +1976,7 @@
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
       hideInsideArticleByKeyword(articleEl, hidden, containers);
       hideInsideArticleByThirdPartyAds(articleEl, hidden);
+      hideInsideArticleThirdPartyIframes(articleEl, hidden);
       hideInsideArticleByHeadingText(articleEl, hidden);
       hideInsideArticleByLinkText(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);

@@ -4,9 +4,9 @@
 
 ---
 
-## Baseline 宣告（v0.7.31 — 2026-04-25 起）
+## Baseline 宣告（v0.7.32 — 2026-04-25 起）
 
-**當前 baseline：v0.7.31**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 cnyes 討論區四處對抗修法（boundary 放寬到 prefix / checkDynamicNoise walk-up + tail-cleanup / MutationObserver removeChild → hide / harness 分頁滾動截圖）為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤。230 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning + paginated screenshots（v0.7.31 新增）守住行為不變式。
+**當前 baseline：v0.7.32**（升級自 v0.6.3）。承接 v0.6.0 styler 瘦身精神 + 累積到 articleEl 內第三方 iframe 預設 hide（cnyes anue 討論區根因）為止的全部 detector / cleaner 能力，toast 縮限到僅顯示主文偵測失敗錯誤。232 jsdom spec + 5 e2e spec + e2e harness 基礎設施 + gap audit warning + paginated screenshots 守住行為不變式。
 
 **baseline 含括的能力**：
 
@@ -37,9 +37,44 @@ v0.5.x 的 styler 堆 ~80 條 !important rule 的做法在 v0.6.0 已被證實�
 - **v0.7.28**（2026-04-25）cnyes 五處聯動修法——hideInsideArticleNav 新規則 + heading-text walk-up fallback 改良 + heading/link/keyword 多項 token 擴增
 - **v0.7.29**（2026-04-25）cnyes 文末「討論區」widget 中文 token 補洞
 - **v0.7.30**（2026-04-25）cnyes「討論區 回應 看更多」h3 boundary 放寬 + 內層 ARTICLE box-shadow 清除
-- **v0.7.31**（2026-04-25）當前 baseline：cnyes 討論區四處對抗修法（Jimmy 提示「截圖只截第一頁不看下面」打臉後改良）
+- **v0.7.31**（2026-04-25）cnyes 討論區四處對抗修法 + harness 分頁截圖
+- **v0.7.32**（2026-04-25）當前 baseline：articleEl 內第三方 iframe 預設 hide 規則——抓出 cnyes anue 討論區「Playwright probe textContent 全找不到、截圖卻看得到」的真根因（widget 整個包在 cross-origin iframe）
 
 以下是版本歷程（倒序）。
+
+---
+
+**v0.7.32**——cnyes anue 討論區 iframe 真根因（Jimmy 2026-04-25 第五輪實機回報「還在」）。
+
+**真根因**（連續 5 輪修法後才意識到）：cnyes 「討論區」widget 整個包在 cross-origin `<iframe>` 裡（anue 是 cnyes 留言系統、用 iframe 嵌入主頁面）。parent document 看不到 iframe 內部 textContent —— 這就是為什麼：
+- v0.7.28-v0.7.31 所有 NOISE_HEADING_TEXT_RE token、walk-up fallback、tail-cleanup 都漏網（規則只能匹配 parent document 可見的 textContent）
+- harness probe + textContent 全文檔搜「討論區」永遠 found=0
+- 但 screenshot 看得到（iframe 內容由 browser 自己 render 出來）
+
+之前所有「文字 token / heading walk-up / tail-cleanup」修法**對 iframe 包裝的 widget 都無效**——必須直接 hide iframe 本身。
+
+**修法**（結構性通則，非站點特判）：
+
+新規則 `hideInsideArticleThirdPartyIframes`（cleaner.js）：掃 articleEl 內所有 `<iframe>`，不在 `KNOWN_MEDIA_IFRAME_SEL` whitelist 的全部 hide。whitelist 含跨站通用的媒體 embed 平台：
+- 影片：YouTube / youtube-nocookie / Vimeo / Dailymotion / Bilibili / Wistia / Vidyard / TED
+- 社群引文：Twitter / X / Facebook（plugins/post + plugins/video） / Instagram
+- 音訊：Spotify / SoundCloud
+- 開發者展示：CodePen / CodeSandbox / JSFiddle / GitHub
+
+**通則依據**：reader mode 是純閱讀、articleEl 內 cross-origin iframe 99% 都是廣告 / 留言 widget / share button / poll / chatroom 等 chrome（無 textContent 可被 jread 規則命中）；例外是已知媒體 embed 平台——影片 / 推文引用 / 程式碼展示等屬正文一部分。`isInPreserved` 保護：figure / figcaption / blockquote / summary 內的 iframe 一律保留（主文 figure 包影片 embed 不被誤殺）。
+
+**新 fixture + spec**：
+- `cnyes-nav-widgets-walkup.html` 加 widget 9（anue iframe，class 用 emotion-hash 不含 noise keyword、src 用 example domain，純靠 iframe rule 命中）+ 對照組 YouTube embed 在 figure 內
+- `cleaner.spec.js` 新增 2 條 assertion：(1) anue iframe 必須 hide；(2) YouTube embed 在 figure 內 + src whitelist 命中時保留
+- **sanity check**：註解 `hideInsideArticleThirdPartyIframes` 呼叫 → anue spec fail；還原 → pass
+
+**驗收**：
+- `npm test` → 232 passing（原 230 + 新 2 條 iframe）
+- 實機驗證須 Jimmy reload 到 v0.7.32 確認
+
+**未動**：detector / styler / popup / service-worker / options / 任何既有 fixture / spec 全部零變化；修法只動 cleaner 一處——新規則 + clean() 流程加一行呼叫。
+
+**驗收教訓**：`probe textContent 找不到` ≠ `widget 不存在`——可能在 cross-origin iframe 裡。下次截圖看得到但 textContent 找不到 → 立即假設 iframe 包裝、不要繼續往「文字 token / heading rule」修法上鑽。
 
 ---
 

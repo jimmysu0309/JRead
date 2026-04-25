@@ -2532,6 +2532,28 @@ describe('cleaner — cnyes-nav-widgets-walkup（社交 nav + 末段 widget 通�
       '應為 none、不是原 rgba(0, 65, 143, 0.1) 0px 0px 6px 0px');
   });
 
+  it('anue 討論區 iframe 被 hideInsideArticleThirdPartyIframes 清（v0.7.32 forcing）', () => {
+    const ifr = document.querySelector('iframe.i9zk2x4');
+    assert.ok(ifr);
+    assert.strictEqual(ifr.dataset.jreadHidden, '1',
+      'anue 討論區 iframe 不在 KNOWN_MEDIA_IFRAME_SEL whitelist、應被 hide；' +
+      'forcing：拿掉 hideInsideArticleThirdPartyIframes 呼叫 → fail');
+  });
+
+  it('主文 YouTube embed iframe（在 figure 內 + src 含 youtube-nocookie）保留', () => {
+    const yt = document.querySelector('iframe.yt-embed');
+    assert.ok(yt);
+    let cur = yt, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden,
+      'YouTube embed 在 figure 內（PRESERVE_SEL 保護）+ src 含 youtube-nocookie ' +
+      '（KNOWN_MEDIA_IFRAME_SEL whitelist）應保留；forcing：(a) src whitelist 漏 ' +
+      'youtube-nocookie / (b) iframe 規則沒檢 isInPreserved → fail');
+  });
+
   it('「點我下載APP」a 被 link-text 命中清（規則 4 forcing）', () => {
     const a = document.querySelector('a');
     // 確認某個 a 的 text 是「點我下載APP」、且自己被 hide
