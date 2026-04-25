@@ -182,6 +182,34 @@
     return false;
   }
 
+  // heading walk-up fallback：從 heading 往 articleEl 方向爬，停在「含主文長段
+  // 落 / 累計主文 textLen / 含主文標題 anchor」之前一層，回傳停下時的最深安全
+  // wrapper（找不到回 null）。兩處呼叫端共用：
+  //   - hideInsideArticleByHeadingText 的 closest 失敗 fallback（v0.7.28 cnyes / v0.7.34 newtalk / v0.7.36 cna）
+  //   - checkDynamicNoise 對 dynamic 注入的 heading 同樣處理
+  // 三道保護：>= 100 chars 主文 long p / 累計 textLen >= 300（中文短段）/ title-anchor wrapper
+  function findSafeWrapperForHeading(h, articleEl) {
+    let cur = h;
+    let lastSafeWrapper = null;
+    while (cur.parentElement && cur.parentElement !== articleEl &&
+           articleEl.contains(cur.parentElement)) {
+      const pp = cur.parentElement;
+      let hasLongP = false;
+      let totalPText = 0;
+      for (const para of pp.querySelectorAll('p')) {
+        const pt = norm(para.textContent);
+        if (pt.length >= 100) { hasLongP = true; break; }
+        totalPText += pt.length;
+      }
+      if (hasLongP) break;
+      if (totalPText >= 300) break;
+      if (hasArticleTitleAnchor(pp, h)) break;
+      lastSafeWrapper = pp;
+      cur = pp;
+    }
+    return lastSafeWrapper;
+  }
+
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
   }
@@ -564,10 +592,7 @@
       const text = (el.textContent || '').trim();
       if (text.length > ACTION_TEXT_MAX) continue;
 
-      const iconCount =
-        el.querySelectorAll('button').length +
-        el.querySelectorAll('[role="button"]').length +
-        el.querySelectorAll('svg').length;
+      const iconCount = el.querySelectorAll('button, [role="button"], svg').length;
       if (iconCount < ACTION_MIN_ICONS) continue;
 
       hide(el, hidden);
@@ -876,34 +901,9 @@
       // 含主文 p（>= 100）或到 articleEl 邊界。這樣 cnyes 的 H3「延伸閱讀」
       // 會 walk 到 `DIV.c1ciwb2s`（不含主文）後 break、target 設為它。
       if (!target || target === articleEl || target.contains(articleEl)) {
-        let cur = h;
-        let lastSafeWrapper = null;
-        while (cur.parentElement && cur.parentElement !== articleEl &&
-               articleEl.contains(cur.parentElement)) {
-          const pp = cur.parentElement;
-          let hasLongP = false;
-          let totalPText = 0;
-          for (const para of pp.querySelectorAll('p')) {
-            const pt = norm(para.textContent);
-            if (pt.length >= 100) { hasLongP = true; break; }
-            totalPText += pt.length;
-          }
-          if (hasLongP) break;
-          // v0.7.36 cna 修法：累計 p textLen >= 300 也視為主文容器、保護。
-          // 場景：中央社新聞每段 60-90 字普遍 < 100 chars 不滿足 hasLongP；
-          // 「延伸閱讀」div walk-up 升到外層 DIV.paragraph（包整篇主文 p），
-          // hasLongP 不觸發 → 整塊 hide → 內文消失。改用累計 textLen 通則：
-          // 主文容器特徵是「累計多 p、總文量大」，跨中文短段 / 西文長段都通用。
-          if (totalPText >= 300) break;
-          // v0.7.34 newtalk 修法：含主文標題級 anchor 的 wrapper 也保護。
-          // 場景：news_info 內含 `<div class="title"><p class="name">標題</p></div>`，
-          // 標題 27 chars 不滿足「>= 100 chars long p」protection；末段分享列
-          // `<button><span>留言</span></button>` 命中 `^留言$` 觸發 walk-up，
-          // 一路升到 news_info 把整個含標題 wrapper hide 掉。
-          if (hasArticleTitleAnchor(pp, h)) break;
-          lastSafeWrapper = pp;
-          cur = pp;
-        }
+        // walk-up fallback 共用 helper（findSafeWrapperForHeading 含三道保護：
+        // >= 100 chars long p / 累計 textLen >= 300 中文短段 / title-anchor wrapper）
+        const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
         if (!lastSafeWrapper) {
           // tail-cleanup fallback（v0.7.31 cnyes 末段討論區修法）：heading
           // 直接是 articleEl 的 child（無 wrapper）、walk-up 第一層即 articleEl
@@ -1862,25 +1862,7 @@
       if (isInPreserved(h)) continue;
       let target = h.closest('section, aside');
       if (!target || target === articleEl || target.contains(articleEl)) {
-        // walk-up：找「不含主文長段落」的最深 wrapper、停在含主文 p 祖先前一層
-        let cur = h;
-        let lastSafeWrapper = null;
-        while (cur.parentElement && cur.parentElement !== articleEl &&
-               articleEl.contains(cur.parentElement)) {
-          const pp = cur.parentElement;
-          let hasLongP = false;
-          let totalPText = 0;
-          for (const para of pp.querySelectorAll('p')) {
-            const pt = norm(para.textContent);
-            if (pt.length >= 100) { hasLongP = true; break; }
-            totalPText += pt.length;
-          }
-          if (hasLongP) break;
-          if (totalPText >= 300) break;  // v0.7.36 cna 中文短段累計保護
-          if (hasArticleTitleAnchor(pp, h)) break;
-          lastSafeWrapper = pp;
-          cur = pp;
-        }
+        const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
         if (!lastSafeWrapper) continue;
         target = lastSafeWrapper;
       }
