@@ -451,12 +451,45 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // 用 document.body.style.zoom 保留清晰度（不是縮 DPR），只壓縮 layout。
   await page.evaluate(() => { document.body.style.zoom = '0.5'; });
   await sleep(300); // 等 reflow
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await sleep(300);
   await page.screenshot({ path: SCREENSHOT_OUT });
   console.log('saved viewport (zoom 0.5):', SCREENSHOT_OUT);
-  // Full-page 截圖：拍完整 reader card（含 scroll 下方殘留）。視窗截圖漏掉
-  // 文末雜訊的情況（之前一直踩這個坑）靠這張不再發生。
+  // Full-page 截圖：拍完整 reader card（含 scroll 下方殘留）
   await page.screenshot({ path: FULLPAGE_OUT, fullPage: true });
   console.log('saved fullpage (zoom 0.5):', FULLPAGE_OUT);
+
+  // ---- 分頁滾動截圖（v0.7.31 Jimmy 硬規則）-----------------------------
+  // Playwright `fullPage: true` 對某些 SPA 站（cnyes 實測：Next.js
+  // reconciliation 在 reader mode 下噴 NotFoundError、layout 整片變空白）
+  // 拍出整張白圖；fullpage 截圖**不可靠**作為唯一視覺驗證。
+  //
+  // 改採分頁滾動：每次滑 viewport 高 × 0.9（留 10% 重疊），截一張，編號
+  // jread-page-1.png / jread-page-2.png ...，直到 scroll 到底。
+  // Claude Read 每張依序看，覆蓋整篇 reader card 不會漏網。
+  // 同時 zoom 0.5 的縮放仍生效——每張一次吃 1.8 個 viewport 的內容。
+  const PAGE_SCREENSHOT_PREFIX = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-page-');
+  // 清掉舊 page 截圖避免混淆
+  for (const f of fs.readdirSync(path.dirname(PAGE_SCREENSHOT_PREFIX))) {
+    if (f.startsWith('jread-page-') && f.endsWith('.png')) {
+      try { fs.unlinkSync(path.join(path.dirname(PAGE_SCREENSHOT_PREFIX), f)); } catch {}
+    }
+  }
+  const docInfo = await page.evaluate(() => ({
+    docHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight
+  }));
+  const stepHeight = Math.floor(docInfo.viewportHeight * 0.9);
+  const pageCount = Math.max(1, Math.ceil(docInfo.docHeight / stepHeight));
+  console.log(`分頁滾動截圖：docHeight=${docInfo.docHeight} viewport=${docInfo.viewportHeight} step=${stepHeight} pages=${pageCount}`);
+  for (let i = 0; i < pageCount; i++) {
+    const y = i * stepHeight;
+    await page.evaluate((sy) => window.scrollTo(0, sy), y);
+    await sleep(400);
+    const out = `${PAGE_SCREENSHOT_PREFIX}${String(i + 1).padStart(2, '0')}.png`;
+    await page.screenshot({ path: out });
+    console.log(`saved page ${i + 1}/${pageCount} (y=${y}): ${out}`);
+  }
 
   if (!KEEP) await ctx.close();
   else console.log('--keep, leaving open');

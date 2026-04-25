@@ -57,7 +57,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|.{2,4}號貼文|^討論區(\s|$)|^(回應|回覆|留言)(\s*\(\d+\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|.{2,4}號貼文|^討論區|^(回應|回覆|留言)(\s*\(\d+\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -841,7 +841,42 @@
           lastSafeWrapper = pp;
           cur = pp;
         }
-        if (!lastSafeWrapper) continue;
+        if (!lastSafeWrapper) {
+          // tail-cleanup fallback（v0.7.31 cnyes 末段討論區修法）：heading
+          // 直接是 articleEl 的 child（無 wrapper）、walk-up 第一層即 articleEl
+          // 就 break 失敗的情境。檢查 heading 之後的 sibling 是否全為 widget
+          // （無主文長 p、textLen >= 100）—— 是的話 hide heading 自己 + 所有
+          // 後續 sibling 直到 articleEl 結尾（文末雜訊統一清）。
+          //
+          // 安全 guard：heading 之前的 sibling 不動（保留主文段落）；只清
+          // heading 自己 + 之後。若任一 next sibling 含主文長 p，立即 abort
+          // 不清（避免誤殺主文）。
+          if (h.parentElement === articleEl) {
+            let allWidgetsAfter = true;
+            let next = h.nextElementSibling;
+            while (next) {
+              let hasLongP2 = false;
+              for (const para of next.querySelectorAll('p')) {
+                if (norm(para.textContent).length >= 100) { hasLongP2 = true; break; }
+              }
+              if (hasLongP2) { allWidgetsAfter = false; break; }
+              next = next.nextElementSibling;
+            }
+            if (allWidgetsAfter) {
+              hide(h, hidden);
+              let s = h.nextElementSibling;
+              while (s) {
+                const nx = s.nextElementSibling;
+                if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
+                  hide(s, hidden);
+                }
+                s = nx;
+              }
+              continue;
+            }
+          }
+          continue;
+        }
         target = lastSafeWrapper;
       }
       if (!target) continue;
@@ -1668,22 +1703,50 @@
         hide(a, hiddenList);
       }
     }
-    // heading text 命中：hide closest section/aside
-    const headings = node.matches && node.matches('h2, h3, h4')
-      ? [node]
-      : (node.querySelectorAll ? Array.from(node.querySelectorAll('h2, h3, h4')) : []);
-    for (const h of headings) {
-      const text = norm(h.textContent);
+    // heading text 命中：跟 hideInsideArticleByHeadingText 同邏輯
+    // （v0.7.31 cnyes lazy-inject 修法）：原本只掃 h2-h4 + closest section/
+    // aside、沒同步 v0.7.28 的 p/div/span 擴展 + walk-up fallback——對 cnyes
+    // 這種 reader mode toggle 後 lazy-inject「討論區」widget（h3 結構、無
+    // section 祖先、整篇主文+widget 同一 ARTICLE wrapper）漏網。
+    const DYN_TITLE_TAG_SEL = 'h2, h3, h4, p, div, span';
+    const candidates = [];
+    if (node.matches && node.matches(DYN_TITLE_TAG_SEL)) candidates.push(node);
+    if (node.querySelectorAll) {
+      candidates.push(...node.querySelectorAll(DYN_TITLE_TAG_SEL));
+    }
+    for (const h of candidates) {
+      const isHeading = /^H[234]$/.test(h.tagName);
+      const text = isHeading
+        ? norm(h.textContent)
+        : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
       if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
       if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
       if (isInPreserved(h)) continue;
-      const section = h.closest('section, aside');
-      if (!section) continue;
-      if (section === articleEl) continue;
-      if (!articleEl.contains(section)) continue;
-      if (section.contains(articleEl)) continue;
-      if (section.dataset && section.dataset.jreadHidden === '1') continue;
-      hide(section, hiddenList);
+      let target = h.closest('section, aside');
+      if (!target || target === articleEl || target.contains(articleEl)) {
+        // walk-up：找「不含主文長段落」的最深 wrapper、停在含主文 p 祖先前一層
+        let cur = h;
+        let lastSafeWrapper = null;
+        while (cur.parentElement && cur.parentElement !== articleEl &&
+               articleEl.contains(cur.parentElement)) {
+          const pp = cur.parentElement;
+          let hasLongP = false;
+          for (const para of pp.querySelectorAll('p')) {
+            if (norm(para.textContent).length >= 100) { hasLongP = true; break; }
+          }
+          if (hasLongP) break;
+          lastSafeWrapper = pp;
+          cur = pp;
+        }
+        if (!lastSafeWrapper) continue;
+        target = lastSafeWrapper;
+      }
+      if (!target) continue;
+      if (target === articleEl) continue;
+      if (!articleEl.contains(target)) continue;
+      if (target.contains(articleEl)) continue;
+      if (target.dataset && target.dataset.jreadHidden === '1') continue;
+      hide(target, hiddenList);
       return;
     }
   }
@@ -1699,13 +1762,33 @@
           if (STRUCTURAL_TAGS.has(node.tagName.toLowerCase())) continue;
           if (isInPreserved(node)) continue;
 
-          // 祖先鏈上 append 的 node（articleEl scope 外）：直接 remove 整塊
-          // ——那裡不該有任何新內容，全是雜訊（popIn 相似文章 / lazy header
-          // / cookie banner 等）。
+          // 祖先鏈上 append 的 node（articleEl scope 外）：hide 整塊（v0.7.31
+          // cnyes 修法）。
+          //
+          // 改 hide 不 removeChild 的原因：cnyes（Next.js）/ React 類 SPA
+          // 站持續做 client-side reconciliation，jread 主動 removeChild 的
+          // node 在 React vdom 裡仍存在、下次 reconcile 找不到 DOM child
+          // 觸發 `Failed to execute 'removeChild' on 'Node': The node to be
+          // removed is not a child of this node.`、整個 React tree 崩潰、
+          // 頁面 layout 變空白。改成 hide() 用 inline `display: none
+          // !important`、保留 DOM node、不打斷 React reconciliation——SPA
+          // 站照樣可繼續更新；watchHiddenInlineRestyle observer 會把後續
+          // !important priority 被清的情況補回來。
+          //
+          // popIn 相似文章 / lazy header / cookie banner 等視覺結果同等
+          // （都是 display:none）、但不再砍 DOM 結構就不打架。
           if (!articleEl.contains(node)) {
             if (node === articleEl) continue;
             if (node.contains && node.contains(articleEl)) continue;
-            if (node.parentNode) node.parentNode.removeChild(node);
+            if (!node.dataset || node.dataset.jreadHidden !== '1') {
+              hide(node, hiddenList);
+            } else {
+              // popIn template clone 類：dataset.jreadHidden 從 source
+              // 帶過來但 inline display 被 popIn 主動設成 block。直接
+              // 補 inline `display: none !important`（hide() 對已標 jreadHidden
+              // 的 node 會 early return、不覆寫 inline display）
+              node.style.setProperty('display', 'none', 'important');
+            }
             continue;
           }
 
