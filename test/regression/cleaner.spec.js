@@ -2416,6 +2416,124 @@ describe('cleaner — ttv-flex-layout-hero-figure（三處聯動修法）', () =
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.28 cnyes.com 多項末段 widget + 左側社交 nav rail 漏清
+// 五處修法（全部結構性通則、非站點特判）：
+//   1. 新規則 hideInsideArticleNav：articleEl 內 <nav> 不含主文長段落 → hide
+//   2. heading-text rule fallback 改良：從 heading 往上 walk「不含主文長段落」
+//      的最深 wrapper 當 target（解決 cnyes 把整片末段 widget 跟主文塞同個
+//      ARTICLE 的結構）
+//   3. NOISE_HEADING_TEXT_RE 加：文章標籤 / 相關行情 / 想知道更多 / AI來回答 /
+//      上一篇 / 下一篇 / .{2,4}號貼文 / prev/next article
+//   4. NOISE_LINK_TEXT_RE 加：點我.{0,8}(下載|訂閱...) / 下載APP / 看更多
+//   5. NOISE_KEYWORD_RE 加：powered[-_]?by
+//   6. heading-text rule 候選擴含 p（short direct text）
+//   7. NOISE_LINK_TEXT_RE walk-up parent 加 LI
+// -----------------------------------------------------------------------------
+describe('cleaner — cnyes-nav-widgets-walkup（社交 nav + 末段 widget 通則修法）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'cnyes-nav-widgets-walkup.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 <article>');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('左側社交 <nav> rail 被 hideInsideArticleNav 清（規則 1 forcing）', () => {
+    const nav = document.querySelector('nav.social-rail');
+    assert.ok(nav);
+    assert.strictEqual(nav.dataset.jreadHidden, '1',
+      'articleEl 內 <nav> 不含主文 p 應被 hide；forcing：拿掉 hideInsideArticleNav 呼叫 → fail');
+  });
+
+  it('「延伸閱讀」widget wrapper 被 walk-up fallback 命中清掉（規則 2 + 結構 h3>div 文字 forcing）', () => {
+    const widget = document.querySelector('.widget-wrapper');
+    assert.ok(widget);
+    assert.strictEqual(widget.dataset.jreadHidden, '1',
+      'widget-wrapper 包「延伸閱讀」h3>div 結構：h3.textContent 命中 NOISE_HEADING_TEXT_RE「延伸閱讀」' +
+      '→ walk-up 從 h3 往上 → div.card 不含主文 p → div.widget-wrapper 不含主文 p → ' +
+      'parent ARTICLE 含主文 break → target=widget-wrapper hide。' +
+      'forcing：回退 fallback 到 articleEl direct child only 邏輯 → fail');
+  });
+
+  it('「想知道更多? AI來回答」H2 widget 被 hide（規則 3 NOISE_HEADING_TEXT_RE forcing）', () => {
+    const wrapper = document.querySelector('.ai-question-wrapper');
+    assert.ok(wrapper);
+    assert.strictEqual(wrapper.dataset.jreadHidden, '1',
+      'h2「想知道更多? AI來回答」應命中新加的 NOISE_HEADING_TEXT_RE 詞、walk-up 到 wrapper hide；' +
+      'forcing：拿掉 `想知道更多` / `AI.{0,4}來回答` token → fail');
+  });
+
+  it('「鉅亨號貼文」widget 被 hide（.{2,4}號貼文 forcing）', () => {
+    const wrapper = document.querySelector('.hao-posts-wrapper');
+    assert.ok(wrapper);
+    assert.strictEqual(wrapper.dataset.jreadHidden, '1',
+      'h3「鉅亨號貼文」(.{2,4}號貼文 命中) → walk-up wrapper hide；' +
+      'forcing：拿掉 `.{2,4}號貼文` token → fail');
+  });
+
+  it('powered_by widget 被 NOISE_KEYWORD_RE 命中清（規則 5 forcing）', () => {
+    const el = document.querySelector('.powered_by');
+    assert.ok(el);
+    let cur = el, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      '`<div class="powered_by">` class `powered_by` 應命中 NOISE_KEYWORD_RE 新加 token；' +
+      'forcing：拿掉 `powered[-_]?by` → fail');
+  });
+
+  it('「下一篇」P 當 heading 候選 + walk-up（規則 3 + 6 forcing）', () => {
+    const ul = document.querySelector('ul.next-prev');
+    assert.ok(ul);
+    assert.strictEqual(ul.dataset.jreadHidden, '1',
+      '<p>下一篇</p> direct text 命中 NOISE_HEADING_TEXT_RE `^(下一篇|上一篇)$`、' +
+      'walk-up 到 ul.next-prev hide；forcing：(a) 候選只掃 div/span 不掃 p → 不命中、' +
+      '(b) 拿掉 `下一篇` token → 不命中');
+  });
+
+  it('「點我下載APP」a 被 link-text 命中清（規則 4 forcing）', () => {
+    const a = document.querySelector('a');
+    // 確認某個 a 的 text 是「點我下載APP」、且自己被 hide
+    const target = Array.from(document.querySelectorAll('a')).find(el => el.textContent.includes('點我下載APP'));
+    assert.ok(target);
+    assert.strictEqual(target.dataset.jreadHidden, '1',
+      'a 文字「點我下載APP」應命中 NOISE_LINK_TEXT_RE 新 token；forcing：拿掉 `點我.{0,8}` 或 `下載\\s*APP` → fail');
+  });
+
+  it('主文 CNYES_MAIN_MARK 段落保留（不被誤殺）', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('CNYES_MAIN_MARK'));
+    assert.ok(marks.length >= 3, `fixture 應含 3+ 主文段落；實際 ${marks.length}`);
+    for (const p of marks) {
+      let cur = p, inH = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inH = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inH, `主文段落不得被 hide：${p.textContent.slice(0, 30)}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.26 techbang.com byline 下方 `<div class="content-top">` 空 wrapper 115px
 // 殘留空白修法。spacer rule 的 blocker check 不考慮 hidden 狀態——wrapper 內
 // DFP 廣告 iframe 雖已被 hideInsideArticleByThirdPartyAds 清掉、仍 match

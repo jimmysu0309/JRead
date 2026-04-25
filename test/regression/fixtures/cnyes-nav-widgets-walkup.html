@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!--
+  Fixture：cnyes news.cnyes.com 多項末段 widget 漏清 + 左側社交 nav rail。
+  Jimmy 2026-04-25 回報：左側社交 sidebar + 文末「文章標籤 / 相關行情 /
+  想知道更多? AI來回答 / 延伸閱讀 / 鉅亨號貼文 / 下一篇 / 主動選股廣告」全部漏網。
+
+  五處修法（v0.7.28，全部結構性通則）：
+  1. 新規則 hideInsideArticleNav：articleEl 內 `<nav>` 不含主文長段落 → hide
+     （cnyes 用 `<nav>` 包左側社交 rail，position: absolute 不命中 fixed 規則、
+     hideOutsideArticleSemantic 對 articleEl 內部不處理；nav 在 reader mode 下
+     一律是 chrome）
+  2. heading-text rule fallback 改良：原 fallback 只試 articleEl 的 direct child、
+     若整篇主文 + widget 都包進同一個 wrapper（cnyes 結構）會 skip。改成從 heading
+     往上 walk「不含主文長段落」的最深 wrapper、停在含主文 p 的祖先前一層當 target
+  3. NOISE_HEADING_TEXT_RE 加：文章標籤 / 相關行情 / 想知道更多 / AI來回答 /
+     上一篇 / 下一篇 / .{2,4}號貼文 / prev/next article
+  4. NOISE_LINK_TEXT_RE 加：點我.{0,8}(下載|訂閱|加入...) / 下載APP / 看更多
+  5. NOISE_KEYWORD_RE 加：powered[-_]?by
+  6. heading-text rule 候選擴含 p（短 direct text）
+  7. NOISE_LINK_TEXT_RE walk-up parent 加 LI
+-->
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>cnyes 末段 widget 清除 forcing</title>
+</head>
+<body>
+<article>
+  <h1>中東局勢的外溢效應正迅速衝擊全球航空業</h1>
+
+  <!-- 左側社交 rail nav：v0.7.28 新規則 hideInsideArticleNav 命中 -->
+  <nav class="social-rail">
+    <a>Facebook</a>
+    <a>LINE</a>
+    <a>連結</a>
+    <button>其他</button>
+    <button>字級</button>
+    <button>列印</button>
+    <button>收藏</button>
+    <a>留言 0</a>
+  </nav>
+
+  <p>CNYES_MAIN_MARK 中東局勢的外溢效應正迅速衝擊全球航空業，因荷姆茲海峽受阻導致航空燃油價格飆升與供應緊張，全球多家航空公司紛紛削減航班運力，進入「自我保護」模式。國際能源署 (IEA) 警告，若衝突持續，全球航空燃油供應緊張將進一步惡化。</p>
+  <p>CNYES_MAIN_MARK 主文第二段，文字長度足夠超過 100 字觸發 walk-up 保護。專家普遍認為這些措施僅是「杯水車薪」。協調燃油進口雖能緩解危機但無法根本解決問題；即便透過多元渠道也難以彌補產量缺口。這場航空燃油危機的核心癥結仍在戰爭本身。</p>
+  <p>CNYES_MAIN_MARK 主文第三段，再加一些長文字以確保 walk-up fallback 在含 p 的祖先處 break、留下乾淨的 widget wrapper 當 target。</p>
+
+  <!-- widget 1：延伸閱讀（heading 結構是 h3 包 div、實際標題在 div 裡）—
+       v0.7.28 walk-up fallback 命中：h3 → div.card → div.widget-wrapper → break -->
+  <div class="widget-wrapper">
+    <div class="card">
+      <h3><div class="t1thwy6j">延伸閱讀</div></h3>
+      <ul>
+        <li><a>WIDGET_LINK 相關文章 1</a></li>
+        <li><a>WIDGET_LINK 相關文章 2</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- widget 2：想知道更多? AI 來回答 -->
+  <div class="ai-question-wrapper">
+    <h2 class="q-title">想知道更多? AI來回答</h2>
+    <ul>
+      <li><a><span>QA_MARK 荷姆茲海峽受阻為何引發全球航空燃油危機？</span></a></li>
+      <li><a><span>QA_MARK 全球航空燃油價格飆升對航空公司營運成本影響為何？</span></a></li>
+    </ul>
+  </div>
+
+  <!-- widget 3：鉅亨號貼文（.{2,4}號貼文 命中） -->
+  <div class="hao-posts-wrapper">
+    <h3><div class="t1thwy6j">鉅亨號貼文</div></h3>
+    <a>HAO_LINK 看更多</a>
+    <ul>
+      <li><a>HAO_LINK 美股艾大叔</a></li>
+    </ul>
+  </div>
+
+  <!-- widget 4：powered_by widget（NOISE_KEYWORD_RE 命中） -->
+  <div class="powered_by">
+    Powered by Mlytics AI
+  </div>
+
+  <!-- widget 5：下一篇/上一篇 navigation -->
+  <ul class="next-prev">
+    <li class="next">
+      <p>下一篇</p>
+      <a>NEXT_ARTICLE_LINK 川普：伊朗將提出符合美方要求的方案</a>
+    </li>
+  </ul>
+
+  <!-- widget 6：點我下載 APP（link-text 命中、walk-up LI） -->
+  <ul class="ad-list">
+    <li class="ad-item">
+      掌握全球財經資訊
+      <a>AD_LINK 點我下載APP</a>
+    </li>
+  </ul>
+</article>
+</body>
+</html>
