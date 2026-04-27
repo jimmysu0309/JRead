@@ -1686,17 +1686,20 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       const text = (el.textContent || '').replace(/\s+/g, '').trim();
-      // textContent 上限放寬到 1000——v0.7.78 instrument 揭穿 theverge
-      // _3zbl0r4 fullText 約 300+ chars（含「ReportClose...FollowFollowSee
-      // All ReportTechClose...」雙 widget 文字串接），舊 200 上限漏命中。
-      // widget 最多含 button label + dropdown 提示文字幾段，不會到 1000；
-      // 主文段落從 detector 角度看也至少 1000+ chars/element 才會被 article
-      // candidate 命中，1000 上限避免誤殺主文。
+      // textContent 上限 1000：widget 最多 button label + dropdown 提示幾段
+      // 不會到 1000；主文段落從 detector 角度至少 1000+ chars 才會被 article
+      // candidate 命中、1000 上限避免誤殺主文。
       if (text.length < 5 || text.length > 1000) continue;
       // textContent 開頭是 "ReportClose" 或 "CloseReport"（兩按鈕並排無空白）
       if (!/^(Report\s*Close|Close\s*Report)/i.test(text)) continue;
       // 必須有 button 或 role=button（widget 結構特徵）
       if (!el.querySelector('button, [role="button"]')) continue;
+      // 主文 anchor 保護：element 含 <h1> / <figure> / <img> = 是主文 lede
+      // 區包覆 widget（theverge.com `<div class="duet--article--lede">` 內含
+      // 主圖 figure + h1 + byline + ReportClose widget 全部混在一起，
+      // textContent 開頭是 widget 文字 ReportClose）。整塊 hide 會誤殺主圖
+      // /標題/作者。widget 自身不會含 h1 / figure / img，這條 guard 安全。
+      if (el.querySelector('h1, figure, img')) continue;
       hide(el, hidden);
     }
   }

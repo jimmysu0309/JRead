@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.80**——v0.7.79 把 ReportClose rule 上限放寬到 1000 後實機**過砍主圖 + H1 + byline**（Jimmy 截圖回報）。**根因**：v0.7.73 instrument 早就顯示 articleEl direct child 0 是 `duet--article--lede` div h=1165 textContent 開頭也是「ReportCloseReportPosts...」——**整個 lede 區（含主圖 figure + H1 + byline + ReportClose widget）的 textContent 開頭都是 widget 文字**，rule selector `div, section` 命中後整塊 lede 被 hide。修法（補主文 anchor 保護 guard）：rule 加 `if (el.querySelector('h1, figure, img')) continue`——widget 自身不會含主文 anchor（h1/figure/img），這條 guard 防止誤殺含主文 anchor 的 lede 包覆 wrapper。**保留所有 instrument log 待 Jimmy 驗證**。289 jsdom spec 全過。
+
+附帶教訓：放寬 rule 上限 / 縮小 guard 時，必須**逐條驗 articleEl 內所有可能命中的 wrapper**——不只 `_3zbl0r4`，連 lede 整塊外層 div 也命中（textContent 開頭是 widget 文字、textLen 介於門檻內），漏 guard 即誤殺。
+
+---
+
 **v0.7.79**——theverge ReportClose widget rule textLen 上限放寬（v0.7.78 instrument 揭穿 v0.7.77 沒命中真因）。**事實**：v0.7.78 instrument 顯示 _3zbl0r4 ownHidden=false hiddenAncestor=null，**沒被任何 rule hide**。fullText 開頭確實是 `ReportClose` 命中 v0.7.77 regex，但 fullText 長度約 300+ chars（雙 widget 文字串接「ReportClose...FollowFollowSee All ReportTechClose...」），超過 v0.7.77 寫的 `text.length > 200` 上限被跳過。修法：textContent 上限從 200 → 1000。理由：widget 最多 button label + dropdown 提示文字幾段不會到 1000；主文段落從 detector 角度至少 1000+ chars 才會被 article candidate 命中、1000 上限避免誤殺主文。**保留所有 instrument log 待 Jimmy 驗證真實機器修法生效再清**。289 jsdom spec 全過。
 
 ---
