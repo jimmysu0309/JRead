@@ -406,6 +406,31 @@ describe('styler — 骨架與可逆性', () => {
       'rule body 必須含 bottom: auto !important');
   });
 
+  // v0.7.53 修法：v0.7.52 把 img 強制 position:static 拉回 normal flow 後，
+  // picture 容器若用 aspect-ratio 撐高度（cna 主圖 picture 套 aspect-ratio
+  // 從 --aspect-ratio CSS variable 算出 4:3）會殘留為「空 box 撐 75% padding」
+  // → 標題下方一大塊空白。picture 強制 aspect-ratio: auto + padding-bottom: 0
+  // 讓高度由 img static 內容自然撐起。
+  it('CSS 含 picture aspect-ratio: auto + padding-bottom: 0 rule（v0.7.53 cna 主圖空白修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找 [data-jread-active="1"] picture 獨立 rule（不含其他 selector，避免抓到
+    // figure/picture 共用 rule）
+    const matches = [...css.matchAll(/\[data-jread-active="1"\]\s+picture\s*\{([^\}]*)\}/g)];
+    let hasReset = false;
+    for (const m of matches) {
+      const body = m[1];
+      if (/aspect-ratio\s*:\s*auto\s*!important/.test(body) &&
+          /padding-bottom\s*:\s*0\s*!important/.test(body)) {
+        hasReset = true; break;
+      }
+    }
+    assert.ok(hasReset,
+      '必須有一條 picture rule 同時含 aspect-ratio: auto + padding-bottom: 0（清 cna 類 aspect-ratio 撐高 hack）');
+  });
+
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
