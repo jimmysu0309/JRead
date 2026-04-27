@@ -173,24 +173,24 @@ html.${HTML_CLASS} body {
   height: auto !important;
   min-height: 0 !important;
 }
-/* <source> 強制不渲染——HTML spec 規定 source 是 picture 的 art-direction
-   metadata、預設 display:none。但 cna.com.tw 在 source 上掛 ::before pseudo-
-   element 配 content: url(...) 把 source 變 visible 撐圖片高度（v0.7.59
-   instrument round 4 揭穿：source > ::before 是真兇，picture 高度 1160 來
-   自此 pseudo-element）。修法：source + source::before + source::after 全部
-   強制 display:none + content:none，禁止任何方式渲染。
-   通則安全：source 從來不該 visible（HTML spec 立場），任何站把它變 visible
-   都是 stylesheet 副作用、不是 reader 該保留視覺。 */
-[${ARTICLE_ATTR}="1"] source,
-[${ARTICLE_ATTR}="1"] picture > source {
-  display: none !important;
-}
-[${ARTICLE_ATTR}="1"] source::before,
-[${ARTICLE_ATTR}="1"] source::after,
-[${ARTICLE_ATTR}="1"] picture > source::before,
-[${ARTICLE_ATTR}="1"] picture > source::after {
+/* picture::before / picture::after 強制不渲染——cna.com.tw 在
+   <picture style="--aspect-ratio:2000/1500;"> 上掛 picture::before
+   配 content: '' + display: block + padding-bottom: 75%（從 CSS variable
+   --aspect-ratio 算出 4:3 比例）撐 picture 高度做 lazy-load placeholder。
+   v0.7.55 picture 自身 aspect-ratio:auto + padding-bottom:0 沒清掉 ::before，
+   ::before 仍在撐高度（Jimmy v0.7.60 截圖揭穿 picture > ::before 才是真兇，
+   不是 source）。修法：reader card 內 picture::before / picture::after 強制
+   content: none + display: none + padding-bottom: 0，禁止 pseudo-element
+   撐空間。同時對 figure 與保險清單同樣處理。
+   通則安全：picture 合法用法不需要 ::before pseudo-element 撐空間（圖片本身
+   有 intrinsic 尺寸），::before 是 placeholder hack 的現代寫法。 */
+[${ARTICLE_ATTR}="1"] picture::before,
+[${ARTICLE_ATTR}="1"] picture::after,
+[${ARTICLE_ATTR}="1"] figure::before,
+[${ARTICLE_ATTR}="1"] figure::after {
   content: none !important;
   display: none !important;
+  padding-bottom: 0 !important;
 }
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
