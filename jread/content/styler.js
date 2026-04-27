@@ -243,7 +243,18 @@ html.${HTML_CLASS} body {
    設計也容易 debug。 */
 [${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr) {
   border-width: 0 !important;
+  left: auto !important;
+  right: auto !important;
 }
+/* left/right: auto 解釋：原站常用 position: relative + left/right 偏移做
+   「圖片向左/右溢出版心做視覺擴張」hack（businessweekly.com.tw .Single-image
+   套 position:relative; left: -90px; right: 90px——讓主圖在二欄 layout 中向
+   左溢出 col-md-7 邊界視覺撐大）。reader mode 下單欄 card layout 沒這需求、
+   offset 反而把圖推出 card padding 範圍變成「圖片偏左 + 右側溢出」破版。
+   清 inset 後 element 回到正常 layout 位置（position:relative 保留、無
+   offset 時等於 static 視覺）。preserve 清單跟 border 一致。
+   top/bottom 不清——sticky 元素用 top:0 是合法 layout（但 ancestor reset
+   已強制祖先 position:static、articleEl 內若有 sticky 是極少數合理場景）。 */
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
