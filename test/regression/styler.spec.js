@@ -451,6 +451,23 @@ describe('styler — 骨架與可逆性', () => {
     // 擴 selector 命中。object-fit 是 CSS property 名當 class 用的常見 pattern。
     assert.ok(/\[class\*="object-fit"\]/.test(css),
       'CSS 必須含 [class*="object-fit"] selector（gvm 類 figure 內 div.object-fit placeholder）');
+
+    // v0.7.70 修法：gvm div.object-fit::before pseudo 用 content:"" + display:block
+    // + height:Npx 撐 placeholder（不是 padding-bottom 也不是 aspect-ratio），
+    // v0.7.61 的 picture::before 修法只清 content + display + padding-bottom，
+    // 沒處理 height 維度——擴 ::before/::after rule selector 涵蓋 object-fit
+    // wrapper 並加 height: 0 維度。
+    assert.ok(/\[class\*="object-fit"\]::before/.test(css),
+      'CSS 必須含 [class*="object-fit"]::before pseudo selector');
+    assert.ok(/\[class\*="object-fit"\]::after/.test(css),
+      'CSS 必須含 [class*="object-fit"]::after pseudo selector');
+    // 新增 height: 0 維度（cna picture::before 是 padding-bottom，gvm
+    // object-fit::before 是直接 height 撐高度）
+    const beforeRule = css.match(/picture::before[\s\S]*?\{([^}]*)\}/);
+    if (beforeRule) {
+      assert.ok(/height\s*:\s*0\s*!important/.test(beforeRule[1]),
+        '::before pseudo rule body 必須含 height: 0 !important（清 gvm 類直接 height 撐高的 placeholder）');
+    }
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
