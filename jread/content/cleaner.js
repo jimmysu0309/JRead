@@ -1658,6 +1658,28 @@
     }
   }
 
+  // ---- 主文內：<aside> 結構性通則 ---------------------------------------
+  // 結構性通則：HTML5 <aside> 語意定義為「與主文相關但獨立的補充內容」——
+  // 側邊欄、註解、相關連結、訂閱推薦等 chrome。reader mode 下純閱讀體驗，
+  // 主文容器內若仍有 aside 殘留（detector 命中後 articleEl 為主文整體
+  // wrapper、aside 是其子代），這些 aside 都是訂閱推薦 / report close /
+  // 小工具，不是主文，全清。
+  // theverge.com 實測：articleEl 內 <aside class="_1wu3rm0 _6ytxv90"> h=294，
+  // 包訂閱推薦/report close widget。class 是 styled-components hash 無語意、
+  // NOISE_KEYWORD_RE 攔不到。靠 <aside> tag 結構特徵清。
+  // 安全：HTML5 spec 定義 aside 必為補充內容、絕不是主文，跨站適用。
+  function hideInsideArticleAsides(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('aside')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      // 安全 guard：aside 內含 <blockquote> 或 <q> = pull-quote（主文引文
+      // aside 是 HTML5 合法用法，常見於長文配置主文 p 之間引述 hero quote）。
+      // Engadget / NYTimes / Verge 等都用此 pattern；保留。
+      if (el.querySelector('blockquote, q')) continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：留言 / 社群面板 structural rule ---------------------------
   // 跨站通用的結構特徵：comment / social widget 必含多個「N 分鐘/小時/天前」
   // 相對時間戳（每則留言一個）。主文作者資訊最多 1 個相對時間戳（發布
@@ -2118,6 +2140,7 @@
       hideInsideArticleByLinkText(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);
       hideInsideArticleFontTags(articleEl, hidden);
+      hideInsideArticleAsides(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);
       hideInsideArticleAllButtons(articleEl, hidden);
       hideInsideArticleJsLinks(articleEl, hidden);
