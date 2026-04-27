@@ -168,12 +168,24 @@ html.${HTML_CLASS} body {
    不影響 figure/div/section 的 aspect-ratio（這些可能合法用於 embed
    container），只 picture 一個 tag。 */
 [${ARTICLE_ATTR}="1"] picture,
-[${ARTICLE_ATTR}="1"] [class*="object-fit"] {
+[${ARTICLE_ATTR}="1"] [class*="object-fit"],
+[${ARTICLE_ATTR}="1"] [class*="placeholder"] {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
+  padding-top: 0 !important;
   height: auto !important;
   min-height: 0 !important;
 }
+/* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
+   實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
+   aspect-ratio 4:3 placeholder）。padding-top 是 padding-bottom hack 的
+   variant（兩者效果一樣，撐父寬度的固定比例高度）。為 padding-bottom hack
+   配套加 padding-top:0 第二維度 reset，覆蓋兩種寫法。 */
+/* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
+   實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
+   aspect-ratio 4:3 placeholder）。padding-top 是 padding-bottom hack 的
+   variant（兩者效果一樣，撐父寬度的固定比例高度）。為 padding-bottom hack
+   配套加 padding-top:0 第二維度 reset，覆蓋兩種寫法。 */
 /* object-fit 是 CSS property 名，當 class 用代表「給 img 套 object-fit
    的 wrapper」是常見 pattern（gvm.com.tw figure 內 div.object-fit
    2026-04-28 實機 Jimmy 截圖揭穿撐空白）。跟 picture 一樣可能用 aspect-ratio

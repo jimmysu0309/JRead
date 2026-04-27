@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.72**——today.line.me 主圖後空白修法（Jimmy DOM 截圖直接揭穿真兇）。**真兇**：`<div class="placeholder" style="padding-top:75.25%">` 用 `padding-top` 撐 4:3 aspect-ratio lazy-load placeholder。跟 cna picture::before / gvm object-fit::before 同類但載體換成 div.placeholder + 用 `padding-top` 不是 padding-bottom。修法（兩條同時擴）：(1) 主 placeholder rule selector 加 `[class*="placeholder"]`，wrapper 慣例命名跨站 pattern；(2) rule body 加 `padding-top: 0 !important` 第二維度，覆蓋 padding-bottom 與 padding-top 兩種 hack 寫法。spec 加 forcing function 驗 selector 含 `[class*="placeholder"]` + rule body 含 padding-top:0。sanity 拿掉 → spec fail。289 jsdom spec 全過。
+
+---
+
 **v0.7.71**——清掉 v0.7.69 instrument log（Jimmy 已驗證 v0.7.70 object-fit::before height:0 修法生效，按硬規則「等修好才清 log」執行）。styler.apply 結尾 [JRead v0.7.69] 區塊整段移除。修法本身（picture / figure / [class*="object-fit"]::before/::after 的 content:none + display:none + padding-bottom:0 + height:0）全部保留。289 jsdom spec 全過。
 
 ---

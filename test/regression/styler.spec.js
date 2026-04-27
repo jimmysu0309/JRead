@@ -452,6 +452,18 @@ describe('styler — 骨架與可逆性', () => {
     assert.ok(/\[class\*="object-fit"\]/.test(css),
       'CSS 必須含 [class*="object-fit"] selector（gvm 類 figure 內 div.object-fit placeholder）');
 
+    // v0.7.72 修法：today.line.me div.placeholder style="padding-top:75.25%"
+    // 用 padding-top（不是 padding-bottom）撐 aspect-ratio placeholder。擴
+    // selector 加 [class*="placeholder"] 並 reset padding-top: 0 第二維度。
+    assert.ok(/\[class\*="placeholder"\]/.test(css),
+      'CSS 必須含 [class*="placeholder"] selector（line today 類 padding-top placeholder）');
+    // 主 picture/figure/object-fit/placeholder rule 必須含 padding-top: 0
+    const placeholderRule = css.match(/\[class\*="placeholder"\][^{]*\{([^}]*)\}/);
+    if (placeholderRule) {
+      assert.ok(/padding-top\s*:\s*0\s*!important/.test(placeholderRule[1]),
+        'placeholder rule body 必須含 padding-top: 0 !important（清 line today 類 padding-top hack）');
+    }
+
     // v0.7.70 修法：gvm div.object-fit::before pseudo 用 content:"" + display:block
     // + height:Npx 撐 placeholder（不是 padding-bottom 也不是 aspect-ratio），
     // v0.7.61 的 picture::before 修法只清 content + display + padding-bottom，
