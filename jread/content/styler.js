@@ -173,6 +173,17 @@ html.${HTML_CLASS} body {
   height: auto !important;
   min-height: 0 !important;
 }
+/* <source> 元素強制 display: none：HTML spec 規定 <source> 是 art-direction
+   metadata、預設 display:none、不渲染。但原站 stylesheet 偶爾用通配 selector
+   或 element selector 把 source 的 display 改成 block（cna.com.tw 實機
+   instrument v0.7.57 揭穿：picture > source 元素 rect_h=1160px、display=block，
+   把 picture 撐高 1160px 變空白；圖在 source 後正常顯示）。reader card
+   強制 source 回到 spec 預設 display:none，picture 高度由 img 撐起。
+   通則安全：source 從來不該 visible，任何站把 source 改 visible 都是
+   原站 stylesheet 副作用、不是 reader 該保留的視覺。 */
+[${ARTICLE_ATTR}="1"] source {
+  display: none !important;
+}
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }
@@ -467,64 +478,6 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
-      // [JRead v0.7.57 instrument] cna 主圖空白 round 3：v0.7.55 picture
-      // height:auto 後實機仍空白。這次印更廣：picture/figure/wrapper 自身 +
-      // inline style + HTML height attribute + picture 的 children + 前後
-      // 兄弟元素的高度（可能空白來自看不見的 placeholder sibling 而非媒體
-      // 自己）。Jimmy 實機 console 看完即移除。
-      try {
-        const picList = articleEl.querySelectorAll('picture');
-        const figList = articleEl.querySelectorAll('figure');
-        function dump(el, label) {
-          if (!el) return;
-          const cs = window.getComputedStyle(el);
-          const r = el.getBoundingClientRect();
-          console.log('[JRead v0.7.57]', label, JSON.stringify({
-            tag: el.tagName,
-            cls: (el.className || '').toString().slice(0, 80),
-            rect_w: Math.round(r.width), rect_h: Math.round(r.height),
-            rect_x: Math.round(r.x), rect_y: Math.round(r.y),
-            comp_h: cs.height, comp_minH: cs.minHeight,
-            comp_pb: cs.paddingBottom, comp_pt: cs.paddingTop,
-            comp_ar: cs.aspectRatio, comp_disp: cs.display,
-            inline_style: el.getAttribute('style') || '(none)',
-            attr_height: el.getAttribute('height') || '(none)'
-          }));
-        }
-        // 印每個 picture 自己 + 各層 ancestor 直到 articleEl + 上下兄弟 + children
-        let idx = 0;
-        for (const pic of picList) {
-          dump(pic, `pic#${idx} self`);
-          // children
-          let ci = 0;
-          for (const child of pic.children) { dump(child, `pic#${idx} child#${ci++}`); }
-          // 5 層 ancestor
-          let cur = pic.parentElement; let depth = 0;
-          while (cur && cur !== articleEl && depth < 6) {
-            dump(cur, `pic#${idx} anc#${depth}`);
-            // 印 ancestor 的前後兄弟
-            if (cur.previousElementSibling) dump(cur.previousElementSibling, `pic#${idx} anc#${depth} prevSib`);
-            if (cur.nextElementSibling) dump(cur.nextElementSibling, `pic#${idx} anc#${depth} nextSib`);
-            cur = cur.parentElement; depth++;
-          }
-          idx++;
-          if (idx >= 2) break;
-        }
-        // 印 article 內前 25 個直接後代（找空白 placeholder）
-        const all = articleEl.querySelectorAll('*');
-        let printed = 0;
-        for (const el of all) {
-          const r = el.getBoundingClientRect();
-          // 高 >= 200 但內無文字直接 textNode 的元素 = 可疑 placeholder
-          if (r.height < 200) continue;
-          const directText = Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join('');
-          if (directText) continue;
-          if (el.tagName === 'PICTURE' || el.tagName === 'FIGURE' || el.tagName === 'IMG') continue;
-          dump(el, `tall-empty#${printed}`);
-          if (++printed >= 8) break;
-        }
-      } catch (e) { console.log('[JRead v0.7.57] err', e.message); }
-
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';
