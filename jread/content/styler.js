@@ -173,6 +173,25 @@ html.${HTML_CLASS} body {
   height: auto !important;
   min-height: 0 !important;
 }
+/* <source> 強制不渲染——HTML spec 規定 source 是 picture 的 art-direction
+   metadata、預設 display:none。但 cna.com.tw 在 source 上掛 ::before pseudo-
+   element 配 content: url(...) 把 source 變 visible 撐圖片高度（v0.7.59
+   instrument round 4 揭穿：source > ::before 是真兇，picture 高度 1160 來
+   自此 pseudo-element）。修法：source + source::before + source::after 全部
+   強制 display:none + content:none，禁止任何方式渲染。
+   通則安全：source 從來不該 visible（HTML spec 立場），任何站把它變 visible
+   都是 stylesheet 副作用、不是 reader 該保留視覺。 */
+[${ARTICLE_ATTR}="1"] source,
+[${ARTICLE_ATTR}="1"] picture > source {
+  display: none !important;
+}
+[${ARTICLE_ATTR}="1"] source::before,
+[${ARTICLE_ATTR}="1"] source::after,
+[${ARTICLE_ATTR}="1"] picture > source::before,
+[${ARTICLE_ATTR}="1"] picture > source::after {
+  content: none !important;
+  display: none !important;
+}
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }

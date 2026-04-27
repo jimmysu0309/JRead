@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.60**——cna 主圖空白真兇終於定位（Jimmy 提供 DOM 截圖揭穿，**保留 v0.7.59 instrument log 待 Jimmy 驗證再刪**）。**真兇**：cna 在 picture 內的 `<source>` 元素掛 `::before` pseudo-element 配 `content: url(...)`，用 pseudo-element 渲染圖片內容把 source 變 visible 撐 picture 高度（v0.7.58 修法 source display:none **無效**，因為 ::before 在 source display:none 之外仍會渲染——pseudo-element 即使 host 是 display:none 也可能透過 specific stylesheet 顯示）。修法：對 reader card 內 `<source>` 自身與 `::before` / `::after` 全部強制 `display: none + content: none`，禁止任何方式渲染。spec 暫不加（待 Jimmy 實機驗證後再補）。**保留 v0.7.59 instrument log**——按 Jimmy 規則「等修好再刪」。284 jsdom spec 全過。
+
+---
+
 **v0.7.59**——cna 主圖空白 instrument round 4（v0.7.58 source display:none 修法仍空白，**還原** v0.7.58 修法）。前幾輪 instrument 都印 element 自身 + ancestor 但沒看到「圖前空白範圍內到底是什麼元素」。本輪改變策略：直接量空白範圍 y=[picture.top, img.top]，遍歷 article 內所有 rect.top 落在這範圍 OR 跨越這範圍的元素，sort by y 列印。setTimeout 500ms 等 layout settle 後才量（避免拿到 layout 階段中途的 rect）。Jimmy 實機 console 看完即移除。同時刪掉 v0.7.58 source rule 與 spec assertion（已驗證無效）。**保留** v0.7.55 picture 自身修法。284 jsdom spec 全過。
 
 ---
