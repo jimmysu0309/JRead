@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.47**——商業周刊 blog 主圖偏左 round 2 修法（v0.7.46 清掉紅色色塊但圖仍偏左、Jimmy 截圖回報「直接破版」）。probe 圈出剩餘根因：祖先 `<div class="Single-left-part col-xs-12 col-md-7 col-lg-8">` 套**客製化** `padding-right: 115px`（原站 Bootstrap 二欄 layout 給右欄 sidebar 預留的留白），reader mode sidebar 已砍但 padding 還在生效→ col 內部寬度被擠成 `608 - 115 = 493px`，主圖只占 col 子集寬度而非完整 card 內寬。styler 既有 col-* reset 只清 `width / max-width / float / flex`，**完全沒清 padding**。修法：col-X- reset 加 `padding: 0 !important`。col 已退化成 block 流排（width: auto + float: none + flex: initial），Bootstrap gutter padding 已無 grid 意義可清。實測：col-md-7 padding-right 115→0、wrapper width 493→608、圖片左右邊跟段落對齊。spec 加 forcing function 驗 col-* rule body 必含 `padding: 0 !important`；sanity 拿掉 → spec 立即 fail。281 jsdom spec 全過（v0.7.46 +1）。
+
+---
+
 **v0.7.46**——商業周刊 blog 主圖左方紅色色塊 + 圖片偏左修法（Jimmy 2026-04-27 截圖回報「圖片破版且偏左」）。probe 揪出根因：主圖外 wrapper `<div class="Single-image Border-left Margin-top position-relative">` 套 `border-left: 45px solid rgb(188, 40, 28)`（商周品牌紅 accent bar）。reader mode 下 border-width 計入 box 寬度→圖片整體被 border 往右擠 45px，視覺同時看到「左側紅色色塊 + 圖片偏離正中」。修法（結構性通則）：styler.js 注入 CSS rule `[data-jread-active="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr) { border-width: 0 !important; }`——reader card 已有圓角 + 陰影邊界，內部任何裝飾 border 都該清。preserve 清單跟既有 background 清除一致 + hr：blockquote 引述慣例 / table 資料分隔 / code 程式碼框 / hr 本身就是 border 化身。只清 `border-width` 不動 `border-style/color`，影響範圍最窄。spec 加 forcing function 驗 CSS 含 `*:not(...)` border-width:0 rule + 14 個 preserve tag 全列入；sanity check 拿掉 rule → spec 立即 fail。harness 截圖確認紅色色塊消失、圖片回正中。280 jsdom spec 全過。
 
 ---

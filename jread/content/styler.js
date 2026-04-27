@@ -203,7 +203,15 @@ html.${HTML_CLASS} body {
   max-width: none !important;
   float: none !important;
   flex: initial !important;
+  padding: 0 !important;
 }
+/* padding: 0 解釋：原站 Bootstrap col 標準 gutter（padding-left/right: 15px）
+   或客製化的 padding（businessweekly.com.tw .col-md-7 padding-right: 115px
+   給右欄 sidebar 留白）在 reader mode 下會把 col 內容擠在 col 寬度的子集
+   內，造成「主圖偏左、寬度不滿」破版。我們已 width: auto + float: none +
+   flex: initial 把 col 退化成 block 流排、padding 已失 grid gutter 意義，可
+   清。businessweekly blog 主圖（497px wide 卡在 col 內 padding-right 115px
+   後）修法：清 padding 後圖回到 card 完整內寬 608px。 */
 /* articleEl 內 block 裝飾 background 清除：原站常用彩色 wrapper
    block（accent bar、inset box、newsletter box、feature card）作為
    視覺裝飾。reader mode 下 card 本身已有統一底色，內部不該再有彩色
