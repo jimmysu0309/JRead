@@ -219,6 +219,23 @@ html.${HTML_CLASS} body {
   background-color: transparent !important;
   background-image: none !important;
 }
+/* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
+   bar、callout 框、圖片框等視覺裝飾。reader card 本身已有圓角 + 陰影邊界，
+   內部任何裝飾 border 都會打斷閱讀流，且會占空間（border-width 計入 box
+   寬度）造成主文/媒體偏移。
+   businessweekly.com.tw 實測：主圖外 wrapper div.Single-image.Border-left
+   套 border-left: 45px solid rgb(188, 40, 28)（商周品牌紅 accent）→ 紅色
+   色塊出現在主圖左方 + 圖片被往右擠 45px 看似破版。border-width:0 後 border
+   視覺消失、wrapper 回到正常寬度、圖片置中。
+   preserve 清單跟 background 清除一致 + hr：blockquote 的 border-left 是
+   引述慣例；table/th/td 的 border 是資料分隔；code/pre 是程式碼框；
+   figure/figcaption/summary 是 W3C 媒體語意；mark/kbd 是 inline 語意；
+   hr 本身就是 border 化身（清掉等於消失）。
+   只清 border-width 不動 border-style/color：影響範圍最窄、若原站日後改
+   設計也容易 debug。 */
+[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr) {
+  border-width: 0 !important;
+}
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
