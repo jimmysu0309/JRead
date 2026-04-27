@@ -507,9 +507,9 @@ html.${HTML_CLASS} body {
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
       // [JRead v0.7.73 instrument] theverge 標題消失 + 主圖下空白 debug。
-      // 印 articleEl 自身 / 是否含 h1 / h1 是否 visible / direct children
-      // hidden 狀態 / 圖後 100~1500px 範圍內 element。保留待 Jimmy 驗證
-      // v0.7.74 修法生效再清。
+      // [JRead v0.7.75 instrument] 加印 _3zbl0r4 / _1p1nf4x0 / _3zbl0ra
+      // 等 styled-components hash element 的 padding / min-height /
+      // aspect-ratio / ::before / ::after，揭穿空白與 byline 缺名真兇。
       try {
         setTimeout(() => {
           try {
@@ -572,6 +572,50 @@ html.${HTML_CLASS} body {
               inGap.sort((a, b) => a.y - b.y);
               console.log('[JRead v0.7.73] elements after first figure (gap area):', inGap.length);
               for (const it of inGap) console.log('[JRead v0.7.73]', JSON.stringify(it));
+
+              // [JRead v0.7.75] 對 gap area 內 height >= 100 的 element 印
+              // 完整 padding / min-height / aspect-ratio / ::before / ::after
+              for (const it of inGap) {
+                if (it.h < 100) continue;
+                // 找實際 element 重新 evaluate（因為 inGap 只存 metadata）
+                const els = articleEl.querySelectorAll('[class*="' + (it.cls.split(/\s+/)[0] || '') + '"]');
+                for (const el of els) {
+                  const r = el.getBoundingClientRect();
+                  if (Math.abs(r.top - it.y) > 5 || Math.abs(r.height - it.h) > 5) continue;
+                  const cs = window.getComputedStyle(el);
+                  const before = window.getComputedStyle(el, '::before');
+                  const after = window.getComputedStyle(el, '::after');
+                  console.log('[JRead v0.7.75] tall el detail:', JSON.stringify({
+                    tag: el.tagName, cls: it.cls,
+                    h: Math.round(r.height), comp_h: cs.height,
+                    minH: cs.minHeight, pt: cs.paddingTop, pb: cs.paddingBottom,
+                    ar: cs.aspectRatio, disp: cs.display, pos: cs.position,
+                    before_content: before.content,
+                    before_h: before.content !== 'none' ? before.height : 'n/a',
+                    before_pt: before.content !== 'none' ? before.paddingTop : 'n/a',
+                    before_pb: before.content !== 'none' ? before.paddingBottom : 'n/a',
+                    after_content: after.content,
+                    after_h: after.content !== 'none' ? after.height : 'n/a'
+                  }));
+                  break;
+                }
+              }
+              // 額外印 byline 區可能元素：a[href*="/author"]
+              const authorLinks = articleEl.querySelectorAll('a[href*="/author"]');
+              console.log('[JRead v0.7.75] author links count:', authorLinks.length);
+              for (const a of authorLinks) {
+                let cur = a, inHidden = false;
+                while (cur && cur !== articleEl) {
+                  if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+                  cur = cur.parentElement;
+                }
+                console.log('[JRead v0.7.75] author link:', JSON.stringify({
+                  href: a.getAttribute('href') || '',
+                  text: (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60),
+                  ownHidden: a.dataset && a.dataset.jreadHidden === '1',
+                  inHidden
+                }));
+              }
             }
           } catch (e) { console.log('[JRead v0.7.73] inner err', e.message); }
         }, 600);

@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.75**——theverge round 2 instrument（v0.7.74 hideInsideArticleAsides 沒解決問題，Jimmy 截圖標題仍消失、主圖後仍空白、byline 仍缺名）。v0.7.73 instrument 揭穿真兇不是 aside 而是 styled-components hash class element：DIV._3zbl0r4 h=457（圖後第一個 tall element）+ DIV._1p1nf4x0 h=320 + 多層 hash class wrapper 撐高度。新 instrument 加印：(1) gap area 內 height>=100 的 element 完整 computed padding-top/padding-bottom/min-height/aspect-ratio/display/position + ::before/::after 四維度；(2) `a[href*="/author"]` 作者連結的 href/text/hidden 狀態（揭穿 byline 缺名真兇）。**保留 v0.7.73+v0.7.75 instrument log 待驗**。289 jsdom spec 全過。
+
+---
+
 **v0.7.74**——theverge 標題消失第一輪修法（v0.7.73 instrument 揭穿三層真兇）。**真兇 1**：H1 在 articleEl 內 visible（detector 沒砍、cleaner 沒砍），但被前面的 `duet--article--lede` div h=1165 + 一堆 `<aside>` h=294 widget 推到螢幕外。**真兇 2/3 待驗**：圖後 1500px 範圍含 `<aside class="_1wu3rm0">` 訂閱推薦 widget，class 是 styled-components hash 無語意 NOISE_KEYWORD_RE 攔不到。**修法**：新 rule `hideInsideArticleAsides` 清 articleEl 內所有 `<aside>` element——HTML5 spec 定義 aside 為「與主文相關但獨立的補充內容」（側邊欄/註解/相關連結），reader mode 純閱讀體驗下 aside 必為訂閱推薦/widget 等 chrome 雜訊，跨站適用。掛進 cleaner 主流程。**保留 v0.7.73 instrument log 待 Jimmy 驗證**——標題回來後再看 byline 缺名等其他層問題。spec 暫不加（待 Jimmy 驗證 + 整輪修法定型再補）。289 jsdom spec 全過。
 
 ---
