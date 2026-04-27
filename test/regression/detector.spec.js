@@ -648,3 +648,216 @@ describe('cleaner — linetoday tail noise sections（heading text heuristic）'
       '動態 append 的「其他人也看了」section 必須被 observer 攔截 hide');
   });
 });
+
+
+// 商業周刊 blog 路由：detector 命中內文 SECTION.row（heuristic bubble-up），
+// H1 在 SECTION.Single-title 是 row 的 sibling、不在 articleEl 內。
+// promoteForTitle 的 LCA fallback 必須把 articleEl 升到含 H1 的共同祖先 MAIN.Single
+// （v0.7.40 修法）。Jimmy 實機 Chrome 與 Playwright Chromium 在 detect 命中
+// 元素上有差異，sibling-walk 哪一層命中不可靠；LCA fallback 對所有變體都補洞。
+describe('detector — businessweekly-blog（LCA fallback 把 H1 拉進 scope）', () => {
+  let window, document, result;
+  before(() => {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(FIXTURE_DIR, 'businessweekly-blog-3021238.html'),
+      scripts: ['detector']
+    });
+    window = env.window;
+    document = env.document;
+    result = env.NS.detector.detect();
+  });
+
+  it('偵測成功', () => {
+    assert.ok(result, 'detector 必須命中');
+  });
+
+  it('articleEl 必須包含 H1.Single-title-main（LCA fallback forcing）', () => {
+    const h1 = document.querySelector('h1.Single-title-main');
+    assert.ok(h1, 'fixture 必須有 H1.Single-title-main');
+    assert.ok(result.el.contains(h1),
+      `articleEl 必須包含主標 H1；實際 articleEl=${result.el.tagName}.${result.el.className}。` +
+      `若不包含 → cleaner 的 hideAncestorSiblings 會把 H1 所在的 SECTION.Single-title 砍掉、reader 顯示無標題。` +
+      `拿掉 promoteForTitle 內的 LCA fallback → 此 assertion fail`);
+  });
+
+  it('articleEl 也必須包含主文 SECTION.row（不能因為升到 LCA 就丟了內文）', () => {
+    const row = document.querySelector('section.row.no-gutters');
+    assert.ok(row);
+    assert.ok(result.el.contains(row));
+  });
+
+  // LCA 升到 MAIN.Single（含 H1 + row 兩個 sibling）
+  it('articleEl 應升到 MAIN.Single（H1 與 row 的 LCA）', () => {
+    const main = document.querySelector('main.Single');
+    assert.ok(main);
+    assert.strictEqual(result.el, main,
+      `articleEl 應升到 MAIN.Single。實際 ${result.el.tagName}.${result.el.className}`);
+  });
+});
+
+// ad-hoc：sibling-walk hop 上限超過時，LCA fallback 必須兜底。
+// 構造：H1 與 articleEl 共同祖先 #container，但 articleEl 包了 6 層 wrapper
+// （超過 PROMOTE_MAX_HOPS=5），sibling-walk 卡在 hops 限制找不到 H1。
+// LCA fallback 從全頁掃 H1 找 og-match + 求 LCA → 應升到 #container。
+describe('detector — LCA fallback when sibling-walk exceeds hop limit', () => {
+  let window, document, result;
+  before(() => {
+    const html = `<!DOCTYPE html>
+<html><head>
+  <title>LCA Fallback Forcing Test</title>
+  <meta property="og:title" content="LCA Fallback Forcing Test">
+</head><body>
+<div id="page-shell">
+  <header>站台選單</header>
+  <div id="container">
+    <h1 id="real-title">LCA Fallback Forcing Test</h1>
+    <div class="l1"><div class="l2"><div class="l3"><div class="l4"><div class="l5"><div class="l6">
+      <article id="article-el">
+        <p>${'這是主文第一段，足夠長度跨 detector charThreshold 門檻，' .repeat(8)}</p>
+        <p>${'第二段繼續累積文字密度，讓 heuristic 命中本元素。' .repeat(8)}</p>
+        <p>${'第三段補強。' .repeat(15)}</p>
+        <p>${'第四段收尾。' .repeat(15)}</p>
+      </article>
+    </div></div></div></div></div></div>
+  </div>
+</div>
+</body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    result = window.__JRead.detector.detect();
+  });
+
+  it('articleEl 必須升到 #container（LCA fallback forcing — sibling-walk 超 hop 限制必失敗）', () => {
+    const container = document.getElementById('container');
+    assert.ok(container);
+    assert.ok(result, 'detector 應命中');
+    assert.strictEqual(result.el, container,
+      `articleEl 應升到 #container（H1 與 article 的 LCA）。實際 ${result.el.tagName}#${result.el.id}.${result.el.className}。` +
+      `拿掉 promoteForTitle 內的 LCA fallback → 此 assertion fail（articleEl 卡在 hop 限制裡的某個 wrapper）`);
+  });
+
+  it('promotedTitleHead 應為 #real-title H1', () => {
+    const h1 = document.getElementById('real-title');
+    assert.ok(h1);
+    assert.strictEqual(result.promotedTitleHead, h1,
+      'LCA fallback 命中的 H1 應記為 promotedTitleHead 給 cleaner narrowPromotedSiblings 用');
+  });
+});
+
+// 商業周刊 blog 實機場景 forcing：og:title 與 H1 character-level 差異（全形 vs
+// 半形數字/標點、不可見空白等）導致 og-match 比對失敗。LCA fallback layer 2
+// （結構性 guard，不依賴文字比對）必須兜底升級。
+describe('detector — LCA fallback structural guard（og-match 失敗時兜底）', () => {
+  let window, document, result;
+  before(() => {
+    // 故意讓 og:title 跟 H1 文字差異夠大，layer 1 og-match 失敗
+    const html = `<!DOCTYPE html>
+<html><head>
+  <title>實機文字差異 forcing test</title>
+  <meta property="og:title" content="完全不同的 og title 內容＿避免 layer 1 命中">
+</head><body>
+<header><nav>站台選單</nav></header>
+<main id="container">
+  <section class="title-section">
+    <h1 id="real-title">主標題使用全形數字２０２６與半形不同</h1>
+  </section>
+  <section class="content-section">
+    <article id="article-el">
+      <p>${'這是主文第一段，足夠長度跨 detector charThreshold 門檻，文字密度極高。' .repeat(10)}</p>
+      <p>${'第二段繼續累積文字密度，讓 heuristic 命中本元素而非外層 main。' .repeat(10)}</p>
+      <p>${'第三段補強。' .repeat(15)}</p>
+      <p>${'第四段收尾。' .repeat(15)}</p>
+    </article>
+  </section>
+</main>
+</body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    result = window.__JRead.detector.detect();
+  });
+
+  it('articleEl 必須升到 #container（structural guard forcing）', () => {
+    const container = document.getElementById('container');
+    assert.ok(container);
+    assert.ok(result, 'detector 應命中');
+    assert.ok(container.contains(result.el),
+      `articleEl 應在 #container 內或本身為 #container（structural guard 升級）。實際 ${result.el.tagName}#${result.el.id}.${result.el.className}`);
+    // 強保證：必須升到 container（不能停留在 article-el 或 content-section）
+    assert.strictEqual(result.el, container,
+      `articleEl 應升到 #container（H1 與 article 的 LCA）。實際 ${result.el.tagName}#${result.el.id}.${result.el.className}。` +
+      `og:title 跟 H1 文字差異 → layer 1 og-match 必失敗；layer 2 structural guard 必須兜底升級。` +
+      `拿掉 layer 2 → 此 assertion fail`);
+  });
+
+  it('promotedTitleHead 應為 #real-title H1（structural guard 命中的 H1）', () => {
+    const h1 = document.getElementById('real-title');
+    assert.ok(h1);
+    assert.strictEqual(result.promotedTitleHead, h1);
+  });
+});
+
+// 商業周刊 blog 路由 v0.7.43 真兇：頁面有 <article class="figure-list"> 跟 <main>
+// 是 sibling、article 內無 h1（archive 圖列 article），但 detector 策略 1
+// article-tag 直接命中它當主文 → 跳過 schema-org/heuristic/main-tag/promote/
+// ensure 全部後續策略。修法：article 不含 h1 且跟 main 是 sibling、main 含 h1 →
+// 降級。
+describe('detector — businessweekly-blog article-tag bait（article 不含 H1 + 與 main sibling）', () => {
+  let window, document, result;
+  before(() => {
+    const html = `<!DOCTYPE html>
+<html><head>
+  <title>BW Blog Article-Tag Bait Test</title>
+  <meta property="og:title" content="BW Blog Article-Tag Bait Test">
+</head><body>
+  <header><nav>站台選單</nav></header>
+  <!-- 商周頁面有 <article class="figure-list"> 跟 main 是 sibling -->
+  <article class="figure-list">
+    <div>${'archive 圖列 article 內容、不是真主文，但文字長度過 MIN_TEXT_LEN。'.repeat(8)}</div>
+    <ul>
+      <li>圖片連結 1</li>
+      <li>圖片連結 2</li>
+    </ul>
+  </article>
+  <div id="divbody" class="Body">
+    <main id="Single_test" class="Single">
+      <section class="Single-title">
+        <h1 class="Single-title-main">真主文標題：BW Blog Article-Tag Bait Test</h1>
+      </section>
+      <section class="row no-gutters position-relative">
+        <p>${'真主文第一段，跨 charThreshold 門檻、文字密度極高。'.repeat(10)}</p>
+        <p>${'第二段繼續累積文字密度，讓 heuristic 命中 SECTION.row。'.repeat(10)}</p>
+        <p>${'第三段補強。'.repeat(15)}</p>
+        <p>${'第四段收尾。'.repeat(15)}</p>
+      </section>
+    </main>
+  </div>
+</body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    result = window.__JRead.detector.detect();
+  });
+
+  it('detector strategy 不可是 article-tag（forcing：article 無 H1 + 跟 main sibling 應降級）', () => {
+    assert.ok(result, 'detector 應命中（main-tag 兜底或 heuristic）');
+    assert.notStrictEqual(result.strategy, 'article-tag',
+      `strategy 不可是 article-tag（ARTICLE.figure-list 應被降級到 schema-org/heuristic/main-tag）。` +
+      `實際 strategy=${result.strategy}, el=${result.el.tagName}.${result.el.className}。` +
+      `拿掉「article 不含 h1 + 跟 main sibling 降級」guard → 此 assertion fail`);
+  });
+
+  it('articleEl 必須含真主文 H1（升級到 MAIN.Single 或更窄但含 H1 的容器）', () => {
+    const h1 = document.querySelector('h1.Single-title-main');
+    assert.ok(h1);
+    assert.ok(result.el.contains(h1),
+      `articleEl 必須包含主標 H1。實際 ${result.el.tagName}.${result.el.className}`);
+  });
+});

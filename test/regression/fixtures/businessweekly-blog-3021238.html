@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!--
+  Regression fixture：商業周刊 blog 路由（businessweekly.com.tw/business/blog/*）
+  來源：businessweekly.com.tw/business/blog/3021238（2026-04-27 實測）
+  Jimmy 回報：reader 模式啟動後標題消失、整篇主文被 hide。
+
+  根因（probe 揪出）：
+  - <main class="Single"> 為 detector 兜底命中
+  - <section class="row no-gutters position-relative"> 包整篇主文（含 26 個長 p、3 個 H2、4 張圖）
+  - row 內 sidebar 區的 LINE follow widget `<div class="line-sub-title">FOLLOW US</div>`
+    命中 NOISE_HEADING_TEXT_RE 的 `^follow\s+us`
+  - hideInsideArticleByHeadingText 的 closest('section, aside') 直接命中外層 section.row
+    （文 sub-title 之間沒有 section/aside 包覆），把整篇主文砍掉
+
+  修法（v0.7.39）：closest hit 後也要套用三道主文 anchor 保護
+    （>= 100 chars 單一 p / 累計 textLen >= 300 / title-anchor wrapper）。
+  保護命中即視為 closest target 過寬，改走 walk-up fallback 找更窄 wrapper；
+  walk-up 也找不到 → continue 不 hide，不誤殺主文。
+
+  此 fixture 為 forcing function：拿掉保護則 SECTION.row 整塊被砍、spec fail。
+-->
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>市值2天蒸發近9兆元、連企業高層都跳船！AI時代下的軟體業如何翻身？－商周頭條｜商周</title>
+  <meta property="og:title" content="市值2天蒸發近9兆元、連企業高層都跳船！AI時代下的軟體業如何翻身？">
+  <meta property="og:type" content="article">
+</head>
+<body id="_main">
+  <header class="Header"><nav>站台選單</nav></header>
+
+  <div id="divbody" class="Body">
+    <main id="Single_test" class="Single">
+      <input type="hidden" name="ADMS_x">
+      <input type="hidden" name="ADMS_y">
+      <input type="hidden" name="ADMS_z">
+      <script>// inline tracking script</script>
+      <div></div>
+
+      <section class="Single-title no-gutters">
+        <h4 class="Single-title-category col-lg-10"><a href="/Channel/business/0000000319">財經</a> | <a href="/Channel/business/0000000320">產業動態</a></h4>
+        <h1 class="Single-title-main col-lg-10">市值2天蒸發近9兆元、連企業高層都跳船！AI時代下的軟體業如何翻身？</h1>
+      </section>
+
+      <section class="row no-gutters position-relative">
+        <div class="Single-left-part col-lg-9">
+          <section class="Single-article">
+            <div class="Single-article WebContent">
+              <figure class="articlephoto">
+                <img src="/cover.jpg" alt="Salesforce">
+                <figcaption>軟體業商業模式受AI代理浪潮衝擊，引發市場憂慮。軟體巨頭Salesforce股價今年以來也跌近3成，表現疲軟。 (來源：Dreamstime/典匠影像)</figcaption>
+              </figure>
+
+              <p>今年2月，美股軟體業在48小時內蒸發了2,850億美元（約合新台幣近9兆元）市值。華爾街給這場拋售取了個名字：SaaSpocalypse——SaaS末日。但讓投資人真正睡不著覺的，不是這個數字——而是他們突然意識到，這些錢可能再也回不來了。這是 charThreshold marker A 的段落內容。</p>
+
+              <p>追蹤軟體股的IGV ETF今年至今已跌近17%，SaaS（軟體即服務）類股跌勢更曾一度跌近4成，現在收斂至約25.6%。Marker B 段落，繼續累積文字密度讓 detector 與 cleaner 都認得到主文容器。</p>
+
+              <h2>分析師：軟體業獲利空間有限</h2>
+              <p>多家華爾街分析機構已經把軟體業的目標價下修，並警告整個 SaaS 商業模式正在被 AI 代理（agent）侵蝕。Marker C 段落要夠長才能跨過保護門檻，避免 closest hit 後直接 hide。</p>
+
+              <p>Salesforce、Workday、ServiceNow 等龍頭公司股價一年內跌幅普遍超過兩成，反映市場對軟體業未來營收的不確定性。Marker D 段落補強。</p>
+
+              <h2>企業銷售老將紛紛投向AI陣營</h2>
+              <p>過去一年，多位前 SaaS 大廠的銷售與產品負責人公開表示加入 AI 新創或內部 AI 平台團隊。Marker E 段落，模擬商周新聞主文段落特徵。</p>
+
+              <p>這個現象意味著傳統 SaaS 高薪職位的吸引力正在被 AI 機會取代。Marker F 段落收尾本節。</p>
+
+              <h2>用戶轉換門檻消失，撼動商業模式</h2>
+              <p>當 AI 代理可以自動串接多個工具時，用戶不再需要綁定單一 SaaS 廠商，「轉換成本」這個 SaaS 商業模式核心優勢逐漸消失。Marker G 段落作為主文倒數第二段。</p>
+
+              <p>面對這場結構性轉變，業內人士預期軟體業必須在三年內完成商業模式改寫，否則營收將顯著萎縮。Marker H 段落為文末段落，跨 charThreshold。</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- Sidebar：實機 DOM 不用 <aside> 語意，純 div 包覆——line-sub-title
+             的 closest('section, aside') 會直接跳過 sidebar 跑到外層 SECTION.row
+             整篇主文容器、觸發 cleaner 的 closest hit 誤殺路徑。 -->
+        <div class="Single-right-part col-lg-3">
+          <div class="Single-sidebar">
+            <div class="line-promote">
+              <div class="line-sub-title">FOLLOW US</div>
+              <a href="https://line.me/follow">加入 LINE 好友</a>
+            </div>
+            <div class="hot-articles">
+              <a href="/x">小編推薦 1</a>
+              <a href="/y">小編推薦 2</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 文末「精選文章看更多」widget——是雜訊、命中 closest hit 後該被砍 -->
+      <section class="Single-promote position-relative">
+        <h2>精選文章</h2>
+        <div><a href="/p1">推薦文章 1</a><span>看更多</span></div>
+      </section>
+    </main>
+  </div>
+
+  <footer><nav>頁尾連結</nav></footer>
+</body>
+</html>
