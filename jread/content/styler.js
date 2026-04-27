@@ -486,10 +486,7 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
-      // [JRead v0.7.65 instrument] gvm.com.tw 主文消失 debug。articleEl 內
-      // [data-jread-hidden="1"] 的元素逐個列印 tag/cls/textContent 前 60 字
-      // + visible p 的 textContent + articleEl 自身結構。Jimmy 實機 console
-      // 揭穿哪條 cleaner rule 過砍主文。修完即移除。
+      // [JRead v0.7.65 instrument] 保留待 Jimmy 驗證 v0.7.67 修法是否生效。
       try {
         setTimeout(() => {
           try {
@@ -497,20 +494,17 @@ html.${HTML_CLASS} body {
             console.log('[JRead v0.7.65] articleEl', articleEl.tagName, (articleEl.className || '').toString().slice(0, 60), 'rect:', JSON.stringify({
               x: Math.round(aR.x), y: Math.round(aR.y), w: Math.round(aR.width), h: Math.round(aR.height)
             }));
-            // 印 articleEl 直接 children
             let ci = 0;
             for (const child of articleEl.children) {
               const cr = child.getBoundingClientRect();
-              const hidden = child.dataset && child.dataset.jreadHidden === '1';
+              const hiddenF = child.dataset && child.dataset.jreadHidden === '1';
               const text = (child.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
               console.log('[JRead v0.7.65] direct child', ci++, JSON.stringify({
                 tag: child.tagName, cls: (child.className || '').toString().slice(0, 60),
-                hidden, w: Math.round(cr.width), h: Math.round(cr.height),
-                text
+                hidden: hiddenF, w: Math.round(cr.width), h: Math.round(cr.height), text
               }));
               if (ci >= 20) break;
             }
-            // 印所有 hidden 元素（限前 30）
             const hiddenEls = articleEl.querySelectorAll('[data-jread-hidden="1"]');
             console.log('[JRead v0.7.65] total hidden in articleEl:', hiddenEls.length);
             let hi = 0;
@@ -520,12 +514,10 @@ html.${HTML_CLASS} body {
               console.log('[JRead v0.7.65] hidden#' + hi, JSON.stringify({
                 tag: el.tagName, cls: (el.className || '').toString().slice(0, 60),
                 w: Math.round(cr.width), h: Math.round(cr.height),
-                textLen: (el.textContent || '').length,
-                text
+                textLen: (el.textContent || '').length, text
               }));
               if (++hi >= 30) break;
             }
-            // 印 visible 主文 p 的 textContent 前 80 字（看主文還剩什麼）
             const visibleP = [];
             for (const p of articleEl.querySelectorAll('p')) {
               let cur = p, inHidden = false;

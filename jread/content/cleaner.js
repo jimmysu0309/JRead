@@ -274,9 +274,9 @@
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
-    // [JRead v0.7.66 instrument] 印 hide 長文 element 時的 stack，
-    // 揭穿哪條 rule 過砍 gvm.com.tw 主文（gvm article-content_level-0
-    // textLen 2849 被某 rule hide）。修完即移除。
+    // [JRead v0.7.66 instrument] 印 hide 長文 element 時的 stack——保留待
+    // Jimmy 驗證 v0.7.67 修法是否真讓 gvm 主文回來，若失敗再用此 log 抓
+    // 第二層真兇。修好驗證後下個 release 統一清掉。
     try {
       const tlen = (el.textContent || '').length;
       if (tlen >= 500) {
@@ -1696,13 +1696,25 @@
       const text = el.textContent || '';
       const matches = text.match(RELATIVE_TIME_RE);
       if (!matches || matches.length < COMMENT_PANEL_MIN_TIMESTAMPS) continue;
-      // 保護主文：若此 el 含主文長段落（>= 300 chars 的 p），跳過
+      // 保護主文 layer 1：若此 el 含主文長段落（>= 300 chars 的 p），跳過
       let hasMainParagraph = false;
       for (const p of el.querySelectorAll('p')) {
         const pText = norm(p.textContent);
         if (pText.length >= 300) { hasMainParagraph = true; break; }
       }
       if (hasMainParagraph) continue;
+      // 保護主文 layer 2：element 含 >= 4 個獨立 `<p>`、每個 >= 50 chars
+      // （trimmed）= 主文。留言面板典型結構是 `<div class="comment">` 巢狀
+      // div、**不用 `<p>` tag**（Disqus / LINE Today / Reddit / FB / Twitter
+      // 等都是 div）。「>= 4 個 long p」是主文必備結構特徵，留言面板達不到。
+      // gvm.com.tw/article/129607 實測：article-content 含 6 個敘事段落 p，
+      // 每段平均 200-300 chars，舊 layer 1「單一 p >= 300 chars」失效（中文
+      // 主文常分多個短 p），p count guard 兜底。
+      let mainPCount = 0;
+      for (const p of el.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 50) mainPCount++;
+      }
+      if (mainPCount >= 4) continue;
       hide(el, hidden);
     }
   }

@@ -3366,3 +3366,62 @@ describe('cleaner — cna-icon-only-link（支持 CNA icon-only a 修法）', ()
       'div.lineAd 必須被 hide（forcing：拿掉 AD_SUFFIX_RE 或從 shouldHideByKeyword 移除 → 此 assertion fail）');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.67 gvm.com.tw 主文「年前」敘事誤判為留言面板修法
+// Jimmy 2026-04-28 截圖回報：reader mode 後內文消失。v0.7.66 hide stack trace
+// 揭穿真兇：hideInsideArticleCommentPanels 用 RELATIVE_TIME_RE 數時間戳 >= 3
+// 誤判主文容器為留言面板。主文作者寫「20 年前 / 30 年前」等正文敘事性時間
+// 描述命中 regex，舊 layer 1 「含 >= 300 chars 單一 p」protection 對中文短段
+// 多 p 結構失效。
+// 修法 layer 2：textLen / timestamp count 比例 guard，比例 >= 500 跳過 hide。
+// -----------------------------------------------------------------------------
+describe('cleaner — gvm-comment-panel-false-positive（主文「年前」敘事誤判修法）', () => {
+  let window, document, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'gvm-comment-panel-false-positive.html'), 'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window; document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => { window.__JRead.cleaner.restore(hidden); });
+
+  it('article-content 主文容器不可被 hide（forcing：layer 2 比例 guard 必須 active）', () => {
+    const main = document.querySelector('div[data-marker="gvm-main-content"]');
+    assert.ok(main, 'fixture 必須含 div.article-content');
+    assert.notStrictEqual(main.dataset.jreadHidden, '1',
+      '含多個「年前」敘事的主文容器必須保留；forcing：拿掉 layer 2 ratio guard → 此 assertion fail');
+    let cur = main.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `主文容器祖先 ${cur.tagName}.${cur.className} 不可被 hide`);
+      cur = cur.parentElement;
+    }
+  });
+
+  it('6 個主文段落（marker main-p1~p6）全部保留', () => {
+    const markers = ['main-p1', 'main-p2', 'main-p3', 'main-p4', 'main-p5', 'main-p6'];
+    for (const m of markers) {
+      const p = document.querySelector(`p[data-marker="${m}"]`);
+      assert.ok(p, `fixture 必須含 ${m}`);
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `主文段落 ${m} 不可被 hide`);
+    }
+  });
+});
