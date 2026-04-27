@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.46**——商業周刊 blog 主圖左方紅色色塊 + 圖片偏左修法（Jimmy 2026-04-27 截圖回報「圖片破版且偏左」）。probe 揪出根因：主圖外 wrapper `<div class="Single-image Border-left Margin-top position-relative">` 套 `border-left: 45px solid rgb(188, 40, 28)`（商周品牌紅 accent bar）。reader mode 下 border-width 計入 box 寬度→圖片整體被 border 往右擠 45px，視覺同時看到「左側紅色色塊 + 圖片偏離正中」。修法（結構性通則）：styler.js 注入 CSS rule `[data-jread-active="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr) { border-width: 0 !important; }`——reader card 已有圓角 + 陰影邊界，內部任何裝飾 border 都該清。preserve 清單跟既有 background 清除一致 + hr：blockquote 引述慣例 / table 資料分隔 / code 程式碼框 / hr 本身就是 border 化身。只清 `border-width` 不動 `border-style/color`，影響範圍最窄。spec 加 forcing function 驗 CSS 含 `*:not(...)` border-width:0 rule + 14 個 preserve tag 全列入；sanity check 拿掉 rule → spec 立即 fail。harness 截圖確認紅色色塊消失、圖片回正中。280 jsdom spec 全過。
+
+---
+
 **v0.7.45**——商業周刊第二種 detect 命中路徑修法（Jimmy 2026-04-27 V0.7.43 instrument log 第二批截圖揭露）。同頁面 detect 在不同時序下命中不同：(A) 命中 ARTICLE.figure-list（已由 v0.7.44 降級 guard 修）；**(B) heuristic 命中 DIV.Single-article、promoteForTitle sibling-walk 升到 SECTION.row、`promotedTitleHead = DIV`**（TITLE_TAG_SEL 含 div/span/p 寬鬆命中、找到某個含主標題文字的 div 包覆當 head）。原 `ensureArticleContainsTitleH1` guard `if (promotedTitleHead) return null` 對任何 truthy 都 skip → DIV 命中也擋掉 → ensureH1 不跑 → articleEl 停在 SECTION.row 不含真 H1。修法：guard 條件改成「`promotedTitleHead` 必須是真 heading（H1-H4）才視為堅實 promote 而 skip；其他 tag（div / span / p）視為 promote 不夠堅實、繼續跑 LCA 升真 H1 容器」。安全保證：Stratechery `wp-block-column` 的 `promotedTitleHead = H2`（堅實）→ guard 命中 skip 不再升（不會誤升 wp-site-blocks）；newtalk 類用 `<p class="name">` 當 title 的場景，guard 不擋 ensure 但下游 `articleEl.querySelector('h1')` 雙保險 / LCA 距離 guard 等都會擋住誤升。spec 覆蓋（既有 layer 2 forcing function + 商周 fixture spec）已驗證。279 jsdom spec 全過。
 
 ---

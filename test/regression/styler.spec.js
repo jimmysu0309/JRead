@@ -290,6 +290,43 @@ describe('styler — 骨架與可逆性', () => {
       'body 必須含 background-image: none !important');
   });
 
+  // v0.7.46 修法：商業周刊 blog 主圖外 wrapper `<div class="Single-image Border-left">`
+  // 套 border-left: 45px solid rgb(188, 40, 28)（商周品牌紅 accent bar）。reader
+  // mode 下 border-width 計入 box 寬度，把圖片整體往右擠 45px、左側顯示 45px
+  // 寬的紅色色塊——使用者回報「圖片破版且偏左」。修法：reader card 內非語意
+  // 保留清單元素（div/section/p/img/a 等）的 border-width 強制為 0，讓裝飾性
+  // border 不影響閱讀流。preserve 清單跟 background 清除一致 + hr：blockquote
+  // 是引述慣例 / table 是資料分隔 / code 是程式碼框 / hr 本身就是 border 化身。
+  it('CSS 清 articleEl 內裝飾性 border（v0.7.46 商周品牌紅 accent bar 修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找含 border-width: 0 的 *:not(...) rule block
+    const m = css.match(
+      /\[data-jread-active="1"\]\s+\*:not\([^)]+\)(?::not\([^)]+\))*\s*\{([^\}]*border-width\s*:\s*0[^\}]*)\}/
+    );
+    assert.ok(m, 'CSS 必須含 articleEl 內 `*:not(...)` border-width: 0 reset rule');
+    const selector = m[0].split('{')[0];
+    const body = m[1];
+
+    // preserve 清單：跟 background 清除完全一致 + hr（border 化身）
+    const preserveTags = [
+      'figure', 'figcaption', 'summary', 'blockquote',
+      'code', 'pre',
+      'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      'mark', 'kbd',
+      'hr'
+    ];
+    for (const tag of preserveTags) {
+      assert.ok(selector.includes(`:not(${tag})`),
+        `border reset selector 必須 :not(${tag})——該 tag 的 border 為語意/慣例需保留`);
+    }
+
+    assert.ok(/border-width\s*:\s*0\s*!important/.test(body),
+      'rule body 必須含 border-width: 0 !important（清商周 div.Single-image 類紅色 accent bar）');
+  });
+
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
