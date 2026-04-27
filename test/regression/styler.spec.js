@@ -205,17 +205,18 @@ describe('styler — 骨架與可逆性', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // 必須存在一個 rule 其 selector list 同時涵蓋 figure 與 picture（可
-    // 以是共用 block 也可以是分開兩條），body 必須同時有 width: auto
-    // !important 與 max-width: 100% !important。
-    // 先取任一含 figure 的 rule block 驗內容。
-    const m = css.match(/\[data-jread-active="1"\]\s+figure\s*(?:,\s*\[data-jread-active="1"\]\s+picture\s*)?\{([^}]*)\}/);
-    assert.ok(m, 'figure 必須有 rule block（修商周封面圖被壓成 31px）');
-    const body = m[1];
-    assert.ok(/width\s*:\s*auto\s*!important/.test(body),
-      'figure rule 必須含 width: auto !important（block 預設行為 = 100% of parent）');
-    assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
-      'figure rule 必須含 max-width: 100% !important');
+    // 必須存在一個含 figure selector 的 rule block，其 body 同時有
+    // width: auto !important 與 max-width: 100% !important（v0.7.56 起多
+    // 條 figure rule 並存，因此遍歷所有含 figure 的 rule 找符合的）。
+    const figureRules = [...css.matchAll(/\[data-jread-active="1"\]\s+figure\s*(?:,[^{]*)?\{([^}]*)\}/g)];
+    let widthRuleBody = null;
+    for (const r of figureRules) {
+      if (/width\s*:\s*auto\s*!important/.test(r[1]) && /max-width\s*:\s*100%\s*!important/.test(r[1])) {
+        widthRuleBody = r[1]; break;
+      }
+    }
+    assert.ok(widthRuleBody,
+      'figure 必須有一條 rule body 同時含 width: auto !important + max-width: 100% !important（修商周封面圖被壓成 31px）');
 
     // picture 也必須有同等 rule
     const mp = css.match(/\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}|,\s*\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}/);
@@ -416,9 +417,9 @@ describe('styler — 骨架與可逆性', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // 找 [data-jread-active="1"] picture 獨立 rule（不含其他 selector，避免抓到
-    // figure/picture 共用 rule）
-    const matches = [...css.matchAll(/\[data-jread-active="1"\]\s+picture\s*\{([^\}]*)\}/g)];
+    // 找含 picture selector 的 rule（v0.7.56 起 picture+figure 共用 rule，
+    // 不再要求 picture 獨立 rule；只要 selector list 含 picture 即可）
+    const matches = [...css.matchAll(/(?:^|,)\s*\[data-jread-active="1"\]\s+picture\s*(?:,[^{]*)?\{([^\}]*)\}/gm)];
     let hasReset = false;
     for (const m of matches) {
       const body = m[1];
@@ -445,6 +446,14 @@ describe('styler — 骨架與可逆性', () => {
     }
     assert.ok(hasHeightAutoMinH,
       '必須有一條 picture rule 同時含 height: auto + min-height: 0（清 cna 類 inline height 寫死的 placeholder 高度）');
+
+    // v0.7.56 修法：cna picture 縮回後 figure / fullPic 等外層 wrapper 仍
+    // 各自被 inline height 寫死撐 placeholder 空間。figure / div.fullPic
+    // 等 wrapper class 也清 height/min-height/aspect-ratio/padding-bottom。
+    assert.ok(/figure/.test(css.match(/\[data-jread-active="1"\][^{]*figure[^{]*\{[^}]*height\s*:\s*auto[^}]*\}/)?.[0] || ''),
+      'figure 必須在某條 rule 中含 height: auto !important（清 placeholder 高度）');
+    assert.ok(/\[class\*="fullPic"\]/.test(css),
+      'CSS 必須含 [class*="fullPic"] selector（cna 類 div.fullPic wrapper placeholder height 清除）');
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {

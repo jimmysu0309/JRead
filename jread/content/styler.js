@@ -167,11 +167,28 @@ html.${HTML_CLASS} body {
    的現代寫法」想撐 placeholder 空間，跟 v0.7.52 拆解 absolute hack 配套。
    不影響 figure/div/section 的 aspect-ratio（這些可能合法用於 embed
    container），只 picture 一個 tag。 */
-[${ARTICLE_ATTR}="1"] picture {
+[${ARTICLE_ATTR}="1"] picture,
+[${ARTICLE_ATTR}="1"] figure {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
   height: auto !important;
   min-height: 0 !important;
+}
+/* fullPic 類媒體 wrapper：原站 figure 外可能再包 div wrapper（cna 為例
+   <div class="fullPic"><figure>...</figure></div>），這層 wrapper 同樣
+   被 inline height 寫死 placeholder 高度。對含 "Pic" / "fullPic" /
+   "media" 等 wrapper class 的 div 也清 height/min-height。
+   通則依據：Pic / Image / Media wrapper 是常見 CMS 命名 pattern。 */
+[${ARTICLE_ATTR}="1"] [class*="fullPic"],
+[${ARTICLE_ATTR}="1"] [class*="full-pic"],
+[${ARTICLE_ATTR}="1"] [class*="full_pic"],
+[${ARTICLE_ATTR}="1"] [class*="image-wrapper"],
+[${ARTICLE_ATTR}="1"] [class*="img-wrapper"],
+[${ARTICLE_ATTR}="1"] [class*="media-wrapper"] {
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+  padding-bottom: 0 !important;
 }
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
