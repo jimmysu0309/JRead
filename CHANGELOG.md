@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.79**——theverge ReportClose widget rule textLen 上限放寬（v0.7.78 instrument 揭穿 v0.7.77 沒命中真因）。**事實**：v0.7.78 instrument 顯示 _3zbl0r4 ownHidden=false hiddenAncestor=null，**沒被任何 rule hide**。fullText 開頭確實是 `ReportClose` 命中 v0.7.77 regex，但 fullText 長度約 300+ chars（雙 widget 文字串接「ReportClose...FollowFollowSee All ReportTechClose...」），超過 v0.7.77 寫的 `text.length > 200` 上限被跳過。修法：textContent 上限從 200 → 1000。理由：widget 最多 button label + dropdown 提示文字幾段不會到 1000；主文段落從 detector 角度至少 1000+ chars 才會被 article candidate 命中、1000 上限避免誤殺主文。**保留所有 instrument log 待 Jimmy 驗證真實機器修法生效再清**。289 jsdom spec 全過。
+
+---
+
 **v0.7.78**——theverge round 4 instrument（v0.7.77 ReportClose widget rule 在實機沒生效，Jimmy 截圖 div._3zbl0r4 仍存在仍撐空白）。Jimmy 提醒不要亂猜——v0.7.77 的 rule 用「textContent 開頭 ReportClose」是賭，沒驗證 _3zbl0r4 自身是否真符合 rule。新 instrument 直接印 _3zbl0r4 真實狀態：(1) ownHidden / inHidden / hiddenAncestor（看是否被砍 / 哪層砍）；(2) directText（不抓子孫）+ fullText 前 200 chars（看 textContent 真實開頭）；(3) outerHTML 前 400 + inline style；(4) children 的 outerHTML 前 200——揭穿 ReportClose widget rule 為何沒命中。**保留所有 instrument log + v0.7.77 ReportClose rule** 待 Jimmy 驗證真兇後再決定 rule 改寫或撤回。289 jsdom spec 全過。
 
 ---
