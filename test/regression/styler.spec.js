@@ -429,6 +429,22 @@ describe('styler — 骨架與可逆性', () => {
     }
     assert.ok(hasReset,
       '必須有一條 picture rule 同時含 aspect-ratio: auto + padding-bottom: 0（清 cna 類 aspect-ratio 撐高 hack）');
+
+    // v0.7.55 修法：v0.7.54 instrument 揭穿 cna picture 空白真兇——picture
+    // 自己 computed height: 1159.56px（aspect-ratio 已 auto, padding-bottom
+    // 已 0, min-height 已 0），但 picture **height 被原站 inline style 或
+    // 高 specificity stylesheet 寫死**（cna lazy-load placeholder 系統慣用）。
+    // picture 加 height: auto + min-height: 0，讓高度由 img 內容撐起。
+    let hasHeightAutoMinH = false;
+    for (const m of matches) {
+      const body = m[1];
+      if (/height\s*:\s*auto\s*!important/.test(body) &&
+          /min-height\s*:\s*0\s*!important/.test(body)) {
+        hasHeightAutoMinH = true; break;
+      }
+    }
+    assert.ok(hasHeightAutoMinH,
+      '必須有一條 picture rule 同時含 height: auto + min-height: 0（清 cna 類 inline height 寫死的 placeholder 高度）');
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {

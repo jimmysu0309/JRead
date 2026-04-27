@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.55**——cna 主圖空白真兇定位（v0.7.54 instrument log 揭穿，立即移除 log）。**真兇**：cna picture 自身 computed `height: 1159.56px`、img 自身 height 只 575.998px——picture 比 img 多撐 584px 空白。aspect-ratio / padding-bottom / min-height 都已 auto/0（v0.7.53 修法生效），但 picture **height 被原站 inline style 或高 specificity stylesheet 寫死**（cna lazy-load placeholder 系統慣用「占位高度」避免文字 reflow）。修法：picture 加 `height: auto !important; min-height: 0 !important`，讓 picture 高度由內容自然撐起（picture 預設 inline、height = 子元素高度 = img height）。spec 補 forcing function 驗 picture rule 必含 height:auto + min-height:0；sanity 拿掉 → spec fail。同時移除 v0.7.54 instrument log。284 jsdom spec 全過。
+
+附帶教訓：picture 撐空白的 3 個 CSS 維度——aspect-ratio / padding-bottom / height——必須**同時**全部清才能完全拆解 placeholder hack；只清前兩個會留下 inline height 撐的空白。
+
+---
+
 **v0.7.54**——cna 主圖空白 instrument round 2（v0.7.53 picture aspect-ratio:auto + padding-bottom:0 後 Jimmy 截圖回報空白依然存在）。styler.apply 結尾遍歷 picture / img 自身 + 沿 ancestor 鏈最多 8 層、列印每層 width/height/aspect-ratio/padding-top/padding-bottom/min-height/display/position。Jimmy 實機 reload + Alt+R 後 console 揭穿真正撐空白的祖先 tag/class/CSS。修完真兇後此版的 instrument log 會立即移除。284 jsdom spec 全過。
 
 ---
