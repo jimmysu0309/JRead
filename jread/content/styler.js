@@ -604,17 +604,40 @@ html.${HTML_CLASS} body {
               const authorLinks = articleEl.querySelectorAll('a[href*="/author"]');
               console.log('[JRead v0.7.75] author links count:', authorLinks.length);
               for (const a of authorLinks) {
-                let cur = a, inHidden = false;
-                while (cur && cur !== articleEl) {
-                  if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
-                  cur = cur.parentElement;
+                let cur = a, hiddenAncestor = null, depth = 0;
+                while (cur && cur !== articleEl && depth < 10) {
+                  if (cur.dataset && cur.dataset.jreadHidden === '1') { hiddenAncestor = { tag: cur.tagName, cls: (cur.className || '').toString().slice(0, 80), depth }; break; }
+                  cur = cur.parentElement; depth++;
                 }
                 console.log('[JRead v0.7.75] author link:', JSON.stringify({
-                  href: a.getAttribute('href') || '',
-                  text: (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60),
+                  text: (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40),
                   ownHidden: a.dataset && a.dataset.jreadHidden === '1',
-                  inHidden
+                  hiddenAncestor
                 }));
+              }
+              // [JRead v0.7.76] 對 _3zbl0r4 / _1p1nf4x0 印 inline style + parent
+              for (const cls of ['_3zbl0r4', '_1p1nf4x0']) {
+                const el = articleEl.querySelector('.' + cls);
+                if (!el) continue;
+                const cs = window.getComputedStyle(el);
+                console.log('[JRead v0.7.76] tall el ' + cls + ':', JSON.stringify({
+                  inline_style: el.getAttribute('style') || '(none)',
+                  comp_disp: cs.display, comp_grid: cs.gridTemplateRows,
+                  comp_minH: cs.minHeight, comp_h: cs.height,
+                  parent_tag: el.parentElement?.tagName,
+                  parent_cls: (el.parentElement?.className || '').toString().slice(0, 80),
+                  parent_disp: el.parentElement ? window.getComputedStyle(el.parentElement).display : '',
+                  parent_grid: el.parentElement ? window.getComputedStyle(el.parentElement).gridTemplateRows : ''
+                }));
+                // 印 children 看 element 內有什麼
+                let ci = 0;
+                for (const c of el.children) {
+                  const cr = c.getBoundingClientRect();
+                  console.log('[JRead v0.7.76] ' + cls + ' child#' + ci++, JSON.stringify({
+                    tag: c.tagName, cls: (c.className || '').toString().slice(0, 60),
+                    h: Math.round(cr.height), text: (c.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40)
+                  }));
+                }
               }
             }
           } catch (e) { console.log('[JRead v0.7.73] inner err', e.message); }

@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.76**——theverge round 3 instrument。v0.7.75 揭穿關鍵事實但留兩個未解：(1) author links count=4 全部 inHidden=true 但前 3 個 ownHidden=false——某層**祖先**被 hide 把整個 byline 包住，需追蹤是哪層；(2) `_3zbl0r4` h=457 / `_1p1nf4x0` h=320 的 padding/min-height/aspect-ratio 全 0，但 `comp_h=457.109px` 直接是 computed height——可能是 stylesheet 顯式 height 或 grid layout 撐高度（`min-height: auto`），需印 inline style + display + grid-template + parent 看清楚。新 instrument 加印：(1) author link 祖先鏈 walk-up 直到 hidden 元素，回報 `hiddenAncestor:{tag,cls,depth}`；(2) tall element 自身 inline style + display + grid-template-rows + parent tag/cls/display/grid-template。**保留所有 instrument log 待 Jimmy 驗證真正修法生效再清**。289 jsdom spec 全過。
+
+---
+
 **v0.7.75**——theverge round 2 instrument（v0.7.74 hideInsideArticleAsides 沒解決問題，Jimmy 截圖標題仍消失、主圖後仍空白、byline 仍缺名）。v0.7.73 instrument 揭穿真兇不是 aside 而是 styled-components hash class element：DIV._3zbl0r4 h=457（圖後第一個 tall element）+ DIV._1p1nf4x0 h=320 + 多層 hash class wrapper 撐高度。新 instrument 加印：(1) gap area 內 height>=100 的 element 完整 computed padding-top/padding-bottom/min-height/aspect-ratio/display/position + ::before/::after 四維度；(2) `a[href*="/author"]` 作者連結的 href/text/hidden 狀態（揭穿 byline 缺名真兇）。**保留 v0.7.73+v0.7.75 instrument log 待驗**。289 jsdom spec 全過。
 
 ---
