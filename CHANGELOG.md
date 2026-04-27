@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.56**——cna 主圖空白第三層拆解（v0.7.55 picture 縮回但 figure / fullPic 等外層 wrapper 也撐 placeholder 高度，Jimmy 截圖回報空白依然存在）。v0.7.54 instrument 已揭穿：picture h=1160（v0.7.55 修）、**figure.floatImg h=1240**（=picture 1160 + figcaption 80）、**div.fullPic h=1240**——figure / fullPic 也被 inline height 寫死。修法：(1) 把 v0.7.55 picture rule（aspect-ratio/padding-bottom/height/min-height 全 reset）擴及 `figure`，兩 tag 共用同條 rule body；(2) 加 wrapper class 通則命中——`[class*="fullPic"] / [class*="full-pic"] / [class*="full_pic"] / [class*="image-wrapper"] / [class*="img-wrapper"] / [class*="media-wrapper"]` 也套同樣 reset（Pic / Image / Media wrapper 是跨 CMS 命名 pattern）。spec 補 forcing function 驗 figure rule 含 height:auto + selector 含 [class*="fullPic"]；sanity 拿掉 → spec fail。284 jsdom spec 全過。
+
+附帶教訓：placeholder height 跨多層 wrapper 都各自寫死時，「picture 修了」≠「整套修了」——visual debugging 必須沿 ancestor 鏈每層獨立檢查。
+
+---
+
 **v0.7.55**——cna 主圖空白真兇定位（v0.7.54 instrument log 揭穿，立即移除 log）。**真兇**：cna picture 自身 computed `height: 1159.56px`、img 自身 height 只 575.998px——picture 比 img 多撐 584px 空白。aspect-ratio / padding-bottom / min-height 都已 auto/0（v0.7.53 修法生效），但 picture **height 被原站 inline style 或高 specificity stylesheet 寫死**（cna lazy-load placeholder 系統慣用「占位高度」避免文字 reflow）。修法：picture 加 `height: auto !important; min-height: 0 !important`，讓 picture 高度由內容自然撐起（picture 預設 inline、height = 子元素高度 = img height）。spec 補 forcing function 驗 picture rule 必含 height:auto + min-height:0；sanity 拿掉 → spec fail。同時移除 v0.7.54 instrument log。284 jsdom spec 全過。
 
 附帶教訓：picture 撐空白的 3 個 CSS 維度——aspect-ratio / padding-bottom / height——必須**同時**全部清才能完全拆解 placeholder hack；只清前兩個會留下 inline height 撐的空白。
