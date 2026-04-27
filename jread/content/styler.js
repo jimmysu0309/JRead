@@ -465,6 +465,37 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
+      // [JRead v0.7.54 instrument] cna 主圖空白 round 2：v0.7.53 picture
+      // aspect-ratio:auto 後仍空白，懷疑祖先層也撐高度。印 picture/img + 全
+      // ancestor 直到 articleEl 的 height / aspect-ratio / padding-bottom /
+      // min-height / display，找出真正撐空白的元素。修完即移除。
+      try {
+        const targets = [];
+        const pic = articleEl.querySelector('picture');
+        const img = articleEl.querySelector('picture img, figure img');
+        if (pic) targets.push({ el: pic, label: 'picture' });
+        if (img) targets.push({ el: img, label: 'img' });
+        for (const t of targets) {
+          let cur = t.el;
+          let depth = 0;
+          while (cur && cur !== articleEl && depth < 8) {
+            const cs = window.getComputedStyle(cur);
+            const r = cur.getBoundingClientRect();
+            console.log('[JRead v0.7.54 instrument]', JSON.stringify({
+              from: t.label, depth,
+              tag: cur.tagName, cls: (cur.className || '').toString().slice(0, 80),
+              w: Math.round(r.width), h: Math.round(r.height),
+              ar: cs.aspectRatio,
+              pb: cs.paddingBottom, pt: cs.paddingTop,
+              minH: cs.minHeight, h_: cs.height,
+              disp: cs.display, pos: cs.position
+            }));
+            cur = cur.parentElement;
+            depth++;
+          }
+        }
+      } catch (e) { console.log('[JRead v0.7.54 instrument] err', e.message); }
+
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';
