@@ -354,6 +354,12 @@ describe('styler — 骨架與可逆性', () => {
       'col-* reset 必須含 float: none !important（Bootstrap col 常帶 float）');
     assert.ok(/flex\s*:\s*initial\s*!important/.test(body),
       'col-* reset 必須含 flex: initial !important（Bootstrap 4+ 用 flex）');
+    // v0.7.47 修法：商周 .Single-left-part.col-md-7 客製化 padding-right: 115px
+    // 給右欄 sidebar 留白，reader mode sidebar 已砍但 padding 還在 → 圖片寬度
+    // 卡在 col 寬度的子集（493px 而非完整 608px）。col 已退化成 block 流排，
+    // Bootstrap gutter padding 已失意義，可清。
+    assert.ok(/padding\s*:\s*0\s*!important/.test(body),
+      'col-* reset 必須含 padding: 0 !important（清商周 col-md-7 padding-right: 115px 類客製化 padding，避免主圖寬度被擠在 col 子集）');
   });
 
   it('重複 apply() 不重複注入 style 元素（更新同一個）', () => {
