@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.77**——theverge byline + lede ReportClose widget 兩層真兇修法（v0.7.76 instrument 揭穿）。**真兇 1**：byline 缺名因 `<aside class="_1wu3rm0">` 包含 author link，被 v0.7.74 通則砍掉連帶作者名消失。**真兇 2**：lede 區 `_3zbl0r4` h=457 是 ReportClose widget 容器（child#0 _1p1nf4x0 textContent="ReportCloseReportPosts from this topic w" h=320 是 widget），class 是 styled-components hash 無語意。**修法 A**：`hideInsideArticleAsides` 加 guard——aside 含 `a[href*="/author"]` / `a[href*="/people/"]` / `a[rel="author"]` 保留（HTML5 spec aside 允許 author byline 用法）。**修法 B**：新 rule `hideInsideArticleReportCloseWidgets` 命中 div/section textContent 開頭 `ReportClose` / `CloseReport` 連寫 + 含 button/role=button 的 widget pattern。範圍限縮 textContent 5-200 chars 避免誤殺主文容器。**保留所有 instrument log 待 Jimmy 驗證**。289 jsdom spec 全過。
+
+---
+
 **v0.7.76**——theverge round 3 instrument。v0.7.75 揭穿關鍵事實但留兩個未解：(1) author links count=4 全部 inHidden=true 但前 3 個 ownHidden=false——某層**祖先**被 hide 把整個 byline 包住，需追蹤是哪層；(2) `_3zbl0r4` h=457 / `_1p1nf4x0` h=320 的 padding/min-height/aspect-ratio 全 0，但 `comp_h=457.109px` 直接是 computed height——可能是 stylesheet 顯式 height 或 grid layout 撐高度（`min-height: auto`），需印 inline style + display + grid-template + parent 看清楚。新 instrument 加印：(1) author link 祖先鏈 walk-up 直到 hidden 元素，回報 `hiddenAncestor:{tag,cls,depth}`；(2) tall element 自身 inline style + display + grid-template-rows + parent tag/cls/display/grid-template。**保留所有 instrument log 待 Jimmy 驗證真正修法生效再清**。289 jsdom spec 全過。
 
 ---
