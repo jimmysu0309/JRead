@@ -3348,4 +3348,21 @@ describe('cleaner — cna-icon-only-link（支持 CNA icon-only a 修法）', ()
       cur = cur.parentElement;
     }
   });
+
+  // v0.7.64 修法：<div class="lineAd"> 廣告 wrapper class 是 camelCase 連寫
+  // ad 後綴（lowercase 為 linead），AD_BOUNDARY_RE 的「邊界 ad 邊界」規則
+  // 攔不到（ad 前是 e 不是邊界字元）。新 AD_SUFFIX_RE 對 layout/position/
+  // content-type prefix + Ad 後綴（lineAd / articleAd / topAd / sideAd /
+  // bannerAd / inlineAd 等）統一命中。
+  it('div.lineAd 必須被 hide（v0.7.64 AD_SUFFIX_RE camelCase ad 後綴修法）', () => {
+    const ad = document.querySelector('div[data-marker="cna-line-ad"]');
+    assert.ok(ad, 'fixture 必須含 div.lineAd');
+    let cur = ad, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      'div.lineAd 必須被 hide（forcing：拿掉 AD_SUFFIX_RE 或從 shouldHideByKeyword 移除 → 此 assertion fail）');
+  });
 });

@@ -40,6 +40,14 @@
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
+  // camelCase / 連寫 ad 後綴（`lineAd` lowercase 為 `linead`，AD_BOUNDARY_RE 攔
+  // 不到——`ad` 前是 `e` 不是邊界字元）。CMS 廣告命名慣例：layout/position/
+  // content-type prefix + Ad 後綴（`lineAd` / `articleAd` / `topAd` / `sideAd`
+  // / `bannerAd` / `inlineAd` 等），跨 CMS pattern。明確列舉前綴避免誤殺
+  // `head` / `load` / `bread` / `glad` 等英文單詞。
+  // cna.com.tw 實測：<div class="lineAd"> 廣告 wrapper 高 571px 殘留主文中。
+  const AD_SUFFIX_RE = /(line|inline|article|page|main|single|banner|display|video|side|top|bottom|left|right|header|footer|content|sticky|float|wrapper|container|block|widget|module|slot|unit|infinite|leader|skyscraper|rectangle|square|tall|wide|preroll|postroll|midroll)ad(s?)([-_\s\d]|$)/i;
+
   // 永不隱藏的保留元素 selector（即使命中 keyword 也跳過，避免 Unclutter 把 <summary> 外移的坑）
   const PRESERVE_SEL = 'summary, figure, figcaption, blockquote';
 
@@ -134,7 +142,7 @@
   function shouldHideByKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
-    return NOISE_KEYWORD_RE.test(m) || AD_BOUNDARY_RE.test(m);
+    return NOISE_KEYWORD_RE.test(m) || AD_BOUNDARY_RE.test(m) || AD_SUFFIX_RE.test(m);
   }
 
   // whitespace-normalize：jsdom textContent 保留 HTML 縮排 `\n    `，真實
