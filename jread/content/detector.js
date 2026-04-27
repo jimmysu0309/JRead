@@ -64,6 +64,19 @@
     if (articles.length === 1) {
       const el = articles[0];
       if (getText(el).length < MIN_TEXT_LEN) return null;
+      // 商業周刊修法（v0.7.43，Jimmy 2026-04-27）：article 不含 H1 且跟 <main> 是
+      // sibling（article 不在 main 內、main 含 H1）→ article 是輔助列表（archive
+      // 圖列 / 推薦清單），真主文在 main 內。降級到下一策略 schema-org / heuristic
+      // / main-tag，配合 promote/ensure 升到 main 含 H1。
+      // 安全保證：anthropic 類「article 在 main 內、article 不含 h1、h1 在 main
+      // 之 article 兄弟」的場景，article 在 main 內、main.contains(el)=true、
+      // 不命中此降級條件、仍走 article-tag 策略。
+      if (!el.querySelector('h1')) {
+        const main = document.querySelector('main');
+        if (main && !main.contains(el) && main.querySelector('h1')) {
+          return null;
+        }
+      }
       return { el, confidence: 0.9, strategy: 'article-tag' };
     }
 
@@ -435,6 +448,54 @@
   const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4']);
   const TITLE_TEXT_MAX = 120;  // og:title 典型 20-50 字（中）或 60-120 字（英）
 
+  // 找 a 與 b 的 lowest common ancestor（jread fallback promote 用）
+  function findLCA(a, b) {
+    if (!a || !b) return null;
+    const ancestors = new Set();
+    for (let cur = a; cur; cur = cur.parentElement) ancestors.add(cur);
+    for (let cur = b; cur; cur = cur.parentElement) {
+      if (ancestors.has(cur)) return cur;
+    }
+    return null;
+  }
+
+  // 最終保護（v0.7.42 商周修法）：detect() 結尾條件呼叫。
+  // 不管 detector 走哪條策略（含 main-tag 兜底，promoteForTitle 不會被觸發）
+  // 或 promoteForTitle 為何 silently 失敗（實機跟 jsdom 行為差異），都做最後一道
+  // 結構性保護——若 promoteForTitle 沒升過（promotedTitleHead 未設），找全頁 H1
+  // 與 articleEl 求 LCA、距離 ≤ 5 hops 就升到 LCA。不依賴文字比對。
+  //
+  // Guard 用 promotedTitleHead 而非「articleEl 含任何 heading」：
+  // - Stratechery articleEl=wp-block-column 含 h2 post-title（promoteForTitle 已升、
+  //   promotedTitleHead 設） → skip 不再升、避免誤升到 wp-site-blocks
+  // - 商周 articleEl=row 含 h2 sub-heading（promoteForTitle 失敗、promotedTitleHead
+  //   未設）→ 跑兜底升到 MAIN.Single（H1.Single-title-main 的 LCA）
+  // 兩個都 articleEl 內含 h2，但 promote 是否成功才是真正的決定因素。
+  function ensureArticleContainsTitleH1(articleEl, promotedTitleHead) {
+    if (!articleEl) return null;
+    // promote 已升 + 命中的是真 heading（H1-H4）→ 視為堅實 promote、不需再升。
+    // 商周 v0.7.44 實測：detect 時序變動下 heuristic 命中 DIV.Single-article →
+    // promote sibling-walk 把 articleEl 升到 SECTION.row 但 promotedTitleHead=DIV
+    // （某個含主標題文字的 div 包覆，TITLE_TAG_SEL 含 div/span 寬鬆命中），
+    // articleEl 仍不含真 <h1>。此時要繼續跑 LCA 升 main 含真 H1。
+    // Stratechery wp-block-column promotedTitleHead=H2 post-title（堅實）→ skip ✓。
+    if (promotedTitleHead && /^H[1-4]$/.test(promotedTitleHead.tagName)) return null;
+    // articleEl 已含真 <h1> → 不需升（雙保險）
+    if (articleEl.querySelector('h1')) return null;
+    for (const h of document.querySelectorAll('h1')) {
+      const lca = findLCA(articleEl, h);
+      if (!lca) continue;
+      if (lca === document.body || lca === document.documentElement) continue;
+      if (!lca.contains(articleEl)) continue;
+      let dist = 0;
+      let cur = articleEl;
+      while (cur && cur !== lca && dist <= 5) { cur = cur.parentElement; dist++; }
+      if (cur !== lca) continue;
+      return { el: lca, titleHead: h };
+    }
+    return null;
+  }
+
   function promoteForTitle(articleEl, maxHops) {
     const target = getCanonicalTitle();
     if (!target) return { el: articleEl, titleHead: null };
@@ -468,6 +529,34 @@
       cur = parent;
       hops++;
     }
+
+    // LCA fallback：sibling-walk 沒命中、掃全頁 h1/h2 找 og-match、跟 articleEl
+    // 求 LCA、若 LCA 在 body 之內就升到 LCA。動機：商業周刊 blog 路由實測——
+    // detector heuristic 命中 SECTION.row.no-gutters（含 hero + 段落、文字密
+    // 度極高），sibling-walk 演算法跑 row → parent=MAIN.Single → main 的
+    // sibling 含 SECTION.Single-title 內 H1，理論上應該命中、但 Jimmy 實機
+    // Chrome 與 Playwright Chromium 之間 detect 結果不一致（probe 顯示
+    // articleEl=main、實機 articleEl=row）。LCA fallback 對「articleEl 不含
+    // 主標題」的所有變體場景都能補洞，不依賴 sibling-walk 哪一層命中。
+    // 安全 guard：(1) H1/H2 必須 og-match；(2) LCA 不能升到 body / html
+    // （太外層、會吞 site chrome）；(3) LCA 必須包含 articleEl（trivial）。
+    // ---- LCA fallback layer 1：og-match LCA ----
+    // sibling-walk 沒命中（hops 限制 / 嵌套太深）但 og-match 還能成立的場景。
+    // 比 layer 2 安全（依賴 og-match guard），優先嘗試。
+    for (const h of document.querySelectorAll('h1, h2')) {
+      if (articleEl.contains(h)) continue;
+      const text = normalizeTitle(h.innerText || h.textContent || '');
+      if (text.length > TITLE_TEXT_MAX) continue;
+      if (!titleMatches(target, text)) continue;
+      const lca = findLCA(articleEl, h);
+      if (!lca) continue;
+      if (lca === document.body || lca === document.documentElement) continue;
+      if (!lca.contains(articleEl)) continue;
+      return { el: lca, titleHead: h };
+    }
+
+    // structural guard layer 移到 detect() 結尾的 ensureArticleContainsTitleH1
+    // ——同邏輯但繞開 strategy === 'main-tag' 條件、所有路徑都會跑到。
     return { el: articleEl, titleHead: null };
   }
 
@@ -519,6 +608,20 @@
       }
       if (result) {
         result.el = narrowToFirstArticleBlock(result.el);
+      }
+      // 最終保護：無條件再做一次「articleEl 必須含 H1」的結構性升級。
+      // 動機：商業周刊 blog 路由實測（Jimmy 2026-04-27）reload v0.7.41 後 console
+      // 證實 og.text === h1.text、LCA(article, h1)=MAIN.Single、distance=1、layer 2
+      // 邏輯應升 — 但 articleEl 仍是 SECTION.row。代表 promoteForTitle 整段被某個
+      // path 跳過或 silently 失敗。把 LCA 結構性 guard 抽到 detect() 結尾無條件
+      // 跑一次，繞開所有 strategy / ambiguous / 流程條件分支。
+      if (result && result.el) {
+        const finalPromoted = ensureArticleContainsTitleH1(result.el, result.promotedTitleHead);
+        if (finalPromoted) {
+          if (!result.promotedFrom) result.promotedFrom = result.el;
+          result.el = finalPromoted.el;
+          result.promotedTitleHead = finalPromoted.titleHead;
+        }
       }
       return result;
     }

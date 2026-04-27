@@ -182,28 +182,34 @@
     return false;
   }
 
+  // 三道主文 anchor 保護：wrapper 含「>= 100 chars 單一 p / 累計 p text >= 300 /
+  // title-anchor element」任一即視為「含主文」、不准砍。findSafeWrapperForHeading
+  // 與 closest hit 分支共用此判定，保持結構性通則一致。
+  function wrapperContainsArticleAnchor(wrapper, exclude) {
+    if (!wrapper || !wrapper.querySelectorAll) return false;
+    let acc = 0;
+    for (const para of wrapper.querySelectorAll('p')) {
+      const pt = norm(para.textContent);
+      if (pt.length >= 100) return true;
+      acc += pt.length;
+      if (acc >= 300) return true;
+    }
+    return hasArticleTitleAnchor(wrapper, exclude);
+  }
+
   // heading walk-up fallback：從 heading 往 articleEl 方向爬，停在「含主文長段
   // 落 / 累計主文 textLen / 含主文標題 anchor」之前一層，回傳停下時的最深安全
   // wrapper（找不到回 null）。兩處呼叫端共用：
   //   - hideInsideArticleByHeadingText 的 closest 失敗 fallback（v0.7.28 cnyes / v0.7.34 newtalk / v0.7.36 cna）
   //   - checkDynamicNoise 對 dynamic 注入的 heading 同樣處理
-  // 三道保護：>= 100 chars 主文 long p / 累計 textLen >= 300（中文短段）/ title-anchor wrapper
+  // 三道保護由 wrapperContainsArticleAnchor 統一判定。
   function findSafeWrapperForHeading(h, articleEl) {
     let cur = h;
     let lastSafeWrapper = null;
     while (cur.parentElement && cur.parentElement !== articleEl &&
            articleEl.contains(cur.parentElement)) {
       const pp = cur.parentElement;
-      let hasLongP = false;
-      let totalPText = 0;
-      for (const para of pp.querySelectorAll('p')) {
-        const pt = norm(para.textContent);
-        if (pt.length >= 100) { hasLongP = true; break; }
-        totalPText += pt.length;
-      }
-      if (hasLongP) break;
-      if (totalPText >= 300) break;
-      if (hasArticleTitleAnchor(pp, h)) break;
+      if (wrapperContainsArticleAnchor(pp, h)) break;
       lastSafeWrapper = pp;
       cur = pp;
     }
@@ -887,6 +893,15 @@
       if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
       if (isInPreserved(h)) continue;
       let target = h.closest('section, aside');
+      // closest hit 分支也必須跑三道主文 anchor 保護——businessweekly blog 實測：
+      // `<div class="line-sub-title">FOLLOW US</div>` 命中 `^follow\s+us`，
+      // closest('section, aside') 直接命中 `<section class="row no-gutters
+      // position-relative">`（包整篇主文 + 26 個長 p + 4 張圖），不加保護就
+      // 連同主文整塊砍 → 使用者只看到 H1 標題、無內文。修法：closest target
+      // 含主文 anchor 即視為過寬，改走 walk-up fallback 找更窄 wrapper。
+      // 與 walk-up fallback 共用 wrapperContainsArticleAnchor 判定（單一 source
+      // of truth，避免結構性通則漂移）。
+      //
       // Fallback：若沒 section/aside 祖先（SPA 類 div-only 結構），改升級到
       // heading 所在 articleEl 的 direct child sub-branch——但僅當該 sub-
       // branch **不含主文長段落**（無 p 的 textLen > 100）才動，避免誤殺
@@ -900,7 +915,9 @@
       // walk、找「不含主文長段落」的最深 wrapper 當 target。停止條件：parent
       // 含主文 p（>= 100）或到 articleEl 邊界。這樣 cnyes 的 H3「延伸閱讀」
       // 會 walk 到 `DIV.c1ciwb2s`（不含主文）後 break、target 設為它。
-      if (!target || target === articleEl || target.contains(articleEl)) {
+      const targetTooWide = target && target !== articleEl &&
+        !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
+      if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
         // walk-up fallback 共用 helper（findSafeWrapperForHeading 含三道保護：
         // >= 100 chars long p / 累計 textLen >= 300 中文短段 / title-anchor wrapper）
         const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
@@ -1861,7 +1878,10 @@
       if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
       if (isInPreserved(h)) continue;
       let target = h.closest('section, aside');
-      if (!target || target === articleEl || target.contains(articleEl)) {
+      // 同 hideInsideArticleByHeadingText：closest target 含主文 anchor 也視為過寬
+      const dynTooWide = target && target !== articleEl &&
+        !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
+      if (!target || target === articleEl || target.contains(articleEl) || dynTooWide) {
         const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
         if (!lastSafeWrapper) continue;
         target = lastSafeWrapper;

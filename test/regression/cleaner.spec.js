@@ -3223,3 +3223,71 @@ describe('cleaner — cna-short-paragraphs-walkup（中文短段 + javascript: a
     assert.notStrictEqual(h1.dataset.jreadHidden, '1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 商業周刊 blog 路由 — closest hit 也要套主文 anchor 保護（v0.7.39 修法）
+// ---------------------------------------------------------------------------
+describe('cleaner — businessweekly-blog-3021238（closest hit 主文 anchor 保護）', () => {
+  let window, document, articleEl, hidden;
+
+  before(() => {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(__dirname, 'fixtures', 'businessweekly-blog-3021238.html'),
+      scripts: ['detector', 'cleaner'],
+      viewport: { width: 1280, height: 900 },
+      pretendToBeVisual: true
+    });
+    window = env.window;
+    document = env.document;
+    const detected = window.__JRead.detector.detect();
+    assert.ok(detected, 'detector 必須命中商周 blog 主文（main.Single 兜底或更窄 promote）');
+    articleEl = detected.el;
+    hidden = window.__JRead.cleaner.clean(articleEl);
+  });
+
+  // 核心 forcing function：closest hit 後，target 含主文 anchor 不准砍
+  it('SECTION.row（含整篇主文）絕不可被 hide（forcing：closest hit 主文 anchor 保護）', () => {
+    const row = document.querySelector('section.row.no-gutters');
+    assert.ok(row, 'fixture 必須有 SECTION.row 包整篇主文');
+    assert.notStrictEqual(row.dataset.jreadHidden, '1',
+      'SECTION.row 含 8+ 個主文 p、3 個 H2、figure，closest hit 必須過主文 anchor 保護不准砍。' +
+      '拿掉 wrapperContainsArticleAnchor 保護 → 此 assertion fail（cleaner 把 line-sub-title FOLLOW US 的 closest section 整塊砍）');
+  });
+
+  // 主標 + 主文段落必須留下
+  it('主標 H1 保留', () => {
+    const h1 = document.querySelector('h1.Single-title-main');
+    assert.ok(h1);
+    assert.notStrictEqual(h1.dataset.jreadHidden, '1');
+    // 祖先鏈也不能被 hide
+    let cur = h1.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `H1 祖先 ${cur.tagName}.${cur.className} 不可被 hide`);
+      cur = cur.parentElement;
+    }
+  });
+
+  it('主文 8 個段落（marker A-H）全部保留', () => {
+    const markers = ['marker A', 'Marker B', 'Marker C', 'Marker D', 'Marker E', 'Marker F', 'Marker G', 'Marker H'];
+    for (const m of markers) {
+      const p = [...document.querySelectorAll('p')].find(el => (el.textContent || '').includes(m));
+      assert.ok(p, `主文段落 ${m} 必須存在於 fixture`);
+      // p 自己 + 所有祖先都不可被 hide
+      let cur = p;
+      while (cur && cur !== document.body) {
+        assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+          `主文段落 ${m} 的祖先 ${cur.tagName}.${cur.className} 不可被 hide`);
+        cur = cur.parentElement;
+      }
+    }
+  });
+
+  it('文末「精選文章 / 看更多」widget 仍應被 hide（forcing：保護不過寬，雜訊正常清）', () => {
+    const promote = document.querySelector('section.Single-promote');
+    assert.ok(promote, 'fixture 必須有 .Single-promote 文末 widget');
+    // closest hit 命中：Single-promote 自己是 closest target、不含主文 anchor → 應被 hide
+    assert.strictEqual(promote.dataset.jreadHidden, '1',
+      '.Single-promote 不含主文 anchor、closest hit 應正常砍——保護不應「過保」誤救雜訊');
+  });
+});
