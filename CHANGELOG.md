@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.66**——gvm 內文消失 instrument round 2（v0.7.65 揭穿 hidden#22 是 DIV.article-content textLen=2849 整篇主文被砍，但無法定位**哪條 rule** 砍的）。新 instrument：在 cleaner.hide() 入口加 stack trace 印——當 element textLen >= 500 時印 tag/cls/textLen + new Error().stack 前 4 層 caller，直接揭穿是哪條 cleaner rule 把主文當雜訊砍。同時保留 v0.7.65 articleEl/children/hidden 概觀 log。修完真兇後兩段 instrument log 立即一起移除。**保留待 Jimmy 驗證**。287 jsdom spec 全過。
+
+---
+
 **v0.7.65**——gvm.com.tw 文章內文消失 instrument（Jimmy 截圖回報 https://www.gvm.com.tw/article/129607 reader mode 後只剩標題+作者+主圖、其餘內文全砍）。styler.apply 結尾加 instrument log：印 articleEl 自身 rect、直接 children（tag/cls/hidden/w/h/text 前 60 字）、所有 [data-jread-hidden="1"] 元素（限前 30）的 tag/cls/textLen/text、以及 visible p 殘留段落。Jimmy 實機 console 揭穿哪條 cleaner rule 過砍 + 哪個 wrapper 被誤砍。修完真兇後此版 instrument log 立即移除。**保留 log 待 Jimmy 驗證真正修法生效再清**（按 Jimmy 硬規則 instrument 等驗證再刪）。287 jsdom spec 全過。
 
 ---
