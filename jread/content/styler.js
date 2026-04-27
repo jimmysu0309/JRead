@@ -424,6 +424,51 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
+      // [JRead v0.7.51 instrument] cna 主圖偏右破版：probe 跟實機不一致，
+      // 直接在 styler 結尾把第一個 wide figure / picture / img 的 computed
+      // style 印出，下一輪 release 看實機 console 對症下藥後立即移除。
+      try {
+        const figs = articleEl.querySelectorAll('figure, picture, img');
+        const wide = [];
+        for (const el of figs) {
+          const r = el.getBoundingClientRect();
+          if (r.width >= 200 && r.height >= 100) {
+            const cs = window.getComputedStyle(el);
+            wide.push({
+              tag: el.tagName,
+              cls: (el.className || '').toString().slice(0, 80),
+              x: Math.round(r.x), right: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height),
+              float: cs.float, position: cs.position,
+              ml: cs.marginLeft, mr: cs.marginRight,
+              left: cs.left, right_: cs.right,
+              transform: cs.transform,
+              w_: cs.width, mw: cs.maxWidth,
+              ta: cs.textAlign
+            });
+            // 也印兩層 ancestor 的關鍵值
+            let p = el.parentElement;
+            for (let h = 0; h < 3 && p && p !== articleEl; h++) {
+              const pr = p.getBoundingClientRect();
+              const pcs = window.getComputedStyle(p);
+              wide.push({
+                _anc: h, tag: p.tagName, cls: (p.className || '').toString().slice(0, 80),
+                x: Math.round(pr.x), right: Math.round(pr.right), w: Math.round(pr.width),
+                float: pcs.float, position: pcs.position,
+                ml: pcs.marginLeft, mr: pcs.marginRight,
+                left: pcs.left, right_: pcs.right,
+                transform: pcs.transform, w_: pcs.width, mw: pcs.maxWidth, ta: pcs.textAlign,
+                disp: pcs.display
+              });
+              p = p.parentElement;
+            }
+            if (wide.length >= 12) break;
+          }
+        }
+        const aR = articleEl.getBoundingClientRect();
+        console.log('[JRead v0.7.51 instrument] articleEl', articleEl.tagName, (articleEl.className || '').toString().slice(0, 50), 'x=', Math.round(aR.x), 'right=', Math.round(aR.right), 'w=', Math.round(aR.width));
+        for (const w of wide) console.log('[JRead v0.7.51 instrument]', JSON.stringify(w));
+      } catch (e) { console.log('[JRead v0.7.51 instrument] err', e.message); }
+
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';

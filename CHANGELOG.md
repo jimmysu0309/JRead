@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.51**——cna 主圖偏右 instrument 版本（v0.7.49 + v0.7.50 兩輪通則修法在實機都失敗，probe 跟實機矛盾，直接走 instrument log 路線）。styler.apply 結尾遍歷 articleEl 內 width >= 200px height >= 100px 的 figure/picture/img、列印自身 + 三層 ancestor 的 computed `float / position / margin / left / right / transform / width / maxWidth / textAlign / display`。Jimmy 實機 reload + Alt+R 後 console 直接看到偏右真兇是哪層、套什麼 CSS。**修完真兇後此版的 instrument log 會立即移除**。282 jsdom spec 全過。
+
+---
+
 **v0.7.50**——cna 主圖偏右修法 round 2（v0.7.49 max-width:100% 修了 centralContent overflow 但 Jimmy 實機截圖回報主圖仍偏右；本輪 probe 數據顯示「圖 x=336 對齊段落」但實機截圖矛盾——「實機 ≠ Playwright」memory 教訓直接命中）。**相信實機截圖、不信 probe**：cna 主圖 `<figure class="floatImg center">` class 名字面就是「float image」，原站 CSS 用 float / 不對稱 margin 把它放到 sidebar 區（reader mode 單欄沒有 sidebar 這種 layout 假設不成立）。修法（結構性通則）：reader card 內所有後代強制 `float: none !important; margin-left: auto !important; margin-right: auto !important`——禁止 float 偏移、block 元素 width < parent 時自動水平置中。對 inline 元素 margin:auto no-op 無副作用，對保留語意 figure / blockquote 也合理（本來就應置中或無 float）。spec 加 forcing function 驗 `[data-jread-active="1"] *` rule 必含 float:none + margin-left:auto + margin-right:auto；sanity 拿掉 → spec fail。282 jsdom spec 全過。
 
 附帶教訓：**雙站 harness 驗證 + probe 數據都對齊** 不等於 **實機正確**——Playwright Chromium 的 lazy-load 時序、bot detection 差異、CSP / extension load order 與實機 Chrome 不同步。下次「實機跟 probe 矛盾」時直接相信實機截圖、加保守通則修法，不再花時間反覆 probe。
