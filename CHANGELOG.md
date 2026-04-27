@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.71**——清掉 v0.7.69 instrument log（Jimmy 已驗證 v0.7.70 object-fit::before height:0 修法生效，按硬規則「等修好才清 log」執行）。styler.apply 結尾 [JRead v0.7.69] 區塊整段移除。修法本身（picture / figure / [class*="object-fit"]::before/::after 的 content:none + display:none + padding-bottom:0 + height:0）全部保留。289 jsdom spec 全過。
+
+---
+
 **v0.7.70**——gvm 主圖前空白真兇定位（v0.7.69 instrument 揭穿）。**真兇**：`div.object-fit::before` pseudo-element 用 `content: ""; display: block; height: 360px / 537.598px`（**直接設 height** 撐 placeholder 高度，不是 padding-bottom 也不是 aspect-ratio）。v0.7.61 cna picture::before 修法只清 `content + display + padding-bottom` 三個維度，沒處理 `height` 維度——`object-fit::before` 用 height 撐高所以那條 rule 不夠。修法：(1) 擴 `::before/::after` rule selector 加 `[class*="object-fit"]::before/after`；(2) rule body 加 `height: 0 !important` 第四維度——對所有 picture/figure/object-fit 的 ::before/::after 全方位清空（display:none + content:none + padding-bottom:0 + height:0）。spec 加 forcing function 驗 selector + height:0 declaration。**保留 v0.7.69 instrument log 待 Jimmy 驗證**。289 jsdom spec 全過。
 
 ---
