@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.65**——gvm.com.tw 文章內文消失 instrument（Jimmy 截圖回報 https://www.gvm.com.tw/article/129607 reader mode 後只剩標題+作者+主圖、其餘內文全砍）。styler.apply 結尾加 instrument log：印 articleEl 自身 rect、直接 children（tag/cls/hidden/w/h/text 前 60 字）、所有 [data-jread-hidden="1"] 元素（限前 30）的 tag/cls/textLen/text、以及 visible p 殘留段落。Jimmy 實機 console 揭穿哪條 cleaner rule 過砍 + 哪個 wrapper 被誤砍。修完真兇後此版 instrument log 立即移除。**保留 log 待 Jimmy 驗證真正修法生效再清**（按 Jimmy 硬規則 instrument 等驗證再刪）。287 jsdom spec 全過。
+
+---
+
 **v0.7.64**——cna 主文中 `<div class="lineAd">` 廣告 wrapper 清除（Jimmy 截圖回報）。根因：lineAd 是 camelCase 連寫 ad 後綴（lowercase 為 linead），既有 AD_BOUNDARY_RE 的「邊界 ad 邊界」(`/(^|[-_\s])ad([-_\s]|$)/`)攔不到——`ad` 前是 `e` 不是邊界字元。修法（結構性通則）：新 AD_SUFFIX_RE 對 layout/position/content-type prefix + Ad 後綴統一命中——`/(line|inline|article|page|main|single|banner|display|video|side|top|bottom|left|right|header|footer|content|sticky|float|wrapper|container|block|widget|module|slot|unit|infinite|leader|skyscraper|rectangle|square|tall|wide|preroll|postroll|midroll)ad(s?)([-_\s\d]|$)/i`，明確列舉 layout 前綴避免誤殺 head/load/bread/glad 等英文單詞。掛進 shouldHideByKeyword 的 OR 鏈。fixture cna-icon-only-link.html 加 `<div class="lineAd">` + spec 驗 hide；sanity 拿掉 → spec fail。287 jsdom spec 全過。
 
 ---
