@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.78**——theverge round 4 instrument（v0.7.77 ReportClose widget rule 在實機沒生效，Jimmy 截圖 div._3zbl0r4 仍存在仍撐空白）。Jimmy 提醒不要亂猜——v0.7.77 的 rule 用「textContent 開頭 ReportClose」是賭，沒驗證 _3zbl0r4 自身是否真符合 rule。新 instrument 直接印 _3zbl0r4 真實狀態：(1) ownHidden / inHidden / hiddenAncestor（看是否被砍 / 哪層砍）；(2) directText（不抓子孫）+ fullText 前 200 chars（看 textContent 真實開頭）；(3) outerHTML 前 400 + inline style；(4) children 的 outerHTML 前 200——揭穿 ReportClose widget rule 為何沒命中。**保留所有 instrument log + v0.7.77 ReportClose rule** 待 Jimmy 驗證真兇後再決定 rule 改寫或撤回。289 jsdom spec 全過。
+
+---
+
 **v0.7.77**——theverge byline + lede ReportClose widget 兩層真兇修法（v0.7.76 instrument 揭穿）。**真兇 1**：byline 缺名因 `<aside class="_1wu3rm0">` 包含 author link，被 v0.7.74 通則砍掉連帶作者名消失。**真兇 2**：lede 區 `_3zbl0r4` h=457 是 ReportClose widget 容器（child#0 _1p1nf4x0 textContent="ReportCloseReportPosts from this topic w" h=320 是 widget），class 是 styled-components hash 無語意。**修法 A**：`hideInsideArticleAsides` 加 guard——aside 含 `a[href*="/author"]` / `a[href*="/people/"]` / `a[rel="author"]` 保留（HTML5 spec aside 允許 author byline 用法）。**修法 B**：新 rule `hideInsideArticleReportCloseWidgets` 命中 div/section textContent 開頭 `ReportClose` / `CloseReport` 連寫 + 含 button/role=button 的 widget pattern。範圍限縮 textContent 5-200 chars 避免誤殺主文容器。**保留所有 instrument log 待 Jimmy 驗證**。289 jsdom spec 全過。
 
 ---
