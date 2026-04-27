@@ -506,6 +506,77 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
+      // [JRead v0.7.73 instrument] theverge 標題消失 + 主圖下空白 debug。
+      // 印 articleEl 自身 / 是否含 h1 / h1 是否 visible / direct children
+      // hidden 狀態 / 圖後 100~1500px 範圍內 element。保留待 Jimmy 驗證
+      // v0.7.74 修法生效再清。
+      try {
+        setTimeout(() => {
+          try {
+            const aR = articleEl.getBoundingClientRect();
+            console.log('[JRead v0.7.73] articleEl', articleEl.tagName, (articleEl.className || '').toString().slice(0, 80), 'rect:', JSON.stringify({
+              x: Math.round(aR.x), y: Math.round(aR.y), w: Math.round(aR.width), h: Math.round(aR.height)
+            }));
+
+            // articleEl 內 h1 狀態
+            const allH1 = articleEl.querySelectorAll('h1');
+            console.log('[JRead v0.7.73] h1 count in articleEl:', allH1.length);
+            for (const h1 of allH1) {
+              const cs = window.getComputedStyle(h1);
+              const r = h1.getBoundingClientRect();
+              let cur = h1, inHidden = false;
+              while (cur && cur !== articleEl) {
+                if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+                cur = cur.parentElement;
+              }
+              console.log('[JRead v0.7.73] h1:', JSON.stringify({
+                text: (h1.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+                inHidden, w: Math.round(r.width), h: Math.round(r.height),
+                disp: cs.display, visibility: cs.visibility, ownHidden: h1.dataset && h1.dataset.jreadHidden === '1'
+              }));
+            }
+
+            // direct children
+            let ci = 0;
+            for (const child of articleEl.children) {
+              const cr = child.getBoundingClientRect();
+              const hF = child.dataset && child.dataset.jreadHidden === '1';
+              const text = (child.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+              console.log('[JRead v0.7.73] direct child', ci++, JSON.stringify({
+                tag: child.tagName, cls: (child.className || '').toString().slice(0, 60),
+                hidden: hF, w: Math.round(cr.width), h: Math.round(cr.height), text
+              }));
+              if (ci >= 15) break;
+            }
+
+            // 圖後空白範圍：找第一個圖、量它 bottom 到下一個 visible block 的 gap
+            const firstFig = articleEl.querySelector('figure, picture, img');
+            if (firstFig) {
+              const fr = firstFig.getBoundingClientRect();
+              const gapTop = fr.bottom;
+              // 找 articleEl 內 rect.top > gapTop 且 rect.height >= 50 的第一批 element
+              const inGap = [];
+              for (const el of articleEl.querySelectorAll('*')) {
+                const r = el.getBoundingClientRect();
+                const cs = window.getComputedStyle(el);
+                // top 在圖 bottom 後 OR 跨越圖 bottom，且 height >= 50
+                if (r.top < gapTop - 5 || r.height < 50) continue;
+                if (r.top > gapTop + 1500) continue;
+                inGap.push({
+                  tag: el.tagName, cls: (el.className || '').toString().slice(0, 50),
+                  y: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height),
+                  disp: cs.display, hiddenA: el.dataset && el.dataset.jreadHidden === '1'
+                });
+                if (inGap.length >= 12) break;
+              }
+              inGap.sort((a, b) => a.y - b.y);
+              console.log('[JRead v0.7.73] elements after first figure (gap area):', inGap.length);
+              for (const it of inGap) console.log('[JRead v0.7.73]', JSON.stringify(it));
+            }
+          } catch (e) { console.log('[JRead v0.7.73] inner err', e.message); }
+        }, 600);
+      } catch (e) { console.log('[JRead v0.7.73] outer err', e.message); }
+
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';

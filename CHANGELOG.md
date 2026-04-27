@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.73**——theverge.com 標題消失 + 圖後空白 instrument（Jimmy 截圖回報 https://www.theverge.com/report/914244/dreame-china-vacuums-hypercars-elon-musk reader mode 後標題不見、圖下大塊空白、byline 殘留缺名字）。多層問題不亂猜，instrument 印：(1) articleEl 自身 + 是否含 h1（detector 有沒有把 h1 升上來）+ h1 visible 狀態（cleaner 有沒有誤砍）；(2) articleEl direct children hidden 狀態；(3) 圖 bottom 後 1500px 範圍內所有 element（找空白來源）。Jimmy 實機 console 揭穿三層真兇。**保留 log 待驗**。289 jsdom spec 全過。
+
+---
+
 **v0.7.72**——today.line.me 主圖後空白修法（Jimmy DOM 截圖直接揭穿真兇）。**真兇**：`<div class="placeholder" style="padding-top:75.25%">` 用 `padding-top` 撐 4:3 aspect-ratio lazy-load placeholder。跟 cna picture::before / gvm object-fit::before 同類但載體換成 div.placeholder + 用 `padding-top` 不是 padding-bottom。修法（兩條同時擴）：(1) 主 placeholder rule selector 加 `[class*="placeholder"]`，wrapper 慣例命名跨站 pattern；(2) rule body 加 `padding-top: 0 !important` 第二維度，覆蓋 padding-bottom 與 padding-top 兩種 hack 寫法。spec 加 forcing function 驗 selector 含 `[class*="placeholder"]` + rule body 含 padding-top:0。sanity 拿掉 → spec fail。289 jsdom spec 全過。
 
 ---
