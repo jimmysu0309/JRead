@@ -381,6 +381,31 @@ describe('styler — 骨架與可逆性', () => {
       '`[data-jread-active="1"] *` rule 必須含 margin-left/right: auto !important（block 元素水平置中）');
   });
 
+  // v0.7.52 修法：cna img 自身 position:absolute + left:304px + right:-304px
+  // 把圖向版心外溢出做全寬 hero（v0.7.51 instrument log 在實機揭穿真兇）。
+  // 強制 articleEl 內 img/video 自身 position:static + inset auto 退回正常
+  // inline-block flow，跟著 figure/picture 容器置中。
+  it('CSS 含 img/video position: static + inset auto rule（v0.7.52 cna img absolute hack 修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找含 img + position: static 的 rule block
+    const m = css.match(/\[data-jread-active="1"\]\s+img\s*,\s*\[data-jread-active="1"\]\s+video\s*\{([^\}]*)\}/);
+    assert.ok(m, 'CSS 必須有 articleEl img + video position 強制 rule block');
+    const body = m[1];
+    assert.ok(/position\s*:\s*static\s*!important/.test(body),
+      'rule body 必須含 position: static !important（清 cna img 類 absolute hack）');
+    assert.ok(/left\s*:\s*auto\s*!important/.test(body),
+      'rule body 必須含 left: auto !important');
+    assert.ok(/right\s*:\s*auto\s*!important/.test(body),
+      'rule body 必須含 right: auto !important');
+    assert.ok(/top\s*:\s*auto\s*!important/.test(body),
+      'rule body 必須含 top: auto !important');
+    assert.ok(/bottom\s*:\s*auto\s*!important/.test(body),
+      'rule body 必須含 bottom: auto !important');
+  });
+
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);

@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.52**——cna 主圖偏右真兇定位 + 修法（v0.7.51 instrument log 在實機 console 揭穿真兇，立即移除 log）。**真兇**：cna 主圖 `<img>` 自身套 `position: absolute; left: 304px; right: -304px`（原站做「圖片向右溢出版心成全寬 hero」的 absolute hack）→ img 從 picture 內 x=304 起算 width 608 → 溢出 picture 右側 304px 變偏右破版。**為何前幾輪通則沒救到**：v0.7.48 的 `*:not(...) { left:auto; right:auto }` 用 `:not(picture):not(figure)` preserve 清單，img 雖不在 picture 清單但 `left/right` 對 position:absolute 元素的 inset 控制是 specificity 戰場——原站 inline style 或更高 specificity 的 stylesheet rule 蓋過。v0.7.50 的 `* { float:none; margin:auto }` 對 absolute element 沒用（absolute 不受 normal flow margin auto 影響）。**修法（結構性通則）**：對 articleEl 內 img/video 自身強制 `position: static !important; top/left/right/bottom: auto !important`——把媒體從任何 absolute / fixed / sticky 定位拉回 normal flow，inset 失效。安全保證：媒體本身不該 absolute（aspect-ratio container 模式是 wrapper 用 padding-bottom + img absolute inset:0 填滿，這個模式 img 變 static 後會回到容器頂部正常顯示，可能有 layout 退化但不會破版）；jread cleaner 已對 padding-bottom hack 做 runtime 處理，CSS level 強制 static 在 reader card 視覺結果是「圖縮在原本位置不溢出」更穩。spec 加 forcing function 驗 img + video rule 必含 position:static + 4 個 inset auto；sanity 拿掉 → spec fail。同時移除 v0.7.51 的 instrument log。283 jsdom spec 全過。
+
+附帶教訓（已存進 memory）：**probe 跟實機矛盾連續兩輪後立刻 instrument log，不再賭通則修法**——這次走 instrument 一輪就抓到真兇，比前兩輪盲改省一個 release cycle。
+
+---
+
 **v0.7.51**——cna 主圖偏右 instrument 版本（v0.7.49 + v0.7.50 兩輪通則修法在實機都失敗，probe 跟實機矛盾，直接走 instrument log 路線）。styler.apply 結尾遍歷 articleEl 內 width >= 200px height >= 100px 的 figure/picture/img、列印自身 + 三層 ancestor 的 computed `float / position / margin / left / right / transform / width / maxWidth / textAlign / display`。Jimmy 實機 reload + Alt+R 後 console 直接看到偏右真兇是哪層、套什麼 CSS。**修完真兇後此版的 instrument log 會立即移除**。282 jsdom spec 全過。
 
 ---
