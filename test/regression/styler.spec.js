@@ -355,6 +355,32 @@ describe('styler — 骨架與可逆性', () => {
       'rule body 必須含 max-width: 100% !important（cap 子元素寬度，避免 cna 類寫死 width:1152px wrapper overflow card）');
   });
 
+  // v0.7.50 修法：cna.com.tw figure.floatImg.center 雖名字含 center 但原站 CSS
+  // 套 float / 不對稱 margin 把主圖放到 sidebar 區，reader mode 單欄沒有
+  // sidebar → 圖偏右破版。實機與 probe 數據不一致（probe 顯示對齊但實機
+  // 偏右），相信實機截圖、強制 block flow 置中。
+  it('CSS 含 articleEl 後代 float: none + margin-left/right: auto rule（v0.7.50 cna .floatImg 偏右修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找含 float: none 與 margin auto 的 [data-jread-active] * rule
+    const matches = [...css.matchAll(/\[data-jread-active="1"\]\s+\*\s*\{([^\}]*)\}/g)];
+    let hasFloatNone = false;
+    let hasMarginLeftAuto = false;
+    let hasMarginRightAuto = false;
+    for (const m of matches) {
+      const body = m[1];
+      if (/float\s*:\s*none\s*!important/.test(body)) hasFloatNone = true;
+      if (/margin-left\s*:\s*auto\s*!important/.test(body)) hasMarginLeftAuto = true;
+      if (/margin-right\s*:\s*auto\s*!important/.test(body)) hasMarginRightAuto = true;
+    }
+    assert.ok(hasFloatNone,
+      '`[data-jread-active="1"] *` rule 必須含 float: none !important（清 cna .floatImg float-right 類偏移）');
+    assert.ok(hasMarginLeftAuto && hasMarginRightAuto,
+      '`[data-jread-active="1"] *` rule 必須含 margin-left/right: auto !important（block 元素水平置中）');
+  });
+
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);

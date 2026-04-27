@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.50**——cna 主圖偏右修法 round 2（v0.7.49 max-width:100% 修了 centralContent overflow 但 Jimmy 實機截圖回報主圖仍偏右；本輪 probe 數據顯示「圖 x=336 對齊段落」但實機截圖矛盾——「實機 ≠ Playwright」memory 教訓直接命中）。**相信實機截圖、不信 probe**：cna 主圖 `<figure class="floatImg center">` class 名字面就是「float image」，原站 CSS 用 float / 不對稱 margin 把它放到 sidebar 區（reader mode 單欄沒有 sidebar 這種 layout 假設不成立）。修法（結構性通則）：reader card 內所有後代強制 `float: none !important; margin-left: auto !important; margin-right: auto !important`——禁止 float 偏移、block 元素 width < parent 時自動水平置中。對 inline 元素 margin:auto no-op 無副作用，對保留語意 figure / blockquote 也合理（本來就應置中或無 float）。spec 加 forcing function 驗 `[data-jread-active="1"] *` rule 必含 float:none + margin-left:auto + margin-right:auto；sanity 拿掉 → spec fail。282 jsdom spec 全過。
+
+附帶教訓：**雙站 harness 驗證 + probe 數據都對齊** 不等於 **實機正確**——Playwright Chromium 的 lazy-load 時序、bot detection 差異、CSP / extension load order 與實機 Chrome 不同步。下次「實機跟 probe 矛盾」時直接相信實機截圖、加保守通則修法，不再花時間反覆 probe。
+
+---
+
 **v0.7.49**——cna.com.tw 主圖偏右破版修法（Jimmy 2026-04-27 截圖回報「索馬利蘭小檔案」主圖偏右溢出 card 邊界，是 v0.7.48 left/right:auto 修法的副作用顯露——商周 case 修好但 cna 顯露另一條根因）。probe 揪出根因：cna 文章 detail layout 用 `<div class="centralContent">` 寫死 `width: 1152px`（原站 article main + sidebar 的固定寬 layout）。reader mode 下 article 已被 cap 到 contentWidth（720px）max-width，但子元素 width:1152px 直接寫死 → overflow card 邊界 488px、主圖被 layout 流帶到右邊破版。修法（結構性通則）：reader card 內所有後代加 `max-width: 100% !important`——強制不超過 parent 寬度，等於 cap 在 article content area 內。對 figure/blockquote/table/code 等保留語意也是合理 cap。不用 width: 100%（會把 inline-block / icon 等小元件強拉成滿寬），只 max-width 限縮上限。實測：centralContent 從 1152→608、主圖 figure.floatImg 對齊主文段落 x=336 right=944 width=608。spec 加 forcing function 驗 `[data-jread-active="1"] *` rule body 必含 max-width: 100%；sanity 拿掉 → spec 立即 fail。harness 雙站驗證（cna + businessweekly 都過）。280 jsdom spec 全過。
 
 附帶教訓：v0.7.48 修了商周 left/right offset hack 但沒抓到 cna width-overflow case——「圖片偏左」與「圖片偏右」表面相反、底下根因不同（offset hack vs fixed-width wrapper）。reader card 對「子元素寫死寬度」這條 hard 通則加在「left/right inset」之後等於補完整套「強制 layout 收斂在 card 內」防線。

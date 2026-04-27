@@ -259,6 +259,22 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] * {
   max-width: 100% !important;
 }
+/* 強制 block flow 置中：原站常用 float / 負 margin / 偏移把媒體放到
+   sidebar 區或文繞圖（cna.com.tw figure.floatImg.center class 名字面上是
+   「float image」，原站 CSS 給 float: right 等讓主圖偏右配合左側 sidebar
+   layout）。reader mode 單欄 card 沒有 sidebar 區、float / 不對稱 margin
+   會把媒體推出版心造成偏移破版。對 reader card 內所有後代強制：
+     float: none——禁止文繞圖類偏移；
+     margin-left/right: auto——若元素 width 小於 parent 自動水平置中。
+   注意只強制 left/right margin，top/bottom 保留原值（垂直節奏交給原站 /
+   styler 既有 first-child margin reset 處理）。對 inline / inline-block
+   元素 margin auto 是 no-op；對 block 元素是水平置中。對保留語意 figure /
+   blockquote 等也合理（這些本來就應該置中或無 float）。 */
+[${ARTICLE_ATTR}="1"] * {
+  float: none !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
 /* left/right: auto 解釋：原站常用 position: relative + left/right 偏移做
    「圖片向左/右溢出版心做視覺擴張」hack（businessweekly.com.tw .Single-image
    套 position:relative; left: -90px; right: 90px——讓主圖在二欄 layout 中向
