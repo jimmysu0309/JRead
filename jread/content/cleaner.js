@@ -1668,14 +1668,46 @@
   // 包訂閱推薦/report close widget。class 是 styled-components hash 無語意、
   // NOISE_KEYWORD_RE 攔不到。靠 <aside> tag 結構特徵清。
   // 安全：HTML5 spec 定義 aside 必為補充內容、絕不是主文，跨站適用。
+  // ---- 主文內：ReportClose 類 dropdown widget structural rule ------------
+  // theverge.com 在主文 lede 區放「Report」按鈕（檢舉文章），點擊展開
+  // 「Close / Report Posts from this topic will be added to your hidden
+  // posts」dropdown。reader mode 下整個 widget（按鈕 + 展開的 dropdown
+  // 文字）都是 chrome、占主圖+標題之間 320px 高度。
+  // 結構性通則：textContent 開頭是「ReportClose」連寫（Report 按鈕 +
+  // Close 按鈕 + 提示文字組成的 widget）= dropdown widget pattern。實機
+  // 不會這樣連寫文字、只會在 widget aria-label / button 並排無空白時
+  // textContent 連起來變這個樣子。命中即 hide。
+  // 範圍限縮：只掃 articleEl 內 div / section（不掃 article / aside），
+  // 避免誤殺主文容器；第一個 child 必須是 button / role=button（widget
+  // 結構特徵）。
+  function hideInsideArticleReportCloseWidgets(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('div, section')) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const text = (el.textContent || '').replace(/\s+/g, '').trim();
+      if (text.length < 5 || text.length > 200) continue;
+      // textContent 開頭是 "ReportClose" 或 "CloseReport"（兩按鈕並排無空白）
+      if (!/^(Report\s*Close|Close\s*Report)/i.test(text)) continue;
+      // 必須有 button 或 role=button（widget 結構特徵）
+      if (!el.querySelector('button, [role="button"]')) continue;
+      hide(el, hidden);
+    }
+  }
+
   function hideInsideArticleAsides(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll('aside')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      // 安全 guard：aside 內含 <blockquote> 或 <q> = pull-quote（主文引文
+      // 安全 guard 1：aside 內含 <blockquote> 或 <q> = pull-quote（主文引文
       // aside 是 HTML5 合法用法，常見於長文配置主文 p 之間引述 hero quote）。
       // Engadget / NYTimes / Verge 等都用此 pattern；保留。
       if (el.querySelector('blockquote, q')) continue;
+      // 安全 guard 2：aside 內含 a[href*="/author"] = 作者 byline aside
+      // （HTML5 spec aside 允許「related to article」含作者資訊；theverge.com
+      // 把 byline 包在 <aside class="_1wu3rm0"> 內，v0.7.74 通則太激進誤殺
+      // 整個 byline 連帶作者名）。保留。
+      if (el.querySelector('a[href*="/author"], a[href*="/people/"], a[rel="author"]')) continue;
       hide(el, hidden);
     }
   }
@@ -2141,6 +2173,7 @@
       hideInsideArticleByInlineAdText(articleEl, hidden);
       hideInsideArticleFontTags(articleEl, hidden);
       hideInsideArticleAsides(articleEl, hidden);
+      hideInsideArticleReportCloseWidgets(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);
       hideInsideArticleAllButtons(articleEl, hidden);
       hideInsideArticleJsLinks(articleEl, hidden);
