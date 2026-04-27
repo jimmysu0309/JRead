@@ -3291,3 +3291,61 @@ describe('cleaner — businessweekly-blog-3021238（closest hit 主文 anchor �
       '.Single-promote 不含主文 anchor、closest hit 應正常砍——保護不應「過保」誤救雜訊');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.63 cna 「支持 CNA」icon-only 按鈕修法
+// Jimmy 2026-04-28 截圖回報：reader mode 下標題下方仍顯示「支持 CNA」icon。
+//   <a class="btn_support"><img src="support.svg"></a> 是 icon-only CTA，
+//   既有 hideInsideArticleJsLinks 只攔 href^="javascript:"、NOISE_KEYWORD_RE
+//   不含 support、NOISE_LINK_TEXT_RE 攔不到（textContent 空）。
+//   修法：hideInsideArticleIconOnlyLinks 通則——主文內 icon-only `<a>`
+//   （含 img/svg 但無 visible 文字）一律 hide，figure/picture 內 a 保留
+//   （主文圖片可點擊版合法用法）。
+// -----------------------------------------------------------------------------
+describe('cleaner — cna-icon-only-link（支持 CNA icon-only a 修法）', () => {
+  let window, document, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'cna-icon-only-link.html'), 'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window; document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => { window.__JRead.cleaner.restore(hidden); });
+
+  it('「支持 CNA」icon-only a (.btn_support) 必須被 hide', () => {
+    const a = document.querySelector('a[data-marker="cna-support"]');
+    assert.ok(a, 'fixture 必須含 a.btn_support');
+    let cur = a, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      'icon-only <a class="btn_support"> 必須被 hide；forcing：拿掉 hideInsideArticleIconOnlyLinks → 此 assertion fail');
+  });
+
+  it('figure 內的 a > img（圖片可點擊版）保留——不誤殺主文圖片連結', () => {
+    const a = document.querySelector('a[data-marker="figure-link"]');
+    assert.ok(a, 'fixture 必須含 figure 內 a');
+    assert.notStrictEqual(a.dataset.jreadHidden, '1',
+      'figure 內 icon-only a 是「圖片可點擊版」合法用法，不可被 hide');
+    let cur = a.parentElement;
+    while (cur && cur !== document.body) {
+      assert.notStrictEqual(cur.dataset.jreadHidden, '1',
+        `figure 內 a 的祖先 ${cur.tagName}.${cur.className} 不可被 hide`);
+      cur = cur.parentElement;
+    }
+  });
+});

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!--
+  Regression fixture：cna.com.tw 主文頂端「支持 CNA」icon-only 按鈕
+  來源：cna.com.tw/news/aopl/202604240301.aspx（2026-04-28 實測）
+  Jimmy 回報：reader mode 啟動後標題下方仍顯示「支持 CNA」icon。
+
+  根因：<a class="btn_support"><img src="support.svg"></a> 是 icon-only
+  CTA 連結（內含 img 無文字），原 cleaner rules 攔不到：
+  - hideInsideArticleJsLinks 只攔 href^="javascript:"
+  - NOISE_KEYWORD_RE 沒含 "support"（誤命中風險高）
+  - NOISE_LINK_TEXT_RE 攔不到（textContent 空）
+
+  修法（v0.7.63）：hideInsideArticleIconOnlyLinks 通則——主文內 icon-only
+  `<a>`（含 img/svg 但無 visible 文字）一律 hide，figure/picture 內的 a 保留
+  （主文圖片可點擊版合法用法）。
+
+  此 fixture 為 forcing function：拿掉 rule 則 a.btn_support 殘留、spec fail。
+-->
+<html lang="zh-Hant">
+<head><meta charset="UTF-8"><title>cna icon-only link</title></head>
+<body>
+  <main>
+    <article class="article">
+      <h1 class="article-title">索馬利蘭戰略地位攀升 BBC：台灣布局盼聯美制中</h1>
+      <div class="btnGroup">
+        <div class="articleTopBtnBox">
+          <a href="https://support.cna.com.tw/" class="btn_support" data-marker="cna-support">
+            <img src="https://imgcdn.cna.com.tw/www/website/img/support.svg" alt="">
+          </a>
+        </div>
+      </div>
+
+      <!-- figure 內 a > img 是「圖片可點擊版」主文用法，保留 -->
+      <figure class="floatImg">
+        <a href="https://www.cna.com.tw/photo/202604240301.aspx" data-marker="figure-link">
+          <img src="https://imgcdn.cna.com.tw/main.jpg" alt="">
+        </a>
+        <figcaption>軟體業商業模式受 AI 代理浪潮衝擊</figcaption>
+      </figure>
+
+      <p>BBC報導，台灣正與索馬利蘭加速靠攏，並遊說美國為首夥伴投入更多關注。本段是主文，給 detector 確認 article 是有效主文容器，不會 no-op。提供足夠長度避免 charThreshold 過濾，內含 marker A、marker B、marker C 三個區塊，模擬 cna 實機文章特徵。</p>
+
+      <p>外媒則指出，台灣正與索馬利蘭加速靠攏，並遊說美國為首夥伴投入更多關注，盼形成「區域聯防」反制中國施壓。Marker D 段落補強。提供 cleaner 的 textLen guard 跨過，避免 article 被當成短文容器誤砍。</p>
+
+      <p>英國廣播公司新聞網（BBC News）中文網昨天報導，賴總統出訪受阻，再次凸顯台灣於非洲的外交困境。Marker E 段落收尾。提供足夠文字密度確保 detector 命中此 article 而非 figure 容器。</p>
+    </article>
+  </main>
+</body>
+</html>

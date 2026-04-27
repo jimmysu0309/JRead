@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.63**——cna 主文頂端「支持 CNA」icon-only 按鈕清除（Jimmy 2026-04-28 截圖回報）。根因：`<a class="btn_support"><img src="support.svg"></a>` 是 icon-only CTA 連結，既有 cleaner rules 全攔不到——`hideInsideArticleJsLinks` 只攔 `href^="javascript:"`、`NOISE_KEYWORD_RE` 沒含 `support`（誤命中風險高，含 supportive 詞變體可能誤殺）、`NOISE_LINK_TEXT_RE` 攔不到（textContent 空）。修法（結構性通則）：新 rule `hideInsideArticleIconOnlyLinks`——主文內 icon-only `<a>`（含 img/svg 但 textContent 去空白後 < 1 字）一律 hide。安全 guard：`figure / picture` 內的 a 保留（「圖片可點擊版」是主文 hero 圖配連結的合法用法）。fixture cna-icon-only-link.html + 2 條 spec（btn_support 必 hide / figure 內 a 必保留）；sanity 拿掉呼叫 → spec 立即 fail。286 jsdom spec 全過。
+
+---
+
 **v0.7.62**——清掉 v0.7.59 instrument log（Jimmy 已驗證 v0.7.61 picture::before 修法生效，按 Jimmy 規則「等修好才清 log」執行）。styler.apply 結尾的 [JRead v0.7.59] 區塊整段移除。修法本身（picture::before / figure::before / picture aspect-ratio:auto / picture height:auto / img position:static / 等等）全部保留。284 jsdom spec 全過。
 
 ---

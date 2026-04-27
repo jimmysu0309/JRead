@@ -1608,6 +1608,33 @@
     }
   }
 
+  // ---- 主文內：icon-only <a> 通則 ---------------------------------------
+  // 結構性通則：reader mode 是純閱讀體驗，所有 CTA / 分享 / 訂閱 / 支持 /
+  // 收藏類 button-style 連結都該清。icon-only `<a>`（內含 svg/img 但無
+  // visible 文字）幾乎都是這類 CTA——主文引用連結一定有文字標籤、絕不會
+  // 是純圖標。
+  // cna.com.tw 實測：「支持 CNA」按鈕是 <a class="btn_support"><img src=
+  // "support.svg"></a>，href 不是 javascript: 所以 hideInsideArticleJsLinks
+  // 攔不到，class btn_support 不在 NOISE_KEYWORD_RE，textContent 空所以
+  // NOISE_LINK_TEXT_RE 也不命中。靠「icon-only」結構特徵統一識別。
+  // 安全 guard：figure / picture 內的 a > img 是「圖片可點擊版」合法用法
+  // （常見於主文 hero 圖配連結），保留；其他位置的 icon-only a 一律 hide。
+  function hideInsideArticleIconOnlyLinks(articleEl, hidden) {
+    for (const a of articleEl.querySelectorAll('a')) {
+      if (isInPreserved(a)) continue;
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      // 跳過 figure / picture 內的 a（主文圖片可點擊版，合法用法）
+      if (a.closest('figure, picture')) continue;
+      // 必須含 img / svg（icon 載體）
+      const hasIcon = a.querySelector('img, svg');
+      if (!hasIcon) continue;
+      // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
+      const text = (a.textContent || '').replace(/\s+/g, '').trim();
+      if (text.length >= 1) continue;
+      hide(a, hidden);
+    }
+  }
+
   // ---- 主文內：<font> tag heuristic ------------------------------------
   // `<font>` 是 HTML4 老式樣式 tag，HTML5 已 deprecated。現代網站幾乎只在
   // **inline 廣告 / PR 推廣**插播時用它（改字色 / 加 emoji 吸睛），正文排
@@ -2074,6 +2101,7 @@
       hideInsideArticleCommentPanels(articleEl, hidden);
       hideInsideArticleAllButtons(articleEl, hidden);
       hideInsideArticleJsLinks(articleEl, hidden);
+      hideInsideArticleIconOnlyLinks(articleEl, hidden);
       hideInsideArticleActionRows(articleEl, hidden, containers);
       hideInsideArticleButtonClusters(articleEl, hidden, containers);
       hideInsideArticleHorizontalRules(articleEl, hidden);
