@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.49**——cna.com.tw 主圖偏右破版修法（Jimmy 2026-04-27 截圖回報「索馬利蘭小檔案」主圖偏右溢出 card 邊界，是 v0.7.48 left/right:auto 修法的副作用顯露——商周 case 修好但 cna 顯露另一條根因）。probe 揪出根因：cna 文章 detail layout 用 `<div class="centralContent">` 寫死 `width: 1152px`（原站 article main + sidebar 的固定寬 layout）。reader mode 下 article 已被 cap 到 contentWidth（720px）max-width，但子元素 width:1152px 直接寫死 → overflow card 邊界 488px、主圖被 layout 流帶到右邊破版。修法（結構性通則）：reader card 內所有後代加 `max-width: 100% !important`——強制不超過 parent 寬度，等於 cap 在 article content area 內。對 figure/blockquote/table/code 等保留語意也是合理 cap。不用 width: 100%（會把 inline-block / icon 等小元件強拉成滿寬），只 max-width 限縮上限。實測：centralContent 從 1152→608、主圖 figure.floatImg 對齊主文段落 x=336 right=944 width=608。spec 加 forcing function 驗 `[data-jread-active="1"] *` rule body 必含 max-width: 100%；sanity 拿掉 → spec 立即 fail。harness 雙站驗證（cna + businessweekly 都過）。280 jsdom spec 全過。
+
+附帶教訓：v0.7.48 修了商周 left/right offset hack 但沒抓到 cna width-overflow case——「圖片偏左」與「圖片偏右」表面相反、底下根因不同（offset hack vs fixed-width wrapper）。reader card 對「子元素寫死寬度」這條 hard 通則加在「left/right inset」之後等於補完整套「強制 layout 收斂在 card 內」防線。
+
+---
+
 **v0.7.48**——商業周刊 blog 主圖偏左 round 3 修法（v0.7.47 修了 col-md-7 padding，但圖仍偏左 + 右側溢出 card padding；Jimmy 截圖回報「文字寬度正常但圖片還是偏左且破版」）。probe round 3 揪出剩餘根因：`<div class="Single-image position-relative">` 套 `position:relative; left: -90px; right: 90px`——原站讓主圖在二欄 layout 中向左溢出 col-md-7 邊界做視覺擴張的 CSS hack。reader mode 單欄 layout 不需要這個 offset，offset 反而把圖推出 card padding 範圍變成「偏左 + 右側破版」。修法（結構性通則）：reader card 內非保留清單元素的 `left / right` inset 一律清 auto——直接合併到 v0.7.46 既有 `*:not(...)` border 清除 rule。preserve 清單跟 border 一致。`top/bottom` 暫不清（避免誤傷 sticky 內部元素的合法 layout）。實測：wrapper left/right 從 -90/90 → 0/0、圖回到主文 column x=336~944，跟段落左右邊對齊。spec 加 forcing function 驗 rule body 必含 `left: auto !important` 與 `right: auto !important`；sanity 拿掉 → spec 立即 fail。280 jsdom spec 全過。
 
 ---

@@ -336,6 +336,25 @@ describe('styler — 骨架與可逆性', () => {
       'rule body 必須含 right: auto !important（清商周 .Single-image 類 position:relative + right:90px 視覺溢出 hack）');
   });
 
+  // v0.7.49 修法：原站常用 width: 1152px / 1080px 等寫死寬度給 article detail
+  // layout wrapper（cna.com.tw .centralContent width: 1152px、原本給 article
+  // main + sidebar 的固定寬 layout）。reader mode 下 article 已被 cap 到
+  // contentWidth 720px max-width，但子元素若寫死 width > 720px 仍會 overflow
+  // 出 card 邊界造成圖片/wrapper 偏右破版。max-width: 100% 強制所有後代不超
+  // parent 寬度。
+  it('CSS 含 articleEl 後代 max-width: 100% rule（v0.7.49 cna 主圖偏右破版修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+
+    // 找 `[data-jread-active="1"] *` 後代 universal selector rule（無 :not()）
+    const m = css.match(/\[data-jread-active="1"\]\s+\*\s*\{([^\}]*)\}/);
+    assert.ok(m, 'CSS 必須含 `[data-jread-active="1"] *` universal rule（無 :not()）');
+    const body = m[1];
+    assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
+      'rule body 必須含 max-width: 100% !important（cap 子元素寬度，避免 cna 類寫死 width:1152px wrapper overflow card）');
+  });
+
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
