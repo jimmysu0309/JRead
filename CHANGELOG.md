@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.62**——清掉 v0.7.59 instrument log（Jimmy 已驗證 v0.7.61 picture::before 修法生效，按 Jimmy 規則「等修好才清 log」執行）。styler.apply 結尾的 [JRead v0.7.59] 區塊整段移除。修法本身（picture::before / figure::before / picture aspect-ratio:auto / picture height:auto / img position:static / 等等）全部保留。284 jsdom spec 全過。
+
+---
+
 **v0.7.61**——cna 主圖空白真兇正解（v0.7.60 對 source::before 修錯位置、Jimmy 提供更上一層 DOM 截圖揭穿——`::before` 是掛在 `<picture>` 自身、不是 `<source>`）。**真兇**：`<picture style="--aspect-ratio:2000/1500;">` 配原站 stylesheet `picture::before { content: ''; display: block; padding-bottom: 75% }`（從 --aspect-ratio CSS variable 算出 4:3 比例）撐 picture 高度做 lazy-load placeholder。v0.7.55 修了 picture 自身 aspect-ratio:auto + padding-bottom:0 沒清掉 ::before，::before 仍在撐高度。**修法**：reader card 內 `picture::before / picture::after / figure::before / figure::after` 全部強制 `content: none + display: none + padding-bottom: 0`。撤回 v0.7.60 的 source rule（修錯位置）。**保留 v0.7.59 instrument log** 待驗。284 jsdom spec 全過。
 
 附帶教訓：lazy-load placeholder hack 用 ::before pseudo-element 撐 aspect-ratio 是流行 CSS 模式（搜「padding-bottom hack with ::before」），下次媒體 wrapper 撐空白找不到 inline height / aspect-ratio 時直接懷疑 ::before。
