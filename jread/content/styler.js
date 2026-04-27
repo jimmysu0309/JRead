@@ -167,12 +167,17 @@ html.${HTML_CLASS} body {
    的現代寫法」想撐 placeholder 空間，跟 v0.7.52 拆解 absolute hack 配套。
    不影響 figure/div/section 的 aspect-ratio（這些可能合法用於 embed
    container），只 picture 一個 tag。 */
-[${ARTICLE_ATTR}="1"] picture {
+[${ARTICLE_ATTR}="1"] picture,
+[${ARTICLE_ATTR}="1"] [class*="object-fit"] {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
   height: auto !important;
   min-height: 0 !important;
 }
+/* object-fit 是 CSS property 名，當 class 用代表「給 img 套 object-fit
+   的 wrapper」是常見 pattern（gvm.com.tw figure 內 div.object-fit
+   2026-04-28 實機 Jimmy 截圖揭穿撐空白）。跟 picture 一樣可能用 aspect-ratio
+   或 padding-bottom hack 撐 lazy-load placeholder。同 picture rule 處理。 */
 /* picture::before / picture::after 強制不渲染——cna.com.tw 在
    <picture style="--aspect-ratio:2000/1500;"> 上掛 picture::before
    配 content: '' + display: block + padding-bottom: 75%（從 CSS variable
@@ -486,57 +491,6 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
-      // [JRead v0.7.65 instrument] 保留待 Jimmy 驗證 v0.7.67 修法是否生效。
-      try {
-        setTimeout(() => {
-          try {
-            const aR = articleEl.getBoundingClientRect();
-            console.log('[JRead v0.7.65] articleEl', articleEl.tagName, (articleEl.className || '').toString().slice(0, 60), 'rect:', JSON.stringify({
-              x: Math.round(aR.x), y: Math.round(aR.y), w: Math.round(aR.width), h: Math.round(aR.height)
-            }));
-            let ci = 0;
-            for (const child of articleEl.children) {
-              const cr = child.getBoundingClientRect();
-              const hiddenF = child.dataset && child.dataset.jreadHidden === '1';
-              const text = (child.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-              console.log('[JRead v0.7.65] direct child', ci++, JSON.stringify({
-                tag: child.tagName, cls: (child.className || '').toString().slice(0, 60),
-                hidden: hiddenF, w: Math.round(cr.width), h: Math.round(cr.height), text
-              }));
-              if (ci >= 20) break;
-            }
-            const hiddenEls = articleEl.querySelectorAll('[data-jread-hidden="1"]');
-            console.log('[JRead v0.7.65] total hidden in articleEl:', hiddenEls.length);
-            let hi = 0;
-            for (const el of hiddenEls) {
-              const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-              const cr = el.getBoundingClientRect();
-              console.log('[JRead v0.7.65] hidden#' + hi, JSON.stringify({
-                tag: el.tagName, cls: (el.className || '').toString().slice(0, 60),
-                w: Math.round(cr.width), h: Math.round(cr.height),
-                textLen: (el.textContent || '').length, text
-              }));
-              if (++hi >= 30) break;
-            }
-            const visibleP = [];
-            for (const p of articleEl.querySelectorAll('p')) {
-              let cur = p, inHidden = false;
-              while (cur && cur !== articleEl) {
-                if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
-                cur = cur.parentElement;
-              }
-              if (inHidden) continue;
-              const text = (p.textContent || '').replace(/\s+/g, ' ').trim();
-              if (text.length < 20) continue;
-              visibleP.push(text.slice(0, 80));
-              if (visibleP.length >= 8) break;
-            }
-            console.log('[JRead v0.7.65] visible p (主文殘留):', visibleP.length, '段');
-            for (const t of visibleP) console.log('[JRead v0.7.65] visible p:', t);
-          } catch (e) { console.log('[JRead v0.7.65] inner err', e.message); }
-        }, 600);
-      } catch (e) { console.log('[JRead v0.7.65] outer err', e.message); }
-
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';

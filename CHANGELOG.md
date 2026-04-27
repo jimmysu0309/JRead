@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.68**——gvm 主圖前空白修法 + 移除 v0.7.65/v0.7.66 instrument log。Jimmy 驗證 v0.7.67 修法生效（gvm 內文回來），但截圖顯示主圖前仍有大塊空白。Jimmy DOM 截圖揭穿真兇：figure 內 `<div class="object-fit">` 空 wrapper 用 aspect-ratio / padding-bottom hack 撐 lazy-load placeholder（跟 v0.7.61 cna picture::before 同類但載體換成 div）。修法：擴 v0.7.55 picture rule selector 加 `[class*="object-fit"]`，同樣強制 aspect-ratio:auto + padding-bottom:0 + height:auto + min-height:0。`object-fit` 是 CSS property 名當 class 用的跨站 pattern（給 img 套 object-fit 的 wrapper 慣例命名）、屬結構性通則。spec 加 forcing function 驗 selector 含 `[class*="object-fit"]`。同時按硬規則「等修好才刪 log」清掉 v0.7.65 articleEl/children/hidden 概觀 log + v0.7.66 hide stack trace（gvm 內文已驗證生效）。289 jsdom spec 全過。
+
+---
+
 **v0.7.67**——gvm.com.tw 主文「年前」敘事誤判修法（v0.7.66 hide stack trace 揭穿真兇）。**真兇**：`hideInsideArticleCommentPanels` 用 `RELATIVE_TIME_RE` 數時間戳 >= 3 判定留言面板。gvm 主文作者寫「20 年前」「30 年前」「5 年前」「10 年前」「3 年前」等正文敘事性時間描述命中 regex，舊 layer 1「含 >= 300 chars 單一 p」protection 對中文短段多 p 結構失效（每段 200-300 chars 不過門檻）→ 整個 article-content textLen=2864 被誤砍。修法（layer 2 protection）：element 含 >= 4 個獨立 `<p>`、每個 >= 50 chars（trimmed） = 主文必備結構特徵。留言面板典型用巢狀 `<div>`（Disqus / LINE Today / Reddit / FB / Twitter / 自製 widget），不用 `<p>` tag——「>= 4 個 long p」留言面板達不到。fixture gvm-comment-panel-false-positive.html（6 段中文長段含 5 個「年前」）+ 2 條 spec（article-content 容器 + 6 段 marker 必保留）；sanity 拿掉 → spec fail。**保留 v0.7.65 / v0.7.66 instrument log 待 Jimmy 驗證真實站點修法生效再清**（按硬規則）。289 jsdom spec 全過。
 
 ---
