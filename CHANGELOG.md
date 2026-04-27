@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.67**——gvm.com.tw 主文「年前」敘事誤判修法（v0.7.66 hide stack trace 揭穿真兇）。**真兇**：`hideInsideArticleCommentPanels` 用 `RELATIVE_TIME_RE` 數時間戳 >= 3 判定留言面板。gvm 主文作者寫「20 年前」「30 年前」「5 年前」「10 年前」「3 年前」等正文敘事性時間描述命中 regex，舊 layer 1「含 >= 300 chars 單一 p」protection 對中文短段多 p 結構失效（每段 200-300 chars 不過門檻）→ 整個 article-content textLen=2864 被誤砍。修法（layer 2 protection）：element 含 >= 4 個獨立 `<p>`、每個 >= 50 chars（trimmed） = 主文必備結構特徵。留言面板典型用巢狀 `<div>`（Disqus / LINE Today / Reddit / FB / Twitter / 自製 widget），不用 `<p>` tag——「>= 4 個 long p」留言面板達不到。fixture gvm-comment-panel-false-positive.html（6 段中文長段含 5 個「年前」）+ 2 條 spec（article-content 容器 + 6 段 marker 必保留）；sanity 拿掉 → spec fail。**保留 v0.7.65 / v0.7.66 instrument log 待 Jimmy 驗證真實站點修法生效再清**（按硬規則）。289 jsdom spec 全過。
+
+---
+
 **v0.7.66**——gvm 內文消失 instrument round 2（v0.7.65 揭穿 hidden#22 是 DIV.article-content textLen=2849 整篇主文被砍，但無法定位**哪條 rule** 砍的）。新 instrument：在 cleaner.hide() 入口加 stack trace 印——當 element textLen >= 500 時印 tag/cls/textLen + new Error().stack 前 4 層 caller，直接揭穿是哪條 cleaner rule 把主文當雜訊砍。同時保留 v0.7.65 articleEl/children/hidden 概觀 log。修完真兇後兩段 instrument log 立即一起移除。**保留待 Jimmy 驗證**。287 jsdom spec 全過。
 
 ---
