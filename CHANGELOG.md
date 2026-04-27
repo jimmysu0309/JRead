@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.81**——撤回 theverge 全部修法 + 移除 instrument log（Jimmy 放棄 theverge 站）。撤回 v0.7.74 `hideInsideArticleAsides`、v0.7.77/v0.7.79/v0.7.80 `hideInsideArticleReportCloseWidgets`（連帶 main 流程的 caller 一起移除），避免這些 rule 對其他站造成誤殺風險。移除 styler.apply 結尾的 v0.7.73 / v0.7.75 / v0.7.78 instrument log（一整塊 setTimeout block）。除了這次 theverge 連 8 版（v0.7.73~v0.7.80）的修法 + log，所有其他站的修法（cna / gvm / 商周 / line today / 等等）全部保留。289 jsdom spec 全過。
+
+附帶教訓：**styled-components hash class 站點如果 textContent 開頭是 widget 文字、整塊 lede 包覆主圖+H1+byline+widget**，靠 textContent prefix + button / role=button 命中根本判別不出 widget vs lede，再多 guard（h1/figure/img exclude）也是賭——主文 anchor 不一定在被命中的同一個 wrapper 層。這類站點需要更高層的方法（例如直接 detector 階段針對 lede class pattern 升級到 entry-body-container），不適合在 cleaner 階段亂砍。
+
+---
+
 **v0.7.80**——v0.7.79 把 ReportClose rule 上限放寬到 1000 後實機**過砍主圖 + H1 + byline**（Jimmy 截圖回報）。**根因**：v0.7.73 instrument 早就顯示 articleEl direct child 0 是 `duet--article--lede` div h=1165 textContent 開頭也是「ReportCloseReportPosts...」——**整個 lede 區（含主圖 figure + H1 + byline + ReportClose widget）的 textContent 開頭都是 widget 文字**，rule selector `div, section` 命中後整塊 lede 被 hide。修法（補主文 anchor 保護 guard）：rule 加 `if (el.querySelector('h1, figure, img')) continue`——widget 自身不會含主文 anchor（h1/figure/img），這條 guard 防止誤殺含主文 anchor 的 lede 包覆 wrapper。**保留所有 instrument log 待 Jimmy 驗證**。289 jsdom spec 全過。
 
 附帶教訓：放寬 rule 上限 / 縮小 guard 時，必須**逐條驗 articleEl 內所有可能命中的 wrapper**——不只 `_3zbl0r4`，連 lede 整塊外層 div 也命中（textContent 開頭是 widget 文字、textLen 介於門檻內），漏 guard 即誤殺。
