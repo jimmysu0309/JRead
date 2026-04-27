@@ -130,6 +130,30 @@ html.${HTML_CLASS} body {
   max-width: 100% !important;
   height: auto !important;
 }
+/* 媒體 element 自身 position 強制 static：原站常用 picture > img 結構搭
+   img 自身 position:absolute + left/right offset 把圖片向版心外延伸成全寬
+   hero（cna.com.tw 主圖實機 instrument 揭穿：img position:absolute,
+   left:304px, right:-304px → img 從 picture 內 x=304 起算 width 608 →
+   溢出 picture 右側 304px 變偏右破版）。reader card 單欄 layout 不需要這
+   類定位 hack——強制 img/video 自身 position:static 讓它退回正常 inline-
+   block flow，跟著 figure/picture 容器置中。
+   不影響合法用法：aspect-ratio wrapper 模式（WP / Substack / Medium 等
+   wrapper aspect-ratio:16/9 + 內部 img absolute inset:0 填滿）的 absolute
+   是 wrapper 用、不是 img 用——但等等，這條模式裡 img 也是 absolute！
+   通則陷阱：避免誤殺，這條只強制最常見破版來源 img/video，inset 也清空；
+   aspect-ratio 容器若靠這個模式，restore 後會破——但 jread cleaner 已對
+   aspect-ratio padding-bottom hack 做 runtime 處理，CSS level 這層強制
+   static 對 reader card 的視覺結果是「圖縮在原本位置、不溢出」反而更穩。
+   實測：cna 索馬利蘭主圖修法後 img 從 absolute → static、left/right
+   offset 失效，圖回到 picture 內正常 inline 位置 width=picture.width。 */
+[${ARTICLE_ATTR}="1"] img,
+[${ARTICLE_ATTR}="1"] video {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+}
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }
@@ -424,51 +448,6 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
-      // [JRead v0.7.51 instrument] cna 主圖偏右破版：probe 跟實機不一致，
-      // 直接在 styler 結尾把第一個 wide figure / picture / img 的 computed
-      // style 印出，下一輪 release 看實機 console 對症下藥後立即移除。
-      try {
-        const figs = articleEl.querySelectorAll('figure, picture, img');
-        const wide = [];
-        for (const el of figs) {
-          const r = el.getBoundingClientRect();
-          if (r.width >= 200 && r.height >= 100) {
-            const cs = window.getComputedStyle(el);
-            wide.push({
-              tag: el.tagName,
-              cls: (el.className || '').toString().slice(0, 80),
-              x: Math.round(r.x), right: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height),
-              float: cs.float, position: cs.position,
-              ml: cs.marginLeft, mr: cs.marginRight,
-              left: cs.left, right_: cs.right,
-              transform: cs.transform,
-              w_: cs.width, mw: cs.maxWidth,
-              ta: cs.textAlign
-            });
-            // 也印兩層 ancestor 的關鍵值
-            let p = el.parentElement;
-            for (let h = 0; h < 3 && p && p !== articleEl; h++) {
-              const pr = p.getBoundingClientRect();
-              const pcs = window.getComputedStyle(p);
-              wide.push({
-                _anc: h, tag: p.tagName, cls: (p.className || '').toString().slice(0, 80),
-                x: Math.round(pr.x), right: Math.round(pr.right), w: Math.round(pr.width),
-                float: pcs.float, position: pcs.position,
-                ml: pcs.marginLeft, mr: pcs.marginRight,
-                left: pcs.left, right_: pcs.right,
-                transform: pcs.transform, w_: pcs.width, mw: pcs.maxWidth, ta: pcs.textAlign,
-                disp: pcs.display
-              });
-              p = p.parentElement;
-            }
-            if (wide.length >= 12) break;
-          }
-        }
-        const aR = articleEl.getBoundingClientRect();
-        console.log('[JRead v0.7.51 instrument] articleEl', articleEl.tagName, (articleEl.className || '').toString().slice(0, 50), 'x=', Math.round(aR.x), 'right=', Math.round(aR.right), 'w=', Math.round(aR.width));
-        for (const w of wide) console.log('[JRead v0.7.51 instrument]', JSON.stringify(w));
-      } catch (e) { console.log('[JRead v0.7.51 instrument] err', e.message); }
-
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';
