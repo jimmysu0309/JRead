@@ -173,17 +173,6 @@ html.${HTML_CLASS} body {
   height: auto !important;
   min-height: 0 !important;
 }
-/* <source> 元素強制 display: none：HTML spec 規定 <source> 是 art-direction
-   metadata、預設 display:none、不渲染。但原站 stylesheet 偶爾用通配 selector
-   或 element selector 把 source 的 display 改成 block（cna.com.tw 實機
-   instrument v0.7.57 揭穿：picture > source 元素 rect_h=1160px、display=block，
-   把 picture 撐高 1160px 變空白；圖在 source 後正常顯示）。reader card
-   強制 source 回到 spec 預設 display:none，picture 高度由 img 撐起。
-   通則安全：source 從來不該 visible，任何站把 source 改 visible 都是
-   原站 stylesheet 副作用、不是 reader 該保留的視覺。 */
-[${ARTICLE_ATTR}="1"] source {
-  display: none !important;
-}
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }
@@ -478,6 +467,61 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
+      // [JRead v0.7.59 instrument] cna 主圖空白 round 4：v0.7.58 source
+      // display:none 修法仍空白，前幾輪猜測都打偏。這次**直接量空白範圍**：
+      // 找 article 內第一個 figure/picture/img，定義空白範圍為 y =
+      // [圖片 ancestor 的 rect.top, 圖片自身 rect.top]，然後遍歷 article 內
+      // 所有 element，找出 rect 完全落在這個 y 範圍內的元素 + 任何 rect_y +
+      // rect_h 落在範圍內的元素。先用 setTimeout 等 layout 完全 settle 再量。
+      // Jimmy 實機 console 看完即移除。
+      try {
+        setTimeout(() => {
+          try {
+            const pic = articleEl.querySelector('figure, picture');
+            const img = articleEl.querySelector('img');
+            if (!pic || !img) { console.log('[JRead v0.7.59] no pic/img'); return; }
+            const picR = pic.getBoundingClientRect();
+            const imgR = img.getBoundingClientRect();
+            const blankTop = picR.top;
+            const blankBottom = imgR.top;
+            console.log('[JRead v0.7.59] picture/figure rect:', JSON.stringify({
+              tag: pic.tagName, cls: (pic.className || '').toString().slice(0, 60),
+              y: Math.round(picR.top), bottom: Math.round(picR.bottom), h: Math.round(picR.height)
+            }));
+            console.log('[JRead v0.7.59] img rect:', JSON.stringify({
+              y: Math.round(imgR.top), bottom: Math.round(imgR.bottom), h: Math.round(imgR.height)
+            }));
+            console.log('[JRead v0.7.59] blank range y=[', Math.round(blankTop), ',', Math.round(blankBottom), '] gap=', Math.round(blankBottom - blankTop));
+
+            // 遍歷 article 全部 element，找出 rect.top 在 [blankTop, blankBottom] 範圍且 rect.height >= 50 的元素
+            const all = articleEl.querySelectorAll('*');
+            const inRange = [];
+            for (const el of all) {
+              const r = el.getBoundingClientRect();
+              if (r.height < 50) continue;
+              // top 落在 blank 範圍 OR 元素跨越 blank 範圍
+              const topInRange = r.top >= blankTop - 5 && r.top < blankBottom + 5;
+              const spansRange = r.top < blankTop && r.bottom > blankTop + 100;
+              if (!topInRange && !spansRange) continue;
+              const cs = window.getComputedStyle(el);
+              inRange.push({
+                tag: el.tagName,
+                cls: (el.className || '').toString().slice(0, 60),
+                y: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height),
+                w: Math.round(r.width), x: Math.round(r.x),
+                disp: cs.display, pos: cs.position,
+                comp_h: cs.height, comp_minH: cs.minHeight,
+                inline: (el.getAttribute('style') || '').slice(0, 100)
+              });
+              if (inRange.length >= 30) break;
+            }
+            console.log('[JRead v0.7.59] elements in/spanning blank range (sorted by y):');
+            inRange.sort((a, b) => a.y - b.y);
+            for (const item of inRange) console.log('[JRead v0.7.59]', JSON.stringify(item));
+          } catch (e) { console.log('[JRead v0.7.59] inner err', e.message); }
+        }, 500);
+      } catch (e) { console.log('[JRead v0.7.59] outer err', e.message); }
+
       let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';

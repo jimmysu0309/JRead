@@ -444,14 +444,6 @@ describe('styler — 骨架與可逆性', () => {
     }
     assert.ok(hasHeightAutoMinH,
       '必須有一條 picture rule 同時含 height: auto + min-height: 0（清 cna 類 inline height 寫死的 placeholder 高度）');
-
-    // v0.7.58 修法：cna picture > source 元素被原站 stylesheet 改成
-    // display:block + 撐 1160px 高度（HTML spec 規定 <source> 預設
-    // display:none）。reader card 強制 source 回 spec 預設不渲染。
-    const m_src = css.match(/\[data-jread-active="1"\]\s+source\s*\{([^\}]*)\}/);
-    assert.ok(m_src, 'CSS 必須有 articleEl source 強制 display:none rule');
-    assert.ok(/display\s*:\s*none\s*!important/.test(m_src[1]),
-      'source rule 必須含 display: none !important（清 cna 類 source 被改 display:block 撐高度的 hack）');
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
