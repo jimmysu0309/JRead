@@ -274,20 +274,6 @@
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
-    // [JRead v0.7.66 instrument] 印 hide 長文 element 時的 stack——保留待
-    // Jimmy 驗證 v0.7.67 修法是否真讓 gvm 主文回來，若失敗再用此 log 抓
-    // 第二層真兇。修好驗證後下個 release 統一清掉。
-    try {
-      const tlen = (el.textContent || '').length;
-      if (tlen >= 500) {
-        const stack = new Error().stack || '';
-        const callerLine = stack.split('\n').slice(2, 6).join(' | ');
-        console.log('[JRead v0.7.66 hide-trace]',
-          el.tagName, (el.className || '').toString().slice(0, 80),
-          'textLen=' + tlen,
-          'caller:', callerLine.slice(0, 400));
-      }
-    } catch (e) {}
     const prevDisplay = el.style.display;
     const prevDisplayPriority = (el.style.getPropertyPriority &&
       el.style.getPropertyPriority('display')) || '';

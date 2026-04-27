@@ -416,8 +416,9 @@ describe('styler — 骨架與可逆性', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // 找 [data-jread-active="1"] picture 獨立 rule
-    const matches = [...css.matchAll(/\[data-jread-active="1"\]\s+picture\s*\{([^\}]*)\}/g)];
+    // 找含 picture selector 的 rule（v0.7.68 起 picture 可能跟其他 selector
+    // 共用 rule body，例如 picture, [class*="object-fit"]）
+    const matches = [...css.matchAll(/\[data-jread-active="1"\]\s+picture\s*(?:,[^{]*)?\{([^\}]*)\}/g)];
     let hasReset = false;
     for (const m of matches) {
       const body = m[1];
@@ -444,6 +445,12 @@ describe('styler — 骨架與可逆性', () => {
     }
     assert.ok(hasHeightAutoMinH,
       '必須有一條 picture rule 同時含 height: auto + min-height: 0（清 cna 類 inline height 寫死的 placeholder 高度）');
+
+    // v0.7.68 修法：gvm.com.tw figure 內 <div class="object-fit"> wrapper 也用
+    // aspect-ratio / padding-bottom hack 撐 lazy-load placeholder（同 picture），
+    // 擴 selector 命中。object-fit 是 CSS property 名當 class 用的常見 pattern。
+    assert.ok(/\[class\*="object-fit"\]/.test(css),
+      'CSS 必須含 [class*="object-fit"] selector（gvm 類 figure 內 div.object-fit placeholder）');
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {
