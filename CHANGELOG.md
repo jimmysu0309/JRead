@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.57**——cna 主圖空白 instrument round 3（v0.7.56 figure / fullPic 通則修法仍失敗、Jimmy 要求別亂猜回到 instrument log）。**還原 v0.7.56 的 figure / wrapper class 修法**（保留 v0.7.55 picture 修法因 v0.7.55 已驗證 picture 自身可縮回）。新加更廣 instrument log：picture/figure/wrapper 自身 + inline style attribute + HTML height attribute + picture 的 children + ancestor 上下兄弟元素 + article 內所有「高 >= 200px 但無直接文字」的可疑 placeholder。Jimmy 實機 console 看完即可揭穿真兇。修完後此版 instrument log 立即移除。spec 還原 v0.7.55 狀態（不要求 figure 含 height:auto / 不要求 fullPic selector）。284 jsdom spec 全過。
+
+---
+
 **v0.7.56**——cna 主圖空白第三層拆解（v0.7.55 picture 縮回但 figure / fullPic 等外層 wrapper 也撐 placeholder 高度，Jimmy 截圖回報空白依然存在）。v0.7.54 instrument 已揭穿：picture h=1160（v0.7.55 修）、**figure.floatImg h=1240**（=picture 1160 + figcaption 80）、**div.fullPic h=1240**——figure / fullPic 也被 inline height 寫死。修法：(1) 把 v0.7.55 picture rule（aspect-ratio/padding-bottom/height/min-height 全 reset）擴及 `figure`，兩 tag 共用同條 rule body；(2) 加 wrapper class 通則命中——`[class*="fullPic"] / [class*="full-pic"] / [class*="full_pic"] / [class*="image-wrapper"] / [class*="img-wrapper"] / [class*="media-wrapper"]` 也套同樣 reset（Pic / Image / Media wrapper 是跨 CMS 命名 pattern）。spec 補 forcing function 驗 figure rule 含 height:auto + selector 含 [class*="fullPic"]；sanity 拿掉 → spec fail。284 jsdom spec 全過。
 
 附帶教訓：placeholder height 跨多層 wrapper 都各自寫死時，「picture 修了」≠「整套修了」——visual debugging 必須沿 ancestor 鏈每層獨立檢查。
