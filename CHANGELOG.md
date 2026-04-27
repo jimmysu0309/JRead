@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.54**——cna 主圖空白 instrument round 2（v0.7.53 picture aspect-ratio:auto + padding-bottom:0 後 Jimmy 截圖回報空白依然存在）。styler.apply 結尾遍歷 picture / img 自身 + 沿 ancestor 鏈最多 8 層、列印每層 width/height/aspect-ratio/padding-top/padding-bottom/min-height/display/position。Jimmy 實機 reload + Alt+R 後 console 揭穿真正撐空白的祖先 tag/class/CSS。修完真兇後此版的 instrument log 會立即移除。284 jsdom spec 全過。
+
+---
+
 **v0.7.53**——cna 主圖空白修法（v0.7.52 把 img 強制 static 拉回 normal flow 後 Jimmy 截圖回報「圖位置對了但標題下方一大片空白」）。根因：cna 主圖 `<picture style="--aspect-ratio:2000/1500">` 配 stylesheet 算出 `aspect-ratio: 4/3` 撐 picture 高度（picture h=456px 對應 w=608px、比例 75%）；原 site 設計是 picture 用 aspect-ratio 撐 box、img absolute inset:0 填滿。v0.7.52 拆解 img absolute 後 img 跌進 normal flow，picture 變成「空 box 撐 75% 高度」殘留視覺空白。修法（與 v0.7.52 配套）：picture 強制 `aspect-ratio: auto !important; padding-bottom: 0 !important`，讓 picture 高度由 img static 內容自然撐起（picture 預設 inline、height = 子元素高度）。安全保證：picture 合法用法是 `<source>+<img>` art-direction wrapper、本身不需要 aspect-ratio 撐高；用 aspect-ratio 撐都是原站 padding-bottom hack 的現代寫法、跟 v0.7.52 配套拆解。不影響 figure/div/section 的 aspect-ratio（embed container 等可能合法用），只動 picture 這一個 tag。spec 加 forcing function 驗 picture rule 同時含 aspect-ratio: auto + padding-bottom: 0；sanity 拿掉 → spec fail。284 jsdom spec 全過。
 
 ---
