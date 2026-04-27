@@ -154,6 +154,23 @@ html.${HTML_CLASS} body {
   right: auto !important;
   bottom: auto !important;
 }
+/* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
+   position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
+   或 padding-bottom hack 撐高度（cna.com.tw <picture style="--aspect-ratio:
+   2000/1500"> 配合 stylesheet 算出 aspect-ratio），原本 absolute img 走
+   後 picture 變成「空 box 撐 75% padding」殘留視覺空白（cna 標題下方一
+   大塊空白實機顯現）。修法：picture 強制 aspect-ratio: auto + padding-
+   bottom: 0，讓高度由 img static 內容自然撐起（picture inline 預設
+   height = 子元素高度）。
+   通則安全：picture 合法用法是 <source>+<img> 的 art-direction wrapper、
+   不需要 aspect-ratio 撐自身；aspect-ratio 都是原站「padding-bottom hack
+   的現代寫法」想撐 placeholder 空間，跟 v0.7.52 拆解 absolute hack 配套。
+   不影響 figure/div/section 的 aspect-ratio（這些可能合法用於 embed
+   container），只 picture 一個 tag。 */
+[${ARTICLE_ATTR}="1"] picture {
+  aspect-ratio: auto !important;
+  padding-bottom: 0 !important;
+}
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }
