@@ -1686,7 +1686,13 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       const text = (el.textContent || '').replace(/\s+/g, '').trim();
-      if (text.length < 5 || text.length > 200) continue;
+      // textContent 上限放寬到 1000——v0.7.78 instrument 揭穿 theverge
+      // _3zbl0r4 fullText 約 300+ chars（含「ReportClose...FollowFollowSee
+      // All ReportTechClose...」雙 widget 文字串接），舊 200 上限漏命中。
+      // widget 最多含 button label + dropdown 提示文字幾段，不會到 1000；
+      // 主文段落從 detector 角度看也至少 1000+ chars/element 才會被 article
+      // candidate 命中，1000 上限避免誤殺主文。
+      if (text.length < 5 || text.length > 1000) continue;
       // textContent 開頭是 "ReportClose" 或 "CloseReport"（兩按鈕並排無空白）
       if (!/^(Report\s*Close|Close\s*Report)/i.test(text)) continue;
       // 必須有 button 或 role=button（widget 結構特徵）
