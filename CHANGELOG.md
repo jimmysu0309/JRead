@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.58**——cna 主圖空白真兇定位（v0.7.57 instrument log 揭穿，立即移除 log）。**真兇**：cna picture 內 `<source>` 元素被原站 stylesheet 改成 `display: block` + 撐 1160px 高度（HTML spec 規定 `<source>` 預設 display:none、不渲染——但原站某條 element selector 或通配 rule 把它變 visible）→ source 在 picture 內以 768x1160 block 元素呈現、把 picture 撐高 1160px → img (picture 第三個 child) 在 source **後面** 正常顯示，肉眼看到「主圖前有一大片空白才是真圖」。前幾輪通則修 picture / figure / wrapper height 都打不到 source 自身。**修法**：reader card 內所有 `<source>` 強制 `display: none !important`，回 HTML spec 預設不渲染。**通則安全**：source 從來不該 visible（任何站把它改 visible 都是 stylesheet 副作用、不是 reader 該保留的視覺），任何站適用。spec 加 forcing function 驗 source rule 含 display: none；sanity 拿掉 → spec fail。同時移除 v0.7.57 instrument log。284 jsdom spec 全過。
+
+附帶教訓：picture 的高度可能來自其 children（不只 img）——`<source>` 預設不渲染只是 spec 預設，原站 stylesheet 可以打破；instrument 印 children 才能看到這層真兇。
+
+---
+
 **v0.7.57**——cna 主圖空白 instrument round 3（v0.7.56 figure / fullPic 通則修法仍失敗、Jimmy 要求別亂猜回到 instrument log）。**還原 v0.7.56 的 figure / wrapper class 修法**（保留 v0.7.55 picture 修法因 v0.7.55 已驗證 picture 自身可縮回）。新加更廣 instrument log：picture/figure/wrapper 自身 + inline style attribute + HTML height attribute + picture 的 children + ancestor 上下兄弟元素 + article 內所有「高 >= 200px 但無直接文字」的可疑 placeholder。Jimmy 實機 console 看完即可揭穿真兇。修完後此版 instrument log 立即移除。spec 還原 v0.7.55 狀態（不要求 figure 含 height:auto / 不要求 fullPic selector）。284 jsdom spec 全過。
 
 ---
