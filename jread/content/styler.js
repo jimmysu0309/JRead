@@ -615,27 +615,38 @@ html.${HTML_CLASS} body {
                   hiddenAncestor
                 }));
               }
-              // [JRead v0.7.76] 對 _3zbl0r4 / _1p1nf4x0 印 inline style + parent
-              for (const cls of ['_3zbl0r4', '_1p1nf4x0']) {
-                const el = articleEl.querySelector('.' + cls);
-                if (!el) continue;
-                const cs = window.getComputedStyle(el);
-                console.log('[JRead v0.7.76] tall el ' + cls + ':', JSON.stringify({
-                  inline_style: el.getAttribute('style') || '(none)',
-                  comp_disp: cs.display, comp_grid: cs.gridTemplateRows,
-                  comp_minH: cs.minHeight, comp_h: cs.height,
-                  parent_tag: el.parentElement?.tagName,
-                  parent_cls: (el.parentElement?.className || '').toString().slice(0, 80),
-                  parent_disp: el.parentElement ? window.getComputedStyle(el.parentElement).display : '',
-                  parent_grid: el.parentElement ? window.getComputedStyle(el.parentElement).gridTemplateRows : ''
+              // [JRead v0.7.78] 對 _3zbl0r4 自身印：是否被 hide / direct
+              // textContent（不抓子孫）/ 完整 textContent / outerHTML 前 400
+              // 字 / 完整 inline style attribute——揭穿空白為何不在 hide 名單。
+              const target = articleEl.querySelector('._3zbl0r4');
+              if (target) {
+                const isHidden = target.dataset && target.dataset.jreadHidden === '1';
+                let inHidden = false, hAnc = null, depth = 0;
+                let cur = target.parentElement;
+                while (cur && cur !== articleEl && depth < 10) {
+                  if (cur.dataset && cur.dataset.jreadHidden === '1') {
+                    hAnc = { tag: cur.tagName, cls: (cur.className || '').toString().slice(0, 60), depth };
+                    inHidden = true; break;
+                  }
+                  cur = cur.parentElement; depth++;
+                }
+                const directText = Array.from(target.childNodes)
+                  .filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
+                const fullText = (target.textContent || '').replace(/\s+/g, ' ').trim();
+                console.log('[JRead v0.7.78] _3zbl0r4 hide-status:', JSON.stringify({
+                  ownHidden: isHidden, inHidden, hiddenAncestor: hAnc,
+                  directText: directText.slice(0, 100),
+                  fullText_first_200: fullText.slice(0, 200),
+                  outerHTML_first_400: target.outerHTML.slice(0, 400),
+                  inline_style: target.getAttribute('style') || '(none)'
                 }));
-                // 印 children 看 element 內有什麼
+                // 印 _3zbl0r4 與直接 children 的 outerHTML 前 200
                 let ci = 0;
-                for (const c of el.children) {
-                  const cr = c.getBoundingClientRect();
-                  console.log('[JRead v0.7.76] ' + cls + ' child#' + ci++, JSON.stringify({
+                for (const c of target.children) {
+                  console.log('[JRead v0.7.78] _3zbl0r4 child#' + ci++, JSON.stringify({
                     tag: c.tagName, cls: (c.className || '').toString().slice(0, 60),
-                    h: Math.round(cr.height), text: (c.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40)
+                    text_first_50: (c.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50),
+                    outer_first_200: c.outerHTML.slice(0, 200)
                   }));
                 }
               }
