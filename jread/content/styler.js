@@ -246,6 +246,19 @@ html.${HTML_CLASS} body {
   left: auto !important;
   right: auto !important;
 }
+/* 子元素寬度 cap：原站常用 width: 1152px / 1080px 等寫死寬度給 article
+   detail layout wrapper（cna.com.tw 的 .centralContent 寫死 width: 1152px、
+   原本給 article main + sidebar 的固定寬 layout）。reader mode 下 article
+   已被 cap 到 contentWidth（720px）max-width，但子元素若寫死 width > 720px
+   仍會 overflow 出 card 邊界造成「圖片/wrapper 偏右破版」（cna 索馬利蘭
+   主圖 right=1488 超出 article right=1000 達 488px）。max-width: 100%
+   強制所有後代不超過 parent 寬度，等於 cap 在 article content area 內。
+   對 figure/blockquote/table/code 等保留語意也是合理 cap（不應超出版心）。
+   不用 width: 100%（會把 inline-block / icon 等小元件強拉成滿寬）；只
+   max-width 限縮上限，width:auto / 顯式 width 仍照原值算。 */
+[${ARTICLE_ATTR}="1"] * {
+  max-width: 100% !important;
+}
 /* left/right: auto 解釋：原站常用 position: relative + left/right 偏移做
    「圖片向左/右溢出版心做視覺擴張」hack（businessweekly.com.tw .Single-image
    套 position:relative; left: -90px; right: 90px——讓主圖在二欄 layout 中向
