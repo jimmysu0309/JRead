@@ -325,6 +325,15 @@ describe('styler — 骨架與可逆性', () => {
 
     assert.ok(/border-width\s*:\s*0\s*!important/.test(body),
       'rule body 必須含 border-width: 0 !important（清商周 div.Single-image 類紅色 accent bar）');
+
+    // v0.7.48 修法：商周 div.Single-image 套 position:relative; left: -90px;
+    // right: 90px（原站讓主圖向左溢出 col-md-7 邊界視覺擴張的 hack）。reader
+    // mode 單欄 layout 不需要這個 offset、否則圖被推出 card padding 範圍。
+    // 通則：reader card 內非保留清單元素的 left/right inset 一律清 auto。
+    assert.ok(/left\s*:\s*auto\s*!important/.test(body),
+      'rule body 必須含 left: auto !important（清商周 .Single-image 類 position:relative + left:-90px 視覺溢出 hack）');
+    assert.ok(/right\s*:\s*auto\s*!important/.test(body),
+      'rule body 必須含 right: auto !important（清商周 .Single-image 類 position:relative + right:90px 視覺溢出 hack）');
   });
 
   it('CSS 含 Bootstrap col-* wrapper reset（v0.7.15 esmchina width 修法）', () => {

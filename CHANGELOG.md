@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.48**——商業周刊 blog 主圖偏左 round 3 修法（v0.7.47 修了 col-md-7 padding，但圖仍偏左 + 右側溢出 card padding；Jimmy 截圖回報「文字寬度正常但圖片還是偏左且破版」）。probe round 3 揪出剩餘根因：`<div class="Single-image position-relative">` 套 `position:relative; left: -90px; right: 90px`——原站讓主圖在二欄 layout 中向左溢出 col-md-7 邊界做視覺擴張的 CSS hack。reader mode 單欄 layout 不需要這個 offset，offset 反而把圖推出 card padding 範圍變成「偏左 + 右側破版」。修法（結構性通則）：reader card 內非保留清單元素的 `left / right` inset 一律清 auto——直接合併到 v0.7.46 既有 `*:not(...)` border 清除 rule。preserve 清單跟 border 一致。`top/bottom` 暫不清（避免誤傷 sticky 內部元素的合法 layout）。實測：wrapper left/right 從 -90/90 → 0/0、圖回到主文 column x=336~944，跟段落左右邊對齊。spec 加 forcing function 驗 rule body 必含 `left: auto !important` 與 `right: auto !important`；sanity 拿掉 → spec 立即 fail。280 jsdom spec 全過。
+
+---
+
 **v0.7.47**——商業周刊 blog 主圖偏左 round 2 修法（v0.7.46 清掉紅色色塊但圖仍偏左、Jimmy 截圖回報「直接破版」）。probe 圈出剩餘根因：祖先 `<div class="Single-left-part col-xs-12 col-md-7 col-lg-8">` 套**客製化** `padding-right: 115px`（原站 Bootstrap 二欄 layout 給右欄 sidebar 預留的留白），reader mode sidebar 已砍但 padding 還在生效→ col 內部寬度被擠成 `608 - 115 = 493px`，主圖只占 col 子集寬度而非完整 card 內寬。styler 既有 col-* reset 只清 `width / max-width / float / flex`，**完全沒清 padding**。修法：col-X- reset 加 `padding: 0 !important`。col 已退化成 block 流排（width: auto + float: none + flex: initial），Bootstrap gutter padding 已無 grid 意義可清。實測：col-md-7 padding-right 115→0、wrapper width 493→608、圖片左右邊跟段落對齊。spec 加 forcing function 驗 col-* rule body 必含 `padding: 0 !important`；sanity 拿掉 → spec 立即 fail。281 jsdom spec 全過（v0.7.46 +1）。
 
 ---
