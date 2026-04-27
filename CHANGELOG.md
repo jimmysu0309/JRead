@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.69**——gvm 主圖前空白 instrument round 2（v0.7.68 [class*="object-fit"] 修法在實機沒生效，Jimmy 截圖回報空白還在 + DOM 揭穿 div.object-fit 仍展開有 hover tooltip 占空間）。新 instrument：印 articleEl 內所有 [class*="object-fit"] element 自身 rect/computed style/inline style/::before/::after pseudo content + display + paddingBottom + aspectRatio + height + 各 child 的 rect/computed/display + figure 祖先 + figure 的 ::before/::after。Jimmy 實機 console 揭穿真兇。**保留 log 待 Jimmy 驗證真正修法生效再清**。289 jsdom spec 全過。
+
+---
+
 **v0.7.68**——gvm 主圖前空白修法 + 移除 v0.7.65/v0.7.66 instrument log。Jimmy 驗證 v0.7.67 修法生效（gvm 內文回來），但截圖顯示主圖前仍有大塊空白。Jimmy DOM 截圖揭穿真兇：figure 內 `<div class="object-fit">` 空 wrapper 用 aspect-ratio / padding-bottom hack 撐 lazy-load placeholder（跟 v0.7.61 cna picture::before 同類但載體換成 div）。修法：擴 v0.7.55 picture rule selector 加 `[class*="object-fit"]`，同樣強制 aspect-ratio:auto + padding-bottom:0 + height:auto + min-height:0。`object-fit` 是 CSS property 名當 class 用的跨站 pattern（給 img 套 object-fit 的 wrapper 慣例命名）、屬結構性通則。spec 加 forcing function 驗 selector 含 `[class*="object-fit"]`。同時按硬規則「等修好才刪 log」清掉 v0.7.65 articleEl/children/hidden 概觀 log + v0.7.66 hide stack trace（gvm 內文已驗證生效）。289 jsdom spec 全過。
 
 ---
