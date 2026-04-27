@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.70**——gvm 主圖前空白真兇定位（v0.7.69 instrument 揭穿）。**真兇**：`div.object-fit::before` pseudo-element 用 `content: ""; display: block; height: 360px / 537.598px`（**直接設 height** 撐 placeholder 高度，不是 padding-bottom 也不是 aspect-ratio）。v0.7.61 cna picture::before 修法只清 `content + display + padding-bottom` 三個維度，沒處理 `height` 維度——`object-fit::before` 用 height 撐高所以那條 rule 不夠。修法：(1) 擴 `::before/::after` rule selector 加 `[class*="object-fit"]::before/after`；(2) rule body 加 `height: 0 !important` 第四維度——對所有 picture/figure/object-fit 的 ::before/::after 全方位清空（display:none + content:none + padding-bottom:0 + height:0）。spec 加 forcing function 驗 selector + height:0 declaration。**保留 v0.7.69 instrument log 待 Jimmy 驗證**。289 jsdom spec 全過。
+
+---
+
 **v0.7.69**——gvm 主圖前空白 instrument round 2（v0.7.68 [class*="object-fit"] 修法在實機沒生效，Jimmy 截圖回報空白還在 + DOM 揭穿 div.object-fit 仍展開有 hover tooltip 占空間）。新 instrument：印 articleEl 內所有 [class*="object-fit"] element 自身 rect/computed style/inline style/::before/::after pseudo content + display + paddingBottom + aspectRatio + height + 各 child 的 rect/computed/display + figure 祖先 + figure 的 ::before/::after。Jimmy 實機 console 揭穿真兇。**保留 log 待 Jimmy 驗證真正修法生效再清**。289 jsdom spec 全過。
 
 ---

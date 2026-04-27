@@ -192,10 +192,13 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] picture::before,
 [${ARTICLE_ATTR}="1"] picture::after,
 [${ARTICLE_ATTR}="1"] figure::before,
-[${ARTICLE_ATTR}="1"] figure::after {
+[${ARTICLE_ATTR}="1"] figure::after,
+[${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
+[${ARTICLE_ATTR}="1"] [class*="object-fit"]::after {
   content: none !important;
   display: none !important;
   padding-bottom: 0 !important;
+  height: 0 !important;
 }
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
@@ -491,10 +494,7 @@ html.${HTML_CLASS} body {
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
       // 裡的 H1」。
-      // [JRead v0.7.69 instrument] gvm 主圖前空白 round 2：v0.7.68 修法
-      // [class*="object-fit"] 在實機沒生效。印 div.object-fit 自身 +
-      // ::before / ::after computed style + child + 兄弟，找真兇。
-      // 保留待 Jimmy 驗證真實修法生效再清。
+      // [JRead v0.7.69 instrument] 保留待 Jimmy 驗證 v0.7.70 修法生效再清。
       try {
         setTimeout(() => {
           try {
@@ -510,62 +510,19 @@ html.${HTML_CLASS} body {
                 w: Math.round(r.width), h: Math.round(r.height),
                 comp_h: cs.height, comp_minH: cs.minHeight,
                 comp_pb: cs.paddingBottom, comp_ar: cs.aspectRatio,
-                comp_disp: cs.display, comp_pos: cs.position,
-                inline: (el.getAttribute('style') || '').slice(0, 100)
+                comp_disp: cs.display, comp_pos: cs.position
               }));
               if (before.content !== 'none') {
                 console.log('[JRead v0.7.69] object-fit ::before:', JSON.stringify({
                   content: before.content, display: before.display,
-                  paddingBottom: before.paddingBottom, height: before.height,
-                  aspectRatio: before.aspectRatio, position: before.position
+                  paddingBottom: before.paddingBottom, height: before.height
                 }));
               }
               if (after.content !== 'none') {
                 console.log('[JRead v0.7.69] object-fit ::after:', JSON.stringify({
                   content: after.content, display: after.display,
-                  paddingBottom: after.paddingBottom, height: after.height,
-                  aspectRatio: after.aspectRatio, position: after.position
+                  paddingBottom: after.paddingBottom, height: after.height
                 }));
-              }
-              // children
-              let ci = 0;
-              for (const c of el.children) {
-                const cr = c.getBoundingClientRect();
-                const ccs = window.getComputedStyle(c);
-                console.log('[JRead v0.7.69] object-fit child#' + ci++, JSON.stringify({
-                  tag: c.tagName, cls: (c.className || '').toString().slice(0, 60),
-                  w: Math.round(cr.width), h: Math.round(cr.height),
-                  comp_h: ccs.height, comp_disp: ccs.display, comp_pos: ccs.position
-                }));
-                if (ci >= 5) break;
-              }
-              // figure 祖先
-              let fig = el.closest('figure');
-              if (fig) {
-                const fcs = window.getComputedStyle(fig);
-                const fr = fig.getBoundingClientRect();
-                const fbefore = window.getComputedStyle(fig, '::before');
-                const fafter = window.getComputedStyle(fig, '::after');
-                console.log('[JRead v0.7.69] figure ancestor:', JSON.stringify({
-                  cls: (fig.className || '').toString().slice(0, 60),
-                  w: Math.round(fr.width), h: Math.round(fr.height),
-                  comp_h: fcs.height, comp_minH: fcs.minHeight,
-                  comp_pb: fcs.paddingBottom, comp_ar: fcs.aspectRatio
-                }));
-                if (fbefore.content !== 'none') {
-                  console.log('[JRead v0.7.69] figure ::before:', JSON.stringify({
-                    content: fbefore.content, display: fbefore.display,
-                    paddingBottom: fbefore.paddingBottom, height: fbefore.height,
-                    aspectRatio: fbefore.aspectRatio
-                  }));
-                }
-                if (fafter.content !== 'none') {
-                  console.log('[JRead v0.7.69] figure ::after:', JSON.stringify({
-                    content: fafter.content, display: fafter.display,
-                    paddingBottom: fafter.paddingBottom, height: fafter.height,
-                    aspectRatio: fafter.aspectRatio
-                  }));
-                }
               }
             }
           } catch (e) { console.log('[JRead v0.7.69] inner err', e.message); }
