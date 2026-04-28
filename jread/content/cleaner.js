@@ -48,7 +48,26 @@
   // 配合外層的 `[^a-z0-9]|$` boundary 對整個匹配 token 的末尾做檢查——能吃
   // `newsletter` / `newsletter2in1` / `newsletter-form` / `newsletterBox` 等所有
   // 以 `newsletter` 開頭的 class 變體。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
+  // v0.7.85：對標業界開源專案（Mozilla Readability / Postlight Parser /
+  // Unclutter / EasyList / uBlock）的 noise keyword 最佳實踐補強。新加 token
+  // 都已過 word-boundary 安全評估（不誤殺主文常見 class）。完整研究紀錄
+  // 與來源見 docs/NOISE_KEYWORD_RESEARCH.md（不存在則待後續補檔）。
+  // 加入分類（按來源）：
+  //   - 品牌/服務名（零誤殺，命中即必然雜訊）：
+  //       addthis, sharedaddy, ai2html, sociable, dianomi, adsense, adslot,
+  //       onesignal, intercom, printfriendly, instapaper_ignore, blogger-labels,
+  //       smartfeed, mpu
+  //   - 廣告/付費牆變體：advert, adbox, adhesion, metered, interstitial, takeover
+  //   - 留言/社群：replies, remark, shoutbox, respond, composer, combx
+  //   - 結構雜訊：supplemental, cover-wrap, entry-unrelated, crumb (補
+  //       breadcrumb 變體), recirc, nag, backdrop, topbar, announcement,
+  //       popover, drawer, loader, contact, shopping, plea
+  //   - 「相關文章 / 推薦」變體：next-article, latest-posts, mostread, most-read
+  // 刻意不加（誤殺風險）：gate (太短/tailgate)、wall (firewall)、media、
+  //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
+  //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
+  //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -164,7 +183,10 @@
   // twz.com 實機 case：ASIDE#article-sidebar 內含 latest-posts-widget，每張
   // 卡片是「短 link + 140 chars 描述 p」，描述 p 超 100 chars → 普通 keyword
   // hide path 被 anchor guard 豁免；strong path 跳過 guard 直接 hide。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary)([^a-z0-9]|$)/i;
+  // v0.7.85：strong path 加品牌名——這些 widget 內容常含長文字（評論 /
+  // recommendation 描述 / 分享配文）會觸發 wrapperContainsArticleAnchor
+  // guard 被豁免。明確品牌名命中即必然雜訊、零誤殺，安全跳過 guard。
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|disqus|outbrain|taboola|dianomi|addthis|sharedaddy)([^a-z0-9]|$)/i;
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;

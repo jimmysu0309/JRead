@@ -711,6 +711,85 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('v0.7.85 業界對標 noise keyword 全覆蓋：Mozilla Readability / Postlight Parser / Unclutter / EasyList 蒐集的新 token 各自 wrapper 命中 hide（forcing：退回舊名單會讓對應 token assertion 一條條 fail）', () => {
+    // v0.7.85：上網蒐集 Mozilla Readability.js REGEXPS / Postlight Parser
+    // UNLIKELY_CANDIDATES_BLACKLIST + NEGATIVE_SCORE_HINTS / Unclutter
+    // contentBlock.ts / EasyList element-hiding generic / uBlock annoyances
+    // 對應 token list 後的補強。每個新 token 用一個短結構 wrapper，必須被
+    // shouldHideByKeyword 命中。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'generic-noise-keyword-coverage.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 article');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 每個 token 對應一個 class，驗該 wrapper 必須被 hide（自身或祖先）
+      const expectedHidden = [
+        // 品牌/服務名
+        '.addthis-toolbox', '.sharedaddy', '.ai2html-graphic', '.sociable-button',
+        '.dianomi-context', '.adsense-banner', '.adslot-300x250',
+        '.onesignal-prompt', '.intercom-launcher', '.printfriendly-button',
+        '.instapaper_ignore', '.blogger-labels-list', '.smartfeed-container',
+        '.mpu-slot',
+        // 廣告 / 付費牆變體
+        '.advert-block', '.adbox-300', '.adhesion-bar', '.metered-content-paywall',
+        '.interstitial-ad', '.takeover-banner',
+        // 留言 / 社群
+        '.replies-thread', '.remark-form', '.shoutbox-widget',
+        '#respond', '.composer-textarea', '.combx-list',
+        // 結構雜訊
+        '.supplemental-block', '.cover-wrap-hero', '.entry-unrelated-block',
+        '.crumb-trail', '.recirc-module', '.nag-banner', '.modal-backdrop',
+        '.topbar-tools', '.announcement-bar', '.popover-tooltip', '.drawer-menu',
+        '.image-loader-spinner', '.contact-us-block', '.shopping-cart-promo',
+        '.plea-fundraiser',
+        // 推薦 / 相關文章 變體
+        '.next-article-card', '.latest-posts-feed', '.mostread-list',
+        '.most-read-list'
+      ];
+
+      const missed = [];
+      for (const sel of expectedHidden) {
+        const el = w.document.querySelector(sel);
+        if (!el) {
+          missed.push(`${sel} (selector 不存在於 fixture)`);
+          continue;
+        }
+        const own = el.dataset.jreadHidden === '1';
+        const ancestor = !!el.closest('[data-jread-hidden="1"]');
+        if (!own && !ancestor) {
+          missed.push(sel);
+        }
+      }
+      assert.deepStrictEqual(missed, [],
+        `下列 noise keyword wrapper 沒被 hide（NOISE_KEYWORD_RE 漏 alternation）：${missed.join(', ')}`);
+
+      // 主文段落保留
+      const mainPs = w.document.querySelectorAll('article > p');
+      assert.ok(mainPs.length >= 3, 'fixture 應有 >= 3 個主文 p');
+      for (const p of mainPs) {
+        assert.notStrictEqual(p.dataset.jreadHidden, '1',
+          `主文 p 不得被 hide（textHead: "${(p.textContent||'').slice(0,40)}..."）`);
+        assert.ok(!p.closest('[data-jread-hidden="1"]'),
+          `主文 p 祖先不得被 hide`);
+      }
+      // h1 保留
+      const h1 = w.document.querySelector('article > h1');
+      assert.ok(h1, 'fixture 應有 article 內 h1');
+      assert.notStrictEqual(h1.dataset.jreadHidden, '1', '主文 h1 不得被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內第三方廣告服務標識符（GAM div-gpt-ad / google_ads_iframe / Taboola trc_*  / popIn _popIn_* / Outbrain / ad-*）→ hideInsideArticleByThirdPartyAds 各 selector branch 全命中，主文保留', () => {
     // 2026-04-23 v0.7.4 EasyList spike 結論：Jimmy 四站實測（line today / udn
     // / chinatimes / upmedia）reader mode 內的殘留廣告指向第三方廣告服務
