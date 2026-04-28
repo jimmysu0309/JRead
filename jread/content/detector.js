@@ -110,6 +110,109 @@
     return { el: main, confidence: 0.75, strategy: 'main-tag' };
   }
 
+  // ---- 策略 5：Shadow DOM fallback（v0.7.86）-----------------------------
+  // 場景：MSN.com 類站點用 Web Components（custom elements + open shadow root）
+  // 包主文，普通 `document.querySelectorAll` 看不到 shadow 內元素。所有上述
+  // 策略全部會落空（h1=0、main=0、article 空殼、無 textLen 大的 wrapper）。
+  //
+  // 通則處理：detect() 主流程全失敗後，掃所有 open shadow root，找含 most p
+  // 的 shadow（主文）+ 含 h1 的 shadow（標題），把 children 深拷貝（cloneNode
+  // (true)）到一個 light DOM `<article data-jread-shadow-replica="1">` 替身、
+  // 掛到 `<body>` 末尾，回傳此替身。後續 cleaner / styler 對替身操作即可。
+  //
+  // 副作用 scoped to shadow-DOM 站：lazy-load src 可能未填、影音 event handler
+  // 失效、shadow scope CSS 不跟著 clone（樣式可能跑掉，但 styler 會套 reader
+  // card 預設樣式）。對既有 light DOM 站零影響——主流程命中時 fallback 不啟動。
+  //
+  // restore：reader exit 時 styler.restore 後若有 `[data-jread-shadow-replica]`
+  // 元素，main.js 流程要連帶移除（避免原站殘留替身）。
+  const SHADOW_REPLICA_ATTR = 'data-jread-shadow-replica';
+  const SHADOW_FALLBACK_MIN_P = 5;
+
+  function collectAllOpenShadowRoots() {
+    const roots = [];
+    const visit = (root) => {
+      if (!root || !root.querySelectorAll) return;
+      for (const el of root.querySelectorAll('*')) {
+        if (el.shadowRoot) {
+          roots.push(el.shadowRoot);
+          visit(el.shadowRoot);
+        }
+      }
+    };
+    visit(document);
+    return roots;
+  }
+
+  function detectByShadowDomFallback() {
+    // 已有替身（同 toggle 重入）：直接回傳，不重複建立
+    const existingReplica = document.querySelector(`[${SHADOW_REPLICA_ATTR}="1"]`);
+    if (existingReplica) {
+      return { el: existingReplica, confidence: 0.5, strategy: 'shadow-dom-fallback' };
+    }
+
+    const roots = collectAllOpenShadowRoots();
+    if (roots.length === 0) return null;
+
+    // 找含 most p 的 shadow root（主文）
+    let mainShadow = null;
+    let mainPCount = 0;
+    for (const root of roots) {
+      const pCount = root.querySelectorAll('p').length;
+      if (pCount > mainPCount) {
+        mainPCount = pCount;
+        mainShadow = root;
+      }
+    }
+
+    // 主文 shadow 必須有 >= SHADOW_FALLBACK_MIN_P 個 p（避免雜訊 widget shadow）
+    if (!mainShadow || mainPCount < SHADOW_FALLBACK_MIN_P) return null;
+
+    // 找對應的 h1 shadow——MSN 類站同頁 render 多篇推薦（多個 VIEWS-HEADER-
+    // WC + CP-ARTICLE），不能直接抓「第一個有 h1 的 shadow」（可能是別篇文章
+    // 的 h1）。從主文 shadow 的 host element 往上爬，在每層祖先 subtree 內
+    // 找最近的「含 h1 的 shadow root（且不是主文 shadow 自己）」——這個就是
+    // 跟主文同 article block 的對應 h1。
+    let h1Shadow = null;
+    if (mainShadow.host) {
+      let cur = mainShadow.host.parentElement;
+      while (cur && !h1Shadow) {
+        for (const el of cur.querySelectorAll('*')) {
+          if (el === mainShadow.host) continue;
+          if (el.shadowRoot && el.shadowRoot.querySelector('h1')) {
+            h1Shadow = el.shadowRoot;
+            break;
+          }
+        }
+        cur = cur.parentElement;
+      }
+    }
+    // 若主文 shadow 本身就含 h1，h1Shadow = mainShadow（避免重複 clone）
+    if (mainShadow.querySelector('h1')) {
+      h1Shadow = mainShadow;
+    }
+
+    // 建立 light DOM 替身
+    const replica = document.createElement('article');
+    replica.setAttribute(SHADOW_REPLICA_ATTR, '1');
+
+    // 先放 h1（若 h1 在另一個 shadow root）
+    if (h1Shadow && h1Shadow !== mainShadow) {
+      const h1 = h1Shadow.querySelector('h1');
+      if (h1) replica.appendChild(h1.cloneNode(true));
+    }
+
+    // clone 主文 shadow root 所有 children
+    for (const child of mainShadow.children) {
+      replica.appendChild(child.cloneNode(true));
+    }
+
+    // 掛到 body 末尾，避開原 shadow 結構不動原站
+    document.body.appendChild(replica);
+
+    return { el: replica, confidence: 0.5, strategy: 'shadow-dom-fallback' };
+  }
+
   // ---- 策略 2：Schema.org --------------------------------------------
   // 雙層：先看 `[itemtype]`（整個 article 容器），fallback 到 `[itemprop="articleBody"]`
   //（內層 content element）。兩者是 Schema.org microdata 同族語意：
@@ -583,6 +686,7 @@
         // 策略 3（OpenGraph）本輪未實作
         detectByHeuristic() ||
         detectByMainTag() ||
+        detectByShadowDomFallback() ||
         null
       );
       if (result && result.strategy !== 'main-tag') {

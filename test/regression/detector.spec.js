@@ -861,3 +861,126 @@ describe('detector — businessweekly-blog article-tag bait（article 不含 H1 
       `articleEl 必須包含主標 H1。實際 ${result.el.tagName}.${result.el.className}`);
   });
 });
+
+describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
+  // MSN.com 用 Web Components（custom elements + open shadow root）包主文，
+  // 普通 querySelectorAll 看不到 shadow 內元素 → 所有上層 detector 策略全失。
+  // fallback：掃所有 open shadow root，找含 most p 的 shadow（主文）+ 對應的
+  // h1 shadow（沿主文 host 往上爬找最近祖先 subtree 內含 h1 的 shadow），把
+  // children 深拷貝進一個 light DOM `<article data-jread-shadow-replica="1">`
+  // 替身、回傳此替身。
+  //
+  // jsdom 支援 attachShadow open mode，可在 spec 內動態建構 shadow 結構模擬。
+
+  function makeShadowDom() {
+    // 建一個 jsdom：light DOM 沒主文（無 article / main / 大 textLen wrapper）
+    const dom = new JSDOM(`<!DOCTYPE html>
+      <html>
+      <head><meta property="og:title" content="MSN test article">
+      <title>Shadow DOM fallback test</title>
+      </head>
+      <body>
+        <desktop-article-content><div class="article-content">
+          <msn-article-page><div class="article-page">
+            <article-block id="block-A">
+              <views-header-wc id="head-A"></views-header-wc>
+              <cp-article id="body-A"></cp-article>
+            </article-block>
+            <article-block id="block-B">
+              <views-header-wc id="head-B"></views-header-wc>
+              <cp-article id="body-B"></cp-article>
+            </article-block>
+          </div></msn-article-page>
+        </div></desktop-article-content>
+      </body>
+      </html>`, { runScripts: 'outside-only' });
+    const w = dom.window;
+    const d = w.document;
+
+    // article block A：當前文章（h1 + 8 個長 p，主文 textLen 大）
+    const headA = d.getElementById('head-A').attachShadow({ mode: 'open' });
+    headA.innerHTML = '<h1>華裔女記者狼狽逃槍擊!坐川普身邊身份曝</h1>';
+    const bodyA = d.getElementById('body-A').attachShadow({ mode: 'open' });
+    let bodyAHTML = '';
+    for (let i = 0; i < 8; i++) {
+      bodyAHTML += `<p>本段為 article A 的主文段落 ${i + 1}，內容夠長足以累積 textLen 通過 detector 主流程的 MIN_TEXT_LEN 門檻，這段刻意寫得長一點以模擬真實新聞報導內文 paragraph 的長度範圍，包含中文混雜英文 NOWNEWS report content 與標點。</p>`;
+    }
+    bodyA.innerHTML = bodyAHTML;
+
+    // article block B：另一篇推薦（不同 h1 + 不同 p，模擬 MSN 同頁 render
+    // 多篇推薦、不能讓 fallback 抓 B 的 h1 配 A 的 p）
+    const headB = d.getElementById('head-B').attachShadow({ mode: 'open' });
+    headB.innerHTML = '<h1>71歲林青霞白髮現身太優雅</h1>';
+    const bodyB = d.getElementById('body-B').attachShadow({ mode: 'open' });
+    let bodyBHTML = '';
+    for (let i = 0; i < 6; i++) {
+      bodyBHTML += `<p>本段為 article B 的主文段落 ${i + 1}，模擬另一篇推薦文章的內文，總 p 數比 A 少，pCount 排序時 A 應勝出，但 B 的 h1 不該被誤抓配 A 的 p。</p>`;
+    }
+    bodyB.innerHTML = bodyBHTML;
+
+    return { dom, w };
+  }
+
+  it('detect() fallback 找到 shadow root 內主文 + 建立 light DOM <article> 替身', () => {
+    const { w } = makeShadowDom();
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    const result = w.__JRead.detector.detect();
+    assert.ok(result, '應命中 shadow-dom-fallback、不得回 null');
+    assert.strictEqual(result.strategy, 'shadow-dom-fallback');
+    assert.strictEqual(result.el.tagName, 'ARTICLE');
+    assert.strictEqual(result.el.getAttribute('data-jread-shadow-replica'), '1',
+      '替身必須有 data-jread-shadow-replica="1" attribute（給 main.js exit 流程清除）');
+  });
+
+  it('替身含主文 article A 的 h1 + 8 個 p（不誤抓 article B 的 h1）', () => {
+    const { w } = makeShadowDom();
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    const result = w.__JRead.detector.detect();
+    const replica = result.el;
+    const h1 = replica.querySelector('h1');
+    assert.ok(h1, '替身必須含 h1');
+    assert.strictEqual(h1.textContent.trim(), '華裔女記者狼狽逃槍擊!坐川普身邊身份曝',
+      '必須抓 article A 的 h1（與主文 p 同 article block），不得抓 article B 的 h1');
+    const ps = replica.querySelectorAll('p');
+    assert.strictEqual(ps.length, 8, '替身應含 article A 的 8 個 p');
+    assert.ok(ps[0].textContent.includes('article A'),
+      '第一個 p 必須屬於 article A 主文（不得跨篇混搭）');
+  });
+
+  it('替身掛在 document.body 內（不動原 shadow 結構）', () => {
+    const { w } = makeShadowDom();
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    const result = w.__JRead.detector.detect();
+    assert.ok(w.document.body.contains(result.el),
+      '替身必須在 body 內（給 light DOM 後續 cleaner / styler 操作）');
+    // 原 shadow 內容仍在原處
+    const origP = w.document.getElementById('body-A').shadowRoot.querySelectorAll('p');
+    assert.strictEqual(origP.length, 8, '原 shadow root 內容不應被移走（只 clone）');
+  });
+
+  it('shadow 內 p 數 < SHADOW_FALLBACK_MIN_P (5) → fallback 不啟動（避免 widget 雜訊 shadow 誤命中）', () => {
+    const dom = new JSDOM(`<!DOCTYPE html><html><body>
+      <my-widget id="w"></my-widget>
+    </body></html>`, { runScripts: 'outside-only' });
+    const w = dom.window;
+    const sr = w.document.getElementById('w').attachShadow({ mode: 'open' });
+    sr.innerHTML = '<p>short widget</p><p>not enough</p>';
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    const result = w.__JRead.detector.detect();
+    assert.strictEqual(result, null, '只有 2 個 p 的 shadow widget 不應觸發 fallback');
+  });
+
+  it('無任何 shadow root → fallback 回 null（既有 light DOM 站零影響）', () => {
+    const dom = new JSDOM(`<!DOCTYPE html><html><body><div>only light DOM</div></body></html>`,
+      { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    const result = w.__JRead.detector.detect();
+    assert.strictEqual(result, null);
+  });
+});
