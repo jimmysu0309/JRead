@@ -38,6 +38,30 @@
     </figure>
 
     <section class="featured-template-content">
+      <!-- v0.7.84：右側 sidebar wrapper（articles flex-row 第二欄）。class
+           含 `article-sidebar-wrapper` 命中 STRONG_NOISE_KEYWORD_RE
+           的 `sidebar-wrapper` alternation；內含 ASIDE#article-sidebar.article-
+           sidebar 也命中 `article-sidebar`。整塊應被 strong path hide
+           （跳過 wrapperContainsArticleAnchor guard）。
+           Forcing function 設計（鎖 strong path）：
+           - 每張卡片 1 個短 a（< 30 chars）+ 1 個 > 100 chars 描述 p
+           - 描述 p 超 100 chars → 必觸發 wrapperContainsArticleAnchor guard
+             → 普通 keyword path 被 anchor guard 豁免
+           - linkDensity 仍 < 0.5 → 條件 A 不命中；jsdom rectH=0 → 條件 B 不命中
+           → 只有 strong keyword path（跳過 anchor guard）能 hide。
+              拿掉 strong path 或拿掉新 alternation 都會讓 assertion fail。 -->
+      <div class="featured-template-sidebar-wrapper article-sidebar-wrapper w-full">
+        <aside id="article-sidebar" class="article-sidebar pb-5">
+          <h3>LATEST IN EARLY WARNING/DSP/SBIRS</h3>
+          <a href="/news/1">Tracking Moving Aircraft</a>
+          <p>Space Force says it is more focused on new satellites to track surface targets amid concerns about slashing the E-7 early warning jet program currently in service.</p>
+          <a href="/news/2">Canada Joining Iron Dome</a>
+          <p>Cooperation on new space-based sensors might be a starting place for U.S. and Canada plans on joint missile defense, but major hurdles remain on funding allocation.</p>
+          <a href="/news/3">Space Force consolidation</a>
+          <p>Multiple programs may be merged under a unified office to streamline procurement decisions and reduce duplication across overlapping satellite constellation efforts.</p>
+        </aside>
+      </div>
+
       <!-- 真兇：class 含 paywall keyword、不含 h1，但包整篇主文 -->
       <div class="entry-content Article-bodyText paywall border-b-2 w-full mb-6">
         <p>Open feuding between President Donald Trump and Elon Musk has thrown a renewed spotlight on just how much the U.S. national security apparatus has come to rely on SpaceX rockets, satellites, and other capabilities, often as the only practical option for fielding new operational space-based capabilities at scale.</p>
