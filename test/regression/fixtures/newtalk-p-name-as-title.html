@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>國防部稱「今年沒錢編急需預算」 李文忠斥：嚴重失職還拿來說嘴 | 政治 | Newtalk新聞</title>
+  <meta property="og:title" content="國防部稱「今年沒錢編急需預算」 李文忠斥：嚴重失職還拿來說嘴">
+</head>
+<body>
+  <!-- v0.7.87 newtalk.tw 修法 forcing function：站把主文標題寫在 <p
+       class="name">（非 h1-h4），原頁有 SEO 用裝飾性 <h1 class="hidden"> 在
+       <header> 內。reader mode 觸發後 cleaner 把 header 內 hidden h1 砍掉，
+       articleEl (DIV.left_column) 內找不到 visible h1-h4 → reader card 標題
+       不見。
+
+       修法（detector.markPromotedTitleIfMissing）：cleaner 跑完後，articleEl
+       內若無「不在 hidden 樹內」的 h1-h4，找等同 og:title 的 p/div/span 元素
+       加 data-jread-promoted-title="1" attribute + inline 大字 style。
+       -->
+
+  <!-- 裝飾性 hidden h1（在 header chrome、會被 cleaner hide） -->
+  <header id="newHeader">
+    <div class="container">
+      <div class="top-head">
+        <a class="logo">
+          <h1 class="hidden">[Newtalk新聞] 國防部稱「今年沒錢編急需預算」 李文忠斥：嚴重失職還拿來說嘴</h1>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- detector 應命中此 article wrapper（main-tag 命中 main 內 div） -->
+  <main>
+    <div class="left_column sticky-main">
+
+      <!-- 跑馬燈 widget（用會命中 NOISE_KEYWORD_RE 的 class 名讓 cleaner
+           可靠 hide）：guard 必須只認「不在 hidden 樹內」的 heading，否則
+           articleEl 內這個 h2 會被誤判為 visible heading，導致不 promote。
+           實機 newtalk class 是 news_marquee（不命中 keyword），但實機 cleaner
+           靠其他 rule 把它 hide；jsdom 不算 layout、harness 行為差異，fixture
+           改用明確命中 keyword 的 class 確保 forcing function 穩定。 -->
+      <section class="newsletter-marquee">
+        <h2 class="hidden">新聞跑馬燈</h2>
+      </section>
+
+      <!-- 主文標題容器：DIV.title > P.name 含真正主文標題 -->
+      <div class="news_info">
+        <div class="title">
+          <p class="name">國防部稱「今年沒錢編急需預算」 李文忠斥：嚴重失職還拿來說嘴</p>
+          <p class="meta">2026-04-27 by 政治中心</p>
+        </div>
+      </div>
+
+      <!-- 主文 -->
+      <div class="news_content">
+        <p>前退輔會副主委李文忠近日對國防部編列預算的方式提出嚴厲批評，認為國防部以「今年沒錢」為由將急需預算延後處理是嚴重失職，更不該拿這個理由說嘴。國防部回應，整體預算編列受限於財政結構，並非單一單位可以解決。</p>
+        <p>李文忠強調，國家安全議題不容拖延，國防部應主動向行政院、立法院爭取必要支援，而不是把責任推給「沒錢」這個說法。多位立委也響應這項立場，要求國防部公開預算分配明細並接受質詢，加強國會監督機制以確保納稅人的錢用在刀口上。</p>
+        <p>此事件後續發展引起政壇廣泛關注，朝野立委將在下週三的國防委員會會議中針對此議題展開深入討論，預期將是本會期國防議程的重要焦點之一，後續發展值得持續關注。</p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
