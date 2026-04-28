@@ -82,6 +82,35 @@ describe('styler — 骨架與可逆性', () => {
     assert.ok(/\[data-jread-ancestor="1"\][^}]*\{[^}]*position:\s*static/.test(css));
   });
 
+  // v0.7.82 修法：Readwise Reader 類 SPA 站把 body / html 設 overflow: hidden、
+  // 讓內層 div 接管 scroll。reader mode 注入 article card 後 body 高度被撐
+  // 開、但 overflow-y:hidden 仍鎖住整個 viewport 沒法捲動。
+  // 通則：reader mode 必須強制 html / body 兩者 overflow-y: visible，把 scroll
+  // 還給 viewport。overflow-x: hidden 仍保留（避免主文超寬橫向拉條）。
+  it('CSS 必須強制 html.__jread-active body overflow-y: visible（解開 SPA 站 body scroll lock）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/html\.__jread-active\s+body\s*\{([^}]*)\}/);
+    assert.ok(m, 'styler 必須有 html.__jread-active body rule');
+    const body = m[1];
+    assert.ok(/overflow-y:\s*visible\s*!important/.test(body),
+      'html.__jread-active body 必須含 overflow-y: visible !important（Readwise Reader 類 SPA 站 body overflow:hidden 會鎖住 reader mode 捲動）');
+    assert.ok(/overflow-x:\s*hidden\s*!important/.test(body),
+      'overflow-x: hidden 仍須保留（避免主文超寬橫向拉條）');
+  });
+
+  it('CSS 必須強制 html.__jread-active overflow-y: visible（解開 SPA 站 html scroll lock）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/html\.__jread-active\s*\{([^}]*)\}/);
+    assert.ok(m, 'styler 必須有 html.__jread-active rule');
+    const body = m[1];
+    assert.ok(/overflow-y:\s*visible\s*!important/.test(body),
+      'html.__jread-active 必須含 overflow-y: visible !important（原 SPA 若把 scroll lock 設在 html 而非 body 同樣會擋住 reader mode 捲動）');
+  });
+
   // v0.6.14 起 styler **不再**有 `*:has(> img/picture/video)` 這條 blanket
   // reset——CSS level 無法區分「padding-bottom hack（Substack/Medium）」與
   // 「純 aspect-ratio 容器（Engadget 類 `aspect-ratio: 16/9` + img absolute

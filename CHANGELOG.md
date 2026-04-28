@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.82**——修 SPA 站（Readwise Reader / Notion / Gmail 類）reader mode 無法捲動。**根因**：這類站把 `body`（有時連 `html`）設 `overflow: hidden`、scroll 交給內層 div 接管。reader mode 把 article card 注入回 body flow、body 高度被撐到 5K+ px，但 `overflow-y: hidden` 仍鎖死 viewport，滾輪 / 鍵盤 / trackpad 全部無效。**修法**：styler base CSS 對 `html.__jread-active` + `html.__jread-active body` 兩條 rule 強制 `overflow-y: visible !important`，讓 scroll 回到 viewport 層級。`overflow-x: hidden` 仍保留避免主文超寬橫向拉條。**通則屬性**：不綁站點 / class，純粹 reset 兩個 root element 的 overflow——任何 SPA 站把 scroll lock 設在 html / body 都解得開，不影響非 SPA 站（它們本來就是 visible）。Readwise Reader（read.readwise.io/new/read/...）實機 console probe 揭穿 `body overflow: hidden hidden hidden` + `body height: 5920px` 即此 bug 的標準特徵。新增 styler.spec.js 兩條 forcing function 鎖住兩條 rule 內容。291 jsdom spec 全過。
+
+---
+
 **v0.7.81**——撤回 theverge 全部修法 + 移除 instrument log（Jimmy 放棄 theverge 站）。撤回 v0.7.74 `hideInsideArticleAsides`、v0.7.77/v0.7.79/v0.7.80 `hideInsideArticleReportCloseWidgets`（連帶 main 流程的 caller 一起移除），避免這些 rule 對其他站造成誤殺風險。移除 styler.apply 結尾的 v0.7.73 / v0.7.75 / v0.7.78 instrument log（一整塊 setTimeout block）。除了這次 theverge 連 8 版（v0.7.73~v0.7.80）的修法 + log，所有其他站的修法（cna / gvm / 商周 / line today / 等等）全部保留。289 jsdom spec 全過。
 
 附帶教訓：**styled-components hash class 站點如果 textContent 開頭是 widget 文字、整塊 lede 包覆主圖+H1+byline+widget**，靠 textContent prefix + button / role=button 命中根本判別不出 widget vs lede，再多 guard（h1/figure/img exclude）也是賭——主文 anchor 不一定在被命中的同一個 wrapper 層。這類站點需要更高層的方法（例如直接 detector 階段針對 lede class pattern 升級到 entry-body-container），不適合在 cleaner 階段亂砍。

@@ -57,8 +57,14 @@
 [data-jread-hidden="1"] {
   display: none !important;
 }
+/* SPA 站（Readwise Reader / Notion / Gmail 等）常把 html / body 設
+   overflow: hidden、scroll 交給內層 div。reader mode 注入 article card 後
+   body 高度被撐開、但 overflow-y:hidden 仍鎖住整個 viewport 無法捲動。
+   通則：reader mode 強制 html / body 兩者 overflow-y: visible，scroll
+   回到 viewport 層級。overflow-x:hidden 保留避免主文超寬橫向拉條。 */
 html.${HTML_CLASS} {
   background: ${theme.pageBg} !important;
+  overflow-y: visible !important;
 }
 html.${HTML_CLASS} body {
   background: ${theme.pageBg} !important;
@@ -68,6 +74,7 @@ html.${HTML_CLASS} body {
   width: auto !important;
   min-width: 0 !important;
   overflow-x: hidden !important;
+  overflow-y: visible !important;
 }
 /* 祖先鏈激進 reset——讓主文容器脫離原站的多欄 layout / 版心限制 / sticky。
    不碰主文本身 [data-jread-active]，所以原站的 h1-h6 / p / list / link 等
