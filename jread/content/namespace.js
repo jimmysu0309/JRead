@@ -34,7 +34,9 @@
       // Readwise integration（v0.7.33）
       GET_READER_STATE: 'GET_READER_STATE',         // popup → content：reader mode 是否啟動，決定 popup 按鈕 disable 狀態
       EXTRACT_READER_HTML: 'EXTRACT_READER_HTML',   // popup → content：抽 reader card outerHTML + url + title
-      SAVE_TO_READWISE: 'SAVE_TO_READWISE'          // popup → SW：把抽出的內容送 Readwise Reader API
+      SAVE_TO_READWISE: 'SAVE_TO_READWISE',         // popup → SW：把抽出的內容送 Readwise Reader API
+      // v0.7.89：SW 透過快速鍵觸發送 Readwise 後，需要在頁面顯示結果 toast
+      SHOW_TOAST: 'SHOW_TOAST'                      // SW → content：顯示 toast（payload: { message, kind }）
     }
   };
 })();

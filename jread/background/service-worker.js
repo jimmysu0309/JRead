@@ -109,13 +109,101 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
 // 失敗時（chrome:// / 禁止注入頁面）回傳 ok=false，但 service worker 無 UI 可以
 // 提示；使用者會發現頁面沒反應，這是 MV3 的侷限。
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== 'toggle-reader-mode') return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || typeof tab.id !== 'number') return;
 
-  const { toggleWithInjectionFallback } = self.__JReadPopup;
-  await toggleWithInjectionFallback(tab.id, {
-    sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
-    executeScript: (opts) => chrome.scripting.executeScript(opts)
-  });
+  if (command === 'toggle-reader-mode') {
+    const { toggleWithInjectionFallback } = self.__JReadPopup;
+    await toggleWithInjectionFallback(tab.id, {
+      sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
+      executeScript: (opts) => chrome.scripting.executeScript(opts)
+    });
+    return;
+  }
+
+  if (command === 'send-to-readwise') {
+    await sendToReadwiseFromCommand(tab.id);
+    return;
+  }
 });
+
+// v0.7.89：快速鍵 Alt+Shift+R 觸發送 Readwise 流程。
+// 流程：
+//   1. 先確認 reader mode 啟動；未啟動則先 toggle 開（含 inject fallback），
+//      等 cleaner / styler 跑完
+//   2. 抽 reader card payload（EXTRACT_READER_HTML）
+//   3. 走與 popup SAVE_TO_READWISE 同樣的 buildReadwisePayload + saveToReadwise
+//   4. 結果透過 SHOW_TOAST 訊息回傳 content script，由 toast 顯示
+// SW 沒 UI、結果只能靠 toast 反饋；toast 失敗（chrome:// 等禁止注入頁）silent
+// fail——使用者按快速鍵沒反應就是限制。
+async function sendToReadwiseFromCommand(tabId) {
+  const sendMessage = (id, m) => chrome.tabs.sendMessage(id, m);
+  const showToast = (message, kind) => {
+    sendMessage(tabId, { type: 'SHOW_TOAST', payload: { message, kind } }).catch(() => {});
+  };
+
+  // 1. 確認 reader mode 啟動；未啟動則先 toggle
+  let state;
+  try {
+    state = await sendMessage(tabId, { type: 'GET_READER_STATE' });
+  } catch {
+    // content script 未注入（chrome:// / Web Store 等）→ 嘗試 inject + toggle
+    state = null;
+  }
+
+  if (!state || !state.active) {
+    const { toggleWithInjectionFallback } = self.__JReadPopup;
+    const toggleResult = await toggleWithInjectionFallback(tabId, {
+      sendMessage,
+      executeScript: (opts) => chrome.scripting.executeScript(opts)
+    });
+    if (!toggleResult || !toggleResult.ok) {
+      // 連注入 + toggle 都失敗，無法顯示 toast（content script 沒跑起來）
+      return;
+    }
+    // 等 detector / cleaner / styler 跑完（content main.js enterReaderMode 是
+    // async）。800ms 對多數站夠；harness 實測 cleaner 跑 100-300ms + styler
+    // 立即注入 + 安全 buffer。
+    await new Promise(r => setTimeout(r, 800));
+  }
+
+  // 2. 抽 reader card payload
+  let extracted;
+  try {
+    extracted = await sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
+  } catch {
+    showToast('無法取得頁面內容', 'error');
+    return;
+  }
+  if (!extracted || !extracted.ok) {
+    showToast('閱讀模式未啟動', 'error');
+    return;
+  }
+
+  // 3. 送 Readwise（重用 popup-core 既有 buildReadwisePayload + saveToReadwise）
+  const { readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' });
+  const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
+  let body;
+  try {
+    body = buildReadwisePayload(extracted.payload || {});
+  } catch (e) {
+    showToast('送出失敗：payload 無效', 'error');
+    return;
+  }
+  const result = await saveToReadwise({ token: readwiseToken, payload: body });
+
+  // 4. 結果 toast
+  if (result && result.ok) {
+    const msg = result.status === 200 ? '已存在於 Readwise Reader' : '已送到 Readwise Reader';
+    showToast(msg, 'success');
+  } else if (result && result.error === 'NO_TOKEN') {
+    showToast('尚未設定 Readwise token，請到設定頁填入', 'error');
+  } else if (result && result.error === 'AUTH') {
+    showToast('Readwise token 無效或已過期', 'error');
+  } else if (result && result.error === 'NETWORK') {
+    showToast('網路錯誤，請稍後再試', 'error');
+  } else {
+    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    showToast(`送出失敗${detail}`, 'error');
+  }
+}

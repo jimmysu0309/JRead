@@ -161,6 +161,14 @@
       return; // sync
     }
 
+    // v0.7.89：SW（快速鍵觸發送 Readwise）→ content：顯示結果 toast
+    if (msg.type === NS.MSG.SHOW_TOAST) {
+      const p = msg.payload || {};
+      showToast(p.message || '', p.kind || 'info');
+      sendResponse({ ok: true });
+      return; // sync
+    }
+
   });
 
   // 設定變更即時套用：popup 的加減/切換動作會寫入 chrome.storage.sync，

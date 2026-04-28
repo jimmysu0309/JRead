@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const EXPECTED_VERSION = '0.7.88';
+const EXPECTED_VERSION = '0.7.89';
 
 describe('version-check', () => {
   it('manifest.json 的 version 必須等於 EXPECTED_VERSION', () => {
@@ -53,5 +53,28 @@ describe('version-check', () => {
       EXPECTED_VERSION,
       `package.json version (${pkg.version}) 與 EXPECTED_VERSION (${EXPECTED_VERSION}) 不一致——bump 版本號時請同步更新`
     );
+  });
+
+  // v0.7.89：manifest commands 必須含 send-to-readwise（快速鍵送 Readwise Reader）
+  it('manifest.json commands 必須含 send-to-readwise（v0.7.89 快速鍵）', () => {
+    const manifestPath = path.join(__dirname, '..', 'jread', 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.ok(manifest.commands, 'manifest 必須有 commands 區塊');
+    assert.ok(manifest.commands['toggle-reader-mode'],
+      'manifest 必須有 toggle-reader-mode command（既有 Alt+R 切換閱讀模式）');
+    assert.ok(manifest.commands['send-to-readwise'],
+      'manifest 必須有 send-to-readwise command（v0.7.89 新增送 Readwise 快速鍵）');
+    const cmd = manifest.commands['send-to-readwise'];
+    assert.ok(cmd.suggested_key && cmd.suggested_key.default,
+      'send-to-readwise 必須有 suggested_key.default');
+    assert.ok(cmd.description && cmd.description.length > 0,
+      'send-to-readwise 必須有 description（給 chrome://extensions/shortcuts 顯示）');
+  });
+
+  it('namespace.js 必須 export MSG.SHOW_TOAST 常數（SW 透過此訊息給 content script 顯示 toast）', () => {
+    const nsPath = path.join(__dirname, '..', 'jread', 'content', 'namespace.js');
+    const src = fs.readFileSync(nsPath, 'utf8');
+    assert.ok(/SHOW_TOAST:\s*['"]SHOW_TOAST['"]/.test(src),
+      'namespace.js MSG 必須含 SHOW_TOAST 常數（SW 快速鍵流程結束後透過此訊息顯示結果 toast）');
   });
 });
