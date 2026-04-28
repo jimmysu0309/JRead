@@ -56,6 +56,11 @@
     if (!NS.state.active) return;
     if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
     if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls);
+    // v0.7.86：移除 detector shadow-DOM fallback 建立的 light DOM 替身。
+    // 替身是 deepClone 出來的、原 shadow content 不動，移除替身後原站視覺
+    // 完全還原。多個替身（理論上不該發生，但保險）一起清。
+    const replicas = document.querySelectorAll('[data-jread-shadow-replica="1"]');
+    replicas.forEach(r => r.remove());
     NS.state.active = false;
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
