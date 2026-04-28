@@ -781,27 +781,45 @@
     }
 
     if (bestCand) {
-      bestCand.setAttribute('data-jread-promoted-title', '1');
-      // inline style 路線（不走 base CSS rule、避免 styler 字串 grep 誤觸
-      // 既有 spec 對 font-size / line-height 字樣的 forcing assertion）。
-      // jsdom guard：jsdom style.setProperty 雖實作但對 unitless / em 解析
-      // 行為與真 Chrome 略異；spec 不檢查 inline style 內容，只驗 attribute
-      // 命中即可。
-      if (bestCand.style && typeof bestCand.style.setProperty === 'function') {
-        bestCand.style.setProperty('font-size', '2em', 'important');
-        bestCand.style.setProperty('font-weight', '700', 'important');
-        bestCand.style.setProperty('line-height', '1.3', 'important');
-        bestCand.style.setProperty('display', 'block', 'important');
-        bestCand.style.setProperty('margin-top', '0', 'important');
-        bestCand.style.setProperty('margin-bottom', '0.6em', 'important');
-        // position: relative + z-index 保險：原站若有圖片 / overlay 因 CSS
-        // quirk（lazy-load placeholder layout / 負 margin / inline baseline
-        // 等）渲染到 promoted-title 之上覆蓋標題視覺，z-index 保標題在最上層。
-        bestCand.style.setProperty('position', 'relative', 'important');
-        bestCand.style.setProperty('z-index', '10', 'important');
+      // v0.7.88：改用「inject 新 H1 在 articleEl 開頭 + hide 原元素」路線。
+      // 原本的「移動原元素 + 加 attribute / style」對 newtalk.tw 失效——原
+      // 元素移到 articleEl first child 後仍跟原 sibling IMG 重疊（IMG 因
+      // 父層 CSS quirk 浮到 articleEl 之外的負 y 位置覆蓋頂部）。
+      // inject 新 H1 是獨立 DOM 節點，flow 不受原元素 sibling 影響；原元素
+      // 設 data-jread-hidden + display:none 避免重複文字。
+      const injected = document.createElement('h1');
+      injected.setAttribute('data-jread-injected-title', '1');
+      injected.textContent = normalizeTitle(bestCand.textContent);
+      // inject 新 H1 自身 inline 大字 style（保險，不依賴 styler base CSS）
+      // background: inherit + padding：原站 IMG 因 layout quirk 浮到 article
+      // 之外覆蓋第一屏（newtalk.tw 實測 IMG rect_y=31 vs article rect_y=40），
+      // 透明 inject H1 仍被視覺覆蓋。inherit 繼承 articleEl 的 articleBg、
+      // padding 給標題視覺呼吸 + 不透明 box 把後方所有覆蓋元素遮住。
+      // z-index: 10 + position: relative 雙保險浮在最上層。
+      if (injected.style && typeof injected.style.setProperty === 'function') {
+        injected.style.setProperty('font-size', '2em', 'important');
+        injected.style.setProperty('font-weight', '700', 'important');
+        injected.style.setProperty('line-height', '1.3', 'important');
+        injected.style.setProperty('display', 'block', 'important');
+        injected.style.setProperty('margin-top', '0', 'important');
+        injected.style.setProperty('margin-bottom', '0.6em', 'important');
+        injected.style.setProperty('padding', '8px 0', 'important');
+        injected.style.setProperty('background', 'inherit', 'important');
+        injected.style.setProperty('position', 'relative', 'important');
+        injected.style.setProperty('z-index', '10', 'important');
       }
+      articleEl.insertBefore(injected, articleEl.firstChild);
+      // hide 原元素，避免標題重複出現
+      bestCand.setAttribute('data-jread-promoted-title-source', '1');
+      if (bestCand.style && typeof bestCand.style.setProperty === 'function') {
+        bestCand.style.setProperty('display', 'none', 'important');
+      }
+      // backward-compat：保留 data-jread-promoted-title attribute 在原元素，
+      // 既有 spec 仍找得到（fixture 標題比對等）。
+      bestCand.setAttribute('data-jread-promoted-title', '1');
     }
   }
+
 
   NS.detector = detector;
   // v0.7.87：暴露 markPromotedTitleIfMissing 給 main.js 在 cleaner 跑完後 call
