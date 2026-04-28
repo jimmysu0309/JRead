@@ -31,33 +31,45 @@
        - sibling sections 含純文字段落（非 link-heavy），condA 的 ld > 0.5
          也無機會觸發
        → 只有主文內 keyword heuristic 能 hide 這些 section。退回舊名單會讓
-         所有 5 條 assertion 同時 fail。 -->
+         所有 5 條 assertion 同時 fail。
+
+       v0.7.83：原本每個 widget 內 <p> 是「測試說明文字」（200+ chars），
+       會觸發新加的「主文 anchor 保護」guard（>= 100 chars 單一 p 的 wrapper
+       視為主文容器、不 hide），導致 widget 被誤判為主文。真實 udn widget 的
+       p 是短摘要（<< 100 chars，多為單行標題式列表），改成真實結構：每個
+       widget 用 <ul><li><a> 列表項或極短 p。 -->
   <article class="article-content">
     <p>UDN_MAIN_MARK 總統府今（23）日證實，賴清德總統原定下週啟程的中美洲友邦訪問行程將暫緩，改期至六月再啟程。</p>
     <p>陸委會下午表示對岸沒有資格為台灣定義兩岸現實；外交部補充六月改期細節將於下月初對外說明。</p>
 
     <section class="more-news article-section context-box">
       <header><h2 id="extends">延伸閱讀</h2></header>
-      <p>這段純文字段落刻意不放 `<a>` 連結，讓 link density 接近零，確保 sidebar-column rule 的 condA（ld > 0.5）不觸發。同時主文文字量已控制在 500 字門檻以下，sidebar-column rule 的 main 門檻也不過，整個 rule 對此 fixture 不動作。這樣 `.more-news` 只能靠 NOISE_KEYWORD_RE 的 `more-news` alternation 命中 hide，是純 keyword forcing。</p>
+      <ul>
+        <li><a href="/news/story/1">總統府再回應</a></li>
+        <li><a href="/news/story/2">陸委會說法</a></li>
+      </ul>
     </section>
 
     <section class="related-news more-news context-box article-section">
       <header><h2>相關新聞</h2></header>
-      <p>這段同上——純文字、無連結、不依賴 sidebar-column rule。驗 related-news keyword 能 match（舊名單 `related-articles` 不 match `related-news`）。</p>
+      <ul>
+        <li><a href="/news/story/3">外交部表態</a></li>
+        <li><a href="/news/story/4">立委質詢</a></li>
+      </ul>
     </section>
 
     <div id="taboola-below-article-thumbnails" class="trc_related_container">
-      <p>Taboola widget 預留位，由第三方 JS 注入推薦內容。id 含 `taboola` 關鍵字，驗 NOISE_KEYWORD_RE 新加的 `taboola` 詞。</p>
+      <p>Taboola 推薦</p>
     </div>
 
     <section class="sponsor-ads article-section context-box">
       <header><h2>贊助廣告</h2></header>
-      <p>▶孩子教育金不夠？這幾種方法很多人不知道 PR（業配純文字連結；舊名單 `sponsored` 形容詞不 match `sponsor-ads`，需要 `sponsor` 詞根）。</p>
+      <p>業配連結佔位</p>
     </section>
 
     <section class="discuss-board article-section context-box">
       <header><h2>留言板</h2></header>
-      <p>留言區純文字（實際會有 textarea + 送出按鈕；舊名單 `discussion` 名詞不 match `discuss-board`，需要 `discuss` 詞根）。</p>
+      <p>留言區佔位</p>
     </section>
   </article>
 </body>

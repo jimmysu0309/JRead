@@ -641,6 +641,65 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('twz.com 類 wrapper class 含 `paywall` keyword 但內含 47 個 p + 8 個 h2 主文 → 觸發 wrapperContainsArticleAnchor guard，主文保留；同 article 內短 widget（newsletter / author-bio）仍被 keyword hide', () => {
+    // 2026-04-28 twz.com/space/this-is-how-... 實測：detector 選對
+    // article#post-6450352，但其內主文 wrapper class 為
+    // `entry-content Article-bodyText paywall border-b-2 w-full mb-6`，
+    // `paywall` keyword 命中 NOISE_KEYWORD_RE 後整塊主文（47 p + 8 h2 + 23K
+    // 字）被 hide，reader card 變空白。CMS（Recurrent Ventures）用
+    // `paywall` class 反向標「付費牆已解鎖內文」、語意完全相反。
+    // 既有「含 h1 → 跳過」guard 不及（h1 在 article 外層 header、不在此
+    // wrapper 內）。修法：keyword 命中後若 wrapper 含主文 anchor（>=100
+    // chars 單一 p / 累計 >= 300 / title-anchor element 三道之一），視為
+    // 主文容器、不 hide。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'twz-paywall-class-content-wrapper.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 article#post-6450352');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      const paywallWrapper = w.document.querySelector('.entry-content.paywall');
+      assert.ok(paywallWrapper, 'fixture 應含 paywall class wrapper');
+      assert.notStrictEqual(paywallWrapper.dataset.jreadHidden, '1',
+        '主文 wrapper（class 含 paywall keyword 但實際包整篇主文）不得被 hide——wrapperContainsArticleAnchor guard 必須命中');
+
+      // 進一步驗主文內所有 p / h2 都沒被祖先連帶 hide
+      const mainPs = paywallWrapper.querySelectorAll('p');
+      assert.ok(mainPs.length >= 5, 'fixture paywall wrapper 應含 >= 5 個 p');
+      for (const p of mainPs) {
+        assert.ok(!p.closest('[data-jread-hidden="1"]'),
+          `主文 p 不得有任一祖先被 hide（textHead: "${(p.textContent||'').slice(0,40)}..."）`);
+      }
+      const mainH2s = paywallWrapper.querySelectorAll('h2');
+      for (const h2 of mainH2s) {
+        assert.ok(!h2.closest('[data-jread-hidden="1"]'),
+          `主文 h2 不得有任一祖先被 hide（text: "${(h2.textContent||'').slice(0,40)}"）`);
+      }
+
+      // 短 widget 仍須被 keyword hide（驗 guard 不會把短 widget 也豁免）
+      const newsletter = w.document.querySelector('.recurrent-newsletter-block');
+      assert.ok(newsletter, 'fixture 應含 newsletter widget');
+      assert.strictEqual(newsletter.dataset.jreadHidden, '1',
+        'newsletter widget（class 含 newsletter keyword、p 短於 100 chars 不觸發 anchor guard）必須被 hide');
+
+      const authorWidget = w.document.querySelector('.recurrent-author-widget');
+      assert.ok(authorWidget, 'fixture 應含 author widget');
+      assert.strictEqual(authorWidget.dataset.jreadHidden, '1',
+        'author widget（class 含 author-widget keyword、p 短於 100 chars 不觸發 anchor guard）必須被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內第三方廣告服務標識符（GAM div-gpt-ad / google_ads_iframe / Taboola trc_*  / popIn _popIn_* / Outbrain / ad-*）→ hideInsideArticleByThirdPartyAds 各 selector branch 全命中，主文保留', () => {
     // 2026-04-23 v0.7.4 EasyList spike 結論：Jimmy 四站實測（line today / udn
     // / chinatimes / upmedia）reader mode 內的殘留廣告指向第三方廣告服務

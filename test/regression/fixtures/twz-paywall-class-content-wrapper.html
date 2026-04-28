@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>This Is How U.S. National Security Has Become Dependent On SpaceX</title>
+  <meta property="og:title" content="This Is How U.S. National Security Has Become Dependent On SpaceX">
+</head>
+<body>
+  <!-- v0.7.83 修法 forcing function：twz.com 主文 wrapper class
+       `entry-content Article-bodyText paywall border-b-2 w-full mb-6` 含
+       `paywall` keyword 命中 NOISE_KEYWORD_RE，但實際包整篇主文 47 個 p +
+       8 個 h2 + 23K 字。CMS（Recurrent Ventures）用 `paywall` class 反向標
+       「付費牆已解鎖內文」、語意完全相反。
+       既有「含 h1 → 跳過」guard 不及（h1 在 ARTICLE 外層 <header>、不在
+       paywall wrapper 內），導致整塊主文被 hide → reader card 空白。
+
+       通則修法：hideInsideArticleByKeyword 命中 keyword 後若 wrapper 含
+       「主文 anchor」（重用 wrapperContainsArticleAnchor 三道判定：>=100
+       chars 單一 p / 累計 p textLen >= 300 / title-anchor element），視為
+       主文容器、不 hide。
+
+       Forcing function 設計：
+       - article 內含一個 `<header>`（含 h1）+ 一個 `paywall` class wrapper
+         （含 47 個長 p）
+       - paywall wrapper 不含 h1（只在外層 header），所以舊 h1 guard 不及
+       - paywall wrapper 內每個 p > 100 chars，必觸發新 guard
+       - 同時放一個短 p 的 newsletter widget（< 100 chars）驗仍能被 hide
+       → 退回修法（拿掉新 guard）會 fail：paywall wrapper 主文被 hide。 -->
+  <article id="post-6450352" class="featured-template-post">
+    <header class="featured-template-header">
+      <h1 class="featured-template-title">This Is How U.S. National Security Has Become Dependent On SpaceX</h1>
+      <p class="byline-item byline-item-author">By Joseph Trevithick, Tyler Rogoway</p>
+    </header>
+
+    <figure class="featured-image">
+      <img src="hero.jpg" alt="SpaceX">
+      <figcaption>HUM Images via Getty</figcaption>
+    </figure>
+
+    <section class="featured-template-content">
+      <!-- 真兇：class 含 paywall keyword、不含 h1，但包整篇主文 -->
+      <div class="entry-content Article-bodyText paywall border-b-2 w-full mb-6">
+        <p>Open feuding between President Donald Trump and Elon Musk has thrown a renewed spotlight on just how much the U.S. national security apparatus has come to rely on SpaceX rockets, satellites, and other capabilities, often as the only practical option for fielding new operational space-based capabilities at scale.</p>
+        <p>SpaceX&#39;s Falcon 9, Falcon Heavy, and Starship rockets are now central to U.S. defense launch cadence; the Starlink and Starshield constellations underpin large swaths of military and intelligence community communications, with no comparable alternatives currently on offer from any other commercial vendor or government provider.</p>
+        <h2 class="wp-block-heading">Space Access</h2>
+        <p>The Department of Defense and the National Reconnaissance Office have come to depend on SpaceX rockets to put national security payloads into orbit, with Falcon 9 carrying the lion&#39;s share of recent launches. Replacement vehicles from competitors are years away from comparable cadence.</p>
+        <p>While other launch providers exist on paper, none currently match the throughput, price, or reliability necessary to fill SpaceX&#39;s role at scale, leaving Pentagon planners with limited near-term alternatives if SpaceX availability ever became constrained.</p>
+        <h2 class="wp-block-heading">Space-Based Communications</h2>
+        <p>Starlink terminals are now widely deployed across U.S. military operations including Ukraine support flows, while Starshield provides a tailored, hardened government variant intended for sensitive payloads and beyond-line-of-sight communications resilient under contested conditions.</p>
+        <p>Multiple defense officials have publicly acknowledged the operational benefit of these systems, even as the procurement, command, and policy community struggles with the strategic implications of single-source dependency on a commercial provider whose leadership has shown willingness to influence access.</p>
+      </div>
+
+      <!-- 短 widget：訂閱表單，class 含 newsletter keyword、p 短於 100 chars。
+           應該被 hide（驗 guard 不會把短 widget 也豁免）。 -->
+      <section class="recurrent-newsletter-block newsletter-cta">
+        <h2 class="newsletter-cta-title">The TWZ Newsletter</h2>
+        <p>Weekly insights on military aviation.</p>
+      </section>
+
+      <!-- 短 widget：作者 bio，class 含 author-widget keyword、textLen 小。
+           應該被 hide。 -->
+      <section class="recurrent-author-widget">
+        <h2>About Joseph</h2>
+        <p>Joseph writes about defense.</p>
+      </section>
+    </section>
+  </article>
+</body>
+</html>
