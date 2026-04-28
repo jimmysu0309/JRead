@@ -892,17 +892,26 @@ describe('detector — markPromotedTitleIfMissing（v0.7.87 newtalk.tw 修法）
       '命中元素必須含 og:title 文字');
   });
 
-  it('promoted 元素加 inline 大字體 style（font-size / font-weight / display / position / z-index）', () => {
+  it('v0.7.88：detector inject 一個 H1.data-jread-injected-title 在 articleEl 第一個 child（獨立 DOM 節點，避免被原元素 sibling 的 IMG layout quirk 覆蓋）', () => {
+    const { document, articleEl } = loadAndRun();
+    const injected = document.querySelector('h1[data-jread-injected-title="1"]');
+    assert.ok(injected, '必須 inject 一個新 H1');
+    assert.strictEqual(articleEl.firstChild, injected,
+      'inject H1 必須是 articleEl 第一個 child（reader card 最上方獨立區域）');
+    assert.ok(injected.textContent.includes('國防部稱'),
+      'inject H1 必須含 og:title 文字');
+    const cssText = injected.style.cssText;
+    assert.ok(/font-size:\s*2em/.test(cssText), 'inject H1 必須有 font-size: 2em inline style');
+    assert.ok(/font-weight:\s*700/.test(cssText), 'inject H1 必須有 font-weight: 700');
+    assert.ok(/display:\s*block/.test(cssText), 'inject H1 必須有 display: block');
+  });
+
+  it('v0.7.88：原 promoted-title-source 元素被 hide（display: none + data-jread-promoted-title-source）避免標題重複出現', () => {
     const { document } = loadAndRun();
-    const promoted = document.querySelector('[data-jread-promoted-title="1"]');
-    const cssText = promoted.style.cssText;
-    assert.ok(/font-size:\s*2em/.test(cssText), 'inline style 必須含 font-size: 2em');
-    assert.ok(/font-weight:\s*700/.test(cssText), 'inline style 必須含 font-weight: 700');
-    assert.ok(/display:\s*block/.test(cssText), 'inline style 必須含 display: block');
-    assert.ok(/position:\s*relative/.test(cssText),
-      'inline style 必須含 position: relative（讓 z-index 生效，保護被 IMG 等元素覆蓋）');
-    assert.ok(/z-index:\s*10/.test(cssText),
-      'inline style 必須含 z-index: 10（保險浮在原站異常 layout 元素之上）');
+    const source = document.querySelector('[data-jread-promoted-title-source="1"]');
+    assert.ok(source, '原元素必須加上 data-jread-promoted-title-source attribute');
+    assert.ok(/display:\s*none/.test(source.style.cssText),
+      '原元素必須 inline style display: none（避免 inject H1 + 原 P.name 標題重複）');
   });
 
   it('articleEl 內被 cleaner hide 的 h2.hidden 不算 visible heading（guard 必須認「不在 hidden 樹內」）', () => {

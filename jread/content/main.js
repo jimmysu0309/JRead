@@ -68,16 +68,18 @@
     // 完全還原。多個替身（理論上不該發生，但保險）一起清。
     const replicas = document.querySelectorAll('[data-jread-shadow-replica="1"]');
     replicas.forEach(r => r.remove());
-    // v0.7.87：清除 detector 加的 promoted-title attribute + inline style
-    // （newtalk.tw 類站把標題寫在非 h1-h4 tag 時 detector 加 attribute + inline
-    // 大字 style）。removeProperty 各 prop 還原；若原站本來無 inline style，
-    // 此 element 的 style attribute 完全清空後即還原原狀。
+    // v0.7.88：移除 detector inject 的 H1（data-jread-injected-title）
+    // + restore 原 promoted-title-source 元素的 display（detector hide 它
+    // 避免標題重複）+ 清原元素的 attribute。
+    document.querySelectorAll('[data-jread-injected-title="1"]').forEach(el => el.remove());
+    document.querySelectorAll('[data-jread-promoted-title-source="1"]').forEach(el => {
+      el.removeAttribute('data-jread-promoted-title-source');
+      if (el.style && typeof el.style.removeProperty === 'function') {
+        el.style.removeProperty('display');
+      }
+    });
     document.querySelectorAll('[data-jread-promoted-title="1"]').forEach(el => {
       el.removeAttribute('data-jread-promoted-title');
-      if (el.style && typeof el.style.removeProperty === 'function') {
-        ['font-size', 'font-weight', 'line-height', 'display', 'margin-top', 'margin-bottom', 'position', 'z-index']
-          .forEach(p => el.style.removeProperty(p));
-      }
     });
     NS.state.active = false;
     NS.state.articleEl = null;

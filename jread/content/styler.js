@@ -173,6 +173,16 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] picture {
   display: block !important;
 }
+/* v0.7.88：媒體 max-height 限制——避免站把主圖原始尺寸塞到 reader card
+   後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
+   類似結構），佔滿整屏甚至蓋住 promoted-title。90vh 留給標題與下方文字
+   一些縫隙、又不過度限縮（90% viewport 高仍是大圖視覺）。 */
+[${ARTICLE_ATTR}="1"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] video,
+[${ARTICLE_ATTR}="1"] picture {
+  max-height: 90vh !important;
+  object-fit: contain !important;
+}
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
    或 padding-bottom hack 撐高度（cna.com.tw <picture style="--aspect-ratio:
