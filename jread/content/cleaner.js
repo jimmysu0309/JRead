@@ -830,6 +830,17 @@
       // 聽新聞 button 等）由其他 rule（hideInsideArticleByKeyword 對子層
       // article_nav、hideInsideArticleAllButtons 對 buttons）各自處理。
       if (el.querySelector && el.querySelector('h1')) continue;
+      // v0.7.83 修法：保護「含主文 anchor」的 wrapper——含 >= 100 chars 單一
+      // p / 累計 p textLen >= 300 / 含 title-anchor element。場景：twz.com
+      // 主文 wrapper class 為 `entry-content Article-bodyText paywall ...`，
+      // 含 `paywall` keyword 命中 NOISE_KEYWORD_RE，但 wrapper 內含 47 個 p、
+      // 8 個 h2、23K 字主文——CMS 用 `paywall` class 反向標「付費牆已解鎖內文」，
+      // 語意完全相反。h1 不在此 wrapper（在外層 HEADER），既有 h1 guard 不及。
+      // 通則：keyword 命中後若 wrapper 含主文 anchor（重用 wrapperContainsArticleAnchor
+      // 三道判定），視為主文容器、不 hide——寧可留小 widget 也不要砍主文。
+      // 風險：少數 widget（含 100+ chars description p 的 newsletter widget 等）
+      // 會被豁免，但其他 rule（heading text / button / link / 等）兜底。
+      if (wrapperContainsArticleAnchor(el, null)) continue;
       hide(el, hidden);
     }
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在

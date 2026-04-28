@@ -4,6 +4,12 @@
 
 ---
 
+**v0.7.83**——修 twz.com 類「主文 wrapper class 含 paywall keyword 被誤殺」造成 reader card 空白。**根因**：twz.com 主文 wrapper class 為 `entry-content Article-bodyText paywall border-b-2 w-full mb-6`，CMS（Recurrent Ventures）用 `paywall` class 反向標「付費牆已解鎖內文」，語意完全相反。`paywall` 命中 `NOISE_KEYWORD_RE`，整塊主文（47 個 p、8 個 h2、23K 字）被 `hideInsideArticleByKeyword` hide。既有「含 h1 → 跳過」guard 不及（h1 在外層 `<header>`、不在此 wrapper 內），reader card 只剩 byline 跟相關文章卡片，主文全失。**修法**：`hideInsideArticleByKeyword` 主 loop 加一條 guard `if (wrapperContainsArticleAnchor(el, null)) continue;`——重用既有的「主文 anchor」三道判定（>=100 chars 單一 p / 累計 p textLen >= 300 / title-anchor element），keyword 命中後若 wrapper 含主文 anchor 視為主文容器、不 hide。**通則屬性**：完全結構性，不綁站點 / class，純粹「wrapper 含主文長文 → 視為主文」啟發式；連動更新 `udn-article-siblings-noise.html` fixture（原 widget p 是 200+ chars 測試說明文字、會誤觸新 guard，改成真實 udn 結構：短摘要 list + 短 p）。新增 `twz-paywall-class-content-wrapper.html` fixture + cleaner.spec.js 一條 forcing function，驗 paywall wrapper 主文保留 + 同 article 內短 widget（newsletter / author-bio）仍被 keyword hide。harness 實機驗 twz.com 修法後主文完整顯示。292 jsdom spec 全過。
+
+附帶教訓：CMS 用 noise keyword 做反向命名（paywall 標「已解鎖」、free 標「付費」、premium 標「免費」等情境）對 NOISE_KEYWORD_RE 是 false positive，但 wrapper 結構特徵（含長 p / 累計 textLen / title-anchor）能反過來證明它是主文。既有 `wrapperContainsArticleAnchor` 函式已被 heading text rule、closest 失敗 fallback 等多處共用，但 keyword rule 漏接——這次補上後三條主要 hide 路徑都用同一套主文保護判定，邏輯一致。
+
+---
+
 **v0.7.82**——修 SPA 站（Readwise Reader / Notion / Gmail 類）reader mode 無法捲動。**根因**：這類站把 `body`（有時連 `html`）設 `overflow: hidden`、scroll 交給內層 div 接管。reader mode 把 article card 注入回 body flow、body 高度被撐到 5K+ px，但 `overflow-y: hidden` 仍鎖死 viewport，滾輪 / 鍵盤 / trackpad 全部無效。**修法**：styler base CSS 對 `html.__jread-active` + `html.__jread-active body` 兩條 rule 強制 `overflow-y: visible !important`，讓 scroll 回到 viewport 層級。`overflow-x: hidden` 仍保留避免主文超寬橫向拉條。**通則屬性**：不綁站點 / class，純粹 reset 兩個 root element 的 overflow——任何 SPA 站把 scroll lock 設在 html / body 都解得開，不影響非 SPA 站（它們本來就是 visible）。Readwise Reader（read.readwise.io/new/read/...）實機 console probe 揭穿 `body overflow: hidden hidden hidden` + `body height: 5920px` 即此 bug 的標準特徵。新增 styler.spec.js 兩條 forcing function 鎖住兩條 rule 內容。291 jsdom spec 全過。
 
 ---
