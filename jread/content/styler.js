@@ -161,6 +161,18 @@ html.${HTML_CLASS} body {
   right: auto !important;
   bottom: auto !important;
 }
+/* v0.7.87：媒體 element 強制 display: block，避免 inline default 配 large
+   naturalHeight + 父層 line-height baseline 對齊讓 IMG top 跑到負 y、視覺
+   覆蓋上方標題。newtalk.tw 實測 IMG height 891 + inline default → rect_y=-9
+   蓋住 promoted-title (rect_y=108)。
+   :not(a > img) 仍排除 link-wrapped icon（icon-link 結構保留 inline），這
+   條額外 :not(picture > img) / :not(figure > img) 不必加——picture / figure
+   本身已是 block container、img 在內部 block 只是視覺正確、不影響原 layout。 */
+[${ARTICLE_ATTR}="1"] img:not(a > img),
+[${ARTICLE_ATTR}="1"] video,
+[${ARTICLE_ATTR}="1"] picture {
+  display: block !important;
+}
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
    或 padding-bottom hack 撐高度（cna.com.tw <picture style="--aspect-ratio:

@@ -862,6 +862,97 @@ describe('detector — businessweekly-blog article-tag bait（article 不含 H1 
   });
 });
 
+describe('detector — markPromotedTitleIfMissing（v0.7.87 newtalk.tw 修法）', () => {
+  // newtalk.tw 把主文標題寫在 <p class="name">（非 h1-h4），原頁裝飾性
+  // <h1 class="hidden"> 在 <header> 內被 cleaner hide → articleEl 內找不
+  // 到 visible h1-h4 → reader card 標題不見。
+  // 修法：cleaner 跑完後 main.js call markPromotedTitleIfMissing(articleEl)：
+  // 找等同 og:title 的 p/div/span 元素加 data-jread-promoted-title 屬性
+  // + inline 大字 style。
+  function loadAndRun() {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(FIXTURE_DIR, 'newtalk-p-name-as-title.html'),
+      scripts: ['detector', 'cleaner']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected, 'detector 應命中 newtalk article wrapper');
+    // 模擬 main.js 流程：先 cleaner，後 markPromotedTitleIfMissing
+    env.NS.cleaner.clean(detected.el);
+    env.NS.detector.markPromotedTitleIfMissing(detected.el);
+    return { window: env.window, document: env.document, articleEl: detected.el };
+  }
+
+  it('articleEl 內無 visible h1-h4（hidden h1 在 header 已被 cleaner hide）→ 找等同 og:title 的 p.name 加 data-jread-promoted-title="1"', () => {
+    const { document } = loadAndRun();
+    const promoted = document.querySelector('[data-jread-promoted-title="1"]');
+    assert.ok(promoted, '必須命中等同 og:title 的元素加 attribute');
+    assert.strictEqual(promoted.tagName, 'P');
+    assert.strictEqual(promoted.className, 'name');
+    assert.ok(promoted.textContent.includes('國防部稱'),
+      '命中元素必須含 og:title 文字');
+  });
+
+  it('promoted 元素加 inline 大字體 style（font-size / font-weight / display / position / z-index）', () => {
+    const { document } = loadAndRun();
+    const promoted = document.querySelector('[data-jread-promoted-title="1"]');
+    const cssText = promoted.style.cssText;
+    assert.ok(/font-size:\s*2em/.test(cssText), 'inline style 必須含 font-size: 2em');
+    assert.ok(/font-weight:\s*700/.test(cssText), 'inline style 必須含 font-weight: 700');
+    assert.ok(/display:\s*block/.test(cssText), 'inline style 必須含 display: block');
+    assert.ok(/position:\s*relative/.test(cssText),
+      'inline style 必須含 position: relative（讓 z-index 生效，保護被 IMG 等元素覆蓋）');
+    assert.ok(/z-index:\s*10/.test(cssText),
+      'inline style 必須含 z-index: 10（保險浮在原站異常 layout 元素之上）');
+  });
+
+  it('articleEl 內被 cleaner hide 的 h2.hidden 不算 visible heading（guard 必須認「不在 hidden 樹內」）', () => {
+    const { document, articleEl } = loadAndRun();
+    // articleEl 內的 h2「新聞跑馬燈」應該是 ancestor-hidden 狀態
+    const h2 = articleEl.querySelector('h2');
+    assert.ok(h2, 'fixture 應有 h2');
+    assert.ok(h2.closest('[data-jread-hidden="1"]'),
+      'h2 應被 cleaner hide（祖先被 hide 即可）');
+    // 而 promote 仍應發生（因為 h2 不算 visible）
+    const promoted = document.querySelector('[data-jread-promoted-title="1"]');
+    assert.ok(promoted,
+      'guard 必須只認「不在 hidden 樹內」的 h1-h4，否則此 fixture 會誤判已有 heading 不 promote');
+  });
+
+  it('articleEl 內已有 visible h1-h4 → 不 promote', () => {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(FIXTURE_DIR, 'newtalk-p-name-as-title.html'),
+      scripts: ['detector', 'cleaner']
+    });
+    const detected = env.NS.detector.detect();
+    // 在 articleEl 內手動加一個 visible h1，模擬「站本來就有正確標題」
+    const fakeH1 = env.document.createElement('h1');
+    fakeH1.textContent = '另一個主標題';
+    detected.el.insertBefore(fakeH1, detected.el.firstChild);
+    env.NS.cleaner.clean(detected.el);
+    env.NS.detector.markPromotedTitleIfMissing(detected.el);
+    const promoted = env.document.querySelector('[data-jread-promoted-title="1"]');
+    assert.strictEqual(promoted, null,
+      'articleEl 內已有 visible h1（不在 hidden 樹內）→ 不該 promote 任何 p/div');
+  });
+
+  it('og:title 缺失 → 不 promote（guard 避免 false positive）', () => {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(FIXTURE_DIR, 'newtalk-p-name-as-title.html'),
+      scripts: ['detector', 'cleaner']
+    });
+    // 拿掉 og:title meta + document.title
+    const meta = env.document.querySelector('meta[property="og:title"]');
+    if (meta) meta.remove();
+    Object.defineProperty(env.document, 'title', { value: '', configurable: true });
+    const detected = env.NS.detector.detect();
+    env.NS.cleaner.clean(detected.el);
+    env.NS.detector.markPromotedTitleIfMissing(detected.el);
+    const promoted = env.document.querySelector('[data-jread-promoted-title="1"]');
+    assert.strictEqual(promoted, null,
+      '無 og:title / docTitle 對標時不該 promote（guard 防 false positive）');
+  });
+});
+
 describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
   // MSN.com 用 Web Components（custom elements + open shadow root）包主文，
   // 普通 querySelectorAll 看不到 shadow 內元素 → 所有上層 detector 策略全失。

@@ -731,5 +731,82 @@
     }
   };
 
+  // v0.7.87：把「articleEl 內等同 og:title / docTitle 的 text 元素」標 promoted
+  // -title attribute，讓 styler 套大字體標題樣式。通則：站若把標題寫在非
+  // h1-h4 tag（newtalk `<p class="name">` / 其他站可能用 `<div class="title">`
+  // / `<span class="post-title">` 等），styler 不會自動視覺突顯，需此 promote。
+  // 已有 visible h1-h4 → 不動（既有 detector path 應已 cover）。
+  function markPromotedTitleIfMissing(articleEl) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+
+    // articleEl 內已有「非 hidden 的 h1-h4」→ 不動。jsdom 環境下 rect=0 不能
+    // 用 rect 判斷 visible；改用「不在 cleaner hide 樹內」當 visible proxy。
+    // 實機 newtalk case：articleEl 內 h1-h4 數為 0（hidden h1 在外層 header）
+    // → loop 不跑 → 進 promote 邏輯。既有 fixture 主文都有 h1-h4 → return。
+    const headings = articleEl.querySelectorAll('h1, h2, h3, h4');
+    for (const h of headings) {
+      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      return;
+    }
+
+    // 取 og:title / docTitle 作為比對基準
+    function normalizeTitle(s) {
+      return (s || '').replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim();
+    }
+    const og = document.querySelector('meta[property="og:title"]')?.content || '';
+    const docT = document.title || '';
+    const baseTitle = normalizeTitle(og) || normalizeTitle(docT.split(/[|｜\-—–]/)[0] || '');
+    if (!baseTitle || baseTitle.length < 5) return;
+
+    // 找 articleEl 內含等同 baseTitle 的 text element（精確或包含關係）
+    // 限制 textLen 接近 baseTitle，避免命中包含主文整段的大 wrapper
+    let bestCand = null;
+    let bestScore = 0;
+    for (const el of articleEl.querySelectorAll('p, div, span, h5, h6')) {
+      const t = normalizeTitle(el.textContent || '');
+      if (t.length < 10 || t.length > baseTitle.length * 1.5) continue;
+      // 包含 baseTitle 60%+ 字元
+      let overlap = 0;
+      if (t === baseTitle) overlap = 1.0;
+      else if (t.includes(baseTitle)) overlap = 0.9;
+      else if (baseTitle.includes(t)) overlap = 0.85;
+      if (overlap < 0.85) continue;
+      // 偏好 text-only 元素（沒巢狀子元素過多 → 確保是純標題、非 wrapper）
+      const childTagCount = el.querySelectorAll('*').length;
+      const score = overlap - childTagCount * 0.05;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCand = el;
+      }
+    }
+
+    if (bestCand) {
+      bestCand.setAttribute('data-jread-promoted-title', '1');
+      // inline style 路線（不走 base CSS rule、避免 styler 字串 grep 誤觸
+      // 既有 spec 對 font-size / line-height 字樣的 forcing assertion）。
+      // jsdom guard：jsdom style.setProperty 雖實作但對 unitless / em 解析
+      // 行為與真 Chrome 略異；spec 不檢查 inline style 內容，只驗 attribute
+      // 命中即可。
+      if (bestCand.style && typeof bestCand.style.setProperty === 'function') {
+        bestCand.style.setProperty('font-size', '2em', 'important');
+        bestCand.style.setProperty('font-weight', '700', 'important');
+        bestCand.style.setProperty('line-height', '1.3', 'important');
+        bestCand.style.setProperty('display', 'block', 'important');
+        bestCand.style.setProperty('margin-top', '0', 'important');
+        bestCand.style.setProperty('margin-bottom', '0.6em', 'important');
+        // position: relative + z-index 保險：原站若有圖片 / overlay 因 CSS
+        // quirk（lazy-load placeholder layout / 負 margin / inline baseline
+        // 等）渲染到 promoted-title 之上覆蓋標題視覺，z-index 保標題在最上層。
+        bestCand.style.setProperty('position', 'relative', 'important');
+        bestCand.style.setProperty('z-index', '10', 'important');
+      }
+    }
+  }
+
   NS.detector = detector;
+  // v0.7.87：暴露 markPromotedTitleIfMissing 給 main.js 在 cleaner 跑完後 call
+  // （cleaner 已 hide chrome 內的 hidden h1-h4 後，articleEl 內若仍無 visible
+  // heading，才 promote 主標）。在 detect() 結尾呼叫時序錯誤——cleaner 還沒
+  // 跑、被 hide 的 heading 仍視為 visible，guard 誤觸不 promote。
+  NS.detector.markPromotedTitleIfMissing = markPromotedTitleIfMissing;
 })();

@@ -41,6 +41,13 @@
       promotedFrom: result.promotedFrom,
       promotedTitleHead: result.promotedTitleHead
     }) : [];
+    // v0.7.87：cleaner 跑完後才 promote 主標——cleaner 已 hide hidden h1-h4
+    // 後，articleEl 內若無 visible heading，找等同 og:title 的 text element
+    // 加 attribute + inline 大字 style（newtalk.tw 主標寫在 p.name 等非 h1-h4
+    // tag 的場景）。需要 cleaner 先跑，guard 才能正確識別「visible heading」。
+    if (NS.detector && typeof NS.detector.markPromotedTitleIfMissing === 'function') {
+      NS.detector.markPromotedTitleIfMissing(result.el);
+    }
     NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
     NS.state.active = true;
 
@@ -61,6 +68,17 @@
     // 完全還原。多個替身（理論上不該發生，但保險）一起清。
     const replicas = document.querySelectorAll('[data-jread-shadow-replica="1"]');
     replicas.forEach(r => r.remove());
+    // v0.7.87：清除 detector 加的 promoted-title attribute + inline style
+    // （newtalk.tw 類站把標題寫在非 h1-h4 tag 時 detector 加 attribute + inline
+    // 大字 style）。removeProperty 各 prop 還原；若原站本來無 inline style，
+    // 此 element 的 style attribute 完全清空後即還原原狀。
+    document.querySelectorAll('[data-jread-promoted-title="1"]').forEach(el => {
+      el.removeAttribute('data-jread-promoted-title');
+      if (el.style && typeof el.style.removeProperty === 'function') {
+        ['font-size', 'font-weight', 'line-height', 'display', 'margin-top', 'margin-bottom', 'position', 'z-index']
+          .forEach(p => el.style.removeProperty(p));
+      }
+    });
     NS.state.active = false;
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
