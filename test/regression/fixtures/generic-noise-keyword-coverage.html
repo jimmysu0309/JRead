@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Generic noise keyword coverage — v0.7.85</title>
+  <meta property="og:title" content="Long form analysis of dependency chains in modern infrastructure">
+</head>
+<body>
+  <!-- v0.7.85 forcing function：對標 Mozilla Readability / Postlight Parser /
+       Unclutter / EasyList / uBlock 的 noise keyword 最佳實踐研究後，加進
+       NOISE_KEYWORD_RE 的新 token 必須各自有 wrapper 命中 hide。退回舊
+       名單會讓對應 assertion 一條條 fail。
+
+       fixture 設計：
+       - <article> 內含主文段落（>= 3 個長 p、不觸發 sidebar-column）
+       - 每個新 token 一個 wrapper（短文字 / 短結構，避免命中 anchor guard）
+       - 同 article 內混雜「應保留」的元素（主文 p、標題）驗 guard 不誤殺
+  -->
+  <article class="article-content">
+    <h1>Long form analysis of dependency chains in modern infrastructure</h1>
+    <p>This is a substantial paragraph that contributes meaningful main-text length so that detector promotes the article container and downstream cleaner rules trigger inner-noise hide passes; the wrapping context here is intentionally rich enough to dominate text-ratio calculations against the small noise widgets below.</p>
+    <p>Another full paragraph extending the visible main-content text length comfortably above the five-hundred character threshold required by some sidebar-column heuristics; the substance of the text is intentionally generic to avoid coincidental keyword collisions with any noise alternation token under test.</p>
+    <p>One more paragraph for safety margin in main-text length calculations, ensuring that subsequent noise widgets fall well below the 10% sibling textLen ratio that would otherwise trigger the existing sidebar-column condition A path.</p>
+
+    <!-- 品牌/服務名（強語意，零誤殺） -->
+    <div class="addthis-toolbox addthis-smartlayers">addthis</div>
+    <div class="sharedaddy sd-block">sharedaddy</div>
+    <div class="ai2html-graphic">ai2html chart</div>
+    <div class="sociable-button">sociable</div>
+    <div class="dianomi-context">dianomi</div>
+    <div class="adsense-banner">adsense</div>
+    <div class="adslot-300x250">adslot</div>
+    <div class="onesignal-prompt">onesignal</div>
+    <div class="intercom-launcher">intercom</div>
+    <div class="printfriendly-button">printfriendly</div>
+    <div class="instapaper_ignore">instapaper hint</div>
+    <div class="blogger-labels-list">blogger labels</div>
+    <div class="smartfeed-container">smartfeed</div>
+    <div class="mpu-slot">mpu</div>
+
+    <!-- 廣告 / 付費牆變體 -->
+    <div class="advert-block">advert</div>
+    <div class="adbox-300">adbox</div>
+    <div class="adhesion-bar">adhesion</div>
+    <div class="metered-content-paywall">metered</div>
+    <div class="interstitial-ad">interstitial</div>
+    <div class="takeover-banner">takeover</div>
+
+    <!-- 留言 / 社群 -->
+    <div class="replies-thread">replies</div>
+    <div class="remark-form">remark</div>
+    <div class="shoutbox-widget">shoutbox</div>
+    <div id="respond" class="respond-form">respond</div>
+    <div class="composer-textarea">composer</div>
+    <div class="combx-list">combx</div>
+
+    <!-- 結構雜訊 -->
+    <div class="supplemental-block">supplemental</div>
+    <div class="cover-wrap-hero">cover-wrap</div>
+    <div class="entry-unrelated-block">entry-unrelated</div>
+    <div class="crumb-trail">crumb</div>
+    <div class="recirc-module">recirc</div>
+    <div class="nag-banner">nag</div>
+    <div class="modal-backdrop">backdrop</div>
+    <div class="topbar-tools">topbar</div>
+    <div class="announcement-bar">announcement</div>
+    <div class="popover-tooltip">popover</div>
+    <div class="drawer-menu">drawer</div>
+    <div class="image-loader-spinner">loader</div>
+    <div class="contact-us-block">contact</div>
+    <div class="shopping-cart-promo">shopping</div>
+    <div class="plea-fundraiser">plea</div>
+
+    <!-- 「相關文章 / 推薦」變體 -->
+    <div class="next-article-card">next-article</div>
+    <div class="latest-posts-feed">latest-posts</div>
+    <div class="mostread-list">mostread</div>
+    <div class="most-read-list">most-read</div>
+  </article>
+</body>
+</html>
