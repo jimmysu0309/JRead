@@ -26,6 +26,18 @@
   //   comment(s) / discuss(ion) / disqus：留言 / 討論（udn `.discuss-board`
   //     實測——`discussion` 名詞不 match `discuss-board`；加 `discuss` 動詞
   //     詞根覆蓋 board / form 類 CMS module）
+  //   article-sidebar / sidebar-(wrapper|column|content|widget|primary|secondary)：
+  //     CMS 慣例 article 內 sidebar wrapper 命名。twz.com 實測 sidebar 是
+  //     `<aside id="article-sidebar" class="article-sidebar pb-5">`，包在
+  //     `<div class="featured-template-sidebar-wrapper article-sidebar-wrapper">`
+  //     內，跟主文 paywall wrapper 是 flex-row siblings。既有
+  //     hideInsideArticleSidebarColumns 條件 B（aside tag + rectH > 400）只
+  //     檢查 direct child，aside 在 sibling div wrapper 內漏網；條件 A
+  //     （linkDensity > 0.5）也因 sidebar 內 11 個 a 累計 textContent 不及
+  //     描述文字 0.5 比值漏網。直接靠 class token 命中比 layout 啟發式穩。
+  //     不裸用 `sidebar` token——會誤殺 `sidebar-icon` / `sidebar-toggle` /
+  //     `mobile-sidebar-button` 等明顯非 sidebar 的 button class。只用明確
+  //     語意的 alternation（CMS / WordPress / news 站慣例命名）。
   // alternation 順序不影響：regex 會依 boundary `(^|[^a-z0-9])...([^a-z0-9]|$)`
   // 逐一 try。動詞詞根不會誤殺既有的形容詞 `recommended` / `sponsored` /
   // `discussion`——後者各自有自己的 alternation 先行。
@@ -36,7 +48,7 @@
   // 配合外層的 `[^a-z0-9]|$` boundary 對整個匹配 token 的末尾做檢查——能吃
   // `newsletter` / `newsletter2in1` / `newsletter-form` / `newsletterBox` 等所有
   // 以 `newsletter` 開頭的 class 變體。
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|recommended|recommend|recommendation|read-more|read-next|up-next|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|breadcrumb|breadcrumbs|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|overlay|modal-(?:content|dialog|box|wrapper)|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -143,6 +155,20 @@
     const m = markerOf(el);
     if (!m.trim()) return false;
     return NOISE_KEYWORD_RE.test(m) || AD_BOUNDARY_RE.test(m) || AD_SUFFIX_RE.test(m);
+  }
+
+  // v0.7.84：strong noise keyword——CMS / news 站慣例命名 sidebar wrapper 的
+  // 強語意 token list，主文 wrapper 絕不會這樣命名。命中時跳過 v0.7.83 加的
+  // wrapperContainsArticleAnchor guard 直接 hide，避免 sidebar 內若含 100+
+  // chars description p（典型相關文章 card 的描述）觸發 guard 被豁免。
+  // twz.com 實機 case：ASIDE#article-sidebar 內含 latest-posts-widget，每張
+  // 卡片是「短 link + 140 chars 描述 p」，描述 p 超 100 chars → 普通 keyword
+  // hide path 被 anchor guard 豁免；strong path 跳過 guard 直接 hide。
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary)([^a-z0-9]|$)/i;
+  function shouldHideByStrongKeyword(el) {
+    const m = markerOf(el);
+    if (!m.trim()) return false;
+    return STRONG_NOISE_KEYWORD_RE.test(m);
   }
 
   // whitespace-normalize：jsdom textContent 保留 HTML 縮排 `\n    `，真實
@@ -840,7 +866,10 @@
       // 三道判定），視為主文容器、不 hide——寧可留小 widget 也不要砍主文。
       // 風險：少數 widget（含 100+ chars description p 的 newsletter widget 等）
       // 會被豁免，但其他 rule（heading text / button / link / 等）兜底。
-      if (wrapperContainsArticleAnchor(el, null)) continue;
+      // v0.7.84：strong keyword（article-sidebar / sidebar-wrapper / 等 CMS
+      // 強語意 sidebar 命名）跳過 anchor guard——主文 wrapper 絕不會用這些
+      // class 命名，sidebar widget 內含長描述 p 時 guard 會誤豁免，需強路徑。
+      if (!shouldHideByStrongKeyword(el) && wrapperContainsArticleAnchor(el, null)) continue;
       hide(el, hidden);
     }
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在

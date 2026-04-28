@@ -695,6 +695,17 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       assert.ok(authorWidget, 'fixture 應含 author widget');
       assert.strictEqual(authorWidget.dataset.jreadHidden, '1',
         'author widget（class 含 author-widget keyword、p 短於 100 chars 不觸發 anchor guard）必須被 hide');
+
+      // v0.7.84：右側 article sidebar 必須被 hide
+      // class 命中 article-sidebar-wrapper / article-sidebar token。
+      const sidebarWrapper = w.document.querySelector('.article-sidebar-wrapper');
+      assert.ok(sidebarWrapper, 'fixture 應含 article-sidebar-wrapper');
+      assert.strictEqual(sidebarWrapper.dataset.jreadHidden, '1',
+        'article-sidebar-wrapper 必須被 NOISE_KEYWORD_RE 新加的 `sidebar-wrapper` alternation 命中 hide（既有 hideInsideArticleSidebarColumns 條件 B 只檢查 direct-child aside、條件 A 對低 linkDensity sidebar 漏網）');
+      const sidebarAside = w.document.querySelector('#article-sidebar');
+      assert.ok(sidebarAside, 'fixture 應含 #article-sidebar');
+      assert.ok(sidebarAside.closest('[data-jread-hidden="1"]'),
+        'aside#article-sidebar 必須被祖先 hide（自己也應命中 article-sidebar token）');
     } finally {
       w.__JRead.cleaner.restore(localHidden);
     }
