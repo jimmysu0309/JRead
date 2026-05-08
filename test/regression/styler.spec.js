@@ -833,3 +833,223 @@ describe('styler — v0.7.38 icon container 限縮（macstories app icon 修法�
       'forcing：用 naked img 會誤打到 link-wrapped icon、且踩到 styler spec line 145 forcing');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.90：auto-hide scrollbar 注入 + scroll listener 生命週期
+// -----------------------------------------------------------------------------
+// 站點常用 `scrollbar-width: none` / `::-webkit-scrollbar { display: none }`
+// 隱藏整個 scroll bar，reader mode 啟動後使用者捲動時看不到任何 indicator。
+// styler 注入 thin scrollbar override + 自製 webkit-scrollbar，並在 apply 時
+// install scroll listener（觸發 [data-jread-scrolling="1"] attr）、restore 時
+// 移除。jsdom 不算 layout / 不 render scrollbar，本 spec 驗的是「CSS 字串
+// 含 override」+「scroll 事件能正確觸發 attr」+「restore 後 attr 清除」。
+// -----------------------------------------------------------------------------
+describe('styler — v0.7.90 auto-hide scrollbar', () => {
+  it('CSS 含 scrollbar-width: thin override（站點 scrollbar-width: none 反制）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/html\.__jread-active\s*\{[^}]*scrollbar-width:\s*thin\s*!important/.test(css),
+      'CSS 必須含 html.__jread-active 的 scrollbar-width: thin !important（override 站點 scrollbar-width: none）');
+  });
+
+  it('CSS 含 ::-webkit-scrollbar 8px override（站點 ::-webkit-scrollbar { display: none } 反制）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/html\.__jread-active::-webkit-scrollbar\s*\{[^}]*width:\s*8px\s*!important/.test(css),
+      'CSS 必須含 ::-webkit-scrollbar 的 width: 8px !important');
+    assert.ok(/html\.__jread-active::-webkit-scrollbar\s*\{[^}]*display:\s*block\s*!important/.test(css),
+      'CSS 必須含 ::-webkit-scrollbar 的 display: block !important（override 站點 display: none）');
+  });
+
+  it('CSS 預設 thumb transparent，scrolling attr 時切到 theme.scrollThumb 色（auto-hide 機制核心）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 預設 thumb 透明
+    assert.ok(/html\.__jread-active::-webkit-scrollbar-thumb\s*\{[^}]*background-color:\s*transparent\s*!important/.test(css),
+      'CSS 必須讓 scrollbar-thumb 預設 background-color: transparent（auto-hide 預設狀態）');
+    // scrolling attr 觸發顯色（light theme thumb）
+    assert.ok(/html\.__jread-active\[data-jread-scrolling="1"\]::-webkit-scrollbar-thumb\s*\{[^}]*rgba\(0,\s*0,\s*0,\s*0\.3\)/.test(css),
+      'CSS 必須含 [data-jread-scrolling="1"] 觸發 light theme thumb rgba(0,0,0,0.3)');
+  });
+
+  it('CSS 含 transition（fade-in/out 順暢）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/transition:\s*background-color\s*0\.3s/.test(css),
+      'CSS 必須含 thumb 的 transition: background-color 0.3s（fade 順暢度）');
+  });
+
+  it('dark theme 注入 light thumb（rgba(255,255,255,0.3)，避免黑底黑 thumb 不可見）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/rgba\(255,\s*255,\s*255,\s*0\.3\)/.test(css),
+      'dark theme 必須注入淺色 thumb rgba(255,255,255,0.3)（黑底不可見問題）');
+  });
+
+  it('apply 後 dispatch scroll event → html 帶 [data-jread-scrolling="1"]', () => {
+    const { window, document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    // scroll 事件前 attr 不存在
+    assert.strictEqual(document.documentElement.getAttribute('data-jread-scrolling'), null);
+    // 觸發 scroll
+    window.dispatchEvent(new window.Event('scroll'));
+    // attr 立刻存在
+    assert.strictEqual(document.documentElement.getAttribute('data-jread-scrolling'), '1',
+      'scroll 事件觸發後 html 必須立刻帶 data-jread-scrolling="1"');
+  });
+
+  it('restore 後 dispatch scroll event 不再觸發 attr（listener 已移除）', () => {
+    const { window, document, NS, articleEl } = setup();
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    NS.styler.restore(articleEl, snap);
+    // 確認 restore 後 attr 已清
+    assert.strictEqual(document.documentElement.getAttribute('data-jread-scrolling'), null);
+    // 觸發 scroll，attr 不應再被加上
+    window.dispatchEvent(new window.Event('scroll'));
+    assert.strictEqual(document.documentElement.getAttribute('data-jread-scrolling'), null,
+      'restore 後 scroll listener 必須已被移除——再 dispatch scroll 不應重新加上 attr');
+  });
+
+  it('restore 立刻清除 [data-jread-scrolling="1"]（避免關閉閱讀模式後殘留 attr）', () => {
+    const { window, document, NS, articleEl } = setup();
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    window.dispatchEvent(new window.Event('scroll'));
+    assert.strictEqual(document.documentElement.getAttribute('data-jread-scrolling'), '1');
+    NS.styler.restore(articleEl, snap);
+    assert.strictEqual(document.documentElement.getAttribute('data-jread-scrolling'), null,
+      'restore() 必須同步清除 data-jread-scrolling attr');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.91：SPACE 鍵捲動（reader mode 啟動後 SPACE 可往下捲一頁、Shift+SPACE 反向）
+// -----------------------------------------------------------------------------
+// 原站攔截 keydown 或 focus 跑掉時瀏覽器原生 SPACE 捲動失效。styler 在 window
+// 層級 capture phase 攔 keydown SPACE，自己呼叫 window.scrollBy。input /
+// textarea / select / contenteditable focus 時放行（避免吃掉表單空白輸入）。
+// jsdom 的 window.scrollBy 是 no-op 但存在；本 spec 用 spy 蓋掉驗呼叫參數。
+// -----------------------------------------------------------------------------
+describe('styler — v0.7.91 SPACE 捲動', () => {
+  function spyScrollBy(window) {
+    const calls = [];
+    window.scrollBy = function (...args) { calls.push(args); };
+    return calls;
+  }
+
+  function fireSpace(window, opts) {
+    const ev = new window.KeyboardEvent('keydown', Object.assign({
+      key: ' ',
+      code: 'Space',
+      bubbles: true,
+      cancelable: true
+    }, opts || {}));
+    window.dispatchEvent(ev);
+    return ev;
+  }
+
+  it('apply 後 dispatch SPACE → preventDefault + scrollBy 往下捲 viewport*0.92', () => {
+    const { window, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+    const calls = spyScrollBy(window);
+    const ev = fireSpace(window);
+    assert.strictEqual(ev.defaultPrevented, true,
+      'SPACE keydown 必須 preventDefault（攔截原站 / 預設行為）');
+    assert.strictEqual(calls.length, 1, 'window.scrollBy 必須被呼叫一次');
+    const arg = calls[0][0];
+    assert.ok(arg && typeof arg === 'object', 'scrollBy 必須收 options 物件');
+    assert.ok(arg.top > 0, 'top 必須為正（往下）');
+    assert.strictEqual(arg.top, 920, 'top 必須等於 innerHeight * 0.92 = 920');
+  });
+
+  it('Shift+SPACE → scrollBy 往上捲（top 為負）', () => {
+    const { window, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true });
+    const calls = spyScrollBy(window);
+    const ev = fireSpace(window, { shiftKey: true });
+    assert.strictEqual(ev.defaultPrevented, true);
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0][0].top, -920, 'Shift+SPACE 必須讓 top 變負（往上）');
+  });
+
+  it('input focus 時 SPACE 放行（不攔、不 scroll）', () => {
+    const { window, document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    assert.strictEqual(document.activeElement, input);
+    const calls = spyScrollBy(window);
+    const ev = fireSpace(window);
+    assert.strictEqual(ev.defaultPrevented, false,
+      'input focus 時 SPACE 不該被 preventDefault（讓使用者輸入空格）');
+    assert.strictEqual(calls.length, 0, 'input focus 時不該呼叫 scrollBy');
+  });
+
+  it('textarea focus 時 SPACE 放行', () => {
+    const { window, document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const ta = document.createElement('textarea');
+    document.body.appendChild(ta);
+    ta.focus();
+    const calls = spyScrollBy(window);
+    const ev = fireSpace(window);
+    assert.strictEqual(ev.defaultPrevented, false);
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('contenteditable focus 時 SPACE 放行', () => {
+    const { window, document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const div = document.createElement('div');
+    div.setAttribute('contenteditable', 'true');
+    document.body.appendChild(div);
+    div.focus();
+    const calls = spyScrollBy(window);
+    const ev = fireSpace(window);
+    assert.strictEqual(ev.defaultPrevented, false,
+      'contenteditable focus 時 SPACE 不該被 preventDefault（避免吃掉編輯空格）');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('Ctrl/Cmd/Alt + SPACE 不攔（保留瀏覽器/系統快速鍵）', () => {
+    const { window, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const calls = spyScrollBy(window);
+    for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      const ev = fireSpace(window, mod);
+      assert.strictEqual(ev.defaultPrevented, false,
+        `${JSON.stringify(mod)} + SPACE 不該被攔截（系統 / 瀏覽器快速鍵）`);
+    }
+    assert.strictEqual(calls.length, 0, 'modifier + SPACE 不該觸發 scrollBy');
+  });
+
+  it('非 SPACE 鍵不觸發（避免誤攔 a / Enter / Tab 等）', () => {
+    const { window, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const calls = spyScrollBy(window);
+    for (const k of ['a', 'Enter', 'Tab', 'ArrowDown', 'PageDown']) {
+      const ev = new window.KeyboardEvent('keydown', { key: k, code: k, bubbles: true, cancelable: true });
+      window.dispatchEvent(ev);
+      assert.strictEqual(ev.defaultPrevented, false, `${k} 不該被攔截`);
+    }
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('restore 後 SPACE keydown 不再觸發 scrollBy（listener 移除）', () => {
+    const { window, NS, articleEl } = setup();
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    NS.styler.restore(articleEl, snap);
+    const calls = spyScrollBy(window);
+    const ev = fireSpace(window);
+    assert.strictEqual(ev.defaultPrevented, false,
+      'restore 後 SPACE 不該再被 jread 攔截（listener 已移除）');
+    assert.strictEqual(calls.length, 0);
+  });
+});
