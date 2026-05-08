@@ -33,10 +33,12 @@
   //   light 不注入（light 連文字色都不注入，保留原站 link 色）。
   //   dark #7fb5e6：在 #1a1a1a 底對比 > 7:1
   //   sepia #2c5282（JRead primary-700）：在 #f4ecd8 底對比 > 6:1
+  //   scrollThumb：v0.7.90 auto-hide scrollbar 顯色用，配 page bg 對比夠辨識
+  //   又不過度搶眼。dark theme 用淺色 thumb、light/sepia 用深色 thumb。
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null },
-    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6' },
-    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282' }
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)' },
+    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)' },
+    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)' }
   };
 
   function themeOf(name) {
@@ -75,6 +77,40 @@ html.${HTML_CLASS} body {
   min-width: 0 !important;
   overflow-x: hidden !important;
   overflow-y: visible !important;
+}
+/* v0.7.90：auto-hide scrollbar——SPA 站常用 scrollbar-width: none /
+   ::-webkit-scrollbar display: none 隱藏整個 scroll bar，reader mode
+   啟動後使用者捲動時看不到任何 indicator。對策：
+     1. scrollbar-width: thin override 站點 hide
+     2. webkit ::-webkit-scrollbar 自製 8px 細條
+     3. thumb 預設 transparent，html 帶 [data-jread-scrolling="1"] 時顯色
+     4. styler 端攔 scroll event 加 attr、800ms idle 後移除
+     5. transition 0.3s 達到 fade-in/out，不打擾閱讀
+   thumb 色按主題：light/sepia 用深色（rgba 黑/sepia text）、dark 用淺色。 */
+html.${HTML_CLASS} {
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+  transition: scrollbar-color 0.3s ease !important;
+}
+html.${HTML_CLASS}[data-jread-scrolling="1"] {
+  scrollbar-color: ${theme.scrollThumb} transparent !important;
+}
+html.${HTML_CLASS}::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  display: block !important;
+  background: transparent !important;
+}
+html.${HTML_CLASS}::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+html.${HTML_CLASS}::-webkit-scrollbar-thumb {
+  background-color: transparent !important;
+  border-radius: 4px !important;
+  transition: background-color 0.3s ease !important;
+}
+html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
+  background-color: ${theme.scrollThumb} !important;
 }
 /* 祖先鏈激進 reset——讓主文容器脫離原站的多欄 layout / 版心限制 / sticky。
    不碰主文本身 [data-jread-active]，所以原站的 h1-h6 / p / list / link 等
@@ -471,6 +507,54 @@ html.${HTML_CLASS} body {
     return base + userOverrides;
   }
 
+  // v0.7.90 auto-hide scrollbar：scroll 事件觸發後立刻 set
+  // [data-jread-scrolling="1"] on html、800ms 無新事件後清除。CSS 端用此
+  // attr 切換 thumb 色，搭配 0.3s transition 達到 fade-in/out。
+  // 模組層級 timer + listener function，apply 時 install / restore 時 remove。
+  // 同個 function reference 才能正確 add/remove，所以不能用 closure 重新建構。
+  const SCROLLING_ATTR = 'data-jread-scrolling';
+  const SCROLL_HIDE_DELAY = 800;
+  let scrollHideTimer = null;
+  function onScrollFlash() {
+    const html = document.documentElement;
+    if (html.getAttribute(SCROLLING_ATTR) !== '1') {
+      html.setAttribute(SCROLLING_ATTR, '1');
+    }
+    if (scrollHideTimer) clearTimeout(scrollHideTimer);
+    scrollHideTimer = setTimeout(() => {
+      document.documentElement.removeAttribute(SCROLLING_ATTR);
+      scrollHideTimer = null;
+    }, SCROLL_HIDE_DELAY);
+  }
+
+  // v0.7.91：SPACE 鍵捲動。reader mode 啟動後，原站若攔截 keydown SPACE
+  // 或 focus 不在 body 上（例如先前 focus 過某個被 cleaner hide 的元素），
+  // 瀏覽器原生「SPACE = 往下捲一頁」會失效。對策：window 層級 capture phase
+  // 攔 keydown SPACE 自己處理，比原站 bubble listener 早收到事件。
+  // 例外：input / textarea / select / contenteditable focus 時放行（使用者
+  // 在主文 input 留言或編輯時 SPACE 是輸入空格，不該被搶）。
+  // viewport * 0.92 ≈ Chrome 預設 SPACE 捲動量；shift+SPACE 反向往上。
+  // smooth scroll 視覺更舒服。
+  const SPACE_SCROLL_FRACTION = 0.92;
+  function onSpaceScroll(e) {
+    if (e.key !== ' ' && e.code !== 'Space') return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const ae = document.activeElement;
+    if (ae) {
+      const tag = ae.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // contenteditable 在實機 Chrome 走 isContentEditable getter；jsdom 沒
+      // 實作 getter，attribute fallback 兜底（真值為 "true" 或空字串）。
+      if (ae.isContentEditable) return;
+      const ce = ae.getAttribute && ae.getAttribute('contenteditable');
+      if (ce === 'true' || ce === '') return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    const dy = window.innerHeight * SPACE_SCROLL_FRACTION * (e.shiftKey ? -1 : 1);
+    window.scrollBy({ top: dy, behavior: 'smooth' });
+  }
+
   function markAncestors(articleEl) {
     const ancestors = [];
     let p = articleEl.parentElement;
@@ -531,6 +615,17 @@ html.${HTML_CLASS} body {
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
       document.documentElement.classList.add(HTML_CLASS);
 
+      // v0.7.90：install scroll listener（auto-hide scrollbar）。passive 確保
+      // 不卡 scroll 效能；window 層級捕捉文件捲動事件。重複 apply 時 remove
+      // 後 add 防止 listener 累積（瀏覽器 dedupe 但保險，restore 也對稱乾淨）。
+      window.removeEventListener('scroll', onScrollFlash, { passive: true });
+      window.addEventListener('scroll', onScrollFlash, { passive: true });
+
+      // v0.7.91：install SPACE keydown listener（capture phase 比原站 bubble
+      // listener 早攔，比原站 keydown 攔截先收到 SPACE）。重複 apply 時保險先 remove。
+      window.removeEventListener('keydown', onSpaceScroll, true);
+      window.addEventListener('keydown', onSpaceScroll, true);
+
       // 消除頂端留白：第一個 h1-h4/p（深層後代也算）margin-top: 0 inline。
       // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
       // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
@@ -556,6 +651,19 @@ html.${HTML_CLASS} body {
       if (!snapshot) return;
       const styleEl = document.getElementById(STYLE_ID);
       if (styleEl) styleEl.remove();
+
+      // v0.7.90：移除 scroll listener、清 timer 與 scrolling attr，避免閱讀
+      // 模式關閉後仍在 html 留下 [data-jread-scrolling] / 殘留 timer 觸發 attr 設定。
+      window.removeEventListener('scroll', onScrollFlash, { passive: true });
+      if (scrollHideTimer) {
+        clearTimeout(scrollHideTimer);
+        scrollHideTimer = null;
+      }
+      document.documentElement.removeAttribute(SCROLLING_ATTR);
+
+      // v0.7.91：移除 SPACE keydown listener（避免關閉 reader mode 後 SPACE
+      // 仍被 jread 攔截）。capture phase listener 第三個參數須為 true 才能正確 dedup。
+      window.removeEventListener('keydown', onSpaceScroll, true);
 
       if (snapshot.articleEl && snapshot.articleEl.removeAttribute) {
         snapshot.articleEl.removeAttribute(ARTICLE_ATTR);
