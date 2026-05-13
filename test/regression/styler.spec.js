@@ -412,26 +412,42 @@ describe('styler — 骨架與可逆性', () => {
   // 套 float / 不對稱 margin 把主圖放到 sidebar 區，reader mode 單欄沒有
   // sidebar → 圖偏右破版。實機與 probe 數據不一致（probe 顯示對齊但實機
   // 偏右），相信實機截圖、強制 block flow 置中。
-  it('CSS 含 articleEl 後代 float: none + margin-left/right: auto rule（v0.7.50 cna .floatImg 偏右修法）', () => {
+  // v0.7.105：margin-left/right: auto 從「* 全 wildcard」改成「只對媒體 tag」
+  // ——避免 BBC byline 的 author wrapper width:458 span 被 auto-center 偏右
+  // 跟 date 左對齊不一致。float: none 仍維持 wildcard。
+  it('CSS 含 articleEl 後代 float: none rule + 媒體 tag margin auto rule（v0.7.50 cna .floatImg / v0.7.105 byline 對齊修法）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // 找含 float: none 與 margin auto 的 [data-jread-active] * rule
-    const matches = [...css.matchAll(/\[data-jread-active="1"\]\s+\*\s*\{([^\}]*)\}/g)];
+    // (1) `* { float: none !important }` rule 必須存在（清 cna .floatImg 類偏移）
+    const wildcardMatches = [...css.matchAll(/\[data-jread-active="1"\]\s+\*\s*\{([^\}]*)\}/g)];
     let hasFloatNone = false;
-    let hasMarginLeftAuto = false;
-    let hasMarginRightAuto = false;
-    for (const m of matches) {
-      const body = m[1];
-      if (/float\s*:\s*none\s*!important/.test(body)) hasFloatNone = true;
-      if (/margin-left\s*:\s*auto\s*!important/.test(body)) hasMarginLeftAuto = true;
-      if (/margin-right\s*:\s*auto\s*!important/.test(body)) hasMarginRightAuto = true;
+    for (const m of wildcardMatches) {
+      if (/float\s*:\s*none\s*!important/.test(m[1])) { hasFloatNone = true; break; }
     }
     assert.ok(hasFloatNone,
       '`[data-jread-active="1"] *` rule 必須含 float: none !important（清 cna .floatImg float-right 類偏移）');
-    assert.ok(hasMarginLeftAuto && hasMarginRightAuto,
-      '`[data-jread-active="1"] *` rule 必須含 margin-left/right: auto !important（block 元素水平置中）');
+
+    // (2) 媒體 tag rule 必須含 margin-left/right: auto（block 元素水平置中）
+    // 媒體 selector 列表（img / picture / video / figure / iframe / table /
+    // blockquote / pre）必須在 selector list 同時出現 margin auto 兩條。
+    // 抽出該 rule block 驗 body。
+    const mediaMatch = css.match(/\[data-jread-active="1"\]\s+img[\s\S]*?\[data-jread-active="1"\]\s+pre\s*\{([^}]*)\}/);
+    assert.ok(mediaMatch,
+      '必須有「img / picture / video / figure / iframe / table / blockquote / pre」共用 rule（v0.7.105 媒體 auto-center 修法）');
+    const body = mediaMatch[1];
+    assert.ok(/margin-left\s*:\s*auto\s*!important/.test(body),
+      '媒體 tag rule 必須含 margin-left: auto !important（block 媒體水平置中）');
+    assert.ok(/margin-right\s*:\s*auto\s*!important/.test(body),
+      '媒體 tag rule 必須含 margin-right: auto !important');
+
+    // (3) 反向 forcing：`*` rule body 不可含 margin auto（避免回歸到 v0.7.104 全
+    // wildcard 套法、BBC byline 又被 auto-center 偏右）
+    for (const m of wildcardMatches) {
+      assert.ok(!/margin-left\s*:\s*auto\s*!important/.test(m[1]),
+        '`* { margin-left: auto }` 已縮限到媒體 tag——forcing：避免回歸到全 wildcard、BBC byline author 又被偏右');
+    }
   });
 
   // v0.7.52 修法：cna img 自身 position:absolute + left:304px + right:-304px

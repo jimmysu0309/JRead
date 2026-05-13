@@ -1599,7 +1599,7 @@
   // 完全不動，避免 v0.7.103 第一版「全 descendants reset」造成連鎖塌陷的回歸。
   const INNER_GRID_DESC_PROPS = ['width', 'margin-left', 'margin-right', 'grid-area', 'grid-column', 'grid-row'];
   const INNER_GRID_DESC_DECLS = {
-    'width': 'auto',
+    'width': '100%',
     'margin-left': '0',
     'margin-right': '0',
     'grid-area': 'auto',

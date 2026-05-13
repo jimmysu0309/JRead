@@ -461,19 +461,28 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
 [${ARTICLE_ATTR}="1"] * {
   max-width: 100% !important;
 }
-/* 強制 block flow 置中：原站常用 float / 負 margin / 偏移把媒體放到
-   sidebar 區或文繞圖（cna.com.tw figure.floatImg.center class 名字面上是
-   「float image」，原站 CSS 給 float: right 等讓主圖偏右配合左側 sidebar
-   layout）。reader mode 單欄 card 沒有 sidebar 區、float / 不對稱 margin
-   會把媒體推出版心造成偏移破版。對 reader card 內所有後代強制：
-     float: none——禁止文繞圖類偏移；
-     margin-left/right: auto——若元素 width 小於 parent 自動水平置中。
-   注意只強制 left/right margin，top/bottom 保留原值（垂直節奏交給原站 /
-   styler 既有 first-child margin reset 處理）。對 inline / inline-block
-   元素 margin auto 是 no-op；對 block 元素是水平置中。對保留語意 figure /
-   blockquote 等也合理（這些本來就應該置中或無 float）。 */
+/* 強制 block flow + 媒體置中。
+   float: none——對所有 reader card 後代——原站常用 float 把媒體放 sidebar
+   或做文繞圖（cna.com.tw figure.floatImg.center 等），reader mode 單欄
+   card 沒 sidebar、float 會把媒體推出版心。
+   margin-left/right: auto——**只**對媒體元素（img / picture / video / figure
+   / iframe / table / blockquote / pre）水平置中。v0.7.105 修法：原本對所有
+   '*' 套 margin auto 太廣泛——BBC byline 的 author wrapper (width 458px
+   span 在 608px 父) 被 auto-center 偏右、跟 date 的左對齊不一致。改成
+   只對「該被置中的媒體 / 區塊內容」套，generic div/span/text wrapper 自然
+   左對齊不被 auto-center。垂直 margin 仍交給原站 / styler 既有 first-child
+   reset。 */
 [${ARTICLE_ATTR}="1"] * {
   float: none !important;
+}
+[${ARTICLE_ATTR}="1"] img,
+[${ARTICLE_ATTR}="1"] picture,
+[${ARTICLE_ATTR}="1"] video,
+[${ARTICLE_ATTR}="1"] figure,
+[${ARTICLE_ATTR}="1"] iframe,
+[${ARTICLE_ATTR}="1"] table,
+[${ARTICLE_ATTR}="1"] blockquote,
+[${ARTICLE_ATTR}="1"] pre {
   margin-left: auto !important;
   margin-right: auto !important;
 }
