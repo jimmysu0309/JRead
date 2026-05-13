@@ -20,6 +20,28 @@
     });
   }
 
+  // v0.7.101：ESC 鍵退出閱讀模式。reader mode 啟動期間 install window keydown
+  // capture-phase listener（比原站 bubble listener 早收到 ESC），按下無修飾鍵
+  // 的 ESC → exitReaderMode。例外：input / textarea / select / contenteditable
+  // focus 時放行——使用者在主文 input 留言或編輯時 ESC 通常用於取消輸入 /
+  // 關閉自己 focus 的下拉選單，不該被搶走當退出觸發。退出時必 remove listener
+  // 避免 reader mode 關閉後 ESC 仍被攔。
+  function onEscKey(e) {
+    if (e.key !== 'Escape' && e.code !== 'Escape') return;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const ae = document.activeElement;
+    if (ae) {
+      const tag = ae.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (ae.isContentEditable) return;
+      const ce = ae.getAttribute && ae.getAttribute('contenteditable');
+      if (ce === 'true' || ce === '') return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    exitReaderMode();
+  }
+
   async function enterReaderMode() {
     const result = NS.detector && NS.detector.detect();
     if (!result) {
@@ -51,6 +73,10 @@
     NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
     NS.state.active = true;
 
+    // v0.7.101：install ESC listener（capture phase 比原站 bubble listener 早收到）
+    window.removeEventListener('keydown', onEscKey, true);
+    window.addEventListener('keydown', onEscKey, true);
+
     chrome.runtime.sendMessage({
       type: NS.MSG.REPORT_DETECTION_RESULT,
       payload: { ok: true, confidence: result.confidence, strategy: result.strategy }
@@ -61,6 +87,8 @@
 
   function exitReaderMode() {
     if (!NS.state.active) return;
+    // v0.7.101：移除 ESC keydown listener（避免 reader mode 關閉後 ESC 仍被攔）
+    window.removeEventListener('keydown', onEscKey, true);
     if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
     if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls);
     // v0.7.86：移除 detector shadow-DOM fallback 建立的 light DOM 替身。
