@@ -757,6 +757,110 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore 後 z-index 應回到 fixture 原值 -1');
   });
 
+  it('主文後代 full-bleed 負 margin 後代 reset 為 0（twz.com `<header class="full-bleed">` margin-left/right: -336px 標題 + meta 超出 reader card 修法）', () => {
+    // twz.com 文章 reader mode 主標 + meta text 視覺飄出 reader card 左側
+    // 背景外：article container 寬 720（被 styler cap），文章內 hero header
+    // `.featured-template-header.full-bleed` inline stylesheet `margin-left:
+    // -336px; margin-right: -336px` 把 header 拉到 article content box 外側
+    // ——header 內 h1 + 作者/日期 meta 跟著飄出。
+    //
+    // v0.7.115 修法：resetNegativeHorizontalMargins 對 articleEl 內任意後代，
+    // 若 computed margin-left/right < 0 且 rect 實際逃出 article content box
+    // → 強制 margin-left/right: 0 !important。
+    //
+    // 邊界保護：
+    // - PRESERVE_SEL（figure 等）內 skip → fixture 含一個 figure 內負 margin 元素，驗證不被誤動
+    // - 負 margin 但 rect 不 overflow（在 box 內合法 inline icon 對齊等）→ 不動
+    const html = `<!DOCTYPE html><html><head>
+      <title>twz full-bleed</title>
+      <meta property="og:title" content="twz test">
+    </head><body>
+      <article id="art" style="padding-left: 56px; padding-right: 56px;">
+        <header id="full-bleed-header" style="margin-left: -336px; margin-right: -336px;">
+          <h1>This Is How U.S. National Security Has Become Dependent On SpaceX</h1>
+          <p>A bitter feud between Trump and Musk serves as a reminder...</p>
+        </header>
+        <p id="normal-p" style="margin-left: -2px;">Padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+        <figure>
+          <img src="hero.jpg" alt="hero">
+          <figcaption id="caption-neg-margin" style="margin-left: -50px;">credit overlay</figcaption>
+        </figure>
+        <p>TWZ_BODY_MARK Main body paragraph padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+      </article>
+    </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中');
+    const articleEl = detected.el;
+
+    const header = w.document.getElementById('full-bleed-header');
+    const normalP = w.document.getElementById('normal-p');
+    const figcap = w.document.getElementById('caption-neg-margin');
+    assert.ok(header && normalP && figcap, 'fixture 元素齊全');
+
+    // stub rect：jsdom 無 layout、需手動指定，才能讓「rect 逃出 article
+    // content box」判斷可走。article rect: x=280, w=720, padding-left=56
+    // → contentLeft=336。header rect: x=0, w=608 → 顯著 overflow left。
+    // normalP rect: x=336, w=608 → 不 overflow（不該被動）。
+    stubRect(articleEl, { top: 0, width: 720, height: 1000 });
+    articleEl.getBoundingClientRect = () => ({
+      top: 0, bottom: 1000, left: 280, right: 1000, width: 720, height: 1000, x: 280, y: 0
+    });
+    header.getBoundingClientRect = () => ({
+      top: 0, bottom: 200, left: 0, right: 608, width: 608, height: 200, x: 0, y: 0
+    });
+    normalP.getBoundingClientRect = () => ({
+      top: 200, bottom: 250, left: 336, right: 944, width: 608, height: 50, x: 336, y: 200
+    });
+    figcap.getBoundingClientRect = () => ({
+      top: 700, bottom: 730, left: 286, right: 894, width: 608, height: 30, x: 286, y: 700
+    });
+
+    const localHidden = w.__JRead.cleaner.clean(articleEl);
+    try {
+      // 核心斷言 1：header（負 margin + overflow）→ margin-left/right: 0 !important
+      // jsdom 把 setProperty('margin-left', '0') normalize 成 '0px'，兩種都接受
+      const ml = header.style.getPropertyValue('margin-left');
+      const mr = header.style.getPropertyValue('margin-right');
+      assert.ok(ml === '0' || ml === '0px',
+        `full-bleed header margin-left 應 reset 為 0（實際 "${ml}"）`);
+      assert.strictEqual(header.style.getPropertyPriority('margin-left'), 'important',
+        'margin-left: 0 應 !important（贏過原 inline -336px）');
+      assert.ok(mr === '0' || mr === '0px',
+        `full-bleed header margin-right 應 reset 為 0（實際 "${mr}"）`);
+      assert.strictEqual(header.style.getPropertyPriority('margin-right'), 'important',
+        'margin-right: 0 應 !important');
+
+      // 核心斷言 2：normalP（負 margin -2px 但不 overflow）→ 不可被動
+      assert.notStrictEqual(normalP.style.getPropertyPriority('margin-left'), 'important',
+        '負 margin 但不 overflow 的 p 不可被誤 reset');
+
+      // 核心斷言 3：figcap 在 figure 內（PRESERVE_SEL）→ 不可被動，即使 overflow
+      assert.notStrictEqual(figcap.style.getPropertyPriority('margin-left'), 'important',
+        'PRESERVE_SEL（figure）內的負 margin 元素不可被誤 reset');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 核心斷言 4：restore 後原 inline margin-left/right 還原
+    assert.strictEqual(header.style.getPropertyValue('margin-left'), '-336px',
+      'restore 後 header margin-left 應回到 fixture 原值 -336px');
+    assert.strictEqual(header.style.getPropertyValue('margin-right'), '-336px',
+      'restore 後 header margin-right 應回到 fixture 原值 -336px');
+  });
+
   it('articleEl 自身被 collapseGridWithHiddenCell 命中 collapse 時，width/max-width/margin reset **不可**套到 articleEl（styler 居中需要）', () => {
     // v0.7.113 forcing function——esmchina /news/14165.html 實機 bug：
     // articleEl 是 `<div class="container">`（Bootstrap row + col-md-9 +
