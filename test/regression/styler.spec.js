@@ -602,8 +602,13 @@ describe('styler — 骨架與可逆性', () => {
       'col-* reset 必須含 max-width: none !important');
     assert.ok(/float\s*:\s*none\s*!important/.test(body),
       'col-* reset 必須含 float: none !important（Bootstrap col 常帶 float）');
-    assert.ok(/flex\s*:\s*initial\s*!important/.test(body),
-      'col-* reset 必須含 flex: initial !important（Bootstrap 4+ 用 flex）');
+    // v0.7.122 forcing function：flex 從 `initial` 改 `1 1 auto`——cn.nytimes
+    // 實測 article-body-item.col-lg-5 在 partial flex 父容器下，flex: initial
+    // (= 0 1 auto) 走 content max-content 寬度只撐到 667px、不滿父寬 728px、
+    // 前 16 段主文段落被卡在 reader card 約一半。改 grow:1 後 flex item 主動
+    // 撐滿父剩餘空間。block 場景下無害（flex shorthand no-op）。
+    assert.ok(/flex\s*:\s*1\s+1\s+auto\s*!important/.test(body),
+      'col-* reset 必須含 flex: 1 1 auto !important（v0.7.122 修法：cn.nytimes col-lg-5 flex item 撐滿父寬，原 `flex: initial` grow:0 在中文段落 max-content 不到父寬時失效）');
     // v0.7.47 修法：商周 .Single-left-part.col-md-7 客製化 padding-right: 115px
     // 給右欄 sidebar 留白，reader mode sidebar 已砍但 padding 還在 → 圖片寬度
     // 卡在 col 寬度的子集（493px 而非完整 608px）。col 已退化成 block 流排，
