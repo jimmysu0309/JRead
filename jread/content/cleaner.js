@@ -1669,6 +1669,109 @@
     }
   }
 
+  // ---- articleEl 內部 flex-row wrap container 強制 block -----------------
+  //
+  // 場景：healthsystemtracker.org 實測——主文用 Bootstrap-style `.row`
+  // (`display: flex; flex-direction: row`) 含多個固定寬度 children
+  // （`.entry-content-left` 140px spacer + `.entry-content-center` 280px
+  // 段落 + `.datawrapper-embed` 467px chart + `.entry-content-right` 140px
+  // spacer ...）。原 design 在 1140px container 寬度可一條 row 排開，
+  // 進 reader card 720px 後 flex-wrap 啟動讓 children 散落到多行 +
+  // 個別 children 維持 stylesheet 固定 width →段落被擠成 256px 窄欄
+  // 緊貼右側、與全寬 h1 視覺斷層。既有規則漏網：
+  //   - collapseGridWithHiddenCell 只在「sibling 已 hidden」時 fire
+  //   - collapseInnerGridFlex 只處理 grid + hard-coded px column、明文
+  //     排除 flex (line 1565)
+  // 這條補上「flex-row 多 child + 無 hidden + wrap 已發生」場景。
+  //
+  // 通則：reader mode 精神是「內文撐滿 card」。任何 flex-row container
+  // 若其 visible children 不全在同一 row（top 值差距 > 5px）= flex-wrap
+  // 已啟動 = 原 layout 寬度超過 reader card 容納範圍 → collapse 成 block
+  // + 子寬度回 auto。
+  //
+  // 邊界保護：
+  // - PRESERVE_SEL（figure / figcaption / blockquote / summary）內部 flex
+  //   保留（image gallery / 引文裝飾通常在 figure 內）
+  // - visible children < 2 不處理
+  // - visible children top 差距 <= 5px = 沒 wrap、單行 flex 設計合理保留
+  //   （author/date inline、未 wrap 的 chip 群等）
+  // - jsdom 無 layout engine（rect 全 0）時 top 全相等 → 不誤觸發
+  //
+  // 與 collapseInnerGridFlex 並列、互補不重疊：那條處理 grid hard-coded
+  // px column；這條處理 flex-row wrap。
+  const INNER_FLEX_PROPS = ['display', 'width', 'max-width', 'margin-left', 'margin-right'];
+  const INNER_FLEX_DECLS = {
+    'display': 'block',
+    'width': '100%',
+    'max-width': 'none',
+    'margin-left': '0',
+    'margin-right': '0'
+  };
+  const INNER_FLEX_CHILD_PROPS = [
+    'flex-grow', 'flex-shrink', 'flex-basis',
+    'width', 'max-width', 'float'
+  ];
+  const INNER_FLEX_CHILD_DECLS = {
+    'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
+    'width': 'auto', 'max-width': 'none', 'float': 'none'
+  };
+
+  function collapseInnerFlexWrap(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const resets = [];
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs) continue;
+      if (cs.display !== 'flex' && cs.display !== 'inline-flex') continue;
+      if (cs.flexDirection !== 'row' && cs.flexDirection !== 'row-reverse') continue;
+      const children = Array.from(el.children);
+      if (children.length < 2) continue;
+      const visibleChildren = [];
+      for (const c of children) {
+        if (c.dataset && c.dataset.jreadHidden === '1') continue;
+        let ccs;
+        try { ccs = window.getComputedStyle(c); } catch (_) { continue; }
+        if (!ccs) continue;
+        if (ccs.display === 'none' || ccs.visibility === 'hidden') continue;
+        visibleChildren.push(c);
+      }
+      if (visibleChildren.length < 2) continue;
+      // wrap 判定：visible children 的 top 差距 > 5px = flex-wrap 已啟動
+      let minTop = Infinity, maxTop = -Infinity;
+      for (const c of visibleChildren) {
+        const r = c.getBoundingClientRect();
+        if (r.top < minTop) minTop = r.top;
+        if (r.top > maxTop) maxTop = r.top;
+      }
+      if (maxTop - minTop <= 5) continue;
+      resets.push({ el, kind: 'container', prev: snapshotStyles(el, INNER_FLEX_PROPS) });
+      applyImportant(el, INNER_FLEX_DECLS);
+      if (el.dataset) el.dataset.jreadCollapsed = '1';
+      for (const c of visibleChildren) {
+        if (!c.style) continue;
+        resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
+        applyImportant(c, INNER_FLEX_CHILD_DECLS);
+      }
+    }
+    hidden.__innerFlexWrap = resets;
+  }
+
+  function restoreInnerFlexWrap(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__innerFlexWrap;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+      if (item.kind === 'container' && item.el.dataset) {
+        delete item.el.dataset.jreadCollapsed;
+      }
+    }
+  }
+
   // ---- figure / picture 容器強制 block（v0.7.24 ttv.com.tw 修法）----------
   //
   // 場景：ttv 主圖包在 `<figure class="cover img"><figure><img></figure></figure>`
@@ -2475,6 +2578,10 @@
       // articleEl 內部所有 grid/flex container 強制 block + 清 grid-template
       // （BBC 類 styled-components 主文被鎖在固定寬 grid 欄位內）
       collapseInnerGridFlex(articleEl, hidden);
+      // articleEl 內部 flex-row container wrap 已啟動者 collapse 成 block
+      // （healthsystemtracker Bootstrap `.row` 多 child 在 reader card 縮窄下
+      // wrap → 段落被擠成窄欄；既有兩條 collapse 規則都漏網的 case）
+      collapseInnerFlexWrap(articleEl, hidden);
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
       resetMediaPlaceholderPadding(articleEl, hidden);
       // figure/picture 容器強制 block：ttv 類雙層 figure + 外層 flex 把 img
@@ -2506,6 +2613,7 @@
       restoreMediaContainerBlock(hiddenEls);
       restoreDescendantBoxShadow(hiddenEls);
       restoreMediaResets(hiddenEls);
+      restoreInnerFlexWrap(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
