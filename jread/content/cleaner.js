@@ -1480,6 +1480,20 @@
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs) continue;
       if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
+      // v0.7.119：排除媒體元素自身——IMG / PICTURE / VIDEO / SOURCE 帶
+      // position: absolute 是 aspect-ratio container 內媒體填滿父寬高的
+      // 常見 layout pattern（cna / ebc / WordPress / Substack hero 圖配
+      // padding-bottom hack 或 CSS aspect-ratio property）；styler 已對
+      // `[data-jread-active] img/video` 強制 position: static、cleaner
+      // resetMediaPlaceholderPadding 對父 aspect-ratio container reset，
+      // 兩條已足以處理 media。這條 rule 設計目的是清「文字 / div / aside
+      // / 按鈕」類視覺 overlay，媒體本身不該列入——誤殺成本（主圖消失）
+      // 遠高於漏網成本（極少數 image-banner overlay，styler position:static
+      // 也已視覺退回 inline-flow）。實機 ebc.net.tw /news/society/548318
+      // 主圖 IMG 原站 position: absolute 配 .article_cover aspect-ratio
+      // container，被誤 hide 後 reader card 主圖整段消失只剩圖說文字。
+      const TAG = el.tagName;
+      if (TAG === 'IMG' || TAG === 'PICTURE' || TAG === 'VIDEO' || TAG === 'SOURCE') continue;
       // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
       let hasLongParagraph = false;
       const ps = el.querySelectorAll && el.querySelectorAll('p');
