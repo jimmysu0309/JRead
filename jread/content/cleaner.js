@@ -1563,9 +1563,34 @@
     'grid-template-rows': 'none'
   };
 
+  // v0.7.103：collapsed grid 的 descendants 殘留 auto-center 修法。
+  // BBC byline 實測——grid 容器（dWzpHk）有 grid-template-columns "230px 491px"，
+  // descendant wrapper（ittDij SPAN）綁 `width:458px` + `margin:0 auto` 配合 grid
+  // 第二欄寬。我們 collapse 父為 display:block 後，458 < 608(父寬) + margin:auto
+  // 觸發水平置中（resolved margin: 75px each side）→ author 從左對齊變中央偏移。
+  // 修法：對 collapsed grid 內任意 descendant，computed margin-left === margin-right
+  // 且 > 4px（auto-center 痕跡）→ 強制 width:auto + margin:0 + grid-area:auto，
+  // 還原為 block flow 的左對齊。symmetric margin 是 auto-center 的結構特徵
+  // ——非 auto-center 的 descendant（單側固定 margin / 0 margin / 不對稱 margin）
+  // 完全不動，避免 v0.7.103 第一版「全 descendants reset」造成連鎖塌陷的回歸。
+  const INNER_GRID_DESC_PROPS = ['width', 'margin-left', 'margin-right', 'grid-area', 'grid-column', 'grid-row'];
+  const INNER_GRID_DESC_DECLS = {
+    'width': 'auto',
+    'margin-left': '0',
+    'margin-right': '0',
+    'grid-area': 'auto',
+    'grid-column': 'auto',
+    'grid-row': 'auto'
+  };
+  // symmetric margin 容差——styled-components 浮點運算可能有 sub-pixel 差異，
+  // 1px 容差既不過鬆也不過嚴。> 4px 門檻避免一般小型 padding-margin 誤觸發。
+  const SYMMETRIC_MARGIN_MIN = 4;
+  const SYMMETRIC_MARGIN_TOLERANCE = 1;
+
   function collapseInnerGridFlex(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
+    const descResets = [];
     for (const el of articleEl.querySelectorAll('*')) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -1578,16 +1603,45 @@
       if (!/\d+px/.test(cs.gridTemplateColumns || '')) continue;
       resets.push({ el, prev: snapshotStyles(el, INNER_GRID_PROPS) });
       applyImportant(el, INNER_GRID_DECLS);
+      // 掃 descendants：只對 symmetric margin（margin-left ≈ margin-right > 4px）
+      // 元素 reset width/margin/grid-area。symmetric margin 是 styled-components
+      // 「fixed width child + margin: auto」auto-center 殘留的結構特徵。
+      // 排除 PRESERVE_SEL + 媒體 tag（widths 由 styler max-width 控管）。
+      for (const desc of el.querySelectorAll('*')) {
+        if (desc.dataset && desc.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(desc)) continue;
+        const tag = desc.tagName;
+        if (tag === 'IMG' || tag === 'PICTURE' || tag === 'VIDEO' || tag === 'SVG' ||
+            tag === 'IFRAME' || tag === 'FIGURE') continue;
+        let dcs;
+        try { dcs = window.getComputedStyle(desc); } catch (_) { continue; }
+        if (!dcs) continue;
+        const ml = parseFloat(dcs.marginLeft) || 0;
+        const mr = parseFloat(dcs.marginRight) || 0;
+        if (ml < SYMMETRIC_MARGIN_MIN || mr < SYMMETRIC_MARGIN_MIN) continue;
+        if (Math.abs(ml - mr) > SYMMETRIC_MARGIN_TOLERANCE) continue;
+        descResets.push({ el: desc, prev: snapshotStyles(desc, INNER_GRID_DESC_PROPS) });
+        applyImportant(desc, INNER_GRID_DESC_DECLS);
+      }
     }
     hidden.__innerGridFlex = resets;
+    hidden.__innerGridFlexDesc = descResets;
   }
 
   function restoreInnerGridFlex(hiddenEls) {
     const arr = hiddenEls && hiddenEls.__innerGridFlex;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        if (!item || !item.el) continue;
+        restoreStyles(item.el, item.prev);
+      }
+    }
+    const desc = hiddenEls && hiddenEls.__innerGridFlexDesc;
+    if (Array.isArray(desc)) {
+      for (const item of desc) {
+        if (!item || !item.el) continue;
+        restoreStyles(item.el, item.prev);
+      }
     }
   }
 
