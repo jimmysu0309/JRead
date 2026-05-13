@@ -1814,13 +1814,29 @@
       // 仍生效、reader card 保留居中。BBC byline 等 inner container case 仍
       // 走完整 reset（el !== articleEl）。
       const isArticleSelf = (el === articleEl);
+      // v0.7.118：non-articleSelf case 加 padding-left/right reset——
+      // 我們把 grid/flex/float container 強制 `display: block + width: 100%`
+      // 後，content-box 預設下 `width: 100%` = 父 content area。container
+      // 若原本有 `padding-left/right > 0`，總寬度 = content + padding > 父
+      // content area，內部 children 全體右溢出 reader card。
+      // 實測 cna.com.tw `.inner-padding`：display: flex（內含 hidden cell
+      // 觸發 condition B）+ padding-left/right: 65px。collapse 後 width:100%
+      // (= 608) + padding 130 → outer 738、超出 card content 65px。
+      // 子元素（h1、figure、p）全偏右 65px 溢出 card 右邊緣。
+      // 通則：grid/flex/float container 被強制 block 後，原 layout 已失效、
+      // 容器自己的 horizontal padding 失去意義（reader card 的視覺留白由
+      // articleEl 自身 padding 提供），清掉 padding-left/right 避免內容溢出。
+      // 不清 padding-top/bottom：vertical padding 是視覺段間距，跟橫向溢出
+      // 無關。articleEl 自身不動 padding（一致性：v0.7.113 不動
+      // width/max-width/margin 同一邏輯，padding 由 styler 控制）。
       const CONTAINER_PROPS = isArticleSelf ? [
         'display', 'grid-template-columns', 'grid-template-rows',
         'grid-template-areas', 'flex-direction'
       ] : [
         'display', 'grid-template-columns', 'grid-template-rows',
         'grid-template-areas', 'flex-direction',
-        'width', 'max-width', 'margin-left', 'margin-right'
+        'width', 'max-width', 'margin-left', 'margin-right',
+        'padding-left', 'padding-right'
       ];
       collapsed.push({ el, kind: 'container', prev: snapshotStyles(el, CONTAINER_PROPS) });
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
@@ -1839,7 +1855,9 @@
         'width': '100%',
         'max-width': 'none',
         'margin-left': '0',
-        'margin-right': '0'
+        'margin-right': '0',
+        'padding-left': '0',
+        'padding-right': '0'
       };
       if (isFlexRow) containerDecls['flex-direction'] = 'column';
       applyImportant(el, containerDecls);
