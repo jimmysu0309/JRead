@@ -11,16 +11,17 @@
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-**當前 baseline：v0.7.32**（2026-04-25 起，承接 v0.6.3 的 styler 瘦身精神 + 累積到 newtalk.tw 非 heading tag title + 非 figure 主圖修法為止的全部 detector/cleaner 能力）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+**當前 baseline：v0.7.123**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–123 的 cleaner / styler edge case 修法。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
 
-**v0.7.32 baseline 包含**：
+**v0.7.123 baseline 包含**（在 v0.7.32 之上累積，完整修法紀錄見 `CHANGELOG.md`）：
 
-1. **styler 瘦身不變**（承接 v0.6.0 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack（Bootstrap col-* reset / 裝飾 background transparent / aspect-ratio placeholder）+ 使用者 override。
-2. **detector 策略完整**：article-tag → schema-org（含 `itemprop="articleBody"` Layer B fallback）→ heuristic（Readability-style bubble-up + POSITIVE/NEGATIVE regex + textLen bonus + top-5 ambiguous 競爭分析）→ main-tag 兜底。title promote 支援 h1-h4 heading + p/div/span 非 heading tag 包標題（v0.7.22 newtalk.tw 修法，非 heading 加 120 char text 上限）、返回 `promotedTitleHead` 給 cleaner 做白名單保護。
-3. **cleaner 規則完整**：16 條 `hideInsideArticle*` rule（keyword / heading text / link text / inline ad / third-party ads / comment panels / font tags / button clusters / action rows / sidebar columns / hr / buttons / spacers）+ dialog/tooltip ARIA + 祖先鏈 sibling + **promote+narrow 聯動（含 promotedTitleHead 白名單 + media-bearing sibling 保護 v0.7.22 / v0.7.24 精修 img-not-in-a）** + grid/flex collapse（articleEl 自身也處理 v0.7.24）+ media placeholder reset + figure/picture 強制 block（v0.7.24） + style-attribute observer 抵禦原站 JS 覆寫 !important priority（v0.7.23） + lazy image hydrate + MutationObserver 動態攔截。
-4. **使用者可調設定**：theme（light/dark/sepia）、fontSize（含 0 = Auto 保留原站）、contentWidth。
-5. **測試覆蓋**：230 jsdom spec（含 43 條 fixture 重現站點 bug）+ 5 e2e spec（SW wire-up 真 Chrome 驗證）+ e2e harness 基礎設施（`tools/e2e-harness.js` + `test/e2e/`，harness 額外內建 gap audit 警告 >= 80px 可疑留白）。
-6. **實測通過站**：Stratechery / ChinaTalk / anthropic / 商業周刊 / Dwarkesh（Substack podcast）/ Medium / BBC / udn / 中時（chinatimes）/ 自由時報（ltn）/ Engadget / 上報（upmedia）/ EBC 東森新聞（v0.7.22 同步修好 article_cover 主圖誤殺）/ LINE Today / ESM China / Newtalk 新聞 / TTV 台視新聞 / techbang T 客邦 / cnyes 鉅亨網 / The Verge（視覺微瑕疵待修，見 PENDING_REGRESSION）。
+1. **styler 瘦身不變**（承接 v0.6.0 / v0.7.32 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack + 使用者 override。
+2. **styler 增強**：cardArticle rule selector 加 `html` 前綴提升 specificity 到 (0,1,1) 贏過原站單 class !important rule（v0.7.121 cn.nytimes 修法）；col-* reset rule 升級為 `width: auto / max-width: none / float: none / flex: 1 1 auto / margin-left: 0 / margin-right: 0 / padding: 0`（v0.7.122 flex-grow:1 撐父 + v0.7.123 清 Bootstrap col offset margin）；figcaption 從 BODY_TEXT_SEL 排除保留原站 typography hierarchy（v0.7.120）。
+3. **cleaner 規則完整 + 新增覆蓋**：v0.7.32 規則全保留 + 後續累積：負 horizontal margin reset（v0.7.115 twz.com full-bleed header）+ 文末 `<footer>` 雙階段 hide（v0.7.116 twz.com category tag）+ aspect-ratio container reset 擴增（v0.7.117 twz.com YouTube facade）+ `collapseGridWithHiddenCell` non-articleSelf wrapper 加 padding-left/right reset（v0.7.118 cna.com.tw inner-padding 溢出）+ `hideInsideArticleAbsoluteOverlays` 排除 IMG/PICTURE/VIDEO/SOURCE 避免主圖誤殺（v0.7.119 ebc.net.tw）+ negative z-index reset（v0.7.114 vocus）+ Bootstrap grid float layout condition D（v0.7.110 TBIJ）。
+4. **使用者可調設定**：theme（light/dark/sepia）、fontSize（含 0 = Auto 保留原站）、contentWidth、fontFamily、lineHeight、autoEnableDomains、Readwise Reader 整合。
+5. **測試覆蓋**：407 jsdom regression spec（每條 cn.nytimes / cna / ebc / twz / udn 等實機 bug 都有 forcing function fixture）+ e2e SW wire-up spec + Playwright harness（`tools/debug-harness.js`）+ `npm test --timeout 30000` 確保 jsdom 重 fixture 不超時（v0.7.118 hotfix）。
+6. **實測通過站擴展**（在 v0.7.32 之上累積）：cn.nytimes / cna.com.tw / ebc.net.tw / twz.com / vocus.cc / esmchina / 商業周刊 / synapseching.substack.com 等。
+7. **Debug 工具鏈**：Claude 自主跑完 reproduce + forensic 循環（Playwright + localStorage instrument bridge），避開 chrome.downloads MV3 SW data URL 限制，免使用者每步截圖（[[feedback-autonomous-debug]] memory 教訓）。
 
 ### 硬規則（繼承）
 
