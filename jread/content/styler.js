@@ -173,6 +173,25 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   max-width: 100% !important;
   height: auto !important;
 }
+/* v0.7.93：picture 與含 img/picture 的容器強制不被 flex stretch / 不維持
+   固定 height——substack imageRow 類 gallery 修法。
+   案例（synapseching.substack.com /p/17 Jimmy 2026-05-13 回報）：
+     IMG → PICTURE → DIV.imageRow（display:flex + height:230px）。
+     imageRow flex 子預設 align-items: stretch 把 picture 拉到 height 230，
+     IMG 自身 height:auto 跑 natural ratio = 295（aspect-ratio 算出來），
+     IMG 295 > picture 230、IMG 295 > imageRow 230 → IMG 從容器底部
+     溢出 65px、視覺覆蓋下方文字段落。
+   修法兩條：
+     1) picture / figure / [圖片 wrapper] 強制 flex: 0 0 auto + align-self:
+        flex-start + min-height: 0 + height: auto——picture 不被 flex 父
+        stretch，picture 自身高度跟 IMG aspect-ratio 一致。
+     2) 任何「直接子含 img / picture」的容器（imageRow / captioned-image-
+        container 類 figure wrapper）強制 height: auto + min-height: 0 +
+        align-items: flex-start，容器自然撐到圖片實際高度、不再固定 230
+        造成圖片溢出蓋下方段落。
+   :has 通則 selector 不綁站點 class——任何站把 flex/grid wrapper 設固定
+   height + 內含 img 都被覆蓋。:has Chromium 105+ 支援，jread 不支援 Firefox
+   無相容問題。 */
 /* 媒體 element 自身 position 強制 static：原站常用 picture > img 結構搭
    img 自身 position:absolute + left/right offset 把圖片向版心外延伸成全寬
    hero（cna.com.tw 主圖實機 instrument 揭穿：img position:absolute,
@@ -639,7 +658,51 @@ html.${HTML_CLASS} body {
         firstInk.style.setProperty('margin-top', '0', 'important');
       }
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority };
+      // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
+      // flex/grid 容器強制改成 block display + height auto，讓並列圖在 reader mode
+      // 下垂直堆疊、不再被父容器固定 height 切掉內容 + 不再 overflow 蓋下方文字。
+      // 案例（synapseching.substack.com /p/17 Jimmy 2026-05-13 回報）：
+      //   IMG → PICTURE → DIV.imageRow（display:flex, height:230px）→ ...
+      //   imageRow flex 子 align-items:stretch 把 picture 拉到 230，但 styler
+      //   `img { height:auto !important }` 讓 IMG 跑 natural ratio = 295，
+      //   IMG 超出 picture 65px → 視覺覆蓋下方段落文字。
+      //   單純 height:auto 又會讓 flex container 內並列圖各取 max-width:100% 加總
+      //   溢出 article 右側（第二張 img.left=952 > article.right=944）。
+      //   結論：reader card 單欄閱讀情境下 flex/grid 並列 layout 無保留必要，
+      //   直接 display:block 讓兩張圖垂直堆疊最穩。
+      // 通則 selector：祖先到 articleEl 為止，掃所有 display:flex / display:grid 且
+      // 直接子含 picture / img / figure 的元素，runtime 設 inline !important
+      // 蓋過原站 stylesheet。CSS :has() jsdom 不支持，改 runtime 解決。
+      const galleryFlex = [];
+      for (const el of articleEl.querySelectorAll('*')) {
+        const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+        if (!cs) continue;
+        if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
+        let hasMediaChild = false;
+        for (const c of el.children) {
+          if (c.tagName === 'PICTURE' || c.tagName === 'IMG' || c.tagName === 'FIGURE') {
+            hasMediaChild = true;
+            break;
+          }
+        }
+        if (!hasMediaChild) continue;
+        // snapshot 原 inline value/priority for restore
+        const prior = {
+          el,
+          display: el.style.getPropertyValue('display'),
+          displayPriority: el.style.getPropertyPriority('display'),
+          height: el.style.getPropertyValue('height'),
+          heightPriority: el.style.getPropertyPriority('height'),
+          minHeight: el.style.getPropertyValue('min-height'),
+          minHeightPriority: el.style.getPropertyPriority('min-height')
+        };
+        galleryFlex.push(prior);
+        el.style.setProperty('display', 'block', 'important');
+        el.style.setProperty('height', 'auto', 'important');
+        el.style.setProperty('min-height', '0', 'important');
+      }
+
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex };
     },
 
     /**
@@ -686,6 +749,23 @@ html.${HTML_CLASS} body {
           );
         } else {
           snapshot.firstInk.style.removeProperty('margin-top');
+        }
+      }
+
+      // v0.7.93：還原 image gallery flex/grid containers 的原 inline style
+      if (Array.isArray(snapshot.galleryFlex)) {
+        for (const g of snapshot.galleryFlex) {
+          if (!g || !g.el) continue;
+          for (const prop of ['display', 'height', 'min-height']) {
+            const key = prop === 'min-height' ? 'minHeight' : prop;
+            const value = g[key];
+            const priority = g[key + 'Priority'];
+            if (value) {
+              g.el.style.setProperty(prop, value, priority || '');
+            } else {
+              g.el.style.removeProperty(prop);
+            }
+          }
         }
       }
     }
