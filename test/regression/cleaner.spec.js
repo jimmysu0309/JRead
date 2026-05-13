@@ -1052,6 +1052,104 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('collapseGridWithHiddenCell 對 non-articleSelf container 必須 reset padding-left/right: 0 !important（cna.com.tw `.inner-padding` 內容溢出 card 修法）', () => {
+    // v0.7.118 forcing function——cna.com.tw 實機 bug：articleEl 內的
+    // `<div class="inner-padding">` 是 flex container（內含 hidden cell
+    // 觸發 collapseGridWithHiddenCell condition B），原站 CSS 設
+    // padding-left/right: 65px。我們把它強制 `display: block + width: 100%`
+    // 後，content-box 預設下 width:100% = 父 content area (608)，加 padding
+    // 130 → outer 738，超出 card 65px。內部所有 children（h1 / figure /
+    // img / p）全偏移 65px 右溢，視覺：標題「BBC：台灣布局盼聯」右邊伸
+    // 出 card 米色背景外。
+    //
+    // 修法：CONTAINER_DECLS (non-isArticleSelf) 加 padding-left: 0 +
+    // padding-right: 0 !important。grid/flex/float container 被強制 block
+    // 後原 layout 失效、容器自己的橫向 padding 失去意義（reader card
+    // 視覺留白由 articleEl 自身 padding 提供），清掉避免內容溢出。
+    // articleEl 自身不動 padding（一致性：v0.7.113 不動 width/max-width/
+    // margin 同邏輯，padding 由 styler 控制）。
+    //
+    // 此 fixture：inline display: flex 觸發 isFlexRow + hidden sibling 觸發
+    // condition A/B（繞過 jsdom 無 stylesheet 解析的限制）。
+    const html = `<!DOCTYPE html><html><head>
+      <title>cna inner-padding overflow</title>
+      <meta property="og:title" content="cna test">
+    </head><body>
+      <article class="article" id="art">
+        <h1 id="title">索馬利蘭戰略地位攀升 BBC：台灣布局盼聯美制中</h1>
+        <div class="wrapper">
+          <div class="inner-padding" id="inner-pad"
+               style="display: flex; flex-direction: row; padding-left: 65px; padding-right: 65px;">
+            <div class="hidden-cell" id="hidden-cell"
+                 style="display: none; width: 200px;">
+              廣告或 sidebar cell，已被其他 cleaner rule hide
+            </div>
+            <div class="centralContent" id="main-col">
+              <p id="p1">CNA_FORCING_MARK Padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding
+              padding padding padding padding padding padding padding padding.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+    </body></html>`;
+
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const articleEl = w.document.getElementById('art');
+    const innerPad = w.document.getElementById('inner-pad');
+    assert.ok(articleEl, 'fixture 必須含 #art');
+    assert.ok(innerPad, 'fixture 必須含 #inner-pad');
+
+    // 紀錄 fixture 原始 padding-left/right inline 值（restore 驗證用）
+    const origPadL = innerPad.style.getPropertyValue('padding-left');
+    const origPadR = innerPad.style.getPropertyValue('padding-right');
+
+    const localHidden = w.__JRead.cleaner.clean(articleEl);
+    try {
+      // 核心斷言 1：inner-padding 必須被 collapse（display:block !important）
+      assert.strictEqual(innerPad.style.getPropertyValue('display'), 'block',
+        'inner-padding 應被 collapseGridWithHiddenCell 偵測（flex + hidden cell condition B）並設 display:block');
+      assert.strictEqual(innerPad.style.getPropertyPriority('display'), 'important',
+        'display:block 必須帶 !important');
+
+      // 核心斷言 2：padding-left/right 必須被 reset 為 0 !important
+      assert.strictEqual(innerPad.style.getPropertyValue('padding-left'), '0px',
+        'collapse 後 padding-left 必須 reset 為 0（避免 width:100% + padding 撐出 card 右邊）');
+      assert.strictEqual(innerPad.style.getPropertyPriority('padding-left'), 'important',
+        'padding-left:0 必須帶 !important（贏過原站 stylesheet rule）');
+      assert.strictEqual(innerPad.style.getPropertyValue('padding-right'), '0px',
+        'collapse 後 padding-right 必須 reset 為 0');
+      assert.strictEqual(innerPad.style.getPropertyPriority('padding-right'), 'important',
+        'padding-right:0 必須帶 !important');
+
+      // 核心斷言 3：width: 100% + margin reset 仍生效（既有 v0.7.104 修法不受影響）
+      assert.strictEqual(innerPad.style.getPropertyValue('width'), '100%',
+        'width:100% 既有 reset 仍存在');
+      assert.strictEqual(innerPad.style.getPropertyPriority('width'), 'important',
+        'width:100% 必須帶 !important');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 核心斷言 4：restore 後 padding-left/right 回到 fixture 原值
+    assert.strictEqual(innerPad.style.getPropertyValue('padding-left'), origPadL,
+      `restore 後 padding-left 應回到 fixture 原值 ${origPadL}`);
+    assert.strictEqual(innerPad.style.getPropertyValue('padding-right'), origPadR,
+      `restore 後 padding-right 應回到 fixture 原值 ${origPadR}`);
+  });
+
   it('udn 類 wrapper-promoted article 後方 5 個雜訊 sibling sections 被 NOISE_KEYWORD_RE 擴充名單命中 hide：more-news / related-news / sponsor / discuss / taboola', () => {
     // 2026-04-23 udn.com/news/story/124844/9460037 實測：detector promote 到
     // section.article-content__wrapper（納入 h1 + cover figure），其下 5 個
