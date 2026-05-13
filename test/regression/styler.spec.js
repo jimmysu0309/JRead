@@ -615,6 +615,16 @@ describe('styler — 骨架與可逆性', () => {
     // Bootstrap gutter padding 已失意義，可清。
     assert.ok(/padding\s*:\s*0\s*!important/.test(body),
       'col-* reset 必須含 padding: 0 !important（清商周 col-md-7 padding-right: 115px 類客製化 padding，避免主圖寬度被擠在 col 子集）');
+    // v0.7.123 forcing function：清 margin-left/right——cn.nytimes 對
+    // `.col-lg-5` 設 `margin-left: 380px`（或縮窄 viewport 下 61px）做窄
+    // 中欄 layout。即使 v0.7.122 flex-grow:1 撐滿父寬，margin 把 wrapper
+    // 內容向內推 380px、article-body-item rect.x=380 w=606 in partial
+    // x=0 w=1366。partial 完全失去自然 align、主文文字只佔 reader card
+    // 中段一小區。reader card 單欄 layout 沒 row 結構支持 col offset，清掉。
+    assert.ok(/margin-left\s*:\s*0\s*!important/.test(body),
+      'col-* reset 必須含 margin-left: 0 !important（v0.7.123 修法：cn.nytimes 對 col-lg-5 設 margin-left: 380px 做窄中欄 layout、即使 flex-grow:1 撐滿父寬，margin 仍把 content 向內推、reader card 內主文偏移）');
+    assert.ok(/margin-right\s*:\s*0\s*!important/.test(body),
+      'col-* reset 必須含 margin-right: 0 !important（對稱清，避免原站對 col 右側設 margin 推回內側）');
   });
 
   it('重複 apply() 不重複注入 style 元素（更新同一個）', () => {
