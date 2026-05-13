@@ -1503,6 +1503,79 @@
     }
   }
 
+  // ---- 主文後代「full-bleed」負 margin 修法（v0.7.115）----
+  // 結構特徵（非站點特判）：原站 hero header / hero figure 類元素常用
+  //   `margin-left: -Npx; margin-right: -Npx`
+  // 配合 `max-width: 100%` 做「full-bleed」效果——讓元素視覺寬度超出主文
+  // container、貼齊整段 design layout 的 outer column 寬。原站正常版面下
+  // article container 寬到能容納這種負 margin overshoot（外圍有 outer
+  // wrapper 撐起足夠空間）。
+  //
+  // reader card 把 article cap 至 720px + 大 padding 後，這類負 margin
+  // 直接把後代元素拉到 article content box 外側——標題 + meta text 看起來
+  // 「飄到 reader card 左邊背景外」（twz.com hero header `.full-bleed`
+  // `margin-left/right: -336px` 實測案例）。
+  //
+  // 修法：對 articleEl 內任意後代，若 computed `margin-left` 或
+  // `margin-right` < 0、且該後代 rect **實際逃出 article content box**
+  // （rect.left < articleEl content-left 或 rect.right > content-right），
+  // 強制 `margin-left/right: 0 !important`。
+  //
+  // 邊界保護：
+  // - articleEl 自身不動（articleEl 居中 margin 由 styler `margin: 40px
+  //   auto` 控制）
+  // - PRESERVE_SEL（figure / blockquote / figcaption / summary）內 skip
+  //   ——pull-quote / caption 類 intentional bleed 不誤殺
+  // - 已被 hide 者跳過
+  // - 必須 rect 實際 overflow 才 reset（小幅負 margin 用於 inline icon
+  //   對齊 / 邊框相疊等不會 overflow 的 case 不會誤觸發）
+  function resetNegativeHorizontalMargins(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    let articleRect, articleCs, articleContentLeft, articleContentRight;
+    try {
+      articleRect = articleEl.getBoundingClientRect();
+      articleCs = window.getComputedStyle(articleEl);
+    } catch (_) { return; }
+    if (!articleRect || articleRect.width < 1) return;
+    articleContentLeft = articleRect.left + (parseFloat(articleCs.paddingLeft) || 0);
+    articleContentRight = articleRect.right - (parseFloat(articleCs.paddingRight) || 0);
+
+    const resets = [];
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs) continue;
+      const ml = parseFloat(cs.marginLeft);
+      const mr = parseFloat(cs.marginRight);
+      const hasNegML = !isNaN(ml) && ml < 0;
+      const hasNegMR = !isNaN(mr) && mr < 0;
+      if (!hasNegML && !hasNegMR) continue;
+      let rect;
+      try { rect = el.getBoundingClientRect(); } catch (_) { continue; }
+      if (!rect || rect.width < 1) continue;
+      // threshold 2px：避免 sub-pixel rounding 邊界誤觸發
+      const overflowsLeft = hasNegML && rect.left < articleContentLeft - 2;
+      const overflowsRight = hasNegMR && rect.right > articleContentRight + 2;
+      if (!overflowsLeft && !overflowsRight) continue;
+      const props = ['margin-left', 'margin-right'];
+      resets.push({ el, prev: snapshotStyles(el, props) });
+      applyImportant(el, { 'margin-left': '0', 'margin-right': '0' });
+    }
+    hidden.__negativeHorizontalMarginResets = resets;
+  }
+
+  function restoreNegativeHorizontalMargins(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__negativeHorizontalMarginResets;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+    }
+  }
+
   function restoreAbsoluteOverlayConverted(hiddenEls) {
     const arr = hiddenEls && hiddenEls.__absoluteOverlayParentHeight;
     if (!Array.isArray(arr)) return;
@@ -2841,6 +2914,7 @@
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
       hideInsideArticleAbsoluteOverlays(articleEl, hidden);
       resetNegativeZIndex(articleEl, hidden);
+      resetNegativeHorizontalMargins(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
@@ -2885,6 +2959,7 @@
       restoreDescendantBoxShadow(hiddenEls);
       restoreMediaResets(hiddenEls);
       restoreNegativeZIndex(hiddenEls);
+      restoreNegativeHorizontalMargins(hiddenEls);
       restoreAbsoluteOverlayConverted(hiddenEls);
       restoreInnerFlexWrap(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
