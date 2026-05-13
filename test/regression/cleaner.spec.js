@@ -2470,6 +2470,74 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore 後 body margin-left 應回到 fixture 原 288px');
   });
 
+  it('hideInsideArticleAbsoluteOverlays 必須排除 IMG/PICTURE/VIDEO/SOURCE（ebc.net.tw 主圖消失修法 v0.7.119）', () => {
+    // v0.7.119 forcing function——ebc.net.tw /news/society/548318 實機 bug：
+    // 主圖 `<img>` 原站 inline `position: absolute`（配 `.article_cover`
+    // aspect-ratio padding-bottom container 撐高度的 responsive layout
+    // pattern），命中 hideInsideArticleAbsoluteOverlays，被當 overlay
+    // 整張 hide，reader card 主圖整段消失只剩圖說「(圖／翻攝畫面)」一行。
+    //
+    // 修法：hideInsideArticleAbsoluteOverlays 對 IMG / PICTURE / VIDEO /
+    // SOURCE 直接 skip——這些 absolute 的媒體元素是常見的「aspect-ratio
+    // container 內媒體填滿」layout pattern，styler 已強制
+    // `[data-jread-active] img/video { position: static }`、cleaner
+    // resetMediaPlaceholderPadding 也對父 aspect-ratio container reset，
+    // 兩條已足以處理。誤殺成本（主圖消失）遠高於漏網成本（極少數
+    // image-banner overlay，styler position:static 也已視覺退回 inline）。
+    //
+    // 此 fixture：inline position:absolute 配 PRESERVE_SEL 外的非 figure
+    // wrapper（驗排除是看 tag 不是看 ancestor），同時保留一個 absolute
+    // div overlay 證明對非媒體 tag 仍 hide（regression guard）。
+    const html = `<!DOCTYPE html><html><head>
+      <title>ebc cover image absolute</title>
+      <meta property="og:title" content="ebc test">
+    </head><body>
+      <article id="art">
+        <h1>ebc 標題</h1>
+        <div class="article_cover">
+          <div class="img_box">
+            <div class="img" style="position: relative;">
+              <img id="cover-img" src="https://example.com/cover.jpg"
+                   style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+            </div>
+          </div>
+          <p>圖說：高鐵一名 30 歲男員工，在台鐵新左營站男廁小便斗裝針孔偷拍。（圖／翻攝畫面）</p>
+        </div>
+        <div id="non-media-overlay"
+             style="position: absolute; top: 0; right: 0; width: 200px; padding: 16px;">
+          <a href="#">訂閱電子報</a>
+          <a href="#">追蹤粉專</a>
+        </div>
+        <p>${'內文 padding 內文 padding '.repeat(30)}</p>
+        <p>${'第二段 padding 第二段 padding '.repeat(30)}</p>
+      </article>
+    </body></html>`;
+
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const articleEl = w.document.getElementById('art');
+    const coverImg = w.document.getElementById('cover-img');
+    const nonMediaOverlay = w.document.getElementById('non-media-overlay');
+    assert.ok(articleEl && coverImg && nonMediaOverlay, 'fixture 元素齊全');
+
+    const localHidden = w.__JRead.cleaner.clean(articleEl);
+    try {
+      // 核心斷言 1：position: absolute 的 IMG 不可被 hide（v0.7.119 修法）
+      assert.notStrictEqual(coverImg.dataset.jreadHidden, '1',
+        'position: absolute 的 IMG（媒體元素）不可被 hideInsideArticleAbsoluteOverlays 誤 hide——破壞 reader 主圖');
+
+      // 核心斷言 2：regression guard——非媒體 tag 的 absolute overlay 仍要 hide
+      assert.strictEqual(nonMediaOverlay.dataset.jreadHidden, '1',
+        '非媒體 tag 的 absolute overlay（訂閱/追蹤 CTA div）仍須被 hide——v0.7.111 既有行為不可破壞');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文短篇 byline + author <a> 高 link density 不得被 hideInsideArticleSidebarColumns 條件 A 誤殺（healthsystemtracker entry-meta 修法）', () => {
     // healthsystemtracker.org 實測：article 內 `.entry-meta` 含 byline
     // (author 名 + Twitter 連結) + 日期，textLen ~80 chars 遠 < 主文
