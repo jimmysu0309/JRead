@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Where Are All The Data Centers? | Where's Your Ed At</title>
+  <!-- og:title 維持英文（page meta 不會被翻譯擴充改動） -->
+  <meta property="og:title" content="Where Are All The Data Centers?">
+</head>
+<body class="post-template">
+  <header class="site-header">
+    <nav>Site nav</nav>
+  </header>
+
+  <main class="main">
+    <div class="container wrapper m-0-auto">
+      <!--
+        Hero 區塊：H1 主標題在 .post-hero（detector heuristic 選到的 ARTICLE.post
+        的兄弟層）。
+        wya 結構特徵：用 <h1> 做每個小節 heading（一頁 12 個），真 hero 也是 <h1>。
+        翻譯擴充（Shinkansen / 沉浸式翻譯）single (replace) 模式把 H1 textContent
+        換成中文後，promoteForTitle 的 titleMatches(og:title="Where Are...", h1
+        textContent="資料中心都跑去哪了?") 比對失敗、不升 → articleEl 留在
+        ARTICLE.post（含 12 個小節 H1 但不含 hero）→ .post-hero 被 cleaner
+        hideAncestorSiblings 砍 → hero H1 不見。
+
+        v0.7.92 ensureArticleContainsTitleH1 加路徑 1：頁面 DOM-order 第一個 H1
+        不在 articleEl 內 → 升 LCA (.container.wrapper)，不依賴文字比對。
+      -->
+      <div class="post-hero is-post is-featured">
+        <div class="post-hero__content">
+          <h1 class="post-hero__title">資料中心都跑去哪了?</h1>
+          <div class="post-hero__meta">
+            <a class="post-hero__author">ED ZITRON</a>
+            <span>MAY 12, 2026</span>
+            <span>37 MIN READ</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row m-b-lg">
+        <div class="col-xs-12 col-lg-6">
+          <article class="post featured no-image content post-access-public">
+            <p>WYA_MAINTEXT_MARK 數據中心建設遲緩是 AI 泡沫的關鍵風險信號之一，本文將深入剖析這個現象背後的結構性原因，以及它對整個產業未來發展的影響。</p>
+            <p>若你喜歡這篇文章，請訂閱我的進階電子報。每年只要 70 美元，或每月 7 美元，你就能每週收到一篇通常在 5000 到 18000 字之間的深度評論，內容包含對 NVIDIA、Anthropic 與 OpenAI 財務狀況，以及整體 AI 泡沫的詳盡分析。</p>
+            <p>我的上一篇文章詳盡評論了 AI 經濟的循環本質，以及 AI 需求成長的假象——說穿了，那真的只是假象。訂閱進階版不僅物超所值，也能支持我繼續每週撰寫這些篇幅巨大、研究深入的免費文章。</p>
+
+            <h1 id="defining-built-operational">定義「已完工」與「投入運轉」</h1>
+            <p>本節討論「已建設完成的資料中心」和「實際投入運轉的資料中心」之間的差異，這個差異對於評估 AI 產業實際運算能力有重大影響，多數媒體報導混淆兩個概念。</p>
+            <p>建設一座資料中心十分困難，從動土到實際投入運轉的時間通常需要 18 到 24 個月，而業界經常將「動土」和「完工」混為一談，導致大眾誤以為產能成長速度比實際要快很多。</p>
+
+            <h1 id="microsoft-misleading">微軟是否在資料中心容量上誤導我們?</h1>
+            <p>微軟對外宣稱的資料中心容量數字與實際完工進度之間存在巨大落差，這個落差可能比表面上看到的更嚴重，本節將透過公開財報資訊還原真相。</p>
+            <p>從 2024 年起，微軟宣布的所有新資料中心容量幾乎都還沒完成，這代表業界對 AI 運算能力的預期需要大幅向下修正，否則整個產業基本面就站不住腳。</p>
+
+            <h1 id="no-really-where">不，認真的，資料中心到底在哪?</h1>
+            <p>本節進一步追問：如果微軟、亞馬遜、Google 都宣稱有大量資料中心容量，那這些設施實際上在哪裡？答案出乎意料地令人不安，許多宣稱的建設根本沒有實體進度。</p>
+            <p>當我們真正去查公開記錄和衛星影像，會發現許多宣稱的建設根本沒有實體進度，整個產業的「資料中心容量」可能是個被高度誇大的數字。</p>
+
+            <h1 id="conclusion">結論：泡沫即將破裂</h1>
+            <p>整合本文所有分析，AI 產業的資料中心建設危機才剛剛開始，這場危機將深刻影響整個科技產業的估值和未來發展軌跡，需要每一個業界從業者嚴肅看待。</p>
+            <p>當建設速度跟不上預期時，整個 AI 商業模型都會破裂，這對 Oracle、OpenAI、Anthropic 等公司來說是致命的威脅，而市場對此尚未有足夠定價。</p>
+          </article>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>site footer</footer>
+</body>
+</html>

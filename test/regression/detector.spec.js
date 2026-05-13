@@ -198,6 +198,99 @@ describe('detector — anthropic-hero-sibling（article-tag 策略下的 title p
 });
 
 // -----------------------------------------------------------------------------
+// 對應 fixture：test/regression/fixtures/wya-translated-hero-h1-sibling.html
+// Bug 來源（2026-05-13 Jimmy 回報）：wheresyoured.at /where-are-all-the-data-centers/
+// 開啟 Shinkansen 翻譯擴充（single / replace 模式）後進閱讀模式，hero H1 標題不見。
+// 站點結構：用 `<h1>` 做小節 heading（一頁 12 個 H1），真 hero `<h1 class="post-hero__title">`
+// 在 ARTICLE.post 的兄弟層 `.post-hero`。
+//
+// 根因：promoteForTitle 走 titleMatches(og:title, h1.textContent) 比對升 articleEl
+// 範圍。翻譯擴充 single mode 把 H1 textContent 替換成中文後 og:title (英文，meta 不受
+// 翻譯影響) 與 H1 (中文) 比對失敗 → promote 不發生 → articleEl 留在 ARTICLE.post
+// (含 12 個小節 H1 但不含 hero) → ensureArticleContainsTitleH1 舊邏輯「articleEl
+// 含任何 H1 就 skip」過早收手 → cleaner hideAncestorSiblings 把 .post-hero 當 chrome
+// 砍 → hero H1 不見。
+//
+// 修法（v0.7.92 結構性通則）：ensureArticleContainsTitleH1 加路徑 1「頁面 DOM-order
+// 第一個 H1 不在 articleEl 內 → 升 LCA」。不依賴文字比對，對翻譯擴充改 H1 文字
+// 的情境也兜得住。hero H1 慣例在 DOM 開頭附近，這是穩定的結構訊號。
+// -----------------------------------------------------------------------------
+describe('detector — wya-translated-hero-h1-sibling（翻譯擴充改 H1 文字後 ensureArticleContainsTitleH1 結構性兜底）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('wya-translated-hero-h1-sibling.html').result;
+  });
+
+  it('偵測成功，回傳物件而非 null', () => {
+    assert.ok(result, '偵測應成功（不得 no-op）');
+  });
+
+  it('主文容器必須包含 hero H1（.post-hero__title）', () => {
+    const heroH1 = result.el.querySelector('h1.post-hero__title');
+    assert.ok(heroH1,
+      `主文容器應含 hero H1.post-hero__title——舊邏輯升不到 .container.wrapper、` +
+      `articleEl 卡在 ARTICLE.post 不含 hero。實際 articleEl=${result.el.tagName}` +
+      `.${(result.el.className || '').slice(0, 60)}`);
+    assert.ok((heroH1.textContent || '').includes('資料中心都跑去哪了'),
+      `hero H1 應含主標題文字（翻譯後中文），實際="${heroH1?.textContent || ''}"`);
+  });
+
+  it('主文容器升到 .container.wrapper（包 .post-hero + ARTICLE.post）', () => {
+    assert.ok(result.el.classList && result.el.classList.contains('container'),
+      `主文容器應升到 .container.wrapper，實際 tag=${result.el.tagName} class="${(result.el.className || '')}"`);
+  });
+
+  it('主文容器同時包含 .post-hero 與 ARTICLE.post（兩塊都要留）', () => {
+    assert.ok(result.el.querySelector('.post-hero'), '.post-hero 必須在主文容器內');
+    assert.ok(result.el.querySelector('article.post'), 'ARTICLE.post 必須在主文容器內');
+  });
+
+  it('主文容器包含內文（WYA_MAINTEXT_MARK）', () => {
+    assert.ok((result.el.textContent || '').includes('WYA_MAINTEXT_MARK'),
+      '主文容器應包含 article 內文（含 marker）');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 對應 fixture：test/regression/fixtures/site-logo-h1-no-upgrade.html
+// 防回歸 fixture（v0.7.92）：site logo H1 在頁面前段 + 真 hero H1 在 article 內。
+// 修法加的「articleEl 含 og:title match 的 heading 就 skip 不升」guard 必須生效，
+// 否則修法會把 articleEl 升到含 logo + main-menu chrome 的 outer wrapper (ChinaTalk
+// 類 Substack 站的 harness 實測回歸)。
+// -----------------------------------------------------------------------------
+describe('detector — site-logo-h1-no-upgrade（ChinaTalk 類 Substack 防誤升 guard）', () => {
+  let result;
+  before(() => {
+    result = loadFixtureAndRunDetector('site-logo-h1-no-upgrade.html').result;
+  });
+
+  it('偵測成功，回傳物件而非 null', () => {
+    assert.ok(result, '偵測應成功（不得 no-op）');
+  });
+
+  it('articleEl 不得升到外層 wrapper（不該吞 logo + main-menu）', () => {
+    // articleEl 必須是 ARTICLE.post 或在它之內，不該被 ensureArticleContainsTitleH1
+    // 升到含 logo H1 的 #main / #entry。檢驗方式：articleEl 不含 logo H1。
+    const logoH1 = result.el.querySelector('h1#wordlogo, h1.logo-title');
+    assert.ok(!logoH1,
+      `articleEl 不該含 logo H1（SiteName），代表升到含 logo 的 outer wrapper。` +
+      `實際 articleEl=${result.el.tagName}.${(result.el.className || '').slice(0, 40)}`);
+  });
+
+  it('articleEl 必須含真 hero H1 (Best Post Title)', () => {
+    const heroH1 = result.el.querySelector('h1.post-title');
+    assert.ok(heroH1, 'articleEl 應含真 hero H1');
+    assert.ok((heroH1.textContent || '').includes('Best Post Title'),
+      `hero H1 文字應為 "Best Post Title", 實際="${heroH1?.textContent || ''}"`);
+  });
+
+  it('articleEl 包含內文 marker', () => {
+    assert.ok((result.el.textContent || '').includes('LOGO_GUARD_MARK'),
+      'articleEl 應含內文 marker');
+  });
+});
+
+// -----------------------------------------------------------------------------
 // 對應 fixture：test/regression/fixtures/ltn-multi-article-siblings.html
 // Bug 來源：news.ltn.com.tw 自由時報類「infinite-scroll archive」頁把多篇
 // article 塞進同一個 `<section>` 裡（每篇是 section 的直系子），popIn
