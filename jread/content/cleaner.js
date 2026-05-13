@@ -1406,12 +1406,18 @@
   //   caption overlay 是設計一部分）
   // - position 必須是 absolute 或 fixed（static / relative / sticky 保留）
   // - articleEl 自身不算
-  // - 主文段落保護：若 element 包含**自身**為長 `<p>`（textContent > 500
-  //   chars）的後代，視為主文流的一部分（絕對定位的主文容器，雖罕見但
-  //   保留），不 hide。500 是邊界—— author bio 通常 < 300 chars，主文
-  //   段落 > 500 chars。
+  // - 主文段落保護：若 element 包含 > 500 chars 的單一 `<p>` 後代，視為
+  //   主文流的一部分（絕對定位的主文容器，雖罕見但保留），不 hide。
+  // - 父高度殘留修法（v0.7.112）：hide absolute child 後，父若 stylesheet
+  //   `min-height` 或 `height` 預留空間給 absolute child（典型 hero header
+  //   `min-height: 720px` 包 hero img + absolute title overlay），會留下
+  //   大塊空白。一併清直接父的 min-height + height 為 0/auto。
+  //   通則：absolute child 是為 overlay 而生的「視覺擴展」，父保留空間
+  //   是配合它；child hidden 後保留空間就是 stale 設計殘留。
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
+    const parentHeightResets = [];
+    const seenParents = new Set();
     for (const el of articleEl.querySelectorAll('*')) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -1433,6 +1439,31 @@
       }
       if (hasLongParagraph) continue;
       hide(el, hidden);
+      // 清直接父的 min-height/height 殘留（避免父預留 absolute child 空間
+      // 後仍空著一大塊）
+      const parent = el.parentElement;
+      if (parent && parent !== articleEl && !seenParents.has(parent)) {
+        seenParents.add(parent);
+        let pcs;
+        try { pcs = window.getComputedStyle(parent); } catch (_) { pcs = null; }
+        if (pcs && (parseFloat(pcs.minHeight) > 0 || parseFloat(pcs.height) > 100)) {
+          parentHeightResets.push({
+            el: parent,
+            prev: snapshotStyles(parent, ['min-height', 'height'])
+          });
+          applyImportant(parent, { 'min-height': '0', 'height': 'auto' });
+        }
+      }
+    }
+    hidden.__absoluteOverlayParentHeight = parentHeightResets;
+  }
+
+  function restoreAbsoluteOverlayConverted(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__absoluteOverlayParentHeight;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
     }
   }
 
@@ -2785,6 +2816,7 @@
       restoreMediaContainerBlock(hiddenEls);
       restoreDescendantBoxShadow(hiddenEls);
       restoreMediaResets(hiddenEls);
+      restoreAbsoluteOverlayConverted(hiddenEls);
       restoreInnerFlexWrap(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);
