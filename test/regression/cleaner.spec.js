@@ -1892,6 +1892,55 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore 後 child 的 width 應回到 fixture 原值 280px');
   });
 
+  it('主文短篇 byline + author <a> 高 link density 不得被 hideInsideArticleSidebarColumns 條件 A 誤殺（healthsystemtracker entry-meta 修法）', () => {
+    // healthsystemtracker.org 實測：article 內 `.entry-meta` 含 byline
+    // (author 名 + Twitter 連結) + 日期，textLen ~80 chars 遠 < 主文
+    // 14K × 10% 1400 → 命中條件 A 的 textLen 比例；author 名都包 `<a>`
+    // → link density > 0.5 → 命中 condition A 全部條件 → 作者+日期整段
+    // 被當 sidebar widget 砍光。reader 進入後使用者看不到作者/日期是
+    // 嚴重 UX 退化（cnyes / Stratechery 類修法後我們已重視 byline 保留）。
+    // 新 byline 白名單：textLen < 200 + BYLINE_TEXT_RE 命中（"By X" /
+    // 月份+日+年 日期 / "撰文：" / "作者：" 等）→ skip hide。
+    // 通則：byline pattern 跨站收斂、誤判風險低；真 widget cluster
+    // 不會同時短篇 + 含 byline 文字 pattern。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'healthsystemtracker-byline-whitelist.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      const entryMeta = w.document.getElementById('entry-meta');
+      const relatedWidget = w.document.getElementById('related-widget');
+      const entryContent = w.document.getElementById('entry-content');
+      assert.ok(entryMeta && relatedWidget && entryContent, 'fixture 元素齊全');
+
+      // 核心斷言 1：byline (.entry-meta) 不得被 hide
+      assert.notStrictEqual(entryMeta.dataset.jreadHidden, '1',
+        '.entry-meta（含 "By X" + 月份+日+年 日期 pattern）byline 不得被條件 A 誤殺');
+
+      // 核心斷言 2：真 widget sidebar（無 byline pattern + 高 link density）
+      // 仍應被 hide——避免白名單過鬆把真 widget 放過
+      assert.strictEqual(relatedWidget.dataset.jreadHidden, '1',
+        '無 byline pattern 的真 widget sidebar 仍應被條件 A hide');
+
+      // 核心斷言 3：主文不可動
+      assert.notStrictEqual(entryContent.dataset.jreadHidden, '1',
+        '主文 .entry-content 不得被誤殺');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {
     // Dwarkesh (Substack) YouTube embed 實測：cross-origin iframe 的
     // textContent = ""（跨域讀不到內部 DOM）+ querySelector 讀不到內部媒體

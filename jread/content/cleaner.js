@@ -131,6 +131,23 @@
   const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)/i;
   const NOISE_INLINE_AD_MAX_LEN = 40;
 
+  // v0.7.109：byline 文字 pattern——hideInsideArticleSidebarColumns
+  // 條件 A（textLen < main × 10% + linkDensity > 0.5）會誤殺短篇 byline
+  // wrapper（healthsystemtracker `.entry-meta` 實測：author 名都包 `<a>`
+  // 連結 link density > 0.5 + 總文字 ~80 chars 遠 < 主文 14K × 10% 1400
+  // chars → 命中 A 砍掉作者 + 日期）。byline 結構特徵是「短文 + author
+  // 識別字串 + date」，下面 regex 涵蓋常見 byline pattern：
+  //   - 英文 byline 前綴："By X" / "Written by X" / "Posted by X"
+  //     / "Author: X" / "Authors: X"
+  //   - 英文日期：月份英文+日+年（"August 2, 2024" / "Aug 2 2024"
+  //     / "2 August 2024" / ISO "2024-08-02"）
+  //   - 中文 byline："撰文：" / "作者：" / "編輯：" / "整理：" / "報導："
+  //     / "發布日期" / "更新日期" / "刊出日期"
+  // 通則：byline 跨站文字 pattern 高度收斂，誤判風險低；搭配 textLen <
+  // BYLINE_MAX_TEXT_LEN 雙條件避免廣告 / sidebar widget 偶含日期片段誤觸發。
+  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  const BYLINE_MAX_TEXT_LEN = 200;
+
   // 主文內 keyword heuristic 只作用於「容器型」元素。
   // 理由：真實世界的廣告/paywall/subscribe 區塊都是容器包裝，
   // 不會是單一 <h1-6> / <p> / <img> / <a>。
@@ -1324,6 +1341,13 @@
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
+          // v0.7.109：byline 白名單——短篇（textLen < 200）+ 文字命中
+          // BYLINE_TEXT_RE（"By X" / 日期 pattern / 中文撰文 等）→ skip。
+          // healthsystemtracker `.entry-meta` 場景：author 名都是 link 導致
+          // ld > 0.5、總文 ~80 chars 落入「sibling 太小且 link 密」誤判；
+          // byline 結構特徵跨站通用，誤殺風險可控。
+          const sText = norm(s.el.textContent || '');
+          if (s.textLen < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(sText)) continue;
           hide(s.el, hidden);
           continue;
         }

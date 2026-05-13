@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>healthsystemtracker byline whitelist</title>
+  <meta property="og:title" content="What drives health spending">
+</head>
+<body>
+  <article id="hst-byline-article">
+    <header>
+      <h1>What drives health spending in the U.S. compared to other countries?</h1>
+    </header>
+
+    <!-- main + byline + 真 widget 三 children 共存於同一 row。
+         hideInsideArticleSidebarColumns 把 entry-content 當 main，
+         entry-meta / related-widget 各自當作小 sibling 比較條件 A：
+           - entry-meta：textLen 短 + ld > 0.5 但**含 byline pattern**
+             → v0.7.109 白名單 → 不 hide
+           - related-widget：textLen 短 + ld > 0.5 + 無 byline pattern
+             → 仍命中條件 A → hide -->
+    <div class="row" id="layout-row">
+      <div class="entry-content" id="entry-content">
+        <p>BODY_MARK The United States spends significantly more on healthcare than
+        comparable countries do, and yet has worse health outcomes. Much of the
+        national conversation has focused on spending on retail prescription drugs
+        and insurer profits and administrative costs as key drivers of health
+        spending in the United States. The Inflation Reduction Act, signed into law
+        by President Biden in 2022, includes several provisions aimed at lowering
+        the cost of these prescription drugs.</p>
+        <p>While it is true that many brand-name retail prescription drugs are
+        priced higher in the U.S., than in peer countries, health spending data
+        indicates that other spending categories particularly hospital and physician
+        payments are primary drivers of the U.S.'s higher health spending. This
+        brief examines the drivers of health spending and differences between the
+        U.S. and its peers. Padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+        <p>The largest category of health spending in both the U.S. and comparable
+        countries is spending on inpatient and outpatient care, which includes
+        payments to hospitals, clinics, and physicians for services and fees such as
+        primary care or specialist visits, surgical care, provider-administered
+        medications, and facility fees. Americans spent $7,500 per person on
+        inpatient and outpatient care while comparable countries spent an average of
+        $2,969 per person, a difference of $4,531 per person.</p>
+        <p>Padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+      </div>
+
+      <div class="entry-meta" id="entry-meta">
+        <div class="entry-author">
+          By <a href="/author/emma">Emma Wager</a> <a href="https://twitter.com/emma">Twitter</a>,
+          <a href="/author/shameek">Shameek Rakshit</a>, and <a href="/author/cynthia">Cynthia Cox</a>
+        </div>
+        <div class="entry-date">August 2, 2024</div>
+      </div>
+
+      <div class="related-widget" id="related-widget">
+        <a href="/related/a">Related Article A</a>
+        <a href="/related/b">Related Article B</a>
+        <a href="/related/c">Related Article C</a>
+        <a href="/related/d">Related Article D</a>
+        <a href="/related/e">Related Article E</a>
+        <a href="/related/f">Related Article F</a>
+      </div>
+    </div>
+  </article>
+</body>
+</html>
