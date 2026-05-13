@@ -4179,12 +4179,15 @@ describe('cleaner — collapseInnerGridFlex descendants 殘留 auto-center reset
       'cleaner.js 必須含 INNER_GRID_DESC_DECLS——forcing：常數被誤刪 → BBC byline 修法失效');
   });
 
-  it('INNER_GRID_DESC_DECLS 必須含 width:auto + margin-left/right:0 + grid-area:auto', () => {
-    // 對 styled-components fixed-width child + margin auto auto-center 的反制
+  it('INNER_GRID_DESC_DECLS 必須含 width:100% + margin-left/right:0 + grid-area:auto', () => {
+    // 對 styled-components fixed-width child + margin auto auto-center 的反制。
+    // v0.7.104 修法：width:auto → width:100% ——實測 BBC styled-components 多層
+    // nested 下 width:auto 即使 inline !important 仍解析成原 stylesheet 寬度，
+    // width:100% 才能可靠覆寫。
     const m = src.match(/const\s+INNER_GRID_DESC_DECLS\s*=\s*\{([\s\S]*?)\}/);
     assert.ok(m, '能找到 INNER_GRID_DESC_DECLS 定義');
     const body = m[1];
-    assert.match(body, /['"]width['"]\s*:\s*['"]auto['"]/, '必須含 width: auto');
+    assert.match(body, /['"]width['"]\s*:\s*['"]100%['"]/, '必須含 width: 100%（v0.7.104 width:auto 改 100%）');
     assert.match(body, /['"]margin-left['"]\s*:\s*['"]0['"]/, '必須含 margin-left: 0');
     assert.match(body, /['"]margin-right['"]\s*:\s*['"]0['"]/, '必須含 margin-right: 0');
     assert.match(body, /['"]grid-area['"]\s*:\s*['"]auto['"]/, '必須含 grid-area: auto');
