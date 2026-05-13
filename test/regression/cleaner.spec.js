@@ -592,6 +592,85 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內中等大小 sidebar column（條件 C，esmchina /news/14116 Bootstrap col-md-3 widget cluster）：main >= sibling × 3 + sibling linkDensity > 0.5 + sibling textLen >= 200 → hide；條件 A 0.1 ratio 不命中（sibling/main = 0.23）', () => {
+    // 2026-05-13 esmchina.com/news/14116.html 實測：detector 選 DIV.container
+    // （Bootstrap row + col-md-9 主文 + col-md-3 sidebar 三 children 全在
+    // articleEl 內）。sidebar 含「近期热点 / EE直播间 / 在线研讨会 / 热门标签」
+    // 整批 widget link cluster——但 sidebar.textLen ≈ 4.7K，main ≈ 20K，
+    // sidebar/main = 0.23 > 條件 A 0.1 ratio 漏網；sidebar 是 `<div>` 不是
+    // `<aside>` 也不命中條件 B。
+    // 新條件 C：main >= sibling × 3 + sibling.ld > 0.5 + sibling.textLen >= 200
+    // → 涵蓋「Bootstrap 兩欄主文+widget sidebar」中等大小 sidebar；條件 A
+    // （極小極密）與條件 C（中等大小高 ld）互補不重疊。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'esmchina-bootstrap-sidebar.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中主文容器');
+
+    // 提供 fixture 中 sidebar / main 的真實 textLen 比值給 forcing function
+    const sidebar = w.document.querySelector('.col-md-3.rightsection');
+    const mainCol = w.document.querySelector('.col-md-9.article-left');
+    assert.ok(sidebar && mainCol, 'fixture 必須含 col-md-9 主欄 + col-md-3 sidebar');
+
+    function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+    function linkDensity(el) {
+      const txt = norm(el.textContent);
+      if (!txt.length) return 0;
+      let linkLen = 0;
+      for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
+      return linkLen / txt.length;
+    }
+    const sidebarLen = norm(sidebar.textContent).length;
+    const mainLen = norm(mainCol.textContent).length;
+    const sidebarLd = linkDensity(sidebar);
+
+    // Forcing function（fixture 安全保證）：
+    //   - sibling/main 比值 > 0.1（條件 A 漏網，必須靠條件 C）
+    //   - main/sibling >= 3（條件 C 命中）
+    //   - sibling.ld > 0.5（條件 C 命中）
+    //   - sibling.textLen >= 200（條件 C 命中）
+    assert.ok(sidebarLen / mainLen > 0.1,
+      `fixture forcing: sidebar/main (${(sidebarLen / mainLen).toFixed(3)}) 必須 > 0.1，否則條件 A 命中、無法 forcing 條件 C`);
+    assert.ok(mainLen >= sidebarLen * 3,
+      `fixture forcing: main (${mainLen}) >= sidebar (${sidebarLen}) × 3 才能 forcing 條件 C`);
+    assert.ok(sidebarLd > 0.5,
+      `fixture forcing: sidebar linkDensity (${sidebarLd.toFixed(3)}) > 0.5 才能 forcing 條件 C`);
+    assert.ok(sidebarLen >= 200,
+      `fixture forcing: sidebar textLen (${sidebarLen}) >= 200 才能 forcing 條件 C`);
+
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+    try {
+      // 核心斷言 1：col-md-3 sidebar 整塊被 hide
+      assert.strictEqual(sidebar.dataset.jreadHidden, '1',
+        'col-md-3.rightsection sidebar widget cluster 必須被條件 C 命中 hide');
+
+      // 核心斷言 2：col-md-9 主欄保留
+      assert.notStrictEqual(mainCol.dataset.jreadHidden, '1',
+        'col-md-9.article-left 主欄不得被 hide');
+      assert.ok(mainCol.textContent.includes('ESMCHINA_MAIN_MARK'),
+        '主欄應含 ESMCHINA_MAIN_MARK');
+
+      // 核心斷言 3：sidebar 內所有 widget 標題段（近期热点 / EE直播间 /
+      // 在线研讨会 / 热门标签）視覺上消失——靠祖先 hide 連帶 invisible
+      const widgetLinks = sidebar.querySelectorAll('a');
+      assert.ok(widgetLinks.length >= 15, `sidebar 至少含 15 個 widget 連結，實際 ${widgetLinks.length}`);
+
+      // 核心斷言 4：detector 容器本身不被 hide
+      assert.notStrictEqual(detected.el.dataset.jreadHidden, '1',
+        'detector 選的主文容器本身不得被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
   it('udn 類 wrapper-promoted article 後方 5 個雜訊 sibling sections 被 NOISE_KEYWORD_RE 擴充名單命中 hide：more-news / related-news / sponsor / discuss / taboola', () => {
     // 2026-04-23 udn.com/news/story/124844/9460037 實測：detector promote 到
     // section.article-content__wrapper（納入 h1 + cover figure），其下 5 個
