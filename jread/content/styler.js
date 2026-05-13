@@ -416,13 +416,17 @@ html [${ARTICLE_ATTR}="1"] {
   float: none !important;
   /* v0.7.122：flex: initial (= 0 1 auto) 改 1 1 auto——flex-grow: 1 讓
      col-* wrapper 在 flex container 內主動撐滿父剩餘空間。原 initial 走
-     flex-basis: auto + grow:0、依 content max-content 寬度自然 size，中
-     文段落沒到父寬時 wrapper 只占自然寬（cn.nytimes 實測 article-body-
-     item.col-lg-5 在 partial flex 父寬 728 下只撐到 667，留 61px 空白、
-     reader card 視覺上段落只佔 reader 一半）。改 grow:1 後 flex item
-     主動撐滿剩餘空間、wrapper 滿父寬、主文段落撐滿 reader card。
-     block 場景下 flex shorthand 是 no-op、無害；flex 場景下實質撐滿。 */
+     flex-basis: auto + grow:0、依 content max-content 寬度自然 size。 */
   flex: 1 1 auto !important;
+  /* v0.7.123：清 margin-left/right——cn.nytimes 實測對 .col-lg-5 設
+     'margin-left: 61px'（Bootstrap col offset），即使 flex-grow:1 撐滿父寬，
+     margin 也會把 wrapper 內容向內推 61px、article-body-item.rect 為
+     'x=380 w=667 right=1047' vs partial 'x=319 w=728 right=1047'——
+     content 起點被 margin-left 推 61px、視覺上主文段落仍只佔 reader card
+     content area 的部分寬度。Bootstrap col offset 在 reader card 單欄
+     layout 失意義（沒 row 結構讓 offset 對齊），清掉。 */
+  margin-left: 0 !important;
+  margin-right: 0 !important;
   padding: 0 !important;
 }
 /* padding: 0 解釋：原站 Bootstrap col 標準 gutter（padding-left/right: 15px）
