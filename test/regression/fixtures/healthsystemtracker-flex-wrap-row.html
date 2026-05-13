@@ -49,8 +49,16 @@
            sidebar 拉回 block flow（不再 overlay 主文）。 -->
       <div class="entry-content-right-sidebar" id="absolute-sidebar"
            style="position: absolute; width: 140px; top: 0;">
-        <p>HST_ABS_MARK About this site sidebar overlay content
-        Peterson Center on Healthcare and KFF are partnering.</p>
+        <!-- v0.7.108：absolute 子層也要被拉回 static——healthsystemtracker
+             實測：v0.7.107 對外層 absolute child 已 reset，但內層
+             `.about` 仍 absolute、anchor 到外層 relative `.row` 繼續 overlay。
+             新 fix：collapse 的 flex container 內所有 position: absolute /
+             fixed 後代都 force static。 -->
+        <div class="about-deep" id="absolute-descendant"
+             style="position: absolute; top: 100px; left: 0;">
+          <p>HST_DEEP_ABS_MARK Deep absolute descendant inside outer absolute
+          sidebar — Peterson Center boilerplate overlay content.</p>
+        </div>
       </div>
     </div>
 
