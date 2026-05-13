@@ -2079,6 +2079,94 @@ describe('cleaner — udn-h1-direct-child-narrow-guard（h1 作為 sibling 時�
 });
 
 // -----------------------------------------------------------------------------
+// v0.7.96 udn /news/story/124844/9460037 主筆室文章
+// narrowPromotedSiblings 把含 byline+日期 的 articleEl direct child sibling
+// 當 chrome 砍。修法：加「sibling 含 <time> + textLen <= 200 → 保留」guard
+// （<time> 是 HTML5 語意 element 專指日期/時間，跨站通用；短文字限制排除
+// 「相關新聞」這類也含 time 的大塊 chrome）
+// -----------------------------------------------------------------------------
+describe('cleaner — udn-byline-subinfo-narrow-guard（含 <time> 的 byline meta 保留）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'udn-byline-subinfo-narrow-guard.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, { promotedFrom: result.promotedFrom });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('detector 命中 article-tag、promote 升到 article-content__wrapper', () => {
+    assert.ok(result.el.classList.contains('article-content__wrapper'),
+      `promote 應升到 section.article-content__wrapper；實際 cls="${result.el.className}"`);
+    assert.ok(result.promotedFrom,
+      'promotedFrom 應紀錄');
+    assert.ok(result.promotedFrom.classList.contains('article-content'),
+      'promotedFrom 應為 article.article-content');
+  });
+
+  it('byline subinfo（含 <time> + textLen <= 200）保留，不被 narrow 誤 hide', () => {
+    const subinfo = document.getElementById('byline-subinfo');
+    assert.ok(subinfo, 'fixture 須含 byline subinfo');
+
+    // Forcing function：subinfo 必須短小 + 含 <time>，才能 forcing 新 guard
+    const sibText = (subinfo.textContent || '').replace(/\s+/g, ' ').trim();
+    assert.ok(sibText.length <= 200,
+      `fixture forcing: subinfo textLen (${sibText.length}) 須 <= 200`);
+    assert.ok(subinfo.querySelector('time'),
+      'fixture forcing: subinfo 須含 <time> element');
+
+    assert.notStrictEqual(subinfo.dataset.jreadHidden, '1',
+      'byline subinfo（含 <time> + 短文字）必須保留；forcing：拿掉 narrowPromotedSiblings 的「含 time + textLen <= 200」guard → 此 assertion fail');
+  });
+
+  it('麵包屑（無 time）仍被 narrow hide', () => {
+    const breadcrumb = document.getElementById('breadcrumb-section');
+    assert.ok(breadcrumb);
+    assert.strictEqual(breadcrumb.dataset.jreadHidden, '1',
+      'SECTION.article-content__info 麵包屑（無 time）仍由 narrow hide（guard 嚴格要求 <time>）');
+  });
+
+  it('主圖 figure（含 img not in a）保留（v0.7.22 media guard）', () => {
+    const cover = document.getElementById('main-cover');
+    assert.ok(cover);
+    assert.notStrictEqual(cover.dataset.jreadHidden, '1',
+      '主圖 figure 含 standalone img、由 v0.7.22 media guard 保留');
+  });
+
+  it('相關新聞（含多個 time 但 textLen > 200）仍被 narrow hide', () => {
+    const related = document.getElementById('related-section');
+    assert.ok(related);
+    const rtxt = (related.textContent || '').replace(/\s+/g, ' ').trim();
+    assert.ok(rtxt.length > 200,
+      `fixture forcing: 相關新聞 textLen (${rtxt.length}) 須 > 200 才能 forcing「短文字限制排除大塊 chrome」`);
+    assert.strictEqual(related.dataset.jreadHidden, '1',
+      'SECTION.more-news 雖含多個 time 但 textLen > 200 → 仍 hide（guard 限制只保短文字 byline meta）');
+  });
+
+  it('主文 UDN_CONTENT_MARK 段落保留', () => {
+    const marks = Array.from(document.querySelectorAll('p'))
+      .filter(p => p.textContent.includes('UDN_CONTENT_MARK'));
+    assert.ok(marks.length >= 4);
+    for (const p of marks) {
+      assert.notStrictEqual(p.dataset.jreadHidden, '1');
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.13 esmchina 5 層深 single-child wrapper + partner-content sibling
 // PROMOTE_MAX_HOPS 4→5、NOISE_KEYWORD_RE 加 `partner` 詞
 // -----------------------------------------------------------------------------

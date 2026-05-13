@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>udn 主筆室文章 byline+date subinfo — narrow guard forcing</title>
+  <meta property="og:title" content="【重磅快評】美中一中交集 賴總統走不出去也不見了">
+</head>
+<body>
+  <!-- v0.7.96 udn /news/story/124844/9460037 實測 repro：
+       - article-tag 策略命中 article.article-content
+       - promoteForTitle 升到 section.article-content__wrapper（h1 的 parent）
+       - articleEl direct children:
+         * SECTION.article-content__info (麵包屑「要聞 / 賴總統暫緩出訪」)
+         * H1.article-content__title (標題,v0.7.14 H1 guard 保留)
+         * DIV.article-content__subinfo (2026-04-23 15:07 聯合報／ 主筆室 + tags + 關閉按鈕)
+         * FIGURE.article-content__cover (主圖,v0.7.22 media guard 保留)
+         * ARTICLE.article-content (主文,promotedFrom)
+         * SECTION.more-news (相關新聞)
+       - 舊版 narrow 把 DIV.article-content__subinfo 當 chrome 砍 → reader card
+         看不到作者+日期。Jimmy 2026-05-13 截圖回報。
+       - v0.7.96 加「sibling 含 <time> + textLen <= 200 → 保留」guard
+       - 麵包屑 SECTION.article-content__info（無 time）→ 仍 narrow hide
+       - 相關新聞 SECTION.more-news（含多個 time 但 textLen > 200）→ 仍 hide
+       -->
+  <section class="article-content__wrapper">
+    <section class="article-content__info" id="breadcrumb-section">
+      <a href="/news">要聞</a>
+      <a href="/news/focus/124844">賴總統暫緩出訪</a>
+    </section>
+    <h1 class="article-content__title" id="udn-h1">【重磅快評】美中一中交集 賴總統走不出去也不見了</h1>
+    <div class="article-content__subinfo" id="byline-subinfo">
+      <time class="article-content__time">2026-04-23 15:07</time>
+      <span> 聯合報／ 主筆室</span>
+      <span class="tag">賴清德</span>
+      <span class="tag">一中政策</span>
+      <button>關閉</button>
+    </div>
+    <figure class="article-content__cover" id="main-cover">
+      <img src="/photo/hero.jpg" alt="賴清德">
+      <figcaption>賴總統出訪示意。圖／聯合報資料照</figcaption>
+    </figure>
+    <article class="article-content">
+      <p>UDN_CONTENT_MARK 賴清德總統出訪受挫，美國國務院官方回應不見「the president Lai」，改以「Taiwan officials」替代。</p>
+      <p>UDN_CONTENT_MARK 第二段。本 fixture 重現 udn 結構：byline+日期 subinfo 是 articleEl direct child、與 promotedFrom article 兄弟關係。</p>
+      <p>UDN_CONTENT_MARK 第三段。narrowPromotedSiblings 漏處理「sibling 含日期 byline」case 時把 subinfo hide。</p>
+      <p>UDN_CONTENT_MARK 第四段收尾。保證 detector heuristic 有足夠文字命中。</p>
+    </article>
+    <section class="more-news article-section" id="related-section">
+      <h3>相關新聞</h3>
+      <ul>
+        <li><a href="#1">相關新聞 1</a><time class="story-list__time">2026-05-05 11:11</time><p>內文摘要相關 1 內容描述較長一些占字數防止 textLen 不到門檻，補充更多文字以確保整段相關新聞列表 textContent 超過 200 chars 門檻，能 forcing 新 guard 的「短文字限制排除大塊 chrome」邏輯有意義</p></li>
+        <li><a href="#2">相關新聞 2</a><time class="story-list__time">2026-05-03 14:40</time><p>內文摘要相關 2 內容描述較長一些占字數防止 textLen 不到門檻</p></li>
+        <li><a href="#3">相關新聞 3</a><time class="story-list__time">2026-05-03 09:20</time><p>內文摘要相關 3 內容描述較長一些占字數防止 textLen 不到門檻</p></li>
+      </ul>
+    </section>
+  </section>
+</body>
+</html>
