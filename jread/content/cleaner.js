@@ -456,6 +456,60 @@
     }
   }
 
+  // ---- 主文內 <footer>：article-content-footer 類 tag / category / share rail ----
+  // HTML5 semantic：<footer> 在 <article> 內代表「該文章的次要/補充資訊」
+  // ——典型內容是 tag 雲、分類連結、社群分享、版權聲明、回到頂部 link，
+  // 與「reader card 只保留主文」哲學衝突。
+  //
+  // 結構特徵（非站點特判）：articleEl 內 `<footer>` tag。
+  // 兩階段處理：
+  //   1) footer **無** >= 100 chars `<p>` → 整段 hide（純 chrome footer）
+  //   2) footer **有** 長 p（作者後記 / 結語段）→ 保留 footer 本身，但
+  //      walk direct children 把「link-only block」（>= 2 anchor + 無
+  //      >= 50 chars `<p>` 的 child）個別 hide
+  //
+  // 案例：twz.com /space/... 文末 `<footer class="article-content-footer">`
+  // 內含
+  //   ├ DIV.pw-incontent-excluded（含 author bio long p 262 chars）→ 保留
+  //   └ SECTION.recurrent-tag-list-article（UL > LI > A.btn 4 個 category
+  //      tag，無長 p）→ hide
+  // 整段不能 hide（會吞掉 bio），但 tag-list section 必須清。
+  //
+  // isLinkOnlyBlock：>= 2 anchor + 無 >= 50 chars `<p>` 的子結構。閾值取
+  // 自 hideInsideArticleHashtagClusters 同源（HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN
+  // = 50），確保主文段落（通常 >= 50 chars）能 guard 住、純連結 cluster
+  // 命中。
+  function isLinkOnlyBlock(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const anchors = el.querySelectorAll('a');
+    if (anchors.length < 2) return false;
+    for (const p of el.querySelectorAll('p')) {
+      if (norm(p.textContent).length >= 50) return false;
+    }
+    return true;
+  }
+
+  function hideInsideArticleFooter(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('footer')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      let hasLongP = false;
+      for (const p of el.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
+      }
+      if (!hasLongP) {
+        hide(el, hidden);
+        continue;
+      }
+      // footer 含長 p：保留 footer 本身，但 walk direct children 找 link-only block
+      for (const child of Array.from(el.children)) {
+        if (child.dataset && child.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(child)) continue;
+        if (isLinkOnlyBlock(child)) hide(child, hidden);
+      }
+    }
+  }
+
   // ---- 主文外：語意標籤 --------------------------------------------------
   function hideOutsideArticleSemantic(articleEl, hidden) {
     // 補 id/class 慣用命名（v0.7.23 newtalk.tw 修法）：newtalk 等舊 CMS /
@@ -2910,6 +2964,7 @@
       hideInsideArticleButtonClusters(articleEl, hidden, containers);
       hideInsideArticleHorizontalRules(articleEl, hidden);
       hideInsideArticleNav(articleEl, hidden);
+      hideInsideArticleFooter(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
       hideInsideArticleAbsoluteOverlays(articleEl, hidden);
