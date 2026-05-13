@@ -1785,6 +1785,7 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     const contentCenter2 = w.document.getElementById('content-center-2');
     const spacerRight = w.document.getElementById('spacer-right');
     const absoluteSidebar = w.document.getElementById('absolute-sidebar');
+    const absoluteDescendant = w.document.getElementById('absolute-descendant');
     const wrapperNormal = w.document.getElementById('wrapper-normal');
     const singleRowFlex = w.document.getElementById('single-row-flex');
     const authorName = w.document.getElementById('author-name');
@@ -1807,6 +1808,7 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     // 也算進去，top 沒差距會 false negative；新 fix 過濾 absolute 後
     // 仍能 by in-flow children top 差距 (100/200/300) 命中 wrap。
     stubRect(absoluteSidebar, { top: 100, width: 140, height: 200 });
+    stubRect(absoluteDescendant, { top: 200, width: 140, height: 100 });
     stubRect(wrapperNormal, { top: 0, width: 608, height: 100 });
     // 單行 flex：top 全同 → 不該被誤觸 collapse
     stubRect(singleRowFlex, { top: 600, width: 608, height: 30 });
@@ -1855,6 +1857,15 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
         'position:static 應 !important');
       assert.strictEqual(absoluteSidebar.style.getPropertyValue('width'), 'auto',
         'absolute child 的 width 也應 reset 為 auto');
+
+      // 核心斷言 2.6（v0.7.108）：absolute 後代（深層巢狀 absolute）也被拉回 static
+      // ——避免 healthsystemtracker `.about` 在 `.entry-content-right` 內部仍
+      // overlay 主文。v0.7.107 只處理 direct child，descendants 仍 absolute
+      // 並 anchor 到外層 relative ancestor 繼續疊字。
+      assert.strictEqual(absoluteDescendant.style.getPropertyValue('position'), 'static',
+        'absolute 後代（非 direct child）也應 force 成 position: static');
+      assert.strictEqual(absoluteDescendant.style.getPropertyPriority('position'), 'important',
+        'descendant position:static 應 !important');
 
       // 核心斷言 3：非 flex 的 wrapper-normal 不得被誤動
       assert.notStrictEqual(wrapperNormal.dataset.jreadCollapsed, '1',

@@ -1772,10 +1772,32 @@
       if (el.dataset) el.dataset.jreadCollapsed = '1';
       // 對所有 visible children（含 absolute）套 CHILD_DECLS——把 absolute
       // 拉回 static、寬度回 auto，讓 layout 整體乾淨在 block flow
+      const directChildrenSet = new Set();
       for (const c of visibleChildren) {
         if (!c.style) continue;
+        directChildrenSet.add(c);
         resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
         applyImportant(c, INNER_FLEX_CHILD_DECLS);
+      }
+      // v0.7.108：deep absolute descendants 拉回 static——v0.7.107 只處理
+      // direct children；absolute descendants（healthsystemtracker `.about`
+      // sidebar 在 `.entry-content-right` 內、原本 anchor 到外層 relative
+      // `.row`）會繼續 overlay 在主文上、產生疊字。對 collapse 的 flex
+      // container 內所有非 direct-child 的 position: absolute / fixed
+      // 後代強制 position: static（reader mode flow > overlay 原則）。
+      // 不動 width/top/left 等——這些後代寬度由 stylesheet 給合理值，
+      // 只取消 absolute 定位讓元素回到 flow 位置就夠。
+      for (const desc of el.querySelectorAll('*')) {
+        if (directChildrenSet.has(desc)) continue;
+        if (desc.dataset && desc.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(desc)) continue;
+        if (!desc.style) continue;
+        let dcs;
+        try { dcs = window.getComputedStyle(desc); } catch (_) { continue; }
+        if (!dcs) continue;
+        if (dcs.position !== 'absolute' && dcs.position !== 'fixed') continue;
+        resets.push({ el: desc, kind: 'desc', prev: snapshotStyles(desc, ['position']) });
+        applyImportant(desc, { 'position': 'static' });
       }
     }
     hidden.__innerFlexWrap = resets;
