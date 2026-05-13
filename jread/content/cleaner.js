@@ -1469,9 +1469,16 @@
       }
       if (!triggerHiddenSibling && !triggerGridUnderfill) continue;
       // 記下 container 的原 inline style 以便 restore
+      // v0.7.104：擴增 width/max-width/margin-left/margin-right reset 軌道——
+      // BBC byline `.dWzpHk` stylesheet rule 給 `width:458px` + `margin:0 auto`
+      // 配合 grid 第二欄寬，collapse 後若不清 container 自身 width/margin，
+      // 458px + auto-center 殘留會把 byline 推到 reader card 中央偏右（margin
+      // 自動分 75px each side）。同樣的修法也覆蓋其他「stylesheet 給 grid
+      // 容器固定寬度」case。
       const CONTAINER_PROPS = [
         'display', 'grid-template-columns', 'grid-template-rows',
-        'grid-template-areas', 'flex-direction'
+        'grid-template-areas', 'flex-direction',
+        'width', 'max-width', 'margin-left', 'margin-right'
       ];
       collapsed.push({ el, kind: 'container', prev: snapshotStyles(el, CONTAINER_PROPS) });
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
@@ -1481,7 +1488,11 @@
         'display': 'block',
         'grid-template-columns': 'none',
         'grid-template-rows': 'none',
-        'grid-template-areas': 'none'
+        'grid-template-areas': 'none',
+        'width': '100%',
+        'max-width': 'none',
+        'margin-left': '0',
+        'margin-right': '0'
       };
       if (isFlexRow) containerDecls['flex-direction'] = 'column';
       applyImportant(el, containerDecls);
@@ -1556,11 +1567,24 @@
   // 只處理 `display: grid|inline-grid` + `grid-template-columns` 含 `\d+px`
   // —— hard-coded 固定寬度是 pathological case（BBC styled-components
   // 把主文鎖在 386px 單欄），reader mode 下明確該 reset。
-  const INNER_GRID_PROPS = ['display', 'grid-template-columns', 'grid-template-rows'];
+  // v0.7.104：collapsed grid 容器自身也 reset width/max-width/margin。
+  // BBC byline `.dWzpHk` stylesheet rule 設 `width: 458px` 配合 grid 第二欄寬，
+  // 我們把 display:grid → block 後 458px 寬度 + margin:auto 在 608px 父容器內
+  // 變成水平置中（margin 自動分 75px each side）→ byline 從左對齊變中央偏移。
+  // 必須把容器自己的 width 也清成 100% + margin 清 0 + max-width 清 none。
+  // 用 100% 而非 auto——實測 BBC 多層 styled-components nested layout 下
+  // `width: auto` 即使 inline !important 仍會解析成原 stylesheet 寬度
+  // （疑似 CSS containment / sub-grid / styled-components 動態 width 互動）；
+  // `width: 100%` 強制使用 parent 的 width，可靠覆寫 stylesheet 任何固定 px。
+  const INNER_GRID_PROPS = ['display', 'grid-template-columns', 'grid-template-rows', 'width', 'max-width', 'margin-left', 'margin-right'];
   const INNER_GRID_DECLS = {
     'display': 'block',
     'grid-template-columns': 'none',
-    'grid-template-rows': 'none'
+    'grid-template-rows': 'none',
+    'width': '100%',
+    'max-width': 'none',
+    'margin-left': '0',
+    'margin-right': '0'
   };
 
   // v0.7.103：collapsed grid 的 descendants 殘留 auto-center 修法。
