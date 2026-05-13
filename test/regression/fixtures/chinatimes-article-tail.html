@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<!--
+  Fixture：chinatimes.com 即時新聞文末雜訊（Jimmy 2026-05-13 回報）。
+
+  觸發頁面：www.chinatimes.com/realtimenews/20260423000917-260410?ctrack=pc_main_headl_p01&chdtv
+  症狀：reader mode 啟動後文末殘留：
+    (1) tags 列「#台積電 #美伊停火 #美股 #道瓊指數」（DIV.article-hash-tag）
+    (2) Prism premium-widget（付費 AI 摘要推廣 box）
+    (3) 訂閱框「免費訂閱《中時新聞網》電子報」（DIV.subscribe-news-letter）
+    (4) 「推薦新聞」list 多條（SECTION#recommended-article.recommended-article）
+
+  根因：(3) 和 (4) 的 wrapper class 本來就含 `subscribe` / `recommended` keyword、
+  原本應該被 hideInsideArticleByKeyword 砍——但 wrapper 子樹內含 H3.title /
+  H4.title element，`hasArticleTitleAnchor` 的 TITLE_ANCHOR_TOKENS 含裸 `title`
+  短 token、被誤命中為「主文標題 anchor」、`wrapperContainsArticleAnchor`
+  返回 true、guard 把 widget 當主文 wrapper 豁免。(1) 和 (2) 是 NOISE_KEYWORD_RE
+  alternation 漏 `hash-tag` 與 `premium-widget` token。
+
+  通則修法（v0.7.97）：
+    - 拆 wrapperContainsArticleAnchor 成兩個版本：
+        * 寬鬆（既有）：含 p 主文長段落 OR title-anchor token → 用於
+          findSafeWrapperForHeading / hideInsideArticleByHeadingText 的
+          walk-up fallback（保留 newtalk `<div class="title">` 主標題場景）
+        * 嚴格（新版）`wrapperContainsMainContentP`：**只看** p 長度——專供
+          hideInsideArticleByKeyword 用。widget wrapper 內若無主文長段落，
+          guard 不豁免 → keyword rule 順利 hide。
+    - NOISE_KEYWORD_RE 加 `hash[-_]?tag|premium[-_]?(?:widget|content|trial|banner|box)`
+      alternation。
+
+  fixture 結構模擬真實 chinatimes DOM：
+    ARTICLE.article-box
+      DIV.column-wrapper.clear-fix
+        DIV.column-left
+          DIV.row
+            DIV.col-xl-11
+              DIV.article-body
+                H1 (主標題)
+                <多段主文 p>
+                DIV.article-hash-tag       ← (1) tags 列，class 含 hash-tag
+                  SPAN.hash-tag > A * 4
+          DIV.premium-widget                ← (2) Prism widget，class 含 premium-widget
+            DIV.brand-header > H3.title 「Prism intelligence」
+          DIV.subscribe-news-letter         ← (3) 訂閱框，class 含 subscribe
+            H3.title 「免費訂閱《中時新聞網》電子報」
+            P.description 「精選 5 則…」
+          SECTION#recommended-article.recommended-article  ← (4) 推薦新聞，class 含 recommended
+            UL.vertical-list
+              LI.row > DIV.col > H4.title > A * 3
+-->
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>美伊延長停火！美股道瓊收紅340點、台積電ADR漲5.26%-中時新聞網</title>
+  <meta property="og:title" content="美伊延長停火！美股道瓊收紅340點、台積電ADR漲5.26%">
+</head>
+<body>
+<div class="container">
+<div class="article-wrapper">
+  <article class="article-box">
+    <div class="column-wrapper clear-fix">
+      <div class="column-left">
+
+        <div class="row">
+          <div class="col-xl-11">
+            <div class="article-body">
+              <h1>美伊延長停火！美股道瓊收紅340點、台積電ADR漲5.26%</h1>
+              <p>CHINATIMES_MAIN_MARK 美國總統川普延長與伊朗的停火協議。美股21日強收紅。標普與那指紐約連漲天數新。道瓊漲340點。台積電ADR (TSM) 漲5.47美元或5.26%。這是首段需要夠長以讓 detector 命中主文容器的主文段落。</p>
+              <p>CHINATIMES_MAIN_MARK 美國總統川普21日宣布美元有限度創高及對伊朗停火。當別評論指出，台股見「一」勢，方力黨和結束時間打強為主。伊朗黨者經停火要害，但也指疑、美方只是準備發起下一場有關時間。報告指出，目前事物，將對關人勢勢級銘也打擊。</p>
+              <p>CHINATIMES_MAIN_MARK 道瓊工業指數上漲340.65點或0.69%。標普500指數揚升73.89點或1.05%。那斯達克指數上揚397.61點或1.64%。費城半導體指數上漲262.05點或2.72%。多項主要指數齊揚，反映市場樂觀預期能源供應將回穩。</p>
+
+              <!-- (1) tags 列：DIV.article-hash-tag → SPAN.hash-tag → A -->
+              <div class="article-hash-tag">
+                <span class="hash-tag">
+                  <a href="#">台積電</a>
+                  <a href="#">美伊停火</a>
+                  <a href="#">美股</a>
+                  <a href="#">道瓊指數</a>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- (2) Prism premium-widget：class 含 premium-widget，內含 H3.title -->
+        <div class="premium-widget">
+          <div class="brand-header">
+            <div class="brand-text">
+              <span class="brand-name">Prism</span>
+              <span class="brand-sub">intelligence</span>
+            </div>
+            <h3 class="title">用 AI 看財經，深度解析</h3>
+          </div>
+          <div class="item">
+            <span class="item-text">伊朗對停火協議的態度為何，潛藏何種風險？</span>
+          </div>
+          <div class="item">
+            <span class="item-text">台股大漲近500點，鴻海、聯發科表現亮眼的原因？</span>
+          </div>
+        </div>
+
+        <!-- (3) subscribe-news-letter：class 含 subscribe，內含 H3.title -->
+        <div class="subscribe-news-letter">
+          <div class="flex-container">
+            <div class="promote-text">
+              <div class="content-container">
+                <h3 class="title">免費訂閱《中時新聞網》電子報</h3>
+                <p class="description">精選 5 則你會關心的新聞，逢上班日發送</p>
+              </div>
+            </div>
+            <div class="form-container">
+              <input type="email" placeholder="輸入 Email">
+              <button>訂閱</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- (4) recommended-article：class 含 recommended，內含多個 H4.title -->
+        <section id="recommended-article" class="recommended-article">
+          <ul class="vertical-list list-style-none">
+            <li class="row">
+              <div class="col">
+                <h4 class="title"><a href="#">RECOMMEND_MARK 美伊談判僵局難解！美股漲跌互見 費半跌105點、那指漲50點</a></h4>
+                <span class="hour">05:39</span>
+                <span class="date">2026/04/28</span>
+              </div>
+            </li>
+            <li class="row">
+              <div class="col">
+                <h4 class="title"><a href="#">RECOMMEND_MARK 道指跌250點 費半勁揚2％ 台指期夜盤狂漲逾500點</a></h4>
+                <span class="hour">23:23</span>
+                <span class="date">2026/04/23</span>
+              </div>
+            </li>
+            <li class="row">
+              <div class="col">
+                <h4 class="title"><a href="#">RECOMMEND_MARK 美伊僵局現轉機 道指強彈400點 台積電ADR漲2％</a></h4>
+                <span class="hour">23:45</span>
+                <span class="date">2026/04/22</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+      </div>
+    </div>
+  </article>
+</div>
+</div>
+</body>
+</html>

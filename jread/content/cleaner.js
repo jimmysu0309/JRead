@@ -67,7 +67,7 @@
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related-(?:articles|news|posts|stories)|more-(?:news|stories|posts|articles)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -96,7 +96,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -251,6 +251,29 @@
       if (acc >= 300) return true;
     }
     return hasArticleTitleAnchor(wrapper, exclude);
+  }
+
+  // 嚴格版（v0.7.97 chinatimes 修法）：只看主文長段落 p，**不**檢查 title-anchor
+  // token。專供 hideInsideArticleByKeyword 用——keyword rule 已對「class 含
+  // noise keyword」做明確判定，wrapper 若是真主文必然含長 p；title-anchor
+  // 太寬（`title` / `headline` 短 token 廣泛被 widget 用：H3.title / H4.title
+  // / span.title 等）會把 widget wrapper 誤豁免。chinatimes 文末
+  // subscribe-news-letter 內 H3.title、recommended-article 內多個 H4.title、
+  // premium-widget 內 span.brand-name 旁配 H3.title——全因含 `title` token
+  // 被 hasArticleTitleAnchor 誤判主文豁免。改用 P-only 嚴格判定後，widget
+  // 內無長 p、guard 不豁免、keyword rule 順利 hide widget；newtalk
+  // `<div class="title">` 主標題場景仍由 hideInsideArticleByHeadingText 走
+  // 寬鬆的 wrapperContainsArticleAnchor（含 title-anchor）保護不受影響。
+  function wrapperContainsMainContentP(wrapper) {
+    if (!wrapper || !wrapper.querySelectorAll) return false;
+    let acc = 0;
+    for (const para of wrapper.querySelectorAll('p')) {
+      const pt = norm(para.textContent);
+      if (pt.length >= 100) return true;
+      acc += pt.length;
+      if (acc >= 300) return true;
+    }
+    return false;
   }
 
   // heading walk-up fallback：從 heading 往 articleEl 方向爬，停在「含主文長段
@@ -905,7 +928,12 @@
       // v0.7.84：strong keyword（article-sidebar / sidebar-wrapper / 等 CMS
       // 強語意 sidebar 命名）跳過 anchor guard——主文 wrapper 絕不會用這些
       // class 命名，sidebar widget 內含長描述 p 時 guard 會誤豁免，需強路徑。
-      if (!shouldHideByStrongKeyword(el) && wrapperContainsArticleAnchor(el, null)) continue;
+      // v0.7.97 chinatimes 修法：anchor guard 改用 wrapperContainsMainContentP
+      // 嚴格版（只看 p）—— 不再因「子樹含 class="title" 短 token」豁免，避免
+      // subscribe-news-letter / recommended-article / premium-widget 等 widget
+      // wrapper 內含 H3/H4.title 卻被誤當主文 wrapper 保護。twz paywall wrapper
+      // 含 47 個長 p（命中 P-only guard）仍正確豁免——通則屬性不變。
+      if (!shouldHideByStrongKeyword(el) && wrapperContainsMainContentP(el)) continue;
       hide(el, hidden);
     }
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在
@@ -1091,6 +1119,62 @@
     }
   }
 
+  // ---- 主文內：hashtag link cluster（文末 #tag 列表）---------------------
+  // 結構特徵（非站點特判）：article 內任一 P / DIV 的「子 link」中，**多數
+  // 文字以 # 開頭**且**自身 direct text 幾乎全是這些 hashtag 連結**——這是
+  // 跨站常見的文末 tags / labels widget（cna 實測：文末「#一帶一路 #中國
+  // #台灣 #伊斯蘭國...」，每個都是 `<a>#...</a>` 在無 class 的 P 內）。
+  // 對 reader mode「純閱讀」定位、tags 是 navigation chrome，不屬於主文。
+  //
+  // 通則條件（避免誤殺主文段落含個別 #hashtag 字串）：
+  //   - container 內 a 數量 >= HASHTAG_MIN_COUNT
+  //   - 其中 ≥ HASHTAG_RATIO 的 a.textContent 以 # 開頭
+  //   - container 的 direct text（不抓子孫）<= HASHTAG_NARRATIVE_TEXT_MAX
+  //     字（避免「敘述+一個 #tag link」的主文段落）
+  //   - container 內**所有非 anchor 的長文字（>= 50 字 block）** 數 = 0
+  //     （避免誤殺含主文 p 的外層 wrapper：cna 真實 DOM 中 DIV.paragraph
+  //      含 5 段長 p + articlekeywordGroup，沒此 guard 會把整個 paragraph
+  //      wrapper hide、主文消失。實測 2026-05-13 fixture sanity check 才
+  //      抓到此 bug，補上 forcing function）。
+  const HASHTAG_MIN_COUNT = 3;
+  const HASHTAG_RATIO = 0.8;
+  const HASHTAG_NARRATIVE_TEXT_MAX = 5;
+  const HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN = 50;
+  function hideInsideArticleHashtagClusters(articleEl, hidden) {
+    const candidates = articleEl.querySelectorAll('p, div');
+    for (const el of candidates) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      if (el.contains && el.contains(articleEl)) continue;
+      const anchors = el.querySelectorAll('a');
+      if (anchors.length < HASHTAG_MIN_COUNT) continue;
+      let hashtagHits = 0;
+      for (const a of anchors) {
+        if (norm(a.textContent).startsWith('#')) hashtagHits++;
+      }
+      if (hashtagHits / anchors.length < HASHTAG_RATIO) continue;
+      // direct text 扣除子孫 = 自身 textNode
+      const directText = norm(Array.from(el.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent).join(''));
+      if (directText.length > HASHTAG_NARRATIVE_TEXT_MAX) continue;
+      // 主文 guard：el 內若有任一非 anchor 的長 text block（p / h* / li /
+      // blockquote 自身 textContent >= 50 字），代表 el 是含主文的 wrapper、
+      // 非純 tag cluster。skip。
+      let hasMainBlock = false;
+      for (const block of el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
+        if (block.closest && block.closest('a')) continue;
+        if (norm(block.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
+          hasMainBlock = true;
+          break;
+        }
+      }
+      if (hasMainBlock) continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：sidebar column（高 linkDensity + 低文字量 vs 兄弟）--------
   // 結構特徵（非站點特判）：主文容器內任一 container，其 direct children
   // 中某個 child Cs 滿足：
@@ -1134,7 +1218,7 @@
   // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
 
-  function hideInsideArticleSidebarColumns(articleEl, hidden, containers) {
+  function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
     // 修法）——esmchina 的 articleEl = DIV.container 本身就是 Bootstrap row、
@@ -1167,6 +1251,24 @@
       for (const s of stats) {
         if (s === main) continue;
         if (isInPreserved(s.el)) continue;
+        // promoted title heading 白名單（v0.7.97 Stratechery 修法）：detector
+        // promote 命中的 title heading（h1-h4），若 sibling 是該 heading 或含該
+        // heading 則 skip。理由：WordPress block theme 預設 post-title 是 <a>
+        // 包整個 heading（自連結到文章），導致 linkDensity = 1 + textLen 短，
+        // 條件 A（textLen < main×10% + ld > 0.5）直接命中、主標題被當 widget
+        // sidebar 砍。與 narrowPromotedSiblings 共用同一條白名單機制，跨 rule
+        // 一致保護「promote 升級後的真標題」不被任何 cleaner rule 誤殺。
+        // promoted title heading 白名單（v0.7.97 Stratechery 修法）：detector
+        // promote 命中的 title heading（h1-h4），若 sibling 是該 heading 或含該
+        // heading 則 skip。理由：WordPress block theme 預設 post-title 是 <a>
+        // 包整個 heading（自連結到文章），導致 linkDensity = 1 + textLen 短，
+        // 條件 A（textLen < main×10% + ld > 0.5）直接命中、主標題被當 widget
+        // sidebar 砍。與 narrowPromotedSiblings 共用同一條白名單機制，跨 rule
+        // 一致保護「promote 升級後的真標題」不被任何 cleaner rule 誤殺。
+        if (promotedTitleHead) {
+          if (s.el === promotedTitleHead) continue;
+          if (s.el.contains && s.el.contains(promotedTitleHead)) continue;
+        }
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
@@ -2222,6 +2324,7 @@
       hideInsideArticleThirdPartyIframes(articleEl, hidden);
       hideInsideArticleByHeadingText(articleEl, hidden);
       hideInsideArticleByLinkText(articleEl, hidden);
+      hideInsideArticleHashtagClusters(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);
       hideInsideArticleFontTags(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);
@@ -2233,7 +2336,7 @@
       hideInsideArticleHorizontalRules(articleEl, hidden);
       hideInsideArticleNav(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
-      hideInsideArticleSidebarColumns(articleEl, hidden, containers);
+      hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能

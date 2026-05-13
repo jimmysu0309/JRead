@@ -46,7 +46,13 @@
       <div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow">
 
         <!-- post-title 是 H2（WordPress block theme 慣例）、articleEl 的 direct child -->
-        <h2 class="wp-block-post-title has-xxxx-large-font-size">2026.12: Please Listen to My Podcast</h2>
+        <!-- v0.7.97 修正：實際 stratechery DOM 中 H2 內含 <a> 包整個 title（post-title
+             自連結到本文），linkDensity = 1.0，會命中 hideInsideArticleSidebarColumns
+             條件 A（textLen < main×10% + ld > 0.5）被誤砍。修法：把 promotedTitleHead
+             傳給 sidebarColumns rule、與 narrow 共用白名單。 -->
+        <h2 class="wp-block-post-title has-xxxx-large-font-size">
+          <a href="https://stratechery.com/2026/please-listen-to-my-podcast/">2026.12: Please Listen to My Podcast</a>
+        </h2>
 
         <!-- 主文容器：heuristic 最先選中，promote 升一層到 wp-block-column -->
         <div class="entry-content wp-block-post-content has-global-padding is-layout-constrained wp-block-post-content-is-layout-constrained">

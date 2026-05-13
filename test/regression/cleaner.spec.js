@@ -2392,13 +2392,19 @@ describe('cleaner — stratechery-h2-post-title（promote+narrow h2 白名單保
       `promotedTitleHead 必須是實際 title heading；實際 text: ${result.promotedTitleHead.textContent}`);
   });
 
-  it('h2 post-title 保留（核心 bug forcing）— 主標題不再被 narrow 誤殺', () => {
+  it('h2 post-title 保留（核心 bug forcing）— 主標題不再被 narrow / sidebarColumns 誤殺', () => {
     const h2 = document.querySelector('h2.wp-block-post-title');
     assert.ok(h2, 'fixture 必須含 h2.wp-block-post-title');
     assert.notStrictEqual(h2.dataset.jreadHidden, '1',
-      'h2 主標題必須保留；forcing：narrow 的 promotedTitleHead guard 被移除 → h2 會被當 sibling chrome hide、此 assertion fail（這是 Jimmy 2026-04-24 實測回報的 baseline regression）');
+      'h2 主標題必須保留；forcing：narrow 的 promotedTitleHead guard 或 sidebarColumns 的 promotedTitleHead guard 被移除 → h2 會被誤殺、此 assertion fail（Jimmy 2026-04-24 / 2026-05-13 baseline regression）');
     assert.ok(h2.textContent.includes('Please Listen to My Podcast'),
       '主標題文字完整保留');
+    // v0.7.97 forcing：H2 內含 <a>（WordPress block theme 預設 post-title 自連結）
+    // 導致 linkDensity = 1.0，命中 hideInsideArticleSidebarColumns 條件 A
+    // （textLen < main×10% + ld > 0.5）被當 sidebar-widget 砍。
+    // 此 assertion 確保 fixture 的 H2 真的有內含 <a>（捕捉真實 DOM 結構特徵）。
+    const innerA = h2.querySelector('a');
+    assert.ok(innerA, 'fixture H2 必須含 <a>（WordPress block theme post-title 自連結結構，linkDensity=1）');
   });
 
   it('sidebar（stratechery-sidebar）仍被 narrow hide（不過度放寬）', () => {
@@ -3739,5 +3745,283 @@ describe('cleaner — gvm-comment-panel-false-positive（主文「年前」敘�
       }
       assert.ok(!inHidden, `主文段落 ${m} 不可被 hide`);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.97 cna 文末三塊雜訊通則修法（Jimmy 2026-05-13 回報 www.cna.com.tw/
+// news/aopl/202604240301.aspx）
+// 三條獨立通則 + 三組 forcing assertion：
+//   (A) hashtag cluster：articlekeywordGroup 內 15 個 <a>#tag</a> → hide
+//   (B) NOISE_KEYWORD_RE camelCase boundary：paragraph.moreArticle → hide
+//   (C) NOISE_HEADING_TEXT_RE「請繼續下滑」+ walk-up fallback：jsNextLine → hide
+// -----------------------------------------------------------------------------
+describe('cleaner — cna-article-tail（hashtag cluster + moreArticle camelCase + 請繼續下滑）', () => {
+  let window, document, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'cna-article-tail.html'), 'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window; document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => { window.__JRead.cleaner.restore(hidden); });
+
+  // ---- (A) hashtag cluster ----
+  it('articlekeywordGroup（15 個 #hashtag a）被 hide — forcing：hashtag cluster rule', () => {
+    const tags = document.querySelector('.articlekeywordGroup');
+    assert.ok(tags, 'fixture 必須含 .articlekeywordGroup');
+    assert.strictEqual(tags.dataset.jreadHidden, '1',
+      'articlekeywordGroup 必須被 hashtag cluster rule 砍——forcing：anchors>=3 + ratio>=0.8 + directText<=5');
+  });
+
+  // ---- (B) NOISE_KEYWORD_RE camelCase moreArticle ----
+  it('paragraph.moreArticle（相關新聞 list）被 hide — forcing：camelCase boundary', () => {
+    const more = document.querySelector('.paragraph.moreArticle');
+    assert.ok(more, 'fixture 必須含 .paragraph.moreArticle');
+    assert.strictEqual(more.dataset.jreadHidden, '1',
+      'paragraph.moreArticle 必須被 NOISE_KEYWORD_RE 砍；forcing：拿掉 camelCase boundary 寬鬆（more[-_]? + articles?）→ 此 assertion fail');
+  });
+
+  it('相關新聞 list 內所有 RELATED_NEWS_MARK link 都不可見', () => {
+    const links = document.querySelectorAll('a');
+    let related = 0;
+    for (const a of links) {
+      if (!a.textContent.includes('RELATED_NEWS_MARK')) continue;
+      related++;
+      let cur = a, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden, `RELATED_NEWS_MARK link "${a.textContent.slice(0, 30)}" 必須在 hidden 祖先內`);
+    }
+    assert.ok(related >= 3, `fixture 應含至少 3 個 RELATED_NEWS_MARK；實際 ${related}`);
+  });
+
+  // ---- (C) 底部「請繼續下滑」box 雙通道保護 ----
+  // 路徑 1（initial run）：jsNextLine.nextline 是 articleEl 的 direct child、
+  //   textLen 短 + linkDensity > 0.5 → 命中 hideInsideArticleSidebarColumns
+  //   條件 A。fixture 從一開始就有 jsNextLine、initial clean 命中。
+  // 路徑 2（dynamic inject 兜底）：Jimmy 2026-05-13 實機回報——Playwright probe
+  //   sidebarColumns 已砍但實機看到、推斷實機是 SPA lazy-hydrate（reader mode
+  //   啟動 / sidebarColumns 跑完後才注入 jsNextLine），sidebarColumns 不會
+  //   retroactively run、靠 checkDynamicNoise + NOISE_HEADING_TEXT_RE 兜底。
+  //   故加「請繼續下滑(閱讀)?」alternation 到 NOISE_HEADING_TEXT_RE，作為
+  //   dynamic 注入時的兜底通道。
+  it('jsNextLine.nextline（底部「請繼續下滑」box）被 hide — initial sidebarColumns 通道', () => {
+    const next = document.querySelector('.jsNextLine.nextline');
+    assert.ok(next, 'fixture 必須含 .jsNextLine.nextline');
+    let cur = next, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden,
+      'jsNextLine.nextline 必須在 hidden 祖先內');
+  });
+
+  // 路徑 2 的 forcing：直接斷言 NOISE_HEADING_TEXT_RE 字面含「請繼續下滑」
+  // phrase——拿掉 alternation → spec fail（雙通道之一壞掉的 forcing）。
+  it('NOISE_HEADING_TEXT_RE 字面必含「請繼續下滑」phrase — forcing：SPA lazy-hydrate dynamic 兜底通道', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
+    );
+    const m = src.match(/const NOISE_HEADING_TEXT_RE = (\/.*?\/i);/);
+    assert.ok(m, 'cleaner.js 必須有 NOISE_HEADING_TEXT_RE 定義');
+    assert.ok(m[1].includes('請繼續下滑'),
+      'NOISE_HEADING_TEXT_RE 必須含「請繼續下滑」phrase；forcing：SPA lazy-hydrate 場景 sidebarColumns 不會 retroactively run、靠 checkDynamicNoise + heading-text rule 兜底，拿掉此 alternation → 實機 cna 文末 jsNextLine box 仍可見');
+  });
+
+  it('NEXT_ARTICLE_MARK link 不可見', () => {
+    const link = Array.from(document.querySelectorAll('a'))
+      .find(a => a.textContent.includes('NEXT_ARTICLE_MARK'));
+    assert.ok(link, 'fixture 必須含 NEXT_ARTICLE_MARK');
+    let cur = link, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, '下一篇 CTA link 必須在 hidden 祖先內');
+  });
+
+  // ---- 主文保護 forcing ----
+  it('5 段主文（CNA_MAIN_MARK）全保留 — 通則修法不誤殺主文', () => {
+    const ps = document.querySelectorAll('p');
+    let mainCount = 0;
+    for (const p of ps) {
+      if (!p.textContent.includes('CNA_MAIN_MARK')) continue;
+      mainCount++;
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `主文段落 "${p.textContent.slice(0, 30)}..." 不可被 hide`);
+    }
+    assert.strictEqual(mainCount, 5, `fixture 應含 5 個 CNA_MAIN_MARK 主文段落；實際 ${mainCount}`);
+  });
+
+  it('H1 主標題保留', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    let cur = h1, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden, 'H1 主標題不可被 hide');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// v0.7.97 chinatimes 文末四塊雜訊修法（Jimmy 2026-05-13 回報 www.chinatimes.com/
+// realtimenews/20260423000917-260410）。四條獨立通則 forcing：
+//   (A) hash-tag tags 列 → NOISE_KEYWORD_RE 加 `hash[-_]?tag`
+//   (B) premium-widget → NOISE_KEYWORD_RE 加 `premium[-_]?(widget|content|trial|banner|box)`
+//   (C) subscribe-news-letter 與 (D) recommended-article → 既有 NOISE keyword
+//       已命中但被 `hasArticleTitleAnchor` 誤豁免，修法把 hideInsideArticleByKeyword
+//       的 anchor guard 從寬鬆版（`wrapperContainsArticleAnchor` 含 title token）
+//       改成嚴格版（`wrapperContainsMainContentP` 只看 p 長度）。
+// -----------------------------------------------------------------------------
+describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + title-anchor guard 嚴格化）', () => {
+  let window, document, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'chinatimes-article-tail.html'), 'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window; document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => { window.__JRead.cleaner.restore(hidden); });
+
+  // ---- (A) article-hash-tag tags 列 ----
+  it('article-hash-tag（tags 列）被 hide — forcing：NOISE_KEYWORD_RE 加 hash-tag alternation', () => {
+    const tags = document.querySelector('.article-hash-tag');
+    assert.ok(tags, 'fixture 必須含 .article-hash-tag');
+    let cur = tags, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'article-hash-tag 必須在 hidden 祖先內');
+  });
+
+  it('NOISE_KEYWORD_RE 字面必含 `hash[-_]?tag` alternation', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
+    );
+    const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
+    assert.ok(m && m[1].includes('hash[-_]?tag'),
+      'NOISE_KEYWORD_RE 必須含 `hash[-_]?tag` alternation；forcing：chinatimes 用 `article-hash-tag` 標 hashtag 區，去掉此 alternation → tags 列殘留');
+  });
+
+  // ---- (B) premium-widget ----
+  it('premium-widget（Prism 付費 widget）被 hide — forcing：NOISE_KEYWORD_RE 加 premium-widget alternation', () => {
+    const prism = document.querySelector('.premium-widget');
+    assert.ok(prism, 'fixture 必須含 .premium-widget');
+    let cur = prism, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'premium-widget 必須在 hidden 祖先內');
+  });
+
+  it('NOISE_KEYWORD_RE 字面必含 `premium[-_]?(?:widget|content|trial|banner|box)` alternation', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
+    );
+    const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
+    assert.ok(m && /premium\[-_\]\?\(\?:widget\|content\|trial\|banner\|box\)/.test(m[1]),
+      'NOISE_KEYWORD_RE 必須含 `premium[-_]?(?:widget|content|trial|banner|box)` alternation');
+  });
+
+  // ---- (C) subscribe-news-letter ----
+  it('subscribe-news-letter（訂閱框）被 hide — forcing：anchor guard 嚴格化（不再因 H3.title 誤豁免）', () => {
+    const sub = document.querySelector('.subscribe-news-letter');
+    assert.ok(sub, 'fixture 必須含 .subscribe-news-letter');
+    let cur = sub, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'subscribe-news-letter 必須在 hidden 祖先內；forcing：把 hideInsideArticleByKeyword 的 anchor guard 換回 wrapperContainsArticleAnchor（含 title token）→ 因 H3.title 子元素被誤豁免、此 assertion fail');
+  });
+
+  // ---- (D) recommended-article ----
+  it('recommended-article（推薦新聞 section）被 hide — forcing：anchor guard 嚴格化', () => {
+    const rec = document.querySelector('#recommended-article');
+    assert.ok(rec, 'fixture 必須含 #recommended-article');
+    let cur = rec, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'recommended-article 必須在 hidden 祖先內；forcing：anchor guard 嚴格化（內含多個 H4.title 不再豁免）');
+  });
+
+  it('所有 RECOMMEND_MARK link 不可見', () => {
+    const links = Array.from(document.querySelectorAll('a'))
+      .filter(a => a.textContent.includes('RECOMMEND_MARK'));
+    assert.ok(links.length >= 3, `fixture 應含至少 3 個 RECOMMEND_MARK；實際 ${links.length}`);
+    for (const a of links) {
+      let cur = a, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden, `RECOMMEND_MARK link "${a.textContent.slice(0, 30)}" 必須在 hidden 祖先內`);
+    }
+  });
+
+  // ---- 主文保護 forcing ----
+  it('3 段主文（CHINATIMES_MAIN_MARK）全保留 — 通則修法不誤殺主文', () => {
+    const ps = document.querySelectorAll('p');
+    let mainCount = 0;
+    for (const p of ps) {
+      if (!p.textContent.includes('CHINATIMES_MAIN_MARK')) continue;
+      mainCount++;
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `主文段落 "${p.textContent.slice(0, 30)}..." 不可被 hide`);
+    }
+    assert.strictEqual(mainCount, 3, `fixture 應含 3 個 CHINATIMES_MAIN_MARK 主文段落；實際 ${mainCount}`);
+  });
+
+  it('H1 主標題保留', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    let cur = h1, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden, 'H1 主標題不可被 hide');
   });
 });
