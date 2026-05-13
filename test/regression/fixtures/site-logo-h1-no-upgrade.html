@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Best Post Title - SiteName</title>
+  <!-- og:title 是 post 標題,不含 site name -->
+  <meta property="og:title" content="Best Post Title">
+</head>
+<body>
+  <!--
+    回歸防禦 fixture (對應 wya 修法 v0.7.92 ChinaTalk Substack 場景):
+    站點頂部有 logo H1「SiteName」(慣例位於頁面開頭),真 hero H1「Best Post Title」
+    在 article 內 (跟 og:title 同字)。
+    若 ensureArticleContainsTitleH1 只看「DOM-order 第一個 H1 不在 articleEl 內」
+    就升 LCA,會把 articleEl 升到 #main (包 logo + main-menu chrome)。
+    修法加 guard:articleEl 已含「跟 og:title match 的 heading」→ skip 不升。
+    利用 meta og:title 不被翻譯擴充改的穩定性。
+  -->
+  <div id="entry">
+    <div id="main">
+      <div class="main-menu">
+        <div class="logo-container">
+          <h1 id="wordlogo" class="logo-title">SiteName</h1>
+        </div>
+        <nav class="main-nav">
+          <a href="/">Home</a>
+          <a href="/about">About</a>
+        </nav>
+      </div>
+      <div class="single-post-container">
+        <div class="container">
+          <div class="single-post">
+            <article class="post">
+              <div class="post-header">
+                <h1 class="post-title">Best Post Title</h1>
+                <div class="post-meta">By Author / Nov 1, 2025</div>
+              </div>
+              <p>LOGO_GUARD_MARK 這是 article 內第一段, 內文要夠長讓 detector heuristic
+                能選到 article (MIN_TEXT_LEN 200 字以上)。本段測試 detector 對 article-tag
+                策略的 promoteForTitle 與 ensureArticleContainsTitleH1 是否正確處理「站點
+                logo H1 在頁面前段 + 真 hero H1 已在 article 內」這個常見 Substack 風格
+                結構。Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+                eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+              <p>Second paragraph with more content to satisfy MIN_TEXT_LEN threshold.
+                Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi
+                ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit
+                in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+              <p>Third paragraph keeps adding to article textLen so heuristic strongly
+                anchors on article tag and not the outer wrapper. Excepteur sint occaecat
+                cupidatat non proident, sunt in culpa qui officia deserunt mollit anim
+                id est laborum.</p>
+              <h2>A section heading</h2>
+              <p>Section body text. Sed ut perspiciatis unde omnis iste natus error sit
+                voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque
+                ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae
+                dicta sunt explicabo.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -583,18 +583,61 @@
     // articleEl 仍不含真 <h1>。此時要繼續跑 LCA 升 main 含真 H1。
     // Stratechery wp-block-column promotedTitleHead=H2 post-title（堅實）→ skip ✓。
     if (promotedTitleHead && /^H[1-4]$/.test(promotedTitleHead.tagName)) return null;
-    // articleEl 已含真 <h1> → 不需升（雙保險）
-    if (articleEl.querySelector('h1')) return null;
-    for (const h of document.querySelectorAll('h1')) {
+
+    function tryLcaPromote(h) {
       const lca = findLCA(articleEl, h);
-      if (!lca) continue;
-      if (lca === document.body || lca === document.documentElement) continue;
-      if (!lca.contains(articleEl)) continue;
+      if (!lca) return null;
+      if (lca === document.body || lca === document.documentElement) return null;
+      if (!lca.contains(articleEl)) return null;
       let dist = 0;
       let cur = articleEl;
       while (cur && cur !== lca && dist <= 5) { cur = cur.parentElement; dist++; }
-      if (cur !== lca) continue;
+      if (cur !== lca) return null;
       return { el: lca, titleHead: h };
+    }
+
+    // v0.7.92 wya 修法（含 ChinaTalk 防回歸）：
+    //
+    // 動機：wheresyoured.at 用 `<h1>` 做小節 heading（一頁 12 個 H1）、真 hero H1
+    // 在 articleEl 兄弟層 `.post-hero`；翻譯擴充（Shinkansen / 沉浸式翻譯）single
+    // (replace) 模式把 H1 textContent 換成中文後 promoteForTitle 的 titleMatches
+    // (og:title, h1.textContent) 失敗、不升 → articleEl 留在 ARTICLE.post 不含
+    // hero → 舊 ensureArticleContainsTitleH1 邏輯「articleEl 含任何 H1 就 skip」
+    // 過早收手 → cleaner 把 .post-hero 砍 → hero H1 不見。
+    //
+    // 修法用結構訊號「DOM-order 第一個 H1」(hero 慣例在頁面開頭) 不依賴文字比對，
+    // 但有 ChinaTalk Substack 類站點的 logo H1 假信號風險（site title H1 慣例
+    // 在頁面開頭但不是 post hero）。
+    //
+    // 觸發前 guard：articleEl 內若已含「跟 og:title / docTitle match 的 heading
+    // (h1/h2/h3/h4)」→ 視為 articleEl 已有 hero、不需升。
+    // 利用 og:title (meta 標籤) 不被翻譯擴充改動的穩定性——ChinaTalk articleEl
+    // 含 H1.post-title「Media Diet Q1 2026」matches og:title 同字 → skip ✓。
+    // wya 翻譯後 articleEl 內 12 個中文 H1 沒一個 match 英文 og:title → 走升 ✓。
+    const target = getCanonicalTitle();
+    if (target) {
+      const articleHeadings = articleEl.querySelectorAll('h1, h2, h3, h4');
+      for (const h of articleHeadings) {
+        const text = normalizeTitle(h.innerText || h.textContent || '');
+        if (text.length > TITLE_TEXT_MAX) continue;
+        if (titleMatches(target, text)) return null;
+      }
+    }
+
+    // 路徑 1：頁面 DOM-order 第一個 H1 不在 articleEl 內 → 升 LCA。
+    const firstH1 = document.querySelector('h1');
+    if (firstH1 && !articleEl.contains(firstH1)) {
+      const r = tryLcaPromote(firstH1);
+      if (r) return r;
+    }
+
+    // 路徑 2（原邏輯）：articleEl 完全不含 H1 → 遍歷所有 H1 找 valid LCA。
+    // 商周 case（articleEl=SECTION.row 不含 H1，H1.Single-title 在兄弟層）兜底。
+    if (!articleEl.querySelector('h1')) {
+      for (const h of document.querySelectorAll('h1')) {
+        const r = tryLcaPromote(h);
+        if (r) return r;
+      }
     }
     return null;
   }
