@@ -245,6 +245,10 @@ describe('styler — 骨架與可逆性', () => {
       'figure rule 必須含 width: auto !important（block 預設行為 = 100% of parent）');
     assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
       'figure rule 必須含 max-width: 100% !important');
+    // v0.7.99：BBC Culture 類站點 figure { margin: 0 } 把 figcaption 跟下方
+    // 主文壓在一起，明示 1.5em margin-bottom 強制拉開（相對字級縮放）。
+    assert.ok(/margin-bottom\s*:\s*1\.5em\s*!important/.test(body),
+      'figure rule 必須含 margin-bottom: 1.5em !important（BBC Culture 類 figcaption 跟下方主文間距修法）；forcing：拿掉此 rule → 真實 BBC 站 figcaption 緊貼下方 p');
 
     // picture 也必須有同等 rule
     const mp = css.match(/\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}|,\s*\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}/);

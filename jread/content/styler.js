@@ -342,6 +342,12 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
 [${ARTICLE_ATTR}="1"] picture {
   width: auto !important;
   max-width: 100% !important;
+  /* v0.7.99：figure 與下方主文內容拉開間距。BBC Culture 類站點原站 CSS
+     '.bOanuU' 之類 styled-components hash class 把 figure margin 砍光，
+     reader mode 下 figcaption 正下方緊貼下一段 p、視覺壓在一起。
+     1.5em 相對字級縮放（讓使用者調字級時間距同步），不寫死 px 避免
+     「字小時間距過寬 / 字大時間距太擠」。 */
+  margin-bottom: 1.5em !important;
 }
 /* 注意：aspect-ratio / padding-bottom 的 placeholder hack 破解改由
    cleaner.resetMediaPlaceholderPadding 在 runtime 處理——因為 CSS :has() 無法
