@@ -506,12 +506,18 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
     // line-height: 26px; font-family: "BBC Reith Serif" }`）——只對 article
     // 本身設 font-size 會被後代自己的 rule 截斷 inheritance、override 失效。
     // 列舉常見 body text 元素才能穿透站點 class rule 的 specificity。
+    // v0.7.120：figcaption 從 BODY_TEXT_SEL 移除——caption 是輔助說明，
+    // 原站設計普遍比 body 小（0.7-0.85em，BBC 實測 12px vs body 18px）+
+    // 較淡色，是 typography hierarchy 的關鍵差異化。把 caption 拉到跟
+    // body 同 fontSize 視覺上等同於把圖說「升格」為主文段落，破壞「圖→
+    // 說明」的階層感。Jimmy 2026-05-13 BBC Culture /article/...oxfords-
+    // medieval-library 截圖回報：fontSize 非預設時 caption 跟內文同字級。
+    // 保留 caption 原站 typography 比「跟 body 等比例縮放」更尊重原站設計。
     const BODY_TEXT_SEL =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
       `[${ARTICLE_ATTR}="1"] li,` +
       `[${ARTICLE_ATTR}="1"] blockquote,` +
-      `[${ARTICLE_ATTR}="1"] figcaption,` +
       `[${ARTICLE_ATTR}="1"] dd,` +
       `[${ARTICLE_ATTR}="1"] dt`;
     let userOverrides = '';
