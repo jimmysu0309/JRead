@@ -661,13 +661,19 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(/line-height:\s*2/.test(css));
   });
 
-  it('非預設 fontSize / fontFamily / lineHeight 的 rule 必須含 body text descendant selector（穿透 BBC / NYT 類站點 class rule）', () => {
+  it('非預設 fontSize / fontFamily / lineHeight 的 rule 必須含 body text descendant selector（穿透 BBC / NYT 類站點 class rule），但 figcaption 排除（保留原站 caption typography hierarchy）', () => {
     // BBC `.HooNV`、NYT article body class 等把 font-size / line-height /
     // font-family 鎖死在 `<p>` 身上——只對 `[data-jread-active="1"]` 自己下
     // rule 會被後代的 class rule 截斷 inheritance，override 失效。override
-    // rule 必須列舉常見 body text 元素（p / li / blockquote / figcaption /
-    // dd / dt）才能穿透站點 class specificity。heading h1-h6 不含（保留
-    // 原站標題大小分級）。
+    // rule 必須列舉常見 body text 元素（p / li / blockquote / dd / dt）才能
+    // 穿透站點 class specificity。heading h1-h6 不含（保留原站標題大小分級）。
+    //
+    // v0.7.120：figcaption 也排除——caption 原站設計普遍比 body 小（0.7-
+    // 0.85em，BBC 12px vs body 18px）+ 較淡色，是 typography hierarchy
+    // 的關鍵差異化。把 caption 拉到跟 body 同 fontSize 視覺上破壞「圖→
+    // 說明」階層感。Jimmy 2026-05-13 BBC Culture 截圖回報：fontSize 非
+    // 預設時 caption 跟內文同字級不該如此。保留 caption 原站 typography
+    // 比「跟 body 等比例縮放」更尊重原站設計。
     const { document, NS, articleEl } = setup();
     // 同時改三項：一次驗完
     NS.styler.apply(articleEl, {
@@ -691,8 +697,11 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
         `${prop} 的 selector list 必須含 [data-jread-active="1"] li`);
       assert.ok(/\[data-jread-active="1"\]\s+blockquote\b/.test(selectorList),
         `${prop} 的 selector list 必須含 [data-jread-active="1"] blockquote`);
-      assert.ok(/\[data-jread-active="1"\]\s+figcaption\b/.test(selectorList),
-        `${prop} 的 selector list 必須含 [data-jread-active="1"] figcaption`);
+      // v0.7.120 forcing function：figcaption **不得**列入 typography rule
+      // selector——保留原站 caption hierarchy（fontSize / fontFamily /
+      // lineHeight 都不覆寫 caption）。
+      assert.ok(!/\[data-jread-active="1"\]\s+figcaption\b/.test(selectorList),
+        `${prop} 的 selector list **不得**含 [data-jread-active="1"] figcaption（v0.7.120 修法：保留原站 caption typography hierarchy，避免把 caption 拉成跟 body 同字級破壞「圖→說明」階層感；BBC Culture 實測 caption 12px vs body 18px）`);
     }
 
     // userOverrides block（font-size / font-family / line-height）不得對
