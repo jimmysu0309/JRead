@@ -2297,6 +2297,7 @@
       if (mediaCs.position !== 'absolute') continue;
 
       const pCs = window.getComputedStyle(parent);
+      // Pattern A: padding-bottom hack
       // 先讀 inline string（jsdom 不解析 % → px，但原站多半走 stylesheet、
       // 少數 hack 寫在 inline）。real Chrome 下 computed 已 resolve 成 px。
       let isHack = false;
@@ -2307,14 +2308,42 @@
         const wPx = parseFloat(pCs.width) || 0;
         if (pbPx > 0 && wPx > 0 && pbPx / wPx > 0.2) isHack = true;
       }
-      if (!isHack) continue;
 
+      // Pattern B: aspect-ratio CSS property（v0.7.117 twz YT facade 修法）
+      // v0.6.14 原設計刻意不動 aspect-ratio 容器，理由「容器歸零後 absolute
+      // img 高度也歸零、視覺消失」。但 v0.7.X styler 後來加了
+      // `img { position: static !important }`——media 已被強制脫離 absolute
+      // 進入 normal flow。此時若 parent aspect-ratio 不動，會出現：
+      //   - parent 高 = wrap.width × aspect-ratio
+      //   - media 高 = wrap.width × naturalH / naturalW（styler height:auto）
+      // 兩者 ratio 不一致時（典型：YT hqdefault.jpg 4:3 配 WordPress
+      // `wp-embed-aspect-16-9` aspect-ratio 16:9）→ media 超出 parent。
+      // 通則修法：parent aspect-ratio 非 auto + absolute media 內含 → reset
+      // aspect-ratio: auto，讓父容器隨 media intrinsic 高度自然 size。
+      // styler position:static 仍會把 media 拉回 normal flow、container 高
+      // 由 media 決定（兩者 ratio 一致時與舊行為視覺無別；不一致時 fix size
+      // mismatch）。
+      const arVal = pCs.aspectRatio;
+      const hasAspectRatio = arVal && arVal !== 'auto' && arVal !== '';
+
+      if (!isHack && !hasAspectRatio) continue;
+
+      const parentProps = [];
+      const parentDecls = {};
+      if (isHack) {
+        parentProps.push('padding-bottom');
+        parentDecls['padding-bottom'] = '0';
+      }
+      if (hasAspectRatio) {
+        parentProps.push('aspect-ratio');
+        parentDecls['aspect-ratio'] = 'auto';
+      }
       resets.push({
         kind: 'placeholder-parent',
         el: parent,
-        prev: snapshotStyles(parent, ['padding-bottom'])
+        prev: snapshotStyles(parent, parentProps)
       });
-      applyImportant(parent, { 'padding-bottom': '0' });
+      applyImportant(parent, parentDecls);
 
       // 把 media 從 absolute 解放，讓它照自己的 intrinsic 尺寸流在原位
       // （styler 那邊會套 max-width:100% + height:auto）

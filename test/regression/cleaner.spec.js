@@ -2466,11 +2466,17 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
-  it('純 aspect-ratio 容器（Engadget pattern）不得被 reset，padding-hack（Substack pattern）必須被 reset', () => {
-    // v0.6.14 修法：CSS `:has(> img)` 無法區分兩種 pattern，搬到 cleaner
-    // runtime 以 padding-bottom / width 比例判斷：
-    //   A) padding-bottom: 56.25% → reset（img absolute → static）
-    //   B) aspect-ratio: 16/9 且 padding-bottom: 0 → 不動
+  it('純 aspect-ratio 容器（Engadget pattern）→ aspect-ratio 重置為 auto（v0.7.117 修法），padding-hack（Substack pattern）→ padding-bottom reset 0', () => {
+    // v0.6.14 原設計：純 aspect-ratio 容器不動（理由：absolute img 配
+    // aspect-ratio 撐高度，reset 後容器歸零、img 高度也歸零、視覺消失）。
+    // v0.7.X styler 後續加了 `img { position: static !important }`——media
+    // 已脫離 absolute。此時若 parent aspect-ratio 不動，會在 media natural
+    // ratio ≠ aspect-ratio 時造成「父容器 ratio vs media ratio mismatch」
+    // 視覺破裂（twz.com WordPress lazied-youtube facade：YT hqdefault.jpg
+    // 4:3 配 wp-embed-aspect-16-9 → media 高 432 溢出父 324）。
+    // v0.7.117 修法：parent aspect-ratio 非 auto + absolute media 內含 →
+    // reset aspect-ratio: auto，讓父容器隨 media intrinsic 高度自然 size
+    // （兩者 ratio 一致時與舊行為視覺無別、不一致時 fix size mismatch）。
     const engadgetHtml = fs.readFileSync(
       path.join(__dirname, 'fixtures', 'engadget-aspect-ratio-image.html'),
       'utf8'
@@ -2485,24 +2491,35 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     const engWrap = ew.document.querySelector('.aspect-ratio-wrapper');
     const engImg = ew.document.querySelector('.aspect-ratio-wrapper > img');
     assert.ok(engWrap && engImg);
-    // 進閱讀模式前原 inline style snapshot
-    const engWrapBefore = engWrap.getAttribute('style');
-    const engImgBefore = engImg.getAttribute('style');
+    // 進閱讀模式前原 aspect-ratio 值 snapshot（用於 restore 驗證）
+    const engWrapARBefore = engWrap.style.aspectRatio;
+    const engImgPosBefore = engImg.style.position;
 
     const engHidden = ew.__JRead.cleaner.clean(engDet.el);
     try {
-      // 核心斷言：純 aspect-ratio 容器的 padding-bottom、img 的 position 都不得被動
+      // v0.7.117 新行為：純 aspect-ratio 容器的 aspect-ratio 被 reset 為 auto !important
+      assert.strictEqual(engWrap.style.getPropertyValue('aspect-ratio'), 'auto',
+        'aspect-ratio 容器應被 reset 為 auto（v0.7.117）');
+      assert.strictEqual(engWrap.style.getPropertyPriority('aspect-ratio'), 'important',
+        'aspect-ratio: auto 必須帶 !important');
+      // padding-bottom 不動（原本就是 0、非 hack）
       assert.notStrictEqual(engWrap.style.getPropertyPriority('padding-bottom'), 'important',
-        '純 aspect-ratio 容器（padding-bottom: 0）不得被 reset');
-      assert.notStrictEqual(engImg.style.getPropertyValue('position'), 'static',
-        '純 aspect-ratio 容器內的 img 不得被改成 static（會破壞 absolute inset:0 layout）');
+        '純 aspect-ratio 容器的 padding-bottom 不應被 !important reset');
+      // img 被 reset 為 position: static（與 padding-hack 同分支處理）
+      assert.strictEqual(engImg.style.getPropertyValue('position'), 'static',
+        '純 aspect-ratio 容器內的 absolute img 應被 reset 為 static');
     } finally {
       ew.__JRead.cleaner.restore(engHidden);
     }
-    assert.strictEqual(engWrap.getAttribute('style'), engWrapBefore,
-      'restore 後 aspect-ratio 容器的 inline style 必須完全還原');
-    assert.strictEqual(engImg.getAttribute('style'), engImgBefore,
-      'restore 後 img 的 inline style 必須完全還原');
+    // 還原後 aspect-ratio 回到原值（1.7777...）、img position 回到 absolute
+    assert.strictEqual(engWrap.style.aspectRatio, engWrapARBefore,
+      'restore 後 aspect-ratio 應回到原值');
+    assert.strictEqual(engWrap.style.getPropertyPriority('aspect-ratio'), '',
+      'restore 後 aspect-ratio 不應殘留 !important');
+    assert.strictEqual(engImg.style.position, engImgPosBefore,
+      'restore 後 img position 應回到 absolute');
+    assert.strictEqual(engImg.style.getPropertyPriority('position'), '',
+      'restore 後 img position 不應殘留 !important');
 
     // --- padding-hack 這邊必須被 reset ---
     const hackHtml = fs.readFileSync(
