@@ -1759,6 +1759,112 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 flex-row container wrap 已啟動（healthsystemtracker Bootstrap `.row`）→ collapse 成 block + 子寬 auto', () => {
+    // healthsystemtracker.org 實測：`<article>` 內 `.row` 用 Bootstrap-style
+    // `display: flex; flex-direction: row` + 多個固定寬度 children（spacer
+    // 140px + content 280px + chart 467px ...）。原 design 在 1140px wide
+    // container 可一條 row 排開，reader card 720px 下 flex-wrap 啟動讓
+    // children 散落多行 → 段落被擠成 256px 窄欄。既有 collapseGridWith-
+    // HiddenCell 要 hidden sibling 才 fire；既有 collapseInnerGridFlex
+    // 只處理 grid + px column。新 collapseInnerFlexWrap 補上：flex-row
+    // + visible children top 差距 > 5px = wrap 已啟動 → collapse 為 block
+    // + 子寬度回 auto。
+    // 通則：針對任何「flex-row 多 child 在縮窄 viewport 下 wrap」的站點，
+    // 非 Bootstrap 或 healthsystemtracker 特判。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'healthsystemtracker-flex-wrap-row.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+
+    const row = w.document.getElementById('bootstrap-row');
+    const spacerLeft = w.document.getElementById('spacer-left');
+    const contentCenter = w.document.getElementById('content-center');
+    const chart1 = w.document.getElementById('chart-1');
+    const contentCenter2 = w.document.getElementById('content-center-2');
+    const spacerRight = w.document.getElementById('spacer-right');
+    const wrapperNormal = w.document.getElementById('wrapper-normal');
+    const singleRowFlex = w.document.getElementById('single-row-flex');
+    const authorName = w.document.getElementById('author-name');
+    const postDate = w.document.getElementById('post-date');
+    assert.ok(row && contentCenter && wrapperNormal && singleRowFlex,
+      'fixture 元素齊全');
+
+    // stub rect 模擬 wrap：bootstrap-row 內 5 children 散落到 3 個 top 值
+    // （flex-wrap 啟動的真實效果——row 1: left+center+chart=140+280+467=887
+    //   超過 row width 560 → chart 換到 row 2；row 2: chart 467 + center2 280
+    //   = 747 超過 560 → center2 換到 row 3 ...）
+    stubRect(row, { top: 100, width: 560, height: 400 });
+    stubRect(spacerLeft, { top: 100, width: 140, height: 50 });
+    stubRect(contentCenter, { top: 100, width: 280, height: 300 });
+    stubRect(chart1, { top: 200, width: 467, height: 300 });
+    stubRect(contentCenter2, { top: 300, width: 280, height: 300 });
+    stubRect(spacerRight, { top: 100, width: 140, height: 50 });
+    stubRect(wrapperNormal, { top: 0, width: 608, height: 100 });
+    // 單行 flex：top 全同 → 不該被誤觸 collapse
+    stubRect(singleRowFlex, { top: 600, width: 608, height: 30 });
+    stubRect(authorName, { top: 600, width: 200, height: 30 });
+    stubRect(postDate, { top: 600, width: 100, height: 30 });
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：wrap 已啟動的 bootstrap-row 被命中 collapse
+      assert.strictEqual(row.dataset.jreadCollapsed, '1',
+        'flex-row + visible children top 差距 > 5px（wrap 啟動）應命中並 collapse');
+      assert.strictEqual(row.style.getPropertyValue('display'), 'block',
+        'collapse 後 display 應為 block');
+      assert.strictEqual(row.style.getPropertyPriority('display'), 'important',
+        'display:block 應 !important（贏過原 inline display:flex）');
+      assert.strictEqual(row.style.getPropertyValue('width'), '100%',
+        'collapse 後 width 應 reset 為 100%');
+      assert.strictEqual(row.style.getPropertyValue('max-width'), 'none',
+        'collapse 後 max-width 應 reset 為 none');
+
+      // 核心斷言 2：visible children 的 flex 屬性 + 固定 width 被 force override
+      assert.strictEqual(contentCenter.style.getPropertyValue('width'), 'auto',
+        'visible child 的 width 應 force 成 auto（覆寫 inline 280px）');
+      assert.strictEqual(contentCenter.style.getPropertyPriority('width'), 'important',
+        'child width:auto 應 !important');
+      assert.strictEqual(contentCenter.style.getPropertyValue('max-width'), 'none',
+        'child max-width 應 reset 為 none');
+      assert.strictEqual(contentCenter.style.getPropertyValue('flex-grow'), '0',
+        'child flex-grow 應 reset 為 0');
+      assert.strictEqual(chart1.style.getPropertyValue('width'), 'auto',
+        'chart embed child 寬度也應 reset');
+
+      // 核心斷言 3：非 flex 的 wrapper-normal 不得被誤動
+      assert.notStrictEqual(wrapperNormal.dataset.jreadCollapsed, '1',
+        '非 flex 的 wrapper 不得被誤觸');
+
+      // 核心斷言 4：單行 flex（children top 全同）不得被誤觸 collapse
+      assert.notStrictEqual(singleRowFlex.dataset.jreadCollapsed, '1',
+        '單行 flex（visible children top 全同、無 wrap）不得被誤 collapse');
+      assert.notStrictEqual(singleRowFlex.style.getPropertyValue('display'), 'block',
+        '單行 flex 的 display 應保持原 flex（未被 force block）');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 核心斷言 5：restore 後 container 的 display / dataset 恢復、child force
+    // override 已清除
+    assert.strictEqual(row.style.getPropertyValue('display'), 'flex',
+      'restore 後原 inline display:flex 應恢復');
+    assert.strictEqual(row.dataset.jreadCollapsed, undefined,
+      'restore 後 data-jread-collapsed attribute 應被移除');
+    assert.notStrictEqual(contentCenter.style.getPropertyPriority('width'), 'important',
+      'restore 後 child 的 width !important 覆寫應清除');
+    assert.strictEqual(contentCenter.style.getPropertyValue('width'), '280px',
+      'restore 後 child 的 width 應回到 fixture 原值 280px');
+  });
+
   it('主文內 cross-origin iframe（YouTube embed）不得被 empty-spacer / action-row 規則誤殺', () => {
     // Dwarkesh (Substack) YouTube embed 實測：cross-origin iframe 的
     // textContent = ""（跨域讀不到內部 DOM）+ querySelector 讀不到內部媒體
