@@ -249,10 +249,30 @@ describe('styler — 骨架與可逆性', () => {
     // 主文壓在一起，明示 1.5em margin-bottom 強制拉開（相對字級縮放）。
     assert.ok(/margin-bottom\s*:\s*1\.5em\s*!important/.test(body),
       'figure rule 必須含 margin-bottom: 1.5em !important（BBC Culture 類 figcaption 跟下方主文間距修法）；forcing：拿掉此 rule → 真實 BBC 站 figcaption 緊貼下方 p');
+    // v0.7.100：figure 上方間距。BBC styled-components figure margin: 0 對稱
+    // 問題——上一段 p 結尾跟 figure 頂端緊貼，加 margin-top: 1.5em 強制拉開。
+    assert.ok(/margin-top\s*:\s*1\.5em\s*!important/.test(body),
+      'figure rule 必須含 margin-top: 1.5em !important（BBC figure 與前段 p 間距）；forcing：拿掉 → 真實 BBC 站 p 結尾緊貼下方 figure');
 
     // picture 也必須有同等 rule
     const mp = css.match(/\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}|,\s*\[data-jread-active="1"\]\s+picture\s*\{([^}]*)\}/);
     assert.ok(/picture/.test(css), 'CSS 必須包含 picture selector');
+  });
+
+  // v0.7.100：BBC Culture 類站點 styled-components 把 h1-h6 margin 全砍光，
+  // p → h2 → p 緊貼難辨章節。明示 h1-h6 上下 margin（相對字級縮放）。
+  it('h1-h6 有強制 margin-top: 1.5em + margin-bottom: 0.5em rule（BBC 章節分隔修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 必須存在一個 rule selector list 涵蓋 h1-h6（可全寫或共用）
+    const m = css.match(/\[data-jread-active="1"\]\s+h1[\s\S]*?\[data-jread-active="1"\]\s+h6\s*\{([^}]*)\}/);
+    assert.ok(m, 'h1-h6 必須有共用 rule block（v0.7.100 BBC 章節間距修法）');
+    const body = m[1];
+    assert.ok(/margin-top\s*:\s*1\.5em\s*!important/.test(body),
+      'h1-h6 rule 必須含 margin-top: 1.5em !important；forcing：拿掉 → BBC 標題緊貼上一段 p');
+    assert.ok(/margin-bottom\s*:\s*0\.5em\s*!important/.test(body),
+      'h1-h6 rule 必須含 margin-bottom: 0.5em !important；forcing：拿掉 → BBC 標題緊貼下一段 p');
   });
 
   it('apply() 把主文內第一個 h1/h2/h3/h4/p 的 margin-top 設為 0 !important（消除頂端留白）', () => {
@@ -659,9 +679,19 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
         `${prop} 的 selector list 必須含 [data-jread-active="1"] figcaption`);
     }
 
-    // 不得對 h1-h6 下 rule（保留原站標題分級）
-    assert.ok(!/\[data-jread-active="1"\]\s+h[1-6]\b/.test(css),
-      'override rule 不得包含 h1-h6 descendant（保留原站標題大小分級）');
+    // userOverrides block（font-size / font-family / line-height）不得對
+    // h1-h6 下 rule——保留原站標題大小分級。v0.7.100 後 styler 的 baseline
+    // h1-h6 rule 只含 margin 不含 typography property，所以 css 整體可能
+    // 包含 h1-h6 selector。改為精準檢查：含 font-size/font-family/line-height
+    // 的 rule block 才禁止 h1-h6 descendant。
+    for (const prop of ['font-size', 'font-family', 'line-height']) {
+      // 找該 prop 所在 rule block 的 selector list
+      const reBlock = new RegExp('([^}{]*)\\{[^}]*' + prop + '\\s*:[^;}]*[;}]', 'i');
+      const mBlock = css.match(reBlock);
+      if (!mBlock) continue;
+      assert.ok(!/\[data-jread-active="1"\]\s+h[1-6]\b/.test(mBlock[1]),
+        `含 ${prop} 的 rule block selector list 不得含 h1-h6（保留原站標題大小分級）`);
+    }
   });
 
   it('fontSize = 0（Auto / 原站字級）→ CSS 不注入 font-size 也不注入 line-height（每站保留原字級與行高）', () => {
@@ -768,15 +798,30 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(/max-width:\s*880px/.test(css880));
   });
 
-  it('CSS 不得套 heading / p / ul / ol / li / blockquote / a 的排版 rule', () => {
-    // v0.6.0 設計：這些 rule 在 v0.5.x 過度激進、互相打架，全部移除。
-    // 原站的 heading margin / list style / link color / blockquote border 等
-    // 由站點 CSS 自己生效。
+  it('CSS 不得套 heading / p / ul / ol / li / blockquote / a 的「排版 typography」rule（font-size / color / line-height / font-family）', () => {
+    // v0.6.0 設計：v0.5.x 對 heading / p 等下了 font-size / line-height /
+    // color / font-family 排版 rule，在多站打架，baseline 全部移除——
+    // typography 由原站 CSS 自己生效。
+    // v0.7.100：放寬限制——允許 h1-h6 / figure 加 margin/padding（解 BBC
+    // styled-components margin: 0 緊貼問題），但仍禁 typography 屬性。
+    // p / ul / ol / li / blockquote / a 維持完全不下 rule（保留原站排版）。
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(!/\]\s*h1\s*[,{]/.test(css), '不得對 h1 下 rule');
-    assert.ok(!/\]\s*h2\s*[,{]/.test(css), '不得對 h2 下 rule');
+
+    // h1-h6 可下 margin/padding rule，但禁 typography 屬性。從 css 抓含
+    // h1-h6 selector 的 rule block，逐一驗 body 不含 typography property。
+    const TYPO_PROPS = ['font-size', 'color', 'line-height', 'font-family', 'font-weight', 'font-style'];
+    const headingBlocks = css.match(/\[data-jread-active="1"\]\s+h[1-6][^{]*\{[^}]*\}/g) || [];
+    for (const block of headingBlocks) {
+      for (const prop of TYPO_PROPS) {
+        const re = new RegExp('(?:^|[;{\\s])' + prop + '\\s*:', 'i');
+        assert.ok(!re.test(block),
+          `h1-h6 rule 不得含 ${prop}（保留原站標題分級）；違反 block: ${block.slice(0, 120)}`);
+      }
+    }
+
+    // p / ul / ol / li / blockquote / a 完全不下 rule（baseline 不動）
     assert.ok(!/\]\s*p\s*\{/.test(css), '不得對 p 下 rule');
     assert.ok(!/\]\s*ul\s*[,{]/.test(css), '不得對 ul 下 rule');
     assert.ok(!/\]\s*ol\s*[,{]/.test(css), '不得對 ol 下 rule');

@@ -346,8 +346,26 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
      '.bOanuU' 之類 styled-components hash class 把 figure margin 砍光，
      reader mode 下 figcaption 正下方緊貼下一段 p、視覺壓在一起。
      1.5em 相對字級縮放（讓使用者調字級時間距同步），不寫死 px 避免
-     「字小時間距過寬 / 字大時間距太擠」。 */
+     「字小時間距過寬 / 字大時間距太擠」。 v0.7.100 加 margin-top 同樣
+     1.5em，解 figure 上方緊貼前一段 p 的對稱問題。 */
+  margin-top: 1.5em !important;
   margin-bottom: 1.5em !important;
+}
+/* v0.7.100：h1-h6 上下 margin。BBC Culture 類站點原站 CSS 把 heading 的
+   margin 全砍光（styled-components hash class 預設 margin: 0），reader mode 下
+   段落 p 結束 → h2 標題 → 下一段 p 三者直接接壤、無視覺斷層、難辨章節。
+   通則：h2-h6 加大 margin-top（章節分隔）+ 較小 margin-bottom（標題與其
+   描述 / 首段較緊密）。h1 主標題已由 first-child rule 強制 margin-top: 0
+   不衝突，這條對 h1 加 margin-top 也不傷（first-child rule specificity 較高）。
+   1.5em / 0.5em 用相對字級單位，使用者調字級時間距同步縮放。 */
+[${ARTICLE_ATTR}="1"] h1,
+[${ARTICLE_ATTR}="1"] h2,
+[${ARTICLE_ATTR}="1"] h3,
+[${ARTICLE_ATTR}="1"] h4,
+[${ARTICLE_ATTR}="1"] h5,
+[${ARTICLE_ATTR}="1"] h6 {
+  margin-top: 1.5em !important;
+  margin-bottom: 0.5em !important;
 }
 /* 注意：aspect-ratio / padding-bottom 的 placeholder hack 破解改由
    cleaner.resetMediaPlaceholderPadding 在 runtime 處理——因為 CSS :has() 無法
