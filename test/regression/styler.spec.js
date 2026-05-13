@@ -1053,3 +1053,91 @@ describe('styler — v0.7.91 SPACE 捲動', () => {
     assert.strictEqual(calls.length, 0);
   });
 });
+
+// =============================================================================
+// v0.7.93 substack imageRow flex gallery 修法
+// 對應 fixture: substack-imagerow-flex-gallery.html
+// Bug 來源 (2026-05-13 Jimmy 回報 synapseching.substack.com /p/17):
+//   imageRow flex 子預設 align-items: stretch 把 picture 拉到固定 height 230,
+//   IMG natural ratio 295 → IMG 從 imageRow 底部溢出 65px 蓋住下方段落文字。
+// 修法 runtime: styler.apply() 掃 articleEl 內所有 flex/grid 容器 (含直接
+//   picture/img/figure 子) 強制 display: block + height: auto + min-height: 0,
+//   reader card 單欄閱讀情境下並列圖改成垂直堆疊,圖不再溢出。
+// =============================================================================
+describe('styler — v0.7.93 substack imageRow flex gallery', () => {
+  const SUBSTACK_FIXTURE = path.join(__dirname, 'fixtures', 'substack-imagerow-flex-gallery.html');
+
+  function setupSubstack() {
+    const env = loadFixtureWithScripts({
+      fixturePath: SUBSTACK_FIXTURE,
+      scripts: ['detector', 'styler']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected, 'detector 必須命中 substack 主文');
+    return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
+  }
+
+  it('apply() 把 .imageRow flex container display 改成 block (inline style + important)', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const imageRow = document.querySelector('.imageRow-_Y6x8T');
+    assert.ok(imageRow, 'fixture 必須含 imageRow');
+    const inlineDisplay = imageRow.style.getPropertyValue('display');
+    const inlinePriority = imageRow.style.getPropertyPriority('display');
+    assert.strictEqual(inlineDisplay, 'block',
+      `imageRow display 應改為 block, 實際="${inlineDisplay}"`);
+    assert.strictEqual(inlinePriority, 'important',
+      `imageRow display 必須有 !important, 否則打不過原站 stylesheet`);
+  });
+
+  it('apply() 把 .imageRow 的 height 改為 auto + min-height: 0 (inline !important)', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const imageRow = document.querySelector('.imageRow-_Y6x8T');
+    assert.strictEqual(imageRow.style.getPropertyValue('height'), 'auto',
+      'imageRow height 應為 auto');
+    assert.strictEqual(imageRow.style.getPropertyPriority('height'), 'important',
+      'imageRow height 必須 !important');
+    assert.strictEqual(imageRow.style.getPropertyValue('min-height'), '0',
+      'imageRow min-height 應為 0');
+  });
+
+  it('restore() 後 .imageRow display/height/min-height 還原為原值', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    const imageRow = document.querySelector('.imageRow-_Y6x8T');
+    const beforeDisplay = imageRow.style.getPropertyValue('display');
+    const beforeHeight = imageRow.style.getPropertyValue('height');
+    const beforeMinHeight = imageRow.style.getPropertyValue('min-height');
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    NS.styler.restore(articleEl, snap);
+    assert.strictEqual(imageRow.style.getPropertyValue('display'), beforeDisplay,
+      `restore 後 inline display 必須還原 (原="${beforeDisplay}")`);
+    assert.strictEqual(imageRow.style.getPropertyValue('height'), beforeHeight,
+      `restore 後 inline height 必須還原 (原="${beforeHeight}")`);
+    assert.strictEqual(imageRow.style.getPropertyValue('min-height'), beforeMinHeight,
+      `restore 後 inline min-height 必須還原 (原="${beforeMinHeight}")`);
+  });
+
+  it('snapshot.galleryFlex 必須記錄被處理的 flex/grid 容器 (forcing function)', () => {
+    const { NS, articleEl } = setupSubstack();
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    assert.ok(Array.isArray(snap.galleryFlex),
+      'snapshot 必須含 galleryFlex 陣列');
+    assert.ok(snap.galleryFlex.length >= 1,
+      `galleryFlex 應至少含一個 imageRow,實際 length=${snap.galleryFlex.length}`);
+  });
+
+  it('非含媒體 flex 容器不被改動 (避免誤殺 layout)', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    // 注入一個 flex container 但不含 picture/img/figure 子, 應不被改動
+    const flexWithoutMedia = document.createElement('div');
+    flexWithoutMedia.style.display = 'flex';
+    flexWithoutMedia.className = 'flex-without-media';
+    flexWithoutMedia.innerHTML = '<span>A</span><span>B</span>';
+    articleEl.appendChild(flexWithoutMedia);
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    // styler 後 inline display 應仍為 flex (沒被 runtime 改 block)
+    assert.strictEqual(flexWithoutMedia.style.getPropertyValue('display'), 'flex',
+      '非含媒體 flex 不該被 runtime 改成 block');
+  });
+});
