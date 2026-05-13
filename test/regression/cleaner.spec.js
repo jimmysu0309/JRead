@@ -1848,24 +1848,22 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       assert.strictEqual(chart1.style.getPropertyValue('width'), 'auto',
         'chart embed child 寬度也應 reset');
 
-      // 核心斷言 2.5（v0.7.107）：absolute child 也被拉回 static + width auto
-      // ——避免 healthsystemtracker `.entry-content-right` "About this site"
-      // 側欄塌成 24px 縮窄縱向 overlay 文章末尾
-      assert.strictEqual(absoluteSidebar.style.getPropertyValue('position'), 'static',
-        'absolute child 應 force 成 position: static（拉回 block flow，不再 overlay）');
-      assert.strictEqual(absoluteSidebar.style.getPropertyPriority('position'), 'important',
-        'position:static 應 !important');
-      assert.strictEqual(absoluteSidebar.style.getPropertyValue('width'), 'auto',
-        'absolute child 的 width 也應 reset 為 auto');
+      // 核心斷言 2.5（v0.7.111 後）：v0.7.111 `hideInsideArticleAbsoluteOverlays`
+      // 直接 hide 整個 absolute overlay sidebar 而非 reset to static——更乾淨。
+      // 原 v0.7.107/108 spec 期望 position: static + width: auto，
+      // 但「直接 hide」更符合 reader mode「無關 overlay 就移除」原則。
+      // collapseInnerFlexWrap 的 absolute reset 邏輯仍保留作 fallback
+      //（對含長 <p> 受 v0.7.111 保護而沒被 hide 的 absolute 元素 reset 定位）。
+      assert.strictEqual(absoluteSidebar.dataset.jreadHidden, '1',
+        'absolute overlay sidebar 應被 v0.7.111 hideInsideArticleAbsoluteOverlays 整段 hide');
 
-      // 核心斷言 2.6（v0.7.108）：absolute 後代（深層巢狀 absolute）也被拉回 static
-      // ——避免 healthsystemtracker `.about` 在 `.entry-content-right` 內部仍
-      // overlay 主文。v0.7.107 只處理 direct child，descendants 仍 absolute
-      // 並 anchor 到外層 relative ancestor 繼續疊字。
-      assert.strictEqual(absoluteDescendant.style.getPropertyValue('position'), 'static',
-        'absolute 後代（非 direct child）也應 force 成 position: static');
-      assert.strictEqual(absoluteDescendant.style.getPropertyPriority('position'), 'important',
-        'descendant position:static 應 !important');
+      // 核心斷言 2.6（v0.7.111 後）：absolute 後代也被 v0.7.111 hide。
+      // descendant 是其 absolute parent 的後代，parent 已被 hide → descendant
+      // 視覺上不可見。dataset.jreadHidden 也應為 1（v0.7.111 規則 walk
+      // querySelectorAll('*') 命中所有 absolute 元素，含 ancestor 已 hide
+      // 者也會自己標 hidden）。
+      assert.strictEqual(absoluteDescendant.dataset.jreadHidden, '1',
+        'absolute 後代也應被 v0.7.111 整段 hide');
 
       // 核心斷言 3：非 flex 的 wrapper-normal 不得被誤動
       assert.notStrictEqual(wrapperNormal.dataset.jreadCollapsed, '1',
@@ -1915,12 +1913,15 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     const w = dom.window;
 
     const absoluteAside = w.document.getElementById('absolute-aside');
+    const absoluteDivOverlay = w.document.getElementById('absolute-div-overlay');
+    const absoluteWithLongP = w.document.getElementById('absolute-with-long-p');
     const storySection = w.document.getElementById('story-section');
     const sectionSidebar = w.document.getElementById('section-sidebar');
     const sectionBody = w.document.getElementById('section-body');
     const storySectionD2 = w.document.getElementById('story-section-d2');
     const sectionBodyD2 = w.document.getElementById('section-body-d2');
-    assert.ok(absoluteAside && storySection && sectionSidebar && sectionBody &&
+    assert.ok(absoluteAside && absoluteDivOverlay && absoluteWithLongP &&
+      storySection && sectionSidebar && sectionBody &&
       storySectionD2 && sectionBodyD2, 'fixture 元素齊全');
 
     // D2 stub rect：jsdom 無 layout engine 必須 stub 才能驗 single-child + rect
@@ -1939,7 +1940,16 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     try {
       // 核心斷言 1：absolute aside 被 hide
       assert.strictEqual(absoluteAside.dataset.jreadHidden, '1',
-        'position: absolute 的 <aside> overlay 應被 hideInsideArticleAbsoluteAsides 整段 hide');
+        'position: absolute 的 <aside> overlay 應被 hideInsideArticleAbsoluteOverlays 整段 hide');
+
+      // 核心斷言 1.5（v0.7.111）：absolute <div> overlay 也被 hide（規則放寬不限 <aside> tag）
+      assert.strictEqual(absoluteDivOverlay.dataset.jreadHidden, '1',
+        'position: absolute 的 <div> overlay（TBIJ author bios sidebar）也應被 hide');
+
+      // 核心斷言 1.6（v0.7.111 protection）：含 > 500 chars <p> 的 absolute 容器
+      // 視為主文段落、不 hide（避免誤殺意外 absolute 的主文 wrapper）
+      assert.notStrictEqual(absoluteWithLongP.dataset.jreadHidden, '1',
+        'position: absolute 但含 > 500 chars 段落的容器視為主文，不 hide');
 
       // 核心斷言 2：float multi-col container 被 condition D 命中 collapse
       assert.strictEqual(storySection.dataset.jreadCollapsed, '1',
