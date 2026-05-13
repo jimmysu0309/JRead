@@ -1458,6 +1458,51 @@
     hidden.__absoluteOverlayParentHeight = parentHeightResets;
   }
 
+  // ---- 主文內：negative z-index 後代 reset -------------------------------
+  //
+  // 場景：vocus.cc 文章 reader mode 下 H1 標題不可見——標題本身 color
+  // 正常、opacity 1、visibility visible，但其 ancestor `<header>` 設
+  // `z-index: -1`。此 ancestor 配上父 DIV 有 opaque background
+  // (`rgb(255, 255, 255)`) → header 與其所有後代（含 H1）渲染 in 父
+  // 的 stacking context 底層、被父 background 遮住 → 視覺消失。
+  //
+  // 通則：reader mode 是 single-column flow、後代不需要負 z-index
+  // 創造 "behind parent" 效果（原 design 常用此手法做 hero overlay 視差
+  // 或 decorative 背景元素）。把任何 negative z-index 的 articleEl 後代
+  // 強制 `z-index: auto !important`，恢復正常 stacking。
+  //
+  // 邊界保護：
+  // - 只重置 negative z-index（< 0）；positive 與 auto 保留（合法絕對
+  //   定位用 z-index 控制 overlay 仍需保留）
+  // - PRESERVE_SEL 內 skip（figure 內絕對定位 caption 等可能需要 z-index）
+  // - articleEl 自身不算
+  function resetNegativeZIndex(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const resets = [];
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs) continue;
+      const zi = parseInt(cs.zIndex, 10);
+      if (isNaN(zi) || zi >= 0) continue;
+      resets.push({ el, prev: snapshotStyles(el, ['z-index']) });
+      applyImportant(el, { 'z-index': 'auto' });
+    }
+    hidden.__negativeZIndexResets = resets;
+  }
+
+  function restoreNegativeZIndex(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__negativeZIndexResets;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+    }
+  }
+
   function restoreAbsoluteOverlayConverted(hiddenEls) {
     const arr = hiddenEls && hiddenEls.__absoluteOverlayParentHeight;
     if (!Array.isArray(arr)) return;
@@ -2795,6 +2840,7 @@
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
       hideInsideArticleAbsoluteOverlays(articleEl, hidden);
+      resetNegativeZIndex(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
@@ -2838,6 +2884,7 @@
       restoreMediaContainerBlock(hiddenEls);
       restoreDescendantBoxShadow(hiddenEls);
       restoreMediaResets(hiddenEls);
+      restoreNegativeZIndex(hiddenEls);
       restoreAbsoluteOverlayConverted(hiddenEls);
       restoreInnerFlexWrap(hiddenEls);
       restoreInnerGridFlex(hiddenEls);

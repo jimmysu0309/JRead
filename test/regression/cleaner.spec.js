@@ -692,6 +692,71 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     }
   });
 
+  it('主文內 negative z-index 後代 reset 為 auto（vocus.cc h1 被 ancestor z-index:-1 推到父背景後方視覺消失修法）', () => {
+    // vocus.cc 文章 reader mode H1 不可見：H1 本身 color/opacity/visibility
+    // 正常，但 ancestor `<header>` 設 `z-index: -1` 配上父 DIV 有 opaque
+    // background → header 與其後代（含 H1）渲染 in 父的 stacking context
+    // 底層、被父 background 遮住 → 視覺消失。
+    // v0.7.114 修法：resetNegativeZIndex 對 articleEl 內任何 computed
+    // z-index < 0 後代強制 z-index: auto !important。
+    const html = `<!DOCTYPE html><html><head>
+      <title>vocus negative z-index</title>
+      <meta property="og:title" content="vocus test">
+    </head><body>
+      <article id="art">
+        <header id="hidden-header" style="z-index: -1; position: relative;">
+          <h1>《Surrender：40首歌，一個故事》：U2主唱波諾的人生之歌，歌如人生</h1>
+        </header>
+        <div id="positive-z" style="z-index: 5; position: relative;">
+          <p>VOCUS_POSITIVE_MARK Positive z-index should be preserved.</p>
+        </div>
+        <div id="zero-z" style="z-index: 0; position: relative;">
+          <p>VOCUS_ZERO_MARK Zero z-index should also be preserved.</p>
+        </div>
+        <p>VOCUS_BODY_MARK Main body paragraph padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+      </article>
+    </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中');
+    const articleEl = detected.el;
+
+    const hiddenHeader = w.document.getElementById('hidden-header');
+    const positiveZ = w.document.getElementById('positive-z');
+    const zeroZ = w.document.getElementById('zero-z');
+    assert.ok(hiddenHeader && positiveZ && zeroZ, 'fixture 元素齊全');
+
+    const localHidden = w.__JRead.cleaner.clean(articleEl);
+    try {
+      // 核心斷言 1：negative z-index 後代被 reset 為 auto !important
+      assert.strictEqual(hiddenHeader.style.getPropertyValue('z-index'), 'auto',
+        'negative z-index 後代應被 force 成 z-index: auto');
+      assert.strictEqual(hiddenHeader.style.getPropertyPriority('z-index'), 'important',
+        'z-index: auto 應 !important（贏過 inline z-index: -1）');
+
+      // 核心斷言 2：positive / zero z-index 不被誤動
+      assert.notStrictEqual(positiveZ.style.getPropertyPriority('z-index'), 'important',
+        'positive z-index 不可被誤 reset');
+      assert.notStrictEqual(zeroZ.style.getPropertyPriority('z-index'), 'important',
+        'zero z-index 不可被誤 reset');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 核心斷言 3：restore 後原 inline z-index: -1 還原
+    assert.strictEqual(hiddenHeader.style.getPropertyValue('z-index'), '-1',
+      'restore 後 z-index 應回到 fixture 原值 -1');
+  });
+
   it('articleEl 自身被 collapseGridWithHiddenCell 命中 collapse 時，width/max-width/margin reset **不可**套到 articleEl（styler 居中需要）', () => {
     // v0.7.113 forcing function——esmchina /news/14165.html 實機 bug：
     // articleEl 是 `<div class="container">`（Bootstrap row + col-md-9 +
