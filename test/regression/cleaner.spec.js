@@ -4164,3 +4164,59 @@ describe('cleaner — bbc-figure-credit-overlay（figure 內 absolute SPAN credi
       'clean() 必須呼叫 hideInsideArticleAbsoluteCreditOverlays——forcing：呼叫鏈被刪 → 此 spec fail');
   });
 });
+
+// v0.7.103：BBC byline (date+author) collapsed grid descendants 殘留 width/margin
+// 修法。難以用 jsdom 行為層測（jsdom 無 layout / computed margin auto resolve），
+// 改用 source-level forcing assertion 驗修法存在 + 通則屬性。
+describe('cleaner — collapseInnerGridFlex descendants 殘留 auto-center reset (v0.7.103)', () => {
+  const fs = require('fs');
+  const src = fs.readFileSync(
+    require('path').join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
+  );
+
+  it('cleaner.js 必須定義 INNER_GRID_DESC_DECLS（descendants reset 宣告表）', () => {
+    assert.ok(src.includes('INNER_GRID_DESC_DECLS'),
+      'cleaner.js 必須含 INNER_GRID_DESC_DECLS——forcing：常數被誤刪 → BBC byline 修法失效');
+  });
+
+  it('INNER_GRID_DESC_DECLS 必須含 width:auto + margin-left/right:0 + grid-area:auto', () => {
+    // 對 styled-components fixed-width child + margin auto auto-center 的反制
+    const m = src.match(/const\s+INNER_GRID_DESC_DECLS\s*=\s*\{([\s\S]*?)\}/);
+    assert.ok(m, '能找到 INNER_GRID_DESC_DECLS 定義');
+    const body = m[1];
+    assert.match(body, /['"]width['"]\s*:\s*['"]auto['"]/, '必須含 width: auto');
+    assert.match(body, /['"]margin-left['"]\s*:\s*['"]0['"]/, '必須含 margin-left: 0');
+    assert.match(body, /['"]margin-right['"]\s*:\s*['"]0['"]/, '必須含 margin-right: 0');
+    assert.match(body, /['"]grid-area['"]\s*:\s*['"]auto['"]/, '必須含 grid-area: auto');
+  });
+
+  it('collapseInnerGridFlex 必須對 descendants 跑 symmetric-margin 條件式 reset', () => {
+    // forcing：v0.7.103 第一版「全 descendants reset」造成 BBC 外層 grid 套娃
+    // 連鎖塌陷的回歸。改用 symmetric margin (margin-left ≈ margin-right > 4px)
+    // 條件精準命中 auto-center 殘留，避免誤殺非 auto-center descendants。
+    assert.ok(src.includes('SYMMETRIC_MARGIN_MIN'),
+      'cleaner.js 必須有 SYMMETRIC_MARGIN_MIN 常數（auto-center 結構特徵的最小 margin 門檻）');
+    // collapseInnerGridFlex 內必須有「比較 margin-left 與 margin-right」的邏輯
+    const fnStart = src.search(/function\s+collapseInnerGridFlex\s*\(/);
+    assert.ok(fnStart >= 0, '能找到 collapseInnerGridFlex 函式');
+    const fnRegion = src.slice(fnStart, fnStart + 3000);
+    assert.match(fnRegion, /marginLeft/, 'collapseInnerGridFlex 必須讀 computed marginLeft');
+    assert.match(fnRegion, /marginRight/, 'collapseInnerGridFlex 必須讀 computed marginRight');
+    assert.match(fnRegion, /Math\.abs\s*\(\s*ml\s*-\s*mr\s*\)/, 'collapseInnerGridFlex 必須驗 |ml - mr| ≤ tolerance（symmetric margin 比對）');
+  });
+
+  it('collapseInnerGridFlex 必須排除 PRESERVE_SEL + 媒體 tag（避免誤殺）', () => {
+    const fnStart = src.search(/function\s+collapseInnerGridFlex\s*\(/);
+    const fnRegion = src.slice(fnStart, fnStart + 3000);
+    assert.match(fnRegion, /isInPreserved\(desc\)/, 'descendant 迴圈必須跑 isInPreserved guard');
+    assert.match(fnRegion, /['"]IMG['"]/, '必須排除 IMG');
+    assert.match(fnRegion, /['"]PICTURE['"]/, '必須排除 PICTURE');
+    assert.match(fnRegion, /['"]VIDEO['"]/, '必須排除 VIDEO');
+    assert.match(fnRegion, /['"]FIGURE['"]/, '必須排除 FIGURE');
+  });
+
+  it('restoreInnerGridFlex 必須還原 __innerGridFlexDesc 軌道（reader mode 退出時清乾淨）', () => {
+    assert.ok(src.includes('__innerGridFlexDesc'),
+      'restoreInnerGridFlex 必須走 __innerGridFlexDesc 軌道——forcing：退出 reader mode 時 descendant inline 樣式必還原');
+  });
+});
