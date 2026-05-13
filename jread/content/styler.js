@@ -133,8 +133,18 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   border: 0 !important;
 }
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
-   / line-height / color——保留原站字體與排版。 */
-[${ARTICLE_ATTR}="1"] {
+   / line-height / color——保留原站字體與排版。
+   v0.7.121：selector 加 'html ' 前綴提升 specificity 從 (0,1,0) → (0,1,1)，
+   贏過原站任何單 class rule（例：cn.nytimes '.article-content { max-width:
+   1040px !important }'）。同 specificity + 同 !important 下，原站 stylesheet
+   依 cascade order 後注入勝出、吃掉 jread max-width: 720px → articleEl 撐
+   寬到 1040px 跨過 Bootstrap lg breakpoint 992px、'.col-lg-5' 類觸發 50%
+   寬度、partial 內主文段落被擠到只佔 reader card 一半（cn.nytimes
+   /opinion/...apple-tim-cook-outsourcing-china 實測 articleEl computed
+   maxWidth=none 證實）。html element 是 root selector、永遠 match、加成
+   specificity 不誤殺其他 selector 邏輯。其他 [data-jread-active="1"] X
+   selector 因含 X tag/class 已有 specificity (0,1,1+) 夠強、不需動。 */
+html [${ARTICLE_ATTR}="1"] {
   box-sizing: border-box !important;
   max-width: ${contentWidth}px !important;
   width: auto !important;
