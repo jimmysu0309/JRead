@@ -577,6 +577,20 @@
           }
           if (hasStandaloneMedia) continue;
         }
+        // byline 分支（v0.7.96 udn 主筆室文章修法）：sibling 短小且含 `<time>`
+        // 元素 → 視為「文首 byline / 作者 / 日期 meta」保留。
+        // `<time>` 是 HTML5 語意 element 專指日期/時間，跨站通用；短文字限制
+        // （textLen <= 200）排除「相關新聞」「最新消息」這類大塊 chrome 雖也含
+        // 多個 time 但本身是 noise list 的場景——udn 實測 byline 37 chars vs
+        // more-news 490 chars，門檻有充裕空間。
+        // 場景：udn /news/story/124844/9460037（主筆室評論文）detector heuristic
+        // 選 ARTICLE.article-content + promote 升到 SECTION.article-content__wrapper，
+        // wrapper 的 children 含 DIV.article-content__subinfo（2026-04-23 15:07
+        // 聯合報／ 主筆室 + tags + 關閉按鈕），舊 narrow 把它當 chrome 砍。
+        if (sib.querySelector && sib.querySelector('time')) {
+          const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
+          if (sibText.length <= 200) continue;
+        }
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);
