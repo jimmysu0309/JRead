@@ -1784,11 +1784,12 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     const chart1 = w.document.getElementById('chart-1');
     const contentCenter2 = w.document.getElementById('content-center-2');
     const spacerRight = w.document.getElementById('spacer-right');
+    const absoluteSidebar = w.document.getElementById('absolute-sidebar');
     const wrapperNormal = w.document.getElementById('wrapper-normal');
     const singleRowFlex = w.document.getElementById('single-row-flex');
     const authorName = w.document.getElementById('author-name');
     const postDate = w.document.getElementById('post-date');
-    assert.ok(row && contentCenter && wrapperNormal && singleRowFlex,
+    assert.ok(row && contentCenter && absoluteSidebar && wrapperNormal && singleRowFlex,
       'fixture 元素齊全');
 
     // stub rect 模擬 wrap：bootstrap-row 內 5 children 散落到 3 個 top 值
@@ -1801,6 +1802,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     stubRect(chart1, { top: 200, width: 467, height: 300 });
     stubRect(contentCenter2, { top: 300, width: 280, height: 300 });
     stubRect(spacerRight, { top: 100, width: 140, height: 50 });
+    // v0.7.107：absolute child top 與 in-flow children 同（top=100）——
+    // 模擬「絕對定位但無 top 設值」case；若 wrap detection 把 absolute
+    // 也算進去，top 沒差距會 false negative；新 fix 過濾 absolute 後
+    // 仍能 by in-flow children top 差距 (100/200/300) 命中 wrap。
+    stubRect(absoluteSidebar, { top: 100, width: 140, height: 200 });
     stubRect(wrapperNormal, { top: 0, width: 608, height: 100 });
     // 單行 flex：top 全同 → 不該被誤觸 collapse
     stubRect(singleRowFlex, { top: 600, width: 608, height: 30 });
@@ -1839,6 +1845,16 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
         'child flex-grow 應 reset 為 0');
       assert.strictEqual(chart1.style.getPropertyValue('width'), 'auto',
         'chart embed child 寬度也應 reset');
+
+      // 核心斷言 2.5（v0.7.107）：absolute child 也被拉回 static + width auto
+      // ——避免 healthsystemtracker `.entry-content-right` "About this site"
+      // 側欄塌成 24px 縮窄縱向 overlay 文章末尾
+      assert.strictEqual(absoluteSidebar.style.getPropertyValue('position'), 'static',
+        'absolute child 應 force 成 position: static（拉回 block flow，不再 overlay）');
+      assert.strictEqual(absoluteSidebar.style.getPropertyPriority('position'), 'important',
+        'position:static 應 !important');
+      assert.strictEqual(absoluteSidebar.style.getPropertyValue('width'), 'auto',
+        'absolute child 的 width 也應 reset 為 auto');
 
       // 核心斷言 3：非 flex 的 wrapper-normal 不得被誤動
       assert.notStrictEqual(wrapperNormal.dataset.jreadCollapsed, '1',
