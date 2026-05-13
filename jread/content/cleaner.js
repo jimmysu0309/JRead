@@ -1175,6 +1175,57 @@
     }
   }
 
+  // ---- 主文內：figure 內 position:absolute credit overlay --------------
+  // 結構特徵（非站點特判）：editorial 站點（BBC / Guardian / NYT / WaPo 類）
+  // 慣例在 `<figure>` 主圖右下角浮一個 `position: absolute` 的 SPAN/DIV
+  // credit overlay（深色背景 + 淺色字、約 12px font），文字內容多半重複
+  // 出現在 `<figcaption>` 的 "(Credit: ...)" 段落裡。reader mode 下：
+  //   1. 圖片寬度被 styler 重排，原站 absolute top/left 算的位置基準失效
+  //      → overlay 落在圖片內容區域上、跟圖案紋路混在一起遮文字
+  //   2. 即使位置正確，圖片下方的 `<figcaption>` 已含 "(Credit: ...)" 重複
+  //      info，overlay 純屬視覺裝飾、無閱讀價值
+  // 通則：當 `<figure>` 含 `<figcaption>` 時，figcaption 是 canonical caption；
+  // 同 figure 內任何 `position: absolute|fixed` 且帶 direct text 的 SPAN/DIV/
+  // P/SMALL 視為 credit overlay → hide。位置定義是純結構特徵（CSS computed
+  // position），無 hostname / class 綁定，跨所有 editorial 站通用。
+  //
+  // 為何 figcaption 要求是 guard：若 figure **沒有** figcaption，absolute
+  // overlay 可能是該 figure 唯一的說明文字，hide 掉就完全失去 caption——
+  // 此 case 不修。BBC 三張圖每張都有 figcaption，guard 自然滿足。
+  //
+  // 為何不檢查 text 是否子集 figcaption：嚴格子集判定會被 BBC 「Courtesy of
+  // the Warden and Fellows of Merton College Oxford」（overlay）vs 「(Credit:
+  // Courtesy of the Warden and Fellows of Merton College Oxford)」（figcaption）
+  // 微妙差異干擾（前者無括號、後者有 "Credit:" 前綴），用 substring 判太脆。
+  // 既然 figcaption 已是 canonical caption，overlay 一律當裝飾砍。
+  //
+  // 為何只看 SPAN/DIV/P/SMALL：避開 IMG/PICTURE/VIDEO（媒體本身可能 absolute
+  // ，例如 padding-hack pattern）+ FIGCAPTION 自己 + BUTTON（hideInsideArticle-
+  // AllButtons 處理）+ SVG（icon overlay 可接受不動，無 direct text）。
+  function hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (fig === articleEl) continue;
+      if (fig.dataset && fig.dataset.jreadHidden === '1') continue;
+      const figcap = fig.querySelector('figcaption');
+      if (!figcap) continue; // canonical caption 缺席就不動
+      for (const el of fig.querySelectorAll('span, div, p, small')) {
+        if (el === figcap) continue;
+        if (el.contains && el.contains(figcap)) continue; // 不砍 figcaption 祖先
+        if (figcap.contains && figcap.contains(el)) continue; // figcaption 內的 overlay 不動（可能是真說明）
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        // direct text（不抓子孫）—— wrapper 沒 direct text 不視為 overlay
+        const directText = norm(Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent).join(''));
+        if (!directText.length) continue;
+        const cs = window.getComputedStyle(el);
+        if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
+        hide(el, hidden);
+      }
+    }
+  }
+
   // ---- 主文內：sidebar column（高 linkDensity + 低文字量 vs 兄弟）--------
   // 結構特徵（非站點特判）：主文容器內任一 container，其 direct children
   // 中某個 child Cs 滿足：
@@ -2325,6 +2376,7 @@
       hideInsideArticleByHeadingText(articleEl, hidden);
       hideInsideArticleByLinkText(articleEl, hidden);
       hideInsideArticleHashtagClusters(articleEl, hidden);
+      hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);
       hideInsideArticleFontTags(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);

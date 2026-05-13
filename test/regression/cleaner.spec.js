@@ -4025,3 +4025,142 @@ describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + titl
     assert.ok(!inHidden, 'H1 主標題不可被 hide');
   });
 });
+
+// v0.7.98 BBC Culture figure 內 position:absolute credit overlay 遮文字（Jimmy
+// 2026-05-13 截圖回報 bbc.com/culture/article/20260423-the-enchanting-story-of-
+// oxfords-medieval-library）。修法：新增 hideInsideArticleAbsoluteCreditOverlays
+// ——figure 內含 figcaption 時，同 figure 內 position:absolute|fixed + 帶
+// direct text 的 SPAN/DIV/P/SMALL 視為 credit overlay → hide。
+describe('cleaner — bbc-figure-credit-overlay（figure 內 absolute SPAN credit overlay）', () => {
+  let window, document, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'bbc-figure-credit-overlay.html'), 'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window; document = window.document;
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    const result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 ARTICLE');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => { window.__JRead.cleaner.restore(hidden); });
+
+  // ---- (A) figure 1 hero credit overlay ----
+  it('figure-hero 內 absolute SPAN credit 被 hide — forcing：absolute + direct text + figure 含 figcaption', () => {
+    const span = document.getElementById('hero-credit');
+    assert.ok(span, 'fixture 必須含 #hero-credit SPAN');
+    assert.strictEqual(span.dataset.jreadHidden, '1',
+      'hero-credit SPAN 必須被 hideInsideArticleAbsoluteCreditOverlays 砍——forcing：position:absolute + direct text + 同 figure 含 figcaption');
+  });
+
+  // ---- (B) figure 2 portrait credit overlay ----
+  it('figure-portrait 內 absolute SPAN credit 被 hide', () => {
+    const span = document.getElementById('portrait-credit');
+    assert.ok(span);
+    assert.strictEqual(span.dataset.jreadHidden, '1',
+      'portrait-credit SPAN 必須被 hide');
+  });
+
+  // ---- (C) figure 3 placeholder credit overlay ----
+  it('figure-with-placeholder 內 absolute SPAN credit 被 hide', () => {
+    const span = document.getElementById('placeholder-credit');
+    assert.ok(span);
+    assert.strictEqual(span.dataset.jreadHidden, '1',
+      'placeholder-credit SPAN 必須被 hide');
+  });
+
+  // ---- (D) absolute IMG（lazy-load placeholder）不可誤殺 ----
+  it('absolute IMG（lazy-load placeholder，無 direct text）不可被誤殺 — direct text guard', () => {
+    const img = document.getElementById('lazy-placeholder');
+    assert.ok(img);
+    assert.notStrictEqual(img.dataset.jreadHidden, '1',
+      'absolute lazy-load IMG 不可被砍；forcing：rule 必須限定 SPAN/DIV/P/SMALL，不含 IMG/PICTURE/VIDEO');
+  });
+
+  // ---- (E) figure 4 無 figcaption — overlay 是唯一說明，不可砍 ----
+  it('figure-no-caption 內 absolute SPAN（figure 無 figcaption）不可砍 — figcaption guard', () => {
+    const span = document.getElementById('nocap-only-credit');
+    assert.ok(span);
+    assert.notStrictEqual(span.dataset.jreadHidden, '1',
+      'figure 沒有 figcaption 時，overlay SPAN 是唯一說明文字、不可砍；forcing：rule 必須含 `if (!figcap) continue;` guard');
+  });
+
+  // ---- (F) FIGCAPTION 必須保留 ----
+  it('所有 figcaption（canonical caption）保留', () => {
+    const caps = document.querySelectorAll('figcaption');
+    assert.ok(caps.length >= 3, 'fixture 應含至少 3 個 figcaption');
+    for (const cap of caps) {
+      assert.notStrictEqual(cap.dataset.jreadHidden, '1',
+        `figcaption "${cap.textContent.slice(0, 40)}..." 不可被 hide`);
+      let cur = cap.parentElement, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `figcaption 祖先不可被 hide（${cap.id}）`);
+    }
+  });
+
+  // ---- (G) IMG 主圖必保留 ----
+  it('所有 IMG 主圖保留（hero / portrait / real / nocap，不含 lazy-placeholder）', () => {
+    const ids = ['hero-img', 'portrait-img', 'real-img', 'nocap-img'];
+    for (const id of ids) {
+      const img = document.getElementById(id);
+      assert.ok(img, `fixture 必須含 #${id}`);
+      let cur = img, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `IMG #${id} 不可被 hide（祖先也不可）`);
+    }
+  });
+
+  // ---- (H) 主文 p 全保留 ----
+  it('主文段落（BBC_BODY_MARK）全保留 — 通則修法不誤殺主文', () => {
+    const ps = document.querySelectorAll('p');
+    let mainCount = 0;
+    for (const p of ps) {
+      if (!p.textContent.includes('BBC_BODY_MARK')) continue;
+      mainCount++;
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `主文段落 "${p.textContent.slice(0, 30)}..." 不可被 hide`);
+    }
+    assert.ok(mainCount >= 6, `fixture 應含至少 6 個 BBC_BODY_MARK 主文段落；實際 ${mainCount}`);
+  });
+
+  // ---- (I) H1 必保留 ----
+  it('H1 主標題保留', () => {
+    const h1 = document.querySelector('h1');
+    assert.ok(h1);
+    let cur = h1, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden, 'H1 主標題不可被 hide');
+  });
+
+  // ---- (J) hideInsideArticleAbsoluteCreditOverlays 函式存在性 forcing ----
+  it('cleaner.js 必須含 hideInsideArticleAbsoluteCreditOverlays 函式 + clean() 呼叫', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
+    );
+    assert.ok(src.includes('function hideInsideArticleAbsoluteCreditOverlays('),
+      'cleaner.js 必須定義 hideInsideArticleAbsoluteCreditOverlays——forcing：函式被誤刪 → spec fail');
+    assert.ok(src.includes('hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden);'),
+      'clean() 必須呼叫 hideInsideArticleAbsoluteCreditOverlays——forcing：呼叫鏈被刪 → 此 spec fail');
+  });
+});
