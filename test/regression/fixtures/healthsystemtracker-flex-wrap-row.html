@@ -40,6 +40,18 @@
         administrative costs as key drivers of health spending.</p>
       </div>
       <div class="entry-content-right" id="spacer-right" style="width: 140px;"></div>
+      <!-- v0.7.107：absolute 側欄 child——healthsystemtracker 的
+           "About this site" sidebar 真實 case：在 flex `.row` 內為
+           `position: absolute` + 固定寬，原 design 浮在右側但 reader
+           card 縮窄後與主文重疊。新 fix：collapseInnerFlexWrap
+           wrap detection 不算 absolute children 的 top；reset 時對
+           absolute children 套 position: static + width: auto，把
+           sidebar 拉回 block flow（不再 overlay 主文）。 -->
+      <div class="entry-content-right-sidebar" id="absolute-sidebar"
+           style="position: absolute; width: 140px; top: 0;">
+        <p>HST_ABS_MARK About this site sidebar overlay content
+        Peterson Center on Healthcare and KFF are partnering.</p>
+      </div>
     </div>
 
     <!-- 邊界保護組：單行 flex（top 全同）不該被 collapse。

@@ -1709,11 +1709,19 @@
   };
   const INNER_FLEX_CHILD_PROPS = [
     'flex-grow', 'flex-shrink', 'flex-basis',
-    'width', 'max-width', 'float'
+    'width', 'max-width', 'float', 'position'
   ];
+  // v0.7.107：CHILD_DECLS 加 `position: static`——healthsystemtracker
+  // `.entry-content-right` (`position: absolute` 的 "About this site"
+  // 側欄) 實測：collapse 父 .row 為 block 後，absolute child 仍維持
+  // `position: absolute` + 我們強制 `width: auto` 觸發 absolute box 的
+  // shrink-to-fit → 寬度塌成 24px (content-shrunk)、text 縱向疊在
+  // Methods 主文上。改成 `position: static` 讓 absolute child 回到
+  // block flow（一般 block 撐滿父寬，不再 overlay）。
   const INNER_FLEX_CHILD_DECLS = {
     'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
-    'width': 'auto', 'max-width': 'none', 'float': 'none'
+    'width': 'auto', 'max-width': 'none', 'float': 'none',
+    'position': 'static'
   };
 
   function collapseInnerFlexWrap(articleEl, hidden) {
@@ -1731,6 +1739,14 @@
       const children = Array.from(el.children);
       if (children.length < 2) continue;
       const visibleChildren = [];
+      // v0.7.107：在 wrap 判定階段過濾掉 position: absolute / fixed children
+      // ——這些 children 的 top 不由 flex layout 決定（由 CSS top/left
+      // 控制），混入會產生 wrap false positive（healthsystemtracker
+      // `.entry-content-right` 全文高 absolute 側欄、top=716 跟其他
+      // flex children 同 row 但獨立計算）。reset 階段仍對 absolute
+      // children 套 CHILD_DECLS（position:static + width:auto），
+      // 將它們拉回 block flow。
+      const inFlowChildren = [];
       for (const c of children) {
         if (c.dataset && c.dataset.jreadHidden === '1') continue;
         let ccs;
@@ -1738,11 +1754,14 @@
         if (!ccs) continue;
         if (ccs.display === 'none' || ccs.visibility === 'hidden') continue;
         visibleChildren.push(c);
+        if (ccs.position === 'absolute' || ccs.position === 'fixed') continue;
+        inFlowChildren.push(c);
       }
       if (visibleChildren.length < 2) continue;
-      // wrap 判定：visible children 的 top 差距 > 5px = flex-wrap 已啟動
+      if (inFlowChildren.length < 2) continue;
+      // wrap 判定：in-flow visible children 的 top 差距 > 5px = flex-wrap 已啟動
       let minTop = Infinity, maxTop = -Infinity;
-      for (const c of visibleChildren) {
+      for (const c of inFlowChildren) {
         const r = c.getBoundingClientRect();
         if (r.top < minTop) minTop = r.top;
         if (r.top > maxTop) maxTop = r.top;
@@ -1751,6 +1770,8 @@
       resets.push({ el, kind: 'container', prev: snapshotStyles(el, INNER_FLEX_PROPS) });
       applyImportant(el, INNER_FLEX_DECLS);
       if (el.dataset) el.dataset.jreadCollapsed = '1';
+      // 對所有 visible children（含 absolute）套 CHILD_DECLS——把 absolute
+      // 拉回 static、寬度回 auto，讓 layout 整體乾淨在 block flow
       for (const c of visibleChildren) {
         if (!c.style) continue;
         resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
