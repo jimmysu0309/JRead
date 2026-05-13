@@ -73,6 +73,32 @@ describe('styler — 骨架與可逆性', () => {
     assert.ok(/box-shadow:/.test(css), 'CSS 必須含卡片 box-shadow');
   });
 
+  it('cardArticle rule selector 必須帶 html 前綴提升 specificity（贏過原站 .article-content 類單 class !important rule，v0.7.121 cn.nytimes 修法）', () => {
+    // cn.nytimes /opinion/...apple-tim-cook-outsourcing-china/ 實測：
+    // articleEl `<article class="article-content font-normal">`，原站 stylesheet
+    // 含 `.article-content { max-width: 1040px !important }` 或類似 (0,1,0) +
+    // !important rule。jread cardArticle 原 selector `[data-jread-active="1"]`
+    // 同 specificity (0,1,0)，同 !important 下 cascade order 由原站勝 → reader
+    // card max-width: 720px 被吃掉、articleEl 撐到 1040px 跨過 Bootstrap lg
+    // breakpoint 992、`.col-lg-5` 觸發 50% 寬度、partial 內主文段落寬度被
+    // 擠到 reader card 一半（instrument: para#0-15 都 x=275 w=490；para#16
+    // 在 collapsed 後 x=15 w=1010）。
+    // 修法：cardArticle selector 加 `html ` 前綴 → specificity (0,1,1)，贏過
+    // 所有原站單 class rule。`html` 是 root selector 永遠 match、加成
+    // specificity 不誤殺其他邏輯。其他 [data-jread-active="1"] X selector
+    // 含 X tag/class 已 (0,1,1+) 夠強、不需動。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 找含 `max-width: ${contentWidth}px` 的 rule（必是 cardArticle）
+    // 取它前面 selector list 確認含 `html [data-jread-active="1"]`
+    const re = /([^}]*)\{[^}]*max-width:\s*720px[^}]*\}/;
+    const m = css.match(re);
+    assert.ok(m, 'CSS 必須含含 max-width: 720px 的 cardArticle rule');
+    assert.ok(/html\s+\[data-jread-active="1"\]/.test(m[1]),
+      'cardArticle rule selector 必須含 `html [data-jread-active="1"]` 前綴（提升 specificity 贏過原站單 class rule）；forcing function：拿掉 html 前綴 → cn.nytimes 類站點 articleEl max-width 失效、reader card 撐到 1040px 破版');
+  });
+
   it('CSS 含祖先鏈 reset（[data-jread-ancestor="1"] 清 max-width / margin / position）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
