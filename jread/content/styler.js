@@ -367,6 +367,18 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   margin-top: 1.5em !important;
   margin-bottom: 0.5em !important;
 }
+/* v0.7.102：p / ul / ol / blockquote 段落間距。BBC styled-components 同樣把
+   p / list / quote 的 margin 砍光（hash class margin: 0），三段 p 緊貼。
+   通則：block-level 內容元素加 margin-bottom 1em（相對字級縮放），與 v0.6.0
+   baseline 「不動 typography」精神一致——只動 spacing 不動字型 / 顏色 / 行高。
+   1em 是各家瀏覽器 user-agent stylesheet 對 p 的預設 margin，貼近大眾預期；
+   多數新聞站本來就有此 margin、覆寫差別極小，BBC 從 0 變 1em 是明顯改善。 */
+[${ARTICLE_ATTR}="1"] p,
+[${ARTICLE_ATTR}="1"] ul,
+[${ARTICLE_ATTR}="1"] ol,
+[${ARTICLE_ATTR}="1"] blockquote {
+  margin-bottom: 1em !important;
+}
 /* 注意：aspect-ratio / padding-bottom 的 placeholder hack 破解改由
    cleaner.resetMediaPlaceholderPadding 在 runtime 處理——因為 CSS :has() 無法
    區分「padding-bottom hack（Substack/Medium 類）」與「純 aspect-ratio

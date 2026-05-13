@@ -804,31 +804,50 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     // typography 由原站 CSS 自己生效。
     // v0.7.100：放寬限制——允許 h1-h6 / figure 加 margin/padding（解 BBC
     // styled-components margin: 0 緊貼問題），但仍禁 typography 屬性。
-    // p / ul / ol / li / blockquote / a 維持完全不下 rule（保留原站排版）。
+    // v0.7.102：再放寬到 p / ul / ol / blockquote 加 margin/padding（同 BBC
+    // p 緊貼問題），但仍禁 typography。li / a 維持完全不下 rule（避免列表
+    // 內部結構 / 連結色被覆寫）。
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // h1-h6 可下 margin/padding rule，但禁 typography 屬性。從 css 抓含
-    // h1-h6 selector 的 rule block，逐一驗 body 不含 typography property。
+    // 可下 margin/padding rule 的 selector（v0.7.100 + v0.7.102 範圍）：
+    // h1-h6 / p / ul / ol / blockquote。逐一驗其 rule block 不含 typography。
     const TYPO_PROPS = ['font-size', 'color', 'line-height', 'font-family', 'font-weight', 'font-style'];
-    const headingBlocks = css.match(/\[data-jread-active="1"\]\s+h[1-6][^{]*\{[^}]*\}/g) || [];
-    for (const block of headingBlocks) {
-      for (const prop of TYPO_PROPS) {
-        const re = new RegExp('(?:^|[;{\\s])' + prop + '\\s*:', 'i');
-        assert.ok(!re.test(block),
-          `h1-h6 rule 不得含 ${prop}（保留原站標題分級）；違反 block: ${block.slice(0, 120)}`);
+    function checkBlocks(re, label) {
+      const blocks = css.match(re) || [];
+      for (const block of blocks) {
+        for (const prop of TYPO_PROPS) {
+          const propRe = new RegExp('(?:^|[;{\\s])' + prop + '\\s*:', 'i');
+          assert.ok(!propRe.test(block),
+            `${label} rule 不得含 ${prop}（保留原站排版）；違反 block: ${block.slice(0, 120)}`);
+        }
       }
     }
+    checkBlocks(/\[data-jread-active="1"\]\s+h[1-6][^{]*\{[^}]*\}/g, 'h1-h6');
+    checkBlocks(/\[data-jread-active="1"\]\s+p[\s,{][^{]*\{[^}]*\}/g, 'p');
+    checkBlocks(/\[data-jread-active="1"\]\s+ul[\s,{][^{]*\{[^}]*\}/g, 'ul');
+    checkBlocks(/\[data-jread-active="1"\]\s+ol[\s,{][^{]*\{[^}]*\}/g, 'ol');
+    checkBlocks(/\[data-jread-active="1"\]\s+blockquote[\s,{][^{]*\{[^}]*\}/g, 'blockquote');
 
-    // p / ul / ol / li / blockquote / a 完全不下 rule（baseline 不動）
-    assert.ok(!/\]\s*p\s*\{/.test(css), '不得對 p 下 rule');
-    assert.ok(!/\]\s*ul\s*[,{]/.test(css), '不得對 ul 下 rule');
-    assert.ok(!/\]\s*ol\s*[,{]/.test(css), '不得對 ol 下 rule');
+    // li / a 維持完全不下 rule（baseline 不動）
     assert.ok(!/\]\s*li\s*\{/.test(css), '不得對 li 下 rule');
-    assert.ok(!/\]\s*blockquote\s*\{/.test(css), '不得對 blockquote 下 rule');
     assert.ok(!/\]\s*a\s*\{/.test(css), '不得對 a 下 rule（連結色保留原站）');
     assert.ok(!/font-size:\s*inherit/.test(css), '不得強制後代 font-size: inherit');
+  });
+
+  // v0.7.102：BBC styled-components p / ul / ol / blockquote margin: 0 → 段落緊貼。
+  // 明示 1em margin-bottom（相對字級縮放，貼近瀏覽器 user-agent 預設）。
+  it('p / ul / ol / blockquote 共用 rule 含 margin-bottom: 1em（BBC 段落間距修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 必有 rule block 同時涵蓋 p / ul / ol / blockquote
+    const m = css.match(/\[data-jread-active="1"\]\s+p[\s\S]*?\[data-jread-active="1"\]\s+blockquote\s*\{([^}]*)\}/);
+    assert.ok(m, 'p / ul / ol / blockquote 必須有共用 rule block（v0.7.102 段落間距修法）');
+    const body = m[1];
+    assert.ok(/margin-bottom\s*:\s*1em\s*!important/.test(body),
+      'p/ul/ol/blockquote rule 必須含 margin-bottom: 1em !important；forcing：拿掉 → BBC 三段 p 緊貼無視覺斷層');
   });
 });
 
