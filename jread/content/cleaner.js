@@ -1628,7 +1628,24 @@
       // 458px + auto-center 殘留會把 byline 推到 reader card 中央偏右（margin
       // 自動分 75px each side）。同樣的修法也覆蓋其他「stylesheet 給 grid
       // 容器固定寬度」case。
-      const CONTAINER_PROPS = [
+      // v0.7.113：articleEl 自身不套 width/max-width/margin reset——
+      // styler 透過 `[data-jread-active] { max-width: 720px; margin: 0 auto }`
+      // 將 articleEl 居中縮成 reader card。若我們對 articleEl 強寫
+      // `width: 100% + max-width: none + margin-left/right: 0 !important`
+      // 會 override styler 的 max-width: 720px → article 撐滿 viewport 不再
+      // 居中。esmchina /news/14165.html 實測：articleEl 是
+      // `<div class="container">` 本身是 Bootstrap 主+sidebar layout 命中
+      // 條件 C（sidebar hidden），我們對 articleEl 套了 width/max-width/
+      // margin reset → reader card 變全寬。
+      // 修法：el === articleEl 時改用較小的 decls 集合（不含 width/max-width/
+      // margin-left/right），純粹清 display + grid-template；styler 的 max-width
+      // 仍生效、reader card 保留居中。BBC byline 等 inner container case 仍
+      // 走完整 reset（el !== articleEl）。
+      const isArticleSelf = (el === articleEl);
+      const CONTAINER_PROPS = isArticleSelf ? [
+        'display', 'grid-template-columns', 'grid-template-rows',
+        'grid-template-areas', 'flex-direction'
+      ] : [
         'display', 'grid-template-columns', 'grid-template-rows',
         'grid-template-areas', 'flex-direction',
         'width', 'max-width', 'margin-left', 'margin-right'
@@ -1637,7 +1654,12 @@
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
       // 等 class 本身 specificity 不是 !important，但多欄定義 rule 可能
       // 有 utility 特殊 priority；保險起見用 important）
-      const containerDecls = {
+      const containerDecls = isArticleSelf ? {
+        'display': 'block',
+        'grid-template-columns': 'none',
+        'grid-template-rows': 'none',
+        'grid-template-areas': 'none'
+      } : {
         'display': 'block',
         'grid-template-columns': 'none',
         'grid-template-rows': 'none',

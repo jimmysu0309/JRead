@@ -666,6 +666,104 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       // 核心斷言 4：detector 容器本身不被 hide
       assert.notStrictEqual(detected.el.dataset.jreadHidden, '1',
         'detector 選的主文容器本身不得被 hide');
+
+      // 核心斷言 5（v0.7.113）：不論 articleEl 是否被 condition C 命中
+      // collapse，articleEl 自身 width / max-width / margin-left/right **不可**
+      // 被 inline !important 覆寫——styler 透過 `[data-jread-active] {
+      // max-width: 720px; margin: 0 auto }` 把 articleEl 居中縮成 reader card，
+      // 若 cleaner 強寫 width: 100% + max-width: none + margin: 0 !important
+      // 會 override styler、reader card 變全寬。esmchina 實機場景：articleEl
+      // 是 Bootstrap `<div class="container">`，命中條件 C → collapse →
+      // 觸發 width/max-width/margin reset bug。
+      // 注意：jsdom 無 CSS 解析浮點，stylesheet 中的 float 在 computed
+      // style 不會反映 → isFloatLayout 不成立、條件 C 不必然觸發；本斷言
+      // 是 forcing guard：「不管有沒有 collapse，**articleEl 的 width/
+      // max-width/margin 永遠不該有 !important 痕跡**」。
+      assert.strictEqual(detected.el.style.getPropertyPriority('width'), '',
+        'articleEl 自身 width 不可被 cleaner inline !important 覆寫（styler 需控制 max-width 居中）');
+      assert.strictEqual(detected.el.style.getPropertyPriority('max-width'), '',
+        'articleEl 自身 max-width 不可被 cleaner inline !important 覆寫');
+      assert.strictEqual(detected.el.style.getPropertyPriority('margin-left'), '',
+        'articleEl 自身 margin-left 不可被 cleaner inline !important 覆寫');
+      assert.strictEqual(detected.el.style.getPropertyPriority('margin-right'), '',
+        'articleEl 自身 margin-right 不可被 cleaner inline !important 覆寫');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+  });
+
+  it('articleEl 自身被 collapseGridWithHiddenCell 命中 collapse 時，width/max-width/margin reset **不可**套到 articleEl（styler 居中需要）', () => {
+    // v0.7.113 forcing function——esmchina /news/14165.html 實機 bug：
+    // articleEl 是 `<div class="container">`（Bootstrap row + col-md-9 +
+    // col-md-3）。col-md-3 sidebar 被 cleaner hide 後，articleEl 命中
+    // collapseGridWithHiddenCell 條件 C（float layout + hidden sibling）。
+    // v0.7.104 的 width/max-width/margin reset bug 套到 articleEl 後，
+    // 強寫 width: 100% + max-width: none + margin: 0 !important，override
+    // styler 的 `[data-jread-active] { max-width: 720px; margin: 0 auto }`
+    // → reader card 不再居中、全寬撐滿 viewport。
+    //
+    // 修法：el === articleEl 時 containerDecls 不含 width/max-width/margin-left/right；
+    // 純粹清 display + grid-template。
+    //
+    // 此 fixture：直接 inline 設 float: left / right 觸發 isFloatLayout
+    // （繞過 jsdom 無 stylesheet 解析浮點的限制）。
+    const html = `<!DOCTYPE html><html><head>
+      <title>esmchina article-as-container</title>
+      <meta property="og:title" content="esmchina test">
+    </head><body>
+      <div class="container" id="art-container">
+        <h1>张汝京疾呼：别执迷3nm/2nm</h1>
+        <div class="col-md-9 article-left" id="main-col" style="float: left;">
+          <p>ESMCHINA_FORCING_MARK Padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding
+          padding padding padding padding padding padding padding padding.</p>
+        </div>
+        <div class="col-md-3 rightsection" id="sidebar-col" style="float: right;">
+          <a href="/1">近期热点新闻列表 link 1 padding</a>
+          <a href="/2">EE 直播间 webinar link 2 padding</a>
+          <a href="/3">在线研讨会 link 3 padding word</a>
+          <a href="/4">热门标签 cluster link 4 padding</a>
+          <a href="/5">行业资讯 link 5 padding word</a>
+          <a href="/6">产业分析 link 6 padding word</a>
+          <a href="/7">技术文章 link 7 padding word</a>
+          <a href="/8">最新评测 link 8 padding word</a>
+        </div>
+      </div>
+    </body></html>`;
+
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    // 跳過 detector（fixture 結構不一定觸發 detector 升到 .container）。
+    // 直接對 `.container` 跑 cleaner——模擬 esmchina 實機 detector 已選 container。
+    const articleEl = w.document.getElementById('art-container');
+    assert.ok(articleEl, 'fixture 必須含 #art-container');
+
+    const localHidden = w.__JRead.cleaner.clean(articleEl);
+    try {
+      // sidebar 應被 hide（condition C linkDensity > 0.5 + textLen >= 200 命中）
+      const sidebar = w.document.getElementById('sidebar-col');
+      // 不保證 hidden（jsdom rect 計算）—— 即使 hidden、即使 collapse 觸發，
+      // 重點是 articleEl 自身的 style 不可有 !important。
+      // 核心斷言：articleEl 的 width/max-width/margin **永遠**不可有 !important
+      assert.strictEqual(articleEl.style.getPropertyPriority('width'), '',
+        'articleEl 自身 width 不可有 !important（styler 需控制居中）');
+      assert.strictEqual(articleEl.style.getPropertyPriority('max-width'), '',
+        'articleEl 自身 max-width 不可有 !important');
+      assert.strictEqual(articleEl.style.getPropertyPriority('margin-left'), '',
+        'articleEl 自身 margin-left 不可有 !important');
+      assert.strictEqual(articleEl.style.getPropertyPriority('margin-right'), '',
+        'articleEl 自身 margin-right 不可有 !important');
     } finally {
       w.__JRead.cleaner.restore(localHidden);
     }
