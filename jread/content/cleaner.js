@@ -1098,6 +1098,18 @@
   const SIDEBAR_COLUMN_TEXT_RATIO = 0.1;
   const SIDEBAR_COLUMN_MIN_LINK_DENSITY = 0.5;
   const SIDEBAR_COLUMN_MIN_MAIN_TEXT = 500;
+  // 條件 C（v0.7.95 esmchina /news/14116 修法）——sidebar column 的「中等
+  // 大小但仍是 link widget」場景。esmchina 實測：`DIV.container > [.article-
+  // title, .col-md-9.article-left(20K chars 主文), .col-md-3.rightsection
+  // (4.7K chars 全 widget link)]`，sidebar.textLen / main.textLen = 0.23，
+  // 不命中條件 A 的 0.1 ratio，但 sidebar 仍是高 link density 的 widget
+  // cluster（近期热点 / EE直播间 / 在线研讨会 / 热门标签）。
+  // 通則：main 至少是 sibling 3 倍 + sibling linkDensity > 0.5 + sibling
+  // textLen >= 200（避免單行短元素誤判）→ hide。Substack Dwarkesh 14.3x
+  // 早就命中條件 A，本條額外 cover 商業類「Bootstrap 兩欄主文+sidebar」
+  // 中等大小 sidebar，single-column 文章（無 sibling）不觸發。
+  const SIDEBAR_COLUMN_MAIN_SIBLING_RATIO = 3;
+  const SIDEBAR_COLUMN_MIN_SIBLING_TEXT = 200;
   // 條件 B（<aside> tag）——sidebar column 的 `<aside>` tag 特判閾值：
   // `<aside>` 是 HTML5 語意「次要內容」tag。article 內 aside 只要
   // rectH > 400 即視為 sidebar（導覽 / 廣告 / 相關列表）hide——rectH 門檻
@@ -1110,9 +1122,15 @@
 
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
-    for (const el of containers) {
-      if (el === articleEl) continue;
-      if (isInPreserved(el)) continue;
+    // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
+    // 修法）——esmchina 的 articleEl = DIV.container 本身就是 Bootstrap row、
+    // main(col-md-9) + sidebar(col-md-3) 直接是 articleEl 的 children。
+    // 舊版 skip articleEl 導致 condition A/B/C 全漏判。條件本身的
+    // textLen >= 500 + sibling ratio + linkDensity guard 已足夠避免誤殺
+    // 「article > [header, main, footer]」這類正常 direct child 結構。
+    const candidates = [articleEl, ...Array.from(containers).filter(c => c !== articleEl)];
+    for (const el of candidates) {
+      if (el !== articleEl && isInPreserved(el)) continue;
       const children = Array.from(el.children);
       if (children.length < 2) continue;
 
@@ -1139,6 +1157,18 @@
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
+          hide(s.el, hidden);
+          continue;
+        }
+        // 條件 C：main >= sibling × 3 AND sibling linkDensity > 0.5
+        //         AND sibling textLen >= 200
+        // （Bootstrap 兩欄主文+widget sidebar 場景，esmchina 類）
+        // 比條件 A 寬鬆但仍要求 sibling 是 link-heavy widget cluster + 有
+        // 一定篇幅（avoid 單行短 nav 誤判），與條件 A 的「極小極密」場景
+        // 互補不重疊。
+        if (main.textLen >= s.textLen * SIDEBAR_COLUMN_MAIN_SIBLING_RATIO &&
+            s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY &&
+            s.textLen >= SIDEBAR_COLUMN_MIN_SIBLING_TEXT) {
           hide(s.el, hidden);
           continue;
         }
