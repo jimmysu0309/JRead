@@ -1384,37 +1384,55 @@
     }
   }
 
-  // ---- 主文內：absolute / fixed <aside> overlay 砍除 ---------------------
+  // ---- 主文內：absolute / fixed overlay 砍除 -----------------------------
   //
-  // 場景：TBIJ thebureauinvestigates.com 實測——`<aside>` tag 含
-  // `tb-o-fixed-left-sidebar__inner` class、`position: absolute`、z-index 1，
-  // 內容是 "We expose injustice and spark change / Help change the world
-  // by becoming a Bureau Insider"（自家網站宣傳浮動側欄）。原 design 在
-  // 寬 viewport 浮在主文左側、reader card 縮窄後與內文 sidebar (Published
-  // date + author byline) 完全重疊、文字疊在一起。
+  // 場景：TBIJ thebureauinvestigates.com 實測——兩處 overlay 浮動側欄：
+  //   (1) `<aside class="tb-o-fixed-left-sidebar__inner">` position absolute
+  //       z-index 1，"We expose injustice / Bureau Insider" 品牌宣傳
+  //   (2) `<div class="tb-c-story-authors tb-js-fixed-sidebar-stop-here">`
+  //       position absolute z-index 2，文末 "About The Authors / Niamh
+  //       McIntyre 報導 / Misbah Khan 報導 / Mark Sellman" 作者 bio
+  // 原 design 在寬 viewport 浮在主文兩側、reader card 縮窄後與內文完全
+  // 重疊、文字疊在一起。
   //
-  // 通則：HTML5 `<aside>` 是「次要 / 旁支內容」tag，semantically 不該是
-  // 主文一部分。`position: absolute / fixed` 的 aside 更明確是「overlay
-  // 漂浮元素」（fixed sidebar / sticky CTA / floating subscribe widget /
-  // brand promotion 等），跟內文無關。reader mode 直接 hide。
+  // 通則：reader mode 的「flow > overlay」原則對任何 position:
+  // absolute / fixed overlay 適用（不限 `<aside>` tag）。HTML5 `<aside>`
+  // 是 semantic 次要內容、`<div>` 帶 absolute 也是 visual overlay；對
+  // reader 都是雜訊。v0.7.111 把 v0.7.110 的 `<aside>`-only 規則放寬到
+  // 任意 tag。
   //
   // 邊界保護：
-  // - 只 hide `<aside>` tag（不動 `<div>`——主文 div 內合法 absolute 元素
-  //   如 figure 內 caption overlay 由 PRESERVE_SEL 處理）
+  // - PRESERVE_SEL 內 skip（figure / blockquote / summary 內 absolute
+  //   caption overlay 是設計一部分）
   // - position 必須是 absolute 或 fixed（static / relative / sticky 保留）
-  // - PRESERVE_SEL 內 skip（figure / blockquote / summary 內 aside 罕見
-  //   但若存在通常是設計一部分）
   // - articleEl 自身不算
-  function hideInsideArticleAbsoluteAsides(articleEl, hidden) {
+  // - 主文段落保護：若 element 包含**自身**為長 `<p>`（textContent > 500
+  //   chars）的後代，視為主文流的一部分（絕對定位的主文容器，雖罕見但
+  //   保留），不 hide。500 是邊界—— author bio 通常 < 300 chars，主文
+  //   段落 > 500 chars。
+  function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
-    for (const aside of articleEl.querySelectorAll('aside')) {
-      if (aside.dataset && aside.dataset.jreadHidden === '1') continue;
-      if (isInPreserved(aside)) continue;
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
       let cs;
-      try { cs = window.getComputedStyle(aside); } catch (_) { continue; }
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs) continue;
       if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
-      hide(aside, hidden);
+      // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
+      let hasLongParagraph = false;
+      const ps = el.querySelectorAll && el.querySelectorAll('p');
+      if (ps) {
+        for (const p of ps) {
+          if ((p.textContent || '').length > 500) {
+            hasLongParagraph = true;
+            break;
+          }
+        }
+      }
+      if (hasLongParagraph) continue;
+      hide(el, hidden);
     }
   }
 
@@ -2723,7 +2741,7 @@
       hideInsideArticleNav(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
-      hideInsideArticleAbsoluteAsides(articleEl, hidden);
+      hideInsideArticleAbsoluteOverlays(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能

@@ -22,6 +22,36 @@
       </div>
     </div>
 
+    <!-- v0.7.111：absolute `<div>` overlay (不限 <aside> tag)：TBIJ
+         tb-c-story-authors fixed sidebar 文末 author bios 浮動側欄
+         應整段 hide。文字 < 500 chars 不觸發主文段落保護 -->
+    <div class="tb-c-story-authors tb-js-fixed-sidebar-stop-here" id="absolute-div-overlay"
+         style="position: absolute; top: 1000px; left: 0; z-index: 2;">
+      <h3>About The Authors</h3>
+      <div class="tb-c-story-author">
+        <h4>Niamh McIntyre</h4>
+        <p>Niamh reports on major technology companies for our Big Tech team.
+        She previously worked for the Guardian, Radar, and the Independent.</p>
+      </div>
+    </div>
+
+    <!-- 主文段落保護組：position: absolute 但含 > 500 chars 段落 → 視為主文
+         流意外絕對定位的容器，不 hide -->
+    <div class="absolute-with-long-p" id="absolute-with-long-p"
+         style="position: absolute; top: 2000px; left: 0;">
+      <p>LONG_PARAGRAPH_MARK This is a real article paragraph that should
+      be preserved even though its container is accidentally position
+      absolute. Padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding
+      padding padding padding padding padding padding padding padding.</p>
+    </div>
+
     <!-- 傳統 float multi-col layout：body float:left + sidebar float:right，
          無 hidden sibling。v0.7.110 條件 D1（>=2 floated children）命中：
          collapse 為 block + 子寬 auto + margin reset -->
