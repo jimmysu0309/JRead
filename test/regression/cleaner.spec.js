@@ -757,6 +757,120 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore 後 z-index 應回到 fixture 原值 -1');
   });
 
+  it('主文內 <footer> tag 含 tag 雲 / category list（twz.com `<footer class="article-content-footer">` 內 `<section class="recurrent-tag-list">` 多個 category 連結 LAND / POTUS / NEWS & FEATURES 修法）→ hide；長 p（作者後記類）保護不誤殺；mixed footer（含 bio + tag-list）→ 保留 footer 本身但 hide link-only block child', () => {
+    // twz.com 文末 footer 內含
+    //   ├ DIV（含 author bio long p 262 chars）→ 應保留
+    //   └ SECTION.recurrent-tag-list-article（UL > LI > A.btn 4 個 tag）→ 應 hide
+    // v0.7.116 修法：hideInsideArticleFooter 兩階段處理——無長 p → 整段
+    // hide；有長 p → 保留 footer 本身但 walk direct children 把 link-only
+    // block（>= 2 anchor + 無 >= 50 chars p）個別 hide。
+    const html = `<!DOCTYPE html><html><head>
+      <title>twz article footer</title>
+      <meta property="og:title" content="twz test">
+    </head><body>
+      <article id="art">
+        <h1>This Is How U.S. National Security Has Become Dependent On SpaceX</h1>
+        <p>TWZ_BODY_MARK Main body paragraph padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+        <footer id="article-footer" class="article-content-footer">
+          <section class="recurrent-tag-list-article">
+            <ul class="tag-list">
+              <li class="tag-list-item"><a class="btn" href="/category/land">LAND</a></li>
+              <li class="tag-list-item"><a class="btn" href="/category/lbmd">LAND-BASED BALLISTIC MISSILE DEFENSE</a></li>
+              <li class="tag-list-item"><a class="btn" href="/category/news">NEWS &amp; FEATURES</a></li>
+              <li class="tag-list-item"><a class="btn" href="/category/potus">POTUS</a></li>
+            </ul>
+          </section>
+        </footer>
+      </article>
+      <!-- 第二個 article：footer 內含長 p（作者後記）→ 保留整段 -->
+      <article id="art-with-epilogue-footer">
+        <h1>Epilogue test article</h1>
+        <p>Body paragraph padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+        <footer id="epilogue-footer">
+          <p>This is a long epilogue paragraph that contains substantive content
+          and reflects the author's final thoughts on the matter at hand, written
+          in semantic footer tag for HTML5 conformance reasons.</p>
+        </footer>
+      </article>
+      <!-- 第三個 article：mixed footer（含 bio long p + tag-list section） -->
+      <article id="art-with-mixed-footer">
+        <h1>Mixed footer article</h1>
+        <p>Body paragraph padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding
+        padding padding padding padding padding padding padding padding padding.</p>
+        <footer id="mixed-footer">
+          <div id="bio-div">
+            <p>Tyler's passion is the study of military technology, strategy,
+            and foreign policy and he has fostered a dominant voice on those
+            topics in the defense media space.</p>
+          </div>
+          <section id="taglist-section">
+            <ul>
+              <li><a href="/category/land">LAND</a></li>
+              <li><a href="/category/potus">POTUS</a></li>
+              <li><a href="/category/news">NEWS &amp; FEATURES</a></li>
+            </ul>
+          </section>
+        </footer>
+      </article>
+    </body></html>`;
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    // 第一個 article：tag-list-only footer → 整段 hide
+    const articleEl = w.document.getElementById('art');
+    const footer = w.document.getElementById('article-footer');
+    assert.ok(articleEl && footer, 'fixture 元素齊全');
+    const localHidden = w.__JRead.cleaner.clean(articleEl);
+    try {
+      assert.strictEqual(footer.dataset.jreadHidden, '1',
+        'tag-list-only footer 應被 hide');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 第二個 article：含長 p 的 epilogue footer → 保留
+    const articleEl2 = w.document.getElementById('art-with-epilogue-footer');
+    const epilogueFooter = w.document.getElementById('epilogue-footer');
+    assert.ok(articleEl2 && epilogueFooter);
+    const hidden2 = w.__JRead.cleaner.clean(articleEl2);
+    try {
+      assert.notStrictEqual(epilogueFooter.dataset.jreadHidden, '1',
+        '含長 p 的 footer 不可被誤 hide（epilogue 保護）');
+    } finally {
+      w.__JRead.cleaner.restore(hidden2);
+    }
+
+    // 第三個 article：mixed footer
+    const articleEl3 = w.document.getElementById('art-with-mixed-footer');
+    const mixedFooter = w.document.getElementById('mixed-footer');
+    const bioDiv = w.document.getElementById('bio-div');
+    const taglistSection = w.document.getElementById('taglist-section');
+    assert.ok(articleEl3 && mixedFooter && bioDiv && taglistSection);
+    const hidden3 = w.__JRead.cleaner.clean(articleEl3);
+    try {
+      // 核心斷言 3：mixed footer 自身不可被 hide（含 bio long p 保護）
+      assert.notStrictEqual(mixedFooter.dataset.jreadHidden, '1',
+        'mixed footer 自身不可被 hide（含 bio long p）');
+      // 核心斷言 4：bio-div（含長 p）不可被 hide
+      assert.notStrictEqual(bioDiv.dataset.jreadHidden, '1',
+        'bio div 不可被 hide（含長 p、isLinkOnlyBlock 不命中）');
+      // 核心斷言 5：tag-list section（>= 2 anchor + 無長 p）被 hide
+      assert.strictEqual(taglistSection.dataset.jreadHidden, '1',
+        'tag-list section 應被 hide（link-only block child of footer）');
+    } finally {
+      w.__JRead.cleaner.restore(hidden3);
+    }
+  });
+
   it('主文後代 full-bleed 負 margin 後代 reset 為 0（twz.com `<header class="full-bleed">` margin-left/right: -336px 標題 + meta 超出 reader card 修法）', () => {
     // twz.com 文章 reader mode 主標 + meta text 視覺飄出 reader card 左側
     // 背景外：article container 寬 720（被 styler cap），文章內 hero header
