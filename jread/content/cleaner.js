@@ -1384,6 +1384,40 @@
     }
   }
 
+  // ---- 主文內：absolute / fixed <aside> overlay 砍除 ---------------------
+  //
+  // 場景：TBIJ thebureauinvestigates.com 實測——`<aside>` tag 含
+  // `tb-o-fixed-left-sidebar__inner` class、`position: absolute`、z-index 1，
+  // 內容是 "We expose injustice and spark change / Help change the world
+  // by becoming a Bureau Insider"（自家網站宣傳浮動側欄）。原 design 在
+  // 寬 viewport 浮在主文左側、reader card 縮窄後與內文 sidebar (Published
+  // date + author byline) 完全重疊、文字疊在一起。
+  //
+  // 通則：HTML5 `<aside>` 是「次要 / 旁支內容」tag，semantically 不該是
+  // 主文一部分。`position: absolute / fixed` 的 aside 更明確是「overlay
+  // 漂浮元素」（fixed sidebar / sticky CTA / floating subscribe widget /
+  // brand promotion 等），跟內文無關。reader mode 直接 hide。
+  //
+  // 邊界保護：
+  // - 只 hide `<aside>` tag（不動 `<div>`——主文 div 內合法 absolute 元素
+  //   如 figure 內 caption overlay 由 PRESERVE_SEL 處理）
+  // - position 必須是 absolute 或 fixed（static / relative / sticky 保留）
+  // - PRESERVE_SEL 內 skip（figure / blockquote / summary 內 aside 罕見
+  //   但若存在通常是設計一部分）
+  // - articleEl 自身不算
+  function hideInsideArticleAbsoluteAsides(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const aside of articleEl.querySelectorAll('aside')) {
+      if (aside.dataset && aside.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(aside)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(aside); } catch (_) { continue; }
+      if (!cs) continue;
+      if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
+      hide(aside, hidden);
+    }
+  }
+
   // ---- 主文內：廣告位 grid / flex cell 被 AdBlocker 清後殘留的欄位寬度 ----
   // 結構特徵（非站點特判）：原站用 CSS Grid / Flex 做「主文 + 廣告側欄」多
   // 欄 layout，AdBlocker（或站點自身）把廣告元素 hide 後，**grid cell / flex
@@ -1491,7 +1525,53 @@
           }
         }
       }
-      if (!triggerHiddenSibling && !triggerGridUnderfill) continue;
+      // 條件 D（v0.7.110）：傳統 float layout——visible children 全部 float
+      // → 視為 multi-col 設計，reader card 縮窄下 children 寬度 + margin
+      // 已偏離設計，collapse 為 block flow。不需 hidden sibling。
+      //
+      // 兩條子路徑：
+      //   D1（多 child）：visibleChildren.length >= 2 + 全 floated。TBIJ
+      //   第一個 tb-o-story-section（sidebar + body）命中。
+      //   D2（單 child，v0.7.110 後續修正）：visibleChildren.length === 1
+      //   + 該 child floated + 該 child 寬度 < 父寬 × 70%。TBIJ 其餘 N 個
+      //   tb-o-story-section 每個只有 body（無 sidebar）但 stylesheet 給
+      //   `width: 50%; margin-left: 25%`，rect 寬 274 (~ 50%) < 547 × 70%，
+      //   命中。
+      //
+      // 邊界保護：
+      // - 單 child 必須 < 70% 父寬：避免誤殺「單個 full-width floated 容器」
+      //   類合理設計（floated child 寬度 ≈ 父寬時 float 對視覺無影響、
+      //   保留不動）
+      // - **所有** visible child 都 floated（混合 floated + 非 floated 通常
+      //   是內文 + pull-quote 結構，保留 pull-quote 不動）
+      // - PRESERVE_SEL 內 skip（既有 isInPreserved 已處理）
+      // - container rect width >= 100（jsdom 無 layout engine 環境 rect 全 0
+      //   會自動 skip；極窄 container 也避免雜訊）
+      // 不對 grid / flex-row 容器做（既有條件 A/B 處理）；專門針對傳統
+      // float-based multi-column / centered-narrow-body layouts。
+      let triggerFloatLayoutAllChildren = false;
+      if (!triggerHiddenSibling && !triggerGridUnderfill && isFloatLayout &&
+          visibleChildren.length >= 1) {
+        const allFloated = visibleChildren.every(c => {
+          const ccs = window.getComputedStyle(c);
+          return ccs.float && ccs.float !== 'none';
+        });
+        if (allFloated) {
+          if (visibleChildren.length >= 2) {
+            triggerFloatLayoutAllChildren = true; // D1
+          } else {
+            // D2：單 floated child + rect 寬度 < 父寬 70% → centered-narrow
+            // 設計，collapse 撐滿
+            const containerRect = el.getBoundingClientRect();
+            const childRect = visibleChildren[0].getBoundingClientRect();
+            if (containerRect.width >= 100 &&
+                childRect.width < containerRect.width * 0.7) {
+              triggerFloatLayoutAllChildren = true; // D2
+            }
+          }
+        }
+      }
+      if (!triggerHiddenSibling && !triggerGridUnderfill && !triggerFloatLayoutAllChildren) continue;
       // 記下 container 的原 inline style 以便 restore
       // v0.7.104：擴增 width/max-width/margin-left/margin-right reset 軌道——
       // BBC byline `.dWzpHk` stylesheet rule 給 `width:458px` + `margin:0 auto`
@@ -1535,13 +1615,19 @@
       // `flex: 0 0 66.67%` shorthand stylesheet rule。float 清零：chinatimes
       // 類傳統多欄 float layout，aside 被 hide 後剩下 float: left 的
       // column-left 仍會維持 308px 固定寬、不撐滿 container。
+      // v0.7.110：加 margin-left/right reset——TBIJ tb-o-story-section__body
+      // stylesheet `margin-left: 25%` 在原 1152 寬下偏移 288，reader card
+      // 547 寬下仍 25% = 137px，body 維持左偏狀態。clear float 不夠、
+      // 還要清 margin 才能讓 body 撐滿父寬。
       const CHILD_PROPS = [
         'flex-grow', 'flex-shrink', 'flex-basis',
-        'width', 'max-width', 'grid-column', 'float'
+        'width', 'max-width', 'grid-column', 'float',
+        'margin-left', 'margin-right'
       ];
       const CHILD_DECLS = {
         'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
-        'width': 'auto', 'max-width': 'none', 'grid-column': 'auto', 'float': 'none'
+        'width': 'auto', 'max-width': 'none', 'grid-column': 'auto', 'float': 'none',
+        'margin-left': '0', 'margin-right': '0'
       };
       for (const c of visibleChildren) {
         if (!c.style) continue;
@@ -2637,6 +2723,7 @@
       hideInsideArticleNav(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
+      hideInsideArticleAbsoluteAsides(articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       hideAncestorSiblings(articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能

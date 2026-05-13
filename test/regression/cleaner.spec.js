@@ -1892,6 +1892,95 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       'restore 後 child 的 width 應回到 fixture 原值 280px');
   });
 
+  it('主文內 float-based 多欄 layout（visible children 全 floated + 無 hidden sibling）→ collapse 為 block + 子 margin/width reset；absolute <aside> overlay 整段 hide（TBIJ 修法）', () => {
+    // TBIJ thebureauinvestigates.com 實測：reader mode 進入後 (1) body
+    // sidebar (author/date) 與 absolute aside "We expose injustice..."
+    // 完全重疊（同 left=366 同 top=856），文字疊在一起；(2) body 段落
+    // 寬度被 stylesheet width:50% + margin-left:25% 限制，仍只佔 reader
+    // card 約一半，剩下大塊空白。既有兩條 collapse 規則漏網：
+    //   - collapseGridWithHiddenCell 條件 C 需 hidden sibling，TBIJ 兩
+    //     children (body + sidebar) 都 visible
+    //   - collapseInnerFlexWrap 只處理 flex-row，TBIJ 父是 display: block
+    //     + children float: left / right
+    // v0.7.110 新條件 D：visibleChildren 全 floated + length >= 2 →
+    // collapse 為 block + 子 float/width/max-width/margin-left/right reset。
+    // 另新 hideInsideArticleAbsoluteAsides：`<aside>` + position
+    // absolute/fixed → hide（HTML5 semantic「次要旁支」+ 絕對定位 =
+    // overlay 浮動裝飾，跟內文無關）。
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'tbij-float-multi-col-and-absolute-aside.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const w = dom.window;
+
+    const absoluteAside = w.document.getElementById('absolute-aside');
+    const storySection = w.document.getElementById('story-section');
+    const sectionSidebar = w.document.getElementById('section-sidebar');
+    const sectionBody = w.document.getElementById('section-body');
+    const storySectionD2 = w.document.getElementById('story-section-d2');
+    const sectionBodyD2 = w.document.getElementById('section-body-d2');
+    assert.ok(absoluteAside && storySection && sectionSidebar && sectionBody &&
+      storySectionD2 && sectionBodyD2, 'fixture 元素齊全');
+
+    // D2 stub rect：jsdom 無 layout engine 必須 stub 才能驗 single-child + rect
+    // 寬 < 70% parent 條件
+    stubRect(storySectionD2, { top: 0, width: 1152, height: 400 });
+    stubRect(sectionBodyD2, { top: 0, width: 576, height: 400 });
+
+    w.__JRead = { state: {}, MSG: {} };
+    w.eval(DETECTOR_SRC);
+    w.eval(CLEANER_SRC);
+
+    const detected = w.__JRead.detector.detect();
+    assert.ok(detected, 'detector 應命中 <article>');
+    const localHidden = w.__JRead.cleaner.clean(detected.el);
+
+    try {
+      // 核心斷言 1：absolute aside 被 hide
+      assert.strictEqual(absoluteAside.dataset.jreadHidden, '1',
+        'position: absolute 的 <aside> overlay 應被 hideInsideArticleAbsoluteAsides 整段 hide');
+
+      // 核心斷言 2：float multi-col container 被 condition D 命中 collapse
+      assert.strictEqual(storySection.dataset.jreadCollapsed, '1',
+        'visible children 全 floated 的 float layout 應命中條件 D 並 collapse');
+      assert.strictEqual(storySection.style.getPropertyValue('display'), 'block',
+        'collapse 後 display 應為 block');
+
+      // 核心斷言 3：floated children 的 float / width / margin 全 reset
+      assert.strictEqual(sectionBody.style.getPropertyValue('float'), 'none',
+        'floated child 的 float 應 reset 為 none');
+      assert.strictEqual(sectionBody.style.getPropertyValue('width'), 'auto',
+        'floated child 的 width 應 reset 為 auto（覆寫 inline 576px）');
+      const marginLeftVal = sectionBody.style.getPropertyValue('margin-left');
+      assert.ok(marginLeftVal === '0' || marginLeftVal === '0px',
+        `floated child 的 margin-left 應 reset 為 0 或 0px（避免 stylesheet margin-left 殘留偏移），實得 "${marginLeftVal}"`);
+      assert.strictEqual(sectionBody.style.getPropertyPriority('margin-left'), 'important',
+        'margin-left:0 應 !important');
+      assert.strictEqual(sectionSidebar.style.getPropertyValue('float'), 'none',
+        'sidebar floated child 的 float 應 reset');
+      assert.strictEqual(sectionSidebar.style.getPropertyValue('width'), 'auto',
+        'sidebar floated child 的 width 應 reset');
+
+      // 核心斷言 3.5（v0.7.110 D2）：單 floated child + rect 寬 < 父 70%
+      // 也應 collapse（TBIJ 後續段落每個 section 只有 body 一個 child 場景）
+      assert.strictEqual(storySectionD2.dataset.jreadCollapsed, '1',
+        '單 floated child + 寬 < 父 70% 也應命中條件 D2 並 collapse');
+      assert.strictEqual(sectionBodyD2.style.getPropertyValue('float'), 'none',
+        'D2 floated child float 應 reset');
+      assert.strictEqual(sectionBodyD2.style.getPropertyValue('width'), 'auto',
+        'D2 floated child width 應 reset 為 auto');
+    } finally {
+      w.__JRead.cleaner.restore(localHidden);
+    }
+
+    // 核心斷言 4：restore 後 inline style 還原
+    assert.strictEqual(sectionBody.style.getPropertyValue('width'), '576px',
+      'restore 後 body 寬度應回到 fixture 原 576px');
+    assert.strictEqual(sectionBody.style.getPropertyValue('margin-left'), '288px',
+      'restore 後 body margin-left 應回到 fixture 原 288px');
+  });
+
   it('主文短篇 byline + author <a> 高 link density 不得被 hideInsideArticleSidebarColumns 條件 A 誤殺（healthsystemtracker entry-meta 修法）', () => {
     // healthsystemtracker.org 實測：article 內 `.entry-meta` 含 byline
     // (author 名 + Twitter 連結) + 日期，textLen ~80 chars 遠 < 主文
