@@ -1141,3 +1141,60 @@ describe('styler — v0.7.93 substack imageRow flex gallery', () => {
       '非含媒體 flex 不該被 runtime 改成 block');
   });
 });
+
+// =============================================================================
+// v0.7.94 gallery 子間距修法
+// Jimmy 2026-05-13 回報 v0.7.93 並列圖改垂直後三張照片緊貼,沒間距。
+// 修法 styler runtime: gallery container 內媒體直接子 (figure/picture/img/a/div)
+// 強制 inline margin-bottom: 12px !important 補空白。restore 還原原 inline 值。
+// =============================================================================
+describe('styler — v0.7.94 gallery 子間距', () => {
+  const SUBSTACK_FIXTURE = path.join(__dirname, 'fixtures', 'substack-imagerow-flex-gallery.html');
+
+  function setupSubstack() {
+    const env = loadFixtureWithScripts({
+      fixturePath: SUBSTACK_FIXTURE,
+      scripts: ['detector', 'styler']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected);
+    return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
+  }
+
+  it('apply() 對 gallery 內直接子 figure 設 inline margin-bottom: 12px !important', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const figs = document.querySelectorAll('.imageRow-_Y6x8T > figure');
+    assert.ok(figs.length >= 2, `fixture imageRow 應含 >= 2 figure (實際=${figs.length})`);
+    for (const f of figs) {
+      assert.strictEqual(f.style.getPropertyValue('margin-bottom'), '12px',
+        `gallery 內 figure 必須有 margin-bottom 12px`);
+      assert.strictEqual(f.style.getPropertyPriority('margin-bottom'), 'important',
+        `gallery 內 figure margin-bottom 必須 !important`);
+    }
+  });
+
+  it('restore() 後 gallery 內 figure margin-bottom 還原', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    const figs = document.querySelectorAll('.imageRow-_Y6x8T > figure');
+    const before = [...figs].map(f => f.style.getPropertyValue('margin-bottom'));
+    const snap = NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    NS.styler.restore(articleEl, snap);
+    [...figs].forEach((f, i) => {
+      assert.strictEqual(f.style.getPropertyValue('margin-bottom'), before[i],
+        `restore 後 inline margin-bottom 應還原 (原="${before[i]}")`);
+    });
+  });
+
+  it('非 gallery 內的 figure 不被加 margin-bottom (避免誤殺)', () => {
+    const { document, NS, articleEl } = setupSubstack();
+    // 注入一個自由 figure (非 gallery container 內), 應不被改
+    const standaloneFig = document.createElement('figure');
+    standaloneFig.id = 'standalone-fig';
+    standaloneFig.innerHTML = '<img src="data:image/svg+xml,%3Csvg/%3E">';
+    articleEl.appendChild(standaloneFig);
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    assert.strictEqual(standaloneFig.style.getPropertyValue('margin-bottom'), '',
+      'gallery 外的 figure 不該被 runtime 加 margin');
+  });
+});

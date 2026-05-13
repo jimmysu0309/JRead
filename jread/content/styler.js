@@ -700,6 +700,27 @@ html.${HTML_CLASS} body {
         el.style.setProperty('display', 'block', 'important');
         el.style.setProperty('height', 'auto', 'important');
         el.style.setProperty('min-height', '0', 'important');
+
+        // v0.7.94：gallery flex 改 block 後原 flex gap 失效，直接子（figure /
+        // picture / img / a / div）會緊貼。逐個媒體子設 margin-bottom: 12px
+        // !important 補空白。snapshot 紀錄原 inline margin-bottom 以便 restore。
+        // Jimmy 2026-05-13 回報 v0.7.93 修完三張並列照片改垂直後緊貼無間距。
+        const mediaTags = new Set(['FIGURE', 'PICTURE', 'IMG', 'A', 'DIV']);
+        for (const child of el.children) {
+          if (!mediaTags.has(child.tagName)) continue;
+          // 排除「不含媒體」的 div（gallery wrapper 內偶爾混 spacer / caption），
+          // 只對「自身含 img/picture/figure 子孫」的 element 加 margin。
+          const hasMediaDescendant = child.tagName === 'IMG' || child.tagName === 'PICTURE' || child.tagName === 'FIGURE' ||
+            !!(child.querySelector && child.querySelector('img, picture, figure'));
+          if (!hasMediaDescendant) continue;
+          const priorChild = {
+            el: child,
+            marginBottom: child.style.getPropertyValue('margin-bottom'),
+            marginBottomPriority: child.style.getPropertyPriority('margin-bottom')
+          };
+          galleryFlex.push(priorChild);
+          child.style.setProperty('margin-bottom', '12px', 'important');
+        }
       }
 
       return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex };
@@ -753,17 +774,29 @@ html.${HTML_CLASS} body {
       }
 
       // v0.7.93：還原 image gallery flex/grid containers 的原 inline style
+      // v0.7.94：同陣列也含 gallery 內媒體直接子的 margin-bottom snapshot
       if (Array.isArray(snapshot.galleryFlex)) {
         for (const g of snapshot.galleryFlex) {
           if (!g || !g.el) continue;
-          for (const prop of ['display', 'height', 'min-height']) {
-            const key = prop === 'min-height' ? 'minHeight' : prop;
-            const value = g[key];
-            const priority = g[key + 'Priority'];
-            if (value) {
-              g.el.style.setProperty(prop, value, priority || '');
+          // gallery container 自身: 還原 display / height / min-height
+          if (g.hasOwnProperty('display')) {
+            for (const prop of ['display', 'height', 'min-height']) {
+              const key = prop === 'min-height' ? 'minHeight' : prop;
+              const value = g[key];
+              const priority = g[key + 'Priority'];
+              if (value) {
+                g.el.style.setProperty(prop, value, priority || '');
+              } else {
+                g.el.style.removeProperty(prop);
+              }
+            }
+          }
+          // gallery 內媒體子: 還原 margin-bottom
+          if (g.hasOwnProperty('marginBottom')) {
+            if (g.marginBottom) {
+              g.el.style.setProperty('margin-bottom', g.marginBottom, g.marginBottomPriority || '');
             } else {
-              g.el.style.removeProperty(prop);
+              g.el.style.removeProperty('margin-bottom');
             }
           }
         }

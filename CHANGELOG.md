@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.94**——gallery 並列改垂直後相片緊貼修法（v0.7.93 後續）。**動機**（Jimmy 2026-05-13 回報）：v0.7.93 把 substack imageRow 類 flex/grid 並列 gallery 改成 block 垂直堆疊解決圖片溢出蓋文字後，原本 flex `gap: 8px` 失效，三張並列改垂直後緊貼無間距、視覺擠在一塊。**修法**：styler.apply() runtime 處理 gallery container 改 block 時，**同時掃 container 直接子**（figure / picture / img / a / div with 媒體子孫），逐個強制 inline `margin-bottom: 12px !important` 補圖之間空白。snapshot.galleryFlex 同陣列加 child 紀錄（marginBottom + marginBottomPriority）供 restore 還原原 inline 值。div 子加額外 guard：自身含 img / picture / figure 子孫才動，避免誤殺非圖類 div spacer / caption。新增 3 條 styler.spec.js forcing function：apply 後 gallery 內 figure 必有 margin-bottom 12px!important + restore 還原 + 非 gallery 內 figure 不被改。339 jsdom spec 全過。
+
+---
+
 **v0.7.93**——substack imageRow flex gallery 圖片遮蔽下方文字修法。**動機**（Jimmy 2026-05-13 回報 synapseching.substack.com /p/17）：兩張並列圖片（imageRow flex 容器固定 height: 230px）開閱讀模式後，圖片下緣溢出容器約 65px、視覺覆蓋下方段落文字。**根因**：(1) substack imageRow `display: flex; height: 230px` 用 `align-items: stretch` 把 picture flex 子拉到 height 230。(2) jread styler `[data-jread-active] img { height: auto !important }` 讓 IMG 跑 natural aspect ratio（197 × 1.5 = 295px），IMG 比 picture/imageRow 容器高 65px。(3) imageRow / picture 沒 `overflow: hidden`，IMG 從容器底部視覺溢出，覆蓋緊接的下方段落文字（imageRow 在 flow 上占 230 高度、IMG 視覺占 295 高度，差 65px 蓋住下方）。**修法**（styler.js runtime）：`apply()` 掃 articleEl 內所有 `display: flex/grid`（或 inline-flex/grid）且**直接子含 picture/img/figure** 的元素，強制 inline `display: block + height: auto + min-height: 0` 改成 block 顯示。reader card 是單欄純閱讀情境，並列 gallery layout 無保留必要，垂直堆疊圖片是最穩妥的結構性兜底。記錄 snapshot.galleryFlex 在 `restore()` 還原原 inline style/priority，符合可逆性。CSS `:has()` 通則 jsdom 不支援、改 runtime 解決。**通則屬性**：純結構性，掃 flex/grid + 媒體直接子，不綁站點 class——任何站把 flex 並列 gallery + 固定 height 都被覆蓋。非含媒體 flex 容器（純文字 flex layout）不被改動，避免誤殺 layout。新增 fixture `substack-imagerow-flex-gallery.html` + 5 條 styler.spec.js（imageRow inline display=block!important / height=auto / min-height=0 / restore 還原 / snapshot.galleryFlex 紀錄 / 非媒體 flex 不被改）。Probe 確認：substack i=11/12 兩張並列圖修法後變垂直堆疊（rect.top 8400 之下，rect.left=336 對齊 article），不再溢出 article 右側、不再蓋下方段落。336 jsdom spec 全過。
 
 ---
