@@ -227,11 +227,12 @@
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'enter' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'exit' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
-  // reload 走 chrome.runtime.reload()——content script 在 isolated world、
-  // 有 extension API 權限；SW + 所有 content script 重啟，bridge 自己也會
-  // 重新注入，下次 dispatchEvent 仍可用。bootstrap 限制：bridge 第一次裝
-  // 進 jread 後仍需一次 manual reload（沒 bridge 之前無法自主），之後永久
-  // 零介入。
+  // reload 走 sendMessage('JREAD_RELOAD') → SW handler 呼叫 chrome.runtime.reload()。
+  // 不可從 content script 直接呼 chrome.runtime.reload —— 該 API 只 SW / popup /
+  // options 可用，content script context 沒此 function，直呼會 TypeError
+  // (v0.7.126 修法，v0.7.124-125 曾誤設計成 content script 直呼)。bridge bootstrap
+  // 限制：jread 任何 bridge 邏輯改動後仍需先 manual reload 一次讓新 code 生效，
+  // 之後 dispatch 'reload' 走 SW 中繼永久零介入。
   window.addEventListener('__jread_debug', (e) => {
     const type = (e && e.detail && e.detail.type) || 'toggle';
     if (type === 'toggle') {
@@ -242,8 +243,12 @@
     } else if (type === 'exit') {
       if (NS.state.active) exitReaderMode();
     } else if (type === 'reload') {
+      // v0.7.126：chrome.runtime.reload() 在 content script context 不存在
+      // （Uncaught TypeError: chrome.runtime.reload is not a function）——
+      // 該 API 僅 SW / popup / options page 可呼叫。改透過 sendMessage 給 SW
+      // 中繼觸發 reload。
       if (NS.state.active) exitReaderMode();
-      chrome.runtime.reload();
+      chrome.runtime.sendMessage({ type: 'JREAD_RELOAD' });
     }
   });
 
