@@ -2200,6 +2200,104 @@
     }
   }
 
+  // ---- v0.7.124：cleaner 末段 collapse empty wrappers ----------------------
+  // 場景：前面 hide 規則把 wrapper 內所有 button/text 都清掉，但 wrapper 自身
+  // 被原站 CSS 鎖固定 `height: <px>`（emotion / styled-components 類 hash class
+  // 慣常做法），display 仍 visible 撐空間。
+  // Medium 文章 top action bar 實測（DIV.cm bd ga gb gc gd, height=24px, child
+  // 全 hide 含 `<p role="tooltip">Member-only story</p>` 已被 hideDialogs 處理）
+  // 撐起 reader card 頂部 24px 殘留 visual gap，反映在 h1 標題下方有大塊留白。
+  //
+  // 通則：reader mode 下若某 wrapper render text 完全空 + 無 visible 媒體 + 無
+  // background image，wrapper 撐空間沒貢獻內容、純屬 CSS 殘留，應一併 hide。
+  //
+  // 限制與 guard：
+  //   - articleEl 自身、PRESERVE_SEL（figure / figcaption / blockquote / summary）
+  //     內不動——figure 可能設計成「圖片 + 圖說」結構，wrapper 邏輯不適用
+  //   - 跳過媒體 tag（IMG/PICTURE/VIDEO/SVG/CANVAS/IFRAME/AUDIO/SOURCE/TRACK）
+  //   - 跳過內容 leaf tag（A/BUTTON/H*/P/LI/UL/OL/BLOCKQUOTE/PRE/CODE/FIGCAPTION
+  //     /EM/STRONG/B/I/U/S/SUP/SUB/SPAN/LABEL/TABLE 與 cell 類 / DD/DT/DL）
+  //     ——這些 tag 不該被當「wrapper」處理；它們自身就是 leaf content
+  //   - rect.height >= 8 且 rect.width >= 80：避免 1-2px micro spacer / icon
+  //     誤觸（圖示型 inline 元素 rect width 一般 < 50）
+  //   - visibleRenderedText() 對 hidden 子孫遞迴排除（display:none / visibility:
+  //     hidden / data-jread-hidden="1"）——比 `el.innerText` 跨 jsdom + 真實
+  //     Chrome 更可靠（jsdom innerText 退化成 textContent，含 hidden text）
+  //   - 子孫有 visible 媒體（rect > 5×5 且祖先未 hide）→ 保留（合法 figure-
+  //     like wrapper）
+  //   - getComputedStyle backgroundImage !== 'none' → 保留（含背景圖視為合法
+  //     decoration / divider，非空殘留）
+  //
+  // 順序：放 clean() 末段、在所有 hideXxx + collapseXxx + resetMedia + force
+  // MediaContainerBlock 之後——所有應 hide 的子孫都已 hide、wrapper visual 狀態
+  // 最終，新規則才能正確判定。
+  const EMPTY_COLLAPSE_SKIP_TAGS = new Set([
+    'IMG','PICTURE','VIDEO','SVG','CANVAS','IFRAME','AUDIO','SOURCE','TRACK',
+    'A','BUTTON','LABEL',
+    'H1','H2','H3','H4','H5','H6',
+    'P','LI','UL','OL','BLOCKQUOTE','PRE','CODE','FIGCAPTION',
+    'EM','STRONG','B','I','U','S','SUP','SUB','SPAN',
+    'TABLE','TR','TD','TH','THEAD','TBODY','TFOOT',
+    'DD','DT','DL',
+    'INPUT','SELECT','TEXTAREA','OPTION'
+  ]);
+  const EMPTY_COLLAPSE_MIN_HEIGHT = 8;
+  const EMPTY_COLLAPSE_MIN_WIDTH = 80;
+
+  // visibility-aware rendered text：遞迴走子孫、跳過 display:none / visibility:
+  // hidden / data-jread-hidden 標記者，把可見 text node 串起來。jsdom getComputedStyle
+  // 對 inline style 仍 valid，所以兩端（jsdom + 真實 Chrome）都得到一致結果。
+  // 比 element.innerText 更可靠（innerText 在 jsdom 退化成 textContent，會帶到 hidden text）。
+  function visibleRenderedText(el) {
+    let out = '';
+    function walk(node) {
+      if (!node) return;
+      if (node.nodeType === 3) { out += node.textContent; return; }
+      if (node.nodeType !== 1) return;
+      if (node.dataset && node.dataset.jreadHidden === '1') return;
+      const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
+        window.getComputedStyle(node) : null;
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return;
+      for (const c of node.childNodes) walk(c);
+    }
+    walk(el);
+    return out;
+  }
+
+  function collapseEmptyWrappersAfterClean(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const el of articleEl.querySelectorAll('*')) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
+      if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
+      const renderText = visibleRenderedText(el).trim();
+      if (renderText.length > 0) continue;
+      // 子孫含 visible 媒體（祖先未 hide + rect > 5×5）→ 保留（合法 figure-like wrapper）
+      let hasVisibleMedia = false;
+      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
+        let cur = m;
+        let inHidden = false;
+        while (cur && cur !== el) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        if (inHidden) continue;
+        const mr = m.getBoundingClientRect();
+        if (mr.height > 5 && mr.width > 5) { hasVisibleMedia = true; break; }
+      }
+      if (hasVisibleMedia) continue;
+      // background image → 視為合法 divider / decoration、保留
+      const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
+        window.getComputedStyle(el) : null;
+      if (cs && cs.backgroundImage && cs.backgroundImage !== 'none') continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- figure / picture 容器強制 block（v0.7.24 ttv.com.tw 修法）----------
   //
   // 場景：ttv 主圖包在 `<figure class="cover img"><figure><img></figure></figure>`
@@ -3051,6 +3149,11 @@
       // 清 articleEl 後代殘留 box-shadow（v0.7.30 cnyes 內層 article 殘留
       // 淡藍陰影、看起來像「卡中卡」框）
       clearDescendantBoxShadow(articleEl, hidden);
+      // v0.7.124：所有 hide / collapse / media 規則跑完後、最後一次掃 empty
+      // wrapper。Medium top action bar（DIV.cm 撐 24px、內部子全 hide 後仍
+      // 保留 CSS height）類殘留以此規則統清。詳見 collapseEmptyWrappersAfterClean
+      // 上方註解。
+      collapseEmptyWrappersAfterClean(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）

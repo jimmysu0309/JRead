@@ -218,5 +218,34 @@
     });
   }
 
+  // Page-world debug bridge：允許 main-world JS（chrome-in-chrome MCP /
+  // devtools console）透過 dispatchEvent 觸發 reader mode toggle、reload
+  // extension、查詢狀態。content script 在 isolated world、page main world
+  // 無法直接呼叫；DOM event 跨 world 廣播，是合法的單向 page→isolated 通道。
+  // 用法（page world）：
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'toggle' } }));
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'enter' } }));
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'exit' } }));
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
+  // reload 走 chrome.runtime.reload()——content script 在 isolated world、
+  // 有 extension API 權限；SW + 所有 content script 重啟，bridge 自己也會
+  // 重新注入，下次 dispatchEvent 仍可用。bootstrap 限制：bridge 第一次裝
+  // 進 jread 後仍需一次 manual reload（沒 bridge 之前無法自主），之後永久
+  // 零介入。
+  window.addEventListener('__jread_debug', (e) => {
+    const type = (e && e.detail && e.detail.type) || 'toggle';
+    if (type === 'toggle') {
+      if (NS.state.active) exitReaderMode();
+      else enterReaderMode();
+    } else if (type === 'enter') {
+      if (!NS.state.active) enterReaderMode();
+    } else if (type === 'exit') {
+      if (NS.state.active) exitReaderMode();
+    } else if (type === 'reload') {
+      if (NS.state.active) exitReaderMode();
+      chrome.runtime.reload();
+    }
+  });
+
   // TODO: SPA 導航偵測（MutationObserver on <title> / history API hook）
 })();
