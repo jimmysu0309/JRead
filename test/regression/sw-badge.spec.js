@@ -21,14 +21,13 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
       'BADGE_ACTIVE_COLOR 必須是 #10b981——forcing：色值偏離（例如改回 #22c55e 等其他綠）會破壞 v0.7.125 視覺設計');
   });
 
-  it('必須宣告 BADGE_ACTIVE_TEXT 常數 = " "（單空格、純色塊角標）', () => {
-    // v0.7.127：從 ● 改純空格——chrome macOS 把 ● 字面渲染巨大、background
-    // 填滿整個 badge 區、視覺上覆蓋整個 icon 看起來像獨立綠圓 icon 而非小
-    // 角標。改純空格後 badge 渲染成「純綠色小色塊」（無字元），符合「綠燈
-    // LED」直覺。Shinkansen 用 ● 是該專案的 icon 大小/形狀適合、跨專案不能
-    // 直接複用同字元。
-    assert.match(src, /const\s+BADGE_ACTIVE_TEXT\s*=\s*['"] ['"]/,
-      'BADGE_ACTIVE_TEXT 必須是單空格——forcing：改回 ● 或其他寬字元會讓 macOS chrome 把 badge 渲染撐滿整個 icon 區、視覺破壞');
+  it('必須宣告 BADGE_ACTIVE_TEXT 常數 = "✓" (U+2713 CHECK MARK)', () => {
+    // v0.7.128：從純空格改 ✓——純色塊「不太好看」（Jimmy 2026-05-14），加對勾
+    // 既保留合理寬度（✓ 是窄字元、不撐 badge background 像 ● 那樣）又帶語意
+    // 「閱讀模式已啟用」。U+2713 比 ● (U+25CF) 窄一截、比 emoji ✅ 中性、跨
+    // 平台一致渲染。
+    assert.match(src, /const\s+BADGE_ACTIVE_TEXT\s*=\s*['"]✓['"]/,
+      'BADGE_ACTIVE_TEXT 必須是 U+2713 CHECK MARK——forcing：改回 ● 或寬字元會撐滿 badge、改回空格會失去「已啟用」語意');
   });
 
   // 抓 SET_ACTIVE_ICON case 完整 body：從 `case 'SET_ACTIVE_ICON'` 到下一個

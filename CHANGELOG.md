@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.128**——badge 改用對勾 ✓。**動機**：v0.7.127 改純色塊（空格）後 Jimmy 2026-05-14 反映「不太好看」，希望加對勾既保留純色塊合理大小又帶語意「閱讀模式已啟用」。**修法**（jread/background/service-worker.js）：`BADGE_ACTIVE_TEXT` 從 `' '`（空格）改 `'✓'`（U+2713 CHECK MARK）—— ✓ 是窄字元、chrome macOS 渲染後不會像 ● 那樣撐滿整個 badge 區、且帶 affirmative 語意。spec assertion 同步更新。全 428 spec passing。
+
+---
+
 **v0.7.127**——reader-active badge 視覺修法：BADGE_ACTIVE_TEXT 從 `'●'` (U+25CF) 改成 `' '`（單空格）。**動機**：v0.7.125 啟用後 Jimmy 2026-05-14 實機截圖揭穿 chrome macOS 把 `●` 字面渲染巨大、整個 18-20px badge 區被綠色 `#10b981` 背景填滿、視覺上完全覆蓋 J icon、看起來像 toolbar 上多了一格獨立綠圓 icon、而不是預期的小角標「綠燈 LED」。**根因**：chrome action badge `setBadgeText` 字元寬度由 chrome 內部決定、background 跟字元寬走、字寬太大就把整個 badge 區撐滿。對 `●` (U+25CF BLACK CIRCLE，全形實心圓字面)，chrome macOS 渲染下吃掉整個 icon 區。Shinkansen 用同字元視覺正常是因為該 icon 設計尺寸/形狀讓 badge 看起來像角標、跨專案不能直接複用同字元。**修法**（jread/background/service-worker.js）：`BADGE_ACTIVE_TEXT` 從 `'●'` 改 `' '` —— badge 渲染成純綠色小色塊、無字元，符合「亮一顆綠色 LED」直覺。**spec 1 條** assertion 同步（test/regression/sw-badge.spec.js）：BADGE_ACTIVE_TEXT 必須是單空格——forcing：改回 ● 或其他寬字元會讓 macOS chrome 把 badge 渲染撐滿整個 icon 區。**全 428 spec passing**。**Bootstrap 限制**：v0.7.127 修法仍需先 manual reload 一次讓新 SW badge text 生效，之後 dispatch reload 永久零介入。
 
 ---
