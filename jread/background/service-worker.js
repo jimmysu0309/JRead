@@ -41,13 +41,16 @@ const ICONS_IDLE = {
   128: '/assets/icons/icon-128-disabled.png'
 };
 
-// v0.7.125：reader mode 啟動時在 toolbar icon 右下角顯示綠色 badge（"●"）
-// 作為視覺輔助訊號。配色 #10b981（tailwind emerald-500，低飽和綠、無壓迫）
-// 與彩色 icon 切換構成雙通道指示：使用者可從 icon 飽和度 + badge 兩處判斷
-// reader mode 狀態。
-// 字元 U+25CF BLACK CIRCLE 與 Shinkansen 翻譯完成 badge 同字元語意一致。
+// v0.7.125：reader mode 啟動時在 toolbar icon 右下角顯示綠色 badge 作為視覺
+// 輔助訊號。配色 #10b981（tailwind emerald-500，低飽和綠、無壓迫）+ 彩色
+// icon 切換構成雙通道指示。
+// v0.7.127：BADGE_ACTIVE_TEXT 從 '●' (U+25CF) → ' '（單空格）—— Jimmy 2026-
+// 05-14 實機截圖揭穿 chrome macOS 把 ● 字面渲染巨大、整個 18-20px badge 區
+// 被綠色背景填滿、視覺上蓋住 J icon、看起來像獨立綠圓 icon 而非小角標。
+// chrome action badge 字元寬度無法縮 fit、背景跟字元寬走。改純空格後 badge
+// 渲染成純色塊小角標（無字元、純綠色 LED 視覺），符合「綠燈」直覺。
 const BADGE_ACTIVE_COLOR = '#10b981';
-const BADGE_ACTIVE_TEXT  = '●';
+const BADGE_ACTIVE_TEXT  = ' ';
 
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
