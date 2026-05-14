@@ -41,6 +41,14 @@ const ICONS_IDLE = {
   128: '/assets/icons/icon-128-disabled.png'
 };
 
+// v0.7.125：reader mode 啟動時在 toolbar icon 右下角顯示綠色 badge（"●"）
+// 作為視覺輔助訊號。配色 #10b981（tailwind emerald-500，低飽和綠、無壓迫）
+// 與彩色 icon 切換構成雙通道指示：使用者可從 icon 飽和度 + badge 兩處判斷
+// reader mode 狀態。
+// 字元 U+25CF BLACK CIRCLE 與 Shinkansen 翻譯完成 badge 同字元語意一致。
+const BADGE_ACTIVE_COLOR = '#10b981';
+const BADGE_ACTIVE_TEXT  = '●';
+
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(null);
@@ -63,10 +71,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     case 'SET_ACTIVE_ICON': {
       // content main.js 在 enter/exit reader mode 時呼叫，切 action icon 彩色/灰階
+      // + 同步切換綠色 badge（active）/ 清空 badge（inactive）
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId !== 'number') return;
       const active = !!(msg.payload && msg.payload.active);
       chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE });
+      if (active) {
+        chrome.action.setBadgeBackgroundColor({ color: BADGE_ACTIVE_COLOR, tabId });
+        // 某些舊版 Chrome 沒 setBadgeTextColor、ignore 即可
+        if (chrome.action.setBadgeTextColor) {
+          chrome.action.setBadgeTextColor({ color: '#ffffff', tabId });
+        }
+        chrome.action.setBadgeText({ text: BADGE_ACTIVE_TEXT, tabId });
+      } else {
+        chrome.action.setBadgeText({ text: '', tabId });
+      }
       return;
     }
     case 'SAVE_TO_READWISE': {
@@ -102,6 +121,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === 'loading') {
     chrome.action.setIcon({ tabId, path: ICONS_IDLE });
+    // 同步清掉 reader-active badge（避免新頁面殘留前一頁的綠燈）
+    chrome.action.setBadgeText({ tabId, text: '' });
   }
 });
 
