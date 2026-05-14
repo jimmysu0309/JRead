@@ -88,6 +88,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       return;
     }
+    case 'JREAD_RELOAD': {
+      // v0.7.126：content script bridge (`__jread_debug` type='reload')
+      // 中繼觸發。chrome.runtime.reload() 只能從 SW / popup / options 呼叫，
+      // content script 直接呼會 TypeError。SW handler 收到後重啟 extension。
+      // 設計給 Claude 自主 debug 用——dispatch event → bridge → sendMessage
+      // → SW reload，整條 chain 無 popup / 鍵盤 shortcut 介入。
+      chrome.runtime.reload();
+      return;
+    }
     case 'SAVE_TO_READWISE': {
       // popup → SW：把 reader card 內容 POST 到 Readwise Reader API。
       // payload 由 content script 的 EXTRACT_READER_HTML 產生（{ url, html, title }）。

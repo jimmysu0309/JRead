@@ -78,4 +78,43 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
     assert.ok(constIdx < handlerIdx,
       'BADGE 常數必須在 handler 之前宣告（top-level const）—— forcing：放 handler 內每次重建浪費 + 也不該被 v8 inline');
   });
+
+  // ─── v0.7.126：JREAD_RELOAD handler（content script → SW reload bridge）─
+  // chrome.runtime.reload() 在 content script context 不存在
+  // （Uncaught TypeError: chrome.runtime.reload is not a function）。
+  // 必須 SW 中繼。bridge 從 content script sendMessage 給 SW、SW 收到後呼叫
+  // chrome.runtime.reload()。
+  describe('v0.7.126 JREAD_RELOAD handler（content → SW reload 中繼）', () => {
+    it('SW message handler 必須含 JREAD_RELOAD case 並呼叫 chrome.runtime.reload', () => {
+      const start = src.search(/case\s+['"]JREAD_RELOAD['"]:/);
+      assert.ok(start >= 0,
+        'SW 必須含 JREAD_RELOAD case——forcing：content bridge 觸發 reload 時走 sendMessage 中繼，handler 缺席則 reload 不會發生');
+      const rest = src.slice(start);
+      const nextCase = rest.search(/\n\s*case\s+['"][A-Z_]+['"]:|\n\s*default:/);
+      const body = nextCase >= 0 ? rest.slice(0, nextCase) : rest;
+      assert.match(body, /chrome\.runtime\.reload\s*\(\s*\)/,
+        'JREAD_RELOAD handler 必須呼叫 chrome.runtime.reload()——forcing：handler 收到但漏接 reload call');
+    });
+  });
+
+  // ─── content script main.js bridge reload 分支 ──────────────────────
+  describe('v0.7.126 main.js bridge reload 分支必須走 sendMessage', () => {
+    const mainSrc = require('fs').readFileSync(
+      require('path').join(__dirname, '..', '..', 'jread', 'content', 'main.js'),
+      'utf8'
+    );
+
+    it('reload 分支必須走 chrome.runtime.sendMessage({type:"JREAD_RELOAD"})（不可直接呼 chrome.runtime.reload）', () => {
+      // 抓 `else if (type === 'reload')` 分支起點——只命中真實 code、不誤撞
+      // 上方 comment 內的 'type: reload' 範例字串。
+      const idx = mainSrc.search(/else\s+if\s*\(\s*type\s*===\s*['"]reload['"]\s*\)/);
+      assert.ok(idx >= 0, "能找到 else if (type==='reload') 分支");
+      // 切出 reload branch body：從匹配點到下一個 else if / listener 結束 `});`
+      const after = mainSrc.slice(idx);
+      const endIdx = after.search(/}\s*else\s+if|\n\s*}\s*\)\s*;/);
+      const body = endIdx >= 0 ? after.slice(0, endIdx + 1) : after;
+      assert.match(body, /chrome\.runtime\.sendMessage\s*\(\s*\{\s*type:\s*['"]JREAD_RELOAD['"]/,
+        "reload 分支必須 sendMessage({type:'JREAD_RELOAD'})——forcing：直接呼 chrome.runtime.reload() 會炸 TypeError（content script 沒此 API）");
+    });
+  });
 });
