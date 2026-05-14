@@ -5068,3 +5068,177 @@ describe('cleaner — collapseInnerGridFlex descendants 殘留 auto-center reset
       'restoreInnerGridFlex 必須走 __innerGridFlexDesc 軌道——forcing：退出 reader mode 時 descendant inline 樣式必還原');
   });
 });
+
+// -----------------------------------------------------------------------------
+// v0.7.124 medium-empty-top-bar：cleaner 末段 collapseEmptyWrappersAfterClean
+// 規則。Medium 文章 articleEl 內 top action bar wrapper（DIV.cm bd ga gb gc gd
+// h=24, child 全 hide 含 `<p role="tooltip">Member-only story</p>` + button
+// cluster）被原站 CSS 鎖固定 height、`hide()` 處理子後 wrapper 仍撐 24px 殘留
+// visual gap。新規則：cleaner 跑完所有 hide/collapse/media reset 後，掃 articleEl
+// 內 element，rect 撐空間 + visibility-aware render text 空 + 無 visible 媒體 +
+// 無 background image → hide。
+//
+// Jimmy 2026-05-14 實機 chrome-in-chrome bridge probe 揭穿：articleEl content
+// edge=88px、h1.rect.top=207px、gap=119px；其中 DIV.cm（top=120, h=24, w=680）
+// 撐 24px、render text 空（內含 tooltip P 已被 hideDialogs hide → 不算 visible
+// text）—— 新規則命中條件全滿足。
+// -----------------------------------------------------------------------------
+describe('cleaner — medium-empty-top-bar（render text 空 + 撐高 wrapper 末段 collapse）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'medium-empty-top-bar.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    // jsdom 無 layout，stub .empty-top-bar rect 到 24px 高 + 680 寬讓新規則
+    // `rect.height >= 8 && rect.width >= 80` 命中。真實 Chrome 下 CSS height
+    // 會直接反映在 rect 不需 stub。
+    const topBar = document.querySelector('.empty-top-bar');
+    Object.defineProperty(topBar, 'getBoundingClientRect', {
+      value: () => ({ width: 680, height: 24, top: 0, bottom: 24, left: 0, right: 680, x: 0, y: 0 }),
+      configurable: true
+    });
+    // sanity：figure-like wrapper 含 visible img、stub rect 撐高度 + 內 img 撐
+    // 5×5+，新規則 hasVisibleMedia guard 應 skip
+    const figureWrap = document.querySelector('.figure-like-wrapper');
+    Object.defineProperty(figureWrap, 'getBoundingClientRect', {
+      value: () => ({ width: 600, height: 400, top: 0, bottom: 400, left: 0, right: 600, x: 0, y: 0 }),
+      configurable: true
+    });
+    const heroImg = figureWrap.querySelector('img');
+    Object.defineProperty(heroImg, 'getBoundingClientRect', {
+      value: () => ({ width: 600, height: 400, top: 0, bottom: 400, left: 0, right: 600, x: 0, y: 0 }),
+      configurable: true
+    });
+    // decoration-divider stub rect（背景圖 wrapper、guard 應 skip）
+    const deco = document.querySelector('.decoration-divider');
+    Object.defineProperty(deco, 'getBoundingClientRect', {
+      value: () => ({ width: 200, height: 16, top: 0, bottom: 16, left: 0, right: 200, x: 0, y: 0 }),
+      configurable: true
+    });
+    window.__JRead = { state: {}, MSG: {} };
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中 <article class="meteredContent">');
+    hidden = window.__JRead.cleaner.clean(result.el);
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('`<p role="tooltip">Member-only story</p>` 先被 hideDialogs hide（前提條件）', () => {
+    const tooltip = document.querySelector('p[role="tooltip"]');
+    assert.ok(tooltip);
+    // tooltip 自身或祖先有 jread-hidden=1
+    let cur = tooltip, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(inHidden, 'role=tooltip P 必須先被 hideDialogs hide（新規則 forcing 的前提）');
+  });
+
+  it('`.empty-top-bar` 被 collapseEmptyWrappersAfterClean hide（forcing：render text 空 + 撐空間）', () => {
+    const topBar = document.querySelector('.empty-top-bar');
+    assert.ok(topBar);
+    assert.strictEqual(topBar.dataset.jreadHidden, '1',
+      '.empty-top-bar 內所有 visible content 被前置規則清光後、wrapper 撐 24px height 殘留 visual gap，' +
+      'collapseEmptyWrappersAfterClean 必須 hide；forcing：若 wrapper 自身或 children 全 hide 後新規則' +
+      '不掃，Medium reader card 頂部 24px 空白會永遠存在');
+  });
+
+  it('主文 MEDIUM_MAIN_TEXT_* 段落保留（sanity：新規則不誤殺含長段落 wrapper）', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => /MEDIUM_MAIN_TEXT_/.test(p.textContent));
+    assert.ok(marks.length >= 5, '至少 5 個主文段落 sanity 標記');
+    for (const p of marks) {
+      let cur = p, inH = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inH = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inH, `MEDIUM_MAIN_TEXT 段落不得被 hide：${p.textContent.slice(0, 30)}`);
+    }
+  });
+
+  it('主文 H1 標題保留（sanity：新規則不誤殺含 h1 的 wrapper）', () => {
+    const h1 = document.querySelector('h1.pw-post-title');
+    assert.ok(h1);
+    let cur = h1, inH = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inH = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inH, 'h1.pw-post-title 不得被 hide');
+  });
+
+  it('含 visible img 的 wrapper 不被誤殺（sanity：hasVisibleMedia guard）', () => {
+    const fw = document.querySelector('.figure-like-wrapper');
+    assert.ok(fw);
+    assert.notStrictEqual(fw.dataset.jreadHidden, '1',
+      '.figure-like-wrapper 內含 visible img、必須 skip；forcing：guard 失效會誤殺含圖 wrapper');
+  });
+
+  it('cleaner.js 必須宣告 collapseEmptyWrappersAfterClean 函式', () => {
+    assert.match(SRC.cleaner, /function\s+collapseEmptyWrappersAfterClean\s*\(/,
+      'cleaner.js 必須含 collapseEmptyWrappersAfterClean——forcing：規則被誤刪 → Medium top bar 殘留 24px');
+  });
+
+  it('clean() 必須呼叫 collapseEmptyWrappersAfterClean', () => {
+    // 函式定義（function declaration）跟 clean() 內呼叫各佔一處——必須 >= 2
+    const occurrences = (SRC.cleaner.match(/collapseEmptyWrappersAfterClean/g) || []).length;
+    assert.ok(occurrences >= 2,
+      `clean() 必須呼叫新規則——forcing：只剩 ${occurrences} 處表示 clean() 內漏接`);
+  });
+
+  it('collapseEmptyWrappersAfterClean 必須有 hasVisibleMedia guard（不誤殺含媒體 wrapper）', () => {
+    const fnStart = SRC.cleaner.search(/function\s+collapseEmptyWrappersAfterClean\s*\(/);
+    assert.ok(fnStart >= 0, '能找到 collapseEmptyWrappersAfterClean');
+    const fnRegion = SRC.cleaner.slice(fnStart, fnStart + 3000);
+    assert.match(fnRegion, /hasVisibleMedia/, '必須含 hasVisibleMedia 變數');
+    assert.match(fnRegion, /img,\s*picture,\s*video,\s*iframe,\s*svg,\s*canvas/,
+      '必須查 img/picture/video/iframe/svg/canvas 媒體 tag');
+  });
+
+  it('collapseEmptyWrappersAfterClean 必須有 backgroundImage guard（不誤殺含背景圖 wrapper）', () => {
+    const fnStart = SRC.cleaner.search(/function\s+collapseEmptyWrappersAfterClean\s*\(/);
+    const fnRegion = SRC.cleaner.slice(fnStart, fnStart + 3000);
+    assert.match(fnRegion, /backgroundImage/,
+      '必須讀 backgroundImage 排除含裝飾圖 wrapper');
+  });
+
+  it('collapseEmptyWrappersAfterClean 必須跳過 PRESERVE_SEL（figure/figcaption/blockquote/summary）', () => {
+    const fnStart = SRC.cleaner.search(/function\s+collapseEmptyWrappersAfterClean\s*\(/);
+    const fnRegion = SRC.cleaner.slice(fnStart, fnStart + 3000);
+    assert.match(fnRegion, /isInPreserved\(el\)/,
+      '必須呼叫 isInPreserved(el) skip PRESERVE_SEL 內元素');
+  });
+
+  it('collapseEmptyWrappersAfterClean SKIP_TAGS 必須含媒體 + 內容 leaf tags', () => {
+    const skipDecl = SRC.cleaner.match(/EMPTY_COLLAPSE_SKIP_TAGS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/);
+    assert.ok(skipDecl, '能找到 EMPTY_COLLAPSE_SKIP_TAGS 集合定義');
+    const body = skipDecl[1];
+    // 媒體
+    for (const t of ['IMG','PICTURE','VIDEO','SVG','CANVAS','IFRAME','AUDIO']) {
+      assert.match(body, new RegExp(`['"]${t}['"]`), `EMPTY_COLLAPSE_SKIP_TAGS 必須含 ${t}（媒體 tag 不可被當 wrapper hide）`);
+    }
+    // 內容 leaf
+    for (const t of ['A','BUTTON','H1','H2','P','LI','BLOCKQUOTE','FIGCAPTION','SPAN']) {
+      assert.match(body, new RegExp(`['"]${t}['"]`), `EMPTY_COLLAPSE_SKIP_TAGS 必須含 ${t}（內容 leaf tag 不該當 wrapper 處理）`);
+    }
+  });
+
+  it('visibleRenderedText helper 必須跳過 jread-hidden / display:none / visibility:hidden', () => {
+    const fnStart = SRC.cleaner.search(/function\s+visibleRenderedText\s*\(/);
+    assert.ok(fnStart >= 0, '能找到 visibleRenderedText helper');
+    const fnRegion = SRC.cleaner.slice(fnStart, fnStart + 1500);
+    assert.match(fnRegion, /jreadHidden/, 'visibleRenderedText 必須跳過 jread-hidden');
+    assert.match(fnRegion, /display.*none/, 'visibleRenderedText 必須跳過 display:none');
+    assert.match(fnRegion, /visibility.*hidden/, 'visibleRenderedText 必須跳過 visibility:hidden');
+  });
+});
