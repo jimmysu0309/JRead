@@ -144,5 +144,23 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
       assert.match(OPTIONS_JS, /blockPageShortcuts\s*:\s*document\.getElementById\(\s*['"]blockPageShortcuts['"]\s*\)\.checked/,
         'save() 必須讀 #blockPageShortcuts.checked 寫進 patch——forcing：欄位漏掉 = toggle 後 storage 不更新');
     });
+
+    // v0.7.132：checkbox 在 flex container 內必須 flex-shrink:0 防壓扁。
+    // bug：v0.7.131 截圖顯示 checkbox 被壓成細長條 + 對勾位置走位——`.field`
+    // 是 flex 且 label 內含長 desc 文字佔據大部分 row，預設 flex-shrink:1
+    // 把 18×18 checkbox 壓變形。修法：`flex: 0 0 18px`（不可成長、不可收縮、
+    // basis 18px）保住 box 尺寸。
+    it('options.html .field checkbox 必須 flex: 0 0 ... 或 flex-shrink: 0（防 flex 壓扁變形）', () => {
+      // 抓 .field input[type="checkbox"] 的 CSS rule block
+      const m = OPTIONS_HTML.match(
+        /\.field\s+input\[type=["']checkbox["']\]\s*\{([\s\S]*?)\}/
+      );
+      assert.ok(m, '能在 options.html 找到 .field input[type="checkbox"] rule');
+      const body = m[1];
+      const hasFlexShortcut = /\bflex\s*:\s*0\s+0\b/.test(body);
+      const hasFlexShrink   = /flex-shrink\s*:\s*0\b/.test(body);
+      assert.ok(hasFlexShortcut || hasFlexShrink,
+        '.field checkbox 必須 `flex: 0 0 <basis>` 或 `flex-shrink: 0`——forcing：缺此規則 label 含長 desc 時 checkbox 會被壓變形（v0.7.131 → v0.7.132 hotfix）');
+    });
   });
 });
