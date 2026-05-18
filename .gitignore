@@ -11,8 +11,11 @@ node_modules/
 # Claude Design 原始下載（HTML/zip/uploads），已抽取必要 source 至 store-assets/sources/
 Claude design/
 
-# Safari build artifacts（xcodebuild 中間檔 + 產出 .pkg）
+# Safari build artifacts（產出 .pkg）
 # safari-app/safari-bootstrap.sh / safari-build.sh / export options plist / Xcode project 仍要 commit
+# 中間檔 BUILD_DIR 已移到 $TMPDIR（避開 iCloud Drive 同步衝突），不再生在 safari-app/build/
+# 此規則仍保留是因為 v0.7.138 release 流程踩坑時 safari-app/build/ 被產出過 + iCloud fileprovider
+# 接管後成 root-owned，留著規則確保萬一未來改回本地路徑也不會誤 commit。
 safari-app/build/
 safari-app/*.pkg
 
