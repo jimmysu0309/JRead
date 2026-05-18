@@ -52,8 +52,11 @@ else
   # safari-build.sh 改動 pbxproj 的 MARKETING_VERSION / CURRENT_PROJECT_VERSION
   # + rsync jread/ → Resources/。這兩處是 deterministic build artifact，應 commit
   # 進 release tag 的 tree state。其他路徑若有改動則屬於使用者未 commit 編輯，abort。
+  # 注意：grep -v 在 stdin 所有行都被 exclude pattern 命中時會回 exit 1（「filter 後沒輸出」），
+  # set -o pipefail 會把這當成 pipeline 失敗整個 script abort。包 { ... || true; } 吞掉，
+  # 否則「Safari sync 後沒任何 dirty 檔」這條 happy path 會被誤殺。
   SAFARI_DIRTY=$(git status --porcelain -- safari-app/JRead/JRead.xcodeproj "safari-app/JRead/JRead Extension/Resources" | wc -l | tr -d ' ')
-  OTHER_DIRTY=$(git status --porcelain | grep -v -E "^.. safari-app/JRead/(JRead\.xcodeproj|JRead Extension/Resources)" | wc -l | tr -d ' ')
+  OTHER_DIRTY=$(git status --porcelain | { grep -vE "^.. safari-app/JRead/(JRead\.xcodeproj|JRead Extension/Resources)" || true; } | wc -l | tr -d ' ')
 
   if [[ "${OTHER_DIRTY}" != "0" ]]; then
     echo "ERROR: Safari build 後 working tree 有非預期改動：" >&2
