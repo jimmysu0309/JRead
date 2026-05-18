@@ -7,13 +7,13 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.133**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.134**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-**當前 baseline：v0.7.133**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–128 的 cleaner / styler edge case 修法 + v0.7.133 新增 YouTube Cinema Mode。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+**當前 baseline：v0.7.134**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–128 的 cleaner / styler edge case 修法 + v0.7.133 新增 YouTube Cinema Mode + v0.7.134 新增 YouTube Borderless Mode（從 Shinkansen 移植，與 cinema mode 完全獨立）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
 
-**v0.7.133 baseline 包含**（在 v0.7.32 之上累積，完整修法紀錄見 `CHANGELOG.md`）：
+**v0.7.134 baseline 包含**（在 v0.7.32 之上累積，完整修法紀錄見 `CHANGELOG.md`）：
 
 1. **styler 瘦身不變**（承接 v0.6.0 / v0.7.32 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack + 使用者 override。
 2. **styler 增強**：cardArticle rule selector 加 `html` 前綴提升 specificity 到 (0,1,1) 贏過原站單 class !important rule（v0.7.121 cn.nytimes 修法）；col-* reset rule 升級為 `width: auto / max-width: none / float: none / flex: 1 1 auto / margin-left: 0 / margin-right: 0 / padding: 0`（v0.7.122 flex-grow:1 撐父 + v0.7.123 清 Bootstrap col offset margin）；figcaption 從 BODY_TEXT_SEL 排除保留原站 typography hierarchy（v0.7.120）。
@@ -23,6 +23,7 @@
 6. **實測通過站擴展**（在 v0.7.32 之上累積）：cn.nytimes / cna.com.tw / ebc.net.tw / twz.com / vocus.cc / esmchina / 商業周刊 / synapseching.substack.com / **medium.com**（v0.7.128 top action bar 殘留 24px 修法）等。
 7. **Debug 工具鏈**：Claude 自主跑完 reproduce + forensic 循環（Playwright + localStorage instrument bridge），避開 chrome.downloads MV3 SW data URL 限制，免使用者每步截圖（[[feedback-autonomous-debug]] memory 教訓）。
 8. **YouTube Cinema Mode**（v0.7.133）：YouTube watch page（`/watch`）detector short-circuit 不跑主文偵測、改注入 CSS 把 `#movie_player` `position: fixed + translate(-50%, -50%)` 釘 viewport 中央、`min(100vw, 177.78vh)` 雙軸 clamp 16:9、黑底鋪滿、隱藏 masthead/留言/描述/推薦/endscreen 浮層。popup 偵測到 youtube-cinema 時 toggle 按鈕文字改「啟動 / 退出影院模式」；ESC 退出；不 install keyguard（保留 YouTube j/k/l/space/f 等 player shortcut）。詳見「YouTube Cinema Mode（v0.7.133）」章節。
+9. **YouTube Borderless Mode**（v0.7.134，從 Shinkansen 移植）：YouTube watch page 第二個獨立沉浸模式——影片以 100vw × 100vh 撐滿視窗、強制 theater、隱藏所有 YouTube UI（masthead / secondary / 留言 / 描述 / chat / 推薦），並透過 SW `RESIZE_OWN_WINDOW` 訊息呼叫 `chrome.windows.update` 把瀏覽器視窗高度 resize 成匹配影片寬高比。manifest 註冊 `toggle-youtube-borderless` 命令但**無 suggested_key**，使用者自行至 `chrome://extensions/shortcuts` 綁；popup 在 YouTube watch 頁多一顆「啟動 / 退出無邊模式」按鈕。與 cinema mode **完全獨立**：各自管自己的 state、各自 toggle、各自 CSS（兩者可同時開，但 CSS 會搶 `#movie_player` rule，使用者自決優先順序）。詳見「YouTube Borderless Mode（v0.7.134）」章節。
 
 ### 硬規則（繼承）
 
@@ -334,6 +335,64 @@ ESC 鍵（`onEscKey` listener 共用，跟 reader mode 一致）或 popup「退�
 1. **harness 驗收受限**：Playwright YouTube watch page 易被 bot detection 擋（player 不 load），cinema mode 行為倚賴 chrome-in-chrome MCP 真實 YouTube 環境手動驗（probe Step 1 已驗 2026-05-18）。
 2. **未支援的 YouTube 變體**：`/shorts/`（9:16）、`/live`（chat sidebar）、premiere 倒數階段——spec 明確只 match `/watch`，其他 no-op。
 3. **endscreen card 殘留可能**：YouTube 偶爾在影片進度條接近結束時跳出 autoplay countdown overlay，雖 CSS 已 hide `.ytp-ce-element` / `.ytp-cards-teaser` / `.ytp-suggested-action`，新版 YouTube 若改 class name 命名 cinema mode 可能漏網——回報時補 selector 即可。
+
+---
+
+## YouTube Borderless Mode（v0.7.134）
+
+從 Shinkansen `SK.YT.Borderless` 移植過來的第二個 YouTube watch page 沉浸模式，跟 cinema mode **完全獨立**。動機：cinema mode 釘 player 在 viewport 中央 + 16:9 雙軸 clamp（保留 browser chrome、不動視窗大小）；borderless mode 走相反方向——影片完全填滿整個視窗、視窗高度被 resize 成匹配影片比例（最沉浸但會動 OS 視窗）。兩者使用情境不同，用什麼由使用者決定。
+
+### 觸發方式
+
+兩條入口、互不依賴：
+
+1. **快速鍵**：manifest 註冊 `toggle-youtube-borderless` 命令但**無 suggested_key**——使用者到 `chrome://extensions/shortcuts` 自行綁。SW `commands.onCommand` 收到後 `chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' })` 轉給 active tab。
+2. **popup 按鈕**：popup `refreshPopupForActiveTab` 偵測 `siteMode === 'youtube-cinema'`（即任何 YouTube watch 頁）時露出 `#borderless-btn`，按鈕文字依 `borderlessActive` 切「啟動 / 退出無邊模式」；click 後 sendMessage `TOGGLE_YT_BORDERLESS`。
+
+非 YouTube watch 頁 `NS.borderless.toggle()` 自己 no-op，popup 按鈕也不顯示。
+
+### 注入內容
+
+`NS.borderless.apply()` 注入 `<style id="__jread_borderless_style">` 含：
+
+1. **隱藏所有 YouTube UI**：`ytd-masthead` / `#masthead-container` / `#secondary` / `ytd-watch-metadata` / `#below` / `#comments` / `#related` / `#chat` / `ytd-merch-shelf-renderer` / `ytd-engagement-panel-section-list-renderer`
+2. **強制 theater 模式**：`snapshotAndSetTheater()` 紀錄原本 `ytd-watch-flexy[theater]` 狀態 + 強制 setAttribute（exit 時若原本沒 theater 才 removeAttribute）
+3. **影片撐滿視窗**：`#movie_player` / `#ytd-player` / `.html5-video-player` / `.html5-video-container` 設 `width: 100vw / height: 100vh / position: relative`；`video.html5-main-video` 同步 inline `width/height: 100vw/100vh + object-fit: contain`
+4. **`html, body` 黑底 + 隱藏 overflow**：避免捲軸跑出來
+
+### 視窗 resize（核心差異化機能）
+
+`requestResize()` 從 `<video>.videoWidth / videoHeight` 取得真實影片比例，算出 outer 高度 = `round(innerWidth / ratio) + (outerHeight - innerHeight)`，bound 在 `[200, screen.availHeight * 0.8]`。content side 不能直接動視窗，必須透過 SW `RESIZE_OWN_WINDOW` 訊息呼叫 `chrome.windows.update(windowId, { height })`。
+
+失敗（install-as-app PWA 限制 / windowId 不在 / Chrome 版本不支援）`.catch()` 沉默吞掉——CSS 已套上、影片以 `object-fit: contain` 顯示（可能上下/左右黑邊但仍可看），不需要 escalate 給使用者。
+
+### SPA navigation
+
+`apply()` 時掛 `yt-navigate-finish` listener：
+
+- 切到別支影片（仍在 `/watch`）：`setTimeout(() => apply(), 500)` 等 YouTube 內部把新 player DOM 建好再重套
+- 切到非 watch 路徑（首頁 / 頻道 / 搜尋）：撤掉 CSS + 清 video inline + reset `prevTheaterValue`，但**保留 `active` flag**——切回 `/watch` 時自動重套（跟 Shinkansen 一致）
+
+### 與 cinema mode 的關係
+
+| 軸 | cinema mode（v0.7.133） | borderless mode（v0.7.134） |
+| --- | --- | --- |
+| 狀態 flag | `NS.state.cinemaActive` | `NS.borderless` 內部 `active`（不在 `NS.state`） |
+| 共用 toggle 入口 | 是（`TOGGLE_READER_MODE` / `Alt+R`） | 否（自己一條 message + command） |
+| 動視窗大小 | 否 | **是**（`chrome.windows.update`） |
+| 強制 theater | 否 | 是 |
+| 退出方式 | ESC / popup 按鈕 | popup 按鈕 / 快速鍵 |
+| Readwise 整合 | 不適用 | 不適用 |
+| keyguard | 不 install | 不 install（保留 YouTube player shortcut） |
+
+兩者**完全獨立、可同時 toggle**。共同 CSS target 是 `#movie_player`——同時 active 時最後注入 / 最高 specificity / `!important` 的 rule 勝出（cinema 的 `position: fixed + clamp` 與 borderless 的 `position: relative + 100vw/100vh` 互斥，呈現結果視 cascade order 而定）。使用者該擇一啟用，spec 不驗它們的互動。
+
+### 已知限制
+
+1. **harness 驗收受限**：與 cinema mode 同樣的限制——Playwright YouTube watch page 易被 bot detection 擋；視窗 resize 部分還需要真實 OS window manager 才能驗（Playwright headed mode 視窗 detached/embedded 行為與真實 Chrome 不一致），實機驗證為主。
+2. **install-as-app / PWA 限制**：使用 Chrome 「install as app」把 YouTube 裝成獨立視窗時，`chrome.windows.update` 對 PWA window 可能無效——`.catch()` 吞掉、CSS 仍生效但 letterboxing 黑邊。
+3. **跨 OS 行為差異**：macOS Chrome 視窗最小高度約 200px、Windows / Linux 可能更低；`calcTargetWindowHeight` 用 200 作 minOuter 保守值。
+4. **SPA navigation reset theater flag**：切到非 watch 路徑時 `prevTheaterValue` 被 reset，切回再 toggle off 時無法判斷「原本是否在 theater」，可能多 removeAttribute 一次（無副作用，YouTube 自己會 idempotent）。
 
 ---
 

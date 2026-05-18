@@ -148,8 +148,10 @@
     }
 
     /* ==========================================================
-       Secondary CTA — Readwise
+       Secondary CTA — YouTube Borderless（v0.7.134）/ Readwise
+       兩顆共用次級按鈕樣式：白底 / 灰邊 / 黑字
        ========================================================== */
+    #borderless-btn,
     #readwise-btn {
       width: 100%;
       margin-top: var(--jr-space-2);
@@ -165,14 +167,17 @@
       transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
       letter-spacing: 0.01em;
     }
+    #borderless-btn:hover:not(:disabled),
     #readwise-btn:hover:not(:disabled) {
       background: var(--jr-neutral-50);
       border-color: var(--jr-neutral-500);
     }
+    #borderless-btn:focus-visible,
     #readwise-btn:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
+    #borderless-btn:disabled,
     #readwise-btn:disabled {
       color: var(--jr-neutral-500);
       background: var(--jr-neutral-50);
@@ -396,6 +401,7 @@
 
   <div id="status" hidden></div>
   <button id="toggle-btn">切換閱讀模式</button>
+  <button id="borderless-btn" hidden title="影片填滿視窗 + 自動 resize 視窗高度匹配影片比例（YouTube watch 頁專用）">啟動無邊模式</button>
   <button id="readwise-btn" hidden title="把當前 reader card 內容送到 Readwise Reader">送到 Readwise Reader</button>
   <div id="readwise-status" hidden></div>
 

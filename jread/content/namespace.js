@@ -25,6 +25,7 @@
     styler: null,
     toast: null,
     cinema: null,           // v0.7.133：YouTube cinema mode（cinema-mode.js 掛載）
+    borderless: null,       // v0.7.134：YouTube borderless mode（youtube-borderless.js 掛載）
 
     // 訊息常數（與 popup / background 對齊）
     MSG: {
@@ -38,7 +39,10 @@
       EXTRACT_READER_HTML: 'EXTRACT_READER_HTML',   // popup → content：抽 reader card outerHTML + url + title
       SAVE_TO_READWISE: 'SAVE_TO_READWISE',         // popup → SW：把抽出的內容送 Readwise Reader API
       // v0.7.89：SW 透過快速鍵觸發送 Readwise 後，需要在頁面顯示結果 toast
-      SHOW_TOAST: 'SHOW_TOAST'                      // SW → content：顯示 toast（payload: { message, kind }）
+      SHOW_TOAST: 'SHOW_TOAST',                     // SW → content：顯示 toast（payload: { message, kind }）
+      // v0.7.134：YouTube borderless mode
+      TOGGLE_YT_BORDERLESS: 'TOGGLE_YT_BORDERLESS', // SW / popup → content：toggle 無邊模式
+      RESIZE_OWN_WINDOW: 'RESIZE_OWN_WINDOW'        // content → SW：把瀏覽器視窗高度 resize 成匹配影片比例
     }
   };
 })();

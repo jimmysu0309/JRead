@@ -305,6 +305,9 @@
       sendResponse({
         active: !!NS.state.active,
         cinemaActive: !!NS.state.cinemaActive,
+        // v0.7.134：borderless 跟 reader / cinema 完全獨立，自己一條軸；popup
+        // 用此值切「啟動 / 退出無邊模式」按鈕文字。
+        borderlessActive: !!(NS.borderless && NS.borderless.isActive && NS.borderless.isActive()),
         siteMode
       });
       return; // sync
@@ -320,6 +323,18 @@
       const p = msg.payload || {};
       showToast(p.message || '', p.kind || 'info');
       sendResponse({ ok: true });
+      return; // sync
+    }
+
+    // v0.7.134：YouTube 無邊模式 toggle（SW 快速鍵 / popup 按鈕觸發）。獨立
+    // 於 reader mode / cinema mode 之外——不動 NS.state、不切 icon / badge，
+    // 純粹委派給 NS.borderless.toggle()。非 YouTube watch 頁 toggle() 自己
+    // no-op，這裡不再 guard 一次。
+    if (msg.type === NS.MSG.TOGGLE_YT_BORDERLESS) {
+      if (NS.borderless && typeof NS.borderless.toggle === 'function') {
+        NS.borderless.toggle();
+      }
+      sendResponse({ ok: true, active: NS.borderless ? NS.borderless.isActive() : false });
       return; // sync
     }
 

@@ -15,6 +15,7 @@
     'content/namespace.js',
     'content/toast.js',
     'content/cinema-mode.js',
+    'content/youtube-borderless.js',
     'content/detector.js',
     'content/cleaner.js',
     'content/styler.js',
