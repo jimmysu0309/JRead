@@ -21,6 +21,8 @@
 
 ## 安裝（開發中）
 
+### Chrome
+
 1. Clone 本 repo
 2. 打開 Chrome，進入 `chrome://extensions/`
 3. 右上角開啟「開發人員模式」
@@ -28,6 +30,16 @@
 5. 點工具列上的 JRead 圖示即可使用
 
 每次改程式碼後請回 `chrome://extensions/` 按該擴充功能卡片上的重新載入按鈕。
+
+### Firefox
+
+每次 release 會自動產出 `jread-firefox-vX.Y.Z.zip`（見 GitHub Releases）。本機重建：
+
+```bash
+./tools/firefox-build.sh   # 需 jq
+```
+
+詳細的 Firefox build transform 說明見 [BUILD.md](BUILD.md)。
 
 ---
 
@@ -60,3 +72,9 @@ npm run debug                     # 或 node tools/debug-harness.js --fresh
 ```bash
 ./release.sh
 ```
+
+跑完 `npm test` + working tree clean check + git tag 後自動 `git push && git push --tags`，GitHub Actions（`.github/workflows/release.yml`）接手 build 三份 zip 上傳到 Release：
+
+- `jread-vX.Y.Z.zip`（Chrome）
+- `jread-firefox-vX.Y.Z.zip`（Firefox sideload）
+- `jread-firefox-vX.Y.Z-source.zip`（AMO source 提交用）

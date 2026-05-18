@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # JRead — release 流程
 # 前置條件：版本號同步清單（CLAUDE.md 硬規則 1）已全部更新。
-# 動作：跑測試 → 確認 working tree 乾淨 → 讀取 manifest 版本 → git tag。
+# 動作：跑測試 → 確認 working tree 乾淨 → 讀取 manifest 版本 → git tag → push → 等
+#       GitHub Actions 建 Chrome + Firefox + Firefox source ZIP 上傳到 GitHub Release。
+#
+# 用法：
+#   ./release.sh                # 完整流程（push + Actions 接手）
+#   SKIP_PUSH=1 ./release.sh    # 只跑測試 + 本機 tag，不 push（debug 用）
 
 set -euo pipefail
 
@@ -29,4 +34,19 @@ else
   git tag "${TAG}"
 fi
 
-echo "==> 完成。如要推送：git push && git push --tags"
+if [[ "${SKIP_PUSH:-0}" = "1" ]]; then
+  echo "==> SKIP_PUSH=1，跳過 push。如要推送：git push && git push --tags"
+  exit 0
+fi
+
+echo "==> 推送 commits + tags 到 origin"
+git push
+git push --tags
+
+echo ""
+echo "==> ${TAG} 已推送。GitHub Actions 會自動 build："
+echo "   - jread-${TAG}.zip（Chrome）"
+echo "   - jread-firefox-${TAG}.zip（Firefox sideload）"
+echo "   - jread-firefox-${TAG}-source.zip（AMO source）"
+echo "   進度：https://github.com/jimmysu0309/JRead/actions"
+echo "   Release：https://github.com/jimmysu0309/JRead/releases/tag/${TAG}"
