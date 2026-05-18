@@ -140,6 +140,9 @@
     NS.state.articleEl = container;
     NS.state.confidence = 1;
     NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(container) : [];
+    if (NS.xThread && typeof NS.xThread.injectAuthorHeaders === 'function') {
+      NS.xThread.injectAuthorHeaders();
+    }
     NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
     NS.state.active = true;
 

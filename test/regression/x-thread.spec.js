@@ -473,6 +473,169 @@ describe('x-thread v0.7.135 — main.js 整合', () => {
   });
 });
 
+describe('x-thread v0.7.137 — author header 保留', () => {
+  // 動機：v0.7.135 合成容器路線下，原 X header（avatar + display name + handle）
+  // clone 進來後被 cleaner 的祖先 wrapper hide rule 連帶 hide（rect=0、整列消
+  // 失），使用者看到沒作者的「裸推文」。修法：x-thread.js 新增 extractAuthorInfo
+  // + createAuthorHeader + injectAuthorHeaders，main.js 在 cleaner 之後呼叫
+  // injectAuthorHeaders 補上合成 author header（cleaner 看不到 = 不會被它的
+  // rule 命中）。
+
+  it('x-thread.js 必須宣告 extractAuthorInfo / createAuthorHeader / injectAuthorHeaders', () => {
+    assert.match(XTHREAD_SRC, /function\s+extractAuthorInfo\s*\(/,
+      'x-thread.js 缺 extractAuthorInfo——從原 article 抽 displayName / handle / avatarSrc');
+    assert.match(XTHREAD_SRC, /function\s+createAuthorHeader\s*\(/,
+      'x-thread.js 缺 createAuthorHeader——產 <header data-jread-x-author> 合成元素');
+    assert.match(XTHREAD_SRC, /function\s+injectAuthorHeaders\s*\(/,
+      'x-thread.js 缺 injectAuthorHeaders——在 cleaner 跑完後注入合成 header');
+  });
+
+  it('NS.xThread 必須 export injectAuthorHeaders + AUTHOR_ATTR', () => {
+    assert.match(XTHREAD_SRC, /NS\.xThread\s*=\s*\{[\s\S]*injectAuthorHeaders[\s\S]*\}/,
+      'NS.xThread 必須暴露 injectAuthorHeaders——main.js enterXThreadMode 在 cleaner 後依此呼叫');
+    assert.match(XTHREAD_SRC, /AUTHOR_ATTR\s*=\s*['"]data-jread-x-author['"]/,
+      'AUTHOR_ATTR 常數必須是 data-jread-x-author——spec 與 source 雙邊綁定');
+  });
+
+  it('extractAuthorInfo 從 User-Name span 抽 display name + handle', () => {
+    const env = setupJsdom('https://x.com/');
+    const article = env.document.createElement('article');
+    article.innerHTML = `
+      <div data-testid="User-Name">
+        <span>Felipe Pasco</span>
+        <span>@philipinspain</span>
+      </div>
+    `;
+    const info = env.NS.xThread.extractAuthorInfo(article);
+    assert.strictEqual(info.displayName, 'Felipe Pasco');
+    assert.strictEqual(info.handle, '@philipinspain');
+  });
+
+  it('extractAuthorInfo 從 UserAvatar-* 區的 img 抽 src', () => {
+    const env = setupJsdom('https://x.com/');
+    const article = env.document.createElement('article');
+    article.innerHTML = `
+      <div data-testid="UserAvatar-Container-philipinspain">
+        <img src="https://pbs.twimg.com/profile_images/abc/photo.jpg" alt="">
+      </div>
+      <div data-testid="User-Name"><span>Felipe</span></div>
+    `;
+    const info = env.NS.xThread.extractAuthorInfo(article);
+    assert.ok(info.avatarSrc && info.avatarSrc.includes('profile_images'),
+      'avatarSrc 必須從 UserAvatar-* div 的 img 抽出');
+  });
+
+  it('extractAuthorInfo handle 必須以 @ 開頭、且跳過超長 span（推文本體）', () => {
+    const env = setupJsdom('https://x.com/');
+    const article = env.document.createElement('article');
+    article.innerHTML = `
+      <div data-testid="User-Name">
+        <span>Felipe Pasco</span>
+        <span>@philipinspain</span>
+      </div>
+      <div data-testid="tweetText"><span>這是很長的推文本文不該被誤認為 handle 或 display name 的 span，長度超過 60 字會被 filter 過濾掉</span></div>
+    `;
+    const info = env.NS.xThread.extractAuthorInfo(article);
+    assert.strictEqual(info.displayName, 'Felipe Pasco');
+    assert.strictEqual(info.handle, '@philipinspain');
+  });
+
+  it('createAuthorHeader 產 <header data-jread-x-author> + 含 avatar img + strong + span', () => {
+    const env = setupJsdom('https://x.com/');
+    const header = env.NS.xThread.createAuthorHeader({
+      displayName: 'Felipe Pasco',
+      handle: '@philipinspain',
+      avatarSrc: 'https://example.com/avatar.jpg'
+    });
+    assert.strictEqual(header.tagName, 'HEADER');
+    assert.strictEqual(header.getAttribute('data-jread-x-author'), '1');
+    assert.ok(header.querySelector('img[data-jread-x-avatar]'), '必須含 avatar img');
+    assert.ok(header.querySelector('strong'), '必須含 strong tag（display name）');
+    assert.ok(header.querySelector('span[data-jread-x-handle]'), '必須含 handle span');
+    assert.strictEqual(header.querySelector('strong').textContent, 'Felipe Pasco');
+    assert.strictEqual(header.querySelector('span[data-jread-x-handle]').textContent, '@philipinspain');
+  });
+
+  it('createAuthorHeader 不可含 class（避開 cleaner class-based keyword rule）+ 不可含 button', () => {
+    const env = setupJsdom('https://x.com/');
+    const header = env.NS.xThread.createAuthorHeader({
+      displayName: 'Felipe',
+      handle: '@felipe',
+      avatarSrc: 'https://example.com/a.jpg'
+    });
+    // 整棵 subtree 不應有任何 class attribute
+    const withClass = header.querySelectorAll('[class]');
+    assert.strictEqual(withClass.length, 0,
+      '合成 author header 全棵不可有 class——cleaner 的 NOISE_KEYWORD_RE 走 class，data-attr 從根本繞過');
+    assert.strictEqual(header.querySelectorAll('button').length, 0,
+      '不可有 button——hideInsideArticleAllButtons 會清掉所有 button');
+  });
+
+  it('injectAuthorHeaders 在 enter() 後注入 N 個 header 在 N 個 article clone 之前', () => {
+    const specs = [
+      { author: 'philipinspain', text: 'main tweet', isMain: true },
+      { author: 'philipinspain', text: 'continuation' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    env.NS.xThread.enter();
+    const injected = env.NS.xThread.injectAuthorHeaders();
+    assert.strictEqual(injected, 2, '兩則 thread member 應該注入 2 個 author header');
+    const container = env.document.querySelector('[data-jread-x-reader]');
+    const headers = container.querySelectorAll(':scope > header[data-jread-x-author]');
+    assert.strictEqual(headers.length, 2);
+    // 順序：每個 header 必須緊跟在對應 article clone 之前
+    const children = Array.from(container.children);
+    assert.strictEqual(children[0].tagName, 'HEADER',
+      '第一個 child 必須是 author header（不是 article clone）');
+    assert.strictEqual(children[1].tagName, 'ARTICLE');
+    assert.strictEqual(children[2].tagName, 'HEADER');
+    assert.strictEqual(children[3].tagName, 'ARTICLE');
+  });
+
+  it('injectAuthorHeaders 合成 header 必須含 display name + handle 文字（forcing：使用者看得到作者）', () => {
+    const specs = [{ author: 'philipinspain', text: 'main', isMain: true }];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    env.NS.xThread.enter();
+    env.NS.xThread.injectAuthorHeaders();
+    const container = env.document.querySelector('[data-jread-x-reader]');
+    const header = container.querySelector('header[data-jread-x-author]');
+    assert.ok(header, 'reader 容器必須有合成 author header');
+    const text = header.textContent;
+    assert.ok(text.includes('philipinspain'),
+      '合成 header textContent 必須含 handle / display name——使用者看得到作者');
+  });
+
+  it('exit() 必須清掉 _lastThreadArticles 內部 state（避免 leak 引用阻 GC）', () => {
+    const specs = [{ author: 'philipinspain', text: 'main', isMain: true }];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    env.NS.xThread.enter();
+    env.NS.xThread.exit();
+    // exit 後 injectAuthorHeaders 應無容器可注入，回 0（不丟例外）
+    assert.strictEqual(env.NS.xThread.injectAuthorHeaders(), 0,
+      'exit 後 injectAuthorHeaders 應安全 no-op 回 0');
+  });
+
+  it('main.js enterXThreadMode 必須在 cleaner.clean 之後、styler.apply 之前呼叫 NS.xThread.injectAuthorHeaders', () => {
+    // 抓 enterXThreadMode body 內 cleaner.clean → injectAuthorHeaders → styler.apply 順序
+    const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n\s{0,4}async\s+function|\n\s{0,4}function\s+\w|\n\s{0,4}\/\/)/);
+    assert.ok(m, '抓不到 enterXThreadMode body');
+    const body = m[0];
+    const cleanerIdx = body.search(/NS\.cleaner\.clean\s*\(/);
+    const injectIdx = body.search(/NS\.xThread\.injectAuthorHeaders\s*\(/);
+    const stylerIdx = body.search(/NS\.styler\.apply\s*\(/);
+    assert.ok(cleanerIdx >= 0, 'enterXThreadMode 應有 NS.cleaner.clean call');
+    assert.ok(injectIdx >= 0, 'enterXThreadMode 應有 NS.xThread.injectAuthorHeaders call（v0.7.137 新增）');
+    assert.ok(stylerIdx >= 0, 'enterXThreadMode 應有 NS.styler.apply call');
+    assert.ok(cleanerIdx < injectIdx,
+      'injectAuthorHeaders 必須在 cleaner.clean 之後——讓 cleaner 看不到合成 header 不會 hide 它');
+    assert.ok(injectIdx < stylerIdx,
+      'injectAuthorHeaders 必須在 styler.apply 之前——讓 styler 能 apply typography 到合成 header');
+  });
+});
+
 describe('x-thread v0.7.135 — manifest / popup-core / namespace 同步', () => {
   it('manifest content_scripts 必須含 content/x-thread.js', () => {
     const files = MANIFEST.content_scripts[0].js;
