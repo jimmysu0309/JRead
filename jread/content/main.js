@@ -96,6 +96,30 @@
     keyguardInstalled = false;
   }
 
+  // v0.7.133：YouTube watch page 走 cinema mode 分支（不跑 cleaner/styler，改
+  // 注入 player-fixed-center 的 CSS）。ESC listener 仍裝（讓使用者退出），**不**
+  // install keyguard——YouTube 的 j/k/l/space/f/m 是 player 控制必備，攔下去會
+  // 打殘觀影體驗（reader mode 才需要擋 Gmail j archive 那類）。獨立成 helper
+  // 是為了 enterReaderMode body 不被撐大、keyguard.spec 等 forcing function 的
+  // slice 假設仍能命中 settings.blockPageShortcuts 那段。
+  function enterCinemaMode() {
+    if (!NS.cinema) return false;
+    const ok = NS.cinema.enter();
+    if (!ok) return false;
+    NS.state.active = true;
+    NS.state.cinemaActive = true;
+    NS.state.articleEl = null;
+    NS.state.confidence = 1;
+    window.removeEventListener('keydown', onEscKey, true);
+    window.addEventListener('keydown', onEscKey, true);
+    chrome.runtime.sendMessage({
+      type: NS.MSG.REPORT_DETECTION_RESULT,
+      payload: { ok: true, confidence: 1, strategy: 'youtube-cinema' }
+    });
+    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    return true;
+  }
+
   async function enterReaderMode() {
     const result = NS.detector && NS.detector.detect();
     if (!result) {
@@ -105,6 +129,9 @@
         payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
       });
       return false;
+    }
+    if (result.isYouTubeCinema) {
+      return enterCinemaMode();
     }
 
     const settings = await getSettings();
@@ -153,6 +180,16 @@
     window.removeEventListener('keydown', onEscKey, true);
     // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
     uninstallKeyguard();
+    // v0.7.133：cinema mode 走獨立 restore 路徑（沒有 cleaner/styler 副作用要還原）
+    if (NS.state.cinemaActive) {
+      if (NS.cinema) NS.cinema.exit();
+      NS.state.cinemaActive = false;
+      NS.state.active = false;
+      NS.state.articleEl = null;
+      NS.state.confidence = 0;
+      chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
+      return;
+    }
     if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
     if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls);
     // v0.7.86：移除 detector shadow-DOM fallback 建立的 light DOM 替身。
@@ -211,6 +248,13 @@
   }
 
   function extractReaderPayload() {
+    // v0.7.133：cinema mode 沒主文 outerHTML 可送 Readwise，明確回 NOT_APPLICABLE
+    // 而非 NOT_ACTIVE（後者讓 popup 顯示「閱讀模式未啟動」會讓使用者困惑——
+    // cinema 是有啟動的）。popup 端 cinema mode 已 hide readwise 按鈕，這是
+    // 防呆 fallback。
+    if (NS.state.cinemaActive) {
+      return { ok: false, reason: 'NOT_APPLICABLE_IN_CINEMA' };
+    }
     if (!NS.state.active || !NS.state.articleEl) {
       return { ok: false, reason: 'NOT_ACTIVE' };
     }
@@ -244,7 +288,25 @@
     }
 
     if (msg.type === NS.MSG.GET_READER_STATE) {
-      sendResponse({ active: !!NS.state.active });
+      // v0.7.133：siteMode 讓 popup 知道當前頁面型態（'youtube-cinema' /
+      // 'article' / null=不適用），用來切換按鈕文字「啟動影院模式」vs
+      // 「切換閱讀模式」+ 控制 Readwise 按鈕可見性。
+      // 'article' = detector 偵測得到主文；null = 既非 cinema 也偵測不到主文
+      // （chrome:// 類禁注入頁面則 sendMessage 直接 reject、popup 走另一路徑）。
+      let siteMode = null;
+      if (NS.cinema && NS.cinema.isYouTubeWatch && NS.cinema.isYouTubeWatch()) {
+        siteMode = 'youtube-cinema';
+      } else if (NS.detector && typeof NS.detector.detect === 'function') {
+        try {
+          const probe = NS.detector.detect();
+          if (probe && probe.el) siteMode = 'article';
+        } catch (_) { /* 偵測失敗 = null */ }
+      }
+      sendResponse({
+        active: !!NS.state.active,
+        cinemaActive: !!NS.state.cinemaActive,
+        siteMode
+      });
       return; // sync
     }
 

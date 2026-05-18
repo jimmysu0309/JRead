@@ -7,13 +7,13 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.132**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.133**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-**當前 baseline：v0.7.132**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–128 的 cleaner / styler edge case 修法。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+**當前 baseline：v0.7.133**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–128 的 cleaner / styler edge case 修法 + v0.7.133 新增 YouTube Cinema Mode。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
 
-**v0.7.132 baseline 包含**（在 v0.7.32 之上累積，完整修法紀錄見 `CHANGELOG.md`）：
+**v0.7.133 baseline 包含**（在 v0.7.32 之上累積，完整修法紀錄見 `CHANGELOG.md`）：
 
 1. **styler 瘦身不變**（承接 v0.6.0 / v0.7.32 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack + 使用者 override。
 2. **styler 增強**：cardArticle rule selector 加 `html` 前綴提升 specificity 到 (0,1,1) 贏過原站單 class !important rule（v0.7.121 cn.nytimes 修法）；col-* reset rule 升級為 `width: auto / max-width: none / float: none / flex: 1 1 auto / margin-left: 0 / margin-right: 0 / padding: 0`（v0.7.122 flex-grow:1 撐父 + v0.7.123 清 Bootstrap col offset margin）；figcaption 從 BODY_TEXT_SEL 排除保留原站 typography hierarchy（v0.7.120）。
@@ -22,6 +22,7 @@
 5. **測試覆蓋**：448 jsdom regression spec（每條 cn.nytimes / cna / ebc / twz / udn / medium 等實機 bug 都有 forcing function fixture，含 v0.7.125–127 SW badge / JREAD_RELOAD bridge / badge text 純色塊修法 + v0.7.129 swallowTabGone race-condition guard + v0.7.130 popup readwise-btn hidden 可見性 + v0.7.131 reader-mode keyguard 攔截原站 shortcut + v0.7.132 options checkbox flex-shrink 防壓扁結構 spec）+ e2e SW wire-up spec + Playwright harness（`tools/debug-harness.js`）+ `npm test --timeout 30000` 確保 jsdom 重 fixture 不超時（v0.7.118 hotfix）。
 6. **實測通過站擴展**（在 v0.7.32 之上累積）：cn.nytimes / cna.com.tw / ebc.net.tw / twz.com / vocus.cc / esmchina / 商業周刊 / synapseching.substack.com / **medium.com**（v0.7.128 top action bar 殘留 24px 修法）等。
 7. **Debug 工具鏈**：Claude 自主跑完 reproduce + forensic 循環（Playwright + localStorage instrument bridge），避開 chrome.downloads MV3 SW data URL 限制，免使用者每步截圖（[[feedback-autonomous-debug]] memory 教訓）。
+8. **YouTube Cinema Mode**（v0.7.133）：YouTube watch page（`/watch`）detector short-circuit 不跑主文偵測、改注入 CSS 把 `#movie_player` `position: fixed + translate(-50%, -50%)` 釘 viewport 中央、`min(100vw, 177.78vh)` 雙軸 clamp 16:9、黑底鋪滿、隱藏 masthead/留言/描述/推薦/endscreen 浮層。popup 偵測到 youtube-cinema 時 toggle 按鈕文字改「啟動 / 退出影院模式」；ESC 退出；不 install keyguard（保留 YouTube j/k/l/space/f 等 player shortcut）。詳見「YouTube Cinema Mode（v0.7.133）」章節。
 
 ### 硬規則（繼承）
 
@@ -235,6 +236,18 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 - `content → popup`：`REPORT_DETECTION_RESULT`（偵測到/沒偵測到、信心分數）
 - `popup → background`：`GET_SETTINGS` / `UPDATE_SETTINGS` / `SAVE_TO_READWISE`（v0.7.33）
 
+**`GET_READER_STATE` response 結構**（v0.7.133 擴充）：
+
+```
+{
+  active:       boolean,  // reader OR cinema 任一啟動
+  cinemaActive: boolean,  // 是否處於 cinema mode（YouTube 專用）
+  siteMode:     'youtube-cinema' | 'article' | null
+                          // 當前頁面型態——popup 用來切按鈕文字 +
+                          // 控制 Readwise 按鈕可見性
+}
+```
+
 ---
 
 ## Readwise Reader 整合（v0.7.33）
@@ -263,6 +276,66 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - 頁面不支援（chrome:// 等 sendMessage reject）→ button disabled
 - 點擊：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ popup → SW（`SAVE_TO_READWISE` 帶 payload）→ SW 讀 token + fetch + 回結果
 - 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`
+
+## YouTube Cinema Mode（v0.7.133）
+
+YouTube watch page 沒主文可閱讀（detector 預設 no-op），但 YouTube 原生缺一個 niche 場景：viewport-width video 上下置中、黑背景、仍在 browser tab 內（不像 fullscreen 整個吞掉 browser chrome）。Cinema mode 補這個 gap，跟 reader mode 共用同一個 toggle（`Alt+R` / popup 按鈕），由 detector 依站點 dispatch。
+
+### 觸發條件
+
+`isYouTubeWatch(url)`（`jread/content/cinema-mode.js`）：
+
+- hostname 必須是 `youtube.com` / `www.youtube.com` / `m.youtube.com`（排除 `youtube-nocookie.com` 等 embed-only 變體）
+- pathname 必須是 `/watch`（排除 `/shorts/` 9:16 / `/@channel` / `/results` / 首頁 `/`）
+
+只有「watch page」一條路徑命中——`/shorts` 是 9:16 影片、`/live` 有 chat sidebar、`premiere` 有倒數階段，這些 cinema CSS 套上去會破，明確 no-op。
+
+### 注入內容
+
+`NS.cinema.enter()` 注入 `<style id="__jread_cinema_style">` 含：
+
+1. **隱藏雜訊**：`ytd-masthead` / `ytd-comments` / `ytd-watch-metadata` / `#meta` / `#info` / `ytd-engagement-panel-section-list-renderer` / `ytd-popup-container` / `ytd-merch-shelf-renderer` 等容器
+2. **隱藏 player 內部浮層**：`.ytp-ce-element` / `.ytp-cards-teaser` / `.ytp-suggested-action` / `.ytp-mealbar-promo-renderer` / `.ytp-paid-content-overlay`（autoplay endscreen card / 卡片提示 / 訂閱推薦等 transient 浮出元素）
+3. **背景塗黑**：`ytd-page-manager` / `ytd-watch-flexy` / 容器鏈一律 `background: #000`，避免白底透出
+4. **player 釘中央**：`#movie_player` `position: fixed + top/left: 50% + transform: translate(-50%, -50%)`，繞過 `ytd-watch-flexy` 的 `#columns` flex layout（從上層 flex-center 反而會跟 player 自己的絕對定位打架）
+5. **雙軸 clamp 16:9**：`width: min(100vw, 177.78vh); height: min(56.25vw, 100vh)`，寬高任一觸到 viewport 都不溢出
+6. **`dispatchEvent(new Event('resize'))`**：YouTube 內部 resize handler 算 `<video>` 的 inline width/height；不 dispatch resize 會讓 video tag 仍是舊 size、畫面全黑
+
+### SPA navigation
+
+YouTube 切影片不 reload，content script 不會重跑。`NS.cinema.enter()` 同時 `window.addEventListener('yt-navigate-finish', onYtNavigate)`，切影片時 dispatch resize 讓 YouTube 重算 player layout。離開 watch page（切到首頁 / 頻道 / 搜尋）使用者要自己按 toggle 退出（或 ESC）——cinema mode 沒設計成自動 exit-on-navigate，因為使用者切影片時通常還是想保持 cinema 模式。
+
+### 退出
+
+ESC 鍵（`onEscKey` listener 共用，跟 reader mode 一致）或 popup「退出影院模式」按鈕；`NS.cinema.exit()` 移除 style + 清 `data-jread-cinema-active` attribute + uninstall yt-navigate-finish listener。
+
+### 不適用 / 不啟動的設計
+
+- **不 install keyguard**（v0.7.131 reader mode 攔截原站快速鍵的機制）：YouTube 的 j/k/l/space/f/m/`<`/`>` 是 player 控制必備（快轉、暫停、全螢幕、靜音、變速），攔下去會打殘觀影體驗。reader mode 才需要擋 Gmail j archive 那類「字符快速鍵 = 破壞性操作」場景。
+- **不跑 cleaner/styler**：cinema mode 沒主文容器（`detect()` 回 `el: null`），main.js 直接走 `enterCinemaMode()` helper 不碰 cleaner/styler。
+- **不支援 Readwise**：cinema mode 沒主文 outerHTML 可送，popup 端 readwise 按鈕在 `cinemaActive` 時強制 `hidden`；`EXTRACT_READER_HTML` 回 `{ ok: false, reason: 'NOT_APPLICABLE_IN_CINEMA' }` 作防呆。
+
+### Popup 按鈕文字切換
+
+`refreshPopupForActiveTab()` 開啟 popup 時 `chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' })`，依 response 的 `siteMode` 切按鈕文字：
+
+- `siteMode === 'youtube-cinema'`：`cinemaActive=false → '啟動影院模式'`、`cinemaActive=true → '退出影院模式'`
+- 其他站維持 `popup.html` 的 default `切換閱讀模式`（不動）
+
+### 與 reader mode 的關係
+
+- 共用同一 toggle 入口（`TOGGLE_READER_MODE` message / `Alt+R` 快速鍵 / popup 按鈕）
+- 共用同一 `NS.state.active` flag（true 代表任一 mode 啟動）+ 新增 `NS.state.cinemaActive` 區分
+- 共用同一 ESC 退出 handler
+- 不共用 cleaner / styler / Readwise / keyguard
+
+### 已知限制
+
+1. **harness 驗收受限**：Playwright YouTube watch page 易被 bot detection 擋（player 不 load），cinema mode 行為倚賴 chrome-in-chrome MCP 真實 YouTube 環境手動驗（probe Step 1 已驗 2026-05-18）。
+2. **未支援的 YouTube 變體**：`/shorts/`（9:16）、`/live`（chat sidebar）、premiere 倒數階段——spec 明確只 match `/watch`，其他 no-op。
+3. **endscreen card 殘留可能**：YouTube 偶爾在影片進度條接近結束時跳出 autoplay countdown overlay，雖 CSS 已 hide `.ytp-ce-element` / `.ytp-cards-teaser` / `.ytp-suggested-action`，新版 YouTube 若改 class name 命名 cinema mode 可能漏網——回報時補 selector 即可。
+
+---
 
 ### 為何 fetch 放 SW 而非 popup
 

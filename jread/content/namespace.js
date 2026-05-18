@@ -11,7 +11,8 @@
 
     // 閱讀模式狀態
     state: {
-      active: false,          // 目前是否處於閱讀模式
+      active: false,          // 目前是否處於閱讀模式 / 影院模式（任一）
+      cinemaActive: false,    // v0.7.133：是否處於 cinema mode（YouTube 專用），與 active 連動
       articleEl: null,        // 偵測到的主文容器
       confidence: 0,          // 偵測信心分數（0–1）
       hiddenEls: [],          // 被隱藏的雜訊元素快照，還原用
@@ -23,6 +24,7 @@
     cleaner: null,
     styler: null,
     toast: null,
+    cinema: null,           // v0.7.133：YouTube cinema mode（cinema-mode.js 掛載）
 
     // 訊息常數（與 popup / background 對齊）
     MSG: {
