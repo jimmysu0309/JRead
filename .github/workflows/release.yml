@@ -1,0 +1,61 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Zip jread folder (Chrome)
+        run: |
+          zip -r jread-${{ steps.version.outputs.VERSION }}.zip jread/
+
+      - name: Build Firefox ZIP (transformed manifest)
+        run: |
+          # Chrome MV3 拒絕 `background.scripts`（warning「requires manifest version 2 or lower」），
+          # Firefox 不支援 `background.service_worker`。所以兩邊不能共用同一份 manifest。
+          # 解法：repo 內 `jread/manifest.json` 永遠是 Chrome 純淨版；此處用 tools/firefox-build.sh
+          # 程式化改寫產生 Firefox 版 ZIP。AMO source.zip 也包這支 script + BUILD.md，
+          # reviewer 重建會用同一條路徑，確保產物一致。
+          ./tools/firefox-build.sh
+
+      - name: Build Firefox source ZIP (for AMO submission)
+        run: |
+          # AMO 對「需要 build step 的 add-on」要求附 source ZIP + 重建說明。
+          # 我們的 build step 是 jq 改幾行 JSON，屬於 trivial transform，但保險起見附上，
+          # 讓 reviewer 跑 firefox-build.sh 就能驗證重建結果與提交的 ZIP 一致。
+          # 內容只含 build 必要檔：jread/ + tools/firefox-build.sh + BUILD.md + LICENSE。
+          # 不含 test/ / .github/ / node_modules / docs/（這些是開發 / CI / landing，跟 build 無關）。
+          mkdir -p source-pkg/tools
+          cp -r jread source-pkg/
+          cp tools/firefox-build.sh source-pkg/tools/
+          cp BUILD.md source-pkg/
+          cp LICENSE source-pkg/ 2>/dev/null || true
+          cd source-pkg
+          zip -r ../jread-firefox-${{ steps.version.outputs.VERSION }}-source.zip .
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.VERSION }}
+          files: |
+            jread-${{ steps.version.outputs.VERSION }}.zip
+            jread-firefox-${{ steps.version.outputs.VERSION }}.zip
+            jread-firefox-${{ steps.version.outputs.VERSION }}-source.zip
+          generate_release_notes: true
+          # GitHub 預設「建立時間最新 = Latest」會被補建舊 tag 偷走 Latest 標籤。
+          # legacy 改用 semver：highest version 才是 Latest，與補建順序無關。
+          make_latest: "legacy"

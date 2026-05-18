@@ -5,7 +5,12 @@
 // 共用 popup 端已測試過的注入 fallback 核心函式。
 // 注意：importScripts 的相對路徑是相對 service worker 自己的所在目錄
 // （background/），而非 extension root。必須用絕對路徑（前置斜線）。
-importScripts('/popup/popup-core.js');
+//
+// Firefox 走 background.scripts（event page 模式），popup-core.js 由 manifest
+// scripts 陣列預先 load，importScripts 在該 context 不存在——typeof guard 跳過即可。
+if (typeof importScripts === 'function') {
+  importScripts('/popup/popup-core.js');
+}
 
 const DEFAULT_SETTINGS = {
   theme: 'light',

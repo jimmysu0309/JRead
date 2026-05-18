@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "0.7.135",
+  "version": "0.7.136",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -13,6 +13,11 @@
   ],
   "background": {
     "service_worker": "background/service-worker.js"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jread@jimmy.zm.su"
+    }
   },
   "action": {
     "default_title": "JRead",

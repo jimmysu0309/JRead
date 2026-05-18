@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.135**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.136**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -103,15 +103,50 @@ JRead/
 │   │   └── *.spec.js
 │   └── PENDING_REGRESSION.md
 ├── tools/
-│   └── debug-harness.js         # Playwright 自動化除錯 harness
+│   ├── debug-harness.js         # Playwright 自動化除錯 harness
+│   └── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
 ├── docs/
 │   └── CHROME_EXTENSION_DEBUG.md # 自動化除錯完整指南
+├── .github/workflows/
+│   └── release.yml              # tag push 觸發 → build Chrome + Firefox + source ZIP
+├── BUILD.md                     # AMO reviewer Firefox 重建指引
 ├── CLAUDE.md
 ├── SPEC.md                      # 本檔
 ├── README.md
 ├── CHANGELOG.md
 └── release.sh
 ```
+
+---
+
+## Firefox 版本（v0.7.136 起）
+
+JRead 同時發佈 Chrome 與 Firefox 兩個版本。
+
+**單一真實來源**：`jread/manifest.json` 永遠對應 Chrome 版（`background.service_worker`）。Firefox manifest 由 `tools/firefox-build.sh` 在 build 時用 `jq` 程式化改寫——沒有兩份 manifest，沒有 minify / bundle / transpile，只動幾行 JSON。
+
+**Build transformation**（`tools/firefox-build.sh`）：
+
+1. `background.service_worker` → `background.scripts: ["popup/popup-core.js", "background/service-worker.js"]`
+   - Chrome MV3 拒絕 `scripts`，Firefox MV3 不支援 `service_worker`，兩邊互斥不能共用
+   - 順序：`popup-core.js` 先 load（提供共用注入 fallback 函式），`service-worker.js` 後 load（依賴 popup-core 全域變數）
+   - Chrome 端透過 `importScripts('/popup/popup-core.js')` 達到同樣依賴關係；該 call 包 `typeof importScripts === 'function'` guard，Firefox event page 跑時直接跳過
+2. `browser_specific_settings.gecko.strict_min_version: "128.0"`
+3. `browser_specific_settings.gecko.data_collection_permissions: { required: ["none"] }`（Mozilla 2025 consent UI 要求；JRead 不收集任何資料）
+
+`browser_specific_settings.gecko.id = "jread@jimmy.zm.su"` 直接寫在 Chrome manifest 裡（Chrome ignore，Firefox build 沿用）——AMO 上架後 ID 鎖死不可改。
+
+**Release artifact**（每次 tag push 由 `.github/workflows/release.yml` 自動產出）：
+
+| 檔名 | 用途 |
+| --- | --- |
+| `jread-vX.Y.Z.zip` | Chrome Web Store 上架 / sideload |
+| `jread-firefox-vX.Y.Z.zip` | Firefox AMO 上架 / sideload |
+| `jread-firefox-vX.Y.Z-source.zip` | AMO reviewer 重建用（含 `tools/firefox-build.sh` + `BUILD.md`） |
+
+`release.sh` 跑完 `npm test` + 確認 working tree 乾淨 → 建 tag → push commits + tags → GitHub Actions 接手。SKIP_PUSH=1 可只跑本機測試 + tag，不 push（debug 用）。
+
+Forcing function：`test/regression/firefox-build.spec.js` 端到端跑 `tools/firefox-build.sh` 驗 manifest 結構（gecko id、strict_min_version、data_collection_permissions、scripts 順序）+ 驗 service-worker.js 內 `typeof importScripts` guard 存在。
 
 ---
 
