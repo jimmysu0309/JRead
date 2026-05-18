@@ -143,6 +143,43 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
 
+    /* v0.7.131：toggle checkbox — 對齊既有 field row 右側 control 區寬度 */
+    .field input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      background: var(--jr-surface);
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+      position: relative;
+    }
+    .field input[type="checkbox"]:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    .field input[type="checkbox"]:checked {
+      background: var(--jr-primary-600);
+      border-color: var(--jr-primary-600);
+    }
+    .field input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 1px;
+      width: 5px;
+      height: 10px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .field input[type="checkbox"]:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+
     /* ==========================================================
        Section heading（Readwise 整合區塊）
        ========================================================== */
@@ -255,6 +292,14 @@
       <span class="desc">主文欄寬</span>
     </label>
     <input type="number" id="contentWidth" min="480" max="1200" step="20">
+  </div>
+
+  <div class="field">
+    <label for="blockPageShortcuts">
+      攔截原站快速鍵
+      <span class="desc">閱讀模式啟動時擋掉 Gmail、YouTube 等站的鍵盤快速鍵（避免誤按 <strong>j / k / e</strong> 觸發 archive、send 等操作）。瀏覽器原生 shortcut 與打字輸入不受影響。</span>
+    </label>
+    <input type="checkbox" id="blockPageShortcuts">
   </div>
 
   <div id="save-status"></div>

@@ -15,7 +15,11 @@ const DEFAULT_SETTINGS = {
   lineHeight: 1.7,
   autoEnableDomains: [],
   // Readwise Reader integration（v0.7.33）。空字串 = 未設定，popup 會擋下送出。
-  readwiseToken: ''
+  readwiseToken: '',
+  // v0.7.131：閱讀模式啟動時攔截原站快速鍵（Gmail j/k/e、YouTube k 等）。
+  // 預設 true——使用者進閱讀模式就是想專心讀、不希望按錯鍵觸發 Gmail
+  // archive / send 等破壞性操作。要關可到 options 取消。
+  blockPageShortcuts: true
 };
 
 // Icon 路徑 map：閱讀模式 active = 彩色、待機 = 灰階。manifest `default_icon`
