@@ -28,6 +28,13 @@
   if (!NS) return;
 
   const READER_ATTR = 'data-jread-x-reader';
+  const AUTHOR_ATTR = 'data-jread-x-author';
+
+  // 模組內保留主推文 thread member 的「原 article」參照——enter() 之後 cleaner
+  // 會跑過合成容器（會 hide 原 article header 的 wrapper，連帶 avatar / display
+  // name / handle 全 rect=0），後續 injectAuthorHeaders() 用此參照重抽 author
+  // 資訊建合成 header 插在 cleaner 後（cleaner 看不到 = 不會 hide）。
+  let _lastThreadArticles = [];
 
   function isXStatusPage(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
@@ -115,6 +122,78 @@
     return articles;
   }
 
+  // 從原 article 抽 author 顯示資訊：display name / handle / avatar src。
+  // 在 enter() 拿到原 article 時抽（cloneNode 後的 DOM 也能抽，但保持一致性
+  // 從原 article 取——src 可能含 React-managed lazy 屬性）。
+  function extractAuthorInfo(article) {
+    if (!article || !article.querySelector) return null;
+    let displayName = null;
+    let handle = null;
+    const userName = article.querySelector('[data-testid="User-Name"]');
+    if (userName) {
+      // User-Name 內所有 span：第一個非 "@" 開頭文字當 displayName，
+      // 第一個 "@" 開頭當 handle。textContent 短於 60 才接受（避開誤抓推文本文）。
+      const spans = userName.querySelectorAll('span');
+      for (const s of spans) {
+        const t = (s.textContent || '').trim();
+        if (!t || t.length > 60) continue;
+        if (!handle && /^@\S+$/.test(t)) {
+          handle = t;
+        } else if (!displayName && !t.startsWith('@')) {
+          displayName = t;
+        }
+        if (displayName && handle) break;
+      }
+    }
+    let avatarSrc = null;
+    const avatarEl = article.querySelector('div[data-testid^="UserAvatar-"]');
+    if (avatarEl) {
+      const img = avatarEl.querySelector('img');
+      if (img) avatarSrc = img.getAttribute('src') || img.src || null;
+    }
+    return { displayName, handle, avatarSrc };
+  }
+
+  // 建合成 author header：用 data-attr 不用 class（避開 cleaner 的 class-based
+  // keyword rule，雖然此函式在 cleaner 跑完才呼叫不會被 hide，但 styler /
+  // 未來規則仍可能掃 class——data-attr 從根本繞過所有 class 命中路徑）。
+  // 結構單純（header > img + div(strong/span)）：避開 hideInsideArticleAllButtons
+  // （無 button）、hideInsideArticleAbsoluteOverlays（無 position absolute）、
+  // hideInsideArticleCommentPanels（無時間戳，不會觸發相對時間配額）。
+  function createAuthorHeader(info) {
+    const h = document.createElement('header');
+    h.setAttribute(AUTHOR_ATTR, '1');
+    h.style.cssText = 'display:flex;align-items:center;gap:12px;margin:1.4em 0 0.6em;';
+
+    if (info.avatarSrc) {
+      const img = document.createElement('img');
+      img.setAttribute('data-jread-x-avatar', '1');
+      img.src = info.avatarSrc;
+      img.alt = '';
+      img.style.cssText = 'width:48px;height:48px;border-radius:50%;flex:0 0 auto;display:block;';
+      h.appendChild(img);
+    }
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'display:flex;flex-direction:column;line-height:1.3;min-width:0;';
+    if (info.displayName) {
+      const strong = document.createElement('strong');
+      strong.textContent = info.displayName;
+      strong.style.cssText = 'font-size:1.05em;';
+      meta.appendChild(strong);
+    }
+    if (info.handle) {
+      const span = document.createElement('span');
+      span.setAttribute('data-jread-x-handle', '1');
+      span.textContent = info.handle;
+      span.style.cssText = 'opacity:0.65;font-size:0.92em;';
+      meta.appendChild(span);
+    }
+    if (meta.children.length) h.appendChild(meta);
+
+    return h;
+  }
+
   function enter() {
     const existing = document.querySelector('[' + READER_ATTR + ']');
     if (existing) return existing;
@@ -124,6 +203,7 @@
     if (!mainArticle) return null;
 
     const threadArticles = collectThreadArticles(mainArticle);
+    _lastThreadArticles = threadArticles;
 
     // 合成 reader card：直接用 <article> tag 讓 detector 既有「article-tag」
     // 偵測語意一致；放 body 開頭，下方所有原 X DOM 變成兄弟，自然被
@@ -137,6 +217,9 @@
       // cloneNode(true)：深 clone 含 tweetText / 圖片 src / User-Name / 時間戳。
       // React event 不會 clone 過來，但純閱讀模式不需要互動（reply / retweet
       // / like 按鈕被 cleaner 的 hideInsideArticleAllButtons 砍掉）。
+      // 原 X header（avatar + name + handle）clone 進來後會被 cleaner 的祖先
+      // wrapper hide rule 連帶 hide（rect=0）——此檔的 injectAuthorHeaders()
+      // 在 cleaner 跑完後重建合成 header 補回 author 顯示。
       const clone = art.cloneNode(true);
       container.appendChild(clone);
     }
@@ -145,9 +228,29 @@
     return container;
   }
 
+  // 在 cleaner 跑完後呼叫（main.js enterXThreadMode 流程）——cleaner 看不到
+  // 此函式注入的 synthetic header，不會被它的 rule 命中。styler 之後跑時
+  // header 仍是合成容器的 direct child，typography 正常繼承。
+  function injectAuthorHeaders() {
+    const container = document.querySelector('[' + READER_ATTR + ']');
+    if (!container) return 0;
+    const articleClones = container.querySelectorAll(':scope > article');
+    let injected = 0;
+    for (let i = 0; i < articleClones.length && i < _lastThreadArticles.length; i++) {
+      const source = _lastThreadArticles[i];
+      const info = extractAuthorInfo(source);
+      if (!info || (!info.displayName && !info.handle && !info.avatarSrc)) continue;
+      const header = createAuthorHeader(info);
+      container.insertBefore(header, articleClones[i]);
+      injected++;
+    }
+    return injected;
+  }
+
   function exit() {
     const containers = document.querySelectorAll('[' + READER_ATTR + ']');
     containers.forEach(c => c.remove());
+    _lastThreadArticles = [];
   }
 
   function isActive() {
@@ -160,9 +263,13 @@
     getAuthorHandle,
     findMainTweet,
     collectThreadArticles,
+    extractAuthorInfo,
+    createAuthorHeader,
     enter,
+    injectAuthorHeaders,
     exit,
     isActive,
-    READER_ATTR
+    READER_ATTR,
+    AUTHOR_ATTR
   };
 })();
