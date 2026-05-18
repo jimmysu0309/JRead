@@ -101,6 +101,43 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
     });
   });
 
+  // ─── v0.7.129：tab-gone race condition 必須吞掉 ─────────────────────
+  // MV3 chrome.action.* / chrome.tabs.sendMessage 是 async promise，事件入隊
+  // → 實際執行間若 tab 被使用者關掉，會 reject `No tab with id: <id>`、
+  // 變成 uncaught (in promise) 堆進 chrome 通知中心。SW handler 對 tab 已關
+  // 的情境 setIcon / setBadgeText 也無意義，必須 silently swallow。
+  describe('v0.7.129 chrome.action.* 必須 silently swallow tab-gone reject', () => {
+    it('必須宣告 swallowTabGone helper（吞掉 tab 已關的 promise reject）', () => {
+      assert.match(src, /const\s+swallowTabGone\s*=/,
+        '必須宣告 swallowTabGone helper——forcing：直接 chrome.action.set* 不接 .catch 會讓「No tab with id」變 uncaught rejection 堆進 chrome 通知中心');
+      // helper 必須真的吞 reject（.catch handler 存在）
+      const m = src.match(/const\s+swallowTabGone\s*=[\s\S]*?\};/);
+      assert.ok(m && /\.catch\s*\(/.test(m[0]),
+        'swallowTabGone 內部必須有 .catch(...)——forcing：宣告但沒 .catch 等於沒吞，rejection 仍會 uncaught');
+    });
+
+    it('所有 chrome.action.set* 呼叫必須被 swallowTabGone 包住', () => {
+      // 抓每處 chrome.action.setIcon / setBadgeText / setBadgeBackgroundColor /
+      // setBadgeTextColor，檢查每個前面緊鄰 swallowTabGone(
+      const calls = src.match(/chrome\.action\.set(Icon|Badge\w+)\s*\(/g) || [];
+      assert.ok(calls.length >= 5,
+        `SW 至少應有 5 處 chrome.action.set* 呼叫（SET_ACTIVE_ICON handler + tabs.onUpdated handler），實測 ${calls.length}`);
+      // 整份 src 不能出現「沒被 swallowTabGone 包」的 chrome.action.set*。
+      // pattern：行內 `chrome.action.set*(` 前面非 `swallowTabGone(`
+      const lines = src.split('\n');
+      const offenders = [];
+      lines.forEach((line, i) => {
+        if (/chrome\.action\.set(Icon|Badge\w+)\s*\(/.test(line)) {
+          if (!/swallowTabGone\s*\(\s*chrome\.action\.set/.test(line)) {
+            offenders.push(`L${i + 1}: ${line.trim()}`);
+          }
+        }
+      });
+      assert.deepStrictEqual(offenders, [],
+        `所有 chrome.action.set* 呼叫都必須 swallowTabGone(chrome.action.set...)——forcing：漏包就會在 tab 關閉時噴 uncaught rejection。違規行：\n${offenders.join('\n')}`);
+    });
+  });
+
   // ─── content script main.js bridge reload 分支 ──────────────────────
   describe('v0.7.126 main.js bridge reload 分支必須走 sendMessage', () => {
     const mainSrc = require('fs').readFileSync(
