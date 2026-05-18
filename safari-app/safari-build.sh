@@ -37,7 +37,12 @@ PROJECT_FILE="$PROJECT_DIR/JRead.xcodeproj"
 PBXPROJ="$PROJECT_FILE/project.pbxproj"
 EXTENSION_RESOURCES="$PROJECT_DIR/JRead Extension/Resources"
 EXPORT_OPTS_DEVID="safari-app/safari-export-options-developerid.plist"
-BUILD_DIR="safari-app/build"
+# BUILD_DIR 故意放 $TMPDIR 不放 safari-app/build——避開 iCloud Drive fileprovider 互動。
+# ~/Documents/Claude/Projects/JRead/ 屬於 iCloud Drive 同步範圍，xcodebuild 產出 signed
+# .app bundle 進 build/ 後會被 fileprovider 接管，bundle 內所有檔案 chown 成 root，
+# 連 sudo 都不一定能 rm（v0.7.138 release 流程實機踩過）。$TMPDIR 是 macOS per-user
+# tmpdir（/var/folders/xx/.../T/），不在 iCloud 同步路徑，重開機系統會清。
+BUILD_DIR="${TMPDIR:-/tmp/}jread-safari-build"
 NOTARY_PROFILE="${NOTARY_PROFILE:-shinkansen-notary}"
 DEVID_INSTALLER_CERT="Developer ID Installer: Zhimin Su (PR6NG3PH45)"
 
