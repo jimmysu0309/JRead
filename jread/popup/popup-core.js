@@ -16,6 +16,7 @@
     'content/toast.js',
     'content/cinema-mode.js',
     'content/youtube-borderless.js',
+    'content/x-thread.js',
     'content/detector.js',
     'content/cleaner.js',
     'content/styler.js',

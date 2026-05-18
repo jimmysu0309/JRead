@@ -1,0 +1,501 @@
+// JRead — X / Twitter status thread reader regression（v0.7.135）
+//
+// 動機：X status 頁（x.com / twitter.com 的 /<user>/status/<digits>）DOM 是
+// timeline 結構，detector 既有策略誤判為列表頁 no-op。Jimmy 2026-05-18 要求
+// 支援「X 原生 thread = 同作者連續推文」+ replies 全清。修法：合成 reader
+// 容器路線——detector 短路 isXThread=true → main.js 走 enterXThreadMode 呼叫
+// NS.xThread.enter() 建 `<article data-jread-x-reader>` clone thread member 進
+// 去注入 body firstChild，後續 cleaner / styler / Readwise / keyguard / ESC
+// 流程 0 fork 全沿用。
+//
+// 假設驗證順序見 CLAUDE.md。本 feature 的 URL match / 主推文 / thread member
+// 偵測 / 合成容器注入已由 chrome-in-chrome probe 在真實 x.com/<user>/status
+// 頁面驗過（2026-05-18 philipinspain status 案例）。本 spec 是 forcing function，
+// 覆蓋：
+//   1. x-thread.js 模組結構（NS.xThread.{ isXStatusPage, extractStatusId,
+//      getAuthorHandle, findMainTweet, collectThreadArticles, enter, exit,
+//      isActive, READER_ATTR }）
+//   2. isXStatusPage URL 判斷（x.com / twitter.com / www / mobile / m / 非
+//      /status/ 路徑 / 非 X 站）
+//   3. extractStatusId 抽 status digits
+//   4. getAuthorHandle 跳過 /status/ 時間戳 link
+//   5. findMainTweet 命中含 a[href*="/status/<ID>"] 的 article
+//   6. collectThreadArticles 邊界（單推文 / 同作者連續 thread / 不同作者中斷 /
+//      非 cellInnerDiv 中斷 / 無 article cell 中斷 / 前後雙向 walk）
+//   7. enter() 注入合成 <article data-jread-x-reader> 到 body 開頭 + exit() 清除
+//   8. detector.js detect() X status 短路（回 isXThread=true / el=null）
+//   9. main.js enterXThreadMode 流程（NS.xThread.enter + cleaner.clean + 標
+//      siteMode='article'）+ exitReaderMode 呼叫 NS.xThread.exit()
+//  10. manifest content_scripts 載入順序（x-thread.js 在 detector.js 前）
+//  11. namespace.js xThread: null 佔位
+
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+const { JSDOM } = require('jsdom');
+
+const ROOT = path.join(__dirname, '..', '..');
+const XTHREAD_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'x-thread.js'), 'utf8');
+const NAMESPACE_SRC = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'namespace.js'), 'utf8');
+const DETECTOR_SRC  = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'detector.js'), 'utf8');
+const MAIN_SRC      = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'), 'utf8');
+const POPUP_CORE    = fs.readFileSync(path.join(ROOT, 'jread', 'popup', 'popup-core.js'), 'utf8');
+const MANIFEST      = JSON.parse(fs.readFileSync(path.join(ROOT, 'jread', 'manifest.json'), 'utf8'));
+
+// 建一個 JSDOM 環境，eval namespace.js + x-thread.js。chrome.runtime.getManifest
+// 要 stub，否則 namespace.js 取版本號會炸。
+function setupJsdom(url, extraScripts = []) {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url,
+    runScripts: 'outside-only'
+  });
+  const { window } = dom;
+  window.chrome = {
+    runtime: {
+      getManifest: () => ({ version: '0.7.135' })
+    }
+  };
+  window.eval(NAMESPACE_SRC);
+  window.eval(XTHREAD_SRC);
+  for (const src of extraScripts) {
+    window.eval(src);
+  }
+  return { window, document: window.document, NS: window.__JRead };
+}
+
+// 建一個迷你 X timeline fixture——主推文 + N 個 reply / thread member cell。
+// cellSpec: [{ author: 'philipinspain', text: '...', isMain?: bool, statusId?: '123' }, ...]
+function buildXTimelineDom(cellSpecs, mainStatusId = '2056') {
+  const cellsHtml = cellSpecs.map((s, i) => {
+    const isMain = !!s.isMain;
+    const statusLink = isMain
+      ? `<a href="/${s.author}/status/${mainStatusId}"><time datetime="2026-05-18T00:00:00.000Z">7h</time></a>`
+      : `<a href="/${s.author}/status/${i + 10000}"><time datetime="2026-05-18T00:00:00.000Z">5h</time></a>`;
+    return `<div data-testid="cellInnerDiv"><div><div>
+      <article role="article" data-testid="tweet">
+        <div data-testid="User-Name">
+          <a href="/${s.author}"><span>${s.author}</span></a>
+          <a href="/${s.author}"><span>@${s.author}</span></a>
+          ${statusLink}
+        </div>
+        <div data-testid="tweetText"><span>${s.text}</span></div>
+      </article>
+    </div></div></div>`;
+  }).join('');
+  return `<!doctype html><html><body>
+    <main role="main"><div data-testid="primaryColumn">
+      <section><div>${cellsHtml}</div></section>
+    </div></main>
+  </body></html>`;
+}
+
+function setupJsdomWithBody(url, htmlBody) {
+  const dom = new JSDOM(htmlBody, {
+    url,
+    runScripts: 'outside-only'
+  });
+  const { window } = dom;
+  window.chrome = {
+    runtime: {
+      getManifest: () => ({ version: '0.7.135' })
+    }
+  };
+  window.eval(NAMESPACE_SRC);
+  window.eval(XTHREAD_SRC);
+  return { window, document: window.document, NS: window.__JRead };
+}
+
+describe('x-thread v0.7.135 — module structure', () => {
+  it('x-thread.js 必須宣告 isXStatusPage / extractStatusId / getAuthorHandle / findMainTweet / collectThreadArticles / enter / exit / isActive', () => {
+    assert.match(XTHREAD_SRC, /function\s+isXStatusPage\s*\(/,
+      'x-thread.js 缺 isXStatusPage——URL 判斷');
+    assert.match(XTHREAD_SRC, /function\s+extractStatusId\s*\(/,
+      'x-thread.js 缺 extractStatusId——從 URL 抽 status digits');
+    assert.match(XTHREAD_SRC, /function\s+getAuthorHandle\s*\(/,
+      'x-thread.js 缺 getAuthorHandle——讀作者 handle');
+    assert.match(XTHREAD_SRC, /function\s+findMainTweet\s*\(/,
+      'x-thread.js 缺 findMainTweet——找主推文 article');
+    assert.match(XTHREAD_SRC, /function\s+collectThreadArticles\s*\(/,
+      'x-thread.js 缺 collectThreadArticles——同作者連續 thread member walk');
+    assert.match(XTHREAD_SRC, /function\s+enter\s*\(/,
+      'x-thread.js 缺 enter——建合成 reader 容器');
+    assert.match(XTHREAD_SRC, /function\s+exit\s*\(/,
+      'x-thread.js 缺 exit——清合成容器');
+    assert.match(XTHREAD_SRC, /function\s+isActive\s*\(/,
+      'x-thread.js 缺 isActive');
+  });
+
+  it('x-thread.js 必須 export NS.xThread 物件，含上述全部 function + READER_ATTR 常數', () => {
+    assert.match(XTHREAD_SRC, /NS\.xThread\s*=\s*\{[\s\S]*isXStatusPage[\s\S]*enter[\s\S]*exit[\s\S]*\}/,
+      'NS.xThread 必須暴露 isXStatusPage / enter / exit（main.js / detector.js 依賴）');
+    assert.match(XTHREAD_SRC, /READER_ATTR\s*=\s*['"]data-jread-x-reader['"]/,
+      'READER_ATTR 常數必須是 data-jread-x-reader——合成容器 marker、spec 與 source 雙邊綁定');
+  });
+});
+
+describe('x-thread v0.7.135 — isXStatusPage URL 判斷', () => {
+  let isXStatusPage;
+  before(() => {
+    const env = setupJsdom('https://example.com/');
+    isXStatusPage = env.NS.xThread.isXStatusPage;
+  });
+
+  it('https://x.com/<user>/status/<digits> → true', () => {
+    assert.strictEqual(isXStatusPage('https://x.com/philipinspain/status/2056152770298675234'), true);
+  });
+
+  it('https://www.x.com/<user>/status/<digits> → true', () => {
+    assert.strictEqual(isXStatusPage('https://www.x.com/user/status/123'), true);
+  });
+
+  it('https://twitter.com/<user>/status/<digits> → true（舊網域）', () => {
+    assert.strictEqual(isXStatusPage('https://twitter.com/user/status/123'), true);
+  });
+
+  it('https://mobile.twitter.com/<user>/status/<digits> → true', () => {
+    assert.strictEqual(isXStatusPage('https://mobile.twitter.com/user/status/123'), true);
+  });
+
+  it('https://x.com/<user>/status/<digits>/photo/1 → true（變體後綴）', () => {
+    assert.strictEqual(isXStatusPage('https://x.com/user/status/123/photo/1'), true);
+  });
+
+  it('https://x.com/<user>/status/<digits>/analytics → true（變體後綴）', () => {
+    assert.strictEqual(isXStatusPage('https://x.com/user/status/123/analytics'), true);
+  });
+
+  it('https://x.com/<user> 純使用者頁 → false', () => {
+    assert.strictEqual(isXStatusPage('https://x.com/philipinspain'), false);
+  });
+
+  it('https://x.com/home → false（首頁不算 status）', () => {
+    assert.strictEqual(isXStatusPage('https://x.com/home'), false);
+  });
+
+  it('https://x.com/notifications → false（通知頁）', () => {
+    assert.strictEqual(isXStatusPage('https://x.com/notifications'), false);
+  });
+
+  it('https://example.com/user/status/123 → false（非 x / twitter 站）', () => {
+    assert.strictEqual(isXStatusPage('https://example.com/user/status/123'), false);
+  });
+
+  it('https://youtube.com/watch?v=status/123 → false', () => {
+    assert.strictEqual(isXStatusPage('https://youtube.com/watch?v=status/123'), false);
+  });
+
+  it('無參數時讀 location.href', () => {
+    const env = setupJsdom('https://x.com/user/status/999');
+    assert.strictEqual(env.NS.xThread.isXStatusPage(), true);
+    const env2 = setupJsdom('https://example.com/');
+    assert.strictEqual(env2.NS.xThread.isXStatusPage(), false);
+  });
+});
+
+describe('x-thread v0.7.135 — extractStatusId', () => {
+  let extractStatusId;
+  before(() => {
+    const env = setupJsdom('https://example.com/');
+    extractStatusId = env.NS.xThread.extractStatusId;
+  });
+
+  it('抽完整 X status URL 內的 digits', () => {
+    assert.strictEqual(
+      extractStatusId('https://x.com/philipinspain/status/2056152770298675234'),
+      '2056152770298675234'
+    );
+  });
+
+  it('帶 /photo/1 後綴仍能正確抽出 status digits', () => {
+    assert.strictEqual(extractStatusId('https://x.com/user/status/123/photo/1'), '123');
+  });
+
+  it('無 status segment → null', () => {
+    assert.strictEqual(extractStatusId('https://x.com/user'), null);
+  });
+});
+
+describe('x-thread v0.7.135 — getAuthorHandle 跳過 /status/ 時間戳 link', () => {
+  it('User-Name 區內第一個非 /status/ link 的 handle 視為作者', () => {
+    const html = `<!doctype html><html><body>
+      <article role="article">
+        <div data-testid="User-Name">
+          <a href="/philipinspain"><span>Felipe</span></a>
+          <a href="/philipinspain"><span>@philipinspain</span></a>
+          <a href="/philipinspain/status/2056"><time>7h</time></a>
+        </div>
+      </article>
+    </body></html>`;
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const article = env.document.querySelector('article');
+    assert.strictEqual(env.NS.xThread.getAuthorHandle(article), 'philipinspain');
+  });
+
+  it('沒 User-Name 區的 article → null', () => {
+    const html = `<!doctype html><html><body><article role="article"></article></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/', html);
+    const article = env.document.querySelector('article');
+    assert.strictEqual(env.NS.xThread.getAuthorHandle(article), null);
+  });
+});
+
+describe('x-thread v0.7.135 — findMainTweet by status ID', () => {
+  it('命中含 a[href*="/status/<ID>"] 的 article', () => {
+    const specs = [
+      { author: 'philipinspain', text: '主推文', isMain: true },
+      { author: 'NYCBossGirl',   text: 'reply 1' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const main = env.NS.xThread.findMainTweet('2056');
+    assert.ok(main, 'findMainTweet 必須找到主推文');
+    const handle = env.NS.xThread.getAuthorHandle(main);
+    assert.strictEqual(handle, 'philipinspain');
+  });
+
+  it('statusId 對應不到任何 article → null', () => {
+    const specs = [
+      { author: 'philipinspain', text: '主推文', isMain: true }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/9999', html);
+    const main = env.NS.xThread.findMainTweet('9999'); // 對應不到
+    assert.strictEqual(main, null);
+  });
+});
+
+describe('x-thread v0.7.135 — collectThreadArticles 邊界', () => {
+  it('單推文 case（後續第一則就是別人 reply）只回主推文', () => {
+    const specs = [
+      { author: 'philipinspain', text: '主推文', isMain: true },
+      { author: 'NYCBossGirl',   text: 'reply 1' },
+      { author: 'sixteen6699',   text: 'reply 2' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const main = env.NS.xThread.findMainTweet('2056');
+    const thread = env.NS.xThread.collectThreadArticles(main);
+    assert.strictEqual(thread.length, 1, '單推文 thread 應只含主推文');
+  });
+
+  it('同作者連續 thread 都納入', () => {
+    const specs = [
+      { author: 'philipinspain', text: '主推文 1/3', isMain: true },
+      { author: 'philipinspain', text: '推文 2/3' },
+      { author: 'philipinspain', text: '推文 3/3' },
+      { author: 'NYCBossGirl',   text: 'reply' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const main = env.NS.xThread.findMainTweet('2056');
+    const thread = env.NS.xThread.collectThreadArticles(main);
+    assert.strictEqual(thread.length, 3, 'thread 應含主推文 + 2 條同作者後續');
+  });
+
+  it('中間隔別人 reply 後再有同作者 → 不納入後段同作者（i=7 case）', () => {
+    const specs = [
+      { author: 'philipinspain', text: '主推文', isMain: true },
+      { author: 'NYCBossGirl',   text: 'reply 1' },
+      { author: 'philipinspain', text: '另一則同作者推文（非 thread continuation）' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const main = env.NS.xThread.findMainTweet('2056');
+    const thread = env.NS.xThread.collectThreadArticles(main);
+    assert.strictEqual(thread.length, 1,
+      '中間隔別人 reply 後同作者推文不算 thread member——i=7 case 必須止損在第一個非作者 cell');
+  });
+
+  it('往前 walk：thread 起點以前的同作者推文也納入', () => {
+    const specs = [
+      { author: 'philipinspain', text: 'thread 第 1 則' },
+      { author: 'philipinspain', text: 'thread 第 2 則（主推文點進來的）', isMain: true },
+      { author: 'philipinspain', text: 'thread 第 3 則' },
+      { author: 'NYCBossGirl',   text: 'reply' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const main = env.NS.xThread.findMainTweet('2056');
+    const thread = env.NS.xThread.collectThreadArticles(main);
+    assert.strictEqual(thread.length, 3, 'thread 應含主推文前後共 3 則');
+  });
+});
+
+describe('x-thread v0.7.135 — enter() / exit() 合成容器', () => {
+  it('enter() 注入 <article data-jread-x-reader> 到 body 開頭', () => {
+    const specs = [
+      { author: 'philipinspain', text: '主推文 850 字', isMain: true },
+      { author: 'NYCBossGirl',   text: 'reply' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const container = env.NS.xThread.enter();
+    assert.ok(container, 'enter() 必須回容器 element');
+    assert.strictEqual(container.tagName, 'ARTICLE');
+    assert.strictEqual(container.getAttribute('data-jread-x-reader'), '1');
+    assert.strictEqual(env.document.body.firstElementChild, container,
+      '合成容器必須是 body 第一個 child——讓 hideAncestorSiblings 自然清掉原 X UI');
+  });
+
+  it('合成容器內含主推文 article（clone 進去）', () => {
+    const specs = [
+      { author: 'philipinspain', text: 'unique-keyword-jread-test-123', isMain: true }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const container = env.NS.xThread.enter();
+    assert.ok(container.textContent.includes('unique-keyword-jread-test-123'),
+      '合成容器必須含主推文文字（cloneNode 後文字保留）');
+    assert.strictEqual(container.querySelectorAll('article').length, 1,
+      '單推文 case：合成容器內 1 個 article clone');
+  });
+
+  it('thread 多則：合成容器內 N 個 article clone（順序保持）', () => {
+    const specs = [
+      { author: 'philipinspain', text: '第 1 則', isMain: true },
+      { author: 'philipinspain', text: '第 2 則' },
+      { author: 'philipinspain', text: '第 3 則' }
+    ];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const container = env.NS.xThread.enter();
+    const articles = container.querySelectorAll('article');
+    assert.strictEqual(articles.length, 3, 'thread 3 則 → 3 個 article clone');
+    assert.ok(container.textContent.includes('第 1 則'));
+    assert.ok(container.textContent.includes('第 2 則'));
+    assert.ok(container.textContent.includes('第 3 則'));
+  });
+
+  it('找不到主推文時 enter() 回 null（不注入容器）', () => {
+    const html = `<!doctype html><html><body><main></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const container = env.NS.xThread.enter();
+    assert.strictEqual(container, null, '找不到主推文時 enter() 必須回 null');
+    assert.strictEqual(env.document.querySelector('[data-jread-x-reader]'), null,
+      '不可注入合成容器');
+  });
+
+  it('exit() 移除合成容器', () => {
+    const specs = [{ author: 'philipinspain', text: 'main', isMain: true }];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    env.NS.xThread.enter();
+    assert.ok(env.NS.xThread.isActive(), 'enter 後 isActive=true');
+    env.NS.xThread.exit();
+    assert.strictEqual(env.NS.xThread.isActive(), false, 'exit 後 isActive=false');
+    assert.strictEqual(env.document.querySelector('[data-jread-x-reader]'), null,
+      'exit 後合成容器必須消失');
+  });
+
+  it('enter() 重複呼叫不會注入第二份容器（冪等）', () => {
+    const specs = [{ author: 'philipinspain', text: 'main', isMain: true }];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    env.NS.xThread.enter();
+    env.NS.xThread.enter();
+    const containers = env.document.querySelectorAll('[data-jread-x-reader]');
+    assert.strictEqual(containers.length, 1, '重複 enter 必須冪等');
+  });
+
+  it('exit() 沒 enter 過時也安全（不丟例外）', () => {
+    const env = setupJsdom('https://x.com/');
+    assert.doesNotThrow(() => env.NS.xThread.exit());
+  });
+});
+
+describe('x-thread v0.7.135 — detector.detect() X status 短路', () => {
+  it('X status URL → detect() 回 isXThread=true / el=null / strategy=x-thread / confidence=1', () => {
+    const specs = [{ author: 'philipinspain', text: 'main', isMain: true }];
+    const html = buildXTimelineDom(specs, '2056');
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    env.window.eval(DETECTOR_SRC);
+    const result = env.NS.detector.detect();
+    assert.ok(result, 'X status URL 不應 no-op');
+    assert.strictEqual(result.isXThread, true,
+      'detect() 必須帶 isXThread=true（main.js 依此判斷走 enterXThreadMode）');
+    assert.strictEqual(result.strategy, 'x-thread');
+    assert.strictEqual(result.confidence, 1);
+    assert.strictEqual(result.el, null,
+      'X status 場景 el=null——合成容器在 main.js enterXThreadMode 才建立');
+  });
+
+  it('非 X 站 URL → detect() 不回 isXThread（走原本偵測）', () => {
+    const env = setupJsdom('https://example.com/article');
+    env.window.eval(DETECTOR_SRC);
+    const result = env.NS.detector.detect();
+    if (result) {
+      assert.notStrictEqual(result.isXThread, true);
+    }
+  });
+
+  it('X 首頁（非 /status/）→ detect() 不回 isXThread', () => {
+    const env = setupJsdom('https://x.com/home');
+    env.window.eval(DETECTOR_SRC);
+    const result = env.NS.detector.detect();
+    if (result) {
+      assert.notStrictEqual(result.isXThread, true);
+    }
+  });
+});
+
+describe('x-thread v0.7.135 — main.js 整合', () => {
+  it('main.js 必須含 enterXThreadMode helper', () => {
+    assert.match(MAIN_SRC, /function\s+enterXThreadMode\s*\(/,
+      'main.js 缺 enterXThreadMode async function');
+  });
+
+  it('main.js enterReaderMode 必須依 result.isXThread dispatch 到 enterXThreadMode', () => {
+    assert.match(MAIN_SRC, /result\.isXThread[\s\S]{0,200}enterXThreadMode\s*\(/,
+      'enterReaderMode 內必須有 if (result.isXThread) return enterXThreadMode() 分支');
+  });
+
+  it('main.js enterXThreadMode 必須呼叫 NS.xThread.enter() + 對合成容器跑 cleaner / styler', () => {
+    assert.match(MAIN_SRC, /NS\.xThread\.enter\s*\(/,
+      'enterXThreadMode 內必須呼叫 NS.xThread.enter()');
+    // cleaner.clean(container) / styler.apply(container) 兩條都在 enterXThreadMode
+    const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n\s{0,4}async\s+function|\n\s{0,4}function\s+\w|\n\s{0,4}\/\/)/);
+    assert.ok(m, '抓不到 enterXThreadMode body');
+    assert.match(m[0], /NS\.cleaner\s*\?\s*NS\.cleaner\.clean\s*\(\s*container/,
+      'enterXThreadMode 必須對合成容器呼叫 cleaner.clean(container)');
+    assert.match(m[0], /NS\.styler\s*\?\s*NS\.styler\.apply\s*\(\s*container/,
+      'enterXThreadMode 必須對合成容器呼叫 styler.apply(container)');
+  });
+
+  it('main.js exitReaderMode 必須呼叫 NS.xThread.exit() 清合成容器', () => {
+    assert.match(MAIN_SRC, /NS\.xThread\s*&&[\s\S]{0,80}NS\.xThread\.exit\s*\(/,
+      'exitReaderMode 必須呼叫 NS.xThread.exit() 清合成容器');
+  });
+
+  it('main.js GET_READER_STATE siteMode 必須對 isXThread 也回 article（讓 popup 啟用按鈕 + Readwise）', () => {
+    // probe.el || probe.isXThread → siteMode = 'article'
+    assert.match(MAIN_SRC, /probe\.el\s*\|\|\s*probe\.isXThread/,
+      'GET_READER_STATE 內 siteMode 判斷必須含 (probe.el || probe.isXThread)，否則 popup 視 X status 為「不可閱讀」按鈕 disabled');
+  });
+});
+
+describe('x-thread v0.7.135 — manifest / popup-core / namespace 同步', () => {
+  it('manifest content_scripts 必須含 content/x-thread.js', () => {
+    const files = MANIFEST.content_scripts[0].js;
+    assert.ok(files.includes('content/x-thread.js'),
+      'manifest content_scripts 必須含 content/x-thread.js');
+  });
+
+  it('manifest content_scripts 順序：x-thread.js 必須在 detector.js 之前', () => {
+    const files = MANIFEST.content_scripts[0].js;
+    const xIdx = files.indexOf('content/x-thread.js');
+    const dIdx = files.indexOf('content/detector.js');
+    assert.ok(xIdx >= 0 && dIdx >= 0);
+    assert.ok(xIdx < dIdx,
+      'x-thread.js 必須在 detector.js 之前——detector.js eval 時 NS.xThread 必須已掛載');
+  });
+
+  it('popup-core.js CONTENT_SCRIPT_FILES 必須含 content/x-thread.js（fallback inject 順序對齊 manifest）', () => {
+    assert.ok(/['"]content\/x-thread\.js['"]/.test(POPUP_CORE),
+      'popup-core CONTENT_SCRIPT_FILES 必須含 content/x-thread.js——和 manifest 同步、避免 fallback inject 漏載');
+  });
+
+  it('namespace.js 必須含 xThread: null 佔位', () => {
+    assert.match(NAMESPACE_SRC, /xThread\s*:\s*null/,
+      'namespace.js 必須有 xThread: null 佔位——讓 NS.xThread 在 x-thread.js 載入前不是 undefined');
+  });
+});
