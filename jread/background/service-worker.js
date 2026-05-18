@@ -53,6 +53,15 @@ const ICONS_IDLE = {
 const BADGE_ACTIVE_COLOR = '#10b981';
 const BADGE_ACTIVE_TEXT  = '✓';
 
+// v0.7.129：吞掉 chrome.action.* / chrome.tabs.sendMessage 在 tab 已關閉時的
+// promise rejection。MV3 API 是 async：事件入隊→實際執行之間若 tab 被使用者
+// 關掉，會 reject `No tab with id: <id>`，預設變成 uncaught (in promise) 堆進
+// chrome 通知中心。對 SW handler 而言這是 benign race（tab 都沒了，setIcon /
+// setBadgeText 也無意義），統一吞 silently。
+const swallowTabGone = (p) => {
+  if (p && typeof p.catch === 'function') p.catch(() => {});
+};
+
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(null);
@@ -79,16 +88,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId !== 'number') return;
       const active = !!(msg.payload && msg.payload.active);
-      chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE });
+      swallowTabGone(chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE }));
       if (active) {
-        chrome.action.setBadgeBackgroundColor({ color: BADGE_ACTIVE_COLOR, tabId });
+        swallowTabGone(chrome.action.setBadgeBackgroundColor({ color: BADGE_ACTIVE_COLOR, tabId }));
         // 某些舊版 Chrome 沒 setBadgeTextColor、ignore 即可
         if (chrome.action.setBadgeTextColor) {
-          chrome.action.setBadgeTextColor({ color: '#ffffff', tabId });
+          swallowTabGone(chrome.action.setBadgeTextColor({ color: '#ffffff', tabId }));
         }
-        chrome.action.setBadgeText({ text: BADGE_ACTIVE_TEXT, tabId });
+        swallowTabGone(chrome.action.setBadgeText({ text: BADGE_ACTIVE_TEXT, tabId }));
       } else {
-        chrome.action.setBadgeText({ text: '', tabId });
+        swallowTabGone(chrome.action.setBadgeText({ text: '', tabId }));
       }
       return;
     }
@@ -133,9 +142,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // 的訊號點。
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === 'loading') {
-    chrome.action.setIcon({ tabId, path: ICONS_IDLE });
+    swallowTabGone(chrome.action.setIcon({ tabId, path: ICONS_IDLE }));
     // 同步清掉 reader-active badge（避免新頁面殘留前一頁的綠燈）
-    chrome.action.setBadgeText({ tabId, text: '' });
+    swallowTabGone(chrome.action.setBadgeText({ tabId, text: '' }));
   }
 });
 

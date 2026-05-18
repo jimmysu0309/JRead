@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.129**——SW `chrome.action.*` 在 tab 已關閉時的 `No tab with id: <id>` uncaught rejection 修法。**動機**：Jimmy 2026-05-18 截圖 chrome 通知中心堆 `Uncaught (in promise) Error: No tab with id: 1159797724.` 來自 `background/service-worker.js`。**根因**：MV3 `chrome.action.setIcon` / `setBadgeText` / `setBadgeBackgroundColor` / `setBadgeTextColor` / `chrome.tabs.sendMessage` 都是 async Promise，事件入隊 → 實際執行間若 tab 被使用者關掉、reload 中途被回收、或多視窗切換時 detach，就會 reject `No tab with id: <id>`。`SET_ACTIVE_ICON` handler（從 sender tab）跟 `tabs.onUpdated` `status === 'loading'` 分支裡的 7 處 `chrome.action.set*` 呼叫都沒接 `.catch`，rejection 變 uncaught 噪音化通知中心。對 SW 而言這是 benign race（tab 都沒了，setIcon / setBadgeText 也無意義）。**修法**（jread/background/service-worker.js）：新增 `swallowTabGone(p)` helper 統一吞 promise reject，包住所有 `chrome.action.set*` 呼叫（L82 setIcon / L84 setBadgeBackgroundColor / L87 setBadgeTextColor / L89 setBadgeText active / L91 setBadgeText inactive / L141 setIcon / L143 setBadgeText）。**spec 2 條 forcing assertion**（test/regression/sw-badge.spec.js v0.7.129 group）：(a) 必須宣告 `swallowTabGone` helper 且 helper 內部有 `.catch(...)`——forcing：缺 helper 或漏 `.catch` 等於沒吞 rejection；(b) 整份 SW 不能有任何 `chrome.action.set*` 漏包 `swallowTabGone(...)`——forcing：新增 SW 程式碼漏接 `.catch` 會被掃出來。**全 430 spec passing**（v0.7.128 428 → v0.7.129 430，新增 2 條 race-condition 結構 assertion）。
+
+---
+
 **v0.7.128**——badge 改用對勾 ✓。**動機**：v0.7.127 改純色塊（空格）後 Jimmy 2026-05-14 反映「不太好看」，希望加對勾既保留純色塊合理大小又帶語意「閱讀模式已啟用」。**修法**（jread/background/service-worker.js）：`BADGE_ACTIVE_TEXT` 從 `' '`（空格）改 `'✓'`（U+2713 CHECK MARK）—— ✓ 是窄字元、chrome macOS 渲染後不會像 ● 那樣撐滿整個 badge 區、且帶 affirmative 語意。spec assertion 同步更新。全 428 spec passing。
 
 ---
