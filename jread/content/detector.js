@@ -735,6 +735,18 @@
           isYouTubeCinema: true
         };
       }
+      // v0.7.135：X / Twitter status 頁短路。timeline 結構（cellInnerDiv 平鋪）
+      // 沒單一 <article> 容器可選，既有 strategy 會把主推文 + reply 視為列表頁
+      // 降級 no-op。改由 NS.xThread.enter() 合成 reader 容器（main.js 走獨立
+      // enterXThreadMode 分支建容器、再對容器跑既有 cleaner / styler 流程）。
+      if (NS.xThread && typeof NS.xThread.isXStatusPage === 'function' && NS.xThread.isXStatusPage()) {
+        return {
+          el: null,
+          confidence: 1,
+          strategy: 'x-thread',
+          isXThread: true
+        };
+      }
       const result = (
         detectByArticleTag() ||
         detectBySchemaOrg() ||

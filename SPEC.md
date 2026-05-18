@@ -7,11 +7,11 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.134**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.135**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
-**當前 baseline：v0.7.134**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–128 的 cleaner / styler edge case 修法 + v0.7.133 新增 YouTube Cinema Mode + v0.7.134 新增 YouTube Borderless Mode（從 Shinkansen 移植，與 cinema mode 完全獨立）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
+**當前 baseline：v0.7.135**（2026-05-13 起，Jimmy 在 cn.nytimes col-* margin reset 修法完成後明確指定為新基準；v0.7.135 在此之上新增 X / Twitter status thread 支援）。承接 v0.7.32 的所有能力 + 累積 v0.7.33–128 的 cleaner / styler edge case 修法 + v0.7.133 新增 YouTube Cinema Mode + v0.7.134 新增 YouTube Borderless Mode（從 Shinkansen 移植，與 cinema mode 完全獨立）+ v0.7.135 新增 X / Twitter status 頁合成 reader 容器支援（thread = 同作者連續推文）。往後 edge case 維修以此版的視覺成果與測試覆蓋為不可退讓底線。
 
 **v0.7.134 baseline 包含**（在 v0.7.32 之上累積，完整修法紀錄見 `CHANGELOG.md`）：
 
@@ -393,6 +393,55 @@ ESC 鍵（`onEscKey` listener 共用，跟 reader mode 一致）或 popup「退�
 2. **install-as-app / PWA 限制**：使用 Chrome 「install as app」把 YouTube 裝成獨立視窗時，`chrome.windows.update` 對 PWA window 可能無效——`.catch()` 吞掉、CSS 仍生效但 letterboxing 黑邊。
 3. **跨 OS 行為差異**：macOS Chrome 視窗最小高度約 200px、Windows / Linux 可能更低；`calcTargetWindowHeight` 用 200 作 minOuter 保守值。
 4. **SPA navigation reset theater flag**：切到非 watch 路徑時 `prevTheaterValue` 被 reset，切回再 toggle off 時無法判斷「原本是否在 theater」，可能多 removeAttribute 一次（無副作用，YouTube 自己會 idempotent）。
+
+---
+
+## X / Twitter status thread reader（v0.7.135）
+
+X / Twitter 的 `/<user>/status/<digits>` URL 透過**合成 reader 容器路線**支援。動機：X status 頁 DOM 是 timeline 結構（`[data-testid="cellInnerDiv"]` 平鋪：主推文 + 一堆別人 reply + 推薦 follow 卡），既有 detector 把 8 個 `article[role="article"]` 視為列表頁降級 no-op。Jimmy 2026-05-18 明確要支援「同作者連續推文 = X 原生 thread」，replies 全清。
+
+### 觸發條件
+
+`isXStatusPage(url)`（`jread/content/x-thread.js`）：
+
+- hostname：`x.com / www.x.com / mobile.x.com / m.x.com / twitter.com / www.twitter.com / mobile.twitter.com / m.twitter.com`
+- pathname：`^/<username>/status/<digits>`（後可接 `/photo/1` `/analytics` 等變體）
+
+非 `/status/` 子路徑（首頁 / 使用者頁 `/<user>` / 通知 `/notifications` 等）均不命中。
+
+### 注入機制
+
+`NS.xThread.enter()`：
+
+1. `extractStatusId(url)` 從 URL 抓 status digits
+2. `findMainTweet(statusId)` 遍歷 `document.querySelectorAll('article[role="article"]')`，命中含 `a[href*="/status/<ID>"]` 的 article 即主推文（X 把該連結作為時間戳）
+3. `collectThreadArticles(mainArticle)`：從主推文 `closest('[data-testid="cellInnerDiv"]')` 往前後 walk sibling cell，每個 cell 跑「同作者連續」判定（`getAuthorHandle(art)` 讀第一個 `[data-testid="User-Name"] a[href^="/"]`，跳過 `/status/` 時間戳）；任一方向遇到「非 cellInnerDiv 兄弟」「cell 無 article」「不同作者」即停該方向擴張
+4. 建合成 `<article data-jread-x-reader>`，深 clone `cloneNode(true)` 每個 thread article 進去
+5. `document.body.insertBefore(container, document.body.firstChild)` 注入 body 開頭——讓 `hideAncestorSiblings` 自然清掉所有原 X UI（masthead / sidebar / 留言 / 推薦 / footer）為合成容器的兄弟
+
+### 跟既有流程的銜接
+
+合成容器是「正常 `<article>` 元素」，articleEl 設成它之後既有所有規則 0 fork 全沿用：
+
+- `cleaner.clean(container)` 跑全套規則：`hideInsideArticleAllButtons` 砍 reply/retweet/like/分析 等按鈕、`hideInsideArticleByLinkText` 命中「Follow」「Subscribe」「N hours ago」等文字
+- `styler.apply(container, settings)` 套讀者卡片排版（max-width / margin / padding / background / 字體）
+- `extractReaderPayload()` 抽合成容器 outerHTML 給 Readwise
+- `installKeyguard()` 攔截 X 的 j/k/l/r 等 keyboard-shortcut
+
+### 退出
+
+`exitReaderMode()` 走既有路徑（styler.restore + cleaner.restore + 各種還原），最後呼叫 `NS.xThread.exit()` 移除合成容器。
+
+### 與 cinema / borderless mode 的關係
+
+X status 是純 reader mode 分支（合成 articleEl + 跑 cleaner/styler），跟 cinema / borderless 完全不同維度——cinema / borderless 是注入全頁 CSS、不動 articleEl 流程。siteMode 在 X status 場景回 `'article'` 讓 popup 視為普通可閱讀頁（按鈕啟用 + Readwise 顯示），不需要新增 `'x-thread'` siteMode。
+
+### 已知限制
+
+1. **SPA navigation 不自動重套**：X 切貼文不 reload、本版未加 `popstate / pushState hook`，使用者切到另一則 status 需手動 toggle off + on
+2. **引用推文 (quoted tweet) 一起 clone**：X 用 nested `<article>` 嵌入 quoted tweet，`cloneNode(true)` 會把它連同主推文一起帶進來——視覺保留，但 cleaner 規則對 nested article 可能不完全 idempotent；目前實測 OK
+3. **lazy-load 圖片**：X 圖片若是 lazy-load 未觸發狀態（推文還沒進主視窗），clone 後可能無 src；通常推文進 viewport 時就已 load，主推文圖片可正常顯示
+4. **harness 驗收受限**：X 易被 bot detection 擋；chrome-in-chrome MCP 不需要 login 即可看到 thread DOM，是主要驗證管道
 
 ---
 

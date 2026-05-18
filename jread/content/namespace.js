@@ -26,6 +26,7 @@
     toast: null,
     cinema: null,           // v0.7.133：YouTube cinema mode（cinema-mode.js 掛載）
     borderless: null,       // v0.7.134：YouTube borderless mode（youtube-borderless.js 掛載）
+    xThread: null,          // v0.7.135：X / Twitter status thread reader（x-thread.js 掛載）
 
     // 訊息常數（與 popup / background 對齊）
     MSG: {

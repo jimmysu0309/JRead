@@ -120,6 +120,47 @@
     return true;
   }
 
+  // v0.7.135：X / Twitter status 頁走合成 reader 容器分支。detector 短路回
+  // isXThread=true 時呼叫 NS.xThread.enter() 在 body 開頭注入合成 `<article
+  // data-jread-x-reader>`，後續 cleaner / styler / Readwise / keyguard / ESC
+  // 流程都對這個合成容器跑——所以這分支只是「在跑 cleaner/styler 之前先建容器」，
+  // 退出時除了走 styler.restore / cleaner.restore 之外多 remove 合成容器。
+  async function enterXThreadMode() {
+    if (!NS.xThread) return false;
+    const container = NS.xThread.enter();
+    if (!container) {
+      showToast('此頁無法偵測主推文', 'error');
+      chrome.runtime.sendMessage({
+        type: NS.MSG.REPORT_DETECTION_RESULT,
+        payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
+      });
+      return false;
+    }
+    const settings = await getSettings();
+    NS.state.articleEl = container;
+    NS.state.confidence = 1;
+    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(container) : [];
+    NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
+    NS.state.active = true;
+
+    window.removeEventListener('keydown', onEscKey, true);
+    window.addEventListener('keydown', onEscKey, true);
+    // X 是 keyboard-shortcut-heavy 站（j/k 換推文、l 點讚、r reply 等），跟 reader
+    // mode 純閱讀完全衝突——install keyguard 攔截。
+    if (settings.blockPageShortcuts !== false) {
+      installKeyguard();
+    } else {
+      uninstallKeyguard();
+    }
+
+    chrome.runtime.sendMessage({
+      type: NS.MSG.REPORT_DETECTION_RESULT,
+      payload: { ok: true, confidence: 1, strategy: 'x-thread' }
+    });
+    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    return true;
+  }
+
   async function enterReaderMode() {
     const result = NS.detector && NS.detector.detect();
     if (!result) {
@@ -132,6 +173,9 @@
     }
     if (result.isYouTubeCinema) {
       return enterCinemaMode();
+    }
+    if (result.isXThread) {
+      return await enterXThreadMode();
     }
 
     const settings = await getSettings();
@@ -210,6 +254,12 @@
     document.querySelectorAll('[data-jread-promoted-title="1"]').forEach(el => {
       el.removeAttribute('data-jread-promoted-title');
     });
+    // v0.7.135：清掉 X / Twitter 合成 reader 容器（NS.xThread.enter() 注入的
+    // [data-jread-x-reader]）。styler / cleaner 已 restore 過了，容器自身只是
+    // 包裝體、直接 remove 不影響原 X DOM。
+    if (NS.xThread && typeof NS.xThread.exit === 'function') {
+      NS.xThread.exit();
+    }
     NS.state.active = false;
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
@@ -299,7 +349,10 @@
       } else if (NS.detector && typeof NS.detector.detect === 'function') {
         try {
           const probe = NS.detector.detect();
-          if (probe && probe.el) siteMode = 'article';
+          // v0.7.135：X / Twitter status 場景 probe.el = null（合成容器要 enter()
+          // 才建），但仍視為可啟動閱讀模式——回 'article' 讓 popup 按鈕啟用
+          // 且 Readwise 按鈕顯示。
+          if (probe && (probe.el || probe.isXThread)) siteMode = 'article';
         } catch (_) { /* 偵測失敗 = null */ }
       }
       sendResponse({
