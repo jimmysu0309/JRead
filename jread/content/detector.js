@@ -723,6 +723,18 @@
      * 最外層不需 promote。
      */
     detect() {
+      // v0.7.133：YouTube watch page 走 cinema mode（不偵測主文、改釘 player 中央
+      // 黑底鋪滿）。短路在最前面：YouTube watch page 沒主文可分析，下面任何
+      // strategy 跑下去都是 no-op + 浪費效能。回傳特殊 result，main.js 看
+      // isYouTubeCinema flag 走 NS.cinema.enter() 而非 cleaner/styler。
+      if (NS.cinema && typeof NS.cinema.isYouTubeWatch === 'function' && NS.cinema.isYouTubeWatch()) {
+        return {
+          el: null,
+          confidence: 1,
+          strategy: 'youtube-cinema',
+          isYouTubeCinema: true
+        };
+      }
       const result = (
         detectByArticleTag() ||
         detectBySchemaOrg() ||

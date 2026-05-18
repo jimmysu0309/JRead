@@ -14,6 +14,7 @@
   const CONTENT_SCRIPT_FILES = [
     'content/namespace.js',
     'content/toast.js',
+    'content/cinema-mode.js',
     'content/detector.js',
     'content/cleaner.js',
     'content/styler.js',

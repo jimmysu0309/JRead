@@ -167,7 +167,11 @@ function setReadwiseStatus(text, kind) {
 // 用 `hidden` 屬性（瀏覽器原生 display:none），保留 `disabled` 給「送出中
 // 防連點」用——hidden 與 disabled 是兩個獨立軸：hidden=「現在不該看到」、
 // disabled=「看得到但暫時不能按」。
-async function refreshReadwiseButton() {
+//
+// v0.7.133：擴增為 refreshPopupForActiveTab，同時依 siteMode 切換 toggle 按鈕
+// 文字（YouTube watch → 影院模式）。Readwise 按鈕在 cinema mode 下強制 hidden
+// （cinema mode 沒主文 outerHTML 可送，按鈕露出無意義）。
+async function refreshPopupForActiveTab() {
   const tabId = await getActiveTabId();
   if (!tabId) {
     readwiseBtn.hidden = true;
@@ -175,7 +179,16 @@ async function refreshReadwiseButton() {
   }
   try {
     const res = await chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
-    readwiseBtn.hidden = !(res && res.active);
+    const siteMode = res && res.siteMode;
+    const active = !!(res && res.active);
+    const cinemaActive = !!(res && res.cinemaActive);
+    // YouTube watch 頁：toggle 按鈕文字改「啟動 / 退出影院模式」；其他站維持
+    // popup.html 的 default「切換閱讀模式」。
+    if (siteMode === 'youtube-cinema') {
+      toggleBtn.textContent = cinemaActive ? '退出影院模式' : '啟動影院模式';
+    }
+    // Readwise 按鈕：active=true 且 非 cinema 才露出（cinema 沒主文可送）
+    readwiseBtn.hidden = !active || cinemaActive;
   } catch (_) {
     readwiseBtn.hidden = true;
   }
@@ -226,4 +239,4 @@ readwiseBtn.addEventListener('click', async () => {
   readwiseBtn.disabled = false;
 });
 
-refreshReadwiseButton();
+refreshPopupForActiveTab();
