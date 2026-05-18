@@ -24,7 +24,10 @@ const CONTENT_WIDTH = { min: 480, max: 1200, step: 40, default: 720 };
 const DEFAULT_SETTINGS = {
   theme: 'light',
   fontSize: FONT_SIZE.default,
-  contentWidth: CONTENT_WIDTH.default
+  contentWidth: CONTENT_WIDTH.default,
+  // v0.7.131：reader mode 攔截原站快速鍵；popup 不放 toggle（options 有），這裡
+  // 僅作 storage.get 的 default fallback，避免讀回 undefined。
+  blockPageShortcuts: true
 };
 
 versionEl.textContent = chrome.runtime.getManifest().version;

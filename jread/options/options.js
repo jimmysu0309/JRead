@@ -5,10 +5,12 @@ const DEFAULTS = {
   theme: 'light',
   fontSize: 18,
   contentWidth: 720,
-  readwiseToken: ''
+  readwiseToken: '',
+  // v0.7.131：reader mode 攔截原站快速鍵（Gmail j/k/e、YouTube k 等誤觸救援）
+  blockPageShortcuts: true
 };
 
-const fields = ['theme', 'fontSize', 'contentWidth', 'readwiseToken'];
+const fields = ['theme', 'fontSize', 'contentWidth', 'readwiseToken', 'blockPageShortcuts'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -18,6 +20,7 @@ function load() {
     document.getElementById('fontSize').value = values.fontSize;
     document.getElementById('contentWidth').value = values.contentWidth;
     document.getElementById('readwiseToken').value = values.readwiseToken || '';
+    document.getElementById('blockPageShortcuts').checked = values.blockPageShortcuts !== false;
   });
 }
 
@@ -26,7 +29,8 @@ function save() {
     theme: document.getElementById('theme').value,
     fontSize: Number(document.getElementById('fontSize').value),
     contentWidth: Number(document.getElementById('contentWidth').value),
-    readwiseToken: document.getElementById('readwiseToken').value.trim()
+    readwiseToken: document.getElementById('readwiseToken').value.trim(),
+    blockPageShortcuts: document.getElementById('blockPageShortcuts').checked
   };
   chrome.storage.sync.set(patch, () => {
     const s = document.getElementById('save-status');

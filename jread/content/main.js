@@ -42,6 +42,60 @@
     exitReaderMode();
   }
 
+  // v0.7.131：reader mode 啟動時攔截原站快速鍵（settings.blockPageShortcuts=true）。
+  // 動機：Jimmy 2026-05-18 — 在 Gmail / YouTube 等 keyboard-shortcut-heavy 站點
+  // 開閱讀模式時，誤按 j / k / e / # 等鍵會觸發原站 archive / next / delete 等
+  // 破壞性操作。
+  //
+  // 攔截方式：window keydown/keypress/keyup capture-phase listener、命中即
+  // stopImmediatePropagation()——阻止頁面 JS 的後續 listener 收到事件。
+  // **不** preventDefault：保留瀏覽器原生 default action（space 滾頁 / tab 跳焦
+  // 等），只擋 page JS 監聽。
+  //
+  // 放行條件：
+  //   - IME composition（e.isComposing / keyCode 229）：中文輸入第一階段不擋
+  //   - INPUT / TEXTAREA / SELECT / contenteditable focus：使用者打字 / 編輯
+  //   - ESC 鍵：讓 onEscKey 處理（雖然 onEscKey 註冊在前先跑，安全冗餘）
+  //
+  // 與 onEscKey 共存：兩者都 window capture phase。enterReaderMode 內**先**
+  // addEventListener(onEscKey) 再 addEventListener(keyguardHandler)——capture
+  // phase 同階段 listener 按註冊順序執行，onEscKey 先收到 ESC、處理完已 exit。
+  function keyguardHandler(e) {
+    // IME 中文輸入第一階段（composition 進行中）不擋。e.isComposing 是標準；
+    // 老瀏覽器用 keyCode 229 sentinel 兜底。
+    if (e.isComposing || e.keyCode === 229) return;
+    // 真正能輸入的 element focus 時不擋（搜尋框、留言、編輯器等）
+    const t = e.target;
+    if (t) {
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (t.isContentEditable) return;
+      const ce = t.getAttribute && t.getAttribute('contenteditable');
+      if (ce === 'true' || ce === '') return;
+    }
+    // ESC 放行給 onEscKey 處理
+    if (e.key === 'Escape' || e.code === 'Escape') return;
+    // 攔截：阻止 page JS listener 收到（chrome 原生 shortcut 不受影響、由
+    // browser 自己處理；瀏覽器原生 default action 也保留）
+    e.stopImmediatePropagation();
+  }
+
+  let keyguardInstalled = false;
+  function installKeyguard() {
+    if (keyguardInstalled) return;
+    window.addEventListener('keydown',  keyguardHandler, true);
+    window.addEventListener('keypress', keyguardHandler, true);
+    window.addEventListener('keyup',    keyguardHandler, true);
+    keyguardInstalled = true;
+  }
+  function uninstallKeyguard() {
+    if (!keyguardInstalled) return;
+    window.removeEventListener('keydown',  keyguardHandler, true);
+    window.removeEventListener('keypress', keyguardHandler, true);
+    window.removeEventListener('keyup',    keyguardHandler, true);
+    keyguardInstalled = false;
+  }
+
   async function enterReaderMode() {
     const result = NS.detector && NS.detector.detect();
     if (!result) {
@@ -77,6 +131,14 @@
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
 
+    // v0.7.131：install keyguard（攔截原站快速鍵），依 settings.blockPageShortcuts。
+    // 註冊順序在 onEscKey 之後——同階段 listener 按註冊順序執行，ESC 先給 onEscKey 處理。
+    if (settings.blockPageShortcuts !== false) {
+      installKeyguard();
+    } else {
+      uninstallKeyguard();
+    }
+
     chrome.runtime.sendMessage({
       type: NS.MSG.REPORT_DETECTION_RESULT,
       payload: { ok: true, confidence: result.confidence, strategy: result.strategy }
@@ -89,6 +151,8 @@
     if (!NS.state.active) return;
     // v0.7.101：移除 ESC keydown listener（避免 reader mode 關閉後 ESC 仍被攔）
     window.removeEventListener('keydown', onEscKey, true);
+    // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
+    uninstallKeyguard();
     if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
     if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls);
     // v0.7.86：移除 detector shadow-DOM fallback 建立的 light DOM 替身。
@@ -206,7 +270,15 @@
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
-      if (!NS.state.active || !NS.state.articleEl || !NS.styler) return;
+      if (!NS.state.active) return;
+      // v0.7.131：blockPageShortcuts 即時切換——options 改 toggle 後立刻生效，
+      // 不需 toggle reader mode。獨立處理，不走 styler restore/apply 路徑。
+      if ('blockPageShortcuts' in changes) {
+        const next = changes.blockPageShortcuts.newValue;
+        if (next === false) uninstallKeyguard();
+        else installKeyguard();
+      }
+      if (!NS.state.articleEl || !NS.styler) return;
       const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'lineHeight'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
