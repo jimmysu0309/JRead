@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "0.7.133",
+  "version": "0.7.134",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -18,10 +18,10 @@
     "default_title": "JRead",
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "16": "assets/icons/icon-16-disabled.png",
-      "32": "assets/icons/icon-32-disabled.png",
-      "48": "assets/icons/icon-48-disabled.png",
-      "128": "assets/icons/icon-128-disabled.png"
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png",
+      "48": "assets/icons/icon-48.png",
+      "128": "assets/icons/icon-128.png"
     }
   },
   "icons": {
@@ -41,6 +41,7 @@
         "content/namespace.js",
         "content/toast.js",
         "content/cinema-mode.js",
+        "content/youtube-borderless.js",
         "content/detector.js",
         "content/cleaner.js",
         "content/styler.js",
@@ -63,6 +64,9 @@
         "mac": "Alt+Shift+R"
       },
       "description": "送到 Readwise Reader（必要時自動啟動閱讀模式）"
+    },
+    "toggle-youtube-borderless": {
+      "description": "切換 YouTube 無邊模式"
     }
   },
   "web_accessible_resources": [

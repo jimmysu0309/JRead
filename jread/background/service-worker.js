@@ -22,9 +22,14 @@ const DEFAULT_SETTINGS = {
   blockPageShortcuts: true
 };
 
-// Icon 路徑 map：閱讀模式 active = 彩色、待機 = 灰階。manifest `default_icon`
-// 指向灰階版，content main.js 在 enter/exit reader mode 時發 SET_ACTIVE_ICON
-// 訊息、SW 針對 sender tab 呼叫 chrome.action.setIcon 切換。
+// Icon 路徑 map：閱讀模式 active / idle 都用彩色版本（v0.7.134，Jimmy 2026-05-18
+// 要求 toolbar 預設藍色——不再用 -disabled 灰階版本）。active / idle 之間的視覺
+// 區隔改全部交給 badge ✓（active 時露出綠色對勾、idle 時 badge 空）。
+//
+// `setIcon` 切換邏輯仍保留（兩個 map 雖然 path 相同、setIcon 跑了無視覺差異），
+// 是為了：(1) 結構保留，未來若要再加 active/idle 視覺區隔（例如 idle 變淺藍）
+// 只需改 ICONS_IDLE path；(2) 跟 v0.7.129 tabs.onUpdated `setIcon 回 IDLE` 兜底
+// 邏輯相容。
 //
 // 路徑**必須以 `/` 開頭**——SW 的 relative path 是相對 SW 所在目錄
 // （`/background/`），不是 extension root。寫 `'assets/...'` 會被解析成
@@ -39,10 +44,10 @@ const ICONS_ACTIVE = {
   128: '/assets/icons/icon-128.png'
 };
 const ICONS_IDLE = {
-  16:  '/assets/icons/icon-16-disabled.png',
-  32:  '/assets/icons/icon-32-disabled.png',
-  48:  '/assets/icons/icon-48-disabled.png',
-  128: '/assets/icons/icon-128-disabled.png'
+  16:  '/assets/icons/icon-16.png',
+  32:  '/assets/icons/icon-32.png',
+  48:  '/assets/icons/icon-48.png',
+  128: '/assets/icons/icon-128.png'
 };
 
 // v0.7.125：reader mode 啟動時在 toolbar icon 右下角顯示綠色 badge 作為視覺
@@ -114,6 +119,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.runtime.reload();
       return;
     }
+    case 'RESIZE_OWN_WINDOW': {
+      // v0.7.134：YouTube 無邊模式 — content side 算完目標視窗高度後請 SW
+      // 呼 chrome.windows.update。失敗（PWA 限制 / windowId 不在 / 權限缺）
+      // 沉默吞掉——CSS 已套上、影片以 object-fit:contain 顯示（會有黑邊但
+      // 仍可看），不需要 escalate 給使用者。
+      const wid = sender && sender.tab && sender.tab.windowId;
+      const height = msg.payload && msg.payload.height;
+      if (typeof wid !== 'number' || typeof height !== 'number') {
+        sendResponse({ ok: false });
+        return; // sync
+      }
+      try {
+        const p = chrome.windows.update(wid, { height });
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (_) {}
+      sendResponse({ ok: true });
+      return; // sync
+    }
     case 'SAVE_TO_READWISE': {
       // popup → SW：把 reader card 內容 POST 到 Readwise Reader API。
       // payload 由 content script 的 EXTRACT_READER_HTML 產生（{ url, html, title }）。
@@ -159,6 +182,39 @@ chrome.commands.onCommand.addListener(async (command) => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || typeof tab.id !== 'number') return;
 
+  // v0.7.134：YouTube 影院 / 無邊模式 active 時，**任一**模式快速鍵都當作退出當前
+  // active 模式（= 按 ESC 的效果）。動機：使用者忘記目前在哪個模式時、不用記哪
+  // 個快速鍵對應哪個退出方向。實作上 SW 先 GET_READER_STATE 拿當前狀態、依此
+  // 重導 command。
+  //   - toggle-reader-mode 觸發但 borderlessActive=true → 改送 TOGGLE_YT_BORDERLESS
+  //     退出無邊模式
+  //   - toggle-youtube-borderless 觸發但 cinemaActive=true → 改走 toggleWithInjectionFallback
+  //     送 TOGGLE_READER_MODE 退出影院模式
+  // 兩者同時 active 時（CSS 會打架但邏輯獨立可同開）以 borderless 優先退出
+  // （borderless 動了 OS 視窗、先退出回正常 chrome 視窗較安全）。
+  // 非 YouTube watch 頁或無模式 active 時走原邏輯。
+  if (command === 'toggle-reader-mode' || command === 'toggle-youtube-borderless') {
+    let state = null;
+    try {
+      state = await chrome.tabs.sendMessage(tab.id, { type: 'GET_READER_STATE' });
+    } catch (_) { /* content script 沒注入：state=null、走 default */ }
+    const cinemaActive = !!(state && state.cinemaActive);
+    const borderlessActive = !!(state && state.borderlessActive);
+
+    if (command === 'toggle-reader-mode' && borderlessActive) {
+      chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
+      return;
+    }
+    if (command === 'toggle-youtube-borderless' && cinemaActive) {
+      const { toggleWithInjectionFallback } = self.__JReadPopup;
+      await toggleWithInjectionFallback(tab.id, {
+        sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
+        executeScript: (opts) => chrome.scripting.executeScript(opts)
+      });
+      return;
+    }
+  }
+
   if (command === 'toggle-reader-mode') {
     const { toggleWithInjectionFallback } = self.__JReadPopup;
     await toggleWithInjectionFallback(tab.id, {
@@ -170,6 +226,15 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   if (command === 'send-to-readwise') {
     await sendToReadwiseFromCommand(tab.id);
+    return;
+  }
+
+  if (command === 'toggle-youtube-borderless') {
+    // v0.7.134：YouTube 無邊模式快速鍵（manifest 沒給 suggested_key，使用者
+    // 自己到 chrome://extensions/shortcuts 綁）。content script 沒注入的頁面
+    // sendMessage 會 reject — 靜默吞掉（chrome:// / Web Store 等本來就不該
+    // 在這些頁面切影片）。
+    chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
     return;
   }
 });

@@ -73,6 +73,15 @@
       padding: 12px 0;
       border-bottom: 1px solid var(--jr-neutral-100);
     }
+    /* 避免 .field border-bottom 與下一個 .section-heading 的 border-top
+       並列成雙線（Jimmy 2026-05-18 截圖反饋）；同時 padding-bottom: 0
+       讓「攔截原站快速鍵 → YouTube 模式 heading」與「無邊模式 desc →
+       Readwise heading」線距上方一致（皆 20px）。:has() 在 Chrome 105+
+       支援。 */
+    .field:has(+ #save-status + .section-heading) {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
     .field label {
       font-weight: 500;
       color: var(--jr-neutral-900);
@@ -185,10 +194,15 @@
     }
 
     /* ==========================================================
-       Section heading（Readwise 整合區塊）
+       Section heading — 兩段 section 之間用 border-top 作為分隔線，視覺
+       上「分隔線 + 標題」一體成形，避免無 border 純靠 margin 產生鬆散
+       空白（v0.7.134：Jimmy 反映「無邊模式 → Readwise Reader 整合」中間
+       少分隔線、且「攔截原站快速鍵」到「YouTube 模式」中間空白過大）。
        ========================================================== */
     .section-heading {
-      margin: 32px 0 8px;
+      margin: 20px 0 8px;
+      padding-top: 16px;
+      border-top: 1px solid var(--jr-neutral-100);
       font-size: 14px;
       font-weight: 600;
       color: var(--jr-neutral-900);
@@ -198,7 +212,7 @@
       font-size: 13px;
       color: var(--jr-neutral-500);
       line-height: 1.6;
-      margin: 0 0 12px;
+      margin: 0 0 8px;
     }
     .section-desc a {
       color: var(--jr-primary-600);
@@ -209,16 +223,48 @@
       text-decoration: underline;
       text-underline-offset: 2px;
     }
+    .section-desc strong {
+      color: var(--jr-neutral-900);
+      font-weight: 600;
+    }
+    .section-desc code {
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      padding: 1px 5px;
+      background: var(--jr-neutral-50);
+      border: 1px solid var(--jr-neutral-100);
+      border-radius: 3px;
+      color: var(--jr-neutral-700);
+      letter-spacing: 0.02em;
+    }
+
+    /* YouTube 模式說明區的次級小標——比 section-heading 小一階，
+       讓「影院模式 / 無邊模式」並列在「YouTube 模式」大標下。
+       上方 margin 16px 跟 section-heading margin-top 20px 構成
+       「section > subsection」兩層節奏（subsection 較緊跟父說明）。 */
+    .subsection-heading {
+      margin: 16px 0 4px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--jr-neutral-900);
+      letter-spacing: -0.005em;
+    }
 
     /* ==========================================================
-       Save status
+       Save status — 「已儲存」訊息暫存區。沒有訊息時完全不撐空間
+       （margin 0 + min-height 0），訊息出現時下方 layout 整體下推
+       14px、1.5s 後消失彈回——必要的 layout shift，換取「攔截原站
+       快速鍵」field 到「YouTube 模式」分隔線之間 20px 一致節奏。
+       v0.7.134：Jimmy 反映 #save-status 撐空白讓 YouTube heading
+       上方距離（32px）跟 Readwise heading 上方距離（20px）不一致；
+       一致統一節奏方案 = margin/min-height 全 0。
        ========================================================== */
     #save-status {
-      margin-top: 16px;
+      margin: 0;
       color: var(--jr-primary-600);
       font-family: var(--jr-font-mono);
       font-size: 12px;
-      min-height: 18px;
+      min-height: 0;
       letter-spacing: 0.02em;
     }
 
@@ -307,6 +353,21 @@
   </div>
 
   <div id="save-status"></div>
+
+  <h2 class="section-heading">YouTube 模式</h2>
+  <p class="section-desc">
+    在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+R</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式可到 <code>chrome://extensions/shortcuts</code> 替「切換 YouTube 無邊模式」自訂一組快速鍵。
+  </p>
+
+  <h3 class="subsection-heading">影院模式</h3>
+  <p class="section-desc">
+    把影片放大置中、四周變黑底，並把上方搜尋列、留言、影片描述、推薦清單、片尾彈出卡片等干擾元素全部隱藏。瀏覽器視窗大小不變。
+  </p>
+
+  <h3 class="subsection-heading">無邊模式</h3>
+  <p class="section-desc">
+    影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗。
+  </p>
 
   <h2 class="section-heading">Readwise Reader 整合</h2>
   <p class="section-desc">

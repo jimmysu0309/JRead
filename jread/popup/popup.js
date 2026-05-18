@@ -8,6 +8,7 @@
 const versionEl = document.getElementById('version');
 const statusEl = document.getElementById('status');
 const toggleBtn = document.getElementById('toggle-btn');
+const borderlessBtn = document.getElementById('borderless-btn');
 const readwiseBtn = document.getElementById('readwise-btn');
 const readwiseStatusEl = document.getElementById('readwise-status');
 const openOptionsLink = document.getElementById('open-options');
@@ -175,6 +176,7 @@ async function refreshPopupForActiveTab() {
   const tabId = await getActiveTabId();
   if (!tabId) {
     readwiseBtn.hidden = true;
+    borderlessBtn.hidden = true;
     return;
   }
   try {
@@ -182,17 +184,39 @@ async function refreshPopupForActiveTab() {
     const siteMode = res && res.siteMode;
     const active = !!(res && res.active);
     const cinemaActive = !!(res && res.cinemaActive);
+    const borderlessActive = !!(res && res.borderlessActive);
     // YouTube watch 頁：toggle 按鈕文字改「啟動 / 退出影院模式」；其他站維持
     // popup.html 的 default「切換閱讀模式」。
     if (siteMode === 'youtube-cinema') {
       toggleBtn.textContent = cinemaActive ? '退出影院模式' : '啟動影院模式';
     }
+    // v0.7.134：無邊模式按鈕——YouTube watch 頁才露出（與 cinema 完全獨立、
+    // 兩者可同時 toggle）。按鈕文字依 borderless 自己的 active 狀態切換。
+    if (siteMode === 'youtube-cinema') {
+      borderlessBtn.hidden = false;
+      borderlessBtn.textContent = borderlessActive ? '退出無邊模式' : '啟動無邊模式';
+    } else {
+      borderlessBtn.hidden = true;
+    }
     // Readwise 按鈕：active=true 且 非 cinema 才露出（cinema 沒主文可送）
     readwiseBtn.hidden = !active || cinemaActive;
   } catch (_) {
     readwiseBtn.hidden = true;
+    borderlessBtn.hidden = true;
   }
 }
+
+// v0.7.134：點按鈕 → sendMessage TOGGLE_YT_BORDERLESS。content script 端
+// 委派給 NS.borderless.toggle()；無 inject fallback（YouTube watch 頁本身
+// 一定載過 jread content script，不會發生 receiving end does not exist）。
+borderlessBtn.addEventListener('click', async () => {
+  const tabId = await getActiveTabId();
+  if (!tabId) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
+  } catch (_) { /* content script 沒注入時 silently fail */ }
+  window.close();
+});
 
 readwiseBtn.addEventListener('click', async () => {
   readwiseBtn.disabled = true;
