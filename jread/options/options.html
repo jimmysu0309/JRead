@@ -143,12 +143,16 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
 
-    /* v0.7.131：toggle checkbox — 對齊既有 field row 右側 control 區寬度 */
+    /* v0.7.131：toggle checkbox — 對齊既有 field row 右側 control 區寬度。
+       `.field` 是 flex container；checkbox 必須 flex-shrink:0 + flex-basis
+       (width)，否則 label 內 desc 較長時 checkbox 會被壓扁成細長條（v0.7.131
+       Jimmy 截圖 bug：箭頭狀變形 + 對勾位置走位）。 */
     .field input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
       width: 18px;
       height: 18px;
+      flex: 0 0 18px;
       margin: 0;
       border: 1px solid var(--jr-neutral-300);
       border-radius: var(--jr-radius-sm);
