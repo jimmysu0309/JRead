@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.137**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.138**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -105,6 +105,14 @@ JRead/
 ├── tools/
 │   ├── debug-harness.js         # Playwright 自動化除錯 harness
 │   └── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
+├── safari-app/                  # macOS Safari Web Extension（v0.7.138 起）
+│   ├── safari-bootstrap.sh      # 一次性 Xcode project 產出（xcrun safari-web-extension-converter）
+│   ├── safari-build.sh          # 每次 release 跑：sync Resources + archive + notarize + staple → .pkg
+│   ├── safari-export-options-developerid.plist  # Developer ID 簽章設定
+│   └── JRead/                   # Xcode project（host App + Extension target）
+│       ├── JRead.xcodeproj/
+│       ├── JRead/               # macOS host App（WKWebView + open Safari prefs）
+│       └── JRead Extension/     # Safari Web Extension target（Resources/ = jread/ 同步鏡像）
 ├── docs/
 │   └── CHROME_EXTENSION_DEBUG.md # 自動化除錯完整指南
 ├── .github/workflows/
@@ -147,6 +155,49 @@ JRead 同時發佈 Chrome 與 Firefox 兩個版本。
 `release.sh` 跑完 `npm test` + 確認 working tree 乾淨 → 建 tag → push commits + tags → GitHub Actions 接手。SKIP_PUSH=1 可只跑本機測試 + tag，不 push（debug 用）。
 
 Forcing function：`test/regression/firefox-build.spec.js` 端到端跑 `tools/firefox-build.sh` 驗 manifest 結構（gecko id、strict_min_version、data_collection_permissions、scripts 順序）+ 驗 service-worker.js 內 `typeof importScripts` guard 存在。
+
+---
+
+## macOS Safari 版本（v0.7.138 起）
+
+JRead 同步發佈 macOS Safari 版本（Developer ID 簽章 + Apple notarize + stapled 的 .pkg，給使用者公開下載手動安裝；不走 Mac App Store）。
+
+**單一真實來源**：`jread/manifest.json` + `jread/` 整棵目錄是 Chrome 版本，Safari build 透過 `safari-app/safari-build.sh` 每次 `rsync -a --delete jread/ safari-app/JRead/JRead Extension/Resources/` 把 Chrome 來源完整同步進 Xcode project 的 Extension Resources/——Safari 與 Chrome 共用同一份 extension code，無雙頭維護。
+
+**Build 流程**（`safari-app/safari-build.sh`，每次 release 自動跑）：
+
+1. 前置 check：Developer ID Application cert / Developer ID Installer cert / notarytool keychain profile（缺哪項印對應安裝指引）
+2. `rsync` jread/ → Extension Resources/
+3. `sed` bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` 到 `project.pbxproj`
+4. `xcodebuild clean` + `xcodebuild archive`（Release configuration，macOS only）
+5. `xcodebuild -exportArchive` 用 `safari-export-options-developerid.plist`（method = developer-id，signingStyle = manual，signingCertificate = "Developer ID Application: Zhimin Su (PR6NG3PH45)"）→ 產 `.app`
+6. `productbuild --component .app /Applications --sign "Developer ID Installer: Zhimin Su (PR6NG3PH45)"` → 產 `.pkg`
+7. `xcrun notarytool submit --wait`（Apple cloud 公證，實測 ~25 秒；Apple 文件聲稱可達 30-60 分鐘）
+8. `xcrun stapler staple` 把公證 ticket 釘進 pkg（離線可驗）
+9. `spctl -a -t install -vv` 驗證 Gatekeeper accept
+10. source drift forcing function：`diff -r --brief jread/ Resources/` 必須 empty
+
+**Apple Developer 設定**（沿用 Shinkansen 同一個 Apple Developer 帳號 Zhimin Su）：
+
+| 項目 | 值 |
+| --- | --- |
+| Team ID | `PR6NG3PH45` |
+| Host App Bundle ID | `app.jread.macos` |
+| Extension Bundle ID | `app.jread.macos.Extension` |
+| Signing | Developer ID Application + Developer ID Installer cert（已裝 Keychain） |
+| notarize profile | `shinkansen-notary`（沿用，notarytool credentials 是同 Apple ID + Team；不同 profile 名稱只是 Keychain key） |
+
+**Release artifact**（每次 release 由本機 build 上傳到 GitHub Release）：
+
+| 檔名 | 用途 |
+| --- | --- |
+| `jread-macos-vX.Y.Z.pkg` | macOS Safari（Developer ID notarized）。使用者下載雙擊 → 安裝到 /Applications → 開啟 JRead.app → 點「結束並開啟 Safari 擴充功能偏好設定」啟用 |
+
+**Release 流程整合**（`release.sh`）：本機跑 `./release.sh` 時自動：(1) npm test → (2) working tree clean check → (3) safari-build.sh（archive + notarize + staple）→ (4) auto-commit pbxproj + Resources/ 改動 → (5) tag → (6) push → (7) 等 GitHub Release 由 Actions 建出 → (8) `gh release upload .pkg --clobber`。`SKIP_SAFARI=1` 可緊急只發 Chrome / Firefox 跳過 Safari build。
+
+**Host App 介面**（最小 host App）：基於 xcrun safari-web-extension-converter 預設模板（WKWebView 載入 `Resources/Base.lproj/Main.html`），文字本地化為繁體中文；按鈕 `<button class="open-preferences">` 點擊呼叫 `SFSafariApplication.showPreferencesForExtension` 跳轉 Safari 擴充功能設定。Icon 沿用 `jread/assets/icons/icon-128.png`。
+
+Forcing function：`test/regression/safari-build.spec.js` 驗 (1) scaffold 檔案存在 + executable；(2) `safari-export-options-developerid.plist` 內 method/teamID/signingStyle/cert；(3) `project.pbxproj` 內 host App bundle ID = `app.jread.macos`、Extension bundle ID = `app.jread.macos.Extension`、4 處 `DEVELOPMENT_TEAM = PR6NG3PH45`；(4) `safari-build.sh` 含 rsync / sed bump / xcodebuild archive / exportArchive / productbuild / notarytool submit / stapler staple / source drift check；(5) `release.sh` 串接 safari-build.sh + SKIP_SAFARI escape + auto-commit + `gh release upload --clobber`。**spec 不實際跑 xcodebuild**（那需要 macOS + Xcode + cert + Apple cloud，跨平台 CI 跑不了）。
 
 ---
 

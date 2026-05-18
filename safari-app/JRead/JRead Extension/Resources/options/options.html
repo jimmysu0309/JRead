@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>JRead 偏好設定</title>
+  <style>
+    /* ==========================================================
+       JRead Design Tokens
+       ========================================================== */
+    :root {
+      --jr-primary-50:  #ebf4ff;
+      --jr-primary-600: #2b6cb0;
+      --jr-primary-700: #2c5282;
+
+      --jr-neutral-50:  #fafafa;
+      --jr-neutral-100: #f0f0f0;
+      --jr-neutral-300: #cccccc;
+      --jr-neutral-500: #888888;
+      --jr-neutral-700: #444444;
+      --jr-neutral-900: #222222;
+
+      --jr-surface:     #ffffff;
+
+      --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+
+      --jr-radius-sm: 4px;
+      --jr-radius-md: 6px;
+
+      --jr-control-w: 140px;
+    }
+
+    * { box-sizing: border-box; }
+    html {
+      font-family: var(--jr-font-ui);
+      font-size: 15px;
+      color: var(--jr-neutral-900);
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      max-width: 560px;
+      margin: 40px auto;
+      padding: 0 24px;
+      background: var(--jr-surface);
+      line-height: 1.5;
+    }
+
+    /* ==========================================================
+       Header
+       ========================================================== */
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+      margin: 0 0 4px;
+    }
+    .version {
+      color: var(--jr-neutral-500);
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      margin-bottom: 24px;
+    }
+
+    /* ==========================================================
+       Field rows
+       ========================================================== */
+    .field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--jr-neutral-100);
+    }
+    /* 避免 .field border-bottom 與下一個 .section-heading 的 border-top
+       並列成雙線（Jimmy 2026-05-18 截圖反饋）；同時 padding-bottom: 0
+       讓「攔截原站快速鍵 → YouTube 模式 heading」與「無邊模式 desc →
+       Readwise heading」線距上方一致（皆 20px）。:has() 在 Chrome 105+
+       支援。 */
+    .field:has(+ #save-status + .section-heading) {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .field label {
+      font-weight: 500;
+      color: var(--jr-neutral-900);
+      font-size: 14px;
+    }
+    .field .desc {
+      display: block;
+      font-weight: 400;
+      font-size: 12px;
+      color: var(--jr-neutral-500);
+      margin-top: 2px;
+    }
+    .field .desc strong {
+      color: var(--jr-primary-600);
+      font-weight: 600;
+    }
+
+    /* ==========================================================
+       Form controls — compact, aligned, tokenized
+       ========================================================== */
+    select,
+    input[type="number"],
+    input[type="password"],
+    input[type="text"] {
+      width: var(--jr-control-w);
+      height: 32px;
+      padding: 0 10px;
+      font-family: var(--jr-font-ui);
+      font-size: 13px;
+      color: var(--jr-neutral-900);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    /* Readwise token 欄位較長，撐到區塊右緣 */
+    input#readwiseToken {
+      width: 280px;
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+    }
+    input[type="number"] {
+      font-family: var(--jr-font-mono);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      padding-right: 12px;
+    }
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+    select:hover,
+    input[type="number"]:hover,
+    input[type="password"]:hover,
+    input[type="text"]:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    select:focus,
+    input[type="number"]:focus,
+    input[type="password"]:focus,
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--jr-primary-600);
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+
+    /* v0.7.131：toggle checkbox — 對齊既有 field row 右側 control 區寬度。
+       `.field` 是 flex container；checkbox 必須 flex-shrink:0 + flex-basis
+       (width)，否則 label 內 desc 較長時 checkbox 會被壓扁成細長條（v0.7.131
+       Jimmy 截圖 bug：箭頭狀變形 + 對勾位置走位）。 */
+    .field input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      margin: 0;
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      background: var(--jr-surface);
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+      position: relative;
+    }
+    .field input[type="checkbox"]:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    .field input[type="checkbox"]:checked {
+      background: var(--jr-primary-600);
+      border-color: var(--jr-primary-600);
+    }
+    .field input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 1px;
+      width: 5px;
+      height: 10px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .field input[type="checkbox"]:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+
+    /* ==========================================================
+       Section heading — 兩段 section 之間用 border-top 作為分隔線，視覺
+       上「分隔線 + 標題」一體成形，避免無 border 純靠 margin 產生鬆散
+       空白（v0.7.134：Jimmy 反映「無邊模式 → Readwise Reader 整合」中間
+       少分隔線、且「攔截原站快速鍵」到「YouTube 模式」中間空白過大）。
+       ========================================================== */
+    .section-heading {
+      margin: 20px 0 8px;
+      padding-top: 16px;
+      border-top: 1px solid var(--jr-neutral-100);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--jr-neutral-900);
+      letter-spacing: -0.005em;
+    }
+    .section-desc {
+      font-size: 13px;
+      color: var(--jr-neutral-500);
+      line-height: 1.6;
+      margin: 0 0 8px;
+    }
+    .section-desc a {
+      color: var(--jr-primary-600);
+      text-decoration: none;
+    }
+    .section-desc a:hover {
+      color: var(--jr-primary-700);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .section-desc strong {
+      color: var(--jr-neutral-900);
+      font-weight: 600;
+    }
+    .section-desc code {
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      padding: 1px 5px;
+      background: var(--jr-neutral-50);
+      border: 1px solid var(--jr-neutral-100);
+      border-radius: 3px;
+      color: var(--jr-neutral-700);
+      letter-spacing: 0.02em;
+    }
+
+    /* YouTube 模式說明區的次級小標——比 section-heading 小一階，
+       讓「影院模式 / 無邊模式」並列在「YouTube 模式」大標下。
+       上方 margin 16px 跟 section-heading margin-top 20px 構成
+       「section > subsection」兩層節奏（subsection 較緊跟父說明）。 */
+    .subsection-heading {
+      margin: 16px 0 4px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--jr-neutral-900);
+      letter-spacing: -0.005em;
+    }
+
+    /* ==========================================================
+       Save status — 「已儲存」訊息暫存區。沒有訊息時完全不撐空間
+       （margin 0 + min-height 0），訊息出現時下方 layout 整體下推
+       14px、1.5s 後消失彈回——必要的 layout shift，換取「攔截原站
+       快速鍵」field 到「YouTube 模式」分隔線之間 20px 一致節奏。
+       v0.7.134：Jimmy 反映 #save-status 撐空白讓 YouTube heading
+       上方距離（32px）跟 Readwise heading 上方距離（20px）不一致；
+       一致統一節奏方案 = margin/min-height 全 0。
+       ========================================================== */
+    #save-status {
+      margin: 0;
+      color: var(--jr-primary-600);
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      min-height: 0;
+      letter-spacing: 0.02em;
+    }
+
+    /* ==========================================================
+       License section
+       ========================================================== */
+    .license {
+      margin-top: 40px;
+    }
+    .license h2 {
+      color: var(--jr-primary-600);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.005em;
+      margin: 0 0 12px;
+    }
+    .license hr {
+      border: 0;
+      border-top: 1px solid var(--jr-neutral-100);
+      margin: 0 0 16px;
+    }
+    .license p {
+      margin: 0 0 12px;
+      line-height: 1.7;
+      font-size: 14px;
+      color: var(--jr-neutral-900);
+    }
+    .license .note,
+    .license .author {
+      color: var(--jr-neutral-500);
+      font-size: 13px;
+    }
+    .license a {
+      color: var(--jr-primary-600);
+      text-decoration: none;
+    }
+    .license a:hover {
+      color: var(--jr-primary-700);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .license strong {
+      font-weight: 700;
+      color: var(--jr-neutral-900);
+    }
+  </style>
+</head>
+<body>
+  <h1>JRead 偏好設定</h1>
+  <div class="version">v<span id="version"></span></div>
+
+  <div class="field">
+    <label>
+      主題
+      <span class="desc">日/夜間 / 米色</span>
+    </label>
+    <select id="theme">
+      <option value="light">亮色</option>
+      <option value="dark">暗色</option>
+      <option value="sepia">米色</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>
+      字級（px）
+      <span class="desc">主文字體大小；<strong>0 = 自動</strong>（保留原站字級，不覆寫）</span>
+    </label>
+    <input type="number" id="fontSize" min="0" max="32" step="1">
+  </div>
+
+  <div class="field">
+    <label>
+      版心寬度（px）
+      <span class="desc">主文欄寬</span>
+    </label>
+    <input type="number" id="contentWidth" min="480" max="1200" step="20">
+  </div>
+
+  <div class="field">
+    <label for="blockPageShortcuts">
+      攔截原站快速鍵
+      <span class="desc">閱讀模式啟動時擋掉 Gmail、YouTube 等站的鍵盤快速鍵（避免誤按 <strong>j / k / e</strong> 觸發 archive、send 等操作）。瀏覽器原生 shortcut 與打字輸入不受影響。</span>
+    </label>
+    <input type="checkbox" id="blockPageShortcuts">
+  </div>
+
+  <div id="save-status"></div>
+
+  <h2 class="section-heading">YouTube 模式</h2>
+  <p class="section-desc">
+    在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+R</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式可到 <code>chrome://extensions/shortcuts</code> 替「切換 YouTube 無邊模式」自訂一組快速鍵。
+  </p>
+
+  <h3 class="subsection-heading">影院模式</h3>
+  <p class="section-desc">
+    把影片放大置中、四周變黑底，並把上方搜尋列、留言、影片描述、推薦清單、片尾彈出卡片等干擾元素全部隱藏。瀏覽器視窗大小不變。
+  </p>
+
+  <h3 class="subsection-heading">無邊模式</h3>
+  <p class="section-desc">
+    影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗。
+  </p>
+
+  <h2 class="section-heading">Readwise Reader 整合</h2>
+  <p class="section-desc">
+    在 popup 點「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
+    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器。
+  </p>
+  <div class="field">
+    <label>
+      Readwise Access Token
+      <span class="desc">空白 = 不啟用</span>
+    </label>
+    <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
+  </div>
+
+  <section class="license">
+    <h2>授權資訊</h2>
+    <hr>
+    <p>JRead 採用 <strong>Elastic License 2.0 (ELv2)</strong> 授權。</p>
+    <p>你可以自由查看原始碼、學習、修改、自己使用，但<strong>不能把 JRead（或改寫版本）包成服務拿去賣</strong>。</p>
+    <p class="note">完整條款請見擴充功能目錄內的 LICENSE 檔案，或參閱 <a href="https://www.elastic.co/licensing/elastic-license" target="_blank" rel="noopener">Elastic License 2.0 官方全文</a>。</p>
+    <p class="author">作者：Jimmy Su　・　Twitter (X)：<a href="https://x.com/jimmy_su" target="_blank" rel="noopener">@jimmy_su</a></p>
+  </section>
+
+  <script src="options.js"></script>
+</body>
+</html>
