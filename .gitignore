@@ -10,3 +10,12 @@ node_modules/
 
 # Claude Design 原始下載（HTML/zip/uploads），已抽取必要 source 至 store-assets/sources/
 Claude design/
+
+# Safari build artifacts（xcodebuild 中間檔 + 產出 .pkg）
+# safari-app/safari-bootstrap.sh / safari-build.sh / export options plist / Xcode project 仍要 commit
+safari-app/build/
+safari-app/*.pkg
+
+# Xcode user-specific state
+*.xcuserdata/
+xcuserdata/

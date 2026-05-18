@@ -41,6 +41,18 @@
 
 詳細的 Firefox build transform 說明見 [BUILD.md](BUILD.md)。
 
+### macOS Safari
+
+每次 release 會自動產出 `jread-macos-vX.Y.Z.pkg`（Developer ID 簽章 + Apple notarize + stapled，見 GitHub Releases）。安裝步驟：
+
+1. 從 GitHub Releases 下載 `jread-macos-vX.Y.Z.pkg`
+2. 雙擊 .pkg 安裝（Gatekeeper 會認 Developer ID notarized 簽章）
+3. 打開 `JRead.app`
+4. 點「結束並開啟 Safari 擴充功能偏好設定…」
+5. 在 Safari 設定的「擴充功能」分頁勾選 JRead 啟用
+
+需 macOS 10.14 以上 + Safari 14 以上。本機重建見 `safari-app/safari-build.sh`（需 Xcode + Apple Developer ID cert + notarytool profile）。
+
 ---
 
 ## 開發
@@ -73,8 +85,19 @@ npm run debug                     # 或 node tools/debug-harness.js --fresh
 ./release.sh
 ```
 
-跑完 `npm test` + working tree clean check + git tag 後自動 `git push && git push --tags`，GitHub Actions（`.github/workflows/release.yml`）接手 build 三份 zip 上傳到 Release：
+`release.sh` 跑完整流程：
+
+1. `npm test`
+2. working tree clean check
+3. Safari Developer ID build（`safari-app/safari-build.sh`：archive + notarize + staple → `jread-macos-vX.Y.Z.pkg`；`SKIP_SAFARI=1` 可緊急跳過）
+4. auto-commit pbxproj + Resources/ 改動
+5. `git tag` + `git push && git push --tags`
+6. GitHub Actions（`.github/workflows/release.yml`）build Chrome + Firefox + Firefox source zip 上傳到 Release
+7. 本機 `gh release upload .pkg --clobber` 把 macOS .pkg 附到同一個 Release
+
+Release artifact：
 
 - `jread-vX.Y.Z.zip`（Chrome）
 - `jread-firefox-vX.Y.Z.zip`（Firefox sideload）
 - `jread-firefox-vX.Y.Z-source.zip`（AMO source 提交用）
+- `jread-macos-vX.Y.Z.pkg`（macOS Safari Developer ID）
