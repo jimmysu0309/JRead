@@ -159,23 +159,22 @@ function setReadwiseStatus(text, kind) {
   readwiseStatusEl.className = kind || 'info';
 }
 
+// v0.7.130：非閱讀模式時整顆按鈕隱藏（不只 disabled）。 reader mode 才是
+// 「送到 Readwise」有意義的入口；非閱讀模式露出灰色 disabled 按鈕只是雜訊。
+// 用 `hidden` 屬性（瀏覽器原生 display:none），保留 `disabled` 給「送出中
+// 防連點」用——hidden 與 disabled 是兩個獨立軸：hidden=「現在不該看到」、
+// disabled=「看得到但暫時不能按」。
 async function refreshReadwiseButton() {
   const tabId = await getActiveTabId();
   if (!tabId) {
-    readwiseBtn.disabled = true;
+    readwiseBtn.hidden = true;
     return;
   }
   try {
     const res = await chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
-    readwiseBtn.disabled = !(res && res.active);
-    if (!(res && res.active)) {
-      readwiseBtn.title = '先啟動閱讀模式才能送出';
-    } else {
-      readwiseBtn.title = '把當前 reader card 內容送到 Readwise Reader';
-    }
+    readwiseBtn.hidden = !(res && res.active);
   } catch (_) {
-    readwiseBtn.disabled = true;
-    readwiseBtn.title = '此頁面無法啟動閱讀模式';
+    readwiseBtn.hidden = true;
   }
 }
 
