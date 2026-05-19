@@ -192,4 +192,17 @@ describe('release.sh — Safari 整合', () => {
   it('必須 poll 等 GH Release 由 Actions 建出後再 upload', () => {
     assert.match(src, /gh release view "\$\{TAG\}"/);
   });
+
+  it('v0.7.141：OTHER_DIRTY 的 grep regex 必須含 `"?` 可選引號前綴（含空格路徑被 git 加雙引號）', () => {
+    // forcing function：避免回退到 v0.7.140 踩過的 bug——含空格路徑
+    // `safari-app/JRead/JRead Extension/...` 被 git status --porcelain 加雙引號
+    // 變成 `"safari-app/...`，舊 grep regex `^.. safari-app/...` 沒對應 quote 前綴，
+    // 路徑沒被 exclude → OTHER_DIRTY != 0 → script abort 在 Safari sync 前。
+    // core.quotepath 只控制非 ASCII 字元引號、空格不在其控制範圍，**只能**在
+    // grep regex 端加 `"?` 容許可選引號才能 match。
+    const otherDirtyLine = src.match(/OTHER_DIRTY=\$\([^)]+\)/);
+    assert.ok(otherDirtyLine, 'release.sh 必須含 OTHER_DIRTY= 賦值');
+    assert.match(otherDirtyLine[0], /"\?safari-app/,
+      'OTHER_DIRTY 的 grep regex 必須含 `"?safari-app` 容許可選引號前綴 —— 否則含空格路徑 `safari-app/JRead/JRead Extension/...` 被 git 加雙引號後 grep 對應不到 → script abort');
+  });
 });

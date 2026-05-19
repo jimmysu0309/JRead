@@ -55,8 +55,15 @@ else
   # 注意：grep -v 在 stdin 所有行都被 exclude pattern 命中時會回 exit 1（「filter 後沒輸出」），
   # set -o pipefail 會把這當成 pipeline 失敗整個 script abort。包 { ... || true; } 吞掉，
   # 否則「Safari sync 後沒任何 dirty 檔」這條 happy path 會被誤殺。
+  # v0.7.141：grep regex 加 `"?` 可選引號前綴 —— git status --porcelain 對含
+  # 空格路徑（如 `safari-app/JRead/JRead Extension/Resources/...`）會加雙引號變成
+  # `"safari-app/JRead/JRead Extension/..."`，舊 regex `^.. safari-app/...` 沒對應
+  # 引號前綴 → 這些路徑沒被 exclude → OTHER_DIRTY != 0 → script abort 在 Safari
+  # sync auto-commit 前（v0.7.140 release.sh 實機踩過）。注意：`core.quotepath`
+  # 只控制非 ASCII 字元的引號處理，空格不在其控制範圍 —— 必須在 grep regex 端
+  # 用 `"?` 容許可選引號才能正確 match。
   SAFARI_DIRTY=$(git status --porcelain -- safari-app/JRead/JRead.xcodeproj "safari-app/JRead/JRead Extension/Resources" | wc -l | tr -d ' ')
-  OTHER_DIRTY=$(git status --porcelain | { grep -vE "^.. safari-app/JRead/(JRead\.xcodeproj|JRead Extension/Resources)" || true; } | wc -l | tr -d ' ')
+  OTHER_DIRTY=$(git status --porcelain | { grep -vE '^.. "?safari-app/JRead/(JRead\.xcodeproj|JRead Extension/Resources)' || true; } | wc -l | tr -d ' ')
 
   if [[ "${OTHER_DIRTY}" != "0" ]]; then
     echo "ERROR: Safari build 後 working tree 有非預期改動：" >&2
