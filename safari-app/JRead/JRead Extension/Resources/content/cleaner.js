@@ -1419,6 +1419,27 @@
     // 舊版 skip articleEl 導致 condition A/B/C 全漏判。條件本身的
     // textLen >= 500 + sibling ratio + linkDensity guard 已足夠避免誤殺
     // 「article > [header, main, footer]」這類正常 direct child 結構。
+    // v0.7.142：canonical title guard——預先算 page-wide canonical title
+    // （og:title / document.title 第一段），對 sibling 加保護：sibling 內含
+    // direct text strict equals canonical title 的 element → 視為文章 header 區
+    // 不 hide。substack reader hub 實機踩過：標題 wrapper（含主標題 <a> 與
+    // 多個 subscribe/share/avatar links）textLen 短 + linkDensity 高觸發條件 A、
+    // 連坐 hide 整段標題區。通則：跨站適用、不綁 substack hostname / class。
+    const _ogMeta = document.querySelector('meta[property="og:title"]');
+    const _ogText = _ogMeta && _ogMeta.content ? norm(_ogMeta.content) : '';
+    const _docTitle = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const _canonicalTitle = _ogText || _docTitle;
+    function siblingContainsCanonicalTitle(sib) {
+      if (!_canonicalTitle || _canonicalTitle.length < 5) return false;
+      if (!sib || !sib.querySelectorAll) return false;
+      for (const el of sib.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
+        const directText = norm(Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent).join(''));
+        if (directText && directText === _canonicalTitle) return true;
+      }
+      return false;
+    }
     const candidates = [articleEl, ...Array.from(containers).filter(c => c !== articleEl)];
     for (const el of candidates) {
       if (el !== articleEl && isInPreserved(el)) continue;
@@ -1462,6 +1483,9 @@
           if (s.el === promotedTitleHead) continue;
           if (s.el.contains && s.el.contains(promotedTitleHead)) continue;
         }
+        // v0.7.142 canonical title guard：sibling 內含 element direct text strict
+        // equals og:title / document.title 第一段 → 視為文章 header 區 skip hide
+        if (siblingContainsCanonicalTitle(s.el)) continue;
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
