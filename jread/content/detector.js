@@ -301,6 +301,17 @@
   const HEURISTIC_SKIP_SEL =
     '[role="dialog"], [role="alertdialog"], [role="tooltip"], [aria-modal="true"], [aria-hidden="true"]';
 
+  // v0.7.144：祖先鏈狀態 cache。每次 detectByHeuristic 跑時對 500+ signals
+  // 逐一沿祖先鏈跑 closest + getComputedStyle，500 signals × 平均 10 層祖先 =
+  // 5K 次 getComputedStyle，每次 trigger layout flush。許多 signals 共用同一
+  // 條祖先鏈、cache 後 hit 直接回答。
+  //
+  // Cache 結構：WeakMap<element, boolean> —— 已 confirmed hidden 的祖先標 true、
+  // 確認可見的標 false。沿祖先鏈往上時遇到已 cached 的祖先直接 short-circuit。
+  // WeakMap 在 detectByHeuristic 內 caller 站清 + 重建（避免 SPA 多 detect run
+  // 拿 stale state，但其實 hidden 狀態跨 detect run 改變的機率低）。
+  let _excludedAncestorCache = null;
+
   function isSignalExcluded(el) {
     // closest() 會把 el 自身也算進去，所以祖先鏈檢查等同 self + ancestors
     if (el.closest && el.closest(HEURISTIC_SKIP_SEL)) return true;
@@ -310,15 +321,33 @@
     // resolve。真 Chrome 能 resolve 整條 cascade；jsdom 不 resolve stylesheet
     // 但會讀 inline——fixture 測試走 inline style 即可驗覆蓋面。
     //
-    // 效能：每 signal 最多走 ~10 層 parent + getComputedStyle 一次，500
-    // signals 實測 Reader mode 進入仍 < 1s，可接受。
+    // 效能（v0.7.144）：祖先鏈 cache —— 多 signal 共用同一條祖先鏈時 cache hit
+    // 直接 short-circuit，省 getComputedStyle layout flush。
+    const cache = _excludedAncestorCache;
+    const visited = [];
     for (let p = el; p && p !== document.body; p = p.parentElement) {
-      if (p.style && p.style.display === 'none') return true;
+      // cache hit：祖先已被 confirmed hidden / visible
+      if (cache && cache.has(p)) {
+        const cached = cache.get(p);
+        // back-fill：把這次走過的祖先全標相同狀態（傳遞性）
+        if (cache) for (const v of visited) cache.set(v, cached);
+        return cached;
+      }
+      visited.push(p);
+      if (p.style && p.style.display === 'none') {
+        if (cache) for (const v of visited) cache.set(v, true);
+        return true;
+      }
       try {
         const cs = window.getComputedStyle && window.getComputedStyle(p);
-        if (cs && cs.display === 'none') return true;
+        if (cs && cs.display === 'none') {
+          if (cache) for (const v of visited) cache.set(v, true);
+          return true;
+        }
       } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
     }
+    // 走完祖先鏈無 hidden：全標 false（傳遞性）
+    if (cache) for (const v of visited) cache.set(v, false);
     return false;
   }
 
@@ -332,6 +361,16 @@
   }
 
   function detectByHeuristic() {
+    // v0.7.144：開 cache、整個 heuristic run 期間 isSignalExcluded 共用
+    _excludedAncestorCache = new WeakMap();
+    try {
+      return _detectByHeuristicImpl();
+    } finally {
+      _excludedAncestorCache = null;
+    }
+  }
+
+  function _detectByHeuristicImpl() {
     const scoreMap = new Map();
     const signals = document.querySelectorAll(SIGNAL_SEL);
     for (const el of signals) {
