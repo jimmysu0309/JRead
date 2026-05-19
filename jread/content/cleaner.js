@@ -604,6 +604,63 @@
     }
   }
 
+  // v0.7.141 eet-china 修法：站點若**無 <article> 標籤**且標題 <h1> 與內文
+  // 容器（articleEl）是 <body> 的 sibling，detector ensureArticleContainsTitleH1
+  // 算 LCA = <body> 被 guard reject 不 promote articleEl 含 h1（避免吞整頁）。
+  // 此時 hideAncestorSiblings 把 h1 wrapper 當外部雜訊 hide → 標題消失。
+  //
+  // 修法：cleaner 末段把 page-wide unique h1 的最近 wrapper（或 h1 自己）
+  // **cloneNode(true) prepend 進 articleEl 開頭**，原 wrapper 仍由
+  // hideAncestorSiblings hide（避免重複顯示）。clone 標記 `data-jread-title-clone="1"`，
+  // 清 inline display + data-jread-hidden（從已被 hide 的原 wrapper 繼承），確保
+  // visible。clone 進 articleEl 後吃 styler reader card 樣式（dark/sepia 配色、
+  // max-width、color），標題與內文視覺一體；layout 對齊。
+  //
+  // 通則：page 唯一 h1（多數新聞站慣例）視為主文標題；跨站適用、不綁 eet-china。
+  // 多 h1 站點（早期 wheresyoured.at 12 個 H1、ChinaTalk Substack site title H1
+  // 假信號等）不豁免，避免誤 promote 非主標題。
+  function promoteUniqueTitleH1Into(articleEl) {
+    if (!articleEl) return;
+    const pageH1s = document.querySelectorAll('h1');
+    if (pageH1s.length !== 1) return;
+    const h1 = pageH1s[0];
+    if (articleEl.contains(h1)) return;
+    // v0.7.141 guard：h1 text 必須 matches og:title / document.title 才視為主文
+    // 標題，避免 newtalk.tw 類「site logo h1（page-wide unique 但語義非主文）」
+    // 誤觸發 promote。markPromotedTitleIfMissing（v0.7.87/88）負責 article 內
+    // 沒 visible h1 的場景找 p.name promote、與本機制互補。
+    const h1Text = norm(h1.textContent || '');
+    if (h1Text.length < 5) return;
+    const og = document.querySelector('meta[property="og:title"]');
+    const ogText = og && og.content ? norm(og.content) : '';
+    const docT = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const baseTitle = ogText || docT;
+    if (!baseTitle || baseTitle.length < 5) return;
+    // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
+    // prefix 但 partial includes baseTitle 而誤觸發 promote——markPromotedTitleIfMissing
+    // 處理那條 case，本機制只負責「h1 自身就是主文標題完整字串」場景）。
+    if (h1Text !== baseTitle) return;
+    // 找 h1 的最近 ancestor wrapper（不為 body 也不為 articleEl 後代）
+    let wrapper = h1.parentElement;
+    if (!wrapper || wrapper === document.body || wrapper === document.documentElement) {
+      // h1 是 body 的 direct child — 沒 wrapper，clone h1 自己
+      wrapper = h1;
+    }
+    const clone = wrapper.cloneNode(true);
+    clone.setAttribute('data-jread-title-clone', '1');
+    // 清 inline display:none + data-jread-hidden（從已被 hideAncestorSiblings
+    // 處理過的原 wrapper 繼承來的）
+    if (clone.style) clone.style.removeProperty('display');
+    if (clone.removeAttribute) clone.removeAttribute('data-jread-hidden');
+    if (clone.querySelectorAll) {
+      for (const el of clone.querySelectorAll('[data-jread-hidden="1"]')) {
+        el.removeAttribute('data-jread-hidden');
+        if (el.style) el.style.removeProperty('display');
+      }
+    }
+    articleEl.insertBefore(clone, articleEl.firstChild);
+  }
+
   // ---- promote+narrow 聯動：sibling chrome 全清 ------------------------
   //
   // 場景：detector heuristic 選到深層 content container（例：ebc 的
@@ -3171,6 +3228,11 @@
       // 保留 CSS height）類殘留以此規則統清。詳見 collapseEmptyWrappersAfterClean
       // 上方註解。
       collapseEmptyWrappersAfterClean(articleEl, hidden);
+      // v0.7.141：eet-china 類站點 page-wide unique h1 在 articleEl 外（與
+      // articleEl 是 body 兄弟、detector LCA=body 被 reject 不 promote），h1
+      // wrapper 已被 hideAncestorSiblings hide。clone 一份 prepend 進 articleEl
+      // 開頭，標題進 reader card 內、dark/sepia theme color 自動套對。
+      promoteUniqueTitleH1Into(articleEl);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
