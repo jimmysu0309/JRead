@@ -1561,7 +1561,7 @@
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
     const seenParents = new Set();
-    for (const el of articleEl.querySelectorAll('*')) {
+    for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
@@ -1636,7 +1636,7 @@
   function resetNegativeZIndex(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
-    for (const el of articleEl.querySelectorAll('*')) {
+    for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
@@ -1698,7 +1698,7 @@
     articleContentRight = articleRect.right - (parseFloat(articleCs.paddingRight) || 0);
 
     const resets = [];
-    for (const el of articleEl.querySelectorAll('*')) {
+    for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
@@ -1779,7 +1779,7 @@
     // `articleEl.querySelectorAll('*')` 天生不含 articleEl 自己、漏處理。
     // 通則：articleEl 若是 flex-row/grid + 有 hidden child、直接 children 間
     // 失衡 → 退化。
-    const candidates = [articleEl, ...articleEl.querySelectorAll('*')];
+    const candidates = [articleEl, ..._getArticleAllElements(articleEl)];
     for (const el of candidates) {
       if (el !== articleEl) {
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -2089,7 +2089,7 @@
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
     const descResets = [];
-    for (const el of articleEl.querySelectorAll('*')) {
+    for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
@@ -2201,7 +2201,7 @@
   function collapseInnerFlexWrap(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
-    for (const el of articleEl.querySelectorAll('*')) {
+    for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
@@ -2355,7 +2355,7 @@
 
   function collapseEmptyWrappersAfterClean(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
-    for (const el of articleEl.querySelectorAll('*')) {
+    for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -2986,15 +2986,25 @@
     // 分享按鈕是 reader mode toggle 後約 3s lazy-inject 的 `<a class=
     // "btn-social--line">`，包在某個 wrapper div 內、wrapper 自己 class
     // 沒命中 keyword，但內部 a 命中——要遞迴檢查。
+    //
+    // v0.7.144：原本 button + a/button 兩條 querySelectorAll 跑兩次，合併
+    // 成單一 selector（a + button + role + input button 系列）+ 依 tagName /
+    // role 派發。SPA 站 reader mode 期每秒數十次 mutation、每次 addedNode 跑
+    // 多次 selector cost 累積。
     if (node.querySelectorAll) {
-      for (const btn of node.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]')) {
-        if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
-        hide(btn, hiddenList);
-      }
-      for (const a of node.querySelectorAll('a, button')) {
-        if (a.dataset && a.dataset.jreadHidden === '1') continue;
-        if (!shouldHideByKeyword(a)) continue;
-        hide(a, hiddenList);
+      const allInteractive = node.querySelectorAll(
+        'a, button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]'
+      );
+      for (const el of allInteractive) {
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）
+        if (el.tagName === 'A') {
+          if (shouldHideByKeyword(el)) hide(el, hiddenList);
+          continue;
+        }
+        // button / role=button / input button 系列：無條件 hide
+        // （硬教訓九：reader mode 純閱讀下所有 interactive button 一律清）
+        hide(el, hiddenList);
       }
     }
     // heading text 命中：跟 hideInsideArticleByHeadingText 同邏輯
@@ -3170,6 +3180,22 @@
   }
 
   // ---- 對外介面 ---------------------------------------------------------
+  // v0.7.144：cache `articleEl.querySelectorAll('*')` 給多條 rule 共用。原本 8 處
+  // 各自 querySelectorAll('*') 對 5K element 主文 = 8 趟 tree walk + 8 份 NodeList
+  // allocation。cache 後只 build 一次 array、8 條 rule 接 cached version。
+  // closure variable 由 clean() 開頭設、結尾清；外部 caller（理論上）每次 clean()
+  // 都重新 build cache（避免 SPA 站 DOM 變動後拿 stale array）。
+  //
+  // 限制：rule 內若 hide/move element 不影響 array（NodeList 是 static snapshot），
+  // 但 array 內元素可能變 detached（被 promoteUniqueTitleH1Into 的 clone 影響——
+  // 該 rule 跑在 clean 末段、後續 rule 不依賴 array）。
+  let _cachedArticleAll = null;
+  function _getArticleAllElements(articleEl) {
+    if (_cachedArticleAll) return _cachedArticleAll;
+    _cachedArticleAll = Array.from(articleEl.querySelectorAll('*'));
+    return _cachedArticleAll;
+  }
+
   const cleaner = {
     /**
      * 隱藏主文外與主文內的雜訊，回傳還原用的清單。
@@ -3185,6 +3211,8 @@
     clean(articleEl, opts) {
       const hidden = [];
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
+      // v0.7.144：每次 clean() 重建 element cache（避免 SPA / 多 articleEl 場景共用 stale array）
+      _cachedArticleAll = null;
       // narrow 放最前：promote 升級後 articleEl 變大、需要先把 sibling chrome
       // 清掉、再跑其他 rule。否則後續 hideInsideArticle* 會對 chrome 子樹做
       // 全套檢查、浪費且產生誤殺風險（chrome 裡的 nav / button / list 等 UI
@@ -3268,6 +3296,8 @@
       // v0.7.23 newtalk.tw 修法：watch hidden el 的 inline style 被原站 JS
       // 覆寫清掉 !important priority，被清就立刻補回
       watchHiddenInlineRestyle(hidden);
+      // v0.7.144：clean() 結束清 cache、釋放 array refs（避免被 GC root hold 住）
+      _cachedArticleAll = null;
       return hidden;
     },
 

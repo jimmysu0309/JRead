@@ -4,6 +4,31 @@
 
 ---
 
+**v0.7.144**——effort 效能重構（v0.7.143 audit 留下的 4 條效能優化）。**動機**：v0.7.143 一次性消化 audit 19 條中的 15 條 bug + 技術債，留下 4 條效能重構獨立 release 方便 isolate 風險（cleaner / detector / styler 核心熱點重構）。
+
+**修法（4 條）**：
+
+(1) **cleaner walk pass 共用 cache**（#11）—— 原本 8 處 rule 各自跑 `articleEl.querySelectorAll('*')`，對 5K element 主文 = 8 趟 tree walk + 8 份 NodeList allocation、啟動延遲拖累。加 `_cachedArticleAll` module-internal cache + `_getArticleAllElements(articleEl)` helper。clean() 開頭設 null 強制重建（避免 SPA 多 articleEl 拿 stale array）、結尾清 null（釋放 GC root）。7 處 rule 全改走 cache helper。剩 1 處 `articleEl.querySelectorAll('*')` invocation 在 cache helper 內 build。spec 7 條 forcing function（含「直接 invocation 數恰好 1」防回退）。
+
+(2) **detector isSignalExcluded 祖先鏈 cache**（#12）—— `detectByHeuristic` 對 500+ signals 逐一沿祖先鏈跑 `closest + getComputedStyle`，500 × 平均 10 層 = 5K 次 getComputedStyle、每次 trigger layout flush。加 `_excludedAncestorCache`（WeakMap<element, boolean>），`detectByHeuristic` 入口開 cache（new WeakMap）+ try/finally 清。`isSignalExcluded` 沿祖先鏈遇到 cached 祖先直接 short-circuit + **back-fill** 此次走過的祖先（傳遞性：第一個 signal 走完整祖先鏈後，後續 signals 同祖先鏈直接命中 cache）。spec 5 條 forcing function（含 try/finally 清 cache）。
+
+(3) **styler 媒體節點先 query**（#13）—— styler.apply 內找「flex/grid 含媒體子的 wrapper」原本 `for (el of articleEl.querySelectorAll('*'))` + 對每個後代跑 getComputedStyle。大頁面 500-2000 elements + 多次設定變更（每改一次字級都重 apply）= 數百 ms 級 jank。改為先 `querySelectorAll('picture, img, figure')` 收媒體節點 → 各自往上 walk parent 鏈到 articleEl 為止收集祖先 Set → 對 Set 內元素才跑 getComputedStyle。從 O(全 DOM) → O(媒體節點 × 平均深度)；純文字主文（無媒體）short-circuit 0 次 getComputedStyle。spec 4 條 forcing function。
+
+(4) **MutationObserver 合 selector**（#14）—— `checkDynamicNoise` 對每個 addedNode 跑兩條 querySelectorAll：(a) `button, [role="button"], input[type=button|submit|reset]`、(b) `a, button`。SPA 站 reader mode 期每秒數十次 mutation、每次塞大 wrapper subtree（React reconciliation），兩條 selector 都要走整個 subtree、cost 累積。合併成單一 selector `a, button, [role="button"], input[type=...]` 一次 querySelectorAll 後依 tagName 派發：a tag 走 `shouldHideByKeyword` 條件 hide（連結是主文引用一部分）、button/role/input button 無條件 hide（硬教訓九：reader mode 純閱讀下所有 interactive button 一律清）。spec 4 條 forcing function。
+
+**預期收益**：
+
+- cleaner 啟動延遲省 7 次 querySelectorAll allocation——對 5K element 主文約省 14-35ms（每次 querySelectorAll('*') 2-5ms）
+- detector probe / heuristic cache hit 後 isSignalExcluded 對共享祖先鏈的 signals 從 O(N) layout flush 降到 O(1)——大頁面 500+ signals 估省 50% getComputedStyle 開銷
+- styler apply 對純文字主文（無 picture/img/figure）省 100% gallery flex 區段 getComputedStyle；含媒體主文省 90%+
+- MutationObserver 對 SPA 站每次 addedNode 從 2 條 querySelectorAll 變 1 條，省 50% selector engine 開銷
+
+**未做改動**：v0.7.143 audit #11 原建議合併 absoluteOverlays / negZIndex / negMargins 三條 rule 成單一 walk pass + 共用 cs object——風險高（rule 間有 hide/applyImportant 互動、合併後 state 變動可能踩 spec），本版採低風險 cache 策略；rule 合併留作未來 phase 2 評估。
+
+**npm test**：774 全綠（v0.7.143 754 → v0.7.144 774，新增 20 條 spec 跨 4 個新 spec file）。**版本同步**：manifest / package.json / SPEC.md / CHANGELOG.md / version-check.spec.js / safari-app（safari-build.sh 自動 sync）。
+
+---
+
 **v0.7.143**——專案內 code review 一次性消化：跑 deep audit 找 19 條問題後一輪修完高/中優先 bug + 技術債共 15 條，餘 4 條效能重構留 v0.7.144。**動機**：Jimmy 2026-05-19 要求「檢查所有程式碼，分析是否有 bug、技術債，以及能夠優化提升效能的地方」+「全部都修好」。**修法（15 條）**：
 
 (1) **cleaner title clone restore bug**（critical）——v0.7.141 `promoteUniqueTitleH1Into` cloneNode prepend 進 articleEl 但**沒 push 進 hidden array**，restore() 不認得 `data-jread-title-clone` attribute、不會 removeChild。同 tab 多次進出 reader mode 會堆疊 N 份 H1 clone。修法：clone push 進 hidden array 帶 `__titleClone: true` marker，restore() 內 if (item.__titleClone) 走 removeChild path。spec 5 條（含「連續 5 次 clean → restore 後 page 仍只有 1 個 h1」forcing function）。

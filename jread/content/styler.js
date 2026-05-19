@@ -766,7 +766,22 @@ html.${HTML_CLASS} body {
       // 直接子含 picture / img / figure 的元素，runtime 設 inline !important
       // 蓋過原站 stylesheet。CSS :has() jsdom 不支持，改 runtime 解決。
       const galleryFlex = [];
-      for (const el of articleEl.querySelectorAll('*')) {
+      // v0.7.144：原 code 對主文每個後代跑 getComputedStyle 找 flex/grid + 含
+      // picture/img/figure 直接子的 wrapper。大頁面 + 多次設定變更時負荷重。
+      // 改為先 querySelectorAll('picture, img, figure') 收媒體節點 → 各自往上
+      // walk parent 鏈到 articleEl 為止收集祖先 Set → 對 Set 內元素才跑
+      // getComputedStyle。從 O(全 DOM) → O(媒體節點 × 平均深度)；純文字主文
+      // 直接 short-circuit 0 次 getComputedStyle。
+      const mediaAncestors = new Set();
+      const mediaNodes = articleEl.querySelectorAll('picture, img, figure');
+      for (const media of mediaNodes) {
+        let cur = media.parentElement;
+        while (cur && cur !== articleEl) {
+          mediaAncestors.add(cur);
+          cur = cur.parentElement;
+        }
+      }
+      for (const el of mediaAncestors) {
         const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
         if (!cs) continue;
         if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
