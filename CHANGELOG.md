@@ -4,6 +4,44 @@
 
 ---
 
+**v0.7.143**——專案內 code review 一次性消化：跑 deep audit 找 19 條問題後一輪修完高/中優先 bug + 技術債共 15 條，餘 4 條效能重構留 v0.7.144。**動機**：Jimmy 2026-05-19 要求「檢查所有程式碼，分析是否有 bug、技術債，以及能夠優化提升效能的地方」+「全部都修好」。**修法（15 條）**：
+
+(1) **cleaner title clone restore bug**（critical）——v0.7.141 `promoteUniqueTitleH1Into` cloneNode prepend 進 articleEl 但**沒 push 進 hidden array**，restore() 不認得 `data-jread-title-clone` attribute、不會 removeChild。同 tab 多次進出 reader mode 會堆疊 N 份 H1 clone。修法：clone push 進 hidden array 帶 `__titleClone: true` marker，restore() 內 if (item.__titleClone) 走 removeChild path。spec 5 條（含「連續 5 次 clean → restore 後 page 仍只有 1 個 h1」forcing function）。
+
+(2) **enterReaderMode race condition guard**——enterReaderMode 是 async（await getSettings），中間時間窗第二次 toggle 進來會看到 `NS.state.active` 仍 false、再跑一次 enterReaderMode；hiddenEls + originalStyles 被第二輪覆蓋、第一輪 hide 的元素永遠回不來。修法：local `enterInFlight` / `exitInFlight` flag + try/finally 清。spec 7 條 forcing function。
+
+(3) **safeSendMessage 統一到 namespace**——v0.7.140 把 helper 加在 main.js 但 youtube-borderless.js 等其他 content script 仍直接呼 chrome.runtime.sendMessage 沒 guard，extension reload 後在 borderless mode 切影片 → requestResize TypeError。修法：safeSendMessage 提到 namespace.js（NS.safeSendMessage），youtube-borderless.js 改走它；main.js 用 `const safeSendMessage = NS.safeSendMessage` 短名 alias。spec 16 條（含 8 條全 content script 檔案 sweep：chrome.runtime.sendMessage 直接呼叫只可在 namespace.js helper body 內）。
+
+(4) **JREAD_RELOAD sender 驗證**——page main world JS（廣告 script / 惡意網站）可 dispatch `__jread_debug` event type='reload' → content bridge → SW JREAD_RELOAD → reload。雖然 reload 不洩漏資料但會打斷所有 tab 的 reader mode。修法：SW handler 用 `chrome.management.getSelf()` 查 installType（不需 "management" permission，self-query），只在 `installType === 'development'` 允許 reload；store / normal install silently 拒絕。spec 4 條。
+
+(5) **detector.probe() 抽出 + GET_READER_STATE 改用**——popup GET_READER_STATE 開啟跑完整 detect() 含 `detectByShadowDomFallback` 會 `document.body.appendChild(replica)` 注入 shadow DOM 替身——光打開 popup 就污染 page DOM。修法：detector 加 probe() 輕量版只跑 read-only 4 策略（article-tag / schema / heuristic / main-tag）回 siteMode；不跑 promote / narrow / ensureH1 / shadow replica appendChild。main.js GET_READER_STATE handler 改用 probe()。spec 6 條（含 fixture 行為驗證 body 注入元素數量不變）。
+
+(6) **storage.onChanged debounce + cinema guard**——popup 連點 stepper 觸發多次 storage.sync.set → multiple restore + await + apply 並發纏繞、originalStyles 可能 snapshot 中間狀態、exit 後還原不回原貌；cinema mode 期間 articleEl=null styler.restore 可能 throw。修法：200ms debounce 合併連續 setting 變更 + handler 入口加 cinemaActive guard。spec 7 條。
+
+(7) **RESIZE_OWN_WINDOW origin + range guard**——SW handler 不檢查 sender.tab.url、不 clamp height，任何 content script 可任意 resize 視窗（content 端 calcTargetWindowHeight 有 clamp 但 SW 沒驗、debug bridge 可繞過）。修法：加 `sender.tab.url` match `youtube.com/watch` + height 範圍 [200, 4096]。spec 4 條。
+
+(8) **resetMediaPlaceholderPadding visited WeakSet 過早 mark**——bug 是 `visited.add(parent)` 在 absolute check 之前 mark，第一個 media 非 absolute（continue）後第二個共享 parent 的 absolute media 被 visited.has skip，padding-bottom hack reset 漏跑、典型踩 `<picture><source><source><img>` 或 lazy-load placeholder + real img 共用 wrapper。修法：visited.add 移到 absolute / preserved 通過後才執行。spec 4 條 + fixture（picture 含 placeholder + real 兩個 img 共享 parent）。
+
+(9) **popup save() debounce**——chrome.storage.sync quota：120 ops/min、1800 ops/hour。連點 stepper 跨 20+18 step + storage.onChanged 廣播多 tab content script 連環 reapply、一分鐘內可踩 quota。修法：save() 加 200ms debounce + pendingPatch 累積未 commit 欄位 + beforeunload listener 強制 flush 防 popup 關閉丟失最後變更。spec 7 條。
+
+(10) **styler fontSize / contentWidth / lineHeight 範圍 clamp**——popup UI 已 clamp [12, 32] / [480, 1200]、options 也有 HTML5 min/max，但 styler.apply 接 settings 時只擋 0/負/NaN 不擋上限，外部寫入或 storage 損壞時 `fontSize: 1e308` / `0.001` 會被當合法值注入 CSS。修法：clamp `fontSize [8, 200]`（保留 0 = Auto sentinel）/ `contentWidth [300, 2000]` / `lineHeight [1.0, 3.0]`。spec 5 條。
+
+(11) **DEFAULT_SETTINGS 四檔 forcing function 擴覆蓋**——v0.7.140 spec 只守 popup ↔ styler 的 fontFamily === 'system-ui' 一欄；SW / options 沒覆蓋。修法：擴 forcing function 守 popup / SW / styler / options 四檔對 theme / fontSize / contentWidth / fontFamily / lineHeight / blockPageShortcuts 全欄位逐字一致。spec 20 條。
+
+(12) **cleaner.js v0.7.97 重複註解刪除**——cleaner.js:1475-1481 一字不差的 8 行註解出現兩次（merge / copy-paste 漏刪副本）；刪掉一份。
+
+(13) **wrapperContainsArticleAnchor / wrapperContainsMainContentP 合一**——兩條 helper p iteration loop 完全相同，差別只在最後是否加 hasArticleTitleAnchor。改為「寬鬆 = 嚴格 + title anchor check」，避免兩份 p loop 各自維護。
+
+(14) **detector findTitleViaLca helper 抽出**——detector ensureArticleContainsTitleH1 與 promoteForTitle 的 LCA fallback 邏輯幾乎完全重複（CLAUDE.md 工作流原則 5「單一資料源」違反）。修法：抽 findTitleViaLca(articleEl, h, maxDist) helper 兩處共用；maxDist=5（ensureArticleContainsTitleH1 用、避免 site chrome 吞進）vs Infinity（promoteForTitle 用、依賴 og-match guard）。spec 6 條 forcing function（含 findLCA 直接呼叫只可在 helper 內 1 次）。
+
+(15) **cinema / borderless 互斥**——v0.7.134 設計「可同時開」但兩者對 `#movie_player` 設互相衝突的 position 規則，同時 active 時 CSS cascade 後贏的破版。修法：(a) enterCinemaMode 開頭 check `NS.borderless.isActive()` 若 active → `toggle()` 退掉；(b) TOGGLE_YT_BORDERLESS handler 若 willEnter && cinemaActive → 先呼 exitReaderMode 退 cinema 再 toggle borderless。spec 6 條。
+
+**留下未做（v0.7.144）**：4 條效能重構——cleaner 共用 walk pass / detector isSignalExcluded cache / styler 媒體節點先 query / MutationObserver 合 selector，預期 reader mode 啟動延遲在大頁面減半。**為何分兩 release**：效能重構動 cleaner / detector / styler 核心熱點，風險高，獨立 release 方便 isolate 問題。
+
+**npm test**：754 全綠（v0.7.142 660 → v0.7.143 754，新增 94 條 spec 跨 11 個新 spec file + 既有 4 個 spec file 更新）。**版本同步**：manifest / package.json / SPEC.md / CHANGELOG.md / version-check.spec.js / safari-app（safari-build.sh 自動 sync）。
+
+---
+
 **v0.7.142**——substack reader hub 標題消失 follow-up：修 `hideInsideArticleSidebarColumns` 對含 canonical title 的 sibling 誤判為 sidebar column。**動機**：Jimmy 2026-05-19 二次回報——v0.7.140 (A) 已加 hideInsideArticleByHeadingText button-text guard 擋掉 `<button><span>Subscribe</span></button>` 觸發 walk-up fallback，但 substack 標題仍消失。chrome-in-chrome probe 確認 root cause：**另一條 cleaner rule `hideInsideArticleSidebarColumns` 條件 A 命中**——article 兩個 direct children 中，標題 wrapper（textLen=51、linkDensity=0.61，含 subscribe button / share / avatar links / publication link）vs 主文 content wrapper（textLen=2074、linkDensity≈0），sibling.textLen 51 < main × 10% 207 AND linkDensity > 0.5，被視為 sidebar column hide 整段標題區。**修法**：cleaner.js `hideInsideArticleSidebarColumns` 加 `siblingContainsCanonicalTitle()` guard——預先算 page-wide canonical title（`<meta property="og:title">` content / `document.title` split `[|｜\-—–]` 第一段）；sibling 內含 element 的 **direct text strict equals** canonical title → 視為文章 header 區 skip hide。與既有 `promotedTitleHead` 白名單（v0.7.97 Stratechery 修法）並列、彼此互補：promotedTitleHead 涵蓋 detector promote 已 surface 的 heading；canonical title guard 涵蓋 detector 沒 promote 但 sibling 內含 og:title text 的 wrapper（substack 走 detector article-tag 直接命中、無 promote）。**通則性**：「sibling 含 page-wide canonical title 字串」是「該 sibling 是文章 header wrapper」最強訊號，跨站適用、不綁 substack hostname / class。strict equality（不容差）排除 newtalk-tw 類 site-logo h1 含 `[Newtalk新聞]` site prefix 誤觸發。**spec 4 條 forcing function**（test/regression/sidebar-column-title-guard.spec.js + 對應 fixture `sidebar-column-title-wrapper-misclassify.html`，最小重現條件 A：article > [title-wrapper(textLen=18 / ld=0.94 / 含 `<a>` direct text === og:title) + content-wrapper(textLen=580 / ld=0)]）：(a) fixture 結構數值驗證（title.textLen << main × 10% + ld > 0.5）；(b) **title-wrapper 不可被 sidebar-column rule hide（核心保護點）**；(c) title-link `<a>` 自己未被 hide；(d) 主文 content-wrapper 保留。**sanity check**：暫時 comment 掉 `if (siblingContainsCanonicalTitle(s.el)) continue` 行，spec (b) 立刻 fail（title-wrapper.jreadHidden=1），還原即 pass。**v0.7.140 (A) substack fixture 副調整**：原 substack-reader-hub-title-button-text.html 為了「真實重現實機 v0.7.140 button-text guard 場景」加長主文 p + 加更多 avatar/share links + 把主文 p 包進 content-wrapper，**仍 pass 既有 7 條 v0.7.140 spec**（button-text guard 邏輯與 sidebar-column 邏輯獨立、新 guard 加上後兩條 path 都被擋）。**已知限制**：(1) canonical title guard 需要 page 有 `<meta property="og:title">` 或可用 `<title>` 第一段——少數站點兩者都不含主標題字串時 guard 不觸發、回退到舊行為（cleaner 仍可能 hide）；(2) 標題 element 的 direct text 必須與 canonical title **完全相同**（含全形空格 / 引號等微差會 miss），這是刻意 strict equality 避免 site-logo h1 含 prefix 誤觸發；(3) 主文 content-wrapper 若也含 canonical title 重複（罕見），guard 也會保護它——但這條本就不會踩 sidebar-column rule（它是 main 不是 sibling）。**npm test**：660 全綠（v0.7.141 656 → v0.7.142 660，新增 4 條 sidebar-column-title-guard）。**版本同步**：manifest / package.json / SPEC.md / CHANGELOG.md / version-check.spec.js / safari-app（safari-build.sh 自動 sync）。
 
 ---

@@ -255,21 +255,6 @@
     return false;
   }
 
-  // 三道主文 anchor 保護：wrapper 含「>= 100 chars 單一 p / 累計 p text >= 300 /
-  // title-anchor element」任一即視為「含主文」、不准砍。findSafeWrapperForHeading
-  // 與 closest hit 分支共用此判定，保持結構性通則一致。
-  function wrapperContainsArticleAnchor(wrapper, exclude) {
-    if (!wrapper || !wrapper.querySelectorAll) return false;
-    let acc = 0;
-    for (const para of wrapper.querySelectorAll('p')) {
-      const pt = norm(para.textContent);
-      if (pt.length >= 100) return true;
-      acc += pt.length;
-      if (acc >= 300) return true;
-    }
-    return hasArticleTitleAnchor(wrapper, exclude);
-  }
-
   // 嚴格版（v0.7.97 chinatimes 修法）：只看主文長段落 p，**不**檢查 title-anchor
   // token。專供 hideInsideArticleByKeyword 用——keyword rule 已對「class 含
   // noise keyword」做明確判定，wrapper 若是真主文必然含長 p；title-anchor
@@ -291,6 +276,16 @@
       if (acc >= 300) return true;
     }
     return false;
+  }
+
+  // 三道主文 anchor 保護：wrapper 含「>= 100 chars 單一 p / 累計 p text >= 300 /
+  // title-anchor element」任一即視為「含主文」、不准砍。findSafeWrapperForHeading
+  // 與 closest hit 分支共用此判定，保持結構性通則一致。
+  //
+  // v0.7.143：合一實作——「寬鬆 = 嚴格 + 加 title anchor」。原本兩條獨立 p loop
+  // 維護成本高、改 p iteration 邏輯時要兩處改。改為直接 reuse 嚴格版。
+  function wrapperContainsArticleAnchor(wrapper, exclude) {
+    return wrapperContainsMainContentP(wrapper) || hasArticleTitleAnchor(wrapper, exclude);
   }
 
   // heading walk-up fallback：從 heading 往 articleEl 方向爬，停在「含主文長段
@@ -619,7 +614,7 @@
   // 通則：page 唯一 h1（多數新聞站慣例）視為主文標題；跨站適用、不綁 eet-china。
   // 多 h1 站點（早期 wheresyoured.at 12 個 H1、ChinaTalk Substack site title H1
   // 假信號等）不豁免，避免誤 promote 非主標題。
-  function promoteUniqueTitleH1Into(articleEl) {
+  function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
     const pageH1s = document.querySelectorAll('h1');
     if (pageH1s.length !== 1) return;
@@ -659,6 +654,12 @@
       }
     }
     articleEl.insertBefore(clone, articleEl.firstChild);
+    // v0.7.143：clone 進 hidden array、走特殊 __titleClone path 在 restore() 時
+    // removeChild（標準 hide() 走 inline display 還原，對 clone 不適用——要整個拿掉）。
+    // 不加進 array 的話 exit reader mode 後 clone 永遠殘留、同 tab 多次進出會堆疊 N 份 H1。
+    if (Array.isArray(hidden)) {
+      hidden.push({ el: clone, __titleClone: true });
+    }
   }
 
   // ---- promote+narrow 聯動：sibling chrome 全清 ------------------------
@@ -1465,13 +1466,6 @@
       for (const s of stats) {
         if (s === main) continue;
         if (isInPreserved(s.el)) continue;
-        // promoted title heading 白名單（v0.7.97 Stratechery 修法）：detector
-        // promote 命中的 title heading（h1-h4），若 sibling 是該 heading 或含該
-        // heading 則 skip。理由：WordPress block theme 預設 post-title 是 <a>
-        // 包整個 heading（自連結到文章），導致 linkDensity = 1 + textLen 短，
-        // 條件 A（textLen < main×10% + ld > 0.5）直接命中、主標題被當 widget
-        // sidebar 砍。與 narrowPromotedSiblings 共用同一條白名單機制，跨 rule
-        // 一致保護「promote 升級後的真標題」不被任何 cleaner rule 誤殺。
         // promoted title heading 白名單（v0.7.97 Stratechery 修法）：detector
         // promote 命中的 title heading（h1-h4），若 sibling 是該 heading 或含該
         // heading 則 skip。理由：WordPress block theme 預設 post-title 是 <a>
@@ -2514,12 +2508,20 @@
     for (const media of articleEl.querySelectorAll('img, picture, video')) {
       const parent = media.parentElement;
       if (!parent || parent === articleEl) continue;
+      // v0.7.143：先過 absolute / preserved / 共享 parent 早期判斷，**最後**才
+      // visited.add(parent)。原 bug：visited 在 absolute check 前 mark parent，
+      // 第一個 media 不是 absolute（continue）會把 parent 過早 mark；第二個
+      // 共享 parent 的 absolute media（典型 <picture><source><source><img>
+      // 多 source 結構、或 lazy-load placeholder 配 real img 共用 wrapper）
+      // 被 visited.has() skip，整個 placeholder reset 邏輯漏跑、主圖下方留白。
       if (visited.has(parent)) continue;
-      visited.add(parent);
       if (isInPreserved(parent) && parent.matches && parent.matches('figcaption')) continue;
 
       const mediaCs = window.getComputedStyle(media);
       if (mediaCs.position !== 'absolute') continue;
+      // 通過 absolute 判斷後才 mark parent（同 parent 後續 absolute media 仍跳過、
+      // 但前面被 continue 掉的 non-absolute media 不會浪費 mark）。
+      visited.add(parent);
 
       const pCs = window.getComputedStyle(parent);
       // Pattern A: padding-bottom hack
@@ -3256,7 +3258,7 @@
       // articleEl 是 body 兄弟、detector LCA=body 被 reject 不 promote），h1
       // wrapper 已被 hideAncestorSiblings hide。clone 一份 prepend 進 articleEl
       // 開頭，標題進 reader card 內、dark/sepia theme color 自動套對。
-      promoteUniqueTitleH1Into(articleEl);
+      promoteUniqueTitleH1Into(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
@@ -3289,6 +3291,13 @@
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;
+        // v0.7.143：title clone（promoteUniqueTitleH1Into 為 eet-china 類站
+        // page-wide unique h1 在 articleEl 外的場景注入的副本）必須整個從
+        // DOM 移除——非「hide → 還原 inline display」路徑。
+        if (item.__titleClone) {
+          if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+          continue;
+        }
         const { el, prevDisplay, prevDisplayPriority } = item;
         // 還原原始 inline display + priority（`!important` 也要還原，
         // 否則原站的 `display: flex !important` 若原本寫在 inline，

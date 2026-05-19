@@ -574,6 +574,29 @@
   // - 商周 articleEl=row 含 h2 sub-heading（promoteForTitle 失敗、promotedTitleHead
   //   未設）→ 跑兜底升到 MAIN.Single（H1.Single-title-main 的 LCA）
   // 兩個都 articleEl 內含 h2，但 promote 是否成功才是真正的決定因素。
+  // v0.7.143：共用 LCA helper（原本 ensureArticleContainsTitleH1 與 promoteForTitle
+  // 的 LCA fallback 兩處各有一份重複實作；CLAUDE.md 工作流原則 5「單一資料源」要求
+  // 合一）。
+  //
+  // 通用語意：算 articleEl 與 candidate heading h 的最近共同祖先 LCA，安全 guard：
+  // (1) LCA 不可為 body / html（避免吞整頁）；(2) LCA 必須真的 contains articleEl
+  // （trivial）；(3) maxDist：articleEl 沿 parent 鏈到 LCA 步數上限（避免遠距 LCA
+  // 把不相關 chrome 一起吃進來）。傳 maxDist=Infinity 跳過此 guard。
+  function findTitleViaLca(articleEl, h, maxDist) {
+    if (!articleEl || !h) return null;
+    const lca = findLCA(articleEl, h);
+    if (!lca) return null;
+    if (lca === document.body || lca === document.documentElement) return null;
+    if (!lca.contains(articleEl)) return null;
+    if (typeof maxDist === 'number' && Number.isFinite(maxDist)) {
+      let dist = 0;
+      let cur = articleEl;
+      while (cur && cur !== lca && dist <= maxDist) { cur = cur.parentElement; dist++; }
+      if (cur !== lca) return null;
+    }
+    return { el: lca, titleHead: h };
+  }
+
   function ensureArticleContainsTitleH1(articleEl, promotedTitleHead) {
     if (!articleEl) return null;
     // promote 已升 + 命中的是真 heading（H1-H4）→ 視為堅實 promote、不需再升。
@@ -584,17 +607,8 @@
     // Stratechery wp-block-column promotedTitleHead=H2 post-title（堅實）→ skip ✓。
     if (promotedTitleHead && /^H[1-4]$/.test(promotedTitleHead.tagName)) return null;
 
-    function tryLcaPromote(h) {
-      const lca = findLCA(articleEl, h);
-      if (!lca) return null;
-      if (lca === document.body || lca === document.documentElement) return null;
-      if (!lca.contains(articleEl)) return null;
-      let dist = 0;
-      let cur = articleEl;
-      while (cur && cur !== lca && dist <= 5) { cur = cur.parentElement; dist++; }
-      if (cur !== lca) return null;
-      return { el: lca, titleHead: h };
-    }
+    // 本層走 maxDist=5（避免 articleEl 與 LCA 距離太遠把 site chrome 吞進）。
+    const tryLcaPromote = (h) => findTitleViaLca(articleEl, h, 5);
 
     // v0.7.92 wya 修法（含 ChinaTalk 防回歸）：
     //
@@ -689,16 +703,16 @@
     // ---- LCA fallback layer 1：og-match LCA ----
     // sibling-walk 沒命中（hops 限制 / 嵌套太深）但 og-match 還能成立的場景。
     // 比 layer 2 安全（依賴 og-match guard），優先嘗試。
+    //
+    // v0.7.143：走共用 findTitleViaLca helper（dist 無上限——og-match guard 已是
+    // 強訊號，dist 過遠也仍是真標題、不需 dist 限制）。
     for (const h of document.querySelectorAll('h1, h2')) {
       if (articleEl.contains(h)) continue;
       const text = normalizeTitle(h.innerText || h.textContent || '');
       if (text.length > TITLE_TEXT_MAX) continue;
       if (!titleMatches(target, text)) continue;
-      const lca = findLCA(articleEl, h);
-      if (!lca) continue;
-      if (lca === document.body || lca === document.documentElement) continue;
-      if (!lca.contains(articleEl)) continue;
-      return { el: lca, titleHead: h };
+      const r = findTitleViaLca(articleEl, h, Infinity);
+      if (r) return r;
     }
 
     // structural guard layer 移到 detect() 結尾的 ensureArticleContainsTitleH1
@@ -708,6 +722,40 @@
 
   // ---- 主函式 ---------------------------------------------------------
   const detector = {
+    /**
+     * v0.7.143：輕量探測，只回 siteMode，不 mutate DOM。
+     *
+     * 動機（v0.7.143 audit #5）：popup GET_READER_STATE 開啟時呼 detect() 拿
+     * siteMode 三選一 flag，但 detect() 會跑 promote / narrow / ensureH1 + 走到
+     * detectByShadowDomFallback **會 `document.body.appendChild(replica)` 注入
+     * shadow DOM 替身**。光是打開 popup 就在頁面注入 article replica = 副作用。
+     *
+     * probe() 跳過 promote / narrow / shadow replica appendChild，只跑 article-tag
+     * / schema-org / heuristic / main-tag 四個 read-only 策略決定 siteMode。
+     * heuristic 仍跑——避免純啟發式偵測站（沒 <article> tag 的新聞站）popup 拿不到
+     * 'article' siteMode → Readwise 按鈕誤判隱藏。
+     *
+     * 回傳 { siteMode } — 'youtube-cinema' / 'x-thread' / 'article' / null。
+     */
+    probe() {
+      if (NS.cinema && typeof NS.cinema.isYouTubeWatch === 'function' && NS.cinema.isYouTubeWatch()) {
+        return { siteMode: 'youtube-cinema' };
+      }
+      if (NS.xThread && typeof NS.xThread.isXStatusPage === 'function' && NS.xThread.isXStatusPage()) {
+        return { siteMode: 'x-thread' };
+      }
+      // 跑 4 個 read-only 策略；故意不走 detectByShadowDomFallback（會 appendChild
+      // 替身、有副作用），shadow DOM 站走 enter reader mode 時才建替身。
+      const result = (
+        detectByArticleTag() ||
+        detectBySchemaOrg() ||
+        detectByHeuristic() ||
+        detectByMainTag()
+      );
+      if (result && result.el) return { siteMode: 'article' };
+      return { siteMode: null };
+    },
+
     /**
      * 偵測主文，回傳 { el, confidence, strategy }；未達門檻時回傳 null。
      * strategy 可能值：'article-tag' | 'schema-org' | 'heuristic' | 'main-tag'

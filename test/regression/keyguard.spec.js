@@ -99,7 +99,7 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
       const idx = MAIN_SRC.search(/async\s+function\s+enterReaderMode/);
       assert.ok(idx >= 0);
       // 取從 enterReaderMode 開始的後續 2000 字（足以涵蓋全函式）
-      const slice = MAIN_SRC.slice(idx, idx + 2000);
+      const slice = MAIN_SRC.slice(idx, idx + 4000);
       assert.match(slice, /settings\.blockPageShortcuts/,
         'enterReaderMode 必須讀 settings.blockPageShortcuts——forcing：少了條件就變強制攔截、無法 opt-out');
       assert.match(slice, /installKeyguard\s*\(/,
@@ -109,7 +109,7 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
     it('exitReaderMode 必須無條件呼叫 uninstallKeyguard', () => {
       const idx = MAIN_SRC.search(/function\s+exitReaderMode/);
       assert.ok(idx >= 0);
-      const slice = MAIN_SRC.slice(idx, idx + 2000);
+      const slice = MAIN_SRC.slice(idx, idx + 4000);
       assert.match(slice, /uninstallKeyguard\s*\(/,
         'exitReaderMode 必須 uninstallKeyguard——forcing：reader mode 關閉後 keyguard 仍掛在 window 上會繼續攔截、影響使用者');
     });

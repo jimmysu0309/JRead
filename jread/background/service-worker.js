@@ -121,7 +121,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // content script 直接呼會 TypeError。SW handler 收到後重啟 extension。
       // 設計給 Claude 自主 debug 用——dispatch event → bridge → sendMessage
       // → SW reload，整條 chain 無 popup / 鍵盤 shortcut 介入。
-      chrome.runtime.reload();
+      //
+      // v0.7.143 安全 hardening：page main world JS（含廣告 script、惡意網站）
+      // 可任意 dispatch `__jread_debug` event 觸發 reload。雖然 reload 不洩漏
+      // 資料、不權限提升，但會打斷使用者所有 tab 的 reader mode。Store 安裝的
+      // 使用者不該被網頁端任意打擾——只允許 unpacked / development 安裝（Claude
+      // 自主 debug 場景）執行 reload。chrome.management.getSelf() 不需要
+      // "management" permission（自己 query 自己）。
+      chrome.management.getSelf((info) => {
+        if (info && info.installType === 'development') {
+          chrome.runtime.reload();
+        } else {
+          // store / normal install：silently reject（不送 toast、不通知，避免
+          // 攻擊者透過 console error 探測 extension 是否裝）
+          console.warn('[JRead] JREAD_RELOAD rejected: installType=', info && info.installType);
+        }
+      });
       return;
     }
     case 'RESIZE_OWN_WINDOW': {
@@ -129,10 +144,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 呼 chrome.windows.update。失敗（PWA 限制 / windowId 不在 / 權限缺）
       // 沉默吞掉——CSS 已套上、影片以 object-fit:contain 顯示（會有黑邊但
       // 仍可看），不需要 escalate 給使用者。
+      //
+      // v0.7.143 安全 hardening：
+      // (a) sender.tab.url 必須是 youtube.com/watch（防其他站點 content
+      //     script 或 debug bridge 任意 resize 視窗）
+      // (b) height 必須在合理範圍 [200, 4096]（content 端 calcTargetWindowHeight
+      //     已 clamp，這裡是第二道防線）
       const wid = sender && sender.tab && sender.tab.windowId;
       const height = msg.payload && msg.payload.height;
+      const senderUrl = sender && sender.tab && sender.tab.url;
       if (typeof wid !== 'number' || typeof height !== 'number') {
-        sendResponse({ ok: false });
+        sendResponse({ ok: false, reason: 'INVALID_ARGS' });
+        return; // sync
+      }
+      if (!senderUrl || !/^https:\/\/(www\.|m\.)?youtube\.com\/watch/.test(senderUrl)) {
+        sendResponse({ ok: false, reason: 'INVALID_ORIGIN' });
+        return; // sync
+      }
+      if (height < 200 || height > 4096) {
+        sendResponse({ ok: false, reason: 'INVALID_HEIGHT' });
         return; // sync
       }
       try {

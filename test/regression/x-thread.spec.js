@@ -466,10 +466,22 @@ describe('x-thread v0.7.135 — main.js 整合', () => {
       'exitReaderMode 必須呼叫 NS.xThread.exit() 清合成容器');
   });
 
-  it('main.js GET_READER_STATE siteMode 必須對 isXThread 也回 article（讓 popup 啟用按鈕 + Readwise）', () => {
-    // probe.el || probe.isXThread → siteMode = 'article'
-    assert.match(MAIN_SRC, /probe\.el\s*\|\|\s*probe\.isXThread/,
-      'GET_READER_STATE 內 siteMode 判斷必須含 (probe.el || probe.isXThread)，否則 popup 視 X status 為「不可閱讀」按鈕 disabled');
+  it('main.js GET_READER_STATE 必須走 NS.detector.probe()（v0.7.143 取代 detect()）', () => {
+    // v0.7.143：GET_READER_STATE handler 改用 probe()——detector probe() 自己對
+    // X status 場景回 { siteMode: 'x-thread' }（detector.js 內 NS.xThread.isXStatusPage()
+    // 短路在 probe 入口）。popup.js 不認 'x-thread'、走預設 toggle 文字 + readwiseBtn
+    // 看 active flag，與 v0.7.135 行為一致。
+    assert.match(MAIN_SRC, /NS\.detector\.probe\s*\(/,
+      'GET_READER_STATE handler 必須呼 NS.detector.probe()，避免原 detect() 副作用（shadow replica appendChild）');
+  });
+
+  it('detector.probe() 必須對 X status 場景回 siteMode=x-thread', () => {
+    // probe() body 內必須含 NS.xThread.isXStatusPage check + return siteMode='x-thread'
+    const DETECTOR_SRC = require('fs').readFileSync(
+      require('path').join(__dirname, '..', '..', 'jread', 'content', 'detector.js'), 'utf8'
+    );
+    assert.match(DETECTOR_SRC, /isXStatusPage[\s\S]{0,200}siteMode:\s*['"]x-thread['"]/,
+      'detector.probe() 必須對 NS.xThread.isXStatusPage() 命中時回 siteMode=x-thread');
   });
 });
 
