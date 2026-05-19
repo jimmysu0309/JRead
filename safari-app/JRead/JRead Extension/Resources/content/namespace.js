@@ -28,6 +28,27 @@
     borderless: null,       // v0.7.134：YouTube borderless mode（youtube-borderless.js 掛載）
     xThread: null,          // v0.7.135：X / Twitter status thread reader（x-thread.js 掛載）
 
+    // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
+    // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼
+    // chrome.runtime.sendMessage 沒 guard）。提到 namespace 後**所有** content
+    // script 共用同一個 entry point。invalidated 時（extension reload 後既有
+    // content script 仍在跑但 chrome.runtime 失效，chrome.runtime.id === undefined）
+    // silently no-op；fire-and-forget call site 不影響使用體驗，callback 版本
+    // invoke null 讓 caller 走「沒回應」分支。
+    safeSendMessage(msg, cb) {
+      if (!chrome || !chrome.runtime || !chrome.runtime.id) {
+        if (cb) { try { cb(null); } catch (_) {} }
+        return;
+      }
+      try {
+        if (cb) chrome.runtime.sendMessage(msg, cb);
+        else chrome.runtime.sendMessage(msg);
+      } catch (_) {
+        // race condition：guard 通過後 context 才失效（極罕見，但保留安全網）
+        if (cb) { try { cb(null); } catch (_) {} }
+      }
+    },
+
     // 訊息常數（與 popup / background 對齊）
     MSG: {
       TOGGLE_READER_MODE: 'TOGGLE_READER_MODE',

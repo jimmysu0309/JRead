@@ -91,12 +91,44 @@ function render(settings) {
 
 let current = { ...DEFAULT_SETTINGS };
 
+// v0.7.143：debounce storage.sync.set 防 chrome.storage.sync quota 踩線。
+// 連點 stepper（fontSize 12-32 跨 20 step、contentWidth 480-1200 跨 18 step）
+// 每 click 觸發一次 set，加上 storage.onChanged broadcast 到所有 tab 的 content
+// script、各自跑 styler restore+apply，連環 cost。chrome.storage.sync quota：
+// MAX_WRITE_OPERATIONS_PER_MINUTE = 120、MAX_WRITE_OPERATIONS_PER_HOUR = 1800。
+// 200ms debounce 對人類連點足夠合併、單次調整無感。
+//
+// 設計：render 在 click 同步跑（UI 立刻反映、popup 內按鈕狀態跟著刷新），但
+// storage.sync.set 透過 debounce 合併。pendingPatch 累積所有未 commit 的欄位。
+let saveTimer = null;
+let pendingPatch = {};
+function commitSave() {
+  if (!Object.keys(pendingPatch).length) return;
+  const patch = pendingPatch;
+  pendingPatch = {};
+  saveTimer = null;
+  try {
+    chrome.storage.sync.set(patch);
+  } catch (_) { /* QuotaExceeded 等 silently 吞——current 已有最新值，下次 popup 開啟仍會走 storage.get */ }
+}
+
 function save(patch) {
   Object.assign(current, patch);
+  Object.assign(pendingPatch, patch);
   render(current);
-  chrome.storage.sync.set(patch);
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(commitSave, 200);
   // content script 透過 storage.onChanged 即時重新套用（若閱讀模式開啟）
 }
+
+// popup 即將關閉時強制 flush pending patch（不然連點後立刻關 popup 會丟失最後幾次變更）
+window.addEventListener('beforeunload', () => {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    commitSave();
+  }
+});
 
 chrome.storage.sync.get(DEFAULT_SETTINGS, (values) => {
   current = { ...DEFAULT_SETTINGS, ...values };

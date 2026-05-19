@@ -14,27 +14,11 @@
     }
   }
 
-  // v0.7.140：context-invalidated guard。extension reload 後既有 content
-  // script 仍跑舊代碼，但 chrome.runtime 失效（chrome.runtime.id === undefined）。
-  // 直接呼 chrome.runtime.sendMessage 會 throw `Cannot read properties of
-  // undefined (reading 'sendMessage')` —— Jimmy 2026-05-19 substack reader
-  // mode exit 時實機踩過（reader mode active 期間 reload extension，使用者
-  // 後續 exit / enter 操作都會踩這條）。統一走 helper：invalidated 時 silently
-  // no-op（fire-and-forget 的 SET_ACTIVE_ICON / SAVE_TO_READWISE 等 call site
-  // 不影響使用體驗；callback 版本 invoke null 讓 caller 走「沒回應」分支）。
-  function safeSendMessage(msg, cb) {
-    if (!chrome || !chrome.runtime || !chrome.runtime.id) {
-      if (cb) { try { cb(null); } catch (_) {} }
-      return;
-    }
-    try {
-      if (cb) chrome.runtime.sendMessage(msg, cb);
-      else chrome.runtime.sendMessage(msg);
-    } catch (_) {
-      // race condition：guard 通過後 context 才失效（極罕見，但保留安全網）
-      if (cb) { try { cb(null); } catch (_) {} }
-    }
-  }
+  // v0.7.143：safeSendMessage 已提到 namespace.js（NS.safeSendMessage），
+  // main.js / youtube-borderless.js / 其他 content script 共用同一個 entry。
+  // 此處 const alias 保留檔內 call site 簡潔（safeSendMessage(...) 不必每處寫
+  // NS.safeSendMessage(...)）。
+  const safeSendMessage = NS.safeSendMessage;
 
   async function getSettings() {
     return new Promise(resolve => {
@@ -126,6 +110,14 @@
   // slice 假設仍能命中 settings.blockPageShortcuts 那段。
   function enterCinemaMode() {
     if (!NS.cinema) return false;
+    // v0.7.143：cinema / borderless 互斥——使用者在 borderless 模式按 cinema 快速鍵
+    // 視為「切換到 cinema」，先退掉 borderless 避免兩條 CSS 軸對 #movie_player 打架
+    // （cinema 設 fixed center、borderless 設 fullscreen 全屏）。同樣 borderless
+    // 入口也會 mutex 退掉 cinema。SPEC.md 從 v0.7.134「可同時開」改為 v0.7.143
+    // 「單一 active」單軸設計。
+    if (NS.borderless && NS.borderless.isActive && NS.borderless.isActive()) {
+      NS.borderless.toggle();
+    }
     const ok = NS.cinema.enter();
     if (!ok) return false;
     NS.state.active = true;
@@ -186,7 +178,25 @@
     return true;
   }
 
+  // v0.7.143：in-flight guard 防快速雙擊快速鍵造成的 race。
+  // enterReaderMode 是 async（有 await getSettings），中間時間窗若第二次 toggle
+  // 進來會看到 NS.state.active 還是 false、再跑一次 enterReaderMode——
+  // NS.state.hiddenEls + originalStyles 被第二輪 snapshot 蓋掉，第一輪 hide 的
+  // 元素永遠回不來。同樣 exit 也加 flag 防 enter→exit 中途再來一輪 enter。
+  let enterInFlight = false;
+  let exitInFlight = false;
+
   async function enterReaderMode() {
+    if (enterInFlight || exitInFlight) return false;
+    enterInFlight = true;
+    try {
+      return await enterReaderModeImpl();
+    } finally {
+      enterInFlight = false;
+    }
+  }
+
+  async function enterReaderModeImpl() {
     const result = NS.detector && NS.detector.detect();
     if (!result) {
       showToast('此頁無法偵測主文', 'error');
@@ -245,6 +255,16 @@
 
   function exitReaderMode() {
     if (!NS.state.active) return;
+    if (exitInFlight) return;
+    exitInFlight = true;
+    try {
+      exitReaderModeImpl();
+    } finally {
+      exitInFlight = false;
+    }
+  }
+
+  function exitReaderModeImpl() {
     // v0.7.101：移除 ESC keydown listener（避免 reader mode 關閉後 ESC 仍被攔）
     window.removeEventListener('keydown', onEscKey, true);
     // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
@@ -368,17 +388,16 @@
       // 「切換閱讀模式」+ 控制 Readwise 按鈕可見性。
       // 'article' = detector 偵測得到主文；null = 既非 cinema 也偵測不到主文
       // （chrome:// 類禁注入頁面則 sendMessage 直接 reject、popup 走另一路徑）。
+      // v0.7.143：改走 NS.detector.probe()（輕量、不 mutate DOM）。
+      // 既有 detect() 在 popup 開啟時跑完整 promote / narrow / shadow replica
+      // appendChild 流程，光是 probe siteMode flag 就在 page DOM 注入 shadow
+      // 替身——副作用 + 效能浪費。probe() 只跑 read-only 4 策略決定 siteMode。
       let siteMode = null;
-      if (NS.cinema && NS.cinema.isYouTubeWatch && NS.cinema.isYouTubeWatch()) {
-        siteMode = 'youtube-cinema';
-      } else if (NS.detector && typeof NS.detector.detect === 'function') {
+      if (NS.detector && typeof NS.detector.probe === 'function') {
         try {
-          const probe = NS.detector.detect();
-          // v0.7.135：X / Twitter status 場景 probe.el = null（合成容器要 enter()
-          // 才建），但仍視為可啟動閱讀模式——回 'article' 讓 popup 按鈕啟用
-          // 且 Readwise 按鈕顯示。
-          if (probe && (probe.el || probe.isXThread)) siteMode = 'article';
-        } catch (_) { /* 偵測失敗 = null */ }
+          const result = NS.detector.probe();
+          siteMode = result && result.siteMode ? result.siteMode : null;
+        } catch (_) { /* probe 失敗 = null */ }
       }
       sendResponse({
         active: !!NS.state.active,
@@ -409,6 +428,14 @@
     // 純粹委派給 NS.borderless.toggle()。非 YouTube watch 頁 toggle() 自己
     // no-op，這裡不再 guard 一次。
     if (msg.type === NS.MSG.TOGGLE_YT_BORDERLESS) {
+      // v0.7.143：cinema / borderless 互斥——啟動 borderless 時若 cinema 已 active
+      // 先 exit reader mode（cinema 走 NS.state.cinemaActive 路徑、必須走完整退出
+      // 流程才能清狀態 + icon），再 toggle borderless。退出 borderless 不踩這條
+      // （borderless toggle 自身決定 enter/exit）。
+      const willEnter = !(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
+      if (willEnter && NS.state.cinemaActive) {
+        exitReaderMode();
+      }
       if (NS.borderless && typeof NS.borderless.toggle === 'function') {
         NS.borderless.toggle();
       }
@@ -423,6 +450,25 @@
   // 走 storage.onChanged 而非訊息，好處是即使同時有多個分頁開啟閱讀模式，
   // 每個 tab 的 content script 都會收到事件、各自更新。
   if (chrome.storage && chrome.storage.onChanged) {
+    // v0.7.143：reapply 走 debounce 合併。popup 連點 stepper 字級/版心會觸發多次
+    // storage.sync.set → 多次 restore + await getSettings + apply 並發纏繞——
+    // originalStyles 可能 snapshot 已套樣式的中間狀態，最後 exit 還原不回原貌。
+    // 200ms 對人類連點足夠合併、對「單次調整」無感。
+    let reapplyTimer = null;
+    const scheduleReapply = () => {
+      if (reapplyTimer) clearTimeout(reapplyTimer);
+      reapplyTimer = setTimeout(async () => {
+        reapplyTimer = null;
+        // v0.7.143：cinema mode active 時 articleEl=null，styler.restore null 無意義
+        // 且可能 throw；明確 guard 避免誤觸發。reader mode 中途切到 cinema 不該踩。
+        if (!NS.state.active || NS.state.cinemaActive) return;
+        if (!NS.state.articleEl || !NS.styler) return;
+        NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
+        const settings = await getSettings();
+        NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
+      }, 200);
+    };
+
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
       if (!NS.state.active) return;
@@ -433,15 +479,13 @@
         if (next === false) uninstallKeyguard();
         else installKeyguard();
       }
+      // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
+      if (NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
       const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'lineHeight'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
-      (async () => {
-        NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
-        const settings = await getSettings();
-        NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
-      })();
+      scheduleReapply();
     });
   }
 

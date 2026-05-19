@@ -139,13 +139,12 @@
       v.videoWidth, v.videoHeight,
       window.innerWidth, window.outerHeight, window.innerHeight
     );
-    try {
-      const p = chrome.runtime.sendMessage({
-        type: NS.MSG.RESIZE_OWN_WINDOW,
-        payload: { height: target }
-      });
-      if (p && typeof p.catch === 'function') p.catch(() => {});
-    } catch (_) {}
+    // v0.7.143：走 NS.safeSendMessage（namespace 共用 helper），guard
+    // chrome.runtime.id 防 extension reload 後 context invalidated TypeError。
+    NS.safeSendMessage({
+      type: NS.MSG.RESIZE_OWN_WINDOW,
+      payload: { height: target }
+    });
   }
 
   function onYtNavigate() {
