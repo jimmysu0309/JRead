@@ -116,3 +116,86 @@ describe('cleaner — eet-china 標題與內文 sibling 結構（v0.7.141）', (
     }
   });
 });
+
+// v0.7.143 — title clone 必須在 restore() 時從 DOM 移除（forcing function）
+//
+// v0.7.141 bug：promoteUniqueTitleH1Into 把 wrapper cloneNode(true) prepend 進
+// articleEl 但**沒 push 進 hidden array**，restore() 路徑不認得這個 attribute、
+// 不會 removeChild。同 tab 多次進出 reader mode 會堆疊 N 份 H1 clone。
+//
+// 修法（v0.7.143）：clone push 進 hidden array 帶 __titleClone marker，restore()
+// 內 if (item.__titleClone) 走 removeChild path、不走標準 inline display 還原。
+describe('cleaner restore — title clone 必須清除（v0.7.143）', () => {
+  let window, document, articleEl, hidden;
+
+  before(() => {
+    const env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_PATH,
+      scripts: ['detector', 'cleaner'],
+      viewport: { width: 1000, height: 800 },
+      pretendToBeVisual: true
+    });
+    window = env.window;
+    document = env.document;
+    articleEl = document.querySelector('.article-text-con');
+    hidden = window.__JRead.cleaner.clean(articleEl);
+  });
+
+  it('clean 完成後 articleEl 內必須含 title clone（前置條件確認）', () => {
+    const clones = articleEl.querySelectorAll('[data-jread-title-clone="1"]');
+    assert.strictEqual(clones.length, 1, '前置條件：clean 後必須有 1 個 clone');
+  });
+
+  it('hidden array 必須含 __titleClone marker 條目', () => {
+    const cloneEntries = hidden.filter(item => item && item.__titleClone);
+    assert.strictEqual(cloneEntries.length, 1,
+      `hidden array 必須含 1 個 __titleClone 條目，實際 ${cloneEntries.length}`);
+  });
+
+  it('restore() 後 articleEl 內不可有任何 data-jread-title-clone 殘留（核心 forcing function）', () => {
+    window.__JRead.cleaner.restore(hidden);
+    const clones = articleEl.querySelectorAll('[data-jread-title-clone]');
+    assert.strictEqual(clones.length, 0,
+      `restore() 後 clone 必須完全移除（否則同 tab 多次 enter reader mode 會堆疊 N 份 H1）；實際殘留 ${clones.length} 個`);
+  });
+
+  it('restore() 後整個 document 內不可有任何 data-jread-title-clone 殘留', () => {
+    // 已在前一條跑過 restore；確認 page 上也無殘留（cleaner 內部 path 出包可能漏掉）
+    const clones = document.querySelectorAll('[data-jread-title-clone]');
+    assert.strictEqual(clones.length, 0,
+      `restore() 後 page 全域必須無 clone 殘留，實際 ${clones.length}`);
+  });
+});
+
+// v0.7.143 — promoteUniqueTitleH1Into 多次呼叫不可堆疊（reentry safety）
+//
+// 模擬同 tab 進入 reader mode → 退出 → 再進入 → 再退出 N 次的累積行為。
+// 若 restore 沒清乾淨，clone 會在每次 clean() 都多 prepend 一份。
+describe('cleaner — 多次 enter/exit reader mode 不可堆疊 title clone（v0.7.143）', () => {
+  let window, document, articleEl;
+
+  before(() => {
+    const env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_PATH,
+      scripts: ['detector', 'cleaner'],
+      viewport: { width: 1000, height: 800 },
+      pretendToBeVisual: true
+    });
+    window = env.window;
+    document = env.document;
+    articleEl = document.querySelector('.article-text-con');
+  });
+
+  it('連續 5 次 clean → restore 後 articleEl 內仍只有 0 個 clone', () => {
+    for (let i = 0; i < 5; i++) {
+      const hidden = window.__JRead.cleaner.clean(articleEl);
+      window.__JRead.cleaner.restore(hidden);
+    }
+    const clones = articleEl.querySelectorAll('[data-jread-title-clone]');
+    assert.strictEqual(clones.length, 0,
+      `第 5 次 restore 後 clone 必須完全清除（堆疊風險的 forcing function），實際殘留 ${clones.length}`);
+    const allH1 = document.querySelectorAll('h1');
+    assert.strictEqual(allH1.length, 1,
+      `5 次循環後 page 上 h1 數必須回到原始 1 個（不堆疊），實際 ${allH1.length}`);
+  });
+});

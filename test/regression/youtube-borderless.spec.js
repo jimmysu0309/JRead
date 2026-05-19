@@ -298,7 +298,9 @@ describe('youtube-borderless v0.7.134 — main.js 訊息 listener', () => {
   });
 
   it('TOGGLE_YT_BORDERLESS handler 必須呼 NS.borderless.toggle()', () => {
-    const m = MAIN_SRC.match(/NS\.MSG\.TOGGLE_YT_BORDERLESS[\s\S]{0,500}/);
+    // v0.7.143：handler body 因加入 cinema/borderless 互斥 mutex 變長，slice 從
+    // 500 字擴到 1500 字確保涵蓋整個 case body
+    const m = MAIN_SRC.match(/NS\.MSG\.TOGGLE_YT_BORDERLESS[\s\S]{0,1500}/);
     assert.ok(m, '抓不到 TOGGLE_YT_BORDERLESS handler slice');
     assert.match(m[0], /NS\.borderless[\s\S]*toggle\s*\(\s*\)/,
       'TOGGLE_YT_BORDERLESS handler 必須呼叫 NS.borderless.toggle()');
