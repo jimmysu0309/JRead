@@ -14,9 +14,31 @@
     }
   }
 
+  // v0.7.140：context-invalidated guard。extension reload 後既有 content
+  // script 仍跑舊代碼，但 chrome.runtime 失效（chrome.runtime.id === undefined）。
+  // 直接呼 chrome.runtime.sendMessage 會 throw `Cannot read properties of
+  // undefined (reading 'sendMessage')` —— Jimmy 2026-05-19 substack reader
+  // mode exit 時實機踩過（reader mode active 期間 reload extension，使用者
+  // 後續 exit / enter 操作都會踩這條）。統一走 helper：invalidated 時 silently
+  // no-op（fire-and-forget 的 SET_ACTIVE_ICON / SAVE_TO_READWISE 等 call site
+  // 不影響使用體驗；callback 版本 invoke null 讓 caller 走「沒回應」分支）。
+  function safeSendMessage(msg, cb) {
+    if (!chrome || !chrome.runtime || !chrome.runtime.id) {
+      if (cb) { try { cb(null); } catch (_) {} }
+      return;
+    }
+    try {
+      if (cb) chrome.runtime.sendMessage(msg, cb);
+      else chrome.runtime.sendMessage(msg);
+    } catch (_) {
+      // race condition：guard 通過後 context 才失效（極罕見，但保留安全網）
+      if (cb) { try { cb(null); } catch (_) {} }
+    }
+  }
+
   async function getSettings() {
     return new Promise(resolve => {
-      chrome.runtime.sendMessage({ type: NS.MSG.GET_SETTINGS }, resolve);
+      safeSendMessage({ type: NS.MSG.GET_SETTINGS }, resolve);
     });
   }
 
@@ -112,11 +134,11 @@
     NS.state.confidence = 1;
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: NS.MSG.REPORT_DETECTION_RESULT,
       payload: { ok: true, confidence: 1, strategy: 'youtube-cinema' }
     });
-    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
     return true;
   }
 
@@ -130,7 +152,7 @@
     const container = NS.xThread.enter();
     if (!container) {
       showToast('此頁無法偵測主推文', 'error');
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: NS.MSG.REPORT_DETECTION_RESULT,
         payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
       });
@@ -156,11 +178,11 @@
       uninstallKeyguard();
     }
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: NS.MSG.REPORT_DETECTION_RESULT,
       payload: { ok: true, confidence: 1, strategy: 'x-thread' }
     });
-    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
     return true;
   }
 
@@ -168,7 +190,7 @@
     const result = NS.detector && NS.detector.detect();
     if (!result) {
       showToast('此頁無法偵測主文', 'error');
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: NS.MSG.REPORT_DETECTION_RESULT,
         payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
       });
@@ -213,11 +235,11 @@
       uninstallKeyguard();
     }
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: NS.MSG.REPORT_DETECTION_RESULT,
       payload: { ok: true, confidence: result.confidence, strategy: result.strategy }
     });
-    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
     return true;
   }
 
@@ -234,7 +256,7 @@
       NS.state.active = false;
       NS.state.articleEl = null;
       NS.state.confidence = 0;
-      chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
+      safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
       return;
     }
     if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
@@ -267,7 +289,7 @@
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
     NS.state.originalStyles = null;
-    chrome.runtime.sendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
+    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
   }
 
   // 抽 reader card 的 outerHTML 給 popup 送 Readwise（v0.7.33）。
@@ -453,7 +475,7 @@
       // 該 API 僅 SW / popup / options page 可呼叫。改透過 sendMessage 給 SW
       // 中繼觸發 reload。
       if (NS.state.active) exitReaderMode();
-      chrome.runtime.sendMessage({ type: 'JREAD_RELOAD' });
+      safeSendMessage({ type: 'JREAD_RELOAD' });
     }
   });
 
