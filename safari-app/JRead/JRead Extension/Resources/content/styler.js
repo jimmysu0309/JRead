@@ -673,12 +673,27 @@ html.${HTML_CLASS} body {
       // fontSize 特殊值 0 = "Auto / 原站字級"，代表使用者明確選擇不注入
       // 任何 font-size override（每站保留原字級）。Number(0) || DEFAULT 會把
       // 0 轉成 DEFAULT、sentinel 失效——需用 Number.isFinite + >= 0 判斷保留 0。
+      //
+      // v0.7.143：上限 clamp。popup UI 已 clamp [12, 32]、options 也有 HTML5
+      // min/max，但儲存層完全沒驗——外部寫入或 storage 損壞時 `fontSize: 1e308`
+      // / `0.001` 會被當合法值注入 CSS。clamp 是第二道防線。
       const rawFs = Number(s.fontSize);
+      const rawCw = Number(s.contentWidth);
+      const rawLh = Number(s.lineHeight);
       const opts = {
-        fontSize: Number.isFinite(rawFs) && rawFs >= 0 ? rawFs : DEFAULTS.fontSize,
-        contentWidth: Number(s.contentWidth) || DEFAULTS.contentWidth,
+        // fontSize：保留 0 = Auto sentinel；其他 clamp [8, 200]px
+        fontSize: Number.isFinite(rawFs) && rawFs >= 0
+          ? (rawFs === 0 ? 0 : Math.min(200, Math.max(8, rawFs)))
+          : DEFAULTS.fontSize,
+        // contentWidth：clamp [300, 2000]px（300 是最窄可閱讀寬、2000 是大螢幕極限）
+        contentWidth: Number.isFinite(rawCw) && rawCw > 0
+          ? Math.min(2000, Math.max(300, rawCw))
+          : DEFAULTS.contentWidth,
         fontFamily: s.fontFamily || DEFAULTS.fontFamily,
-        lineHeight: Number(s.lineHeight) || DEFAULTS.lineHeight
+        // lineHeight：clamp [1.0, 3.0]（unitless ratio；< 1 字會重疊、> 3 段落破碎）
+        lineHeight: Number.isFinite(rawLh) && rawLh > 0
+          ? Math.min(3.0, Math.max(1.0, rawLh))
+          : DEFAULTS.lineHeight
       };
       const theme = themeOf(s.theme);
 
@@ -751,7 +766,22 @@ html.${HTML_CLASS} body {
       // 直接子含 picture / img / figure 的元素，runtime 設 inline !important
       // 蓋過原站 stylesheet。CSS :has() jsdom 不支持，改 runtime 解決。
       const galleryFlex = [];
-      for (const el of articleEl.querySelectorAll('*')) {
+      // v0.7.144：原 code 對主文每個後代跑 getComputedStyle 找 flex/grid + 含
+      // picture/img/figure 直接子的 wrapper。大頁面 + 多次設定變更時負荷重。
+      // 改為先 querySelectorAll('picture, img, figure') 收媒體節點 → 各自往上
+      // walk parent 鏈到 articleEl 為止收集祖先 Set → 對 Set 內元素才跑
+      // getComputedStyle。從 O(全 DOM) → O(媒體節點 × 平均深度)；純文字主文
+      // 直接 short-circuit 0 次 getComputedStyle。
+      const mediaAncestors = new Set();
+      const mediaNodes = articleEl.querySelectorAll('picture, img, figure');
+      for (const media of mediaNodes) {
+        let cur = media.parentElement;
+        while (cur && cur !== articleEl) {
+          mediaAncestors.add(cur);
+          cur = cur.parentElement;
+        }
+      }
+      for (const el of mediaAncestors) {
         const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
         if (!cs) continue;
         if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
