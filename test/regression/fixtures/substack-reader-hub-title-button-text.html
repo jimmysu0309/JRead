@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>substack reader hub minimal repro</title></head>
+<body>
+<!--
+  v0.7.140 substack reader hub bug 最小重現 fixture：
+
+  bug：「reader mode 標題消失」（Jimmy 2026-05-19 回報，
+  https://substack.com/home/post/p-188798414 實機踩過）。
+
+  根因：cleaner 的 hideInsideArticleByHeadingText 掃 div/span/p direct text
+  命中 NOISE_HEADING_TEXT_RE，但**沒排除 button 內 element**。substack 的訂閱
+  按鈕是 <button class="subscribe-btn"><span class="button-text">Subscribe</span></button>，
+  內層 span direct text == "Subscribe"，命中 `^subscribe$` heading keyword rule。
+  span 沒 section/aside 祖先 → 走 walk-up fallback findSafeWrapperForHeading。
+  substack 標題用 <a>（非 <h1>）、整個標題區塊沒任何 <p>（byline/description 用
+  div）、class 全是 emotion hash 不含 title-anchor token（'title' / 'headline'
+  / 'article-title' 等），三道 anchor guard 全失效 → walk-up 一路走到 article
+  direct child wrapper (.pc-justifyContent-center) 才停 → hide 它 → 整段標題 +
+  publication meta + byline + description 連坐消失。
+
+  結構性通則修法（cleaner.js hideInsideArticleByHeadingText 加 `if (h.closest('button')) continue`）：
+  button text 是 CTA word（Subscribe/Follow/Read more 等）撞 heading keyword 是
+  結構性 false positive；button 本身會被 hideInsideArticleAllButtons 清，不需要
+  heading rule 走 walk-up。這條 fix 跨站適用，不綁定 substack。
+
+  fixture 最小化原則：article 內結構盡量複製 substack reader hub「無 <h1> + 無
+  <p>（在標題區塊內）+ 全 emotion hash class」三個關鍵特徵，確保 anchor guard
+  失效；後段補 4 個夠長 <p> 讓 detector 選到 article（textLen > MIN_TEXT_LEN
+  200 chars）。
+-->
+<article class="pencraft pc-display-flex pc-flexDirection-column pc-gap-16 pc-reset typography newsletter-post post post-viewer-post">
+  <!-- article 第一個 direct child：標題區塊 wrapper（被誤殺的元素） -->
+  <div class="pencraft pc-display-flex pc-justifyContent-center pc-reset" data-test="title-wrapper">
+    <div class="pencraft pc-display-flex pc-flexDirection-column pc-gap-16 pc-reset flex-grow-rzmknG">
+      <!-- publication meta -->
+      <div class="pencraft pc-display-flex pc-flexDirection-column pc-gap-4 pc-alignItems-flex-start pc-reset">
+        <span>
+          <div class="pencraft pc-reset color-secondary-ls1g8s line-height-20-t4M0El font-meta-MWBumP size-11-NuY2Zx weight-medium-fw81nC transform-uppercase-yKDgcq reset-IxiVJZ meta-EgzBVA">
+            <span class="pencraft pc-reset decoration-hover-underline-ClDVRM reset-IxiVJZ">
+              <a target="_blank" class="link-LIBpto">自由研究帳</a>
+            </span>
+          </div>
+        </span>
+        <!-- 標題 <a>（非 <h1>，class 全是 emotion hash 不含 title-anchor token） -->
+        <div class="pencraft pc-display-flex pc-flexDirection-column pc-gap-8 pc-alignItems-flex-start pc-reset">
+          <a target="_blank" class="pencraft pc-reset line-height-44-JcViWb font-display-nhmvtD size-36-qKvSib weight-bold-DmI9lw decoration-hover-underline-ClDVRM" data-test="article-title">想煮咖哩給喜歡的人吃的晚上，</a>
+        </div>
+        <!-- byline + description（用 div 非 <p>） -->
+        <div class="pencraft pc-reset flex-grow-rzmknG color-secondary-ls1g8s align-center-y7ZD4w line-height-20-t4M0El font-text-qe4AeH size-15-Psle70 weight-regular-mUq6Gb reset-IxiVJZ">By 許瞳 Hitomi Xu · Launched 2 years ago</div>
+        <div class="pencraft pc-reset flex-grow-rzmknG color-primary-zABazT align-center-y7ZD4w line-height-20-t4M0El font-text-qe4AeH size-15-Psle70 weight-regular-mUq6Gb reset-IxiVJZ">寫散文的女生經營的自由研究。用書、音樂、文化研究剪輯心靈電影，直到下次想像力落地。</div>
+      </div>
+      <!-- subscribe widget（觸發 bug 的 button + span Subscribe） -->
+      <div class="pencraft pc-display-flex pc-flexDirection-column pc-gap-16 pc-alignItems-center pc-reset">
+        <div class="subscribe-widget subscribeWidget-sIP7pQ" data-test="subscribe-widget">
+          <div class="pencraft pc-display-flex pc-justifyContent-center pc-reset">
+            <div class="container-IpPqBD">
+              <form method="post" novalidate="" class="form form-M5sC90">
+                <div class="sideBySideWrap-vGXrwP">
+                  <div class="emailInputWrapper-QlA86j">
+                    <input name="email" readonly="" placeholder="Type your email..." type="email" class="pencraft emailInput-OkIMeB input-y4v6N4 inputText-pV_yWb readOnly-yVYuPy">
+                  </div>
+                  <button tabindex="0" type="submit" class="pencraft pc-reset rightButton primary subscribe-btn button-VFSdkv buttonBase-GK1x3M" data-test="subscribe-btn">
+                    <span class="button-text " data-test="subscribe-button-text">Subscribe</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- article 主文段落（detector 選 article 需要 textLen >= MIN_TEXT_LEN 200） -->
+  <p data-test="body-p-1">這本揚銘在臉書上宣告數年「已經在寫了 / 寫到一半了 / 改稿了！」的新（？）書，是他旅居尾道的旅宿、擔任管理員期間，所寫的酸甜苦辣離家記，日記後頭還貼心地附上了尾道觀光大使直授的私房景點。</p>
+  <p data-test="body-p-2">我在上市第一天就迫不及待買了 kobo 電子版。讀了前幾頁我就哭出來了，是喜極而泣，因為揚銘說，這本書寫這麼久，是希望一字一句都是他的真心喜悅。「如果覺得寫作痛苦，大可以不寫。我是因為喜歡才寫，有好玩的事想說給你聽才寫，最希望你看了開心，不想讓你看了難過。」</p>
+  <p data-test="body-p-3">我的天啊，這位愛妻家眼鏡男子的發言，完全撼動了我這個台北 emo 小女生，視寫作為獻祭、告解、排宿便的價值觀（宿便未清，難怪一直碎碎念）。對啊！何年何月起，寫作變成傷人害己的道具，忘記創作該是喜悅。</p>
+  <p data-test="body-p-4">我上回快快樂樂地寫作文，是什麼時候呢？記憶最鮮明的是大學延畢那年，每月寫回顧給當時男朋友的時候了。果真，當我書才讀了一點，就在國際書展見到揚銘時，他警告我：「書的後半有點放閃喔，收到很多客訴。」</p>
+</article>
+</body>
+</html>

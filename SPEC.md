@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.138**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.140**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -303,12 +303,24 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 
 使用者三項必要設定（來自需求）：**頁面寬度、日夜間模式、字型大小**。其餘欄位先保留後端預設，未來 Options UI 決定是否曝露給使用者。
 
+v0.7.140 起 popup 多了「字型」select，提供 4 個內建 stack：
+
+| popup 選項 | storage `fontFamily` 字面值 |
+| --- | --- |
+| 系統預設 | `system-ui`（== styler DEFAULTS.fontFamily，**不注入 override**，保留原站字體） |
+| 襯線 | `"Noto Serif TC", Georgia, "Times New Roman", serif` |
+| 無襯線 | `"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif` |
+| 等寬 | `ui-monospace, Menlo, Consolas, monospace` |
+
+option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐字一致（forcing function spec 校對）。styler 注入時會在使用者 stack 末尾再串自己的 fallback chain，即使具名字型都沒裝也能 fall back 到對應的 generic family。
+
+
 | 欄位 | 型別 | 預設值 | 儲存位置 | 使用者可調？ |
 | --- | --- | --- | --- | --- |
 | `theme` | `'light' \| 'dark' \| 'sepia'` | `'light'` | `storage.sync` | ✅（日/夜間切換） |
 | `fontSize` | `number`（px） | `18` | `storage.sync` | ✅ |
 | `contentWidth` | `number`（px） | `720` | `storage.sync` | ✅（頁面寬度） |
-| `fontFamily` | `string` | `'system-ui'` | `storage.sync` | ❌（MVP 固定） |
+| `fontFamily` | `string` | `'system-ui'` | `storage.sync` | ✅（popup「字型」select：系統預設/襯線/無襯線/等寬，v0.7.140） |
 | `lineHeight` | `number` | `1.7` | `storage.sync` | ❌（MVP 固定） |
 | `autoEnableDomains` | `string[]` | `[]` | `storage.sync` | ❌（MVP 不做） |
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |

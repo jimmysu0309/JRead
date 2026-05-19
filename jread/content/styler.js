@@ -683,12 +683,16 @@ html.${HTML_CLASS} body {
       const theme = themeOf(s.theme);
 
       // 判斷哪些是「使用者改過」→ 需要 override；預設值 / Auto 不動原站
-      //   fontSize = 0 (Auto) → 不注入（跟 DEFAULT 行為一致，都保留原站）
-      //   fontSize = DEFAULT (18) → 不注入
-      //   fontSize = 其他數字（12~32） → 注入 px 值
+      //   fontSize = 0 (Auto) → 不注入（保留原站字級的明確 sentinel）
+      //   fontSize > 0 → 一律注入（包括 == DEFAULT 18）。v0.7.140 修正：
+      //     舊版「fontSize == DEFAULT → 不注入」造成 popup 顯示 18 但實際看
+      //     到原站 20px / 22px 的 UX confusion——「未動設定 = 保留原站」這條
+      //     隱含語義太隱晦使用者無感知。Auto = 0 sentinel 已涵蓋「我要保留
+      //     原站」的明確意圖，DEFAULT skip 不再有獨立語義。Jimmy 2026-05-19
+      //     substack reader hub 截圖回報「設定為 18 仍顯示 20」實機觸發。
       const overrides = {
         theme: (s.theme || DEFAULTS.theme) !== DEFAULTS.theme,
-        fontSize: opts.fontSize > 0 && opts.fontSize !== DEFAULTS.fontSize,
+        fontSize: opts.fontSize > 0,
         fontFamily: opts.fontFamily !== DEFAULTS.fontFamily,
         lineHeight: opts.lineHeight !== DEFAULTS.lineHeight
       };

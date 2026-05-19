@@ -154,8 +154,8 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
       const after = mainSrc.slice(idx);
       const endIdx = after.search(/}\s*else\s+if|\n\s*}\s*\)\s*;/);
       const body = endIdx >= 0 ? after.slice(0, endIdx + 1) : after;
-      assert.match(body, /chrome\.runtime\.sendMessage\s*\(\s*\{\s*type:\s*['"]JREAD_RELOAD['"]/,
-        "reload 分支必須 sendMessage({type:'JREAD_RELOAD'})——forcing：直接呼 chrome.runtime.reload() 會炸 TypeError（content script 沒此 API）");
+      assert.match(body, /safeSendMessage\s*\(\s*\{\s*type:\s*['"]JREAD_RELOAD['"]/,
+        "reload 分支必須 safeSendMessage({type:'JREAD_RELOAD'})——forcing：直接呼 chrome.runtime.reload() 會炸 TypeError（content script 沒此 API）；v0.7.140 起 main.js 所有 sendMessage 統一走 safeSendMessage helper 加 context-invalidated guard");
     });
   });
 });

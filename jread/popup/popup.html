@@ -314,6 +314,31 @@
     }
 
     /* ==========================================================
+       Font-family select — 對齊其他 row 元件 110px / 28px
+       ========================================================== */
+    .font-family-select {
+      width: 110px;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      background: var(--jr-surface);
+      color: var(--jr-neutral-900);
+      font-family: var(--jr-font-ui);
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23888888' d='M0 0l5 6 5-6z'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      padding-right: 24px;
+    }
+    .font-family-select:hover { border-color: var(--jr-neutral-500); }
+    .font-family-select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
+
+    /* ==========================================================
        Auto toggle — off = ghost, on = filled blue
        ========================================================== */
     .font-controls { display: inline-flex; align-items: center; gap: 6px; }
@@ -435,6 +460,16 @@
         <span class="val" id="content-width-val">720</span>
         <button data-action="width-inc" aria-label="版心變寬">+</button>
       </div>
+    </div>
+
+    <div class="setting-row">
+      <label for="font-family-select">字型</label>
+      <select id="font-family-select" class="font-family-select" aria-label="字型">
+        <option value="system-ui">系統預設</option>
+        <option value="&quot;Noto Serif TC&quot;, Georgia, &quot;Times New Roman&quot;, serif">襯線</option>
+        <option value="&quot;Noto Sans TC&quot;, -apple-system, &quot;Helvetica Neue&quot;, sans-serif">無襯線</option>
+        <option value="ui-monospace, Menlo, Consolas, monospace">等寬</option>
+      </select>
     </div>
   </section>
 
