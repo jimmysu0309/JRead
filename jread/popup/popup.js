@@ -16,16 +16,31 @@ const shortcutEl = document.getElementById('shortcut-hint');
 const fontSizeValEl = document.getElementById('font-size-val');
 const fontAutoBtn = document.getElementById('font-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
+const fontFamilySelect = document.getElementById('font-family-select');
 const themeBtns = document.querySelectorAll('.theme-btn');
 
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
 const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
 const CONTENT_WIDTH = { min: 480, max: 1200, step: 40, default: 720 };
+// v0.7.140：popup 字型 select 的 4 個內建 stack。預設 'system-ui' 對齊 styler
+// DEFAULTS.fontFamily —— 選「系統預設」== 不注入 font-family override，保留各
+// 站原本字體。其他三組故意把 generic family（serif / sans-serif / monospace）
+// 放在 stack 末尾，確保即使 stack 內具名字型都沒裝，瀏覽器仍能 fall back 到
+// 一個合理的通用 family。styler 注入時會再串接自己的 fallback chain，重複沒關
+// 係（CSS 解析正確、第一個能命中的字型即勝出）。HTML 內 option value 必須與
+// 此處字面值逐字一致（forcing function spec 會校對）。
+const FONT_STACKS = {
+  system: 'system-ui',
+  serif: '"Noto Serif TC", Georgia, "Times New Roman", serif',
+  sans: '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif',
+  mono: 'ui-monospace, Menlo, Consolas, monospace'
+};
 const DEFAULT_SETTINGS = {
   theme: 'light',
   fontSize: FONT_SIZE.default,
   contentWidth: CONTENT_WIDTH.default,
+  fontFamily: FONT_STACKS.system,
   // v0.7.131：reader mode 攔截原站快速鍵；popup 不放 toggle（options 有），這裡
   // 僅作 storage.get 的 default fallback，避免讀回 undefined。
   blockPageShortcuts: true
@@ -65,6 +80,13 @@ function render(settings) {
   document.querySelector('[data-action="width-inc"]').disabled = settings.contentWidth >= CONTENT_WIDTH.max;
   // Auto 按鈕 active 狀態
   if (fontAutoBtn) fontAutoBtn.classList.toggle('active', isAuto);
+  // 字型 select：value 對 4 個 option match 不到（例如外部直接 storage.set
+  // 自訂 stack）時 fall back 顯示「系統預設」但不寫回 storage，避免默默改動
+  // 使用者外部設定。
+  if (fontFamilySelect) {
+    fontFamilySelect.value = settings.fontFamily;
+    if (fontFamilySelect.value === '') fontFamilySelect.value = FONT_STACKS.system;
+  }
 }
 
 let current = { ...DEFAULT_SETTINGS };
@@ -113,6 +135,11 @@ document.querySelector('[data-action="width-dec"]').addEventListener('click', ()
 document.querySelector('[data-action="width-inc"]').addEventListener('click', () => {
   save({ contentWidth: clamp(current.contentWidth + CONTENT_WIDTH.step, CONTENT_WIDTH.min, CONTENT_WIDTH.max) });
 });
+if (fontFamilySelect) {
+  fontFamilySelect.addEventListener('change', (e) => {
+    save({ fontFamily: e.target.value });
+  });
+}
 
 // ---- 切換閱讀模式 ------------------------------------------------------
 async function getActiveTabId() {

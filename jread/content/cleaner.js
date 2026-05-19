@@ -1075,6 +1075,20 @@
       if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
       if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
       if (isInPreserved(h)) continue;
+      // v0.7.140：button 內 element 不該觸發 heading rule——button text 是 CTA
+      // word（Subscribe / Follow / Read more 等）撞 heading keyword 是結構性
+      // false positive；button 本身會被 hideInsideArticleAllButtons 無條件清，
+      // 不需要 heading rule 走 walk-up fallback。
+      //
+      // substack reader hub 實機踩過：subscribe-btn 內 `<span class="button-text">
+      // Subscribe</span>` 命中 `^subscribe$` heading rule，substack 標題用 <a>
+      // 不是 <h1>、整個標題區塊沒任何 <p>（byline/description 用 div）、class
+      // 全是 emotion hash 不含 title-anchor token——三道 anchor guard 全失效，
+      // walk-up fallback 一路走到 article direct child wrapper 才停，把整段
+      // 標題 + meta + byline + description + subscribe 區塊連坐 hide。
+      //
+      // 結構性通則：button 內 text 對 heading rule 來說恆是 false positive。
+      if (h.closest('button')) continue;
       let target = h.closest('section, aside');
       // closest hit 分支也必須跑三道主文 anchor 保護——businessweekly blog 實測：
       // `<div class="line-sub-title">FOLLOW US</div>` 命中 `^follow\s+us`，
@@ -2919,6 +2933,9 @@
       if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
       if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
       if (isInPreserved(h)) continue;
+      // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
+      // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
+      if (h.closest('button')) continue;
       let target = h.closest('section, aside');
       // 同 hideInsideArticleByHeadingText：closest target 含主文 anchor 也視為過寬
       const dynTooWide = target && target !== articleEl &&

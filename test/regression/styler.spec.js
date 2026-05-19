@@ -668,17 +668,21 @@ describe('styler — 骨架與可逆性', () => {
 // 改過後才套 override。避免「使用者只想關雜訊、沒想換字體」卻被強制換字體。
 // -----------------------------------------------------------------------------
 describe('styler — 使用者設定 override（預設值不動原站）', () => {
-  it('預設設定 → CSS 不注入 font-size / font-family / line-height 覆寫', () => {
+  it('預設設定 → CSS 仍注入 font-size（v0.7.140 修正）、連帶 line-height、不注入 font-family', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    // 卡片 rule 不得含這些 property（整個 CSS 都不得含）
-    assert.ok(!/font-size:\s*\d+px/.test(css),
-      '預設 fontSize 時不得注入 font-size（保留原站字級）');
+    // v0.7.140：fontSize == DEFAULT (18) 仍注入——使用者選 18 預期看到 18px
+    //（substack reader hub 實機踩過：popup 顯示 18 但實際看到原站 source-serif-pro
+    // 20px）。Auto = 0 是唯一「保留原站」sentinel。fontSize 注入時連帶注入
+    // line-height（既有設計：字級改了行高必須等比縮放，避免原站 px 鎖死的
+    // line-height 對小字級變過寬行距）。font-family 仍走「改過才注入」邏輯。
+    assert.ok(/font-size:\s*18px/.test(css),
+      '預設 fontSize 18 必須注入 font-size 18px（避免被原站樣式覆蓋造成 UX confusion）');
+    assert.ok(/line-height:\s*1\.7/.test(css),
+      'fontSize 注入時連帶注入 line-height（既有設計，DEFAULT lineHeight 1.7）');
     assert.ok(!/font-family:/.test(css),
       '預設 fontFamily 時不得注入 font-family（保留原站字體）');
-    assert.ok(!/line-height:/.test(css),
-      '預設 lineHeight 時不得注入 line-height（保留原站行高）');
   });
 
   it('非預設 fontSize → 注入 font-size', () => {
@@ -686,6 +690,16 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 22 });
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(/font-size:\s*22px/.test(css));
+  });
+
+  it('fontSize === DEFAULT (18) 必須注入 font-size 18px（v0.7.140 forcing function）', () => {
+    // forcing function：避免回退到舊版「fontSize == DEFAULT 不注入」的 UX trap
+    // —— popup 顯示 18 / 實際看到原站非 18px 的場景。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 18 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/font-size:\s*18px\s*!important/.test(css),
+      'fontSize 18 必須以 !important 注入 (穿透原站 source-serif-pro / NYT body class 等規則)');
   });
 
   it('非預設 fontFamily → 注入 font-family', () => {
@@ -864,7 +878,7 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(/max-width:\s*880px/.test(css880));
   });
 
-  it('CSS 不得套 heading / p / ul / ol / li / blockquote / a 的「排版 typography」rule（font-size / color / line-height / font-family）', () => {
+  it('Auto (fontSize=0) 下 CSS 不得套 heading / p / ul / ol / li / blockquote / a 的「排版 typography」rule（font-size / color / line-height / font-family）', () => {
     // v0.6.0 設計：v0.5.x 對 heading / p 等下了 font-size / line-height /
     // color / font-family 排版 rule，在多站打架，baseline 全部移除——
     // typography 由原站 CSS 自己生效。
@@ -873,8 +887,13 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     // v0.7.102：再放寬到 p / ul / ol / blockquote 加 margin/padding（同 BBC
     // p 緊貼問題），但仍禁 typography。li / a 維持完全不下 rule（避免列表
     // 內部結構 / 連結色被覆寫）。
+    // v0.7.140：「fontSize > 0 一律注入 BODY_TEXT_SEL（含 p / li / blockquote
+    // / dd / dt）穿透 BBC / NYT class rule」是必要設計——本條驗收必須用
+    // fontSize=0 (Auto) 跑，確保「使用者明確選擇保留原站」時 styler 不主動
+    // 對 p / li / blockquote 下 typography rule（baseline v0.6 精神）。
+    // fontSize > 0 時的 BODY_TEXT_SEL rule 由另一條 spec 驗收。
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 0 });
     const css = document.getElementById('__jread-style').textContent;
 
     // 可下 margin/padding rule 的 selector（v0.7.100 + v0.7.102 範圍）：
