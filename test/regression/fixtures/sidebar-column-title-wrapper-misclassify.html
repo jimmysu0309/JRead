@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>想煮咖哩給喜歡的人吃的晚上， - 自由研究帳</title>
+  <meta property="og:title" content="想煮咖哩給喜歡的人吃的晚上，">
+</head>
+<body>
+<!--
+  v0.7.142 fixture：hideInsideArticleSidebarColumns 誤判主文標題 wrapper 為
+  sidebar column 的最小重現。
+
+  實機 bug（Jimmy 2026-05-19 substack reader hub 二次回報）：v0.7.140 button-text
+  guard 修法已擋掉 hideInsideArticleByHeadingText 對 button 內 span 的 walk-up
+  fallback hide，但**另一條 rule hideInsideArticleSidebarColumns 仍命中**：
+  - main = 主文 content wrapper（textLen=2074、linkDensity 接近 0）
+  - sibling = 標題 wrapper（textLen=51、linkDensity=0.61 含 subscribe button /
+    avatar links / publication link 等）
+  - 條件 A: sibling.textLen 51 < main × 10% 207 AND sibling.linkDensity 0.61 > 0.5
+  - → hide 整個標題 wrapper（含 page-wide unique title link）
+
+  修法（v0.7.142）：cleaner hideInsideArticleSidebarColumns 對 sibling 加 canonical
+  title guard——sibling 內含 textContent strict equals og:title / document.title
+  第一段（split |｜-—–）的 element → 視為「文章 header 區」、skip hide。
+
+  通則性：「sibling 含 page-wide canonical title 字串」是「該 sibling 是文章
+  header wrapper」最強訊號；跨站適用、不綁 substack。
+-->
+<article>
+  <!-- 標題 wrapper：短 textLen + 高 linkDensity（subscribe button / share / avatar links），
+       觸發 hideInsideArticleSidebarColumns 條件 A 誤判為 sidebar -->
+  <div data-test="title-wrapper">
+    <a href="#" data-test="title-link">想煮咖哩給喜歡的人吃的晚上，</a>
+    <a href="#">x</a><a href="#">x</a><a href="#">x</a>
+  </div>
+  <!-- 主文 wrapper：長 textLen + 低 linkDensity（純 p 段落），被選為 main -->
+  <div data-test="content-wrapper">
+    <p>這本揚銘在臉書上宣告數年「已經在寫了 / 寫到一半了 / 改稿了！」的新（？）書，是他旅居尾道的旅宿、擔任管理員期間，所寫的酸甜苦辣離家記，日記後頭還貼心地附上了尾道觀光大使直授的私房景點。書中除了詳實記錄日記，揚銘也用獨特的觀察視角，捕捉了尾道這座小城鎮的人情味與生活節奏，讓讀者彷彿親臨現場。</p>
+    <p>我在上市第一天就迫不及待買了 kobo 電子版。讀了前幾頁我就哭出來了，是喜極而泣，因為揚銘說，這本書寫這麼久，是希望一字一句都是他的真心喜悅。「如果覺得寫作痛苦，大可以不寫。我是因為喜歡才寫，有好玩的事想說給你聽才寫，最希望你看了開心，不想讓你看了難過。」這段話深深打動了我，讓我重新思考寫作這件事對自己的意義。</p>
+    <p>我的天啊，這位愛妻家眼鏡男子的發言，完全撼動了我這個台北 emo 小女生，視寫作為獻祭、告解、排宿便的價值觀（宿便未清，難怪一直碎碎念）。對啊！何年何月起，寫作變成傷人害己的道具，忘記創作該是喜悅。揚銘用他自己的生命實踐證明，寫作可以是一件幸福的事情，可以是分享喜悅的方式。</p>
+    <p>我上回快快樂樂地寫作文，是什麼時候呢？記憶最鮮明的是大學延畢那年，每月寫回顧給當時男朋友的時候了。果真，當我書才讀了一點，就在國際書展見到揚銘時，他警告我：「書的後半有點放閃喔，收到很多客訴。」我笑了出來，但又心生羨慕，能寫出這樣讓讀者「客訴」的甜蜜，本身就是一種幸福。</p>
+  </div>
+</article>
+</body>
+</html>
