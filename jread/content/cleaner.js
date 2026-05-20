@@ -2912,6 +2912,62 @@
     }
   }
 
+  // ---- 主文內：video interlude widget（文章中段插播推薦影片）-------------
+  //
+  // GQ Taiwan / Vogue / Wired / Vanity Fair 等 Condé Nast 旗下站點共用
+  // CMS，會在文章中段插入「WATCH」widget：一個 `<figure>` 內含 heading
+  // ("WATCH")、外連的影片標題 `<a>`、與 iframe 影片 embed。實機是「另
+  // 一篇影片的推薦」，跟主文無關，本質類似廣告插播。
+  //
+  // figure 預設由 PRESERVE_SEL（hideInsideArticleThirdPartyIframes 走
+  // isInPreserved）保護不會被砍 iframe；外層 figure 自身也不會被其他
+  // cleaner rule 動（figure 是主文媒體保護單位）。結果 widget 整塊殘留
+  // 視覺上「heading + 標題連結 + 歪掉的影片 embed」。
+  //
+  // 結構性通則（不綁 hostname / 不綁 class / 不綁 data-testid）：
+  //   - `<figure>` 自身**含 iframe 或 video**（媒體 embed）
+  //   - **且**該 figure **含 `<a href>` text 長度 >= 20 chars**（指向別頁的
+  //     「標題連結」；主文 figure 的 source-credit a 通常 < 10 chars）
+  //   - 排除 figcaption 內的 inline a（主文圖說合法 inline link）
+  //   - 排除主文本身與 articleEl 祖先
+  //   → 視為 interlude widget，hide 整個外層 figure
+  //
+  // 為何 20 chars threshold：主文真實 figure 內的 a 連結通常是「source:
+  // AP」「攝影：張三」「點此放大」這類 < 10 chars 短文字；interlude
+  // widget 的 a 是「影片完整標題」，跨站慣例 20-100 chars。20 是兩者
+  // 之間有安全 margin 的判定值。
+  //
+  // 為何不只 hide iframe / 只動內部結構：interlude widget 的 heading
+  // ("WATCH") + 標題連結若留下，視覺殘留依然是「跟主文無關的推薦」；
+  // 必須整塊 figure hide 才乾淨。
+  //
+  // 與 hideInsideArticleThirdPartyIframes 的關係：那條對「figure 外的
+  // iframe」hide（未知 embed → noise）；本條對「整個 figure 是 widget
+  // wrapper」hide（包了 iframe 但 figure 自身就是雜訊容器）。互補不重疊。
+  function hideInsideArticleVideoInterludes(articleEl, hidden) {
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (fig.dataset && fig.dataset.jreadHidden === '1') continue;
+      if (fig === articleEl) continue;
+      if (fig.contains && fig.contains(articleEl)) continue;
+      // 必須含 iframe 或 video（媒體 embed 訊號）
+      const hasMedia = fig.querySelector && fig.querySelector('iframe, video');
+      if (!hasMedia) continue;
+      // 必須含「指向別頁的長文字 a」(interlude title-link 訊號)
+      let hasInterludeLink = false;
+      const links = fig.querySelectorAll ? fig.querySelectorAll('a[href]') : [];
+      for (const a of links) {
+        // 主文圖說 inline link 跳過（合法）
+        if (a.closest && a.closest('figcaption')) continue;
+        const text = norm(a.textContent || '');
+        if (text.length < 20) continue;
+        hasInterludeLink = true;
+        break;
+      }
+      if (!hasInterludeLink) continue;
+      hide(fig, hidden);
+    }
+  }
+
   // ---- 主文內：inline 廣告插播文字 heuristic ---------------------------
   // 自由時報 / 聯合 / ETtoday 等台灣新聞站在主文段落中段插播「廣告（請
   // 繼續閱讀本文）」類 placeholder 短文字，無可識別 class、不成 section
@@ -3237,6 +3293,7 @@
       hideInsideArticleByKeyword(articleEl, hidden, containers);
       hideInsideArticleByThirdPartyAds(articleEl, hidden);
       hideInsideArticleThirdPartyIframes(articleEl, hidden);
+      hideInsideArticleVideoInterludes(articleEl, hidden);
       hideInsideArticleByHeadingText(articleEl, hidden);
       hideInsideArticleByLinkText(articleEl, hidden);
       hideInsideArticleHashtagClusters(articleEl, hidden);
