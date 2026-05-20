@@ -599,6 +599,34 @@
     }
   }
 
+  // v0.7.147 fallback helper：判斷 h1 是否含明確「主文標題」class 訊號。
+  // 用於 promoteUniqueTitleH1Into 的 strict equality fail 場景（Shinkansen
+  // 等翻譯擴展翻 body h1 後、document.title 仍是原文、strict eq 失敗）。
+  //
+  // 訊號 token：article / post / entry / page / news / story / content 前綴
+  // 接 title / headline / heading；或單純 title / headline（但排除 subtitle /
+  // supertitle / microtitle 等變體）。
+  //
+  // 跨站適用：eet-china 是 `<h1 class="article-title">`、WordPress 通用
+  // `entry-title`、各 CMS 共用 `post-title` / `page-title` / `headline`。
+  // newtalk-tw site logo 通常是 `<h1 class="site-logo">` 或 `class="logo"`，
+  // 不含 title token，fallback 不會誤觸發。
+  const TITLE_CLASS_HIT_RE = /(?:^|[-_\s])(?:article|post|entry|page|news|story|content)[-_]?(?:title|headline|heading)(?:[-_\s]|$)|(?:^|[-_\s])(?:title|headline)(?:[-_\s]|$)/i;
+  const TITLE_CLASS_NEGATIVE_RE = /(?:sub|super|micro|tiny|aside|side)title/i;
+  function looksLikeArticleTitleH1(h1) {
+    if (!h1) return false;
+    function check(s) {
+      if (!s) return false;
+      if (TITLE_CLASS_NEGATIVE_RE.test(s)) return false;
+      return TITLE_CLASS_HIT_RE.test(s);
+    }
+    if (check((h1.className || '').toString())) return true;
+    if (check(h1.id || '')) return true;
+    const p = h1.parentElement;
+    if (p && check((p.className || '').toString())) return true;
+    return false;
+  }
+
   // v0.7.141 eet-china 修法：站點若**無 <article> 標籤**且標題 <h1> 與內文
   // 容器（articleEl）是 <body> 的 sibling，detector ensureArticleContainsTitleH1
   // 算 LCA = <body> 被 guard reject 不 promote articleEl 含 h1（避免吞整頁）。
@@ -634,7 +662,22 @@
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
     // prefix 但 partial includes baseTitle 而誤觸發 promote——markPromotedTitleIfMissing
     // 處理那條 case，本機制只負責「h1 自身就是主文標題完整字串」場景）。
-    if (h1Text !== baseTitle) return;
+    if (h1Text !== baseTitle) {
+      // v0.7.147 fallback：翻譯擴展（Shinkansen / Google Translate 等）翻 body
+      // 內 h1 text 但 `<title>` tag 沒翻，導致 strict equality fail（簡體 docT
+      // vs 繁體 h1）。看 h1 自己 / parent class / id 是否含明確「主文標題」
+      // class 訊號（article-title / post-title / entry-title 等慣用 token），
+      // 若有則視為主文標題、繞過 strict equality 仍 promote。
+      //
+      // class 訊號排除 newtalk.tw site logo h1（class 通常為 `site-logo` /
+      // `header-logo`、不含 article-title token），保持 v0.7.141 修法刻意設計
+      // 的「不誤觸發 site logo」性質。
+      //
+      // 對「strict equality 已通過」的場景無變更（line 上方 return 已 short-
+      // circuit 不會進 fallback）—— fallback 只對 strict eq fail + 含明確 title
+      // class 的 h1 額外 promote。
+      if (!looksLikeArticleTitleH1(h1)) return;
+    }
     // 找 h1 的最近 ancestor wrapper（不為 body 也不為 articleEl 後代）
     let wrapper = h1.parentElement;
     if (!wrapper || wrapper === document.body || wrapper === document.documentElement) {
@@ -2403,7 +2446,40 @@
   // 為何不在 styler 加 `display: block`：styler 視為動不得、需 Jimmy 授權；
   // 放 cleaner 用 inline !important + restore 機制跟 v0.6.13 的
   // resetMediaPlaceholderPadding 同層級。
-  const MEDIA_CONTAINER_PROPS = ['display'];
+  //
+  // v0.7.146 hero shrink 修法（Jimmy 2026-05-20 回報 GQ Taiwan
+  // omega-swatch-moonwatch「主圖變超小一個」）：原本只改 display 不動寬度。
+  // 但對 `display: grid` 或 `display: flex` 容器，其撐住 width 的機制是
+  // **grid template / flex layout 邏輯本身**——一旦 display 改 block，這些
+  // 撐力消失，element shrink-to-fit content。GQ hero figure 原本 display:
+  // grid 用 grid-template-columns 撐 width=1152，cleaner 把 display 改
+  // block 後 grid-template-columns 變失效屬性（block element 忽略 grid-*），
+  // figure 從 1152 縮成 62（fit picture intrinsic min-width）。
+  //
+  // 修法：對 grid/inline-grid/flex/inline-flex 改 block 時，**同時**設
+  // `width: 100%` + 清 `grid-template-columns/rows`——把「grid/flex 撐寬」
+  // 換成「block + width:100% 撐寬」，整體寬度行為連續。對 inline /
+  // inline-block 改 block 不需動 width（block 默認 fill parent），維持原本
+  // 最小介入。與 `collapseInnerGridFlex`（line ~2088）的 INNER_GRID_DECLS
+  // 同 pattern：display:block + width:100% + 清 grid-template + 清 margin
+  // —— 但 collapseInnerGridFlex 因 isInPreserved skip 掉 figure / picture，
+  // 兩條互補不重疊（collapseInnerGridFlex 處理 articleEl 內非媒體 grid 容器、
+  // 本條處理媒體 figure/picture 容器）。
+  const MEDIA_CONTAINER_PROPS = ['display', 'width', 'max-width', 'grid-template-columns', 'grid-template-rows', 'margin-left', 'margin-right'];
+  // 對 grid/flex 容器（含 inline-）shrink 場景使用——同步設 width:100% +
+  // 清 grid-template + 清 margin（避免 collapse 後殘留 stylesheet `margin: auto`
+  // 造成水平置中偏移）。
+  const MEDIA_CONTAINER_DECLS_GRID_FLEX = {
+    'display': 'block',
+    'width': '100%',
+    'max-width': 'none',
+    'grid-template-columns': 'none',
+    'grid-template-rows': 'none',
+    'margin-left': '0',
+    'margin-right': '0'
+  };
+  // inline / inline-block → block：純改 display，不動 width（block 默認 fill）
+  const MEDIA_CONTAINER_DECLS_INLINE = { 'display': 'block' };
 
   function forceMediaContainerBlock(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -2420,7 +2496,10 @@
       if (d === 'block' || d === 'none') continue;
       if (!/^(flex|inline-flex|grid|inline-grid|inline-block|inline)$/.test(d)) continue;
       resets.push({ el, prev: snapshotStyles(el, MEDIA_CONTAINER_PROPS) });
-      applyImportant(el, { display: 'block' });
+      // grid/flex 容器需同步設 width:100%（grid/flex 撐寬機制因 display
+      // 改變消失、需 block 撐寬接手）；inline/inline-block 不需要
+      const isGridFlex = /^(flex|inline-flex|grid|inline-grid)$/.test(d);
+      applyImportant(el, isGridFlex ? MEDIA_CONTAINER_DECLS_GRID_FLEX : MEDIA_CONTAINER_DECLS_INLINE);
     }
     hidden.__mediaContainerBlock = resets;
   }
@@ -2912,6 +2991,62 @@
     }
   }
 
+  // ---- 主文內：video interlude widget（文章中段插播推薦影片）-------------
+  //
+  // GQ Taiwan / Vogue / Wired / Vanity Fair 等 Condé Nast 旗下站點共用
+  // CMS，會在文章中段插入「WATCH」widget：一個 `<figure>` 內含 heading
+  // ("WATCH")、外連的影片標題 `<a>`、與 iframe 影片 embed。實機是「另
+  // 一篇影片的推薦」，跟主文無關，本質類似廣告插播。
+  //
+  // figure 預設由 PRESERVE_SEL（hideInsideArticleThirdPartyIframes 走
+  // isInPreserved）保護不會被砍 iframe；外層 figure 自身也不會被其他
+  // cleaner rule 動（figure 是主文媒體保護單位）。結果 widget 整塊殘留
+  // 視覺上「heading + 標題連結 + 歪掉的影片 embed」。
+  //
+  // 結構性通則（不綁 hostname / 不綁 class / 不綁 data-testid）：
+  //   - `<figure>` 自身**含 iframe 或 video**（媒體 embed）
+  //   - **且**該 figure **含 `<a href>` text 長度 >= 20 chars**（指向別頁的
+  //     「標題連結」；主文 figure 的 source-credit a 通常 < 10 chars）
+  //   - 排除 figcaption 內的 inline a（主文圖說合法 inline link）
+  //   - 排除主文本身與 articleEl 祖先
+  //   → 視為 interlude widget，hide 整個外層 figure
+  //
+  // 為何 20 chars threshold：主文真實 figure 內的 a 連結通常是「source:
+  // AP」「攝影：張三」「點此放大」這類 < 10 chars 短文字；interlude
+  // widget 的 a 是「影片完整標題」，跨站慣例 20-100 chars。20 是兩者
+  // 之間有安全 margin 的判定值。
+  //
+  // 為何不只 hide iframe / 只動內部結構：interlude widget 的 heading
+  // ("WATCH") + 標題連結若留下，視覺殘留依然是「跟主文無關的推薦」；
+  // 必須整塊 figure hide 才乾淨。
+  //
+  // 與 hideInsideArticleThirdPartyIframes 的關係：那條對「figure 外的
+  // iframe」hide（未知 embed → noise）；本條對「整個 figure 是 widget
+  // wrapper」hide（包了 iframe 但 figure 自身就是雜訊容器）。互補不重疊。
+  function hideInsideArticleVideoInterludes(articleEl, hidden) {
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (fig.dataset && fig.dataset.jreadHidden === '1') continue;
+      if (fig === articleEl) continue;
+      if (fig.contains && fig.contains(articleEl)) continue;
+      // 必須含 iframe 或 video（媒體 embed 訊號）
+      const hasMedia = fig.querySelector && fig.querySelector('iframe, video');
+      if (!hasMedia) continue;
+      // 必須含「指向別頁的長文字 a」(interlude title-link 訊號)
+      let hasInterludeLink = false;
+      const links = fig.querySelectorAll ? fig.querySelectorAll('a[href]') : [];
+      for (const a of links) {
+        // 主文圖說 inline link 跳過（合法）
+        if (a.closest && a.closest('figcaption')) continue;
+        const text = norm(a.textContent || '');
+        if (text.length < 20) continue;
+        hasInterludeLink = true;
+        break;
+      }
+      if (!hasInterludeLink) continue;
+      hide(fig, hidden);
+    }
+  }
+
   // ---- 主文內：inline 廣告插播文字 heuristic ---------------------------
   // 自由時報 / 聯合 / ETtoday 等台灣新聞站在主文段落中段插播「廣告（請
   // 繼續閱讀本文）」類 placeholder 短文字，無可識別 class、不成 section
@@ -3237,6 +3372,7 @@
       hideInsideArticleByKeyword(articleEl, hidden, containers);
       hideInsideArticleByThirdPartyAds(articleEl, hidden);
       hideInsideArticleThirdPartyIframes(articleEl, hidden);
+      hideInsideArticleVideoInterludes(articleEl, hidden);
       hideInsideArticleByHeadingText(articleEl, hidden);
       hideInsideArticleByLinkText(articleEl, hidden);
       hideInsideArticleHashtagClusters(articleEl, hidden);
