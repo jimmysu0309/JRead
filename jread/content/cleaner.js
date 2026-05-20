@@ -599,6 +599,34 @@
     }
   }
 
+  // v0.7.147 fallback helper：判斷 h1 是否含明確「主文標題」class 訊號。
+  // 用於 promoteUniqueTitleH1Into 的 strict equality fail 場景（Shinkansen
+  // 等翻譯擴展翻 body h1 後、document.title 仍是原文、strict eq 失敗）。
+  //
+  // 訊號 token：article / post / entry / page / news / story / content 前綴
+  // 接 title / headline / heading；或單純 title / headline（但排除 subtitle /
+  // supertitle / microtitle 等變體）。
+  //
+  // 跨站適用：eet-china 是 `<h1 class="article-title">`、WordPress 通用
+  // `entry-title`、各 CMS 共用 `post-title` / `page-title` / `headline`。
+  // newtalk-tw site logo 通常是 `<h1 class="site-logo">` 或 `class="logo"`，
+  // 不含 title token，fallback 不會誤觸發。
+  const TITLE_CLASS_HIT_RE = /(?:^|[-_\s])(?:article|post|entry|page|news|story|content)[-_]?(?:title|headline|heading)(?:[-_\s]|$)|(?:^|[-_\s])(?:title|headline)(?:[-_\s]|$)/i;
+  const TITLE_CLASS_NEGATIVE_RE = /(?:sub|super|micro|tiny|aside|side)title/i;
+  function looksLikeArticleTitleH1(h1) {
+    if (!h1) return false;
+    function check(s) {
+      if (!s) return false;
+      if (TITLE_CLASS_NEGATIVE_RE.test(s)) return false;
+      return TITLE_CLASS_HIT_RE.test(s);
+    }
+    if (check((h1.className || '').toString())) return true;
+    if (check(h1.id || '')) return true;
+    const p = h1.parentElement;
+    if (p && check((p.className || '').toString())) return true;
+    return false;
+  }
+
   // v0.7.141 eet-china 修法：站點若**無 <article> 標籤**且標題 <h1> 與內文
   // 容器（articleEl）是 <body> 的 sibling，detector ensureArticleContainsTitleH1
   // 算 LCA = <body> 被 guard reject 不 promote articleEl 含 h1（避免吞整頁）。
@@ -634,7 +662,22 @@
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
     // prefix 但 partial includes baseTitle 而誤觸發 promote——markPromotedTitleIfMissing
     // 處理那條 case，本機制只負責「h1 自身就是主文標題完整字串」場景）。
-    if (h1Text !== baseTitle) return;
+    if (h1Text !== baseTitle) {
+      // v0.7.147 fallback：翻譯擴展（Shinkansen / Google Translate 等）翻 body
+      // 內 h1 text 但 `<title>` tag 沒翻，導致 strict equality fail（簡體 docT
+      // vs 繁體 h1）。看 h1 自己 / parent class / id 是否含明確「主文標題」
+      // class 訊號（article-title / post-title / entry-title 等慣用 token），
+      // 若有則視為主文標題、繞過 strict equality 仍 promote。
+      //
+      // class 訊號排除 newtalk.tw site logo h1（class 通常為 `site-logo` /
+      // `header-logo`、不含 article-title token），保持 v0.7.141 修法刻意設計
+      // 的「不誤觸發 site logo」性質。
+      //
+      // 對「strict equality 已通過」的場景無變更（line 上方 return 已 short-
+      // circuit 不會進 fallback）—— fallback 只對 strict eq fail + 含明確 title
+      // class 的 h1 額外 promote。
+      if (!looksLikeArticleTitleH1(h1)) return;
+    }
     // 找 h1 的最近 ancestor wrapper（不為 body 也不為 articleEl 後代）
     let wrapper = h1.parentElement;
     if (!wrapper || wrapper === document.body || wrapper === document.documentElement) {

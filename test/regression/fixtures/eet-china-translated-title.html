@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+  最小重現：eet-china 簡體文章被 Shinkansen / 翻譯擴展翻成繁體後標題消失
+  Jimmy 2026-05-20 回報 https://www.eet-china.com/news/202604299557.html
+
+  關鍵差異 vs v0.7.141 fixture eet-china-title-sibling.html：
+    - <title> tag 仍是**簡體**（翻譯擴展不動 `<title>` element）
+    - <h1 class="article-title"> text 已被翻成**繁體**（body 內容被翻）
+    → promoteUniqueTitleH1Into strict equality `h1Text !== docT` 失敗
+    → 原 v0.7.141 修法 return 不 promote、標題沒 clone 進 articleEl
+    → hideAncestorSiblings 把 h1 wrapper hide 後標題完全消失
+
+  v0.7.147 修法：strict equality fail 後加 fallback——h1 自身 / parent class
+  含明確「article-title」訊號 (TITLE_CLASS_HIT_RE) 則仍 promote。eet-china
+  的 h1 class 是 `article-title`，正好命中 fallback。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>苹果iPhone "印度制造"遭遇扩产难题-电子工程专辑</title>
+</head>
+<body>
+  <!-- h1 wrapper 是 body sibling（與 articleEl 不在同一祖先鏈下）-->
+  <div class="rowPage row-article-title" data-test="title-wrapper">
+    <h1 class="article-title" data-test="h1">蘋果iPhone 「印度製造」遭遇擴產難題</h1>
+  </div>
+
+  <!-- articleEl 內無 h1：detector ensureArticleContainsTitleH1 不 promote 上升（v0.7.141 場景） -->
+  <div class="article-text-con article_text" data-test="article-root">
+    <p data-test="body-p-1">根據《日經亞洲》4月29日披露的最新消息，蘋果在印度的iPhone擴產計劃近期遭遇了實質性挫折——在2026年2月的中國春節假期期間，由於失去了中國技術團隊的支持，印度工廠的供應鏈與生產線陷入了無法獨立運作的尷尬境地，甚至直接停擺。</p>
+    <p data-test="body-p-2">據供應鏈內部人士透露，蘋果已告知部分供應商，暫時維持目前在印度的生產份額，不再尋求快速擴張。這項急煞車訊號表明，在接任 CEO 約翰·特努斯（John Ternus）的任期內，供應鏈多元化的步伐將被迫放緩。</p>
+    <p data-test="body-p-3">蘋果先前已嘗試在印度同步進行新產品導入（NPI），這本是消費電子開發中最核心、最考驗製造能力的環節，但隨著春節假期中國團隊缺席，印度工廠才意識到自身在製造體系上的高度依賴性。</p>
+  </div>
+</body>
+</html>
