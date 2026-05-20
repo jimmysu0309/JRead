@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!--
+  最小重現：GQ Taiwan / Condé Nast CMS hero figure 用 `display: grid` 撐
+  width=1152，cleaner.forceMediaContainerBlock 把 display 改 block 後
+  shrink 到 62px。
+  Jimmy 2026-05-20 回報 https://www.gq.com.tw/article/omega-swatch-moonwatch
+  「原本全版面的主圖變超小一個」。
+
+  真實 DOM 結構（probe-gq-hero-after-cleaner.js dump 結果）:
+    <figure class="ContentHeaderLeadAssetContent">           <-- display:grid + grid-template-columns:NNNpx
+      <div class="lead-asset__content__photo">                <-- 主圖容器
+        <span class="responsive-asset">
+          <div class="aspect-ratio-container">
+            <picture><img src="..."></picture>                <-- 16:9 主圖
+          </div>
+        </span>
+      </div>
+      <div class="caption-wrapper">
+        <span>© Swatch</span>                                 <-- 圖說
+      </div>
+    </figure>
+
+  forceMediaContainerBlock 規則（v0.7.146 修正版）：
+    display:grid|inline-grid|flex|inline-flex → block + width:100% +
+    清 grid-template-columns/rows + margin:0
+    （inline / inline-block → block 維持只改 display 不動 width）
+
+  本 spec 驗證 jsdom 環境下 cleaner.clean 後 figure inline style 含這些
+  declaration（jsdom 無 layout 不能驗 width 數值，驗 inline style 是
+  forcing function）。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>GQ Hero Grid Figure Test</title>
+  <style>
+    /* 模擬 GQ stylesheet：hero figure display:grid 用 grid-template-columns 撐寬度 */
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1152px;
+      grid-template-rows: auto;
+      width: 1152px;
+    }
+    /* 主文一般 figure：default display:block 不該被本 rule 動到 width */
+    .normal-figure {
+      display: block;
+    }
+    /* 主文左右並排 figure：display:flex—— 應被改 block + width:100% */
+    .flex-figure {
+      display: flex;
+    }
+    /* 主文 inline-block figure：應只改 display、不動 width */
+    .inline-block-figure {
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <article data-test="article-root">
+    <h1>揭秘全球最受歡迎腕錶 Omega x Swatch 「MoonSwatch」 便宜又超有質感的成功秘訣！</h1>
+
+    <!-- ====== Hero figure: display:grid + grid-template-columns（核心 case）====== -->
+    <!-- inline style 是為了 jsdom 環境穩定計算 computedStyle.display；
+         真實站台是 stylesheet rule -->
+    <figure class="hero-grid ContentHeaderLeadAssetContent"
+            style="display: grid; grid-template-columns: 1152px;"
+            data-test="hero-figure">
+      <div class="lead-asset__content__photo">
+        <span class="responsive-asset">
+          <div class="aspect-ratio-container" data-testid="aspect-ratio-container">
+            <picture data-test="hero-picture">
+              <img src="https://media.gq.com.tw/photos/sample/16:9/w_2560/sample.jpg" alt="MoonSwatch hero" data-test="hero-img">
+            </picture>
+          </div>
+        </span>
+      </div>
+      <div class="caption-wrapper" data-testid="caption-wrapper">
+        <span class="caption__credit">© Swatch</span>
+      </div>
+    </figure>
+
+    <p data-test="body-p-1">在短短兩年內，MoonSwatch 就已成為世界上最熱門的手錶之一。究竟成功背後的秘密是什麼？這個行李箱可不是一般的行李箱，甚至比網球傳奇羅傑費德勒先前代言的 Rimowa 行李箱更吸引人，由 Swatch 精心打造。</p>
+
+    <!-- ====== Normal block figure：不該被動 ====== -->
+    <figure class="normal-figure" data-test="normal-block-figure">
+      <picture data-test="normal-picture"><img src="sample.jpg"></picture>
+      <figcaption data-test="normal-caption">主文圖說</figcaption>
+    </figure>
+
+    <!-- ====== Flex figure：display:flex，shrink-to-fit 場景（v0.7.24 ttv 修法觸發 case）====== -->
+    <figure class="flex-figure" style="display: flex;" data-test="flex-figure">
+      <picture data-test="flex-picture"><img src="sample.jpg"></picture>
+    </figure>
+
+    <!-- ====== inline-block figure：應只改 display ====== -->
+    <figure class="inline-block-figure" style="display: inline-block;" data-test="inline-block-figure">
+      <picture data-test="ib-picture"><img src="sample.jpg"></picture>
+    </figure>
+
+    <p data-test="body-p-2">2025 年 Swatch 集團將繼續探索更多元的合作可能。</p>
+  </article>
+</body>
+</html>
