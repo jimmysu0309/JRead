@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<!--
+  最小重現：GQ Taiwan (Condé Nast CMS) 「WATCH」video interlude widget
+  Jimmy 2026-05-20 回報 https://www.gq.com.tw/article/omega-swatch-moonwatch
+  「video 歪右邊」「類似廣告」。
+
+  真實 DOM 結構（probe-gq-watch.js dump 結果）:
+    <figure data-testid="cne-interlude-container">       <-- interlude wrapper
+      <p class="InterludeHeader">WATCH</p>
+      <a target="_blank" href="https://gq.com.tw/video/watch/...">
+        <p class="InterludeTitle">影片標題</p>
+      </a>
+      <div data-testid="cnevideoembed">
+        <div data-testid="teaser-wrapper">
+          <figure class="cne-video-embed">                <-- nested figure
+            <iframe>...</iframe>
+          </figure>
+        </div>
+      </div>
+    </figure>
+
+  cleaner rule hideInsideArticleVideoInterludes 條件:
+    figure 含 iframe + figure 含 a[href] text >= 20 chars (非 figcaption)
+    → hide 整個 figure
+
+  fixture 同時放主文真實的「figure 含 iframe (YouTube embed)」+「figure
+  含 figcaption 內 inline link」+「figure 含短 source-credit a」作為保護
+  case，確認 rule 不誤殺合法主文媒體。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta property="og:title" content="揭秘全球最受歡迎腕錶 Omega x Swatch「MoonSwatch」">
+  <title>揭秘全球最受歡迎腕錶 Omega x Swatch | GQ Taiwan</title>
+</head>
+<body>
+  <article class="article main-content story" data-test="article-root">
+    <h1>揭秘全球最受歡迎腕錶 Omega x Swatch「MoonSwatch」便宜又超有質感的成功秘訣！</h1>
+
+    <p data-test="body-p-1">Swatch 的理念確實是希望能夠突出合作的代表性腕錶，而對於 Omega 來說正好就是 Speedmaster，對於 Blancpain 來說則是經典的 Fifty Fathoms 潛水錶。儘管 Blancpain x Swatch 的合作能夠帶領 Blancpain 走入大眾市場，但確實也存在一定的兩極化效應。</p>
+
+    <h2>Omega x Swatch MoonSwatch 為何這麼夯？</h2>
+
+    <p data-test="body-p-2">這也讓 Swatch 集團選擇了一個全新的、能夠在 Speedmaster 和 Fifty Fathoms 故事之上更進一步的合作方式：那就是 BLANCPAIN x SWATCH Scuba Fifty。透過這次合作，Swatch 的設計理念並不僅僅是「降低門檻」。</p>
+
+    <!-- ====== INTERLUDE WIDGET（應被 hide）====== -->
+    <figure data-testid="cne-interlude-container" data-test="interlude-figure">
+      <p class="InterludeHeader">WATCH</p>
+      <a rel="noopener noreferrer" target="_blank"
+         href="https://gq.com.tw/video/watch/ke-pu-chang-zhi-shi-gq-taiwan-2023-08-10"
+         data-test="interlude-title-link">
+        <p class="InterludeTitle">人為什麼要有智齒、闌尾？生物學教授解釋從頭到腳各種「無用處」人體器官｜科普長知識｜GQ Taiwan</p>
+      </a>
+      <div data-testid="cnevideoembed">
+        <div data-testid="teaser-wrapper">
+          <figure class="cne-video-embed" data-testid="video-embed-figure">
+            <div data-testid="sticky-wrapper">
+              <div id="video-container">
+                <iframe src="https://video.condenast.com/embed/..." data-test="interlude-iframe"></iframe>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </div>
+    </figure>
+    <!-- ====== END INTERLUDE WIDGET ====== -->
+
+    <h2>MoonSwatch 生物陶瓷革命</h2>
+
+    <p data-test="body-p-3">2022 年 3 月推出的 MoonSwatch 重新定義了 Swatch 在製錶界的地位。Bioceramic 材質的應用顯示出品牌追求環境永續的承諾，這種陶瓷與蓖麻油萃取的生物塑膠結合的材料賦予腕錶截然不同的觸感。</p>
+
+    <!-- ====== 主文真實 figure: YouTube embed（應保留）====== -->
+    <figure data-test="legit-youtube-figure">
+      <iframe src="https://www.youtube.com/embed/abc123" data-test="legit-youtube-iframe"></iframe>
+      <figcaption data-test="legit-youtube-caption">影片：MoonSwatch 開箱實測</figcaption>
+    </figure>
+    <!-- ====== END YOUTUBE ====== -->
+
+    <p data-test="body-p-4">這項合作讓兩個品牌的故事與工藝在新的層次上交織。</p>
+
+    <!-- ====== 主文真實 figure: 含 figcaption 內 inline link（應保留）====== -->
+    <figure data-test="legit-figcaption-link-figure">
+      <iframe src="https://www.youtube.com/embed/xyz789" data-test="legit-figcaption-iframe"></iframe>
+      <figcaption data-test="legit-figcaption">
+        影片來源：<a href="https://example.com/source-channel" data-test="legit-figcaption-link">官方頻道精彩集錦完整版內容</a>
+      </figcaption>
+    </figure>
+    <!-- ====== END FIGCAPTION LINK ====== -->
+
+    <p data-test="body-p-5">Swatch 集團在這次合作中找到了更具創意的方式。</p>
+
+    <!-- ====== 主文真實 figure: 短 source-credit a < 20 chars（應保留）====== -->
+    <figure data-test="legit-short-credit-figure">
+      <iframe src="https://www.youtube.com/embed/def456" data-test="legit-short-iframe"></iframe>
+      <figcaption>
+        <a href="https://example.com/ap" data-test="legit-short-credit">source: AP</a>
+      </figcaption>
+    </figure>
+    <!-- ====== END SHORT CREDIT ====== -->
+
+    <h2>2025 年 Swatch 會有哪些合作？</h2>
+
+    <p data-test="body-p-6">展望 2025 年，Swatch 集團將繼續探索更多元的合作可能，從藝術家聯名到永續材質實驗。</p>
+  </article>
+</body>
+</html>

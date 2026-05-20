@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.145**——GQ Taiwan「WATCH」video interlude widget 清除。**動機**：Jimmy 2026-05-20 回報 https://www.gq.com.tw/article/omega-swatch-moonwatch「這個頁面的 video 歪右邊。如果無法修正，可以把這個區段去掉，它類似廣告」。probe-gq-watch.js 探真實 DOM 確認是 Condé Nast Entertainment CMS 的「interlude」widget——`<figure data-testid="cne-interlude-container">` 內含 heading（"WATCH"）+ 外連影片標題 `<a>` + 嵌套 iframe video embed。Jimmy 點出「類似廣告」精準：跟主文無關的「文章中段插播推薦影片」，本質非主文 inline media。所有 Condé Nast 旗下站（Vogue / Wired / Vanity Fair / The New Yorker 等）共用此 CMS。**修法**：新增 cleaner rule `hideInsideArticleVideoInterludes`——掃 articleEl 內所有 `<figure>`，若 figure 含 iframe/video（媒體 embed 訊號）**且**含 a[href] textContent >= 20 chars（指向別頁的「標題連結」訊號；主文 source-credit a 通常 < 10 chars）→ hide 整個 figure。**guard**：排除 figcaption 內的 inline a（合法主文圖說 inline link），排除 articleEl 自身與祖先。**結構通則**（不綁 hostname / 不綁 class / 不綁 data-testid）：figure 是主文媒體單位但「figure 內含跨頁長標題連結」極罕見、是 widget wrapper 的強訊號。**與既有規則互補**：`hideInsideArticleThirdPartyIframes` 對 figure 外的 iframe hide、本條對「整個 figure 是 widget wrapper」hide，互補不重疊。**為何不修對齊**：Jimmy 給兩選項，移除 widget 結構通則更乾淨——修對齊只治標（layout 易再壞），且 reader mode 純閱讀哲學下「跟主文無關的推薦影片」就是該移除。**spec**（test/regression/gq-video-interlude-widget.spec.js + fixture gq-video-interlude-widget.html）6 條 forcing function：(a) fixture 結構數值驗證；(b) interlude figure 必須 hide（核心保護點）；(c1) 主文真實 YouTube figure（無 a）保留；(c2) figcaption 內 inline link 保留；(c3) 短 source-credit a < 20 chars 保留；(d) 主文 body-p-1 ~ body-p-6 全保留。sanity check：comment 掉 cleaner pipeline call 立刻 fail (b)、其餘 5 條仍 pass、還原 pass 全綠。**npm test**：780 全綠（v0.7.144 774 → v0.7.145 780，新增 6 條 spec）。**版本同步**：manifest / package.json / SPEC.md / CHANGELOG.md / version-check.spec.js / safari-app（safari-build.sh 自動 sync）。
+
+---
+
 **v0.7.144**——effort 效能重構（v0.7.143 audit 留下的 4 條效能優化）。**動機**：v0.7.143 一次性消化 audit 19 條中的 15 條 bug + 技術債，留下 4 條效能重構獨立 release 方便 isolate 風險（cleaner / detector / styler 核心熱點重構）。
 
 **修法（4 條）**：
