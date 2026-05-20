@@ -3070,7 +3070,26 @@
     'iframe[src*="codepen.io"]',
     'iframe[src*="codesandbox.io"]',
     'iframe[src*="jsfiddle.net"]',
-    'iframe[src*="github.com"]'
+    'iframe[src*="github.com"]',
+    // v0.7.150：chart / data visualization embed services。Jimmy 2026-05-20
+    // 回報 healthsystemtracker.org datawrapper 圖表消失（probe 確認
+    // iframe.datawrapper src 含 datawrapper.dwcdn.net 不在 whitelist、被
+    // hideInsideArticleThirdPartyIframes 誤視為 noise hide）。datawrapper /
+    // flourish / tableau / highcharts / plotly 是新聞站做數據圖最常見
+    // embed 服務（NYT / Reuters / Bloomberg / ProPublica / healthsystemtracker /
+    // FiveThirtyEight 等），等同 YouTube / Vimeo 級的主文內容。
+    'iframe[src*="datawrapper.dwcdn.net"]',
+    'iframe[src*="datawrapper.de"]',
+    'iframe[src*="flourish.studio"]',
+    'iframe[src*="public.flourish.studio"]',
+    'iframe[src*="public.tableau.com"]',
+    'iframe[src*="tableauusercontent.com"]',
+    'iframe[src*="plot.ly"]',
+    'iframe[src*="plotly.com"]',
+    'iframe[src*="chart-studio.plotly.com"]',
+    'iframe[src*="highcharts.com"]',
+    'iframe[src*="observablehq.com"]',
+    'iframe[src*="infogram.com"]'
   ].join(', ');
 
   function hideInsideArticleThirdPartyIframes(articleEl, hidden) {
