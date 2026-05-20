@@ -581,6 +581,23 @@ html.${HTML_CLASS} body {
 [${ARTICLE_ATTR}="1"] * {
   color: ${theme.text} !important;
 }`;
+      // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
+      // card bg 深、跨 origin iframe（datawrapper / flourish / tableau / plotly
+      // 等 chart service）內容預設 transparent + 為 light theme 嵌入站設計
+      // 的深色文字 → 跟 dark reader card bg 完全融在一起、chart title / legend /
+      // axis labels 不可讀。Jimmy 2026-05-20 回報 healthsystemtracker dark
+      // theme 下「圖表區塊也使用深底色，導致文字難以閱讀」截圖確認。
+      // 強制 iframe background:#fff 讓 transparent 區域透出白色、deeper text 可見。
+      // 跨 origin iframe 我們無法讀寫其 styles、只能對 iframe element 本身設背景。
+      // 副作用：YouTube / Vimeo / Twitter 等 video / social embed 自身 player
+      // 會用自己 bg 覆蓋 iframe transparent area、白底 fallback 對它們無視覺
+      // 影響；對 chart embed 是核心保護。
+      // 用 html.__jread-active + [data-jread-active] 提升 specificity 到
+      // (0,2,2)——避免站點 `iframe.datawrapper` 類 (0,1,2) rule 勝出。
+      userOverrides += `
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe {
+  background-color: #fff !important;
+}`;
       // 連結色回補：上面 `* { color: X }` 會吞掉原站 link 色。在 dark / sepia
       // 底下若沒有針對性 a 規則，連結跟正文完全同色無法辨識。加粗底線做雙通道
       // 差異化（顏色 + underline），連 a 內包的 <em>/<strong>/<code> 也要補。
