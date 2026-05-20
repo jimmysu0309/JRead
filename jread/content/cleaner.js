@@ -705,6 +705,84 @@
     }
   }
 
+  // v0.7.149：擴充 v0.7.141 修法處理「主標題不是 h1 而是 h1/h2/h3 + article-title
+  // class signal」場景。Stratechery 自動翻譯後 detector 評分變動、選了內層
+  // `entry-content` 為 articleEl，主標題 `<h2.wp-block-post-title>` 在外層
+  // sibling、被 hideAncestorSiblings hide → reader card 內無標題。
+  //
+  // 跟 promoteUniqueTitleH1Into 互補：
+  //   - 那條 require page-wide unique h1（Stratechery 沒 h1，條件不滿足）
+  //   - 本條 page-wide DOM order 第一個含 article-title class signal 的 h1/h2/h3
+  //
+  // 跟 markPromotedTitleIfMissing 互補：
+  //   - 那條只掃 articleEl **內**的 p/div/span/h5/h6（漏 h1-h4）
+  //   - 本條掃 articleEl **外**的 h1/h2/h3（articleEl 內已有 visible heading 早 return）
+  //
+  // 跨站適用——WordPress block theme 慣例 `wp-block-post-title`、各 CMS
+  // `article-title` / `post-title` / `entry-title` / `headline` 等通用 token。
+  // newtalk site-logo h1 class 不含 article-title token、不會誤觸發。
+  //
+  // 為何選 DOM order 第一個：主標題在 page header 區、related articles widget
+  // 在 sidebar / footer 區（DOM order > 主標題）。DOM order 是穩定訊號、不依賴
+  // rect / visible 判定（cleaner 跑完後候選可能已被祖先 hide、rect 0×0）。
+  function promoteArticleTitleClassHeadingInto(articleEl, hidden) {
+    if (!articleEl) return;
+    // articleEl 內已有 visible h1（主標題語意） → skip（不重複 promote）。
+    // 故意只 check h1 不 check h2-h4：h2/h3 在主文常用作 section heading，
+    // 並非主標題；若 articleEl 內無 h1 但有 h2 section heading，仍需 promote
+    // 主標題進來（Stratechery 翻譯後 entry-content 內有 h2 section heading
+    // 但無 h1，主標題 wp-block-post-title 在外、需 promote）。
+    const innerH1s = articleEl.querySelectorAll('h1');
+    for (const h of innerH1s) {
+      if (h.dataset && h.dataset.jreadHidden === '1') continue;
+      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      return;
+    }
+    // 已 promote 過（v0.7.141 機制）→ skip
+    if (articleEl.querySelector('[data-jread-title-clone="1"]')) return;
+    // 已 inject 過（markPromotedTitleIfMissing 機制）→ skip
+    if (articleEl.querySelector('[data-jread-injected-title="1"]')) return;
+
+    // page-wide 找 DOM order 第一個含 article-title class signal 的 h1/h2/h3
+    const candidates = document.querySelectorAll('h1, h2, h3');
+    for (const h of candidates) {
+      if (articleEl.contains(h)) continue; // articleEl 內已早 return 處理
+      if (!looksLikeArticleTitleH1(h)) continue; // 含 article-title class 訊號
+      const text = norm(h.textContent || '');
+      if (text.length < 5) continue;
+      // promote：clone heading wrapper 或 heading 自己 prepend 進 articleEl 開頭。
+      // 規則：若 wrapper 文字長度 ≈ heading（差 <= 30 chars），用 wrapper（保留
+      // wrapper styling，例 eet-china .rowPage.row-article-title 含 article-title
+      // 配色 class）；若 wrapper 文字遠大於 heading（wrapper 包了其他 sibling
+      // 內容，例 Stratechery wp-block-column wrapper 含 hero image + caption），
+      // 則 clone heading 自己避免帶入無關 element。
+      let wrapper = h.parentElement;
+      if (!wrapper || wrapper === document.body || wrapper === document.documentElement) {
+        wrapper = h;
+      } else {
+        const wrapperText = norm(wrapper.textContent || '');
+        if (wrapperText.length > text.length + 30) {
+          wrapper = h;
+        }
+      }
+      const clone = wrapper.cloneNode(true);
+      clone.setAttribute('data-jread-title-clone', '1');
+      if (clone.style) clone.style.removeProperty('display');
+      if (clone.removeAttribute) clone.removeAttribute('data-jread-hidden');
+      if (clone.querySelectorAll) {
+        for (const el of clone.querySelectorAll('[data-jread-hidden="1"]')) {
+          el.removeAttribute('data-jread-hidden');
+          if (el.style) el.style.removeProperty('display');
+        }
+      }
+      articleEl.insertBefore(clone, articleEl.firstChild);
+      if (Array.isArray(hidden)) {
+        hidden.push({ el: clone, __titleClone: true });
+      }
+      return; // 只 promote DOM order 第一個
+    }
+  }
+
   // ---- promote+narrow 聯動：sibling chrome 全清 ------------------------
   //
   // 場景：detector heuristic 選到深層 content container（例：ebc 的
@@ -3436,6 +3514,11 @@
       // wrapper 已被 hideAncestorSiblings hide。clone 一份 prepend 進 articleEl
       // 開頭，標題進 reader card 內、dark/sepia theme color 自動套對。
       promoteUniqueTitleH1Into(articleEl, hidden);
+      // v0.7.149：擴充處理「主標題不是 h1 而是 h2/h3 + article-title class」
+      // 場景。Stratechery 自動翻譯後 detector 評分變動、選了內層 entry-content
+      // 為 articleEl、主標題 h2.wp-block-post-title 在外層 sibling 被
+      // hideAncestorSiblings hide → reader card 無標題。
+      promoteArticleTitleClassHeadingInto(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）

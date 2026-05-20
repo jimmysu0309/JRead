@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!--
+  v0.7.149 negative case: articleEl 內已有 visible h1 時，新 fn early return
+  不重複 promote sidebar 的 article-title class h2。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta property="og:title" content="Main Article Title">
+  <title>Main Article Title</title>
+</head>
+<body>
+  <article data-test="article-root">
+    <h1 class="article-title" data-test="main-h1">Main Article Title</h1>
+    <p data-test="body-p-1">主文段落內容 1，這裡有大量文字確保 detector 把這個 article 選中為 articleEl，足夠的字數讓文字密度評分通過 cleaner 各條 rule 的保護門檻。</p>
+    <p data-test="body-p-2">主文段落內容 2，補足長度避免被 cleaner 視為 chrome / sidebar 內容誤殺。</p>
+  </article>
+  <aside data-test="sidebar">
+    <h2 class="post-title" data-test="sidebar-h2"><a href="/other">Sidebar Related Article Title</a></h2>
+  </aside>
+</body>
+</html>
