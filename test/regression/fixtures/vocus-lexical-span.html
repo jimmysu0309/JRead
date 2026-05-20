@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>白川夜船 vs 川習會：川普 WWE 招式精解</title>
+  <meta property="og:title" content="白川夜船 vs 川習會：川普 WWE 招式精解">
+</head>
+<body>
+  <!--
+    vocus.cc Lexical 編輯器輸出結構 minimal repro：
+    每段是 <p class="lexical__paragraph"><span style="white-space: pre-wrap">文字</span></p>
+    站點對 span 自身設 font-family（不是 inline style，靠 stylesheet rule），
+    讓 p 上的 font-family override 不會 inherit 到 span。
+    這份 fixture 不依賴實際 CSS（jsdom 不算 cascade），forcing function 驗的是
+    「styler 注入的 selector list 含 span」這條結構性事實。
+    包含一個 icon-class span 作為「不應被誤殺」的 negative case。
+  -->
+  <main>
+    <article>
+      <h1>白川夜船 vs 川習會：川普 WWE 招式精解</h1>
+      <p class="lexical__paragraph">
+        <span style="white-space: pre-wrap">川普座車來了，川普下車，川習應當握手，這是川習會的第一秒，但就這一秒，出事了。這場聚會東道主是習，按照外交慣例，東道主應該主動上前迎接賓客。</span>
+      </p>
+      <p class="lexical__paragraph">
+        <span style="white-space: pre-wrap">問題是，川普這位熱愛作秀、習於作秀、更在 WWE 摔角擂台上玩過無數次過招的老油條，竟然先一秒欺身上前，早於習抬手前伸出了手——這一秒鐘的時間差，全球鎂光燈都看見了。</span>
+        <span class="material-icons" style="font-family: 'Material Icons'">share</span>
+      </p>
+      <p class="lexical__paragraph">
+        <span style="white-space: pre-wrap">還沒完，最後的殺招來了：川普竟然用左手輕拍了習近平的手臂幾下，這親暱溫暖的舉動，完全就是在呵護小朋友或寵物。兩國元首相會時這種輕拍動作極為罕見。</span>
+      </p>
+      <blockquote class="lexical__quote">
+        <span style="white-space: pre-wrap">習主席本想展現明、清時代的遺產，以此一擊定音認定「新興國家是美國」，然而這種措辭看在外交圈反而成為破綻——主客異位、自我矮化。</span>
+      </blockquote>
+      <p class="lexical__paragraph">
+        <span style="white-space: pre-wrap">中國再次重申「中美是夥伴而非敵人」、「合作有更多利益」等等論調，但這些論調你會講，我也會講，能做朋友誰會口出惡言難看面？</span>
+      </p>
+    </article>
+  </main>
+</body>
+</html>
