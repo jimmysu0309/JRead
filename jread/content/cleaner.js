@@ -2403,7 +2403,40 @@
   // 為何不在 styler 加 `display: block`：styler 視為動不得、需 Jimmy 授權；
   // 放 cleaner 用 inline !important + restore 機制跟 v0.6.13 的
   // resetMediaPlaceholderPadding 同層級。
-  const MEDIA_CONTAINER_PROPS = ['display'];
+  //
+  // v0.7.146 hero shrink 修法（Jimmy 2026-05-20 回報 GQ Taiwan
+  // omega-swatch-moonwatch「主圖變超小一個」）：原本只改 display 不動寬度。
+  // 但對 `display: grid` 或 `display: flex` 容器，其撐住 width 的機制是
+  // **grid template / flex layout 邏輯本身**——一旦 display 改 block，這些
+  // 撐力消失，element shrink-to-fit content。GQ hero figure 原本 display:
+  // grid 用 grid-template-columns 撐 width=1152，cleaner 把 display 改
+  // block 後 grid-template-columns 變失效屬性（block element 忽略 grid-*），
+  // figure 從 1152 縮成 62（fit picture intrinsic min-width）。
+  //
+  // 修法：對 grid/inline-grid/flex/inline-flex 改 block 時，**同時**設
+  // `width: 100%` + 清 `grid-template-columns/rows`——把「grid/flex 撐寬」
+  // 換成「block + width:100% 撐寬」，整體寬度行為連續。對 inline /
+  // inline-block 改 block 不需動 width（block 默認 fill parent），維持原本
+  // 最小介入。與 `collapseInnerGridFlex`（line ~2088）的 INNER_GRID_DECLS
+  // 同 pattern：display:block + width:100% + 清 grid-template + 清 margin
+  // —— 但 collapseInnerGridFlex 因 isInPreserved skip 掉 figure / picture，
+  // 兩條互補不重疊（collapseInnerGridFlex 處理 articleEl 內非媒體 grid 容器、
+  // 本條處理媒體 figure/picture 容器）。
+  const MEDIA_CONTAINER_PROPS = ['display', 'width', 'max-width', 'grid-template-columns', 'grid-template-rows', 'margin-left', 'margin-right'];
+  // 對 grid/flex 容器（含 inline-）shrink 場景使用——同步設 width:100% +
+  // 清 grid-template + 清 margin（避免 collapse 後殘留 stylesheet `margin: auto`
+  // 造成水平置中偏移）。
+  const MEDIA_CONTAINER_DECLS_GRID_FLEX = {
+    'display': 'block',
+    'width': '100%',
+    'max-width': 'none',
+    'grid-template-columns': 'none',
+    'grid-template-rows': 'none',
+    'margin-left': '0',
+    'margin-right': '0'
+  };
+  // inline / inline-block → block：純改 display，不動 width（block 默認 fill）
+  const MEDIA_CONTAINER_DECLS_INLINE = { 'display': 'block' };
 
   function forceMediaContainerBlock(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -2420,7 +2453,10 @@
       if (d === 'block' || d === 'none') continue;
       if (!/^(flex|inline-flex|grid|inline-grid|inline-block|inline)$/.test(d)) continue;
       resets.push({ el, prev: snapshotStyles(el, MEDIA_CONTAINER_PROPS) });
-      applyImportant(el, { display: 'block' });
+      // grid/flex 容器需同步設 width:100%（grid/flex 撐寬機制因 display
+      // 改變消失、需 block 撐寬接手）；inline/inline-block 不需要
+      const isGridFlex = /^(flex|inline-flex|grid|inline-grid)$/.test(d);
+      applyImportant(el, isGridFlex ? MEDIA_CONTAINER_DECLS_GRID_FLEX : MEDIA_CONTAINER_DECLS_INLINE);
     }
     hidden.__mediaContainerBlock = resets;
   }
