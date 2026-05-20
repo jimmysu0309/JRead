@@ -535,13 +535,34 @@ html [${ARTICLE_ATTR}="1"] {
     // 說明」的階層感。Jimmy 2026-05-13 BBC Culture /article/...oxfords-
     // medieval-library 截圖回報：fontSize 非預設時 caption 跟內文同字級。
     // 保留 caption 原站 typography 比「跟 body 等比例縮放」更尊重原站設計。
+    // v0.7.152：含 span。WYSIWYG 編輯器（Lexical / TipTap / ProseMirror /
+    // Slate / Draft.js 等跨平台 rich-text 編輯器）輸出文章內文時普遍把每段
+    // 文字包成 `<p><span style="white-space: pre-wrap">文字</span></p>`，並且
+    // 站點 stylesheet 對 span 自身寫死 font-family（vocus.cc 實測：對所有
+    // 文章內 span 套 `font-family: "Noto Sans TC", "Microsoft JhengHei fixed",
+    // ...`）。p 上的 font-family override 不會 inherit 到 span（span 自己
+    // 有 rule，截斷 inheritance），導致使用者「字型」設定完全失效。Jimmy
+    // 2026-05-20 vocus.cc /article/6a0d369c... 回報「字型設定無效」實機觸發。
+    //
+    // :not exclusions 避免破壞 icon font span：material-icons / font-awesome
+    // 等用 font-family 載 icon glyph，強制覆寫成襯線/無襯線會讓 icon 消失或
+    // 變成奇怪字元。badge / emoji 同樣可能依賴特殊字型。實測 vocus 主文 0 個
+    // icon span，這些 exclusion 是跨站保守防護不會影響 vocus 修法生效。
+    const SPAN_TEXT_SEL = `[${ARTICLE_ATTR}="1"] span` +
+      `:not([class*="icon"])` +
+      `:not([class*="material-"])` +
+      `:not([class^="fa-"])` +
+      `:not([class*=" fa-"])` +
+      `:not([class*="emoji"])` +
+      `:not([class*="badge"])`;
     const BODY_TEXT_SEL =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
       `[${ARTICLE_ATTR}="1"] li,` +
       `[${ARTICLE_ATTR}="1"] blockquote,` +
       `[${ARTICLE_ATTR}="1"] dd,` +
-      `[${ARTICLE_ATTR}="1"] dt`;
+      `[${ARTICLE_ATTR}="1"] dt,` +
+      SPAN_TEXT_SEL;
     let userOverrides = '';
     if (overrides.fontSize) {
       // 同步注入 line-height：字級改了行高必須跟著縮放，否則原站用 px 鎖死的

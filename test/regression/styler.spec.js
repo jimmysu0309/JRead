@@ -752,6 +752,14 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
         `${prop} 的 selector list 必須含 [data-jread-active="1"] li`);
       assert.ok(/\[data-jread-active="1"\]\s+blockquote\b/.test(selectorList),
         `${prop} 的 selector list 必須含 [data-jread-active="1"] blockquote`);
+      // v0.7.152 forcing function：span 必須在 selector list（穿透 WYSIWYG
+      // 編輯器 Lexical / TipTap / ProseMirror 等對 span 自身寫 font-family
+      // 的 rule。vocus.cc 實測：<p class="lexical__paragraph"><span>文字
+      // </span></p>，vocus stylesheet 對 span 寫死 font-family，我們對 p
+      // 的 override 不會 inherit 到 span，使用者「字型」設定失效。Jimmy
+      // 2026-05-20 vocus /article/6a0d369c... 回報實機觸發）。
+      assert.ok(/\[data-jread-active="1"\]\s+span/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] span（v0.7.152 修法：穿透 WYSIWYG 編輯器對 span 自身 font-family rule；拿掉 span → vocus.cc 類站點字型設定無效）`);
       // v0.7.120 forcing function：figcaption **不得**列入 typography rule
       // selector——保留原站 caption hierarchy（fontSize / fontFamily /
       // lineHeight 都不覆寫 caption）。
@@ -1349,5 +1357,69 @@ describe('styler — v0.7.94 gallery 子間距', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     assert.strictEqual(standaloneFig.style.getPropertyValue('margin-bottom'), '',
       'gallery 外的 figure 不該被 runtime 加 margin');
+  });
+});
+
+describe('styler — vocus.cc Lexical span 字型穿透（v0.7.152）', () => {
+  // 案例 / 修法：BODY_TEXT_SEL 加入 span（含 icon class :not exclusions），
+  // 讓使用者「字型」設定能穿透 WYSIWYG 編輯器（Lexical / TipTap / ProseMirror /
+  // Slate / Draft.js 等）對 span 自身寫 font-family 的 rule。同時保留 icon font
+  // span（material-icons / font-awesome / emoji / badge）不被覆寫。
+  function setupVocus() {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(__dirname, 'fixtures', 'vocus-lexical-span.html'),
+      scripts: ['detector', 'styler']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected, 'vocus fixture detector 必須命中');
+    return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
+  }
+
+  it('span selector 含 icon class :not exclusions（避免 material-icons / font-awesome / badge / emoji 等 icon font span 被覆寫 font-family）', () => {
+    const { document, NS, articleEl } = setupVocus();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontFamily: 'Georgia' });
+    const css = document.getElementById('__jread-style').textContent;
+    // 找 font-family rule 所在 selector list
+    const re = /([^}]*)\{[^}]*font-family\s*:/i;
+    const m = css.match(re);
+    assert.ok(m, 'CSS 應含 font-family rule');
+    const selectorList = m[1];
+    // 切出 span 條
+    const spanCond = selectorList.split(',').map(s => s.trim()).find(s => /\bspan\b/.test(s));
+    assert.ok(spanCond, 'selector list 必須含 span 條');
+    // 必含 icon-related :not exclusions
+    for (const token of ['icon', 'material-', 'fa-', 'emoji', 'badge']) {
+      assert.ok(spanCond.includes(token),
+        `span selector 必須含 :not(...) 排除 "${token}" class（避免 icon font / badge 被覆寫 font-family）；實際 spanCond="${spanCond}"`);
+    }
+  });
+
+  it('注入的 span selector 命中 vocus 純 span（lexical__paragraph > span，無 class），但不命中 material-icons span', () => {
+    // 用 styler 注入的 CSS rule selector 直接走 querySelectorAll 驗 DOM 命中。
+    // 這條 spec 是 vocus 修法的核心 forcing function：純 span 必須被命中（讓
+    // font-family override 生效），icon span 必須跳過。
+    const { document, NS, articleEl } = setupVocus();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontFamily: 'Georgia' });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/([^}]*)\{[^}]*font-family\s*:/i);
+    const selectorList = m[1];
+    const spanCond = selectorList.split(',').map(s => s.trim()).find(s => /\bspan\b/.test(s));
+    assert.ok(spanCond, 'selector list 必須含 span 條');
+
+    // 純 span（vocus pattern）：lexical__paragraph > span，無 class
+    const plainSpan = articleEl.querySelector('p.lexical__paragraph > span');
+    assert.ok(plainSpan, 'fixture 必有 vocus 純 span');
+    assert.strictEqual(plainSpan.className, '', 'plainSpan 應無 class（vocus 真實 pattern）');
+
+    // 用 styler 注入的 selector 驗匹配
+    const matched = [...articleEl.querySelectorAll(spanCond)];
+    assert.ok(matched.includes(plainSpan),
+      `純 span 應被 selector "${spanCond}" 命中（讓 vocus 類站點 font-family override 生效）`);
+
+    // negative case：material-icons span 不該被命中
+    const iconSpan = articleEl.querySelector('span.material-icons');
+    assert.ok(iconSpan, 'fixture 必有 material-icons span 做 negative case');
+    assert.ok(!matched.includes(iconSpan),
+      `material-icons span 不該被 span selector 命中（保留 icon font 字型不被使用者「字型」設定覆寫成襯線/無襯線）`);
   });
 });
