@@ -1626,6 +1626,19 @@
       // container，被誤 hide 後 reader card 主圖整段消失只剩圖說文字。
       const TAG = el.tagName;
       if (TAG === 'IMG' || TAG === 'PICTURE' || TAG === 'VIDEO' || TAG === 'SOURCE') continue;
+      // v0.7.148 guard：含 `<h1>` → 視為「hero header title overlay」設計，
+      // 不 hide（hide 後 h1 雖自身 visible 但 ancestor display:none 會連帶
+      // 0×0 不可見、標題完全消失）。TBIJ thebureauinvestigates.com 實機
+      // 案例：`<div class="tb-c-story-header__heading">` position:absolute
+      // 包 `<h1.tb-c-story-header__title>`——design 用 absolute 把主標題
+      // 定位在 hero image 上方，reader card 縮窄後沒意義但 hide 就連標題
+      // 一起消失。
+      // 通則：semantic h1 是「主文標題」最強訊號，含 h1 的 absolute wrapper
+      // 99% 是「title overlay」設計、不該被當 chrome overlay 砍。漏網成本
+      // （site banner h1 overlay 殘留）遠低於誤殺成本（主標題消失）。
+      // 不擴及 h2-h6：section heading 包在 absolute wrapper 罕見也通常無
+      // semantic 主文意義，保留現有 hide 行為。
+      if (el.querySelector && el.querySelector('h1')) continue;
       // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
       let hasLongParagraph = false;
       const ps = el.querySelectorAll && el.querySelectorAll('p');
