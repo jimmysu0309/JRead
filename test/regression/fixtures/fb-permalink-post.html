@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>(1) David Chen - 主貼文內文起頭| Facebook</title>
+</head>
+<body>
+  <!-- 模擬 FB permalink post DOM 結構（2026-05-21 probe 真實頁面後簡化）。
+       關鍵特徵：
+       1. 沒 <article> / <main> / schema.org
+       2. 主貼文文字 wrapper 標記 data-ad-comet-preview="message" + data-ad-preview="message"
+          外層標 data-ad-rendering-role="story_message"
+       3. 作者標 data-ad-rendering-role="profile_name"
+       4. 留言全是 [role="article"]（FB 給每則留言 role="article"，不是主貼文）
+       5. 同 page 有「sidebar 推薦小貼文」也標 data-ad-comet-preview="message"，
+          但 textContent 被 truncated 到 20 字以內、含「查看更多」連結——演算法
+          必須挑「最長」訊息為主貼文
+  -->
+
+  <!-- 站點 chrome -->
+  <header>
+    <nav>Facebook 頂部 nav</nav>
+  </header>
+
+  <!-- Sidebar 推薦貼文（短 message，應被排除） -->
+  <aside>
+    <div>
+      <div data-ad-rendering-role="profile_name"><span>蔡依橙</span></div>
+      <div data-ad-rendering-role="story_message">
+        <div data-ad-comet-preview="message" data-ad-preview="message">
+          <div><span><div>AI 時代誰被裁員? …… 查看更多</div></span></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主貼文 unit（permalink 焦點貼文） -->
+  <div id="main-post-wrapper">
+    <!-- i=0：FB hidden a11y placeholder（rect.height = 0、純 Facebook 重複字串） -->
+    <div style="height:0;overflow:hidden;">
+      <span>Facebook Facebook Facebook Facebook Facebook</span>
+    </div>
+
+    <!-- i=1：作者 header（含 timestamp / privacy icon——cleaner 跑時會 hide） -->
+    <div>
+      <a href="/drdavidchen/" role="link">
+        <svg><image href="https://scontent.fb.com/avatar.jpg" /></svg>
+      </a>
+      <div>
+        <div data-ad-rendering-role="profile_name">
+          <span><a href="/drdavidchen/">David Chen</a></span>
+        </div>
+        <a href="/drdavidchen/posts/pfbid02UCSG..." role="link">
+          <span>5 天</span>
+        </a>
+      </div>
+      <button aria-label="更多選項"></button>
+    </div>
+
+    <!-- i=2：主貼文文字 + 附件 -->
+    <div data-ad-rendering-role="story_message">
+      <div data-ad-comet-preview="message" data-ad-preview="message">
+        <div><span dir="auto">
+          <div>數日前，川普在北京人民大會堂的國宴上致詞，提到了一段多數人都不知道的歷史。</div>
+          <div>他說：崇拜米國首任總統 #喬治華盛頓 的中國人們，送來一塊現在嵌在 #華盛頓紀念碑 內側的石頭。</div>
+          <div>這篇貼文敘述歷史故事——文字內容非常長，主貼文文字應該至少超過 500 字才能與 sidebar 推薦的 truncated 短訊息明確區分。</div>
+          <div>為了讓 fixture 真實反映 FB permalink 結構，我們再加更多段落，確保 textLen 至少數百字以上。歷史內容描述中美交流之始、華盛頓紀念碑的石頭來源、清朝文人與米國總統的文化連結——這些都是這篇貼文的關鍵敘述。</div>
+        </span></div>
+      </div>
+      <!-- 附件區（外連結卡 / 圖片） -->
+      <div>
+        <a href="https://example.com/article" role="link">
+          <img src="https://scontent.fb.com/thumb.jpg" alt="">
+          <div><span>外連結預覽標題</span></div>
+        </a>
+      </div>
+    </div>
+
+    <!-- i=3：reactions + share count + 留言區 -->
+    <div>
+      <div>
+        <span>所有心情：</span>
+        <span>3,497</span>
+        <span>29 則留言</span>
+        <span>950 次分享</span>
+      </div>
+      <div>
+        <button role="button">讚</button>
+        <button role="button">留言</button>
+        <button role="button">分享</button>
+      </div>
+      <!-- 留言區（10 則留言示意） -->
+      <div>
+        <div role="article" aria-label="Amos Shen的留言5小時前">
+          <span>Amos Shen</span><span>不過 Meta 裁員邏輯好像不是這樣?</span><span>5小時</span>
+        </div>
+        <div role="article" aria-label="蔡依橙回覆Amos Shen的留言4小時前">
+          <span>蔡依橙</span><span>Meta 老闆最近想把錢拿去買 AI，人就不用了......</span><span>4小時</span>
+        </div>
+        <div role="article" aria-label="KaiJung Chen的留言7小時前">
+          <span>KaiJung Chen</span><span>對岸用殘體中文看不懂啦</span><span>7小時</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right rail -->
+  <aside>
+    <nav>FB right rail</nav>
+  </aside>
+</body>
+</html>

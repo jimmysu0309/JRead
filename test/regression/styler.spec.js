@@ -1517,3 +1517,99 @@ describe('styler — Wikipedia infobox table 字級穿透（v0.7.156）', () => 
     }
   });
 });
+
+describe('styler — boldText 字粗 smoothing 切換（v0.7.157）', () => {
+  // 動機：CJK 字型 weight 視覺差異不可靠（macOS PingFang TC 跨 400/500/600
+  // 視覺幾乎不可辨;Microsoft JhengHei 只有 400/700 兩階）。改用
+  // -webkit-font-smoothing 模式作為粗細切換軸——細 = antialiased（grayscale）/
+  // 粗 = auto（subpixel-antialiased，macOS 預設）。reader card baseline
+  // 已套 antialiased（v0.7.157 商周字粗修法），使用者選「粗」時反轉回 auto。
+  function setup() {
+    const env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_PATH,
+      scripts: ['detector', 'styler']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected);
+    return { document: env.document, NS: env.NS, articleEl: detected.el };
+  }
+
+  it('boldText: false (細) → 不額外注入 smoothing rule（沿用 reader card baseline antialiased）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, boldText: false });
+    const css = document.getElementById('__jread-style').textContent;
+    // 不應出現 `-webkit-font-smoothing: auto` rule（baseline 是 antialiased）
+    assert.doesNotMatch(css, /-webkit-font-smoothing\s*:\s*auto\s*!important/i,
+      '細模式下不可有 -webkit-font-smoothing: auto rule（與 baseline antialiased 衝突）');
+  });
+
+  it('boldText: true (粗) → 注入 -webkit-font-smoothing: auto 反轉 reader card baseline', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, boldText: true });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.match(css, /-webkit-font-smoothing\s*:\s*auto\s*!important/i,
+      '粗模式必須注入 -webkit-font-smoothing: auto（反轉 baseline antialiased、回到 macOS 預設 subpixel）');
+    assert.match(css, /-moz-osx-font-smoothing\s*:\s*auto\s*!important/i,
+      '粗模式必須同時注入 -moz-osx-font-smoothing: auto');
+  });
+
+  it('boldText: true 注入的 rule 必須 scoped 到 [data-jread-active]（不污染原站）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, boldText: true });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/([^{}]+)\{[^}]*-webkit-font-smoothing\s*:\s*auto\s*!important/i);
+    assert.ok(m, '應找得到 boldText: auto rule');
+    assert.match(m[1], /data-jread-active/,
+      'boldText auto rule 必須 scoped 到 [data-jread-active]，不可全域套');
+  });
+});
+
+describe('styler — font-smoothing antialiased（v0.7.157 商周中文字粗修法）', () => {
+  // 動機：Jimmy 2026-05-21 回報 businessweekly.com.tw/Archive/Article?StrId=7014202
+  // 閱讀模式下中文「字體比較粗」。probe：商周 stylesheet 沒設
+  // `-webkit-font-smoothing`，macOS Chrome auto = subpixel-antialiased，PingFang
+  // TC fallback render 視覺偏粗。Medium / NYT / Substack 等專業閱讀站普遍套
+  // antialiased — reader card 統一套以對齊業界閱讀體驗。
+  function setupBusinessweekly() {
+    const env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_PATH,
+      scripts: ['detector', 'styler']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected, 'businessweekly fixture detector 必須命中');
+    return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
+  }
+
+  it('注入的 CSS 必須含 `-webkit-font-smoothing: antialiased` 給 [data-jread-active]', () => {
+    const { document, NS, articleEl } = setupBusinessweekly();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.match(css, /-webkit-font-smoothing\s*:\s*antialiased/i,
+      'styler 必須給 reader card 注入 -webkit-font-smoothing: antialiased（修商周類沒設 smoothing 的站 macOS 上字粗）');
+    assert.match(css, /-moz-osx-font-smoothing\s*:\s*grayscale/i,
+      'styler 必須給 reader card 注入 -moz-osx-font-smoothing: grayscale（macOS Firefox 對應 property）');
+  });
+
+  it('font-smoothing rule 必須 scoped 到 [data-jread-active]（不影響原站視覺）', () => {
+    const { document, NS, articleEl } = setupBusinessweekly();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 找 antialiased 那條 rule 的 selector
+    const m = css.match(/([^{}]+)\{[^}]*-webkit-font-smoothing\s*:\s*antialiased/i);
+    assert.ok(m, '應找得到 antialiased rule 區塊');
+    const selectorList = m[1];
+    assert.match(selectorList, /data-jread-active/,
+      'antialiased rule 必須 scoped 到 [data-jread-active]，不可全域套（會污染原站）');
+  });
+
+  it('reader card 內後代必須 inherit smoothing（防站點 stylesheet 子層級重設 auto）', () => {
+    const { document, NS, articleEl } = setupBusinessweekly();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // universal selector 區塊內必須含 inherit（合併進原 max-width: 100% 那條）
+    assert.match(css, /-webkit-font-smoothing\s*:\s*inherit/i,
+      'CSS 必須含 -webkit-font-smoothing: inherit—— 防站點 stylesheet 在子層級重設 auto 把 reader card 內某些元素拉回 subpixel');
+    assert.match(css, /-moz-osx-font-smoothing\s*:\s*inherit/i,
+      'CSS 必須含 -moz-osx-font-smoothing: inherit（Firefox 對應）');
+  });
+});
