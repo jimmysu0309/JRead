@@ -27,6 +27,7 @@
     cinema: null,           // v0.7.133：YouTube cinema mode（cinema-mode.js 掛載）
     borderless: null,       // v0.7.134：YouTube borderless mode（youtube-borderless.js 掛載）
     xThread: null,          // v0.7.135：X / Twitter status thread reader（x-thread.js 掛載）
+    fbPost: null,           // v0.7.157：Facebook permalink post reader（fb-post.js 掛載）
 
     // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼

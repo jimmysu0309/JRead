@@ -178,6 +178,49 @@
     return true;
   }
 
+  // v0.7.157：Facebook permalink post 走合成 reader 容器分支。fb-post.js 找
+  // 到主貼文 wrapper 後 clone 進 `<article data-jread-fb-reader>` 注入 body
+  // 開頭，後續 cleaner / styler 流程沿用。FB 跟 X 同樣 keyboard-shortcut-heavy
+  // （j/k 換貼文等），install keyguard 攔截。
+  async function enterFbPostMode() {
+    if (!NS.fbPost) return false;
+    const container = NS.fbPost.enter();
+    if (!container) {
+      showToast('此頁無法偵測主貼文', 'error');
+      safeSendMessage({
+        type: NS.MSG.REPORT_DETECTION_RESULT,
+        payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
+      });
+      return false;
+    }
+    const settings = await getSettings();
+    NS.state.articleEl = container;
+    NS.state.confidence = 1;
+    // FB 合成容器跳過 cleaner.clean——fb-post.js pruneReaderClone 已做精準清理
+    // （留言 / button / placeholder / reactions metadata），通用 cleaner 對 FB
+    // 巢狀 emotion-hash DIV 結構過於激進、會把主貼文文字 wrapper 也誤殺
+    // （probe 實證：cleaner 在 reader card 內把含「川普」1741 字 wrapper 標
+    // data-jread-hidden=1）。
+    NS.state.hiddenEls = [];
+    NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
+    NS.state.active = true;
+
+    window.removeEventListener('keydown', onEscKey, true);
+    window.addEventListener('keydown', onEscKey, true);
+    if (settings.blockPageShortcuts !== false) {
+      installKeyguard();
+    } else {
+      uninstallKeyguard();
+    }
+
+    safeSendMessage({
+      type: NS.MSG.REPORT_DETECTION_RESULT,
+      payload: { ok: true, confidence: 1, strategy: 'fb-post' }
+    });
+    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    return true;
+  }
+
   // v0.7.143：in-flight guard 防快速雙擊快速鍵造成的 race。
   // enterReaderMode 是 async（有 await getSettings），中間時間窗若第二次 toggle
   // 進來會看到 NS.state.active 還是 false、再跑一次 enterReaderMode——
@@ -215,6 +258,9 @@
     }
     if (result.isXThread) {
       return await enterXThreadMode();
+    }
+    if (result.isFbPost) {
+      return await enterFbPostMode();
     }
 
     const settings = await getSettings();
@@ -308,6 +354,10 @@
     // 包裝體、直接 remove 不影響原 X DOM。
     if (NS.xThread && typeof NS.xThread.exit === 'function') {
       NS.xThread.exit();
+    }
+    // v0.7.157：清掉 Facebook permalink 合成 reader 容器
+    if (NS.fbPost && typeof NS.fbPost.exit === 'function') {
+      NS.fbPost.exit();
     }
     NS.state.active = false;
     NS.state.articleEl = null;
@@ -486,7 +536,7 @@
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'lineHeight', 'pangu'];
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'boldText', 'lineHeight', 'pangu'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();
