@@ -371,7 +371,7 @@
   <div class="field">
     <label for="boldText">
       字粗外觀
-      <span class="desc">用 <code>-webkit-font-smoothing</code> 切換字體粗細視覺（細 = antialiased / grayscale；粗 = subpixel-antialiased，macOS 預設）。僅在 macOS 有差異;Windows / Linux 兩者視覺一致。</span>
+      <span class="desc">用 <code>-webkit-font-smoothing</code> 切換字體粗細視覺（細 = antialiased / grayscale；粗 = subpixel-antialiased，macOS 預設）。僅在 macOS 有差異；Windows / Linux 兩者視覺一致。</span>
     </label>
     <input type="checkbox" id="boldText">
   </div>
@@ -386,8 +386,8 @@
 
   <div class="field">
     <label for="pangu">
-      中英文間自動補空白
-      <span class="desc">閱讀模式下，中英文（含數字、<strong>%</strong>、<strong>°</strong>）相鄰時自動插入空白，例如 <code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>、<code>60%以上</code> → <code>60% 以上</code>。程式碼、連結內文字不會被動。</span>
+      中英文間自動補空白 + 中文標點全形化
+      <span class="desc">閱讀模式下兩件事同時做：（1）中英文（含數字、<strong>%</strong>、<strong>°</strong>）相鄰時自動插入空白，例如 <code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>、<code>60%以上</code> → <code>60% 以上</code>；（2）中文邊界的半形標點 <strong>, . : ; ? !</strong> 轉成 <strong>，。：；？！</strong>，半形括號 <strong>( )</strong> 兩側都是中文時轉 <strong>（）</strong>，例如 <code>他說,然後</code> → <code>他說，然後</code>。中文段落內的半形逗號（即使前後緊鄰英數字）也會轉全形，例如 <code>叫 Google Alerts,2003 年</code> → <code>叫 Google Alerts，2003 年</code>。<code>example.com</code> / <code>1.5kg</code> / <code>Mr.Smith</code> 等純 ASCII 邊界不會動。程式碼、連結內文字不會被動。</span>
     </label>
     <input type="checkbox" id="pangu">
   </div>

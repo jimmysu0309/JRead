@@ -24,6 +24,9 @@
   //   /permalink.php?story_fbid=*
   //   /story.php?story_fbid=*&id=*
   //   /share/p/<id>
+  //   /groups/<gid>/posts/<pid>/                       ← 既有 /posts/ 規則涵蓋
+  //   /groups/<gid>/permalink/<pid>/                   ← 既有 /permalink/ 規則涵蓋
+  //   /groups/<gid>/?multi_permalinks=<pid>            ← v0.7.159 新增（modal preview）
   function isFacebookPost(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
     try {
@@ -34,6 +37,9 @@
       if (/\/permalink(\.php)?(\/|$)/.test(path)) return true;
       if (path === '/story.php' && (u.searchParams.has('story_fbid') || u.searchParams.has('fbid'))) return true;
       if (/\/share\/p\//.test(path)) return true;
+      // FB Groups modal preview：/groups/<gid>/?multi_permalinks=<pid>
+      // 從社團頁面點某貼文展開的 URL，主貼文在 modal overlay 內、結構與一般 permalink 相同
+      if (/^\/groups\//.test(path) && u.searchParams.has('multi_permalinks')) return true;
       return false;
     } catch (_) {
       return false;
@@ -151,6 +157,8 @@
   }
 
   // 在 clone 內清掉非主貼文內容：
+  // - 主貼文 message 之後的 sibling chain（link-card / reactions / OG meta
+  //   重複描述 等所有「主文結束後」內容；v0.7.158）
   // - [role="article"] 留言（FB 把每則留言標為 role="article"）
   // - 所有 button / [role="button"]（CLAUDE.md 硬教訓九：reader mode 純閱讀
   //   定位下所有 interactive button 一律清，無保留例外）
@@ -158,6 +166,78 @@
   // - 含留言區 wrapper 的直系子（textLen 通常較短但含多個 role="article"）
   // - reactions/share count wrapper（含「則留言」「次分享」等慣用語）
   function pruneReaderClone(clone, original) {
+    // v0.7.158 主文後續 sibling chain 全清（chrome-in-chrome probe 真實 FB DOM
+    // 後的最終版）。實機 Nathan Chiu 貼文 DOM 結構：
+    //   findPostContainer 結果（commonAncestor）4 個 children：
+    //     [0] Facebook x N hidden placeholder
+    //     [1] author header (Nathan Chiu + timestamp)
+    //     [2] content wrapper        ← 含 mainMsg
+    //         └── inner wrapper      ← 此 wrapper 的 children：
+    //             ├── [0] story_message > mainMsg
+    //             └── [1] 附帶圖 wrapper（textLen=0, imgs=1）★ 保留
+    //     [3] reactions+留言 (textLen=1288, imgs=18)
+    // 沿 mainMsg 祖先鏈往上走時，會在「inner wrapper」層遇到 [1] 附帶圖 —
+    // 必須結構性辨識保留之，否則貼文媒體被誤殺（Jimmy 第二次回報）。
+    //
+    // 保留條件（chrome-in-chrome 連 Jimmy session 多輪實機 probe 後最終版）：
+    //
+    // sibling 三種類型 + 處理方式：
+    //   附帶圖 wrapper：含 img + 不含 role=article + 不含 button + linkRatio 低
+    //                  → **保留整個 wrapper**
+    //   share-preview widget：含 img + 不含 role=article + 不含 button + **linkRatio 高**
+    //                  （整片是 <a> 連結—— FB OG share preview 把貼文預覽包成 link
+    //                  cluster：short URL + 作者名 + 重複貼文文字 + 縮圖全在 <a> 內）
+    //                  → **unwrap 只留媒體**（砍 short URL / 作者名 / 重複文字、保留圖）
+    //   reactions+留言 wrapper：含 role=article 或 button → **整 wrapper 砍**
+    //
+    // linkRatio = anchorText.length / allText.length（去 whitespace 後計算）
+    // 實機 probe 結果（Jimmy 2026-05-21 Nathan Chiu 貼文）：
+    //   share-preview widget linkRatio = 1.01（textContent 中 <a> 文字佔 100%+）
+    //   reactions+留言 wrapper linkRatio = 0.12
+    //   一般附帶圖 wrapper linkRatio 預期遠小於 0.7（圖不會整個包在 <a> 內）
+    // 閾值 0.7 為判別線。
+    const mainMsgClone = clone.querySelector('[data-ad-comet-preview="message"]');
+    if (mainMsgClone) {
+      let node = mainMsgClone.parentElement;
+      while (node && node !== clone) {
+        let next = node.nextElementSibling;
+        while (next) {
+          const toRemove = next;
+          next = next.nextElementSibling;
+          const hasMedia = toRemove.querySelector('img, picture, video');
+          const hasComment = toRemove.querySelector('[role="article"]');
+          const hasButton = toRemove.querySelector('button, [role="button"]');
+          if (hasComment || hasButton) { toRemove.remove(); continue; }
+          if (!hasMedia) { toRemove.remove(); continue; }
+
+          // 算 linkRatio：textContent 中 <a> 文字佔比
+          const allText = (toRemove.textContent || '').replace(/\s/g, '');
+          const anchorText = Array.from(toRemove.querySelectorAll('a'))
+            .map(a => (a.textContent || '').replace(/\s/g, '')).join('');
+          const linkRatio = allText.length ? anchorText.length / allText.length : 0;
+
+          if (linkRatio > 0.7) {
+            // share-preview widget：unwrap 圖、砍其他內容
+            const mediaEls = toRemove.querySelectorAll('img, picture, video');
+            if (mediaEls.length > 0) {
+              const wrap = clone.ownerDocument.createElement('div');
+              wrap.setAttribute('data-jread-fb-media', '1');
+              for (const m of mediaEls) {
+                // 移除 <a> 包裝，只 clone 媒體 element 本身
+                wrap.appendChild(m.cloneNode(true));
+              }
+              toRemove.replaceWith(wrap);
+            } else {
+              toRemove.remove();
+            }
+            continue;
+          }
+          // linkRatio 低 + 含媒體 → 純附帶媒體 wrapper，整個保留
+        }
+        node = node.parentElement;
+      }
+    }
+
     // 留言全清
     const comments = clone.querySelectorAll('[role="article"]');
     comments.forEach(c => c.remove());
@@ -206,41 +286,23 @@
     return clone;
   }
 
-  // 從原 DOM 抽 author info 資訊：display name + avatar + timestamp link href
+  // 從原 DOM 抽 author info 資訊：display name。
+  // v0.7.158 移除 avatar 抓取——FB DOM 把作者頭像 SVG image 與貼文預覽卡縮圖
+  // 放在共同祖先的不同 sibling 內，querySelectorAll DOM order 容易誤取預覽卡
+  // 圖（例如 Jimmy 2026-05-21 回報 Nathan Chiu 貼文的 avatar 變成內文提到的
+  // Sundar Pichai 演講照）。FB DOM 結構頻繁改版，穩定 selector 難維護。
+  // reader mode 是純閱讀、作者名已足夠識別，移除 avatar 視覺更乾淨。
   function extractAuthorInfo(author, mainMsg) {
-    const info = { displayName: null, avatarSrc: null };
+    const info = { displayName: null };
     if (!author) return info;
     info.displayName = (author.innerText || author.textContent || '').trim() || null;
-    // 作者 avatar：FB 把頭像 img 放在 profile_name 的 sibling/ancestor 範圍內,
-    // 找最接近的 svg image 或 img。常見結構：
-    //   <a><svg><image href="..."></svg></a>   <profile_name>
-    // walk up 共同祖先後找含 image href 的 svg
-    const headerScope = commonAncestor(author, mainMsg)?.parentElement || document.body;
-    const imgs = headerScope.querySelectorAll('image[xlink\\:href], image[href], img');
-    for (const im of imgs) {
-      const src = im.getAttribute('xlink:href') || im.getAttribute('href') || im.getAttribute('src');
-      if (!src || /^data:/.test(src)) continue;
-      // 排除主文內嵌入圖（連結卡縮圖）：只取作者區域附近的 img
-      // 簡單啟發：取第一個非主文內 img
-      if (mainMsg && mainMsg.contains(im)) continue;
-      info.avatarSrc = src;
-      break;
-    }
     return info;
   }
 
   function createSyntheticHeader(info) {
     const h = document.createElement('header');
     h.setAttribute('data-jread-fb-author', '1');
-    h.style.cssText = 'display:flex;align-items:center;gap:12px;margin:1.4em 0 0.6em;';
-    if (info.avatarSrc) {
-      const img = document.createElement('img');
-      img.setAttribute('data-jread-fb-avatar', '1');
-      img.src = info.avatarSrc;
-      img.alt = '';
-      img.style.cssText = 'width:48px;height:48px;border-radius:50%;flex:0 0 auto;display:block;';
-      h.appendChild(img);
-    }
+    h.style.cssText = 'margin:1.4em 0 0.6em;';
     if (info.displayName) {
       const strong = document.createElement('strong');
       strong.textContent = info.displayName;
@@ -283,7 +345,7 @@
     markParagraphDivs(clone);
 
     // 合成 author header 放最前
-    if (info.displayName || info.avatarSrc) {
+    if (info.displayName) {
       const header = createSyntheticHeader(info);
       reader.appendChild(header);
     }
