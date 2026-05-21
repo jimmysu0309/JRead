@@ -124,6 +124,37 @@ describe('fb-post v0.7.157 — isFacebookPost URL 判斷', () => {
     assert.strictEqual(isFacebookPost('https://www.facebook.com/share/p/abc123'), true);
   });
 
+  // v0.7.159 — FB Groups 社團貼文 URL patterns（Jimmy 2026-05-21 實機回報）
+  it('https://www.facebook.com/groups/<gid>/?multi_permalinks=<pid> → true（v0.7.159 FB Groups modal preview）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/groups/902748753095551/?multi_permalinks=26919193527691051&hoisted_section_header_type=recently_seen'),
+      true,
+      'FB Groups modal preview URL（從社團頁點貼文展開）必須命中——Jimmy 實機回報 軍事迷 社團貼文偵測不到'
+    );
+  });
+
+  it('https://www.facebook.com/groups/<gid>/posts/<pid>/ → true（既有 /posts/ 規則涵蓋）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/groups/902748753095551/posts/26919193527691051/'),
+      true
+    );
+  });
+
+  it('https://www.facebook.com/groups/<gid>/permalink/<pid>/ → true（既有 /permalink/ 規則涵蓋）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/groups/902748753095551/permalink/26919193527691051/'),
+      true
+    );
+  });
+
+  it('https://www.facebook.com/groups/<gid>/ 純社團首頁（無 multi_permalinks query）→ false', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/groups/902748753095551/'),
+      false,
+      '社團首頁列出多則貼文，沒有單一主貼文可閱讀，必須 no-op'
+    );
+  });
+
   it('https://www.facebook.com/<user> 純使用者頁 → false', () => {
     assert.strictEqual(isFacebookPost('https://www.facebook.com/drdavidchen'), false);
   });

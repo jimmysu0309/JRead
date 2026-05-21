@@ -24,6 +24,9 @@
   //   /permalink.php?story_fbid=*
   //   /story.php?story_fbid=*&id=*
   //   /share/p/<id>
+  //   /groups/<gid>/posts/<pid>/                       ← 既有 /posts/ 規則涵蓋
+  //   /groups/<gid>/permalink/<pid>/                   ← 既有 /permalink/ 規則涵蓋
+  //   /groups/<gid>/?multi_permalinks=<pid>            ← v0.7.159 新增（modal preview）
   function isFacebookPost(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
     try {
@@ -34,6 +37,9 @@
       if (/\/permalink(\.php)?(\/|$)/.test(path)) return true;
       if (path === '/story.php' && (u.searchParams.has('story_fbid') || u.searchParams.has('fbid'))) return true;
       if (/\/share\/p\//.test(path)) return true;
+      // FB Groups modal preview：/groups/<gid>/?multi_permalinks=<pid>
+      // 從社團頁面點某貼文展開的 URL，主貼文在 modal overlay 內、結構與一般 permalink 相同
+      if (/^\/groups\//.test(path) && u.searchParams.has('multi_permalinks')) return true;
       return false;
     } catch (_) {
       return false;
