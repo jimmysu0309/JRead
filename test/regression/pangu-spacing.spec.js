@@ -10,12 +10,19 @@
 //   CJK 取常用漢字 一-鿿 + 擴充 A 㐀-䶿
 //   全形標點、符號邊界（。，「」（）等）不視為邊界—— 已有視覺分隔
 //
+// v0.7.158 新增：CJK 邊界的半形標點 → 全形標點
+//   , . : ; ? ! 之前或之後緊鄰 CJK 即轉成 ， 。 ： ； ？ ！
+//   ( ) 兩側都緊鄰 CJK 才轉成 （ ）（避免混合 ASCII 時不對稱）
+//   引號 ' " 不在此規則（開/閉判斷複雜）
+//   example.com / 1.5 / Mr.Smith 等純 ASCII 邊界不會被誤動
+//
 // 跳過 tag：CODE / PRE / KBD / SAMP / VAR（程式碼）、A（連結文字，破壞引用
 // 語意 + 內含 URL fragment 風險）、SCRIPT / STYLE / NOSCRIPT、TEXTAREA /
 // INPUT / SELECT / OPTION（表單值）、contenteditable 元素。
 //
 // 設定 storage key：pangu（boolean，預設 true）。透過 settings.pangu === false
-// 關閉，apply 不掃 + restore 也不還原（snapshot.panguSnap = null）。
+// 關閉，apply 不掃 + restore 也不還原（snapshot.panguSnap = null）。標點全形化
+// 與 pangu 共用同一開關（v0.7.158 設計決策）。
 //
 // 動態注入內容（SPA / lazy-load 留言、推薦、後到段落）由 MutationObserver
 // 接住，新插入的 element / text node 自動 pangu。
@@ -184,6 +191,18 @@ describe('styler — Pangu spacing (CJK ↔ ASCII 自動補空白)', () => {
       const { snapshot } = setup({ pangu: false });
       assert.ok(!snapshot.panguSnap, `pangu off 時 panguSnap 必須為 null/undefined，實際: ${JSON.stringify(snapshot.panguSnap)}`);
     });
+
+    it('pangu: false 時半形標點也不轉全形（v0.7.158 共用同一開關）', () => {
+      const { env } = setup({ pangu: false });
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-comma'),
+        '他說,然後就走了,沒有回頭。'
+      );
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-paren-cjk'),
+        '他寫了(關於這件事)的書評,大家都看了.'
+      );
+    });
   });
 
   describe('(d) restore 可逆', () => {
@@ -214,6 +233,131 @@ describe('styler — Pangu spacing (CJK ↔ ASCII 自動補空白)', () => {
           `restore 後 #${id} 必須回到原值；實際仍為 ${env.document.getElementById(id).textContent}`
         );
       }
+    });
+  });
+
+  // v0.7.158：CJK 邊界半形標點 → 全形標點。觸發條件：標點前或後緊鄰 CJK 即轉。
+  // 標的：, . : ; ? ! ( ) → ，。：；？！（）。引號不在此規則。
+  // 半形括號額外限制：兩側都緊鄰 CJK 才轉（避免混合 ASCII 內容時左右不對稱）。
+  describe('(f) 半形標點 → 全形標點（CJK 邊界）', () => {
+    it('CJK 前接半形 , → 全形 ，（連續多個）', () => {
+      const { env } = setup();
+      // 原文 他說,然後就走了,沒有回頭。
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-comma'),
+        '他說，然後就走了，沒有回頭。'
+      );
+    });
+
+    it('CJK 前接半形 . → 全形 。（句中與句尾）', () => {
+      const { env } = setup();
+      // 原文 他說了一句話.然後離開.
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-period'),
+        '他說了一句話。然後離開。'
+      );
+    });
+
+    it(': ; ? ! 五種半形標點全部轉全形', () => {
+      const { env } = setup();
+      // 原文 他問:你好嗎?我說:不錯!然後;走了.
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-mix'),
+        '他問：你好嗎？我說：不錯！然後；走了。'
+      );
+    });
+
+    it('半形括號兩側都緊鄰 CJK → 全形 （）', () => {
+      const { env } = setup();
+      // 原文 他寫了(關於這件事)的書評,大家都看了.
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-paren-cjk'),
+        '他寫了（關於這件事）的書評，大家都看了。'
+      );
+    });
+
+    it('半形括號內含 ASCII（混合）保留半形 + pangu 補空白', () => {
+      const { env } = setup();
+      // 原文 他寫了(Hello World)的書評,大家都看了.
+      // 期望括號保半形（避免不對稱）、CJK↔ASCII 邊界補空白、逗號/句號照樣轉全形
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-paren-ascii'),
+        '他寫了 (Hello World) 的書評，大家都看了。'
+      );
+    });
+
+    it('半形標點後接 CJK 也轉（Hello,世界 → Hello，世界）', () => {
+      const { env } = setup();
+      // 原文 Hello,世界,Hi,中文.
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-cjk-after'),
+        'Hello，世界，Hi，中文。'
+      );
+    });
+
+    it('純 ASCII 邊界的標點完全不動（URL / IP / 小數 / Mr.）', () => {
+      const { env } = setup();
+      // 原文 URL example.com 和 IP 192.168.0.1 還有 1.5kg 都不該動到
+      // 期望整句保持原樣
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-ascii-safe'),
+        'URL example.com 和 IP 192.168.0.1 還有 1.5kg 都不該動到'
+      );
+    });
+
+    it('混合句中 Mr. / 1.5 / example.com 保半形，CJK 邊界的標點才轉', () => {
+      const { env } = setup();
+      // 原文 作者 Mr.Smith 寫的版本 1.5 在 example.com,值得參考.
+      // 期望 Mr.Smith / 1.5 / example.com 內的 . 不動，com 後的 , 因後接 CJK 轉全形，句尾 . 前 CJK 轉全形
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-mr-smith'),
+        '作者 Mr.Smith 寫的版本 1.5 在 example.com，值得參考。'
+      );
+    });
+
+    it('中文閉引號 」 後接半形 , 也視為 CJK 邊界（Jimmy 2026-05-21 實機回報）', () => {
+      const { env } = setup();
+      // 原文 「藍色連結」,Google 自己宣告它死了.
+      // 期望 」, → 」， 且句尾 . → 。
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-after-cjk-quote'),
+        '「藍色連結」，Google 自己宣告它死了。'
+      );
+    });
+
+    it('書名號 》 後接半形 , 也視為 CJK 邊界（即使逗號後是 ASCII）', () => {
+      const { env } = setup();
+      // 原文 他寫了《好書》,Hello 接著看下去.
+      // 》, → 》，（boundary 命中：》在 　-〿）；逗號後是 ASCII 不靠 PUNCT_RE_CJK_AFTER 救
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-after-cjk-book'),
+        '他寫了《好書》，Hello 接著看下去。'
+      );
+    });
+
+    it('text node 整體為中文 prose 時，ASCII↔ASCII 邊界的 , 也轉全形（Jimmy 2026-05-21 實機回報）', () => {
+      const { env } = setup();
+      // 原文 叫 Google Alerts,2003 年就有了。
+      // `,` 緊鄰前後 `s` `2` 都是 ASCII；但 text node 含 `叫`/`年`/`就`/`有`/`了` 漢字
+      // 觸發寬鬆模式 → 逗號轉全形
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-loose-comma'),
+        '叫 Google Alerts，2003 年就有了。'
+      );
+    });
+
+    it('純英文 text node 不啟動寬鬆模式（沒 CJK boundary）', () => {
+      const { env } = setup();
+      // 既有 p-ascii-only 純英文段落不該被寬鬆模式誤動
+      assert.strictEqual(
+        textOf(env.document, 'p-ascii-only'),
+        'This paragraph is pure English so pangu should not touch it.'
+      );
+      // 既有 p-ascii-paren 含半形括號也不該被誤動
+      assert.strictEqual(
+        textOf(env.document, 'p-ascii-paren'),
+        'Pure English (with parens) stays untouched here.'
+      );
     });
   });
 

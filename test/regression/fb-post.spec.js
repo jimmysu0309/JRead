@@ -220,6 +220,97 @@ describe('fb-post v0.7.157 — enter() 注入合成容器', () => {
     }
   });
 
+  it('share-preview widget（整片 link cluster + 含媒體）→ unwrap 只留 img、砍短網域 / 名字 / 重複文字（Jimmy 2026-05-21 第四次實機回報）', () => {
+    // 實機 Nathan Chiu 貼文 chrome-in-chrome probe 結果：share-preview widget 是
+    // story_message 之後 sibling（mainMsg 祖父輩 sibling），整片包在 <a> 內，
+    // linkRatio = 1.01（textContent 中 <a> 文字佔 100%+）。
+    const html = `<!doctype html><html><body>
+      <div id="post-container">
+        <div data-ad-rendering-role="profile_name"><span>Author</span></div>
+        <div id="content-wrapper">
+          <div data-ad-rendering-role="story_message">
+            <div data-ad-comet-preview="message" data-ad-preview="message">
+              <div><span dir="auto">主文文字必須夠長確保 findMainMessage 選中這個 message。歷史故事敘述繼續延展，包含中美交流之始、清朝文人與米國總統的文化連結。這段文字必須累計超過 500 字才能讓 findMainMessage 把這個 message 視為主貼文而非 sidebar 推薦短訊息。再加一句確保長度足夠。share-preview widget 必須被 unwrap 只留 img、砍掉文字。</span></div>
+            </div>
+          </div>
+          <div id="share-preview" role="link">
+            <a href="https://share.fb.com/abc">
+              <img src="https://scontent.fb.com/og-thumb.jpg" alt="">
+              <div><span>Hv9AdSq.com</span></div>
+              <div><span>Jimmy Su</span></div>
+              <div><span>數日前，川普在北京人民大會堂的國宴上致詞，提到了一段多數人都不知道的歷史。歷史內容描述中美交流之始、華盛頓紀念碑的石頭來源、清朝文人與米國總統的文化連結。重複整篇貼文的 OG description。</span></div>
+            </a>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+    const env = setupJsdom('https://www.facebook.com/u/posts/abc', html);
+    const container = env.NS.fbPost.enter();
+    assert.ok(container, 'enter() 必須回容器');
+    // unwrap 後 img 保留
+    const ogImg = container.querySelector('img[src*="og-thumb.jpg"]');
+    assert.ok(ogImg, 'share-preview 內的 img 必須 unwrap 後保留');
+    // 短網域 / 名字 / OG description 重複都應被砍
+    assert.ok(!container.textContent.includes('Hv9AdSq.com'),
+      'share-preview 內的短網域不可殘留');
+    assert.ok(!container.textContent.includes('Jimmy Su'),
+      'share-preview 內的分享者名字不可殘留');
+    assert.ok(!container.textContent.includes('OG description'),
+      'share-preview 內的 OG description 不可殘留');
+    // unwrap 後 img 沒被 <a> 包住
+    assert.strictEqual(ogImg.closest('a'), null,
+      'unwrap 後 img 不應仍在 <a> 內（避免點圖跳到 share 對話）');
+  });
+
+  it('附帶圖在 mainMsg 祖父輩 sibling（實機 Nathan Chiu 貼文結構）也保留', () => {
+    // chrome-in-chrome probe 真實 FB permalink DOM 後發現附帶圖 wrapper 不在
+    // mainMsg 同階、而在 mainMsg 祖父輩 sibling（即 mainMsg.parentElement.
+    // parentElement 的 next sibling）——這個 sibling 是「純媒體 wrapper」
+    // (textLen=0 + 含 img)，必須結構性辨識保留。
+    const html = `<!doctype html><html><body>
+      <div id="post-container">
+        <div data-ad-rendering-role="profile_name"><span>Author</span></div>
+        <div id="content-wrapper">
+          <div id="inner-wrapper">
+            <div id="story_message_wrap" data-ad-rendering-role="story_message">
+              <div data-ad-comet-preview="message" data-ad-preview="message">
+                <div><span dir="auto">主文文字夠長確保比 sidebar 推薦短訊息更長。歷史故事敘述繼續延展，包含中美交流之始、清朝文人與米國總統的文化連結。這段文字必須累計超過 500 字才能讓 findMainMessage 把這個 message 視為主貼文而非 sidebar 推薦的 truncated 短訊息。所以再加一句：附帶照片必須保留，不可被誤殺。</span></div>
+              </div>
+            </div>
+            <div id="attached-media-wrapper">
+              <img src="https://scontent.fb.com/attached-photo.jpg" alt="">
+            </div>
+          </div>
+        </div>
+        <div id="og-meta">
+          <a href="https://example.com">m7NKy5VBX1.com</a>
+          <div>OG description 重複整篇貼文這段文字也很長確保超過 50 字 textLen 閾值會被砍掉。</div>
+        </div>
+      </div>
+    </body></html>`;
+    const env = setupJsdom('https://www.facebook.com/u/posts/abc', html);
+    const container = env.NS.fbPost.enter();
+    assert.ok(container, 'enter() 必須回容器');
+    const attachedImg = container.querySelector('img[src*="attached-photo.jpg"]');
+    assert.ok(attachedImg,
+      '附帶圖在 mainMsg 祖父輩 sibling（純媒體 wrapper：textLen=0 + 含 img）必須保留');
+    assert.ok(!container.textContent.includes('m7NKy5VBX1.com'),
+      'OG meta widget 在更上層 sibling、textLen 超閾值，必須砍');
+  });
+
+  it('story_message 之後 sibling 全清（OG meta widget / reactions / comments——Jimmy 2026-05-21 第一次回報）', () => {
+    const env = setupJsdom('https://www.facebook.com/drdavidchen/posts/pfbid02', FIXTURE);
+    const container = env.NS.fbPost.enter();
+    // fixture i=3a OG meta widget 含短網域 + 重複貼文文字（story_message 同階 sibling，非 mainMsg 同階）
+    assert.ok(!container.textContent.includes('m7NKy5VBX1.com'),
+      'OG meta widget 短網域不可殘留（Nathan Chiu 貼文實機看到的「m7NKy5VBX1.com / Jimmy Su / 重複內容」block）');
+    // fixture i=3 reactions block 含「3,497」/「950 次分享」（story_message 同階 sibling）
+    assert.ok(!container.textContent.includes('3,497'),
+      'reactions 計數不可殘留');
+    assert.ok(!container.textContent.includes('950 次分享'),
+      'share 計數不可殘留');
+  });
+
   it('合成容器內不含留言（pruneReaderClone 移除全部 [role="article"]）', () => {
     const env = setupJsdom('https://www.facebook.com/drdavidchen/posts/pfbid02', FIXTURE);
     const container = env.NS.fbPost.enter();
