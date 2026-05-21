@@ -24,7 +24,11 @@ const DEFAULT_SETTINGS = {
   // v0.7.131：閱讀模式啟動時攔截原站快速鍵（Gmail j/k/e、YouTube k 等）。
   // 預設 true——使用者進閱讀模式就是想專心讀、不希望按錯鍵觸發 Gmail
   // archive / send 等破壞性操作。要關可到 options 取消。
-  blockPageShortcuts: true
+  blockPageShortcuts: true,
+  // 中英文字之間自動補空白（盤古之白）。reader mode 啟動時掃 articleEl 所有
+  // text node、套規則「CJK ↔ 英數字 / % / °」→ 之間插空白。詳見 styler.js
+  // pangu module。預設 true，使用者可到 options 取消。
+  pangu: true
 };
 
 // Icon 路徑 map：閱讀模式 active / idle 都用彩色版本（v0.7.134，Jimmy 2026-05-18

@@ -24,7 +24,11 @@
     fontSize: 18,
     contentWidth: 720,
     fontFamily: 'system-ui',
-    lineHeight: 1.7
+    lineHeight: 1.7,
+    // 中英文字之間自動補空白（盤古之白）。預設 true—— 大部分台灣 / 港澳 / 中文
+    // 讀者習慣這種視覺節奏，原始網站常缺空格（特別是 CMS / SPA 編輯器寫入時）。
+    // 使用者可到 options 取消。詳見下方 pangu module。
+    pangu: true
   };
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
@@ -697,6 +701,122 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe {
     return ancestors;
   }
 
+  // ---- Pangu spacing（中英文間自動補空白）---------------------------------
+  // 規則：
+  //   CJK ↔ ASCII 英數字（LEAD）→ 補空白
+  //   ASCII 英數字 + 常見後綴單位 % °（TRAIL）→ CJK 補空白
+  // CJK 範圍取常用漢字 + 擴充 A，標點 / 全形字元不計入（不會在「中文，AI」這
+  // 種已有全形逗號邊界的位置誤補空白）。
+  //
+  // 跳過 tag：CODE / PRE / KBD / SAMP / VAR（程式碼風格不可動）、A（連結文字
+  // 動了會破壞引用語意，且很多 ASCII URL fragment 在 anchor text 內）、
+  // SCRIPT / STYLE / NOSCRIPT（非可見內容）、TEXTAREA / INPUT（表單值）、
+  // contenteditable 元素（使用者輸入區）。
+  const PANGU_CJK = '[\\u3400-\\u4dbf\\u4e00-\\u9fff]';
+  // LEAD（緊接 CJK 之後）：英數字 + 半形 `(` —— CJK後面接 `(` 補空白
+  //   例：威騰電子(Western Digital) → 威騰電子 (Western Digital)
+  //   `(` 後面（括號內側）不補空白（緊貼括號內容才是視覺常規）
+  // TRAIL（緊接 CJK 之前）：英數字 + % + ° + 半形 `)` —— `)` 後面接 CJK 補空白
+  //   例：(Western Digital)獨立 → (Western Digital) 獨立
+  // 全形括號 （）/ 方括號 「」/ 書名號 《》 都不在 ASCII 範圍，不誤動
+  const PANGU_LEAD = '[A-Za-z0-9(]';
+  const PANGU_TRAIL = '[A-Za-z0-9%\\u00b0)]'; // ° = °
+  const PANGU_RE_CJK_ALNUM = new RegExp('(' + PANGU_CJK + ')(' + PANGU_LEAD + ')', 'g');
+  const PANGU_RE_ALNUM_CJK = new RegExp('(' + PANGU_TRAIL + ')(' + PANGU_CJK + ')', 'g');
+  const PANGU_SKIP_TAGS = new Set(['CODE', 'PRE', 'KBD', 'SAMP', 'VAR', 'A', 'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION']);
+
+  function panguize(s) {
+    return s.replace(PANGU_RE_CJK_ALNUM, '$1 $2').replace(PANGU_RE_ALNUM_CJK, '$1 $2');
+  }
+
+  // 從 text node 沿 parent 鏈走到 articleEl，判斷是否落在跳過 tag / contenteditable 內
+  function panguShouldSkipNode(textNode, articleEl) {
+    let p = textNode.parentElement;
+    while (p && p !== articleEl.parentElement) {
+      if (PANGU_SKIP_TAGS.has(p.tagName)) return true;
+      const ce = p.getAttribute && p.getAttribute('contenteditable');
+      if (ce === 'true' || ce === '') return true;
+      if (p === articleEl) break;
+      p = p.parentElement;
+    }
+    return false;
+  }
+
+  // 走訪 articleEl 下所有可見 text node、套 pangu 規則。改動的 node 連同原值
+  // 紀錄回傳 array，供 restore 還原。對 ROOT 為 element 或 text node 都接。
+  function panguApplyToTree(root, articleEl, changes) {
+    const doc = articleEl.ownerDocument;
+    if (root.nodeType === 3) {
+      if (!/\S/.test(root.nodeValue)) return;
+      if (panguShouldSkipNode(root, articleEl)) return;
+      const before = root.nodeValue;
+      const after = panguize(before);
+      if (after !== before) {
+        changes.push({ node: root, original: before });
+        root.nodeValue = after;
+      }
+      return;
+    }
+    if (root.nodeType !== 1) return;
+    // root element 自己若是 skip tag → 整棵跳過
+    if (PANGU_SKIP_TAGS.has(root.tagName)) return;
+    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!/\S/.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+        if (panguShouldSkipNode(node, articleEl)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) {
+      const before = n.nodeValue;
+      const after = panguize(before);
+      if (after !== before) {
+        changes.push({ node: n, original: before });
+        n.nodeValue = after;
+      }
+    }
+  }
+
+  // apply 入口：對 articleEl 一次性掃完 + 起 MutationObserver 接後續注入內容
+  // （SPA / lazy-load 的留言、推薦、後到段落）。回傳 snapshot 供 restore。
+  function panguInstall(articleEl) {
+    const changes = [];
+    panguApplyToTree(articleEl, articleEl, changes);
+
+    // MutationObserver 只觀察 childList + subtree，避免 nodeValue 自寫又觸發
+    // characterData 回環。原站若後續改既有 text node 的內容，本輪不重套——
+    // 等下一次 reader mode 進入時會重新處理。
+    const obs = new MutationObserver((mutations) => {
+      for (const mut of mutations) {
+        for (const node of mut.addedNodes) {
+          panguApplyToTree(node, articleEl, changes);
+        }
+      }
+    });
+    obs.observe(articleEl, { childList: true, subtree: true });
+    return { changes, observer: obs };
+  }
+
+  // restore：先停 observer、把 changes 內的 text node 還原為原值。已 detach
+  // 的 node（site JS 移走的）跳過——還原也無意義。
+  function panguRestore(snapshot) {
+    if (!snapshot) return;
+    if (snapshot.observer) {
+      try { snapshot.observer.disconnect(); } catch {}
+    }
+    if (Array.isArray(snapshot.changes)) {
+      for (const c of snapshot.changes) {
+        if (!c || !c.node) continue;
+        // 只有 nodeValue 仍為 panguize 過的字串才還原，避免覆蓋原站之後改動
+        const after = panguize(c.original);
+        if (c.node.nodeValue === after) {
+          c.node.nodeValue = c.original;
+        }
+      }
+    }
+  }
+
   const styler = {
     /**
      * 套用閱讀模式排版。
@@ -868,7 +988,13 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe {
         }
       }
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex };
+      // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
+      // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
+      // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
+      const panguEnabled = s.pangu !== false;
+      const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
+
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex, panguSnap };
     },
 
     /**
@@ -916,6 +1042,13 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe {
         } else {
           snapshot.firstInk.style.removeProperty('margin-top');
         }
+      }
+
+      // Pangu spacing 還原：停 MutationObserver、把改過的 text node 還回原值
+      // 必須在移除 ARTICLE_ATTR 之後（restore 順序對 DOM 副作用沒有依賴，但
+      // panguRestore 內部只看 snapshot.changes，不依賴 reader mode attr）
+      if (snapshot.panguSnap) {
+        panguRestore(snapshot.panguSnap);
       }
 
       // v0.7.93：還原 image gallery flex/grid containers 的原 inline style

@@ -121,6 +121,25 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
+  describe('pangu：popup / SW / styler / options 四檔一致（v0.7.153 新增）', () => {
+    it('SW DEFAULT_SETTINGS.pangu === true', () => {
+      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'pangu');
+      assert.strictEqual(v, 'true', `SW pangu 必須 === true，實際 ${v}`);
+    });
+    it('styler DEFAULTS.pangu === true', () => {
+      const v = extractField(STYLER_SRC, 'DEFAULTS', 'pangu');
+      assert.strictEqual(v, 'true', `styler pangu 必須 === true，實際 ${v}`);
+    });
+    it('options DEFAULTS.pangu === true', () => {
+      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'pangu');
+      assert.strictEqual(v, 'true', `options pangu 必須 === true，實際 ${v}`);
+    });
+    it('popup DEFAULT_SETTINGS.pangu === true', () => {
+      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'pangu');
+      assert.strictEqual(v, 'true', `popup pangu 必須 === true，實際 ${v}`);
+    });
+  });
+
   describe('fontFamily：popup / SW / styler 三邊一致（options 沒這欄）', () => {
     it('SW DEFAULT_SETTINGS.fontFamily === system-ui', () => {
       const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'fontFamily');

@@ -43,7 +43,10 @@ const DEFAULT_SETTINGS = {
   fontFamily: FONT_STACKS.system,
   // v0.7.131：reader mode 攔截原站快速鍵；popup 不放 toggle（options 有），這裡
   // 僅作 storage.get 的 default fallback，避免讀回 undefined。
-  blockPageShortcuts: true
+  blockPageShortcuts: true,
+  // Pangu spacing（中英文間自動補空白）；popup 不放 toggle（options 有），這裡
+  // 僅作 storage.get 的 default fallback，避免讀回 undefined。
+  pangu: true
 };
 
 versionEl.textContent = chrome.runtime.getManifest().version;
