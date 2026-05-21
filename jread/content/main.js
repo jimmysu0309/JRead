@@ -186,20 +186,24 @@
   let enterInFlight = false;
   let exitInFlight = false;
 
-  async function enterReaderMode() {
+  async function enterReaderMode(opts) {
     if (enterInFlight || exitInFlight) return false;
     enterInFlight = true;
     try {
-      return await enterReaderModeImpl();
+      return await enterReaderModeImpl(opts);
     } finally {
       enterInFlight = false;
     }
   }
 
-  async function enterReaderModeImpl() {
+  async function enterReaderModeImpl(opts) {
+    // v0.7.155：silent flag — auto-enable 網域命中後 caller 沒主動按鈕、偵測
+    // 失敗彈「此頁無法偵測主文」反而干擾。手動 toggle / 快速鍵走 opts 預設 falsy
+    // 路徑，行為不變。
+    const silent = !!(opts && opts.silent);
     const result = NS.detector && NS.detector.detect();
     if (!result) {
-      showToast('此頁無法偵測主文', 'error');
+      if (!silent) showToast('此頁無法偵測主文', 'error');
       safeSendMessage({
         type: NS.MSG.REPORT_DETECTION_RESULT,
         payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
@@ -522,6 +526,25 @@
       safeSendMessage({ type: 'JREAD_RELOAD' });
     }
   });
+
+  // v0.7.155：auto-enable 網域 — document_idle 注入時若當前 hostname 命中
+  // settings.autoEnableDomains，silent 進閱讀模式（偵測失敗不彈 toast，避免
+  // 沒主動觸發卻彈錯誤訊息）。iframe 不跑（top-level 才進）；context invalidated
+  // 時 safeSendMessage 已 silent no-op。SPA 路由變化不額外處理——content script
+  // 每次完整頁面 navigation 都會重新注入，這層就是天然的「頁面載入」時點。
+  (async function tryAutoEnableOnLoad() {
+    try {
+      if (window.top !== window.self) return;
+      const helper = window.__JReadDomainMatch;
+      if (!helper) return;
+      const settings = await getSettings();
+      if (!settings) return;
+      const list = Array.isArray(settings.autoEnableDomains) ? settings.autoEnableDomains : [];
+      if (!helper.matchHostname(location.hostname, list)) return;
+      if (NS.state.active) return;
+      await enterReaderMode({ silent: true });
+    } catch (_) { /* getSettings/detector 失敗：保持原頁面、不打擾 */ }
+  })();
 
   // TODO: SPA 導航偵測（MutationObserver on <title> / history API hook）
 })();
