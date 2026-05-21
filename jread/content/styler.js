@@ -801,8 +801,63 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
   const PANGU_RE_ALNUM_CJK = new RegExp('(' + PANGU_TRAIL + ')(' + PANGU_CJK + ')', 'g');
   const PANGU_SKIP_TAGS = new Set(['CODE', 'PRE', 'KBD', 'SAMP', 'VAR', 'A', 'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION']);
 
+  // 中文半形標點 → 全形標點對照（v0.7.158）。觸發條件：前或後緊鄰 CJK 邊界即
+  // 轉，確保 example.com / Hello, world 這類純 ASCII 邊界不會被誤動。
+  // 引號 ' " 不在此表（開/閉判斷複雜、誤殺風險高）。
+  //
+  // PUNCT_BOUNDARY_CJK 比 PANGU_CJK 寬：除漢字本範圍外另含 CJK 符號標點區段
+  // U+3000-303F（、。「」『』《》〈〉【】〔〕 等）與全形 ASCII 區段
+  // U+FF00-FFEF（，。：；？！（）［］ 與全形英數字 等）。理由：使用者反例
+  // `「藍色連結」,Google` 中 `,` 前一字元是 `」`(U+300D)，原 PANGU_CJK 漢字
+  // 範圍不含 CJK 標點，導致逗號不被視為「中文邊界」漏轉。pangu 補空白規則
+  // 維持只看 PANGU_CJK（漢字本範圍），避免「全形標點 ↔ ASCII」之間誤補空白
+  // ——全形標點自帶視覺分隔，補空白反而視覺破碎。
+  const PUNCT_MAP = { ',': '，', '.': '。', ':': '：', ';': '；', '?': '？', '!': '！' };
+  const PUNCT_BOUNDARY_CJK = '[\\u3400-\\u4dbf\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef]';
+  const PUNCT_BOUNDARY_CJK_RE = new RegExp(PUNCT_BOUNDARY_CJK);
+  // 命中順序：先「CJK 在前」（句尾 / 中文後接標點）、再「CJK 在後」（標點後
+  // 接中文，如 Hello, 世界）。兩條獨立替換可同時覆蓋 `中文,Hello,中文` 內的
+  // 兩個逗號（第一個前 CJK 觸發、第二個後 CJK 觸發）。
+  const PUNCT_CHARS = '[,.:;?!]';
+  const PUNCT_RE_CJK_BEFORE = new RegExp('(' + PUNCT_BOUNDARY_CJK + ')(' + PUNCT_CHARS + ')', 'g');
+  const PUNCT_RE_CJK_AFTER = new RegExp('(' + PUNCT_CHARS + ')(?=' + PUNCT_BOUNDARY_CJK + ')', 'g');
+  // 半形括號 ( ) 只在「兩側都緊鄰 CJK 邊界」時轉全形——避免 `中文 (English)`
+  // 變成不對稱的 `中文（English)`；混合 ASCII 內容時保留半形交給 pangu 補空白。
+  const PAREN_OPEN_RE = new RegExp('(' + PUNCT_BOUNDARY_CJK + ')\\((?=' + PUNCT_BOUNDARY_CJK + ')', 'g');
+  const PAREN_CLOSE_RE = new RegExp('(' + PUNCT_BOUNDARY_CJK + ')\\)(?=' + PUNCT_BOUNDARY_CJK + ')', 'g');
+  // 寬鬆規則：text node 整體含 CJK 邊界字元時，把剩餘 ASCII↔ASCII 邊界的半形
+  // 逗號也轉全形。涵蓋 `叫 Google Alerts,2003 年就有了` 這類「英文片語接半形
+  // 逗號接 ASCII 但整段為中文 prose」情境（Jimmy 2026-05-21 實機回報）。
+  // 其他標點（. : ; ? !）不在寬鬆規則內：
+  //   . 寬鬆轉會誤殺 example.com / 1.5 / Mr.Smith
+  //   : 寬鬆轉會誤殺 http://  / 12:30 時間格式
+  //   ; ? ! 寬鬆轉風險目前未實測，保留嚴格邊界 fallback 空間
+  // tradeoff：中文 prose 內混 inline 英文 list（如「他列出 Apple, Banana, Cherry」）
+  // 的逗號會被誤轉全形，但此情境在新聞 / 部落格 prose 內罕見，且 list 通常以
+  // HTML 結構（<ul>/<ol>）或全形頓號 `、` 呈現，誤殺面小。
+
+  function fullwidthPunct(s) {
+    return s
+      .replace(PUNCT_RE_CJK_BEFORE, (m, cjk, p) => cjk + PUNCT_MAP[p])
+      .replace(PUNCT_RE_CJK_AFTER, (m, p) => PUNCT_MAP[p])
+      .replace(PAREN_OPEN_RE, '$1（')
+      .replace(PAREN_CLOSE_RE, '$1）');
+  }
+
   function panguize(s) {
-    return s.replace(PANGU_RE_CJK_ALNUM, '$1 $2').replace(PANGU_RE_ALNUM_CJK, '$1 $2');
+    // 階段一：strict CJK boundary 標點全形化。
+    // 標點轉全形後不再進 PANGU_LEAD/TRAIL 字元類，避免重複觸發補空白
+    // （例如 `他說(嘿嘿)` → `他說（嘿嘿）` 後 pangu 不動）。
+    // 混合情境（中文後接 ASCII 括號）標點保半形，由 pangu 補空白。
+    let out = fullwidthPunct(s);
+    // 階段二：text node 整體含 CJK boundary → 寬鬆模式，剩餘 ASCII↔ASCII 邊界
+    // 的半形逗號也轉全形。
+    if (PUNCT_BOUNDARY_CJK_RE.test(s)) {
+      out = out.replace(/,/g, '，');
+    }
+    return out
+      .replace(PANGU_RE_CJK_ALNUM, '$1 $2')
+      .replace(PANGU_RE_ALNUM_CJK, '$1 $2');
   }
 
   // 從 text node 沿 parent 鏈走到 articleEl，判斷是否落在跳過 tag / contenteditable 內
