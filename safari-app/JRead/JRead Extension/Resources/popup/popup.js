@@ -18,6 +18,9 @@ const fontAutoBtn = document.getElementById('font-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
 const fontFamilySelect = document.getElementById('font-family-select');
 const themeBtns = document.querySelectorAll('.theme-btn');
+const autoDomainRow = document.getElementById('auto-domain-row');
+const autoDomainCb = document.getElementById('auto-domain-cb');
+const autoDomainHostEl = document.getElementById('auto-domain-host');
 
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
@@ -46,7 +49,10 @@ const DEFAULT_SETTINGS = {
   blockPageShortcuts: true,
   // Pangu spacing（中英文間自動補空白）；popup 不放 toggle（options 有），這裡
   // 僅作 storage.get 的 default fallback，避免讀回 undefined。
-  pangu: true
+  pangu: true,
+  // v0.7.155：自動啟動網域清單。popup 端會用 __JReadDomainMatch 比對當前 tab
+  // hostname 反映 toggle 狀態；options 是完整清單編輯入口。
+  autoEnableDomains: []
 };
 
 versionEl.textContent = chrome.runtime.getManifest().version;
@@ -326,3 +332,72 @@ readwiseBtn.addEventListener('click', async () => {
 });
 
 refreshPopupForActiveTab();
+
+// ---- v0.7.155：此網域自動啟動 toggle ----------------------------------------
+// 在 popup 開啟時拉當前 tab 的 hostname + 從 storage 讀 autoEnableDomains，
+// 反映 checkbox 狀態。chrome:// / file:// / about: / 無 host 的 URL 整 row hidden。
+// Toggle ON：把當前 hostname 加進清單（若尚未被 match）。
+// Toggle OFF：移除清單中**所有**符合此 hostname 的 entry（含更寬的 pattern，
+//   如 'abc.com'）——確保使用者按關閉後，此頁面真的不會再 auto-enter。
+//   tooltip 已說明此語意。
+async function getActiveTabUrlInfo() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.url) return null;
+    const u = new URL(tab.url);
+    // 只認 http/https；其他 scheme（chrome://、about:、file://、chrome-extension://）
+    // 沒 meaningful hostname、auto-enable 也不會生效，整 row 隱藏比較乾淨。
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return { hostname: (u.hostname || '').toLowerCase() };
+  } catch (_) { return null; }
+}
+
+let currentHostname = '';
+
+async function refreshAutoDomainRow() {
+  const info = await getActiveTabUrlInfo();
+  const helper = window.__JReadDomainMatch;
+  if (!info || !info.hostname || !helper) {
+    autoDomainRow.hidden = true;
+    return;
+  }
+  currentHostname = info.hostname;
+  autoDomainHostEl.textContent = info.hostname;
+  autoDomainRow.hidden = false;
+  chrome.storage.sync.get({ autoEnableDomains: [] }, (values) => {
+    const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains : [];
+    autoDomainCb.checked = helper.matchHostname(currentHostname, list);
+  });
+}
+
+autoDomainCb.addEventListener('change', () => {
+  const helper = window.__JReadDomainMatch;
+  if (!helper || !currentHostname) return;
+  const wantOn = autoDomainCb.checked;
+  chrome.storage.sync.get({ autoEnableDomains: [] }, (values) => {
+    const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains.slice() : [];
+    let next;
+    if (wantOn) {
+      // 已 match 則不重複加（例如清單中已有 abc.com、目前 hostname=www.abc.com）
+      next = helper.matchHostname(currentHostname, list)
+        ? list
+        : list.concat([currentHostname]);
+    } else {
+      next = helper.removeMatching(currentHostname, list);
+    }
+    chrome.storage.sync.set({ autoEnableDomains: helper.parseList(next.join('\n')) });
+  });
+});
+
+// 跨 tab / options 同步：清單在他處變動時，popup checkbox 立刻反映
+if (chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !('autoEnableDomains' in changes)) return;
+    const helper = window.__JReadDomainMatch;
+    if (!helper || !currentHostname) return;
+    const list = Array.isArray(changes.autoEnableDomains.newValue) ? changes.autoEnableDomains.newValue : [];
+    autoDomainCb.checked = helper.matchHostname(currentHostname, list);
+  });
+}
+
+refreshAutoDomainRow();
