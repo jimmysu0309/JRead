@@ -339,6 +339,63 @@
     .font-family-select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
 
     /* ==========================================================
+       Popup checkbox（v0.7.155 「此網域自動啟動」用）—— 與 options 同視覺
+       語言，獨立 class 避免污染既有 popup button/select。
+       ========================================================== */
+    .popup-checkbox {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      background: var(--jr-surface);
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+      position: relative;
+    }
+    .popup-checkbox:hover { border-color: var(--jr-neutral-500); }
+    .popup-checkbox:checked {
+      background: var(--jr-primary-600);
+      border-color: var(--jr-primary-600);
+    }
+    .popup-checkbox:checked::after {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 1px;
+      width: 5px;
+      height: 10px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .popup-checkbox:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+    /* 帶 hostname pill 的 label 改為左右 baseline；hostname 用 mono 字型 +
+       次要色，與 settings label 區隔出「主名詞 + 機器辨識字串」階層。 */
+    .auto-domain-label {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      max-width: 220px;
+    }
+    .auto-domain-label .host {
+      font-family: var(--jr-font-mono);
+      font-size: 11px;
+      color: var(--jr-neutral-500);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    /* ==========================================================
        Auto toggle — off = ghost, on = filled blue
        ========================================================== */
     .font-controls { display: inline-flex; align-items: center; gap: 6px; }
@@ -471,6 +528,16 @@
         <option value="ui-monospace, Menlo, Consolas, monospace">等寬</option>
       </select>
     </div>
+
+    <!-- v0.7.155：此網域自動啟動。chrome:// / file:// 等無有效 hostname 的頁面
+         此 row 整個 hidden（popup.js 開啟時動態判定）。-->
+    <div class="setting-row" id="auto-domain-row" hidden>
+      <label class="auto-domain-label" for="auto-domain-cb" title="頁面載入時自動進入閱讀模式；關閉會移除清單中所有符合此網域的條目">
+        <span>此網域自動啟動</span>
+        <span class="host" id="auto-domain-host"></span>
+      </label>
+      <input type="checkbox" id="auto-domain-cb" class="popup-checkbox">
+    </div>
   </section>
 
   <div class="footer">
@@ -480,6 +547,7 @@
     <a href="#" class="options-link" id="open-options">進階設定 →</a>
   </div>
 
+  <script src="../content/domain-match.js"></script>
   <script src="popup-core.js"></script>
   <script src="popup.js"></script>
 </body>
