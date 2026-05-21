@@ -760,6 +760,17 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
       // 2026-05-20 vocus /article/6a0d369c... 回報實機觸發）。
       assert.ok(/\[data-jread-active="1"\]\s+span/.test(selectorList),
         `${prop} 的 selector list 必須含 [data-jread-active="1"] span（v0.7.152 修法：穿透 WYSIWYG 編輯器對 span 自身 font-family rule；拿掉 span → vocus.cc 類站點字型設定無效）`);
+      // v0.7.156 forcing function：td / th / caption 必須在 selector list（穿透
+      // 站點對 table cell 字級的縮小規則，例 Wikipedia `table.infobox { font-size:
+      // 0.88em }`）。Jimmy 2026-05-21 Wikipedia /Longchamp_(company) Chrome
+      // 翻譯成 zh-TW 實測：body p = 18px ✓ / infobox td/th = 15.84px ✗（0.88em
+      // 繼承）+ CJK 字型 metric 比 Latin 視覺再小一階 → 體感「中文特別小」。
+      assert.ok(/\[data-jread-active="1"\]\s+td\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] td（v0.7.156 修法：穿透 Wikipedia / 技術文件等 table 排版站點對 cell 字級的 0.88em 縮小規則；拿掉 td → infobox 字級永遠維持 0.88em，使用者字級設定形同失效）`);
+      assert.ok(/\[data-jread-active="1"\]\s+th\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] th（v0.7.156 修法：與 td 同源；table header cell）`);
+      assert.ok(/\[data-jread-active="1"\]\s+caption\b/.test(selectorList),
+        `${prop} 的 selector list 必須含 [data-jread-active="1"] caption（v0.7.156：table 標題與 cell 同樣是閱讀內容，不該被縮小）`);
       // v0.7.120 forcing function：figcaption **不得**列入 typography rule
       // selector——保留原站 caption hierarchy（fontSize / fontFamily /
       // lineHeight 都不覆寫 caption）。
@@ -1421,5 +1432,88 @@ describe('styler — vocus.cc Lexical span 字型穿透（v0.7.152）', () => {
     assert.ok(iconSpan, 'fixture 必有 material-icons span 做 negative case');
     assert.ok(!matched.includes(iconSpan),
       `material-icons span 不該被 span selector 命中（保留 icon font 字型不被使用者「字型」設定覆寫成襯線/無襯線）`);
+  });
+});
+
+describe('styler — Wikipedia infobox table 字級穿透（v0.7.156）', () => {
+  // 案例 / 修法：BODY_TEXT_SEL 加入 td / th / caption，讓使用者字級設定能穿透
+  // Wikipedia `table.infobox { font-size: 0.88em }` 類站點對 table cell 字級的
+  // 縮小規則。Jimmy 2026-05-21 Wikipedia /Longchamp_(company) Chrome 翻譯成
+  // zh-TW 實測：body p = 18px ✓ / infobox td/th = 15.84px ✗（0.88em 繼承）+
+  // CJK 字型 metric 比 Latin 視覺再小一階 → 體感「中文特別小」。
+  function setupWiki() {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(__dirname, 'fixtures', 'wikipedia-infobox-table.html'),
+      scripts: ['detector', 'styler']
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected, 'Wikipedia fixture detector 必須命中');
+    return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
+  }
+
+  it('注入的 selector 命中 fixture 內所有 infobox td / th / caption', () => {
+    const { document, NS, articleEl } = setupWiki();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 20 });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/([^}]*)\{[^}]*font-size\s*:\s*20px/i);
+    assert.ok(m, 'CSS 應含 font-size: 20px rule');
+    const selectorList = m[1];
+    // 切出 td / th / caption 各自的條
+    const tdCond = selectorList.split(',').map(s => s.trim()).find(s => /\btd\b/.test(s));
+    const thCond = selectorList.split(',').map(s => s.trim()).find(s => /\bth\b/.test(s));
+    const capCond = selectorList.split(',').map(s => s.trim()).find(s => /\bcaption\b/.test(s));
+    assert.ok(tdCond, 'selector list 必須含 td 條');
+    assert.ok(thCond, 'selector list 必須含 th 條');
+    assert.ok(capCond, 'selector list 必須含 caption 條');
+
+    // fixture 內 4 個 td、4 個 th、1 個 caption 必須全被命中
+    const tds = articleEl.querySelectorAll('td');
+    const ths = articleEl.querySelectorAll('th');
+    const caps = articleEl.querySelectorAll('caption');
+    assert.strictEqual(tds.length, 4, 'fixture 應有 4 個 td');
+    assert.strictEqual(ths.length, 4, 'fixture 應有 4 個 th');
+    assert.strictEqual(caps.length, 1, 'fixture 應有 1 個 caption');
+
+    const matchedTds = [...articleEl.querySelectorAll(tdCond)];
+    const matchedThs = [...articleEl.querySelectorAll(thCond)];
+    const matchedCaps = [...articleEl.querySelectorAll(capCond)];
+    assert.strictEqual(matchedTds.length, 4,
+      `td selector "${tdCond}" 應命中 fixture 內全部 4 個 td；實際命中 ${matchedTds.length}`);
+    assert.strictEqual(matchedThs.length, 4,
+      `th selector "${thCond}" 應命中 fixture 內全部 4 個 th；實際命中 ${matchedThs.length}`);
+    assert.strictEqual(matchedCaps.length, 1,
+      `caption selector "${capCond}" 應命中 fixture 內 caption；實際命中 ${matchedCaps.length}`);
+  });
+
+  it('font-family override 同樣命中 td / th / caption（穿透 Wikipedia infobox 字型 rule）', () => {
+    // 動機等同字級：infobox 若用 stylesheet 設 font-family（少見但有），使用者
+    // 「字型」設定不該對 cell 失效。
+    const { document, NS, articleEl } = setupWiki();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontFamily: 'Georgia' });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/([^}]*)\{[^}]*font-family\s*:/i);
+    assert.ok(m, 'CSS 應含 font-family rule');
+    const selectorList = m[1];
+    for (const tag of ['td', 'th', 'caption']) {
+      const cond = selectorList.split(',').map(s => s.trim()).find(s => new RegExp('\\b' + tag + '\\b').test(s));
+      assert.ok(cond,
+        `font-family selector list 必須含 ${tag} 條（v0.7.156：字型 override 與字級 override 同邊界）`);
+    }
+  });
+
+  it('table 自己**不在** selector list（避免動 table-level layout：行高 / 邊框 / column 寬）', () => {
+    // 設計選擇：只攔 cell 級避免破壞 table 整體 layout。table 上若有 font-size
+    // override 會影響 em-based padding / border-spacing / col width 等。
+    const { document, NS, articleEl } = setupWiki();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 20 });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/([^}]*)\{[^}]*font-size\s*:\s*20px/i);
+    const selectorList = m[1];
+    // 各條 selector 結尾不得是純 'table'（前後有空白或 comma 邊界）
+    const conds = selectorList.split(',').map(s => s.trim());
+    for (const cond of conds) {
+      assert.ok(!/\s+table$/.test(cond),
+        `selector list 不得含尾端為 "table" 的條（避免動 table-level layout）；實際違規條："${cond}"`);
+    }
   });
 });

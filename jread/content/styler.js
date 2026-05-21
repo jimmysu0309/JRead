@@ -559,6 +559,16 @@ html [${ARTICLE_ATTR}="1"] {
       `:not([class*=" fa-"])` +
       `:not([class*="emoji"])` +
       `:not([class*="badge"])`;
+    // v0.7.156：加入 td, th —— Wikipedia / 技術文件 / Stack Overflow 等用 table
+    // 排版 content 的站點普遍對 `table.infobox` / `.wikitable` 等寫死 `font-size:
+    // 0.88em` 縮小 table 內字。Jimmy 2026-05-21 Wikipedia /Longchamp_(company)
+    // Chrome 翻譯成 zh-TW 後實測：body p = 18px ✓ / infobox td/th = 15.84px ✗
+    // （Wikipedia table.infobox 0.88em 規則繼承），CJK 字型 metric 比 Latin 視覺
+    // 上又小一階 → 使用者體感「中文特別小」。td/th 加進 selector 後 infobox 內
+    // 文字會強制套使用者字級。`<table>` 自己**不加**——只攔 cell 級而不動 table
+    // 級避免破壞站點 table layout（行高 / 邊框 / column 寬等）；cell 級字級放大
+    // 已足夠解決「看不清」核心痛點。`caption` 跟著 td/th 一起進 selector——是
+    // table 的標題，跟 cell 同等重要的閱讀內容。
     const BODY_TEXT_SEL =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
@@ -566,6 +576,9 @@ html [${ARTICLE_ATTR}="1"] {
       `[${ARTICLE_ATTR}="1"] blockquote,` +
       `[${ARTICLE_ATTR}="1"] dd,` +
       `[${ARTICLE_ATTR}="1"] dt,` +
+      `[${ARTICLE_ATTR}="1"] td,` +
+      `[${ARTICLE_ATTR}="1"] th,` +
+      `[${ARTICLE_ATTR}="1"] caption,` +
       SPAN_TEXT_SEL;
     let userOverrides = '';
     if (overrides.fontSize) {
