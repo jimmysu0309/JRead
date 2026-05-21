@@ -123,6 +123,30 @@
       font-family: var(--jr-font-mono);
       font-size: 12px;
     }
+    /* v0.7.155：自動啟動網域 textarea。獨佔整個區塊寬度（不走 .field 左右
+       分欄）；mono 字型 + 較小字級對齊「網域 = 機器辨識字串」語意。 */
+    textarea#autoEnableDomains {
+      width: 100%;
+      min-height: 110px;
+      padding: 10px 12px;
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--jr-neutral-900);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      resize: vertical;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    textarea#autoEnableDomains:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    textarea#autoEnableDomains:focus {
+      outline: none;
+      border-color: var(--jr-primary-600);
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
     input[type="number"] {
       font-family: var(--jr-font-mono);
       font-variant-numeric: tabular-nums;
@@ -362,6 +386,12 @@
 
   <div id="save-status"></div>
 
+  <h2 class="section-heading">自動啟動網域</h2>
+  <p class="section-desc">
+    符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在 popup 用「此網域自動啟動」開關快速加入目前網域。
+  </p>
+  <textarea id="autoEnableDomains" spellcheck="false" autocomplete="off" placeholder="abc.com&#10;news.example.org"></textarea>
+
   <h2 class="section-heading">YouTube 模式</h2>
   <p class="section-desc">
     在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+R</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式可到 <code>chrome://extensions/shortcuts</code> 替「切換 YouTube 無邊模式」自訂一組快速鍵。
@@ -399,6 +429,7 @@
     <p class="author">作者：Jimmy Su　・　Twitter (X)：<a href="https://x.com/jimmy_su" target="_blank" rel="noopener">@jimmy_su</a></p>
   </section>
 
+  <script src="../content/domain-match.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

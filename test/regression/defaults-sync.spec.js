@@ -121,6 +121,21 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
+  describe('autoEnableDomains：popup / SW / options 三檔一致（v0.7.155 新增；styler 無此欄）', () => {
+    it('SW DEFAULT_SETTINGS.autoEnableDomains === []', () => {
+      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'autoEnableDomains');
+      assert.strictEqual(v, '[]', `SW autoEnableDomains 必須 === []，實際 ${v}`);
+    });
+    it('options DEFAULTS.autoEnableDomains === []', () => {
+      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'autoEnableDomains');
+      assert.strictEqual(v, '[]', `options autoEnableDomains 必須 === []，實際 ${v}`);
+    });
+    it('popup DEFAULT_SETTINGS.autoEnableDomains === []', () => {
+      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'autoEnableDomains');
+      assert.strictEqual(v, '[]', `popup autoEnableDomains 必須 === []，實際 ${v}`);
+    });
+  });
+
   describe('pangu：popup / SW / styler / options 四檔一致（v0.7.153 新增）', () => {
     it('SW DEFAULT_SETTINGS.pangu === true', () => {
       const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'pangu');

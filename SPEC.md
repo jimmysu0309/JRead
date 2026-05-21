@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.154**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.155**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -18,7 +18,7 @@
 1. **styler 瘦身不變**（承接 v0.6.0 / v0.7.32 精神）：字型 / heading margin / p margin / list style / link color / blockquote border **全部保留原站樣式**；styler 只注入讀者卡片容器 + 祖先鏈 reset + 必要 hack + 使用者 override。
 2. **styler 增強**：cardArticle rule selector 加 `html` 前綴提升 specificity 到 (0,1,1) 贏過原站單 class !important rule（v0.7.121 cn.nytimes 修法）；col-* reset rule 升級為 `width: auto / max-width: none / float: none / flex: 1 1 auto / margin-left: 0 / margin-right: 0 / padding: 0`（v0.7.122 flex-grow:1 撐父 + v0.7.123 清 Bootstrap col offset margin）；figcaption 從 BODY_TEXT_SEL 排除保留原站 typography hierarchy（v0.7.120）。
 3. **cleaner 規則完整 + 新增覆蓋**：v0.7.32 規則全保留 + 後續累積：負 horizontal margin reset（v0.7.115 twz.com full-bleed header）+ 文末 `<footer>` 雙階段 hide（v0.7.116 twz.com category tag）+ aspect-ratio container reset 擴增（v0.7.117 twz.com YouTube facade）+ `collapseGridWithHiddenCell` non-articleSelf wrapper 加 padding-left/right reset（v0.7.118 cna.com.tw inner-padding 溢出）+ `hideInsideArticleAbsoluteOverlays` 排除 IMG/PICTURE/VIDEO/SOURCE 避免主圖誤殺（v0.7.119 ebc.net.tw）+ negative z-index reset（v0.7.114 vocus）+ Bootstrap grid float layout condition D（v0.7.110 TBIJ）+ **`collapseEmptyWrappersAfterClean` 末段空 wrapper collapse**（v0.7.128 Medium top action bar 24px 殘留撐起標題上方空白）。
-4. **使用者可調設定**：theme（light/dark/sepia）、fontSize（含 0 = Auto 保留原站）、contentWidth、fontFamily、lineHeight、autoEnableDomains、Readwise Reader 整合、**blockPageShortcuts**（v0.7.131 reader mode 攔截原站快速鍵 Gmail / YouTube 等，預設 on）、**pangu**（v0.7.153 中英文間自動補空白，預設 on）。
+4. **使用者可調設定**：theme（light/dark/sepia）、fontSize（含 0 = Auto 保留原站）、contentWidth、fontFamily、lineHeight、**autoEnableDomains**（v0.7.155 options 「自動啟動網域」+ popup 「此網域自動啟動」checkbox，命中即頁面載入 silent enterReaderMode）、Readwise Reader 整合、**blockPageShortcuts**（v0.7.131 reader mode 攔截原站快速鍵 Gmail / YouTube 等，預設 on）、**pangu**（v0.7.153 中英文間自動補空白，預設 on）。
 5. **測試覆蓋**：448 jsdom regression spec（每條 cn.nytimes / cna / ebc / twz / udn / medium 等實機 bug 都有 forcing function fixture，含 v0.7.125–127 SW badge / JREAD_RELOAD bridge / badge text 純色塊修法 + v0.7.129 swallowTabGone race-condition guard + v0.7.130 popup readwise-btn hidden 可見性 + v0.7.131 reader-mode keyguard 攔截原站 shortcut + v0.7.132 options checkbox flex-shrink 防壓扁結構 spec）+ e2e SW wire-up spec + Playwright harness（`tools/debug-harness.js`）+ `npm test --timeout 30000` 確保 jsdom 重 fixture 不超時（v0.7.118 hotfix）。
 6. **實測通過站擴展**（在 v0.7.32 之上累積）：cn.nytimes / cna.com.tw / ebc.net.tw / twz.com / vocus.cc / esmchina / 商業周刊 / synapseching.substack.com / **medium.com**（v0.7.128 top action bar 殘留 24px 修法）等。
 7. **Debug 工具鏈**：Claude 自主跑完 reproduce + forensic 循環（Playwright + localStorage instrument bridge），避開 chrome.downloads MV3 SW data URL 限制，免使用者每步截圖（[[feedback-autonomous-debug]] memory 教訓）。
@@ -324,7 +324,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `lineHeight` | `number` | `1.7` | `storage.sync` | ❌（MVP 固定） |
 | `blockPageShortcuts` | `boolean` | `true` | `storage.sync` | ✅（options 「攔截原站快速鍵」） |
 | `pangu` | `boolean` | `true` | `storage.sync` | ✅（options 「中英文間自動補空白」，v0.7.153）—— reader mode 啟動時掃 articleEl 所有 text node，CJK ↔ 英數字 / % / ° 邊界補空白；跳過 `<code>` / `<a>` / `<input>` / contenteditable 等 |
-| `autoEnableDomains` | `string[]` | `[]` | `storage.sync` | ❌（MVP 不做） |
+| `autoEnableDomains` | `string[]` | `[]` | `storage.sync` | ✅（v0.7.155 options 「自動啟動網域」textarea + popup 「此網域自動啟動」checkbox）—— 命中網域時 content script document_idle 自動 silent enterReaderMode；matching rule：`hostname === pattern OR hostname.endsWith('.' + pattern)`（`abc.com` 涵蓋 `www.abc.com` / 子網域；`www.abc.com` 只匹配自身，不含 `123.abc.com`） |
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |
 
 ---
@@ -377,6 +377,37 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - 頁面不支援（chrome:// 等 sendMessage reject）→ button disabled
 - 點擊：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ popup → SW（`SAVE_TO_READWISE` 帶 payload）→ SW 讀 token + fetch + 回結果
 - 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`
+
+## 自動啟動網域（v0.7.155）
+
+使用者可指定一份網域清單，命中時頁面載入即自動進入閱讀模式，不需手動按 popup 或快速鍵。動機：經常閱讀的特定新聞網站每次都按一次切換太繁瑣，列入清單後 content script document_idle 就 silent enterReaderMode。
+
+### Matching 規則
+
+- **本身或子網域**：pattern `'abc.com'` 命中 `abc.com`、`www.abc.com`、`foo.abc.com`、`a.b.abc.com`（所有以 `.abc.com` 結尾的 hostname）。
+- **只本身**：pattern `'www.abc.com'` 命中 `www.abc.com`，**不**命中 `123.abc.com`（兄弟子網域，因 `123.abc.com` 不 endsWith `.www.abc.com`），也**不**命中父網域 `abc.com`。
+- **形式**：`hostname === pattern OR hostname.endsWith('.' + pattern)`，大小寫不敏感。
+- **正規化**：input 自動 lowercase、去 scheme（`https://`）、去 path / query / hash、去 port、去前後 dot。`https://www.abc.com/news/123` → `www.abc.com`。
+
+實作：`jread/content/domain-match.js`，IIFE 掛 `window.__JReadDomainMatch`（content script / popup / options 共用）+ CommonJS 匯出（regression spec 直接 require）。
+
+### 設定 UX
+
+兩個入口共用同一份 `storage.sync.autoEnableDomains` 陣列：
+
+1. **Options 頁「自動啟動網域」textarea**：完整清單管理，一行一個網域。`change` 事件（blur 觸發）才寫 sync，避免每按一鍵踩配額。正規化後寫回 textarea 讓使用者看到實際生效形式。
+2. **Popup「此網域自動啟動」checkbox**：當前 tab 是 http/https 才顯示 row（chrome:// / file:// / about: 隱藏）；顯示目前 hostname 在 label 旁的 mono 字小字。
+   - **Toggle ON**：把當前 hostname 加進清單（若 helper `matchHostname` 已回 true 則不重複加）
+   - **Toggle OFF**：呼叫 `removeMatching` 移除清單中**所有**會命中此 hostname 的 entry（含更寬的 pattern 如 `abc.com`）—— 確保關閉後此頁面真的不會再 auto-enter
+
+兩端透過 `chrome.storage.onChanged` 跨 tab 即時同步：options 編輯時 popup 已開啟也會立刻反映、反之亦然。
+
+### Auto-enter 行為
+
+- **觸發點**：`jread/content/main.js` IIFE 末尾 `tryAutoEnableOnLoad()`，document_idle 時 read settings → `matchHostname(location.hostname, list)` → 命中即 `enterReaderMode({ silent: true })`
+- **iframe guard**：`window.top !== window.self` 直接 return，避免 iframe 內 hostname 命中導致一頁多次觸發
+- **silent flag**：偵測失敗時**不**彈「此頁無法偵測主文」toast（使用者沒主動按、彈錯誤反而干擾）。手動 toggle / 快速鍵走無 silent 路徑、行為不變。
+- **SPA 路由**：不額外處理。content script 每次完整頁面 navigation 重新注入，這層就是天然的「頁面載入」時點。SPA 內部 history.pushState 切頁不會重觸發（與整個 extension 一致）。
 
 ## YouTube Cinema Mode（v0.7.133）
 

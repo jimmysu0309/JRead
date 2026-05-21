@@ -37,8 +37,10 @@ describe('main.js — enterReaderMode/exitReaderMode 重入保護（v0.7.143）'
 
   it('enterReaderMode 入口必須先 check inFlight 並 return false', () => {
     // 確認 enterReaderMode 函式 body 第一行包含 enterInFlight check
-    const match = src.match(/async function enterReaderMode\(\)\s*\{([\s\S]{0,200})/);
-    assert.ok(match, '必須找到 async function enterReaderMode() 宣告');
+    // v0.7.155：簽名容許 0 或 1 個參數（auto-enable 新增 opts.silent）；invariant
+    // 仍是 enterInFlight guard。
+    const match = src.match(/async function enterReaderMode\([^)]*\)\s*\{([\s\S]{0,200})/);
+    assert.ok(match, '必須找到 async function enterReaderMode(...) 宣告');
     assert.ok(
       /if\s*\(\s*enterInFlight/.test(match[1]),
       'enterReaderMode 入口必須 check enterInFlight；實際前 200 字元：\n' + match[1]
@@ -91,7 +93,7 @@ describe('main.js — enterReaderMode/exitReaderMode 重入保護（v0.7.143）'
   });
 
   it('enterReaderMode 也必須 check exitInFlight（防 exit 進行中再點 enter）', () => {
-    const match = src.match(/async function enterReaderMode\(\)\s*\{([\s\S]{0,200})/);
+    const match = src.match(/async function enterReaderMode\([^)]*\)\s*\{([\s\S]{0,200})/);
     assert.ok(match);
     assert.ok(
       /exitInFlight/.test(match[1]),
