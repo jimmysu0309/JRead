@@ -17,6 +17,13 @@ const DEFAULT_SETTINGS = {
   fontSize: 18,
   contentWidth: 720,
   fontFamily: 'system-ui',
+  // 字粗外觀。false = 細（-webkit-font-smoothing: antialiased，macOS grayscale
+  // anti-aliasing，視覺較細）= 預設;true = 粗（auto = subpixel-antialiased，
+  // macOS 預設 = 視覺較粗）。用 smoothing 切換而非 font-weight—— CJK 字型
+  // 在 macOS 上不同 weight (400/500/600/700) 視覺差異不穩定（不同 font face
+  // 涵蓋範圍不一），smoothing 模式差異明顯且跨字型穩定。Linux / Windows 上
+  // -webkit-font-smoothing 無效，此 setting 在那些 OS 上無視覺差異。
+  boldText: false,
   lineHeight: 1.7,
   autoEnableDomains: [],
   // Readwise Reader integration（v0.7.33）。空字串 = 未設定，popup 會擋下送出。

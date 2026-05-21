@@ -106,6 +106,40 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
+  describe('boldText：popup / SW / styler / options 必須四邊一致（v0.7.157 字粗 smoothing 切換）', () => {
+    // CJK 字型 weight 視覺差異不可靠，改用 -webkit-font-smoothing 模式作為粗細
+    // 切換軸（細 = antialiased / 粗 = auto subpixel）。預設 false (細)。
+    it('SW DEFAULT_SETTINGS.boldText === false', () => {
+      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'boldText');
+      assert.strictEqual(v, 'false', `SW boldText 預設必須 === false (細)，實際 ${v}`);
+    });
+    it('styler DEFAULTS.boldText === false', () => {
+      const v = extractField(STYLER_SRC, 'DEFAULTS', 'boldText');
+      assert.strictEqual(v, 'false', `styler boldText 預設必須 === false (細)，實際 ${v}`);
+    });
+    it('options DEFAULTS.boldText === false', () => {
+      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'boldText');
+      assert.strictEqual(v, 'false', `options boldText 預設必須 === false (細)，實際 ${v}`);
+    });
+    it('popup DEFAULT_SETTINGS.boldText === false', () => {
+      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'boldText');
+      assert.strictEqual(v, 'false', `popup DEFAULT_SETTINGS.boldText 預設必須 === false (細)，實際 ${v}`);
+    });
+    it('main.js storage.onChanged relevantKeys 必須含 boldText（reader mode 即時套用、不需 refresh）', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const MAIN_SRC = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'jread', 'content', 'main.js'),
+        'utf8'
+      );
+      const m = MAIN_SRC.match(/relevantKeys\s*=\s*\[([^\]]+)\]/);
+      assert.ok(m, '必須能抓到 main.js relevantKeys 陣列');
+      const keys = m[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+      assert.ok(keys.includes('boldText'),
+        `relevantKeys 必須含 boldText；否則 popup 切換字粗後 content script 不會 reapply、使用者需 refresh 頁面才看到效果。實際 keys: ${JSON.stringify(keys)}`);
+    });
+  });
+
   describe('blockPageShortcuts：popup / SW / options 三邊一致（styler 沒這欄）', () => {
     it('SW DEFAULT_SETTINGS.blockPageShortcuts === true', () => {
       const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'blockPageShortcuts');

@@ -783,6 +783,9 @@
       if (NS.xThread && typeof NS.xThread.isXStatusPage === 'function' && NS.xThread.isXStatusPage()) {
         return { siteMode: 'x-thread' };
       }
+      if (NS.fbPost && typeof NS.fbPost.isFacebookPost === 'function' && NS.fbPost.isFacebookPost()) {
+        return { siteMode: 'fb-post' };
+      }
       // 跑 4 個 read-only 策略；故意不走 detectByShadowDomFallback（會 appendChild
       // 替身、有副作用），shadow DOM 站走 enter reader mode 時才建替身。
       const result = (
@@ -832,6 +835,18 @@
           confidence: 1,
           strategy: 'x-thread',
           isXThread: true
+        };
+      }
+      // v0.7.157：Facebook permalink 短路。permalink post（/<user>/posts/pfbid*
+      // 等）沒 article/main/schema 也沒 <p> signal，detector 四層全 null。改由
+      // NS.fbPost.enter() 合成 reader 容器（main.js 走獨立 enterFbPostMode 分支
+      // 建容器、再對容器跑既有 cleaner / styler 流程）。
+      if (NS.fbPost && typeof NS.fbPost.isFacebookPost === 'function' && NS.fbPost.isFacebookPost()) {
+        return {
+          el: null,
+          confidence: 1,
+          strategy: 'fb-post',
+          isFbPost: true
         };
       }
       const result = (

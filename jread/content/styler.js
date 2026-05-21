@@ -24,6 +24,10 @@
     fontSize: 18,
     contentWidth: 720,
     fontFamily: 'system-ui',
+    // 字粗外觀。false = 細（antialiased / grayscale）= 預設;true = 粗（auto =
+    // subpixel-antialiased）。用 smoothing 切換而非 font-weight—— CJK 字型在
+    // macOS 上不同 weight 視覺差異不穩定，smoothing 模式差異明顯且跨字型穩定。
+    boldText: false,
     lineHeight: 1.7,
     // 中英文字之間自動補空白（盤古之白）。預設 true—— 大部分台灣 / 港澳 / 中文
     // 讀者習慣這種視覺節奏，原始網站常缺空格（特別是 CMS / SPA 編輯器寫入時）。
@@ -163,6 +167,14 @@ html [${ARTICLE_ATTR}="1"] {
   float: none !important;
   position: static !important;
   transform: none !important;
+  /* v0.7.157：font-smoothing 統一 antialiased（macOS）/ grayscale（macOS Firefox）。
+     站點未自行設定時，macOS Chrome 預設 -webkit-font-smoothing 為 auto（subpixel-
+     antialiased），中文字渲染明顯偏粗（businessweekly.com.tw 等中文新聞站 stack
+     "Microsoft JhengHei", "Noto Sans TC", "PingFang TC" fallback 到 PingFang TC
+     後字重雖 400 但視覺偏粗）。Medium / NYT / Substack 等專業閱讀站 stylesheet
+     普遍套 antialiased。reader-card scoped 不影響原站視覺，是業界閱讀體驗最佳實踐。 */
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 /* 消除頂端留白：第一個 direct child 清 margin-top / padding-top。
    JS 端另外會對「第一個 h1-h4/p」設 margin-top: 0 inline（覆蓋深層 CMS 寫死的值） */
@@ -486,6 +498,13 @@ html [${ARTICLE_ATTR}="1"] {
    max-width 限縮上限，width:auto / 顯式 width 仍照原值算。 */
 [${ARTICLE_ATTR}="1"] * {
   max-width: 100% !important;
+  /* v0.7.157：font-smoothing 繼承——站點若在子層級重設 -webkit-font-smoothing
+     為 auto，會把 reader card 內部分元素拉回 subpixel-antialiased（macOS）導致
+     字粗。強制 inherit 鎖定子層走 reader card 套的 antialiased（grayscale）。
+     合併進此 universal rule（不另開）—— spec 既有 regex 預期第一條 universal
+     selector body 內含 max-width: 100%。 */
+  -webkit-font-smoothing: inherit !important;
+  -moz-osx-font-smoothing: inherit !important;
 }
 /* 強制 block flow + 媒體置中。
    float: none——對所有 reader card 後代——原站常用 float 把媒體放 sidebar
@@ -599,6 +618,16 @@ ${BODY_TEXT_SEL} {
       userOverrides += `
 ${BODY_TEXT_SEL} {
   font-family: ${opts.fontFamily}, -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
+}`;
+    }
+    if (opts.boldText) {
+      // 使用者選「粗」—— 反轉 reader card 預設的 antialiased，回到 macOS Chrome
+      // 預設 auto = subpixel-antialiased，視覺較粗。CJK 字型 weight 視覺差異
+      // 不可靠，smoothing 模式差異反而明顯且穩定（macOS 限定，其他 OS 無效）。
+      userOverrides += `
+html [${ARTICLE_ATTR}="1"] {
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
 }`;
     }
     if (overrides.lineHeight && !overrides.fontSize) {
@@ -895,6 +924,9 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
           ? Math.min(2000, Math.max(300, rawCw))
           : DEFAULTS.contentWidth,
         fontFamily: s.fontFamily || DEFAULTS.fontFamily,
+        // boldText boolean — true = 粗 (subpixel-antialiased) / false = 細
+        // (antialiased)。預設 false（細）。
+        boldText: s.boldText === true,
         // lineHeight：clamp [1.0, 3.0]（unitless ratio；< 1 字會重疊、> 3 段落破碎）
         lineHeight: Number.isFinite(rawLh) && rawLh > 0
           ? Math.min(3.0, Math.max(1.0, rawLh))

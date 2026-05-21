@@ -5,6 +5,8 @@ const DEFAULTS = {
   theme: 'light',
   fontSize: 18,
   contentWidth: 720,
+  // 字粗外觀（細 = antialiased / 粗 = subpixel-antialiased）;預設細
+  boldText: false,
   readwiseToken: '',
   // v0.7.131：reader mode 攔截原站快速鍵（Gmail j/k/e、YouTube k 等誤觸救援）
   blockPageShortcuts: true,
@@ -16,7 +18,7 @@ const DEFAULTS = {
   autoEnableDomains: []
 };
 
-const fields = ['theme', 'fontSize', 'contentWidth', 'readwiseToken', 'blockPageShortcuts', 'pangu'];
+const fields = ['theme', 'fontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -25,6 +27,7 @@ function load() {
     document.getElementById('theme').value = values.theme;
     document.getElementById('fontSize').value = values.fontSize;
     document.getElementById('contentWidth').value = values.contentWidth;
+    document.getElementById('boldText').checked = values.boldText === true;
     document.getElementById('readwiseToken').value = values.readwiseToken || '';
     document.getElementById('blockPageShortcuts').checked = values.blockPageShortcuts !== false;
     document.getElementById('pangu').checked = values.pangu !== false;
@@ -47,6 +50,7 @@ function save() {
     theme: document.getElementById('theme').value,
     fontSize: Number(document.getElementById('fontSize').value),
     contentWidth: Number(document.getElementById('contentWidth').value),
+    boldText: document.getElementById('boldText').checked,
     readwiseToken: document.getElementById('readwiseToken').value.trim(),
     blockPageShortcuts: document.getElementById('blockPageShortcuts').checked,
     pangu: document.getElementById('pangu').checked
