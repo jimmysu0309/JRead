@@ -7,10 +7,12 @@ const DEFAULTS = {
   contentWidth: 720,
   readwiseToken: '',
   // v0.7.131：reader mode 攔截原站快速鍵（Gmail j/k/e、YouTube k 等誤觸救援）
-  blockPageShortcuts: true
+  blockPageShortcuts: true,
+  // 中英文字之間自動補空白（盤古之白）；預設 true
+  pangu: true
 };
 
-const fields = ['theme', 'fontSize', 'contentWidth', 'readwiseToken', 'blockPageShortcuts'];
+const fields = ['theme', 'fontSize', 'contentWidth', 'readwiseToken', 'blockPageShortcuts', 'pangu'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -21,6 +23,7 @@ function load() {
     document.getElementById('contentWidth').value = values.contentWidth;
     document.getElementById('readwiseToken').value = values.readwiseToken || '';
     document.getElementById('blockPageShortcuts').checked = values.blockPageShortcuts !== false;
+    document.getElementById('pangu').checked = values.pangu !== false;
   });
 }
 
@@ -30,7 +33,8 @@ function save() {
     fontSize: Number(document.getElementById('fontSize').value),
     contentWidth: Number(document.getElementById('contentWidth').value),
     readwiseToken: document.getElementById('readwiseToken').value.trim(),
-    blockPageShortcuts: document.getElementById('blockPageShortcuts').checked
+    blockPageShortcuts: document.getElementById('blockPageShortcuts').checked,
+    pangu: document.getElementById('pangu').checked
   };
   chrome.storage.sync.set(patch, () => {
     const s = document.getElementById('save-status');
