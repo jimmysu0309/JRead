@@ -619,9 +619,43 @@ html.${HTML_CLASS} body {
       // 影響；對 chart embed 是核心保護。
       // 用 html.__jread-active + [data-jread-active] 提升 specificity 到
       // (0,2,2)——避免站點 `iframe.datawrapper` 類 (0,1,2) rule 勝出。
+      //
+      // v0.7.154：同邏輯擴到 <img>——businessweekly chart PNG 帶 transparent bg
+      // + light theme 設計（黑字 + 橘柱 + 紅標題 + 白方框 callout），light card
+      // 透出白底正常顯示；dark card 透出 #1a1a1a → 黑色 x 軸文字（亞馬遜 / 輝達
+      // / Google / Meta / 蘋果等）+ 黑色註解（資料來源：Google Finance）全部
+      // 對比 1:1 直接消失。Jimmy 2026-05-21 chrome-in-chrome 連登入 session
+      // probe 確認 chart 是 `<img class="thumb">`、bg transparent + alt 含
+      // chart 標題 + image bitmap 內部已固定設計、jread 無法 invert 內容。
+      // 修法：dark/sepia 強制 `<img>` 白底，讓 PNG transparent 區域透出白色、
+      // 黑字回復可讀。
+      // 副作用：JPG 主圖完整覆蓋整圖、白底 fallback 看不到無影響；公司 logo /
+      // icon PNG 透明 + light 設計者透白底反而與站點 light visual 一致；
+      // 透明 GIF / 小裝飾少見、白底無明顯害處。
       userOverrides += `
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe {
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe,
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] img {
   background-color: #fff !important;
+}`;
+      // v0.7.154：blockquote 強制清背景。dark / sepia theme 下站點原本為 light
+      // theme 設計的 blockquote（淺灰底 + 深色文字）—— styler line 454 preserve
+      // 清單刻意保留 blockquote 原 bg（W3C 引述語意視覺區隔），但 dark theme
+      // 下 jread `* { color: theme.text }` 把文字色覆寫成淺色 → 淺灰底 +
+      // 淺灰文字 = 對比 1.x:1 不可讀。Jimmy 2026-05-21 回報商周
+      // /Archive/Article?StrId=7014078 dark theme「引文底色與文字對比太低很難
+      // 閱讀」截圖確認。
+      // Probe 數值：站點 blockquote.blockquote 套 bg #f5f5f5、styler 覆寫 color
+      // #d4d4d4 → 對比 1.38:1（WCAG AA 需 4.5:1）；inject 修法 transparent 後
+      // 透出 reader card #1a1a1a → 對比 11.74:1（AAA 通過）。
+      // 副作用：light theme 不注入（既有 preserve 設計仍有效）。dark / sepia
+      // 下 blockquote 失去「淺底突顯」視覺、但 border-left / padding / ::before
+      // 引號圖示 contrast 都 >= 13:1 仍可辨識為引文。
+      // selector specificity (0,2,1) > 站點常見 `blockquote.blockquote` (0,1,1)
+      // / `.quote-block` (0,1,0) 等 rule。
+      userOverrides += `
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
+  background-color: transparent !important;
+  background-image: none !important;
 }`;
       // 連結色回補：上面 `* { color: X }` 會吞掉原站 link 色。在 dark / sepia
       // 底下若沒有針對性 a 規則，連結跟正文完全同色無法辨識。加粗底線做雙通道

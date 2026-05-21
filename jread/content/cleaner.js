@@ -864,6 +864,34 @@
           const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
           if (sibText.length <= 200) continue;
         }
+        // 主文長段落分支（v0.7.154 wealth.com.tw 修法）：sibling 含「不在
+        // list-item / 連結內」的 >= 100 chars 單一 p 或累計 >= 300 chars → 視為
+        // 含主文內容、保留。
+        // 場景：wealth.com.tw SPA 站 detector 選了下半部 content container 為
+        // promotedFrom（emotion hash class，內含「所以真正的荷蘭病...」一段），
+        // 但兄弟 DIV.JozKC 內含開頭灰底引文 + 前 2-3 段主文（「真正的荷蘭病，
+        // 會讓國家愈來愈懶 + 荷蘭病與九二共識...」+ 之後內文）。
+        // 既有白名單（H1 / promotedTitleHead / standalone media / time byline）
+        // 全沒命中，被當 chrome 砍 → 開頭一大段主文消失。
+        //
+        // 為何不能直接重用 wrapperContainsMainContentP：sidebar 「相關新聞」
+        // 列表 `<ul><li><a>...</a><p>長描述</p></li></ul>` 的 p 也可能很長
+        // （udn fixture 實測），舊 helper 沒區分 → 誤豁免整個相關新聞區。
+        // 通則特徵：主文 p 不會被 `<li>` / `<a>` / `<aside>` 包；sidebar 列表
+        // 項的描述 p 必然在 `<li>` 內（HTML 語意）或 `<a>` 內（卡片連結）。
+        // 本 guard 內聯自己 walker、跳過這類包裹的 p。
+        if (sib.querySelectorAll) {
+          let acc = 0;
+          let mainContentFound = false;
+          for (const para of sib.querySelectorAll('p')) {
+            if (para.closest('li, a, aside')) continue;
+            const pt = norm(para.textContent);
+            if (pt.length >= 100) { mainContentFound = true; break; }
+            acc += pt.length;
+            if (acc >= 300) { mainContentFound = true; break; }
+          }
+          if (mainContentFound) continue;
+        }
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);

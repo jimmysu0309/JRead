@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>wealth.com.tw SPA — narrow guard：sibling 含主文長段落 forcing</title>
+  <meta property="og:title" content="李鎮宇：台灣半導體產業是「反荷蘭病」">
+</head>
+<body>
+  <!-- v0.7.154 wealth.com.tw 實測 repro：
+       Jimmy 2026-05-21 回報 https://www.wealth.com.tw/articles/f2b6e893-... 進閱讀
+       模式後文章開頭一大段（含灰底引文 + 前 2-3 段主文 + 第一個 H3）整段不見。
+       Probe 確認：cleaner narrowPromotedSiblings 把 promotedFrom 的兄弟 DIV.JozKC
+       砍了，但該 DIV 含開頭灰底引文「真正的荷蘭病，會讓國家愈來愈懶...」 +
+       後續 2-3 段主文 + H3 標題「半導體業拉抬...」。既有白名單（H1 / promotedTitleHead /
+       standalone media / time byline）全沒命中。
+       修法：narrow guard 加「sibling 含 unwrapped >= 100 chars 單一 p 或累計 >= 300
+       chars」→ 保留。閉口排除：list-item / a / aside 內的 p 不算（避免誤豁免 sidebar
+       相關新聞列表的描述 p，與 udn-byline-subinfo fixture 共生）。
+       本 fixture 結構：
+         - SECTION.article-content__wrapper (detector 升到的 articleEl 候選)
+           - H1 (標題,既有 H1 guard 保留)
+           - DIV.cover-wrapper (主圖,既有 media guard 保留)
+           - DIV.JozKC-style.content-wrapper-A (前段主文,含灰底引文 + 開頭內文 + H3)
+             ← 必須保留（新 guard 的 forcing function 目標）
+           - DIV.JozKC-style.content-wrapper-B (promotedFrom,後段主文)
+           - DIV.related-sidebar (相關新聞 list,sidebar 雜訊,必須仍 hide)
+       -->
+  <section class="article-content__wrapper" id="root-wrapper">
+    <h1 id="wealth-h1">李鎮宇：台灣半導體產業是「反荷蘭病」</h1>
+
+    <div class="cover-wrapper" id="main-cover">
+      <img src="/photo/tsmc.jpg" alt="台積電">
+      <figcaption>▲對於單一產業太強引發「荷蘭病」，台灣並無荷蘭病</figcaption>
+    </div>
+
+    <!-- 前段主文 wrapper：含灰底引文 + 前 2-3 段內文 + H3
+         舊版 narrow 把這整塊砍掉、Jimmy 看到的就是這段不見 -->
+    <div class="content-wrapper-A JozKC-style" id="content-A">
+      <blockquote id="quote-block">
+        <p>真正的荷蘭病，會讓國家愈來愈懶。但半導體產業，會逼整個社會愈來愈強悍。</p>
+      </blockquote>
+      <p id="content-A-p1">荷蘭病與九二共識很類似，明明在台灣不存在，但每隔一陣子就會被拿出來討論。這段文字必須夠長以觸發新 guard 的單一 p >= 100 chars 條件，確保 narrow 演算法會把整個 wrapper 視為主文 wrapper 並豁免砍除。</p>
+      <p id="content-A-p2">每一次只要台灣出口太強、半導體太賺錢、台積電股價一漲，就會有人開始憂心忡忡，說台灣經濟「失衡」，說半導體太強會害死其他產業，台灣得了「荷蘭病」。真的是這樣嗎？</p>
+      <h3 id="content-A-h3">半導體業拉抬 製造業不僅沒死還成長</h3>
+      <p id="content-A-p3">「荷蘭病」（Dutch Disease）原本就是一個非常特定的經濟現象。1960 年代後，荷蘭發現天然氣，天然資源出口暴增，大量外匯流入，導致本幣升值，最後製造業競爭力被打爛。簡單講，就是一個國家突然撿到一筆不需要努力的錢，結果整個社會開始失去進步能力。</p>
+    </div>
+
+    <!-- 後段主文 wrapper：promotedFrom（detector 實際升到這裡的 promotedFrom）
+         narrow 從這裡沿祖先鏈走、把兄弟 content-A 砍除 -->
+    <div class="content-wrapper-B JozKC-style" id="content-B">
+      <p id="content-B-p1">所以真正的荷蘭病，有幾個核心特徵。第一，它是外生型暴利。不是因為你技術進步，而是地底突然冒出石油。第二，本幣被動升值。第三，人才、資本、政策全部被單一資源吸走。第四，非資源產業的製造業開始死亡。</p>
+      <p id="content-B-p2">很多盛產資源的國家都是類似的案例，但台灣半導體根本不是這種邏輯。因為半導體不是「挖出來的」，而是「卷出來的」。</p>
+      <p id="content-B-p3">它依賴教育體系、工程師文化、長期資本支出、製造紀律、供應鏈協同、極端良率管理、24 小時輪班、上下游聚落、IP 保護、客戶信任、地緣政治信用。</p>
+      <p id="content-B-p4">而且半導體的摩爾定律就在那邊，每 18 個月就得打掉重練。每一代製程都要重新學習、封裝升級都要重新驗證、從 7 奈米、5 奈米、3 奈米，到 CoWoS、SoIC、HBM。</p>
+    </div>
+
+    <!-- sidebar 「相關新聞」list：p 描述很長，但全包在 li > p，新 guard 排除 -->
+    <div class="related-sidebar" id="related-sidebar">
+      <h4>相關新聞</h4>
+      <ul>
+        <li><a href="#1">相關新聞 1</a><p>內文摘要相關 1 內容描述較長一些占字數防止 textLen 不到門檻，補充更多文字以確保整段相關新聞列表 textContent 超過門檻，能 forcing 新 guard「排除 li 內 p」邏輯有意義</p></li>
+        <li><a href="#2">相關新聞 2</a><p>內文摘要相關 2 內容描述較長一些占字數防止 textLen 不到門檻</p></li>
+        <li><a href="#3">相關新聞 3</a><p>內文摘要相關 3 內容描述較長一些占字數</p></li>
+      </ul>
+    </div>
+  </section>
+</body>
+</html>

@@ -72,8 +72,14 @@ describe('styler — dark/sepia theme iframe background fix (v0.7.151)', () => {
 
   it('(d) dark theme: iframe rule selector 用 html.__jread-active 提升 specificity', () => {
     const css = setup('dark');
-    // 避免站點 iframe.datawrapper (0,1,2) 等具體 class selector 勝出
-    assert.ok(/html\.__jread-active\s+\[data-jread-active="1"\]\s+iframe\s*\{[^}]*background-color:\s*#fff/i.test(css),
-      `iframe bg rule 必須用 html.__jread-active + [data-jread-active="1"] 雙層 selector（specificity 0,2,2），避免站點 (0,1,2) rule 勝出`);
+    // 避免站點 iframe.datawrapper (0,1,2) 等具體 class selector 勝出。
+    // v0.7.154：selector 已合併 `iframe, img` 共用；兩種寫法都接受
+    //   (i)  獨立：`html.__jread-active [data-jread-active="1"] iframe { ... bg }`
+    //   (ii) 合併：`html.__jread-active [data-jread-active="1"] iframe,
+    //                html.__jread-active [data-jread-active="1"] img { ... bg }`
+    const independentRule = /html\.__jread-active\s+\[data-jread-active="1"\]\s+iframe\s*\{[^}]*background-color:\s*#fff/i;
+    const mergedRule = /html\.__jread-active\s+\[data-jread-active="1"\]\s+iframe\s*,\s*html\.__jread-active\s+\[data-jread-active="1"\]\s+img\s*\{[^}]*background-color:\s*#fff/i;
+    assert.ok(independentRule.test(css) || mergedRule.test(css),
+      `iframe bg rule 必須用 html.__jread-active + [data-jread-active="1"] 雙層 selector（specificity 0,2,2），避免站點 (0,1,2) rule 勝出。v0.7.154 後可與 img 合併寫成 selector list`);
   });
 });
