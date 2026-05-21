@@ -17,6 +17,7 @@ const fontSizeValEl = document.getElementById('font-size-val');
 const fontAutoBtn = document.getElementById('font-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
 const fontFamilySelect = document.getElementById('font-family-select');
+const boldTextBtns = document.querySelectorAll('[data-bold]');
 const themeBtns = document.querySelectorAll('.theme-btn');
 const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
@@ -44,6 +45,9 @@ const DEFAULT_SETTINGS = {
   fontSize: FONT_SIZE.default,
   contentWidth: CONTENT_WIDTH.default,
   fontFamily: FONT_STACKS.system,
+  // 字粗外觀（細 = antialiased / 粗 = subpixel-antialiased）;預設細 對齊 styler
+  // reader card baseline (antialiased) — 使用者切「粗」反轉回 macOS 預設 subpixel
+  boldText: false,
   // v0.7.131：reader mode 攔截原站快速鍵；popup 不放 toggle（options 有），這裡
   // 僅作 storage.get 的 default fallback，避免讀回 undefined。
   blockPageShortcuts: true,
@@ -89,6 +93,10 @@ function render(settings) {
   document.querySelector('[data-action="width-inc"]').disabled = settings.contentWidth >= CONTENT_WIDTH.max;
   // Auto 按鈕 active 狀態
   if (fontAutoBtn) fontAutoBtn.classList.toggle('active', isAuto);
+  // 字粗 segmented
+  for (const btn of boldTextBtns) {
+    btn.classList.toggle('active', String(settings.boldText) === btn.dataset.bold);
+  }
   // 字型 select：value 對 4 個 option match 不到（例如外部直接 storage.set
   // 自訂 stack）時 fall back 顯示「系統預設」但不寫回 storage，避免默默改動
   // 使用者外部設定。
@@ -179,6 +187,13 @@ document.querySelector('[data-action="width-inc"]').addEventListener('click', ()
 if (fontFamilySelect) {
   fontFamilySelect.addEventListener('change', (e) => {
     save({ fontFamily: e.target.value });
+  });
+}
+
+// 字粗 segmented
+for (const btn of boldTextBtns) {
+  btn.addEventListener('click', () => {
+    save({ boldText: btn.dataset.bold === 'true' });
   });
 }
 
