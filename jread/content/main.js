@@ -482,7 +482,7 @@
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'lineHeight'];
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'lineHeight', 'pangu'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();
