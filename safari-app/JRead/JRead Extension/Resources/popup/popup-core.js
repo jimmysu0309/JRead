@@ -53,11 +53,14 @@
   // 依官方 API（https://readwise.io/reader_api）：
   //   POST https://readwise.io/api/v3/save/
   //   Header: Authorization: Token <access_token>
-  //   Body:   { url, html?, title?, image_url?, author?, summary?, location? }
+  //   Body:   { url, html?, title?, image_url?, author?, summary?,
+  //            published_date?, location?, category?, tags?, notes? }
   // 200 = 已存在、201 = 新建。
+  // 註：Readwise Reader API 沒 `language` 欄位（送了會被忽略）——所以 JRead
+  // 不抽 / 不送 language。
   const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
 
-  function buildReadwisePayload({ url, html, title, imageUrl } = {}) {
+  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate } = {}) {
     if (!url || typeof url !== 'string') {
       throw new Error('buildReadwisePayload: url 必填');
     }
@@ -69,6 +72,18 @@
     // 端 normalize 過、這裡再防呆一層，避免直接送 throw 整個 payload。
     if (imageUrl && typeof imageUrl === 'string' && /^https?:\/\//i.test(imageUrl)) {
       body.image_url = imageUrl;
+    }
+    // v0.7.167：author 單一字串（一般站抽 byline / JSON-LD;FB 送 vanity
+    // username 或 displayName fallback;X / Twitter 送 @handle）。
+    if (author && typeof author === 'string') {
+      const t = author.trim();
+      if (t) body.author = t;
+    }
+    // v0.7.167：published_date ISO 8601 字串（content script 端 normalize 過,
+    // 此處只防呆 trim）。
+    if (publishedDate && typeof publishedDate === 'string') {
+      const t = publishedDate.trim();
+      if (t) body.published_date = t;
     }
     return body;
   }

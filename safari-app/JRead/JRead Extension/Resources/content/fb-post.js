@@ -395,12 +395,33 @@
     return !!document.querySelector('[' + READER_ATTR + ']');
   }
 
+  // v0.7.167：FB permalink URL 抽 vanity username 給 Readwise author 欄位。
+  // `/<user>/posts/<id>` pattern 的 seg[0] = vanity username。其他 reserved
+  // pattern(groups/permalink.php/story.php/share/profile.php)沒 vanity,回
+  // 空字串讓 caller(main.js extractAuthor)fallback 到 displayName。
+  function extractAuthorVanityFromUrl(url) {
+    const target = url || (typeof location !== 'undefined' ? location.href : '');
+    try {
+      const u = new URL(target);
+      if (!/^(www\.|m\.|mobile\.|web\.)?facebook\.com$/i.test(u.hostname)) return '';
+      const seg = u.pathname.split('/').filter(Boolean);
+      if (seg.length < 2) return '';
+      if (seg[1] !== 'posts') return '';
+      const reserved = new Set(['groups', 'permalink.php', 'story.php', 'share', 'profile.php', 'permalink', 'people', 'pages']);
+      if (reserved.has(seg[0])) return '';
+      return seg[0];
+    } catch (_) {
+      return '';
+    }
+  }
+
   NS.fbPost = {
     isFacebookPost,
     findMainMessage,
     findAuthorForMessage,
     findPostContainer,
     extractAuthorInfo,
+    extractAuthorVanityFromUrl,
     createSyntheticHeader,
     pruneReaderClone,
     stripFacebookLayout,
