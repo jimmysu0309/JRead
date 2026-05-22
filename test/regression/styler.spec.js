@@ -1508,10 +1508,17 @@ describe('styler — vocus.cc Lexical span 字型穿透（v0.7.152）', () => {
     assert.ok(plainSpan, 'fixture 必有 vocus 純 span');
     assert.strictEqual(plainSpan.className, '', 'plainSpan 應無 class（vocus 真實 pattern）');
 
-    // 用 styler 注入的 selector 驗匹配
-    const matched = [...articleEl.querySelectorAll(spanCond)];
+    // v0.7.164：剝掉 `:not(pre *)` / `:not(code *)` 子句後再丟 jsdom。jsdom
+    // nwsapi CSS engine 不支援 Selectors 4 「:not() 內含 complex selector」
+    // （Chrome 88+ runtime 完全支援）。spec 驗的是 vocus span 命中行為，跟
+    // pre/code 排除無關——剝掉該子句不影響本 spec 邏輯。:not(pre *):not(code *)
+    // 的存在性另由 styler-pre-code-monospace-preserve.spec.js 驗。
+    const jsdomCompatSel = spanCond
+      .replace(/:not\(pre\s*\*\s*\)/g, '')
+      .replace(/:not\(code\s*\*\s*\)/g, '');
+    const matched = [...articleEl.querySelectorAll(jsdomCompatSel)];
     assert.ok(matched.includes(plainSpan),
-      `純 span 應被 selector "${spanCond}" 命中（讓 vocus 類站點 font-family override 生效）`);
+      `純 span 應被 selector "${jsdomCompatSel}" 命中（讓 vocus 類站點 font-family override 生效）`);
 
     // negative case：material-icons span 不該被命中
     const iconSpan = articleEl.querySelector('span.material-icons');

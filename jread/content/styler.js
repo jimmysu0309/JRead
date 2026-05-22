@@ -568,13 +568,26 @@ html [${ARTICLE_ATTR}="1"] {
     // 等用 font-family 載 icon glyph，強制覆寫成襯線/無襯線會讓 icon 消失或
     // 變成奇怪字元。badge / emoji 同樣可能依賴特殊字型。實測 vocus 主文 0 個
     // icon span，這些 exclusion 是跨站保守防護不會影響 vocus 修法生效。
+    // v0.7.164：再加 `:not(pre *):not(code *)`——pre / code 後代的 span 必須
+    // 保留 monospace（程式碼框慣例）。Medium WYSIWYG 把 <pre> 內每行包成
+    // <span class="...">，舊 SPAN_TEXT_SEL 把這些 span 套上使用者字型 stack
+    // （sans-serif），讓站點 author CSS 對 pre 寫的 monospace 被 span 覆蓋
+    // 失效。Jimmy 2026-05-22 Medium @ddsakura-blog M5 Max 評測文回報「框內
+    // 等寬字型被代換」。利用 Selectors 4 complex selector in :not()（Chrome
+    // 88+ 支援，Manifest V3 最低 88，全相容），pre / code 後代的 span 不命中
+    // SPAN_TEXT_SEL → inherit 父元素字型（站點 pre author CSS 的 monospace
+    // stack）。寫成兩個 :not()（不寫 :not(pre *, code *) selector list 形式）
+    // 是為了 selector 字串內不含 comma——spec 程式用 split(',') 切 selector
+    // list 驗證時不會誤把 :not() 內的 comma 當分隔切壞。
     const SPAN_TEXT_SEL = `[${ARTICLE_ATTR}="1"] span` +
       `:not([class*="icon"])` +
       `:not([class*="material-"])` +
       `:not([class^="fa-"])` +
       `:not([class*=" fa-"])` +
       `:not([class*="emoji"])` +
-      `:not([class*="badge"])`;
+      `:not([class*="badge"])` +
+      `:not(pre *)` +
+      `:not(code *)`;
     // v0.7.156：加入 td, th —— Wikipedia / 技術文件 / Stack Overflow 等用 table
     // 排版 content 的站點普遍對 `table.infobox` / `.wikitable` 等寫死 `font-size:
     // 0.88em` 縮小 table 內字。Jimmy 2026-05-21 Wikipedia /Longchamp_(company)
@@ -709,7 +722,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] img {
       // 淺灰文字 = 對比 1.x:1 不可讀。Jimmy 2026-05-21 回報商周
       // /Archive/Article?StrId=7014078 dark theme「引文底色與文字對比太低很難
       // 閱讀」截圖確認。
-      // Probe 數值：站點 blockquote.blockquote 套 bg #f5f5f5、styler 覆寫 color
+      // Probe 數值:站點 blockquote.blockquote 套 bg #f5f5f5、styler 覆寫 color
       // #d4d4d4 → 對比 1.38:1（WCAG AA 需 4.5:1）；inject 修法 transparent 後
       // 透出 reader card #1a1a1a → 對比 11.74:1（AAA 通過）。
       // 副作用：light theme 不注入（既有 preserve 設計仍有效）。dark / sepia
@@ -717,8 +730,22 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] img {
       // 引號圖示 contrast 都 >= 13:1 仍可辨識為引文。
       // selector specificity (0,2,1) > 站點常見 `blockquote.blockquote` (0,1,1)
       // / `.quote-block` (0,1,0) 等 rule。
+      //
+      // v0.7.164：同邏輯擴到 <pre> + <code>。Jimmy 2026-05-22 回報 Medium
+      // M5 Max 評測文（@ddsakura-blog）dark theme 下「白底卡片內淺灰字閱讀
+      // 困難」截圖確認。Probe 確認真兇是 <pre>（不是 blockquote——Medium 整篇
+      // 沒用 blockquote tag）：站點 .pre 套 bg #f9f9f9、styler 覆寫 color
+      // #d4d4d4 → 對比 1.04:1（比 blockquote 更糟）。inline <code> 同個雷：
+      // 站點 .code 套 bg #f2f2f2 + dark text → 對比同樣 1.04:1。兩者都是
+      // 「站點 light theme 設計的淺色程式碼框 + jread dark 覆寫文字色」的同類
+      // 通則 bug，跟 blockquote 走同一條 transparent 修法。
+      // pre / code 失去「淺底程式碼框」視覺、但 padding / font-family monospace
+      // 仍保留可辨識為 code；inline code 變成跟主文同色但 monospace 字體仍
+      // 可區分。
       userOverrides += `
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote,
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] pre,
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   background-color: transparent !important;
   background-image: none !important;
 }`;

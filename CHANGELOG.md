@@ -4,6 +4,20 @@
 
 ---
 
+**v0.7.164**——dark theme `<pre>` + `<code>` 視覺修法（背景對比 + 字型保留）。**動機**：Jimmy 2026-05-22 回報 Medium @ddsakura-blog M5 Max 評測文 dark theme 下兩個視覺問題：(1)「白底卡片內淺灰字閱讀困難」；(2) 修好 bg 後「框內等寬字型被代換」。**Root cause（兩件事）**：
+
+(1) **背景對比**：cage probe 發現真兇不是 blockquote（整篇沒用 blockquote tag），而是 `<pre>`（站點 `.pre` 套 bg `#f9f9f9`）+ inline `<code>`（站點 `.code` 套 bg `#f2f2f2`）。styler line 463 background 清除規則 preserve 清單刻意保留 `pre / code` 原站 bg（程式碼框視覺區隔），light theme 下淺底 + 黑字可讀；但 dark theme 下 jread `* { color: theme.text }` 把文字色覆寫成 `#d4d4d4`，淺底 + 淺字對比 **1.04:1**（比 v0.7.154 blockquote 修的 1.38:1 更糟）。這是與 v0.7.154 完全同性質的結構性通則 bug——「站點 light theme 設計的 light bg + jread dark text 覆寫 = 對比過低」適用於所有 preserve 清單上 bg 元素。
+
+(2) **字型代換**：v0.7.152 為穿透 WYSIWYG 編輯器（vocus.cc 對 span 寫死 font-family）加入 `SPAN_TEXT_SEL = [data-jread-active="1"] span:not(icon)...`，fontFamily / fontSize override 套到 article 內所有 span。Medium WYSIWYG 把 `<pre>` 內每行包成 `<span class="...">`，這條 SPAN_TEXT_SEL 也命中 pre 內 span → 蓋掉站點 pre author CSS 的 monospace stack (`source-code-pro, Menlo, Monaco...`) → pre 框內字型被代換成使用者字型（sans-serif）。Probe：Medium 文章 20 個 span / 12 個非 pre/code 後代 / 8 個 pre/code 後代是漏網。
+
+**修法（兩件事併進同版號）**：(a) 把 v0.7.154 的 `dark/sepia html.__jread-active [data-jread-active="1"] blockquote { background-color: transparent !important }` rule 擴成 `blockquote, pre, code` 三 selector 共用同條 rule body。dark 下透出 reader card #1a1a1a → 對比 11.74:1（AAA）；sepia 下透出 #f4ecd8 同樣 AA 通過。light 完全不注入（既有 preserve 設計仍有效）。(b) SPAN_TEXT_SEL 結尾加 `:not(pre *):not(code *)`（Selectors 4 complex selector in :not()，Chrome 88+ 支援，Manifest V3 最低 88，全相容）。pre / code 後代的 span 不命中 SPAN_TEXT_SEL → font-family 不被覆寫 → inherit 父元素字型（站點 pre author CSS 的 monospace stack 仍生效）。寫成兩個獨立 `:not()`（不寫 `:not(pre *, code *)` selector list 形式）避免 selector 字串含 comma 干擾 `split(',')` 切 selector list 的程式邏輯。
+
+**spec**：(a) 新增 `styler-dark-code-pre-bg.spec.js` 6 條 forcing function（dark/sepia 注入 pre/code transparent / light 不注入 pre/code rule）；更新 `styler-dark-blockquote-bg.spec.js` regex 容忍 multi-selector list（`blockquote\b[^{]*\{`）。(b) 新增 `styler-pre-code-monospace-preserve.spec.js` 3 條 forcing function（非預設 fontFamily / fontSize 注入的 SPAN_TEXT_SEL 必須含 `:not(pre *):not(code *)`；預設值若仍注入也必須含）；更新 `styler.spec.js` v0.7.152 vocus span 命中 spec：querySelectorAll 前剝掉 `:not(pre *)` / `:not(code *)` 子句（jsdom nwsapi 不支援 Selectors 4 complex selector in :not()，runtime Chrome 完全支援）。sanity check：(a) 拿掉 styler `pre, code` selector → bg spec 4 條 dark/sepia 立刻 fail；(b) 拿掉 styler `:not(pre *):not(code *)` → monospace spec 3 條立刻 fail；都還原全綠 996 passing。
+
+**版本同步**：manifest / package.json / SPEC.md / CHANGELOG.md / version-check.spec.js。
+
+---
+
 **v0.7.163**——FB 段落間距設定失效修法。**動機**：Jimmy 2026-05-22 回報 popup 調「段落間距」在 Facebook 不生效。**Root cause**：三事實構成必然失效——(1) `fb-post.js` `markParagraphDivs` 對 leaf paragraph div 寫 inline `setProperty('margin', '1.2em 0', 'important')`（v0.7.157 寫死、註解標「防 styler 通用 rule 覆寫」）；(2) `styler.js` 的 `paragraphSpacing` 規則 selector 只含 `p / ul / ol / blockquote`，**不含 FB div 段落**（FB 用 div 不用 p）；(3) 硬教訓十：inline `!important` 永遠贏 stylesheet `!important`。三者組合 = styler 規則即使涵蓋 fb-para selector，inline `!important` 也會擋掉,而既有 selector 連嘗試覆寫的機會都沒有。**修法**：(a) `fb-post.js` `markParagraphDivs` 改用 `div.style.margin = '1.2em 0'`（無 `!important`）作為 fallback，給 Auto sentinel (-1) 與 styler 規則尚未注入時用；(b) `styler.js` 的 `paragraphSpacing >= 0` 條件分支 selector 加 `[data-jread-active="1"] [data-jread-fb-para="1"]`，並設 `margin-top` 與 `margin-bottom` 兩者（FB div 沒 p 的 user-agent margin、上下都得設）。**spec**：styler.spec.js 新增 2 條 forcing function——「paragraphSpacing >= 0 必須注入 fb-para rule block 且 margin-top/bottom 都有」/「paragraphSpacing=-1 Auto 不注入 fb-para 規則（fb-post inline fallback 接手）」；fb-post.spec.js 新增 1 條 forcing function——「fb-para inline margin 不得用 !important」（priority 必須為空字串，否則 styler 設定打不到）。sanity check：把 fb-post 改回 `!important` → fb-post.spec.js 新 spec 立刻 fail（priority="important"）；還原 989 全綠。**版本同步**：manifest / package.json / SPEC.md / CHANGELOG.md / version-check.spec.js。
 
 ---
