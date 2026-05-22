@@ -648,6 +648,170 @@ describe('x-thread v0.7.137 — author header 保留', () => {
   });
 });
 
+// v0.7.160：X 推文 / Article tweetPhoto 圖片 unwrap regression
+// 動機：Jimmy 2026-05-22 回報 X article（https://x.com/EEEEYHN/status/2057397813999456759）
+// reader mode 進入後缺所有圖片。probe 揭穿：tweetPhoto 多層 wrapper（padding-bottom
+// hack + absolute + overflow:hidden）+ a-link 包圖被通用 cleaner 規則
+// （hideInsideArticleAbsoluteOverlays / hideInsideArticleIconOnlyLinks /
+// resetMediaPlaceholderPadding 只看 direct parent）誤殺。修法：enter() cloneNode
+// 後對每個 [data-testid="tweetPhoto"] 找最近 a 祖先 → replaceWith
+// <figure data-jread-x-media><img></figure>；figure 是 PRESERVE_SEL 內 tag，
+// cleaner 自動 skip 內部 hide rule。
+//
+// 此 spec 覆蓋 unwrapTweetMedia() 結構行為：
+//   - 普通推文：a[href*="/photo/"] 包 img → 用 a 當 replace target
+//   - X Article：tweetPhoto 包 img、外層 a[href*="/article/"] 是 photo link → 用 a 當 target
+//   - 沒外層 a 時直接 unwrap tweetPhoto 本身
+//   - removeAttribute('style') 清原站 inline position:absolute 等
+//   - 跳過含 tweetText 的 a（不能跨段落 unwrap）
+function buildTweetPhotoCell(author, mainStatusId, photoConfig) {
+  // photoConfig: { wrapType: 'photo-link'|'article-link'|'none', count: 1..N }
+  const photoEls = [];
+  for (let i = 0; i < photoConfig.count; i++) {
+    const innerImg = `<img alt="圖片" src="https://pbs.twimg.com/media/test${i}.jpg" data-testid="tweetPhoto-img-${i}">`;
+    const tweetPhoto = `<div data-testid="tweetPhoto" aria-label="圖片"><div style="position:absolute;padding-bottom:50%"><div><div>${innerImg}</div></div></div></div>`;
+    if (photoConfig.wrapType === 'photo-link') {
+      photoEls.push(`<a href="/${author}/status/${mainStatusId}/photo/${i + 1}">${tweetPhoto}</a>`);
+    } else if (photoConfig.wrapType === 'article-link') {
+      photoEls.push(`<a href="/${author}/article/${mainStatusId}">${tweetPhoto}</a>`);
+    } else {
+      photoEls.push(tweetPhoto);
+    }
+  }
+  return `<div data-testid="cellInnerDiv"><div><div>
+    <article role="article" data-testid="tweet">
+      <div data-testid="User-Name">
+        <a href="/${author}"><span>${author}</span></a>
+        <a href="/${author}"><span>@${author}</span></a>
+        <a href="/${author}/status/${mainStatusId}"><time datetime="2026-05-22T00:00:00.000Z">5h</time></a>
+      </div>
+      <div data-testid="tweetText"><span>主推文文字</span></div>
+      ${photoEls.join('')}
+    </article>
+  </div></div></div>`;
+}
+
+describe('x-thread v0.7.160 — unwrapTweetMedia tweetPhoto 圖片解纏', () => {
+  it('unwrapTweetMedia 必須 export 在 NS.xThread', () => {
+    const env = setupJsdom('https://x.com/');
+    assert.strictEqual(typeof env.NS.xThread.unwrapTweetMedia, 'function',
+      'NS.xThread.unwrapTweetMedia 必須 export — 後續 main.js / 測試依賴');
+  });
+
+  it('普通推文：a[href*="/photo/"] 包 tweetPhoto → unwrap 後 a 被 figure 取代', () => {
+    const cells = buildTweetPhotoCell('philipinspain', '2056', { wrapType: 'photo-link', count: 1 });
+    const html = `<!doctype html><html><body><main><section><div>${cells}</div></section></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/philipinspain/status/2056', html);
+    const container = env.NS.xThread.enter();
+    assert.ok(container);
+    // tweetPhoto wrapper + a wrapper 都應被替換掉，剩 figure
+    assert.strictEqual(container.querySelectorAll('[data-testid="tweetPhoto"]').length, 0,
+      'unwrap 後 [data-testid="tweetPhoto"] 必須消失');
+    assert.strictEqual(container.querySelectorAll('a[href*="/photo/"]').length, 0,
+      'unwrap 後 photo a 必須消失（被 figure 取代）');
+    const figs = container.querySelectorAll('figure[data-jread-x-media]');
+    assert.strictEqual(figs.length, 1, '1 張圖 → 1 個 figure');
+    assert.strictEqual(figs[0].querySelector('img').getAttribute('data-jread-x-tweet-photo'), '1',
+      'img 必須被標記 data-jread-x-tweet-photo（保留 src，從原 tweetPhoto 抽出）');
+  });
+
+  it('X Article：a[href*="/article/"] 包 tweetPhoto 不含 tweetText → unwrap 同樣命中', () => {
+    // X Article 結構：article-link 包 tweetPhoto 但不跨段落
+    const cellsHtml = `<div data-testid="cellInnerDiv"><div><div>
+      <article role="article" data-testid="tweet">
+        <div data-testid="User-Name">
+          <a href="/EEEEYHN"><span>EYHN</span></a>
+          <a href="/EEEEYHN/status/2057"><time>5h</time></a>
+        </div>
+        <div data-testid="tweetText"><span>article 主文</span></div>
+        <div data-testid="twitterArticleReadView">
+          <a href="/EEEEYHN/article/2057">
+            <div data-testid="tweetPhoto"><div><img src="https://pbs.twimg.com/media/x.jpg"></div></div>
+          </a>
+          <a href="/EEEEYHN/article/2057">
+            <div data-testid="tweetPhoto"><div><img src="https://pbs.twimg.com/media/y.jpg"></div></div>
+          </a>
+        </div>
+      </article>
+    </div></div></div>`;
+    const html = `<!doctype html><html><body><main><section><div>${cellsHtml}</div></section></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/EEEEYHN/status/2057', html);
+    const container = env.NS.xThread.enter();
+    assert.ok(container);
+    assert.strictEqual(container.querySelectorAll('[data-testid="tweetPhoto"]').length, 0,
+      'X Article：2 張 tweetPhoto 必須全 unwrap');
+    assert.strictEqual(container.querySelectorAll('a[href*="/article/"]').length, 0,
+      '包圖的 article-link a 必須被 figure 取代');
+    assert.strictEqual(container.querySelectorAll('figure[data-jread-x-media]').length, 2,
+      '2 張圖 → 2 個 figure');
+  });
+
+  it('沒外層 a：tweetPhoto 直接被 figure 取代（fallback path）', () => {
+    const cellsHtml = `<div data-testid="cellInnerDiv"><div><div>
+      <article role="article" data-testid="tweet">
+        <div data-testid="User-Name">
+          <a href="/user"><span>user</span></a>
+          <a href="/user/status/123"><time>5h</time></a>
+        </div>
+        <div data-testid="tweetPhoto"><div><img src="https://pbs.twimg.com/media/z.jpg"></div></div>
+      </article>
+    </div></div></div>`;
+    const html = `<!doctype html><html><body><main><section><div>${cellsHtml}</div></section></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/user/status/123', html);
+    const container = env.NS.xThread.enter();
+    assert.strictEqual(container.querySelectorAll('[data-testid="tweetPhoto"]').length, 0,
+      '沒外層 a 也要 unwrap tweetPhoto 自身');
+    assert.strictEqual(container.querySelectorAll('figure[data-jread-x-media]').length, 1);
+  });
+
+  it('img 的原站 inline style 必須清掉（避免 position:absolute / blur 殘留）', () => {
+    const cellsHtml = `<div data-testid="cellInnerDiv"><div><div>
+      <article role="article" data-testid="tweet">
+        <div data-testid="User-Name">
+          <a href="/u"><span>u</span></a>
+          <a href="/u/status/9"><time>5h</time></a>
+        </div>
+        <div data-testid="tweetPhoto">
+          <a href="/u/status/9/photo/1"><img src="x.jpg" style="position:absolute;top:0;left:0;filter:blur(20px)"></a>
+        </div>
+      </article>
+    </div></div></div>`;
+    const html = `<!doctype html><html><body><main><section>${cellsHtml}</section></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/u/status/9', html);
+    const container = env.NS.xThread.enter();
+    const img = container.querySelector('figure[data-jread-x-media] img');
+    assert.ok(img, 'figure 內必須含 img');
+    assert.strictEqual(img.getAttribute('style'), null,
+      'img.style 必須清掉（removeAttribute style）— 原站 position:absolute / filter:blur 不該殘留');
+  });
+
+  it('包 tweetText 的 a 不算 photo link：圖片若在這種 a 內，向上找祖先停在前一層', () => {
+    // 邊界：a 同時包 tweetText + tweetPhoto（罕見但 X 某些 inline embed 可能）
+    // —— 此時不能 replace 整個 a（會吃掉 tweetText），應 fallback 用 tweetPhoto 當 target
+    const cellsHtml = `<div data-testid="cellInnerDiv"><div><div>
+      <article role="article" data-testid="tweet">
+        <div data-testid="User-Name">
+          <a href="/u"><span>u</span></a>
+          <a href="/u/status/9"><time>5h</time></a>
+        </div>
+        <a href="/u/status/9">
+          <div data-testid="tweetText"><span>跨段落文字</span></div>
+          <div data-testid="tweetPhoto"><img src="x.jpg"></div>
+        </a>
+      </article>
+    </div></div></div>`;
+    const html = `<!doctype html><html><body><main><section>${cellsHtml}</section></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/u/status/9', html);
+    const container = env.NS.xThread.enter();
+    assert.strictEqual(container.querySelectorAll('[data-testid="tweetPhoto"]').length, 0,
+      'tweetPhoto 必須 unwrap');
+    assert.ok(container.querySelector('a[href="/u/status/9"]'),
+      '包 tweetText 的 a 必須保留（不可被 figure 取代，會丟失 tweetText）');
+    assert.ok(container.textContent.includes('跨段落文字'),
+      'tweetText 內容必須保留');
+  });
+});
+
 describe('x-thread v0.7.135 — manifest / popup-core / namespace 同步', () => {
   it('manifest content_scripts 必須含 content/x-thread.js', () => {
     const files = MANIFEST.content_scripts[0].js;
