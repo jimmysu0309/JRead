@@ -413,6 +413,84 @@
     return clone.outerHTML;
   }
 
+  // v0.7.166：抽 hero / cover image URL 送 Readwise Reader 的 image_url 欄位。
+  // 策略（多層 fallback）：
+  //   1. reader card 內第一張「visible 主圖」：natural >= 200×200（或無 naturalWidth
+  //      時 fallback rect >= 200×120）、不在 [data-jread-hidden] 子孫內、URL 非
+  //      data:/blob:。reader card 是 detector + cleaner 之後的主文範圍，第一張
+  //      通過大小門檻的圖視為主圖（hero）。
+  //   2. <meta property="og:image"> / og:image:url / og:image:secure_url /
+  //      twitter:image / twitter:image:src 任一存在（site OG metadata）。做為
+  //      reader card 內無圖時的 fallback——Wikipedia / 純文字 blog / Substack
+  //      newsletter 等可能主圖只在 OG meta。
+  // URL 必須 absolute http(s)——透過 new URL(src, base) 轉、不接受 data:/blob:
+  // （Readwise 端不能 fetch 這類 URL 當 cover image）。
+  function extractHeroImage(articleEl) {
+    if (!articleEl) return '';
+    const base = location.href;
+    const isUsable = (raw) => {
+      if (!raw || typeof raw !== 'string') return null;
+      const s = raw.trim();
+      if (!s) return null;
+      if (/^data:/i.test(s) || /^blob:/i.test(s)) return null;
+      try {
+        const abs = new URL(s, base).href;
+        if (!/^https?:\/\//i.test(abs)) return null;
+        return abs;
+      } catch (_) {
+        return null;
+      }
+    };
+    // 1. reader card 內第一張符合條件的 img
+    const imgs = articleEl.querySelectorAll('img');
+    for (const img of imgs) {
+      if (img.closest('[data-jread-hidden="1"]')) continue;
+      const nw = img.naturalWidth || 0;
+      const nh = img.naturalHeight || 0;
+      if (nw && nh) {
+        if (nw < 200 || nh < 200) continue;
+      } else {
+        const rect = img.getBoundingClientRect && img.getBoundingClientRect();
+        if (!rect) continue;
+        if (rect.width < 200 || rect.height < 120) continue;
+      }
+      // srcset 優先取最大解析度（無 srcset 退回 src / currentSrc）
+      let candidate = '';
+      const srcset = img.getAttribute('srcset');
+      if (srcset) {
+        const entries = srcset.split(',').map(e => e.trim()).filter(Boolean).map(e => {
+          const parts = e.split(/\s+/);
+          const url = parts[0];
+          const desc = parts[1] || '';
+          const wMatch = desc.match(/^(\d+)w$/);
+          return { url, w: wMatch ? Number(wMatch[1]) : 0 };
+        });
+        if (entries.length) {
+          entries.sort((a, b) => b.w - a.w);
+          candidate = entries[0].url;
+        }
+      }
+      if (!candidate) candidate = img.currentSrc || img.src || img.getAttribute('src') || '';
+      const u = isUsable(candidate);
+      if (u) return u;
+    }
+    // 2. fallback：og:image / twitter:image meta
+    const metaSelectors = [
+      'meta[property="og:image"]',
+      'meta[property="og:image:url"]',
+      'meta[property="og:image:secure_url"]',
+      'meta[name="twitter:image"]',
+      'meta[name="twitter:image:src"]'
+    ];
+    for (const sel of metaSelectors) {
+      const m = document.head && document.head.querySelector(sel);
+      if (!m) continue;
+      const u = isUsable(m.getAttribute('content'));
+      if (u) return u;
+    }
+    return '';
+  }
+
   function extractReaderPayload() {
     // v0.7.133：cinema mode 沒主文 outerHTML 可送 Readwise，明確回 NOT_APPLICABLE
     // 而非 NOT_ACTIVE（後者讓 popup 顯示「閱讀模式未啟動」會讓使用者困惑——
@@ -427,12 +505,14 @@
     const html = buildCleanHtml(NS.state.articleEl);
     const rawTitle = (document.title || '').trim();
     const title = rawTitle.split(/\s+[|\-—–·]\s+/)[0].trim() || rawTitle;
+    const imageUrl = extractHeroImage(NS.state.articleEl);
     return {
       ok: true,
       payload: {
         url: location.href,
         html,
-        title
+        title,
+        imageUrl
       }
     };
   }
