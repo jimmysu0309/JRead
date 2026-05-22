@@ -148,8 +148,12 @@
       }
       if (hasDirectText && !hasBlockChild) {
         div.setAttribute('data-jread-fb-para', '1');
-        // inline margin (!important 防 styler 通用 rule 覆寫，scoped 不影響其他站)
-        div.style.setProperty('margin', '1.2em 0', 'important');
+        // v0.7.163：inline fallback margin（無 !important）——styler stylesheet
+        // 端的 paragraphSpacing 規則 selector 已涵蓋 [data-jread-fb-para]，
+        // 使用者調整段落間距會生效。硬教訓十：inline !important 永遠贏
+        // stylesheet !important，先前寫死 !important 會擋掉使用者設定。
+        // 此處 1.2em 是 Auto sentinel (-1) 與 styler 規則尚未注入時的 fallback。
+        div.style.margin = '1.2em 0';
         count++;
       }
     }
