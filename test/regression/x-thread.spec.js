@@ -764,6 +764,29 @@ describe('x-thread v0.7.160 — unwrapTweetMedia tweetPhoto 圖片解纏', () =>
     assert.strictEqual(container.querySelectorAll('figure[data-jread-x-media]').length, 1);
   });
 
+  it('img 必須補 inline opacity:1 !important（v0.7.161：X stylesheet img.css-9pa8cd opacity:0 lazy-load fade 殘留修法）', () => {
+    const cellsHtml = `<div data-testid="cellInnerDiv"><div><div>
+      <article role="article" data-testid="tweet">
+        <div data-testid="User-Name">
+          <a href="/u"><span>u</span></a>
+          <a href="/u/status/9"><time>5h</time></a>
+        </div>
+        <div data-testid="tweetPhoto">
+          <a href="/u/status/9/photo/1"><img src="x.jpg" class="css-9pa8cd"></a>
+        </div>
+      </article>
+    </div></div></div>`;
+    const html = `<!doctype html><html><body><main><section>${cellsHtml}</section></main></body></html>`;
+    const env = setupJsdomWithBody('https://x.com/u/status/9', html);
+    const container = env.NS.xThread.enter();
+    const img = container.querySelector('figure[data-jread-x-media] img');
+    assert.ok(img);
+    assert.strictEqual(img.style.opacity, '1',
+      'img.style.opacity 必須是 1（覆寫 X stylesheet 的 opacity:0 lazy-load placeholder）');
+    assert.strictEqual(img.style.getPropertyPriority('opacity'), 'important',
+      'opacity 必須是 !important——只 inline 不夠，X stylesheet rule specificity 高，必須 !important 才贏');
+  });
+
   it('img 的原站 inline style 必須清掉（避免 position:absolute / blur 殘留）', () => {
     const cellsHtml = `<div data-testid="cellInnerDiv"><div><div>
       <article role="article" data-testid="tweet">
@@ -781,8 +804,16 @@ describe('x-thread v0.7.160 — unwrapTweetMedia tweetPhoto 圖片解纏', () =>
     const container = env.NS.xThread.enter();
     const img = container.querySelector('figure[data-jread-x-media] img');
     assert.ok(img, 'figure 內必須含 img');
-    assert.strictEqual(img.getAttribute('style'), null,
-      'img.style 必須清掉（removeAttribute style）— 原站 position:absolute / filter:blur 不該殘留');
+    // 原站 inline style 含 position:absolute / top / left / filter:blur 必須清掉
+    // （unwrap 內 removeAttribute('style')）。
+    // 但 v0.7.161 之後 unwrap 會接著 setProperty opacity:1 !important，所以
+    // style attribute 不可能為 null——驗 position / top / left / filter 個別欄位
+    // 都為空字串，opacity 為 1，即清得乾淨。
+    assert.strictEqual(img.style.position, '', '原站 position:absolute 必須清掉');
+    assert.strictEqual(img.style.top, '', '原站 top 必須清掉');
+    assert.strictEqual(img.style.left, '', '原站 left 必須清掉');
+    assert.strictEqual(img.style.filter, '', '原站 filter:blur 必須清掉');
+    assert.strictEqual(img.style.opacity, '1', 'unwrap 後 opacity 必須補 1');
   });
 
   it('包 tweetText 的 a 不算 photo link：圖片若在這種 a 內，向上找祖先停在前一層', () => {
