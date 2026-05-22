@@ -655,6 +655,10 @@ ${BODY_TEXT_SEL} {
 [${ARTICLE_ATTR}="1"] ol,
 [${ARTICLE_ATTR}="1"] blockquote {
   margin-bottom: ${opts.paragraphSpacing}em !important;
+}
+[${ARTICLE_ATTR}="1"] [data-jread-fb-para="1"] {
+  margin-top: ${opts.paragraphSpacing}em !important;
+  margin-bottom: ${opts.paragraphSpacing}em !important;
 }`;
     }
     if (overrides.theme && theme.text) {
