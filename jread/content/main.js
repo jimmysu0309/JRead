@@ -491,6 +491,200 @@
     return '';
   }
 
+  // v0.7.167：抽 author 字串送 Readwise Reader 的 author 欄位。
+  // 三條分支:
+  //   1. Facebook 合成 reader（[data-jread-fb-reader]）：優先 URL vanity
+  //      username（fb-post.js extractAuthorVanityFromUrl）;reserved path
+  //      (groups / story.php / permalink.php / share)沒 vanity → fallback
+  //      讀合成 header [data-jread-fb-author] strong 的 displayName。
+  //   2. X / Twitter 合成 reader（[data-jread-x-reader]）：URL pathname
+  //      第一段是 handle,送 @handle 形式。
+  //   3. 一般網站:多層 fallback —— JSON-LD Article.author.name → meta
+  //      [name="author"] / [property="article:author"](filter URL 形式)→
+  //      [rel="author"] / [itemprop="author"] / .byline 等 byline 元素。
+  // 找不到回空字串,buildReadwisePayload 端會省略該欄。
+  function extractAuthor() {
+    if (document.querySelector('[data-jread-fb-reader]')) {
+      const vanity = (NS.fbPost && typeof NS.fbPost.extractAuthorVanityFromUrl === 'function')
+        ? NS.fbPost.extractAuthorVanityFromUrl()
+        : '';
+      if (vanity) return vanity;
+      const header = document.querySelector('[data-jread-fb-author] strong');
+      if (header) {
+        const t = (header.textContent || '').trim();
+        if (t) return t;
+      }
+      return '';
+    }
+    if (document.querySelector('[data-jread-x-reader]')) {
+      return extractXAuthorHandle();
+    }
+    return extractGenericAuthor();
+  }
+
+  function extractXAuthorHandle() {
+    try {
+      const u = new URL(location.href);
+      const host = u.hostname.replace(/^www\./i, '');
+      if (host !== 'x.com' && host !== 'twitter.com') return '';
+      const m = u.pathname.match(/^\/([A-Za-z0-9_]+)\/status\/\d+/);
+      if (!m) return '';
+      return '@' + m[1];
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function extractGenericAuthor() {
+    // 1. JSON-LD（Article / NewsArticle / BlogPosting 等 schema 慣用 author.name）
+    const ldNodes = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const node of ldNodes) {
+      let data;
+      try { data = JSON.parse(node.textContent || ''); }
+      catch (_) { continue; }
+      const a = findJsonLdAuthor(data);
+      if (a) return a;
+    }
+    // 2. <meta name="author">（純名字最常見載體）
+    const m1 = document.head && document.head.querySelector('meta[name="author"]');
+    if (m1) {
+      const c = (m1.getAttribute('content') || '').trim();
+      if (c && c.length < 200) return c;
+    }
+    // 3. <meta property="article:author">（OG 規範；FB 常用,值可能是 profile URL,排除）
+    const m2 = document.head && document.head.querySelector('meta[property="article:author"]');
+    if (m2) {
+      const c = (m2.getAttribute('content') || '').trim();
+      if (c && c.length < 200 && !/^https?:\/\//i.test(c)) return c;
+    }
+    // 4. byline 元素（[rel=author] / [itemprop=author] / 慣用 class）
+    const sels = [
+      '[itemprop="author"] [itemprop="name"]',
+      '[itemprop="author"]',
+      '[rel="author"]',
+      '.byline-author',
+      '.author-name',
+      '.byline .author',
+      '.byline'
+    ];
+    for (const sel of sels) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t && t.length < 100) return t;
+    }
+    return '';
+  }
+
+  function findJsonLdAuthor(data) {
+    if (!data) return '';
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        const a = findJsonLdAuthor(item);
+        if (a) return a;
+      }
+      return '';
+    }
+    if (typeof data !== 'object') return '';
+    if (data['@graph']) {
+      const a = findJsonLdAuthor(data['@graph']);
+      if (a) return a;
+    }
+    if (data.author) {
+      const v = data.author;
+      if (typeof v === 'string') return v.trim();
+      if (Array.isArray(v)) {
+        for (const x of v) {
+          if (typeof x === 'string') {
+            const t = x.trim();
+            if (t) return t;
+          } else if (x && typeof x === 'object' && x.name) {
+            const t = String(x.name).trim();
+            if (t) return t;
+          }
+        }
+      } else if (typeof v === 'object' && v.name) {
+        const t = String(v.name).trim();
+        if (t) return t;
+      }
+    }
+    return '';
+  }
+
+  // v0.7.167：抽 published_date 送 Readwise Reader（ISO 8601 字串)。
+  // 多層 fallback:JSON-LD Article.datePublished → meta property=
+  // "article:published_time"(OG 規範,最普及)→ 各種 meta 變體 → <time
+  // datetime="..."> 第一個 parseable 的。new Date(raw).toISOString() 正規化:
+  // raw 可能是 "2026-05-22"(純日期)/ "2026-05-22T10:00:00+08:00"(含時區)/
+  // "Fri, 22 May 2026 10:00:00 GMT"(RFC 2822) —— Date 都能解析,toISOString
+  // 統一輸出 UTC ISO 8601(Readwise 文件範例格式)。
+  function extractPublishedDate() {
+    // 1. JSON-LD datePublished / dateCreated
+    const ldNodes = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const node of ldNodes) {
+      let data;
+      try { data = JSON.parse(node.textContent || ''); }
+      catch (_) { continue; }
+      const d = findJsonLdDate(data);
+      if (d) {
+        const iso = normalizeIsoDate(d);
+        if (iso) return iso;
+      }
+    }
+    // 2. meta tags
+    const metaSels = [
+      'meta[property="article:published_time"]',
+      'meta[name="article:published_time"]',
+      'meta[name="pubdate"]',
+      'meta[name="publishdate"]',
+      'meta[name="date"]',
+      'meta[name="DC.date"]',
+      'meta[name="DC.date.issued"]',
+      'meta[itemprop="datePublished"]'
+    ];
+    for (const sel of metaSels) {
+      const m = document.head && document.head.querySelector(sel);
+      if (!m) continue;
+      const iso = normalizeIsoDate(m.getAttribute('content'));
+      if (iso) return iso;
+    }
+    // 3. <time datetime="...">
+    const times = document.querySelectorAll('time[datetime]');
+    for (const t of times) {
+      const iso = normalizeIsoDate(t.getAttribute('datetime'));
+      if (iso) return iso;
+    }
+    return '';
+  }
+
+  function findJsonLdDate(data) {
+    if (!data) return '';
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        const d = findJsonLdDate(item);
+        if (d) return d;
+      }
+      return '';
+    }
+    if (typeof data !== 'object') return '';
+    if (data['@graph']) {
+      const d = findJsonLdDate(data['@graph']);
+      if (d) return d;
+    }
+    if (typeof data.datePublished === 'string') return data.datePublished;
+    if (typeof data.dateCreated === 'string') return data.dateCreated;
+    return '';
+  }
+
+  function normalizeIsoDate(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    const s = raw.trim();
+    if (!s) return '';
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString();
+  }
+
   function extractReaderPayload() {
     // v0.7.133：cinema mode 沒主文 outerHTML 可送 Readwise，明確回 NOT_APPLICABLE
     // 而非 NOT_ACTIVE（後者讓 popup 顯示「閱讀模式未啟動」會讓使用者困惑——
@@ -506,13 +700,17 @@
     const rawTitle = (document.title || '').trim();
     const title = rawTitle.split(/\s+[|\-—–·]\s+/)[0].trim() || rawTitle;
     const imageUrl = extractHeroImage(NS.state.articleEl);
+    const author = extractAuthor();
+    const publishedDate = extractPublishedDate();
     return {
       ok: true,
       payload: {
         url: location.href,
         html,
         title,
-        imageUrl
+        imageUrl,
+        author,
+        publishedDate
       }
     };
   }
