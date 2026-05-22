@@ -15,6 +15,10 @@ const openOptionsLink = document.getElementById('open-options');
 const shortcutEl = document.getElementById('shortcut-hint');
 const fontSizeValEl = document.getElementById('font-size-val');
 const fontAutoBtn = document.getElementById('font-auto-btn');
+const lineHeightValEl = document.getElementById('line-height-val');
+const lineHeightAutoBtn = document.getElementById('line-height-auto-btn');
+const paragraphSpacingValEl = document.getElementById('paragraph-spacing-val');
+const paragraphSpacingAutoBtn = document.getElementById('paragraph-spacing-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
 const fontFamilySelect = document.getElementById('font-family-select');
 const boldTextBtns = document.querySelectorAll('[data-bold]');
@@ -27,6 +31,18 @@ const autoDomainHostEl = document.getElementById('auto-domain-host');
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
 const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
 const CONTENT_WIDTH = { min: 480, max: 1200, step: 40, default: 720 };
+// 行距：unitless ratio，clamp 對齊 styler [1.0, 3.0]；auto = 0 sentinel（不注入
+// line-height，保留原站行距）。step 0.1 配合人眼舒適區間細調。
+const LINE_HEIGHT = { min: 1.0, max: 3.0, step: 0.1, default: 1.7, auto: 0 };
+// 段落間距：em 為單位，clamp [0, 3.0]；auto = -1 sentinel（不注入 p/ul/ol/
+// blockquote margin-bottom 規則，保留原站 typography）。0 是合法值（段落貼緊）
+// 所以不能拿來當 sentinel，改用 -1。step 0.25 給「半段、一段、兩段」這類常見
+// 間距選擇。
+const PARAGRAPH_SPACING = { min: 0, max: 3.0, step: 0.25, default: 1.0, auto: -1 };
+
+// 浮點誤差校正：1.7 + 0.1 = 1.7999999999999998；統一 round 到 2 位小數後再
+// 用 String() 印出（會自動省略尾端 0，例如 1 而不是 1.00）。
+function roundStep(v) { return Math.round(v * 100) / 100; }
 // v0.7.140：popup 字型 select 的 4 個內建 stack。預設 'system-ui' 對齊 styler
 // DEFAULTS.fontFamily —— 選「系統預設」== 不注入 font-family override，保留各
 // 站原本字體。其他三組故意把 generic family（serif / sans-serif / monospace）
@@ -45,6 +61,8 @@ const DEFAULT_SETTINGS = {
   fontSize: FONT_SIZE.default,
   contentWidth: CONTENT_WIDTH.default,
   fontFamily: FONT_STACKS.system,
+  lineHeight: LINE_HEIGHT.default,
+  paragraphSpacing: PARAGRAPH_SPACING.default,
   // 字粗外觀（細 = antialiased / 粗 = subpixel-antialiased）;預設細 對齊 styler
   // reader card baseline (antialiased) — 使用者切「粗」反轉回 macOS 預設 subpixel
   boldText: false,
@@ -80,6 +98,16 @@ function render(settings) {
   const isAuto = settings.fontSize === FONT_SIZE.auto;
   fontSizeValEl.textContent = isAuto ? 'Auto' : String(settings.fontSize);
   contentWidthValEl.textContent = String(settings.contentWidth);
+  // 行距：Auto sentinel = 0；其他顯示 roundStep 後的數字（避免浮點 trailing 9）
+  const isLhAuto = settings.lineHeight === LINE_HEIGHT.auto;
+  if (lineHeightValEl) {
+    lineHeightValEl.textContent = isLhAuto ? 'Auto' : String(roundStep(settings.lineHeight));
+  }
+  // 段落間距：Auto sentinel = -1；非 Auto 顯示數字（0 / 1 / 1.25 / 2 etc.）
+  const isPsAuto = settings.paragraphSpacing === PARAGRAPH_SPACING.auto;
+  if (paragraphSpacingValEl) {
+    paragraphSpacingValEl.textContent = isPsAuto ? 'Auto' : String(roundStep(settings.paragraphSpacing));
+  }
   for (const btn of themeBtns) {
     btn.classList.toggle('active', btn.dataset.theme === settings.theme);
   }
@@ -89,10 +117,21 @@ function render(settings) {
     isAuto || settings.fontSize <= FONT_SIZE.min;
   document.querySelector('[data-action="font-inc"]').disabled =
     !isAuto && settings.fontSize >= FONT_SIZE.max;
+  // 行距 / 段落間距同 Auto 處理邏輯
+  const lhDec = document.querySelector('[data-action="line-height-dec"]');
+  const lhInc = document.querySelector('[data-action="line-height-inc"]');
+  if (lhDec) lhDec.disabled = isLhAuto || settings.lineHeight <= LINE_HEIGHT.min;
+  if (lhInc) lhInc.disabled = !isLhAuto && settings.lineHeight >= LINE_HEIGHT.max;
+  const psDec = document.querySelector('[data-action="paragraph-spacing-dec"]');
+  const psInc = document.querySelector('[data-action="paragraph-spacing-inc"]');
+  if (psDec) psDec.disabled = isPsAuto || settings.paragraphSpacing <= PARAGRAPH_SPACING.min;
+  if (psInc) psInc.disabled = !isPsAuto && settings.paragraphSpacing >= PARAGRAPH_SPACING.max;
   document.querySelector('[data-action="width-dec"]').disabled = settings.contentWidth <= CONTENT_WIDTH.min;
   document.querySelector('[data-action="width-inc"]').disabled = settings.contentWidth >= CONTENT_WIDTH.max;
   // Auto 按鈕 active 狀態
   if (fontAutoBtn) fontAutoBtn.classList.toggle('active', isAuto);
+  if (lineHeightAutoBtn) lineHeightAutoBtn.classList.toggle('active', isLhAuto);
+  if (paragraphSpacingAutoBtn) paragraphSpacingAutoBtn.classList.toggle('active', isPsAuto);
   // 字粗 segmented
   for (const btn of boldTextBtns) {
     btn.classList.toggle('active', String(settings.boldText) === btn.dataset.bold);
@@ -176,6 +215,48 @@ if (fontAutoBtn) {
       ? FONT_SIZE.default
       : FONT_SIZE.auto;
     save({ fontSize: next });
+  });
+}
+
+// 行距：與字級同 Auto + stepper 模式
+const lhDecBtn = document.querySelector('[data-action="line-height-dec"]');
+const lhIncBtn = document.querySelector('[data-action="line-height-inc"]');
+if (lhDecBtn) lhDecBtn.addEventListener('click', () => {
+  if (current.lineHeight === LINE_HEIGHT.auto) return;
+  save({ lineHeight: roundStep(clamp(current.lineHeight - LINE_HEIGHT.step, LINE_HEIGHT.min, LINE_HEIGHT.max)) });
+});
+if (lhIncBtn) lhIncBtn.addEventListener('click', () => {
+  if (current.lineHeight === LINE_HEIGHT.auto) {
+    save({ lineHeight: LINE_HEIGHT.default });
+    return;
+  }
+  save({ lineHeight: roundStep(clamp(current.lineHeight + LINE_HEIGHT.step, LINE_HEIGHT.min, LINE_HEIGHT.max)) });
+});
+if (lineHeightAutoBtn) {
+  lineHeightAutoBtn.addEventListener('click', () => {
+    const next = current.lineHeight === LINE_HEIGHT.auto ? LINE_HEIGHT.default : LINE_HEIGHT.auto;
+    save({ lineHeight: next });
+  });
+}
+
+// 段落間距：與字級同 Auto + stepper 模式（Auto sentinel = -1，因為 0 是合法值）
+const psDecBtn = document.querySelector('[data-action="paragraph-spacing-dec"]');
+const psIncBtn = document.querySelector('[data-action="paragraph-spacing-inc"]');
+if (psDecBtn) psDecBtn.addEventListener('click', () => {
+  if (current.paragraphSpacing === PARAGRAPH_SPACING.auto) return;
+  save({ paragraphSpacing: roundStep(clamp(current.paragraphSpacing - PARAGRAPH_SPACING.step, PARAGRAPH_SPACING.min, PARAGRAPH_SPACING.max)) });
+});
+if (psIncBtn) psIncBtn.addEventListener('click', () => {
+  if (current.paragraphSpacing === PARAGRAPH_SPACING.auto) {
+    save({ paragraphSpacing: PARAGRAPH_SPACING.default });
+    return;
+  }
+  save({ paragraphSpacing: roundStep(clamp(current.paragraphSpacing + PARAGRAPH_SPACING.step, PARAGRAPH_SPACING.min, PARAGRAPH_SPACING.max)) });
+});
+if (paragraphSpacingAutoBtn) {
+  paragraphSpacingAutoBtn.addEventListener('click', () => {
+    const next = current.paragraphSpacing === PARAGRAPH_SPACING.auto ? PARAGRAPH_SPACING.default : PARAGRAPH_SPACING.auto;
+    save({ paragraphSpacing: next });
   });
 }
 document.querySelector('[data-action="width-dec"]').addEventListener('click', () => {

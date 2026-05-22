@@ -124,4 +124,63 @@ describe('styler — 數值 clamp（v0.7.143）', () => {
     }
     window.__JRead.styler.restore(articleEl, null);
   });
+
+  // v0.7.162 paragraphSpacing clamp
+  it('極大 paragraphSpacing (1e308) 必須 clamp 到上限 5em 以下', () => {
+    window.__JRead.styler.apply(articleEl, {
+      theme: 'light',
+      fontSize: 18,
+      contentWidth: 720,
+      fontFamily: 'system-ui',
+      lineHeight: 1.7,
+      paragraphSpacing: 1e308
+    });
+    const styleEl = window.document.getElementById('__jread-style');
+    const css = styleEl.textContent;
+    assert.ok(!/margin-bottom:\s*1e\+?\d+em/.test(css), 'CSS 不可含 1e+308em 字面');
+    const match = css.match(/margin-bottom:\s*(\d+(?:\.\d+)?)em\s*!important/);
+    if (match) {
+      const em = parseFloat(match[1]);
+      assert.ok(em <= 5, `clamp 後 paragraphSpacing 應 <= 5em，實際 ${em}em`);
+    }
+    window.__JRead.styler.restore(articleEl, null);
+  });
+
+  it('paragraphSpacing = -1（Auto sentinel）必須保留、不可 clamp 到 0', () => {
+    window.__JRead.styler.apply(articleEl, {
+      theme: 'light',
+      fontSize: 18,
+      contentWidth: 720,
+      fontFamily: 'system-ui',
+      lineHeight: 1.7,
+      paragraphSpacing: -1
+    });
+    const styleEl = window.document.getElementById('__jread-style');
+    const css = styleEl.textContent;
+    // -1 是 Auto sentinel——不該注入 p/ul/ol/blockquote margin-bottom 規則
+    assert.ok(!/\[data-jread-active="1"\]\s+p,[\s\S]*?\[data-jread-active="1"\]\s+blockquote\s*\{[^}]*margin-bottom/.test(css),
+      `paragraphSpacing=-1 (Auto) 不可注入 p/ul/ol/blockquote margin-bottom 規則；實際 CSS:\n${css.slice(0, 500)}`);
+    window.__JRead.styler.restore(articleEl, null);
+  });
+
+  it('paragraphSpacing = -2（無效負值）必須 fallback 到 DEFAULTS（1.0），不可注入 -2em', () => {
+    window.__JRead.styler.apply(articleEl, {
+      theme: 'light',
+      fontSize: 18,
+      contentWidth: 720,
+      fontFamily: 'system-ui',
+      lineHeight: 1.7,
+      paragraphSpacing: -2
+    });
+    const styleEl = window.document.getElementById('__jread-style');
+    const css = styleEl.textContent;
+    assert.ok(!/margin-bottom:\s*-\d+(?:\.\d+)?em/.test(css),
+      'CSS 不可含負值 em（-2 不應通過 clamp）');
+    // -2 應 fallback 到 DEFAULTS.paragraphSpacing = 1.0 → 注入 1em
+    const m = css.match(/\[data-jread-active="1"\]\s+p[\s\S]*?\[data-jread-active="1"\]\s+blockquote\s*\{([^}]*)\}/);
+    assert.ok(m, 'paragraphSpacing 無效負值應 fallback 到 1.0，仍有 rule block');
+    assert.ok(/margin-bottom\s*:\s*1em\s*!important/.test(m[1]),
+      'paragraphSpacing 無效負值應 fallback 到 1.0 → margin-bottom: 1em');
+    window.__JRead.styler.restore(articleEl, null);
+  });
 });

@@ -511,6 +511,32 @@
     </div>
 
     <div class="setting-row">
+      <label>行距</label>
+      <div class="font-controls">
+        <button class="auto-btn" id="line-height-auto-btn"
+          title="保留各站點原本的行距（不覆寫）">自動</button>
+        <div class="stepper">
+          <button data-action="line-height-dec" aria-label="行距減小">−</button>
+          <span class="val" id="line-height-val">1.7</span>
+          <button data-action="line-height-inc" aria-label="行距放大">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <label>段落間距</label>
+      <div class="font-controls">
+        <button class="auto-btn" id="paragraph-spacing-auto-btn"
+          title="保留各站點原本的段落間距（不覆寫）">自動</button>
+        <div class="stepper">
+          <button data-action="paragraph-spacing-dec" aria-label="段落間距縮小">−</button>
+          <span class="val" id="paragraph-spacing-val">1</span>
+          <button data-action="paragraph-spacing-inc" aria-label="段落間距放大">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-row">
       <label>版心寬度</label>
       <div class="stepper">
         <button data-action="width-dec" aria-label="版心變窄">−</button>

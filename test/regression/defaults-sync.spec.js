@@ -205,7 +205,7 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
-  describe('lineHeight：popup（沒有）/ SW / styler 兩邊一致', () => {
+  describe('lineHeight：popup / SW / styler 三邊一致（v0.7.162 popup 也宣告）', () => {
     it('SW DEFAULT_SETTINGS.lineHeight === 1.7', () => {
       const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'lineHeight');
       assert.strictEqual(v, '1.7', `SW lineHeight 必須 === 1.7，實際 ${v}`);
@@ -213,6 +213,35 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     it('styler DEFAULTS.lineHeight === 1.7', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'lineHeight');
       assert.strictEqual(v, '1.7', `styler lineHeight 必須 === 1.7，實際 ${v}`);
+    });
+    it('popup LINE_HEIGHT.default === 1.7', () => {
+      const m = POPUP_SRC.match(/LINE_HEIGHT\s*=\s*\{[^}]*default:\s*([\d.]+)/);
+      assert.ok(m, '必須能抓到 popup LINE_HEIGHT.default');
+      assert.strictEqual(m[1], '1.7', `popup LINE_HEIGHT.default 必須 === 1.7，實際 ${m[1]}`);
+    });
+  });
+
+  describe('paragraphSpacing：popup / SW / styler 三邊一致（v0.7.162 新增）', () => {
+    it('SW DEFAULT_SETTINGS.paragraphSpacing === 1.0', () => {
+      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'paragraphSpacing');
+      assert.strictEqual(v, '1.0', `SW paragraphSpacing 必須 === 1.0，實際 ${v}`);
+    });
+    it('styler DEFAULTS.paragraphSpacing === 1.0', () => {
+      const v = extractField(STYLER_SRC, 'DEFAULTS', 'paragraphSpacing');
+      assert.strictEqual(v, '1.0', `styler paragraphSpacing 必須 === 1.0，實際 ${v}`);
+    });
+    it('popup PARAGRAPH_SPACING.default === 1.0', () => {
+      const m = POPUP_SRC.match(/PARAGRAPH_SPACING\s*=\s*\{[^}]*default:\s*([\d.]+)/);
+      assert.ok(m, '必須能抓到 popup PARAGRAPH_SPACING.default');
+      assert.strictEqual(m[1], '1.0', `popup PARAGRAPH_SPACING.default 必須 === 1.0，實際 ${m[1]}`);
+    });
+    it('main.js storage.onChanged relevantKeys 必須含 paragraphSpacing（reader mode 即時套用）', () => {
+      const MAIN_SRC = fs.readFileSync(path.join(ROOT, 'content', 'main.js'), 'utf8');
+      const m = MAIN_SRC.match(/relevantKeys\s*=\s*\[([^\]]+)\]/);
+      assert.ok(m, '必須能抓到 main.js relevantKeys 陣列');
+      const keys = m[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+      assert.ok(keys.includes('paragraphSpacing'),
+        `relevantKeys 必須含 paragraphSpacing；否則 popup 切換段落間距後 content script 不會 reapply。實際 keys: ${JSON.stringify(keys)}`);
     });
   });
 });
