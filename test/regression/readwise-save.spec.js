@@ -56,6 +56,61 @@ describe('readwise: buildReadwisePayload', () => {
     assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: 'data:image/png;base64,iVBORw0KG' }).image_url, undefined);
     assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: 'blob:https://example.com/abc' }).image_url, undefined);
   });
+
+  // v0.7.167：author 欄位（FB vanity / X handle / 一般站 byline name）
+  it('author 是非空字串：trim 後送 author', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', author: '  Jane Doe  ' });
+    assert.strictEqual(body.author, 'Jane Doe');
+  });
+
+  it('author 是 FB vanity username：原樣送', () => {
+    const body = buildReadwisePayload({ url: 'https://facebook.com/u/posts/1', author: 'drdavidchen' });
+    assert.strictEqual(body.author, 'drdavidchen');
+  });
+
+  it('author 是 X handle（含 @）：原樣送', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com/u/status/1', author: '@elonmusk' });
+    assert.strictEqual(body.author, '@elonmusk');
+  });
+
+  it('author 空字串 / null / 非 string：略過 author', () => {
+    const bases = { url: 'https://x.com' };
+    assert.strictEqual(buildReadwisePayload({ ...bases, author: '' }).author, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, author: '   ' }).author, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, author: null }).author, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, author: 123 }).author, undefined);
+  });
+
+  // v0.7.167：published_date 欄位（ISO 8601 字串，content script 端 normalize）
+  it('publishedDate 是 ISO 8601 字串：trim 後送 published_date', () => {
+    const body = buildReadwisePayload({
+      url: 'https://x.com',
+      publishedDate: '  2026-05-22T10:00:00Z  '
+    });
+    assert.strictEqual(body.published_date, '2026-05-22T10:00:00Z');
+  });
+
+  it('publishedDate 空字串 / null / 非 string：略過', () => {
+    const bases = { url: 'https://x.com' };
+    assert.strictEqual(buildReadwisePayload({ ...bases, publishedDate: '' }).published_date, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, publishedDate: null }).published_date, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, publishedDate: 123 }).published_date, undefined);
+  });
+
+  // v0.7.167：language 欄位不存在於 Readwise Reader API,buildReadwisePayload
+  // 絕對不可在 body 內輸出 language key(避免使用者 / 上游誤以為有支援)。
+  it('絕對不送 language 欄位（Readwise API 不接受）', () => {
+    const body = buildReadwisePayload({
+      url: 'https://x.com',
+      html: '<p>x</p>',
+      title: 'T',
+      author: 'A',
+      publishedDate: '2026-05-22T00:00:00Z',
+      imageUrl: 'https://x.com/i.jpg',
+      language: 'zh-TW'
+    });
+    assert.strictEqual(body.language, undefined, 'body 不可含 language');
+  });
 });
 
 function makeFetch(impl) {
@@ -216,6 +271,45 @@ describe('readwise: 訊息協定常數同步', () => {
       /payload:\s*{[^}]*imageUrl/,
       'extractReaderPayload payload 必須含 imageUrl 欄位（給 buildReadwisePayload 轉 image_url）'
     );
+    // v0.7.167：author / publishedDate 抽取——extractAuthor / extractPublishedDate
+    // helper 定義 + extractReaderPayload payload 帶上兩欄位。
+    assert.match(
+      mainSrc,
+      /function\s+extractAuthor\s*\(/,
+      'main.js 必須定義 extractAuthor 函式（v0.7.167）'
+    );
+    assert.match(
+      mainSrc,
+      /function\s+extractPublishedDate\s*\(/,
+      'main.js 必須定義 extractPublishedDate 函式（v0.7.167）'
+    );
+    assert.match(
+      mainSrc,
+      /payload:\s*{[^}]*author/,
+      'extractReaderPayload payload 必須含 author 欄位'
+    );
+    assert.match(
+      mainSrc,
+      /payload:\s*{[^}]*publishedDate/,
+      'extractReaderPayload payload 必須含 publishedDate 欄位'
+    );
+    // FB / X 短路必須早於一般站抽取
+    assert.match(
+      mainSrc,
+      /data-jread-fb-reader[\s\S]{0,800}extractAuthorVanityFromUrl/,
+      'extractAuthor 必須先處理 FB 合成 reader 分支（用 NS.fbPost.extractAuthorVanityFromUrl）'
+    );
+    assert.match(
+      mainSrc,
+      /data-jread-x-reader[\s\S]{0,300}extractXAuthorHandle/,
+      'extractAuthor 必須處理 X / Twitter 合成 reader 分支（extractXAuthorHandle from URL）'
+    );
+    // 一般站 byline 多層 fallback
+    assert.match(mainSrc, /application\/ld\+json/, 'extractAuthor 必須讀 JSON-LD');
+    assert.match(mainSrc, /meta\[name="author"\]/, 'extractAuthor 必須讀 meta[name="author"]');
+    assert.match(mainSrc, /article:published_time/, 'extractPublishedDate 必須讀 article:published_time');
+    assert.match(mainSrc, /datePublished/, 'extractPublishedDate 必須讀 JSON-LD datePublished');
+    assert.match(mainSrc, /time\[datetime\]/, 'extractPublishedDate 必須 fallback 到 <time datetime>');
   });
 });
 

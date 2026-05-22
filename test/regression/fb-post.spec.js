@@ -89,6 +89,68 @@ describe('fb-post v0.7.157 — 模組結構', () => {
   });
 });
 
+// v0.7.167：FB permalink URL 抽 vanity username 給 Readwise author 欄位。
+describe('fb-post v0.7.167 — extractAuthorVanityFromUrl', () => {
+  let f;
+  before(() => {
+    const env = setupJsdom('https://example.com/');
+    f = env.NS.fbPost.extractAuthorVanityFromUrl;
+  });
+
+  it('NS.fbPost 必須暴露 extractAuthorVanityFromUrl', () => {
+    assert.strictEqual(typeof f, 'function',
+      'NS.fbPost.extractAuthorVanityFromUrl 必須存在(main.js extractAuthor 依賴)');
+    assert.match(FBPOST_SRC, /function\s+extractAuthorVanityFromUrl\s*\(/);
+    assert.match(FBPOST_SRC, /NS\.fbPost\s*=\s*\{[\s\S]*extractAuthorVanityFromUrl[\s\S]*\}/);
+  });
+
+  it('https://www.facebook.com/drdavidchen/posts/pfbid02… → "drdavidchen"', () => {
+    assert.strictEqual(f('https://www.facebook.com/drdavidchen/posts/pfbid02UCSG1dpwH7hjrftyrtepKB'), 'drdavidchen');
+  });
+
+  it('https://facebook.com/user/posts/123 → "user"(無 www)', () => {
+    assert.strictEqual(f('https://facebook.com/user/posts/123'), 'user');
+  });
+
+  it('https://m.facebook.com/user/posts/123 → "user"(行動版)', () => {
+    assert.strictEqual(f('https://m.facebook.com/user/posts/123'), 'user');
+  });
+
+  it('https://www.facebook.com/groups/<gid>/posts/<pid> → ""(社團路徑保留段不送)', () => {
+    assert.strictEqual(f('https://www.facebook.com/groups/902748753095551/posts/26919193527691051/'), '',
+      'groups 是 reserved path,沒 vanity → 空字串(caller fallback 用 displayName)');
+  });
+
+  it('https://www.facebook.com/story.php?story_fbid=…&id=… → ""(無 vanity)', () => {
+    assert.strictEqual(f('https://www.facebook.com/story.php?story_fbid=123&id=456'), '');
+  });
+
+  it('https://www.facebook.com/permalink.php?story_fbid=… → ""', () => {
+    assert.strictEqual(f('https://www.facebook.com/permalink.php?story_fbid=123&id=456'), '');
+  });
+
+  it('https://www.facebook.com/share/p/abc → ""(短連結無 vanity)', () => {
+    assert.strictEqual(f('https://www.facebook.com/share/p/abc123'), '');
+  });
+
+  it('https://www.facebook.com/user(無 /posts/)→ ""(純使用者頁不送)', () => {
+    assert.strictEqual(f('https://www.facebook.com/drdavidchen'), '');
+  });
+
+  it('https://example.com/user/posts/123 → ""(非 FB 站)', () => {
+    assert.strictEqual(f('https://example.com/user/posts/123'), '');
+  });
+
+  it('https://fakefacebook.com/user/posts/123 → ""(防 hostname 包含 facebook.com 子字串)', () => {
+    assert.strictEqual(f('https://fakefacebook.com/user/posts/123'), '');
+  });
+
+  it('無參數時讀 location.href', () => {
+    const env = setupJsdom('https://www.facebook.com/drdavidchen/posts/pfbid02');
+    assert.strictEqual(env.NS.fbPost.extractAuthorVanityFromUrl(), 'drdavidchen');
+  });
+});
+
 describe('fb-post v0.7.157 — isFacebookPost URL 判斷', () => {
   let isFacebookPost;
   before(() => {

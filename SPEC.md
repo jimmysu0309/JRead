@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.166**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.167**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -360,8 +360,18 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 - Endpoint：`POST https://readwise.io/api/v3/save/`
 - Header：`Authorization: Token <user_access_token>`
-- Body：`{ url, html?, title? }`（html / title 可省，Readwise 會自抓，但帶上 JRead 處理過的 html 才能繞過原站 parser 問題）
+- Body：`{ url, html?, title?, image_url?, author?, published_date? }`（除 `url` 外皆可省，Readwise 會自抓，但帶上 JRead 處理過的欄位才能繞過原站 parser 問題與補強冷門站缺漏 metadata）
 - 回傳：`200`（已存在）/ `201`（新建）
+- **注意**：Readwise Reader API 沒 `language` 欄位（送了會被忽略），JRead 不抽 / 不送 `language`。
+
+### 欄位抽取策略（v0.7.166–167）
+
+- **`image_url`（v0.7.166）**：`main.js extractHeroImage(articleEl)` — reader card 內第一張通過 200×200 / 200×120 門檻的 visible `img`（不在 `[data-jread-hidden]` 子孫內，srcset 取最大解析度 entry）→ fallback `meta[property="og:image"]` / `og:image:url` / `og:image:secure_url` / `meta[name="twitter:image"]` / `twitter:image:src`。URL 必須 absolute `http(s)`,`data:`/`blob:`/相對路徑略過。
+- **`author`（v0.7.167）**：`main.js extractAuthor()` — 三條分支：
+  - Facebook 合成 reader（`[data-jread-fb-reader]`）：`NS.fbPost.extractAuthorVanityFromUrl()` 抽 `/<user>/posts/<id>` 第一段 vanity username,reserved path(`groups` / `permalink.php` / `story.php` / `share` / `profile.php` / `permalink` / `people` / `pages`)沒 vanity → fallback 讀合成 header `[data-jread-fb-author] strong` 的 displayName。
+  - X / Twitter 合成 reader（`[data-jread-x-reader]`）：`/<handle>/status/<id>` → `@handle`（hostname 嚴格比對 `x.com` / `twitter.com`,防 hostname 混淆攻擊）。
+  - 一般網站:JSON-LD `Article.author.name`（含 `string` / `object` / `array` / `@graph` 多 schema）→ `meta[name="author"]` → `meta[property="article:author"]`（filter `^https?://` URL 形式）→ byline 元素：`[itemprop="author"] [itemprop="name"]` / `[itemprop="author"]` / `[rel="author"]` / `.byline-author` / `.author-name` / `.byline .author` / `.byline`。文字長度 >= 100 字拒絕（避免抓到段落）。
+- **`published_date`（v0.7.167）**：`main.js extractPublishedDate()` — JSON-LD `datePublished` / `dateCreated`（含 `@graph` 巢狀）→ `meta` 變體（`article:published_time` / `pubdate` / `publishdate` / `date` / `DC.date` / `DC.date.issued` / `itemprop="datePublished"`）→ `<time datetime="...">` 第一個 parseable。一律 `new Date(raw).toISOString()` 正規化為 UTC ISO 8601（純日期 `2026-05-22` → `2026-05-22T00:00:00.000Z`；含時區 `+08:00` 自動轉 UTC）。
 
 ### 設定
 
