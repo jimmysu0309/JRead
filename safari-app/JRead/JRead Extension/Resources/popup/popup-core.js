@@ -53,17 +53,23 @@
   // 依官方 API（https://readwise.io/reader_api）：
   //   POST https://readwise.io/api/v3/save/
   //   Header: Authorization: Token <access_token>
-  //   Body:   { url, html?, title?, author?, summary?, location? }
+  //   Body:   { url, html?, title?, image_url?, author?, summary?, location? }
   // 200 = 已存在、201 = 新建。
   const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
 
-  function buildReadwisePayload({ url, html, title } = {}) {
+  function buildReadwisePayload({ url, html, title, imageUrl } = {}) {
     if (!url || typeof url !== 'string') {
       throw new Error('buildReadwisePayload: url 必填');
     }
     const body = { url };
     if (html && typeof html === 'string') body.html = html;
     if (title && typeof title === 'string') body.title = title;
+    // v0.7.166：image_url 帶主圖 URL（Readwise Reader 用為 cover image）。
+    // 必須是 http/https absolute URL——data:/blob: 已在 extractReaderPayload
+    // 端 normalize 過、這裡再防呆一層，避免直接送 throw 整個 payload。
+    if (imageUrl && typeof imageUrl === 'string' && /^https?:\/\//i.test(imageUrl)) {
+      body.image_url = imageUrl;
+    }
     return body;
   }
 
