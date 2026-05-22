@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.165**——FB 段落送 Readwise Reader 擠成一團——`buildCleanHtml` 把 `[data-jread-fb-para="1"]` div 改寫成 `<p>`。**動機**：Jimmy 2026-05-22 回報「Facebook 的文章在閱讀模式送到 Readwise Reader 時，文章段落都會擠在一起」。**Root cause**：fb-post.js `markParagraphDivs` 把 FB 主貼文的「直接含文字 leaf div」標 `data-jread-fb-para="1"` + 設 inline `style="margin: 1.2em 0"`，本地 reader card 靠 inline margin（+ styler 注入的 `[data-jread-fb-para]` 規則）顯示段落間距。但送 Readwise 走 `extractReaderPayload → buildCleanHtml → POST` 流程，`buildCleanHtml` 雖然不動 `style` attribute，但 Readwise Reader 端的 HTML sanitizer 會砍掉所有 inline style 並重新套自家排版——`<div>` 在他們的 parser 裡不被視為段落（無 native margin），結果所有段落 div 緊貼在一起。**修法**：`buildCleanHtml` 在「移除 hidden / 移除注入 style」之後、「strip data-jread-* attr」之前，把所有 `[data-jread-fb-para="1"]` div 改寫成 `<p>`（複製 attribute + 搬子節點 + replaceWith）。本地 reader card 不變（仍用 div + inline margin + styler 規則），Readwise 端收到 `<p>` 用語意辨識段落。markParagraphDivs 既有 guard 已保證 fb-para div 的 children 只有 text node 或 inline element（span / a / strong / em ...），轉 `<p>` 不會違反「p 不可含 block-level child」HTML 規則。**spec**：`readwise-save.spec.js` (a) `buildCleanHtmlImpl` 鏡像同步加入 fb-para → p 轉換；(b) 新增「FB permalink 段落 div 改寫成 `<p>`」行為 spec（驗 `<p>` 含原文字 + 內部 inline `<a>` 連結保留 + 非 fb-para div 不被誤轉 + 改寫後不留 data-jread-fb-para 殘骸）；(c) main.js forcing function 新增「必須處理 data-jread-fb-para」+「必須 createElement('p')」兩條 assert。sanity：拿掉 main.js 新增的 fb-para 轉換段 → forcing function + 行為 spec 立刻 fail；還原全綠。
+
+---
+
 **v0.7.164**——dark theme `<pre>` + `<code>` 視覺修法（背景對比 + 字型保留）。**動機**：Jimmy 2026-05-22 回報 Medium @ddsakura-blog M5 Max 評測文 dark theme 下兩個視覺問題：(1)「白底卡片內淺灰字閱讀困難」；(2) 修好 bg 後「框內等寬字型被代換」。**Root cause（兩件事）**：
 
 (1) **背景對比**：cage probe 發現真兇不是 blockquote（整篇沒用 blockquote tag），而是 `<pre>`（站點 `.pre` 套 bg `#f9f9f9`）+ inline `<code>`（站點 `.code` 套 bg `#f2f2f2`）。styler line 463 background 清除規則 preserve 清單刻意保留 `pre / code` 原站 bg（程式碼框視覺區隔），light theme 下淺底 + 黑字可讀；但 dark theme 下 jread `* { color: theme.text }` 把文字色覆寫成 `#d4d4d4`，淺底 + 淺字對比 **1.04:1**（比 v0.7.154 blockquote 修的 1.38:1 更糟）。這是與 v0.7.154 完全同性質的結構性通則 bug——「站點 light theme 設計的 light bg + jread dark text 覆寫 = 對比過低」適用於所有 preserve 清單上 bg 元素。
