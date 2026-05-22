@@ -51,10 +51,12 @@ function setup(themeName) {
 }
 
 describe('styler — dark/sepia theme blockquote bg fix (v0.7.154)', () => {
-  // 嚴格 regex：只命中「selector 結尾為 blockquote」的 rule（避免命中 base
-  // 規則 `*:not(figure):not(blockquote)... { background-color: transparent }`
-  // 那條 `:not(blockquote)` 字串）
-  const BQ_BG_RULE = /html\.__jread-active\s+\[data-jread-active="1"\]\s+blockquote\s*\{[^}]*background-color:\s*transparent\s*!important/i;
+  // 嚴格 regex：只命中「selector 含 blockquote」的 rule（避免命中 base 規則
+  // `*:not(figure):not(blockquote)... { background-color: transparent }` 那條
+  // `:not(blockquote)` 字串）。`[^{]*` 容忍 v0.7.164 之後 selector 變 comma list
+  // （blockquote, pre, code 共用同一條 rule body），blockquote 之後到 `{` 之間
+  // 可以含其他 selector。
+  const BQ_BG_RULE = /html\.__jread-active\s+\[data-jread-active="1"\]\s+blockquote\b[^{]*\{[^}]*background-color:\s*transparent\s*!important/i;
 
   it('(a) dark theme: stylesheet 含 blockquote background-color: transparent rule', () => {
     const css = setup('dark');
