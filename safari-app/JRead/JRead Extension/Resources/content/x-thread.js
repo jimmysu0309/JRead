@@ -194,6 +194,73 @@
     return h;
   }
 
+  // v0.7.160：X 推文 / Article 內圖片多層 wrapper 解纏。
+  //
+  // X 把圖片包在多層 emotion-styled wrapper 裡（padding-bottom 比例 hack +
+  // absolute 子 + overflow:hidden）。普通推文是 `<div data-testid="tweetPhoto">`
+  // 為最外層 wrapper；X Article（twitterArticleReadView）則 tweetPhoto 是
+  // 內層、外層另有 `r-1p0dtai` / `r-1adg3ll` 等比例 wrapper。
+  //
+  // 兩種結構的共通點：**每張圖被一個 `<a href="/photo/N">` link 包圍**（X 點圖
+  // 開大圖的 anchor），這個 a 是「最接近 img 且唯一識別 photo 的祖先」。
+  //
+  // 修法：找 article 內每個 `a[href*="/photo/"]`，把它整段 replaceWith
+  // `<figure><img></figure>`。figure 是 PRESERVE_SEL 內 tag，cleaner 對 figure
+  // 內部 hide rule 自動 skip；styler 對 figure / img 已有現成排版規則
+  // （max-width: 100%、height: auto、置中）。同時 removeAttribute('style')
+  // 清原站 inline position:absolute / top / left / filter:blur 等 lazy-load
+  // placeholder 樣式。
+  //
+  // cleaner 副作用避免：figure 插入後其外層仍是 X 的 absolute / aspect-ratio
+  // wrapper（emotion class），若被 hideInsideArticleAbsoluteOverlays 命中會
+  // 連帶 hide figure。X article 主文流是 `<div[twitterArticleReadView]>` 直接
+  // child（文字段落 / 圖片 wrapper 平鋪），圖片 wrapper 自身 position:absolute
+  // 配 padding-bottom 比例撐 h；hide 後 figure 雖 preserve 但 ancestor display:
+  // none 仍會 0×0 不可見。額外處理：圖片 wrapper 往上 walk 找 article direct
+  // child 祖先，整段 replace 成 figure，避免任何中介 wrapper 殘留。
+  function unwrapTweetMedia(clone) {
+    if (!clone || !clone.querySelectorAll) return 0;
+    let unwrapped = 0;
+    // 對每個 tweetPhoto 找最近的「a + img wrapper」當 unwrap 對象：
+    //   普通 X 推文：a[href*="/photo/"] 直接包 img、tweetPhoto 在更外層
+    //   X Article：a[href*="/article/"] 是「圖片可點擊版」、tweetPhoto 在更內層
+    // 共通：從 tweetPhoto 開始 bidirectional walk —— 內找 img、外找最近祖先 a
+    // （該 a 含此 img、不含 tweetText、不含 UserAvatar），用該 a 當 unwrap
+    // 起點。若沒外層 a，直接拿 tweetPhoto 做 unwrap target。
+    const tweetPhotos = clone.querySelectorAll('[data-testid="tweetPhoto"]');
+    for (const tp of tweetPhotos) {
+      const img = tp.querySelector('img');
+      if (!img) continue;
+      // 從 tp 往外找最近的 a（停在 clone 邊界）
+      let target = tp;
+      let cur = tp.parentElement;
+      while (cur && cur !== clone) {
+        if (cur.tagName === 'A') {
+          // 確認 a 不含 tweetText（不跨段落）
+          if (!cur.querySelector('[data-testid="tweetText"]')) {
+            target = cur;
+          }
+          break;
+        }
+        cur = cur.parentElement;
+      }
+      // 抽 img、清 inline style（含 position:absolute / top / left / blur）
+      img.removeAttribute('style');
+      // v0.7.161：X stylesheet 對 `img.css-9pa8cd` 套 `opacity: 0` 當 lazy-load
+      // placeholder，由 React 在實際載入完成後 fade-in 到 1。cloneNode 不複製
+      // React event handler、fade-in 永不觸發、img 永遠透明（DOM 完美但視覺空白）。
+      // 用 inline !important 直接覆寫 stylesheet rule（specificity 必勝）。
+      img.style.setProperty('opacity', '1', 'important');
+      img.setAttribute('data-jread-x-tweet-photo', '1');
+      const fig = clone.ownerDocument.createElement('figure');
+      fig.setAttribute('data-jread-x-media', '1');
+      fig.appendChild(img);
+      target.replaceWith(fig);
+      unwrapped++;
+    }
+    return unwrapped;
+  }
+
   function enter() {
     const existing = document.querySelector('[' + READER_ATTR + ']');
     if (existing) return existing;
@@ -221,6 +288,7 @@
       // wrapper hide rule 連帶 hide（rect=0）——此檔的 injectAuthorHeaders()
       // 在 cleaner 跑完後重建合成 header 補回 author 顯示。
       const clone = art.cloneNode(true);
+      unwrapTweetMedia(clone);
       container.appendChild(clone);
     }
 
@@ -265,6 +333,7 @@
     collectThreadArticles,
     extractAuthorInfo,
     createAuthorHeader,
+    unwrapTweetMedia,
     enter,
     injectAuthorHeaders,
     exit,
