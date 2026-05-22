@@ -251,6 +251,22 @@ describe('fb-post v0.7.157 — enter() 注入合成容器', () => {
     }
   });
 
+  // v0.7.163：inline margin 不得有 !important（否則 styler stylesheet 規則被擋）
+  // 硬教訓十：inline !important 永遠贏 stylesheet !important。使用者調 paragraphSpacing
+  // 是透過 styler 注入的 [data-jread-fb-para] selector 規則，若此處用 !important
+  // 鎖死，使用者設定完全不會生效（Jimmy 2026-05-22 回報 FB 段落間距無效根因）。
+  it('markParagraphDivs inline margin 不得用 !important（保留給 styler paragraphSpacing 規則覆寫）', () => {
+    const env = setupJsdom('https://www.facebook.com/drdavidchen/posts/pfbid02', FIXTURE);
+    const container = env.NS.fbPost.enter();
+    const paragraphs = container.querySelectorAll('[data-jread-fb-para]');
+    assert.ok(paragraphs.length > 0, '前提：fb-para 必須存在');
+    for (const p of paragraphs) {
+      const priority = p.style.getPropertyPriority('margin');
+      assert.strictEqual(priority, '',
+        `[data-jread-fb-para] inline margin 不得有 !important（priority="${priority}"），否則使用者調 paragraphSpacing 無效；text="${(p.textContent || '').slice(0, 30)}"`);
+    }
+  });
+
   it('share-preview widget（整片 link cluster + 含媒體）→ unwrap 只留 img、砍短網域 / 名字 / 重複文字（Jimmy 2026-05-21 第四次實機回報）', () => {
     // 實機 Nathan Chiu 貼文 chrome-in-chrome probe 結果：share-preview widget 是
     // story_message 之後 sibling（mainMsg 祖父輩 sibling），整片包在 <a> 內，

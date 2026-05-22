@@ -891,6 +891,30 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
       'paragraphSpacing = 2.25 必須注入 margin-bottom: 2.25em');
   });
 
+  // v0.7.163：FB div paragraph (data-jread-fb-para) 受 paragraphSpacing 控管
+  // FB permalink fb-post.js 把段落 div 標 data-jread-fb-para=1。paragraphSpacing
+  // 規則必須涵蓋此 selector，否則使用者調間距完全打不到 FB。
+  it('paragraphSpacing >= 0 → 必須注入 [data-jread-fb-para] 規則（FB div 段落間距生效）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, paragraphSpacing: 1.5 });
+    const css = document.getElementById('__jread-style').textContent;
+    const re = /\[data-jread-active="1"\]\s+\[data-jread-fb-para="1"\]\s*\{([^}]*)\}/;
+    const m = css.match(re);
+    assert.ok(m, 'paragraphSpacing = 1.5 必須注入 [data-jread-fb-para] rule block（FB div paragraph 受設定控管）');
+    assert.ok(/margin-top\s*:\s*1\.5em\s*!important/.test(m[1]),
+      'fb-para 必須注入 margin-top: 1.5em（FB div 沒 p 的 user-agent margin、上下都得設）');
+    assert.ok(/margin-bottom\s*:\s*1\.5em\s*!important/.test(m[1]),
+      'fb-para 必須注入 margin-bottom: 1.5em');
+  });
+
+  it('paragraphSpacing = -1 (Auto) → 不注入 [data-jread-fb-para] 規則（fb-post inline fallback 1.2em 接手）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, paragraphSpacing: -1 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(!/\[data-jread-fb-para="1"\]\s*\{[^}]*margin/.test(css),
+      'paragraphSpacing = -1 (Auto) 不得注入 fb-para margin 規則（保留 fb-post.js inline fallback）');
+  });
+
   it('非預設 fontSize + 非預設 lineHeight：line-height 只注入一次（避免 CSS 重複 rule）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 16, lineHeight: 2.0 });
