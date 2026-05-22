@@ -381,6 +381,23 @@
     // 2. 移除 jread 注入的 style 元素（避免汙染 Readwise 端）
     const injected = clone.querySelectorAll('style#__jread-style, style[data-jread]');
     injected.forEach(n => n.remove());
+    // 2.5 FB permalink 段落 div → p。fb-post.js markParagraphDivs 把 FB 主貼文的
+    // 「直接含文字的 leaf div」標 data-jread-fb-para="1" + 設 inline margin。本地
+    // reader card 靠 inline margin（+ styler 注入的 [data-jread-fb-para] 規則）
+    // 顯示段落間距，但送 Readwise Reader 後對方 sanitizer 會砍 inline style，
+    // 段落全擠在一起。把 div 改寫成 <p> 讓 Readwise 用語意辨識段落結構。
+    // 限定 fb-para tag：markParagraphDivs 已 guard「children 只有 text node 或
+    // inline element（span / a / strong / em ...）」、不會抓到含 block child 的 div，
+    // 因此轉 <p> 不會違反 HTML 規則（p 不可含 block-level child）。
+    const fbParas = clone.querySelectorAll('[data-jread-fb-para="1"]');
+    fbParas.forEach(div => {
+      const p = document.createElement('p');
+      for (const attr of Array.from(div.attributes)) {
+        p.setAttribute(attr.name, attr.value);
+      }
+      while (div.firstChild) p.appendChild(div.firstChild);
+      div.replaceWith(p);
+    });
     // 3. 剝掉所有 data-jread-* attribute
     function stripDataAttrs(node) {
       if (node.attributes) {

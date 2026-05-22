@@ -169,6 +169,15 @@ describe('readwise: 訊息協定常數同步', () => {
     assert.match(mainSrc, /data-jread-hidden/, 'main.js 必須處理 data-jread-hidden 隱藏節點');
     assert.match(mainSrc, /data-jread/, 'main.js 必須剝掉 data-jread-* attribute');
     assert.match(mainSrc, /extractReaderPayload/, 'main.js 必須有 extractReaderPayload 函式');
+    // v0.7.165：FB permalink 段落（div + data-jread-fb-para）送 Readwise 前必須
+    // 改寫成 <p>，否則對方 sanitizer 砍 inline style 後段落擠成一團（Jimmy
+    // 2026-05-22 回報）。anchor 在 querySelectorAll('[data-jread-fb-para...]') 之後
+    // 不久必須出現 createElement('p')——同一個轉換 block 內，不容易因註解誤通過。
+    assert.match(
+      mainSrc,
+      /querySelectorAll\(['"]\[data-jread-fb-para[^)]+\)[\s\S]{0,500}createElement\(['"]p['"]\)/,
+      'main.js buildCleanHtml 必須把 [data-jread-fb-para] div 轉成 <p>（送 Readwise 時段落結構保留）'
+    );
   });
 });
 
@@ -182,6 +191,15 @@ function buildCleanHtmlImpl(rootEl) {
   const clone = rootEl.cloneNode(true);
   clone.querySelectorAll('[data-jread-hidden="1"]').forEach(n => n.remove());
   clone.querySelectorAll('style#__jread-style, style[data-jread]').forEach(n => n.remove());
+  const doc = clone.ownerDocument;
+  clone.querySelectorAll('[data-jread-fb-para="1"]').forEach(div => {
+    const p = doc.createElement('p');
+    for (const attr of Array.from(div.attributes)) {
+      p.setAttribute(attr.name, attr.value);
+    }
+    while (div.firstChild) p.appendChild(div.firstChild);
+    div.replaceWith(p);
+  });
   function strip(node) {
     if (node.attributes) {
       const toRemove = [];
@@ -239,6 +257,33 @@ describe('readwise: buildCleanHtml 行為契約', () => {
     const html = buildCleanHtmlImpl(root);
     assert.ok(!/data-jread/.test(html), '所有 data-jread-* attribute 必須被剝掉');
     assert.ok(html.includes('主文'));
+  });
+
+  it('FB permalink 段落 div（data-jread-fb-para="1"）改寫成 <p>', () => {
+    // 背景：fb-post.js markParagraphDivs 把 FB 主貼文的「直接含文字 leaf div」
+    // 標 data-jread-fb-para="1" + 設 inline margin '1.2em 0'，本地 reader card
+    // 靠 inline margin 顯示段落間距。送 Readwise Reader 時對方 sanitizer 會砍
+    // inline style，段落全擠成一團（Jimmy 2026-05-22 回報）。改寫成 <p> 讓
+    // Readwise 用語意辨識段落結構。
+    const root = makeDoc(`
+      <article data-jread-active="1" data-jread-fb-reader="1">
+        <header><strong>作者</strong></header>
+        <div>
+          <div data-jread-fb-para="1" style="margin: 1.2em 0;">第一段內容很重要</div>
+          <div data-jread-fb-para="1" style="margin: 1.2em 0;">第二段內容也很重要 <a href="https://x.com">連結</a></div>
+          <div>媒體 wrapper 不該被轉</div>
+        </div>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root);
+    // 段落必須是 <p>（Readwise 才會識別為段落）
+    assert.match(html, /<p[^>]*>第一段內容很重要<\/p>/, 'FB 段落 div 必須改寫成 <p>');
+    assert.match(html, /<p[^>]*>第二段內容也很重要/, 'FB 段落 div 必須改寫成 <p>（含 inline 連結也保留）');
+    assert.ok(html.includes('<a href="https://x.com">連結</a>'), '段落內的 inline 連結必須保留');
+    // 非 fb-para div 不可被誤轉
+    assert.ok(html.includes('<div>媒體 wrapper 不該被轉</div>'), '非 fb-para div 必須維持 <div>');
+    // 改寫後不可留下 fb-para 標的舊 div
+    assert.ok(!/<div[^>]*data-jread-fb-para/.test(html), '改寫後不可留下 data-jread-fb-para 的 div');
   });
 
   it('保留非 jread 的 data-* attribute（不誤殺站點原有資料屬性）', () => {
