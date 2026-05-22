@@ -246,6 +246,11 @@
       }
       // 抽 img、清 inline style（含 position:absolute / top / left / blur）
       img.removeAttribute('style');
+      // v0.7.161：X stylesheet 對 `img.css-9pa8cd` 套 `opacity: 0` 當 lazy-load
+      // placeholder，由 React 在實際載入完成後 fade-in 到 1。cloneNode 不複製
+      // React event handler、fade-in 永不觸發、img 永遠透明（DOM 完美但視覺空白）。
+      // 用 inline !important 直接覆寫 stylesheet rule（specificity 必勝）。
+      img.style.setProperty('opacity', '1', 'important');
       img.setAttribute('data-jread-x-tweet-photo', '1');
       const fig = clone.ownerDocument.createElement('figure');
       fig.setAttribute('data-jread-x-media', '1');
