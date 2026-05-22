@@ -134,7 +134,21 @@ function normalizeIsoDate(raw) {
   return d.toISOString();
 }
 
+// v0.7.168: X / Twitter 合成 reader 容器內取主推文 time(最後一個 datetime)。
+function extractXPublishedDate(doc) {
+  const container = doc.querySelector('[data-jread-x-reader]');
+  if (!container) return '';
+  const firstArticle = container.querySelector(':scope > article');
+  if (!firstArticle) return '';
+  const times = firstArticle.querySelectorAll('time[datetime]');
+  if (!times.length) return '';
+  const last = times[times.length - 1];
+  return normalizeIsoDate(last.getAttribute('datetime'));
+}
+
 function extractPublishedDate(doc) {
+  if (doc.querySelector('[data-jread-fb-reader]')) return '';
+  if (doc.querySelector('[data-jread-x-reader]')) return extractXPublishedDate(doc);
   const ldNodes = doc.querySelectorAll('script[type="application/ld+json"]');
   for (const node of ldNodes) {
     let data;
@@ -426,5 +440,117 @@ describe('extractPublishedDate — <time> fallback', () => {
   it('找不到任何日期 → 空字串', () => {
     const doc = makeDoc(`<!doctype html><html><head></head><body>nothing</body></html>`);
     assert.strictEqual(extractPublishedDate(doc), '');
+  });
+});
+
+// v0.7.168: X / Twitter 合成 reader 主推文 time 抽取
+describe('extractPublishedDate — X / Twitter 合成 reader', () => {
+  it('主推文 article 只有 1 個 time(無 quoted tweet)→ 取該 time', () => {
+    const doc = makeDoc(`<!doctype html><html><head></head><body>
+      <article data-jread-x-reader="1">
+        <article data-testid="tweet">
+          <time datetime="2026-05-19T19:56:55.000Z">上午3:56 · 2026年5月20日</time>
+        </article>
+      </article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '2026-05-19T19:56:55.000Z');
+  });
+
+  it('主推文 article 含 quoted tweet(2 個 time)→ 取最後一個(主推文 timestamp)', () => {
+    // 實機 cage probe 場景:@emissionite 主推文引用 2023 年舊推文,article 內
+    // 第一個 time 是 quoted tweet 時間、最後一個是主推文 timestamp。
+    const doc = makeDoc(`<!doctype html><html><head></head><body>
+      <article data-jread-x-reader="1">
+        <article data-testid="tweet">
+          <div data-testid="tweetText">引用了一則舊推</div>
+          <time datetime="2023-07-01T01:20:56.000Z">2023年7月1日</time>
+          <time datetime="2026-05-19T19:56:55.000Z">上午3:56 · 2026年5月20日</time>
+        </article>
+      </article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '2026-05-19T19:56:55.000Z',
+      '主推文 timestamp 慣例在 quoted tweet 之後 → 取最後一個 time');
+  });
+
+  it('合成容器內第二個 article(reply / sidebar)的 time 不可被取', () => {
+    // cage probe 實證:document.querySelectorAll(time)[0] 抓到 @Scott_Wiener
+    // reply 而非主推文(@emissionite)——這條 spec 守護「主推文必定是合成
+    // 容器內第一個 :scope > article」的契約。
+    const doc = makeDoc(`<!doctype html><html><head></head><body>
+      <article data-jread-x-reader="1">
+        <article data-testid="tweet">
+          <time datetime="2026-05-19T19:56:55.000Z">main</time>
+        </article>
+        <article data-testid="tweet">
+          <time datetime="2024-01-01T00:00:00.000Z">reply</time>
+        </article>
+      </article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '2026-05-19T19:56:55.000Z',
+      '只能取第一個 article(主推文 clone),其他 article 是 thread 後續推文不算主推文時間');
+  });
+
+  it('合成容器內無 article → 空', () => {
+    const doc = makeDoc(`<!doctype html><html><head></head><body>
+      <article data-jread-x-reader="1"></article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '');
+  });
+
+  it('合成容器 article 內無 time → 空(不退回 meta / JSON-LD)', () => {
+    // X 合成 reader 啟動時,document.head 內 OG meta 不可能是「主推文時間」
+    // (X 整站共用同一份 OG metadata,通常是 og:image / og:title 描述,不是
+    // 個別推文時間)。若主推文 article 沒 time 就明確不送,避免抓到誤導值。
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta property="article:published_time" content="2024-01-01T00:00:00Z">
+    </head><body>
+      <article data-jread-x-reader="1">
+        <article data-testid="tweet"><div>沒 time</div></article>
+      </article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '',
+      'X 合成 reader 短路後不可回退到 document head meta');
+  });
+
+  it('time datetime 無效 → 空', () => {
+    const doc = makeDoc(`<!doctype html><html><head></head><body>
+      <article data-jread-x-reader="1">
+        <article data-testid="tweet">
+          <time datetime="not-a-date">x</time>
+        </article>
+      </article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '');
+  });
+});
+
+// v0.7.168: FB 合成 reader DOM 結構性沒絕對日期,明確不送
+describe('extractPublishedDate — FB 合成 reader skip', () => {
+  it('FB 合成 reader 命中 → 直接回空字串(不抓 document 內任何 fallback)', () => {
+    // FB DOM 只有 aria-label="50分鐘前" 相對時間,沒 JSON-LD / meta / <time>;
+    // 即便頁面剛好有同站某 meta(理論上不會,但防呆)也不該抓——FB 結構性
+    // 沒精確發文時間,Jimmy 2026-05-22 明確選「跳過不送」。
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta property="article:published_time" content="2024-01-01T00:00:00Z">
+      <script type="application/ld+json">${JSON.stringify({
+        '@type': 'Article', 'datePublished': '2025-01-01T00:00:00Z'
+      })}</script>
+    </head><body>
+      <article data-jread-fb-reader="1">
+        <header><strong>作者</strong></header>
+        <div>貼文文字</div>
+        <time datetime="2026-01-01T00:00:00Z">假 time</time>
+      </article>
+    </body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '',
+      'FB 合成 reader 必須短路回空,不可走任何 fallback');
+  });
+
+  it('FB 合成 reader 不在時(只有 marker 缺失)→ 走一般 fallback', () => {
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta property="article:published_time" content="2024-01-01T00:00:00Z">
+    </head><body></body></html>`);
+    assert.strictEqual(extractPublishedDate(doc), '2024-01-01T00:00:00.000Z',
+      '沒 FB / X 合成 reader marker 時,extractPublishedDate 應該照舊走一般 fallback');
   });
 });

@@ -310,6 +310,37 @@ describe('readwise: 訊息協定常數同步', () => {
     assert.match(mainSrc, /article:published_time/, 'extractPublishedDate 必須讀 article:published_time');
     assert.match(mainSrc, /datePublished/, 'extractPublishedDate 必須讀 JSON-LD datePublished');
     assert.match(mainSrc, /time\[datetime\]/, 'extractPublishedDate 必須 fallback 到 <time datetime>');
+    // v0.7.168:extractPublishedDate FB / X 分流——FB 結構性沒絕對日期、明
+    // 確不送;X 取合成容器主推文 article 內最後一個 time(避免抓到 reply)。
+    // 抽 extractPublishedDate body 確認 FB / X 分支在 fallback 之前。
+    assert.match(
+      mainSrc,
+      /function\s+extractPublishedDate\s*\(\s*\)\s*\{[\s\S]{0,400}data-jread-fb-reader/,
+      'extractPublishedDate 必須在 fallback 前對 [data-jread-fb-reader] 短路 return ""'
+    );
+    assert.match(
+      mainSrc,
+      /function\s+extractPublishedDate\s*\(\s*\)\s*\{[\s\S]{0,400}data-jread-x-reader[\s\S]{0,200}extractXPublishedDate/,
+      'extractPublishedDate 必須在 fallback 前對 [data-jread-x-reader] 走 extractXPublishedDate'
+    );
+    assert.match(
+      mainSrc,
+      /function\s+extractXPublishedDate\s*\(/,
+      'main.js 必須定義 extractXPublishedDate helper'
+    );
+    // extractXPublishedDate 必須抓「合成容器內第一個 article 的最後一個 time」
+    // ——這個 heuristic 是 X 主推文 timestamp 在 quoted tweet 之後的結構慣
+    // 例(cage probe 2026-05-22 實證)。
+    assert.match(
+      mainSrc,
+      /:scope\s*>\s*article/,
+      'extractXPublishedDate 必須用 :scope > article 鎖定合成容器第一個 article(主推文 clone)'
+    );
+    assert.match(
+      mainSrc,
+      /times\[times\.length\s*-\s*1\]/,
+      'extractXPublishedDate 必須取最後一個 time(主推文 timestamp 在 quoted tweet 之後)'
+    );
   });
 });
 

@@ -618,7 +618,24 @@
   // raw 可能是 "2026-05-22"(純日期)/ "2026-05-22T10:00:00+08:00"(含時區)/
   // "Fri, 22 May 2026 10:00:00 GMT"(RFC 2822) —— Date 都能解析,toISOString
   // 統一輸出 UTC ISO 8601(Readwise 文件範例格式)。
+  //
+  // v0.7.168 分流:
+  //   - FB 合成 reader([data-jread-fb-reader]):DOM 結構性沒絕對日期
+  //     (FB 只用 aria-label="50分鐘前" 相對時間),Jimmy 2026-05-22 確認
+  //     寧可不送也不要倒推不精準時間 → 直接 return ''。
+  //   - X / Twitter 合成 reader([data-jread-x-reader]):一般 fallback 用
+  //     document.querySelectorAll 第一個 time 會抓到 reply article 而非主推
+  //     文(Jimmy 2026-05-22 cage probe 實證 article[0]=reply 在前),改從
+  //     合成容器的第一個 article(主推文 clone)抓**最後一個** time[datetime]
+  //     ——X 主推文 article 慣例:quoted tweet 時間在前、主推文 timestamp
+  //     在後;沒 quoted tweet 時 article 內只有 1 個 time 也是主推文。
   function extractPublishedDate() {
+    if (document.querySelector('[data-jread-fb-reader]')) {
+      return '';
+    }
+    if (document.querySelector('[data-jread-x-reader]')) {
+      return extractXPublishedDate();
+    }
     // 1. JSON-LD datePublished / dateCreated
     const ldNodes = document.querySelectorAll('script[type="application/ld+json"]');
     for (const node of ldNodes) {
@@ -683,6 +700,22 @@
     const d = new Date(s);
     if (isNaN(d.getTime())) return '';
     return d.toISOString();
+  }
+
+  // v0.7.168:X / Twitter 合成 reader 容器內取主推文發文時間。
+  // 合成容器內第一個 :scope > article 是主推文 clone(x-thread.js
+  // collectThreadArticles 把 mainArticle 放在最前)。X 主推文 article 內若
+  // 有 quoted tweet 會有 2 個 time(quoted 時間在前、主推文 timestamp 在
+  // 後);沒 quoted tweet 時只有 1 個 time。一律取最後一個。
+  function extractXPublishedDate() {
+    const container = document.querySelector('[data-jread-x-reader]');
+    if (!container) return '';
+    const firstArticle = container.querySelector(':scope > article');
+    if (!firstArticle) return '';
+    const times = firstArticle.querySelectorAll('time[datetime]');
+    if (!times.length) return '';
+    const last = times[times.length - 1];
+    return normalizeIsoDate(last.getAttribute('datetime'));
   }
 
   function extractReaderPayload() {
