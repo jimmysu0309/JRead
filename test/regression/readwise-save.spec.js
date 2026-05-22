@@ -38,6 +38,24 @@ describe('readwise: buildReadwisePayload', () => {
     const body = buildReadwisePayload({ url: 'https://x.com', html: '', title: null });
     assert.deepStrictEqual(body, { url: 'https://x.com' });
   });
+
+  // v0.7.166：image_url 主圖
+  it('imageUrl 是 http(s) absolute URL：送 image_url', () => {
+    const body = buildReadwisePayload({
+      url: 'https://example.com/post/1',
+      imageUrl: 'https://cdn.example.com/hero.jpg'
+    });
+    assert.strictEqual(body.image_url, 'https://cdn.example.com/hero.jpg');
+  });
+
+  it('imageUrl 是 data: / blob: / 相對路徑 / 空字串：略過 image_url（避免送無效 URL）', () => {
+    const bases = { url: 'https://example.com/post/1' };
+    assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: '' }).image_url, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: null }).image_url, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: '/relative.jpg' }).image_url, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: 'data:image/png;base64,iVBORw0KG' }).image_url, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, imageUrl: 'blob:https://example.com/abc' }).image_url, undefined);
+  });
 });
 
 function makeFetch(impl) {
@@ -177,6 +195,26 @@ describe('readwise: 訊息協定常數同步', () => {
       mainSrc,
       /querySelectorAll\(['"]\[data-jread-fb-para[^)]+\)[\s\S]{0,500}createElement\(['"]p['"]\)/,
       'main.js buildCleanHtml 必須把 [data-jread-fb-para] div 轉成 <p>（送 Readwise 時段落結構保留）'
+    );
+    // v0.7.166：hero image URL 抽取——extractHeroImage helper 定義 + extractReaderPayload
+    // 把結果放進 payload.imageUrl（buildReadwisePayload 端再轉成 image_url 送 API）。
+    // 拆兩條 assert 各自指向 definition / call site，避免單一 regex 在某邊被移除時還能
+    // 命中另一邊（sanity：本輪靠這分離抓出單側 rename 的 bug）。
+    assert.match(
+      mainSrc,
+      /function\s+extractHeroImage\s*\(/,
+      'main.js 必須定義 extractHeroImage 函式（抽 cover image URL）'
+    );
+    assert.match(
+      mainSrc,
+      /=\s*extractHeroImage\s*\(\s*NS\.state\.articleEl\s*\)/,
+      'extractReaderPayload 必須呼叫 extractHeroImage(NS.state.articleEl)'
+    );
+    assert.match(mainSrc, /og:image/, 'extractHeroImage 必須處理 og:image meta fallback');
+    assert.match(
+      mainSrc,
+      /payload:\s*{[^}]*imageUrl/,
+      'extractReaderPayload payload 必須含 imageUrl 欄位（給 buildReadwisePayload 轉 image_url）'
     );
   });
 });
