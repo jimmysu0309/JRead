@@ -28,7 +28,8 @@ const DEFAULT_SETTINGS = {
   fontSize: 18,
   contentWidth: 720,
   fontFamily: 'system-ui',
-  lineHeight: 1.7
+  lineHeight: 1.7,
+  paragraphSpacing: 1.0
 };
 
 describe('styler — 骨架與可逆性', () => {
@@ -827,6 +828,67 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(m, '應能找到 line-height: 1.7 的 rule block');
     assert.ok(/\[data-jread-active="1"\]\s+p\b/.test(m[1]),
       'line-height rule 必含 p descendant selector（穿透 Medium .pi/.pc class rule）');
+  });
+
+  // v0.7.162：lineHeight Auto sentinel = 0 + paragraphSpacing 可調 + Auto = -1
+  it('lineHeight = 0（Auto）→ 即使 fontSize 改過也不注入 line-height', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 20, lineHeight: 0 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/font-size:\s*20px/.test(css),
+      'fontSize 改過必須注入 font-size（前提）');
+    assert.ok(!/line-height:\s*[\d.]+\s*!important/.test(css),
+      'lineHeight = 0 (Auto) 不得注入任何 line-height !important（保留原站行距）');
+  });
+
+  it('lineHeight = 0（Auto）+ fontSize 預設 → 不注入 font-size 也不注入 line-height（baseline 保留原站）', () => {
+    // 與 fontSize=0 Auto 的對稱情境：兩個都 Auto 等於完全 baseline。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 0, lineHeight: 0 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(!/font-size:\s*\d+px\s*!important/.test(css),
+      'fontSize = 0 (Auto) 不得注入 font-size override');
+    assert.ok(!/line-height:\s*[\d.]+\s*!important/.test(css),
+      'lineHeight = 0 (Auto) 不得注入任何 line-height');
+  });
+
+  it('paragraphSpacing 預設 1.0 → 注入 p/ul/ol/blockquote margin-bottom: 1em', () => {
+    // 對齊 v0.7.102 baseline 行為（舊版固定 1em margin-bottom 規則已搬到
+    // userOverrides 條件注入；預設值仍應生效）。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/\[data-jread-active="1"\]\s+p[\s\S]*?\[data-jread-active="1"\]\s+blockquote\s*\{([^}]*)\}/);
+    assert.ok(m, 'p / ul / ol / blockquote 必須有共用 rule block（paragraphSpacing 預設 1.0 注入）');
+    assert.ok(/margin-bottom\s*:\s*1em\s*!important/.test(m[1]),
+      'paragraphSpacing 預設 1.0 必須注入 margin-bottom: 1em !important');
+  });
+
+  it('paragraphSpacing = -1（Auto）→ 不注入 p/ul/ol/blockquote margin-bottom 規則（保留原站 typography）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, paragraphSpacing: -1 });
+    const css = document.getElementById('__jread-style').textContent;
+    // p/ul/ol/blockquote 共用 rule block 不得出現（base 已移除、userOverrides 不注入）
+    assert.ok(!/\[data-jread-active="1"\]\s+p,[\s\S]*?\[data-jread-active="1"\]\s+blockquote\s*\{[^}]*margin-bottom/.test(css),
+      'paragraphSpacing = -1 (Auto) 不得注入 p/ul/ol/blockquote 共用 margin-bottom 規則');
+  });
+
+  it('paragraphSpacing = 0（緊貼）→ 注入 margin-bottom: 0em（與 Auto 區隔，0 是合法值）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, paragraphSpacing: 0 });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/\[data-jread-active="1"\]\s+p[\s\S]*?\[data-jread-active="1"\]\s+blockquote\s*\{([^}]*)\}/);
+    assert.ok(m, 'paragraphSpacing = 0 仍須注入 rule block（與 -1 Auto 區隔）');
+    assert.ok(/margin-bottom\s*:\s*0em\s*!important/.test(m[1]),
+      'paragraphSpacing = 0 必須注入 margin-bottom: 0em（使用者顯式要求段落緊貼）');
+  });
+
+  it('paragraphSpacing 非預設值 → 注入對應 em 值', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, paragraphSpacing: 2.25 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/margin-bottom\s*:\s*2\.25em\s*!important/.test(css),
+      'paragraphSpacing = 2.25 必須注入 margin-bottom: 2.25em');
   });
 
   it('非預設 fontSize + 非預設 lineHeight：line-height 只注入一次（避免 CSS 重複 rule）', () => {

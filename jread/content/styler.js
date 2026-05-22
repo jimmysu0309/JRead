@@ -29,6 +29,11 @@
     // macOS 上不同 weight 視覺差異不穩定，smoothing 模式差異明顯且跨字型穩定。
     boldText: false,
     lineHeight: 1.7,
+    // 段落間距（p / ul / ol / blockquote margin-bottom，em 為單位）。預設 1.0em
+    // 對齊 user-agent stylesheet p margin，貼近大眾預期；多數新聞站本來就有此
+    // margin、覆寫差別極小，BBC styled-components 把 p margin 砍光從 0 變 1em
+    // 是明顯改善。popup 可調 0 ~ 3.0、auto sentinel = -1（不注入此規則保留原站）。
+    paragraphSpacing: 1.0,
     // 中英文字之間自動補空白（盤古之白）。預設 true—— 大部分台灣 / 港澳 / 中文
     // 讀者習慣這種視覺節奏，原始網站常缺空格（特別是 CMS / SPA 編輯器寫入時）。
     // 使用者可到 options 取消。詳見下方 pangu module。
@@ -393,18 +398,10 @@ html [${ARTICLE_ATTR}="1"] {
   margin-top: 1.5em !important;
   margin-bottom: 0.5em !important;
 }
-/* v0.7.102：p / ul / ol / blockquote 段落間距。BBC styled-components 同樣把
-   p / list / quote 的 margin 砍光（hash class margin: 0），三段 p 緊貼。
-   通則：block-level 內容元素加 margin-bottom 1em（相對字級縮放），與 v0.6.0
-   baseline 「不動 typography」精神一致——只動 spacing 不動字型 / 顏色 / 行高。
-   1em 是各家瀏覽器 user-agent stylesheet 對 p 的預設 margin，貼近大眾預期；
-   多數新聞站本來就有此 margin、覆寫差別極小，BBC 從 0 變 1em 是明顯改善。 */
-[${ARTICLE_ATTR}="1"] p,
-[${ARTICLE_ATTR}="1"] ul,
-[${ARTICLE_ATTR}="1"] ol,
-[${ARTICLE_ATTR}="1"] blockquote {
-  margin-bottom: 1em !important;
-}
+/* v0.7.102：p / ul / ol / blockquote 段落間距已搬到 userOverrides 條件注入
+   （v0.7.162 起 paragraphSpacing 可調）。預設 paragraphSpacing=1.0 + Auto 兩種
+   切分後不再永遠注入，Auto 模式下完全保留原站 typography。注入點見 buildCss
+   末段 paragraphSpacing >= 0 條件分支。 */
 /* 注意：aspect-ratio / padding-bottom 的 placeholder hack 破解改由
    cleaner.resetMediaPlaceholderPadding 在 runtime 處理——因為 CSS :has() 無法
    區分「padding-bottom hack（Substack/Medium 類）」與「純 aspect-ratio
@@ -600,6 +597,9 @@ html [${ARTICLE_ATTR}="1"] {
       `[${ARTICLE_ATTR}="1"] caption,` +
       SPAN_TEXT_SEL;
     let userOverrides = '';
+    // v0.7.162：lineHeight Auto sentinel = 0。Auto 時跳過所有 line-height 注入
+    // （保留原站行距）；非 Auto 才把 lineHeight 串進 font-size rule 或獨立 rule。
+    const lhAuto = opts.lineHeight === 0;
     if (overrides.fontSize) {
       // 同步注入 line-height：字級改了行高必須跟著縮放，否則原站用 px 鎖死的
       // 行高（例：Medium `.pi { line-height: 32px }` 配 20px 字級 = 1.6 倍）
@@ -608,10 +608,14 @@ html [${ARTICLE_ATTR}="1"] {
       // baseline 「預設值不動原站」精神仍保留——使用者**完全沒改任何
       // override** 時 userOverrides 為空、DEFAULT 分支不走此路徑；只有
       // 使用者主動改字級才連帶動行高。
+      // v0.7.162：使用者顯式選「行距 Auto」時跳過 line-height（即使 fontSize
+      // 改過）—— 風險自負，原站若用 px 鎖死的 line-height 在字級縮小後會
+      // 變成過寬行距，這是 Auto sentinel 的明確 trade-off。
+      const lhClause = lhAuto ? '' : `
+  line-height: ${opts.lineHeight} !important;`;
       userOverrides += `
 ${BODY_TEXT_SEL} {
-  font-size: ${opts.fontSize}px !important;
-  line-height: ${opts.lineHeight} !important;
+  font-size: ${opts.fontSize}px !important;${lhClause}
 }`;
     }
     if (overrides.fontFamily) {
@@ -633,9 +637,24 @@ html [${ARTICLE_ATTR}="1"] {
     if (overrides.lineHeight && !overrides.fontSize) {
       // fontSize 已改過時 line-height 已連帶注入；這裡只處理「只改 lineHeight
       // 沒改 fontSize」的獨立分支，避免 CSS 重複 rule。
+      // v0.7.162：lhAuto 時 overrides.lineHeight 為 false（見 apply 內 overrides
+      // 計算），這裡不會誤注入；保險再 guard 一層。
       userOverrides += `
 ${BODY_TEXT_SEL} {
   line-height: ${opts.lineHeight} !important;
+}`;
+    }
+    // v0.7.162：段落間距條件注入。Auto sentinel = -1 跳過（保留原站 typography）；
+    // 非 Auto（含 0 / 預設 1.0 / 使用者自調值）注入 p / ul / ol / blockquote
+    // margin-bottom。預設 1.0em 行為等價於 v0.7.102 base 內舊版固定規則（已搬
+    // 離 base、改放此處受 Auto sentinel 控制）。
+    if (opts.paragraphSpacing >= 0) {
+      userOverrides += `
+[${ARTICLE_ATTR}="1"] p,
+[${ARTICLE_ATTR}="1"] ul,
+[${ARTICLE_ATTR}="1"] ol,
+[${ARTICLE_ATTR}="1"] blockquote {
+  margin-bottom: ${opts.paragraphSpacing}em !important;
 }`;
     }
     if (overrides.theme && theme.text) {
@@ -969,6 +988,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
       const rawFs = Number(s.fontSize);
       const rawCw = Number(s.contentWidth);
       const rawLh = Number(s.lineHeight);
+      const rawPs = Number(s.paragraphSpacing);
       const opts = {
         // fontSize：保留 0 = Auto sentinel；其他 clamp [8, 200]px
         fontSize: Number.isFinite(rawFs) && rawFs >= 0
@@ -982,10 +1002,18 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
         // boldText boolean — true = 粗 (subpixel-antialiased) / false = 細
         // (antialiased)。預設 false（細）。
         boldText: s.boldText === true,
-        // lineHeight：clamp [1.0, 3.0]（unitless ratio；< 1 字會重疊、> 3 段落破碎）
-        lineHeight: Number.isFinite(rawLh) && rawLh > 0
-          ? Math.min(3.0, Math.max(1.0, rawLh))
-          : DEFAULTS.lineHeight
+        // lineHeight：v0.7.162 起新增 0 = Auto sentinel（保留原站行距、不注入
+        // line-height）；非 0 clamp [1.0, 3.0]（unitless ratio；< 1 字會重疊、
+        // > 3 段落破碎）。
+        lineHeight: Number.isFinite(rawLh) && rawLh >= 0
+          ? (rawLh === 0 ? 0 : Math.min(3.0, Math.max(1.0, rawLh)))
+          : DEFAULTS.lineHeight,
+        // paragraphSpacing：v0.7.162 新增；-1 = Auto sentinel（不注入 p/ul/ol/
+        // blockquote margin-bottom），非 -1 clamp [0, 5]em（0 = 段落緊貼，是合
+        // 法值；5 是極限上限避免外部 storage 損壞時注入 1e308em）。預設 1.0。
+        paragraphSpacing: Number.isFinite(rawPs) && rawPs >= -1
+          ? (rawPs === -1 ? -1 : Math.min(5, Math.max(0, rawPs)))
+          : DEFAULTS.paragraphSpacing
       };
       const theme = themeOf(s.theme);
 
@@ -1001,7 +1029,10 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote {
         theme: (s.theme || DEFAULTS.theme) !== DEFAULTS.theme,
         fontSize: opts.fontSize > 0,
         fontFamily: opts.fontFamily !== DEFAULTS.fontFamily,
-        lineHeight: opts.lineHeight !== DEFAULTS.lineHeight
+        // v0.7.162：lineHeight Auto (0) 不算「override」—— 它代表「不注入」而
+        // 非「使用者自設值」。only 非預設且非 Auto 才算 override，避免 Auto 走
+        // 進獨立 line-height rule 分支。
+        lineHeight: opts.lineHeight !== DEFAULTS.lineHeight && opts.lineHeight !== 0
       };
 
       let styleEl = document.getElementById(STYLE_ID);

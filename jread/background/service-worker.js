@@ -25,6 +25,9 @@ const DEFAULT_SETTINGS = {
   // -webkit-font-smoothing 無效，此 setting 在那些 OS 上無視覺差異。
   boldText: false,
   lineHeight: 1.7,
+  // v0.7.162：段落間距（p / ul / ol / blockquote margin-bottom，em）。預設 1.0
+  // 對應 v0.7.102 baseline 行為；popup 可調 0~3.0、-1 = Auto sentinel（不注入規則）。
+  paragraphSpacing: 1.0,
   autoEnableDomains: [],
   // Readwise Reader integration（v0.7.33）。空字串 = 未設定，popup 會擋下送出。
   readwiseToken: '',
