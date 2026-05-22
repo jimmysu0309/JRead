@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.167**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.168**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -371,7 +371,10 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - Facebook 合成 reader（`[data-jread-fb-reader]`）：`NS.fbPost.extractAuthorVanityFromUrl()` 抽 `/<user>/posts/<id>` 第一段 vanity username,reserved path(`groups` / `permalink.php` / `story.php` / `share` / `profile.php` / `permalink` / `people` / `pages`)沒 vanity → fallback 讀合成 header `[data-jread-fb-author] strong` 的 displayName。
   - X / Twitter 合成 reader（`[data-jread-x-reader]`）：`/<handle>/status/<id>` → `@handle`（hostname 嚴格比對 `x.com` / `twitter.com`,防 hostname 混淆攻擊）。
   - 一般網站:JSON-LD `Article.author.name`（含 `string` / `object` / `array` / `@graph` 多 schema）→ `meta[name="author"]` → `meta[property="article:author"]`（filter `^https?://` URL 形式）→ byline 元素：`[itemprop="author"] [itemprop="name"]` / `[itemprop="author"]` / `[rel="author"]` / `.byline-author` / `.author-name` / `.byline .author` / `.byline`。文字長度 >= 100 字拒絕（避免抓到段落）。
-- **`published_date`（v0.7.167）**：`main.js extractPublishedDate()` — JSON-LD `datePublished` / `dateCreated`（含 `@graph` 巢狀）→ `meta` 變體（`article:published_time` / `pubdate` / `publishdate` / `date` / `DC.date` / `DC.date.issued` / `itemprop="datePublished"`）→ `<time datetime="...">` 第一個 parseable。一律 `new Date(raw).toISOString()` 正規化為 UTC ISO 8601（純日期 `2026-05-22` → `2026-05-22T00:00:00.000Z`；含時區 `+08:00` 自動轉 UTC）。
+- **`published_date`（v0.7.167–168）**:`main.js extractPublishedDate()` 三條分支(v0.7.168 加 FB / X 分流):
+  - Facebook 合成 reader(`[data-jread-fb-reader]`):**不送**——FB DOM 結構性沒絕對日期(只有「N 分鐘前」相對時間 `aria-label`),倒推精度不夠 Jimmy 寧可空白。
+  - X / Twitter 合成 reader(`[data-jread-x-reader]`):從合成容器第一個 `:scope > article`(主推文 clone,`x-thread.js collectThreadArticles` 排序保證)取**最後一個** `<time datetime>` —— X 主推文 article 內若有 quoted tweet,quoted 時間在前、主推文 timestamp 在後;沒 quoted tweet 時只 1 個 time 也是主推文。**不退回** document head meta(X 整站共用 OG metadata 無法代表單則推文)。
+  - 一般網站:JSON-LD `datePublished` / `dateCreated`(含 `@graph` 巢狀)→ `meta` 變體(`article:published_time` / `pubdate` / `publishdate` / `date` / `DC.date` / `DC.date.issued` / `itemprop="datePublished"`)→ `<time datetime="...">` 第一個 parseable。一律 `new Date(raw).toISOString()` 正規化為 UTC ISO 8601(純日期 `2026-05-22` → `2026-05-22T00:00:00.000Z`;含時區 `+08:00` 自動轉 UTC)。
 
 ### 設定
 
