@@ -421,15 +421,22 @@ html [${ARTICLE_ATTR}="1"] {
    通則：h2-h6 加大 margin-top（章節分隔）+ 較小 margin-bottom（標題與其
    描述 / 首段較緊密）。h1 主標題已由 first-child rule 強制 margin-top: 0
    不衝突，這條對 h1 加 margin-top 也不傷（first-child rule specificity 較高）。
-   1.5em / 0.5em 用相對字級單位，使用者調字級時間距同步縮放。 */
+   v0.7.171：原 1.5em / 0.5em 在「font-size 巨大的 h1」站點(CNBC h1.headline
+   font-size:54px → 1.5em = 81px margin-top)會撐出 80-90px 的「LIFE 標籤跟標題
+   中間大段空白」、dark mode 卡片底色深、空白特別明顯。Jimmy 2026-05-23 CNBC
+   blob 截圖揭穿。改用 clamp() 上下限封頂：margin-top 介於 16px..32px、
+   margin-bottom 介於 8px..16px。CNBC h1 81px → 32px;BBC h1 ~48px → 32px;
+   一般 h2-h6 (font 24-30px) 1em 在 24-30px 落入 clamp 中段、近似原 1.5em
+   效果但不會無限放大。clamp 中段值用 1em 而非 1.5em、配合 cap 後 medium-h1
+   也夠視覺分隔。 */
 [${ARTICLE_ATTR}="1"] h1,
 [${ARTICLE_ATTR}="1"] h2,
 [${ARTICLE_ATTR}="1"] h3,
 [${ARTICLE_ATTR}="1"] h4,
 [${ARTICLE_ATTR}="1"] h5,
 [${ARTICLE_ATTR}="1"] h6 {
-  margin-top: 1.5em !important;
-  margin-bottom: 0.5em !important;
+  margin-top: clamp(16px, 1em, 32px) !important;
+  margin-bottom: clamp(8px, 0.4em, 16px) !important;
 }
 /* v0.7.102：p / ul / ol / blockquote 段落間距已搬到 userOverrides 條件注入
    （v0.7.162 起 paragraphSpacing 可調）。預設 paragraphSpacing=1.0 + Auto 兩種
