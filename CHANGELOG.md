@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.172**——newtalk.tw 閱讀模式開頭出現不相關推薦新聞圖片和連結。**根因**:`promoteArticleTitleClassHeadingInto` 找到外部推薦新聞的 `<h3 class="title">`（在 `<a class="trackNewsGA4">` 內），`class="title"` 命中 `TITLE_CLASS_HIT_RE` 的 standalone `title` pattern，把整個 `<a>` wrapper（含不相關圖片 + 標題）clone 進 articleEl 開頭。**修法**:加 `h.closest('a')` guard——heading 在 `<a>` 內 = 推薦卡片標題（連結指向其他文章），不是本文標題。通則依據：文章標題不會包在 `<a>` 裡；跨站推薦新聞都是 `<a><h3>title</h3></a>` 結構。**spec**:`newtalk-promo-card-title-clone.spec.js` 新增 4 條 forcing function。`npm test` 1076 條通過。
+
+---
+
 **v0.7.171**——CNBC blob 文章 dark mode 「LIFE 標籤跟標題」中間大段空白。**動機**:Jimmy 2026-05-23 在 v0.7.170 release 後再截圖回報 dark mode 仍見約 80-90px 的空白 (light mode 因白底掩蓋不明顯但也存在)。**根因 (cage probe)**:JRead v0.7.100 對 h1-h6 注入 `margin-top: 1.5em !important` 確保「站點把 heading margin 砍光」時仍有視覺斷層;但 CNBC h1.headline `font-size: 54px`(reader card narrow width 下),`1.5em × 54px = 81px` 的 margin-top 直接撐出 LIFE 標籤跟標題間的 81px 空白。雙重不幸:CNBC h1 字級巨大 + JRead em 單位放大規則疊加。**修法**:`margin-top: 1.5em` 改 `clamp(16px, 1em, 32px)`、`margin-bottom: 0.5em` 改 `clamp(8px, 0.4em, 16px)`。clamp 上下限封頂、中段值改 1em (從 1.5em),CNBC h1 81→32px、BBC h1 ~48→32px、一般 h2-h6 (font 24-30px) 落入 clamp 中段近似原 1.5em 效果但不會無限放大。cage 實測 CNBC dark mode gap 從 91px → 42px。**spec**:`styler-h1-margin-clamp.spec.js` 新增 4 條 forcing function:(a) CSS 含 h1-h6 selector + (b) margin-top: clamp(16px,1em,32px) !important + (c) margin-bottom: clamp(8px,0.4em,16px) !important + (d) 必須不存在舊 `margin-top: 1.5em !important` 殘留。`npm test` 1072 條通過。**通則教訓**:em-based margin 在「heading font-size 跨站差距大」時會放大失控。clamp() 上下限封頂是 em-unit 規則的安全做法,可考慮其他 em-based rule 一併檢視(目前先保守只動 heading 一條)。
 
 ---
