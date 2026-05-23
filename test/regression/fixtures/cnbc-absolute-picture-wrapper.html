@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<!--
+  最小重現：CNBC InlineImage lazy-load aspect-ratio wrapper:
+    .imagePlaceholder (padding-bottom 55.5%, relative)
+      .imageContainer (position:absolute)      <-- HIDDEN by v0.7.111 rule
+        <picture>
+          <source...>
+          <img src="...">
+
+  Bug：cleaner.hideInsideArticleAbsoluteOverlays (v0.7.111) hide imageContainer
+  div 因為它 position:absolute、無 h1、無 long-p 保護；連帶 picture + img
+  在 dark mode 完全不顯示（light mode 也可能受影響）。
+
+  Jimmy 2026-05-23 回報 https://www.cnbc.com/2019/10/.../the-blob.html
+  「圖片沒出來」(dark mode 截圖)。CDP probe outerHTML 顯示 imageContainer +
+  imagePlaceholder 都被加上 data-jread-hidden=1 + display: none !important。
+
+  v0.7.170 修法：hideInsideArticleAbsoluteOverlays 加 guard——
+  `el.querySelector('picture, img, video')` 命中 → skip。保留 v0.7.111 對
+  「無 media 的 absolute overlay」仍 hide 的行為（互補不退步）。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta property="og:title" content="'The Blob': This mysterious 'smart' slime can solve puzzles">
+  <title>'The Blob' | CNBC</title>
+</head>
+<body>
+  <article class="MakeIt-Regular-Article" data-test="article-root">
+    <header data-test="hero-header">
+      <h1 data-test="article-h1">'The Blob': This mysterious 'smart' slime can solve puzzles and make decisions</h1>
+    </header>
+
+    <!-- ====== InlineImage lazy-load wrapper（核心保護點）====== -->
+    <div class="InlineImage-styles-makeit-imageEmbed" data-test="image-embed">
+      <div class="InlineImage-styles-makeit-wrapper" data-test="image-wrapper">
+        <!-- imagePlaceholder 撐 aspect-ratio（padding-bottom hack）-->
+        <div class="InlineImage-styles-makeit-imagePlaceholder"
+             style="padding-bottom: 55.5556%; position: relative;"
+             data-test="image-placeholder">
+          <!-- imageContainer position:absolute 填滿 placeholder + 包 picture -->
+          <div class="InlineImage-styles-makeit-imageContainer"
+               style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"
+               data-test="image-container">
+            <picture data-test="image-picture">
+              <source srcset="https://image.cnbcfm.com/api/v1/image/106195976-blob.jpeg?w=1480" media="(min-width: 1340px)" type="image/webp">
+              <source srcset="https://image.cnbcfm.com/api/v1/image/106195976-blob.jpeg?w=1260" media="(min-width: 1020px)" type="image/webp">
+              <img src="https://image.cnbcfm.com/api/v1/image/106195976-blob.jpeg?w=1858" alt="Physarum Polycephalum better known as a Blob" data-test="image-img">
+            </picture>
+          </div>
+        </div>
+        <div class="InlineImage-styles-makeit-captionContainer" data-test="caption-container">
+          <div class="InlineImage-styles-makeit-imageEmbedCaption">A picture taken on October 16, 2019 at the Parc Zoologique de Paris shows a Physarum Polycephalum.</div>
+          <div class="InlineImage-styles-makeit-imageEmbedCredit">STEPHANE DE SAKUTIN | AFP | Getty Images</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ArticleBody-styles-makeit-articleBody" data-test="article-body">
+      <p data-test="body-p-1">It sounds like something out of a horror film, but it's real: A genius slime mold that's capable of learning, solving puzzles and making decisions is on display at the Paris Zoological Park.</p>
+      <p data-test="body-p-2">The slime is called Physarum polycephalum, but most people refer to it as "The Blob."</p>
+    </div>
+
+    <!-- ====== Absolute overlay 無 media（保留 v0.7.111 既有 case 仍被 hide）====== -->
+    <aside class="newsletter-signup"
+           style="position: absolute; left: 0; top: 200px; width: 200px;"
+           data-test="overlay-no-media-aside">
+      <p>Sign up for our newsletter</p>
+    </aside>
+
+    <div class="related-stories"
+         style="position: absolute; right: 0; top: 400px; width: 250px;"
+         data-test="overlay-no-media-div">
+      <h3>Related Stories</h3>
+      <p>More articles you might like</p>
+    </div>
+  </article>
+</body>
+</html>
