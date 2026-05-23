@@ -327,6 +327,39 @@ html [${ARTICLE_ATTR}="1"] {
   padding-bottom: 0 !important;
   height: 0 !important;
 }
+/* CSS side-bleed 裝飾 pseudo（::before / ::after + position:absolute + bg-color
+   + transform: translate）—— 原站慣例用來把卡片底色「溢出」到 article 左右側，
+   reader card 不需要這種裝飾。CNBC ArticleHeader-styles-makeit-wrapperHeroNoImage
+   ::before 把 white bleed 到 header 左側 522×482px 大片白盒（v0.7.169 Jimmy
+   2026-05-23 截圖揭穿；CDP DOM.getNodeForLocation 指認 transform:matrix(1,0,0,1,
+   -522.578,0) + bg-color:white）。修法：reader card 內 *::before / *::after
+   一律清掉 background-color 與 background-image，content + color 不動，list
+   marker / drop cap 文字 pseudo 仍工作。
+   通則安全：pseudo bg 在 reader card 沒有合法用途——pageWrapper 已有自己的
+   bg，多餘 pseudo bg 只會在版心外漏出色塊（或誤覆蓋主文）。 */
+[${ARTICLE_ATTR}="1"] *::before,
+[${ARTICLE_ATTR}="1"] *::after {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+/* Body wrapper margin reset：原站慣例用 div 包 paragraph cluster / heading /
+   list 並設 margin-left/right 形成 grid offset 或 narrow-column 視覺（CNBC
+   ArticleBody 內 div.group margin-left:91px 把內文 p 整段推向版心右側 91px；
+   v0.7.169 Jimmy 截圖揭穿 p rect.left=587 vs caption rect.left=496）。
+   reader card 單欄版心、這些 wrapper margin 失意義、把主文擠成偏右窄條。
+   通則：含 direct content child（p / h1-h6 / ul / ol / blockquote）的 div =
+   body content wrapper、reader mode 不需橫向位移、清掉 margin-left/right。
+   其他媒體 block（figure / blockquote / pre）有自身 margin auto-center 邏輯
+   不受影響（這條 selector 命中的是 div，不是 figure/blockquote 本身）。
+   CSS :has() Chrome 105+ 支持、Manifest V3 用戶實機均可用；jsdom 不支持
+   :has() 語意但只驗 CSS 字串注入即可（不依賴 layout 計算）。 */
+[${ARTICLE_ATTR}="1"] div:has(> p),
+[${ARTICLE_ATTR}="1"] div:has(> h1, > h2, > h3, > h4, > h5, > h6),
+[${ARTICLE_ATTR}="1"] div:has(> ul, > ol),
+[${ARTICLE_ATTR}="1"] div:has(> blockquote) {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
 [${ARTICLE_ATTR}="1"] a > img {
   max-width: 100% !important;
 }
