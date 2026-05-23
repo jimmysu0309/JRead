@@ -288,7 +288,7 @@ describe('styler — 骨架與可逆性', () => {
 
   // v0.7.100：BBC Culture 類站點 styled-components 把 h1-h6 margin 全砍光，
   // p → h2 → p 緊貼難辨章節。明示 h1-h6 上下 margin（相對字級縮放）。
-  it('h1-h6 有強制 margin-top: 1.5em + margin-bottom: 0.5em rule（BBC 章節分隔修法）', () => {
+  it('h1-h6 有強制 margin-top + margin-bottom clamp rule（BBC 章節分隔修法 + v0.7.171 CNBC big-h1 cap）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
@@ -296,10 +296,13 @@ describe('styler — 骨架與可逆性', () => {
     const m = css.match(/\[data-jread-active="1"\]\s+h1[\s\S]*?\[data-jread-active="1"\]\s+h6\s*\{([^}]*)\}/);
     assert.ok(m, 'h1-h6 必須有共用 rule block（v0.7.100 BBC 章節間距修法）');
     const body = m[1];
-    assert.ok(/margin-top\s*:\s*1\.5em\s*!important/.test(body),
-      'h1-h6 rule 必須含 margin-top: 1.5em !important；forcing：拿掉 → BBC 標題緊貼上一段 p');
-    assert.ok(/margin-bottom\s*:\s*0\.5em\s*!important/.test(body),
-      'h1-h6 rule 必須含 margin-bottom: 0.5em !important；forcing：拿掉 → BBC 標題緊貼下一段 p');
+    // v0.7.171：原 1.5em / 0.5em 改 clamp() 上下限封頂——避免 CNBC h1
+    // font-size:54px → 1.5em = 81px margin-top 撐出 LIFE 標籤跟標題間
+    // 大段空白（dark mode 特別明顯）。clamp 中段 1em、上限 32px/16px。
+    assert.ok(/margin-top\s*:\s*clamp\(\s*16px\s*,\s*1em\s*,\s*32px\s*\)\s*!important/.test(body),
+      'h1-h6 rule 必須含 margin-top: clamp(16px, 1em, 32px) !important；forcing：拿掉 → BBC 標題緊貼上一段 p，或 CNBC big-h1 撐出 81px 空白');
+    assert.ok(/margin-bottom\s*:\s*clamp\(\s*8px\s*,\s*0\.4em\s*,\s*16px\s*\)\s*!important/.test(body),
+      'h1-h6 rule 必須含 margin-bottom: clamp(8px, 0.4em, 16px) !important；forcing：拿掉 → BBC 標題緊貼下一段 p');
   });
 
   it('apply() 把主文內第一個 h1/h2/h3/h4/p 的 margin-top 設為 0 !important（消除頂端留白）', () => {
