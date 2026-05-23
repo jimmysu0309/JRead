@@ -748,6 +748,11 @@
     for (const h of candidates) {
       if (articleEl.contains(h)) continue; // articleEl 內已早 return 處理
       if (!looksLikeArticleTitleH1(h)) continue; // 含 article-title class 訊號
+      // heading 在 <a> 內 = 推薦卡片 / promo card（連結指向其他文章）的標題，
+      // 不是本文標題。文章標題不會包在 <a> 裡。newtalk.tw 實測：sidebar /
+      // top5 推薦新聞都是 <a class="trackNewsGA4"><h3 class="title">...</h3></a>，
+      // class="title" 命中 TITLE_CLASS_HIT_RE 但語義非主文標題。
+      if (h.closest('a')) continue;
       const text = norm(h.textContent || '');
       if (text.length < 5) continue;
       // promote：clone heading wrapper 或 heading 自己 prepend 進 articleEl 開頭。
