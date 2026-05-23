@@ -9,10 +9,10 @@
 // （推薦卡片連結），不是獨立的文章標題。clone wrapper = <a> + <img> +
 // 不相關標題文字整包 prepend 進 articleEl，造成開頭出現亂七八糟的內容。
 //
-// 修法：promoteArticleTitleClassHeadingInto 加 `h.closest('a')` guard——
-// heading 在 <a> 內 = 推薦卡片標題，不是本文標題。文章標題不會包在 <a> 裡。
-// 通則依據：跨站推薦新聞都是 <a href="other-article"><h3>title</h3></a>；
-// 文章標題是獨立 heading，不在 link wrapper 裡。
+// 修法：promoteArticleTitleClassHeadingInto 改用 TITLE_CLASS_STRICT_RE（只接受
+// 複合 token 如 article-title / post-title / wp-block-post-title），不接受
+// bare class="title"。bare "title" 太泛——newtalk.tw 的推薦卡片 h3、閒置
+// 提醒 dialog h2 都用 class="title"，全部誤命中。
 //
 // 本 spec 是 forcing function：
 //   - 外部 <a> 內的 <h3 class="title"> 不可被 promote 進 articleEl
@@ -72,5 +72,14 @@ describe('cleaner — newtalk promo card <h3 class="title"> 在 <a> 內不可被
     assert.ok(titleP, 'p.name 標題元素必須存在');
     assert.ok(titleP.textContent.includes('川普'),
       `標題應含「川普」，實際: "${titleP.textContent.trim().substring(0, 40)}"`);
+  });
+
+  it('閒置 dialog 的 <h2 class="title"> 不可被 clone 進 articleEl', () => {
+    const allH2 = articleEl.querySelectorAll('h2');
+    for (const h2 of allH2) {
+      const text = h2.textContent.trim();
+      assert.ok(!text.includes('閒置'),
+        `articleEl 內不應出現閒置提醒，但找到: "${text}"`);
+    }
   });
 });

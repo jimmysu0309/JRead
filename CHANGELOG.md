@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.173**——延續 v0.7.172 修法。newtalk 閒置提醒 dialog `<h2 class="title">` 也被 `promoteArticleTitleClassHeadingInto` clone 進 articleEl（bare `class="title"` 命中 `TITLE_CLASS_HIT_RE` 第二 alternation）。**修法**：新增 `TITLE_CLASS_STRICT_RE`（只接受複合 token：`article-title` / `post-title` / `wp-block-post-title` / `entry-title` 等），`promoteArticleTitleClassHeadingInto` 改用 strict 版；bare `title` / `headline` 仍保留在 `looksLikeArticleTitleH1` 供 `promoteUniqueTitleH1Into` 使用（該函式有 og:title strict equality guard 兜底）。v0.7.172 的 `h.closest('a')` guard 已被 strict regex 涵蓋、移除。**spec**：fixture 加閒置 dialog h2 + 新增 1 條 forcing function。`npm test` 1077 條通過。
+
+---
+
 **v0.7.172**——newtalk.tw 閱讀模式開頭出現不相關推薦新聞圖片和連結。**根因**:`promoteArticleTitleClassHeadingInto` 找到外部推薦新聞的 `<h3 class="title">`（在 `<a class="trackNewsGA4">` 內），`class="title"` 命中 `TITLE_CLASS_HIT_RE` 的 standalone `title` pattern，把整個 `<a>` wrapper（含不相關圖片 + 標題）clone 進 articleEl 開頭。**修法**:加 `h.closest('a')` guard——heading 在 `<a>` 內 = 推薦卡片標題（連結指向其他文章），不是本文標題。通則依據：文章標題不會包在 `<a>` 裡；跨站推薦新聞都是 `<a><h3>title</h3></a>` 結構。**spec**:`newtalk-promo-card-title-clone.spec.js` 新增 4 條 forcing function。`npm test` 1076 條通過。
 
 ---
