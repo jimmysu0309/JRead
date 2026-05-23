@@ -612,6 +612,11 @@
   // newtalk-tw site logo 通常是 `<h1 class="site-logo">` 或 `class="logo"`，
   // 不含 title token，fallback 不會誤觸發。
   const TITLE_CLASS_HIT_RE = /(?:^|[-_\s])(?:article|post|entry|page|news|story|content)[-_]?(?:title|headline|heading)(?:[-_\s]|$)|(?:^|[-_\s])(?:title|headline)(?:[-_\s]|$)/i;
+  // v0.7.173 strict 版：只接受複合 token（article-title / post-title / entry-title
+  // 等），不接受單獨 class="title"。用於 promoteArticleTitleClassHeadingInto——
+  // 該函式沒有 og:title matching guard，bare "title" 太泛會抓到推薦卡片標題 /
+  // 閒置提醒 dialog / breadcrumb 等非主文 heading（newtalk.tw 實測）。
+  const TITLE_CLASS_STRICT_RE = /(?:^|[-_\s])(?:article|post|entry|page|news|story|content)[-_]?(?:title|headline|heading)(?:[-_\s]|$)/i;
   const TITLE_CLASS_NEGATIVE_RE = /(?:sub|super|micro|tiny|aside|side)title/i;
   function looksLikeArticleTitleH1(h1) {
     if (!h1) return false;
@@ -623,6 +628,20 @@
     if (check((h1.className || '').toString())) return true;
     if (check(h1.id || '')) return true;
     const p = h1.parentElement;
+    if (p && check((p.className || '').toString())) return true;
+    return false;
+  }
+
+  function looksLikeArticleTitleStrict(h) {
+    if (!h) return false;
+    function check(s) {
+      if (!s) return false;
+      if (TITLE_CLASS_NEGATIVE_RE.test(s)) return false;
+      return TITLE_CLASS_STRICT_RE.test(s);
+    }
+    if (check((h.className || '').toString())) return true;
+    if (check(h.id || '')) return true;
+    const p = h.parentElement;
     if (p && check((p.className || '').toString())) return true;
     return false;
   }
@@ -747,12 +766,12 @@
     const candidates = document.querySelectorAll('h1, h2, h3');
     for (const h of candidates) {
       if (articleEl.contains(h)) continue; // articleEl 內已早 return 處理
-      if (!looksLikeArticleTitleH1(h)) continue; // 含 article-title class 訊號
-      // heading 在 <a> 內 = 推薦卡片 / promo card（連結指向其他文章）的標題，
-      // 不是本文標題。文章標題不會包在 <a> 裡。newtalk.tw 實測：sidebar /
-      // top5 推薦新聞都是 <a class="trackNewsGA4"><h3 class="title">...</h3></a>，
-      // class="title" 命中 TITLE_CLASS_HIT_RE 但語義非主文標題。
-      if (h.closest('a')) continue;
+      // v0.7.173：改用 TITLE_CLASS_STRICT_RE（只接受複合 token，不接受 bare
+      // "title"/"headline"）。本函式沒有 og:title matching guard，bare "title"
+      // 在 newtalk.tw 會命中推薦卡片 h3、閒置提醒 dialog h2 等非主文 heading。
+      // promoteUniqueTitleH1Into 有 strict equality guard 所以用寬鬆版沒問題；
+      // 本函式無該 guard，必須靠 class signal 本身夠精準。
+      if (!looksLikeArticleTitleStrict(h)) continue;
       const text = norm(h.textContent || '');
       if (text.length < 5) continue;
       // promote：clone heading wrapper 或 heading 自己 prepend 進 articleEl 開頭。
