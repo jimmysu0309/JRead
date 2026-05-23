@@ -1745,6 +1745,22 @@
       // 不擴及 h2-h6：section heading 包在 absolute wrapper 罕見也通常無
       // semantic 主文意義，保留現有 hide 行為。
       if (el.querySelector && el.querySelector('h1')) continue;
+      // v0.7.170 guard：含 picture / img / video 後代 → 視為「aspect-ratio
+      // 媒體 wrapper」（lazy-load padding-bottom hack + 內層 absolute container
+      // 包 picture 是跨 CMS 通用 pattern）。CNBC InlineImage 實機:
+      //   <div padding-bottom:55.5%>  <!-- aspect-ratio placeholder -->
+      //     <span class="transition-fade-...">
+      //       <div>
+      //         <div class="imageContainer" style="position:absolute">  ← THIS
+      //           <picture><source><img></picture>
+      //   imageContainer 是 absolute div，舊 rule 把它當 overlay 砍，picture +
+      //   主圖被 ancestor display:none 連帶消失。img / picture / video TAG 本
+      //   身已有 line 1734 排除，但 wrapper div 沒，這條補洞。
+      //   通則：absolute div 內含 media 元素 → 99% 是 media wrapper layout，
+      //   不是「文字/裝飾 overlay」。漏網成本（極少數帶 hero img 的整塊 banner
+      //   overlay）遠低於誤殺成本（主圖整塊消失）。Jimmy 2026-05-23 CNBC
+      //   blob dark mode 截圖揭穿主圖完全消失，light mode 也部分消失。
+      if (el.querySelector && el.querySelector('picture, img, video')) continue;
       // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
       let hasLongParagraph = false;
       const ps = el.querySelectorAll && el.querySelectorAll('p');
