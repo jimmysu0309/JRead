@@ -1,0 +1,42 @@
+<!--
+  ctee.com.tw taglist（CSS ::before 加 #）regression fixture。
+  重點：hashtag 的 # 由 ::before 加，a.textContent 不含 #，
+  hideInsideArticleHashtagClusters（要求 startsWith('#')）漏掉。
+  修法：tag-list / taglist 加入 NOISE_KEYWORD_RE，由 keyword rule 命中 hide。
+-->
+<main class="main-container">
+  <ul class="bread-crumb">
+    <li class="crumb-last">BMW 搶下全球首發 E Ink 登上量產車</li>
+  </ul>
+  <div class="content__header">
+    <h1 class="main-title">BMW 搶下全球首發 E Ink 登上量產車</h1>
+    <ul class="news-credit">
+      <li><time>2026.04.24</time></li>
+      <li><time>14:12</time></li>
+      <li><span>工商時報</span></li>
+      <li><a href="/author">袁顥庭</a></li>
+    </ul>
+    <div class="list-box taglist">
+      <ul>
+        <li class="taglist__item"><a href="/tag/BMW">BMW</a></li>
+        <li class="taglist__item"><a href="/tag/E-Ink">E Ink</a></li>
+        <li class="taglist__item"><a href="/tag/元太">元太</a></li>
+        <li class="taglist__item"><a href="/tag/電子紙">電子紙</a></li>
+        <li class="taglist__item"><a href="/tag/汽車表面技術">汽車表面技術</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="content__body">
+    <figure class="picture--article">
+      <img src="placeholder.jpg" alt="BMW iX3">
+      <figcaption>BMW 於 2026 北京車展正式公開亮相搭載 E Ink Prism 技術的 BMW iX3 Flow Edition，成為全球首款導入 E Ink Prism 技術的量產車款。</figcaption>
+    </figure>
+    <div class="article-wrap">
+      <article>
+        <p>元太宣布，搭載 E Ink Prism 技術的 BMW iX3 Flow Edition 已於 2026 北京車展正式公開亮相。此一里程碑象徵汽車表面創新技術的重大突破，BMW iX3 Flow Edition 是全球首款將 E Ink Prism 電子紙技術整合至量產車款的車型，讓車主得以透過手機 App 即時切換引擎蓋外觀顏色與圖案。</p>
+        <p>元太董事長李政昊表示，元太始終懷抱一個願景，讓電子紙走進各種表面，賦予它們生命與情感。我們要感謝團隊多年的堅持，讓電子紙通過汽車產業最嚴苛的考驗。</p>
+        <p>E Ink 的電泳式電子紙技術已廣泛為應用於電子書閱讀器等產品。其原理是透過數百萬個內含帶電粒子的微膠囊，在電場驅動下改變排列狀態，使表面呈現不同視覺效果。</p>
+      </article>
+    </div>
+  </div>
+</main>
