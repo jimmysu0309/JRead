@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.185**——fix: ctee.com.tw 標題下方 taglist（#BMW #E Ink 等）殘留。hashtag 的 # 由 CSS ::before 加、a.textContent 不含 #，hideInsideArticleHashtagClusters 漏掉。`tag[-_]?list` 加入 NOISE_KEYWORD_RE，由 keyword rule 命中 hide。
+
+---
+
 **v0.7.184**——fix: 推薦文章 section（related-news / more-news / recommended 等）內含長摘要 p 時被 anchor guard 誤豁免。將 related/more/recommended 等「推薦/相關文章 section」命名家族加入 STRONG_NOISE_KEYWORD_RE，跳過 wrapperContainsMainContentP guard 直接 hide。udn 實測：section.related-news.more-news 含 6 篇推薦文章各有 100+ chars 摘要 p → 推薦區殘留。
 
 ---
