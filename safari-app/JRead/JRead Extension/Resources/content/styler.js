@@ -178,6 +178,16 @@ html [${ARTICLE_ATTR}="1"] {
   float: none !important;
   position: static !important;
   transform: none !important;
+  /* v0.7.179：reader card 顯式設 text color（所有 theme）。搭配下方
+     後代 color: inherit 規則，確保 CMS 彩色 banner 內白字不會在背景
+     被 strip 後殘留不可見。light theme 之前不設 color（交給原站），但
+     原站 color 常配合已被 strip 的 background 設計，留下等於留 bug。 */
+  color: ${theme.text || '#1a1a1a'} !important;
+  /* WordPress Gutenberg constrained layout override：WP 用 CSS custom
+     property 限制 content width（通常 560-650px），在 reader card 內多
+     餘且讓內文過窄。override 到 100% 讓內文撐滿 card 版心。 */
+  --wp--style--global--content-size: 100% !important;
+  --wp--style--global--wide-size: 100% !important;
   /* v0.7.157：font-smoothing 統一 antialiased（macOS）/ grayscale（macOS Firefox）。
      站點未自行設定時，macOS Chrome 預設 -webkit-font-smoothing 為 auto（subpixel-
      antialiased），中文字渲染明顯偏粗（businessweekly.com.tw 等中文新聞站 stack
@@ -496,6 +506,27 @@ html [${ARTICLE_ATTR}="1"] {
    flex: initial 把 col 退化成 block 流排、padding 已失 grid gutter 意義，可
    清。businessweekly blog 主圖（497px wide 卡在 col 內 padding-right 115px
    後）修法：清 padding 後圖回到 card 完整內寬 608px。 */
+/* v0.7.179：WordPress Gutenberg constrained layout override。WP block theme
+   用 .wp-container-core-post-content-is-layout-HASH > :where(:not(.alignfull))
+   對 p/h/ul/ol 等 content block 設 max-width: 560-650px。:where() specificity
+   是 0 但 generated class 的 specificity (0,1,0) 搭配 cascade order 靠後仍
+   贏過舊 JRead universal * 規則。
+   對策：直接 target 常見 content block tag，specificity (0,1,2)+(0,1,2) 夠高。
+   通則性：p / h1-h6 / ul / ol / dl / blockquote 是 HTML 標準 content block
+   tag，不綁 WordPress class。非 WP 站不受影響（原 max-width 通常由頁面 CSS
+   設、被此 rule override 也無害——reader card 內文 100% 撐滿是正確行為）。 */
+html [${ARTICLE_ATTR}="1"] p,
+html [${ARTICLE_ATTR}="1"] h1,
+html [${ARTICLE_ATTR}="1"] h2,
+html [${ARTICLE_ATTR}="1"] h3,
+html [${ARTICLE_ATTR}="1"] h4,
+html [${ARTICLE_ATTR}="1"] h5,
+html [${ARTICLE_ATTR}="1"] h6,
+html [${ARTICLE_ATTR}="1"] ul,
+html [${ARTICLE_ATTR}="1"] ol,
+html [${ARTICLE_ATTR}="1"] dl {
+  max-width: none !important;
+}
 /* articleEl 內 block 裝飾 background 清除：原站常用彩色 wrapper
    block（accent bar、inset box、newsletter box、feature card）作為
    視覺裝飾。reader mode 下 card 本身已有統一底色，內部不該再有彩色
@@ -510,6 +541,18 @@ html [${ARTICLE_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
   background-color: transparent !important;
   background-image: none !important;
+}
+/* v0.7.179：後代 text color reset——搭配上面的 background strip。原站 CMS
+   banner / hero header 常用「白字 + 彩色背景」設計（CNN opinion-header、
+   BBC live-page-header 等），styler strip 背景後白字對白底不可見。
+   color: inherit !important 讓所有後代繼承 reader card 顯式設的 text color
+   （見 html [data-jread-active] 的 color 規則）。
+   exclude：a（保留連結色）、code/pre（保留 syntax highlight）、mark/kbd
+   （語意 inline 元素）、table 系（保留 cell 色彩）。
+   dark/sepia theme 另有 * { color: theme.text } 覆寫全部色，本規則被
+   cascade 蓋過無副作用。 */
+[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+  color: inherit !important;
 }
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
    bar、callout 框、圖片框等視覺裝飾。reader card 本身已有圓角 + 陰影邊界，
@@ -539,8 +582,12 @@ html [${ARTICLE_ATTR}="1"] {
    強制所有後代不超過 parent 寬度，等於 cap 在 article content area 內。
    對 figure/blockquote/table/code 等保留語意也是合理 cap（不應超出版心）。
    不用 width: 100%（會把 inline-block / icon 等小元件強拉成滿寬）；只
-   max-width 限縮上限，width:auto / 顯式 width 仍照原值算。 */
-[${ARTICLE_ATTR}="1"] * {
+   max-width 限縮上限，width:auto / 顯式 width 仍照原值算。
+   v0.7.179：加 html 前綴把 specificity 從 (0,1,0) 升到 (0,1,1)——WordPress
+   block theme 常用 .entry-content > p 寫死 max-width 560px !important
+   （specificity 0,1,1 + !important），舊 (0,1,0) + !important 被打敗導致
+   reader card 內文過窄。html 前綴不影響 match 語意（html 永遠 match）。 */
+html [${ARTICLE_ATTR}="1"] * {
   max-width: 100% !important;
   /* v0.7.157：font-smoothing 繼承——站點若在子層級重設 -webkit-font-smoothing
      為 auto，會把 reader card 內部分元素拉回 subpixel-antialiased（macOS）導致
