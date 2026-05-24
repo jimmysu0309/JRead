@@ -164,7 +164,7 @@
     window.addEventListener('keydown', onEscKey, true);
     // X 是 keyboard-shortcut-heavy 站（j/k 換推文、l 點讚、r reply 等），跟 reader
     // mode 純閱讀完全衝突——install keyguard 攔截。
-    if (settings.blockPageShortcuts !== false) {
+    if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
     } else {
       uninstallKeyguard();
@@ -207,7 +207,7 @@
 
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
-    if (settings.blockPageShortcuts !== false) {
+    if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
     } else {
       uninstallKeyguard();
@@ -289,7 +289,7 @@
 
     // v0.7.131：install keyguard（攔截原站快速鍵），依 settings.blockPageShortcuts。
     // 註冊順序在 onEscKey 之後——同階段 listener 按註冊順序執行，ESC 先給 onEscKey 處理。
-    if (settings.blockPageShortcuts !== false) {
+    if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
     } else {
       uninstallKeyguard();
