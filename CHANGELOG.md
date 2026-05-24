@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.183**——fix: video player 在 reader mode 不可見 + 影片溢出遮字。(1) 所有影響 media layout 的 CSS 規則（position/left/right/float/max-width/display/max-height/margin-auto）加 `:not([data-jread-player="1"])` 排除，JW Player absolute positioning layout 恢復。(2) player container 標記從「向上走 4 層」改為「找最近 position:relative+overflow:hidden 祖先」，外層 layout wrapper 維持被 card max-width 約束。(3) strip 大幅負 margin-top（< -20px）：原站 mt:-80px 把 video 向上拉進 opinion-header 100px padding 區域做重疊，strip padding 後殘留負 margin 導致 video 遮住 subtitle。Harness 截圖確認影片在 card 內正確排版、無溢出遮字。
+
+---
+
 **v0.7.182**——fix: video player poster/controls 被 background strip CSS 清除。新增 `data-jread-player` 標記機制：styler `apply()` 從 `<video>` 向上走 4 層找 player container，標記 container 及所有後代；background strip / color inherit / pseudo-element strip 三條 CSS 規則加 `:not([data-jread-player="1"])` 排除 player 子結構。`restore()` 清除標記。
 
 ---
