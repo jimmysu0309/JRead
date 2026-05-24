@@ -623,6 +623,10 @@ html [${ARTICLE_ATTR}="1"] {
     // stack）。寫成兩個 :not()（不寫 :not(pre *, code *) selector list 形式）
     // 是為了 selector 字串內不含 comma——spec 程式用 split(',') 切 selector
     // list 驗證時不會誤把 :not() 內的 comma 當分隔切壞。
+    // v0.7.175：加 :not(h1 *) ~ :not(h6 *)——heading 內的 span 不應被 body
+    // text font-size 覆寫。CNA 等站 h1 文字包在 <span>，SPAN_TEXT_SEL 會
+    // 把 span 字級壓成 body fontSize、打敗 h1 自身的 font-size。排除 heading
+    // 後代讓 span 正確 inherit heading font-size。
     const SPAN_TEXT_SEL = `[${ARTICLE_ATTR}="1"] span` +
       `:not([class*="icon"])` +
       `:not([class*="material-"])` +
@@ -631,7 +635,13 @@ html [${ARTICLE_ATTR}="1"] {
       `:not([class*="emoji"])` +
       `:not([class*="badge"])` +
       `:not(pre *)` +
-      `:not(code *)`;
+      `:not(code *)` +
+      `:not(h1 *)` +
+      `:not(h2 *)` +
+      `:not(h3 *)` +
+      `:not(h4 *)` +
+      `:not(h5 *)` +
+      `:not(h6 *)`;
     // v0.7.156：加入 td, th —— Wikipedia / 技術文件 / Stack Overflow 等用 table
     // 排版 content 的站點普遍對 `table.infobox` / `.wikitable` 等寫死 `font-size:
     // 0.88em` 縮小 table 內字。Jimmy 2026-05-21 Wikipedia /Longchamp_(company)
