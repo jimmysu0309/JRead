@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.178**——fix: 新聞站分類標籤微型欄（CNN "News"、BBC "Science & Environment" 等 kicker/eyebrow）殘留在 reader mode。hideInsideArticleSidebarColumns 新增條件 D：flex row 內 2-4 children、textLen ≤ 30 的 sibling 旁有含 heading 的 sibling → hide；guards：<time> / heading / media / canonicalTitle / promotedTitleHead / byline。
+
+---
+
 **v0.7.177**——fix: emoji vertical-align 微調至 `-0.1em`（與中文字視覺對齊）；block 圖片（img/video/picture）加 `margin-bottom: 24px` 避免連續圖片緊貼無間距（Facebook 多圖貼文實測）。
 
 ---
