@@ -430,9 +430,9 @@ describe('styler — 骨架與可逆性', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // 找 `[data-jread-active="1"] *` 後代 universal selector rule（無 :not()）
-    const m = css.match(/\[data-jread-active="1"\]\s+\*\s*\{([^\}]*)\}/);
-    assert.ok(m, 'CSS 必須含 `[data-jread-active="1"] *` universal rule（無 :not()）');
+    // 找 `html [data-jread-active="1"] *` 後代 universal selector rule（v0.7.179 加 html prefix，可含 :not()）
+    const m = css.match(/html\s+\[data-jread-active="1"\]\s+\*[^{]*\{([^\}]*)\}/);
+    assert.ok(m, 'CSS 必須含 `html [data-jread-active="1"] *...` universal rule');
     const body = m[1];
     assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
       'rule body 必須含 max-width: 100% !important（cap 子元素寬度，避免 cna 類寫死 width:1152px wrapper overflow card）');
@@ -451,13 +451,13 @@ describe('styler — 骨架與可逆性', () => {
     const css = document.getElementById('__jread-style').textContent;
 
     // (1) `* { float: none !important }` rule 必須存在（清 cna .floatImg 類偏移）
-    const wildcardMatches = [...css.matchAll(/\[data-jread-active="1"\]\s+\*\s*\{([^\}]*)\}/g)];
+    const wildcardMatches = [...css.matchAll(/\[data-jread-active="1"\]\s+\*[^{]*\{([^\}]*)\}/g)];
     let hasFloatNone = false;
     for (const m of wildcardMatches) {
       if (/float\s*:\s*none\s*!important/.test(m[1])) { hasFloatNone = true; break; }
     }
     assert.ok(hasFloatNone,
-      '`[data-jread-active="1"] *` rule 必須含 float: none !important（清 cna .floatImg float-right 類偏移）');
+      '`[data-jread-active="1"] *...` rule 必須含 float: none !important（清 cna .floatImg float-right 類偏移）');
 
     // (2) 媒體 tag rule 必須含 margin-left/right: auto（block 元素水平置中）
     // 媒體 selector 列表（img / picture / video / figure / iframe / table /
@@ -489,8 +489,9 @@ describe('styler — 骨架與可逆性', () => {
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
 
-    // 找含 img + position: static 的 rule block
-    const m = css.match(/\[data-jread-active="1"\]\s+img\s*,\s*\[data-jread-active="1"\]\s+video\s*\{([^\}]*)\}/);
+    // 找含 img + video + position: static 的 rule block（可能含 :not() 排除）
+    const allRules = [...css.matchAll(/\[data-jread-active="1"\]\s+img[^,]*,\s*\[data-jread-active="1"\]\s+video[^{]*\{([^\}]*)\}/g)];
+    const m = allRules.find(r => /position\s*:\s*static/.test(r[1]));
     assert.ok(m, 'CSS 必須有 articleEl img + video position 強制 rule block');
     const body = m[1];
     assert.ok(/position\s*:\s*static\s*!important/.test(body),

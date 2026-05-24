@@ -256,8 +256,8 @@ html [${ARTICLE_ATTR}="1"] {
    static 對 reader card 的視覺結果是「圖縮在原本位置、不溢出」反而更穩。
    實測：cna 索馬利蘭主圖修法後 img 從 absolute → static、left/right
    offset 失效，圖回到 picture 內正常 inline 位置 width=picture.width。 */
-[${ARTICLE_ATTR}="1"] img,
-[${ARTICLE_ATTR}="1"] video {
+[${ARTICLE_ATTR}="1"] img:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]) {
   position: static !important;
   top: auto !important;
   left: auto !important;
@@ -271,9 +271,9 @@ html [${ARTICLE_ATTR}="1"] {
    :not(a > img) 仍排除 link-wrapped icon（icon-link 結構保留 inline），這
    條額外 :not(picture > img) / :not(figure > img) 不必加——picture / figure
    本身已是 block container、img 在內部 block 只是視覺正確、不影響原 layout。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img),
-[${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] picture {
+[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
   display: block !important;
   margin-bottom: 24px !important;
 }
@@ -281,9 +281,9 @@ html [${ARTICLE_ATTR}="1"] {
    後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
    類似結構），佔滿整屏甚至蓋住 promoted-title。90vh 留給標題與下方文字
    一些縫隙、又不過度限縮（90% viewport 高仍是大圖視覺）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img),
-[${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] picture {
+[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
   max-height: 90vh !important;
   object-fit: contain !important;
 }
@@ -569,7 +569,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    hr 本身就是 border 化身（清掉等於消失）。
    只清 border-width 不動 border-style/color：影響範圍最窄、若原站日後改
    設計也容易 debug。 */
-[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr) {
+[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr):not([${PLAYER_ATTR}="1"]) {
   border-width: 0 !important;
   left: auto !important;
   right: auto !important;
@@ -588,7 +588,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    block theme 常用 .entry-content > p 寫死 max-width 560px !important
    （specificity 0,1,1 + !important），舊 (0,1,0) + !important 被打敗導致
    reader card 內文過窄。html 前綴不影響 match 語意（html 永遠 match）。 */
-html [${ARTICLE_ATTR}="1"] * {
+html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   max-width: 100% !important;
   /* v0.7.157：font-smoothing 繼承——站點若在子層級重設 -webkit-font-smoothing
      為 auto，會把 reader card 內部分元素拉回 subpixel-antialiased（macOS）導致
@@ -609,14 +609,14 @@ html [${ARTICLE_ATTR}="1"] * {
    只對「該被置中的媒體 / 區塊內容」套，generic div/span/text wrapper 自然
    左對齊不被 auto-center。垂直 margin 仍交給原站 / styler 既有 first-child
    reset。 */
-[${ARTICLE_ATTR}="1"] * {
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   float: none !important;
 }
-[${ARTICLE_ATTR}="1"] img,
-[${ARTICLE_ATTR}="1"] picture,
-[${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] figure,
-[${ARTICLE_ATTR}="1"] iframe,
+[${ARTICLE_ATTR}="1"] img:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] figure:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] iframe:not([${PLAYER_ATTR}="1"]),
 [${ARTICLE_ATTR}="1"] table,
 [${ARTICLE_ATTR}="1"] blockquote,
 [${ARTICLE_ATTR}="1"] pre {
@@ -1226,14 +1226,25 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       // 及所有後代標記為 player 結構、不被 background strip 清除。
       // <iframe> 不標記：YouTube/Vimeo embed 的 poster 在 iframe 內部
       // document，reader card CSS 影響不到。
+      // v0.7.183 修正：只標到 player root（position:relative + overflow:hidden
+      // 的最近祖先），不標外層 layout wrapper。JW Player 結構：
+      //   video → jw-media(abs) → jw-wrapper(abs) → jwplayer(rel+ovH) → layout wrappers
+      // 外層 wrapper 必須被 card max-width/position 約束，否則 player 溢出遮字。
+      // v0.7.182 走 4 層太高，把 wp-block-group layout wrapper 也排除了。
       const playerMarked = [];
       for (const vid of articleEl.querySelectorAll('video')) {
-        let container = vid;
-        for (let i = 0; i < 4; i++) {
-          if (!container.parentElement || container.parentElement === articleEl) break;
-          container = container.parentElement;
+        let container = null;
+        const _win = articleEl.ownerDocument?.defaultView;
+        let cur = vid.parentElement;
+        while (cur && cur !== articleEl && _win) {
+          const cs = _win.getComputedStyle(cur);
+          if (cs.position === 'relative' && cs.overflow === 'hidden') {
+            container = cur;
+            break;
+          }
+          cur = cur.parentElement;
         }
-        if (container === vid) container = vid.parentElement || vid;
+        if (!container) container = vid.parentElement || vid;
         container.setAttribute(PLAYER_ATTR, '1');
         playerMarked.push(container);
         for (const el of container.querySelectorAll('*')) {
@@ -1317,6 +1328,29 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
             if (pb > 48) cur.style.setProperty('padding-bottom', '0', 'important');
           }
           cur = cur.parentElement;
+        }
+      }
+
+      // v0.7.183：strip 大幅負 margin-top（CMS layout hack 的遺毒）。
+      // 原站用 margin-top:-80px 類負值把 video block 向上拉進 opinion-
+      // header 的 100px padding 區域做視覺重疊。我們 strip padding 後、
+      // 負 margin 殘留 → video 溢出遮住 subtitle。通則：reader card
+      // 內負 margin-top > 20px 的元素 = layout hack，不適用單欄 card。
+      const negMarginSnap = [];
+      {
+        const _w = articleEl.ownerDocument?.defaultView;
+        if (_w) {
+          for (const el of articleEl.querySelectorAll('div, section')) {
+            const mt = parseFloat(_w.getComputedStyle(el).marginTop) || 0;
+            if (mt < -20) {
+              negMarginSnap.push({
+                el,
+                mt: el.style.getPropertyValue('margin-top'),
+                mtP: el.style.getPropertyPriority('margin-top'),
+              });
+              el.style.setProperty('margin-top', '0', 'important');
+            }
+          }
         }
       }
 
@@ -1451,7 +1485,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked };
     },
 
     /**
@@ -1527,6 +1561,15 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
           else s.el.style.removeProperty('padding-top');
           if (s.pb) s.el.style.setProperty('padding-bottom', s.pb, s.pbP || '');
           else s.el.style.removeProperty('padding-bottom');
+        }
+      }
+
+      // v0.7.183：還原 negative margin-top strip
+      if (Array.isArray(snapshot.negMarginSnap)) {
+        for (const s of snapshot.negMarginSnap) {
+          if (!s || !s.el) continue;
+          if (s.mt) s.el.style.setProperty('margin-top', s.mt, s.mtP || '');
+          else s.el.style.removeProperty('margin-top');
         }
       }
 
