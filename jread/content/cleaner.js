@@ -145,7 +145,14 @@
   //     / "發布日期" / "更新日期" / "刊出日期"
   // 通則：byline 跨站文字 pattern 高度收斂，誤判風險低；搭配 textLen <
   // BYLINE_MAX_TEXT_LEN 雙條件避免廣告 / sidebar widget 偶含日期片段誤觸發。
-  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  // v0.7.181：BYLINE_TEXT_RE 擴充：
+  //   1. `\bby\s` 不限於行首——MSNBC "May. 24, 2026... By Marc Santia" 的 "By"
+  //      在日期之後、舊版 `^\s*by` 不命中。新增 `\bby\s` 作為獨立 alternation，
+  //      word boundary 避免 "nearby" / "standby" 誤命中。
+  //   2. 月份縮寫加 `\.?` 容許 AP style "May." / "Jan." / "Feb." 等帶點格式。
+  //      AP stylebook 慣例：三字母以下月份不縮（May 原本就三字母不帶點），
+  //      但實務 CMS 各自表述（MSNBC 用 "May."），`\.?` 一律相容。
+  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
   const BYLINE_MAX_TEXT_LEN = 200;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
@@ -1194,6 +1201,21 @@
 
       const rect = el.getBoundingClientRect();
       if (rect.height < SPACER_MIN_HEIGHT) continue;
+
+      // v0.7.181：sibling media guard——JW Player `.jw-aspect`（padding-top:
+      // 56.25% 撐 16:9 容器）無 text、不含 media 子（video 在 sibling
+      // `.jw-wrapper` 內），看起來 = empty spacer → 被 hide → player 高度
+      // 歸零。通則：空 div 的 parent 含 video/iframe sibling = player layout
+      // 輔助元素，不 hide。
+      if (el.parentElement) {
+        let siblingHasMedia = false;
+        for (const sib of el.parentElement.children) {
+          if (sib === el) continue;
+          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
+          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
+        }
+        if (siblingHasMedia) continue;
+      }
 
       hide(el, hidden);
     }
@@ -2634,6 +2656,22 @@
         if (mr.height > 5 && mr.width > 5) { hasVisibleMedia = true; break; }
       }
       if (hasVisibleMedia) continue;
+      // v0.7.181：sibling media guard——JW Player / video.js / 各 CMS video
+      // embed 的空 div（aspect spacer / overlay container）被 collapse 後
+      // video player 高度歸零。JW Player `.jw-aspect`（padding-top: 56.25%
+      // 撐 16:9 容器）是典型 case：無 text、不含 media 子（video 在 sibling
+      // `.jw-wrapper` 內），原本看起來 = empty wrapper → 被 collapse。
+      // 通則：空 div 的 parent 含 video/iframe sibling → 本 div 可能是 player
+      // 的 layout 輔助元素，collapse 會打壞 player，skip。
+      if (el.parentElement) {
+        let siblingHasMedia = false;
+        for (const sib of el.parentElement.children) {
+          if (sib === el) continue;
+          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
+          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
+        }
+        if (siblingHasMedia) continue;
+      }
       // background image → 視為合法 divider / decoration、保留
       const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
         window.getComputedStyle(el) : null;
