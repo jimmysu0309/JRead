@@ -932,20 +932,21 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
       '—— fontSize 已改時 lineHeight 連帶 inline 在同一 block，不走獨立分支避免重複');
   });
 
-  it('light theme（預設）→ 頁面底色 #ececec、不注入強制文字色', () => {
+  it('light theme（預設）→ 頁面底色 #ececec、reader card 有 base text color、後代 color inherit', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(css.includes('#ececec'), 'light 頁面底色應為 #ececec');
-    // light 預設 theme.text 為 null，不得注入 color override 到 body / article *
+    // v0.7.179：reader card 必須有 base text color（#1a1a1a），搭配後代
+    // color: inherit 確保 CMS 彩色 banner 白字在 bg strip 後仍可讀。
     assert.ok(
-      !/color:\s*#1a1a1a/.test(css),
-      'light theme 不得強制覆寫文字色（保留原站 color）'
+      /color:\s*#1a1a1a/.test(css),
+      'light theme reader card 需設 base text color #1a1a1a（v0.7.179 white-text fix）'
     );
-    // light 也不得動 link 色（保留原站 link 色）
+    // 後代必須有 color: inherit 規則
     assert.ok(
-      !/\]\s*a\s*[,{]/.test(css),
-      'light theme 不得注入任何 a 規則'
+      /color:\s*inherit\s*!important/.test(css),
+      'light theme 後代需有 color: inherit（v0.7.179 white-text fix）'
     );
   });
 
