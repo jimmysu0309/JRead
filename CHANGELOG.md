@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.179**——fix: CMS 彩色 banner 白字在 reader mode 不可見 + WordPress constrained layout 內文過窄。styler 加 reader card 顯式 text color + 後代 `color: inherit !important`（所有 theme）；content block tag（p/h/ul/ol/dl）加 `max-width: none !important` override WP layout constraint；universal `*` max-width 加 `html` 前綴提升 specificity。
+
+---
+
 **v0.7.178**——fix: 新聞站分類標籤微型欄（CNN "News"、BBC "Science & Environment" 等 kicker/eyebrow）殘留在 reader mode。hideInsideArticleSidebarColumns 新增條件 D：flex row 內 2-4 children、textLen ≤ 30 的 sibling 旁有含 heading 的 sibling → hide；guards：<time> / heading / media / canonicalTitle / promotedTitleHead / byline。
 
 ---
