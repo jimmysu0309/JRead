@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.182**——fix: video player poster/controls 被 background strip CSS 清除。新增 `data-jread-player` 標記機制：styler `apply()` 從 `<video>` 向上走 4 層找 player container，標記 container 及所有後代；background strip / color inherit / pseudo-element strip 三條 CSS 規則加 `:not([data-jread-player="1"])` 排除 player 子結構。`restore()` 清除標記。
+
+---
+
 **v0.7.181**——fix: MSNBC/ms.now 日期/作者消失 + 影片 player 高度歸零。(1) BYLINE_TEXT_RE 擴充 `\bby\s` 不限行首 + 月份縮寫加 `\.?` 容許 AP style "May."——hideInsideArticleSidebarColumns condition A 的 byline guard 正確觸發。(2) hideInsideArticleEmptySpacers + collapseEmptyWrappersAfterClean 加 sibling media guard：空 div 的 parent 含 video/iframe sibling 時 skip——JW Player `.jw-aspect`（padding-top: 56.25%）不再被 collapse。
 
 ---

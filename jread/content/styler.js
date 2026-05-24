@@ -19,6 +19,7 @@
   const ANCESTOR_ATTR = 'data-jread-ancestor';
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
+  const PLAYER_ATTR = 'data-jread-player';
 
   // 預設值：等於「未設定」——對應的 CSS 不會注入（保留原站樣式）
   const DEFAULTS = {
@@ -354,8 +355,8 @@ html [${ARTICLE_ATTR}="1"] {
    marker / drop cap 文字 pseudo 仍工作。
    通則安全：pseudo bg 在 reader card 沒有合法用途——pageWrapper 已有自己的
    bg，多餘 pseudo bg 只會在版心外漏出色塊（或誤覆蓋主文）。 */
-[${ARTICLE_ATTR}="1"] *::before,
-[${ARTICLE_ATTR}="1"] *::after {
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"])::before,
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"])::after {
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -538,7 +539,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    語意（主文媒體容器、引述）；code/pre/table/th/td 需要背景區隔
    （程式碼 block / 表格 row 交替色）；mark 是語意 highlight；kbd
    鍵盤按鍵視覺慣例白底。這些 tag 的原站背景保留。 */
-[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not([${PLAYER_ATTR}="1"]) {
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -551,7 +552,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    （語意 inline 元素）、table 系（保留 cell 色彩）。
    dark/sepia theme 另有 * { color: theme.text } 覆寫全部色，本規則被
    cascade 蓋過無副作用。 */
-[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
 }
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
@@ -1217,6 +1218,30 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
+      // v0.7.182：mark video player container descendants——背景/色彩
+      // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
+      // JW Player 的 poster（.jw-preview background-image: url(thumb)）、
+      // 控制列（.jw-controls bg-color）、play 按鈕 overlay 等仰賴
+      // background-image/color 呈現 UI。通則：<video> 的最近 N 層祖先
+      // 及所有後代標記為 player 結構、不被 background strip 清除。
+      // <iframe> 不標記：YouTube/Vimeo embed 的 poster 在 iframe 內部
+      // document，reader card CSS 影響不到。
+      const playerMarked = [];
+      for (const vid of articleEl.querySelectorAll('video')) {
+        let container = vid;
+        for (let i = 0; i < 4; i++) {
+          if (!container.parentElement || container.parentElement === articleEl) break;
+          container = container.parentElement;
+        }
+        if (container === vid) container = vid.parentElement || vid;
+        container.setAttribute(PLAYER_ATTR, '1');
+        playerMarked.push(container);
+        for (const el of container.querySelectorAll('*')) {
+          el.setAttribute(PLAYER_ATTR, '1');
+          playerMarked.push(el);
+        }
+      }
+
       const ancestors = markAncestors(articleEl);
 
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
@@ -1426,7 +1451,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked };
     },
 
     /**
@@ -1455,6 +1480,11 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       if (Array.isArray(snapshot.inlineImgs)) {
         for (const img of snapshot.inlineImgs) {
           if (img && img.removeAttribute) img.removeAttribute(INLINE_IMG_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.playerMarked)) {
+        for (const el of snapshot.playerMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(PLAYER_ATTR);
         }
       }
 
