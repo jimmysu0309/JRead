@@ -264,6 +264,7 @@ html [${ARTICLE_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] video,
 [${ARTICLE_ATTR}="1"] picture {
   display: block !important;
+  margin-bottom: 24px !important;
 }
 /* v0.7.88：媒體 max-height 限制——避免站把主圖原始尺寸塞到 reader card
    後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
@@ -593,7 +594,7 @@ html [${ARTICLE_ATTR}="1"] {
   object-fit: initial !important;
   margin-left: 0.15em !important;
   margin-right: 0.15em !important;
-  vertical-align: 0 !important;
+  vertical-align: -0.1em !important;
 }
 `;
 
