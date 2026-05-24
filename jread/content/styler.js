@@ -676,8 +676,11 @@ ${BODY_TEXT_SEL} {
 }`;
     }
     if (overrides.titleFontSize) {
+      // h1 * 必須一起覆寫：CNA 等站把 h1 文字包在 <span> 裡，SPAN_TEXT_SEL
+      // 會把 span 字級壓成 body fontSize，即使 h1 本身 50px 也無效。
       userOverrides += `
-[${ARTICLE_ATTR}="1"] h1 {
+[${ARTICLE_ATTR}="1"] h1,
+[${ARTICLE_ATTR}="1"] h1 * {
   font-size: ${opts.titleFontSize}px !important;
 }`;
     }

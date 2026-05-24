@@ -4,7 +4,7 @@
 
 ---
 
-**v0.7.175**——feat: 新增「標題字級」設定（`titleFontSize`）。options 頁面可調 h1 font-size（px），0 = Auto 保留原站標題大小（預設）、非 0 覆寫。解決使用者調大內文字級（如 54px）後原站 h1（如 CNA 35px）反而比內文小的問題。styler `buildCss` 條件注入 `[data-jread-active="1"] h1 { font-size: Npx !important }`；SW `DEFAULT_SETTINGS` / options DEFAULTS 同步。`npm test` 1077 條通過。
+**v0.7.175**——feat: 新增「標題字級」設定（`titleFontSize`）。options 頁面可調 h1 font-size（px），0 = Auto 保留原站標題大小（預設）、非 0 覆寫。解決使用者調大內文字級（如 54px）後原站 h1（如 CNA 35px）反而比內文小的問題。CSS rule 同時 target `h1` 和 `h1 *`——CNA 等站把 h1 文字包在 `<span>` 裡，`SPAN_TEXT_SEL` 會把 span 字級壓成 body fontSize，必須穿透子元素才生效。SW `DEFAULT_SETTINGS` / options DEFAULTS 同步。`npm test` 1082 條通過。
 
 ---
 
