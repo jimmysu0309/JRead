@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.175**——feat: 新增「標題字級」設定（`titleFontSize`）。options 頁面可調 h1 font-size（px），0 = Auto 保留原站標題大小（預設）、非 0 覆寫。解決使用者調大內文字級（如 54px）後原站 h1（如 CNA 35px）反而比內文小的問題。styler `buildCss` 條件注入 `[data-jread-active="1"] h1 { font-size: Npx !important }`；SW `DEFAULT_SETTINGS` / options DEFAULTS 同步。`npm test` 1077 條通過。
+
+---
+
 **v0.7.174**——fix: X 推文含圖片時閱讀模式不顯示照片。`unwrapTweetMedia` 把 `<a>` 替換成 `<figure>` 後，figure 仍卡在 X 的 aspect-ratio hack wrapper 鏈（height:0 + overflow:hidden + position:absolute）裡被裁切不可見。新增 hoist 邏輯：找到 media 所在的 branch root（跟 tweetText 同層級的 wrapper），把 figure 搬到該 branch 前面、移除空殼 wrapper。加 guard 跳過 figure 已在正確層級的情境（jsdom fixture 無多層 wrapper 的 case）。`npm test` 1077 條通過。
 
 ---
