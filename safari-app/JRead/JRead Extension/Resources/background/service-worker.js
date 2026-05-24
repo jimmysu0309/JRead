@@ -38,7 +38,8 @@ const DEFAULT_SETTINGS = {
   // 中英文字之間自動補空白（盤古之白）。reader mode 啟動時掃 articleEl 所有
   // text node、套規則「CJK ↔ 英數字 / % / °」→ 之間插空白。詳見 styler.js
   // pangu module。預設 true，使用者可到 options 取消。
-  pangu: true
+  pangu: true,
+  titleFontSize: 0
 };
 
 // Icon 路徑 map：閱讀模式 active / idle 都用彩色版本（v0.7.134，Jimmy 2026-05-18
