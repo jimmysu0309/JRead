@@ -1,0 +1,60 @@
+<!--
+  UDN 推薦文章 section（related-news）殘留 regression fixture。
+  重點：section.related-news 內含 100+ chars 摘要 p，觸發 wrapperContainsMainContentP
+  anchor guard 而漏掉 keyword hide。修法：related/more/recommended 家族加入
+  STRONG_NOISE_KEYWORD_RE，跳過 anchor guard 直接 hide。
+-->
+<section class="article-content__wrapper">
+  <h1 class="article-content__title">美中一中交集 賴總統走不出去也不見了</h1>
+  <div class="article-content__subinfo">
+    <section class="authors">
+      <span class="article-content__author">聯合報／主筆室</span>
+      <time class="article-content__time">2026-04-23 15:07</time>
+    </section>
+  </div>
+  <figure class="article-content__cover">
+    <img src="placeholder.jpg" alt="cover">
+    <figcaption>賴清德總統出訪受挫，美國國務院官方回應不見「the president Lai」。示意圖。</figcaption>
+  </figure>
+  <article class="article-content">
+    <section class="article-content__editor">
+      <p>賴總統原訂出訪非洲友邦史瓦帝尼，因中共阻撓取消。總統隨即喊話朝野團結「認清中國」。綠營槍口轉向選舉動員，大打抗中保台。不過，這回美國並未配合賣芒果乾。大陸國台辦和外交部記者會否認「中華民國總統」的存在。</p>
+      <p>大陸「一中原則」，對上美國「一中政策」，不只讓賴總統走不出台灣，竟也從美國的官方文書裡消失。</p>
+      <p>美國國務院對賴總統取消出訪一事，以書面回復中央社低調處理。相比去年七月國務院澄清並無過境計畫，這次措詞顯得節制保守。</p>
+      <p>另一個極突兀的現象是：當事國史瓦帝尼對中國阻撓台灣貴客一事，僅對該國媒體口頭表示遺憾，毫無譴責抗議。</p>
+      <p>美國刻意避開對台灣外交空間、賴總統政治身分的表態，無非是為維護川習會順利達陣。只要美中持續博弈對話，對「一中」問題找到利益交集，「賴總統」的存在感只會愈來愈輕。</p>
+    </section>
+  </article>
+  <!-- 第一個 more-news（無推薦文章摘要 p）——NOISE_KEYWORD_RE 命中後無 anchor guard 阻擋 -->
+  <section class="more-news article-section context-box">
+    <h3>延伸閱讀</h3>
+    <div class="story-list__news">
+      <div class="story-list__text"><h3><a href="/other1">其他新聞標題一</a></h3></div>
+    </div>
+  </section>
+  <!-- 第二個 related-news（含 100+ chars 摘要 p）——修法前被 anchor guard 豁免 -->
+  <section class="related-news more-news context-box article-section">
+    <h3>相關新聞</h3>
+    <div class="story-list__news">
+      <div class="story-list__text">
+        <h3><a href="/news/story/124844/9482384">賴總統返台：台灣人有權利走向世界 不會因打壓而退縮</a></h3>
+        <p>賴清德結束友邦史瓦帝尼國是訪問，今上午返抵國門，賴總統隨即發表返國談話表示，「我們回來了！」這次的出訪行程一度受到阻撓，但是台灣人有權利走向世界，不會因打壓而退縮，我們將持續深化邦交、拓展國際空間、捍衛民主自由的價值。</p>
+      </div>
+      <div class="story-list__text">
+        <h3><a href="/news/story/124844/9478913">出訪史瓦帝尼 賴總統帶了五頭牛、達悟族拼板舟模型等伴手禮</a></h3>
+        <p>賴清德總統出訪史瓦帝尼，在當地時間五月二日下午前往滿都樓國際會議廳，參加軍禮歡迎儀式、兩國元首雙邊會談並在晚宴上互贈伴手禮，展現兩國深厚邦誼。</p>
+      </div>
+      <div class="story-list__text">
+        <h3><a href="/news/story/124844/9478444">與史王雙邊會談 賴總統：任何國家都沒有權利阻擋台灣為世界貢獻</a></h3>
+        <p>賴清德總統出訪非洲友邦史瓦帝尼，他今天透過臉書表示，他和史瓦帝尼國王恩史瓦帝三世進行雙邊會談時提到，中華民國台灣是主權國家，任何國家都沒有權利阻擋台灣為世界貢獻。</p>
+      </div>
+    </div>
+  </section>
+  <!-- sponsor / discuss 區（class 命中 NOISE_KEYWORD_RE + STRONG_NOISE_KEYWORD_RE） -->
+  <section class="sponsor-ads article-section context-box">
+    <div>贊助商廣告</div>
+  </section>
+  <section class="discuss-board article-section context-box">
+    <h3>討論區</h3>
+  </section>
+</section>

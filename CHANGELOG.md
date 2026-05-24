@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.184**——fix: 推薦文章 section（related-news / more-news / recommended 等）內含長摘要 p 時被 anchor guard 誤豁免。將 related/more/recommended 等「推薦/相關文章 section」命名家族加入 STRONG_NOISE_KEYWORD_RE，跳過 wrapperContainsMainContentP guard 直接 hide。udn 實測：section.related-news.more-news 含 6 篇推薦文章各有 100+ chars 摘要 p → 推薦區殘留。
+
+---
+
 **v0.7.183**——fix: video player 在 reader mode 不可見 + 影片溢出遮字。(1) 所有影響 media layout 的 CSS 規則（position/left/right/float/max-width/display/max-height/margin-auto）加 `:not([data-jread-player="1"])` 排除，JW Player absolute positioning layout 恢復。(2) player container 標記從「向上走 4 層」改為「找最近 position:relative+overflow:hidden 祖先」，外層 layout wrapper 維持被 card max-width 約束。(3) strip 大幅負 margin-top（< -20px）：原站 mt:-80px 把 video 向上拉進 opinion-header 100px padding 區域做重疊，strip padding 後殘留負 margin 導致 video 遮住 subtitle。Harness 截圖確認影片在 card 內正確排版、無溢出遮字。
 
 ---
