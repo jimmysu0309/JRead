@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.176**——fix: emoji `<img>` 在 reader mode 從 inline 變成置中獨立區塊。styler 的 `img { display: block }` 規則把 Facebook/LINE 等站的 emoji 圖片（naturalWidth <= 48）推成 block + margin auto 置中，破壞原文排版。修法：apply() 掃描小型 img 標記 `[data-jread-inline-img]`，CSS override 保持 inline flow。同時修復 `getSettings()` 回傳 null 時 `settings.blockPageShortcuts` 存取炸 TypeError 的既有 bug（SW 未就緒時觸發 reader mode 會命中）。
+
+---
+
 **v0.7.175**——feat: 新增「標題字級」設定（`titleFontSize`）。options 頁面可調 h1 font-size（px），0 = Auto 保留原站標題大小（預設）、非 0 覆寫。解決使用者調大內文字級（如 54px）後原站 h1（如 CNA 35px）反而比內文小的問題。CSS rule 同時 target `h1` 和 `h1 *`——CNA 等站把 h1 文字包在 `<span>` 裡，`SPAN_TEXT_SEL` 會把 span 字級壓成 body fontSize，必須穿透子元素才生效。SW `DEFAULT_SETTINGS` / options DEFAULTS 同步。`npm test` 1082 條通過。
 
 ---
