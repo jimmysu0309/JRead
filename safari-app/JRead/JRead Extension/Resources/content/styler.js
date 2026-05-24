@@ -17,6 +17,8 @@
   const HTML_CLASS = '__jread-active';
   const ARTICLE_ATTR = 'data-jread-active';
   const ANCESTOR_ATTR = 'data-jread-ancestor';
+  const INLINE_IMG_ATTR = 'data-jread-inline-img';
+  const INLINE_IMG_MAX = 48;
 
   // 預設值：等於「未設定」——對應的 CSS 不會注入（保留原站樣式）
   const DEFAULTS = {
@@ -581,6 +583,18 @@ html [${ARTICLE_ATTR}="1"] {
    offset 時等於 static 視覺）。preserve 清單跟 border 一致。
    top/bottom 不清——sticky 元素用 top:0 是合法 layout（但 ancestor reset
    已強制祖先 position:static、articleEl 內若有 sticky 是極少數合理場景）。 */
+/* inline emoji / icon：naturalWidth <= ${INLINE_IMG_MAX} 的小圖片由 apply()
+   JS 標記 [${INLINE_IMG_ATTR}]，保留 inline flow 不被 block + margin auto
+   推成獨立置中區塊。Facebook / LINE 等社群站 emoji 用 <img> 渲染（16~32px），
+   forced block 會讓每個 emoji 換行置中破壞原文排版。 */
+[${ARTICLE_ATTR}="1"] img[${INLINE_IMG_ATTR}] {
+  display: inline !important;
+  max-height: none !important;
+  object-fit: initial !important;
+  margin-left: 0.15em !important;
+  margin-right: 0.15em !important;
+  vertical-align: 0 !important;
+}
 `;
 
     // ---- 使用者 override：僅在非預設值才注入 ----
@@ -1144,6 +1158,17 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       styleEl.textContent = buildCss(theme, opts, overrides);
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
+
+      const inlineImgs = [];
+      for (const img of articleEl.querySelectorAll('img')) {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX) {
+          img.setAttribute(INLINE_IMG_ATTR, '1');
+          inlineImgs.push(img);
+        }
+      }
+
       const ancestors = markAncestors(articleEl);
 
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
@@ -1259,7 +1284,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex, panguSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex, panguSnap, inlineImgs };
     },
 
     /**
@@ -1284,6 +1309,12 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       // v0.7.91：移除 SPACE keydown listener（避免關閉 reader mode 後 SPACE
       // 仍被 jread 攔截）。capture phase listener 第三個參數須為 true 才能正確 dedup。
       window.removeEventListener('keydown', onSpaceScroll, true);
+
+      if (Array.isArray(snapshot.inlineImgs)) {
+        for (const img of snapshot.inlineImgs) {
+          if (img && img.removeAttribute) img.removeAttribute(INLINE_IMG_ATTR);
+        }
+      }
 
       if (snapshot.articleEl && snapshot.articleEl.removeAttribute) {
         snapshot.articleEl.removeAttribute(ARTICLE_ATTR);
