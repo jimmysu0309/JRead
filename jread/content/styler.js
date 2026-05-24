@@ -37,7 +37,11 @@
     // 中英文字之間自動補空白（盤古之白）。預設 true—— 大部分台灣 / 港澳 / 中文
     // 讀者習慣這種視覺節奏，原始網站常缺空格（特別是 CMS / SPA 編輯器寫入時）。
     // 使用者可到 options 取消。詳見下方 pangu module。
-    pangu: true
+    pangu: true,
+    // 標題字級（h1）。0 = Auto（保留原站標題大小）；非 0 = 強制覆寫 h1
+    // font-size 為該 px 值。使用者 body fontSize 調到 40px+ 時原站 h1 常只有
+    // 30-36px，標題反而比內文小——此設定讓使用者自訂標題大小。
+    titleFontSize: 0
   };
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
@@ -671,6 +675,12 @@ ${BODY_TEXT_SEL} {
   font-size: ${opts.fontSize}px !important;${lhClause}
 }`;
     }
+    if (overrides.titleFontSize) {
+      userOverrides += `
+[${ARTICLE_ATTR}="1"] h1 {
+  font-size: ${opts.titleFontSize}px !important;
+}`;
+    }
     if (overrides.fontFamily) {
       userOverrides += `
 ${BODY_TEXT_SEL} {
@@ -1084,7 +1094,12 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         // 法值；5 是極限上限避免外部 storage 損壞時注入 1e308em）。預設 1.0。
         paragraphSpacing: Number.isFinite(rawPs) && rawPs >= -1
           ? (rawPs === -1 ? -1 : Math.min(5, Math.max(0, rawPs)))
-          : DEFAULTS.paragraphSpacing
+          : DEFAULTS.paragraphSpacing,
+        titleFontSize: (() => {
+          const raw = Number(s.titleFontSize);
+          if (!Number.isFinite(raw) || raw < 0) return DEFAULTS.titleFontSize;
+          return raw === 0 ? 0 : Math.min(200, Math.max(8, raw));
+        })()
       };
       const theme = themeOf(s.theme);
 
@@ -1103,7 +1118,8 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         // v0.7.162：lineHeight Auto (0) 不算「override」—— 它代表「不注入」而
         // 非「使用者自設值」。only 非預設且非 Auto 才算 override，避免 Auto 走
         // 進獨立 line-height rule 分支。
-        lineHeight: opts.lineHeight !== DEFAULTS.lineHeight && opts.lineHeight !== 0
+        lineHeight: opts.lineHeight !== DEFAULTS.lineHeight && opts.lineHeight !== 0,
+        titleFontSize: opts.titleFontSize > 0
       };
 
       let styleEl = document.getElementById(STYLE_ID);
