@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.174**——fix: X 推文含圖片時閱讀模式不顯示照片。`unwrapTweetMedia` 把 `<a>` 替換成 `<figure>` 後，figure 仍卡在 X 的 aspect-ratio hack wrapper 鏈（height:0 + overflow:hidden + position:absolute）裡被裁切不可見。新增 hoist 邏輯：找到 media 所在的 branch root（跟 tweetText 同層級的 wrapper），把 figure 搬到該 branch 前面、移除空殼 wrapper。加 guard 跳過 figure 已在正確層級的情境（jsdom fixture 無多層 wrapper 的 case）。`npm test` 1077 條通過。
+
+---
+
 **v0.7.173**——延續 v0.7.172 修法。newtalk 閒置提醒 dialog `<h2 class="title">` 也被 `promoteArticleTitleClassHeadingInto` clone 進 articleEl（bare `class="title"` 命中 `TITLE_CLASS_HIT_RE` 第二 alternation）。**修法**：新增 `TITLE_CLASS_STRICT_RE`（只接受複合 token：`article-title` / `post-title` / `wp-block-post-title` / `entry-title` 等），`promoteArticleTitleClassHeadingInto` 改用 strict 版；bare `title` / `headline` 仍保留在 `looksLikeArticleTitleH1` 供 `promoteUniqueTitleH1Into` 使用（該函式有 og:title strict equality guard 兜底）。v0.7.172 的 `h.closest('a')` guard 已被 strict regex 涵蓋、移除。**spec**：fixture 加閒置 dialog h2 + 新增 1 條 forcing function。`npm test` 1077 條通過。
 
 ---

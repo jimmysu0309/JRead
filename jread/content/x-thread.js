@@ -258,6 +258,42 @@
       target.replaceWith(fig);
       unwrapped++;
     }
+    // v0.7.174：hoist figures out of X's aspect-ratio hack wrapper chain.
+    // replaceWith 後 figure 仍卡在多層 wrapper（height:0 + overflow:hidden +
+    // position:absolute）裡被裁切不可見。X article 結構是單一大 wrapper 包所有
+    // 內容（header / tweetText / media / buttons / timestamp），media 跟 tweetText
+    // 是同級兄弟。找到 media 所在的 branch（跟 tweetText 同層級的 div），把
+    // figure 搬到該 branch 之前、移除空殼。
+    const figs = clone.querySelectorAll('figure[data-jread-x-media]');
+    if (figs.length) {
+      let mediaRoot = null;
+      let cur = figs[0];
+      while (cur && cur !== clone) {
+        const parent = cur.parentElement;
+        if (!parent) break;
+        const siblings = parent.children;
+        let hasTweetTextSibling = false;
+        for (let i = 0; i < siblings.length; i++) {
+          const sib = siblings[i];
+          if (sib === cur) continue;
+          if (sib.getAttribute('data-testid') === 'tweetText' ||
+              sib.querySelector('[data-testid="tweetText"]')) {
+            hasTweetTextSibling = true;
+            break;
+          }
+        }
+        if (hasTweetTextSibling) { mediaRoot = cur; break; }
+        cur = cur.parentElement;
+      }
+      if (mediaRoot && mediaRoot.parentElement &&
+          !mediaRoot.hasAttribute('data-jread-x-media')) {
+        const parent = mediaRoot.parentElement;
+        for (const fig of figs) {
+          parent.insertBefore(fig, mediaRoot);
+        }
+        mediaRoot.remove();
+      }
+    }
     return unwrapped;
   }
 
