@@ -1233,11 +1233,32 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       window.removeEventListener('keydown', onSpaceScroll, true);
       window.addEventListener('keydown', onSpaceScroll, true);
 
-      // 消除頂端留白：第一個 h1-h4/p（深層後代也算）margin-top: 0 inline。
-      // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
-      // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
-      // 裡的 H1」。
-      let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
+      // 消除頂端留白：第一個**可見** h1-h4/p（深層後代也算）margin-top: 0
+      // inline。必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS
+      // 的 `:first-child` 只能摸到 article 的 direct child，摸不到「包在
+      // wrapper 裡的 H1」。
+      // v0.7.180：跳過 display:none / data-jread-hidden 內的隱藏元素。
+      // MSNBC/ms.now opinion-header 內 .opinion-column(display:none) 包
+      // P "Opinion" 類別標籤——querySelector DOM order 比 H1 早命中，導致
+      // firstInk 指向隱藏 P、後續 ancestor padding strip 和 titleFontSize
+      // inline override 都因此 miss。
+      let firstInk = null;
+      {
+        const _win = articleEl.ownerDocument?.defaultView;
+        for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
+          if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+          if (_win) {
+            let hidden = false;
+            for (let a = el; a && a !== articleEl; a = a.parentElement) {
+              const d = _win.getComputedStyle(a).display;
+              if (d === 'none') { hidden = true; break; }
+            }
+            if (hidden) continue;
+          }
+          firstInk = el;
+          break;
+        }
+      }
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';
       if (firstInk) {
@@ -1274,17 +1295,28 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
-      // v0.7.179：title font-size inline override。CMS 高 specificity rule
-      // 常用 5+ class selector + !important 鎖死 h1 font-size，CSS stylesheet
+      // v0.7.180：title font-size inline override。CMS 高 specificity rule
+      // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
+      // `.opinion-header > .wp-block-group .title-and-dek-column
+      //  h1.wp-block-post-title[class*=...] { font-size: 2rem !important }`
+      // specificity (0,5+,1) 打敗 jread stylesheet (0,1,1)），CSS stylesheet
       // 打不贏。inline !important 是最高優先級。
+      // 獨立搜尋第一個可見 h1（不依賴 firstInk 是否 H tag）：firstInk 可能是
+      // P（副標題/byline 在 DOM order 比 H1 早出現時），title override 不該
+      // 因此 miss。
       let titleFsSnap = null;
-      if (overrides.titleFontSize && firstInk && /^H[1-6]$/.test(firstInk.tagName)) {
-        titleFsSnap = {
-          el: firstInk,
-          fs: firstInk.style.getPropertyValue('font-size'),
-          fsP: firstInk.style.getPropertyPriority('font-size'),
-        };
-        firstInk.style.setProperty('font-size', opts.titleFontSize + 'px', 'important');
+      if (overrides.titleFontSize) {
+        const titleH1 = firstInk && /^H1$/.test(firstInk.tagName)
+          ? firstInk
+          : articleEl.querySelector('h1:not([data-jread-hidden="1"])');
+        if (titleH1) {
+          titleFsSnap = {
+            el: titleH1,
+            fs: titleH1.style.getPropertyValue('font-size'),
+            fsP: titleH1.style.getPropertyPriority('font-size'),
+          };
+          titleH1.style.setProperty('font-size', opts.titleFontSize + 'px', 'important');
+        }
       }
 
       // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
