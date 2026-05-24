@@ -1246,6 +1246,47 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         firstInk.style.setProperty('margin-top', '0', 'important');
       }
 
+      // v0.7.179：strip excessive padding on ancestors between firstInk and
+      // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
+      // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
+      // 純空白。沿 firstInk 往上走到 articleEl，每層 paddingTop > 48px
+      // （reader card 自身 padding 大小）的元素清掉 padding。
+      const ancestorPaddingSnap = [];
+      if (firstInk) {
+        let cur = firstInk.parentElement;
+        const win = articleEl.ownerDocument?.defaultView;
+        while (cur && cur !== articleEl && win) {
+          const cs = win.getComputedStyle(cur);
+          const pt = parseFloat(cs.paddingTop) || 0;
+          const pb = parseFloat(cs.paddingBottom) || 0;
+          if (pt > 48 || pb > 48) {
+            ancestorPaddingSnap.push({
+              el: cur,
+              pt: cur.style.getPropertyValue('padding-top'),
+              ptP: cur.style.getPropertyPriority('padding-top'),
+              pb: cur.style.getPropertyValue('padding-bottom'),
+              pbP: cur.style.getPropertyPriority('padding-bottom'),
+            });
+            if (pt > 48) cur.style.setProperty('padding-top', '0', 'important');
+            if (pb > 48) cur.style.setProperty('padding-bottom', '0', 'important');
+          }
+          cur = cur.parentElement;
+        }
+      }
+
+      // v0.7.179：title font-size inline override。CMS 高 specificity rule
+      // 常用 5+ class selector + !important 鎖死 h1 font-size，CSS stylesheet
+      // 打不贏。inline !important 是最高優先級。
+      let titleFsSnap = null;
+      if (overrides.titleFontSize && firstInk && /^H[1-6]$/.test(firstInk.tagName)) {
+        titleFsSnap = {
+          el: firstInk,
+          fs: firstInk.style.getPropertyValue('font-size'),
+          fsP: firstInk.style.getPropertyPriority('font-size'),
+        };
+        firstInk.style.setProperty('font-size', opts.titleFontSize + 'px', 'important');
+      }
+
       // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
       // flex/grid 容器強制改成 block display + height auto，讓並列圖在 reader mode
       // 下垂直堆疊、不再被父容器固定 height 切掉內容 + 不再 overflow 蓋下方文字。
@@ -1326,13 +1367,34 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
+      // v0.7.179：WordPress constrained layout inline override。
+      // CSS stylesheet `html [data-jread-active] p { max-width: none !important }`
+      // 在某些 WP theme 下 computed 仍未生效（疑似 WP 動態注入的 inline style
+      // 或 container query 機制覆蓋）。inline !important 是 CSS 最高優先級，
+      // 任何 stylesheet rule 都無法打敗。
+      const wpConstrained = [];
+      const CONTENT_BLOCK_SEL = 'p, h1, h2, h3, h4, h5, h6, ul, ol, dl';
+      for (const el of articleEl.querySelectorAll(CONTENT_BLOCK_SEL)) {
+        const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+        if (!cs) continue;
+        const mw = cs.maxWidth;
+        if (mw && mw !== 'none' && mw !== '100%' && !mw.startsWith('100')) {
+          wpConstrained.push({
+            el,
+            maxWidth: el.style.getPropertyValue('max-width'),
+            maxWidthPriority: el.style.getPropertyPriority('max-width'),
+          });
+          el.style.setProperty('max-width', 'none', 'important');
+        }
+      }
+
       // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
       // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
       // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex, panguSnap, inlineImgs };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs };
     },
 
     /**
@@ -1393,6 +1455,36 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       // panguRestore 內部只看 snapshot.changes，不依賴 reader mode attr）
       if (snapshot.panguSnap) {
         panguRestore(snapshot.panguSnap);
+      }
+
+      // v0.7.179：還原 ancestor padding strip
+      if (Array.isArray(snapshot.ancestorPaddingSnap)) {
+        for (const s of snapshot.ancestorPaddingSnap) {
+          if (!s || !s.el) continue;
+          if (s.pt) s.el.style.setProperty('padding-top', s.pt, s.ptP || '');
+          else s.el.style.removeProperty('padding-top');
+          if (s.pb) s.el.style.setProperty('padding-bottom', s.pb, s.pbP || '');
+          else s.el.style.removeProperty('padding-bottom');
+        }
+      }
+
+      // v0.7.179：還原 title font-size inline override
+      if (snapshot.titleFsSnap) {
+        const t = snapshot.titleFsSnap;
+        if (t.fs) t.el.style.setProperty('font-size', t.fs, t.fsP || '');
+        else t.el.style.removeProperty('font-size');
+      }
+
+      // v0.7.179：還原 WP constrained layout inline max-width override
+      if (Array.isArray(snapshot.wpConstrained)) {
+        for (const g of snapshot.wpConstrained) {
+          if (!g || !g.el) continue;
+          if (g.maxWidth) {
+            g.el.style.setProperty('max-width', g.maxWidth, g.maxWidthPriority || '');
+          } else {
+            g.el.style.removeProperty('max-width');
+          }
+        }
       }
 
       // v0.7.93：還原 image gallery flex/grid containers 的原 inline style
