@@ -1584,6 +1584,12 @@
   // ratio 上漏網；Engadget 過往靠此條 B 命中也不依賴 ratio，因為 aside
   // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
+  // 條件 D（分類標籤微型欄）：新聞站 kicker / eyebrow（CNN "News"、BBC
+  // "Science & Environment" 等），在 flex layout 與標題並排的獨立短欄。
+  // 既有條件 A/B/C 全要求 main.textLen ≥ 500 或 linkDensity > 0.5，對
+  // 這類「極短、零 link、兄弟只有標題」的 label 欄全部漏網。
+  const CATEGORY_LABEL_MAX_LEN = 30;
+  const CATEGORY_HEADING_SIBLING_MIN_TEXT = 50;
 
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
@@ -1696,6 +1702,53 @@
             hide(s.el, hidden);
           }
         }
+      }
+    }
+
+    // ---- 條件 D pass：分類標籤微型欄 ------------------------------------
+    // 獨立 pass，不受 main.textLen ≥ 500 門檻限制。入口條件改為「容器內
+    // 至少一個 child 含 heading（h1-h4）且 textLen ≥ 50」。
+    // CNN / BBC / 各新聞站常見的 section label（"News"、"Politics"、
+    // "Science & Environment"）在 flex 欄與標題並排，textLen 極短（1-3 詞）、
+    // linkDensity = 0，既有 A/B/C 全漏。
+    // children 上限 4：分類標籤 pattern 是 flex row 裡 2-3 個 column，不是
+    // 10+ children 的主文流。放寬到多 children 容器會大量誤殺短 sibling
+    //（商周 postbody 14+ children 含 captioned-image / byline 等）。
+    for (const el of candidates) {
+      if (el !== articleEl && isInPreserved(el)) continue;
+      const children = Array.from(el.children);
+      if (children.length < 2 || children.length > 4) continue;
+
+      let headingSib = null;
+      for (const c of children) {
+        if (/^H[1-4]$/.test(c.tagName) ||
+            (c.querySelector && c.querySelector('h1, h2, h3, h4'))) {
+          if (norm(c.textContent).length >= CATEGORY_HEADING_SIBLING_MIN_TEXT) {
+            headingSib = c;
+            break;
+          }
+        }
+      }
+      if (!headingSib) continue;
+
+      for (const c of children) {
+        if (c === headingSib) continue;
+        const cText = norm(c.textContent);
+        if (cText.length > CATEGORY_LABEL_MAX_LEN) continue;
+        if (cText.length === 0) continue;
+        if (isInPreserved(c)) continue;
+        if (c.dataset && c.dataset.jreadHidden === '1') continue;
+        if (promotedTitleHead) {
+          if (c === promotedTitleHead) continue;
+          if (c.contains && c.contains(promotedTitleHead)) continue;
+        }
+        if (siblingContainsCanonicalTitle(c)) continue;
+        if (/^H[1-4]$/.test(c.tagName) ||
+            (c.querySelector && c.querySelector('h1, h2, h3, h4'))) continue;
+        if (c.querySelector && c.querySelector('time')) continue;
+        if (c.querySelector && c.querySelector('img, picture, video')) continue;
+        if (BYLINE_TEXT_RE.test(cText)) continue;
+        hide(c, hidden);
       }
     }
   }
