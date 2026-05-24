@@ -50,10 +50,10 @@ describe('styler — pseudo-element 側 bg 強制清掉（v0.7.169 CNBC side-ble
   it('CSS 必須含 [data-jread-active="1"] *::before / *::after 規則', () => {
     const css = getInjectedCss();
     // selector：[data-jread-active="1"] *::before, [data-jread-active="1"] *::after
-    assert.ok(/\[data-jread-active="1"\]\s*\*::before/.test(css),
-      'CSS 必須含 [data-jread-active="1"] *::before selector（覆蓋所有 reader card 內 pseudo）');
-    assert.ok(/\[data-jread-active="1"\]\s*\*::after/.test(css),
-      'CSS 必須含 [data-jread-active="1"] *::after selector');
+    assert.ok(/\[data-jread-active="1"\]\s*\*[^{]*::before/.test(css),
+      'CSS 必須含 [data-jread-active="1"] *...::before selector（覆蓋所有 reader card 內 pseudo）');
+    assert.ok(/\[data-jread-active="1"\]\s*\*[^{]*::after/.test(css),
+      'CSS 必須含 [data-jread-active="1"] *...::after selector');
   });
 
   it('該 rule 必須同時清 background-color 與 background-image（用 !important）', () => {
@@ -61,9 +61,9 @@ describe('styler — pseudo-element 側 bg 強制清掉（v0.7.169 CNBC side-ble
     // 找出 *::before / *::after rule 區塊，內部須含 background-color / image
     // 兩條 declaration、都用 !important。容許前後額外 declaration、空白。
     const m = css.match(
-      /\[data-jread-active="1"\]\s*\*::before\s*,\s*\[data-jread-active="1"\]\s*\*::after\s*\{([^}]+)\}/
+      /\[data-jread-active="1"\]\s*\*[^{]*::before\s*,\s*\[data-jread-active="1"\]\s*\*[^{]*::after\s*\{([^}]+)\}/
     );
-    assert.ok(m, '必須找到 *::before, *::after 合併規則區塊');
+    assert.ok(m, '必須找到 *...::before, *...::after 合併規則區塊');
     const body = m[1];
     assert.ok(/background-color\s*:\s*transparent\s*!important/.test(body),
       'rule body 必須含 background-color: transparent !important');
