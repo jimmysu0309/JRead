@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.177**——fix: emoji vertical-align 微調至 `-0.1em`（與中文字視覺對齊）；block 圖片（img/video/picture）加 `margin-bottom: 24px` 避免連續圖片緊貼無間距（Facebook 多圖貼文實測）。
+
+---
+
 **v0.7.176**——fix: emoji `<img>` 在 reader mode 從 inline 變成置中獨立區塊。styler 的 `img { display: block }` 規則把 Facebook/LINE 等站的 emoji 圖片（naturalWidth <= 48）推成 block + margin auto 置中，破壞原文排版。修法：apply() 掃描小型 img 標記 `[data-jread-inline-img]`，CSS override 保持 inline flow。同時修復 `getSettings()` 回傳 null 時 `settings.blockPageShortcuts` 存取炸 TypeError 的既有 bug（SW 未就緒時觸發 reader mode 會命中）。
 
 ---
