@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Video Player Aspect Spacer Guard</title>
+</head>
+<body>
+<!--
+  v0.7.181 fixture：collapseEmptyWrappersAfterClean sibling media guard。
+
+  Bug：JW Player / video.js 等 video embed 結構中，空 div（aspect spacer /
+  overlay container）被 collapseEmptyWrappersAfterClean 砍掉後 video player
+  高度歸零。典型結構：`.jw-aspect`（padding-top: 56.25% 撐 16:9 容器）是空
+  div，無 text、不含 media 子元素——video 在 sibling `.jw-wrapper` 內。
+
+  修法：空 div 的 parent 含 video/iframe 的 sibling → 本 div 可能是 player
+  layout 輔助元素，skip collapse。
+
+  fixture：
+    1. player-container 內：aspect-spacer（空 div）+ player-wrapper（含 video）
+       → aspect-spacer 應保留
+    2. orphan-empty（空 div，無 media sibling）→ 應被 collapse
+
+  注意：aspect-spacer 的 stubRect height 設 50px（< SPACER_MIN_HEIGHT 60）
+  以避免被 hideInsideArticleEmptySpacers 先行吃掉；50px >= EMPTY_COLLAPSE_MIN_HEIGHT 8
+  使其進入 collapseEmptyWrappersAfterClean 判定——本 spec 要測的就是這條。
+-->
+<div data-test="article-root">
+  <div data-test="player-container">
+    <div data-test="aspect-spacer" style="padding-top: 56.25%; width: 200px;"></div>
+    <div data-test="player-wrapper" style="width: 200px;">
+      <video style="width: 200px;"></video>
+    </div>
+  </div>
+  <p>A federal grand jury in Washington, D.C., returned a multi-count indictment Thursday against the man accused of opening fire near the White House security checkpoint last month, according to court documents unsealed Friday morning. The indictment charges the suspect with assault on a federal officer, possession of a firearm.</p>
+  <!-- 孤立空 div：包在獨立 wrapper 內使其 parent.children 不含 media sibling -->
+  <div data-test="orphan-wrapper">
+    <div data-test="orphan-empty"></div>
+    <p>Filler text sibling without any media elements at all.</p>
+  </div>
+</div>
+</body>
+</html>
