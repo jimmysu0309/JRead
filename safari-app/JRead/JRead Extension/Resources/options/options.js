@@ -10,6 +10,8 @@ const DEFAULTS = {
   readwiseToken: '',
   // v0.7.131：reader mode 攔截原站快速鍵（Gmail j/k/e、YouTube k 等誤觸救援）
   blockPageShortcuts: true,
+  // 標題字級（h1）；0 = Auto（保留原站標題大小）
+  titleFontSize: 0,
   // 中英文字之間自動補空白（盤古之白）；預設 true
   pangu: true,
   // v0.7.155：自動啟動閱讀模式的網域清單（字串陣列）。matching rule：
@@ -18,7 +20,7 @@ const DEFAULTS = {
   autoEnableDomains: []
 };
 
-const fields = ['theme', 'fontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -26,6 +28,7 @@ function load() {
   chrome.storage.sync.get(DEFAULTS, (values) => {
     document.getElementById('theme').value = values.theme;
     document.getElementById('fontSize').value = values.fontSize;
+    document.getElementById('titleFontSize').value = values.titleFontSize;
     document.getElementById('contentWidth').value = values.contentWidth;
     document.getElementById('boldText').checked = values.boldText === true;
     document.getElementById('readwiseToken').value = values.readwiseToken || '';
@@ -49,6 +52,7 @@ function save() {
   const patch = {
     theme: document.getElementById('theme').value,
     fontSize: Number(document.getElementById('fontSize').value),
+    titleFontSize: Number(document.getElementById('titleFontSize').value),
     contentWidth: Number(document.getElementById('contentWidth').value),
     boldText: document.getElementById('boldText').checked,
     readwiseToken: document.getElementById('readwiseToken').value.trim(),
