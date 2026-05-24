@@ -210,7 +210,13 @@
   // v0.7.85：strong path 加品牌名——這些 widget 內容常含長文字（評論 /
   // recommendation 描述 / 分享配文）會觸發 wrapperContainsArticleAnchor
   // guard 被豁免。明確品牌名命中即必然雜訊、零誤殺，安全跳過 guard。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|disqus|outbrain|taboola|dianomi|addthis|sharedaddy)([^a-z0-9]|$)/i;
+  // v0.7.184：strong path 加「相關/推薦文章 section」命名家族——CMS 慣例
+  // `related-news` / `more-news` / `recommended` 等 section wrapper 內含
+  // 推薦文章摘要 p（>= 100 chars），觸發 wrapperContainsMainContentP guard
+  // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
+  // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
+  // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin)([^a-z0-9]|$)/i;
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
