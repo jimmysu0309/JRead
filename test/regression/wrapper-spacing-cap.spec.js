@@ -27,9 +27,9 @@ describe('wrapper spacing cap（v0.7.186）', () => {
       'cleaner.js 必須宣告 capWrapperSpacing');
   });
 
-  it('capWrapperSpacing 必須定義 WRAPPER_SPACING_CAP = 24', () => {
-    assert.ok(/WRAPPER_SPACING_CAP\s*=\s*24/.test(CLEANER_SRC),
-      'cap 閾值必須是 24px');
+  it('capWrapperSpacing 必須定義 WRAPPER_SPACING_CAP = 16', () => {
+    assert.ok(/WRAPPER_SPACING_CAP\s*=\s*16/.test(CLEANER_SRC),
+      'cap 閾值必須是 16px');
   });
 
   it('capWrapperSpacing 必須處理 DIV / SECTION / HEADER / FOOTER / ASIDE / NAV', () => {

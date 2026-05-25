@@ -221,6 +221,8 @@ html [${ARTICLE_ATTR}="1"] > *:last-child {
 html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > header {
   margin: 0 !important;
   padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
 }
 html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   margin: 0 !important;

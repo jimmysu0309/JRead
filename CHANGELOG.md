@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.189**——fix: header height:auto 消除 hero overlay 空白 + cap 閾值降到 16px。header 加 height:auto + min-height:0 讓固定高度 hero banner 縮到內容高度，標題 overlay 在圖片底部自然呈現。cap 從 24px 降到 16px 進一步壓縮 wrapper 間距。cage 實機驗證通過。
+
+---
+
 **v0.7.188**——fix: v0.7.186 collapseEmptyBlockSpacers 誤殺 hero image。IMG/VIDEO/PICTURE 等媒體 tag 本身就是內容、不該被當 spacer 隱藏。加 MEDIA_SELF_TAGS guard 排除。
 
 ---

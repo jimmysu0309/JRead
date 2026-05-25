@@ -2723,7 +2723,7 @@
     }
   }
 
-  const WRAPPER_SPACING_CAP = 24;
+  const WRAPPER_SPACING_CAP = 16;
   const WRAPPER_SPACING_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'NAV', 'HEADER', 'FOOTER']);
   const WRAPPER_SPACING_PROPS = ['margin-top', 'margin-bottom', 'padding-top', 'padding-bottom'];
 
