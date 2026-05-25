@@ -92,12 +92,28 @@
   //   更多相關 / 更多...文章 / 更多...新聞 / 查看更多 / 看更多
   //   其他人也看 / 你可能也喜歡 / 也許您(會|也會)(感興趣|喜歡)
   // 為避免誤殺主文的正當副標題（例如「案情分析」「後續發展」），要求：
-  //   - heading text 長度 <= 20 chars（推薦 section 標題通常短）
+  //   - heading text 長度 <= 40 chars（推薦 section 標題通常短；v0.7.190
+  //     從 20 提升至 40——Substack「Subscribe to X」24 chars / WordPress
+  //     「Stratechery Articles and Updates」35 chars / MDN「Help improve
+  //     MDN」16 chars 等跨站 CTA heading 超過 20 漏網。regex pattern 已
+  //     全部用 `^` anchor 或足夠長的 multi-word token 避免主文 subheading
+  //     誤命中，提升 max_len 風險可控。）
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
-  const NOISE_HEADING_MAX_LEN = 20;
+  // v0.7.190 新增 pattern（Page Rounds C2 FAIL 批次修正）：
+  //   - `^subscribe\b`（原 `^subscribe$` 放寬——「Subscribe to ChinaTalk」等
+  //     Substack / newsletter 訂閱區塊 heading）
+  //   - `\bnewsletter$`（原 `^newsletter$` 放寬尾 anchor——「The TWZ Newsletter」
+  //     等含品牌名的 newsletter heading；保留尾 `$` anchor 避免
+  //     「Newsletter Archives」等主文 subheading 前綴誤命中）
+  //   - `^don.?t\s+miss\b`（CNBC「Don’t miss:」推薦區塊 heading；`.?`
+  //     覆蓋 ASCII `’` / 右單引號 `’` / 左單引號 `’` 三種變體）
+  //   - `^help\s+improve\b`（MDN「Help improve MDN」CTA heading）
+  //   - `\barticles?\s+and\s+updates?\b`（Stratechery / newsletter 站
+  //     「Articles and Updates」推薦彙整 section heading）
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_MAX_LEN = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
   // 站在文末常塞「查看原始文章」（連回發布站）、主文中段塞「點開加入…LINE
@@ -1312,11 +1328,13 @@
     // 下去」都是 div/span）。對 div/span 只看 direct text（不抓子孫），
     // 且長度要 <= NOISE_HEADING_MAX_LEN，避免誤殺主文段落。
     const semanticHeadings = Array.from(articleEl.querySelectorAll('h2, h3, h4'));
-    // div / span / p 候選（v0.7.28 加 p：cnyes 用 `<p>下一篇</p>` 當
-    // navigation header；line today 用 div/span 包 section title）。對 p
-    // 的 direct text 仍套 NOISE_HEADING_MAX_LEN <= 20 過濾，避免主文長段
-    // 落誤命中（主文 p 通常 > 20 字）。
-    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span, p'))
+    // div / span / p / strong / em / b 候選（v0.7.28 加 p：cnyes 用
+    // `<p>下一篇</p>` 當 navigation header；line today 用 div/span 包
+    // section title；v0.7.190 加 strong/em/b：upmedia.mg 把「延伸閱讀」
+    // 包在 `<strong>（延伸閱讀：）</strong>` 內——已有的 `延伸閱讀` pattern
+    // 能匹配但原 selector 漏掃 strong/em/b tag）。對所有非 semantic heading
+    // 的 direct text 仍套 NOISE_HEADING_MAX_LEN 過濾。
+    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span, p, strong, em, b'))
       .filter(el => {
         const direct = Array.from(el.childNodes)
           .filter(n => n.nodeType === 3)
@@ -1326,7 +1344,7 @@
       });
     const headings = semanticHeadings.concat(divSpanCandidates);
     for (const h of headings) {
-      // 對 div/span 只用 direct text（heading tag 用 textContent）
+      // 對 div/span/strong/em/b 只用 direct text（heading tag 用 textContent）
       const isSemanticHeading = /^H[234]$/.test(h.tagName);
       const text = isSemanticHeading
         ? norm(h.textContent)
@@ -3431,6 +3449,35 @@
     }
   }
 
+  // ---- 主文內：CTA 段落 heuristic（subscribe / newsletter / follow CTA）---
+  // v0.7.190 Page Rounds C2 FAIL 批次修正：BBC Culture 文末
+  // `<p><em>sign up for The Essential List newsletter...</em></p>` /
+  // `<p><em>follow us on Facebook and Instagram</em></p>` 類 CTA 段落、
+  // CNBC `<p>Like this story? Subscribe to CNBC Make It on YouTube!</p>`。
+  // 這些段落用 em/strong 包裝、不是 heading / link，heading text rule 和
+  // link text rule 都漏網。
+  //
+  // 結構性通則（非站點特判）：主文 `<p>` 的 textContent 含「sign up for
+  // + newsletter」/「follow us on + 社群平台名」/「subscribe to + 頻道」
+  // /「like this story」等 CTA 慣用語——主文內正常引用 / 描述不會整段都
+  // 是 CTA 語氣。檢查的是 `<p>` 的 full textContent（包括 em/strong 子
+  // 孫文字），所以 em 包裝不影響命中。
+  const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b)/i;
+  const NOISE_CTA_PARA_MAX_LEN = 200;
+
+  function hideInsideArticleCTAParagraphs(articleEl, hidden) {
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p === articleEl) continue;
+      if (p.contains && p.contains(articleEl)) continue;
+      if (isInPreserved(p)) continue;
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      const text = norm(p.textContent);
+      if (!text || text.length > NOISE_CTA_PARA_MAX_LEN) continue;
+      if (!NOISE_CTA_PARA_RE.test(text)) continue;
+      hide(p, hidden);
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -3735,6 +3782,7 @@
       hideInsideArticleHashtagClusters(articleEl, hidden);
       hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);
+      hideInsideArticleCTAParagraphs(articleEl, hidden);
       hideInsideArticleFontTags(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);
       hideInsideArticleAllButtons(articleEl, hidden);

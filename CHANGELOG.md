@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.190**——fix: Page Rounds C2 FAIL 批次修正——文末推薦/訂閱/CTA 區塊殘留。NOISE_HEADING_MAX_LEN 20→40；NOISE_HEADING_TEXT_RE 新增 subscribe/newsletter/don't miss/help improve/articles and updates 五組 pattern；heading text scanner 擴掃 strong/em/b 元素（upmedia.mg 延伸閱讀）；新增 hideInsideArticleCTAParagraphs（BBC sign up for newsletter / follow us on / CNBC subscribe to YouTube CTA 段落）。7 站中 6 站 harness 驗證通過。
+
+---
+
 **v0.7.189**——fix: header height:auto 消除 hero overlay 空白 + cap 閾值降到 16px。header 加 height:auto + min-height:0 讓固定高度 hero banner 縮到內容高度，標題 overlay 在圖片底部自然呈現。cap 從 24px 降到 16px 進一步壓縮 wrapper 間距。cage 實機驗證通過。
 
 ---
