@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.187**——fix: v0.7.186 header > * position:static 太激進導致 hero image 消失。移除 header 子元素的 position/height 覆寫，僅保留 header margin:0 + padding:0。hero overlay pattern（absolute heading 在 image 上方）在實機正常運作、不應干預。
+
+---
+
 **v0.7.186**——fix: reader card 內結構性大塊空白消除。三層修法：(1) styler CSS 新增 direct child header/footer margin+padding+height reset（hero overlay pattern 的 absolute 子元素強制 static 回 normal flow）、last-child bottom spacing strip；(2) cleaner capWrapperSpacing 對 articleEl 內所有 wrapper（div/section/header/footer/aside/nav）的 margin/padding > 24px 的部分 cap 到 24px；(3) cleaner collapseEmptyBlockSpacers 對 skip-list 中 display:block + 零文字的 spacer 元素（如空 caption SPAN）執行 hide。thebureauinvestigates.com 實測：header 從 720px 縮到 274px（hero image area 消除）、subtitle→Published 間距從 158px 降到 56px、story-body bottom-padding 從 90px cap 到 24px。
 
 ---
