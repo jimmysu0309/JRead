@@ -221,21 +221,6 @@ html [${ARTICLE_ATTR}="1"] > *:last-child {
 html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > header {
   margin: 0 !important;
   padding: 0 !important;
-  height: auto !important;
-  min-height: 0 !important;
-}
-/* header 直接子：strip absolute positioning + 固定高度。hero overlay pattern
-   （heading absolute 在 image 上方）在 reader mode 下失效——hero image 被 strip
-   background 或 CDN 載入失敗後、absolute heading 飄到負 y。強制 static 讓
-   heading 回到 normal flow、header 自然 shrink-to-fit。 */
-html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > header > * {
-  position: static !important;
-  height: auto !important;
-  min-height: 0 !important;
-  top: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  right: auto !important;
 }
 html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   margin: 0 !important;

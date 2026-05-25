@@ -110,8 +110,4 @@ describe('wrapper spacing cap（v0.7.186）', () => {
       'styler 必須對 last-child 設 padding-bottom: 0');
   });
 
-  it('styler 必須注入 > header > * { position: static } CSS（hero overlay fix）', () => {
-    assert.ok(/>\s*header\s*>\s*\*\s*\{[^}]*position:\s*static\s*!important/s.test(STYLER_SRC),
-      'styler 必須對 header 子元素強制 position: static');
-  });
 });
