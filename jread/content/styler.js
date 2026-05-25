@@ -204,6 +204,45 @@ html [${ARTICLE_ATTR}="1"] {
   margin-top: 0 !important;
   padding-top: 0 !important;
 }
+/* 消除底端留白：最後一個 direct child 清 margin-bottom / padding-bottom。
+   原站常用最後一個 wrapper div 設大量 pb（例如 90px page-footer spacing），
+   reader card 本身已有 48px bottom padding，不需 wrapper 額外貢獻。
+   html 前綴提升 specificity 到 (0,1,2)，贏過原站 .class-name { pb: Xpx }。 */
+html [${ARTICLE_ATTR}="1"] > *:last-child {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+/* direct child <header> / <footer>：原站在 article 內部的 header（標題 + 副標
+   + 主圖 cluster）和 footer（相關文章 / 分享 / credit）常設大量 margin 做視覺
+   隔離。reader card 單欄 layout 不需這些 section-level spacing——content 元素
+   本身的 margin（h1 / p / figure）已提供足夠間距。
+   html 前綴 + double attribute selector 提升 specificity 到 (0,2,2)，贏過
+   任何站點 .site-class .header-class 類 CSS rule。 */
+html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > header {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+/* header 直接子：strip absolute positioning + 固定高度。hero overlay pattern
+   （heading absolute 在 image 上方）在 reader mode 下失效——hero image 被 strip
+   background 或 CDN 載入失敗後、absolute heading 飄到負 y。強制 static 讓
+   heading 回到 normal flow、header 自然 shrink-to-fit。 */
+html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > header > * {
+  position: static !important;
+  height: auto !important;
+  min-height: 0 !important;
+  top: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: auto !important;
+}
+html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
    height: auto 的作用是「原站 CSS 鎖死 height、不讓 max-width 觸發 aspect-
    ratio 自動縮放」時強制按比例算——但這條對 a > img 結構（link-

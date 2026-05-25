@@ -2686,6 +2686,85 @@
     }
   }
 
+  function collapseEmptyBlockSpacers(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return;
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      if (!EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || cs.display !== 'block') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
+      if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
+      const text = visibleRenderedText(el).trim();
+      if (text.length > 0) continue;
+      let hasMedia = false;
+      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
+        let inHidden = false;
+        let cur = m;
+        while (cur && cur !== el) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        if (inHidden) continue;
+        const mr = m.getBoundingClientRect();
+        if (mr.height > 5 && mr.width > 5) { hasMedia = true; break; }
+      }
+      if (hasMedia) continue;
+      if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
+      hide(el, hidden);
+    }
+  }
+
+  const WRAPPER_SPACING_CAP = 24;
+  const WRAPPER_SPACING_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'NAV', 'HEADER', 'FOOTER']);
+  const WRAPPER_SPACING_PROPS = ['margin-top', 'margin-bottom', 'padding-top', 'padding-bottom'];
+
+  function capWrapperSpacing(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return;
+    const capped = [];
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (!WRAPPER_SPACING_TAGS.has(el.tagName)) continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || cs.display === 'none') continue;
+      let needsCap = false;
+      for (const prop of WRAPPER_SPACING_PROPS) {
+        if ((parseFloat(cs.getPropertyValue(prop)) || 0) > WRAPPER_SPACING_CAP) {
+          needsCap = true; break;
+        }
+      }
+      if (!needsCap) continue;
+      const prev = snapshotStyles(el, WRAPPER_SPACING_PROPS);
+      const decls = {};
+      for (const prop of WRAPPER_SPACING_PROPS) {
+        if ((parseFloat(cs.getPropertyValue(prop)) || 0) > WRAPPER_SPACING_CAP) {
+          decls[prop] = WRAPPER_SPACING_CAP + 'px';
+        }
+      }
+      applyImportant(el, decls);
+      capped.push({ el, prev });
+    }
+    hidden.__cappedWrapperSpacing = capped;
+  }
+
+  function restoreCappedWrapperSpacing(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__cappedWrapperSpacing;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+    }
+  }
+
   // ---- figure / picture 容器強制 block（v0.7.24 ttv.com.tw 修法）----------
   //
   // 場景：ttv 主圖包在 `<figure class="cover img"><figure><img></figure></figure>`
@@ -3693,6 +3772,8 @@
       // 保留 CSS height）類殘留以此規則統清。詳見 collapseEmptyWrappersAfterClean
       // 上方註解。
       collapseEmptyWrappersAfterClean(articleEl, hidden);
+      collapseEmptyBlockSpacers(articleEl, hidden);
+      capWrapperSpacing(articleEl, hidden);
       // v0.7.141：eet-china 類站點 page-wide unique h1 在 articleEl 外（與
       // articleEl 是 body 兄弟、detector LCA=body 被 reject 不 promote），h1
       // wrapper 已被 hideAncestorSiblings hide。clone 一份 prepend 進 articleEl
@@ -3734,6 +3815,7 @@
       restoreInnerFlexWrap(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);
+      restoreCappedWrapperSpacing(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;
