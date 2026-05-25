@@ -92,28 +92,20 @@
   //   更多相關 / 更多...文章 / 更多...新聞 / 查看更多 / 看更多
   //   其他人也看 / 你可能也喜歡 / 也許您(會|也會)(感興趣|喜歡)
   // 為避免誤殺主文的正當副標題（例如「案情分析」「後續發展」），要求：
-  //   - heading text 長度 <= 40 chars（推薦 section 標題通常短；v0.7.190
-  //     從 20 提升至 40——Substack「Subscribe to X」24 chars / WordPress
-  //     「Stratechery Articles and Updates」35 chars / MDN「Help improve
-  //     MDN」16 chars 等跨站 CTA heading 超過 20 漏網。regex pattern 已
-  //     全部用 `^` anchor 或足夠長的 multi-word token 避免主文 subheading
-  //     誤命中，提升 max_len 風險可控。）
+  //   - heading text 長度 <= NOISE_HEADING_MAX_LEN（20 chars）
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  // v0.7.190 新增 pattern（Page Rounds C2 FAIL 批次修正）：
-  //   - `^subscribe\b`（原 `^subscribe$` 放寬——「Subscribe to ChinaTalk」等
-  //     Substack / newsletter 訂閱區塊 heading）
-  //   - `\bnewsletter$`（原 `^newsletter$` 放寬尾 anchor——「The TWZ Newsletter」
-  //     等含品牌名的 newsletter heading；保留尾 `$` anchor 避免
-  //     「Newsletter Archives」等主文 subheading 前綴誤命中）
-  //   - `^don.?t\s+miss\b`（CNBC「Don’t miss:」推薦區塊 heading；`.?`
-  //     覆蓋 ASCII `’` / 右單引號 `’` / 左單引號 `’` 三種變體）
-  //   - `^help\s+improve\b`（MDN「Help improve MDN」CTA heading）
-  //   - `\barticles?\s+and\s+updates?\b`（Stratechery / newsletter 站
-  //     「Articles and Updates」推薦彙整 section heading）
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
-  const NOISE_HEADING_MAX_LEN = 40;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_MAX_LEN = 20;
+  // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
+  // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
+  // 既有 pattern（延伸閱讀 等）維持 max_len=20 不提升——upmedia.mg 把
+  // 「延伸閱讀：＋連結文字」包在 H3（29 chars），提升後 heading rule walk-up
+  // 因該站主文用 <div> 不用 <p>、wrapperContainsMainContentP guard 全 miss、
+  // 一路 walk 到含整篇主文的 wrapper hide 掉 → 主文消失。
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b)/i;
+  const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
   // 站在文末常塞「查看原始文章」（連回發布站）、主文中段塞「點開加入…LINE
@@ -1336,11 +1328,20 @@
     // 的 direct text 仍套 NOISE_HEADING_MAX_LEN 過濾。
     const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span, p, strong, em, b'))
       .filter(el => {
+        // strong/em/b 在 h2/h3/h4 內部時跳過——semantic heading 本身已在
+        // semanticHeadings 列表中、用 textContent（含子孫）檢查。若再把
+        // 內部的 strong 當獨立候選掃，其 direct text（不含 <a> 子孫）會
+        // 比 heading textContent 短很多，繞過 max_len guard（upmedia.mg
+        // `<h3><strong>（延伸閱讀：<a>...長文...</a>）</strong></h3>` 的
+        // strong direct text 只有 7 chars，但 h3 textContent 29 chars）。
+        const tag = el.tagName;
+        if ((tag === 'STRONG' || tag === 'EM' || tag === 'B') &&
+            el.closest('h2, h3, h4')) return false;
         const direct = Array.from(el.childNodes)
           .filter(n => n.nodeType === 3)
           .map(n => n.textContent).join('');
         const text = norm(direct);
-        return text && text.length <= NOISE_HEADING_MAX_LEN;
+        return text && text.length <= NOISE_HEADING_MAX_LEN_EXT;
       });
     const headings = semanticHeadings.concat(divSpanCandidates);
     for (const h of headings) {
@@ -1349,8 +1350,14 @@
       const text = isSemanticHeading
         ? norm(h.textContent)
         : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
-      if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
-      if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
+      if (!text) continue;
+      // 雙層 max_len：既有 pattern 用嚴格 max_len（20），新 pattern 用寬鬆
+      // max_len（40）。upmedia.mg 的 H3「延伸閱讀：＋連結文字」29 chars 命中
+      // 延伸閱讀 pattern，但 walk-up guard 因主文用 <div> 不用 <p> 全 miss →
+      // 整篇主文被 hide。既有 pattern 仍限 20 chars 避免此類 regression。
+      const hitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
+      const hitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
+      if (!hitBase && !hitExt) continue;
       if (isInPreserved(h)) continue;
       // v0.7.140：button 內 element 不該觸發 heading rule——button text 是 CTA
       // word（Subscribe / Follow / Read more 等）撞 heading keyword 是結構性
@@ -3562,8 +3569,10 @@
       const text = isHeading
         ? norm(h.textContent)
         : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
-      if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
-      if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
+      if (!text) continue;
+      const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
+      const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
+      if (!dynHitBase && !dynHitExt) continue;
       if (isInPreserved(h)) continue;
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
