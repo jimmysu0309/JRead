@@ -104,7 +104,7 @@
   // 「延伸閱讀：＋連結文字」包在 H3（29 chars），提升後 heading rule walk-up
   // 因該站主文用 <div> 不用 <p>、wrapperContainsMainContentP guard 全 miss、
   // 一路 walk 到含整篇主文的 wrapper hide 掉 → 主文消失。
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b)/i;
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|推薦閱讀|推薦文章)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -294,6 +294,20 @@
       const pt = norm(para.textContent);
       if (pt.length >= 100) return true;
       acc += pt.length;
+      if (acc >= 300) return true;
+    }
+    // v0.7.190：也掃 <div> 的 direct text（text node，不含子孫 element
+    // 文字）。upmedia.mg 主文段落用 <div> 不用 <p>，原本 guard 全 miss →
+    // heading text walk-up 把整個主文容器 hide。只看 direct text 是為了
+    // 區分「div 本身就是段落」vs「div 是 wrapper 包子元素」——wrapper 的
+    // direct text 接近 0、段落的 direct text 就是文章內容。
+    for (const div of wrapper.querySelectorAll('div')) {
+      const direct = Array.from(div.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent).join('');
+      const dt = norm(direct);
+      if (dt.length >= 100) return true;
+      acc += dt.length;
       if (acc >= 300) return true;
     }
     return false;
@@ -1435,6 +1449,14 @@
               }
               continue;
             }
+          }
+          // v0.7.190 最後防線：walk-up 找不到安全容器 + tail-cleanup 不
+          // 適用（heading 不是 articleEl 直接子）→ 至少 hide heading 自己。
+          // upmedia.mg 的 H3（延伸閱讀）在 articleEl 的孫層、parent 含主文
+          // div 段落（guard 正確 break）、tail-cleanup 條件不滿足（parent
+          // !== articleEl），但 heading 本身仍是雜訊——hide 它不影響主文。
+          if (!(h.dataset && h.dataset.jreadHidden === '1')) {
+            hide(h, hidden);
           }
           continue;
         }
