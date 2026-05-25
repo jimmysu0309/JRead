@@ -285,6 +285,7 @@ Claude 用 TaskCreate 建一個總任務，每完成一站用 TaskUpdate 記錄�
 | D2 | 水平捲軸 | 頁面底部出現左右捲動條 |
 | D3 | 圖片溢出 | 圖片比卡片寬，超出右邊界 |
 | D4 | 表格 | 寬表格被硬切掉（應該要有水平捲動） |
+| D5 | inline 元素對比 | inline `<code>` / 高亮標籤 / badge 的底色在 reader card 上太突兀（例：MDN 的 `Array` inline code 黑底白字浮在白卡上），或底色消失導致元素跟一般文字混在一起看不出差異 |
 
 ### E. 暗色模式
 
@@ -671,4 +672,11 @@ DOM context（from tail audit）：
 2. **regression check（重跑其他站確認沒壞）**：每站至少看 `light-page-01.png`（首屏）確認 reader card 有正常內容、寬度合理、排版沒炸。「visibleTextLength 正常」不代表「視覺正常」——內文寬度被壓窄、表格溢出、code block 跑版這些問題 stdout 完全看不到。
 3. **cage 驗證**：觸發 reader mode 後截圖看首屏 + 滾到底看尾巴。不能只觸發 reader mode 不截圖就報 PASS。
 
-**違反此規則的歷史教訓**：v0.7.190 修 7 站 C2 FAIL 後跑 6 站 regression check，只看 harness stdout 數字（visibleTextLength、residual PASS）就全報 PASS，完全沒有用 Read tool 看任何一張截圖。Jimmy 問「為什麼你認為 MDN 內文寬度正常」時才發現根本沒看過截圖。
+**看截圖時必須看兩個層次**：
+
+- **整體佈局**：reader card 有沒有出現？內文寬度正常嗎？有沒有大空白或溢出？
+- **元素細節**：inline code / badge / 高亮標籤的底色在卡片上是否突兀？連結顏色分得出來嗎？表格欄線有沒有消失？blockquote 有沒有視覺區分？
+
+只看整體佈局就判 PASS 是不夠的。v0.7.190 MDN 修寬度後截圖明確顯示 `Array` inline code 用黑底白字浮在白卡上非常突兀（D5），但 Claude 只確認「卡片有出現、寬度正常」就報 PASS，完全沒看到元素層次的對比問題。
+
+**違反此規則的歷史教訓**：v0.7.190 修 7 站 C2 FAIL 後跑 6 站 regression check，只看 harness stdout 數字（visibleTextLength、residual PASS）就全報 PASS，完全沒有用 Read tool 看任何一張截圖。Jimmy 問「為什麼你認為 MDN 內文寬度正常」時才發現根本沒看過截圖。看了截圖後又只確認佈局沒看到 inline code 對比異常，被 Jimmy 第二次指出。
