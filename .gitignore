@@ -1,10 +1,14 @@
 node_modules/
+
+# 內部文件（QA 驗收規格等），不上傳
+docs/excluded/
 .backups/
 .claude/settings.local.json
 .DS_Store
 
 # 自動化除錯 harness 輸出（screenshot 等）
 .playwright-mcp/
+# Page Rounds 視覺驗收截圖（在 docs/excluded/ 下，已被 docs/excluded/ 規則涵蓋）
 # 舊 Playwright MCP 設定檔（目前已改用 tools/debug-harness.js 不再需要）
 .playwright-mcp.json
 
