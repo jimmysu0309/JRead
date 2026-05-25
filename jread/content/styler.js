@@ -56,9 +56,9 @@
   //   scrollThumb：v0.7.90 auto-hide scrollbar 顯色用，配 page bg 對比夠辨識
   //   又不過度搶眼。dark theme 用淺色 thumb、light/sepia 用深色 thumb。
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)' },
-    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)' },
-    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)' }
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)' },
+    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)' },
+    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)', inlineCodeBg: 'rgba(91,70,54,0.08)' }
   };
 
   function themeOf(name) {
@@ -599,6 +599,15 @@ html [${ARTICLE_ATTR}="1"] dl {
   border-width: 0 !important;
   left: auto !important;
   right: auto !important;
+}
+/* v0.7.190 inline code 底色統一：原站 inline <code>（不含 <pre> 內的）
+   底色差異極大——MDN 用深灰近黑 rgb(45,48,52)、多數站用淺灰。reader
+   card 白底上深灰 code badge 太突兀（D5）。統一覆寫為 theme 協調的
+   半透明底色，保持 code 與主文的視覺區分但不喧賓奪主。
+   不動 <pre> 內 code（程式碼 block 有自己的背景 + syntax color 體系）。*/
+[${ARTICLE_ATTR}="1"] code:not(pre code) {
+  background: ${theme.inlineCodeBg} !important;
+  color: inherit !important;
 }
 /* 子元素寬度 cap：原站常用 width: 1152px / 1080px 等寫死寬度給 article
    detail layout wrapper（cna.com.tw 的 .centralContent 寫死 width: 1152px、
