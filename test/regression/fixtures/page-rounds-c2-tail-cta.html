@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!--
+  Fixture：Page Rounds v2 七站 C2 FAIL — 文末推薦/訂閱/CTA 區塊殘留。
+  2026-05-25 Page Rounds 報告：31 站中 7 站 C2 FAIL，全為文末 CTA 殘留。
+
+  修法（v0.7.190）：
+  1. NOISE_HEADING_MAX_LEN 20→40（涵蓋 24-35 chars heading）
+  2. NOISE_HEADING_TEXT_RE 新增 pattern：
+     - ^subscribe\b（原 ^subscribe$ 放寬）
+     - \bnewsletter$（原 ^newsletter$ 放寬）
+     - ^don't\s+miss\b（CNBC 推薦區塊）
+     - ^help\s+improve\b（MDN CTA）
+     - \barticles?\s+and\s+updates?\b（Stratechery 推薦彙整）
+  3. divSpanCandidates 加 strong/em/b（upmedia.mg STRONG 延伸閱讀）
+  4. 新函式 hideInsideArticleCTAParagraphs（BBC 內嵌 CTA 段落）
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Page Rounds C2 tail CTA forcing</title>
+</head>
+<body>
+<article>
+  <h1>Main Article Title</h1>
+  <p>First paragraph of main article content that is long enough to be considered real content. This paragraph needs to exceed one hundred characters to serve as the main content anchor for the cleaner's guard conditions.</p>
+  <p>Second paragraph of the article with substantial text content. The cleaner uses paragraph length as a signal to identify main content areas versus noise widgets. This paragraph also needs to be long enough.</p>
+
+  <!-- Case 1: chinatalk.media — H4 "Subscribe to ChinaTalk" (24 chars) -->
+  <div class="subscribe-section-1">
+    <h4 class="pencraft">Subscribe to ChinaTalk</h4>
+    <div class="pencraft">Hundreds of paid subscribers</div>
+    <div class="pencraft">By subscribing, you agree to terms.</div>
+  </div>
+
+  <!-- Case 2: stratechery.com — heading with "Articles and Updates" -->
+  <div class="promo-section-2">
+    <h3>Stratechery Articles and Updates</h3>
+    <p>This week's podcast episode covers AI developments.</p>
+  </div>
+
+  <!-- Case 3: bbc.com — EM inside P with CTA text -->
+  <p class="bbc-cta-signup"><em>If you liked this story, sign up for The Essential List newsletter delivered to your inbox every Friday.</em></p>
+  <p class="bbc-cta-follow"><em>For more Culture stories from the BBC follow us on Facebook and Instagram</em></p>
+
+  <!-- Case 4: twz.com — H2 "The TWZ Newsletter" (18 chars) -->
+  <div class="newsletter-section-4">
+    <h2>The TWZ Newsletter</h2>
+    <p>Weekly insights and analysis on the latest developments.</p>
+  </div>
+
+  <!-- Case 5: upmedia.mg — STRONG "（延伸閱讀：）" -->
+  <p class="upmedia-readmore"><strong>（延伸閱讀：）</strong><a href="#">Some related article title here</a></p>
+
+  <!-- Case 6: cnbc.com — P with CTA + "Don't miss:" -->
+  <p class="cnbc-cta-like"><strong>Like this story? Subscribe to CNBC Make It on YouTube!</strong></p>
+  <div class="cnbc-dont-miss-section">
+    <p><strong>Don't miss:</strong></p>
+    <a href="#">This $2.7 million watch looks like James Bond</a>
+  </div>
+
+  <!-- Case 7: developer.mozilla.org — H2 "Help improve MDN" -->
+  <div class="mdn-footer-cta">
+    <h2>Help improve MDN</h2>
+    <a href="#" class="article-footer__contribute">Learn how to contribute</a>
+    <p class="article-footer__last-modified">This page was last modified on 2026-05-01.</p>
+  </div>
+</article>
+</body>
+</html>
