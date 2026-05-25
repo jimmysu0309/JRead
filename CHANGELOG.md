@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.188**——fix: v0.7.186 collapseEmptyBlockSpacers 誤殺 hero image。IMG/VIDEO/PICTURE 等媒體 tag 本身就是內容、不該被當 spacer 隱藏。加 MEDIA_SELF_TAGS guard 排除。
+
+---
+
 **v0.7.187**——fix: v0.7.186 header > * position:static 太激進導致 hero image 消失。移除 header 子元素的 position/height 覆寫，僅保留 header margin:0 + padding:0。hero overlay pattern（absolute heading 在 image 上方）在實機正常運作、不應干預。
 
 ---
