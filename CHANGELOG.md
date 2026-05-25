@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.186**——fix: reader card 內結構性大塊空白消除。三層修法：(1) styler CSS 新增 direct child header/footer margin+padding+height reset（hero overlay pattern 的 absolute 子元素強制 static 回 normal flow）、last-child bottom spacing strip；(2) cleaner capWrapperSpacing 對 articleEl 內所有 wrapper（div/section/header/footer/aside/nav）的 margin/padding > 24px 的部分 cap 到 24px；(3) cleaner collapseEmptyBlockSpacers 對 skip-list 中 display:block + 零文字的 spacer 元素（如空 caption SPAN）執行 hide。thebureauinvestigates.com 實測：header 從 720px 縮到 274px（hero image area 消除）、subtitle→Published 間距從 158px 降到 56px、story-body bottom-padding 從 90px cap 到 24px。
+
+---
+
 **v0.7.185**——fix: ctee.com.tw 標題下方 taglist（#BMW #E Ink 等）殘留。hashtag 的 # 由 CSS ::before 加、a.textContent 不含 #，hideInsideArticleHashtagClusters 漏掉。`tag[-_]?list` 加入 NOISE_KEYWORD_RE，由 keyword rule 命中 hide。
 
 ---
