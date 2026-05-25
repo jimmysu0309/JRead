@@ -3783,6 +3783,19 @@
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
       // v0.7.144：每次 clean() 重建 element cache（避免 SPA / 多 articleEl 場景共用 stale array）
       _cachedArticleAll = null;
+      // v0.7.190：articleEl 若為 `display: contents`（MDN `<main class="layout__content">`），
+      // 元素自己不產生 box → styler 的 reader card 樣式（白底、max-width、圓角、陰影）
+      // 全部沒效果。用 inline !important 強制 block，確保 reader card 可見。
+      if (articleEl.style) {
+        let cs;
+        try { cs = window.getComputedStyle(articleEl); } catch (_) { /* noop */ }
+        if (cs && cs.display === 'contents') {
+          const prevDisplay = articleEl.style.getPropertyValue('display');
+          const prevPriority = articleEl.style.getPropertyPriority('display');
+          hidden.__displayContentsSnap = { el: articleEl, prevDisplay, prevPriority };
+          articleEl.style.setProperty('display', 'block', 'important');
+        }
+      }
       // narrow 放最前：promote 升級後 articleEl 變大、需要先把 sibling chrome
       // 清掉、再跑其他 rule。否則後續 hideInsideArticle* 會對 chrome 子樹做
       // 全套檢查、浪費且產生誤殺風險（chrome 裡的 nav / button / list 等 UI
@@ -3887,6 +3900,14 @@
     restore(hiddenEls) {
       stopWatchingDynamicAppends();
       stopWatchingHiddenInlineRestyle();
+      // v0.7.190：還原 display: contents override
+      if (hiddenEls && hiddenEls.__displayContentsSnap) {
+        const { el, prevDisplay, prevPriority } = hiddenEls.__displayContentsSnap;
+        if (el && el.style) {
+          el.style.removeProperty('display');
+          if (prevDisplay) el.style.setProperty('display', prevDisplay, prevPriority || '');
+        }
+      }
       restoreLazyImages(hiddenEls);
       restoreMediaContainerBlock(hiddenEls);
       restoreDescendantBoxShadow(hiddenEls);
