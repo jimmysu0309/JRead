@@ -879,6 +879,7 @@
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'toggle' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'enter' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'exit' } }));
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-theme', theme: 'dark' } }));  // 'light' | 'dark' | 'sepia'
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
   // reload 走 sendMessage('JREAD_RELOAD') → SW handler 呼叫 chrome.runtime.reload()。
   // 不可從 content script 直接呼 chrome.runtime.reload —— 該 API 只 SW / popup /
@@ -895,6 +896,14 @@
       if (!NS.state.active) enterReaderMode();
     } else if (type === 'exit') {
       if (NS.state.active) exitReaderMode();
+    } else if (type === 'set-theme') {
+      // Page Rounds 暗色模式驗收用。cage javascript_tool 跑在 main world，
+      // 無法存取 chrome.storage.sync；透過 bridge 讓 isolated world 代寫。
+      // 寫完後 onChanged listener 自動 scheduleReapply，不需額外觸發。
+      const theme = e && e.detail && e.detail.theme;
+      if (theme && ['light', 'dark', 'sepia'].includes(theme)) {
+        chrome.storage.sync.set({ theme });
+      }
     } else if (type === 'reload') {
       // v0.7.126：chrome.runtime.reload() 在 content script context 不存在
       // （Uncaught TypeError: chrome.runtime.reload is not a function）——
