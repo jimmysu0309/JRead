@@ -2686,6 +2686,8 @@
     }
   }
 
+  const MEDIA_SELF_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'IFRAME', 'SVG', 'CANVAS', 'AUDIO']);
+
   function collapseEmptyBlockSpacers(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     if (typeof window === 'undefined' || !window.getComputedStyle) return;
@@ -2694,6 +2696,7 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
       if (!EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
+      if (MEDIA_SELF_TAGS.has(el.tagName)) continue;
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs || cs.display !== 'block') continue;
