@@ -162,6 +162,14 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   box-shadow: none !important;
   border: 0 !important;
 }
+/* ancestor 的直接子元素若不在 ancestor 鏈上、也不是主文容器，一律隱藏。
+   Substack / WordPress 等 CMS 的 site header / nav / footer / sidebar 是
+   ancestor 的兄弟子樹，ancestor reset 只清自身樣式、不影響子元素渲染——
+   文字內容仍在 normal flow 殘留（chinatalk.media h1#wordlogo "ChinaTalk"
+   即此情境）。通則：reader mode 只顯示主文卡片，其餘分支一律隱藏。 */
+[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]) {
+  display: none !important;
+}
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
    / line-height / color——保留原站字體與排版。
    v0.7.121：selector 加 'html ' 前綴提升 specificity 從 (0,1,0) → (0,1,1)，
