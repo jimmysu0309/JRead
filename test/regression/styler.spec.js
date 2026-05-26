@@ -555,14 +555,25 @@ describe('styler — 骨架與可逆性', () => {
     // v0.7.72 修法：today.line.me div.placeholder style="padding-top:75.25%"
     // 用 padding-top（不是 padding-bottom）撐 aspect-ratio placeholder。擴
     // selector 加 [class*="placeholder"] 並 reset padding-top: 0 第二維度。
-    assert.ok(/\[class\*="placeholder"\]/.test(css),
-      'CSS 必須含 [class*="placeholder"] selector（line today 類 padding-top placeholder）');
+    assert.ok(/\[class\*="placeholder"(\s*i)?\]/.test(css),
+      'CSS 必須含 [class*="placeholder"] 或 [class*="placeholder" i] selector（line today 類 padding-top placeholder）');
     // 主 picture/figure/object-fit/placeholder rule 必須含 padding-top: 0
-    const placeholderRule = css.match(/\[class\*="placeholder"\][^{]*\{([^}]*)\}/);
+    const placeholderRule = css.match(/\[class\*="placeholder"(?:\s*i)?\][^{]*\{([^}]*)\}/);
     if (placeholderRule) {
       assert.ok(/padding-top\s*:\s*0\s*!important/.test(placeholderRule[1]),
         'placeholder rule body 必須含 padding-top: 0 !important（清 line today 類 padding-top hack）');
     }
+
+    // v0.7.198 修法：placeholder 內部 wrapper 一併拉回 static flow——
+    // padding-bottom hack 結構「placeholder relative + 子層 absolute」中，
+    // img/video 已被 styler 強制 static，但中間 wrapper div 仍 absolute →
+    // 不佔 flow 高度 → 文字疊在圖片上（CNBC imageContainer）。
+    // case-insensitive flag 確保 imagePlaceholder（大寫 P）也命中。
+    const phDescRule = css.match(/\[class\*="placeholder"\s*i\][^{]*\*[^{]*\{([^}]*)\}/);
+    assert.ok(phDescRule,
+      'CSS 必須含 [class*="placeholder" i] * descendant rule（placeholder 內所有子層回 static）');
+    assert.ok(/position\s*:\s*static\s*!important/.test(phDescRule[1]),
+      'placeholder descendant rule 必須含 position: static !important');
 
     // v0.7.70 修法：gvm div.object-fit::before pseudo 用 content:"" + display:block
     // + height:Npx 撐 placeholder（不是 padding-bottom 也不是 aspect-ratio），
