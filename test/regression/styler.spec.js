@@ -977,6 +977,17 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(hasExclusion, 'dark theme * { color } 規則必須排除 figcaption');
   });
 
+  it('light theme → 顯式 link 色 #1a73e8 + underline（v0.7.197 TWZ 白字連結修法）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/color:\s*#1a73e8/.test(css), 'light theme 必須有 link 色 #1a73e8');
+    assert.ok(
+      /\[data-jread-active="1"\]\s*a[^{]*\{[^}]*text-decoration:\s*underline/.test(css),
+      'light theme link 必須有 underline'
+    );
+  });
+
   it('dark theme → 注入文字色 + 卡片底色 + 可讀 link 色（避免連結與正文同色無法辨識）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
@@ -984,8 +995,6 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(css.includes('#0b0b0b'), 'dark 頁面底色');
     assert.ok(css.includes('#1a1a1a'), 'dark 卡片底色');
     assert.ok(/color:\s*#d4d4d4/.test(css), 'dark 文字色必須注入（覆蓋原站色）');
-    // 必須回補 link 色——否則 `* { color: X }` 會吞掉原站 link 色
-    assert.ok(/\]\s*a,\s*\[data-jread-active="1"\]\s*a\s*\*/.test(css), 'dark 必須有 a / a * 規則');
     assert.ok(/color:\s*#7fb5e6/.test(css), 'dark link 色必須是 #7fb5e6');
     assert.ok(/text-decoration:\s*underline/.test(css), 'dark link 必須有 underline（色 + 線雙通道差異化）');
   });

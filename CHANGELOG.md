@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.197**——fix: TWZ byline 逗號浮空 + Google News widget 殘留。(1) light theme 加顯式 link 色 `#1a73e8`（Material blue, AA 5.2:1）+ underline 雙通道——原站深底白字連結在 reader card 白底上不可讀（TWZ 作者名 rgb(248,248,248) 近白），三個 theme 統一有顯式 link 色。連結色規則移入 base CSS（不再只在 dark/sepia override 注入）。(2) NOISE_KEYWORD_RE 加 `google[-_]?(?:add|news)` 命中 Google News 追蹤 widget（TWZ `item-wrapper--google-add`）。
+
 **v0.7.196**——fix: figcaption 對比度不足。styler 的 background strip 規則排除 figcaption（保留原站背景），但 color inherit 規則沒排除——深色背景 + 深色繼承文字 = 不可讀。TWZ (thewarzone.com) 白字深灰底圖說實測觸發。修法：color inherit 規則 + dark/sepia theme color 規則都加 `:not(figcaption)`，背景與文字色成對保留。
 
 **v0.7.195**——fix: CNN overflow + STREAMING NOW 殘留。(1) `collapseGridWithHiddenCell` 的 `CHILD_DECLS` 與 `INNER_FLEX_CHILD_DECLS` 改 `max-width: none` → `max-width: 100%`——inline-block 子元素不再無限撐寬溢出 reader card（CNN `layout__center` display:inline-block + min-width:500px 導致 444px 溢出 360px card 136px）。(2) `NOISE_KEYWORD_RE` / `STRONG_NOISE_KEYWORD_RE` 加 `related[-_]?content` pattern，命中 CNN `related-content-elevate` 等 class。

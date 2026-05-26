@@ -56,7 +56,7 @@
   //   scrollThumb：v0.7.90 auto-hide scrollbar 顯色用，配 page bg 對比夠辨識
   //   又不過度搶眼。dark theme 用淺色 thumb、light/sepia 用深色 thumb。
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: '#1a73e8', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
     dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', progressBar: '#7fb5e6' },
     sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)', inlineCodeBg: 'rgba(91,70,54,0.08)', progressBar: '#2c5282' }
   };
@@ -605,6 +605,23 @@ html [${ARTICLE_ATTR}="1"] dl {
 [${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(figcaption):not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
 }
+/* v0.7.197：顯式 link color（所有 theme）。v0.7.179 加 color: inherit 時排除
+   <a>（保留原站 link 色），但原站 link 色常配合已被 strip 的深色背景設計——
+   TWZ (thewarzone.com) 作者連結原色 rgb(248,248,248)（近白），strip 背景後
+   白字對白底不可讀，只剩 byline separator 逗號（dark inherit）突兀可見。
+   dark/sepia 早有顯式 link 色 + underline（v0.7.100）；light theme 沒有是
+   設計疏漏。現在三個 theme 統一顯式 link 色 + underline 雙通道差異化。
+   light #1a73e8：Material Design blue，on #ffffff 對比 5.2:1（AA），與
+   body text #1a1a1a 明確可辨。:not([player]) 排除嵌入 player 內連結。 */
+[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]) {
+  color: ${theme.link} !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  text-decoration-thickness: 1px !important;
+}
+[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]) * {
+  color: ${theme.link} !important;
+}
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
    bar、callout 框、圖片框等視覺裝飾。reader card 本身已有圓角 + 陰影邊界，
    內部任何裝飾 border 都會打斷閱讀流，且會占空間（border-width 計入 box
@@ -934,19 +951,8 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   background-color: transparent !important;
   background-image: none !important;
 }`;
-      // 連結色回補：上面 `* { color: X }` 會吞掉原站 link 色。在 dark / sepia
-      // 底下若沒有針對性 a 規則，連結跟正文完全同色無法辨識。加粗底線做雙通道
-      // 差異化（顏色 + underline），連 a 內包的 <em>/<strong>/<code> 也要補。
-      userOverrides += `
-[${ARTICLE_ATTR}="1"] a,
-[${ARTICLE_ATTR}="1"] a * {
-  color: ${theme.link} !important;
-}
-[${ARTICLE_ATTR}="1"] a {
-  text-decoration: underline !important;
-  text-underline-offset: 2px !important;
-  text-decoration-thickness: 1px !important;
-}`;
+      // v0.7.197：連結色已移至 base CSS（所有 theme 統一注入）。
+      // 此處不再重複注入。
     }
 
     return base + userOverrides;
