@@ -346,12 +346,25 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    container），只 picture 一個 tag。 */
 [${ARTICLE_ATTR}="1"] picture,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"],
-[${ARTICLE_ATTR}="1"] [class*="placeholder"] {
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i] {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
   padding-top: 0 !important;
   height: auto !important;
   min-height: 0 !important;
+}
+/* placeholder 內部 wrapper 一併拉回 static flow：padding-bottom hack 的配套
+   結構是「placeholder position:relative + 子層 position:absolute 填滿 padding
+   區域」。styler 已把 img/video 強制 static（line ~303），但 img 與 placeholder
+   之間若有中間 wrapper div 仍保持 absolute，該 div 不佔 flow 高度→文字疊在
+   圖片上（CNBC DIV.imageContainer 結構實測）。清 padding hack 時一併清所有
+   後代的 absolute positioning，讓圖片容器自然撐高度。 */
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]) * {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
 }
 /* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
    實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
