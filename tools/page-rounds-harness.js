@@ -184,6 +184,43 @@ async function runTailAudit(page) {
   });
 }
 
+// ---- Overflow audit（水平溢出檢查）----
+async function runOverflowAudit(page) {
+  return page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    if (!art) return { error: 'no article', overflow: false, items: [] };
+    const cardRect = art.getBoundingClientRect();
+    const docOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+    const items = [];
+    for (const el of art.querySelectorAll('*')) {
+      const cs = window.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      if (r.right > cardRect.right + 2) {
+        const overflow = Math.round(r.right - cardRect.right);
+        items.push({
+          tag: el.tagName,
+          cls: (el.className || '').toString().slice(0, 80),
+          width: Math.round(r.width),
+          cardWidth: Math.round(cardRect.width),
+          overflowPx: overflow,
+          text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40)
+        });
+      }
+    }
+    const unique = [];
+    const seen = new Set();
+    for (const it of items) {
+      const key = `${it.tag}.${it.cls.split(' ')[0]}`;
+      if (!seen.has(key)) { seen.add(key); unique.push(it); }
+      if (unique.length >= 10) break;
+    }
+    return { overflow: docOverflow || unique.length > 0, docScrollWidth: document.documentElement.scrollWidth,
+      docClientWidth: document.documentElement.clientWidth, cardWidth: Math.round(cardRect.width), items: unique };
+  });
+}
+
 // ---- Content stats（輔助信號）----
 async function getContentStats(page) {
   return page.evaluate(() => {
@@ -295,7 +332,7 @@ async function getContentStats(page) {
 
   const audit = { url: TARGET_URL, hostname, dirName, readerModeActive: readerActive,
     contentStats: null, residual: { initial: null, delayed: null },
-    gaps: { initial: null, delayed: null }, tail: null, restored: null };
+    gaps: { initial: null, delayed: null }, overflow: null, tail: null, restored: null };
 
   if (!readerActive) {
     console.log('WARNING: reader mode 未啟動，截圖供 Claude 判定 fallback');
@@ -334,7 +371,18 @@ async function getContentStats(page) {
   }
   console.log('  content stats:', JSON.stringify(audit.contentStats));
 
-  // ---- 7b. Tail audit（文末元素 dump）----
+  // ---- 7b. Overflow audit（水平溢出）----
+  audit.overflow = await runOverflowAudit(page);
+  if (audit.overflow.overflow) {
+    console.log(`  ⚠️  OVERFLOW: doc ${audit.overflow.docScrollWidth}px > viewport ${audit.overflow.docClientWidth}px, card ${audit.overflow.cardWidth}px`);
+    for (const it of audit.overflow.items.slice(0, 5)) {
+      console.log(`    ${it.tag}.${it.cls.split(' ')[0]} width=${it.width}px overflow=${it.overflowPx}px "${it.text}"`);
+    }
+  } else {
+    console.log('  ✅ overflow: 無水平溢出');
+  }
+
+  // ---- 7c. Tail audit（文末元素 dump）----
   audit.tail = await runTailAudit(page);
   const tailItems = audit.tail.items;
   const tailLast = tailItems.slice(-10);
