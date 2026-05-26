@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.191**——feat: 閱讀進度條。reader mode 頂端顯示 3px 細線進度條，隨捲動即時更新寬度百分比。顏色跟主題色連動（light 藍 / dark 淡藍 / sepia 深藍）。關閉閱讀模式自動移除。同場加映：所有 Playwright harness 加 `--window-position=-2400,-2400` 防止 Chromium 視窗搶焦點。
+
+---
+
 **v0.7.190**——fix: Page Rounds C2 FAIL 批次修正——文末推薦/訂閱/CTA 區塊殘留。NOISE_HEADING_MAX_LEN 20→40；NOISE_HEADING_TEXT_RE 新增 subscribe/newsletter/don't miss/help improve/articles and updates 五組 pattern；heading text scanner 擴掃 strong/em/b 元素（upmedia.mg 延伸閱讀）；新增 hideInsideArticleCTAParagraphs（BBC sign up for newsletter / follow us on / CNBC subscribe to YouTube CTA 段落）。7 站中 6 站 harness 驗證通過。
 
 ---

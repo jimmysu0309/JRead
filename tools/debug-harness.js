@@ -62,7 +62,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       `--disable-extensions-except=${EXT_PATH}`,
       `--load-extension=${EXT_PATH}`,
       '--no-first-run',
-      '--no-default-browser-check'
+      '--no-default-browser-check',
+      '--window-position=-2400,-2400'
     ]
   });
 
