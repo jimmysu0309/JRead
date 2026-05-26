@@ -2082,8 +2082,8 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
         'visible col-md-8 的 flex-grow 應被 force 成 0');
       assert.strictEqual(colMd8.style.getPropertyValue('flex-shrink'), '0',
         'visible col-md-8 的 flex-shrink 應被 force 成 0');
-      assert.strictEqual(colMd8.style.getPropertyValue('max-width'), 'none',
-        'visible col-md-8 的 max-width 應被 force 成 none（清 max-width:66.67%）');
+      assert.strictEqual(colMd8.style.getPropertyValue('max-width'), '100%',
+        'visible col-md-8 的 max-width 應被 force 成 100%（清 max-width:66.67%）');
       assert.strictEqual(colMd8.style.getPropertyValue('width'), 'auto',
         'visible col-md-8 的 width 應被 force 成 auto');
       // hidden child 不動它的 inline width（反正它 display:none 不顯示）
@@ -2167,8 +2167,8 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
         'grid-column:auto 應 !important');
       assert.strictEqual(mainCol.style.getPropertyValue('width'), 'auto',
         'visible child 的 width 應 force 成 auto');
-      assert.strictEqual(mainCol.style.getPropertyValue('max-width'), 'none',
-        'visible child 的 max-width 應 force 成 none');
+      assert.strictEqual(mainCol.style.getPropertyValue('max-width'), '100%',
+        'visible child 的 max-width 應 force 成 100%');
 
       // 核心斷言 3：wrapper-normal 非 grid，不得被誤動
       assert.notStrictEqual(wrapperNormal.dataset.jreadCollapsed, '1',
@@ -2320,8 +2320,8 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
         'visible child 的 width 應 force 成 auto（覆寫 inline 280px）');
       assert.strictEqual(contentCenter.style.getPropertyPriority('width'), 'important',
         'child width:auto 應 !important');
-      assert.strictEqual(contentCenter.style.getPropertyValue('max-width'), 'none',
-        'child max-width 應 reset 為 none');
+      assert.strictEqual(contentCenter.style.getPropertyValue('max-width'), '100%',
+        'child max-width 應 reset 為 100%');
       assert.strictEqual(contentCenter.style.getPropertyValue('flex-grow'), '0',
         'child flex-grow 應 reset 為 0');
       assert.strictEqual(chart1.style.getPropertyValue('width'), 'auto',
@@ -4802,6 +4802,15 @@ describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + titl
     const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
     assert.ok(m && /premium\[-_\]\?\(\?:widget\|content\|trial\|banner\|box\)/.test(m[1]),
       'NOISE_KEYWORD_RE 必須含 `premium[-_]?(?:widget|content|trial|banner|box)` alternation');
+  });
+
+  it('NOISE_KEYWORD_RE 字面必含 `google[-_]?(?:add|news)` alternation（v0.7.197 TWZ Google News widget）', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
+    );
+    const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
+    assert.ok(m && /google\[-_\]\?\(\?:add\|news\)/.test(m[1]),
+      'NOISE_KEYWORD_RE 必須含 `google[-_]?(?:add|news)` alternation');
   });
 
   // ---- (C) subscribe-news-letter ----

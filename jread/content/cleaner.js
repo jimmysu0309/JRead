@@ -67,7 +67,7 @@
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news))([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -224,7 +224,7 @@
   // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
   // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
   // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin)([^a-z0-9]|$)/i;
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin)([^a-z0-9]|$)/i;
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -2356,7 +2356,7 @@
       ];
       const CHILD_DECLS = {
         'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
-        'width': 'auto', 'max-width': 'none', 'grid-column': 'auto', 'float': 'none',
+        'width': 'auto', 'max-width': '100%', 'grid-column': 'auto', 'float': 'none',
         'margin-left': '0', 'margin-right': '0'
       };
       for (const c of visibleChildren) {
@@ -2560,7 +2560,7 @@
   // block flow（一般 block 撐滿父寬，不再 overlay）。
   const INNER_FLEX_CHILD_DECLS = {
     'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
-    'width': 'auto', 'max-width': 'none', 'float': 'none',
+    'width': 'auto', 'max-width': '100%', 'float': 'none',
     'position': 'static'
   };
 
