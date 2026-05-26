@@ -67,7 +67,7 @@
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news))([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -92,12 +92,20 @@
   //   更多相關 / 更多...文章 / 更多...新聞 / 查看更多 / 看更多
   //   其他人也看 / 你可能也喜歡 / 也許您(會|也會)(感興趣|喜歡)
   // 為避免誤殺主文的正當副標題（例如「案情分析」「後續發展」），要求：
-  //   - heading text 長度 <= 20 chars（推薦 section 標題通常短）
+  //   - heading text 長度 <= NOISE_HEADING_MAX_LEN（20 chars）
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor['’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
+  // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
+  // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
+  // 既有 pattern（延伸閱讀 等）維持 max_len=20 不提升——upmedia.mg 把
+  // 「延伸閱讀：＋連結文字」包在 H3（29 chars），提升後 heading rule walk-up
+  // 因該站主文用 <div> 不用 <p>、wrapperContainsMainContentP guard 全 miss、
+  // 一路 walk 到含整篇主文的 wrapper hide 掉 → 主文消失。
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|推薦閱讀|推薦文章)/i;
+  const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
   // 站在文末常塞「查看原始文章」（連回發布站）、主文中段塞「點開加入…LINE
@@ -145,7 +153,14 @@
   //     / "發布日期" / "更新日期" / "刊出日期"
   // 通則：byline 跨站文字 pattern 高度收斂，誤判風險低；搭配 textLen <
   // BYLINE_MAX_TEXT_LEN 雙條件避免廣告 / sidebar widget 偶含日期片段誤觸發。
-  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  // v0.7.181：BYLINE_TEXT_RE 擴充：
+  //   1. `\bby\s` 不限於行首——MSNBC "May. 24, 2026... By Marc Santia" 的 "By"
+  //      在日期之後、舊版 `^\s*by` 不命中。新增 `\bby\s` 作為獨立 alternation，
+  //      word boundary 避免 "nearby" / "standby" 誤命中。
+  //   2. 月份縮寫加 `\.?` 容許 AP style "May." / "Jan." / "Feb." 等帶點格式。
+  //      AP stylebook 慣例：三字母以下月份不縮（May 原本就三字母不帶點），
+  //      但實務 CMS 各自表述（MSNBC 用 "May."），`\.?` 一律相容。
+  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
   const BYLINE_MAX_TEXT_LEN = 200;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
@@ -203,7 +218,13 @@
   // v0.7.85：strong path 加品牌名——這些 widget 內容常含長文字（評論 /
   // recommendation 描述 / 分享配文）會觸發 wrapperContainsArticleAnchor
   // guard 被豁免。明確品牌名命中即必然雜訊、零誤殺，安全跳過 guard。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|disqus|outbrain|taboola|dianomi|addthis|sharedaddy)([^a-z0-9]|$)/i;
+  // v0.7.184：strong path 加「相關/推薦文章 section」命名家族——CMS 慣例
+  // `related-news` / `more-news` / `recommended` 等 section wrapper 內含
+  // 推薦文章摘要 p（>= 100 chars），觸發 wrapperContainsMainContentP guard
+  // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
+  // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
+  // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin)([^a-z0-9]|$)/i;
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -273,6 +294,20 @@
       const pt = norm(para.textContent);
       if (pt.length >= 100) return true;
       acc += pt.length;
+      if (acc >= 300) return true;
+    }
+    // v0.7.190：也掃 <div> 的 direct text（text node，不含子孫 element
+    // 文字）。upmedia.mg 主文段落用 <div> 不用 <p>，原本 guard 全 miss →
+    // heading text walk-up 把整個主文容器 hide。只看 direct text 是為了
+    // 區分「div 本身就是段落」vs「div 是 wrapper 包子元素」——wrapper 的
+    // direct text 接近 0、段落的 direct text 就是文章內容。
+    for (const div of wrapper.querySelectorAll('div')) {
+      const direct = Array.from(div.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent).join('');
+      const dt = norm(direct);
+      if (dt.length >= 100) return true;
+      acc += dt.length;
       if (acc >= 300) return true;
     }
     return false;
@@ -502,6 +537,42 @@
         if (isInPreserved(child)) continue;
         if (isLinkOnlyBlock(child)) hide(child, hidden);
       }
+    }
+  }
+
+  // article direct child DIV 中 link-heavy block（>= 5 anchor、無 >= 50
+  // chars `<p>`）視為推薦 card grid，hide。guard：含 canonical title
+  // （og:title / document.title）的容器視為文章標題區，skip。
+  function hideInsideArticleDirectChildLinkBlocks(articleEl, hidden) {
+    const ogMeta = document.querySelector('meta[property="og:title"]');
+    const ogText = ogMeta && ogMeta.content ? norm(ogMeta.content) : '';
+    const docTitle = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const canonical = ogText || docTitle;
+    function containsCanonicalTitle(el) {
+      if (!canonical || canonical.length < 5) return false;
+      for (const n of el.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
+        const dt = norm(Array.from(n.childNodes)
+          .filter(c => c.nodeType === 3).map(c => c.textContent).join(''));
+        if (dt && dt === canonical) return true;
+      }
+      return false;
+    }
+    let divIdx = 0;
+    for (const child of Array.from(articleEl.children)) {
+      if (child.tagName !== 'DIV') continue;
+      divIdx++;
+      if (divIdx <= 2) continue;
+      if (child.dataset && child.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(child)) continue;
+      if (containsCanonicalTitle(child)) continue;
+      const anchors = child.querySelectorAll('a');
+      if (anchors.length < 5) continue;
+      let hasLongP = false;
+      for (const p of child.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 50) { hasLongP = true; break; }
+      }
+      if (hasLongP) continue;
+      hide(child, hidden);
     }
   }
 
@@ -1195,6 +1266,21 @@
       const rect = el.getBoundingClientRect();
       if (rect.height < SPACER_MIN_HEIGHT) continue;
 
+      // v0.7.181：sibling media guard——JW Player `.jw-aspect`（padding-top:
+      // 56.25% 撐 16:9 容器）無 text、不含 media 子（video 在 sibling
+      // `.jw-wrapper` 內），看起來 = empty spacer → 被 hide → player 高度
+      // 歸零。通則：空 div 的 parent 含 video/iframe sibling = player layout
+      // 輔助元素，不 hide。
+      if (el.parentElement) {
+        let siblingHasMedia = false;
+        for (const sib of el.parentElement.children) {
+          if (sib === el) continue;
+          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
+          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
+        }
+        if (siblingHasMedia) continue;
+      }
+
       hide(el, hidden);
     }
   }
@@ -1284,27 +1370,44 @@
     // 下去」都是 div/span）。對 div/span 只看 direct text（不抓子孫），
     // 且長度要 <= NOISE_HEADING_MAX_LEN，避免誤殺主文段落。
     const semanticHeadings = Array.from(articleEl.querySelectorAll('h2, h3, h4'));
-    // div / span / p 候選（v0.7.28 加 p：cnyes 用 `<p>下一篇</p>` 當
-    // navigation header；line today 用 div/span 包 section title）。對 p
-    // 的 direct text 仍套 NOISE_HEADING_MAX_LEN <= 20 過濾，避免主文長段
-    // 落誤命中（主文 p 通常 > 20 字）。
-    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span, p'))
+    // div / span / p / strong / em / b 候選（v0.7.28 加 p：cnyes 用
+    // `<p>下一篇</p>` 當 navigation header；line today 用 div/span 包
+    // section title；v0.7.190 加 strong/em/b：upmedia.mg 把「延伸閱讀」
+    // 包在 `<strong>（延伸閱讀：）</strong>` 內——已有的 `延伸閱讀` pattern
+    // 能匹配但原 selector 漏掃 strong/em/b tag）。對所有非 semantic heading
+    // 的 direct text 仍套 NOISE_HEADING_MAX_LEN 過濾。
+    const divSpanCandidates = Array.from(articleEl.querySelectorAll('div, span, p, strong, em, b'))
       .filter(el => {
+        // strong/em/b 在 h2/h3/h4 內部時跳過——semantic heading 本身已在
+        // semanticHeadings 列表中、用 textContent（含子孫）檢查。若再把
+        // 內部的 strong 當獨立候選掃，其 direct text（不含 <a> 子孫）會
+        // 比 heading textContent 短很多，繞過 max_len guard（upmedia.mg
+        // `<h3><strong>（延伸閱讀：<a>...長文...</a>）</strong></h3>` 的
+        // strong direct text 只有 7 chars，但 h3 textContent 29 chars）。
+        const tag = el.tagName;
+        if ((tag === 'STRONG' || tag === 'EM' || tag === 'B') &&
+            el.closest('h2, h3, h4')) return false;
         const direct = Array.from(el.childNodes)
           .filter(n => n.nodeType === 3)
           .map(n => n.textContent).join('');
         const text = norm(direct);
-        return text && text.length <= NOISE_HEADING_MAX_LEN;
+        return text && text.length <= NOISE_HEADING_MAX_LEN_EXT;
       });
     const headings = semanticHeadings.concat(divSpanCandidates);
     for (const h of headings) {
-      // 對 div/span 只用 direct text（heading tag 用 textContent）
+      // 對 div/span/strong/em/b 只用 direct text（heading tag 用 textContent）
       const isSemanticHeading = /^H[234]$/.test(h.tagName);
       const text = isSemanticHeading
         ? norm(h.textContent)
         : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
-      if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
-      if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
+      if (!text) continue;
+      // 雙層 max_len：既有 pattern 用嚴格 max_len（20），新 pattern 用寬鬆
+      // max_len（40）。upmedia.mg 的 H3「延伸閱讀：＋連結文字」29 chars 命中
+      // 延伸閱讀 pattern，但 walk-up guard 因主文用 <div> 不用 <p> 全 miss →
+      // 整篇主文被 hide。既有 pattern 仍限 20 chars 避免此類 regression。
+      const hitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
+      const hitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
+      if (!hitBase && !hitExt) continue;
       if (isInPreserved(h)) continue;
       // v0.7.140：button 內 element 不該觸發 heading rule——button text 是 CTA
       // word（Subscribe / Follow / Read more 等）撞 heading keyword 是結構性
@@ -1382,6 +1485,14 @@
               }
               continue;
             }
+          }
+          // v0.7.190 最後防線：walk-up 找不到安全容器 + tail-cleanup 不
+          // 適用（heading 不是 articleEl 直接子）→ 至少 hide heading 自己。
+          // upmedia.mg 的 H3（延伸閱讀）在 articleEl 的孫層、parent 含主文
+          // div 段落（guard 正確 break）、tail-cleanup 條件不滿足（parent
+          // !== articleEl），但 heading 本身仍是雜訊——hide 它不影響主文。
+          if (!(h.dataset && h.dataset.jreadHidden === '1')) {
+            hide(h, hidden);
           }
           continue;
         }
@@ -2245,7 +2356,7 @@
       ];
       const CHILD_DECLS = {
         'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
-        'width': 'auto', 'max-width': 'none', 'grid-column': 'auto', 'float': 'none',
+        'width': 'auto', 'max-width': '100%', 'grid-column': 'auto', 'float': 'none',
         'margin-left': '0', 'margin-right': '0'
       };
       for (const c of visibleChildren) {
@@ -2449,7 +2560,7 @@
   // block flow（一般 block 撐滿父寬，不再 overlay）。
   const INNER_FLEX_CHILD_DECLS = {
     'flex-grow': '0', 'flex-shrink': '0', 'flex-basis': 'auto',
-    'width': 'auto', 'max-width': 'none', 'float': 'none',
+    'width': 'auto', 'max-width': '100%', 'float': 'none',
     'position': 'static'
   };
 
@@ -2634,11 +2745,109 @@
         if (mr.height > 5 && mr.width > 5) { hasVisibleMedia = true; break; }
       }
       if (hasVisibleMedia) continue;
+      // v0.7.181：sibling media guard——JW Player / video.js / 各 CMS video
+      // embed 的空 div（aspect spacer / overlay container）被 collapse 後
+      // video player 高度歸零。JW Player `.jw-aspect`（padding-top: 56.25%
+      // 撐 16:9 容器）是典型 case：無 text、不含 media 子（video 在 sibling
+      // `.jw-wrapper` 內），原本看起來 = empty wrapper → 被 collapse。
+      // 通則：空 div 的 parent 含 video/iframe sibling → 本 div 可能是 player
+      // 的 layout 輔助元素，collapse 會打壞 player，skip。
+      if (el.parentElement) {
+        let siblingHasMedia = false;
+        for (const sib of el.parentElement.children) {
+          if (sib === el) continue;
+          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
+          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
+        }
+        if (siblingHasMedia) continue;
+      }
       // background image → 視為合法 divider / decoration、保留
       const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
         window.getComputedStyle(el) : null;
       if (cs && cs.backgroundImage && cs.backgroundImage !== 'none') continue;
       hide(el, hidden);
+    }
+  }
+
+  const MEDIA_SELF_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'IFRAME', 'SVG', 'CANVAS', 'AUDIO']);
+
+  function collapseEmptyBlockSpacers(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return;
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      if (!EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
+      if (MEDIA_SELF_TAGS.has(el.tagName)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || cs.display !== 'block') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
+      if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
+      const text = visibleRenderedText(el).trim();
+      if (text.length > 0) continue;
+      let hasMedia = false;
+      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
+        let inHidden = false;
+        let cur = m;
+        while (cur && cur !== el) {
+          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+          cur = cur.parentElement;
+        }
+        if (inHidden) continue;
+        const mr = m.getBoundingClientRect();
+        if (mr.height > 5 && mr.width > 5) { hasMedia = true; break; }
+      }
+      if (hasMedia) continue;
+      if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
+      hide(el, hidden);
+    }
+  }
+
+  const WRAPPER_SPACING_CAP = 16;
+  const WRAPPER_SPACING_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'NAV', 'HEADER', 'FOOTER']);
+  const WRAPPER_SPACING_PROPS = ['margin-top', 'margin-bottom', 'padding-top', 'padding-bottom'];
+
+  function capWrapperSpacing(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return;
+    const capped = [];
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (!WRAPPER_SPACING_TAGS.has(el.tagName)) continue;
+      if (isInPreserved(el)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || cs.display === 'none') continue;
+      let needsCap = false;
+      for (const prop of WRAPPER_SPACING_PROPS) {
+        if ((parseFloat(cs.getPropertyValue(prop)) || 0) > WRAPPER_SPACING_CAP) {
+          needsCap = true; break;
+        }
+      }
+      if (!needsCap) continue;
+      const prev = snapshotStyles(el, WRAPPER_SPACING_PROPS);
+      const decls = {};
+      for (const prop of WRAPPER_SPACING_PROPS) {
+        if ((parseFloat(cs.getPropertyValue(prop)) || 0) > WRAPPER_SPACING_CAP) {
+          decls[prop] = WRAPPER_SPACING_CAP + 'px';
+        }
+      }
+      applyImportant(el, decls);
+      capped.push({ el, prev });
+    }
+    hidden.__cappedWrapperSpacing = capped;
+  }
+
+  function restoreCappedWrapperSpacing(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__cappedWrapperSpacing;
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
     }
   }
 
@@ -3305,6 +3514,35 @@
     }
   }
 
+  // ---- 主文內：CTA 段落 heuristic（subscribe / newsletter / follow CTA）---
+  // v0.7.190 Page Rounds C2 FAIL 批次修正：BBC Culture 文末
+  // `<p><em>sign up for The Essential List newsletter...</em></p>` /
+  // `<p><em>follow us on Facebook and Instagram</em></p>` 類 CTA 段落、
+  // CNBC `<p>Like this story? Subscribe to CNBC Make It on YouTube!</p>`。
+  // 這些段落用 em/strong 包裝、不是 heading / link，heading text rule 和
+  // link text rule 都漏網。
+  //
+  // 結構性通則（非站點特判）：主文 `<p>` 的 textContent 含「sign up for
+  // + newsletter」/「follow us on + 社群平台名」/「subscribe to + 頻道」
+  // /「like this story」等 CTA 慣用語——主文內正常引用 / 描述不會整段都
+  // 是 CTA 語氣。檢查的是 `<p>` 的 full textContent（包括 em/strong 子
+  // 孫文字），所以 em 包裝不影響命中。
+  const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b)/i;
+  const NOISE_CTA_PARA_MAX_LEN = 200;
+
+  function hideInsideArticleCTAParagraphs(articleEl, hidden) {
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p === articleEl) continue;
+      if (p.contains && p.contains(articleEl)) continue;
+      if (isInPreserved(p)) continue;
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      const text = norm(p.textContent);
+      if (!text || text.length > NOISE_CTA_PARA_MAX_LEN) continue;
+      if (!NOISE_CTA_PARA_RE.test(text)) continue;
+      hide(p, hidden);
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -3389,8 +3627,10 @@
       const text = isHeading
         ? norm(h.textContent)
         : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
-      if (!text || text.length > NOISE_HEADING_MAX_LEN) continue;
-      if (!NOISE_HEADING_TEXT_RE.test(text)) continue;
+      if (!text) continue;
+      const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
+      const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
+      if (!dynHitBase && !dynHitExt) continue;
       if (isInPreserved(h)) continue;
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
@@ -3579,6 +3819,19 @@
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
       // v0.7.144：每次 clean() 重建 element cache（避免 SPA / 多 articleEl 場景共用 stale array）
       _cachedArticleAll = null;
+      // v0.7.190：articleEl 若為 `display: contents`（MDN `<main class="layout__content">`），
+      // 元素自己不產生 box → styler 的 reader card 樣式（白底、max-width、圓角、陰影）
+      // 全部沒效果。用 inline !important 強制 block，確保 reader card 可見。
+      if (articleEl.style) {
+        let cs;
+        try { cs = window.getComputedStyle(articleEl); } catch (_) { /* noop */ }
+        if (cs && cs.display === 'contents') {
+          const prevDisplay = articleEl.style.getPropertyValue('display');
+          const prevPriority = articleEl.style.getPropertyPriority('display');
+          hidden.__displayContentsSnap = { el: articleEl, prevDisplay, prevPriority };
+          articleEl.style.setProperty('display', 'block', 'important');
+        }
+      }
       // narrow 放最前：promote 升級後 articleEl 變大、需要先把 sibling chrome
       // 清掉、再跑其他 rule。否則後續 hideInsideArticle* 會對 chrome 子樹做
       // 全套檢查、浪費且產生誤殺風險（chrome 裡的 nav / button / list 等 UI
@@ -3609,6 +3862,7 @@
       hideInsideArticleHashtagClusters(articleEl, hidden);
       hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden);
       hideInsideArticleByInlineAdText(articleEl, hidden);
+      hideInsideArticleCTAParagraphs(articleEl, hidden);
       hideInsideArticleFontTags(articleEl, hidden);
       hideInsideArticleCommentPanels(articleEl, hidden);
       hideInsideArticleAllButtons(articleEl, hidden);
@@ -3619,6 +3873,7 @@
       hideInsideArticleHorizontalRules(articleEl, hidden);
       hideInsideArticleNav(articleEl, hidden);
       hideInsideArticleFooter(articleEl, hidden);
+      hideInsideArticleDirectChildLinkBlocks(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
       hideInsideArticleAbsoluteOverlays(articleEl, hidden);
@@ -3649,6 +3904,8 @@
       // 保留 CSS height）類殘留以此規則統清。詳見 collapseEmptyWrappersAfterClean
       // 上方註解。
       collapseEmptyWrappersAfterClean(articleEl, hidden);
+      collapseEmptyBlockSpacers(articleEl, hidden);
+      capWrapperSpacing(articleEl, hidden);
       // v0.7.141：eet-china 類站點 page-wide unique h1 在 articleEl 外（與
       // articleEl 是 body 兄弟、detector LCA=body 被 reject 不 promote），h1
       // wrapper 已被 hideAncestorSiblings hide。clone 一份 prepend 進 articleEl
@@ -3680,6 +3937,14 @@
     restore(hiddenEls) {
       stopWatchingDynamicAppends();
       stopWatchingHiddenInlineRestyle();
+      // v0.7.190：還原 display: contents override
+      if (hiddenEls && hiddenEls.__displayContentsSnap) {
+        const { el, prevDisplay, prevPriority } = hiddenEls.__displayContentsSnap;
+        if (el && el.style) {
+          el.style.removeProperty('display');
+          if (prevDisplay) el.style.setProperty('display', prevDisplay, prevPriority || '');
+        }
+      }
       restoreLazyImages(hiddenEls);
       restoreMediaContainerBlock(hiddenEls);
       restoreDescendantBoxShadow(hiddenEls);
@@ -3690,6 +3955,7 @@
       restoreInnerFlexWrap(hiddenEls);
       restoreInnerGridFlex(hiddenEls);
       restoreCollapsed(hiddenEls);
+      restoreCappedWrapperSpacing(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;

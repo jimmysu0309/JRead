@@ -19,6 +19,7 @@
   const ANCESTOR_ATTR = 'data-jread-ancestor';
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
+  const PLAYER_ATTR = 'data-jread-player';
 
   // 預設值：等於「未設定」——對應的 CSS 不會注入（保留原站樣式）
   const DEFAULTS = {
@@ -55,9 +56,9 @@
   //   scrollThumb：v0.7.90 auto-hide scrollbar 顯色用，配 page bg 對比夠辨識
   //   又不過度搶眼。dark theme 用淺色 thumb、light/sepia 用深色 thumb。
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)' },
-    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)' },
-    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)' }
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: '#1a73e8', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
+    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', progressBar: '#7fb5e6' },
+    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)', inlineCodeBg: 'rgba(91,70,54,0.08)', progressBar: '#2c5282' }
   };
 
   function themeOf(name) {
@@ -77,6 +78,16 @@
    scroll / resize / timer 類 handler 重設 hide 過元素 display 的情境。 */
 [data-jread-hidden="1"] {
   display: none !important;
+}
+#${PROGRESS_ID} {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: ${theme.progressBar};
+  z-index: 2147483647;
+  pointer-events: none;
 }
 /* SPA 站（Readwise Reader / Notion / Gmail 等）常把 html / body 設
    overflow: hidden、scroll 交給內層 div。reader mode 注入 article card 後
@@ -151,6 +162,14 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   box-shadow: none !important;
   border: 0 !important;
 }
+/* ancestor 的直接子元素若不在 ancestor 鏈上、也不是主文容器，一律隱藏。
+   Substack / WordPress 等 CMS 的 site header / nav / footer / sidebar 是
+   ancestor 的兄弟子樹，ancestor reset 只清自身樣式、不影響子元素渲染——
+   文字內容仍在 normal flow 殘留（chinatalk.media h1#wordlogo "ChinaTalk"
+   即此情境）。通則：reader mode 只顯示主文卡片，其餘分支一律隱藏。 */
+[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]) {
+  display: none !important;
+}
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
    / line-height / color——保留原站字體與排版。
    v0.7.121：selector 加 'html ' 前綴提升 specificity 從 (0,1,0) → (0,1,1)，
@@ -202,6 +221,32 @@ html [${ARTICLE_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] > *:first-child {
   margin-top: 0 !important;
   padding-top: 0 !important;
+}
+/* 消除底端留白：最後一個 direct child 清 margin-bottom / padding-bottom。
+   原站常用最後一個 wrapper div 設大量 pb（例如 90px page-footer spacing），
+   reader card 本身已有 48px bottom padding，不需 wrapper 額外貢獻。
+   html 前綴提升 specificity 到 (0,1,2)，贏過原站 .class-name { pb: Xpx }。 */
+html [${ARTICLE_ATTR}="1"] > *:last-child {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+/* direct child <header> / <footer>：原站在 article 內部的 header（標題 + 副標
+   + 主圖 cluster）和 footer（相關文章 / 分享 / credit）常設大量 margin 做視覺
+   隔離。reader card 單欄 layout 不需這些 section-level spacing——content 元素
+   本身的 margin（h1 / p / figure）已提供足夠間距。
+   html 前綴 + double attribute selector 提升 specificity 到 (0,2,2)，贏過
+   任何站點 .site-class .header-class 類 CSS rule。 */
+html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > header {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
 }
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
    height: auto 的作用是「原站 CSS 鎖死 height、不讓 max-width 觸發 aspect-
@@ -255,8 +300,8 @@ html [${ARTICLE_ATTR}="1"] {
    static 對 reader card 的視覺結果是「圖縮在原本位置、不溢出」反而更穩。
    實測：cna 索馬利蘭主圖修法後 img 從 absolute → static、left/right
    offset 失效，圖回到 picture 內正常 inline 位置 width=picture.width。 */
-[${ARTICLE_ATTR}="1"] img,
-[${ARTICLE_ATTR}="1"] video {
+[${ARTICLE_ATTR}="1"] img:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]) {
   position: static !important;
   top: auto !important;
   left: auto !important;
@@ -270,9 +315,9 @@ html [${ARTICLE_ATTR}="1"] {
    :not(a > img) 仍排除 link-wrapped icon（icon-link 結構保留 inline），這
    條額外 :not(picture > img) / :not(figure > img) 不必加——picture / figure
    本身已是 block container、img 在內部 block 只是視覺正確、不影響原 layout。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img),
-[${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] picture {
+[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
   display: block !important;
   margin-bottom: 24px !important;
 }
@@ -280,9 +325,9 @@ html [${ARTICLE_ATTR}="1"] {
    後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
    類似結構），佔滿整屏甚至蓋住 promoted-title。90vh 留給標題與下方文字
    一些縫隙、又不過度限縮（90% viewport 高仍是大圖視覺）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img),
-[${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] picture {
+[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
   max-height: 90vh !important;
   object-fit: contain !important;
 }
@@ -354,8 +399,8 @@ html [${ARTICLE_ATTR}="1"] {
    marker / drop cap 文字 pseudo 仍工作。
    通則安全：pseudo bg 在 reader card 沒有合法用途——pageWrapper 已有自己的
    bg，多餘 pseudo bg 只會在版心外漏出色塊（或誤覆蓋主文）。 */
-[${ARTICLE_ATTR}="1"] *::before,
-[${ARTICLE_ATTR}="1"] *::after {
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"])::before,
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"])::after {
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -538,7 +583,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    語意（主文媒體容器、引述）；code/pre/table/th/td 需要背景區隔
    （程式碼 block / 表格 row 交替色）；mark 是語意 highlight；kbd
    鍵盤按鍵視覺慣例白底。這些 tag 的原站背景保留。 */
-[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not([${PLAYER_ATTR}="1"]) {
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -548,11 +593,34 @@ html [${ARTICLE_ATTR}="1"] dl {
    color: inherit !important 讓所有後代繼承 reader card 顯式設的 text color
    （見 html [data-jread-active] 的 color 規則）。
    exclude：a（保留連結色）、code/pre（保留 syntax highlight）、mark/kbd
-   （語意 inline 元素）、table 系（保留 cell 色彩）。
+   （語意 inline 元素）、table 系（保留 cell 色彩）、figcaption（背景保留
+   所以文字色也保留——見下方 v0.7.195 註釋）。
    dark/sepia theme 另有 * { color: theme.text } 覆寫全部色，本規則被
-   cascade 蓋過無副作用。 */
-[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd) {
+   cascade 蓋過無副作用。
+   v0.7.195：加 :not(figcaption)。background strip 規則已排除 figcaption
+   （保留原站背景），但 color inherit 沒排除——導致 figcaption 原站深色
+   背景 + reader card 深色繼承文字 = 對比度極低不可讀。TWZ (thewarzone.com)
+   圖說白字 + 深灰底實測觸發。figcaption 背景與文字色必須成對保留，不能
+   只保留一邊。dark/sepia theme 的 * { color } 覆寫仍會蓋過本規則。 */
+[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(figcaption):not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
+}
+/* v0.7.197：顯式 link color（所有 theme）。v0.7.179 加 color: inherit 時排除
+   <a>（保留原站 link 色），但原站 link 色常配合已被 strip 的深色背景設計——
+   TWZ (thewarzone.com) 作者連結原色 rgb(248,248,248)（近白），strip 背景後
+   白字對白底不可讀，只剩 byline separator 逗號（dark inherit）突兀可見。
+   dark/sepia 早有顯式 link 色 + underline（v0.7.100）；light theme 沒有是
+   設計疏漏。現在三個 theme 統一顯式 link 色 + underline 雙通道差異化。
+   light #1a73e8：Material Design blue，on #ffffff 對比 5.2:1（AA），與
+   body text #1a1a1a 明確可辨。:not([player]) 排除嵌入 player 內連結。 */
+[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]) {
+  color: ${theme.link} !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  text-decoration-thickness: 1px !important;
+}
+[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]) * {
+  color: ${theme.link} !important;
 }
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
    bar、callout 框、圖片框等視覺裝飾。reader card 本身已有圓角 + 陰影邊界，
@@ -568,10 +636,19 @@ html [${ARTICLE_ATTR}="1"] dl {
    hr 本身就是 border 化身（清掉等於消失）。
    只清 border-width 不動 border-style/color：影響範圍最窄、若原站日後改
    設計也容易 debug。 */
-[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr) {
+[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr):not([${PLAYER_ATTR}="1"]) {
   border-width: 0 !important;
   left: auto !important;
   right: auto !important;
+}
+/* v0.7.190 inline code 底色統一：原站 inline <code>（不含 <pre> 內的）
+   底色差異極大——MDN 用深灰近黑 rgb(45,48,52)、多數站用淺灰。reader
+   card 白底上深灰 code badge 太突兀（D5）。統一覆寫為 theme 協調的
+   半透明底色，保持 code 與主文的視覺區分但不喧賓奪主。
+   不動 <pre> 內 code（程式碼 block 有自己的背景 + syntax color 體系）。*/
+[${ARTICLE_ATTR}="1"] code:not(pre code) {
+  background: ${theme.inlineCodeBg} !important;
+  color: inherit !important;
 }
 /* 子元素寬度 cap：原站常用 width: 1152px / 1080px 等寫死寬度給 article
    detail layout wrapper（cna.com.tw 的 .centralContent 寫死 width: 1152px、
@@ -587,7 +664,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    block theme 常用 .entry-content > p 寫死 max-width 560px !important
    （specificity 0,1,1 + !important），舊 (0,1,0) + !important 被打敗導致
    reader card 內文過窄。html 前綴不影響 match 語意（html 永遠 match）。 */
-html [${ARTICLE_ATTR}="1"] * {
+html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   max-width: 100% !important;
   /* v0.7.157：font-smoothing 繼承——站點若在子層級重設 -webkit-font-smoothing
      為 auto，會把 reader card 內部分元素拉回 subpixel-antialiased（macOS）導致
@@ -608,14 +685,14 @@ html [${ARTICLE_ATTR}="1"] * {
    只對「該被置中的媒體 / 區塊內容」套，generic div/span/text wrapper 自然
    左對齊不被 auto-center。垂直 margin 仍交給原站 / styler 既有 first-child
    reset。 */
-[${ARTICLE_ATTR}="1"] * {
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   float: none !important;
 }
-[${ARTICLE_ATTR}="1"] img,
-[${ARTICLE_ATTR}="1"] picture,
-[${ARTICLE_ATTR}="1"] video,
-[${ARTICLE_ATTR}="1"] figure,
-[${ARTICLE_ATTR}="1"] iframe,
+[${ARTICLE_ATTR}="1"] img:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] figure:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] iframe:not([${PLAYER_ATTR}="1"]),
 [${ARTICLE_ATTR}="1"] table,
 [${ARTICLE_ATTR}="1"] blockquote,
 [${ARTICLE_ATTR}="1"] pre {
@@ -806,7 +883,7 @@ html.${HTML_CLASS} body {
   color: ${theme.text} !important;
 }
 [${ARTICLE_ATTR}="1"],
-[${ARTICLE_ATTR}="1"] * {
+[${ARTICLE_ATTR}="1"] *:not(figcaption) {
   color: ${theme.text} !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
@@ -874,19 +951,8 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   background-color: transparent !important;
   background-image: none !important;
 }`;
-      // 連結色回補：上面 `* { color: X }` 會吞掉原站 link 色。在 dark / sepia
-      // 底下若沒有針對性 a 規則，連結跟正文完全同色無法辨識。加粗底線做雙通道
-      // 差異化（顏色 + underline），連 a 內包的 <em>/<strong>/<code> 也要補。
-      userOverrides += `
-[${ARTICLE_ATTR}="1"] a,
-[${ARTICLE_ATTR}="1"] a * {
-  color: ${theme.link} !important;
-}
-[${ARTICLE_ATTR}="1"] a {
-  text-decoration: underline !important;
-  text-underline-offset: 2px !important;
-  text-decoration-thickness: 1px !important;
-}`;
+      // v0.7.197：連結色已移至 base CSS（所有 theme 統一注入）。
+      // 此處不再重複注入。
     }
 
     return base + userOverrides;
@@ -900,6 +966,18 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   const SCROLLING_ATTR = 'data-jread-scrolling';
   const SCROLL_HIDE_DELAY = 800;
   let scrollHideTimer = null;
+
+  const PROGRESS_ID = '__jread-progress';
+  let progressEl = null;
+  function onScrollProgress() {
+    if (!progressEl) return;
+    const de = document.documentElement;
+    const scrollTop = de.scrollTop || document.body.scrollTop;
+    const scrollHeight = de.scrollHeight - de.clientHeight;
+    if (scrollHeight <= 0) { progressEl.style.width = '0%'; return; }
+    const pct = Math.min(100, (scrollTop / scrollHeight) * 100);
+    progressEl.style.width = pct + '%';
+  }
   function onScrollFlash() {
     const html = document.documentElement;
     if (html.getAttribute(SCROLLING_ATTR) !== '1') {
@@ -1217,6 +1295,41 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
+      // v0.7.182：mark video player container descendants——背景/色彩
+      // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
+      // JW Player 的 poster（.jw-preview background-image: url(thumb)）、
+      // 控制列（.jw-controls bg-color）、play 按鈕 overlay 等仰賴
+      // background-image/color 呈現 UI。通則：<video> 的最近 N 層祖先
+      // 及所有後代標記為 player 結構、不被 background strip 清除。
+      // <iframe> 不標記：YouTube/Vimeo embed 的 poster 在 iframe 內部
+      // document，reader card CSS 影響不到。
+      // v0.7.183 修正：只標到 player root（position:relative + overflow:hidden
+      // 的最近祖先），不標外層 layout wrapper。JW Player 結構：
+      //   video → jw-media(abs) → jw-wrapper(abs) → jwplayer(rel+ovH) → layout wrappers
+      // 外層 wrapper 必須被 card max-width/position 約束，否則 player 溢出遮字。
+      // v0.7.182 走 4 層太高，把 wp-block-group layout wrapper 也排除了。
+      const playerMarked = [];
+      for (const vid of articleEl.querySelectorAll('video')) {
+        let container = null;
+        const _win = articleEl.ownerDocument?.defaultView;
+        let cur = vid.parentElement;
+        while (cur && cur !== articleEl && _win) {
+          const cs = _win.getComputedStyle(cur);
+          if (cs.position === 'relative' && cs.overflow === 'hidden') {
+            container = cur;
+            break;
+          }
+          cur = cur.parentElement;
+        }
+        if (!container) container = vid.parentElement || vid;
+        container.setAttribute(PLAYER_ATTR, '1');
+        playerMarked.push(container);
+        for (const el of container.querySelectorAll('*')) {
+          el.setAttribute(PLAYER_ATTR, '1');
+          playerMarked.push(el);
+        }
+      }
+
       const ancestors = markAncestors(articleEl);
 
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
@@ -1228,22 +1341,129 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       window.removeEventListener('scroll', onScrollFlash, { passive: true });
       window.addEventListener('scroll', onScrollFlash, { passive: true });
 
+      // 閱讀進度條
+      progressEl = document.getElementById(PROGRESS_ID);
+      if (!progressEl) {
+        progressEl = document.createElement('div');
+        progressEl.id = PROGRESS_ID;
+        (document.head?.parentElement || document.documentElement).appendChild(progressEl);
+      }
+      window.removeEventListener('scroll', onScrollProgress, { passive: true });
+      window.addEventListener('scroll', onScrollProgress, { passive: true });
+      onScrollProgress();
+
       // v0.7.91：install SPACE keydown listener（capture phase 比原站 bubble
       // listener 早攔，比原站 keydown 攔截先收到 SPACE）。重複 apply 時保險先 remove。
       window.removeEventListener('keydown', onSpaceScroll, true);
       window.addEventListener('keydown', onSpaceScroll, true);
 
-      // 消除頂端留白：第一個 h1-h4/p（深層後代也算）margin-top: 0 inline。
-      // 必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS 的
-      // `:first-child` 只能摸到 article 的 direct child，摸不到「包在 wrapper
-      // 裡的 H1」。
-      let firstInk = articleEl.querySelector('h1, h2, h3, h4, p');
+      // 消除頂端留白：第一個**可見** h1-h4/p（深層後代也算）margin-top: 0
+      // inline。必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS
+      // 的 `:first-child` 只能摸到 article 的 direct child，摸不到「包在
+      // wrapper 裡的 H1」。
+      // v0.7.180：跳過 display:none / data-jread-hidden 內的隱藏元素。
+      // MSNBC/ms.now opinion-header 內 .opinion-column(display:none) 包
+      // P "Opinion" 類別標籤——querySelector DOM order 比 H1 早命中，導致
+      // firstInk 指向隱藏 P、後續 ancestor padding strip 和 titleFontSize
+      // inline override 都因此 miss。
+      let firstInk = null;
+      {
+        const _win = articleEl.ownerDocument?.defaultView;
+        for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
+          if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+          if (_win) {
+            let hidden = false;
+            for (let a = el; a && a !== articleEl; a = a.parentElement) {
+              const d = _win.getComputedStyle(a).display;
+              if (d === 'none') { hidden = true; break; }
+            }
+            if (hidden) continue;
+          }
+          firstInk = el;
+          break;
+        }
+      }
       let firstInkPriorMt = '';
       let firstInkPriorMtPriority = '';
       if (firstInk) {
         firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
         firstInkPriorMtPriority = firstInk.style.getPropertyPriority('margin-top');
         firstInk.style.setProperty('margin-top', '0', 'important');
+      }
+
+      // v0.7.179：strip excessive padding on ancestors between firstInk and
+      // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
+      // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
+      // 純空白。沿 firstInk 往上走到 articleEl，每層 paddingTop > 48px
+      // （reader card 自身 padding 大小）的元素清掉 padding。
+      const ancestorPaddingSnap = [];
+      if (firstInk) {
+        let cur = firstInk.parentElement;
+        const win = articleEl.ownerDocument?.defaultView;
+        while (cur && cur !== articleEl && win) {
+          const cs = win.getComputedStyle(cur);
+          const pt = parseFloat(cs.paddingTop) || 0;
+          const pb = parseFloat(cs.paddingBottom) || 0;
+          if (pt > 48 || pb > 48) {
+            ancestorPaddingSnap.push({
+              el: cur,
+              pt: cur.style.getPropertyValue('padding-top'),
+              ptP: cur.style.getPropertyPriority('padding-top'),
+              pb: cur.style.getPropertyValue('padding-bottom'),
+              pbP: cur.style.getPropertyPriority('padding-bottom'),
+            });
+            if (pt > 48) cur.style.setProperty('padding-top', '0', 'important');
+            if (pb > 48) cur.style.setProperty('padding-bottom', '0', 'important');
+          }
+          cur = cur.parentElement;
+        }
+      }
+
+      // v0.7.183：strip 大幅負 margin-top（CMS layout hack 的遺毒）。
+      // 原站用 margin-top:-80px 類負值把 video block 向上拉進 opinion-
+      // header 的 100px padding 區域做視覺重疊。我們 strip padding 後、
+      // 負 margin 殘留 → video 溢出遮住 subtitle。通則：reader card
+      // 內負 margin-top > 20px 的元素 = layout hack，不適用單欄 card。
+      const negMarginSnap = [];
+      {
+        const _w = articleEl.ownerDocument?.defaultView;
+        if (_w) {
+          for (const el of articleEl.querySelectorAll('div, section')) {
+            const mt = parseFloat(_w.getComputedStyle(el).marginTop) || 0;
+            if (mt < -20) {
+              negMarginSnap.push({
+                el,
+                mt: el.style.getPropertyValue('margin-top'),
+                mtP: el.style.getPropertyPriority('margin-top'),
+              });
+              el.style.setProperty('margin-top', '0', 'important');
+            }
+          }
+        }
+      }
+
+      // v0.7.180：title font-size inline override。CMS 高 specificity rule
+      // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
+      // `.opinion-header > .wp-block-group .title-and-dek-column
+      //  h1.wp-block-post-title[class*=...] { font-size: 2rem !important }`
+      // specificity (0,5+,1) 打敗 jread stylesheet (0,1,1)），CSS stylesheet
+      // 打不贏。inline !important 是最高優先級。
+      // 獨立搜尋第一個可見 h1（不依賴 firstInk 是否 H tag）：firstInk 可能是
+      // P（副標題/byline 在 DOM order 比 H1 早出現時），title override 不該
+      // 因此 miss。
+      let titleFsSnap = null;
+      if (overrides.titleFontSize) {
+        const titleH1 = firstInk && /^H1$/.test(firstInk.tagName)
+          ? firstInk
+          : articleEl.querySelector('h1:not([data-jread-hidden="1"])');
+        if (titleH1) {
+          titleFsSnap = {
+            el: titleH1,
+            fs: titleH1.style.getPropertyValue('font-size'),
+            fsP: titleH1.style.getPropertyPriority('font-size'),
+          };
+          titleH1.style.setProperty('font-size', opts.titleFontSize + 'px', 'important');
+        }
       }
 
       // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
@@ -1326,13 +1546,34 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
+      // v0.7.179：WordPress constrained layout inline override。
+      // CSS stylesheet `html [data-jread-active] p { max-width: none !important }`
+      // 在某些 WP theme 下 computed 仍未生效（疑似 WP 動態注入的 inline style
+      // 或 container query 機制覆蓋）。inline !important 是 CSS 最高優先級，
+      // 任何 stylesheet rule 都無法打敗。
+      const wpConstrained = [];
+      const CONTENT_BLOCK_SEL = 'p, h1, h2, h3, h4, h5, h6, ul, ol, dl';
+      for (const el of articleEl.querySelectorAll(CONTENT_BLOCK_SEL)) {
+        const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+        if (!cs) continue;
+        const mw = cs.maxWidth;
+        if (mw && mw !== 'none' && mw !== '100%' && !mw.startsWith('100')) {
+          wpConstrained.push({
+            el,
+            maxWidth: el.style.getPropertyValue('max-width'),
+            maxWidthPriority: el.style.getPropertyPriority('max-width'),
+          });
+          el.style.setProperty('max-width', 'none', 'important');
+        }
+      }
+
       // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
       // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
       // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, galleryFlex, panguSnap, inlineImgs };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked };
     },
 
     /**
@@ -1354,6 +1595,10 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       }
       document.documentElement.removeAttribute(SCROLLING_ATTR);
 
+      // 閱讀進度條清除
+      window.removeEventListener('scroll', onScrollProgress, { passive: true });
+      if (progressEl) { progressEl.remove(); progressEl = null; }
+
       // v0.7.91：移除 SPACE keydown listener（避免關閉 reader mode 後 SPACE
       // 仍被 jread 攔截）。capture phase listener 第三個參數須為 true 才能正確 dedup。
       window.removeEventListener('keydown', onSpaceScroll, true);
@@ -1361,6 +1606,11 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       if (Array.isArray(snapshot.inlineImgs)) {
         for (const img of snapshot.inlineImgs) {
           if (img && img.removeAttribute) img.removeAttribute(INLINE_IMG_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.playerMarked)) {
+        for (const el of snapshot.playerMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(PLAYER_ATTR);
         }
       }
 
@@ -1393,6 +1643,45 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       // panguRestore 內部只看 snapshot.changes，不依賴 reader mode attr）
       if (snapshot.panguSnap) {
         panguRestore(snapshot.panguSnap);
+      }
+
+      // v0.7.179：還原 ancestor padding strip
+      if (Array.isArray(snapshot.ancestorPaddingSnap)) {
+        for (const s of snapshot.ancestorPaddingSnap) {
+          if (!s || !s.el) continue;
+          if (s.pt) s.el.style.setProperty('padding-top', s.pt, s.ptP || '');
+          else s.el.style.removeProperty('padding-top');
+          if (s.pb) s.el.style.setProperty('padding-bottom', s.pb, s.pbP || '');
+          else s.el.style.removeProperty('padding-bottom');
+        }
+      }
+
+      // v0.7.183：還原 negative margin-top strip
+      if (Array.isArray(snapshot.negMarginSnap)) {
+        for (const s of snapshot.negMarginSnap) {
+          if (!s || !s.el) continue;
+          if (s.mt) s.el.style.setProperty('margin-top', s.mt, s.mtP || '');
+          else s.el.style.removeProperty('margin-top');
+        }
+      }
+
+      // v0.7.179：還原 title font-size inline override
+      if (snapshot.titleFsSnap) {
+        const t = snapshot.titleFsSnap;
+        if (t.fs) t.el.style.setProperty('font-size', t.fs, t.fsP || '');
+        else t.el.style.removeProperty('font-size');
+      }
+
+      // v0.7.179：還原 WP constrained layout inline max-width override
+      if (Array.isArray(snapshot.wpConstrained)) {
+        for (const g of snapshot.wpConstrained) {
+          if (!g || !g.el) continue;
+          if (g.maxWidth) {
+            g.el.style.setProperty('max-width', g.maxWidth, g.maxWidthPriority || '');
+          } else {
+            g.el.style.removeProperty('max-width');
+          }
+        }
       }
 
       // v0.7.93：還原 image gallery flex/grid containers 的原 inline style
