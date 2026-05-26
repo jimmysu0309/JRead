@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.194**——fix: cnyes.com 推薦文章 card grid 殘留。新規則 `hideInsideArticleDirectChildLinkBlocks`：article direct child DIV 若含 >= 5 anchor 且無 >= 50 chars `<p>`、不含 canonical title、非前兩個 DIV child，視為推薦 card grid hide。通用結構規則，不綁站點。
+
 **v0.7.193**——fix: 翻譯擴充（Shinkansen）後 detector 把 `<article>` 升級到 `div#main`——site logo H1 殘留。根因：`ensureArticleContainsTitleH1` 的 og:title guard 在翻譯後失效（og:title 英文 vs H1 中文），path 1 把 DOM-first H1（h1#wordlogo site logo）當 hero 升 LCA。修法：articleEl 內恰有 1 個 H1 時，結構上信賴該 H1 就是文章標題，跳過 promote。wya 案例（12 個 H1 = section heading）不受影響。
 
 ---

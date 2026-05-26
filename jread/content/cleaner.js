@@ -540,6 +540,42 @@
     }
   }
 
+  // article direct child DIV 中 link-heavy block（>= 5 anchor、無 >= 50
+  // chars `<p>`）視為推薦 card grid，hide。guard：含 canonical title
+  // （og:title / document.title）的容器視為文章標題區，skip。
+  function hideInsideArticleDirectChildLinkBlocks(articleEl, hidden) {
+    const ogMeta = document.querySelector('meta[property="og:title"]');
+    const ogText = ogMeta && ogMeta.content ? norm(ogMeta.content) : '';
+    const docTitle = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const canonical = ogText || docTitle;
+    function containsCanonicalTitle(el) {
+      if (!canonical || canonical.length < 5) return false;
+      for (const n of el.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
+        const dt = norm(Array.from(n.childNodes)
+          .filter(c => c.nodeType === 3).map(c => c.textContent).join(''));
+        if (dt && dt === canonical) return true;
+      }
+      return false;
+    }
+    let divIdx = 0;
+    for (const child of Array.from(articleEl.children)) {
+      if (child.tagName !== 'DIV') continue;
+      divIdx++;
+      if (divIdx <= 2) continue;
+      if (child.dataset && child.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(child)) continue;
+      if (containsCanonicalTitle(child)) continue;
+      const anchors = child.querySelectorAll('a');
+      if (anchors.length < 5) continue;
+      let hasLongP = false;
+      for (const p of child.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 50) { hasLongP = true; break; }
+      }
+      if (hasLongP) continue;
+      hide(child, hidden);
+    }
+  }
+
   // ---- 主文外：語意標籤 --------------------------------------------------
   function hideOutsideArticleSemantic(articleEl, hidden) {
     // 補 id/class 慣用命名（v0.7.23 newtalk.tw 修法）：newtalk 等舊 CMS /
@@ -3837,6 +3873,7 @@
       hideInsideArticleHorizontalRules(articleEl, hidden);
       hideInsideArticleNav(articleEl, hidden);
       hideInsideArticleFooter(articleEl, hidden);
+      hideInsideArticleDirectChildLinkBlocks(articleEl, hidden);
       hideInsideArticleEmptySpacers(articleEl, hidden, containers);
       hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
       hideInsideArticleAbsoluteOverlays(articleEl, hidden);
