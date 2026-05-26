@@ -593,10 +593,16 @@ html [${ARTICLE_ATTR}="1"] dl {
    color: inherit !important 讓所有後代繼承 reader card 顯式設的 text color
    （見 html [data-jread-active] 的 color 規則）。
    exclude：a（保留連結色）、code/pre（保留 syntax highlight）、mark/kbd
-   （語意 inline 元素）、table 系（保留 cell 色彩）。
+   （語意 inline 元素）、table 系（保留 cell 色彩）、figcaption（背景保留
+   所以文字色也保留——見下方 v0.7.195 註釋）。
    dark/sepia theme 另有 * { color: theme.text } 覆寫全部色，本規則被
-   cascade 蓋過無副作用。 */
-[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not([${PLAYER_ATTR}="1"]) {
+   cascade 蓋過無副作用。
+   v0.7.195：加 :not(figcaption)。background strip 規則已排除 figcaption
+   （保留原站背景），但 color inherit 沒排除——導致 figcaption 原站深色
+   背景 + reader card 深色繼承文字 = 對比度極低不可讀。TWZ (thewarzone.com)
+   圖說白字 + 深灰底實測觸發。figcaption 背景與文字色必須成對保留，不能
+   只保留一邊。dark/sepia theme 的 * { color } 覆寫仍會蓋過本規則。 */
+[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(figcaption):not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
 }
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
@@ -860,7 +866,7 @@ html.${HTML_CLASS} body {
   color: ${theme.text} !important;
 }
 [${ARTICLE_ATTR}="1"],
-[${ARTICLE_ATTR}="1"] * {
+[${ARTICLE_ATTR}="1"] *:not(figcaption) {
   color: ${theme.text} !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader

@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.196**——fix: figcaption 對比度不足。styler 的 background strip 規則排除 figcaption（保留原站背景），但 color inherit 規則沒排除——深色背景 + 深色繼承文字 = 不可讀。TWZ (thewarzone.com) 白字深灰底圖說實測觸發。修法：color inherit 規則 + dark/sepia theme color 規則都加 `:not(figcaption)`，背景與文字色成對保留。
+
+**v0.7.195**——fix: CNN overflow + STREAMING NOW 殘留。(1) `collapseGridWithHiddenCell` 的 `CHILD_DECLS` 與 `INNER_FLEX_CHILD_DECLS` 改 `max-width: none` → `max-width: 100%`——inline-block 子元素不再無限撐寬溢出 reader card（CNN `layout__center` display:inline-block + min-width:500px 導致 444px 溢出 360px card 136px）。(2) `NOISE_KEYWORD_RE` / `STRONG_NOISE_KEYWORD_RE` 加 `related[-_]?content` pattern，命中 CNN `related-content-elevate` 等 class。
+
 **v0.7.194**——fix: cnyes.com 推薦文章 card grid 殘留。新規則 `hideInsideArticleDirectChildLinkBlocks`：article direct child DIV 若含 >= 5 anchor 且無 >= 50 chars `<p>`、不含 canonical title、非前兩個 DIV child，視為推薦 card grid hide。通用結構規則，不綁站點。
 
 **v0.7.193**——fix: 翻譯擴充（Shinkansen）後 detector 把 `<article>` 升級到 `div#main`——site logo H1 殘留。根因：`ensureArticleContainsTitleH1` 的 og:title guard 在翻譯後失效（og:title 英文 vs H1 中文），path 1 把 DOM-first H1（h1#wordlogo site logo）當 hero 升 LCA。修法：articleEl 內恰有 1 個 H1 時，結構上信賴該 H1 就是文章標題，跳過 promote。wya 案例（12 個 H1 = section heading）不受影響。

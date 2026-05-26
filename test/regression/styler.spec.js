@@ -951,6 +951,32 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     );
   });
 
+  it('color inherit 規則排除 figcaption（v0.7.196 TWZ 圖說對比度修法）', () => {
+    // figcaption 的背景被 background strip 規則的 :not(figcaption) 保留，
+    // color inherit 也必須排除 figcaption，否則深色背景 + 深色繼承文字 = 不可讀。
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // light theme：color: inherit 規則必須有 :not(figcaption)
+    const colorInheritRule = css.match(/\[[^\]]*="1"\]\s*\*[^{]*\{[^}]*color:\s*inherit\s*!important/);
+    assert.ok(colorInheritRule, 'CSS 必須有 color: inherit 規則');
+    assert.ok(
+      colorInheritRule[0].includes(':not(figcaption)'),
+      'color: inherit 規則必須排除 figcaption（背景保留 ∴ 文字色也保留）'
+    );
+  });
+
+  it('dark/sepia theme color 規則排除 figcaption（v0.7.196）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
+    const css = document.getElementById('__jread-style').textContent;
+    // dark theme 的 [article] * { color: theme.text } 必須排除 figcaption
+    const themeColorRules = css.match(/\[data-jread-active="1"\]\s*\*[^{]*\{[^}]*color:\s*#d4d4d4/g);
+    assert.ok(themeColorRules, 'dark theme 必須有 * { color } 規則');
+    const hasExclusion = themeColorRules.some(r => r.includes(':not(figcaption)'));
+    assert.ok(hasExclusion, 'dark theme * { color } 規則必須排除 figcaption');
+  });
+
   it('dark theme → 注入文字色 + 卡片底色 + 可讀 link 色（避免連結與正文同色無法辨識）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
