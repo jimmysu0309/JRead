@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.193**——fix: 翻譯擴充（Shinkansen）後 detector 把 `<article>` 升級到 `div#main`——site logo H1 殘留。根因：`ensureArticleContainsTitleH1` 的 og:title guard 在翻譯後失效（og:title 英文 vs H1 中文），path 1 把 DOM-first H1（h1#wordlogo site logo）當 hero 升 LCA。修法：articleEl 內恰有 1 個 H1 時，結構上信賴該 H1 就是文章標題，跳過 promote。wya 案例（12 個 H1 = section heading）不受影響。
+
+---
+
 **v0.7.192**——fix: ancestor 非 ancestor 子元素殘留（chinatalk.media site header "ChinaTalk"）。新增 CSS 通則：ancestor 的直接子元素若不在 ancestor 鏈上也不是主文容器，一律 `display: none !important`。
 
 ---
