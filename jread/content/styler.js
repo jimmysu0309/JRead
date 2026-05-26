@@ -56,9 +56,9 @@
   //   scrollThumb：v0.7.90 auto-hide scrollbar 顯色用，配 page bg 對比夠辨識
   //   又不過度搶眼。dark theme 用淺色 thumb、light/sepia 用深色 thumb。
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)' },
-    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)' },
-    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)', inlineCodeBg: 'rgba(91,70,54,0.08)' }
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: null, scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
+    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', progressBar: '#7fb5e6' },
+    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)', inlineCodeBg: 'rgba(91,70,54,0.08)', progressBar: '#2c5282' }
   };
 
   function themeOf(name) {
@@ -78,6 +78,16 @@
    scroll / resize / timer 類 handler 重設 hide 過元素 display 的情境。 */
 [data-jread-hidden="1"] {
   display: none !important;
+}
+#${PROGRESS_ID} {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: ${theme.progressBar};
+  z-index: 2147483647;
+  pointer-events: none;
 }
 /* SPA 站（Readwise Reader / Notion / Gmail 等）常把 html / body 設
    overflow: hidden、scroll 交給內層 div。reader mode 注入 article card 後
@@ -936,6 +946,18 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   const SCROLLING_ATTR = 'data-jread-scrolling';
   const SCROLL_HIDE_DELAY = 800;
   let scrollHideTimer = null;
+
+  const PROGRESS_ID = '__jread-progress';
+  let progressEl = null;
+  function onScrollProgress() {
+    if (!progressEl) return;
+    const de = document.documentElement;
+    const scrollTop = de.scrollTop || document.body.scrollTop;
+    const scrollHeight = de.scrollHeight - de.clientHeight;
+    if (scrollHeight <= 0) { progressEl.style.width = '0%'; return; }
+    const pct = Math.min(100, (scrollTop / scrollHeight) * 100);
+    progressEl.style.width = pct + '%';
+  }
   function onScrollFlash() {
     const html = document.documentElement;
     if (html.getAttribute(SCROLLING_ATTR) !== '1') {
@@ -1299,6 +1321,17 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       window.removeEventListener('scroll', onScrollFlash, { passive: true });
       window.addEventListener('scroll', onScrollFlash, { passive: true });
 
+      // 閱讀進度條
+      progressEl = document.getElementById(PROGRESS_ID);
+      if (!progressEl) {
+        progressEl = document.createElement('div');
+        progressEl.id = PROGRESS_ID;
+        (document.head?.parentElement || document.documentElement).appendChild(progressEl);
+      }
+      window.removeEventListener('scroll', onScrollProgress, { passive: true });
+      window.addEventListener('scroll', onScrollProgress, { passive: true });
+      onScrollProgress();
+
       // v0.7.91：install SPACE keydown listener（capture phase 比原站 bubble
       // listener 早攔，比原站 keydown 攔截先收到 SPACE）。重複 apply 時保險先 remove。
       window.removeEventListener('keydown', onSpaceScroll, true);
@@ -1541,6 +1574,10 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         scrollHideTimer = null;
       }
       document.documentElement.removeAttribute(SCROLLING_ATTR);
+
+      // 閱讀進度條清除
+      window.removeEventListener('scroll', onScrollProgress, { passive: true });
+      if (progressEl) { progressEl.remove(); progressEl = null; }
 
       // v0.7.91：移除 SPACE keydown listener（避免關閉 reader mode 後 SPACE
       // 仍被 jread 攔截）。capture phase listener 第三個參數須為 true 才能正確 dedup。
