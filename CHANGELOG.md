@@ -4,6 +4,10 @@
 
 ---
 
+**v0.7.192**——fix: ancestor 非 ancestor 子元素殘留（chinatalk.media site header "ChinaTalk"）。新增 CSS 通則：ancestor 的直接子元素若不在 ancestor 鏈上也不是主文容器，一律 `display: none !important`。
+
+---
+
 **v0.7.191**——feat: 閱讀進度條。reader mode 頂端顯示 3px 細線進度條，隨捲動即時更新寬度百分比。顏色跟主題色連動（light 藍 / dark 淡藍 / sepia 深藍）。關閉閱讀模式自動移除。同場加映：所有 Playwright harness 加 `--window-position=-2400,-2400` 防止 Chromium 視窗搶焦點。
 
 ---
