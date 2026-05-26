@@ -677,6 +677,11 @@
       }
     }
 
+    // 翻譯擴充（Shinkansen / 沉浸式翻譯）把 H1 text 換成中文後 og:title
+    // 比對失敗，但若 articleEl 內恰有 1 個 H1，結構上幾乎確定就是文章
+    // 標題——不需升。wya 案例 12 H1 = section heading 不受影響。
+    if (articleEl.querySelectorAll('h1').length === 1) return null;
+
     // 路徑 1：頁面 DOM-order 第一個 H1 不在 articleEl 內 → 升 LCA。
     const firstH1 = document.querySelector('h1');
     if (firstH1 && !articleEl.contains(firstH1)) {
