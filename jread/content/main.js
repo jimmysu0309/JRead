@@ -904,6 +904,16 @@
       if (theme && ['light', 'dark', 'sepia'].includes(theme)) {
         chrome.storage.sync.set({ theme });
       }
+    } else if (type === 'translate') {
+      // 觸發 Shinkansen 翻譯（跨 extension debug bridge）。
+      // Shinkansen 的 content script 監聽 'shinkansen-debug-request' custom
+      // event（isolated world 間 DOM event 共享）。支援 engine 參數：
+      //   { type: 'translate' }                     → 預設引擎
+      //   { type: 'translate', engine: 'google' }   → Google MT（免 API key）
+      const engine = e && e.detail && e.detail.engine;
+      const action = engine ? 'TRANSLATE_ENGINE' : 'TRANSLATE';
+      const detail = engine ? { action, engine } : { action };
+      window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail }));
     } else if (type === 'reload') {
       // v0.7.126：chrome.runtime.reload() 在 content script context 不存在
       // （Uncaught TypeError: chrome.runtime.reload is not a function）——

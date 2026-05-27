@@ -44,9 +44,13 @@ const NOISE_AUDIT_KEYWORDS = [
   '聽新聞', '聽書', '想成為', '玩問答', '拿課程', '抽獎', '免費領'
 ];
 
-const URL = process.env.JREAD_URL || 'https://www.chinatalk.media/p/best-books-q1-2026';
+// --url 優先，其次 JREAD_URL 環境變數，最後預設
+const urlArgIdx = process.argv.indexOf('--url');
+const URL = (urlArgIdx >= 0 && process.argv[urlArgIdx + 1]) || process.env.JREAD_URL || 'https://www.chinatalk.media/p/best-books-q1-2026';
 const FRESH = process.argv.includes('--fresh');
 const KEEP = process.argv.includes('--keep');
+const WITH_SHINKANSEN = process.argv.includes('--shinkansen');
+const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -54,13 +58,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   if (FRESH) fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
+  // 載入 extension：JRead 必載，--shinkansen 時同時載 Shinkansen
+  const extPaths = [EXT_PATH];
+  if (WITH_SHINKANSEN) {
+    if (!fs.existsSync(path.join(SHINKANSEN_EXT, 'manifest.json'))) {
+      console.error('Shinkansen extension 不在預期位置:', SHINKANSEN_EXT);
+      process.exit(1);
+    }
+    extPaths.push(SHINKANSEN_EXT);
+    console.log('shinkansen: enabled');
+  }
+  const extList = extPaths.join(',');
+
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',          // 必須：用 bundled Chromium，才能載 unpacked extension
     headless: false,              // 必須：extension 僅 headed 模式可用
     viewport: { width: 1280, height: 900 },
     args: [
-      `--disable-extensions-except=${EXT_PATH}`,
-      `--load-extension=${EXT_PATH}`,
+      `--disable-extensions-except=${extList}`,
+      `--load-extension=${extList}`,
       '--no-first-run',
       '--no-default-browser-check',
       '--window-position=-2400,-2400',
@@ -445,6 +461,94 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // 都已展開，這張最接近實機使用者看到的狀態）
     const gapDelayed = await runGapAudit();
     printGapAudit('delayed +scroll +15s', gapDelayed);
+
+    // ---- Shinkansen 翻譯後 audit（--shinkansen 啟用時） --------------------
+    // 觸發 Shinkansen 翻譯（Google MT，免 API key），等翻譯完成後再跑一次
+    // residual audit，抓「翻譯 extension 在 body 層注入/重建元素導致站名殘留」
+    // 類 bug。v0.7.199 修法後 body 在 ancestor 鏈內，body 的非 ancestor 直接
+    // 子元素被 CSS 隱藏——Shinkansen 翻譯不應讓任何非主文內容重新浮現。
+    if (WITH_SHINKANSEN) {
+      console.log('\n===== SHINKANSEN TRANSLATION =====');
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await sleep(300);
+
+      // 透過 JRead debug bridge 呼叫 Shinkansen（跨 extension custom event）
+      const translateResult = await page.evaluate(() => {
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);
+          window.addEventListener('shinkansen-debug-response', (e) => {
+            clearTimeout(timeout);
+            resolve({ ok: true, detail: e.detail });
+          }, { once: true });
+          window.dispatchEvent(new CustomEvent('__jread_debug', {
+            detail: { type: 'translate', engine: 'google' }
+          }));
+        });
+      });
+      console.log('translate trigger:', JSON.stringify(translateResult));
+
+      // 等翻譯完成（Google MT 一般 3-8s，視文章長度）
+      console.log('waiting for translation to settle...');
+      await sleep(15000);
+
+      // 翻譯後 residual audit
+      const residualPostTranslate = await page.evaluate((keywords) => {
+        const art = document.querySelector('[data-jread-active="1"]');
+        if (!art) return { error: 'no article' };
+        function isVisible(el) {
+          let cur = el;
+          while (cur) {
+            if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+            const cs = window.getComputedStyle(cur);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            if (cur === document.body) break;
+            cur = cur.parentElement;
+          }
+          return true;
+        }
+        function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+        const items = [];
+        // 掃整個 body（不只 article 內），抓翻譯後 article 外是否有可見非主文殘留
+        for (const el of document.body.querySelectorAll('*')) {
+          if (!isVisible(el)) continue;
+          const tagUpper = el.tagName.toUpperCase();
+          if (tagUpper === 'TITLE' || tagUpper === 'DESC' || tagUpper === 'STYLE' ||
+              tagUpper === 'SCRIPT' || tagUpper === 'NOSCRIPT') continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.width < 5 || rect.height < 5) continue;
+          const direct = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3)
+            .map(n => n.textContent).join('');
+          const text = norm(direct);
+          if (!text || text.length > 60 || text.length < 2) continue;
+          const inArticle = !!el.closest('[data-jread-active="1"]');
+          if (!inArticle) {
+            // article 外的可見文字 = 潛在殘留
+            items.push({
+              tag: el.tagName,
+              text: text.slice(0, 60),
+              inArticle: false,
+              rect: `${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}x${Math.round(rect.height)}`
+            });
+          }
+        }
+        // 統計翻譯涵蓋率
+        const translatedCount = document.querySelectorAll('[data-shinkansen-translated]').length;
+        return { outsideArticle: items, translatedCount };
+      }, NOISE_AUDIT_KEYWORDS);
+
+      console.log(`\n===== POST-TRANSLATION AUDIT =====`);
+      console.log(`Shinkansen 翻譯元素數: ${residualPostTranslate.translatedCount}`);
+      if (residualPostTranslate.outsideArticle && residualPostTranslate.outsideArticle.length > 0) {
+        console.log(`\n⚠️  article 外可見文字 ${residualPostTranslate.outsideArticle.length} 項（翻譯後殘留）：`);
+        for (const w of residualPostTranslate.outsideArticle) {
+          console.log(`   <${w.tag}> rect=[${w.rect}] "${w.text}"`);
+        }
+      } else {
+        console.log('✅ 翻譯後 article 外無可見文字殘留');
+      }
+      console.log('==========================\n');
+    }
   }
 
   fs.mkdirSync(path.dirname(SCREENSHOT_OUT), { recursive: true });
