@@ -268,11 +268,7 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] video,
 [${ARTICLE_ATTR}="1"] picture {
-  /* pixel cap = card content width（max-width - padding 左右）。
-     Swiper / carousel parent 被 JS 設為 viewport 寬時 100% 無效、
-     pixel cap 直接約束 img 本身。小容器內的圖片不會被撐大（max-width
-     只設上限，不改 width/object-fit）。 */
-  max-width: ${contentWidth - 112}px !important;
+  max-width: 100% !important;
   height: auto !important;
 }
 /* v0.7.93：picture 與含 img/picture 的容器強制不被 flex stretch / 不維持
