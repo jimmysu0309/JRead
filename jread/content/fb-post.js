@@ -27,6 +27,8 @@
   //   /groups/<gid>/posts/<pid>/                       ← 既有 /posts/ 規則涵蓋
   //   /groups/<gid>/permalink/<pid>/                   ← 既有 /permalink/ 規則涵蓋
   //   /groups/<gid>/?multi_permalinks=<pid>            ← v0.7.159 新增（modal preview）
+  //   /photo/?fbid=<id>&set=<set_id>                   ← v0.7.204 新增（相簿照片貼文）
+  //   /photo.php?fbid=<id>                             ← v0.7.204 新增（legacy 相簿照片）
   function isFacebookPost(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
     try {
@@ -40,6 +42,9 @@
       // FB Groups modal preview：/groups/<gid>/?multi_permalinks=<pid>
       // 從社團頁面點某貼文展開的 URL，主貼文在 modal overlay 內、結構與一般 permalink 相同
       if (/^\/groups\//.test(path) && u.searchParams.has('multi_permalinks')) return true;
+      // FB photo permalink：/photo/?fbid=<id> 或 /photo.php?fbid=<id>
+      // 相簿照片頁附帶貼文內容，DOM 結構與一般 permalink 相同（data-ad-comet-preview="message"）
+      if (/^\/photo(\.php)?\/?$/.test(path) && u.searchParams.has('fbid')) return true;
       return false;
     } catch (_) {
       return false;
@@ -316,12 +321,128 @@
     return h;
   }
 
+  // ── v0.7.204 FB photo page fallback ──
+  // FB photo permalink（/photo/?fbid=...）的 DOM 結構跟一般 permalink 完全不同：
+  //   - 完全沒有 data-ad-comet-preview="message"
+  //   - 完全沒有 data-ad-rendering-role="profile_name"
+  //   - 主文在 role="complementary" 右側面板的 <span dir="auto"> 內
+  //   - 作者名在 <a aria-label="..." href="/username"> FB profile link
+  //   - 文字用 <br> 換行 + hashtag <a> + 可能有「查看更多」截斷
+  // 2026-05-28 chrome-in-chrome probe 真實 facebook.com/photo/?fbid=... 頁面驗證。
+  // 點「查看更多」展開截斷文字。FB React setState 是 async，必須在獨立 JS
+  // task 跑完後才 re-render——呼叫端（main.js enterFbPostMode）await 短暫
+  // delay 讓 React flush，再呼叫 enter() 讀已展開的文字。
+  function expandSeeMore() {
+    var panel = document.querySelector('[role="complementary"]');
+    if (!panel) return false;
+    var btns = panel.querySelectorAll('[role="button"]');
+    var clicked = false;
+    for (var i = 0; i < btns.length; i++) {
+      var t = (btns[i].innerText || '').trim();
+      if (/^(查看更多|See [Mm]ore|顯示更多)$/.test(t)) {
+        btns[i].click();
+        clicked = true;
+      }
+    }
+    return clicked;
+  }
+
+  function findPhotoPostContent() {
+    var panel = document.querySelector('[role="complementary"]');
+    if (!panel) return null;
+
+    // 找作者：panel 內第一個指向 FB profile 的 <a>（帶 aria-label 或 clean text）
+    var authorName = null;
+    var profileLinks = panel.querySelectorAll('a[href]');
+    for (var ai = 0; ai < profileLinks.length; ai++) {
+      var href = profileLinks[ai].getAttribute('href') || '';
+      if (/^https:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._]+\/?$/.test(href)) {
+        authorName = profileLinks[ai].getAttribute('aria-label') || (profileLinks[ai].innerText || '').trim();
+        if (authorName && authorName.length > 0 && authorName.length < 50) break;
+        authorName = null;
+      }
+    }
+
+    // 找主文：panel 內最長的 <span dir="auto">，排除留言（role="article" 內）
+    var candidates = Array.from(panel.querySelectorAll('span[dir="auto"]'))
+      .filter(function (s) { return !s.closest('[role="article"]'); })
+      .filter(function (s) { return (s.innerText || '').length > 100; })
+      .sort(function (a, b) { return (b.innerText || '').length - (a.innerText || '').length; });
+
+    if (candidates.length === 0) return null;
+
+    var postTextEl = candidates[0];
+
+    // 找 photo 圖片
+    var photoImg = document.querySelector('img[data-visualcompletion="media-vc-image"]');
+
+    return { authorName: authorName, postTextEl: postTextEl, photoImg: photoImg };
+  }
+
+  function enterPhotoMode() {
+    var content = findPhotoPostContent();
+    if (!content || !content.postTextEl) return null;
+
+    var reader = document.createElement('article');
+    reader.setAttribute(READER_ATTR, '1');
+    var lang = document.documentElement.getAttribute('lang');
+    if (lang) reader.setAttribute('lang', lang);
+
+    // 作者 header
+    if (content.authorName) {
+      var header = createSyntheticHeader({ displayName: content.authorName });
+      reader.appendChild(header);
+    }
+
+    // 照片（放在作者下方、主文上方）
+    if (content.photoImg) {
+      var figure = document.createElement('figure');
+      var imgClone = content.photoImg.cloneNode(true);
+      imgClone.removeAttribute('class');
+      imgClone.removeAttribute('style');
+      imgClone.style.cssText = 'max-width:100%;height:auto;display:block;margin:1em auto;';
+      figure.appendChild(imgClone);
+      reader.appendChild(figure);
+    }
+
+    // 主文文字 clone + 清理
+    var textClone = content.postTextEl.cloneNode(true);
+    // 移除「顯示較少」按鈕
+    var roleBtns = textClone.querySelectorAll('[role="button"]');
+    for (var ri = 0; ri < roleBtns.length; ri++) {
+      var rt = (roleBtns[ri].innerText || '').trim();
+      if (/^(顯示較少|Show [Ll]ess|收合)$/.test(rt)) roleBtns[ri].remove();
+    }
+    stripFacebookLayout(textClone);
+
+    // 包進 div
+    var textWrapper = document.createElement('div');
+    textWrapper.appendChild(textClone);
+    reader.appendChild(textWrapper);
+
+    document.body.insertBefore(reader, document.body.firstChild);
+
+    // hide body 直系子（同 enter() 邏輯）
+    _hiddenBodySiblings = [];
+    for (var ci = 0; ci < document.body.children.length; ci++) {
+      var child = document.body.children[ci];
+      if (child === reader) continue;
+      if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
+      var prevDisplay = child.style.getPropertyValue('display');
+      var prevPriority = child.style.getPropertyPriority('display');
+      child.style.setProperty('display', 'none', 'important');
+      _hiddenBodySiblings.push({ el: child, prevDisplay: prevDisplay, prevPriority: prevPriority });
+    }
+
+    return reader;
+  }
+
   function enter() {
     const existing = document.querySelector('[' + READER_ATTR + ']');
     if (existing) return existing;
 
     const container = findPostContainer();
-    if (!container) return null;
+    if (!container) return enterPhotoMode();
 
     const mainMsg = container.querySelector('[data-ad-comet-preview="message"]');
     const author = container.querySelector('[data-ad-rendering-role="profile_name"]');
@@ -426,6 +547,7 @@
     pruneReaderClone,
     stripFacebookLayout,
     markParagraphDivs,
+    expandSeeMore,
     enter,
     exit,
     isActive,

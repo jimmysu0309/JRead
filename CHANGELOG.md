@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.204**——fix: Facebook `/photo/?fbid=` URL 無法進閱讀模式。(1) `isFacebookPost()` 新增 `/photo/` 和 `/photo.php` URL pattern。(2) FB photo 頁 DOM 完全沒有 `data-ad-comet-preview="message"` / `data-ad-rendering-role="profile_name"` marker（跟一般 permalink 結構不同），新增 `findPhotoPostContent()` fallback：從 `role="complementary"` 面板抓作者（`<a aria-label>`）+ 主文（最長 `<span dir="auto">`）+ 照片（`img[data-visualcompletion="media-vc-image"]`）。(3) 新增 `expandSeeMore()` 先展開「查看更多」截斷文字，`enterFbPostMode()` await 500ms 讓 React re-render 後再建 reader card。
+
 **v0.7.203**——fix: reader card 加 `overflow-x: hidden`——Swiper / carousel 類 JS library 把 slide 寬度設為原始 viewport 寬（912px）超出 card（720px），hero image 溢出右邊界。yamatomichi.com 實測觸發。
 
 **v0.7.202**——fix: (1) thenewslens.com 文末「立刻點擊免費加入會員！」殘留 + 「相關議題」heading 殘留。(2) news.ltn.com.tw 文末 APP 推廣「不用抽 不用搶 現在用 APP 看新聞 保證天天中獎」殘留 + 800×532 hero image missing。修法：NOISE_HEADING_TEXT_RE 加 `相關議題|新聞來源`；NOISE_LINK_TEXT_RE 加 `加入.{0,4}會員` + `(點|按)我`；NOISE_LINK_TEXT_STRICT_RE 加 `立刻` 同義詞 + `點擊/点击` 加入；hideInsideArticleByLinkText 加 CTA_PROMO_P_RE parent-upgrade（推廣段落含 noise link 時整段 hide）；hideInsideArticleByKeyword 的 `<a>` scan + hideInsideArticleIconOnlyLinks 加 rendered-size fallback guard（lazy-load hero image naturalWidth=0 不誤殺）。

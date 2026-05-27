@@ -184,6 +184,10 @@
   // （j/k 換貼文等），install keyguard 攔截。
   async function enterFbPostMode() {
     if (!NS.fbPost) return false;
+    // v0.7.204 photo page：先點「查看更多」展開截斷文字，等 React re-render
+    if (NS.fbPost.expandSeeMore && NS.fbPost.expandSeeMore()) {
+      await new Promise(function (r) { setTimeout(r, 500); });
+    }
     const container = NS.fbPost.enter();
     if (!container) {
       showToast('此頁無法偵測主貼文', 'error');
