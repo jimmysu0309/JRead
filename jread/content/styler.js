@@ -254,6 +254,27 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   height: auto !important;
   min-height: 0 !important;
 }
+/* 所有 block 後代不超出 card content area：原站 CSS 可能對 header /
+   section / div 設固定 width 或 min-width（yamatomichi Next.js header
+   等），reader card 縮窄後這些元素溢出右邊界被 overflow-x:hidden 截斷。
+   通則：reader card 是單欄 layout，任何後代都不該比 parent 寬。 */
+[${ARTICLE_ATTR}="1"] div,
+[${ARTICLE_ATTR}="1"] section,
+[${ARTICLE_ATTR}="1"] ul,
+[${ARTICLE_ATTR}="1"] ol,
+[${ARTICLE_ATTR}="1"] h1,
+[${ARTICLE_ATTR}="1"] h2,
+[${ARTICLE_ATTR}="1"] h3,
+[${ARTICLE_ATTR}="1"] h4,
+[${ARTICLE_ATTR}="1"] h5,
+[${ARTICLE_ATTR}="1"] h6,
+[${ARTICLE_ATTR}="1"] p,
+[${ARTICLE_ATTR}="1"] header,
+[${ARTICLE_ATTR}="1"] footer,
+[${ARTICLE_ATTR}="1"] nav {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
    height: auto 的作用是「原站 CSS 鎖死 height、不讓 max-width 觸發 aspect-
    ratio 自動縮放」時強制按比例算——但這條對 a > img 結構（link-
