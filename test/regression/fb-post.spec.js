@@ -209,6 +209,39 @@ describe('fb-post v0.7.157 — isFacebookPost URL 判斷', () => {
     );
   });
 
+  // v0.7.204 — FB photo permalink URL patterns（Jimmy 2026-05-27 實機回報）
+  it('https://www.facebook.com/photo/?fbid=<id>&set=<set_id> → true（v0.7.204 相簿照片貼文）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/photo/?fbid=6474442069241681&set=a.155130037839614'),
+      true,
+      'FB photo permalink（相簿照片頁附帶貼文）必須命中——Jimmy 2026-05-27 回報無法進閱讀模式'
+    );
+  });
+
+  it('https://www.facebook.com/photo.php?fbid=<id> → true（legacy 相簿照片 URL）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/photo.php?fbid=6474442069241681'),
+      true,
+      'legacy photo.php URL 必須命中'
+    );
+  });
+
+  it('https://m.facebook.com/photo/?fbid=<id>&set=<set_id> → true（行動版相簿照片）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://m.facebook.com/photo/?fbid=6474442069241681&set=a.155130037839614'),
+      true,
+      '行動版 photo permalink 必須命中'
+    );
+  });
+
+  it('https://www.facebook.com/photo/ 無 fbid query → false（相簿首頁不是單篇貼文）', () => {
+    assert.strictEqual(
+      isFacebookPost('https://www.facebook.com/photo/'),
+      false,
+      'photo 路徑無 fbid 不代表特定貼文、必須 no-op'
+    );
+  });
+
   it('https://www.facebook.com/groups/<gid>/ 純社團首頁（無 multi_permalinks query）→ false', () => {
     assert.strictEqual(
       isFacebookPost('https://www.facebook.com/groups/902748753095551/'),
@@ -494,6 +527,17 @@ describe('fb-post v0.7.157 — detector.detect() FB 短路', () => {
       assert.notStrictEqual(result.isFbPost, true);
     }
   });
+
+  // v0.7.204：FB photo permalink 走 fb-post 短路
+  it('FB photo URL → detect() 回 isFbPost=true（v0.7.204 相簿照片貼文）', () => {
+    const env = setupJsdom('https://www.facebook.com/photo/?fbid=6474442069241681&set=a.155130037839614', FIXTURE);
+    env.window.eval(DETECTOR_SRC);
+    const result = env.NS.detector.detect();
+    assert.ok(result, 'FB photo URL 不應 no-op');
+    assert.strictEqual(result.isFbPost, true,
+      'detect() 必須帶 isFbPost=true（photo permalink 走 FB post 讀取流程）');
+    assert.strictEqual(result.strategy, 'fb-post');
+  });
 });
 
 describe('fb-post v0.7.157 — detector.probe() FB siteMode', () => {
@@ -502,6 +546,15 @@ describe('fb-post v0.7.157 — detector.probe() FB siteMode', () => {
     env.window.eval(DETECTOR_SRC);
     const probe = env.NS.detector.probe();
     assert.strictEqual(probe.siteMode, 'fb-post');
+  });
+
+  // v0.7.204：FB photo permalink probe
+  it('FB photo URL → probe() 回 siteMode=fb-post（v0.7.204）', () => {
+    const env = setupJsdom('https://www.facebook.com/photo/?fbid=6474442069241681&set=a.155130037839614');
+    env.window.eval(DETECTOR_SRC);
+    const probe = env.NS.detector.probe();
+    assert.strictEqual(probe.siteMode, 'fb-post',
+      'photo permalink 必須 probe 為 fb-post——popup 依此判斷顯示 FB post 模式 UI');
   });
 
   it('detector.js probe() 內必須含 NS.fbPost.isFacebookPost check + return siteMode=fb-post', () => {
