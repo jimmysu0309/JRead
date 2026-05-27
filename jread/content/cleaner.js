@@ -893,6 +893,62 @@
     }
   }
 
+  // ---- overwide img promote：把超寬容器內的大圖拉進 article flow ----------
+  // Swiper / carousel JS library 把 slide 寬設為 viewport 寬。reader card
+  // 縮窄後 CSS max-width:100% 相對超寬 parent 無效，Swiper runtime 會
+  // re-apply display:flex 阻止 flex collapse。
+  // 修法：找 articleEl 內 rendered width > card width 120% 的 img，clone
+  // 一份 bare <img> 直接 insertBefore 原容器，hide 原容器。clone 在 article
+  // normal flow 中吃 styler 的 max-width:100% = card content width，自然
+  // 等比縮放。restore() 時 removeChild clone + unhide 原容器。
+  function promoteOverwideImages(articleEl, hidden) {
+    if (!articleEl) return;
+    // clean() 時 styler 尚未 apply card CSS，不能靠 getBoundingClientRect
+    // 判斷超寬。改用結構特徵：ancestor 有 JS 設的 inline width > 720px
+    // （Swiper 等 library 慣例 pattern）。
+    const MAX_CARD = 720;
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      if (img.closest && img.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(img)) continue;
+      const natW = img.naturalWidth || img.width;
+      const natH = img.naturalHeight || img.height;
+      if (natW < 400 || natH < 200) continue;
+      // 檢查 ancestor chain：是否有 inline width > MAX_CARD 的 ancestor
+      let overwideAncestor = null;
+      let cur = img.parentElement;
+      while (cur && cur !== articleEl) {
+        const inlineW = cur.style && cur.style.width;
+        if (inlineW) {
+          const px = parseFloat(inlineW);
+          if (px > MAX_CARD) { overwideAncestor = cur; break; }
+        }
+        cur = cur.parentElement;
+      }
+      if (!overwideAncestor) continue;
+      // 找 articleEl 的 direct child 作為 hide 目標
+      let container = overwideAncestor;
+      while (container && container !== articleEl &&
+             container.parentElement !== articleEl) {
+        container = container.parentElement;
+      }
+      if (!container || container === articleEl) continue;
+      const clone = img.cloneNode(false);
+      clone.setAttribute('data-jread-promoted-img', '1');
+      clone.removeAttribute('style');
+      clone.style.setProperty('display', 'block', 'important');
+      clone.style.setProperty('max-width', '100%', 'important');
+      clone.style.setProperty('height', 'auto', 'important');
+      clone.style.setProperty('margin', '0 auto 24px', 'important');
+      container.parentElement.insertBefore(clone, container);
+      hide(container, hidden);
+      if (Array.isArray(hidden)) {
+        hidden.push({ el: clone, __promotedImg: true });
+      }
+      break;
+    }
+  }
+
   // ---- promote+narrow 聯動：sibling chrome 全清 ------------------------
   //
   // 場景：detector heuristic 選到深層 content container（例：ebc 的
@@ -3964,6 +4020,8 @@
       // 為 articleEl、主標題 h2.wp-block-post-title 在外層 sibling 被
       // hideAncestorSiblings hide → reader card 無標題。
       promoteArticleTitleClassHeadingInto(articleEl, hidden);
+      // 超寬圖片 promote：Swiper / carousel 內的 hero img 拉到 article flow
+      promoteOverwideImages(articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
@@ -4011,6 +4069,10 @@
         // page-wide unique h1 在 articleEl 外的場景注入的副本）必須整個從
         // DOM 移除——非「hide → 還原 inline display」路徑。
         if (item.__titleClone) {
+          if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+          continue;
+        }
+        if (item.__promotedImg) {
           if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
           continue;
         }
