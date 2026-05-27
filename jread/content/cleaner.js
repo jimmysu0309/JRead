@@ -63,11 +63,14 @@
   //       breadcrumb 變體), recirc, nag, backdrop, topbar, announcement,
   //       popover, drawer, loader, contact, shopping, plea
   //   - 「相關文章 / 推薦」變體：next-article, latest-posts, mostread, most-read
+  //   - 導覽 / 站點結構：menu（navigation menu container，跨 CMS 慣例命名
+  //       main-menu / nav-menu / mobile-menu / menu-bar 等；word boundary
+  //       防止 menuitem 誤命中）
   // 刻意不加（誤殺風險）：gate (太短/tailgate)、wall (firewall)、media、
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news))([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news)|menu)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -224,7 +227,7 @@
   // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
   // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
   // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin)([^a-z0-9]|$)/i;
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin|menu)([^a-z0-9]|$)/i;
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -1302,7 +1305,11 @@
       // 內部的 controls / nav / share（article_header 內的 article_nav /
       // 聽新聞 button 等）由其他 rule（hideInsideArticleByKeyword 對子層
       // article_nav、hideInsideArticleAllButtons 對 buttons）各自處理。
-      if (el.querySelector && el.querySelector('h1')) continue;
+      // v0.7.199：strong keyword（menu 等明確非主文結構）跳過 H1 guard。
+      // Substack `div.main-menu` 含 h1#wordlogo（站名），H1 guard 誤保護
+      // 導致站名在翻譯 extension 重建 DOM 後殘留。menu container 內的 H1
+      // 是站點 branding、不是文章標題——strong keyword 語意足夠確定。
+      if (el.querySelector && el.querySelector('h1') && !shouldHideByStrongKeyword(el)) continue;
       // v0.7.83 修法：保護「含主文 anchor」的 wrapper——含 >= 100 chars 單一
       // p / 累計 p textLen >= 300 / 含 title-anchor element。場景：twz.com
       // 主文 wrapper class 為 `entry-content Article-bodyText paywall ...`，
@@ -3231,6 +3238,9 @@
       // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
       const text = (a.textContent || '').replace(/\s+/g, '').trim();
       if (text.length >= 1) continue;
+      // 跳過含大尺寸圖片的 a（hero / 插圖可點擊版，非 icon button）
+      const img = a.querySelector('img');
+      if (img && img.naturalWidth >= 200 && img.naturalHeight >= 100) continue;
       hide(a, hidden);
     }
   }
