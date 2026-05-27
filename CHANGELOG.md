@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.203**——fix: reader card 加 `overflow-x: hidden`——Swiper / carousel 類 JS library 把 slide 寬度設為原始 viewport 寬（912px）超出 card（720px），hero image 溢出右邊界。yamatomichi.com 實測觸發。
+
 **v0.7.202**——fix: (1) thenewslens.com 文末「立刻點擊免費加入會員！」殘留 + 「相關議題」heading 殘留。(2) news.ltn.com.tw 文末 APP 推廣「不用抽 不用搶 現在用 APP 看新聞 保證天天中獎」殘留 + 800×532 hero image missing。修法：NOISE_HEADING_TEXT_RE 加 `相關議題|新聞來源`；NOISE_LINK_TEXT_RE 加 `加入.{0,4}會員` + `(點|按)我`；NOISE_LINK_TEXT_STRICT_RE 加 `立刻` 同義詞 + `點擊/点击` 加入；hideInsideArticleByLinkText 加 CTA_PROMO_P_RE parent-upgrade（推廣段落含 noise link 時整段 hide）；hideInsideArticleByKeyword 的 `<a>` scan + hideInsideArticleIconOnlyLinks 加 rendered-size fallback guard（lazy-load hero image naturalWidth=0 不誤殺）。
 
 **v0.7.201**——fix: (1) TVBS 整頁空白——`hideInsideArticleCommentPanels` 誤將文章唯一子元素 `DIV.article_new` 當留言面板 hide（後代相關報導區含 3+ 相對時間戳、所有 `<p>` 都很短未觸發既有 guard）。修法：加 text-ratio guard（候選元素文字量 > article 50% 則 skip）。(2) The Register 極窄排版（每行 6.7 字元）——原站 CSS 對 `<p>` 設 padding-left: 220px + padding-right: 320px，reader card 56px 側邊 padding 下文字只剩 68px。修法：styler 加 `html [data-jread-active] p { padding-left: 0; padding-right: 0 }` reset。
