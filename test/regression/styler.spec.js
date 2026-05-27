@@ -48,14 +48,23 @@ describe('styler — 骨架與可逆性', () => {
     assert.strictEqual(articleEl.getAttribute('data-jread-active'), '1');
   });
 
-  it('apply() 替主文容器的祖先鏈標 data-jread-ancestor="1"（到 body 為止）', () => {
+  it('apply() 替主文容器的祖先鏈標 data-jread-ancestor="1"（含 body）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const main = document.querySelector('main');
     assert.ok(main, 'fixture 應有 <main>');
     assert.strictEqual(main.getAttribute('data-jread-ancestor'), '1');
-    assert.strictEqual(document.body.getAttribute('data-jread-ancestor'), null,
-      'body 不應被標（祖先鏈到 body 為止）');
+    assert.strictEqual(document.body.getAttribute('data-jread-ancestor'), '1',
+      'body 也應被標 ancestor（v0.7.199：堵翻譯 extension 在 body 層注入殘留）');
+  });
+
+  it('ancestor sibling hiding rule 排除 #__jread-toast-host（toast 掛在 body 下需可見）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    const re = /\[data-jread-ancestor="1"\]\s*>\s*\*:not[^{]*#__jread-toast-host[^{]*\{\s*display\s*:\s*none\s*!important/;
+    assert.ok(re.test(css),
+      'ancestor sibling hiding rule 必須含 :not(#__jread-toast-host) 排除');
   });
 
   it('apply() 替 <html> 加 class __jread-active（觸發頁面底色 reset）', () => {

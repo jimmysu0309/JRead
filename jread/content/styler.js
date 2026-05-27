@@ -163,11 +163,12 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   border: 0 !important;
 }
 /* ancestor 的直接子元素若不在 ancestor 鏈上、也不是主文容器，一律隱藏。
-   Substack / WordPress 等 CMS 的 site header / nav / footer / sidebar 是
-   ancestor 的兄弟子樹，ancestor reset 只清自身樣式、不影響子元素渲染——
-   文字內容仍在 normal flow 殘留（chinatalk.media h1#wordlogo "ChinaTalk"
-   即此情境）。通則：reader mode 只顯示主文卡片，其餘分支一律隱藏。 */
-[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]) {
+   v0.7.199：body 也納入 ancestor 鏈，body 直接子樹若非 ancestor / article
+   / JRead UI 一律隱藏——堵住翻譯類 extension（Shinkansen 等）在 body 層級
+   注入或重建元素導致站名殘留的通道（chinatalk.media h1#wordlogo）。
+   #__jread-toast-host 是 JRead toast 通知 host，position:fixed 掛在 body
+   下，必須排除。 */
+[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]):not(#__jread-toast-host) {
   display: none !important;
 }
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
@@ -1034,7 +1035,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   function markAncestors(articleEl) {
     const ancestors = [];
     let p = articleEl.parentElement;
-    const stop = document.body || document.documentElement;
+    const stop = document.documentElement;
     while (p && p !== stop) {
       p.setAttribute(ANCESTOR_ATTR, '1');
       ancestors.push(p);
