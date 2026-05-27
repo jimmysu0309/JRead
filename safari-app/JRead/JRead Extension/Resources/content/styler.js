@@ -163,11 +163,12 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   border: 0 !important;
 }
 /* ancestor 的直接子元素若不在 ancestor 鏈上、也不是主文容器，一律隱藏。
-   Substack / WordPress 等 CMS 的 site header / nav / footer / sidebar 是
-   ancestor 的兄弟子樹，ancestor reset 只清自身樣式、不影響子元素渲染——
-   文字內容仍在 normal flow 殘留（chinatalk.media h1#wordlogo "ChinaTalk"
-   即此情境）。通則：reader mode 只顯示主文卡片，其餘分支一律隱藏。 */
-[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]) {
+   v0.7.199：body 也納入 ancestor 鏈，body 直接子樹若非 ancestor / article
+   / JRead UI 一律隱藏——堵住翻譯類 extension（Shinkansen 等）在 body 層級
+   注入或重建元素導致站名殘留的通道（chinatalk.media h1#wordlogo）。
+   #__jread-toast-host 是 JRead toast 通知 host，position:fixed 掛在 body
+   下，必須排除。 */
+[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]):not(#__jread-toast-host) {
   display: none !important;
 }
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
@@ -197,6 +198,11 @@ html [${ARTICLE_ATTR}="1"] {
   float: none !important;
   position: static !important;
   transform: none !important;
+  /* reader card 不應有水平溢出——Swiper / carousel 類 JS library 常把
+     slide 寬度設為原始 viewport 寬而非 card content width，圖片隨之超出
+     card 右邊界。overflow-x:hidden 是 fallback clip（防溢出可見），搭配
+     constrainOverwideDescendants() runtime 修正超寬後代使圖片等比縮放。 */
+  overflow-x: hidden !important;
   /* v0.7.179：reader card 顯式設 text color（所有 theme）。搭配下方
      後代 color: inherit 規則，確保 CMS 彩色 banner 內白字不會在背景
      被 strip 後殘留不可見。light theme 之前不設 color（交給原站），但
@@ -247,6 +253,28 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   padding: 0 !important;
   height: auto !important;
   min-height: 0 !important;
+}
+/* 所有 block 後代不超出 card content area：原站 CSS 可能對 header /
+   section / div 設固定 width 或 min-width（yamatomichi Next.js header
+   等），reader card 縮窄後這些元素溢出右邊界被 overflow-x:hidden 截斷。
+   通則：reader card 是單欄 layout，任何後代都不該比 parent 寬。 */
+[${ARTICLE_ATTR}="1"] div,
+[${ARTICLE_ATTR}="1"] section,
+[${ARTICLE_ATTR}="1"] ul,
+[${ARTICLE_ATTR}="1"] ol,
+[${ARTICLE_ATTR}="1"] h1,
+[${ARTICLE_ATTR}="1"] h2,
+[${ARTICLE_ATTR}="1"] h3,
+[${ARTICLE_ATTR}="1"] h4,
+[${ARTICLE_ATTR}="1"] h5,
+[${ARTICLE_ATTR}="1"] h6,
+[${ARTICLE_ATTR}="1"] p,
+[${ARTICLE_ATTR}="1"] header,
+[${ARTICLE_ATTR}="1"] footer,
+[${ARTICLE_ATTR}="1"] nav {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
 }
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
    height: auto 的作用是「原站 CSS 鎖死 height、不讓 max-width 觸發 aspect-
@@ -564,6 +592,16 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    flex: initial 把 col 退化成 block 流排、padding 已失 grid gutter 意義，可
    清。businessweekly blog 主圖（497px wide 卡在 col 內 padding-right 115px
    後）修法：清 padding 後圖回到 card 完整內寬 608px。 */
+/* v0.7.201：內容 block 元素水平 padding reset。原站用 padding-left/right
+   做多欄 layout 內縮（The Register 對 p 設 padding-left: 220px + padding-right:
+   320px）。reader card 是 single-column、已有 56px 側邊 padding，原站
+   的水平 padding 只會把文字擠窄（The Register 每行僅 6.7 字元）。
+   只清 left/right，保留 top/bottom（站點可能用它做段落間距）。
+   html 前綴提升 specificity。 */
+html [${ARTICLE_ATTR}="1"] p {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
 /* v0.7.179：WordPress Gutenberg constrained layout override。WP block theme
    用 .wp-container-core-post-content-is-layout-HASH > :where(:not(.alignfull))
    對 p/h/ul/ol 等 content block 設 max-width: 560-650px。:where() specificity
@@ -1034,7 +1072,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   function markAncestors(articleEl) {
     const ancestors = [];
     let p = articleEl.parentElement;
-    const stop = document.body || document.documentElement;
+    const stop = document.documentElement;
     while (p && p !== stop) {
       p.setAttribute(ANCESTOR_ATTR, '1');
       ancestors.push(p);
@@ -1455,6 +1493,12 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
+      // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
+      // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
+      // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
+      // Runtime walk：比較每個 block 元素的 rendered width 與 card width，
+      // 超寬的強制 max-width:100% + box-sizing:border-box。max-width:100%
+      // 相對 parent 逐層 cascade，最外層被 card 擋住、內層隨之縮。
       // v0.7.180：title font-size inline override。CMS 高 specificity rule
       // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
       // `.opinion-header > .wp-block-group .title-and-dek-column
