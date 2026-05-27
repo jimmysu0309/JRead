@@ -200,7 +200,8 @@ html [${ARTICLE_ATTR}="1"] {
   transform: none !important;
   /* reader card 不應有水平溢出——Swiper / carousel 類 JS library 常把
      slide 寬度設為原始 viewport 寬而非 card content width，圖片隨之超出
-     card 右邊界。overflow-x:hidden clip 住所有超寬後代。 */
+     card 右邊界。overflow-x:hidden 是 fallback clip（防溢出可見），搭配
+     constrainOverwideDescendants() runtime 修正超寬後代使圖片等比縮放。 */
   overflow-x: hidden !important;
   /* v0.7.179：reader card 顯式設 text color（所有 theme）。搭配下方
      後代 color: inherit 規則，確保 CMS 彩色 banner 內白字不會在背景
@@ -267,7 +268,7 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] video,
 [${ARTICLE_ATTR}="1"] picture {
-  max-width: 100% !important;
+  max-width: ${contentWidth - 112}px !important;
   height: auto !important;
 }
 /* v0.7.93：picture 與含 img/picture 的容器強制不被 flex stretch / 不維持
@@ -1470,6 +1471,12 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         }
       }
 
+      // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
+      // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
+      // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
+      // Runtime walk：比較每個 block 元素的 rendered width 與 card width，
+      // 超寬的強制 max-width:100% + box-sizing:border-box。max-width:100%
+      // 相對 parent 逐層 cascade，最外層被 card 擋住、內層隨之縮。
       // v0.7.180：title font-size inline override。CMS 高 specificity rule
       // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
       // `.opinion-header > .wp-block-group .title-and-dek-column
