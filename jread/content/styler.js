@@ -565,6 +565,16 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    flex: initial 把 col 退化成 block 流排、padding 已失 grid gutter 意義，可
    清。businessweekly blog 主圖（497px wide 卡在 col 內 padding-right 115px
    後）修法：清 padding 後圖回到 card 完整內寬 608px。 */
+/* v0.7.201：內容 block 元素水平 padding reset。原站用 padding-left/right
+   做多欄 layout 內縮（The Register 對 p 設 padding-left: 220px + padding-right:
+   320px）。reader card 是 single-column、已有 56px 側邊 padding，原站
+   的水平 padding 只會把文字擠窄（The Register 每行僅 6.7 字元）。
+   只清 left/right，保留 top/bottom（站點可能用它做段落間距）。
+   html 前綴提升 specificity。 */
+html [${ARTICLE_ATTR}="1"] p {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
 /* v0.7.179：WordPress Gutenberg constrained layout override。WP block theme
    用 .wp-container-core-post-content-is-layout-HASH > :where(:not(.alignfull))
    對 p/h/ul/ol 等 content block 設 max-width: 560-650px。:where() specificity

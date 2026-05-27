@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.201**——fix: (1) TVBS 整頁空白——`hideInsideArticleCommentPanels` 誤將文章唯一子元素 `DIV.article_new` 當留言面板 hide（後代相關報導區含 3+ 相對時間戳、所有 `<p>` 都很短未觸發既有 guard）。修法：加 text-ratio guard（候選元素文字量 > article 50% 則 skip）。(2) The Register 極窄排版（每行 6.7 字元）——原站 CSS 對 `<p>` 設 padding-left: 220px + padding-right: 320px，reader card 56px 側邊 padding 下文字只剩 68px。修法：styler 加 `html [data-jread-active] p { padding-left: 0; padding-right: 0 }` reset。
+
 **v0.7.200**——fix: 翻譯 extension 重建 DOM 後站名殘留（ChinaTalk）。(1) NOISE_KEYWORD_RE + STRONG_NOISE_KEYWORD_RE 加 `menu`（navigation menu container 通則）。(2) `hideInsideArticleByKeyword` 的 H1 guard 改為 strong keyword 可跳過——`div.main-menu` 含 h1#wordlogo（站名 branding），舊 guard 無條件保護導致 menu container 漏網。(3) debug bridge 加 `translate` action 觸發 Shinkansen 翻譯。(4) harness 加 `--shinkansen` flag 同時載入 Shinkansen + 翻譯後 audit、`--url` 參數。(5) icon-only link guard 跳過含大尺寸圖片的 a。
 
 **v0.7.199**——fix: 翻譯 extension（Shinkansen 等）在 body 層級注入/重建元素導致站名殘留（chinatalk.media「中國談」）。修法：(1) `markAncestors` 擴展到含 body，body 也標 `data-jread-ancestor="1"`。(2) ancestor sibling hiding CSS rule 加 `:not(#__jread-toast-host)` 排除 JRead toast 通知 host。body 的非 ancestor/article 直接子元素一律隱藏，堵住翻譯 extension 從 body 層級逃脫 reader mode 的通道。

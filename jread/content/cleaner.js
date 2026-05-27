@@ -3276,6 +3276,7 @@
   const COMMENT_PANEL_MIN_TIMESTAMPS = 3;
 
   function hideInsideArticleCommentPanels(articleEl, hidden) {
+    const articleTextLen = norm(articleEl.textContent).length || 1;
     for (const el of articleEl.querySelectorAll('div, section, aside, ul, ol')) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
@@ -3284,6 +3285,15 @@
       const text = el.textContent || '';
       const matches = text.match(RELATIVE_TIME_RE);
       if (!matches || matches.length < COMMENT_PANEL_MIN_TIMESTAMPS) continue;
+      // 保護主文 layer 0（v0.7.201）：候選元素的文字量佔整個 article > 50%
+      // 就不可能是留言面板——留言面板是 article 的子區塊，不會佔多數內容。
+      // TVBS news.tvbs.com.tw 實測：`DIV.article_new`（article 的唯一子元素）
+      // 的後代「相關報導」區含 3+ 個相對時間戳命中 RELATIVE_TIME_RE，但所有
+      // `<p>` 都很短（UNIQLO 促銷品項列表）不觸發 layer 1/2 guard，整個
+      // article 內容被當留言面板 hide → 整頁空白。文字量比例 guard 是結構性
+      // 通則：comment panel 的文字佔 article 整體的比例一定很小。
+      const elTextLen = norm(text).length;
+      if (elTextLen > articleTextLen * 0.5) continue;
       // 保護主文 layer 1：若此 el 含主文長段落（>= 300 chars 的 p），跳過
       let hasMainParagraph = false;
       for (const p of el.querySelectorAll('p')) {
