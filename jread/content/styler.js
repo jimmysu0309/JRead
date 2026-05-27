@@ -273,6 +273,7 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] footer,
 [${ARTICLE_ATTR}="1"] nav {
   max-width: 100% !important;
+  min-width: 0 !important;
   box-sizing: border-box !important;
 }
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
