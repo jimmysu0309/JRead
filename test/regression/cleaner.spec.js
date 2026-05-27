@@ -3723,11 +3723,18 @@ describe('cleaner — cnyes-nav-widgets-walkup（社交 nav + 末段 widget 通�
 
   it('「點我下載APP」a 被 link-text 命中清（規則 4 forcing）', () => {
     const a = document.querySelector('a');
-    // 確認某個 a 的 text 是「點我下載APP」、且自己被 hide
+    // 確認某個 a 的 text 是「點我下載APP」、且自己或祖先被 hide
+    // （CTA_PROMO_P_RE 升級 parent 時 LI 被 hide 而非 a 本身）
     const target = Array.from(document.querySelectorAll('a')).find(el => el.textContent.includes('點我下載APP'));
     assert.ok(target);
-    assert.strictEqual(target.dataset.jreadHidden, '1',
-      'a 文字「點我下載APP」應命中 NOISE_LINK_TEXT_RE 新 token；forcing：拿掉 `點我.{0,8}` 或 `下載\\s*APP` → fail');
+    let hidden = false;
+    let cur = target;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { hidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(hidden,
+      'a 文字「點我下載APP」應命中 NOISE_LINK_TEXT_RE 新 token；forcing：拿掉 `(點|按)我.{0,8}` 或 `下載\\s*APP` → fail');
   });
 
   it('主文 CNYES_MAIN_MARK 段落保留（不被誤殺）', () => {

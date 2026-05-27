@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Icon-only hero image guard</title></head>
+<body>
+<article id="main-article">
+  <header>
+    <a class="cover-link" href="https://example.com/hero.png">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+           width="1000" height="420" class="cover-image" />
+    </a>
+  </header>
+  <h1>Test Article</h1>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+  <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident.</p>
+  <!-- lazy-loaded hero image: naturalWidth=0 at clean() time, but rendered size is large -->
+  <a class="image-popup-vertical-fit" href="https://example.com/hero-full.jpg">
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+         class="lazy_imgs" width="800" height="532" />
+  </a>
+  <!-- icon-only CTA link (should be hidden) -->
+  <a class="share-btn" href="javascript:void(0)"><svg width="20" height="20"><circle r="10" cx="10" cy="10"/></svg></a>
+</article>
+</body></html>
