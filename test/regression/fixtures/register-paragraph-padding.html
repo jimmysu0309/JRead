@@ -1,0 +1,15 @@
+<!--
+  Fixture: The Register paragraph padding reset
+  結構特徵：原站 CSS 對 <p> 設 padding-left: 220px; padding-right: 320px，
+  在 reader card（720px 內寬、56px 側邊 padding）內把文字擠到僅 68px 寬
+  （約 6.7 字元/行）。
+  修法：styler 注入 html [data-jread-active="1"] p { padding-left: 0; padding-right: 0; }
+-->
+<html><body>
+<article id="test-article">
+  <h2>Server downtime hits three continents as cloud provider fumbles update</h2>
+  <p style="padding-left: 220px; padding-right: 320px; box-sizing: border-box;">A major cloud service provider caused widespread outages across Europe, Asia and North America on Tuesday after deploying a misconfigured update to its global load balancing infrastructure.</p>
+  <p style="padding-left: 220px; padding-right: 320px; box-sizing: border-box;">The incident, which lasted approximately four hours, affected thousands of businesses relying on the platform for hosting and content delivery, according to status page updates.</p>
+  <p style="padding-left: 220px; padding-right: 320px; box-sizing: border-box;">Engineers identified the root cause as an incorrect routing table pushed to edge nodes during a routine maintenance window, the company said in a post-mortem.</p>
+</article>
+</body></html>
