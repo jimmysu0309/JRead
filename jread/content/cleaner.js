@@ -2614,13 +2614,6 @@
       const children = Array.from(el.children);
       if (children.length < 2) continue;
       const visibleChildren = [];
-      // v0.7.107：在 wrap 判定階段過濾掉 position: absolute / fixed children
-      // ——這些 children 的 top 不由 flex layout 決定（由 CSS top/left
-      // 控制），混入會產生 wrap false positive（healthsystemtracker
-      // `.entry-content-right` 全文高 absolute 側欄、top=716 跟其他
-      // flex children 同 row 但獨立計算）。reset 階段仍對 absolute
-      // children 套 CHILD_DECLS（position:static + width:auto），
-      // 將它們拉回 block flow。
       const inFlowChildren = [];
       for (const c of children) {
         if (c.dataset && c.dataset.jreadHidden === '1') continue;
