@@ -198,6 +198,10 @@ html [${ARTICLE_ATTR}="1"] {
   float: none !important;
   position: static !important;
   transform: none !important;
+  /* reader card 不應有水平溢出——Swiper / carousel 類 JS library 常把
+     slide 寬度設為原始 viewport 寬而非 card content width，圖片隨之超出
+     card 右邊界。overflow-x:hidden clip 住所有超寬後代。 */
+  overflow-x: hidden !important;
   /* v0.7.179：reader card 顯式設 text color（所有 theme）。搭配下方
      後代 color: inherit 規則，確保 CMS 彩色 banner 內白字不會在背景
      被 strip 後殘留不可見。light theme 之前不設 color（交給原站），但
