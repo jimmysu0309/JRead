@@ -99,7 +99,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -107,7 +107,7 @@
   // 「延伸閱讀：＋連結文字」包在 H3（29 chars），提升後 heading rule walk-up
   // 因該站主文用 <div> 不用 <p>、wrapperContainsMainContentP guard 全 miss、
   // 一路 walk 到含整篇主文的 wrapper hide 掉 → 主文消失。
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|推薦閱讀|推薦文章)/i;
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -122,7 +122,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|點我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -131,7 +131,7 @@
   // 推廣 `<a>` 整段 80+ chars 包含完整描述 + 結尾「立即报名>>」CTA，被 60 chars
   // 上限 skip 漏網。將此類 strict CTA 拆出獨立 regex，hideInsideArticleByLinkText
   // 對 strict CTA 命中時跳過 length cap，僅保留 PRESERVE_SEL 與 article-self 保護。
-  const NOISE_LINK_TEXT_STRICT_RE = /(立即\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读)|點擊\s*(報名|領取|下載|了解|查看|閱讀))/i;
+  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读|加入)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)/i;
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
   // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
@@ -141,6 +141,18 @@
   //   續文指示字樣
   const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)/i;
   const NOISE_INLINE_AD_MAX_LEN = 40;
+
+  // CTA 推廣段落 heuristic：當 hideInsideArticleByLinkText 命中 noise link
+  // 後，若 parent P/DIV 文字匹配此 pattern，視為整段推廣內容（非主文），
+  // 升級 hide parent 而非僅 hide link 本身。跨站結構性 CTA 字樣：
+  //   - 加入...會員：thenewslens「【加入關鍵評論網會員】」等會員推廣 P
+  //   - 訂閱...電子報：newsletter 訂閱推廣
+  //   - 下載...APP / 用 APP 看：LTN / ETtoday 等台灣新聞站 APP 推廣
+  //   - 中獎 / 天天中獎：APP 抽獎推廣（LTN「保證天天中獎」）
+  //   - download...app / get the app：英文站 app promo
+  // 僅在 parent 內已有 child link 命中 NOISE_LINK_TEXT_RE 時才觸發——雙
+  // 條件交叉降低誤殺風險（主文段落不會同時含 CTA link + CTA P 字樣）。
+  const CTA_PROMO_P_RE = /(加入.{0,15}會員|訂閱.{0,15}電子報|下載.{0,8}(APP|app)|現在用\s*APP|用\s*APP\s*看|天天中獎|保證.{0,6}中獎|download\s+(the\s+)?app|get\s+the\s+app|install\s+(the\s+)?app)/i;
 
   // v0.7.109：byline 文字 pattern——hideInsideArticleSidebarColumns
   // 條件 A（textLen < main × 10% + linkDensity > 0.5）會誤殺短篇 byline
@@ -1349,6 +1361,19 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (!shouldHideByKeyword(el)) continue;
+      // <a> 含大尺寸圖片（hero / 插圖的可點擊 lightbox 版）跳過——class
+      // 如 "image-popup-vertical-fit" 含 "popup" keyword 但實際是 lightbox
+      // link 不是 UI popup。naturalWidth 對 lazy-load 為 0，fallback 檢查
+      // rendered 尺寸。
+      if (el.tagName === 'A') {
+        const img = el.querySelector('img');
+        if (img) {
+          const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
+          const rect = img.getBoundingClientRect();
+          const renOk = rect.width >= 200 && rect.height >= 100;
+          if (natOk || renOk) continue;
+        }
+      }
       hide(el, hidden);
     }
   }
@@ -1532,8 +1557,10 @@
       }
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
-      // 嘗試 hide parent p / div 若 a 文字占 parent 文字 80% 以上（整個段
-      // 落都是 CTA）
+      // 嘗試 hide parent p / div：
+      //   1. a 文字占 parent 文字 80% 以上（整段都是 CTA）
+      //   2. parent 文字匹配 CTA_PROMO_P_RE（推廣段落，非主文——加入會員 /
+      //      下載 APP / 中獎 等跨站 CTA 字樣）
       const parent = a.parentElement;
       let target = a;
       if (parent && (parent.tagName === 'P' || parent.tagName === 'DIV' || parent.tagName === 'LI')) {
@@ -1541,7 +1568,8 @@
         else if (parent.contains(articleEl)) { /* 不 hide 主文祖先 */ }
         else {
           const parentText = norm(parent.textContent);
-          if (parentText.length > 0 && text.length / parentText.length >= 0.8) {
+          if (parentText.length > 0 &&
+              (text.length / parentText.length >= 0.8 || CTA_PROMO_P_RE.test(parentText))) {
             target = parent;
           }
         }
@@ -3238,9 +3266,16 @@
       // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
       const text = (a.textContent || '').replace(/\s+/g, '').trim();
       if (text.length >= 1) continue;
-      // 跳過含大尺寸圖片的 a（hero / 插圖可點擊版，非 icon button）
+      // 跳過含大尺寸圖片的 a（hero / 插圖可點擊版，非 icon button）。
+      // naturalWidth/Height 對 lazy-load 圖片為 0（尚未載入），fallback
+      // 檢查 rendered 尺寸（CSS / HTML attribute 決定的佈局大小）。
       const img = a.querySelector('img');
-      if (img && img.naturalWidth >= 200 && img.naturalHeight >= 100) continue;
+      if (img) {
+        const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
+        const rect = img.getBoundingClientRect();
+        const renOk = rect.width >= 200 && rect.height >= 100;
+        if (natOk || renOk) continue;
+      }
       hide(a, hidden);
     }
   }
