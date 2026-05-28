@@ -309,6 +309,63 @@ async function runFigcaptionAudit(page) {
   });
 }
 
+// ---- Body width audit（內文寬度比例偵測）----
+// 偵測「內文整體被原站 sidebar-style layout 縮窄」的情形，補 narrowText
+// （chars/line < 10 極端窄欄）抓不到的中度縮窄（每行字數還正常但只佔
+// cardW 的 60-70%）。
+// 判定：主文 p（>= 60 chars）的 width / cardW 比例。
+//   - 個別 p ratio < 0.8 視為 narrow
+//   - > 50% 的主文 p 都 narrow → 整體 body width narrow
+// twreporter.org 實機觸發（修法前 32/32 個 p 都是 480px = 67% cardW）。
+async function runBodyWidthAudit(page) {
+  return page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    if (!art) return { error: 'no article', narrow: false };
+    const cardRect = art.getBoundingClientRect();
+    if (cardRect.width < 10) return { narrow: false, reason: 'card width invalid' };
+    const ps = Array.from(art.querySelectorAll('p')).filter(p => {
+      const text = (p.textContent || '').trim();
+      if (text.length < 60) return false;
+      const cs = window.getComputedStyle(p);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      if (p.closest('[data-jread-hidden="1"]')) return false;
+      // 排除 figcaption 內 p（有自己的 figcaption audit）
+      if (p.closest('figcaption')) return false;
+      // 排除 blockquote / aside / footer 內 p（這些有自己的窄寬語意）
+      if (p.closest('blockquote, aside, footer')) return false;
+      return true;
+    });
+    if (ps.length < 3) return { narrow: false, reason: 'too few main paragraphs (< 3)', totalP: ps.length };
+
+    const NARROW_RATIO_THRESHOLD = 0.8;  // p width 必須 >= 80% cardW
+    const samples = [];
+    let narrowCount = 0;
+    for (const p of ps) {
+      const r = p.getBoundingClientRect();
+      const ratio = r.width / cardRect.width;
+      if (ratio < NARROW_RATIO_THRESHOLD) {
+        narrowCount++;
+        if (samples.length < 5) {
+          samples.push({
+            pWidth: Math.round(r.width),
+            ratio: Math.round(ratio * 100),
+            text: (p.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50)
+          });
+        }
+      }
+    }
+    const narrowFraction = narrowCount / ps.length;
+    return {
+      narrow: narrowFraction > 0.5,
+      cardWidth: Math.round(cardRect.width),
+      totalP: ps.length,
+      narrowCount,
+      narrowFraction: Math.round(narrowFraction * 100),
+      samples
+    };
+  });
+}
+
 // ---- Hero image audit（原頁 vs reader mode 比對）----
 // 比對原頁 top-3 大圖是否在 reader mode 中存活。
 async function runHeroImageAudit(page, originalHeroImages) {
@@ -576,6 +633,23 @@ async function getContentStats(page) {
     console.log('  ✅ figcaption: 無過窄圖說');
   }
 
+  // ---- 7d3. Body width audit（內文寬度比例偵測，zoom 1.0 下量）----
+  // 補 narrowText 抓不到的中度縮窄（每行字數還正常但只佔 cardW 60-70%）。
+  // twreporter.org sidebar-style 雙欄 layout 的 p 480px / cardW 720px = 67% 觸發。
+  await page.evaluate(() => { document.body.style.zoom = '1'; });
+  await sleep(200);
+  audit.bodyWidth = await runBodyWidthAudit(page);
+  await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+  await sleep(200);
+  if (audit.bodyWidth.narrow) {
+    console.log(`  ⚠️  body width narrow: ${audit.bodyWidth.narrowCount}/${audit.bodyWidth.totalP} paragraphs < 80% of card (${audit.bodyWidth.narrowFraction}%)`);
+    for (const s of (audit.bodyWidth.samples || []).slice(0, 3)) {
+      console.log(`    ${s.pWidth}px (${s.ratio}% of ${audit.bodyWidth.cardWidth}px card): "${s.text}"`);
+    }
+  } else {
+    console.log('  ✅ body width: 內文寬度正常');
+  }
+
   // ---- 7e. Tail audit（文末元素 dump）----
   audit.tail = await runTailAudit(page);
   const tailItems = audit.tail.items;
@@ -656,6 +730,7 @@ async function getContentStats(page) {
     (audit.heroImage?.missing?.length > 0) ||
     (audit.narrowText?.narrow) ||
     (audit.figcaption?.cramped) ||
+    (audit.bodyWidth?.narrow) ||
     hasLargeGap;
   const verdict = hasFail ? 'failed' : 'pass';
   audit.verdict = verdict;
