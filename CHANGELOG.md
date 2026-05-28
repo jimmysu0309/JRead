@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.206** — fix: Bootstrap `.ratio` aspect-ratio hack 撐空白（thenewslens.com 標題→hero 305px gap）；harness `hasFail` 加入 gap >= 200px 判定
+
 **v0.7.205**——fix: TVBS 文末推薦區塊殘留。NOISE_HEADING_TEXT_RE 擴充 `你可能(也|會)?` / `其他人.{0,3}看` / `人氣(精選|點閱榜|排行榜|推薦)` / `在...Google...新聞...關注` 四組 pattern；NOISE_LINK_TEXT_RE 新增中文 Google News CTA pattern。Page Rounds 第三輪 TVBS C2/C4/C1 修正。
 
 **v0.7.204**——fix: Facebook `/photo/?fbid=` URL 無法進閱讀模式。(1) `isFacebookPost()` 新增 `/photo/` 和 `/photo.php` URL pattern。(2) FB photo 頁 DOM 完全沒有 `data-ad-comet-preview="message"` / `data-ad-rendering-role="profile_name"` marker（跟一般 permalink 結構不同），新增 `findPhotoPostContent()` fallback：從 `role="complementary"` 面板抓作者（`<a aria-label>`）+ 主文（最長 `<span dir="auto">`）+ 照片（`img[data-visualcompletion="media-vc-image"]`）。(3) 新增 `expandSeeMore()` 先展開「查看更多」截斷文字，`enterFbPostMode()` await 500ms 讓 React re-render 後再建 reader card。
