@@ -4,6 +4,8 @@
 
 ---
 
+**harness** — page-rounds-harness 修兩類 audit 假警報：(1) `runOverflowAudit` 加 `NON_RENDERING_TAGS` skip（SOURCE/TRACK/META/LINK/STYLE/SCRIPT/HEAD/TITLE/TEMPLATE/PARAM）排除 cna 把 `<source>` 從 user-agent `display:none` 改成有 layout 造成的誤判 + OVERFLOW log 按 docOverflow 真偽分支訊息。(2) `captureOriginalHeroImages` 加 natural size `>= 300x150` 過濾排除 newtalk 100x100 anonymous_100.jpg avatar 被 CSS 撐大誤判 hero + `runHeroImageAudit` 前加 `waitForReaderImagesLoaded` 解 lazy-load race。batch 22 PASS → 23 PASS。
+
 **v0.7.209** — fix: twreporter sidebar-style 雙欄 layout 縮窄（figcaption 180px 窄欄 + 內文 p 固定 480px）
 
 **v0.7.208** — fix: article-others widget 文末「建議閱讀」相關文章列表殘留（thenewslens.com）
