@@ -272,6 +272,11 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] header,
 [${ARTICLE_ATTR}="1"] footer,
 [${ARTICLE_ATTR}="1"] nav {
+  /* v0.7.209：加 width: auto——原站用 styled-components 對 p 設固定窄欄
+     寬度（twreporter.org 「width: 480px」配 sidebar-style 圖說做雙欄 layout）。
+     reader card 是 single-column、p 應跟容器同寬。max-width: 100% 只擋上限、
+     擋不掉原站固定 480px 值，必須 width: auto 把 explicit width 清掉。 */
+  width: auto !important;
   max-width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
@@ -528,6 +533,16 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
      1.5em，解 figure 上方緊貼前一段 p 的對稱問題。 */
   margin-top: 1.5em !important;
   margin-bottom: 1.5em !important;
+}
+/* v0.7.209：figcaption 固定寬度退回 auto。原站可能對 figcaption 設固定窄寬
+   做 sidebar-style 圖文並排 layout（twreporter.org figcaption width: 180px
+   配主文 480px 雙欄）。reader mode 下 figure 已被強制 block，圖說殘留固定
+   180px 窄寬會被擠成「每行 1-2 字」的窄欄。
+   width: auto 拉回 block-level 預設 = 100% of parent；max-width: 100% 防上限
+   超出 figure。不碰 background/color/font——保留原站 typography hierarchy。 */
+[${ARTICLE_ATTR}="1"] figcaption {
+  width: auto !important;
+  max-width: 100% !important;
 }
 /* v0.7.100：h1-h6 上下 margin。BBC Culture 類站點原站 CSS 把 heading 的
    margin 全砍光（styled-components hash class 預設 margin: 0），reader mode 下

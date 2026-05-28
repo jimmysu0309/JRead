@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.209** — fix: twreporter sidebar-style 雙欄 layout 縮窄（figcaption 180px 窄欄 + 內文 p 固定 480px）
+
 **v0.7.208** — fix: article-others widget 文末「建議閱讀」相關文章列表殘留（thenewslens.com）
 
 **v0.7.207** — fix: avatar icon 在 ratio wrapper 內被 flex 撐到全寬（thenewslens 中央社 logo 496×496 → 200×200 上限）

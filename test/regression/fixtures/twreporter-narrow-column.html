@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>twreporter sidebar-style 雙欄 layout：figcaption 窄欄 + p 固定 width</title>
+<style>
+/* 原站 layout：主文 480px + 圖說 sidebar 180px 雙欄。reader card single
+   column 下這兩個固定寬度必須拉回 auto。 */
+figcaption { width: 180px; }
+p.brief__Content { width: 480px; }
+p.body__StyledParagraph { width: 480px; margin-left: 35px; margin-right: 35px; }
+</style>
+</head><body>
+<main>
+  <article class="article-body-item">
+    <h1>twreporter 雙欄 layout 縮窄測試</h1>
+
+    <p class="brief__Content">在開打 39 天後，這場衝擊全球經濟的戰爭，因美國和伊朗的「短暫休兵」，暫時得到脆弱且充滿不確定性的喘息空間。本段為主文導言段落，原站設定 width: 480px 用於雙欄 layout。</p>
+
+    <figure>
+      <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+           width="600" height="400" alt="ruins">
+      <figcaption>在這場席捲中東的多國衝突中，超過 1,500 人死亡的黎巴嫩，國內死傷規模僅次於伊朗。圖為 2026 年 4 月 5 日，在以色列空襲過後，搜救人員在黎巴嫩首都貝魯特南部搜尋倖存者。（攝影 / Fadel Itani / AFP）</figcaption>
+    </figure>
+
+    <p class="body__StyledParagraph">除了美伊談判的前景模糊，以色列與中東其他國家的反應，也顯示了 2 週停戰方案的脆弱與多變性——在川普宣布停火後，以色列雖然同意暫停軍事行動。</p>
+    <p class="body__StyledParagraph">台灣時間 4 月 8 日上午 6 點 32 分，美國總統川普透過社群網站宣布：在巴基斯坦的調停下，美國已同意暫停對伊朗的攻擊和轟炸 2 週。</p>
+    <p class="body__StyledParagraph">川普宣布停火後，伊朗外交部隨即發出暫時停火的聲明，伊朗國營媒體亦代發最高領袖的文字命令，指示伊朗全軍立刻停止與敵軍交火。</p>
+  </article>
+</main>
+</body></html>
