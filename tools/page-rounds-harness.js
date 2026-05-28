@@ -394,16 +394,45 @@ async function runHeroImageAudit(page, originalHeroImages) {
 }
 
 // 擷取原頁 top hero images（toggle 前呼叫）
+// 過濾雙重條件：渲染 size + natural size 都要夠大，避免 100x100 avatar 被
+// CSS 撐成 300+px 顯示後誤判成 hero（newtalk anonymous_100.jpg 實測踩到）。
 async function captureOriginalHeroImages(page) {
   return page.evaluate(() => {
     return Array.from(document.querySelectorAll('img')).map(img => {
       const r = img.getBoundingClientRect();
       return { src: img.src?.slice(0, 120), w: r.width, h: r.height,
         naturalW: img.naturalWidth, naturalH: img.naturalHeight, top: r.top };
-    }).filter(i => i.w >= 300 && i.h >= 150 && i.top < 800)
+    }).filter(i => i.w >= 300 && i.h >= 150
+      && i.naturalW >= 300 && i.naturalH >= 150
+      && i.top < 800)
       .sort((a, b) => a.top - b.top)
       .slice(0, 3);
   });
+}
+
+// 等 reader card 內 hero-sized img naturalWidth > 0
+// 解 lazy-load race：reader mode 重新 mount img 後 IntersectionObserver
+// 還沒觸發、或網路慢時 naturalW=0 會被 audit filter 過濾掉誤判為 missing。
+async function waitForReaderImagesLoaded(page, timeoutMs = 3000) {
+  await page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    if (!art) return;
+    art.scrollIntoView({ block: 'start' });
+    window.scrollTo(0, document.body.scrollHeight);
+    window.scrollTo(0, 0);
+  });
+  try {
+    await page.waitForFunction((budget) => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      if (!art) return true;
+      const imgs = Array.from(art.querySelectorAll('img')).filter(img => {
+        const r = img.getBoundingClientRect();
+        return r.width >= 100 && r.height >= 50
+          && !img.closest('[data-jread-hidden="1"]');
+      });
+      return imgs.every(img => img.naturalWidth > 0);
+    }, { timeout: timeoutMs, polling: 200 });
+  } catch (e) { /* timeout — 留給 audit 自行判定 */ }
 }
 
 // ---- Content stats（輔助信號）----
@@ -597,6 +626,7 @@ async function getContentStats(page) {
   if (originalHeroImages.length > 0) {
     await page.evaluate(() => { document.body.style.zoom = '1'; });
     await sleep(200);
+    await waitForReaderImagesLoaded(page);
     audit.heroImage = await runHeroImageAudit(page, originalHeroImages);
     await page.evaluate(() => { document.body.style.zoom = '0.5'; });
     await sleep(200);
