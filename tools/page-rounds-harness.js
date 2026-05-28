@@ -221,6 +221,130 @@ async function runOverflowAudit(page) {
   });
 }
 
+// ---- Narrow text audit（內文寬度過窄檢查）----
+// 用「平均每行字元數」偵測：正常段落每行 40+ 字元（英文）或 15+ 字元（中文）。
+// 若段落高度 / 行高 > 字元數 / 預期每行字元數，代表文字被擠窄。
+// 這個方法不受 zoom、box model、float 影響——直接看「文字有沒有被壓成每行一個字」。
+async function runNarrowTextAudit(page) {
+  return page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    if (!art) return { error: 'no article', narrow: false, items: [] };
+    const cardRect = art.getBoundingClientRect();
+    const ps = Array.from(art.querySelectorAll('p')).filter(p => {
+      const text = (p.textContent || '').trim();
+      if (text.length < 60) return false;
+      const cs = window.getComputedStyle(p);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      if (p.closest('[data-jread-hidden="1"]')) return false;
+      return true;
+    });
+    const items = [];
+    for (const p of ps) {
+      const r = p.getBoundingClientRect();
+      if (r.height < 10) continue;
+      const cs = window.getComputedStyle(p);
+      const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4 || 20;
+      const lines = Math.max(1, Math.round(r.height / lh));
+      const chars = (p.textContent || '').trim().length;
+      const charsPerLine = chars / lines;
+      // 每行 < 10 字元 = 極端窄欄（正常英文每行 40-80 字元，中文 15-30）
+      if (charsPerLine < 10) {
+        items.push({
+          charsPerLine: Math.round(charsPerLine * 10) / 10,
+          lines, chars,
+          boxWidth: Math.round(r.width),
+          text: (p.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60)
+        });
+      }
+      if (items.length >= 5) break;
+    }
+    return { narrow: items.length > 0, cardWidth: Math.round(cardRect.width),
+      narrowCount: items.length, totalP: ps.length, items };
+  });
+}
+
+// ---- Figcaption width audit（圖說寬度偵測）----
+// 偵測 figcaption 被原站 CSS 限制成遠比 figure/img 窄的情形。
+// 判定：figcaption 可見寬度 < figure 寬度 50% 視為 cramped。
+async function runFigcaptionAudit(page) {
+  return page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    if (!art) return { error: 'no article', cramped: false, items: [] };
+    function isVisible(el) {
+      let cur = el;
+      while (cur) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+        const cs = window.getComputedStyle(cur);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        if (cur === document.body) break;
+        cur = cur.parentElement;
+      }
+      return true;
+    }
+    const items = [];
+    for (const fc of art.querySelectorAll('figcaption')) {
+      if (!isVisible(fc)) continue;
+      const fcRect = fc.getBoundingClientRect();
+      if (fcRect.width < 1 || fcRect.height < 1) continue;
+      const figure = fc.closest('figure');
+      if (!figure) continue;
+      const figRect = figure.getBoundingClientRect();
+      if (figRect.width < 10) continue;
+      const img = figure.querySelector('img');
+      const imgRect = img ? img.getBoundingClientRect() : null;
+      const refWidth = imgRect && imgRect.width > 10 ? imgRect.width : figRect.width;
+      const ratio = Math.round(fcRect.width / refWidth * 100);
+      if (ratio < 50) {
+        items.push({
+          fcWidth: Math.round(fcRect.width),
+          refWidth: Math.round(refWidth),
+          figWidth: Math.round(figRect.width),
+          ratio,
+          text: (fc.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60)
+        });
+      }
+      if (items.length >= 5) break;
+    }
+    return { cramped: items.length > 0, crampedCount: items.length, items };
+  });
+}
+
+// ---- Hero image audit（原頁 vs reader mode 比對）----
+// 比對原頁 top-3 大圖是否在 reader mode 中存活。
+async function runHeroImageAudit(page, originalHeroImages) {
+  const readerImgs = await page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    if (!art) return [];
+    return Array.from(art.querySelectorAll('img')).map(img => {
+      const r = img.getBoundingClientRect();
+      return { src: img.src?.slice(0, 120), w: r.width, h: r.height,
+        naturalW: img.naturalWidth, naturalH: img.naturalHeight,
+        hidden: !!(img.closest('[data-jread-hidden="1"]')) };
+    }).filter(i => i.naturalW >= 200 && i.naturalH >= 100
+      && i.w >= 100 && i.h >= 50 && !i.hidden);
+  });
+  const missing = [];
+  for (const orig of originalHeroImages) {
+    const found = readerImgs.some(ri =>
+      ri.src === orig.src || (ri.naturalW === orig.naturalW && ri.naturalH === orig.naturalH));
+    if (!found) missing.push(orig);
+  }
+  return { originalCount: originalHeroImages.length, readerCount: readerImgs.length, missing };
+}
+
+// 擷取原頁 top hero images（toggle 前呼叫）
+async function captureOriginalHeroImages(page) {
+  return page.evaluate(() => {
+    return Array.from(document.querySelectorAll('img')).map(img => {
+      const r = img.getBoundingClientRect();
+      return { src: img.src?.slice(0, 120), w: r.width, h: r.height,
+        naturalW: img.naturalWidth, naturalH: img.naturalHeight, top: r.top };
+    }).filter(i => i.w >= 300 && i.h >= 150 && i.top < 800)
+      .sort((a, b) => a.top - b.top)
+      .slice(0, 3);
+  });
+}
+
 // ---- Content stats（輔助信號）----
 async function getContentStats(page) {
   return page.evaluate(() => {
@@ -259,9 +383,15 @@ async function getContentStats(page) {
 (async () => {
   const hostname = hostnameOf(TARGET_URL);
   const dirName = outDirName(TARGET_URL);
-  const outDir = path.join(PROJECT_ROOT, 'docs', 'excluded', 'page-rounds', dirName);
+  const PR_ROOT = path.join(PROJECT_ROOT, 'docs', 'excluded', 'page-rounds');
 
-  // 清舊截圖
+  // 清舊截圖（可能在 pass/ 或 failed/ 下）
+  for (const sub of ['pass', 'failed']) {
+    const old = path.join(PR_ROOT, sub, dirName);
+    if (fs.existsSync(old)) fs.rmSync(old, { recursive: true });
+  }
+  // 暫存到 _wip/ 下，跑完 audit 後再移到 pass/ 或 failed/
+  const outDir = path.join(PR_ROOT, '_wip', dirName);
   if (fs.existsSync(outDir)) fs.rmSync(outDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -312,6 +442,14 @@ async function getContentStats(page) {
   await sleep(300);
   await takePagedScreenshots(page, outDir, 'original');
 
+  // ---- 3.5. 擷取原頁 hero images（zoom 還原到 1.0 量原始 rect）----
+  await page.evaluate(() => { document.body.style.zoom = '1'; });
+  await sleep(200);
+  const originalHeroImages = await captureOriginalHeroImages(page);
+  console.log(`  hero images found: ${originalHeroImages.length}`);
+  await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+  await sleep(200);
+
   // ---- 4. 進入 reader mode ----
   const tabId = await sw.evaluate(async (u) => {
     const ts = await chrome.tabs.query({});
@@ -338,7 +476,13 @@ async function getContentStats(page) {
   if (!readerActive) {
     console.log('WARNING: reader mode 未啟動，截圖供 Claude 判定 fallback');
     await takePagedScreenshots(page, outDir, 'light');
+    audit.verdict = 'failed';
     fs.writeFileSync(path.join(outDir, 'audit.json'), JSON.stringify(audit, null, 2));
+    const failDir = path.join(PR_ROOT, 'failed', dirName);
+    fs.mkdirSync(path.join(PR_ROOT, 'failed'), { recursive: true });
+    fs.renameSync(outDir, failDir);
+    try { fs.rmdirSync(path.join(PR_ROOT, '_wip')); } catch {}
+    console.log(`\n❌ FAIL (reader mode inactive)\nDone. Screenshots in: ${failDir}`);
     if (!KEEP) await ctx.close();
     return;
   }
@@ -383,7 +527,56 @@ async function getContentStats(page) {
     console.log('  ✅ overflow: 無水平溢出');
   }
 
-  // ---- 7c. Tail audit（文末元素 dump）----
+  // ---- 7c. Hero image audit（原頁 vs reader mode 比對）----
+  if (originalHeroImages.length > 0) {
+    await page.evaluate(() => { document.body.style.zoom = '1'; });
+    await sleep(200);
+    audit.heroImage = await runHeroImageAudit(page, originalHeroImages);
+    await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+    await sleep(200);
+    if (audit.heroImage.missing.length > 0) {
+      console.log(`  ⚠️  hero image missing: ${audit.heroImage.missing.length}/${audit.heroImage.originalCount}`);
+      for (const m of audit.heroImage.missing) {
+        console.log(`    MISSING: ${m.naturalW}x${m.naturalH} ${m.src?.slice(0, 80)}`);
+      }
+    } else {
+      console.log(`  ✅ hero images: ${audit.heroImage.originalCount} found, all preserved`);
+    }
+  } else {
+    console.log('  ℹ️  hero images: none detected on original page');
+  }
+
+  // ---- 7d. Narrow text audit（內文寬度過窄檢查，zoom 1.0 下量）----
+  await page.evaluate(() => { document.body.style.zoom = '1'; });
+  await sleep(200);
+  audit.narrowText = await runNarrowTextAudit(page);
+  await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+  await sleep(200);
+  if (audit.narrowText.narrow) {
+    console.log(`  ⚠️  narrow text: ${audit.narrowText.narrowCount} paragraphs with < 10 chars/line`);
+    for (const it of audit.narrowText.items.slice(0, 3)) {
+      console.log(`    ${it.charsPerLine} chars/line (${it.lines} lines, ${it.chars} chars): "${it.text}"`);
+    }
+  } else {
+    console.log('  ✅ narrow text: 無過窄段落');
+  }
+
+  // ---- 7d2. Figcaption width audit（圖說寬度偵測，zoom 1.0 下量）----
+  await page.evaluate(() => { document.body.style.zoom = '1'; });
+  await sleep(200);
+  audit.figcaption = await runFigcaptionAudit(page);
+  await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+  await sleep(200);
+  if (audit.figcaption.cramped) {
+    console.log(`  ⚠️  figcaption cramped: ${audit.figcaption.crampedCount} captions < 50% of image width`);
+    for (const it of audit.figcaption.items.slice(0, 3)) {
+      console.log(`    ${it.fcWidth}px / ${it.refWidth}px = ${it.ratio}%: "${it.text}"`);
+    }
+  } else {
+    console.log('  ✅ figcaption: 無過窄圖說');
+  }
+
+  // ---- 7e. Tail audit（文末元素 dump）----
   audit.tail = await runTailAudit(page);
   const tailItems = audit.tail.items;
   const tailLast = tailItems.slice(-10);
@@ -448,9 +641,35 @@ async function getContentStats(page) {
   }));
   console.log('restored state:', JSON.stringify(audit.restored));
 
-  // ---- 12. 寫 audit.json ----
+  // ---- 12. 判定 pass/fail + 寫 audit.json + 移目錄 ----
+  // gap >= 200px 視為異常空白（80-199px 只 warn 不 fail，圖文間距正常範圍）
+  const hasLargeGap = [
+    ...(audit.gaps?.initial?.gaps || []),
+    ...(audit.gaps?.delayed?.gaps || [])
+  ].some(g => g.gap >= 200);
+
+  const hasFail =
+    !audit.readerModeActive ||
+    (audit.residual?.initial?.warnings?.length > 0) ||
+    (audit.residual?.delayed?.warnings?.length > 0) ||
+    (audit.overflow?.overflow) ||
+    (audit.heroImage?.missing?.length > 0) ||
+    (audit.narrowText?.narrow) ||
+    (audit.figcaption?.cramped) ||
+    hasLargeGap;
+  const verdict = hasFail ? 'failed' : 'pass';
+  audit.verdict = verdict;
+
   fs.writeFileSync(path.join(outDir, 'audit.json'), JSON.stringify(audit, null, 2));
-  console.log(`\nDone. Screenshots in: ${outDir}`);
+
+  const finalDir = path.join(PR_ROOT, verdict, dirName);
+  fs.mkdirSync(path.join(PR_ROOT, verdict), { recursive: true });
+  fs.renameSync(outDir, finalDir);
+  // 清 _wip（若空）
+  try { fs.rmdirSync(path.join(PR_ROOT, '_wip')); } catch {}
+
+  console.log(`\n${verdict === 'pass' ? '✅ PASS' : '❌ FAIL'}`);
+  console.log(`Done. Screenshots in: ${finalDir}`);
   console.log('audit.json written.');
 
   if (!KEEP) {

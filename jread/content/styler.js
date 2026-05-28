@@ -374,6 +374,7 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    container），只 picture 一個 tag。 */
 [${ARTICLE_ATTR}="1"] picture,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"],
+[${ARTICLE_ATTR}="1"] [class*="ratio" i],
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i] {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
@@ -424,7 +425,9 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] figure::before,
 [${ARTICLE_ATTR}="1"] figure::after,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
-[${ARTICLE_ATTR}="1"] [class*="object-fit"]::after {
+[${ARTICLE_ATTR}="1"] [class*="object-fit"]::after,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]::before,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after {
   content: none !important;
   display: none !important;
   padding-bottom: 0 !important;
