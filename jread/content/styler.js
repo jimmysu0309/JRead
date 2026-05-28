@@ -487,7 +487,15 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] [class*="app-icon"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] [class*="app_icon"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] [class*="thumb-icon"] img:not(a > img),
-[${ARTICLE_ATTR}="1"] [class*="icon-wrapper"] img:not(a > img) {
+[${ARTICLE_ATTR}="1"] [class*="icon-wrapper"] img:not(a > img),
+/* v0.7.207：avatar 是跨站通用 pattern（Medium / Substack / WordPress / CMS
+   類「作者頭像」「來源圖示」），命名慣例 author-avatar / avatar-wrapper /
+   avatar_image / user-avatar 等。reader mode 下這類 img 應保持 icon 尺寸、
+   不該因 flex layout 被撐到全寬。命中 wrapper class 或 img class 含 avatar
+   token 都套 200px 上限。thenewslens.com 「中央通訊社」author-avatar 在
+   ratio wrapper 內被撐到 496×496 實機 bug 觸發。 */
+[${ARTICLE_ATTR}="1"] [class*="avatar" i] img:not(a > img),
+[${ARTICLE_ATTR}="1"] img[class*="avatar" i]:not(a > img) {
   width: auto !important;
   height: auto !important;
   max-width: 200px !important;
