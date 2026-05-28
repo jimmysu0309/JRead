@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.208** — fix: article-others widget 文末「建議閱讀」相關文章列表殘留（thenewslens.com）
+
 **v0.7.207** — fix: avatar icon 在 ratio wrapper 內被 flex 撐到全寬（thenewslens 中央社 logo 496×496 → 200×200 上限）
 
 **v0.7.206** — fix: Bootstrap `.ratio` aspect-ratio hack 撐空白（thenewslens.com 標題→hero 305px gap）；harness `hasFail` 加入 gap >= 200px 判定
