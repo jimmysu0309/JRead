@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.207** — fix: avatar icon 在 ratio wrapper 內被 flex 撐到全寬（thenewslens 中央社 logo 496×496 → 200×200 上限）
+
 **v0.7.206** — fix: Bootstrap `.ratio` aspect-ratio hack 撐空白（thenewslens.com 標題→hero 305px gap）；harness `hasFail` 加入 gap >= 200px 判定
 
 **v0.7.205**——fix: TVBS 文末推薦區塊殘留。NOISE_HEADING_TEXT_RE 擴充 `你可能(也|會)?` / `其他人.{0,3}看` / `人氣(精選|點閱榜|排行榜|推薦)` / `在...Google...新聞...關注` 四組 pattern；NOISE_LINK_TEXT_RE 新增中文 Google News CTA pattern。Page Rounds 第三輪 TVBS C2/C4/C1 修正。
