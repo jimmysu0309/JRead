@@ -191,8 +191,12 @@ async function runOverflowAudit(page) {
     if (!art) return { error: 'no article', overflow: false, items: [] };
     const cardRect = art.getBoundingClientRect();
     const docOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+    // 非渲染 tag：HTML 規範上不該 paint，但原站 CSS 可能把 display 改成非 none
+    // 造成 rect 非零，false positive。<source> 是 cna.com.tw 實測踩到的例子。
+    const NON_RENDERING_TAGS = new Set(['SOURCE','TRACK','META','LINK','STYLE','SCRIPT','HEAD','TITLE','TEMPLATE','PARAM']);
     const items = [];
     for (const el of art.querySelectorAll('*')) {
+      if (NON_RENDERING_TAGS.has(el.tagName)) continue;
       const cs = window.getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       const r = el.getBoundingClientRect();
@@ -576,7 +580,12 @@ async function getContentStats(page) {
   // ---- 7b. Overflow audit（水平溢出）----
   audit.overflow = await runOverflowAudit(page);
   if (audit.overflow.overflow) {
-    console.log(`  ⚠️  OVERFLOW: doc ${audit.overflow.docScrollWidth}px > viewport ${audit.overflow.docClientWidth}px, card ${audit.overflow.cardWidth}px`);
+    const docOverflow = audit.overflow.docScrollWidth > audit.overflow.docClientWidth;
+    if (docOverflow) {
+      console.log(`  ⚠️  OVERFLOW (page): doc ${audit.overflow.docScrollWidth}px > viewport ${audit.overflow.docClientWidth}px, card ${audit.overflow.cardWidth}px`);
+    } else {
+      console.log(`  ⚠️  OVERFLOW (${audit.overflow.items.length} elements outside card): card ${audit.overflow.cardWidth}px`);
+    }
     for (const it of audit.overflow.items.slice(0, 5)) {
       console.log(`    ${it.tag}.${it.cls.split(' ')[0]} width=${it.width}px overflow=${it.overflowPx}px "${it.text}"`);
     }
