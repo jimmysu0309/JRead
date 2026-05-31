@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <title>巴哈姆特 photoswipe lazy image — forcing fixture</title>
+  <meta property="og:title" content="HK 416 三雄爭霸完整拆解分析">
+</head>
+<body>
+  <!-- v0.7.212：巴哈姆特 forum 把每張貼文圖包成
+         <div><a class="photoswipe-image" href="xxx.JPG"><img data-src="xxx.JPG"
+              src="https://i2.bahamut.com.tw/none.gif" class="lazyload"></a><br></div>
+       （lazysizes lazy-load + photoswipe lightbox）。
+       cleaner 於 document_idle 跑時這些 img 尚未載入：jsdom 裡 getBoundingClientRect
+       恆為 0×0、naturalWidth=0——天然重現「lazy 圖 0 尺寸」條件。
+
+       兩個歷史 bug：
+       (1) hideInsideArticleIconOnlyLinks 把「無文字 + 圖 0 尺寸」的
+           <a class="photoswipe-image"> 當 icon-only CTA 砍掉
+       (2) collapseEmptyWrappersAfterClean 把「無文字 + 無 rendered 媒體」的
+           wrapper <div> 當空殼 collapse
+       兩者疊加 → reader mode 下 34 張內容圖被砍 31 張、只剩進閱讀模式前已載入的
+       3 張可見（Jimmy 2026-05-31 cage 實測）。
+
+       修法 forcing function：
+       (a) icon-only 規則：href 指向圖片檔（.JPG）→ skip；img 帶真實 data-src → skip
+       (b) collapse 規則：img 帶真實 data-src（imgIsContentMedia）→ 視為內容媒體、保留 -->
+  <article class="forum-article">
+    <h1>HK 416 三雄爭霸完整拆解分析</h1>
+    <p>本次 HK416 a5 有推出 15800 的標準版，搭配合金槍機；與前代相比在槍身細節做了不少強化，這篇心得會逐一拆解 GHK、VFC、VIPER 三家的差異。為避免主文字數太少讓 detector 退回 null，這段落刻意填充到足夠長度，描述各家在槍身、握把、槍機、外觀塗裝上的細節差異與實際操作手感比較。</p>
+
+    <div class="post-image-wrap">
+      <a class="photoswipe-image" href="https://truth.bahamut.com.tw/s01/202509/forum/60534/ad8155834c887bef.JPG">
+        <img class="lazyload" src="https://i2.bahamut.com.tw/none.gif"
+             data-src="https://truth.bahamut.com.tw/s01/202509/forum/60534/ad8155834c887bef.JPG" alt="">
+      </a><br>
+    </div>
+
+    <p>能直接使用 m4 下身，這點 ghk 也有還原出來，DD HK416 a5 意外挺好看的，使用 v3 下身時上下身縫隙也非常小，這點給讚！簡易開箱到此這邊，這邊立刻請出兩位前輩，開拆。</p>
+
+    <div class="post-image-wrap">
+      <a class="photoswipe-image" href="https://truth.bahamut.com.tw/s01/202509/forum/60534/1a60afaab580.JPG">
+        <img class="lazyload" src="https://i2.bahamut.com.tw/none.gif"
+             data-src="https://truth.bahamut.com.tw/s01/202509/forum/60534/1a60afaab580.JPG" alt="">
+      </a><br>
+    </div>
+
+    <div class="post-image-wrap">
+      <a class="photoswipe-image" href="https://truth.bahamut.com.tw/s01/202509/forum/60534/1901d8f27f46.JPG">
+        <img class="lazyload" src="https://i2.bahamut.com.tw/none.gif"
+             data-src="https://truth.bahamut.com.tw/s01/202509/forum/60534/1901d8f27f46.JPG" alt="">
+      </a><br>
+    </div>
+
+    <p>上半部分大部分解，槍機組件拆下後可以看到內部結構，這部分三家的還原度都相當高，細節值得肯定。後續會再補充更多實拍照片與操作心得，給有興趣入手的同好參考。</p>
+  </article>
+</body>
+</html>
