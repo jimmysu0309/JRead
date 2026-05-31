@@ -190,6 +190,13 @@ html [${ARTICLE_ATTR}="1"] {
   min-height: 0 !important;
   height: auto !important;
   margin: 40px auto !important;
+  /* v0.7.210：display 正規化為 block——原站若把主內容容器設成
+     inline-block / inline / table-cell（巴哈姆特 .c-section__main 是
+     inline-block，父 section text-align: right 雙欄 layout），margin auto
+     水平置中會失效（auto margin 對非 block-level 元素算成 0）、且 inline-block
+     受父層 text-align 影響靠右/靠左。float/position/transform 已在正規化容器，
+     display:block 是同群最後一塊拼圖，確保 reader card 永遠水平置中。 */
+  display: block !important;
   padding: 48px 56px !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;

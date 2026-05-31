@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.210** — fix: 巴哈姆特哈啦板（forum.gamer.com.tw）reader card 整塊靠右、未水平置中。根因：`section.c-section` 是 `text-align:right` 的雙欄 layout、主內容 `div.c-section__main` 為 `inline-block`；reader card 選中後若保留原站 `inline-block`，`margin:auto` 水平置中失效（auto margin 對非 block-level 元素算成 0）+ 受父層 `text-align:right` 影響整塊靠右（cage 實測 left=609）。修法（styler）：reader card rule（`html [data-jread-active="1"]`）加 `display: block !important`——`float`/`position`/`transform`/`width`/`margin` 已在此 rule 正規化，`display:block` 是同群最後一塊拼圖，確保 reader card 永遠 block-level 水平置中。通則屬性：描述 CSS display 結構特徵（inline-block 主內容），非站點特判。另補兩條 v0.7.195 Page Rounds backfill regression spec（CNN inline-block child grid-collapse overflow `max-width:100%` + `related-content` class keyword hide，皆驗已 ship 的 cleaner 行為）+ `tools/batch-page-rounds.sh` 批次驗證工具。
+
 **harness** — page-rounds-harness 修兩類 audit 假警報：(1) `runOverflowAudit` 加 `NON_RENDERING_TAGS` skip（SOURCE/TRACK/META/LINK/STYLE/SCRIPT/HEAD/TITLE/TEMPLATE/PARAM）排除 cna 把 `<source>` 從 user-agent `display:none` 改成有 layout 造成的誤判 + OVERFLOW log 按 docOverflow 真偽分支訊息。(2) `captureOriginalHeroImages` 加 natural size `>= 300x150` 過濾排除 newtalk 100x100 anonymous_100.jpg avatar 被 CSS 撐大誤判 hero + `runHeroImageAudit` 前加 `waitForReaderImagesLoaded` 解 lazy-load race。batch 22 PASS → 23 PASS。
 
 **v0.7.209** — fix: twreporter sidebar-style 雙欄 layout 縮窄（figcaption 180px 窄欄 + 內文 p 固定 480px）
