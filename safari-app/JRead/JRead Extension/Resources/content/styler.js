@@ -190,6 +190,13 @@ html [${ARTICLE_ATTR}="1"] {
   min-height: 0 !important;
   height: auto !important;
   margin: 40px auto !important;
+  /* v0.7.210：display 正規化為 block——原站若把主內容容器設成
+     inline-block / inline / table-cell（巴哈姆特 .c-section__main 是
+     inline-block，父 section text-align: right 雙欄 layout），margin auto
+     水平置中會失效（auto margin 對非 block-level 元素算成 0）、且 inline-block
+     受父層 text-align 影響靠右/靠左。float/position/transform 已在正規化容器，
+     display:block 是同群最後一塊拼圖，確保 reader card 永遠水平置中。 */
+  display: block !important;
   padding: 48px 56px !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
@@ -272,6 +279,11 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] header,
 [${ARTICLE_ATTR}="1"] footer,
 [${ARTICLE_ATTR}="1"] nav {
+  /* v0.7.209：加 width: auto——原站用 styled-components 對 p 設固定窄欄
+     寬度（twreporter.org 「width: 480px」配 sidebar-style 圖說做雙欄 layout）。
+     reader card 是 single-column、p 應跟容器同寬。max-width: 100% 只擋上限、
+     擋不掉原站固定 480px 值，必須 width: auto 把 explicit width 清掉。 */
+  width: auto !important;
   max-width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
@@ -374,6 +386,7 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    container），只 picture 一個 tag。 */
 [${ARTICLE_ATTR}="1"] picture,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"],
+[${ARTICLE_ATTR}="1"] [class*="ratio" i],
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i] {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
@@ -424,7 +437,9 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] figure::before,
 [${ARTICLE_ATTR}="1"] figure::after,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
-[${ARTICLE_ATTR}="1"] [class*="object-fit"]::after {
+[${ARTICLE_ATTR}="1"] [class*="object-fit"]::after,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]::before,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after {
   content: none !important;
   display: none !important;
   padding-bottom: 0 !important;
@@ -484,7 +499,15 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
 [${ARTICLE_ATTR}="1"] [class*="app-icon"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] [class*="app_icon"] img:not(a > img),
 [${ARTICLE_ATTR}="1"] [class*="thumb-icon"] img:not(a > img),
-[${ARTICLE_ATTR}="1"] [class*="icon-wrapper"] img:not(a > img) {
+[${ARTICLE_ATTR}="1"] [class*="icon-wrapper"] img:not(a > img),
+/* v0.7.207：avatar 是跨站通用 pattern（Medium / Substack / WordPress / CMS
+   類「作者頭像」「來源圖示」），命名慣例 author-avatar / avatar-wrapper /
+   avatar_image / user-avatar 等。reader mode 下這類 img 應保持 icon 尺寸、
+   不該因 flex layout 被撐到全寬。命中 wrapper class 或 img class 含 avatar
+   token 都套 200px 上限。thenewslens.com 「中央通訊社」author-avatar 在
+   ratio wrapper 內被撐到 496×496 實機 bug 觸發。 */
+[${ARTICLE_ATTR}="1"] [class*="avatar" i] img:not(a > img),
+[${ARTICLE_ATTR}="1"] img[class*="avatar" i]:not(a > img) {
   width: auto !important;
   height: auto !important;
   max-width: 200px !important;
@@ -517,6 +540,16 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
      1.5em，解 figure 上方緊貼前一段 p 的對稱問題。 */
   margin-top: 1.5em !important;
   margin-bottom: 1.5em !important;
+}
+/* v0.7.209：figcaption 固定寬度退回 auto。原站可能對 figcaption 設固定窄寬
+   做 sidebar-style 圖文並排 layout（twreporter.org figcaption width: 180px
+   配主文 480px 雙欄）。reader mode 下 figure 已被強制 block，圖說殘留固定
+   180px 窄寬會被擠成「每行 1-2 字」的窄欄。
+   width: auto 拉回 block-level 預設 = 100% of parent；max-width: 100% 防上限
+   超出 figure。不碰 background/color/font——保留原站 typography hierarchy。 */
+[${ARTICLE_ATTR}="1"] figcaption {
+  width: auto !important;
+  max-width: 100% !important;
 }
 /* v0.7.100：h1-h6 上下 margin。BBC Culture 類站點原站 CSS 把 heading 的
    margin 全砍光（styled-components hash class 預設 margin: 0），reader mode 下

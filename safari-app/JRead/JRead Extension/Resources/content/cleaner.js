@@ -70,7 +70,7 @@
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news)|menu)([^a-z0-9]|$)/i;
+  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|article[-_]?others?|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news)|menu)([^a-z0-9]|$)/i;
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -99,7 +99,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人也看|你可能(也)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -122,7 +122,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|在.{0,6}(Google|谷歌).{0,6}(新聞|News).{0,6}(關注|追蹤)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -239,7 +239,7 @@
   // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
   // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
   // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin|menu)([^a-z0-9]|$)/i;
+  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|article[-_]?others?|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin|menu)([^a-z0-9]|$)/i;
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -2803,6 +2803,50 @@
     return out;
   }
 
+  // v0.7.212：判定 img 是否為「真實內容圖」——empty-wrapper / spacer collapse
+  // 規則用此取代「只看 rendered rect > 5×5」的判定。問題：cleaner 於
+  // document_idle 跑時 lazy-load 內容圖尚未載入、rect 0×0（巴哈姆特 forum
+  // a.photoswipe-image 內的 img 都是 lazysizes lazy），舊判定當「無 visible
+  // media」→ 把包圖的 wrapper 當空殼 collapse → 圖載入後 wrapper 已 display:
+  // none → reader mode 整片圖消失。三條 OR 任一成立即視為內容圖：
+  //   (1) 已 render 出尺寸（loaded + laid out）
+  //   (2) 已載入但尚未 layout（naturalWidth/Height 反映真實圖、> 32px 排除
+  //       tracking pixel / 1px spacer）
+  //   (3) lazy content image：帶真實 data-src / data-* / srcset（非 placeholder
+  //       /spacer），cleaner 跑時雖未載入、但確定是真實內容圖
+  function imgIsContentMedia(m) {
+    const mr = m.getBoundingClientRect();
+    if (mr.height > 5 && mr.width > 5) return true;
+    if (m.naturalWidth > 32 && m.naturalHeight > 32) return true;
+    for (const at of LAZY_SRC_ATTRS) {
+      const v = m.getAttribute(at);
+      if (v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v)) return true;
+    }
+    const ss = m.getAttribute('srcset') || m.getAttribute('data-srcset');
+    if (ss) {
+      const first = ss.split(',')[0].trim().split(/\s+/)[0];
+      if (first && !LAZY_PLACEHOLDER_RE.test(first) && !SPACER_SRC_RE.test(first)) return true;
+    }
+    return false;
+  }
+
+  // 子孫是否含「未被 hide 的真實內容媒體」——img 走 imgIsContentMedia（含
+  // lazy 判定），其他媒體 tag（picture/video/iframe/svg/canvas）維持 rect 判定。
+  function hasUnhiddenContentMedia(el) {
+    for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
+      let cur = m, inHidden = false;
+      while (cur && cur !== el) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      if (inHidden) continue;
+      if (m.tagName === 'IMG') { if (imgIsContentMedia(m)) return true; continue; }
+      const mr = m.getBoundingClientRect();
+      if (mr.height > 5 && mr.width > 5) return true;
+    }
+    return false;
+  }
+
   function collapseEmptyWrappersAfterClean(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const el of _getArticleAllElements(articleEl)) {
@@ -2815,20 +2859,9 @@
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
       const renderText = visibleRenderedText(el).trim();
       if (renderText.length > 0) continue;
-      // 子孫含 visible 媒體（祖先未 hide + rect > 5×5）→ 保留（合法 figure-like wrapper）
-      let hasVisibleMedia = false;
-      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
-        let cur = m;
-        let inHidden = false;
-        while (cur && cur !== el) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
-          cur = cur.parentElement;
-        }
-        if (inHidden) continue;
-        const mr = m.getBoundingClientRect();
-        if (mr.height > 5 && mr.width > 5) { hasVisibleMedia = true; break; }
-      }
-      if (hasVisibleMedia) continue;
+      // 子孫含未被 hide 的真實內容媒體（含 lazy 內容圖，見 imgIsContentMedia）
+      // → 保留（合法 figure-like wrapper）
+      if (hasUnhiddenContentMedia(el)) continue;
       // v0.7.181：sibling media guard——JW Player / video.js / 各 CMS video
       // embed 的空 div（aspect spacer / overlay container）被 collapse 後
       // video player 高度歸零。JW Player `.jw-aspect`（padding-top: 56.25%
@@ -2872,19 +2905,8 @@
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
       const text = visibleRenderedText(el).trim();
       if (text.length > 0) continue;
-      let hasMedia = false;
-      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
-        let inHidden = false;
-        let cur = m;
-        while (cur && cur !== el) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
-          cur = cur.parentElement;
-        }
-        if (inHidden) continue;
-        const mr = m.getBoundingClientRect();
-        if (mr.height > 5 && mr.width > 5) { hasMedia = true; break; }
-      }
-      if (hasMedia) continue;
+      // 含未被 hide 的真實內容媒體（含 lazy 內容圖）→ 保留
+      if (hasUnhiddenContentMedia(el)) continue;
       if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
       hide(el, hidden);
     }
@@ -3201,6 +3223,23 @@
   // 常見 placeholder：`data:image/gif;base64,R0lGOD...`（1x1 透明 gif）、
   // `data:image/svg+xml;base64,...`（低解析度佔位 svg）
   const LAZY_PLACEHOLDER_RE = /^\s*$|^about:blank$|^data:image\//i;
+  // v0.7.211：spacer-image placeholder 判定——部分站點（巴哈姆特 forum 用
+  // `https://i2.bahamut.com.tw/none.gif`）不用 data:URI、而用一張**真實 URL
+  // 的透明/空白 spacer gif** 當 lazy placeholder。這類 src 是合法 http URL、
+  // 不被 LAZY_PLACEHOLDER_RE 認得，導致 hydration 把它當「已是真圖」跳過、
+  // data-src 的真圖永遠補不上 → reader mode 下整片 below-fold 圖空白。
+  // 結構性通則：偵測檔名為 spacer/blank 慣用語（none/blank/spacer/pixel/
+  // transparent/grey/loading/placeholder/1x1/dummy/empty/px…）的小圖 URL。
+  // 安全性：僅當該 img 同時帶有指向「真實不同 URL」的 lazy attr（data-src 等）
+  // 才會被改寫——真正的主文內容圖不會同時是 spacer 檔名又帶 data-src，誤判
+  // 風險極低。reader mode「實機 vs Playwright」差異（headless 下 gamer
+  // lazysizes 未把 src 設成 none.gif、停在空 src 反而被認得）使此 bug 只在
+  // 實機 Chrome 顯現，故此修法以 harness 強制注入 spacer 狀態驗證根因。
+  const SPACER_SRC_RE = /\/(?:none|blank|spacer|pixel|transparent|trans|grey|gray|loading|placeholder|placehold|1x1|1px|px|dummy|empty|clear|noimage|no-image)\.(?:gif|png|svg|webp)(?:[?#].*)?$/i;
+  // 圖片檔 URL 判定：副檔名為常見圖片格式（忽略 query / hash）。用於辨識
+  // 「指向圖片檔的 <a>」= lightbox / photoswipe /「看原圖」連結（內容圖檢視
+  // 連結，非 icon/CTA）。
+  const IMG_URL_RE = /\.(?:jpe?g|png|gif|webp|avif|bmp|svg|jfif)(?:[?#].*)?$/i;
 
   function hydrateLazyImages(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -3211,22 +3250,26 @@
       // removeAttribute 才能還原；若原站 `src=""` 則要 setAttribute('src','')）
       const hadSrcAttr = img.hasAttribute('src');
       const prevSrc = hadSrcAttr ? img.getAttribute('src') : '';
-      if (!LAZY_PLACEHOLDER_RE.test(prevSrc)) continue;
+      // 「未 hydrate」判定：空/about:blank/data:image（LAZY_PLACEHOLDER_RE）
+      // 或真實 URL 的 spacer gif（SPACER_SRC_RE，如 none.gif）
+      const isUnhydrated = LAZY_PLACEHOLDER_RE.test(prevSrc) || SPACER_SRC_RE.test(prevSrc);
+      if (!isUnhydrated) continue;
 
       let newSrc = null;
       for (const attr of LAZY_SRC_ATTRS) {
         const v = img.getAttribute(attr);
-        if (v && !LAZY_PLACEHOLDER_RE.test(v)) { newSrc = v; break; }
+        if (v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v)) { newSrc = v; break; }
       }
       // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）
       if (!newSrc) {
         const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
         if (srcset) {
           const first = srcset.split(',')[0].trim().split(/\s+/)[0];
-          if (first && !LAZY_PLACEHOLDER_RE.test(first)) newSrc = first;
+          if (first && !LAZY_PLACEHOLDER_RE.test(first) && !SPACER_SRC_RE.test(first)) newSrc = first;
         }
       }
-      if (!newSrc) continue;
+      // newSrc 必須與現有 src 不同才補（避免 spacer→spacer 的 no-op 改寫）
+      if (!newSrc || newSrc === prevSrc) continue;
 
       hydrations.push({ el: img, prevSrc, hadSrcAttr });
       img.setAttribute('src', newSrc);
@@ -3315,6 +3358,15 @@
       // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
       const text = (a.textContent || '').replace(/\s+/g, '').trim();
       if (text.length >= 1) continue;
+      // v0.7.212：跳過「href 指向圖片檔的 a」(lightbox / photoswipe /「看原圖」
+      // 連結慣例)——href 為 .jpg/.png/... 的 a 是內容圖檢視連結、非 icon/CTA。
+      // 此判定**不依賴圖片是否已載入**，解 timing bug：lazy 圖在 cleaner 於
+      // document_idle 跑時 naturalWidth=0、rect 0x0，被下方尺寸 guard 誤判
+      // icon-only 砍掉、之後圖載入但父 a 已 display:none → reader mode 整片
+      // 圖片消失（巴哈姆特 forum a.photoswipe-image href=".../xxx.JPG" 實測：
+      // 34 張內容圖被砍 31 張、只剩進閱讀模式前已載入的 3 張可見）。
+      const href = a.getAttribute('href') || '';
+      if (IMG_URL_RE.test(href)) continue;
       // 跳過含大尺寸圖片的 a（hero / 插圖可點擊版，非 icon button）。
       // naturalWidth/Height 對 lazy-load 圖片為 0（尚未載入），fallback
       // 檢查 rendered 尺寸（CSS / HTML attribute 決定的佈局大小）。
@@ -3323,7 +3375,14 @@
         const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
         const rect = img.getBoundingClientRect();
         const renOk = rect.width >= 200 && rect.height >= 100;
-        if (natOk || renOk) continue;
+        // lazy content image：尚未載入時 naturalWidth / rect 皆 0、無法測量，
+        // 但 img 帶真實 data-src / srcset（非 placeholder / spacer）= 內容圖
+        // （相簿 / 插圖），非 icon——保留，避免 timing 早於圖片載入時誤殺。
+        const hasLazyContentSrc = LAZY_SRC_ATTRS.some(at => {
+          const v = img.getAttribute(at);
+          return v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v);
+        }) || !!(img.getAttribute('srcset') || img.getAttribute('data-srcset'));
+        if (natOk || renOk || hasLazyContentSrc) continue;
       }
       hide(a, hidden);
     }
