@@ -5227,13 +5227,27 @@ describe('cleaner — medium-empty-top-bar（render text 空 + 撐高 wrapper �
       `clean() 必須呼叫新規則——forcing：只剩 ${occurrences} 處表示 clean() 內漏接`);
   });
 
-  it('collapseEmptyWrappersAfterClean 必須有 hasVisibleMedia guard（不誤殺含媒體 wrapper）', () => {
+  it('collapseEmptyWrappersAfterClean 必須有 media guard（不誤殺含媒體 wrapper）', () => {
     const fnStart = SRC.cleaner.search(/function\s+collapseEmptyWrappersAfterClean\s*\(/);
     assert.ok(fnStart >= 0, '能找到 collapseEmptyWrappersAfterClean');
     const fnRegion = SRC.cleaner.slice(fnStart, fnStart + 3000);
-    assert.match(fnRegion, /hasVisibleMedia/, '必須含 hasVisibleMedia 變數');
-    assert.match(fnRegion, /img,\s*picture,\s*video,\s*iframe,\s*svg,\s*canvas/,
+    // v0.7.212：media guard 重構為共用 helper hasUnhiddenContentMedia
+    assert.match(fnRegion, /hasUnhiddenContentMedia\(el\)/,
+      '必須呼叫 hasUnhiddenContentMedia(el) guard');
+  });
+
+  it('hasUnhiddenContentMedia / imgIsContentMedia 必須查媒體 tag + lazy 內容圖判定（v0.7.212）', () => {
+    // helper 查 img/picture/video/iframe/svg/canvas
+    assert.match(SRC.cleaner, /img,\s*picture,\s*video,\s*iframe,\s*svg,\s*canvas/,
       '必須查 img/picture/video/iframe/svg/canvas 媒體 tag');
+    // imgIsContentMedia 必須宣告且判定 lazy 內容圖（naturalWidth + data-src）——
+    // forcing：拿掉 lazy 判定 → 巴哈姆特 photoswipe lazy 圖在 cleaner 跑時
+    // rect 0×0 被當無 media → wrapper collapse → 圖載入後消失
+    const fnStart = SRC.cleaner.search(/function\s+imgIsContentMedia\s*\(/);
+    assert.ok(fnStart >= 0, '必須宣告 imgIsContentMedia helper');
+    const fnRegion = SRC.cleaner.slice(fnStart, fnStart + 1200);
+    assert.match(fnRegion, /naturalWidth/, 'imgIsContentMedia 必須查 naturalWidth（已載入但未 layout）');
+    assert.match(fnRegion, /LAZY_SRC_ATTRS/, 'imgIsContentMedia 必須查 LAZY_SRC_ATTRS（lazy 內容圖 data-src）');
   });
 
   it('collapseEmptyWrappersAfterClean 必須有 backgroundImage guard（不誤殺含背景圖 wrapper）', () => {

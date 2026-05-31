@@ -2803,6 +2803,50 @@
     return out;
   }
 
+  // v0.7.212：判定 img 是否為「真實內容圖」——empty-wrapper / spacer collapse
+  // 規則用此取代「只看 rendered rect > 5×5」的判定。問題：cleaner 於
+  // document_idle 跑時 lazy-load 內容圖尚未載入、rect 0×0（巴哈姆特 forum
+  // a.photoswipe-image 內的 img 都是 lazysizes lazy），舊判定當「無 visible
+  // media」→ 把包圖的 wrapper 當空殼 collapse → 圖載入後 wrapper 已 display:
+  // none → reader mode 整片圖消失。三條 OR 任一成立即視為內容圖：
+  //   (1) 已 render 出尺寸（loaded + laid out）
+  //   (2) 已載入但尚未 layout（naturalWidth/Height 反映真實圖、> 32px 排除
+  //       tracking pixel / 1px spacer）
+  //   (3) lazy content image：帶真實 data-src / data-* / srcset（非 placeholder
+  //       /spacer），cleaner 跑時雖未載入、但確定是真實內容圖
+  function imgIsContentMedia(m) {
+    const mr = m.getBoundingClientRect();
+    if (mr.height > 5 && mr.width > 5) return true;
+    if (m.naturalWidth > 32 && m.naturalHeight > 32) return true;
+    for (const at of LAZY_SRC_ATTRS) {
+      const v = m.getAttribute(at);
+      if (v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v)) return true;
+    }
+    const ss = m.getAttribute('srcset') || m.getAttribute('data-srcset');
+    if (ss) {
+      const first = ss.split(',')[0].trim().split(/\s+/)[0];
+      if (first && !LAZY_PLACEHOLDER_RE.test(first) && !SPACER_SRC_RE.test(first)) return true;
+    }
+    return false;
+  }
+
+  // 子孫是否含「未被 hide 的真實內容媒體」——img 走 imgIsContentMedia（含
+  // lazy 判定），其他媒體 tag（picture/video/iframe/svg/canvas）維持 rect 判定。
+  function hasUnhiddenContentMedia(el) {
+    for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
+      let cur = m, inHidden = false;
+      while (cur && cur !== el) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      if (inHidden) continue;
+      if (m.tagName === 'IMG') { if (imgIsContentMedia(m)) return true; continue; }
+      const mr = m.getBoundingClientRect();
+      if (mr.height > 5 && mr.width > 5) return true;
+    }
+    return false;
+  }
+
   function collapseEmptyWrappersAfterClean(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const el of _getArticleAllElements(articleEl)) {
@@ -2815,20 +2859,9 @@
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
       const renderText = visibleRenderedText(el).trim();
       if (renderText.length > 0) continue;
-      // 子孫含 visible 媒體（祖先未 hide + rect > 5×5）→ 保留（合法 figure-like wrapper）
-      let hasVisibleMedia = false;
-      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
-        let cur = m;
-        let inHidden = false;
-        while (cur && cur !== el) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
-          cur = cur.parentElement;
-        }
-        if (inHidden) continue;
-        const mr = m.getBoundingClientRect();
-        if (mr.height > 5 && mr.width > 5) { hasVisibleMedia = true; break; }
-      }
-      if (hasVisibleMedia) continue;
+      // 子孫含未被 hide 的真實內容媒體（含 lazy 內容圖，見 imgIsContentMedia）
+      // → 保留（合法 figure-like wrapper）
+      if (hasUnhiddenContentMedia(el)) continue;
       // v0.7.181：sibling media guard——JW Player / video.js / 各 CMS video
       // embed 的空 div（aspect spacer / overlay container）被 collapse 後
       // video player 高度歸零。JW Player `.jw-aspect`（padding-top: 56.25%
@@ -2872,19 +2905,8 @@
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
       const text = visibleRenderedText(el).trim();
       if (text.length > 0) continue;
-      let hasMedia = false;
-      for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
-        let inHidden = false;
-        let cur = m;
-        while (cur && cur !== el) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
-          cur = cur.parentElement;
-        }
-        if (inHidden) continue;
-        const mr = m.getBoundingClientRect();
-        if (mr.height > 5 && mr.width > 5) { hasMedia = true; break; }
-      }
-      if (hasMedia) continue;
+      // 含未被 hide 的真實內容媒體（含 lazy 內容圖）→ 保留
+      if (hasUnhiddenContentMedia(el)) continue;
       if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
       hide(el, hidden);
     }
@@ -3214,6 +3236,10 @@
   // lazysizes 未把 src 設成 none.gif、停在空 src 反而被認得）使此 bug 只在
   // 實機 Chrome 顯現，故此修法以 harness 強制注入 spacer 狀態驗證根因。
   const SPACER_SRC_RE = /\/(?:none|blank|spacer|pixel|transparent|trans|grey|gray|loading|placeholder|placehold|1x1|1px|px|dummy|empty|clear|noimage|no-image)\.(?:gif|png|svg|webp)(?:[?#].*)?$/i;
+  // 圖片檔 URL 判定：副檔名為常見圖片格式（忽略 query / hash）。用於辨識
+  // 「指向圖片檔的 <a>」= lightbox / photoswipe /「看原圖」連結（內容圖檢視
+  // 連結，非 icon/CTA）。
+  const IMG_URL_RE = /\.(?:jpe?g|png|gif|webp|avif|bmp|svg|jfif)(?:[?#].*)?$/i;
 
   function hydrateLazyImages(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -3332,6 +3358,15 @@
       // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
       const text = (a.textContent || '').replace(/\s+/g, '').trim();
       if (text.length >= 1) continue;
+      // v0.7.212：跳過「href 指向圖片檔的 a」(lightbox / photoswipe /「看原圖」
+      // 連結慣例)——href 為 .jpg/.png/... 的 a 是內容圖檢視連結、非 icon/CTA。
+      // 此判定**不依賴圖片是否已載入**，解 timing bug：lazy 圖在 cleaner 於
+      // document_idle 跑時 naturalWidth=0、rect 0x0，被下方尺寸 guard 誤判
+      // icon-only 砍掉、之後圖載入但父 a 已 display:none → reader mode 整片
+      // 圖片消失（巴哈姆特 forum a.photoswipe-image href=".../xxx.JPG" 實測：
+      // 34 張內容圖被砍 31 張、只剩進閱讀模式前已載入的 3 張可見）。
+      const href = a.getAttribute('href') || '';
+      if (IMG_URL_RE.test(href)) continue;
       // 跳過含大尺寸圖片的 a（hero / 插圖可點擊版，非 icon button）。
       // naturalWidth/Height 對 lazy-load 圖片為 0（尚未載入），fallback
       // 檢查 rendered 尺寸（CSS / HTML attribute 決定的佈局大小）。
@@ -3340,7 +3375,14 @@
         const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
         const rect = img.getBoundingClientRect();
         const renOk = rect.width >= 200 && rect.height >= 100;
-        if (natOk || renOk) continue;
+        // lazy content image：尚未載入時 naturalWidth / rect 皆 0、無法測量，
+        // 但 img 帶真實 data-src / srcset（非 placeholder / spacer）= 內容圖
+        // （相簿 / 插圖），非 icon——保留，避免 timing 早於圖片載入時誤殺。
+        const hasLazyContentSrc = LAZY_SRC_ATTRS.some(at => {
+          const v = img.getAttribute(at);
+          return v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v);
+        }) || !!(img.getAttribute('srcset') || img.getAttribute('data-srcset'));
+        if (natOk || renOk || hasLazyContentSrc) continue;
       }
       hide(a, hidden);
     }
