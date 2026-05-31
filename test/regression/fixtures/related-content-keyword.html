@@ -1,0 +1,24 @@
+<!--
+  Fixture: "related-content" class keyword should be hidden by NOISE_KEYWORD_RE.
+  Structural pattern: CNN "STREAMING NOW" / generic "related content" widgets
+  use class names like "related-content-elevate" or "related-content-wrapper".
+-->
+<html><body>
+<article id="test-article">
+  <h1>Test Article Title</h1>
+  <p>This is the main article body with enough text content to qualify as a real paragraph discussing important topics at length and providing context for the reader.</p>
+  <p>Second paragraph of the article continues the discussion with more details about the subject matter.</p>
+
+  <!-- related-content widget: should be hidden -->
+  <div class="related-content-elevate">
+    <header class="related-content-title">
+      <span class="related-content-label">STREAMING NOW</span>
+    </header>
+    <a class="related-content-link" href="/video/guardrails">
+      <span>AI is supposed to have guardrails. Why do they sometimes fail?</span>
+    </a>
+  </div>
+
+  <p>Third paragraph after the widget continues the main article content with additional information for the reader.</p>
+</article>
+</body></html>
