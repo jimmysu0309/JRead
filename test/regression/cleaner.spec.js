@@ -2819,6 +2819,15 @@ describe('cleaner — lazy-image-hydration（placeholder img src 補正 + 還原
     assert.strictEqual(img.getAttribute('src'), '',
       '無任何 fallback 時 src 應保持空字串');
   });
+
+  it('case 6 — 真實 URL spacer gif（none.gif）+ data-src：src 被替換成 data-src（v0.7.211）', () => {
+    const img = document.getElementById('case-spacer-gif');
+    assert.ok(img);
+    assert.strictEqual(img.getAttribute('src'),
+      'https://truth.bahamut.com.tw/s01/202509/forum/case6-real.jpg',
+      'spacer gif（none.gif）是真實 URL 但屬 placeholder，應被 data-src 取代——' +
+      '否則巴哈姆特 below-fold 圖片在 reader mode 下全空白');
+  });
 });
 
 describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', () => {
@@ -2839,15 +2848,19 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
     const case1 = doc.getElementById('case-placeholder-gif');
     const case2 = doc.getElementById('case-empty-data-original');
     const case4 = doc.getElementById('case-srcset-fallback');
+    const case6 = doc.getElementById('case-spacer-gif');
     const origCase1 = case1.getAttribute('src');
     const origCase2 = case2.getAttribute('src');
     const origCase4 = case4.getAttribute('src');
+    const origCase6 = case6.getAttribute('src');
 
     const hiddenLocal = w.__JRead.cleaner.clean(detected.el);
 
     // clean 後 src 應已變動
     assert.notStrictEqual(case1.getAttribute('src'), origCase1,
       'clean 後 case1 的 src 應已被替換（否則 hydration 未生效）');
+    assert.notStrictEqual(case6.getAttribute('src'), origCase6,
+      'clean 後 case6 的 spacer src 應已被替換（否則 none.gif hydration 未生效）');
 
     // restore
     w.__JRead.cleaner.restore(hiddenLocal);
@@ -2859,6 +2872,8 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
       'restore 後 case2 src 應回到原空字串');
     assert.strictEqual(case4.getAttribute('src'), origCase4,
       'restore 後 case4 src 應回到原空字串');
+    assert.strictEqual(case6.getAttribute('src'), origCase6,
+      'restore 後 case6 src 應回到原 none.gif spacer');
   });
 });
 

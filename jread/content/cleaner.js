@@ -3201,6 +3201,19 @@
   // 常見 placeholder：`data:image/gif;base64,R0lGOD...`（1x1 透明 gif）、
   // `data:image/svg+xml;base64,...`（低解析度佔位 svg）
   const LAZY_PLACEHOLDER_RE = /^\s*$|^about:blank$|^data:image\//i;
+  // v0.7.211：spacer-image placeholder 判定——部分站點（巴哈姆特 forum 用
+  // `https://i2.bahamut.com.tw/none.gif`）不用 data:URI、而用一張**真實 URL
+  // 的透明/空白 spacer gif** 當 lazy placeholder。這類 src 是合法 http URL、
+  // 不被 LAZY_PLACEHOLDER_RE 認得，導致 hydration 把它當「已是真圖」跳過、
+  // data-src 的真圖永遠補不上 → reader mode 下整片 below-fold 圖空白。
+  // 結構性通則：偵測檔名為 spacer/blank 慣用語（none/blank/spacer/pixel/
+  // transparent/grey/loading/placeholder/1x1/dummy/empty/px…）的小圖 URL。
+  // 安全性：僅當該 img 同時帶有指向「真實不同 URL」的 lazy attr（data-src 等）
+  // 才會被改寫——真正的主文內容圖不會同時是 spacer 檔名又帶 data-src，誤判
+  // 風險極低。reader mode「實機 vs Playwright」差異（headless 下 gamer
+  // lazysizes 未把 src 設成 none.gif、停在空 src 反而被認得）使此 bug 只在
+  // 實機 Chrome 顯現，故此修法以 harness 強制注入 spacer 狀態驗證根因。
+  const SPACER_SRC_RE = /\/(?:none|blank|spacer|pixel|transparent|trans|grey|gray|loading|placeholder|placehold|1x1|1px|px|dummy|empty|clear|noimage|no-image)\.(?:gif|png|svg|webp)(?:[?#].*)?$/i;
 
   function hydrateLazyImages(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -3211,22 +3224,26 @@
       // removeAttribute 才能還原；若原站 `src=""` 則要 setAttribute('src','')）
       const hadSrcAttr = img.hasAttribute('src');
       const prevSrc = hadSrcAttr ? img.getAttribute('src') : '';
-      if (!LAZY_PLACEHOLDER_RE.test(prevSrc)) continue;
+      // 「未 hydrate」判定：空/about:blank/data:image（LAZY_PLACEHOLDER_RE）
+      // 或真實 URL 的 spacer gif（SPACER_SRC_RE，如 none.gif）
+      const isUnhydrated = LAZY_PLACEHOLDER_RE.test(prevSrc) || SPACER_SRC_RE.test(prevSrc);
+      if (!isUnhydrated) continue;
 
       let newSrc = null;
       for (const attr of LAZY_SRC_ATTRS) {
         const v = img.getAttribute(attr);
-        if (v && !LAZY_PLACEHOLDER_RE.test(v)) { newSrc = v; break; }
+        if (v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v)) { newSrc = v; break; }
       }
       // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）
       if (!newSrc) {
         const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
         if (srcset) {
           const first = srcset.split(',')[0].trim().split(/\s+/)[0];
-          if (first && !LAZY_PLACEHOLDER_RE.test(first)) newSrc = first;
+          if (first && !LAZY_PLACEHOLDER_RE.test(first) && !SPACER_SRC_RE.test(first)) newSrc = first;
         }
       }
-      if (!newSrc) continue;
+      // newSrc 必須與現有 src 不同才補（避免 spacer→spacer 的 no-op 改寫）
+      if (!newSrc || newSrc === prevSrc) continue;
 
       hydrations.push({ el: img, prevSrc, hadSrcAttr });
       img.setAttribute('src', newSrc);

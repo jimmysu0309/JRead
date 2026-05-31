@@ -20,6 +20,9 @@
              → 期望：clean() 後 src = srcset 第一個 URL
        (5) src / 所有 data-* / srcset 全空
              → 期望：clean() 不動，也不記入 hydration 清單
+       (6) src 是真實 URL 的 spacer gif（none.gif）+ data-src 有真圖
+             → 期望：clean() 後 src 被替換成 data-src 值（v0.7.211 巴哈姆特
+               none.gif spacer placeholder 修法）；restore() 後回 none.gif
 
        任一 case 期望失敗等同 hydrateLazyImages 實作錯誤。 -->
   <article class="article">
@@ -54,6 +57,12 @@
     <img id="case-all-empty"
          src=""
          alt="case 5">
+
+    <!-- case (6): 真實 URL 的 spacer gif placeholder（巴哈姆特 none.gif）+ data-src -->
+    <img id="case-spacer-gif"
+         src="https://i2.bahamut.com.tw/none.gif"
+         data-src="https://truth.bahamut.com.tw/s01/202509/forum/case6-real.jpg"
+         alt="case 6">
 
     <p>主文收尾段。此行確保 <code>articleEl</code> 有足夠 signal 被 detector 認得、cleaner 才能對其 img 做 hydrate。Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
   </article>
