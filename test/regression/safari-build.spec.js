@@ -160,6 +160,22 @@ describe('safari-build.sh', () => {
     assert.match(src, /diff -r --brief jread\/[\s\S]+EXTENSION_RESOURCES/);
   });
 
+  it('必須清掉舊版 .pkg（每次 bump 只留本次版本，避免 safari-app/ 累積歷史 .pkg）', () => {
+    // forcing function：v0.7.213 前每次 bump 產新 .pkg 但不刪舊版，safari-app/
+    // 會累積一堆歷史 .pkg。build 必須 glob safari-app/jread-macos-v*.pkg、
+    // 跳過本次 $DEVID_PKG、rm 其餘。
+    assert.match(
+      src,
+      /for old in safari-app\/jread-macos-v\*\.pkg/,
+      'safari-build.sh 必須 glob 舊版 .pkg 做清除'
+    );
+    assert.match(
+      src,
+      /if \[ "\$old" != "\$DEVID_PKG" \]/,
+      '清除迴圈必須跳過本次版本 $DEVID_PKG，只刪舊版'
+    );
+  });
+
   it('輸出 .pkg 路徑必須是 safari-app/jread-macos-v<version>.pkg', () => {
     assert.match(
       src,
