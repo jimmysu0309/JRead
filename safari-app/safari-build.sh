@@ -149,8 +149,19 @@ if [ ! -d "$DEVID_APP" ]; then
   exit 1
 fi
 
-# 5. productbuild 把 .app 包進 installer .pkg + Developer ID Installer cert 簽
+# 4.5 清掉舊版 .pkg（每次 bump 只留本次版本，避免 safari-app/ 累積一堆歷史 .pkg）
 DEVID_PKG="safari-app/jread-macos-v${VERSION}.pkg"
+echo "==> 清除舊版 .pkg（保留本次 v${VERSION}）..."
+for old in safari-app/jread-macos-v*.pkg; do
+  # glob 沒命中時 $old 會是字面 pattern，-e 檢查擋掉
+  [ -e "$old" ] || continue
+  if [ "$old" != "$DEVID_PKG" ]; then
+    echo "    rm $old"
+    rm -f "$old"
+  fi
+done
+
+# 5. productbuild 把 .app 包進 installer .pkg + Developer ID Installer cert 簽
 echo "==> productbuild Developer ID .pkg（install 到 /Applications，Installer cert 簽）..."
 productbuild \
   --component "$DEVID_APP" /Applications \
