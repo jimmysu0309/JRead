@@ -1190,7 +1190,11 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
     // 階段二：text node 整體含 CJK boundary → 寬鬆模式，剩餘 ASCII↔ASCII 邊界
     // 的半形逗號也轉全形。
     if (PUNCT_BOUNDARY_CJK_RE.test(s)) {
-      out = out.replace(/,/g, '，');
+      // 千分位分隔逗號（兩側都是數字，如 3,610 / 3,610,000）保半形——這是數字
+      // 格式不是中文標點，轉全形會變成 `3，610` 明顯錯誤（Jimmy 2026-06-03 回報）。
+      // 只轉「非數字夾住」的逗號：`(?<!\d),`（前非數字）或 `,(?!\d)`（後非數字），
+      // 兩條件都不成立（=前後皆數字）才視為千分位、保半形。
+      out = out.replace(/(?<!\d),|,(?!\d)/g, '，');
     }
     return out
       .replace(PANGU_RE_CJK_ALNUM, '$1 $2')
