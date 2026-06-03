@@ -346,6 +346,17 @@ describe('styler — Pangu spacing (CJK ↔ ASCII 自動補空白)', () => {
       );
     });
 
+    it('千分位分隔逗號（兩側都是數字）保半形，不轉全形（Jimmy 2026-06-03 實機回報 3,610 → 3，610 錯誤）', () => {
+      const { env } = setup();
+      // 原文 歐盟撥款 3,610 億歐元，總計 3,610,000 元。
+      // 3,610 / 3,610,000 的逗號兩側皆數字 = 千分位數字格式，必須保半形；
+      // 中間已是全形的 ，（億歐元，總計）維持不動
+      assert.strictEqual(
+        textOf(env.document, 'p-punct-thousands'),
+        '歐盟撥款 3,610 億歐元，總計 3,610,000 元。'
+      );
+    });
+
     it('純英文 text node 不啟動寬鬆模式（沒 CJK boundary）', () => {
       const { env } = setup();
       // 既有 p-ascii-only 純英文段落不該被寬鬆模式誤動
