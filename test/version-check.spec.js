@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const EXPECTED_VERSION = '0.7.212';
+const EXPECTED_VERSION = '0.7.213';
 
 describe('version-check', () => {
   it('manifest.json 的 version 必須等於 EXPECTED_VERSION', () => {
