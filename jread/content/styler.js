@@ -354,8 +354,11 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    蓋住 promoted-title (rect_y=108)。
    :not(a > img) 仍排除 link-wrapped icon（icon-link 結構保留 inline），這
    條額外 :not(picture > img) / :not(figure > img) 不必加——picture / figure
-   本身已是 block container、img 在內部 block 只是視覺正確、不影響原 layout。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]),
+   本身已是 block container、img 在內部 block 只是視覺正確、不影響原 layout。
+   v0.7.214：加 :not([${INLINE_IMG_ATTR}]) 排除 inline emoji / icon——此條
+   specificity (0,2,3) 高於 inline-img rule (0,2,1)，沒排除會把已標 inline 的
+   emoji 強制 block、emoji 獨佔一行（x.com Twemoji 實機回報）。 */
+[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
 [${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
 [${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
   display: block !important;
@@ -365,7 +368,7 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
    後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
    類似結構），佔滿整屏甚至蓋住 promoted-title。90vh 留給標題與下方文字
    一些縫隙、又不過度限縮（90% viewport 高仍是大圖視覺）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
 [${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
 [${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
   max-height: 90vh !important;
@@ -792,10 +795,11 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
    offset 時等於 static 視覺）。preserve 清單跟 border 一致。
    top/bottom 不清——sticky 元素用 top:0 是合法 layout（但 ancestor reset
    已強制祖先 position:static、articleEl 內若有 sticky 是極少數合理場景）。 */
-/* inline emoji / icon：naturalWidth <= ${INLINE_IMG_MAX} 的小圖片由 apply()
-   JS 標記 [${INLINE_IMG_ATTR}]，保留 inline flow 不被 block + margin auto
-   推成獨立置中區塊。Facebook / LINE 等社群站 emoji 用 <img> 渲染（16~32px），
-   forced block 會讓每個 emoji 換行置中破壞原文排版。 */
+/* inline emoji / icon：naturalWidth <= ${INLINE_IMG_MAX}（或 natural 不可靠時
+   rendered rect <= ${INLINE_IMG_MAX}，見 apply() 內 v0.7.214 註解）的小圖片由
+   apply() JS 標記 [${INLINE_IMG_ATTR}]，保留 inline flow 不被 block + margin
+   auto 推成獨立置中區塊。Facebook / LINE 等社群站 emoji 用 <img> 渲染
+   （16~32px），forced block 會讓每個 emoji 換行置中破壞原文排版。 */
 [${ARTICLE_ATTR}="1"] img[${INLINE_IMG_ATTR}] {
   display: inline !important;
   max-height: none !important;
@@ -1377,7 +1381,20 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       for (const img of articleEl.querySelectorAll('img')) {
         const w = img.naturalWidth || img.width;
         const h = img.naturalHeight || img.height;
-        if (w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX) {
+        let isInline = w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
+        // v0.7.214：natural 尺寸對「無 intrinsic size 的 SVG」不可靠——Chrome
+        // 對只有 viewBox 的 SVG 回報 CSS replaced element 預設 150×150（X/
+        // Twitter 的 Twemoji emoji SVG 實測命中），高解析 emoji PNG（Twemoji
+        // PNG 原檔 72×72）也會超過上限。rendered 尺寸才是「這張圖在文中是
+        // icon / emoji」的視覺事實：natural 判定 miss 時 fallback 量 rect，
+        // 兩維皆 > 0 且 <= INLINE_IMG_MAX 即標 inline。只在 miss 時量、
+        // 避免對每張內容圖都 force layout。
+        if (!isInline) {
+          const r = img.getBoundingClientRect();
+          isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
+                     r.height > 0 && r.height <= INLINE_IMG_MAX;
+        }
+        if (isInline) {
           img.setAttribute(INLINE_IMG_ATTR, '1');
           inlineImgs.push(img);
         }
