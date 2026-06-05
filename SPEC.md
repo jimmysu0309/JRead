@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.214**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.216**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -61,7 +61,7 @@ JRead 是 Chrome Extension「Unclutter」的 clone——提供純閱讀模式，
 | 偏好設定 | 字體、字級、主題色（亮/暗）、行高、版心寬度 | ☐ 未開始 |
 | Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作） |
 | Toast 提示 | **僅** 主文偵測失敗時顯示「此頁無法偵測主文」錯誤 toast；reader mode on/off 不再彈 toast（v0.7.32 Jimmy 要求簡化）。Shadow DOM 封裝 | ✅ v0.4.0 / 縮限 v0.7.32 |
-| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）切換閱讀模式；若未生效可至 `chrome://extensions/shortcuts` 手動指派。**閱讀模式啟動期間按 `ESC` 可立即退出**（v0.7.101，input/textarea/contenteditable focus 時放行）。 | ✅ v0.4.0 / ESC 退出 v0.7.101 |
+| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）切換閱讀模式；若未生效可至 `chrome://extensions/shortcuts` 手動指派。**閱讀模式啟動期間按 `ESC` 可立即退出**（v0.7.101，input/textarea/contenteditable focus 時放行）。**`Space` / `Shift+Space` 段落焦點卷動**（v0.7.216，仿 Readwise Reader：左側指示條標記目前段落、Space 跳下一段；段落低於顯示門檻（viewport × `spaceScrollRatio`% 預設 50%，options 可調、0 = 停用）時以 rAF 動畫卷回畫面上方落點）。 | ✅ v0.4.0 / ESC 退出 v0.7.101 / Space 段落焦點卷動 v0.7.216 |
 
 ---
 
@@ -326,6 +326,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `lineHeight` | `number` | `1.7` | `storage.sync` | ✅（popup「行距」stepper [1.0, 3.0] / step 0.1 / Auto sentinel = 0 不注入 line-height 保留原站，v0.7.162） |
 | `paragraphSpacing` | `number` | `1.0` | `storage.sync` | ✅（popup「段落間距」stepper [0, 3.0]em / step 0.25 / Auto sentinel = -1 不注入 p/ul/ol/blockquote margin-bottom 規則保留原站 typography，v0.7.162） |
 | `blockPageShortcuts` | `boolean` | `true` | `storage.sync` | ✅（options 「攔截原站快速鍵」） |
+| `spaceScrollRatio` | `number`（%） | `50` | `storage.sync` | ✅（options 「Space 顯示門檻」number input [0, 90] / step 5，v0.7.215 固定翻頁 → v0.7.216 改段落焦點模型）—— reader mode 下按 `Space` 把左側 4px 主題色指示條（`#__jread-focus-bar`，`content/space-scroll.js` 建立/定位、CSS rule 在 styler stylesheet 與 `#__jread-progress` 共用 `theme.progressBar` 色）移到下一個段落（`Shift+Space` 回上一段；指示條左錨點固定在 articleEl 左緣 - 14px、水平位置恆定不跟個別 block 漂移）。**此值 = 焦點段落允許的顯示門檻**（top 不可低於 viewport × ratio%）：門檻內只移指示條不卷動；低於門檻 → rAF 動畫（450ms easeInOutCubic）「卷到落點」——讓段落 top 落到 viewport × `REST_FRACTION`(0.1) 處，卷距隨段落位置而定（非固定距離，保證卷完必在門檻內、指示條永不停留頁面底部）。反向：段落 top 高過 viewport 上緣才往上卷、落同一落點。**0 = 停用 sentinel**（不攔截、保留瀏覽器原生跳卷）。段落候選 = articleEl 內 `p / h1-h6 / li / blockquote / pre / figure / table`（**清單以 li 為焦點單位、不收 ul/ol 容器**——newsletter 類 ol 每個 li 是完整段落，收容器會讓 Space 一次跳過整列；排除 data-jread-hidden 子樹、巢狀取最外層、零高度跳過）+ **照片以每張為單位**：多圖容器（含 >= 2 張高度 >= 40px 內容圖、扣除 figcaption 後正文 < 100 字 = 圖庫）讓位給個別 img/video；單圖 figure 整塊當單位（含圖說）；文字段落內插圖不拆；未被任何已收單位覆蓋的內容圖一律獨立成單位（保證不漏圖）、合併後依文件順序排序；手動卷遠（焦點段落離開 viewport）或焦點段落被 SPA 移除後按 Space 重新錨定到可視區第一段。**滑鼠點擊主文內任一段 → 指示條跳到該段**（click capture listener、純觀察不 preventDefault，連結點擊 / 文字選取照常；li 內文字點擊歸最外層 li），之後 Space 從該段接續。放行條件同 keyguard（IME / INPUT / TEXTAREA / SELECT / BUTTON / contenteditable focus），alt / ctrl / meta 修飾鍵不攔；listener 註冊順序必須在 keyguard 之前（keyguard 對非 ESC 鍵 stopImmediatePropagation，main.js wrapper 維護 invariant）。cinema / borderless 模式不裝（YouTube space = play/pause）。storage.onChanged 即時生效。**與 styler v0.7.91 onSpaceScroll 的關係**：模組啟用時 styler 的 SPACE = scrollBy 92% fallback 讓位（onSpaceScroll 開頭檢查 `NS.spaceScroll.isInstalled()`）；ratio = 0 時 fallback 自動回歸——「0 = 停用」實際語意是「回到 v0.7.91 整頁卷動」而非純原生 |
 | `pangu` | `boolean` | `true` | `storage.sync` | ✅（options 「中英文間自動補空白 + 中文標點全形化」，v0.7.153 / v0.7.158）—— reader mode 啟動時掃 articleEl 所有 text node：(1) CJK ↔ 英數字 / % / ° 邊界補空白；(2) v0.7.158 新增 CJK 邊界的半形標點 `, . : ; ? !` 轉成 `，。：；？！`，半形括號 `( )` 兩側緊鄰 CJK 時轉 `（）`，引號不在此規則；中文 prose text node 內 ASCII↔ASCII 邊界的半形逗號也轉全形，但**數字千分位逗號**（兩側皆數字，如 `3,610` / `3,610,000`）保半形（v0.7.213，數字格式非標點）；跳過 `<code>` / `<a>` / `<input>` / contenteditable 等 |
 | `autoEnableDomains` | `string[]` | `[]` | `storage.sync` | ✅（v0.7.155 options 「自動啟動網域」textarea + popup 「此網域自動啟動」checkbox）—— 命中網域時 content script document_idle 自動 silent enterReaderMode；matching rule：`hostname === pattern OR hostname.endsWith('.' + pattern)`（`abc.com` 涵蓋 `www.abc.com` / 子網域；`www.abc.com` 只匹配自身，不含 `123.abc.com`） |
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |
