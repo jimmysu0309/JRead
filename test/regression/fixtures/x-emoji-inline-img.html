@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>X emoji inline img fixture</title>
+</head>
+<body>
+  <!-- 最小重現：X status reader（x-thread 合成容器）內 tweetText 的 Twemoji
+       emoji <img>。X 用無 intrinsic size 的 SVG（只有 viewBox），Chrome 對
+       naturalWidth/naturalHeight 回報 CSS replaced element 預設 150×150，
+       超過 INLINE_IMG_MAX(48) → 沒標 data-jread-inline-img → 被通用圖片規則
+       forced block + margin auto 推成獨立置中區塊（v0.7.213 Jimmy 截圖回報）。
+       實際 rendered 尺寸是 20×20（原站 CSS 設為文字高度）。
+       spec 內用 defineProperty + stubRect 模擬 natural / rendered 尺寸。 -->
+  <article>
+    <h1>測試推文標題</h1>
+    <div data-testid="tweetText">
+      <img id="emoji-svg" src="https://abs.twimg.com/emoji/v2/svg/1f1f9-1f1fc.svg" alt="🇹🇼" draggable="false">
+      <span>台灣檢警這次的「鏈上狙擊」破案流程，技術成本低到讓你發抖：</span>
+      <img id="emoji-png" src="https://example.com/emoji/72x72/1f4a1.png" alt="💡" draggable="false">
+    </div>
+    <p>主文段落一，提供足夠文字長度讓結構看起來像正常文章內容，避免其他規則干擾本測試。</p>
+    <figure>
+      <img id="content-photo" src="https://example.com/media/photo.png" alt="圖片">
+    </figure>
+    <p>主文段落二，繼續提供文字內容。</p>
+  </article>
+</body>
+</html>
