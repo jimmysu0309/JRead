@@ -102,6 +102,24 @@
     keyguardInstalled = false;
   }
 
+  // v0.7.216：Space 段落焦點卷動（仿 Readwise Reader）——實作在
+  // content/space-scroll.js 的 NS.spaceScroll 模組（焦點段落指示條 + 門檻
+  // 卷動 + rAF 動畫）。此 wrapper 負責 main.js 自有的 keyguard 順序
+  // invariant：spaceScrollHandler 必須先於 keyguardHandler 註冊（keyguard
+  // 對非 ESC 鍵 stopImmediatePropagation，晚註冊的同 phase listener 收不到
+  // 事件）。各 enter 路徑在 installKeyguard 之前呼叫本 wrapper 天然滿足；
+  // onChanged 把 ratio 從 0 動態改回正值時 sync 內新 install 的 listener 會
+  // 排在 keyguard 後面——重掛 keyguard 把它推回隊尾。
+  function syncSpaceScrollFromSettings(settings) {
+    if (!NS.spaceScroll) return;
+    const wasInstalled = NS.spaceScroll.isInstalled();
+    NS.spaceScroll.sync(settings, NS.state.articleEl);
+    if (!wasInstalled && NS.spaceScroll.isInstalled() && keyguardInstalled) {
+      uninstallKeyguard();
+      installKeyguard();
+    }
+  }
+
   // v0.7.133：YouTube watch page 走 cinema mode 分支（不跑 cleaner/styler，改
   // 注入 player-fixed-center 的 CSS）。ESC listener 仍裝（讓使用者退出），**不**
   // install keyguard——YouTube 的 j/k/l/space/f/m 是 player 控制必備，攔下去會
@@ -162,6 +180,8 @@
 
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
+    // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
+    syncSpaceScrollFromSettings(settings);
     // X 是 keyboard-shortcut-heavy 站（j/k 換推文、l 點讚、r reply 等），跟 reader
     // mode 純閱讀完全衝突——install keyguard 攔截。
     if (!settings || settings.blockPageShortcuts !== false) {
@@ -211,6 +231,8 @@
 
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
+    // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
+    syncSpaceScrollFromSettings(settings);
     if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
     } else {
@@ -291,6 +313,9 @@
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
 
+    // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
+    syncSpaceScrollFromSettings(settings);
+
     // v0.7.131：install keyguard（攔截原站快速鍵），依 settings.blockPageShortcuts。
     // 註冊順序在 onEscKey 之後——同階段 listener 按註冊順序執行，ESC 先給 onEscKey 處理。
     if (!settings || settings.blockPageShortcuts !== false) {
@@ -323,6 +348,8 @@
     window.removeEventListener('keydown', onEscKey, true);
     // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
     uninstallKeyguard();
+    // v0.7.216：一律拆掉 Space 段落焦點卷動（listener + 指示條 + 進行中動畫）
+    if (NS.spaceScroll) NS.spaceScroll.uninstall();
     // v0.7.133：cinema mode 走獨立 restore 路徑（沒有 cleaner/styler 副作用要還原）
     if (NS.state.cinemaActive) {
       if (NS.cinema) NS.cinema.exit();
@@ -864,6 +891,10 @@
         const next = changes.blockPageShortcuts.newValue;
         if (next === false) uninstallKeyguard();
         else installKeyguard();
+      }
+      // v0.7.216：spaceScrollRatio 即時切換——options 改數值後立刻生效
+      if ('spaceScrollRatio' in changes) {
+        syncSpaceScrollFromSettings({ spaceScrollRatio: changes.spaceScrollRatio.newValue });
       }
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;
