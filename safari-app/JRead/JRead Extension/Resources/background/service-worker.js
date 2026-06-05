@@ -119,6 +119,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // + 同步切換綠色 badge（active）/ 清空 badge（inactive）
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId !== 'number') return;
+      // v0.7.217 iOS Safari guard：iOS 的 action API 子集可能缺 setIcon /
+      // badge 系列——缺就整段跳過（badge 純裝飾，無功能損失），避免 TypeError
+      // 炸掉 onMessage listener。
+      if (!chrome.action || !chrome.action.setIcon || !chrome.action.setBadgeText) return;
       const active = !!(msg.payload && msg.payload.active);
       swallowTabGone(chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE }));
       if (active) {
@@ -146,6 +150,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 使用者不該被網頁端任意打擾——只允許 unpacked / development 安裝（Claude
       // 自主 debug 場景）執行 reload。chrome.management.getSelf() 不需要
       // "management" permission（自己 query 自己）。
+      // v0.7.217 iOS Safari guard：iOS 無 chrome.management / runtime.reload，
+      // 缺 API 直接 reject——debug bridge 只在桌面 unpacked（Claude 自主 debug）
+      // 場景有意義，iOS 上不存在這個使用情境。
+      if (!(chrome.management && chrome.management.getSelf) || !chrome.runtime.reload) {
+        console.warn('[JRead] JREAD_RELOAD rejected: management/reload API unavailable');
+        return;
+      }
       chrome.management.getSelf((info) => {
         if (info && info.installType === 'development') {
           chrome.runtime.reload();

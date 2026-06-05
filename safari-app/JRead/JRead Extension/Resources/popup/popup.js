@@ -83,16 +83,23 @@ const DEFAULT_SETTINGS = {
 versionEl.textContent = chrome.runtime.getManifest().version;
 
 // ---- 快速鍵提示 --------------------------------------------------------
-chrome.commands.getAll((commands) => {
-  if (!shortcutEl) return;
-  const cmd = (commands || []).find(c => c.name === 'toggle-reader-mode');
-  const shortcut = cmd && cmd.shortcut;
-  if (shortcut) {
-    shortcutEl.textContent = `快速鍵：${shortcut}`;
-  } else {
-    shortcutEl.innerHTML = '快速鍵未設定，請到 <code>chrome://extensions/shortcuts</code> 指派';
-  }
-});
+// v0.7.217 iOS Safari guard：iOS 無 chrome.commands API——popup.js 是
+// top-level script，直接呼叫會 TypeError 中斷整個 popup（連 toggle 按鈕
+// handler 都掛）。缺 API 時隱藏快速鍵提示列（觸控環境本來就沒鍵盤指派）。
+if (chrome.commands && chrome.commands.getAll) {
+  chrome.commands.getAll((commands) => {
+    if (!shortcutEl) return;
+    const cmd = (commands || []).find(c => c.name === 'toggle-reader-mode');
+    const shortcut = cmd && cmd.shortcut;
+    if (shortcut) {
+      shortcutEl.textContent = `快速鍵：${shortcut}`;
+    } else {
+      shortcutEl.innerHTML = '快速鍵未設定，請到 <code>chrome://extensions/shortcuts</code> 指派';
+    }
+  });
+} else if (shortcutEl) {
+  shortcutEl.hidden = true;
+}
 
 // ---- 設定面板 ----------------------------------------------------------
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
