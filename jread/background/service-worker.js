@@ -39,7 +39,10 @@ const DEFAULT_SETTINGS = {
   // text node、套規則「CJK ↔ 英數字 / % / °」→ 之間插空白。詳見 styler.js
   // pangu module。預設 true，使用者可到 options 取消。
   pangu: true,
-  titleFontSize: 0
+  titleFontSize: 0,
+  // v0.7.215：Space 平滑卷動（Readwise Reader 風格）。Space / Shift+Space 以
+  // rAF 動畫卷動 viewport 高度的 N%；0 = 停用（保留瀏覽器原生跳卷）。
+  spaceScrollRatio: 50
 };
 
 // Icon 路徑 map：閱讀模式 active / idle 都用彩色版本（v0.7.134，Jimmy 2026-05-18
