@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.216**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.217**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -104,14 +104,22 @@ JRead/
 │   └── PENDING_REGRESSION.md
 ├── tools/
 │   ├── debug-harness.js         # Playwright 自動化除錯 harness
-│   └── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
-├── safari-app/                  # macOS Safari Web Extension（v0.7.138 起）
-│   ├── safari-bootstrap.sh      # 一次性 Xcode project 產出（xcrun safari-web-extension-converter）
+│   ├── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
+│   └── asc-provision-ios.js     # iOS 簽章資源 bootstrap（憑證 / bundle ID / profiles，idempotent）
+├── safari-app/                  # Safari Web Extension（macOS v0.7.138 起 / iOS v0.7.217 起）
+│   ├── safari-bootstrap.sh      # 一次性 macOS Xcode project 產出（xcrun safari-web-extension-converter）
 │   ├── safari-build.sh          # 每次 release 跑：sync Resources + archive + notarize + staple → .pkg
 │   ├── safari-export-options-developerid.plist  # Developer ID 簽章設定
-│   └── JRead/                   # Xcode project（host App + Extension target）
+│   ├── ios-bootstrap.sh         # 一次性 iOS Xcode project 產出（converter --ios-only + patch）
+│   ├── ios-build.sh             # 手動觸發：sync Resources + archive + export .ipa + altool 上傳 TestFlight
+│   ├── ios-export-options.plist # iOS App Store manual signing 設定
+│   ├── JRead/                   # macOS Xcode project（host App + Extension target）
+│   │   ├── JRead.xcodeproj/
+│   │   ├── JRead/               # macOS host App（WKWebView + open Safari prefs）
+│   │   └── JRead Extension/     # Safari Web Extension target（Resources/ = jread/ 同步鏡像）
+│   └── JRead-iOS/               # iOS Xcode project（與 macOS 完全獨立）
 │       ├── JRead.xcodeproj/
-│       ├── JRead/               # macOS host App（WKWebView + open Safari prefs）
+│       ├── JRead/               # iOS host App（converter 模板）
 │       └── JRead Extension/     # Safari Web Extension target（Resources/ = jread/ 同步鏡像）
 ├── docs/
 │   └── CHROME_EXTENSION_DEBUG.md # 自動化除錯完整指南
@@ -198,6 +206,51 @@ JRead 同步發佈 macOS Safari 版本（Developer ID 簽章 + Apple notarize + 
 **Host App 介面**（最小 host App）：基於 xcrun safari-web-extension-converter 預設模板（WKWebView 載入 `Resources/Base.lproj/Main.html`），文字本地化為繁體中文；按鈕 `<button class="open-preferences">` 點擊呼叫 `SFSafariApplication.showPreferencesForExtension` 跳轉 Safari 擴充功能設定。Icon 沿用 `jread/assets/icons/icon-128.png`。
 
 Forcing function：`test/regression/safari-build.spec.js` 驗 (1) scaffold 檔案存在 + executable；(2) `safari-export-options-developerid.plist` 內 method/teamID/signingStyle/cert；(3) `project.pbxproj` 內 host App bundle ID = `app.jread.macos`、Extension bundle ID = `app.jread.macos.Extension`、4 處 `DEVELOPMENT_TEAM = PR6NG3PH45`；(4) `safari-build.sh` 含 rsync / sed bump / xcodebuild archive / exportArchive / productbuild / notarytool submit / stapler staple / source drift check；(5) `release.sh` 串接 safari-build.sh + SKIP_SAFARI escape + auto-commit + `gh release upload --clobber`。**spec 不實際跑 xcodebuild**（那需要 macOS + Xcode + cert + Apple cloud，跨平台 CI 跑不了）。
+
+---
+
+## iOS / iPadOS 版本（v0.7.217 起，TestFlight 軌）
+
+JRead 提供 iOS / iPadOS Safari Web Extension，目前走 **TestFlight internal testing**（免審核、build 上傳後 ASC 處理 5-30 分鐘即可裝；尚未公開上架 App Store）。
+
+**發佈節奏與 Chrome / macOS 解耦**：`safari-app/ios-build.sh` **手動觸發**、不綁 `release.sh`——Chrome / macOS 每版即發，iOS 要發時人工跑一次 build script。同版本號重傳 ASC 會被拒，重傳前先 bump。
+
+**單一真實來源**：與 macOS 軌同模式——`safari-app/ios-build.sh` 每次 `rsync -a --delete jread/ "safari-app/JRead-iOS/JRead Extension/Resources/"`，extension code 不雙頭維護。iOS Xcode project（`safari-app/JRead-iOS/`）與 macOS project（`safari-app/JRead/`）**完全獨立**，由 `safari-app/ios-bootstrap.sh`（converter `--ios-only`）一次性產出。
+
+**Apple Developer 設定**：
+
+| 項目 | 值 |
+| --- | --- |
+| Host App Bundle ID | `app.jread.ios` |
+| Extension Bundle ID | `app.jread.ios.Extension` |
+| 簽章 | **manual signing**：Apple Distribution 憑證 + 「JRead iOS App Store」/「JRead iOS Extension App Store」IOS_APP_STORE profiles（Release config；Debug 維持 automatic 供 simulator） |
+| 簽章資源管理 | `tools/asc-provision-ios.js`（idempotent；透過 ASC API 建憑證 / bundle ID / profiles；憑證一年到期重跑換發） |
+| ASC app record | 「JRead – Privacy Reader Mode」（appId `6776944917`，primaryLocale zh-Hant，SKU `jread-001`） |
+| TestFlight | internal group「Internal」（`hasAccessToAllBuilds: true`——新 build 自動可測，tester: jimmy_su@me.com） |
+| 出口合規 | host App Info.plist `ITSAppUsesNonExemptEncryption = NO`（只用 HTTPS，上傳後免問卷直接可測） |
+
+**為什麼 manual signing**：team 沒有註冊任何 iOS 裝置，automatic signing 在 archive 階段堅持產 development profile 而失敗（「Your team has no devices」）；App Store distribution profile 不需要裝置清單，manual 直接繞開。
+
+**Build 流程**（`safari-app/ios-build.sh`）：rsync Resources → sed bump pbxproj 版本 → `xcodebuild archive`（`generic/platform=iOS`）→ `xcodebuild -exportArchive`（`ios-export-options.plist`：method app-store-connect + manual provisioningProfiles mapping）→ `altool --validate-app` → `altool --upload-app`（ASC API key `592WJH7U2F`，與 Shinkansen 共用，env `ASC_KEY_ID` / `ASC_ISSUER_ID` 可覆寫）→ source drift check。`SKIP_UPLOAD=1` 只產 `.ipa` 不上傳。BUILD_DIR 在 `$TMPDIR`（iCloud fileprovider 接管教訓）。
+
+**iOS API 相容性**（v0.7.217 guards，`test/regression/ios-api-guards.spec.js`）：
+
+| API | iOS 狀況 | 處理 |
+| --- | --- | --- |
+| `chrome.management.getSelf` / `chrome.runtime.reload`（JREAD_RELOAD debug bridge） | 可能缺席 | SW handler 開頭 existence guard，缺 API 直接 reject |
+| `chrome.action` badge / setIcon | 子集可能缺 | SET_ACTIVE_ICON case 開頭 guard，缺就整段跳過（badge 純裝飾） |
+| `chrome.commands`（popup 快速鍵提示） | iOS Safari 26 實測**有支援** | popup.js 仍包 existence guard 兜底，缺 API 時隱藏提示列 |
+| `chrome.windows.update`（YouTube Borderless resize） | iOS 無 windows API | 原有 try/catch 已吃掉 TypeError，Borderless 自動降級（CSS 照套、視窗不 resize） |
+| `chrome.storage.sync` | 可用但**不走 iCloud**（Apple 官方：等同 local） | 無修改；Mac ↔ iPad 設定不互通，各裝置各自設定 |
+
+**Simulator 驗證工具鏈**（iPad Pro 11" simulator 實測 v0.7.216 全功能通過）：
+- 啟用 extension：Settings UI 無法 scripting——直接對 Safari container 的 `Library/Safari/WebExtensions/Extensions.plist` 注入 `Enabled: true` + `GrantedPermissions` + `GrantedPermissionOrigins`（python plistlib；key 含點號 plutil keypath 解析不了），重啟 MobileSafari 生效
+- UI 操作：macOS 輔助使用權限未授予時 osascript 點不了 Simulator——改用 `idb`（`brew install facebook/fb/idb-companion` + `python3 -m venv ~/.idb-venv && pip install fb-idb`；Python 3.14 需 patch `idb/cli/main.py` 的 `asyncio.get_event_loop()` → `new_event_loop()`），`idb_companion --udid <UDID>` 起 gRPC 後 `idb ui tap/swipe` 注入 HID 事件
+- 座標換算：XcodeBuildMCP screenshot 551px 寬 vs iPad 834pt，×1.5136
+- Extension 是否真的載入：看 `Library/WebKit/com.apple.mobilesafari/WebExtensions/Default/<ext>/State.plist` 的 `BackgroundContentEventListeners` + `LastSeenVersion`（SW 跑過才會記錄）
+- 與 Playwright harness 的分工：cleaner / detector 修法仍以 Playwright harness 為主（跑得快、可 residual audit）；iOS simulator 只驗「iOS 特有行為」（API 缺席、popup popover、觸控），**不重跑整套站點驗收**
+
+Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold 存在 + executable、pbxproj bundle ID / 4 處 DEVELOPMENT_TEAM / manual signing Release + automatic Debug、Info.plist 出口合規 key、export options mapping、build script 步驟完整性（rsync / 版本 sync / archive / export / validate / upload / drift check / SKIP_UPLOAD）。**spec 不實際跑 xcodebuild / altool**。
 
 ---
 
