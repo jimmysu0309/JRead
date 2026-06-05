@@ -89,6 +89,19 @@
   z-index: 2147483647;
   pointer-events: none;
 }
+/* v0.7.216：Space 段落焦點指示條（space-scroll.js 建立 / 定位元素，CSS rule
+   放這裡跟 #__jread-progress 共用 theme.progressBar 色——單一資料源，主題
+   切換 reapply 重建 stylesheet 自動跟色）。position: absolute 文件座標，
+   卷動時黏著段落；top / height 加 transition，焦點換段落時平滑滑移。 */
+#__jread-focus-bar {
+  position: absolute;
+  width: 4px;
+  border-radius: 2px;
+  background: ${theme.progressBar};
+  z-index: 2147483646;
+  pointer-events: none;
+  transition: top 0.25s ease, height 0.25s ease;
+}
 /* SPA 站（Readwise Reader / Notion / Gmail 等）常把 html / body 設
    overflow: hidden、scroll 交給內層 div。reader mode 注入 article card 後
    body 高度被撐開、但 overflow-y:hidden 仍鎖住整個 viewport 無法捲動。
@@ -1088,6 +1101,12 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
   // smooth scroll 視覺更舒服。
   const SPACE_SCROLL_FRACTION = 0.92;
   function onSpaceScroll(e) {
+    // v0.7.216：space-scroll.js 段落焦點模組啟用時讓位——否則兩條 path 對同
+    // 一個 SPACE 各捲各的（本 handler scrollBy 92% + 模組段落推進）疊成雙重
+    // 捲動（2026-06-05 Playwright probe 實證 828px 幽靈捲動的根因）。模組
+    // 停用（spaceScrollRatio = 0）時本 handler 自動回歸 v0.7.91 整頁捲動，
+    // 維持「reader mode 下 SPACE 一定可捲」的原始動機。
+    if (NS.spaceScroll && NS.spaceScroll.isInstalled && NS.spaceScroll.isInstalled()) return;
     if (e.key !== ' ' && e.code !== 'Space') return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const ae = document.activeElement;

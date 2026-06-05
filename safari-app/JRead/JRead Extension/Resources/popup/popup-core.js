@@ -22,6 +22,7 @@
     'content/detector.js',
     'content/cleaner.js',
     'content/styler.js',
+    'content/space-scroll.js',
     'content/main.js'
   ];
 

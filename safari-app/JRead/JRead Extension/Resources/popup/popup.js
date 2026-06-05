@@ -74,7 +74,10 @@ const DEFAULT_SETTINGS = {
   pangu: true,
   // v0.7.155：自動啟動網域清單。popup 端會用 __JReadDomainMatch 比對當前 tab
   // hostname 反映 toggle 狀態；options 是完整清單編輯入口。
-  autoEnableDomains: []
+  autoEnableDomains: [],
+  // v0.7.215：Space 平滑卷動比例（% of viewport）；popup 不放控制項（options
+  // 有），這裡僅作 storage.get 的 default fallback，避免讀回 undefined。
+  spaceScrollRatio: 50
 };
 
 versionEl.textContent = chrome.runtime.getManifest().version;

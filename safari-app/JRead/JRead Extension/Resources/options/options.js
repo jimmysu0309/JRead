@@ -14,13 +14,15 @@ const DEFAULTS = {
   titleFontSize: 0,
   // 中英文字之間自動補空白（盤古之白）；預設 true
   pangu: true,
+  // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用
+  spaceScrollRatio: 50,
   // v0.7.155：自動啟動閱讀模式的網域清單（字串陣列）。matching rule：
   // hostname === pattern OR hostname endsWith '.' + pattern。
   // 'abc.com' 涵蓋 www.abc.com / foo.abc.com；'www.abc.com' 只含 www.abc.com。
   autoEnableDomains: []
 };
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -34,6 +36,7 @@ function load() {
     document.getElementById('readwiseToken').value = values.readwiseToken || '';
     document.getElementById('blockPageShortcuts').checked = values.blockPageShortcuts !== false;
     document.getElementById('pangu').checked = values.pangu !== false;
+    document.getElementById('spaceScrollRatio').value = values.spaceScrollRatio;
     // autoEnableDomains：array → textarea 多行字串（每行一個正規化過的網域）
     const helper = window.__JReadDomainMatch;
     const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains : [];
@@ -57,7 +60,8 @@ function save() {
     boldText: document.getElementById('boldText').checked,
     readwiseToken: document.getElementById('readwiseToken').value.trim(),
     blockPageShortcuts: document.getElementById('blockPageShortcuts').checked,
-    pangu: document.getElementById('pangu').checked
+    pangu: document.getElementById('pangu').checked,
+    spaceScrollRatio: Number(document.getElementById('spaceScrollRatio').value)
   };
   chrome.storage.sync.set(patch, flashSaved);
 }
