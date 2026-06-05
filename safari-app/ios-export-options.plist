@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- iOS TestFlight / App Store 軌 export 設定（ios-build.sh 用） -->
+    <!-- export 留 .ipa 在本機，由 ios-build.sh 接 altool --upload-app 上傳 -->
+    <!-- manual signing：team 無註冊 iOS 裝置，automatic 會卡 development
+         profile；憑證 + App Store profiles 由 tools/asc-provision-ios.js 管理 -->
+    <key>method</key>
+    <string>app-store-connect</string>
+    <key>destination</key>
+    <string>export</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+    <key>teamID</key>
+    <string>PR6NG3PH45</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>app.jread.ios</key>
+        <string>JRead iOS App Store</string>
+        <key>app.jread.ios.Extension</key>
+        <string>JRead iOS Extension App Store</string>
+    </dict>
+    <key>uploadSymbols</key>
+    <true/>
+</dict>
+</plist>

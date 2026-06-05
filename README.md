@@ -54,6 +54,16 @@
 
 需 macOS 10.14 以上 + Safari 14 以上。本機重建見 `safari-app/safari-build.sh`（需 Xcode + Apple Developer ID cert + notarytool profile）。
 
+### iOS / iPadOS Safari（TestFlight）
+
+v0.7.217 起提供 iOS / iPadOS Safari Web Extension，目前走 TestFlight internal testing（尚未公開上架 App Store）：
+
+1. 受邀測試者在 iPad / iPhone 裝 TestFlight App，接受邀請後安裝 JRead
+2. 設定 → App → Safari → 延伸功能 → 啟用 JRead，並允許「所有網站」
+3. Safari 工具列點 J 圖示 → 「切換閱讀模式」
+
+發佈走 `safari-app/ios-build.sh`（手動觸發、與 Chrome / macOS release 解耦；需 Xcode + Apple Distribution cert + ASC API key，簽章資源由 `tools/asc-provision-ios.js` 管理）。
+
 ---
 
 ## 開發

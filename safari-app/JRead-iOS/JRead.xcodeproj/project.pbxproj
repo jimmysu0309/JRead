@@ -1,0 +1,634 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9EE3FE862FD28B7100CD167D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FE852FD28B7100CD167D /* AppDelegate.swift */; };
+		9EE3FE8A2FD28B7100CD167D /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FE882FD28B7100CD167D /* Main.html */; };
+		9EE3FE8C2FD28B7100CD167D /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FE8B2FD28B7100CD167D /* Icon.png */; };
+		9EE3FE8E2FD28B7100CD167D /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FE8D2FD28B7100CD167D /* Style.css */; };
+		9EE3FE902FD28B7100CD167D /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FE8F2FD28B7100CD167D /* SceneDelegate.swift */; };
+		9EE3FE922FD28B7100CD167D /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FE912FD28B7100CD167D /* ViewController.swift */; };
+		9EE3FE952FD28B7100CD167D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FE932FD28B7100CD167D /* LaunchScreen.storyboard */; };
+		9EE3FE982FD28B7100CD167D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FE962FD28B7100CD167D /* Main.storyboard */; };
+		9EE3FEA02FD28B7100CD167D /* JRead Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9EE3FE9F2FD28B7100CD167D /* JRead Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9EE3FEA52FD28B7200CD167D /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FEA42FD28B7200CD167D /* SafariWebExtensionHandler.swift */; };
+		9EE3FEA72FD28B7200CD167D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FE992FD28B7100CD167D /* Assets.xcassets */; };
+		9EE3FEB92FD28B7200CD167D /* background in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB22FD28B7200CD167D /* background */; };
+		9EE3FEBA2FD28B7200CD167D /* options in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB32FD28B7200CD167D /* options */; };
+		9EE3FEBB2FD28B7200CD167D /* popup in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB42FD28B7200CD167D /* popup */; };
+		9EE3FEBC2FD28B7200CD167D /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB52FD28B7200CD167D /* LICENSE */; };
+		9EE3FEBD2FD28B7200CD167D /* content in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB62FD28B7200CD167D /* content */; };
+		9EE3FEBE2FD28B7200CD167D /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB72FD28B7200CD167D /* manifest.json */; };
+		9EE3FEBF2FD28B7200CD167D /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB82FD28B7200CD167D /* assets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9EE3FEA12FD28B7100CD167D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9EE3FE7A2FD28B7100CD167D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9EE3FE9E2FD28B7100CD167D;
+			remoteInfo = "JRead Extension";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		9EE3FEAD2FD28B7200CD167D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				9EE3FEA02FD28B7100CD167D /* JRead Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		9EE3FE822FD28B7100CD167D /* JRead.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JRead.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9EE3FE852FD28B7100CD167D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		9EE3FE892FD28B7100CD167D /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
+		9EE3FE8B2FD28B7100CD167D /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
+		9EE3FE8D2FD28B7100CD167D /* Style.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = Style.css; sourceTree = "<group>"; };
+		9EE3FE8F2FD28B7100CD167D /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		9EE3FE912FD28B7100CD167D /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		9EE3FE942FD28B7100CD167D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		9EE3FE972FD28B7100CD167D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		9EE3FE992FD28B7100CD167D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9EE3FE9A2FD28B7100CD167D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9EE3FE9F2FD28B7100CD167D /* JRead Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "JRead Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9EE3FEA42FD28B7200CD167D /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		9EE3FEA62FD28B7200CD167D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9EE3FEB22FD28B7200CD167D /* background */ = {isa = PBXFileReference; lastKnownFileType = folder; name = background; path = Resources/background; sourceTree = "<group>"; };
+		9EE3FEB32FD28B7200CD167D /* options */ = {isa = PBXFileReference; lastKnownFileType = folder; name = options; path = Resources/options; sourceTree = "<group>"; };
+		9EE3FEB42FD28B7200CD167D /* popup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = popup; path = Resources/popup; sourceTree = "<group>"; };
+		9EE3FEB52FD28B7200CD167D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = Resources/LICENSE; sourceTree = "<group>"; };
+		9EE3FEB62FD28B7200CD167D /* content */ = {isa = PBXFileReference; lastKnownFileType = folder; name = content; path = Resources/content; sourceTree = "<group>"; };
+		9EE3FEB72FD28B7200CD167D /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = Resources/manifest.json; sourceTree = "<group>"; };
+		9EE3FEB82FD28B7200CD167D /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = Resources/assets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9EE3FE7F2FD28B7100CD167D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9EE3FE9C2FD28B7100CD167D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		9EE3FE792FD28B7100CD167D = {
+			isa = PBXGroup;
+			children = (
+				9EE3FE842FD28B7100CD167D /* JRead */,
+				9EE3FEA32FD28B7100CD167D /* JRead Extension */,
+				9EE3FE832FD28B7100CD167D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9EE3FE832FD28B7100CD167D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9EE3FE822FD28B7100CD167D /* JRead.app */,
+				9EE3FE9F2FD28B7100CD167D /* JRead Extension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9EE3FE842FD28B7100CD167D /* JRead */ = {
+			isa = PBXGroup;
+			children = (
+				9EE3FE852FD28B7100CD167D /* AppDelegate.swift */,
+				9EE3FE8F2FD28B7100CD167D /* SceneDelegate.swift */,
+				9EE3FE912FD28B7100CD167D /* ViewController.swift */,
+				9EE3FE932FD28B7100CD167D /* LaunchScreen.storyboard */,
+				9EE3FE962FD28B7100CD167D /* Main.storyboard */,
+				9EE3FE992FD28B7100CD167D /* Assets.xcassets */,
+				9EE3FE9A2FD28B7100CD167D /* Info.plist */,
+				9EE3FE872FD28B7100CD167D /* Resources */,
+			);
+			path = JRead;
+			sourceTree = "<group>";
+		};
+		9EE3FE872FD28B7100CD167D /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9EE3FE882FD28B7100CD167D /* Main.html */,
+				9EE3FE8B2FD28B7100CD167D /* Icon.png */,
+				9EE3FE8D2FD28B7100CD167D /* Style.css */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		9EE3FEA32FD28B7100CD167D /* JRead Extension */ = {
+			isa = PBXGroup;
+			children = (
+				9EE3FEB12FD28B7200CD167D /* Resources */,
+				9EE3FEA42FD28B7200CD167D /* SafariWebExtensionHandler.swift */,
+				9EE3FEA62FD28B7200CD167D /* Info.plist */,
+			);
+			path = "JRead Extension";
+			sourceTree = "<group>";
+		};
+		9EE3FEB12FD28B7200CD167D /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9EE3FEB22FD28B7200CD167D /* background */,
+				9EE3FEB32FD28B7200CD167D /* options */,
+				9EE3FEB42FD28B7200CD167D /* popup */,
+				9EE3FEB52FD28B7200CD167D /* LICENSE */,
+				9EE3FEB62FD28B7200CD167D /* content */,
+				9EE3FEB72FD28B7200CD167D /* manifest.json */,
+				9EE3FEB82FD28B7200CD167D /* assets */,
+			);
+			name = Resources;
+			path = "JRead Extension";
+			sourceTree = SOURCE_ROOT;
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9EE3FE812FD28B7100CD167D /* JRead */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9EE3FEAE2FD28B7200CD167D /* Build configuration list for PBXNativeTarget "JRead" */;
+			buildPhases = (
+				9EE3FE7E2FD28B7100CD167D /* Sources */,
+				9EE3FE7F2FD28B7100CD167D /* Frameworks */,
+				9EE3FE802FD28B7100CD167D /* Resources */,
+				9EE3FEAD2FD28B7200CD167D /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9EE3FEA22FD28B7100CD167D /* PBXTargetDependency */,
+			);
+			name = JRead;
+			packageProductDependencies = (
+			);
+			productName = JRead;
+			productReference = 9EE3FE822FD28B7100CD167D /* JRead.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9EE3FE9E2FD28B7100CD167D /* JRead Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9EE3FEAA2FD28B7200CD167D /* Build configuration list for PBXNativeTarget "JRead Extension" */;
+			buildPhases = (
+				9EE3FE9B2FD28B7100CD167D /* Sources */,
+				9EE3FE9C2FD28B7100CD167D /* Frameworks */,
+				9EE3FE9D2FD28B7100CD167D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "JRead Extension";
+			packageProductDependencies = (
+			);
+			productName = "JRead Extension";
+			productReference = 9EE3FE9F2FD28B7100CD167D /* JRead Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9EE3FE7A2FD28B7100CD167D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					9EE3FE812FD28B7100CD167D = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					9EE3FE9E2FD28B7100CD167D = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = 9EE3FE7D2FD28B7100CD167D /* Build configuration list for PBXProject "JRead" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 9EE3FE792FD28B7100CD167D;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9EE3FE832FD28B7100CD167D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9EE3FE812FD28B7100CD167D /* JRead */,
+				9EE3FE9E2FD28B7100CD167D /* JRead Extension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9EE3FE802FD28B7100CD167D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EE3FE8C2FD28B7100CD167D /* Icon.png in Resources */,
+				9EE3FE982FD28B7100CD167D /* Main.storyboard in Resources */,
+				9EE3FE952FD28B7100CD167D /* LaunchScreen.storyboard in Resources */,
+				9EE3FE8A2FD28B7100CD167D /* Main.html in Resources */,
+				9EE3FEA72FD28B7200CD167D /* Assets.xcassets in Resources */,
+				9EE3FE8E2FD28B7100CD167D /* Style.css in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9EE3FE9D2FD28B7100CD167D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EE3FEBB2FD28B7200CD167D /* popup in Resources */,
+				9EE3FEB92FD28B7200CD167D /* background in Resources */,
+				9EE3FEBF2FD28B7200CD167D /* assets in Resources */,
+				9EE3FEBC2FD28B7200CD167D /* LICENSE in Resources */,
+				9EE3FEBA2FD28B7200CD167D /* options in Resources */,
+				9EE3FEBE2FD28B7200CD167D /* manifest.json in Resources */,
+				9EE3FEBD2FD28B7200CD167D /* content in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9EE3FE7E2FD28B7100CD167D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EE3FE922FD28B7100CD167D /* ViewController.swift in Sources */,
+				9EE3FE862FD28B7100CD167D /* AppDelegate.swift in Sources */,
+				9EE3FE902FD28B7100CD167D /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9EE3FE9B2FD28B7100CD167D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EE3FEA52FD28B7200CD167D /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9EE3FEA22FD28B7100CD167D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9EE3FE9E2FD28B7100CD167D /* JRead Extension */;
+			targetProxy = 9EE3FEA12FD28B7100CD167D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		9EE3FE882FD28B7100CD167D /* Main.html */ = {
+			isa = PBXVariantGroup;
+			children = (
+				9EE3FE892FD28B7100CD167D /* Base */,
+			);
+			name = Main.html;
+			sourceTree = "<group>";
+		};
+		9EE3FE932FD28B7100CD167D /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				9EE3FE942FD28B7100CD167D /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		9EE3FE962FD28B7100CD167D /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				9EE3FE972FD28B7100CD167D /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		9EE3FEA82FD28B7200CD167D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		9EE3FEA92FD28B7200CD167D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		9EE3FEAB2FD28B7200CD167D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = PR6NG3PH45;
+				CURRENT_PROJECT_VERSION = 0.7.217;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "JRead Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "JRead Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.7.217;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.jread.ios.Extension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9EE3FEAC2FD28B7200CD167D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = PR6NG3PH45;
+				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS Extension App Store";
+				CURRENT_PROJECT_VERSION = 0.7.217;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "JRead Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "JRead Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.7.217;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.jread.ios.Extension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9EE3FEAF2FD28B7200CD167D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = PR6NG3PH45;
+				CURRENT_PROJECT_VERSION = 0.7.217;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = JRead/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = JRead;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.7.217;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.jread.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9EE3FEB02FD28B7200CD167D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = PR6NG3PH45;
+				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS App Store";
+				CURRENT_PROJECT_VERSION = 0.7.217;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = JRead/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = JRead;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.7.217;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.jread.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9EE3FE7D2FD28B7100CD167D /* Build configuration list for PBXProject "JRead" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9EE3FEA82FD28B7200CD167D /* Debug */,
+				9EE3FEA92FD28B7200CD167D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9EE3FEAA2FD28B7200CD167D /* Build configuration list for PBXNativeTarget "JRead Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9EE3FEAB2FD28B7200CD167D /* Debug */,
+				9EE3FEAC2FD28B7200CD167D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9EE3FEAE2FD28B7200CD167D /* Build configuration list for PBXNativeTarget "JRead" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9EE3FEAF2FD28B7200CD167D /* Debug */,
+				9EE3FEB02FD28B7200CD167D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9EE3FE7A2FD28B7100CD167D /* Project object */;
+}
