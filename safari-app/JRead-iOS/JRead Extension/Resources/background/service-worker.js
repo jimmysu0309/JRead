@@ -42,7 +42,16 @@ const DEFAULT_SETTINGS = {
   titleFontSize: 0,
   // v0.7.215：Space 平滑卷動（Readwise Reader 風格）。Space / Shift+Space 以
   // rAF 動畫卷動 viewport 高度的 N%；0 = 停用（保留瀏覽器原生跳卷）。
-  spaceScrollRatio: 50
+  spaceScrollRatio: 50,
+  // v0.7.218：自訂快速鍵。key 與 manifest commands 同字彙；value 是
+  // { code, alt, shift, ctrl, meta } 或 null（= 未自訂，只有 manifest 預設鍵）。
+  // Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，options 的 recorder 是
+  // 唯一通道；比對在 content/custom-shortcuts.js 的 keydown capture listener。
+  customShortcuts: {
+    'toggle-reader-mode': null,
+    'send-to-readwise': null,
+    'toggle-youtube-borderless': null
+  }
 };
 
 // Icon 路徑 map：閱讀模式 active / idle 都用彩色版本（v0.7.134，Jimmy 2026-05-18
@@ -113,6 +122,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const patch = msg.payload || {};
       chrome.storage.sync.set(patch).then(() => sendResponse({ ok: true }));
       return true;
+    }
+    case 'CUSTOM_COMMAND': {
+      // v0.7.218：content/custom-shortcuts.js 的自訂快速鍵命中後送來。
+      // 走與 manifest commands.onCommand 同一條 dispatchCommand（含 YouTube
+      // 模式重導），單一資料源。command 白名單擋掉 page 端偽造的任意字串；
+      // tabId 取 sender.tab（按鍵發生的 tab，比 active-tab query 更準——
+      // 背景 tab 透過巨集鍵盤等送鍵時不會誤殺前景 tab）。
+      const command = msg.payload && msg.payload.command;
+      const allowed = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless'];
+      const tabId = sender && sender.tab && sender.tab.id;
+      if (typeof tabId !== 'number' || !allowed.includes(command)) return;
+      dispatchCommand(command, tabId);
+      return;
     }
     case 'SET_ACTIVE_ICON': {
       // content main.js 在 enter/exit reader mode 時呼叫，切 action icon 彩色/灰階
@@ -242,10 +264,11 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
 // 快速鍵：manifest 的 commands 觸發後走與 popup 相同的 toggle + inject fallback。
 // 失敗時（chrome:// / 禁止注入頁面）回傳 ok=false，但 service worker 無 UI 可以
 // 提示；使用者會發現頁面沒反應，這是 MV3 的侷限。
-chrome.commands.onCommand.addListener(async (command) => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || typeof tab.id !== 'number') return;
-
+//
+// v0.7.218：dispatch 主體抽成 dispatchCommand(command, tabId)——manifest 預設
+// 鍵（commands.onCommand，browser 層）與自訂快速鍵（content script keydown →
+// CUSTOM_COMMAND 訊息）共用同一條 dispatch，YouTube 模式重導等邏輯單一資料源。
+async function dispatchCommand(command, tabId) {
   // v0.7.134：YouTube 影院 / 無邊模式 active 時，**任一**模式快速鍵都當作退出當前
   // active 模式（= 按 ESC 的效果）。動機：使用者忘記目前在哪個模式時、不用記哪
   // 個快速鍵對應哪個退出方向。實作上 SW 先 GET_READER_STATE 拿當前狀態、依此
@@ -260,18 +283,18 @@ chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'toggle-reader-mode' || command === 'toggle-youtube-borderless') {
     let state = null;
     try {
-      state = await chrome.tabs.sendMessage(tab.id, { type: 'GET_READER_STATE' });
+      state = await chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
     } catch (_) { /* content script 沒注入：state=null、走 default */ }
     const cinemaActive = !!(state && state.cinemaActive);
     const borderlessActive = !!(state && state.borderlessActive);
 
     if (command === 'toggle-reader-mode' && borderlessActive) {
-      chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
+      chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
       return;
     }
     if (command === 'toggle-youtube-borderless' && cinemaActive) {
       const { toggleWithInjectionFallback } = self.__JReadPopup;
-      await toggleWithInjectionFallback(tab.id, {
+      await toggleWithInjectionFallback(tabId, {
         sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
         executeScript: (opts) => chrome.scripting.executeScript(opts)
       });
@@ -281,7 +304,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   if (command === 'toggle-reader-mode') {
     const { toggleWithInjectionFallback } = self.__JReadPopup;
-    await toggleWithInjectionFallback(tab.id, {
+    await toggleWithInjectionFallback(tabId, {
       sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
       executeScript: (opts) => chrome.scripting.executeScript(opts)
     });
@@ -289,7 +312,7 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 
   if (command === 'send-to-readwise') {
-    await sendToReadwiseFromCommand(tab.id);
+    await sendToReadwiseFromCommand(tabId);
     return;
   }
 
@@ -298,10 +321,23 @@ chrome.commands.onCommand.addListener(async (command) => {
     // 自己到 chrome://extensions/shortcuts 綁）。content script 沒注入的頁面
     // sendMessage 會 reject — 靜默吞掉（chrome:// / Web Store 等本來就不該
     // 在這些頁面切影片）。
-    chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
+    chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
     return;
   }
-});
+}
+
+// manifest 預設鍵（browser 層）→ dispatchCommand。
+// v0.7.218 iOS Safari guard：iOS 的 commands API 殘缺（v0.7.217 已知 getAll
+// 缺席）——top-level 直呼 onCommand.addListener 若 API 整個缺席會 TypeError
+// 炸掉 SW 註冊階段，連 onMessage listener 都掛。guard 後 iOS 上預設鍵不可用
+// 也沒關係：自訂快速鍵（content keydown → CUSTOM_COMMAND）是 iOS 的主通道。
+if (chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener(async (command) => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || typeof tab.id !== 'number') return;
+    await dispatchCommand(command, tab.id);
+  });
+}
 
 // v0.7.89：快速鍵 Alt+Shift+R 觸發送 Readwise 流程。
 // 流程：

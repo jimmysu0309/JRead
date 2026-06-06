@@ -65,7 +65,10 @@
       SHOW_TOAST: 'SHOW_TOAST',                     // SW → content：顯示 toast（payload: { message, kind }）
       // v0.7.134：YouTube borderless mode
       TOGGLE_YT_BORDERLESS: 'TOGGLE_YT_BORDERLESS', // SW / popup → content：toggle 無邊模式
-      RESIZE_OWN_WINDOW: 'RESIZE_OWN_WINDOW'        // content → SW：把瀏覽器視窗高度 resize 成匹配影片比例
+      RESIZE_OWN_WINDOW: 'RESIZE_OWN_WINDOW',       // content → SW：把瀏覽器視窗高度 resize 成匹配影片比例
+      // v0.7.218：自訂快速鍵——custom-shortcuts.js 命中後請 SW 走 manifest
+      // commands 同一條 dispatch（payload: { command }，與 commands key 同字彙）
+      CUSTOM_COMMAND: 'CUSTOM_COMMAND'              // content → SW：自訂快速鍵觸發指令
     }
   };
 })();
