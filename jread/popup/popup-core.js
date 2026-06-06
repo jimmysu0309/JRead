@@ -14,6 +14,8 @@
   const CONTENT_SCRIPT_FILES = [
     'content/namespace.js',
     'content/domain-match.js',
+    'content/shortcut-utils.js',
+    'content/custom-shortcuts.js',
     'content/toast.js',
     'content/cinema-mode.js',
     'content/youtube-borderless.js',

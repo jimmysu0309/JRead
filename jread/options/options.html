@@ -82,6 +82,13 @@
       border-bottom: none;
       padding-bottom: 0;
     }
+    /* v0.7.218：快速鍵區最後一列 field 後接 #shortcut-hint + 下一個
+       section-heading——同樣避免 field border-bottom 與 heading border-top
+       並列成雙線 */
+    .field:has(+ #shortcut-hint + .section-heading) {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
     .field label {
       font-weight: 500;
       color: var(--jr-neutral-900);
@@ -275,6 +282,69 @@
     }
 
     /* ==========================================================
+       快速鍵 recorder（v0.7.218）
+       控制群（recorder + 還原）固定總寬 = --jr-control-w，右緣與其他
+       field 的 select / input 對齊（UI grid 規則：同 column 兄弟元件
+       左右邊緣全對齊、固定寬不用 min-width）。
+       ========================================================== */
+    .shortcut-controls {
+      display: flex;
+      gap: 6px;
+      flex: 0 0 var(--jr-control-w);
+      width: var(--jr-control-w);
+    }
+    .shortcut-recorder {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 32px;
+      padding: 0 8px;
+      font-family: var(--jr-font-mono);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      color: var(--jr-neutral-900);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    .shortcut-recorder:hover { border-color: var(--jr-neutral-500); }
+    /* 顯示內建預設值（尚未自訂）時降灰，與「已自訂」黑字雙態區分 */
+    .shortcut-recorder.is-default { color: var(--jr-neutral-500); }
+    /* 錄製中：品牌色 ring（不填色，維持 WYSIWYG 按鈕 active 慣例） */
+    .shortcut-recorder.recording {
+      border-color: var(--jr-primary-600);
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+      color: var(--jr-primary-600);
+    }
+    .shortcut-clear {
+      flex: 0 0 28px;
+      height: 32px;
+      padding: 0;
+      font-size: 13px;
+      line-height: 1;
+      color: var(--jr-neutral-500);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      cursor: pointer;
+      transition: border-color 0.12s ease, color 0.12s ease;
+    }
+    .shortcut-clear:hover { border-color: var(--jr-neutral-500); color: var(--jr-neutral-700); }
+    .shortcut-clear:disabled { opacity: 0.35; cursor: default; }
+    .shortcut-clear:disabled:hover { border-color: var(--jr-neutral-300); color: var(--jr-neutral-500); }
+    /* 錄製驗證失敗原因。空字串時不撐空間（同 #save-status 邏輯） */
+    #shortcut-hint {
+      margin: 0;
+      min-height: 0;
+      font-size: 12px;
+      color: #b45309; /* amber-700——警告語意，與品牌藍 / 灰階區分 */
+    }
+
+    /* ==========================================================
        Save status — 「已儲存」訊息暫存區。沒有訊息時完全不撐空間
        （margin 0 + min-height 0），訊息出現時下方 layout 整體下推
        14px、1.5s 後消失彈回——必要的 layout shift，換取「攔截原站
@@ -410,6 +480,42 @@
 
   <div id="save-status"></div>
 
+  <h2 class="section-heading">快速鍵</h2>
+  <p class="section-desc">
+    點欄位後直接按下想要的組合鍵（需包含 <strong>⌥ Option</strong> 或 <strong>⌃ Control</strong>，按 <strong>ESC</strong> 取消錄製）。自訂鍵由 JRead 在頁面內攔截，Chrome 與 Safari 通用——<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂</strong>。內建預設鍵仍然有效；位址列輸入中時自訂鍵收不到按鍵（預設鍵不受此限）。
+  </p>
+  <div class="field">
+    <label>
+      切換純閱讀模式
+      <span class="desc">內建預設 <strong>⌥R</strong></span>
+    </label>
+    <div class="shortcut-controls">
+      <button type="button" class="shortcut-recorder" id="sc-toggle-reader-mode" data-command="toggle-reader-mode"></button>
+      <button type="button" class="shortcut-clear" id="sc-clear-toggle-reader-mode" data-command="toggle-reader-mode" title="還原預設">✕</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>
+      送到 Readwise Reader
+      <span class="desc">內建預設 <strong>⌥⇧R</strong></span>
+    </label>
+    <div class="shortcut-controls">
+      <button type="button" class="shortcut-recorder" id="sc-send-to-readwise" data-command="send-to-readwise"></button>
+      <button type="button" class="shortcut-clear" id="sc-clear-send-to-readwise" data-command="send-to-readwise" title="還原預設">✕</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>
+      切換 YouTube 無邊模式
+      <span class="desc">無內建預設鍵</span>
+    </label>
+    <div class="shortcut-controls">
+      <button type="button" class="shortcut-recorder" id="sc-toggle-youtube-borderless" data-command="toggle-youtube-borderless"></button>
+      <button type="button" class="shortcut-clear" id="sc-clear-toggle-youtube-borderless" data-command="toggle-youtube-borderless" title="清除">✕</button>
+    </div>
+  </div>
+  <div id="shortcut-hint"></div>
+
   <h2 class="section-heading">自動啟動網域</h2>
   <p class="section-desc">
     符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在 popup 用「此網域自動啟動」開關快速加入目前網域。
@@ -418,7 +524,7 @@
 
   <h2 class="section-heading">YouTube 模式</h2>
   <p class="section-desc">
-    在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+R</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式可到 <code>chrome://extensions/shortcuts</code> 替「切換 YouTube 無邊模式」自訂一組快速鍵。
+    在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+R</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式可在上方「快速鍵」區自訂一組快速鍵（Chrome 亦可到 <code>chrome://extensions/shortcuts</code> 設瀏覽器層快速鍵）。
   </p>
 
   <h3 class="subsection-heading">影院模式</h3>
@@ -454,6 +560,7 @@
   </section>
 
   <script src="../content/domain-match.js"></script>
+  <script src="../content/shortcut-utils.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
