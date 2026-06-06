@@ -99,7 +99,13 @@ describe('iOS Safari API availability guards（v0.7.217）', () => {
   });
 
   it('popup.js：commands API 缺席時必須隱藏快速鍵提示列（else 分支）', () => {
-    assert.ok(/else\s+if\s*\(shortcutEl\)\s*\{\s*\n?\s*shortcutEl\.hidden\s*=\s*true/.test(POPUP_SRC),
+    // v0.7.220：提示改為先讀 storage customShortcuts（自訂鍵優先），結構從
+    // top-level `else if (shortcutEl)` 移進 storage callback（callback 開頭
+    // shortcutEl null-check early return）——守的行為不變：commands API 缺席
+    // 且無自訂鍵時整列 hidden。
+    assert.ok(/else\s*\{\s*\n?\s*shortcutEl\.hidden\s*=\s*true/.test(POPUP_SRC),
       'commands API 不存在時 shortcutEl 必須 hidden（iOS 觸控環境沒有鍵盤指派頁可去）');
+    assert.ok(/if\s*\(!shortcutEl\)\s*return/.test(POPUP_SRC),
+      'storage callback 開頭必須 shortcutEl null-check（取代舊 else-if guard）');
   });
 });

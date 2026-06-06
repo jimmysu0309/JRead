@@ -90,23 +90,35 @@ const DEFAULT_SETTINGS = {
 versionEl.textContent = chrome.runtime.getManifest().version;
 
 // ---- 快速鍵提示 --------------------------------------------------------
-// v0.7.217 iOS Safari guard：iOS 無 chrome.commands API——popup.js 是
-// top-level script，直接呼叫會 TypeError 中斷整個 popup（連 toggle 按鈕
-// handler 都掛）。缺 API 時隱藏快速鍵提示列（觸控環境本來就沒鍵盤指派）。
-if (chrome.commands && chrome.commands.getAll) {
-  chrome.commands.getAll((commands) => {
-    if (!shortcutEl) return;
-    const cmd = (commands || []).find(c => c.name === 'toggle-reader-mode');
-    const shortcut = cmd && cmd.shortcut;
-    if (shortcut) {
-      shortcutEl.textContent = `快速鍵：${shortcut}`;
-    } else {
-      shortcutEl.innerHTML = '快速鍵未設定，請到 <code>chrome://extensions/shortcuts</code> 指派';
-    }
-  });
-} else if (shortcutEl) {
-  shortcutEl.hidden = true;
-}
+// v0.7.220：優先顯示 options 錄的自訂快速鍵（storage.sync.customShortcuts，
+// Jimmy 回報：已自訂仍顯示「未設定請到 chrome://extensions/shortcuts」——
+// 舊版只看 commands.getAll 的 browser 層指派，不知道自訂鍵存在）。
+// 順位：自訂鍵 → browser 層指派（commands.getAll）→ 未設定提示（指向進階
+// 設定的 recorder，不再指 chrome://extensions/shortcuts——Safari 沒有那頁）
+// → commands API 缺席且無自訂（iOS 觸控）才整列隱藏。
+// v0.7.217 iOS Safari guard 保留：chrome.commands 可能缺席，top-level 直呼
+// 會 TypeError 中斷整個 popup。
+chrome.storage.sync.get({ customShortcuts: DEFAULT_SETTINGS.customShortcuts }, (v) => {
+  if (!shortcutEl) return;
+  const SCU = window.__JReadShortcuts;
+  const table = SCU.sanitizeTable(v && v.customShortcuts);
+  const custom = table['toggle-reader-mode'];
+  if (custom) {
+    shortcutEl.textContent = `快速鍵：${SCU.format(custom)}`;
+    return;
+  }
+  if (chrome.commands && chrome.commands.getAll) {
+    chrome.commands.getAll((commands) => {
+      const cmd = (commands || []).find(c => c.name === 'toggle-reader-mode');
+      const shortcut = cmd && cmd.shortcut;
+      shortcutEl.textContent = shortcut
+        ? `快速鍵：${shortcut}`
+        : '快速鍵未設定——可在進階設定錄製';
+    });
+  } else {
+    shortcutEl.hidden = true;
+  }
+});
 
 // ---- 設定面板 ----------------------------------------------------------
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
