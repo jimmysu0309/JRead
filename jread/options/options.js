@@ -19,12 +19,110 @@ const DEFAULTS = {
   // v0.7.155：自動啟動閱讀模式的網域清單（字串陣列）。matching rule：
   // hostname === pattern OR hostname endsWith '.' + pattern。
   // 'abc.com' 涵蓋 www.abc.com / foo.abc.com；'www.abc.com' 只含 www.abc.com。
-  autoEnableDomains: []
+  autoEnableDomains: [],
+  // v0.7.218：自訂快速鍵。key 與 manifest commands 同字彙；value 是
+  // { code, alt, shift, ctrl, meta } 或 null（= 未自訂，只有 manifest 預設鍵）。
+  // Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，這裡的 recorder 是唯一通道。
+  customShortcuts: {
+    'toggle-reader-mode': null,
+    'send-to-readwise': null,
+    'toggle-youtube-borderless': null
+  }
 };
 
 const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
+
+// ---- 快速鍵 recorder（v0.7.218）--------------------------------------
+// 點 recorder 進入錄製狀態 → window keydown capture 抓組合 → validate →
+// 寫回 storage.sync.customShortcuts 整張表。比對 / 驗證 / 格式化邏輯共用
+// content/shortcut-utils.js（window.__JReadShortcuts），與 content script
+// 的 keydown 比對單一資料源。
+const SC = window.__JReadShortcuts;
+let shortcutTable = SC.sanitizeTable(null); // 三 key 全 null
+let recordingCmd = null;                    // 錄製中的 command（null = 沒在錄）
+
+function shortcutHint(msg) {
+  document.getElementById('shortcut-hint').textContent = msg || '';
+}
+
+function renderShortcuts() {
+  SC.COMMANDS.forEach((cmd) => {
+    const btn = document.getElementById('sc-' + cmd);
+    const clearBtn = document.getElementById('sc-clear-' + cmd);
+    if (!btn) return;
+    const custom = shortcutTable[cmd];
+    const def = SC.MANIFEST_DEFAULTS[cmd];
+    if (recordingCmd === cmd) {
+      btn.textContent = '按下組合鍵…';
+    } else if (custom) {
+      btn.textContent = SC.format(custom);
+    } else {
+      btn.textContent = def ? SC.format(def) + '（預設）' : '未設定';
+    }
+    btn.classList.toggle('recording', recordingCmd === cmd);
+    btn.classList.toggle('is-default', !custom && recordingCmd !== cmd);
+    if (clearBtn) clearBtn.disabled = !custom;
+  });
+}
+
+function saveShortcuts() {
+  chrome.storage.sync.set({ customShortcuts: shortcutTable }, flashSaved);
+}
+
+SC.COMMANDS.forEach((cmd) => {
+  document.getElementById('sc-' + cmd).addEventListener('click', () => {
+    // 再點同一顆 = 取消錄製
+    recordingCmd = recordingCmd === cmd ? null : cmd;
+    shortcutHint('');
+    renderShortcuts();
+  });
+  document.getElementById('sc-clear-' + cmd).addEventListener('click', () => {
+    shortcutTable[cmd] = null;
+    recordingCmd = null;
+    shortcutHint('');
+    saveShortcuts();
+    renderShortcuts();
+  });
+});
+
+// 錄製用 keydown：capture phase 搶在頁面其他 handler 前
+window.addEventListener('keydown', (e) => {
+  if (!recordingCmd) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.code === 'Escape') { // 取消錄製
+    recordingCmd = null;
+    renderShortcuts();
+    return;
+  }
+  const s = SC.eventToShortcut(e);
+  if (!s) return; // 純 modifier 鍵——組合未完成，等下一鍵
+  const v = SC.validate(s);
+  if (!v.ok) {
+    shortcutHint(v.reason);
+    recordingCmd = null;
+    renderShortcuts();
+    return;
+  }
+  // 與其他指令的「生效鍵」（自訂值 || 內建預設）衝突檢查
+  for (const other of SC.COMMANDS) {
+    if (other === recordingCmd) continue;
+    const effective = shortcutTable[other] || SC.MANIFEST_DEFAULTS[other];
+    if (effective && SC.shortcutEquals(s, effective)) {
+      shortcutHint(SC.format(s) + ' 已指派給其他指令');
+      recordingCmd = null;
+      renderShortcuts();
+      return;
+    }
+  }
+  shortcutTable[recordingCmd] = s;
+  recordingCmd = null;
+  shortcutHint('');
+  saveShortcuts();
+  renderShortcuts();
+}, true);
 
 function load() {
   chrome.storage.sync.get(DEFAULTS, (values) => {
@@ -42,6 +140,9 @@ function load() {
     const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains : [];
     document.getElementById('autoEnableDomains').value =
       helper ? helper.serializeList(list) : list.join('\n');
+    // v0.7.218：自訂快速鍵——storage 讀回值消毒後渲染 recorder 顯示
+    shortcutTable = SC.sanitizeTable(values.customShortcuts);
+    renderShortcuts();
   });
 }
 

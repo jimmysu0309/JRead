@@ -15,6 +15,7 @@
 - 偏好設定：主題（亮/暗/米色）、字級、版心寬度
 - Space / Shift+Space 段落焦點卷動（v0.7.216）：閱讀模式下左側指示條標記目前段落，按 Space 跳到下一段；段落低於顯示門檻時自動平滑卷回畫面上方（仿 Readwise Reader，門檻可在 options 調整）
 - Readwise Reader 整合（v0.7.33）：把 JRead 處理過的乾淨主文一鍵送到 Readwise Reader，繞過原站 parser 問題
+- 自訂快速鍵（v0.7.218）：options 「快速鍵」區可為「切換閱讀模式 / 送 Readwise / YouTube 無邊模式」錄製自訂組合鍵——Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，這裡是唯一通道；Chrome 也通用
 
 詳細規格見 [SPEC.md](SPEC.md)。
 

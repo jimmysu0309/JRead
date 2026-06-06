@@ -218,16 +218,25 @@ describe('youtube-borderless v0.7.134 — SW cross-mode 退出邏輯', () => {
   // 當前 active 模式（= 按 ESC 的效果）。SW 先 GET_READER_STATE 拿當前狀態
   // 再依此重導 command。
   //
-  // JS regex 沒 balanced brace、抓不出 onCommand listener 完整 block，改用
-  // substring 從 onCommand 那行切到檔尾——後續內容（onCommand 後的 helper
-  // function 等）不會混入 listener 內部分支字眼，安全。
+  // JS regex 沒 balanced brace、抓不出完整 block，改用 substring 從 dispatch
+  // 主體那行切到檔尾——後續內容（helper function 等）不會混入分支字眼，安全。
+  // v0.7.218：cross-mode 重導邏輯從 onCommand listener 抽成 dispatchCommand
+  // （manifest 預設鍵與自訂快速鍵 CUSTOM_COMMAND 共用同一條 dispatch），
+  // slice 切點跟著移；另斷言 onCommand 仍接回 dispatchCommand。
 
   const ON_COMMAND_SLICE = SW_SRC.slice(
-    SW_SRC.indexOf('chrome.commands.onCommand.addListener')
+    SW_SRC.indexOf('async function dispatchCommand')
   );
 
-  it('SW onCommand 必須先 GET_READER_STATE 才決定 command 重導', () => {
-    assert.ok(ON_COMMAND_SLICE.length > 0, '抓不到 chrome.commands.onCommand listener');
+  it('SW onCommand listener 必須把 command 轉交 dispatchCommand（預設鍵接回同一條 dispatch）', () => {
+    const listenerSlice = SW_SRC.slice(SW_SRC.indexOf('chrome.commands.onCommand.addListener'));
+    assert.ok(listenerSlice.length > 0, '抓不到 chrome.commands.onCommand listener');
+    assert.match(listenerSlice, /dispatchCommand\(command,\s*tab\.id\)/,
+      'onCommand listener 必須呼叫 dispatchCommand——預設鍵與自訂鍵不可雙實作 dispatch');
+  });
+
+  it('SW dispatch 必須先 GET_READER_STATE 才決定 command 重導', () => {
+    assert.ok(ON_COMMAND_SLICE.length > 0, '抓不到 dispatchCommand');
     assert.match(ON_COMMAND_SLICE, /chrome\.tabs\.sendMessage[\s\S]*?GET_READER_STATE/,
       'SW onCommand 必須在處理 toggle-reader-mode / toggle-youtube-borderless 前 GET_READER_STATE 拿當前 cinema/borderless active 狀態');
   });
