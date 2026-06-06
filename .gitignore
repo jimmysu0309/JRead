@@ -26,3 +26,6 @@ safari-app/*.pkg
 # Xcode user-specific state
 *.xcuserdata/
 xcuserdata/
+
+# Claude Code 本機 session 狀態（權限設定 / lock），不進 repo
+.claude/
