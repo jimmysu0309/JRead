@@ -78,6 +78,10 @@
         width: auto;
         max-width: 560px;
         margin: 0 auto;
+        /* v0.7.223：iOS 字級偏小——整體 1.2x（base 14px → ~17px，對齊 iOS
+           內文標準字級）。用 zoom 而非 rem 重構：等比放大觸控目標 +
+           保留既有對齊 grid 的 px 等式（fixed width 元件比例不破）。 */
+        zoom: 1.2;
       }
     }
 
