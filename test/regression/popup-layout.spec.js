@@ -53,4 +53,21 @@ describe('popup layout（v0.7.222）', () => {
     assert.ok(Number(m[1]) > 300,
       `min-width guard（${m[1]}px）必須大於桌面設計寬 300px，否則桌面 popup 視窗會循環觸發`);
   });
+
+  // v0.7.223：Jimmy iPhone 回報觸控環境字級偏小（base 14px vs iOS 內文
+  // 標準 ~17px）。media query 內用 zoom 等比放大（觸控目標 + 對齊 grid
+  // px 等式一起縮放，不走 rem 重構）。
+  it('觸控 media query 內 body 必須有 zoom >= 1.15（iOS 字級放大）', () => {
+    const m = POPUP_HTML.match(
+      /@media\s*\(pointer:\s*coarse\)[^{]*\{\s*body\s*\{([\s\S]*?)\}/);
+    assert.ok(m, '抓不到 media query 內的 body 區塊');
+    const z = m[1].match(/zoom:\s*([\d.]+)/);
+    assert.ok(z, 'media query 內 body 缺 zoom —— iOS 字級會回到偏小的 14px base');
+    assert.ok(Number(z[1]) >= 1.15, `zoom（${z[1]}）必須 >= 1.15`);
+  });
+
+  it('popup.html 必須有 viewport meta（device-width，防 iOS 980px fallback）', () => {
+    assert.ok(/<meta\s+name="viewport"\s+content="width=device-width/.test(POPUP_HTML),
+      'popup.html 缺 viewport meta');
+  });
 });

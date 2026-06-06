@@ -19,4 +19,20 @@ describe('options 頁 layout（v0.7.219）', () => {
     assert.ok(m, '抓不到 options body max-width 宣告');
     assert.strictEqual(m[1], '760', `options body max-width 必須 760px，實際 ${m[1]}px`);
   });
+
+  // v0.7.223：Jimmy iOS 回報 options 字體偏小。根因：無 viewport meta 時
+  // iOS 用 980px 預設 layout viewport 整頁縮 ~0.44 倍。配套觸控 zoom 放大。
+  it('options.html 必須有 viewport meta（device-width，根因修法）', () => {
+    assert.ok(/<meta\s+name="viewport"\s+content="width=device-width/.test(OPTIONS_HTML),
+      'options.html 缺 viewport meta —— iOS 會用 980px fallback 整頁縮小');
+  });
+
+  it('觸控 media query 必須對 body 套 zoom >= 1.15（device-width 後 15px base 仍偏小）', () => {
+    const m = OPTIONS_HTML.match(
+      /@media\s*\(pointer:\s*coarse\)\s*\{\s*body\s*\{([\s\S]*?)\}/);
+    assert.ok(m, '抓不到 (pointer: coarse) body 區塊');
+    const z = m[1].match(/zoom:\s*([\d.]+)/);
+    assert.ok(z, '觸控 media query 內 body 缺 zoom');
+    assert.ok(Number(z[1]) >= 1.15, `zoom（${z[1]}）必須 >= 1.15`);
+  });
 });
