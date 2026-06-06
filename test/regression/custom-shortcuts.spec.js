@@ -274,3 +274,39 @@ describe('(F) namespace / options / popup wire-up', () => {
     assert.match(POPUP_JS, /customShortcuts:\s*\{/, 'popup DEFAULT_SETTINGS 缺 customShortcuts——storage.get 缺 default 會讀回 undefined');
   });
 });
+
+describe('(G) popup 快速鍵提示（v0.7.220）', () => {
+  // Jimmy 2026-06-06 回報：options 已錄自訂鍵，popup footer 仍顯示
+  // 「快速鍵未設定，請到 chrome://extensions/shortcuts 指派」——舊版提示
+  // 只看 commands.getAll（browser 層），不知道 customShortcuts 存在。
+  const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup', 'popup.html'), 'utf8');
+
+  it('提示必須先讀 storage customShortcuts、自訂鍵存在時優先顯示', () => {
+    const m = POPUP_JS.match(/chrome\.storage\.sync\.get\(\s*\{\s*customShortcuts:[\s\S]*?\n\}\);/);
+    assert.ok(m, 'popup 快速鍵提示必須以 storage.sync.get(customShortcuts) 開頭');
+    const body = m[0];
+    assert.match(body, /SCU\.format\(custom\)/, '自訂鍵存在時必須 format 顯示');
+    // 自訂鍵分支必須在 getAll fallback 之前（順位：自訂 → browser 層 → 未設定）
+    assert.ok(body.indexOf('SCU.format(custom)') < body.indexOf('chrome.commands.getAll'),
+      '自訂鍵顯示必須先於 commands.getAll fallback');
+  });
+
+  it('未設定訊息不可再指向 chrome://extensions/shortcuts（Safari 沒有那頁）', () => {
+    assert.ok(!POPUP_JS.includes('快速鍵未設定，請到'),
+      '舊訊息「快速鍵未設定，請到 chrome://extensions/shortcuts 指派」必須移除');
+    assert.match(POPUP_JS, /快速鍵未設定——可在進階設定錄製/,
+      '未設定訊息必須指向進階設定的 recorder');
+  });
+
+  it('popup.html 必須引入 shortcut-utils.js 且先於 popup.js', () => {
+    const utilIdx = POPUP_HTML.indexOf('shortcut-utils.js');
+    const popupIdx = POPUP_HTML.indexOf('"popup.js"');
+    assert.ok(utilIdx !== -1, 'popup.html 缺 shortcut-utils.js script tag');
+    assert.ok(utilIdx < popupIdx, 'shortcut-utils.js 必須先於 popup.js（提示 callback 讀 window.__JReadShortcuts）');
+  });
+
+  it('iOS guard 保留：commands API 缺席且無自訂時 shortcutEl 必須 hidden', () => {
+    assert.match(POPUP_JS, /shortcutEl\.hidden = true/,
+      'commands API 缺席 fallback（觸控環境整列隱藏）不可移除');
+  });
+});
