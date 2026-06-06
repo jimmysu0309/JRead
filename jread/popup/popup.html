@@ -2,6 +2,9 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
+  <!-- iOS sheet / popover 排版基準：明寫 device-width 防 980px 預設
+       layout viewport fallback；桌面 popup 視窗忽略此 meta（v0.7.222） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JRead</title>
   <style>
     /* ==========================================================
@@ -63,6 +66,19 @@
       padding: var(--jr-space-4);
       background: var(--jr-surface);
       -webkit-font-smoothing: antialiased;
+    }
+    /* iOS / iPadOS sheet・popover（v0.7.222）：iPhone 的 popup 是整螢幕寬
+       sheet、iPad 是 OS 固定寬 popover——viewport 由 OS 給定，不像
+       Chrome / macOS Safari 會把 popup 視窗縮到 body 的 300px。
+       結構條件：觸控環境（pointer: coarse）+ viewport 已寬於設計寬
+       （min-width guard 排除 content-sized popup 視窗，避免 width: auto
+       與視窗 sizing 互相循環）→ body 撐滿可用寬度、過寬時置中。 */
+    @media (pointer: coarse) and (min-width: 340px) {
+      body {
+        width: auto;
+        max-width: 560px;
+        margin: 0 auto;
+      }
     }
 
     /* ==========================================================
