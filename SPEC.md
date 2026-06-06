@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.220**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.221**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -364,7 +364,7 @@ v0.7.140 起 popup 多了「字型」select，提供 4 個內建 stack：
 | popup 選項 | storage `fontFamily` 字面值 |
 | --- | --- |
 | 系統預設 | `system-ui`（== styler DEFAULTS.fontFamily，**不注入 override**，保留原站字體） |
-| 襯線 | `"Noto Serif TC", Georgia, "Times New Roman", serif` |
+| 襯線 | `"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif`（v0.7.221：CJK 襯線字體必須明寫——iOS WebKit 對清單中段泛型 serif 只解析拉丁，CJK 會穿透到 styler sans 後綴的 PingFang TC；macOS 命中 Songti、iOS 命中 Hiragino Mincho。SW onInstalled 有舊值精準遷移） |
 | 無襯線 | `"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif` |
 | 等寬 | `ui-monospace, Menlo, Consolas, monospace` |
 

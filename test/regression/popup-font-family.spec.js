@@ -56,7 +56,9 @@ describe('popup 字型 select（v0.7.140）', () => {
       assert.strictEqual(values[0], 'system-ui',
         '「系統預設」option value 必須是 "system-ui"（對齊 styler DEFAULTS.fontFamily）');
       assert.strictEqual(values[1],
-        '"Noto Serif TC", Georgia, "Times New Roman", serif',
+        // v0.7.221：補 CJK 襯線字體（macOS Songti / iOS Hiragino Mincho）——
+        // 根因與平台實證見 serif-font-stack.spec.js
+        '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
         '「襯線」option value 必須對齊 popup.js FONT_STACKS.serif 字面值');
       assert.strictEqual(values[2],
         '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif',

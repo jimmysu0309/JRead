@@ -4,6 +4,8 @@
 
 ---
 
+**v0.7.221** — fix: iOS / iPadOS 選「襯線」中文仍渲染無襯線（Jimmy iPad 回報：襯線/無襯線結果相同）。根因（iOS simulator 三輪 probe page 實證）：styler 注入 font-family 時在使用者 stack 後接 sans 系 fallback（`-apple-system, "Noto Sans TC", "PingFang TC", …`）；iOS WebKit 對「清單中間」的泛型 `serif` 只解析拉丁字型，CJK 字元繼續往後找、命中後綴的 PingFang TC——桌面平台對中段泛型有 per-script fallback 所以沒事。iOS runtime fonts 實查：無 Songti、唯一內建 CJK 襯線 = Hiragino Mincho ProN。修法：FONT_STACKS.serif 在泛型 serif 前、拉丁字型後明寫 CJK 襯線字體（`"Songti TC", "Songti SC", "Hiragino Mincho ProN"`——macOS 命中 Songti、iOS 命中 Hiragino Mincho），CJK 在進入 sans 後綴前命中；popup.html option value 同步。fontFamily 以整串 stack 字面值存 storage，既有使用者舊值不會跟著常數動——SW onInstalled 加 LEGACY_SERIF_STACK → SERIF_STACK 精準遷移。新增 `serif-font-stack.spec.js` 4 條（三檔字面值同步 + stack 結構順序）+ 更新 popup-font-family.spec 字面值。
+
 **v0.7.220** — fix: popup 快速鍵提示不認得自訂鍵（Jimmy 回報：options 已錄自訂快速鍵，popup footer 仍顯示「快速鍵未設定，請到 chrome://extensions/shortcuts 指派」）。根因：提示只看 `commands.getAll()`（browser 層指派），不知道 v0.7.218 的 `customShortcuts` 存在。修法：順位改為自訂鍵（storage.sync，`__JReadShortcuts.format` 顯示）→ browser 層指派 → 未設定提示改指向「進階設定」recorder（不再指 chrome://extensions/shortcuts——Safari 沒有那頁）→ commands API 缺席且無自訂（iOS 觸控）才整列隱藏。popup.html 引入 shortcut-utils.js。custom-shortcuts.spec.js 新增 (G) 4 條。
 
 **v0.7.219** — fix: options 頁版心 560px → 760px（Jimmy iPad 模擬器驗收反映太窄；options 以 open_in_tab 整頁開啟，560px 在 iPad / 桌面整頁下留白過多、desc 長段落擠成高窄柱）。新增 `options-layout.spec.js` forcing function 鎖定 body max-width。

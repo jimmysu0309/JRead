@@ -52,7 +52,15 @@ function roundStep(v) { return Math.round(v * 100) / 100; }
 // 此處字面值逐字一致（forcing function spec 會校對）。
 const FONT_STACKS = {
   system: 'system-ui',
-  serif: '"Noto Serif TC", Georgia, "Times New Roman", serif',
+  // v0.7.221：襯線 stack 必須明寫各平台的 CJK 襯線字體（macOS：Songti TC/SC、
+  // iOS：Hiragino Mincho ProN）。根因：styler 注入時會在使用者 stack 後接
+  // sans 系 fallback（-apple-system / PingFang TC…），iOS WebKit 對「清單中
+  // 間」的泛型 serif 只解析拉丁字型（Times），CJK 字元會繼續往後找、命中
+  // 後綴的 PingFang TC——襯線/無襯線中文看起來一樣（Jimmy 2026-06-06 iPad
+  // 回報；桌面平台對中段泛型有 per-script fallback 所以沒事）。CJK 襯線
+  // 字體放在泛型 serif 之前、拉丁字型之後：拉丁照走 Georgia/Times，CJK 在
+  // 進入 sans 後綴前命中明寫的襯線字體。iOS simulator 實測 D 列驗證通過。
+  serif: '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
   sans: '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif',
   mono: 'ui-monospace, Menlo, Consolas, monospace'
 };
