@@ -38,7 +38,10 @@
       -webkit-font-smoothing: antialiased;
     }
     body {
-      max-width: 560px;
+      /* v0.7.219：560px → 760px（Jimmy iPad 模擬器驗收反映太窄）。
+         options 以 open_in_tab 整頁開啟，560px 在 iPad / 桌面整頁下
+         留白過多、desc 長段落被擠成高窄柱。 */
+      max-width: 760px;
       margin: 40px auto;
       padding: 0 24px;
       background: var(--jr-surface);
