@@ -103,10 +103,19 @@ const swallowTabGone = (p) => {
   if (p && typeof p.catch === 'function') p.catch(() => {});
 };
 
+// v0.7.221：舊襯線 stack 遷移。fontFamily 以「整串 stack 字面值」存進
+// storage，popup 常數改了既有使用者的舊值不會跟著動——必須 onInstalled
+//（首裝 + 每次更新都觸發）時做一次精準替換。舊值缺 CJK 襯線字體，iOS 上
+// 中文會 fallback 到 styler sans 後綴的 PingFang TC（詳見 popup.js
+// FONT_STACKS.serif 註解）。兩常數必須與 popup.js 同步（spec forcing）。
+const LEGACY_SERIF_STACK = '"Noto Serif TC", Georgia, "Times New Roman", serif';
+const SERIF_STACK = '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif';
+
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(null);
   const merged = { ...DEFAULT_SETTINGS, ...current };
+  if (merged.fontFamily === LEGACY_SERIF_STACK) merged.fontFamily = SERIF_STACK;
   await chrome.storage.sync.set(merged);
 });
 
