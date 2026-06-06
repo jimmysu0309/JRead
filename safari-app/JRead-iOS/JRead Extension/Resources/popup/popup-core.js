@@ -16,6 +16,7 @@
     'content/domain-match.js',
     'content/shortcut-utils.js',
     'content/custom-shortcuts.js',
+    'content/touch-gestures.js',
     'content/toast.js',
     'content/cinema-mode.js',
     'content/youtube-borderless.js',
