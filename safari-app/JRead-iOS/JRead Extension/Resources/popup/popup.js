@@ -77,7 +77,14 @@ const DEFAULT_SETTINGS = {
   autoEnableDomains: [],
   // v0.7.215：Space 平滑卷動比例（% of viewport）；popup 不放控制項（options
   // 有），這裡僅作 storage.get 的 default fallback，避免讀回 undefined。
-  spaceScrollRatio: 50
+  spaceScrollRatio: 50,
+  // v0.7.218：自訂快速鍵；popup 不放控制項（options 有 recorder），這裡僅作
+  // storage.get 的 default fallback，避免讀回 undefined。
+  customShortcuts: {
+    'toggle-reader-mode': null,
+    'send-to-readwise': null,
+    'toggle-youtube-borderless': null
+  }
 };
 
 versionEl.textContent = chrome.runtime.getManifest().version;
