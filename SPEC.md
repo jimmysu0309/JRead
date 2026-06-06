@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.222**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.223**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -61,7 +61,7 @@ JRead 是 Chrome Extension「Unclutter」的 clone——提供純閱讀模式，
 | 偏好設定 | 字體、字級、主題色（亮/暗）、行高、版心寬度 | ☐ 未開始 |
 | Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作） |
 | Toast 提示 | **僅** 主文偵測失敗時顯示「此頁無法偵測主文」錯誤 toast；reader mode on/off 不再彈 toast（v0.7.32 Jimmy 要求簡化）。Shadow DOM 封裝 | ✅ v0.4.0 / 縮限 v0.7.32 |
-| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）切換閱讀模式；若未生效可至 `chrome://extensions/shortcuts` 手動指派。**v0.7.218 自訂快速鍵**：options 「快速鍵」recorder 可為三個指令錄自訂組合（Safari 含 iPad 外接鍵盤唯一改鍵通道，content script 層攔截、與預設鍵並存）。**閱讀模式啟動期間按 `ESC` 可立即退出**（v0.7.101，input/textarea/contenteditable focus 時放行）。**`Space` / `Shift+Space` 段落焦點卷動**（v0.7.216，仿 Readwise Reader：左側指示條標記目前段落、Space 跳下一段；段落低於顯示門檻（viewport × `spaceScrollRatio`% 預設 50%，options 可調、0 = 停用）時以 rAF 動畫卷回畫面上方落點）。 | ✅ v0.4.0 / ESC 退出 v0.7.101 / Space 段落焦點卷動 v0.7.216 |
+| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）切換閱讀模式；若未生效可至 `chrome://extensions/shortcuts` 手動指派。**v0.7.218 自訂快速鍵**：options 「快速鍵」recorder 可為三個指令錄自訂組合（Safari 含 iPad 外接鍵盤唯一改鍵通道，content script 層攔截、與預設鍵並存）。**閱讀模式啟動期間按 `ESC` 可立即退出**（v0.7.101，input/textarea/contenteditable focus 時放行）。**`Space` / `Shift+Space` 段落焦點卷動**（v0.7.216，仿 Readwise Reader：左側指示條標記目前段落、Space 跳下一段；段落低於顯示門檻（viewport × `spaceScrollRatio`% 預設 50%，options 可調、0 = 停用）時以 rAF 動畫卷回畫面上方落點）。 **3 指輕點切換閱讀模式**（v0.7.223，觸控裝置 `navigator.maxTouchPoints >= 3` 才註冊：恰 3 指同落、移動 < 30px、600ms 內全離手 → 觸發；第 4 指 / 移動超容差 / touchcancel（iOS 系統手勢接管）取消；走 `CUSTOM_COMMAND('toggle-reader-mode')` 與快速鍵同一條 dispatch——iOS / iPadOS 觸控環境的主 toggle 通道）。 | ✅ v0.4.0 / ESC 退出 v0.7.101 / Space 段落焦點卷動 v0.7.216 / 3 指輕點 v0.7.223 |
 
 ---
 
@@ -86,6 +86,7 @@ JRead/
 │   │   ├── namespace.js         # window.__JRead 初始化
 │   │   ├── shortcut-utils.js    # 自訂快速鍵 helper（content / options / spec 共用，v0.7.218）
 │   │   ├── custom-shortcuts.js  # 自訂快速鍵 keydown 攔截 → CUSTOM_COMMAND（v0.7.218）
+│   │   ├── touch-gestures.js    # 3 指輕點 toggle 閱讀模式 → CUSTOM_COMMAND（v0.7.223）
 │   │   ├── detector.js          # 主文偵測
 │   │   ├── cleaner.js           # 雜訊隱藏
 │   │   ├── styler.js            # 套用乾淨排版
@@ -396,7 +397,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 - `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）
 - `content → popup`：`REPORT_DETECTION_RESULT`（偵測到/沒偵測到、信心分數）
 - `popup → background`：`GET_SETTINGS` / `UPDATE_SETTINGS` / `SAVE_TO_READWISE`（v0.7.33）
-- `content → background`：`CUSTOM_COMMAND`（v0.7.218，自訂快速鍵命中；payload `{ command }`，SW 白名單驗證後走 `dispatchCommand`——與 manifest `commands.onCommand` 同一條 dispatch）
+- `content → background`：`CUSTOM_COMMAND`（v0.7.218，自訂快速鍵命中；v0.7.223 起 3 指輕點手勢也走此訊息；payload `{ command }`，SW 白名單驗證後走 `dispatchCommand`——與 manifest `commands.onCommand` 同一條 dispatch）
 
 **`GET_READER_STATE` response 結構**（v0.7.133 擴充）：
 
