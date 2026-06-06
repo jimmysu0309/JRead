@@ -2,6 +2,10 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
+  <!-- v0.7.223：無 viewport meta 時 iOS 用 980px 預設 layout viewport
+       整頁縮小 ~0.44 倍（Jimmy 回報 iOS options 字體偏小的根因）。
+       桌面分頁忽略此 meta。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JRead 偏好設定</title>
   <style>
     /* ==========================================================
@@ -46,6 +50,12 @@
       padding: 0 24px;
       background: var(--jr-surface);
       line-height: 1.5;
+    }
+    /* v0.7.223：觸控裝置字級放大（device-width 下 base 15px 仍偏小 →
+       ~18px）。options 走 open_in_tab 整頁，無桌面 popup 視窗 sizing
+       循環問題，僅以 pointer 區分；zoom 等比放大觸控目標與排版。 */
+    @media (pointer: coarse) {
+      body { zoom: 1.2; }
     }
 
     /* ==========================================================
