@@ -27,17 +27,18 @@
 #   - Repo 內 `jread/manifest.json` 永遠對應 Chrome 版（只有 service_worker）
 #   - 此 script 把 service_worker 換成 scripts、加 strict_min_version，生成 Firefox 版
 #
-# 為什麼 scripts 陣列裡有兩個檔案（順序重要）：
-#   - JRead 的 service-worker.js 依賴 popup-core.js 共用 popup 端的注入 fallback 邏輯
-#   - Chrome MV3 SW context 用 importScripts('/popup/popup-core.js') 預載
+# 為什麼 scripts 陣列裡有三個檔案（順序重要；v0.7.235 加 settings-defaults）：
+#   - JRead 的 service-worker.js 依賴 popup-core.js（注入 fallback 邏輯）與
+#     content/settings-defaults.js（DEFAULT_SETTINGS 單一資料源）
+#   - Chrome MV3 SW context 用 importScripts 預載
 #   - Firefox event page 沒有 importScripts，改由 manifest scripts 陣列依序 load
-#   - 順序必須是 [popup/popup-core.js, background/service-worker.js]——popup-core 先載，
-#     service-worker 才看得到全域變數
+#   - 順序必須是 [popup/popup-core.js, content/settings-defaults.js,
+#     background/service-worker.js]——依賴檔先載，service-worker 才看得到全域變數
 #
 # 驗證重建一致性（reviewer 用）：
 #   1. ./firefox-build.sh
 #   2. unzip -p jread-firefox-<v>.zip manifest.json | jq .
-#   3. 檢查 background 應是 {"scripts": ["popup/popup-core.js", "background/service-worker.js"]}
+#   3. 檢查 background 應是 {"scripts": ["popup/popup-core.js", "content/settings-defaults.js", "background/service-worker.js"]}
 #   4. 檢查 browser_specific_settings.gecko.strict_min_version 應是 "128.0"
 
 set -euo pipefail
@@ -68,13 +69,13 @@ mkdir -p firefox-build
 cp -r jread/* firefox-build/
 
 # 2. 用 jq 程式化改寫 manifest：
-#    - background：刪掉 service_worker，改用 scripts（兩個檔，順序為 popup-core 在前）
+#    - background：刪掉 service_worker，改用 scripts（三個檔，依賴檔在前、SW 最後）
 #    - browser_specific_settings.gecko：加上 strict_min_version: "128.0"
 #    - browser_specific_settings.gecko：加上 data_collection_permissions: { required: ["none"] }
 #      （Mozilla 2025 起的隱私 consent UI 規則，JRead 不收集任何使用者資料，僅本地
 #       呼叫使用者自填的 Readwise Reader API。）
 #    這是唯一的 build transformation。沒有 minify、bundle、transpile。
-jq '.background = {"scripts": ["popup/popup-core.js", "background/service-worker.js"]} |
+jq '.background = {"scripts": ["popup/popup-core.js", "content/settings-defaults.js", "background/service-worker.js"]} |
     .browser_specific_settings.gecko.strict_min_version = "128.0" |
     .browser_specific_settings.gecko.data_collection_permissions = {"required": ["none"]}' \
     jread/manifest.json > firefox-build/manifest.json

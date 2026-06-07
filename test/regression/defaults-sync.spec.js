@@ -16,7 +16,10 @@ const assert = require('assert');
 
 const ROOT = path.join(__dirname, '..', '..', 'jread');
 const POPUP_SRC = fs.readFileSync(path.join(ROOT, 'popup', 'popup.js'), 'utf8');
-const SW_SRC = fs.readFileSync(path.join(ROOT, 'background', 'service-worker.js'), 'utf8');
+// v0.7.235：SW 的 DEFAULT_SETTINGS literal 搬到 content/settings-defaults.js
+// 單一資料源（iOS background 掉包修法）——本 spec 對「SW 端 defaults」的
+// 守備對象同步搬家。
+const SHARED_SRC = fs.readFileSync(path.join(ROOT, 'content', 'settings-defaults.js'), 'utf8');
 const STYLER_SRC = fs.readFileSync(path.join(ROOT, 'content', 'styler.js'), 'utf8');
 const OPTIONS_SRC = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
 
@@ -48,9 +51,9 @@ function extractField(src, constName, field) {
 
 describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   describe('fontSize：popup / SW / styler / options 必須四邊一致', () => {
-    it('SW DEFAULT_SETTINGS.fontSize === 18', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'fontSize');
-      assert.strictEqual(v, '18', `SW DEFAULT_SETTINGS.fontSize 必須 === 18，實際 ${v}`);
+    it('shared DEFAULT_SETTINGS.fontSize === 18', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'fontSize');
+      assert.strictEqual(v, '18', `shared DEFAULT_SETTINGS.fontSize 必須 === 18，實際 ${v}`);
     });
     it('styler DEFAULTS.fontSize === 18', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontSize');
@@ -68,8 +71,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('contentWidth：四檔一致', () => {
-    it('SW DEFAULT_SETTINGS.contentWidth === 720', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'contentWidth');
+    it('shared DEFAULT_SETTINGS.contentWidth === 720', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'contentWidth');
       assert.strictEqual(v, '720', `SW contentWidth 必須 === 720，實際 ${v}`);
     });
     it('styler DEFAULTS.contentWidth === 720', () => {
@@ -88,8 +91,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('theme：四檔一致', () => {
-    it('SW DEFAULT_SETTINGS.theme === light', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'theme');
+    it('shared DEFAULT_SETTINGS.theme === light', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'theme');
       assert.strictEqual(v, "'light'", `SW theme 必須 === 'light'，實際 ${v}`);
     });
     it('styler DEFAULTS.theme === light', () => {
@@ -109,8 +112,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   describe('boldText：popup / SW / styler / options 必須四邊一致（v0.7.157 字粗 smoothing 切換）', () => {
     // CJK 字型 weight 視覺差異不可靠，改用 -webkit-font-smoothing 模式作為粗細
     // 切換軸（細 = antialiased / 粗 = auto subpixel）。預設 false (細)。
-    it('SW DEFAULT_SETTINGS.boldText === false', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'boldText');
+    it('shared DEFAULT_SETTINGS.boldText === false', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'boldText');
       assert.strictEqual(v, 'false', `SW boldText 預設必須 === false (細)，實際 ${v}`);
     });
     it('styler DEFAULTS.boldText === false', () => {
@@ -141,8 +144,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('blockPageShortcuts：popup / SW / options 三邊一致（styler 沒這欄）', () => {
-    it('SW DEFAULT_SETTINGS.blockPageShortcuts === true', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'blockPageShortcuts');
+    it('shared DEFAULT_SETTINGS.blockPageShortcuts === true', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'blockPageShortcuts');
       assert.strictEqual(v, 'true', `SW blockPageShortcuts 必須 === true，實際 ${v}`);
     });
     it('options DEFAULTS.blockPageShortcuts === true', () => {
@@ -156,8 +159,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('autoEnableDomains：popup / SW / options 三檔一致（v0.7.155 新增；styler 無此欄）', () => {
-    it('SW DEFAULT_SETTINGS.autoEnableDomains === []', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'autoEnableDomains');
+    it('shared DEFAULT_SETTINGS.autoEnableDomains === []', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'autoEnableDomains');
       assert.strictEqual(v, '[]', `SW autoEnableDomains 必須 === []，實際 ${v}`);
     });
     it('options DEFAULTS.autoEnableDomains === []', () => {
@@ -171,8 +174,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('pangu：popup / SW / styler / options 四檔一致（v0.7.153 新增）', () => {
-    it('SW DEFAULT_SETTINGS.pangu === true', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'pangu');
+    it('shared DEFAULT_SETTINGS.pangu === true', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'pangu');
       assert.strictEqual(v, 'true', `SW pangu 必須 === true，實際 ${v}`);
     });
     it('styler DEFAULTS.pangu === true', () => {
@@ -190,8 +193,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('fontFamily：popup / SW / styler 三邊一致（options 沒這欄）', () => {
-    it('SW DEFAULT_SETTINGS.fontFamily === system-ui', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'fontFamily');
+    it('shared DEFAULT_SETTINGS.fontFamily === system-ui', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'fontFamily');
       assert.strictEqual(v, "'system-ui'", `SW fontFamily 必須 === 'system-ui'，實際 ${v}`);
     });
     it('styler DEFAULTS.fontFamily === system-ui', () => {
@@ -206,8 +209,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('lineHeight：popup / SW / styler 三邊一致（v0.7.162 popup 也宣告）', () => {
-    it('SW DEFAULT_SETTINGS.lineHeight === 1.7', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'lineHeight');
+    it('shared DEFAULT_SETTINGS.lineHeight === 1.7', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'lineHeight');
       assert.strictEqual(v, '1.7', `SW lineHeight 必須 === 1.7，實際 ${v}`);
     });
     it('styler DEFAULTS.lineHeight === 1.7', () => {
@@ -222,8 +225,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
   });
 
   describe('paragraphSpacing：popup / SW / styler 三邊一致（v0.7.162 新增）', () => {
-    it('SW DEFAULT_SETTINGS.paragraphSpacing === 1.0', () => {
-      const v = extractField(SW_SRC, 'DEFAULT_SETTINGS', 'paragraphSpacing');
+    it('shared DEFAULT_SETTINGS.paragraphSpacing === 1.0', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'paragraphSpacing');
       assert.strictEqual(v, '1.0', `SW paragraphSpacing 必須 === 1.0，實際 ${v}`);
     });
     it('styler DEFAULTS.paragraphSpacing === 1.0', () => {
