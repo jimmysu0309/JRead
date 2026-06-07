@@ -1,8 +1,11 @@
 // JRead — 翻頁模式（v0.7.227）
 //
 // 電子書式水平翻頁：CSS 端（styler.js pagedMode 區塊）把 reader card 變成
-// fixed 滿版 multi-column 容器（column-count: 1 + column-fill: auto + 高度
-// 約束 → 溢出內容自動長出等寬水平 overflow column = 頁）；本模組負責行為層：
+// fixed 滿版 multi-column 容器（column-width: 版心寬 + column-fill: auto +
+// 高度約束 → 溢出內容自動長出等寬水平 overflow column = 頁；v0.7.230 起
+// 不可用 column-count: 1——WebKit 對 count=1 不建 fragmentation context、
+// scrollWidth 不含 overflow columns，翻頁全滅，詳見 styler.js 註解）；
+// 本模組負責行為層：
 //
 //   - 左右滑動翻頁（touch swipe；起點避開螢幕左右邊緣 EDGE_GUARD_PX，
 //     防 iOS Safari 邊緣滑動 = 瀏覽歷史手勢的誤觸）

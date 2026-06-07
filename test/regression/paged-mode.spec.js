@@ -1,8 +1,13 @@
 // JRead — regression spec: 翻頁模式（v0.7.227）
 //
 // 功能：電子書式水平翻頁。styler 在 settings.pagedMode === true 時注入
-// multi-column overflow columns CSS（column-count: 1 + column-fill: auto +
-// fixed 滿版容器），paged-mode.js 負責手勢 / 鍵盤 / 滾輪翻頁 + 頁碼指示。
+// multi-column overflow columns CSS（column-width: 版心寬 + column-fill: auto
+// + fixed 滿版容器），paged-mode.js 負責手勢 / 鍵盤 / 滾輪翻頁 + 頁碼指示。
+//
+// v0.7.230：「一頁一欄」改用 column-width 表達——WebKit 對 column-count: 1
+// 不建 multicol fragmentation context（scrollWidth == clientWidth、scrollLeft
+// 永遠 0、翻頁全滅；真機 Safari probe 實證），本 spec 把「不得含
+// column-count: 1」設為 forcing function。
 //
 // 訊號層次（本 spec 驗 X、不驗 Y）：
 //   驗：CSS 字串注入條件與內容、純邏輯（swipe / 鍵盤分類、頁數計算）、
@@ -54,10 +59,18 @@ describe('翻頁模式（v0.7.227）', () => {
 
   // ---- A. styler CSS 注入條件 ------------------------------------------
   describe('styler pagedMode CSS', () => {
-    it('pagedMode: true → 注入 column-count: 1 + column-fill: auto 翻頁區塊', () => {
+    it('pagedMode: true → 注入 column-width: 版心寬 + column-fill: auto 翻頁區塊', () => {
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
-      assert.ok(css.includes('column-count: 1 !important'), '須含 column-count: 1');
+      // 「一頁一欄」必須用 column-width（= settings.contentWidth）表達
+      assert.ok(css.includes(`column-width: ${BASE_SETTINGS.contentWidth}px !important`),
+        '須含 column-width: <contentWidth>px');
+      assert.ok(css.includes('column-count: auto !important'),
+        '須含 column-count: auto（壓掉原站可能的 column-count 規則）');
       assert.ok(css.includes('column-fill: auto !important'), '須含 column-fill: auto');
+      // forcing function：WebKit 對 column-count: 1 不建 fragmentation
+      // context（翻頁全滅），任何人改回 count=1 必須在這裡 fail
+      assert.ok(!css.includes('column-count: 1'),
+        '不得含 column-count: 1（WebKit 翻頁全滅 bug，v0.7.230）');
       // fixed 滿版容器（top/bottom 錨定，不用 vh）
       const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*position:\s*fixed\s*!important/);
       assert.ok(ruleMatch, '翻頁容器規則須將 reader card 設 position: fixed');

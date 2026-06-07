@@ -286,12 +286,37 @@ fixture 的正確定位是**forcing function（鎖住行為不回歸）**，不�
   node tools/debug-harness.js --fresh
   # 或針對特定網址
   JREAD_URL=https://example.com node tools/debug-harness.js --fresh
+  # 驗收翻頁模式（先寫 settings.pagedMode=true 再 toggle，印 PAGED AUDIT：
+  # column CSS 算出值 / 頁數 / 鍵盤翻頁 stride）
+  node tools/debug-harness.js --fresh --paged
 
 然後 Read `.playwright-mcp/jread-viewport.png`、分析 stdout log。
 不需要請使用者貼 console 或截圖——這是自助的工具。
 
 注意：`window.__JRead` 在 isolated world，`page.evaluate` 讀不到。
 驗證一律走 shared DOM 的副作用（data-* / injected style / getBoundingClientRect）。
+
+注意：**改過 background SW 後必加 `--fresh`**——Chromium 會把 unpacked
+extension 的 SW 快取在 persistent profile 內，重啟不一定重載；content script
+每次從磁碟新載。症狀是「content 端是新 code、SW 回應是舊 code」（新欄位
+缺、SW 內新 log 不出現），v0.7.230 燒 4 輪 debug 的實證教訓。
+
+### WebKit（Safari）軌的驗證
+
+本 harness 是 Chromium，**WebKit engine 行為驗不到**（v0.7.230 翻頁模式
+column-count: 1 bug 即 Chrome 綠、Safari 全滅）。WebKit 軌兩條驗法：
+
+1. **Playwright WebKit**（`npx playwright install webkit`）：不能載 extension，
+   改把 content script 以 `addScriptTag` 注入 page main world + chrome API
+   stub（`setContent` 不觸發 `addInitScript`，stub 要放頁內 `<script>`）。
+   注意 Playwright WebKit 是 **trunk build，可能已修正式版 Safari 還沒修的
+   bug**（v0.7.230：trunk 對 count=1 正常、正式版 Safari 翻車）——綠燈不可
+   直接當「Safari 沒問題」。
+2. **safaridriver（真 Safari）**：需使用者一次性開 Safari → 設定 → 開發者 →
+   「允許遠端自動化」；`safaridriver -p 4445` + W3C WebDriver REST 即可驅動。
+   限制：自動化視窗 `visibilityState=hidden`、**rAF 完全不發、timer 鎖
+   ~220ms**——能驗同步 DOM / layout / scrollLeft 直接賦值，rAF 動畫類行為
+   驗不到（卡死是環境假象，不是 bug）。
 
 ## 假設驗證順序（硬性要求）
 

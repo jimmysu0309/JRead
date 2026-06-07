@@ -47,6 +47,12 @@ const NOISE_AUDIT_KEYWORDS = [
 // --url 優先，其次 JREAD_URL 環境變數，最後預設
 const urlArgIdx = process.argv.indexOf('--url');
 const URL = (urlArgIdx >= 0 && process.argv[urlArgIdx + 1]) || process.env.JREAD_URL || 'https://www.chinatalk.media/p/best-books-q1-2026';
+// --fresh：砍掉重建 persistent profile。**改過 background SW 後必加**——
+// Chromium 會把 unpacked extension 的 SW 快取在 profile 內，重啟
+// launchPersistentContext 不一定重載新 SW（content script 倒是每次從磁碟
+// 新載）。症狀：content 端行為是新 code、SW 端回應是舊 code（v0.7.230
+// debug 翻頁模式時 GET_SETTINGS 回應缺新欄位、SW 內新加的 console.log
+// 不出現，燒 4 輪才定位）。懷疑「SW 行為跟 code 對不上」直接 --fresh。
 const FRESH = process.argv.includes('--fresh');
 const KEEP = process.argv.includes('--keep');
 // --scheme dark：模擬 prefers-color-scheme: dark（macOS 深色模式使用者看到的
@@ -55,6 +61,15 @@ const KEEP = process.argv.includes('--keep');
 const schemeArgIdx = process.argv.indexOf('--scheme');
 const COLOR_SCHEME = (schemeArgIdx >= 0 && process.argv[schemeArgIdx + 1]) || 'light';
 const WITH_SHINKANSEN = process.argv.includes('--shinkansen');
+// --paged：toggle 前先把 settings.pagedMode 寫成 true（直接寫 storage.sync，
+// 與 popup checkbox 同一條資料路徑），驗收電子書式水平翻頁。v0.7.230 WebKit
+// column-count: 1 翻頁全滅 bug 修法後加入——Chromium 端翻頁視覺 / 頁數 /
+// scrollLeft stride 從此可由 harness 自驗，不再依賴一次性 probe。
+// 注意：本 harness 是 Chromium，只驗 Chrome 軌；WebKit 軌（Safari）的
+// engine 行為驗證要用 Playwright WebKit 或 safaridriver（真 Safari），且
+// safaridriver 自動化視窗 visibilityState=hidden、rAF 不發，只能驗同步
+// scrollLeft、不能驗 rAF 翻頁動畫。
+const PAGED = process.argv.includes('--paged');
 const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -126,6 +141,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   }, URL);
   console.log('tabId:', tabId);
 
+  // --paged：toggle 前寫入 pagedMode 設定（enter 路徑的 getSettings 會讀到）。
+  // 非 --paged 也明確寫 false——profile 跨 run 重用，上一輪 --paged 殘留的
+  // true 會讓後續普通驗收意外跑進翻頁模式。
+  await sw.evaluate((on) => chrome.storage.sync.set({ pagedMode: on }), PAGED);
+  if (PAGED) console.log('paged: settings.pagedMode = true');
+
   // 透過 SW 觸發 content script 的 TOGGLE_READER_MODE
   const toggle = await sw.evaluate(async (id) => {
     try {
@@ -152,6 +173,49 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     };
   });
   console.log('DOM state:', state);
+
+  // ===== PAGED AUDIT（--paged）=====
+  // 驗：multicol 分頁 CSS 算出值（column-width 不可為 auto——auto 代表退回
+  // column-count 路徑，WebKit 翻頁全滅 bug 的型態）、頁數 > 1、鍵盤翻頁後
+  // scrollLeft 跳 stride、頁碼指示文字。不驗：WebKit 軌（本 harness 是
+  // Chromium）、swipe 手勢（Playwright 觸控模擬與實機差異大）。
+  if (PAGED && state.articleFound) {
+    const pagedState = await page.evaluate(() => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      const cs = getComputedStyle(art);
+      return {
+        columnWidth: cs.columnWidth,
+        columnCount: cs.columnCount,
+        columnFill: cs.columnFill,
+        position: cs.position,
+        clientWidth: art.clientWidth,
+        scrollWidth: art.scrollWidth,
+        pages: Math.max(1, Math.round(art.scrollWidth / art.clientWidth)),
+        indicator: (document.getElementById('__jread-page-indicator') || {}).textContent || '(無)'
+      };
+    });
+    console.log('PAGED AUDIT:', pagedState);
+    const pagedWarn = [];
+    if (pagedState.columnWidth === 'auto') pagedWarn.push('column-width 是 auto（必須是版心寬——count 路徑在 WebKit 翻頁全滅）');
+    if (pagedState.pages <= 1) pagedWarn.push('頁數 <= 1（multicol overflow columns 沒長出來）');
+    // 鍵盤翻頁實測：→ 應讓 scrollLeft 跳一個 stride（= clientWidth）
+    await page.keyboard.press('ArrowRight');
+    await sleep(600); // 等 260ms 翻頁動畫 + 緩衝
+    const afterTurn = await page.evaluate(() => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      return {
+        scrollLeft: art.scrollLeft,
+        indicator: (document.getElementById('__jread-page-indicator') || {}).textContent
+      };
+    });
+    console.log('PAGED 按 → 後:', afterTurn);
+    if (pagedState.pages > 1 && Math.round(afterTurn.scrollLeft) !== pagedState.clientWidth) {
+      pagedWarn.push(`翻頁後 scrollLeft=${afterTurn.scrollLeft}，預期 stride=${pagedState.clientWidth}`);
+    }
+    console.log(pagedWarn.length
+      ? '⚠️ PAGED WARNINGS:\n' + pagedWarn.map(w => '  ⚠️ ' + w).join('\n')
+      : '✅ PAGED AUDIT 通過（column-width 路徑 + 多頁 + 鍵盤翻頁 stride 正確）');
+  }
 
   if (!state.articleFound) {
     console.log('reader mode not active — saving screenshot for inspection');
