@@ -316,6 +316,21 @@ describe('(G) popup 快速鍵提示（v0.7.220）', () => {
     assert.ok(utilIdx < popupIdx, 'shortcut-utils.js 必須先於 popup.js（提示 callback 讀 window.__JReadShortcuts）');
   });
 
+  it('觸控裝置提示必須顯示 3 指輕點手勢、且優先於自訂鍵（v0.7.232）', () => {
+    // Jimmy 2026-06-07：有觸控的版本，popup 下方快速鍵提示以三指觸控代替。
+    const m = POPUP_JS.match(/chrome\.storage\.sync\.get\(\s*\{\s*customShortcuts:[\s\S]*?\n\}\);/);
+    assert.ok(m, 'popup 快速鍵提示 block 不存在');
+    const body = m[0];
+    // 注意：必須驗 if 述句本身（含 navigator. 前綴 + 完整條件），不能只 grep
+    // 「maxTouchPoints >= 3」——註解裡也有同字樣，鬆 regex 會偽陰性放行。
+    const touchIf = /if\s*\(\(navigator\.maxTouchPoints\s*\|\|\s*0\)\s*>=\s*3\)/;
+    assert.match(body, touchIf,
+      '觸控判定必須用 (navigator.maxTouchPoints || 0) >= 3（與 touch-gestures.js 安裝門檻一致，結構性不綁平台）');
+    assert.match(body, /三指輕點/, '觸控提示文字必須含「三指輕點」');
+    assert.ok(body.search(touchIf) < body.indexOf('SCU.format(custom)'),
+      '觸控手勢分支必須先於自訂鍵顯示（觸控環境手勢恆可用、外接鍵盤未必在）');
+  });
+
   it('iOS guard 保留：commands API 缺席且無自訂時 shortcutEl 必須 hidden', () => {
     assert.match(POPUP_JS, /shortcutEl\.hidden = true/,
       'commands API 缺席 fallback（觸控環境整列隱藏）不可移除');
