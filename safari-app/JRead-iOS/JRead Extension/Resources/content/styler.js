@@ -65,6 +65,155 @@
     return THEMES[name] || THEMES.light;
   }
 
+  // ---------------------------------------------------------------------------
+  // v0.7.225：保留原站色容器的對比守門（contrast guard）
+  // Trigger：Jimmy 2026-06-07 回報 blog.tymscar.com（dark scheme）code block
+  // 在 light theme reader card 內幾乎全白不可讀。
+  //
+  // Root cause（通則，非站點特例）：styler 刻意保留 pre / table 的原站文字色
+  // （syntax highlight / 表格設計），但這些色是配合「原站 effective 背景」設計
+  // 的。站點走 prefers-color-scheme: dark 時 token 色為淺色、背景常是
+  // 「半透明白疊深色 body」（tymscar 實測 pre bg = srgb 5% 白、body #1a1a1a，
+  // 對比 4.6~16.3:1）。reader card 強制白底後半透明 bg 疊白 = 白，token 色
+  // 不變 → 對比掉到 1.07~3.79:1。
+  //
+  // 修法：apply() 注入 CSS 前先量每個 pre / table 的「原始 effective bg」
+  // （往上爬 ancestor、半透明圖層 alpha 合成）+ 文字載體色與字數；注入後以
+  // card bg 為基底重算新 effective bg。若「大部分文字對新 bg 不可讀（< 3:1
+  // 占比 >= 40%）、但對原始 bg 可讀」→ 把原始 bg 用 inline !important 還給
+  // 該容器，保留原站 syntax highlight 設計。restore() 對稱還原。
+  //
+  // 訊號層次（明確標注，見 CLAUDE.md 工作流原則 3）：
+  //   本 guard 驗「pre / table 內文字 vs effective bg 的 WCAG 對比」一層；
+  //   不驗 figcaption / mark / kbd（同樣保留原站色但無回報案例、修法形狀不同
+  //   ——bg 還原對 caption 會出現突兀色塊，應改覆寫文字色）、不驗圖片 / iframe
+  //   內部內容（jread 摸不到）、不驗 dark / sepia theme（`* { color: theme.text }`
+  //   已蓋掉 token 色 + v0.7.164 已把 pre/code/blockquote bg 清 transparent，
+  //   此 bug 結構上不存在）。
+  //
+  // 保守邊界：站點「原本就低對比」（lowOrig >= 0.4）不觸發——那是站點自己的
+  // 設計，jread 沒有破壞它就不該動；無 opaque bg 且靠 color-scheme: dark 讓
+  // canvas 變深的站，origBg 會誤算成白 → lowOrig 高 → guard 保守不動（漏修
+  // 但不誤傷）。
+  const CONTRAST_GUARD_SEL = 'pre, table';
+  const CONTRAST_MIN_RATIO = 3;       // < 3:1 視為不可讀（WCAG 大字 / UI 元件下限）
+  const CONTRAST_LOW_FRACTION = 0.4;  // 低對比文字字數占比 >= 40% 才觸發
+  const CONTRAST_MAX_TARGETS = 20;    // 每頁最多處理 20 個容器（效能上限）
+  const CONTRAST_MAX_CARRIERS = 80;   // 每容器最多取 80 個文字載體
+  const WHITE = { r: 255, g: 255, b: 255, a: 1 };
+
+  // 解析 getComputedStyle 回傳的色字串。涵蓋 Chrome 兩種 serialization
+  // （legacy comma rgb/rgba、wide-gamut color(srgb ... / a)——站點 CSS 用
+  // color-mix / 相對色語法時 computed 會是後者，tymscar 實測命中）+ theme
+  // 常數的 hex。解析失敗回 null（呼叫端視為 transparent / 跳過）。
+  function parseCssColor(str) {
+    if (!str) return null;
+    const s = String(str).trim();
+    let m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i);
+    if (m) {
+      const a = m[4] === undefined ? 1
+        : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+      return { r: +m[1], g: +m[2], b: +m[3], a };
+    }
+    m = s.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)$/i);
+    if (m) {
+      const a = m[4] === undefined ? 1
+        : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+      return { r: Math.round(+m[1] * 255), g: Math.round(+m[2] * 255), b: Math.round(+m[3] * 255), a };
+    }
+    m = s.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+    if (m) {
+      let h = m[1];
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 };
+    }
+    if (/^transparent$/i.test(s)) return { r: 0, g: 0, b: 0, a: 0 };
+    return null;
+  }
+
+  // fg 疊在 bg 上的 alpha 合成（簡化：bg 視為 opaque 基底）
+  function blendOver(fg, bg) {
+    const a = fg.a;
+    return {
+      r: fg.r * a + bg.r * (1 - a),
+      g: fg.g * a + bg.g * (1 - a),
+      b: fg.b * a + bg.b * (1 - a),
+      a: 1
+    };
+  }
+
+  function relLuminance(c) {
+    const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+  }
+
+  function contrastRatio(c1, c2) {
+    const l1 = relLuminance(c1), l2 = relLuminance(c2);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  }
+
+  // 從 el 往上收集 background-color 圖層到 stopEl（exclusive）/ body 為止，
+  // 由外而內疊在 baseColor 基底上 → 回傳該元素的 effective 背景色。
+  // 遇 opaque 圖層提前停（更外層不影響視覺）。
+  function compositeBgOver(el, stopEl, baseColor, win) {
+    const layers = [];
+    let opaqueFound = false;
+    let cur = el;
+    while (cur && cur !== stopEl && cur.nodeType === 1) {
+      const c = parseCssColor(win.getComputedStyle(cur).backgroundColor);
+      if (c && c.a > 0) {
+        layers.push(c);
+        if (c.a >= 0.999) { opaqueFound = true; break; }
+      }
+      if (cur === win.document.body) break;
+      cur = cur.parentElement;
+    }
+    let base = opaqueFound ? { r: 0, g: 0, b: 0, a: 1 } : { ...baseColor };
+    for (let i = layers.length - 1; i >= 0; i--) base = blendOver(layers[i], base);
+    return base;
+  }
+
+  // 收集容器內的文字載體：自身 direct textNode 有內容的元素 + 其 computed
+  // color，字數作對比統計權重。direct text（不抓子孫）避免 wrapper 重複計數。
+  // 保留 el reference——phase 2 必須**重新**讀注入後的 computed color，不能
+  // 沿用此處量到的原始色：沒有自己 color 的元素（td 等）注入後自然繼承 card
+  // 深字（color: inherit 規則的 :not(td) 排除只是「不強制」，自然繼承照走
+  // 新 cascade）。用 phase 1 舊色判定會誤觸發——tymscar table 實測修壞：
+  // guard 誤還原深 bg、td 實際已是深字 → 深底深字 1:1（CONTRAST AUDIT 抓到）。
+  function collectTextCarriers(target, win) {
+    const carriers = [];
+    const els = [target, ...target.querySelectorAll('*')];
+    for (const el of els) {
+      if (carriers.length >= CONTRAST_MAX_CARRIERS) break;
+      const tag = el.tagName.toUpperCase();
+      if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
+      if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+      let len = 0;
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3) len += n.textContent.trim().length;
+      }
+      if (!len) continue;
+      const col = parseCssColor(win.getComputedStyle(el).color);
+      if (!col || col.a < 0.5) continue; // 透明文字不計
+      carriers.push({ el, origColor: col, len });
+    }
+    return carriers;
+  }
+
+  // 低對比文字占比：對 bg 對比 < CONTRAST_MIN_RATIO 的字數 / 總字數。
+  // colorKey 選用哪個時間點的色：'origColor'（phase 1 注入前）或
+  // 'newColor'（phase 2 注入後重量、繼承已走新 cascade）。
+  function lowContrastFraction(carriers, bg, colorKey) {
+    let low = 0, total = 0;
+    for (const c of carriers) {
+      const col = c[colorKey];
+      if (!col) continue;
+      total += c.len;
+      if (contrastRatio(col, bg) < CONTRAST_MIN_RATIO) low += c.len;
+    }
+    return total > 0 ? low / total : 0;
+  }
+
   function buildCss(theme, opts, overrides) {
     const { contentWidth } = opts;
 
@@ -202,7 +351,13 @@ html [${ARTICLE_ATTR}="1"] {
   width: auto !important;
   min-height: 0 !important;
   height: auto !important;
-  margin: 40px auto !important;
+  /* v0.7.226：垂直 margin 40px → clamp(8px, calc(6.4vw - 19.2px), 40px)。
+     窄 viewport（手機）下 card 已撐滿水平空間、40px 灰條純屬桌面卡片美學
+     殘留（Jimmy iPhone 回報頂端浪費一截）。線性 ramp：viewport >= 925px
+     維持 40px 桌面不變（與水平 padding 的 933px 門檻一致）、430pt → ~8px。
+     min(40px, Nvw) 過原點直線在 430pt 只能收到 ~18px、不夠陡，改用
+     calc 截距版。結構性條件（viewport 寬度），不綁平台。 */
+  margin: clamp(8px, calc(6.4vw - 19.2px), 40px) auto !important;
   /* v0.7.210：display 正規化為 block——原站若把主內容容器設成
      inline-block / inline / table-cell（巴哈姆特 .c-section__main 是
      inline-block，父 section text-align: right 雙欄 layout），margin auto
@@ -214,8 +369,12 @@ html [${ARTICLE_ATTR}="1"] {
      max-width 被 viewport clamp，固定 56px×2 吃掉 26% 可讀寬度（430pt 實測
      內文僅 318px、版心調大也無感——Jimmy iPhone 回報）。min() 連續縮放：
      viewport >= 933px 維持 56px 桌面卡片美學不變；越窄 padding 越收
-     （430pt → ~26px、內文 378px）。結構性條件（viewport 寬度），不綁平台。 */
-  padding: 48px min(56px, 6vw) !important;
+     （430pt → ~26px、內文 378px）。結構性條件（viewport 寬度），不綁平台。
+     v0.7.226：垂直 padding 48px → min(48px, 6vw)。同水平邏輯——手機上
+     固定 48px 頂部白 + 40px margin 灰條合計 88px 才見第一行字（430pt probe
+     實測）。6vw 與水平 padding 同係數：窄 viewport 下四邊 padding 等寬
+     （430pt → ~26px），viewport >= 800px 維持 48px 桌面不變。 */
+  padding: min(48px, 6vw) min(56px, 6vw) !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
@@ -1391,6 +1550,28 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         titleFontSize: opts.titleFontSize > 0
       };
 
+      // v0.7.225 contrast guard phase 1：注入 CSS 前量「原始 effective bg」+
+      // 文字載體色。必須在 styleEl.textContent 設定前跑——注入後 body / 祖先
+      // bg 被 reader 樣式覆蓋，原始背景量不到。只在 light theme 跑（theme.text
+      // 非 null 時 `* { color: theme.text }` 蓋掉 token 色 + v0.7.164 已清
+      // pre/code bg transparent，結構上不存在此 bug）。
+      const contrastProbe = [];
+      if (!theme.text) {
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (_win && _win.getComputedStyle) {
+          for (const el of articleEl.querySelectorAll(CONTRAST_GUARD_SEL)) {
+            if (contrastProbe.length >= CONTRAST_MAX_TARGETS) break;
+            // 嵌套容器（table 內 pre 等）只處理最外層，避免疊兩層 inline bg
+            if (el.parentElement && el.parentElement.closest && el.parentElement.closest(CONTRAST_GUARD_SEL)) continue;
+            const carriers = collectTextCarriers(el, _win);
+            const totalLen = carriers.reduce((s2, c) => s2 + c.len, 0);
+            if (totalLen < 10) continue; // 太短不具統計意義
+            const origBg = compositeBgOver(el, null, WHITE, _win);
+            contrastProbe.push({ el, carriers, origBg });
+          }
+        }
+      }
+
       let styleEl = document.getElementById(STYLE_ID);
       if (!styleEl) {
         styleEl = document.createElement('style');
@@ -1451,6 +1632,20 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
           cur = cur.parentElement;
         }
         if (!container) container = vid.parentElement || vid;
+        // v0.7.225：container 含主文長段落（>= 100 chars 的 p / li）= 它不是
+        // player 結構、是 layout wrapper——縮回 video 自身。tymscar 實測：
+        // video 的 parentElement 是包大半主文的 anon div，fallback 直接標它
+        // 導致 246/267 元素被 PLAYER_ATTR 豁免色彩保護（link 留站點 dark
+        // scheme 綠色、白卡上 1.37:1）。「含主文長段落才保護」guard 與
+        // cleaner 硬教訓四同款通則。對 relative+hidden 命中的 container 也
+        // 套用——合法 player root（JW Player 等）內不會有長文字段落。
+        if (container !== vid) {
+          let hasLongText = false;
+          for (const p of container.querySelectorAll('p, li')) {
+            if ((p.textContent || '').trim().length >= 100) { hasLongText = true; break; }
+          }
+          if (hasLongText) container = vid;
+        }
         container.setAttribute(PLAYER_ATTR, '1');
         playerMarked.push(container);
         for (const el of container.querySelectorAll('*')) {
@@ -1463,6 +1658,72 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
 
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
       document.documentElement.classList.add(HTML_CLASS);
+
+      // v0.7.225 contrast guard phase 2：CSS 全生效後（ARTICLE_ATTR + HTML_CLASS
+      // 都已就位）以 card bg 為基底重算每個容器的新 effective bg。半透明 pre bg
+      // 疊白卡 = 近白；wrapper 載 bg 的站則已被 background strip 清掉——兩種
+      // 機制都會讓 newBg 落到 card bg。判定「大部分文字對新 bg 不可讀、但對
+      // 原始 bg 可讀」才動手：把原始 bg inline !important 還給容器（原站
+      // syntax 色是配這個 bg 設計的，還原 bg = 還原設計時的對比）。
+      // snapshot entry 通用化：{ el, prop, prev, prevP }——bg 還原與
+      // per-carrier 色覆寫共用一個還原清單。
+      const contrastBgSnap = [];
+      if (contrastProbe.length) {
+        const _win = articleEl.ownerDocument?.defaultView;
+        const cardBg = parseCssColor(theme.articleBg) || WHITE;
+        for (const probe of contrastProbe) {
+          const newBg = compositeBgOver(probe.el, articleEl, cardBg, _win);
+          // 重量注入後的實際文字色（繼承類元素已走新 cascade，見
+          // collectTextCarriers 註解——用 phase 1 舊色會誤觸發）
+          for (const c of probe.carriers) {
+            c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
+          }
+          // --- 修法一：整容器 bg 還原（大部分文字不可讀時）---
+          // 修復後的最終狀態 = 注入後文字色 + 還原的原始 bg。這個組合必須
+          // 真的可讀才動手——同時涵蓋「原站本來就低對比（不是 jread 造成、
+          // 還原 bg 也救不回）」的保守分支：那種 case 此檢查必 fail。
+          let finalBg = newBg;
+          if (lowContrastFraction(probe.carriers, newBg, 'newColor') >= CONTRAST_LOW_FRACTION &&
+              lowContrastFraction(probe.carriers, probe.origBg, 'newColor') < CONTRAST_LOW_FRACTION) {
+            contrastBgSnap.push({
+              el: probe.el,
+              prop: 'background-color',
+              prev: probe.el.style.getPropertyValue('background-color'),
+              prevP: probe.el.style.getPropertyPriority('background-color')
+            });
+            const o = probe.origBg;
+            probe.el.style.setProperty(
+              'background-color',
+              `rgb(${Math.round(o.r)}, ${Math.round(o.g)}, ${Math.round(o.b)})`,
+              'important'
+            );
+            finalBg = probe.origBg;
+          }
+          // --- 修法二：per-carrier 色覆寫（少數載體仍不可讀時）---
+          // tymscar table 實測：th 有自己的 color（淺色、為深底設計）被
+          // :not(th) 排除保留，td 無 color 繼承 card 深字——混色容器 bg 還原
+          // 會弄壞多數 td、只能對 th 這類少數載體個別覆寫文字色。覆寫值不
+          // 猜原設計、直接依最終 bg 亮度選高對比色（淺底深字 / 深底淺字）。
+          // 「原設計可讀」前提仍要守：原本就低對比的載體不是 jread 造成，
+          // 不動（同修法一的保守邊界）。
+          for (const c of probe.carriers) {
+            if (!c.newColor) continue;
+            if (contrastRatio(c.newColor, finalBg) >= CONTRAST_MIN_RATIO) continue;
+            if (contrastRatio(c.origColor, probe.origBg) < CONTRAST_MIN_RATIO) continue;
+            contrastBgSnap.push({
+              el: c.el,
+              prop: 'color',
+              prev: c.el.style.getPropertyValue('color'),
+              prevP: c.el.style.getPropertyPriority('color')
+            });
+            c.el.style.setProperty(
+              'color',
+              relLuminance(finalBg) > 0.5 ? '#1a1a1a' : '#f0f0f0',
+              'important'
+            );
+          }
+        }
+      }
 
       // v0.7.90：install scroll listener（auto-hide scrollbar）。passive 確保
       // 不卡 scroll 效能；window 層級捕捉文件捲動事件。重複 apply 時 remove
@@ -1708,7 +1969,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked, contrastBgSnap };
     },
 
     /**
@@ -1805,6 +2066,16 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
         const t = snapshot.titleFsSnap;
         if (t.fs) t.el.style.setProperty('font-size', t.fs, t.fsP || '');
         else t.el.style.removeProperty('font-size');
+      }
+
+      // v0.7.225：還原 contrast guard 的 inline override（background-color
+      // 還原 + per-carrier color 覆寫，通用 {el, prop, prev, prevP} entry）
+      if (Array.isArray(snapshot.contrastBgSnap)) {
+        for (const s of snapshot.contrastBgSnap) {
+          if (!s || !s.el || !s.prop) continue;
+          if (s.prev) s.el.style.setProperty(s.prop, s.prev, s.prevP || '');
+          else s.el.style.removeProperty(s.prop);
+        }
       }
 
       // v0.7.179：還原 WP constrained layout inline max-width override
