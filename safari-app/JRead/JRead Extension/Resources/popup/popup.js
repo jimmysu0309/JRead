@@ -105,13 +105,20 @@ versionEl.textContent = chrome.runtime.getManifest().version;
 // v0.7.220：優先顯示 options 錄的自訂快速鍵（storage.sync.customShortcuts，
 // Jimmy 回報：已自訂仍顯示「未設定請到 chrome://extensions/shortcuts」——
 // 舊版只看 commands.getAll 的 browser 層指派，不知道自訂鍵存在）。
-// 順位：自訂鍵 → browser 層指派（commands.getAll）→ 未設定提示（指向進階
-// 設定的 recorder，不再指 chrome://extensions/shortcuts——Safari 沒有那頁）
-// → commands API 缺席且無自訂（iOS 觸控）才整列隱藏。
+// 順位：觸控手勢（v0.7.232）→ 自訂鍵 → browser 層指派（commands.getAll）→
+// 未設定提示（指向進階設定的 recorder，不再指 chrome://extensions/shortcuts
+// ——Safari 沒有那頁）→ commands API 缺席且無自訂才整列隱藏。
 // v0.7.217 iOS Safari guard 保留：chrome.commands 可能缺席，top-level 直呼
 // 會 TypeError 中斷整個 popup。
 chrome.storage.sync.get({ customShortcuts: DEFAULT_SETTINGS.customShortcuts }, (v) => {
   if (!shortcutEl) return;
+  // v0.7.232：觸控裝置（maxTouchPoints >= 3，門檻與 touch-gestures.js 安裝
+  // 條件一致）的主 toggle 通道是 3 指輕點、不是鍵盤——footer 提示改顯示
+  // 手勢，優先於自訂鍵 / browser 指派（觸控恆可用，外接鍵盤未必在）。
+  if ((navigator.maxTouchPoints || 0) >= 3) {
+    shortcutEl.textContent = '三指輕點：切換純閱讀';
+    return;
+  }
   const SCU = window.__JReadShortcuts;
   const table = SCU.sanitizeTable(v && v.customShortcuts);
   const custom = table['toggle-reader-mode'];
