@@ -49,6 +49,11 @@ const urlArgIdx = process.argv.indexOf('--url');
 const URL = (urlArgIdx >= 0 && process.argv[urlArgIdx + 1]) || process.env.JREAD_URL || 'https://www.chinatalk.media/p/best-books-q1-2026';
 const FRESH = process.argv.includes('--fresh');
 const KEEP = process.argv.includes('--keep');
+// --scheme dark：模擬 prefers-color-scheme: dark（macOS 深色模式使用者看到的
+// 站點樣式）。v0.7.225 tymscar code block 對比 bug 只在 dark scheme 重現——
+// 站點為深底設計的 syntax 色 + reader 白卡。預設 light。
+const schemeArgIdx = process.argv.indexOf('--scheme');
+const COLOR_SCHEME = (schemeArgIdx >= 0 && process.argv[schemeArgIdx + 1]) || 'light';
 const WITH_SHINKANSEN = process.argv.includes('--shinkansen');
 const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 
@@ -74,6 +79,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     channel: 'chromium',          // 必須：用 bundled Chromium，才能載 unpacked extension
     headless: false,              // 必須：extension 僅 headed 模式可用
     viewport: { width: 1280, height: 900 },
+    colorScheme: COLOR_SCHEME,    // --scheme dark 模擬深色模式使用者
+
     args: [
       `--disable-extensions-except=${extList}`,
       `--load-extension=${extList}`,
@@ -357,6 +364,113 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const gapInitial = await runGapAudit();
     printGapAudit('initial, 1.2s post-toggle', gapInitial);
 
+    // ---- Contrast audit：reader card 內 visible 文字 vs effective bg 對比 ----
+    // Jimmy 2026-06-07 回報 tymscar code block 白底白字後加的第三層 audit。
+    // 訊號層次：本 audit 驗「文字色 vs effective bg（ancestor 爬升 + alpha
+    // 合成）的 WCAG 對比」；不驗圖片 / iframe 內部內容（DOM 摸不到）、不驗
+    // ::before / ::after pseudo 文字、不驗 opacity / filter 造成的視覺淡化。
+    // < 3:1（WCAG 大字 / UI 元件下限）即 ⚠️——residual / gap audit 都抓不到
+    // 這類「東西在、看不見」的 bug，grep keyword 更不可能命中。forcing
+    // function：修 styler / theme 類改動後驗收必看本段。
+    async function runContrastAudit() {
+      return await page.evaluate(() => {
+        const art = document.querySelector('[data-jread-active="1"]');
+        if (!art) return { error: 'no article' };
+        function parseColor(s) {
+          if (!s) return null;
+          let m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i);
+          if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4])) };
+          m = s.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)$/i);
+          if (m) return { r: Math.round(+m[1] * 255), g: Math.round(+m[2] * 255), b: Math.round(+m[3] * 255), a: m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4])) };
+          return null;
+        }
+        function lum(c) {
+          const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+          return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+        }
+        function contrast(a, b) {
+          const l1 = lum(a), l2 = lum(b);
+          return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        }
+        function blend(fg, bg) {
+          const a = fg.a;
+          return { r: fg.r * a + bg.r * (1 - a), g: fg.g * a + bg.g * (1 - a), b: fg.b * a + bg.b * (1 - a), a: 1 };
+        }
+        function effBg(el) {
+          const layers = [];
+          let opaque = false;
+          let cur = el;
+          while (cur && cur.nodeType === 1) {
+            const c = parseColor(getComputedStyle(cur).backgroundColor);
+            if (c && c.a > 0) { layers.push(c); if (c.a >= 0.999) { opaque = true; break; } }
+            if (cur === document.body) break;
+            cur = cur.parentElement;
+          }
+          let base = opaque ? { r: 0, g: 0, b: 0, a: 1 } : { r: 255, g: 255, b: 255, a: 1 };
+          for (let i = layers.length - 1; i >= 0; i--) base = blend(layers[i], base);
+          return base;
+        }
+        function isVisible(el) {
+          let cur = el;
+          while (cur) {
+            if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+            const cs = getComputedStyle(cur);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            if (cur === document.body) break;
+            cur = cur.parentElement;
+          }
+          return true;
+        }
+        const warnings = [];
+        let scanned = 0;
+        for (const el of art.querySelectorAll('*')) {
+          if (warnings.length >= 20 || scanned >= 1500) break;
+          const tag = el.tagName.toUpperCase();
+          if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
+          let direct = '';
+          for (const n of el.childNodes) if (n.nodeType === 3) direct += n.textContent;
+          direct = direct.replace(/\s+/g, ' ').trim();
+          if (direct.length < 4) continue;
+          scanned++;
+          if (!isVisible(el)) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 5 || r.height < 5) continue;
+          const fg = parseColor(getComputedStyle(el).color);
+          if (!fg || fg.a < 0.5) continue;
+          const bg = effBg(el);
+          const ratio = contrast(fg, bg);
+          if (ratio < 3) {
+            warnings.push({
+              tag: el.tagName,
+              cls: (el.className || '').toString().slice(0, 40),
+              text: direct.slice(0, 40),
+              color: getComputedStyle(el).color,
+              bg: `rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)})`,
+              ratio: Math.round(ratio * 100) / 100
+            });
+          }
+        }
+        return { scanned, warnings };
+      });
+    }
+
+    function printContrastAudit(label, c) {
+      console.log(`\n===== CONTRAST AUDIT (${label}) =====`);
+      if (c.error) { console.log(c.error); console.log('==========================\n'); return; }
+      if (!c.warnings || c.warnings.length === 0) {
+        console.log(`✅ 無 < 3:1 低對比文字（掃描 ${c.scanned} 個 visible 文字載體）`);
+      } else {
+        console.log(`⚠️  ${c.warnings.length} 項低對比文字（< 3:1，styler theme / bg strip 誤傷或站點 dark scheme 色被白卡吃掉）：`);
+        for (const w of c.warnings) {
+          console.log(`   ${String(w.ratio).padStart(5)}:1  ${w.tag}.${w.cls || '(anon)'} fg=${w.color} bg=${w.bg} "${w.text}"`);
+        }
+      }
+      console.log('==========================\n');
+    }
+
+    const contrastInitial = await runContrastAudit();
+    printContrastAudit('initial, 1.2s post-toggle', contrastInitial);
+
     // 第 2 次 audit（+3s，捕 Jimmy 回報的「文章出現後約 3 秒按鈕才注入」
     // 時機）。LINE Today 類 SPA 站點 lazy-inject 常在 toggle 後 2-4s 發
     // 生，這個時間點最接近使用者眼見為實的「突然跳出雜訊」瞬間。
@@ -461,6 +575,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // 都已展開，這張最接近實機使用者看到的狀態）
     const gapDelayed = await runGapAudit();
     printGapAudit('delayed +scroll +15s', gapDelayed);
+
+    // delayed 時機再跑一次 contrast audit（lazy-inject 的內容也要過對比檢查）
+    const contrastDelayed = await runContrastAudit();
+    printContrastAudit('delayed +scroll +15s', contrastDelayed);
 
     // ---- Shinkansen 翻譯後 audit（--shinkansen 啟用時） --------------------
     // 觸發 Shinkansen 翻譯（Google MT，免 API key），等翻譯完成後再跑一次

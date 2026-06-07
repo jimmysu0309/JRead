@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!--
+  最小重現：blog.tymscar.com/posts/v100localllm/（v0.7.225 contrast guard）
+  站點走 prefers-color-scheme: dark：body 深底 rgb(26,26,26)、pre 半透明白
+  bg（rgba(255,255,255,0.05)，視覺上=深底）、syntax token 為淺色（monokai 系：
+  基底 #f0f0f0 / 粉 #f92672 / 黃 #e6db74）。
+  jread light theme 白卡強制背景後：半透明 bg 疊白 = 白、token 色保留 →
+  對比 1.07~3.79:1 不可讀。
+  jsdom 不解析 stylesheet cascade，原站樣式一律用 inline style 模擬。
+-->
+<html>
+<head><meta charset="utf-8"><title>Running a local LLM on a V100</title></head>
+<body style="background-color: rgb(26, 26, 26); color: rgb(240, 240, 240);">
+  <article class="post">
+    <div class="post-content">
+      <h1 style="color: rgb(240, 240, 240);">Running a local LLM on a V100</h1>
+      <p style="color: rgb(240, 240, 240);">NixOS made most of this straightforward. Here is the key configuration for getting the driver and kernel right, including the legacy nvidia package selection and the xserver video driver list that the V100 requires.</p>
+
+      <!-- (a) 核心 case：dark scheme 設計的 code block。pre 半透明白 bg +
+           淺色 token——light theme 白卡下對比 1.1:1，guard 必須還原原始
+           effective bg rgb(37,37,37)（= 0.05 白疊 rgb(26,26,26)）。 -->
+      <div class="highlight">
+        <pre data-test="dark-pre" style="background-color: rgba(255, 255, 255, 0.05); color: rgb(248, 248, 242);"><code style="color: rgb(248, 248, 242);"><span style="color: rgb(240, 240, 240);">boot.kernelPackages</span> <span style="color: rgb(249, 38, 114);">=</span> <span style="color: rgb(240, 240, 240);">pkgs.linuxPackages_6_6;</span>
+<span style="color: rgb(240, 240, 240);">services.xserver.enable</span> <span style="color: rgb(249, 38, 114);">=</span> <span style="color: rgb(102, 217, 239);">true</span><span style="color: rgb(240, 240, 240);">;</span>
+<span style="color: rgb(240, 240, 240);">services.xserver.videoDrivers</span> <span style="color: rgb(249, 38, 114);">=</span> <span style="color: rgb(230, 219, 116);">[ "nvidia" ];</span></code></pre>
+      </div>
+
+      <p style="color: rgb(240, 240, 240);">And for loading CUDA 12.2 from an older nixpkgs since the current one only ships 12.6 and newer versions that are not compatible with the V100 compute capability.</p>
+
+      <!-- (b) control：light 設計的 code block（深色文字、無 bg）。白卡下
+           對比本來就高，guard 不可動它。 -->
+      <pre data-test="light-pre" style="color: rgb(30, 30, 30);"><span style="color: rgb(30, 30, 30);">nvidia-smi --query-gpu=name,memory.total --format=csv</span>
+<span style="color: rgb(60, 60, 60);"># Tesla V100-PCIE-16GB, 16384 MiB</span></pre>
+
+      <!-- (c) control：原站自身低對比（淺字 + 自帶 opaque 淺底）。lowOrig
+           >= 0.4 → 不是 jread 造成的，guard 保守不動。 -->
+      <pre data-test="bad-origin-pre" style="background-color: rgb(250, 250, 250); color: rgb(235, 235, 235);"><span style="color: rgb(235, 235, 235);">this code block was unreadable on the original site already</span></pre>
+
+      <!-- (d) dark scheme 設計的 table：淺色文字 + transparent bg（透出深
+           body）。白卡下同樣不可讀，guard 同條通則修。 -->
+      <table data-test="dark-table" style="color: rgb(230, 230, 230);">
+        <tbody>
+          <tr>
+            <td style="color: rgb(230, 230, 230);">GPU model and compute capability</td>
+            <td style="color: rgb(230, 230, 230);">Tesla V100 supports compute 7.0</td>
+          </tr>
+          <tr>
+            <td style="color: rgb(230, 230, 230);">CUDA toolkit version requirement</td>
+            <td style="color: rgb(230, 230, 230);">CUDA 12.2 from older nixpkgs pin</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- (d2) 混色 table（tymscar 真實結構）：th 有**自己的** color（淺色、
+           為深底設計、被 :not(th) 排除保留）、td 無 color 注入後繼承 card
+           深字。jsdom 不模擬 cascade 繼承，td 用 inline 深色近似「注入後
+           最終色」。bg 還原會弄壞多數 td → guard 必須走 per-carrier 色覆寫
+           只動 th。 -->
+      <table data-test="mixed-table">
+        <thead>
+          <tr>
+            <th data-test="mixed-th" style="color: rgb(240, 240, 240);">Metric</th>
+            <th style="color: rgb(240, 240, 240);">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-test="mixed-td" style="color: rgb(26, 26, 26);">Inference speed with both GPUs running tensor parallel inference</td>
+            <td style="color: rgb(26, 26, 26);">approximately 32 tokens per second sustained throughput</td>
+          </tr>
+          <tr>
+            <td style="color: rgb(26, 26, 26);">Prompt processing throughput for long context windows</td>
+            <td style="color: rgb(26, 26, 26);">approximately 133 to 160 tokens per second measured</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- (e) video 在「包含主文長段落」的 anon wrapper 內（真實頁面結構：
+           VIDEO → DIV.(anon) → DIV.post-content）。player 標記的 fallback
+           container 不可外溢到這種 layout wrapper——否則 wrapper 內所有
+           元素被 PLAYER_ATTR 豁免色彩保護（站點 dark scheme 綠 link 留在
+           白卡上 1.37:1）。 -->
+      <div data-test="video-wrapper">
+        <p style="color: rgb(240, 240, 240);">To get the model running I had to pin llama.cpp to a specific commit and patch the CUDA architecture list so that compute capability 7.0 was included in the build flags for both cards.</p>
+        <p style="color: rgb(240, 240, 240);">The full configuration is in <a data-test="green-link" href="https://example.com/dotfiles" style="color: rgb(0, 255, 0);">this commit on my dotfiles repo</a> if you want to reproduce the setup on your own machine.</p>
+        <video data-test="demo-video"></video>
+      </div>
+
+      <p style="color: rgb(240, 240, 240);">The important thing is: it works. Both GPUs show up, CUDA is functional, and NixOS keeps the whole configuration declarative so the machine can be rebuilt from scratch at any time.</p>
+    </div>
+  </article>
+</body>
+</html>

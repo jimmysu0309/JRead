@@ -61,6 +61,7 @@
 1. reader card 內所有 visible h1-h6 / a / button / span / figcaption 的 direct text outline（前 60 項，過濾 SVG `<title>` / `<script>` 等肉眼不可見 tag）
 2. 命中 `NOISE_AUDIT_KEYWORDS` 的⚠️ warning 清單（含 parent class，方便辨識 DOM 結構）
 3. 初始 1.2s 後 + delayed 5s 後**兩次 audit**（捕捉 SPA 站晚到的 lazy-load 注入）
+4. **CONTRAST AUDIT**（v0.7.225）：reader card 內 visible 文字 vs effective bg（ancestor 爬升 + alpha 合成）的 WCAG 對比，< 3:1 印 ⚠️——「東西在、看不見」類 bug（dark scheme 站的色被白卡吃掉）residual / gap audit 都抓不到，**修 styler / theme 類改動後驗收必看本段**。`--scheme dark` flag 模擬深色模式使用者（此類 bug 常只在 dark scheme 重現，tymscar 2026-06-07 實證）
 
 **禁止僅用 grep 特定 keyword 判定「清乾淨」** —— 那是**偽陰性驗收**（grep 沒命中 ≠ 不在，可能是 harness 沒 dump 該段 DOM）。殘留雜訊必須由 `RESIDUAL AUDIT` 產生 `✅ 無殘留雜訊` 標示，且 visible outline 無明顯非主文內容，才算驗收過。
 
