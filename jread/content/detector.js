@@ -506,6 +506,15 @@
     return head.length >= 4 ? head : t;
   }
 
+  // 卡片連結式標題判別：heading 的祖先含 <a> = 整顆標題被包成可點連結，
+  // 屬於推薦 / 相關 / 側欄文章卡（連向其他文章、常重複當前頁標題文字），
+  // 不是本文自身的 hero 標題。本文 hero 標題慣例為裸 heading（其內可含
+  // 連結，但 heading 本身不會是某個 <a> 的後代）。用 closest('a') 判祖先方向，
+  // 不會誤殺「<h1> 內含 <a>」的自連標題（那種 a 是 heading 的後代、非祖先）。
+  function isHeadingInsideAnchor(h) {
+    return !!(h && h.closest && h.closest('a'));
+  }
+
   function titleMatches(target, text) {
     // 雙向包含，避免 og:title / document.title / h1 互有冗餘前後綴的差異
     if (!target || !text) return false;
@@ -671,6 +680,12 @@
     if (target) {
       const articleHeadings = articleEl.querySelectorAll('h1, h2, h3, h4');
       for (const h of articleHeadings) {
+        // 跳過「被 <a> 包住」的 heading——卡片連結式標題（推薦 / 相關 / 側欄
+        // 文章卡）慣例整顆 heading 包在 <a> 裡連向該文，常重複當前頁標題文字
+        // （shoppingdesign 側欄推薦卡 <a><h2>本文標題</h2></a> 實證）。本文自身
+        // 的 hero 標題幾乎不會整顆被 <a> 包成可點卡片——以此排除假標題訊號，
+        // 避免 articleEl 內的側欄重複標題誤判「scope 已含標題」而放棄升級。
+        if (isHeadingInsideAnchor(h)) continue;
         const text = normalizeTitle(h.innerText || h.textContent || '');
         if (text.length > TITLE_TEXT_MAX) continue;
         if (titleMatches(target, text)) return null;
@@ -719,6 +734,10 @@
         if (sib.matches && sib.matches(TITLE_TAG_SEL)) heads.push(sib);
         if (sib.querySelectorAll) heads.push(...sib.querySelectorAll(TITLE_TAG_SEL));
         for (const h of heads) {
+          // 跳過卡片連結式標題（推薦 / 相關 / 側欄文章卡 <a> 包住的標題）——
+          // 否則側欄重複標題會讓 promote 停在「含主文 + 側欄」的共同祖先、
+          // 把真 hero 標題與 hero 圖排除在 scope 外（shoppingdesign 實證）。
+          if (isHeadingInsideAnchor(h)) continue;
           const text = normalizeTitle(h.innerText || h.textContent || '');
           // 非 heading tag 加 120 char 上限：防止含標題字串的正文段落（例：
           // 「根據 og:title，...」這類引用）或整塊 wrapper textContent 被當
@@ -752,6 +771,7 @@
     // 強訊號，dist 過遠也仍是真標題、不需 dist 限制）。
     for (const h of document.querySelectorAll('h1, h2')) {
       if (articleEl.contains(h)) continue;
+      if (isHeadingInsideAnchor(h)) continue;
       const text = normalizeTitle(h.innerText || h.textContent || '');
       if (text.length > TITLE_TEXT_MAX) continue;
       if (!titleMatches(target, text)) continue;
