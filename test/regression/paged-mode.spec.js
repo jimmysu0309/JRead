@@ -298,12 +298,16 @@ describe('翻頁模式（v0.7.227）', () => {
         'paged-mode.js 與 styler.js 的 PROGRESS_ID 是同一事實的雙實作，必須一致');
     });
 
-    it('SW / popup DEFAULT_SETTINGS.pagedMode 預設都是 false', () => {
-      for (const [name, src] of [['service-worker.js', SW_SRC], ['popup.js', POPUP_SRC]]) {
-        const m = src.match(/pagedMode:\s*(\S+?),/);
-        assert.ok(m, `${name} DEFAULT_SETTINGS 須含 pagedMode`);
-        assert.strictEqual(m[1], 'false', `${name} pagedMode 預設必須 false`);
-      }
+    it('shared defaults / popup DEFAULT_SETTINGS.pagedMode 預設都是 false', () => {
+      // v0.7.235：SW 的 DEFAULT_SETTINGS literal 搬到 content/settings-defaults.js
+      // 單一資料源（iOS background 掉包修法），直接 require 驗值；popup 仍是
+      // 同一事實的雙實作（值綁 popup UI 常數），維持 source regex 校對。
+      const sharedDefaults = require('../../jread/content/settings-defaults.js');
+      assert.strictEqual(sharedDefaults.pagedMode, false,
+        'settings-defaults.js pagedMode 預設必須 false');
+      const m = POPUP_SRC.match(/pagedMode:\s*(\S+?),/);
+      assert.ok(m, 'popup.js DEFAULT_SETTINGS 須含 pagedMode');
+      assert.strictEqual(m[1], 'false', 'popup.js pagedMode 預設必須 false');
     });
 
     it('popup.html 須含 #paged-mode-cb 開關、popup.js 須有 save wiring', () => {

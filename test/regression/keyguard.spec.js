@@ -16,7 +16,8 @@ const path = require('path');
 const assert = require('assert');
 
 const ROOT = path.join(__dirname, '..', '..');
-const SW_SRC      = fs.readFileSync(path.join(ROOT, 'jread', 'background', 'service-worker.js'), 'utf8');
+// v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
+const SHARED_SRC  = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'settings-defaults.js'), 'utf8');
 const MAIN_SRC    = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'), 'utf8');
 const OPTIONS_HTML = fs.readFileSync(path.join(ROOT, 'jread', 'options', 'options.html'), 'utf8');
 const OPTIONS_JS   = fs.readFileSync(path.join(ROOT, 'jread', 'options', 'options.js'), 'utf8');
@@ -24,14 +25,14 @@ const POPUP_JS     = fs.readFileSync(path.join(ROOT, 'jread', 'popup', 'popup.js
 
 describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
 
-  describe('SW DEFAULT_SETTINGS', () => {
+  describe('shared DEFAULT_SETTINGS（settings-defaults.js）', () => {
     it('必須含 blockPageShortcuts: true（預設 on）', () => {
       // 抓 DEFAULT_SETTINGS object literal body
-      const m = SW_SRC.match(/const\s+DEFAULT_SETTINGS\s*=\s*\{([\s\S]*?)\};/);
-      assert.ok(m, '能在 SW 找到 DEFAULT_SETTINGS');
+      const m = SHARED_SRC.match(/const\s+DEFAULT_SETTINGS\s*=\s*\{([\s\S]*?)\};/);
+      assert.ok(m, '能在 settings-defaults.js 找到 DEFAULT_SETTINGS');
       const body = m[1];
       assert.match(body, /blockPageShortcuts\s*:\s*true\b/,
-        'SW DEFAULT_SETTINGS 必須含 blockPageShortcuts: true——forcing：欄位缺席會讓 content script 讀回 undefined、條件式 `!== false` 預設啟用 OK，但 storage migration / popup 預設值會不同步');
+        'shared DEFAULT_SETTINGS 必須含 blockPageShortcuts: true——forcing：欄位缺席會讓 content script 讀回 undefined、條件式 `!== false` 預設啟用 OK，但 storage migration / popup 預設值會不同步');
     });
   });
 

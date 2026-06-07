@@ -34,6 +34,8 @@ const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'u
 const CUSTOM_SRC = fs.readFileSync(path.join(ROOT, 'content', 'custom-shortcuts.js'), 'utf8');
 const NS_SRC = fs.readFileSync(path.join(ROOT, 'content', 'namespace.js'), 'utf8');
 const SW_SRC = fs.readFileSync(path.join(ROOT, 'background', 'service-worker.js'), 'utf8');
+// v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
+const SHARED_DEFAULTS_SRC = fs.readFileSync(path.join(ROOT, 'content', 'settings-defaults.js'), 'utf8');
 const OPTIONS_HTML = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
 const OPTIONS_JS = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup', 'popup.js'), 'utf8');
@@ -230,8 +232,8 @@ describe('(D) custom-shortcuts.js source 結構', () => {
 
 describe('(E) service worker', () => {
   it('DEFAULT_SETTINGS 必須含 customShortcuts 三 key 全 null', () => {
-    const m = SW_SRC.match(/customShortcuts:\s*\{([\s\S]*?)\}/);
-    assert.ok(m, 'SW DEFAULT_SETTINGS 必須含 customShortcuts');
+    const m = SHARED_DEFAULTS_SRC.match(/customShortcuts:\s*\{([\s\S]*?)\}/);
+    assert.ok(m, 'shared DEFAULT_SETTINGS 必須含 customShortcuts');
     ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless'].forEach((cmd) => {
       assert.match(m[1], new RegExp("'" + cmd + "':\\s*null"), 'customShortcuts 缺 ' + cmd + ': null');
     });

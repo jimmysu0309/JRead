@@ -17,7 +17,8 @@ const path = require('path');
 const assert = require('assert');
 
 const ROOT = path.join(__dirname, '..', '..');
-const SW_SRC       = fs.readFileSync(path.join(ROOT, 'jread', 'background', 'service-worker.js'), 'utf8');
+// v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
+const SHARED_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'settings-defaults.js'), 'utf8');
 const MAIN_SRC     = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'), 'utf8');
 const MODULE_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'space-scroll.js'), 'utf8');
 const STYLER_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'styler.js'), 'utf8');
@@ -57,11 +58,11 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
   });
 
   describe('設定欄位三檔同步（spaceScrollRatio: 50）', () => {
-    it('SW DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50', () => {
-      const m = SW_SRC.match(/const\s+DEFAULT_SETTINGS\s*=\s*\{([\s\S]*?)\};/);
-      assert.ok(m, '能在 SW 找到 DEFAULT_SETTINGS');
+    it('shared DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50', () => {
+      const m = SHARED_SRC.match(/const\s+DEFAULT_SETTINGS\s*=\s*\{([\s\S]*?)\};/);
+      assert.ok(m, '能在 settings-defaults.js 找到 DEFAULT_SETTINGS');
       assert.match(m[1], /spaceScrollRatio\s*:\s*50\b/,
-        'SW DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50——forcing：欄位缺席 GET_SETTINGS 讀回 undefined、content script 雖有 fallback 但 storage migration 會不同步');
+        'shared DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50——forcing：欄位缺席 GET_SETTINGS 讀回 undefined、content script 雖有 fallback 但 storage migration 會不同步');
     });
 
     it('popup.js DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50（storage.get default fallback）', () => {

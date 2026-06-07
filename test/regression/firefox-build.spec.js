@@ -58,11 +58,11 @@ describe('firefox-build.sh', function () {
     );
   });
 
-  it('Firefox manifest 用 background.scripts，順序為 popup-core 先', () => {
+  it('Firefox manifest 用 background.scripts，依賴檔在前、SW 最後', () => {
     assert.deepStrictEqual(
       manifest.background.scripts,
-      ['popup/popup-core.js', 'background/service-worker.js'],
-      'scripts 順序錯：popup-core 必須先 load，service-worker 才看得到全域變數'
+      ['popup/popup-core.js', 'content/settings-defaults.js', 'background/service-worker.js'],
+      'scripts 順序錯：popup-core / settings-defaults 必須先 load，service-worker 才看得到全域變數'
     );
   });
 

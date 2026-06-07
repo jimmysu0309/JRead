@@ -153,14 +153,17 @@ describe('patch-safari-manifest.sh（event page patch，macOS / iOS build 共用
     assert.ok(fs.statSync(PATCH_PATH).mode & 0o111, 'patch-safari-manifest.sh 必須 executable');
   });
 
-  it('必須產生 scripts 兩檔（popup-core 先載）+ persistent:false、必須含受控差異驗證', () => {
+  it('必須產生 scripts 三檔（依賴檔先載、SW 最後）+ persistent:false、必須含受控差異驗證', () => {
     const psh = fs.readFileSync(PATCH_PATH, 'utf8');
     // v0.7.229：event page 沒有 importScripts——SW 內 typeof guard 會靜默跳過，
-    // 只列 service-worker.js 一檔會讓 __JReadPopup undefined、manifest 快速鍵
-    // dispatch 在 Safari 直接 TypeError。popup-core 必須由 scripts 陣列預載且在前。
-    assert.ok(/scripts:\s*\[\$pc,\s*\$sw\]/.test(psh),
-      'background.scripts 必須是 [popup-core, service-worker] 兩檔且 popup-core 在前');
+    // 清單漏列依賴檔會讓對應 global undefined、Safari 直接 TypeError。
+    // v0.7.235：settings-defaults.js 加入預載（DEFAULT_SETTINGS 單一資料源，
+    // SW 的 GET_SETTINGS / onInstalled merge 依賴 __JReadSettingsDefaults）。
+    assert.ok(/scripts:\s*\[\$pc,\s*\$sd,\s*\$sw\]/.test(psh),
+      'background.scripts 必須是 [popup-core, settings-defaults, service-worker] 三檔且依賴檔在前');
     assert.ok(/POPUP_CORE="popup\/popup-core\.js"/.test(psh), 'popup-core 路徑必須是 popup/popup-core.js');
+    assert.ok(/SETTINGS_DEFAULTS="content\/settings-defaults\.js"/.test(psh),
+      'settings-defaults 路徑必須是 content/settings-defaults.js');
     assert.ok(/persistent:\s*false/.test(psh), '必須宣告 persistent: false（non-persistent event page）');
     assert.ok(/del\(\.background\)/.test(psh), '必須驗證 background 以外欄位與 source 一致（受控差異唯一性）');
   });
@@ -170,7 +173,8 @@ describe('patch-safari-manifest.sh（event page patch，macOS / iOS build 共用
     const m = ffsh.match(/"scripts":\s*\[([^\]]+)\]/);
     assert.ok(m, 'firefox-build.sh 找不到 background.scripts 改寫');
     const ffList = m[1].match(/"[^"]+"/g).map((s) => s.replace(/"/g, ''));
-    assert.deepStrictEqual(ffList, ['popup/popup-core.js', 'background/service-worker.js'],
+    assert.deepStrictEqual(ffList,
+      ['popup/popup-core.js', 'content/settings-defaults.js', 'background/service-worker.js'],
       'firefox-build.sh scripts 清單變動——patch-safari-manifest.sh 必須同步（兩邊是同一份事實的雙實作）');
   });
 
