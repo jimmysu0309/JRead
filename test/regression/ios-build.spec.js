@@ -153,12 +153,25 @@ describe('patch-safari-manifest.sh（event page patch，macOS / iOS build 共用
     assert.ok(fs.statSync(PATCH_PATH).mode & 0o111, 'patch-safari-manifest.sh 必須 executable');
   });
 
-  it('必須產生 scripts + persistent:false 並移除 service_worker、必須含受控差異驗證', () => {
+  it('必須產生 scripts 兩檔（popup-core 先載）+ persistent:false、必須含受控差異驗證', () => {
     const psh = fs.readFileSync(PATCH_PATH, 'utf8');
-    assert.ok(/del\(\.service_worker\)/.test(psh), '必須移除 service_worker key（Safari 雙宣告時偏好哪個 key 無保證，整個換掉最穩）');
-    assert.ok(/scripts:\s*\[\$sw\]/.test(psh), '必須宣告 background.scripts = [原 service_worker 檔]');
+    // v0.7.229：event page 沒有 importScripts——SW 內 typeof guard 會靜默跳過，
+    // 只列 service-worker.js 一檔會讓 __JReadPopup undefined、manifest 快速鍵
+    // dispatch 在 Safari 直接 TypeError。popup-core 必須由 scripts 陣列預載且在前。
+    assert.ok(/scripts:\s*\[\$pc,\s*\$sw\]/.test(psh),
+      'background.scripts 必須是 [popup-core, service-worker] 兩檔且 popup-core 在前');
+    assert.ok(/POPUP_CORE="popup\/popup-core\.js"/.test(psh), 'popup-core 路徑必須是 popup/popup-core.js');
     assert.ok(/persistent:\s*false/.test(psh), '必須宣告 persistent: false（non-persistent event page）');
     assert.ok(/del\(\.background\)/.test(psh), '必須驗證 background 以外欄位與 source 一致（受控差異唯一性）');
+  });
+
+  it('scripts 清單必須與 tools/firefox-build.sh 的 event page 清單同列同序（雙處硬寫防 drift）', () => {
+    const ffsh = fs.readFileSync(path.join(REPO_ROOT, 'tools', 'firefox-build.sh'), 'utf8');
+    const m = ffsh.match(/"scripts":\s*\[([^\]]+)\]/);
+    assert.ok(m, 'firefox-build.sh 找不到 background.scripts 改寫');
+    const ffList = m[1].match(/"[^"]+"/g).map((s) => s.replace(/"/g, ''));
+    assert.deepStrictEqual(ffList, ['popup/popup-core.js', 'background/service-worker.js'],
+      'firefox-build.sh scripts 清單變動——patch-safari-manifest.sh 必須同步（兩邊是同一份事實的雙實作）');
   });
 
   it('macOS safari-build.sh 也必須接同一支 patch script（不雙實作）', () => {

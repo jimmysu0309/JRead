@@ -16,11 +16,18 @@
 #   唯一一處受控差異（本 script 是該差異的唯一產生者與驗證者）。
 #
 # 用法：patch-safari-manifest.sh <Extension Resources 目錄>
-#   1) patch（冪等）：background = { scripts: [<原 service_worker>],
-#      persistent: false }；background 其餘欄位（type 等）保留
+#   1) patch（冪等）：background = { scripts: [popup/popup-core.js,
+#      background/service-worker.js], persistent: false }；其餘欄位保留
 #   2) verify：除 background 外必須與 jread/manifest.json 完全一致
 #      （jq -S 正規化比對）——build script 的 drift check 以 -x manifest.json
 #      排除本檔案後，由這條驗證補上 manifest 的受控差異檢查
+#
+# scripts 為什麼是兩個檔（v0.7.229 修正，與 tools/firefox-build.sh 同列同序）：
+#   service-worker.js 依賴 popup-core.js 的 __JReadPopup（sendWithInjectionFallback
+#   等），Chrome SW context 用 importScripts('/popup/popup-core.js') 預載；event
+#   page 是網頁 context **沒有 importScripts**（SW 內的 typeof guard 會靜默跳過）
+#   ——只列 service-worker.js 一檔會讓 __JReadPopup undefined，manifest 快速鍵
+#   dispatch / Readwise 快速鍵在 Safari 直接 TypeError。順序必須 popup-core 在前。
 set -euo pipefail
 
 RES_DIR="${1:?用法: patch-safari-manifest.sh <Extension Resources 目錄>}"
@@ -42,15 +49,20 @@ if [ -z "$SW_FILE" ] || [ "$SW_FILE" = "null" ]; then
   exit 1
 fi
 
-# patch（冪等：已是 event page 形式就跳過、只跑 verify）
-ALREADY=$(jq -r '.background | has("scripts") and (has("service_worker") | not)' "$DST_MANIFEST")
-if [ "$ALREADY" != "true" ]; then
-  TMP="$DST_MANIFEST.tmp"
-  jq --arg sw "$SW_FILE" \
-    '.background = ((.background | del(.service_worker)) + { scripts: [$sw], persistent: false })' \
-    "$DST_MANIFEST" > "$TMP"
-  mv "$TMP" "$DST_MANIFEST"
+# scripts 清單與 tools/firefox-build.sh 的 jq 改寫同列同序（雙處硬寫，
+# ios-build.spec.js 有 forcing function 比對兩邊一致防 drift）
+POPUP_CORE="popup/popup-core.js"
+if [ ! -f "$RES_DIR/$POPUP_CORE" ]; then
+  echo "ERROR: $RES_DIR/$POPUP_CORE 不存在（scripts 預載依賴）" >&2
+  exit 1
 fi
+
+# patch（冪等：已是 event page 形式就重打一次確保清單最新，jq 冪等安全）
+TMP="$DST_MANIFEST.tmp"
+jq --arg sw "$SW_FILE" --arg pc "$POPUP_CORE" \
+  '.background = { scripts: [$pc, $sw], persistent: false }' \
+  "$DST_MANIFEST" > "$TMP"
+mv "$TMP" "$DST_MANIFEST"
 
 # verify 1：除 background 外與 source 完全一致
 SRC_REST=$(jq -S 'del(.background)' "$SRC_MANIFEST")
@@ -61,9 +73,9 @@ if [ "$SRC_REST" != "$DST_REST" ]; then
   exit 1
 fi
 
-# verify 2：background 必須是預期 event page 形式
-BG_OK=$(jq -r --arg sw "$SW_FILE" \
-  '(.background.scripts == [$sw]) and (.background.persistent == false) and (.background | has("service_worker") | not)' \
+# verify 2：background 必須是預期 event page 形式（popup-core 先載、SW 在後）
+BG_OK=$(jq -r --arg sw "$SW_FILE" --arg pc "$POPUP_CORE" \
+  '(.background.scripts == [$pc, $sw]) and (.background.persistent == false) and (.background | has("service_worker") | not)' \
   "$DST_MANIFEST")
 if [ "$BG_OK" != "true" ]; then
   echo "ERROR: Safari manifest background 不是預期 event page 形式：" >&2
@@ -71,4 +83,4 @@ if [ "$BG_OK" != "true" ]; then
   exit 1
 fi
 
-echo "Safari manifest patched: background = event page（scripts: [$SW_FILE], persistent: false）"
+echo "Safari manifest patched: background = event page（scripts: [$POPUP_CORE, $SW_FILE], persistent: false）"
