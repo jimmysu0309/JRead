@@ -59,11 +59,14 @@ describe('翻頁模式（v0.7.227）', () => {
 
   // ---- A. styler CSS 注入條件 ------------------------------------------
   describe('styler pagedMode CSS', () => {
-    it('pagedMode: true → 注入 column-width: 版心寬 + column-fill: auto 翻頁區塊', () => {
+    it('pagedMode: true → 注入 column-width + column-fill: auto 翻頁區塊', () => {
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
-      // 「一頁一欄」必須用 column-width（= settings.contentWidth）表達
-      assert.ok(css.includes(`column-width: ${BASE_SETTINGS.contentWidth}px !important`),
-        '須含 column-width: <contentWidth>px');
+      // 「一頁一欄」必須用 column-width 表達。v0.7.234 寬度一致性：
+      // contentWidth 語意 = 卡片總寬（與捲動模式 baseline 同義），欄寬 =
+      // contentWidth − 左右內距和——兩模式內文行寬才逐 px 相等（Jimmy
+      // 2026-06-07 macOS Chrome / Safari 回報「兩模式頁面寬度不同」）。
+      assert.ok(css.includes(`column-width: calc(${BASE_SETTINGS.contentWidth}px - min(56px, 6vw) * 2) !important`),
+        '須含 column-width: calc(<contentWidth>px − 左右內距和)');
       assert.ok(css.includes('column-count: auto !important'),
         '須含 column-count: auto（壓掉原站可能的 column-count 規則）');
       assert.ok(css.includes('column-fill: auto !important'), '須含 column-fill: auto');
@@ -74,6 +77,22 @@ describe('翻頁模式（v0.7.227）', () => {
       // fixed 滿版容器（top/bottom 錨定，不用 vh）
       const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*position:\s*fixed\s*!important/);
       assert.ok(ruleMatch, '翻頁容器規則須將 reader card 設 position: fixed');
+    });
+
+    it('翻頁/捲動模式卡片總寬必須同為 contentWidth（寬度一致性，v0.7.234）', () => {
+      // Jimmy 2026-06-07 macOS Chrome / Safari 回報：兩模式頁面寬度不同。
+      // 舊版翻頁容器 max-width = contentWidth + 內距 ×2（832）、column-width
+      // = contentWidth（720）→ 卡片與內文都比捲動模式寬 112px。forcing：
+      // 翻頁容器 max-width 必須恰為 contentWidth（與捲動模式卡片同寬），
+      // 不得再出現「contentWidth + 內距」的 cap。
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*column-width[^}]*\}/s);
+      assert.ok(ruleMatch, '須有翻頁容器規則');
+      const rule = ruleMatch[0];
+      assert.ok(rule.includes(`max-width: ${BASE_SETTINGS.contentWidth}px !important`),
+        '翻頁容器 max-width 必須恰為 contentWidth（卡片總寬與捲動模式相等）');
+      assert.ok(!rule.includes(`max-width: calc(${BASE_SETTINGS.contentWidth}px +`),
+        '不得回退到 max-width: calc(contentWidth + 內距 ×2)（兩模式寬度不一致根因）');
     });
 
     it('pagedMode: true → 右內距用 transparent border、padding-right 必須為 0（WebKit 尾端 padding 缺陷，v0.7.231）', () => {
