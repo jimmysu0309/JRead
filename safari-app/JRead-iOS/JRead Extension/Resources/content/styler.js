@@ -1241,6 +1241,19 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
     // 此區塊**只在 settings.pagedMode = true 注入**——垂直卷動模式（預設）
     // 一行都不受影響。選擇器與 base 卡片規則同 specificity（html 前綴），
     // 同 stylesheet 內後注入者勝，覆寫卡片的 static / max-width / margin。
+    //
+    // v0.7.231：右側視覺內距必須用 border-right（transparent）表達、不可用
+    // padding-right——WebKit（Safari 26.5 真機 + Playwright trunk 都實證）的
+    // multicol scrollable overflow **不含尾端 inline-end padding**，
+    // padding-right: 56px 會讓 max scrollLeft 比最後一頁的 stride 格點短 56px，
+    // 翻到最後一頁被 clamp → 整頁右移 56px（文字貼死卡片右緣、左內距變兩倍，
+    // 即「最後一頁版面寬度沒有尊重設定」症狀；其他頁目標值 < max 不受影響）。
+    // border 不參與 scroll container 自身的 scrollable overflow，兩引擎
+    // （Chromium 含尾端 padding / WebKit 不含）的 max scrollLeft 公式因此一致；
+    // transparent border + 預設 background-clip: border-box 讓卡片底色照常
+    // 鋪滿 border 區，視覺與 padding 完全相同。box-sizing: border-box（base
+    // 卡片規則已設）下 max-width 832 = 56 padding + 720 content + 56 border，
+    // content box 寬不變、column-width 算出值不變。
     if (opts.pagedMode) {
       userOverrides += `
 /* 翻頁模式：鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
@@ -1251,11 +1264,13 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
   overscroll-behavior: none !important;
 }
 /* 滿版固定容器：left/right 0 + margin auto + max-width 讓桌面寬視窗時
-   頁面寬度 cap 在版心 + padding（置中書頁感），手機窄視窗自然滿版。
+   頁面寬度 cap 在版心 + 水平內距（置中書頁感），手機窄視窗自然滿版。
    top/bottom 0 錨定取代 height: 100vh——iOS Safari 網址列收合時 fixed
    元素隨 layout viewport 調整，不吃 vh 單位的動態視窗誤差。
-   padding 與卡片模式同公式（min(48px,6vw) / min(56px,6vw)），column-gap
-   = 水平 padding × 2，維持「stride = clientWidth」恆等式。 */
+   水平內距：左 padding + 右 transparent border（不可用 padding-right，
+   見上方 v0.7.231 註解）；column-gap = 左右內距和，維持
+   「stride = column 寬 + gap = clientWidth − padding + gap」恆等式
+   （paged-mode.js stride() 讀 computed style 算同一公式）。 */
 html [${ARTICLE_ATTR}="1"] {
   position: fixed !important;
   top: 0 !important;
@@ -1266,7 +1281,8 @@ html [${ARTICLE_ATTR}="1"] {
   height: auto !important;
   max-width: calc(${contentWidth}px + min(56px, 6vw) * 2) !important;
   margin: 0 auto !important;
-  padding: min(48px, 6vw) min(56px, 6vw) !important;
+  padding: min(48px, 6vw) 0 min(48px, 6vw) min(56px, 6vw) !important;
+  border-right: min(56px, 6vw) solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   column-width: ${contentWidth}px !important;
