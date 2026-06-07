@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.231**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.232**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -246,7 +246,7 @@ JRead 提供 iOS / iPadOS Safari Web Extension，目前走 **TestFlight internal
 | --- | --- | --- |
 | `chrome.management.getSelf` / `chrome.runtime.reload`（JREAD_RELOAD debug bridge） | 可能缺席 | SW handler 開頭 existence guard，缺 API 直接 reject |
 | `chrome.action` badge / setIcon | 子集可能缺 | SET_ACTIVE_ICON case 開頭 guard，缺就整段跳過（badge 純裝飾） |
-| `chrome.commands`（popup 快速鍵提示） | iOS Safari 26 實測**有支援** | popup.js 仍包 existence guard 兜底，缺 API 時隱藏提示列 |
+| `chrome.commands`（popup 快速鍵提示） | iOS Safari 26 實測**有支援** | popup.js 仍包 existence guard 兜底，缺 API 時隱藏提示列。**v0.7.232**：觸控裝置（`maxTouchPoints >= 3`，與 touch-gestures.js 門檻一致）提示改顯示「三指輕點：切換純閱讀」，優先於自訂鍵 / browser 指派 |
 | `chrome.windows.update`（YouTube Borderless resize） | iOS 無 windows API | 原有 try/catch 已吃掉 TypeError，Borderless 自動降級（CSS 照套、視窗不 resize） |
 | `chrome.storage.sync` | 可用但**不走 iCloud**（Apple 官方：等同 local） | 無修改；Mac ↔ iPad 設定不互通，各裝置各自設定 |
 
