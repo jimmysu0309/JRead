@@ -1252,8 +1252,8 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
     // （Chromium 含尾端 padding / WebKit 不含）的 max scrollLeft 公式因此一致；
     // transparent border + 預設 background-clip: border-box 讓卡片底色照常
     // 鋪滿 border 區，視覺與 padding 完全相同。box-sizing: border-box（base
-    // 卡片規則已設）下 max-width 832 = 56 padding + 720 content + 56 border，
-    // content box 寬不變、column-width 算出值不變。
+    // 卡片規則已設）下 max-width 720 = 56 padding + 608 content + 56 border
+    //（v0.7.234 寬度一致後的桌面值），content box 寬 = column-width 算出值。
     if (opts.pagedMode) {
       userOverrides += `
 /* 翻頁模式：鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
@@ -1264,13 +1264,21 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
   overscroll-behavior: none !important;
 }
 /* 滿版固定容器：left/right 0 + margin auto + max-width 讓桌面寬視窗時
-   頁面寬度 cap 在版心 + 水平內距（置中書頁感），手機窄視窗自然滿版。
+   頁面寬度 cap 在版心（置中書頁感），手機窄視窗自然滿版。
    top/bottom 0 錨定取代 height: 100vh——iOS Safari 網址列收合時 fixed
    元素隨 layout viewport 調整，不吃 vh 單位的動態視窗誤差。
    水平內距：左 padding + 右 transparent border（不可用 padding-right，
    見上方 v0.7.231 註解）；column-gap = 左右內距和，維持
    「stride = column 寬 + gap = clientWidth − padding + gap」恆等式
-   （paged-mode.js stride() 讀 computed style 算同一公式）。 */
+   （paged-mode.js stride() 讀 computed style 算同一公式）。
+   v0.7.234 寬度一致性（Jimmy 回報「翻頁與捲動模式頁面寬度不同」）：
+   contentWidth 的語意以捲動模式 baseline 為準 = **卡片總寬**（含內距，
+   border-box；內文 = contentWidth − 左右內距和）。翻頁模式必須同語意：
+   max-width cap 在 contentWidth（不再 + 內距 ×2）、column-width =
+   contentWidth − 左右內距和——兩模式卡片總寬與內文行寬才會逐 px 相等。
+   「一頁一欄」invariant 不變：容器 content box 寬 A = min(viewport,
+   contentWidth) − 內距和 <= W = calc(contentWidth − 內距和)，
+   N = max(1, floor((A+gap)/(W+gap))) 恆 = 1（等寬時恰好 1）。 */
 html [${ARTICLE_ATTR}="1"] {
   position: fixed !important;
   top: 0 !important;
@@ -1279,13 +1287,13 @@ html [${ARTICLE_ATTR}="1"] {
   bottom: 0 !important;
   width: auto !important;
   height: auto !important;
-  max-width: calc(${contentWidth}px + min(56px, 6vw) * 2) !important;
+  max-width: ${contentWidth}px !important;
   margin: 0 auto !important;
   padding: min(48px, 6vw) 0 min(48px, 6vw) min(56px, 6vw) !important;
   border-right: min(56px, 6vw) solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  column-width: ${contentWidth}px !important;
+  column-width: calc(${contentWidth}px - min(56px, 6vw) * 2) !important;
   column-count: auto !important;
   column-gap: calc(min(56px, 6vw) * 2) !important;
   column-fill: auto !important;
