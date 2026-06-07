@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.227**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.228**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -61,7 +61,7 @@ JRead 是 Chrome Extension「Unclutter」的 clone——提供純閱讀模式，
 | 偏好設定 | 字體、字級、主題色（亮/暗）、行高、版心寬度 | ☐ 未開始 |
 | Popup UI | 顯示當前頁面是否可閱讀、版本號、切換按鈕 | ◐ 進行中（基本版已實作） |
 | Toast 提示 | **僅** 主文偵測失敗時顯示「此頁無法偵測主文」錯誤 toast；reader mode on/off 不再彈 toast（v0.7.32 Jimmy 要求簡化）。Shadow DOM 封裝 | ✅ v0.4.0 / 縮限 v0.7.32 |
-| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）切換閱讀模式；若未生效可至 `chrome://extensions/shortcuts` 手動指派。**v0.7.218 自訂快速鍵**：options 「快速鍵」recorder 可為三個指令錄自訂組合（Safari 含 iPad 外接鍵盤唯一改鍵通道，content script 層攔截、與預設鍵並存）。**閱讀模式啟動期間按 `ESC` 可立即退出**（v0.7.101，input/textarea/contenteditable focus 時放行）。**`Space` / `Shift+Space` 段落焦點卷動**（v0.7.216，仿 Readwise Reader：左側指示條標記目前段落、Space 跳下一段；段落低於顯示門檻（viewport × `spaceScrollRatio`% 預設 50%，options 可調、0 = 停用）時以 rAF 動畫卷回畫面上方落點）。 **3 指輕點切換閱讀模式**（v0.7.223，觸控裝置 `navigator.maxTouchPoints >= 3` 才註冊：恰 3 指同落、移動 < 30px、600ms 內全離手 → 觸發；第 4 指 / 移動超容差 / touchcancel（iOS 系統手勢接管）取消；走 `CUSTOM_COMMAND('toggle-reader-mode')` 與快速鍵同一條 dispatch——iOS / iPadOS 觸控環境的主 toggle 通道）。 | ✅ v0.4.0 / ESC 退出 v0.7.101 / Space 段落焦點卷動 v0.7.216 / 3 指輕點 v0.7.223 |
+| 快速鍵 | 預設 `Alt+R`（Mac: `Option+R`）切換閱讀模式；若未生效可至 `chrome://extensions/shortcuts` 手動指派。**v0.7.218 自訂快速鍵**：options 「快速鍵」recorder 可為三個指令錄自訂組合（Safari 含 iPad 外接鍵盤唯一改鍵通道，content script 層攔截、與預設鍵並存）。**閱讀模式啟動期間按 `ESC` 可立即退出**（v0.7.101，input/textarea/contenteditable focus 時放行）。**`Space` / `Shift+Space` 段落焦點卷動**（v0.7.216，仿 Readwise Reader：左側指示條標記目前段落、Space 跳下一段；段落低於顯示門檻（viewport × `spaceScrollRatio`% 預設 50%，options 可調、0 = 停用）時以 rAF 動畫卷回畫面上方落點）。 **3 指輕點切換閱讀模式**（v0.7.223，觸控裝置 `navigator.maxTouchPoints >= 3` 才註冊：恰 3 指同落、移動 < 30px、600ms 內全離手 → 觸發；第 4 指 / 移動超容差 / touchcancel（iOS 系統手勢接管）取消；走 content 端 `NS.dispatchLocalCommand('toggle-reader-mode')` 本地 dispatch（v0.7.228 起零訊息傳遞、SW 死活無關——iOS Safari SW 被回收後不再喚醒，Apple Forums 758346）——iOS / iPadOS 觸控環境的主 toggle 通道）。 | ✅ v0.4.0 / ESC 退出 v0.7.101 / Space 段落焦點卷動 v0.7.216 / 3 指輕點 v0.7.223 |
 | 翻頁模式 | **電子書式水平翻頁**（v0.7.227，popup「翻頁模式」checkbox 開啟、預設關 = 垂直卷動）：reader card 變 fixed 滿版 multi-column 容器（`column-count: 1` + `column-fill: auto` + 高度約束 → 溢出內容自動長出等寬水平 overflow column = 頁；stride 恆等式 `column-gap = 左右 padding 和` → 翻一頁 = scrollLeft 跳 clientWidth）。圖片/影片/iframe `max-height: calc(100dvh − 垂直 padding − 120px caption 餘裕)` + `break-inside: avoid` 縮放至單頁不跨頁切割。翻頁通道：單指左右滑（起點避開螢幕左右 28px——iOS Safari 歷史手勢讓位）/ `←` `→` `PageUp` `PageDown` `Space`(`Shift+Space` 反向) `Home` `End` / 滾輪與觸控板（delta 累積 90 過門檻、翻後 550ms 慣性鎖定）。頁碼指示 `N / M` 固定底部置中（掛 `<html>` 下——掛 body 會被 ancestor sibling 隱藏規則吃掉）+ 進度條寬度 = 已讀頁比例。桌面寬視窗頁寬 cap `contentWidth + 水平 padding × 2` 置中（書頁感）。resize/旋轉按閱讀比例回對應頁；lazy-load 增頁即時重算。翻頁模式下 Space 段落卷動（space-scroll）讓位停用；ESC 退出與 3 指輕點不受影響；退出還原進場前文件卷動位置。`content/paged-mode.js`（雙匯出：NS.pagedMode + module.exports 純邏輯給 jsdom spec） | ✅ v0.7.227 |
 
 ---
@@ -86,8 +86,8 @@ JRead/
 │   ├── content/                 # Content scripts（按載入順序）
 │   │   ├── namespace.js         # window.__JRead 初始化
 │   │   ├── shortcut-utils.js    # 自訂快速鍵 helper（content / options / spec 共用，v0.7.218）
-│   │   ├── custom-shortcuts.js  # 自訂快速鍵 keydown 攔截 → CUSTOM_COMMAND（v0.7.218）
-│   │   ├── touch-gestures.js    # 3 指輕點 toggle 閱讀模式 → CUSTOM_COMMAND（v0.7.223）
+│   │   ├── custom-shortcuts.js  # 自訂快速鍵 keydown 攔截 → 本地 dispatch / CUSTOM_COMMAND（v0.7.218 / v0.7.228）
+│   │   ├── touch-gestures.js    # 3 指輕點 toggle 閱讀模式 → 本地 dispatch（v0.7.223 / v0.7.228）
 │   │   ├── detector.js          # 主文偵測
 │   │   ├── cleaner.js           # 雜訊隱藏
 │   │   ├── styler.js            # 套用乾淨排版
@@ -175,12 +175,12 @@ Forcing function：`test/regression/firefox-build.spec.js` 端到端跑 `tools/f
 
 JRead 同步發佈 macOS Safari 版本（Developer ID 簽章 + Apple notarize + stapled 的 .pkg，給使用者公開下載手動安裝；不走 Mac App Store）。
 
-**單一真實來源**：`jread/manifest.json` + `jread/` 整棵目錄是 Chrome 版本，Safari build 透過 `safari-app/safari-build.sh` 每次 `rsync -a --delete jread/ safari-app/JRead/JRead Extension/Resources/` 把 Chrome 來源完整同步進 Xcode project 的 Extension Resources/——Safari 與 Chrome 共用同一份 extension code，無雙頭維護。
+**單一真實來源**：`jread/manifest.json` + `jread/` 整棵目錄是 Chrome 版本，Safari build 透過 `safari-app/safari-build.sh` 每次 `rsync -a --delete jread/ safari-app/JRead/JRead Extension/Resources/` 把 Chrome 來源完整同步進 Xcode project 的 Extension Resources/——Safari 與 Chrome 共用同一份 extension code，無雙頭維護。**唯一受控差異**（v0.7.228）：rsync 後 `safari-app/patch-safari-manifest.sh` 把 Resources/manifest.json 的 background 改宣告 event page（`scripts + persistent: false`，iOS SW 不喚醒 bug 對策、macOS 統一宣告），drift check `-x manifest.json` 排除、由 patch script verify 補檢查。
 
 **Build 流程**（`safari-app/safari-build.sh`，每次 release 自動跑）：
 
 1. 前置 check：Developer ID Application cert / Developer ID Installer cert / notarytool keychain profile（缺哪項印對應安裝指引）
-2. `rsync` jread/ → Extension Resources/
+2. `rsync` jread/ → Extension Resources/ + `patch-safari-manifest.sh`（background → event page）
 3. `sed` bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` 到 `project.pbxproj`
 4. `xcodebuild clean` + `xcodebuild archive`（Release configuration，macOS only）
 5. `xcodebuild -exportArchive` 用 `safari-export-options-developerid.plist`（method = developer-id，signingStyle = manual，signingCertificate = "Developer ID Application: Zhimin Su (PR6NG3PH45)"）→ 產 `.app`
@@ -236,7 +236,9 @@ JRead 提供 iOS / iPadOS Safari Web Extension，目前走 **TestFlight internal
 
 **為什麼 manual signing**：team 沒有註冊任何 iOS 裝置，automatic signing 在 archive 階段堅持產 development profile 而失敗（「Your team has no devices」）；App Store distribution profile 不需要裝置清單，manual 直接繞開。
 
-**Build 流程**（`safari-app/ios-build.sh`）：rsync Resources → sed bump pbxproj 版本 → `xcodebuild archive`（`generic/platform=iOS`）→ `xcodebuild -exportArchive`（`ios-export-options.plist`：method app-store-connect + manual provisioningProfiles mapping）→ `altool --validate-app` → `altool --upload-app`（ASC API key `592WJH7U2F`，與 Shinkansen 共用，env `ASC_KEY_ID` / `ASC_ISSUER_ID` 可覆寫）→ source drift check。`SKIP_UPLOAD=1` 只產 `.ipa` 不上傳。BUILD_DIR 在 `$TMPDIR`（iCloud fileprovider 接管教訓）。
+**iOS background lifecycle（v0.7.228 根治「用一段時間後失效」）**：iOS Safari 的 MV3 background **service worker 被系統回收後不再喚醒**（Apple Developer Forums [thread 758346](https://developer.apple.com/forums/thread/758346)；iOS 17.4 起、迄今未修；Chrome / macOS Safari 的 SW 死後下個事件會重生，iOS 實機死透，僅重開機 / Settings 重開 extension / 強制關閉 Safari 可復原）；iOS 18.4+ 另有 `tabs.sendMessage` 無聲掉包 regression（[thread 787958](https://developer.apple.com/forums/thread/787958)）。對策雙管：(1) 觸發路徑去 SW 化——3 指輕點 / 自訂快速鍵 toggle 走 content 端 `dispatchLocalCommand` 本地 dispatch（零訊息傳遞）；(2) Safari build 的 manifest 由 `safari-app/patch-safari-manifest.sh`（macOS / iOS 共用、冪等）把 background 改宣告 event page（`scripts + persistent: false`——Safari 對 event page 生命週期管理正常，卸載後可重生）；Chrome 版 manifest 維持 `service_worker` 不動，build drift check `-x manifest.json` 排除這個唯一受控差異、由 patch script verify 補檢查。**機制限制**：send-to-readwise 的 API 呼叫住在 background，仍依賴 event page 喚醒；若 Apple 再 regress event page lifecycle，僅此功能受影響、toggle 類觸發不受波及。
+
+**Build 流程**（`safari-app/ios-build.sh`）：rsync Resources → manifest event page patch（`patch-safari-manifest.sh`）→ sed bump pbxproj 版本 → `xcodebuild archive`（`generic/platform=iOS`）→ `xcodebuild -exportArchive`（`ios-export-options.plist`：method app-store-connect + manual provisioningProfiles mapping）→ `altool --validate-app` → `altool --upload-app`（ASC API key `592WJH7U2F`，與 Shinkansen 共用，env `ASC_KEY_ID` / `ASC_ISSUER_ID` 可覆寫）→ source drift check。`SKIP_UPLOAD=1` 只產 `.ipa` 不上傳。BUILD_DIR 在 `$TMPDIR`（iCloud fileprovider 接管教訓）。
 
 **iOS API 相容性**（v0.7.217 guards，`test/regression/ios-api-guards.spec.js`）：
 
@@ -403,7 +405,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `pagedMode` | `boolean` | `false` | `storage.sync` | ✅（popup「翻頁模式」checkbox，v0.7.227）——電子書式水平翻頁，詳見核心功能表「翻頁模式」row。嚴格 `=== true` 才啟用（storage 損壞 / 外部寫入非 boolean 視為關）。storage.onChanged 即時切換（走 scheduleReapply：styler 重建 stylesheet + 模組 install/uninstall，閱讀模式開啟中也能直接生效；字級/版心調整時模組重算頁數並按比例回原位）。垂直模式（預設）零行為差異——翻頁 CSS 區塊只在 true 時注入 |
 | `pangu` | `boolean` | `true` | `storage.sync` | ✅（options 「中英文間自動補空白 + 中文標點全形化」，v0.7.153 / v0.7.158）—— reader mode 啟動時掃 articleEl 所有 text node：(1) CJK ↔ 英數字 / % / ° 邊界補空白；(2) v0.7.158 新增 CJK 邊界的半形標點 `, . : ; ? !` 轉成 `，。：；？！`，半形括號 `( )` 兩側緊鄰 CJK 時轉 `（）`，引號不在此規則；中文 prose text node 內 ASCII↔ASCII 邊界的半形逗號也轉全形，但**數字千分位逗號**（兩側皆數字，如 `3,610` / `3,610,000`）保半形（v0.7.213，數字格式非標點）；跳過 `<code>` / `<a>` / `<input>` / contenteditable 等 |
 | `autoEnableDomains` | `string[]` | `[]` | `storage.sync` | ✅（v0.7.155 options 「自動啟動網域」textarea + popup 「此網域自動啟動」checkbox）—— 命中網域時 content script document_idle 自動 silent enterReaderMode；matching rule：`hostname === pattern OR hostname.endsWith('.' + pattern)`（`abc.com` 涵蓋 `www.abc.com` / 子網域；`www.abc.com` 只匹配自身，不含 `123.abc.com`） |
-| `customShortcuts` | `object` | 三 key 全 `null` | `storage.sync` | ✅（v0.7.218 options 「快速鍵」recorder）—— key 與 manifest commands 同字彙（`toggle-reader-mode` / `send-to-readwise` / `toggle-youtube-borderless`）；value = `{ code, alt, shift, ctrl, meta }`（`e.code` 實體鍵位 + modifier booleans）或 `null`（未自訂）。比對在 `content/custom-shortcuts.js` keydown capture listener，命中送 `CUSTOM_COMMAND` 給 SW 走 `dispatchCommand`（與 manifest 預設鍵同一條 dispatch）。動機：Safari（含 iOS / iPadOS 外接鍵盤）沒有瀏覽器層改鍵入口，options recorder 是唯一通道。validate 規則：必含 ⌥ 或 ⌃、拒絕 ⌘ 組合（content script 搶不過瀏覽器/系統）、拒絕 ESC（保留退出）、拒絕與內建預設鍵相同（browser 層停不掉、雙觸發 = toggle 兩次）、拒絕與其他指令生效鍵衝突。已知限制：位址列 focus / content script 沒注入的頁面自訂鍵無效（manifest 預設鍵不受此限，作為 fallback） |
+| `customShortcuts` | `object` | 三 key 全 `null` | `storage.sync` | ✅（v0.7.218 options 「快速鍵」recorder）—— key 與 manifest commands 同字彙（`toggle-reader-mode` / `send-to-readwise` / `toggle-youtube-borderless`）；value = `{ code, alt, shift, ctrl, meta }`（`e.code` 實體鍵位 + modifier booleans）或 `null`（未自訂）。比對在 `content/custom-shortcuts.js` keydown capture listener；v0.7.228 起 toggle 類指令命中後直接走 content 端 `NS.dispatchLocalCommand`（本地 dispatch、SW 死活無關——iOS Safari SW 被回收後不再喚醒），send-to-readwise（API 呼叫住 SW）仍送 `CUSTOM_COMMAND` 給 SW。動機：Safari（含 iOS / iPadOS 外接鍵盤）沒有瀏覽器層改鍵入口，options recorder 是唯一通道。validate 規則：必含 ⌥ 或 ⌃、拒絕 ⌘ 組合（content script 搶不過瀏覽器/系統）、拒絕 ESC（保留退出）、拒絕與內建預設鍵相同（browser 層停不掉、雙觸發 = toggle 兩次）、拒絕與其他指令生效鍵衝突。已知限制：位址列 focus / content script 沒注入的頁面自訂鍵無效（manifest 預設鍵不受此限，作為 fallback） |
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |
 
 ---
@@ -415,7 +417,8 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 - `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）
 - `content → popup`：`REPORT_DETECTION_RESULT`（偵測到/沒偵測到、信心分數）
 - `popup → background`：`GET_SETTINGS` / `UPDATE_SETTINGS` / `SAVE_TO_READWISE`（v0.7.33）
-- `content → background`：`CUSTOM_COMMAND`（v0.7.218，自訂快速鍵命中；v0.7.223 起 3 指輕點手勢也走此訊息；payload `{ command }`，SW 白名單驗證後走 `dispatchCommand`——與 manifest `commands.onCommand` 同一條 dispatch）
+- `content → background`：`CUSTOM_COMMAND`（v0.7.218，自訂快速鍵命中；payload `{ command }`，SW 白名單驗證後走 `dispatchCommand`。v0.7.228 起僅 send-to-readwise 與 fallback 場景使用——toggle 類指令與 3 指輕點改走 content 端本地 dispatch，不再過 SW）
+- `background → content`：`DISPATCH_COMMAND`（v0.7.228，manifest 預設鍵路徑：SW `dispatchCommand` 委派 content 端 `dispatchLocalCommand`（含 cross-mode 重導、單一資料源）；payload `{ command }`，content 端白名單 toggle-reader-mode / toggle-youtube-borderless）
 
 **`GET_READER_STATE` response 結構**（v0.7.133 擴充）：
 

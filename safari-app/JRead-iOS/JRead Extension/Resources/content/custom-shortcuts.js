@@ -4,9 +4,12 @@
 // chrome://extensions/shortcuts），iPad 外接鍵盤使用者完全無法改鍵。
 // Safari 也不支援 commands.update()——manifest suggested_key 是死的。
 // 唯一通用解是 content script 層自己攔 keydown：options 錄製的組合存
-// storage.sync.customShortcuts，這裡比對命中後送 CUSTOM_COMMAND 給 SW，
-// 走與 manifest commands.onCommand 同一條 dispatch（含 YouTube 模式重導
-// 邏輯），不另開分支（單一資料源）。
+// storage.sync.customShortcuts，這裡比對命中後 dispatch。
+// v0.7.228：toggle 類指令走 main.js dispatchLocalCommand（content 端本地
+// dispatch，含 YouTube 模式重導；與 3 指手勢 / manifest 預設鍵同一條決策，
+// 單一資料源）——iOS Safari SW 被回收後不再喚醒（Apple Forums 758346），
+// 繞 SW 的觸發在 iOS 會隨時間失效。send-to-readwise 仍送 CUSTOM_COMMAND
+// 給 SW（Readwise API 呼叫住在 SW）。
 //
 // 與 manifest 預設鍵的關係：預設鍵在 browser 層、程式停不掉，兩者並存。
 // shortcut-utils.validate 拒絕「自訂值 == 預設值」避免同一按鍵雙觸發。
@@ -65,6 +68,15 @@
         // browser 層快速鍵「頁面收不到」的行為對齊）。
         e.preventDefault();
         e.stopImmediatePropagation();
+        // v0.7.228：toggle 類指令直接本地 dispatch（main.js dispatchLocalCommand，
+        // 含 cross-mode 重導）——iOS Safari SW 被系統回收後不再喚醒（Apple Forums
+        // thread 758346），round-trip SW 的觸發會隨時間失效。send-to-readwise
+        // 的 Readwise API 呼叫住在 SW、無法本地化，仍走 CUSTOM_COMMAND（SW 死亡
+        // 時失效，靠 manifest 雙宣告 event page 修法兜底）。
+        if (cmd !== 'send-to-readwise' && typeof NS.dispatchLocalCommand === 'function') {
+          NS.dispatchLocalCommand(cmd);
+          return;
+        }
         NS.safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: cmd } });
         return;
       }

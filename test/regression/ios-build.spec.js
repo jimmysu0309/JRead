@@ -122,11 +122,51 @@ describe('ios-build.sh 步驟完整性', () => {
     assert.ok(/xcodebuild -exportArchive/.test(sh), '缺 exportArchive');
     assert.ok(/altool --validate-app/.test(sh), '缺 altool validate（upload 前先 validate 抓問題）');
     assert.ok(/altool --upload-app/.test(sh), '缺 altool upload');
-    assert.ok(/diff -r --brief jread\//.test(sh), '缺 source drift check');
+    assert.ok(/diff -r --brief -x manifest\.json jread\//.test(sh),
+      '缺 source drift check（-x manifest.json：manifest 是 event page patch 的唯一受控差異）');
     assert.ok(/SKIP_UPLOAD/.test(sh), '缺 SKIP_UPLOAD escape hatch');
   });
 
   it('BUILD_DIR 必須在 $TMPDIR（iCloud fileprovider 接管教訓，Shinkansen v1.9.26 同根因）', () => {
     assert.ok(/BUILD_DIR="\$\{TMPDIR/.test(sh), 'BUILD_DIR 必須用 $TMPDIR，不可放 repo 內（iCloud Drive 同步範圍）');
+  });
+
+  // v0.7.228：iOS Safari 的 MV3 SW 被系統回收後不再喚醒（Apple Forums 758346）
+  // ——Safari build 的 manifest 必須 patch 成 event page（scripts + persistent:
+  // false），否則「用一段時間後手勢 / popup 失效、強制關閉 Safari 才復原」回歸。
+  it('rsync 後必須跑 patch-safari-manifest.sh（event page patch），drift check 後必須再 verify 一次', () => {
+    const patchCalls = sh.match(/patch-safari-manifest\.sh/g) || [];
+    assert.ok(patchCalls.length >= 2,
+      `patch-safari-manifest.sh 必須出現至少 2 次（rsync 後 patch + drift check 後 verify），實際 ${patchCalls.length} 次`);
+    const rsyncIdx = sh.indexOf('rsync -a --delete jread/');
+    const firstPatchIdx = sh.indexOf('patch-safari-manifest.sh');
+    assert.ok(rsyncIdx !== -1 && firstPatchIdx > rsyncIdx,
+      'patch 必須在 rsync 之後（rsync --delete 會覆掉 patch 結果）');
+  });
+});
+
+describe('patch-safari-manifest.sh（event page patch，macOS / iOS build 共用）', () => {
+  const PATCH_PATH = path.join(SAFARI_APP_DIR, 'patch-safari-manifest.sh');
+
+  it('必須存在且 executable', () => {
+    assert.ok(fs.existsSync(PATCH_PATH), '缺 safari-app/patch-safari-manifest.sh');
+    assert.ok(fs.statSync(PATCH_PATH).mode & 0o111, 'patch-safari-manifest.sh 必須 executable');
+  });
+
+  it('必須產生 scripts + persistent:false 並移除 service_worker、必須含受控差異驗證', () => {
+    const psh = fs.readFileSync(PATCH_PATH, 'utf8');
+    assert.ok(/del\(\.service_worker\)/.test(psh), '必須移除 service_worker key（Safari 雙宣告時偏好哪個 key 無保證，整個換掉最穩）');
+    assert.ok(/scripts:\s*\[\$sw\]/.test(psh), '必須宣告 background.scripts = [原 service_worker 檔]');
+    assert.ok(/persistent:\s*false/.test(psh), '必須宣告 persistent: false（non-persistent event page）');
+    assert.ok(/del\(\.background\)/.test(psh), '必須驗證 background 以外欄位與 source 一致（受控差異唯一性）');
+  });
+
+  it('macOS safari-build.sh 也必須接同一支 patch script（不雙實作）', () => {
+    const macSh = fs.readFileSync(path.join(SAFARI_APP_DIR, 'safari-build.sh'), 'utf8');
+    const calls = macSh.match(/patch-safari-manifest\.sh/g) || [];
+    assert.ok(calls.length >= 2,
+      `safari-build.sh 必須呼叫 patch-safari-manifest.sh 至少 2 次（patch + verify），實際 ${calls.length} 次`);
+    assert.ok(/diff -r --brief -x manifest\.json jread\//.test(macSh),
+      'safari-build.sh drift check 必須 -x manifest.json（manifest 是受控差異）');
   });
 });
