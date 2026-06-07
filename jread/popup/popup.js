@@ -26,6 +26,7 @@ const themeBtns = document.querySelectorAll('.theme-btn');
 const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
 const autoDomainHostEl = document.getElementById('auto-domain-host');
+const pagedModeCb = document.getElementById('paged-mode-cb');
 
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
@@ -86,6 +87,9 @@ const DEFAULT_SETTINGS = {
   // v0.7.215：Space 平滑卷動比例（% of viewport）；popup 不放控制項（options
   // 有），這裡僅作 storage.get 的 default fallback，避免讀回 undefined。
   spaceScrollRatio: 50,
+  // v0.7.227：翻頁模式（電子書式水平翻頁）。popup 有 toggle；預設 false =
+  // 傳統垂直卷動。與 SW DEFAULT_SETTINGS 同步（forcing spec 校對）。
+  pagedMode: false,
   // v0.7.218：自訂快速鍵；popup 不放控制項（options 有 recorder），這裡僅作
   // storage.get 的 default fallback，避免讀回 undefined。
   customShortcuts: {
@@ -180,6 +184,8 @@ function render(settings) {
     fontFamilySelect.value = settings.fontFamily;
     if (fontFamilySelect.value === '') fontFamilySelect.value = FONT_STACKS.system;
   }
+  // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
+  if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
 }
 
 let current = { ...DEFAULT_SETTINGS };
@@ -230,6 +236,12 @@ chrome.storage.sync.get(DEFAULT_SETTINGS, (values) => {
 
 for (const btn of themeBtns) {
   btn.addEventListener('click', () => save({ theme: btn.dataset.theme }));
+}
+
+// v0.7.227：翻頁模式 toggle。寫入後 content script 走 storage.onChanged →
+// scheduleReapply 即時切換（閱讀模式開啟中也能直接生效）。
+if (pagedModeCb) {
+  pagedModeCb.addEventListener('change', () => save({ pagedMode: pagedModeCb.checked }));
 }
 
 document.querySelector('[data-action="font-dec"]').addEventListener('click', () => {

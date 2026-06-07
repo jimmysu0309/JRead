@@ -43,6 +43,9 @@ const DEFAULT_SETTINGS = {
   // v0.7.215：Space 平滑卷動（Readwise Reader 風格）。Space / Shift+Space 以
   // rAF 動畫卷動 viewport 高度的 N%；0 = 停用（保留瀏覽器原生跳卷）。
   spaceScrollRatio: 50,
+  // v0.7.227：翻頁模式（電子書式水平翻頁——左右滑動 / ←→ 鍵 / 滾輪翻頁，
+  // 圖片縮放至單頁內）。預設 false = 傳統垂直卷動。
+  pagedMode: false,
   // v0.7.218：自訂快速鍵。key 與 manifest commands 同字彙；value 是
   // { code, alt, shift, ctrl, meta } 或 null（= 未自訂，只有 manifest 預設鍵）。
   // Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，options 的 recorder 是
