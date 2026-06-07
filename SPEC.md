@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.224**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.225**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -353,6 +353,21 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 | `contentWidth` | `720` | 永遠注入（卡片骨架不可缺） |
 
 這樣「開啟閱讀模式但不改設定」＝ 原站字體 / 字級 / 行高 / 排版 + 讀者卡片容器。最貼近原站視覺。
+
+### 對比守門（contrast guard，v0.7.225，light theme only）
+
+styler 刻意保留 `pre` / `table` 的原站文字色（syntax highlight / cell 色彩），但這些色是配合「原站 effective 背景」設計的——站點走 `prefers-color-scheme: dark` 時 token 色為淺色，reader card 白底會讓對比掉到 1.x:1（tymscar 實測 pre bg = 半透明白疊深 body，白卡下 1.07:1）。`apply()` 內建兩段式 runtime 檢查：
+
+1. **Phase 1（CSS 注入前）**：量每個 `pre` / `table` 的原始 effective bg（ancestor 爬升 + alpha 合成）+ 各文字載體（direct textNode 元素）的色與字數
+2. **Phase 2（CSS 全生效後）**：以 card bg 為基底重算新 effective bg + **重量注入後的實際文字色**（繼承類元素如 td 已走新 cascade，不可沿用 phase 1 舊色——誤判會把 table 修壞）。兩種修法形狀：
+   - **整容器 bg 還原**：低對比文字（< 3:1）字數占比 >= 40% 且「注入後文字色 + 原始 bg」可讀 → 原始 bg 以 inline `!important` 還給容器（保留 syntax highlight 設計）
+   - **per-carrier 色覆寫**：少數載體（如 th 自帶為深底設計的淺色）對最終 bg 仍 < 3:1 且原設計可讀 → 個別 inline 覆寫文字色（依最終 bg 亮度選深字 / 淺字）
+
+保守邊界：原站本來就低對比的不動（不是 jread 造成）；dark / sepia theme 整段跳過（`* { color: theme.text }` 已蓋 token 色 + v0.7.164 已清 bg）。`restore()` 以通用 `{el, prop, prev, prevP}` snapshot 對稱還原。不驗 figcaption / mark / kbd（無回報案例、修法形狀不同）、不驗圖片 / iframe 內部。
+
+配套：`tools/debug-harness.js` 的 **CONTRAST AUDIT**（initial + delayed 兩次）掃 reader card 內 visible 文字 vs effective bg 的 WCAG 對比、< 3:1 印 ⚠️，是修 styler / theme 類改動的驗收 forcing function；`--scheme dark` flag 模擬深色模式使用者（此類 bug 只在 dark scheme 重現）。
+
+另一條同輪通則：video player 標記（`PLAYER_ATTR`）的 container 若含 >= 100 chars 的 p / li = layout wrapper 而非 player 結構，縮回 video 自身——否則 wrapper 內所有元素被豁免色彩保護（tymscar 實測 246/267 元素被誤標、link 留站點綠色在白卡上 1.37:1）。
 
 ---
 
