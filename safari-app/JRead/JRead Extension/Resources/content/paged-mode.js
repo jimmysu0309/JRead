@@ -16,10 +16,25 @@
 //     styler 的 #__jread-progress 進度條（寬度 = 已讀頁比例）
 //   - resize / 旋轉時重算頁數、保持目前閱讀比例位置
 //
-// stride 恆等式：styler CSS 設 column-gap = 左右 padding 和，因此
-// 「column 寬 + gap = 元素 clientWidth」——翻到第 n 頁 = scrollLeft 跳
-// n × clientWidth。頁數 = round(scrollWidth / stride)（Playwright probe 於
-// chinatalk 43 頁 / udn 4 頁實測恆等式零偏移）。
+// stride 恆等式：styler CSS 設 column-gap = 左右視覺內距和（左 padding +
+// 右 transparent border），因此「column 寬 + gap = stride」，翻到第 n 頁 =
+// scrollLeft 跳 n × stride。stride = clientWidth − padding + column-gap
+// （讀 computed style 算，v0.7.231 起 clientWidth 不再恰等於 stride——
+// 右內距改用 border 表達後 clientWidth 少了右側 56px，見 styler.js 註解）。
+//
+// 頁數（v0.7.231）：不可信 scrollWidth——正式版 Safari 26.5 的 multicol
+// scrollable overflow 會多報一個無內容的幽靈欄（chinatalk 實測 25 欄內容
+// 報 26 欄寬），round(scrollWidth / stride) 多算一頁，翻到幽靈頁時
+// scrollLeft 被 clamp 在非格點位置 → Safari 把最後一欄重畫在錯位的位置
+// （= Jimmy 回報「最後一頁版面寬度沒尊重設定」的根因之二；之一是尾端
+// padding 不算進 overflow，styler 端已用 border 修）。改量**實際內容末端**
+// 落在第幾欄：最後幾個非空 text node 的 Range rect（line box 按 fragment
+// 正確回報；element.getBoundingClientRect 對跨欄 block 回 as-if-unfragmented
+// 聯集、兩引擎都會超出實際 layout，不可用）+ 替換元素（img 等，atomic
+// fragment，bounding rect 可靠）取 max。Safari 對「已捲動狀態下的 overflow
+// column fragment rect」回報會偏移，量測前強制 scrollLeft = 0、量完還原
+// （同一 frame 內同步讀寫不觸發 repaint，使用者無感）。scrollWidth 公式
+// 保留作 fallback（jsdom / Range rect 全 0 的退化環境）。
 //
 // 與既有機能的相容（main.js 端 wiring）：
 //   - Space 段落卷動（space-scroll.js）在翻頁模式下停用——文件不可垂直卷動，
@@ -51,11 +66,25 @@
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
-  // 頁數：stride 恆等式下 scrollWidth 是 stride 整數倍（probe 實測），round
-  // 兜浮點誤差；guard 退化輸入回 1。
+  // 頁數 fallback：scrollWidth ≈ N × stride + padding − gap（兩引擎的尾端
+  // 計入差異都在 ±stride/2 內），round 兜偏差；guard 退化輸入回 1。
+  // 注意正式版 Safari 的幽靈欄會讓本公式多算一頁——正常路徑用
+  // computePageCountFromExtent（量實際內容末端），本公式只在量不到
+  // （jsdom / 空文章）時兜底。
   function computePageCount(scrollWidth, stride) {
     if (!(stride > 0) || !(scrollWidth > 0)) return 1;
     return Math.max(1, Math.round(scrollWidth / stride));
+  }
+
+  // 頁數主路徑：內容末端（相對 padding-box 卷動座標的右緣）落在第幾欄。
+  // contentEndX 已含 padding-left 起手；第 k 欄（0-based）涵蓋
+  // (padLeft + k×stride, padLeft + k×stride + columnWidth]，
+  // ceil((contentEndX − padLeft) / stride) = k + 1 = 頁數。
+  function computePageCountFromExtent(contentEndX, padLeft, stride) {
+    if (!(stride > 0)) return 1;
+    const x = contentEndX - (padLeft > 0 ? padLeft : 0);
+    if (!(x > 0)) return 1;
+    return Math.max(1, Math.ceil(x / stride));
   }
 
   // swipe 手勢分類。輸入純物件 { dx, dy, startX, viewportW }：
@@ -100,13 +129,80 @@
   let wheelLockUntil = 0;
   let touchState = null;    // { startX, startY, multi }
   let remeasureTimers = [];
+  let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
 
+  // stride = column 寬 + gap = (clientWidth − 左右 padding) + column-gap。
+  // computed style 讀不到數值（jsdom 無 layout）時退回 clientWidth
+  // （舊恆等式，jsdom spec 環境夠用）。
   function stride() {
-    return art ? art.clientWidth : 0;
+    if (!art) return 0;
+    try {
+      const cs = getComputedStyle(art);
+      const padL = parseFloat(cs.paddingLeft);
+      const padR = parseFloat(cs.paddingRight);
+      const gap = parseFloat(cs.columnGap);
+      const s = art.clientWidth - padL - padR + gap;
+      if (isFinite(s) && s > 0) return s;
+    } catch (e) { /* 退化環境 */ }
+    return art.clientWidth;
+  }
+
+  // 內容末端在卷動座標（padding-box 原點）的最大右緣。Safari 對已捲動狀態
+  // 的 overflow column fragment rect 回報會偏移——強制 scrollLeft = 0 量測、
+  // 量完還原（同一 frame 同步讀寫，無 repaint）。回 0 = 量不到。
+  function measureContentEndX() {
+    if (!art) return 0;
+    const prev = art.scrollLeft;
+    let maxRight = 0;
+    try {
+      art.scrollLeft = 0;
+      const base = art.getBoundingClientRect().left;
+      // 最後幾個非空 text node 的 line box（從文末往回找，跳過被 cleaner
+      // 隱藏的 rect 全 0 節點；取 max 而非只看最後一個——文末可能是隱藏雜訊）
+      const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        if (node.nodeValue && node.nodeValue.trim()) textNodes.push(node);
+      }
+      let hits = 0;
+      for (let i = textNodes.length - 1; i >= 0 && hits < 10; i--) {
+        const range = document.createRange();
+        range.selectNodeContents(textNodes[i]);
+        let any = false;
+        for (const r of range.getClientRects()) {
+          if (r.width > 0) {
+            any = true;
+            maxRight = Math.max(maxRight, r.right - base);
+          }
+        }
+        if (any) hits++;
+      }
+      // 替換元素是 atomic fragment、bounding rect 可靠（文末是圖片的文章靠這層）
+      for (const el of art.querySelectorAll('img, video, iframe, svg')) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0) maxRight = Math.max(maxRight, r.right - base);
+      }
+    } catch (e) {
+      maxRight = 0; // jsdom 等無 Range rect 環境 → fallback
+    }
+    art.scrollLeft = prev;
+    return maxRight;
+  }
+
+  // 重算實測頁數（install / resize / lazy-load remeasure 時呼叫）
+  function remeasurePages() {
+    if (!art) { measuredPages = 0; return; }
+    const endX = measureContentEndX();
+    if (!(endX > 0)) { measuredPages = 0; return; }
+    let padL = 0;
+    try { padL = parseFloat(getComputedStyle(art).paddingLeft) || 0; } catch (e) { /* */ }
+    measuredPages = computePageCountFromExtent(endX, padL, stride());
   }
 
   function pageCount() {
-    return art ? computePageCount(art.scrollWidth, stride()) : 1;
+    if (!art) return 1;
+    return measuredPages > 0 ? measuredPages : computePageCount(art.scrollWidth, stride());
   }
 
   function renderIndicator() {
@@ -213,11 +309,12 @@
 
   function onTouchCancel() { touchState = null; }
 
-  // resize / 旋轉：stride 變了、頁界全部重排——按 lastRatio 回到對應頁
+  // resize / 旋轉：stride 變了、頁界全部重排——重測頁數、按 lastRatio 回到對應頁
   function onResize() {
     if (!art) return;
     requestAnimationFrame(() => {
       if (!art) return;
+      remeasurePages();
       const total = pageCount();
       goTo(Math.round(lastRatio * (total - 1)), false);
     });
@@ -257,13 +354,18 @@
 
     installed = true;
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
+    remeasurePages();
     const total = pageCount();
     goTo(Math.round(lastRatio * (total - 1)), false);
 
-    // lazy-load 圖片 / 晚到內容會讓 scrollWidth 變動——延遲重算頁數
-    // （只刷指示文字與 clamp，不跳頁）
+    // lazy-load 圖片 / 晚到內容會讓內容末端移動——延遲重測頁數
+    // （刷指示文字；頁數縮水時 clamp 回最後一頁，不然停在幽靈位置）
     remeasureTimers = [1000, 3000].map(ms => setTimeout(() => {
-      if (installed) renderIndicator();
+      if (!installed) return;
+      remeasurePages();
+      const t = pageCount();
+      if (idx > t - 1) goTo(t - 1, false);
+      else renderIndicator();
     }, ms));
   }
 
@@ -291,6 +393,7 @@
     touchState = null;
     wheelAccum = 0;
     idx = 0;
+    measuredPages = 0;
     // lastRatio 刻意保留：settings reapply 的 uninstall→install 要回原位；
     // exitReaderMode 後 main.js 會呼叫 resetPosition() 歸零
   }
@@ -315,6 +418,7 @@
 
   const api = {
     computePageCount,
+    computePageCountFromExtent,
     classifySwipe,
     classifyKey,
     sync,
