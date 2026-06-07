@@ -281,42 +281,20 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
 // 鍵（commands.onCommand，browser 層）與自訂快速鍵（content script keydown →
 // CUSTOM_COMMAND 訊息）共用同一條 dispatch，YouTube 模式重導等邏輯單一資料源。
 async function dispatchCommand(command, tabId) {
-  // v0.7.134：YouTube 影院 / 無邊模式 active 時，**任一**模式快速鍵都當作退出當前
-  // active 模式（= 按 ESC 的效果）。動機：使用者忘記目前在哪個模式時、不用記哪
-  // 個快速鍵對應哪個退出方向。實作上 SW 先 GET_READER_STATE 拿當前狀態、依此
-  // 重導 command。
-  //   - toggle-reader-mode 觸發但 borderlessActive=true → 改送 TOGGLE_YT_BORDERLESS
-  //     退出無邊模式
-  //   - toggle-youtube-borderless 觸發但 cinemaActive=true → 改走 toggleWithInjectionFallback
-  //     送 TOGGLE_READER_MODE 退出影院模式
-  // 兩者同時 active 時（CSS 會打架但邏輯獨立可同開）以 borderless 優先退出
-  // （borderless 動了 OS 視窗、先退出回正常 chrome 視窗較安全）。
-  // 非 YouTube watch 頁或無模式 active 時走原邏輯。
+  // v0.7.228：cross-mode 重導（v0.7.134「任一模式快速鍵都當退出當前 active 模式」）
+  // 整段搬進 content 端 main.js dispatchLocalCommand——重導需要的 cinema /
+  // borderless 狀態本來就在 content 端（舊版 SW 還得先 round-trip 查詢 reader
+  // state 來問）。動機：iOS Safari SW 被系統回收後不再喚醒（Apple Forums thread
+  // 758346），3 指手勢 / 自訂快速鍵改走 content 本地 dispatch 才能在 SW 死亡後
+  // 存活；SW 這裡只剩 manifest 預設鍵（browser 層事件）的委派 + content script
+  // 未注入頁面的 injection fallback。重導決策單一資料源在 main.js，這裡不可
+  // 重新長出狀態查詢 / 重導分支（youtube-borderless.spec 有 forcing function 釘著）。
   if (command === 'toggle-reader-mode' || command === 'toggle-youtube-borderless') {
-    let state = null;
-    try {
-      state = await chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
-    } catch (_) { /* content script 沒注入：state=null、走 default */ }
-    const cinemaActive = !!(state && state.cinemaActive);
-    const borderlessActive = !!(state && state.borderlessActive);
-
-    if (command === 'toggle-reader-mode' && borderlessActive) {
-      chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
-      return;
-    }
-    if (command === 'toggle-youtube-borderless' && cinemaActive) {
-      const { toggleWithInjectionFallback } = self.__JReadPopup;
-      await toggleWithInjectionFallback(tabId, {
-        sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
-        executeScript: (opts) => chrome.scripting.executeScript(opts)
-      });
-      return;
-    }
-  }
-
-  if (command === 'toggle-reader-mode') {
-    const { toggleWithInjectionFallback } = self.__JReadPopup;
-    await toggleWithInjectionFallback(tabId, {
+    const { sendWithInjectionFallback } = self.__JReadPopup;
+    await sendWithInjectionFallback(tabId, {
+      type: 'DISPATCH_COMMAND',
+      payload: { command }
+    }, {
       sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
       executeScript: (opts) => chrome.scripting.executeScript(opts)
     });
@@ -325,15 +303,6 @@ async function dispatchCommand(command, tabId) {
 
   if (command === 'send-to-readwise') {
     await sendToReadwiseFromCommand(tabId);
-    return;
-  }
-
-  if (command === 'toggle-youtube-borderless') {
-    // v0.7.134：YouTube 無邊模式快速鍵（manifest 沒給 suggested_key，使用者
-    // 自己到 chrome://extensions/shortcuts 綁）。content script 沒注入的頁面
-    // sendMessage 會 reject — 靜默吞掉（chrome:// / Web Store 等本來就不該
-    // 在這些頁面切影片）。
-    chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' }).catch(() => {});
     return;
   }
 }

@@ -144,10 +144,25 @@ describe('3 指輕點手勢（v0.7.223）', () => {
       assert.ok(idx < js.indexOf('content/main.js'), '必須在 main.js 之前');
     });
 
-    it('觸發必須送 CUSTOM_COMMAND + toggle-reader-mode（走 SW dispatchCommand 單一資料源）', () => {
-      assert.ok(/NS\.MSG\.CUSTOM_COMMAND/.test(SRC), '必須用 NS.MSG.CUSTOM_COMMAND');
-      assert.ok(/command:\s*'toggle-reader-mode'/.test(SRC), 'payload.command 必須是 toggle-reader-mode');
-      assert.ok(/NS\.safeSendMessage/.test(SRC), '必須走 NS.safeSendMessage（context invalidated guard）');
+    // 註解剝除後才比對——檔頭/行內註解會提到同字面值（NS.dispatchLocalCommand
+    // 等），whole-file regex 會被註解滿足產生偽陰性（sanity check 實證踩過）。
+    const CODE = SRC.replace(/^\s*\/\/.*$/gm, '');
+
+    it('觸發必須優先走 NS.dispatchLocalCommand（v0.7.228：iOS SW 死亡後仍可本地觸發）', () => {
+      // iOS Safari 的 MV3 SW 被系統回收後不再喚醒（Apple Forums 758346）——
+      // 3 指輕點是 iOS 觸控環境的主 toggle 通道，不可依賴 SW round-trip。
+      assert.ok(/NS\.dispatchLocalCommand\('toggle-reader-mode'\)/.test(CODE),
+        '觸發必須直接呼叫 NS.dispatchLocalCommand（content 端本地 dispatch，零訊息傳遞）');
+      const localIdx = CODE.indexOf("NS.dispatchLocalCommand('toggle-reader-mode')");
+      const swIdx = CODE.indexOf('NS.MSG.CUSTOM_COMMAND');
+      assert.ok(localIdx !== -1 && swIdx !== -1 && localIdx < swIdx,
+        '本地 dispatch 必須是主路徑、CUSTOM_COMMAND 只能是 fallback（順序顛倒 = iOS 失效 bug 回歸）');
+    });
+
+    it('fallback 必須保留 CUSTOM_COMMAND + safeSendMessage（SPA 注入競態時 main.js 未載）', () => {
+      assert.ok(/NS\.MSG\.CUSTOM_COMMAND/.test(CODE), 'fallback 必須用 NS.MSG.CUSTOM_COMMAND');
+      assert.ok(/command:\s*'toggle-reader-mode'/.test(CODE), 'payload.command 必須是 toggle-reader-mode');
+      assert.ok(/NS\.safeSendMessage/.test(CODE), '必須走 NS.safeSendMessage（context invalidated guard）');
     });
 
     it('SW CUSTOM_COMMAND 白名單必須仍含 toggle-reader-mode', () => {

@@ -76,6 +76,13 @@ echo "==> Sync extension Resources..."
 mkdir -p "$EXTENSION_RESOURCES"
 rsync -a --delete jread/ "$EXTENSION_RESOURCES/"
 
+# 1.5 Safari manifest patch（v0.7.228）：background service worker → event page。
+#     iOS Safari 的 MV3 SW 被系統回收後不再喚醒（Apple Forums thread 758346），
+#     使用者只能強制關閉 Safari 自救；event page 卸載後可正常重生。
+#     詳見 safari-app/patch-safari-manifest.sh（macOS / iOS build 共用）。
+echo "==> Patch Safari manifest（background → event page）..."
+bash safari-app/patch-safari-manifest.sh "$EXTENSION_RESOURCES"
+
 # 2. 版本號同步進 pbxproj
 echo "==> Sync version to project.pbxproj..."
 sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = ${VERSION};/g" "$PBXPROJ"
@@ -107,13 +114,16 @@ if [ ! -f "$IPA" ]; then
 fi
 
 # 5. Source drift forcing function
+#    manifest.json 是唯一受控差異（event page patch）——diff 以 -x 排除後，
+#    交由 patch-safari-manifest.sh（冪等）重跑 verify 補上 manifest 檢查。
 echo "==> Source drift check..."
-DRIFT=$(diff -r --brief jread/ "$EXTENSION_RESOURCES/" 2>&1 || true)
+DRIFT=$(diff -r --brief -x manifest.json jread/ "$EXTENSION_RESOURCES/" 2>&1 || true)
 if [ -n "$DRIFT" ]; then
   echo "ERROR: source drift between jread/ and Resources/:" >&2
   echo "$DRIFT" >&2
   exit 1
 fi
+bash safari-app/patch-safari-manifest.sh "$EXTENSION_RESOURCES"
 
 # 6. 上傳 App Store Connect（→ TestFlight 處理 5-30 分鐘後可裝）
 if [ "${SKIP_UPLOAD:-0}" = "1" ]; then

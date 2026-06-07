@@ -213,19 +213,20 @@ describe('youtube-borderless v0.7.134 — manifest', () => {
   });
 });
 
-describe('youtube-borderless v0.7.134 — SW cross-mode 退出邏輯', () => {
+describe('youtube-borderless — cross-mode 退出邏輯（v0.7.228 落地 content 端）', () => {
   // v0.7.134：YouTube 影院 / 無邊模式 active 時，任一模式快速鍵都當作退出
-  // 當前 active 模式（= 按 ESC 的效果）。SW 先 GET_READER_STATE 拿當前狀態
-  // 再依此重導 command。
-  //
-  // JS regex 沒 balanced brace、抓不出完整 block，改用 substring 從 dispatch
-  // 主體那行切到檔尾——後續內容（helper function 等）不會混入分支字眼，安全。
-  // v0.7.218：cross-mode 重導邏輯從 onCommand listener 抽成 dispatchCommand
-  // （manifest 預設鍵與自訂快速鍵 CUSTOM_COMMAND 共用同一條 dispatch），
-  // slice 切點跟著移；另斷言 onCommand 仍接回 dispatchCommand。
+  // 當前 active 模式（= 按 ESC 的效果）。
+  // v0.7.218：dispatch 抽成 dispatchCommand（預設鍵與自訂鍵單一資料源）。
+  // v0.7.228：重導決策整段搬進 content 端 main.js dispatchLocalCommand——
+  // iOS Safari SW 被回收後不再喚醒（Apple Forums 758346），3 指手勢 / 自訂
+  // 快速鍵改本地 dispatch 才能在 SW 死亡後存活。SW dispatchCommand 只剩
+  // manifest 預設鍵的 DISPATCH_COMMAND 委派（+ injection fallback）。
+  // 本 describe 是 forcing function：擋「SW 端重新長出重導分支」（雙實作）
+  // 與「content 端重導被改掉」兩個方向的 regression。
 
-  const ON_COMMAND_SLICE = SW_SRC.slice(
-    SW_SRC.indexOf('async function dispatchCommand')
+  const DISPATCH_SLICE = SW_SRC.slice(
+    SW_SRC.indexOf('async function dispatchCommand'),
+    SW_SRC.indexOf('chrome.commands.onCommand')
   );
 
   it('SW onCommand listener 必須把 command 轉交 dispatchCommand（預設鍵接回同一條 dispatch）', () => {
@@ -235,35 +236,51 @@ describe('youtube-borderless v0.7.134 — SW cross-mode 退出邏輯', () => {
       'onCommand listener 必須呼叫 dispatchCommand——預設鍵與自訂鍵不可雙實作 dispatch');
   });
 
-  it('SW dispatch 必須先 GET_READER_STATE 才決定 command 重導', () => {
-    assert.ok(ON_COMMAND_SLICE.length > 0, '抓不到 dispatchCommand');
-    assert.match(ON_COMMAND_SLICE, /chrome\.tabs\.sendMessage[\s\S]*?GET_READER_STATE/,
-      'SW onCommand 必須在處理 toggle-reader-mode / toggle-youtube-borderless 前 GET_READER_STATE 拿當前 cinema/borderless active 狀態');
+  it('SW dispatchCommand 必須把兩個 toggle 指令委派 DISPATCH_COMMAND 給 content（sendWithInjectionFallback）', () => {
+    assert.ok(DISPATCH_SLICE.length > 0, '抓不到 dispatchCommand');
+    assert.match(DISPATCH_SLICE,
+      /toggle-reader-mode['"]\s*\|\|\s*command\s*===\s*['"]toggle-youtube-borderless/,
+      'dispatchCommand 必須同時涵蓋 toggle-reader-mode / toggle-youtube-borderless 兩指令');
+    assert.match(DISPATCH_SLICE, /sendWithInjectionFallback/,
+      'dispatchCommand 必須走 sendWithInjectionFallback（content script 未注入頁面的 fallback）');
+    assert.match(DISPATCH_SLICE, /DISPATCH_COMMAND/,
+      'dispatchCommand 必須送 DISPATCH_COMMAND 訊息（content 端 dispatchLocalCommand 接手）');
   });
 
-  it('SW onCommand 必須有 borderlessActive 時 toggle-reader-mode 改送 TOGGLE_YT_BORDERLESS 的分支', () => {
-    // toggle-reader-mode 觸發但 borderless active → 改退出 borderless（送 TOGGLE_YT_BORDERLESS）
-    assert.match(ON_COMMAND_SLICE,
-      /toggle-reader-mode['"]\s*&&\s*borderlessActive[\s\S]*?TOGGLE_YT_BORDERLESS/,
-      'SW onCommand 必須有「toggle-reader-mode 且 borderlessActive=true → 送 TOGGLE_YT_BORDERLESS 退出無邊模式」分支');
+  it('SW dispatchCommand 不可重新長出 GET_READER_STATE 重導分支（重導單一資料源在 main.js）', () => {
+    assert.ok(!/GET_READER_STATE/.test(DISPATCH_SLICE),
+      'dispatchCommand 出現 GET_READER_STATE——重導邏輯不可回到 SW 端雙實作（v0.7.228 已搬進 main.js dispatchLocalCommand）');
   });
 
-  it('SW onCommand 必須有 cinemaActive 時 toggle-youtube-borderless 改走 toggleWithInjectionFallback 的分支', () => {
-    // toggle-youtube-borderless 觸發但 cinema active → 改退出 cinema（toggleWithInjectionFallback 走 TOGGLE_READER_MODE）
-    assert.match(ON_COMMAND_SLICE,
-      /toggle-youtube-borderless['"]\s*&&\s*cinemaActive[\s\S]*?toggleWithInjectionFallback/,
-      'SW onCommand 必須有「toggle-youtube-borderless 且 cinemaActive=true → toggleWithInjectionFallback 退出影院模式」分支');
+  it('main.js dispatchLocalCommand 必須有 borderlessActive 時 toggle-reader-mode 改退無邊模式的重導', () => {
+    const m = MAIN_SRC.match(/async function dispatchLocalCommand\(command\)\s*\{([\s\S]*?)\n  \}/);
+    assert.ok(m, '抓不到 main.js dispatchLocalCommand');
+    const body = m[1];
+    assert.match(body, /borderlessActive/,
+      'dispatchLocalCommand 必須讀 borderless active 狀態');
+    const readerIdx = body.indexOf("'toggle-reader-mode'");
+    assert.ok(readerIdx >= 0, 'dispatchLocalCommand 必須處理 toggle-reader-mode');
+    const readerSlice = body.slice(readerIdx, readerIdx + 300);
+    assert.match(readerSlice, /if\s*\(borderlessActive\)\s*return toggleBorderless/,
+      'toggle-reader-mode 在 borderlessActive 時必須改走 toggleBorderless（退無邊模式）');
   });
 
-  it('SW onCommand 兩個模式皆 inactive 時走原本各自 path（沒被 redirect 邏輯 short-circuit）', () => {
-    // 必須仍有 toggle-reader-mode → toggleWithInjectionFallback 主要分支
-    assert.match(ON_COMMAND_SLICE,
-      /command\s*===\s*['"]toggle-reader-mode['"][\s\S]*?toggleWithInjectionFallback/,
-      'SW 仍須保留「toggle-reader-mode → toggleWithInjectionFallback」主分支供 cinema/borderless 都 inactive 時用');
-    // 必須仍有 toggle-youtube-borderless → sendMessage TOGGLE_YT_BORDERLESS 主要分支
-    assert.match(ON_COMMAND_SLICE,
-      /command\s*===\s*['"]toggle-youtube-borderless['"][\s\S]*?TOGGLE_YT_BORDERLESS/,
-      'SW 仍須保留「toggle-youtube-borderless → sendMessage TOGGLE_YT_BORDERLESS」主分支供兩模式都 inactive 時用');
+  it('main.js dispatchLocalCommand 必須有 cinemaActive 時 toggle-youtube-borderless 改退影院模式的重導', () => {
+    const m = MAIN_SRC.match(/async function dispatchLocalCommand\(command\)\s*\{([\s\S]*?)\n  \}/);
+    const body = m[1];
+    const ytIdx = body.indexOf("'toggle-youtube-borderless'");
+    assert.ok(ytIdx >= 0, 'dispatchLocalCommand 必須處理 toggle-youtube-borderless');
+    const ytSlice = body.slice(ytIdx, ytIdx + 300);
+    assert.match(ytSlice, /cinemaActive\)\s*return toggleReader/,
+      'toggle-youtube-borderless 在 cinemaActive 時必須改走 toggleReader（退影院模式）');
+  });
+
+  it('main.js 必須有 DISPATCH_COMMAND case + command 白名單 + 接回 dispatchLocalCommand', () => {
+    const idx = MAIN_SRC.search(/msg\.type\s*===\s*NS\.MSG\.DISPATCH_COMMAND/);
+    assert.ok(idx >= 0, 'main.js onMessage 缺 DISPATCH_COMMAND case——manifest 預設鍵會失效');
+    const slice = MAIN_SRC.slice(idx, idx + 700);
+    assert.match(slice, /allowed/, 'DISPATCH_COMMAND case 必須有 command 白名單');
+    assert.match(slice, /dispatchLocalCommand\(command\)/, 'DISPATCH_COMMAND 必須接回 dispatchLocalCommand（單一資料源）');
   });
 });
 
@@ -288,15 +305,13 @@ describe('youtube-borderless v0.7.134 — SW handler', () => {
       'SW commands.onCommand 必須有 toggle-youtube-borderless 分支');
   });
 
-  it('toggle-youtube-borderless 分支必須 sendMessage TOGGLE_YT_BORDERLESS', () => {
+  it('toggle-youtube-borderless 分支必須委派 DISPATCH_COMMAND（v0.7.228 改 content 端 dispatch）', () => {
     const m = SW_SRC.match(/command\s*===\s*['"]toggle-youtube-borderless['"][\s\S]{0,500}/);
     assert.ok(m, '抓不到 toggle-youtube-borderless 分支');
-    assert.match(m[0], /TOGGLE_YT_BORDERLESS/,
-      'toggle-youtube-borderless 分支必須 sendMessage 含 TOGGLE_YT_BORDERLESS type');
-    assert.match(m[0], /chrome\.tabs\.sendMessage/,
-      'toggle-youtube-borderless 分支必須走 chrome.tabs.sendMessage');
-    assert.match(m[0], /\.catch\s*\(/,
-      'toggle-youtube-borderless sendMessage 必須 .catch 吞掉 receiving end does not exist');
+    assert.match(m[0], /DISPATCH_COMMAND/,
+      'toggle-youtube-borderless 必須走 DISPATCH_COMMAND 委派（content 端 dispatchLocalCommand 含互斥邏輯）');
+    assert.match(m[0], /sendWithInjectionFallback/,
+      'toggle-youtube-borderless 必須走 sendWithInjectionFallback（內含 sendMessage 失敗的 inject 重試 + 錯誤吞噬）');
   });
 });
 
@@ -306,13 +321,13 @@ describe('youtube-borderless v0.7.134 — main.js 訊息 listener', () => {
       'main.js onMessage 必須有 NS.MSG.TOGGLE_YT_BORDERLESS case');
   });
 
-  it('TOGGLE_YT_BORDERLESS handler 必須呼 NS.borderless.toggle()', () => {
-    // v0.7.143：handler body 因加入 cinema/borderless 互斥 mutex 變長，slice 從
-    // 500 字擴到 1500 字確保涵蓋整個 case body
-    const m = MAIN_SRC.match(/NS\.MSG\.TOGGLE_YT_BORDERLESS[\s\S]{0,1500}/);
-    assert.ok(m, '抓不到 TOGGLE_YT_BORDERLESS handler slice');
+  it('toggleBorderless（handler 委派目標）必須呼 NS.borderless.toggle()', () => {
+    // v0.7.228：handler 內文抽成 toggleBorderless()（與 dispatchLocalCommand
+    // 共用）——改釘函式 body；handler 委派由 cinema-borderless-mutex.spec 驗。
+    const m = MAIN_SRC.match(/function toggleBorderless\(\)\s*\{[\s\S]{0,800}/);
+    assert.ok(m, '抓不到 toggleBorderless body');
     assert.match(m[0], /NS\.borderless[\s\S]*toggle\s*\(\s*\)/,
-      'TOGGLE_YT_BORDERLESS handler 必須呼叫 NS.borderless.toggle()');
+      'toggleBorderless 必須呼叫 NS.borderless.toggle()');
   });
 
   it('GET_READER_STATE response 必須含 borderlessActive 欄位', () => {

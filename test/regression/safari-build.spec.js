@@ -156,8 +156,13 @@ describe('safari-build.sh', () => {
     assert.match(src, /xcrun stapler staple/);
   });
 
-  it('必須跑 source drift check（jread/ vs Resources/ 比對）', () => {
-    assert.match(src, /diff -r --brief jread\/[\s\S]+EXTENSION_RESOURCES/);
+  it('必須跑 source drift check（jread/ vs Resources/ 比對；manifest 是受控差異 -x 排除）', () => {
+    // v0.7.228：manifest.json 由 patch-safari-manifest.sh 改成 event page
+    //（iOS SW 不喚醒 bug 對策），是 jread/ ↔ Resources/ 唯一受控差異——drift
+    // check 排除它、改由 patch script 的 verify 補上 manifest 檢查。
+    assert.match(src, /diff -r --brief -x manifest\.json jread\/[\s\S]+EXTENSION_RESOURCES/);
+    assert.match(src, /patch-safari-manifest\.sh/,
+      'safari-build.sh 必須接 patch-safari-manifest.sh（event page patch）');
   });
 
   it('必須清掉舊版 .pkg（每次 bump 只留本次版本，避免 safari-app/ 累積歷史 .pkg）', () => {

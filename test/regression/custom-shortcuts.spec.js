@@ -209,6 +209,17 @@ describe('(D) custom-shortcuts.js source 結構', () => {
     assert.match(CUSTOM_SRC, /safeSendMessage\(\s*\{\s*type:\s*NS\.MSG\.CUSTOM_COMMAND/,
       '必須走 NS.safeSendMessage——直呼 chrome.runtime.sendMessage 在 extension reload 後會 throw');
   });
+  it('toggle 類指令必須優先本地 dispatch（v0.7.228：iOS SW 死亡後仍可用）、send-to-readwise 走 SW', () => {
+    // iOS Safari SW 被回收後不再喚醒（Apple Forums 758346）——toggle 類指令
+    // 的處理本來就在 content 端，繞 SW 一圈只會在 iOS 上隨時間失效。
+    // send-to-readwise 的 API 呼叫住在 SW、必須照走 CUSTOM_COMMAND。
+    assert.match(CUSTOM_SRC, /cmd\s*!==\s*'send-to-readwise'[\s\S]{0,120}NS\.dispatchLocalCommand/,
+      'toggle 類指令必須在 send-to-readwise 排除後走 NS.dispatchLocalCommand（本地 dispatch）');
+    const localIdx = CUSTOM_SRC.indexOf('NS.dispatchLocalCommand');
+    const swIdx = CUSTOM_SRC.indexOf('NS.MSG.CUSTOM_COMMAND');
+    assert.ok(localIdx !== -1 && swIdx !== -1 && localIdx < swIdx,
+      '本地 dispatch 必須是主路徑、CUSTOM_COMMAND 是 send-to-readwise 與 fallback 用');
+  });
   it('必須監聽 storage.onChanged 即時更新（options 改鍵不必 reload 頁面）', () => {
     assert.match(CUSTOM_SRC, /storage\.onChanged/, '缺 storage.onChanged listener');
   });

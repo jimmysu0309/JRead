@@ -10,9 +10,9 @@
 //   - touchcancel（iOS 系統手勢——3 指複製 / 撤銷等——接管時送出）→ 取消，
 //     讓系統手勢優先
 //
-// 觸發走 CUSTOM_COMMAND → SW dispatchCommand('toggle-reader-mode')，與
-// manifest 快速鍵 / 自訂快速鍵（custom-shortcuts.js）同一條 dispatch
-//（含 YouTube 模式重導），單一資料源。
+// 觸發走 NS.dispatchLocalCommand('toggle-reader-mode')（main.js 提供，含
+// YouTube 模式重導）——v0.7.228 起與自訂快速鍵共用 content 端本地 dispatch，
+// 不再 round-trip SW（iOS Safari SW 被回收後不再喚醒，Apple Forums 758346）。
 //
 // 跨環境匯出：content script 走 window.__JReadTouchGesture、regression
 // spec 走 module.exports（jsdom 無 TouchEvent 建構子——狀態機收
@@ -98,6 +98,16 @@
   if (typeof window !== 'undefined' && typeof chrome !== 'undefined' && chrome.runtime) {
     const NS = window.__JRead = window.__JRead || {};
     api.install(document, navigator, () => {
+      // v0.7.228：直接本地 dispatch、不再 round-trip SW。iOS Safari 的 MV3 SW
+      // 被系統回收後不再喚醒（Apple Forums thread 758346）——舊版 CUSTOM_COMMAND
+      // → SW → TOGGLE_READER_MODE 的來回在 SW 死亡後石沉大海，3 指輕點（iOS
+      // 觸控環境的主 toggle 通道）隨時間失效、只能強制關閉 Safari 自救。
+      // dispatchLocalCommand 由 main.js 提供（載入順序在本檔之後，觸發當下才
+      // 查），含 cross-mode 重導；缺席時（SPA 注入競態）fallback 走原 SW 路徑。
+      if (typeof NS.dispatchLocalCommand === 'function') {
+        NS.dispatchLocalCommand('toggle-reader-mode');
+        return;
+      }
       NS.safeSendMessage({
         type: NS.MSG.CUSTOM_COMMAND,
         payload: { command: 'toggle-reader-mode' }

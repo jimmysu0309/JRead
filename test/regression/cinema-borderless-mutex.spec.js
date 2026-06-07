@@ -47,25 +47,35 @@ describe('cinema/borderless 互斥（v0.7.143）', () => {
       `borderless mutex check 必須在 NS.cinema.enter() 之前（先退 borderless 才避免 CSS 打架）；borderless idx=${borderlessIdx}, enter idx=${cinemaEnterIdx}`);
   });
 
-  it('TOGGLE_YT_BORDERLESS handler 必須 check cinemaActive', () => {
+  // v0.7.228：互斥邏輯從 TOGGLE_YT_BORDERLESS handler 內文抽成具名函式
+  // toggleBorderless()（onMessage 與 dispatchLocalCommand 共用），以下三條改
+  // 釘 toggleBorderless body——邏輯不變、位置搬家。
+  function toggleBorderlessBody() {
+    const match = MAIN_SRC.match(/function toggleBorderless\(\)\s*\{([\s\S]*?)\n  \}/);
+    assert.ok(match, '必須能抓到 toggleBorderless body（v0.7.228 抽出的共用函式）');
+    return match[1];
+  }
+
+  it('toggleBorderless 必須 check cinemaActive', () => {
+    assert.ok(/cinemaActive/.test(toggleBorderlessBody()),
+      'toggleBorderless 必須 check NS.state.cinemaActive（borderless 啟動時若 cinema active 先退 cinema）');
+  });
+
+  it('toggleBorderless 必須呼 exitReaderMode（cinema 完整退出路徑）', () => {
+    assert.ok(/exitReaderMode\s*\(/.test(toggleBorderlessBody()),
+      'toggleBorderless 必須在 cinema active 時呼 exitReaderMode 退 cinema（完整清狀態 + icon）');
+  });
+
+  it('toggleBorderless 必須只在 willEnter 時退 cinema（退 borderless 不踩）', () => {
+    assert.ok(/willEnter/.test(toggleBorderlessBody()),
+      'toggleBorderless 必須宣告 willEnter 旗標——只在「即將啟動 borderless」場景才退 cinema，退 borderless 時不該觸發');
+  });
+
+  it('TOGGLE_YT_BORDERLESS handler 必須委派 toggleBorderless()（不可雙實作互斥邏輯）', () => {
     const idx = MAIN_SRC.search(/msg\.type\s*===\s*NS\.MSG\.TOGGLE_YT_BORDERLESS/);
     assert.ok(idx >= 0, '必須找到 TOGGLE_YT_BORDERLESS handler');
-    const handlerSlice = MAIN_SRC.slice(idx, idx + 1500);
-    assert.ok(/cinemaActive/.test(handlerSlice),
-      'TOGGLE_YT_BORDERLESS handler 必須 check NS.state.cinemaActive（borderless 啟動時若 cinema active 先退 cinema）');
-  });
-
-  it('TOGGLE_YT_BORDERLESS handler 必須呼 exitReaderMode（cinema 完整退出路徑）', () => {
-    const idx = MAIN_SRC.search(/msg\.type\s*===\s*NS\.MSG\.TOGGLE_YT_BORDERLESS/);
-    const handlerSlice = MAIN_SRC.slice(idx, idx + 1500);
-    assert.ok(/exitReaderMode\s*\(/.test(handlerSlice),
-      'TOGGLE_YT_BORDERLESS handler 必須在 cinema active 時呼 exitReaderMode 退 cinema（完整清狀態 + icon）');
-  });
-
-  it('TOGGLE_YT_BORDERLESS 必須只在 willEnter 時退 cinema（退 borderless 不踩）', () => {
-    const idx = MAIN_SRC.search(/msg\.type\s*===\s*NS\.MSG\.TOGGLE_YT_BORDERLESS/);
-    const handlerSlice = MAIN_SRC.slice(idx, idx + 1500);
-    assert.ok(/willEnter/.test(handlerSlice),
-      'TOGGLE_YT_BORDERLESS handler 必須宣告 willEnter 旗標——只在「即將啟動 borderless」場景才退 cinema，退 borderless 時不該觸發');
+    const handlerSlice = MAIN_SRC.slice(idx, idx + 300);
+    assert.ok(/toggleBorderless\s*\(/.test(handlerSlice),
+      'TOGGLE_YT_BORDERLESS handler 必須呼叫 toggleBorderless()——互斥邏輯單一資料源');
   });
 });

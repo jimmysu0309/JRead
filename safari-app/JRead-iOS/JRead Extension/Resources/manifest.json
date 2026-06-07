@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "0.7.227",
+  "version": "0.7.228",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -12,7 +12,10 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background/service-worker.js"
+    "scripts": [
+      "background/service-worker.js"
+    ],
+    "persistent": false
   },
   "browser_specific_settings": {
     "gecko": {
@@ -41,7 +44,9 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "<all_urls>"
+      ],
       "js": [
         "content/namespace.js",
         "content/domain-match.js",
@@ -84,8 +89,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["assets/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

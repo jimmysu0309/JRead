@@ -115,6 +115,14 @@ echo "==> Sync extension Resources..."
 mkdir -p "$EXTENSION_RESOURCES"
 rsync -a --delete jread/ "$EXTENSION_RESOURCES/"
 
+# 1.5 Safari manifest patch（v0.7.228）：background service worker → event page。
+#     iOS Safari 的 MV3 SW 被系統回收後不再喚醒（Apple Forums thread 758346）；
+#     macOS Safari 雖未觀察到同等死透行為，但 event page 是 Apple 文件偏好的
+#     background 形式、兩平台統一宣告避免 lifecycle 差異。
+#     詳見 safari-app/patch-safari-manifest.sh（macOS / iOS build 共用）。
+echo "==> Patch Safari manifest（background → event page）..."
+bash safari-app/patch-safari-manifest.sh "$EXTENSION_RESOURCES"
+
 # 2. 版本號同步進 pbxproj
 echo "==> Sync version to project.pbxproj..."
 sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = ${VERSION};/g" "$PBXPROJ"
@@ -186,13 +194,16 @@ xcrun stapler validate "$DEVID_PKG"
 spctl -a -t install -vv "$DEVID_PKG" 2>&1 | head -5
 
 # 9. Source drift forcing function
+#    manifest.json 是唯一受控差異（event page patch）——diff 以 -x 排除後，
+#    交由 patch-safari-manifest.sh（冪等）重跑 verify 補上 manifest 檢查。
 echo "==> Source drift check..."
-DRIFT=$(diff -r --brief jread/ "$EXTENSION_RESOURCES/" 2>&1 || true)
+DRIFT=$(diff -r --brief -x manifest.json jread/ "$EXTENSION_RESOURCES/" 2>&1 || true)
 if [ -n "$DRIFT" ]; then
   echo "ERROR: source drift between jread/ and Resources/:" >&2
   echo "$DRIFT" >&2
   exit 1
 fi
+bash safari-app/patch-safari-manifest.sh "$EXTENSION_RESOURCES"
 
 echo ""
 echo "Done: ${DEVID_PKG}（已 notarize + stapled）"

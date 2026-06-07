@@ -817,18 +817,81 @@
     };
   }
 
+  // v0.7.228：toggle 主體抽成具名函式——onMessage handler 與 dispatchLocalCommand
+  // 共用，單一資料源。
+  async function toggleReader() {
+    if (NS.state.active) {
+      exitReaderMode();
+      return { active: false };
+    }
+    const ok = await enterReaderMode();
+    return { active: ok };
+  }
+
+  // v0.7.134 / v0.7.143 語意原樣搬出（原 TOGGLE_YT_BORDERLESS handler 內文）：
+  // 啟動 borderless 時若 cinema 已 active 先走完整 exitReaderMode 清狀態 + icon；
+  // 退出 borderless 不踩這條（willEnter guard）。
+  function toggleBorderless() {
+    const willEnter = !(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
+    if (willEnter && NS.state.cinemaActive) {
+      exitReaderMode();
+    }
+    if (NS.borderless && typeof NS.borderless.toggle === 'function') {
+      NS.borderless.toggle();
+    }
+    return { ok: true, active: NS.borderless ? NS.borderless.isActive() : false };
+  }
+
+  // v0.7.228：統一指令 dispatch（content 端單一資料源，含 cross-mode 重導）。
+  //
+  // 動機：iOS Safari 的 MV3 service worker 被系統回收後**不再喚醒**（Apple
+  // Forums thread 758346，iOS 17.4 起迄今未修）——任何「content → SW → content」
+  // round-trip 在 SW 死亡後石沉大海：3 指手勢 / 自訂快速鍵全部失效，使用者只能
+  // 強制關閉 Safari 重建 extension 程序自救。
+  //
+  // 修法：cross-mode 重導（v0.7.134「任一模式快速鍵都當退出當前 active 模式」）
+  // 從 SW dispatchCommand 搬進這裡——重導需要的狀態（NS.state / NS.borderless）
+  // 本來就在 content 端，SW 原先還得 GET_READER_STATE round-trip 來問。觸控
+  // 手勢與自訂快速鍵直接本地呼叫（零訊息傳遞、SW 死活無關）；manifest 預設鍵
+  // （browser 層事件只進得了 SW）由 SW 委派 DISPATCH_COMMAND 訊息接回這條，
+  // 重導決策不雙實作。
+  async function dispatchLocalCommand(command) {
+    const borderlessActive = !!(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
+    if (command === 'toggle-reader-mode') {
+      // 重導：borderless active 時改退無邊模式（= 按 ESC 效果）
+      if (borderlessActive) return toggleBorderless();
+      return toggleReader();
+    }
+    if (command === 'toggle-youtube-borderless') {
+      // 重導：cinema active 時改走 reader toggle 退出影院模式
+      if (NS.state.cinemaActive) return toggleReader();
+      return toggleBorderless();
+    }
+    return { ok: false };
+  }
+  NS.dispatchLocalCommand = dispatchLocalCommand;
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (msg.type === NS.MSG.TOGGLE_READER_MODE) {
       (async () => {
-        if (NS.state.active) {
-          exitReaderMode();
-          sendResponse({ active: false });
-        } else {
-          const ok = await enterReaderMode();
-          sendResponse({ active: ok });
-        }
+        sendResponse(await toggleReader());
+      })();
+      return true;
+    }
+
+    // v0.7.228：SW dispatchCommand 委派（manifest 預設鍵路徑）。command 白名單
+    // ——訊息來源雖限 extension 內部，仍防 payload 偽造 / 打錯字眼靜默 no-op。
+    if (msg.type === NS.MSG.DISPATCH_COMMAND) {
+      const command = msg.payload && msg.payload.command;
+      const allowed = ['toggle-reader-mode', 'toggle-youtube-borderless'];
+      if (!allowed.includes(command)) {
+        sendResponse({ ok: false });
+        return; // sync
+      }
+      (async () => {
+        sendResponse(await dispatchLocalCommand(command));
       })();
       return true;
     }
@@ -879,18 +942,8 @@
     // 純粹委派給 NS.borderless.toggle()。非 YouTube watch 頁 toggle() 自己
     // no-op，這裡不再 guard 一次。
     if (msg.type === NS.MSG.TOGGLE_YT_BORDERLESS) {
-      // v0.7.143：cinema / borderless 互斥——啟動 borderless 時若 cinema 已 active
-      // 先 exit reader mode（cinema 走 NS.state.cinemaActive 路徑、必須走完整退出
-      // 流程才能清狀態 + icon），再 toggle borderless。退出 borderless 不踩這條
-      // （borderless toggle 自身決定 enter/exit）。
-      const willEnter = !(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
-      if (willEnter && NS.state.cinemaActive) {
-        exitReaderMode();
-      }
-      if (NS.borderless && typeof NS.borderless.toggle === 'function') {
-        NS.borderless.toggle();
-      }
-      sendResponse({ ok: true, active: NS.borderless ? NS.borderless.isActive() : false });
+      // v0.7.143 互斥邏輯在 toggleBorderless()（v0.7.228 抽出共用，見上方）
+      sendResponse(toggleBorderless());
       return; // sync
     }
 
