@@ -1222,10 +1222,22 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
 
     // ===== 翻頁模式（v0.7.227）=====
     // 電子書式水平翻頁：reader card 改成 position:fixed 滿版容器 + CSS
-    // multi-column overflow columns——column-count: 1 + column-fill: auto +
+    // multi-column overflow columns——「一頁一欄」+ column-fill: auto +
     // 高度約束，溢出內容自動長出等寬水平 column（= 頁）。翻頁由
     // content/paged-mode.js 程式控制 scrollLeft（stride = clientWidth，
     // 因 column-gap = 左右 padding 和，column 寬 + gap 恰為元素 clientWidth）。
+    //
+    // v0.7.230：「一頁一欄」必須用 column-width 表達、不可用 column-count: 1
+    // ——WebKit（Safari macOS / iOS）對 column-count: 1 不建立 multicol
+    // fragmentation context：不長 overflow columns、scrollWidth == clientWidth、
+    // scrollLeft 永遠 clamp 0，翻頁完全失效（2015 年起的已知 engine bug，
+    // Apple Developer Forums thread 22213；column-count >= 2 與 column-width
+    // 路徑皆正常，safaridriver 真機 Safari probe 實證 count1 → pages=1 /
+    // width 修法 → pages=12 可捲）。column-width: ${contentWidth}px 在
+    // 「容器 content box 寬恆 <= contentWidth」前提下（max-width cap 保證），
+    // 兩引擎都恰好算出 1 欄：N = max(1, floor((A + gap) / (W + gap)))，
+    // A <= W → N = 1，used width 自動撐滿 A——窄視窗（手機）column 跟著
+    // 縮、寬視窗 cap 在版心，與 column-count: 1 在 Chrome 的行為完全等價。
     // 此區塊**只在 settings.pagedMode = true 注入**——垂直卷動模式（預設）
     // 一行都不受影響。選擇器與 base 卡片規則同 specificity（html 前綴），
     // 同 stylesheet 內後注入者勝，覆寫卡片的 static / max-width / margin。
@@ -1257,7 +1269,8 @@ html [${ARTICLE_ATTR}="1"] {
   padding: min(48px, 6vw) min(56px, 6vw) !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  column-count: 1 !important;
+  column-width: ${contentWidth}px !important;
+  column-count: auto !important;
   column-gap: calc(min(56px, 6vw) * 2) !important;
   column-fill: auto !important;
   overflow: hidden !important;
