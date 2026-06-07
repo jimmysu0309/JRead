@@ -76,6 +76,22 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(ruleMatch, '翻頁容器規則須將 reader card 設 position: fixed');
     });
 
+    it('pagedMode: true → 右內距用 transparent border、padding-right 必須為 0（WebKit 尾端 padding 缺陷，v0.7.231）', () => {
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      // forcing function：WebKit（Safari 26.5 真機實證）multicol scrollable
+      // overflow 不含尾端 inline-end padding——padding-right > 0 會讓最後一頁
+      // scrollLeft 被 clamp 短 56px、整頁右移錯位。右視覺內距必須用
+      // transparent border 表達（border 不參與 scrollable overflow）。
+      const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*column-width[^}]*\}/s);
+      assert.ok(ruleMatch, '須有翻頁容器規則');
+      const rule = ruleMatch[0];
+      assert.ok(rule.includes('border-right: min(56px, 6vw) solid transparent !important'),
+        '右內距必須用 transparent border-right（scrollable overflow 不含 border）');
+      // padding 簡寫的 right 槽位必須是 0（4 值簡寫第二值）
+      assert.ok(/padding:\s*min\(48px, 6vw\) 0 min\(48px, 6vw\) min\(56px, 6vw\) !important/.test(rule),
+        '翻頁容器 padding-right 必須為 0（WebKit 不把尾端 padding 算進 scrollable overflow）');
+    });
+
     it('pagedMode: true → 文件鎖卷動 + overscroll-behavior 防歷史手勢', () => {
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
       assert.ok(css.includes('overscroll-behavior: none !important'),
@@ -123,6 +139,30 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.strictEqual(pagedApi.computePageCount(0, 0), 1);
       assert.strictEqual(pagedApi.computePageCount(-5, 393), 1);
       assert.strictEqual(pagedApi.computePageCount(NaN, NaN), 1);
+    });
+  });
+
+  describe('computePageCountFromExtent（v0.7.231 頁數主路徑）', () => {
+    // 正式版 Safari 26.5 chinatalk 實測值：內容末端 20744（25 欄）、padL 56、
+    // stride 832——scrollWidth 公式會因幽靈欄多算成 26 頁，extent 公式必須回 25
+    it('Safari 幽靈欄場景：內容末端 20744 / padL 56 / stride 832 = 25 頁（scrollWidth 公式誤報 26）', () => {
+      assert.strictEqual(pagedApi.computePageCountFromExtent(20744, 56, 832), 25);
+      // 對照：同場景 Safari scrollWidth = 21576 → 舊公式多算一頁
+      assert.strictEqual(pagedApi.computePageCount(21576, 832), 26);
+    });
+    it('Chromium 場景：內容末端 19912 / padL 56 / stride 832 = 24 頁（與 scrollWidth 公式一致）', () => {
+      assert.strictEqual(pagedApi.computePageCountFromExtent(19912, 56, 832), 24);
+    });
+    it('內容末端恰落欄界（k×stride + padL）不多算幽靈頁', () => {
+      assert.strictEqual(pagedApi.computePageCountFromExtent(56 + 3 * 832, 56, 832), 3);
+    });
+    it('單頁短文 = 1 頁', () => {
+      assert.strictEqual(pagedApi.computePageCountFromExtent(500, 56, 832), 1);
+    });
+    it('退化輸入（0 / 負 / NaN）回 1', () => {
+      assert.strictEqual(pagedApi.computePageCountFromExtent(0, 56, 832), 1);
+      assert.strictEqual(pagedApi.computePageCountFromExtent(-10, 0, 832), 1);
+      assert.strictEqual(pagedApi.computePageCountFromExtent(NaN, NaN, NaN), 1);
     });
   });
 

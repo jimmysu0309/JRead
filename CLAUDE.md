@@ -62,7 +62,7 @@
 2. 命中 `NOISE_AUDIT_KEYWORDS` 的⚠️ warning 清單（含 parent class，方便辨識 DOM 結構）
 3. 初始 1.2s 後 + delayed 5s 後**兩次 audit**（捕捉 SPA 站晚到的 lazy-load 注入）
 4. **CONTRAST AUDIT**（v0.7.225）：reader card 內 visible 文字 vs effective bg（ancestor 爬升 + alpha 合成）的 WCAG 對比，< 3:1 印 ⚠️——「東西在、看不見」類 bug（dark scheme 站的色被白卡吃掉）residual / gap audit 都抓不到，**修 styler / theme 類改動後驗收必看本段**。`--scheme dark` flag 模擬深色模式使用者（此類 bug 常只在 dark scheme 重現，tymscar 2026-06-07 實證）
-5. **PAGED AUDIT**（v0.7.230）：`--paged` flag 驗收翻頁模式（toggle 前寫 settings.pagedMode=true，印 column CSS 算出值 / 頁數 / 鍵盤翻頁 stride 實測）。**改 background SW 後 harness 必加 `--fresh`**——Chromium 把 unpacked extension 的 SW 快取在 persistent profile，重啟不一定重載（content script 每次從磁碟新載），「content 新 / SW 舊」的不對稱會誤導 debug（v0.7.230 燒 4 輪實證）
+5. **PAGED AUDIT**（v0.7.230）：`--paged` flag 驗收翻頁模式（toggle 前寫 settings.pagedMode=true，印 column CSS 算出值 / 頁數 / 鍵盤翻頁 stride 實測）。v0.7.231 起 stride = `clientWidth − 左右 padding + column-gap`（右視覺內距是 transparent border 不是 padding——WebKit scrollable overflow 不含尾端 padding；`padding-right ≠ 0` 會印 warning）；頁數由內容末端實測（`computePageCountFromExtent`），不信 scrollWidth（正式版 Safari 多報幽靈欄）。**改 background SW 後 harness 必加 `--fresh`**——Chromium 把 unpacked extension 的 SW 快取在 persistent profile，重啟不一定重載（content script 每次從磁碟新載），「content 新 / SW 舊」的不對稱會誤導 debug（v0.7.230 燒 4 輪實證）
 
 **Chromium harness 綠 ≠ WebKit（Safari）綠**：本 harness 只驗 Chrome 軌。v0.7.230 翻頁模式 `column-count: 1` bug 即 Chrome 全綠、所有 Safari 全滅（WebKit 對 count=1 不建 multicol fragmentation context）。Jimmy 回報「Safari / iOS 行為跟 Chrome 不一致」時，WebKit 軌驗證流程（Playwright WebKit 注入法 + safaridriver 真 Safari 法、各自的坑）見 `docs/CHROME_EXTENSION_DEBUG.md`「WebKit（Safari）軌的驗證」章節；**Playwright WebKit 是 trunk build，綠燈不可直接當正式版 Safari 綠**。
 

@@ -318,6 +318,18 @@ column-count: 1 bug 即 Chrome 綠、Safari 全滅）。WebKit 軌兩條驗法�
    ~220ms**——能驗同步 DOM / layout / scrollLeft 直接賦值，rAF 動畫類行為
    驗不到（卡死是環境假象，不是 bug）。
 
+   兩個 v0.7.231 實證的坑：
+   - **bfcache 還魂**：同一 session 內「導航 A → about:blank → A」會把 A 的
+     **完整 JS heap（含先前注入的舊 code closure）** 從 bfcache 還原，重注入
+     新 code 也蓋不掉舊 listener。驗新 code 必須 DELETE session 開新 session。
+   - **實機裝著正式版 extension 會搶 debug event**：使用者 Safari 裝著舊版
+     JRead（isolated world），`__jread_debug` 是 DOM event 跨 world 廣播，
+     舊版會先進 reader mode、注入舊 stylesheet，蓋掉手動注入的新 code。
+     驗新 code 不可廣播 event——直接呼叫 main world 注入模組鏈
+     （`NS.detector.detect()` → `NS.cleaner.clean()` → `NS.styler.apply()` →
+     `NS.pagedMode.sync()`）。判別訊號：注入後 computed style 仍是舊版值
+     （v0.7.231 案例：`paddingRight: 56px` 而非新版的 `0px`）。
+
 ## 假設驗證順序（硬性要求）
 
 修 detector / cleaner / styler 這類跟真實 DOM 互動的 bug 時，**必須先在
