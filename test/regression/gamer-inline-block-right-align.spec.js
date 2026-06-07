@@ -57,7 +57,9 @@ describe('styler — reader card display 正規化為 block（v0.7.210）', () =
   it('(b) reader card rule 同時保留 margin auto 置中', () => {
     const css = document.getElementById('__jread-style').textContent;
     const m = css.match(/html\s*\[data-jread-active="1"\]\s*\{([^}]*)\}/);
-    assert.ok(/margin\s*:\s*40px\s+auto\s*!important/.test(m[1]),
-      'reader card rule 必須保留 margin: 40px auto（配合 display:block 才能水平置中）');
+    // v0.7.226：垂直 margin 改 clamp() 響應式收斂——本 spec 只關心水平
+    // auto 置中仍在（任意垂直值 + auto + !important）。
+    assert.ok(/margin\s*:\s*[^;]*\bauto\s*!important/.test(m[1]),
+      'reader card rule 必須保留 margin: <vertical> auto（配合 display:block 才能水平置中）');
   });
 });

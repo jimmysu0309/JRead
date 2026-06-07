@@ -156,12 +156,25 @@ describe('styler — 骨架與可逆性', () => {
   // 窄 viewport 下 card max-width 被 viewport clamp，固定 56px×2 水平 padding
   // 吃掉 26% 可讀寬度（430pt 實測內文僅 318px）。改 min(56px, 6vw) 連續縮放：
   // viewport >= 933px 維持桌面 56px 不變、430pt → ~26px（內文 378px / 88%）。
-  it('CSS reader card 水平 padding 必須是 min(56px, 6vw)（窄 viewport 自動收斂）', () => {
+  // v0.7.226：Jimmy iPhone 回報「頂端浪費一截空間」。根因：垂直 margin 40px
+  // + 垂直 padding 48px 都是桌面卡片固定值，430pt probe 實測第一行字前
+  // 共 88px 空白。垂直 padding 比照水平改 min(48px, 6vw)（窄 viewport 四邊
+  // padding 等寬 ~26px）；垂直 margin 改 clamp(8px, calc(6.4vw - 19.2px), 40px)
+  // 線性 ramp（min() 過原點直線收不夠陡，430pt 仍剩 ~18px 灰條）。
+  it('CSS reader card padding 必須是 min(48px, 6vw) min(56px, 6vw)（窄 viewport 自動收斂）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(/padding:\s*48px\s+min\(56px,\s*6vw\)\s*!important/.test(css),
-      'reader card padding 必須是 48px min(56px, 6vw)——固定 56px 會在手機上浪費 26% 寬度');
+    assert.ok(/padding:\s*min\(48px,\s*6vw\)\s+min\(56px,\s*6vw\)\s*!important/.test(css),
+      'reader card padding 必須是 min(48px, 6vw) min(56px, 6vw)——固定值會在手機上浪費寬度與頂部空間');
+  });
+
+  it('CSS reader card 垂直 margin 必須是 clamp(8px, calc(6.4vw - 19.2px), 40px)（手機收斂灰條）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/margin:\s*clamp\(8px,\s*calc\(6\.4vw\s*-\s*19\.2px\),\s*40px\)\s+auto\s*!important/.test(css),
+      'reader card margin 必須是 clamp(8px, calc(6.4vw - 19.2px), 40px) auto——固定 40px 在手機頂端是浪費的灰條');
   });
 
   it('CSS 不得含 *:has(> img) padding-bottom:0 blanket rule（會誤傷純 aspect-ratio 容器）', () => {
