@@ -351,7 +351,13 @@ html [${ARTICLE_ATTR}="1"] {
   width: auto !important;
   min-height: 0 !important;
   height: auto !important;
-  margin: 40px auto !important;
+  /* v0.7.226：垂直 margin 40px → clamp(8px, calc(6.4vw - 19.2px), 40px)。
+     窄 viewport（手機）下 card 已撐滿水平空間、40px 灰條純屬桌面卡片美學
+     殘留（Jimmy iPhone 回報頂端浪費一截）。線性 ramp：viewport >= 925px
+     維持 40px 桌面不變（與水平 padding 的 933px 門檻一致）、430pt → ~8px。
+     min(40px, Nvw) 過原點直線在 430pt 只能收到 ~18px、不夠陡，改用
+     calc 截距版。結構性條件（viewport 寬度），不綁平台。 */
+  margin: clamp(8px, calc(6.4vw - 19.2px), 40px) auto !important;
   /* v0.7.210：display 正規化為 block——原站若把主內容容器設成
      inline-block / inline / table-cell（巴哈姆特 .c-section__main 是
      inline-block，父 section text-align: right 雙欄 layout），margin auto
@@ -363,8 +369,12 @@ html [${ARTICLE_ATTR}="1"] {
      max-width 被 viewport clamp，固定 56px×2 吃掉 26% 可讀寬度（430pt 實測
      內文僅 318px、版心調大也無感——Jimmy iPhone 回報）。min() 連續縮放：
      viewport >= 933px 維持 56px 桌面卡片美學不變；越窄 padding 越收
-     （430pt → ~26px、內文 378px）。結構性條件（viewport 寬度），不綁平台。 */
-  padding: 48px min(56px, 6vw) !important;
+     （430pt → ~26px、內文 378px）。結構性條件（viewport 寬度），不綁平台。
+     v0.7.226：垂直 padding 48px → min(48px, 6vw)。同水平邏輯——手機上
+     固定 48px 頂部白 + 40px margin 灰條合計 88px 才見第一行字（430pt probe
+     實測）。6vw 與水平 padding 同係數：窄 viewport 下四邊 padding 等寬
+     （430pt → ~26px），viewport >= 800px 維持 48px 桌面不變。 */
+  padding: min(48px, 6vw) min(56px, 6vw) !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
