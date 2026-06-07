@@ -26,6 +26,7 @@
     'content/cleaner.js',
     'content/styler.js',
     'content/space-scroll.js',
+    'content/paged-mode.js',
     'content/main.js'
   ];
 

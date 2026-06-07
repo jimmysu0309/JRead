@@ -112,9 +112,31 @@
   // 排在 keyguard 後面——重掛 keyguard 把它推回隊尾。
   function syncSpaceScrollFromSettings(settings) {
     if (!NS.spaceScroll) return;
+    // v0.7.227：翻頁模式啟動時停用 Space 段落卷動——文件已鎖垂直卷動，
+    // Space 由 paged-mode.js 接手為「翻下一頁」。兩模組對同一個 Space 鍵
+    // 是互斥事實，以 pagedMode installed 狀態作單一判定源。
+    if (NS.pagedMode && NS.pagedMode.isInstalled()) {
+      NS.spaceScroll.uninstall();
+      return;
+    }
     const wasInstalled = NS.spaceScroll.isInstalled();
     NS.spaceScroll.sync(settings, NS.state.articleEl);
     if (!wasInstalled && NS.spaceScroll.isInstalled() && keyguardInstalled) {
+      uninstallKeyguard();
+      installKeyguard();
+    }
+  }
+
+  // v0.7.227：翻頁模式（paged-mode.js）settings 同步 wrapper。與
+  // syncSpaceScrollFromSettings 同款 keyguard 順序 invariant：模組的
+  // keydown listener（←/→/Space 翻頁）必須先於 keyguardHandler 收到事件
+  // （keyguard 對非 ESC 鍵 stopImmediatePropagation）——onChanged 動態開啟
+  // 時新 listener 排在 keyguard 後面，重掛 keyguard 推回隊尾。
+  function syncPagedModeFromSettings(settings) {
+    if (!NS.pagedMode) return;
+    const wasInstalled = NS.pagedMode.isInstalled();
+    NS.pagedMode.sync(settings, NS.state.articleEl);
+    if (!wasInstalled && NS.pagedMode.isInstalled() && keyguardInstalled) {
       uninstallKeyguard();
       installKeyguard();
     }
@@ -306,12 +328,20 @@
     if (NS.detector && typeof NS.detector.markPromotedTitleIfMissing === 'function') {
       NS.detector.markPromotedTitleIfMissing(result.el);
     }
+    // v0.7.227：styler 注入前捕捉文件卷動位置——pagedMode CSS 的 overflow
+    // hidden 會把 scrollY clamp 成 0，退出翻頁模式時靠此值還原（模組內
+    // installed guard 防重複覆寫）。
+    if (NS.pagedMode) NS.pagedMode.captureScrollY();
     NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
     NS.state.active = true;
 
     // v0.7.101：install ESC listener（capture phase 比原站 bubble listener 早收到）
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
+
+    // v0.7.227：翻頁模式——須在 syncSpaceScroll 之前（spaceScroll 依
+    // pagedMode installed 狀態決定讓位）、在 installKeyguard 之前註冊
+    syncPagedModeFromSettings(settings);
 
     // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
     syncSpaceScrollFromSettings(settings);
@@ -350,6 +380,14 @@
     uninstallKeyguard();
     // v0.7.216：一律拆掉 Space 段落焦點卷動（listener + 指示條 + 進行中動畫）
     if (NS.spaceScroll) NS.spaceScroll.uninstall();
+    // v0.7.227：一律拆掉翻頁模式（listener + 頁碼指示 + 還原文件卷動位置）。
+    // 必須在 styler.restore 之前呼叫——uninstall 內的 scrollTo 還原排在
+    // rAF，等本輪同步的 restore 移除 overflow hidden 後文件才可卷動。
+    // resetPosition：退出 reader mode = 閱讀 session 結束，下次進入從第一頁起。
+    if (NS.pagedMode) {
+      NS.pagedMode.uninstall();
+      NS.pagedMode.resetPosition();
+    }
     // v0.7.133：cinema mode 走獨立 restore 路徑（沒有 cleaner/styler 副作用要還原）
     if (NS.state.cinemaActive) {
       if (NS.cinema) NS.cinema.exit();
@@ -878,7 +916,15 @@
         if (!NS.state.articleEl || !NS.styler) return;
         NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
         const settings = await getSettings();
+        // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
+        // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
+        if (NS.pagedMode) NS.pagedMode.captureScrollY();
         NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
+        // v0.7.227：reapply 後重同步翻頁模組（pagedMode 切換 / 字級版心調整
+        // 都會改頁面切割，模組內部重算頁數並回到原閱讀比例）；spaceScroll
+        // 跟著重同步（依 pagedMode installed 狀態讓位或恢復）
+        syncPagedModeFromSettings(settings);
+        syncSpaceScrollFromSettings(settings);
       }, 200);
     };
 
@@ -899,7 +945,9 @@
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'boldText', 'lineHeight', 'paragraphSpacing', 'pangu'];
+      // v0.7.227：pagedMode 走 reapply 路徑——CSS 注入/移除需要 styler 重建
+      // stylesheet，模組 install/uninstall 在 scheduleReapply 尾端同步
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'boldText', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();
