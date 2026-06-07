@@ -152,6 +152,18 @@ describe('styler — 骨架與可逆性', () => {
   // 「純 aspect-ratio 容器（Engadget 類 `aspect-ratio: 16/9` + img absolute
   // inset:0）」，誤傷後者會把主圖高度歸零。改由 cleaner.resetMediaPlaceholderPadding
   // 於 runtime 用 padding-bottom / width 比例判別再決定是否 reset。
+  // v0.7.224：Jimmy iPhone 回報「版心調大段落也不變寬、浪費螢幕」。根因：
+  // 窄 viewport 下 card max-width 被 viewport clamp，固定 56px×2 水平 padding
+  // 吃掉 26% 可讀寬度（430pt 實測內文僅 318px）。改 min(56px, 6vw) 連續縮放：
+  // viewport >= 933px 維持桌面 56px 不變、430pt → ~26px（內文 378px / 88%）。
+  it('CSS reader card 水平 padding 必須是 min(56px, 6vw)（窄 viewport 自動收斂）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/padding:\s*48px\s+min\(56px,\s*6vw\)\s*!important/.test(css),
+      'reader card padding 必須是 48px min(56px, 6vw)——固定 56px 會在手機上浪費 26% 寬度');
+  });
+
   it('CSS 不得含 *:has(> img) padding-bottom:0 blanket rule（會誤傷純 aspect-ratio 容器）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);

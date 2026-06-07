@@ -210,7 +210,12 @@ html [${ARTICLE_ATTR}="1"] {
      受父層 text-align 影響靠右/靠左。float/position/transform 已在正規化容器，
      display:block 是同群最後一塊拼圖，確保 reader card 永遠水平置中。 */
   display: block !important;
-  padding: 48px 56px !important;
+  /* v0.7.224：水平 padding 56px → min(56px, 6vw)。窄 viewport（手機）下
+     max-width 被 viewport clamp，固定 56px×2 吃掉 26% 可讀寬度（430pt 實測
+     內文僅 318px、版心調大也無感——Jimmy iPhone 回報）。min() 連續縮放：
+     viewport >= 933px 維持 56px 桌面卡片美學不變；越窄 padding 越收
+     （430pt → ~26px、內文 378px）。結構性條件（viewport 寬度），不綁平台。 */
+  padding: 48px min(56px, 6vw) !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
