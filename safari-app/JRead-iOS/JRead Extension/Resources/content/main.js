@@ -197,11 +197,20 @@
     if (NS.xThread && typeof NS.xThread.injectAuthorHeaders === 'function') {
       NS.xThread.injectAuthorHeaders();
     }
+    // v0.7.233：styler 注入前捕捉卷動位置（pagedMode CSS 的 overflow hidden
+    // 會把 scrollY clamp 成 0）——與 enterReaderModeImpl 同款
+    if (NS.pagedMode) NS.pagedMode.captureScrollY();
     NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
     NS.state.active = true;
 
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
+    // v0.7.233：翻頁模式同步——styler 依 settings.pagedMode 在所有路徑注入翻頁
+    // CSS，模組（頁碼指示 / 翻頁手勢鍵盤 / spaceScroll 讓位判定源）必須跟著
+    // 裝，否則合成容器路徑變成「視覺翻頁、模組沒裝」：段落指示條殘留（Jimmy
+    // 2026-06-07 iOS 回報）、頁碼不顯示、超過一頁翻不動。順序與
+    // enterReaderModeImpl 相同：pagedMode → spaceScroll → keyguard。
+    syncPagedModeFromSettings(settings);
     // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
     syncSpaceScrollFromSettings(settings);
     // X 是 keyboard-shortcut-heavy 站（j/k 換推文、l 點讚、r reply 等），跟 reader
@@ -248,11 +257,15 @@
     // （probe 實證：cleaner 在 reader card 內把含「川普」1741 字 wrapper 標
     // data-jread-hidden=1）。
     NS.state.hiddenEls = [];
+    // v0.7.233：styler 注入前捕捉卷動位置——與 enterReaderModeImpl 同款
+    if (NS.pagedMode) NS.pagedMode.captureScrollY();
     NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
     NS.state.active = true;
 
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
+    // v0.7.233：翻頁模式同步——理由見 enterXThreadMode 同位置註解
+    syncPagedModeFromSettings(settings);
     // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
     syncSpaceScrollFromSettings(settings);
     if (!settings || settings.blockPageShortcuts !== false) {
