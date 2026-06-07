@@ -1220,6 +1220,88 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
       // 此處不再重複注入。
     }
 
+    // ===== 翻頁模式（v0.7.227）=====
+    // 電子書式水平翻頁：reader card 改成 position:fixed 滿版容器 + CSS
+    // multi-column overflow columns——column-count: 1 + column-fill: auto +
+    // 高度約束，溢出內容自動長出等寬水平 column（= 頁）。翻頁由
+    // content/paged-mode.js 程式控制 scrollLeft（stride = clientWidth，
+    // 因 column-gap = 左右 padding 和，column 寬 + gap 恰為元素 clientWidth）。
+    // 此區塊**只在 settings.pagedMode = true 注入**——垂直卷動模式（預設）
+    // 一行都不受影響。選擇器與 base 卡片規則同 specificity（html 前綴），
+    // 同 stylesheet 內後注入者勝，覆寫卡片的 static / max-width / margin。
+    if (opts.pagedMode) {
+      userOverrides += `
+/* 翻頁模式：鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
+   overscroll-behavior 擋 macOS 觸控板水平 swipe 的歷史導航誤觸。 */
+html.${HTML_CLASS}, html.${HTML_CLASS} body {
+  overflow: hidden !important;
+  height: 100% !important;
+  overscroll-behavior: none !important;
+}
+/* 滿版固定容器：left/right 0 + margin auto + max-width 讓桌面寬視窗時
+   頁面寬度 cap 在版心 + padding（置中書頁感），手機窄視窗自然滿版。
+   top/bottom 0 錨定取代 height: 100vh——iOS Safari 網址列收合時 fixed
+   元素隨 layout viewport 調整，不吃 vh 單位的動態視窗誤差。
+   padding 與卡片模式同公式（min(48px,6vw) / min(56px,6vw)），column-gap
+   = 水平 padding × 2，維持「stride = clientWidth」恆等式。 */
+html [${ARTICLE_ATTR}="1"] {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: calc(${contentWidth}px + min(56px, 6vw) * 2) !important;
+  margin: 0 auto !important;
+  padding: min(48px, 6vw) min(56px, 6vw) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  column-count: 1 !important;
+  column-gap: calc(min(56px, 6vw) * 2) !important;
+  column-fill: auto !important;
+  overflow: hidden !important;
+}
+/* 媒體單頁化：高度 cap 在「頁面內容高 − caption 餘裕 120px」、等比縮放，
+   搭配 break-inside: avoid 整塊不跨頁切割（高於一頁的元素 spec fallback
+   仍會切，但 max-height 已保證 img/video 本體不超頁）。120px ≈ 3 行圖說
+   + margin——56px 實測不夠（chinatalk 直式書封圖 + 圖說的 figure 總高
+   818 > 頁 796，break-inside 對「高於 fragmentainer 的元素」失效強制切割）。
+   100vh 與 100dvh 雙宣告：支援 dvh 的引擎（iOS 16.4+）用動態視窗高，
+   舊引擎 fallback vh。 */
+html [${ARTICLE_ATTR}="1"] img,
+html [${ARTICLE_ATTR}="1"] video,
+html [${ARTICLE_ATTR}="1"] svg,
+html [${ARTICLE_ATTR}="1"] iframe {
+  max-height: calc(100vh - min(48px, 6vw) * 2 - 120px) !important;
+  max-height: calc(100dvh - min(48px, 6vw) * 2 - 120px) !important;
+  width: auto !important;
+  max-width: 100% !important;
+  object-fit: contain !important;
+}
+html [${ARTICLE_ATTR}="1"] figure,
+html [${ARTICLE_ATTR}="1"] picture,
+html [${ARTICLE_ATTR}="1"] img,
+html [${ARTICLE_ATTR}="1"] video,
+html [${ARTICLE_ATTR}="1"] iframe {
+  break-inside: avoid;
+}
+/* 頁碼指示（paged-mode.js 建立 / 更新文字）：固定底部置中、不擋互動。
+   色用中性灰——白卡 / 黑卡 / 米卡上都可讀，不依賴 theme 欄位。 */
+#__jread-page-indicator {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 11px/1 ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: rgba(128, 128, 128, 0.95);
+  z-index: 2147483647;
+  pointer-events: none;
+  user-select: none;
+}`;
+    }
+
     return base + userOverrides;
   }
 
@@ -1527,7 +1609,10 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
           const raw = Number(s.titleFontSize);
           if (!Number.isFinite(raw) || raw < 0) return DEFAULTS.titleFontSize;
           return raw === 0 ? 0 : Math.min(200, Math.max(8, raw));
-        })()
+        })(),
+        // v0.7.227：翻頁模式（電子書式水平翻頁）。boolean、預設 false——
+        // 嚴格 === true 判定，storage 損壞 / 外部寫入非 boolean 值一律當關。
+        pagedMode: s.pagedMode === true
       };
       const theme = themeOf(s.theme);
 
