@@ -183,14 +183,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const pagedState = await page.evaluate(() => {
       const art = document.querySelector('[data-jread-active="1"]');
       const cs = getComputedStyle(art);
+      // v0.7.231 stride 恆等式：右內距改 transparent border 後
+      // stride = clientWidth − 左右 padding + column-gap（≠ clientWidth）
+      const stride = art.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + parseFloat(cs.columnGap);
       return {
         columnWidth: cs.columnWidth,
         columnCount: cs.columnCount,
         columnFill: cs.columnFill,
         position: cs.position,
+        paddingRight: cs.paddingRight,
+        borderRightWidth: cs.borderRightWidth,
         clientWidth: art.clientWidth,
         scrollWidth: art.scrollWidth,
-        pages: Math.max(1, Math.round(art.scrollWidth / art.clientWidth)),
+        stride,
+        pages: Math.max(1, Math.round(art.scrollWidth / stride)),
         indicator: (document.getElementById('__jread-page-indicator') || {}).textContent || '(無)'
       };
     });
@@ -198,7 +204,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const pagedWarn = [];
     if (pagedState.columnWidth === 'auto') pagedWarn.push('column-width 是 auto（必須是版心寬——count 路徑在 WebKit 翻頁全滅）');
     if (pagedState.pages <= 1) pagedWarn.push('頁數 <= 1（multicol overflow columns 沒長出來）');
-    // 鍵盤翻頁實測：→ 應讓 scrollLeft 跳一個 stride（= clientWidth）
+    if (pagedState.paddingRight !== '0px') pagedWarn.push(`padding-right=${pagedState.paddingRight}（必須 0——WebKit 尾端 padding 不算進 scrollable overflow，最後一頁會錯位 56px，v0.7.231）`);
+    // 鍵盤翻頁實測：→ 應讓 scrollLeft 跳一個 stride
     await page.keyboard.press('ArrowRight');
     await sleep(600); // 等 260ms 翻頁動畫 + 緩衝
     const afterTurn = await page.evaluate(() => {
@@ -209,8 +216,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       };
     });
     console.log('PAGED 按 → 後:', afterTurn);
-    if (pagedState.pages > 1 && Math.round(afterTurn.scrollLeft) !== pagedState.clientWidth) {
-      pagedWarn.push(`翻頁後 scrollLeft=${afterTurn.scrollLeft}，預期 stride=${pagedState.clientWidth}`);
+    if (pagedState.pages > 1 && Math.round(afterTurn.scrollLeft) !== Math.round(pagedState.stride)) {
+      pagedWarn.push(`翻頁後 scrollLeft=${afterTurn.scrollLeft}，預期 stride=${pagedState.stride}`);
     }
     console.log(pagedWarn.length
       ? '⚠️ PAGED WARNINGS:\n' + pagedWarn.map(w => '  ⚠️ ' + w).join('\n')
