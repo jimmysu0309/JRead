@@ -2,60 +2,23 @@
 // 注意：service worker 隨時可能被終止，不可用全域變數保存狀態，
 // 所有需要跨請求保留的資料一律走 chrome.storage。
 
-// 共用 popup 端已測試過的注入 fallback 核心函式。
+// 共用 popup 端已測試過的注入 fallback 核心函式 + DEFAULT_SETTINGS 單一資料源。
 // 注意：importScripts 的相對路徑是相對 service worker 自己的所在目錄
 // （background/），而非 extension root。必須用絕對路徑（前置斜線）。
 //
-// Firefox 走 background.scripts（event page 模式），popup-core.js 由 manifest
-// scripts 陣列預先 load，importScripts 在該 context 不存在——typeof guard 跳過即可。
+// Safari / Firefox 走 background.scripts（event page 模式），popup-core.js 與
+// settings-defaults.js 由 manifest scripts 陣列預先 load（patch-safari-manifest.sh
+// / firefox-build.sh 同列同序），importScripts 在該 context 不存在——typeof
+// guard 跳過即可（v0.7.229 教訓：scripts 陣列漏列 = Safari 直接 TypeError）。
 if (typeof importScripts === 'function') {
   importScripts('/popup/popup-core.js');
+  importScripts('/content/settings-defaults.js');
 }
 
-const DEFAULT_SETTINGS = {
-  theme: 'light',
-  fontSize: 18,
-  contentWidth: 720,
-  fontFamily: 'system-ui',
-  // 字粗外觀。false = 細（-webkit-font-smoothing: antialiased，macOS grayscale
-  // anti-aliasing，視覺較細）= 預設;true = 粗（auto = subpixel-antialiased，
-  // macOS 預設 = 視覺較粗）。用 smoothing 切換而非 font-weight—— CJK 字型
-  // 在 macOS 上不同 weight (400/500/600/700) 視覺差異不穩定（不同 font face
-  // 涵蓋範圍不一），smoothing 模式差異明顯且跨字型穩定。Linux / Windows 上
-  // -webkit-font-smoothing 無效，此 setting 在那些 OS 上無視覺差異。
-  boldText: false,
-  lineHeight: 1.7,
-  // v0.7.162：段落間距（p / ul / ol / blockquote margin-bottom，em）。預設 1.0
-  // 對應 v0.7.102 baseline 行為；popup 可調 0~3.0、-1 = Auto sentinel（不注入規則）。
-  paragraphSpacing: 1.0,
-  autoEnableDomains: [],
-  // Readwise Reader integration（v0.7.33）。空字串 = 未設定，popup 會擋下送出。
-  readwiseToken: '',
-  // v0.7.131：閱讀模式啟動時攔截原站快速鍵（Gmail j/k/e、YouTube k 等）。
-  // 預設 true——使用者進閱讀模式就是想專心讀、不希望按錯鍵觸發 Gmail
-  // archive / send 等破壞性操作。要關可到 options 取消。
-  blockPageShortcuts: true,
-  // 中英文字之間自動補空白（盤古之白）。reader mode 啟動時掃 articleEl 所有
-  // text node、套規則「CJK ↔ 英數字 / % / °」→ 之間插空白。詳見 styler.js
-  // pangu module。預設 true，使用者可到 options 取消。
-  pangu: true,
-  titleFontSize: 0,
-  // v0.7.215：Space 平滑卷動（Readwise Reader 風格）。Space / Shift+Space 以
-  // rAF 動畫卷動 viewport 高度的 N%；0 = 停用（保留瀏覽器原生跳卷）。
-  spaceScrollRatio: 50,
-  // v0.7.227：翻頁模式（電子書式水平翻頁——左右滑動 / ←→ 鍵 / 滾輪翻頁，
-  // 圖片縮放至單頁內）。預設 false = 傳統垂直卷動。
-  pagedMode: false,
-  // v0.7.218：自訂快速鍵。key 與 manifest commands 同字彙；value 是
-  // { code, alt, shift, ctrl, meta } 或 null（= 未自訂，只有 manifest 預設鍵）。
-  // Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，options 的 recorder 是
-  // 唯一通道；比對在 content/custom-shortcuts.js 的 keydown capture listener。
-  customShortcuts: {
-    'toggle-reader-mode': null,
-    'send-to-readwise': null,
-    'toggle-youtube-borderless': null
-  }
-};
+// v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
+// （content getSettings 直讀 storage 也要同一份 defaults，iOS background
+// 掉包修法），SW 端由 importScripts / event page scripts 預載後取用。
+const DEFAULT_SETTINGS = globalThis.__JReadSettingsDefaults;
 
 // Icon 路徑 map：閱讀模式 active / idle 都用彩色版本（v0.7.134，Jimmy 2026-05-18
 // 要求 toolbar 預設藍色——不再用 -disabled 灰階版本）。active / idle 之間的視覺

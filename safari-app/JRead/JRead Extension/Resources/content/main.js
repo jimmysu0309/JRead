@@ -20,9 +20,35 @@
   // NS.safeSendMessage(...)）。
   const safeSendMessage = NS.safeSendMessage;
 
+  // v0.7.235：直讀 chrome.storage.sync（defaults 來自單一資料源
+  // content/settings-defaults.js），不再 round-trip background 的 GET_SETTINGS。
+  // 根因：iOS Safari 的 background event page 訊息會無聲掉包（SW 回收後不再
+  // 喚醒 thread 758346；iOS 18.4+ sendMessage 掉包 regression thread 787958），
+  // 掉包時舊版 getSettings 回 undefined → 下游所有設定 fallback 預設值——
+  // theme / fontSize 靜默退化難察覺，pagedMode 永遠 false（「翻頁模式 iOS
+  // 沒功能」根因，simulator instrument 實證 round-trip undefined / 直讀正常）。
+  // storage API 在 content script 直接可用、不依賴 background 存活，與
+  // v0.7.228 觸發路徑去 SW 化同一條設計原則。
+  // fallback：chrome.storage 失效（extension reload 後 context invalidated
+  // 會 throw）時退回 GET_SETTINGS round-trip——Chrome 的 SW 正常時仍可救；
+  // 兩邊都死則 resolve(null)，與舊行為的降級結果一致。
   async function getSettings() {
+    const defaults = window.__JReadSettingsDefaults || {};
     return new Promise(resolve => {
-      safeSendMessage({ type: NS.MSG.GET_SETTINGS }, resolve);
+      const fallbackViaBackground = () => {
+        safeSendMessage({ type: NS.MSG.GET_SETTINGS }, resolve);
+      };
+      try {
+        chrome.storage.sync.get(defaults, (values) => {
+          if (chrome.runtime.lastError || !values) {
+            fallbackViaBackground();
+            return;
+          }
+          resolve(values);
+        });
+      } catch (_) {
+        fallbackViaBackground();
+      }
     });
   }
 
