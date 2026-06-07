@@ -328,6 +328,43 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(space < guard, '兩個模組 listener 都必須先於 keyguard 註冊');
     });
 
+    it('三條 enter 路徑（一般 / X thread / FB post）都必須同步 pagedMode、且先於 spaceScroll（v0.7.233）', () => {
+      // Jimmy 2026-06-07 iOS 回報：X thread 翻頁模式下段落指示條殘留。根因：
+      // styler 依 settings.pagedMode 在所有路徑注入翻頁 CSS，但 X / FB 合成
+      // 容器路徑沒呼叫 syncPagedModeFromSettings——模組沒裝 = spaceScroll 的
+      // 「pagedMode installed 才讓位」判定永遠不成立（指示條殘留），且頁碼
+      // 不顯示、超過一頁翻不動。
+      // 注意：不可用「全檔 call site 計數 >= 3」——onChanged reapply 的同名
+      // call 也會被算進去，少一條 enter 路徑仍湊得到 3（sanity check 實證
+      // 偽陰性）。必須逐函式 body 驗證。
+      const fnBody = (name) => {
+        const starts = [
+          MAIN_SRC.indexOf(`async function ${name}`),
+          MAIN_SRC.indexOf(`function ${name}`)
+        ].filter((i) => i >= 0);
+        assert.ok(starts.length, `main.js 缺 ${name}`);
+        const start = Math.min(...starts);
+        // 函式之間以下一個 top-level function 宣告為界（夠粗但對本檢查足夠）
+        const next = MAIN_SRC.slice(start + 10).search(/\n  (?:async )?function /);
+        return next >= 0 ? MAIN_SRC.slice(start, start + 10 + next) : MAIN_SRC.slice(start);
+      };
+      for (const fn of ['enterXThreadMode', 'enterFbPostMode', 'enterReaderModeImpl']) {
+        const body = fnBody(fn);
+        const paged = body.indexOf('syncPagedModeFromSettings(settings)');
+        const space = body.indexOf('syncSpaceScrollFromSettings(settings)');
+        assert.ok(paged >= 0, `${fn} 必須呼叫 syncPagedModeFromSettings(settings)`);
+        assert.ok(space >= 0, `${fn} 必須呼叫 syncSpaceScrollFromSettings(settings)`);
+        assert.ok(paged < space,
+          `${fn}：pagedMode 同步必須先於 spaceScroll（讓位判定依賴 installed 狀態）`);
+        assert.ok(body.includes('captureScrollY'),
+          `${fn} 必須在 styler.apply 前呼叫 captureScrollY`);
+      }
+      // captureScrollY 也必須三路徑齊備（styler 注入 overflow hidden 前捕捉）
+      const capCalls = MAIN_SRC.match(/NS\.pagedMode\.captureScrollY\(\)/g) || [];
+      assert.ok(capCalls.length >= 4,
+        `captureScrollY 必須在三條 enter 路徑 + onChanged reapply 共 >= 4 處呼叫，實際 ${capCalls.length} 處`);
+    });
+
     it('syncSpaceScrollFromSettings 含 pagedMode 讓位 guard（Space 鍵互斥）', () => {
       const fnBody = MAIN_SRC.slice(
         MAIN_SRC.indexOf('function syncSpaceScrollFromSettings'),
