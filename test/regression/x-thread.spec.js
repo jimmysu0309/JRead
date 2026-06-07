@@ -453,7 +453,7 @@ describe('x-thread v0.7.135 — main.js 整合', () => {
     assert.match(MAIN_SRC, /NS\.xThread\.enter\s*\(/,
       'enterXThreadMode 內必須呼叫 NS.xThread.enter()');
     // cleaner.clean(container) / styler.apply(container) 兩條都在 enterXThreadMode
-    const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n\s{0,4}async\s+function|\n\s{0,4}function\s+\w|\n\s{0,4}\/\/)/);
+    const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n {0,2}(?:async )?function )/);
     assert.ok(m, '抓不到 enterXThreadMode body');
     assert.match(m[0], /NS\.cleaner\s*\?\s*NS\.cleaner\.clean\s*\(\s*container/,
       'enterXThreadMode 必須對合成容器呼叫 cleaner.clean(container)');
@@ -632,7 +632,7 @@ describe('x-thread v0.7.137 — author header 保留', () => {
 
   it('main.js enterXThreadMode 必須在 cleaner.clean 之後、styler.apply 之前呼叫 NS.xThread.injectAuthorHeaders', () => {
     // 抓 enterXThreadMode body 內 cleaner.clean → injectAuthorHeaders → styler.apply 順序
-    const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n\s{0,4}async\s+function|\n\s{0,4}function\s+\w|\n\s{0,4}\/\/)/);
+    const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n {0,2}(?:async )?function )/);
     assert.ok(m, '抓不到 enterXThreadMode body');
     const body = m[0];
     const cleanerIdx = body.search(/NS\.cleaner\.clean\s*\(/);
