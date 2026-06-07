@@ -112,9 +112,31 @@
   // 排在 keyguard 後面——重掛 keyguard 把它推回隊尾。
   function syncSpaceScrollFromSettings(settings) {
     if (!NS.spaceScroll) return;
+    // v0.7.227：翻頁模式啟動時停用 Space 段落卷動——文件已鎖垂直卷動，
+    // Space 由 paged-mode.js 接手為「翻下一頁」。兩模組對同一個 Space 鍵
+    // 是互斥事實，以 pagedMode installed 狀態作單一判定源。
+    if (NS.pagedMode && NS.pagedMode.isInstalled()) {
+      NS.spaceScroll.uninstall();
+      return;
+    }
     const wasInstalled = NS.spaceScroll.isInstalled();
     NS.spaceScroll.sync(settings, NS.state.articleEl);
     if (!wasInstalled && NS.spaceScroll.isInstalled() && keyguardInstalled) {
+      uninstallKeyguard();
+      installKeyguard();
+    }
+  }
+
+  // v0.7.227：翻頁模式（paged-mode.js）settings 同步 wrapper。與
+  // syncSpaceScrollFromSettings 同款 keyguard 順序 invariant：模組的
+  // keydown listener（←/→/Space 翻頁）必須先於 keyguardHandler 收到事件
+  // （keyguard 對非 ESC 鍵 stopImmediatePropagation）——onChanged 動態開啟
+  // 時新 listener 排在 keyguard 後面，重掛 keyguard 推回隊尾。
+  function syncPagedModeFromSettings(settings) {
+    if (!NS.pagedMode) return;
+    const wasInstalled = NS.pagedMode.isInstalled();
+    NS.pagedMode.sync(settings, NS.state.articleEl);
+    if (!wasInstalled && NS.pagedMode.isInstalled() && keyguardInstalled) {
       uninstallKeyguard();
       installKeyguard();
     }
@@ -306,12 +328,20 @@
     if (NS.detector && typeof NS.detector.markPromotedTitleIfMissing === 'function') {
       NS.detector.markPromotedTitleIfMissing(result.el);
     }
+    // v0.7.227：styler 注入前捕捉文件卷動位置——pagedMode CSS 的 overflow
+    // hidden 會把 scrollY clamp 成 0，退出翻頁模式時靠此值還原（模組內
+    // installed guard 防重複覆寫）。
+    if (NS.pagedMode) NS.pagedMode.captureScrollY();
     NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
     NS.state.active = true;
 
     // v0.7.101：install ESC listener（capture phase 比原站 bubble listener 早收到）
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
+
+    // v0.7.227：翻頁模式——須在 syncSpaceScroll 之前（spaceScroll 依
+    // pagedMode installed 狀態決定讓位）、在 installKeyguard 之前註冊
+    syncPagedModeFromSettings(settings);
 
     // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
     syncSpaceScrollFromSettings(settings);
@@ -350,6 +380,14 @@
     uninstallKeyguard();
     // v0.7.216：一律拆掉 Space 段落焦點卷動（listener + 指示條 + 進行中動畫）
     if (NS.spaceScroll) NS.spaceScroll.uninstall();
+    // v0.7.227：一律拆掉翻頁模式（listener + 頁碼指示 + 還原文件卷動位置）。
+    // 必須在 styler.restore 之前呼叫——uninstall 內的 scrollTo 還原排在
+    // rAF，等本輪同步的 restore 移除 overflow hidden 後文件才可卷動。
+    // resetPosition：退出 reader mode = 閱讀 session 結束，下次進入從第一頁起。
+    if (NS.pagedMode) {
+      NS.pagedMode.uninstall();
+      NS.pagedMode.resetPosition();
+    }
     // v0.7.133：cinema mode 走獨立 restore 路徑（沒有 cleaner/styler 副作用要還原）
     if (NS.state.cinemaActive) {
       if (NS.cinema) NS.cinema.exit();
@@ -779,18 +817,81 @@
     };
   }
 
+  // v0.7.228：toggle 主體抽成具名函式——onMessage handler 與 dispatchLocalCommand
+  // 共用，單一資料源。
+  async function toggleReader() {
+    if (NS.state.active) {
+      exitReaderMode();
+      return { active: false };
+    }
+    const ok = await enterReaderMode();
+    return { active: ok };
+  }
+
+  // v0.7.134 / v0.7.143 語意原樣搬出（原 TOGGLE_YT_BORDERLESS handler 內文）：
+  // 啟動 borderless 時若 cinema 已 active 先走完整 exitReaderMode 清狀態 + icon；
+  // 退出 borderless 不踩這條（willEnter guard）。
+  function toggleBorderless() {
+    const willEnter = !(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
+    if (willEnter && NS.state.cinemaActive) {
+      exitReaderMode();
+    }
+    if (NS.borderless && typeof NS.borderless.toggle === 'function') {
+      NS.borderless.toggle();
+    }
+    return { ok: true, active: NS.borderless ? NS.borderless.isActive() : false };
+  }
+
+  // v0.7.228：統一指令 dispatch（content 端單一資料源，含 cross-mode 重導）。
+  //
+  // 動機：iOS Safari 的 MV3 service worker 被系統回收後**不再喚醒**（Apple
+  // Forums thread 758346，iOS 17.4 起迄今未修）——任何「content → SW → content」
+  // round-trip 在 SW 死亡後石沉大海：3 指手勢 / 自訂快速鍵全部失效，使用者只能
+  // 強制關閉 Safari 重建 extension 程序自救。
+  //
+  // 修法：cross-mode 重導（v0.7.134「任一模式快速鍵都當退出當前 active 模式」）
+  // 從 SW dispatchCommand 搬進這裡——重導需要的狀態（NS.state / NS.borderless）
+  // 本來就在 content 端，SW 原先還得 GET_READER_STATE round-trip 來問。觸控
+  // 手勢與自訂快速鍵直接本地呼叫（零訊息傳遞、SW 死活無關）；manifest 預設鍵
+  // （browser 層事件只進得了 SW）由 SW 委派 DISPATCH_COMMAND 訊息接回這條，
+  // 重導決策不雙實作。
+  async function dispatchLocalCommand(command) {
+    const borderlessActive = !!(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
+    if (command === 'toggle-reader-mode') {
+      // 重導：borderless active 時改退無邊模式（= 按 ESC 效果）
+      if (borderlessActive) return toggleBorderless();
+      return toggleReader();
+    }
+    if (command === 'toggle-youtube-borderless') {
+      // 重導：cinema active 時改走 reader toggle 退出影院模式
+      if (NS.state.cinemaActive) return toggleReader();
+      return toggleBorderless();
+    }
+    return { ok: false };
+  }
+  NS.dispatchLocalCommand = dispatchLocalCommand;
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (msg.type === NS.MSG.TOGGLE_READER_MODE) {
       (async () => {
-        if (NS.state.active) {
-          exitReaderMode();
-          sendResponse({ active: false });
-        } else {
-          const ok = await enterReaderMode();
-          sendResponse({ active: ok });
-        }
+        sendResponse(await toggleReader());
+      })();
+      return true;
+    }
+
+    // v0.7.228：SW dispatchCommand 委派（manifest 預設鍵路徑）。command 白名單
+    // ——訊息來源雖限 extension 內部，仍防 payload 偽造 / 打錯字眼靜默 no-op。
+    if (msg.type === NS.MSG.DISPATCH_COMMAND) {
+      const command = msg.payload && msg.payload.command;
+      const allowed = ['toggle-reader-mode', 'toggle-youtube-borderless'];
+      if (!allowed.includes(command)) {
+        sendResponse({ ok: false });
+        return; // sync
+      }
+      (async () => {
+        sendResponse(await dispatchLocalCommand(command));
       })();
       return true;
     }
@@ -841,18 +942,8 @@
     // 純粹委派給 NS.borderless.toggle()。非 YouTube watch 頁 toggle() 自己
     // no-op，這裡不再 guard 一次。
     if (msg.type === NS.MSG.TOGGLE_YT_BORDERLESS) {
-      // v0.7.143：cinema / borderless 互斥——啟動 borderless 時若 cinema 已 active
-      // 先 exit reader mode（cinema 走 NS.state.cinemaActive 路徑、必須走完整退出
-      // 流程才能清狀態 + icon），再 toggle borderless。退出 borderless 不踩這條
-      // （borderless toggle 自身決定 enter/exit）。
-      const willEnter = !(NS.borderless && NS.borderless.isActive && NS.borderless.isActive());
-      if (willEnter && NS.state.cinemaActive) {
-        exitReaderMode();
-      }
-      if (NS.borderless && typeof NS.borderless.toggle === 'function') {
-        NS.borderless.toggle();
-      }
-      sendResponse({ ok: true, active: NS.borderless ? NS.borderless.isActive() : false });
+      // v0.7.143 互斥邏輯在 toggleBorderless()（v0.7.228 抽出共用，見上方）
+      sendResponse(toggleBorderless());
       return; // sync
     }
 
@@ -878,7 +969,15 @@
         if (!NS.state.articleEl || !NS.styler) return;
         NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
         const settings = await getSettings();
+        // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
+        // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
+        if (NS.pagedMode) NS.pagedMode.captureScrollY();
         NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
+        // v0.7.227：reapply 後重同步翻頁模組（pagedMode 切換 / 字級版心調整
+        // 都會改頁面切割，模組內部重算頁數並回到原閱讀比例）；spaceScroll
+        // 跟著重同步（依 pagedMode installed 狀態讓位或恢復）
+        syncPagedModeFromSettings(settings);
+        syncSpaceScrollFromSettings(settings);
       }, 200);
     };
 
@@ -899,7 +998,9 @@
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'boldText', 'lineHeight', 'paragraphSpacing', 'pangu'];
+      // v0.7.227：pagedMode 走 reapply 路徑——CSS 注入/移除需要 styler 重建
+      // stylesheet，模組 install/uninstall 在 scheduleReapply 尾端同步
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'boldText', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();

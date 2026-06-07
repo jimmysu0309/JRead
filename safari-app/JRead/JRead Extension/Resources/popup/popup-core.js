@@ -26,19 +26,22 @@
     'content/cleaner.js',
     'content/styler.js',
     'content/space-scroll.js',
+    'content/paged-mode.js',
     'content/main.js'
   ];
 
   /**
-   * 對指定 tab 嘗試 toggle；sendMessage 失敗時主動注入 content scripts 後重試一次。
+   * 對指定 tab 送任意訊息；sendMessage 失敗時主動注入 content scripts 後重試一次。
+   * v0.7.228：從 toggleWithInjectionFallback 抽出泛用版——SW dispatchCommand
+   * 委派 DISPATCH_COMMAND 給 content 端時共用同一條 injection fallback。
    * @param {number} tabId
+   * @param {object} msg 要送的訊息物件
    * @param {object} deps 依賴注入：
    *   - sendMessage(tabId, msg) → Promise
    *   - executeScript({ target:{tabId}, files }) → Promise
    * @returns {Promise<{ok:boolean, res?:any, injected?:boolean, error?:any}>}
    */
-  async function toggleWithInjectionFallback(tabId, deps) {
-    const msg = { type: 'TOGGLE_READER_MODE' };
+  async function sendWithInjectionFallback(tabId, msg, deps) {
     try {
       const res = await deps.sendMessage(tabId, msg);
       return { ok: true, res, injected: false };
@@ -51,6 +54,11 @@
         return { ok: false, error: secondErr };
       }
     }
+  }
+
+  /** 對指定 tab 嘗試 toggle 閱讀模式（popup 主按鈕 / SW cinema 退出路徑用）。 */
+  async function toggleWithInjectionFallback(tabId, deps) {
+    return sendWithInjectionFallback(tabId, { type: 'TOGGLE_READER_MODE' }, deps);
   }
 
   // ---- Readwise Reader integration（v0.7.33）-----------------------------
@@ -123,6 +131,7 @@
   }
 
   const api = {
+    sendWithInjectionFallback,
     toggleWithInjectionFallback,
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
