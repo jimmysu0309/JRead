@@ -1034,6 +1034,11 @@
       if ('spaceScrollRatio' in changes) {
         syncSpaceScrollFromSettings({ spaceScrollRatio: changes.spaceScrollRatio.newValue });
       }
+      // v0.7.237：showPageNumber 即時切換——純顯示層，直接增/移除頁碼指示器，
+      // 不走 styler reapply（避免捲動→翻頁閃爍）。翻頁模式未啟動時無感。
+      if ('showPageNumber' in changes && NS.pagedMode) {
+        NS.pagedMode.setShowIndicator(changes.showPageNumber.newValue !== false);
+      }
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
