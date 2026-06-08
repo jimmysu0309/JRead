@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JRead 翻頁收合 instrument</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  /* 複製翻頁模式：body 撐高 500vh、overflow visible（觸控放行垂直卷動） */
+  html, body { overflow-x: hidden; overflow-y: visible; height: auto; }
+  body { min-height: 500vh; background: linear-gradient(#fff, #dde, #fff); }
+  /* 複製卡片：fixed 滿版 + touch-action pan-y */
+  #card {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    touch-action: pan-y;
+  }
+  /* 紅框 instrument overlay：高 z-index、pointer-events:none 讓手勢穿到 card */
+  #log {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 58%;
+    z-index: 99999; pointer-events: none;
+    border: 3px solid red; box-sizing: border-box;
+    background: rgba(0,0,0,0.85); color: #0f0;
+    font: 11px/1.22 monospace; padding: 4px;
+    white-space: pre; overflow: hidden;
+  }
+  #steps {
+    position: fixed; top: 58%; left: 0; right: 0;
+    z-index: 99999; pointer-events: none;
+    background: rgba(0,40,90,0.9); color: #fff;
+    font: 13px/1.4 -apple-system, monospace; padding: 8px;
+    box-sizing: border-box;
+  }
+  #hint {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 22%;
+    display: flex; align-items: center; justify-content: center;
+    color: #06c; font: 16px monospace; pointer-events: none; z-index: 9999;
+  }
+</style>
+</head>
+<body>
+<div id="card"></div>
+<div id="hint">↑ 在這裡上滑 ↑</div>
+<div id="steps">步驟：① 上滑收合工具列 → ② 工具列收合後、scroll bar 還在時「再上滑一次」 → ③ 截圖紅框</div>
+<div id="log"></div>
+<script>
+  var logEl = document.getElementById('log');
+  var lines = [];
+  var t0 = performance.now();
+  function ms() { return Math.round(performance.now() - t0); }
+  function vvH() { return window.visualViewport ? Math.round(window.visualViewport.height) : -1; }
+  function sy() { return Math.round(window.scrollY || window.pageYOffset || 0); }
+  function push(tag, extra) {
+    lines.push(ms() + ' ' + tag + ' sy=' + sy() + ' iH=' + window.innerHeight + ' vvH=' + vvH() + (extra ? ' ' + extra : ''));
+    if (lines.length > 28) lines.shift();
+    logEl.textContent = lines.join('\n');
+  }
+
+  push('INIT', 'scale=' + (window.visualViewport ? window.visualViewport.scale : -1));
+
+  // 200ms 輪詢：即使 scroll 事件不發，也能看到 scrollY/innerH/vvH 何時變
+  var lastSnap = '';
+  setInterval(function () {
+    var snap = sy() + '|' + window.innerHeight + '|' + vvH();
+    if (snap !== lastSnap) { push('POLL*changed', ''); lastSnap = snap; }
+  }, 200);
+
+  var scrollCount = 0;
+  window.addEventListener('scroll', function () {
+    scrollCount++;
+    if (scrollCount <= 6 || scrollCount % 12 === 0) push('scroll#' + scrollCount, '');
+  }, { passive: true });
+
+  var moveCount = 0, lastCancelable = null;
+  window.addEventListener('touchstart', function (e) {
+    push('TSTART', 'cancelable=' + e.cancelable);
+    moveCount = 0; lastCancelable = null;
+  }, { capture: true, passive: true });
+  window.addEventListener('touchmove', function (e) {
+    moveCount++;
+    if (e.cancelable !== lastCancelable) {
+      push('TMOVE cancelable=>' + e.cancelable, '#' + moveCount);
+      lastCancelable = e.cancelable;
+    } else if (moveCount <= 2) {
+      push('TMOVE', 'cancelable=' + e.cancelable);
+    }
+  }, { capture: true, passive: false });
+  window.addEventListener('touchend', function (e) {
+    push('TEND', 'moves=' + moveCount);
+  }, { capture: true, passive: true });
+</script>
+</body>
+</html>
