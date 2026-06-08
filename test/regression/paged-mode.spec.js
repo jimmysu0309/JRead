@@ -332,6 +332,28 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // v0.7.243：shouldLockByScroll(scrollY, threshold)——scrollY 為據上鎖（主路徑，
+  // scrollY 即時、不像 viewport 高度延遲 ~5s）。翻頁卡片 fixed，垂直捲動唯一作用是收
+  // 工具列，scrollY 超門檻即代表已做收合滑動。
+  describe('shouldLockByScroll（scrollY 即時上鎖，v0.7.243）', () => {
+    const s = pagedApi.shouldLockByScroll;
+    const T = pagedApi.SCROLL_LOCK_PX;
+    it('SCROLL_LOCK_PX 預設 100', () => {
+      assert.strictEqual(T, 100);
+    });
+    it('scrollY 超門檻 → true（已做收合滑動）', () => {
+      assert.strictEqual(s(101, T), true);
+      assert.strictEqual(s(600, T), true);
+    });
+    it('scrollY 恰好等於門檻 → false（嚴格大於才鎖）', () => {
+      assert.strictEqual(s(100, T), false);
+    });
+    it('scrollY 未達門檻 → false（小幅 / 抖動不誤鎖）', () => {
+      assert.strictEqual(s(0, T), false);
+      assert.strictEqual(s(40, T), false);
+    });
+  });
+
   // v0.7.242：viewportH() 優先 visualViewport.height（iOS 工具列收合即時反映，
   // window.innerHeight 延遲 ~5s）；pinch-zoom（scale != 1）退回 innerHeight。
   describe('viewportH（收合鎖量測源，v0.7.242）', () => {

@@ -70,6 +70,7 @@
   const TURN_ANIM_MS = 260;         // 翻頁動畫時長
   const HMOVE_BLOCK_PX = 6;         // v0.7.237：水平位移超此值即 preventDefault（擋 Safari 邊緣返回手勢）
   const COLLAPSE_DELTA_PX = 16;     // v0.7.240：innerHeight 比 baseline 高出此值即判定 iOS 工具列已收合（實證 714→754 = 40px，門檻取安全中間值）
+  const SCROLL_LOCK_PX = 100;       // v0.7.243：scrollY 超此值即視為「已做收合滑動」→ 鎖（不等 viewport 高度更新；100px 已過 iOS 工具列收合提交點 ~50px）
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
@@ -133,6 +134,14 @@
     if (locked) return true;
     if (pageIdx !== 0) return true;
     return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX;
+  }
+
+  // v0.7.243：是否該以 scrollY 為據上鎖（純邏輯）。翻頁模式卡片 position:fixed，垂直
+  // 捲動唯一作用是收 iOS 工具列——scrollY 超門檻即代表使用者已做收合滑動。scrollY 在
+  // iOS 捲動事件中「即時」（不像 innerHeight / visualViewport.height 要等捲動停才更新），
+  // 故用它讓鎖即時觸發。
+  function shouldLockByScroll(scrollY, threshold) {
+    return scrollY > threshold;
   }
 
   // 鍵盤對映。輸入 event-like { key, code, shiftKey, altKey, ctrlKey, metaKey }。
@@ -358,11 +367,25 @@
     }, ms));
   }
 
-  // v0.7.241：文件捲動即重驗收合——收合過程 innerHeight 會在捲動中/後變高，捲動
-  // 事件比 window 'resize' 可靠。passive（不擋捲動）；已鎖就跳過。
+  // v0.7.243：以 scrollY 為據上鎖（主路徑）。讀即時 scrollY，超門檻即鎖。
+  // 限手指已離開（touchState 為 null = touchend 後 / 慣性中）——避免在收合滑動「進行中」
+  // 鎖了 → onTouchMove 對同一手勢 preventDefault 打斷收合捲動。手指離開後鎖不影響
+  // 已在跑的慣性（慣性非 touch 驅動），且為下個手勢備好擋全部。
+  function checkScrollLock() {
+    if (vLocked || touchState) return;
+    if (typeof window === 'undefined') return;
+    const y = window.scrollY || window.pageYOffset || 0;
+    if (shouldLockByScroll(y, SCROLL_LOCK_PX)) applyVLock();
+  }
+
+  // v0.7.241：文件捲動即重驗收合。v0.7.243：主路徑改用 scrollY（即時、不延遲）——
+  // iOS 的 innerHeight / visualViewport.height 都要等捲動完全停（scroll bar 消失，
+  // 實測 ~5s）才更新（Jimmy 連兩版回報「要等 scroll bar 消失才鎖死」），故不能靠
+  // viewport 高度判即時收合。checkCollapseLock（height-based）留作慢確認 + rotate/解鎖。
   function onScroll() {
     if (vLocked) return;
-    checkCollapseLock();
+    checkScrollLock();      // 主：scrollY 超門檻即鎖（即時）
+    checkCollapseLock();    // 次：viewport 高度變化（旋轉 / 慢確認）
   }
 
   // rAF ease-out 動畫跳頁。jsdom 無 layout，spec 不測本函式。
@@ -471,9 +494,12 @@
       viewportW: window.innerWidth
     });
     touchState = null;
-    // v0.7.240：手勢結束後對照 viewport——這次若是收合用的垂直滑，innerHeight 已變高 → 上鎖
+    // v0.7.243：手指離開時 scrollY 已是拖曳終點（即時、不延遲）——超門檻立刻鎖（主路徑）
+    checkScrollLock();
+    // v0.7.240：次路徑——對照 viewport 高度（旋轉 / 慢確認）
     checkCollapseLock();
-    // v0.7.241：收合常在 touchend「之後」才完成（innerHeight 那時才變高）——排延遲重驗補上鎖
+    // v0.7.241：收合常在 touchend「之後」才完成（viewport 高度那時才變）——排延遲重驗補上鎖；
+    // 慣性會把 scrollY 帶更高，onScroll 的 checkScrollLock 也會在慣性中補鎖
     if (!vLocked) scheduleCollapseProbes();
     if (dir) turn(dir);
   }
@@ -621,8 +647,10 @@
     classifyKey,
     shouldBlockTouchMove,
     blockTouchDecision,
+    shouldLockByScroll,
     classifyViewportChange,
     viewportH,
+    SCROLL_LOCK_PX,
     sync,
     install,
     uninstall,
