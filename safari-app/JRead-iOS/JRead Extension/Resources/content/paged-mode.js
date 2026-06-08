@@ -312,10 +312,27 @@
     if (art) art.style.removeProperty('touch-action'); // 還原 styler 注入的 pan-y
   }
 
-  // v0.7.240：依當前 viewport 對照 baseline 決定收合鎖動作（onResize / onTouchEnd 都呼叫）。
+  // v0.7.242：量測 viewport 高度——優先 visualViewport.height。Jimmy 真機回報「收合後
+  // 要等 scroll bar 消失（~5s）才鎖死」，根因：iOS Safari 的 window.innerHeight 對工具列
+  // 收合「延遲」更新——要等捲動完全停止（慣性跑完、scroll indicator 消失）才變成 754；
+  // visualViewport.height 則對工具列高度變化「即時」反映。改讀它讓收合鎖在工具列一收合
+  // 就觸發、不必等慣性。pinch-zoom（scale != 1）時 visualViewport.height 含縮放、不可靠，
+  // 退回 innerHeight。寬度仍用 window.innerWidth（layout 寬，收合不變、旋轉才變，
+  // 不受 visualViewport 的縮放/捲動偏移影響）。
+  function viewportH() {
+    if (typeof window === 'undefined') return 0;
+    const vv = window.visualViewport;
+    if (vv && typeof vv.height === 'number' && vv.scale && Math.abs(vv.scale - 1) < 0.01) {
+      return vv.height;
+    }
+    return typeof window.innerHeight === 'number' ? window.innerHeight : 0;
+  }
+
+  // v0.7.240：依當前 viewport 對照 baseline 決定收合鎖動作（onResize / onTouchEnd / scroll
+  // / visualViewport.resize 都呼叫）。v0.7.242：高度改讀 viewportH()（即時反映工具列收合）。
   function checkCollapseLock() {
     if (typeof window === 'undefined') return;
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = window.innerWidth, h = viewportH();
     const action = classifyViewportChange(collapseBaseW, collapseBaseH, w, h, COLLAPSE_DELTA_PX);
     if (action === 'rotate') { collapseBaseW = w; collapseBaseH = h; unlockVScroll(); }
     else if (action === 'lower') { collapseBaseH = h; }
@@ -493,7 +510,7 @@
     vLocked = false;
     if (typeof window !== 'undefined') {
       collapseBaseW = window.innerWidth;
-      collapseBaseH = window.innerHeight;
+      collapseBaseH = viewportH(); // v0.7.242：與 checkCollapseLock 同量測源（visualViewport 優先）
     }
 
     // v0.7.237：頁碼指示器依 showIndicator 增/移除（settings.showPageNumber）
@@ -605,6 +622,7 @@
     shouldBlockTouchMove,
     blockTouchDecision,
     classifyViewportChange,
+    viewportH,
     sync,
     install,
     uninstall,
