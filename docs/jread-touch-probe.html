@@ -51,8 +51,9 @@
 <body>
 <div id="log"></div>
 <div class="controls">
-  <button id="btnFix">套用 no-drag / no-callout（測修法）</button>
-  <button id="btnClear">清空 log</button>
+  <button id="btnPD" class="on">preventDefault: 開（JRead 行為）</button>
+  <button id="btnFix">套 no-drag/callout</button>
+  <button id="btnClear">清空</button>
 </div>
 
 <div class="content">
@@ -106,13 +107,19 @@ window.addEventListener('touchstart', function (e) {
   log('<span class="start">START</span> ' + tgt(e) + ' x=' + Math.round(t.clientX));
 }, { capture: true, passive: true });
 
+var preventDefaultOn = true; // JRead 預設行為：水平滑動 preventDefault
 window.addEventListener('touchmove', function (e) {
   if (!touchState || e.touches.length !== 1) return;
   var t = e.touches[0];
+  var dx = t.clientX - touchState.startX, dy = t.clientY - touchState.startY;
   touchState.lastX = t.clientX; touchState.lastY = t.clientY; touchState.moves++;
   if (e.cancelable) touchState.anyCancelable = true;
-  // 每 gesture 只印前 2 + 最後 1 個 move，避免洗版
-  touchState._lastMoveStr = 'MOVE ' + tgt(e) + ' cancelable=' + e.cancelable + ' x=' + Math.round(t.clientX) + ' dx=' + Math.round(t.clientX - touchState.startX);
+  // JRead onTouchMove 行為：水平支配（|dx|>|dy| 且 |dx|>6）→ preventDefault
+  var pd = false;
+  if (preventDefaultOn && e.cancelable && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) {
+    e.preventDefault(); pd = true;
+  }
+  touchState._lastMoveStr = 'MOVE ' + tgt(e) + ' c=' + e.cancelable + (pd ? ' [PD]' : '') + ' x=' + Math.round(t.clientX) + ' dx=' + Math.round(dx);
   if (touchState.moves <= 2) log('  ' + touchState._lastMoveStr);
 }, { capture: true, passive: false });
 
@@ -153,6 +160,12 @@ document.getElementById('btnFix').addEventListener('click', function () {
   this.classList.toggle('on', fixed);
   this.textContent = fixed ? '✅ 已套修法（再滑圖片測）— 點此還原' : '套用 no-drag / no-callout（測修法）';
   log('<b>--- ' + (fixed ? '已套用 no-drag/no-callout，請再滑圖片' : '已還原原始行為') + ' ---</b>');
+});
+document.getElementById('btnPD').addEventListener('click', function () {
+  preventDefaultOn = !preventDefaultOn;
+  this.classList.toggle('on', preventDefaultOn);
+  this.textContent = 'preventDefault: ' + (preventDefaultOn ? '開（JRead 行為）' : '關（對照）');
+  log('<b>--- preventDefault ' + (preventDefaultOn ? '開（複製 JRead）' : '關') + '，請再滑圖片 ---</b>');
 });
 document.getElementById('btnClear').addEventListener('click', function () { lines = []; logEl.innerHTML = ''; });
 
