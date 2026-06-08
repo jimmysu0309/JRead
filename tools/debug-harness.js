@@ -55,6 +55,11 @@ const URL = (urlArgIdx >= 0 && process.argv[urlArgIdx + 1]) || process.env.JREAD
 // 不出現，燒 4 輪才定位）。懷疑「SW 行為跟 code 對不上」直接 --fresh。
 const FRESH = process.argv.includes('--fresh');
 const KEEP = process.argv.includes('--keep');
+// --width <px>：覆寫 viewport 寬度（預設 1280 桌面）。驗收手機版心寬度用——
+// 例 `--width 390` 模擬 iPhone 15 邏輯寬、`--width 430` 模擬 Pro Max。窄
+// viewport 下 styler 的 padding / margin clamp 才會觸發，桌面寬量不到手機行為。
+const widthArgIdx = process.argv.indexOf('--width');
+const VIEWPORT_WIDTH = (widthArgIdx >= 0 && parseInt(process.argv[widthArgIdx + 1], 10)) || 1280;
 // --scheme dark：模擬 prefers-color-scheme: dark（macOS 深色模式使用者看到的
 // 站點樣式）。v0.7.225 tymscar code block 對比 bug 只在 dark scheme 重現——
 // 站點為深底設計的 syntax 色 + reader 白卡。預設 light。
@@ -93,7 +98,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',          // 必須：用 bundled Chromium，才能載 unpacked extension
     headless: false,              // 必須：extension 僅 headed 模式可用
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: VIEWPORT_WIDTH, height: 900 },
     colorScheme: COLOR_SCHEME,    // --scheme dark 模擬深色模式使用者
 
     args: [
