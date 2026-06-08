@@ -59,7 +59,12 @@
   // swipe 判定參數（結構性，不綁平台）
   const SWIPE_MIN_DX = 48;          // 水平位移門檻（px）
   const SWIPE_AXIS_RATIO = 1.4;     // |dx| 必須 > |dy| × ratio（軸向支配）
-  const EDGE_GUARD_PX = 28;         // 起點離螢幕左右邊緣 < 此值不認（瀏覽器歷史手勢區）
+  // v0.7.239：整頁可滑（Jimmy 回報「翻頁只在中間生效、太不靈敏」）。原本 28px
+  // 邊緣緩衝是為閃避 iOS Safari 左邊緣返回手勢，但真機實證「左邊緣往右滑不會
+  // 返回、只是滑不動」——擋返回已由 onTouchMove 水平 preventDefault（v0.7.237）+
+  // 卡片 touch-action（page1 pan-y / page2+ none，原生水平 pan 一律不放行）雙重
+  // 覆蓋，邊緣緩衝是多餘的 belt、反而害整頁邊緣翻不了頁。設 0 = 全頁起手都認。
+  const EDGE_GUARD_PX = 0;
   const WHEEL_THRESHOLD = 90;       // 滾輪 delta 累積門檻
   const WHEEL_LOCKOUT_MS = 550;     // 翻頁後滾輪鎖定（吃掉觸控板慣性尾巴）
   const TURN_ANIM_MS = 260;         // 翻頁動畫時長
@@ -240,6 +245,24 @@
     if (bar) bar.style.width = (total <= 1 ? 100 : ((idx + 1) / total) * 100) + '%';
   }
 
+  // v0.7.239：iOS 工具列收合「只在第一頁可滑」（Jimmy 要求：第一頁垂直滑收
+  // 工具列，第二頁起維持原本鎖定行為、不能再垂直滑）。純邏輯：給定本次單指
+  // 滑動位移與目前頁碼，回傳 onTouchMove 是否該 preventDefault（= 擋住原生捲動）。
+  //   - 第一頁（pageIdx 0）：只擋「水平支配」滑動（Safari 邊緣返回手勢），
+  //     放行垂直滑 → 底下 document 捲動 → iOS 收合工具列（styler 卡片
+  //     touch-action: pan-y 讓垂直 pan 冒泡到 document）。
+  //   - 第二頁起（pageIdx >= 1）：擋「所有」單指滑動——垂直擋住 = 維持第一頁
+  //     收合後的 scrollY 不被捲回（工具列保持收合）、水平擋住 = Safari 邊緣返回。
+  // 為何用 preventDefault 不用 touch-action：iOS WebKit 在有 passive:false
+  // touchmove listener 時 touch-action 不可靠（等 JS 決定、且 touch-action 不
+  // 繼承，手指實際落在卡片內 auto 的 <p>/<img>）——simulator 實證 touch-action:
+  // none 仍被捲動穿透；passive:false 的 preventDefault 才真正擋得住。
+  // 翻頁本身由 touchend 的 JS 程式控 scrollLeft，不受 preventDefault 影響。
+  function shouldBlockTouchMove(dx, dy, pageIdx) {
+    if (pageIdx !== 0) return true;
+    return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX;
+  }
+
   // rAF ease-out 動畫跳頁。jsdom 無 layout，spec 不測本函式。
   function goTo(n, animate) {
     if (!art) return;
@@ -325,10 +348,12 @@
   function onTouchMove(e) {
     if (!touchState) return;
     if (e.touches.length !== 1) { touchState = null; return; }
+    if (!e.cancelable) return;
     const t = e.touches[0];
     const dx = t.clientX - touchState.startX;
     const dy = t.clientY - touchState.startY;
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX && e.cancelable) {
+    // v0.7.239：第一頁只擋水平（放行垂直滑收工具列）、第二頁起擋全部（鎖死）
+    if (shouldBlockTouchMove(dx, dy, idx)) {
       e.preventDefault();
     }
   }
@@ -466,6 +491,7 @@
     computePageCountFromExtent,
     classifySwipe,
     classifyKey,
+    shouldBlockTouchMove,
     sync,
     install,
     uninstall,

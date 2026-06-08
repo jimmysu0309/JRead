@@ -248,13 +248,45 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.strictEqual(
         pagedApi.classifySwipe({ dx: -60, dy: 70, startX: 200, viewportW: W }), null);
     });
-    it('左邊緣起手 → null（讓位 iOS Safari 歷史手勢）', () => {
+    // v0.7.239：整頁可滑（EDGE_GUARD_PX = 0）。Jimmy 回報「翻頁只在中間生效、
+    // 太不靈敏」+ 真機實證左邊緣往右滑「不會返回、只是滑不動」——擋返回已由
+    // onTouchMove preventDefault + 卡片 touch-action 雙重覆蓋，邊緣緩衝是多餘的
+    // belt、反害邊緣翻不了頁。forcing：邊緣起手現在必須照常分類，不再回 null。
+    it('左邊緣起手 → prev（整頁可滑，v0.7.239；不再讓位邊緣緩衝）', () => {
       assert.strictEqual(
-        pagedApi.classifySwipe({ dx: 100, dy: 0, startX: 10, viewportW: W }), null);
+        pagedApi.classifySwipe({ dx: 100, dy: 0, startX: 10, viewportW: W }), 'prev');
     });
-    it('右邊緣起手 → null', () => {
+    it('右邊緣起手 → next（整頁可滑，v0.7.239）', () => {
       assert.strictEqual(
-        pagedApi.classifySwipe({ dx: -100, dy: 0, startX: W - 10, viewportW: W }), null);
+        pagedApi.classifySwipe({ dx: -100, dy: 0, startX: W - 10, viewportW: W }), 'next');
+    });
+    it('EDGE_GUARD_PX 必須為 0（整頁可滑 forcing：任何人調回非 0 → 邊緣翻不了頁）', () => {
+      assert.strictEqual(pagedApi.EDGE_GUARD_PX, 0);
+    });
+  });
+
+  // ---- iOS 工具列收合只在第一頁可滑（v0.7.239）----------------------------
+  // shouldBlockTouchMove(dx, dy, pageIdx)：onTouchMove 是否 preventDefault。
+  // 第一頁只擋水平（放行垂直滑收工具列）、第二頁起擋全部（維持收合 + 鎖定）。
+  // HMOVE_BLOCK_PX = 6。
+  describe('shouldBlockTouchMove（工具列收合限第一頁）', () => {
+    it('第一頁垂直滑（dy 支配）→ false（放行 → 捲 document 收工具列）', () => {
+      assert.strictEqual(pagedApi.shouldBlockTouchMove(2, 80, 0), false);
+    });
+    it('第一頁水平滑（dx 支配且 > 6）→ true（擋 Safari 邊緣返回）', () => {
+      assert.strictEqual(pagedApi.shouldBlockTouchMove(40, 5, 0), true);
+    });
+    it('第一頁水平微動（dx <= 6）→ false（不誤擋）', () => {
+      assert.strictEqual(pagedApi.shouldBlockTouchMove(4, 1, 0), false);
+    });
+    it('第二頁垂直滑 → true（鎖死：維持第一頁收合後的 scrollY 不被捲回）', () => {
+      assert.strictEqual(pagedApi.shouldBlockTouchMove(2, 80, 1), true);
+    });
+    it('第二頁水平滑 → true（擋返回；翻頁由 touchend JS 處理）', () => {
+      assert.strictEqual(pagedApi.shouldBlockTouchMove(40, 5, 1), true);
+    });
+    it('更後面的頁垂直滑 → true', () => {
+      assert.strictEqual(pagedApi.shouldBlockTouchMove(0, 100, 5), true);
     });
   });
 
