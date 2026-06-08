@@ -161,12 +161,18 @@ describe('styler — 骨架與可逆性', () => {
   // 共 88px 空白。垂直 padding 比照水平改 min(48px, 6vw)（窄 viewport 四邊
   // padding 等寬 ~26px）；垂直 margin 改 clamp(8px, calc(6.4vw - 19.2px), 40px)
   // 線性 ramp（min() 過原點直線收不夠陡，430pt 仍剩 ~18px 灰條）。
-  it('CSS reader card padding 必須是 min(48px, 6vw) min(56px, 6vw)（窄 viewport 自動收斂）', () => {
+  // v0.8.1：Jimmy iPhone 回報「閱讀模式常比原本網頁內文還窄」。根因：水平
+  // padding min(56px, 6vw) 在 390pt iPhone 留 23.4px×2 → 內文 343px，比原站
+  // 行動版主文窄（probe 實測 BBC/Wikipedia/Verge 原站內文 358-362px = 16px
+  // gutter）。水平 padding 改 clamp(16px, calc(7.4vw - 12.8px), 56px)：floor
+  // 16px = 行動版主文標準 gutter，390pt 內文 = 358px 對齊原站；>= 933px 仍
+  // 56px 桌面不變。垂直 padding 維持 min(48px, 6vw)（頂部體感無關可讀寬）。
+  it('CSS reader card padding 必須是 min(48px, 6vw) clamp(16px, calc(7.4vw - 12.8px), 56px)（手機內文對齊原站 gutter）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
-    assert.ok(/padding:\s*min\(48px,\s*6vw\)\s+min\(56px,\s*6vw\)\s*!important/.test(css),
-      'reader card padding 必須是 min(48px, 6vw) min(56px, 6vw)——固定值會在手機上浪費寬度與頂部空間');
+    assert.ok(/padding:\s*min\(48px,\s*6vw\)\s+clamp\(16px,\s*calc\(7\.4vw\s*-\s*12\.8px\),\s*56px\)\s*!important/.test(css),
+      'reader card 水平 padding 必須是 clamp(16px, calc(7.4vw - 12.8px), 56px)——固定/過大 padding 會讓手機內文比原站還窄');
   });
 
   it('CSS reader card 垂直 margin 必須是 clamp(8px, calc(6.4vw - 19.2px), 40px)（手機收斂灰條）', () => {
