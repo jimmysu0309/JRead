@@ -7,7 +7,7 @@
 <style>
   html, body { margin: 0; padding: 0; }
   html, body { overflow-x: hidden; overflow-y: visible; height: auto; }
-  body { min-height: 500vh; background: linear-gradient(#fff, #dde, #fff); }
+  body { min-height: 250vh; background: linear-gradient(#fff, #dde, #fff); }
   #card { position: fixed; top: 0; left: 0; right: 0; bottom: 0; touch-action: pan-y; }
   #status {
     position: fixed; top: 0; left: 0; right: 0;
@@ -45,12 +45,13 @@
 <div id="card"></div>
 <div id="hint">↑ 在這裡上滑 / 下滑 ↑</div>
 <div id="reset">⟳ 點這裡 RESET（解鎖 + 回頂）</div>
-<div id="steps">① 上滑收合工具列（vLocked 應變 true）→ ② 鎖住後試「下滑」想叫回工具列 → ③ 看工具列有沒有被叫回來 + 截圖紅框</div>
+<div id="steps">[NO-LOCK / 250vh] ① 上滑：工具列收不收得了（iH 變 836「收合」）→ ② 收合後停手 2 秒，看「工具列」是否維持「收合」不彈回 → ③ 截圖</div>
 <div id="status"></div>
 <div id="log"></div>
 <script>
   var SCROLL_LOCK_PX = 100;
   var HMOVE_BLOCK_PX = 6;
+  var LOCK_ENABLED = false; // v0.7.244 驗證：關掉鎖，測純收合是否穩定不彈回
   var vLocked = false;
   var touchState = null;
   var card = document.getElementById('card');
@@ -62,7 +63,7 @@
   function vvH() { return window.visualViewport ? Math.round(window.visualViewport.height) : -1; }
   function sy() { return Math.round(window.scrollY || window.pageYOffset || 0); }
   function renderStatus() {
-    statusEl.textContent = 'vLocked=' + vLocked + '  sy=' + sy() + '\niH=' + window.innerHeight + ' vvH=' + vvH() + ' (工具列:' + (window.innerHeight >= 820 ? '收合' : '展開') + ')';
+    statusEl.textContent = '[NO-LOCK] vLocked=' + vLocked + ' sy=' + sy() + '\niH=' + window.innerHeight + ' (工具列:' + (window.innerHeight >= 820 ? '收合' : '展開') + ')';
   }
   function push(tag, extra) {
     lines.push(ms() + ' ' + tag + ' sy=' + sy() + ' iH=' + window.innerHeight + (extra ? ' ' + extra : ''));
@@ -79,6 +80,7 @@
     push('*** vLocked=TRUE ***', '(touch-action:none)');
   }
   function checkScrollLock() {
+    if (!LOCK_ENABLED) return; // no-lock 驗證模式
     if (vLocked || touchState) return;
     if (sy() > SCROLL_LOCK_PX) applyVLock();
   }
