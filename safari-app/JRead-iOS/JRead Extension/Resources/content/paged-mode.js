@@ -387,7 +387,11 @@
   function onTouchStart(e) {
     if (e.touches.length !== 1) { touchState = null; return; } // 多指讓位（3 指 toggle 等）
     const t = e.touches[0];
-    touchState = { startX: t.clientX, startY: t.clientY };
+    // lastX/lastY：追蹤手指最後位置——iOS 在可點擊圖片/連結上啟動原生 image-
+    // drag / callout 時，會對進行中的單指水平 swipe 送 touchcancel（不送 touchend）。
+    // onTouchCancel 靠這個累積位移補判翻頁（changedTouches 在 cancel 時可能位移
+    // 不足），讓「圖片上左右滑」也能翻頁。
+    touchState = { startX: t.clientX, startY: t.clientY, lastX: t.clientX, lastY: t.clientY };
   }
 
   // v0.7.237：水平支配的單指滑動 preventDefault——攔住 iOS Safari 的系統級
@@ -402,6 +406,8 @@
     if (e.touches.length !== 1) { touchState = null; return; }
     if (!e.cancelable) return;
     const t = e.touches[0];
+    touchState.lastX = t.clientX;
+    touchState.lastY = t.clientY;
     const dx = t.clientX - touchState.startX;
     const dy = t.clientY - touchState.startY;
     // v0.7.239：第一頁只擋水平（放行垂直滑收工具列）、第二頁起擋全部（鎖死）
@@ -424,7 +430,25 @@
     if (dir) turn(dir);
   }
 
-  function onTouchCancel() { touchState = null; }
+  // v0.8.5：iOS 在可點擊圖片/連結上啟動原生 image-drag / callout 時，對進行中
+  // 的單指水平 swipe 送 touchcancel（非 touchend）。舊版直接丟棄手勢 → Jimmy
+  // 回報「圖片上左右滑無法翻頁，必須在內文上滑」。改成 cancel 時用累積位移補判：
+  // 若仍構成水平 swipe（classifySwipe 同款 threshold / 角度 / 邊緣 guard），照樣翻頁。
+  // tap / 微動 / 垂直滑 / 邊緣手勢都不會通過 classifySwipe，不會誤翻。
+  function onTouchCancel() {
+    if (touchState) {
+      const dir = classifySwipe({
+        dx: touchState.lastX - touchState.startX,
+        dy: touchState.lastY - touchState.startY,
+        startX: touchState.startX,
+        viewportW: window.innerWidth
+      });
+      touchState = null;
+      if (dir) turn(dir);
+      return;
+    }
+    touchState = null;
+  }
 
   // resize / 旋轉：stride 變了、頁界全部重排——重測頁數、按 lastRatio 回到對應頁
   function onResize() {
