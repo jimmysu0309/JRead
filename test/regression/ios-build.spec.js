@@ -93,6 +93,26 @@ describe('host App Info.plist', () => {
   });
 });
 
+describe('host App 啟動引導畫面（Main.html）本地化', () => {
+  // 單一 iOS binary 涵蓋 macOS（在 Apple Silicon Mac 以 iPad App 執行），台灣使用者
+  // 開 App 第一眼是這張畫面——必須繁中，不可殘留 converter 英文 stock 模板。
+  // forcing function：ios-bootstrap.sh 重跑會用 converter 模板覆蓋 host App，
+  // 沒這條守會在重 bootstrap 後悄悄退回英文。
+  const MAIN_HTML = path.join(PROJECT_DIR, 'JRead', 'Resources', 'Base.lproj', 'Main.html');
+
+  it('必須宣告 lang="zh-Hant"', () => {
+    const html = fs.readFileSync(MAIN_HTML, 'utf8');
+    assert.match(html, /<html lang="zh-Hant">/);
+  });
+
+  it('必須為繁中啟用引導、且不殘留 converter 英文 stock 文案', () => {
+    const html = fs.readFileSync(MAIN_HTML, 'utf8');
+    assert.ok(/啟用 JRead/.test(html), 'Main.html 必須含繁中啟用引導文字');
+    assert.ok(!/You can turn on/.test(html),
+      'Main.html 不可殘留 converter 預設英文「You can turn on …」——bootstrap 重跑後須重新本地化');
+  });
+});
+
 describe('ios-export-options.plist', () => {
   const xml = fs.readFileSync(EXPORT_OPTS_PATH, 'utf8');
 
@@ -145,7 +165,7 @@ describe('ios-build.sh 步驟完整性', () => {
   });
 });
 
-describe('patch-safari-manifest.sh（event page patch，macOS / iOS build 共用）', () => {
+describe('patch-safari-manifest.sh（event page patch，iOS build）', () => {
   const PATCH_PATH = path.join(SAFARI_APP_DIR, 'patch-safari-manifest.sh');
 
   it('必須存在且 executable', () => {
@@ -176,14 +196,5 @@ describe('patch-safari-manifest.sh（event page patch，macOS / iOS build 共用
     assert.deepStrictEqual(ffList,
       ['popup/popup-core.js', 'content/settings-defaults.js', 'background/service-worker.js'],
       'firefox-build.sh scripts 清單變動——patch-safari-manifest.sh 必須同步（兩邊是同一份事實的雙實作）');
-  });
-
-  it('macOS safari-build.sh 也必須接同一支 patch script（不雙實作）', () => {
-    const macSh = fs.readFileSync(path.join(SAFARI_APP_DIR, 'safari-build.sh'), 'utf8');
-    const calls = macSh.match(/patch-safari-manifest\.sh/g) || [];
-    assert.ok(calls.length >= 2,
-      `safari-build.sh 必須呼叫 patch-safari-manifest.sh 至少 2 次（patch + verify），實際 ${calls.length} 次`);
-    assert.ok(/diff -r --brief -x manifest\.json jread\//.test(macSh),
-      'safari-build.sh drift check 必須 -x manifest.json（manifest 是受控差異）');
   });
 });
