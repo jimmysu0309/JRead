@@ -1426,6 +1426,24 @@ html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] iframe {
   break-inside: avoid;
 }
+/* v0.8.7：翻頁模式下 media / 連結禁用原生 drag + 補 touch-action——真機實證
+   （Jimmy 2026-06-09 culpium/Substack）圖片 draggable=true，iPhone 上水平拖曳
+   圖片會啟動 iOS 原生 drag-and-drop（lift）搶走左右滑手勢 → 「圖片上滑不翻頁、
+   內文正常」。卡片設 touch-action: pan-y 但 touch-action **不繼承**，圖片預設
+   auto 仍放行原生手勢。對 media + 連結明確補 touch-action: pan-y pinch-zoom（同
+   卡片，水平 swipe 不被瀏覽器原生攔）+ -webkit-user-drag/touch-callout: none
+   （停掉圖片 drag-lift 與長按選單），水平 swipe 一律交給 paged-mode.js JS 翻頁。
+   只在翻頁模式注入（此 block 在 if(opts.pagedMode) 內）；垂直模式不影響長按存圖。 */
+html [${ARTICLE_ATTR}="1"] img,
+html [${ARTICLE_ATTR}="1"] picture,
+html [${ARTICLE_ATTR}="1"] figure,
+html [${ARTICLE_ATTR}="1"] video,
+html [${ARTICLE_ATTR}="1"] svg,
+html [${ARTICLE_ATTR}="1"] a {
+  touch-action: pan-y pinch-zoom !important;
+  -webkit-user-drag: none !important;
+  -webkit-touch-callout: none !important;
+}
 /* 頁碼指示（paged-mode.js 建立 / 更新文字）：固定底部置中、不擋互動。
    色用中性灰——白卡 / 黑卡 / 米卡上都可讀，不依賴 theme 欄位。 */
 #__jread-page-indicator {
