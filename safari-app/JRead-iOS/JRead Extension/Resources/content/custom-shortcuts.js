@@ -58,8 +58,10 @@
 
   function onKeyDown(e) {
     if (!table) return;
-    // IME 中文輸入第一階段不攔（與 keyguard 同規則）
-    if (e.isComposing || e.keyCode === 229) return;
+    // IME 中文輸入第一階段不攔（與 keyguard 同規則）——但僅在「沒按 ⌥/⌃」時
+    // 才當輸入跳過。macOS / Chrome 的 dead-key 字母（⌥E / ⌥U / ⌥I / ⌥N / ⌥`）
+    // 會帶 isComposing / keyCode 229，但那其實是使用者按了含 ⌥ 的快速鍵，不能漏掉。
+    if ((e.isComposing || e.keyCode === 229) && !e.altKey && !e.ctrlKey) return;
     for (const cmd of SC.COMMANDS) {
       const s = table[cmd];
       if (s && SC.matches(e, s)) {
