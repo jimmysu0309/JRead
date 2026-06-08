@@ -3,39 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>JRead 收合鎖測試台</title>
+<title>JRead 收合範圍 instrument</title>
 <style>
   html, body { margin: 0; padding: 0; }
   html, body { overflow-x: hidden; overflow-y: visible; height: auto; }
-  body { min-height: 250vh; background: linear-gradient(#fff, #dde, #fff); }
+  body { min-height: 150vh; background: linear-gradient(#fff, #dde, #fff); }
   #card { position: fixed; top: 0; left: 0; right: 0; bottom: 0; touch-action: pan-y; }
   #status {
-    position: fixed; top: 0; left: 0; right: 0;
-    z-index: 99999; pointer-events: none;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 99999; pointer-events: none;
     border: 3px solid red; border-bottom: none; box-sizing: border-box;
     background: rgba(0,0,0,0.9); color: #fff; font: bold 15px/1.5 monospace; padding: 6px;
   }
+  #btns {
+    position: fixed; top: 64px; left: 0; right: 0; z-index: 99999;
+    border-left: 3px solid red; border-right: 3px solid red; box-sizing: border-box;
+    background: rgba(20,20,20,0.95); padding: 5px; display: flex; flex-wrap: wrap; gap: 5px;
+  }
+  #btns button { flex: 1 0 26%; padding: 9px 0; font: bold 14px monospace; background: #345; color: #fff; border: 1px solid #678; border-radius: 5px; }
+  #btns button.on { background: #2a7; }
   #log {
-    position: fixed; top: 64px; left: 0; right: 0; height: calc(52% - 64px);
-    z-index: 99999; pointer-events: none;
+    position: fixed; top: 132px; left: 0; right: 0; height: calc(52% - 132px);
+    z-index: 99998; pointer-events: none;
     border: 3px solid red; border-top: none; box-sizing: border-box;
     background: rgba(0,0,0,0.85); color: #0f0; font: 11px/1.2 monospace; padding: 4px;
     white-space: pre; overflow: hidden;
   }
   #steps {
-    position: fixed; top: 52%; left: 0; right: 0;
-    z-index: 99999; pointer-events: none;
-    background: rgba(0,40,90,0.92); color: #fff; font: 12px/1.35 -apple-system, monospace; padding: 7px;
-    box-sizing: border-box;
-  }
-  /* RESET 按鈕：可點，重置 vLocked + 回頂 */
-  #reset {
-    position: fixed; bottom: 0; left: 0; right: 0; height: 16%;
-    display: flex; align-items: center; justify-content: center;
-    background: #822; color: #fff; font: bold 16px monospace; z-index: 99999;
+    position: fixed; top: 52%; left: 0; right: 0; z-index: 99997; pointer-events: none;
+    background: rgba(0,40,90,0.92); color: #fff; font: 12px/1.35 -apple-system, monospace; padding: 7px; box-sizing: border-box;
   }
   #hint {
-    position: fixed; bottom: 16%; left: 0; right: 0; height: 24%;
+    position: fixed; bottom: 0; left: 0; right: 0; height: 26%;
     display: flex; align-items: center; justify-content: center;
     color: #06c; font: 15px monospace; pointer-events: none; z-index: 9999;
   }
@@ -43,107 +41,55 @@
 </head>
 <body>
 <div id="card"></div>
-<div id="hint">↑ 在這裡上滑 / 下滑 ↑</div>
-<div id="reset">⟳ 點這裡 RESET（解鎖 + 回頂）</div>
-<div id="steps">[NO-LOCK / 250vh] ① 上滑：工具列收不收得了（iH 變 836「收合」）→ ② 收合後停手 2 秒，看「工具列」是否維持「收合」不彈回 → ③ 截圖</div>
+<div id="hint">↑ 在這裡上滑收合 ↑</div>
+<div id="steps">① 點上面數字選 min-height → ② 上滑看「工具列」收不收得了 → ③ 找出還收得了的「最小」值 → ④ 截圖（含選中的值）</div>
 <div id="status"></div>
+<div id="btns"></div>
 <div id="log"></div>
 <script>
-  var SCROLL_LOCK_PX = 100;
-  var HMOVE_BLOCK_PX = 6;
-  var LOCK_ENABLED = false; // v0.7.244 驗證：關掉鎖，測純收合是否穩定不彈回
-  var vLocked = false;
-  var touchState = null;
   var card = document.getElementById('card');
   var statusEl = document.getElementById('status');
   var logEl = document.getElementById('log');
+  var btnsEl = document.getElementById('btns');
   var lines = [];
   var t0 = performance.now();
+  var curVH = 150;
   function ms() { return Math.round(performance.now() - t0); }
-  function vvH() { return window.visualViewport ? Math.round(window.visualViewport.height) : -1; }
   function sy() { return Math.round(window.scrollY || window.pageYOffset || 0); }
+  function maxScroll() { return Math.max(0, Math.round(document.documentElement.scrollHeight - window.innerHeight)); }
+  function tb() { return window.innerHeight >= 820 ? '收合' : '展開'; }
   function renderStatus() {
-    statusEl.textContent = '[NO-LOCK] vLocked=' + vLocked + ' sy=' + sy() + '\niH=' + window.innerHeight + ' (工具列:' + (window.innerHeight >= 820 ? '收合' : '展開') + ')';
+    statusEl.textContent = 'min-height=' + curVH + 'vh  可捲=' + maxScroll() + 'px\nsy=' + sy() + ' iH=' + window.innerHeight + ' 工具列:' + tb();
   }
-  function push(tag, extra) {
-    lines.push(ms() + ' ' + tag + ' sy=' + sy() + ' iH=' + window.innerHeight + (extra ? ' ' + extra : ''));
-    if (lines.length > 22) lines.shift();
+  function push(tag) {
+    lines.push(ms() + ' ' + tag + ' sy=' + sy() + ' iH=' + window.innerHeight + ' ' + tb());
+    if (lines.length > 16) lines.shift();
     logEl.textContent = lines.join('\n');
     renderStatus();
   }
-
-  // === 複製 JRead 鎖邏輯 ===
-  function applyVLock() {
-    if (vLocked) return;
-    vLocked = true;
-    card.style.setProperty('touch-action', 'none', 'important');
-    push('*** vLocked=TRUE ***', '(touch-action:none)');
-  }
-  function checkScrollLock() {
-    if (!LOCK_ENABLED) return; // no-lock 驗證模式
-    if (vLocked || touchState) return;
-    if (sy() > SCROLL_LOCK_PX) applyVLock();
-  }
-
-  window.addEventListener('scroll', function () {
-    checkScrollLock();
-  }, { passive: true });
-
-  window.addEventListener('touchstart', function (e) {
-    if (e.touches.length !== 1) { touchState = null; return; }
-    var t = e.touches[0];
-    touchState = { x: t.clientX, y: t.clientY };
-    push('TSTART', 'cancelable=' + e.cancelable);
-  }, { capture: true, passive: true });
-
-  var lastC = null;
-  window.addEventListener('touchmove', function (e) {
-    if (!touchState) return;
-    if (e.touches.length !== 1) { touchState = null; return; }
-    var t = e.touches[0];
-    var dx = t.clientX - touchState.x, dy = t.clientY - touchState.y;
-    // JRead onTouchMove 邏輯：vLocked 擋全部；第一頁只擋水平
-    var block = vLocked || (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX);
-    var acted = 'no';
-    if (block) {
-      if (e.cancelable) { e.preventDefault(); acted = 'preventDefault'; }
-      else { acted = 'CANT(noncancelable)'; }
-    }
-    if (e.cancelable !== lastC) {
-      push('TMOVE c=>' + e.cancelable, 'block=' + block + ' act=' + acted);
-      lastC = e.cancelable;
-    }
-  }, { capture: true, passive: false });
-
-  window.addEventListener('touchend', function (e) {
-    touchState = null;
-    checkScrollLock();
-    push('TEND', 'vLocked=' + vLocked);
-    lastC = null;
-  }, { capture: true, passive: true });
-
-  // RESET
-  document.getElementById('reset').addEventListener('click', function () {
-    vLocked = false;
-    card.style.removeProperty('touch-action');
+  function setVH(v) {
+    curVH = v;
+    document.body.style.minHeight = v + 'vh';
     window.scrollTo(0, 0);
+    [].forEach.call(btnsEl.children, function (b) { b.className = (parseInt(b.textContent) === v ? 'on' : ''); });
     lines = [];
-    push('=== RESET ===', '');
+    push('=== set ' + v + 'vh, 可捲≈' + maxScroll() + 'px ===');
+  }
+  [110, 120, 135, 150, 180, 250].forEach(function (v) {
+    var b = document.createElement('button');
+    b.textContent = v;
+    b.addEventListener('click', function () { setVH(v); });
+    btnsEl.appendChild(b);
   });
 
-  // 乾淨開始：擋掉 Safari 重整還原捲動位置（否則一載入 sy>100 就立刻誤鎖）
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   window.scrollTo(0, 0);
-  vLocked = false;
-  card.style.removeProperty('touch-action');
-
-  push('INIT', '(forced sy=0)');
-  // poll 同時記錄 iH 變化（工具列收合/展開時序），不只更新 status
   var lastIH = window.innerHeight;
   setInterval(function () {
     renderStatus();
-    if (window.innerHeight !== lastIH) { push('iH→' + window.innerHeight, (window.innerHeight >= 820 ? '收合' : '展開')); lastIH = window.innerHeight; }
+    if (window.innerHeight !== lastIH) { push('iH→' + window.innerHeight); lastIH = window.innerHeight; }
   }, 150);
+  setVH(150);
 </script>
 </body>
 </html>
