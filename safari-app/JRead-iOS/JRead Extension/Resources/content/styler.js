@@ -411,11 +411,17 @@ html [${ARTICLE_ATTR}="1"] {
      內文僅 318px、版心調大也無感——Jimmy iPhone 回報）。min() 連續縮放：
      viewport >= 933px 維持 56px 桌面卡片美學不變；越窄 padding 越收
      （430pt → ~26px、內文 378px）。結構性條件（viewport 寬度），不綁平台。
-     v0.7.226：垂直 padding 48px → min(48px, 6vw)。同水平邏輯——手機上
-     固定 48px 頂部白 + 40px margin 灰條合計 88px 才見第一行字（430pt probe
-     實測）。6vw 與水平 padding 同係數：窄 viewport 下四邊 padding 等寬
-     （430pt → ~26px），viewport >= 800px 維持 48px 桌面不變。 */
-  padding: min(48px, 6vw) min(56px, 6vw) !important;
+     v0.8.1：水平 padding 改 clamp(16px, calc(7.4vw - 12.8px), 56px)。
+     原 min(56px, 6vw) 在 390pt iPhone 留 23.4px×2 → 內文僅 343px，比原站
+     行動版主文窄（probe 實測 BBC/Wikipedia/Verge 原站內文 358-362px = 16px
+     gutter，JRead 反而窄 15px——Jimmy 回報「閱讀模式常比原本網頁內文還窄」）。
+     16px 是行動版主文業界標準左右 gutter（多數新聞/知識站採用），floor 設
+     16px 讓 390pt 內文 = 358px 對齊原站、不再更窄。線性段斜率對齊原 933px
+     桌面門檻（>= 933px 仍 56px、桌面卡片美學不變）。結構性條件（viewport
+     寬度 + 標準 gutter 常數），不綁平台。
+     垂直 padding 維持 min(48px, 6vw)（v0.7.226）——頂部空白是縱向體感、與
+     水平可讀寬無關，不需同步收到 16px。 */
+  padding: min(48px, 6vw) clamp(16px, calc(7.4vw - 12.8px), 56px) !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
