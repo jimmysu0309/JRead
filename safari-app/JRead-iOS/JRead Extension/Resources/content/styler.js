@@ -28,22 +28,34 @@
   // 所以「只點名不載入」在 iOS 上無效。@font-face 把字型實體載進來、由 JRead 自己
   // 掌控覆蓋率，才能跟 iOS 內建閱讀模式一樣零缺字。family 名稱用 "Noto Serif TC"
   // 對齊 popup 襯線 option 的第一順位——既有設定的使用者免遷移即生效。
-  // font-weight: 100 900 讓單一 Regular face 涵蓋全 weight 範圍（heading 等 bold
-  // 文字 faux-bold 仍用本字型，不會因 weight 不符而 fall back 回缺字的系統 serif）。
-  // woff2 lazy-load：只有實際選「襯線」用到此 family 時才會下載，預設無襯線使用者
-  // 零成本。chrome.runtime.getURL guard：extension context 失效時退回空字串（不注入）。
+  //
+  // v0.7.257：三個真實字重各一個靜態字面（Light 300 / Regular 400 / SemiBold 600，
+  // 同一份 6606 字覆蓋、由 Noto Serif TC 可變字型 pin 出）。為什麼不能沿用舊版
+  // 單一 face + 一個涵蓋 100~900 整段範圍的 weight 宣告：那寫法告訴瀏覽器「這一個
+  // 字面已涵蓋整段範圍」，於是使用者選的細(300)/中(400)/粗(600) 全被對映到同一字面、
+  // 且關閉 faux-bold 合成——襯線字重三段渲染完全相同（Jimmy 2026-06-08 回報「襯線
+  // 字重沒效果」的根因；無襯線走系統字 PingFang/JhengHei 有真實多字重故正常）。字重
+  // 無法無中生有（瀏覽器只能合成較粗、不能變細），故三段都內嵌真實字面才能各有差別。
+  // 三檔都用 font-display: swap + lazy-load——只有選「襯線」用到此 family 時才下載，
+  // 預設無襯線使用者零成本。chrome.runtime.getURL guard：extension context 失效時退回
+  // 空字串（不注入）。三個 @font-face 同 family 名、各自 font-weight 單值，瀏覽器依
+  // BODY_TEXT_SEL 注入的 font-weight 精準命中對應字面。
   let FONT_FACE_CSS = '';
   try {
     if (chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.getURL) {
-      const fontUrl = chrome.runtime.getURL('assets/fonts/noto-serif-tc.woff2');
-      FONT_FACE_CSS = `@font-face {
+      const faces = [
+        { weight: 300, file: 'noto-serif-tc-light.woff2' },
+        { weight: 400, file: 'noto-serif-tc-regular.woff2' },
+        { weight: 600, file: 'noto-serif-tc-semibold.woff2' },
+      ];
+      FONT_FACE_CSS = faces.map((f) => `@font-face {
   font-family: "Noto Serif TC";
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: ${f.weight};
   font-display: swap;
-  src: url("${fontUrl}") format("woff2");
+  src: url("${chrome.runtime.getURL('assets/fonts/' + f.file)}") format("woff2");
 }
-`;
+`).join('');
     }
   } catch (e) {
     FONT_FACE_CSS = '';
