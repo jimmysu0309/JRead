@@ -238,6 +238,15 @@ harness 覆蓋率很高（service worker 啟動、manifest 解析、content scri
 
 **「結果可逆」不是動手的理由**——必須先跟使用者確認再執行。
 
+### 7. UI 文字段落句末不加句號
+
+**所有使用者面對的中文 UI 文字**（popup / options 的說明文字、`.desc` / `.section-desc` / `.license` 段落、toast / status 訊息、按鈕與提示文字等）**段落句末不加句號**——Jimmy 2026-06-08 規則。
+
+- **只去段末句號，句中分句的句號保留**：例如「…API 儲存。Token 從…取得」中間那個句號是分句，留著；只有整段最後一字之後不放句號
+- 其他段末標點（？！）不在此規則內，照語意保留
+- **不影響**：程式碼註解（本專案註解用繁中、句末可有句號）、debug / console log、非使用者面對的字串
+- forcing function：`test/regression/options-desc-no-trailing-period.spec.js` 驗 options.html 段落收尾標籤前不得是句號。新增其他頁面的 UI 說明文字時，比照自查段末不留句號
+
 ---
 
 ## 規則變更流程
