@@ -1376,8 +1376,13 @@ html [${ARTICLE_ATTR}="1"] {
      touch-action 只管瀏覽器「原生手勢」回應、不影響 JS touch event；
      pan-y 同時讓瀏覽器不嘗試原生水平捲（卡片 overflow:hidden 本就不可
      原生水平捲），與 v0.7.237 onTouchMove 對水平 swipe 的 preventDefault
-     （擋系統邊緣返回手勢）互補並存。 */
-  touch-action: pan-y !important;
+     （擋系統邊緣返回手勢）互補並存。
+     v0.7.255：補 pinch-zoom token——純 pan-y 會關掉雙指捏合（iOS Safari 的
+     「呼叫所有標籤頁」手勢 = 雙指捏合縮放系統手勢），翻頁模式下使用者捏不
+     出標籤頁切換器（Jimmy 回報）。pan-y 只放行垂直 pan、pinch-zoom 放行雙指
+     縮放，兩者並列不互斥；單指水平 swipe 仍由 onTouchMove preventDefault 擋
+     （preventDefault 只在 touches.length === 1 觸發，雙指捏合不受影響）。 */
+  touch-action: pan-y pinch-zoom !important;
 }
 /* 媒體單頁化：高度 cap 在「頁面內容高 − caption 餘裕 120px」、等比縮放，
    搭配 break-inside: avoid 整塊不跨頁切割（高於一頁的元素 spec fallback
