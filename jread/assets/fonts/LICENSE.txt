@@ -1,4 +1,6 @@
-Noto Serif TC (noto-serif-tc.woff2) bundled with JRead.
+Noto Serif TC (noto-serif-tc-light.woff2 / noto-serif-tc-regular.woff2 /
+noto-serif-tc-semibold.woff2 — Light 300 / Regular 400 / SemiBold 600 字重
+subset，由 Noto Serif TC 可變字型 pin 出) bundled with JRead.
 
 Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name
 'Source'. Noto is a trademark of Google Inc. Noto fonts are open source.
