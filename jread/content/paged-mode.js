@@ -63,6 +63,7 @@
   const WHEEL_THRESHOLD = 90;       // 滾輪 delta 累積門檻
   const WHEEL_LOCKOUT_MS = 550;     // 翻頁後滾輪鎖定（吃掉觸控板慣性尾巴）
   const TURN_ANIM_MS = 260;         // 翻頁動畫時長
+  const HMOVE_BLOCK_PX = 6;         // v0.7.237：水平位移超此值即 preventDefault（擋 Safari 邊緣返回手勢）
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
@@ -130,6 +131,7 @@
   let touchState = null;    // { startX, startY, multi }
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
+  let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
 
   // stride = column 寬 + gap = (clientWidth − 左右 padding) + column-gap。
   // computed style 讀不到數值（jsdom 無 layout）時退回 clientWidth
@@ -203,6 +205,30 @@
   function pageCount() {
     if (!art) return 1;
     return measuredPages > 0 ? measuredPages : computePageCount(art.scrollWidth, stride());
+  }
+
+  // v0.7.237：依 showIndicator 增/移除底部頁碼指示器。install 與 sync（設定
+  // 即時切換）共用——頁碼是純顯示層，切換不需重建 multicol layout。
+  function reconcileIndicator() {
+    if (showIndicator) {
+      if (!indicatorEl) {
+        indicatorEl = document.getElementById(INDICATOR_ID);
+      }
+      if (!indicatorEl) {
+        indicatorEl = document.createElement('div');
+        indicatorEl.id = INDICATOR_ID;
+        // 必須掛在 <html> 下（與 styler progressEl 同層），不能掛 body——
+        // body 帶 data-jread-ancestor，styler 的 sibling 隱藏規則
+        // `[ancestor] > *:not(...)` 會把 body 下的非主文子元素全部 display:none，
+        // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
+        // markAncestors 標記，不受該規則影響。
+        (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
+      }
+      renderIndicator();
+    } else if (indicatorEl) {
+      indicatorEl.remove();
+      indicatorEl = null;
+    }
   }
 
   function renderIndicator() {
@@ -289,8 +315,22 @@
     touchState = { startX: t.clientX, startY: t.clientY };
   }
 
+  // v0.7.237：水平支配的單指滑動 preventDefault——攔住 iOS Safari 的系統級
+  // 邊緣返回手勢（swipe-from-edge back/forward），以及任何原生水平卷動。
+  // 翻頁模式下文件已 overflow:hidden 鎖死、水平觸控本就無原生用途，攔掉零副作用。
+  // 必須 passive:false 才能 preventDefault；只攔單指（多指 = 3 指 toggle，讓位
+  // 給 touch-gestures.js）。Jimmy 回報「第一頁左滑觸發 Safari back」即此手勢——
+  // 第一頁無上一頁可翻，但 Safari 仍把邊緣滑動解讀成返回；preventDefault 後
+  // Safari 收不到該手勢、不再導航（翻頁仍由 touchend 的 classifySwipe 處理）。
   function onTouchMove(e) {
-    if (touchState && e.touches.length !== 1) touchState = null;
+    if (!touchState) return;
+    if (e.touches.length !== 1) { touchState = null; return; }
+    const t = e.touches[0];
+    const dx = t.clientX - touchState.startX;
+    const dy = t.clientY - touchState.startY;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX && e.cancelable) {
+      e.preventDefault();
+    }
   }
 
   function onTouchEnd(e) {
@@ -322,7 +362,8 @@
 
   function install(articleEl) {
     if (installed && art === articleEl) {
-      // styler reapply 後重掛：重算頁數、回到原比例位置
+      // styler reapply 後重掛：頁碼開關可能變動（reconcile）、重算頁數回原位
+      reconcileIndicator();
       onResize();
       return;
     }
@@ -330,24 +371,17 @@
     if (!articleEl) return;
     art = articleEl;
 
-    indicatorEl = document.getElementById(INDICATOR_ID);
-    if (!indicatorEl) {
-      indicatorEl = document.createElement('div');
-      indicatorEl.id = INDICATOR_ID;
-      // 必須掛在 <html> 下（與 styler progressEl 同層），不能掛 body——
-      // body 帶 data-jread-ancestor，styler 的 sibling 隱藏規則
-      // `[ancestor] > *:not(...)` 會把 body 下的非主文子元素全部 display:none，
-      // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
-      // markAncestors 標記，不受該規則影響。
-      (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
-    }
+    // v0.7.237：頁碼指示器依 showIndicator 增/移除（settings.showPageNumber）
+    reconcileIndicator();
 
     // keydown 必須 capture（先於原站 listener）；touch passive（不阻塞原生
     // 行為，swipe 判定在 touchend 才做）；wheel passive: false（要 preventDefault）。
     window.addEventListener('keydown', onKeydown, true);
     window.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
-    window.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
+    // touchmove 必須 passive:false——onTouchMove 對水平滑動 preventDefault 擋
+    // iOS Safari 邊緣返回手勢（v0.7.237），passive:true 無法 preventDefault。
+    window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
     window.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     window.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.addEventListener('resize', onResize);
@@ -374,7 +408,7 @@
     window.removeEventListener('keydown', onKeydown, true);
     window.removeEventListener('wheel', onWheel, { passive: false });
     window.removeEventListener('touchstart', onTouchStart, { capture: true, passive: true });
-    window.removeEventListener('touchmove', onTouchMove, { capture: true, passive: true });
+    window.removeEventListener('touchmove', onTouchMove, { capture: true, passive: false });
     window.removeEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     window.removeEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.removeEventListener('resize', onResize);
@@ -400,6 +434,14 @@
 
   function resetPosition() { lastRatio = 0; }
 
+  // v0.7.237：頁碼指示即時切換（popup showPageNumber toggle）。純顯示層——
+  // 只增/移除指示器、不重建 multicol layout（避免 full styler reapply 的
+  // 捲動→翻頁閃爍）。installed 時才 reconcile（未裝時只更新旗標，下次 install 生效）。
+  function setShowIndicator(show) {
+    showIndicator = show !== false;
+    if (installed) reconcileIndicator();
+  }
+
   // 文件卷動位置捕捉：必須在 styler 注入 overflow hidden **之前**呼叫——
   // 注入後文件不可卷動、window.scrollY 已被 clamp 成 0，事後讀必丟失。
   // main.js 在 enterReaderMode / scheduleReapply 的 styler.apply 前呼叫；
@@ -411,6 +453,9 @@
   // settings → 模組狀態同步（與 space-scroll.sync 同形）：pagedMode = true
   // 且有 articleEl 才 install。
   function sync(settings, articleEl) {
+    // v0.7.237：頁碼指示開關（嚴格 !== false → 預設顯示）。install 前先更新，
+    // reconcileIndicator 才能據此增/移除。
+    showIndicator = !(settings && settings.showPageNumber === false);
     const on = !!(settings && settings.pagedMode === true);
     if (on && articleEl) install(articleEl);
     else uninstall();
@@ -425,6 +470,7 @@
     install,
     uninstall,
     resetPosition,
+    setShowIndicator,
     captureScrollY,
     isInstalled: () => installed,
     SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD,

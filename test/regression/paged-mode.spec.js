@@ -288,6 +288,120 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // ---- C2. 頁碼指示開關 showPageNumber（v0.7.237）------------------------
+  // Jimmy 回報：翻頁模式底部頁碼「3 / 43」佔顯示空間，做成 option。
+  // 訊號層次：驗 sync/setShowIndicator 對指示器 DOM 的增/移除 + 模組不被
+  // uninstall（純顯示層）。不驗真實 layout（jsdom 無 layout）。
+  describe('頁碼指示開關 showPageNumber（v0.7.237）', () => {
+    function loadModuleEnv() {
+      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+      env.window.eval(PAGED_SRC);
+      return env;
+    }
+
+    it('sync(pagedMode: true, showPageNumber: false) → installed 但無頁碼指示器', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true, showPageNumber: false }, art);
+      assert.strictEqual(api.isInstalled(), true, 'showPageNumber=false 不得影響翻頁模式啟動');
+      assert.strictEqual(env.document.getElementById('__jread-page-indicator'), null,
+        'showPageNumber=false → 不建頁碼指示器');
+      api.uninstall();
+    });
+
+    it('sync 預設（showPageNumber 未設）→ 顯示頁碼指示器（嚮後相容）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      assert.ok(env.document.getElementById('__jread-page-indicator'),
+        'showPageNumber 未設 → 預設顯示（!== false）');
+      api.uninstall();
+    });
+
+    it('setShowIndicator 即時增/移除頁碼指示器、不 uninstall 模組（輕量路徑）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      assert.ok(env.document.getElementById('__jread-page-indicator'), '初始顯示');
+      api.setShowIndicator(false);
+      assert.strictEqual(env.document.getElementById('__jread-page-indicator'), null,
+        'setShowIndicator(false) → 移除指示器');
+      assert.strictEqual(api.isInstalled(), true, 'setShowIndicator 不得 uninstall 翻頁模組');
+      api.setShowIndicator(true);
+      assert.ok(env.document.getElementById('__jread-page-indicator'),
+        'setShowIndicator(true) → 重新建立指示器');
+      api.uninstall();
+    });
+  });
+
+  // ---- C3. 邊緣手勢攔截 onTouchMove preventDefault（v0.7.237）-------------
+  // Jimmy 回報：翻頁模式第一頁左滑觸發 iOS Safari「back」。修法：水平支配的
+  // 單指 touchmove preventDefault，攔住系統邊緣返回手勢（passive:false 才能擋）。
+  // 訊號層次：驗「水平 preventDefault / 垂直放行」的判定邏輯 + listener 註冊
+  // 為 passive:false。不驗真實 iOS Safari 是否尊重 preventDefault（系統手勢
+  // 只能 Jimmy 真機驗——idb 合成 HID 無法觸發 UIScreenEdgePanGestureRecognizer，
+  // 2026-06-08 simulator 實證）。
+  describe('邊緣手勢攔截 onTouchMove（v0.7.237）', () => {
+    function loadModuleEnv() {
+      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+      env.window.eval(PAGED_SRC);
+      return env;
+    }
+    function fireTouch(env, type, touches, cancelable) {
+      const ev = new env.window.Event(type, { bubbles: true, cancelable: cancelable !== false });
+      ev.touches = touches;
+      ev.changedTouches = touches;
+      let prevented = false;
+      const orig = ev.preventDefault.bind(ev);
+      ev.preventDefault = () => { prevented = true; orig(); };
+      env.window.dispatchEvent(ev);
+      return prevented;
+    }
+
+    it('水平支配單指滑動 → preventDefault（擋 Safari 返回手勢）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      const prevented = fireTouch(env, 'touchmove', [{ clientX: 360, clientY: 305 }]);
+      assert.strictEqual(prevented, true, '|dx| > |dy| 的滑動必須 preventDefault');
+      api.uninstall();
+    });
+
+    it('垂直支配滑動 → 不 preventDefault（放行 pull-to-refresh / 系統卷動）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      const prevented = fireTouch(env, 'touchmove', [{ clientX: 405, clientY: 380 }]);
+      assert.strictEqual(prevented, false, '|dy| > |dx| 的滑動不得 preventDefault');
+      api.uninstall();
+    });
+
+    it('多指 touchmove → 不 preventDefault（讓位 3 指 toggle）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      const prevented = fireTouch(env, 'touchmove',
+        [{ clientX: 360, clientY: 305 }, { clientX: 200, clientY: 305 }, { clientX: 100, clientY: 305 }]);
+      assert.strictEqual(prevented, false, '多指滑動不得 preventDefault（讓位手勢模組）');
+      api.uninstall();
+    });
+
+    it('touchmove listener 必須 passive:false（否則 preventDefault 無效、擋不住返回手勢）', () => {
+      assert.ok(
+        /addEventListener\('touchmove', onTouchMove, \{ capture: true, passive: false \}\)/.test(PAGED_SRC),
+        'touchmove 必須註冊為 passive:false');
+    });
+  });
+
   // ---- D. 跨檔字面值同步（forcing function）------------------------------
   describe('跨檔同步', () => {
     it('paged-mode.js PROGRESS_ID 必須與 styler.js PROGRESS_ID 字面一致', () => {
@@ -314,6 +428,27 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(POPUP_HTML.includes('id="paged-mode-cb"'), 'popup.html 須含 checkbox');
       assert.ok(/save\(\{\s*pagedMode:/.test(POPUP_SRC), 'popup.js 須在 change 時 save({ pagedMode })');
     });
+
+    it('shared defaults / popup DEFAULT_SETTINGS.showPageNumber 預設都是 true（v0.7.237）', () => {
+      const sharedDefaults = require('../../jread/content/settings-defaults.js');
+      assert.strictEqual(sharedDefaults.showPageNumber, true,
+        'settings-defaults.js showPageNumber 預設必須 true（嚮後相容：原本一律顯示）');
+      const m = POPUP_SRC.match(/showPageNumber:\s*(\S+?),/);
+      assert.ok(m, 'popup.js DEFAULT_SETTINGS 須含 showPageNumber');
+      assert.strictEqual(m[1], 'true', 'popup.js showPageNumber 預設必須 true');
+    });
+
+    it('popup.html 須含 #page-number-cb / #page-number-row + .setting-row[hidden] 修正（v0.7.237）', () => {
+      assert.ok(POPUP_HTML.includes('id="page-number-cb"'), 'popup.html 須含頁碼指示 checkbox');
+      assert.ok(POPUP_HTML.includes('id="page-number-row"'), 'popup.html 須含頁碼指示 row');
+      assert.ok(/save\(\{\s*showPageNumber:/.test(POPUP_SRC), 'popup.js 須在 change 時 save({ showPageNumber })');
+      // .setting-row { display:flex }（author origin）會蓋過 [hidden] 屬性的 UA
+      // display:none——沒這條顯式規則，JS 對 setting-row 設 .hidden=true 完全無效
+      // （iOS simulator 實證：頁碼指示 row 在翻頁模式關閉時仍顯示）。
+      assert.ok(
+        /\.setting-row\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(POPUP_HTML),
+        'popup.html 須有 .setting-row[hidden] { display:none !important }（修 hidden 屬性對 setting-row 失效）');
+    });
   });
 
   // ---- E. main.js wiring 結構順序 ----------------------------------------
@@ -321,6 +456,17 @@ describe('翻頁模式（v0.7.227）', () => {
     it('storage.onChanged relevantKeys 含 pagedMode（即時切換走 reapply）', () => {
       const m = MAIN_SRC.match(/const relevantKeys = \[([^\]]+)\]/);
       assert.ok(m && m[1].includes("'pagedMode'"), 'relevantKeys 必須含 pagedMode');
+    });
+
+    it('showPageNumber 走獨立輕量路徑（setShowIndicator）、不在 relevantKeys（v0.7.237）', () => {
+      // 頁碼指示是純顯示層——full reapply 會造成捲動→翻頁閃爍，改直接 reconcile。
+      assert.ok(/'showPageNumber' in changes/.test(MAIN_SRC),
+        'main.js 須獨立處理 showPageNumber 變更');
+      assert.ok(/NS\.pagedMode\.setShowIndicator\(/.test(MAIN_SRC),
+        'main.js 須呼叫 NS.pagedMode.setShowIndicator');
+      const m = MAIN_SRC.match(/const relevantKeys = \[([^\]]+)\]/);
+      assert.ok(m && !m[1].includes('showPageNumber'),
+        'showPageNumber 不應在 relevantKeys（純顯示層、不需 full styler reapply）');
     });
 
     it('exitReaderModeImpl 必須 uninstall 翻頁模組 + resetPosition', () => {
