@@ -494,11 +494,15 @@
   </div>
 
   <div class="field">
-    <label for="boldText">
-      字粗外觀
-      <span class="desc">用 <code>-webkit-font-smoothing</code> 切換字體粗細視覺（細 = antialiased / grayscale；粗 = subpixel-antialiased，macOS 預設）。僅在 macOS 有差異；Windows / Linux 兩者視覺一致。</span>
+    <label for="fontWeight">
+      字重
+      <span class="desc">調整內文字體粗細（細 = 300 / 中 = 400 / 粗 = 600 Semibold）。用真正的 <code>font-weight</code>，<strong>全平台一致生效</strong>。標題字重不受影響（保留章節階層）。</span>
     </label>
-    <input type="checkbox" id="boldText">
+    <select id="fontWeight">
+      <option value="300">細</option>
+      <option value="400">中</option>
+      <option value="600">粗</option>
+    </select>
   </div>
 
   <div class="field">
