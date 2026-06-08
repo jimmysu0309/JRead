@@ -18,9 +18,9 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
-## [2026-06-08] v0.7.240→243 收合後鎖死垂直卷動，真機是否「立刻」鎖死不重展開
-- 觸發頁面：任意翻頁模式（pagedMode）文章，iOS Safari（TestFlight v0.7.243）
-- 症狀：(待驗) 第一頁垂直滑收合 iOS 工具列後，程式應**立刻**鎖死垂直卷動（vLocked → onTouchMove 擋全部 + 卡片 touch-action:none、scrollY 凍結）。逐版修法：v0.7.240 初版（Jimmy「收合後沒鎖、要滑到第二頁回來才鎖」）→ v0.7.241 補 scroll/visualViewport.resize/touchend 延遲重驗 trigger（Jimmy「會鎖、但要等 scroll bar 消失 ~5s」）→ v0.7.242 改讀 visualViewport.height（Jimmy「仍要等 scroll bar 消失 ~5s」→ **證實 visualViewport.height 在 iOS 也延遲更新**）→ v0.7.243 **棄用 viewport 高度、改用 scrollY 即時上鎖**（scrollY > 100px 即視為已做收合滑動，scrollY 不延遲）。需真機確認：(1) 第一頁收合後是否「立刻」鎖死、垂直滑不再能把工具列重新展開；(2) 左右翻頁確實變靈敏；(3) scrollY 門檻 100px 是否在工具列「確實已收合」之後才鎖（理論上 iOS 捲 50px 內就收合提交，100px 安全；若真機看到「鎖了但工具列還在」代表門檻要再調或 iOS 該裝置收合提交點更高）。
-- 推測根因：N/A（功能驗收，非 bug）。決策邏輯已有 jsdom spec（shouldLockByScroll / blockTouchDecision / classifyViewportChange / viewportH）+ scroll listener 註冊 forcing function，sanity break 驗過。
-- 未補 spec 原因：iOS Safari 工具列收合提交點對應的 scrollY 門檻、以及 viewport 高度更新時機，都是 WebKit + iOS runtime 行為，jsdom 無 layout、Chromium harness 不跑此 media query、模擬器對 Safari chrome 行為亦非權威（CLAUDE.md WebKit 軌警語）。只能真機 TestFlight 驗。若 v0.7.243 仍不對，下一步上 iOS 模擬器 instrument（紅框 div 印 scrollY / innerHeight / visualViewport.height 逐毫秒時序）。
-- 責任人/目標日期：Jimmy 真機驗（TestFlight v0.7.243 上架後），驗過即清本條。
+## [2026-06-08] v0.7.244 翻頁收合「縮小範圍、不鎖」最終版真機 feel-check
+- 觸發頁面：任意翻頁模式（pagedMode）文章，iOS Safari（TestFlight v0.7.244）
+- 症狀：(待最終確認) v0.7.240→243 的「收合後鎖死垂直卷動」已實證在 iOS 本質做不到（touch-action:none 鎖死時慣性彈回頂端 + 工具列重展開；下滑必能叫回工具列），整套鎖已撤回。v0.7.244 = min-height 101vh（真機 Pages instrument 逐值實測：101vh 可捲 ~8px 即收得了工具列）+ 回 v0.7.239 per-page 模型（第一頁放行垂直、第二頁起 preventDefault 鎖）。核心行為已在真機 instrument 驗過（101vh 收得了 / 無鎖無彈回 / 下滑自然叫回工具列）。剩：組裝成 extension 後的整體手感確認——第一頁左右滑是否乾淨、收合是否如預期、第二頁起垂直是否鎖住。
+- 推測根因：N/A（功能收尾，非 bug）。
+- 未補 spec 原因：iOS Safari 工具列收合 / 第一頁放行第二頁鎖的真機手感是 WebKit + iOS runtime 行為，jsdom / Chromium harness / 模擬器皆非權威（CLAUDE.md WebKit 軌警語）。CSS forcing function（min-height > 100vh + overflow-y visible + 觸控 media query）+ shouldBlockTouchMove per-page spec 已涵蓋可測層。
+- 責任人/目標日期：Jimmy 真機驗（TestFlight v0.7.244 上架後），OK 即清本條 + 移除 docs/instrument.html 與 GitHub Pages。
