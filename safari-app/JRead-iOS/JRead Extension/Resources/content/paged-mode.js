@@ -170,6 +170,7 @@
   let vLocked = false;      // 垂直卷動是否已鎖死（工具列收合後 true）
   let collapseBaseW = 0;    // 工具列展開時的 innerWidth baseline（寬度變 = 旋轉，重設）
   let collapseBaseH = 0;    // 工具列展開時的 innerHeight baseline（變高 = 收合）
+  let collapseProbeTimers = []; // v0.7.241：垂直滑後延遲重驗收合的 timer（收合在 touchend 之後才完成）
 
   // stride = column 寬 + gap = (clientWidth − 左右 padding) + column-gap。
   // computed style 讀不到數值（jsdom 無 layout）時退回 clientWidth
@@ -321,6 +322,32 @@
     else if (action === 'lock') { applyVLock(); }
   }
 
+  // v0.7.241：垂直滑後延遲重驗收合（Jimmy 真機回報「第一頁收合後沒鎖死，要滑到第二頁
+  // 再回來才鎖」）。根因：iOS 工具列收合在垂直滑的 touchend「之後」才完成（慣性 +
+  // 工具列動畫），innerHeight 變高也在那之後；而 window 'resize' 對工具列收合不可靠
+  // 觸發，touchend 當下 checkCollapseLock 又還沒變高 → 收合與下次檢查之間有空窗，
+  // 直到下個手勢（翻到第二頁）的 touchend 才補上鎖。對策：手勢結束後排幾個延遲
+  // 重驗，等收合完成後 innerHeight 已變高即上鎖。idempotent（applyVLock 有 guard）。
+  function clearCollapseProbes() {
+    for (const t of collapseProbeTimers) clearTimeout(t);
+    collapseProbeTimers = [];
+  }
+  function scheduleCollapseProbes() {
+    if (typeof setTimeout === 'undefined') return;
+    clearCollapseProbes();
+    collapseProbeTimers = [100, 300, 600, 1000].map(ms => setTimeout(() => {
+      if (!installed || vLocked) return;
+      checkCollapseLock();
+    }, ms));
+  }
+
+  // v0.7.241：文件捲動即重驗收合——收合過程 innerHeight 會在捲動中/後變高，捲動
+  // 事件比 window 'resize' 可靠。passive（不擋捲動）；已鎖就跳過。
+  function onScroll() {
+    if (vLocked) return;
+    checkCollapseLock();
+  }
+
   // rAF ease-out 動畫跳頁。jsdom 無 layout，spec 不測本函式。
   function goTo(n, animate) {
     if (!art) return;
@@ -429,6 +456,8 @@
     touchState = null;
     // v0.7.240：手勢結束後對照 viewport——這次若是收合用的垂直滑，innerHeight 已變高 → 上鎖
     checkCollapseLock();
+    // v0.7.241：收合常在 touchend「之後」才完成（innerHeight 那時才變高）——排延遲重驗補上鎖
+    if (!vLocked) scheduleCollapseProbes();
     if (dir) turn(dir);
   }
 
@@ -481,6 +510,11 @@
     window.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     window.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.addEventListener('resize', onResize);
+    // v0.7.241：捲動 + visualViewport resize 都重驗收合鎖——iOS 工具列收合對 window
+    // 'resize' 觸發不可靠，這兩個是收合「完成後」更可靠的訊號（捲動驅動收合、
+    // visualViewport 是 iOS 工具列高度變化的正規事件）。
+    window.addEventListener('scroll', onScroll, { passive: true });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
 
     installed = true;
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
@@ -508,9 +542,12 @@
     window.removeEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     window.removeEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('scroll', onScroll, { passive: true });
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     for (const t of remeasureTimers) clearTimeout(t);
     remeasureTimers = [];
+    clearCollapseProbes();
     if (indicatorEl) { indicatorEl.remove(); indicatorEl = null; }
     // v0.7.240：還原卡片 touch-action（鎖時設過 inline none），避免元素被 styler
     // reapply 沿用時殘留鎖狀態
