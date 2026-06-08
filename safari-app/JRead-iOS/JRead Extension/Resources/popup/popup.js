@@ -27,11 +27,17 @@ const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
 const autoDomainHostEl = document.getElementById('auto-domain-host');
 const pagedModeCb = document.getElementById('paged-mode-cb');
+const pageNumberRow = document.getElementById('page-number-row');
+const pageNumberCb = document.getElementById('page-number-cb');
 
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
 const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
-const CONTENT_WIDTH = { min: 480, max: 1200, step: 40, default: 720 };
+// v0.7.237：上限 1200 → 1600。寬視窗（iPad 橫向 / 桌面寬螢幕）下版心可調更
+// 寬；styler 端 clamp [300, 2000] 仍是最終防線（1600 < 2000 安全）。窄視窗
+// （手機）下 card 受 viewport clamp，上限拉高不影響——viewport < contentWidth
+// 時 max-width cap 無效、實際寬 = viewport（這是「手機調版心無感」的本質）。
+const CONTENT_WIDTH = { min: 480, max: 1600, step: 40, default: 720 };
 // 行距：unitless ratio，clamp 對齊 styler [1.0, 3.0]；auto = 0 sentinel（不注入
 // line-height，保留原站行距）。step 0.1 配合人眼舒適區間細調。
 const LINE_HEIGHT = { min: 1.0, max: 3.0, step: 0.1, default: 1.7, auto: 0 };
@@ -90,6 +96,9 @@ const DEFAULT_SETTINGS = {
   // v0.7.227：翻頁模式（電子書式水平翻頁）。popup 有 toggle；預設 false =
   // 傳統垂直卷動。與 SW DEFAULT_SETTINGS 同步（forcing spec 校對）。
   pagedMode: false,
+  // v0.7.237：翻頁模式頁碼指示。popup 有 toggle（翻頁模式開啟時才顯示該 row）；
+  // 預設 true = 顯示「3 / 43」。
+  showPageNumber: true,
   // v0.7.218：自訂快速鍵；popup 不放控制項（options 有 recorder），這裡僅作
   // storage.get 的 default fallback，避免讀回 undefined。
   customShortcuts: {
@@ -193,6 +202,10 @@ function render(settings) {
   }
   // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
   if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
+  // v0.7.237：頁碼指示 checkbox（嚴格 !== false → 預設顯示）；該 row 只在
+  // 翻頁模式開啟時才顯示（非翻頁模式無頁碼可言，避免雞肋控制項佔空間）。
+  if (pageNumberCb) pageNumberCb.checked = settings.showPageNumber !== false;
+  if (pageNumberRow) pageNumberRow.hidden = settings.pagedMode !== true;
 }
 
 let current = { ...DEFAULT_SETTINGS };
@@ -248,7 +261,17 @@ for (const btn of themeBtns) {
 // v0.7.227：翻頁模式 toggle。寫入後 content script 走 storage.onChanged →
 // scheduleReapply 即時切換（閱讀模式開啟中也能直接生效）。
 if (pagedModeCb) {
-  pagedModeCb.addEventListener('change', () => save({ pagedMode: pagedModeCb.checked }));
+  pagedModeCb.addEventListener('change', () => {
+    save({ pagedMode: pagedModeCb.checked });
+    // 翻頁模式 row 切換時，頁碼指示 row 跟著顯隱（render 也會處理，這裡即時反映）
+    if (pageNumberRow) pageNumberRow.hidden = !pagedModeCb.checked;
+  });
+}
+
+// v0.7.237：頁碼指示 toggle。寫入後 content script 走 storage.onChanged →
+// scheduleReapply → syncPagedModeFromSettings 即時增/移除底部頁碼指示器。
+if (pageNumberCb) {
+  pageNumberCb.addEventListener('change', () => save({ showPageNumber: pageNumberCb.checked }));
 }
 
 document.querySelector('[data-action="font-dec"]').addEventListener('click', () => {
