@@ -21,6 +21,34 @@
   const INLINE_IMG_MAX = 48;
   const PLAYER_ATTR = 'data-jread-player';
 
+  // 內嵌襯線 CJK 字型（Noto Serif TC 全 TC 集，woff2）。
+  // 為什麼必須內嵌：iOS Safari「網頁路徑」的預設襯線字型缺「夠」「查」等常用字的
+  // 字形，這些字 fall back 到蘋方黑體（iOS 模擬器實證）；且 Safari 網頁不理會
+  // CSS 指定的系統字型名稱（"Songti TC" 等一律 resolve 到那套有缺漏的預設 serif），
+  // 所以「只點名不載入」在 iOS 上無效。@font-face 把字型實體載進來、由 JRead 自己
+  // 掌控覆蓋率，才能跟 iOS 內建閱讀模式一樣零缺字。family 名稱用 "Noto Serif TC"
+  // 對齊 popup 襯線 option 的第一順位——既有設定的使用者免遷移即生效。
+  // font-weight: 100 900 讓單一 Regular face 涵蓋全 weight 範圍（heading 等 bold
+  // 文字 faux-bold 仍用本字型，不會因 weight 不符而 fall back 回缺字的系統 serif）。
+  // woff2 lazy-load：只有實際選「襯線」用到此 family 時才會下載，預設無襯線使用者
+  // 零成本。chrome.runtime.getURL guard：extension context 失效時退回空字串（不注入）。
+  let FONT_FACE_CSS = '';
+  try {
+    if (chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.getURL) {
+      const fontUrl = chrome.runtime.getURL('assets/fonts/noto-serif-tc.woff2');
+      FONT_FACE_CSS = `@font-face {
+  font-family: "Noto Serif TC";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("${fontUrl}") format("woff2");
+}
+`;
+    }
+  } catch (e) {
+    FONT_FACE_CSS = '';
+  }
+
   // 預設值：等於「未設定」——對應的 CSS 不會注入（保留原站樣式）
   const DEFAULTS = {
     theme: 'light',
@@ -1384,7 +1412,11 @@ html [${ARTICLE_ATTR}="1"] iframe {
 }`;
     }
 
-    return base + userOverrides;
+    // 內嵌襯線 CJK 字型只在使用者實際選了自訂字型（overrides.fontFamily）時注入，
+    // 與上方 font-family override rule 的觸發條件一致——預設無襯線時不污染 CSS。
+    // 接在最末（user font-family rule 之後）：woff2 lazy-load、且不打亂「CSS 第一個
+    // font-family block = user override rule」的既有結構（styler.spec 倚賴此順序）。
+    return base + userOverrides + (overrides.fontFamily ? FONT_FACE_CSS : '');
   }
 
   // v0.7.90 auto-hide scrollbar：scroll 事件觸發後立刻 set

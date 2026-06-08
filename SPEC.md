@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.252**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.253**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -349,6 +349,8 @@ v0.7.140 起 popup 多了「字型」select，提供 4 個內建 stack：
 | 等寬 | `ui-monospace, Menlo, Consolas, monospace` |
 
 option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐字一致（forcing function spec 校對）。styler 注入時會在使用者 stack 末尾再串自己的 fallback chain，即使具名字型都沒裝也能 fall back 到對應的 generic family。
+
+**內嵌襯線 CJK 字型（v0.7.253）**：iOS Safari「網頁路徑」的預設襯線字型缺「夠」「查」等常用字的字形（iOS 26.5 模擬器實證），且 Safari 網頁不認 CSS 指定的系統字型名（`"Songti TC"` 等一律 resolve 到那套有缺漏的預設 serif）——v0.7.221 的字型名 stack 只把「整段全黑體」改善到「多數字襯線、少數字仍缺」。根治：styler 打包完整的 **Noto Serif TC（全 TC 集 woff2，6,606 字、`jread/assets/fonts/noto-serif-tc.woff2`、約 1.3MB）**，用 `@font-face`（family 名 `"Noto Serif TC"` 對齊 stack 第一順位、`font-weight: 100 900` 讓單一 Regular face 涵蓋全 weight）經 `chrome.runtime.getURL` 載入；CJK 字元改由 JRead 自帶完整字型渲染，跨平台（尤其 iOS）零缺字。@font-face 只在 `overrides.fontFamily` 為 true（使用者選了自訂字型）時注入、woff2 lazy-load——預設無襯線使用者零成本、不下載。`web_accessible_resources` 的 `assets/*` 涵蓋字型路徑。forcing function `test/regression/embed-serif-font.spec.js`。iOS 內建閱讀模式之所以不缺字，是因為它是 Apple 原生排版器用完整系統 Songti，網頁拿不到那套——故必須自帶。
 
 
 | 欄位 | 型別 | 預設值 | 儲存位置 | 使用者可調？ |

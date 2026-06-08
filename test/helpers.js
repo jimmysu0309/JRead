@@ -48,8 +48,16 @@ function loadFixtureWithScripts(opts) {
   // 最小替身）的理由：cleaner/detector 的標題折疊倚賴 NS.foldTitlePunct，最小
   // 替身缺這個 helper 會讓 spec 走 fallback、驗不到 fold 行為（v0.7.251 CNBC
   // 智慧撇號修法的 forcing function 需要真 helper 才有意義）。
+  // getURL stub：styler 的內嵌字型 @font-face 用 chrome.runtime.getURL 取
+  // web_accessible_resource 路徑。缺這個 stub 時 styler 會 guard 成不注入
+  // @font-face（embed-serif-font.spec 驗的就是這條），補上才能驗到 runtime 注入。
   window.chrome = window.chrome || {
-    runtime: { getManifest: () => ({ version: '0.0.0-test' }), id: 'test-ext', sendMessage: () => {} }
+    runtime: {
+      getManifest: () => ({ version: '0.0.0-test' }),
+      id: 'test-ext',
+      sendMessage: () => {},
+      getURL: (p) => 'chrome-extension://test-ext/' + p
+    }
   };
   window.eval(SRC.namespace);
   for (const name of scripts) {
