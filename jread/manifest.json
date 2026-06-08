@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "0.7.251",
+  "version": "0.7.252",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -67,19 +67,23 @@
   "commands": {
     "toggle-reader-mode": {
       "suggested_key": {
-        "default": "Alt+R",
-        "mac": "Alt+R"
+        "default": "Alt+3",
+        "mac": "Alt+3"
       },
       "description": "切換純閱讀模式"
     },
     "send-to-readwise": {
       "suggested_key": {
-        "default": "Alt+Shift+R",
-        "mac": "Alt+Shift+R"
+        "default": "Alt+Shift+3",
+        "mac": "Alt+Shift+3"
       },
       "description": "送到 Readwise Reader（必要時自動啟動閱讀模式）"
     },
     "toggle-youtube-borderless": {
+      "suggested_key": {
+        "default": "Alt+4",
+        "mac": "Alt+4"
+      },
       "description": "切換 YouTube 無邊模式"
     }
   },
