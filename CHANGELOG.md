@@ -4,6 +4,8 @@
 
 ---
 
+**v0.8.3** — fix(雜訊 heading 壓掉真標題 + hero 字級下限): Jimmy 2026-06-09 回報 roomie.tw/posts/73403「標題在 iOS 字體相當小、在 Chrome 完全沒出現」。根因：站方把真標題做成「`H1.sr-only`（視覺隱藏）+ 非 heading `span.title`」，文章末尾另有一個 cleaner 漏網的雜訊 H3（「現在就追蹤 Roomie IG，看更多…」）。舊 `markPromotedTitleIfMissing` guard「articleEl 內有任何 non-hidden h1-h4 就放棄注入標題」被這個雜訊 H3 誤觸 → 真標題從不注入 → Chrome 整個沒標題、iOS 退回站方 23px 小 span。修法（detector）：guard 只在「可見 h1-h4 文字**等同 og:title**」時才放棄注入；雜訊 heading 不等同 og:title，不再壓掉真標題。注入後並把其餘 leaf 標題載體去重 hide（避免 responsive 站 desktop/mobile 雙份 span 殘留第二個標題）。另（styler，Jimmy 指定規則）：Auto 模式（titleFontSize=0）下加 **hero 字級下限 = 1.5× 內文字級**，原站把標題做太小時拉到下限、夠大則不動。forcing function：`roomie-noise-heading-blocks-title.spec.js`、`styler-title-font-size.spec.js` 新增 hero floor 四案、`detector.spec.js` 更新 guard 語意（等同 og:title 才 bail）。Chromium harness 實證 roomie 標題回到最上方大字 hero、無重複。**注意**：roomie 文末仍有兩項 pre-existing 殘留雜訊 heading（「訂閱 every little d.」「現在就追蹤」，>20 字超過 NOISE_HEADING_MAX_LEN）未在本輪處理，屬獨立 cleaner gap
+
 **v0.8.2** — change(AppIcon 改用 Claude Design 品牌稿 docs/icon-512.png 重生): Jimmy 2026-06-09 指定 app icon 改用 `docs/icon-512.png`（Claude Design 品牌 badge——品牌藍圓角方塊 + 白色 serif J、透明背景）為來源，取代 v0.8.1 用 Playwright 字型 fallback 即時 render 的 J（字面非品牌原稿）。`tools/generate-ios-appicon.js` 改成 full-bleed composite：badge 方形直邊本來就頂到畫布邊緣（opaque bbox = 滿版 512²、只有四圓角透明），疊在滿版品牌藍 `#2b6cb0` 底上 → 透明圓角被同色填滿 → 滿版出血、不透明無 alpha、圓角交給 iOS squircle。J 字面沿用 Claude Design 原稿不重繪。輸出 1024×1024 / colorType RGB（無 alpha）。ios-appicon-full-bleed.spec.js（v0.8.1 加）仍涵蓋此圖（四角品牌藍 + 無 alpha）。
 
 **v0.8.1** — fix(iPhone 閱讀內文寬度 + home screen app icon 白框):

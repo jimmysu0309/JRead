@@ -92,3 +92,73 @@ describe('styler — titleFontSize（v0.7.175）', () => {
       'titleFontSize=2 應 clamp 到 8px');
   });
 });
+
+// v0.8.3：hero 字級下限（Jimmy 2026-06-09 規則）。Auto 模式下原站標題太小時
+// 把 hero 拉到至少 1.5× 內文字級（roomie.tw 23px span 類站）。
+describe('styler — hero 字級下限（v0.8.3）', () => {
+  const FLOOR_FIXTURE = path.join(__dirname, 'fixtures', 'hero-title-font-floor.html');
+
+  function applyWith(opts) {
+    const env = loadFixtureWithScripts({
+      fixturePath: FLOOR_FIXTURE,
+      scripts: ['styler'],
+      viewport: { width: 1000, height: 800 },
+      pretendToBeVisual: true
+    });
+    const articleEl = env.document.querySelector('.article-body');
+    articleEl.setAttribute('data-jread-active', '1');
+    env.window.__JRead.styler.apply(articleEl, opts);
+    return { window: env.window, articleEl };
+  }
+
+  it('Auto 模式：過小的 hero h1 被拉到 1.5× 內文字級（18 → 27px inline）', () => {
+    const { articleEl } = applyWith({
+      theme: 'light', fontSize: 18, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 1.7, titleFontSize: 0
+    });
+    const h1 = articleEl.querySelector('h1.post-title');
+    assert.strictEqual(h1.style.getPropertyValue('font-size'), '27px',
+      `Auto 模式下過小 hero 應被拉到 27px，實際 "${h1.style.getPropertyValue('font-size')}"`);
+    assert.strictEqual(h1.style.getPropertyPriority('font-size'), 'important',
+      'hero 字級下限必須用 !important');
+  });
+
+  it('內文 36px → 下限 54px（隨內文字級縮放）', () => {
+    const { articleEl } = applyWith({
+      theme: 'light', fontSize: 36, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 1.7, titleFontSize: 0
+    });
+    const h1 = articleEl.querySelector('h1.post-title');
+    assert.strictEqual(h1.style.getPropertyValue('font-size'), '54px',
+      `內文 36px 時 hero 下限應為 54px，實際 "${h1.style.getPropertyValue('font-size')}"`);
+  });
+
+  it('override 模式（titleFontSize>0）：hero floor 不介入，由 titleFontSize 精準覆寫', () => {
+    const { articleEl } = applyWith({
+      theme: 'light', fontSize: 18, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 1.7, titleFontSize: 72
+    });
+    const h1 = articleEl.querySelector('h1.post-title');
+    assert.strictEqual(h1.style.getPropertyValue('font-size'), '72px',
+      `override 模式 hero 應為 72px（非 floor），實際 "${h1.style.getPropertyValue('font-size')}"`);
+  });
+
+  it('restore 後 hero inline font-size 完全還原', () => {
+    const env = loadFixtureWithScripts({
+      fixturePath: FLOOR_FIXTURE,
+      scripts: ['styler'],
+      viewport: { width: 1000, height: 800 },
+      pretendToBeVisual: true
+    });
+    const articleEl = env.document.querySelector('.article-body');
+    articleEl.setAttribute('data-jread-active', '1');
+    const snap = env.window.__JRead.styler.apply(articleEl, {
+      theme: 'light', fontSize: 18, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 1.7, titleFontSize: 0
+    });
+    env.window.__JRead.styler.restore(articleEl, snap);
+    const h1 = articleEl.querySelector('h1.post-title');
+    assert.strictEqual(h1.style.getPropertyValue('font-size'), '',
+      `restore 後 hero inline font-size 應清空，實際 "${h1.style.getPropertyValue('font-size')}"`);
+  });
+});

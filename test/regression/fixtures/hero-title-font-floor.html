@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<!--
+  hero 字級下限最小重現（v0.8.3）：articleEl 內第一個可見 h1 是真標題。
+  Auto 模式（titleFontSize=0）下，styler 應把 hero 字級拉到至少 1.5× 內文字級。
+-->
+<html>
+<head><title>測試標題</title></head>
+<body>
+  <main class="article-body">
+    <h1 class="post-title">這是一個被原站做得很小的文章標題</h1>
+    <p>主文第一段，內容夠長以模擬真實文章段落，讓 detector / styler 視為主文容器並套用閱讀模式排版規則。</p>
+    <p>主文第二段，繼續累積文字密度。</p>
+  </main>
+</body>
+</html>
