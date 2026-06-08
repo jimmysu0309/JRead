@@ -357,6 +357,27 @@
     return lastSafeWrapper;
   }
 
+  // strict CTA（立即報名 / 立即下載 等）promo block 整塊清：esmchina 類站把
+  // 整段活動推廣文字塞進單一 `<a>`、hide 該 `<a>` 即清乾淨；但 shoppingdesign
+  // 類站把推廣 banner 拆成「標題 div + 描述 div + 報名 <a>」多個 sibling
+  // （`div.title2` + `div.info2` + `a.btn-only2`），只 hide `<a>` 會留下標題 +
+  // 描述殘留。通則：strict CTA 是「活動 / 課程推廣 block」的最強訊號（主文不會
+  // 自己叫讀者「立即報名」），從 CTA 往上找「不含主文的最外層 wrapper」（重用
+  // findSafeWrapperForHeading 的 walk-up + 主文保護）整塊 hide。walk-up 止於含
+  // 主文長段落 / 標題 anchor 的祖先，主文一定受保護；找不到安全 wrapper（CTA
+  // 的 parent 就含主文，例：esmchina 單一 <a> 直接掛在主文流）則退回只 hide
+  // CTA 自己。回傳是否有 hide。
+  function hideStrictCtaPromoBlock(ctaEl, articleEl, hidden) {
+    if (!ctaEl || isInPreserved(ctaEl)) return false;
+    const block = findSafeWrapperForHeading(ctaEl, articleEl);
+    const target = block || ctaEl;
+    if (target === articleEl) return false;
+    if (target.contains && target.contains(articleEl)) return false;
+    if (target.dataset && target.dataset.jreadHidden === '1') return true;
+    hide(target, hidden);
+    return true;
+  }
+
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
   }
@@ -1613,6 +1634,9 @@
       }
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      // strict CTA（立即報名 等活動 / 課程推廣鈕）：往上整塊清 promo banner
+      // （標題 + 描述 + 報名鈕拆成多 sibling 的場景），避免只清按鈕留殘文。
+      if (strictHit && hideStrictCtaPromoBlock(a, articleEl, hidden)) continue;
       // 嘗試 hide parent p / div：
       //   1. a 文字占 parent 文字 80% 以上（整段都是 CTA）
       //   2. parent 文字匹配 CTA_PROMO_P_RE（推廣段落，非主文——加入會員 /
@@ -3764,6 +3788,13 @@
       );
       for (const el of allInteractive) {
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        // strict CTA（立即報名 等）：delayed lazy-inject 的活動 / 課程推廣
+        // banner（class 無語意 keyword、a / button text 才是訊號）整塊清。
+        // 放在 a / button 派發之前——對 a 也要走（btn-only2 類 class 不命中
+        // keyword、但 text「立即報名」是強訊號）。
+        if (NOISE_LINK_TEXT_STRICT_RE.test(norm(el.textContent))) {
+          if (hideStrictCtaPromoBlock(el, articleEl, hiddenList)) continue;
+        }
         // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）
         if (el.tagName === 'A') {
           if (shouldHideByKeyword(el)) hide(el, hiddenList);
