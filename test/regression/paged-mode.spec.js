@@ -111,10 +111,55 @@ describe('翻頁模式（v0.7.227）', () => {
         '翻頁容器 padding-right 必須為 0（WebKit 不把尾端 padding 算進 scrollable overflow）');
     });
 
-    it('pagedMode: true → 文件鎖卷動 + overscroll-behavior 防歷史手勢', () => {
+    it('pagedMode: true → 桌面文件鎖卷動 + overscroll-behavior 防歷史手勢', () => {
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
       assert.ok(css.includes('overscroll-behavior: none !important'),
         '須含 overscroll-behavior: none（macOS 觸控板水平 swipe 歷史導航防護）');
+      // 桌面（媒體查詢外）html/body 維持 overflow: hidden 鎖死垂直卷動
+      const base = css.match(/html\.__jread-active, html\.__jread-active body\s*\{([^}]*)\}/);
+      assert.ok(base && /overflow:\s*hidden\s*!important/.test(base[1]),
+        '桌面 base 規則須維持 overflow: hidden（無自動收合工具列、撐高會多無用捲軸）');
+    });
+
+    it('pagedMode: true → 觸控裝置放行垂直卷動 + 撐高 body（iOS 工具列自動收合 hack，v0.7.238）', () => {
+      // Jimmy 2026-06-08 回報：翻頁模式希望進入時自動收合 Safari 工具列多顯示
+      // 一行。simulator 對照實證「程式捲動無法觸發收合、只有真實手勢能」——
+      // 故 hack = 翻頁 document 在觸控裝置改為可垂直捲、撐高 body，使用者垂直
+      // 滑一下 → document 捲動 → iOS 自動收合工具列（卡片 fixed 視覺不動）。
+      // forcing function：
+      //   1. 必須有 (hover:none) and (pointer:coarse) 觸控媒體查詢區塊
+      //   2. 該區塊內 html/body overflow-y 必須是 visible（放行垂直卷動）
+      //   3. body 必須 min-height >= 100vh（給足捲動距離越過收合門檻）
+      // 任何人把翻頁 document 改回無條件 overflow:hidden（鎖死垂直卷動）→ 收合
+      // hack 失效、本測試 fail。
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      const mqIdx = css.indexOf('@media (hover: none) and (pointer: coarse)');
+      assert.ok(mqIdx >= 0, '須有 (hover:none) and (pointer:coarse) 觸控媒體查詢區塊（收合 hack 限觸控裝置）');
+      // 取媒體查詢起點之後的內容驗屬性（min-height: 200vh 是翻頁專屬、整份
+      // CSS 僅此一處，overflow-y: visible 在媒體查詢內為觸控裝置放行）
+      const after = css.slice(mqIdx);
+      assert.ok(/overflow-y:\s*visible\s*!important/.test(after),
+        '觸控裝置翻頁 document 必須 overflow-y: visible（放行垂直卷動，使用者滑一下觸發 iOS 工具列收合）');
+      // min-height 必須 >= 300vh：iOS 實證 200vh 一滑就貼底、Safari 接近底部
+      // 不收合工具列；500vh 落中段穩定收合。forcing：不得回退到 <= 200vh。
+      const mh = after.match(/min-height:\s*(\d+)vh\s*!important/);
+      assert.ok(mh, 'body 必須有 min-height: <N>vh（撐高給足垂直捲動距離）');
+      assert.ok(parseInt(mh[1], 10) >= 300,
+        `body min-height 必須 >= 300vh（實得 ${mh[1]}vh；200vh 一滑貼底、iOS 接近底部不收工具列）`);
+    });
+
+    it('pagedMode: true → 翻頁卡片 touch-action: pan-y（垂直 pan 冒泡捲 document 收工具列，v0.7.238）', () => {
+      // iOS simulator 真機實證：缺這行時 document 可捲（scrollH 1508 > 714）、
+      // 媒體查詢匹配，但 fixed + overflow:hidden 卡片上的非被動 touchmove
+      // listener 讓 WebKit 對垂直 pan 處置變曖昧、scrollY 卡死 0 → 工具列不收。
+      // touch-action: pan-y 讓垂直 pan 冒泡去捲 document（水平翻頁仍由 JS
+      // 程式控 scrollLeft，touch-action 不影響 JS touch event）。
+      // forcing function：任何人拿掉卡片 touch-action → 收合 hack 失效。
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*column-width[^}]*\}/s);
+      assert.ok(ruleMatch, '須有翻頁容器規則');
+      assert.ok(/touch-action:\s*pan-y\s*!important/.test(ruleMatch[0]),
+        '翻頁卡片必須含 touch-action: pan-y（垂直 pan 冒泡捲 document → iOS 自動收合工具列）');
     });
 
     it('pagedMode: true → 媒體單頁化（max-height dvh + break-inside: avoid）', () => {
