@@ -66,18 +66,18 @@ describe('(A) shortcut-utils 純邏輯', () => {
   });
 
   describe('matches —— modifier 全欄位嚴格比對', () => {
-    const altR = { code: 'KeyR', alt: true, shift: false, ctrl: false, meta: false };
-    it('⌥R 事件命中 ⌥R', () => {
-      assert.strictEqual(SC.matches(kbd('KeyR', { alt: true }), altR), true);
+    const alt3 = { code: 'Digit3', alt: true, shift: false, ctrl: false, meta: false };
+    it('⌥3 事件命中 ⌥3', () => {
+      assert.strictEqual(SC.matches(kbd('Digit3', { alt: true }), alt3), true);
     });
-    it('⌥⇧R 事件**不**命中 ⌥R（多按 shift 是不同組合）', () => {
-      assert.strictEqual(SC.matches(kbd('KeyR', { alt: true, shift: true }), altR), false);
+    it('⌥⇧3 事件**不**命中 ⌥3（多按 shift 是不同組合）', () => {
+      assert.strictEqual(SC.matches(kbd('Digit3', { alt: true, shift: true }), alt3), false);
     });
-    it('純 R 事件不命中 ⌥R', () => {
-      assert.strictEqual(SC.matches(kbd('KeyR'), altR), false);
+    it('純 3 事件不命中 ⌥3', () => {
+      assert.strictEqual(SC.matches(kbd('Digit3'), alt3), false);
     });
     it('shortcut 為 null 時恆 false（未自訂不可命中任何鍵）', () => {
-      assert.strictEqual(SC.matches(kbd('KeyR', { alt: true }), null), false);
+      assert.strictEqual(SC.matches(kbd('Digit3', { alt: true }), null), false);
     });
   });
 
@@ -100,11 +100,17 @@ describe('(A) shortcut-utils 純邏輯', () => {
     it('ESC 拒絕——保留給退出閱讀模式', () => {
       assert.strictEqual(SC.validate({ code: 'Escape', alt: true, shift: false, ctrl: false, meta: false }).ok, false);
     });
-    it('⌥R 拒絕——已是內建預設（browser 層停不掉，雙觸發 = toggle 兩次）', () => {
-      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyR', { alt: true }))).ok, false);
+    it('⌥3 拒絕——已是 toggle-reader-mode 內建預設（browser 層停不掉，雙觸發 = toggle 兩次）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit3', { alt: true }))).ok, false);
     });
-    it('⌥⇧R 拒絕——已是 send-to-readwise 內建預設', () => {
-      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyR', { alt: true, shift: true }))).ok, false);
+    it('⌥⇧3 拒絕——已是 send-to-readwise 內建預設', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit3', { alt: true, shift: true }))).ok, false);
+    });
+    it('⌥4 拒絕——已是 toggle-youtube-borderless 內建預設（v0.7.251 新增）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit4', { alt: true }))).ok, false);
+    });
+    it('⌥R 通過——v0.7.251 起不再是預設、釋放給自訂', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyR', { alt: true }))).ok, true);
     });
   });
 

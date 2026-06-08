@@ -2,8 +2,8 @@
 //
 // 動機：v0.7.134 從 Shinkansen 移植「無邊模式」進 JRead。隱藏所有 YouTube UI、
 // 強制 theater、影片 100vw × 100vh 撐滿視窗，並 SW 端 `chrome.windows.update`
-// 把瀏覽器視窗高度 resize 成匹配影片比例。功能無 suggested_key，使用者自綁
-// 快速鍵；popup 在 YouTube watch 頁多一顆「切換無邊模式」按鈕。
+// 把瀏覽器視窗高度 resize 成匹配影片比例。v0.7.251 起內建預設鍵 ⌥4（原本
+// 無 suggested_key）、亦可自綁；popup 在 YouTube watch 頁多一顆「切換無邊模式」按鈕。
 //
 // 與 cinema-mode（v0.7.133）兩者完全獨立、可同時 toggle、CSS 會搶
 // `#movie_player` rule，spec 不驗它們的互動，只各自管自己的結構。
@@ -193,14 +193,15 @@ describe('youtube-borderless v0.7.134 — manifest', () => {
       `youtube-borderless.js 必須在 main.js 之前載入（main.js 訊息 handler 會呼 NS.borderless.toggle()），實際順序 borderless=${idxBorderless} main=${idxMain}`);
   });
 
-  it('manifest.json commands 必須有 toggle-youtube-borderless（無 suggested_key 隱藏功能）', () => {
+  it('manifest.json commands 必須有 toggle-youtube-borderless（v0.7.251 起預設 ⌥4）', () => {
     assert.ok(MANIFEST.commands && MANIFEST.commands['toggle-youtube-borderless'],
       'manifest commands 必須有 toggle-youtube-borderless');
     const cmd = MANIFEST.commands['toggle-youtube-borderless'];
     assert.ok(cmd.description && cmd.description.length > 0,
       'toggle-youtube-borderless 必須有 description（給 chrome://extensions/shortcuts 顯示）');
-    assert.ok(!cmd.suggested_key,
-      'toggle-youtube-borderless 預期無 suggested_key（隱藏功能、避免撞鍵）');
+    // v0.7.251：Jimmy 指定預設鍵 ⌥4（原本無 suggested_key）。
+    assert.strictEqual(cmd.suggested_key && cmd.suggested_key.default, 'Alt+4',
+      'toggle-youtube-borderless suggested_key.default 必須是 Alt+4');
   });
 
   it('popup-core.js CONTENT_SCRIPT_FILES 必須與 manifest content_scripts.js 完全一致', () => {
