@@ -75,7 +75,7 @@
     lines = [];
     push('=== set ' + v + 'vh, 可捲≈' + maxScroll() + 'px ===');
   }
-  [110, 120, 135, 150, 180, 250].forEach(function (v) {
+  [101, 110, 120, 135, 150, 250].forEach(function (v) {
     var b = document.createElement('button');
     b.textContent = v;
     b.addEventListener('click', function () { setVH(v); });
