@@ -581,10 +581,11 @@
     </div>
 
     <div class="setting-row">
-      <label>字粗</label>
-      <div class="theme-group" role="group" aria-label="字粗">
-        <button class="theme-btn" data-bold="false" title="細（antialiased / 平滑邊緣）">細</button>
-        <button class="theme-btn" data-bold="true"  title="粗（subpixel-antialiased / macOS 預設）">粗</button>
+      <label>字重</label>
+      <div class="theme-group" role="group" aria-label="字重">
+        <button class="theme-btn" data-weight="300" title="細（font-weight 300）">細</button>
+        <button class="theme-btn" data-weight="400" title="中（font-weight 400，預設）">中</button>
+        <button class="theme-btn" data-weight="600" title="粗（font-weight 600 Semibold）">粗</button>
       </div>
     </div>
 
@@ -593,7 +594,7 @@
       <select id="font-family-select" class="font-family-select" aria-label="字型">
         <option value="system-ui">系統預設</option>
         <option value="&quot;Noto Serif TC&quot;, Georgia, &quot;Times New Roman&quot;, &quot;Songti TC&quot;, &quot;Songti SC&quot;, &quot;Hiragino Mincho ProN&quot;, serif">襯線</option>
-        <option value="&quot;Noto Sans TC&quot;, -apple-system, &quot;Helvetica Neue&quot;, sans-serif">無襯線</option>
+        <option value="-apple-system, &quot;PingFang TC&quot;, &quot;Microsoft JhengHei&quot;, &quot;Noto Sans TC&quot;, &quot;Helvetica Neue&quot;, sans-serif">無襯線</option>
         <option value="ui-monospace, Menlo, Consolas, monospace">等寬</option>
       </select>
     </div>
