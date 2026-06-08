@@ -253,6 +253,13 @@
     return (s || '').replace(/\s+/g, ' ').trim();
   }
 
+  // v0.7.251：標題比對專用正規化——在 norm（collapse 空白）之上再折疊
+  // typographic 引號/撇號/刪節號到 ASCII。canonical title（og:title /
+  // document.title）對「可見 heading direct text」的 strict `===` 比對，
+  // 兩端字串來源不同（meta 標籤常 ASCII、渲染 h1 常 smart-quote），必須
+  // 同折疊才不會因 ' vs ' 假性不等。詳見 namespace.js foldTitlePunct。
+  const normTitle = (s) => (NS && NS.foldTitlePunct ? NS.foldTitlePunct(s) : norm(s));
+
   // 「主文標題級」class anchor token list。命中於 wrapper 子樹則該 wrapper
   // 視為「含主文標題」、hideInsideArticleByHeadingText 的 walk-up fallback
   // 必須停（不再升級 hide），避免把含主標的 article-header wrapper 誤殺。
@@ -581,13 +588,13 @@
   // （og:title / document.title）的容器視為文章標題區，skip。
   function hideInsideArticleDirectChildLinkBlocks(articleEl, hidden) {
     const ogMeta = document.querySelector('meta[property="og:title"]');
-    const ogText = ogMeta && ogMeta.content ? norm(ogMeta.content) : '';
-    const docTitle = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
+    const docTitle = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
     const canonical = ogText || docTitle;
     function containsCanonicalTitle(el) {
       if (!canonical || canonical.length < 5) return false;
       for (const n of el.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
-        const dt = norm(Array.from(n.childNodes)
+        const dt = normTitle(Array.from(n.childNodes)
           .filter(c => c.nodeType === 3).map(c => c.textContent).join(''));
         if (dt && dt === canonical) return true;
       }
@@ -778,11 +785,11 @@
     // 標題，避免 newtalk.tw 類「site logo h1（page-wide unique 但語義非主文）」
     // 誤觸發 promote。markPromotedTitleIfMissing（v0.7.87/88）負責 article 內
     // 沒 visible h1 的場景找 p.name promote、與本機制互補。
-    const h1Text = norm(h1.textContent || '');
+    const h1Text = normTitle(h1.textContent || '');
     if (h1Text.length < 5) return;
     const og = document.querySelector('meta[property="og:title"]');
-    const ogText = og && og.content ? norm(og.content) : '';
-    const docT = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const ogText = og && og.content ? normTitle(og.content) : '';
+    const docT = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
     const baseTitle = ogText || docT;
     if (!baseTitle || baseTitle.length < 5) return;
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
@@ -1832,14 +1839,14 @@
     // 多個 subscribe/share/avatar links）textLen 短 + linkDensity 高觸發條件 A、
     // 連坐 hide 整段標題區。通則：跨站適用、不綁 substack hostname / class。
     const _ogMeta = document.querySelector('meta[property="og:title"]');
-    const _ogText = _ogMeta && _ogMeta.content ? norm(_ogMeta.content) : '';
-    const _docTitle = norm((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const _ogText = _ogMeta && _ogMeta.content ? normTitle(_ogMeta.content) : '';
+    const _docTitle = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
     const _canonicalTitle = _ogText || _docTitle;
     function siblingContainsCanonicalTitle(sib) {
       if (!_canonicalTitle || _canonicalTitle.length < 5) return false;
       if (!sib || !sib.querySelectorAll) return false;
       for (const el of sib.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
-        const directText = norm(Array.from(el.childNodes)
+        const directText = normTitle(Array.from(el.childNodes)
           .filter(n => n.nodeType === 3)
           .map(n => n.textContent).join(''));
         if (directText && directText === _canonicalTitle) return true;

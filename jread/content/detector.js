@@ -485,7 +485,12 @@
   // h1/h2 就是本文標題——把主文容器升級到它與 articleEl 的共同 parent，
   // 使標題納入主文 scope。
   function normalizeTitle(s) {
-    return (s || '').replace(/\s+/g, ' ').trim();
+    // v0.7.251：折疊 typographic 引號/撇號/刪節號到 ASCII（og:title 常 ASCII、
+    // 渲染 h1 常 smart-quote，strict 比對需同折疊）。getCanonicalTitle 折疊後
+    // 才切 `–—|` 站名尾綴——foldTitlePunct 刻意不折破折號，split 仍有效。
+    return (NS && NS.foldTitlePunct
+      ? NS.foldTitlePunct(s)
+      : (s || '').replace(/\s+/g, ' ').trim());
   }
 
   function getCanonicalTitle() {
@@ -945,7 +950,13 @@
 
     // 取 og:title / docTitle 作為比對基準
     function normalizeTitle(s) {
-      return (s || '').replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim();
+      // v0.7.251：先去 `[...]` site prefix，再折疊 typographic 標點（見上方
+      // 同名函式註解）——markPromotedTitleIfMissing 同樣比對 og:title vs
+      // 可見 text element，smart-quote 不折疊會漏 match。
+      const stripped = (s || '').replace(/\[.*?\]/g, '');
+      return (NS && NS.foldTitlePunct
+        ? NS.foldTitlePunct(stripped)
+        : stripped.replace(/\s+/g, ' ').trim());
     }
     const og = document.querySelector('meta[property="og:title"]')?.content || '';
     const docT = document.title || '';

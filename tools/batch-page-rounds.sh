@@ -28,6 +28,7 @@ URLS=(
   "https://www.npr.org/2026/04/21/nx-s1-5776665/surprising-origin-features-superglue-kids-adults-to-screens"
   "https://cn.nytimes.com/opinion/20260424/apple-tim-cook-outsourcing-china/"
   "https://www.cnbc.com/2019/10/23/the-blob-slime-mold-physarum-polycephalum-characteristics.html"
+  "https://www.cnbc.com/2026/06/02/nvidias-new-pc-chips-are-ceos-bid-to-own-every-part-of-ai-stack.html"
   "https://www.theverge.com/tech/933415/google-io-2026-biggest-announcements-ai-gemini"
   "https://slate.com/news-and-politics/2026/05/supreme-court-analysis-voting-rights-disaster-america.html"
   "https://techcrunch.com/2026/05/10/anthropic-says-evil-portrayals-of-ai-were-responsible-for-claudes-blackmail-attempts/"

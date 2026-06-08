@@ -42,9 +42,18 @@ function loadFixtureWithScripts(opts) {
     Object.defineProperty(window, 'innerWidth',  { value: viewport.width,  configurable: true });
     Object.defineProperty(window, 'innerHeight', { value: viewport.height, configurable: true });
   }
-  // 最小 NS 環境（等價於 namespace.js 的核心：只提供 state / MSG 容器）
-  window.__JRead = { state: {}, MSG: {} };
+  // 載入「真正的」namespace.js（單一資料源）——含 state / MSG / safeSendMessage
+  // / foldTitlePunct 等共用 helper。namespace.js 頂端讀 chrome.runtime.getManifest()，
+  // jsdom 無 chrome，先補最小 stub。改用真 namespace（而非舊的 `{state:{},MSG:{}}`
+  // 最小替身）的理由：cleaner/detector 的標題折疊倚賴 NS.foldTitlePunct，最小
+  // 替身缺這個 helper 會讓 spec 走 fallback、驗不到 fold 行為（v0.7.251 CNBC
+  // 智慧撇號修法的 forcing function 需要真 helper 才有意義）。
+  window.chrome = window.chrome || {
+    runtime: { getManifest: () => ({ version: '0.0.0-test' }), id: 'test-ext', sendMessage: () => {} }
+  };
+  window.eval(SRC.namespace);
   for (const name of scripts) {
+    if (name === 'namespace') continue; // 已載入
     if (!SRC[name]) throw new Error(`unknown content script: ${name}`);
     window.eval(SRC[name]);
   }
