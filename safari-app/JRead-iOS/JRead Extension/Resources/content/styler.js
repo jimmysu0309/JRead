@@ -1256,12 +1256,40 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
     //（v0.7.234 寬度一致後的桌面值），content box 寬 = column-width 算出值。
     if (opts.pagedMode) {
       userOverrides += `
-/* 翻頁模式：鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
-   overscroll-behavior 擋 macOS 觸控板水平 swipe 的歷史導航誤觸。 */
+/* 翻頁模式：桌面鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
+   overscroll-behavior 擋 macOS 觸控板水平 swipe 的歷史導航誤觸 +
+   觸控裝置（下方 hack 放行垂直卷動後）擋頂端下拉的 rubber-band 把 fixed
+   卡片帶出畫面、以及 pull-to-refresh 誤觸。 */
 html.${HTML_CLASS}, html.${HTML_CLASS} body {
   overflow: hidden !important;
   height: 100% !important;
   overscroll-behavior: none !important;
+}
+/* v0.7.238 iOS 工具列自動收合 hack：觸控裝置放行垂直卷動 + 撐高 body。
+   翻頁卡片是 position:fixed（視覺釘住、不隨 document 捲動），但底下 document
+   可垂直捲——使用者垂直滑一下 → document 捲動 → iOS Safari 偵測到「真實手勢
+   捲動」自動收合網址列工具列，多顯示一行內容（卡片 fixed inset:0 隨 layout
+   viewport 變高、每欄多容一行）。程式捲動（window.scrollTo）無法觸發收合
+   ——iOS 只認真實觸控手勢，simulator 對照實證（scrollTo 捲了但工具列不收 /
+   手指滑同頁就收）——故只能半手動，使用者垂直滑一下觸發。
+   限觸控裝置（(hover:none) and (pointer:coarse)）：桌面無此自動收合工具列，
+   且撐高 body 會多一條無用垂直捲軸；桌面維持上方 overflow:hidden 鎖死。
+   min-height: 500vh 給足捲動距離——**不可用 200vh**：iOS simulator 真機實證，
+   200vh（max scroll ≈ 0.1 viewport）使用者一滑就貼底，iOS Safari 接近底部時
+   不收合工具列（scrollY 748 / max 794 仍 innerH 714 不收）；改 500vh 後同款
+   滑動落在中段（scrollY 748 / max ~3000）穩定收合（innerH 714→754，多一行）。
+   翻頁走水平 scrollLeft、不動 scrollY，一次垂直滑收合後讀整篇都維持收合；
+   500vh 讓使用者正常 swipe 幾乎不可能滑到底而觸發重新展開。垂直 scrollTop
+   不代表閱讀進度——onScrollProgress 在翻頁模式讓位（見該函式 guard）。 */
+@media (hover: none) and (pointer: coarse) {
+  html.${HTML_CLASS}, html.${HTML_CLASS} body {
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    height: auto !important;
+  }
+  html.${HTML_CLASS} body {
+    min-height: 500vh !important;
+  }
 }
 /* 滿版固定容器：left/right 0 + margin auto + max-width 讓桌面寬視窗時
    頁面寬度 cap 在版心（置中書頁感），手機窄視窗自然滿版。
@@ -1298,6 +1326,19 @@ html [${ARTICLE_ATTR}="1"] {
   column-gap: calc(min(56px, 6vw) * 2) !important;
   column-fill: auto !important;
   overflow: hidden !important;
+  /* v0.7.238 iOS 工具列自動收合 hack 的關鍵：卡片 touch-action: pan-y——
+     讓觸控裝置在這張 fixed 卡片上的「垂直 pan」冒泡去捲底下 document
+     （→ iOS Safari 偵測到真實手勢捲動 → 自動收合工具列）。沒有這行時，
+     fixed + overflow:hidden 卡片上的非被動 touchmove listener 會讓 WebKit
+     對垂直 pan 的處置變曖昧、scrollY 卡死 0（iOS simulator 真機實證：
+     document 明明可捲 scrollH 1508 > 714、mq matches，但垂直滑不捲——
+     加 pan-y 後才捲、innerH 714→754 工具列收合）。水平翻頁不受影響：
+     翻頁由 paged-mode.js JS 讀 touchstart/end 座標程式控 scrollLeft，
+     touch-action 只管瀏覽器「原生手勢」回應、不影響 JS touch event；
+     pan-y 同時讓瀏覽器不嘗試原生水平捲（卡片 overflow:hidden 本就不可
+     原生水平捲），與 v0.7.237 onTouchMove 對水平 swipe 的 preventDefault
+     （擋系統邊緣返回手勢）互補並存。 */
+  touch-action: pan-y !important;
 }
 /* 媒體單頁化：高度 cap 在「頁面內容高 − caption 餘裕 120px」、等比縮放，
    搭配 break-inside: avoid 整塊不跨頁切割（高於一頁的元素 spec fallback
@@ -1355,6 +1396,12 @@ html [${ARTICLE_ATTR}="1"] iframe {
   let progressEl = null;
   function onScrollProgress() {
     if (!progressEl) return;
+    // v0.7.238：翻頁模式下進度條由 paged-mode.js 依「頁比例」驅動。觸控裝置
+    // 翻頁模式 document 可垂直捲動（iOS 工具列收合 hack），垂直 scrollTop 是
+    // 「收合工具列用」的捲動量、不代表閱讀進度——讓位避免覆寫頁碼進度條
+    //（與 onSpaceScroll 讓位 space-scroll 同準則：同一進度條兩條 path 各驅各的
+    // 會打架）。
+    if (NS.pagedMode && NS.pagedMode.isInstalled && NS.pagedMode.isInstalled()) return;
     const de = document.documentElement;
     const scrollTop = de.scrollTop || document.body.scrollTop;
     const scrollHeight = de.scrollHeight - de.clientHeight;
