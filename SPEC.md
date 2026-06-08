@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.7.248**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.7.249**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -112,20 +112,14 @@ JRead/
 │   ├── debug-harness.js         # Playwright 自動化除錯 harness
 │   ├── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
 │   └── asc-provision-ios.js     # iOS 簽章資源 bootstrap（憑證 / bundle ID / profiles，idempotent）
-├── safari-app/                  # Safari Web Extension（macOS v0.7.138 起 / iOS v0.7.217 起）
-│   ├── safari-bootstrap.sh      # 一次性 macOS Xcode project 產出（xcrun safari-web-extension-converter）
-│   ├── safari-build.sh          # 每次 release 跑：sync Resources + archive + notarize + staple → .pkg
-│   ├── safari-export-options-developerid.plist  # Developer ID 簽章設定
+├── safari-app/                  # Safari Web Extension（iOS v0.7.217 起；單一 iOS binary 涵蓋 iOS / iPadOS / macOS）
 │   ├── ios-bootstrap.sh         # 一次性 iOS Xcode project 產出（converter --ios-only + patch）
 │   ├── ios-build.sh             # 手動觸發：sync Resources + archive + export .ipa + altool 上傳 TestFlight
 │   ├── ios-export-options.plist # iOS App Store manual signing 設定
-│   ├── JRead/                   # macOS Xcode project（host App + Extension target）
-│   │   ├── JRead.xcodeproj/
-│   │   ├── JRead/               # macOS host App（WKWebView + open Safari prefs）
-│   │   └── JRead Extension/     # Safari Web Extension target（Resources/ = jread/ 同步鏡像）
-│   └── JRead-iOS/               # iOS Xcode project（與 macOS 完全獨立）
+│   ├── patch-safari-manifest.sh # build 時把 manifest background 改宣告 event page（受控差異）
+│   └── JRead-iOS/               # iOS Xcode project（在 Apple Silicon Mac 以 iPad App 執行涵蓋 macOS）
 │       ├── JRead.xcodeproj/
-│       ├── JRead/               # iOS host App（converter 模板）
+│       ├── JRead/               # iOS host App（converter 模板 + 繁中啟用引導畫面）
 │       └── JRead Extension/     # Safari Web Extension target（Resources/ = jread/ 同步鏡像）
 ├── docs/
 │   └── CHROME_EXTENSION_DEBUG.md # 自動化除錯完整指南
@@ -172,56 +166,13 @@ Forcing function：`test/regression/firefox-build.spec.js` 端到端跑 `tools/f
 
 ---
 
-## macOS Safari 版本（v0.7.138 起）
-
-JRead 同步發佈 macOS Safari 版本（Developer ID 簽章 + Apple notarize + stapled 的 .pkg，給使用者公開下載手動安裝；不走 Mac App Store）。
-
-**單一真實來源**：`jread/manifest.json` + `jread/` 整棵目錄是 Chrome 版本，Safari build 透過 `safari-app/safari-build.sh` 每次 `rsync -a --delete jread/ safari-app/JRead/JRead Extension/Resources/` 把 Chrome 來源完整同步進 Xcode project 的 Extension Resources/——Safari 與 Chrome 共用同一份 extension code，無雙頭維護。**唯一受控差異**（v0.7.228）：rsync 後 `safari-app/patch-safari-manifest.sh` 把 Resources/manifest.json 的 background 改宣告 event page（`scripts + persistent: false`，iOS SW 不喚醒 bug 對策、macOS 統一宣告），drift check `-x manifest.json` 排除、由 patch script verify 補檢查。
-
-**Build 流程**（`safari-app/safari-build.sh`，每次 release 自動跑）：
-
-1. 前置 check：Developer ID Application cert / Developer ID Installer cert / notarytool keychain profile（缺哪項印對應安裝指引）
-2. `rsync` jread/ → Extension Resources/ + `patch-safari-manifest.sh`（background → event page）
-3. `sed` bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` 到 `project.pbxproj`
-4. `xcodebuild clean` + `xcodebuild archive`（Release configuration，macOS only）
-5. `xcodebuild -exportArchive` 用 `safari-export-options-developerid.plist`（method = developer-id，signingStyle = manual，signingCertificate = "Developer ID Application: Zhimin Su (PR6NG3PH45)"）→ 產 `.app`
-6. `productbuild --component .app /Applications --sign "Developer ID Installer: Zhimin Su (PR6NG3PH45)"` → 產 `.pkg`
-7. `xcrun notarytool submit --wait`（Apple cloud 公證，實測 ~25 秒；Apple 文件聲稱可達 30-60 分鐘）
-8. `xcrun stapler staple` 把公證 ticket 釘進 pkg（離線可驗）
-9. `spctl -a -t install -vv` 驗證 Gatekeeper accept
-10. source drift forcing function：`diff -r --brief jread/ Resources/` 必須 empty
-
-**Apple Developer 設定**（沿用 Shinkansen 同一個 Apple Developer 帳號 Zhimin Su）：
-
-| 項目 | 值 |
-| --- | --- |
-| Team ID | `PR6NG3PH45` |
-| Host App Bundle ID | `app.jread.macos` |
-| Extension Bundle ID | `app.jread.macos.Extension` |
-| Signing | Developer ID Application + Developer ID Installer cert（已裝 Keychain） |
-| notarize profile | `shinkansen-notary`（沿用，notarytool credentials 是同 Apple ID + Team；不同 profile 名稱只是 Keychain key） |
-
-**Release artifact**（每次 release 由本機 build 上傳到 GitHub Release）：
-
-| 檔名 | 用途 |
-| --- | --- |
-| `jread-macos-vX.Y.Z.pkg` | macOS Safari（Developer ID notarized）。使用者下載雙擊 → 安裝到 /Applications → 開啟 JRead.app → 點「結束並開啟 Safari 擴充功能偏好設定」啟用 |
-
-**Release 流程整合**（`release.sh`）：本機跑 `./release.sh` 時自動：(1) npm test → (2) working tree clean check → (3) safari-build.sh（archive + notarize + staple）→ (4) auto-commit pbxproj + Resources/ 改動 → (5) tag → (6) push → (7) 等 GitHub Release 由 Actions 建出 → (8) `gh release upload .pkg --clobber`。`SKIP_SAFARI=1` 可緊急只發 Chrome / Firefox 跳過 Safari build。
-
-**Host App 介面**（最小 host App）：基於 xcrun safari-web-extension-converter 預設模板（WKWebView 載入 `Resources/Base.lproj/Main.html`），文字本地化為繁體中文；按鈕 `<button class="open-preferences">` 點擊呼叫 `SFSafariApplication.showPreferencesForExtension` 跳轉 Safari 擴充功能設定。Icon 沿用 `jread/assets/icons/icon-128.png`。
-
-Forcing function：`test/regression/safari-build.spec.js` 驗 (1) scaffold 檔案存在 + executable；(2) `safari-export-options-developerid.plist` 內 method/teamID/signingStyle/cert；(3) `project.pbxproj` 內 host App bundle ID = `app.jread.macos`、Extension bundle ID = `app.jread.macos.Extension`、4 處 `DEVELOPMENT_TEAM = PR6NG3PH45`；(4) `safari-build.sh` 含 rsync / sed bump / xcodebuild archive / exportArchive / productbuild / notarytool submit / stapler staple / source drift check；(5) `release.sh` 串接 safari-build.sh + SKIP_SAFARI escape + auto-commit + `gh release upload --clobber`。**spec 不實際跑 xcodebuild**（那需要 macOS + Xcode + cert + Apple cloud，跨平台 CI 跑不了）。
-
----
-
 ## iOS / iPadOS 版本（v0.7.217 起，TestFlight 軌）
 
 JRead 提供 iOS / iPadOS Safari Web Extension，目前走 **TestFlight internal testing**（免審核、build 上傳後 ASC 處理 5-30 分鐘即可裝；尚未公開上架 App Store）。
 
-**發佈節奏與 Chrome / macOS 解耦**：`safari-app/ios-build.sh` **手動觸發**、不綁 `release.sh`——Chrome / macOS 每版即發，iOS 要發時人工跑一次 build script。同版本號重傳 ASC 會被拒，重傳前先 bump。
+**發佈節奏與 Chrome / Firefox 解耦**：`safari-app/ios-build.sh` **手動觸發**、不綁 `release.sh`——Chrome / Firefox 每版即發，Safari（iOS／在 Apple Silicon Mac 以 iPad App 執行）要發時人工跑一次 build script。同版本號重傳 ASC 會被拒，重傳前先 bump。
 
-**單一真實來源**：與 macOS 軌同模式——`safari-app/ios-build.sh` 每次 `rsync -a --delete jread/ "safari-app/JRead-iOS/JRead Extension/Resources/"`，extension code 不雙頭維護。iOS Xcode project（`safari-app/JRead-iOS/`）與 macOS project（`safari-app/JRead/`）**完全獨立**，由 `safari-app/ios-bootstrap.sh`（converter `--ios-only`）一次性產出。
+**單一真實來源**：`safari-app/ios-build.sh` 每次 `rsync -a --delete jread/ "safari-app/JRead-iOS/JRead Extension/Resources/"`，extension code 與 Chrome 共用 `jread/`、不雙頭維護。iOS Xcode project（`safari-app/JRead-iOS/`）由 `safari-app/ios-bootstrap.sh`（converter `--ios-only`）一次性產出。
 
 **Apple Developer 設定**：
 
@@ -237,7 +188,7 @@ JRead 提供 iOS / iPadOS Safari Web Extension，目前走 **TestFlight internal
 
 **為什麼 manual signing**：team 沒有註冊任何 iOS 裝置，automatic signing 在 archive 階段堅持產 development profile 而失敗（「Your team has no devices」）；App Store distribution profile 不需要裝置清單，manual 直接繞開。
 
-**iOS background lifecycle（v0.7.228 根治「用一段時間後失效」）**：iOS Safari 的 MV3 background **service worker 被系統回收後不再喚醒**（Apple Developer Forums [thread 758346](https://developer.apple.com/forums/thread/758346)；iOS 17.4 起、迄今未修；Chrome / macOS Safari 的 SW 死後下個事件會重生，iOS 實機死透，僅重開機 / Settings 重開 extension / 強制關閉 Safari 可復原）；iOS 18.4+ 另有 `tabs.sendMessage` 無聲掉包 regression（[thread 787958](https://developer.apple.com/forums/thread/787958)）。對策雙管：(1) 觸發路徑去 SW 化——3 指輕點 / 自訂快速鍵 toggle 走 content 端 `dispatchLocalCommand` 本地 dispatch（零訊息傳遞）；(2) Safari build 的 manifest 由 `safari-app/patch-safari-manifest.sh`（macOS / iOS 共用、冪等）把 background 改宣告 event page（`scripts + persistent: false`——Safari 對 event page 生命週期管理正常，卸載後可重生）；Chrome 版 manifest 維持 `service_worker` 不動，build drift check `-x manifest.json` 排除這個唯一受控差異、由 patch script verify 補檢查。**機制限制**：send-to-readwise 的 API 呼叫住在 background，仍依賴 event page 喚醒；若 Apple 再 regress event page lifecycle，僅此功能受影響、toggle 類觸發不受波及。**v0.7.235 補修**：v0.7.228 漏掉 content 端 `getSettings` 也住在 background（`GET_SETTINGS` round-trip）——iOS 掉包時回 `undefined`、所有設定靜默 fallback 預設值（theme / fontSize 接近預設難察覺；pagedMode 永遠 false = Jimmy 回報「翻頁模式 iOS 沒功能」根因，simulator instrument 實證）。已改直讀 `chrome.storage.sync`（defaults 單一資料源 `content/settings-defaults.js`，Safari event page scripts 預載清單同步加檔——v0.7.229 同款坑），round-trip 降為 storage 失效 fallback。background 依賴現況：僅 send-to-readwise + icon badge。
+**iOS background lifecycle（v0.7.228 根治「用一段時間後失效」）**：iOS Safari 的 MV3 background **service worker 被系統回收後不再喚醒**（Apple Developer Forums [thread 758346](https://developer.apple.com/forums/thread/758346)；iOS 17.4 起、迄今未修；Chrome / macOS Safari 的 SW 死後下個事件會重生，iOS 實機死透，僅重開機 / Settings 重開 extension / 強制關閉 Safari 可復原）；iOS 18.4+ 另有 `tabs.sendMessage` 無聲掉包 regression（[thread 787958](https://developer.apple.com/forums/thread/787958)）。對策雙管：(1) 觸發路徑去 SW 化——3 指輕點 / 自訂快速鍵 toggle 走 content 端 `dispatchLocalCommand` 本地 dispatch（零訊息傳遞）；(2) Safari build 的 manifest 由 `safari-app/patch-safari-manifest.sh`（冪等）把 background 改宣告 event page（`scripts + persistent: false`——Safari 對 event page 生命週期管理正常，卸載後可重生）；Chrome 版 manifest 維持 `service_worker` 不動，build drift check `-x manifest.json` 排除這個唯一受控差異、由 patch script verify 補檢查。**機制限制**：send-to-readwise 的 API 呼叫住在 background，仍依賴 event page 喚醒；若 Apple 再 regress event page lifecycle，僅此功能受影響、toggle 類觸發不受波及。**v0.7.235 補修**：v0.7.228 漏掉 content 端 `getSettings` 也住在 background（`GET_SETTINGS` round-trip）——iOS 掉包時回 `undefined`、所有設定靜默 fallback 預設值（theme / fontSize 接近預設難察覺；pagedMode 永遠 false = Jimmy 回報「翻頁模式 iOS 沒功能」根因，simulator instrument 實證）。已改直讀 `chrome.storage.sync`（defaults 單一資料源 `content/settings-defaults.js`，Safari event page scripts 預載清單同步加檔——v0.7.229 同款坑），round-trip 降為 storage 失效 fallback。background 依賴現況：僅 send-to-readwise + icon badge。
 
 **Build 流程**（`safari-app/ios-build.sh`）：rsync Resources → manifest event page patch（`patch-safari-manifest.sh`）→ sed bump pbxproj 版本 → `xcodebuild archive`（`generic/platform=iOS`）→ `xcodebuild -exportArchive`（`ios-export-options.plist`：method app-store-connect + manual provisioningProfiles mapping）→ `altool --validate-app` → `altool --upload-app`（ASC API key `592WJH7U2F`，與 Shinkansen 共用，env `ASC_KEY_ID` / `ASC_ISSUER_ID` 可覆寫）→ source drift check。`SKIP_UPLOAD=1` 只產 `.ipa` 不上傳。BUILD_DIR 在 `$TMPDIR`（iCloud fileprovider 接管教訓）。
 

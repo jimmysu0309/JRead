@@ -6,7 +6,7 @@
 #   export .ipa、altool 上傳 App Store Connect（→ TestFlight）。
 #
 #   手動觸發、不綁 release.sh——iOS 走 TestFlight / App Store 節奏，
-#   與 Chrome / macOS 每版即發解耦。要發 iOS 時人工跑：
+#   與 Chrome / Firefox 每版即發解耦。要發 iOS 時人工跑：
 #     ./safari-app/ios-build.sh
 #   只想本機產 .ipa 不上傳：
 #     SKIP_UPLOAD=1 ./safari-app/ios-build.sh
@@ -79,7 +79,7 @@ rsync -a --delete jread/ "$EXTENSION_RESOURCES/"
 # 1.5 Safari manifest patch（v0.7.228）：background service worker → event page。
 #     iOS Safari 的 MV3 SW 被系統回收後不再喚醒（Apple Forums thread 758346），
 #     使用者只能強制關閉 Safari 自救；event page 卸載後可正常重生。
-#     詳見 safari-app/patch-safari-manifest.sh（macOS / iOS build 共用）。
+#     詳見 safari-app/patch-safari-manifest.sh。
 echo "==> Patch Safari manifest（background → event page）..."
 bash safari-app/patch-safari-manifest.sh "$EXTENSION_RESOURCES"
 

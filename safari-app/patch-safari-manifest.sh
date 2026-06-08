@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # patch-safari-manifest.sh — Safari build 的 manifest background patch + 受控差異驗證
-#（macOS safari-build.sh 與 iOS ios-build.sh 共用，單一資料源、不雙實作）
+#（由 iOS ios-build.sh 呼叫；event page scripts 清單與 tools/firefox-build.sh 同列同序）
 #
 # 為什麼存在（v0.7.228）：
 #   iOS Safari 的 MV3 background **service worker 被系統回收後不再喚醒**

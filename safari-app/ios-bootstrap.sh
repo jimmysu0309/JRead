@@ -11,9 +11,9 @@
 #   會覆蓋 safari-app/JRead-iOS/（包含 host App 的 Swift / storyboard /
 #   Info.plist 客製）。重跑前手動備份，完成後再 patch 回去。
 #
-# 與 macOS 軌（safari-bootstrap.sh → safari-app/JRead/）完全獨立：
-#   兩個 Xcode project 各自存在，extension code 都由 build script rsync
-#   自 jread/ 單一真實來源，不雙頭維護。
+# 單一 iOS binary 涵蓋 iOS / iPadOS / macOS（在 Apple Silicon Mac 以 iPad App
+# 執行）：extension code 由 build script rsync 自 jread/ 單一真實來源、與 Chrome
+# 共用、不雙頭維護。
 #
 # bootstrap 後自動 patch（本 script 已內建，重跑不用手動做）：
 #   1. host App PRODUCT_BUNDLE_IDENTIFIER：converter 會給 `app.jread.JRead`

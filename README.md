@@ -47,25 +47,21 @@
 
 ### macOS Safari
 
-每次 release 會自動產出 `jread-macos-vX.Y.Z.pkg`（Developer ID 簽章 + Apple notarize + stapled，見 GitHub Releases）。安裝步驟：
+> **v0.7.249 起改用 iOS App 涵蓋 macOS。** 不再產獨立的 Developer ID `.pkg`——Safari 版本由**單一 iOS binary** 提供，在 Apple Silicon Mac 上以「iPad App 在 Mac 執行」模式跑（見下方 iOS / iPadOS 章節）。
+>
+> 歷史 `.pkg`（v0.7.248 以前）仍保留在 GitHub Releases 可下載，但不再更新；既有以 `.pkg` 安裝的使用者請改裝 iOS App。
 
-1. 從 GitHub Releases 下載 `jread-macos-vX.Y.Z.pkg`
-2. 雙擊 .pkg 安裝（Gatekeeper 會認 Developer ID notarized 簽章）
-3. 打開 `JRead.app`
-4. 點「結束並開啟 Safari 擴充功能偏好設定…」
-5. 在 Safari 設定的「擴充功能」分頁勾選 JRead 啟用
+### iOS / iPadOS / macOS Safari（TestFlight）
 
-需 macOS 10.14 以上 + Safari 14 以上。本機重建見 `safari-app/safari-build.sh`（需 Xcode + Apple Developer ID cert + notarytool profile）。
+v0.7.217 起提供 Safari Web Extension，**單一 iOS binary 同時涵蓋 iPhone / iPad / Apple Silicon Mac**，目前走 TestFlight internal testing（尚未公開上架 App Store）：
 
-### iOS / iPadOS Safari（TestFlight）
-
-v0.7.217 起提供 iOS / iPadOS Safari Web Extension，目前走 TestFlight internal testing（尚未公開上架 App Store）：
-
-1. 受邀測試者在 iPad / iPhone 裝 TestFlight App，接受邀請後安裝 JRead
-2. 設定 → App → Safari → 延伸功能 → 啟用 JRead，並允許「所有網站」
+1. 受邀測試者在 iPhone / iPad / Mac 裝 TestFlight App，接受邀請後安裝 JRead
+2. 啟用擴充功能：
+   - **iPhone / iPad**：設定 → App → Safari → 延伸功能 → 啟用 JRead，並允許「所有網站」
+   - **Mac**（以 iPad App 執行）：Safari → 設定 →「擴充功能」分頁勾選 JRead，並允許「所有網站」
 3. Safari 工具列點 J 圖示 → 「切換閱讀模式」
 
-發佈走 `safari-app/ios-build.sh`（手動觸發、與 Chrome / macOS release 解耦；需 Xcode + Apple Distribution cert + ASC API key，簽章資源由 `tools/asc-provision-ios.js` 管理）。
+發佈走 `safari-app/ios-build.sh`（手動觸發、與 Chrome / Firefox release 解耦；需 Xcode + Apple Distribution cert + ASC API key，簽章資源由 `tools/asc-provision-ios.js` 管理）。
 
 ---
 
@@ -103,15 +99,13 @@ npm run debug                     # 或 node tools/debug-harness.js --fresh
 
 1. `npm test`
 2. working tree clean check
-3. Safari Developer ID build（`safari-app/safari-build.sh`：archive + notarize + staple → `jread-macos-vX.Y.Z.pkg`；`SKIP_SAFARI=1` 可緊急跳過）
-4. auto-commit pbxproj + Resources/ 改動
-5. `git tag` + `git push && git push --tags`
-6. GitHub Actions（`.github/workflows/release.yml`）build Chrome + Firefox + Firefox source zip 上傳到 Release
-7. 本機 `gh release upload .pkg --clobber` 把 macOS .pkg 附到同一個 Release
+3. `git tag` + `git push && git push --tags`
+4. GitHub Actions（`.github/workflows/release.yml`）build Chrome + Firefox + Firefox source zip 上傳到 Release
+
+Safari（iOS／在 Mac 以 iPad App 執行）走獨立的 TestFlight 軌、與本流程解耦——人工跑 `./safari-app/ios-build.sh`。
 
 Release artifact：
 
 - `jread-vX.Y.Z.zip`（Chrome）
 - `jread-firefox-vX.Y.Z.zip`（Firefox sideload）
 - `jread-firefox-vX.Y.Z-source.zip`（AMO source 提交用）
-- `jread-macos-vX.Y.Z.pkg`（macOS Safari Developer ID）
