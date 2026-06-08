@@ -129,8 +129,19 @@
     push('=== RESET ===', '');
   });
 
-  push('INIT', '');
-  setInterval(renderStatus, 200);
+  // 乾淨開始：擋掉 Safari 重整還原捲動位置（否則一載入 sy>100 就立刻誤鎖）
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  window.scrollTo(0, 0);
+  vLocked = false;
+  card.style.removeProperty('touch-action');
+
+  push('INIT', '(forced sy=0)');
+  // poll 同時記錄 iH 變化（工具列收合/展開時序），不只更新 status
+  var lastIH = window.innerHeight;
+  setInterval(function () {
+    renderStatus();
+    if (window.innerHeight !== lastIH) { push('iH→' + window.innerHeight, (window.innerHeight >= 820 ? '收合' : '展開')); lastIH = window.innerHeight; }
+  }, 150);
 </script>
 </body>
 </html>
