@@ -934,19 +934,8 @@
   // -title attribute，讓 styler 套大字體標題樣式。通則：站若把標題寫在非
   // h1-h4 tag（newtalk `<p class="name">` / 其他站可能用 `<div class="title">`
   // / `<span class="post-title">` 等），styler 不會自動視覺突顯，需此 promote。
-  // 已有 visible h1-h4 → 不動（既有 detector path 應已 cover）。
   function markPromotedTitleIfMissing(articleEl) {
     if (!articleEl || !articleEl.querySelectorAll) return;
-
-    // articleEl 內已有「非 hidden 的 h1-h4」→ 不動。jsdom 環境下 rect=0 不能
-    // 用 rect 判斷 visible；改用「不在 cleaner hide 樹內」當 visible proxy。
-    // 實機 newtalk case：articleEl 內 h1-h4 數為 0（hidden h1 在外層 header）
-    // → loop 不跑 → 進 promote 邏輯。既有 fixture 主文都有 h1-h4 → return。
-    const headings = articleEl.querySelectorAll('h1, h2, h3, h4');
-    for (const h of headings) {
-      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
-      return;
-    }
 
     // 取 og:title / docTitle 作為比對基準
     function normalizeTitle(s) {
@@ -962,6 +951,33 @@
     const docT = document.title || '';
     const baseTitle = normalizeTitle(og) || normalizeTitle(docT.split(/[|｜\-—–]/)[0] || '');
     if (!baseTitle || baseTitle.length < 5) return;
+
+    // 文字是否等同 baseTitle（精確或雙向 60% 包含）
+    function matchesBaseTitle(t) {
+      if (!t || t.length < 5) return false;
+      if (t === baseTitle) return true;
+      if (t.includes(baseTitle) && baseTitle.length >= t.length * 0.6) return true;
+      if (baseTitle.includes(t) && t.length >= baseTitle.length * 0.6) return true;
+      return false;
+    }
+
+    // v0.8.3：guard 只在「可見 h1-h4 文字等同 baseTitle」時才放棄注入——代表
+    // 真標題已以 heading 呈現。舊邏輯「articleEl 內有任何 non-hidden h1-h4 就
+    // return」會被 cleaner 漏網的雜訊 heading 誤觸（roomie.tw 實證：footer
+    // 「現在就追蹤 Roomie IG」H3 未被 cleaner hide → 舊 guard 誤判已有標題 →
+    // 真標題（sr-only H1 + 非 heading span.title）從不注入 → Chrome 整個沒標題、
+    // iOS 退回站方 23px 小 span）。雜訊 heading 不等同 og:title，不再讓它壓掉注入。
+    // jsdom 環境 rect=0 無法用 rect 判 visible；用「不在 cleaner hide 樹內」當
+    // visible proxy（與 v0.7.87 同款）。翻譯擴充把 h1 換成中文時不 match 英文
+    // og:title，guard 不 bail、bestCand 搜尋同樣 miss → no-op，不產重複標題。
+    const headings = articleEl.querySelectorAll('h1, h2, h3, h4');
+    for (const h of headings) {
+      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      if (isHeadingInsideAnchor(h)) continue; // 卡片連結式重複標題不算數
+      const text = normalizeTitle(h.innerText || h.textContent || '');
+      if (text.length > TITLE_TEXT_MAX) continue;
+      if (matchesBaseTitle(text)) return; // 真標題已以可見 heading 呈現
+    }
 
     // 找 articleEl 內含等同 baseTitle 的 text element（精確或包含關係）
     // 限制 textLen 接近 baseTitle，避免命中包含主文整段的大 wrapper
@@ -1022,6 +1038,27 @@
       // backward-compat：保留 data-jread-promoted-title attribute 在原元素，
       // 既有 spec 仍找得到（fixture 標題比對等）。
       bestCand.setAttribute('data-jread-promoted-title', '1');
+
+      // v0.8.3：去重——把 articleEl 內其餘「等同 baseTitle 的 leaf 標題載體」
+      // 一併 hide，避免 responsive 站把標題做成「desktop / mobile 雙份 span」時
+      // inject 後仍殘留另一份可見標題（roomie.tw 實證：mobile-info > span.title
+      // 在窄視窗顯示、bestCand 卻挑到 breadcrumb span，iOS 上 inject H1 + mobile
+      // span 變成兩個標題）。只清 leaf-ish（後代 element ≤ 2）且文字長度近 baseTitle
+      // 的節點——不碰含主文/meta 的大 wrapper，也不碰 inject H1 自己。
+      for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, h5, h6, p, div, span')) {
+        if (el === bestCand) continue;
+        if (el.hasAttribute('data-jread-injected-title')) continue;
+        // 已被 cleaner hide 的不必再碰（不可見、且避免與 cleaner.restore 互踩）
+        if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+        if (el.querySelectorAll('*').length > 2) continue;
+        const t = normalizeTitle(el.textContent || '');
+        if (t.length > baseTitle.length * 1.5) continue;
+        if (!matchesBaseTitle(t)) continue;
+        el.setAttribute('data-jread-promoted-title-source', '1');
+        if (el.style && typeof el.style.setProperty === 'function') {
+          el.style.setProperty('display', 'none', 'important');
+        }
+      }
     }
   }
 

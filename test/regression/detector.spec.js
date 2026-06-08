@@ -1020,21 +1020,43 @@ describe('detector — markPromotedTitleIfMissing（v0.7.87 newtalk.tw 修法）
       'guard 必須只認「不在 hidden 樹內」的 h1-h4，否則此 fixture 會誤判已有 heading 不 promote');
   });
 
-  it('articleEl 內已有 visible h1-h4 → 不 promote', () => {
+  it('articleEl 內已有「等同 og:title 的 visible h1」→ 不 promote', () => {
     const env = loadFixtureWithScripts({
       fixturePath: path.join(FIXTURE_DIR, 'newtalk-p-name-as-title.html'),
       scripts: ['detector', 'cleaner']
     });
     const detected = env.NS.detector.detect();
-    // 在 articleEl 內手動加一個 visible h1，模擬「站本來就有正確標題」
+    // 在 articleEl 內手動加一個「等同 og:title」的 visible h1，模擬「站本來就有
+    // 正確標題 heading」——此時不該再 inject 重複標題。
     const fakeH1 = env.document.createElement('h1');
-    fakeH1.textContent = '另一個主標題';
+    fakeH1.textContent = '國防部稱「今年沒錢編急需預算」 李文忠斥：嚴重失職還拿來說嘴';
     detected.el.insertBefore(fakeH1, detected.el.firstChild);
     env.NS.cleaner.clean(detected.el);
     env.NS.detector.markPromotedTitleIfMissing(detected.el);
     const promoted = env.document.querySelector('[data-jread-promoted-title="1"]');
     assert.strictEqual(promoted, null,
-      'articleEl 內已有 visible h1（不在 hidden 樹內）→ 不該 promote 任何 p/div');
+      'articleEl 內已有等同 og:title 的 visible h1 → 不該 promote 任何 p/div');
+  });
+
+  it('v0.8.3：visible h1 但「文字不等同 og:title」（雜訊 heading）→ 仍要 promote 真標題', () => {
+    const env = loadFixtureWithScripts({
+      fixturePath: path.join(FIXTURE_DIR, 'newtalk-p-name-as-title.html'),
+      scripts: ['detector', 'cleaner']
+    });
+    const detected = env.NS.detector.detect();
+    // 加一個不等同 og:title 的 visible heading（模擬 cleaner 漏網的 footer CTA
+    // 「現在就追蹤…」類雜訊 heading）。舊 guard 會被它誤觸而放棄注入真標題，
+    // 造成 roomie.tw 類站「Chrome 整個沒標題 / iOS 退回小 span」。
+    const noiseH3 = env.document.createElement('h3');
+    noiseH3.textContent = '現在就追蹤 Roomie IG，看更多生活觀察';
+    detected.el.appendChild(noiseH3);
+    env.NS.cleaner.clean(detected.el);
+    env.NS.detector.markPromotedTitleIfMissing(detected.el);
+    const injected = env.document.querySelector('[data-jread-injected-title="1"]');
+    assert.ok(injected,
+      '雜訊 heading 不等同 og:title，不該壓掉真標題注入');
+    assert.ok(injected.textContent.includes('國防部'),
+      `注入標題文字應為真標題，實際 "${injected.textContent.slice(0, 20)}"`);
   });
 
   it('og:title 缺失 → 不 promote（guard 避免 false positive）', () => {
