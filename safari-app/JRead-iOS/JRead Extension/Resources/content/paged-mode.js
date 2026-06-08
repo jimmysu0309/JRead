@@ -404,12 +404,17 @@
   function onTouchMove(e) {
     if (!touchState) return;
     if (e.touches.length !== 1) { touchState = null; return; }
-    if (!e.cancelable) return;
     const t = e.touches[0];
-    touchState.lastX = t.clientX;
-    touchState.lastY = t.clientY;
+    // v0.8.6：lastX/lastY 追蹤必須在 cancelable 檢查**之前**——可點擊圖片上 iOS
+    // 把 touchmove 標成 non-cancelable（系統已接管準備 image-drag），舊 v0.8.5 把
+    // 追蹤放在 `if (!e.cancelable) return` 之後 → lastX 永不更新 → onTouchCancel
+    // 補判 dx=0 → 圖片上仍滑不動（Jimmy 2026-06-09 實機回報 v0.8.5 沒修好）。
+    // 位置追蹤與「能否 preventDefault」無關，先記下來，cancel/end 才補得了判。
     const dx = t.clientX - touchState.startX;
     const dy = t.clientY - touchState.startY;
+    touchState.lastX = t.clientX;
+    touchState.lastY = t.clientY;
+    if (!e.cancelable) return;
     // v0.7.239：第一頁只擋水平（放行垂直滑收工具列）、第二頁起擋全部（鎖死）
     if (shouldBlockTouchMove(dx, dy, idx)) {
       e.preventDefault();
@@ -435,11 +440,19 @@
   // 回報「圖片上左右滑無法翻頁，必須在內文上滑」。改成 cancel 時用累積位移補判：
   // 若仍構成水平 swipe（classifySwipe 同款 threshold / 角度 / 邊緣 guard），照樣翻頁。
   // tap / 微動 / 垂直滑 / 邊緣手勢都不會通過 classifySwipe，不會誤翻。
-  function onTouchCancel() {
+  function onTouchCancel(e) {
     if (touchState) {
+      // 取「lastX（touchmove 累積）」與「changedTouches（cancel 當下位置）」中
+      // 水平位移最大者——涵蓋兩種 iOS 變體：(a) 有派發 touchmove → lastX 準；
+      // (b) 圖片上直接 cancel 幾乎沒 touchmove → 靠 cancel event 的 changedTouches。
+      let endX = touchState.lastX, endY = touchState.lastY;
+      const ct = e && e.changedTouches && e.changedTouches[0];
+      if (ct && Math.abs(ct.clientX - touchState.startX) > Math.abs(endX - touchState.startX)) {
+        endX = ct.clientX; endY = ct.clientY;
+      }
       const dir = classifySwipe({
-        dx: touchState.lastX - touchState.startX,
-        dy: touchState.lastY - touchState.startY,
+        dx: endX - touchState.startX,
+        dy: endY - touchState.startY,
         startX: touchState.startX,
         viewportW: window.innerWidth
       });
