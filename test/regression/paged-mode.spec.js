@@ -511,6 +511,86 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // ---- C4. touchcancel 補判翻頁（v0.8.5）---------------------------------
+  // Jimmy 回報：iPhone 翻頁模式「在可點擊的圖片上左右滑動無法翻頁，必須在內文
+  // 上滑」。根因（從 code 推定）：touch listener 掛 window capture，必對所有
+  // target 收到 touchstart/move/end——唯一會丟失手勢的路徑是 touchcancel。iOS 在
+  // 可點擊圖片/連結上啟動原生 image-drag / callout 時，對進行中的單指水平 swipe
+  // 送 touchcancel（非 touchend），舊 onTouchCancel 直接丟棄 → 圖片上滑不翻頁。
+  // 修法：onTouchCancel 用 touchmove 累積的 lastX/lastY 補判，構成水平 swipe 就翻頁。
+  // 訊號層次：本測驗「touchcancel 後翻頁判定」邏輯（jsdom 合成事件 + stub layout
+  // 讓頁數>1 觀測 indicator）。不驗真實 iOS 是否在圖片上送 touchcancel（系統行為，
+  // 只能真機/simulator HID 驗）。
+  describe('touchcancel 補判翻頁（圖片上滑動，v0.8.5）', () => {
+    function loadInstalled() {
+      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+      env.window.eval(PAGED_SRC);
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      // jsdom 無 layout：stub clientWidth/scrollWidth 讓 pageCount > 1，才觀測得到翻頁
+      Object.defineProperty(art, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(art, 'scrollWidth', { value: 1200, configurable: true });
+      api.sync({ pagedMode: true }, art);
+      return { env, api };
+    }
+    function fireTouch(env, type, touches) {
+      const ev = new env.window.Event(type, { bubbles: true, cancelable: true });
+      ev.touches = touches;
+      ev.changedTouches = touches;
+      env.window.dispatchEvent(ev);
+    }
+    function pageText(env) {
+      const ind = env.document.getElementById('__jread-page-indicator');
+      return ind ? ind.textContent : null;
+    }
+
+    it('水平 swipe 後收到 touchcancel（iOS 圖片 drag）→ 仍翻頁', () => {
+      const { env, api } = loadInstalled();
+      assert.strictEqual(pageText(env), '1 / 3', '初始應在第 1 頁');
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireTouch(env, 'touchmove', [{ clientX: 300, clientY: 302 }]); // 左滑 100px
+      fireTouch(env, 'touchcancel', []); // iOS image-drag 中斷
+      assert.strictEqual(pageText(env), '2 / 3',
+        'touchcancel 中斷的水平 swipe 必須照樣翻到下一頁');
+      api.uninstall();
+    });
+
+    it('右滑 + touchcancel → 翻回上一頁', () => {
+      const { env, api } = loadInstalled();
+      // 先到第 2 頁
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireTouch(env, 'touchmove', [{ clientX: 300, clientY: 300 }]);
+      fireTouch(env, 'touchcancel', []);
+      assert.strictEqual(pageText(env), '2 / 3');
+      // 右滑回上一頁
+      fireTouch(env, 'touchstart', [{ clientX: 300, clientY: 300 }]);
+      fireTouch(env, 'touchmove', [{ clientX: 400, clientY: 300 }]); // 右滑 100px
+      fireTouch(env, 'touchcancel', []);
+      assert.strictEqual(pageText(env), '1 / 3', '右滑 + cancel 必須翻回上一頁');
+      api.uninstall();
+    });
+
+    it('微動（非 swipe）+ touchcancel → 不翻頁（tap on 圖片不誤翻）', () => {
+      const { env, api } = loadInstalled();
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireTouch(env, 'touchmove', [{ clientX: 396, clientY: 301 }]); // 僅 4px
+      fireTouch(env, 'touchcancel', []);
+      assert.strictEqual(pageText(env), '1 / 3',
+        '位移不足 SWIPE_MIN_DX 的 touchcancel 不得翻頁');
+      api.uninstall();
+    });
+
+    it('垂直滑動 + touchcancel → 不翻頁（直向手勢不誤翻）', () => {
+      const { env, api } = loadInstalled();
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireTouch(env, 'touchmove', [{ clientX: 405, clientY: 400 }]); // 垂直支配
+      fireTouch(env, 'touchcancel', []);
+      assert.strictEqual(pageText(env), '1 / 3',
+        '垂直支配位移的 touchcancel 不得翻頁');
+      api.uninstall();
+    });
+  });
+
   // ---- D. 跨檔字面值同步（forcing function）------------------------------
   describe('跨檔同步', () => {
     it('paged-mode.js PROGRESS_ID 必須與 styler.js PROGRESS_ID 字面一致', () => {
