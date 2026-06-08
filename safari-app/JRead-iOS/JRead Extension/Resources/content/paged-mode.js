@@ -280,13 +280,17 @@
     return blockTouchDecision(dx, dy, pageIdx, vLocked);
   }
 
-  // v0.7.245：套用/解除第一頁收合鎖。鎖時把卡片 touch-action 收成 none（pan-y 是收合
-  // 入口，收合鎖定後不再需要原生垂直 pan）；解鎖還原成 CSS 的 pan-y。**只在捲動停止後
-  // 呼叫**（見 onScroll 的 debounce）——慣性中設 none 會害捲動彈回頂端（真機實證）。
+  // v0.7.245：套用/解除第一頁收合鎖。鎖時把卡片 touch-action 收成擋掉原生 pan
+  // （pan-y 是收合入口，收合鎖定後不再需要原生垂直 pan）；解鎖還原成 CSS 的
+  // pan-y pinch-zoom。**只在捲動停止後呼叫**（見 onScroll 的 debounce）——慣性中
+  // 設鎖會害捲動彈回頂端（真機實證）。
+  // v0.7.255：鎖值用 'pinch-zoom' 而非 'none'——保留雙指捏合「呼叫所有標籤頁」
+  // 系統手勢（none 會連捏合一起關掉，Jimmy 回報翻頁模式捏不出標籤頁切換器）。
+  // pinch-zoom 只放行雙指縮放、不放行單指 pan，鎖死垂直 pan 的目的仍達成。
   function applyVLock() {
     if (vLocked) return;
     vLocked = true;
-    if (art) art.style.setProperty('touch-action', 'none', 'important');
+    if (art) art.style.setProperty('touch-action', 'pinch-zoom', 'important');
   }
   function unlockVScroll() {
     if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
