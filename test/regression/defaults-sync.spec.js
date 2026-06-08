@@ -109,26 +109,26 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
-  describe('boldText：popup / SW / styler / options 必須四邊一致（v0.7.157 字粗 smoothing 切換）', () => {
-    // CJK 字型 weight 視覺差異不可靠，改用 -webkit-font-smoothing 模式作為粗細
-    // 切換軸（細 = antialiased / 粗 = auto subpixel）。預設 false (細)。
-    it('shared DEFAULT_SETTINGS.boldText === false', () => {
-      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'boldText');
-      assert.strictEqual(v, 'false', `SW boldText 預設必須 === false (細)，實際 ${v}`);
+  describe('fontWeight：popup / SW / styler / options 必須四邊一致（v0.7.254 字重三段）', () => {
+    // v0.7.254：取代 boldText（macOS-only smoothing）。真正的 font-weight：
+    // 細 300 / 中 400（預設）/ 粗 700，全平台一致生效。預設 400（中）。
+    it('shared DEFAULT_SETTINGS.fontWeight === 400', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'fontWeight');
+      assert.strictEqual(v, '400', `SW fontWeight 預設必須 === 400 (中)，實際 ${v}`);
     });
-    it('styler DEFAULTS.boldText === false', () => {
-      const v = extractField(STYLER_SRC, 'DEFAULTS', 'boldText');
-      assert.strictEqual(v, 'false', `styler boldText 預設必須 === false (細)，實際 ${v}`);
+    it('styler DEFAULTS.fontWeight === 400', () => {
+      const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontWeight');
+      assert.strictEqual(v, '400', `styler fontWeight 預設必須 === 400 (中)，實際 ${v}`);
     });
-    it('options DEFAULTS.boldText === false', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'boldText');
-      assert.strictEqual(v, 'false', `options boldText 預設必須 === false (細)，實際 ${v}`);
+    it('options DEFAULTS.fontWeight === 400', () => {
+      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'fontWeight');
+      assert.strictEqual(v, '400', `options fontWeight 預設必須 === 400 (中)，實際 ${v}`);
     });
-    it('popup DEFAULT_SETTINGS.boldText === false', () => {
-      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'boldText');
-      assert.strictEqual(v, 'false', `popup DEFAULT_SETTINGS.boldText 預設必須 === false (細)，實際 ${v}`);
+    it('popup DEFAULT_SETTINGS.fontWeight === 400', () => {
+      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'fontWeight');
+      assert.strictEqual(v, '400', `popup DEFAULT_SETTINGS.fontWeight 預設必須 === 400 (中)，實際 ${v}`);
     });
-    it('main.js storage.onChanged relevantKeys 必須含 boldText（reader mode 即時套用、不需 refresh）', () => {
+    it('main.js storage.onChanged relevantKeys 必須含 fontWeight（reader mode 即時套用、不需 refresh）', () => {
       const fs = require('fs');
       const path = require('path');
       const MAIN_SRC = fs.readFileSync(
@@ -138,8 +138,24 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const m = MAIN_SRC.match(/relevantKeys\s*=\s*\[([^\]]+)\]/);
       assert.ok(m, '必須能抓到 main.js relevantKeys 陣列');
       const keys = m[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
-      assert.ok(keys.includes('boldText'),
-        `relevantKeys 必須含 boldText；否則 popup 切換字粗後 content script 不會 reapply、使用者需 refresh 頁面才看到效果。實際 keys: ${JSON.stringify(keys)}`);
+      assert.ok(keys.includes('fontWeight'),
+        `relevantKeys 必須含 fontWeight；否則 popup 切換字重後 content script 不會 reapply、使用者需 refresh 頁面才看到效果。實際 keys: ${JSON.stringify(keys)}`);
+      assert.ok(!keys.includes('boldText'),
+        `relevantKeys 不可再含已退役的 boldText。實際 keys: ${JSON.stringify(keys)}`);
+    });
+    it('SW onInstalled 必須含 boldText → fontWeight 一次性遷移（boldText:true → 600）', () => {
+      // forcing function：舊使用者若曾設「粗」(boldText:true)，更新後必須換算成
+      // fontWeight 600（粗 Semibold），否則靜默退回中（400）。遷移邏輯在 SW onInstalled。
+      const fs = require('fs');
+      const path = require('path');
+      const SW_SRC = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'jread', 'background', 'service-worker.js'),
+        'utf8'
+      );
+      assert.match(SW_SRC, /current\.fontWeight\s*===\s*undefined\s*&&\s*current\.boldText\s*===\s*true/,
+        'SW onInstalled 必須有「未遷移過 + 舊 boldText:true」的條件判斷');
+      assert.match(SW_SRC, /merged\.fontWeight\s*=\s*600/,
+        'SW onInstalled 必須把舊 boldText:true 換算成 fontWeight 600');
     });
   });
 

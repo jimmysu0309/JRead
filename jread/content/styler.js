@@ -55,10 +55,11 @@
     fontSize: 18,
     contentWidth: 720,
     fontFamily: 'system-ui',
-    // 字粗外觀。false = 細（antialiased / grayscale）= 預設;true = 粗（auto =
-    // subpixel-antialiased）。用 smoothing 切換而非 font-weight—— CJK 字型在
-    // macOS 上不同 weight 視覺差異不穩定，smoothing 模式差異明顯且跨字型穩定。
-    boldText: false,
+    // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。改用
+    // 真正的 font-weight（取代 v0.7.157 boldText 的 -webkit-font-smoothing——後者
+    // 只在 macOS 有視覺差異，Windows / Linux / iOS 看不出來，與 Jimmy「全平台適用」
+    // 需求衝突）。三段一律注入（含 400）——見 buildCss 內 font-weight 注入註解。
+    fontWeight: 400,
     lineHeight: 1.7,
     // 段落間距（p / ul / ol / blockquote margin-bottom，em 為單位）。預設 1.0em
     // 對齊 user-agent stylesheet p margin，貼近大眾預期；多數新聞站本來就有此
@@ -1132,14 +1133,20 @@ ${BODY_TEXT_SEL} {
   font-family: ${opts.fontFamily}, -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
 }`;
     }
-    if (opts.boldText) {
-      // 使用者選「粗」—— 反轉 reader card 預設的 antialiased，回到 macOS Chrome
-      // 預設 auto = subpixel-antialiased，視覺較粗。CJK 字型 weight 視覺差異
-      // 不可靠，smoothing 模式差異反而明顯且穩定（macOS 限定，其他 OS 無效）。
+    {
+      // v0.7.254：字重三段（細 300 / 中 400 / 粗 600）一律注入，含預設中 400。
+      // 為什麼連 400 也注入（不沿用其他 override 的「預設值不動原站」優化）：原站
+      // 若對內文設了非 400 的字重（shoppingdesign `.htmlview p { font-weight: 300 }`，
+      // Jimmy 2026-06-08 cage 實證），中(400) 不注入就會退回原站的 300、與細(300)
+      // 撞成同一種粗細——使用者切細/中看不出差別。使用者既然有「字重」這個明確
+      // 控制項，三段就一律強制套用、才是三個真實字重。用真正的 font-weight 全平台
+      // 生效（取代 v0.7.157 boldText 的 macOS-only -webkit-font-smoothing）。只套
+      // BODY_TEXT_SEL（p / li / blockquote / span 等內文載體），**不含 h1-h6**
+      // ——標題字重由原站 / UA bold 維持、保留章節階層；strong / b 等有自身明確
+      // font-weight 的元素也不受影響（inherit 只影響沒明確 weight 的後代）。
       userOverrides += `
-html [${ARTICLE_ATTR}="1"] {
-  -webkit-font-smoothing: auto !important;
-  -moz-osx-font-smoothing: auto !important;
+${BODY_TEXT_SEL} {
+  font-weight: ${opts.fontWeight} !important;
 }`;
     }
     if (overrides.lineHeight && !overrides.fontSize) {
@@ -1710,9 +1717,12 @@ html [${ARTICLE_ATTR}="1"] iframe {
           ? Math.min(2000, Math.max(300, rawCw))
           : DEFAULTS.contentWidth,
         fontFamily: s.fontFamily || DEFAULTS.fontFamily,
-        // boldText boolean — true = 粗 (subpixel-antialiased) / false = 細
-        // (antialiased)。預設 false（細）。
-        boldText: s.boldText === true,
+        // v0.7.254：字重三段 300（細）/ 400（中，預設）/ 600（粗 Semibold）。只接受
+        // 這三個合法值，其餘（舊資料 / 損壞 / 外部寫入）一律回退 400。粗用 600 而非
+        // 700：700 視覺太重（Jimmy 回報）；600 Semibold 比中明顯重、又不過粗，且
+        // 跨平台不撞色（500 在 Windows 微軟正黑無 face 會退回 400 與中相同，故不用
+        // 500）。舊 boldText 已退役、由 SW onInstalled 遷移到 fontWeight。
+        fontWeight: (s.fontWeight === 300 || s.fontWeight === 600) ? s.fontWeight : 400,
         // lineHeight：v0.7.162 起新增 0 = Auto sentinel（保留原站行距、不注入
         // line-height）；非 0 clamp [1.0, 3.0]（unitless ratio；< 1 字會重疊、
         // > 3 段落破碎）。

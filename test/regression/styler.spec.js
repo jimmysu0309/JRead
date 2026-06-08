@@ -1088,7 +1088,11 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
 
     // 可下 margin/padding rule 的 selector（v0.7.100 + v0.7.102 範圍）：
     // h1-h6 / p / ul / ol / blockquote。逐一驗其 rule block 不含 typography。
-    const TYPO_PROPS = ['font-size', 'color', 'line-height', 'font-family', 'font-weight', 'font-style'];
+    // v0.7.254：font-weight 從本清單移除——字重三段是「明確控制項」，三段一律
+    // 注入（含預設中 400），不走「Auto 保留原站」邏輯（原站若對內文設非 400 字重，
+    // 中不注入會與細撞色，Jimmy cage 實證）。font-weight 的注入由本檔「fontWeight
+    // 字重三段」describe 專驗。其餘 typography 屬性仍維持 Auto 不注入。
+    const TYPO_PROPS = ['font-size', 'color', 'line-height', 'font-family', 'font-style'];
     function checkBlocks(re, label) {
       const blocks = css.match(re) || [];
       for (const block of blocks) {
@@ -1696,12 +1700,12 @@ describe('styler — Wikipedia infobox table 字級穿透（v0.7.156）', () => 
   });
 });
 
-describe('styler — boldText 字粗 smoothing 切換（v0.7.157）', () => {
-  // 動機：CJK 字型 weight 視覺差異不可靠（macOS PingFang TC 跨 400/500/600
-  // 視覺幾乎不可辨;Microsoft JhengHei 只有 400/700 兩階）。改用
-  // -webkit-font-smoothing 模式作為粗細切換軸——細 = antialiased（grayscale）/
-  // 粗 = auto（subpixel-antialiased，macOS 預設）。reader card baseline
-  // 已套 antialiased（v0.7.157 商周字粗修法），使用者選「粗」時反轉回 auto。
+describe('styler — fontWeight 字重三段（v0.7.254）', () => {
+  // v0.7.254：取代 v0.7.157 boldText（-webkit-font-smoothing 只在 macOS 有差異、
+  // 與「全平台適用」需求衝突）。改用真正的 font-weight：細 300 / 中 400（預設）/
+  // 粗 600（Semibold）。**三段一律注入**（含 400）——原站若對內文設非 400 字重
+  // （shoppingdesign `.htmlview p {300}`），中(400) 不注入會退回原站值與細撞色，
+  // 故 400 也強制注入。只套 BODY_TEXT_SEL（內文載體、不含 h1-h6）。
   function setup() {
     const env = loadFixtureWithScripts({
       fixturePath: FIXTURE_PATH,
@@ -1712,33 +1716,58 @@ describe('styler — boldText 字粗 smoothing 切換（v0.7.157）', () => {
     return { document: env.document, NS: env.NS, articleEl: detected.el };
   }
 
-  it('boldText: false (細) → 不額外注入 smoothing rule（沿用 reader card baseline antialiased）', () => {
+  it('fontWeight: 400 (中，預設) → 仍注入 font-weight: 400 !important（強制蓋原站字重）', () => {
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, boldText: false });
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontWeight: 400 });
     const css = document.getElementById('__jread-style').textContent;
-    // 不應出現 `-webkit-font-smoothing: auto` rule（baseline 是 antialiased）
-    assert.doesNotMatch(css, /-webkit-font-smoothing\s*:\s*auto\s*!important/i,
-      '細模式下不可有 -webkit-font-smoothing: auto rule（與 baseline antialiased 衝突）');
+    assert.match(css, /font-weight\s*:\s*400\s*!important/i,
+      '中（預設）也必須注入 font-weight: 400 !important——否則原站內文非 400 時中會退回原站值、與細撞成同色（shoppingdesign 案例）');
   });
 
-  it('boldText: true (粗) → 注入 -webkit-font-smoothing: auto 反轉 reader card baseline', () => {
+  it('fontWeight: 600 (粗 Semibold) → 注入 font-weight: 600 !important', () => {
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, boldText: true });
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontWeight: 600 });
     const css = document.getElementById('__jread-style').textContent;
-    assert.match(css, /-webkit-font-smoothing\s*:\s*auto\s*!important/i,
-      '粗模式必須注入 -webkit-font-smoothing: auto（反轉 baseline antialiased、回到 macOS 預設 subpixel）');
-    assert.match(css, /-moz-osx-font-smoothing\s*:\s*auto\s*!important/i,
-      '粗模式必須同時注入 -moz-osx-font-smoothing: auto');
+    assert.match(css, /font-weight\s*:\s*600\s*!important/i,
+      '粗模式必須注入 font-weight: 600 !important（Semibold，比 700 輕、跨平台不撞色）');
   });
 
-  it('boldText: true 注入的 rule 必須 scoped 到 [data-jread-active]（不污染原站）', () => {
+  it('fontWeight: 300 (細) → 注入 font-weight: 300 !important', () => {
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, boldText: true });
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontWeight: 300 });
     const css = document.getElementById('__jread-style').textContent;
-    const m = css.match(/([^{}]+)\{[^}]*-webkit-font-smoothing\s*:\s*auto\s*!important/i);
-    assert.ok(m, '應找得到 boldText: auto rule');
+    assert.match(css, /font-weight\s*:\s*300\s*!important/i,
+      '細模式必須注入 font-weight: 300 !important（全平台真實字重）');
+  });
+
+  it('font-weight rule 必須 scoped 到 [data-jread-active]、且不套 h1-h6（保留標題階層）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontWeight: 600 });
+    const css = document.getElementById('__jread-style').textContent;
+    const m = css.match(/([^{}]+)\{\s*font-weight\s*:\s*600\s*!important/i);
+    assert.ok(m, '應找得到 font-weight: 600 rule');
     assert.match(m[1], /data-jread-active/,
-      'boldText auto rule 必須 scoped 到 [data-jread-active]，不可全域套');
+      'font-weight rule 必須 scoped 到 [data-jread-active]，不可全域套');
+    // selector 不可「正向」選到 h1-h6（`="1"] h1` 這類後代選擇器）——標題字重
+    // 交給原站 / UA bold 維持章節階層。注意 SPAN_TEXT_SEL 的 `:not(h1 *)` 是
+    // 「排除」heading 後代、是保護機制，不算正向命中。
+    assert.doesNotMatch(m[1], /="1"\]\s+h[1-6]\b/,
+      'font-weight rule selector 不可正向命中 h1-h6（標題字重不受字重設定影響）');
+    // 反向確認 heading 保護仍在（span 排除 heading 後代）
+    assert.match(m[1], /:not\(h1 \*\)/,
+      'BODY_TEXT_SEL 必須保留 :not(h1 *) 等 heading 後代排除（避免壓到標題內 span）');
+  });
+
+  it('非法 fontWeight（700 / 500 / 字串 / undefined）→ 回退中、注入 400（不注入 300/600）', () => {
+    for (const bad of [700, 500, '600', undefined, null, 0]) {
+      const { document, NS, articleEl } = setup();
+      NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontWeight: bad });
+      const css = document.getElementById('__jread-style').textContent;
+      assert.match(css, /font-weight\s*:\s*400\s*!important/i,
+        `非法值 ${JSON.stringify(bad)} 應回退中（400）並注入 400`);
+      assert.doesNotMatch(css, /font-weight\s*:\s*(300|600|700|500)\s*!important/i,
+        `非法值 ${JSON.stringify(bad)} 不可注入 300/500/600/700`);
+    }
   });
 });
 

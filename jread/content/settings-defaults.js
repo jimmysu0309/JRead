@@ -30,9 +30,11 @@
     fontSize: 18,
     contentWidth: 720,
     fontFamily: 'system-ui',
-    // 字粗外觀。false = 細（-webkit-font-smoothing: antialiased）= 預設；
-    // true = 粗（subpixel-antialiased）。詳見 styler.js。
-    boldText: false,
+    // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。用真正的
+    // font-weight 全平台生效，取代 v0.7.157 boldText（-webkit-font-smoothing 只在
+    // macOS 有差異）。三段一律注入（含 400，避免原站內文非 400 時中退回原站與細撞色）。
+    // 舊 boldText 由 SW onInstalled 一次性遷移（boldText:true → 600）。詳見 styler.js。
+    fontWeight: 400,
     lineHeight: 1.7,
     // v0.7.162：段落間距（em）。1.0 對應 v0.7.102 baseline。
     paragraphSpacing: 1.0,

@@ -61,7 +61,9 @@ describe('popup 字型 select（v0.7.140）', () => {
         '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
         '「襯線」option value 必須對齊 popup.js FONT_STACKS.serif 字面值');
       assert.strictEqual(values[2],
-        '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif',
+        // v0.7.254：系統 CJK 字型優先、Noto Sans TC 降後（繞過站點 @font-face
+        // 劫持「Noto Sans TC」名字導致字重失效——根因見 popup.js FONT_STACKS.sans 註解）
+        '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
         '「無襯線」option value 必須對齊 popup.js FONT_STACKS.sans 字面值');
       assert.strictEqual(values[3], 'ui-monospace, Menlo, Consolas, monospace',
         '「等寬」option value 必須對齊 popup.js FONT_STACKS.mono 字面值');
