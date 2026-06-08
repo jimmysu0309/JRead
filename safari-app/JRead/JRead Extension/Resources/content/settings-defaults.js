@@ -48,6 +48,9 @@
     spaceScrollRatio: 50,
     // v0.7.227：翻頁模式（電子書式水平翻頁）。預設 false = 垂直卷動。
     pagedMode: false,
+    // v0.7.237：翻頁模式底部頁碼指示（「3 / 43」）。預設 true = 顯示；
+    // false = 隱藏（Jimmy 回報頁碼佔用顯示空間）。只在 pagedMode 時有意義。
+    showPageNumber: true,
     // v0.7.218：自訂快速鍵。null = 未自訂。
     customShortcuts: {
       'toggle-reader-mode': null,
