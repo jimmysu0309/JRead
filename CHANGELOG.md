@@ -4,6 +4,8 @@
 
 ---
 
+**v0.8.2** — change(AppIcon 改用 Claude Design 品牌稿 docs/icon-512.png 重生): Jimmy 2026-06-09 指定 app icon 改用 `docs/icon-512.png`（Claude Design 品牌 badge——品牌藍圓角方塊 + 白色 serif J、透明背景）為來源，取代 v0.8.1 用 Playwright 字型 fallback 即時 render 的 J（字面非品牌原稿）。`tools/generate-ios-appicon.js` 改成 full-bleed composite：badge 方形直邊本來就頂到畫布邊緣（opaque bbox = 滿版 512²、只有四圓角透明），疊在滿版品牌藍 `#2b6cb0` 底上 → 透明圓角被同色填滿 → 滿版出血、不透明無 alpha、圓角交給 iOS squircle。J 字面沿用 Claude Design 原稿不重繪。輸出 1024×1024 / colorType RGB（無 alpha）。ios-appicon-full-bleed.spec.js（v0.8.1 加）仍涵蓋此圖（四角品牌藍 + 無 alpha）。
+
 **v0.8.1** — fix(iPhone 閱讀內文寬度 + home screen app icon 白框):
 
 - **iPhone 閱讀模式內文比原站還窄**：Jimmy 2026-06-09 回報「iPhone 進入閱讀模式後內文寬度還是不夠寬，常常比原本網頁內文還窄」。**根因**：reader card 水平 padding 為 `min(56px, 6vw)`，在 390pt iPhone 留 23.4px×2 → 內文僅 343px。Playwright harness（新增 `--width` flag 模擬手機 viewport）量測原站行動版主文：BBC / Wikipedia / Verge 都是 358-362px（= 16px 標準左右 gutter），JRead 反而窄 ~15px。**修法**：水平 padding 改 `clamp(16px, calc(7.4vw - 12.8px), 56px)`——floor 16px 是行動版主文業界標準 gutter，390pt 內文回到 358px 對齊原站；線性段斜率對齊原 933px 桌面門檻，viewport >= 933px 仍維持 56px 桌面卡片美學不變。垂直 padding 維持 `min(48px, 6vw)`（頂部空白是縱向體感、與可讀寬無關）。**結構性通則**（viewport 寬度 + 標準 gutter 常數，不綁平台/站點）。**驗證**：harness `--width 390/430` 實測內文 357.9 / 392px（皆比修前 343 / 378px 寬）、桌面 1280 clamp 回 56px 不變。**spec forcing**：styler.spec.js padding 斷言更新為新 clamp，破壞→fail / 還原→pass 確認。

@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 // 生成 iOS / iPadOS / macOS（iOS-on-Mac）home screen 用的 AppIcon（1024×1024）。
-// 跟 Chrome 工具列 icon（tools/generate-icons.js）規格不同的兩個關鍵點：
 //
-//   1. 全出血（full-bleed）：品牌藍 #2b6cb0 必須填滿整個 1024 畫布、不留白邊。
-//      iOS 會對 app icon 自己套 squircle 圓角遮罩——若來源圖自帶白邊 + 自帶
-//      圓角，遮罩後會看到「白框 + 雙重圓角」（Jimmy 2026-06-09 home screen
-//      回報）。app icon 來源一律滿版方形、圓角交給系統。
-//   2. 不透明（no alpha）：app icon 不可含透明像素（透明會被系統合成成黑/白
-//      邊）。body 同樣鋪藍底、screenshot 不 omitBackground，輸出純不透明。
-//
-// 品牌字面與顏色沿用 popup logomark / Chrome icon 同一份規格（單一資料源）：
-// #2b6cb0 底 + 白色 serif J，font-size 0.643×N、letter-spacing -0.02em、
-// padding-right 0.071×N。差別只在「滿版方形、無 border-radius」。
+// 來源：docs/icon-512.png（Claude Design 品牌 badge——品牌藍圓角方塊 + 白色
+// serif J，透明背景）。直接拿來當 app icon 會有兩個問題：
+//   1. 圓角是透明的——iOS 對 app icon 再套 squircle 遮罩前會把透明合成成
+//      黑/白邊（Jimmy 2026-06-09 home screen 白框回報的同型態）。
+//   2. app icon 不可含 alpha。
+// 修法（full-bleed composite）：badge 的方形「直邊」本來就頂到畫布邊緣
+//   （opaque bbox = 滿版 512²，只有四個圓角是透明），所以把 badge 疊在一張
+//   滿版品牌藍底上 → 透明圓角被同色藍填滿 → 滿版出血、不透明、圓角交給 iOS。
+//   藍底色 = #2b6cb0（與 badge 方塊同色，實測 rgb 43,108,176，blue-on-blue
+//   無縫）。J 字面沿用 Claude Design 原稿、不重繪。
 //
 //   node tools/generate-ios-appicon.js
 
@@ -20,6 +19,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..');
+const SRC = path.join(ROOT, 'docs', 'icon-512.png');
 const OUT = path.join(
   ROOT,
   'safari-app', 'JRead-iOS', 'JRead', 'Assets.xcassets',
@@ -27,51 +27,43 @@ const OUT = path.join(
 );
 
 const N = 1024;
-const BG = '#2b6cb0';          // 品牌藍（與 generate-icons.js / popup 同一份）
-const FS_RATIO  = 0.643;       // font-size / N
-const PAD_RATIO = 0.071;       // padding-right / N（serif J 視覺置中微調）
-
-function iconHtml(n) {
-  const fontSize = Math.round(n * FS_RATIO);
-  const pad = Math.max(0, Math.round(n * PAD_RATIO));
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-    html, body { margin: 0; padding: 0; background: ${BG}; }
-    .icon {
-      width: ${n}px;
-      height: ${n}px;
-      background: ${BG};
-      /* 無 border-radius：圓角交給 iOS 系統 squircle 遮罩 */
-      display: grid;
-      place-items: center;
-      font-family: "Noto Serif TC", "Songti TC", Georgia, "Times New Roman", serif;
-      font-weight: 600;
-      color: #ffffff;
-      line-height: 1;
-      letter-spacing: -0.02em;
-      box-sizing: border-box;
-      -webkit-font-smoothing: antialiased;
-    }
-    .glyph {
-      font-size: ${fontSize}px;
-      padding-right: ${pad}px;
-      display: block;
-    }
-  </style></head><body>
-    <div class="icon"><span class="glyph">J</span></div>
-  </body></html>`;
-}
+const BG = '#2b6cb0'; // 品牌藍（= badge 方塊色，填滿圓角透明區用）
 
 (async () => {
+  if (!fs.existsSync(SRC)) {
+    console.error(`ERROR: 來源不存在 ${SRC}`);
+    process.exit(1);
+  }
+  const dataUrl = 'data:image/png;base64,' + fs.readFileSync(SRC).toString('base64');
+
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
     viewport: { width: N, height: N },
     deviceScaleFactor: 1
   });
   const page = await ctx.newPage();
-  await page.setContent(iconHtml(N), { waitUntil: 'networkidle' });
-  const el = await page.$('.icon');
-  // omitBackground: false（預設）→ 輸出不透明（app icon 不可含 alpha）
+  await page.setContent(`<!doctype html><meta charset="utf-8">
+    <style>html,body{margin:0;padding:0}</style>
+    <canvas id="c" width="${N}" height="${N}"></canvas>`);
+
+  await page.evaluate(async ({ src, n, bg }) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.getElementById('c');
+    const x = c.getContext('2d');
+    // 1. 滿版品牌藍底（填掉 badge 透明圓角 → full-bleed）
+    x.fillStyle = bg;
+    x.fillRect(0, 0, n, n);
+    // 2. badge 疊上（512 → 1024 high-quality 放大；直邊頂邊、圓角藍底透出）
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(img, 0, 0, n, n);
+  }, { src: dataUrl, n: N, bg: BG });
+
+  const el = await page.$('#c');
+  // omitBackground:false → 不透明輸出（app icon 不可含 alpha）
   await el.screenshot({ path: OUT, omitBackground: false });
-  console.log(`[OK] ${path.relative(ROOT, OUT)}（full-bleed, opaque）`);
+  console.log(`[OK] ${path.relative(ROOT, OUT)}（來源 docs/icon-512.png，full-bleed, opaque）`);
   await browser.close();
 })();
