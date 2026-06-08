@@ -533,8 +533,8 @@ describe('翻頁模式（v0.7.227）', () => {
       api.sync({ pagedMode: true }, art);
       return { env, api };
     }
-    function fireTouch(env, type, touches) {
-      const ev = new env.window.Event(type, { bubbles: true, cancelable: true });
+    function fireTouch(env, type, touches, cancelable) {
+      const ev = new env.window.Event(type, { bubbles: true, cancelable: cancelable !== false });
       ev.touches = touches;
       ev.changedTouches = touches;
       env.window.dispatchEvent(ev);
@@ -587,6 +587,31 @@ describe('翻頁模式（v0.7.227）', () => {
       fireTouch(env, 'touchcancel', []);
       assert.strictEqual(pageText(env), '1 / 3',
         '垂直支配位移的 touchcancel 不得翻頁');
+      api.uninstall();
+    });
+
+    // v0.8.6：non-cancelable touchmove（iOS 圖片上系統已接管 → touchmove
+    // cancelable=false）必須仍追蹤 lastX，否則 onTouchCancel 補判 dx=0。這是
+    // v0.8.5「圖片上仍滑不動」的真兇——lastX 追蹤被擋在 `!e.cancelable return` 之後。
+    it('non-cancelable touchmove（圖片接管）+ touchcancel → 仍翻頁（v0.8.6 真兇）', () => {
+      const { env, api } = loadInstalled();
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireTouch(env, 'touchmove', [{ clientX: 300, clientY: 302 }], false); // cancelable:false
+      fireTouch(env, 'touchcancel', []);
+      assert.strictEqual(pageText(env), '2 / 3',
+        'non-cancelable touchmove 仍須追蹤位置，touchcancel 才補得了翻頁');
+      api.uninstall();
+    });
+
+    // v0.8.6：極端變體——iOS 直接 cancel、幾乎沒派發 touchmove。靠 cancel event
+    // 的 changedTouches 補位置（onTouchCancel 取 lastX 與 changedTouches 最大位移者）。
+    it('無 touchmove、touchcancel 自帶位移（changedTouches）→ 仍翻頁', () => {
+      const { env, api } = loadInstalled();
+      fireTouch(env, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      // 不派發 touchmove；cancel 直接帶最終位置
+      fireTouch(env, 'touchcancel', [{ clientX: 300, clientY: 302 }]);
+      assert.strictEqual(pageText(env), '2 / 3',
+        'touchcancel 的 changedTouches 位移足夠時必須翻頁');
       api.uninstall();
     });
   });
