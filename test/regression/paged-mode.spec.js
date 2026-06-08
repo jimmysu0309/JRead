@@ -290,6 +290,48 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // v0.7.240：blockTouchDecision(dx, dy, pageIdx, locked)——把 vLocked 顯式餵入的
+  // 純函式（shouldBlockTouchMove 是它的薄包裝）。鎖死後一律 true。
+  describe('blockTouchDecision（收合後鎖死垂直卷動，v0.7.240）', () => {
+    it('未鎖 + 第一頁垂直滑 → false（放行去觸發收合）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, false), false);
+    });
+    it('已鎖 + 第一頁垂直滑 → true（凍結 scrollY 維持收合）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, true), true);
+    });
+    it('已鎖 + 第一頁水平微動（dx <= 6）→ true（鎖死蓋過第一頁放行）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(4, 1, 0, true), true);
+    });
+    it('已鎖 + 任意滑動 → 恆 true', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(0, 0, 0, true), true);
+      assert.strictEqual(pagedApi.blockTouchDecision(100, 100, 0, true), true);
+    });
+  });
+
+  // v0.7.240：classifyViewportChange(baseW, baseH, curW, curH, delta)——iOS 工具列
+  // 收合偵測。寬不變 + 高變高出 delta = 'lock'；高變矮 = 'lower'；寬變 = 'rotate'。
+  describe('classifyViewportChange（工具列收合偵測，v0.7.240）', () => {
+    const c = pagedApi.classifyViewportChange;
+    it('innerHeight 變高出 delta（714→754，delta 16）→ lock（工具列收合）', () => {
+      assert.strictEqual(c(390, 714, 390, 754, 16), 'lock');
+    });
+    it('innerHeight 只微高（< delta）→ null（雜訊不誤鎖）', () => {
+      assert.strictEqual(c(390, 714, 390, 724, 16), null);
+    });
+    it('innerHeight 恰好等於 baseline → null', () => {
+      assert.strictEqual(c(390, 714, 390, 714, 16), null);
+    });
+    it('innerHeight 變矮 → lower（工具列更展開，下修 baseline）', () => {
+      assert.strictEqual(c(390, 714, 390, 700, 16), 'lower');
+    });
+    it('寬度變了（旋轉）即使高也變 → rotate（重設 baseline + 解鎖）', () => {
+      assert.strictEqual(c(390, 714, 844, 390, 16), 'rotate');
+    });
+    it('寬度變了 + 高度增加 → 仍 rotate（不誤判成收合）', () => {
+      assert.strictEqual(c(390, 714, 430, 800, 16), 'rotate');
+    });
+  });
+
   describe('classifyKey', () => {
     const k = (key, mods) => pagedApi.classifyKey({ key, ...(mods || {}) });
     it('→ / PageDown / Space = next', () => {
