@@ -69,6 +69,7 @@
   const WHEEL_LOCKOUT_MS = 550;     // 翻頁後滾輪鎖定（吃掉觸控板慣性尾巴）
   const TURN_ANIM_MS = 260;         // 翻頁動畫時長
   const HMOVE_BLOCK_PX = 6;         // v0.7.237：水平位移超此值即 preventDefault（擋 Safari 邊緣返回手勢）
+  const COLLAPSE_DELTA_PX = 16;     // v0.7.240：innerHeight 比 baseline 高出此值即判定 iOS 工具列已收合（實證 714→754 = 40px，門檻取安全中間值）
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
@@ -109,6 +110,31 @@
     return g.dx < 0 ? 'next' : 'prev';
   }
 
+  // v0.7.240：viewport 變化分類（iOS 工具列收合偵測，純邏輯）。
+  // 比較收合 baseline (baseW/baseH) 與當前 (curW/curH)：
+  //   'rotate' = 寬度變了（旋轉 / 視窗縮放）→ 重設 baseline + 解鎖（新方向可再收合一次）
+  //   'lower'  = innerHeight 比 baseline 矮（工具列更展開）→ 下修 baseline
+  //   'lock'   = innerHeight 比 baseline 高出 delta（工具列收合）→ 鎖死垂直卷動
+  //   null     = 無顯著變化
+  // 用 innerHeight 變高判定收合，不猜卷動距離——避免「滑一點點沒收合卻誤鎖、之後
+  // 再也收不了」。寬度不變才比高度，旋轉/縮放不會誤判成收合。
+  function classifyViewportChange(baseW, baseH, curW, curH, deltaPx) {
+    if (curW !== baseW) return 'rotate';
+    if (curH < baseH) return 'lower';
+    if (curH > baseH + deltaPx) return 'lock';
+    return null;
+  }
+
+  // v0.7.240：單指 touchmove 是否 preventDefault（擋原生捲動）。純邏輯：
+  //   - vLocked（工具列已收合）：擋全部——凍結 scrollY 維持收合 + 左右滑乾淨
+  //   - 第一頁未鎖：只擋水平支配滑動（放行垂直滑去觸發收合）
+  //   - 第二頁起：擋全部（文件鎖死）
+  function blockTouchDecision(dx, dy, pageIdx, locked) {
+    if (locked) return true;
+    if (pageIdx !== 0) return true;
+    return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX;
+  }
+
   // 鍵盤對映。輸入 event-like { key, code, shiftKey, altKey, ctrlKey, metaKey }。
   // 回傳 'next' / 'prev' / 'first' / 'last' / null。
   function classifyKey(e) {
@@ -137,6 +163,13 @@
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
+  // v0.7.240：工具列收合後鎖死垂直卷動（Jimmy 回報「可卷動範圍過高 → 左右滑不靈敏」）。
+  // 設計：保留 500vh 讓第一次垂直滑動有足夠空間觸發 iOS 收合工具列，一旦偵測到收合
+  // （innerHeight 變高）就鎖死後續所有垂直卷動 → scrollY 凍結在收合位置（工具列保持
+  // 收合）、左右滑不再被原生垂直 pan 搶走。等於「只放行一次收合用的小滑動」。
+  let vLocked = false;      // 垂直卷動是否已鎖死（工具列收合後 true）
+  let collapseBaseW = 0;    // 工具列展開時的 innerWidth baseline（寬度變 = 旋轉，重設）
+  let collapseBaseH = 0;    // 工具列展開時的 innerHeight baseline（變高 = 收合）
 
   // stride = column 寬 + gap = (clientWidth − 左右 padding) + column-gap。
   // computed style 讀不到數值（jsdom 無 layout）時退回 clientWidth
@@ -245,22 +278,47 @@
     if (bar) bar.style.width = (total <= 1 ? 100 : ((idx + 1) / total) * 100) + '%';
   }
 
-  // v0.7.239：iOS 工具列收合「只在第一頁可滑」（Jimmy 要求：第一頁垂直滑收
-  // 工具列，第二頁起維持原本鎖定行為、不能再垂直滑）。純邏輯：給定本次單指
-  // 滑動位移與目前頁碼，回傳 onTouchMove 是否該 preventDefault（= 擋住原生捲動）。
-  //   - 第一頁（pageIdx 0）：只擋「水平支配」滑動（Safari 邊緣返回手勢），
+  // v0.7.240：iOS 工具列收合的 touchmove 攔截策略（薄包裝，把模組私有 vLocked
+  // 餵給純函式 blockTouchDecision，方便 jsdom spec 直接測純邏輯）。
+  //   - vLocked（工具列已收合，v0.7.240）：擋「所有」單指滑動——垂直擋住把 scrollY
+  //     凍結在收合位置（工具列保持收合）、左右滑不再被原生垂直 pan 搶走（解 Jimmy
+  //     回報「可卷動範圍過高 → 左右滑不靈敏」）。
+  //   - 第一頁未鎖（pageIdx 0）：只擋「水平支配」滑動（Safari 邊緣返回手勢），
   //     放行垂直滑 → 底下 document 捲動 → iOS 收合工具列（styler 卡片
-  //     touch-action: pan-y 讓垂直 pan 冒泡到 document）。
-  //   - 第二頁起（pageIdx >= 1）：擋「所有」單指滑動——垂直擋住 = 維持第一頁
-  //     收合後的 scrollY 不被捲回（工具列保持收合）、水平擋住 = Safari 邊緣返回。
-  // 為何用 preventDefault 不用 touch-action：iOS WebKit 在有 passive:false
+  //     touch-action: pan-y 讓垂直 pan 冒泡到 document）。收合後即進入 vLocked。
+  //   - 第二頁起（pageIdx >= 1）：擋「所有」單指滑動（文件鎖死）。
+  // 為何用 preventDefault 不用純靠 touch-action：iOS WebKit 在有 passive:false
   // touchmove listener 時 touch-action 不可靠（等 JS 決定、且 touch-action 不
   // 繼承，手指實際落在卡片內 auto 的 <p>/<img>）——simulator 實證 touch-action:
   // none 仍被捲動穿透；passive:false 的 preventDefault 才真正擋得住。
   // 翻頁本身由 touchend 的 JS 程式控 scrollLeft，不受 preventDefault 影響。
   function shouldBlockTouchMove(dx, dy, pageIdx) {
-    if (pageIdx !== 0) return true;
-    return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX;
+    return blockTouchDecision(dx, dy, pageIdx, vLocked);
+  }
+
+  // v0.7.240：套用/解除垂直卷動鎖。鎖時把卡片 touch-action 收成 none（pan-y 是收合
+  // hack 的入口，收合完成後不再需要原生垂直 pan）；解鎖還原成 CSS 的 pan-y。
+  // 不去改 body min-height（500vh）——縮回去會 clamp scrollY 反而可能讓工具列重展開；
+  // 鎖 touch + onTouchMove preventDefault 雙保險足以凍結 scrollY。
+  function applyVLock() {
+    if (vLocked) return;
+    vLocked = true;
+    if (art) art.style.setProperty('touch-action', 'none', 'important');
+  }
+  function unlockVScroll() {
+    if (!vLocked) return;
+    vLocked = false;
+    if (art) art.style.removeProperty('touch-action'); // 還原 styler 注入的 pan-y
+  }
+
+  // v0.7.240：依當前 viewport 對照 baseline 決定收合鎖動作（onResize / onTouchEnd 都呼叫）。
+  function checkCollapseLock() {
+    if (typeof window === 'undefined') return;
+    const w = window.innerWidth, h = window.innerHeight;
+    const action = classifyViewportChange(collapseBaseW, collapseBaseH, w, h, COLLAPSE_DELTA_PX);
+    if (action === 'rotate') { collapseBaseW = w; collapseBaseH = h; unlockVScroll(); }
+    else if (action === 'lower') { collapseBaseH = h; }
+    else if (action === 'lock') { applyVLock(); }
   }
 
   // rAF ease-out 動畫跳頁。jsdom 無 layout，spec 不測本函式。
@@ -369,6 +427,8 @@
       viewportW: window.innerWidth
     });
     touchState = null;
+    // v0.7.240：手勢結束後對照 viewport——這次若是收合用的垂直滑，innerHeight 已變高 → 上鎖
+    checkCollapseLock();
     if (dir) turn(dir);
   }
 
@@ -377,6 +437,9 @@
   // resize / 旋轉：stride 變了、頁界全部重排——重測頁數、按 lastRatio 回到對應頁
   function onResize() {
     if (!art) return;
+    // v0.7.240：工具列收合 / 展開 / 旋轉都先過收合鎖判定（rAF 前做，後續 remeasure
+    // 用的是鎖判定後的 baseline）
+    checkCollapseLock();
     requestAnimationFrame(() => {
       if (!art) return;
       remeasurePages();
@@ -395,6 +458,14 @@
     if (installed) uninstall();
     if (!articleEl) return;
     art = articleEl;
+
+    // v0.7.240：擷取工具列展開時的 viewport baseline（收合會讓 innerHeight 變高）。
+    // 進場時 scrollY 已歸零、工具列通常展開 = 最矮，後續變高才判定收合。
+    vLocked = false;
+    if (typeof window !== 'undefined') {
+      collapseBaseW = window.innerWidth;
+      collapseBaseH = window.innerHeight;
+    }
 
     // v0.7.237：頁碼指示器依 showIndicator 增/移除（settings.showPageNumber）
     reconcileIndicator();
@@ -441,6 +512,9 @@
     for (const t of remeasureTimers) clearTimeout(t);
     remeasureTimers = [];
     if (indicatorEl) { indicatorEl.remove(); indicatorEl = null; }
+    // v0.7.240：還原卡片 touch-action（鎖時設過 inline none），避免元素被 styler
+    // reapply 沿用時殘留鎖狀態
+    unlockVScroll();
     if (art) art.scrollLeft = 0;
     // 還原進場前的文件卷動位置（overflow hidden 期間 scrollTop 歸零，
     // CSS 移除後不還原會讓使用者掉回頁首）。styler restore 在本 uninstall
@@ -492,6 +566,8 @@
     classifySwipe,
     classifyKey,
     shouldBlockTouchMove,
+    blockTouchDecision,
+    classifyViewportChange,
     sync,
     install,
     uninstall,
