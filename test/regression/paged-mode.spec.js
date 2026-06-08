@@ -148,18 +148,32 @@ describe('翻頁模式（v0.7.227）', () => {
         `body min-height 必須 > 100vh（實得 ${mh[1]}vh；<= 100vh 無可捲空間、收不了工具列）`);
     });
 
-    it('pagedMode: true → 翻頁卡片 touch-action: pan-y（垂直 pan 冒泡捲 document 收工具列，v0.7.238）', () => {
-      // iOS simulator 真機實證：缺這行時 document 可捲（scrollH 1508 > 714）、
+    it('pagedMode: true → 翻頁卡片 touch-action: pan-y pinch-zoom（垂直 pan 收工具列 + 雙指捏合呼叫所有標籤頁，v0.7.255）', () => {
+      // iOS simulator 真機實證：缺 pan-y 時 document 可捲（scrollH 1508 > 714）、
       // 媒體查詢匹配，但 fixed + overflow:hidden 卡片上的非被動 touchmove
       // listener 讓 WebKit 對垂直 pan 處置變曖昧、scrollY 卡死 0 → 工具列不收。
       // touch-action: pan-y 讓垂直 pan 冒泡去捲 document（水平翻頁仍由 JS
       // 程式控 scrollLeft，touch-action 不影響 JS touch event）。
-      // forcing function：任何人拿掉卡片 touch-action → 收合 hack 失效。
+      // v0.7.255：必須補 pinch-zoom token——純 pan-y 會關掉雙指捏合，iOS Safari
+      // 的「呼叫所有標籤頁」是雙指捏合縮放系統手勢，翻頁模式捏不出（Jimmy 回報）。
+      // forcing function：任何人拿掉 pan-y → 收合失效；拿掉 pinch-zoom → 捏合失效。
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
       const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*column-width[^}]*\}/s);
       assert.ok(ruleMatch, '須有翻頁容器規則');
-      assert.ok(/touch-action:\s*pan-y\s*!important/.test(ruleMatch[0]),
-        '翻頁卡片必須含 touch-action: pan-y（垂直 pan 冒泡捲 document → iOS 自動收合工具列）');
+      assert.ok(/touch-action:\s*pan-y\s+pinch-zoom\s*!important/.test(ruleMatch[0]),
+        '翻頁卡片必須含 touch-action: pan-y pinch-zoom（垂直 pan 收工具列 + 雙指捏合呼叫所有標籤頁）');
+    });
+
+    it('applyVLock 收合鎖用 pinch-zoom 而非 none（保留雙指捏合呼叫所有標籤頁，v0.7.255）', () => {
+      // 第一頁捲動停止後鎖死垂直 pan，但鎖值必須是 'pinch-zoom' 不是 'none'——
+      // none 會連雙指捏合系統手勢一起關掉，使用者在第一頁鎖定後捏不出所有標籤頁。
+      // pinch-zoom 只擋單指 pan、放行雙指縮放，鎖死垂直 pan 的目的仍達成。
+      const lockMatch = PAGED_SRC.match(/function applyVLock\(\)\s*\{[^}]*\}/s);
+      assert.ok(lockMatch, '須有 applyVLock');
+      assert.ok(/setProperty\(\s*'touch-action'\s*,\s*'pinch-zoom'\s*,\s*'important'\s*\)/.test(lockMatch[0]),
+        'applyVLock 必須用 pinch-zoom（保留雙指捏合）、不可用 none');
+      assert.ok(!/'touch-action'\s*,\s*'none'/.test(lockMatch[0]),
+        'applyVLock 不可把 touch-action 設成 none（會關掉雙指捏合呼叫所有標籤頁）');
     });
 
     it('pagedMode: true → 媒體單頁化（max-height dvh + break-inside: avoid）', () => {
