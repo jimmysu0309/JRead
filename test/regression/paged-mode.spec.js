@@ -290,6 +290,24 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // v0.7.245：blockTouchDecision(dx, dy, pageIdx, locked)——第一頁「捲動停止後」鎖死
+  // （locked=true）即擋全部單指滑動。locked 由 shouldBlockTouchMove 餵入模組私有 vLocked。
+  describe('blockTouchDecision（第一頁收合後鎖死，v0.7.245）', () => {
+    it('未鎖 + 第一頁垂直滑 → false（放行去收工具列）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, false), false);
+    });
+    it('已鎖 + 第一頁垂直滑 → true（維持收合、左右滑乾淨）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, true), true);
+    });
+    it('已鎖 + 第一頁水平微動（dx <= 6）→ true（鎖蓋過第一頁放行）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(4, 1, 0, true), true);
+    });
+    it('已鎖 → 任意滑動恆 true；未鎖第二頁起也恆 true', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(100, 100, 0, true), true);
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 1, false), true);
+    });
+  });
+
   describe('classifyKey', () => {
     const k = (key, mods) => pagedApi.classifyKey({ key, ...(mods || {}) });
     it('→ / PageDown / Space = next', () => {
