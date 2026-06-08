@@ -1265,27 +1265,26 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
   height: 100% !important;
   overscroll-behavior: none !important;
 }
-/* v0.7.238 iOS 工具列自動收合 hack：觸控裝置放行垂直卷動 + 撐高 body。
+/* v0.7.238 iOS 工具列自動收合 hack：觸控裝置放行垂直卷動 + 略撐高 body。
    翻頁卡片是 position:fixed（視覺釘住、不隨 document 捲動），但底下 document
    可垂直捲——使用者垂直滑一下 → document 捲動 → iOS Safari 偵測到「真實手勢
    捲動」自動收合網址列工具列，多顯示一行內容（卡片 fixed inset:0 隨 layout
    viewport 變高、每欄多容一行）。程式捲動（window.scrollTo）無法觸發收合
-   ——iOS 只認真實觸控手勢，simulator 對照實證（scrollTo 捲了但工具列不收 /
-   手指滑同頁就收）——故只能半手動，使用者垂直滑一下觸發。
+   ——iOS 只認真實觸控手勢，simulator 對照實證——故只能半手動，使用者垂直滑一下觸發。
    限觸控裝置（(hover:none) and (pointer:coarse)）：桌面無此自動收合工具列，
    且撐高 body 會多一條無用垂直捲軸；桌面維持上方 overflow:hidden 鎖死。
-   min-height: 500vh 給足捲動距離——**不可用 200vh**：iOS simulator 真機實證，
-   200vh（max scroll ≈ 0.1 viewport）使用者一滑就貼底，iOS Safari 接近底部時
-   不收合工具列（scrollY 748 / max 794 仍 innerH 714 不收）；改 500vh 後同款
-   滑動落在中段（scrollY 748 / max ~3000）穩定收合（innerH 714→754，多一行）。
-   翻頁走水平 scrollLeft、不動 scrollY，一次垂直滑收合後讀整篇都維持收合。
-   v0.7.240（Jimmy 回報「可卷動範圍過高 → 左右滑不靈敏」）：500vh 在收合「之前」
-   是必要的（給足空間讓第一次滑動觸發收合），但收合「之後」這整段可卷動範圍
-   會讓後續左右滑被原生垂直 pan 搶走、不靈敏。對策不在 CSS（縮 min-height 會
-   clamp scrollY 反讓工具列重展開），而在 paged-mode.js：偵測到 innerHeight 變高
-   = 工具列已收合，即鎖死垂直卷動（vLocked → onTouchMove 擋全部 + 卡片 touch-action:
-   none），scrollY 凍結在收合位置、左右滑乾淨。故 500vh 保留、靠 JS 鎖收尾。
-   垂直 scrollTop 不代表閱讀進度——onScrollProgress 在翻頁模式讓位（見該函式 guard）。 */
+   v0.7.244 min-height 500vh → 101vh（Jimmy 真機實測收尾，2026-06-08）：iOS 工具列
+   收合**看「有沒有在捲動」、不看「捲多少」**——只要 body 比視窗略高、有一點點可捲
+   空間（101vh ≈ 視窗高 +1%），使用者垂直滑一下就觸發收合（真機實測 101vh 收得了；
+   先前以為要 ~280px 捲動距離是錯的）。**不可 <= 100vh**：body 不比視窗高就無可捲空間、
+   完全收不了。為何縮到 101vh：500vh 的大捲動範圍讓第一頁左右滑被原生垂直 pan 搶走、
+   不靈敏（Jimmy 最初回報「捲動範圍過高」）；101vh 把垂直捲動範圍壓到最低（捲軸幾乎
+   看不到）→ 左右滑乾淨，又保留收合。**收合後不鎖死垂直卷動**——iOS 上「收合 + 鎖死」
+   本質做不到（鎖死垂直時慣性捲動彈回頂端、工具列重展開；且使用者下滑必能叫回工具列，
+   擋不住也不該擋，v0.7.240→243 燒四版 + 真機 instrument 實證）。第一頁放行垂直（可收合 /
+   可自然叫回），第二頁起由 paged-mode.js onTouchMove preventDefault 鎖（純擋、不碰
+   touch-action，無彈回問題）。垂直 scrollTop 不代表閱讀進度——onScrollProgress 在翻頁
+   模式讓位（見該函式 guard）。 */
 @media (hover: none) and (pointer: coarse) {
   html.${HTML_CLASS}, html.${HTML_CLASS} body {
     overflow-x: hidden !important;
@@ -1293,7 +1292,7 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
     height: auto !important;
   }
   html.${HTML_CLASS} body {
-    min-height: 500vh !important;
+    min-height: 101vh !important;
   }
 }
 /* 滿版固定容器：left/right 0 + margin auto + max-width 讓桌面寬視窗時
