@@ -95,6 +95,28 @@ describe('翻頁模式（v0.7.227）', () => {
         '不得回退到 max-width: calc(contentWidth + 內距 ×2)（兩模式寬度不一致根因）');
     });
 
+    it('pagedMode: true → media/連結補 touch-action: pan-y pinch-zoom + -webkit-user-drag: none（圖片上滑能翻頁，v0.8.7）', () => {
+      // Jimmy 2026-06-09 culpium/Substack 真機實證：圖片 draggable=true，iPhone
+      // 上水平拖曳圖片啟動 iOS 原生 drag-lift 搶走左右滑 → 圖片上滑不翻頁。
+      // 卡片 touch-action: pan-y 不繼承到圖片，須對 media/連結明確補。
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      const ruleMatch = css.match(/html \[data-jread-active="1"\] img,[^{]*\{[^}]*-webkit-user-drag[^}]*\}/s);
+      assert.ok(ruleMatch, '翻頁模式須有 media/連結的 touch-action + user-drag 規則');
+      const rule = ruleMatch[0];
+      assert.ok(rule.includes('touch-action: pan-y pinch-zoom !important'),
+        'media/連結須補 touch-action: pan-y pinch-zoom（同卡片，水平 swipe 不被原生攔）');
+      assert.ok(rule.includes('-webkit-user-drag: none !important'),
+        '須停掉 -webkit-user-drag（擋 iOS image drag-lift 搶手勢）');
+      assert.ok(rule.includes('-webkit-touch-callout: none !important'),
+        '須停掉 -webkit-touch-callout（長按選單也會干擾）');
+    });
+
+    it('pagedMode: false（垂直模式）→ 不注入 media touch-action/user-drag 規則（保留長按存圖）', () => {
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: false });
+      assert.ok(!/-webkit-user-drag/.test(css),
+        '垂直模式不得注入 -webkit-user-drag（避免犧牲長按存圖等原生互動）');
+    });
+
     it('pagedMode: true → 右內距用 transparent border、padding-right 必須為 0（WebKit 尾端 padding 缺陷，v0.7.231）', () => {
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
       // forcing function：WebKit（Safari 26.5 真機實證）multicol scrollable
