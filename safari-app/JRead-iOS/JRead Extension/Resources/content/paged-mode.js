@@ -69,6 +69,8 @@
   const WHEEL_LOCKOUT_MS = 550;     // 翻頁後滾輪鎖定（吃掉觸控板慣性尾巴）
   const TURN_ANIM_MS = 260;         // 翻頁動畫時長
   const HMOVE_BLOCK_PX = 6;         // v0.7.237：水平位移超此值即 preventDefault（擋 Safari 邊緣返回手勢）
+  const SETTLE_LOCK_MS = 250;       // v0.7.245：捲動停止判定（此毫秒內無 scroll = 捲軸消失 = 已停止）
+  const SETTLE_LOCK_MIN_SY = 2;     // v0.7.245：停止時 scrollY 超此值（已捲離頂端 = 已收合）才鎖
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
@@ -137,6 +139,13 @@
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
+  // v0.7.245：第一頁「捲動停止後」鎖死垂直卷動（Jimmy 要保留「捲軸消失後可鎖住」）。
+  // 與 v0.7.240→243 已撤回的鎖不同：觸發點是「捲動完全停止（debounce）」、不是捲動中
+  // ——在慣性中設 touch-action:none 會害捲動彈回頂端 + 工具列重展開（真機 instrument
+  // 實證）；等停止才鎖無慣性可打斷、不彈回。配 styler 的 101vh（範圍極小、停止快），
+  // 收合後幾乎立刻鎖、左右滑乾淨（真機驗過鎖得住、工具列維持收合）。
+  let vLocked = false;
+  let settleTimer = null;
 
   // stride = column 寬 + gap = (clientWidth − 左右 padding) + column-gap。
   // computed style 讀不到數值（jsdom 無 layout）時退回 clientWidth
@@ -258,9 +267,48 @@
   // 繼承，手指實際落在卡片內 auto 的 <p>/<img>）——simulator 實證 touch-action:
   // none 仍被捲動穿透；passive:false 的 preventDefault 才真正擋得住。
   // 翻頁本身由 touchend 的 JS 程式控 scrollLeft，不受 preventDefault 影響。
-  function shouldBlockTouchMove(dx, dy, pageIdx) {
+  // v0.7.245：加 vLocked——第一頁收合後（捲動停止）鎖死，擋全部單指滑動。
+  //   - locked（第一頁已收合鎖定 / 第二頁起）：擋全部
+  //   - 第一頁未鎖：只擋水平支配（放行垂直滑去收工具列）
+  // 純函式（jsdom spec 直接測），vLocked 由薄包裝 shouldBlockTouchMove 餵入。
+  function blockTouchDecision(dx, dy, pageIdx, locked) {
+    if (locked) return true;
     if (pageIdx !== 0) return true;
     return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX;
+  }
+  function shouldBlockTouchMove(dx, dy, pageIdx) {
+    return blockTouchDecision(dx, dy, pageIdx, vLocked);
+  }
+
+  // v0.7.245：套用/解除第一頁收合鎖。鎖時把卡片 touch-action 收成 none（pan-y 是收合
+  // 入口，收合鎖定後不再需要原生垂直 pan）；解鎖還原成 CSS 的 pan-y。**只在捲動停止後
+  // 呼叫**（見 onScroll 的 debounce）——慣性中設 none 會害捲動彈回頂端（真機實證）。
+  function applyVLock() {
+    if (vLocked) return;
+    vLocked = true;
+    if (art) art.style.setProperty('touch-action', 'none', 'important');
+  }
+  function unlockVScroll() {
+    if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+    if (!vLocked) return;
+    vLocked = false;
+    if (art) art.style.removeProperty('touch-action');
+  }
+
+  // v0.7.245：捲動「停止後」才鎖。每次 scroll 重設 debounce；SETTLE_LOCK_MS 內無再
+  // scroll = 捲軸消失 = 已停止。停止時若已捲離頂端（scrollY > 門檻 = 已收合）且手指
+  // 不在畫面上、未鎖 → applyVLock。停止後鎖無慣性可打斷、不彈回（與 v0.7.240→243
+  // 「捲動中就鎖」的彈回 bug 區別）。第二頁起垂直被擋、不會捲動，故本鎖只由第一頁
+  // 收合滑動觸發。
+  function onScroll() {
+    if (vLocked) return;
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(function () {
+      settleTimer = null;
+      if (vLocked || touchState) return;
+      const y = window.scrollY || window.pageYOffset || 0;
+      if (y > SETTLE_LOCK_MIN_SY) applyVLock();
+    }, SETTLE_LOCK_MS);
   }
 
   // rAF ease-out 動畫跳頁。jsdom 無 layout，spec 不測本函式。
@@ -395,6 +443,7 @@
     if (installed) uninstall();
     if (!articleEl) return;
     art = articleEl;
+    vLocked = false; // v0.7.245：新進場（同篇 reapply 走上面 early return 不重置）
 
     // v0.7.237：頁碼指示器依 showIndicator 增/移除（settings.showPageNumber）
     reconcileIndicator();
@@ -410,6 +459,7 @@
     window.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     window.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, { passive: true }); // v0.7.245：捲動停止後鎖
 
     installed = true;
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
@@ -437,9 +487,13 @@
     window.removeEventListener('touchend', onTouchEnd, { capture: true, passive: true });
     window.removeEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('scroll', onScroll, { passive: true });
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     for (const t of remeasureTimers) clearTimeout(t);
     remeasureTimers = [];
+    // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
+    // 元素被 styler reapply 沿用時殘留鎖狀態
+    unlockVScroll();
     if (indicatorEl) { indicatorEl.remove(); indicatorEl = null; }
     if (art) art.scrollLeft = 0;
     // 還原進場前的文件卷動位置（overflow hidden 期間 scrollTop 歸零，
@@ -492,6 +546,7 @@
     classifySwipe,
     classifyKey,
     shouldBlockTouchMove,
+    blockTouchDecision,
     sync,
     install,
     uninstall,
