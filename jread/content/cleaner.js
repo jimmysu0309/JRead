@@ -107,7 +107,12 @@
   // 「延伸閱讀：＋連結文字」包在 H3（29 chars），提升後 heading rule walk-up
   // 因該站主文用 <div> 不用 <p>、wrapperContainsMainContentP guard 全 miss、
   // 一路 walk 到含整篇主文的 wrapper hide 掉 → 主文消失。
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章)/i;
+  // v0.8.4：subscribe / follow 社群 CTA heading（roomie.tw footer 實證）。
+  // 跨站慣例的「訂閱…電子報，看更多」「現在就追蹤 X，看更多」「追蹤 X，看更多」
+  // CTA 句式常做成 heading tag（roomie 用 H5 / H3），但長度 21-40 字超過 base
+  // max_len（20）漏網。這些 pattern 語意強綁訂閱/追蹤社群 CTA，主文副標幾乎不
+  // 會這樣寫，誤殺風險低（且 walk-up「含主文長 p 才保護」與 max_len 40 仍兜底）。
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -1485,7 +1490,11 @@
     // 而非 semantic heading tag——「貼文 (166)」「熱門」「最新」「繼續看
     // 下去」都是 div/span）。對 div/span 只看 direct text（不抓子孫），
     // 且長度要 <= NOISE_HEADING_MAX_LEN，避免誤殺主文段落。
-    const semanticHeadings = Array.from(articleEl.querySelectorAll('h2, h3, h4'));
+    // v0.8.4：加 h5/h6——roomie.tw 用 H5 做 footer「訂閱…電子報，看更多」CTA
+    // heading。hide 由 NOISE_HEADING_TEXT_RE / EXT regex 把關，真副標（如
+    // roomie 的 H5「帶我去世界的盡頭」）不含雜訊詞 → 不會誤殺；h5/h6 進掃只是
+    // 讓「文字命中雜訊 pattern 的 h5/h6」也能被清。
+    const semanticHeadings = Array.from(articleEl.querySelectorAll('h2, h3, h4, h5, h6'));
     // div / span / p / strong / em / b 候選（v0.7.28 加 p：cnyes 用
     // `<p>下一篇</p>` 當 navigation header；line today 用 div/span 包
     // section title；v0.7.190 加 strong/em/b：upmedia.mg 把「延伸閱讀」
@@ -1512,7 +1521,7 @@
     const headings = semanticHeadings.concat(divSpanCandidates);
     for (const h of headings) {
       // 對 div/span/strong/em/b 只用 direct text（heading tag 用 textContent）
-      const isSemanticHeading = /^H[234]$/.test(h.tagName);
+      const isSemanticHeading = /^H[23456]$/.test(h.tagName);
       const text = isSemanticHeading
         ? norm(h.textContent)
         : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
