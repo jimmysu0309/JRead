@@ -332,6 +332,34 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // v0.7.242：viewportH() 優先 visualViewport.height（iOS 工具列收合即時反映，
+  // window.innerHeight 延遲 ~5s）；pinch-zoom（scale != 1）退回 innerHeight。
+  describe('viewportH（收合鎖量測源，v0.7.242）', () => {
+    function loadEnv() {
+      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+      env.window.eval(PAGED_SRC);
+      return env;
+    }
+    it('有 visualViewport 且 scale=1 → 回 visualViewport.height（非 innerHeight）', () => {
+      const env = loadEnv();
+      env.window.innerHeight = 714;
+      env.window.visualViewport = { height: 754, scale: 1 };
+      assert.strictEqual(env.window.__JRead.pagedMode.viewportH(), 754);
+    });
+    it('pinch-zoom（scale != 1）→ 退回 innerHeight（縮放時 vv.height 不可靠）', () => {
+      const env = loadEnv();
+      env.window.innerHeight = 714;
+      env.window.visualViewport = { height: 500, scale: 2 };
+      assert.strictEqual(env.window.__JRead.pagedMode.viewportH(), 714);
+    });
+    it('無 visualViewport → 退回 innerHeight', () => {
+      const env = loadEnv();
+      env.window.innerHeight = 714;
+      try { delete env.window.visualViewport; } catch (e) { env.window.visualViewport = undefined; }
+      assert.strictEqual(env.window.__JRead.pagedMode.viewportH(), 714);
+    });
+  });
+
   describe('classifyKey', () => {
     const k = (key, mods) => pagedApi.classifyKey({ key, ...(mods || {}) });
     it('→ / PageDown / Space = next', () => {
