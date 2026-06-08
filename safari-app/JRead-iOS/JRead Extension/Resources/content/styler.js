@@ -1278,9 +1278,14 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
    200vh（max scroll ≈ 0.1 viewport）使用者一滑就貼底，iOS Safari 接近底部時
    不收合工具列（scrollY 748 / max 794 仍 innerH 714 不收）；改 500vh 後同款
    滑動落在中段（scrollY 748 / max ~3000）穩定收合（innerH 714→754，多一行）。
-   翻頁走水平 scrollLeft、不動 scrollY，一次垂直滑收合後讀整篇都維持收合；
-   500vh 讓使用者正常 swipe 幾乎不可能滑到底而觸發重新展開。垂直 scrollTop
-   不代表閱讀進度——onScrollProgress 在翻頁模式讓位（見該函式 guard）。 */
+   翻頁走水平 scrollLeft、不動 scrollY，一次垂直滑收合後讀整篇都維持收合。
+   v0.7.240（Jimmy 回報「可卷動範圍過高 → 左右滑不靈敏」）：500vh 在收合「之前」
+   是必要的（給足空間讓第一次滑動觸發收合），但收合「之後」這整段可卷動範圍
+   會讓後續左右滑被原生垂直 pan 搶走、不靈敏。對策不在 CSS（縮 min-height 會
+   clamp scrollY 反讓工具列重展開），而在 paged-mode.js：偵測到 innerHeight 變高
+   = 工具列已收合，即鎖死垂直卷動（vLocked → onTouchMove 擋全部 + 卡片 touch-action:
+   none），scrollY 凍結在收合位置、左右滑乾淨。故 500vh 保留、靠 JS 鎖收尾。
+   垂直 scrollTop 不代表閱讀進度——onScrollProgress 在翻頁模式讓位（見該函式 guard）。 */
 @media (hover: none) and (pointer: coarse) {
   html.${HTML_CLASS}, html.${HTML_CLASS} body {
     overflow-x: hidden !important;
