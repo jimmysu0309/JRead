@@ -5,8 +5,9 @@ const DEFAULTS = {
   theme: 'light',
   fontSize: 18,
   contentWidth: 720,
-  // 字粗外觀（細 = antialiased / 粗 = subpixel-antialiased）;預設細
-  boldText: false,
+  // v0.7.254：字重三段 300（細）/ 400（中，預設）/ 600（粗 Semibold）。真正的
+  // font-weight、全平台生效（取代舊 boldText 的 macOS-only smoothing）。
+  fontWeight: 400,
   readwiseToken: '',
   // v0.7.131：reader mode 攔截原站快速鍵（Gmail j/k/e、YouTube k 等誤觸救援）
   blockPageShortcuts: true,
@@ -30,7 +31,7 @@ const DEFAULTS = {
   }
 };
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'boldText', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -157,7 +158,9 @@ function load() {
     document.getElementById('fontSize').value = values.fontSize;
     document.getElementById('titleFontSize').value = values.titleFontSize;
     document.getElementById('contentWidth').value = values.contentWidth;
-    document.getElementById('boldText').checked = values.boldText === true;
+    // 字重 select：值非 300/400/600（舊資料 / 損壞）時顯示「中」（400）
+    document.getElementById('fontWeight').value =
+      [300, 400, 600].includes(Number(values.fontWeight)) ? String(Number(values.fontWeight)) : '400';
     document.getElementById('readwiseToken').value = values.readwiseToken || '';
     document.getElementById('blockPageShortcuts').checked = values.blockPageShortcuts !== false;
     document.getElementById('pangu').checked = values.pangu !== false;
@@ -185,7 +188,7 @@ function save() {
     fontSize: Number(document.getElementById('fontSize').value),
     titleFontSize: Number(document.getElementById('titleFontSize').value),
     contentWidth: Number(document.getElementById('contentWidth').value),
-    boldText: document.getElementById('boldText').checked,
+    fontWeight: Number(document.getElementById('fontWeight').value),
     readwiseToken: document.getElementById('readwiseToken').value.trim(),
     blockPageShortcuts: document.getElementById('blockPageShortcuts').checked,
     pangu: document.getElementById('pangu').checked,

@@ -77,12 +77,31 @@ const swallowTabGone = (p) => {
 const LEGACY_SERIF_STACK = '"Noto Serif TC", Georgia, "Times New Roman", serif';
 const SERIF_STACK = '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif';
 
+// v0.7.254：無襯線 stack 遷移。舊值領頭點名「Noto Sans TC」，被部分站點壞掉的
+// @font-face 劫持導致字重失效（細/中渲染相同，Jimmy 2026-06-08 shoppingdesign
+// 回報）。新值改系統 CJK 字型優先、繞過劫持。既有選「無襯線」的使用者存的是
+// 舊整串字面值、popup 常數改了不會自動跟動——onInstalled 精準替換。兩常數必須
+// 與 popup.js FONT_STACKS.sans 同步（spec forcing）。
+const LEGACY_SANS_STACK = '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif';
+const SANS_STACK = '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif';
+
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(null);
   const merged = { ...DEFAULT_SETTINGS, ...current };
   if (merged.fontFamily === LEGACY_SERIF_STACK) merged.fontFamily = SERIF_STACK;
+  if (merged.fontFamily === LEGACY_SANS_STACK) merged.fontFamily = SANS_STACK;
+  // v0.7.254：舊 boldText（布林、macOS-only smoothing）→ fontWeight（三段
+  // 300/400/600）一次性遷移。只在使用者「尚未有 fontWeight 值」時換算（current
+  // 沒這 key），避免覆寫使用者後來設的字重。boldText:true（粗）→ 600；
+  // false / 未設 → 預設 400（中，merged 已帶 DEFAULT_SETTINGS.fontWeight）。
+  // 遷移後刪掉 boldText 殘留 key（已退役、不再有任何 path 讀它）。
+  if (current.fontWeight === undefined && current.boldText === true) {
+    merged.fontWeight = 600;
+  }
+  delete merged.boldText;
   await chrome.storage.sync.set(merged);
+  await chrome.storage.sync.remove('boldText');
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

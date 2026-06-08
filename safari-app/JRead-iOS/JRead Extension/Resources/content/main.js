@@ -1044,7 +1044,7 @@
       if (!NS.state.articleEl || !NS.styler) return;
       // v0.7.227：pagedMode 走 reapply 路徑——CSS 注入/移除需要 styler 重建
       // stylesheet，模組 install/uninstall 在 scheduleReapply 尾端同步
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'boldText', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();

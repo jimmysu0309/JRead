@@ -21,7 +21,7 @@ const paragraphSpacingValEl = document.getElementById('paragraph-spacing-val');
 const paragraphSpacingAutoBtn = document.getElementById('paragraph-spacing-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
 const fontFamilySelect = document.getElementById('font-family-select');
-const boldTextBtns = document.querySelectorAll('[data-bold]');
+const fontWeightBtns = document.querySelectorAll('[data-weight]');
 const themeBtns = document.querySelectorAll('.theme-btn');
 const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
@@ -68,7 +68,18 @@ const FONT_STACKS = {
   // 字體放在泛型 serif 之前、拉丁字型之後：拉丁照走 Georgia/Times，CJK 在
   // 進入 sans 後綴前命中明寫的襯線字體。iOS simulator 實測 D 列驗證通過。
   serif: '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
-  sans: '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif',
+  // v0.7.254：無襯線 stack 改「系統 CJK 字型優先、Noto Sans TC 降後」。根因
+  // （Jimmy 2026-06-08 shoppingdesign 回報「細/中同粗」）：部分站點自己定義
+  // @font-face 劫持「Noto Sans TC」這個 family 名、且 weight→檔案對映壞掉
+  // （shoppingdesign 把 400 跟 300 都指到 Light.woff2），我們舊 stack 領頭點名
+  // 「Noto Sans TC」就吃到站點那份壞字型 → font-weight 細/中渲染相同。改成
+  // 先點 -apple-system（拉丁 SF）+ PingFang TC（macOS/iOS CJK）+ Microsoft
+  // JhengHei（Windows CJK）——逐字 fallback 對 CJK 字元會先命中本機完整字重
+  // 系統字型、繞過站點劫持的 webfont；「Noto Sans TC」留作末段 fallback
+  // （Linux/Android 系統字、那些平台少見此劫持）。系統 CJK 字型字重齊全
+  // （PingFang Light/Regular/Medium/Semibold、JhengHei Light/Regular/Bold），
+  // 三段粗細跨站穩定。verse 等不劫持名字的站點本來就正常、改後不受影響。
+  sans: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
   mono: 'ui-monospace, Menlo, Consolas, monospace'
 };
 const DEFAULT_SETTINGS = {
@@ -78,9 +89,9 @@ const DEFAULT_SETTINGS = {
   fontFamily: FONT_STACKS.system,
   lineHeight: LINE_HEIGHT.default,
   paragraphSpacing: PARAGRAPH_SPACING.default,
-  // 字粗外觀（細 = antialiased / 粗 = subpixel-antialiased）;預設細 對齊 styler
-  // reader card baseline (antialiased) — 使用者切「粗」反轉回 macOS 預設 subpixel
-  boldText: false,
+  // v0.7.254：字重三段 300（細）/ 400（中，預設）/ 600（粗 Semibold）。真正的
+  // font-weight、全平台生效（取代舊 boldText 的 macOS-only smoothing）。三段一律注入。
+  fontWeight: 400,
   // v0.7.131：reader mode 攔截原站快速鍵；popup 不放 toggle（options 有），這裡
   // 僅作 storage.get 的 default fallback，避免讀回 undefined。
   blockPageShortcuts: true,
@@ -189,9 +200,9 @@ function render(settings) {
   if (fontAutoBtn) fontAutoBtn.classList.toggle('active', isAuto);
   if (lineHeightAutoBtn) lineHeightAutoBtn.classList.toggle('active', isLhAuto);
   if (paragraphSpacingAutoBtn) paragraphSpacingAutoBtn.classList.toggle('active', isPsAuto);
-  // 字粗 segmented
-  for (const btn of boldTextBtns) {
-    btn.classList.toggle('active', String(settings.boldText) === btn.dataset.bold);
+  // 字重 segmented（細 300 / 中 400 / 粗 600）
+  for (const btn of fontWeightBtns) {
+    btn.classList.toggle('active', String(settings.fontWeight) === btn.dataset.weight);
   }
   // 字型 select：value 對 4 個 option match 不到（例如外部直接 storage.set
   // 自訂 stack）時 fall back 顯示「系統預設」但不寫回 storage，避免默默改動
@@ -350,10 +361,10 @@ if (fontFamilySelect) {
   });
 }
 
-// 字粗 segmented
-for (const btn of boldTextBtns) {
+// 字重 segmented（細 300 / 中 400 / 粗 600）
+for (const btn of fontWeightBtns) {
   btn.addEventListener('click', () => {
-    save({ boldText: btn.dataset.bold === 'true' });
+    save({ fontWeight: Number(btn.dataset.weight) });
   });
 }
 
