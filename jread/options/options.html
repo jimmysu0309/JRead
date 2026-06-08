@@ -507,7 +507,7 @@
   <div class="field">
     <label for="fontWeight">
       字重
-      <span class="desc">調整內文字體粗細（細 = 300 / 中 = 400 / 粗 = 600 Semibold）。用真正的 <code>font-weight</code>，<strong>全平台一致生效</strong>。標題字重不受影響（保留章節階層）。</span>
+      <span class="desc">調整內文字體粗細（細 = 300 / 中 = 400 / 粗 = 600 Semibold）。用真正的 <code>font-weight</code>，<strong>全平台一致生效</strong>。標題字重不受影響（保留章節階層）</span>
     </label>
     <select id="fontWeight">
       <option value="300">細</option>
@@ -519,7 +519,7 @@
   <div class="field">
     <label for="blockPageShortcuts">
       攔截原站快速鍵
-      <span class="desc">閱讀模式啟動時擋掉 Gmail、YouTube 等站的鍵盤快速鍵（避免誤按 <strong>j / k / e</strong> 觸發 archive、send 等操作）。瀏覽器原生 shortcut 與打字輸入不受影響。</span>
+      <span class="desc">閱讀模式啟動時擋掉 Gmail、YouTube 等站的鍵盤快速鍵（避免誤按 <strong>j / k / e</strong> 觸發 archive、send 等操作）。瀏覽器原生 shortcut 與打字輸入不受影響</span>
     </label>
     <input type="checkbox" id="blockPageShortcuts">
   </div>
@@ -527,7 +527,7 @@
   <div class="field">
     <label>
       Space 顯示門檻（%）
-      <span class="desc">閱讀模式下按 <strong>Space</strong> 把左側段落指示條移到下一段（<strong>Shift+Space</strong> 回上一段）。段落位置若低於畫面高度的此比例，會自動平滑卷動把段落帶回畫面上方；門檻內則只移指示條、不卷動。仿 Readwise Reader：預設 <strong>50</strong>%（畫面中線）；<strong>0 = 停用</strong>（回到整頁卷動）。建議範圍 30–90。</span>
+      <span class="desc">閱讀模式下按 <strong>Space</strong> 把左側段落指示條移到下一段（<strong>Shift+Space</strong> 回上一段）。段落位置若低於畫面高度的此比例，會自動平滑卷動把段落帶回畫面上方；門檻內則只移指示條、不卷動。仿 Readwise Reader：預設 <strong>50</strong>%（畫面中線）；<strong>0 = 停用</strong>（回到整頁卷動）。建議範圍 30–90</span>
     </label>
     <input type="number" id="spaceScrollRatio" min="0" max="90" step="5">
   </div>
@@ -535,7 +535,7 @@
   <div class="field">
     <label for="pangu">
       中英文間自動補空白 + 中文標點全形化
-      <span class="desc">閱讀模式下兩件事同時做：（1）中英文（含數字、<strong>%</strong>、<strong>°</strong>）相鄰時自動插入空白，例如 <code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>、<code>60%以上</code> → <code>60% 以上</code>；（2）中文邊界的半形標點 <strong>, . : ; ? !</strong> 轉成 <strong>，。：；？！</strong>，半形括號 <strong>( )</strong> 兩側都是中文時轉 <strong>（）</strong>，例如 <code>他說,然後</code> → <code>他說，然後</code>。中文段落內的半形逗號（即使前後緊鄰英數字）也會轉全形，例如 <code>叫 Google Alerts,2003 年</code> → <code>叫 Google Alerts，2003 年</code>。<code>example.com</code> / <code>1.5kg</code> / <code>Mr.Smith</code> 等純 ASCII 邊界不會動。程式碼、連結內文字不會被動。</span>
+      <span class="desc">閱讀模式下兩件事同時做：（1）中英文（含數字、<strong>%</strong>、<strong>°</strong>）相鄰時自動插入空白，例如 <code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>、<code>60%以上</code> → <code>60% 以上</code>；（2）中文邊界的半形標點 <strong>, . : ; ? !</strong> 轉成 <strong>，。：；？！</strong>，半形括號 <strong>( )</strong> 兩側都是中文時轉 <strong>（）</strong>，例如 <code>他說,然後</code> → <code>他說，然後</code>。中文段落內的半形逗號（即使前後緊鄰英數字）也會轉全形，例如 <code>叫 Google Alerts,2003 年</code> → <code>叫 Google Alerts，2003 年</code>。<code>example.com</code> / <code>1.5kg</code> / <code>Mr.Smith</code> 等純 ASCII 邊界不會動。程式碼、連結內文字不會被動</span>
     </label>
     <input type="checkbox" id="pangu">
   </div>
@@ -544,10 +544,10 @@
 
   <h2 class="section-heading">快速鍵</h2>
   <p class="section-desc intro-desktop">
-    點欄位後直接按下想要的組合鍵（需包含 <strong>⌥ Option</strong> 或 <strong>⌃ Control</strong>，按 <strong>ESC</strong> 取消錄製）。自訂鍵由 JRead 在頁面內攔截；內建預設鍵仍然有效；位址列輸入中時自訂鍵收不到按鍵（預設鍵不受此限）。
+    點欄位後直接按下想要的組合鍵（需包含 <strong>⌥ Option</strong> 或 <strong>⌃ Control</strong>，按 <strong>ESC</strong> 取消錄製）。自訂鍵由 JRead 在頁面內攔截；內建預設鍵仍然有效；位址列輸入中時自訂鍵收不到按鍵（預設鍵不受此限）
   </p>
   <p class="section-desc intro-safari">
-    點欄位後直接按下想要的組合鍵（Safari 需用 <strong>⌃ Control</strong> 組合，按 <strong>ESC</strong> 取消錄製）。<strong>⌥ Option／⌘ Command 組合會被 Safari 系統層攔截、傳不到網頁</strong>，自訂鍵一定要含 ⌃ Control。<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂。</strong>內建預設鍵仍然有效。
+    點欄位後直接按下想要的組合鍵（Safari 需用 <strong>⌃ Control</strong> 組合，按 <strong>ESC</strong> 取消錄製）。<strong>⌥ Option／⌘ Command 組合會被 Safari 系統層攔截、傳不到網頁</strong>，自訂鍵一定要含 ⌃ Control。<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂。</strong>內建預設鍵仍然有效
   </p>
   <div class="field">
     <label>
@@ -583,29 +583,29 @@
 
   <h2 class="section-heading">自動啟動網域</h2>
   <p class="section-desc">
-    符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在 popup 用「此網域自動啟動」開關快速加入目前網域。
+    符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在 popup 用「此網域自動啟動」開關快速加入目前網域
   </p>
   <textarea id="autoEnableDomains" spellcheck="false" autocomplete="off" placeholder="abc.com&#10;news.example.org"></textarea>
 
   <h2 class="section-heading">YouTube 模式</h2>
   <p class="section-desc">
-    在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+3</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式內建預設鍵 <code>Alt+4</code>，也可在上方「快速鍵」區自訂（Chrome 亦可到 <code>chrome://extensions/shortcuts</code> 設瀏覽器層快速鍵）。
+    在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+3</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式內建預設鍵 <code>Alt+4</code>，也可在上方「快速鍵」區自訂（Chrome 亦可到 <code>chrome://extensions/shortcuts</code> 設瀏覽器層快速鍵）
   </p>
 
   <h3 class="subsection-heading">影院模式</h3>
   <p class="section-desc">
-    把影片放大置中、四周變黑底，並把上方搜尋列、留言、影片描述、推薦清單、片尾彈出卡片等干擾元素全部隱藏。瀏覽器視窗大小不變。
+    把影片放大置中、四周變黑底，並把上方搜尋列、留言、影片描述、推薦清單、片尾彈出卡片等干擾元素全部隱藏。瀏覽器視窗大小不變
   </p>
 
   <h3 class="subsection-heading">無邊模式</h3>
   <p class="section-desc">
-    影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗。
+    影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗
   </p>
 
   <h2 class="section-heading">Readwise Reader 整合</h2>
   <p class="section-desc">
     在 popup 點「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
-    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器。
+    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器
   </p>
   <div class="field">
     <label>
@@ -618,9 +618,9 @@
   <section class="license">
     <h2>授權資訊</h2>
     <hr>
-    <p>JRead 採用 <strong>Elastic License 2.0 (ELv2)</strong> 授權。</p>
-    <p>你可以自由查看原始碼、學習、修改、自己使用，但<strong>不能把 JRead（或改寫版本）包成服務拿去賣</strong>。</p>
-    <p class="note">完整條款請見擴充功能目錄內的 LICENSE 檔案，或參閱 <a href="https://www.elastic.co/licensing/elastic-license" target="_blank" rel="noopener">Elastic License 2.0 官方全文</a>。</p>
+    <p>JRead 採用 <strong>Elastic License 2.0 (ELv2)</strong> 授權</p>
+    <p>你可以自由查看原始碼、學習、修改、自己使用，但<strong>不能把 JRead（或改寫版本）包成服務拿去賣</strong></p>
+    <p class="note">完整條款請見擴充功能目錄內的 LICENSE 檔案，或參閱 <a href="https://www.elastic.co/licensing/elastic-license" target="_blank" rel="noopener">Elastic License 2.0 官方全文</a></p>
     <p class="author">作者：Jimmy Su　・　Twitter (X)：<a href="https://x.com/jimmy_su" target="_blank" rel="noopener">@jimmy_su</a></p>
   </section>
 
