@@ -104,17 +104,34 @@
   }
 
   // 錄製驗證。回 { ok: boolean, reason?: string }。
+  // 第二參數 opts.requireCtrl === true 時改用 Safari 規則（見下）。
   // 規則（全是結構性通則，非站點/鍵位特判）：
   //   - 必須含 ⌥ 或 ⌃ —— 單鍵或只加 ⇧ 會在打字 / 閱讀操作時誤觸
   //   - 拒絕 ⌘ 組合 —— content script 搶不過瀏覽器 / 系統層快速鍵（⌘L、⌘R 等
   //     根本到不了頁面），錄了也不會動
   //   - 拒絕 ESC —— 保留給退出閱讀模式（main.js onEscKey）
   //   - 拒絕與內建預設鍵相同 —— browser 層停不掉，兩層同時觸發 = toggle 兩次
-  function validate(s) {
+  //
+  // requireCtrl（Safari runtime 傳 true）：自訂鍵必含 ⌃ Control。
+  //   Safari（含 macOS / iPadOS / iOS）把 ⌥ Option 與 ⌘ Command 組合路由到
+  //   系統鍵盤指令層，完全不以 keydown 傳給網頁——content script 監聽網頁
+  //   keydown 永遠收不到 ⌥/⌘ 組合（實機 probe 實證）。只有 ⌃（及純鍵 / ⇧）
+  //   會傳到頁面。為「同一組自訂鍵跨 Apple 裝置一致」，macOS Safari 也統一
+  //   要求 ⌃。這是引擎層行為、依 runtime 切（非 OS / build flag）。
+  function validate(s, opts) {
+    var requireCtrl = !!(opts && opts.requireCtrl);
     if (!s || !s.code) return { ok: false, reason: '請按下含一般按鍵的組合' };
     if (s.code === 'Escape') return { ok: false, reason: 'ESC 保留給退出閱讀模式' };
-    if (s.meta) return { ok: false, reason: '⌘ 組合會被瀏覽器或系統搶走，請改用 ⌥ 或 ⌃ 組合' };
-    if (!s.alt && !s.ctrl) return { ok: false, reason: '組合需包含 ⌥ 或 ⌃（避免打字時誤觸）' };
+    if (s.meta) {
+      return { ok: false, reason: requireCtrl
+        ? 'Safari 需用 ⌃ Control 組合（⌘ 會被系統攔截、傳不到網頁）'
+        : '⌘ 組合會被瀏覽器或系統搶走，請改用 ⌥ 或 ⌃ 組合' };
+    }
+    if (requireCtrl) {
+      if (!s.ctrl) return { ok: false, reason: 'Safari 需用 ⌃ Control 組合（⌥ 組合會被 Safari 攔截、傳不到網頁）' };
+    } else if (!s.alt && !s.ctrl) {
+      return { ok: false, reason: '組合需包含 ⌥ 或 ⌃（避免打字時誤觸）' };
+    }
     for (var i = 0; i < COMMANDS.length; i++) {
       var def = MANIFEST_DEFAULTS[COMMANDS[i]];
       if (def && shortcutEquals(s, def)) {

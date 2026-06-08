@@ -333,6 +333,19 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
       color: var(--jr-primary-600);
     }
+    /* 驗證被拒（Safari 按 ⌥／⌘ 等）：紅框 + 抖動，明顯提示。
+       options.js flashRecorderInvalid 加上 .invalid、1.2s 後移除 */
+    .shortcut-recorder.invalid {
+      border-color: #ff3b30;                       /* iOS 系統紅 */
+      box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.18);
+      color: #ff3b30;
+      animation: jr-sc-shake 0.32s ease;
+    }
+    @keyframes jr-sc-shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-3px); }
+      75% { transform: translateX(3px); }
+    }
     .shortcut-clear {
       flex: 0 0 28px;
       height: 32px;
@@ -349,13 +362,34 @@
     .shortcut-clear:hover { border-color: var(--jr-neutral-500); color: var(--jr-neutral-700); }
     .shortcut-clear:disabled { opacity: 0.35; cursor: default; }
     .shortcut-clear:disabled:hover { border-color: var(--jr-neutral-300); color: var(--jr-neutral-500); }
-    /* 錄製驗證失敗原因。空字串時不撐空間（同 #save-status 邏輯） */
+    /* 錄製驗證失敗原因。空字串時不撐空間（同 #save-status 邏輯）；
+       有文字時上 amber 底框 + ⚠（options.js 加前綴），不只是一行小灰字 */
     #shortcut-hint {
       margin: 0;
       min-height: 0;
-      font-size: 12px;
-      color: #b45309; /* amber-700——警告語意，與品牌藍 / 灰階區分 */
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: #92400e; /* amber-800 文字 */
     }
+    #shortcut-hint:not(:empty) {
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: var(--jr-radius-sm);
+      background: #fff7ed;       /* amber-50 底 */
+      border: 1px solid #fed7aa; /* amber-200 框 */
+    }
+
+    /* ==========================================================
+       快速鍵說明文字依 runtime 引擎切換（options.js 加 body.runtime-*）。
+       桌面（Chrome / Firefox）可用 ⌥ 或 ⌃；Safari 僅 ⌃（⌥／⌘ 被系統攔截）。
+       純 CSS 顯示切換、不需額外 JS。
+       ========================================================== */
+    .intro-desktop,
+    .intro-safari { display: none; }
+    body.runtime-chrome .intro-desktop,
+    body.runtime-firefox .intro-desktop { display: block; }
+    body.runtime-safari .intro-safari { display: block; }
 
     /* ==========================================================
        Save status — 「已儲存」訊息暫存區。沒有訊息時完全不撐空間
@@ -494,8 +528,11 @@
   <div id="save-status"></div>
 
   <h2 class="section-heading">快速鍵</h2>
-  <p class="section-desc">
-    點欄位後直接按下想要的組合鍵（需包含 <strong>⌥ Option</strong> 或 <strong>⌃ Control</strong>，按 <strong>ESC</strong> 取消錄製）。自訂鍵由 JRead 在頁面內攔截，Chrome 與 Safari 通用——<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂</strong>。內建預設鍵仍然有效；位址列輸入中時自訂鍵收不到按鍵（預設鍵不受此限）。
+  <p class="section-desc intro-desktop">
+    點欄位後直接按下想要的組合鍵（需包含 <strong>⌥ Option</strong> 或 <strong>⌃ Control</strong>，按 <strong>ESC</strong> 取消錄製）。自訂鍵由 JRead 在頁面內攔截；內建預設鍵仍然有效；位址列輸入中時自訂鍵收不到按鍵（預設鍵不受此限）。
+  </p>
+  <p class="section-desc intro-safari">
+    點欄位後直接按下想要的組合鍵（Safari 需用 <strong>⌃ Control</strong> 組合，按 <strong>ESC</strong> 取消錄製）。<strong>⌥ Option／⌘ Command 組合會被 Safari 系統層攔截、傳不到網頁</strong>，自訂鍵一定要含 ⌃ Control。<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂。</strong>內建預設鍵仍然有效。
   </p>
   <div class="field">
     <label>

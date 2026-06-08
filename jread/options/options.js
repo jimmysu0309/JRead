@@ -43,8 +43,32 @@ const SC = window.__JReadShortcuts;
 let shortcutTable = SC.sanitizeTable(null); // 三 key 全 null
 let recordingCmd = null;                    // 錄製中的 command（null = 沒在錄）
 
+// runtime 偵測（依 extension URL 前綴，非 OS / build flag）：
+//   chrome-extension:// → Chrome、moz-extension:// → Firefox、其餘 → Safari
+//   （safari-web-extension:// 涵蓋 macOS / iPadOS / iOS Safari）。
+// body class 讓「說明文字依引擎切換」純 CSS 完成（不需額外 JS）；
+// isSafariRuntime 餵給 validate 的 requireCtrl——Safari 自訂鍵必含 ⌃ Control。
+const extUrl = chrome.runtime.getURL('');
+let runtime = 'safari';
+if (extUrl.startsWith('chrome-extension://')) runtime = 'chrome';
+else if (extUrl.startsWith('moz-extension://')) runtime = 'firefox';
+document.body.classList.add('runtime-' + runtime);
+const isSafariRuntime = (runtime === 'safari');
+
+// hint 文字加 ⚠ 前綴（空字串不撐空間，CSS :not(:empty) 才上 amber 底框）
 function shortcutHint(msg) {
-  document.getElementById('shortcut-hint').textContent = msg || '';
+  document.getElementById('shortcut-hint').textContent = msg ? '⚠ ' + msg : '';
+}
+
+// 錄製被拒時讓該 recorder 紅框 + 抖動閃一下（~1.2s 後移除）
+function flashRecorderInvalid(cmd) {
+  const btn = document.getElementById('sc-' + cmd);
+  if (!btn) return;
+  btn.classList.remove('invalid'); // 連續被拒時重啟動畫
+  // 強制 reflow 讓 animation 重新觸發
+  void btn.offsetWidth;
+  btn.classList.add('invalid');
+  setTimeout(() => btn.classList.remove('invalid'), 1200);
 }
 
 function renderShortcuts() {
@@ -99,11 +123,13 @@ window.addEventListener('keydown', (e) => {
   }
   const s = SC.eventToShortcut(e);
   if (!s) return; // 純 modifier 鍵——組合未完成，等下一鍵
-  const v = SC.validate(s);
+  const rejectedCmd = recordingCmd; // flash 用——下面會把 recordingCmd 清掉
+  const v = SC.validate(s, { requireCtrl: isSafariRuntime });
   if (!v.ok) {
     shortcutHint(v.reason);
     recordingCmd = null;
     renderShortcuts();
+    flashRecorderInvalid(rejectedCmd);
     return;
   }
   // 與其他指令的「生效鍵」（自訂值 || 內建預設）衝突檢查
@@ -114,6 +140,7 @@ window.addEventListener('keydown', (e) => {
       shortcutHint(SC.format(s) + ' 已指派給其他指令');
       recordingCmd = null;
       renderShortcuts();
+      flashRecorderInvalid(rejectedCmd);
       return;
     }
   }

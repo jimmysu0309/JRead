@@ -108,6 +108,29 @@ describe('(A) shortcut-utils 純邏輯', () => {
     });
   });
 
+  describe('validate —— Safari requireCtrl 規則（⌥/⌘ 在 Safari 收不到網頁 keydown）', () => {
+    it('requireCtrl:true 時 ⌥-only 拒絕（Safari 攔截 ⌥）', () => {
+      const v = SC.validate(SC.eventToShortcut(kbd('KeyJ', { alt: true })), { requireCtrl: true });
+      assert.strictEqual(v.ok, false);
+      assert.match(v.reason, /⌃/, '拒絕理由必須提示改用 ⌃ Control');
+    });
+    it('requireCtrl:true 時 ⌘-only 拒絕（Safari 攔截 ⌘）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ', { meta: true, alt: true })), { requireCtrl: true }).ok, false);
+    });
+    it('requireCtrl:true 時純鍵 / 只加 ⇧ 拒絕', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ')), { requireCtrl: true }).ok, false);
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ', { shift: true })), { requireCtrl: true }).ok, false);
+    });
+    it('requireCtrl:true 時含 ⌃ 放行（⌃J / ⌃⇧J）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ', { ctrl: true })), { requireCtrl: true }).ok, true);
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ', { ctrl: true, shift: true })), { requireCtrl: true }).ok, true);
+    });
+    it('不傳 opts（非 Safari runtime）→ ⌥ 仍合法（向後相容，預設鍵 desktop 不受限）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ', { alt: true }))).ok, true);
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyJ', { alt: true })), { requireCtrl: false }).ok, true);
+    });
+  });
+
   describe('format', () => {
     it('⌃⌥⇧ 順序固定 + KeyX → X', () => {
       assert.strictEqual(SC.format({ code: 'KeyR', alt: true, shift: true, ctrl: true, meta: false }), '⌃⌥⇧R');
@@ -207,6 +230,10 @@ describe('(D) custom-shortcuts.js source 結構', () => {
     assert.match(CUSTOM_SRC, /isComposing/, '缺 isComposing guard——中文輸入第一階段會誤觸');
     assert.match(CUSTOM_SRC, /keyCode\s*===\s*229/, '缺 keyCode 229 sentinel（老瀏覽器兜底）');
   });
+  it('IME guard 必須只在「沒按 ⌥/⌃」時跳過（dead-key 字母 ⌥E/⌥U 等仍是快速鍵，不可漏）', () => {
+    assert.match(CUSTOM_SRC, /\(\s*e\.isComposing\s*\|\|\s*e\.keyCode\s*===\s*229\s*\)\s*&&\s*!e\.altKey\s*&&\s*!e\.ctrlKey/,
+      'IME guard 必須是 (isComposing || keyCode===229) && !altKey && !ctrlKey——否則 macOS ⌥+字母 dead-key 帶 229 會被當輸入漏掉');
+  });
   it('必須透過 NS.safeSendMessage 送 CUSTOM_COMMAND（context-invalidated guard）', () => {
     assert.match(CUSTOM_SRC, /safeSendMessage\(\s*\{\s*type:\s*NS\.MSG\.CUSTOM_COMMAND/,
       '必須走 NS.safeSendMessage——直呼 chrome.runtime.sendMessage 在 extension reload 後會 throw');
@@ -282,6 +309,35 @@ describe('(F) namespace / options / popup wire-up', () => {
   it('options.js recorder 必須做「與其他指令生效鍵衝突」檢查', () => {
     assert.match(OPTIONS_JS, /shortcutTable\[other\]\s*\|\|\s*SC\.MANIFEST_DEFAULTS\[other\]/,
       '衝突檢查必須比對其他指令的生效鍵（自訂值 || 內建預設），缺了會讓兩個指令吃同一組合');
+  });
+  it('options.js 必須依 extension URL 前綴偵測 runtime 並加 body.runtime-* class', () => {
+    assert.match(OPTIONS_JS, /chrome\.runtime\.getURL\(''\)/, '缺 runtime 偵測（getURL 前綴）');
+    assert.match(OPTIONS_JS, /startsWith\('chrome-extension:\/\/'\)/, '缺 chrome-extension:// 判定');
+    assert.match(OPTIONS_JS, /startsWith\('moz-extension:\/\/'\)/, '缺 moz-extension:// 判定');
+    assert.match(OPTIONS_JS, /classList\.add\('runtime-'\s*\+\s*runtime\)/, '缺 body.runtime-* class');
+    assert.match(OPTIONS_JS, /isSafariRuntime\s*=\s*\(runtime\s*===\s*'safari'\)/, '缺 isSafariRuntime（safari 為 fallback）');
+  });
+  it('options.js validate 必須傳 requireCtrl: isSafariRuntime（Safari 自訂鍵必含 ⌃）', () => {
+    assert.match(OPTIONS_JS, /SC\.validate\(\s*s\s*,\s*\{\s*requireCtrl:\s*isSafariRuntime\s*\}\s*\)/,
+      'validate 必須帶 requireCtrl: isSafariRuntime——否則 Safari 仍會放行收不到的 ⌥/⌘ 組合');
+  });
+  it('options.js 錄製被拒時必須 flashRecorderInvalid（紅框抖動明顯提示）', () => {
+    assert.match(OPTIONS_JS, /function flashRecorderInvalid/, '缺 flashRecorderInvalid');
+    assert.match(OPTIONS_JS, /classList\.add\('invalid'\)/, 'flash 必須加 .invalid class');
+    assert.match(OPTIONS_JS, /flashRecorderInvalid\(/, '驗證失敗分支必須呼叫 flashRecorderInvalid');
+  });
+  it('options.js hint 必須加 ⚠ 前綴（明顯提示，非一行小灰字）', () => {
+    assert.match(OPTIONS_JS, /'⚠ '\s*\+\s*msg/, 'shortcutHint 必須在非空時加 ⚠ 前綴');
+  });
+  it('options.html 必須有 intro-desktop / intro-safari 兩版說明 + runtime CSS 切換', () => {
+    assert.ok(OPTIONS_HTML.includes('intro-desktop'), '缺 .intro-desktop 桌面版說明');
+    assert.ok(OPTIONS_HTML.includes('intro-safari'), '缺 .intro-safari Safari 版說明');
+    assert.match(OPTIONS_HTML, /body\.runtime-safari\s+\.intro-safari/, '缺 body.runtime-safari 顯示切換');
+    assert.match(OPTIONS_HTML, /body\.runtime-chrome\s+\.intro-desktop/, '缺 body.runtime-chrome 顯示切換');
+  });
+  it('options.html 必須有 .shortcut-recorder.invalid 紅框 + shake keyframes', () => {
+    assert.match(OPTIONS_HTML, /\.shortcut-recorder\.invalid/, '缺 .invalid 紅框樣式');
+    assert.match(OPTIONS_HTML, /@keyframes jr-sc-shake/, '缺 shake keyframes');
   });
   it('popup.js DEFAULT_SETTINGS 必須含 customShortcuts（default fallback parity）', () => {
     assert.match(POPUP_JS, /customShortcuts:\s*\{/, 'popup DEFAULT_SETTINGS 缺 customShortcuts——storage.get 缺 default 會讀回 undefined');
