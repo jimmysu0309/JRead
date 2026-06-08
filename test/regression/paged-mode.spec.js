@@ -405,6 +405,24 @@ describe('翻頁模式（v0.7.227）', () => {
       api.sync({ pagedMode: true }, null);
       assert.strictEqual(api.isInstalled(), false);
     });
+
+    // v0.7.241：收合鎖必須掛 'scroll' listener（iOS 工具列收合在 touchend 之後才完成、
+    // window 'resize' 觸發不可靠——捲動是收合「完成後」更可靠的重驗訊號）。forcing
+    // function：防止這條 trigger 被誤刪而退回「只在 touchend / resize 檢查」的 bug。
+    it('install 必須註冊 scroll listener、uninstall 必須移除（v0.7.241 收合重驗 trigger）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const added = [], removed = [];
+      const origAdd = env.window.addEventListener.bind(env.window);
+      const origRemove = env.window.removeEventListener.bind(env.window);
+      env.window.addEventListener = (type, ...rest) => { added.push(type); return origAdd(type, ...rest); };
+      env.window.removeEventListener = (type, ...rest) => { removed.push(type); return origRemove(type, ...rest); };
+      const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      assert.ok(added.includes('scroll'), 'install 必須註冊 window scroll listener');
+      api.uninstall();
+      assert.ok(removed.includes('scroll'), 'uninstall 必須移除 window scroll listener');
+    });
   });
 
   // ---- C2. 頁碼指示開關 showPageNumber（v0.7.237）------------------------
