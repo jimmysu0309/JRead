@@ -384,29 +384,9 @@
     wheelLockUntil = now + WHEEL_LOCKOUT_MS;
   }
 
-  // v0.8.7 debug overlay（網址 hash 含 jreaddbg 才啟用；診斷「圖片上滑不翻頁」
-  // 真機 touch 事件序列用。確認修法後移除——standalone instrument 重現不了，
-  // 只能在真機真站抓真實事件）。dbgOn 為 false 時所有 dbg() 是 no-op、零 production 影響。
-  let dbgEl = null;
-  function dbgOn() { try { return /jreaddbg/.test(location.hash || ''); } catch (e) { return false; } }
-  function dbg(msg) {
-    if (!dbgOn()) return;
-    if (!dbgEl) {
-      dbgEl = document.createElement('div');
-      dbgEl.id = '__jread-touch-dbg';
-      dbgEl.style.cssText = 'position:fixed;top:0;left:0;right:0;max-height:42vh;overflow:hidden;background:rgba(0,0,0,.86);color:#0f0;font:10px/1.3 ui-monospace,monospace;padding:4px;z-index:2147483647;white-space:pre-wrap;border-bottom:2px solid red;pointer-events:none';
-      (document.documentElement || document.body).appendChild(dbgEl);
-      dbgEl._l = [];
-    }
-    dbgEl._l.push(msg); if (dbgEl._l.length > 24) dbgEl._l.shift();
-    dbgEl.textContent = dbgEl._l.join('\n');
-  }
-  function dbgTgt(e) { const t = e.target; const tag = t && t.tagName ? t.tagName : '?'; const a = (t && t.closest && t.closest('a')) ? '+a' : ''; return tag + a; }
-
   function onTouchStart(e) {
-    if (e.touches.length !== 1) { touchState = null; dbg('START 多指 →skip'); return; } // 多指讓位（3 指 toggle 等）
+    if (e.touches.length !== 1) { touchState = null; return; } // 多指讓位（3 指 toggle 等）
     const t = e.touches[0];
-    dbg('START ' + dbgTgt(e) + ' x=' + Math.round(t.clientX));
     // lastX/lastY：追蹤手指最後位置——iOS 在可點擊圖片/連結上啟動原生 image-
     // drag / callout 時，會對進行中的單指水平 swipe 送 touchcancel（不送 touchend）。
     // onTouchCancel 靠這個累積位移補判翻頁（changedTouches 在 cancel 時可能位移
@@ -434,8 +414,6 @@
     const dy = t.clientY - touchState.startY;
     touchState.lastX = t.clientX;
     touchState.lastY = t.clientY;
-    touchState._moves = (touchState._moves || 0) + 1;
-    if (dbgOn() && touchState._moves <= 3) dbg('  MOVE ' + dbgTgt(e) + ' c=' + e.cancelable + ' x=' + Math.round(t.clientX) + ' dx=' + Math.round(dx));
     if (!e.cancelable) return;
     // v0.7.239：第一頁只擋水平（放行垂直滑收工具列）、第二頁起擋全部（鎖死）
     if (shouldBlockTouchMove(dx, dy, idx)) {
@@ -444,19 +422,15 @@
   }
 
   function onTouchEnd(e) {
-    if (!touchState || e.touches.length > 0) {
-      if (touchState && e.touches.length > 0) dbg('END 還有 ' + e.touches.length + ' 指');
-      return;
-    }
+    if (!touchState || e.touches.length > 0) return;
     const t = e.changedTouches && e.changedTouches[0];
-    if (!t) { dbg('END 無 changedTouches'); touchState = null; return; }
+    if (!t) { touchState = null; return; }
     const dir = classifySwipe({
       dx: t.clientX - touchState.startX,
       dy: t.clientY - touchState.startY,
       startX: touchState.startX,
       viewportW: window.innerWidth
     });
-    dbg('END ' + dbgTgt(e) + ' moves=' + (touchState._moves || 0) + ' ctX=' + Math.round(t.clientX) + ' dx=' + Math.round(t.clientX - touchState.startX) + ' → ' + (dir ? dir.toUpperCase() + ' ✅' : '✗無'));
     touchState = null;
     if (dir) turn(dir);
   }
@@ -482,7 +456,6 @@
         startX: touchState.startX,
         viewportW: window.innerWidth
       });
-      dbg('CANCEL ' + dbgTgt(e) + ' moves=' + (touchState._moves || 0) + ' dx=' + Math.round(endX - touchState.startX) + ' → ' + (dir ? dir.toUpperCase() + ' ✅' : '✗無'));
       touchState = null;
       if (dir) turn(dir);
       return;
