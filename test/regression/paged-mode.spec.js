@@ -129,23 +129,23 @@ describe('翻頁模式（v0.7.227）', () => {
       // forcing function：
       //   1. 必須有 (hover:none) and (pointer:coarse) 觸控媒體查詢區塊
       //   2. 該區塊內 html/body overflow-y 必須是 visible（放行垂直卷動）
-      //   3. body 必須 min-height >= 100vh（給足捲動距離越過收合門檻）
+      //   3. body 必須 min-height > 100vh（要比視窗高、才有可捲空間觸發收合）
       // 任何人把翻頁 document 改回無條件 overflow:hidden（鎖死垂直卷動）→ 收合
       // hack 失效、本測試 fail。
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
       const mqIdx = css.indexOf('@media (hover: none) and (pointer: coarse)');
       assert.ok(mqIdx >= 0, '須有 (hover:none) and (pointer:coarse) 觸控媒體查詢區塊（收合 hack 限觸控裝置）');
-      // 取媒體查詢起點之後的內容驗屬性（min-height: 200vh 是翻頁專屬、整份
-      // CSS 僅此一處，overflow-y: visible 在媒體查詢內為觸控裝置放行）
       const after = css.slice(mqIdx);
       assert.ok(/overflow-y:\s*visible\s*!important/.test(after),
         '觸控裝置翻頁 document 必須 overflow-y: visible（放行垂直卷動，使用者滑一下觸發 iOS 工具列收合）');
-      // min-height 必須 >= 300vh：iOS 實證 200vh 一滑就貼底、Safari 接近底部
-      // 不收合工具列；500vh 落中段穩定收合。forcing：不得回退到 <= 200vh。
+      // v0.7.244：min-height 必須 > 100vh（要比視窗高、才有可捲空間）。Jimmy 真機
+      // 實測 iOS 工具列收合看「有沒有在捲」不看「捲多少」——101vh 就收得了；500vh
+      // 的大範圍反害第一頁左右滑不靈敏，故縮到剛好 > 100vh。forcing：不得 <= 100vh
+      // （body 不比視窗高 = 無可捲空間 = 完全收不了）。
       const mh = after.match(/min-height:\s*(\d+)vh\s*!important/);
       assert.ok(mh, 'body 必須有 min-height: <N>vh（撐高給足垂直捲動距離）');
-      assert.ok(parseInt(mh[1], 10) >= 300,
-        `body min-height 必須 >= 300vh（實得 ${mh[1]}vh；200vh 一滑貼底、iOS 接近底部不收工具列）`);
+      assert.ok(parseInt(mh[1], 10) > 100,
+        `body min-height 必須 > 100vh（實得 ${mh[1]}vh；<= 100vh 無可捲空間、收不了工具列）`);
     });
 
     it('pagedMode: true → 翻頁卡片 touch-action: pan-y（垂直 pan 冒泡捲 document 收工具列，v0.7.238）', () => {
@@ -290,98 +290,6 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
-  // v0.7.240：blockTouchDecision(dx, dy, pageIdx, locked)——把 vLocked 顯式餵入的
-  // 純函式（shouldBlockTouchMove 是它的薄包裝）。鎖死後一律 true。
-  describe('blockTouchDecision（收合後鎖死垂直卷動，v0.7.240）', () => {
-    it('未鎖 + 第一頁垂直滑 → false（放行去觸發收合）', () => {
-      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, false), false);
-    });
-    it('已鎖 + 第一頁垂直滑 → true（凍結 scrollY 維持收合）', () => {
-      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, true), true);
-    });
-    it('已鎖 + 第一頁水平微動（dx <= 6）→ true（鎖死蓋過第一頁放行）', () => {
-      assert.strictEqual(pagedApi.blockTouchDecision(4, 1, 0, true), true);
-    });
-    it('已鎖 + 任意滑動 → 恆 true', () => {
-      assert.strictEqual(pagedApi.blockTouchDecision(0, 0, 0, true), true);
-      assert.strictEqual(pagedApi.blockTouchDecision(100, 100, 0, true), true);
-    });
-  });
-
-  // v0.7.240：classifyViewportChange(baseW, baseH, curW, curH, delta)——iOS 工具列
-  // 收合偵測。寬不變 + 高變高出 delta = 'lock'；高變矮 = 'lower'；寬變 = 'rotate'。
-  describe('classifyViewportChange（工具列收合偵測，v0.7.240）', () => {
-    const c = pagedApi.classifyViewportChange;
-    it('innerHeight 變高出 delta（714→754，delta 16）→ lock（工具列收合）', () => {
-      assert.strictEqual(c(390, 714, 390, 754, 16), 'lock');
-    });
-    it('innerHeight 只微高（< delta）→ null（雜訊不誤鎖）', () => {
-      assert.strictEqual(c(390, 714, 390, 724, 16), null);
-    });
-    it('innerHeight 恰好等於 baseline → null', () => {
-      assert.strictEqual(c(390, 714, 390, 714, 16), null);
-    });
-    it('innerHeight 變矮 → lower（工具列更展開，下修 baseline）', () => {
-      assert.strictEqual(c(390, 714, 390, 700, 16), 'lower');
-    });
-    it('寬度變了（旋轉）即使高也變 → rotate（重設 baseline + 解鎖）', () => {
-      assert.strictEqual(c(390, 714, 844, 390, 16), 'rotate');
-    });
-    it('寬度變了 + 高度增加 → 仍 rotate（不誤判成收合）', () => {
-      assert.strictEqual(c(390, 714, 430, 800, 16), 'rotate');
-    });
-  });
-
-  // v0.7.243：shouldLockByScroll(scrollY, threshold)——scrollY 為據上鎖（主路徑，
-  // scrollY 即時、不像 viewport 高度延遲 ~5s）。翻頁卡片 fixed，垂直捲動唯一作用是收
-  // 工具列，scrollY 超門檻即代表已做收合滑動。
-  describe('shouldLockByScroll（scrollY 即時上鎖，v0.7.243）', () => {
-    const s = pagedApi.shouldLockByScroll;
-    const T = pagedApi.SCROLL_LOCK_PX;
-    it('SCROLL_LOCK_PX 預設 100', () => {
-      assert.strictEqual(T, 100);
-    });
-    it('scrollY 超門檻 → true（已做收合滑動）', () => {
-      assert.strictEqual(s(101, T), true);
-      assert.strictEqual(s(600, T), true);
-    });
-    it('scrollY 恰好等於門檻 → false（嚴格大於才鎖）', () => {
-      assert.strictEqual(s(100, T), false);
-    });
-    it('scrollY 未達門檻 → false（小幅 / 抖動不誤鎖）', () => {
-      assert.strictEqual(s(0, T), false);
-      assert.strictEqual(s(40, T), false);
-    });
-  });
-
-  // v0.7.242：viewportH() 優先 visualViewport.height（iOS 工具列收合即時反映，
-  // window.innerHeight 延遲 ~5s）；pinch-zoom（scale != 1）退回 innerHeight。
-  describe('viewportH（收合鎖量測源，v0.7.242）', () => {
-    function loadEnv() {
-      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
-      env.window.eval(PAGED_SRC);
-      return env;
-    }
-    it('有 visualViewport 且 scale=1 → 回 visualViewport.height（非 innerHeight）', () => {
-      const env = loadEnv();
-      env.window.innerHeight = 714;
-      env.window.visualViewport = { height: 754, scale: 1 };
-      assert.strictEqual(env.window.__JRead.pagedMode.viewportH(), 754);
-    });
-    it('pinch-zoom（scale != 1）→ 退回 innerHeight（縮放時 vv.height 不可靠）', () => {
-      const env = loadEnv();
-      env.window.innerHeight = 714;
-      env.window.visualViewport = { height: 500, scale: 2 };
-      assert.strictEqual(env.window.__JRead.pagedMode.viewportH(), 714);
-    });
-    it('無 visualViewport → 退回 innerHeight', () => {
-      const env = loadEnv();
-      env.window.innerHeight = 714;
-      try { delete env.window.visualViewport; } catch (e) { env.window.visualViewport = undefined; }
-      assert.strictEqual(env.window.__JRead.pagedMode.viewportH(), 714);
-    });
-  });
-
   describe('classifyKey', () => {
     const k = (key, mods) => pagedApi.classifyKey({ key, ...(mods || {}) });
     it('→ / PageDown / Space = next', () => {
@@ -454,24 +362,6 @@ describe('翻頁模式（v0.7.227）', () => {
       const api = env.window.__JRead.pagedMode;
       api.sync({ pagedMode: true }, null);
       assert.strictEqual(api.isInstalled(), false);
-    });
-
-    // v0.7.241：收合鎖必須掛 'scroll' listener（iOS 工具列收合在 touchend 之後才完成、
-    // window 'resize' 觸發不可靠——捲動是收合「完成後」更可靠的重驗訊號）。forcing
-    // function：防止這條 trigger 被誤刪而退回「只在 touchend / resize 檢查」的 bug。
-    it('install 必須註冊 scroll listener、uninstall 必須移除（v0.7.241 收合重驗 trigger）', () => {
-      const env = loadModuleEnv();
-      const api = env.window.__JRead.pagedMode;
-      const added = [], removed = [];
-      const origAdd = env.window.addEventListener.bind(env.window);
-      const origRemove = env.window.removeEventListener.bind(env.window);
-      env.window.addEventListener = (type, ...rest) => { added.push(type); return origAdd(type, ...rest); };
-      env.window.removeEventListener = (type, ...rest) => { removed.push(type); return origRemove(type, ...rest); };
-      const art = env.document.querySelector('article');
-      api.sync({ pagedMode: true }, art);
-      assert.ok(added.includes('scroll'), 'install 必須註冊 window scroll listener');
-      api.uninstall();
-      assert.ok(removed.includes('scroll'), 'uninstall 必須移除 window scroll listener');
     });
   });
 
