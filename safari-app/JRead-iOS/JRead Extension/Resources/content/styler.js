@@ -2173,6 +2173,34 @@ html [${ARTICLE_ATTR}="1"] iframe {
         }
       }
 
+      // v0.8.3：hero 標題字級下限（Jimmy 2026-06-09 規則）。Auto 模式
+      // （titleFontSize=0、不強制覆寫）下，原站把標題做得太小（roomie.tw
+      // mobile span.title 23px、近內文 18px，視覺上不像標題）時，把 hero
+      // 拉到至少 1.5× 內文字級。只在低於下限時 bump（max 語意），原站 hero
+      // 夠大就不動。hero = detector inject 的 H1（[data-jread-injected-title]）
+      // 優先，否則第一個可見 h1。override 模式由上方 titleFsSnap 精準覆寫、
+      // 不走這條（exact size 已贏）。
+      let heroFloorSnap = null;
+      if (!overrides.titleFontSize) {
+        const floorPx = Math.round((opts.fontSize || DEFAULTS.fontSize) * 1.5);
+        const heroEl = articleEl.querySelector('[data-jread-injected-title="1"]')
+          || (firstInk && /^H1$/.test(firstInk.tagName)
+            ? firstInk
+            : articleEl.querySelector('h1:not([data-jread-hidden="1"])'));
+        if (heroEl && floorPx > 0) {
+          const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+          const cur = win ? (parseFloat(win.getComputedStyle(heroEl).fontSize) || 0) : 0;
+          if (cur < floorPx) {
+            heroFloorSnap = {
+              el: heroEl,
+              fs: heroEl.style.getPropertyValue('font-size'),
+              fsP: heroEl.style.getPropertyPriority('font-size'),
+            };
+            heroEl.style.setProperty('font-size', floorPx + 'px', 'important');
+          }
+        }
+      }
+
       // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
       // flex/grid 容器強制改成 block display + height auto，讓並列圖在 reader mode
       // 下垂直堆疊、不再被父容器固定 height 切掉內容 + 不再 overflow 蓋下方文字。
@@ -2280,7 +2308,7 @@ html [${ARTICLE_ATTR}="1"] iframe {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked, contrastBgSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked, contrastBgSnap };
     },
 
     /**
@@ -2392,6 +2420,13 @@ html [${ARTICLE_ATTR}="1"] iframe {
         const t = snapshot.titleFsSnap;
         if (t.fs) t.el.style.setProperty('font-size', t.fs, t.fsP || '');
         else t.el.style.removeProperty('font-size');
+      }
+
+      // v0.8.3：還原 hero 字級下限 inline override
+      if (snapshot.heroFloorSnap) {
+        const h = snapshot.heroFloorSnap;
+        if (h.fs) h.el.style.setProperty('font-size', h.fs, h.fsP || '');
+        else h.el.style.removeProperty('font-size');
       }
 
       // v0.7.225：還原 contrast guard 的 inline override（background-color
