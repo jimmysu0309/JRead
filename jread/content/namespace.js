@@ -50,6 +50,24 @@
       }
     },
 
+    // v0.7.251：標題比對用的標點正規化（detector + cleaner 共用，單一資料源）。
+    // 動機：站點的 og:title / document.title（meta 標籤、CMS 後台輸出）常用
+    // ASCII 直引號 / 撇號（' " ...），但渲染出的 <h1> 經排版 JS/CSS 或編輯器
+    // 智慧引號轉換成 typographic 變體（’ “ ” …）。CNBC 實證：og 撇號 U+0027
+    // (39) vs h1 撇號 U+2019 (8217)，strict `===` 比對失敗 → cleaner 的
+    // 「含 canonical title 容器 skip」guard 失效 → 整塊文章 header（含主標）
+    // 被當 link-only block 砍掉、標題消失。折疊單/雙引號家族 + 刪節號到
+    // ASCII 等價字，再 collapse 空白。**刻意不折破折號**——detector 的
+    // getCanonicalTitle 用 `–—|` 當站名尾綴分隔符切首段，折了會破壞 split。
+    foldTitlePunct(s) {
+      return (s || '')
+        .replace(/[‘’‚‛`´]/g, "'") // ' ' ‚ ‛ ` ´ → '
+        .replace(/[“”„‟«»]/g, '"') // " " „ ‟ « » → "
+        .replace(/…/g, '...')                               // … → ...
+        .replace(/\s+/g, ' ')
+        .trim();
+    },
+
     // 訊息常數（與 popup / background 對齊）
     MSG: {
       TOGGLE_READER_MODE: 'TOGGLE_READER_MODE',
