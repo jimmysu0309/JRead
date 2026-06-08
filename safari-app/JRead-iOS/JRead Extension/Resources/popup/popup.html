@@ -63,7 +63,11 @@
     body {
       width: 300px;
       margin: 0;
-      padding: var(--jr-space-4);
+      /* v0.7.248：垂直 padding 16→12，水平維持 16。全展開內容（10 設定列 +
+         2 按鈕 + footer）原 623px 超過瀏覽器 popup ~600px 高度上限 → 出捲軸
+         （Chrome / Safari 通用上限；macOS Safari 回報）。配合下方設定列間距
+         與 section margin 收斂，把全展開內容壓到 ~570px < 上限、消捲軸。 */
+      padding: var(--jr-space-3) var(--jr-space-4);
       background: var(--jr-surface);
       -webkit-font-smoothing: antialiased;
     }
@@ -230,7 +234,8 @@
        Settings section
        ========================================================== */
     .settings {
-      margin-top: var(--jr-space-4);
+      /* v0.7.248：margin-top 16→12（popup 高度收斂，見 body 註解） */
+      margin-top: var(--jr-space-3);
       padding-top: var(--jr-space-3);
       border-top: 1px solid var(--jr-neutral-100);
     }
@@ -238,7 +243,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: var(--jr-space-3);
+      /* v0.7.248：列間距 12→8（popup 高度收斂主力——10 列省 ~36px） */
+      margin-bottom: var(--jr-space-2);
       min-height: 28px;
     }
     .setting-row:last-child { margin-bottom: 0; }
@@ -461,7 +467,8 @@
       align-items: baseline;
       justify-content: space-between;
       gap: var(--jr-space-2);
-      margin-top: var(--jr-space-4);
+      /* v0.7.248：margin-top 16→12（popup 高度收斂，見 body 註解） */
+      margin-top: var(--jr-space-3);
       padding-top: var(--jr-space-3);
       border-top: 1px solid var(--jr-neutral-100);
     }

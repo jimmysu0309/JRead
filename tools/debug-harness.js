@@ -542,6 +542,58 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const contrastInitial = await runContrastAudit();
     printContrastAudit('initial, 1.2s post-toggle', contrastInitial);
 
+    // ===== WIDTH AUDIT（v0.7.246）=====
+    // 驗「內文段落寬度 == reader card 版心內距寬」。Jimmy roomie.tw 回報：
+    // 圖片 / 標題撐滿版心、內文段落卻左右窄一截（中間 wrapper 帶水平 padding
+    // 把內文壓窄）。styler 的 enforceContentWidth 自我檢查應把內文撐回滿版。
+    // 本 audit 是 forcing function：頂層內文 p（非 blockquote/li/figure/table
+    // 內）的 content-box 寬若比 card 版心窄 > 2px → ⚠️。
+    // 翻頁模式 multicol 下 card clientWidth 含全部欄、量不準，--paged 時跳過。
+    // 這條驗「視覺幾何」層，不驗「CSS 字串」——padding 被清但元素若被別的
+    // rule 再夾窄也抓得到。
+    if (!PAGED) {
+      const widthAudit = await page.evaluate(() => {
+        const card = document.querySelector('[data-jread-active="1"]');
+        if (!card) return { error: 'no card' };
+        const ccs = getComputedStyle(card);
+        const cardContentW = card.getBoundingClientRect().width
+          - parseFloat(ccs.paddingLeft) - parseFloat(ccs.paddingRight)
+          - parseFloat(ccs.borderLeftWidth) - parseFloat(ccs.borderRightWidth);
+        const INDENT = new Set(['BLOCKQUOTE', 'UL', 'OL', 'DL', 'MENU', 'LI', 'DD', 'DT',
+          'FIGURE', 'FIGCAPTION', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'PRE']);
+        const narrow = [];
+        let checked = 0;
+        for (const p of card.querySelectorAll('p')) {
+          if (p.closest('[data-jread-hidden="1"]')) continue;
+          if ((p.textContent || '').trim().length < 30) continue;
+          const cs = getComputedStyle(p);
+          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+          if (cs.float !== 'none' || cs.display.includes('inline')) continue;
+          // 在語意縮排容器內 → 縮排刻意，不驗
+          let a = p.parentElement, skip = false;
+          while (a && a !== card) { if (INDENT.has(a.tagName)) { skip = true; break; } a = a.parentElement; }
+          if (skip) continue;
+          const pcs = getComputedStyle(p);
+          const pw = p.getBoundingClientRect().width
+            - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight);
+          checked++;
+          if (cardContentW - pw > 2) {
+            narrow.push({ text: (p.textContent || '').trim().slice(0, 16), pw: +pw.toFixed(1) });
+          }
+        }
+        return { cardContentW: +cardContentW.toFixed(1), checked, narrow };
+      });
+      console.log('\n===== WIDTH AUDIT (initial) =====');
+      if (widthAudit.error) {
+        console.log('  ', widthAudit.error);
+      } else if (widthAudit.narrow.length === 0) {
+        console.log(`✅ 內文符合版心寬（card 版心 ${widthAudit.cardContentW}px，檢查 ${widthAudit.checked} 段全部滿版）`);
+      } else {
+        console.log(`⚠️ ${widthAudit.narrow.length} 段內文窄於版心 ${widthAudit.cardContentW}px（enforceContentWidth 漏網）：`);
+        for (const n of widthAudit.narrow) console.log(`   ${n.pw}px  「${n.text}…」`);
+      }
+    }
+
     // 第 2 次 audit（+3s，捕 Jimmy 回報的「文章出現後約 3 秒按鈕才注入」
     // 時機）。LINE Today 類 SPA 站點 lazy-inject 常在 toggle 後 2-4s 發
     // 生，這個時間點最接近使用者眼見為實的「突然跳出雜訊」瞬間。

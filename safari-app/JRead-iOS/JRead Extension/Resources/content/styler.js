@@ -2005,6 +2005,79 @@ html [${ARTICLE_ATTR}="1"] iframe {
         }
       }
 
+      // v0.7.246：版心自我檢查（enforce content width）。
+      // 症狀（Jimmy roomie.tw/posts/73403 iPhone 回報）：圖片撐滿 reader card
+      // 版心，但內文段落（v0.7.246）+ 標題 / 分類列（v0.7.247）左右各窄一截。
+      // 根因 = 主文容器與內容之間夾了一層通用 block wrapper 帶水平 padding：
+      //   內文：`div.content { padding: 0 20px }`
+      //   標題列：`div.mobile-info { padding: 0 24px }`（內含可見標題 + 分類 + 日期；
+      //           語意 h1 是 sr-only display:none，可見標題是非 heading 元素）
+      // card 已提供唯一應有的閱讀內距、此 wrapper 的額外水平內距把內容壓窄到
+      // < 設定版心寬。styler 既有 width:auto / max-width:100% 只擋「超寬」、
+      // 擋不掉「被內距夾窄」。
+      //
+      // 通則（非站點特判）：reader card 是單欄 layout，card padding 是唯一應有
+      // 的閱讀內距；card 內任何通用 block wrapper（div / section / article /
+      // aside / header / footer / nav）+ 文字 block（p / h1-6）都不該再貢獻水平
+      // padding/margin。直接遍歷 card 內這些元素清零水平內距——不依賴「找到某個
+      // 段落」（roomie 可見標題不是 heading、隱藏 h1 又空，沿段落鏈走不到標題
+      // wrapper，故 v0.7.247 改為全面遍歷）。
+      //   - 語意縮排容器（blockquote / 清單 / 表格 / 圖說 / 程式碼 / details）
+      //     自身與其後代不動——縮排是刻意的。
+      //   - cleaner 清掉的隱藏雜訊（data-jread-hidden）不動。
+      //   - 水平 margin：既有規則已對這些元素設 width:auto / max-width:100%，
+      //     滿版元素的 auto margin 會算成 0，故 computed 水平 margin > 0 必是
+      //     「顯式非置中 margin」（narrowing / offset），清掉安全。
+      // 圖片若是 wrapper 外的 full-bleed 子元素本就滿版，清零後內容與圖片同寬
+      // = 符合設定寬度。翻頁模式（multicol）與捲動模式同根因同修法——走「水平
+      // 內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），通用。
+      const contentWidthSnap = [];
+      {
+        const win = articleEl.ownerDocument?.defaultView;
+        if (win) {
+          // 語意縮排容器：縮排刻意（引言 / 清單 / 表格 / 圖說 / 程式碼），
+          // 自身與後代都不清
+          const INDENT_TAGS = new Set(['BLOCKQUOTE', 'UL', 'OL', 'DL', 'MENU', 'LI', 'DD', 'DT',
+            'FIGURE', 'FIGCAPTION', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH',
+            'PRE', 'DETAILS', 'SUMMARY']);
+          // 清水平內距對象：通用 block wrapper + 內文文字 block
+          const TARGET_SEL = 'div, section, article, main, aside, header, footer, nav, p, h1, h2, h3, h4, h5, h6';
+          const zeroHoriz = (el) => {
+            const cs = win.getComputedStyle(el);
+            const pl = parseFloat(cs.paddingLeft) || 0;
+            const pr = parseFloat(cs.paddingRight) || 0;
+            const ml = parseFloat(cs.marginLeft) || 0;
+            const mr = parseFloat(cs.marginRight) || 0;
+            if (pl <= 0.5 && pr <= 0.5 && ml <= 0.5 && mr <= 0.5) return;
+            contentWidthSnap.push({
+              el,
+              pl: el.style.getPropertyValue('padding-left'), plP: el.style.getPropertyPriority('padding-left'),
+              pr: el.style.getPropertyValue('padding-right'), prP: el.style.getPropertyPriority('padding-right'),
+              ml: el.style.getPropertyValue('margin-left'), mlP: el.style.getPropertyPriority('margin-left'),
+              mr: el.style.getPropertyValue('margin-right'), mrP: el.style.getPropertyPriority('margin-right'),
+            });
+            if (pl > 0.5) el.style.setProperty('padding-left', '0', 'important');
+            if (pr > 0.5) el.style.setProperty('padding-right', '0', 'important');
+            if (ml > 0.5) el.style.setProperty('margin-left', '0', 'important');
+            if (mr > 0.5) el.style.setProperty('margin-right', '0', 'important');
+          };
+          for (const el of articleEl.querySelectorAll(TARGET_SEL)) {
+            // 自身是語意縮排容器 → 不清（保留引言 / 清單 / 表格縮排）
+            if (INDENT_TAGS.has(el.tagName)) continue;
+            // cleaner 清掉的隱藏雜訊不動
+            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+            // 在語意縮排脈絡內 → 縮排刻意，跳過
+            let a = el.parentElement, insideIndent = false;
+            while (a && a !== articleEl) {
+              if (INDENT_TAGS.has(a.tagName)) { insideIndent = true; break; }
+              a = a.parentElement;
+            }
+            if (insideIndent) continue;
+            zeroHoriz(el);
+          }
+        }
+      }
+
       // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
       // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
       // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
@@ -2142,7 +2215,7 @@ html [${ARTICLE_ATTR}="1"] iframe {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked, contrastBgSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked, contrastBgSnap };
     },
 
     /**
@@ -2231,6 +2304,21 @@ html [${ARTICLE_ATTR}="1"] iframe {
           if (!s || !s.el) continue;
           if (s.mt) s.el.style.setProperty('margin-top', s.mt, s.mtP || '');
           else s.el.style.removeProperty('margin-top');
+        }
+      }
+
+      // v0.7.246：還原內文版心自我檢查清掉的水平 padding/margin
+      if (Array.isArray(snapshot.contentWidthSnap)) {
+        for (const s of snapshot.contentWidthSnap) {
+          if (!s || !s.el) continue;
+          if (s.pl) s.el.style.setProperty('padding-left', s.pl, s.plP || '');
+          else s.el.style.removeProperty('padding-left');
+          if (s.pr) s.el.style.setProperty('padding-right', s.pr, s.prP || '');
+          else s.el.style.removeProperty('padding-right');
+          if (s.ml) s.el.style.setProperty('margin-left', s.ml, s.mlP || '');
+          else s.el.style.removeProperty('margin-left');
+          if (s.mr) s.el.style.setProperty('margin-right', s.mr, s.mrP || '');
+          else s.el.style.removeProperty('margin-right');
         }
       }
 
