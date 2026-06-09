@@ -37,6 +37,7 @@ URLS=(
   "https://nautil.us/is-this-why-science-advances-one-funeral-at-a-time-1280650"
   "https://stratechery.com/2026/please-listen-to-my-podcast/"
   "https://www.chinatalk.media/p/quantum-101"
+  "https://www.chinatalk.media/p/wartalk-the-view-from-africom"
   "https://www.twz.com/space/this-is-how-the-u-s-national-security-apparatus-is-dependent-on-spacex"
   "https://www.lawfaremedia.org/article/china-s-agentic-ai-controversy"
   "https://www.bellingcat.com/news/2026/04/09/the-hungarian-government-passwords-exposed-online/"
