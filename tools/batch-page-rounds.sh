@@ -46,6 +46,7 @@ URLS=(
   "https://www.healthsystemtracker.org/brief/what-drives-health-spending-in-the-u-s-compared-to-other-countries/"
   "https://36kr.com/p/3777437597586178"
   "https://sspai.com/post/105378"
+  "https://forum.gamer.com.tw/C.php?bsn=60534&snA=9284"
   "https://zh.wikipedia.org/wiki/%E7%8F%8D%E7%8F%A0%E5%A5%B6%E8%8C%B6"
   "https://en.wikipedia.org/wiki/Large_language_model"
   "https://stackoverflow.com/questions/66618136/persistent-service-worker-in-chrome-extension"
