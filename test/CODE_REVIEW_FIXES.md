@@ -42,7 +42,7 @@
 - [x] **C6** ✅ v0.8.18 `styler.js` base CSS 以 (theme, contentWidth) memoize（只算一次），userOverrides 每次重組
 - [x] **C7** ✅ v0.8.17 editable-focus guard 抽 NS.isEditableTarget（補 paged 漏的 BUTTON）
 - [x] **C8** ✅ v0.8.18 `main.js` JSON-LD 共用單次 parse（getJsonLd memoize）
-- [ ] **C9（效能）** cleaner collapse rule phase1 純讀→phase2 純寫；checkDynamicNoise 動態 hide 補掛 inline-restyle observer
+- [x] **C9（效能）** ✅ v0.8.20 collapse rule phase1 純讀→phase2 純寫；hide() 在 observer active 時補掛 inline-restyle observer（動態雜訊硬教訓十保護）
 - [x] **C10** ✅ v0.8.17 paged savedScrollY 歸零 / onResize debounce(resizeRaf) / wheelAccum 反向歸零
 - [ ] 每項：harness probe 驗假設 → 改 code → fixture+spec → `npm test` → harness 自驗 → bump + commit
 

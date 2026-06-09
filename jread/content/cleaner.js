@@ -553,6 +553,13 @@
     // 的 `[data-jread-hidden="1"] { display: none !important }`，戰勝後
     // 按鈕重新顯示。改用 inline !important 後就完全贏過任何 stylesheet。
     el.style.setProperty('display', 'none', 'important');
+    // v0.8.20 C9：動態階段 hide 的雜訊即時補掛 inline-restyle observer。初始
+    // clean() 階段 styleRestoreObserver 尚 null（watchHiddenInlineRestyle 在
+    // clean 末段才建立），此呼叫 early-return、由末段 batch 一次掛；動態階段
+    // （checkDynamicNoise / dynamic-append，皆在 clean 之後的 MutationObserver
+    // callback）observer 已 active → 即時補掛，否則原站 JS 之後重設其 style 清
+    // 掉 !important priority 時無人補回（硬教訓十保護對 SPA 動態雜訊失效）。
+    registerHiddenForRestyle(el);
   }
 
   // ---- 任何位置：ARIA UI-chrome roles ------------------------------------
@@ -2365,6 +2372,14 @@
   function collapseGridWithHiddenCell(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const collapsed = [];
+    // v0.8.20 C9：讀寫分離。原本迴圈內對每個 candidate「讀 computed + rect → 立刻
+    // applyImportant 寫 style」交錯——後續 candidate 的 getBoundingClientRect 讀到
+    // 被前一個 candidate 寫入 mutate 過的 layout（每次讀都 forced synchronous
+    // reflow，且 rect 量測被污染：巢狀 grid 外層 collapse 成 block 後，內層的
+    // 寬度量測已非原始值，underfill / D2 觸發判定會誤判）。phase1 純讀（含 rect /
+    // snapshot / 觸發決策，全部量測在未被 mutate 的原始 layout 上），把要寫的
+    // 動作收進 writes worklist；phase2 純寫（一次套用，不再回頭讀 layout）。
+    const writes = [];
     // 掃 article 內所有可能的 grid / flex-row container，**含 articleEl 自己**
     // （v0.7.24 ttv.com.tw 修法）：ttv 的 `DIV.news-article.fitVids` 本身是
     // `display: flex`（左主文 + 右 sidebar 兩欄 layout），sidebar 被 narrow
@@ -2557,8 +2572,8 @@
         'padding-right': '0'
       };
       if (isFlexRow) containerDecls['flex-direction'] = 'column';
-      applyImportant(el, containerDecls);
-      if (el.dataset) el.dataset.jreadCollapsed = '1';
+      // phase2 寫：container decls + jreadCollapsed 標記
+      writes.push({ el, decls: containerDecls, markCollapsed: true });
 
       // 關鍵：collapse container 只改了父的 display，但 children 身上的
       // Bootstrap `col-md-8` 類 class（`flex: 0 0 66.67%; max-width: 66.67%`）
@@ -2590,8 +2605,13 @@
       for (const c of visibleChildren) {
         if (!c.style) continue;
         collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, CHILD_PROPS) });
-        applyImportant(c, CHILD_DECLS);
+        writes.push({ el: c, decls: CHILD_DECLS });
       }
+    }
+    // ---- phase2：純寫（所有量測已在 phase1 完成於原始 layout）----
+    for (const w of writes) {
+      applyImportant(w.el, w.decls);
+      if (w.markCollapsed && w.el.dataset) w.el.dataset.jreadCollapsed = '1';
     }
     // v0.8.18 C3：collapsed 紀錄（{el, kind, prev}）收進統一 hidden.__styleResets，
     // restoreAllStyleResets 一個 loop 還原 inline style + 對 kind='container' 刪
@@ -3923,6 +3943,7 @@
               // 補 inline `display: none !important`（hide() 對已標 jreadHidden
               // 的 node 會 early return、不覆寫 inline display）
               node.style.setProperty('display', 'none', 'important');
+              registerHiddenForRestyle(node); // v0.8.20 C9：clone 也補掛 observer
             }
             continue;
           }
@@ -3981,9 +4002,27 @@
   let styleRestoreObserver = null;
   let hiddenElsRef = null;
 
+  // v0.8.20 C9：把單一已隱藏元素掛上 inline-restyle observer。給動態階段
+  // （checkDynamicNoise / dynamic-append）即時補掛用——initial clean() 末段的
+  // watchHiddenInlineRestyle 只 snapshot 當時 hidden 清單，之後動態 hide 的
+  // 雜訊不在 WeakSet 也沒被 observe。observer 未 active（initial clean 階段）
+  // 時 no-op、避免重複掛（由 batch 一次處理）。
+  function registerHiddenForRestyle(el) {
+    if (!styleRestoreObserver || !hiddenElsRef) return;
+    if (!el || el.nodeType !== 1) return;
+    if (hiddenElsRef.has(el)) return;
+    hiddenElsRef.add(el);
+    styleRestoreObserver.observe(el, { attributes: true, attributeFilter: ['style'] });
+  }
+
   function watchHiddenInlineRestyle(hidden) {
     if (styleRestoreObserver) { styleRestoreObserver.disconnect(); styleRestoreObserver = null; }
-    if (!Array.isArray(hidden) || hidden.length === 0) return;
+    if (!Array.isArray(hidden)) return;
+    // v0.8.20 C9：即使初始 hidden 為空也要建立 observer——後續 checkDynamicNoise
+    // 動態 hide 的 SPA 雜訊靠 registerHiddenForRestyle 補掛到這個 observer 上；
+    // 若初始空就 early-return（舊行為），styleRestoreObserver 永遠 null、動態
+    // 雜訊的硬教訓十保護失效。與 startWatchingDynamicAppends（不因空 early-return）
+    // 一致。idle observer 成本可忽略。
     hiddenElsRef = new WeakSet(hidden.map(h => h.el).filter(Boolean));
 
     styleRestoreObserver = new MutationObserver(mutations => {
