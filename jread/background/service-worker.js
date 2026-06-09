@@ -87,21 +87,39 @@ const SANS_STACK = '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sa
 
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.sync.get(null);
-  const merged = { ...DEFAULT_SETTINGS, ...current };
-  if (merged.fontFamily === LEGACY_SERIF_STACK) merged.fontFamily = SERIF_STACK;
-  if (merged.fontFamily === LEGACY_SANS_STACK) merged.fontFamily = SANS_STACK;
-  // v0.7.254：舊 boldText（布林、macOS-only smoothing）→ fontWeight（三段
-  // 300/400/600）一次性遷移。只在使用者「尚未有 fontWeight 值」時換算（current
-  // 沒這 key），避免覆寫使用者後來設的字重。boldText:true（粗）→ 600；
-  // false / 未設 → 預設 400（中，merged 已帶 DEFAULT_SETTINGS.fontWeight）。
-  // 遷移後刪掉 boldText 殘留 key（已退役、不再有任何 path 讀它）。
-  if (current.fontWeight === undefined && current.boldText === true) {
-    merged.fontWeight = 600;
+  // v0.8.15：改為「只寫 diff」而非整包 get(null)+set(merged) 全量回寫。
+  // 全量回寫的問題：(1) 每次版本 bump 都把所有欄位（含可能很長的
+  // autoEnableDomains / customShortcuts）重寫一次，徒增 storage.sync 配額壓力
+  //（QUOTA_BYTES_PER_ITEM 8KB / 整體 ~100KB）；(2) 整段 async 無 try/catch，
+  // 任一 await reject（配額 / 暫時錯誤）變成 unhandled rejection。
+  // 現在只把「真的需要補 / 遷移」的 key 收進 patch，其餘不動。
+  try {
+    const current = await chrome.storage.sync.get(null);
+    const patch = {};
+    // 補上 current 缺漏的預設 key（已存在的欄位不覆蓋）
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (!(key in current)) patch[key] = DEFAULT_SETTINGS[key];
+    }
+    // 舊 stack 字面值精準遷移（popup 常數改了不會自動跟動既有使用者的存值）
+    if (current.fontFamily === LEGACY_SERIF_STACK) patch.fontFamily = SERIF_STACK;
+    if (current.fontFamily === LEGACY_SANS_STACK) patch.fontFamily = SANS_STACK;
+    // v0.7.254：舊 boldText（布林、macOS-only smoothing）→ fontWeight（三段
+    // 300/400/600）一次性遷移。只在使用者「尚未有 fontWeight 值」時換算（current
+    // 沒這 key），避免覆寫使用者後來設的字重。boldText:true（粗）→ 600；
+    // false / 未設 → 預設 400（由上面「補缺漏 key」迴圈帶入 DEFAULT_SETTINGS.fontWeight）。
+    if (current.fontWeight === undefined && current.boldText === true) {
+      patch.fontWeight = 600;
+    }
+    if (Object.keys(patch).length > 0) {
+      await chrome.storage.sync.set(patch);
+    }
+    // 遷移後刪掉 boldText 殘留 key（已退役、不再有任何 path 讀它）
+    if ('boldText' in current) {
+      await chrome.storage.sync.remove('boldText');
+    }
+  } catch (e) {
+    console.warn('[JRead] onInstalled 設定遷移失敗:', e);
   }
-  delete merged.boldText;
-  await chrome.storage.sync.set(merged);
-  await chrome.storage.sync.remove('boldText');
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -223,18 +241,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 在 SW fetch 而非 popup fetch 的理由：popup 關閉後 fetch 會中斷；SW 即便 popup 關了
       // 也能跑完並透過 sendResponse 回給 popup（若 popup 已關則 silently drop，但 fetch
       // 已成功觸發）。
+      // v0.8.15：整個 async IIFE 包 try/catch。原本只有 buildReadwisePayload
+      // 被包住，storage.sync.get / saveToReadwise 若 throw 會讓 IIFE rejection
+      // 無人接、sendResponse 永不被呼叫 → popup 端 await 拿到 undefined、卡在
+      // 「送出中…」。現在保證任何路徑都會回 sendResponse。
       (async () => {
-        const { readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' });
-        const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
-        let body;
         try {
-          body = buildReadwisePayload(msg.payload || {});
+          const { readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' });
+          const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
+          let body;
+          try {
+            body = buildReadwisePayload(msg.payload || {});
+          } catch (e) {
+            sendResponse({ ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) });
+            return;
+          }
+          const result = await saveToReadwise({ token: readwiseToken, payload: body });
+          sendResponse(result);
         } catch (e) {
-          sendResponse({ ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) });
-          return;
+          sendResponse({ ok: false, error: 'INTERNAL', message: String(e && e.message || e) });
         }
-        const result = await saveToReadwise({ token: readwiseToken, payload: body });
-        sendResponse(result);
       })();
       return true; // async sendResponse
     }

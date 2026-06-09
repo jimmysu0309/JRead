@@ -371,12 +371,15 @@ for (const btn of fontWeightBtns) {
 // ---- 切換閱讀模式 ------------------------------------------------------
 async function getActiveTabId() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab ? tab.id : null;
+  // tab.id 理論上一定是 number，但 DevTools / 特殊頁可能回 TAB_ID_NONE(-1)
+  // 或缺值；統一正規化成「number 或 null」，呼叫端一律用 typeof 判定，
+  // 避免 `if (!tabId)` 把合法的 tab.id===0 誤判為失敗（v0.8.15）。
+  return tab && typeof tab.id === 'number' ? tab.id : null;
 }
 
 toggleBtn.addEventListener('click', async () => {
   const tabId = await getActiveTabId();
-  if (!tabId) {
+  if (typeof tabId !== 'number') {
     statusEl.textContent = '無法取得當前分頁';
     statusEl.hidden = false;
     return;
@@ -428,7 +431,7 @@ function setReadwiseStatus(text, kind) {
 // （cinema mode 沒主文 outerHTML 可送，按鈕露出無意義）。
 async function refreshPopupForActiveTab() {
   const tabId = await getActiveTabId();
-  if (!tabId) {
+  if (typeof tabId !== 'number') {
     readwiseBtn.hidden = true;
     borderlessBtn.hidden = true;
     return;
@@ -465,7 +468,7 @@ async function refreshPopupForActiveTab() {
 // 一定載過 jread content script，不會發生 receiving end does not exist）。
 borderlessBtn.addEventListener('click', async () => {
   const tabId = await getActiveTabId();
-  if (!tabId) return;
+  if (typeof tabId !== 'number') return;
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
@@ -477,7 +480,7 @@ readwiseBtn.addEventListener('click', async () => {
   setReadwiseStatus('送出中…', 'info');
 
   const tabId = await getActiveTabId();
-  if (!tabId) {
+  if (typeof tabId !== 'number') {
     setReadwiseStatus('無法取得當前分頁', 'err');
     readwiseBtn.disabled = false;
     return;

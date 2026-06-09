@@ -60,6 +60,22 @@ describe('(A) matching helper — Jimmy 指定規則', () => {
     assert.strictEqual(DM.matchHostname('WWW.ABC.COM', ['abc.com']), true);
     assert.strictEqual(DM.matchHostname('www.abc.com', ['ABC.COM']), true);
   });
+  // v0.8.15：public-suffix / 單段 pattern 防 over-match。誤填 'com' 不該 match
+  // 整個 .com eTLD；suffix 比對只在 pattern 含至少一個點時啟用。
+  it('單段 pattern "com" **不**命中 anything.com（防 public-suffix over-match）', () => {
+    assert.strictEqual(DM.matchHostname('anything.com', ['com']), false);
+    assert.strictEqual(DM.matchHostname('example.com', ['com']), false);
+  });
+  it('單段 pattern "io" **不**命中 github.io（防 over-match）', () => {
+    assert.strictEqual(DM.matchHostname('github.io', ['io']), false);
+  });
+  it('單段 pattern 只走 exact match（"localhost" 命中 localhost、不命中 foo.localhost）', () => {
+    assert.strictEqual(DM.matchHostname('localhost', ['localhost']), true);
+    assert.strictEqual(DM.matchHostname('foo.localhost', ['localhost']), false);
+  });
+  it('含點的 pattern 仍正常做 suffix（"abc.com" 命中 www.abc.com 不受影響）', () => {
+    assert.strictEqual(DM.matchHostname('www.abc.com', ['abc.com']), true);
+  });
 });
 
 describe('(A) matching helper — normalizeDomain 正規化', () => {
@@ -114,6 +130,11 @@ describe('(A) matching helper — parseList / serializeList / removeMatching', (
   it('removeMatching：兄弟子網域不影響（123.abc.com 不會掃掉 www.abc.com）', () => {
     const list = ['www.abc.com'];
     assert.deepStrictEqual(DM.removeMatching('123.abc.com', list), ['www.abc.com']);
+  });
+  it('removeMatching：與 matchHostname 同規則，單段 pattern 只 exact（"com" 不被 example.com 掃掉）', () => {
+    const list = ['com', 'example.com'];
+    // hostname=example.com 只該移除精確的 'example.com'，'com' 因不含點不做 suffix
+    assert.deepStrictEqual(DM.removeMatching('example.com', list), ['com']);
   });
 });
 

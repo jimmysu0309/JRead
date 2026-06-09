@@ -64,7 +64,8 @@ describe('襯線 stack CJK 字體（v0.7.221 forcing function）', () => {
     assert.ok(legacy && next, 'SW 缺 LEGACY_SERIF_STACK / SERIF_STACK 常數');
     assert.strictEqual(legacy[1], EXPECTED_LEGACY, 'LEGACY 常數必須等於 v0.7.220 以前的襯線 stack（精準匹配才遷移，不能誤改使用者自選值）');
     assert.strictEqual(next[1], EXPECTED_SERIF, 'SW SERIF_STACK 必須與 popup FONT_STACKS.serif 同步');
-    assert.match(SW_SRC, /merged\.fontFamily === LEGACY_SERIF_STACK\)\s*merged\.fontFamily = SERIF_STACK/,
+    // v0.8.15：onInstalled 改寫 diff patch（merged → patch、判定改讀 current）
+    assert.match(SW_SRC, /current\.fontFamily === LEGACY_SERIF_STACK\)\s*patch\.fontFamily = SERIF_STACK/,
       'onInstalled 必須做精準替換遷移');
   });
 });
@@ -120,7 +121,8 @@ describe('無襯線 stack 系統 CJK 字型優先（v0.7.254 forcing function）
     assert.ok(legacy && next, 'SW 缺 LEGACY_SANS_STACK / SANS_STACK 常數');
     assert.strictEqual(legacy[1], EXPECTED_LEGACY_SANS, 'LEGACY_SANS 常數必須等於 v0.7.253 以前的無襯線 stack（精準匹配才遷移）');
     assert.strictEqual(next[1], EXPECTED_SANS, 'SW SANS_STACK 必須與 popup FONT_STACKS.sans 同步');
-    assert.match(SW_SRC, /merged\.fontFamily === LEGACY_SANS_STACK\)\s*merged\.fontFamily = SANS_STACK/,
+    // v0.8.15：onInstalled 改寫 diff patch（merged → patch、判定改讀 current）
+    assert.match(SW_SRC, /current\.fontFamily === LEGACY_SANS_STACK\)\s*patch\.fontFamily = SANS_STACK/,
       'onInstalled 必須做精準替換遷移');
   });
 });
