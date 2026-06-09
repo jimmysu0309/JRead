@@ -258,6 +258,25 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         'positionBar 必須走 barAnchorLeft 取左錨點');
     });
 
+    it('單頁文章不顯示指示條（Jimmy 2026-06-09）：isSinglePage 判定 + setFocus 早退移除 bar', () => {
+      // 整篇文章在 viewport 內裝得下、不需捲動時，段落焦點指示條只是視覺雜訊
+      // （X 短推文 / 短文章常見）——setFocus 必須在單頁時移除 bar 不顯示。
+      const single = extractFnBody(MODULE_SRC, 'isSinglePage');
+      assert.ok(single, '必須有 isSinglePage function——forcing：無單頁判定則短文章仍顯示指示條');
+      assert.match(single, /scrollHeight\s*<=\s*window\.innerHeight/,
+        'isSinglePage 必須以 scrollHeight <= innerHeight 判定不需捲動——forcing：判定基礎錯會誤把多頁當單頁、指示條整個消失');
+      const setFocusBody = extractFnBody(MODULE_SRC, 'setFocus');
+      assert.ok(setFocusBody, '必須有 setFocus function');
+      assert.match(setFocusBody, /isSinglePage\s*\(\s*\)/,
+        'setFocus 必須呼叫 isSinglePage——forcing：沒接上判定 = 單頁仍顯示指示條（X 短推文 Jimmy 截圖實證）');
+      assert.match(setFocusBody, /isSinglePage\s*\(\s*\)[\s\S]*barEl\.remove\s*\(/,
+        'setFocus 單頁分支必須 remove barEl 再 return——forcing：只 return 不移除會讓 resize 由多頁變單頁時殘留 bar');
+      // onResize 必須重走 setFocus（而非直接 positionBar）才能在單頁↔多頁互換時更新顯示
+      const resizeBody = extractFnBody(MODULE_SRC, 'onResize');
+      assert.match(resizeBody, /setFocus\s*\(/,
+        'onResize 必須重走 setFocus——forcing：直接 positionBar 不會重評單頁判定、resize 改變視窗高度時指示條不跟著出現/消失');
+    });
+
     it('焦點指示條：BAR_ID 必須是 __jread-focus-bar、掛 <html> 直下（逃過 body 內隱藏規則）', () => {
       assert.match(MODULE_SRC, /BAR_ID\s*=\s*'__jread-focus-bar'/,
         'BAR_ID 必須是 __jread-focus-bar（styler CSS rule 對應 id）');

@@ -207,6 +207,20 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(css.includes('object-fit: contain'), '超尺寸圖片須等比縮放');
     });
 
+    it('pagedMode: true → 媒體單頁化 img 規則必須排除 inline emoji（:not([data-jread-inline-img])，v0.8.10）', () => {
+      // Jimmy 2026-06-09 翻頁模式 X Twemoji 實機回報：viewBox-only SVG emoji 被
+      // width:auto + max-width:100% 撐成滿欄（150 natural → 608px）。媒體單頁化
+      // 規則的 img 選擇器必須排除 [data-jread-inline-img]（與捲動模式 block-image
+      // rule 同準則）——inline-img rule 只覆蓋 max-height/object-fit/display、未設
+      // width，故 width:auto 仍會命中 emoji，必須在選擇器層排除。
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      // 抓「width: auto + max-width:100% 的媒體單頁化」那條 rule（含 100dvh max-height）
+      const m = css.match(/([^\n]*img[^{]*)\{[^}]*max-height:\s*calc\(100dvh[^}]*width:\s*auto[^}]*\}/s);
+      assert.ok(m, '須能抓到含 100dvh max-height + width:auto 的媒體單頁化 rule');
+      assert.ok(/img:not\(\[data-jread-inline-img\]\)/.test(m[1]),
+        '媒體單頁化 rule 的 img 選擇器必須是 img:not([data-jread-inline-img])——forcing：缺排除會把 inline emoji 撐成滿欄（X Twemoji 實機回報）');
+    });
+
     it('pagedMode: true → 頁碼指示 #__jread-page-indicator 樣式', () => {
       const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
       assert.ok(css.includes('#__jread-page-indicator'), '須含頁碼指示樣式');
