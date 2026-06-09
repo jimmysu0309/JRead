@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.22**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.23**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -719,6 +719,17 @@ popup 關閉後其 fetch 會中斷；放 SW 即便使用者立刻關掉 popup，
   - `.youtube-wrap > .youtube-inner > iframe[src*="youtube-nocookie.com/embed"]`（YouTube 縮圖 embed，點了才 load 真正播放器）
   - 標題 / 副標 / 作者 / 日期 / 贊助商段落 / 內文段落
 - **切斷點**：主文在「Me too.」對話結尾後乾淨結束。`<div id="discussion">` 包住的整塊留言區（含 H4「Discussion about this video」+ `<textarea>` 留言表單 + `.comment-list-items`）由 v0.6.9 keyword heuristic 命中 hide（`#discussion` id 含 `discussion` 字樣）
+
+### VERSE（verse.com.tw，flex 直立 credit rail）
+
+- **測試日期**：2026-06-09
+- **測試頁面**：`/article/kanda`
+- **DOM 結構**：`article > div.content-wrapper(display:flex) > { div.content(主文), div.meta(直立 credit rail) }`。`.meta` rail 裝 `<ul.authors>` 直書「文字、攝影／TC 盾」+ 書籤 `<button>`，被 flex `align-items: stretch` 拉到與主文等高（clean-time 255×9883px）
+- **症狀**：reader mode 開啟後主文左側殘留直書 byline credit + 書籤 icon；rail 吃掉 flex 寬度讓主文窄於版心（580px / 應 608px）
+- **既有規則為何漏**：`hideInsideArticleSidebarColumns` 條件 A/C 要 `linkDensity > 0.5`（rail 是純文字 credit + icon、ld 低）、條件 B 要 `<aside>` tag（rail 是 `<div>`）、條件 D 要 sibling 含 heading（rail 無）；又因 cleaner 跑在 styler 之前，clean-time rail 還是 255px 寬（非 styler reflow 後的 28px），靠絕對窄寬度判斷也漏
+- **觸發新規則**：`hideInsideArticleSidebarColumns` **條件 E**（v0.8.23）——父容器 `display:flex` + sibling 文字 < main × 10% + rect 高 > 400 + 寬 < main 寬 × 0.5 + 高 > 寬 × 2 + 不含 ≥ 120×120 真圖片 → hide。純結構幾何、clean-time 即成立、不綁 class / hostname。image guard（`railContainsRealImage`）保護雜誌側圖排版的真圖片欄不被誤殺
+- **連帶修好**：rail 移除後 flex 寬度回歸主文，27 段內文全部滿版 608px（WIDTH AUDIT 同源警告一併消失）
+- **forcing spec**：`test/regression/verse-flex-meta-rail.spec.js`（核心 hide + 主文保留 + image guard 不誤殺）
 
 ---
 

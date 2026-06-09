@@ -1949,12 +1949,42 @@
   // ratio 上漏網；Engadget 過往靠此條 B 命中也不依賴 ratio，因為 aside
   // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
+  // 條件 E（flex 拉伸的近空直立 rail）：flex 主文旁的細長側欄——垂直
+  // byline / 直書社群分享列 / 書籤 rail（verse.com.tw `.meta` 實案：
+  // `<div>` 裝 `<ul.authors>` 直書「文字、攝影／TC」+ 書籤 icon）。
+  // 既有 A/C 要 linkDensity > 0.5、B 要 <aside> tag，這類「純文字 credit +
+  // 少量 icon、低 link density」的 rail 全漏；連帶它吃掉 flex 寬度讓主文窄
+  // 於版心（WIDTH AUDIT 26 段警告同源）。
+  // **結構特徵（clean-time 即成立，不依賴 styler reflow 後的窄寬度）**：
+  // 父容器 display:flex；sibling 文字量極小（< main × 10%）；被 flex
+  // align-stretch 拉到很高（> 400px）；寬度遠小於主欄（< main 寬 × 0.5）；
+  // 高 > 寬 × 2（直立欄非橫幅）。主文欄不會「又高又瘦又幾乎沒字」——
+  // 那只會是 credit/分享 rail 或裝飾細條。drop-cap / pull-quote 有實質
+  // 文字且不會這麼高；真圖片欄由 image guard 排除（含 > 120×120 的
+  // <img>/<picture> 不 hide）。純結構幾何、不綁 class / hostname。
+  const RAIL_MIN_HEIGHT = 400;
+  const RAIL_MAX_WIDTH_RATIO = 0.5; // sibling 寬 / main 寬 上限
+  const RAIL_MIN_ASPECT = 2; // height / width
+  const RAIL_IMG_GUARD_SIZE = 120; // 含此尺寸以上 img/picture 視為真圖片欄、不 hide
   // 條件 D（分類標籤微型欄）：新聞站 kicker / eyebrow（CNN "News"、BBC
   // "Science & Environment" 等），在 flex layout 與標題並排的獨立短欄。
   // 既有條件 A/B/C 全要求 main.textLen ≥ 500 或 linkDensity > 0.5，對
   // 這類「極短、零 link、兄弟只有標題」的 label 欄全部漏網。
   const CATEGORY_LABEL_MAX_LEN = 30;
   const CATEGORY_HEADING_SIBLING_MIN_TEXT = 50;
+
+  // 條件 E 的 image guard：rail 內若含 >= 120×120 的 <img>/<picture> 視為
+  // 真圖片欄（雜誌側圖排版）不 hide；書籤 / 分享 icon 那種小 icon 放行。
+  function railContainsRealImage(el) {
+    if (!el.querySelectorAll) return false;
+    for (const img of el.querySelectorAll('img, picture')) {
+      const r = img.getBoundingClientRect && img.getBoundingClientRect();
+      if (r && r.width >= RAIL_IMG_GUARD_SIZE && r.height >= RAIL_IMG_GUARD_SIZE) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
@@ -2064,6 +2094,23 @@
           const r = s.el.getBoundingClientRect &&
             s.el.getBoundingClientRect();
           if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) {
+            hide(s.el, hidden);
+            continue;
+          }
+        }
+        // 條件 E：flex 拉伸的近空直立 rail（垂直 byline / 直書分享列 /
+        // 書籤 rail）。父 flex + sibling 文字極小 + 高 > 400 + 寬 < main 寬
+        // × 0.5 + 高 > 寬 × 2，且不含實質圖片——純結構幾何，clean-time 即
+        // 成立（不靠 styler reflow 後的窄寬度）。
+        if (s.el.getBoundingClientRect && main.el.getBoundingClientRect &&
+            /flex/.test(getComputedStyle(el).display) &&
+            s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO) {
+          const r = s.el.getBoundingClientRect();
+          const mr = main.el.getBoundingClientRect();
+          if (r && mr && r.width > 0 && r.height > RAIL_MIN_HEIGHT &&
+              r.width < mr.width * RAIL_MAX_WIDTH_RATIO &&
+              r.height >= r.width * RAIL_MIN_ASPECT &&
+              !railContainsRealImage(s.el)) {
             hide(s.el, hidden);
           }
         }
