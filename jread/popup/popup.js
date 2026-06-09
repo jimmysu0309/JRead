@@ -57,67 +57,15 @@ function roundStep(v) { return Math.round(v * 100) / 100; }
 // 一個合理的通用 family。styler 注入時會再串接自己的 fallback chain，重複沒關
 // 係（CSS 解析正確、第一個能命中的字型即勝出）。HTML 內 option value 必須與
 // 此處字面值逐字一致（forcing function spec 會校對）。
-const FONT_STACKS = {
-  system: 'system-ui',
-  // v0.7.221：襯線 stack 必須明寫各平台的 CJK 襯線字體（macOS：Songti TC/SC、
-  // iOS：Hiragino Mincho ProN）。根因：styler 注入時會在使用者 stack 後接
-  // sans 系 fallback（-apple-system / PingFang TC…），iOS WebKit 對「清單中
-  // 間」的泛型 serif 只解析拉丁字型（Times），CJK 字元會繼續往後找、命中
-  // 後綴的 PingFang TC——襯線/無襯線中文看起來一樣（Jimmy 2026-06-06 iPad
-  // 回報；桌面平台對中段泛型有 per-script fallback 所以沒事）。CJK 襯線
-  // 字體放在泛型 serif 之前、拉丁字型之後：拉丁照走 Georgia/Times，CJK 在
-  // 進入 sans 後綴前命中明寫的襯線字體。iOS simulator 實測 D 列驗證通過。
-  serif: '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
-  // v0.7.254：無襯線 stack 改「系統 CJK 字型優先、Noto Sans TC 降後」。根因
-  // （Jimmy 2026-06-08 shoppingdesign 回報「細/中同粗」）：部分站點自己定義
-  // @font-face 劫持「Noto Sans TC」這個 family 名、且 weight→檔案對映壞掉
-  // （shoppingdesign 把 400 跟 300 都指到 Light.woff2），我們舊 stack 領頭點名
-  // 「Noto Sans TC」就吃到站點那份壞字型 → font-weight 細/中渲染相同。改成
-  // 先點 -apple-system（拉丁 SF）+ PingFang TC（macOS/iOS CJK）+ Microsoft
-  // JhengHei（Windows CJK）——逐字 fallback 對 CJK 字元會先命中本機完整字重
-  // 系統字型、繞過站點劫持的 webfont；「Noto Sans TC」留作末段 fallback
-  // （Linux/Android 系統字、那些平台少見此劫持）。系統 CJK 字型字重齊全
-  // （PingFang Light/Regular/Medium/Semibold、JhengHei Light/Regular/Bold），
-  // 三段粗細跨站穩定。verse 等不劫持名字的站點本來就正常、改後不受影響。
-  sans: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
-  mono: 'ui-monospace, Menlo, Consolas, monospace'
-};
-const DEFAULT_SETTINGS = {
-  theme: 'light',
-  fontSize: FONT_SIZE.default,
-  contentWidth: CONTENT_WIDTH.default,
-  fontFamily: FONT_STACKS.system,
-  lineHeight: LINE_HEIGHT.default,
-  paragraphSpacing: PARAGRAPH_SPACING.default,
-  // v0.7.254：字重三段 300（細）/ 400（中，預設）/ 600（粗 Semibold）。真正的
-  // font-weight、全平台生效（取代舊 boldText 的 macOS-only smoothing）。三段一律注入。
-  fontWeight: 400,
-  // v0.7.131：reader mode 攔截原站快速鍵；popup 不放 toggle（options 有），這裡
-  // 僅作 storage.get 的 default fallback，避免讀回 undefined。
-  blockPageShortcuts: true,
-  // Pangu spacing（中英文間自動補空白）；popup 不放 toggle（options 有），這裡
-  // 僅作 storage.get 的 default fallback，避免讀回 undefined。
-  pangu: true,
-  // v0.7.155：自動啟動網域清單。popup 端會用 __JReadDomainMatch 比對當前 tab
-  // hostname 反映 toggle 狀態；options 是完整清單編輯入口。
-  autoEnableDomains: [],
-  // v0.7.215：Space 平滑卷動比例（% of viewport）；popup 不放控制項（options
-  // 有），這裡僅作 storage.get 的 default fallback，避免讀回 undefined。
-  spaceScrollRatio: 50,
-  // v0.7.227：翻頁模式（電子書式水平翻頁）。popup 有 toggle；預設 false =
-  // 傳統垂直卷動。與 SW DEFAULT_SETTINGS 同步（forcing spec 校對）。
-  pagedMode: false,
-  // v0.7.237：翻頁模式頁碼指示。popup 有 toggle（翻頁模式開啟時才顯示該 row）；
-  // 預設 true = 顯示「3 / 43」。
-  showPageNumber: true,
-  // v0.7.218：自訂快速鍵；popup 不放控制項（options 有 recorder），這裡僅作
-  // storage.get 的 default fallback，避免讀回 undefined。
-  customShortcuts: {
-    'toggle-reader-mode': null,
-    'send-to-readwise': null,
-    'toggle-youtube-borderless': null
-  }
-};
+// v0.8.16：font stacks 與 DEFAULT_SETTINGS 改讀 settings-defaults.js 單一資料源
+//（由 popup.html `<script src="../content/settings-defaults.js">` 在 popup.js
+// 之前載入）。原本 popup 各自宣告一份完整字面值、靠 forcing spec 人工校對防
+// drift（CLAUDE.md 工作流原則 5 點名）。UI 常數（FONT_SIZE / CONTENT_WIDTH /
+// LINE_HEIGHT / PARAGRAPH_SPACING）仍是 popup 專用（slider 邊界 + Auto sentinel），
+// 不在此整併。注意：popup.html 的 fontFamily <option value> 是靜態 HTML 拷貝，
+// 由 serif-font-stack spec 校對與 FONT_STACKS 一致。
+const FONT_STACKS = window.__JReadFontStacks;
+const DEFAULT_SETTINGS = window.__JReadSettingsDefaults;
 
 versionEl.textContent = chrome.runtime.getManifest().version;
 

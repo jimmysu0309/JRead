@@ -696,14 +696,15 @@ describe('翻頁模式（v0.7.227）', () => {
 
     it('shared defaults / popup DEFAULT_SETTINGS.pagedMode 預設都是 false', () => {
       // v0.7.235：SW 的 DEFAULT_SETTINGS literal 搬到 content/settings-defaults.js
-      // 單一資料源（iOS background 掉包修法），直接 require 驗值；popup 仍是
-      // 同一事實的雙實作（值綁 popup UI 常數），維持 source regex 校對。
+      // 單一資料源（iOS background 掉包修法），直接 require 驗值。
+      // v0.8.16：popup 也收斂到單一資料源（const DEFAULT_SETTINGS =
+      // window.__JReadSettingsDefaults），不再自帶 literal——改驗 reference 形式 +
+      // shared 正準值（popup 生效值即此值）。
       const sharedDefaults = require('../../jread/content/settings-defaults.js');
       assert.strictEqual(sharedDefaults.pagedMode, false,
         'settings-defaults.js pagedMode 預設必須 false');
-      const m = POPUP_SRC.match(/pagedMode:\s*(\S+?),/);
-      assert.ok(m, 'popup.js DEFAULT_SETTINGS 須含 pagedMode');
-      assert.strictEqual(m[1], 'false', 'popup.js pagedMode 預設必須 false');
+      assert.match(POPUP_SRC, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+        'popup.js DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
     });
 
     it('popup.html 須含 #paged-mode-cb 開關、popup.js 須有 save wiring', () => {
@@ -712,12 +713,12 @@ describe('翻頁模式（v0.7.227）', () => {
     });
 
     it('shared defaults / popup DEFAULT_SETTINGS.showPageNumber 預設都是 true（v0.7.237）', () => {
+      // v0.8.16：popup 收斂到單一資料源，不再自帶 literal——驗 reference + shared 正準值。
       const sharedDefaults = require('../../jread/content/settings-defaults.js');
       assert.strictEqual(sharedDefaults.showPageNumber, true,
         'settings-defaults.js showPageNumber 預設必須 true（嚮後相容：原本一律顯示）');
-      const m = POPUP_SRC.match(/showPageNumber:\s*(\S+?),/);
-      assert.ok(m, 'popup.js DEFAULT_SETTINGS 須含 showPageNumber');
-      assert.strictEqual(m[1], 'true', 'popup.js showPageNumber 預設必須 true');
+      assert.match(POPUP_SRC, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+        'popup.js DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
     });
 
     it('popup.html 須含 #page-number-cb / #page-number-row + .setting-row[hidden] 修正（v0.7.237）', () => {

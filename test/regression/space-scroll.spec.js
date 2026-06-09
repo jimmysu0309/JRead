@@ -19,6 +19,9 @@ const assert = require('assert');
 const ROOT = path.join(__dirname, '..', '..');
 // v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
 const SHARED_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'settings-defaults.js'), 'utf8');
+// v0.8.16：popup / options 改 reference 單一資料源、不再自帶 literal。正準值
+// 由 require shared 提供。
+const SHARED       = require(path.join(ROOT, 'jread', 'content', 'settings-defaults.js'));
 const MAIN_SRC     = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'), 'utf8');
 const MODULE_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'space-scroll.js'), 'utf8');
 const STYLER_SRC   = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'styler.js'), 'utf8');
@@ -65,18 +68,20 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         'shared DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50——forcing：欄位缺席 GET_SETTINGS 讀回 undefined、content script 雖有 fallback 但 storage migration 會不同步');
     });
 
-    it('popup.js DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50（storage.get default fallback）', () => {
-      const m = POPUP_JS.match(/const\s+DEFAULT_SETTINGS\s*=\s*\{([\s\S]*?)\};/);
-      assert.ok(m, '能在 popup.js 找到 DEFAULT_SETTINGS');
-      assert.match(m[1], /spaceScrollRatio\s*:\s*50\b/,
-        'popup.js DEFAULT_SETTINGS 必須含 spaceScrollRatio: 50——forcing：storage.get 缺 default 會讀回 undefined');
+    it('popup.js DEFAULT_SETTINGS（reference shared）生效 spaceScrollRatio === 50（storage.get default fallback）', () => {
+      // v0.8.16：popup DEFAULT_SETTINGS 改 reference window.__JReadSettingsDefaults；
+      // 正準值驗 shared 物件（popup 生效值即此值）。
+      assert.match(POPUP_JS, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+        'popup.js DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+      assert.strictEqual(SHARED.spaceScrollRatio, 50,
+        'shared DEFAULT_SETTINGS.spaceScrollRatio 必須 === 50——forcing：storage.get 缺 default 會讀回 undefined');
     });
 
-    it('options.js DEFAULTS 必須含 spaceScrollRatio: 50', () => {
-      const m = OPTIONS_JS.match(/const\s+DEFAULTS\s*=\s*\{([\s\S]*?)\};/);
-      assert.ok(m, '能找到 options.js DEFAULTS');
-      assert.match(m[1], /spaceScrollRatio\s*:\s*50\b/,
-        'options.js DEFAULTS 必須含 spaceScrollRatio: 50——forcing：load 時讀回 undefined、number input 顯示空白');
+    it('options.js DEFAULTS（reference shared）生效 spaceScrollRatio === 50', () => {
+      assert.match(OPTIONS_JS, /const DEFAULTS = window\.__JReadSettingsDefaults\b/,
+        'options.js DEFAULTS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+      assert.strictEqual(SHARED.spaceScrollRatio, 50,
+        'shared DEFAULTS.spaceScrollRatio 必須 === 50——forcing：load 時讀回 undefined、number input 顯示空白');
     });
   });
 

@@ -22,6 +22,9 @@ const POPUP_HTML   = fs.readFileSync(path.join(ROOT, 'popup', 'popup.html'), 'ut
 const POPUP_JS     = fs.readFileSync(path.join(ROOT, 'popup', 'popup.js'), 'utf8');
 const MAIN_JS      = fs.readFileSync(path.join(ROOT, 'content', 'main.js'), 'utf8');
 const MANIFEST     = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+// v0.8.16：options DEFAULTS 改 reference content/settings-defaults.js 單一資料源、
+// 不再自帶 literal。正準值由 require shared 提供。
+const SHARED       = require(path.join(ROOT, 'content', 'settings-defaults.js'));
 
 describe('(A) matching helper — Jimmy 指定規則', () => {
   it('"abc.com" 命中 abc.com 本身', () => {
@@ -158,9 +161,13 @@ describe('(B) options.html / options.js wire-up', () => {
     assert.match(OPTIONS_HTML, /<script[^>]*src="\.\.\/content\/domain-match\.js"/,
       'options.html 必須在 options.js 之前引入 domain-match.js');
   });
-  it('options.js DEFAULTS 含 autoEnableDomains: []', () => {
-    assert.match(OPTIONS_JS, /autoEnableDomains:\s*\[\]/,
-      'options.js DEFAULTS 必須含 autoEnableDomains: []');
+  it('options.js DEFAULTS（reference shared）生效 autoEnableDomains === []', () => {
+    // v0.8.16：options DEFAULTS 改 reference window.__JReadSettingsDefaults；
+    // 正準值驗 shared 物件（options 生效值即此值）。
+    assert.match(OPTIONS_JS, /const DEFAULTS = window\.__JReadSettingsDefaults\b/,
+      'options.js DEFAULTS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+    assert.deepStrictEqual(SHARED.autoEnableDomains, [],
+      'shared DEFAULTS.autoEnableDomains 必須 === []');
   });
   it('options.js textarea change handler 走 chrome.storage.sync.set', () => {
     // 確保 textarea 變動會寫回 sync.autoEnableDomains（不是只在 textarea 暫存）

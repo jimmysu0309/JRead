@@ -36,6 +36,9 @@ const NS_SRC = fs.readFileSync(path.join(ROOT, 'content', 'namespace.js'), 'utf8
 const SW_SRC = fs.readFileSync(path.join(ROOT, 'background', 'service-worker.js'), 'utf8');
 // v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
 const SHARED_DEFAULTS_SRC = fs.readFileSync(path.join(ROOT, 'content', 'settings-defaults.js'), 'utf8');
+// v0.8.16：popup / options 改 reference 單一資料源、不再自帶 literal。正準值
+// 由 require shared 提供。
+const SHARED_DEFAULTS = require(path.join(ROOT, 'content', 'settings-defaults.js'));
 const OPTIONS_HTML = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
 const OPTIONS_JS = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup', 'popup.js'), 'utf8');
@@ -307,8 +310,13 @@ describe('(F) namespace / options / popup wire-up', () => {
     assert.ok(utilIdx !== -1, '缺 shortcut-utils.js script tag');
     assert.ok(utilIdx < optIdx, 'shortcut-utils.js 必須先於 options.js（後者 top-level 讀 window.__JReadShortcuts）');
   });
-  it('options.js DEFAULTS 必須含 customShortcuts、recorder 寫回必須整張表 set', () => {
-    assert.match(OPTIONS_JS, /customShortcuts:\s*\{/, 'DEFAULTS 缺 customShortcuts');
+  it('options.js DEFAULTS（reference shared）含 customShortcuts、recorder 寫回必須整張表 set', () => {
+    // v0.8.16：options DEFAULTS 改 reference window.__JReadSettingsDefaults；
+    // customShortcuts 欄位存在性驗 shared 物件。整表寫回邏輯仍 grep options.js。
+    assert.match(OPTIONS_JS, /const DEFAULTS = window\.__JReadSettingsDefaults\b/,
+      'options.js DEFAULTS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+    assert.ok(SHARED_DEFAULTS.customShortcuts && typeof SHARED_DEFAULTS.customShortcuts === 'object',
+      'shared DEFAULTS 缺 customShortcuts');
     assert.match(OPTIONS_JS, /chrome\.storage\.sync\.set\(\s*\{\s*customShortcuts:\s*shortcutTable\s*\}/,
       '必須整張表寫回（partial set 會讓其他 command 的設定 drift）');
   });
@@ -345,8 +353,13 @@ describe('(F) namespace / options / popup wire-up', () => {
     assert.match(OPTIONS_HTML, /\.shortcut-recorder\.invalid/, '缺 .invalid 紅框樣式');
     assert.match(OPTIONS_HTML, /@keyframes jr-sc-shake/, '缺 shake keyframes');
   });
-  it('popup.js DEFAULT_SETTINGS 必須含 customShortcuts（default fallback parity）', () => {
-    assert.match(POPUP_JS, /customShortcuts:\s*\{/, 'popup DEFAULT_SETTINGS 缺 customShortcuts——storage.get 缺 default 會讀回 undefined');
+  it('popup.js DEFAULT_SETTINGS（reference shared）含 customShortcuts（default fallback parity）', () => {
+    // v0.8.16：popup DEFAULT_SETTINGS 改 reference window.__JReadSettingsDefaults；
+    // customShortcuts 欄位存在性驗 shared 物件。
+    assert.match(POPUP_JS, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+      'popup.js DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+    assert.ok(SHARED_DEFAULTS.customShortcuts && typeof SHARED_DEFAULTS.customShortcuts === 'object',
+      'shared DEFAULT_SETTINGS 缺 customShortcuts——storage.get 缺 default 會讀回 undefined');
   });
 });
 

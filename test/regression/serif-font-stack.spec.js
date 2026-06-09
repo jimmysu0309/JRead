@@ -26,18 +26,34 @@ const ROOT = path.join(__dirname, '..', '..', 'jread');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup', 'popup.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup', 'popup.html'), 'utf8');
 const SW_SRC = fs.readFileSync(path.join(ROOT, 'background', 'service-worker.js'), 'utf8');
+// v0.8.16：font stack 字面值收斂到 content/settings-defaults.js 單一資料源
+//（globalThis.__JReadFontStacks / __JReadLegacyFontStacks）。popup.js / SW 都
+// 改 reference，不再各自寫一份字面值。require shared 後從 globalThis 取正準值。
+require(path.join(ROOT, 'content', 'settings-defaults.js'));
+const FONT_STACKS = globalThis.__JReadFontStacks;
+const LEGACY_FONT_STACKS = globalThis.__JReadLegacyFontStacks;
 
 const EXPECTED_SERIF =
   '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif';
 const EXPECTED_LEGACY = '"Noto Serif TC", Georgia, "Times New Roman", serif';
 
+// v0.8.16：popup FONT_STACKS 改 reference 單一資料源——「popup 生效的 stack」
+// 即 shared 的值。原本逐檔 grep popup literal 改成讀 shared font stacks。
 function popupStack(key) {
-  const m = POPUP_JS.match(new RegExp(key + ":\\s*'([^']+)'"));
-  return m && m[1];
+  return FONT_STACKS[key];
 }
 
 describe('襯線 stack CJK 字體（v0.7.221 forcing function）', () => {
-  it('popup.js FONT_STACKS.serif 必須含 CJK 襯線字體（macOS Songti / iOS Hiragino Mincho）', () => {
+  it('popup.js FONT_STACKS / SW 字型常數取自單一資料源（v0.8.16 結構不變式）', () => {
+    assert.match(POPUP_JS, /const FONT_STACKS = window\.__JReadFontStacks\b/,
+      'popup.js FONT_STACKS 必須 = window.__JReadFontStacks（單一資料源）');
+    assert.match(SW_SRC, /globalThis\.__JReadFontStacks/,
+      'SW 的字型 stack 常數必須取自 globalThis.__JReadFontStacks');
+    assert.match(SW_SRC, /globalThis\.__JReadLegacyFontStacks/,
+      'SW 的舊字型 stack 常數必須取自 globalThis.__JReadLegacyFontStacks');
+  });
+
+  it('shared FONT_STACKS.serif 必須含 CJK 襯線字體（macOS Songti / iOS Hiragino Mincho）', () => {
     assert.strictEqual(popupStack('serif'), EXPECTED_SERIF,
       'FONT_STACKS.serif 與預期 stack 不一致——CJK 襯線字體缺席時 iOS 中文會 fallback 到 styler sans 後綴的 PingFang TC');
   });
@@ -59,11 +75,17 @@ describe('襯線 stack CJK 字體（v0.7.221 forcing function）', () => {
   });
 
   it('SW 必須有 LEGACY_SERIF_STACK → SERIF_STACK 遷移（fontFamily 存字面值、改常數不動舊使用者）', () => {
-    const legacy = SW_SRC.match(/LEGACY_SERIF_STACK = '([^']+)'/);
-    const next = SW_SRC.match(/\bSERIF_STACK = '([^']+)'/);
-    assert.ok(legacy && next, 'SW 缺 LEGACY_SERIF_STACK / SERIF_STACK 常數');
-    assert.strictEqual(legacy[1], EXPECTED_LEGACY, 'LEGACY 常數必須等於 v0.7.220 以前的襯線 stack（精準匹配才遷移，不能誤改使用者自選值）');
-    assert.strictEqual(next[1], EXPECTED_SERIF, 'SW SERIF_STACK 必須與 popup FONT_STACKS.serif 同步');
+    // v0.8.16：SW 的字型 stack 常數改 reference 單一資料源
+    //（SERIF_STACK = globalThis.__JReadFontStacks.serif 等），不再各自寫字面值。
+    // 正準值改驗 shared font stacks；遷移邏輯 wiring 仍逐字校對。
+    assert.match(SW_SRC, /\bSERIF_STACK = globalThis\.__JReadFontStacks\.serif\b/,
+      'SW SERIF_STACK 必須取自 globalThis.__JReadFontStacks.serif');
+    assert.match(SW_SRC, /\bLEGACY_SERIF_STACK = globalThis\.__JReadLegacyFontStacks\.serif\b/,
+      'SW LEGACY_SERIF_STACK 必須取自 globalThis.__JReadLegacyFontStacks.serif');
+    assert.strictEqual(LEGACY_FONT_STACKS.serif, EXPECTED_LEGACY,
+      'shared LEGACY 襯線常數必須等於 v0.7.220 以前的襯線 stack（精準匹配才遷移，不能誤改使用者自選值）');
+    assert.strictEqual(FONT_STACKS.serif, EXPECTED_SERIF,
+      'shared SERIF_STACK 必須與 popup FONT_STACKS.serif 同步');
     // v0.8.15：onInstalled 改寫 diff patch（merged → patch、判定改讀 current）
     assert.match(SW_SRC, /current\.fontFamily === LEGACY_SERIF_STACK\)\s*patch\.fontFamily = SERIF_STACK/,
       'onInstalled 必須做精準替換遷移');
@@ -116,11 +138,15 @@ describe('無襯線 stack 系統 CJK 字型優先（v0.7.254 forcing function）
   });
 
   it('SW 必須有 LEGACY_SANS_STACK → SANS_STACK 遷移', () => {
-    const legacy = SW_SRC.match(/LEGACY_SANS_STACK = '([^']+)'/);
-    const next = SW_SRC.match(/\bSANS_STACK = '([^']+)'/);
-    assert.ok(legacy && next, 'SW 缺 LEGACY_SANS_STACK / SANS_STACK 常數');
-    assert.strictEqual(legacy[1], EXPECTED_LEGACY_SANS, 'LEGACY_SANS 常數必須等於 v0.7.253 以前的無襯線 stack（精準匹配才遷移）');
-    assert.strictEqual(next[1], EXPECTED_SANS, 'SW SANS_STACK 必須與 popup FONT_STACKS.sans 同步');
+    // v0.8.16：同 serif——SW 字型 stack 常數改 reference 單一資料源。
+    assert.match(SW_SRC, /\bSANS_STACK = globalThis\.__JReadFontStacks\.sans\b/,
+      'SW SANS_STACK 必須取自 globalThis.__JReadFontStacks.sans');
+    assert.match(SW_SRC, /\bLEGACY_SANS_STACK = globalThis\.__JReadLegacyFontStacks\.sans\b/,
+      'SW LEGACY_SANS_STACK 必須取自 globalThis.__JReadLegacyFontStacks.sans');
+    assert.strictEqual(LEGACY_FONT_STACKS.sans, EXPECTED_LEGACY_SANS,
+      'shared LEGACY_SANS 常數必須等於 v0.7.253 以前的無襯線 stack（精準匹配才遷移）');
+    assert.strictEqual(FONT_STACKS.sans, EXPECTED_SANS,
+      'shared SANS_STACK 必須與 popup FONT_STACKS.sans 同步');
     // v0.8.15：onInstalled 改寫 diff patch（merged → patch、判定改讀 current）
     assert.match(SW_SRC, /current\.fontFamily === LEGACY_SANS_STACK\)\s*patch\.fontFamily = SANS_STACK/,
       'onInstalled 必須做精準替換遷移');
