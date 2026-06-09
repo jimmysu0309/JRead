@@ -34,7 +34,7 @@
 
 ## Batch C — 需 harness 驗假設 + 重構（逐項先 probe 再動 code）
 
-- [ ] **C1** `main.js:1126` SPA 導航偵測（history API hook + `<title>` observer），路由變化先 exitReaderMode 再視情況重觸發
+- [x] **C1** ✅ v0.8.21 SPA 導航偵測（popstate + `<title>` observer + href 輪詢；isolated world 攔不到頁面 pushState 故不 hook history），路由變化先 exitReaderMode 再視情況重觸發（live 真機驗證見 PENDING_REGRESSION）
 - [x] **C2** ✅ v0.8.19 `detector.js` 抽 `isAncestorChainHidden` 共用 predicate + `scoredTextLen`（隱藏計 0），套到所有 textLen 計分，消除「隱藏容器吞主文」整類 bug
 - [x] **C3** ✅ v0.8.18 `cleaner.js` 11 條 `restoreXxx` + sidecar 統一成單一 `__styleResets` + restoreAllStyleResets（消對稱性漏接風險）
 - [x] **C4** ✅ v0.8.18 `cleaner.js` NOISE regex 改 NOISE_TOKEN_DEFS build-time 組，strong set 從 strong:true 子集衍生（消 drift）
