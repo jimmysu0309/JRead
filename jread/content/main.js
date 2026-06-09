@@ -1,7 +1,7 @@
 // JRead — Content Script 進入點
 // 負責：監聽 popup / background 訊息、串接 detector → cleaner → styler、
 // 僅在主文偵測失敗時顯示 toast（v0.7.27 Jimmy 要求移除「已進入/離開
-// 閱讀模式」等狀態通知，圖示 + 卡片出現本身就是回饋）、SPA 導航偵測（TODO）。
+// 閱讀模式」等狀態通知，圖示 + 卡片出現本身就是回饋）、SPA 導航偵測（v0.8.21）。
 (function () {
   'use strict';
 
@@ -1116,24 +1116,96 @@
     }
   });
 
-  // v0.7.155：auto-enable 網域 — document_idle 注入時若當前 hostname 命中
-  // settings.autoEnableDomains，silent 進閱讀模式（偵測失敗不彈 toast，避免
-  // 沒主動觸發卻彈錯誤訊息）。iframe 不跑（top-level 才進）；context invalidated
-  // 時 safeSendMessage 已 silent no-op。SPA 路由變化不額外處理——content script
-  // 每次完整頁面 navigation 都會重新注入，這層就是天然的「頁面載入」時點。
+  // v0.7.155：auto-enable 網域 — 當前 hostname 命中 settings.autoEnableDomains
+  // 時 silent 進閱讀模式（偵測失敗不彈 toast，避免沒主動觸發卻彈錯誤訊息）。
+  // 共用判定：document_idle 首次載入 + SPA 路由變化重觸發都走這條（單一資料源）。
+  async function autoEnableMatchesCurrentRoute() {
+    const helper = window.__JReadDomainMatch;
+    if (!helper) return false;
+    const settings = await getSettings();
+    if (!settings) return false;
+    const list = Array.isArray(settings.autoEnableDomains) ? settings.autoEnableDomains : [];
+    return !!helper.matchHostname(location.hostname, list);
+  }
+
   (async function tryAutoEnableOnLoad() {
     try {
       if (window.top !== window.self) return;
-      const helper = window.__JReadDomainMatch;
-      if (!helper) return;
-      const settings = await getSettings();
-      if (!settings) return;
-      const list = Array.isArray(settings.autoEnableDomains) ? settings.autoEnableDomains : [];
-      if (!helper.matchHostname(location.hostname, list)) return;
+      if (!(await autoEnableMatchesCurrentRoute())) return;
       if (NS.state.active) return;
       await enterReaderMode({ silent: true });
     } catch (_) { /* getSettings/detector 失敗：保持原頁面、不打擾 */ }
   })();
 
-  // TODO: SPA 導航偵測（MutationObserver on <title> / history API hook）
+  // v0.8.21 C1：SPA 導航偵測。
+  //
+  // 動機：SPA 站（Next.js / React Router / Vue Router 等）路由切換**不重載
+  // content script**——舊版只在 document_idle 注入時跑一次 auto-enable，且
+  // reader card 綁的是「舊路由」的 DOM。使用者在 SPA 站 reader mode 下點到
+  // 下一篇文章時：(a) 舊 reader card 殘留、新內容被它蓋住；(b) auto-enable
+  // 網域不會對新路由重觸發。
+  //
+  // 對策：偵測路由變化 → 先 exitReaderMode（拆掉綁舊 DOM 的 reader card）→
+  // 視情況重觸發（使用者原本就在 reader mode、或新路由命中 auto-enable 網域
+  // → 等新內容渲染後 silent 重進）。
+  //
+  // 為何不 monkey-patch history.pushState / replaceState（review 原始建議）：
+  // content script 跑在 **isolated world**，`window.history` 是與頁面 main
+  // world 分離的 wrapper——在 isolated world 改寫 history.pushState **攔不到
+  // 頁面自己呼叫的 pushState**（頁面看到的是 main world 的原版）。要真正攔
+  // 需注入 main-world script（web_accessible_resource），代價與 CSP 風險高。
+  // 改用 content script 可靠的三個訊號：
+  //   1. popstate（back / forward / hash 路由，window 事件兩個 world 都收得到）
+  //   2. <title> childList MutationObserver（SPA 換頁幾乎都更新 document.title，
+  //      DOM 共享、content script 收得到）
+  //   3. location.href 輪詢（catch-all：少數換頁不動 title 也不發 popstate 的
+  //      pushState 路由；800ms 輕量輪詢，成本可忽略）
+  // 三者都收斂到 onRouteChange()，以 location.href 是否真的變化為準（去重：
+  // title 因未讀數「(1) …」變動但 href 沒變則不誤判為導航）。
+  let _spaLastUrl = location.href;
+  let _spaReenterTimer = null;
+  let _spaInstalled = false;
+
+  function onSpaRouteChange() {
+    const url = location.href;
+    if (url === _spaLastUrl) return; // href 沒變 = 非真導航（title 雜訊變動等）
+    _spaLastUrl = url;
+    // 路由變化：reader card 綁的是舊路由 DOM，先同步退出
+    const wasActive = NS.state.active && !NS.state.cinemaActive;
+    if (NS.state.active) {
+      try { exitReaderMode(); } catch (_) { /* 退出失敗不阻斷後續 */ }
+    }
+    // 視情況重觸發：等新內容渲染後評估。debounce 合併連續路由跳轉。
+    if (_spaReenterTimer) clearTimeout(_spaReenterTimer);
+    _spaReenterTimer = setTimeout(async () => {
+      _spaReenterTimer = null;
+      try {
+        if (NS.state.active) return; // 期間使用者已手動進入
+        // wasActive（保留使用者閱讀意圖跨路由）或新路由命中 auto-enable 網域
+        // → silent 重進（偵測失敗 no-op，不彈 toast）。
+        const autoMatch = await autoEnableMatchesCurrentRoute();
+        if (!wasActive && !autoMatch) return;
+        if (NS.state.active) return;
+        await enterReaderMode({ silent: true });
+      } catch (_) { /* 重觸發失敗：保持原頁面 */ }
+    }, 400);
+  }
+
+  function installSpaNavigationWatch() {
+    if (_spaInstalled) return;
+    if (window.top !== window.self) return; // top-level frame 才偵測
+    _spaInstalled = true;
+    window.addEventListener('popstate', onSpaRouteChange);
+    try {
+      const titleEl = document.querySelector('title');
+      if (titleEl) {
+        new MutationObserver(onSpaRouteChange).observe(titleEl, { childList: true });
+      }
+    } catch (_) { /* 無 <title> / observer 不可用：靠 popstate + 輪詢 */ }
+    try {
+      setInterval(onSpaRouteChange, 800);
+    } catch (_) { /* setInterval 不可用：靠事件 */ }
+  }
+
+  installSpaNavigationWatch();
 })();
