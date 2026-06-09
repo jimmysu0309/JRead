@@ -99,7 +99,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -1587,7 +1587,30 @@
           // 安全 guard：heading 之前的 sibling 不動（保留主文段落）；只清
           // heading 自己 + 之後。若任一 next sibling 含主文長 p，立即 abort
           // 不清（避免誤殺主文）。
-          if (h.parentElement === articleEl) {
+          //
+          // v0.8.11 放寬（roomie.tw）：heading 不是 articleEl 直接子、而是埋在
+          // articleEl 內某 content wrapper（DIV.content）尾段的情境——「同場加映」
+          // 是 P、parent 是含 8 段主文長 p 的 DIV.content（≠ articleEl=MAIN），後接
+          // 延伸閱讀 UL。原條件 `parent === articleEl` 不成立 → 只 hide heading 自己、
+          // 連結 UL 留下。放寬：parent 雖非 articleEl，但只要 parent 在 h **之前**含
+          // 主文長 p（確認 h 確實在某內容區塊的尾段、不是整塊 noise wrapper），就比照
+          // articleEl 直接子做尾段清除。「h 之後全為 widget」的 guard 不變、仍是保護
+          // 主文的核心；「之前含主文」guard 確保不會把整個 noise-only wrapper 從中間
+          // 切開誤判成尾段。
+          const tailParent = h.parentElement;
+          let tailApplies = tailParent === articleEl;
+          if (!tailApplies && tailParent && articleEl.contains(tailParent)) {
+            for (let pv = h.previousElementSibling; pv; pv = pv.previousElementSibling) {
+              let hasLongBefore = pv.tagName === 'P' && norm(pv.textContent).length >= 100;
+              if (!hasLongBefore) {
+                for (const para of pv.querySelectorAll('p')) {
+                  if (norm(para.textContent).length >= 100) { hasLongBefore = true; break; }
+                }
+              }
+              if (hasLongBefore) { tailApplies = true; break; }
+            }
+          }
+          if (tailApplies) {
             let allWidgetsAfter = true;
             let next = h.nextElementSibling;
             while (next) {

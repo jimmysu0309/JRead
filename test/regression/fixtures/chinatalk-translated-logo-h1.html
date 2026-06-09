@@ -7,29 +7,51 @@
 <body>
   <div id="entry">
     <div id="main" class="main typography">
-      <!-- site logo H1（Substack 的 wordlogo，在 article 外） -->
+      <!-- site logo H1（Substack 的 wordlogo，在 article 外）。
+           v0.8.12：真實 chinatalk 長文站名 logo 非 anchor 包、裸 H1。 -->
       <div class="header-bar">
-        <h1 id="wordlogo"><a href="/"><span>ChinaTalk</span></a></h1>
+        <h1 id="wordlogo"><span>ChinaTalk</span></h1>
         <div class="nav-buttons"><button>Give gift</button></div>
       </div>
       <!-- 真正的文章 -->
       <div class="single-post-container">
-        <article class="typography newsletter-post post">
-          <div class="post-header">
-            <!-- 翻譯擴充把 H1 文字換成中文，跟 og:title 不再 match -->
-            <h1 class="post-title">「敬我們毫無希望的事業，旗開得勝」</h1>
-            <div class="byline">F. Ichiro Gifford</div>
-            <div class="post-date">2026 年 5 月 24 日</div>
+        <div class="single-post">
+          <article class="typography newsletter-post post">
+            <div class="post-header">
+              <!-- 翻譯擴充把 H1 文字換成中文，跟 og:title 不再 match -->
+              <h1 class="post-title">「敬我們毫無希望的事業，旗開得勝」</h1>
+              <div class="byline">F. Ichiro Gifford</div>
+              <div class="post-date">2026 年 5 月 24 日</div>
+            </div>
+            <div class="body markup">
+              <p>F. Ichiro Gifford 是一位能源分析師，也是前公務員，曾於電力公用事業部門擔任規劃經濟學家，專精於整合資源規劃，對蘇聯晚期經濟史有長年研究。</p>
+              <p>他最近正經歷人生中的蘇聯階段，讀完了 Benjamin Nathans 的新書《To the Success of Our Hopeless Cause》（2024 年），Jordan 也曾在 ChinaTalk 採訪過這位作者！</p>
+              <!-- v0.8.12：真實長文 article 內有多個 section H1（header-anchor-post），
+                   defeats 既有「article 內恰 1 個 H1」guard，逼出 path 1 上浮 bug -->
+              <h1 class="header-anchor-post">為什麼是特種部隊，為什麼是現在</h1>
+              <p>Ichiro 認為，蘇聯晚期異議人士（以及他們所處的俄羅斯）的故事，能為我們在面對 2020 年代的美國時提供指引，這個比較看似突兀卻有深意。</p>
+              <p>一個核心挑戰：寫一段俄國異議運動史很難，因為材料零散、國際聯繫若隱若現。有 1968 年紅場示威這個高潮——雖然只有八個人上場。</p>
+              <h1 class="header-anchor-post">世界的中心</h1>
+              <p>蘇聯異議運動最有力的武器是書本。沙漏、地下印刷、手抄本，對抗審查的工具一再被創造出來，這些工具的演化本身就是一部技術史。</p>
+              <p>Samizdat 成為一種自我複製的出版系統：每份打字稿用碳紙夾出四五份副本，收到的人再打一遍，指數增長，形成去中心化的傳播網路。</p>
+              <h1 class="header-anchor-post">普丁的錢包</h1>
+              <p>當代俄羅斯的審查機制與蘇聯時期有本質差異，但異議者面對的孤立感卻驚人地相似，這種跨越世代的延續性值得深思與警惕。</p>
+            </div>
+          </article>
+        </div>
+        <!-- 留言區（在 article 外、single-post-container 內）。
+             path 1 上浮到 div#main 時會被一起括進主文 → 殘留 -->
+        <div id="discussion" class="comments-section">
+          <h4 class="comment-heading">關於這篇文章的討論</h4>
+          <div class="comment">
+            <p>我不太喜歡這些廣泛的政治討論，事實上我感到非常失望。</p>
           </div>
-          <div class="body markup">
-            <p>F. Ichiro Gifford 是一位能源分析師，也是前公務員，曾於電力公用事業部門擔任規劃經濟學家，專精於整合資源規劃。</p>
-            <p>他最近正經歷人生中的蘇聯階段，讀完了 Benjamin Nathans 的新書《To the Success of Our Hopeless Cause》（2024 年），Jordan 也曾在 ChinaTalk 採訪過這位作者！</p>
-            <p>Ichiro 認為，蘇聯晚期異議人士（以及他們所處的俄羅斯）的故事，能為我們在面對 2020 年代的美國時提供指引。</p>
-            <p>一個核心挑戰：寫一段俄國異議運動史很難，因為材料零散、國際聯繫若隱若現。有 1968 年紅場示威這個高潮——雖然只有八個人上場。</p>
-            <p>蘇聯異議運動最有力的武器是書本。沙漏、地下印刷、手抄本，對抗審查的工具一再被創造出來。</p>
-            <p>Samizdat 成為一種自我複製的出版系統：每份打字稿用碳紙夾出四五份副本，收到的人再打一遍，指數增長。</p>
-          </div>
-        </article>
+        </div>
+      </div>
+      <!-- 推薦文章列表（在 article 外）-->
+      <div class="portable-archive-list">
+        <a class="archive-item" href="/p/ai-girlfriends">為什麼美國打造人工智慧女友，中國打造人工智慧男友</a>
+        <a class="archive-item" href="/p/deepseek">Deepseek：引領中國人工智慧競賽的寧靜巨人</a>
       </div>
     </div>
   </div>

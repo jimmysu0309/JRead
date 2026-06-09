@@ -67,6 +67,9 @@
 
   // 內容圖片的最小高度——低於此視為 inline 小圖（emoji / icon），不當焦點單位
   const MEDIA_MIN_HEIGHT = 40;
+  // 裸文字 block 焦點單位的最小直接文字長度——短標題 / 短句（如「一：上半部分大部分解」
+  // 10 字）也算段落，但濾掉 wrapper 偶含的零星標籤字
+  const MIN_TEXT_BLOCK = 4;
 
   // 多圖容器（圖庫）判定：含 >= 2 張內容圖、且圖說以外幾乎沒有正文。
   // Jimmy 2026-06-05 訂正：照片以每張為單位——圖庫容器讓位給個別圖片；
@@ -99,6 +102,33 @@
       if (r.height < 4) continue;
       // 多圖容器讓位給個別圖片（下方 media 迴圈收）
       if (isMediaGallery(el)) continue;
+      blocks.push(el);
+    }
+    // 裸文字 block 單位：BBS / 老站把每段文字放裸 <div>/<font>、不用 <p>
+    // （forum.gamer.com.tw 實測整篇本文是 display:block 的 <div> 直接含文字、與
+    // 圖交錯，BLOCK_SEL 全漏收 → 焦點條只在圖與圖之間跳、跳過中間文字）。通則：
+    // block-level 且「直接含 >= MIN_TEXT_BLOCK 字文字節點」的元素 = 段落等價焦點
+    // 單位。guard 確保只收 leaf-most 文字承載層、不誤收 wrapper：
+    //   - 直接 text node 長度 >= MIN_TEXT_BLOCK（whitespace-only wrapper directLen=0 排除）
+    //   - computed display 為 block-level（排除 inline span/font 的行內片段）
+    //   - 不含 BLOCK_SEL 後代（含 <p> 等語意 block = wrapper、讓 BLOCK_SEL 那層收）
+    //   - 不含另一個文字候選（保留 leaf-most、避免大 wrapper 吃掉整篇變單一單位）
+    //   - 祖先不是已收 block（巢狀於 figure/blockquote/已收文字 block 內 → 跳）
+    const textCandidates = [];
+    for (const el of articleEl.querySelectorAll('div, font, section, td')) {
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      let directLen = 0;
+      for (const n of el.childNodes) if (n.nodeType === 3) directLen += n.textContent.trim().length;
+      if (directLen < MIN_TEXT_BLOCK) continue;
+      const disp = (el.ownerDocument.defaultView || window).getComputedStyle(el).display;
+      if (!/^(block|list-item|table-cell|flow-root|table)$/.test(disp)) continue;
+      if (el.getBoundingClientRect().height < 4) continue;
+      textCandidates.push(el);
+    }
+    for (const el of textCandidates) {
+      if (el.querySelector(BLOCK_SEL)) continue;                         // 含語意 block = wrapper
+      if (textCandidates.some((o) => o !== el && el.contains(o))) continue; // 含其他候選 = wrapper
+      if (blocks.some((b) => b !== el && b.contains(el))) continue;      // 巢狀於已收 block
       blocks.push(el);
     }
     // 圖片 / 影片單位：沒被任何已收 block 單位覆蓋的內容圖、每張獨立成單位
@@ -152,12 +182,29 @@
     barEl.style.height = r.height + 'px';
   }
 
+  // 單頁判定（Jimmy 2026-06-09）：整篇文章在 viewport 內裝得下、不需捲動時
+  // 不顯示段落焦點指示條——指示條的作用是追蹤捲動閱讀位置，沒有捲動可追蹤
+  // 時它只是視覺雜訊（X 短推文 / 短文章常見）。容差 +2px 吸收 sub-pixel
+  // rounding（scrollHeight / innerHeight 取整誤差），避免恰好等高被誤判成多頁。
+  function isSinglePage() {
+    const scroller = document.scrollingElement || document.documentElement;
+    if (!scroller) return false;
+    return scroller.scrollHeight <= window.innerHeight + 2;
+  }
+
   function onResize() {
-    if (focusedBlock && focusedBlock.isConnected) positionBar(focusedBlock);
+    // resize 可能讓單頁 ↔ 多頁互換（視窗高度改變 / 字級調整）——重走 setFocus
+    // 讓指示條依最新單頁判定顯示或隱藏
+    if (focusedBlock && focusedBlock.isConnected) setFocus(focusedBlock);
   }
 
   function setFocus(block) {
     focusedBlock = block;
+    // 單頁文章不顯示指示條——移除已建的 bar（涵蓋 resize 由多頁變單頁的情境）
+    if (isSinglePage()) {
+      if (barEl) { barEl.remove(); barEl = null; }
+      return;
+    }
     ensureBar();
     positionBar(block);
   }

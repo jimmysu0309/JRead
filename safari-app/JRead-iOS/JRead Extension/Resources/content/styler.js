@@ -20,6 +20,11 @@
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
   const PLAYER_ATTR = 'data-jread-player';
+  // 大內容圖（lightbox / photoswipe 等 `<a>` 包圖結構）標記：apply() runtime 量到
+  // >= CONTENT_IMG_MIN 的 a-wrapped img 標 [CONTENT_IMG_ATTR]，讓 block + margin
+  // 規則對它生效（一般 img:not(a > img) 排除把這類大圖當 icon-link 漏掉）。
+  const CONTENT_IMG_ATTR = 'data-jread-content-img';
+  const CONTENT_IMG_MIN = 200; // 任一維 >= 200px 視為內容照片、非 icon（icon 規則上限 200）
 
   // 內嵌襯線 CJK 字型（Noto Serif TC 全 TC 集，woff2）。
   // 為什麼必須內嵌：iOS Safari「網頁路徑」的預設襯線字型缺「夠」「查」等常用字的
@@ -598,6 +603,26 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   max-height: 90vh !important;
   object-fit: contain !important;
 }
+/* 大內容圖被 a（lightbox / photoswipe）包住的 rescue：apply() runtime 已對
+   >= CONTENT_IMG_MIN 的 a-wrapped img 標 content-img attr（見 apply 內註解）。
+   上方 block / max-height 規則用 :not(a > img) 排除把這類大圖漏成 display:inline
+   + 原站小 margin（巴哈 forum.gamer.com.tw 圖文只隔 4px 實測）。對標記過的
+   content-img 強制 block + 上下對稱 24px margin（解「圖文分隔太窄」）+ max-width
+   100% + height auto + max-height 90vh，與一般內容圖同排版。a 包裝層一併設 block
+   讓圖置中、margin 生效（inline a 內的 block img 不會撐出區塊）。
+   icon-link（< 200px）不會被標記、維持原 inline icon 行為不受影響。 */
+[${ARTICLE_ATTR}="1"] img[${CONTENT_IMG_ATTR}] {
+  display: block !important;
+  margin-top: 24px !important;
+  margin-bottom: 24px !important;
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: 90vh !important;
+  object-fit: contain !important;
+}
+[${ARTICLE_ATTR}="1"] a:has(> img[${CONTENT_IMG_ATTR}]) {
+  display: block !important;
+}
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
    或 padding-bottom hack 撐高度（cna.com.tw <picture style="--aspect-ratio:
@@ -633,6 +658,23 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   left: auto !important;
   right: auto !important;
   bottom: auto !important;
+}
+/* 媒體直接容器不可塌陷：原站慣例用「固定 / 零 height 容器 + JS 注入播放器」
+   做影片嵌入 placeholder（CNBC InlineVideo-inlineThumbnailContainer height:0
+   + 內含 342px 縮圖 img，Jimmy 2026-06-09 截圖揭穿縮圖溢出疊在內文上）。
+   reader mode 播放器 JS 不跑、容器維持塌陷高度，img overflow:visible 溢出蓋住
+   後續段落。既有 height:auto reset 只綁 placeholder/ratio/object-fit/picture
+   class，這類影片嵌入 wrapper class（InlineVideo-*）無語意、全 miss。
+   通則：任何「直接子為 img / picture / video」的容器強制 height:auto +
+   min-height:0，容器自然撐到媒體實際高度（不綁 class，與既有 placeholder /
+   ratio / imageRow flex 修法同精神）。
+   排除：inline emoji img（不撐其 p 容器）、已標記 player 的容器。:has 不命中
+   時（無媒體直接子）規則不套，對純文字段落零影響。 */
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video) {
+  height: auto !important;
+  min-height: 0 !important;
 }
 /* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
    實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
@@ -1409,7 +1451,13 @@ html [${ARTICLE_ATTR}="1"] {
    818 > 頁 796，break-inside 對「高於 fragmentainer 的元素」失效強制切割）。
    100vh 與 100dvh 雙宣告：支援 dvh 的引擎（iOS 16.4+）用動態視窗高，
    舊引擎 fallback vh。 */
-html [${ARTICLE_ATTR}="1"] img,
+/* v0.8.10：img 選擇器排除 [${INLINE_IMG_ATTR}]——inline emoji / icon 不可套
+   「縮放至單頁」的 width:auto + max-width:100%，否則 viewBox-only SVG emoji
+   （X Twemoji）被撐成滿欄（150 natural → 608px，Jimmy 翻頁模式實機回報）。
+   與捲動模式 block-image rule（line ~585/595）同一排除準則。inline-img rule
+   （line ~1027）只覆蓋 max-height/object-fit/display、未設 width，故此規則的
+   width:auto 仍會命中 emoji——必須在選擇器層排除。 */
+html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
 html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] svg,
 html [${ARTICLE_ATTR}="1"] iframe {
@@ -1836,9 +1884,32 @@ html [${ARTICLE_ATTR}="1"] a {
       }
       styleEl.textContent = buildCss(theme, opts, overrides);
 
-      articleEl.setAttribute(ARTICLE_ATTR, '1');
-
+      // inline emoji / icon 標記必須在 ARTICLE_ATTR 設定**前**跑——標記用 rect
+      // fallback（viewBox-only SVG / 高解析 emoji PNG 的 naturalWidth 不可靠時
+      // 量 rendered 尺寸）必須對「原站 CSS 下的渲染尺寸」量。ARTICLE_ATTR 一旦
+      // 設定，buildCss 的 reader 規則（特別是翻頁模式 `img { width: auto !important;
+      // max-width: 100% }`）立即生效，會把 viewBox-only SVG emoji 撐成滿欄（150
+      // natural → 608px rect）→ rect > INLINE_IMG_MAX → 永遠標不到 inline →
+      // emoji 滿版（v0.8.10 翻頁模式 X Twemoji 實機回報、probe 實證 chicken-egg）。
+      // 在 ARTICLE_ATTR 前量 = reader 規則尚未 active = 量到原站 inline 尺寸，
+      // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
       const inlineImgs = [];
+      const contentImgs = [];
+      const contentImgLoadCleanup = [];
+      // 量 img 尺寸（natural 優先、不可靠時 fallback rect），>= CONTENT_IMG_MIN 即標
+      // content-img；回傳是否已標（含先前已標）。load listener 補標時重用。
+      const tryMarkContentImg = (img) => {
+        if (img.hasAttribute(CONTENT_IMG_ATTR)) return true;
+        if (img.hasAttribute(INLINE_IMG_ATTR)) return false;
+        let big = (img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
+                  (img.naturalHeight || img.height) >= CONTENT_IMG_MIN;
+        if (!big) {
+          const r = img.getBoundingClientRect();
+          big = r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
+        }
+        if (big) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
+        return false;
+      };
       for (const img of articleEl.querySelectorAll('img')) {
         const w = img.naturalWidth || img.width;
         const h = img.naturalHeight || img.height;
@@ -1858,8 +1929,32 @@ html [${ARTICLE_ATTR}="1"] a {
         if (isInline) {
           img.setAttribute(INLINE_IMG_ATTR, '1');
           inlineImgs.push(img);
+          continue;
+        }
+        // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
+        // block + margin 規則會漏掉它 → 維持原站 display:inline + 小 margin（巴哈
+        // forum.gamer.com.tw a.photoswipe-image > img 實測 inline + 4px margin、
+        // 圖文幾乎貼著）。量到 >= CONTENT_IMG_MIN 且祖先有 `<a>` 的 img 標記為
+        // content-img，CSS 對它強制 block + 對稱 margin。inline emoji 已在上面
+        // continue 排除、不會誤標。
+        //
+        // 自適應 lazy-load（v0.8.11 修正）：apply() 在 document_idle 跑，巴哈這類
+        // 整篇 lazyload 圖在 toggle 當下多數還沒載入——naturalWidth=0、無 width 屬性、
+        // rect 是 placeholder 小尺寸 → big 判定失敗、漏標 → 圖載入後 naturalWidth 變
+        // 大但標記不會重跑，下方 32/34 張圖維持 inline + 4px margin 貼著文字（Jimmy
+        // 2026-06-09 截圖實證）。修法：未即時標到的 a-wrapped img 掛 once load
+        // listener，圖載入時 tryMarkContentImg 重量、夠大就補標（CSS 即時生效加
+        // margin）。below-fold lazy 圖在使用者捲到時才 load → 屆時才標，自適應載入時序。
+        if (img.closest('a')) {
+          if (!tryMarkContentImg(img) && !img.complete) {
+            const onLoad = () => tryMarkContentImg(img);
+            img.addEventListener('load', onLoad);
+            contentImgLoadCleanup.push({ img, onLoad });
+          }
         }
       }
+
+      articleEl.setAttribute(ARTICLE_ATTR, '1');
 
       // v0.7.182：mark video player container descendants——背景/色彩
       // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
@@ -2326,7 +2421,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, playerMarked, contrastBgSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, contrastBgSnap };
     },
 
     /**
@@ -2359,6 +2454,18 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.inlineImgs)) {
         for (const img of snapshot.inlineImgs) {
           if (img && img.removeAttribute) img.removeAttribute(INLINE_IMG_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.contentImgs)) {
+        for (const img of snapshot.contentImgs) {
+          if (img && img.removeAttribute) img.removeAttribute(CONTENT_IMG_ATTR);
+        }
+      }
+      // 移除尚未觸發的 lazy-load content-img 標記 listener（避免退出後圖載入仍
+      // 在已 detach 的節點上補標 / listener 洩漏）
+      if (Array.isArray(snapshot.contentImgLoadCleanup)) {
+        for (const { img, onLoad } of snapshot.contentImgLoadCleanup) {
+          if (img && img.removeEventListener) img.removeEventListener('load', onLoad);
         }
       }
       if (Array.isArray(snapshot.playerMarked)) {

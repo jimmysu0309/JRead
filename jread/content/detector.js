@@ -650,6 +650,35 @@
     return { el: lca, titleHead: h };
   }
 
+  // v0.8.12 ChinaTalk translate-first 修法：articleEl 是否「自帶標題」。
+  //
+  // 結構訊號（純 DOM 位置、與文字無關 → 翻譯擴充把標題換成中文也不失效）：
+  // articleEl 內 DOM-order 第一個 heading（h1-h4）若出現在第一個 substantial
+  // <p>（內文段落）之前，代表 article 開頭就是自己的標題區（post-header），
+  // 文章自帶 hero——不需要向外層借 H1。
+  //
+  // 動機：chinatalk.media 長文經 Shinkansen translate-first 後，article 內含
+  // post-title H1 +多個 section H1（header-anchor-post），既有「article 內恰 1
+  // 個 H1」guard（line 703）不觸發；article 內 H1 全變中文、og:title 維持英文
+  // → line 684-698 文字比對 guard 也失效 → path 1 把頁面 DOM-first H1（站名
+  // masthead「ChinaTalk」logo H1）當 hero 升 LCA 到 div#main，把留言區
+  // (#discussion) + 推薦列表 (portable-archive-list) 整塊括進主文 → 清不掉。
+  //
+  // 區分 wya（wheresyoured.at）案例：wya article 開頭是內文 <p>（hero 在
+  // articleEl 兄弟層 .post-hero、article 不自帶標題），第一個 heading 是 section
+  // header、在內文之後 → self-titled=false → path 1 照常升 LCA 取 hero。
+  function articleIsSelfTitled(articleEl) {
+    if (!articleEl || !articleEl.ownerDocument) return false;
+    const walker = articleEl.ownerDocument.createTreeWalker(articleEl, NodeFilter.SHOW_ELEMENT);
+    let n;
+    while ((n = walker.nextNode())) {
+      const tag = n.tagName;
+      if (/^H[1-4]$/.test(tag)) return true;                      // heading 先出現 → 自帶標題
+      if (tag === 'P' && getText(n).length > 80) return false;    // 內文先出現 → 不自帶標題
+    }
+    return false;
+  }
+
   function ensureArticleContainsTitleH1(articleEl, promotedTitleHead) {
     if (!articleEl) return null;
     // promote 已升 + 命中的是真 heading（H1-H4）→ 視為堅實 promote、不需再升。
@@ -703,8 +732,10 @@
     if (articleEl.querySelectorAll('h1').length === 1) return null;
 
     // 路徑 1：頁面 DOM-order 第一個 H1 不在 articleEl 內 → 升 LCA。
+    // self-titled guard：article 開頭已是自己的標題區時，頁面 DOM-first H1 是
+    // 站名 masthead logo（非 post hero），升上去會把留言/推薦括進主文。
     const firstH1 = document.querySelector('h1');
-    if (firstH1 && !articleEl.contains(firstH1)) {
+    if (firstH1 && !articleEl.contains(firstH1) && !articleIsSelfTitled(articleEl)) {
       const r = tryLcaPromote(firstH1);
       if (r) return r;
     }
