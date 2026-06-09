@@ -70,7 +70,70 @@
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|article[-_]?others?|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news)|menu)([^a-z0-9]|$)/i;
+  // v0.8.18 C4：原本 NOISE_KEYWORD_RE / STRONG_NOISE_KEYWORD_RE 是兩條 ~1.5K
+  // 字元的手寫單行 regex，strong set 的 token 全是 noise set 的子集、靠人工
+  // 抄第二份維護——一邊加 token 另一邊忘了同步就 drift（v0.7.184 udn
+  // related-news 殘留就是漏抄 strong 的後果）。改成單一 token 名單
+  // NOISE_TOKEN_DEFS（每筆 `{ t, strong? }`）：NOISE set 用全部 token、STRONG
+  // set 由 `strong:true` 的子集**衍生**，build-time 用 buildKeywordRe 組正則。
+  // 兩 set 永遠同源，結構上不可能 drift。token 片段（含 `newsletter[\w-]*`
+  // 等帶 quantifier 的）原樣保留，buildKeywordRe 套回原本的邊界 wrapper
+  // `(^|[^a-z0-9])(...)([^a-z0-9]|$)` + `/i`——產出與舊 literal 逐字相等的
+  // NOISE source（tools/probe-c4-noise-tokens.js 驗過 byte-identical）。
+  const NOISE_TOKEN_DEFS = [
+    { t: 'paywall' }, { t: 'subscribe' }, { t: 'subscription' }, { t: 'newsletter[\\w-]*' },
+    { t: 'signup' }, { t: 'sign-up' }, { t: 'signin' }, { t: 'sign-in' }, { t: 'login' }, { t: 'register' },
+    { t: 'promo' }, { t: 'promotion' }, { t: 'promote' },
+    { t: 'advertisement' }, { t: 'advert' }, { t: 'adbox' }, { t: 'adsense' }, { t: 'adslot' },
+    { t: 'adhesion' }, { t: 'metered' }, { t: 'interstitial' }, { t: 'takeover' },
+    { t: 'sponsored' }, { t: 'sponsor' }, { t: 'donation' }, { t: 'donate' },
+    { t: 'call-to-action' }, { t: 'cta' }, { t: 'callout' },
+    { t: 'related[-_]?(?:articles?|news|posts|stories|content)', strong: true },
+    { t: 'more[-_]?(?:news|stories|posts|articles?)', strong: true },
+    { t: 'hash[-_]?tag' }, { t: 'tag[-_]?list' },
+    { t: 'premium[-_]?(?:widget|content|trial|banner|box)' },
+    { t: 'next-article', strong: true }, { t: 'latest-posts', strong: true },
+    { t: 'mostread', strong: true }, { t: 'most-read', strong: true },
+    { t: 'recommended', strong: true }, { t: 'recommend', strong: true }, { t: 'recommendation', strong: true },
+    { t: 'read-more', strong: true }, { t: 'read-next', strong: true }, { t: 'up-next', strong: true },
+    { t: 'recirc', strong: true }, { t: 'smartfeed', strong: true }, { t: 'taboola', strong: true },
+    { t: 'trc_[a-z_]+' }, { t: 'outbrain', strong: true }, { t: 'zergnet', strong: true },
+    { t: 'revcontent', strong: true }, { t: 'popin', strong: true }, { t: 'dianomi', strong: true },
+    { t: 'addthis', strong: true }, { t: 'sharedaddy', strong: true },
+    { t: 'sociable' }, { t: 'ai2html' }, { t: 'onesignal' }, { t: 'intercom' },
+    { t: 'printfriendly' }, { t: 'instapaper_ignore' }, { t: 'blogger-labels' }, { t: 'mpu' },
+    { t: 'share' }, { t: 'social' }, { t: 'social-(?:bar|links|icons|share|media)' },
+    { t: 'comment' }, { t: 'comments' }, { t: 'comment-form' },
+    { t: 'discussion' }, { t: 'discuss' }, { t: 'disqus', strong: true },
+    { t: 'livefyre' }, { t: 'hyvor' }, { t: 'replies' }, { t: 'remark' }, { t: 'shoutbox' },
+    { t: 'respond' }, { t: 'composer' }, { t: 'combx' },
+    { t: 'article-sidebar', strong: true }, { t: 'article[-_]?others?', strong: true },
+    { t: 'sidebar-wrapper', strong: true }, { t: 'sidebar-column', strong: true },
+    { t: 'sidebar-content', strong: true }, { t: 'sidebar-widget', strong: true },
+    { t: 'sidebar-primary', strong: true }, { t: 'sidebar-secondary', strong: true },
+    { t: 'supplemental' }, { t: 'cover-wrap' }, { t: 'entry-unrelated' },
+    { t: 'breadcrumb' }, { t: 'breadcrumbs' }, { t: 'crumb' },
+    { t: 'audio-player' }, { t: 'audio-widget' }, { t: 'controls' }, { t: 'partner' },
+    { t: 'postlisting' }, { t: 'post-listing' }, { t: 'thread' }, { t: 'threads' },
+    { t: 'reposted' }, { t: 'repost' }, { t: 'follow' }, { t: 'follow-us' }, { t: 'following' },
+    { t: 'cookie-(?:banner|notice|consent|bar|message)' }, { t: 'gdpr' }, { t: 'consent' },
+    { t: 'privacy-(?:banner|notice)' }, { t: 'email-(?:signup|capture|subscribe)' },
+    { t: 'pagination' }, { t: 'page-nav' }, { t: 'pager' }, { t: 'page-navigation' },
+    { t: 'author-(?:bio|card|info|box|meta|widget)' }, { t: 'about-(?:author|the-author)' },
+    { t: 'powered[-_]?by' }, { t: 'popup' }, { t: 'popover' }, { t: 'overlay' },
+    { t: 'modal-(?:content|dialog|box|wrapper)' }, { t: 'backdrop' }, { t: 'drawer' },
+    { t: 'floating-(?:bar|cta|widget)' }, { t: 'sticky-(?:bar|cta|banner|subscribe)' },
+    { t: 'topbar' }, { t: 'announcement' }, { t: 'nag' }, { t: 'plea' }, { t: 'contact' },
+    { t: 'shopping' }, { t: 'loader' }, { t: 'toast' }, { t: 'snackbar' },
+    { t: 'notification-(?:bar|banner)' }, { t: 'marker' },
+    { t: 'weixin' }, { t: 'wechat' }, { t: 'weibo' }, { t: 'qrcode' }, { t: 'qr-code' }, { t: 'qrcoode' },
+    { t: 'app-?download' }, { t: 'app-?promo' }, { t: 'app-?banner' }, { t: 'appdownload' },
+    { t: 'app-?store-?banner' }, { t: 'google[-_]?(?:add|news)' }, { t: 'menu', strong: true }
+  ];
+  function buildKeywordRe(tokens) {
+    return new RegExp('(^|[^a-z0-9])(' + tokens.join('|') + ')([^a-z0-9]|$)', 'i');
+  }
+  const NOISE_KEYWORD_RE = buildKeywordRe(NOISE_TOKEN_DEFS.map(d => d.t));
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -244,7 +307,10 @@
   // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
   // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
   // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|article[-_]?others?|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin|menu)([^a-z0-9]|$)/i;
+  // v0.8.18 C4：strong set 從 NOISE_TOKEN_DEFS 的 `strong:true` 子集衍生（同源、
+  // 不再手抄第二份 → 消 drift）。順序與舊 literal 不同但 .test() 布林等價
+  // （end boundary 已 anchor，alternation 順序不影響命中結果，probe 驗過）。
+  const STRONG_NOISE_KEYWORD_RE = buildKeywordRe(NOISE_TOKEN_DEFS.filter(d => d.strong).map(d => d.t));
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -390,6 +456,98 @@
     return true;
   }
 
+  // ---- heading 雜訊 target 解析（靜態 clean + 動態 observer 單一資料源）-----
+  // C5（v0.8.22）：原本 hideInsideArticleByHeadingText（靜態 clean）與
+  // checkDynamicNoise（MutationObserver 動態雜訊）各維護一份「命中雜訊 pattern
+  // 的 heading → 決定 hide 哪個元素」邏輯。兩份是同一份事實的雙實作，必然 drift
+  // ——dynamic 版的註解（v0.7.31 cnyes 修法）自己就記著「歷史上漏同步靜態的
+  // p/div/span 擴展 + walk-up fallback」。CLAUDE.md 工作流原則 5：回頭重整 path
+  // 合一，不靠註解防 drift。
+  //
+  // 前置條件由呼叫端負責（兩條 path 的 candidate 蒐集 / regex 命中 / max_len
+  // 過濾不同，留各自處理）：h 已確認命中 NOISE_HEADING regex、非 button 內、
+  // 非 PRESERVE_SEL 內。本函式只做「target 解析 + hide」這段共用邏輯。
+  // 回傳 true 表示有 hide（呼叫端據此決定 loop continue / observer return）。
+  //
+  // 解析順序（與舊靜態版逐行等價）：
+  //   1. closest('section, aside')——精確命中 section-level 容器
+  //   2. tooWide 檢查：closest 命中含主文 anchor 的過寬容器 → 改走 walk-up
+  //   3. walk-up fallback（findSafeWrapperForHeading）找不含主文的最深 wrapper
+  //   4. 連 walk-up 都失敗 → hideHeadingNoiseTail（尾段清除 / 最後防線 hide(h)）
+  //   5. 最終四道主文保護 guard + hide(target)
+  function resolveHeadingNoiseTarget(h, articleEl, hidden) {
+    let target = h.closest('section, aside');
+    const targetTooWide = target && target !== articleEl &&
+      !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
+    if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
+      const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
+      if (!lastSafeWrapper) {
+        return hideHeadingNoiseTail(h, articleEl, hidden);
+      }
+      target = lastSafeWrapper;
+    }
+    if (!target) return false;
+    if (target === articleEl) return false;
+    if (!articleEl.contains(target)) return false;
+    if (target.contains(articleEl)) return false;
+    if (target.dataset && target.dataset.jreadHidden === '1') return false;
+    hide(target, hidden);
+    return true;
+  }
+
+  // walk-up 找不到安全容器時的尾段清除 + 最後防線（v0.7.31 cnyes / v0.8.11
+  // roomie / v0.7.190 upmedia 累積修法）。tail-cleanup：heading 之前含主文長 p
+  // （確認 h 在某內容區塊尾段、不是整塊 noise wrapper）且 heading 之後 sibling
+  // 全為 widget（無主文長 p）→ hide heading + 之後所有 sibling。tail 不適用時的
+  // 最後防線：至少 hide heading 自己（不影響主文）。回傳是否有 hide。
+  function hideHeadingNoiseTail(h, articleEl, hidden) {
+    const tailParent = h.parentElement;
+    let tailApplies = tailParent === articleEl;
+    if (!tailApplies && tailParent && articleEl.contains(tailParent)) {
+      for (let pv = h.previousElementSibling; pv; pv = pv.previousElementSibling) {
+        let hasLongBefore = pv.tagName === 'P' && norm(pv.textContent).length >= 100;
+        if (!hasLongBefore) {
+          for (const para of pv.querySelectorAll('p')) {
+            if (norm(para.textContent).length >= 100) { hasLongBefore = true; break; }
+          }
+        }
+        if (hasLongBefore) { tailApplies = true; break; }
+      }
+    }
+    if (tailApplies) {
+      let allWidgetsAfter = true;
+      let next = h.nextElementSibling;
+      while (next) {
+        let hasLongP2 = false;
+        for (const para of next.querySelectorAll('p')) {
+          if (norm(para.textContent).length >= 100) { hasLongP2 = true; break; }
+        }
+        if (hasLongP2) { allWidgetsAfter = false; break; }
+        next = next.nextElementSibling;
+      }
+      if (allWidgetsAfter) {
+        hide(h, hidden);
+        let s = h.nextElementSibling;
+        while (s) {
+          const nx = s.nextElementSibling;
+          if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
+            hide(s, hidden);
+          }
+          s = nx;
+        }
+        return true;
+      }
+    }
+    // 最後防線：tail-cleanup 不適用（heading 不是內容區塊尾段）→ 至少 hide
+    // heading 自己（upmedia.mg H3「延伸閱讀」在主文孫層、tail 條件不滿足，
+    // 但 heading 本身仍是雜訊）。
+    if (!(h.dataset && h.dataset.jreadHidden === '1')) {
+      hide(h, hidden);
+      return true;
+    }
+    return false;
+  }
+
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
   }
@@ -437,6 +595,41 @@
     }
   }
 
+  // v0.8.18 C3：所有「快照 inline style → 套 !important override」的 reset 統一
+  // 收進單一 hidden.__styleResets，restore() 一個 loop 還原。原本是 10 個各自
+  // 的 sidecar（__negativeZIndexResets / __collapsed / __innerGridFlex(+Desc) /
+  // __innerFlexWrap / __cappedWrapperSpacing / __mediaContainerBlock /
+  // __descendantBoxShadow / __mediaResets / __absoluteOverlayParentHeight）配
+  // 10 個 restoreXxx——新增一條 reset 規則要對稱維護「producer 存 sidecar +
+  // 寫 restoreXxx + restore() 呼叫」三處，漏一處就退出 reader mode 殘留 inline
+  // 樣式（對稱性漏接風險）。統一後新增規則只要在 producer 結尾呼叫
+  // addStyleResets(hidden, items) 一處。
+  // item 形狀沿用各 producer：{el, prev}（多數）/ {el, kind, prev}（collapse /
+  // innerFlexWrap，kind='container' 者 restore 時要刪 jreadCollapsed 標記）。
+  function addStyleResets(hidden, items) {
+    if (!hidden || !Array.isArray(items) || items.length === 0) return;
+    if (!hidden.__styleResets) hidden.__styleResets = [];
+    for (const it of items) {
+      if (it && it.el) hidden.__styleResets.push(it);
+    }
+  }
+
+  // 統一 restore loop：反向迭代（後跑的 producer 先還原），確保同一 el+prop 若
+  // 被兩條 reset 規則先後覆寫時，最早的 producer 快照（= 真正原始 inline 值）
+  // 最後寫入勝出。非重疊情形（絕大多數）順序無影響。
+  function restoreAllStyleResets(hidden) {
+    const arr = hidden && hidden.__styleResets;
+    if (!Array.isArray(arr)) return;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const item = arr[i];
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+      if (item.kind === 'container' && item.el.dataset) {
+        delete item.el.dataset.jreadCollapsed;
+      }
+    }
+  }
+
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
@@ -452,6 +645,13 @@
     // 的 `[data-jread-hidden="1"] { display: none !important }`，戰勝後
     // 按鈕重新顯示。改用 inline !important 後就完全贏過任何 stylesheet。
     el.style.setProperty('display', 'none', 'important');
+    // v0.8.20 C9：動態階段 hide 的雜訊即時補掛 inline-restyle observer。初始
+    // clean() 階段 styleRestoreObserver 尚 null（watchHiddenInlineRestyle 在
+    // clean 末段才建立），此呼叫 early-return、由末段 batch 一次掛；動態階段
+    // （checkDynamicNoise / dynamic-append，皆在 clean 之後的 MutationObserver
+    // callback）observer 已 active → 即時補掛，否則原站 JS 之後重設其 style 清
+    // 掉 !important priority 時無人補回（硬教訓十保護對 SPA 動態雜訊失效）。
+    registerHiddenForRestyle(el);
   }
 
   // ---- 任何位置：ARIA UI-chrome roles ------------------------------------
@@ -1548,110 +1748,10 @@
       //
       // 結構性通則：button 內 text 對 heading rule 來說恆是 false positive。
       if (h.closest('button')) continue;
-      let target = h.closest('section, aside');
-      // closest hit 分支也必須跑三道主文 anchor 保護——businessweekly blog 實測：
-      // `<div class="line-sub-title">FOLLOW US</div>` 命中 `^follow\s+us`，
-      // closest('section, aside') 直接命中 `<section class="row no-gutters
-      // position-relative">`（包整篇主文 + 26 個長 p + 4 張圖），不加保護就
-      // 連同主文整塊砍 → 使用者只看到 H1 標題、無內文。修法：closest target
-      // 含主文 anchor 即視為過寬，改走 walk-up fallback 找更窄 wrapper。
-      // 與 walk-up fallback 共用 wrapperContainsArticleAnchor 判定（單一 source
-      // of truth，避免結構性通則漂移）。
-      //
-      // Fallback：若沒 section/aside 祖先（SPA 類 div-only 結構），改升級到
-      // heading 所在 articleEl 的 direct child sub-branch——但僅當該 sub-
-      // branch **不含主文長段落**（無 p 的 textLen > 100）才動，避免誤殺
-      // 主文（chinatimes「也許您會感興趣」h4 在 column-wrapper 深層後代，
-      // column-wrapper 自身含主文 p > 100，保護成立）。
-      //
-      // v0.7.28 cnyes 修法：原 fallback 只試 articleEl 的 direct child；若
-      // 站點把整篇主文跟末段 widget 全包進 articleEl 的同一個直接子（cnyes
-      // 是 `DIV.c9ky432 > ARTICLE.mfxje1x` 內含主文 p + 多個 widget），
-      // direct child 含主文 → skip → widget 全留下。改進：從 heading 往上
-      // walk、找「不含主文長段落」的最深 wrapper 當 target。停止條件：parent
-      // 含主文 p（>= 100）或到 articleEl 邊界。這樣 cnyes 的 H3「延伸閱讀」
-      // 會 walk 到 `DIV.c1ciwb2s`（不含主文）後 break、target 設為它。
-      const targetTooWide = target && target !== articleEl &&
-        !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
-      if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
-        // walk-up fallback 共用 helper（findSafeWrapperForHeading 含三道保護：
-        // >= 100 chars long p / 累計 textLen >= 300 中文短段 / title-anchor wrapper）
-        const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
-        if (!lastSafeWrapper) {
-          // tail-cleanup fallback（v0.7.31 cnyes 末段討論區修法）：heading
-          // 直接是 articleEl 的 child（無 wrapper）、walk-up 第一層即 articleEl
-          // 就 break 失敗的情境。檢查 heading 之後的 sibling 是否全為 widget
-          // （無主文長 p、textLen >= 100）—— 是的話 hide heading 自己 + 所有
-          // 後續 sibling 直到 articleEl 結尾（文末雜訊統一清）。
-          //
-          // 安全 guard：heading 之前的 sibling 不動（保留主文段落）；只清
-          // heading 自己 + 之後。若任一 next sibling 含主文長 p，立即 abort
-          // 不清（避免誤殺主文）。
-          //
-          // v0.8.11 放寬（roomie.tw）：heading 不是 articleEl 直接子、而是埋在
-          // articleEl 內某 content wrapper（DIV.content）尾段的情境——「同場加映」
-          // 是 P、parent 是含 8 段主文長 p 的 DIV.content（≠ articleEl=MAIN），後接
-          // 延伸閱讀 UL。原條件 `parent === articleEl` 不成立 → 只 hide heading 自己、
-          // 連結 UL 留下。放寬：parent 雖非 articleEl，但只要 parent 在 h **之前**含
-          // 主文長 p（確認 h 確實在某內容區塊的尾段、不是整塊 noise wrapper），就比照
-          // articleEl 直接子做尾段清除。「h 之後全為 widget」的 guard 不變、仍是保護
-          // 主文的核心；「之前含主文」guard 確保不會把整個 noise-only wrapper 從中間
-          // 切開誤判成尾段。
-          const tailParent = h.parentElement;
-          let tailApplies = tailParent === articleEl;
-          if (!tailApplies && tailParent && articleEl.contains(tailParent)) {
-            for (let pv = h.previousElementSibling; pv; pv = pv.previousElementSibling) {
-              let hasLongBefore = pv.tagName === 'P' && norm(pv.textContent).length >= 100;
-              if (!hasLongBefore) {
-                for (const para of pv.querySelectorAll('p')) {
-                  if (norm(para.textContent).length >= 100) { hasLongBefore = true; break; }
-                }
-              }
-              if (hasLongBefore) { tailApplies = true; break; }
-            }
-          }
-          if (tailApplies) {
-            let allWidgetsAfter = true;
-            let next = h.nextElementSibling;
-            while (next) {
-              let hasLongP2 = false;
-              for (const para of next.querySelectorAll('p')) {
-                if (norm(para.textContent).length >= 100) { hasLongP2 = true; break; }
-              }
-              if (hasLongP2) { allWidgetsAfter = false; break; }
-              next = next.nextElementSibling;
-            }
-            if (allWidgetsAfter) {
-              hide(h, hidden);
-              let s = h.nextElementSibling;
-              while (s) {
-                const nx = s.nextElementSibling;
-                if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
-                  hide(s, hidden);
-                }
-                s = nx;
-              }
-              continue;
-            }
-          }
-          // v0.7.190 最後防線：walk-up 找不到安全容器 + tail-cleanup 不
-          // 適用（heading 不是 articleEl 直接子）→ 至少 hide heading 自己。
-          // upmedia.mg 的 H3（延伸閱讀）在 articleEl 的孫層、parent 含主文
-          // div 段落（guard 正確 break）、tail-cleanup 條件不滿足（parent
-          // !== articleEl），但 heading 本身仍是雜訊——hide 它不影響主文。
-          if (!(h.dataset && h.dataset.jreadHidden === '1')) {
-            hide(h, hidden);
-          }
-          continue;
-        }
-        target = lastSafeWrapper;
-      }
-      if (!target) continue;
-      if (target === articleEl) continue;
-      if (!articleEl.contains(target)) continue;
-      if (target.contains(articleEl)) continue;
-      if (target.dataset && target.dataset.jreadHidden === '1') continue;
-      hide(target, hidden);
+      // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget
+      // （含 closest('section,aside') → tooWide → walk-up fallback → tail-cleanup
+      // / 最後防線 hide(h)）。與 checkDynamicNoise 單一資料源，消雙實作 drift。
+      resolveHeadingNoiseTarget(h, articleEl, hidden);
     }
   }
 
@@ -1849,12 +1949,42 @@
   // ratio 上漏網；Engadget 過往靠此條 B 命中也不依賴 ratio，因為 aside
   // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
+  // 條件 E（flex 拉伸的近空直立 rail）：flex 主文旁的細長側欄——垂直
+  // byline / 直書社群分享列 / 書籤 rail（verse.com.tw `.meta` 實案：
+  // `<div>` 裝 `<ul.authors>` 直書「文字、攝影／TC」+ 書籤 icon）。
+  // 既有 A/C 要 linkDensity > 0.5、B 要 <aside> tag，這類「純文字 credit +
+  // 少量 icon、低 link density」的 rail 全漏；連帶它吃掉 flex 寬度讓主文窄
+  // 於版心（WIDTH AUDIT 26 段警告同源）。
+  // **結構特徵（clean-time 即成立，不依賴 styler reflow 後的窄寬度）**：
+  // 父容器 display:flex；sibling 文字量極小（< main × 10%）；被 flex
+  // align-stretch 拉到很高（> 400px）；寬度遠小於主欄（< main 寬 × 0.5）；
+  // 高 > 寬 × 2（直立欄非橫幅）。主文欄不會「又高又瘦又幾乎沒字」——
+  // 那只會是 credit/分享 rail 或裝飾細條。drop-cap / pull-quote 有實質
+  // 文字且不會這麼高；真圖片欄由 image guard 排除（含 > 120×120 的
+  // <img>/<picture> 不 hide）。純結構幾何、不綁 class / hostname。
+  const RAIL_MIN_HEIGHT = 400;
+  const RAIL_MAX_WIDTH_RATIO = 0.5; // sibling 寬 / main 寬 上限
+  const RAIL_MIN_ASPECT = 2; // height / width
+  const RAIL_IMG_GUARD_SIZE = 120; // 含此尺寸以上 img/picture 視為真圖片欄、不 hide
   // 條件 D（分類標籤微型欄）：新聞站 kicker / eyebrow（CNN "News"、BBC
   // "Science & Environment" 等），在 flex layout 與標題並排的獨立短欄。
   // 既有條件 A/B/C 全要求 main.textLen ≥ 500 或 linkDensity > 0.5，對
   // 這類「極短、零 link、兄弟只有標題」的 label 欄全部漏網。
   const CATEGORY_LABEL_MAX_LEN = 30;
   const CATEGORY_HEADING_SIBLING_MIN_TEXT = 50;
+
+  // 條件 E 的 image guard：rail 內若含 >= 120×120 的 <img>/<picture> 視為
+  // 真圖片欄（雜誌側圖排版）不 hide；書籤 / 分享 icon 那種小 icon 放行。
+  function railContainsRealImage(el) {
+    if (!el.querySelectorAll) return false;
+    for (const img of el.querySelectorAll('img, picture')) {
+      const r = img.getBoundingClientRect && img.getBoundingClientRect();
+      if (r && r.width >= RAIL_IMG_GUARD_SIZE && r.height >= RAIL_IMG_GUARD_SIZE) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
@@ -1964,6 +2094,23 @@
           const r = s.el.getBoundingClientRect &&
             s.el.getBoundingClientRect();
           if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) {
+            hide(s.el, hidden);
+            continue;
+          }
+        }
+        // 條件 E：flex 拉伸的近空直立 rail（垂直 byline / 直書分享列 /
+        // 書籤 rail）。父 flex + sibling 文字極小 + 高 > 400 + 寬 < main 寬
+        // × 0.5 + 高 > 寬 × 2，且不含實質圖片——純結構幾何，clean-time 即
+        // 成立（不靠 styler reflow 後的窄寬度）。
+        if (s.el.getBoundingClientRect && main.el.getBoundingClientRect &&
+            /flex/.test(getComputedStyle(el).display) &&
+            s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO) {
+          const r = s.el.getBoundingClientRect();
+          const mr = main.el.getBoundingClientRect();
+          if (r && mr && r.width > 0 && r.height > RAIL_MIN_HEIGHT &&
+              r.width < mr.width * RAIL_MAX_WIDTH_RATIO &&
+              r.height >= r.width * RAIL_MIN_ASPECT &&
+              !railContainsRealImage(s.el)) {
             hide(s.el, hidden);
           }
         }
@@ -2132,7 +2279,7 @@
         }
       }
     }
-    hidden.__absoluteOverlayParentHeight = parentHeightResets;
+    addStyleResets(hidden, parentHeightResets);
   }
 
   // ---- 主文內：negative z-index 後代 reset -------------------------------
@@ -2168,16 +2315,7 @@
       resets.push({ el, prev: snapshotStyles(el, ['z-index']) });
       applyImportant(el, { 'z-index': 'auto' });
     }
-    hidden.__negativeZIndexResets = resets;
-  }
-
-  function restoreNegativeZIndex(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__negativeZIndexResets;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 主文後代「full-bleed」負 margin 修法（v0.7.115）----
@@ -2241,25 +2379,7 @@
       resets.push({ el, prev: snapshotStyles(el, props) });
       applyImportant(el, { 'margin-left': '0', 'margin-right': '0' });
     }
-    hidden.__negativeHorizontalMarginResets = resets;
-  }
-
-  function restoreNegativeHorizontalMargins(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__negativeHorizontalMarginResets;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
-  }
-
-  function restoreAbsoluteOverlayConverted(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__absoluteOverlayParentHeight;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 主文內：廣告位 grid / flex cell 被 AdBlocker 清後殘留的欄位寬度 ----
@@ -2291,6 +2411,14 @@
   function collapseGridWithHiddenCell(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const collapsed = [];
+    // v0.8.20 C9：讀寫分離。原本迴圈內對每個 candidate「讀 computed + rect → 立刻
+    // applyImportant 寫 style」交錯——後續 candidate 的 getBoundingClientRect 讀到
+    // 被前一個 candidate 寫入 mutate 過的 layout（每次讀都 forced synchronous
+    // reflow，且 rect 量測被污染：巢狀 grid 外層 collapse 成 block 後，內層的
+    // 寬度量測已非原始值，underfill / D2 觸發判定會誤判）。phase1 純讀（含 rect /
+    // snapshot / 觸發決策，全部量測在未被 mutate 的原始 layout 上），把要寫的
+    // 動作收進 writes worklist；phase2 純寫（一次套用，不再回頭讀 layout）。
+    const writes = [];
     // 掃 article 內所有可能的 grid / flex-row container，**含 articleEl 自己**
     // （v0.7.24 ttv.com.tw 修法）：ttv 的 `DIV.news-article.fitVids` 本身是
     // `display: flex`（左主文 + 右 sidebar 兩欄 layout），sidebar 被 narrow
@@ -2483,8 +2611,8 @@
         'padding-right': '0'
       };
       if (isFlexRow) containerDecls['flex-direction'] = 'column';
-      applyImportant(el, containerDecls);
-      if (el.dataset) el.dataset.jreadCollapsed = '1';
+      // phase2 寫：container decls + jreadCollapsed 標記
+      writes.push({ el, decls: containerDecls, markCollapsed: true });
 
       // 關鍵：collapse container 只改了父的 display，但 children 身上的
       // Bootstrap `col-md-8` 類 class（`flex: 0 0 66.67%; max-width: 66.67%`）
@@ -2516,23 +2644,18 @@
       for (const c of visibleChildren) {
         if (!c.style) continue;
         collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, CHILD_PROPS) });
-        applyImportant(c, CHILD_DECLS);
+        writes.push({ el: c, decls: CHILD_DECLS });
       }
     }
-    // 把 collapsed 紀錄接到 hidden 陣列尾（共享 restore）——但格式不同，
-    // restore 流程要能識別。為了不動 restore 簽章，存到 hidden.__collapsed
-    // （sidecar array，不是正常 item）。
-    hidden.__collapsed = collapsed;
-  }
-
-  function restoreCollapsed(hiddenEls) {
-    const collapsed = hiddenEls && hiddenEls.__collapsed;
-    if (!Array.isArray(collapsed)) return;
-    for (const item of collapsed) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-      if (item.kind === 'container' && item.el.dataset) delete item.el.dataset.jreadCollapsed;
+    // ---- phase2：純寫（所有量測已在 phase1 完成於原始 layout）----
+    for (const w of writes) {
+      applyImportant(w.el, w.decls);
+      if (w.markCollapsed && w.el.dataset) w.el.dataset.jreadCollapsed = '1';
     }
+    // v0.8.18 C3：collapsed 紀錄（{el, kind, prev}）收進統一 hidden.__styleResets，
+    // restoreAllStyleResets 一個 loop 還原 inline style + 對 kind='container' 刪
+    // jreadCollapsed 標記。
+    addStyleResets(hidden, collapsed);
   }
 
   // ---- articleEl 內部 grid/flex container 強制 block ---------------------
@@ -2642,25 +2765,8 @@
         applyImportant(desc, INNER_GRID_DESC_DECLS);
       }
     }
-    hidden.__innerGridFlex = resets;
-    hidden.__innerGridFlexDesc = descResets;
-  }
-
-  function restoreInnerGridFlex(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__innerGridFlex;
-    if (Array.isArray(arr)) {
-      for (const item of arr) {
-        if (!item || !item.el) continue;
-        restoreStyles(item.el, item.prev);
-      }
-    }
-    const desc = hiddenEls && hiddenEls.__innerGridFlexDesc;
-    if (Array.isArray(desc)) {
-      for (const item of desc) {
-        if (!item || !item.el) continue;
-        restoreStyles(item.el, item.prev);
-      }
-    }
+    addStyleResets(hidden, resets);
+    addStyleResets(hidden, descResets);
   }
 
   // ---- articleEl 內部 flex-row wrap container 強制 block -----------------
@@ -2787,19 +2893,7 @@
         applyImportant(desc, { 'position': 'static' });
       }
     }
-    hidden.__innerFlexWrap = resets;
-  }
-
-  function restoreInnerFlexWrap(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__innerFlexWrap;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-      if (item.kind === 'container' && item.el.dataset) {
-        delete item.el.dataset.jreadCollapsed;
-      }
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- v0.7.124：cleaner 末段 collapse empty wrappers ----------------------
@@ -3008,16 +3102,7 @@
       applyImportant(el, decls);
       capped.push({ el, prev });
     }
-    hidden.__cappedWrapperSpacing = capped;
-  }
-
-  function restoreCappedWrapperSpacing(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__cappedWrapperSpacing;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, capped);
   }
 
   // ---- figure / picture 容器強制 block（v0.7.24 ttv.com.tw 修法）----------
@@ -3091,16 +3176,7 @@
       const isGridFlex = /^(flex|inline-flex|grid|inline-grid)$/.test(d);
       applyImportant(el, isGridFlex ? MEDIA_CONTAINER_DECLS_GRID_FLEX : MEDIA_CONTAINER_DECLS_INLINE);
     }
-    hidden.__mediaContainerBlock = resets;
-  }
-
-  function restoreMediaContainerBlock(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__mediaContainerBlock;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 後代 container 殘留 box-shadow 清除（v0.7.30 cnyes.com 修法）-----
@@ -3134,16 +3210,7 @@
       resets.push({ el, prev: snapshotStyles(el, DECOR_BOX_SHADOW_PROPS) });
       applyImportant(el, { 'box-shadow': 'none' });
     }
-    hidden.__descendantBoxShadow = resets;
-  }
-
-  function restoreDescendantBoxShadow(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__descendantBoxShadow;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 媒體 placeholder pattern：區分 padding-hack vs 正規 aspect-ratio ---
@@ -3254,16 +3321,7 @@
       media.style.removeProperty('right');
       media.style.removeProperty('bottom');
     }
-    hidden.__mediaResets = resets;
-  }
-
-  function restoreMediaResets(hiddenEls) {
-    const resets = hiddenEls && hiddenEls.__mediaResets;
-    if (!Array.isArray(resets)) return;
-    for (const item of resets) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 主文內：lazy-load 圖片 src 補正 ------------------------------------
@@ -3868,22 +3926,12 @@
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
       if (h.closest('button')) continue;
-      let target = h.closest('section, aside');
-      // 同 hideInsideArticleByHeadingText：closest target 含主文 anchor 也視為過寬
-      const dynTooWide = target && target !== articleEl &&
-        !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
-      if (!target || target === articleEl || target.contains(articleEl) || dynTooWide) {
-        const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
-        if (!lastSafeWrapper) continue;
-        target = lastSafeWrapper;
-      }
-      if (!target) continue;
-      if (target === articleEl) continue;
-      if (!articleEl.contains(target)) continue;
-      if (target.contains(articleEl)) continue;
-      if (target.dataset && target.dataset.jreadHidden === '1') continue;
-      hide(target, hiddenList);
-      return;
+      // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget（與
+      // 靜態 hideInsideArticleByHeadingText 單一資料源）。dynamic 因此補齊靜態的
+      // tail-cleanup + 最後防線 hide(h)——歷史上 dynamic 漏同步這兩段（cnyes
+      // lazy-inject「討論區」widget 整篇主文+widget 同 ARTICLE wrapper、walk-up
+      // 回 null 時 dynamic 舊版直接放棄）。命中即停（observer 每次只處理一個 node）。
+      if (resolveHeadingNoiseTarget(h, articleEl, hiddenList)) return;
     }
   }
 
@@ -3924,6 +3972,7 @@
               // 補 inline `display: none !important`（hide() 對已標 jreadHidden
               // 的 node 會 early return、不覆寫 inline display）
               node.style.setProperty('display', 'none', 'important');
+              registerHiddenForRestyle(node); // v0.8.20 C9：clone 也補掛 observer
             }
             continue;
           }
@@ -3982,9 +4031,27 @@
   let styleRestoreObserver = null;
   let hiddenElsRef = null;
 
+  // v0.8.20 C9：把單一已隱藏元素掛上 inline-restyle observer。給動態階段
+  // （checkDynamicNoise / dynamic-append）即時補掛用——initial clean() 末段的
+  // watchHiddenInlineRestyle 只 snapshot 當時 hidden 清單，之後動態 hide 的
+  // 雜訊不在 WeakSet 也沒被 observe。observer 未 active（initial clean 階段）
+  // 時 no-op、避免重複掛（由 batch 一次處理）。
+  function registerHiddenForRestyle(el) {
+    if (!styleRestoreObserver || !hiddenElsRef) return;
+    if (!el || el.nodeType !== 1) return;
+    if (hiddenElsRef.has(el)) return;
+    hiddenElsRef.add(el);
+    styleRestoreObserver.observe(el, { attributes: true, attributeFilter: ['style'] });
+  }
+
   function watchHiddenInlineRestyle(hidden) {
     if (styleRestoreObserver) { styleRestoreObserver.disconnect(); styleRestoreObserver = null; }
-    if (!Array.isArray(hidden) || hidden.length === 0) return;
+    if (!Array.isArray(hidden)) return;
+    // v0.8.20 C9：即使初始 hidden 為空也要建立 observer——後續 checkDynamicNoise
+    // 動態 hide 的 SPA 雜訊靠 registerHiddenForRestyle 補掛到這個 observer 上；
+    // 若初始空就 early-return（舊行為），styleRestoreObserver 永遠 null、動態
+    // 雜訊的硬教訓十保護失效。與 startWatchingDynamicAppends（不因空 early-return）
+    // 一致。idle observer 成本可忽略。
     hiddenElsRef = new WeakSet(hidden.map(h => h.el).filter(Boolean));
 
     styleRestoreObserver = new MutationObserver(mutations => {
@@ -4181,16 +4248,10 @@
         }
       }
       restoreLazyImages(hiddenEls);
-      restoreMediaContainerBlock(hiddenEls);
-      restoreDescendantBoxShadow(hiddenEls);
-      restoreMediaResets(hiddenEls);
-      restoreNegativeZIndex(hiddenEls);
-      restoreNegativeHorizontalMargins(hiddenEls);
-      restoreAbsoluteOverlayConverted(hiddenEls);
-      restoreInnerFlexWrap(hiddenEls);
-      restoreInnerGridFlex(hiddenEls);
-      restoreCollapsed(hiddenEls);
-      restoreCappedWrapperSpacing(hiddenEls);
+      // v0.8.18 C3：原本 10 個 restoreXxx 各還原一個 sidecar，統一成單一
+      // restoreAllStyleResets（遍歷 hidden.__styleResets 一個 loop）。lazy image
+      // src 補正非「inline style 還原」、形狀不同，保留獨立 restoreLazyImages。
+      restoreAllStyleResets(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;

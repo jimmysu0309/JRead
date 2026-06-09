@@ -305,14 +305,9 @@
     if (e.isComposing || e.keyCode === 229) return false;
     if (e.key !== ' ' && e.code !== 'Space') return false;
     if (e.altKey || e.ctrlKey || e.metaKey) return false;
-    const t = e.target;
-    if (t) {
-      const tag = t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return false;
-      if (t.isContentEditable) return false;
-      const ce = t.getAttribute && t.getAttribute('contenteditable');
-      if (ce === 'true' || ce === '') return false;
-    }
+    // v0.8.17：編輯/互動類 element 放行——共用 NS.isEditableTarget 單一資料源
+    //（原本 paged-mode 另寫一份且漏 BUTTON，已合一）。
+    if (NS.isEditableTarget(e.target)) return false;
     return true;
   }
 

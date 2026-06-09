@@ -33,7 +33,11 @@
       const p = normalizeDomain(raw);
       if (!p) continue;
       if (h === p) return true;
-      if (h.endsWith('.' + p)) return true;
+      // suffix 比對只在 pattern 含至少一個點時啟用：防止使用者誤填 public
+      // suffix / 單段字串（如 'com' / 'io' / 'co.uk' 的 'com'）match 整個
+      // eTLD 底下所有網域、auto-enter 在沒預期的大量站點誤觸（v0.8.15）。
+      // 單段 pattern（無點）一律只走上面的 exact match。
+      if (p.includes('.') && h.endsWith('.' + p)) return true;
     }
     return false;
   }
@@ -73,7 +77,8 @@
       const p = normalizeDomain(raw);
       if (!p) return false; // 順手清空字串
       if (h === p) return false;
-      if (h.endsWith('.' + p)) return false;
+      // 與 matchHostname 同規則：suffix 比對只在 pattern 含點時啟用（v0.8.15）
+      if (p.includes('.') && h.endsWith('.' + p)) return false;
       return true;
     });
   }
