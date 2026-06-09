@@ -4,6 +4,13 @@
 > 此檔為**進度持久化**用，防對話中斷後遺失批次計畫。每完成一項把 `[ ]` 改 `[x]` 並註記版本/commit。
 > 全部批次完成且 working tree clean 後可刪除本檔。
 
+> **Push 決策（Jimmy 2026-06-09）**：A/B/C-1（v0.8.15/16/17）已 commit + local tag、**尚未 push**。
+> 約定「全部 Batch C 做完再一次 push」——剩餘 C 項（C8/C3/C4/C6/C2/C9/C1）完成前不要 push、不要跑 release.sh。
+>
+> **下次開新對話接續**：working tree 乾淨、3 個 batch 已 tag。剩餘 C 項見下方 Batch C 清單，
+> 每項依硬規則 4 先 harness probe 驗假設再動 code。C2（detector 評分）/C9（cleaner 讀寫分離+observer）/
+> C1（SPA 新功能）為高風險、建議各自獨立 commit。
+
 ---
 
 ## Batch A — SW / popup / util 邏輯修正（不需 harness，純邏輯）✅ 完成 v0.8.15
