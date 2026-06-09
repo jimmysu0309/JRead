@@ -456,6 +456,98 @@
     return true;
   }
 
+  // ---- heading 雜訊 target 解析（靜態 clean + 動態 observer 單一資料源）-----
+  // C5（v0.8.22）：原本 hideInsideArticleByHeadingText（靜態 clean）與
+  // checkDynamicNoise（MutationObserver 動態雜訊）各維護一份「命中雜訊 pattern
+  // 的 heading → 決定 hide 哪個元素」邏輯。兩份是同一份事實的雙實作，必然 drift
+  // ——dynamic 版的註解（v0.7.31 cnyes 修法）自己就記著「歷史上漏同步靜態的
+  // p/div/span 擴展 + walk-up fallback」。CLAUDE.md 工作流原則 5：回頭重整 path
+  // 合一，不靠註解防 drift。
+  //
+  // 前置條件由呼叫端負責（兩條 path 的 candidate 蒐集 / regex 命中 / max_len
+  // 過濾不同，留各自處理）：h 已確認命中 NOISE_HEADING regex、非 button 內、
+  // 非 PRESERVE_SEL 內。本函式只做「target 解析 + hide」這段共用邏輯。
+  // 回傳 true 表示有 hide（呼叫端據此決定 loop continue / observer return）。
+  //
+  // 解析順序（與舊靜態版逐行等價）：
+  //   1. closest('section, aside')——精確命中 section-level 容器
+  //   2. tooWide 檢查：closest 命中含主文 anchor 的過寬容器 → 改走 walk-up
+  //   3. walk-up fallback（findSafeWrapperForHeading）找不含主文的最深 wrapper
+  //   4. 連 walk-up 都失敗 → hideHeadingNoiseTail（尾段清除 / 最後防線 hide(h)）
+  //   5. 最終四道主文保護 guard + hide(target)
+  function resolveHeadingNoiseTarget(h, articleEl, hidden) {
+    let target = h.closest('section, aside');
+    const targetTooWide = target && target !== articleEl &&
+      !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
+    if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
+      const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
+      if (!lastSafeWrapper) {
+        return hideHeadingNoiseTail(h, articleEl, hidden);
+      }
+      target = lastSafeWrapper;
+    }
+    if (!target) return false;
+    if (target === articleEl) return false;
+    if (!articleEl.contains(target)) return false;
+    if (target.contains(articleEl)) return false;
+    if (target.dataset && target.dataset.jreadHidden === '1') return false;
+    hide(target, hidden);
+    return true;
+  }
+
+  // walk-up 找不到安全容器時的尾段清除 + 最後防線（v0.7.31 cnyes / v0.8.11
+  // roomie / v0.7.190 upmedia 累積修法）。tail-cleanup：heading 之前含主文長 p
+  // （確認 h 在某內容區塊尾段、不是整塊 noise wrapper）且 heading 之後 sibling
+  // 全為 widget（無主文長 p）→ hide heading + 之後所有 sibling。tail 不適用時的
+  // 最後防線：至少 hide heading 自己（不影響主文）。回傳是否有 hide。
+  function hideHeadingNoiseTail(h, articleEl, hidden) {
+    const tailParent = h.parentElement;
+    let tailApplies = tailParent === articleEl;
+    if (!tailApplies && tailParent && articleEl.contains(tailParent)) {
+      for (let pv = h.previousElementSibling; pv; pv = pv.previousElementSibling) {
+        let hasLongBefore = pv.tagName === 'P' && norm(pv.textContent).length >= 100;
+        if (!hasLongBefore) {
+          for (const para of pv.querySelectorAll('p')) {
+            if (norm(para.textContent).length >= 100) { hasLongBefore = true; break; }
+          }
+        }
+        if (hasLongBefore) { tailApplies = true; break; }
+      }
+    }
+    if (tailApplies) {
+      let allWidgetsAfter = true;
+      let next = h.nextElementSibling;
+      while (next) {
+        let hasLongP2 = false;
+        for (const para of next.querySelectorAll('p')) {
+          if (norm(para.textContent).length >= 100) { hasLongP2 = true; break; }
+        }
+        if (hasLongP2) { allWidgetsAfter = false; break; }
+        next = next.nextElementSibling;
+      }
+      if (allWidgetsAfter) {
+        hide(h, hidden);
+        let s = h.nextElementSibling;
+        while (s) {
+          const nx = s.nextElementSibling;
+          if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
+            hide(s, hidden);
+          }
+          s = nx;
+        }
+        return true;
+      }
+    }
+    // 最後防線：tail-cleanup 不適用（heading 不是內容區塊尾段）→ 至少 hide
+    // heading 自己（upmedia.mg H3「延伸閱讀」在主文孫層、tail 條件不滿足，
+    // 但 heading 本身仍是雜訊）。
+    if (!(h.dataset && h.dataset.jreadHidden === '1')) {
+      hide(h, hidden);
+      return true;
+    }
+    return false;
+  }
+
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
   }
@@ -1656,110 +1748,10 @@
       //
       // 結構性通則：button 內 text 對 heading rule 來說恆是 false positive。
       if (h.closest('button')) continue;
-      let target = h.closest('section, aside');
-      // closest hit 分支也必須跑三道主文 anchor 保護——businessweekly blog 實測：
-      // `<div class="line-sub-title">FOLLOW US</div>` 命中 `^follow\s+us`，
-      // closest('section, aside') 直接命中 `<section class="row no-gutters
-      // position-relative">`（包整篇主文 + 26 個長 p + 4 張圖），不加保護就
-      // 連同主文整塊砍 → 使用者只看到 H1 標題、無內文。修法：closest target
-      // 含主文 anchor 即視為過寬，改走 walk-up fallback 找更窄 wrapper。
-      // 與 walk-up fallback 共用 wrapperContainsArticleAnchor 判定（單一 source
-      // of truth，避免結構性通則漂移）。
-      //
-      // Fallback：若沒 section/aside 祖先（SPA 類 div-only 結構），改升級到
-      // heading 所在 articleEl 的 direct child sub-branch——但僅當該 sub-
-      // branch **不含主文長段落**（無 p 的 textLen > 100）才動，避免誤殺
-      // 主文（chinatimes「也許您會感興趣」h4 在 column-wrapper 深層後代，
-      // column-wrapper 自身含主文 p > 100，保護成立）。
-      //
-      // v0.7.28 cnyes 修法：原 fallback 只試 articleEl 的 direct child；若
-      // 站點把整篇主文跟末段 widget 全包進 articleEl 的同一個直接子（cnyes
-      // 是 `DIV.c9ky432 > ARTICLE.mfxje1x` 內含主文 p + 多個 widget），
-      // direct child 含主文 → skip → widget 全留下。改進：從 heading 往上
-      // walk、找「不含主文長段落」的最深 wrapper 當 target。停止條件：parent
-      // 含主文 p（>= 100）或到 articleEl 邊界。這樣 cnyes 的 H3「延伸閱讀」
-      // 會 walk 到 `DIV.c1ciwb2s`（不含主文）後 break、target 設為它。
-      const targetTooWide = target && target !== articleEl &&
-        !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
-      if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
-        // walk-up fallback 共用 helper（findSafeWrapperForHeading 含三道保護：
-        // >= 100 chars long p / 累計 textLen >= 300 中文短段 / title-anchor wrapper）
-        const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
-        if (!lastSafeWrapper) {
-          // tail-cleanup fallback（v0.7.31 cnyes 末段討論區修法）：heading
-          // 直接是 articleEl 的 child（無 wrapper）、walk-up 第一層即 articleEl
-          // 就 break 失敗的情境。檢查 heading 之後的 sibling 是否全為 widget
-          // （無主文長 p、textLen >= 100）—— 是的話 hide heading 自己 + 所有
-          // 後續 sibling 直到 articleEl 結尾（文末雜訊統一清）。
-          //
-          // 安全 guard：heading 之前的 sibling 不動（保留主文段落）；只清
-          // heading 自己 + 之後。若任一 next sibling 含主文長 p，立即 abort
-          // 不清（避免誤殺主文）。
-          //
-          // v0.8.11 放寬（roomie.tw）：heading 不是 articleEl 直接子、而是埋在
-          // articleEl 內某 content wrapper（DIV.content）尾段的情境——「同場加映」
-          // 是 P、parent 是含 8 段主文長 p 的 DIV.content（≠ articleEl=MAIN），後接
-          // 延伸閱讀 UL。原條件 `parent === articleEl` 不成立 → 只 hide heading 自己、
-          // 連結 UL 留下。放寬：parent 雖非 articleEl，但只要 parent 在 h **之前**含
-          // 主文長 p（確認 h 確實在某內容區塊的尾段、不是整塊 noise wrapper），就比照
-          // articleEl 直接子做尾段清除。「h 之後全為 widget」的 guard 不變、仍是保護
-          // 主文的核心；「之前含主文」guard 確保不會把整個 noise-only wrapper 從中間
-          // 切開誤判成尾段。
-          const tailParent = h.parentElement;
-          let tailApplies = tailParent === articleEl;
-          if (!tailApplies && tailParent && articleEl.contains(tailParent)) {
-            for (let pv = h.previousElementSibling; pv; pv = pv.previousElementSibling) {
-              let hasLongBefore = pv.tagName === 'P' && norm(pv.textContent).length >= 100;
-              if (!hasLongBefore) {
-                for (const para of pv.querySelectorAll('p')) {
-                  if (norm(para.textContent).length >= 100) { hasLongBefore = true; break; }
-                }
-              }
-              if (hasLongBefore) { tailApplies = true; break; }
-            }
-          }
-          if (tailApplies) {
-            let allWidgetsAfter = true;
-            let next = h.nextElementSibling;
-            while (next) {
-              let hasLongP2 = false;
-              for (const para of next.querySelectorAll('p')) {
-                if (norm(para.textContent).length >= 100) { hasLongP2 = true; break; }
-              }
-              if (hasLongP2) { allWidgetsAfter = false; break; }
-              next = next.nextElementSibling;
-            }
-            if (allWidgetsAfter) {
-              hide(h, hidden);
-              let s = h.nextElementSibling;
-              while (s) {
-                const nx = s.nextElementSibling;
-                if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
-                  hide(s, hidden);
-                }
-                s = nx;
-              }
-              continue;
-            }
-          }
-          // v0.7.190 最後防線：walk-up 找不到安全容器 + tail-cleanup 不
-          // 適用（heading 不是 articleEl 直接子）→ 至少 hide heading 自己。
-          // upmedia.mg 的 H3（延伸閱讀）在 articleEl 的孫層、parent 含主文
-          // div 段落（guard 正確 break）、tail-cleanup 條件不滿足（parent
-          // !== articleEl），但 heading 本身仍是雜訊——hide 它不影響主文。
-          if (!(h.dataset && h.dataset.jreadHidden === '1')) {
-            hide(h, hidden);
-          }
-          continue;
-        }
-        target = lastSafeWrapper;
-      }
-      if (!target) continue;
-      if (target === articleEl) continue;
-      if (!articleEl.contains(target)) continue;
-      if (target.contains(articleEl)) continue;
-      if (target.dataset && target.dataset.jreadHidden === '1') continue;
-      hide(target, hidden);
+      // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget
+      // （含 closest('section,aside') → tooWide → walk-up fallback → tail-cleanup
+      // / 最後防線 hide(h)）。與 checkDynamicNoise 單一資料源，消雙實作 drift。
+      resolveHeadingNoiseTarget(h, articleEl, hidden);
     }
   }
 
@@ -3887,22 +3879,12 @@
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
       if (h.closest('button')) continue;
-      let target = h.closest('section, aside');
-      // 同 hideInsideArticleByHeadingText：closest target 含主文 anchor 也視為過寬
-      const dynTooWide = target && target !== articleEl &&
-        !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
-      if (!target || target === articleEl || target.contains(articleEl) || dynTooWide) {
-        const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
-        if (!lastSafeWrapper) continue;
-        target = lastSafeWrapper;
-      }
-      if (!target) continue;
-      if (target === articleEl) continue;
-      if (!articleEl.contains(target)) continue;
-      if (target.contains(articleEl)) continue;
-      if (target.dataset && target.dataset.jreadHidden === '1') continue;
-      hide(target, hiddenList);
-      return;
+      // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget（與
+      // 靜態 hideInsideArticleByHeadingText 單一資料源）。dynamic 因此補齊靜態的
+      // tail-cleanup + 最後防線 hide(h)——歷史上 dynamic 漏同步這兩段（cnyes
+      // lazy-inject「討論區」widget 整篇主文+widget 同 ARTICLE wrapper、walk-up
+      // 回 null 時 dynamic 舊版直接放棄）。命中即停（observer 每次只處理一個 node）。
+      if (resolveHeadingNoiseTarget(h, articleEl, hiddenList)) return;
     }
   }
 
