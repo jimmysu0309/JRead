@@ -88,18 +88,25 @@ describe('settings-defaults.js 單一資料源', () => {
     assert.strictEqual(globalThis.__JReadSettingsDefaults, sharedDefaults);
   });
 
-  it('popup.js DEFAULT_SETTINGS 的每個欄位都存在於 shared defaults（雙實作防 drift）', () => {
-    // popup 的值綁 UI 常數（FONT_SIZE.default 等）無法直接 deepEqual，
-    // 至少鎖欄位集合是 shared 的子集——popup 多出 shared 沒有的欄位
-    // 代表兩邊已 drift。
-    const m = POPUP_SRC.match(/const DEFAULT_SETTINGS = \{([\s\S]*?)\n\};/);
-    assert.ok(m, 'popup.js 找不到 DEFAULT_SETTINGS literal');
-    const keys = [...m[1].matchAll(/^\s{2}(?:'([^']+)'|([A-Za-z_$][\w$]*))\s*:/gm)]
-      .map((k) => k[1] || k[2]);
-    assert.ok(keys.length >= 8, `popup DEFAULT_SETTINGS 欄位抽取異常（拿到 ${keys.length} 個）`);
-    for (const k of keys) {
-      assert.ok(k in sharedDefaults, `popup.js DEFAULT_SETTINGS.${k} 不存在於 settings-defaults.js`);
-    }
+  it('popup.js DEFAULT_SETTINGS 直接 reference shared（不再有自己的 literal）', () => {
+    // v0.8.16：popup 原本自帶 DEFAULT_SETTINGS literal，本 spec 舊版只做「popup
+    // 欄位 ⊆ shared」單向子集檢查（漏掉 shared 多出欄位的反向 drift）。整併後
+    // popup 改 `const DEFAULT_SETTINGS = window.__JReadSettingsDefaults`——兩邊
+    // 同一個物件、欄位 100% 一致，反向 drift 結構上不可能。改成驗 reference 形式
+    //（仿同檔 SW 的「importScripts 並 globalThis 取用、不再有 literal」檢查風格）。
+    assert.match(POPUP_SRC, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+      'popup.js 的 DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+    assert.ok(!/const DEFAULT_SETTINGS = \{/.test(POPUP_SRC),
+      'popup.js 不得再有 DEFAULT_SETTINGS literal（單一資料源在 settings-defaults.js）');
+  });
+
+  it('options.js DEFAULTS 直接 reference shared（不再有自己的 literal）', () => {
+    // v0.8.16 同理：options.js 也收斂到單一資料源，反向 drift 結構上不可能。
+    const OPTIONS_SRC = fs.readFileSync(path.join(JREAD_DIR, 'options', 'options.js'), 'utf8');
+    assert.match(OPTIONS_SRC, /const DEFAULTS = window\.__JReadSettingsDefaults\b/,
+      'options.js 的 DEFAULTS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+    assert.ok(!/const DEFAULTS = \{/.test(OPTIONS_SRC),
+      'options.js 不得再有 DEFAULTS literal（單一資料源在 settings-defaults.js）');
   });
 });
 

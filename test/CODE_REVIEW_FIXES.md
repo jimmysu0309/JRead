@@ -15,12 +15,15 @@
 - [x] spec：`sw-async-listener-guards.spec.js` 新增 + `auto-enable-domains.spec.js` 擴充 public-suffix；既有 defaults-sync / serif-font-stack spec 同步 merged→patch
 - [x] `npm test` 1538 passing → bump 0.8.15 + 同步清單 6 項 → commit + local tag（**push 延後**，3 批一起 push 或待 Jimmy 確認）
 
-## Batch B — 單一資料源整併（CLAUDE.md 工作流原則 5）
+## Batch B — 單一資料源整併（CLAUDE.md 工作流原則 5）✅ 完成 v0.8.16
 
-- [ ] **B1** `DEFAULT_SETTINGS` 三處（sw / popup / options）整併：popup、options 改讀共用 `settings-defaults.js`（需 `<script src>` 引入，非 content script）；popup 補缺漏的 `titleFontSize`
-- [ ] **B2** `SERIF_STACK`/`SANS_STACK`/`LEGACY_*` font stacks 抽進共用層，SW + popup 不再各寫一份字面值
-- [ ] **B3** 防-drift spec 補反向檢查（shared 欄位 ⊆ popup 該有的非 token 欄位），堵單向盲點
-- [ ] `npm test` 全綠 → bump + 同步清單 → commit + tag + release
+- [x] **B1** popup.js / options.js 改 `= window.__JReadSettingsDefaults`（移除各自 literal）；titleFontSize 自動齊備
+- [x] **B2** font stacks（FONT_STACKS + LEGACY）收斂進 settings-defaults.js（`__JReadFontStacks`/`__JReadLegacyFontStacks`）；SW + popup 改 reference；popup.html option 值為靜態 HTML 第三份、spec 校對
+- [x] **B3** settings-direct-read spec 改結構檢查（popup/options reference shared 且無 literal），反向 drift 結構上不可能
+- [x] popup.html / options.html 加 `<script src="../content/settings-defaults.js">`
+- [x] 9 個 forcing spec 改寫（reference 檢查 + require shared 正準值，保留 styler literal 校對 + HTML option 校對）；sanity 驗證 forcing 仍有效（corrupt shared → fail）
+- [x] `npm test` 1538 passing → harness --fresh 煙霧測試 reader mode 正常載入 → bump 0.8.16 → commit + local tag（push 延後）
+- ⚠️ **popup/options UI 為 harness-blind**：Jimmy reload 後需手動開 popup 確認設定顯示/切換正常
 
 ## Batch C — 需 harness 驗假設 + 重構（逐項先 probe 再動 code）
 

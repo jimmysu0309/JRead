@@ -26,6 +26,11 @@ const POPUP_JS = fs.readFileSync(
 const STYLER_JS = fs.readFileSync(
   path.join(__dirname, '..', '..', 'jread', 'content', 'styler.js'), 'utf8'
 );
+// v0.8.16：FONT_STACKS / DEFAULT_SETTINGS 收斂到 content/settings-defaults.js
+// 單一資料源。popup.js 改 reference window.__JReadFontStacks / __JReadSettingsDefaults，
+// 不再各自宣告 literal。require shared 後從 globalThis 取正準值。
+const SHARED = require(path.join(__dirname, '..', '..', 'jread', 'content', 'settings-defaults.js'));
+const SHARED_FONT_STACKS = globalThis.__JReadFontStacks;
 
 describe('popup 字型 select（v0.7.140）', () => {
   describe('popup.html', () => {
@@ -79,26 +84,29 @@ describe('popup 字型 select（v0.7.140）', () => {
   });
 
   describe('popup.js', () => {
-    it('必須 export FONT_STACKS 常數，含 system / serif / sans / mono 四個 key', () => {
-      // 用 source-level pattern check（popup.js 不是 module，無法 require）
-      assert.ok(/const FONT_STACKS = \{/.test(POPUP_JS),
-        'popup.js 必須宣告 const FONT_STACKS = { ... }');
-      // 個別 key 必須存在（行內逐字 match，避免 lint 改格式後 drift）
+    it('FONT_STACKS 取自單一資料源、含 system / serif / sans / mono 四個 key', () => {
+      // v0.8.16：popup.js FONT_STACKS 改 reference window.__JReadFontStacks。
+      // 結構驗 reference 形式；key 集合驗 shared 物件。
+      assert.match(POPUP_JS, /const FONT_STACKS = window\.__JReadFontStacks\b/,
+        'popup.js FONT_STACKS 必須 = window.__JReadFontStacks（單一資料源）');
       for (const key of ['system', 'serif', 'sans', 'mono']) {
-        const re = new RegExp(`\\b${key}:\\s*['"\`]`);
-        assert.ok(re.test(POPUP_JS),
-          `FONT_STACKS 必須含 "${key}" key`);
+        assert.ok(key in SHARED_FONT_STACKS,
+          `shared FONT_STACKS 必須含 "${key}" key`);
+        assert.strictEqual(typeof SHARED_FONT_STACKS[key], 'string',
+          `shared FONT_STACKS.${key} 必須是字串 stack`);
       }
     });
 
     it('FONT_STACKS.system 必須是 "system-ui"（與 styler DEFAULTS.fontFamily 對齊）', () => {
-      assert.ok(/system:\s*['"]system-ui['"]/.test(POPUP_JS),
-        'popup.js FONT_STACKS.system 必須等於 "system-ui"');
+      assert.strictEqual(SHARED_FONT_STACKS.system, 'system-ui',
+        'shared FONT_STACKS.system 必須等於 "system-ui"');
     });
 
-    it('DEFAULT_SETTINGS 必須含 fontFamily: FONT_STACKS.system', () => {
-      assert.ok(/fontFamily:\s*FONT_STACKS\.system/.test(POPUP_JS),
-        'popup.js DEFAULT_SETTINGS 必須含 fontFamily: FONT_STACKS.system');
+    it('DEFAULT_SETTINGS.fontFamily 必須等於 FONT_STACKS.system（單一資料源內自洽）', () => {
+      // v0.8.16：popup 不再有自己的 DEFAULT_SETTINGS literal——「選系統預設 == 不
+      // 注入 override」要成立，shared 的 fontFamily 預設值必須恰為 FONT_STACKS.system。
+      assert.strictEqual(SHARED.fontFamily, SHARED_FONT_STACKS.system,
+        'shared DEFAULT_SETTINGS.fontFamily 必須等於 FONT_STACKS.system（system-ui）');
     });
 
     it('必須對 font-family-select 綁 change handler 寫進 storage', () => {

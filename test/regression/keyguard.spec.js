@@ -18,6 +18,9 @@ const assert = require('assert');
 const ROOT = path.join(__dirname, '..', '..');
 // v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
 const SHARED_SRC  = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'settings-defaults.js'), 'utf8');
+// v0.8.16：popup / options 不再自帶 literal、改 reference 單一資料源。正準值
+// 由 require shared 提供。
+const SHARED      = require(path.join(ROOT, 'jread', 'content', 'settings-defaults.js'));
 const MAIN_SRC    = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'), 'utf8');
 const OPTIONS_HTML = fs.readFileSync(path.join(ROOT, 'jread', 'options', 'options.html'), 'utf8');
 const OPTIONS_JS   = fs.readFileSync(path.join(ROOT, 'jread', 'options', 'options.js'), 'utf8');
@@ -37,11 +40,12 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
   });
 
   describe('popup.js DEFAULT_SETTINGS', () => {
-    it('必須含 blockPageShortcuts 欄位（storage.get 的 default fallback）', () => {
-      const m = POPUP_JS.match(/const\s+DEFAULT_SETTINGS\s*=\s*\{([\s\S]*?)\};/);
-      assert.ok(m, '能在 popup.js 找到 DEFAULT_SETTINGS');
-      assert.match(m[1], /blockPageShortcuts\s*:/,
-        'popup.js DEFAULT_SETTINGS 必須含 blockPageShortcuts——forcing：storage.get 缺 default 會讀回 undefined');
+    it('取自 shared 單一資料源、blockPageShortcuts 欄位存在（storage.get 的 default fallback）', () => {
+      // v0.8.16：popup DEFAULT_SETTINGS 改 reference window.__JReadSettingsDefaults。
+      assert.match(POPUP_JS, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+        'popup.js DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+      assert.ok('blockPageShortcuts' in SHARED,
+        'shared DEFAULT_SETTINGS 必須含 blockPageShortcuts——forcing：storage.get 缺 default 會讀回 undefined');
     });
   });
 
@@ -130,12 +134,13 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
         'options.html 必須有 <input type="checkbox" id="blockPageShortcuts">——forcing：UI 缺席使用者無法切換');
     });
 
-    it('options.js DEFAULTS / fields 必須含 blockPageShortcuts', () => {
-      // DEFAULTS object
-      const m = OPTIONS_JS.match(/const\s+DEFAULTS\s*=\s*\{([\s\S]*?)\};/);
-      assert.ok(m, '能找到 options.js DEFAULTS');
-      assert.match(m[1], /blockPageShortcuts\s*:/,
-        'options.js DEFAULTS 必須含 blockPageShortcuts——forcing：load 時讀回 undefined');
+    it('options.js DEFAULTS（reference shared）/ fields 必須含 blockPageShortcuts', () => {
+      // v0.8.16：options DEFAULTS 改 reference window.__JReadSettingsDefaults；
+      // 欄位存在性驗 shared 物件。fields 陣列仍是 options 自帶、照常 grep。
+      assert.match(OPTIONS_JS, /const DEFAULTS = window\.__JReadSettingsDefaults\b/,
+        'options.js DEFAULTS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
+      assert.ok('blockPageShortcuts' in SHARED,
+        'shared DEFAULTS 必須含 blockPageShortcuts——forcing：load 時讀回 undefined');
       // fields array
       assert.match(OPTIONS_JS, /'blockPageShortcuts'/,
         "options.js fields 陣列必須含 'blockPageShortcuts'——forcing：change 事件未綁定 = toggle 後不存");

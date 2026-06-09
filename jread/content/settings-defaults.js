@@ -61,8 +61,40 @@
     }
   };
 
+  // v0.8.16：字型 stack 單一資料源。原本 SW（service-worker.js）與 popup
+  //（popup.js FONT_STACKS）各寫一份完整字面值、靠 serif-font-stack spec 人工
+  // 校對防 drift（CLAUDE.md 工作流原則 5 點名）。現在收斂到本檔，兩邊都讀同
+  // 一份。注意：popup.html 的 <option value> 是第三份**靜態 HTML 拷貝**（HTML
+  // 無法引用 JS 常數），仍由 serif-font-stack spec 校對 HTML↔JS 一致。
+  //
+  // serif：各平台 CJK 襯線字體明寫（macOS Songti、iOS Hiragino Mincho），放在
+  // 泛型 serif 之前、拉丁字型之後——iOS WebKit 對清單中段泛型 serif 只解析拉丁
+  // 字型，CJK 會 fallback 到後綴 sans，需明寫才不會襯線/無襯線看起來一樣。
+  // sans：系統 CJK 字型優先（-apple-system / PingFang TC / JhengHei），繞過部分
+  // 站點對「Noto Sans TC」family 名的 @font-face 劫持（weight→檔案對映壞掉導致
+  // 字重失效）；Noto Sans TC 留作末段 fallback。詳見各 stack 的演進註解歷史。
+  const FONT_STACKS = {
+    system: 'system-ui',
+    serif: '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
+    sans: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
+    mono: 'ui-monospace, Menlo, Consolas, monospace'
+  };
+
+  // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進
+  // storage，改 FONT_STACKS 常數不會自動更新既有使用者的存值——SW onInstalled
+  // 比對舊值精準替換成新值。LEGACY_SERIF = v0.7.220 以前；LEGACY_SANS = v0.7.253 以前。
+  const LEGACY_FONT_STACKS = {
+    serif: '"Noto Serif TC", Georgia, "Times New Roman", serif',
+    sans: '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif'
+  };
+
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
   // globalThis；jsdom regression spec 走 module.exports。
   global.__JReadSettingsDefaults = DEFAULT_SETTINGS;
+  global.__JReadFontStacks = FONT_STACKS;
+  global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
+  // module.exports 維持 === DEFAULT_SETTINGS（既有呼叫端契約，不可附掛其他 key
+  // 否則污染 Object.keys / 被當設定欄位寫進 storage）。jsdom spec 需要 font
+  // stacks 時 require 本檔後讀 globalThis.__JReadFontStacks。
   if (typeof module !== 'undefined' && module.exports) module.exports = DEFAULT_SETTINGS;
 })(typeof globalThis !== 'undefined' ? globalThis : self);

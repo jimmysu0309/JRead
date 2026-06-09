@@ -1,35 +1,13 @@
 // JRead — Options
 // 使用者可調欄位：theme / fontSize / contentWidth（對齊 SPEC.md）。
 
-const DEFAULTS = {
-  theme: 'light',
-  fontSize: 18,
-  contentWidth: 720,
-  // v0.7.254：字重三段 300（細）/ 400（中，預設）/ 600（粗 Semibold）。真正的
-  // font-weight、全平台生效（取代舊 boldText 的 macOS-only smoothing）。
-  fontWeight: 400,
-  readwiseToken: '',
-  // v0.7.131：reader mode 攔截原站快速鍵（Gmail j/k/e、YouTube k 等誤觸救援）
-  blockPageShortcuts: true,
-  // 標題字級（h1）；0 = Auto（保留原站標題大小）
-  titleFontSize: 0,
-  // 中英文字之間自動補空白（盤古之白）；預設 true
-  pangu: true,
-  // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用
-  spaceScrollRatio: 50,
-  // v0.7.155：自動啟動閱讀模式的網域清單（字串陣列）。matching rule：
-  // hostname === pattern OR hostname endsWith '.' + pattern。
-  // 'abc.com' 涵蓋 www.abc.com / foo.abc.com；'www.abc.com' 只含 www.abc.com。
-  autoEnableDomains: [],
-  // v0.7.218：自訂快速鍵。key 與 manifest commands 同字彙；value 是
-  // { code, alt, shift, ctrl, meta } 或 null（= 未自訂，只有 manifest 預設鍵）。
-  // Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，這裡的 recorder 是唯一通道。
-  customShortcuts: {
-    'toggle-reader-mode': null,
-    'send-to-readwise': null,
-    'toggle-youtube-borderless': null
-  }
-};
+// v0.8.16：DEFAULTS 改讀 settings-defaults.js 單一資料源（由 options.html
+// `<script src="../content/settings-defaults.js">` 在 options.js 之前載入）。
+// 原本 options 自宣告一份預設值 literal、靠 forcing spec 校對防 drift（CLAUDE.md
+// 工作流原則 5）。shared 是 superset；options 實際只儲存 `fields` 列出的 9 欄
+// + customShortcuts + autoEnableDomains，多出的預設 key 僅作 storage.get fallback、
+// 不影響儲存範圍。titleFontSize 等欄位自動齊備（修掉 popup 缺 titleFontSize 的舊 drift）。
+const DEFAULTS = window.__JReadSettingsDefaults;
 
 const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio'];
 

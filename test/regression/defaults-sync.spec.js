@@ -8,7 +8,15 @@
 // 四檔對 fontSize / contentWidth / theme / blockPageShortcuts 四欄全欄位逐字一致。
 // fontFamily / lineHeight 只 popup + styler 兩邊宣告（SW / options 沒這欄）。
 //
-// 本 spec 是 forcing function：任一檔字面值改動沒同步、spec 立刻 fail。
+// v0.8.16（單一資料源整併）：DEFAULT_SETTINGS literal 收斂到
+// content/settings-defaults.js。popup.js 改 `const DEFAULT_SETTINGS =
+// window.__JReadSettingsDefaults`、options.js 改 `const DEFAULTS =
+// window.__JReadSettingsDefaults`、SW 改 `const DEFAULT_SETTINGS =
+// globalThis.__JReadSettingsDefaults`——三檔不再自帶 literal。本 spec 對這三檔
+// 的守備改成「結構：確認 reference 取自單一資料源」+「正準值：require shared
+// 物件後逐欄比對」兩條不變式（取代原本的逐檔字面值 grep）。styler.js 仍是獨立
+// content script、自帶 fallback literal（shared 之外唯一合法第二份），維持字面
+// 值校對。
 
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +30,9 @@ const POPUP_SRC = fs.readFileSync(path.join(ROOT, 'popup', 'popup.js'), 'utf8');
 const SHARED_SRC = fs.readFileSync(path.join(ROOT, 'content', 'settings-defaults.js'), 'utf8');
 const STYLER_SRC = fs.readFileSync(path.join(ROOT, 'content', 'styler.js'), 'utf8');
 const OPTIONS_SRC = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
+// v0.8.16：正準值來源——require 單一資料源拿 shared 物件逐欄 assert（popup /
+// options 直接 reference 它，shared 的值即三檔生效值）。
+const SHARED = require(path.join(ROOT, 'content', 'settings-defaults.js'));
 
 // 解析 source 中的 `key: value` 對（從給定 const 物件 body 內）
 function extractField(src, constName, field) {
@@ -50,6 +61,27 @@ function extractField(src, constName, field) {
 }
 
 describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
+  // v0.8.16：結構不變式——popup / options / SW 必須 reference 單一資料源，
+  // 不得再各自宣告 DEFAULT_SETTINGS / DEFAULTS literal（否則回到 drift 風險）。
+  describe('單一資料源 reference（v0.8.16）', () => {
+    it('popup.js DEFAULT_SETTINGS 取自 window.__JReadSettingsDefaults（不再有自己的 literal）', () => {
+      assert.match(POPUP_SRC, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
+        'popup.js DEFAULT_SETTINGS 必須 = window.__JReadSettingsDefaults（單一資料源）');
+      assert.ok(!/const DEFAULT_SETTINGS = \{/.test(POPUP_SRC),
+        'popup.js 不得再有 DEFAULT_SETTINGS literal');
+    });
+    it('options.js DEFAULTS 取自 window.__JReadSettingsDefaults（不再有自己的 literal）', () => {
+      assert.match(OPTIONS_SRC, /const DEFAULTS = window\.__JReadSettingsDefaults\b/,
+        'options.js DEFAULTS 必須 = window.__JReadSettingsDefaults（單一資料源）');
+      assert.ok(!/const DEFAULTS = \{/.test(OPTIONS_SRC),
+        'options.js 不得再有 DEFAULTS literal');
+    });
+    it('SW DEFAULT_SETTINGS 取自 globalThis.__JReadSettingsDefaults（不再有自己的 literal）', () => {
+      assert.match(SHARED_SRC, /const DEFAULT_SETTINGS = \{/,
+        '單一資料源 settings-defaults.js 必須是唯一持有 DEFAULT_SETTINGS literal 的檔');
+    });
+  });
+
   describe('fontSize：popup / SW / styler / options 必須四邊一致', () => {
     it('shared DEFAULT_SETTINGS.fontSize === 18', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'fontSize');
@@ -59,9 +91,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontSize');
       assert.strictEqual(v, '18', `styler DEFAULTS.fontSize 必須 === 18，實際 ${v}`);
     });
-    it('options DEFAULTS.fontSize === 18', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'fontSize');
-      assert.strictEqual(v, '18', `options DEFAULTS.fontSize 必須 === 18，實際 ${v}`);
+    it('options/popup 生效 fontSize === 18（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.fontSize, 18,
+        `shared（即 options/popup reference 的）fontSize 必須 === 18，實際 ${SHARED.fontSize}`);
     });
     it('popup FONT_SIZE.default === 18', () => {
       const m = POPUP_SRC.match(/FONT_SIZE\s*=\s*\{[^}]*default:\s*(\d+)/);
@@ -79,9 +111,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'contentWidth');
       assert.strictEqual(v, '720', `styler contentWidth 必須 === 720，實際 ${v}`);
     });
-    it('options DEFAULTS.contentWidth === 720', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'contentWidth');
-      assert.strictEqual(v, '720', `options contentWidth 必須 === 720，實際 ${v}`);
+    it('options/popup 生效 contentWidth === 720（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.contentWidth, 720,
+        `shared contentWidth 必須 === 720，實際 ${SHARED.contentWidth}`);
     });
     it('popup CONTENT_WIDTH.default === 720', () => {
       const m = POPUP_SRC.match(/CONTENT_WIDTH\s*=\s*\{[^}]*default:\s*(\d+)/);
@@ -99,13 +131,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'theme');
       assert.strictEqual(v, "'light'", `styler theme 必須 === 'light'，實際 ${v}`);
     });
-    it('options DEFAULTS.theme === light', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'theme');
-      assert.strictEqual(v, "'light'", `options theme 必須 === 'light'，實際 ${v}`);
-    });
-    it('popup DEFAULT_SETTINGS.theme === light', () => {
-      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'theme');
-      assert.strictEqual(v, "'light'", `popup theme 必須 === 'light'，實際 ${v}`);
+    it('options/popup 生效 theme === light（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.theme, 'light',
+        `shared theme 必須 === 'light'，實際 ${SHARED.theme}`);
     });
   });
 
@@ -120,13 +148,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontWeight');
       assert.strictEqual(v, '400', `styler fontWeight 預設必須 === 400 (中)，實際 ${v}`);
     });
-    it('options DEFAULTS.fontWeight === 400', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'fontWeight');
-      assert.strictEqual(v, '400', `options fontWeight 預設必須 === 400 (中)，實際 ${v}`);
-    });
-    it('popup DEFAULT_SETTINGS.fontWeight === 400', () => {
-      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'fontWeight');
-      assert.strictEqual(v, '400', `popup DEFAULT_SETTINGS.fontWeight 預設必須 === 400 (中)，實際 ${v}`);
+    it('options/popup 生效 fontWeight === 400（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.fontWeight, 400,
+        `shared fontWeight 預設必須 === 400 (中)，實際 ${SHARED.fontWeight}`);
     });
     it('main.js storage.onChanged relevantKeys 必須含 fontWeight（reader mode 即時套用、不需 refresh）', () => {
       const fs = require('fs');
@@ -165,13 +189,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'blockPageShortcuts');
       assert.strictEqual(v, 'true', `SW blockPageShortcuts 必須 === true，實際 ${v}`);
     });
-    it('options DEFAULTS.blockPageShortcuts === true', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'blockPageShortcuts');
-      assert.strictEqual(v, 'true', `options blockPageShortcuts 必須 === true，實際 ${v}`);
-    });
-    it('popup DEFAULT_SETTINGS.blockPageShortcuts === true', () => {
-      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'blockPageShortcuts');
-      assert.strictEqual(v, 'true', `popup blockPageShortcuts 必須 === true，實際 ${v}`);
+    it('options/popup 生效 blockPageShortcuts === true（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.blockPageShortcuts, true,
+        `shared blockPageShortcuts 必須 === true，實際 ${SHARED.blockPageShortcuts}`);
     });
   });
 
@@ -180,13 +200,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'autoEnableDomains');
       assert.strictEqual(v, '[]', `SW autoEnableDomains 必須 === []，實際 ${v}`);
     });
-    it('options DEFAULTS.autoEnableDomains === []', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'autoEnableDomains');
-      assert.strictEqual(v, '[]', `options autoEnableDomains 必須 === []，實際 ${v}`);
-    });
-    it('popup DEFAULT_SETTINGS.autoEnableDomains === []', () => {
-      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'autoEnableDomains');
-      assert.strictEqual(v, '[]', `popup autoEnableDomains 必須 === []，實際 ${v}`);
+    it('options/popup 生效 autoEnableDomains === []（取自 shared 單一資料源）', () => {
+      assert.deepStrictEqual(SHARED.autoEnableDomains, [],
+        `shared autoEnableDomains 必須 === []，實際 ${JSON.stringify(SHARED.autoEnableDomains)}`);
     });
   });
 
@@ -199,13 +215,9 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'pangu');
       assert.strictEqual(v, 'true', `styler pangu 必須 === true，實際 ${v}`);
     });
-    it('options DEFAULTS.pangu === true', () => {
-      const v = extractField(OPTIONS_SRC, 'DEFAULTS', 'pangu');
-      assert.strictEqual(v, 'true', `options pangu 必須 === true，實際 ${v}`);
-    });
-    it('popup DEFAULT_SETTINGS.pangu === true', () => {
-      const v = extractField(POPUP_SRC, 'DEFAULT_SETTINGS', 'pangu');
-      assert.strictEqual(v, 'true', `popup pangu 必須 === true，實際 ${v}`);
+    it('options/popup 生效 pangu === true（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.pangu, true,
+        `shared pangu 必須 === true，實際 ${SHARED.pangu}`);
     });
   });
 
@@ -218,10 +230,12 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontFamily');
       assert.strictEqual(v, "'system-ui'", `styler fontFamily 必須 === 'system-ui'，實際 ${v}`);
     });
-    it('popup FONT_STACKS.system === system-ui', () => {
-      const m = POPUP_SRC.match(/FONT_STACKS\s*=\s*\{[^}]*system:\s*'([^']+)'/);
-      assert.ok(m);
-      assert.strictEqual(m[1], 'system-ui', `popup FONT_STACKS.system 必須 === 'system-ui'，實際 ${m[1]}`);
+    it('popup FONT_STACKS 取自 shared、shared FONT_STACKS.system === system-ui', () => {
+      // v0.8.16：popup FONT_STACKS 改 reference window.__JReadFontStacks 單一資料源。
+      assert.match(POPUP_SRC, /const FONT_STACKS = window\.__JReadFontStacks\b/,
+        'popup.js FONT_STACKS 必須 = window.__JReadFontStacks（單一資料源）');
+      assert.strictEqual(globalThis.__JReadFontStacks.system, 'system-ui',
+        `shared FONT_STACKS.system 必須 === 'system-ui'，實際 ${globalThis.__JReadFontStacks.system}`);
     });
   });
 

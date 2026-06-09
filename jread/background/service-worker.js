@@ -69,21 +69,16 @@ const swallowTabGone = (p) => {
   if (p && typeof p.catch === 'function') p.catch(() => {});
 };
 
-// v0.7.221：舊襯線 stack 遷移。fontFamily 以「整串 stack 字面值」存進
-// storage，popup 常數改了既有使用者的舊值不會跟著動——必須 onInstalled
-//（首裝 + 每次更新都觸發）時做一次精準替換。舊值缺 CJK 襯線字體，iOS 上
-// 中文會 fallback 到 styler sans 後綴的 PingFang TC（詳見 popup.js
-// FONT_STACKS.serif 註解）。兩常數必須與 popup.js 同步（spec forcing）。
-const LEGACY_SERIF_STACK = '"Noto Serif TC", Georgia, "Times New Roman", serif';
-const SERIF_STACK = '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif';
-
-// v0.7.254：無襯線 stack 遷移。舊值領頭點名「Noto Sans TC」，被部分站點壞掉的
-// @font-face 劫持導致字重失效（細/中渲染相同，Jimmy 2026-06-08 shoppingdesign
-// 回報）。新值改系統 CJK 字型優先、繞過劫持。既有選「無襯線」的使用者存的是
-// 舊整串字面值、popup 常數改了不會自動跟動——onInstalled 精準替換。兩常數必須
-// 與 popup.js FONT_STACKS.sans 同步（spec forcing）。
-const LEGACY_SANS_STACK = '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif';
-const SANS_STACK = '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif';
+// v0.8.16：font stack 常數從 settings-defaults.js 單一資料源取用（原本 SW
+// 與 popup.js 各寫一份完整字面值、靠 spec 人工校對防 drift）。fontFamily 以
+// 「整串 stack 字面值」存進 storage，改 FONT_STACKS 常數不會自動更新既有使用者
+// 的舊存值——onInstalled 比對舊值（LEGACY_*）精準替換成新值（SERIF/SANS_STACK）。
+// settings-defaults.js 由 importScripts（line 15）/ event page scripts 預載，
+// 取用點在這些常數初始化前已執行。
+const LEGACY_SERIF_STACK = globalThis.__JReadLegacyFontStacks.serif;
+const SERIF_STACK = globalThis.__JReadFontStacks.serif;
+const LEGACY_SANS_STACK = globalThis.__JReadLegacyFontStacks.sans;
+const SANS_STACK = globalThis.__JReadFontStacks.sans;
 
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
 chrome.runtime.onInstalled.addListener(async () => {
