@@ -154,7 +154,8 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
       );
       assert.match(SW_SRC, /current\.fontWeight\s*===\s*undefined\s*&&\s*current\.boldText\s*===\s*true/,
         'SW onInstalled 必須有「未遷移過 + 舊 boldText:true」的條件判斷');
-      assert.match(SW_SRC, /merged\.fontWeight\s*=\s*600/,
+      // v0.8.15：onInstalled 改寫 diff patch（merged → patch），遷移仍保留
+      assert.match(SW_SRC, /patch\.fontWeight\s*=\s*600/,
         'SW onInstalled 必須把舊 boldText:true 換算成 fontWeight 600');
     });
   });
