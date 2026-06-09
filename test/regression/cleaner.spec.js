@@ -3093,7 +3093,7 @@ describe('cleaner — esmchina-promote-5-hops（5 層深結構 + partner 詞清 
       path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
       'utf8'
     );
-    const m = src.match(/const NOISE_KEYWORD_RE = \/([^\/]+)\/i;/);
+    const m = src.match(/const NOISE_TOKEN_DEFS = \[([\s\S]*?)\n  \];/);
     assert.ok(m);
     assert.ok(/\bpartner\b/.test(m[1]),
       `NOISE_KEYWORD_RE 必須含 \`partner\`；實際 pattern=${m[1]}`);
@@ -4120,7 +4120,7 @@ describe('cleaner — ebc-inline-marker-ad（`marker` keyword 擴充清行銷插
       path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'),
       'utf8'
     );
-    const m = src.match(/const NOISE_KEYWORD_RE = \/([^\/]+)\/i;/);
+    const m = src.match(/const NOISE_TOKEN_DEFS = \[([\s\S]*?)\n  \];/);
     assert.ok(m, '必須能抓到 NOISE_KEYWORD_RE');
     assert.ok(/\bmarker\b/.test(m[1]),
       `NOISE_KEYWORD_RE 必須含 \`marker\`；實際 pattern=${m[1]}`);
@@ -4800,7 +4800,7 @@ describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + titl
     const src = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
     );
-    const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
+    const m = src.match(/const NOISE_TOKEN_DEFS = \[([\s\S]*?)\n  \];/);
     assert.ok(m && m[1].includes('hash[-_]?tag'),
       'NOISE_KEYWORD_RE 必須含 `hash[-_]?tag` alternation；forcing：chinatimes 用 `article-hash-tag` 標 hashtag 區，去掉此 alternation → tags 列殘留');
   });
@@ -4821,7 +4821,7 @@ describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + titl
     const src = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
     );
-    const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
+    const m = src.match(/const NOISE_TOKEN_DEFS = \[([\s\S]*?)\n  \];/);
     assert.ok(m && /premium\[-_\]\?\(\?:widget\|content\|trial\|banner\|box\)/.test(m[1]),
       'NOISE_KEYWORD_RE 必須含 `premium[-_]?(?:widget|content|trial|banner|box)` alternation');
   });
@@ -4830,7 +4830,7 @@ describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + titl
     const src = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'content', 'cleaner.js'), 'utf8'
     );
-    const m = src.match(/const NOISE_KEYWORD_RE = (\/.*?\/i);/);
+    const m = src.match(/const NOISE_TOKEN_DEFS = \[([\s\S]*?)\n  \];/);
     assert.ok(m && /google\[-_\]\?\(\?:add\|news\)/.test(m[1]),
       'NOISE_KEYWORD_RE 必須含 `google[-_]?(?:add|news)` alternation');
   });
@@ -5094,9 +5094,14 @@ describe('cleaner — collapseInnerGridFlex descendants 殘留 auto-center reset
     assert.match(fnRegion, /['"]FIGURE['"]/, '必須排除 FIGURE');
   });
 
-  it('restoreInnerGridFlex 必須還原 __innerGridFlexDesc 軌道（reader mode 退出時清乾淨）', () => {
-    assert.ok(src.includes('__innerGridFlexDesc'),
-      'restoreInnerGridFlex 必須走 __innerGridFlexDesc 軌道——forcing：退出 reader mode 時 descendant inline 樣式必還原');
+  it('collapseInnerGridFlex 的 descendant reset 必須接入統一 restore（v0.8.18 C3）', () => {
+    // C3：原本 descendant inline 樣式存 hidden.__innerGridFlexDesc + restoreInnerGridFlex
+    // 走它還原；已統一成 addStyleResets(hidden, descResets) → restoreAllStyleResets
+    // 一個 loop 還原。forcing：退出 reader mode 時 descendant inline 樣式必還原。
+    assert.ok(/addStyleResets\(hidden,\s*descResets\)/.test(src),
+      'collapseInnerGridFlex 必須 addStyleResets(hidden, descResets) 把 descendant reset 接入 hidden.__styleResets');
+    assert.ok(/function\s+restoreAllStyleResets\s*\(/.test(src) && /restoreAllStyleResets\(hiddenEls\)/.test(src),
+      'restore() 必須透過 restoreAllStyleResets 統一還原（含 descendant reset）');
   });
 });
 

@@ -643,13 +643,28 @@
     }
   }
 
-  function extractGenericAuthor() {
-    // 1. JSON-LD（Article / NewsArticle / BlogPosting 等 schema 慣用 author.name）
+  // v0.8.18 C8：JSON-LD 共用單次 parse。author / date 抽取原本各自重跑一次
+  // LD script 的 querySelectorAll + JSON.parse,同一份 LD 區塊在一次 payload
+  // 抽取裡被解析兩次。改成 memoize:同一輪抽取只解析
+  // 一次,extractReaderPayload 開頭 resetJsonLdCache() 重置（換頁後重新解析）。
+  // 維持兩個 extractXxx 函式空參數列（readwise-save.spec.js forcing 依賴）。
+  let _jsonLdCache = null;
+  function getJsonLd() {
+    if (_jsonLdCache) return _jsonLdCache;
+    const out = [];
     const ldNodes = document.querySelectorAll('script[type="application/ld+json"]');
     for (const node of ldNodes) {
-      let data;
-      try { data = JSON.parse(node.textContent || ''); }
-      catch (_) { continue; }
+      try { out.push(JSON.parse(node.textContent || '')); }
+      catch (_) { /* 跳過解析失敗的 LD 區塊 */ }
+    }
+    _jsonLdCache = out;
+    return out;
+  }
+  function resetJsonLdCache() { _jsonLdCache = null; }
+
+  function extractGenericAuthor() {
+    // 1. JSON-LD（Article / NewsArticle / BlogPosting 等 schema 慣用 author.name）
+    for (const data of getJsonLd()) {
       const a = findJsonLdAuthor(data);
       if (a) return a;
     }
@@ -744,12 +759,8 @@
     if (document.querySelector('[data-jread-x-reader]')) {
       return extractXPublishedDate();
     }
-    // 1. JSON-LD datePublished / dateCreated
-    const ldNodes = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const node of ldNodes) {
-      let data;
-      try { data = JSON.parse(node.textContent || ''); }
-      catch (_) { continue; }
+    // 1. JSON-LD datePublished / dateCreated（v0.8.18 C8：共用單次 parse）
+    for (const data of getJsonLd()) {
       const d = findJsonLdDate(data);
       if (d) {
         const iso = normalizeIsoDate(d);
@@ -837,6 +848,7 @@
     if (!NS.state.active || !NS.state.articleEl) {
       return { ok: false, reason: 'NOT_ACTIVE' };
     }
+    resetJsonLdCache(); // v0.8.18 C8：每輪 payload 抽取重新解析 JSON-LD
     const html = buildCleanHtml(NS.state.articleEl);
     const rawTitle = (document.title || '').trim();
     const title = rawTitle.split(/\s+[|\-—–·]\s+/)[0].trim() || rawTitle;
