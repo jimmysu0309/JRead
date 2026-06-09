@@ -263,6 +263,17 @@
   function buildCss(theme, opts, overrides) {
     const { contentWidth } = opts;
 
+    // 水平 gutter（reader card 左右內距）單一資料源。連續滑動（base 卡片
+    // padding）與翻頁模式（左 padding + 右 transparent border + column-gap +
+    // column-width 扣除）必須用同一值，否則兩模式內文行寬會 drift——v0.8.1 把
+    // 連續模式 gutter 從 min(56px,6vw) 改成 clamp(16px,…,56px)（390pt 內文對齊
+    // 原站 16px 標準 gutter），但翻頁模式漏改、仍停在舊 min(56px,6vw)（390pt
+    // 留 23.4px），導致「翻頁比捲動窄」（Jimmy 2026-06-09 roomie.tw 回報）。
+    // 抽成常數讓兩條 path 共用、杜絕未來再 drift。clamp 線性段斜率對齊 933px
+    // 桌面門檻（>= 933px 仍 56px、桌面卡片美學不變），floor 16px = 行動版主文
+    // 業界標準左右 gutter。結構性條件（viewport 寬 + 標準 gutter 常數），不綁平台。
+    const H_GUTTER = 'clamp(16px, calc(7.4vw - 12.8px), 56px)';
+
     // ---- 骨架：頁面 reset + 祖先鏈 reset + 卡片容器（永遠注入）----
     const base = `
 /* 補 cleaner hide 漏洞：cleaner 只設 inline style.display = 'none' 無
@@ -425,8 +436,9 @@ html [${ARTICLE_ATTR}="1"] {
      桌面門檻（>= 933px 仍 56px、桌面卡片美學不變）。結構性條件（viewport
      寬度 + 標準 gutter 常數），不綁平台。
      垂直 padding 維持 min(48px, 6vw)（v0.7.226）——頂部空白是縱向體感、與
-     水平可讀寬無關，不需同步收到 16px。 */
-  padding: min(48px, 6vw) clamp(16px, calc(7.4vw - 12.8px), 56px) !important;
+     水平可讀寬無關，不需同步收到 16px。
+     v0.8.14：水平 gutter 值抽成 H_GUTTER 常數，與翻頁模式共用同一資料源。 */
+  padding: min(48px, 6vw) ${H_GUTTER} !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
@@ -1120,6 +1132,16 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
     // text font-size 覆寫。CNA 等站 h1 文字包在 <span>，SPAN_TEXT_SEL 會
     // 把 span 字級壓成 body fontSize、打敗 h1 自身的 font-size。排除 heading
     // 後代讓 span 正確 inherit heading font-size。
+    // v0.8.13：加 :not(time ~ span)——meta/日期列裡跟 `<time>` 同排的 bare span
+    // （roomie.tw 實測：`<time class="post-date">2023/5/24</time><span>更新</span>`）
+    // 是日期列標籤，不是主文內容。`<time>` 本身不在 BODY_TEXT_SEL、保留站點
+    // 的小字（.post-date 11px），但相鄰 span 被 SPAN_TEXT_SEL 拉成 body 18px，
+    // 同一條 meta 列出現 11px 日期 + 18px「更新」的字級斷層（Jimmy 2026-06-09
+    // 回報「更新尺寸突兀」）。time 與其相鄰 span 是同一份「日期/meta 列」事實，
+    // 兩條 path 不可 drift：span 跟著 time 一起保留站點 meta typography（如同
+    // figcaption / caption 保留比 body 小的階層）。`time ~ span` 是結構訊號
+    // （span 為 time 的後續兄弟），非站點/class 特判。複合 selector in :not()
+    // 同 :not(pre *) 走 Selectors 4（Chrome 88+ 相容）。
     const SPAN_TEXT_SEL = `[${ARTICLE_ATTR}="1"] span` +
       `:not([class*="icon"])` +
       `:not([class*="material-"])` +
@@ -1129,6 +1151,7 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
       `:not([class*="badge"])` +
       `:not(pre *)` +
       `:not(code *)` +
+      `:not(time ~ span)` +
       `:not(h1 *)` +
       `:not(h2 *)` +
       `:not(h3 *)` +
@@ -1416,13 +1439,13 @@ html [${ARTICLE_ATTR}="1"] {
   height: auto !important;
   max-width: ${contentWidth}px !important;
   margin: 0 auto !important;
-  padding: min(48px, 6vw) 0 min(48px, 6vw) min(56px, 6vw) !important;
-  border-right: min(56px, 6vw) solid transparent !important;
+  padding: min(48px, 6vw) 0 min(48px, 6vw) ${H_GUTTER} !important;
+  border-right: ${H_GUTTER} solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  column-width: calc(${contentWidth}px - min(56px, 6vw) * 2) !important;
+  column-width: calc(${contentWidth}px - ${H_GUTTER} * 2) !important;
   column-count: auto !important;
-  column-gap: calc(min(56px, 6vw) * 2) !important;
+  column-gap: calc(${H_GUTTER} * 2) !important;
   column-fill: auto !important;
   overflow: hidden !important;
   /* v0.7.238 iOS 工具列自動收合 hack 的關鍵：卡片 touch-action: pan-y——
