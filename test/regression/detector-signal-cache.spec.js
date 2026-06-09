@@ -41,23 +41,33 @@ describe('detector isSignalExcluded ancestor cache（v0.7.144 #12）', () => {
       'detectByHeuristic 必須用 try/finally 清 _excludedAncestorCache = null（避免 throw 後 cache 殘留 stale state）');
   });
 
-  it('isSignalExcluded 必須 consult cache（cache.has / cache.get short-circuit）', () => {
-    const match = DETECTOR_SRC.match(/function\s+isSignalExcluded[\s\S]*?\n  \}/);
-    assert.ok(match, '必須能抓到 isSignalExcluded body');
+  // v0.8.19 C2：祖先鏈 hidden 的 cache walk 從 isSignalExcluded 抽到共用
+  // isAncestorChainHidden（同時供 article-tag / schema-org / main-tag textLen
+  // 計分用）。isSignalExcluded 改成 ARIA closest + 委派 isAncestorChainHidden。
+  it('isAncestorChainHidden 必須 consult cache（cache.has / cache.set short-circuit）', () => {
+    const match = DETECTOR_SRC.match(/function\s+isAncestorChainHidden[\s\S]*?\n  \}/);
+    assert.ok(match, '必須能抓到 isAncestorChainHidden body');
     const body = match[0];
     assert.ok(/cache\.has\s*\(/.test(body),
-      'isSignalExcluded 必須 check cache.has(p) 在祖先鏈 walk 中提早 short-circuit');
+      'isAncestorChainHidden 必須 check cache.has(p) 在祖先鏈 walk 中提早 short-circuit');
     assert.ok(/cache\.set\s*\(/.test(body),
-      'isSignalExcluded 必須 cache.set 寫入結果（hidden / visible），給後續同祖先鏈 query 受惠');
+      'isAncestorChainHidden 必須 cache.set 寫入結果（hidden / visible），給後續同祖先鏈 query 受惠');
   });
 
-  it('isSignalExcluded 必須做 back-fill（把此次走過的祖先全標相同狀態）', () => {
-    const match = DETECTOR_SRC.match(/function\s+isSignalExcluded[\s\S]*?\n  \}/);
+  it('isAncestorChainHidden 必須做 back-fill（把此次走過的祖先全標相同狀態）', () => {
+    const match = DETECTOR_SRC.match(/function\s+isAncestorChainHidden[\s\S]*?\n  \}/);
     const body = match[0];
     // 必須含 `visited` array 累積走過的元素 + 結束時 set 給整個 visited
     assert.ok(/visited/.test(body),
-      'isSignalExcluded 必須宣告 visited array 累積此次走過的祖先（傳遞性 back-fill）');
+      'isAncestorChainHidden 必須宣告 visited array 累積此次走過的祖先（傳遞性 back-fill）');
     assert.ok(/for\s*\(.+of\s+visited\)[\s\S]{0,80}cache\.set/.test(body),
-      'isSignalExcluded 必須對 visited 內每個祖先做 cache.set（back-fill 傳遞性）');
+      'isAncestorChainHidden 必須對 visited 內每個祖先做 cache.set（back-fill 傳遞性）');
+  });
+
+  it('isSignalExcluded 必須委派 isAncestorChainHidden（ARIA closest + 共用 hidden predicate）', () => {
+    const match = DETECTOR_SRC.match(/function\s+isSignalExcluded[\s\S]*?\n  \}/);
+    assert.ok(match, '必須能抓到 isSignalExcluded body');
+    assert.ok(/isAncestorChainHidden\s*\(/.test(match[0]),
+      'isSignalExcluded 必須委派 isAncestorChainHidden（hidden 判定單一資料源）');
   });
 });
