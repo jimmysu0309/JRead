@@ -35,7 +35,7 @@
 ## Batch C — 需 harness 驗假設 + 重構（逐項先 probe 再動 code）
 
 - [ ] **C1** `main.js:1126` SPA 導航偵測（history API hook + `<title>` observer），路由變化先 exitReaderMode 再視情況重觸發
-- [ ] **C2** `detector.js:39-42` 抽「祖先鏈 hidden」共用 predicate，套到所有 textLen 計分（article-tag / schema-org / 候選容器），消除「隱藏容器吞主文」整類 bug
+- [x] **C2** ✅ v0.8.19 `detector.js` 抽 `isAncestorChainHidden` 共用 predicate + `scoredTextLen`（隱藏計 0），套到所有 textLen 計分，消除「隱藏容器吞主文」整類 bug
 - [x] **C3** ✅ v0.8.18 `cleaner.js` 11 條 `restoreXxx` + sidecar 統一成單一 `__styleResets` + restoreAllStyleResets（消對稱性漏接風險）
 - [x] **C4** ✅ v0.8.18 `cleaner.js` NOISE regex 改 NOISE_TOKEN_DEFS build-time 組，strong set 從 strong:true 子集衍生（消 drift）
 - [ ] **C5** `cleaner.js` heading 雜訊處理靜態/動態雙實作抽共用 `resolveHeadingNoiseTarget`

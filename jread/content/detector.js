@@ -63,7 +63,7 @@
     // 單一 <article>：直接採用（需過字數門檻）
     if (articles.length === 1) {
       const el = articles[0];
-      if (getText(el).length < MIN_TEXT_LEN) return null;
+      if (scoredTextLen(el) < MIN_TEXT_LEN) return null;
       // 商業周刊修法（v0.7.43，Jimmy 2026-04-27）：article 不含 H1 且跟 <main> 是
       // sibling（article 不在 main 內、main 含 H1）→ article 是輔助列表（archive
       // 圖列 / 推薦清單），真主文在 main 內。降級到下一策略 schema-org / heuristic
@@ -83,7 +83,7 @@
     // 多個 <article>：通常是列表頁（首頁、部落格首頁、Medium 的 for you 等）
     // 策略：挑最長者；但若前幾篇長度相近，認定為列表頁而降級到策略 4
     const sorted = articles
-      .map(el => ({ el, len: getText(el).length }))
+      .map(el => ({ el, len: scoredTextLen(el) }))
       .sort((a, b) => b.len - a.len);
 
     const top = sorted[0];
@@ -106,7 +106,7 @@
   function detectByMainTag() {
     const main = document.querySelector('main');
     if (!main) return null;
-    if (getText(main).length < MIN_TEXT_LEN) return null;
+    if (scoredTextLen(main) < MIN_TEXT_LEN) return null;
     return { el: main, confidence: 0.75, strategy: 'main-tag' };
   }
 
@@ -238,7 +238,7 @@
       const candidates = Array.from(document.querySelectorAll(sel));
       // 頁面可能多個（例如相關文章 list 也標 Article），取最長
       const best = candidates
-        .map(el => ({ el, len: getText(el).length }))
+        .map(el => ({ el, len: scoredTextLen(el) }))
         .filter(x => x.len >= MIN_TEXT_LEN)
         .sort((a, b) => b.len - a.len)[0];
       if (best) {
@@ -250,7 +250,7 @@
     // 但內層 content element 掛了 itemprop）
     const bodyCandidates = Array.from(document.querySelectorAll('[itemprop="articleBody"]'));
     const bestBody = bodyCandidates
-      .map(el => ({ el, len: getText(el).length }))
+      .map(el => ({ el, len: scoredTextLen(el) }))
       .filter(x => x.len >= MIN_TEXT_LEN)
       .sort((a, b) => b.len - a.len)[0];
     if (bestBody) {
@@ -312,17 +312,21 @@
   // 拿 stale state，但其實 hidden 狀態跨 detect run 改變的機率低）。
   let _excludedAncestorCache = null;
 
-  function isSignalExcluded(el) {
-    // closest() 會把 el 自身也算進去，所以祖先鏈檢查等同 self + ancestors
-    if (el.closest && el.closest(HEURISTIC_SKIP_SEL)) return true;
-    // 沿祖先鏈檢查「被隱藏」——inline display:none 是最直接的 marker；
-    // upmedia 等非標準 Bootstrap markup 的 modal 則沒 inline / ARIA，只靠
-    // stylesheet `.modal { display: none }`，需要 getComputedStyle 才能
-    // resolve。真 Chrome 能 resolve 整條 cascade；jsdom 不 resolve stylesheet
-    // 但會讀 inline——fixture 測試走 inline style 即可驗覆蓋面。
-    //
-    // 效能（v0.7.144）：祖先鏈 cache —— 多 signal 共用同一條祖先鏈時 cache hit
-    // 直接 short-circuit，省 getComputedStyle layout flush。
+  // v0.8.19 C2：祖先鏈 hidden 共用 predicate——沿 el 自身 + 祖先鏈檢查 inline
+  // display:none / computed display:none。原本只內嵌在 isSignalExcluded 給
+  // heuristic signal 用，但 article-tag / schema-org / main-tag / 候選容器的
+  // textLen 門檻都走 getText(el).length，而 getText 對隱藏元素（innerText 在
+  // display:none 下回 ''）fallback 到 textContent → 隱藏容器的全部文字（modal
+  // 2700 字）被計入字數、通過 MIN_TEXT_LEN 甚至贏過真主文（upmedia.mg modal
+  // 實案）。抽成共用 predicate 後套到所有 textLen 計分（scoredTextLen），隱藏
+  // 元素一律計 0。
+  // 效能（v0.7.144）：祖先鏈 cache（_excludedAncestorCache，heuristic run 期間
+  // 共用）邏輯原樣保留——多 signal 共用同一條祖先鏈時 cache hit 直接
+  // short-circuit，省 getComputedStyle layout flush。cache 未開（article-tag /
+  // schema-org / main-tag 等 caller）時直接逐次計算、仍正確。
+  // 真 Chrome 能 resolve 整條 cascade；jsdom 不 resolve stylesheet 但讀 inline
+  // ——fixture 測試走 inline style 即可驗覆蓋面。
+  function isAncestorChainHidden(el) {
     const cache = _excludedAncestorCache;
     const visited = [];
     for (let p = el; p && p !== document.body; p = p.parentElement) {
@@ -330,7 +334,7 @@
       if (cache && cache.has(p)) {
         const cached = cache.get(p);
         // back-fill：把這次走過的祖先全標相同狀態（傳遞性）
-        if (cache) for (const v of visited) cache.set(v, cached);
+        for (const v of visited) cache.set(v, cached);
         return cached;
       }
       visited.push(p);
@@ -349,6 +353,21 @@
     // 走完祖先鏈無 hidden：全標 false（傳遞性）
     if (cache) for (const v of visited) cache.set(v, false);
     return false;
+  }
+
+  function isSignalExcluded(el) {
+    // closest() 會把 el 自身也算進去，所以祖先鏈檢查等同 self + ancestors
+    // ARIA UI-chrome（dialog / alertdialog / tooltip / aria-modal / aria-hidden）
+    // 是 signal 計分專用的排除；祖先鏈 hidden 走共用 predicate。
+    if (el.closest && el.closest(HEURISTIC_SKIP_SEL)) return true;
+    return isAncestorChainHidden(el);
+  }
+
+  // textLen 計分共用：祖先鏈 hidden 的元素一律計 0，避免 getText 對隱藏節點
+  // fallback textContent 灌水通過字數門檻。可見元素照常用 getText——innerText
+  // 在真實瀏覽器已排除內部隱藏子樹，jsdom 退回 textContent（fixture 知情）。
+  function scoredTextLen(el) {
+    return isAncestorChainHidden(el) ? 0 : getText(el).length;
   }
 
   function seedScore(text) {
@@ -393,7 +412,7 @@
       const tag = el.tagName;
       if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'MAIN' && tag !== 'ARTICLE') continue;
 
-      const textLen = getText(el).length;
+      const textLen = scoredTextLen(el);
       if (textLen < MIN_TEXT_LEN) continue;
 
       // 連結密度懲罰：主文的連結密度應低；sidebar / 相關文章列表的連結密度高
