@@ -50,19 +50,24 @@ describe('wrapper spacing cap（v0.7.186）', () => {
     }
   });
 
-  it('capWrapperSpacing 必須將結果存到 hidden.__cappedWrapperSpacing', () => {
-    assert.ok(/hidden\.__cappedWrapperSpacing\s*=\s*capped/.test(CLEANER_SRC),
-      '必須存到 hidden.__cappedWrapperSpacing 供 restore 用');
+  // v0.8.18 C3：原本各 reset 規則各存自己的 sidecar（__cappedWrapperSpacing）+
+  // 各自 restoreXxx，已統一成單一 hidden.__styleResets + restoreAllStyleResets。
+  // capWrapperSpacing 改用 addStyleResets(hidden, capped) 把結果接入統一陣列。
+  it('capWrapperSpacing 必須把結果接入統一 reset 陣列（addStyleResets）', () => {
+    assert.ok(/addStyleResets\(hidden,\s*capped\)/.test(CLEANER_SRC),
+      'capWrapperSpacing 必須 addStyleResets(hidden, capped) 接入 hidden.__styleResets（C3）');
   });
 
-  it('cleaner 必須宣告 restoreCappedWrapperSpacing 函式', () => {
-    assert.ok(/function\s+restoreCappedWrapperSpacing\s*\(/.test(CLEANER_SRC),
-      '必須有對應的 restore 函式');
+  it('cleaner 必須有統一 restore 機制（addStyleResets + restoreAllStyleResets）', () => {
+    assert.ok(/function\s+addStyleResets\s*\(/.test(CLEANER_SRC),
+      'cleaner 必須宣告 addStyleResets（統一收 reset）');
+    assert.ok(/function\s+restoreAllStyleResets\s*\(/.test(CLEANER_SRC),
+      'cleaner 必須宣告 restoreAllStyleResets（單一 restore loop）');
   });
 
-  it('restore() 必須呼叫 restoreCappedWrapperSpacing', () => {
-    assert.ok(/restoreCappedWrapperSpacing\(hiddenEls\)/.test(CLEANER_SRC),
-      'restore 流程必須呼叫 restoreCappedWrapperSpacing');
+  it('restore() 必須呼叫 restoreAllStyleResets', () => {
+    assert.ok(/restoreAllStyleResets\(hiddenEls\)/.test(CLEANER_SRC),
+      'restore 流程必須呼叫 restoreAllStyleResets');
   });
 
   it('clean() 必須呼叫 capWrapperSpacing', () => {

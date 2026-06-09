@@ -341,6 +341,16 @@ describe('readwise: 訊息協定常數同步', () => {
       /times\[times\.length\s*-\s*1\]/,
       'extractXPublishedDate 必須取最後一個 time(主推文 timestamp 在 quoted tweet 之後)'
     );
+    // v0.8.18 C8：JSON-LD 共用單次 parse——author / date 不可各自重跑
+    // querySelectorAll('script[type="application/ld+json"]')。forcing:整份
+    // main.js 只能有一處 LD querySelectorAll（在 getJsonLd helper 內）。
+    assert.match(mainSrc, /function\s+getJsonLd\s*\(/, 'main.js 必須定義 getJsonLd 共用 LD parse helper（C8）');
+    assert.match(mainSrc, /function\s+resetJsonLdCache\s*\(/, 'main.js 必須定義 resetJsonLdCache（C8 memoize 重置）');
+    const ldQueryCount = (mainSrc.match(/querySelectorAll\(\s*['"]script\[type="application\/ld\+json"\]['"]\s*\)/g) || []).length;
+    assert.strictEqual(ldQueryCount, 1,
+      `JSON-LD querySelectorAll 只能在 getJsonLd 出現一次（C8 共用單次 parse），實際 ${ldQueryCount} 處`);
+    assert.match(mainSrc, /resetJsonLdCache\(\)[\s\S]{0,200}buildCleanHtml/,
+      'extractReaderPayload 必須在抽取前 resetJsonLdCache()（換頁後重新解析 LD）');
   });
 });
 

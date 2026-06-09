@@ -70,7 +70,70 @@
   //   meta、info、tags、widget 單字、scroll 單字、disclaimer、dialog、
   //   alert、prompt、commercial、tease、splash、bookmark、tools、legends、
   //   dateline (主文署名)、marketing (主題詞會誤命)、aux、yom-remote (站特定)
-  const NOISE_KEYWORD_RE = /(^|[^a-z0-9])(paywall|subscribe|subscription|newsletter[\w-]*|signup|sign-up|signin|sign-in|login|register|promo|promotion|promote|advertisement|advert|adbox|adsense|adslot|adhesion|metered|interstitial|takeover|sponsored|sponsor|donation|donate|call-to-action|cta|callout|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|hash[-_]?tag|tag[-_]?list|premium[-_]?(?:widget|content|trial|banner|box)|next-article|latest-posts|mostread|most-read|recommended|recommend|recommendation|read-more|read-next|up-next|recirc|smartfeed|taboola|trc_[a-z_]+|outbrain|zergnet|revcontent|popin|dianomi|addthis|sharedaddy|sociable|ai2html|onesignal|intercom|printfriendly|instapaper_ignore|blogger-labels|mpu|share|social|social-(?:bar|links|icons|share|media)|comment|comments|comment-form|discussion|discuss|disqus|livefyre|hyvor|replies|remark|shoutbox|respond|composer|combx|article-sidebar|article[-_]?others?|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|supplemental|cover-wrap|entry-unrelated|breadcrumb|breadcrumbs|crumb|audio-player|audio-widget|controls|partner|postlisting|post-listing|thread|threads|reposted|repost|follow|follow-us|following|cookie-(?:banner|notice|consent|bar|message)|gdpr|consent|privacy-(?:banner|notice)|email-(?:signup|capture|subscribe)|pagination|page-nav|pager|page-navigation|author-(?:bio|card|info|box|meta|widget)|about-(?:author|the-author)|powered[-_]?by|popup|popover|overlay|modal-(?:content|dialog|box|wrapper)|backdrop|drawer|floating-(?:bar|cta|widget)|sticky-(?:bar|cta|banner|subscribe)|topbar|announcement|nag|plea|contact|shopping|loader|toast|snackbar|notification-(?:bar|banner)|marker|weixin|wechat|weibo|qrcode|qr-code|qrcoode|app-?download|app-?promo|app-?banner|appdownload|app-?store-?banner|google[-_]?(?:add|news)|menu)([^a-z0-9]|$)/i;
+  // v0.8.18 C4：原本 NOISE_KEYWORD_RE / STRONG_NOISE_KEYWORD_RE 是兩條 ~1.5K
+  // 字元的手寫單行 regex，strong set 的 token 全是 noise set 的子集、靠人工
+  // 抄第二份維護——一邊加 token 另一邊忘了同步就 drift（v0.7.184 udn
+  // related-news 殘留就是漏抄 strong 的後果）。改成單一 token 名單
+  // NOISE_TOKEN_DEFS（每筆 `{ t, strong? }`）：NOISE set 用全部 token、STRONG
+  // set 由 `strong:true` 的子集**衍生**，build-time 用 buildKeywordRe 組正則。
+  // 兩 set 永遠同源，結構上不可能 drift。token 片段（含 `newsletter[\w-]*`
+  // 等帶 quantifier 的）原樣保留，buildKeywordRe 套回原本的邊界 wrapper
+  // `(^|[^a-z0-9])(...)([^a-z0-9]|$)` + `/i`——產出與舊 literal 逐字相等的
+  // NOISE source（tools/probe-c4-noise-tokens.js 驗過 byte-identical）。
+  const NOISE_TOKEN_DEFS = [
+    { t: 'paywall' }, { t: 'subscribe' }, { t: 'subscription' }, { t: 'newsletter[\\w-]*' },
+    { t: 'signup' }, { t: 'sign-up' }, { t: 'signin' }, { t: 'sign-in' }, { t: 'login' }, { t: 'register' },
+    { t: 'promo' }, { t: 'promotion' }, { t: 'promote' },
+    { t: 'advertisement' }, { t: 'advert' }, { t: 'adbox' }, { t: 'adsense' }, { t: 'adslot' },
+    { t: 'adhesion' }, { t: 'metered' }, { t: 'interstitial' }, { t: 'takeover' },
+    { t: 'sponsored' }, { t: 'sponsor' }, { t: 'donation' }, { t: 'donate' },
+    { t: 'call-to-action' }, { t: 'cta' }, { t: 'callout' },
+    { t: 'related[-_]?(?:articles?|news|posts|stories|content)', strong: true },
+    { t: 'more[-_]?(?:news|stories|posts|articles?)', strong: true },
+    { t: 'hash[-_]?tag' }, { t: 'tag[-_]?list' },
+    { t: 'premium[-_]?(?:widget|content|trial|banner|box)' },
+    { t: 'next-article', strong: true }, { t: 'latest-posts', strong: true },
+    { t: 'mostread', strong: true }, { t: 'most-read', strong: true },
+    { t: 'recommended', strong: true }, { t: 'recommend', strong: true }, { t: 'recommendation', strong: true },
+    { t: 'read-more', strong: true }, { t: 'read-next', strong: true }, { t: 'up-next', strong: true },
+    { t: 'recirc', strong: true }, { t: 'smartfeed', strong: true }, { t: 'taboola', strong: true },
+    { t: 'trc_[a-z_]+' }, { t: 'outbrain', strong: true }, { t: 'zergnet', strong: true },
+    { t: 'revcontent', strong: true }, { t: 'popin', strong: true }, { t: 'dianomi', strong: true },
+    { t: 'addthis', strong: true }, { t: 'sharedaddy', strong: true },
+    { t: 'sociable' }, { t: 'ai2html' }, { t: 'onesignal' }, { t: 'intercom' },
+    { t: 'printfriendly' }, { t: 'instapaper_ignore' }, { t: 'blogger-labels' }, { t: 'mpu' },
+    { t: 'share' }, { t: 'social' }, { t: 'social-(?:bar|links|icons|share|media)' },
+    { t: 'comment' }, { t: 'comments' }, { t: 'comment-form' },
+    { t: 'discussion' }, { t: 'discuss' }, { t: 'disqus', strong: true },
+    { t: 'livefyre' }, { t: 'hyvor' }, { t: 'replies' }, { t: 'remark' }, { t: 'shoutbox' },
+    { t: 'respond' }, { t: 'composer' }, { t: 'combx' },
+    { t: 'article-sidebar', strong: true }, { t: 'article[-_]?others?', strong: true },
+    { t: 'sidebar-wrapper', strong: true }, { t: 'sidebar-column', strong: true },
+    { t: 'sidebar-content', strong: true }, { t: 'sidebar-widget', strong: true },
+    { t: 'sidebar-primary', strong: true }, { t: 'sidebar-secondary', strong: true },
+    { t: 'supplemental' }, { t: 'cover-wrap' }, { t: 'entry-unrelated' },
+    { t: 'breadcrumb' }, { t: 'breadcrumbs' }, { t: 'crumb' },
+    { t: 'audio-player' }, { t: 'audio-widget' }, { t: 'controls' }, { t: 'partner' },
+    { t: 'postlisting' }, { t: 'post-listing' }, { t: 'thread' }, { t: 'threads' },
+    { t: 'reposted' }, { t: 'repost' }, { t: 'follow' }, { t: 'follow-us' }, { t: 'following' },
+    { t: 'cookie-(?:banner|notice|consent|bar|message)' }, { t: 'gdpr' }, { t: 'consent' },
+    { t: 'privacy-(?:banner|notice)' }, { t: 'email-(?:signup|capture|subscribe)' },
+    { t: 'pagination' }, { t: 'page-nav' }, { t: 'pager' }, { t: 'page-navigation' },
+    { t: 'author-(?:bio|card|info|box|meta|widget)' }, { t: 'about-(?:author|the-author)' },
+    { t: 'powered[-_]?by' }, { t: 'popup' }, { t: 'popover' }, { t: 'overlay' },
+    { t: 'modal-(?:content|dialog|box|wrapper)' }, { t: 'backdrop' }, { t: 'drawer' },
+    { t: 'floating-(?:bar|cta|widget)' }, { t: 'sticky-(?:bar|cta|banner|subscribe)' },
+    { t: 'topbar' }, { t: 'announcement' }, { t: 'nag' }, { t: 'plea' }, { t: 'contact' },
+    { t: 'shopping' }, { t: 'loader' }, { t: 'toast' }, { t: 'snackbar' },
+    { t: 'notification-(?:bar|banner)' }, { t: 'marker' },
+    { t: 'weixin' }, { t: 'wechat' }, { t: 'weibo' }, { t: 'qrcode' }, { t: 'qr-code' }, { t: 'qrcoode' },
+    { t: 'app-?download' }, { t: 'app-?promo' }, { t: 'app-?banner' }, { t: 'appdownload' },
+    { t: 'app-?store-?banner' }, { t: 'google[-_]?(?:add|news)' }, { t: 'menu', strong: true }
+  ];
+  function buildKeywordRe(tokens) {
+    return new RegExp('(^|[^a-z0-9])(' + tokens.join('|') + ')([^a-z0-9]|$)', 'i');
+  }
+  const NOISE_KEYWORD_RE = buildKeywordRe(NOISE_TOKEN_DEFS.map(d => d.t));
   // ad- / -ad 邊界特例（不可直接放進上面 alternation，否則 2 字母太短會大量誤殺）
   const AD_BOUNDARY_RE = /(^|[-_\s])ad([-_\s]|$)/i;
 
@@ -244,7 +307,10 @@
   // 被豁免。主文 wrapper 絕不會命名為這些 token，safe to force-hide。
   // udn 實測：`section.related-news.more-news` 內 6 篇推薦文章各有 100+ chars
   // 摘要 p → anchor guard 誤豁免 → 推薦區殘留。
-  const STRONG_NOISE_KEYWORD_RE = /(^|[^a-z0-9])(article-sidebar|article[-_]?others?|sidebar-wrapper|sidebar-column|sidebar-content|sidebar-widget|sidebar-primary|sidebar-secondary|related[-_]?(?:articles?|news|posts|stories|content)|more[-_]?(?:news|stories|posts|articles?)|recommended|recommend|recommendation|next-article|latest-posts|mostread|most-read|read-more|read-next|up-next|recirc|smartfeed|disqus|outbrain|taboola|dianomi|addthis|sharedaddy|revcontent|zergnet|popin|menu)([^a-z0-9]|$)/i;
+  // v0.8.18 C4：strong set 從 NOISE_TOKEN_DEFS 的 `strong:true` 子集衍生（同源、
+  // 不再手抄第二份 → 消 drift）。順序與舊 literal 不同但 .test() 布林等價
+  // （end boundary 已 anchor，alternation 順序不影響命中結果，probe 驗過）。
+  const STRONG_NOISE_KEYWORD_RE = buildKeywordRe(NOISE_TOKEN_DEFS.filter(d => d.strong).map(d => d.t));
   function shouldHideByStrongKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -433,6 +499,41 @@
       el.style.removeProperty(name);
       if (entry && entry.value) {
         el.style.setProperty(name, entry.value, entry.priority || '');
+      }
+    }
+  }
+
+  // v0.8.18 C3：所有「快照 inline style → 套 !important override」的 reset 統一
+  // 收進單一 hidden.__styleResets，restore() 一個 loop 還原。原本是 10 個各自
+  // 的 sidecar（__negativeZIndexResets / __collapsed / __innerGridFlex(+Desc) /
+  // __innerFlexWrap / __cappedWrapperSpacing / __mediaContainerBlock /
+  // __descendantBoxShadow / __mediaResets / __absoluteOverlayParentHeight）配
+  // 10 個 restoreXxx——新增一條 reset 規則要對稱維護「producer 存 sidecar +
+  // 寫 restoreXxx + restore() 呼叫」三處，漏一處就退出 reader mode 殘留 inline
+  // 樣式（對稱性漏接風險）。統一後新增規則只要在 producer 結尾呼叫
+  // addStyleResets(hidden, items) 一處。
+  // item 形狀沿用各 producer：{el, prev}（多數）/ {el, kind, prev}（collapse /
+  // innerFlexWrap，kind='container' 者 restore 時要刪 jreadCollapsed 標記）。
+  function addStyleResets(hidden, items) {
+    if (!hidden || !Array.isArray(items) || items.length === 0) return;
+    if (!hidden.__styleResets) hidden.__styleResets = [];
+    for (const it of items) {
+      if (it && it.el) hidden.__styleResets.push(it);
+    }
+  }
+
+  // 統一 restore loop：反向迭代（後跑的 producer 先還原），確保同一 el+prop 若
+  // 被兩條 reset 規則先後覆寫時，最早的 producer 快照（= 真正原始 inline 值）
+  // 最後寫入勝出。非重疊情形（絕大多數）順序無影響。
+  function restoreAllStyleResets(hidden) {
+    const arr = hidden && hidden.__styleResets;
+    if (!Array.isArray(arr)) return;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const item = arr[i];
+      if (!item || !item.el) continue;
+      restoreStyles(item.el, item.prev);
+      if (item.kind === 'container' && item.el.dataset) {
+        delete item.el.dataset.jreadCollapsed;
       }
     }
   }
@@ -2132,7 +2233,7 @@
         }
       }
     }
-    hidden.__absoluteOverlayParentHeight = parentHeightResets;
+    addStyleResets(hidden, parentHeightResets);
   }
 
   // ---- 主文內：negative z-index 後代 reset -------------------------------
@@ -2168,16 +2269,7 @@
       resets.push({ el, prev: snapshotStyles(el, ['z-index']) });
       applyImportant(el, { 'z-index': 'auto' });
     }
-    hidden.__negativeZIndexResets = resets;
-  }
-
-  function restoreNegativeZIndex(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__negativeZIndexResets;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 主文後代「full-bleed」負 margin 修法（v0.7.115）----
@@ -2241,25 +2333,7 @@
       resets.push({ el, prev: snapshotStyles(el, props) });
       applyImportant(el, { 'margin-left': '0', 'margin-right': '0' });
     }
-    hidden.__negativeHorizontalMarginResets = resets;
-  }
-
-  function restoreNegativeHorizontalMargins(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__negativeHorizontalMarginResets;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
-  }
-
-  function restoreAbsoluteOverlayConverted(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__absoluteOverlayParentHeight;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 主文內：廣告位 grid / flex cell 被 AdBlocker 清後殘留的欄位寬度 ----
@@ -2519,20 +2593,10 @@
         applyImportant(c, CHILD_DECLS);
       }
     }
-    // 把 collapsed 紀錄接到 hidden 陣列尾（共享 restore）——但格式不同，
-    // restore 流程要能識別。為了不動 restore 簽章，存到 hidden.__collapsed
-    // （sidecar array，不是正常 item）。
-    hidden.__collapsed = collapsed;
-  }
-
-  function restoreCollapsed(hiddenEls) {
-    const collapsed = hiddenEls && hiddenEls.__collapsed;
-    if (!Array.isArray(collapsed)) return;
-    for (const item of collapsed) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-      if (item.kind === 'container' && item.el.dataset) delete item.el.dataset.jreadCollapsed;
-    }
+    // v0.8.18 C3：collapsed 紀錄（{el, kind, prev}）收進統一 hidden.__styleResets，
+    // restoreAllStyleResets 一個 loop 還原 inline style + 對 kind='container' 刪
+    // jreadCollapsed 標記。
+    addStyleResets(hidden, collapsed);
   }
 
   // ---- articleEl 內部 grid/flex container 強制 block ---------------------
@@ -2642,25 +2706,8 @@
         applyImportant(desc, INNER_GRID_DESC_DECLS);
       }
     }
-    hidden.__innerGridFlex = resets;
-    hidden.__innerGridFlexDesc = descResets;
-  }
-
-  function restoreInnerGridFlex(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__innerGridFlex;
-    if (Array.isArray(arr)) {
-      for (const item of arr) {
-        if (!item || !item.el) continue;
-        restoreStyles(item.el, item.prev);
-      }
-    }
-    const desc = hiddenEls && hiddenEls.__innerGridFlexDesc;
-    if (Array.isArray(desc)) {
-      for (const item of desc) {
-        if (!item || !item.el) continue;
-        restoreStyles(item.el, item.prev);
-      }
-    }
+    addStyleResets(hidden, resets);
+    addStyleResets(hidden, descResets);
   }
 
   // ---- articleEl 內部 flex-row wrap container 強制 block -----------------
@@ -2787,19 +2834,7 @@
         applyImportant(desc, { 'position': 'static' });
       }
     }
-    hidden.__innerFlexWrap = resets;
-  }
-
-  function restoreInnerFlexWrap(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__innerFlexWrap;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-      if (item.kind === 'container' && item.el.dataset) {
-        delete item.el.dataset.jreadCollapsed;
-      }
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- v0.7.124：cleaner 末段 collapse empty wrappers ----------------------
@@ -3008,16 +3043,7 @@
       applyImportant(el, decls);
       capped.push({ el, prev });
     }
-    hidden.__cappedWrapperSpacing = capped;
-  }
-
-  function restoreCappedWrapperSpacing(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__cappedWrapperSpacing;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, capped);
   }
 
   // ---- figure / picture 容器強制 block（v0.7.24 ttv.com.tw 修法）----------
@@ -3091,16 +3117,7 @@
       const isGridFlex = /^(flex|inline-flex|grid|inline-grid)$/.test(d);
       applyImportant(el, isGridFlex ? MEDIA_CONTAINER_DECLS_GRID_FLEX : MEDIA_CONTAINER_DECLS_INLINE);
     }
-    hidden.__mediaContainerBlock = resets;
-  }
-
-  function restoreMediaContainerBlock(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__mediaContainerBlock;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 後代 container 殘留 box-shadow 清除（v0.7.30 cnyes.com 修法）-----
@@ -3134,16 +3151,7 @@
       resets.push({ el, prev: snapshotStyles(el, DECOR_BOX_SHADOW_PROPS) });
       applyImportant(el, { 'box-shadow': 'none' });
     }
-    hidden.__descendantBoxShadow = resets;
-  }
-
-  function restoreDescendantBoxShadow(hiddenEls) {
-    const arr = hiddenEls && hiddenEls.__descendantBoxShadow;
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 媒體 placeholder pattern：區分 padding-hack vs 正規 aspect-ratio ---
@@ -3254,16 +3262,7 @@
       media.style.removeProperty('right');
       media.style.removeProperty('bottom');
     }
-    hidden.__mediaResets = resets;
-  }
-
-  function restoreMediaResets(hiddenEls) {
-    const resets = hiddenEls && hiddenEls.__mediaResets;
-    if (!Array.isArray(resets)) return;
-    for (const item of resets) {
-      if (!item || !item.el) continue;
-      restoreStyles(item.el, item.prev);
-    }
+    addStyleResets(hidden, resets);
   }
 
   // ---- 主文內：lazy-load 圖片 src 補正 ------------------------------------
@@ -4181,16 +4180,10 @@
         }
       }
       restoreLazyImages(hiddenEls);
-      restoreMediaContainerBlock(hiddenEls);
-      restoreDescendantBoxShadow(hiddenEls);
-      restoreMediaResets(hiddenEls);
-      restoreNegativeZIndex(hiddenEls);
-      restoreNegativeHorizontalMargins(hiddenEls);
-      restoreAbsoluteOverlayConverted(hiddenEls);
-      restoreInnerFlexWrap(hiddenEls);
-      restoreInnerGridFlex(hiddenEls);
-      restoreCollapsed(hiddenEls);
-      restoreCappedWrapperSpacing(hiddenEls);
+      // v0.8.18 C3：原本 10 個 restoreXxx 各還原一個 sidecar，統一成單一
+      // restoreAllStyleResets（遍歷 hidden.__styleResets 一個 loop）。lazy image
+      // src 補正非「inline style 還原」、形狀不同，保留獨立 restoreLazyImages。
+      restoreAllStyleResets(hiddenEls);
       if (!Array.isArray(hiddenEls)) return;
       for (const item of hiddenEls) {
         if (!item || !item.el) continue;

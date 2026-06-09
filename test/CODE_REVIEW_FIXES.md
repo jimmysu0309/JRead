@@ -36,12 +36,12 @@
 
 - [ ] **C1** `main.js:1126` SPA 導航偵測（history API hook + `<title>` observer），路由變化先 exitReaderMode 再視情況重觸發
 - [ ] **C2** `detector.js:39-42` 抽「祖先鏈 hidden」共用 predicate，套到所有 textLen 計分（article-tag / schema-org / 候選容器），消除「隱藏容器吞主文」整類 bug
-- [ ] **C3** `cleaner.js` 11 條 `restoreXxx` + sidecar 統一成單一 `__styleResets=[{el,prev}]`，restore() 一個 loop（消對稱性漏接風險）
-- [ ] **C4** `cleaner.js:73,247` NOISE regex 改 token 陣列 build-time 組，strong set 從同一份子集衍生（消 drift）
+- [x] **C3** ✅ v0.8.18 `cleaner.js` 11 條 `restoreXxx` + sidecar 統一成單一 `__styleResets` + restoreAllStyleResets（消對稱性漏接風險）
+- [x] **C4** ✅ v0.8.18 `cleaner.js` NOISE regex 改 NOISE_TOKEN_DEFS build-time 組，strong set 從 strong:true 子集衍生（消 drift）
 - [ ] **C5** `cleaner.js` heading 雜訊處理靜態/動態雙實作抽共用 `resolveHeadingNoiseTarget`
-- [ ] **C6** `styler.js:278-1089` base CSS 拆靜態片段常數（只算一次），只 theme-dependent 片段每次重組
+- [x] **C6** ✅ v0.8.18 `styler.js` base CSS 以 (theme, contentWidth) memoize（只算一次），userOverrides 每次重組
 - [x] **C7** ✅ v0.8.17 editable-focus guard 抽 NS.isEditableTarget（補 paged 漏的 BUTTON）
-- [ ] **C8** `main.js:648,748` JSON-LD 共用單次 parse
+- [x] **C8** ✅ v0.8.18 `main.js` JSON-LD 共用單次 parse（getJsonLd memoize）
 - [ ] **C9（效能）** cleaner collapse rule phase1 純讀→phase2 純寫；checkDynamicNoise 動態 hide 補掛 inline-restyle observer
 - [x] **C10** ✅ v0.8.17 paged savedScrollY 歸零 / onResize debounce(resizeRaf) / wheelAccum 反向歸零
 - [ ] 每項：harness probe 驗假設 → 改 code → fixture+spec → `npm test` → harness 自驗 → bump + commit
