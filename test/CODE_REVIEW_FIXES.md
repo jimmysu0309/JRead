@@ -33,11 +33,16 @@
 - [ ] **C4** `cleaner.js:73,247` NOISE regex 改 token 陣列 build-time 組，strong set 從同一份子集衍生（消 drift）
 - [ ] **C5** `cleaner.js` heading 雜訊處理靜態/動態雙實作抽共用 `resolveHeadingNoiseTarget`
 - [ ] **C6** `styler.js:278-1089` base CSS 拆靜態片段常數（只算一次），只 theme-dependent 片段每次重組
-- [ ] **C7** `paged-mode.js`/`space-scroll.js` editable-focus guard 抽共用 util（補 paged 漏的 BUTTON）
+- [x] **C7** ✅ v0.8.17 editable-focus guard 抽 NS.isEditableTarget（補 paged 漏的 BUTTON）
 - [ ] **C8** `main.js:648,748` JSON-LD 共用單次 parse
 - [ ] **C9（效能）** cleaner collapse rule phase1 純讀→phase2 純寫；checkDynamicNoise 動態 hide 補掛 inline-restyle observer
-- [ ] **C10（效能）** paged savedScrollY 歸零 / onResize debounce / wheelAccum 反向歸零
+- [x] **C10** ✅ v0.8.17 paged savedScrollY 歸零 / onResize debounce(resizeRaf) / wheelAccum 反向歸零
 - [ ] 每項：harness probe 驗假設 → 改 code → fixture+spec → `npm test` → harness 自驗 → bump + commit
+
+### C-1 完成（v0.8.17）：C7 + C10（輸入/翻頁 race 修法）
+- editable-target-guard.spec.js 新增（行為驗 BUTTON + 結構驗兩 call site 共用）；paged-mode.spec.js 加 C10 源碼結構 forcing；space-scroll.spec.js shouldHandle 測試改驗 NS.isEditableTarget
+- npm test 1550 passing；sanity（移除 BUTTON → fail）；harness --paged 通過（鍵盤翻頁 stride 正確）
+- **剩餘 C 項**（C1 SPA / C2 detector getText / C3-C6 大重構 / C8 / C9）建議各自獨立 focused commit + harness probe
 
 ---
 
