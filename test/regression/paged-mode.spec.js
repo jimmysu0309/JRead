@@ -42,6 +42,12 @@ const BASE_SETTINGS = {
   paragraphSpacing: 1.0
 };
 
+// 水平 gutter 單一資料源（styler.js H_GUTTER 常數）。連續滑動卡片 padding 與
+// 翻頁模式（左 padding + 右 transparent border + column-gap + column-width 扣除）
+// 必須共用此值，否則兩模式內文行寬 drift（v0.8.14 修法：Jimmy 2026-06-09 回報
+// 「翻頁比捲動窄」——v0.8.1 只改了連續模式的 gutter、翻頁漏改）。
+const H_GUTTER = 'clamp(16px, calc(7.4vw - 12.8px), 56px)';
+
 function applyAndGetCss(settings) {
   const env = loadFixtureWithScripts({
     fixturePath: FIXTURE_PATH,
@@ -65,7 +71,7 @@ describe('翻頁模式（v0.7.227）', () => {
       // contentWidth 語意 = 卡片總寬（與捲動模式 baseline 同義），欄寬 =
       // contentWidth − 左右內距和——兩模式內文行寬才逐 px 相等（Jimmy
       // 2026-06-07 macOS Chrome / Safari 回報「兩模式頁面寬度不同」）。
-      assert.ok(css.includes(`column-width: calc(${BASE_SETTINGS.contentWidth}px - min(56px, 6vw) * 2) !important`),
+      assert.ok(css.includes(`column-width: calc(${BASE_SETTINGS.contentWidth}px - ${H_GUTTER} * 2) !important`),
         '須含 column-width: calc(<contentWidth>px − 左右內距和)');
       assert.ok(css.includes('column-count: auto !important'),
         '須含 column-count: auto（壓掉原站可能的 column-count 規則）');
@@ -93,6 +99,30 @@ describe('翻頁模式（v0.7.227）', () => {
         '翻頁容器 max-width 必須恰為 contentWidth（卡片總寬與捲動模式相等）');
       assert.ok(!rule.includes(`max-width: calc(${BASE_SETTINGS.contentWidth}px +`),
         '不得回退到 max-width: calc(contentWidth + 內距 ×2)（兩模式寬度不一致根因）');
+    });
+
+    it('翻頁/捲動模式水平 gutter 必須同值（內文行寬一致，v0.8.14）', () => {
+      // Jimmy 2026-06-09 roomie.tw 真機回報：翻頁模式內文比連續滑動窄。
+      // 根因：水平 gutter 由兩條 path 各自寫死——v0.8.1 把連續模式卡片
+      // padding 從 min(56px,6vw) 改成 clamp(16px,…,56px)（390pt 內文對齊原站
+      // 16px 標準 gutter），但翻頁模式漏改、仍停在 min(56px,6vw)（390pt 留
+      // 23.4px → 內文窄 15px×2）。forcing function：兩模式都必須用 H_GUTTER。
+      const paged = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      const scroll = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: false });
+      // 連續模式卡片 padding 用 H_GUTTER
+      assert.ok(scroll.includes(`padding: min(48px, 6vw) ${H_GUTTER} !important`),
+        '連續模式卡片水平 padding 必須是 H_GUTTER');
+      // 翻頁模式左 padding / 右 border / column-width 扣除 / column-gap 全用 H_GUTTER
+      const pagedRule = paged.match(/html \[data-jread-active="1"\]\s*\{[^}]*column-width[^}]*\}/s)[0];
+      assert.ok(pagedRule.includes(`${H_GUTTER} !important`) &&
+        pagedRule.includes(`border-right: ${H_GUTTER} solid transparent`),
+        '翻頁模式左 padding + 右 border 必須用同一 H_GUTTER');
+      assert.ok(pagedRule.includes(`column-gap: calc(${H_GUTTER} * 2) !important`),
+        '翻頁模式 column-gap 必須是 H_GUTTER ×2（維持 stride = column 寬 + gap 恆等式）');
+      // forcing function：翻頁模式不得再殘留舊的 min(56px, 6vw) gutter
+      assert.ok(!pagedRule.includes('min(56px, 6vw) solid') &&
+        !pagedRule.includes('- min(56px, 6vw) * 2'),
+        '翻頁模式不得殘留舊 min(56px, 6vw) gutter（兩模式寬度不一致根因）');
     });
 
     it('pagedMode: true → media/連結補 touch-action: pan-y pinch-zoom + -webkit-user-drag: none（圖片上滑能翻頁，v0.8.7）', () => {
@@ -126,10 +156,12 @@ describe('翻頁模式（v0.7.227）', () => {
       const ruleMatch = css.match(/html \[data-jread-active="1"\]\s*\{[^}]*column-width[^}]*\}/s);
       assert.ok(ruleMatch, '須有翻頁容器規則');
       const rule = ruleMatch[0];
-      assert.ok(rule.includes('border-right: min(56px, 6vw) solid transparent !important'),
+      assert.ok(rule.includes(`border-right: ${H_GUTTER} solid transparent !important`),
         '右內距必須用 transparent border-right（scrollable overflow 不含 border）');
       // padding 簡寫的 right 槽位必須是 0（4 值簡寫第二值）
-      assert.ok(/padding:\s*min\(48px, 6vw\) 0 min\(48px, 6vw\) min\(56px, 6vw\) !important/.test(rule),
+      const padRe = new RegExp('padding:\\s*min\\(48px, 6vw\\) 0 min\\(48px, 6vw\\) ' +
+        H_GUTTER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' !important');
+      assert.ok(padRe.test(rule),
         '翻頁容器 padding-right 必須為 0（WebKit 不把尾端 padding 算進 scrollable overflow）');
     });
 
