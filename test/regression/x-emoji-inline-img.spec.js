@@ -15,9 +15,13 @@
 // restore() 可逆性。不驗實際視覺 layout（jsdom 不算 layout；視覺由
 // Playwright harness 驗）。
 
+const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { loadFixtureWithScripts, stubRect } = require('../helpers');
+
+const STYLER_SRC = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'jread', 'content', 'styler.js'), 'utf8');
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'x-emoji-inline-img.html');
 
@@ -96,6 +100,21 @@ describe('x-emoji-inline-img — natural 尺寸不可靠時以 rendered 尺寸�
     NS.styler.apply(articleEl, SETTINGS);
     assert.strictEqual(hidden.getAttribute('data-jread-inline-img'), null,
       'rect 0 不可觸發 rendered fallback（w > 0 guard）');
+  });
+
+  it('inline-img 標記必須在 setAttribute(ARTICLE_ATTR) 之前（v0.8.10 翻頁模式 chicken-egg）', () => {
+    // Jimmy 2026-06-09 翻頁模式 X Twemoji 實機回報：emoji 被撐成滿欄。根因是
+    // 順序——ARTICLE_ATTR 一設定，翻頁模式 reader 規則（img { width:auto !important }）
+    // 立即生效，把 viewBox-only SVG emoji 撐成 608px → rect fallback 量到 608 >
+    // INLINE_IMG_MAX → 永遠標不到 inline。標記必須在 ARTICLE_ATTR **前**跑，量到
+    // 原站 inline 尺寸才標得對。jsdom 無 CSS cascade、stubRect 固定值，重現不了
+    // 此時序 bug——故以 source 順序為 forcing function。
+    const tagIdx = STYLER_SRC.indexOf("setAttribute(INLINE_IMG_ATTR, '1')");
+    const artIdx = STYLER_SRC.indexOf("setAttribute(ARTICLE_ATTR, '1')");
+    assert.ok(tagIdx >= 0, 'styler.js 必須有 setAttribute(INLINE_IMG_ATTR) 標記');
+    assert.ok(artIdx >= 0, 'styler.js 必須有 setAttribute(ARTICLE_ATTR, "1")');
+    assert.ok(tagIdx < artIdx,
+      'inline-img 標記必須在 setAttribute(ARTICLE_ATTR) 之前——forcing：順序反了則 reader 規則先生效、emoji rect 被撐大、標不到 inline（翻頁模式滿版 emoji）');
   });
 
   it('restore() 移除 emoji 的 data-jread-inline-img（可逆性）', () => {

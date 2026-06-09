@@ -152,12 +152,29 @@
     barEl.style.height = r.height + 'px';
   }
 
+  // 單頁判定（Jimmy 2026-06-09）：整篇文章在 viewport 內裝得下、不需捲動時
+  // 不顯示段落焦點指示條——指示條的作用是追蹤捲動閱讀位置，沒有捲動可追蹤
+  // 時它只是視覺雜訊（X 短推文 / 短文章常見）。容差 +2px 吸收 sub-pixel
+  // rounding（scrollHeight / innerHeight 取整誤差），避免恰好等高被誤判成多頁。
+  function isSinglePage() {
+    const scroller = document.scrollingElement || document.documentElement;
+    if (!scroller) return false;
+    return scroller.scrollHeight <= window.innerHeight + 2;
+  }
+
   function onResize() {
-    if (focusedBlock && focusedBlock.isConnected) positionBar(focusedBlock);
+    // resize 可能讓單頁 ↔ 多頁互換（視窗高度改變 / 字級調整）——重走 setFocus
+    // 讓指示條依最新單頁判定顯示或隱藏
+    if (focusedBlock && focusedBlock.isConnected) setFocus(focusedBlock);
   }
 
   function setFocus(block) {
     focusedBlock = block;
+    // 單頁文章不顯示指示條——移除已建的 bar（涵蓋 resize 由多頁變單頁的情境）
+    if (isSinglePage()) {
+      if (barEl) { barEl.remove(); barEl = null; }
+      return;
+    }
     ensureBar();
     positionBar(block);
   }

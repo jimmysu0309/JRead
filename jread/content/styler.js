@@ -1409,7 +1409,13 @@ html [${ARTICLE_ATTR}="1"] {
    818 > 頁 796，break-inside 對「高於 fragmentainer 的元素」失效強制切割）。
    100vh 與 100dvh 雙宣告：支援 dvh 的引擎（iOS 16.4+）用動態視窗高，
    舊引擎 fallback vh。 */
-html [${ARTICLE_ATTR}="1"] img,
+/* v0.8.10：img 選擇器排除 [${INLINE_IMG_ATTR}]——inline emoji / icon 不可套
+   「縮放至單頁」的 width:auto + max-width:100%，否則 viewBox-only SVG emoji
+   （X Twemoji）被撐成滿欄（150 natural → 608px，Jimmy 翻頁模式實機回報）。
+   與捲動模式 block-image rule（line ~585/595）同一排除準則。inline-img rule
+   （line ~1027）只覆蓋 max-height/object-fit/display、未設 width，故此規則的
+   width:auto 仍會命中 emoji——必須在選擇器層排除。 */
+html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
 html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] svg,
 html [${ARTICLE_ATTR}="1"] iframe {
@@ -1836,8 +1842,15 @@ html [${ARTICLE_ATTR}="1"] a {
       }
       styleEl.textContent = buildCss(theme, opts, overrides);
 
-      articleEl.setAttribute(ARTICLE_ATTR, '1');
-
+      // inline emoji / icon 標記必須在 ARTICLE_ATTR 設定**前**跑——標記用 rect
+      // fallback（viewBox-only SVG / 高解析 emoji PNG 的 naturalWidth 不可靠時
+      // 量 rendered 尺寸）必須對「原站 CSS 下的渲染尺寸」量。ARTICLE_ATTR 一旦
+      // 設定，buildCss 的 reader 規則（特別是翻頁模式 `img { width: auto !important;
+      // max-width: 100% }`）立即生效，會把 viewBox-only SVG emoji 撐成滿欄（150
+      // natural → 608px rect）→ rect > INLINE_IMG_MAX → 永遠標不到 inline →
+      // emoji 滿版（v0.8.10 翻頁模式 X Twemoji 實機回報、probe 實證 chicken-egg）。
+      // 在 ARTICLE_ATTR 前量 = reader 規則尚未 active = 量到原站 inline 尺寸，
+      // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
       const inlineImgs = [];
       for (const img of articleEl.querySelectorAll('img')) {
         const w = img.naturalWidth || img.width;
@@ -1860,6 +1873,8 @@ html [${ARTICLE_ATTR}="1"] a {
           inlineImgs.push(img);
         }
       }
+
+      articleEl.setAttribute(ARTICLE_ATTR, '1');
 
       // v0.7.182：mark video player container descendants——背景/色彩
       // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
