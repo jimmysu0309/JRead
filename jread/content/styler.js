@@ -111,6 +111,50 @@
     return THEMES[name] || THEMES.light;
   }
 
+  // v0.8.24：覆蓋 <meta name="theme-color">——iOS Safari 拿這個 meta 的色去染
+  // 狀態列與底部工具列（網頁背景以外的「瀏覽器 chrome」區域）。原站宣告的品牌色
+  // （chinatalk.media #f9eedc 米色實測）在閱讀模式下會在螢幕上下端露出，與 reader
+  // card 不一致（特別是分頁模式 card 滿版 inset:0、上下米條格外突兀）。閱讀模式下
+  // 把所有 theme-color meta 的 content 改成 reader card 色（theme.articleBg），退出
+  // 還原。通則：對任何有宣告 theme-color 的站一律生效，不綁站點。
+  //
+  // 站點可能宣告多個 theme-color（light / dark media 變體）——全部覆蓋成同一個
+  // JRead 色（reader card 色不隨裝置 scheme 變，覆蓋後不論 Safari 選哪個都是 JRead
+  // 色）。完全沒宣告時自建一個（Safari 預設用白底染 chrome，自建才染得到 reader 色）。
+  // 回傳 snapshot 供 restore：created=true 的移除、其餘還原原 content。
+  function applyThemeColor(color) {
+    if (typeof document === 'undefined') return null;
+    const snap = [];
+    const head = document.head || document.documentElement;
+    const existing = head ? head.querySelectorAll('meta[name="theme-color"]') : [];
+    if (existing && existing.length) {
+      for (const m of existing) {
+        snap.push({ el: m, prev: m.getAttribute('content'), created: false });
+        m.setAttribute('content', color);
+      }
+    } else if (head) {
+      const m = document.createElement('meta');
+      m.setAttribute('name', 'theme-color');
+      m.setAttribute('content', color);
+      head.appendChild(m);
+      snap.push({ el: m, prev: null, created: true });
+    }
+    return snap;
+  }
+  function restoreThemeColor(snap) {
+    if (!Array.isArray(snap)) return;
+    for (const s of snap) {
+      if (!s || !s.el) continue;
+      if (s.created) {
+        s.el.remove();
+      } else if (s.prev === null) {
+        s.el.removeAttribute('content');
+      } else {
+        s.el.setAttribute('content', s.prev);
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // v0.7.225：保留原站色容器的對比守門（contrast guard）
   // Trigger：Jimmy 2026-06-07 回報 blog.tymscar.com（dark scheme）code block
@@ -2055,6 +2099,9 @@ html [${ARTICLE_ATTR}="1"] a {
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
       document.documentElement.classList.add(HTML_CLASS);
 
+      // v0.8.24：覆蓋 theme-color meta = reader card 色（狀態列 / 底部工具列染色）
+      const themeColorSnap = applyThemeColor(theme.articleBg);
+
       // v0.7.225 contrast guard phase 2：CSS 全生效後（ARTICLE_ATTR + HTML_CLASS
       // 都已就位）以 card bg 為基底重算每個容器的新 effective bg。半透明 pre bg
       // 疊白卡 = 近白；wrapper 載 bg 的站則已被 background strip 清掉——兩種
@@ -2466,7 +2513,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, contrastBgSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -2530,6 +2577,9 @@ html [${ARTICLE_ATTR}="1"] a {
       if (!snapshot.htmlHadClass) {
         document.documentElement.classList.remove(HTML_CLASS);
       }
+
+      // v0.8.24：還原 theme-color meta（自建的移除、原有的還原 content）
+      restoreThemeColor(snapshot.themeColorSnap);
 
       if (snapshot.firstInk) {
         if (snapshot.firstInkPriorMt) {

@@ -4,6 +4,10 @@
 
 ---
 
+**v0.8.24** — 閱讀模式覆蓋 `<meta name="theme-color">` = reader card 色（狀態列 / 底部工具列染色）。對應 bug：Jimmy 2026-06-09 回報 chinatalk.media 分頁模式螢幕**上下端露出原站米色背景**（截圖實測 `#f9eedc`）。根因：iOS Safari 拿網頁宣告的 `<meta name="theme-color">` 去染「瀏覽器 chrome」區域（頂端狀態列 + 底部工具列），這色在網頁背景以外、reader card（`position:fixed; inset:0`）蓋不到，於是原站品牌色在上下端露出，與 reader card 不一致（分頁模式 card 滿版尤其突兀）。修法（CLAUDE.md 硬規則 3 結構性通則）：styler `apply()` 把所有 theme-color meta 的 `content` 覆蓋成 `theme.articleBg`（light `#ffffff` / dark `#1a1a1a` / sepia `#f4ecd8`），多個 light/dark media 變體全部覆蓋成同一 JRead 色（reader 色不隨裝置 scheme 變）、完全沒宣告時自建一個；`restore()` 還原原 content / 移除自建。不綁站點、對任何宣告 theme-color 的站一律生效。forcing spec：`test/regression/styler-theme-color-meta.spec.js`（覆蓋 + 還原可逆、dark/sepia 各自色、多 media 變體全覆蓋、無宣告時自建+移除）。`npm test` 1586 passing；sanity（`themeColorSnap = null` → 「無宣告自建」斷言 fail）。視覺效果為 iOS Safari WebKit 行為、Chromium harness / jsdom 驗不到，靠真機 TestFlight 驗收。
+
+---
+
 **v0.8.23** — cleaner `hideInsideArticleSidebarColumns` **條件 E**：flex 拉伸的近空直立 rail。對應 bug：verse.com.tw/article/kanda reader mode 開啟後主文左側殘留直書 credit rail「文字、攝影／TC 盾」+ 書籤 icon。原頁結構 `article > div.content-wrapper(display:flex) > { div.content(主文), div.meta(credit rail) }`，`.meta` 被 flex `align-items: stretch` 拉到與主文等高、又吃掉 flex 寬度讓主文窄於版心（580px / 應 608px）。既有條件全漏：A/C 要 linkDensity > 0.5（rail 純文字 credit + icon、ld 低）、B 要 `<aside>` tag（rail 是 `<div>`）、D 要 sibling 含 heading（rail 無）；又因 cleaner 跑在 styler 之前、clean-time rail 還是 255px 寬（非 reflow 後的 28px），靠絕對窄寬度也漏。修法（CLAUDE.md 硬規則 3 結構性通則）：條件 E——父 `display:flex` + sibling 文字 < main × 10% + rect 高 > 400 + 寬 < main 寬 × 0.5 + 高 > 寬 × 2 + 不含 ≥ 120×120 真圖片（`railContainsRealImage` guard 保護雜誌側圖排版）→ hide。純結構幾何、clean-time 即成立、不綁 class / hostname。連帶修好「rail 偷走 flex 寬度」——27 段內文回歸滿版 608px（WIDTH AUDIT 同源警告消失）。forcing spec：`test/regression/verse-flex-meta-rail.spec.js`（核心 hide + 主文保留 + image guard 不誤殺）；harness 自驗真實頁 RESIDUAL ✅ 無殘留 / WIDTH ✅ 滿版 / 無可疑 a/button。`npm test` 1582 passing；sanity（破壞條件 E → 核心斷言 fail）。
 
 ---
