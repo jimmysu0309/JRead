@@ -133,6 +133,7 @@
   let savedScrollY = 0;     // 進翻頁模式前的文件卷動位置，退出還原
   let indicatorEl = null;
   let animFrame = null;
+  let resizeRaf = 0;        // v0.8.17：onResize debounce 的 pending rAF handle
   let wheelAccum = 0;
   let wheelLockUntil = 0;
   let touchState = null;    // { startX, startY, multi }
@@ -349,15 +350,11 @@
     else if (dir === 'last') goTo(pageCount() - 1, true);
   }
 
-  // 編輯類 element focus 時放行（與 onEscKey / onSpaceScroll 同準則）
+  // 編輯/互動類 element focus 時放行（與 space-scroll 同準則，共用 NS 單一資料源）。
+  // v0.8.17：改用 NS.isEditableTarget——原本本地版漏 BUTTON，按鈕 focus 時方向鍵 /
+  // Space 被翻頁攔截、按不到。
   function isEditableFocus() {
-    const ae = document.activeElement;
-    if (!ae) return false;
-    const tag = ae.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-    if (ae.isContentEditable) return true;
-    const ce = ae.getAttribute && ae.getAttribute('contenteditable');
-    return ce === 'true' || ce === '';
+    return window.__JRead.isEditableTarget(document.activeElement);
   }
 
   function onKeydown(e) {
@@ -377,6 +374,9 @@
     const now = performance.now();
     if (now < wheelLockUntil) return;
     const d = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // v0.8.17：方向反轉時先歸零累積——否則往一邊累積未達門檻、改往反向滾要先
+    // 抵銷掉舊累積（門檻形同兩倍），且閒置殘留可能讓一個小 delta 跨門檻翻錯向。
+    if (d !== 0 && wheelAccum !== 0 && Math.sign(d) !== Math.sign(wheelAccum)) wheelAccum = 0;
     wheelAccum += d;
     if (Math.abs(wheelAccum) < WHEEL_THRESHOLD) return;
     turn(wheelAccum > 0 ? 'next' : 'prev');
@@ -464,9 +464,14 @@
   }
 
   // resize / 旋轉：stride 變了、頁界全部重排——重測頁數、按 lastRatio 回到對應頁
+  // v0.8.17：debounce 單一 pending rAF——行動裝置旋轉會連發多次 resize，原本每次
+  // 各排一個 rAF，多個 rAF 在同 frame 依序跑 remeasure（內含強制 scrollLeft=0 再
+  // 還原），與彼此的中間值交錯造成錯位。先取消前一個 pending rAF 再排新的。
   function onResize() {
     if (!art) return;
-    requestAnimationFrame(() => {
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
       if (!art) return;
       remeasurePages();
       const total = pageCount();
@@ -530,6 +535,7 @@
     window.removeEventListener('resize', onResize);
     window.removeEventListener('scroll', onScroll, { passive: true });
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+    if (resizeRaf) { cancelAnimationFrame(resizeRaf); resizeRaf = 0; }
     for (const t of remeasureTimers) clearTimeout(t);
     remeasureTimers = [];
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
@@ -542,6 +548,9 @@
     // 之後才移除 overflow hidden——延後一個 frame 等文件恢復可卷動。
     const y = savedScrollY;
     if (y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
+    // v0.8.17：消費後歸零——避免殘留值在下一輪 install 失敗 / captureScrollY
+    // 沒重抓時被誤用，把使用者捲到與當前頁面無關的位置。
+    savedScrollY = 0;
     art = null;
     installed = false;
     touchState = null;

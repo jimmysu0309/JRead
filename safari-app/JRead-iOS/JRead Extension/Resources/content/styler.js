@@ -260,6 +260,19 @@
     return total > 0 ? low / total : 0;
   }
 
+  // v0.8.18 C6：base 骨架 memoize cache（theme 物件 → Map(contentWidth → base 字串)）。
+  // base 只依賴 theme + contentWidth，3 個 THEMES 是穩定 module 物件、可當 WeakMap key。
+  const _baseSkeletonCache = new WeakMap();
+  function baseSkeletonCacheGet(theme, contentWidth) {
+    const m = _baseSkeletonCache.get(theme);
+    return m ? m.get(contentWidth) : undefined;
+  }
+  function baseSkeletonCacheSet(theme, contentWidth, base) {
+    let m = _baseSkeletonCache.get(theme);
+    if (!m) { m = new Map(); _baseSkeletonCache.set(theme, m); }
+    m.set(contentWidth, base);
+  }
+
   function buildCss(theme, opts, overrides) {
     const { contentWidth } = opts;
 
@@ -275,7 +288,14 @@
     const H_GUTTER = 'clamp(16px, calc(7.4vw - 12.8px), 56px)';
 
     // ---- 骨架：頁面 reset + 祖先鏈 reset + 卡片容器（永遠注入）----
-    const base = `
+    // v0.8.18 C6：base 骨架只依賴 theme + contentWidth（不含 fontSize / lineHeight
+    // / fontFamily / pagedMode 等使用者變數），~800 行卻每次 apply() 重組。改成以
+    // (theme, contentWidth) memoize：同組合只算一次，使用者調字級 / 字型 / 行距
+    // （只動 userOverrides）時 base 直接命中 cache、不再重建。輸出逐字相等
+    // （tools/probe-c6-buildcss.js 驗過 27 組 snapshot identical）。
+    let base = baseSkeletonCacheGet(theme, contentWidth);
+    if (base === undefined) {
+      base = `
 /* 補 cleaner hide 漏洞：cleaner 只設 inline style.display = 'none' 無
    !important，站點 JS（例如商周 .postnav.fixed 的 scroll handler 主動
    el.style.display = 'block'）會把 inline display 整個覆寫掉、priority
@@ -1087,6 +1107,8 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   vertical-align: -0.1em !important;
 }
 `;
+      baseSkeletonCacheSet(theme, contentWidth, base);
+    }
 
     // ---- 使用者 override：僅在非預設值才注入 ----
     // body text selector list（不含 heading h1-h6——保留原站標題大小分級；

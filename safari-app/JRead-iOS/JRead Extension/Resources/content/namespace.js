@@ -68,6 +68,20 @@
         .trim();
     },
 
+    // v0.8.17：編輯/互動類 element focus 判定（paged-mode 翻頁鍵 + space-scroll
+    // 共用，單一資料源）。原本兩處各寫一份且 paged 版漏了 BUTTON——按鈕 focus 時
+    // 方向鍵 / Space 被翻頁攔截、吃掉按鈕的鍵盤啟用（同一份事實雙實作的 drift，
+    // CLAUDE.md 工作流原則 5）。傳入要判定的 element：keydown 時 paged 用
+    // document.activeElement、space 用 e.target，兩者對 keydown 等價。
+    isEditableTarget(el) {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return true;
+      if (el.isContentEditable) return true;
+      const ce = el.getAttribute && el.getAttribute('contenteditable');
+      return ce === 'true' || ce === '';
+    },
+
     // 訊息常數（與 popup / background 對齊）
     MSG: {
       TOGGLE_READER_MODE: 'TOGGLE_READER_MODE',
