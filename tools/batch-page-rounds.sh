@@ -19,6 +19,8 @@ URLS=(
   "https://www.cw.com.tw/article/5133011"
   "https://vocus.cc/article/69eb1cbcfd8978000141431d"
   "https://www.twreporter.org/a/hello-world-2026-04-08"
+  "https://www.roomie.tw/posts/73403"
+  "https://www.shoppingdesign.com.tw/post/view/13485"
   "https://www.bbc.com/culture/article/20260423-the-enchanting-story-of-oxfords-medieval-library"
   "https://www.bbc.com/news/articles/clyepyy82kxo"
   "https://edition.cnn.com/2026/05/24/us/ai-flying-airplanes"

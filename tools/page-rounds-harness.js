@@ -396,14 +396,20 @@ async function runHeroImageAudit(page, originalHeroImages) {
 // 擷取原頁 top hero images（toggle 前呼叫）
 // 過濾雙重條件：渲染 size + natural size 都要夠大，避免 100x100 avatar 被
 // CSS 撐成 300+px 顯示後誤判成 hero（newtalk anonymous_100.jpg 實測踩到）。
+// 再加長寬比過濾：排除 >= 4:1 的超寬橫幅 / 細長條——這類是裝飾性版頭 banner
+// （cnbc AI_AGE special-report header template 1497x160 ≈ 9.4:1 實測踩到），
+// 純閱讀模式本來就該清掉，不該被當成 hero 誤判 missing。真 hero 照片長寬比罕見超過 3:1。
 async function captureOriginalHeroImages(page) {
   return page.evaluate(() => {
+    const MAX_ASPECT = 4; // 寬/高 或 高/寬 超過此值視為裝飾性細長條，非 hero
     return Array.from(document.querySelectorAll('img')).map(img => {
       const r = img.getBoundingClientRect();
       return { src: img.src?.slice(0, 120), w: r.width, h: r.height,
         naturalW: img.naturalWidth, naturalH: img.naturalHeight, top: r.top };
     }).filter(i => i.w >= 300 && i.h >= 150
       && i.naturalW >= 300 && i.naturalH >= 150
+      && i.naturalW / i.naturalH < MAX_ASPECT
+      && i.naturalH / i.naturalW < MAX_ASPECT
       && i.top < 800)
       .sort((a, b) => a.top - b.top)
       .slice(0, 3);
