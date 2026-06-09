@@ -132,11 +132,12 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         '必須放行 IME composition——forcing：中文輸入第一階段按空白選字會被搶走');
     });
 
-    it('shouldHandle 必須放行 INPUT / TEXTAREA / contenteditable focus（打空白是正常輸入）', () => {
-      assert.match(guardBody, /INPUT|TEXTAREA/,
-        '必須放行 INPUT / TEXTAREA——forcing：使用者在搜尋框打空白會變成卷動');
-      assert.match(guardBody, /isContentEditable|contenteditable/,
-        '必須放行 contenteditable——forcing：rich editor 內打空白會變成卷動');
+    it('shouldHandle 必須放行編輯/互動 element focus（共用 NS.isEditableTarget）', () => {
+      // v0.8.17：INPUT/TEXTAREA/SELECT/BUTTON/contenteditable 判定收斂到
+      // NS.isEditableTarget 單一資料源（與 paged-mode 共用，原本各寫一份且 paged
+      // 漏 BUTTON）。放行行為的逐項驗證在 editable-target-guard.spec.js。
+      assert.match(guardBody, /NS\.isEditableTarget\(\s*e\.target\s*\)/,
+        '必須呼叫共用 NS.isEditableTarget(e.target)——forcing：搜尋框 / rich editor 打空白不該變卷動');
     });
 
     it('shouldHandle 必須擋 alt / ctrl / meta 修飾鍵；handler shift 決定方向', () => {

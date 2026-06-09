@@ -838,4 +838,36 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(i < list.indexOf('content/main.js'), '必須排在 main.js 之前');
     });
   });
+
+  // ---- F. 輸入/捲動 race 修法（v0.8.17 code review C10）---------------------
+  // 這些是 module-state 耦合的 runtime 行為（onWheel/onResize/uninstall），純
+  // jsdom 難以行為驗（依賴 performance.now / rAF / live layout）；以原始碼結構
+  // forcing function 守住修法不被改回，runtime 由 --paged harness 覆蓋。
+  describe('輸入/捲動 race 修法（v0.8.17）', () => {
+    it('onWheel：方向反轉時先把 wheelAccum 歸零（防門檻變兩倍 / 殘留翻錯向）', () => {
+      const m = PAGED_SRC.match(/function onWheel\(e\)\s*\{([\s\S]*?)\n {2}\}/);
+      assert.ok(m, '抓不到 onWheel');
+      assert.match(m[1], /Math\.sign\(d\)\s*!==\s*Math\.sign\(wheelAccum\)[\s\S]*?wheelAccum = 0/,
+        'onWheel 必須在 delta 與累積方向相反時歸零 wheelAccum');
+    });
+
+    it('onResize：debounce 單一 pending rAF（取消前一個再排新的）', () => {
+      assert.match(PAGED_SRC, /let resizeRaf =/, '必須宣告 resizeRaf handle');
+      const m = PAGED_SRC.match(/function onResize\(\)\s*\{([\s\S]*?)\n {2}\}/);
+      assert.ok(m, '抓不到 onResize');
+      assert.match(m[1], /if \(resizeRaf\) cancelAnimationFrame\(resizeRaf\)/,
+        'onResize 必須先取消前一個 pending rAF（旋轉連發 resize 不堆疊）');
+      assert.match(m[1], /resizeRaf = requestAnimationFrame/,
+        'onResize 必須把新 rAF 存進 resizeRaf');
+    });
+
+    it('uninstall：取消 pending resizeRaf + 消費後歸零 savedScrollY', () => {
+      const m = PAGED_SRC.match(/function uninstall\(\)\s*\{([\s\S]*?)\n {2}\}/);
+      assert.ok(m, '抓不到 uninstall');
+      assert.match(m[1], /if \(resizeRaf\)\s*\{\s*cancelAnimationFrame\(resizeRaf\)/,
+        'uninstall 必須取消 pending resizeRaf（避免離開後 rAF 仍跑）');
+      assert.match(m[1], /savedScrollY = 0/,
+        'uninstall 必須在消費 savedScrollY 後歸零（防殘留值誤捲）');
+    });
+  });
 });
