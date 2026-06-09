@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!--
+  條件 E image guard：flex 主文旁的窄高欄若含 >= 120×120 的真圖片
+  （雜誌側圖排版）不得被誤殺。與 verse-flex-meta-rail 同幾何，差別在
+  sibling 內是大圖而非 credit 文字 → railContainsRealImage 回 true、skip。
+-->
+<html>
+<head><meta property="og:title" content="測試文章標題夠長以通過 canonical 檢查"></head>
+<body>
+  <main class="article">
+    <article data-test="article-root">
+      <div class="content-wrapper" data-test="content-wrapper" style="display:flex">
+        <div class="content" data-test="main-content" id="main-content">
+          <h1>測試文章標題夠長以通過 canonical 檢查</h1>
+          <p>2025 年秋天，英國城市文化媒體《Time Out》發布年度「全球最酷街區」榜單，東京神保町位居榜首。對於一個以舊書和古本聞名的街區而言，這個稱號既意外又合理。神保町的故事，是一場跨越數百年的歷史層積，從武家宅邸到大學書街，再到今日的愛書人天堂。這裡約有 130 家舊書店，400 家咖喱飯館，構成一種無法被複製的活著的獨特性。</p>
+          <p>轉折始於明治維新。1868 年後，神保町一帶聚集了大量大學與專門學校，書店隨之興起。至 1920 年代，神保町的書店已高度專業化：有專營電影、戲劇、美術、醫學、法律的店家，各擅勝場。網路時代的衝擊並未壓垮神保町，舊書店反而以其無法被數位取代的實體價值繼續存在。</p>
+        </div>
+        <div class="side-figure" data-test="image-rail" id="image-rail">
+          <img id="rail-img" src="photo.jpg" alt="街景">
+        </div>
+      </div>
+    </article>
+  </main>
+</body>
+</html>
