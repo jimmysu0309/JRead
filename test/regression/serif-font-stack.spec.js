@@ -34,8 +34,12 @@ const FONT_STACKS = globalThis.__JReadFontStacks;
 const LEGACY_FONT_STACKS = globalThis.__JReadLegacyFontStacks;
 
 const EXPECTED_SERIF =
-  '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif';
-const EXPECTED_LEGACY = '"Noto Serif TC", Georgia, "Times New Roman", serif';
+  'Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif';
+// v0.8.25：LEGACY serif 為陣列（歷代舊值），命中任一即遷移到新值。
+const EXPECTED_LEGACY = [
+  '"Noto Serif TC", Georgia, "Times New Roman", serif',
+  '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif'
+];
 
 // v0.8.16：popup FONT_STACKS 改 reference 單一資料源——「popup 生效的 stack」
 // 即 shared 的值。原本逐檔 grep popup literal 改成讀 shared font stacks。
@@ -58,10 +62,15 @@ describe('襯線 stack CJK 字體（v0.7.221 forcing function）', () => {
       'FONT_STACKS.serif 與預期 stack 不一致——CJK 襯線字體缺席時 iOS 中文會 fallback 到 styler sans 後綴的 PingFang TC');
   });
 
-  it('stack 結構：CJK 襯線字體必須在泛型 serif 之前、拉丁字型之後', () => {
+  it('stack 結構：西文襯線在所有 CJK 字體之前（英文 fall back 到 Georgia）、CJK 字體在泛型 serif 之前', () => {
     const s = popupStack('serif');
     const idx = (n) => s.indexOf(n);
+    // v0.8.25 核心：Georgia 在內嵌 "Noto Serif TC" 之前——英文/數字逐字命中
+    // Georgia，中文穿到後面的內嵌 Noto Serif TC。
+    assert.ok(idx('Georgia') < idx('Noto Serif TC'),
+      '西文襯線（Georgia）必須在內嵌 Noto Serif TC 之前——否則英文吃 Noto Serif TC 拉丁字形，不會 fall back');
     assert.ok(idx('Georgia') < idx('Songti TC'), '拉丁字型必須在 CJK 字體前（拉丁照走 Georgia/Times）');
+    assert.ok(idx('Noto Serif TC') < s.lastIndexOf('serif'), '內嵌 Noto Serif TC 必須在泛型 serif 前');
     assert.ok(idx('Songti TC') < s.lastIndexOf('serif'), 'Songti TC 必須在泛型 serif 前');
     assert.ok(idx('Hiragino Mincho ProN') < s.lastIndexOf('serif'), 'Hiragino Mincho ProN（iOS 唯一 CJK 襯線）必須在泛型 serif 前');
   });
@@ -74,21 +83,22 @@ describe('襯線 stack CJK 字體（v0.7.221 forcing function）', () => {
       'popup.html 襯線 option value 與 popup.js FONT_STACKS.serif drift——select 比對 settings.fontFamily 會失配、UI 顯示錯誤選項');
   });
 
-  it('SW 必須有 LEGACY_SERIF_STACK → SERIF_STACK 遷移（fontFamily 存字面值、改常數不動舊使用者）', () => {
+  it('SW 必須有 LEGACY serif → SERIF_STACK 遷移（fontFamily 存字面值、改常數不動舊使用者）', () => {
     // v0.8.16：SW 的字型 stack 常數改 reference 單一資料源
     //（SERIF_STACK = globalThis.__JReadFontStacks.serif 等），不再各自寫字面值。
     // 正準值改驗 shared font stacks；遷移邏輯 wiring 仍逐字校對。
+    // v0.8.25：LEGACY serif 改陣列（歷代舊值），遷移用 .includes()。
     assert.match(SW_SRC, /\bSERIF_STACK = globalThis\.__JReadFontStacks\.serif\b/,
       'SW SERIF_STACK 必須取自 globalThis.__JReadFontStacks.serif');
-    assert.match(SW_SRC, /\bLEGACY_SERIF_STACK = globalThis\.__JReadLegacyFontStacks\.serif\b/,
-      'SW LEGACY_SERIF_STACK 必須取自 globalThis.__JReadLegacyFontStacks.serif');
-    assert.strictEqual(LEGACY_FONT_STACKS.serif, EXPECTED_LEGACY,
-      'shared LEGACY 襯線常數必須等於 v0.7.220 以前的襯線 stack（精準匹配才遷移，不能誤改使用者自選值）');
+    assert.match(SW_SRC, /\bLEGACY_SERIF_STACKS = globalThis\.__JReadLegacyFontStacks\.serif\b/,
+      'SW LEGACY_SERIF_STACKS 必須取自 globalThis.__JReadLegacyFontStacks.serif');
+    assert.deepStrictEqual(LEGACY_FONT_STACKS.serif, EXPECTED_LEGACY,
+      'shared LEGACY 襯線陣列必須等於歷代舊襯線 stack（精準匹配才遷移，不能誤改使用者自選值）');
     assert.strictEqual(FONT_STACKS.serif, EXPECTED_SERIF,
       'shared SERIF_STACK 必須與 popup FONT_STACKS.serif 同步');
     // v0.8.15：onInstalled 改寫 diff patch（merged → patch、判定改讀 current）
-    assert.match(SW_SRC, /current\.fontFamily === LEGACY_SERIF_STACK\)\s*patch\.fontFamily = SERIF_STACK/,
-      'onInstalled 必須做精準替換遷移');
+    assert.match(SW_SRC, /LEGACY_SERIF_STACKS\.includes\(current\.fontFamily\)\)\s*patch\.fontFamily = SERIF_STACK/,
+      'onInstalled 必須做精準替換遷移（命中任一歷代舊值）');
   });
 });
 

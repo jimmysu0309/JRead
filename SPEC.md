@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.24**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.25**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -346,7 +346,7 @@ v0.7.140 起 popup 多了「字型」select，提供 4 個內建 stack：
 | popup 選項 | storage `fontFamily` 字面值 |
 | --- | --- |
 | 系統預設 | `system-ui`（== styler DEFAULTS.fontFamily，**不注入 override**，保留原站字體） |
-| 襯線 | `"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif`（v0.7.221：CJK 襯線字體必須明寫——iOS WebKit 對清單中段泛型 serif 只解析拉丁，CJK 會穿透到 styler sans 後綴的 PingFang TC；macOS 命中 Songti、iOS 命中 Hiragino Mincho。SW onInstalled 有舊值精準遷移） |
+| 襯線 | `Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif`（v0.8.25：西文襯線 Georgia/Times 排在 CJK 字體之前，CSS 逐字 fallback 下英文/數字命中 Georgia、中文穿到內嵌 Noto Serif TC——讓英文 fall back 到西文襯線而非吃 Noto Serif TC 拉丁字形。v0.7.221：CJK 襯線字體必須明寫——iOS WebKit 對清單中段泛型 serif 只解析拉丁，CJK 會穿透到 styler sans 後綴的 PingFang TC；macOS 命中 Songti、iOS 命中 Hiragino Mincho。SW onInstalled 有歷代舊值精準遷移） |
 | 無襯線 | `-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif`（v0.7.254：系統 CJK 字型優先、`"Noto Sans TC"` 降到末段——部分站點用壞掉的 `@font-face` 劫持「Noto Sans TC」名字、weight→檔案對映錯誤（shoppingdesign 把 weight 400 與 300 都指到 `Light.woff2`），舊 stack 領頭點名就吃到壞 webfont → 字重細/中渲染相同。CJK 逐字 fallback 先命中本機完整字重系統字型（PingFang/JhengHei）即繞過劫持。SW onInstalled 有舊值精準遷移） |
 | 等寬 | `ui-monospace, Menlo, Consolas, monospace` |
 

@@ -63,7 +63,8 @@ describe('popup 字型 select（v0.7.140）', () => {
       assert.strictEqual(values[1],
         // v0.7.221：補 CJK 襯線字體（macOS Songti / iOS Hiragino Mincho）——
         // 根因與平台實證見 serif-font-stack.spec.js
-        '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
+        // v0.8.25：西文襯線（Georgia / Times）排到 CJK 之前，英文 fall back 到 Georgia
+        'Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
         '「襯線」option value 必須對齊 popup.js FONT_STACKS.serif 字面值');
       assert.strictEqual(values[2],
         // v0.7.254：系統 CJK 字型優先、Noto Sans TC 降後（繞過站點 @font-face

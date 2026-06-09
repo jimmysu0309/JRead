@@ -67,24 +67,34 @@
   // 一份。注意：popup.html 的 <option value> 是第三份**靜態 HTML 拷貝**（HTML
   // 無法引用 JS 常數），仍由 serif-font-stack spec 校對 HTML↔JS 一致。
   //
-  // serif：各平台 CJK 襯線字體明寫（macOS Songti、iOS Hiragino Mincho），放在
-  // 泛型 serif 之前、拉丁字型之後——iOS WebKit 對清單中段泛型 serif 只解析拉丁
-  // 字型，CJK 會 fallback 到後綴 sans，需明寫才不會襯線/無襯線看起來一樣。
+  // serif：v0.8.25 起西文襯線（Georgia / Times）排在 CJK 字體之前——CSS 逐字
+  // fallback 下英文/數字命中 Georgia（西文襯線比 Noto Serif TC 拉丁字形更適合
+  // 螢幕閱讀），中文穿到後面的內嵌 "Noto Serif TC"（zero 缺字保證不變）。CJK
+  // 字體（內嵌 Noto Serif TC + macOS Songti + iOS Hiragino Mincho）仍放在泛型
+  // serif 之前——iOS WebKit 對清單中段泛型 serif 只解析拉丁字型，CJK 會 fallback
+  // 到後綴 sans，需明寫才不會襯線/無襯線看起來一樣。
   // sans：系統 CJK 字型優先（-apple-system / PingFang TC / JhengHei），繞過部分
   // 站點對「Noto Sans TC」family 名的 @font-face 劫持（weight→檔案對映壞掉導致
   // 字重失效）；Noto Sans TC 留作末段 fallback。詳見各 stack 的演進註解歷史。
   const FONT_STACKS = {
     system: 'system-ui',
-    serif: '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
+    serif: 'Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
     sans: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
     mono: 'ui-monospace, Menlo, Consolas, monospace'
   };
 
   // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進
   // storage，改 FONT_STACKS 常數不會自動更新既有使用者的存值——SW onInstalled
-  // 比對舊值精準替換成新值。LEGACY_SERIF = v0.7.220 以前；LEGACY_SANS = v0.7.253 以前。
+  // 比對舊值精準替換成新值。
+  // serif 為**陣列**（歷代舊值各一筆，命中任一即遷移到新值）：
+  //   [0] v0.7.220 以前（無明寫 CJK 字體）
+  //   [1] v0.7.221–v0.8.24（Noto Serif TC 領頭，英文吃 Noto 拉丁字形）
+  // sans 為單一字面值（v0.7.253 以前）。
   const LEGACY_FONT_STACKS = {
-    serif: '"Noto Serif TC", Georgia, "Times New Roman", serif',
+    serif: [
+      '"Noto Serif TC", Georgia, "Times New Roman", serif',
+      '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif'
+    ],
     sans: '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif'
   };
 
