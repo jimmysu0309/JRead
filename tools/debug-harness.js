@@ -15,6 +15,8 @@
 //   JREAD_URL=https://example.com node tools/debug-harness.js
 //   node tools/debug-harness.js --fresh              # 清 profile 後啟動
 //   node tools/debug-harness.js --keep               # 跑完不關瀏覽器（方便肉眼驗證）
+//   node tools/debug-harness.js --shinkansen         # toggle 後翻譯（驗 body 層殘留）
+//   node tools/debug-harness.js --translate-first    # 先翻譯→再 toggle（對應 Safari 實機順序）
 // -----------------------------------------------------------------------------
 
 const path = require('path');
@@ -65,7 +67,17 @@ const VIEWPORT_WIDTH = (widthArgIdx >= 0 && parseInt(process.argv[widthArgIdx + 
 // 站點為深底設計的 syntax 色 + reader 白卡。預設 light。
 const schemeArgIdx = process.argv.indexOf('--scheme');
 const COLOR_SCHEME = (schemeArgIdx >= 0 && process.argv[schemeArgIdx + 1]) || 'light';
-const WITH_SHINKANSEN = process.argv.includes('--shinkansen');
+// --translate-first：先 Shinkansen 翻譯 → 再 toggle JRead（對應 Jimmy 實機
+// Safari 順序）。隱含 --shinkansen（需載入 Shinkansen extension）。
+// 動機（v0.8.12）：detector/cleaner 的輸出受頁面文字內容影響（Readability 評分、
+// og:title 文字比對）。翻譯把文字換成中文後會走進「英文未翻譯」從沒測過的 code
+// path——chinatalk.media 實案：translate-first 後 detector 把站名 logo H1 當 hero
+// 上浮、留言+推薦括進主文。普通 --shinkansen 是「toggle→翻譯」順序、抓不到此類
+// （主 RESIDUAL AUDIT 在 toggle 當下跑、DOM 還是英文）。--translate-first 把翻譯
+// 移到 toggle 之前，讓既有 RESIDUAL / CONTRAST / GAP audit 全跑在「翻譯後偵測
+// 的 DOM」上，這類 in-article 雜訊殘留才驗得到。Chromium 即可重現 = 不需 WebKit。
+const TRANSLATE_FIRST = process.argv.includes('--translate-first');
+const WITH_SHINKANSEN = process.argv.includes('--shinkansen') || TRANSLATE_FIRST;
 // --paged：toggle 前先把 settings.pagedMode 寫成 true（直接寫 storage.sync，
 // 與 popup checkbox 同一條資料路徑），驗收電子書式水平翻頁。v0.7.230 WebKit
 // column-count: 1 翻頁全滅 bug 修法後加入——Chromium 端翻頁視覺 / 頁數 /
@@ -78,6 +90,29 @@ const PAGED = process.argv.includes('--paged');
 const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Shinkansen 翻譯觸發（跨 extension custom event，Google MT 免 API key）。
+// --shinkansen（toggle 後）與 --translate-first（toggle 前）共用。
+async function triggerShinkansenTranslate(page) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await sleep(300);
+  const res = await page.evaluate(() => new Promise((resolve) => {
+    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);
+    window.addEventListener('shinkansen-debug-response', (e) => {
+      clearTimeout(to);
+      resolve({ ok: true, detail: e.detail });
+    }, { once: true });
+    window.dispatchEvent(new CustomEvent('__jread_debug', {
+      detail: { type: 'translate', engine: 'google' }
+    }));
+  }));
+  console.log('translate trigger:', JSON.stringify(res));
+  console.log('waiting for translation to settle...');
+  await sleep(15000);
+  const n = await page.evaluate(() => document.querySelectorAll('[data-shinkansen-translated]').length);
+  console.log(`Shinkansen 翻譯元素數: ${n}`);
+  return n;
+}
 
 (async () => {
   if (FRESH) fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
@@ -151,6 +186,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // true 會讓後續普通驗收意外跑進翻頁模式。
   await sw.evaluate((on) => chrome.storage.sync.set({ pagedMode: on }), PAGED);
   if (PAGED) console.log('paged: settings.pagedMode = true');
+
+  // --translate-first：toggle JRead 之前先翻譯（對應 Jimmy 實機 Safari 順序）。
+  // 翻譯完成後下面的 toggle + 所有 audit 都跑在「翻譯後 DOM」上。
+  if (TRANSLATE_FIRST) {
+    console.log('\n===== SHINKANSEN TRANSLATE-FIRST（toggle 前翻譯） =====');
+    await triggerShinkansenTranslate(page);
+  }
 
   // 透過 SW 觸發 content script 的 TOGGLE_READER_MODE
   const toggle = await sw.evaluate(async (id) => {
@@ -713,29 +755,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // residual audit，抓「翻譯 extension 在 body 層注入/重建元素導致站名殘留」
     // 類 bug。v0.7.199 修法後 body 在 ancestor 鏈內，body 的非 ancestor 直接
     // 子元素被 CSS 隱藏——Shinkansen 翻譯不應讓任何非主文內容重新浮現。
-    if (WITH_SHINKANSEN) {
+    // --translate-first 已在 toggle 前翻譯過、主 audit 也跑在翻譯後 DOM，這裡
+    // 不重複翻譯（避免多等 15s + 重複觸發）；普通 --shinkansen 才走 toggle 後翻譯。
+    if (WITH_SHINKANSEN && !TRANSLATE_FIRST) {
       console.log('\n===== SHINKANSEN TRANSLATION =====');
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await sleep(300);
-
-      // 透過 JRead debug bridge 呼叫 Shinkansen（跨 extension custom event）
-      const translateResult = await page.evaluate(() => {
-        return new Promise((resolve) => {
-          const timeout = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);
-          window.addEventListener('shinkansen-debug-response', (e) => {
-            clearTimeout(timeout);
-            resolve({ ok: true, detail: e.detail });
-          }, { once: true });
-          window.dispatchEvent(new CustomEvent('__jread_debug', {
-            detail: { type: 'translate', engine: 'google' }
-          }));
-        });
-      });
-      console.log('translate trigger:', JSON.stringify(translateResult));
-
-      // 等翻譯完成（Google MT 一般 3-8s，視文章長度）
-      console.log('waiting for translation to settle...');
-      await sleep(15000);
+      await triggerShinkansenTranslate(page);
 
       // 翻譯後 residual audit
       const residualPostTranslate = await page.evaluate((keywords) => {

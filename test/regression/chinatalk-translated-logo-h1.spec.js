@@ -4,6 +4,13 @@
 // ensureArticleContainsTitleH1 的 og:title guard 失效，path 1 把 DOM-first H1
 // (h1#wordlogo site logo) 當 hero 升 LCA 到 div#main——主文範圍過廣、site header
 // 殘留。修法：articleEl 內恰有 1 個 H1 時信賴結構、跳過 promote。
+//
+// v0.8.12（translate-first 真實長文修法）：原 fixture 只有 1 個 H1，靠上述
+// 「恰 1 個 H1」guard 通過——但真實 chinatalk 長文 article 內有多個 section
+// H1（header-anchor-post），guard 不觸發、bug 重現（detector 上浮到 div#main、
+// 把 #discussion 留言區 + portable-archive-list 推薦列表括進主文）。fixture 已
+// 擴充加入 section H1 + 留言/推薦 sibling；修法改用 articleIsSelfTitled 結構訊號
+// （article 開頭即標題區 → 不向外借 hero、純位置與翻譯無關）。
 
 const path = require('path');
 const assert = require('assert');
@@ -43,6 +50,25 @@ describe('detector — 翻譯後 site logo H1 不應導致 promote 過廣', () =
     assert.ok(h1, 'article 內必須有 H1');
     assert.ok(h1.textContent.includes('敬我們毫無希望的事業'),
       'H1 必須是翻譯後的文章標題');
+  });
+
+  // v0.8.12 核心：留言區 + 推薦列表（article 外）不應被 detector 括進主文
+  it('留言區 #discussion 不在偵測到的 article 內', () => {
+    const { NS, document } = setup();
+    const result = NS.detector.detect();
+    const discussion = document.getElementById('discussion');
+    assert.ok(discussion, 'fixture 必須有 #discussion 留言區');
+    assert.ok(!result.el.contains(discussion),
+      '留言區不應在偵測到的主文容器內（translate-first 上浮 bug 回歸）');
+  });
+
+  it('推薦列表 .portable-archive-list 不在偵測到的 article 內', () => {
+    const { NS, document } = setup();
+    const result = NS.detector.detect();
+    const recs = document.querySelector('.portable-archive-list');
+    assert.ok(recs, 'fixture 必須有 .portable-archive-list 推薦列表');
+    assert.ok(!result.el.contains(recs),
+      '推薦列表不應在偵測到的主文容器內（translate-first 上浮 bug 回歸）');
   });
 
   // sanity check：暫時拿掉 article 內的 H1，確認 detector 仍能升級
