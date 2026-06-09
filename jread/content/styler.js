@@ -32,7 +32,8 @@
   // CSS 指定的系統字型名稱（"Songti TC" 等一律 resolve 到那套有缺漏的預設 serif），
   // 所以「只點名不載入」在 iOS 上無效。@font-face 把字型實體載進來、由 JRead 自己
   // 掌控覆蓋率，才能跟 iOS 內建閱讀模式一樣零缺字。family 名稱用 "Noto Serif TC"
-  // 對齊 popup 襯線 option 的第一順位——既有設定的使用者免遷移即生效。
+  // 對齊 popup 襯線 stack 裡的 CJK family 名（v0.8.25 起西文襯線 Georgia/Times 排在
+  // 前面、英文 fall back 到 Georgia；中文逐字 fallback 穿到此內嵌字型）。
   //
   // v0.7.257：三個真實字重各一個靜態字面（Light 300 / Regular 400 / SemiBold 600，
   // 同一份 6606 字覆蓋、由 Noto Serif TC 可變字型 pin 出）。為什麼不能沿用舊版

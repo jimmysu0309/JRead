@@ -75,7 +75,8 @@ const swallowTabGone = (p) => {
 // 的舊存值——onInstalled 比對舊值（LEGACY_*）精準替換成新值（SERIF/SANS_STACK）。
 // settings-defaults.js 由 importScripts（line 15）/ event page scripts 預載，
 // 取用點在這些常數初始化前已執行。
-const LEGACY_SERIF_STACK = globalThis.__JReadLegacyFontStacks.serif;
+// v0.8.25：LEGACY serif 為陣列（歷代舊值各一筆），命中任一即遷移到新值。
+const LEGACY_SERIF_STACKS = globalThis.__JReadLegacyFontStacks.serif;
 const SERIF_STACK = globalThis.__JReadFontStacks.serif;
 const LEGACY_SANS_STACK = globalThis.__JReadLegacyFontStacks.sans;
 const SANS_STACK = globalThis.__JReadFontStacks.sans;
@@ -96,7 +97,7 @@ chrome.runtime.onInstalled.addListener(async () => {
       if (!(key in current)) patch[key] = DEFAULT_SETTINGS[key];
     }
     // 舊 stack 字面值精準遷移（popup 常數改了不會自動跟動既有使用者的存值）
-    if (current.fontFamily === LEGACY_SERIF_STACK) patch.fontFamily = SERIF_STACK;
+    if (LEGACY_SERIF_STACKS.includes(current.fontFamily)) patch.fontFamily = SERIF_STACK;
     if (current.fontFamily === LEGACY_SANS_STACK) patch.fontFamily = SANS_STACK;
     // v0.7.254：舊 boldText（布林、macOS-only smoothing）→ fontWeight（三段
     // 300/400/600）一次性遷移。只在使用者「尚未有 fontWeight 值」時換算（current

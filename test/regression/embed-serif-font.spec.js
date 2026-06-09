@@ -10,7 +10,8 @@
 //      同一套有缺漏的預設 serif（Safari 不認系統字型名）——「只點名不載入」無效。
 //   3. iOS 內建閱讀模式正常 = Apple 原生排版器用完整系統 Songti，網頁拿不到那套。
 // 修法：@font-face 內嵌完整 Noto Serif TC（全 TC 集 woff2），family 名 "Noto
-// Serif TC" 對齊 popup 襯線 stack 第一順位——CJK 字元由 JRead 自帶完整字型渲染。
+// Serif TC" 對齊 popup 襯線 stack 中的 CJK family 名——CJK 字元由 JRead 自帶完整
+// 字型渲染（v0.8.25 起西文襯線 Georgia/Times 排在前面，英文不吃此字型）。
 //
 // Bug 二（Jimmy 2026-06-08 回報，v0.7.257 修）：襯線模式下字重三段（細/中/粗）
 // 渲染完全相同、字重選擇沒效果（無襯線正常）。
@@ -48,7 +49,7 @@ const DEFAULT_SETTINGS = {
 // 襯線 stack（popup 襯線 option 值）——overrides.fontFamily 為 true 時才注入 @font-face
 const SERIF_SETTINGS = {
   ...DEFAULT_SETTINGS,
-  fontFamily: '"Noto Serif TC", Georgia, "Times New Roman", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif'
+  fontFamily: 'Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif'
 };
 
 describe('內嵌襯線 CJK 字型（v0.7.253 內嵌 / v0.7.257 三字重 forcing function）', () => {
@@ -67,7 +68,7 @@ describe('內嵌襯線 CJK 字型（v0.7.253 內嵌 / v0.7.257 三字重 forcing
 
   it('styler.js 定義三個 @font-face：family 一致、weight 300/400/600 各單值、三個 woff2 src', () => {
     assert.match(STYLER_SRC, /font-family:\s*"Noto Serif TC"/,
-      '@font-face family 必須是 "Noto Serif TC"（對齊 popup 襯線 stack 第一順位，免遷移生效）');
+      '@font-face family 必須是 "Noto Serif TC"（對齊 popup 襯線 stack 中的 CJK family 名，CJK 字元由內嵌字型渲染）');
     // 三個字重檔名都必須出現在 styler（接線正確）
     for (const file of Object.values(FONT_FILES)) {
       assert.ok(STYLER_SRC.includes(file), `styler 必須引用字型檔 ${file}`);
