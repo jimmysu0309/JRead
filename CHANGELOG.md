@@ -4,6 +4,10 @@
 
 ---
 
+**v0.8.32** — fix(WPA 快速鍵真根因：runtime.onStartup 啟動觸發器): v0.8.30 keep-alive、v0.8.31 改鍵在 YouTube WPA 都實測無效後，改用**程序層監看**（ps 看 appex）追到真根因：macOS Safari WPA 內「on-demand 啟動 extension appex」**全面故障**——osascript 實測點 menu「延伸功能動作」、開 popup、content `runtime.connect` 都不會 spawn JRead appex 程序 → background 從沒跑過、`commands.onCommand` 無人接，所以 ⌥3 / ⌥R / menu 動作「從來不會動」（保活保的是從沒活過的程序）。Shinkansen 同場景可用的真正結構差異（A/B 終於收斂）：它註冊了 `runtime.onStartup` listener（4 處）、WPA session 啟動 2s 內 appex 就被拉起（ps 實證 PID 時間線：WPA 19:37:09 → Shinkansen appex 19:37:11），之後 keep-alive port 保活；JRead 一個 onStartup 都沒有。修法：SW 加 `runtime.onStartup` 空 listener（listener 的存在本身就是啟動觸發器，handler 不需做事；iOS existence guard 同 commands 款）。兩段式缺一不可：**onStartup 拉起 → keep-alive 保活**——WPA 不會 on-demand 重啟死掉的 appex（Shinkansen 偶發全滅 = appex 死後救不回，重啟 WPA 自救），v0.8.30 的 keep-alive 因此仍是必要件。Chrome 軌 onStartup 僅瀏覽器啟動時喚 SW 一次、無副作用。safari-keepalive.spec 加 onStartup wire-up forcing（含 guard 檢查）。驗收：TestFlight 更新後完全關閉並重開 YouTube WPA，測 ⌥R / menu 動作。
+
+---
+
 **v0.8.31** — change(預設快速鍵改回 ⌥+字母): v0.8.30 keep-alive port 在 YouTube WPA 實測無效（⌥3 / menu 動作仍全滅），「background 沒被拉起」非唯一根因——剩餘嫌疑是 WPA 對 ⌥+數字的 commands 鍵盤對映（Shinkansen 可用的 ⌥S 是 ⌥+字母；macOS ⌥+數字產生特殊字元如 £）。依 Jimmy 指定改鍵實驗：**切換純閱讀模式 `⌥3` → `⌥R`、送 Readwise `⌥⇧3` → `⌥⇧R`、YouTube 無邊模式 `⌥4` → `⌥Y`**（即還原 v0.7.252 之前的字母鍵 + 無邊模式換 Y；影院模式照舊與閱讀模式共用 toggle、在 YouTube 頁自動重導）。同步單一資料源全部 path：manifest suggested_key（default+mac）、`shortcut-utils.js` MANIFEST_DEFAULTS 鏡像（KeyR / KeyR+shift / KeyY）、options.html 三個 desc hint + YouTube 說明段、SW 註解、SPEC.md。`⌥3` / `⌥⇧3` / `⌥4` 釋放給自訂；validate 拒絕清單隨 MANIFEST_DEFAULTS 自動跟動（data-driven）。keep-alive port 保留（iOS background 回收對策仍成立）。regression：custom-shortcuts.spec validate 真值表翻面（⌥R/⌥⇧R/⌥Y 拒絕、⌥3 放行）、youtube-borderless.spec suggested_key 改 Alt+Y。注意：Chrome 既有安裝不會重套 suggested_key（只在首次安裝套用），Chrome 使用者需到 `chrome://extensions/shortcuts` 手動指派；Safari 直接讀 manifest、更新即生效。
 
 ---

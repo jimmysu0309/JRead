@@ -265,6 +265,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+// v0.8.32：runtime.onStartup 空 listener——macOS Safari WPA（加入 Dock 的
+// web app）的 background 啟動觸發器。
+//
+// 2026-06-10 程序層實證（ps 監看 appex）：WPA 內「on-demand 啟動 extension
+// appex」全面故障——menu「延伸功能動作」點擊、popup 開啟、content script
+// runtime.connect / sendMessage 都**不會** spawn appex 程序 → background 永遠
+// 沒跑 → commands.onCommand 無人接 → ⌥ 預設鍵與 menu 動作「從來不會動」
+// （v0.8.30 keep-alive、v0.8.31 改鍵都救不了：保活保的是從沒活過的程序）。
+// Shinkansen 同場景可用的真正差異：它註冊了 runtime.onStartup listener，
+// WPA session 啟動 2s 內 appex 就被拉起（ps 實證），之後 keep-alive port
+// 保活。listener 的**存在本身**就是啟動觸發器，handler 不需做事。
+// Chrome 軌也有 onStartup（瀏覽器啟動時喚 SW 一次）、無副作用。
+// iOS guard：API 缺席就跳過（與 commands guard 同款，缺了也只是 WPA 軌沒救）。
+if (chrome.runtime.onStartup && chrome.runtime.onStartup.addListener) {
+  chrome.runtime.onStartup.addListener(() => {
+    // 空 handler：喚起 background 本身就是目的。content/keepalive.js 的
+    // port 會在頁面載入後接上、讓 background 維持存活（兩段式：onStartup
+    // 拉起 → keep-alive 保活，缺一不可——WPA 不會 on-demand 重啟死掉的 appex）
+  });
+}
+
 // v0.8.30：Safari keep-alive port（content/keepalive.js 開，Safari 限定）。
 // macOS Safari WPA（加入 Dock 的 web app）/ iOS Safari 會把閒置 background
 // 永久回收且 onCommand 喚不醒（Apple Forums 758346）→ manifest 預設鍵
