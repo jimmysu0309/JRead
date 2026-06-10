@@ -10,19 +10,18 @@
 //     拉起來的觸發器。JRead 自 v0.7.235 起 content 直讀 storage、零訊息，補上
 //     這一發對齊。Chrome 不發（SW 事件喚醒可靠，不需要）。
 //
-// (B) keep-alive port（v0.8.30，觸控裝置限定 = 真 iOS / iPadOS）：iOS Safari
-//     會把閒置 background 永久回收且喚不醒（Apple Forums 758346）→ 開長連線
-//     port + 每 20s ping 讓它不被回收。**v0.8.33 起 gate 收緊到
-//     `navigator.maxTouchPoints > 0`**：macOS Safari / WPA 不跑——v0.8.30-32
-//     在 WPA 內 port connect 對「拉不起來的 background」的回傳值沒有 null
-//     guard，疑似 TypeError 中止同批 content script 後續檔案的執行（JRead 在
-//     WPA 全滅、連 v0.8.29 原本可用的 ⌃R 自訂鍵都死掉的回歸根因）。macOS
-//     Safari 的 background 生命週期正常，本來就不需要 keep-alive。
+// (B) keep-alive port（v0.8.30，Safari 全平台；v0.8.33 曾收緊到觸控裝置、
+//     v0.8.34 改回全 Safari）：iOS Safari 會把閒置 background 永久回收且喚
+//     不醒（Apple Forums 758346）→ 開長連線 port + 每 20s ping 讓它不被回收。
+//     macOS Safari WPA 同樣需要：background 被 SW 端 wake alarm（v0.8.34）
+//     拉起後，唯一讓它整個 session 不死的就是這條 port（Shinkansen 同款配方
+//     ——它的 port gate 是 build-time IS_IOS_BUILD、在 Mac 上也是 true）。
+//     v0.8.33 的 null guard + try/catch 保留：background 拉不起來的環境
+//     connect 回傳值不可信，TypeError 不可外洩。
 //
-// gate 訊號：Safari 用 runtime URL scheme（safari-web-extension://，結構性
-// 平台訊號、非 UA 嗅探）；iOS 用 maxTouchPoints（與 touch-gestures.js 同款）。
-// 「iPad app 跑在 Apple Silicon Mac」時 extension 在 macOS Safari 內執行、
-// maxTouchPoints = 0 → 不開 port，正確（macOS 不需要）。
+// gate 訊號：runtime URL scheme（safari-web-extension://，結構性平台訊號、
+// 非 UA 嗅探）。Chrome / Firefox 不開（background 生命週期正常，長連線
+// keep-alive 違反 MV3 best practice）。
 //
 // 訊號層次說明：jsdom spec 驗「gate / 連線 / 重連 / 可見性 / null guard」邏輯
 // 與兩側 wire-up，**不驗** Safari 實機的回收時序與 WPA 喚醒效果（那層只能靠
@@ -102,9 +101,7 @@
     void (chrome.runtime && chrome.runtime.lastError);
   });
 
-  // (B) keep-alive port：真觸控裝置（iOS / iPadOS）限定
-  if ((navigator.maxTouchPoints || 0) === 0) return;
-
+  // (B) keep-alive port：Safari 全平台（iOS 防回收 + macOS WPA 接力 alarm 保活）
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stop();
     else start();
