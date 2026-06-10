@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const EXPECTED_VERSION = '0.8.30';
+const EXPECTED_VERSION = '0.8.31';
 
 describe('version-check', () => {
   it('manifest.json 的 version 必須等於 EXPECTED_VERSION', () => {
@@ -61,7 +61,7 @@ describe('version-check', () => {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     assert.ok(manifest.commands, 'manifest 必須有 commands 區塊');
     assert.ok(manifest.commands['toggle-reader-mode'],
-      'manifest 必須有 toggle-reader-mode command（Alt+3 切換閱讀模式，v0.7.251 起）');
+      'manifest 必須有 toggle-reader-mode command（Alt+R 切換閱讀模式，v0.8.31 起）');
     assert.ok(manifest.commands['send-to-readwise'],
       'manifest 必須有 send-to-readwise command（v0.7.89 新增送 Readwise 快速鍵）');
     const cmd = manifest.commands['send-to-readwise'];
