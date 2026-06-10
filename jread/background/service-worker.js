@@ -122,6 +122,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
 
   switch (msg.type) {
+    case 'BG_WAKE_PING': {
+      // v0.8.33：content/keepalive.js 在 Safari 載入時發的一發喚醒訊息。
+      // 訊息的「送達」本身就是目的（把 macOS WPA 內從不自行啟動的 background
+      // 拉起來——Shinkansen 的 content 每頁都 sendMessage、其 commands 在 WPA
+      // 可用的疑似關鍵）。回 ok 讓 content callback 收到回應、不留 lastError。
+      sendResponse({ ok: true });
+      return; // sync
+    }
     case 'GET_SETTINGS': {
       chrome.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse);
       return true; // async
