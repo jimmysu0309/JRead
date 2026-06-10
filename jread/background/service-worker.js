@@ -265,6 +265,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+// v0.8.30：Safari keep-alive port（content/keepalive.js 開，Safari 限定）。
+// macOS Safari WPA（加入 Dock 的 web app）/ iOS Safari 會把閒置 background
+// 永久回收且 onCommand 喚不醒（Apple Forums 758346）→ manifest 預設鍵
+// ⌥3 / ⌥4 與 Safari menu「延伸功能動作」全滅。content 端每 20s ping 讓
+// background 維持非閒置；「持續有 port 連著 + 收訊息」這個事實本身就是
+// keep-alive，handler 只回 pong 供 content / 自動化偵測背景存活。
+// 無條件註冊（不以平台 gate）：Chrome 軌 content 端 gate 在
+// safari-web-extension:// scheme、永不開這條 port → 此 listener 在 Chrome
+// 不觸發，零行為差異；無條件註冊讓 Chromium harness 能驗 port 接線。
+chrome.runtime.onConnect.addListener((port) => {
+  if (!port || port.name !== 'jread-keepalive') return;
+  port.onMessage.addListener(() => {
+    try { port.postMessage({ pong: true }); } catch (_) {}
+  });
+});
+
 // 導航到新 URL 時重置 icon 回灰階——content script 會在新頁重新載入、預設
 // state 也是 inactive，但 setIcon 的 per-tab 設定會跨 navigation 殘留，
 // 需主動清空。監聽 tab.onUpdated 的 status === 'loading' 是新頁載入最早
