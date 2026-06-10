@@ -23,14 +23,15 @@
   // manifest.json commands 的 suggested_key 鏡像（瀏覽器層預設鍵）。
   // regression spec 有 forcing function 守這份鏡像與 manifest 逐欄一致——
   // 改 manifest suggested_key 沒同步這裡會 fail。
-  // 用途：(1) options 顯示「⌥3（預設）」(2) validate 拒絕「自訂值 == 預設值」
+  // 用途：(1) options 顯示「⌥R（預設）」(2) validate 拒絕「自訂值 == 預設值」
   // （兩層同時觸發會 toggle 兩次 = 視覺上沒反應）。
-  // v0.7.251：預設鍵由 ⌥R / ⌥⇧R 改為 ⌥3 / ⌥⇧3，並給 YouTube 無邊模式新增
-  // 預設 ⌥4（原本無 suggested_key）。digit 用 e.code 'Digit3' / 'Digit4'。
+  // v0.7.252：預設鍵由 ⌥R / ⌥⇧R 改為 ⌥3 / ⌥⇧3 + 無邊模式新增 ⌥4。
+  // v0.8.31：改回 ⌥R / ⌥⇧R、無邊模式 ⌥4 → ⌥Y（Jimmy 指定；macOS Safari WPA
+  // 內 ⌥+數字鍵 commands 全滅、Shinkansen 的 ⌥+字母（⌥S）可用，對齊字母 pattern）。
   var MANIFEST_DEFAULTS = {
-    'toggle-reader-mode':        { code: 'Digit3', alt: true, shift: false, ctrl: false, meta: false },
-    'send-to-readwise':          { code: 'Digit3', alt: true, shift: true,  ctrl: false, meta: false },
-    'toggle-youtube-borderless': { code: 'Digit4', alt: true, shift: false, ctrl: false, meta: false }
+    'toggle-reader-mode':        { code: 'KeyR', alt: true, shift: false, ctrl: false, meta: false },
+    'send-to-readwise':          { code: 'KeyR', alt: true, shift: true,  ctrl: false, meta: false },
+    'toggle-youtube-borderless': { code: 'KeyY', alt: true, shift: false, ctrl: false, meta: false }
   };
 
   // 純 modifier 鍵的 e.code——按下這些時組合還沒完成，eventToShortcut 回 null
