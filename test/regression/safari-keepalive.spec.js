@@ -194,6 +194,19 @@ describe('(B) wire-up 結構', () => {
       `content 端 PORT_NAME 必須是 '${PORT_NAME}'`);
   });
 
+  it('SW 必須註冊 runtime.onStartup listener（WPA background 啟動觸發器，v0.8.32）', () => {
+    // 2026-06-10 程序層實證：macOS Safari WPA 不會 on-demand spawn extension
+    // appex（menu / popup / runtime.connect 都不行），background 只有「session
+    // 啟動時被 onStartup 拉起」一條活路；keep-alive port 只負責之後不死。
+    // 移除此 listener = WPA 內 ⌥ 預設鍵與 menu 動作回到全滅。
+    // 注意帶開括號——guard 行的 `&& chrome.runtime.onStartup.addListener)` 是
+    // existence 檢查不是註冊，不可被當成命中（sanity 實測踩過）
+    assert.ok(/chrome\.runtime\.onStartup\.addListener\(/.test(SW_SRC),
+      'SW 必須實際呼叫 chrome.runtime.onStartup.addListener(...)（空 handler 即可，存在本身是啟動觸發器）');
+    assert.ok(/chrome\.runtime\.onStartup\s*&&\s*chrome\.runtime\.onStartup\.addListener/.test(SW_SRC),
+      'onStartup 註冊前必須有 existence guard（iOS API 可能缺席）');
+  });
+
   it('content gate 必須是 safari-web-extension:// scheme（結構性平台訊號，非 UA 嗅探）', () => {
     assert.ok(/safari-web-extension:\/\//.test(KEEPALIVE_SRC),
       'keepalive.js 必須以 runtime URL scheme 判斷 Safari');
