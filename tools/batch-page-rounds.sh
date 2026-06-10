@@ -54,6 +54,7 @@ URLS=(
   "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/at"
   "https://dev.to/isocyanideisgood/2026-web-dev-trends-that-actually-matter-5520"
   "https://github.blog/engineering/architecture-optimization/from-latency-to-instant-modernizing-github-issues-navigation-performance/"
+  "https://telefoncek.si/2025/02/2025-02-10-hidden-microphone-on-nanokvm/"
 )
 
 PASS=0
