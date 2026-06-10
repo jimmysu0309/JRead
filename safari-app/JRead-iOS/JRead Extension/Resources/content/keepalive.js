@@ -1,28 +1,32 @@
-// JRead — Safari background keep-alive port（v0.8.30）
+// JRead — Safari background 存活機制（v0.8.30 引入，v0.8.33 重整）
 //
-// 根因（2026-06-10 YouTube WPA 排查）：macOS Safari「加入 Dock」web app（WPA）
-// 與 iOS Safari 對擴充 background（即使已宣告成 event page）的生命週期管理
-// 相同：閒置約 30s 後被系統回收，之後 commands.onCommand 與 Safari menu
-// 「延伸功能動作」都喚不醒它（Apple Developer Forums thread 758346）。JRead
-// 的 manifest 預設鍵（⌥3 / ⌥4 / ⌥⇧3）與 menu 動作都走 background 端
-// onCommand → 在 WPA 內「從來不會動」。Shinkansen 同場景多半正常，唯一結構
-// 差異是它有 content 端 keep-alive port（每 20s ping，讓 background 維持
-// 非閒置不被回收）——本檔移植同機制。
+// 兩段機制，gate 各自獨立：
 //
-// 兩個效果：
-//   1. port connect 本身會把尚未啟動的 event page 拉起來。WPA 冷啟後 JRead
-//      background 可能從沒被載入——content script 不再 round-trip 取設定
-//      （v0.7.235 起直讀 storage），沒有任何訊息會喚它。
-//   2. 每 20s ping 重置系統閒置計時 → background 不被回收 → onCommand 活著。
+// (A) wake ping（v0.8.33，Safari 全平台）：content 載入時對 background 發一發
+//     runtime.sendMessage。動機：macOS Safari WPA（加入 Dock 的 web app）的
+//     background 不會因 commands / menu / popup 啟動（2026-06-10 實測），而
+//     Shinkansen 的 commands 在 WPA 可用、它的 content 每頁載入都會 sendMessage
+//     給 background（sticky query / log）——這發訊息疑似就是把 WPA background
+//     拉起來的觸發器。JRead 自 v0.7.235 起 content 直讀 storage、零訊息，補上
+//     這一發對齊。Chrome 不發（SW 事件喚醒可靠，不需要）。
 //
-// gate：只在 Safari 跑（runtime URL scheme 為 safari-web-extension://，結構性
-// 平台訊號、非 UA 嗅探）。Chrome / Firefox 的 background 生命週期正常（事件
-// 可靠喚醒），長連線 keep-alive 反而違反 MV3 best practice（SW 永不休眠、
-// 白耗資源）——不開。只在分頁可見時 ping（hidden 即斷線省電）；JRead content
-// script 只注入 top frame（manifest 無 all_frames），不需 frame guard。
+// (B) keep-alive port（v0.8.30，觸控裝置限定 = 真 iOS / iPadOS）：iOS Safari
+//     會把閒置 background 永久回收且喚不醒（Apple Forums 758346）→ 開長連線
+//     port + 每 20s ping 讓它不被回收。**v0.8.33 起 gate 收緊到
+//     `navigator.maxTouchPoints > 0`**：macOS Safari / WPA 不跑——v0.8.30-32
+//     在 WPA 內 port connect 對「拉不起來的 background」的回傳值沒有 null
+//     guard，疑似 TypeError 中止同批 content script 後續檔案的執行（JRead 在
+//     WPA 全滅、連 v0.8.29 原本可用的 ⌃R 自訂鍵都死掉的回歸根因）。macOS
+//     Safari 的 background 生命週期正常，本來就不需要 keep-alive。
 //
-// 訊號層次說明：jsdom spec 驗「gate / 連線 / 重連 / 可見性」邏輯與兩側 wire-up，
-// **不驗** Safari 實機的回收時序（那層只能靠 TestFlight 實機驗收）。
+// gate 訊號：Safari 用 runtime URL scheme（safari-web-extension://，結構性
+// 平台訊號、非 UA 嗅探）；iOS 用 maxTouchPoints（與 touch-gestures.js 同款）。
+// 「iPad app 跑在 Apple Silicon Mac」時 extension 在 macOS Safari 內執行、
+// maxTouchPoints = 0 → 不開 port，正確（macOS 不需要）。
+//
+// 訊號層次說明：jsdom spec 驗「gate / 連線 / 重連 / 可見性 / null guard」邏輯
+// 與兩側 wire-up，**不驗** Safari 實機的回收時序與 WPA 喚醒效果（那層只能靠
+// TestFlight 實機驗收）。
 (function () {
   'use strict';
 
@@ -57,32 +61,49 @@
       port = null;
       return;
     }
-    // background 回 pong → 記錄存活（production 不依賴此值，讓自動化測得到
-    // 真實 content ↔ background round-trip）
-    port.onMessage.addListener(() => { api.alive = true; });
-    // background 被回收 / extension reload → port 斷線。仍可見就 1s 後重連
-    // （重連的 connect 會重新拉起 event page；context 失效時 start 自會早退，
-    // 1s 延遲避免 reload 期間緊迴圈）
-    port.onDisconnect.addListener(() => {
-      port = null;
-      if (timer) { clearInterval(timer); timer = null; }
-      if (!document.hidden) setTimeout(start, 1000);
-    });
-    timer = setInterval(() => {
-      if (!port) return;
-      try {
-        port.postMessage({ t: 'ping' });
-      } catch (_) {
-        stop();
+    // v0.8.33 null guard：background 拉不起來的環境（macOS WPA 實測）connect
+    // 可能回傳 falsy / 殘缺 port——整段 listener 掛載包 try/catch，任何一步壞
+    // 都不能讓 TypeError 外洩（中止同批 content script 的風險）
+    if (!port) return;
+    try {
+      // background 回 pong → 記錄存活（production 不依賴此值，讓自動化測得到
+      // 真實 content ↔ background round-trip）
+      port.onMessage.addListener(() => { api.alive = true; });
+      // background 被回收 / extension reload → port 斷線。仍可見就 1s 後重連
+      // （重連的 connect 會重新拉起 event page；context 失效時 start 自會早退，
+      // 1s 延遲避免 reload 期間緊迴圈）
+      port.onDisconnect.addListener(() => {
+        port = null;
+        if (timer) { clearInterval(timer); timer = null; }
         if (!document.hidden) setTimeout(start, 1000);
-      }
-    }, PING_MS);
+      });
+      timer = setInterval(() => {
+        if (!port) return;
+        try {
+          port.postMessage({ t: 'ping' });
+        } catch (_) {
+          stop();
+          if (!document.hidden) setTimeout(start, 1000);
+        }
+      }, PING_MS);
+    } catch (_) {
+      stop();
+    }
   }
 
   const api = { start, stop, alive: false, PORT_NAME, PING_MS };
   NS.keepalive = api;
 
   if (!isSafariRuntime()) return;
+
+  // (A) wake ping：Safari 全平台。fire-and-forget；callback 讀 lastError
+  // 吞掉「background 沒回應」的 console 警告。
+  NS.safeSendMessage({ type: 'BG_WAKE_PING' }, () => {
+    void (chrome.runtime && chrome.runtime.lastError);
+  });
+
+  // (B) keep-alive port：真觸控裝置（iOS / iPadOS）限定
+  if ((navigator.maxTouchPoints || 0) === 0) return;
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stop();
