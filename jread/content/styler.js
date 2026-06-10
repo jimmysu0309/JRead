@@ -2007,42 +2007,6 @@ html [${ARTICLE_ATTR}="1"] a {
       const inlineImgs = [];
       const contentImgs = [];
       const contentImgLoadCleanup = [];
-
-      // v0.8.27：圖片載入後強制背景 re-raster，清「版面位移殘影」。
-      // 根因（Jimmy 2026-06-10 翻譯後 reader 實機回報、cage 真機定位）：文章圖
-      // 無 width/height/aspect-ratio，進閱讀模式當下未載入（naturalWidth=0、不佔
-      // 空間）→ 卡片偏短；約 1s 後圖陸續載入各撐高數百 px（4 張累計 ~2000px）→
-      // 標題以下內容被往下推（使用者語：「撐大」）。瀏覽器對「不透明圖層位移」
-      // 不一定 invalidate 舊位置 paint tile，殘留繪製：標題在舊位置疊影、右邊距
-      // 留白色殘框。非單一引擎 bug——Blink / WebKit 共用 tile-based 合成，兩者皆
-      // 重現（Chrome + Safari 實證）。
-      // 為何不「事前預留空間防位移」：圖無原生尺寸資訊、載入前算不出比例，無法
-      // 事前 reserve；故走「位移後清殘影」。
-      // flush 手法：把 body 背景設 transparent 一幀再還原——強制背景層 re-raster
-      // 清掉 stale tile；html 同為 pageBg、transparent 幀肉眼無感、零閃動。
-      // translateZ / 純 reflow 不重繪背景，實測無效（必須動背景 paint）。
-      const flushImgCleanup = [];
-      const flushTimers = [];
-      let _flushScheduled = false;
-      const _win = articleEl.ownerDocument?.defaultView || window;
-      const _raf = typeof _win.requestAnimationFrame === 'function'
-        ? _win.requestAnimationFrame.bind(_win) : null;
-      const flushStalePaint = () => {
-        // 非瀏覽器環境（jsdom 等無 rAF）→ no-op：殘影是真機 GPU 合成現象、
-        // 無 layout/raster 可清，跳過避免報錯。
-        if (!_raf || _flushScheduled) return;
-        _flushScheduled = true;
-        _raf(() => {
-          const body = document.body;
-          if (!body) { _flushScheduled = false; return; }
-          body.style.setProperty('background-color', 'transparent', 'important');
-          void body.offsetHeight;
-          _raf(() => {
-            body.style.removeProperty('background-color');
-            _flushScheduled = false;
-          });
-        });
-      };
       // 量 img 尺寸（natural 優先、不可靠時 fallback rect），>= CONTENT_IMG_MIN 即標
       // content-img；回傳是否已標（含先前已標）。load listener 補標時重用。
       const tryMarkContentImg = (img) => {
@@ -2099,19 +2063,7 @@ html [${ARTICLE_ATTR}="1"] a {
             contentImgLoadCleanup.push({ img, onLoad });
           }
         }
-        // v0.8.27：未載入的內容圖載入時會撐高卡片、推移內容 → 殘影。掛 load
-        // listener，載入後 flush 清殘影（見上方 flushStalePaint 註解）。同一
-        // flushStalePaint 參考供所有圖共用、restore 對稱移除。
-        if (!img.complete) {
-          img.addEventListener('load', flushStalePaint);
-          flushImgCleanup.push({ img, onLoad: flushStalePaint });
-        }
       }
-      // v0.8.27：延遲 flush 兜底——涵蓋「非圖片載入」的晚到位移（翻譯擴充如
-      // Shinkansen 在 reader 進入後 ~1s re-render 改 DOM 觸發 reflow，亦會留殘影）。
-      // 兩個時點覆蓋 re-render 與末張圖載入的常見時序；restore 對稱 clearTimeout。
-      flushTimers.push(setTimeout(flushStalePaint, 1500));
-      flushTimers.push(setTimeout(flushStalePaint, 3000));
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
 
@@ -2583,7 +2535,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, flushImgCleanup, flushTimers, playerMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -2629,16 +2581,6 @@ html [${ARTICLE_ATTR}="1"] a {
         for (const { img, onLoad } of snapshot.contentImgLoadCleanup) {
           if (img && img.removeEventListener) img.removeEventListener('load', onLoad);
         }
-      }
-      // v0.8.27：移除 flush-on-load listener + 清延遲 flush timer（避免退出後圖
-      // 載入仍 flush 背景、或延遲 flush 在已退出的頁面上動 body 背景）
-      if (Array.isArray(snapshot.flushImgCleanup)) {
-        for (const { img, onLoad } of snapshot.flushImgCleanup) {
-          if (img && img.removeEventListener) img.removeEventListener('load', onLoad);
-        }
-      }
-      if (Array.isArray(snapshot.flushTimers)) {
-        for (const t of snapshot.flushTimers) clearTimeout(t);
       }
       if (Array.isArray(snapshot.playerMarked)) {
         for (const el of snapshot.playerMarked) {
