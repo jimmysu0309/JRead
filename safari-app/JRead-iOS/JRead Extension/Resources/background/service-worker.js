@@ -340,7 +340,7 @@ if (chrome.commands && chrome.commands.onCommand) {
   });
 }
 
-// v0.7.89：快速鍵送 Readwise 流程（v0.7.251 起預設鍵 Alt+Shift+3）。
+// v0.7.89：快速鍵送 Readwise 流程（v0.8.31 起預設鍵 Alt+Shift+R）。
 // 流程：
 //   1. 先確認 reader mode 啟動；未啟動則先 toggle 開（含 inject fallback），
 //      等 cleaner / styler 跑完
