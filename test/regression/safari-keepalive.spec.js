@@ -5,10 +5,15 @@
 //     的 background 不會因 commands / menu / popup 啟動（2026-06-10 程序層 +
 //     行為層實測），Shinkansen 的 content 每頁 sendMessage、其 commands 在 WPA
 //     可用，對齊此喚醒路徑。
-// (B) keep-alive port（觸控裝置限定 = 真 iOS / iPadOS）：iOS background 閒置
-//     被永久回收（Apple Forums 758346）→ 20s ping 防回收。v0.8.33 起 macOS
-//     Safari / WPA 不跑——v0.8.30-32 port 無 null guard 疑似 TypeError 中止
-//     同批 content script（WPA 內連 ⌃R 都死的回歸根因），且 macOS 本不需要。
+// (B) keep-alive port（Safari 全平台，v0.8.34）：iOS background 閒置被永久
+//     回收（Apple Forums 758346）→ 20s ping 防回收；macOS WPA 則由 SW 端
+//     wake alarm 拉起後靠本 port 保活整個 session（Shinkansen 同款配方）。
+//     port null guard + try/catch（v0.8.33）保留——background 拉不起來的
+//     環境 connect 回傳值不可信。
+// SW 端另有 (C) wake alarm（v0.8.34，Safari 限定 5 分鐘週期）：alarm 是持久化
+//     排程，WPA 啟動時逾期 alarm 迫使 WebKit 喚 background——實測 onStartup /
+//     sendMessage / connect / menu / popup 都拉不起 WPA background，alarm 是
+//     唯一可靠觸發器（Shinkansen 24h alarm 的間歇模式實證）。
 //
 // 訊號層次說明：本檔驗 (A)(B) 行為邏輯（sandbox 注入 mock）與兩側 wire-up。
 // **不驗** Safari 實機回收時序與 WPA 喚醒效果——只能靠 TestFlight 實機驗收。
@@ -32,7 +37,7 @@ function loadKeepalive(opts = {}) {
     scheme = 'safari-web-extension://abc/', // 預設模擬 Safari
     hidden = false,
     runtimeId = 'ext-id',
-    touch = 5,                              // 預設模擬 iOS（觸控）
+    touch = 0,                              // 預設模擬 macOS（v0.8.34 起 port 不看觸控）
     connectReturnsNull = false
   } = opts;
 
@@ -114,17 +119,15 @@ function loadKeepalive(opts = {}) {
 }
 
 describe('(A) wake ping — Safari 全平台喚醒訊息', () => {
-  it('Safari（觸控）→ 發 BG_WAKE_PING', () => {
+  it('Safari → 發 BG_WAKE_PING', () => {
     const env = loadKeepalive();
     assert.strictEqual(env.sent.length, 1);
     assert.strictEqual(env.sent[0].type, 'BG_WAKE_PING');
   });
 
-  it('Safari（無觸控 = macOS Safari / WPA）→ 仍發 BG_WAKE_PING、但不開 port', () => {
+  it('Safari 無觸控（macOS / WPA）→ port 也要開（v0.8.34：WPA 靠 port 接力 alarm 保活）', () => {
     const env = loadKeepalive({ touch: 0 });
-    assert.strictEqual(env.sent.length, 1, 'macOS Safari 也要發 wake ping（WPA 喚醒 background 的主通道）');
-    assert.strictEqual(env.connects.length, 0, 'macOS（無觸控）不得開 keep-alive port');
-    assert.strictEqual(env.visibilityHandlers.length, 0, 'macOS 不得掛 visibilitychange listener');
+    assert.strictEqual(env.realConnects().length, 1, 'macOS Safari 也要開 keep-alive port');
   });
 
   it('Chrome 軌 → 不發 wake ping、不開 port', () => {
@@ -135,8 +138,8 @@ describe('(A) wake ping — Safari 全平台喚醒訊息', () => {
   });
 });
 
-describe('(B) keep-alive port — 觸控裝置（iOS / iPadOS）限定', () => {
-  it('Safari + 觸控 + 分頁可見 → 立即開 port（name=jread-keepalive）', () => {
+describe('(B) keep-alive port — Safari 全平台', () => {
+  it('Safari + 分頁可見 → 立即開 port（name=jread-keepalive）', () => {
     const env = loadKeepalive();
     assert.strictEqual(env.realConnects().length, 1, '必須 connect 恰好 1 次');
     assert.strictEqual(env.realConnects()[0].name, PORT_NAME);
@@ -246,11 +249,20 @@ describe('(C) wire-up 結構', () => {
       `content 端 PORT_NAME 必須是 '${PORT_NAME}'`);
   });
 
-  it('content gate 必須是 safari-web-extension:// scheme + maxTouchPoints（結構性訊號，非 UA 嗅探）', () => {
+  it('content gate 必須是 safari-web-extension:// scheme（結構性訊號，非 UA 嗅探）', () => {
     assert.ok(/safari-web-extension:\/\//.test(KEEPALIVE_SRC),
       'keepalive.js 必須以 runtime URL scheme 判斷 Safari');
-    assert.ok(/maxTouchPoints/.test(KEEPALIVE_SRC),
-      'keep-alive port 必須以 maxTouchPoints gate 到觸控裝置（macOS WPA 不可開 port）');
     assert.ok(!/userAgent/.test(KEEPALIVE_SRC), '不得用 UA 嗅探');
+  });
+
+  it('manifest 必須含 alarms 權限；SW 必須註冊 onAlarm + Safari 限定建立週期 alarm（v0.8.34）', () => {
+    assert.ok(MANIFEST.permissions.includes('alarms'),
+      'manifest permissions 必須含 alarms（WPA background 啟動觸發器）');
+    assert.ok(/chrome\.alarms\.onAlarm\.addListener\(/.test(SW_SRC),
+      'SW 必須註冊 onAlarm listener（空 handler 即可，被喚醒本身是目的）');
+    assert.ok(/chrome\.alarms\.create\('jread-bg-wake'/.test(SW_SRC),
+      "SW 必須建立 'jread-bg-wake' 週期 alarm");
+    const m = SW_SRC.match(/if \(IS_SAFARI_RUNTIME\) \{[\s\S]{0,300}chrome\.alarms\.create/);
+    assert.ok(m, 'alarms.create 必須 gate 在 IS_SAFARI_RUNTIME 內（Chrome 不建、省無謂喚醒）');
   });
 });

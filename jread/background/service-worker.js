@@ -294,6 +294,41 @@ if (chrome.runtime.onStartup && chrome.runtime.onStartup.addListener) {
   });
 }
 
+// v0.8.34：Safari 限定 wake alarm——macOS Safari WPA 的 background 啟動觸發器
+// 第二發（onStartup / wake ping 實測都拉不起來）。
+//
+// 機制：alarm 是**持久化排程**（存在 extension 狀態、不隨 background 死亡消失）。
+// WPA 啟動時若 alarm 已逾期，WebKit 必須喚 background 派送 onAlarm → background
+// 被拉起 → content keep-alive port 接手保活整個 session → commands.onCommand
+// 有人接。Shinkansen 在 WPA「多半能動、偶爾全滅」的間歇模式 = 它的 24h alarm
+// 在「每天首開」時逾期（→ 能動）、「短時間重開」時未逾期（→ 全滅），實證
+// alarm 是 WPA 唯一可靠的 background 啟動觸發器。JRead 用 5 分鐘週期把
+// 「未逾期窗口」縮到最小。
+//
+// 雞生蛋注意：本段程式碼在 background 內執行——WPA 內 background 第一次跑
+// 起來之前 alarm 不存在。bootstrap 路徑：extension 更新 / 設定頁啟用切換 /
+// 一般 Safari 的任何 background 喚醒（alarm 狀態若 per-context 則需該 context
+// 跑過一次）。same-name create 冪等（重複呼叫覆蓋、無重複註冊）。
+// Chrome 不建 alarm（SW 事件喚醒可靠，省每 5 分鐘的無謂喚醒）；onAlarm
+// listener 無條件註冊（Chrome 無 alarm 永不觸發，零行為差異）。
+const IS_SAFARI_RUNTIME = (() => {
+  try {
+    return chrome.runtime.getURL('').startsWith('safari-web-extension://');
+  } catch (_) {
+    return false;
+  }
+})();
+if (chrome.alarms && chrome.alarms.onAlarm) {
+  // 空 handler：被喚醒本身就是目的（喚醒後 keep-alive port 會在 content
+  // 重連時接上、接手保活）
+  chrome.alarms.onAlarm.addListener(() => {});
+  if (IS_SAFARI_RUNTIME) {
+    try {
+      chrome.alarms.create('jread-bg-wake', { delayInMinutes: 5, periodInMinutes: 5 });
+    } catch (_) { /* alarms 不可用環境（舊版 Safari）silently skip */ }
+  }
+}
+
 // v0.8.30：Safari keep-alive port（content/keepalive.js 開，Safari 限定）。
 // macOS Safari WPA（加入 Dock 的 web app）/ iOS Safari 會把閒置 background
 // 永久回收且 onCommand 喚不醒（Apple Forums 758346）→ manifest 預設鍵
