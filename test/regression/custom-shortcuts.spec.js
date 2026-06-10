@@ -103,17 +103,17 @@ describe('(A) shortcut-utils 純邏輯', () => {
     it('ESC 拒絕——保留給退出閱讀模式', () => {
       assert.strictEqual(SC.validate({ code: 'Escape', alt: true, shift: false, ctrl: false, meta: false }).ok, false);
     });
-    it('⌥3 拒絕——已是 toggle-reader-mode 內建預設（browser 層停不掉，雙觸發 = toggle 兩次）', () => {
-      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit3', { alt: true }))).ok, false);
+    it('⌥R 拒絕——已是 toggle-reader-mode 內建預設（browser 層停不掉，雙觸發 = toggle 兩次）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyR', { alt: true }))).ok, false);
     });
-    it('⌥⇧3 拒絕——已是 send-to-readwise 內建預設', () => {
-      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit3', { alt: true, shift: true }))).ok, false);
+    it('⌥⇧R 拒絕——已是 send-to-readwise 內建預設', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyR', { alt: true, shift: true }))).ok, false);
     });
-    it('⌥4 拒絕——已是 toggle-youtube-borderless 內建預設（v0.7.251 新增）', () => {
-      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit4', { alt: true }))).ok, false);
+    it('⌥Y 拒絕——已是 toggle-youtube-borderless 內建預設（v0.8.31 起）', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyY', { alt: true }))).ok, false);
     });
-    it('⌥R 通過——v0.7.251 起不再是預設、釋放給自訂', () => {
-      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('KeyR', { alt: true }))).ok, true);
+    it('⌥3 通過——v0.8.31 起不再是預設、釋放給自訂', () => {
+      assert.strictEqual(SC.validate(SC.eventToShortcut(kbd('Digit3', { alt: true }))).ok, true);
     });
   });
 

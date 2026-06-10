@@ -193,15 +193,16 @@ describe('youtube-borderless v0.7.134 — manifest', () => {
       `youtube-borderless.js 必須在 main.js 之前載入（main.js 訊息 handler 會呼 NS.borderless.toggle()），實際順序 borderless=${idxBorderless} main=${idxMain}`);
   });
 
-  it('manifest.json commands 必須有 toggle-youtube-borderless（v0.7.251 起預設 ⌥4）', () => {
+  it('manifest.json commands 必須有 toggle-youtube-borderless（v0.8.31 起預設 ⌥Y）', () => {
     assert.ok(MANIFEST.commands && MANIFEST.commands['toggle-youtube-borderless'],
       'manifest commands 必須有 toggle-youtube-borderless');
     const cmd = MANIFEST.commands['toggle-youtube-borderless'];
     assert.ok(cmd.description && cmd.description.length > 0,
       'toggle-youtube-borderless 必須有 description（給 chrome://extensions/shortcuts 顯示）');
-    // v0.7.251：Jimmy 指定預設鍵 ⌥4（原本無 suggested_key）。
-    assert.strictEqual(cmd.suggested_key && cmd.suggested_key.default, 'Alt+4',
-      'toggle-youtube-borderless suggested_key.default 必須是 Alt+4');
+    // v0.7.251 Jimmy 指定預設鍵 ⌥4；v0.8.31 改 ⌥Y（WPA 內 ⌥+數字 commands 全滅，
+    // 對齊 Shinkansen 可用的 ⌥+字母 pattern）。
+    assert.strictEqual(cmd.suggested_key && cmd.suggested_key.default, 'Alt+Y',
+      'toggle-youtube-borderless suggested_key.default 必須是 Alt+Y');
   });
 
   it('popup-core.js CONTENT_SCRIPT_FILES 必須與 manifest content_scripts.js 完全一致', () => {

@@ -4,6 +4,10 @@
 
 ---
 
+**v0.8.31** — change(預設快速鍵改回 ⌥+字母): v0.8.30 keep-alive port 在 YouTube WPA 實測無效（⌥3 / menu 動作仍全滅），「background 沒被拉起」非唯一根因——剩餘嫌疑是 WPA 對 ⌥+數字的 commands 鍵盤對映（Shinkansen 可用的 ⌥S 是 ⌥+字母；macOS ⌥+數字產生特殊字元如 £）。依 Jimmy 指定改鍵實驗：**切換純閱讀模式 `⌥3` → `⌥R`、送 Readwise `⌥⇧3` → `⌥⇧R`、YouTube 無邊模式 `⌥4` → `⌥Y`**（即還原 v0.7.252 之前的字母鍵 + 無邊模式換 Y；影院模式照舊與閱讀模式共用 toggle、在 YouTube 頁自動重導）。同步單一資料源全部 path：manifest suggested_key（default+mac）、`shortcut-utils.js` MANIFEST_DEFAULTS 鏡像（KeyR / KeyR+shift / KeyY）、options.html 三個 desc hint + YouTube 說明段、SW 註解、SPEC.md。`⌥3` / `⌥⇧3` / `⌥4` 釋放給自訂；validate 拒絕清單隨 MANIFEST_DEFAULTS 自動跟動（data-driven）。keep-alive port 保留（iOS background 回收對策仍成立）。regression：custom-shortcuts.spec validate 真值表翻面（⌥R/⌥⇧R/⌥Y 拒絕、⌥3 放行）、youtube-borderless.spec suggested_key 改 Alt+Y。注意：Chrome 既有安裝不會重套 suggested_key（只在首次安裝套用），Chrome 使用者需到 `chrome://extensions/shortcuts` 手動指派；Safari 直接讀 manifest、更新即生效。
+
+---
+
 **v0.8.30** — Safari background keep-alive port：修 macOS Safari WPA（「加入 Dock」web app）內 ⌥3 / ⌥4 預設快速鍵與 menu「編輯 → 延伸功能動作」全部失效。Jimmy 2026-06-10 回報：YouTube WPA 內 JRead 的 ⌥3 / menu 動作從來不會動（popup 正常、自訂 ⌃R 正常），Shinkansen 的 ⌥S / menu 多半正常、偶爾也死。排查鎖定根因：WPA / iOS Safari 把閒置 background（即使 event page）約 30s 後永久回收，之後 `commands.onCommand`（⌥ 預設鍵與 menu 動作的共同路徑）喚不醒它（Apple Forums 758346）；JRead content 自 v0.7.235 直讀 storage、不再有任何訊息喚 background，所以 WPA 冷啟後 background 從沒被拉起 →「從來不會動」。Shinkansen 多半能動的唯一結構差異 = 它有 content 端 keep-alive port（A/B 對照實證）。修法移植同機制：新增 `content/keepalive.js`——Safari 限定（runtime scheme `safari-web-extension://` gate，Chrome / Firefox 不開）開長連線 port + 每 20s ping（connect 本身會拉起未啟動的 event page；ping 重置閒置計時不被回收），分頁 hidden 即斷線省電、斷線 1s 後重連；SW 端 `onConnect` 回 pong（無條件註冊，Chrome 軌 listener 永不觸發）。自訂快速鍵（⌃R）不受影響（v0.7.228 起 content 本地派送、不經 background）。已知限制：Safari menu 顯示的快速鍵永遠是 manifest `suggested_key`（⌥3），自訂鍵改不了 menu 標示（Safari 無 `commands.update` API）。新增 `test/regression/safari-keepalive.spec.js`（sandbox 行為測試 + 兩側 wire-up forcing）。實機驗收需重發 TestFlight build（`./safari-app/ios-build.sh`）。
 
 ---
