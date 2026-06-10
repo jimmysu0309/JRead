@@ -1809,7 +1809,15 @@
   //
   // 通則條件（避免誤殺主文段落含個別 #hashtag 字串）：
   //   - container 內 a 數量 >= HASHTAG_MIN_COUNT
-  //   - 其中 ≥ HASHTAG_RATIO 的 a.textContent 以 # 開頭
+  //   - 命中下列任一「tag bar」判定：
+  //       (a) >= HASHTAG_RATIO 的 a.textContent 以 # 開頭，或
+  //       (b) hashtag a 絕對數 >= HASHTAG_MIN_COUNT 且**其餘非 # anchor 全是
+  //           短連結（<= TAG_BAR_ANCHOR_MAX_LEN 字）**——典型「分類連結 +
+  //           hashtag」混排的 meta/tag bar（roomie.tw .single-meta 實測：
+  //           TRAVEL/CULTURE + 一日百元生活圈 兩個分類連結 + 6 個 #tag，
+  //           ratio=6/8=0.75 卡在 0.8 門檻下漏網。桌面被站方 CSS media query
+  //           `.mobile-info{display:none}` 藏住、手機才顯示 → iOS 專屬殘留）。
+  //           非 # anchor 也是短連結 = 整列都是 navigation chrome、非主文敘述。
   //   - container 的 direct text（不抓子孫）<= HASHTAG_NARRATIVE_TEXT_MAX
   //     字（避免「敘述+一個 #tag link」的主文段落）
   //   - container 內**所有非 anchor 的長文字（>= 50 字 block）** 數 = 0
@@ -1821,6 +1829,7 @@
   const HASHTAG_RATIO = 0.8;
   const HASHTAG_NARRATIVE_TEXT_MAX = 5;
   const HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN = 50;
+  const TAG_BAR_ANCHOR_MAX_LEN = 24;  // 分類/標籤連結屬短文字；超過視為敘述性連結
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
     const candidates = articleEl.querySelectorAll('p, div');
     for (const el of candidates) {
@@ -1831,10 +1840,21 @@
       const anchors = el.querySelectorAll('a');
       if (anchors.length < HASHTAG_MIN_COUNT) continue;
       let hashtagHits = 0;
+      let nonHashAllShort = true;
       for (const a of anchors) {
-        if (norm(a.textContent).startsWith('#')) hashtagHits++;
+        const at = norm(a.textContent);
+        if (at.startsWith('#')) hashtagHits++;
+        else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
       }
-      if (hashtagHits / anchors.length < HASHTAG_RATIO) continue;
+      const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
+      const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
+      if (!ratioPass && !tagBarPass) continue;
+      // 媒體 guard：純 tag bar 不含媒體。`querySelectorAll('a')` 是遞迴的，
+      // 若 el 是外層 wrapper（含 .single-meta tag 列 + 主圖 figure），會在此
+      // 被命中而把 hero 圖一起 hide（roomie.tw .mobile-info 實測：6 hashtag
+      // + hero 768x461 同一 DIV 內 → 修法初版誤殺 hero）。含媒體 → skip 外層，
+      // 留給內層純 tag bar（.single-meta，無 img）被精準命中。
+      if (el.querySelector('img, picture, video, iframe, figure, svg')) continue;
       // direct text 扣除子孫 = 自身 textNode
       const directText = norm(Array.from(el.childNodes)
         .filter(n => n.nodeType === 3)
