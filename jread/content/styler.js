@@ -567,6 +567,27 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   height: auto !important;
   min-height: 0 !important;
 }
+/* v0.8.26：巢狀語意內容容器（article / main）水平 padding 清零——用注入式
+   stylesheet 補強，不只靠 JS inline（zeroHoriz，見下方 contentWidthSnap）。
+   根因：原站常對 <article> 設自身水平 padding（telefoncek.si 的
+   article { padding: 3em }）。reader card 已提供卡片 padding，巢狀 article 的
+   padding 疊上去 = 雙重內距把內文夾窄。zeroHoriz 進閱讀模式時用 inline !important
+   清掉它，normal 模式正常；但「先翻譯（Shinkansen 等翻譯擴充）再進閱讀模式」時，
+   翻譯擴充沉澱期的 re-render 會把 JRead 寫的 inline style 屬性整個洗掉（實測
+   ~1s 後 article 的 style 被清空、原站 3em padding 復活、內文 608px→500px）。
+   inline 擋不住跨擴充洗，改用注入式 stylesheet——#__jread-style 全程不被洗、
+   退出時整張移除即完整還原（不動原網頁元素，比 inline snapshot 還乾淨）。
+   只鎖 article / main：語意上「這就是主內容」的 landmark 容器，不會被當縮排
+   callout box 用，水平 padding 清零安全；div / section 的縮排語意歧義仍交給
+   zeroHoriz 的 indent-aware JS 處理。html 前綴提升 specificity 到 (0,1,2)
+   贏過原站 article { padding } 類 rule。selector 要求 article/main 是
+   [data-jread-active] 的「後代」——卡片本身若是 article/main 不受影響（它走
+   卡片 rule 拿卡片 padding）。 */
+html [${ARTICLE_ATTR}="1"] article,
+html [${ARTICLE_ATTR}="1"] main {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
 /* 所有 block 後代不超出 card content area：原站 CSS 可能對 header /
    section / div 設固定 width 或 min-width（yamatomichi Next.js header
    等），reader card 縮窄後這些元素溢出右邊界被 overflow-x:hidden 截斷。

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>巢狀語意 article 自帶水平 padding（telefoncek.si 雙重內距縮窄）</title>
+<style>
+/* 原站對 <article> 設自身水平 padding（telefoncek.si: article { padding: 3em }）。
+   reader card 已提供卡片 padding，巢狀 article 的 padding 疊上去 = 雙重內距，
+   把內文夾窄。先翻譯再進閱讀模式時，翻譯擴充 re-render 會洗掉 JRead 的 inline
+   padding-zero，原站 padding 復活——故 padding-zero 必須由注入式 stylesheet 兜底。 */
+article { padding: 3em; background: #faf9f5; }
+</style>
+</head><body>
+<div class="page-content">
+<div class="wrapper">
+  <header class="post-header">
+    <h1 class="post-title">How I discovered a hidden microphone on a Chinese NanoKVM</h1>
+  </header>
+  <article class="post">
+    <div class="entry-content">
+      <p>NanoKVM is a hardware KVM switch developed by the Chinese company Sipeed. Released last year, it enables remote control of a computer or server using a virtual keyboard, mouse, and monitor. Thanks to its compact size and low price, it quickly gained attention online.</p>
+      <p>As mentioned, NanoKVM is a KVM switch designed for remotely controlling and managing computers or servers. It features an HDMI port, three USB-C ports, an Ethernet port for network connectivity, and a special serial interface.</p>
+      <p>The device could be connected to the target computer using an HDMI cable, capturing the video output that would normally be displayed on a monitor. This allows you to view the computer screen directly in your browser, essentially acting as a virtual monitor.</p>
+      <p>Through the USB connection, NanoKVM can also emulate a keyboard, mouse, CD-ROM, USB drive, and even a USB network adapter. This means you can remotely control the computer as if you were physically sitting in front of it.</p>
+      <p>While it functions similarly to remote management tools like RDP or VNC, it has one key difference: there is no need to install any software on the target computer. Simply plug in the device, and you are ready to manage it remotely.</p>
+    </div>
+  </article>
+</div>
+</div>
+</body></html>
