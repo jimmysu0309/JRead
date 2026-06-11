@@ -86,7 +86,21 @@
 
     // 多個 <article>：通常是列表頁（首頁、部落格首頁、Medium 的 for you 等）
     // 策略：挑最長者；但若前幾篇長度相近，認定為列表頁而降級到策略 4
-    const sorted = articles
+    //
+    // v0.8.45：挑之前先用視口相交過濾。無限捲動站（thenewslens cage 實證）
+    // 把「下一篇」preload 成同文件的第二個 <article>，preload 篇比本文長時
+    // 「挑最長」會選到使用者根本沒在看的那篇（reader card 開出來是下一篇）。
+    // 結構性訊號：使用者觸發閱讀模式的當下，要讀的是「與視口相交」的那篇
+    // ——preload 篇在視口外的下方。有相交者只在相交者中挑；全部不相交
+    // （極端捲動位置）或 rect 不可用（jsdom / 隱藏候選）→ 退回全集合，
+    // 行為與舊版一致。列表頁多篇同時相交，looksLikeListPage 判定不受影響。
+    const vh = window.innerHeight || 0;
+    const intersecting = vh > 0 ? articles.filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.height > 0 && r.bottom > 0 && r.top < vh;
+    }) : [];
+    const pool = intersecting.length > 0 ? intersecting : articles;
+    const sorted = pool
       .map(el => ({ el, len: scoredTextLen(el) }))
       .sort((a, b) => b.len - a.len);
 

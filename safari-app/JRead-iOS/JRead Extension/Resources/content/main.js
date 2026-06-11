@@ -1177,6 +1177,18 @@
     const url = spaRouteKey(location.href);
     if (url === _spaLastUrl) return; // 路由 key 沒變 = 非真導航（title 雜訊 / 錨點跳轉等）
     _spaLastUrl = url;
+    // v0.8.45：URL 變了 ≠ 真導航——先驗 DOM 事實。無限捲動站（thenewslens
+    // 實證）preload 下一篇 + 依「視口目前在哪篇」replaceState 切 URL 與
+    // title；進入 reader mode 的瞬間 cleaner / styler 讓頁面高度劇變，站方
+    // 視口判定被觸發、URL 被切到下一篇 → 舊版把這當真導航 exit → 還原原頁
+    // → 站方又把 URL 切回 → 再觸發本 handler……reader mode 永遠掛不穩
+    // （cage instrument 抓到 exit stack 源頭就是本 handler、當時 href 已是
+    // 下一篇）。判別是結構性的：真 SPA 導航會把舊路由的 DOM 拆掉重建——
+    // articleEl 必然 disconnected；無限捲動的 URL 同步不動原文章 DOM——
+    // articleEl 仍連在文件上。還連著就保持 reader mode、只更新 _spaLastUrl。
+    // cinema 模式 articleEl 為 null，自然走原 exit 路徑（YouTube SPA 導航
+    // 行為不變）。
+    if (NS.state.active && NS.state.articleEl && NS.state.articleEl.isConnected) return;
     // 路由變化：reader card 綁的是舊路由 DOM，先同步退出
     const wasActive = NS.state.active && !NS.state.cinemaActive;
     if (NS.state.active) {

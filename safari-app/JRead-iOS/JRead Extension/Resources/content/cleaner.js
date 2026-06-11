@@ -97,6 +97,16 @@
     // 原 `tag[-_]?list` 不命中（`tag` 後接 `s` 非邊界）。
     { t: 'hash[-_]?tag' }, { t: 'tags?[-_]?list' },
     { t: 'premium[-_]?(?:widget|content|trial|banner|box)' },
+    // v0.8.45 chinatimes 實測：圖說下方「字級設定：」原站字級調整 UI 殘留
+    // （DIV.font-size-setting < DIV.article-function）。CMS 慣例命名通則，
+    // 不綁站點。
+    { t: 'font-?size-?(?:setting|switcher|control|adjuster?)' },
+    { t: 'article-function' },
+    // v0.8.45 businessweekly 實測：文末「商周大調查」投票 widget 殘留
+    // （DIV.investigate < DIV.bwvoteModulev1，y=1640 IMG↔IMG 207px gap
+    // 來源）。investigate（調查 widget）與 vote-module 系都是互動投票
+    // 模組的慣例命名；investigative（調查報導）因 token 邊界不會誤命中。
+    { t: 'investigate' }, { t: 'vote[-_]?(?:module|widget|box|panel|section)' },
     { t: 'next-article', strong: true }, { t: 'latest-posts', strong: true },
     { t: 'mostread', strong: true }, { t: 'most-read', strong: true },
     { t: 'recommended', strong: true }, { t: 'recommend', strong: true }, { t: 'recommendation', strong: true },
@@ -118,7 +128,11 @@
     { t: 'sidebar-primary', strong: true }, { t: 'sidebar-secondary', strong: true },
     { t: 'supplemental' }, { t: 'cover-wrap' }, { t: 'entry-unrelated' },
     { t: 'breadcrumb' }, { t: 'breadcrumbs' }, { t: 'crumb' },
-    { t: 'audio-player' }, { t: 'audio-widget' }, { t: 'controls' }, { t: 'partner' },
+    // v0.8.45：audio 系 token 放寬分隔符——cw.com.tw 用 BEM 雙底線
+    // `audio__player`（「文章語音朗讀」player 文字殘留實測），原 `audio-player`
+    // 只認單連字號。[-_]* 同時涵蓋 audio-player / audio__player / audioplayer。
+    { t: 'audio[-_]*player' }, { t: 'audio[-_]*widget' }, { t: 'article[-_]+audio' },
+    { t: 'controls' }, { t: 'partner' },
     { t: 'postlisting' }, { t: 'post-listing' }, { t: 'thread' }, { t: 'threads' },
     { t: 'reposted' }, { t: 'repost' }, { t: 'follow' }, { t: 'follow-us' }, { t: 'following' },
     { t: 'cookie-(?:banner|notice|consent|bar|message)' }, { t: 'gdpr' }, { t: 'consent' },
@@ -167,7 +181,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -180,7 +194,13 @@
   // CTA 句式常做成 heading tag（roomie 用 H5 / H3），但長度 21-40 字超過 base
   // max_len（20）漏網。這些 pattern 語意強綁訂閱/追蹤社群 CTA，主文副標幾乎不
   // 會這樣寫，誤殺風險低（且 walk-up「含主文長 p 才保護」與 max_len 40 仍兜底）。
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletter$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
+  // v0.8.45 新增三條（2026-06-11 page rounds C2）：
+  //   ^explore\s+more — github.blog「Explore more from GitHub」推薦區 heading
+  //     （24 chars 超過 base 的 20、且 ^more 錨定不容忍前綴動詞）
+  //   ^sign\s+up\s+for — slate「Sign up for Executive Dysfunction」newsletter
+  //     headline（base 只有完全等於 ^sign\s+up$ 的版本）
+  //   ^follow\s+topics — theverge「Follow topics and authors」follow CTA 區
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -195,7 +215,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -327,6 +347,13 @@
   // 讓 fixture 與真實站點量到同一個 textLen。sidebar / button-cluster 規則共用。
   function norm(s) {
     return (s || '').replace(/\s+/g, ' ').trim();
+  }
+
+  // v0.8.45：heading 比對專用——norm 之上再剝尾隨標點。推薦 / 訂閱 section
+  // heading 常帶冒號等收尾標點（bbc「More like this:」實測），錨定 `$` 的
+  // pattern（^more\s+like\s+this$ 類）會因標點 miss。只剝結尾、不動句中。
+  function normHeading(s) {
+    return norm(s).replace(/[\s:：;；!！…⋯.。?？▼▾›»>-]+$/, '');
   }
 
   // v0.7.251：標題比對專用正規化——在 norm（collapse 空白）之上再折疊
@@ -1750,10 +1777,12 @@
     const headings = semanticHeadings.concat(divSpanCandidates);
     for (const h of headings) {
       // 對 div/span/strong/em/b 只用 direct text（heading tag 用 textContent）
+      // v0.8.45：用 normHeading（剝尾隨標點）——「More like this:」類收尾
+      // 冒號讓 `$` 錨定 pattern miss（bbc culture 實測）。
       const isSemanticHeading = /^H[23456]$/.test(h.tagName);
       const text = isSemanticHeading
-        ? norm(h.textContent)
-        : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+        ? normHeading(h.textContent)
+        : normHeading(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
       if (!text) continue;
       // 雙層 max_len：既有 pattern 用嚴格 max_len（20），新 pattern 用寬鬆
       // max_len（40）。upmedia.mg 的 H3「延伸閱讀：＋連結文字」29 chars 命中
@@ -1781,6 +1810,59 @@
       // （含 closest('section,aside') → tooWide → walk-up fallback → tail-cleanup
       // / 最後防線 hide(h)）。與 checkDynamicNoise 單一資料源，消雙實作 drift。
       resolveHeadingNoiseTarget(h, articleEl, hidden);
+    }
+  }
+
+  // ---- 主文內：heading 內 inline 動作連結（v0.8.45）------------------------
+  // MediaWiki 類站每節 heading 旁有「[編輯]」動作連結（zh.wikipedia WK4
+  // 實測：h2 內 span 包 `[ <a>編輯</a> ]`），light / dark 都殘留。
+  // 結構通則（不綁 mw-editsection class）：heading（h1-h6）內、含 <a> 的
+  // <span> wrapper、自身文字遠短於 heading 主文字（占比 < 30% 且 <= 12
+  // chars）= 標題旁的動作 / 裝飾連結群（edit / share / anchor permalink /
+  // New! badge），不是標題內容。連 wrapper 一起 hide（只 hide <a> 會留下
+  // 括號殘渣）。
+  // 誤殺邊界：連結式標題（h2 > a 直接包整個標題）無 span wrapper 或文字
+  // 占比高，不命中；標題尾端的語意 small 註記（年份等）非 a 不命中。
+  // 中文 heading 短（「歷史起源[編輯]」8 chars、span 占 0.5），純占比判定
+  // 不可靠——「括號包裹」（[編輯] / (edit)）是動作連結的跨站視覺慣例，
+  // 命中括號形即放行占比檢查。
+  // 掃兩個位置（zh.wikipedia probe 實證新版 MediaWiki 兩種都有）：
+  //   (a) heading 內部的 span（舊版皮膚 h2 > span.mw-editsection）
+  //   (b) heading 的 wrapper 內 sibling span（新版 DIV.mw-heading > H2 +
+  //       SPAN.mw-editsection——editsection 移出 h2）。wrapper 必須「純粹
+  //       包標題」：文字量 ≈ heading + 短連結（<= headText + 15 chars），
+  //       排除「heading 與大段內容同層」的一般容器。
+  function hideInsideArticleHeadingActionLinks(articleEl, hidden) {
+    // titleBodyLen：heading「本體」文字長（內部 span 場景 = headText 減
+    // span 文字；sibling 場景 headText 本來就不含 span = headText 全長）。
+    function maybeHideActionSpan(span, titleBodyLen, hidden) {
+      if (span.dataset && span.dataset.jreadHidden === '1') return;
+      if (!span.querySelector('a')) return;
+      if (span.querySelector('img, picture, svg')) return; // icon 圖另有規則
+      const t = norm(span.textContent);
+      if (!t || t.length > 12) return;
+      if (titleBodyLen < 2) return; // 標題本體必須存在
+      const bracketed = /^[\[(（【〔].*[\])）】〕]$/.test(t.replace(/\s+/g, ''));
+      if (!bracketed && t.length / (titleBodyLen + t.length) >= 0.3) return;
+      hide(span, hidden);
+    }
+    for (const h of articleEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+      if (h.dataset && h.dataset.jreadHidden === '1') continue;
+      const headText = norm(h.textContent);
+      if (!headText) continue;
+      // (a) heading 內部（headText 含 span 文字 → 本體 = 差值）
+      for (const span of h.querySelectorAll('span')) {
+        maybeHideActionSpan(span, headText.length - norm(span.textContent).length, hidden);
+      }
+      // (b) wrapper 內 sibling（wrapper 純粹包標題才掃；headText 即本體）
+      const wrap = h.parentElement;
+      if (wrap && wrap !== articleEl &&
+          norm(wrap.textContent).length <= headText.length + 15) {
+        for (const sib of wrap.children) {
+          if (sib === h || sib.tagName !== 'SPAN') continue;
+          maybeHideActionSpan(sib, headText.length, hidden);
+        }
+      }
     }
   }
 
@@ -2166,6 +2248,22 @@
               r.height >= r.width * RAIL_MIN_ASPECT &&
               !railContainsRealImage(s.el)) {
             hide(s.el, hidden);
+            continue;
+          }
+          // 條件 E2（v0.8.45）：flex-grow 均分的近空 rail。theverge
+          // duet--layout--rail 實測：廣告 / 推薦 rail 的 flexGrow:1 與主欄
+          // 均分（各 304px、寬度比 1.0），條件 E 的「寬 < main × 0.5」幾何
+          // 假設失效；rail 沒清 → 主文被壓到卡片 42% 寬（body-width-narrow
+          // 21/21 段）。等寬時改用更強的「絕對近空 + 等高拉伸」訊號：
+          // 文字 < 100 chars（絕對值，主文欄不可能 9000px 高只有兩行字）+
+          // 高度 ≈ main 高（>= 80%，flex align-stretch 分欄特徵）+ 高 >
+          // 400 + 不含實質圖片 / 影音 embed。
+          if (r && mr && r.height > RAIL_MIN_HEIGHT &&
+              s.textLen < 100 &&
+              r.height >= mr.height * 0.8 &&
+              !railContainsRealImage(s.el) &&
+              !(s.el.querySelector && s.el.querySelector('video, iframe'))) {
+            hide(s.el, hidden);
           }
         }
       }
@@ -2319,17 +2417,34 @@
       hide(el, hidden);
       // 清直接父的 min-height/height 殘留（避免父預留 absolute child 空間
       // 後仍空著一大塊）
+      // v0.8.45：player 結構的 parent 跳過——player root 的高度是 player
+      // 佔位、不是「為 absolute child 預留的殘空間」。ms.now JW Player
+      // 實測：jw-controls 類 absolute child 被本規則清掉後，parent reset
+      // 把 jw-wrapper 高度打成 auto → player 塌成 16px、JW JS 以負 margin
+      // 把 video 置中於塌掉的容器 → video 突出 342px 蓋住 dek 文字 +
+      // 流空間錯位出 245px 假空白（gap audit y=206）。同理 parent 內仍含
+      // visible video / iframe 時也不 reset（高度 = 媒體佔位）。
       const parent = el.parentElement;
       if (parent && parent !== articleEl && !seenParents.has(parent)) {
         seenParents.add(parent);
-        let pcs;
-        try { pcs = window.getComputedStyle(parent); } catch (_) { pcs = null; }
-        if (pcs && (parseFloat(pcs.minHeight) > 0 || parseFloat(pcs.height) > 100)) {
-          parentHeightResets.push({
-            el: parent,
-            prev: snapshotStyles(parent, ['min-height', 'height'])
-          });
-          applyImportant(parent, { 'min-height': '0', 'height': 'auto' });
+        const isPlayerStruct = parent.getAttribute &&
+          parent.getAttribute('data-jread-player') === '1';
+        let hasVisibleMedia = false;
+        if (!isPlayerStruct && parent.querySelectorAll) {
+          for (const m of parent.querySelectorAll('video, iframe')) {
+            if (!m.closest('[data-jread-hidden="1"]')) { hasVisibleMedia = true; break; }
+          }
+        }
+        if (!isPlayerStruct && !hasVisibleMedia) {
+          let pcs;
+          try { pcs = window.getComputedStyle(parent); } catch (_) { pcs = null; }
+          if (pcs && (parseFloat(pcs.minHeight) > 0 || parseFloat(pcs.height) > 100)) {
+            parentHeightResets.push({
+              el: parent,
+              prev: snapshotStyles(parent, ['min-height', 'height'])
+            });
+            applyImportant(parent, { 'min-height': '0', 'height': 'auto' });
+          }
         }
       }
     }
@@ -2463,6 +2578,76 @@
   const COLLAPSE_ATTR = 'data-jread-collapsed';
   // collapse child reset 跳過的 replaced element（/i：SVG tagName 保留原小寫 case）
   const COLLAPSE_REPLACED_TAG_RE = /^(?:IMG|SVG|VIDEO|AUDIO|PICTURE|CANVAS|IFRAME|EMBED|OBJECT)$/i;
+
+  // ---- flex-row 殘殼欄（v0.8.45 theverge）---------------------------------
+  // 場景：flex 兩欄 layout 的推薦 / 廣告 rail，clean 當下有完整內容（theverge
+  // duet--layout--rail instrument 實測 2123 chars），各 sidebar 條件的文字量
+  // / link density 門檻都不命中；之後 rail **內部**被其他 rule 逐個清空，
+  // 只剩 54 chars 殘殼——wrapper 本身仍 visible、flexGrow:1 照樣占走 50%
+  // 寬，主文被壓到卡片 42%（body-width-narrow 21/21 段實測）。
+  // 結構特徵（不綁 class）：flex-row container 內、非主欄、**可見**文字
+  // < 100 chars、含 >= 1 個被 jread hide 的後代（證明是「被清空」而非原本
+  // 就空的 spacer）、無 visible 大媒體。命中即 hide 殘殼欄，緊接著的
+  // collapseGridWithHiddenCell 看到 hidden child 自然觸發條件 A collapse、
+  // 主欄回滿寬。
+  // 必須跑在所有 hide 類規則之後、collapse 之前（依賴「內部已被清空」的
+  // 最終狀態）。
+  const EMPTIED_COLUMN_MAX_VISIBLE_TEXT = 100;
+  const EMPTIED_COLUMN_WALK_CAP = 2000; // subtree 走訪上限（防巨欄白吃效能）
+
+  function visibleTextLenOf(root) {
+    let len = 0;
+    let visited = 0;
+    const walk = (el) => {
+      if (visited++ > EMPTIED_COLUMN_WALK_CAP) { len += 100000; return; } // 超大欄直接視為非殘殼
+      if (el.dataset && el.dataset.jreadHidden === '1') return;
+      const cs = window.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3) len += norm(n.textContent).length;
+        else if (n.nodeType === 1) walk(n);
+      }
+    };
+    walk(root);
+    return len;
+  }
+
+  function hideEmptiedFlexColumns(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const el of [articleEl, ...articleEl.querySelectorAll('div, section')]) {
+      if (el !== articleEl) {
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(el)) continue;
+      }
+      const cs = window.getComputedStyle(el);
+      if (!((cs.display === 'flex' || cs.display === 'inline-flex') &&
+            (cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse'))) continue;
+      const children = Array.from(el.children)
+        .filter(c => !(c.dataset && c.dataset.jreadHidden === '1'));
+      if (children.length < 2 || children.length > 4) continue;
+      // 主欄判定用粗 textLen（textContent 含 hidden 文字，便宜）——主欄不會
+      // 是殘殼，粗值夠用
+      const stats = children.map(c => ({ el: c, rough: norm(c.textContent).length }));
+      let main = stats[0];
+      for (const s of stats) if (s.rough > main.rough) main = s;
+      if (main.rough < 500) continue;
+      for (const s of stats) {
+        if (s === main) continue;
+        if (isInPreserved(s.el)) continue;
+        // 「被清空」證據：含 jread hide 的後代
+        if (!s.el.querySelector || !s.el.querySelector('[data-jread-hidden="1"]')) continue;
+        // visible 大媒體 guard（媒體欄不是殘殼）
+        if (railContainsRealImage(s.el)) continue;
+        let hasVisibleEmbed = false;
+        for (const m of s.el.querySelectorAll('video, iframe')) {
+          if (!m.closest('[data-jread-hidden="1"]')) { hasVisibleEmbed = true; break; }
+        }
+        if (hasVisibleEmbed) continue;
+        if (visibleTextLenOf(s.el) >= EMPTIED_COLUMN_MAX_VISIBLE_TEXT) continue;
+        hide(s.el, hidden);
+      }
+    }
+  }
 
   function collapseGridWithHiddenCell(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -2810,6 +2995,18 @@
       if (!/^(grid|inline-grid)$/.test(cs.display)) continue;
       // 只 collapse hard-coded px 的 grid（固定欄寬）；彈性單位保留
       if (!/\d+px/.test(cs.gridTemplateColumns || '')) continue;
+      // v0.8.45：子樹含 visible video / iframe 的 grid 跳過——player 佔位
+      // 高度常由 grid rows / absolute 子層撐著（ms.now msnbc-video-block
+      // grid 實測：collapse 後佔位塌成 16px，JW Player 以負 margin 置中於
+      // 塌掉的容器、video 突出蓋住 dek 文字 + 流空間錯位出 245px 假空白）。
+      // player 寬度已由 styler 的 media cap 管，不需要本規則的寬度修正。
+      let hasLiveMedia = false;
+      if (el.querySelectorAll) {
+        for (const m of el.querySelectorAll('video, iframe')) {
+          if (!m.closest('[data-jread-hidden="1"]')) { hasLiveMedia = true; break; }
+        }
+      }
+      if (hasLiveMedia) continue;
       resets.push({ el, prev: snapshotStyles(el, INNER_GRID_PROPS) });
       applyImportant(el, INNER_GRID_DECLS);
       // 掃 descendants：只對 symmetric margin（margin-left ≈ margin-right > 4px）
@@ -3186,6 +3383,21 @@
         }
       }
       if (!needsCap) continue;
+      // v0.8.45：aspect spacer guard（v0.7.181 同款結構判定）。JW Player
+      // `.jw-aspect` 用 padding-top 撐 player 佔位（ms.now 實測 540px 被
+      // cap 成 16px → player 塌、JW 以負 margin 把 video 置中於塌掉的容
+      // 器、video 突出蓋住 dek + 流空間錯位出 245px 假空白）。通則：parent
+      // 含 video / iframe sibling 的 wrapper 是 player layout 輔助元素，
+      // 其大 padding 是媒體佔位、不是裝飾留白，不 cap。
+      if (el.parentElement) {
+        let siblingHasMedia = false;
+        for (const sib of el.parentElement.children) {
+          if (sib === el) continue;
+          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
+          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
+        }
+        if (siblingHasMedia) continue;
+      }
       const prev = snapshotStyles(el, WRAPPER_SPACING_PROPS);
       const decls = {};
       for (const prop of WRAPPER_SPACING_PROPS) {
@@ -3468,15 +3680,26 @@
       // 「未 hydrate」判定：空/about:blank/data:image（LAZY_PLACEHOLDER_RE）
       // 或真實 URL 的 spacer gif（SPACER_SRC_RE，如 none.gif）
       const isUnhydrated = LAZY_PLACEHOLDER_RE.test(prevSrc) || SPACER_SRC_RE.test(prevSrc);
-      if (!isUnhydrated) continue;
+      // v0.8.46 第三類：站點 lazy library 用「真實 URL 的品牌 placeholder 圖」
+      // 當 src（tvbs 實測：img.lazyimage 的 src 停在 2017 年的灰底品牌圖、
+      // 檔名是日期 hash，真圖在 data-src）——前兩類判定全 miss、主圖整塊
+      // 灰白。結構雙條件：class 含 lazy 慣用 token（lazyload / lazyimage /
+      // lazysizes / b-lazy 等 library 跨站慣例命名）+ 帶指向不同真 URL 的
+      // LAZY_SRC_ATTRS。已 hydrate 的 img（src 已換成 data-src 同值）由
+      // 下方 newSrc === prevSrc 的 no-op guard 排除；此路徑**不走 srcset
+      // fallback**——lazysizes 類已正常顯示的圖（class lazyloaded）srcset
+      // 變體與 src 不同是響應式常態，不可誤改寫。
+      const hasLazyClass = /(^|[\s_-])lazy/i.test(String(img.className || ''));
+      if (!isUnhydrated && !hasLazyClass) continue;
 
       let newSrc = null;
       for (const attr of LAZY_SRC_ATTRS) {
         const v = img.getAttribute(attr);
         if (v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v)) { newSrc = v; break; }
       }
-      // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）
-      if (!newSrc) {
+      // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）。
+      // 僅限前兩類（src 確定是 placeholder）；lazy class 路徑不走（見上）。
+      if (!newSrc && isUnhydrated) {
         const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
         if (srcset) {
           const first = srcset.split(',')[0].trim().split(/\s+/)[0];
@@ -3522,8 +3745,30 @@
   //   - strong keyword（menu / sidebar 等明確非主文結構）跳過兩道保護
   function keywordWrapperIsProtected(el) {
     if (shouldHideByStrongKeyword(el)) return false;
-    if (el.querySelector && el.querySelector('h1')) return true;
+    if (el.querySelector && el.querySelector('h1') && wrapperH1IsMainTitle(el)) return true;
     return wrapperContainsMainContentP(el);
+  }
+
+  // v0.8.45：H1 guard 限縮。slate.com 實測 newsletter signup 區把 CTA
+  // 「Sign up for Executive Dysfunction」放在 <h1 class="newsletter-signup__
+  // headline">——舊版「含 h1 一律保留」被視覺大字濫用的 h1 騙過，
+  // `newsletter[\w-]*` keyword 命中卻被豁免。主文標題 h1 的結構特徵：
+  //   (a) 文字與 canonical title（og:title / document.title 去站名）相等或
+  //       互為前綴（站點 h1 常帶副標、og:title 常截斷）；或
+  //   (b) 是文件第一個 h1——翻譯 extension 改寫 h1 文字後 (a) 必失敗，
+  //       但主標的「文件首個 h1」位置不變（translate-first 場景靠這條）。
+  // 兩者皆否（newsletter headline 在主標之後、文字與標題無關）→ 不享保護。
+  // canonical 取不到時退回保守保護（與舊版行為一致，寧可漏清不誤殺）。
+  function wrapperH1IsMainTitle(el) {
+    const h1 = el.querySelector('h1');
+    if (!h1) return false;
+    if (document.querySelector('h1') === h1) return true; // (b) 文件第一個 h1
+    const ogMeta = document.querySelector('meta[property="og:title"]');
+    const canonical = normTitle((ogMeta && ogMeta.content) || NS.stripSiteSuffix(document.title || ''));
+    if (!canonical || canonical.length < 5) return true; // 無 canonical：保守保護
+    const h1Text = normTitle(h1.textContent || '');
+    if (!h1Text) return false;
+    return h1Text === canonical || h1Text.startsWith(canonical) || canonical.startsWith(h1Text);
   }
 
   // <a> 的「內容圖連結」豁免：lightbox / photoswipe / 看原圖。三道判定：
@@ -4113,9 +4358,10 @@
     }
     for (const h of candidates) {
       const isHeading = /^H[234]$/.test(h.tagName);
+      // v0.8.45：與靜態側同步用 normHeading（剝尾隨標點），見 normHeading 註解
       const text = isHeading
-        ? norm(h.textContent)
-        : norm(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+        ? normHeading(h.textContent)
+        : normHeading(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
       if (!text) continue;
       const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
       const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
@@ -4366,6 +4612,7 @@
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
+      safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
@@ -4392,6 +4639,10 @@
       safeRun(resetNegativeHorizontalMargins, articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       safeRun(hideAncestorSiblings, articleEl, hidden);
+      // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在
+      // 所有 hide 類規則之後、collapse 之前（hide 殘殼後 collapse 才看得到
+      // hidden child 觸發條件 A）
+      safeRun(hideEmptiedFlexColumns, articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
       // 偵測到「某 child 已被 hide」的條件
       safeRun(collapseGridWithHiddenCell, articleEl, hidden);
