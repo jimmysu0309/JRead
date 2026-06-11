@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.38**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.39**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -110,7 +110,10 @@ JRead/
 │   │   └── *.spec.js
 │   └── PENDING_REGRESSION.md
 ├── tools/
+│   ├── audit-lib.js             # harness audit 共用 library（NOISE_AUDIT_KEYWORDS + 全部 audit 函式的單一資料源，v0.8.39）
 │   ├── debug-harness.js         # Playwright 自動化除錯 harness
+│   ├── page-rounds-harness.js   # 批次視覺驗收（5 組分頁截圖 + audit.json + pass/fail verdict）
+│   ├── e2e-harness.js           # e2e spec 用 SW 啟動樣板（test/e2e/ import）
 │   ├── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
 │   └── asc-provision-ios.js     # iOS 簽章資源 bootstrap（憑證 / bundle ID / profiles，idempotent）
 ├── safari-app/                  # Safari Web Extension（iOS v0.7.217 起；單一 iOS binary 涵蓋 iOS / iPadOS / macOS）

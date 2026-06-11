@@ -22,29 +22,17 @@
 const path = require('path');
 const fs = require('fs');
 const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwright'));
+// audit 邏輯與 NOISE_AUDIT_KEYWORDS 的單一資料源（v0.8.39 抽出，與
+// page-rounds-harness 共用；anti-drift forcing function 見
+// test/regression/harness-audit-lib.spec.js）
+const audits = require(path.join(__dirname, 'audit-lib.js'));
+const { NOISE_AUDIT_KEYWORDS } = audits;
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const EXT_PATH = path.join(PROJECT_ROOT, 'jread');
 const PROFILE_DIR = '/tmp/jread-pw-profile';
 const SCREENSHOT_OUT = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-viewport.png');
 const FULLPAGE_OUT = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-reader-fullpage.png');
-
-// 殘留偵測名單：reader card 內若出現這些字樣 = cleaner rule 漏網（雜訊殘留）。
-// 規則：跨站常見的「推薦 / 相關 / 社群 / CTA / 訂閱 / 留言」等非主文字樣。
-// 新增字樣請同步維護 cleaner.js 的 NOISE_*_RE regex；此清單是 forcing
-// function—— harness 每次驗收必跑、任一命中都印 WARNING。
-const NOISE_AUDIT_KEYWORDS = [
-  '更多', '相關', '其他人', '推薦', '最新', '延伸', '查看原始', '看更多', '看原文',
-  '加入', '訂閱', 'LINE 官方', 'LINE官方', '官方帳號', '粉絲專頁', '好友',
-  'AI 摘要', 'AI摘要', '網友貼文', '貼文',
-  '轉發', '留言', '建立貼文', '熱門', '繼續看下去', '貼文', '回覆',
-  '廣告', '贊助', '業配',
-  '登入', '註冊',
-  '原始文章',
-  '追蹤', '關注', '訂閱',
-  'Google新聞', 'Google 新聞', '透過',
-  '聽新聞', '聽書', '想成為', '玩問答', '拿課程', '抽獎', '免費領'
-];
 
 // --url 優先，其次 JREAD_URL 環境變數，最後預設
 const urlArgIdx = process.argv.indexOf('--url');
@@ -108,9 +96,23 @@ async function triggerShinkansenTranslate(page) {
   }));
   console.log('translate trigger:', JSON.stringify(res));
   console.log('waiting for translation to settle...');
-  await sleep(15000);
-  const n = await page.evaluate(() => document.querySelectorAll('[data-shinkansen-translated]').length);
-  console.log(`Shinkansen 翻譯元素數: ${n}`);
+  // poll 翻譯元素數，連續兩次（間隔 1.5s）非零且不再增加即視為穩定——
+  // 舊版固定 sleep 15s，多數頁 5-8s 就翻完，白等一半以上；上限 20s 兜底
+  // （比舊版多 5s headroom，慢站不會比以前更早被砍）。
+  const start = Date.now();
+  let n = 0, prev = -1, stable = 0;
+  while (Date.now() - start < 20000) {
+    await sleep(1500);
+    n = await page.evaluate(() => document.querySelectorAll('[data-shinkansen-translated]').length);
+    if (n > 0 && n === prev) {
+      stable++;
+      if (stable >= 2) break;
+    } else {
+      stable = 0;
+    }
+    prev = n;
+  }
+  console.log(`Shinkansen 翻譯元素數: ${n}（${((Date.now() - start) / 1000).toFixed(1)}s）`);
   return n;
 }
 
@@ -319,71 +321,10 @@ async function triggerShinkansenTranslate(page) {
     console.log('gaps:', JSON.stringify(gaps, null, 2));
 
     // ---- Residual audit：列出 reader card 內所有可見 heading + 連結的文字 ----
-    // 抓 reader card 內每個 visible h1-h6 + a + button + top-level section/p
-    // 的 text，檢查有沒有落在 NOISE_AUDIT_KEYWORDS 名單裡。這是 forcing
-    // function：cleaner rule 跑完若仍有雜訊可見，這裡一定報 WARNING——
-    // 避免之前「grep 沒命中 = 清乾淨」的偽陰性驗收。
-    const residual = await page.evaluate((keywords) => {
-      const art = document.querySelector('[data-jread-active="1"]');
-      if (!art) return { error: 'no article' };
-
-      function isVisible(el) {
-        if (el.dataset && el.dataset.jreadHidden === '1') return false;
-        let cur = el;
-        while (cur) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
-          const cs = window.getComputedStyle(cur);
-          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-          if (cur === document.body) break;
-          cur = cur.parentElement;
-        }
-        return true;
-      }
-
-      function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-
-      const items = [];
-      // 掃 articleEl 內所有 element，列出「自身直接 textNode 有內容 <= 60 chars」
-      // 的 element——這些是 heading / button / span / tag / meta 類短文字，
-      // 最容易是非主文雜訊。p 含長段落會被 > 60 門檻過濾掉，不會污染 outline。
-      for (const el of art.querySelectorAll('*')) {
-        if (!isVisible(el)) continue;
-        // SVG <title> / <desc> 是 accessibility 補充文字（tooltip），肉眼不
-        // 可見，audit 不列。HTML <style> / <script> 同理。
-        const tag = el.tagName;
-        const tagUpper = tag.toUpperCase();
-        if (tagUpper === 'TITLE' || tagUpper === 'DESC' || tagUpper === 'STYLE' ||
-            tagUpper === 'SCRIPT' || tagUpper === 'NOSCRIPT') continue;
-        // 只看 direct text（不抓子孫的），避免「包了主文的 wrapper」產生假 outline
-        const direct = Array.from(el.childNodes)
-          .filter(n => n.nodeType === 3)
-          .map(n => n.textContent).join('');
-        const text = norm(direct);
-        if (!text || text.length > 60) continue;
-        if (text.length < 2) continue;
-        const hitKws = keywords.filter(kw => text.includes(kw));
-        items.push({
-          tag: tag,
-          text: text.slice(0, 60),
-          hitKeywords: hitKws,
-          elCls: (el.className || '').toString().slice(0, 80),
-          parents: hitKws.length > 0 ? (() => {
-            const out = [];
-            let p = el.parentElement;
-            for (let i = 0; i < 3 && p; i++) {
-              const c = ((p.className || '').toString().split(/\s+/).slice(0, 2).join('.')) || '(anon)';
-              out.push(`${p.tagName}.${c}`);
-              p = p.parentElement;
-            }
-            return out.join(' > ');
-          })() : null
-        });
-        if (items.length >= 200) break;
-      }
-
-      const warnings = items.filter(it => it.hitKeywords.length > 0);
-      return { total: items.length, warnings, items: items.slice(0, 60) };
-    }, NOISE_AUDIT_KEYWORDS);
+    // 這是 forcing function：cleaner rule 跑完若仍有雜訊可見，這裡一定報
+    // WARNING——避免之前「grep 沒命中 = 清乾淨」的偽陰性驗收。
+    // 實作在 audit-lib.js（與 page-rounds 共用同一份）。
+    const residual = await audits.runResidualText(page, NOISE_AUDIT_KEYWORDS);
 
     function printAudit(label, r) {
       console.log(`\n===== RESIDUAL AUDIT (${label}) =====`);
@@ -415,55 +356,8 @@ async function triggerShinkansenTranslate(page) {
     // 現在對 p/h*/figure/img/ul/ol/blockquote 等 content anchor 按 y 位置
     // 排序、量連續兩個 block 間 gap，>= 80px 印警告。非 forcing function
     // （某些段落間合法大 margin 例如 h2 前 60-80px），只提醒 Claude 修法
-    // 後自動巡視這些位置。threshold 80 是「正常段落 margin」（line-height
-    // 1.7 × 18px ≈ 30px，h2 margin-top 多站慣例 40-60px）與 techbang 實測
-    // 262px 案例間取的中位，可未來調整。
-    async function runGapAudit() {
-      return await page.evaluate(() => {
-        const art = document.querySelector('[data-jread-active="1"]');
-        if (!art) return { error: 'no article' };
-        function isVisible(el) {
-          let cur = el;
-          while (cur) {
-            if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
-            const cs = window.getComputedStyle(cur);
-            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-            if (cur === document.body) break;
-            cur = cur.parentElement;
-          }
-          return true;
-        }
-        function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-        const blocks = [];
-        // content anchor：主文常見的「一段內容」元素。div 故意不收——div 太
-        // 通用、會納入 wrapper 造成 double-count。figure / img 含圖片 / ul /
-        // ol 含列表、都是 Jimmy 視覺上會記住「上個區塊結束」的點。
-        for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, blockquote, pre')) {
-          if (!isVisible(el)) continue;
-          const r = el.getBoundingClientRect();
-          if (r.width < 10 || r.height < 10) continue;
-          blocks.push({
-            top: r.top, bottom: r.bottom,
-            tag: el.tagName,
-            text: norm(el.innerText || el.textContent || '').slice(0, 40)
-          });
-        }
-        blocks.sort((a, b) => a.top - b.top);
-        const gaps = [];
-        for (let i = 1; i < blocks.length; i++) {
-          const gap = blocks[i].top - blocks[i - 1].bottom;
-          if (gap >= 80) {
-            gaps.push({
-              gap: Math.round(gap),
-              prev: `${blocks[i-1].tag} "${blocks[i-1].text}"`,
-              next: `${blocks[i].tag} "${blocks[i].text}"`,
-              y: Math.round(blocks[i-1].bottom)
-            });
-          }
-        }
-        return { gaps, blockCount: blocks.length };
-      });
-    }
+    // 後自動巡視這些位置。threshold 與實作在 audit-lib.js。
+    const runGapAudit = () => audits.runGapAudit(page);
 
     function printGapAudit(label, g) {
       console.log(`\n===== GAP AUDIT (${label}) =====`);
@@ -489,88 +383,8 @@ async function triggerShinkansenTranslate(page) {
     // ::before / ::after pseudo 文字、不驗 opacity / filter 造成的視覺淡化。
     // < 3:1（WCAG 大字 / UI 元件下限）即 ⚠️——residual / gap audit 都抓不到
     // 這類「東西在、看不見」的 bug，grep keyword 更不可能命中。forcing
-    // function：修 styler / theme 類改動後驗收必看本段。
-    async function runContrastAudit() {
-      return await page.evaluate(() => {
-        const art = document.querySelector('[data-jread-active="1"]');
-        if (!art) return { error: 'no article' };
-        function parseColor(s) {
-          if (!s) return null;
-          let m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i);
-          if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4])) };
-          m = s.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)$/i);
-          if (m) return { r: Math.round(+m[1] * 255), g: Math.round(+m[2] * 255), b: Math.round(+m[3] * 255), a: m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4])) };
-          return null;
-        }
-        function lum(c) {
-          const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-          return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
-        }
-        function contrast(a, b) {
-          const l1 = lum(a), l2 = lum(b);
-          return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-        }
-        function blend(fg, bg) {
-          const a = fg.a;
-          return { r: fg.r * a + bg.r * (1 - a), g: fg.g * a + bg.g * (1 - a), b: fg.b * a + bg.b * (1 - a), a: 1 };
-        }
-        function effBg(el) {
-          const layers = [];
-          let opaque = false;
-          let cur = el;
-          while (cur && cur.nodeType === 1) {
-            const c = parseColor(getComputedStyle(cur).backgroundColor);
-            if (c && c.a > 0) { layers.push(c); if (c.a >= 0.999) { opaque = true; break; } }
-            if (cur === document.body) break;
-            cur = cur.parentElement;
-          }
-          let base = opaque ? { r: 0, g: 0, b: 0, a: 1 } : { r: 255, g: 255, b: 255, a: 1 };
-          for (let i = layers.length - 1; i >= 0; i--) base = blend(layers[i], base);
-          return base;
-        }
-        function isVisible(el) {
-          let cur = el;
-          while (cur) {
-            if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
-            const cs = getComputedStyle(cur);
-            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-            if (cur === document.body) break;
-            cur = cur.parentElement;
-          }
-          return true;
-        }
-        const warnings = [];
-        let scanned = 0;
-        for (const el of art.querySelectorAll('*')) {
-          if (warnings.length >= 20 || scanned >= 1500) break;
-          const tag = el.tagName.toUpperCase();
-          if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
-          let direct = '';
-          for (const n of el.childNodes) if (n.nodeType === 3) direct += n.textContent;
-          direct = direct.replace(/\s+/g, ' ').trim();
-          if (direct.length < 4) continue;
-          scanned++;
-          if (!isVisible(el)) continue;
-          const r = el.getBoundingClientRect();
-          if (r.width < 5 || r.height < 5) continue;
-          const fg = parseColor(getComputedStyle(el).color);
-          if (!fg || fg.a < 0.5) continue;
-          const bg = effBg(el);
-          const ratio = contrast(fg, bg);
-          if (ratio < 3) {
-            warnings.push({
-              tag: el.tagName,
-              cls: (el.className || '').toString().slice(0, 40),
-              text: direct.slice(0, 40),
-              color: getComputedStyle(el).color,
-              bg: `rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)})`,
-              ratio: Math.round(ratio * 100) / 100
-            });
-          }
-        }
-        return { scanned, warnings };
-      });
-    }
+    // function：修 styler / theme 類改動後驗收必看本段。實作在 audit-lib.js。
+    const runContrastAudit = () => audits.runContrastAudit(page);
 
     function printContrastAudit(label, c) {
       console.log(`\n===== CONTRAST AUDIT (${label}) =====`);
@@ -597,39 +411,9 @@ async function triggerShinkansenTranslate(page) {
     // 內）的 content-box 寬若比 card 版心窄 > 2px → ⚠️。
     // 翻頁模式 multicol 下 card clientWidth 含全部欄、量不準，--paged 時跳過。
     // 這條驗「視覺幾何」層，不驗「CSS 字串」——padding 被清但元素若被別的
-    // rule 再夾窄也抓得到。
+    // rule 再夾窄也抓得到。實作在 audit-lib.js。
     if (!PAGED) {
-      const widthAudit = await page.evaluate(() => {
-        const card = document.querySelector('[data-jread-active="1"]');
-        if (!card) return { error: 'no card' };
-        const ccs = getComputedStyle(card);
-        const cardContentW = card.getBoundingClientRect().width
-          - parseFloat(ccs.paddingLeft) - parseFloat(ccs.paddingRight)
-          - parseFloat(ccs.borderLeftWidth) - parseFloat(ccs.borderRightWidth);
-        const INDENT = new Set(['BLOCKQUOTE', 'UL', 'OL', 'DL', 'MENU', 'LI', 'DD', 'DT',
-          'FIGURE', 'FIGCAPTION', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'PRE']);
-        const narrow = [];
-        let checked = 0;
-        for (const p of card.querySelectorAll('p')) {
-          if (p.closest('[data-jread-hidden="1"]')) continue;
-          if ((p.textContent || '').trim().length < 30) continue;
-          const cs = getComputedStyle(p);
-          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-          if (cs.float !== 'none' || cs.display.includes('inline')) continue;
-          // 在語意縮排容器內 → 縮排刻意，不驗
-          let a = p.parentElement, skip = false;
-          while (a && a !== card) { if (INDENT.has(a.tagName)) { skip = true; break; } a = a.parentElement; }
-          if (skip) continue;
-          const pcs = getComputedStyle(p);
-          const pw = p.getBoundingClientRect().width
-            - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight);
-          checked++;
-          if (cardContentW - pw > 2) {
-            narrow.push({ text: (p.textContent || '').trim().slice(0, 16), pw: +pw.toFixed(1) });
-          }
-        }
-        return { cardContentW: +cardContentW.toFixed(1), checked, narrow };
-      });
+      const widthAudit = await audits.runContentWidthAudit(page);
       console.log('\n===== WIDTH AUDIT (initial) =====');
       if (widthAudit.error) {
         console.log('  ', widthAudit.error);
@@ -639,46 +423,33 @@ async function triggerShinkansenTranslate(page) {
         console.log(`⚠️ ${widthAudit.narrow.length} 段內文窄於版心 ${widthAudit.cardContentW}px（enforceContentWidth 漏網）：`);
         for (const n of widthAudit.narrow) console.log(`   ${n.pw}px  「${n.text}…」`);
       }
+
+      // ===== OVERFLOW AUDIT（v0.8.39）=====
+      // page-rounds 一直有、debug-harness 一直沒有的訊號層——單次 debug 驗收
+      // 從此也抓「元素衝出 card 右緣 / 整頁長水平 scrollbar」。翻頁模式
+      // multicol 天生超出 viewport，--paged 跳過。
+      const overflowAudit = await audits.runOverflowAudit(page);
+      console.log('\n===== OVERFLOW AUDIT (initial) =====');
+      if (overflowAudit.error) {
+        console.log('  ', overflowAudit.error);
+      } else if (!overflowAudit.overflow) {
+        console.log(`✅ 無水平溢出（card ${overflowAudit.cardWidth}px）`);
+      } else {
+        console.log(`⚠️ 水平溢出：doc ${overflowAudit.docScrollWidth}px / viewport ${overflowAudit.docClientWidth}px，card ${overflowAudit.cardWidth}px`);
+        for (const it of overflowAudit.items.slice(0, 5)) {
+          console.log(`   ${it.tag}.${it.cls.split(' ')[0]} width=${it.width}px overflow=${it.overflowPx}px "${it.text}"`);
+        }
+      }
     }
 
     // 第 2 次 audit（+3s，捕 Jimmy 回報的「文章出現後約 3 秒按鈕才注入」
     // 時機）。LINE Today 類 SPA 站點 lazy-inject 常在 toggle 後 2-4s 發
     // 生，這個時間點最接近使用者眼見為實的「突然跳出雜訊」瞬間。
     await sleep(3000);
-    const residual3s = await page.evaluate((keywords) => {
-      const art = document.querySelector('[data-jread-active="1"]');
-      if (!art) return { error: 'no article' };
-      function isVisible(el) {
-        let cur = el;
-        while (cur) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
-          const cs = window.getComputedStyle(cur);
-          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-          if (cur === document.body) break;
-          cur = cur.parentElement;
-        }
-        return true;
-      }
-      function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-      const items = [];
-      // 擴掃：任何 visible a/button（含空 direct text 的 icon button），
-      // 用 textContent（整棵子樹的 text）作判定——LINE 分享這類
-      // `<a><svg/><span>分享</span></a>` 才不會漏
-      for (const btn of art.querySelectorAll('a, button, [role="button"]')) {
-        if (!isVisible(btn)) continue;
-        const text = norm(btn.textContent).slice(0, 60);
-        const cls = (btn.className || '').toString().slice(0, 60);
-        const href = btn.getAttribute ? (btn.getAttribute('href') || '') : '';
-        items.push({
-          tag: btn.tagName,
-          text: text || '(no text)',
-          cls, href: href.slice(0, 40),
-          hitKeywords: keywords.filter(kw => text.includes(kw) || cls.toLowerCase().includes(kw.toLowerCase()))
-        });
-        if (items.length >= 200) break;
-      }
-      return { total: items.length, warnings: items.filter(i => i.hitKeywords.length > 0 || /share|social|subscribe|follow/i.test(i.cls) || /line\.me|twitter|facebook|x\.com/.test(i.href)), items: items.slice(0, 60) };
-    }, NOISE_AUDIT_KEYWORDS);
+    // 擴掃：任何 visible a/button（含空 direct text 的 icon button），
+    // 用 textContent（整棵子樹的 text）作判定——LINE 分享這類
+    // `<a><svg/><span>分享</span></a>` 才不會漏。實作在 audit-lib.js。
+    const residual3s = await audits.runResidualLinks(page, NOISE_AUDIT_KEYWORDS);
     console.log('\n===== RESIDUAL AUDIT (+3s all a/button) =====');
     console.log(`reader card 內 visible a/button/role=button 總數: ${residual3s.total}`);
     if (residual3s.warnings && residual3s.warnings.length > 0) {
@@ -704,41 +475,7 @@ async function triggerShinkansenTranslate(page) {
     await sleep(10000);
     await page.evaluate(() => window.scrollTo(0, 0));
     await sleep(2000);
-    const residualDelayed = await page.evaluate((keywords) => {
-      const art = document.querySelector('[data-jread-active="1"]');
-      if (!art) return { error: 'no article' };
-      function isVisible(el) {
-        let cur = el;
-        while (cur) {
-          if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
-          const cs = window.getComputedStyle(cur);
-          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-          if (cur === document.body) break;
-          cur = cur.parentElement;
-        }
-        return true;
-      }
-      function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-      const items = [];
-      for (const el of art.querySelectorAll('*')) {
-        if (!isVisible(el)) continue;
-        const tagUpper = el.tagName.toUpperCase();
-        if (tagUpper === 'TITLE' || tagUpper === 'DESC' || tagUpper === 'STYLE' ||
-            tagUpper === 'SCRIPT' || tagUpper === 'NOSCRIPT') continue;
-        const direct = Array.from(el.childNodes)
-          .filter(n => n.nodeType === 3)
-          .map(n => n.textContent).join('');
-        const text = norm(direct);
-        if (!text || text.length > 60 || text.length < 2) continue;
-        items.push({
-          tag: el.tagName,
-          text: text.slice(0, 60),
-          hitKeywords: keywords.filter(kw => text.includes(kw))
-        });
-        if (items.length >= 200) break;
-      }
-      return { total: items.length, warnings: items.filter(i => i.hitKeywords.length > 0), items: items.slice(0, 60) };
-    }, NOISE_AUDIT_KEYWORDS);
+    const residualDelayed = await audits.runResidualText(page, NOISE_AUDIT_KEYWORDS);
     printAudit('delayed +scroll +15s', residualDelayed);
 
     // delayed 時機再跑一次 gap audit（lazy-load / late inject 的 placeholder
@@ -761,51 +498,9 @@ async function triggerShinkansenTranslate(page) {
       console.log('\n===== SHINKANSEN TRANSLATION =====');
       await triggerShinkansenTranslate(page);
 
-      // 翻譯後 residual audit
-      const residualPostTranslate = await page.evaluate((keywords) => {
-        const art = document.querySelector('[data-jread-active="1"]');
-        if (!art) return { error: 'no article' };
-        function isVisible(el) {
-          let cur = el;
-          while (cur) {
-            if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
-            const cs = window.getComputedStyle(cur);
-            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-            if (cur === document.body) break;
-            cur = cur.parentElement;
-          }
-          return true;
-        }
-        function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-        const items = [];
-        // 掃整個 body（不只 article 內），抓翻譯後 article 外是否有可見非主文殘留
-        for (const el of document.body.querySelectorAll('*')) {
-          if (!isVisible(el)) continue;
-          const tagUpper = el.tagName.toUpperCase();
-          if (tagUpper === 'TITLE' || tagUpper === 'DESC' || tagUpper === 'STYLE' ||
-              tagUpper === 'SCRIPT' || tagUpper === 'NOSCRIPT') continue;
-          const rect = el.getBoundingClientRect();
-          if (rect.width < 5 || rect.height < 5) continue;
-          const direct = Array.from(el.childNodes)
-            .filter(n => n.nodeType === 3)
-            .map(n => n.textContent).join('');
-          const text = norm(direct);
-          if (!text || text.length > 60 || text.length < 2) continue;
-          const inArticle = !!el.closest('[data-jread-active="1"]');
-          if (!inArticle) {
-            // article 外的可見文字 = 潛在殘留
-            items.push({
-              tag: el.tagName,
-              text: text.slice(0, 60),
-              inArticle: false,
-              rect: `${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}x${Math.round(rect.height)}`
-            });
-          }
-        }
-        // 統計翻譯涵蓋率
-        const translatedCount = document.querySelectorAll('[data-shinkansen-translated]').length;
-        return { outsideArticle: items, translatedCount };
-      }, NOISE_AUDIT_KEYWORDS);
+      // 翻譯後 residual audit：掃整個 body（不只 article 內），抓翻譯後
+      // article 外是否有可見非主文殘留。實作在 audit-lib.js。
+      const residualPostTranslate = await audits.runOutsideArticle(page);
 
       console.log(`\n===== POST-TRANSLATION AUDIT =====`);
       console.log(`Shinkansen 翻譯元素數: ${residualPostTranslate.translatedCount}`);
@@ -841,31 +536,18 @@ async function triggerShinkansenTranslate(page) {
   // 拍出整張白圖；fullpage 截圖**不可靠**作為唯一視覺驗證。
   //
   // 改採分頁滾動：每次滑 viewport 高 × 0.9（留 10% 重疊），截一張，編號
-  // jread-page-1.png / jread-page-2.png ...，直到 scroll 到底。
-  // Claude Read 每張依序看，覆蓋整篇 reader card 不會漏網。
+  // jread-page-01.png / jread-page-02.png ...，直到 scroll 到底（上限 40 頁，
+  // 截斷會明確 log）。Claude Read 每張依序看，覆蓋整篇 reader card 不會漏網。
   // 同時 zoom 0.5 的縮放仍生效——每張一次吃 1.8 個 viewport 的內容。
-  const PAGE_SCREENSHOT_PREFIX = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-page-');
+  // 實作在 audit-lib.js（與 page-rounds 共用）。
+  const PAGE_SCREENSHOT_DIR = path.join(PROJECT_ROOT, '.playwright-mcp');
   // 清掉舊 page 截圖避免混淆
-  for (const f of fs.readdirSync(path.dirname(PAGE_SCREENSHOT_PREFIX))) {
+  for (const f of fs.readdirSync(PAGE_SCREENSHOT_DIR)) {
     if (f.startsWith('jread-page-') && f.endsWith('.png')) {
-      try { fs.unlinkSync(path.join(path.dirname(PAGE_SCREENSHOT_PREFIX), f)); } catch {}
+      try { fs.unlinkSync(path.join(PAGE_SCREENSHOT_DIR, f)); } catch {}
     }
   }
-  const docInfo = await page.evaluate(() => ({
-    docHeight: document.documentElement.scrollHeight,
-    viewportHeight: window.innerHeight
-  }));
-  const stepHeight = Math.floor(docInfo.viewportHeight * 0.9);
-  const pageCount = Math.max(1, Math.ceil(docInfo.docHeight / stepHeight));
-  console.log(`分頁滾動截圖：docHeight=${docInfo.docHeight} viewport=${docInfo.viewportHeight} step=${stepHeight} pages=${pageCount}`);
-  for (let i = 0; i < pageCount; i++) {
-    const y = i * stepHeight;
-    await page.evaluate((sy) => window.scrollTo(0, sy), y);
-    await sleep(400);
-    const out = `${PAGE_SCREENSHOT_PREFIX}${String(i + 1).padStart(2, '0')}.png`;
-    await page.screenshot({ path: out });
-    console.log(`saved page ${i + 1}/${pageCount} (y=${y}): ${out}`);
-  }
+  await audits.takePagedScreenshots(page, { dir: PAGE_SCREENSHOT_DIR, prefix: 'jread' });
 
   if (!KEEP) await ctx.close();
   else console.log('--keep, leaving open');
