@@ -452,13 +452,17 @@ describe('x-thread v0.7.135 — main.js 整合', () => {
   it('main.js enterXThreadMode 必須呼叫 NS.xThread.enter() + 對合成容器跑 cleaner / styler', () => {
     assert.match(MAIN_SRC, /NS\.xThread\.enter\s*\(/,
       'enterXThreadMode 內必須呼叫 NS.xThread.enter()');
-    // cleaner.clean(container) / styler.apply(container) 兩條都在 enterXThreadMode
+    // v0.8.37：styler.apply 等共用收尾搬進 finalizeEnter（三路徑單一資料源）；
+    // cleaner.clean(container) 是 x-thread 路徑特有、仍在本函式內
     const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n {0,2}(?:async )?function )/);
     assert.ok(m, '抓不到 enterXThreadMode body');
     assert.match(m[0], /NS\.cleaner\s*\?\s*NS\.cleaner\.clean\s*\(\s*container/,
       'enterXThreadMode 必須對合成容器呼叫 cleaner.clean(container)');
-    assert.match(m[0], /NS\.styler\s*\?\s*NS\.styler\.apply\s*\(\s*container/,
-      'enterXThreadMode 必須對合成容器呼叫 styler.apply(container)');
+    assert.match(m[0], /return finalizeEnter\(container, settings\)/,
+      'enterXThreadMode 必須走 finalizeEnter 共用收尾（styler.apply / 模組同步 / keyguard）');
+    const fe = MAIN_SRC.match(/function finalizeEnter[\s\S]+?(?=\n {0,2}(?:async )?function )/);
+    assert.ok(fe && /NS\.styler\s*\?\s*NS\.styler\.apply\s*\(\s*container/.test(fe[0]),
+      'finalizeEnter 必須對容器呼叫 styler.apply(container)');
   });
 
   it('main.js exitReaderMode 必須呼叫 NS.xThread.exit() 清合成容器', () => {
@@ -630,21 +634,22 @@ describe('x-thread v0.7.137 — author header 保留', () => {
       'exit 後 injectAuthorHeaders 應安全 no-op 回 0');
   });
 
-  it('main.js enterXThreadMode 必須在 cleaner.clean 之後、styler.apply 之前呼叫 NS.xThread.injectAuthorHeaders', () => {
-    // 抓 enterXThreadMode body 內 cleaner.clean → injectAuthorHeaders → styler.apply 順序
+  it('main.js enterXThreadMode 必須在 cleaner.clean 之後、finalizeEnter（styler.apply）之前呼叫 NS.xThread.injectAuthorHeaders', () => {
+    // v0.8.37：styler.apply 搬進 finalizeEnter 共用收尾——順序合約改成
+    // cleaner.clean → injectAuthorHeaders → finalizeEnter（內含 styler.apply）
     const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n {0,2}(?:async )?function )/);
     assert.ok(m, '抓不到 enterXThreadMode body');
     const body = m[0];
     const cleanerIdx = body.search(/NS\.cleaner\.clean\s*\(/);
     const injectIdx = body.search(/NS\.xThread\.injectAuthorHeaders\s*\(/);
-    const stylerIdx = body.search(/NS\.styler\.apply\s*\(/);
+    const finalizeIdx = body.search(/return finalizeEnter\(/);
     assert.ok(cleanerIdx >= 0, 'enterXThreadMode 應有 NS.cleaner.clean call');
     assert.ok(injectIdx >= 0, 'enterXThreadMode 應有 NS.xThread.injectAuthorHeaders call（v0.7.137 新增）');
-    assert.ok(stylerIdx >= 0, 'enterXThreadMode 應有 NS.styler.apply call');
+    assert.ok(finalizeIdx >= 0, 'enterXThreadMode 應走 finalizeEnter 收尾');
     assert.ok(cleanerIdx < injectIdx,
       'injectAuthorHeaders 必須在 cleaner.clean 之後——讓 cleaner 看不到合成 header 不會 hide 它');
-    assert.ok(injectIdx < stylerIdx,
-      'injectAuthorHeaders 必須在 styler.apply 之前——讓 styler 能 apply typography 到合成 header');
+    assert.ok(injectIdx < finalizeIdx,
+      'injectAuthorHeaders 必須在 finalizeEnter（styler.apply）之前——讓 styler 能 apply typography 到合成 header');
   });
 });
 

@@ -5,9 +5,14 @@
 // NS.state.hiddenEls + originalStyles 被第二輪 snapshot 蓋掉、第一輪 hide 的
 // 元素永遠回不來。快速雙擊快速鍵會觸發。
 //
-// 修法（v0.7.143）：main.js 加 local `enterInFlight` / `exitInFlight` flag。
-// enterReaderMode wrapper 在 inFlight 期間直接 return false、finally 清 flag。
-// exitReaderMode 同樣處理。
+// 修法（v0.7.143）：main.js 加 local `enterInFlight` flag。enterReaderMode
+// wrapper 在 inFlight 期間直接 return false、finally 清 flag。
+//
+// v0.8.37：exitInFlight 死 guard 移除——exitReaderModeImpl 全同步、flag 在
+// 同一個 task 內 set→clear，沒有任何 async gap 能讓第二個呼叫觀察到 true；
+// enterReaderMode 的 `|| exitInFlight` 同理永 false。本 spec 同步改驗
+// 「exitInFlight 不得復活」（再加 exit 端 async gap 時必須重新設計互斥，
+// 不可沿用舊死 guard）。
 //
 // jsdom 無法乾淨模擬 chrome.runtime + storage + async race，本 spec 是 forcing
 // function：直接掃 main.js source 結構確認 guard 存在。
@@ -28,10 +33,12 @@ describe('main.js — enterReaderMode/exitReaderMode 重入保護（v0.7.143）'
     );
   });
 
-  it('main.js 必須宣告 exitInFlight flag', () => {
+  it('exitInFlight 死 guard 不得復活（v0.8.37 移除；exit 全同步、flag 永遠觀察不到 true）', () => {
+    // 排除註解行（移除紀錄的註解會提及舊名）
+    const codeOnly = src.split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');
     assert.ok(
-      /let\s+exitInFlight\s*=\s*false/.test(src),
-      'main.js 必須宣告 `let exitInFlight = false` 作為退出重入保護 flag'
+      !/exitInFlight/.test(codeOnly),
+      'main.js 程式碼不得再出現 exitInFlight——exit 端若未來引入 async gap，互斥要重新設計、不可沿用舊死 guard'
     );
   });
 
@@ -47,12 +54,12 @@ describe('main.js — enterReaderMode/exitReaderMode 重入保護（v0.7.143）'
     );
   });
 
-  it('exitReaderMode 入口必須 check exitInFlight', () => {
+  it('exitReaderMode 入口必須 check NS.state.active（非 active no-op）', () => {
     const match = src.match(/function exitReaderMode\(\)\s*\{([\s\S]{0,400})/);
     assert.ok(match, '必須找到 function exitReaderMode() 宣告');
     assert.ok(
-      /if\s*\(\s*exitInFlight\s*\)/.test(match[1]),
-      'exitReaderMode 入口必須 check exitInFlight；實際前 400 字元：\n' + match[1]
+      /if\s*\(\s*!NS\.state\.active\s*\)\s*return/.test(match[1]),
+      'exitReaderMode 入口必須 check !NS.state.active；實際前 400 字元：\n' + match[1]
     );
   });
 
@@ -75,29 +82,4 @@ describe('main.js — enterReaderMode/exitReaderMode 重入保護（v0.7.143）'
     );
   });
 
-  it('exitReaderMode wrapper 必須用 try/finally 清 flag', () => {
-    const lines = src.split('\n');
-    let setTrueLine = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (/exitInFlight\s*=\s*true/.test(lines[i])) {
-        setTrueLine = i;
-        break;
-      }
-    }
-    assert.notStrictEqual(setTrueLine, -1, '必須有 exitInFlight = true 行');
-    const window = lines.slice(setTrueLine, setTrueLine + 30).join('\n');
-    assert.ok(
-      /finally\s*\{[\s\S]*exitInFlight\s*=\s*false/.test(window),
-      'exitInFlight = true 後 30 行內必須有 finally { exitInFlight = false }；實際：\n' + window
-    );
-  });
-
-  it('enterReaderMode 也必須 check exitInFlight（防 exit 進行中再點 enter）', () => {
-    const match = src.match(/async function enterReaderMode\([^)]*\)\s*\{([\s\S]{0,200})/);
-    assert.ok(match);
-    assert.ok(
-      /exitInFlight/.test(match[1]),
-      'enterReaderMode 入口必須同時 check exitInFlight（防 exit 還沒結束就 enter）'
-    );
-  });
 });

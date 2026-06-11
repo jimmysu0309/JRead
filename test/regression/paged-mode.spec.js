@@ -757,20 +757,22 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(/NS\.pagedMode\.resetPosition\(\)/.test(MAIN_SRC), '須呼叫 NS.pagedMode.resetPosition()');
     });
 
-    it('enter 路徑：captureScrollY 在 styler.apply 之前（overflow hidden 注入前捕捉）', () => {
+    // v0.8.37：三條 enter 路徑的共用收尾抽成 finalizeEnter（單一資料源）——
+    // 順序合約改驗 finalizeEnter body
+    it('finalizeEnter：captureScrollY 在 styler.apply 之前（overflow hidden 注入前捕捉）', () => {
       const enterBody = MAIN_SRC.slice(
-        MAIN_SRC.indexOf('async function enterReaderModeImpl'),
-        MAIN_SRC.indexOf('function exitReaderMode('));
+        MAIN_SRC.indexOf('function finalizeEnter'),
+        MAIN_SRC.indexOf('async function enterXThreadMode'));
       const cap = enterBody.indexOf('captureScrollY');
       const apply = enterBody.indexOf('NS.styler.apply');
       assert.ok(cap >= 0 && apply >= 0 && cap < apply,
         'captureScrollY 必須在 NS.styler.apply 之前呼叫');
     });
 
-    it('enter 路徑：syncPagedModeFromSettings 在 syncSpaceScrollFromSettings 之前、installKeyguard 之前', () => {
+    it('finalizeEnter：syncPagedModeFromSettings 在 syncSpaceScrollFromSettings 之前、installKeyguard 之前', () => {
       const enterBody = MAIN_SRC.slice(
-        MAIN_SRC.indexOf('async function enterReaderModeImpl'),
-        MAIN_SRC.indexOf('function exitReaderMode('));
+        MAIN_SRC.indexOf('function finalizeEnter'),
+        MAIN_SRC.indexOf('async function enterXThreadMode'));
       // 抓 call-site（帶引數括號），避免被註解內提及的函式名干擾
       const paged = enterBody.indexOf('syncPagedModeFromSettings(settings)');
       const space = enterBody.indexOf('syncSpaceScrollFromSettings(settings)');
@@ -801,21 +803,18 @@ describe('翻頁模式（v0.7.227）', () => {
         return next >= 0 ? MAIN_SRC.slice(start, start + 10 + next) : MAIN_SRC.slice(start);
       };
       // v0.8.36：generic path 抽成 enterGenericReaderMode（enter pipeline 容錯重構）
+      // v0.8.37：模組同步收尾抽成 finalizeEnter——三路徑改驗「都走 finalizeEnter」
+      // （單一資料源，結構上不可能再 drift），finalizeEnter 內部順序由上方
+      // 兩條 it 看守。
       for (const fn of ['enterXThreadMode', 'enterFbPostMode', 'enterGenericReaderMode']) {
         const body = fnBody(fn);
-        const paged = body.indexOf('syncPagedModeFromSettings(settings)');
-        const space = body.indexOf('syncSpaceScrollFromSettings(settings)');
-        assert.ok(paged >= 0, `${fn} 必須呼叫 syncPagedModeFromSettings(settings)`);
-        assert.ok(space >= 0, `${fn} 必須呼叫 syncSpaceScrollFromSettings(settings)`);
-        assert.ok(paged < space,
-          `${fn}：pagedMode 同步必須先於 spaceScroll（讓位判定依賴 installed 狀態）`);
-        assert.ok(body.includes('captureScrollY'),
-          `${fn} 必須在 styler.apply 前呼叫 captureScrollY`);
+        assert.ok(body.includes('return finalizeEnter(container, settings)'),
+          `${fn} 必須走 finalizeEnter 共用收尾（模組同步 / keyguard / captureScrollY 單一資料源）`);
       }
-      // captureScrollY 也必須三路徑齊備（styler 注入 overflow hidden 前捕捉）
+      // captureScrollY：finalizeEnter（三路徑共用）+ onChanged reapply 共 2 處
       const capCalls = MAIN_SRC.match(/NS\.pagedMode\.captureScrollY\(\)/g) || [];
-      assert.ok(capCalls.length >= 4,
-        `captureScrollY 必須在三條 enter 路徑 + onChanged reapply 共 >= 4 處呼叫，實際 ${capCalls.length} 處`);
+      assert.ok(capCalls.length >= 2,
+        `captureScrollY 必須在 finalizeEnter + onChanged reapply 共 >= 2 處呼叫，實際 ${capCalls.length} 處`);
     });
 
     it('syncSpaceScrollFromSettings 含 pagedMode 讓位 guard（Space 鍵互斥）', () => {

@@ -48,6 +48,8 @@
     }
   `;
 
+  // 注意：與 cinema-mode.js 的 isYouTubeWatch 互為鏡像（v0.8.37 標記），改
+  // 判定時兩處必須同步——理由見 cinema-mode.js 同名函式上方註解。
   function isYouTubeWatch(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
     try {

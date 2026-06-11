@@ -50,6 +50,18 @@
       }
     },
 
+    // v0.8.37：「標題去站名尾綴」單一資料源（原本 detector ×2 / main Readwise
+    // / cleaner ×3 共 6 份實作、分隔符集合各不相同——「Title - Site」某些 path
+    // 切得掉、某些切不掉，修分隔 bug 要改六處）。語意：
+    //   - 半形分隔符（| - — – ·）必須前後有空白才切——保護連字號複合詞
+    //     （COVID-19、e-mail）不被誤切（舊 cleaner 版 `/[|｜\-—–]/` 無空白
+    //     要求，「COVID-19 疫情」會被切成「COVID」）
+    //   - 全形 ｜ 不要求空白——中文站慣例「標題｜站名」常不加空白
+    // 回傳第一段 trim 後字串；無分隔符回傳原字串 trim。
+    stripSiteSuffix(title) {
+      return (title || '').split(/\s+[|\-—–·]\s+|｜/)[0].trim();
+    },
+
     // v0.7.251：標題比對用的標點正規化（detector + cleaner 共用，單一資料源）。
     // 動機：站點的 og:title / document.title（meta 標籤、CMS 後台輸出）常用
     // ASCII 直引號 / 撇號（' " ...），但渲染出的 <h1> 經排版 JS/CSS 或編輯器
@@ -82,12 +94,16 @@
       return ce === 'true' || ce === '';
     },
 
-    // 訊息常數（與 popup / background 對齊）
+    // 訊息常數（與 popup / background 對齊）。
+    // v0.8.37：REPORT_DETECTION_RESULT（7 處發送、全 repo 零接收、每次偵測
+    // 白喚醒 SW 一次）與 UPDATE_SETTINGS（SW 有 case、零發送端——popup /
+    // options 都直寫 storage.sync）兩個死協定移除；BG_WAKE_PING / JREAD_RELOAD
+    // / JREAD_DEBUG_SET_THEME 原本是 inline 字面值、收進本表（單一詞彙源）。
+    // message-protocol-consistency.spec 是三方一致（MSG ↔ content 發送 ↔ SW
+    // case）的 forcing function。
     MSG: {
       TOGGLE_READER_MODE: 'TOGGLE_READER_MODE',
-      REPORT_DETECTION_RESULT: 'REPORT_DETECTION_RESULT',
       GET_SETTINGS: 'GET_SETTINGS',
-      UPDATE_SETTINGS: 'UPDATE_SETTINGS',
       SET_ACTIVE_ICON: 'SET_ACTIVE_ICON',
       // Readwise integration（v0.7.33）
       GET_READER_STATE: 'GET_READER_STATE',         // popup → content：reader mode 是否啟動，決定 popup 按鈕 disable 狀態
@@ -103,7 +119,12 @@
       CUSTOM_COMMAND: 'CUSTOM_COMMAND',             // content → SW：自訂快速鍵觸發指令
       // v0.7.228：統一指令 dispatch 落地 content 端（iOS SW 終止後手勢/自訂鍵
       // 仍可本地觸發）；SW 只在 manifest 預設鍵（browser 層事件）時委派此訊息
-      DISPATCH_COMMAND: 'DISPATCH_COMMAND'          // SW → content：dispatchLocalCommand(payload.command)
+      DISPATCH_COMMAND: 'DISPATCH_COMMAND',         // SW → content：dispatchLocalCommand(payload.command)
+      // v0.8.33：Safari 限定 content 載入喚醒 ping（keepalive.js 發送）
+      BG_WAKE_PING: 'BG_WAKE_PING',                 // content → SW：喚醒 background（Safari）
+      // debug bridge（development install 限定，SW 端 runIfDevelopmentInstall gate）
+      JREAD_RELOAD: 'JREAD_RELOAD',                 // content → SW：reload extension
+      JREAD_DEBUG_SET_THEME: 'JREAD_DEBUG_SET_THEME' // content → SW：代寫 theme（cage Page Rounds 用）
     }
   };
 })();

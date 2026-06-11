@@ -388,12 +388,14 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         'uninstall 必須清焦點狀態——forcing：重進 reader mode 殘留舊文章的焦點引用');
     });
 
-    it('sync 對缺欄位 / null settings 必須 fallback 50', () => {
+    it('sync 對缺欄位 / null settings 必須 fallback 預設值（v0.8.37 改讀 settings-defaults 單一資料源）', () => {
       const body = extractFnBody(MODULE_SRC, 'sync');
       assert.ok(body, '必須有 sync function');
       assert.match(body, /Number\.isFinite/,
         '必須 Number.isFinite guard——forcing：升版舊 storage 缺欄位讀回 undefined、Number(undefined)=NaN 會讓比較全 false、功能 silently 失效');
-      assert.match(body, /:\s*50\b/, 'fallback 預設必須 50');
+      assert.match(body, /:\s*DEFAULT_RATIO\b/, 'fallback 必須走 DEFAULT_RATIO');
+      assert.match(MODULE_SRC, /__JReadSettingsDefaults[\s\S]{0,80}spaceScrollRatio/,
+        'DEFAULT_RATIO 必須讀 settings-defaults 單一資料源（不可寫死字面值繞過）');
     });
 
     it('main.js wrapper 必須維持「先於 keyguard」順序 invariant（sync 後新 install 且 keyguard 已掛則重掛）', () => {
@@ -405,24 +407,28 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         'wrapper 必須檢查 keyguardInstalled 並重掛——forcing：onChanged 把 ratio 從 0 動態改回正值時，spaceScrollHandler 排在 keyguard 後面、被 stopImmediatePropagation 吃掉');
     });
 
-    it('三條 enter 路徑（一般 / X thread / FB post）都必須呼叫 syncSpaceScrollFromSettings', () => {
-      // 帶分號的 call site——不帶分號會誤匹配 function 宣告自身
-      const calls = MAIN_SRC.match(/syncSpaceScrollFromSettings\s*\(\s*settings\s*\)\s*;/g) || [];
-      assert.ok(calls.length >= 3,
-        `enterReaderModeImpl / enterXThreadMode / enterFbPostMode 三條路徑都必須呼叫 syncSpaceScrollFromSettings(settings)，實際 ${calls.length} 處——forcing：漏一條該模式下 Space 卷動失效`);
+    it('三條 enter 路徑都必須經 finalizeEnter 呼叫 syncSpaceScrollFromSettings（v0.8.37 收斂單一資料源）', () => {
+      // v0.8.37：三路徑共用收尾抽成 finalizeEnter——改驗「三路徑都走
+      // finalizeEnter」+「finalizeEnter 內含 syncSpaceScrollFromSettings」，
+      // 結構上不可能再漏一條路徑（舊驗法數 call site，三份重複本身就是 drift 源）
+      const finalizeCalls = MAIN_SRC.match(/return finalizeEnter\(container, settings\)/g) || [];
+      assert.ok(finalizeCalls.length >= 3,
+        `三條 enter 路徑都必須 return finalizeEnter(container, settings)，實際 ${finalizeCalls.length} 處`);
+      const fe = MAIN_SRC.slice(
+        MAIN_SRC.indexOf('function finalizeEnter'),
+        MAIN_SRC.indexOf('async function enterXThreadMode'));
+      assert.match(fe, /syncSpaceScrollFromSettings\s*\(\s*settings\s*\)\s*;/,
+        'finalizeEnter 必須呼叫 syncSpaceScrollFromSettings(settings)');
     });
 
-    it('enter 路徑內 syncSpaceScrollFromSettings 必須在 installKeyguard 之前', () => {
-      const re = /syncSpaceScrollFromSettings\s*\(\s*settings\s*\)\s*;/g;
-      let m;
-      let checked = 0;
-      while ((m = re.exec(MAIN_SRC)) !== null) {
-        const after = MAIN_SRC.slice(m.index, m.index + 600);
-        assert.match(after, /installKeyguard\s*\(/,
-          'syncSpaceScrollFromSettings 之後必須接 installKeyguard（同路徑、後註冊）——forcing：順序反了 Space 事件先被 keyguard stopImmediatePropagation');
-        checked++;
-      }
-      assert.ok(checked >= 3, '至少檢查三個 call site');
+    it('finalizeEnter 內 syncSpaceScrollFromSettings 必須在 installKeyguard 之前', () => {
+      const fe = MAIN_SRC.slice(
+        MAIN_SRC.indexOf('function finalizeEnter'),
+        MAIN_SRC.indexOf('async function enterXThreadMode'));
+      const space = fe.indexOf('syncSpaceScrollFromSettings(settings)');
+      const guard = fe.indexOf('installKeyguard()');
+      assert.ok(space >= 0 && guard >= 0 && space < guard,
+        'syncSpaceScrollFromSettings 必須在 installKeyguard 之前——forcing：順序反了 Space 事件先被 keyguard stopImmediatePropagation');
     });
 
     it('exitReaderMode 必須無條件呼叫 NS.spaceScroll.uninstall', () => {

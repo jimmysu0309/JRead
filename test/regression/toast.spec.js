@@ -17,7 +17,9 @@ function setup() {
     pretendToBeVisual: true
   });
   const { window } = dom;
-  window.__JRead = { state: {}, MSG: {} };
+  // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+  window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+  window.eval(require("../helpers").SRC.namespace);
   window.eval(TOAST_SRC);
   return { window, document: window.document, NS: window.__JRead };
 }

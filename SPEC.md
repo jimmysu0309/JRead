@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.36**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.37**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -385,14 +385,20 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 
 ## 訊息協定（content ↔ background ↔ popup）
 
-待實作時補上。目前已知需要：
+詞彙單一資料源：`content/namespace.js` 的 `NS.MSG` 表；三方一致（MSG 表 ↔ content 發送 ↔ SW case）由 `test/regression/message-protocol-consistency.spec.js` 強制（v0.8.37）。
 
-- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）
-- `content → popup`：`REPORT_DETECTION_RESULT`（偵測到/沒偵測到、信心分數）
-- `popup → background`：`GET_SETTINGS` / `UPDATE_SETTINGS` / `SAVE_TO_READWISE`（v0.7.33）。**v0.7.235**：content 端 `getSettings` 不再走 `GET_SETTINGS` round-trip——改直讀 `chrome.storage.sync.get(defaults)`（defaults 來自 `content/settings-defaults.js` 單一資料源）；iOS Safari background 訊息會無聲掉包（thread 758346 / 787958），掉包時舊版回 `undefined` → 所有設定 fallback 預設值（pagedMode 永遠 false = 「翻頁模式 iOS 沒功能」根因）。`GET_SETTINGS` handler 保留，僅作 content 端 storage 失效（context invalidated）時的 fallback
-- `content → background`：`CUSTOM_COMMAND`（v0.7.218，自訂快速鍵命中；payload `{ command }`，SW 白名單驗證後走 `dispatchCommand`。v0.7.228 起僅 send-to-readwise 與 fallback 場景使用——toggle 類指令與 3 指輕點改走 content 端本地 dispatch，不再過 SW）
-- `background → content`：`DISPATCH_COMMAND`（v0.7.228，manifest 預設鍵路徑：SW `dispatchCommand` 委派 content 端 `dispatchLocalCommand`（含 cross-mode 重導、單一資料源）；payload `{ command }`，content 端白名單 toggle-reader-mode / toggle-youtube-borderless）
+- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）
+- `popup → background`：`SAVE_TO_READWISE`（v0.7.33）。popup / options 的設定讀寫一律直接走 `chrome.storage.sync`、不經 SW
+- `content → background`：
+  - `GET_SETTINGS`：**v0.7.235** 起 content 端 `getSettings` 不再走 round-trip——改直讀 `chrome.storage.sync.get(defaults)`（defaults 來自 `content/settings-defaults.js` 單一資料源）；iOS Safari background 訊息會無聲掉包（thread 758346 / 787958），掉包時舊版回 `undefined` → 所有設定 fallback 預設值（pagedMode 永遠 false = 「翻頁模式 iOS 沒功能」根因）。handler 保留，僅作 content 端 storage 失效（context invalidated）時的 fallback
+  - `SET_ACTIVE_ICON`：enter/exit 切 action icon 彩色/灰階 + 綠色 badge
+  - `RESIZE_OWN_WINDOW`：YouTube 無邊模式視窗高度調整（v0.7.134）
+  - `CUSTOM_COMMAND`（v0.7.218，自訂快速鍵命中；payload `{ command }`，SW 白名單驗證後走 `dispatchCommand`。v0.7.228 起僅 send-to-readwise 與 fallback 場景使用——toggle 類指令與 3 指輕點改走 content 端本地 dispatch、不再過 SW）
+  - `BG_WAKE_PING`（v0.8.33，Safari 限定喚醒 ping）
+  - `JREAD_RELOAD` / `JREAD_DEBUG_SET_THEME`（debug bridge；SW 端 `runIfDevelopmentInstall` gate，僅 unpacked / development 安裝執行）
+- `background → content`：`DISPATCH_COMMAND`（v0.7.228，manifest 預設鍵路徑：SW `dispatchCommand` 委派 content 端 `dispatchLocalCommand`（含 cross-mode 重導、單一資料源）；payload `{ command }`，content 端白名單 toggle-reader-mode / toggle-youtube-borderless）/ `SHOW_TOAST`（快速鍵送 Readwise 的結果 toast）
 
+**已退役協定（v0.8.37 移除，不可不加接收端就復活）**：`REPORT_DETECTION_RESULT`（content 7 處發送、全 repo 零接收、每次偵測白喚醒 SW 一次）、`UPDATE_SETTINGS`（SW 有 handler、零發送端——popup / options 都直寫 storage.sync）。
 **`GET_READER_STATE` response 結構**（v0.7.133 擴充）：
 
 ```

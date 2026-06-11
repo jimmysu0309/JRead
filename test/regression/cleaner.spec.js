@@ -257,7 +257,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     NS = window.__JRead;
@@ -344,7 +346,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -367,7 +371,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -403,7 +409,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -485,7 +493,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     // main-col 也給 rect，確保 rectH 讀得到（其他 children 不 stub，jsdom 回 0 即可）
     stubRect(mainCol, { top: 100, width: 528, height: 5000 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -537,7 +549,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     stubRect(aside, { top: 100, width: 300, height: 1349 });
     stubRect(mainCol, { top: 100, width: 600, height: 1500 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -608,7 +624,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -722,7 +740,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -821,7 +841,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -911,7 +933,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1023,7 +1047,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
 
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1103,7 +1129,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
 
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1161,7 +1189,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1216,7 +1246,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1281,7 +1313,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1363,7 +1397,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1484,7 +1520,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -1549,7 +1587,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1589,7 +1629,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1626,7 +1668,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1674,7 +1718,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1737,7 +1783,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1792,7 +1840,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
       </body></html>`;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1820,7 +1870,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1871,7 +1923,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1926,7 +1980,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     `;
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -1956,7 +2012,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -2012,7 +2070,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -2140,7 +2200,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     stubRect(mainCol, { top: 100, width: 296, height: 300 });
     stubRect(wrapperNormal, { top: 0, width: 608, height: 100 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2218,7 +2282,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     stubRect(grid, { top: 0, width: 608, height: 200 });
     stubRect(child, { top: 0, width: 608, height: 200 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2294,7 +2362,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     stubRect(authorName, { top: 600, width: 200, height: 30 });
     stubRect(postDate, { top: 600, width: 100, height: 30 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2408,7 +2480,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     stubRect(storySectionD2, { top: 0, width: 1152, height: 400 });
     stubRect(sectionBodyD2, { top: 0, width: 576, height: 400 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2515,7 +2591,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
 
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2556,7 +2634,11 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2600,7 +2682,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -2649,7 +2733,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const engadgetDom = new JSDOM(engadgetHtml, { runScripts: 'outside-only' });
     const ew = engadgetDom.window;
-    ew.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    ew.chrome = ew.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    ew.eval(require("../helpers").SRC.namespace);
     ew.eval(DETECTOR_SRC);
     ew.eval(CLEANER_SRC);
     const engDet = ew.__JRead.detector.detect();
@@ -2694,7 +2780,9 @@ describe('cleaner — reader mode 下 MutationObserver 凍結主文祖先鏈', (
     );
     const hackDom = new JSDOM(hackHtml, { runScripts: 'outside-only' });
     const hw = hackDom.window;
-    hw.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    hw.chrome = hw.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    hw.eval(require("../helpers").SRC.namespace);
     hw.eval(DETECTOR_SRC);
     hw.eval(CLEANER_SRC);
     const hackDet = hw.__JRead.detector.detect();
@@ -2772,7 +2860,9 @@ describe('cleaner — lazy-image-hydration（placeholder img src 補正 + 還原
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const detected = window.__JRead.detector.detect();
@@ -2838,7 +2928,9 @@ describe('cleaner — lazy-image restore（hydration 後還原 round-trip）', (
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -2893,7 +2985,9 @@ describe('cleaner — udn-h1-direct-child-narrow-guard（h1 作為 sibling 時�
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -2956,7 +3050,9 @@ describe('cleaner — udn-byline-subinfo-narrow-guard（含 <time> 的 byline me
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3041,7 +3137,9 @@ describe('cleaner — esmchina-promote-5-hops（5 層深結構 + partner 詞清 
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3115,7 +3213,9 @@ describe('cleaner — ebc-promote-narrow-sibling-chrome（promote+narrow 聯動�
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3219,7 +3319,9 @@ describe('cleaner — stratechery-h2-post-title（promote+narrow h2 白名單保
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3325,7 +3427,9 @@ describe('cleaner — newtalk-p-class-title（p 標題 + 非 figure 主圖雙修
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3517,7 +3621,9 @@ describe('cleaner — ttv-flex-layout-hero-figure（三處聯動修法）', () =
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3623,7 +3729,9 @@ describe('cleaner — cnyes-nav-widgets-walkup（社交 nav + 末段 widget 通�
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3794,7 +3902,9 @@ describe('cleaner — techbang-empty-spacer-hidden-blocker（blocker 已 hide �
       value: () => ({ width: 500, height: 115, top: 0, bottom: 115, left: 0, right: 500, x: 0, y: 0 }),
       configurable: true
     });
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3860,7 +3970,9 @@ describe('cleaner — techbang-newsletter-dfp-inline（newsletter 變體 + DFP �
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -3927,7 +4039,9 @@ describe('cleaner — medium-click-to-zoom-button（button 含媒體時保留 wr
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const detected = window.__JRead.detector.detect();
@@ -4000,7 +4114,9 @@ describe('cleaner — bbc-inner-grid-fixed-column（pathological 固定 px grid 
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const detected = window.__JRead.detector.detect();
@@ -4059,7 +4175,9 @@ describe('cleaner — bbc-inner-grid restore round-trip', () => {
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -4091,7 +4209,9 @@ describe('cleaner — ebc-inline-marker-ad（`marker` keyword 擴充清行銷插
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
     const detected = w.__JRead.detector.detect();
@@ -4143,7 +4263,9 @@ describe('cleaner — h1-wrapper-header-keyword-guard（保護主文標題 wrapp
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const detected = window.__JRead.detector.detect();
@@ -4215,7 +4337,9 @@ describe('cleaner — esmchina-tail-widgets（QR 分享 widget + Keysight CTA + 
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -4318,7 +4442,9 @@ describe('cleaner — cna-short-paragraphs-walkup（中文短段 + javascript: a
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
@@ -4500,7 +4626,9 @@ describe('cleaner — cna-icon-only-link（支持 CNA icon-only a 修法）', ()
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window; document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const result = window.__JRead.detector.detect();
@@ -4574,7 +4702,9 @@ describe('cleaner — gvm-comment-panel-false-positive（主文「年前」敘�
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window; document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const result = window.__JRead.detector.detect();
@@ -4632,7 +4762,9 @@ describe('cleaner — cna-article-tail（hashtag cluster + moreArticle camelCase
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window; document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const result = window.__JRead.detector.detect();
@@ -4771,7 +4903,9 @@ describe('cleaner — chinatimes-article-tail（hash-tag + premium-widget + titl
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window; document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const result = window.__JRead.detector.detect();
@@ -4916,7 +5050,9 @@ describe('cleaner — bbc-figure-credit-overlay（figure 內 absolute SPAN credi
     );
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window; document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     const result = window.__JRead.detector.detect();
@@ -5157,7 +5293,9 @@ describe('cleaner — medium-empty-top-bar（render text 空 + 撐高 wrapper �
       value: () => ({ width: 200, height: 16, top: 0, bottom: 16, left: 0, right: 200, x: 0, y: 0 }),
       configurable: true
     });
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();

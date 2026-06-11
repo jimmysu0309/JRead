@@ -586,10 +586,11 @@ describe('fb-post v0.7.157 — main.js 整合', () => {
       'enterFbPostMode 必須跳過 cleaner.clean()——通用 cleaner 對 FB clone 過於激進會誤殺主貼文');
     assert.match(m[0], /NS\.state\.hiddenEls\s*=\s*\[\]/,
       'enterFbPostMode 必須將 hiddenEls 設為空陣列（沒跑 cleaner、無 snapshot）');
-    assert.match(m[0], /NS\.styler\s*\?\s*NS\.styler\.apply\s*\(\s*container/,
-      'enterFbPostMode 必須對合成容器呼叫 styler.apply(container)');
-    assert.match(m[0], /strategy:\s*['"]fb-post['"]/,
-      'enterFbPostMode 必須在 REPORT_DETECTION_RESULT 標 strategy=fb-post');
+    // v0.8.37：styler.apply 搬進 finalizeEnter 共用收尾
+    assert.match(m[0], /return finalizeEnter\(container, settings\)/,
+      'enterFbPostMode 必須走 finalizeEnter 共用收尾（內含 styler.apply）');
+    // v0.8.37：REPORT_DETECTION_RESULT 死訊息移除（零接收端）、SET_ACTIVE_ICON
+    // 搬進 finalizeEnter——上方 finalizeEnter 斷言已涵蓋 enter 副作用
   });
 
   it('main.js exitReaderMode 必須呼叫 NS.fbPost.exit() 清合成容器', () => {
