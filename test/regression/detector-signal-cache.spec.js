@@ -27,15 +27,23 @@ describe('detector isSignalExcluded ancestor cache（v0.7.144 #12）', () => {
       'detector.js 必須宣告 let _excludedAncestorCache（祖先鏈狀態 cache）');
   });
 
-  it('detectByHeuristic 必須開 cache（new WeakMap）', () => {
+  it('detectByHeuristic 必須開 cache（v0.8.38 起經 withAncestorCache helper）', () => {
     const match = DETECTOR_SRC.match(/function\s+detectByHeuristic\s*\(\)\s*\{([\s\S]*?)\n  \}/);
     assert.ok(match, '必須能抓到 detectByHeuristic body');
-    assert.ok(/_excludedAncestorCache\s*=\s*new\s+WeakMap/.test(match[1]),
-      'detectByHeuristic 入口必須 `_excludedAncestorCache = new WeakMap()` 開 cache');
+    assert.ok(/withAncestorCache\(/.test(match[1]),
+      'detectByHeuristic 必須走 withAncestorCache（cache 開關單一資料源）');
+    const helper = DETECTOR_SRC.match(/function\s+withAncestorCache[\s\S]*?\n  \}/);
+    assert.ok(helper && /_excludedAncestorCache\s*=\s*new\s+WeakMap/.test(helper[0]),
+      'withAncestorCache 必須開 new WeakMap cache');
+    // v0.8.38：article-tag / schema-org 也必須 cache-scoped（scoredTextLen 不再裸跑）
+    for (const fn of ["detectByArticleTag", "detectBySchemaOrg"]) {
+      const m2 = DETECTOR_SRC.match(new RegExp("function\\s+" + fn + "\\s*\\(\\)\\s*\\{([\\s\\S]*?)\\n  \\}"));
+      assert.ok(m2 && /withAncestorCache\(/.test(m2[1]), fn + " 必須走 withAncestorCache");
+    }
   });
 
-  it('detectByHeuristic 必須用 try/finally 清 cache（即使內部 throw）', () => {
-    const match = DETECTOR_SRC.match(/function\s+detectByHeuristic\s*\(\)\s*\{([\s\S]*?)\n  \}/);
+  it('withAncestorCache 必須用 try/finally 清 cache（即使內部 throw）', () => {
+    const match = DETECTOR_SRC.match(/function\s+withAncestorCache\s*\(fn\)\s*\{([\s\S]*?)\n  \}/);
     const body = match[1];
     assert.ok(/try\s*\{[\s\S]*?finally\s*\{[\s\S]*?_excludedAncestorCache\s*=\s*null/.test(body),
       'detectByHeuristic 必須用 try/finally 清 _excludedAncestorCache = null（避免 throw 後 cache 殘留 stale state）');

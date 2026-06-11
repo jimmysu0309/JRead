@@ -2482,12 +2482,17 @@
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
         if (isInPreserved(el)) continue;
       }
+      // v0.8.38（perf）：children 檢查移到 getComputedStyle 之前——後者觸發
+      // style/layout resolve，巨頁（Wikipedia 級 4 萬+ 節點）多數元素是 leaf，
+      // 先用免費的 children.length 篩掉可省掉超過一半的 computed 讀取
+      // （本 rule 是 clean() 最重單一 rule，實測 116ms → 重排後見 CHANGELOG）。
+      // 語意完全等價：無 children 的元素在舊版也是 continue。
+      const children = Array.from(el.children);
+      if (children.length < 1) continue;
       const cs = window.getComputedStyle(el);
       const isGrid = cs.display === 'grid' || cs.display === 'inline-grid';
       const isFlexRow = (cs.display === 'flex' || cs.display === 'inline-flex') &&
         (cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse');
-      const children = Array.from(el.children);
-      if (children.length < 1) continue;
       // 分類 children：hidden vs visible；同時記下是否有 visible float child
       // （判斷是否為傳統 float 多欄 layout）
       let hasHiddenChild = false;
@@ -2880,13 +2885,15 @@
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
+      // v0.8.38（perf）：children 數檢查移到 getComputedStyle 之前（理由同
+      // collapseGridWithHiddenCell——免費篩掉 leaf，語意等價）
+      if (el.children.length < 2) continue;
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs) continue;
       if (cs.display !== 'flex' && cs.display !== 'inline-flex') continue;
       if (cs.flexDirection !== 'row' && cs.flexDirection !== 'row-reverse') continue;
       const children = Array.from(el.children);
-      if (children.length < 2) continue;
       const visibleChildren = [];
       const inFlowChildren = [];
       for (const c of children) {
