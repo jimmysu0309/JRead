@@ -195,6 +195,24 @@ describe('harness audit-lib — 單一資料源合約', () => {
       assert.match(fn[0], /lastSegOf/, '必須有 pathname 尾段比對');
     });
 
+    it('collectReaderImages 收 present（未載入但未被 hide）的 img——lazy 時序不算誤殺', () => {
+      // dev.to cover 在 harness 的 original 捲動 + zoom 序列下 lazyload 永不
+      // 觸發，元素完好（Jimmy cage 實機 2026-06-11 確認正常渲染）。hero audit
+      // 的 missing 語意是「cleaner 誤殺」（hide / 移除），DOM 存在且未 hidden
+      // 的 img 不可計 missing。
+      const dom = new JSDOM(`<!DOCTYPE html><body>
+        <article data-jread-active="1">
+          <img src="https://cdn.example.com/img/width=1000/https%3A%2F%2Forigin%2Fabcdef123456.png">
+        </article>
+      </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+      const rebuilt = dom.window.eval(`(${auditLib.pageFns.collectReaderImages.toString()})`);
+      const imgs = rebuilt();
+      // jsdom 無 layout：rect / natural 全 0 → loaded false，但元素必須在清單裡
+      assert.strictEqual(imgs.length, 1, '未載入的 img 必須以 present 身分進清單');
+      assert.strictEqual(imgs[0].loaded, false, 'rect / natural 不過門檻 → loaded false');
+      assert.ok(imgs[0].src.includes('abcdef123456'), 'src 必須保留供比對');
+    });
+
     it('auditGap 含區間覆蓋檢查（engadget embed 卡 / ms.now player 假 gap）', () => {
       const src = auditLib.pageFns.auditGap.toString();
       assert.match(src, /intervalCovered/, 'gap 候選必須先過區間覆蓋檢查');
