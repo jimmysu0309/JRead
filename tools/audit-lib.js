@@ -47,7 +47,7 @@ const NOISE_KEYWORDS_STRICT = [
   'subscribe', 'sign up', 'newsletter', 'sponsored', 'advertisement',
   'related articles', 'related stories', 'recommended for you',
   'you may like', 'you might like', 'most read', 'most popular',
-  'read more', 'more from', 'read next', 'up next', 'trending',
+  'read more', 'more from', 'read next', 'up next',
   'follow us', 'share this', "don't miss"
 ];
 const NOISE_KEYWORDS_CONTEXTUAL = [
@@ -55,7 +55,10 @@ const NOISE_KEYWORDS_CONTEXTUAL = [
   '更多', '相關', '推薦', '最新', '延伸', '加入', '訂閱', '好友', '貼文', '分享',
   '轉發', '留言', '熱門', '回覆', '廣告', '贊助', '登入', '註冊', '追蹤', '關注',
   // 英文常用詞（<= 5 個字的短句才警告）
-  'share', 'follow', 'comments', 'related', 'log in', 'sign in', 'popular', 'recommended'
+  // trending 自 strict 降級（2026-06-11 dev.to 實證：文章主題就是 trends 時
+  // 內文 "What's trending now:" 命中 x4 假陽性——主題詞不可當 strict）
+  'share', 'follow', 'comments', 'related', 'log in', 'sign in', 'popular', 'recommended',
+  'trending'
 ];
 const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL };
 // 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
@@ -219,7 +222,14 @@ pageFns.auditResidualLinks = function (tiers) {
         ? lowText.split(/\s+/).length <= 5
         : (text.length <= 12 || kw.length / text.length >= 0.5);
     });
-    const clsOrHrefHit = !inProse &&
+    // byline 豁免（2026-06-11 調校）：作者社群連結（cnbc byline 的 @twitter
+    // 連結 x3 實證誤報）是合法 metadata。結構判定：連結所在的近層 wrapper
+    // 含 <time>（發布日期）或語意 author 標記 = byline 區。
+    const inByline = !!btn.closest('address, [rel="author"]') || (() => {
+      const w = btn.closest('p, div, span, section, header, li');
+      return !!(w && w.querySelector && w.querySelector('time'));
+    })();
+    const clsOrHrefHit = !inProse && !inByline &&
       (/share|social|subscribe|follow/i.test(cls) || /line\.me|twitter|facebook|x\.com/.test(href));
     items.push({
       tag: btn.tagName,
@@ -315,12 +325,33 @@ pageFns.auditGap = function () {
   // gap 用 running max bottom 算，不是相鄰兩塊相減——較早出現的大容器
   // （wikipedia infobox table 包著 IMG）會往下延伸蓋住區間，相鄰相減會把
   // 「有內容、只是內容屬於前面容器」量成假 gap（2026-06-11 實案）
+  //
+  // 區間覆蓋檢查（2026-06-11 調校）：block 清單只認標準內容 tag，非標準
+  // embed 容器（engadget DIV 卡片、ms.now JW Player 的 div/video absolute
+  // 結構）的空間會被量成假 gap。gap 候選確立前掃「visible 且實際覆蓋區間
+  // >= 50% 的任意元素」——有就代表空間被內容填著、不是真空白。
+  function intervalCovered(top, bottom) {
+    const span = bottom - top;
+    if (span <= 0) return true;
+    for (const el of art.querySelectorAll('div, video, iframe, section, aside, span, a, canvas, svg')) {
+      const r = el.getBoundingClientRect();
+      if (r.height < span * 0.5 || r.width < 50) continue;
+      const overlap = Math.min(r.bottom, bottom) - Math.max(r.top, top);
+      if (overlap < span * 0.5) continue;
+      // wrapper 防誤判：元素高度遠大於區間（> 3x）代表它是跨區大容器、
+      // 不是「填著這段空間的內容」
+      if (r.height > span * 3) continue;
+      if (!isVisible(el)) continue;
+      return true;
+    }
+    return false;
+  }
   const gaps = [];
   let maxBottom = blocks.length ? blocks[0].bottom : 0;
   let maxIdx = 0;
   for (let i = 1; i < blocks.length; i++) {
     const gap = blocks[i].top - maxBottom;
-    if (gap >= 80) {
+    if (gap >= 80 && !intervalCovered(maxBottom, blocks[i].top)) {
       gaps.push({
         gap: Math.round(gap),
         prev: `${blocks[maxIdx].tag} "${blocks[maxIdx].text}"`,
@@ -733,15 +764,22 @@ pageFns.collectOriginalTextStats = function () {
 // 1497x160 實測——純閱讀本來就該清，不該當 hero 誤判 missing）。
 pageFns.captureOriginalHeroImages = function () {
   const MAX_ASPECT = 4; // 寬/高 或 高/寬 超過此值視為裝飾性細長條，非 hero
+  // promo / popup 圖排除（2026-06-11 twreporter 實證：會員推廣 popup 的圖
+  // 被當 hero 候選，reader 正確清掉後誤報 missing）。src pattern 是 audit
+  // 端 heuristic（非 extension 規則，誤放代價只是少一個 hero 候選）。
+  const PROMO_SRC_RE = /promo|popup|membership|advert|banner|campaign/i;
+  // src 截 300（原 120）：dev.to 類 image proxy 把尺寸參數放 pathname、原圖
+  // URL encode 在尾段，120 截斷讓變體比對的尾段全失效。
   return Array.from(document.querySelectorAll('img')).map(img => {
     const r = img.getBoundingClientRect();
-    return { src: img.src ? img.src.slice(0, 120) : '', w: r.width, h: r.height,
+    return { src: img.src ? img.src.slice(0, 300) : '', w: r.width, h: r.height,
       naturalW: img.naturalWidth, naturalH: img.naturalHeight, top: r.top };
   }).filter(i => i.w >= 300 && i.h >= 150
     && i.naturalW >= 300 && i.naturalH >= 150
     && i.naturalW / i.naturalH < MAX_ASPECT
     && i.naturalH / i.naturalW < MAX_ASPECT
-    && i.top < 800)
+    && i.top < 800
+    && !PROMO_SRC_RE.test(i.src))
     .sort((a, b) => a.top - b.top)
     .slice(0, 3);
 };
@@ -752,7 +790,7 @@ pageFns.collectReaderImages = function () {
   if (!art) return [];
   return Array.from(art.querySelectorAll('img')).map(img => {
     const r = img.getBoundingClientRect();
-    return { src: img.src ? img.src.slice(0, 120) : '', w: r.width, h: r.height,
+    return { src: img.src ? img.src.slice(0, 300) : '', w: r.width, h: r.height,
       naturalW: img.naturalWidth, naturalH: img.naturalHeight,
       hidden: !!(img.closest('[data-jread-hidden="1"]')) };
   }).filter(i => i.naturalW >= 200 && i.naturalH >= 100
@@ -787,12 +825,24 @@ async function runHeroImageAudit(page, originalHeroImages) {
   const pathnameOf = (src) => {
     try { return new URL(src).pathname; } catch { return null; }
   };
+  // pathname 尾段（檔名 / encoded 原圖 URL）——dev.to 類 image proxy 把尺寸
+  // 參數放 pathname（width=1000,... 是 path segment），reader 縮窄後響應式
+  // srcset 換變體 → src / pathname / naturalW 三條全 miss 誤報 missing
+  // （2026-06-11 實證）。同一張圖的所有變體共享尾段（encoded 原圖 URL）。
+  const lastSegOf = (src) => {
+    const p = pathnameOf(src);
+    if (!p) return null;
+    const seg = p.split('/').filter(Boolean).pop();
+    return seg && seg.length >= 8 ? seg : null; // 過短尾段（'1.jpg' 類）跨圖撞名，不採用
+  };
   const missing = [];
   for (const orig of originalHeroImages) {
     const origPath = pathnameOf(orig.src);
+    const origSeg = lastSegOf(orig.src);
     const found = readerImgs.some(ri =>
       ri.src === orig.src ||
       (origPath && pathnameOf(ri.src) === origPath) ||
+      (origSeg && lastSegOf(ri.src) === origSeg) ||
       (ri.naturalW === orig.naturalW && ri.naturalH === orig.naturalH));
     if (!found) missing.push(orig);
   }

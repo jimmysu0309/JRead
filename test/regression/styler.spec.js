@@ -1017,15 +1017,19 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     );
   });
 
-  it('dark/sepia theme color 規則排除 figcaption（v0.7.196）', () => {
+  it('dark/sepia theme color 規則涵蓋 figcaption（v0.8.45 成對覆寫，推翻 v0.7.196 排除）', () => {
+    // v0.7.196 曾要求 dark 也排除 figcaption（沿用 light 的「背景文字成對保留」），
+    // 但 dark 下 figcaption 背景已被 v0.8.45 背景中和規則清掉，排除字色反而留下
+    // 「原站深灰字疊暗卡」ratio 1.7-2.7（2026-06-11 page rounds A 群 8 站實證）。
+    // dark / sepia 改為成對覆寫：背景中和 + 字色接管，* { color } 不再排除。
+    // 完整 forcing function 見 styler-dark-contrast-pairs.spec.js。
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
     const css = document.getElementById('__jread-style').textContent;
-    // dark theme 的 [article] * { color: theme.text } 必須排除 figcaption
     const themeColorRules = css.match(/\[data-jread-active="1"\]\s*\*[^{]*\{[^}]*color:\s*#d4d4d4/g);
     assert.ok(themeColorRules, 'dark theme 必須有 * { color } 規則');
     const hasExclusion = themeColorRules.some(r => r.includes(':not(figcaption)'));
-    assert.ok(hasExclusion, 'dark theme * { color } 規則必須排除 figcaption');
+    assert.ok(!hasExclusion, 'dark theme * { color } 規則不可排除 figcaption（成對覆寫）');
   });
 
   it('light theme → 顯式 link 色 #1a73e8 + underline（v0.7.197 TWZ 白字連結修法）', () => {

@@ -220,9 +220,12 @@
   //   本 guard 驗「pre / table 內文字 vs effective bg 的 WCAG 對比」一層；
   //   不驗 figcaption / mark / kbd（同樣保留原站色但無回報案例、修法形狀不同
   //   ——bg 還原對 caption 會出現突兀色塊，應改覆寫文字色）、不驗圖片 / iframe
-  //   內部內容（jread 摸不到）、不驗 dark / sepia theme（`* { color: theme.text }`
-  //   已蓋掉 token 色 + v0.7.164 已把 pre/code/blockquote bg 清 transparent，
-  //   此 bug 結構上不存在）。
+  //   內部內容（jread 摸不到）。
+  //   dark / sepia theme 不走本 guard——v0.8.45 起由 apply() 內獨立的
+  //   「dark contrast 兜底層」（phase 3）負責：那層掃全 card 直接文字載體、
+  //   對 effective bg 對比 < 3:1 才 inline 修文字色（2026-06-11 page rounds
+  //   12 站 dark E1 整治；twz 站點 (0,3,0) !important rule 類 cascade 輸局
+  //   只有 inline !important 能終結）。
   //
   // 保守邊界：站點「原本就低對比」（lowOrig >= 0.4）不觸發——那是站點自己的
   // 設計，jread 沒有破壞它就不該動；無 opaque bg 且靠 color-scheme: dark 讓
@@ -288,15 +291,20 @@
   // 從 el 往上收集 background-color 圖層到 stopEl（exclusive）/ body 為止，
   // 由外而內疊在 baseColor 基底上 → 回傳該元素的 effective 背景色。
   // 遇 opaque 圖層提前停（更外層不影響視覺）。
-  function compositeBgOver(el, stopEl, baseColor, win) {
+  // skipFn（選填）：回傳 true 的層忽略其 bg——dark 兜底層用來按「jread 規則
+  // 的目標狀態」計算（會被背景中和規則打 transparent 的層不計入），見
+  // phase 3 註解的 SPA cascade 時序坑。
+  function compositeBgOver(el, stopEl, baseColor, win, skipFn) {
     const layers = [];
     let opaqueFound = false;
     let cur = el;
     while (cur && cur !== stopEl && cur.nodeType === 1) {
-      const c = parseCssColor(win.getComputedStyle(cur).backgroundColor);
-      if (c && c.a > 0) {
-        layers.push(c);
-        if (c.a >= 0.999) { opaqueFound = true; break; }
+      if (!(skipFn && skipFn(cur))) {
+        const c = parseCssColor(win.getComputedStyle(cur).backgroundColor);
+        if (c && c.a > 0) {
+          layers.push(c);
+          if (c.a >= 0.999) { opaqueFound = true; break; }
+        }
       }
       if (cur === win.document.body) break;
       cur = cur.parentElement;
@@ -673,6 +681,11 @@ html [${ARTICLE_ATTR}="1"] main {
 [${ARTICLE_ATTR}="1"] picture {
   max-width: 100% !important;
   height: auto !important;
+  /* v0.8.45：min-height 一併清——cw.com.tw 實測站點對 hero img 設
+     min-height: 645px（為原站滿版寬的響應式設計），height:auto 被
+     min-height 頂住、object-fit:contain 下影像 letterbox 置中 → 主圖
+     上下各 ~118px 假空白。reader 縮窄後媒體高度一律按比例算。 */
+  min-height: 0 !important;
 }
 /* v0.7.93：picture 與含 img/picture 的容器強制不被 flex stretch / 不維持
    固定 height——substack imageRow 類 gallery 修法。
@@ -1410,12 +1423,22 @@ ${BODY_TEXT_SEL} {
     }
     if (overrides.theme && theme.text) {
       // dark / sepia：覆蓋文字色（light 的 text 是 null，不注入）
+      //
+      // v0.8.45：移除 `:not(figcaption)`。v0.7.195 排除 figcaption 的理由是
+      // 「背景與文字色成對保留」——但那是 light theme 的設計（light 不注入
+      // 文字色、preserve 背景合理）；dark / sepia 下本規則的語意是「theme
+      // 接管全部文字色」，figcaption 排除後留下原站深灰（為原站白底設計），
+      // 疊在 dark 卡 #1a1a1a 上 ratio 1.7-2.7 不可讀（2026-06-11 page rounds
+      // A 群 8 站：bbc x2 / cna / ctee / propublica / shoppingdesign /
+      // techcrunch / theverge）。dark / sepia 下 figcaption 的原站背景也已
+      // 由下方 v0.8.45 背景中和規則清掉，「成對保留」改為「成對覆寫」，
+      // 不再有單邊覆寫的低對比組合。light theme 行為不變（本區塊不注入）。
       userOverrides += `
 html.${HTML_CLASS} body {
   color: ${theme.text} !important;
 }
 [${ARTICLE_ATTR}="1"],
-[${ARTICLE_ATTR}="1"] *:not(figcaption) {
+[${ARTICLE_ATTR}="1"] * {
   color: ${theme.text} !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
@@ -1476,10 +1499,20 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] img {
       // pre / code 失去「淺底程式碼框」視覺、但 padding / font-family monospace
       // 仍保留可辨識為 code；inline code 變成跟主文同色但 monospace 字體仍
       // 可區分。
+      //
+      // v0.8.45：同邏輯擴到 figure / figcaption / summary + table 系。2026-06-11
+      // page rounds B 群 4 站實證同類 bug：BG_PRESERVE 在 light theme 下合理
+      // 保留的「元素自帶亮色背景」（Wikipedia figure thumb #f8f9fa、維護模板
+      // mbox table、newtalk figcaption.mainpic #f0f0f0、sspai 表格 TH/TD
+      // #f7f7f9），dark theme 把文字色覆寫成亮灰後變成「亮底亮字」ratio
+      // 1.3-1.5；亮底上的 theme.link 亮藍連結也只剩 2.1-2.2。中和背景讓暗卡
+      // 透出，文字 / 連結色回到為暗底設計的對比。tag 清單 = BG_PRESERVE 群組
+      // 減 mark / kbd（語意高亮的黃底 / 鍵帽白底是內容語意、保留；其上若有
+      // 低對比由 apply() 的 dark contrast 兜底層逐元素修文字色）。
+      // 用群組常數生成、不手寫 selector（v0.8.37 drift 防護同款）。
       userOverrides += `
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] blockquote,
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] pre,
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code {
+${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
+    .map((t) => `html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] ${t}`).join(',\n')} {
   background-color: transparent !important;
   background-image: none !important;
 }`;
@@ -2259,6 +2292,81 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v0.8.45 dark / sepia contrast 兜底層（phase 3）：CSS 通則層管不到的
+      // 低對比文字逐元素修色。CSS cascade 有結構性輸局——站點高 specificity
+      // !important rule（twz `.recurrent-author-widgets .recurrent-author-widget
+      // .author-bio` = (0,3,0) !important，贏 jread color-inherit 的 (0,2,12)，
+      // probe 實證）、@layer important 反轉、CSS-in-JS 動態注入——stylesheet
+      // 軍備競賽永遠有更高的站點。inline style + !important 是 author origin
+      // 最高優先級，cascade 戰爭一律終結。
+      // 保守邊界：只修「對 effective bg 對比 < 3:1」的元素——本來就不可讀，
+      // 改色是淨改善；可讀的原站色（表格漲跌紅綠、syntax token、mark 高亮上
+      // 的深字）一律不動。候選色挑對比較高者（亮底深字 / 暗底用 theme 淺字），
+      // 連結用 link 色變體維持與正文的雙通道辨識。修後仍 < 3:1 則不動（與
+      // v0.7.225 light guard 同款保守分支——不是 jread 能救的不亂動）。
+      // restore 走 contrastBgSnap 既有通道；theme 切換走 main.js restore→apply
+      // 重跑，inline 不殘留、不污染重算。
+      // 訊號層次：本層驗「直接文字載體 vs effective bg 的 WCAG 對比」；不驗
+      // 圖片 / iframe 內部（jread 摸不到）、不驗 lazy-load 晚到的內容（apply
+      // 當下不存在的元素掃不到——對 theme 切換場景夠用，極端 lazy 站漏網）。
+      //
+      // SPA cascade 時序坑（sspai instrument 實證）：apply() 同步流程內
+      // getComputedStyle 量到的 bg 可能還是站點值——SPA hydration 期站點動態
+      // <style> 與 jread styleEl 的 cascade 勝負會在 apply 之後翻轉（sspai TH
+      // 在 phase 3 當下 bg=#f7f7f9、1.5s 後才變 transparent），照當下值修色
+      // 會做出「亮底深字」之後變「暗底深字」ratio 1。所以 effective bg 不照
+      // 當下 computed 算，而是按「jread 規則的目標狀態」算：會被上方背景中和
+      // 規則打 transparent 的層（tag 清單同款生成）一律跳過其 bg。代價：站點
+      // rule 永久賽贏中和規則的極端站會被當成已中和而漏修（保守邊界——漏修
+      // 不誤傷）。
+      if (theme.text) {
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (_win && _win.getComputedStyle) {
+          const cardBg = parseCssColor(theme.articleBg) || WHITE;
+          const neutralizedSel = [...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS].join(',');
+          const skipNeutralized = (cur) => !!(cur.matches && cur.matches(neutralizedSel));
+          let scanned = 0;
+          let fixed = 0;
+          for (const el of articleEl.querySelectorAll('*')) {
+            if (scanned >= 3000 || fixed >= 300) break;
+            const tag = el.tagName.toUpperCase();
+            if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
+            let len = 0;
+            for (const n of el.childNodes) {
+              if (n.nodeType === 3) len += n.textContent.trim().length;
+            }
+            if (len < 4) continue;
+            scanned++;
+            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+            const cs = _win.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+            const fg = parseCssColor(cs.color);
+            if (!fg || fg.a < 0.5) continue;
+            const bg = compositeBgOver(el, null, cardBg, _win, skipNeutralized);
+            if (contrastRatio(fg, bg) >= CONTRAST_MIN_RATIO) continue;
+            const isLink = !!(el.closest && el.closest('a'));
+            // 深色候選：#1a1a1a（深字）/ #1a73e8（light theme link 色，亮底上 5.2:1）
+            const candidates = isLink ? [theme.link, '#1a73e8'] : [theme.text, '#1a1a1a'];
+            let best = null;
+            let bestRatio = -1;
+            for (const cstr of candidates) {
+              const c = parseCssColor(cstr);
+              const r = c ? contrastRatio(c, bg) : 0;
+              if (r > bestRatio) { bestRatio = r; best = cstr; }
+            }
+            if (!best || bestRatio < CONTRAST_MIN_RATIO) continue;
+            contrastBgSnap.push({
+              el,
+              prop: 'color',
+              prev: el.style.getPropertyValue('color'),
+              prevP: el.style.getPropertyPriority('color')
+            });
+            el.style.setProperty('color', best, 'important');
+            fixed++;
+          }
+        }
+      }
+
       // v0.7.90：install scroll listener（auto-hide scrollbar）。passive 確保
       // 不卡 scroll 效能；window 層級捕捉文件捲動事件。重複 apply 時 remove
       // 後 add 防止 listener 累積（瀏覽器 dedupe 但保險，restore 也對稱乾淨）。
@@ -2529,6 +2637,13 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
       for (const el of mediaAncestors) {
+        // v0.8.45：排除 player 結構（與 v0.7.182 background strip 同原則）。
+        // ms.now 實測：JW Player 的 jw-wrapper（含 poster img、computed flex）
+        // 被本規則打成 display:block + height:auto → 容器塌成 16px → JW JS
+        // 對 video 寫負 margin 置中於塌掉的容器 → video absolute 突出 342px
+        // 蓋住 dek 文字 + 流空間錯位出 245px 假空白（gap audit y=206 實證）。
+        // player 內部 layout 由 player JS 自己管理，jread 不該動。
+        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
         const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
         if (!cs) continue;
         if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;

@@ -112,3 +112,32 @@ describe('main.js — spaRouteKey 錨點 hash 不算導航（v0.8.35）', () => 
     assert.match(fn, /spaRouteKey\(location\.href\)/, 'onSpaRouteChange 必須走 spaRouteKey');
   });
 });
+
+describe('main.js — 無限捲動 URL 同步不退出（v0.8.45 thenewslens）', () => {
+  // bug：無限捲動站 preload 下一篇 + 依視口判定 replaceState 切 URL / title。
+  // 進入 reader mode 的瞬間頁面高度劇變 → 站方把 URL 切到下一篇 → 舊版
+  // onSpaRouteChange 當真導航 exit → 還原原頁 → 站方又切回 URL → 再觸發……
+  // reader mode 永遠掛不穩（cage instrument 抓到 exit stack 源頭即本 handler）。
+  // 判別是結構性 DOM 事實：真 SPA 導航會拆掉舊路由 DOM（articleEl
+  // disconnected）；無限捲動的 URL 同步不動原文章 DOM（仍 isConnected）。
+  it('onSpaRouteChange：articleEl 仍 isConnected 時必須保持 reader mode（不 exit）', () => {
+    const fn = SRC.match(/function\s+onSpaRouteChange[\s\S]*?\n  \}/);
+    assert.ok(fn, '抓得到 onSpaRouteChange body');
+    const body = fn[0];
+    const guardIdx = body.indexOf('isConnected');
+    const exitIdx = body.indexOf('exitReaderMode()');
+    assert.ok(guardIdx > -1, '必須有 articleEl.isConnected guard（無限捲動 URL 同步判別）');
+    assert.ok(exitIdx > -1, 'exit 路徑仍須存在（真導航行為不變）');
+    assert.ok(guardIdx < exitIdx, 'isConnected guard 必須在 exitReaderMode 之前（先驗 DOM 事實再退出）');
+    assert.match(body, /NS\.state\.active\s*&&\s*NS\.state\.articleEl\s*&&\s*NS\.state\.articleEl\.isConnected[\s\S]{0,20}return/,
+      'active 且 articleEl 連著必須 early-return');
+  });
+
+  it('guard 之前必須先更新 _spaLastUrl（避免同一 URL 反覆觸發）', () => {
+    const body = SRC.match(/function\s+onSpaRouteChange[\s\S]*?\n  \}/)[0];
+    const lastUrlIdx = body.indexOf('_spaLastUrl = url');
+    const guardIdx = body.indexOf('isConnected');
+    assert.ok(lastUrlIdx > -1 && lastUrlIdx < guardIdx,
+      '_spaLastUrl 更新必須在 isConnected guard 之前（URL 記錄與退出決策解耦）');
+  });
+});
