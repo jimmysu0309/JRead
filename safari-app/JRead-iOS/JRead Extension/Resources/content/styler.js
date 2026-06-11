@@ -860,6 +860,23 @@ ${MEDIA_CAP_SEL} {
   background-color: transparent !important;
   background-image: none !important;
 }
+/* v0.8.41：reader card / ancestor「自身」的 ::before / ::after 整顆關掉。
+   上面那條只蓋 card 的「後代」pseudo、且只清 bg（border 畫的裝飾清不到）。
+   foreignaffairs.com 在整頁 wrapper .base::before 掛 position:absolute +
+   inset:0 + border:15px solid 的整頁裝飾框；該 wrapper 被選為 card（或落在
+   ancestor 鏈）後 position 被 reset 成 static，inset:0 改以 viewport 大小的
+   initial containing block 定位，渲染成「第一頁位置一個 viewport 大小的框」
+   （site 邊框色跟 color-scheme 走：dark 黑框 / light 灰框）。
+   通則安全：card = 主文容器、ancestor = 純 layout 通道，reader mode 下兩者
+   自身的 pseudo 只可能是站方版面裝飾（frame / side-bleed / overlay）；drop cap
+   / list marker / 引號這類合法文字 pseudo 都掛在後代元素上，不受影響。
+   直接 content:none 比逐項清 paint 屬性（bg / border / shadow）徹底。 */
+[${ARTICLE_ATTR}="1"]::before,
+[${ARTICLE_ATTR}="1"]::after,
+[${ANCESTOR_ATTR}="1"]::before,
+[${ANCESTOR_ATTR}="1"]::after {
+  content: none !important;
+}
 /* Body wrapper margin reset：原站慣例用 div 包 paragraph cluster / heading /
    list 並設 margin-left/right 形成 grid offset 或 narrow-column 視覺（CNBC
    ArticleBody 內 div.group margin-left:91px 把內文 p 整段推向版心右側 91px；
