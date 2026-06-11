@@ -788,13 +788,21 @@ pageFns.captureOriginalHeroImages = function () {
 pageFns.collectReaderImages = function () {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return [];
+  // 兩類都收（2026-06-11 調校）：
+  //   loaded — 已渲染的圖（natural + rect 過門檻），原行為
+  //   present — 元素在 DOM、未被 jread hide、但尚未載入 / 渲染（lazy 時序）。
+  //     hero audit 的目的是抓「cleaner 誤殺」（元素被 hide / 移除）；dev.to
+  //     cover 在 harness 的 original 捲動 + zoom 序列下 lazyload 永不觸發，
+  //     但元素完好、Jimmy 實機（cage 2026-06-11）confirmed 正常渲染——
+  //     渲染狀態是時序問題，不可計 missing。
   return Array.from(art.querySelectorAll('img')).map(img => {
     const r = img.getBoundingClientRect();
     return { src: img.src ? img.src.slice(0, 300) : '', w: r.width, h: r.height,
       naturalW: img.naturalWidth, naturalH: img.naturalHeight,
       hidden: !!(img.closest('[data-jread-hidden="1"]')) };
-  }).filter(i => i.naturalW >= 200 && i.naturalH >= 100
-    && i.w >= 100 && i.h >= 50 && !i.hidden);
+  }).filter(i => !i.hidden && i.src)
+    .map(i => ({ ...i,
+      loaded: i.naturalW >= 200 && i.naturalH >= 100 && i.w >= 100 && i.h >= 50 }));
 };
 
 // =============================================================================
@@ -839,14 +847,20 @@ async function runHeroImageAudit(page, originalHeroImages) {
   for (const orig of originalHeroImages) {
     const origPath = pathnameOf(orig.src);
     const origSeg = lastSegOf(orig.src);
+    // src 系比對對 loaded / present 都成立（present = 元素在 DOM 未被 hide、
+    // 只是 lazy 未載——不是誤殺）；natural 尺寸比對只對 loaded 有意義。
     const found = readerImgs.some(ri =>
       ri.src === orig.src ||
       (origPath && pathnameOf(ri.src) === origPath) ||
       (origSeg && lastSegOf(ri.src) === origSeg) ||
-      (ri.naturalW === orig.naturalW && ri.naturalH === orig.naturalH));
+      (ri.loaded && ri.naturalW === orig.naturalW && ri.naturalH === orig.naturalH));
     if (!found) missing.push(orig);
   }
-  return { originalCount: originalHeroImages.length, readerCount: readerImgs.length, missing };
+  return {
+    originalCount: originalHeroImages.length,
+    readerCount: readerImgs.filter(ri => ri.loaded).length,
+    missing
+  };
 }
 
 // 等 reader card 內 hero-sized img naturalWidth > 0。

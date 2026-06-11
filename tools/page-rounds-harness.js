@@ -217,6 +217,14 @@ async function setZoom(page, z) {
   // enter 直接跳回上次位置（分頁截圖預期從第 1 頁起、audit 預期從頁首掃起）
   await sw.evaluate(() => chrome.storage.local.remove('readingPositions'));
 
+  // 2026-06-11：enter 前必須還原 zoom 1.0——cleaner / styler 的所有 rect 判定
+  // （icon-link 門檻、content-img 200px、header zone 32px、sidebar 高度等）
+  // 會在 body zoom 0.5 下全部減半失真。dev.to 實證：cover（zoom 0.5 下高
+  // 128 < content-img 門檻 200）被當 icon link 誤殺、hero audit 報 missing
+  // ——Jimmy 實機（zoom 1.0 enter）完全正常。真實使用者不會在 body zoom
+  // 0.5 下 enter，harness 必須在同條件下觸發。light 截圖前再切回 0.5。
+  await setZoom(page, 1);
+
   const toggle = await sw.evaluate(async (id) => {
     try { return { ok: true, res: await chrome.tabs.sendMessage(id, { type: 'TOGGLE_READER_MODE' }) }; }
     catch (e) { return { ok: false, err: e.message }; }
@@ -249,6 +257,7 @@ async function setZoom(page, z) {
 
   // ---- 6. 亮色截圖 ----
   console.log('Phase: light');
+  await setZoom(page, 0.5); // enter 在 zoom 1.0 跑（rect 判定不可失真），截圖回 0.5
   await page.evaluate(() => window.scrollTo(0, 0));
   await sleep(200);
   await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'light' });
