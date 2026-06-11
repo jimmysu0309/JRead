@@ -2117,6 +2117,48 @@
     return false;
   }
 
+  // ---- 自連結 permalink 標題判定（translate-proof 結構訊號） ---------------
+  // v0.8.47 翻譯場景修法（sharptext / david-smith 實證）：WordPress 等 CMS 慣用
+  // 自連結標題 `<h1><a href="本文 permalink">標題</a></h1>`——文字短 + 連結密度
+  // 100%，形狀與 link-heavy widget 相同，原本全靠文字比對 guard（promotedTitleHead
+  // / siblingContainsCanonicalTitle 比 og:title / document.title）救。翻譯擴充
+  // （Shinkansen / 沉浸式翻譯 / Chrome 內建翻譯）把 heading 文字換成中文後，
+  // og:title 是 meta 標籤翻譯不動，比對必失敗、保護全滅 → sidebar-column 條件 A
+  // 把標題（sharptext：H1 自身被當欄；david-smith：含 h1 的 HEADER 整塊）砍掉。
+  // 是否觸發甚至取決於譯文長度抽籤：david-smith 用 Gemini Flash Lite 翻出長譯名
+  // → header linkDensity 0.6 中槍；Google MT 翻 4 字短譯名 → 0.41 躲過。
+  //
+  // 結構通則：heading（h1-h4、不被 <a> 包住）內含 <a>，其 href 解析後與本頁
+  // URL 同 origin + 同 pathname（尾斜線不計）且無 query / hash → 該 heading
+  // 是本文的自連結標題。URL 不會被翻譯改動，比對 translate-proof。
+  // query / hash 排除理由：站內 anchor 連結（#comments）與帶參數連結不是
+  // permalink 慣例，不可享標題保護。
+  function headingHasSelfLinkPermalink(h) {
+    if (!h || !h.querySelectorAll) return false;
+    if (h.closest && h.closest('a')) return false; // 卡片連結式標題（推薦卡）排除
+    const normPath = p => ((p || '').replace(/\/+$/, '') || '/');
+    for (const a of h.querySelectorAll('a[href]')) {
+      let u;
+      try { u = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
+      if (u.origin !== location.origin) continue;
+      if (u.hash || u.search) continue;
+      if (normPath(u.pathname) === normPath(location.pathname)) return true;
+    }
+    return false;
+  }
+
+  // sibling 自身是自連結標題 heading，或內含一個（david-smith：HEADER 包
+  // h1 + 日期 + byline link；sharptext：H1.wp-block-post-title 自己就是 sibling）
+  function containsSelfLinkTitleHeading(el) {
+    if (!el) return false;
+    const heads = [];
+    if (el.matches && el.matches('h1, h2, h3, h4')) heads.push(el);
+    if (el.querySelectorAll) {
+      for (const h of el.querySelectorAll('h1, h2, h3, h4')) heads.push(h);
+    }
+    return heads.some(headingHasSelfLinkPermalink);
+  }
+
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
@@ -2190,6 +2232,9 @@
         // v0.7.142 canonical title guard：sibling 內含 element direct text strict
         // equals og:title / document.title 第一段 → 視為文章 header 區 skip hide
         if (siblingContainsCanonicalTitle(s.el)) continue;
+        // v0.8.47 自連結 permalink 標題 guard：文字比對在翻譯後失效，URL 訊號
+        // 不受翻譯影響（見 headingHasSelfLinkPermalink 註解）
+        if (containsSelfLinkTitleHeading(s.el)) continue;
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
