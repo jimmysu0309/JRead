@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<title>player 佔位保護最小重現</title>
+</head>
+<body>
+<!-- ms.now JW Player 實測（2026-06-11 page rounds A3 245px 假空白）：
+     player 佔位被三條 jread 規則圍毆——
+     1. capWrapperSpacing 把 .jw-aspect 的 padding-top: 540px cap 成 16px
+     2. absolute overlay 的 parentHeightResets 把 jw-wrapper 高度打 auto
+     3. collapseInnerGridFlex 把含 player 的 grid wrapper collapse
+     佔位塌 16px 後 JW JS 以負 margin 置中 video → 突出蓋字 + 流空間錯位。
+     三條各自的 guard：aspect spacer（parent 含 video sibling）不 cap、
+     player parent 不 reset 高度、含 visible video 的 grid 不 collapse。 -->
+<main>
+  <article id="post">
+    <h1>主文標題：影片佔位保護測試文章</h1>
+    <p>第一段內文。這段文字需要足夠長讓偵測器選到這個 article 元素作為主文
+    容器，並讓保護規則有正確的主文錨點，以下嵌入一個模擬影片播放器的結構。</p>
+    <div class="video-grid" style="display: grid; grid-template-columns: 608px;">
+      <div class="player-root" style="position: relative; overflow: hidden;">
+        <div class="aspect-spacer" style="padding-top: 340px;"></div>
+        <div class="media-wrap" style="position: absolute; top: 0;">
+          <video src="clip.mp4" width="608" height="342"></video>
+        </div>
+      </div>
+    </div>
+    <p>第二段內文，影片下方的段落。佔位被打塌時這一段會與上方內容之間出現
+    大片假空白，或被突出的影片蓋住，保護規則生效後排版應該維持正常。</p>
+    <p>第三段內文，收尾段落，繼續累積足夠的文字量讓偵測器與各個門檻條件
+    都能正確運作，避免測試環境因字數不足走到非預期的路徑。</p>
+  </article>
+</main>
+</body>
+</html>

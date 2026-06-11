@@ -173,6 +173,55 @@ describe('harness audit-lib — 單一資料源合約', () => {
     });
   });
 
+  describe('2026-06-11 page rounds 調校（誤報整治）', () => {
+    it('trending 不得是 strict keyword（dev.to 主題文內文命中 x4 假陽性）', () => {
+      assert.ok(!auditLib.NOISE_KEYWORDS_STRICT.includes('trending'),
+        'trending 是主題詞、會命中合法內文，只能放 contextual');
+      assert.ok(auditLib.NOISE_KEYWORDS_CONTEXTUAL.includes('trending'),
+        'trending 應降級為 contextual（仍要看截圖判定）');
+    });
+
+    it('captureOriginalHeroImages 排除 promo / popup src（twreporter 誤報）', () => {
+      const src = auditLib.pageFns.captureOriginalHeroImages.toString();
+      assert.match(src, /promo\|popup/i, 'hero 候選必須排除 promo / popup src pattern');
+    });
+
+    it('runHeroImageAudit 含 pathname 尾段比對（dev.to 響應式變體誤報）', () => {
+      // image proxy 把尺寸參數放 pathname：同一張圖的變體 src / pathname /
+      // naturalW 三條全不同，只有尾段（encoded 原圖 URL）共享。
+      const lib = fs.readFileSync(path.join(TOOLS, 'audit-lib.js'), 'utf8');
+      const fn = lib.match(/async function runHeroImageAudit[\s\S]*?\n\}/);
+      assert.ok(fn, '抓得到 runHeroImageAudit');
+      assert.match(fn[0], /lastSegOf/, '必須有 pathname 尾段比對');
+    });
+
+    it('auditGap 含區間覆蓋檢查（engadget embed 卡 / ms.now player 假 gap）', () => {
+      const src = auditLib.pageFns.auditGap.toString();
+      assert.match(src, /intervalCovered/, 'gap 候選必須先過區間覆蓋檢查');
+      assert.match(src, /video, iframe/, '覆蓋掃描必須含非標準 embed 容器（div/video/iframe）');
+    });
+
+    it('auditResidualLinks byline 豁免（cnbc 作者社群連結誤報 x3）', () => {
+      const dom = new JSDOM(`<!DOCTYPE html><body>
+        <article data-jread-active="1">
+          <p>${'主文長段落內容'.repeat(12)}</p>
+          <div class="byline-wrap">
+            <time datetime="2026-06-11">June 11</time>
+            <a href="https://x.com/corystieg">@corystieg</a>
+          </div>
+          <a class="share-btn" href="https://x.com/intent/share">share</a>
+        </article>
+      </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+      const rebuilt = dom.window.eval(`(${auditLib.pageFns.auditResidualLinks.toString()})`);
+      const res = rebuilt(auditLib.NOISE_KEYWORD_TIERS);
+      const warnTexts = res.warnings.map(w => w.text);
+      assert.ok(!warnTexts.some(t => t.includes('@corystieg')),
+        '與 <time> 同 wrapper 的作者社群連結是 byline metadata，不應警告');
+      assert.ok(warnTexts.some(t => t.includes('share')),
+        '非 byline 的 share 連結仍須警告（豁免不能過寬）');
+    });
+  });
+
   describe('node-side API 形狀', () => {
     it('exports 齊全（兩支 harness 的 call site 依賴）', () => {
       const required = ['NOISE_AUDIT_KEYWORDS', 'NOISE_KEYWORD_TIERS', 'pageFns',

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta property="og:title" content="主文標題：深入解析雜訊清除的結構性通則">
+<title>主文標題：深入解析雜訊清除的結構性通則 - 測試站</title>
+</head>
+<body>
+<!-- 2026-06-11 page rounds C2 文末殘留最小重現（v0.8.45）：
+     1. bbc culture「More like this:」——尾隨冒號讓 ^...$ 錨定 pattern miss
+     2. github.blog「Explore more from GitHub」——24 chars 超過 base max_len 20
+     3. theverge「Follow topics and authors」——STRONG 包裝的 follow CTA
+     4. slate「Sign up for Executive Dysfunction」——CTA 濫用 <h1>，舊版
+        keyword rule 的「含 h1 一律保留」guard 被騙過 -->
+<main>
+  <article id="post">
+    <header class="article-header">
+      <h1>主文標題：深入解析雜訊清除的結構性通則</h1>
+    </header>
+    <p>第一段主文內容。這段文字需要足夠長，讓偵測器把這個 article 元素選為主文
+    容器，同時也讓各個 wrapper 保護規則有正確的主文錨點可以辨識，避免測試環境
+    中因字數不足而走到非預期的程式路徑。</p>
+    <p>第二段主文內容，繼續累積文字量。清除規則的測試重點在於文末各種推廣區塊
+    能否被正確隱藏，而主文段落與標題必須完整保留，不可被任何一條規則誤殺。</p>
+    <section class="tail-related">
+      <h2 class="noise-more-like">More like this:</h2>
+      <a href="/a1">The Mystery of the World's Oldest Library</a>
+      <a href="/a2">Eight of History's Most Influential Books</a>
+    </section>
+    <aside class="tail-explore">
+      <h2 class="noise-explore">Explore more from GitHub</h2>
+      <div>
+        <h3>Docs</h3>
+        <a href="/docs">Go to Docs</a>
+      </div>
+    </aside>
+    <div class="tail-follow">
+      <span><strong class="noise-follow-topics">Follow topics and authors</strong></span>
+      <span>from this story to see more like this in your personalized homepage feed.</span>
+    </div>
+    <!-- cnbc footer 訂閱推廣連結（「Subscribe to X」CTA 慣用形） -->
+    <ul class="tail-subscribe-list">
+      <li><a class="noise-subscribe-to" href="/pro">Subscribe to CNBC PRO</a></li>
+      <li><a class="noise-signup-now" href="/signup">Sign Up Now</a></li>
+    </ul>
+    <section class="newsletter-signup">
+      <div class="newsletter-signup__intro">
+        <h1 class="noise-newsletter-h1">Sign up for Executive Dysfunction</h1>
+        <span class="newsletter-signup__description"><p>Delivered every Thursday morning.</p></span>
+      </div>
+    </section>
+  </article>
+</main>
+</body>
+</html>

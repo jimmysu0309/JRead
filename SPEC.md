@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.44**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.45**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -230,7 +230,7 @@ Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold �
 
 ## 主文偵測策略（優先序）
 
-1. 語意標籤：`<article>`（單一或明顯最長者；多個相近篇幅判為列表頁而降級）
+1. 語意標籤：`<article>`（單一或明顯最長者；多個相近篇幅判為列表頁而降級）。多個 `<article>` 挑選前先做**視口相交過濾**（v0.8.45）：無限捲動站把「下一篇」preload 成同文件的第二個 article 且可能比本文長（thenewslens 實證），「挑最長」會選到使用者沒在看的那篇——有視口相交者只在相交者中挑；全部不相交或 rect 不可用（jsdom）退回全集合
 2. Schema.org：`[itemtype*="Article"]`、`[itemtype*="NewsArticle"]`、`[itemtype*="BlogPosting"]`
 3. OpenGraph：`meta[property="og:type"][content="article"]` 搭配啟發式（暫未實作）
 4. 內容密度啟發式（Readability-style bubble-up）：對 `<p>` / `<li>` / `<h2-4>` / `<blockquote>` / `<pre>` 算 contentScore（文字長 + 逗號數），向 parent 100% / grandparent 50% 累加；容器型元素以累積分勝出。此法避免「站體外殼因後代 p 總數多而贏過真主文容器」
@@ -240,6 +240,12 @@ Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold �
 ### Title promote（所有非兜底策略）
 
 Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
+
+### SPA 導航偵測與無限捲動豁免（v0.8.21 / v0.8.45）
+
+三訊號收斂到 `onSpaRouteChange`：popstate、`<title>` childList MutationObserver、800ms href 輪詢；比對 key 走 `spaRouteKey`（錨點 hash 不算導航、`#/` hash-router 算）。路由真變化 → exit 拆舊卡 → 400ms 後視情況 silent 重進（wasActive 或新路由命中 auto-enable）。
+
+v0.8.45 **無限捲動豁免**：URL 變了 ≠ 真導航——先驗 DOM 事實。無限捲動站（thenewslens 實證）preload 下一篇並依「視口在哪篇」replaceState 切 URL / title；進閱讀模式瞬間頁面高度劇變觸發站方視口判定 → URL 被切到下一篇 → 舊版誤判真導航 exit → 還原原頁 → URL 又切回 → 循環（reader 永遠掛不穩）。判別：真 SPA 導航會拆掉舊路由 DOM（articleEl disconnected）；無限捲動的 URL 同步不動原文章 DOM。`NS.state.articleEl.isConnected` 仍為 true → 保持 reader mode、只更新 `_spaLastUrl`。cinema 模式 articleEl 為 null、自然走原 exit 路徑。
 
 ### 內文保留特例（避免誤殺內容）
 
@@ -276,6 +282,24 @@ collapse 後對 visible children 的寬度 reset（`width: auto !important` + fl
 ### 空殼 wrapper collapse 的 icon-size 媒體豁免（v0.8.44 通則）
 
 `collapseEmptyWrappersAfterClean` / `collapseEmptyBlockSpacers` 判定「wrapper 是否含真實內容媒體」（`hasUnhiddenContentMedia`）時，已 layout 且 rendered rect ≤ 32×32 的 img / svg 視為裝飾 icon、不算內容媒體——雜訊列（如 tag 列）被 hide 後 wrapper 只剩孤兒 icon 時，空殼 collapse 不再被 icon 擋下（eettaiwan `.content-footer` 內 24×24 tags icon 實測）。icon 判定必須用 rendered rect、不可用 naturalWidth：viewBox-only SVG 的 `<img>` 無內在尺寸、natural 回 CSS 預設 150×150。rect 0×0（lazy 未載入 / 未 layout）不走此豁免，留給 `imgIsContentMedia` 的 lazy 判定兜底。
+
+### flex-row 殘殼欄（v0.8.45 通則）
+
+flex 兩欄 layout 的推薦 / 廣告 rail 在 clean 當下有完整內容（theverge instrument 實測 2123 chars，sidebar 各條件不命中），之後**內部**被其他 rule 逐個清空只剩殘殼——wrapper 本身仍 visible、`flexGrow:1` 照樣占走 50% 寬、主文被壓到卡片 42%。`hideEmptiedFlexColumns`（跑在所有 hide 規則之後、collapse 之前）：flex-row container 內非主欄（主欄粗文字 ≥ 500）+ **可見**文字 < 100 chars + 含 ≥ 1 個被 jread hide 的後代（證明被清空、非原生 spacer）+ 無 visible 大媒體 → hide 殘殼欄，緊接的 collapse 看到 hidden child 自然觸發退化、主欄回滿寬。
+
+### heading 旁動作連結（v0.8.45 通則）
+
+MediaWiki 類站每節標題旁有「[編輯]」動作連結（zh.wikipedia WK4）。結構通則：heading（h1-h6）**內部**或 **heading wrapper 內 sibling**（新版 MediaWiki `DIV.mw-heading > H2 + SPAN`）的含 `<a>` 的 `<span>`、文字 ≤ 12 chars、括號包裹（`[編輯]` / `(edit)` 跨站視覺慣例）或占 heading 文字 < 30% → 連 wrapper 一起 hide（只清 `<a>` 會留括號殘渣）。sibling 掃描限「wrapper 純粹包標題」（wrapper 文字 ≤ heading + 15 chars）。連結式標題（a 占整個 heading）不命中。
+
+### video player 佔位保護（v0.8.45 三 guard）
+
+player 的佔位高度常由 aspect spacer（padding-top hack）/ grid rows / absolute 子層撐著，被一般 spacing / collapse 規則打掉後 player JS 會以負 margin 把 video 置中於塌掉的容器——video 突出蓋字 + 流空間錯位出大片假空白（ms.now JW Player 245px 實證，被三條規則圍毆）。三條結構 guard（皆不綁 class）：
+
+1. `capWrapperSpacing`：parent 含 video / iframe sibling 的 wrapper 大 padding 是媒體佔位、不 cap（v0.7.181 同款判定）
+2. absolute overlay 的 parent 高度 reset：parent 是 player 結構（`data-jread-player`）或內含 visible video / iframe → 不 reset
+3. `collapseInnerGridFlex`：子樹含 visible video / iframe 的 grid 跳過 collapse
+
+styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0.7.182 bg strip 同原則）；媒體寬高規則加 `min-height: 0 !important`（cw.com.tw 站點對 hero img 設 min-height 645px，height:auto 被頂住、object-fit contain letterbox 出上下假空白）。
 
 ### 主文內雜訊（跨站通用 keyword heuristic）
 
@@ -353,7 +377,15 @@ styler 刻意保留 `pre` / `table` 的原站文字色（syntax highlight / cell
    - **整容器 bg 還原**：低對比文字（< 3:1）字數占比 >= 40% 且「注入後文字色 + 原始 bg」可讀 → 原始 bg 以 inline `!important` 還給容器（保留 syntax highlight 設計）
    - **per-carrier 色覆寫**：少數載體（如 th 自帶為深底設計的淺色）對最終 bg 仍 < 3:1 且原設計可讀 → 個別 inline 覆寫文字色（依最終 bg 亮度選深字 / 淺字）
 
-保守邊界：原站本來就低對比的不動（不是 jread 造成）；dark / sepia theme 整段跳過（`* { color: theme.text }` 已蓋 token 色 + v0.7.164 已清 bg）。`restore()` 以通用 `{el, prop, prev, prevP}` snapshot 對稱還原。不驗 figcaption / mark / kbd（無回報案例、修法形狀不同）、不驗圖片 / iframe 內部。
+保守邊界：原站本來就低對比的不動（不是 jread 造成）；dark / sepia theme 整段跳過、改走下方 v0.8.45 兜底層。`restore()` 以通用 `{el, prop, prev, prevP}` snapshot 對稱還原。不驗圖片 / iframe 內部。
+
+### dark / sepia 前景背景成對覆寫 + contrast 兜底層（v0.8.45）
+
+2026-06-11 page rounds 第四輪 dark E1 12 站整治，兩個互補根因都在 dark theme：
+
+- **A 群（暗底暗字）**：dark 字色覆寫曾排除 figcaption（v0.7.196 沿用 light 的「背景文字成對保留」）——但 dark 下背景也會被中和，排除只留下「原站白底設計的深灰圖說疊暗卡」ratio 1.7-2.7。v0.8.45 起 dark / sepia 改**成對覆寫**：字色覆寫不再排除 figcaption。
+- **B 群（亮底亮字）**：BG_PRESERVE 保留的元素自帶亮底（Wikipedia figure thumb / mbox table、sspai 表格 TH）+ 字被覆寫成亮灰 → ratio 1.3-1.5。背景中和規則由 blockquote / pre / code 擴到 **figure / figcaption / summary / table 系**（群組常數生成防 drift；mark / kbd 保留語意高亮）。
+- **Phase 3 兜底層**（apply() 內、dark / sepia only）：CSS cascade 有結構性輸局——站點高 specificity `!important` rule（twz (0,3,0) 實證）、@layer 反轉、CSS-in-JS——stylesheet 軍備競賽無解。掃 card 內直接文字載體、對 effective bg 對比 < 3:1 才 inline `!important` 修字色（候選色挑對比較高者；連結用 link 色變體維持雙通道）。effective bg 按「中和後目標狀態」算、不照當下 computed（SPA hydration 期 cascade 會翻轉，sspai TH instrument 實證——照當下值會修出「亮底深字」之後變「暗底深字」）。可讀的原站色（表格漲跌紅綠、syntax token）一律不動；修後仍 < 3:1 不動（同 light guard 保守邊界）。restore 走 contrastBgSnap 既有通道。
 
 配套：`tools/debug-harness.js` 的 **CONTRAST AUDIT**（initial + delayed 兩次）掃 reader card 內 visible 文字 vs effective bg 的 WCAG 對比、< 3:1 印 ⚠️，是修 styler / theme 類改動的驗收 forcing function；`--scheme dark` flag 模擬深色模式使用者（此類 bug 只在 dark scheme 重現）。
 
