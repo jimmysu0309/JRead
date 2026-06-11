@@ -55,6 +55,10 @@
     // v0.7.237：翻頁模式底部頁碼指示（「3 / 43」）。預設 true = 顯示；
     // false = 隱藏（Jimmy 回報頁碼佔用顯示空間）。只在 pagedMode 時有意義。
     showPageNumber: true,
+    // v0.8.40：閱讀位置記憶效期（天）。文章看到一半離開時記住閱讀位置
+    //（捲動模式記段落、翻頁模式記頁數，存 storage.local），效期內重進
+    // 閱讀模式自動回到上次位置。0 = 停用、上限 7（position-memory.js clamp）。
+    positionMemoryDays: 3,
     // v0.7.218：自訂快速鍵。null = 未自訂。
     customShortcuts: {
       'toggle-reader-mode': null,

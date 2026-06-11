@@ -189,6 +189,11 @@ async function triggerShinkansenTranslate(page) {
   await sw.evaluate((on) => chrome.storage.sync.set({ pagedMode: on }), PAGED);
   if (PAGED) console.log('paged: settings.pagedMode = true');
 
+  // v0.8.40：清掉閱讀位置記憶——profile 跨 run 重用，上一輪同 URL 的記錄會讓
+  // enter 直接跳回上次位置（PAGED AUDIT 預期從第 1 頁起跳、GAP/RESIDUAL scan
+  // 預期從頁首掃起）。位置記憶功能本身的驗證走獨立 probe，不靠本 harness。
+  await sw.evaluate(() => chrome.storage.local.remove('readingPositions'));
+
   // --translate-first：toggle JRead 之前先翻譯（對應 Jimmy 實機 Safari 順序）。
   // 翻譯完成後下面的 toggle + 所有 audit 都跑在「翻譯後 DOM」上。
   if (TRANSLATE_FIRST) {

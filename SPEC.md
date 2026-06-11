@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.39**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.40**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -101,6 +101,7 @@ JRead/
 │   │   ├── styler.js            # 套用乾淨排版
 │   │   ├── space-scroll.js      # Space 段落焦點卷動 + 指示條（v0.7.216）
 │   │   ├── paged-mode.js        # 翻頁模式：手勢/鍵盤/滾輪翻頁 + 頁碼指示（v0.7.227）
+│   │   ├── position-memory.js   # 閱讀位置記憶：段落/頁碼持久化 + 回復（v0.8.40）
 │   │   └── main.js              # 進入點、事件串接
 │   ├── popup/
 │   │   ├── popup.html
@@ -388,7 +389,9 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `pangu` | `boolean` | `true` | `storage.sync` | ✅（options 「中英文間自動補空白 + 中文標點全形化」，v0.7.153 / v0.7.158）—— reader mode 啟動時掃 articleEl 所有 text node：(1) CJK ↔ 英數字 / % / ° 邊界補空白；(2) v0.7.158 新增 CJK 邊界的半形標點 `, . : ; ? !` 轉成 `，。：；？！`，半形括號 `( )` 兩側緊鄰 CJK 時轉 `（）`，引號不在此規則；中文 prose text node 內 ASCII↔ASCII 邊界的半形逗號也轉全形，但**數字千分位逗號**（兩側皆數字，如 `3,610` / `3,610,000`）保半形（v0.7.213，數字格式非標點）；跳過 `<code>` / `<a>` / `<input>` / contenteditable 等 |
 | `autoEnableDomains` | `string[]` | `[]` | `storage.sync` | ✅（v0.7.155 options 「自動啟動網域」textarea + popup 「此網域自動啟動」checkbox）—— 命中網域時 content script document_idle 自動 silent enterReaderMode；matching rule：`hostname === pattern OR hostname.endsWith('.' + pattern)`（`abc.com` 涵蓋 `www.abc.com` / 子網域；`www.abc.com` 只匹配自身，不含 `123.abc.com`） |
 | `customShortcuts` | `object` | 三 key 全 `null` | `storage.sync` | ✅（v0.7.218 options 「快速鍵」recorder）—— key 與 manifest commands 同字彙（`toggle-reader-mode` / `send-to-readwise` / `toggle-youtube-borderless`）；value = `{ code, alt, shift, ctrl, meta }`（`e.code` 實體鍵位 + modifier booleans）或 `null`（未自訂）。比對在 `content/custom-shortcuts.js` keydown capture listener；v0.7.228 起 toggle 類指令命中後直接走 content 端 `NS.dispatchLocalCommand`（本地 dispatch、SW 死活無關——iOS Safari SW 被回收後不再喚醒），send-to-readwise（API 呼叫住 SW）仍送 `CUSTOM_COMMAND` 給 SW。動機：Safari（含 iOS / iPadOS 外接鍵盤）沒有瀏覽器層改鍵入口，options recorder 是唯一通道。validate 規則：必含 ⌥ 或 ⌃、拒絕 ⌘ 組合（content script 搶不過瀏覽器/系統）、拒絕 ESC（保留退出）、拒絕與內建預設鍵相同（browser 層停不掉、雙觸發 = toggle 兩次）、拒絕與其他指令生效鍵衝突。**v0.7.250 Safari ⌃ Control 強制**：`validate(s, { requireCtrl })`——Safari（含 macOS / iPadOS / iOS）把 **⌥ Option 與 ⌘ Command 組合路由到系統鍵盤指令層、完全不以 keydown 傳給網頁**（content script 永遠收不到，iPad 真機 probe 實證；只有 ⌃ Control 與純鍵 / ⇧ 會傳到頁面），故 Safari runtime 的自訂鍵必含 ⌃，⌥-only / ⌘-only 在錄製時擋下。runtime 偵測依 extension URL 前綴（`chrome-extension://` → Chrome、`moz-extension://` → Firefox、其餘 → Safari），options 加 `body.runtime-*` class、傳 `requireCtrl: isSafariRuntime`（不傳 opts 向後相容、⌥ 仍合法）；說明文字兩版（桌面「需含 ⌥ 或 ⌃」／ Safari「需用 ⌃ Control」）純 CSS 依 body class 切換；錄製被拒時 recorder 紅框 + 抖動（`.invalid`）+ ⚠ amber hint 框。已知限制：位址列 focus / content script 沒注入的頁面自訂鍵無效（manifest 預設鍵不受此限，作為 fallback） |
+| `positionMemoryDays` | `number`（天） | `3` | `storage.sync` | ✅（options 「閱讀位置記憶」number input [0, 7] step 1，v0.8.40）—— 閱讀位置記憶效期。**0 = 停用 sentinel**、上限 7 天（`position-memory.js clampDays` 消毒：缺值 / null / 非數字回預設 3——`Number(null) === 0` 不可誤判成停用；超界 clamp）。storage.onChanged 即時生效（改 0 停止當前追蹤；0 → 正值下次進入閱讀模式生效）。詳見「閱讀位置記憶（v0.8.40）」章節 |
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |
+| `readingPositions` | `object` | `{}` | `storage.local`（快取） | ❌（內部用，v0.8.40）—— 閱讀位置記憶的 entry map（`{ urlKey: { ts, mode, page/pages 或 ratio/blockIndex/blockText } }`），寫入時自動淘汰過期 + 超量（上限 100 筆、舊的先丟） |
 
 ---
 
@@ -492,6 +495,36 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - **iframe guard**：`window.top !== window.self` 直接 return，避免 iframe 內 hostname 命中導致一頁多次觸發
 - **silent flag**：偵測失敗時**不**彈「此頁無法偵測主文」toast（使用者沒主動按、彈錯誤反而干擾）。手動 toggle / 快速鍵走無 silent 路徑、行為不變。
 - **SPA 路由**：不額外處理。content script 每次完整頁面 navigation 重新注入，這層就是天然的「頁面載入」時點。SPA 內部 history.pushState 切頁不會重觸發（與整個 extension 一致）。
+
+## 閱讀位置記憶（v0.8.40）
+
+文章看到一半離開（退出閱讀模式、關分頁、SPA 換頁、瀏覽器重啟）時記住閱讀位置，效期內（`positionMemoryDays`，預設 3 天、上限 7、0 = 停用）重新進入閱讀模式自動回到上次位置。實作：`content/position-memory.js`（純邏輯 module.exports 給 jsdom spec）。
+
+### 記什麼
+
+- **捲動模式**：「目前閱讀段落」的文字簽名（collapse 空白取前 120 字）+ 段落 index + 整篇進度比例。段落來源 = `NS.spaceScroll.currentAnchor`——焦點段落（指示條）還在 viewport 內就用它，否則 viewport 內第一個段落；段落收集規則與 space-scroll `collectBlocks` 同一份（v0.8.40 起 `collectBlocks(rootEl)` 接受容器參數、匯出 `getBlocks` / `currentAnchor` / `anchorTo`）。
+- **翻頁模式**：頁碼 + 總頁數（`NS.pagedMode.getPosition`，v0.8.40 新 API）+ 進度比例。
+
+### 回復策略（多層 fallback）
+
+1. **翻頁模式**：總頁數沒變直接 `goToPage` 同一頁；變了（字級 / 版心 / 視窗改變導致重新分頁）按進度比例換算。
+2. **捲動模式**：文字簽名在段落清單找回同一段（簽名重複取離儲存 index 最近者）→ 捲到 REST_FRACTION（0.1，與 space-scroll 落點同值、spec 鏡像校對）落點 + `anchorTo` 把指示條移上去；簽名找不到（內容改版）退儲存 index；再退進度比例。
+3. **跨模式**（存的時候是捲動、回來開了翻頁，或反之）：進度比例近似換算。
+4. 回復後 1.2s 若使用者未互動再對位一次（lazy-load 圖片推移版面）。
+
+### 儲存與生命週期
+
+- `storage.local.readingPositions` map（快取類不放 sync——entry 含段落文字、量大且無跨裝置意義），urlKey 用 main.js `spaRouteKey`（錨點 hash 不分流、hash-router 分流，與 SPA 導航偵測同一份 key 語意；SPA 換頁後 flush 用進場時捕捉的 key）。
+- 追蹤：reader mode 啟動期間 scroll / wheel / touch / keydown / click 觸發 debounce 1s 寫入；pagehide / 分頁切背景立即 flush；`exitReaderModeImpl` 開頭呼叫 `endSession()`——必須在 `pagedMode.uninstall`（頁碼歸零）與 `styler.restore`（捲動位置還原原站排版）**之前**（spec forcing）。
+- `beginSession` 在 finalizeEnter 內、`syncPagedModeFromSettings` 之後（翻頁模組裝好才能 goToPage）、`installKeyguard` 之前（keydown listener 先於 keyguard 註冊，否則 stopImmediatePropagation 吃掉翻頁鍵；spec forcing）。
+- 位置還在開頭（翻頁第 1 頁 / 捲動進度 < 2% 且段落 index 0）不記、並刪舊 entry；寫入時淘汰過期 + 超量（上限 100 筆）。
+- 與 v0.7.227「退出 reader mode 從第一頁起」的關係：`resetPosition()` 照舊歸零，記憶功能啟用且效期內由 restore 蓋回上次頁碼——停用（0）時行為與 v0.8.39 以前完全相同。
+
+### 驗證分層
+
+- jsdom：`test/regression/position-memory.spec.js`（純邏輯 + wiring 順序 forcing）。
+- e2e：`test/e2e/position-memory.spec.js`（真 Chromium：捲動 / 翻頁 exit→重進回復、停用不寫）。
+- 跨瀏覽器重啟：debug-harness 跨 run 實證（2026-06-11 enter 自動回到上輪第 2 頁）；harness 為保確定性已在 toggle 前 `storage.local.remove('readingPositions')`（debug-harness + page-rounds 兩支都清，位置記憶驗證走獨立 e2e、不靠站點 harness）。
 
 ## YouTube Cinema Mode（v0.7.133）
 

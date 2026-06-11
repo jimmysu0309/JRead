@@ -141,6 +141,10 @@ async function setZoom(page, z) {
 
   if (!tabId) { console.error('ERROR: 找不到 tab'); process.exit(1); }
 
+  // v0.8.40：清掉閱讀位置記憶——profile 跨 run 重用，上一輪同 URL 的記錄會讓
+  // enter 直接跳回上次位置（分頁截圖預期從第 1 頁起、audit 預期從頁首掃起）
+  await sw.evaluate(() => chrome.storage.local.remove('readingPositions'));
+
   const toggle = await sw.evaluate(async (id) => {
     try { return { ok: true, res: await chrome.tabs.sendMessage(id, { type: 'TOGGLE_READER_MODE' }) }; }
     catch (e) { return { ok: false, err: e.message }; }

@@ -9,7 +9,7 @@
 // 不影響儲存範圍。titleFontSize 等欄位自動齊備（修掉 popup 缺 titleFontSize 的舊 drift）。
 const DEFAULTS = window.__JReadSettingsDefaults;
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio', 'positionMemoryDays'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -141,7 +141,7 @@ function readFieldFromDom(id) {
   const el = document.getElementById(id);
   switch (id) {
     case 'fontSize': case 'titleFontSize': case 'contentWidth':
-    case 'fontWeight': case 'spaceScrollRatio': {
+    case 'fontWeight': case 'spaceScrollRatio': case 'positionMemoryDays': {
       // v0.8.36：number input 的 min/max 屬性不阻止手動輸入超界值或留空
       // （Number('') = 0 → contentWidth 存 0）。以 input 自身的 min/max 為
       // clamp 範圍（單一資料源在 HTML），空值 / NaN 退回 shared 預設值——
