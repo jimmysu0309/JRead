@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<title>品牌 placeholder lazy 圖最小重現</title>
+</head>
+<body>
+<!-- tvbs 實測（2026-06-11 Jimmy cage 回報主圖空白）：站點 lazy library 用
+     「真實 URL 的品牌 placeholder 圖」當 src（2017 年灰底品牌圖、檔名是
+     日期 hash），真圖在 data-src。hydrateLazyImages 前兩類判定（data: URI /
+     spacer 檔名）全 miss。第三類：class 含 lazy token + 帶 lazy attr。 -->
+<main>
+  <article id="post">
+    <h1>主文標題：品牌 placeholder 懶載圖測試</h1>
+    <p>第一段主文內容。這段文字需要足夠長，讓偵測器把這個 article 元素選為
+    主文容器，同時讓各個保護規則有正確的主文錨點可以辨識，避免測試環境中
+    因字數不足而走到非預期的程式路徑。</p>
+    <div class="img margin_b20">
+      <!-- src 是真實 URL 的品牌 placeholder（檔名無 spacer 慣用語） -->
+      <img class="lazyimage img" id="branded-lazy"
+           src="https://cc.example.com/img/upload/2017/11/09/20171109193947-11b8e8d3.png"
+           data-src="https://cc.example.com/img/upload/2026/05/26/20260526121254-72ab98b6.jpg">
+    </div>
+    <p>第二段主文內容，圖片下方的段落。lazy library 在閱讀模式下不觸發時，
+    擴充功能要把 data-src 的真圖補上，使用者才不會看到一整塊灰白佔位。</p>
+    <!-- 已 hydrate 完成的響應式圖（lazyloaded class、srcset 變體與 src 不同）
+         ——不可被誤改寫 -->
+    <img class="lazyautosizes lazyloaded" id="already-hydrated"
+         src="https://cdn.example.com/dynamic/image/width=1000/photo.png"
+         srcset="https://cdn.example.com/dynamic/image/width=800/photo.png 800w, https://cdn.example.com/dynamic/image/width=1000/photo.png 1000w">
+    <p>收尾段落，繼續累積文字量確保偵測穩定。已經正常顯示的響應式圖片不可
+    被第三類判定誤改寫成其他變體。</p>
+  </article>
+</main>
+</body>
+</html>

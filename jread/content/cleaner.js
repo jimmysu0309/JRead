@@ -181,7 +181,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -3680,15 +3680,26 @@
       // 「未 hydrate」判定：空/about:blank/data:image（LAZY_PLACEHOLDER_RE）
       // 或真實 URL 的 spacer gif（SPACER_SRC_RE，如 none.gif）
       const isUnhydrated = LAZY_PLACEHOLDER_RE.test(prevSrc) || SPACER_SRC_RE.test(prevSrc);
-      if (!isUnhydrated) continue;
+      // v0.8.46 第三類：站點 lazy library 用「真實 URL 的品牌 placeholder 圖」
+      // 當 src（tvbs 實測：img.lazyimage 的 src 停在 2017 年的灰底品牌圖、
+      // 檔名是日期 hash，真圖在 data-src）——前兩類判定全 miss、主圖整塊
+      // 灰白。結構雙條件：class 含 lazy 慣用 token（lazyload / lazyimage /
+      // lazysizes / b-lazy 等 library 跨站慣例命名）+ 帶指向不同真 URL 的
+      // LAZY_SRC_ATTRS。已 hydrate 的 img（src 已換成 data-src 同值）由
+      // 下方 newSrc === prevSrc 的 no-op guard 排除；此路徑**不走 srcset
+      // fallback**——lazysizes 類已正常顯示的圖（class lazyloaded）srcset
+      // 變體與 src 不同是響應式常態，不可誤改寫。
+      const hasLazyClass = /(^|[\s_-])lazy/i.test(String(img.className || ''));
+      if (!isUnhydrated && !hasLazyClass) continue;
 
       let newSrc = null;
       for (const attr of LAZY_SRC_ATTRS) {
         const v = img.getAttribute(attr);
         if (v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v)) { newSrc = v; break; }
       }
-      // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）
-      if (!newSrc) {
+      // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）。
+      // 僅限前兩類（src 確定是 placeholder）；lazy class 路徑不走（見上）。
+      if (!newSrc && isUnhydrated) {
         const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
         if (srcset) {
           const first = srcset.split(',')[0].trim().split(/\s+/)[0];
