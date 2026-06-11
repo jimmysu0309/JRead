@@ -38,14 +38,16 @@ describe('main.js — enter pipeline 容錯（v0.8.36）', () => {
   it('detect() 必須包 try/catch、失敗走 exitReaderModeImpl 清 artifacts', () => {
     assert.match(impl, /try\s*\{\s*\n?\s*result = NS\.detector && NS\.detector\.detect\(\);/,
       'detect() 呼叫必須在 try 內（detect 會做 DOM mutation，throw 留半套 replica）');
-    const detectCatch = impl.match(/catch \(err\) \{[\s\S]{0,400}?DETECT_ERROR/);
+    // v0.8.37：REPORT_DETECTION_RESULT 死訊息移除，catch 改以「清理 + toast +
+    // return false」為驗證錨點
+    const detectCatch = impl.match(/catch \(err\) \{[\s\S]{0,400}?無法偵測主文/);
     assert.ok(detectCatch && /exitReaderModeImpl\(\)/.test(detectCatch[0]),
       'detect 失敗的 catch 必須呼叫 exitReaderModeImpl 清理');
   });
 
   it('enter 分支（cinema / x-thread / fb-post / generic）必須整段包 try/catch、失敗還原', () => {
-    const enterCatch = impl.match(/catch \(err\) \{[\s\S]{0,600}?ENTER_FAILED[\s\S]{0,200}?return false/);
-    assert.ok(enterCatch, 'enter pipeline 必須有 catch + ENTER_FAILED 回報 + return false（讓 sendResponse 有回應、不懸空）');
+    const enterCatch = impl.match(/catch \(err\) \{[\s\S]{0,600}?無法啟用閱讀模式[\s\S]{0,200}?return false/);
+    assert.ok(enterCatch, 'enter pipeline 必須有 catch + 失敗 toast + return false（讓 sendResponse 有回應、不懸空）');
     assert.ok(/exitReaderModeImpl\(\)/.test(enterCatch[0]),
       'enter 失敗的 catch 必須走 exitReaderModeImpl 完整還原（半套 hide / replica / state）');
   });

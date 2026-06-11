@@ -52,7 +52,11 @@ describe('cleaner — hideInsideArticleSidebarColumns 條件 E：flex 拉伸的�
     stubRect(mainContent, { top: 100, width: 704, height: 9883 });
     stubRect(metaRail, { top: 100, left: 704, width: 255, height: 9883 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 
@@ -106,7 +110,11 @@ describe('cleaner — 條件 E image guard：含真圖片的窄高 flex 欄不�
     stubRect(imageRail, { top: 100, left: 704, width: 300, height: 5000 });
     stubRect(railImg, { top: 100, left: 704, width: 300, height: 400 });
 
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     w.eval(CLEANER_SRC);
 

@@ -151,11 +151,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse).catch(() => sendResponse(null));
       return true; // async
     }
-    case 'UPDATE_SETTINGS': {
-      const patch = msg.payload || {};
-      chrome.storage.sync.set(patch).then(() => sendResponse({ ok: true }));
-      return true;
-    }
     case 'CUSTOM_COMMAND': {
       // v0.7.218：content/custom-shortcuts.js 的自訂快速鍵命中後送來。
       // 走與 manifest commands.onCommand 同一條 dispatchCommand（含 YouTube

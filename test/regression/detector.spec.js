@@ -818,7 +818,9 @@ describe('detector — LCA fallback when sibling-walk exceeds hop limit', () => 
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     result = window.__JRead.detector.detect();
   });
@@ -870,7 +872,9 @@ describe('detector — LCA fallback structural guard（og-match 失敗時兜底�
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     result = window.__JRead.detector.detect();
   });
@@ -934,7 +938,9 @@ describe('detector — businessweekly-blog article-tag bait（article 不含 H1 
     const dom = new JSDOM(html, { runScripts: 'outside-only' });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     result = window.__JRead.detector.detect();
   });
@@ -1138,7 +1144,9 @@ describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
 
   it('detect() fallback 找到 shadow root 內主文 + 建立 light DOM <article> 替身', () => {
     const { w } = makeShadowDom();
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     const result = w.__JRead.detector.detect();
     assert.ok(result, '應命中 shadow-dom-fallback、不得回 null');
@@ -1150,7 +1158,9 @@ describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
 
   it('替身含主文 article A 的 h1 + 8 個 p（不誤抓 article B 的 h1）', () => {
     const { w } = makeShadowDom();
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     const result = w.__JRead.detector.detect();
     const replica = result.el;
@@ -1166,7 +1176,9 @@ describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
 
   it('替身掛在 document.body 內（不動原 shadow 結構）', () => {
     const { w } = makeShadowDom();
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     const result = w.__JRead.detector.detect();
     assert.ok(w.document.body.contains(result.el),
@@ -1183,7 +1195,9 @@ describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
     const w = dom.window;
     const sr = w.document.getElementById('w').attachShadow({ mode: 'open' });
     sr.innerHTML = '<p>short widget</p><p>not enough</p>';
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     const result = w.__JRead.detector.detect();
     assert.strictEqual(result, null, '只有 2 個 p 的 shadow widget 不應觸發 fallback');
@@ -1193,7 +1207,9 @@ describe('detector — Shadow DOM fallback（v0.7.86 MSN.com 修法）', () => {
     const dom = new JSDOM(`<!DOCTYPE html><html><body><div>only light DOM</div></body></html>`,
       { runScripts: 'outside-only' });
     const w = dom.window;
-    w.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix 等共用 helper 需要）
+    w.chrome = w.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    w.eval(require("../helpers").SRC.namespace);
     w.eval(DETECTOR_SRC);
     const result = w.__JRead.detector.detect();
     assert.strictEqual(result, null);

@@ -762,7 +762,7 @@
     const anchors = el.querySelectorAll('a');
     if (anchors.length < 2) return false;
     for (const p of el.querySelectorAll('p')) {
-      if (norm(p.textContent).length >= 50) return false;
+      if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) return false;
     }
     return true;
   }
@@ -794,7 +794,7 @@
   function hideInsideArticleDirectChildLinkBlocks(articleEl, hidden) {
     const ogMeta = document.querySelector('meta[property="og:title"]');
     const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
-    const docTitle = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const docTitle = normTitle(NS.stripSiteSuffix(document.title || ''));
     const canonical = ogText || docTitle;
     function containsCanonicalTitle(el) {
       if (!canonical || canonical.length < 5) return false;
@@ -817,7 +817,7 @@
       if (anchors.length < 5) continue;
       let hasLongP = false;
       for (const p of child.querySelectorAll('p')) {
-        if (norm(p.textContent).length >= 50) { hasLongP = true; break; }
+        if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
       hide(child, hidden);
@@ -1020,7 +1020,7 @@
     if (h1Text.length < 5) return;
     const og = document.querySelector('meta[property="og:title"]');
     const ogText = og && og.content ? normTitle(og.content) : '';
-    const docT = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const docT = normTitle(NS.stripSiteSuffix(document.title || ''));
     const baseTitle = ogText || docT;
     if (!baseTitle || baseTitle.length < 5) return;
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
@@ -2046,7 +2046,7 @@
     // 連坐 hide 整段標題區。通則：跨站適用、不綁 substack hostname / class。
     const _ogMeta = document.querySelector('meta[property="og:title"]');
     const _ogText = _ogMeta && _ogMeta.content ? normTitle(_ogMeta.content) : '';
-    const _docTitle = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const _docTitle = normTitle(NS.stripSiteSuffix(document.title || ''));
     const _canonicalTitle = _ogText || _docTitle;
     function siblingContainsCanonicalTitle(sib) {
       if (!_canonicalTitle || _canonicalTitle.length < 5) return false;

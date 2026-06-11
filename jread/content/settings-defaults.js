@@ -19,9 +19,11 @@
 // storage.sync 正常回 pagedMode=true）。修法：getSettings 直讀 storage、
 // defaults 由本檔提供，徹底去除 background 依賴。
 //
-// popup/popup.js 另有 popup 專用 DEFAULT_SETTINGS（值綁 popup UI 常數
-// FONT_SIZE.default 等）——兩份是同一事實的雙實作，由
-// test/regression/settings-direct-read.spec.js 校對欄位一致防 drift。
+// v0.8.16 起 popup / options / SW 都直接 reference 本檔的 global（popup.js 讀
+// window.__JReadSettingsDefaults、SW 讀 globalThis.__JReadSettingsDefaults），
+// 預設值單一資料源已收斂（v0.8.37 勘誤：上一版註解仍寫 popup 有自己一份
+// literal，已過時）；styler.js 的 DEFAULTS literal 是唯一受控第二份（讓 jsdom
+// spec 可獨立載 styler 的取捨），由 defaults-sync.spec.js 逐欄字面值校對防 drift。
 (function (global) {
   'use strict';
 

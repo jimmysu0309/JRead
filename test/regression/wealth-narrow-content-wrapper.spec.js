@@ -43,7 +43,9 @@ describe('cleaner — wealth-narrow-content-wrapper-guard（sibling 含主文長
     const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
     window = dom.window;
     document = window.document;
-    window.__JRead = { state: {}, MSG: {} };
+    // v0.8.37：改載真 namespace.js（stripSiteSuffix / foldTitlePunct 等共用 helper 需要）
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
     window.eval(DETECTOR_SRC);
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();

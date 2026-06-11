@@ -44,8 +44,14 @@
   // 多數按壓只移指示條不卷動。
   const REST_FRACTION = 0.1;
 
+  // v0.8.37：預設值取自 settings-defaults 單一資料源（manifest 順序保證先載）；
+  // `|| 50` 僅為極端 fallback（jsdom 局部載入等），改預設值請動 settings-defaults
+  const DEFAULT_RATIO = (typeof globalThis !== 'undefined' &&
+    globalThis.__JReadSettingsDefaults &&
+    Number(globalThis.__JReadSettingsDefaults.spaceScrollRatio)) || 50;
+
   let installed = false;
-  let ratio = 50;            // settings.spaceScrollRatio（% of viewport）
+  let ratio = DEFAULT_RATIO; // settings.spaceScrollRatio（% of viewport）
   let articleEl = null;
   let focusedBlock = null;
   let barEl = null;
@@ -356,7 +362,7 @@
   // 跟 Readwise 一致）。
   function sync(settings, el) {
     const raw = settings ? Number(settings.spaceScrollRatio) : NaN;
-    ratio = Number.isFinite(raw) ? raw : 50;
+    ratio = Number.isFinite(raw) ? raw : DEFAULT_RATIO;
     if (el) articleEl = el;
     if (ratio > 0 && articleEl) {
       install();

@@ -91,6 +91,9 @@ function loadKeepalive(opts = {}) {
 
   const windowMock = {
     __JRead: {
+      // v0.8.37：BG_WAKE_PING 收進 NS.MSG 詞彙表（keepalive.js 不再用 inline
+      // 字面值），mock 提供同名常數
+      MSG: { BG_WAKE_PING: 'BG_WAKE_PING' },
       safeSendMessage(msg, cb) {
         env.sent.push(msg);
         if (cb) cb({ ok: true });
