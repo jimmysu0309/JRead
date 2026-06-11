@@ -57,6 +57,10 @@
   // 會把 sidebar 吞進主文。應該讓 heuristic 有機會在 <main> 內部找到更精準
   // 的內容容器，找不到再退回整個 <main>。
   function detectByArticleTag() {
+    // v0.8.38：策略期間共用祖先鏈 cache（理由見 withAncestorCache 註解）
+    return withAncestorCache(_detectByArticleTagImpl);
+  }
+  function _detectByArticleTagImpl() {
     const articles = Array.from(document.querySelectorAll('article'));
     if (articles.length === 0) return null;
 
@@ -228,6 +232,10 @@
   // 跨站通用，非站點特判（硬規則 3）。itemprop 元素的 textLen 通常較緊湊
   // （僅 content 主體、不含 byline / meta），命中即主文。
   function detectBySchemaOrg() {
+    // v0.8.38：策略期間共用祖先鏈 cache（理由見 withAncestorCache 註解）
+    return withAncestorCache(_detectBySchemaOrgImpl);
+  }
+  function _detectBySchemaOrgImpl() {
     // Layer A：容器型 itemtype（最精確）
     const typeSelectors = [
       '[itemtype*="NewsArticle" i]',
@@ -379,14 +387,24 @@
     return s;
   }
 
-  function detectByHeuristic() {
-    // v0.7.144：開 cache、整個 heuristic run 期間 isSignalExcluded 共用
+  // v0.8.38（perf）：祖先鏈 cache 的開關抽成共用 helper。原本只有 heuristic
+  // 開 cache，article-tag / schema-org 的 scoredTextLen 裸跑——多 article 排序
+  // 與四個 selector 的候選 map 對同一條祖先鏈重複 getComputedStyle（巨頁實測
+  // detect 首跑 122ms 的主要成分）。巢狀呼叫（已有外層 cache）沿用、不重建
+  // 不提早清。
+  function withAncestorCache(fn) {
+    if (_excludedAncestorCache) return fn();
     _excludedAncestorCache = new WeakMap();
     try {
-      return _detectByHeuristicImpl();
+      return fn();
     } finally {
       _excludedAncestorCache = null;
     }
+  }
+
+  function detectByHeuristic() {
+    // v0.7.144：開 cache、整個 heuristic run 期間 isSignalExcluded 共用
+    return withAncestorCache(_detectByHeuristicImpl);
   }
 
   function _detectByHeuristicImpl() {
