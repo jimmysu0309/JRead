@@ -26,7 +26,7 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
 // page-rounds-harness 共用；anti-drift forcing function 見
 // test/regression/harness-audit-lib.spec.js）
 const audits = require(path.join(__dirname, 'audit-lib.js'));
-const { NOISE_AUDIT_KEYWORDS } = audits;
+const { NOISE_KEYWORD_TIERS } = audits;
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const EXT_PATH = path.join(PROJECT_ROOT, 'jread');
@@ -329,7 +329,7 @@ async function triggerShinkansenTranslate(page) {
     // 這是 forcing function：cleaner rule 跑完若仍有雜訊可見，這裡一定報
     // WARNING——避免之前「grep 沒命中 = 清乾淨」的偽陰性驗收。
     // 實作在 audit-lib.js（與 page-rounds 共用同一份）。
-    const residual = await audits.runResidualText(page, NOISE_AUDIT_KEYWORDS);
+    const residual = await audits.runResidualText(page, NOISE_KEYWORD_TIERS);
 
     function printAudit(label, r) {
       console.log(`\n===== RESIDUAL AUDIT (${label}) =====`);
@@ -337,7 +337,7 @@ async function triggerShinkansenTranslate(page) {
       if (r.warnings && r.warnings.length > 0) {
         console.log(`\n⚠️  殘留雜訊 ${r.warnings.length} 項（cleaner rule 漏網）：`);
         for (const w of r.warnings) {
-          console.log(`   ${w.tag}.${w.elCls || '(anon)'} [${w.hitKeywords.join(', ')}] "${w.text}"`);
+          console.log(`   [${w.severity || 'strict'}] ${w.tag}.${w.elCls || '(anon)'} [${w.hitKeywords.join(', ')}] "${w.text}"`);
           if (w.parents) console.log(`     ancestors: ${w.parents}`);
         }
       } else {
@@ -454,7 +454,7 @@ async function triggerShinkansenTranslate(page) {
     // 擴掃：任何 visible a/button（含空 direct text 的 icon button），
     // 用 textContent（整棵子樹的 text）作判定——LINE 分享這類
     // `<a><svg/><span>分享</span></a>` 才不會漏。實作在 audit-lib.js。
-    const residual3s = await audits.runResidualLinks(page, NOISE_AUDIT_KEYWORDS);
+    const residual3s = await audits.runResidualLinks(page, NOISE_KEYWORD_TIERS);
     console.log('\n===== RESIDUAL AUDIT (+3s all a/button) =====');
     console.log(`reader card 內 visible a/button/role=button 總數: ${residual3s.total}`);
     if (residual3s.warnings && residual3s.warnings.length > 0) {
@@ -480,7 +480,7 @@ async function triggerShinkansenTranslate(page) {
     await sleep(10000);
     await page.evaluate(() => window.scrollTo(0, 0));
     await sleep(2000);
-    const residualDelayed = await audits.runResidualText(page, NOISE_AUDIT_KEYWORDS);
+    const residualDelayed = await audits.runResidualText(page, NOISE_KEYWORD_TIERS);
     printAudit('delayed +scroll +15s', residualDelayed);
 
     // delayed 時機再跑一次 gap audit（lazy-load / late inject 的 placeholder
