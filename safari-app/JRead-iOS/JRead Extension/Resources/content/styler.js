@@ -1,12 +1,16 @@
 // JRead — 閱讀模式排版（瘦身版 / c 路線）
-// 設計哲學：**盡量不動原站的內文排版**（font-family / font-size / heading margin /
-// p margin / list style / link color / blockquote / code 等一律不覆寫），只提供：
+// 設計哲學：**盡量不動原站的內文排版**，只提供：
 //   1. 讀者卡片容器（article card）——版心、背景、圓角、陰影、置中
 //   2. 頁面 / 祖先鏈 reset——讓主文能脫離原 2-col layout 限制
 //   3. 必要的「破壞站點 hack」——aspect-ratio placeholder、圖片超出版心
-//   4. 使用者 override——只在使用者**改過**預設設定（theme/fontSize/fontFamily/
-//      lineHeight）時注入對應 CSS，預設值不動
-// restore() 移除 style 元素與 attribute 即可完整還原，不動任何原 inline style。
+//   4. 使用者 override——依設定注入對應 CSS
+// 「預設值＝不注入」原則的現況（v0.8.37 勘誤，舊敘述已過時）：theme /
+// fontFamily / titleFontSize 仍維持「預設不動原站」；fontSize（v0.7.140 起，
+// 預設 18 也注入、連帶 line-height）與 fontWeight（v0.7.254 起三段一律注入）
+// 是刻意例外——理由見各注入點註解（原站非 400 字重 / px 鎖死行高等場景，
+// 不注入會讓設定項看起來壞掉）。
+// restore() 移除 style 元素與 attribute 即可完整還原，不動任何原 inline style
+// （runtime inline override 都有 snapshot + priority 還原）。
 (function () {
   'use strict';
 
@@ -20,6 +24,42 @@
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
   const PLAYER_ATTR = 'data-jread-player';
+
+  // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
+  // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
+  // 同 stylesheet 後注入者勝」。原 bug：翻頁媒體規則用 html 前綴、specificity
+  // (0,2,2)，輸給 base 的 (0,3,3)（:not(a > img) 依 Selectors 4 取引數最高
+  // specificity 計入 2 個 type、加 3 個 attribute），兩邊都 !important →
+  // specificity 高者勝、base 90vh 蓋掉翻頁單頁 cap——裸 img（非 a 包）站的
+  // 直式長圖有效上限 90vh > 欄高、break-inside: avoid 對高於 fragmentainer
+  // 的元素失效、圖被跨頁切割。a-wrapped 大圖走 content-img rule (0,2,1)、
+  // 翻頁規則本來就贏，所以 Substack 類測試站全綠、裸 img 站才現形。
+  // 抽常數讓兩處逐字同一份，杜絕 selector drift。
+  const MEDIA_CAP_SEL =
+    `[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"])`;
+
+  // v0.8.37：preserve `:not()` 鏈由共用 tag 群組生成（原本三條鏈各自手寫、
+  // 已實際 drift 過一次：v0.7.195 TWZ figcaption——bg strip 排除了 figcaption、
+  // color inherit 沒跟上，圖說白字配深底變不可讀）。三條鏈的集合「刻意」不同：
+  //   - bg / border strip 保留 figure/summary/blockquote 的原站背景與框線
+  //   - color inherit 不排除它們（引述等文字要繼承 reader text color）、
+  //     但排除 a（連結色另有顯式規則）與 figcaption（背景文字成對保留）
+  // 改 tag 群組時三條鏈自動同步；要改單一鏈的集合請動下方組合、不要繞過群組。
+  const TABLE_TAGS = ['table', 'thead', 'tbody', 'tr', 'th', 'td'];
+  const CODE_TAGS = ['code', 'pre'];
+  const INLINE_SEMANTIC_TAGS = ['mark', 'kbd'];
+  const MEDIA_SEMANTIC_TAGS = ['figure', 'figcaption', 'summary', 'blockquote'];
+  const notChain = (tags) => tags.map((t) => `:not(${t})`).join('');
+  const BG_PRESERVE_NOT = notChain([...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS]);
+  const BORDER_PRESERVE_NOT = notChain([...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS, 'hr']);
+  const COLOR_PRESERVE_NOT = notChain(['a', ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS, 'figcaption']);
+
+  // v0.8.37：垂直 gutter 單一資料源——base 卡片 padding / 翻頁卡片 padding /
+  // 翻頁媒體單頁 cap 的 calc 必須同一值（與 H_GUTTER 同款 drift 防護；v0.8.1
+  // 事故：改了連續模式 gutter、翻頁漏改，兩模式行寬 drift）。
+  const V_GUTTER = 'min(48px, 6vw)';
   // 大內容圖（lightbox / photoswipe 等 `<a>` 包圖結構）標記：apply() runtime 量到
   // >= CONTENT_IMG_MIN 的 a-wrapped img 標 [CONTENT_IMG_ATTR]，讓 block + margin
   // 規則對它生效（一般 img:not(a > img) 排除把這類大圖當 icon-link 漏掉）。
@@ -67,7 +107,9 @@
     FONT_FACE_CSS = '';
   }
 
-  // 預設值：等於「未設定」——對應的 CSS 不會注入（保留原站樣式）
+  // 預設值。theme / fontFamily / titleFontSize：預設＝「未設定」、對應 CSS 不
+  // 注入（保留原站樣式）；fontSize / fontWeight 為刻意例外、預設也注入——
+  // 見檔頭設計哲學與各注入點註解（v0.8.37 勘誤舊「全部不注入」敘述）。
   const DEFAULTS = {
     theme: 'light',
     fontSize: 18,
@@ -503,7 +545,7 @@ html [${ARTICLE_ATTR}="1"] {
      垂直 padding 維持 min(48px, 6vw)（v0.7.226）——頂部空白是縱向體感、與
      水平可讀寬無關，不需同步收到 16px。
      v0.8.14：水平 gutter 值抽成 H_GUTTER 常數，與翻頁模式共用同一資料源。 */
-  padding: min(48px, 6vw) ${H_GUTTER} !important;
+  padding: ${V_GUTTER} ${H_GUTTER} !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
@@ -685,9 +727,7 @@ html [${ARTICLE_ATTR}="1"] main {
    v0.7.214：加 :not([${INLINE_IMG_ATTR}]) 排除 inline emoji / icon——此條
    specificity (0,2,3) 高於 inline-img rule (0,2,1)，沒排除會把已標 inline 的
    emoji 強制 block、emoji 獨佔一行（x.com Twemoji 實機回報）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
-[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
-[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
+${MEDIA_CAP_SEL} {
   display: block !important;
   margin-bottom: 24px !important;
 }
@@ -695,9 +735,7 @@ html [${ARTICLE_ATTR}="1"] main {
    後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
    類似結構），佔滿整屏甚至蓋住 promoted-title。90vh 留給標題與下方文字
    一些縫隙、又不過度限縮（90% viewport 高仍是大圖視覺）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
-[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
-[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
+${MEDIA_CAP_SEL} {
   max-height: 90vh !important;
   object-fit: contain !important;
 }
@@ -774,11 +812,6 @@ html [${ARTICLE_ATTR}="1"] main {
   height: auto !important;
   min-height: 0 !important;
 }
-/* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
-   實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
-   aspect-ratio 4:3 placeholder）。padding-top 是 padding-bottom hack 的
-   variant（兩者效果一樣，撐父寬度的固定比例高度）。為 padding-bottom hack
-   配套加 padding-top:0 第二維度 reset，覆蓋兩種寫法。 */
 /* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
    實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
    aspect-ratio 4:3 placeholder）。padding-top 是 padding-bottom hack 的
@@ -1034,7 +1067,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    語意（主文媒體容器、引述）；code/pre/table/th/td 需要背景區隔
    （程式碼 block / 表格 row 交替色）；mark 是語意 highlight；kbd
    鍵盤按鍵視覺慣例白底。這些 tag 的原站背景保留。 */
-[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not([${PLAYER_ATTR}="1"]) {
+[${ARTICLE_ATTR}="1"] *${BG_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -1053,7 +1086,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    背景 + reader card 深色繼承文字 = 對比度極低不可讀。TWZ (thewarzone.com)
    圖說白字 + 深灰底實測觸發。figcaption 背景與文字色必須成對保留，不能
    只保留一邊。dark/sepia theme 的 * { color } 覆寫仍會蓋過本規則。 */
-[${ARTICLE_ATTR}="1"] *:not(a):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(figcaption):not([${PLAYER_ATTR}="1"]) {
+[${ARTICLE_ATTR}="1"] *${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
 }
 /* v0.7.197：顯式 link color（所有 theme）。v0.7.179 加 color: inherit 時排除
@@ -1087,7 +1120,7 @@ html [${ARTICLE_ATTR}="1"] dl {
    hr 本身就是 border 化身（清掉等於消失）。
    只清 border-width 不動 border-style/color：影響範圍最窄、若原站日後改
    設計也容易 debug。 */
-[${ARTICLE_ATTR}="1"] *:not(figure):not(figcaption):not(summary):not(blockquote):not(code):not(pre):not(table):not(thead):not(tbody):not(tr):not(th):not(td):not(mark):not(kbd):not(hr):not([${PLAYER_ATTR}="1"]) {
+[${ARTICLE_ATTR}="1"] *${BORDER_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
   border-width: 0 !important;
   left: auto !important;
   right: auto !important;
@@ -1256,7 +1289,7 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
     // 級避免破壞站點 table layout（行高 / 邊框 / column 寬等）；cell 級字級放大
     // 已足夠解決「看不清」核心痛點。`caption` 跟著 td/th 一起進 selector——是
     // table 的標題，跟 cell 同等重要的閱讀內容。
-    const BODY_TEXT_SEL =
+    const BODY_TEXT_CORE =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
       `[${ARTICLE_ATTR}="1"] li,` +
@@ -1265,8 +1298,17 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
       `[${ARTICLE_ATTR}="1"] dt,` +
       `[${ARTICLE_ATTR}="1"] td,` +
       `[${ARTICLE_ATTR}="1"] th,` +
-      `[${ARTICLE_ATTR}="1"] caption,` +
-      SPAN_TEXT_SEL;
+      `[${ARTICLE_ATTR}="1"] caption,`;
+    const BODY_TEXT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL;
+    // v0.8.36：font-weight 專用 selector——span 再排除 strong / b 後代。
+    // 字級 / 字型注入對 strong 內 span 是正確的（粗體文字也要跟著使用者字級
+    // 字型），但 font-weight 注入打在 strong 內的 span 會把粗體抹平成使用者
+    // 字重：WYSIWYG 編輯器（Lexical / TipTap，vocus 類站）普遍輸出
+    // `<strong><span style="...">粗體</span></strong>`，span 自己命中規則 →
+    // 文字渲染 400、內文粗體全部消失（預設設定就觸發，不需使用者改字重）。
+    // p 級注入不受影響——strong 有 UA 自身 font-weight（bolder），不靠 inherit。
+    const BODY_WEIGHT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL +
+      ':not(strong *):not(b *)';
     let userOverrides = '';
     // v0.7.162：lineHeight Auto sentinel = 0。Auto 時跳過所有 line-height 注入
     // （保留原站行距）；非 Auto 才把 lineHeight 串進 font-size rule 或獨立 rule。
@@ -1312,11 +1354,13 @@ ${BODY_TEXT_SEL} {
       // 撞成同一種粗細——使用者切細/中看不出差別。使用者既然有「字重」這個明確
       // 控制項，三段就一律強制套用、才是三個真實字重。用真正的 font-weight 全平台
       // 生效（取代 v0.7.157 boldText 的 macOS-only -webkit-font-smoothing）。只套
-      // BODY_TEXT_SEL（p / li / blockquote / span 等內文載體），**不含 h1-h6**
-      // ——標題字重由原站 / UA bold 維持、保留章節階層；strong / b 等有自身明確
-      // font-weight 的元素也不受影響（inherit 只影響沒明確 weight 的後代）。
+      // BODY_WEIGHT_SEL（p / li / blockquote / span 等內文載體），**不含 h1-h6**
+      // ——標題字重由原站 / UA bold 維持、保留章節階層。strong / b 自身有 UA
+      // font-weight 不受 p 級注入影響；strong / b **內的 span** 由 BODY_WEIGHT_SEL
+      // 的 :not(strong *):not(b *) 排除（v0.8.36——span 直接命中規則不是 inherit，
+      // 不排除會把 WYSIWYG 站的內文粗體抹平）。
       userOverrides += `
-${BODY_TEXT_SEL} {
+${BODY_WEIGHT_SEL} {
   font-weight: ${opts.fontWeight} !important;
 }`;
     }
@@ -1527,7 +1571,7 @@ html [${ARTICLE_ATTR}="1"] {
   height: auto !important;
   max-width: ${contentWidth}px !important;
   margin: 0 auto !important;
-  padding: min(48px, 6vw) 0 min(48px, 6vw) ${H_GUTTER} !important;
+  padding: ${V_GUTTER} 0 ${V_GUTTER} ${H_GUTTER} !important;
   border-right: ${H_GUTTER} solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
@@ -1572,11 +1616,19 @@ html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
 html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] svg,
 html [${ARTICLE_ATTR}="1"] iframe {
-  max-height: calc(100vh - min(48px, 6vw) * 2 - 120px) !important;
-  max-height: calc(100dvh - min(48px, 6vw) * 2 - 120px) !important;
+  max-height: calc(100vh - ${V_GUTTER} * 2 - 120px) !important;
+  max-height: calc(100dvh - ${V_GUTTER} * 2 - 120px) !important;
   width: auto !important;
   max-width: 100% !important;
   object-fit: contain !important;
+}
+/* v0.8.35：以「與 base 90vh cap 逐字相同的 selector（MEDIA_CAP_SEL）、同
+   specificity、後注入勝」覆寫單頁 cap。上一條 html 前綴規則 (0,2,2) 在
+   cascade 輸給 base 媒體 cap (0,3,3)——裸 img（非 a 包）的直式長圖在翻頁
+   模式有效 max-height 變 90vh、超過欄高被跨頁切割。 */
+${MEDIA_CAP_SEL} {
+  max-height: calc(100vh - ${V_GUTTER} * 2 - 120px) !important;
+  max-height: calc(100dvh - ${V_GUTTER} * 2 - 120px) !important;
 }
 html [${ARTICLE_ATTR}="1"] figure,
 html [${ARTICLE_ATTR}="1"] picture,

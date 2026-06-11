@@ -97,7 +97,7 @@
 
   // (A) wake ping：Safari 全平台。fire-and-forget；callback 讀 lastError
   // 吞掉「background 沒回應」的 console 警告。
-  NS.safeSendMessage({ type: 'BG_WAKE_PING' }, () => {
+  NS.safeSendMessage({ type: NS.MSG.BG_WAKE_PING }, () => {
     void (chrome.runtime && chrome.runtime.lastError);
   });
 

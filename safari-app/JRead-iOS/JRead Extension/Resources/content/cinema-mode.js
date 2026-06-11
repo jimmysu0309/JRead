@@ -24,6 +24,10 @@
   const STYLE_ID = '__jread_cinema_style';
   const ACTIVE_ATTR = 'data-jread-cinema-active';
 
+  // 注意：本函式與 youtube-borderless.js 的 isYouTubeWatch 互為鏡像（v0.8.37
+  // 標記）——兩模組獨立載入、各自持有一份。改 hostname / pathname 判定時兩處
+  // 必須同步（例如未來要加 music.youtube.com 排除）。不抽共用的原因：兩模組
+  // 無載入順序依賴關係，為 10 行 util 建立跨模組依賴不划算。
   function isYouTubeWatch(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
     try {
