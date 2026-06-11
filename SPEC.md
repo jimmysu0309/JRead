@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.42**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.43**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -266,6 +266,12 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
 ### 主文內 layout 殘留空欄（結構性通則）
 
 主文內若有 `display: grid` 或 `display: flex; flex-direction: row` 的容器，且其 direct children 中有 ≥ 1 個被 hide（`data-jread-hidden="1"` 或 `display: none` / `visibility: hidden`），代表原站 layout 設計了 N 欄但其中一欄內容已被清空——cleaner 給 container 加 inline `display: block !important; grid-template-columns: none !important` 等規則退化成自然 block。典型場景：Engadget / NYT / 許多新聞站用 CSS Grid 做「主文 + 廣告側欄」layout，AdBlocker 清廣告後殘留的 grid cell 空間壓擠主文。intentional 多欄圖文（無 hidden child）不會觸發。
+
+collapse 後對 visible children 的寬度 reset（`width: auto !important` + flex longhand 清零）**跳過 replaced element**（img / svg / video / picture / canvas / iframe / embed / object，v0.8.43）——reset 的對象是 Bootstrap col-* 類「layout 欄位」children，replaced element 不可能是欄位；且清掉原站 icon 圖的 stylesheet 寬度後，viewBox-only SVG 的 `<img>`（無內在尺寸）依 CSS spec 撐滿 containing block（eettaiwan content-footer tags.svg 18px → 603px 巨型 icon 實測）。`collapseGridWithHiddenCell` 與 `collapseInnerFlexWrap` 兩條 child reset path 同一豁免。
+
+### 標題區（header zone）裝飾 icon（v0.8.43 通則）
+
+標題下方除了必要的作者及日期文字，不出現 icon（Jimmy 2026-06-11 通則）。結構定義：article 開頭到「第一個內容區塊」（首個 ≥ 60 chars 的可見文字段落、或第一張 ≥ 200×100px 媒體）之間是 header zone；zone 內 rect ≤ 32px 見方的 img / svg 視為裝飾性 meta icon（時鐘、人像、書籤、分隔點）一律 hide——資訊已由旁邊的日期 / 作者文字承載。誤殺防線：heading（h1-h6）內小圖不動（標題 emoji 是內容）、preserved 元素內不動、rect 0×0（lazy / 已隱藏）不動、zone 之後的內文 inline emoji 完全不掃、zone 終點找不到整條 no-op。
 
 ### 主文內雜訊（跨站通用 keyword heuristic）
 
