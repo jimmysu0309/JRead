@@ -122,7 +122,7 @@ harness 模擬不到、需 Jimmy 實機驗的僅三類：**keyboard shortcut 對
   2. `README.md`：版本號、功能特色、安裝/使用說明
   3. `CHANGELOG.md`：版本條目
   4. `CLAUDE.md`：協作規則本身
-  5. `test/fixtures/` 下的測試頁期望值（若測試有依賴預設設定）
+  5. `test/regression/fixtures/` 下的測試頁期望值（若測試有依賴預設設定）
 - **具體數值必須對照程式碼**：預設值、欄位名稱、函式名稱等，必須從程式碼確認，不可憑記憶填寫
 - 程式碼改完還沒同步文件 = 工作沒做完
 

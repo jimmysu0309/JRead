@@ -24,7 +24,7 @@ description: JRead 版本 bump + release 完整流程。每次 bump manifest 版
 5. `test/version-check.spec.js` 的 `EXPECTED_VERSION`（forcing function：不改必 fail）
 6. `README.md` 若有提到版本號的段落
 
-文件同步（硬規則 2）：行為 / UI / 設定有變時，同步 `SPEC.md`、`README.md`、必要時 `CLAUDE.md` 與 `test/fixtures/` 期望值。具體數值對照程式碼，不憑記憶。
+文件同步（硬規則 2）：行為 / UI / 設定有變時，同步 `SPEC.md`、`README.md`、必要時 `CLAUDE.md` 與 `test/regression/fixtures/` 期望值。具體數值對照程式碼，不憑記憶。
 
 ## 3. commit 前 git status 檢查（硬規則 5）
 

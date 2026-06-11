@@ -87,12 +87,19 @@ JRead/
 │   │   ├── namespace.js         # window.__JRead 初始化
 │   │   ├── keepalive.js         # Safari 限定 background keep-alive port（v0.8.30，WPA / iOS 回收喚不醒對策）
 │   │   ├── settings-defaults.js # DEFAULT_SETTINGS 單一資料源（content / SW / Safari、Firefox event page 共用，v0.7.235）
+│   │   ├── domain-match.js      # 萬用字元網域比對（content / popup / options / spec 共用）
 │   │   ├── shortcut-utils.js    # 自訂快速鍵 helper（content / options / spec 共用，v0.7.218）
 │   │   ├── custom-shortcuts.js  # 自訂快速鍵 keydown 攔截 → 本地 dispatch / CUSTOM_COMMAND（v0.7.218 / v0.7.228）
 │   │   ├── touch-gestures.js    # 3 指輕點 toggle 閱讀模式 → 本地 dispatch（v0.7.223 / v0.7.228）
+│   │   ├── toast.js             # 頁內 toast 通知
+│   │   ├── cinema-mode.js       # YouTube 劇院模式（v0.7.133）
+│   │   ├── youtube-borderless.js # YouTube 無邊框模式（v0.7.134）
+│   │   ├── x-thread.js          # X（Twitter）thread 合成容器
+│   │   ├── fb-post.js           # Facebook post 合成容器
 │   │   ├── detector.js          # 主文偵測
 │   │   ├── cleaner.js           # 雜訊隱藏
 │   │   ├── styler.js            # 套用乾淨排版
+│   │   ├── space-scroll.js      # Space 段落焦點卷動 + 指示條（v0.7.216）
 │   │   ├── paged-mode.js        # 翻頁模式：手勢/鍵盤/滾輪翻頁 + 頁碼指示（v0.7.227）
 │   │   └── main.js              # 進入點、事件串接
 │   ├── popup/
@@ -101,8 +108,7 @@ JRead/
 │   ├── options/
 │   │   ├── options.html
 │   │   └── options.js
-│   ├── site-overrides/          # 站點特判隔離區（慎用）
-│   └── assets/
+│   └── assets/                  # （站點特判隔離區 site-overrides/ 為規劃保留位置，目前無任何站點特判、目錄未建立）
 ├── test/
 │   ├── version-check.spec.js    # 版本號 forcing function
 │   ├── regression/              # 回歸測試

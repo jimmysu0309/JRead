@@ -1,7 +1,8 @@
 # Noise Keyword 業界對標研究
 
+> 建檔於 v0.7.85；對標來源與「不可採用」結論至今有效。
 > 此檔記錄 JRead 的 `NOISE_KEYWORD_RE` / `STRONG_NOISE_KEYWORD_RE` / `AD_BOUNDARY_RE` / `AD_SUFFIX_RE` 對標的開源專案與研究結論。
-> 未來新增 keyword 前先讀本檔，避免重複研究 / 採用過已知會誤殺的 token。
+> v0.8.18 C4 起，NOISE / STRONG 兩個 regex 改由 `jread/content/cleaner.js` 的單一 token 名單 `NOISE_TOKEN_DEFS`（`{ t, strong? }`）衍生，結構上不再可能 drift；新增 keyword 改動 `NOISE_TOKEN_DEFS`，動手前先讀本檔，避免重複研究 / 採用過已知會誤殺的 token。
 
 ---
 
