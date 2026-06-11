@@ -29,4 +29,7 @@ safari-app/*.pkg
 xcuserdata/
 
 # Claude Code 本機 session 狀態（權限設定 / lock），不進 repo
-.claude/
+# 例外：.claude/skills/ 是專案流程的單一資料源（release / harness-verify / probe
+# / new-noise-rule / ios-release），必須進版控
+.claude/*
+!.claude/skills/
