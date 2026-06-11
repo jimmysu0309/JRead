@@ -43,9 +43,17 @@ git add <明確列出的檔案> && git commit -m "vX.Y.Z — <摘要>"
 - push 後 GitHub Actions 自動建 Release：Chrome zip + Firefox sideload zip + AMO source zip
 - 進度看 https://github.com/jimmysu0309/JRead/actions
 
-## 5. iOS / Safari 軌（解耦，不自動跟發）
+## 5. iOS / Safari 軌（每次 release 都跟發 TestFlight）
 
-iOS 走 TestFlight 節奏，要發時另走 `/ios-release` skill（`./safari-app/ios-build.sh`）。release.sh 不處理 iOS。
+**Jimmy 2026-06-11 規則：每個 release 都上傳 TestFlight**。release.sh 成功後接著跑：
+
+```bash
+./safari-app/ios-build.sh   # 同步 Resources → bump pbxproj → archive → export ipa → 上傳 ASC
+```
+
+- 版本號已在第 2 節 bump 過，ios-build.sh 直接取 manifest version，不會撞「同版本重傳被拒」
+- 細節與坑（簽章、Resources mirror、ASC key）見 `/ios-release` skill
+- release.sh 本身仍不處理 iOS，TestFlight 上傳是本節的獨立步驟
 
 ## 6. 收尾
 

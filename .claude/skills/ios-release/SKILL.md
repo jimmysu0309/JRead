@@ -1,6 +1,6 @@
 ---
 name: ios-release
-description: JRead iOS Safari Web Extension 的 TestFlight 出版與模擬器自驗。Jimmy 說「發 iOS / 上 TestFlight / 同步 iOS build」或修 iOS 專屬 bug 要驗證時用。與 release.sh 解耦、人工觸發
+description: JRead iOS Safari Web Extension 的 TestFlight 出版與模擬器自驗。Jimmy 說「發 iOS / 上 TestFlight / 同步 iOS build」或修 iOS 專屬 bug 要驗證時用。2026-06-11 起每次 release 都跟發 TestFlight（由 /release skill 第 5 節觸發）
 ---
 
 # iOS 出版（TestFlight 軌）

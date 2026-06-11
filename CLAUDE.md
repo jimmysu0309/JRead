@@ -51,7 +51,7 @@
 | `/harness-verify` | 改 detector / cleaner / styler / theme / paged / SW 後的 harness 驗收；依改動類型選 flag 與 audit |
 | `/probe` | 修 detector / cleaner / styler 這類真實 DOM 互動 bug **之前**（硬性順序：先驗假設再動 code） |
 | `/new-noise-rule` | Jimmy 回報 cleaner 漏網（殘留 / 按鈕沒清 / 推薦列還在）要加雜訊規則時 |
-| `/ios-release` | 發 iOS TestFlight、修 iOS 專屬 bug 要模擬器自驗時 |
+| `/ios-release` | 發 iOS TestFlight（每次 release 都跟發，由 `/release` 第 5 節觸發）、修 iOS 專屬 bug 要模擬器自驗時 |
 
 ---
 
