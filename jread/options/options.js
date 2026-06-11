@@ -130,19 +130,48 @@ window.addEventListener('keydown', (e) => {
   renderShortcuts();
 }, true);
 
+// ---- 欄位 ↔ DOM 雙向轉換（單一資料源，load 與 storage.onChanged 共用）------
+// v0.8.35：原本 save() 把 9 欄全部從 DOM 讀回整包重寫——options 分頁開著時，
+// popup（或另一個 options 分頁）寫入的變更會被本頁 DOM 殘留值無聲蓋回（stale
+// overwrite，CLAUDE.md 工作流原則 5 的雙 path drift）。改成：
+//   1. 每欄 change 只寫該欄（diff write）
+//   2. storage.onChanged 把其他 context 的變更同步回本頁 DOM（全欄位，不只
+//      autoEnableDomains）
+function readFieldFromDom(id) {
+  const el = document.getElementById(id);
+  switch (id) {
+    case 'fontSize': case 'titleFontSize': case 'contentWidth':
+    case 'fontWeight': case 'spaceScrollRatio':
+      return Number(el.value);
+    case 'blockPageShortcuts': case 'pangu':
+      return el.checked;
+    case 'readwiseToken':
+      return el.value.trim();
+    default:
+      return el.value;
+  }
+}
+
+function applyFieldToDom(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  // 使用者正在編輯的欄位不回寫（避免打字途中被外部變更清掉）
+  if (el === document.activeElement) return;
+  if (id === 'fontWeight') {
+    // 字重 select：值非 300/400/600（舊資料 / 損壞）時顯示「中」（400）
+    el.value = [300, 400, 600].includes(Number(value)) ? String(Number(value)) : '400';
+  } else if (id === 'blockPageShortcuts' || id === 'pangu') {
+    el.checked = value !== false;
+  } else if (id === 'readwiseToken') {
+    el.value = value || '';
+  } else {
+    el.value = value;
+  }
+}
+
 function load() {
   chrome.storage.sync.get(DEFAULTS, (values) => {
-    document.getElementById('theme').value = values.theme;
-    document.getElementById('fontSize').value = values.fontSize;
-    document.getElementById('titleFontSize').value = values.titleFontSize;
-    document.getElementById('contentWidth').value = values.contentWidth;
-    // 字重 select：值非 300/400/600（舊資料 / 損壞）時顯示「中」（400）
-    document.getElementById('fontWeight').value =
-      [300, 400, 600].includes(Number(values.fontWeight)) ? String(Number(values.fontWeight)) : '400';
-    document.getElementById('readwiseToken').value = values.readwiseToken || '';
-    document.getElementById('blockPageShortcuts').checked = values.blockPageShortcuts !== false;
-    document.getElementById('pangu').checked = values.pangu !== false;
-    document.getElementById('spaceScrollRatio').value = values.spaceScrollRatio;
+    fields.forEach((id) => applyFieldToDom(id, values[id]));
     // autoEnableDomains：array → textarea 多行字串（每行一個正規化過的網域）
     const helper = window.__JReadDomainMatch;
     const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains : [];
@@ -156,28 +185,21 @@ function load() {
 
 function flashSaved() {
   const s = document.getElementById('save-status');
+  // v0.8.35：set 失敗（quota / 寫入頻率超限）不可閃「已儲存」假訊號
+  if (chrome.runtime.lastError) {
+    s.textContent = '儲存失敗，請稍後再試';
+    setTimeout(() => { s.textContent = ''; }, 3000);
+    return;
+  }
   s.textContent = '已儲存';
   setTimeout(() => { s.textContent = ''; }, 1500);
 }
 
-function save() {
-  const patch = {
-    theme: document.getElementById('theme').value,
-    fontSize: Number(document.getElementById('fontSize').value),
-    titleFontSize: Number(document.getElementById('titleFontSize').value),
-    contentWidth: Number(document.getElementById('contentWidth').value),
-    fontWeight: Number(document.getElementById('fontWeight').value),
-    readwiseToken: document.getElementById('readwiseToken').value.trim(),
-    blockPageShortcuts: document.getElementById('blockPageShortcuts').checked,
-    pangu: document.getElementById('pangu').checked,
-    spaceScrollRatio: Number(document.getElementById('spaceScrollRatio').value)
-  };
-  chrome.storage.sync.set(patch, flashSaved);
-}
-
-// 任何欄位變更即存檔
+// 任何欄位變更即存檔——只寫該欄（diff write，見上方 v0.8.35 註解）
 fields.forEach((id) => {
-  document.getElementById(id).addEventListener('change', save);
+  document.getElementById(id).addEventListener('change', () => {
+    chrome.storage.sync.set({ [id]: readFieldFromDom(id) }, flashSaved);
+  });
 });
 
 // autoEnableDomains 走獨立路徑：textarea 多行字串 → parseList → 寫回 sync。
@@ -195,15 +217,28 @@ document.getElementById('autoEnableDomains').addEventListener('change', (e) => {
   });
 });
 
-// popup 端 toggle 會即時更新 sync.autoEnableDomains；options 開著時跟著刷新
+// 其他 context（popup / 另一個 options 分頁）寫入時，options 開著要跟著刷新。
+// v0.8.35：從只同步 autoEnableDomains 擴成全欄位 + customShortcuts——這是
+// diff-write 修法的另一半（DOM 永遠反映 storage 最新值，殘留 stale 值的面消失）
 if (chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'sync' || !('autoEnableDomains' in changes)) return;
-    const helper = window.__JReadDomainMatch;
-    const next = changes.autoEnableDomains.newValue;
-    const list = Array.isArray(next) ? next : [];
-    document.getElementById('autoEnableDomains').value =
-      helper ? helper.serializeList(list) : list.join('\n');
+    if (area !== 'sync') return;
+    for (const id of fields) {
+      if (id in changes) applyFieldToDom(id, changes[id].newValue);
+    }
+    if ('customShortcuts' in changes && !recordingCmd) {
+      shortcutTable = SC.sanitizeTable(changes.customShortcuts.newValue);
+      renderShortcuts();
+    }
+    if ('autoEnableDomains' in changes) {
+      const helper = window.__JReadDomainMatch;
+      const next = changes.autoEnableDomains.newValue;
+      const list = Array.isArray(next) ? next : [];
+      const ta = document.getElementById('autoEnableDomains');
+      if (ta !== document.activeElement) {
+        ta.value = helper ? helper.serializeList(list) : list.join('\n');
+      }
+    }
   });
 }
 

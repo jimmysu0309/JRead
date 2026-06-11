@@ -186,8 +186,12 @@ function commitSave() {
   pendingPatch = {};
   saveTimer = null;
   try {
-    chrome.storage.sync.set(patch);
-  } catch (_) { /* QuotaExceeded 等 silently 吞——current 已有最新值，下次 popup 開啟仍會走 storage.get */ }
+    // v0.8.35：MV3 promise 模式下 set() 失敗（QuotaExceeded / 寫入頻率超限）是
+    // promise rejection，同步 try/catch 接不到——必須 .catch 吞掉，否則 unhandled
+    // rejection。current 已有最新值，下次 popup 開啟仍會走 storage.get。
+    const p = chrome.storage.sync.set(patch);
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (_) { /* callback 模式（無 promise 回傳）的同步 throw 兜底 */ }
 }
 
 function save(patch) {
@@ -199,13 +203,21 @@ function save(patch) {
   // content script 透過 storage.onChanged 即時重新套用（若閱讀模式開啟）
 }
 
-// popup 即將關閉時強制 flush pending patch（不然連點後立刻關 popup 會丟失最後幾次變更）
-window.addEventListener('beforeunload', () => {
+// popup 即將關閉時強制 flush pending patch（不然連點後立刻關 popup 會丟失最後幾次變更）。
+// v0.8.35：改聽 pagehide + visibilitychange——Chrome action popup 關閉不走一般
+// navigation path，beforeunload 長期不可靠；iOS Safari 則完全不支援 beforeunload
+// （popup sheet 收合同樣丟事件）。pagehide 與 visibilitychange(hidden) 兩者在
+// 桌面 Chrome / iOS Safari 都會觸發，雙掛保險（flushPendingSave 冪等，重複呼叫無害）。
+function flushPendingSave() {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
-    commitSave();
   }
+  commitSave();
+}
+window.addEventListener('pagehide', flushPendingSave);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushPendingSave();
 });
 
 chrome.storage.sync.get(DEFAULT_SETTINGS, (values) => {
@@ -340,6 +352,7 @@ toggleBtn.addEventListener('click', async () => {
   });
 
   if (result.ok) {
+    flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
     window.close();
   } else {
     statusEl.textContent = '此頁面無法啟動閱讀模式';
@@ -420,6 +433,7 @@ borderlessBtn.addEventListener('click', async () => {
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
+  flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();
 });
 

@@ -146,9 +146,14 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
         "options.js fields 陣列必須含 'blockPageShortcuts'——forcing：change 事件未綁定 = toggle 後不存");
     });
 
-    it('options.js save() 必須處理 checkbox.checked → boolean', () => {
-      assert.match(OPTIONS_JS, /blockPageShortcuts\s*:\s*document\.getElementById\(\s*['"]blockPageShortcuts['"]\s*\)\.checked/,
-        'save() 必須讀 #blockPageShortcuts.checked 寫進 patch——forcing：欄位漏掉 = toggle 後 storage 不更新');
+    it('options.js 必須以 checkbox.checked → boolean 讀 blockPageShortcuts', () => {
+      // v0.8.35：save() 改 diff write，欄位讀取收斂進 readFieldFromDom 的
+      // checkbox case——forcing 意圖不變：blockPageShortcuts 必須走 .checked
+      // boolean，不可被當文字欄位讀 .value
+      const m = OPTIONS_JS.match(/function\s+readFieldFromDom[\s\S]*?\n\}/);
+      assert.ok(m, 'options.js 必須有 readFieldFromDom（欄位讀取單一資料源）');
+      assert.match(m[0], /case\s*['"]blockPageShortcuts['"][\s\S]{0,120}\.checked/,
+        'readFieldFromDom 必須讓 blockPageShortcuts 走 checkbox .checked case——欄位漏掉 = toggle 後 storage 不更新');
     });
 
     // v0.7.132：checkbox 在 flex container 內必須 flex-shrink:0 防壓扁。
