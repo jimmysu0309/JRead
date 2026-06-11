@@ -12,13 +12,22 @@
 //   node tools/page-rounds-harness.js --keep    # 跑完不關瀏覽器
 //
 // 輸出：
-//   docs/excluded/page-rounds/<pass|failed>/<hostname>_<path-hash>/
+//   docs/excluded/page-rounds/<pass|review|failed|blocked>/<hostname>_<path-hash>/
 //     original-page-01.png   — 原頁面（reader mode 前）
 //     light-page-01.png      — reader mode 亮色
 //     delayed-page-01.png    — 5s 後（C7 延遲雜訊比對）
 //     dark-page-01.png       — 暗色模式（set-theme 經 SW gate 驗證實際套上）
 //     restored-page-01.png   — 退出 reader mode 後
-//     audit.json             — 輔助信號（residual/gap/contrast/overflow/寬度/hero/theme）
+//     audit.json             — 輔助信號 + failReasons / reviewReasons
+//
+// verdict 四態（2026-06-11 誤報 / 誤放整治——舊 binary pass/fail 把高低精度
+// 信號混在一起，12 FAIL 內 5 假陽性 + 3 bot-block，fail 桶失去鑑別力）：
+//   pass    — 全部信號乾淨（Claude 仍應抽看 light-page-01 首屏）
+//   review  — 只命中低精度信號（contextual residual / hero / links /
+//             retention），需 Claude 看截圖判定真偽，截圖保留
+//   failed  — 命中高精度信號（strict residual / overflow / contrast /
+//             narrowText / gap>=200(delayed) / theme / restore），近乎必為真 bug
+//   blocked — bot challenge / 空頁，環境問題非 JRead bug，改用 cage 重測
 // -----------------------------------------------------------------------------
 
 const path = require('path');
@@ -29,7 +38,7 @@ const crypto = require('crypto');
 const os = require('os');
 
 const audits = require(path.join(__dirname, 'audit-lib.js'));
-const { NOISE_AUDIT_KEYWORDS } = audits;
+const { NOISE_KEYWORD_TIERS } = audits;
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const EXT_PATH = path.join(PROJECT_ROOT, 'jread');
@@ -42,6 +51,28 @@ const TARGET_URL = (urlArg ? process.argv[process.argv.indexOf('--url') + 1] : n
 const KEEP = process.argv.includes('--keep');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// bot challenge / 封鎖頁標記（lowercase 比對 title + innerText 前 3000 chars）。
+// 用高特異性片語——bare 'cloudflare' 不行，談 Cloudflare 的文章會誤中。
+const BLOCK_PAGE_MARKERS = [
+  'just a moment', 'checking your browser', 'verify you are human',
+  'you have been blocked', 'attention required', 'access denied',
+  'enable javascript and cookies', 'pardon our interruption',
+  'cloudflare ray id', 'performance & security by cloudflare',
+  '請完成驗證', '安全驗證'
+];
+
+// 偵測目前頁面是否為 bot challenge / 封鎖頁（toggle 前 + reader 未啟動時各跑一次）
+function checkBlockSignal(page) {
+  return page.evaluate((markers) => {
+    const text = ((document.title || '') + ' ' +
+      (document.body ? document.body.innerText.slice(0, 3000) : '')).toLowerCase();
+    return {
+      hits: markers.filter(m => text.includes(m)),
+      bodyTextLen: document.body ? document.body.innerText.replace(/\s+/g, '').length : 0
+    };
+  }, BLOCK_PAGE_MARKERS);
+}
 
 function hostnameOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'unknown'; }
@@ -70,8 +101,8 @@ async function setZoom(page, z) {
   const dirName = outDirName(TARGET_URL);
   const PR_ROOT = path.join(PROJECT_ROOT, 'docs', 'excluded', 'page-rounds');
 
-  // 清舊截圖（可能在 pass/ 或 failed/ 下）
-  for (const sub of ['pass', 'failed']) {
+  // 清舊截圖（可能在任一 verdict 目錄下）
+  for (const sub of ['pass', 'review', 'failed', 'blocked']) {
     const old = path.join(PR_ROOT, sub, dirName);
     if (fs.existsSync(old)) fs.rmSync(old, { recursive: true });
   }
@@ -127,11 +158,52 @@ async function setZoom(page, z) {
   await sleep(100);
   await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'original' });
 
-  // ---- 3.5. 擷取原頁 hero images（zoom 還原到 1.0 量原始 rect）----
+  // ---- 3.5. 擷取原頁 hero images（zoom 還原到 1.0 量原始 rect）+ 原頁文字量 ----
   await setZoom(page, 1);
   const originalHeroImages = await audits.captureOriginalHeroImages(page);
   console.log(`  hero images found: ${originalHeroImages.length}`);
+  // B3 基準：原頁 visible p 文字總量（retention ratio 用，見 audit-lib 頭註解）
+  const originalTextStats = await audits.collectOriginalTextStats(page);
+  console.log(`  original p text: ${originalTextStats.pTextLength} chars (${originalTextStats.pCount} p)`);
   await setZoom(page, 0.5);
+
+  const audit = { url: TARGET_URL, hostname, dirName, readerModeActive: false,
+    originalTextStats, blockSignal: null,
+    contentStats: null, residual: { initial: null, delayed: null },
+    links: null, retention: null,
+    gaps: { initial: null, delayed: null },
+    contrast: { light: null, dark: null },
+    theme: { dark: null, lightRestore: null },
+    overflow: null, tail: null, restored: null,
+    failReasons: [], reviewReasons: [] };
+
+  // verdict 收尾共用：寫 audit.json、移目錄、印 VERDICT 行（batch script 解析這行）
+  function finalize(verdict) {
+    audit.verdict = verdict;
+    fs.writeFileSync(path.join(outDir, 'audit.json'), JSON.stringify(audit, null, 2));
+    const finalDir = path.join(PR_ROOT, verdict, dirName);
+    fs.mkdirSync(path.join(PR_ROOT, verdict), { recursive: true });
+    fs.renameSync(outDir, finalDir);
+    try { fs.rmdirSync(path.join(PR_ROOT, '_wip')); } catch {}
+    const mark = { pass: '✅ PASS', review: '🔍 REVIEW', failed: '❌ FAIL', blocked: '⛔ BLOCKED' }[verdict];
+    console.log(`\nVERDICT: ${verdict}${audit.failReasons.length ? ' fail=[' + audit.failReasons.join(', ') + ']' : ''}${audit.reviewReasons.length ? ' review=[' + audit.reviewReasons.join(', ') + ']' : ''}`);
+    console.log(`${mark}\nDone. Screenshots in: ${finalDir}`);
+    return finalDir;
+  }
+
+  // ---- 3.7. 封鎖頁偵測（toggle 前）----
+  // 必須在 toggle 前跑：封鎖頁也有標題 + 段落，detector 會把它當主文、
+  // reader mode 照樣啟動且全信號乾淨直接 pass（thenewslens Cloudflare
+  // 封鎖頁判 pass 的誤放實案）。這裡只看 marker、不看文字量——SPA 慢 render
+  // 的低文字量不該在這層誤判成 blocked
+  audit.blockSignal = await checkBlockSignal(page);
+  if (audit.blockSignal.hits.length > 0) {
+    console.log(`WARNING: 封鎖頁標記命中 [${audit.blockSignal.hits.join(', ')}]——bot challenge / 封鎖頁，不進 reader mode`);
+    audit.reviewReasons.push(`bot-block: ${audit.blockSignal.hits.join(',')}`);
+    finalize('blocked');
+    if (!KEEP) await ctx.close();
+    return;
+  }
 
   // ---- 4. 進入 reader mode ----
   const tabId = await sw.evaluate(async (u) => {
@@ -156,23 +228,21 @@ async function setZoom(page, z) {
   const readerActive = await page.evaluate(() => !!document.querySelector('[data-jread-active="1"]'));
   console.log('reader mode active:', readerActive);
 
-  const audit = { url: TARGET_URL, hostname, dirName, readerModeActive: readerActive,
-    contentStats: null, residual: { initial: null, delayed: null },
-    gaps: { initial: null, delayed: null },
-    contrast: { light: null, dark: null },
-    theme: { dark: null, lightRestore: null },
-    overflow: null, tail: null, restored: null };
+  audit.readerModeActive = readerActive;
 
   if (!readerActive) {
-    console.log('WARNING: reader mode 未啟動，截圖供 Claude 判定 fallback');
+    // 分流：bot challenge（toggle 後才 redirect / render 出來的）或空頁 =
+    // 環境問題（blocked，非 JRead bug），其餘才是真 fail（detector no-op /
+    // content script 沒起來）。舊版一律記 failed，Cloudflare 站混進真 bug
+    // 堆要人工 triage（2026-05-27 報告 3 站）。
+    const blockSignal = await checkBlockSignal(page);
+    audit.blockSignal = blockSignal;
+    const isBlocked = blockSignal.hits.length > 0 || blockSignal.bodyTextLen < 200;
+    console.log(`WARNING: reader mode 未啟動（${isBlocked ? 'bot-block/空頁：' + (blockSignal.hits.join(',') || `bodyText=${blockSignal.bodyTextLen}`) : '頁面正常但 detector no-op'}），截圖供 Claude 判定`);
     await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'light' });
-    audit.verdict = 'failed';
-    fs.writeFileSync(path.join(outDir, 'audit.json'), JSON.stringify(audit, null, 2));
-    const failDir = path.join(PR_ROOT, 'failed', dirName);
-    fs.mkdirSync(path.join(PR_ROOT, 'failed'), { recursive: true });
-    fs.renameSync(outDir, failDir);
-    try { fs.rmdirSync(path.join(PR_ROOT, '_wip')); } catch {}
-    console.log(`\n❌ FAIL (reader mode inactive)\nDone. Screenshots in: ${failDir}`);
+    if (isBlocked) audit.reviewReasons.push('bot-block-or-empty-page');
+    else audit.failReasons.push('reader-mode-inactive');
+    finalize(isBlocked ? 'blocked' : 'failed');
     if (!KEEP) await ctx.close();
     return;
   }
@@ -183,18 +253,46 @@ async function setZoom(page, z) {
   await sleep(200);
   await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'light' });
 
-  // ---- 7. Residual + gap + contrast audit（輔助信號）----
+  // ---- 7. Residual + links + gap + contrast audit（輔助信號）----
   audit.contentStats = await audits.runContentStats(page);
-  audit.residual.initial = await audits.runResidualText(page, NOISE_AUDIT_KEYWORDS);
+  audit.residual.initial = await audits.runResidualText(page, NOISE_KEYWORD_TIERS);
   audit.gaps.initial = await audits.runGapAudit(page);
 
   if (audit.residual.initial.warnings.length > 0) {
-    console.log(`  ⚠️  residual warnings: ${audit.residual.initial.warnings.length}`);
+    console.log(`  ⚠️  residual warnings: ${audit.residual.initial.warnings.length}（strict ${audit.residual.initial.strictCount}）`);
     for (const w of audit.residual.initial.warnings.slice(0, 5)) {
-      console.log(`    ${w.tag} "${w.text}" [${w.hitKeywords.join(', ')}]`);
+      console.log(`    [${w.severity}] ${w.tag} "${w.text}" [${w.hitKeywords.join(', ')}]`);
     }
   } else {
     console.log('  ✅ residual: 無命中');
+  }
+
+  // 連結 / 按鈕殘留（C1）——debug-harness 一直有、page rounds 漏接的訊號層
+  // （share/social class、社群 href、icon button 文字）。低精度 → review 信號
+  audit.links = await audits.runResidualLinks(page, NOISE_KEYWORD_TIERS);
+  if (audit.links.warnings.length > 0) {
+    console.log(`  ⚠️  links/buttons 可疑: ${audit.links.warnings.length}`);
+    for (const w of audit.links.warnings.slice(0, 5)) {
+      console.log(`    ${w.tag} "${w.text}" cls="${w.cls.slice(0, 30)}" href="${w.href}"`);
+    }
+  } else {
+    console.log('  ✅ links/buttons: 無可疑項');
+  }
+
+  // Retention（B3 信號）：reader 內 p 文字量 / 原頁 p 文字量。過低 = detector
+  // 選錯容器 / cleaner 誤殺主文的疑點。留言 / 推薦也是 p、被合法清掉會拉低
+  // ratio，所以是 review 信號不 fail；原頁 p 文字 < 800 chars（論壇 div 排版）跳過
+  if (originalTextStats.pTextLength >= 800 && audit.contentStats) {
+    const ratio = audit.contentStats.pTextLength / originalTextStats.pTextLength;
+    audit.retention = { ratio: Math.round(ratio * 100) / 100,
+      readerPText: audit.contentStats.pTextLength, originalPText: originalTextStats.pTextLength };
+    if (ratio < 0.3) {
+      console.log(`  ⚠️  retention: reader 僅保留原頁 ${Math.round(ratio * 100)}% p 文字（${audit.contentStats.pTextLength}/${originalTextStats.pTextLength}）——B3 疑點，看截圖確認主文完整`);
+    } else {
+      console.log(`  ✅ retention: ${Math.round(ratio * 100)}%（${audit.contentStats.pTextLength}/${originalTextStats.pTextLength}）`);
+    }
+  } else {
+    console.log('  ℹ️  retention: 原頁 p 文字量不足，跳過判定');
   }
   if (audit.gaps.initial.gaps.length > 0) {
     console.log(`  ⚠️  gap warnings: ${audit.gaps.initial.gaps.length}`);
@@ -306,11 +404,14 @@ async function setZoom(page, z) {
   // ---- 9. 延遲截圖（C7）----
   console.log('Phase: delayed');
   await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'delayed' });
-  audit.residual.delayed = await audits.runResidualText(page, NOISE_AUDIT_KEYWORDS);
+  audit.residual.delayed = await audits.runResidualText(page, NOISE_KEYWORD_TIERS);
   audit.gaps.delayed = await audits.runGapAudit(page);
 
   if (audit.residual.delayed.warnings.length > 0) {
-    console.log(`  ⚠️  delayed residual warnings: ${audit.residual.delayed.warnings.length}`);
+    console.log(`  ⚠️  delayed residual warnings: ${audit.residual.delayed.warnings.length}（strict ${audit.residual.delayed.strictCount}）`);
+    for (const w of audit.residual.delayed.warnings.slice(0, 5)) {
+      console.log(`    [${w.severity}] ${w.tag} "${w.text}" [${w.hitKeywords.join(', ')}]`);
+    }
   } else {
     console.log('  ✅ delayed residual: 無命中');
   }
@@ -322,6 +423,13 @@ async function setZoom(page, z) {
   // 五張全錯而綠燈」的偽陰性（v0.8.39 harness review 抓到的盲點）。
   console.log('Phase: dark');
   audit.theme.dark = await audits.setThemeAndVerify(page, 'dark');
+  if (!audit.theme.dark.applied) {
+    // SW gate / storage race 偶發——重試一次再定罪，避免環境抖動記成站點 FAIL
+    console.log('  dark theme 第一次未套上，重試一次…');
+    await sleep(800);
+    audit.theme.dark = await audits.setThemeAndVerify(page, 'dark');
+    audit.theme.dark.retried = true;
+  }
   if (!audit.theme.dark.applied) {
     console.log(`  ⚠️  dark theme 未套上（bg ${audit.theme.dark.before} → ${audit.theme.dark.after}）——SW gate 拒絕或 storage race，dark 截圖不可信`);
   } else {
@@ -368,39 +476,38 @@ async function setZoom(page, z) {
   }));
   console.log('restored state:', JSON.stringify(audit.restored));
 
-  // ---- 12. 判定 pass/fail + 寫 audit.json + 移目錄 ----
-  // gap >= 200px 視為異常空白（80-199px 只 warn 不 fail，圖文間距正常範圍）
-  const hasLargeGap = [
-    ...(audit.gaps?.initial?.gaps || []),
-    ...(audit.gaps?.delayed?.gaps || [])
-  ].some(g => g.gap >= 200);
+  // ---- 12. 判定 verdict + 寫 audit.json + 移目錄 ----
+  // 高精度信號 → failReasons（近乎必為真 bug）；低精度信號 → reviewReasons
+  //（需 Claude 看截圖判定真偽）。分層依據：2026-05-27 報告的假陽性盤點
+  //（contextual keyword / hero missing 是 FP 慣犯；overflow / contrast /
+  // narrowText / strict keyword 無 FP 紀錄）。
+  const fail = audit.failReasons;
+  const review = audit.reviewReasons;
 
-  const hasFail =
-    !audit.readerModeActive ||
-    (audit.residual?.initial?.warnings?.length > 0) ||
-    (audit.residual?.delayed?.warnings?.length > 0) ||
-    (audit.contrast?.light?.warnings?.length > 0) ||
-    (audit.contrast?.dark?.warnings?.length > 0) ||
-    !audit.theme?.dark?.applied ||
-    (audit.overflow?.overflow) ||
-    (audit.heroImage?.missing?.length > 0) ||
-    (audit.narrowText?.narrow) ||
-    (audit.figcaption?.cramped) ||
-    (audit.bodyWidth?.narrow) ||
-    hasLargeGap;
-  const verdict = hasFail ? 'failed' : 'pass';
-  audit.verdict = verdict;
+  // residual：strict 命中 = fail，contextual-only = review
+  for (const [label, r] of [['initial', audit.residual.initial], ['delayed', audit.residual.delayed]]) {
+    if (!r || !r.warnings) continue;
+    if (r.strictCount > 0) fail.push(`residual-strict(${label})x${r.strictCount}`);
+    else if (r.warnings.length > 0) review.push(`residual-contextual(${label})x${r.warnings.length}`);
+  }
+  if (audit.links?.warnings?.length > 0) review.push(`links-suspicious x${audit.links.warnings.length}`);
+  if (audit.retention && audit.retention.ratio < 0.3) review.push(`retention ${Math.round(audit.retention.ratio * 100)}%`);
+  // gap：只用 delayed（lazy-load 展開後）量測——initial 的 placeholder 假 gap
+  // 在 delayed 會消失；>= 200px 視為異常空白（80-199px 只 warn）
+  const largeGapsDelayed = (audit.gaps?.delayed?.gaps || []).filter(g => g.gap >= 200);
+  if (largeGapsDelayed.length > 0) fail.push(`gap>=200(delayed)x${largeGapsDelayed.length}`);
+  if (audit.contrast?.light?.warnings?.length > 0) fail.push(`contrast(light)x${audit.contrast.light.warnings.length}`);
+  if (audit.contrast?.dark?.warnings?.length > 0) fail.push(`contrast(dark)x${audit.contrast.dark.warnings.length}`);
+  if (!audit.theme?.dark?.applied) fail.push('dark-theme-not-applied');
+  if (audit.overflow?.overflow) fail.push('overflow');
+  if (audit.heroImage?.missing?.length > 0) review.push(`hero-missing x${audit.heroImage.missing.length}`);
+  if (audit.narrowText?.narrow) fail.push('narrow-text');
+  if (audit.figcaption?.cramped) fail.push('figcaption-cramped');
+  if (audit.bodyWidth?.narrow) fail.push('body-width-narrow');
+  // F1 還原失敗（舊版只記錄不判定——誤放）
+  if (audit.restored && (audit.restored.jreadActive || audit.restored.jreadStyle)) fail.push('restore-failed');
 
-  fs.writeFileSync(path.join(outDir, 'audit.json'), JSON.stringify(audit, null, 2));
-
-  const finalDir = path.join(PR_ROOT, verdict, dirName);
-  fs.mkdirSync(path.join(PR_ROOT, verdict), { recursive: true });
-  fs.renameSync(outDir, finalDir);
-  // 清 _wip（若空）
-  try { fs.rmdirSync(path.join(PR_ROOT, '_wip')); } catch {}
-
-  console.log(`\n${verdict === 'pass' ? '✅ PASS' : '❌ FAIL'}`);
-  console.log(`Done. Screenshots in: ${finalDir}`);
+  finalize(fail.length > 0 ? 'failed' : (review.length > 0 ? 'review' : 'pass'));
   console.log('audit.json written.');
 
   if (!KEEP) {

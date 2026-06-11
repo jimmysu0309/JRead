@@ -29,6 +29,20 @@ describe('harness audit-lib — 單一資料源合約', () => {
     assert.deepStrictEqual(dupes, [], `keyword 名單有重複項: ${dupes.join(', ')}`);
   });
 
+  it('keyword 兩層分級存在且合併等於全名單（page rounds verdict 分流依賴）', () => {
+    const tiers = auditLib.NOISE_KEYWORD_TIERS;
+    assert.ok(tiers && Array.isArray(tiers.strict) && Array.isArray(tiers.contextual));
+    assert.ok(tiers.strict.length > 10, 'strict 層應有實質名單');
+    assert.ok(tiers.contextual.length > 10, 'contextual 層應有實質名單');
+    assert.deepStrictEqual(
+      auditLib.NOISE_AUDIT_KEYWORDS,
+      [...tiers.strict, ...tiers.contextual],
+      '合併名單必須 = strict + contextual（單一資料源）');
+    // 兩層都要有英文詞——舊名單幾乎全中文，英文站 residual audit 形同空轉
+    assert.ok(tiers.strict.some(k => /[a-z]/.test(k)), 'strict 層應含英文 CTA 詞');
+    assert.ok(tiers.contextual.some(k => /[a-z]/.test(k)), 'contextual 層應含英文常用詞');
+  });
+
   describe('anti-drift：harness 不得自帶 audit 實作', () => {
     for (const file of ['debug-harness.js', 'page-rounds-harness.js']) {
       const src = fs.readFileSync(path.join(TOOLS, file), 'utf8');
@@ -73,7 +87,7 @@ describe('harness audit-lib — 單一資料源合約', () => {
       for (const name of textFns) {
         const rebuilt = rebuildInWindow(window, auditLib.pageFns[name]);
         const res = name === 'auditResidualText' || name === 'auditResidualLinks'
-          ? rebuilt(auditLib.NOISE_AUDIT_KEYWORDS)
+          ? rebuilt(auditLib.NOISE_KEYWORD_TIERS)
           : rebuilt();
         assert.ok(res && res.error === 'no article' || res === null || typeof res === 'object',
           `pageFns.${name} 在無 card DOM 下應回報 no article / 安全結構`);
@@ -91,7 +105,7 @@ describe('harness audit-lib — 單一資料源合約', () => {
         </article>
       </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
       const rebuilt = dom.window.eval(`(${auditLib.pageFns.auditResidualText.toString()})`);
-      const res = rebuilt(auditLib.NOISE_AUDIT_KEYWORDS);
+      const res = rebuilt(auditLib.NOISE_KEYWORD_TIERS);
       assert.ok(!res.error, 'reader card 應被找到');
       const warnTexts = res.warnings.map(w => w.text);
       assert.ok(warnTexts.some(t => t.includes('延伸閱讀')),
@@ -102,33 +116,71 @@ describe('harness audit-lib — 單一資料源合約', () => {
       // 警告需附 ancestors 資訊（Claude 辨識 DOM 結構用）
       const hit = res.warnings.find(w => w.text.includes('延伸閱讀'));
       assert.ok(hit.parents && hit.parents.length > 0, '命中項應帶 parents ancestor 鏈');
+      assert.strictEqual(hit.severity, 'strict', '「延伸閱讀」CTA 措辭應為 strict 級');
     });
 
-    it('auditResidualLinks：a/button 用 textContent 判定（icon+span 結構不漏）', () => {
+    it('auditResidualText 分層：常用詞命中正文不警告、CTA 短文字警告（2026-05 假陽性整治）', () => {
+      const dom = new JSDOM(`<!DOCTYPE html><body>
+        <article data-jread-active="1">
+          <p>${'主文長段落內容'.repeat(12)}</p>
+          <!-- 歷史假陽性：常用詞落在正文句子（36kr「最新」/ wikipedia「加入」實案）-->
+          <h2>DeepSeek 的最新模型再次震撼了整個產業圈</h2>
+          <p>步驟三：加入珍珠即完成手搖珍珠奶茶喔</p>
+          <!-- 真雜訊：短 CTA 文字（contextual 詞 + 短文字 / 高占比）-->
+          <span class="tail-cta">看更多熱門文章</span>
+          <h6>推薦文章</h6>
+          <!-- 英文 CTA（舊名單全中文、英文站形同空轉）-->
+          <h4>Subscribe to ChinaTalk</h4>
+          <!-- 英文 word-boundary：shareholders 不可命中 share -->
+          <div class="quote-box">Shareholders rallied today</div>
+          <!-- 長文段落（>= 80 chars）內合法提及 strict 詞 → 降為 contextual -->
+          <p>這篇報導花了很長的篇幅討論訂閱制媒體在過去十年間的營運模式轉變，<em>subscribe</em> 一詞在原文反覆出現了數十次，從報業的衰退談到 podcast 與電子報的興起，值得閱讀與思考其中的商業邏輯與未來走向。</p>
+        </article>
+      </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+      const rebuilt = dom.window.eval(`(${auditLib.pageFns.auditResidualText.toString()})`);
+      const res = rebuilt(auditLib.NOISE_KEYWORD_TIERS);
+      const byText = (t) => res.warnings.find(w => w.text.includes(t));
+      assert.ok(!byText('DeepSeek'), '「最新」落在長標題正文不應警告（占比低且 > 12 字）');
+      assert.ok(!byText('珍珠'), '「加入」落在正文句子不應警告');
+      assert.ok(byText('看更多'), '「看更多熱門文章」CTA 應警告');
+      assert.ok(byText('推薦文章'), '「推薦文章」heading 應警告');
+      const sub = byText('Subscribe to ChinaTalk');
+      assert.ok(sub && sub.severity === 'strict', '英文 Subscribe CTA 應為 strict 級');
+      assert.ok(!byText('Shareholders'), 'shareholders 不可被 share 子字串誤中（word boundary）');
+      const prose = res.warnings.find(w => w.tag === 'EM' && w.text === 'subscribe');
+      assert.ok(!prose || prose.severity === 'contextual',
+        '長文段落內提及 strict 詞應降為 contextual（不可計 fail 信號）');
+    });
+
+    it('auditResidualLinks：a/button 用 textContent 判定（icon+span 結構不漏）、正文內連結不誤報', () => {
       const dom = new JSDOM(`<!DOCTYPE html><body>
         <article data-jread-active="1">
           <p>${'主文長段落內容'.repeat(12)}</p>
           <a href="https://line.me/x"><svg></svg><span>分享給好友</span></a>
           <button class="css-x1y2z3">建立貼文</button>
+          <!-- 新聞內文常嵌社群連結：長段落內的 a 不做 href / class 判定 -->
+          <p>${'報導內容'.repeat(20)}，據他在 <a href="https://x.com/foo/status/123">這則貼文</a> 中的說法，事件仍在發展中。</p>
         </article>
       </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
       const rebuilt = dom.window.eval(`(${auditLib.pageFns.auditResidualLinks.toString()})`);
-      const res = rebuilt(auditLib.NOISE_AUDIT_KEYWORDS);
+      const res = rebuilt(auditLib.NOISE_KEYWORD_TIERS);
       assert.ok(!res.error);
       const warnTexts = res.warnings.map(w => w.text);
       assert.ok(warnTexts.some(t => t.includes('好友')), '巢狀 span 文字應經 textContent 命中');
       assert.ok(warnTexts.some(t => t.includes('建立貼文')), 'emotion hash class 的 button 應由文字命中');
+      assert.ok(!warnTexts.some(t => t.includes('這則貼文')),
+        '長文段落內的社群 href 連結是合法內文連結，不應警告');
     });
   });
 
   describe('node-side API 形狀', () => {
     it('exports 齊全（兩支 harness 的 call site 依賴）', () => {
-      const required = ['NOISE_AUDIT_KEYWORDS', 'pageFns',
+      const required = ['NOISE_AUDIT_KEYWORDS', 'NOISE_KEYWORD_TIERS', 'pageFns',
         'runResidualText', 'runResidualLinks', 'runOutsideArticle', 'runGapAudit',
         'runContrastAudit', 'runContentWidthAudit', 'runBodyWidthAudit',
         'runOverflowAudit', 'runNarrowTextAudit', 'runFigcaptionAudit',
         'runTailAudit', 'runContentStats', 'captureOriginalHeroImages',
-        'runHeroImageAudit', 'waitForReaderImagesLoaded',
+        'collectOriginalTextStats', 'runHeroImageAudit', 'waitForReaderImagesLoaded',
         'takePagedScreenshots', 'setThemeAndVerify'];
       for (const name of required) {
         assert.ok(name in auditLib, `audit-lib 缺 export: ${name}`);

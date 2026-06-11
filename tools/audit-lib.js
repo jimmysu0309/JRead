@@ -22,23 +22,44 @@ const path = require('path');
 
 // 殘留偵測名單：reader card 內若出現這些字樣 = cleaner rule 漏網（雜訊殘留）。
 // 規則：跨站常見的「推薦 / 相關 / 社群 / CTA / 訂閱 / 留言」等非主文字樣。
-// 新增字樣請同步維護 cleaner.js 的 NOISE_*_RE regex；此清單是 forcing
-// function——harness 每次驗收必跑、任一命中都印 WARNING。
-// 已知誤報：「透過」「更多」「貼文」是常用詞，翻譯後內文常以子字串命中——
-// 看 ancestors 落在主文內文容器（body.markup / available-content）即誤報。
-// 名單不得有重複項（regression spec 驗）。
-const NOISE_AUDIT_KEYWORDS = [
-  '更多', '相關', '其他人', '推薦', '最新', '延伸', '查看原始', '看更多', '看原文',
-  '加入', '訂閱', 'LINE 官方', 'LINE官方', '官方帳號', '粉絲專頁', '好友',
-  'AI 摘要', 'AI摘要', '網友貼文', '貼文',
-  '轉發', '留言', '建立貼文', '熱門', '繼續看下去', '回覆',
-  '廣告', '贊助', '業配',
-  '登入', '註冊',
-  '原始文章',
-  '追蹤', '關注',
-  'Google新聞', 'Google 新聞', '透過',
-  '聽新聞', '聽書', '想成為', '玩問答', '拿課程', '抽獎', '免費領'
+// 新增字樣請同步維護 cleaner.js 的 NOISE_*_RE regex。
+//
+// 兩層精度（page rounds verdict 依此分流，2026-06-11 誤報整治）：
+//   - STRICT：CTA 專屬措辭，命中即近乎必為雜訊 → page rounds 計 fail 信號。
+//   - CONTEXTUAL：常用詞（「最新」「加入」曾命中 36kr / wikipedia 正文，
+//     歷史 5 站假陽性），只在可疑 context（短文字、keyword 占比高）下警告，
+//     且只計 review 信號（要 Claude 看截圖確認）。「透過」誤報率過高已除名
+//     （CTA 場景由「LINE 官方」「官方帳號」等 strict 詞覆蓋）。
+//   - 兩層皆含英文詞——舊名單幾乎全中文，英文站 residual audit 形同空轉
+//     （chinatalk Subscribe 區塊全靠肉眼，2026-05 報告實證）。拉丁字詞用
+//     word-boundary 比對（'share' 不命中 'shareholders'）。
+// 名單（合併後）不得有重複項（regression spec 驗）。
+const NOISE_KEYWORDS_STRICT = [
+  // 中文 CTA 專屬措辭
+  '延伸閱讀', '相關文章', '相關新聞', '相關報導', '推薦閱讀', '推薦文章', '推薦新聞',
+  '查看原始', '看更多', '看原文', '原始文章', '其他人',
+  'LINE 官方', 'LINE官方', '官方帳號', '粉絲專頁',
+  'AI 摘要', 'AI摘要', '網友貼文', '建立貼文', '繼續看下去',
+  'Google新聞', 'Google 新聞',
+  '訂閱電子報', '免費訂閱', '加入會員', '加入好友',
+  '聽新聞', '聽書', '想成為', '玩問答', '拿課程', '抽獎', '免費領', '業配',
+  // 英文 CTA 專屬措辭
+  'subscribe', 'sign up', 'newsletter', 'sponsored', 'advertisement',
+  'related articles', 'related stories', 'recommended for you',
+  'you may like', 'you might like', 'most read', 'most popular',
+  'read more', 'more from', 'read next', 'up next', 'trending',
+  'follow us', 'share this', "don't miss"
 ];
+const NOISE_KEYWORDS_CONTEXTUAL = [
+  // 中文常用詞（短文字 / 高占比才警告）
+  '更多', '相關', '推薦', '最新', '延伸', '加入', '訂閱', '好友', '貼文', '分享',
+  '轉發', '留言', '熱門', '回覆', '廣告', '贊助', '登入', '註冊', '追蹤', '關注',
+  // 英文常用詞（<= 5 個字的短句才警告）
+  'share', 'follow', 'comments', 'related', 'log in', 'sign in', 'popular', 'recommended'
+];
+const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL };
+// 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
+const NOISE_AUDIT_KEYWORDS = [...NOISE_KEYWORDS_STRICT, ...NOISE_KEYWORDS_CONTEXTUAL];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -51,9 +72,18 @@ const pageFns = {};
 // 驗：reader card 內 visible element 的 direct textNode（<= 60 chars）是否命中
 // keyword 名單；不驗：> 60 chars 的長文案雜訊（整段推薦文字會逃過，已知
 // tradeoff——keyword 比對對長文誤報率太高）、圖片內文字、iframe 內部。
-pageFns.auditResidualText = function (keywords) {
+// 入參 tiers = { strict, contextual }（NOISE_KEYWORD_TIERS）；傳純 array 視為
+// 全 strict（向後相容）。命中分兩級 severity：
+//   - strict：CTA 專屬措辭直接命中
+//   - contextual：常用詞，僅在「短文字（<= 12 字）或 keyword 占比 >= 50%」
+//     才算命中（拉丁詞改用「<= 5 個字的短句」判定）
+// 命中元素若位於長文段落內（p/li/blockquote 等 ancestor 文字 >= 80 chars），
+// 一律降為 contextual——內文裡合法提到「subscribe / 廣告」不該是 fail 信號。
+pageFns.auditResidualText = function (tiers) {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { error: 'no article' };
+  const strict = Array.isArray(tiers) ? tiers : (tiers.strict || []);
+  const contextual = Array.isArray(tiers) ? [] : (tiers.contextual || []);
   function isVisible(el) {
     let cur = el;
     while (cur) {
@@ -66,6 +96,35 @@ pageFns.auditResidualText = function (keywords) {
     return true;
   }
   function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  function matchKw(text, lowText, kw) {
+    if (/[a-z]/i.test(kw)) {
+      // 拉丁詞：word-boundary 比對（允許複數 s），'share' 不命中 'shareholders'
+      const esc = kw.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp('(^|[^a-z])' + esc + 's?([^a-z]|$)').test(lowText);
+    }
+    return text.includes(kw);
+  }
+  function classify(el, text) {
+    const lowText = text.toLowerCase();
+    const hits = [];
+    let severity = null;
+    for (const kw of strict) {
+      if (matchKw(text, lowText, kw)) { hits.push(kw); severity = 'strict'; }
+    }
+    for (const kw of contextual) {
+      if (!matchKw(text, lowText, kw)) continue;
+      const ok = /[a-z]/i.test(kw)
+        ? lowText.split(/\s+/).length <= 5
+        : (text.length <= 12 || kw.length / text.length >= 0.5);
+      if (ok) { hits.push(kw); if (!severity) severity = 'contextual'; }
+    }
+    if (severity === 'strict') {
+      // 長文段落內的命中降級（內文合法提及，不可計 fail）
+      const block = el.parentElement && el.parentElement.closest('p, li, blockquote, figcaption, dd, dt');
+      if (block && norm(block.textContent).length >= 80) severity = 'contextual';
+    }
+    return { hits, severity };
+  }
   const items = [];
   // 掃 articleEl 內所有 element，列出「自身直接 textNode 有內容 <= 60 chars」
   // 的 element——這些是 heading / button / span / tag / meta 類短文字，
@@ -83,13 +142,14 @@ pageFns.auditResidualText = function (keywords) {
       .map(n => n.textContent).join('');
     const text = norm(direct);
     if (!text || text.length > 60 || text.length < 2) continue;
-    const hitKws = keywords.filter(kw => text.includes(kw));
+    const { hits, severity } = classify(el, text);
     items.push({
       tag: el.tagName,
       text: text.slice(0, 60),
-      hitKeywords: hitKws,
+      hitKeywords: hits,
+      severity,
       elCls: (el.className || '').toString().slice(0, 80),
-      parents: hitKws.length > 0 ? (() => {
+      parents: hits.length > 0 ? (() => {
         const out = [];
         let p = el.parentElement;
         for (let i = 0; i < 3 && p; i++) {
@@ -102,8 +162,13 @@ pageFns.auditResidualText = function (keywords) {
     });
     if (items.length >= 200) break;
   }
-  const warnings = items.filter(it => it.hitKeywords.length > 0);
-  return { total: items.length, warnings, items: items.slice(0, 60) };
+  const warnings = items.filter(it => it.severity);
+  return {
+    total: items.length,
+    warnings,
+    strictCount: warnings.filter(w => w.severity === 'strict').length,
+    items: items.slice(0, 60)
+  };
 };
 
 // ---- Residual audit（a/button 全量掃描）----
@@ -111,9 +176,14 @@ pageFns.auditResidualText = function (keywords) {
 // 的 icon button）——用 textContent（整棵子樹）判定，LINE 分享這類
 // `<a><svg/><span>分享</span></a>` 才不會漏；class / href 另以 share/social
 // 慣用詞與社群網域比對。
-pageFns.auditResidualLinks = function (keywords) {
+// 入參 tiers 同 auditResidualText。長文段落內的 inline 連結（新聞內文常嵌
+// 推文 / 社群連結）不做 class / href / contextual 判定——只有 strict keyword
+// 才警告（2026-06-11：避免把合法內文連結記成殘留按鈕）。
+pageFns.auditResidualLinks = function (tiers) {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { error: 'no article' };
+  const strict = Array.isArray(tiers) ? tiers : (tiers.strict || []);
+  const contextual = Array.isArray(tiers) ? [] : (tiers.contextual || []);
   function isVisible(el) {
     let cur = el;
     while (cur) {
@@ -126,23 +196,43 @@ pageFns.auditResidualLinks = function (keywords) {
     return true;
   }
   function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  function matchKw(text, lowText, kw) {
+    if (/[a-z]/i.test(kw)) {
+      const esc = kw.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp('(^|[^a-z])' + esc + 's?([^a-z]|$)').test(lowText);
+    }
+    return text.includes(kw);
+  }
   const items = [];
   for (const btn of art.querySelectorAll('a, button, [role="button"]')) {
     if (!isVisible(btn)) continue;
     const text = norm(btn.textContent).slice(0, 60);
+    const lowText = text.toLowerCase();
     const cls = (btn.className || '').toString().slice(0, 60);
     const href = btn.getAttribute ? (btn.getAttribute('href') || '') : '';
+    const block = btn.parentElement && btn.parentElement.closest('p, li, blockquote, figcaption, dd, dt');
+    const inProse = !!(block && norm(block.textContent).length >= 80);
+    const strictHits = strict.filter(kw => matchKw(text, lowText, kw));
+    const ctxHits = inProse ? [] : contextual.filter(kw => {
+      if (!matchKw(text, lowText, kw)) return false;
+      return /[a-z]/i.test(kw)
+        ? lowText.split(/\s+/).length <= 5
+        : (text.length <= 12 || kw.length / text.length >= 0.5);
+    });
+    const clsOrHrefHit = !inProse &&
+      (/share|social|subscribe|follow/i.test(cls) || /line\.me|twitter|facebook|x\.com/.test(href));
     items.push({
       tag: btn.tagName,
       text: text || '(no text)',
       cls, href: href.slice(0, 40),
-      hitKeywords: keywords.filter(kw => text.includes(kw) || cls.toLowerCase().includes(kw.toLowerCase()))
+      hitKeywords: [...strictHits, ...ctxHits],
+      suspicious: strictHits.length > 0 || ctxHits.length > 0 || clsOrHrefHit
     });
     if (items.length >= 200) break;
   }
   return {
     total: items.length,
-    warnings: items.filter(i => i.hitKeywords.length > 0 || /share|social|subscribe|follow/i.test(i.cls) || /line\.me|twitter|facebook|x\.com/.test(i.href)),
+    warnings: items.filter(i => i.suspicious),
     items: items.slice(0, 60)
   };
 };
@@ -190,10 +280,15 @@ pageFns.auditOutsideArticle = function () {
 };
 
 // ---- Gap audit（>= 80px 垂直留白）----
-// 驗：content anchor（p/h*/figure/img/ul/ol/blockquote/pre）按 y 排序後相鄰
-// 兩 block 間 gap；>= 80px 警告（未清的 empty wrapper / 廣告 placeholder /
-// 塌陷 figure 的型態，techbang 262px 實案）。非 forcing function——h2 前
+// 驗：content anchor（p/h*/figure/img/ul/ol/dl/blockquote/pre/table）按 y 排序
+// 後相鄰兩 block 間 gap；>= 80px 警告（未清的 empty wrapper / 廣告 placeholder
+// / 塌陷 figure 的型態，techbang 262px 實案）。非 forcing function——h2 前
 // 60-80px 是合法 margin。div 故意不收：太通用、會納入 wrapper double-count。
+// table / dl 必須收：wikipedia ambox 提示框是 TABLE，selector 漏掉時 H1→IMG
+// 被量成 209px 假 gap（其實中間有內容，2026-06-11 實案）。
+// 量測 scale 注意：rect 值隨 caller 當下的 body zoom 縮放——debug-harness 在
+// zoom 1.0 跑（80px = 真實 80px）；page-rounds 在 zoom 0.5 跑（80/200 門檻
+// ≈ 真實 160/400px，歷史校準如此，調門檻前先確認是哪支 harness 的尺度）。
 pageFns.auditGap = function () {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { error: 'no article', gaps: [], blockCount: 0 };
@@ -209,7 +304,7 @@ pageFns.auditGap = function () {
     return true;
   }
   const blocks = [];
-  for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, blockquote, pre')) {
+  for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, dl, blockquote, pre, table')) {
     if (!isVisible(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.width < 10 || r.height < 10) continue;
@@ -217,17 +312,23 @@ pageFns.auditGap = function () {
       text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) });
   }
   blocks.sort((a, b) => a.top - b.top);
+  // gap 用 running max bottom 算，不是相鄰兩塊相減——較早出現的大容器
+  // （wikipedia infobox table 包著 IMG）會往下延伸蓋住區間，相鄰相減會把
+  // 「有內容、只是內容屬於前面容器」量成假 gap（2026-06-11 實案）
   const gaps = [];
+  let maxBottom = blocks.length ? blocks[0].bottom : 0;
+  let maxIdx = 0;
   for (let i = 1; i < blocks.length; i++) {
-    const gap = blocks[i].top - blocks[i - 1].bottom;
+    const gap = blocks[i].top - maxBottom;
     if (gap >= 80) {
       gaps.push({
         gap: Math.round(gap),
-        prev: `${blocks[i - 1].tag} "${blocks[i - 1].text}"`,
+        prev: `${blocks[maxIdx].tag} "${blocks[maxIdx].text}"`,
         next: `${blocks[i].tag} "${blocks[i].text}"`,
-        y: Math.round(blocks[i - 1].bottom)
+        y: Math.round(maxBottom)
       });
     }
+    if (blocks[i].bottom > maxBottom) { maxBottom = blocks[i].bottom; maxIdx = i; }
   }
   return { gaps, blockCount: blocks.length };
 };
@@ -594,6 +695,38 @@ pageFns.auditContentStats = function () {
     linkCount: links.length, blockquoteCount: blockquotes.length, videoCount: videos.length };
 };
 
+// ---- 原頁文字量（toggle 前呼叫，B3 內文消失的基準）----
+// 驗：原頁 visible <p> 文字總量。進 reader 後與 contentStats.pTextLength 比，
+// retention ratio 過低 = detector 可能選錯容器 / cleaner 誤殺主文（B3，
+// thenewslens pTextLength 偏低實案——舊 harness 對 B3 完全沒有 audit 信號，
+// 只能靠 Claude 事後起疑）。不驗：主文不放 <p> 的站（論壇 div 排版）——
+// 原頁 p 文字 < 800 chars 時 caller 跳過判定。留言 / 推薦段落也是 p，被
+// cleaner 合法清掉會拉低 ratio，所以這條只能當 review 信號、不可 fail。
+pageFns.collectOriginalTextStats = function () {
+  function isVisible(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+      const cs = window.getComputedStyle(cur);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      if (cur === document.body) break;
+      cur = cur.parentElement;
+    }
+    return true;
+  }
+  let pTextLength = 0;
+  let pCount = 0;
+  for (const p of document.querySelectorAll('p')) {
+    if (!isVisible(p)) continue;
+    const len = (p.textContent || '').trim().length;
+    if (len < 20) continue;
+    pTextLength += len;
+    pCount++;
+    if (pCount >= 800) break;
+  }
+  return { pTextLength, pCount };
+};
+
 // ---- Hero image：原頁擷取（toggle 前呼叫）----
 // 雙重過濾：渲染 size + natural size 都要夠大（100x100 avatar 被 CSS 撐大
 // 誤判 hero，newtalk 實測）；長寬比 >= 4:1 排除（裝飾性版頭 banner，cnbc
@@ -643,14 +776,24 @@ const runFigcaptionAudit = (page) => page.evaluate(pageFns.auditFigcaption);
 const runTailAudit = (page) => page.evaluate(pageFns.auditTail);
 const runContentStats = (page) => page.evaluate(pageFns.auditContentStats);
 const captureOriginalHeroImages = (page) => page.evaluate(pageFns.captureOriginalHeroImages);
+const collectOriginalTextStats = (page) => page.evaluate(pageFns.collectOriginalTextStats);
 
 // Hero image audit：原頁 top-3 大圖是否在 reader mode 中存活。
+// 比對三軌：src 全等、URL pathname 相同（srcset / CDN 變體切換會換 query
+// 或解析度後綴、natural 尺寸跟著變，twreporter 假 missing 實案）、natural
+// 尺寸全等。
 async function runHeroImageAudit(page, originalHeroImages) {
   const readerImgs = await page.evaluate(pageFns.collectReaderImages);
+  const pathnameOf = (src) => {
+    try { return new URL(src).pathname; } catch { return null; }
+  };
   const missing = [];
   for (const orig of originalHeroImages) {
+    const origPath = pathnameOf(orig.src);
     const found = readerImgs.some(ri =>
-      ri.src === orig.src || (ri.naturalW === orig.naturalW && ri.naturalH === orig.naturalH));
+      ri.src === orig.src ||
+      (origPath && pathnameOf(ri.src) === origPath) ||
+      (ri.naturalW === orig.naturalW && ri.naturalH === orig.naturalH));
     if (!found) missing.push(orig);
   }
   return { originalCount: originalHeroImages.length, readerCount: readerImgs.length, missing };
@@ -740,6 +883,9 @@ async function setThemeAndVerify(page, theme, timeoutMs = 4000) {
 
 module.exports = {
   NOISE_AUDIT_KEYWORDS,
+  NOISE_KEYWORDS_STRICT,
+  NOISE_KEYWORDS_CONTEXTUAL,
+  NOISE_KEYWORD_TIERS,
   pageFns,
   runResidualText,
   runResidualLinks,
@@ -754,6 +900,7 @@ module.exports = {
   runTailAudit,
   runContentStats,
   captureOriginalHeroImages,
+  collectOriginalTextStats,
   runHeroImageAudit,
   waitForReaderImagesLoaded,
   takePagedScreenshots,

@@ -117,9 +117,9 @@ JRead/
 │   │   └── *.spec.js
 │   └── PENDING_REGRESSION.md
 ├── tools/
-│   ├── audit-lib.js             # harness audit 共用 library（NOISE_AUDIT_KEYWORDS + 全部 audit 函式的單一資料源，v0.8.39）
+│   ├── audit-lib.js             # harness audit 共用 library（NOISE_KEYWORD_TIERS 兩級 keyword + 全部 audit 函式的單一資料源，v0.8.39）
 │   ├── debug-harness.js         # Playwright 自動化除錯 harness
-│   ├── page-rounds-harness.js   # 批次視覺驗收（5 組分頁截圖 + audit.json + pass/fail verdict）
+│   ├── page-rounds-harness.js   # 批次視覺驗收（5 組分頁截圖 + audit.json + 四態 verdict：pass/review/failed/blocked + failReasons）
 │   ├── e2e-harness.js           # e2e spec 用 SW 啟動樣板（test/e2e/ import）
 │   ├── firefox-build.sh         # Firefox sideload ZIP 重建（jq 改 manifest）
 │   └── asc-provision-ios.js     # iOS 簽章資源 bootstrap（憑證 / bundle ID / profiles，idempotent）

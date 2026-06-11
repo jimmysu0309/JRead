@@ -33,6 +33,7 @@ description: JRead Playwright harness 驗收決策樹。改 detector / cleaner /
 - **translate-first 的 audit 誤報**：翻譯後內文含「透過 / 更多 / 追蹤」等常用詞會被 keyword 子字串命中——ancestors 在 `body.markup` / `available-content`（主文）即誤報
 - **Chromium 綠 ≠ WebKit 綠**：本 harness 只驗 Chrome 軌（v0.7.230 `column-count: 1` Chrome 全綠、Safari 全滅）。WebKit 軌驗證見 `docs/CHROME_EXTENSION_DEBUG.md`「WebKit（Safari）軌的驗證」；Playwright WebKit 是 trunk build，不可直接當正式版 Safari 綠
 - **page-rounds 的 dark 截圖**必經 `setThemeAndVerify` 驗 card bg 真的變色（SW gate 後 dispatch 不保證生效）
+- **page-rounds verdict 四態**（2026-06-11）：`failed` = 高精度信號（strict residual / contrast / overflow / gap>=200 delayed / 寬度 / theme / restore），近乎必為真 bug；`review` = 低精度信號（contextual residual / links / hero / retention），必看截圖判真偽；`blocked` = bot challenge（toggle 前偵測——封鎖頁會被 detector 當主文照常 pass，thenewslens 誤放實案），改 cage 重測。keyword 分 strict / contextual 兩級住 `NOISE_KEYWORD_TIERS`
 
 ## Harness 模擬不到、需 Jimmy 實機驗的（僅此三類）
 

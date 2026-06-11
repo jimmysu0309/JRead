@@ -58,7 +58,9 @@ URLS=(
 )
 
 PASS=0
+REVIEW=0
 FAIL=0
+BLOCKED=0
 ERROR=0
 
 for i in "${!URLS[@]}"; do
@@ -71,17 +73,26 @@ for i in "${!URLS[@]}"; do
   OUTPUT=$(JREAD_URL="$url" node tools/page-rounds-harness.js 2>&1)
   EXIT_CODE=$?
 
+  # harness 在收尾印一行 machine-greppable 的 `VERDICT: <verdict> fail=[...] review=[...]`
+  VERDICT_LINE=$(echo "$OUTPUT" | grep "^VERDICT:" | tail -1)
+  VERDICT=$(echo "$VERDICT_LINE" | awk '{print $2}')
+
   if [ $EXIT_CODE -ne 0 ]; then
-    echo "  ❌ ERROR (exit $EXIT_CODE)"
+    echo "  ⛔ ERROR (exit $EXIT_CODE)"
     ERROR=$((ERROR+1))
-  elif echo "$OUTPUT" | grep -q "^✅ PASS"; then
+  elif [ "$VERDICT" = "pass" ]; then
     echo "  ✅ PASS"
     PASS=$((PASS+1))
-  elif echo "$OUTPUT" | grep -q "^❌ FAIL"; then
-    REASON=$(echo "$OUTPUT" | grep "⚠️" | head -3 | sed 's/^/    /')
-    echo "  ❌ FAIL"
-    echo "$REASON"
+  elif [ "$VERDICT" = "review" ]; then
+    echo "  🔍 REVIEW — $VERDICT_LINE"
+    REVIEW=$((REVIEW+1))
+  elif [ "$VERDICT" = "failed" ]; then
+    echo "  ❌ FAIL — $VERDICT_LINE"
+    echo "$OUTPUT" | grep "⚠️" | head -3 | sed 's/^/    /'
     FAIL=$((FAIL+1))
+  elif [ "$VERDICT" = "blocked" ]; then
+    echo "  ⛔ BLOCKED（bot challenge / 空頁，改用 cage 重測）"
+    BLOCKED=$((BLOCKED+1))
   else
     echo "  ❓ UNKNOWN"
     ERROR=$((ERROR+1))
@@ -91,7 +102,9 @@ done
 echo ""
 echo "=============================="
 echo "TOTAL: ${#URLS[@]} sites"
-echo "  ✅ PASS:  $PASS"
-echo "  ❌ FAIL:  $FAIL"
-echo "  ⛔ ERROR: $ERROR"
+echo "  ✅ PASS:    $PASS"
+echo "  🔍 REVIEW:  $REVIEW   （低精度信號，Claude 必看截圖判真偽）"
+echo "  ❌ FAIL:    $FAIL   （高精度信號，近乎必為真 bug）"
+echo "  ⛔ BLOCKED: $BLOCKED   （環境擋住，改 cage）"
+echo "  ⛔ ERROR:   $ERROR"
 echo "=============================="
