@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.43**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.44**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -273,6 +273,10 @@ collapse 後對 visible children 的寬度 reset（`width: auto !important` + fl
 
 標題下方除了必要的作者及日期文字，不出現 icon（Jimmy 2026-06-11 通則）。結構定義：article 開頭到「第一個內容區塊」（首個 ≥ 60 chars 的可見文字段落、或第一張 ≥ 200×100px 媒體）之間是 header zone；zone 內 rect ≤ 32px 見方的 img / svg 視為裝飾性 meta icon（時鐘、人像、書籤、分隔點）一律 hide——資訊已由旁邊的日期 / 作者文字承載。誤殺防線：heading（h1-h6）內小圖不動（標題 emoji 是內容）、preserved 元素內不動、rect 0×0（lazy / 已隱藏）不動、zone 之後的內文 inline emoji 完全不掃、zone 終點找不到整條 no-op。
 
+### 空殼 wrapper collapse 的 icon-size 媒體豁免（v0.8.44 通則）
+
+`collapseEmptyWrappersAfterClean` / `collapseEmptyBlockSpacers` 判定「wrapper 是否含真實內容媒體」（`hasUnhiddenContentMedia`）時，已 layout 且 rendered rect ≤ 32×32 的 img / svg 視為裝飾 icon、不算內容媒體——雜訊列（如 tag 列）被 hide 後 wrapper 只剩孤兒 icon 時，空殼 collapse 不再被 icon 擋下（eettaiwan `.content-footer` 內 24×24 tags icon 實測）。icon 判定必須用 rendered rect、不可用 naturalWidth：viewBox-only SVG 的 `<img>` 無內在尺寸、natural 回 CSS 預設 150×150。rect 0×0（lazy 未載入 / 未 layout）不走此豁免，留給 `imgIsContentMedia` 的 lazy 判定兜底。
+
 ### 主文內雜訊（跨站通用 keyword heuristic）
 
 主文容器內出現以下 class / id 關鍵字的區塊視為雜訊（不分大小寫）：
@@ -280,7 +284,8 @@ collapse 後對 visible children 的寬度 reset（`width: auto !important` + fl
 - `paywall`、`subscribe`、`newsletter`、`signup`
 - `promo`、`promotion`、`advertisement`、`sponsored`、`sponsor`（動詞詞根覆蓋 udn `.sponsor-ads` 類）、`ad-`、`-ad`
 - `cta`、`call-to-action`
-- `related-(articles|news|posts|stories)`、`more-(news|stories|posts|articles)`、`recommended`、`recommend`、`recommendation`、`read-more`、`read-next`、`up-next`、`taboola`、`outbrain`、`zergnet`、`revcontent`
+- `related-(articles|news|posts|stories)`、反序命名 `(post|article|news|story)-related`（v0.8.44 eettaiwan `post-related`）、`more-(news|stories|posts|articles)`、`recommended`、`recommend`、`recommendation`、`read-more`、`read-next`、`up-next`、`taboola`、`outbrain`、`zergnet`、`revcontent`
+- `hash-tag`、`tag(s)-list`（v0.8.44 補複數變體：eettaiwan 文末 tag 列 class 用 `tags-list`，原 `tag-list` token 不命中）
 - `breadcrumb(s)`、`pagination`、`page-nav`、`pager`、`author-(bio|card|info|box|meta|widget)`
 - `follow`、`follow-us`、`subscribe`、`subscription`、`newsletter-(signup|form|cta)`、`email-(signup|capture|subscribe)`
 - `cookie-(banner|notice|consent|bar)`、`gdpr`、`consent`、`privacy-(banner|notice)`
