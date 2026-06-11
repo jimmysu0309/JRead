@@ -720,6 +720,29 @@
     return false;
   }
 
+  // articleEl 內「自帶的 og-match 標題 heading」查找（共用 helper）。
+  // 規則：h1-h4、不被 <a> 包住（排除推薦 / 側欄文章卡的重複標題）、文字
+  // titleMatches og:title / docTitle。命中回傳該 heading、否則 null。
+  //
+  // v0.8.42 抽出動機：這條「articleEl 已含標題 → 不需升級」的事實原本只在
+  // ensureArticleContainsTitleH1 有 guard，promoteForTitle 沒有——兩條 path
+  // 處理同一份事實但不對稱。foreignaffairs 實證：ARTICLE.article 自含 H1
+  // hero，但 sticky 導覽列有 SPAN.site-nav__current-article 顯示「目前文章
+  // 標題」（跨站慣例：閱讀進度列 / sticky header 常複寫當前標題），
+  // promoteForTitle sibling-walk 在 hop 1 命中該 span → articleEl 被升到
+  // 接近整頁的 wrapper，MAIN 內 ARTICLE 的兄弟（related / most-read section
+  // 數千 px）全部括進主文，文章尾巴整串推薦雜訊清不掉。
+  function findSelfTitleHead(articleEl, target) {
+    if (!articleEl || !target || !articleEl.querySelectorAll) return null;
+    for (const h of articleEl.querySelectorAll('h1, h2, h3, h4')) {
+      if (isHeadingInsideAnchor(h)) continue;
+      const text = normalizeTitle(h.innerText || h.textContent || '');
+      if (text.length > TITLE_TEXT_MAX) continue;
+      if (titleMatches(target, text)) return h;
+    }
+    return null;
+  }
+
   function ensureArticleContainsTitleH1(articleEl, promotedTitleHead) {
     if (!articleEl) return null;
     // promote 已升 + 命中的是真 heading（H1-H4）→ 視為堅實 promote、不需再升。
@@ -751,21 +774,13 @@
     // 利用 og:title (meta 標籤) 不被翻譯擴充改動的穩定性——ChinaTalk articleEl
     // 含 H1.post-title「Media Diet Q1 2026」matches og:title 同字 → skip ✓。
     // wya 翻譯後 articleEl 內 12 個中文 H1 沒一個 match 英文 og:title → 走升 ✓。
+    // 跳過「被 <a> 包住」的 heading 的理由（findSelfTitleHead 內建）：卡片連結
+    // 式標題（推薦 / 相關 / 側欄文章卡）慣例整顆 heading 包在 <a> 裡連向該文，
+    // 常重複當前頁標題文字（shoppingdesign 側欄推薦卡 <a><h2>本文標題</h2></a>
+    // 實證）。本文自身的 hero 標題幾乎不會整顆被 <a> 包成可點卡片——以此排除
+    // 假標題訊號，避免 articleEl 內的側欄重複標題誤判「scope 已含標題」而放棄升級。
     const target = getCanonicalTitle();
-    if (target) {
-      const articleHeadings = articleEl.querySelectorAll('h1, h2, h3, h4');
-      for (const h of articleHeadings) {
-        // 跳過「被 <a> 包住」的 heading——卡片連結式標題（推薦 / 相關 / 側欄
-        // 文章卡）慣例整顆 heading 包在 <a> 裡連向該文，常重複當前頁標題文字
-        // （shoppingdesign 側欄推薦卡 <a><h2>本文標題</h2></a> 實證）。本文自身
-        // 的 hero 標題幾乎不會整顆被 <a> 包成可點卡片——以此排除假標題訊號，
-        // 避免 articleEl 內的側欄重複標題誤判「scope 已含標題」而放棄升級。
-        if (isHeadingInsideAnchor(h)) continue;
-        const text = normalizeTitle(h.innerText || h.textContent || '');
-        if (text.length > TITLE_TEXT_MAX) continue;
-        if (titleMatches(target, text)) return null;
-      }
-    }
+    if (target && findSelfTitleHead(articleEl, target)) return null;
 
     // 翻譯擴充（Shinkansen / 沉浸式翻譯）把 H1 text 換成中文後 og:title
     // 比對失敗，但若 articleEl 內恰有 1 個 H1，結構上幾乎確定就是文章
@@ -795,6 +810,17 @@
   function promoteForTitle(articleEl, maxHops) {
     const target = getCanonicalTitle();
     if (!target) return { el: articleEl, titleHead: null };
+
+    // self-titled guard（v0.8.42）：articleEl 已自含 og-match 的 hero heading
+    // → promote 的存在理由（把 article 外的標題括進 scope）不成立，直接收手。
+    // 不加這條時，頁面上任何「複寫當前文章標題的 site chrome」（sticky 導覽列
+    // 的閱讀進度標題、breadcrumb 末節、aside 的本文卡）都可能讓 sibling-walk
+    // 誤升——foreignaffairs SPAN.site-nav__current-article 實證把 articleEl
+    // 升到近整頁 wrapper、文章尾巴推薦雜訊全進主文。回傳命中的 heading 當
+    // titleHead（語意同「promote 已有堅實標題」，呼叫端只在 el 變動時使用）。
+    const selfHead = findSelfTitleHead(articleEl, target);
+    if (selfHead) return { el: articleEl, titleHead: selfHead };
+
     const limit = typeof maxHops === 'number' ? maxHops : PROMOTE_MAX_HOPS;
 
     let cur = articleEl;
