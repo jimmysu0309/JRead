@@ -203,10 +203,16 @@
       setTimeout(() => { if (active) apply(); }, 500);
     } else {
       // 切到非 /watch（首頁 / 頻道 / search）：撤掉 CSS 但保留 active flag，
-      // 切回 watch 時自動重套
+      // 切回 watch 時自動重套。
+      // v0.8.36：必須走 restoreTheater()（含 removeAttribute）——舊版只丟棄
+      // snapshot（prevTheaterValue = null），但 ytd-watch-flexy 在 SPA 導航中
+      // 持續存在、我們 apply 時設的 theater attribute 殘留；切回 watch 後
+      // snapshotAndSetTheater 在 prevTheaterValue === null 下重新 snapshot、
+      // 把自己設的殘留讀成「使用者原本就在劇院」→ 之後 toggle off 不移除，
+      // 原本非劇院模式的使用者被永久留在 theater。
       removeStyle();
       clearVideoInline();
-      prevTheaterValue = null;
+      restoreTheater();
     }
   }
 

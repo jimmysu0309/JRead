@@ -205,11 +205,14 @@
   // data-jread-x-reader>`，後續 cleaner / styler / Readwise / keyguard / ESC
   // 流程都對這個合成容器跑——所以這分支只是「在跑 cleaner/styler 之前先建容器」，
   // 退出時除了走 styler.restore / cleaner.restore 之外多 remove 合成容器。
-  async function enterXThreadMode() {
+  async function enterXThreadMode(opts) {
+    // v0.8.36：尊重 silent flag（v0.7.155 漏網——x.com 是 SPA，路由變化
+    // silent 重進在容器偵測失敗時不該彈錯誤 toast）
+    const silent = !!(opts && opts.silent);
     if (!NS.xThread) return false;
     const container = NS.xThread.enter();
     if (!container) {
-      showToast('此頁無法偵測主推文', 'error');
+      if (!silent) showToast('此頁無法偵測主推文', 'error');
       safeSendMessage({
         type: NS.MSG.REPORT_DETECTION_RESULT,
         payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
@@ -259,7 +262,9 @@
   // 到主貼文 wrapper 後 clone 進 `<article data-jread-fb-reader>` 注入 body
   // 開頭，後續 cleaner / styler 流程沿用。FB 跟 X 同樣 keyboard-shortcut-heavy
   // （j/k 換貼文等），install keyguard 攔截。
-  async function enterFbPostMode() {
+  async function enterFbPostMode(opts) {
+    // v0.8.36：尊重 silent flag（理由見 enterXThreadMode 同位置註解）
+    const silent = !!(opts && opts.silent);
     if (!NS.fbPost) return false;
     // v0.7.204 photo page：先點「查看更多」展開截斷文字，等 React re-render
     if (NS.fbPost.expandSeeMore && NS.fbPost.expandSeeMore()) {
@@ -267,7 +272,7 @@
     }
     const container = NS.fbPost.enter();
     if (!container) {
-      showToast('此頁無法偵測主貼文', 'error');
+      if (!silent) showToast('此頁無法偵測主貼文', 'error');
       safeSendMessage({
         type: NS.MSG.REPORT_DETECTION_RESULT,
         payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
@@ -331,7 +336,23 @@
     // 失敗彈「此頁無法偵測主文」反而干擾。手動 toggle / 快速鍵走 opts 預設 falsy
     // 路徑，行為不變。
     const silent = !!(opts && opts.silent);
-    const result = NS.detector && NS.detector.detect();
+    // v0.8.36：detect() 會做 DOM mutation（shadow replica appendChild / inject
+    // H1），throw 時半套 artifacts 留在頁面（replica 是可見的文章複本）。包
+    // try/catch、失敗走 exitReaderModeImpl 清乾淨（該函式無 active guard、
+    // 對未設定的 state 各步驟都安全 no-op）。
+    let result;
+    try {
+      result = NS.detector && NS.detector.detect();
+    } catch (err) {
+      console.warn('[JRead] detector.detect() 失敗，清理半套 artifacts：', err);
+      try { exitReaderModeImpl(); } catch (_) { /* 清理失敗：console 已有訊號 */ }
+      if (!silent) showToast('此頁無法偵測主文', 'error');
+      safeSendMessage({
+        type: NS.MSG.REPORT_DETECTION_RESULT,
+        payload: { ok: false, reason: 'DETECT_ERROR' }
+      });
+      return false;
+    }
     if (!result) {
       if (!silent) showToast('此頁無法偵測主文', 'error');
       safeSendMessage({
@@ -340,16 +361,39 @@
       });
       return false;
     }
-    if (result.isYouTubeCinema) {
-      return enterCinemaMode();
+    // v0.8.36：detect 成功後的 enter pipeline 整段包 try/catch。舊行為：cleaner
+    // / styler 中途 throw → NS.state.active 停在 false → exitReaderMode() 開頭
+    // 的 !active guard 直接 no-op——已 hide 的元素 / shadow replica / injected
+    // H1 全部永遠無法還原（使用者只能 reload）；rejection 沿 onMessage 的
+    // async IIFE 上傳，sendResponse 懸空。改成 catch 內走完整 exit 流程還原
+    // 半套狀態（exitReaderModeImpl 無 active guard，對部分設定的 state 安全）。
+    // v0.8.36：silent flag 同時傳進 x-thread / fb-post 分支（v0.7.155 漏網
+    // ——x.com 本身是 SPA，路由變化 silent 重進在偵測失敗時會彈錯誤 toast）。
+    try {
+      if (result.isYouTubeCinema) {
+        return enterCinemaMode();
+      }
+      if (result.isXThread) {
+        return await enterXThreadMode(opts);
+      }
+      if (result.isFbPost) {
+        return await enterFbPostMode(opts);
+      }
+      return await enterGenericReaderMode(result, silent);
+    } catch (err) {
+      console.warn('[JRead] 進入閱讀模式失敗，還原半套狀態：', err);
+      try { exitReaderModeImpl(); } catch (_) { /* 還原失敗：console 已有訊號 */ }
+      if (!silent) showToast('此頁無法啟用閱讀模式', 'error');
+      safeSendMessage({
+        type: NS.MSG.REPORT_DETECTION_RESULT,
+        payload: { ok: false, reason: 'ENTER_FAILED' }
+      });
+      return false;
     }
-    if (result.isXThread) {
-      return await enterXThreadMode();
-    }
-    if (result.isFbPost) {
-      return await enterFbPostMode();
-    }
+  }
 
+  async function enterGenericReaderMode(result, silent) {
+    void silent; // generic path 目前無 toast；參數保留語意對齊三分支
     const settings = await getSettings();
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
@@ -1020,6 +1064,12 @@
         if (!NS.state.articleEl || !NS.styler) return;
         NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
         const settings = await getSettings();
+        // v0.8.36：await 期間使用者可能已按 ESC 退出 / 切 cinema / SPA 導航
+        // 拆卡（exit 是同步的、不被 enterInFlight 擋）——此時 articleEl 已是
+        // null，繼續 apply 會注入無主 stylesheet 並在 inactive 狀態下覆寫
+        // originalStyles。await 之後必須重跑同一組 guard。
+        if (!NS.state.active || NS.state.cinemaActive) return;
+        if (!NS.state.articleEl || !NS.styler) return;
         // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
         // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
         if (NS.pagedMode) NS.pagedMode.captureScrollY();
@@ -1092,9 +1142,13 @@
       // Page Rounds 暗色模式驗收用。cage javascript_tool 跑在 main world，
       // 無法存取 chrome.storage.sync；透過 bridge 讓 isolated world 代寫。
       // 寫完後 onChanged listener 自動 scheduleReapply，不需額外觸發。
+      // v0.8.36 安全 hardening：改經 SW 中繼 + development install gate（與
+      // reload 同款防護）。舊版 content 直寫 storage.sync——任意網頁 JS 可
+      // dispatch 本 event 改寫使用者 theme（sync 會同步到所有裝置）。Store /
+      // 正式安裝一律拒絕；unpacked（Claude 自主 debug / cage）照常可用。
       const theme = e && e.detail && e.detail.theme;
       if (theme && ['light', 'dark', 'sepia'].includes(theme)) {
-        chrome.storage.sync.set({ theme });
+        safeSendMessage({ type: 'JREAD_DEBUG_SET_THEME', payload: { theme } });
       }
     } else if (type === 'translate') {
       // 觸發 Shinkansen 翻譯（跨 extension debug bridge）。

@@ -100,10 +100,10 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
     });
 
     it('enterReaderMode 必須根據 settings.blockPageShortcuts 決定 installKeyguard', () => {
-      // 抓 enterReaderMode body 到第一個 return true / return false 結尾
-      const idx = MAIN_SRC.search(/async\s+function\s+enterReaderMode/);
-      assert.ok(idx >= 0);
-      // 取從 enterReaderMode 開始的後續 2000 字（足以涵蓋全函式）
+      // v0.8.36：generic enter path 抽成 enterGenericReaderMode（enter pipeline
+      // 容錯重構）——keyguard 安裝邏輯在該函式內，直接以它為錨點
+      const idx = MAIN_SRC.search(/async\s+function\s+enterGenericReaderMode/);
+      assert.ok(idx >= 0, 'main.js 必須有 enterGenericReaderMode');
       const slice = MAIN_SRC.slice(idx, idx + 4000);
       assert.match(slice, /settings\.blockPageShortcuts/,
         'enterReaderMode 必須讀 settings.blockPageShortcuts——forcing：少了條件就變強制攔截、無法 opt-out');

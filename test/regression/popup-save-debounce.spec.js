@@ -91,6 +91,13 @@ describe('popup.js save() debounce（v0.7.143）', () => {
       `每個 window.close() 前都必須 flushPendingSave（${flushedCloseCalls.length}/${closeCalls.length}）`);
   });
 
+  it('storage.get callback 必須 merge pendingPatch（popup 開啟瞬間點擊不被舊值蓋回）', () => {
+    // v0.8.36：callback 抵達前使用者已點擊的變更累積在 pendingPatch、尚未
+    // commit——current 整包替換會把 UI 還原成 storage 舊值
+    assert.ok(/current = \{ \.\.\.DEFAULT_SETTINGS, \.\.\.values, \.\.\.pendingPatch \}/.test(POPUP_SRC),
+      'storage.sync.get callback 必須以 pendingPatch 收尾 merge');
+  });
+
   it('commitSave 必須 .catch promise rejection（MV3 set 失敗是 rejection，同步 try/catch 接不到）', () => {
     const fn = POPUP_SRC.match(/function\s+commitSave[\s\S]*?\n\}/);
     assert.ok(fn, '抓得到 commitSave body');

@@ -5036,7 +5036,8 @@ describe('cleaner — bbc-figure-credit-overlay（figure 內 absolute SPAN credi
     );
     assert.ok(src.includes('function hideInsideArticleAbsoluteCreditOverlays('),
       'cleaner.js 必須定義 hideInsideArticleAbsoluteCreditOverlays——forcing：函式被誤刪 → spec fail');
-    assert.ok(src.includes('hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden);'),
+    // v0.8.36 起 clean() 內 rule 呼叫包在 safeRun（per-rule 容錯）
+    assert.ok(src.includes('safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);'),
       'clean() 必須呼叫 hideInsideArticleAbsoluteCreditOverlays——forcing：呼叫鏈被刪 → 此 spec fail');
   });
 });

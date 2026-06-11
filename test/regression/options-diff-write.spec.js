@@ -108,6 +108,24 @@ describe('options — 設定 diff write（v0.8.35）', () => {
     assert.strictEqual(document.getElementById('fontWeight').value, '400');
   });
 
+  it('數值欄位超界 / 留空必須 clamp 到 input min/max、退回預設（v0.8.36）', () => {
+    const { window, document, setCalls } = buildOptionsEnv();
+    setCalls.length = 0;
+
+    // 超界：fontSize max=32
+    const fontSize = document.getElementById('fontSize');
+    fontSize.value = '999';
+    fontSize.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.strictEqual(setCalls.pop().fontSize, 32, '超過 max 必須 clamp 到 input max（32）');
+
+    // 留空：Number('') = 0 舊版會把 contentWidth 存 0；必須退回預設再 clamp
+    const cw = document.getElementById('contentWidth');
+    cw.value = '';
+    cw.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const v = setCalls.pop().contentWidth;
+    assert.ok(v >= 480, `留空不可存 0（實際 ${v}，必須 >= input min 480）`);
+  });
+
   it('onChanged 同步後再改欄位，寫回的是 storage 最新值（端到端防互蓋）', () => {
     const { window, document, setCalls, fireOnChanged } = buildOptionsEnv();
 

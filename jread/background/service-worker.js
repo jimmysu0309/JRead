@@ -118,6 +118,20 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
+// v0.8.36：debug bridge 訊息的共用 gate——只在 unpacked / development 安裝
+// 執行（Claude 自主 debug / cage 場景）。chrome.management.getSelf() 不需要
+// "management" permission（自己 query 自己）。store / 正式安裝 silently
+// reject（console.warn 留訊號、不彈 toast，避免網頁端探測 extension 存在）。
+function runIfDevelopmentInstall(label, fn) {
+  chrome.management.getSelf((info) => {
+    if (info && info.installType === 'development') {
+      fn();
+    } else {
+      console.warn('[JRead]', label, 'rejected: installType=', info && info.installType);
+    }
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
 
@@ -131,7 +145,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return; // sync
     }
     case 'GET_SETTINGS': {
-      chrome.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse);
+      // v0.8.36：get reject（storage 失效等罕見場景）時也要回應——sendResponse
+      // 永不呼叫會讓 content fallback 軌的 callback 懸空。回 null 讓 caller
+      // 走自己的 defaults fallback。
+      chrome.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse).catch(() => sendResponse(null));
       return true; // async
     }
     case 'UPDATE_SETTINGS': {
@@ -195,14 +212,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         console.warn('[JRead] JREAD_RELOAD rejected: management/reload API unavailable');
         return;
       }
-      chrome.management.getSelf((info) => {
-        if (info && info.installType === 'development') {
-          chrome.runtime.reload();
-        } else {
-          // store / normal install：silently reject（不送 toast、不通知，避免
-          // 攻擊者透過 console error 探測 extension 是否裝）
-          console.warn('[JRead] JREAD_RELOAD rejected: installType=', info && info.installType);
-        }
+      runIfDevelopmentInstall('JREAD_RELOAD', () => chrome.runtime.reload());
+      return;
+    }
+    case 'JREAD_DEBUG_SET_THEME': {
+      // v0.8.36 安全 hardening：debug bridge 的 set-theme 原本由 content 直寫
+      // chrome.storage.sync——任意網頁 JS 可 dispatch `__jread_debug` 改使用者
+      // theme（sync 同步到所有裝置）。改經 SW 中繼 + 與 JREAD_RELOAD 同款
+      // development install gate：unpacked（Claude 自主 debug / cage Page
+      // Rounds）照常可用，store / 正式安裝 silently reject。theme 白名單在
+      // SW 端再驗一次（第二道防線，不信 content 端 payload）。
+      if (!(chrome.management && chrome.management.getSelf)) {
+        console.warn('[JRead] JREAD_DEBUG_SET_THEME rejected: management API unavailable');
+        return;
+      }
+      const theme = msg.payload && msg.payload.theme;
+      if (!['light', 'dark', 'sepia'].includes(theme)) return;
+      runIfDevelopmentInstall('JREAD_DEBUG_SET_THEME', () => {
+        chrome.storage.sync.set({ theme }).catch(() => {});
       });
       return;
     }
@@ -351,6 +378,11 @@ chrome.runtime.onConnect.addListener((port) => {
 // 的訊號點。
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === 'loading') {
+    // v0.8.36 iOS guard：與 SET_ACTIVE_ICON case 同款——iOS 的 action API
+    // 子集可能缺 setIcon / badge 系列，缺就跳過（swallowTabGone 只吞 promise
+    // rejection，API 不存在是同步 TypeError、會在每次任何 tab 進 loading 時
+    // 炸一次 listener）。同一平台事實、兩條 path 防護必須對稱。
+    if (!chrome.action || !chrome.action.setIcon || !chrome.action.setBadgeText) return;
     swallowTabGone(chrome.action.setIcon({ tabId, path: ICONS_IDLE }));
     // 同步清掉 reader-active badge（避免新頁面殘留前一頁的綠燈）
     swallowTabGone(chrome.action.setBadgeText({ tabId, text: '' }));
@@ -458,7 +490,16 @@ async function sendToReadwiseFromCommand(tabId) {
   }
 
   // 3. 送 Readwise（重用 popup-core 既有 buildReadwisePayload + saveToReadwise）
-  const { readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' });
+  // v0.8.36：storage 讀取與 fetch 都包 try/catch——與 popup 軌 SAVE_TO_READWISE
+  // 的 v0.8.15 修法精神一致（保證任何路徑都有 toast 回饋，不留 unhandled
+  // rejection）。command 軌原本這兩步裸跑，reject 時整個 function 無聲死掉。
+  let readwiseToken;
+  try {
+    ({ readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' }));
+  } catch {
+    showToast('無法讀取設定，請稍後再試', 'error');
+    return;
+  }
   const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
   let body;
   try {
@@ -467,7 +508,13 @@ async function sendToReadwiseFromCommand(tabId) {
     showToast('送出失敗：payload 無效', 'error');
     return;
   }
-  const result = await saveToReadwise({ token: readwiseToken, payload: body });
+  let result;
+  try {
+    result = await saveToReadwise({ token: readwiseToken, payload: body });
+  } catch {
+    showToast('網路錯誤，請稍後再試', 'error');
+    return;
+  }
 
   // 4. 結果 toast
   if (result && result.ok) {

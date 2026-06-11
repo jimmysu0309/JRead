@@ -141,8 +141,17 @@ function readFieldFromDom(id) {
   const el = document.getElementById(id);
   switch (id) {
     case 'fontSize': case 'titleFontSize': case 'contentWidth':
-    case 'fontWeight': case 'spaceScrollRatio':
-      return Number(el.value);
+    case 'fontWeight': case 'spaceScrollRatio': {
+      // v0.8.36：number input 的 min/max 屬性不阻止手動輸入超界值或留空
+      // （Number('') = 0 → contentWidth 存 0）。以 input 自身的 min/max 為
+      // clamp 範圍（單一資料源在 HTML），空值 / NaN 退回 shared 預設值——
+      // 與 popup 端 clamp() 防護對齊（原本兩條寫入 path 驗證不一致）
+      let n = Number(el.value);
+      if (el.value === '' || !Number.isFinite(n)) n = Number(DEFAULTS[id]);
+      if (typeof el.min === 'string' && el.min !== '') n = Math.max(Number(el.min), n);
+      if (typeof el.max === 'string' && el.max !== '') n = Math.min(Number(el.max), n);
+      return n;
+    }
     case 'blockPageShortcuts': case 'pangu':
       return el.checked;
     case 'readwiseToken':
