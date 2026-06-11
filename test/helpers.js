@@ -28,14 +28,19 @@ const SRC = {
  * @param {Array<keyof typeof SRC>} opts.scripts  要 eval 的 script（namespace 不需手動載，此 helper 用最小 NS 替代）
  * @param {Object} [opts.viewport]   { width, height } 可選；有值時 stub window.innerWidth/innerHeight
  * @param {boolean} [opts.pretendToBeVisual=false]  JSDOM pretendToBeVisual（cleaner 的 fixed/sticky rect 需要）
+ * @param {string} [opts.url]        jsdom 的 document URL（預設 about:blank）。驗
+ *                                   「自連結 permalink 標題」這類比對 location 的
+ *                                   規則時必須給，否則 fixture 內的相對 href 解析
+ *                                   不出 origin、guard 永遠 false（偽陰性）
  * @returns {{ window: Window, document: Document, NS: Object }}
  */
 function loadFixtureWithScripts(opts) {
-  const { fixturePath, scripts, viewport, pretendToBeVisual } = opts;
+  const { fixturePath, scripts, viewport, pretendToBeVisual, url } = opts;
   const html = fs.readFileSync(fixturePath, 'utf8');
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
-    pretendToBeVisual: !!pretendToBeVisual
+    pretendToBeVisual: !!pretendToBeVisual,
+    ...(url ? { url } : {})
   });
   const { window } = dom;
   if (viewport) {
