@@ -48,7 +48,8 @@ describe('cleaner.js walk cache（v0.7.144 #11）', () => {
 
   it('clean() 結束區段必須清 cache（GC 友好）', () => {
     // 找到 watchHiddenInlineRestyle(hidden) 之後到 return 之間
-    const m = CLEANER_SRC.match(/watchHiddenInlineRestyle\(hidden\);[\s\S]{0,300}return\s+hidden;/);
+    // （v0.8.36 起該呼叫包在 safeRun 內，regex 同時吃兩種形狀）
+    const m = CLEANER_SRC.match(/(?:safeRun\()?watchHiddenInlineRestyle,?\s*\(?hidden\);[\s\S]{0,300}return\s+hidden;/);
     assert.ok(m, '必須能抓到 clean() 結束區段');
     assert.ok(/_cachedArticleAll\s*=\s*null/.test(m[0]),
       'clean() 結束區段（watchHiddenInlineRestyle 與 return 之間）必須清 _cachedArticleAll = null');

@@ -800,7 +800,8 @@ describe('翻頁模式（v0.7.227）', () => {
         const next = MAIN_SRC.slice(start + 10).search(/\n  (?:async )?function /);
         return next >= 0 ? MAIN_SRC.slice(start, start + 10 + next) : MAIN_SRC.slice(start);
       };
-      for (const fn of ['enterXThreadMode', 'enterFbPostMode', 'enterReaderModeImpl']) {
+      // v0.8.36：generic path 抽成 enterGenericReaderMode（enter pipeline 容錯重構）
+      for (const fn of ['enterXThreadMode', 'enterFbPostMode', 'enterGenericReaderMode']) {
         const body = fnBody(fn);
         const paged = body.indexOf('syncPagedModeFromSettings(settings)');
         const space = body.indexOf('syncSpaceScrollFromSettings(settings)');

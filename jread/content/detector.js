@@ -779,6 +779,13 @@
     let hops = 0;
     while (cur && cur.parentElement && cur !== document.body && hops < limit) {
       const parent = cur.parentElement;
+      // v0.8.36 body/html guard：articleEl 是 body 直接子（shadow replica 正是
+      // document.body.appendChild、必定命中此形狀）時第一圈 parent 就是 body
+      // ——任一 body-level sibling 子樹含 og:title 相符文字就會把 articleEl
+      // 升級成整個 <body>、styler 套全頁。LCA 路徑有同款 guard（lca ===
+      // document.body reject），sibling-walk 漏了——同一條「不可吞整頁」事實
+      // 兩 path 必須對稱。
+      if (parent === document.body || parent === document.documentElement) break;
       for (const sib of parent.children) {
         if (sib === cur) continue;
         // heads 同時包含 sib 自己（若 match）+ 所有子孫。不能只二選一

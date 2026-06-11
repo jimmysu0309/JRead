@@ -109,7 +109,7 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
       // Number.isFinite guard 會拒收字串，必須 Number() 轉型
       const m = OPTIONS_JS.match(/function\s+readFieldFromDom[\s\S]*?\n\}/);
       assert.ok(m, 'options.js 必須有 readFieldFromDom（欄位讀取單一資料源）');
-      assert.match(m[0], /case\s*['"]spaceScrollRatio['"][\s\S]{0,200}return\s+Number\(/,
+      assert.match(m[0], /case\s*['"]spaceScrollRatio['"][\s\S]{0,500}Number\(el\.value\)/,
         'readFieldFromDom 必須讓 spaceScrollRatio 走 Number() 轉型 case');
     });
   });

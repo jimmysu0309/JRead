@@ -221,7 +221,9 @@ document.addEventListener('visibilitychange', () => {
 });
 
 chrome.storage.sync.get(DEFAULT_SETTINGS, (values) => {
-  current = { ...DEFAULT_SETTINGS, ...values };
+  // v0.8.36：merge pendingPatch——popup 開啟瞬間使用者已點擊的變更（callback
+  // 抵達前累積在 pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI
+  current = { ...DEFAULT_SETTINGS, ...values, ...pendingPatch };
   render(current);
 });
 

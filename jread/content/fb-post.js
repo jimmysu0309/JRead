@@ -422,12 +422,13 @@
 
     document.body.insertBefore(reader, document.body.firstChild);
 
-    // hide body 直系子（同 enter() 邏輯）
+    // hide body 直系子（同 enter() 邏輯；JRead 自家 host 豁免，見 enter() 註解）
     _hiddenBodySiblings = [];
     for (var ci = 0; ci < document.body.children.length; ci++) {
       var child = document.body.children[ci];
       if (child === reader) continue;
       if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
+      if (child.id && child.id.indexOf('__jread') === 0) continue;
       var prevDisplay = child.style.getPropertyValue('display');
       var prevPriority = child.style.getPropertyPriority('display');
       child.style.setProperty('display', 'none', 'important');
@@ -486,6 +487,13 @@
     for (const child of Array.from(document.body.children)) {
       if (child === reader) continue;
       if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
+      // v0.8.36：JRead 自家掛在 body 上的 host（#__jread-toast-host /
+      // #__jread-page-indicator 等，一律 __jread 前綴）豁免——舊版只排除
+      // script/style，toast host 若在 enter 前已存在（本頁先前顯示過 toast）
+      // 會被 inline !important 蓋掉，FB reader 下送 Readwise 的結果 toast
+      // 不可見（styler 的同款 ancestor 規則有 :not(#__jread-toast-host)，
+      // 本 path 是該事實的第二實作、漏了排除——以 id 前綴做結構性豁免）。
+      if (child.id && child.id.indexOf('__jread') === 0) continue;
       const prevDisplay = child.style.getPropertyValue('display');
       const prevPriority = child.style.getPropertyPriority('display');
       child.style.setProperty('display', 'none', 'important');

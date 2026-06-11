@@ -35,9 +35,12 @@ describe('checkDynamicNoise 合 selector（v0.7.144 #14）', () => {
   });
 
   it('checkDynamicNoise body 內必須宣告合併版 interactive selector', () => {
-    // 合併版 selector 必須含 a + button + role + input types
-    assert.ok(/a,\s*button,\s*\[role="button"\]/.test(body),
-      'checkDynamicNoise 必須用合併版 selector `a, button, [role="button"], input[type=...]` 一次 querySelectorAll');
+    // v0.8.36：selector 收斂到 INTERACTIVE_BTN_SEL 常數（單一資料源），
+    // 合併版 = `'a, ' + INTERACTIVE_BTN_SEL`。常數內容另驗。
+    assert.ok(/querySelectorAll\(\s*'a, '\s*\+\s*INTERACTIVE_BTN_SEL\s*\)/.test(body),
+      'checkDynamicNoise 必須用合併版 selector（a + INTERACTIVE_BTN_SEL）一次 querySelectorAll');
+    assert.ok(/const\s+INTERACTIVE_BTN_SEL\s*=\s*\n?\s*'button, \[role="button"\], input\[type="button"\], input\[type="submit"\], input\[type="reset"\]'/.test(CLEANER_SRC),
+      'INTERACTIVE_BTN_SEL 常數必須含 button + role + input 三類');
   });
 
   it('checkDynamicNoise body 內 a/button 系列 querySelectorAll 只能跑 1 次', () => {
@@ -59,10 +62,13 @@ describe('checkDynamicNoise 合 selector（v0.7.144 #14）', () => {
       'a tag 必須條件式 hide（只在 shouldHideByKeyword 命中時）');
   });
 
-  it('checkDynamicNoise 必須對 button/role 無條件 hide', () => {
-    // 合併 loop 內 a 分支 continue 後 button 系列無條件 hide
-    // 簡化驗證：loop 結尾必須 hide(el, hiddenList) 直接呼（不在 shouldHideByKeyword 條件內）
-    assert.ok(/continue;\s*\}[\s\S]{0,200}hide\(el,\s*hiddenList\)/.test(body),
-      'button / role / input button 系列必須無條件 hide（不受 shouldHideByKeyword 限制）');
+  it('checkDynamicNoise 必須對 button/role 一律 hide（唯一例外 = 媒體 button）', () => {
+    // v0.8.36（B2）：button 系列 hide 不受 shouldHideByKeyword 限制（硬教訓九），
+    // 唯一豁免是 buttonWrapsContentMedia（與靜態 hideInsideArticleAllButtons
+    // 同源的 Medium click-to-zoom 保護）——不可再出現其他 gate。
+    assert.ok(/continue;\s*\}[\s\S]{0,400}buttonWrapsContentMedia\(el\)[\s\S]{0,60}hide\(el,\s*hiddenList\)/.test(body),
+      'button / role / input button 系列必須 hide，唯一 gate 是 buttonWrapsContentMedia 媒體豁免');
+    assert.ok(!/tagName\s*!==\s*['"]A['"][\s\S]{0,120}shouldHideByKeyword/.test(body),
+      'button hide 不可被 shouldHideByKeyword 條件化');
   });
 });

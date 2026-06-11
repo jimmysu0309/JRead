@@ -34,27 +34,50 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
       'JREAD_RELOAD handler 必須用 chrome.management.getSelf 檢查 installType。實際 case body:\n' + caseBody);
   });
 
-  it('JREAD_RELOAD case body 必須含 installType === "development" check', () => {
-    assert.ok(/installType\s*===\s*['"]development['"]/.test(caseBody),
-      'JREAD_RELOAD handler 必須 check installType === "development"（store install 拒絕 reload）');
+  // v0.8.36：installType check 抽進共用 runIfDevelopmentInstall（JREAD_RELOAD
+  // 與 JREAD_DEBUG_SET_THEME 共用同一 gate）。case body 驗「reload 包在 helper
+  // callback 內」、helper 驗「installType check 在 fn() 執行之前」。
+  it('runIfDevelopmentInstall helper 必須含 installType === "development" check 且先於 fn()', () => {
+    const helper = SW_SRC.match(/function\s+runIfDevelopmentInstall[\s\S]*?\n\}/);
+    assert.ok(helper, 'SW 必須有 runIfDevelopmentInstall helper');
+    const lines = helper[0].split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l));
+    let installTypeLine = -1;
+    let fnCallLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (installTypeLine === -1 && /installType\s*===\s*['"]development['"]/.test(lines[i])) installTypeLine = i;
+      if (fnCallLine === -1 && /^\s*fn\(\);/.test(lines[i])) fnCallLine = i;
+    }
+    assert.notStrictEqual(installTypeLine, -1, 'helper 必須 check installType === "development"');
+    assert.notStrictEqual(fnCallLine, -1, 'helper 必須在 guard 內呼叫 fn()');
+    assert.ok(installTypeLine < fnCallLine, 'installType check 必須在 fn() 之前（先驗證再執行）');
   });
 
-  it('chrome.runtime.reload() invocation（非註解）必須在 installType check 之後', () => {
-    // 排除單行 comment 行，找實際 invocation 行 index
-    const lines = caseBody.split('\n');
-    let installTypeLine = -1;
-    let reloadLine = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (/^\s*\/\//.test(line)) continue;
-      if (/^\s*\*/.test(line)) continue;
-      if (installTypeLine === -1 && /installType/.test(line)) installTypeLine = i;
-      if (reloadLine === -1 && /chrome\.runtime\.reload\s*\(/.test(line)) reloadLine = i;
-    }
-    assert.notStrictEqual(installTypeLine, -1, 'case body 必須含 installType check（非註解）');
-    assert.notStrictEqual(reloadLine, -1, 'case body 必須含 chrome.runtime.reload() invocation（非註解）');
-    assert.ok(installTypeLine < reloadLine,
-      `installType check 必須出現在 reload() invocation 之前（先驗證再執行）。installType line=${installTypeLine}, reload line=${reloadLine}`);
+  it('JREAD_RELOAD 的 chrome.runtime.reload() 必須包在 runIfDevelopmentInstall callback 內', () => {
+    assert.ok(/runIfDevelopmentInstall\(\s*['"]JREAD_RELOAD['"]\s*,\s*\(\)\s*=>\s*chrome\.runtime\.reload\(\)\s*\)/.test(caseBody),
+      'reload 必須委派 runIfDevelopmentInstall（不可裸呼）');
+    // 不可有 guard 外的裸 reload 呼叫
+    const bare = caseBody.split('\n').filter(l =>
+      !/^\s*(\/\/|\*)/.test(l) && /chrome\.runtime\.reload\s*\(\)/.test(l) && !/runIfDevelopmentInstall/.test(l) && !/!chrome\.runtime\.reload/.test(l));
+    assert.strictEqual(bare.length, 0, 'case body 不可有 gate 外的裸 chrome.runtime.reload() 呼叫');
+  });
+
+  it('JREAD_DEBUG_SET_THEME 也必須走 runIfDevelopmentInstall + theme 白名單（v0.8.36）', () => {
+    const m = SW_SRC.match(/case\s+['"]JREAD_DEBUG_SET_THEME['"]:\s*\{([\s\S]*?)\}\s*(case|default)/);
+    assert.ok(m, 'SW 必須有 JREAD_DEBUG_SET_THEME case（debug bridge set-theme 改經 SW 中繼）');
+    assert.ok(/runIfDevelopmentInstall\(\s*['"]JREAD_DEBUG_SET_THEME['"]/.test(m[1]),
+      'set-theme 必須與 reload 同款 development gate——任意網頁可 dispatch __jread_debug，store 安裝不可被改 theme');
+    assert.ok(/\[\s*'light',\s*'dark',\s*'sepia'\s*\]\.includes\(theme\)/.test(m[1]),
+      'SW 端必須再驗一次 theme 白名單（第二道防線）');
+  });
+
+  it('content set-theme 分支不可再直寫 chrome.storage.sync（必須經 SW 中繼）', () => {
+    const MAIN_SRC = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'main.js'), 'utf8');
+    const m = MAIN_SRC.match(/type === 'set-theme'[\s\S]*?else if/);
+    assert.ok(m, '抓得到 set-theme 分支');
+    assert.ok(!/chrome\.storage\.sync\.set/.test(m[0]),
+      'set-theme 分支不可直寫 storage.sync（任意網頁 JS 可觸發、會同步到所有裝置）');
+    assert.ok(/JREAD_DEBUG_SET_THEME/.test(m[0]), 'set-theme 必須改送 JREAD_DEBUG_SET_THEME 給 SW');
   });
 
   it('manifest.json 不應加 "management" permission（getSelf 自查不需要）', () => {

@@ -1267,7 +1267,7 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
     // 級避免破壞站點 table layout（行高 / 邊框 / column 寬等）；cell 級字級放大
     // 已足夠解決「看不清」核心痛點。`caption` 跟著 td/th 一起進 selector——是
     // table 的標題，跟 cell 同等重要的閱讀內容。
-    const BODY_TEXT_SEL =
+    const BODY_TEXT_CORE =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
       `[${ARTICLE_ATTR}="1"] li,` +
@@ -1276,8 +1276,17 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
       `[${ARTICLE_ATTR}="1"] dt,` +
       `[${ARTICLE_ATTR}="1"] td,` +
       `[${ARTICLE_ATTR}="1"] th,` +
-      `[${ARTICLE_ATTR}="1"] caption,` +
-      SPAN_TEXT_SEL;
+      `[${ARTICLE_ATTR}="1"] caption,`;
+    const BODY_TEXT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL;
+    // v0.8.36：font-weight 專用 selector——span 再排除 strong / b 後代。
+    // 字級 / 字型注入對 strong 內 span 是正確的（粗體文字也要跟著使用者字級
+    // 字型），但 font-weight 注入打在 strong 內的 span 會把粗體抹平成使用者
+    // 字重：WYSIWYG 編輯器（Lexical / TipTap，vocus 類站）普遍輸出
+    // `<strong><span style="...">粗體</span></strong>`，span 自己命中規則 →
+    // 文字渲染 400、內文粗體全部消失（預設設定就觸發，不需使用者改字重）。
+    // p 級注入不受影響——strong 有 UA 自身 font-weight（bolder），不靠 inherit。
+    const BODY_WEIGHT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL +
+      ':not(strong *):not(b *)';
     let userOverrides = '';
     // v0.7.162：lineHeight Auto sentinel = 0。Auto 時跳過所有 line-height 注入
     // （保留原站行距）；非 Auto 才把 lineHeight 串進 font-size rule 或獨立 rule。
@@ -1323,11 +1332,13 @@ ${BODY_TEXT_SEL} {
       // 撞成同一種粗細——使用者切細/中看不出差別。使用者既然有「字重」這個明確
       // 控制項，三段就一律強制套用、才是三個真實字重。用真正的 font-weight 全平台
       // 生效（取代 v0.7.157 boldText 的 macOS-only -webkit-font-smoothing）。只套
-      // BODY_TEXT_SEL（p / li / blockquote / span 等內文載體），**不含 h1-h6**
-      // ——標題字重由原站 / UA bold 維持、保留章節階層；strong / b 等有自身明確
-      // font-weight 的元素也不受影響（inherit 只影響沒明確 weight 的後代）。
+      // BODY_WEIGHT_SEL（p / li / blockquote / span 等內文載體），**不含 h1-h6**
+      // ——標題字重由原站 / UA bold 維持、保留章節階層。strong / b 自身有 UA
+      // font-weight 不受 p 級注入影響；strong / b **內的 span** 由 BODY_WEIGHT_SEL
+      // 的 :not(strong *):not(b *) 排除（v0.8.36——span 直接命中規則不是 inherit，
+      // 不排除會把 WYSIWYG 站的內文粗體抹平）。
       userOverrides += `
-${BODY_TEXT_SEL} {
+${BODY_WEIGHT_SEL} {
   font-weight: ${opts.fontWeight} !important;
 }`;
     }

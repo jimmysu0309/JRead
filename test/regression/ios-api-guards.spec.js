@@ -40,17 +40,23 @@ describe('iOS Safari API availability guards（v0.7.217）', () => {
   it('SW JREAD_RELOAD：chrome.management.getSelf 呼叫前必須有 existence guard', () => {
     const body = caseBody(SW_SRC, 'JREAD_RELOAD');
     // 排除註解行後，guard 必須出現在 getSelf invocation 之前
+    // v0.8.36：getSelf 實際呼叫搬進共用 runIfDevelopmentInstall helper
+    // （JREAD_RELOAD 與 JREAD_DEBUG_SET_THEME 共用同一 gate）——case body 驗
+    // existence guard + helper 委派，helper 內驗 getSelf 呼叫。
     const lines = body.split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l));
     let guardLine = -1;
     let callLine = -1;
     for (let i = 0; i < lines.length; i++) {
       if (guardLine === -1 && /chrome\.management\s*&&\s*chrome\.management\.getSelf/.test(lines[i])) guardLine = i;
-      if (callLine === -1 && /chrome\.management\.getSelf\s*\(\s*\(/.test(lines[i])) callLine = i;
+      if (callLine === -1 && /runIfDevelopmentInstall\s*\(/.test(lines[i])) callLine = i;
     }
     assert.notStrictEqual(guardLine, -1,
       'JREAD_RELOAD 必須含 `chrome.management && chrome.management.getSelf` existence guard（iOS 無 management API）');
-    assert.notStrictEqual(callLine, -1, 'JREAD_RELOAD 必須仍有 getSelf 實際呼叫');
-    assert.ok(guardLine < callLine, 'guard 必須在 getSelf 呼叫之前');
+    assert.notStrictEqual(callLine, -1, 'JREAD_RELOAD 必須委派 runIfDevelopmentInstall');
+    assert.ok(guardLine < callLine, 'guard 必須在 helper 呼叫之前');
+    const helper = SW_SRC.match(/function\s+runIfDevelopmentInstall[\s\S]*?\n\}/);
+    assert.ok(helper && /chrome\.management\.getSelf\s*\(\s*\(/.test(helper[0]),
+      'runIfDevelopmentInstall 必須實際呼叫 chrome.management.getSelf');
   });
 
   it('SW JREAD_RELOAD：guard 必須同時檢查 chrome.runtime.reload 存在', () => {
