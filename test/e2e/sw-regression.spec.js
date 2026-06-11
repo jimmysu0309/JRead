@@ -12,11 +12,16 @@
 //
 //   條目 5（2026-04-22）：action icon swap wire-up（ACTIVE ↔ IDLE）
 //     v0.7.0 新增 + v0.7.3 修絕對路徑。三條 wire：
-//       (a) chrome.runtime.onMessage handler 收 SET_ACTIVE_ICON → setIcon
-//       (b) chrome.tabs.onUpdated status=loading → setIcon IDLE
+//       (a) chrome.runtime.onMessage handler 收 SET_ACTIVE_ICON → setIcon + badge
+//       (b) chrome.tabs.onUpdated status=loading → setIcon IDLE + 清 badge
 //       (c) content main.js 於 enter/exit reader mode 發 SET_ACTIVE_ICON
-//     策略：在 SW 內 monkey-patch chrome.action.setIcon 記錄所有 calls、
-//     trigger TOGGLE_READER_MODE 後檢查記錄。驗 ICONS_ACTIVE / ICONS_IDLE 值。
+//     策略：在 SW 內 monkey-patch chrome.action.setIcon / setBadgeText 記錄
+//     所有 calls、trigger TOGGLE_READER_MODE 後檢查記錄。
+//     v0.8.40 勘誤：v0.7.134 起 ICONS_IDLE 與 ICONS_ACTIVE 路徑相同（Jimmy
+//     要求 toolbar 預設藍色、不再用 -disabled 灰階），active/idle 視覺區隔
+//     全交給 badge（✓ 綠 / 空）——本 spec 原本 assert IDLE call 路徑含
+//     'disabled'，自該版起恆 fail（e2e 不在 npm test 預設範圍、未被發現）。
+//     改驗現行訊號：icon path 與 SW 常數相等（不寫死字面值）+ badge 清/設。
 //
 //   條目 4（2026-04-21）：commands.onCommand handler wire-up
 //     v0.4.0 新增。listener 註冊 + 核心 toggleWithInjectionFallback 可在
@@ -73,13 +78,20 @@ describe('SW e2e regression（PENDING 條目 3/4/5）', function () {
       // 的 loading 狀態會進 patched 版本，第一次 call 就是 IDLE。
       await harness.sw.evaluate(() => {
         self.__iconCalls = [];
-        const orig = chrome.action.setIcon.bind(chrome.action);
+        self.__badgeCalls = [];
+        const origIcon = chrome.action.setIcon.bind(chrome.action);
         chrome.action.setIcon = (opts) => {
-          // 只記下 path map 的 key（16/32/48/128）取其一當辨識
-          // ICONS_ACTIVE 路徑含 'icon-16.png'、ICONS_IDLE 含 'icon-16-disabled.png'
+          // 只記下 path map 的 16 路徑當辨識（v0.7.134 起 ACTIVE / IDLE 路徑
+          // 相同，這裡驗的是「onUpdated / SET_ACTIVE_ICON 有呼叫且路徑 = SW
+          // 常數」，active/idle 區隔由 badge calls 驗）
           const pathSignature = opts && opts.path && opts.path['16'];
           self.__iconCalls.push({ tabId: opts.tabId, pathSignature, when: Date.now() });
-          return orig(opts);
+          return origIcon(opts);
+        };
+        const origBadge = chrome.action.setBadgeText.bind(chrome.action);
+        chrome.action.setBadgeText = (opts) => {
+          self.__badgeCalls.push({ tabId: opts.tabId, text: opts.text, when: Date.now() });
+          return origBadge(opts);
         };
       });
 
@@ -90,12 +102,21 @@ describe('SW e2e regression（PENDING 條目 3/4/5）', function () {
 
     after(async () => { if (page) await page.close(); });
 
-    it('(b) 頁面 load 時 tabs.onUpdated 觸發 setIcon IDLE', async () => {
-      const calls = await harness.sw.evaluate(() => self.__iconCalls);
-      const idleCall = calls.find(c =>
-        c.tabId === tabId && c.pathSignature && c.pathSignature.includes('disabled'));
+    it('(b) 頁面 load 時 tabs.onUpdated 觸發 setIcon IDLE + 清 badge', async () => {
+      // IDLE 路徑直接讀 SW 頂層常數（top-level const 在 SW realm 全域可見），
+      // 不寫死字面值——未來再改 icon 策略時 spec 跟著常數走
+      const state = await harness.sw.evaluate(() => ({
+        iconCalls: self.__iconCalls,
+        badgeCalls: self.__badgeCalls,
+        idlePath16: ICONS_IDLE['16'] || ICONS_IDLE[16]
+      }));
+      const idleCall = state.iconCalls.find(c =>
+        c.tabId === tabId && c.pathSignature === state.idlePath16);
       assert.ok(idleCall,
-        `tabs.onUpdated status=loading 應觸發 setIcon IDLE。實際 calls: ${JSON.stringify(calls)}`);
+        `tabs.onUpdated status=loading 應以 ICONS_IDLE 呼叫 setIcon。實際 calls: ${JSON.stringify(state.iconCalls)}`);
+      const clearCall = state.badgeCalls.find(c => c.tabId === tabId && c.text === '');
+      assert.ok(clearCall,
+        `tabs.onUpdated status=loading 應清空 badge（避免新頁殘留前頁綠燈）。實際 badge calls: ${JSON.stringify(state.badgeCalls)}`);
     }).timeout(10000);
 
     it('(a)(c) 觸發 TOGGLE_READER_MODE → SET_ACTIVE_ICON message → setIcon ACTIVE', async function () {
@@ -115,12 +136,20 @@ describe('SW e2e regression（PENDING 條目 3/4/5）', function () {
       }
       // 等 content main.js 發 SET_ACTIVE_ICON message + SW handler 處理
       await new Promise(r => setTimeout(r, 800));
-      const calls = await harness.sw.evaluate(() => self.__iconCalls);
-      const activeCall = calls.find(c =>
-        c.tabId === tabId && c.pathSignature &&
-        c.pathSignature.includes('icon-16.png') && !c.pathSignature.includes('disabled'));
+      const state = await harness.sw.evaluate(() => ({
+        iconCalls: self.__iconCalls,
+        badgeCalls: self.__badgeCalls,
+        activePath16: ICONS_ACTIVE['16'] || ICONS_ACTIVE[16],
+        badgeText: BADGE_ACTIVE_TEXT
+      }));
+      const activeCall = state.iconCalls.find(c =>
+        c.tabId === tabId && c.pathSignature === state.activePath16);
       assert.ok(activeCall,
-        `enter reader mode 應觸發 setIcon ACTIVE。實際 calls: ${JSON.stringify(calls)}`);
+        `enter reader mode 應以 ICONS_ACTIVE 呼叫 setIcon。實際 calls: ${JSON.stringify(state.iconCalls)}`);
+      // v0.7.134 起 active/idle 的視覺區隔在 badge——enter 必須設 BADGE_ACTIVE_TEXT
+      const badgeOn = state.badgeCalls.find(c => c.tabId === tabId && c.text === state.badgeText);
+      assert.ok(badgeOn,
+        `enter reader mode 應設 active badge（'${state.badgeText}'）。實際 badge calls: ${JSON.stringify(state.badgeCalls)}`);
     }).timeout(15000);
   });
 
