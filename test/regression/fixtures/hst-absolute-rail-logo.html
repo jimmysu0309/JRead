@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  healthsystemtracker.org「About this site」absolute sidebar rail 最小重現
+  （v0.8.48 page rounds 第五輪 C6+D：0 寬塌縮疊印）。
+  真實結構：DIV.row(flex) > [多個 entry-content-center(主文), DIV.entry-content-right
+  (position:absolute 285×8506 全欄高 rail，內含 DIV.about 推廣框 + 102×34
+  Peterson/KFF 小 logo IMG)]。
+  hideInsideArticleAbsoluteOverlays 的 v0.7.170「含 img 就跳過」guard 被小
+  logo 誤觸發 → rail 留下，reader 塌縮 0 寬、文字疊印內文。
+  修法：guard 細分為 containsContentScaleImg——已載入的小 logo（natural
+  210×70 / rendered 102×34）不算內容媒體，rail 照 hide。
+  控制組：absolute 媒體 wrapper 內含內容級大圖（CNBC pattern）必須保留。
+-->
+<html>
+<body>
+  <article id="story">
+    <h1>What drives health spending in the U.S. compared to other countries</h1>
+    <div class="row" style="display: flex; position: relative">
+      <div class="entry-content-center">
+        <p>Health spending per capita in the United States continues to outpace comparable countries by a wide margin. In 2021, the United States spent over eight thousand dollars per capita on health, while comparable countries averaged less than five thousand dollars per capita on similar baskets of services and goods.</p>
+        <p>For example, increased spending on administration was the cause of seven percent of spending growth between 2013 and 2021 in the U.S., but only caused three percent of spending growth in comparable countries during the same observation window, a gap that compounds over time.</p>
+      </div>
+      <div class="entry-content-right" id="promo-rail" style="position: absolute; right: 0; top: 0">
+        <div class="about" style="position: absolute">
+          <div class="about-header"><h4 class="about-title"><a href="https://example.org/about">About this site</a></h4></div>
+          <p>The Peterson Center on Healthcare and KFF are partnering to monitor how well the U.S. healthcare system is performing in terms of quality and cost.</p>
+          <img id="small-logo" src="logo-pch.png" alt="Peterson Center logo">
+          <img id="small-logo-2" src="logo-kff.png" alt="KFF logo">
+        </div>
+      </div>
+      <!-- 控制組：absolute 媒體 wrapper 內含內容級大圖（CNBC imageContainer pattern）-->
+      <div class="image-container" id="media-wrapper" style="position: absolute; top: 600px">
+        <img id="hero-img" src="hero.jpg" alt="">
+      </div>
+    </div>
+  </article>
+</body>
+</html>

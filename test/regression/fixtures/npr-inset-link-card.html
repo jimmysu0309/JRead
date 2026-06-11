@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  npr.org 主文中段「相關文章嵌入卡」最小重現（v0.8.48 page rounds 第五輪 C2）。
+  真實結構：DIV#storytext 內 float:right 的 DIV.bucketwrap.internallink
+  （無 noise keyword class）含縮圖 + kicker 連結 + H3 標題連結，文字 ~90 chars
+  幾乎全在 <a> 內（linkDensity 0.99）。既有 keyword / heading / sidebar-column
+  規則全漏（條件 A 要 main >= 900、條件 C 要 sibling >= 200 chars）。
+  fixture 用無語意 class（zz-card）模擬 npr 命名，spec 驗
+  hideInsideArticleInsetLinkCards 以結構特徵（ld + float/窄 + h3>a）命中。
+-->
+<html>
+<head><meta property="og:title" content="The surprising origin of superglue features"></head>
+<body>
+  <article id="story">
+    <h1>The surprising origin of superglue features</h1>
+    <p>What makes a person keep playing a video slot machine? Some of the same features that make children stay on social media apps or video games for too long, researchers say, and the parallels run deeper than most parents expect when they first hand over a device.</p>
+    <div class="zz-card" id="inset-card" style="float: right">
+      <div class="zz-card-img"><a href="https://example.org/other-article"><img src="thumb.jpg" alt=""></a></div>
+      <div class="zz-card-block">
+        <h3 class="slug"><a href="https://example.org/section/tech">Technology</a></h3>
+        <h3><a href="https://example.org/other-article">Verdicts against Meta and Google may bring a new era of big tech accountability</a></h3>
+      </div>
+    </div>
+    <p>In two landmark cases, social media companies have been found liable for endangering and harming children. Meta and Google are appealing the verdicts and disputing the idea that their products are addictive, but over the course of more than a decade scientists have identified key features.</p>
+    <!-- 控制組 1：主文圖 wrapper（img + 短 credit 連結、無 heading 連結）不可命中 -->
+    <div class="zz-photo" id="photo-wrapper" style="float: right">
+      <img src="photo.jpg" alt="">
+      <a href="https://example.org/photographer">AP Photo</a>
+    </div>
+    <p>These features create a kind of superglue on the apps, says cultural anthropologist Natasha Dow Schull at New York University, who has pioneered research in this field. They keep us spending more time on these apps and spending more money. They drain us of our energy and ourselves.</p>
+    <!-- 控制組 2：自連結 permalink 標題卡（translate-proof guard）不可命中 -->
+    <div class="zz-title-card" id="self-link-card" style="float: right">
+      <h2><a href="/fixture-current-page">The surprising origin of superglue features</a></h2>
+    </div>
+    <p>During the trial in California, the attorney bringing the case accused Meta and Google of designing their apps to behave like digital casinos. That is an apt comparison, according to research on how major platforms keep major audiences engaged for hours at a time.</p>
+  </article>
+</body>
+</html>

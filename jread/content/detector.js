@@ -1068,7 +1068,13 @@
     }
     const og = document.querySelector('meta[property="og:title"]')?.content || '';
     const docT = document.title || '';
-    const baseTitle = normalizeTitle(og) || normalizeTitle(NS.stripSiteSuffix(docT));
+    // v0.8.48：og:title 也必須過 stripSiteSuffix——Wikipedia 類站點 og:title
+    // 含站名尾綴（「珍珠奶茶 - 維基百科，自由的百科全書」），未去尾綴時
+    // baseTitle 整串含站名 → bestCand 掃描命中「站台標語」元素（#siteSub）
+    // → 注入錯誤 H1「維基百科，自由的百科全書」、真標題降級成小字（第五輪
+    // page rounds B1）。去尾綴後最壞情況是 baseTitle 變短導致不注入（no-op
+    // 降級），不會再注入錯誤標題。
+    const baseTitle = normalizeTitle(NS.stripSiteSuffix(og)) || normalizeTitle(NS.stripSiteSuffix(docT));
     if (!baseTitle || baseTitle.length < 5) return;
 
     // 文字是否等同 baseTitle（精確或雙向 60% 包含）

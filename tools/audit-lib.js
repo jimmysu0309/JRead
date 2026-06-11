@@ -225,10 +225,13 @@ pageFns.auditResidualLinks = function (tiers) {
     // byline 豁免（2026-06-11 調校）：作者社群連結（cnbc byline 的 @twitter
     // 連結 x3 實證誤報）是合法 metadata。結構判定：連結所在的近層 wrapper
     // 含 <time>（發布日期）或語意 author 標記 = byline 區。
+    // 第五輪補：cnbc `A.Author-authorTwitter` 的 wrapper 無 <time> 仍誤報——
+    // 「純 @handle 文字 + author/byline 命名容器內」也視為 byline metadata。
+    const isHandle = /^@[a-z0-9_.]+$/i.test(text);
     const inByline = !!btn.closest('address, [rel="author"]') || (() => {
       const w = btn.closest('p, div, span, section, header, li');
       return !!(w && w.querySelector && w.querySelector('time'));
-    })();
+    })() || (isHandle && !!btn.closest('[class*="author" i], [class*="byline" i]'));
     const clsOrHrefHit = !inProse && !inByline &&
       (/share|social|subscribe|follow/i.test(cls) || /line\.me|twitter|facebook|x\.com/.test(href));
     items.push({
@@ -344,6 +347,32 @@ pageFns.auditGap = function () {
       if (!isVisible(el)) continue;
       return true;
     }
+    // 裸 div 逐行文字聯集覆蓋（2026-06-11 第五輪調校）：巴哈論壇把每行文字
+    // 放獨立裸 <div>（26px 小行），單一元素 >= 50% 覆蓋檢查對它們隱形 →
+    // 圖與圖之間整段文字被量成假 gap。改對「帶 direct text 的 leaf rect」
+    // 做聯集覆蓋，>= 30% 即視為有內容。
+    const ranges = [];
+    for (const el of art.querySelectorAll('div, span, p, a, li, td')) {
+      const direct = Array.from(el.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent).join('');
+      if (!direct.replace(/\s+/g, ' ').trim()) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 8 || r.width < 50) continue;
+      const t = Math.max(r.top, top), b = Math.min(r.bottom, bottom);
+      if (b <= t) continue;
+      if (!isVisible(el)) continue;
+      ranges.push([t, b]);
+    }
+    ranges.sort((a, b) => a[0] - b[0]);
+    let covered = 0, curT = null, curB = null;
+    for (const [t, b] of ranges) {
+      if (curB === null) { curT = t; curB = b; }
+      else if (t > curB) { covered += curB - curT; curT = t; curB = b; }
+      else if (b > curB) { curB = b; }
+    }
+    if (curB !== null) covered += curB - curT;
+    if (covered >= span * 0.3) return true;
     return false;
   }
   const gaps = [];
@@ -893,8 +922,12 @@ async function waitForReaderImagesLoaded(page, timeoutMs = 3000) {
 // mode 下噴 NotFoundError、拍出整張白圖）。改每次滑 viewport × 0.9（留 10%
 // 重疊）截一張。maxPages 上限防超長頁拍幾十張；截斷時明確 log 被丟掉的頁數
 //（no silent caps——沉默截斷會被讀成「整頁都看過了」）。
+// opts.ensure：每頁截圖前的非同步 callback（第五輪調校）。dark 分頁截圖時序
+// bug——cnbc 實證 dark-page-02 起卡片回亮色（SPA 捲動觸發 re-render 把主題
+// 弄掉），audit theme 欄位只在切換當下驗一次、之後各頁 silent 失真。caller
+// 傳 ensure 在每頁前重驗 / 重套狀態（page-rounds dark phase 用）。
 async function takePagedScreenshots(page, opts) {
-  const { dir, prefix, maxPages = 40 } = opts;
+  const { dir, prefix, maxPages = 40, ensure } = opts;
   const info = await page.evaluate(() => ({
     docHeight: document.documentElement.scrollHeight,
     viewportHeight: window.innerHeight
@@ -906,6 +939,9 @@ async function takePagedScreenshots(page, opts) {
   for (let i = 0; i < count; i++) {
     await page.evaluate(y => window.scrollTo(0, y), i * step);
     await sleep(400);
+    if (ensure) {
+      try { await ensure(i); } catch (_) { /* ensure 失敗不擋截圖 */ }
+    }
     const p = path.join(dir, `${prefix}-page-${String(i + 1).padStart(2, '0')}.png`);
     await page.screenshot({ path: p });
     paths.push(p);

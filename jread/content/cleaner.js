@@ -107,6 +107,16 @@
     // 來源）。investigate（調查 widget）與 vote-module 系都是互動投票
     // 模組的慣例命名；investigative（調查報導）因 token 邊界不會誤命中。
     { t: 'investigate' }, { t: 'vote[-_]?(?:module|widget|box|panel|section)' },
+    // v0.8.48 dev.to 實測：`billboard` 是業界廣告位慣例命名（Google ad size
+    // 名稱 billboard 970×250；dev.to `body-billboard-container` / `js-billboard`）。
+    // strong：廣告文案常含 100+ chars 長 p，普通 path 會被主文 guard 誤豁免；
+    // 主文 wrapper 絕不會命名 billboard。
+    { t: 'billboard', strong: true },
+    // v0.8.48 theregister 實測：「MORE CONTEXT」相關文章列 wrapper class
+    // `articleList`（lowercase 後 articlelist）。article-list 系 = 文章列表
+    // 容器，出現在單篇文章內必為相關推薦列，跨 CMS 慣例命名（對齊既有
+    // postlisting / post-listing）。
+    { t: 'article[-_]?list(?:ing)?s?' },
     { t: 'next-article', strong: true }, { t: 'latest-posts', strong: true },
     { t: 'mostread', strong: true }, { t: 'most-read', strong: true },
     { t: 'recommended', strong: true }, { t: 'recommend', strong: true }, { t: 'recommendation', strong: true },
@@ -139,6 +149,14 @@
     { t: 'privacy-(?:banner|notice)' }, { t: 'email-(?:signup|capture|subscribe)' },
     { t: 'pagination' }, { t: 'page-nav' }, { t: 'pager' }, { t: 'page-navigation' },
     { t: 'author-(?:bio|card|info|box|meta|widget)' }, { t: 'about-(?:author|the-author)' },
+    // v0.8.48 zh.wikipedia 實測：語言切換 DIV.vector-dropdown（checkbox-hack
+    // disclosure widget）殘留。dropdown 是跨框架 UI chrome 慣例命名（Vector /
+    // Bootstrap dropdown-menu / 各 CMS nav dropdown），主文內容不會這樣命名。
+    { t: 'dropdown' },
+    // v0.8.48：noprint = MediaWiki 與多數 CMS 的「列印時不顯示」語意標記
+    // （zh.wikipedia #siteSub 站台標語實測殘留）。閱讀模式語意 ≈ 列印視圖，
+    // 站方自己標 noprint 的元素必然非內容。
+    { t: 'noprint' },
     { t: 'powered[-_]?by' }, { t: 'popup' }, { t: 'popover' }, { t: 'overlay' },
     { t: 'modal-(?:content|dialog|box|wrapper)' }, { t: 'backdrop' }, { t: 'drawer' },
     { t: 'floating-(?:bar|cta|widget)' }, { t: 'sticky-(?:bar|cta|banner|subscribe)' },
@@ -215,7 +233,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -232,7 +250,11 @@
   // 走 inline text 匹配：
   //   廣告 / AD / 業配 + 各種變體括號 + 「請繼續 / 接下來 / 以下內容」等
   //   續文指示字樣
-  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)/i;
+  // v0.8.48 vocus 實測：廣告位清掉後殘留「為什麼會看到廣告❓」說明 label
+  // （hash class SPA、僅 text 可辨識）。「為什麼(會)看到(這則)廣告」是廣告
+  // 平台通用的 ad-transparency 標籤（Facebook / Google / vocus 同款句式），
+  // 主文段落不會以此開頭——direct textNode + 40 chars 上限雙保險。
+  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^(為什麼|为什么)(我)?(會|会|你會)?看到(這個|這則|这个|这则|此)?(廣告|广告)|^why\s+am\s+i\s+seeing\s+this\s+ad/i;
   const NOISE_INLINE_AD_MAX_LEN = 40;
 
   // CTA 推廣段落 heuristic：當 hideInsideArticleByLinkText 命中 noise link
@@ -245,7 +267,11 @@
   //   - download...app / get the app：英文站 app promo
   // 僅在 parent 內已有 child link 命中 NOISE_LINK_TEXT_RE 時才觸發——雙
   // 條件交叉降低誤殺風險（主文段落不會同時含 CTA link + CTA P 字樣）。
-  const CTA_PROMO_P_RE = /(加入.{0,15}會員|訂閱.{0,15}電子報|下載.{0,8}(APP|app)|現在用\s*APP|用\s*APP\s*看|天天中獎|保證.{0,6}中獎|download\s+(the\s+)?app|get\s+the\s+app|install\s+(the\s+)?app)/i;
+  // v0.8.48 cw.com.tw 實測：byline 下方「首次訂閱 3 個月只要$499(原價$790)
+  // 領取優惠」訂閱促銷行——「首次訂閱 / 訂閱…只要$N / 原價…優惠」是訂閱制
+  // 媒體跨站促銷句式，主文段落不會這樣寫。「早鳥優惠」同型（cage 重驗時
+  // cw 換檔成「AI 時代下…提升競爭力？早鳥優惠」課程促銷行，同位置同結構）。
+  const CTA_PROMO_P_RE = /(加入.{0,15}會員|訂閱.{0,15}電子報|下載.{0,8}(APP|app)|現在用\s*APP|用\s*APP\s*看|天天中獎|保證.{0,6}中獎|首次訂閱|訂閱.{0,12}(只要|優惠)|原價.{0,12}優惠|早鳥(優惠|價|票|方案|報名)|download\s+(the\s+)?app|get\s+the\s+app|install\s+(the\s+)?app)/i;
 
   // v0.7.109：byline 文字 pattern——hideInsideArticleSidebarColumns
   // 條件 A（textLen < main × 10% + linkDensity > 0.5）會誤殺短篇 byline
@@ -268,7 +294,11 @@
   //   2. 月份縮寫加 `\.?` 容許 AP style "May." / "Jan." / "Feb." 等帶點格式。
   //      AP stylebook 慣例：三字母以下月份不縮（May 原本就三字母不帶點），
   //      但實務 CMS 各自表述（MSNBC 用 "May."），`\.?` 一律相容。
-  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  // v0.8.48：補中文 / 台灣慣用日期 pattern——upmedia「徐瑋璐 2026年04月22日
+  // 18:20:00」（年月日格式）與 vocus「2026/04/24 發佈」（slash 格式）的 byline
+  // 都不含英文月份 / ISO 連字號日期，舊 regex 全 miss。4 位年開頭限定，不會
+  // 誤命中版本號（1.2.3）或一般數字。
+  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
   const BYLINE_MAX_TEXT_LEN = 200;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
@@ -1323,6 +1353,20 @@
           const sibText = (sib.textContent || '').replace(/\s+/g, ' ').trim();
           if (sibText.length <= 200) continue;
         }
+        // byline 文字分支（v0.8.48 upmedia 修法）：站點不用 <time> tag、日期
+        // 是純文字 SPAN（upmedia「上報快訊 徐瑋璐 2026年04月22日 18:20:00」）
+        // 時，上面 time-tag guard 全 miss → 整列作者+日期被當 chrome 砍。
+        // 與 sidebar-column 條件 A 同款保護：短小（<= BYLINE_MAX_TEXT_LEN）+
+        // 文字命中 BYLINE_TEXT_RE（作者前綴 / 各式日期 pattern）→ 保留。
+        // <li> 排除：短相關新聞列（卡片帶刊出日期、總文字可能 < 200）會
+        // 誤享保護——byline 列不用 ul/li 排版、相關列表幾乎都用，結構特徵
+        // 可區分（fixture 控制組 forcing）。
+        {
+          const sibText2 = norm(sib.textContent || '');
+          if (sibText2.length > 0 && sibText2.length <= BYLINE_MAX_TEXT_LEN &&
+              BYLINE_TEXT_RE.test(sibText2) &&
+              !(sib.querySelector && sib.querySelector('li'))) continue;
+        }
         // 主文長段落分支（v0.7.154 wealth.com.tw 修法）：sibling 含「不在
         // list-item / 連結內」的 >= 100 chars 單一 p 或累計 >= 300 chars → 視為
         // 含主文內容、保留。
@@ -1672,7 +1716,7 @@
       // 是站點 branding、不是文章標題——strong keyword 語意足夠確定。
       // v0.8.36：H1 guard + 主文 wrapper guard 收斂進 keywordWrapperIsProtected
       // （與動態 checkDynamicNoise 單一資料源），語意逐字不變。
-      if (keywordWrapperIsProtected(el)) continue;
+      if (keywordWrapperIsProtected(el, articleEl)) continue;
       // v0.7.83 修法：保護「含主文 anchor」的 wrapper——含 >= 100 chars 單一
       // p / 累計 p textLen >= 300 / 含 title-anchor element。場景：twz.com
       // 主文 wrapper class 為 `entry-content Article-bodyText paywall ...`，
@@ -2392,6 +2436,27 @@
   //   大塊空白。一併清直接父的 min-height + height 為 0/auto。
   //   通則：absolute child 是為 overlay 而生的「視覺擴展」，父保留空間
   //   是配合它；child hidden 後保留空間就是 stale 設計殘留。
+  // v0.8.48：absolute overlay media guard 的 img 細分判定。
+  // 「內容級」img = 任一條：
+  //   - 未載入 / lazy 1px placeholder（naturalWidth <= 8）——尺寸無法判定，
+  //     保守視為內容圖（誤殺成本 = 主圖整塊消失，CNBC v0.7.170 教訓）
+  //   - natural >= 200×150（原圖就是內容尺寸）
+  //   - rendered >= 150×100（版面上以內容尺寸呈現）
+  // 都不滿足（已載入的小 logo / icon）→ 不算內容媒體，overlay 照 hide。
+  function containsContentScaleImg(el) {
+    if (!el.querySelectorAll) return false;
+    for (const img of el.querySelectorAll('img')) {
+      const w = img.naturalWidth || 0;
+      const h = img.naturalHeight || 0;
+      if (w <= 8) return true; // 未載入 / placeholder：保守保護
+      if (w >= 200 && h >= 150) return true;
+      let r;
+      try { r = img.getBoundingClientRect(); } catch (_) { r = null; }
+      if (r && r.width >= 150 && r.height >= 100) return true;
+    }
+    return false;
+  }
+
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
@@ -2446,7 +2511,13 @@
       //   不是「文字/裝飾 overlay」。漏網成本（極少數帶 hero img 的整塊 banner
       //   overlay）遠低於誤殺成本（主圖整塊消失）。Jimmy 2026-05-23 CNBC
       //   blob dark mode 截圖揭穿主圖完全消失，light mode 也部分消失。
-      if (el.querySelector && el.querySelector('picture, img, video')) continue;
+      // v0.8.48 healthsystemtracker 細分：guard 只認「內容級」媒體。sidebar
+      // 推廣框（absolute 全欄高 rail）內含 102×34 小 logo img 也被舊 guard
+      // 豁免 → reader 下塌縮成 0 寬、文字疊印在內文上。picture / video 不
+      // 細分照舊保護；bare img 改由 containsContentScaleImg 判尺寸（未載入
+      // / lazy placeholder 保守視為內容圖，CNBC lazy hero 教訓不回退）。
+      if (el.querySelector && el.querySelector('picture, video')) continue;
+      if (containsContentScaleImg(el)) continue;
       // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
       let hasLongParagraph = false;
       const ps = el.querySelectorAll && el.querySelectorAll('p');
@@ -2459,6 +2530,18 @@
         }
       }
       if (hasLongParagraph) continue;
+      // byline guard（v0.8.48 theverge 修法）：containsContentScaleImg 細分
+      // 後，「absolute byline 區塊 + 小頭像」（by Andrew Liszewski + avatar）
+      // 不再被 img guard 豁免 → 作者署名整塊消失（B 類誤殺）。文字開頭命中
+      // BYLINE_TEXT_RE（by X / 日期 / 撰文：）的 absolute 區塊視為 byline
+      // 保留；內部 share / comments 按鈕由 button 類規則各自清。
+      // 只看開頭 60 chars——byline 區塊常拖著 author bio popup 長文字，
+      // 整段測會被稀釋；photo credit overlay（也以 by 開頭）已由先跑的
+      // hideInsideArticleAbsoluteCreditOverlays 標 hidden、不會走到這。
+      {
+        const headText = norm(el.textContent || '').slice(0, 60);
+        if (headText && BYLINE_TEXT_RE.test(headText)) continue;
+      }
       hide(el, hidden);
       // 清直接父的 min-height/height 殘留（避免父預留 absolute child 空間
       // 後仍空著一大塊）
@@ -3171,7 +3254,34 @@
         if (r.top < minTop) minTop = r.top;
         if (r.top > maxTop) maxTop = r.top;
       }
-      if (maxTop - minTop <= 5) continue;
+      // 條件 B（v0.8.48 theverge lede 修法）：沒 wrap 的「媒體欄 + 文字欄」
+      // 對半 lede。theverge 實測：lede flex row = [圖欄 303px, dek 欄 305px]
+      // 並排塞進 720px 卡——hero 縮成小圖靠左、dek/byline 擠右側窄欄、文字
+      // 被截斷。結構特徵（不綁 class）：恰 2 個 in-flow 欄、各佔容器 30-70%
+      // （真雙欄、非 avatar+文字的 byline row）、一欄含 >= 150px 寬內容圖、
+      // 另一欄含 >= 80 chars 文字 → reader 單欄精神下 collapse 成 block 堆疊。
+      // 圖片並列 gallery（兩欄都是圖、無長文字）與 avatar byline（頭像欄
+      // < 30%）都不命中；figure 內已被 isInPreserved 擋掉。
+      let twoColLede = false;
+      if (maxTop - minTop <= 5 && inFlowChildren.length === 2) {
+        const cw = el.getBoundingClientRect().width;
+        if (cw > 0) {
+          const stats2 = inFlowChildren.map(c => {
+            const r = c.getBoundingClientRect();
+            let hasContentImg = false;
+            for (const im of c.querySelectorAll('img, picture')) {
+              const ir = im.getBoundingClientRect();
+              if (ir.width >= 150) { hasContentImg = true; break; }
+            }
+            return { ratio: r.width / cw, hasContentImg, textLen: norm(c.textContent).length };
+          });
+          const bothCols = stats2.every(s => s.ratio >= 0.3 && s.ratio <= 0.7);
+          const mediaCol = stats2.find(s => s.hasContentImg);
+          const textCol = stats2.find(s => !s.hasContentImg && s.textLen >= 80);
+          twoColLede = bothCols && !!mediaCol && !!textCol;
+        }
+      }
+      if (maxTop - minTop <= 5 && !twoColLede) continue;
       resets.push({ el, kind: 'container', prev: snapshotStyles(el, INNER_FLEX_PROPS) });
       applyImportant(el, INNER_FLEX_DECLS);
       if (el.dataset) el.dataset.jreadCollapsed = '1';
@@ -3788,9 +3898,26 @@
   //   - 含主文長 p 的 wrapper 保留（v0.7.83/0.7.97 twz `entry-content ...
   //     paywall`——CMS 用 paywall class 反向標「已解鎖內文」）
   //   - strong keyword（menu / sidebar 等明確非主文結構）跳過兩道保護
-  function keywordWrapperIsProtected(el) {
+  // v0.8.48「content-bearing noise」家族：這些 token 命名的雜訊區塊**自身就
+  // 帶長文**（留言串的留言內容、促捐信 / promo letter 的宣傳段落），長 p guard
+  // （wrapperContainsMainContentP）對它們是錯的保護——「有長 p」在這族正是
+  // 雜訊本體的特徵。dev.to SECTION#comments（留言 7 段 50+ chars p、佔 article
+  // 23%）/ propublica .wp-block-*-promo-letter（promo 4 段 maxP 512、佔 6.4%）
+  // 實測都被長 p guard 誤豁免。
+  // 修法：家族 token 命中時改用「文字佔比 guard」——區塊文字 < article 50%
+  // 即不享長 p 保護（留言 / 促捐區永遠是 article 的少數內容；反向若某 wrapper
+  // 真包了主文，佔比 >= 50% 仍走長 p guard 保護）。H1 主標 guard 順序在前不變。
+  // 家族成員只收「區塊自身會帶長文」的 token：留言系 + 促捐 / promo 系。
+  // paywall / subscribe 不收——twz 實證主文 wrapper 會帶 paywall class。
+  const CONTENT_BEARING_NOISE_RE = /(^|[^a-z0-9])(comments?|comment-form|discussion|discuss|replies|respond|promo|promotion|donation|donate|plea)([^a-z0-9]|$)/i;
+
+  function keywordWrapperIsProtected(el, articleEl) {
     if (shouldHideByStrongKeyword(el)) return false;
     if (el.querySelector && el.querySelector('h1') && wrapperH1IsMainTitle(el)) return true;
+    if (articleEl && CONTENT_BEARING_NOISE_RE.test(markerOf(el))) {
+      const articleLen = norm(articleEl.textContent).length;
+      if (articleLen && norm(el.textContent).length < articleLen * 0.5) return false;
+    }
     return wrapperContainsMainContentP(el);
   }
 
@@ -3853,6 +3980,59 @@
   // 風險評估：極低。reader mode 下使用者只閱讀、不會操作按鈕；主文正文
   // 從不用 `<button>` 排版文字。極少數 code demo / interactive widget 會
   // 被誤殺，但 reader mode 本就不適合跑 interactive demo（應該回原站）。
+  // v0.8.48 theverge 修法：byline 內「作者名 chip」豁免。theverge 把 byline
+  // 作者名做成 `<span role="button">Andrew Liszewski</span>`（點開 hover
+  // card），無條件清 button 後 byline 只剩「by and」——作者署名消失（B 類）。
+  // 豁免條件全部成立才算作者名 chip（與「所有 interactive button 一律清」
+  // 硬教訓的張力以最窄結構特徵收斂）：
+  //   - 只豁免 [role="button"] 偽 button（真 <button> / <input> 照清——主文
+  //     語意內容不會用真 button tag 呈現）
+  //   - 純文字（不含 svg / img icon）、1-40 chars、不命中 NOISE_LINK_TEXT_RE
+  //     CTA 字樣（share / follow / comments 等照清）
+  //   - 處於 byline 語境：往上最近的 textLen <= 200 block 祖先，文字開頭
+  //     命中 BYLINE_TEXT_RE（by X / 日期 / 撰文：）
+  // byline 語境文字量要排除巢狀 <aside>（theverge 實測：作者 hover-card bio
+  // 是 byline span 內的 ASIDE、168 chars，會把每層祖先 textLen 撐爆 200 讓
+  // 語境判定永遠 fail）。aside 語意 = 次要內容，不算 byline 本文。
+  function textSansAsides(el) {
+    let t = norm(el.textContent || '');
+    if (el.querySelectorAll) {
+      for (const a of el.querySelectorAll('aside')) {
+        const at = norm(a.textContent || '');
+        if (at) t = t.replace(at, '');
+      }
+    }
+    return norm(t);
+  }
+
+  // 不排除內含小 svg/img——theverge 作者 chip 帶 hover-card caret icon 實測。
+  // icon-only button 由「文字 1-40 chars」條件自然排除。最後一道「chip 文字
+  // 必須出現在 byline 句頭內」是防 Link / Share / Gift 類 chip 借同一個
+  // byline 祖先語境矇混的 forcing 條件（作者名必在「by …」句中、widget
+  // chip 文字不在）。
+  function isBylineNameChip(btn) {
+    if (!btn.matches || !btn.matches('[role="button"]')) return false;
+    if (btn.matches('button, input')) return false;
+    const t = norm(btn.textContent || '');
+    if (!t.length || t.length > 40) return false;
+    if (NOISE_LINK_TEXT_RE.test(t)) return false;
+    let cur = btn.parentElement;
+    for (let hops = 0; cur && hops < 6; hops++) {
+      const ct = textSansAsides(cur);
+      if (ct.length > 200) return false;
+      if (BYLINE_TEXT_RE.test(ct.slice(0, 60))) {
+        // 作者名出現在「by …」與日期段之間；Link/Share/Gift 類 widget chip
+        // 排在日期之後。只在日期段開始前的片段找 chip 文字（無日期則取前
+        // 160 chars——該 hop 通常只有「by 名單」本身）。
+        const dateIdx = ct.search(/\b\d{4}\b|\d{1,2}:\d{2}/);
+        const head = dateIdx > 0 ? ct.slice(0, dateIdx) : ct.slice(0, 160);
+        return head.includes(t);
+      }
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
   function hideInsideArticleAllButtons(articleEl, hidden) {
     for (const btn of articleEl.querySelectorAll(INTERACTIVE_BTN_SEL)) {
       if (btn === articleEl) continue;
@@ -3861,6 +4041,8 @@
       // 媒體 button 豁免：見 buttonWrapsContentMedia（v0.7.11 Medium
       // click-to-zoom 修法；v0.8.36 抽共用 guard 供動態 path 同步使用）
       if (buttonWrapsContentMedia(btn)) continue;
+      // byline 作者名 chip 豁免（v0.8.48 theverge，見 isBylineNameChip）
+      if (isBylineNameChip(btn)) continue;
       hide(btn, hidden);
     }
   }
@@ -3978,6 +4160,27 @@
       if (!r || r.width <= 0 || r.height <= 0) continue;
       if (r.width > HEADER_ZONE_ICON_MAX || r.height > HEADER_ZONE_ICON_MAX) continue;
       hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：原站隱藏 img 釘死（v0.8.48 healthsystemtracker）------------
+  // styler 對 article 內 img 一律 display:block !important（v0.7.87 newtalk
+  // 修法），副作用是把原站「刻意 display:none」的 img 一併復活——datawrapper
+  // embed 的 no-JS fallback <img>（stylesheet display:none）被翻成可見，每張
+  // 圖表出現兩份；fallback full.png 透明底在暗色主題下文字不可讀（第五輪
+  // E1/E5 + 圖表雙份同根因）。
+  // 修法：clean 時掃 article 內 computed display:none 的 img，用 hide() 釘
+  // inline !important（CSS 優先級最高層、贏過 styler stylesheet rule），維持
+  // 原站隱藏狀態。退出 reader 由 hidden 清單統一回復 inline 值。
+  // 不檢查 isInPreserved：figure 內的 fallback img 同樣會被 styler 復活，
+  // 釘住「原本就看不見的東西」沒有誤殺面。
+  function hideInsideArticleOriginallyHiddenImgs(articleEl, hidden) {
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      let cs;
+      try { cs = window.getComputedStyle(img); } catch (_) { continue; }
+      if (!cs || cs.display !== 'none') continue;
+      hide(img, hidden);
     }
   }
 
@@ -4243,6 +4446,111 @@
     }
   }
 
+  // ---- 主文內：inset 相關文章嵌入卡（v0.8.48 npr 實測）-------------------
+  // 新聞站在主文段落間插「相關文章嵌入卡」：縮圖 + kicker 連結 + 標題連結，
+  // 常以 float / 窄欄 inset 排版（npr `.bucketwrap.internallink.insettwocolumn`，
+  // class 無 noise keyword 語意）。結構性特徵（不綁 class / hostname）：
+  //   - 文字幾乎全在 <a> 內（linkDensity >= 0.9）——嵌入卡只有 kicker + 標題
+  //   - 文字量 15-300 chars（一至兩張卡的標題量級；排除空容器與真內容區）
+  //   - 含「heading 包連結」（h2-h4 > a，嵌入卡的標題連結慣例結構）
+  //   - float left/right 或寬 < article 50%（inset 排版幾何特徵）
+  // 主文圖片 wrapper（img + credit link）無 heading 連結不命中；自連結標題
+  // （permalink heading）與 byline 各有 guard。
+  const INSET_LINK_CARD_MIN_TEXT = 15;
+  const INSET_LINK_CARD_MAX_TEXT = 300;
+  const INSET_LINK_CARD_MIN_LD = 0.9;
+  const INSET_LINK_CARD_MAX_WIDTH_RATIO = 0.5;
+
+  function hideInsideArticleInsetLinkCards(articleEl, hidden) {
+    let articleWidth = 0;
+    try { articleWidth = articleEl.getBoundingClientRect().width; } catch (_) { /* noop */ }
+    for (const el of articleEl.querySelectorAll('div, aside')) {
+      if (el === articleEl) continue;
+      if (el.contains && el.contains(articleEl)) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const t = norm(el.textContent);
+      if (t.length < INSET_LINK_CARD_MIN_TEXT || t.length > INSET_LINK_CARD_MAX_TEXT) continue;
+      let linkLen = 0;
+      for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
+      if (linkLen / t.length < INSET_LINK_CARD_MIN_LD) continue;
+      if (!el.querySelector('h2 a, h3 a, h4 a')) continue;
+      // 自連結 permalink 標題（本文標題卡）保護——translate-proof URL 訊號
+      if (containsSelfLinkTitleHeading(el)) continue;
+      // byline 保護（與 sidebar-column 條件 A 同款）：短文 + byline pattern
+      if (t.length < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(t)) continue;
+      let cs, r;
+      try { cs = window.getComputedStyle(el); r = el.getBoundingClientRect(); } catch (_) { continue; }
+      const floated = cs && (cs.float === 'left' || cs.float === 'right');
+      const narrow = articleWidth > 0 && r && r.width > 0 &&
+        r.width < articleWidth * INSET_LINK_CARD_MAX_WIDTH_RATIO;
+      if (!floated && !narrow) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：float 推廣 aside（v0.8.48 quanta 實測）---------------------
+  // 雜誌類站點在主文旁 float 插 ASIDE 推廣模組（quanta「The Quanta Podcast」
+  // 含 H4 標題 + 宣傳文 + ALL EPISODES 連結 + audio 播放器；「Related:」相關
+  // 文章連結塊）。結構性特徵：
+  //   - <aside> tag（HTML5 語意「次要內容」）+ float left/right（inset 推廣排版）
+  //   - 文字量 < 600 chars（模組量級，非內容性 aside box）
+  //   - 含 <a href> 或 audio/iframe/video（推廣連結 / 播放器訊號）
+  // 同站的合法 caption / margin-note aside（圖說、引文補充）無連結無媒體
+  // 不命中（quanta 全頁 15 個 aside probe 實證僅 2 個推廣模組命中）。
+  // 與 sidebar-column 條件 B（aside + rectH > 400 走 sibling stats）互補：
+  // 本條不依賴 sibling 結構、抓的是「主文流內 float 小模組」。
+  const FLOATED_PROMO_ASIDE_MAX_TEXT = 600;
+
+  function hideInsideArticleFloatedPromoAsides(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('aside')) {
+      if (el === articleEl) continue;
+      if (el.contains && el.contains(articleEl)) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || (cs.float !== 'left' && cs.float !== 'right')) continue;
+      const t = norm(el.textContent);
+      if (!t.length || t.length > FLOATED_PROMO_ASIDE_MAX_TEXT) continue;
+      const hasLink = !!el.querySelector('a[href]');
+      const hasMedia = !!el.querySelector('audio, iframe, video');
+      if (!hasLink && !hasMedia) continue;
+      // 自連結標題 / byline 保護（與 inset 卡同款）
+      if (containsSelfLinkTitleHeading(el)) continue;
+      if (t.length < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(t)) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：figure 包未知 widget iframe（v0.8.48 propublica 實測）------
+  // PRESERVE_SEL 對 figure 的保護讓 hideInsideArticleThirdPartyIframes 掃不進
+  // figure 內部——站方把「Listen to this article」音訊播放器 iframe 包在
+  // <figure> 裡（WordPress block 慣例）整塊漏網。結構性特徵：
+  //   - figure 內含 iframe 且 **不在** KNOWN_MEDIA_IFRAME_SEL 白名單
+  //     （YouTube / datawrapper 等內容 embed 在 figure 內照常保留）
+  //   - figure 內無 img / picture / video（figure 純為 host 該 widget 存在）
+  //   - iframe 已 render 且高度 < 200px（播放器條 / 訂閱表單的量級；內容型
+  //     互動圖表 / 影片 embed 慣例 >= 300px。高度 0 = 未載入，保守跳過）
+  // 命中 → hide 整個 figure（連 wrapper 一起清，不留版面空洞）。
+  const WIDGET_IFRAME_MAX_HEIGHT = 200;
+
+  function hideInsideArticleFigureWidgetIframes(articleEl, hidden) {
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (fig === articleEl) continue;
+      if (fig.contains && fig.contains(articleEl)) continue;
+      if (fig.dataset && fig.dataset.jreadHidden === '1') continue;
+      if (fig.querySelector('img, picture, video')) continue;
+      const iframe = fig.querySelector('iframe');
+      if (!iframe) continue;
+      if (iframe.matches && iframe.matches(KNOWN_MEDIA_IFRAME_SEL)) continue;
+      let r;
+      try { r = iframe.getBoundingClientRect(); } catch (_) { continue; }
+      if (!r || r.height <= 0 || r.height >= WIDGET_IFRAME_MAX_HEIGHT) continue;
+      hide(fig, hidden);
+    }
+  }
+
   // ---- 主文內：inline 廣告插播文字 heuristic ---------------------------
   // 自由時報 / 聯合 / ETtoday 等台灣新聞站在主文段落中段插播「廣告（請
   // 繼續閱讀本文）」類 placeholder 短文字，無可識別 class、不成 section
@@ -4336,7 +4644,7 @@
     // 靜態 path 的 wrapper 豁免後內部雜訊由 button / link rule 各自處理）。
     if (shouldHideByKeyword(node)) {
       if (node.dataset && node.dataset.jreadHidden === '1') return;
-      if (!keywordWrapperIsProtected(node)) {
+      if (!keywordWrapperIsProtected(node, articleEl)) {
         hide(node, hiddenList);
         return;
       }
@@ -4348,7 +4656,8 @@
     // 包主文圖）舊版會連圖一起消失。
     if (node.matches && node.matches(INTERACTIVE_BTN_SEL)) {
       if (node.dataset && node.dataset.jreadHidden === '1') return;
-      if (!buttonWrapsContentMedia(node)) {
+      // v0.8.48：byline 作者名 chip 豁免與靜態 path 同步（isBylineNameChip）
+      if (!buttonWrapsContentMedia(node) && !isBylineNameChip(node)) {
         hide(node, hiddenList);
         return;
       }
@@ -4383,8 +4692,9 @@
         }
         // button / role=button / input button 系列：一律 hide
         // （硬教訓九：reader mode 純閱讀下所有 interactive button 一律清）。
-        // v0.8.36（B2）：唯一例外 = 媒體 button（與靜態 rule 同源豁免）。
-        if (!buttonWrapsContentMedia(el)) hide(el, hiddenList);
+        // v0.8.36（B2）：例外 = 媒體 button（與靜態 rule 同源豁免）。
+        // v0.8.48：例外 + byline 作者名 chip（isBylineNameChip，同源）。
+        if (!buttonWrapsContentMedia(el) && !isBylineNameChip(el)) hide(el, hiddenList);
       }
     }
     // heading text 命中：跟 hideInsideArticleByHeadingText 同邏輯
@@ -4656,6 +4966,11 @@
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
+      // v0.8.48 三條新規則：須在 collapse / styler reflow 前跑（float / 寬度
+      // / iframe 高度量測要反映原站 layout）
+      safeRun(hideInsideArticleInsetLinkCards, articleEl, hidden);
+      safeRun(hideInsideArticleFloatedPromoAsides, articleEl, hidden);
+      safeRun(hideInsideArticleFigureWidgetIframes, articleEl, hidden);
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
@@ -4698,6 +5013,9 @@
       // （healthsystemtracker Bootstrap `.row` 多 child 在 reader card 縮窄下
       // wrap → 段落被擠成窄欄；既有兩條 collapse 規則都漏網的 case）
       safeRun(collapseInnerFlexWrap, articleEl, hidden);
+      // 原站隱藏 img 釘死（須在 styler 注入前完成——styler img display:block
+      // 會復活 stylesheet 層的 display:none fallback 圖）
+      safeRun(hideInsideArticleOriginallyHiddenImgs, articleEl, hidden);
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
       safeRun(resetMediaPlaceholderPadding, articleEl, hidden);
       // figure/picture 容器強制 block：ttv 類雙層 figure + 外層 flex 把 img

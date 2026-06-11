@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!--
+  content-bearing noise 家族 guard 最小重現（v0.8.48 page rounds 第五輪
+  dev.to C3 + propublica C2）。
+  兩個真實場景共用同一根因：雜訊區塊 class 命中 noise keyword（comments /
+  promo），但區塊自身帶長 p（留言內容 / 促捐信文案），wrapperContainsMainContentP
+  guard 誤豁免 → 殘留。
+  修法後：家族 token + 文字佔比 < article 50% → 不享長 p 保護、照 hide。
+  控制組：class 帶 comments 但包含主文（佔比 >= 50%）的 wrapper 仍受保護。
+-->
+<html>
+<body>
+  <article id="story">
+    <h1>2026 Web Dev Trends That Actually Matter</h1>
+    <p>AI integration and performance-focused architectures like Wasm and edge computing are reshaping the landscape this year. Modern frameworks have matured significantly, and stable tooling is finally letting teams focus on fundamentals instead of churn. The quality over quantity point hits hardest for teams shipping production software at scale.</p>
+    <p>Finally, hiring trends emphasize system design skills, debugging and performance tuning, production experience with deployments and CI/CD, and collaboration and communication. Not just framework knowledge, but thinking in systems. Developers who master fundamentals and modern stacks are in high demand globally, and that demand keeps growing quarter over quarter.</p>
+    <p>So if you want to stay relevant: focus on fundamentals, learn modern performance techniques, understand AI integration, and embrace stable tools and scalable architectures. This is what real web development success looks like in 2026, according to the engineers who actually ship and maintain large production systems for a living.</p>
+    <!-- dev.to 場景：留言區 section#comments，留言是長 p（佔比 < 50%）→ hide -->
+    <section id="comments" class="text-padding mb-4">
+      <p>this list captures the reality check happening right now. everyone talks about the next shiny framework but the actual wins come from performance, stable tooling, and understanding where things are deployed in production environments.</p>
+      <p>one thing missing from most trend lists is the importance of staying current without burning out. developers who curate their learning sources ship better code than those drowning in every new release announcement.</p>
+      <p>Some comments may only be visible to logged-in visitors.</p>
+    </section>
+    <!-- propublica 場景：促捐 promo letter，宣傳文是長 p（佔比 < 50%）→ hide -->
+    <div class="wp-block-sitename-promo-letter" id="promo-letter">
+      <h2>Who owns this newsroom? No one.</h2>
+      <p>We are an independent nonprofit newsroom that investigates abuses of power. We dig deep into important issues, shining a light on abuses of power and betrayals of public trust, and we stick with those issues as long as it takes to hold power to account.</p>
+      <a href="https://example.org/donate">DONATE NOW</a>
+    </div>
+  </article>
+  <!-- 控制組（獨立 clean 對象）：class 帶 comments 的 wrapper 包住整篇主文
+       （佔比 >= 50%）→ 文字佔比 guard 不放行、長 p 保護仍生效 -->
+  <div id="story2-root">
+    <div class="article-with-comments-wrapper" id="protected-wrapper">
+      <p>This wrapper has a comments token in its class name but actually contains the main article text, which means the text-share guard must keep protecting it from the keyword rule despite the family match. Hiding it would blank the whole page for readers, the exact failure mode the share guard exists to prevent in production.</p>
+      <p>The long paragraph protection remains correct here because the block holds the majority of the article content, not a minority noise section like a comment thread or a promo letter appended after the body of the story.</p>
+    </div>
+    <p>Short trailing note outside the wrapper.</p>
+  </div>
+</body>
+</html>

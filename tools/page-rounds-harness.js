@@ -446,7 +446,27 @@ async function setZoom(page, z) {
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   await sleep(300);
-  await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'dark' });
+  // 第五輪調校：每頁截圖前重驗 theme 還在（cnbc 實證 SPA 捲動 re-render 把
+  // dark 弄掉、page-02 起拍成亮色而 audit 全綠——E 層實際只驗到第一屏）。
+  // 掉了就重套並記 reasserts，audit.json 留痕。
+  audit.theme.dark.reasserts = 0;
+  const darkBg = audit.theme.dark.after;
+  await audits.takePagedScreenshots(page, {
+    dir: outDir, prefix: 'dark',
+    ensure: audit.theme.dark.applied ? (async () => {
+      const bg = await page.evaluate(() => {
+        const art = document.querySelector('[data-jread-active="1"]');
+        return art ? getComputedStyle(art).backgroundColor : null;
+      });
+      if (bg && darkBg && bg !== darkBg) {
+        audit.theme.dark.reasserts++;
+        await audits.setThemeAndVerify(page, 'dark', 2500);
+      }
+    }) : undefined
+  });
+  if (audit.theme.dark.reasserts > 0) {
+    console.log(`  ⚠️  dark theme 在分頁截圖期間掉了 ${audit.theme.dark.reasserts} 次，已重套（SPA re-render 競態）`);
+  }
 
   // 暗色 contrast audit（v0.8.39 新增——對比 bug 常只在 dark 重現，tymscar
   // 教訓；dark theme 沒套上時跳過，量到的會是亮色數據沒意義）

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  billboard / article-list keyword token 最小重現（v0.8.48 page rounds 第五輪
+  dev.to C4 + theregister C2）。
+  - dev.to：文末 Promoted billboard（DIV.body-billboard-container > DIV.crayons-bb
+    含廣告圖 + 長文案 p）。billboard 是業界廣告位慣例命名；廣告文案 100+ chars
+    會觸發長 p guard，token 必須 strong。
+  - theregister：「MORE CONTEXT」相關文章列（DIV.articleList 含 H2 + UL 連結），
+    article[-_]?list 命中（內無長 p、普通 path 即可）。
+-->
+<html>
+<body>
+  <article id="story">
+    <h1>Microsoft lets users exile floating Copilot button</h1>
+    <p>Microsoft has made Copilot a little less in-your-face with the option to banish the assistant's floating action button to the toolbar. The change, rolling out this week, comes after howls of outrage from customers over the decision to drop a Copilot button onto user workspaces without asking anyone first.</p>
+    <p>Although the desire to get users clicking on the assistant is understandable, obscuring content in productivity applications was perhaps not the best way to do it. Forums show plenty of frustration with the floating button, and redesigns and interface tweaks will always generate strong feelings from users.</p>
+    <!-- dev.to 場景：billboard 廣告塊（長文案 p 觸發長 p guard → 須 strong）-->
+    <div class="below-post-bb body-billboard-container" id="billboard">
+      <div class="crayons-card crayons-bb js-billboard body-billboard">
+        <span class="crayons-bb__indicator">Promoted</span>
+        <img class="crayons-bb__image" src="ad.png" alt="">
+        <a href="https://example.org/ad">Build fast on a managed database without the fear of outgrowing.</a>
+        <p>Don't let your database dictate your speed. With this managed document database, the same model you use for your MVP handles global scale across all major cloud providers. Start free and stay fast as you grow your product.</p>
+      </div>
+    </div>
+    <!-- theregister 場景：相關文章列 articleList -->
+    <div class="lab4 column articleList layout_vertical" id="article-list">
+      <div class="content">
+        <h2 class="article-list-title">MORE CONTEXT</h2>
+        <ul>
+          <li><a href="https://example.org/a1">Execs struggle to find the AI productivity boom</a></li>
+          <li><a href="https://example.org/a2">Microsoft makes Copilot easier to summon</a></li>
+          <li><a href="https://example.org/a3">Windows irks a cesspool but it wants to do better</a></li>
+        </ul>
+      </div>
+    </div>
+    <p>A new option has been added to the menu: move to ribbon. Click it and Copilot is banished to the ribbon, which does exactly that, although it can be moved back if a user happens to miss that particular design decision after trying the new layout.</p>
+  </article>
+</body>
+</html>

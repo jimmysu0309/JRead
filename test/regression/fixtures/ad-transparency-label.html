@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!--
+  vocus.cc「為什麼會看到廣告❓」ad-transparency label 最小重現
+  （v0.8.48 page rounds 第五輪 C4）。
+  真實結構：廣告本體已被清，hash class SPAN（sc-31aea9cb-1）只剩
+  「為什麼會看到廣告」label 殘留在第一、二段之間。class 無語意，僅 direct
+  text 可辨識——NOISE_INLINE_AD_TEXT_RE 新增 alternation 命中。
+  控制組：主文段落「提到」廣告字樣（非開頭句式 / 超長）不可誤殺。
+-->
+<html>
+<body>
+  <article id="story" class="editor-content-block">
+    <h1>《Surrender：40 首歌，一個故事》</h1>
+    <p>忘記從哪裡得知這本回憶錄的，大概是某個深夜的播客節目。波諾用四十首歌串起人生四十個階段，從都柏林少年到世界舞台，每一章都以一首歌為題，寫法相當別緻，讀起來像聽一張慢慢展開的專輯。</p>
+    <div class="sc-e45c49f0-1 iNaeGM">
+      <span class="sc-31aea9cb-1 fDDlcg" id="transparency-label">為什麼會看到廣告</span>
+    </div>
+    <p>波諾深知，如果再回憶錄只是平鋪直敘地羅列巡演與獎項，那就太無聊了。他選擇了最誠實的途徑：把自己的一生拆解、打碎，重新放入四十首歌的脈絡之中，每一段都帶著音樂的迴聲，也帶著愛爾蘭人特有的自嘲。</p>
+    <!-- 控制組：主文段落含「廣告」字樣但非 label 句式 -->
+    <p id="legit-para">他也談到樂團早年為什麼會看到廣告與商業的界線如此模糊：八〇年代的音樂產業裡，授權一首歌給廣告幾乎等於背叛，但時代變了，串流時代的歌手得學會與商業共存。</p>
+  </article>
+</body>
+</html>
