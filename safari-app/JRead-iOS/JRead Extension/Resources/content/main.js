@@ -213,6 +213,14 @@
     window.addEventListener('keydown', onEscKey, true);
     syncPagedModeFromSettings(settings);
     syncSpaceScrollFromSettings(settings);
+    // v0.8.40：閱讀位置記憶——回復上次位置 + 開始追蹤。必須在 syncPagedMode
+    // 之後（翻頁模組已 install、頁數已算好才能 goToPage）、installKeyguard
+    // 之前（模組的 keydown listener 要先於 keyguard 收到翻頁鍵——keyguard 對
+    // 非 ESC 鍵 stopImmediatePropagation）。urlKey 用 spaRouteKey（與 SPA
+    // 導航偵測同一份 key 語意：錨點 hash 不分流、hash-router 分流）。
+    if (NS.positionMemory) {
+      NS.positionMemory.beginSession(spaRouteKey(location.href), settings, container);
+    }
     if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
     } else {
@@ -376,6 +384,10 @@
   }
 
   function exitReaderModeImpl() {
+    // v0.8.40：先 flush 閱讀位置記憶——必須在 pagedMode.uninstall（頁碼歸零）
+    // 與 styler.restore（捲動位置還原成原站排版）之前，位置此刻才有效。
+    // 未開始 session（cinema / 停用 / enter 失敗 rollback）時 no-op。
+    if (NS.positionMemory) NS.positionMemory.endSession();
     // v0.7.101：移除 ESC keydown listener（避免 reader mode 關閉後 ESC 仍被攔）
     window.removeEventListener('keydown', onEscKey, true);
     // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
@@ -1021,6 +1033,11 @@
       // 不走 styler reapply（避免捲動→翻頁閃爍）。翻頁模式未啟動時無感。
       if ('showPageNumber' in changes && NS.pagedMode) {
         NS.pagedMode.setShowIndicator(changes.showPageNumber.newValue !== false);
+      }
+      // v0.8.40：閱讀位置記憶效期即時切換——改成 0 停止當前追蹤；0 → 正值
+      // 下次進入閱讀模式生效（當前 session 不回溯補追蹤）。
+      if ('positionMemoryDays' in changes && NS.positionMemory) {
+        NS.positionMemory.setDays(changes.positionMemoryDays.newValue);
       }
       // v0.7.143：cinema mode active 時不走 styler reapply 路徑（articleEl=null）
       if (NS.state.cinemaActive) return;

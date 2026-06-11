@@ -89,8 +89,13 @@
     { t: 'sponsored' }, { t: 'sponsor' }, { t: 'donation' }, { t: 'donate' },
     { t: 'call-to-action' }, { t: 'cta' }, { t: 'callout' },
     { t: 'related[-_]?(?:articles?|news|posts|stories|content)', strong: true },
+    // v0.8.44 eettaiwan 實測：CMS 也用名詞在前的反序命名（`post-related` /
+    // `article-related`），原 token 只涵蓋 `related-posts` 順序 → 漏網。
+    { t: '(?:posts?|articles?|news|stor(?:y|ies))[-_]related', strong: true },
     { t: 'more[-_]?(?:news|stories|posts|articles?)', strong: true },
-    { t: 'hash[-_]?tag' }, { t: 'tag[-_]?list' },
+    // v0.8.44：`tags-list`（複數）變體——eettaiwan 文末 tag 列 class 用複數，
+    // 原 `tag[-_]?list` 不命中（`tag` 後接 `s` 非邊界）。
+    { t: 'hash[-_]?tag' }, { t: 'tags?[-_]?list' },
     { t: 'premium[-_]?(?:widget|content|trial|banner|box)' },
     { t: 'next-article', strong: true }, { t: 'latest-posts', strong: true },
     { t: 'mostread', strong: true }, { t: 'most-read', strong: true },
@@ -190,7 +195,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|在.{0,6}(Google|谷歌).{0,6}(新聞|News).{0,6}(關注|追蹤)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -2456,6 +2461,8 @@
   //   （rect.width > 0 或者 dataset.jreadHidden="1"）
   // - 保留 container 原 inline display / grid-template 讓 restore 還原
   const COLLAPSE_ATTR = 'data-jread-collapsed';
+  // collapse child reset 跳過的 replaced element（/i：SVG tagName 保留原小寫 case）
+  const COLLAPSE_REPLACED_TAG_RE = /^(?:IMG|SVG|VIDEO|AUDIO|PICTURE|CANVAS|IFRAME|EMBED|OBJECT)$/i;
 
   function collapseGridWithHiddenCell(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
@@ -2697,6 +2704,13 @@
       };
       for (const c of visibleChildren) {
         if (!c.style) continue;
+        // replaced element（img / svg / video…）跳過 child reset——這組 reset
+        // 的對象是 Bootstrap col-* 類「layout 欄位」children，replaced element
+        // 不可能是欄位；而且 `width: auto !important` 會清掉原站給 icon 圖的
+        // stylesheet 寬度，viewBox-only SVG 的 `<img>`（無內在尺寸）依 CSS
+        // spec 退回撐滿 containing block（eettaiwan content-footer 的
+        // tags.svg 18px → 603px 巨型 icon 實測）。
+        if (COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
         collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, CHILD_PROPS) });
         writes.push({ el: c, decls: CHILD_DECLS });
       }
@@ -2925,6 +2939,12 @@
       for (const c of visibleChildren) {
         if (!c.style) continue;
         directChildrenSet.add(c);
+        // replaced element 跳過 child reset（理由同 collapseGridWithHiddenCell
+        // 的 CHILD_DECLS skip）：width:auto !important 清掉原站 icon 寬度後，
+        // viewBox-only SVG `<img>` 無內在尺寸、依 CSS spec 撐滿 containing
+        // block（eettaiwan content-footer tags.svg 18px → 603px 實測——
+        // tag 連結 wrap 多行觸發本條、不是 hidden-cell 那條）。
+        if (COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
         resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
         applyImportant(c, INNER_FLEX_CHILD_DECLS);
       }
@@ -3045,6 +3065,17 @@
 
   // 子孫是否含「未被 hide 的真實內容媒體」——img 走 imgIsContentMedia（含
   // lazy 判定），其他媒體 tag（picture/video/iframe/svg/canvas）維持 rect 判定。
+  //
+  // v0.8.44 icon-size 豁免：已 layout 且 rendered rect ≤ 32×32 的 img / svg
+  // 視為裝飾 icon、不算內容媒體。場景：eettaiwan 文末 `.content-footer` 內
+  // tags icon（rendered 24×24）——tag 列被 keyword hide 後 wrapper 只剩 icon，
+  // 原判定把 icon 當內容媒體 → empty-wrapper collapse 被 guard 擋下、icon
+  // 孤兒殘留。注意不可用 naturalWidth 判 icon：viewBox-only SVG 的 `<img>`
+  // 無內在尺寸、natural 回 CSS 預設 150×150（eettaiwan tags.svg 實測），
+  // rendered rect 才反映真實視覺尺寸。rect 0×0（未載入 / 未 layout）不走
+  // 此豁免、留給 imgIsContentMedia 的 lazy 判定兜底（巴哈姆特 lazysizes 坑）。
+  // 32px 閾值與 imgIsContentMedia「natural > 32 排除 tracking pixel」同源。
+  const ICON_MEDIA_MAX = 32;
   function hasUnhiddenContentMedia(el) {
     for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
       let cur = m, inHidden = false;
@@ -3053,7 +3084,14 @@
         cur = cur.parentElement;
       }
       if (inHidden) continue;
-      if (m.tagName === 'IMG') { if (imgIsContentMedia(m)) return true; continue; }
+      // SVG tagName 保留原 case（'svg'），比較前 toUpperCase
+      const tagUp = m.tagName.toUpperCase();
+      if (tagUp === 'IMG' || tagUp === 'SVG') {
+        const ir = m.getBoundingClientRect();
+        if (ir.width > 0 && ir.height > 0 &&
+            ir.width <= ICON_MEDIA_MAX && ir.height <= ICON_MEDIA_MAX) continue;
+      }
+      if (tagUp === 'IMG') { if (imgIsContentMedia(m)) return true; continue; }
       const mr = m.getBoundingClientRect();
       if (mr.height > 5 && mr.width > 5) return true;
     }
@@ -3585,6 +3623,71 @@
       // / 動態 path 單一資料源）。
       if (anchorIsContentImageLink(a)) continue;
       hide(a, hidden);
+    }
+  }
+
+  // ---- 主文內：標題區（header zone）裝飾 icon -----------------------------
+  // 通則（Jimmy 2026-06-11）：標題下方除了必要的作者及日期文字，不該出現
+  // icon。結構定義：article 開頭到「第一個內容區塊」（首個長文字段落、或
+  // 第一張內容尺寸媒體）之間是 header zone——標題 / byline / 日期 / 分類
+  // meta 的家。這個區域裡 icon 尺寸（rect <= 32px 見方）的 img / svg 都是
+  // 裝飾性 meta icon（時鐘、人像、書籤、分隔點；eettaiwan
+  // detail-timeicon / detail-usericon 實測 18×18）——資訊已由旁邊的日期 /
+  // 作者文字承載，icon 零貢獻，且 reader 排版下常因 inline 基線對不齊而
+  // 突兀。
+  // 通則邊界（避免誤殺）：
+  //   - heading（h1-h6）內的小圖不動——標題內 emoji 是內容（Twemoji 慣例）
+  //   - preserved（figure / figcaption / blockquote / summary）內不動
+  //   - rect 0×0（lazy 未載 / 已隱藏）不動——尺寸無法判定，寧可漏不誤殺
+  //   - zone 終點找不到（無長段落也無內容圖的退化頁）→ 整條 no-op
+  //   - zone 之後（內文區）完全不掃——內文 inline emoji / 小圖是內容
+  const HEADER_ZONE_ICON_MAX = 32;     // icon 尺寸判定上限（px）
+  const HEADER_ZONE_TEXT_MIN = 60;     // 「長文字段落」門檻（chars）
+  const HEADER_ZONE_MEDIA_MIN_W = 200; // 「內容尺寸媒體」門檻（px）
+  const HEADER_ZONE_MEDIA_MIN_H = 100;
+
+  function hideHeaderZoneDecorativeIcons(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    // 1) 找 header zone 終點：document order 第一個長文字 block 或內容尺寸媒體
+    let zoneEnd = null;
+    for (const el of _getArticleAllElements(articleEl)) {
+      const tag = el.tagName;
+      if (tag === 'P' || tag === 'LI' || tag === 'BLOCKQUOTE' || tag === 'PRE') {
+        let t = '';
+        try { t = (el.textContent || '').trim(); } catch (_) { continue; }
+        if (t.length < HEADER_ZONE_TEXT_MIN) continue;
+        // 隱藏元素不可當 zone 終點（cleaner 已清的摘要 / 站方 display:none
+        // teaser），否則 zone 提早結束、byline icon 漏掃。computed 讀取只在
+        // 長度過門檻的少數候選上做，無全頁掃描成本
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        let cs;
+        try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+        if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) continue;
+        zoneEnd = el; break;
+      } else if (tag === 'IMG' || tag === 'VIDEO') {
+        let r;
+        try { r = el.getBoundingClientRect(); } catch (_) { continue; }
+        if (r && r.width >= HEADER_ZONE_MEDIA_MIN_W &&
+            r.height >= HEADER_ZONE_MEDIA_MIN_H) { zoneEnd = el; break; }
+      }
+    }
+    if (!zoneEnd) return;
+    // 2) zone 內 icon 尺寸的 img / svg → hide。querySelectorAll 是 document
+    //    order，掃到 zoneEnd 本身（compareDocumentPosition 回 0）、zoneEnd 內部
+    //    （CONTAINS）、或 zoneEnd 之後（PRECEDING）時 FOLLOWING bit 都不成立
+    //    → break 離開 header zone。
+    for (const el of articleEl.querySelectorAll('img, svg')) {
+      let pos;
+      try { pos = el.compareDocumentPosition(zoneEnd); } catch (_) { continue; }
+      if (!(pos & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      if (el.closest && el.closest('h1, h2, h3, h4, h5, h6')) continue;
+      let r;
+      try { r = el.getBoundingClientRect(); } catch (_) { continue; }
+      if (!r || r.width <= 0 || r.height <= 0) continue;
+      if (r.width > HEADER_ZONE_ICON_MAX || r.height > HEADER_ZONE_ICON_MAX) continue;
+      hide(el, hidden);
     }
   }
 
@@ -4273,6 +4376,9 @@
       safeRun(hideInsideArticleAllButtons, articleEl, hidden);
       safeRun(hideInsideArticleJsLinks, articleEl, hidden);
       safeRun(hideInsideArticleIconOnlyLinks, articleEl, hidden);
+      // header zone 裝飾 icon：須在 collapse 類規則（會 mutate layout）之前跑，
+      // icon rect 量測才反映原站尺寸
+      safeRun(hideHeaderZoneDecorativeIcons, articleEl, hidden);
       safeRun(hideInsideArticleActionRows, articleEl, hidden, containers);
       safeRun(hideInsideArticleButtonClusters, articleEl, hidden, containers);
       safeRun(hideInsideArticleHorizontalRules, articleEl, hidden);

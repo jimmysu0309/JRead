@@ -93,16 +93,20 @@
     return textLen < 100;
   }
 
-  function collectBlocks() {
-    if (!articleEl || !articleEl.isConnected) return [];
+  // v0.8.40：root 參數讓 position-memory（閱讀位置記憶）共用同一份段落收集
+  // 規則（單一資料源——li 單位 / 圖庫拆圖 / 裸文字 block 等規則不雙實作）。
+  // 不傳 root 時用模組自己的 articleEl（既有呼叫端行為不變）。
+  function collectBlocks(rootEl) {
+    const root = rootEl || articleEl;
+    if (!root || !root.isConnected) return [];
     const blocks = [];
     // 一般 block 單位
-    for (const el of articleEl.querySelectorAll(BLOCK_SEL)) {
+    for (const el of root.querySelectorAll(BLOCK_SEL)) {
       // cleaner 隱藏的節點（含祖先被 hide）不收
       if (el.closest('[data-jread-hidden="1"]')) continue;
       // 巢狀 block 取最外層（blockquote > p / figure > table 等只收外層）
       const outer = el.parentElement && el.parentElement.closest(BLOCK_SEL);
-      if (outer && articleEl.contains(outer)) continue;
+      if (outer && root.contains(outer)) continue;
       // 不可見 / 空段落（display:none rect 為 0）
       const r = el.getBoundingClientRect();
       if (r.height < 4) continue;
@@ -121,7 +125,7 @@
     //   - 不含另一個文字候選（保留 leaf-most、避免大 wrapper 吃掉整篇變單一單位）
     //   - 祖先不是已收 block（巢狀於 figure/blockquote/已收文字 block 內 → 跳）
     const textCandidates = [];
-    for (const el of articleEl.querySelectorAll('div, font, section, td')) {
+    for (const el of root.querySelectorAll('div, font, section, td')) {
       if (el.closest('[data-jread-hidden="1"]')) continue;
       let directLen = 0;
       for (const n of el.childNodes) if (n.nodeType === 3) directLen += n.textContent.trim().length;
@@ -141,12 +145,12 @@
     // （圖庫容器在上面被 isMediaGallery 排除、不在 blocks 內 → 其圖片落到
     // 這裡逐張收；單圖 figure / 文字段落已是單位 → 其內圖片被覆蓋、不重複收。
     // 此規則保證任何內容圖都恰好屬於一個焦點單位、永不漏失）
-    for (const m of articleEl.querySelectorAll('img, video')) {
+    for (const m of root.querySelectorAll('img, video')) {
       if (m.closest('[data-jread-hidden="1"]')) continue;
       if (m.getBoundingClientRect().height < MEDIA_MIN_HEIGHT) continue;
       let covered = false;
       let p = m.parentElement;
-      while (p && p !== articleEl) {
+      while (p && p !== root) {
         if (blocks.indexOf(p) !== -1) { covered = true; break; }
         p = p.parentElement;
       }
@@ -375,9 +379,40 @@
     }
   }
 
+  // v0.8.40：閱讀位置記憶（position-memory.js）共用 API——
+  //   getBlocks(el)：對指定容器跑 collectBlocks（段落收集規則單一資料源）
+  //   currentAnchor(el)：「目前閱讀段落」最佳估計——焦點段落還在 viewport 內
+  //     就用它（Space 閱讀的真實位置）；不在（手動捲遠 / 模組未啟用）退
+  //     viewport 內第一個段落（與 advance 的 re-anchor 同準則）。回
+  //     { el, index }（index 對應 getBlocks 同一份清單）或 null。
+  //   anchorTo(block)：回復位置後把指示條移到該段（未 install 時 no-op——
+  //     spaceScrollRatio = 0 停用時沒有指示條可移）。
+  function currentAnchor(el) {
+    const blocks = collectBlocks(el);
+    if (!blocks.length) return null;
+    let target = null;
+    if (focusedBlock && focusedBlock.isConnected && blocks.indexOf(focusedBlock) !== -1) {
+      const r = focusedBlock.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < window.innerHeight) target = focusedBlock;
+    }
+    if (!target) target = firstVisibleBlock(blocks);
+    if (!target) return null;
+    const index = blocks.indexOf(target);
+    if (index === -1) return null;
+    return { el: target, index };
+  }
+
+  function anchorTo(block) {
+    if (!installed || !block || !block.isConnected) return;
+    setFocus(block);
+  }
+
   NS.spaceScroll = {
     sync,
     uninstall,
-    isInstalled: () => installed
+    isInstalled: () => installed,
+    getBlocks: collectBlocks,
+    currentAnchor,
+    anchorTo
   };
 })();

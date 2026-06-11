@@ -563,6 +563,20 @@
 
   function resetPosition() { lastRatio = 0; }
 
+  // v0.8.40：閱讀位置記憶（position-memory.js）共用 API。getPosition 在
+  // exitReaderMode 的 endSession flush 時讀（main.js 保證在 uninstall 之前
+  // ——uninstall 會把 idx 歸零）；goToPage 在 restore 時跳回儲存頁（無動畫，
+  // 進場直接落點）。goTo 內建 clamp + lastRatio 同步，後續 resize / lazy-load
+  // remeasure 的按比例回位自動接手。
+  function getPosition() {
+    if (!installed) return null;
+    return { idx, total: pageCount() };
+  }
+  function goToPage(n) {
+    if (!installed) return;
+    goTo(n, false);
+  }
+
   // v0.7.237：頁碼指示即時切換（popup showPageNumber toggle）。純顯示層——
   // 只增/移除指示器、不重建 multicol layout（避免 full styler reapply 的
   // 捲動→翻頁閃爍）。installed 時才 reconcile（未裝時只更新旗標，下次 install 生效）。
@@ -603,6 +617,8 @@
     resetPosition,
     setShowIndicator,
     captureScrollY,
+    getPosition,
+    goToPage,
     isInstalled: () => installed,
     SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD,
     INDICATOR_ID, PROGRESS_ID
