@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>走出機殼—AC/DC 電源外接是趨勢還是權衡？ - 電子工程專輯</title>
+</head>
+<body>
+<!--
+  最小重現：eettaiwan（aspencoreasia WordPress theme）兩條 icon 雜訊
+  1) header zone（標題與首段之間的 byline）裝飾 icon：detail-timeicon /
+     detail-usericon 18×18 svg，日期 / 作者文字旁的純裝飾
+  2) collapseGridWithHiddenCell 對 flex container 的 visible children 一律
+     強制 width:auto !important——content-footer（flex）內的 tags.svg `<img>`
+     被清掉 stylesheet 寬度後，viewBox-only SVG 無內在尺寸、撐滿容器變
+     603×603 巨型 icon。replaced element 必須跳過 child reset。
+  rect 由 spec stub（jsdom 無 layout engine）。
+-->
+<article>
+  <div class="title-header">
+    <h1 class="title-p">走出機殼—AC/DC 電源外接是趨勢還是權衡？<img class="title-emoji" src="emoji-plug.png" alt="🔌"></h1>
+  </div>
+  <div class="detail">
+    <div class="detail-list">
+      <img class="detail-timeicon" src="time.svg" alt="">
+      <span class="detail-time">2026-06-05</span>
+    </div>
+    <div class="detail-list detail-lists">
+      <img class="detail-usericon" src="user.svg" alt="">
+      <span class="detail-user">作者 Bill Schweber，EE Times 技術網站管理員</span>
+    </div>
+  </div>
+  <div class="content-textbox">
+    <p>FIRST_LONG_PARAGRAPH_MARK 近年來，在小型系統中，交流轉直流電源轉換器的配置方式正出現微妙的變化：越來越多設計人員不再將電源轉換器設置在終端產品的機殼內，而是將這項關鍵功能移至獨立的外接模組。</p>
+    <p>筆者不太願意僅憑這些零散觀察就直接將其視為一項新趨勢，但或許它確實正在發生中。電源轉換過程產生的熱能在外部模組中耗散，不會對產品本體造成熱負擔，使氣流設計、熱點控制與整體散熱規劃更為容易。內文裡的 inline emoji <img class="content-emoji" src="emoji-smile.png" alt="🙂"> 是內容的一部分，不可誤殺。</p>
+    <p>外接電源有助於縮小產品體積並降低成本，不僅主機設計更精簡，提升外觀吸引力，也可降低機殼材料與運輸成本。氮化鎵元件與通用序列匯流排供電標準的普及，讓外接電源模組的功率密度大幅提升。</p>
+    <div class="aggregation">
+      <div class="content-footer" style="display: flex; flex-direction: row;">
+        <div class="footer-promo" style="display: none;">促銷殘骸（原站 JS 隱藏的欄位）</div>
+        <img class="content-tags" src="tags.svg" alt="">
+        <div class="content-tag-links"><a href="/tag/acdc">AC-DC</a><a href="/tag/gan">GaN</a></div>
+      </div>
+      <!-- collapseInnerFlexWrap path：無 hidden child、children top 差 > 5px
+           （wrap 已啟動，rect 由 spec stub）。真實站 content-footer 走的是
+           這條（tag 連結 wrap 多行），img child 同樣不可被套 width:auto -->
+      <div class="wrap-footer" style="display: flex; flex-direction: row;">
+        <img class="wrap-tags-icon" src="tags.svg" alt="">
+        <div class="wrap-links-a"><a href="/tag/usbc">USB-C</a></div>
+        <div class="wrap-links-b"><a href="/tag/psu">電源供應器</a></div>
+      </div>
+      <!-- Google 新聞 follow CTA：「透過《Google 新聞》追蹤」語序不被舊
+           pattern（在...關注）命中的漏網 -->
+      <div class="google-jump-container">
+        <a href="https://news.google.com/search?q=test"><p><img src="badge.png" alt="透過 《Google 新聞》 追蹤 EE Times"><span>透過 《Google 新聞》 追蹤 EE Times</span></p></a>
+      </div>
+    </div>
+  </div>
+</article>
+</body>
+</html>
