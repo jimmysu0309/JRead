@@ -192,10 +192,32 @@
     NS.state.confidence = 1;
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
-    safeSendMessage({
-      type: NS.MSG.REPORT_DETECTION_RESULT,
-      payload: { ok: true, confidence: 1, strategy: 'youtube-cinema' }
-    });
+    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    return true;
+  }
+
+  // v0.8.37：三條 enter 路徑（generic / x-thread / fb-post）的共用收尾。
+  // 歷史上三段 ~80% 重複且實際 drift 過（silent flag 只有 generic path 尊重、
+  // v0.8.36 才補齊——同一份事實三實作的典型代價）。差異點只剩「容器怎麼來、
+  // cleaner 跑不跑」，由各 caller 設定 state 後呼叫本函式統一收尾。
+  // 順序不變（v0.7.233 定案）：captureScrollY（styler 注入 overflow hidden 前
+  // 捕捉卷動位置）→ styler.apply → active → ESC listener（remove+add 防重複）
+  // → syncPagedMode → syncSpaceScroll（依 pagedMode installed 讓位）→
+  // keyguard（依 settings.blockPageShortcuts；註冊順序在 onEscKey 之後，同
+  // 階段 listener 按註冊順序執行、ESC 先給 onEscKey）→ SET_ACTIVE_ICON。
+  function finalizeEnter(container, settings) {
+    if (NS.pagedMode) NS.pagedMode.captureScrollY();
+    NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
+    NS.state.active = true;
+    window.removeEventListener('keydown', onEscKey, true);
+    window.addEventListener('keydown', onEscKey, true);
+    syncPagedModeFromSettings(settings);
+    syncSpaceScrollFromSettings(settings);
+    if (!settings || settings.blockPageShortcuts !== false) {
+      installKeyguard();
+    } else {
+      uninstallKeyguard();
+    }
     safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
     return true;
   }
@@ -205,15 +227,14 @@
   // data-jread-x-reader>`，後續 cleaner / styler / Readwise / keyguard / ESC
   // 流程都對這個合成容器跑——所以這分支只是「在跑 cleaner/styler 之前先建容器」，
   // 退出時除了走 styler.restore / cleaner.restore 之外多 remove 合成容器。
-  async function enterXThreadMode() {
+  async function enterXThreadMode(opts) {
+    // v0.8.36：尊重 silent flag（v0.7.155 漏網——x.com 是 SPA，路由變化
+    // silent 重進在容器偵測失敗時不該彈錯誤 toast）
+    const silent = !!(opts && opts.silent);
     if (!NS.xThread) return false;
     const container = NS.xThread.enter();
     if (!container) {
-      showToast('此頁無法偵測主推文', 'error');
-      safeSendMessage({
-        type: NS.MSG.REPORT_DETECTION_RESULT,
-        payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
-      });
+      if (!silent) showToast('此頁無法偵測主推文', 'error');
       return false;
     }
     const settings = await getSettings();
@@ -223,43 +244,18 @@
     if (NS.xThread && typeof NS.xThread.injectAuthorHeaders === 'function') {
       NS.xThread.injectAuthorHeaders();
     }
-    // v0.7.233：styler 注入前捕捉卷動位置（pagedMode CSS 的 overflow hidden
-    // 會把 scrollY clamp 成 0）——與 enterReaderModeImpl 同款
-    if (NS.pagedMode) NS.pagedMode.captureScrollY();
-    NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
-    NS.state.active = true;
-
-    window.removeEventListener('keydown', onEscKey, true);
-    window.addEventListener('keydown', onEscKey, true);
-    // v0.7.233：翻頁模式同步——styler 依 settings.pagedMode 在所有路徑注入翻頁
-    // CSS，模組（頁碼指示 / 翻頁手勢鍵盤 / spaceScroll 讓位判定源）必須跟著
-    // 裝，否則合成容器路徑變成「視覺翻頁、模組沒裝」：段落指示條殘留（Jimmy
-    // 2026-06-07 iOS 回報）、頁碼不顯示、超過一頁翻不動。順序與
-    // enterReaderModeImpl 相同：pagedMode → spaceScroll → keyguard。
-    syncPagedModeFromSettings(settings);
-    // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
-    syncSpaceScrollFromSettings(settings);
-    // X 是 keyboard-shortcut-heavy 站（j/k 換推文、l 點讚、r reply 等），跟 reader
-    // mode 純閱讀完全衝突——install keyguard 攔截。
-    if (!settings || settings.blockPageShortcuts !== false) {
-      installKeyguard();
-    } else {
-      uninstallKeyguard();
-    }
-
-    safeSendMessage({
-      type: NS.MSG.REPORT_DETECTION_RESULT,
-      payload: { ok: true, confidence: 1, strategy: 'x-thread' }
-    });
-    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
-    return true;
+    // X 是 keyboard-shortcut-heavy 站（j/k 換推文、l 點讚、r reply 等），跟
+    // reader mode 純閱讀完全衝突——finalizeEnter 內的 keyguard 攔截。
+    return finalizeEnter(container, settings);
   }
 
   // v0.7.157：Facebook permalink post 走合成 reader 容器分支。fb-post.js 找
   // 到主貼文 wrapper 後 clone 進 `<article data-jread-fb-reader>` 注入 body
   // 開頭，後續 cleaner / styler 流程沿用。FB 跟 X 同樣 keyboard-shortcut-heavy
   // （j/k 換貼文等），install keyguard 攔截。
-  async function enterFbPostMode() {
+  async function enterFbPostMode(opts) {
+    // v0.8.36：尊重 silent flag（理由見 enterXThreadMode 同位置註解）
+    const silent = !!(opts && opts.silent);
     if (!NS.fbPost) return false;
     // v0.7.204 photo page：先點「查看更多」展開截斷文字，等 React re-render
     if (NS.fbPost.expandSeeMore && NS.fbPost.expandSeeMore()) {
@@ -267,11 +263,7 @@
     }
     const container = NS.fbPost.enter();
     if (!container) {
-      showToast('此頁無法偵測主貼文', 'error');
-      safeSendMessage({
-        type: NS.MSG.REPORT_DETECTION_RESULT,
-        payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
-      });
+      if (!silent) showToast('此頁無法偵測主貼文', 'error');
       return false;
     }
     const settings = await getSettings();
@@ -283,41 +275,21 @@
     // （probe 實證：cleaner 在 reader card 內把含「川普」1741 字 wrapper 標
     // data-jread-hidden=1）。
     NS.state.hiddenEls = [];
-    // v0.7.233：styler 注入前捕捉卷動位置——與 enterReaderModeImpl 同款
-    if (NS.pagedMode) NS.pagedMode.captureScrollY();
-    NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
-    NS.state.active = true;
-
-    window.removeEventListener('keydown', onEscKey, true);
-    window.addEventListener('keydown', onEscKey, true);
-    // v0.7.233：翻頁模式同步——理由見 enterXThreadMode 同位置註解
-    syncPagedModeFromSettings(settings);
-    // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
-    syncSpaceScrollFromSettings(settings);
-    if (!settings || settings.blockPageShortcuts !== false) {
-      installKeyguard();
-    } else {
-      uninstallKeyguard();
-    }
-
-    safeSendMessage({
-      type: NS.MSG.REPORT_DETECTION_RESULT,
-      payload: { ok: true, confidence: 1, strategy: 'fb-post' }
-    });
-    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
-    return true;
+    return finalizeEnter(container, settings);
   }
 
   // v0.7.143：in-flight guard 防快速雙擊快速鍵造成的 race。
   // enterReaderMode 是 async（有 await getSettings），中間時間窗若第二次 toggle
   // 進來會看到 NS.state.active 還是 false、再跑一次 enterReaderMode——
   // NS.state.hiddenEls + originalStyles 被第二輪 snapshot 蓋掉，第一輪 hide 的
-  // 元素永遠回不來。同樣 exit 也加 flag 防 enter→exit 中途再來一輪 enter。
+  // 元素永遠回不來。
+  // v0.8.37：移除 exitInFlight 死 guard——exitReaderModeImpl 全同步、flag 在
+  // 同一個 task 內 set→clear，沒有任何 async gap 能讓第二個呼叫觀察到 true
+  // （enterReaderMode 開頭的 `|| exitInFlight` 同理永 false）。
   let enterInFlight = false;
-  let exitInFlight = false;
 
   async function enterReaderMode(opts) {
-    if (enterInFlight || exitInFlight) return false;
+    if (enterInFlight) return false;
     enterInFlight = true;
     try {
       return await enterReaderModeImpl(opts);
@@ -331,25 +303,52 @@
     // 失敗彈「此頁無法偵測主文」反而干擾。手動 toggle / 快速鍵走 opts 預設 falsy
     // 路徑，行為不變。
     const silent = !!(opts && opts.silent);
-    const result = NS.detector && NS.detector.detect();
-    if (!result) {
+    // v0.8.36：detect() 會做 DOM mutation（shadow replica appendChild / inject
+    // H1），throw 時半套 artifacts 留在頁面（replica 是可見的文章複本）。包
+    // try/catch、失敗走 exitReaderModeImpl 清乾淨（該函式無 active guard、
+    // 對未設定的 state 各步驟都安全 no-op）。
+    let result;
+    try {
+      result = NS.detector && NS.detector.detect();
+    } catch (err) {
+      console.warn('[JRead] detector.detect() 失敗，清理半套 artifacts：', err);
+      try { exitReaderModeImpl(); } catch (_) { /* 清理失敗：console 已有訊號 */ }
       if (!silent) showToast('此頁無法偵測主文', 'error');
-      safeSendMessage({
-        type: NS.MSG.REPORT_DETECTION_RESULT,
-        payload: { ok: false, reason: 'NO_ARTICLE_FOUND' }
-      });
       return false;
     }
-    if (result.isYouTubeCinema) {
-      return enterCinemaMode();
+    if (!result) {
+      if (!silent) showToast('此頁無法偵測主文', 'error');
+      return false;
     }
-    if (result.isXThread) {
-      return await enterXThreadMode();
+    // v0.8.36：detect 成功後的 enter pipeline 整段包 try/catch。舊行為：cleaner
+    // / styler 中途 throw → NS.state.active 停在 false → exitReaderMode() 開頭
+    // 的 !active guard 直接 no-op——已 hide 的元素 / shadow replica / injected
+    // H1 全部永遠無法還原（使用者只能 reload）；rejection 沿 onMessage 的
+    // async IIFE 上傳，sendResponse 懸空。改成 catch 內走完整 exit 流程還原
+    // 半套狀態（exitReaderModeImpl 無 active guard，對部分設定的 state 安全）。
+    // v0.8.36：silent flag 同時傳進 x-thread / fb-post 分支（v0.7.155 漏網
+    // ——x.com 本身是 SPA，路由變化 silent 重進在偵測失敗時會彈錯誤 toast）。
+    try {
+      if (result.isYouTubeCinema) {
+        return enterCinemaMode();
+      }
+      if (result.isXThread) {
+        return await enterXThreadMode(opts);
+      }
+      if (result.isFbPost) {
+        return await enterFbPostMode(opts);
+      }
+      return await enterGenericReaderMode(result, silent);
+    } catch (err) {
+      console.warn('[JRead] 進入閱讀模式失敗，還原半套狀態：', err);
+      try { exitReaderModeImpl(); } catch (_) { /* 還原失敗：console 已有訊號 */ }
+      if (!silent) showToast('此頁無法啟用閱讀模式', 'error');
+      return false;
     }
-    if (result.isFbPost) {
-      return await enterFbPostMode();
-    }
+  }
 
+  async function enterGenericReaderMode(result, silent) {
+    void silent; // generic path 目前無 toast；參數保留語意對齊三分支
     const settings = await getSettings();
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
@@ -367,49 +366,13 @@
     if (NS.detector && typeof NS.detector.markPromotedTitleIfMissing === 'function') {
       NS.detector.markPromotedTitleIfMissing(result.el);
     }
-    // v0.7.227：styler 注入前捕捉文件卷動位置——pagedMode CSS 的 overflow
-    // hidden 會把 scrollY clamp 成 0，退出翻頁模式時靠此值還原（模組內
-    // installed guard 防重複覆寫）。
-    if (NS.pagedMode) NS.pagedMode.captureScrollY();
-    NS.state.originalStyles = NS.styler ? NS.styler.apply(result.el, settings) : null;
-    NS.state.active = true;
-
-    // v0.7.101：install ESC listener（capture phase 比原站 bubble listener 早收到）
-    window.removeEventListener('keydown', onEscKey, true);
-    window.addEventListener('keydown', onEscKey, true);
-
-    // v0.7.227：翻頁模式——須在 syncSpaceScroll 之前（spaceScroll 依
-    // pagedMode installed 狀態決定讓位）、在 installKeyguard 之前註冊
-    syncPagedModeFromSettings(settings);
-
-    // v0.7.216：Space 段落焦點卷動——須在 installKeyguard 之前註冊（見 wrapper 註解）
-    syncSpaceScrollFromSettings(settings);
-
-    // v0.7.131：install keyguard（攔截原站快速鍵），依 settings.blockPageShortcuts。
-    // 註冊順序在 onEscKey 之後——同階段 listener 按註冊順序執行，ESC 先給 onEscKey 處理。
-    if (!settings || settings.blockPageShortcuts !== false) {
-      installKeyguard();
-    } else {
-      uninstallKeyguard();
-    }
-
-    safeSendMessage({
-      type: NS.MSG.REPORT_DETECTION_RESULT,
-      payload: { ok: true, confidence: result.confidence, strategy: result.strategy }
-    });
-    safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
-    return true;
+    const container = result.el;
+    return finalizeEnter(container, settings);
   }
 
   function exitReaderMode() {
     if (!NS.state.active) return;
-    if (exitInFlight) return;
-    exitInFlight = true;
-    try {
-      exitReaderModeImpl();
-    } finally {
-      exitInFlight = false;
-    }
+    exitReaderModeImpl();
   }
 
   function exitReaderModeImpl() {
@@ -471,6 +434,7 @@
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
     NS.state.originalStyles = null;
+    NS.state.confidence = 0; // v0.8.37：與 cinema exit 路徑對齊（原本只有 cinema 重置）
     safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
   }
 
@@ -851,7 +815,8 @@
     resetJsonLdCache(); // v0.8.18 C8：每輪 payload 抽取重新解析 JSON-LD
     const html = buildCleanHtml(NS.state.articleEl);
     const rawTitle = (document.title || '').trim();
-    const title = rawTitle.split(/\s+[|\-—–·]\s+/)[0].trim() || rawTitle;
+    // v0.8.37：站名尾綴切法收斂到 NS.stripSiteSuffix（單一資料源）
+    const title = NS.stripSiteSuffix(rawTitle) || rawTitle;
     const imageUrl = extractHeroImage(NS.state.articleEl);
     const author = extractAuthor();
     const publishedDate = extractPublishedDate();
@@ -1020,6 +985,12 @@
         if (!NS.state.articleEl || !NS.styler) return;
         NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
         const settings = await getSettings();
+        // v0.8.36：await 期間使用者可能已按 ESC 退出 / 切 cinema / SPA 導航
+        // 拆卡（exit 是同步的、不被 enterInFlight 擋）——此時 articleEl 已是
+        // null，繼續 apply 會注入無主 stylesheet 並在 inactive 狀態下覆寫
+        // originalStyles。await 之後必須重跑同一組 guard。
+        if (!NS.state.active || NS.state.cinemaActive) return;
+        if (!NS.state.articleEl || !NS.styler) return;
         // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
         // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
         if (NS.pagedMode) NS.pagedMode.captureScrollY();
@@ -1092,9 +1063,13 @@
       // Page Rounds 暗色模式驗收用。cage javascript_tool 跑在 main world，
       // 無法存取 chrome.storage.sync；透過 bridge 讓 isolated world 代寫。
       // 寫完後 onChanged listener 自動 scheduleReapply，不需額外觸發。
+      // v0.8.36 安全 hardening：改經 SW 中繼 + development install gate（與
+      // reload 同款防護）。舊版 content 直寫 storage.sync——任意網頁 JS 可
+      // dispatch 本 event 改寫使用者 theme（sync 會同步到所有裝置）。Store /
+      // 正式安裝一律拒絕；unpacked（Claude 自主 debug / cage）照常可用。
       const theme = e && e.detail && e.detail.theme;
       if (theme && ['light', 'dark', 'sepia'].includes(theme)) {
-        chrome.storage.sync.set({ theme });
+        safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SET_THEME, payload: { theme } });
       }
     } else if (type === 'translate') {
       // 觸發 Shinkansen 翻譯（跨 extension debug bridge）。
@@ -1112,7 +1087,7 @@
       // 該 API 僅 SW / popup / options page 可呼叫。改透過 sendMessage 給 SW
       // 中繼觸發 reload。
       if (NS.state.active) exitReaderMode();
-      safeSendMessage({ type: 'JREAD_RELOAD' });
+      safeSendMessage({ type: NS.MSG.JREAD_RELOAD });
     }
   });
 
@@ -1162,13 +1137,28 @@
   //      pushState 路由；800ms 輕量輪詢，成本可忽略）
   // 三者都收斂到 onRouteChange()，以 location.href 是否真的變化為準（去重：
   // title 因未讀數「(1) …」變動但 href 沒變則不誤判為導航）。
-  let _spaLastUrl = location.href;
+  // v0.8.35：路由比對 key 必須剝掉「錨點型 hash」——閱讀模式刻意保留 <a>（硬教訓
+  // 九），點文內註腳 / TOC 錨點（href="#fn1"）會讓 location.href 變化，舊版以完整
+  // href 比對 → 800ms 輪詢誤判為換頁 → 強制退出再 silent 重進，頁面閃回原站、
+  // 捲動位置全失。例外：hash-router SPA（`#/path`、`#!/path`）的 hash 是真路由，
+  // 保留進比對 key（剝掉會讓 hash-router 站換頁後 reader card 綁舊內容）。
+  // 判別是結構性的：錨點 fragment 不會以 `/` 或 `!` 開頭，router hash 慣例以
+  // `#/` 或 `#!` 開頭。
+  function spaRouteKey(href) {
+    const i = href.indexOf('#');
+    if (i === -1) return href;
+    const hash = href.slice(i);
+    if (hash.startsWith('#/') || hash.startsWith('#!')) return href; // hash-router
+    return href.slice(0, i); // 錨點型 hash：不算導航
+  }
+
+  let _spaLastUrl = spaRouteKey(location.href);
   let _spaReenterTimer = null;
   let _spaInstalled = false;
 
   function onSpaRouteChange() {
-    const url = location.href;
-    if (url === _spaLastUrl) return; // href 沒變 = 非真導航（title 雜訊變動等）
+    const url = spaRouteKey(location.href);
+    if (url === _spaLastUrl) return; // 路由 key 沒變 = 非真導航（title 雜訊 / 錨點跳轉等）
     _spaLastUrl = url;
     // 路由變化：reader card 綁的是舊路由 DOM，先同步退出
     const wasActive = NS.state.active && !NS.state.cinemaActive;

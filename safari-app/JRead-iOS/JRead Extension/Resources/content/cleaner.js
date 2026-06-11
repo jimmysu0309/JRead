@@ -762,7 +762,7 @@
     const anchors = el.querySelectorAll('a');
     if (anchors.length < 2) return false;
     for (const p of el.querySelectorAll('p')) {
-      if (norm(p.textContent).length >= 50) return false;
+      if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) return false;
     }
     return true;
   }
@@ -794,7 +794,7 @@
   function hideInsideArticleDirectChildLinkBlocks(articleEl, hidden) {
     const ogMeta = document.querySelector('meta[property="og:title"]');
     const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
-    const docTitle = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const docTitle = normTitle(NS.stripSiteSuffix(document.title || ''));
     const canonical = ogText || docTitle;
     function containsCanonicalTitle(el) {
       if (!canonical || canonical.length < 5) return false;
@@ -817,7 +817,7 @@
       if (anchors.length < 5) continue;
       let hasLongP = false;
       for (const p of child.querySelectorAll('p')) {
-        if (norm(p.textContent).length >= 50) { hasLongP = true; break; }
+        if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
       hide(child, hidden);
@@ -965,6 +965,32 @@
     return false;
   }
 
+  // v0.8.36（B3）：title clone 的就地雜訊清理。兩條 promote path 把 clone 子樹
+  // 的 data-jread-hidden + inline display 全清（wrapper 從 hideAncestorSiblings
+  // 繼承的 hide 必須解除、標題才看得到），但這同時「復活」了 clone 內已被
+  // button / icon-link / keyword rule 清掉的雜訊——promote 跑在所有 hide rule
+  // 之後（clean() 末段）、dynamic observer 也在 promote 之後才建立，clone 不會
+  // 再被任何 rule 掃到，share button 群 / icon link 在 reader card 頂部復活。
+  // 修法：clone 內互動雜訊就地 inline none（不進 hidden list——整個 clone 在
+  // restore() 走 __titleClone path removeChild，無需個別還原）。豁免與主 rule
+  // 同源：媒體 button（buttonWrapsContentMedia）、內容圖連結
+  // （anchorIsContentImageLink）。
+  function sanitizeTitleClone(clone) {
+    if (!clone.querySelectorAll) return;
+    for (const el of clone.querySelectorAll('a, ' + INTERACTIVE_BTN_SEL)) {
+      if (el.tagName === 'A') {
+        // a：keyword 命中、或 icon-only（含 icon 載體且無文字）才清
+        const iconOnly = !!el.querySelector('img, svg') &&
+          (el.textContent || '').replace(/\s+/g, '').trim().length === 0;
+        if (!shouldHideByKeyword(el) && !iconOnly) continue;
+        if (anchorIsContentImageLink(el)) continue;
+      } else if (buttonWrapsContentMedia(el)) {
+        continue;
+      }
+      el.style.setProperty('display', 'none', 'important');
+    }
+  }
+
   // v0.7.141 eet-china 修法：站點若**無 <article> 標籤**且標題 <h1> 與內文
   // 容器（articleEl）是 <body> 的 sibling，detector ensureArticleContainsTitleH1
   // 算 LCA = <body> 被 guard reject 不 promote articleEl 含 h1（避免吞整頁）。
@@ -994,7 +1020,7 @@
     if (h1Text.length < 5) return;
     const og = document.querySelector('meta[property="og:title"]');
     const ogText = og && og.content ? normTitle(og.content) : '';
-    const docT = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const docT = normTitle(NS.stripSiteSuffix(document.title || ''));
     const baseTitle = ogText || docT;
     if (!baseTitle || baseTitle.length < 5) return;
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
@@ -1025,7 +1051,7 @@
     const clone = wrapper.cloneNode(true);
     clone.setAttribute('data-jread-title-clone', '1');
     // 清 inline display:none + data-jread-hidden（從已被 hideAncestorSiblings
-    // 處理過的原 wrapper 繼承來的）
+    // 處理過的原 wrapper 繼承來的），再就地清 clone 內雜訊（見 sanitizeTitleClone）
     if (clone.style) clone.style.removeProperty('display');
     if (clone.removeAttribute) clone.removeAttribute('data-jread-hidden');
     if (clone.querySelectorAll) {
@@ -1034,6 +1060,7 @@
         if (el.style) el.style.removeProperty('display');
       }
     }
+    sanitizeTitleClone(clone);
     articleEl.insertBefore(clone, articleEl.firstChild);
     // v0.7.143：clone 進 hidden array、走特殊 __titleClone path 在 restore() 時
     // removeChild（標準 hide() 走 inline display 還原，對 clone 不適用——要整個拿掉）。
@@ -1118,6 +1145,7 @@
           if (el.style) el.style.removeProperty('display');
         }
       }
+      sanitizeTitleClone(clone);
       articleEl.insertBefore(clone, articleEl.firstChild);
       if (Array.isArray(hidden)) {
         hidden.push({ el: clone, __titleClone: true });
@@ -1610,7 +1638,9 @@
       // Substack `div.main-menu` 含 h1#wordlogo（站名），H1 guard 誤保護
       // 導致站名在翻譯 extension 重建 DOM 後殘留。menu container 內的 H1
       // 是站點 branding、不是文章標題——strong keyword 語意足夠確定。
-      if (el.querySelector && el.querySelector('h1') && !shouldHideByStrongKeyword(el)) continue;
+      // v0.8.36：H1 guard + 主文 wrapper guard 收斂進 keywordWrapperIsProtected
+      // （與動態 checkDynamicNoise 單一資料源），語意逐字不變。
+      if (keywordWrapperIsProtected(el)) continue;
       // v0.7.83 修法：保護「含主文 anchor」的 wrapper——含 >= 100 chars 單一
       // p / 累計 p textLen >= 300 / 含 title-anchor element。場景：twz.com
       // 主文 wrapper class 為 `entry-content Article-bodyText paywall ...`，
@@ -1629,7 +1659,7 @@
       // subscribe-news-letter / recommended-article / premium-widget 等 widget
       // wrapper 內含 H3/H4.title 卻被誤當主文 wrapper 保護。twz paywall wrapper
       // 含 47 個長 p（命中 P-only guard）仍正確豁免——通則屬性不變。
-      if (!shouldHideByStrongKeyword(el) && wrapperContainsMainContentP(el)) continue;
+      // （此 guard 已併入上方 keywordWrapperIsProtected，註解保留紀錄修法脈絡）
       hide(el, hidden);
     }
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在
@@ -1650,19 +1680,13 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (!shouldHideByKeyword(el)) continue;
-      // <a> 含大尺寸圖片（hero / 插圖的可點擊 lightbox 版）跳過——class
-      // 如 "image-popup-vertical-fit" 含 "popup" keyword 但實際是 lightbox
-      // link 不是 UI popup。naturalWidth 對 lazy-load 為 0，fallback 檢查
-      // rendered 尺寸。
-      if (el.tagName === 'A') {
-        const img = el.querySelector('img');
-        if (img) {
-          const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
-          const rect = img.getBoundingClientRect();
-          const renOk = rect.width >= 200 && rect.height >= 100;
-          if (natOk || renOk) continue;
-        }
-      }
+      // <a> 含內容圖跳過——class 如 "image-popup-vertical-fit" 含 "popup"
+      // keyword 但實際是 lightbox link 不是 UI popup。
+      // v0.8.36：改用共用 anchorIsContentImageLink——順帶補上 v0.7.212 的
+      // href 圖檔判定 + lazy content src 豁免（原本只有 icon-only rule 有，
+      // 本 path 漏網：class 命中 keyword 且圖尚未 lazy-load 的 lightbox 連結
+      // 會被誤殺，圖載入後父 a 已 display:none——與巴哈姆特 bug 同型）。
+      if (el.tagName === 'A' && anchorIsContentImageLink(el)) continue;
       hide(el, hidden);
     }
   }
@@ -2022,7 +2046,7 @@
     // 連坐 hide 整段標題區。通則：跨站適用、不綁 substack hostname / class。
     const _ogMeta = document.querySelector('meta[property="og:title"]');
     const _ogText = _ogMeta && _ogMeta.content ? normTitle(_ogMeta.content) : '';
-    const _docTitle = normTitle((document.title || '').split(/[|｜\-—–]/)[0] || '');
+    const _docTitle = normTitle(NS.stripSiteSuffix(document.title || ''));
     const _canonicalTitle = _ogText || _docTitle;
     function siblingContainsCanonicalTitle(sib) {
       if (!_canonicalTitle || _canonicalTitle.length < 5) return false;
@@ -2038,7 +2062,12 @@
     const candidates = [articleEl, ...Array.from(containers).filter(c => c !== articleEl)];
     for (const el of candidates) {
       if (el !== articleEl && isInPreserved(el)) continue;
-      const children = Array.from(el.children);
+      // v0.8.36（B5）：排除已被前面 rule hide 的 child——display:none 的元素
+      // textContent 照樣有值，已 hide 的大型雜訊區（related-news 等，文字量
+      // 常數千 chars）會被誤選為 main、讓條件 A/C 的比例判定以雜訊為基準
+      // （誤殺真內容欄或漏判真 sidebar）。
+      const children = Array.from(el.children)
+        .filter(c => !(c.dataset && c.dataset.jreadHidden === '1'));
       if (children.length < 2) continue;
 
       const stats = children.map(c => {
@@ -2453,12 +2482,17 @@
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
         if (isInPreserved(el)) continue;
       }
+      // v0.8.38（perf）：children 檢查移到 getComputedStyle 之前——後者觸發
+      // style/layout resolve，巨頁（Wikipedia 級 4 萬+ 節點）多數元素是 leaf，
+      // 先用免費的 children.length 篩掉可省掉超過一半的 computed 讀取
+      // （本 rule 是 clean() 最重單一 rule，實測 116ms → 重排後見 CHANGELOG）。
+      // 語意完全等價：無 children 的元素在舊版也是 continue。
+      const children = Array.from(el.children);
+      if (children.length < 1) continue;
       const cs = window.getComputedStyle(el);
       const isGrid = cs.display === 'grid' || cs.display === 'inline-grid';
       const isFlexRow = (cs.display === 'flex' || cs.display === 'inline-flex') &&
         (cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse');
-      const children = Array.from(el.children);
-      if (children.length < 1) continue;
       // 分類 children：hidden vs visible；同時記下是否有 visible float child
       // （判斷是否為傳統 float 多欄 layout）
       let hasHiddenChild = false;
@@ -2851,13 +2885,15 @@
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
+      // v0.8.38（perf）：children 數檢查移到 getComputedStyle 之前（理由同
+      // collapseGridWithHiddenCell——免費篩掉 leaf，語意等價）
+      if (el.children.length < 2) continue;
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs) continue;
       if (cs.display !== 'flex' && cs.display !== 'inline-flex') continue;
       if (cs.flexDirection !== 'row' && cs.flexDirection !== 'row-reverse') continue;
       const children = Array.from(el.children);
-      if (children.length < 2) continue;
       const visibleChildren = [];
       const inFlowChildren = [];
       for (const c of children) {
@@ -3428,6 +3464,55 @@
     }
   }
 
+  // ---- 靜態 / 動態雙 path 共用 hide guard（v0.8.36，B2 修法）---------------
+  // 歷史教訓：靜態 rule 修過的主文保護（twz paywall wrapper / ebc article_header
+  // 的 H1 guard、Medium click-to-zoom 的媒體 button 豁免、巴哈姆特 lazy 圖的
+  // lightbox <a> 豁免）動態 checkDynamicNoise 一條都沒同步——Shinkansen 翻譯
+  // 每秒重建 wrapper / React reconciliation re-append 時，靜態 path 修掉的誤殺
+  // 在動態 path 原樣重現（同一份事實雙實作 drift，工作流原則 5）。抽成單一
+  // 資料源，靜態與動態兩 path 一律經過同一組 guard。
+
+  // interactive button 的 selector 單一資料源（原本四處手寫變體，drift 即 B2 根因之一）
+  const INTERACTIVE_BTN_SEL =
+    'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]';
+
+  // keyword 命中的 wrapper 在 hide 前的主文保護：
+  //   - 含 h1 的 wrapper 一律保留（v0.7.78 ebc article_header——CMS header
+  //     命名命中 keyword 但包主文 h1）
+  //   - 含主文長 p 的 wrapper 保留（v0.7.83/0.7.97 twz `entry-content ...
+  //     paywall`——CMS 用 paywall class 反向標「已解鎖內文」）
+  //   - strong keyword（menu / sidebar 等明確非主文結構）跳過兩道保護
+  function keywordWrapperIsProtected(el) {
+    if (shouldHideByStrongKeyword(el)) return false;
+    if (el.querySelector && el.querySelector('h1')) return true;
+    return wrapperContainsMainContentP(el);
+  }
+
+  // <a> 的「內容圖連結」豁免：lightbox / photoswipe / 看原圖。三道判定：
+  //   - href 指向圖片檔（v0.7.212：不依賴圖片載入與否，解 lazy timing bug）
+  //   - 內含已載入的大圖（natural / rendered 尺寸）
+  //   - 內含 lazy 內容圖（data-src / srcset 帶真實 URL、非 placeholder）
+  function anchorIsContentImageLink(a) {
+    const href = (a.getAttribute && a.getAttribute('href')) || '';
+    if (href && IMG_URL_RE.test(href)) return true;
+    const img = a.querySelector && a.querySelector('img');
+    if (!img) return false;
+    const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
+    const rect = img.getBoundingClientRect();
+    const renOk = rect.width >= 200 && rect.height >= 100;
+    const hasLazyContentSrc = LAZY_SRC_ATTRS.some(at => {
+      const v = img.getAttribute(at);
+      return v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v);
+    }) || !!(img.getAttribute('srcset') || img.getAttribute('data-srcset'));
+    return natOk || renOk || hasLazyContentSrc;
+  }
+
+  // button 的主文媒體豁免（v0.7.11 Medium click-to-zoom）：button 內含
+  // img/picture/video = 主文載體、非純 CTA，hide 掉連圖片都看不見
+  function buttonWrapsContentMedia(btn) {
+    return !!(btn.querySelector && btn.querySelector('img, picture, video'));
+  }
+
   // ---- 主文內：所有 interactive button 一律 hide --------------------------
   // Jimmy 2026-04-23 明確要求：reader mode 下不需要任何按鈕（分享 / 訂閱 /
   // 追蹤 / 讚 / 收藏 / 播放 / 展開 / 任何 CTA / 任何 interactive）。
@@ -3441,21 +3526,13 @@
   // 從不用 `<button>` 排版文字。極少數 code demo / interactive widget 會
   // 被誤殺，但 reader mode 本就不適合跑 interactive demo（應該回原站）。
   function hideInsideArticleAllButtons(articleEl, hidden) {
-    const sel = 'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]';
-    for (const btn of articleEl.querySelectorAll(sel)) {
+    for (const btn of articleEl.querySelectorAll(INTERACTIVE_BTN_SEL)) {
       if (btn === articleEl) continue;
       if (btn.contains && btn.contains(articleEl)) continue;
       if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
-      // 保護含主文媒體的 button wrapper（v0.7.11 Medium click-to-zoom 修法）：
-      // Medium 把主文 <picture>/<img> 嵌在 <div role="button" tabindex="0">
-      // 的 wrapper 裡、點擊看大圖（a11y 同時有 span「Press enter or click
-      // to view image in full size」）。btn 內含 img/picture/video 時保留
-      // 整個 wrapper——這是 v0.7.3「所有 button 無條件清」rule 的例外：
-      // button wrapper 雙重角色（click-to-zoom + 主文媒體容器），hide 掉
-      // 連圖片都看不見。通則依據：button 內含媒體元素 = 主文載體、非純
-      // CTA。share / subscribe / follow button 一般用 svg（不在保護範圍內）
-      // 或完全無圖、保留判定不影響。
-      if (btn.querySelector && btn.querySelector('img, picture, video')) continue;
+      // 媒體 button 豁免：見 buttonWrapsContentMedia（v0.7.11 Medium
+      // click-to-zoom 修法；v0.8.36 抽共用 guard 供動態 path 同步使用）
+      if (buttonWrapsContentMedia(btn)) continue;
       hide(btn, hidden);
     }
   }
@@ -3499,32 +3576,14 @@
       // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
       const text = (a.textContent || '').replace(/\s+/g, '').trim();
       if (text.length >= 1) continue;
-      // v0.7.212：跳過「href 指向圖片檔的 a」(lightbox / photoswipe /「看原圖」
-      // 連結慣例)——href 為 .jpg/.png/... 的 a 是內容圖檢視連結、非 icon/CTA。
-      // 此判定**不依賴圖片是否已載入**，解 timing bug：lazy 圖在 cleaner 於
-      // document_idle 跑時 naturalWidth=0、rect 0x0，被下方尺寸 guard 誤判
-      // icon-only 砍掉、之後圖載入但父 a 已 display:none → reader mode 整片
-      // 圖片消失（巴哈姆特 forum a.photoswipe-image href=".../xxx.JPG" 實測：
-      // 34 張內容圖被砍 31 張、只剩進閱讀模式前已載入的 3 張可見）。
-      const href = a.getAttribute('href') || '';
-      if (IMG_URL_RE.test(href)) continue;
-      // 跳過含大尺寸圖片的 a（hero / 插圖可點擊版，非 icon button）。
-      // naturalWidth/Height 對 lazy-load 圖片為 0（尚未載入），fallback
-      // 檢查 rendered 尺寸（CSS / HTML attribute 決定的佈局大小）。
-      const img = a.querySelector('img');
-      if (img) {
-        const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
-        const rect = img.getBoundingClientRect();
-        const renOk = rect.width >= 200 && rect.height >= 100;
-        // lazy content image：尚未載入時 naturalWidth / rect 皆 0、無法測量，
-        // 但 img 帶真實 data-src / srcset（非 placeholder / spacer）= 內容圖
-        // （相簿 / 插圖），非 icon——保留，避免 timing 早於圖片載入時誤殺。
-        const hasLazyContentSrc = LAZY_SRC_ATTRS.some(at => {
-          const v = img.getAttribute(at);
-          return v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v);
-        }) || !!(img.getAttribute('srcset') || img.getAttribute('data-srcset'));
-        if (natOk || renOk || hasLazyContentSrc) continue;
-      }
+      // v0.7.212：「href 指向圖片檔」+「大圖 / lazy 內容圖」豁免——lightbox /
+      // photoswipe /「看原圖」連結慣例。href 判定**不依賴圖片是否已載入**，解
+      // timing bug：lazy 圖在 cleaner 於 document_idle 跑時 naturalWidth=0、
+      // rect 0x0 會被誤判 icon-only 砍掉（巴哈姆特 forum a.photoswipe-image
+      // 實測：34 張內容圖被砍 31 張）。
+      // v0.8.36：三道判定收斂進共用 anchorIsContentImageLink（與 keyword path
+      // / 動態 path 單一資料源）。
+      if (anchorIsContentImageLink(a)) continue;
       hide(a, hidden);
     }
   }
@@ -3875,19 +3934,31 @@
   //   - 含 h2/h3/h4 文字命中 NOISE_HEADING_TEXT_RE（跨站 section 標題慣用語）
   function checkDynamicNoise(articleEl, node, hiddenList) {
     if (isInPreserved(node)) return;
-    // 雜訊 class/id 直接 hide 整個 node
+    // 雜訊 class/id 直接 hide 整個 node。
+    // v0.8.36（B2）：補上與靜態 hideInsideArticleByKeyword 同一組主文保護
+    // （keywordWrapperIsProtected：H1 guard + 主文 wrapper guard）——Shinkansen
+    // 翻譯重建 / React reconciliation 把 class 含 paywall/share 等 token 的
+    // 主文 wrapper re-append 時，舊版動態 path 零 guard 直接 hide 整篇主文。
+    // 被保護的 wrapper 不 return：落下去掃內部 button / a（與靜態行為一致——
+    // 靜態 path 的 wrapper 豁免後內部雜訊由 button / link rule 各自處理）。
     if (shouldHideByKeyword(node)) {
       if (node.dataset && node.dataset.jreadHidden === '1') return;
-      hide(node, hiddenList);
-      return;
+      if (!keywordWrapperIsProtected(node)) {
+        hide(node, hiddenList);
+        return;
+      }
     }
     // **所有** interactive button 一律 hide（Jimmy 要求：reader mode 下
     // 任何按鈕都不需要）。delayed lazy-inject 的按鈕走這條。
-    if (node.matches && node.matches(
-        'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]')) {
+    // v0.8.36（B2）：補媒體 button 豁免（與靜態 hideInsideArticleAllButtons
+    // 同源）——lazy 注入的 Medium click-to-zoom 圖片 wrapper（div role=button
+    // 包主文圖）舊版會連圖一起消失。
+    if (node.matches && node.matches(INTERACTIVE_BTN_SEL)) {
       if (node.dataset && node.dataset.jreadHidden === '1') return;
-      hide(node, hiddenList);
-      return;
+      if (!buttonWrapsContentMedia(node)) {
+        hide(node, hiddenList);
+        return;
+      }
     }
     // 遞迴檢查 node 內的 button / a / role=button——new node 可能是包了
     // 雜訊的 wrapper，其內部的 button/a 才帶 class keyword。udn LINE
@@ -3900,9 +3971,7 @@
     // role 派發。SPA 站 reader mode 期每秒數十次 mutation、每次 addedNode 跑
     // 多次 selector cost 累積。
     if (node.querySelectorAll) {
-      const allInteractive = node.querySelectorAll(
-        'a, button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]'
-      );
+      const allInteractive = node.querySelectorAll('a, ' + INTERACTIVE_BTN_SEL);
       for (const el of allInteractive) {
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
         // strict CTA（立即報名 等）：delayed lazy-inject 的活動 / 課程推廣
@@ -3912,14 +3981,17 @@
         if (NOISE_LINK_TEXT_STRICT_RE.test(norm(el.textContent))) {
           if (hideStrictCtaPromoBlock(el, articleEl, hiddenList)) continue;
         }
-        // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）
+        // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）。
+        // v0.8.36（B2）：補 lightbox / lazy 內容圖豁免（與靜態 keyword <a>
+        // path / icon-only rule 共用 anchorIsContentImageLink）。
         if (el.tagName === 'A') {
-          if (shouldHideByKeyword(el)) hide(el, hiddenList);
+          if (shouldHideByKeyword(el) && !anchorIsContentImageLink(el)) hide(el, hiddenList);
           continue;
         }
-        // button / role=button / input button 系列：無條件 hide
-        // （硬教訓九：reader mode 純閱讀下所有 interactive button 一律清）
-        hide(el, hiddenList);
+        // button / role=button / input button 系列：一律 hide
+        // （硬教訓九：reader mode 純閱讀下所有 interactive button 一律清）。
+        // v0.8.36（B2）：唯一例外 = 媒體 button（與靜態 rule 同源豁免）。
+        if (!buttonWrapsContentMedia(el)) hide(el, hiddenList);
       }
     }
     // heading text 命中：跟 hideInsideArticleByHeadingText 同邏輯
@@ -3931,7 +4003,10 @@
     const candidates = [];
     if (node.matches && node.matches(DYN_TITLE_TAG_SEL)) candidates.push(node);
     if (node.querySelectorAll) {
-      candidates.push(...node.querySelectorAll(DYN_TITLE_TAG_SEL));
+      // v0.8.36（B7）：不可用 spread——SPA hydration 一次 re-append 超大 root
+      // wrapper 時 NodeList 可達數萬，spread 進引數超過引擎上限丟 RangeError、
+      // 整個 MutationObserver callback 中斷、該批其他 addedNodes 漏處理。
+      for (const el of node.querySelectorAll(DYN_TITLE_TAG_SEL)) candidates.push(el);
     }
     for (const h of candidates) {
       const isHeading = /^H[234]$/.test(h.tagName);
@@ -4139,6 +4214,16 @@
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
       // v0.7.144：每次 clean() 重建 element cache（避免 SPA / 多 articleEl 場景共用 stale array）
       _cachedArticleAll = null;
+      // v0.8.36（T3）：per-rule 容錯。30+ 條 heuristic rule 的輸入是任意網站
+      // DOM，任一條丟例外的舊行為是整個 clean() 中斷——hidden 陣列不會回傳給
+      // caller、observers 沒啟動、已 hide 的元素沒有任何 handle 可 restore
+      // （使用者只能 reload 自救）。改成壞一條跳過、其餘照跑 + 保住 hidden
+      // handle。console.warn 保留訊號（不 silent 吞，debug 時看得到哪條壞）。
+      const safeRun = (fn, ...args) => {
+        try { fn(...args); } catch (err) {
+          try { console.warn('[JRead] cleaner rule 失敗，跳過：', fn && fn.name, err); } catch (_) { /* noop */ }
+        }
+      };
       // v0.7.190：articleEl 若為 `display: contents`（MDN `<main class="layout__content">`），
       // 元素自己不產生 box → styler 的 reader card 樣式（白底、max-width、圓角、陰影）
       // 全部沒效果。用 inline !important 強制 block，確保 reader card 可見。
@@ -4161,92 +4246,92 @@
       // 分支——Stratechery WordPress block theme 的 h2.wp-block-post-title
       // 在此獲得保護、不被誤認 sibling chrome 清掉。
       if (opts && opts.promotedFrom && opts.promotedFrom !== articleEl) {
-        narrowPromotedSiblings(articleEl, opts.promotedFrom, hidden, opts.promotedTitleHead);
+        safeRun(narrowPromotedSiblings, articleEl, opts.promotedFrom, hidden, opts.promotedTitleHead);
       }
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
-      hideDialogs(articleEl, hidden);
-      hideOutsideArticleSemantic(articleEl, hidden);
-      hideFixedOutsideArticle(articleEl, hidden);
-      hideSocialShareClusters(articleEl, hidden);
+      safeRun(hideDialogs, articleEl, hidden);
+      safeRun(hideOutsideArticleSemantic, articleEl, hidden);
+      safeRun(hideFixedOutsideArticle, articleEl, hidden);
+      safeRun(hideSocialShareClusters, articleEl, hidden);
       // 5 條 CONTAINER_SEL 規則共用同一次掃描結果（v0.6.26 效能重構）——
       // 原本各 rule 獨立 querySelectorAll 5 次 article descendant，合併成 1 次。
       // 規則內仍有 `continue` 排除 & `if (dataset.jreadHidden === '1') continue;`
       // 共享 hidden 標記，等同前後鏈接。
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
-      hideInsideArticleByKeyword(articleEl, hidden, containers);
-      hideInsideArticleByThirdPartyAds(articleEl, hidden);
-      hideInsideArticleThirdPartyIframes(articleEl, hidden);
-      hideInsideArticleVideoInterludes(articleEl, hidden);
-      hideInsideArticleByHeadingText(articleEl, hidden);
-      hideInsideArticleByLinkText(articleEl, hidden);
-      hideInsideArticleHashtagClusters(articleEl, hidden);
-      hideInsideArticleAbsoluteCreditOverlays(articleEl, hidden);
-      hideInsideArticleByInlineAdText(articleEl, hidden);
-      hideInsideArticleCTAParagraphs(articleEl, hidden);
-      hideInsideArticleFontTags(articleEl, hidden);
-      hideInsideArticleCommentPanels(articleEl, hidden);
-      hideInsideArticleAllButtons(articleEl, hidden);
-      hideInsideArticleJsLinks(articleEl, hidden);
-      hideInsideArticleIconOnlyLinks(articleEl, hidden);
-      hideInsideArticleActionRows(articleEl, hidden, containers);
-      hideInsideArticleButtonClusters(articleEl, hidden, containers);
-      hideInsideArticleHorizontalRules(articleEl, hidden);
-      hideInsideArticleNav(articleEl, hidden);
-      hideInsideArticleFooter(articleEl, hidden);
-      hideInsideArticleDirectChildLinkBlocks(articleEl, hidden);
-      hideInsideArticleEmptySpacers(articleEl, hidden, containers);
-      hideInsideArticleSidebarColumns(articleEl, hidden, containers, opts && opts.promotedTitleHead);
-      hideInsideArticleAbsoluteOverlays(articleEl, hidden);
-      resetNegativeZIndex(articleEl, hidden);
-      resetNegativeHorizontalMargins(articleEl, hidden);
+      safeRun(hideInsideArticleByKeyword, articleEl, hidden, containers);
+      safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
+      safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
+      safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
+      safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
+      safeRun(hideInsideArticleByLinkText, articleEl, hidden);
+      safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
+      safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
+      safeRun(hideInsideArticleByInlineAdText, articleEl, hidden);
+      safeRun(hideInsideArticleCTAParagraphs, articleEl, hidden);
+      safeRun(hideInsideArticleFontTags, articleEl, hidden);
+      safeRun(hideInsideArticleCommentPanels, articleEl, hidden);
+      safeRun(hideInsideArticleAllButtons, articleEl, hidden);
+      safeRun(hideInsideArticleJsLinks, articleEl, hidden);
+      safeRun(hideInsideArticleIconOnlyLinks, articleEl, hidden);
+      safeRun(hideInsideArticleActionRows, articleEl, hidden, containers);
+      safeRun(hideInsideArticleButtonClusters, articleEl, hidden, containers);
+      safeRun(hideInsideArticleHorizontalRules, articleEl, hidden);
+      safeRun(hideInsideArticleNav, articleEl, hidden);
+      safeRun(hideInsideArticleFooter, articleEl, hidden);
+      safeRun(hideInsideArticleDirectChildLinkBlocks, articleEl, hidden);
+      safeRun(hideInsideArticleEmptySpacers, articleEl, hidden, containers);
+      safeRun(hideInsideArticleSidebarColumns, articleEl, hidden, containers, opts && opts.promotedTitleHead);
+      safeRun(hideInsideArticleAbsoluteOverlays, articleEl, hidden);
+      safeRun(resetNegativeZIndex, articleEl, hidden);
+      safeRun(resetNegativeHorizontalMargins, articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
-      hideAncestorSiblings(articleEl, hidden);
+      safeRun(hideAncestorSiblings, articleEl, hidden);
       // grid/flex 殘留空欄 collapse：所有前置規則標記完 hidden 後再掃，才能
       // 偵測到「某 child 已被 hide」的條件
-      collapseGridWithHiddenCell(articleEl, hidden);
+      safeRun(collapseGridWithHiddenCell, articleEl, hidden);
       // articleEl 內部所有 grid/flex container 強制 block + 清 grid-template
       // （BBC 類 styled-components 主文被鎖在固定寬 grid 欄位內）
-      collapseInnerGridFlex(articleEl, hidden);
+      safeRun(collapseInnerGridFlex, articleEl, hidden);
       // articleEl 內部 flex-row container wrap 已啟動者 collapse 成 block
       // （healthsystemtracker Bootstrap `.row` 多 child 在 reader card 縮窄下
       // wrap → 段落被擠成窄欄；既有兩條 collapse 規則都漏網的 case）
-      collapseInnerFlexWrap(articleEl, hidden);
+      safeRun(collapseInnerFlexWrap, articleEl, hidden);
       // 媒體 placeholder：padding-bottom hack vs 純 aspect-ratio 的區分
-      resetMediaPlaceholderPadding(articleEl, hidden);
+      safeRun(resetMediaPlaceholderPadding, articleEl, hidden);
       // figure/picture 容器強制 block：ttv 類雙層 figure + 外層 flex 把 img
       // 壓到 0×0 的場景（v0.7.24）
-      forceMediaContainerBlock(articleEl, hidden);
+      safeRun(forceMediaContainerBlock, articleEl, hidden);
       // 清 articleEl 後代殘留 box-shadow（v0.7.30 cnyes 內層 article 殘留
       // 淡藍陰影、看起來像「卡中卡」框）
-      clearDescendantBoxShadow(articleEl, hidden);
+      safeRun(clearDescendantBoxShadow, articleEl, hidden);
       // v0.7.124：所有 hide / collapse / media 規則跑完後、最後一次掃 empty
       // wrapper。Medium top action bar（DIV.cm 撐 24px、內部子全 hide 後仍
       // 保留 CSS height）類殘留以此規則統清。詳見 collapseEmptyWrappersAfterClean
       // 上方註解。
-      collapseEmptyWrappersAfterClean(articleEl, hidden);
-      collapseEmptyBlockSpacers(articleEl, hidden);
-      capWrapperSpacing(articleEl, hidden);
+      safeRun(collapseEmptyWrappersAfterClean, articleEl, hidden);
+      safeRun(collapseEmptyBlockSpacers, articleEl, hidden);
+      safeRun(capWrapperSpacing, articleEl, hidden);
       // v0.7.141：eet-china 類站點 page-wide unique h1 在 articleEl 外（與
       // articleEl 是 body 兄弟、detector LCA=body 被 reject 不 promote），h1
       // wrapper 已被 hideAncestorSiblings hide。clone 一份 prepend 進 articleEl
       // 開頭，標題進 reader card 內、dark/sepia theme color 自動套對。
-      promoteUniqueTitleH1Into(articleEl, hidden);
+      safeRun(promoteUniqueTitleH1Into, articleEl, hidden);
       // v0.7.149：擴充處理「主標題不是 h1 而是 h2/h3 + article-title class」
       // 場景。Stratechery 自動翻譯後 detector 評分變動、選了內層 entry-content
       // 為 articleEl、主標題 h2.wp-block-post-title 在外層 sibling 被
       // hideAncestorSiblings hide → reader card 無標題。
-      promoteArticleTitleClassHeadingInto(articleEl, hidden);
+      safeRun(promoteArticleTitleClassHeadingInto, articleEl, hidden);
       // 超寬圖片 promote：Swiper / carousel 內的 hero img 拉到 article flow
-      promoteOverwideImages(articleEl, hidden);
+      safeRun(promoteOverwideImages, articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
-      hydrateLazyImages(articleEl, hidden);
+      safeRun(hydrateLazyImages, articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
-      startWatchingDynamicAppends(articleEl, hidden);
+      safeRun(startWatchingDynamicAppends, articleEl, hidden);
       // v0.7.23 newtalk.tw 修法：watch hidden el 的 inline style 被原站 JS
       // 覆寫清掉 !important priority，被清就立刻補回
-      watchHiddenInlineRestyle(hidden);
+      safeRun(watchHiddenInlineRestyle, hidden);
       // v0.7.144：clean() 結束清 cache、釋放 array refs（避免被 GC root hold 住）
       _cachedArticleAll = null;
       return hidden;
@@ -4268,34 +4353,46 @@
         }
       }
       restoreLazyImages(hiddenEls);
+      if (Array.isArray(hiddenEls)) {
+        for (const item of hiddenEls) {
+          if (!item || !item.el) continue;
+          // v0.7.143：title clone（promoteUniqueTitleH1Into 為 eet-china 類站
+          // page-wide unique h1 在 articleEl 外的場景注入的副本）必須整個從
+          // DOM 移除——非「hide → 還原 inline display」路徑。
+          if (item.__titleClone) {
+            if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+            continue;
+          }
+          if (item.__promotedImg) {
+            if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+            continue;
+          }
+          const { el, prevDisplay, prevDisplayPriority } = item;
+          // 還原原始 inline display + priority（`!important` 也要還原，
+          // 否則原站的 `display: flex !important` 若原本寫在 inline，
+          // reader mode 退出後會變成無 priority）。
+          el.style.removeProperty('display');
+          if (prevDisplay) {
+            el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
+          }
+          if (el.dataset) delete el.dataset.jreadHidden;
+        }
+      }
       // v0.8.18 C3：原本 10 個 restoreXxx 各還原一個 sidecar，統一成單一
       // restoreAllStyleResets（遍歷 hidden.__styleResets 一個 loop）。lazy image
       // src 補正非「inline style 還原」、形狀不同，保留獨立 restoreLazyImages。
+      //
+      // v0.8.35：restoreAllStyleResets 必須在 hidden display 迴圈「之後」跑。
+      // collapse 類 producer（collapseGridWithHiddenCell / forceMediaContainerBlock
+      // 等）先把 container 寫成 display:block !important 並把原站 inline 快照進
+      // __styleResets；之後 collapseEmptyWrappersAfterClean 又 hide() 同一元素時，
+      // hide() 快照到的 prevDisplay 是 collapse 寫入值（block + important）而非
+      // 原站值。舊順序（styleResets 先還原）會被 hidden 迴圈把 block !important
+      // 寫回去——退出閱讀模式後原站 grid/flex container 永久鎖成 block。
+      // 正確順序：先還原 hide 快照（回到 collapse 後狀態）、再由 styleResets 還原
+      // 真正的原始 inline 值。反向交錯（先 hide 後 collapse）不存在——所有
+      // collapse producer 都跳過 jreadHidden === '1' 的元素。
       restoreAllStyleResets(hiddenEls);
-      if (!Array.isArray(hiddenEls)) return;
-      for (const item of hiddenEls) {
-        if (!item || !item.el) continue;
-        // v0.7.143：title clone（promoteUniqueTitleH1Into 為 eet-china 類站
-        // page-wide unique h1 在 articleEl 外的場景注入的副本）必須整個從
-        // DOM 移除——非「hide → 還原 inline display」路徑。
-        if (item.__titleClone) {
-          if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
-          continue;
-        }
-        if (item.__promotedImg) {
-          if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
-          continue;
-        }
-        const { el, prevDisplay, prevDisplayPriority } = item;
-        // 還原原始 inline display + priority（`!important` 也要還原，
-        // 否則原站的 `display: flex !important` 若原本寫在 inline，
-        // reader mode 退出後會變成無 priority）。
-        el.style.removeProperty('display');
-        if (prevDisplay) {
-          el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
-        }
-        if (el.dataset) delete el.dataset.jreadHidden;
-      }
     }
   };
 

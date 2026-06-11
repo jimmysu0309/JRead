@@ -57,6 +57,10 @@
   // 會把 sidebar 吞進主文。應該讓 heuristic 有機會在 <main> 內部找到更精準
   // 的內容容器，找不到再退回整個 <main>。
   function detectByArticleTag() {
+    // v0.8.38：策略期間共用祖先鏈 cache（理由見 withAncestorCache 註解）
+    return withAncestorCache(_detectByArticleTagImpl);
+  }
+  function _detectByArticleTagImpl() {
     const articles = Array.from(document.querySelectorAll('article'));
     if (articles.length === 0) return null;
 
@@ -228,6 +232,10 @@
   // 跨站通用，非站點特判（硬規則 3）。itemprop 元素的 textLen 通常較緊湊
   // （僅 content 主體、不含 byline / meta），命中即主文。
   function detectBySchemaOrg() {
+    // v0.8.38：策略期間共用祖先鏈 cache（理由見 withAncestorCache 註解）
+    return withAncestorCache(_detectBySchemaOrgImpl);
+  }
+  function _detectBySchemaOrgImpl() {
     // Layer A：容器型 itemtype（最精確）
     const typeSelectors = [
       '[itemtype*="NewsArticle" i]',
@@ -379,14 +387,24 @@
     return s;
   }
 
-  function detectByHeuristic() {
-    // v0.7.144：開 cache、整個 heuristic run 期間 isSignalExcluded 共用
+  // v0.8.38（perf）：祖先鏈 cache 的開關抽成共用 helper。原本只有 heuristic
+  // 開 cache，article-tag / schema-org 的 scoredTextLen 裸跑——多 article 排序
+  // 與四個 selector 的候選 map 對同一條祖先鏈重複 getComputedStyle（巨頁實測
+  // detect 首跑 122ms 的主要成分）。巢狀呼叫（已有外層 cache）沿用、不重建
+  // 不提早清。
+  function withAncestorCache(fn) {
+    if (_excludedAncestorCache) return fn();
     _excludedAncestorCache = new WeakMap();
     try {
-      return _detectByHeuristicImpl();
+      return fn();
     } finally {
       _excludedAncestorCache = null;
     }
+  }
+
+  function detectByHeuristic() {
+    // v0.7.144：開 cache、整個 heuristic run 期間 isSignalExcluded 共用
+    return withAncestorCache(_detectByHeuristicImpl);
   }
 
   function _detectByHeuristicImpl() {
@@ -455,10 +473,11 @@
     //
     // 通則：收前 N 名（N=5，與 Readability 一致），比較 top1.score/top2.score。
     // 若比值 >= 1.25：top1 明顯勝出，confidence 照舊線性縮放。
-    // 若比值 <  1.25：模糊區，confidence 打折（×0.85），讓下游 detect() 知道
-    //   此 heuristic 結果不穩，必要時降到 MIN_CONFIDENCE 以下回傳 null、
-    //   改走 detectByMainTag 兜底。不直接選 top2——top1 仍是高分者，只是
-    //   告訴上層「這個 pick 的確定性不高、別硬 promote」。
+    // 若比值 <  1.25：模糊區——改從 top-5 挑 class weight 最好者（見下方
+    //   v0.7.7 修法註解）。注意：v0.7.5 的「confidence ×0.85 打折 → 低於
+    //   MIN_CONFIDENCE 回 null → main-tag 兜底」機制已在 v0.7.7 回滾移除，
+    //   heuristic 現在**不會**因低信心讓位（clamp 下限 = MIN_CONFIDENCE，
+    //   門檻必過）；ambiguous flag 仍回傳給上層當「別硬 promote」訊號。
     candidates.sort((a, b) => b.score - a.score);
     const top = candidates.slice(0, 5);
     const runnerUpScore = top[1] ? top[1].score : 0;
@@ -483,11 +502,12 @@
     const bestScore = chosen.score;
 
     // 分數 → confidence 線性縮放：bubble-up 的典型主文分數在 20–60 範圍。
-    // 10 分以下 → 0.30（門檻邊緣），50 分以上 → 0.70（高信心上限）
+    // 10 分以下 → 0.30（門檻邊緣），50 分以上 → 0.70（高信心上限）。
+    // v0.8.37：移除舊 `if (confidence < MIN_CONFIDENCE) return null;` 死碼——
+    // clamp 下限就是 MIN_CONFIDENCE（0.30），條件永 false（v0.7.7 回滾打折
+    // 機制後殘留）。heuristic 有任何候選即拍板，低信心降級路徑不存在。
     const raw = (bestScore - 10) / 40 * 0.4 + 0.30;
     const confidence = Math.max(0.30, Math.min(0.70, raw));
-
-    if (confidence < MIN_CONFIDENCE) return null;
 
     // title promote 由 detect() 統一處理，不在此重複
     return { el: best, confidence, strategy: 'heuristic', ambiguous };
@@ -521,12 +541,14 @@
     const og = normalizeTitle(
       document.querySelector('meta[property="og:title"]')?.content || ''
     );
+    // v0.8.37：站名尾綴切法收斂到 NS.stripSiteSuffix（原本全 codebase 6 份
+    // 實作、分隔符集合各不相同）。首段過短（< 4）退回整串的 guard 保留。
     if (og.length >= 4) {
-      const ogHead = og.split(/\s+[–—|]\s+/)[0];
+      const ogHead = NS.stripSiteSuffix(og);
       return ogHead.length >= 4 ? ogHead : og;
     }
     const t = normalizeTitle(document.title || '');
-    const head = t.split(/\s+[–—|]\s+/)[0];
+    const head = NS.stripSiteSuffix(t);
     return head.length >= 4 ? head : t;
   }
 
@@ -779,6 +801,13 @@
     let hops = 0;
     while (cur && cur.parentElement && cur !== document.body && hops < limit) {
       const parent = cur.parentElement;
+      // v0.8.36 body/html guard：articleEl 是 body 直接子（shadow replica 正是
+      // document.body.appendChild、必定命中此形狀）時第一圈 parent 就是 body
+      // ——任一 body-level sibling 子樹含 og:title 相符文字就會把 articleEl
+      // 升級成整個 <body>、styler 套全頁。LCA 路徑有同款 guard（lca ===
+      // document.body reject），sibling-walk 漏了——同一條「不可吞整頁」事實
+      // 兩 path 必須對稱。
+      if (parent === document.body || parent === document.documentElement) break;
       for (const sib of parent.children) {
         if (sib === cur) continue;
         // heads 同時包含 sib 自己（若 match）+ 所有子孫。不能只二選一
@@ -999,7 +1028,7 @@
     }
     const og = document.querySelector('meta[property="og:title"]')?.content || '';
     const docT = document.title || '';
-    const baseTitle = normalizeTitle(og) || normalizeTitle(docT.split(/[|｜\-—–]/)[0] || '');
+    const baseTitle = normalizeTitle(og) || normalizeTitle(NS.stripSiteSuffix(docT));
     if (!baseTitle || baseTitle.length < 5) return;
 
     // 文字是否等同 baseTitle（精確或雙向 60% 包含）
