@@ -4268,34 +4268,46 @@
         }
       }
       restoreLazyImages(hiddenEls);
+      if (Array.isArray(hiddenEls)) {
+        for (const item of hiddenEls) {
+          if (!item || !item.el) continue;
+          // v0.7.143：title clone（promoteUniqueTitleH1Into 為 eet-china 類站
+          // page-wide unique h1 在 articleEl 外的場景注入的副本）必須整個從
+          // DOM 移除——非「hide → 還原 inline display」路徑。
+          if (item.__titleClone) {
+            if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+            continue;
+          }
+          if (item.__promotedImg) {
+            if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+            continue;
+          }
+          const { el, prevDisplay, prevDisplayPriority } = item;
+          // 還原原始 inline display + priority（`!important` 也要還原，
+          // 否則原站的 `display: flex !important` 若原本寫在 inline，
+          // reader mode 退出後會變成無 priority）。
+          el.style.removeProperty('display');
+          if (prevDisplay) {
+            el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
+          }
+          if (el.dataset) delete el.dataset.jreadHidden;
+        }
+      }
       // v0.8.18 C3：原本 10 個 restoreXxx 各還原一個 sidecar，統一成單一
       // restoreAllStyleResets（遍歷 hidden.__styleResets 一個 loop）。lazy image
       // src 補正非「inline style 還原」、形狀不同，保留獨立 restoreLazyImages。
+      //
+      // v0.8.35：restoreAllStyleResets 必須在 hidden display 迴圈「之後」跑。
+      // collapse 類 producer（collapseGridWithHiddenCell / forceMediaContainerBlock
+      // 等）先把 container 寫成 display:block !important 並把原站 inline 快照進
+      // __styleResets；之後 collapseEmptyWrappersAfterClean 又 hide() 同一元素時，
+      // hide() 快照到的 prevDisplay 是 collapse 寫入值（block + important）而非
+      // 原站值。舊順序（styleResets 先還原）會被 hidden 迴圈把 block !important
+      // 寫回去——退出閱讀模式後原站 grid/flex container 永久鎖成 block。
+      // 正確順序：先還原 hide 快照（回到 collapse 後狀態）、再由 styleResets 還原
+      // 真正的原始 inline 值。反向交錯（先 hide 後 collapse）不存在——所有
+      // collapse producer 都跳過 jreadHidden === '1' 的元素。
       restoreAllStyleResets(hiddenEls);
-      if (!Array.isArray(hiddenEls)) return;
-      for (const item of hiddenEls) {
-        if (!item || !item.el) continue;
-        // v0.7.143：title clone（promoteUniqueTitleH1Into 為 eet-china 類站
-        // page-wide unique h1 在 articleEl 外的場景注入的副本）必須整個從
-        // DOM 移除——非「hide → 還原 inline display」路徑。
-        if (item.__titleClone) {
-          if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
-          continue;
-        }
-        if (item.__promotedImg) {
-          if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
-          continue;
-        }
-        const { el, prevDisplay, prevDisplayPriority } = item;
-        // 還原原始 inline display + priority（`!important` 也要還原，
-        // 否則原站的 `display: flex !important` 若原本寫在 inline，
-        // reader mode 退出後會變成無 priority）。
-        el.style.removeProperty('display');
-        if (prevDisplay) {
-          el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
-        }
-        if (el.dataset) delete el.dataset.jreadHidden;
-      }
     }
   };
 

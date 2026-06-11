@@ -101,11 +101,16 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         'desc 必須用 <strong> 標注 0 = 停用 sentinel——forcing：sentinel 值不標注使用者只能猜');
     });
 
-    it("options.js fields 必須含 'spaceScrollRatio'（change 綁定）+ save() 必須 Number() 轉型", () => {
+    it("options.js fields 必須含 'spaceScrollRatio'（change 綁定）+ 讀取必須 Number() 轉型", () => {
       assert.match(OPTIONS_JS, /'spaceScrollRatio'/,
         "options.js fields 陣列必須含 'spaceScrollRatio'——forcing：change 事件未綁定 = 調整後不存");
-      assert.match(OPTIONS_JS, /spaceScrollRatio\s*:\s*Number\(\s*document\.getElementById\(\s*['"]spaceScrollRatio['"]\s*\)\.value\s*\)/,
-        'save() 必須 Number() 轉型寫進 patch——forcing：number input .value 是字串、模組的 Number.isFinite guard 會拒收字串');
+      // v0.8.35：save() 改 diff write，欄位讀取收斂進 readFieldFromDom 的
+      // Number case——forcing 意圖不變：number input .value 是字串、模組的
+      // Number.isFinite guard 會拒收字串，必須 Number() 轉型
+      const m = OPTIONS_JS.match(/function\s+readFieldFromDom[\s\S]*?\n\}/);
+      assert.ok(m, 'options.js 必須有 readFieldFromDom（欄位讀取單一資料源）');
+      assert.match(m[0], /case\s*['"]spaceScrollRatio['"][\s\S]{0,200}return\s+Number\(/,
+        'readFieldFromDom 必須讓 spaceScrollRatio 走 Number() 轉型 case');
     });
   });
 

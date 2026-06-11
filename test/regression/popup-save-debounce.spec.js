@@ -8,7 +8,8 @@
 //
 // 修法：save() 加 200ms debounce 合併連續 setting 變更。render 在 click 同步跑
 // （UI 立刻反映）但 storage.sync.set 透過 setTimeout 延後。pendingPatch 累積
-// 未 commit 欄位。beforeunload 強制 flush 防 popup 關閉丟失最後變更。
+// 未 commit 欄位。pagehide + visibilitychange 強制 flush 防 popup 關閉丟失最後
+// 變更（v0.8.35 起，原 beforeunload 在 action popup / iOS Safari 都不觸發）。
 //
 // 本 spec 是 forcing function：
 //   - popup.js 必須宣告 saveTimer / pendingPatch / commitSave
@@ -67,11 +68,33 @@ describe('popup.js save() debounce（v0.7.143）', () => {
       `debounce 延遲應在 100-500ms 範圍，實際 ${delay}ms`);
   });
 
-  it('必須註冊 beforeunload listener flush pendingPatch（防 popup 關閉丟失最後變更）', () => {
-    assert.ok(/addEventListener\s*\(\s*['"]beforeunload['"]/.test(POPUP_SRC),
-      '必須註冊 beforeunload listener，popup 關閉前 flush 未 commit 的 pendingPatch');
-    // beforeunload handler 必須呼 commitSave 或 storage.sync.set
-    assert.ok(/beforeunload[\s\S]{0,300}commitSave/.test(POPUP_SRC),
-      'beforeunload handler 必須在 popup 關閉前呼 commitSave 強制 flush');
+  // v0.8.35：flush 改聽 pagehide + visibilitychange。Chrome action popup 關閉
+  // 不走一般 navigation path、beforeunload 長期不可靠；iOS Safari 完全不支援
+  // beforeunload。實際丟失場景：調完設定 200ms 內點頁面外關 popup → debounce
+  // 中的 patch 靜默丟失。
+  it('必須宣告 flushPendingSave 並掛 pagehide + visibilitychange（不可再用 beforeunload）', () => {
+    assert.ok(/function\s+flushPendingSave/.test(POPUP_SRC),
+      '必須宣告 flushPendingSave（清 timer + commitSave）');
+    assert.ok(/addEventListener\s*\(\s*['"]pagehide['"]\s*,\s*flushPendingSave/.test(POPUP_SRC),
+      '必須掛 pagehide → flushPendingSave');
+    assert.ok(/visibilitychange[\s\S]{0,200}flushPendingSave/.test(POPUP_SRC),
+      '必須掛 visibilitychange(hidden) → flushPendingSave');
+    assert.ok(!/addEventListener\s*\(\s*['"]beforeunload['"]/.test(POPUP_SRC),
+      'beforeunload 在 action popup / iOS Safari 都不可靠，不可再依賴');
+  });
+
+  it('自家 window.close() 路徑必須先明確 flushPendingSave（不賭 pagehide 時序）', () => {
+    // toggle 按鈕與無邊模式按鈕兩條 close 路徑
+    const closeCalls = POPUP_SRC.match(/window\.close\(\)/g) || [];
+    const flushedCloseCalls = POPUP_SRC.match(/flushPendingSave\(\);[^\n]*\n\s*window\.close\(\)/g) || [];
+    assert.strictEqual(flushedCloseCalls.length, closeCalls.length,
+      `每個 window.close() 前都必須 flushPendingSave（${flushedCloseCalls.length}/${closeCalls.length}）`);
+  });
+
+  it('commitSave 必須 .catch promise rejection（MV3 set 失敗是 rejection，同步 try/catch 接不到）', () => {
+    const fn = POPUP_SRC.match(/function\s+commitSave[\s\S]*?\n\}/);
+    assert.ok(fn, '抓得到 commitSave body');
+    assert.ok(/\.catch\s*\(/.test(fn[0]),
+      'commitSave 必須對 storage.sync.set 的回傳 promise 掛 .catch（quota 失敗防 unhandled rejection）');
   });
 });

@@ -20,6 +20,21 @@
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
   const PLAYER_ATTR = 'data-jread-player';
+
+  // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
+  // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
+  // 同 stylesheet 後注入者勝」。原 bug：翻頁媒體規則用 html 前綴、specificity
+  // (0,2,2)，輸給 base 的 (0,3,3)（:not(a > img) 依 Selectors 4 取引數最高
+  // specificity 計入 2 個 type、加 3 個 attribute），兩邊都 !important →
+  // specificity 高者勝、base 90vh 蓋掉翻頁單頁 cap——裸 img（非 a 包）站的
+  // 直式長圖有效上限 90vh > 欄高、break-inside: avoid 對高於 fragmentainer
+  // 的元素失效、圖被跨頁切割。a-wrapped 大圖走 content-img rule (0,2,1)、
+  // 翻頁規則本來就贏，所以 Substack 類測試站全綠、裸 img 站才現形。
+  // 抽常數讓兩處逐字同一份，杜絕 selector drift。
+  const MEDIA_CAP_SEL =
+    `[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
+[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"])`;
   // 大內容圖（lightbox / photoswipe 等 `<a>` 包圖結構）標記：apply() runtime 量到
   // >= CONTENT_IMG_MIN 的 a-wrapped img 標 [CONTENT_IMG_ATTR]，讓 block + margin
   // 規則對它生效（一般 img:not(a > img) 排除把這類大圖當 icon-link 漏掉）。
@@ -685,9 +700,7 @@ html [${ARTICLE_ATTR}="1"] main {
    v0.7.214：加 :not([${INLINE_IMG_ATTR}]) 排除 inline emoji / icon——此條
    specificity (0,2,3) 高於 inline-img rule (0,2,1)，沒排除會把已標 inline 的
    emoji 強制 block、emoji 獨佔一行（x.com Twemoji 實機回報）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
-[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
-[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
+${MEDIA_CAP_SEL} {
   display: block !important;
   margin-bottom: 24px !important;
 }
@@ -695,9 +708,7 @@ html [${ARTICLE_ATTR}="1"] main {
    後 height: auto 計算出超大值（newtalk.tw 實機主圖 height=891 / cna 等
    類似結構），佔滿整屏甚至蓋住 promoted-title。90vh 留給標題與下方文字
    一些縫隙、又不過度限縮（90% viewport 高仍是大圖視覺）。 */
-[${ARTICLE_ATTR}="1"] img:not(a > img):not([${PLAYER_ATTR}="1"]):not([${INLINE_IMG_ATTR}]),
-[${ARTICLE_ATTR}="1"] video:not([${PLAYER_ATTR}="1"]),
-[${ARTICLE_ATTR}="1"] picture:not([${PLAYER_ATTR}="1"]) {
+${MEDIA_CAP_SEL} {
   max-height: 90vh !important;
   object-fit: contain !important;
 }
@@ -1577,6 +1588,14 @@ html [${ARTICLE_ATTR}="1"] iframe {
   width: auto !important;
   max-width: 100% !important;
   object-fit: contain !important;
+}
+/* v0.8.35：以「與 base 90vh cap 逐字相同的 selector（MEDIA_CAP_SEL）、同
+   specificity、後注入勝」覆寫單頁 cap。上一條 html 前綴規則 (0,2,2) 在
+   cascade 輸給 base 媒體 cap (0,3,3)——裸 img（非 a 包）的直式長圖在翻頁
+   模式有效 max-height 變 90vh、超過欄高被跨頁切割。 */
+${MEDIA_CAP_SEL} {
+  max-height: calc(100vh - min(48px, 6vw) * 2 - 120px) !important;
+  max-height: calc(100dvh - min(48px, 6vw) * 2 - 120px) !important;
 }
 html [${ARTICLE_ATTR}="1"] figure,
 html [${ARTICLE_ATTR}="1"] picture,

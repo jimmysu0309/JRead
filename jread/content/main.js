@@ -1162,13 +1162,28 @@
   //      pushState 路由；800ms 輕量輪詢，成本可忽略）
   // 三者都收斂到 onRouteChange()，以 location.href 是否真的變化為準（去重：
   // title 因未讀數「(1) …」變動但 href 沒變則不誤判為導航）。
-  let _spaLastUrl = location.href;
+  // v0.8.35：路由比對 key 必須剝掉「錨點型 hash」——閱讀模式刻意保留 <a>（硬教訓
+  // 九），點文內註腳 / TOC 錨點（href="#fn1"）會讓 location.href 變化，舊版以完整
+  // href 比對 → 800ms 輪詢誤判為換頁 → 強制退出再 silent 重進，頁面閃回原站、
+  // 捲動位置全失。例外：hash-router SPA（`#/path`、`#!/path`）的 hash 是真路由，
+  // 保留進比對 key（剝掉會讓 hash-router 站換頁後 reader card 綁舊內容）。
+  // 判別是結構性的：錨點 fragment 不會以 `/` 或 `!` 開頭，router hash 慣例以
+  // `#/` 或 `#!` 開頭。
+  function spaRouteKey(href) {
+    const i = href.indexOf('#');
+    if (i === -1) return href;
+    const hash = href.slice(i);
+    if (hash.startsWith('#/') || hash.startsWith('#!')) return href; // hash-router
+    return href.slice(0, i); // 錨點型 hash：不算導航
+  }
+
+  let _spaLastUrl = spaRouteKey(location.href);
   let _spaReenterTimer = null;
   let _spaInstalled = false;
 
   function onSpaRouteChange() {
-    const url = location.href;
-    if (url === _spaLastUrl) return; // href 沒變 = 非真導航（title 雜訊變動等）
+    const url = spaRouteKey(location.href);
+    if (url === _spaLastUrl) return; // 路由 key 沒變 = 非真導航（title 雜訊 / 錨點跳轉等）
     _spaLastUrl = url;
     // 路由變化：reader card 綁的是舊路由 DOM，先同步退出
     const wasActive = NS.state.active && !NS.state.cinemaActive;

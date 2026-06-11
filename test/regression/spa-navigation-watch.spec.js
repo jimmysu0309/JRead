@@ -69,3 +69,46 @@ describe('main.js — SPA 導航偵測 wiring（C1）', () => {
     assert.ok(calls >= 2, `autoEnableMatchesCurrentRoute 應被 load + SPA 兩處共用，實際 ${calls} 處`);
   });
 });
+
+describe('main.js — spaRouteKey 錨點 hash 不算導航（v0.8.35）', () => {
+  // bug：舊版以完整 location.href 比對，閱讀模式下點文內註腳 / TOC 錨點
+  // （href="#fn1"）→ 輪詢誤判換頁 → 強制退出再 silent 重進（畫面閃回原站、
+  // 捲動位置全失）。spaRouteKey 是純函式，抽出 source 直接功能驗證。
+  const fnMatch = SRC.match(/function\s+spaRouteKey\s*\(href\)\s*\{[\s\S]*?\n  \}/);
+  assert.ok(fnMatch, 'main.js 必須有 spaRouteKey（路由比對 key 單一資料源）');
+  // eslint-disable-next-line no-eval
+  const spaRouteKey = eval('(' + fnMatch[0] + ')');
+
+  it('錨點型 hash 變化不改變路由 key（點註腳不退出閱讀模式）', () => {
+    assert.strictEqual(
+      spaRouteKey('https://a.com/article#fn1'),
+      spaRouteKey('https://a.com/article'),
+      '#fn1 錨點不可被當成導航');
+    assert.strictEqual(
+      spaRouteKey('https://a.com/article#fn1'),
+      spaRouteKey('https://a.com/article#section-2'),
+      '錨點之間切換不可被當成導航');
+  });
+
+  it('hash-router（#/、#!）的 hash 是真路由，必須保留進比對 key', () => {
+    assert.notStrictEqual(
+      spaRouteKey('https://a.com/#/post/1'),
+      spaRouteKey('https://a.com/#/post/2'),
+      'hash-router 換頁必須被視為導航');
+    assert.notStrictEqual(
+      spaRouteKey('https://a.com/#!/post/1'),
+      spaRouteKey('https://a.com/#!/post/2'),
+      'hashbang router 換頁必須被視為導航');
+  });
+
+  it('pathname / query 變化仍視為導航', () => {
+    assert.notStrictEqual(spaRouteKey('https://a.com/p/1'), spaRouteKey('https://a.com/p/2'));
+    assert.notStrictEqual(spaRouteKey('https://a.com/p?id=1'), spaRouteKey('https://a.com/p?id=2'));
+  });
+
+  it('onSpaRouteChange 與初始 _spaLastUrl 都必須經過 spaRouteKey（同一比對基準）', () => {
+    assert.match(SRC, /_spaLastUrl\s*=\s*spaRouteKey\(location\.href\)/, '初始值必須走 spaRouteKey');
+    const fn = SRC.match(/function\s+onSpaRouteChange[\s\S]*?\n  \}/)[0];
+    assert.match(fn, /spaRouteKey\(location\.href\)/, 'onSpaRouteChange 必須走 spaRouteKey');
+  });
+});
