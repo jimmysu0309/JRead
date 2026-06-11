@@ -89,8 +89,13 @@
     { t: 'sponsored' }, { t: 'sponsor' }, { t: 'donation' }, { t: 'donate' },
     { t: 'call-to-action' }, { t: 'cta' }, { t: 'callout' },
     { t: 'related[-_]?(?:articles?|news|posts|stories|content)', strong: true },
+    // v0.8.44 eettaiwan 實測：CMS 也用名詞在前的反序命名（`post-related` /
+    // `article-related`），原 token 只涵蓋 `related-posts` 順序 → 漏網。
+    { t: '(?:posts?|articles?|news|stor(?:y|ies))[-_]related', strong: true },
     { t: 'more[-_]?(?:news|stories|posts|articles?)', strong: true },
-    { t: 'hash[-_]?tag' }, { t: 'tag[-_]?list' },
+    // v0.8.44：`tags-list`（複數）變體——eettaiwan 文末 tag 列 class 用複數，
+    // 原 `tag[-_]?list` 不命中（`tag` 後接 `s` 非邊界）。
+    { t: 'hash[-_]?tag' }, { t: 'tags?[-_]?list' },
     { t: 'premium[-_]?(?:widget|content|trial|banner|box)' },
     { t: 'next-article', strong: true }, { t: 'latest-posts', strong: true },
     { t: 'mostread', strong: true }, { t: 'most-read', strong: true },
@@ -3060,6 +3065,17 @@
 
   // 子孫是否含「未被 hide 的真實內容媒體」——img 走 imgIsContentMedia（含
   // lazy 判定），其他媒體 tag（picture/video/iframe/svg/canvas）維持 rect 判定。
+  //
+  // v0.8.44 icon-size 豁免：已 layout 且 rendered rect ≤ 32×32 的 img / svg
+  // 視為裝飾 icon、不算內容媒體。場景：eettaiwan 文末 `.content-footer` 內
+  // tags icon（rendered 24×24）——tag 列被 keyword hide 後 wrapper 只剩 icon，
+  // 原判定把 icon 當內容媒體 → empty-wrapper collapse 被 guard 擋下、icon
+  // 孤兒殘留。注意不可用 naturalWidth 判 icon：viewBox-only SVG 的 `<img>`
+  // 無內在尺寸、natural 回 CSS 預設 150×150（eettaiwan tags.svg 實測），
+  // rendered rect 才反映真實視覺尺寸。rect 0×0（未載入 / 未 layout）不走
+  // 此豁免、留給 imgIsContentMedia 的 lazy 判定兜底（巴哈姆特 lazysizes 坑）。
+  // 32px 閾值與 imgIsContentMedia「natural > 32 排除 tracking pixel」同源。
+  const ICON_MEDIA_MAX = 32;
   function hasUnhiddenContentMedia(el) {
     for (const m of el.querySelectorAll('img, picture, video, iframe, svg, canvas')) {
       let cur = m, inHidden = false;
@@ -3068,7 +3084,14 @@
         cur = cur.parentElement;
       }
       if (inHidden) continue;
-      if (m.tagName === 'IMG') { if (imgIsContentMedia(m)) return true; continue; }
+      // SVG tagName 保留原 case（'svg'），比較前 toUpperCase
+      const tagUp = m.tagName.toUpperCase();
+      if (tagUp === 'IMG' || tagUp === 'SVG') {
+        const ir = m.getBoundingClientRect();
+        if (ir.width > 0 && ir.height > 0 &&
+            ir.width <= ICON_MEDIA_MAX && ir.height <= ICON_MEDIA_MAX) continue;
+      }
+      if (tagUp === 'IMG') { if (imgIsContentMedia(m)) return true; continue; }
       const mr = m.getBoundingClientRect();
       if (mr.height > 5 && mr.width > 5) return true;
     }
