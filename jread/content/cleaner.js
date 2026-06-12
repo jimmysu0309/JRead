@@ -4597,6 +4597,99 @@
     }
   }
 
+  // ---- 主文內：作者 bio 卡（avatar 錨定，v0.8.52 theverge 實測）-----------
+  // 場景：文首 / 文末「作者頭像 + 短 bio」卡（「{頭像} David Pierce is
+  // editor-at-large and Vergecast co-host…」）殘留在主文段落間。CSS-modules /
+  // SPA 站 class 全是 hash（_4aoxp30），author-bio keyword 規則攔不到。
+  // 結構特徵（跨 CMS 慣例，非站點特判）：
+  //   - 小尺寸近方形 img（rendered <= AVATAR_MAX_RENDER，頭像為方 / 圓裁切；
+  //     長寬比限 [0.5, 2] 排除橫幅 logo）
+  //   - 頭像身分訊號二擇一：
+  //     a) 包頭像的 <a> href path 命中作者頁路徑慣例（/author/ /authors/
+  //        /people/ /staff/ /contributors/ /profile/ /writers/ /team/，
+  //        或 Medium / Substack 式整段 /@handle）
+  //     b) 圖檔 URL 命中 avatar 慣例命名（avatar〔gravatar 含此子串〕/
+  //        headshot / author_profile / profile_pic|photo|image——WordPress /
+  //        Chorus / Discourse 等 CMS 資產路徑慣例）
+  //   - 從頭像向上走找 bio 卡容器：textContent <= BIO_CARD_MAX_TEXT、無
+  //     > BIO_CARD_LONG_P chars 主文 p、無 video/iframe/figure/picture（內容
+  //     媒體界線）、無其他大圖的**最高層**祖先。theverge 實測：卡 wrapper 一路
+  //     到 lede-bottom 都是 310 chars、再上一層跳 14.5K chars，界線清楚。
+  // 保護（誤殺面）：
+  //   - byline row（v0.8.48 absolute byline guard 同款）：頭 60 chars 命中
+  //     BYLINE_TEXT_RE（by X / 日期）→ 是署名列不是 bio 卡，保留
+  //   - 容器文字 < BIO_CARD_MIN_TEXT → 不是 bio 卡（純頭像 link 交給
+  //     icon-only / button 類規則），避免誤殺主文內小 inline 圖
+  //   - containsSelfLinkTitleHeading → 標題區不動
+  const AVATAR_MAX_RENDER = 80;
+  const BIO_CARD_MIN_TEXT = 20;
+  const BIO_CARD_MAX_TEXT = 400;
+  const BIO_CARD_LONG_P = 500;
+  const AUTHOR_PAGE_PATH_RE = /(^|\/)(authors?|people|staff|contributors?|profiles?|writers?|team)(\/|$)|^\/?@[\w.-]+\/?$/i;
+  const AVATAR_SRC_RE = /avatar|head-?shot|author[\W_]*profile|profile[\W_]*(?:pic|photo|image)/i;
+
+  function hideInsideArticleAuthorBioCards(articleEl, hidden) {
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.closest && img.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(img)) continue;
+      let r;
+      try { r = img.getBoundingClientRect(); } catch (_) { continue; }
+      if (!r || r.width <= 0 || r.height <= 0) continue;
+      if (r.width > AVATAR_MAX_RENDER || r.height > AVATAR_MAX_RENDER) continue;
+      const ratio = r.width / r.height;
+      if (ratio < 0.5 || ratio > 2) continue;
+      // 身分訊號
+      let isAvatar = false;
+      const a = img.closest && img.closest('a[href]');
+      if (a) {
+        let pathname = '';
+        try { pathname = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
+        if (pathname && AUTHOR_PAGE_PATH_RE.test(pathname)) isAvatar = true;
+      }
+      if (!isAvatar && AVATAR_SRC_RE.test(img.currentSrc || img.src || '')) isAvatar = true;
+      if (!isAvatar) continue;
+      // 向上走找 bio 卡容器（取符合條件的最高層祖先）
+      let candidate = null;
+      let cur = img.parentElement;
+      while (cur && cur !== articleEl) {
+        if (cur.contains && cur.contains(articleEl)) break;
+        if (norm(cur.textContent).length > BIO_CARD_MAX_TEXT) break;
+        // 內容媒體界線：figure / picture / video / iframe 是主文媒體慣例載體，
+        // bio 卡不會包它們；含其一即停（不往上吞 lede / 主文 wrapper）
+        if (cur.querySelector && cur.querySelector('figure, picture, video, iframe')) break;
+        // 主文段落保護
+        let hasLongP = false;
+        for (const p of cur.querySelectorAll('p')) {
+          if (norm(p.textContent).length > BIO_CARD_LONG_P) { hasLongP = true; break; }
+        }
+        if (hasLongP) break;
+        // 其他大圖（rendered 超過頭像量級 1.5 倍）→ 不是 bio 卡
+        let hasBigImg = false;
+        for (const im of cur.querySelectorAll('img')) {
+          if (im === img) continue;
+          let ir;
+          try { ir = im.getBoundingClientRect(); } catch (_) { hasBigImg = true; break; }
+          if (ir && (ir.width > AVATAR_MAX_RENDER * 1.5 || ir.height > AVATAR_MAX_RENDER * 1.5)) {
+            hasBigImg = true;
+            break;
+          }
+        }
+        if (hasBigImg) break;
+        candidate = cur;
+        cur = cur.parentElement;
+      }
+      if (!candidate) continue;
+      if (candidate.dataset && candidate.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(candidate)) continue;
+      const t = norm(candidate.textContent);
+      if (t.length < BIO_CARD_MIN_TEXT) continue;
+      // byline 保護：署名列（by X / 日期開頭）不是 bio 卡
+      if (BYLINE_TEXT_RE.test(t.slice(0, 60))) continue;
+      if (containsSelfLinkTitleHeading(candidate)) continue;
+      hide(candidate, hidden);
+    }
+  }
+
   // ---- 主文內：figure 包未知 widget iframe（v0.8.48 propublica 實測）------
   // PRESERVE_SEL 對 figure 的保護讓 hideInsideArticleThirdPartyIframes 掃不進
   // figure 內部——站方把「Listen to this article」音訊播放器 iframe 包在
@@ -5050,6 +5143,7 @@
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
+      safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
       safeRun(hideInsideArticleByInlineAdText, articleEl, hidden);
       safeRun(hideInsideArticleCTAParagraphs, articleEl, hidden);
       safeRun(hideInsideArticleFontTags, articleEl, hidden);
