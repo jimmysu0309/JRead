@@ -1216,6 +1216,80 @@
     }
   }
 
+  // ---- 標題前導雜訊：主文標題之前的兄弟分支一律視為雜訊 -------------------
+  // v0.8.51：結構性通則——閱讀模式的版面契約是「主文標題是 reader card 第一
+  // 個內容」，正文從標題開始；任何排在標題前的內容（kicker / 會員徽章 / 分類
+  // 標籤 / 工具列）都不是正文，hide。
+  //
+  // 實證場景：Medium 付費牆文章的「Member-only story」徽章 <p> 住在無 class
+  // 的 <div>、是 h1 容器的前一個兄弟。class 全 emotion hash（keyword 軌不可
+  // 行）、文字隨 UI 語系 / 翻譯擴充變動（會員限定故事 / 會員專屬內容——
+  // Shinkansen 每輪譯文不同），文字軌也不穩；只有「位於標題前」這個結構訊號
+  // 跨站穩定。Medium 舊版徽章包在 role="tooltip"（hideDialogs 清掉），改版
+  // 後變裸 <p>，原規則 miss——本條補上位置語意這層。
+  //
+  // anchor 選 articleEl 內第一個可見 h1。不靠 og:title strict 比對——翻譯
+  // 擴充翻過 body h1 後 strict eq 必 fail；也不靠 title class token——
+  // emotion hash class 無語意。兩段式：優先取 rect 已 layout 可見者，全部
+  // rect 0×0（jsdom 無 layout engine / 尚未 layout）時退回第一個 computed
+  // style 可見者，兩端行為一致。
+  //
+  // guard 組防誤殺（每條都對齊既有產品決策，非新發明）：
+  //   - wrapperContainsMainContentP：分支含主文長段落 → 不動（標題在文章
+  //     中段的異常結構，寧可殘留不誤殺正文）
+  //   - hasUnhiddenContentMedia / video|audio|iframe 存在：分支含內容媒體
+  //     → 不動（pre-title hero 圖 / Substack podcast 播放器）。tag 存在
+  //     判定是 jsdom-safe 補充：播放器類內容在 rect 未 layout 時也要保護
+  //   - <time> 後代：文首 byline / 日期 meta（v0.7.96 udn 決策同源）
+  //   - heading（h1-h6）後代：條件 D heading guard 同源（TL;DR 類段落
+  //     導引），含 heading 的分支交給 hideInsideArticleByHeadingText 的
+  //     文字軌判定，本條不越權
+  //   - byline 文字訊號：BYLINE_TEXT_RE / 相對時間戳 + textLen <=
+  //     BYLINE_MAX_TEXT_LEN（v0.8.48 upmedia 決策同源——BBC 類「3 days
+  //     ago + 作者」byline row 不用 <time> tag）
+  function preTitleBranchIsProtected(sib) {
+    if (wrapperContainsMainContentP(sib)) return true;
+    if (sib.querySelector && sib.querySelector('video, audio, iframe, h1, h2, h3, h4, h5, h6, time')) return true;
+    if (hasUnhiddenContentMedia(sib)) return true;
+    const text = norm(visibleRenderedText(sib));
+    if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
+        (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE))) return true;
+    return false;
+  }
+
+  function findFirstVisibleH1(articleEl) {
+    let fallback = null;
+    for (const h of articleEl.querySelectorAll('h1')) {
+      if (h.closest('[data-jread-hidden="1"]')) continue;
+      let cs;
+      try { cs = window.getComputedStyle(h); } catch (_) { continue; }
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      if (!fallback) fallback = h;
+      const r = h.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) return h;
+    }
+    return fallback;
+  }
+
+  function hideInsideArticlePreTitleNoise(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const anchor = findFirstVisibleH1(articleEl);
+    if (!anchor) return;
+    // 從 anchor 往 articleEl 爬，每一層的 preceding sibling 都在「標題前」
+    let chainNode = anchor;
+    while (chainNode && chainNode !== articleEl) {
+      let sib = chainNode.previousElementSibling;
+      while (sib) {
+        if (!(sib.dataset && sib.dataset.jreadHidden === '1') &&
+            !preTitleBranchIsProtected(sib)) {
+          hide(sib, hidden);
+        }
+        sib = sib.previousElementSibling;
+      }
+      chainNode = chainNode.parentElement;
+    }
+  }
+
   // ---- overwide img promote：把超寬容器內的大圖拉進 article flow ----------
   // Swiper / carousel JS library 把 slide 寬設為 viewport 寬。reader card
   // 縮窄後 CSS max-width:100% 相對超寬 parent 無效，Swiper runtime 會
@@ -4999,6 +5073,11 @@
       safeRun(resetNegativeHorizontalMargins, articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       safeRun(hideAncestorSiblings, articleEl, hidden);
+      // v0.8.51 標題前導雜訊：主文標題前的兄弟分支一律 hide（Medium 付費牆
+      // 「Member-only story」徽章類）。放在精細規則之後（已 hidden 者 skip、
+      // 不重複處理）、collapse 類之前（emptied flex / grid 規則能看到本條
+      // 標的 hidden 狀態）
+      safeRun(hideInsideArticlePreTitleNoise, articleEl, hidden);
       // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在
       // 所有 hide 類規則之後、collapse 之前（hide 殘殼後 collapse 才看得到
       // hidden child 觸發條件 A）
