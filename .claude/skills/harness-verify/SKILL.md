@@ -18,7 +18,7 @@ description: JRead Playwright harness 驗收決策樹。改 detector / cleaner /
 | 排版 / 寬度 / 位移 | `--width 390` 驗手機版心 | zoom 0.5 縮圖有對齊錯覺——必加 probe rect 數值或 zoom 1.0 截圖二次確認 |
 | 「只在 Safari」的雜訊回報 | `--translate-first` | 先翻譯→再 toggle（Jimmy 實機順序），主 audit 跑在翻譯後 DOM。能重現 = translation-path bug，可在 Chromium 修。普通 `--shinkansen` 是 toggle→翻譯，抓不到此類 |
 
-其他 flag：`--keep`（跑完不關，肉眼驗）、`--url <URL>` 或 `JREAD_URL` 環境變數。
+其他 flag：`--keep`（跑完不關，肉眼驗）、`--headed`（關掉 `--headless=new`；Cloudflare 類 bot challenge 站必加——headless 被偵測直接出驗證頁、detector 撿到 challenge 頁驗收全失真（upmedia 實證）；headed 仍可能間歇被擋，連續被擋就改 cage 實機驗）、`--url <URL>` 或 `JREAD_URL` 環境變數。
 
 ## 第二步：讀結果
 

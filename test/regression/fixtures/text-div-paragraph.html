@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>div 當段落的 CMS 站（upmedia 類）最小重現</title>
+</head>
+<body>
+  <!-- v0.8.49 最小重現：upmedia.mg /tw/focus/comprehensive/256956
+       CMS 把主文段落輸出成無 class 的裸 <div>（非 <p>），站點 CSS 給 22px；
+       圖說 div.mbt-text 17px（比主文小 = typography hierarchy）。
+       BODY_TEXT_SEL 列舉 tag 攔不到裸 div → 使用者 fontSize 18 設定失效、
+       主文維持 22px「特別大」。jsdom 不跑 stylesheet cascade，站點字級
+       以 inline style 模擬（markTextDivs 讀 computed font-size，等效）。 -->
+  <div id="post" class="news-box">
+    <h1>測試標題：馬鈴薯之亂聲量分析</h1>
+    <p style="font-size: 22px">這是一段用 p 標籤的導言文字，原本就會被 BODY_TEXT_SEL 命中，與裸 div 段落形成對照組，長度補到超過門檻以模擬真實段落字數。</p>
+    <div style="font-size: 22px">近期馬鈴薯之亂持續延燒，起因於政府調整美國進口加工用馬鈴薯檢疫條件，引發食安疑慮，這是第一段用裸 div 承載的主文段落文字。</div>
+    <div style="font-size: 22px">根據輿情資料庫分析，討論聲量在政策公布後迅速飆升，這是第二段用裸 div 承載的主文段落，內含 <a href="#">行內連結</a> 與 <strong>粗體</strong> 仍應視為 leaf paragraph。</div>
+    <div class="img-wrap" style="font-size: 22px">
+      <img src="about:blank" width="600" height="400" alt="占位圖">
+      <div class="mbt-text" style="font-size: 17px">圖說：馬鈴薯之亂延燒，政院與在野展開攻防。</div>
+    </div>
+    <figure>
+      <img src="about:blank" width="600" height="400" alt="占位圖二">
+      <div class="fig-caption" style="font-size: 17px">figure 內的圖說 div，不可被標記。</div>
+    </figure>
+    <div style="font-size: 22px">輿情分析指出，討論焦點主要集中在食安標準本身，而非政治操作，這是第三段裸 div 主文段落，用來確保主流字級的文字量加權壓倒圖說。</div>
+  </div>
+</body>
+</html>
