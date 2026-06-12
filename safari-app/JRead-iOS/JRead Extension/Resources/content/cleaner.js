@@ -199,7 +199,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(from|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^further\s+reading|editor[‘’]?s\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關新聞|相關文章|相關報導|相關行情|相關議題|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -224,7 +224,13 @@
   //     浮動（「追蹤本則報導的主題」/「追蹤此故事中的主題和作者」實測兩款），
   //     共同句式 = 開頭「追蹤/關注」+ 短距離內出現「主題/話題/作者」。^ 錨定 +
   //     距離上限 12 避免吃到「追蹤報導：…」這類合法新聞副標（無主題/作者字眼）
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
+  // v0.8.54 新增（nytimes 文末推薦區實證）：
+  //   ^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$ —
+  //     與 base 同款錨定 pattern 抄進 EXT 層。「Trending in The Times」21 chars
+  //     剛好超過 base max_len（20）漏網；pattern 本身 ^$ 錨定 + 後綴字數上限
+  //     {0,3}，主文副標以推薦字樣開頭又整句收束在四個字內的機率極低，放寬到
+  //     40 chars 誤殺風險可控（walk-up 主文保護仍兜底）
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -239,7 +245,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -543,10 +549,37 @@
   //   3. walk-up fallback（findSafeWrapperForHeading）找不含主文的最深 wrapper
   //   4. 連 walk-up 都失敗 → hideHeadingNoiseTail（尾段清除 / 最後防線 hide(h)）
   //   5. 最終四道主文保護 guard + hide(target)
+  // link-feed 容器判定（v0.8.54 nytimes 實證）：文末推薦 feed（Related
+  // Content 群組 / Trending 列表）由大量短 teaser <p> 組成，累計文字輕易
+  // >= 300 chars，誤觸 wrapperContainsMainContentP 的累計門檻而被 tooWide
+  // 當主文保護、整區推薦 feed 只藏得掉 heading。但 feed 的結構特徵與主文
+  // 截然相反：無任何單一 >= 100 chars 長段落、文字大半在 <a> 內（teaser
+  // 標題即連結）。實測 nytimes 推薦區 link density 0.69、主文 section
+  // 0.08，分隔帶寬。三條件全中才視為 link feed：
+  //   - 無 >= 100 chars 的 <p>（主文段落不存在）
+  //   - <a> 內文字佔總文字 >= 0.5
+  //   - <a> 數 >= 3（排除「一小段引言 + 一兩個連結」的合法短區塊）
+  function isLinkFeedContainer(el) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const p of el.querySelectorAll('p')) {
+      if (norm(p.textContent).length >= 100) return false;
+    }
+    const links = el.querySelectorAll('a');
+    if (links.length < 3) return false;
+    const total = norm(el.textContent).length;
+    if (!total) return false;
+    let linkText = 0;
+    for (const a of links) linkText += norm(a.textContent).length;
+    return linkText / total >= 0.5;
+  }
+
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
     let target = h.closest('section, aside');
+    // tooWide 的主文保護對 link-feed 容器不適用（v0.8.54）：累計短 teaser
+    // p / teaser title-anchor token 都是 feed 自己的內容，不是主文訊號
     const targetTooWide = target && target !== articleEl &&
-      !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h);
+      !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h) &&
+      !isLinkFeedContainer(target);
     if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
       const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
       if (!lastSafeWrapper) {
@@ -4627,6 +4660,101 @@
   //   - 容器文字 < BIO_CARD_MIN_TEXT → 不是 bio 卡（純頭像 link 交給
   //     icon-only / button 類規則），避免誤殺主文內小 inline 圖
   //   - containsSelfLinkTitleHeading → 標題區不動
+  // ---- 主文內：印刷版出處聲明行（v0.8.54 nytimes 實證）---------------------
+  // 美系新聞站文末慣例聲明「A version of this article appears in print on
+  // <日期>, Section C, Page 5 of the New York edition ... Order Reprints |
+  // Today's Paper | Subscribe」。class 是 hash（css-lojhqv）、句子不在 <p>
+  // 內（div + span 拼裝）、長度超過 heading rule 的 max_len（40）——三條既有
+  // 軌都接不住。靠句式文字 heuristic（業界慣用語，非站點特判）+ 結構 guard：
+  //   - 區塊 textContent 命中 appear(s|ed) in print on/in 句式
+  //   - 總文字 <= 250（聲明行單行；討論印刷媒體的主文段落遠超此數，且通常
+  //     不會恰好用這個 metadata 句式）
+  //   - 區塊內無 >= 100 chars 的 <p>（不含主文）
+  // 命中的 div/p 直接 hide（嵌套時外層先中、內層因文字相同也中，重複 hide
+  // 無害）——連同行內的 Order Reprints / Today's Paper / Subscribe 連結與
+  // 分隔符 span（". | |"）一起清，避免單清連結剩分隔符殘渣
+  const PRINT_EDITION_NOTE_RE = /\bappear(?:s|ed)?\s+in\s+print\s+(?:on|in)\b/i;
+  const PRINT_EDITION_NOTE_MAX_TEXT = 250;
+
+  function hideInsideArticlePrintEditionNote(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('div, p')) {
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(el)) continue;
+      const text = norm(el.textContent);
+      if (!text || text.length > PRINT_EDITION_NOTE_MAX_TEXT) continue;
+      if (!PRINT_EDITION_NOTE_RE.test(text)) continue;
+      let hasLongP = false;
+      for (const p of el.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
+      }
+      if (hasLongP) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：文末 curated 故事集連結卡（v0.8.54 nytimes 實證）------------
+  // 文末「本則故事的相關報導導覽卡」（nytimes styln-guide：H2 是故事集名
+  // 「Stephen Colbert's Late Night Exit」）：heading 是故事專名、無雜訊字樣
+  // 可匹配，heading 軌全失效。結構訊號（非站點特判）：teaser 長文字（>= 100
+  // chars）全在 <li> 內、每個 li 都是「<p> 摘要 + 站內文章連結」的 teaser
+  // 形狀；主文恰相反——長段落以 top-level <p> 存在（nytimes 主文 section
+  // 零 <li>）。五道條件全中才 hide：
+  //   - 區塊位於「最後一個主文長段落」之後（tail 區；主文長段落 = >= 100
+  //     chars 的 <p>，不在 li / a / figure / blockquote 內）
+  //   - <section> 元素（CMS 對 supplementary 區塊的 semantic 慣例）
+  //   - 含 >= 2 個 li，且每個 li 都含 <p> 與站內連結（hostname 相同、pathname
+  //     不同於本頁、非純 # anchor；比 hostname 不比 origin——站點常有 http/
+  //     https 混用的 legacy 連結，scheme 差異不影響「站內」語意）
+  //   - 無 li 外的 >= 100 chars <p>（區塊不含正文段落）
+  //   - 區塊文字 < 主文總文字 30%——防誤殺「文章主體本身就是 curated list」
+  //     的 listicle（那種 list 占比遠超 30%）
+  // Wikipedia References / See also 不命中：li 無 <p> wrapper（citation 用
+  // cite tag、see-also 用裸 <a>），references 的站內連結多為 # anchor 回鏈
+  function hideTailCuratedLinkLists(articleEl, hidden) {
+    let lastMainP = null;
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (norm(p.textContent).length < 100) continue;
+      if (p.closest('li, a, figure, blockquote')) continue;
+      lastMainP = p;
+    }
+    if (!lastMainP) return;
+    const articleTextLen = norm(articleEl.textContent).length || 1;
+    for (const sec of articleEl.querySelectorAll('section')) {
+      if (sec.dataset && sec.dataset.jreadHidden === '1') continue;
+      if (sec.closest && sec.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(sec)) continue;
+      if (sec.contains(lastMainP)) continue;
+      if (!(lastMainP.compareDocumentPosition(sec) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+      const lis = sec.querySelectorAll('li');
+      if (lis.length < 2) continue;
+      let teaserShaped = true;
+      for (const li of lis) {
+        if (!li.querySelector('p')) { teaserShaped = false; break; }
+        let hasInternalLink = false;
+        for (const a of li.querySelectorAll('a[href]')) {
+          const href = a.getAttribute('href') || '';
+          if (!href || href.startsWith('#')) continue;
+          let u;
+          try { u = new URL(href, location.href); } catch (_) { continue; }
+          if (u.hostname === location.hostname && u.pathname !== location.pathname) {
+            hasInternalLink = true;
+            break;
+          }
+        }
+        if (!hasInternalLink) { teaserShaped = false; break; }
+      }
+      if (!teaserShaped) continue;
+      let longPOutsideLi = false;
+      for (const p of sec.querySelectorAll('p')) {
+        if (norm(p.textContent).length >= 100 && !p.closest('li')) { longPOutsideLi = true; break; }
+      }
+      if (longPOutsideLi) continue;
+      if (norm(sec.textContent).length / articleTextLen >= 0.3) continue;
+      hide(sec, hidden);
+    }
+  }
+
   const AVATAR_MAX_RENDER = 80;
   const BIO_CARD_MIN_TEXT = 20;
   const BIO_CARD_MAX_TEXT = 400;
@@ -5150,6 +5278,8 @@
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
+      safeRun(hideInsideArticlePrintEditionNote, articleEl, hidden);
+      safeRun(hideTailCuratedLinkLists, articleEl, hidden);
       safeRun(hideInsideArticleByInlineAdText, articleEl, hidden);
       safeRun(hideInsideArticleCTAParagraphs, articleEl, hidden);
       safeRun(hideInsideArticleFontTags, articleEl, hidden);
