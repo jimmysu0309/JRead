@@ -75,6 +75,10 @@ const WITH_SHINKANSEN = process.argv.includes('--shinkansen') || TRANSLATE_FIRST
 // safaridriver 自動化視窗 visibilityState=hidden、rAF 不發，只能驗同步
 // scrollLeft、不能驗 rAF 翻頁動畫。
 const PAGED = process.argv.includes('--paged');
+// --headed：不加 --headless=new（用真窗口跑，視窗仍移到螢幕外）。Cloudflare
+// 類 bot challenge 會偵測 headless 模式直接出驗證頁（upmedia.mg 實證——
+// headless 下 detector 撿到的是 challenge 頁、驗收全失真），這類站必加。
+const HEADED = process.argv.includes('--headed');
 const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -144,7 +148,7 @@ async function triggerShinkansenTranslate(page) {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-position=-2400,-2400',
-      '--headless=new'
+      ...(HEADED ? [] : ['--headless=new'])
     ]
   });
 
