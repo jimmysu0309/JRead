@@ -24,6 +24,13 @@
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
   const PLAYER_ATTR = 'data-jread-player';
+  // v0.8.49：「div 當段落」標記。部分 CMS（upmedia 等）把主文段落輸出成無
+  // class 的裸 <div>（不是 <p>），BODY_TEXT_SEL 列舉的段落 tag 都不命中 →
+  // 使用者 fontSize / fontFamily / lineHeight / fontWeight 設定對主文整段失效、
+  // 保留站點字級（upmedia 22px vs 設定 18px，體感「特別大」）。CSS 無法選
+  // 「直接含文字的 div」，apply() 在 ARTICLE_ATTR 設定前（reader 規則尚未
+  // 生效、量得到原站字級）runtime 標記，BODY_TEXT_CORE 把 marker 納入。
+  const TEXT_DIV_ATTR = 'data-jread-text-div';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -1319,6 +1326,9 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
     // 級避免破壞站點 table layout（行高 / 邊框 / column 寬等）；cell 級字級放大
     // 已足夠解決「看不清」核心痛點。`caption` 跟著 td/th 一起進 selector——是
     // table 的標題，跟 cell 同等重要的閱讀內容。
+    // v0.8.49：加 [TEXT_DIV_ATTR]——CMS「div 當段落」站（upmedia 等）的主文
+    // 段落載體由 apply() runtime 標記（見 markTextDivs），列舉 tag 攔不到的
+    // 裸 div 段落才能吃到使用者字級/字型/行距/字重設定。
     const BODY_TEXT_CORE =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
@@ -1328,7 +1338,8 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
       `[${ARTICLE_ATTR}="1"] dt,` +
       `[${ARTICLE_ATTR}="1"] td,` +
       `[${ARTICLE_ATTR}="1"] th,` +
-      `[${ARTICLE_ATTR}="1"] caption,`;
+      `[${ARTICLE_ATTR}="1"] caption,` +
+      `[${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"],`;
     const BODY_TEXT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL;
     // v0.8.36：font-weight 專用 selector——span 再排除 strong / b 後代。
     // 字級 / 字型注入對 strong 內 span 是正確的（粗體文字也要跟著使用者字級
@@ -1812,6 +1823,69 @@ html [${ARTICLE_ATTR}="1"] a {
     return ancestors;
   }
 
+  // ---- 「div 當段落」標記（v0.8.49）---------------------------------------
+  // 結構訊號與 fb-post.js markParagraphDivs 同款：leaf paragraph div = 直接
+  // child text node 有實質文字 + 沒有 block 子元素（只有 text node / inline
+  // element）。upmedia 等 CMS 主文段落實測命中、巢狀 layout wrapper 不命中。
+  //
+  // caption 防護：圖說類 div（upmedia div.mbt-text 17px）也符合 leaf 條件，
+  // 但依 figcaption 原則（v0.7.120——caption 比 body 小是 typography hierarchy
+  // 的關鍵差異化）必須保留站點小字。結構訊號 = 字級階層本身：以「文字量加權
+  // 最重的字級」為主文主流字級，只標記字級 >= 主流的 div——站點把 caption 設
+  // 得比主文小，這個相對關係跨站成立（probe upmedia 實證：段落 22px ×5 段
+  // 共 680 字 vs 圖說 17px ×2 共 76 字 → 主流 22px、圖說被排除）。
+  // 文字量加權（不用 div 個數）：caption 短、段落長，個數多數決在「圖多文少」
+  // 的相簿型文章會選錯邊，字數加權不會。
+  function markTextDivs(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const INLINE_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR']);
+    const candidates = [];
+    for (const div of articleEl.querySelectorAll('div')) {
+      // figure 內 div = 圖說/媒體結構；pre/code 內保留程式碼排版；
+      // contenteditable 是使用者輸入區不動
+      if (div.closest && div.closest('figure, pre, code')) continue;
+      if (div.isContentEditable) continue;
+      let directLen = 0;
+      let hasBlockChild = false;
+      for (const node of div.childNodes) {
+        if (node.nodeType === 3 /* TEXT_NODE */) {
+          directLen += node.textContent.trim().length;
+        } else if (node.nodeType === 1 /* ELEMENT_NODE */ && !INLINE_TAGS.has(node.tagName)) {
+          hasBlockChild = true;
+          break;
+        }
+      }
+      if (hasBlockChild || directLen < 4) continue;
+      const cs = win.getComputedStyle(div);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const fs = Math.round(parseFloat(cs.fontSize) || 0);
+      if (!fs) continue;
+      candidates.push({ div, fs, len: (div.textContent || '').trim().length });
+    }
+    if (!candidates.length) return [];
+    // 主流字級 = 文字量加權最重的字級；同重取較大者（傾向段落、排除 caption）
+    const weightByFs = new Map();
+    for (const c of candidates) {
+      weightByFs.set(c.fs, (weightByFs.get(c.fs) || 0) + c.len);
+    }
+    let dominantFs = 0;
+    let maxWeight = -1;
+    for (const [fs, w] of weightByFs) {
+      if (w > maxWeight || (w === maxWeight && fs > dominantFs)) {
+        maxWeight = w;
+        dominantFs = fs;
+      }
+    }
+    const marked = [];
+    for (const c of candidates) {
+      if (c.fs < dominantFs) continue; // 比主流小 = caption 類，保留站點階層
+      c.div.setAttribute(TEXT_DIV_ATTR, '1');
+      marked.push(c.div);
+    }
+    return marked;
+  }
+
   // ---- Pangu spacing（中英文間自動補空白）---------------------------------
   // 規則：
   //   CJK ↔ ASCII 英數字（LEAD）→ 補空白
@@ -2166,6 +2240,11 @@ html [${ARTICLE_ATTR}="1"] a {
           }
         }
       }
+
+      // v0.8.49：「div 當段落」標記必須在 ARTICLE_ATTR 設定**前**跑——主流字級
+      // 判定要量「原站 CSS 下的字級」；ARTICLE_ATTR 一旦設定，BODY_TEXT_SEL 的
+      // font-size 規則對 article 根生效，繼承鏈被改、量到的是注入後的值。
+      const textDivMarked = markTextDivs(articleEl);
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
 
@@ -2719,7 +2798,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -2769,6 +2848,12 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.playerMarked)) {
         for (const el of snapshot.playerMarked) {
           if (el && el.removeAttribute) el.removeAttribute(PLAYER_ATTR);
+        }
+      }
+      // v0.8.49：移除「div 當段落」標記
+      if (Array.isArray(snapshot.textDivMarked)) {
+        for (const el of snapshot.textDivMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(TEXT_DIV_ATTR);
         }
       }
 
