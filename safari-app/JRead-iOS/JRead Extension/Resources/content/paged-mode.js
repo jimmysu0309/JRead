@@ -18,9 +18,11 @@
 //
 // stride 恆等式：styler CSS 設 column-gap = 左右視覺內距和（左 padding +
 // 右 transparent border），因此「column 寬 + gap = stride」，翻到第 n 頁 =
-// scrollLeft 跳 n × stride。stride = clientWidth − padding + column-gap
-// （讀 computed style 算，v0.7.231 起 clientWidth 不再恰等於 stride——
-// 右內距改用 border 表達後 clientWidth 少了右側 56px，見 styler.js 註解）。
+// scrollLeft 跳 n × stride。v0.8.56 起 stride 真值以 max scrollLeft 格點
+// 量化取得（maxSL = (頁數−1) × stride 恆等式反推）——computed style 推導
+// 的近似值在 fractional px 環境每頁有 sub-px 誤差（iOS border snap 至 1/3px
+// 格 + clientWidth 整數截斷），多頁累積成可見的整欄右移（chinatalk 64 頁
+// 累積 21px、右緣文字被裁切），近似公式只作量化起點與退化 fallback。
 //
 // 頁數（v0.7.231）：不可信 scrollWidth——正式版 Safari 26.5 的 multicol
 // scrollable overflow 會多報一個無內容的幽靈欄（chinatalk 實測 25 欄內容
@@ -95,6 +97,22 @@
     return Math.max(1, Math.ceil(x / stride));
   }
 
+  // stride 格點量化（v0.8.56）：依 styler 的 border-right 設計（v0.7.231），
+  // 「max scrollLeft = (頁數 − 1) × 引擎實際 stride」在兩引擎恆成立——border
+  // 不參與 scrollable overflow、尾端 padding 為 0。從 computed style 推導的
+  // 近似 stride 在 fractional px 環境不可靠：iOS WebKit 把 border-width snap
+  // 到裝置像素格（DPR 3 → 16.948px 用值變 16.6667px）且 clientWidth 整數
+  // 截斷，每頁誤差 0.333px、64 頁累積 21px → 內容右移、右緣裁切（chinatalk
+  // iPhone 模擬器 instrument 實證：引擎 stride 402.28 vs 公式 401.948）。
+  // 量化 = maxScrollLeft / round(maxScrollLeft / 近似值)：格數 k 是整數，
+  // 近似值相對誤差 < 0.5/k 內都收斂到引擎真值，誤差不再隨頁數累積。
+  // 近似值不足 maxSL 半格（單頁 / 量不到）時退回近似值。
+  function quantizeStride(maxScrollLeft, approx) {
+    if (!(approx > 0) || !(maxScrollLeft > approx / 2)) return approx;
+    const k = Math.max(1, Math.round(maxScrollLeft / approx));
+    return maxScrollLeft / k;
+  }
+
   // swipe 手勢分類。輸入純物件 { dx, dy, startX, viewportW }：
   //   dx/dy = touchend − touchstart 位移；startX = 起點 clientX。
   // 回傳 'next'（往左滑 = 翻下一頁）/ 'prev' / null。
@@ -148,20 +166,53 @@
   let vLocked = false;
   let settleTimer = null;
 
-  // stride = column 寬 + gap = (clientWidth − 左右 padding) + column-gap。
-  // computed style 讀不到數值（jsdom 無 layout）時退回 clientWidth
-  // （舊恆等式，jsdom spec 環境夠用）。
-  function stride() {
+  // stride = column 寬 + gap = (content box 寬) + column-gap。
+  // v0.8.56：寬度改用 getBoundingClientRect().width（分數精度）減 computed
+  // padding / border——不可用整數 clientWidth（iOS 上 border snap 到 1/3px 格
+  // 後 content+padding 寬非整數，clientWidth 截斷讓 stride 每頁短 0.333px、
+  // 累積成「越後頁越靠右、右緣裁切」）。rect 量不到（jsdom 無 layout）時
+  // 退回 clientWidth 公式（舊恆等式，jsdom spec 環境夠用）。
+  function strideApprox() {
     if (!art) return 0;
     try {
       const cs = getComputedStyle(art);
       const padL = parseFloat(cs.paddingLeft);
       const padR = parseFloat(cs.paddingRight);
+      const bL = parseFloat(cs.borderLeftWidth) || 0;
+      const bR = parseFloat(cs.borderRightWidth) || 0;
       const gap = parseFloat(cs.columnGap);
-      const s = art.clientWidth - padL - padR + gap;
+      const rectW = art.getBoundingClientRect().width;
+      let s = rectW - padL - padR - bL - bR + gap;
+      if (isFinite(s) && s > 0) return s;
+      s = art.clientWidth - padL - padR + gap;
       if (isFinite(s) && s > 0) return s;
     } catch (e) { /* 退化環境 */ }
     return art.clientWidth;
+  }
+
+  // 量化後 stride 快取；0 = 尚未量（install / remeasure 時重算）。computed
+  // border 用值在 iOS 兩次讀值都不一致（16.948 vs 16.6667），近似公式只當
+  // 量化起點，格點真值一律以 max scrollLeft 反推。
+  let strideExact = 0;
+
+  function stride() {
+    if (!art) return 0;
+    return strideExact > 0 ? strideExact : strideApprox();
+  }
+
+  // 實測 max scrollLeft（同一 frame 同步寫讀還原，無 repaint）。jsdom 無
+  // clamp 會原值讀回 sentinel → 視為量不到回 0。
+  const MAX_SCROLL_PROBE = 1e7;
+  function measureMaxScrollLeft() {
+    if (!art) return 0;
+    const prev = art.scrollLeft;
+    let max = 0;
+    try {
+      art.scrollLeft = MAX_SCROLL_PROBE;
+      max = art.scrollLeft;
+      art.scrollLeft = prev;
+    } catch (e) { return 0; }
+    return max >= MAX_SCROLL_PROBE ? 0 : max;
   }
 
   // 內容末端在卷動座標（padding-box 原點）的最大右緣。Safari 對已捲動狀態
@@ -207,9 +258,13 @@
     return maxRight;
   }
 
-  // 重算實測頁數（install / resize / lazy-load remeasure 時呼叫）
+  // 重算實測頁數（install / resize / lazy-load remeasure 時呼叫）。
+  // v0.8.56：先重算量化 stride（layout 可能變了），頁數計算與後續 goTo 的
+  // 格點跳頁都用同一個引擎真值。
   function remeasurePages() {
-    if (!art) { measuredPages = 0; return; }
+    if (!art) { measuredPages = 0; strideExact = 0; return; }
+    strideExact = 0; // 先清，strideApprox 才會被重新讀取
+    strideExact = quantizeStride(measureMaxScrollLeft(), strideApprox());
     const endX = measureContentEndX();
     if (!(endX > 0)) { measuredPages = 0; return; }
     let padL = 0;
@@ -557,6 +612,7 @@
     wheelAccum = 0;
     idx = 0;
     measuredPages = 0;
+    strideExact = 0;
     // lastRatio 刻意保留：settings reapply 的 uninstall→install 要回原位；
     // exitReaderMode 後 main.js 會呼叫 resetPosition() 歸零
   }
@@ -607,6 +663,7 @@
   const api = {
     computePageCount,
     computePageCountFromExtent,
+    quantizeStride,
     classifySwipe,
     classifyKey,
     shouldBlockTouchMove,

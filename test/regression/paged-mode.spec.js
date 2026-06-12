@@ -312,6 +312,40 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  describe('quantizeStride（v0.8.56 stride 格點量化）', () => {
+    // iOS 模擬器 chinatalk 實測（iPhone 17 Pro 402pt、contentWidth 760）：
+    // 引擎實際 stride 402.281（border 16.948 被 snap 成 16.6667 + clientWidth
+    // 整數截斷讓近似公式算出 401.948，每頁短 0.333px、64 頁累積 21px →
+    // 末頁 scrollLeft 25724 vs 格點 25746、內容整欄右移裁切右緣文字）。
+    // maxSL = 25747（引擎讀值）、64 格 → 量化回 402.297，誤差不再累積
+    it('iOS chinatalk 實案：maxSL 25747 / 近似 401.948 → 64 格量化 402.297', () => {
+      const q = pagedApi.quantizeStride(25747, 401.948);
+      assert.ok(Math.abs(q - 25747 / 64) < 1e-9);
+      // 末頁 target = 63...64 格都必須落回引擎格點：64 × q = maxSL 本身
+      assert.ok(Math.abs(64 * q - 25747) < 1e-6);
+      // 舊公式的累積誤差場景：64 × 401.948 = 25724.67，差 22px（本 bug 的症狀）
+      assert.ok(25747 - 64 * 401.948 > 20);
+    });
+    it('Chromium 幽靈欄場景：maxSL 含幽靈欄時量化出的 stride 仍是真值', () => {
+      // probe 實測：Chromium scrollWidth 多報一欄，maxSL 29103 = 74 × 393.28
+      // （內容實際 74 欄 = 73 格 + 幽靈 1 格）；量化分母 round(29103/393.282)
+      // = 74 → 29103 / 74 = 393.28 仍等於引擎 stride，頁數誤差由
+      // computePageCountFromExtent 處理，stride 不受幽靈欄污染
+      const q = pagedApi.quantizeStride(29103, 393.282);
+      assert.ok(Math.abs(q - 29103 / 74) < 1e-9);
+      assert.ok(Math.abs(q - 393.28) < 0.01);
+    });
+    it('單頁（maxSL 0）/ 量不到 → 退回近似值', () => {
+      assert.strictEqual(pagedApi.quantizeStride(0, 401.948), 401.948);
+      assert.strictEqual(pagedApi.quantizeStride(100, 401.948), 401.948); // < 半格
+    });
+    it('退化輸入：近似值 0 / 負 / NaN 原樣回傳（caller fallback）', () => {
+      assert.strictEqual(pagedApi.quantizeStride(25747, 0), 0);
+      assert.strictEqual(pagedApi.quantizeStride(25747, -1), -1);
+      assert.ok(Number.isNaN(pagedApi.quantizeStride(25747, NaN)));
+    });
+  });
+
   describe('classifySwipe', () => {
     const W = 393; // iPhone 視窗寬
     it('往左滑（dx 負）= next', () => {
