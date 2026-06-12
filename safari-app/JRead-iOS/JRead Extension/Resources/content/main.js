@@ -482,6 +482,33 @@
       while (div.firstChild) p.appendChild(div.firstChild);
       div.replaceWith(p);
     });
+    // 2.6 空殼 prune（v0.8.53）：cleaner 把 li / 容器內部的 interactive 元素
+    // （follow / share / topic 按鈕群）標 hidden 後，步驟 1 刪掉那些節點會留下
+    // 「沒有任何可見內容的殼」——本地 reader card 殼高度為 0 看不見，但 outerHTML
+    // 送到 Readwise Reader 後對方不吃本地 CSS，空 <li> 渲染成一排空 bullet
+    // （theverge 頂端 topic chips ul + 文末 follow widget ul 實證）。
+    // 結構性通則：post-order 走訪，沒有非空白文字、也沒有媒體子孫的元素整個移除
+    // （先清子孫再判自身，讓 li → ul 這類殼鏈逐層塌掉）。保護邊界：
+    //   - 表格結構元素不 prune（空 td/th 撐欄位對齊是合法結構）
+    //   - 媒體 / void 元素自身不 prune；含媒體子孫的容器視為有內容
+    //   - <noscript> 的 textContent 是原始 HTML 字串（非空）→ 自然保留
+    //     （站點 lazy image 的 noscript fallback 是 Readwise 端的圖片來源）
+    const PRUNE_KEEP_TAGS = new Set([
+      'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'CAPTION',
+      'COLGROUP', 'COL', 'BR', 'HR', 'WBR',
+      'IMG', 'PICTURE', 'SOURCE', 'TRACK', 'VIDEO', 'AUDIO', 'IFRAME',
+      'SVG', 'EMBED', 'OBJECT', 'CANVAS'
+    ]);
+    const PRUNE_MEDIA_SEL = 'img, picture, video, audio, iframe, svg, embed, object, canvas';
+    function pruneEmptyHusks(node) {
+      for (const child of Array.from(node.children)) pruneEmptyHusks(child);
+      if (node === clone) return;
+      if (PRUNE_KEEP_TAGS.has(node.tagName.toUpperCase())) return;
+      if ((node.textContent || '').trim()) return;
+      if (node.querySelector(PRUNE_MEDIA_SEL)) return;
+      node.remove();
+    }
+    pruneEmptyHusks(clone);
     // 3. 剝掉所有 data-jread-* attribute
     function stripDataAttrs(node) {
       if (node.attributes) {
