@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.54**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.55**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -240,6 +240,8 @@ Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold �
 ### Title promote（所有非兜底策略）
 
 Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
+
+**標題注入 fallback（`markPromotedTitleIfMissing`，v0.7.87/v0.7.88）**：站若把標題寫在非 heading tag（newtalk `<p class="name">` 等），cleaner 跑完後掃 articleEl 內 og:title 相符的 text element（bestCand），注入獨立 `h1[data-jread-injected-title]` 在 articleEl 開頭並 hide 原元素。guard 鏈：可見 h1-h4 文字等同 og:title → 不注入（v0.8.3）；**bestCand 候選必須「視覺上有呈現」——自身 + 祖先鏈無 `display:none` / `visibility:hidden|collapse` / `opacity≈0`（v0.8.55，nytimes translate-first 實證：站方 sticky masthead 留有「當前文章標題」隱形英文副本，翻譯擴充只翻可見文字 → 真 h1 已中文不 match 英文 og:title、bestCand 卻命中隱形英文副本 → 注入英文 H1 又被翻譯 guard 譯成另一版中文 → 重複標題。注入的存在理由是「站方以非 heading 呈現標題」，隱形元素不構成呈現；可見副本必然已被翻譯而自然落選，兩側閉環）**。可見性判定不用 getBoundingClientRect（jsdom fixture rect 全 0 會誤殺），逐祖先檢查各自 computed style。
 
 ### SPA 導航偵測與無限捲動豁免（v0.8.21 / v0.8.45）
 
