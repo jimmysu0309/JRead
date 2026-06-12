@@ -22,6 +22,9 @@
                          podcast player。 -->
                     <div class="container-dlhqPD" style="display: flex; flex-direction: row">
                       <div class="video-wrapper-lforaE">
+                        <!-- 真實 Substack podcast player 含 <audio> 元素（v0.8.51
+                             pre-title 規則的 media guard 依此判定「播放器是內容」） -->
+                        <audio src="https://api.substack.com/feed/podcast/episode.mp3" preload="none"></audio>
                         <div>PLAYER_CONTENT_MARK audio player controls</div>
                         <div class="sidebar-right-hidden">arrow</div>
                         <div class="sidebar-left-hidden"></div>
