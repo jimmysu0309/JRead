@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.52**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.53**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -482,6 +482,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 ### 欄位抽取策略（v0.7.166–167）
 
+- **`html`**：`main.js buildCleanHtml(articleEl)` — clone reader card 後依序：(1) 移除 `[data-jread-hidden="1"]` 節點（cleaner 只 inline `display:none` 不刪節點，Readwise parser 不吃本地 CSS 會把雜訊渲染回來）；(2) 移除 jread 注入的 `<style>`；(2.5) FB 段落 div → `<p>`（v0.7.165）；(2.6) **空殼 prune（v0.8.53）**——post-order 走訪移除「無非空白文字、無媒體子孫」的殼元素（cleaner 清掉 li 內 follow / share 按鈕群後留下的空 `<li>` / `<ul>`，在 Readwise 端渲染成一排空 bullet；theverge 頂端 topic chips + 文末 follow widget 實證）。保護邊界：表格結構元素（td/th 等）不 prune、媒體 / void 元素（img / picture / video / audio / iframe / svg / embed / object / canvas / br / hr 等）自身不 prune、`<noscript>`（textContent 為原始 HTML 字串非空）自然保留；(3) 剝掉所有 `data-jread-*` attribute。
 - **`title`（v0.8.50）**：`main.js extractReaderTitle()` — reader card（`NS.state.articleEl`）內第一個可見 `<h1>` 的 `innerText`（collapse 空白；跳過 `[data-jread-hidden]` 自身或子孫——站名 logo h1 類雜訊；> 300 字視為 detector 誤圈容器不採用）→ fallback `document.title` + `NS.stripSiteSuffix` 去站名尾綴。動機：`document.title` 是載入時靜態 metadata，DOM 被翻譯擴充（Shinkansen single 模式原地替換）改寫後不會跟著變——舊版直讀 `document.title` 導致譯後文章送 Readwise 的是原文標題。h1 路徑**不做**尾綴切割（站名尾綴是 `document.title` 慣例，h1 本文常含合法「 — 」分隔）。X / FB 合成 reader 無 h1，自然走 fallback。
 - **`image_url`（v0.7.166）**：`main.js extractHeroImage(articleEl)` — reader card 內第一張通過 200×200 / 200×120 門檻的 visible `img`（不在 `[data-jread-hidden]` 子孫內，srcset 取最大解析度 entry）→ fallback `meta[property="og:image"]` / `og:image:url` / `og:image:secure_url` / `meta[name="twitter:image"]` / `twitter:image:src`。URL 必須 absolute `http(s)`,`data:`/`blob:`/相對路徑略過。
 - **`author`（v0.7.167）**：`main.js extractAuthor()` — 三條分支：

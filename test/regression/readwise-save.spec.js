@@ -242,6 +242,16 @@ describe('readwise: 訊息協定常數同步', () => {
     assert.match(mainSrc, /data-jread-hidden/, 'main.js 必須處理 data-jread-hidden 隱藏節點');
     assert.match(mainSrc, /data-jread/, 'main.js 必須剝掉 data-jread-* attribute');
     assert.match(mainSrc, /extractReaderPayload/, 'main.js 必須有 extractReaderPayload 函式');
+    // v0.8.53：空殼 prune——hidden 節點刪掉後留下的「無文字、無媒體」殼（空 li /
+    // 空 ul）必須整個移除，否則 Readwise 端渲染成一排空 bullet（theverge 頂端
+    // topic chips + 文末 follow widget 實證）。anchor：pruneEmptyHusks 定義 +
+    // 在 buildCleanHtml 內被呼叫。
+    assert.match(mainSrc, /function\s+pruneEmptyHusks\s*\(/,
+      'main.js buildCleanHtml 必須定義 pruneEmptyHusks（空殼 prune，防 Readwise 空 bullet）');
+    // ^\s* + m flag：呼叫行必須是程式碼行開頭（被註解掉 `// pruneEmptyHusks(clone)`
+    // 時不可通過——sanity check 實證鬆 regex 會被註解行騙過）
+    assert.match(mainSrc, /^\s*pruneEmptyHusks\(clone\);/m,
+      'main.js buildCleanHtml 必須對 clone 執行 pruneEmptyHusks（不可是註解）');
     // v0.7.165：FB permalink 段落（div + data-jread-fb-para）送 Readwise 前必須
     // 改寫成 <p>，否則對方 sanitizer 砍 inline style 後段落擠成一團（Jimmy
     // 2026-05-22 回報）。anchor 在 querySelectorAll('[data-jread-fb-para...]') 之後
@@ -384,6 +394,23 @@ function buildCleanHtmlImpl(rootEl) {
     while (div.firstChild) p.appendChild(div.firstChild);
     div.replaceWith(p);
   });
+  // v0.8.53 空殼 prune（與 main.js pruneEmptyHusks 等價）
+  const PRUNE_KEEP_TAGS = new Set([
+    'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'CAPTION',
+    'COLGROUP', 'COL', 'BR', 'HR', 'WBR',
+    'IMG', 'PICTURE', 'SOURCE', 'TRACK', 'VIDEO', 'AUDIO', 'IFRAME',
+    'SVG', 'EMBED', 'OBJECT', 'CANVAS'
+  ]);
+  const PRUNE_MEDIA_SEL = 'img, picture, video, audio, iframe, svg, embed, object, canvas';
+  function pruneEmptyHusks(node) {
+    for (const child of Array.from(node.children)) pruneEmptyHusks(child);
+    if (node === clone) return;
+    if (PRUNE_KEEP_TAGS.has(node.tagName.toUpperCase())) return;
+    if ((node.textContent || '').trim()) return;
+    if (node.querySelector(PRUNE_MEDIA_SEL)) return;
+    node.remove();
+  }
+  pruneEmptyHusks(clone);
   function strip(node) {
     if (node.attributes) {
       const toRemove = [];
@@ -480,6 +507,68 @@ describe('readwise: buildCleanHtml 行為契約', () => {
     assert.ok(html.includes('data-article-id="123"'), '原站 data-* 必須保留');
     assert.ok(html.includes('data-tracking="ignore"'), '原站 data-* 必須保留');
     assert.ok(!html.includes('data-jread-active'), 'jread data-* 必須剝掉');
+  });
+
+  // v0.8.53 空殼 prune：cleaner 把 li 內部的 interactive 元素標 hidden（follow /
+  // share / topic 按鈕群），移除後殘留的空 li / ul 在 Readwise 端渲染成一排空
+  // bullet（theverge 頂端 topic chips + 文末 follow widget，Jimmy 2026-06-12
+  // 截圖回報；本地 reader card 殼高 0 看不見、偽陰性）。
+  it('hidden 內容移除後的空 li / ul 殼必須整個 prune（防 Readwise 空 bullet）', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <h1>標題</h1>
+        <ul class="topic-chips">
+          <li><span role="button" data-jread-hidden="1">Tech 追蹤按鈕</span></li>
+          <li><span role="button" data-jread-hidden="1">Gadgets 追蹤按鈕</span></li>
+          <li><span role="button" data-jread-hidden="1">Apps 追蹤按鈕</span></li>
+        </ul>
+        <p>主文段落</p>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root);
+    assert.ok(!html.includes('<li'), '內容全被 hidden 清掉的 li 殼必須移除');
+    assert.ok(!html.includes('topic-chips'), '殼鏈必須逐層塌掉（li 清空後 ul 也移除）');
+    assert.ok(html.includes('主文段落'), '主文必須保留');
+  });
+
+  it('有可見文字或媒體的 li 不可被 prune（合法清單內容保留）', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <ul>
+          <li>有文字的清單項</li>
+          <li><img src="https://cdn.example.com/pic.jpg"></li>
+          <li><span data-jread-hidden="1">按鈕</span></li>
+        </ul>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root);
+    assert.ok(html.includes('有文字的清單項'), '有文字的 li 必須保留');
+    assert.ok(html.includes('cdn.example.com/pic.jpg'), '含媒體的 li 必須保留');
+    assert.ok(!/(<li[^>]*>\s*<\/li>)/.test(html), '清空的 li 殼必須移除');
+  });
+
+  it('表格結構元素不 prune（空 td 撐欄位對齊是合法結構）', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <table><tbody><tr><td></td><td>值</td></tr></tbody></table>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root);
+    assert.ok(html.includes('<td></td>'), '空 td 必須保留（表格對齊結構）');
+    assert.ok(html.includes('<td>值</td>'));
+  });
+
+  it('空 div / span 殼也 prune；含媒體子孫的容器保留', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <div class="empty-wrap"><span></span></div>
+        <figure><div><img src="https://cdn.example.com/hero.jpg"></div></figure>
+        <p>內文</p>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root);
+    assert.ok(!html.includes('empty-wrap'), '無文字無媒體的 div 殼必須移除');
+    assert.ok(html.includes('cdn.example.com/hero.jpg'), '含 img 子孫的容器必須保留');
   });
 });
 
