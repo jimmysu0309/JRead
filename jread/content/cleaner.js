@@ -218,7 +218,13 @@
   //   ^sign\s+up\s+for — slate「Sign up for Executive Dysfunction」newsletter
   //     headline（base 只有完全等於 ^sign\s+up$ 的版本）
   //   ^follow\s+topics — theverge「Follow topics and authors」follow CTA 區
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
+  // v0.8.53 新增（theverge translate-first 實證）：
+  //   ^(追蹤|關注).{0,12}(主題|話題|作者) — ^follow\s+topics 的譯文變體。頁面先被
+  //     翻譯擴充翻成中文再進閱讀模式時，英文 CTA pattern 全失效；譯文措辭隨引擎
+  //     浮動（「追蹤本則報導的主題」/「追蹤此故事中的主題和作者」實測兩款），
+  //     共同句式 = 開頭「追蹤/關注」+ 短距離內出現「主題/話題/作者」。^ 錨定 +
+  //     距離上限 12 避免吃到「追蹤報導：…」這類合法新聞副標（無主題/作者字眼）
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
