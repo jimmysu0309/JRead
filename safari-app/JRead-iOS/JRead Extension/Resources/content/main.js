@@ -813,6 +813,36 @@
     return normalizeIsoDate(last.getAttribute('datetime'));
   }
 
+  // v0.8.50：title 來源改以 reader card 內第一個可見 <h1> 為主、document.title
+  // 為 fallback。動機：document.title 是頁面載入時的靜態 metadata，DOM 後續被
+  // 改寫（翻譯擴充原地替換 heading 文字、SPA 換頁）時不會跟著變——使用者在
+  // reader card 看到譯後標題、送 Readwise 卻是原文（Jimmy 2026-06-12 回報，
+  // Shinkansen 譯後情境）。結構性通則：「使用者看到的主標」單一資料源就是
+  // card 內渲染中的 h1，不綁任何翻譯擴充的標記。
+  //   - 跳過 cleaner 標記隱藏的 h1（[data-jread-hidden] 自身或子孫——站名
+  //     logo h1 類雜訊）
+  //   - 用 innerText 取「可見文字」（display:none 子節點不入列）；jsdom 沒
+  //     實作 innerText 時退 textContent（僅測試環境會走到）
+  //   - 文字過長（> 300 字）視為非標題（detector 誤圈整塊容器時的防線）
+  //   - card 內沒 h1（X / FB 合成 reader、無標題頁）→ fallback document.title
+  //     並沿用 NS.stripSiteSuffix 去站名尾綴。h1 路徑不做尾綴切割——站名尾綴
+  //     是 document.title 的慣例，h1 本文常含合法的「 — 」分隔，切了會截斷標題
+  function extractReaderTitle() {
+    const card = NS.state.articleEl;
+    if (card) {
+      const headings = card.querySelectorAll('h1');
+      for (const h of headings) {
+        if (h.closest('[data-jread-hidden="1"]')) continue;
+        const raw = h.innerText != null ? h.innerText : h.textContent;
+        const text = (raw || '').replace(/\s+/g, ' ').trim();
+        if (text && text.length <= 300) return text;
+      }
+    }
+    const rawTitle = (document.title || '').trim();
+    // v0.8.37：站名尾綴切法收斂到 NS.stripSiteSuffix（單一資料源）
+    return NS.stripSiteSuffix(rawTitle) || rawTitle;
+  }
+
   function extractReaderPayload() {
     // v0.7.133：cinema mode 沒主文 outerHTML 可送 Readwise，明確回 NOT_APPLICABLE
     // 而非 NOT_ACTIVE（後者讓 popup 顯示「閱讀模式未啟動」會讓使用者困惑——
@@ -826,9 +856,7 @@
     }
     resetJsonLdCache(); // v0.8.18 C8：每輪 payload 抽取重新解析 JSON-LD
     const html = buildCleanHtml(NS.state.articleEl);
-    const rawTitle = (document.title || '').trim();
-    // v0.8.37：站名尾綴切法收斂到 NS.stripSiteSuffix（單一資料源）
-    const title = NS.stripSiteSuffix(rawTitle) || rawTitle;
+    const title = extractReaderTitle();
     const imageUrl = extractHeroImage(NS.state.articleEl);
     const author = extractAuthor();
     const publishedDate = extractPublishedDate();
