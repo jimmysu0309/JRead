@@ -56,4 +56,26 @@ describe('popup v0.7.130 — 送到 Readwise Reader 按鈕可見性', () => {
     assert.ok(hiddenAssignmentCount >= 2,
       `refreshPopupForActiveTab 至少應有 2 處 readwiseBtn.hidden 賦值（早期 return + 主路徑），實測 ${hiddenAssignmentCount}——forcing：漏掉早期 return 路徑會讓「無 tab / 無 content script」情境按鈕仍露出`);
   });
+
+  // v0.8.50：未設定 readwiseToken 時整顆按鈕隱藏（Jimmy 2026-06-12）。
+  // 沒 token 按下去必然走「尚未設定 token」錯誤路徑，按鈕露出只是雜訊。
+  it('popup.js 必須有 hasReadwiseToken helper（讀 storage.sync.readwiseToken 並 trim 判空）', () => {
+    const m = POPUP_JS.match(/function\s+hasReadwiseToken\s*\(\s*\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(m, 'popup.js 必須定義 hasReadwiseToken——forcing：移除 helper 會回退到「沒 token 也露出按鈕」');
+    const body = m[1];
+    assert.match(body, /readwiseToken/,
+      'hasReadwiseToken 必須讀 readwiseToken 欄位');
+    assert.match(body, /storage\.sync\.get/,
+      'hasReadwiseToken 必須走 chrome.storage.sync（token 存放處，與 options 同一資料源）');
+    assert.match(body, /\.trim\(\)/,
+      'hasReadwiseToken 必須 trim 後判空——全空白 token 等同未設定（saveToReadwise 端也以 trim 判 NO_TOKEN）');
+  });
+
+  it('refreshPopupForActiveTab 主路徑的 readwiseBtn.hidden 必須含 token 條件', () => {
+    const m = POPUP_JS.match(/async\s+function\s+refreshPopupForActiveTab\s*\(\s*\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(m);
+    const body = m[1];
+    assert.match(body, /readwiseBtn\.hidden\s*=[^;]*hasReadwiseToken/,
+      'readwiseBtn.hidden 賦值必須納入 hasReadwiseToken 條件——forcing：拿掉 token 條件會回退到「沒 token 也露出按鈕」（v0.8.50）');
+  });
 });
