@@ -1104,6 +1104,40 @@
       if (matchesBaseTitle(text)) return; // 真標題已以可見 heading 呈現
     }
 
+    // v0.8.55 nytimes translate-first 修法：bestCand 候選必須「視覺上有呈現」
+    // （自身 + 祖先鏈無 display:none / visibility:hidden|collapse / opacity≈0）。
+    //
+    // 動機：站點常在 site chrome 留「當前文章標題」的隱形副本（NYT sticky
+    // masthead `visibility:hidden` + `opacity:1e-09`，捲動後才顯示）。翻譯擴充
+    // 只翻可見文字 → 隱形副本維持英文 → 真 h1 已是中文不 match 英文 og:title
+    // （上方 heading guard 不收手）、bestCand 卻命中這顆英文隱形副本 → 注入
+    // 英文 H1，翻譯擴充的 content guard 再把它譯成另一版中文 → 重複標題。
+    //
+    // 本 guard 同時閉環 translate-first 兩側：可見的標題副本必然已被翻譯
+    // （不會 match 英文 baseTitle、自然落選），不可見的副本被本 guard 排除。
+    // 未翻譯頁不受影響——真標題若可見照常入選；只擋「使用者根本看不到的
+    // 文字」被拿來當注入來源（注入的存在理由是「站方以非 heading 呈現標題」，
+    // 隱形元素不構成呈現）。
+    //
+    // 不用 getBoundingClientRect 判可見：jsdom fixture rect 全 0 會誤殺；
+    // 逐祖先檢查各自的 computed style 即可（不依賴 visibility 繼承解析，
+    // jsdom 讀 inline style 也能驗）。display:none 沿用既有共用 predicate。
+    function isCandidateVisiblyPresented(el) {
+      if (isAncestorChainHidden(el)) return false;
+      for (let p = el; p && p !== document.body; p = p.parentElement) {
+        if (p.style && (p.style.visibility === 'hidden' || p.style.visibility === 'collapse')) return false;
+        try {
+          const cs = window.getComputedStyle && window.getComputedStyle(p);
+          if (cs) {
+            if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return false;
+            const op = parseFloat(cs.opacity);
+            if (!Number.isNaN(op) && op < 0.05) return false;
+          }
+        } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
+      }
+      return true;
+    }
+
     // 找 articleEl 內含等同 baseTitle 的 text element（精確或包含關係）
     // 限制 textLen 接近 baseTitle，避免命中包含主文整段的大 wrapper
     let bestCand = null;
@@ -1117,6 +1151,8 @@
       else if (t.includes(baseTitle)) overlap = 0.9;
       else if (baseTitle.includes(t)) overlap = 0.85;
       if (overlap < 0.85) continue;
+      // 視覺呈現 guard 放在 overlap 之後（命中才查祖先鏈，省 getComputedStyle）
+      if (!isCandidateVisiblyPresented(el)) continue;
       // 偏好 text-only 元素（沒巢狀子元素過多 → 確保是純標題、非 wrapper）
       const childTagCount = el.querySelectorAll('*').length;
       const score = overlap - childTagCount * 0.05;
