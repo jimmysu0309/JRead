@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>作者 bio 卡（avatar 錨定）fixture — theverge v0.8.52 最小重現</title>
+</head>
+<body>
+<article id="story">
+  <h1>Pokemon, Lego, and the Amazing Digital Circus</h1>
+
+  <!-- lede 尾段：作者 bio 卡（theverge duet--ledes--standard-lede-bottom 對應）
+       class 全 hash（CSS modules），keyword 規則攔不到 -->
+  <div id="lede-bottom" class="x9q1r0">
+    <div id="bio-card" class="x9q1r1">
+      <div class="x9q1r2">
+        <a id="avatar-link" href="/authors/david-pierce">
+          <img id="avatar" class="x9q1r3" src="/wp-content/uploads/some-cms/images/195807/DAVID_PIERCE.0.jpg" alt="David Pierce" width="36" height="36">
+        </a>
+      </div>
+      <div class="x9q1r4">
+        <span role="button" tabindex="0">David Pierce</span>
+        <span id="bio-text"> is editor-at-large and Vergecast co-host with over a decade of experience covering consumer tech. Previously, at Protocol, The Wall Street Journal, and Wired.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 控制組 1：byline row（含頭像）——BYLINE_TEXT_RE 開頭，必須保留 -->
+  <div id="byline-row" class="x9q1r5">
+    <a href="/authors/david-pierce"><img id="byline-avatar" src="/img/people/dp-2.jpg" alt="David Pierce" width="36" height="36"></a>
+    <span>by David Pierce Dec 12, 2026, 9:00 AM GMT+8</span>
+  </div>
+
+  <!-- 主文段落（> 500 chars，長 p 保護的素材） -->
+  <p id="content-p1">Hi, friends! Welcome to the weekly newsletter about all things installing. This paragraph needs to be quite long so that it counts as real article content for the cleaner heuristics, which protect any container that includes a paragraph longer than five hundred characters from being hidden by the author bio card rule. So let us keep typing about digital circuses, brick sets, pocket monsters, app installers, and the various ways people set up their phones and computers every week, until we comfortably pass the five hundred character threshold required by the regression test fixture here. Almost there now, just a little bit more filler text to be safe.</p>
+
+  <!-- 控制組 2：主文段落內 inline avatar 風格小圖——父層是長 p，walk-up 立即
+       break、不可誤殺段落 -->
+  <p id="content-p2">Another long paragraph of body text that happens to contain a tiny inline image <img id="inline-avatar" src="/img/profile_pic_demo.jpg" alt="demo" width="24" height="24"> right in the middle of the prose. The presence of an avatar-looking image inside a genuine article paragraph must never cause the paragraph to disappear, because the bio card rule stops walking up as soon as the surrounding container holds more text than a bio card plausibly would, and this paragraph is intentionally written to exceed that four hundred character ceiling by a comfortable margin, with plenty of additional words to spare for safety.</p>
+
+  <p id="content-p3">Short closing paragraph of the article body.</p>
+</article>
+</body>
+</html>
