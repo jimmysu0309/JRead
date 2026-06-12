@@ -351,6 +351,17 @@ describe('readwise: 訊息協定常數同步', () => {
       `JSON-LD querySelectorAll 只能在 getJsonLd 出現一次（C8 共用單次 parse），實際 ${ldQueryCount} 處`);
     assert.match(mainSrc, /resetJsonLdCache\(\)[\s\S]{0,200}buildCleanHtml/,
       'extractReaderPayload 必須在抽取前 resetJsonLdCache()（換頁後重新解析 LD）');
+    // v0.8.50：title 來源改以 reader card 內可見 h1 為主（document.title 是
+    // 載入時靜態 metadata，翻譯擴充改寫 DOM 後不會跟著變——送出去的是原文
+    // 標題，Jimmy 2026-06-12 回報）。
+    assert.match(mainSrc, /function\s+extractReaderTitle\s*\(/,
+      'main.js 必須定義 extractReaderTitle（v0.8.50：card h1 優先、document.title fallback）');
+    assert.match(mainSrc, /=\s*extractReaderTitle\s*\(\s*\)/,
+      'extractReaderPayload 的 title 必須來自 extractReaderTitle()——forcing：直接讀 document.title 會回退到「譯後標題送原文」bug');
+    assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,800}data-jread-hidden/,
+      'extractReaderTitle 必須跳過 [data-jread-hidden] 內的 h1（站名 logo h1 類雜訊）');
+    assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,1200}stripSiteSuffix/,
+      'extractReaderTitle 的 document.title fallback 必須沿用 NS.stripSiteSuffix 去站名尾綴');
   });
 });
 
@@ -469,5 +480,111 @@ describe('readwise: buildCleanHtml 行為契約', () => {
     assert.ok(html.includes('data-article-id="123"'), '原站 data-* 必須保留');
     assert.ok(html.includes('data-tracking="ignore"'), '原站 data-* 必須保留');
     assert.ok(!html.includes('data-jread-active'), 'jread data-* 必須剝掉');
+  });
+});
+
+// v0.8.50 行為層 spec：extractReaderTitle 的等價實作（main.js 包在 IIFE 內無法
+// require，比照 buildCleanHtmlImpl 模式重寫；上面 forcing function 抓「實作存在
+// + 結構正確」、這裡抓「演算法效果正確」）。
+//
+// 背景：document.title 是載入時靜態 metadata。翻譯擴充（Shinkansen single 模式）
+// 原地替換 h1 內文後，使用者在 reader card 看到譯後標題、document.title 仍是
+// 原文——舊版直接讀 document.title 導致 Readwise 收到未翻譯標題。修法：card 內
+// 第一個可見 h1 是「使用者看到的主標」單一資料源，優先取用。
+function stripSiteSuffixImpl(title) {
+  return (title || '').split(/\s+[|\-—–·]\s+|｜/)[0].trim();
+}
+
+function extractReaderTitleImpl(card, doc) {
+  if (card) {
+    const headings = card.querySelectorAll('h1');
+    for (const h of headings) {
+      if (h.closest('[data-jread-hidden="1"]')) continue;
+      const raw = h.innerText != null ? h.innerText : h.textContent;
+      const text = (raw || '').replace(/\s+/g, ' ').trim();
+      if (text && text.length <= 300) return text;
+    }
+  }
+  const rawTitle = (doc.title || '').trim();
+  return stripSiteSuffixImpl(rawTitle) || rawTitle;
+}
+
+describe('readwise: extractReaderTitle 行為契約（v0.8.50）', () => {
+  function makeCase(bodyHTML, docTitle) {
+    const dom = new JSDOM(
+      `<!DOCTYPE html><html><head><title>${docTitle}</title></head><body>${bodyHTML}</body></html>`
+    );
+    const doc = dom.window.document;
+    return { card: doc.querySelector('[data-jread-active="1"]'), doc };
+  }
+
+  it('card 內 h1 與 document.title 不同（翻譯後場景）：送 h1 文字', () => {
+    // 模擬 Shinkansen single 模式：h1 內文已被原地替換成譯文，document.title 仍是原文
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1"><h1>了解 MCP 的十個關鍵</h1><p>內文</p></article>`,
+      'Ten Things About MCP | Example Blog'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '了解 MCP 的十個關鍵');
+  });
+
+  it('card 內沒 h1（X / FB 合成 reader 類）：fallback document.title 並去站名尾綴', () => {
+    const { card, doc } = makeCase(
+      `<div data-jread-active="1"><p>推文內容</p></div>`,
+      '文章標題 | 中央社 CNA'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '文章標題');
+  });
+
+  it('h1 在 [data-jread-hidden] 雜訊區內（站名 logo h1）：跳過、取下一個可見 h1', () => {
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1">
+        <header data-jread-hidden="1"><h1>站名 Logo</h1></header>
+        <h1>真正的文章標題</h1><p>內文</p>
+      </article>`,
+      '真正的文章標題 - 站名'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '真正的文章標題');
+  });
+
+  it('h1 自身標 data-jread-hidden 且無其他 h1：fallback document.title', () => {
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1"><h1 data-jread-hidden="1">Logo</h1><p>內文</p></article>`,
+      '標題 - 站名'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '標題');
+  });
+
+  it('h1 文字為空白：fallback document.title', () => {
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1"><h1>   </h1><p>內文</p></article>`,
+      '標題 - 站名'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '標題');
+  });
+
+  it('h1 文字超過 300 字（detector 誤圈容器的防線）：fallback document.title', () => {
+    const long = '長'.repeat(301);
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1"><h1>${long}</h1><p>內文</p></article>`,
+      '標題 - 站名'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '標題');
+  });
+
+  it('h1 路徑不做站名尾綴切割（標題本文含「 — 」不可被截斷）', () => {
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1"><h1>AI 浪潮 — 十年後的回望</h1></article>`,
+      'AI 浪潮 — 十年後的回望 | 站名'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), 'AI 浪潮 — 十年後的回望');
+  });
+
+  it('h1 內多重空白 / 換行：collapse 成單一空白', () => {
+    const { card, doc } = makeCase(
+      `<article data-jread-active="1"><h1>標題
+        分兩行   多空白</h1></article>`,
+      'whatever'
+    );
+    assert.strictEqual(extractReaderTitleImpl(card, doc), '標題 分兩行 多空白');
   });
 });

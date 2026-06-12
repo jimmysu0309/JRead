@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.49**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.50**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -482,6 +482,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 ### 欄位抽取策略（v0.7.166–167）
 
+- **`title`（v0.8.50）**：`main.js extractReaderTitle()` — reader card（`NS.state.articleEl`）內第一個可見 `<h1>` 的 `innerText`（collapse 空白；跳過 `[data-jread-hidden]` 自身或子孫——站名 logo h1 類雜訊；> 300 字視為 detector 誤圈容器不採用）→ fallback `document.title` + `NS.stripSiteSuffix` 去站名尾綴。動機：`document.title` 是載入時靜態 metadata，DOM 被翻譯擴充（Shinkansen single 模式原地替換）改寫後不會跟著變——舊版直讀 `document.title` 導致譯後文章送 Readwise 的是原文標題。h1 路徑**不做**尾綴切割（站名尾綴是 `document.title` 慣例，h1 本文常含合法「 — 」分隔）。X / FB 合成 reader 無 h1，自然走 fallback。
 - **`image_url`（v0.7.166）**：`main.js extractHeroImage(articleEl)` — reader card 內第一張通過 200×200 / 200×120 門檻的 visible `img`（不在 `[data-jread-hidden]` 子孫內，srcset 取最大解析度 entry）→ fallback `meta[property="og:image"]` / `og:image:url` / `og:image:secure_url` / `meta[name="twitter:image"]` / `twitter:image:src`。URL 必須 absolute `http(s)`,`data:`/`blob:`/相對路徑略過。
 - **`author`（v0.7.167）**：`main.js extractAuthor()` — 三條分支：
   - Facebook 合成 reader（`[data-jread-fb-reader]`）：`NS.fbPost.extractAuthorVanityFromUrl()` 抽 `/<user>/posts/<id>` 第一段 vanity username,reserved path（`groups` / `permalink.php` / `story.php` / `share` / `profile.php` / `permalink` / `people` / `pages`）沒 vanity → fallback 讀合成 header `[data-jread-fb-author] strong` 的 displayName。
@@ -501,10 +502,9 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 ### Popup UI 行為
 
 - 「送到 Readwise Reader」按鈕放在「切換閱讀模式」下方，次級樣式（白底灰邊）
-- popup 開啟時透過 `GET_READER_STATE` 查 reader mode 狀態：
-  - 未啟動 → button disabled，title `先啟動閱讀模式才能送出`
-  - 已啟動 → button enabled
-  - 頁面不支援（chrome:// 等 sendMessage reject）→ button disabled
+- popup 開啟時透過 `GET_READER_STATE` 查 reader mode 狀態，按鈕可見性（v0.7.130 起整顆 `hidden`、非 disabled；`disabled` 軸保留給送出中防連點）：
+  - reader mode 已啟動 **且** 非 cinema mode **且** 已設定 `readwiseToken`（trim 後非空，v0.8.50）→ 按鈕顯示
+  - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
 - 點擊：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ popup → SW（`SAVE_TO_READWISE` 帶 payload）→ SW 讀 token + fetch + 回結果
 - 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`
 

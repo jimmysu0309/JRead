@@ -392,6 +392,22 @@ function setReadwiseStatus(text, kind) {
 // v0.7.133：擴增為 refreshPopupForActiveTab，同時依 siteMode 切換 toggle 按鈕
 // 文字（YouTube watch → 影院模式）。Readwise 按鈕在 cinema mode 下強制 hidden
 // （cinema mode 沒主文 outerHTML 可送，按鈕露出無意義）。
+//
+// v0.8.50：未設定 readwiseToken 時按鈕也整顆 hidden（Jimmy 2026-06-12）——
+// 沒 token 按下去必然走到「尚未設定 token」錯誤，按鈕露出只是雜訊。token
+// 在 popup 開啟期間於 options 填入的情境不需即時反映（開 options 時 popup
+// 已關閉，下次開啟重新讀取）。
+function hasReadwiseToken() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.sync.get({ readwiseToken: '' }, (v) => {
+        const t = v && v.readwiseToken;
+        resolve(typeof t === 'string' && t.trim() !== '');
+      });
+    } catch (_) { resolve(false); }
+  });
+}
+
 async function refreshPopupForActiveTab() {
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') {
@@ -418,8 +434,9 @@ async function refreshPopupForActiveTab() {
     } else {
       borderlessBtn.hidden = true;
     }
-    // Readwise 按鈕：active=true 且 非 cinema 才露出（cinema 沒主文可送）
-    readwiseBtn.hidden = !active || cinemaActive;
+    // Readwise 按鈕：active=true 且 非 cinema 且 已設 token 才露出
+    // （cinema 沒主文可送；沒 token 按了必失敗，v0.8.50 整顆隱藏）
+    readwiseBtn.hidden = !active || cinemaActive || !(await hasReadwiseToken());
   } catch (_) {
     readwiseBtn.hidden = true;
     borderlessBtn.hidden = true;
