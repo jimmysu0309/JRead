@@ -186,6 +186,31 @@ describe('harness audit-lib — 單一資料源合約', () => {
       assert.match(src, /promo\|popup/i, 'hero 候選必須排除 promo / popup src pattern');
     });
 
+    it('captureOriginalHeroImages 排除 CTA / widget 容器內的圖（myartbroker WidgetCta 誤報 hero-missing）', () => {
+      // myartbroker 頁面級「Buy/Sell prints」促銷 widget WidgetCta_base 內含
+      // 3800x2800 藝術圖，src 是 CDN hash（無 promo 關鍵字）躲過 PROMO_SRC_RE，
+      // reader 正確清掉 CTA 後被誤報 hero-missing。祖先 class 含 cta/widget →
+      // 不算 hero 候選。
+      const dom = new JSDOM(`<!DOCTYPE html><body>
+        <img id="hero" src="https://cdn.sanity.io/images/aaa/article-hero-abc123def456.png">
+        <div class="WidgetCta_base__VanRD"><div class="WidgetCta_scrollable">
+          <img id="cta" src="https://cdn.sanity.io/images/aaa/72759f23bfd0ff018961c1db.png">
+        </div></div>
+      </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+      const w = dom.window;
+      // mock rect + natural size 讓兩張都過 size gate（jsdom rect 全 0）
+      for (const img of w.document.querySelectorAll('img')) {
+        img.getBoundingClientRect = () => ({ width: 600, height: 420, top: 120, right: 600, bottom: 540, left: 0 });
+        Object.defineProperty(img, 'naturalWidth', { value: 3000, configurable: true });
+        Object.defineProperty(img, 'naturalHeight', { value: 2100, configurable: true });
+      }
+      const rebuilt = w.eval(`(${auditLib.pageFns.captureOriginalHeroImages.toString()})`);
+      const heroes = rebuilt();
+      const srcs = heroes.map(h => h.src);
+      assert.ok(srcs.some(s => /article-hero/.test(s)), '一般 hero 圖應入選');
+      assert.ok(!srcs.some(s => /72759f23/.test(s)), 'CTA / widget 容器內的圖必須排除（避免誤報 hero-missing）');
+    });
+
     it('runHeroImageAudit 含 pathname 尾段比對（dev.to 響應式變體誤報）', () => {
       // image proxy 把尺寸參數放 pathname：同一張圖的變體 src / pathname /
       // naturalW 三條全不同，只有尾段（encoded 原圖 URL）共享。

@@ -797,18 +797,28 @@ pageFns.captureOriginalHeroImages = function () {
   // 被當 hero 候選，reader 正確清掉後誤報 missing）。src pattern 是 audit
   // 端 heuristic（非 extension 規則，誤放代價只是少一個 hero 候選）。
   const PROMO_SRC_RE = /promo|popup|membership|advert|banner|campaign/i;
+  // CTA / widget 容器內的圖排除（2026-06-14 myartbroker 實證：頁面級「Buy/Sell
+  // Hockney prints」促銷 widget `WidgetCta_base` 內含 3800x2800 藝術圖，src 是
+  // CDN hash（無 promo/popup 關鍵字）躲過 PROMO_SRC_RE，reader 正確清掉 CTA 後
+  // 被誤報 hero-missing）。promo 圖常見載體是 class 帶 cta/widget/promo/popup
+  // 的容器——祖先 class 比 src 關鍵字更穩。同 src-pattern 一樣是 audit 端
+  // heuristic（非 extension 規則，誤放代價只是少一個 hero 候選）。
+  const CTA_WIDGET_SEL = '[class*="cta" i],[class*="widget" i],[class*="promo" i],[class*="popup" i],[class*="advert" i],[class*="banner" i]';
+  const inCtaWidget = (img) => { try { return !!img.closest(CTA_WIDGET_SEL); } catch (e) { return false; } };
   // src 截 300（原 120）：dev.to 類 image proxy 把尺寸參數放 pathname、原圖
   // URL encode 在尾段，120 截斷讓變體比對的尾段全失效。
   return Array.from(document.querySelectorAll('img')).map(img => {
     const r = img.getBoundingClientRect();
     return { src: img.src ? img.src.slice(0, 300) : '', w: r.width, h: r.height,
-      naturalW: img.naturalWidth, naturalH: img.naturalHeight, top: r.top };
+      naturalW: img.naturalWidth, naturalH: img.naturalHeight, top: r.top,
+      inCtaWidget: inCtaWidget(img) };
   }).filter(i => i.w >= 300 && i.h >= 150
     && i.naturalW >= 300 && i.naturalH >= 150
     && i.naturalW / i.naturalH < MAX_ASPECT
     && i.naturalH / i.naturalW < MAX_ASPECT
     && i.top < 800
-    && !PROMO_SRC_RE.test(i.src))
+    && !PROMO_SRC_RE.test(i.src)
+    && !i.inCtaWidget)
     .sort((a, b) => a.top - b.top)
     .slice(0, 3);
 };
