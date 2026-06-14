@@ -457,7 +457,7 @@
   // 同時剝掉 jread 內部用的 data-jread-* attribute 和 jread 注入的 style 元素。
   // 抓 document.title 的分隔前首段當 title——多數站把站名接在「| Site Name」之後，
   // 切掉避免 Readwise 顯示「文章標題 | 中央社 CNA」這種尾巴。
-  function buildCleanHtml(rootEl) {
+  function buildCleanHtml(rootEl, title) {
     const clone = rootEl.cloneNode(true);
     // 1. 移除被 cleaner 標記隱藏的節點
     const hidden = clone.querySelectorAll('[data-jread-hidden="1"]');
@@ -521,6 +521,25 @@
       for (const child of node.children) stripDataAttrs(child);
     }
     stripDataAttrs(clone);
+    // 4. 去重「與 payload title 同文的主標 heading」（v0.8.62）。
+    // Readwise Reader 端用 payload 的 title 欄位另外渲染一條主標 header，body 內
+    // 若殘留同名 heading 會被重複渲染成第 2、第 3 條標題（theatlantic 實證：
+    // detector 注入的可見主標 h1 + 站方原生 ArticleTitle h1（被 detector 設
+    // display:none 但未標 data-jread-hidden，逃過步驟 1）兩份都進了 outerHTML）。
+    // 結構性通則：「主標」這份事實送 Readwise 時由 title 欄位單一承擔，body 不該
+    // 再出現——折疊標點 + 大小寫後與 title 文字相等的 h1-h6 全部移除。比對全文
+    // 相等（非 includes）避免誤殺「標題是某段 heading 子字串」的合法 section
+    // heading；reader card 主標一律 <= 300 字，title 來源同此上限。
+    if (title) {
+      const fold = (s) => (NS && NS.foldTitlePunct ? NS.foldTitlePunct(s) : (s || '').replace(/\s+/g, ' ').trim()).toLowerCase();
+      const foldedTitle = fold(title);
+      if (foldedTitle) {
+        clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+          const t = fold(h.textContent || '');
+          if (t && t === foldedTitle) h.remove();
+        });
+      }
+    }
     return clone.outerHTML;
   }
 
@@ -882,8 +901,8 @@
       return { ok: false, reason: 'NOT_ACTIVE' };
     }
     resetJsonLdCache(); // v0.8.18 C8：每輪 payload 抽取重新解析 JSON-LD
-    const html = buildCleanHtml(NS.state.articleEl);
     const title = extractReaderTitle();
+    const html = buildCleanHtml(NS.state.articleEl, title);
     const imageUrl = extractHeroImage(NS.state.articleEl);
     const author = extractAuthor();
     const publishedDate = extractPublishedDate();
