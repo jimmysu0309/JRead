@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Flex text column de-collapse fixture</title></head>
+<body>
+<article id="art">
+  <h1>David Hockney's California (1965)</h1>
+
+  <!-- 正例 1：flex-row 把主文擠成半欄（christies sc-kLokBR 形狀） -->
+  <section>
+    <div id="flexrow" style="display:flex;flex-direction:row;">
+      <div id="textcol">
+        <p id="p1">In 1964, David Hockney left London for California. Having graduated from the Royal College of Art in 1962, he had saved up enough money from selling his paintings to live in Los Angeles for a year.</p>
+        <p id="p2">It occurred to Hockney that the affluent Los Angeles suburbs had rarely been represented in art. He resolved to become the Piranesi of Santa Monica and Beverly Hills.</p>
+      </div>
+      <div id="sidecol"><p id="side1">Sold for £18,710,000</p></div>
+    </div>
+  </section>
+
+  <!-- 正例 2：grid 多欄把主文擠成半欄 -->
+  <section>
+    <div id="gridrow" style="display:grid;grid-template-columns:1fr 1fr;">
+      <div id="gtextcol">
+        <p id="gp1">Not only did Los Angeles offer the artist a fresh new world to depict, it also offered him a more liberated way of living than the London he had left behind that year.</p>
+      </div>
+      <div id="gsidecol"><p id="gside1">detail</p></div>
+    </div>
+  </section>
+
+  <!-- 反例 A：flex-row 但只有單一全寬子（沒真的分欄）→ 不可塌 -->
+  <section>
+    <div id="fullrow" style="display:flex;flex-direction:row;">
+      <div id="fulltextcol">
+        <p id="fp1">This is a normal full-width paragraph inside a flex container that has only one child column, so it occupies the entire content width and must not be collapsed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 反例 B：flex-column（本來就垂直堆疊）→ 不可塌 -->
+  <section>
+    <div id="colstack" style="display:flex;flex-direction:column;">
+      <p id="cp1">A flex-column container stacks its children vertically already, so even a long paragraph here is full width and the container must not be touched by the de-column pass.</p>
+    </div>
+  </section>
+
+  <!-- 反例 C：橫向 UI 列（短文字 / 無長段落）→ 不可塌 -->
+  <section>
+    <div id="btnrow" style="display:flex;flex-direction:row;">
+      <a id="b1" href="#">Share</a>
+      <a id="b2" href="#">Save</a>
+      <a id="b3" href="#">Print</a>
+    </div>
+  </section>
+</article>
+</body>
+</html>

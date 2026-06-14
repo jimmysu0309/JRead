@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.65**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.66**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -363,6 +363,12 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 `apply()` runtime 自我檢查：圖片撐滿 reader card 版心、但內文 / 標題 / 分類列被中間 wrapper 的水平 padding 夾窄時（roomie.tw 內文 `div.content { padding: 0 20px }`、標題列 `div.mobile-info { padding: 0 24px }`，Jimmy iPhone 回報），把內容撐回滿版。reader card 是單欄 layout、card padding 是唯一應有的閱讀內距——**遍歷 card 內所有通用 block wrapper（`div` / `section` / `article` / `main` / `aside` / `header` / `footer` / `nav`）+ 文字 block（`p` / `h1`–`h6`）**，把水平 `padding` / `margin` 清零（inline `!important`）。
 
 v0.7.247 從「沿段落祖先鏈走」改為「全面遍歷」：roomie 可見標題是 `<span>`（語意 `h1` 是 sr-only `display:none` 又空），沿段落鏈走不到標題 wrapper——直接遍歷才涵蓋標題。排除規則：(1) 語意縮排容器（`blockquote` / `ul` / `ol` / `dl` / `li` / `figure` / `figcaption` / `table` 及其 cell / `pre` / `details`）自身與其後代不動，保留引言 / 清單 / 表格 / 程式碼縮排；(2) `data-jread-hidden`（cleaner 清掉的雜訊）不動。水平 `margin` 清零安全的理由：既有規則已對這些元素設 `width: auto` / `max-width: 100%`，滿版元素的 auto margin 算成 0，故 computed 水平 margin > 0 必是「顯式非置中 margin」。既有 `width: auto` / `max-width: 100%` 只擋「超寬」、擋不掉「被內距夾窄」，此檢查補反向兜底。捲動與翻頁（multicol）模式同根因同修法——走「水平內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），兩模式通用。`restore()` 對稱還原原 inline 值。Forcing function：`test/regression/content-width-self-check.spec.js`（內文 wrapper + 標題列 wrapper padding 清零 / blockquote + ul 縮排保留 / restore 還原）+ `tools/debug-harness.js` 的 **WIDTH AUDIT**（捲動模式量內文 p content-box 寬 vs card 版心寬，窄 > 2px 印 ⚠️；`--paged` 跳過）。
+
+### 文字欄塌成單欄（de-column flex/grid text columns，v0.8.66）
+
+`apply()` runtime 自我檢查：原站把主文段落排進 **flex-row** 或 **多欄 grid** 容器做雜誌式雙欄 layout 時（christies.com/en/stories `div.sc-kLokBR` 是 `display:flex`，文字欄被擠成 292px 半欄、另半欄留給側欄圖說、本文沒側欄時純留白，Jimmy 2026-06-14 回報「內文寬度不正確」），把分欄容器塌成 `display:block`、讓段落退回正常 block flow 撐滿版心。既有 `galleryFlex`（v0.7.93）只塌「含 `picture` / `img` / `figure` 直接子」的 flex/grid（並列圖），純文字欄分欄是另一條 path——此 pass 補上。
+
+結構訊號（非站點特判）：掃所有 **>= 80 字的長 `<p>`**，沿祖先鏈往上找 `display:flex` 且 `flex-direction:row(-reverse)`、或 `display:grid` 且 `grid-template-columns` >= 2 column track 的容器；若該長段落**實際渲染寬 < 容器內容寬 70%**（確認真的在分欄、非單一全寬子），把容器塌成 `display:block`（inline `!important`）。中間 wrapper 由既有 `[data-jread-active] div { width:auto }` 規則接手撐滿。防誤殺：`flex-direction:column`（本來就垂直堆疊）、橫向 UI 列（button / 分享列無長段落）、單一全寬子（比例接近 1）皆不命中；player 容器（`data-jread-player`）排除。每塌一層後重量段落寬，內層 splitter 塌掉後外層比例回到 ~1 不會被誤塌。`restore()` 還原原 inline `display`。Forcing function：`test/regression/flex-text-column-decollapse.spec.js`（flex-row / grid 正例塌成 block + 三類防誤殺 guard + restore 還原）；真實 Chromium flex 解析寬度走 `tools/debug-harness.js` 截圖自驗。
 
 ### 僅在「使用者改過預設值」時才注入的 override
 
