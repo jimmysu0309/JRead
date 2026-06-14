@@ -68,6 +68,12 @@ function setup() {
   // 掛 load listener；不可在 apply 當下立即塌。
   stubRect($('lazyrow'), { top: 2700, width: 600, height: 480 });
   stubRect($('lazyimg'), { top: 2700, width: 0, height: 0 });
+  // 正例 5：小 hero 72%（450/600）——> 0.7 但 < 0.9，v0.8.70 圖片門檻才塌。
+  stubRect($('midrow'), { top: 3300, width: 600, height: 300 });
+  stubRect($('midimg'), { top: 3300, width: 432, height: 270 });
+  // 反例 E：圖片幾乎撐滿（576/600 = 96% >= 0.9）→ 不塌。
+  stubRect($('fullimgrow'), { top: 3900, width: 600, height: 360 });
+  stubRect($('fullimg'), { top: 3900, width: 576, height: 360 });
 
   const art = $('art');
   const snapshot = env.NS.styler.apply(art, DEFAULT_SETTINGS);
@@ -133,6 +139,16 @@ describe('styler — de-column flex/grid 文字欄塌成單欄（v0.8.66）', ()
   it('lazy hero：載入後（load 事件）補跑 de-column 塌欄（v0.8.69 核心驗證點）', () => {
     assert.strictEqual($('lazyrow').style.display, 'block',
       'hero 載入後量到 405px（撐窄欄），load listener 應補塌欄，否則 hero 卡 66.67% 欄偏左');
+  });
+
+  it('小 hero 72%（介於 0.7~0.9）→ 塌欄（v0.8.70 圖片門檻放寬核心驗證點）', () => {
+    assert.strictEqual($('midrow').style.display, 'block',
+      '440px 級小 hero = 72%、舊 0.7 門檻漏掉；圖片門檻 0.9 後應塌欄置中，否則仍偏左');
+  });
+
+  it('防誤殺 E：圖片幾乎撐滿 flex 容器（96% >= 0.9）不可塌', () => {
+    assert.notStrictEqual($('fullimgrow').style.display, 'block',
+      '圖片已近全寬、沒被分欄擠窄，不該塌欄');
   });
 
   it('restore 後塌欄容器的 inline display 還原（無殘留）', () => {

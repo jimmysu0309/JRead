@@ -80,6 +80,22 @@
       <div id="lazysidecol"><p id="lazyside1">£201,600</p></div>
     </div>
   </section>
+
+  <!-- 正例 5：小 hero 在 flex 欄 = 72%（介於 0.7~0.9）。v0.8.70 圖片門檻放寬到
+       0.9 後才會塌；舊 0.7 門檻會漏掉（christies 440px hero 實況）。 -->
+  <section>
+    <div id="midrow" style="display:flex;flex-direction:row;">
+      <div id="midcol"><picture><img id="midimg" src="mid.jpg" alt="mid"></picture></div>
+      <div id="midsidecol"><p id="midside1">caption</p></div>
+    </div>
+  </section>
+
+  <!-- 反例 E：圖片幾乎撐滿 flex 容器（96%）→ 沒被分欄擠窄、不可塌 -->
+  <section>
+    <div id="fullimgrow" style="display:flex;flex-direction:row;">
+      <div id="fullimgcol"><picture><img id="fullimg" src="full.jpg" alt="full"></picture></div>
+    </div>
+  </section>
 </article>
 </body>
 </html>
