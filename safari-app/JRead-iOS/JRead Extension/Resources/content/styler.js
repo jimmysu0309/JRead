@@ -856,6 +856,66 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] *:has(> picture[data-jread-hidden="1"]) * {
   min-height: 0 !important;
 }
+/* ===== Carousel / slider 版面中和（v0.8.67）=====
+   原站用 carousel/slider library（pure-react-carousel / slick / swiper /
+   splide / flickity）做水平翻頁 widget。三層共通結構：
+     1) slider 根：overflow:hidden + JS 寫死的 inline height，只露一張 slide
+     2) slide track：display:flex（nowrap）+ transform:translateX(...) 平移
+     3) 每張 slide：padding-bottom aspect hack 撐高度 + 內層 position:absolute
+        inset:0 填滿（pure-react-carousel 的 inner-slide）
+   reader mode 把 overflow / transform 拆掉後，JS 寫死的 height 與 slide 的
+   absolute 內層仍在 → slide 內容（圖片）溢出自己被壓縮的 aspect box、疊到
+   上一張 slide 的圖說上（christies stories「Auction Highlights」carousel，
+   Jimmy 2026-06-14 截圖：圖蓋住「20TH & 21ST CENTURY ART | AUCTION
+   HIGHLIGHTS」文字）。
+   通則：carousel library 的 class 名是跨站共用的「結構慣例」（library 公開
+   CSS API，非單一站點 hash class），與既有 [class*="ratio"] / .imageRow /
+   placeholder hack 修法同精神。把 slider 根 / track / slide / inner 全部拉回
+   normal vertical flow——height auto + transform none + display block +
+   position static + 清 padding-bottom hack——slide 改成乾淨垂直堆疊、不再
+   互相重疊。不移除內容（圖庫類 carousel 的每張 slide 仍可讀）。 */
+[${ARTICLE_ATTR}="1"] [class*="carousel__slider"],
+[${ARTICLE_ATTR}="1"] [class*="slick-list"],
+[${ARTICLE_ATTR}="1"] [class*="splide__track"],
+[${ARTICLE_ATTR}="1"] [class*="flickity-viewport"],
+[${ARTICLE_ATTR}="1"] [class~="swiper"] {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+[${ARTICLE_ATTR}="1"] [class*="sliderTray" i],
+[${ARTICLE_ATTR}="1"] [class*="slider-tray" i],
+[${ARTICLE_ATTR}="1"] [class*="slick-track"],
+[${ARTICLE_ATTR}="1"] [class*="swiper-wrapper"],
+[${ARTICLE_ATTR}="1"] [class*="splide__list"],
+[${ARTICLE_ATTR}="1"] [class*="flickity-slider"] {
+  transform: none !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  white-space: normal !important;
+}
+[${ARTICLE_ATTR}="1"] [class*="carousel__slide"],
+[${ARTICLE_ATTR}="1"] [class*="carousel__inner-slide"],
+[${ARTICLE_ATTR}="1"] [class*="slick-slide"],
+[${ARTICLE_ATTR}="1"] [class*="swiper-slide"],
+[${ARTICLE_ATTR}="1"] [class*="splide__slide"],
+[${ARTICLE_ATTR}="1"] [class*="carousel-cell"] {
+  position: static !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding-bottom: 0 !important;
+  float: none !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  margin-right: 0 !important;
+  transform: none !important;
+}
 /* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
    實機 Jimmy 截圖揭穿 div.placeholder style="padding-top:75.25%" 撐
    aspect-ratio 4:3 placeholder）。padding-top 是 padding-bottom hack 的
