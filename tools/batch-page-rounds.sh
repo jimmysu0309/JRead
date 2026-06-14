@@ -44,6 +44,7 @@ URLS=(
   "https://restofworld.org/2026/ai-davos-wef-2026-highlights/"
   "https://www.propublica.org/article/todd-blanche-complaint-conflict-of-interest"
   "https://www.quantamagazine.org/the-ai-revolution-in-math-has-arrived-20260413/"
+  "https://www.myartbroker.com/artist-david-hockney/articles/david-hockney-paintings"
   "https://www.healthsystemtracker.org/brief/what-drives-health-spending-in-the-u-s-compared-to-other-countries/"
   "https://36kr.com/p/3777437597586178"
   "https://sspai.com/post/105378"
