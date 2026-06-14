@@ -162,6 +162,10 @@ async function setZoom(page, z) {
   await setZoom(page, 1);
   const originalHeroImages = await audits.captureOriginalHeroImages(page);
   console.log(`  hero images found: ${originalHeroImages.length}`);
+  // 內文掉圖 audit：toggle 前標記內容圖候選（高精度窄版，見 audit-lib 頭註解）。
+  // 補 hero audit 的洞——hero 只驗頂端前 3 張，文章深處內容圖被誤殺抓不到。
+  const taggedFigures = await audits.tagOriginalContentFigures(page);
+  console.log(`  content figures tagged: ${taggedFigures}`);
   // B3 基準：原頁 visible p 文字總量（retention ratio 用，見 audit-lib 頭註解）
   const originalTextStats = await audits.collectOriginalTextStats(page);
   console.log(`  original p text: ${originalTextStats.pTextLength} chars (${originalTextStats.pCount} p)`);
@@ -174,7 +178,7 @@ async function setZoom(page, z) {
     gaps: { initial: null, delayed: null },
     contrast: { light: null, dark: null },
     theme: { dark: null, lightRestore: null },
-    overflow: null, tail: null, restored: null,
+    overflow: null, tail: null, restored: null, droppedFigures: null,
     failReasons: [], reviewReasons: [] };
 
   // verdict 收尾共用：寫 audit.json、移目錄、印 VERDICT 行（batch script 解析這行）
@@ -360,6 +364,21 @@ async function setZoom(page, z) {
     console.log('  ℹ️  hero images: none detected on original page');
   }
 
+  // 內文掉圖 audit（toggle 後 collect；tag 已在 toggle 前做）
+  if (taggedFigures > 0) {
+    audit.droppedFigures = await audits.runDroppedFigureAudit(page);
+    if (audit.droppedFigures.dropped.length > 0) {
+      console.log(`  ⚠️  內文掉圖: ${audit.droppedFigures.dropped.length}/${audit.droppedFigures.tagged}（cleaner 誤殺嫌疑）`);
+      for (const d of audit.droppedFigures.dropped) {
+        console.log(`    DROPPED: "${d.alt}" ${d.src?.slice(0, 70)}`);
+      }
+    } else {
+      console.log(`  ✅ 內文掉圖: ${audit.droppedFigures.tagged} 張內容圖全保留`);
+    }
+  } else {
+    console.log('  ℹ️  內文掉圖: 原頁無內容圖候選');
+  }
+
   audit.narrowText = await audits.runNarrowTextAudit(page);
   if (audit.narrowText.narrow) {
     console.log(`  ⚠️  narrow text: ${audit.narrowText.narrowCount} paragraphs with < 10 chars/line`);
@@ -530,6 +549,9 @@ async function setZoom(page, z) {
   if (!audit.theme?.dark?.applied) fail.push('dark-theme-not-applied');
   if (audit.overflow?.overflow) fail.push('overflow');
   if (audit.heroImage?.missing?.length > 0) review.push(`hero-missing x${audit.heroImage.missing.length}`);
+  // 內文掉圖：review-tier（高精度窄版，FP 已壓到近 0，但仍歸低精度由 Claude
+  // 看截圖確認——保守不 fail build，與 hero-missing 同層）
+  if (audit.droppedFigures?.dropped?.length > 0) review.push(`content-img-dropped x${audit.droppedFigures.dropped.length}`);
   if (audit.narrowText?.narrow) fail.push('narrow-text');
   if (audit.figcaption?.cramped) fail.push('figcaption-cramped');
   if (audit.bodyWidth?.narrow) fail.push('body-width-narrow');

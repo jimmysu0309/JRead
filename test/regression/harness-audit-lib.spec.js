@@ -238,6 +238,44 @@ describe('harness audit-lib — 單一資料源合約', () => {
       assert.ok(imgs[0].src.includes('abcdef123456'), 'src 必須保留供比對');
     });
 
+    it('tagOriginalContentFigures：srcset 內容圖入選、widget / 推薦 / 卡片容器內排除', () => {
+      // 高精度窄版掉圖 audit 的 capture 端（2026-06-14 myartbroker）。內容圖
+      // 慣例整張包 <a> 連到作品頁、lazy 時 natural 0×0，靠 srcset 識別；相關
+      // 文章縮圖結構相同，只能靠 widget / related / swiper / card 容器排除
+      // （天真版在 myartbroker 報 4 張 RelatedArticles 卡片 FP）。
+      const dom = new JSDOM(`<!DOCTYPE html><body>
+        <div class="magazineimage"><a href="/artwork/x"><img id="fig" srcset="a.jpg?w=750 750w"></a></div>
+        <div class="RelatedArticles_wrap"><div class="swiper-slide"><a href="/y"><img id="card" srcset="b.jpg?w=750 750w"></a></div></div>
+        <ul><li><a href="/z"><img id="li" srcset="c.jpg?w=750 750w"></a></li></ul>
+      </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+      const rebuilt = dom.window.eval(`(${auditLib.pageFns.tagOriginalContentFigures.toString()})`);
+      const n = rebuilt(auditLib.CFIG_NOISE_TOKENS);
+      assert.strictEqual(n, 1, '只有單張內容圖入選（card / li 在 widget / 列表容器內排除）');
+      assert.strictEqual(dom.window.document.getElementById('fig').getAttribute('data-pr-cfig'), '0',
+        '內容圖必須被標記；forcing：拿掉 srcset 識別或容器排除 → 標記數錯');
+      assert.strictEqual(dom.window.document.getElementById('card').hasAttribute('data-pr-cfig'), false,
+        'RelatedArticles / swiper 卡片不得被標（FP 來源）');
+      assert.strictEqual(dom.window.document.getElementById('li').hasAttribute('data-pr-cfig'), false,
+        '<li> 列表縮圖不得被標');
+    });
+
+    it('collectDroppedContentFigures：article 內被 hide = dropped、外部清除不算、可見保留', () => {
+      const dom = new JSDOM(`<!DOCTYPE html><body>
+        <article data-jread-active="1">
+          <div data-jread-hidden="1"><div class="magazineimage"><img id="dropped" data-pr-cfig="0" srcset="a 750w"></div></div>
+          <div class="magazineimage"><img id="kept" data-pr-cfig="1" srcset="b 750w"></div>
+        </article>
+        <div class="sidebar"><img id="out" data-pr-cfig="2" srcset="c 750w"></div>
+      </body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+      const rebuilt = dom.window.eval(`(${auditLib.pageFns.collectDroppedContentFigures.toString()})`);
+      const r = rebuilt();
+      assert.strictEqual(r.tagged, 3, '三張 tagged 圖全數分類');
+      assert.strictEqual(r.dropped.length, 1, 'article 內被 hide 的內容圖 = dropped');
+      assert.strictEqual(r.dropped[0].id, '0', 'dropped 必須是 #dropped；forcing：拿掉 inside+hidden 判定 → 抓錯');
+      assert.strictEqual(r.insideVisible, 1, 'article 內未被 hide = 保留');
+      assert.strictEqual(r.outside, 1, 'article 外被清的圖不算掉圖（reader 本來就該清）');
+    });
+
     it('auditGap 含區間覆蓋檢查（engadget embed 卡 / ms.now player 假 gap）', () => {
       const src = auditLib.pageFns.auditGap.toString();
       assert.match(src, /intervalCovered/, 'gap 候選必須先過區間覆蓋檢查');
