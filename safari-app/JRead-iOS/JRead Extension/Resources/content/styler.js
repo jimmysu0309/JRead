@@ -2882,35 +2882,16 @@ html [${ARTICLE_ATTR}="1"] a {
       // splitter 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
       const textColFlex = [];
       const textColSeen = new Set();
+      // v0.8.69：lazy content img 載入後才補跑 de-column 的 load listener，
+      // restore 時清除尚未觸發者（避免退出後仍在 detach 節點上塌欄 / 洩漏）。
+      const decolumnLoadCleanup = [];
       // galleryFlex 已塌成 block 的容器不再重複塌（避免 restore 雙重還原）。
       for (const g of galleryFlex) { if (g.el) textColSeen.add(g.el); }
       {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
-          // anchor = 「被分欄擠窄」的訊號載體：長段落 + 內容圖片。
-          const anchors = [];
-          for (const p of articleEl.querySelectorAll('p')) {
-            if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
-            if ((p.textContent || '').trim().length >= 80) anchors.push(p);
-          }
-          // v0.8.68：content media 也當 anchor——christies stories 把直幅素描
-          // 放進 flex-row 的 66.67% 欄（DIV flex: 0 0 calc(66.6667% - 8px)），
-          // 欄內只有 <a><picture><img>、沒有長 <p>，上面 longParas 路徑漏掉、
-          // 圖被鎖在 2/3 欄寬 = 397px（card 內容寬 608），偏左又縮小（Jimmy
-          // 2026-06-14 截圖）。galleryFlex 只認「flex/grid 直接子是 picture/
-          // img/figure」的並列圖，這裡的媒體深埋在欄 wrapper div 內、不命中。
-          // 補上：>= 100px 的 content img 當 anchor，沿用同一「< 容器內容寬
-          // 70% → 塌欄」結構訊號。inline emoji（INLINE_IMG_ATTR）與純 icon-link
-          // （a > img 未標 content-img）排除，與 styler media 規則同準則。
-          for (const m of articleEl.querySelectorAll('img')) {
-            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
-            if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
-            if (m.parentElement && m.parentElement.tagName === 'A' &&
-                !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
-            const mr = m.getBoundingClientRect();
-            if (mr.width >= 100 && mr.height >= 100) anchors.push(m);
-          }
-          for (const anchor of anchors) {
+          // 對單一 anchor 沿祖先鏈塌分欄容器（長段落 / content img 共用同一邏輯）。
+          const decolumnFrom = (anchor) => {
             let cur = anchor.parentElement;
             while (cur && cur !== articleEl) {
               if (!textColSeen.has(cur) &&
@@ -2938,6 +2919,44 @@ html [${ARTICLE_ATTR}="1"] a {
                 }
               }
               cur = cur.parentElement;
+            }
+          };
+
+          // anchor 1：長段落（toggle 當下已在 DOM、文字不 lazy）。
+          for (const p of articleEl.querySelectorAll('p')) {
+            if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
+            if ((p.textContent || '').trim().length >= 80) decolumnFrom(p);
+          }
+          // anchor 2：content 圖片（v0.8.68）——christies stories 把直幅素描 /
+          // hero 放進 flex-row 的 66.67% 欄（DIV flex: 0 0 calc(66.6667% - 8px)），
+          // 欄內只有 <a><picture><img>、沒有長 <p>，longParas 路徑漏掉、圖被鎖在
+          // 2/3 欄寬 = 397px（card 內容寬 608），偏左又縮小。galleryFlex 只認
+          // 「flex/grid 直接子是 picture/img/figure」的並列圖，這裡的媒體深埋在欄
+          // wrapper div 內、不命中。inline emoji（INLINE_IMG_ATTR）與純 icon-link
+          // （a > img 未標 content-img）排除，與 styler media 規則同準則。
+          //
+          // v0.8.69：lazy 圖延後處理——hero 在 above-fold 卻 lazy-load，toggle
+          // 當下 naturalWidth=0 / rect 0x0、不滿 >= 100px anchor 門檻被漏掉，
+          // 一次性 de-column 跑完就不再回頭，圖載入後仍卡 66.67% 欄偏左（Jimmy
+          // 2026-06-14 cage 實機實證：hero rect 397/608、sc-kLokBR 仍 flex、
+          // 長 <p> 路徑救不到它的圖說欄）。修法：toggle 當下已載入的圖立即跑；
+          // 未載入的掛一次性 load listener，載入後重量、夠大且撐窄欄才塌。
+          for (const m of articleEl.querySelectorAll('img')) {
+            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
+            if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
+            if (m.parentElement && m.parentElement.tagName === 'A' &&
+                !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
+            const mr = m.getBoundingClientRect();
+            if (mr.width >= 100 && mr.height >= 100) {
+              decolumnFrom(m);
+            } else if (!m.complete || (m.naturalWidth || 0) === 0) {
+              const onLoad = () => {
+                if (m.hasAttribute(INLINE_IMG_ATTR)) return;
+                const rr = m.getBoundingClientRect();
+                if (rr.width >= 100 && rr.height >= 100) decolumnFrom(m);
+              };
+              m.addEventListener('load', onLoad, { once: true });
+              decolumnLoadCleanup.push({ img: m, onLoad });
             }
           }
         }
@@ -2970,7 +2989,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3163,6 +3182,14 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v0.8.69：移除尚未觸發的 lazy content-img de-column listener（避免退出後
+      // 圖載入仍在已 detach 的節點上塌欄 / listener 洩漏）。先清 listener 再還原
+      // display，避免 restore 進行中 load 事件又補一筆塌欄。
+      if (Array.isArray(snapshot.decolumnLoadCleanup)) {
+        for (const { img, onLoad } of snapshot.decolumnLoadCleanup) {
+          if (img && img.removeEventListener) img.removeEventListener('load', onLoad);
+        }
+      }
       // v0.8.66：還原 de-column flex/grid 容器的 display inline override
       if (Array.isArray(snapshot.textColFlex)) {
         for (const t of snapshot.textColFlex) {
