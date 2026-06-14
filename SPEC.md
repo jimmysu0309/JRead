@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.64**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.65**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -452,7 +452,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 詞彙單一資料源：`content/namespace.js` 的 `NS.MSG` 表；三方一致（MSG 表 ↔ content 發送 ↔ SW case）由 `test/regression/message-protocol-consistency.spec.js` 強制（v0.8.37）。
 
 - `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）
-- `popup → background`：`SAVE_TO_READWISE`（v0.7.33）。popup / options 的設定讀寫一律直接走 `chrome.storage.sync`、不經 SW
+- `popup → background`：（無）。popup / options 的設定讀寫一律直接走 `chrome.storage.sync`、不經 SW。**v0.8.65 起送 Readwise 不再走 SW**——原 `SAVE_TO_READWISE`（v0.7.33）popup → SW 往返已移除，改在 popup（extension 頁、有 `<all_urls>` host_permission）直接 fetch（`popup-core.saveReaderPayload`）。動機：iOS Safari 背景頁（event page、`persistent:false`）被系統掛起得遠比 macOS 積極，popup → SW 非同步往返 + 背景頁 fetch 在 iOS 會 silently 失敗（popup `await` 拿到 `undefined` → 純「送出失敗」無 HTTP 碼；macOS Chrome / Safari 正常）。options「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走同一路徑
 - `content → background`：
   - `GET_SETTINGS`：**v0.7.235** 起 content 端 `getSettings` 不再走 round-trip——改直讀 `chrome.storage.sync.get(defaults)`（defaults 來自 `content/settings-defaults.js` 單一資料源）；iOS Safari background 訊息會無聲掉包（thread 758346 / 787958），掉包時舊版回 `undefined` → 所有設定 fallback 預設值（pagedMode 永遠 false = 「翻頁模式 iOS 沒功能」根因）。handler 保留，僅作 content 端 storage 失效（context invalidated）時的 fallback
   - `SET_ACTIVE_ICON`：enter/exit 切 action icon 彩色/灰階 + 綠色 badge
@@ -516,8 +516,8 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - popup 開啟時透過 `GET_READER_STATE` 查 reader mode 狀態，按鈕可見性（v0.7.130 起整顆 `hidden`、非 disabled；`disabled` 軸保留給送出中防連點）：
   - reader mode 已啟動 **且** 非 cinema mode **且** 已設定 `readwiseToken`（trim 後非空，v0.8.50）→ 按鈕顯示
   - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
-- 點擊：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ popup → SW（`SAVE_TO_READWISE` 帶 payload）→ SW 讀 token + fetch + 回結果
-- 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`
+- 點擊（v0.8.65）：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ **popup 自己**讀 `readwiseToken` + `popup-core.saveReaderPayload`（buildReadwisePayload + fetch `POST /api/v3/save/`）回結果。**不再繞 SW**（iOS 背景頁掛起會 silently 失敗，見訊息協定段 v0.8.65 註）。快速鍵送出（無 popup）仍走 SW `sendToReadwiseFromCommand`
+- 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位）
 
 ## 自動啟動網域（v0.7.155）
 

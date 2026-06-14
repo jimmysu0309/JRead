@@ -261,36 +261,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       return; // sync
     }
-    case 'SAVE_TO_READWISE': {
-      // popup → SW：把 reader card 內容 POST 到 Readwise Reader API。
-      // payload 由 content script 的 EXTRACT_READER_HTML 產生（{ url, html, title }）。
-      // 在 SW fetch 而非 popup fetch 的理由：popup 關閉後 fetch 會中斷；SW 即便 popup 關了
-      // 也能跑完並透過 sendResponse 回給 popup（若 popup 已關則 silently drop，但 fetch
-      // 已成功觸發）。
-      // v0.8.15：整個 async IIFE 包 try/catch。原本只有 buildReadwisePayload
-      // 被包住，storage.sync.get / saveToReadwise 若 throw 會讓 IIFE rejection
-      // 無人接、sendResponse 永不被呼叫 → popup 端 await 拿到 undefined、卡在
-      // 「送出中…」。現在保證任何路徑都會回 sendResponse。
-      (async () => {
-        try {
-          const { readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' });
-          const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
-          let body;
-          try {
-            body = buildReadwisePayload(msg.payload || {});
-          } catch (e) {
-            sendResponse({ ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) });
-            return;
-          }
-          const result = await saveToReadwise({ token: readwiseToken, payload: body });
-          sendResponse(result);
-        } catch (e) {
-          sendResponse({ ok: false, error: 'INTERNAL', message: String(e && e.message || e) });
-        }
-      })();
-      return true; // async sendResponse
-    }
     default:
+      // v0.8.65：原 popup → SW 的 SAVE_TO_READWISE case 已移除——popup「送到
+      // Readwise」改在 extension 頁直接 fetch（popup-core.saveReaderPayload）。
+      // iOS Safari 背景頁被掛起得太積極，popup → SW 非同步往返 + 背景 fetch 會
+      // silently 失敗（純「送出失敗」無 HTTP 碼；macOS Chrome / Safari 正常）。
+      // 快速鍵送出（無 popup）走 sendToReadwiseFromCommand，仍在 SW 內直送。
       return;
   }
 });

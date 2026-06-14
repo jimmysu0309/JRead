@@ -5,7 +5,7 @@
 const path = require('path');
 const assert = require('assert');
 
-const { buildReadwisePayload, saveToReadwise, validateReadwiseToken, READWISE_API_URL, READWISE_AUTH_URL } = require(
+const { buildReadwisePayload, saveToReadwise, saveReaderPayload, validateReadwiseToken, READWISE_API_URL, READWISE_AUTH_URL } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
 
@@ -211,6 +211,84 @@ describe('readwise: saveToReadwise', () => {
   });
 });
 
+// v0.8.65：popup「送到 Readwise」改走 popup-core.saveReaderPayload，在 extension
+// 頁直接 fetch（不繞 background）。iOS Safari 背景頁掛起讓 SAVE_TO_READWISE 往返 /
+// 背景 fetch silently 失敗（macOS Chrome/Safari 正常）；options「測試 token」GET 從
+// extension 頁直接發 iOS 實測可行，save 改走同一路徑。
+describe('readwise: saveReaderPayload（popup extension-page 直送，v0.8.65）', () => {
+  const goodPayload = { url: 'https://example.com/post/1', html: '<p>x</p>' };
+
+  it('成功：讀 token → build → POST /save/，回 ok=true + 帶對 token', async () => {
+    const { fetchImpl, calls } = makeFetch(async () => ({
+      ok: true, status: 201, json: async () => ({ id: 'abc' })
+    }));
+    const r = await saveReaderPayload({
+      payload: goodPayload,
+      getToken: async () => 'tok-123',
+      fetchImpl
+    });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.status, 201);
+    assert.strictEqual(calls[0][0], READWISE_API_URL);
+    assert.strictEqual(calls[0][1].method, 'POST');
+    assert.strictEqual(calls[0][1].headers['Authorization'], 'Token tok-123');
+    assert.deepStrictEqual(JSON.parse(calls[0][1].body), goodPayload);
+  });
+
+  it('getToken 回空字串：saveToReadwise 端回 NO_TOKEN，不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
+    const r = await saveReaderPayload({ payload: goodPayload, getToken: async () => '', fetchImpl });
+    assert.strictEqual(r.error, 'NO_TOKEN');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('getToken throw（storage 讀取失敗）：回 INTERNAL、不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
+    const r = await saveReaderPayload({
+      payload: goodPayload,
+      getToken: async () => { throw new Error('storage boom'); },
+      fetchImpl
+    });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'INTERNAL');
+    assert.match(r.message, /storage boom/);
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('payload 缺 url：回 INVALID_PAYLOAD、不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
+    const r = await saveReaderPayload({
+      payload: { html: '<p>x</p>' },
+      getToken: async () => 'tok-123',
+      fetchImpl
+    });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'INVALID_PAYLOAD');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('401：透傳 saveToReadwise 的 AUTH', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 401, json: async () => ({}) }));
+    const r = await saveReaderPayload({ payload: goodPayload, getToken: async () => 'bad', fetchImpl });
+    assert.strictEqual(r.error, 'AUTH');
+    assert.strictEqual(r.status, 401);
+  });
+
+  // forcing function：popup 按鈕必須走 extension-page 直送、不可回退到繞 background
+  it('popup.js 必須用 saveReaderPayload 直送、不得用 runtime.sendMessage 送 SAVE_TO_READWISE', () => {
+    const fs = require('fs');
+    const js = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'popup', 'popup.js'), 'utf8'
+    );
+    assert.match(js, /saveReaderPayload/,
+      'popup.js 必須呼叫 window.__JReadPopup.saveReaderPayload（extension 頁直送）');
+    assert.ok(
+      !/sendMessage\(\s*\{\s*[^}]*SAVE_TO_READWISE/.test(js),
+      'popup.js 不可用 runtime.sendMessage 送 SAVE_TO_READWISE（iOS 背景頁掛起會 silently 失敗）'
+    );
+  });
+});
+
 // v0.8.64：options 頁「測試 token」按鈕走 validateReadwiseToken（純函式 +
 // 注入 fetch）。驗 token 缺漏 / 有效（204）/ 無效（401·403）/ 其他 HTTP /
 // 網路錯誤 / 無 fetch，以及打對 GET 端點 + Authorization header。
@@ -308,23 +386,34 @@ describe('readwise: validateReadwiseToken', () => {
 });
 
 describe('readwise: 訊息協定常數同步', () => {
-  it('namespace.js MSG 必須含 Readwise 用三條訊息（forcing function）', () => {
+  it('namespace.js MSG 必須含 Readwise 用兩條 popup→content 訊息（forcing function）', () => {
     const fs = require('fs');
     const nsSrc = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'content', 'namespace.js'), 'utf8'
     );
-    assert.match(nsSrc, /GET_READER_STATE/);
-    assert.match(nsSrc, /EXTRACT_READER_HTML/);
-    assert.match(nsSrc, /SAVE_TO_READWISE/);
+    assert.match(nsSrc, /GET_READER_STATE:/);
+    assert.match(nsSrc, /EXTRACT_READER_HTML:/);
   });
 
-  it('SW 必須含 SAVE_TO_READWISE handler（forcing function）', () => {
+  // v0.8.65：SAVE_TO_READWISE 訊息 + SW handler 已移除（popup 改 extension 頁直送）。
+  // 守住「不得復活成 popup → SW 死往返」：SW 不可再有 SAVE_TO_READWISE case，
+  // namespace 不可再宣告為 live 常數（只允許出現在移除說明註解）。
+  it('SW 不得再有 SAVE_TO_READWISE message handler（已改 popup 直送，v0.8.65）', () => {
     const fs = require('fs');
     const swSrc = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'background', 'service-worker.js'), 'utf8'
     );
-    assert.match(swSrc, /case 'SAVE_TO_READWISE'/);
-    assert.match(swSrc, /readwiseToken/);
+    assert.ok(!/case\s+['"]SAVE_TO_READWISE['"]/.test(swSrc),
+      'SW 不可再有 SAVE_TO_READWISE case（iOS 背景頁掛起會 silently 失敗，已改 popup-core.saveReaderPayload 直送）');
+  });
+
+  it('namespace.js 不得再把 SAVE_TO_READWISE 宣告為 live MSG 常數（v0.8.65）', () => {
+    const fs = require('fs');
+    const nsSrc = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'namespace.js'), 'utf8'
+    );
+    assert.ok(!/SAVE_TO_READWISE\s*:\s*['"]SAVE_TO_READWISE['"]/.test(nsSrc),
+      'namespace.js 不可再宣告 SAVE_TO_READWISE MSG 常數（已移除 popup→SW 訊息）');
   });
 
   it('main.js 抽 reader payload 時必須移除 hidden 節點 + 剝掉 jread data-* attr（forcing function）', () => {
