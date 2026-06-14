@@ -2855,40 +2855,63 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
-      // v0.8.66：文字欄多欄塌成單欄（de-column flex/grid text columns）。
+      // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。
       // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
-      // 正確」）：原站把主文段落排進 flex-row / 多欄 grid 容器做雜誌式雙欄
-      // layout（christies `div.sc-kLokBR` 是 display:flex 把內文擠成 292px 半欄、
-      // 另半欄留給側欄圖說、本文沒側欄時右半整片留白）。reader card 是單欄
-      // layout，這類橫向分欄讓內文只佔卡片版心一部分、大量浪費可讀寬度。
+      // 正確」+「圖片偏左變小」）：原站把主文段落 / 內容圖片排進 flex-row /
+      // 多欄 grid 容器做雜誌式雙欄 layout（christies `div.sc-kLokBR` 是
+      // display:flex 把內文擠成 292px 半欄、把直幅素描鎖在 66.67% 欄 = 397px、
+      // 另半欄留給側欄圖說，本文沒側欄時右半整片留白）。reader card 是單欄
+      // layout，這類橫向分欄讓內容只佔卡片版心一部分、大量浪費可讀寬度。
       // 上方 galleryFlex 只處理「含 picture/img/figure 直接子」的 flex/grid
-      // （並列圖），純文字欄的橫向分欄是另一條 path——這裡補上。
+      // （並列圖），「段落分欄」與「媒體深埋在欄 wrapper div 內」是另兩條
+      // path——這裡一起補上。
       //
-      // 通則（非站點特判，符合硬規則 3）：以「主文長段落實際被渲染得比它的
-      // flex/grid 祖先的內容寬窄一截（< 70%）」為結構訊號——往上找出真正在分欄
-      // 的那層容器，塌成 display:block 讓段落退回正常 block flow 撐滿版心（既有
-      // `[data-jread-active] div { width:auto }` 規則接手讓中間 wrapper 也撐滿）。
+      // 通則（非站點特判，符合硬規則 3）：以「主文長段落 / 內容圖片實際被渲染
+      // 得比它的 flex/grid 祖先的內容寬窄一截（< 70%）」為結構訊號——往上找出
+      // 真正在分欄的那層容器，塌成 display:block 讓內容退回正常 block flow 撐滿
+      // 版心（塌欄後欄 wrapper 的 flex-basis 失效、退回 block 自然填滿父寬）。
       // 防誤殺：
       //   - 只認 flex-direction:row(-reverse) 或 grid 多欄（>= 2 column track）；
       //     flex-column 本來就垂直堆疊、不命中。
-      //   - 必須含 >= 80 字的長 <p>——button row / tag 列 / 麵包屑 / metadata
-      //     這類橫向 UI 沒有長段落、不命中。
-      //   - 段落寬必須 < 容器內容寬 70%——單一全寬 flex/grid 子（沒真的分欄）
+      //   - anchor 必須是 >= 80 字的長 <p> 或 >= 100px 的 content img——button
+      //     row / tag 列 / 麵包屑 / metadata / emoji / icon-link 沒有長段落或
+      //     大圖、不命中。
+      //   - anchor 寬必須 < 容器內容寬 70%——單一全寬 flex/grid 子（沒真的分欄）
       //     比例接近 1、不動。
-      // 每塌一層後重量段落寬：內層 splitter 塌掉後段落已撐滿，外層若非 splitter
-      // 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
+      // 每塌一層後重量 anchor 寬：內層 splitter 塌掉後 anchor 已撐滿，外層若非
+      // splitter 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
       const textColFlex = [];
       const textColSeen = new Set();
+      // galleryFlex 已塌成 block 的容器不再重複塌（避免 restore 雙重還原）。
+      for (const g of galleryFlex) { if (g.el) textColSeen.add(g.el); }
       {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
-          const longParas = [];
+          // anchor = 「被分欄擠窄」的訊號載體：長段落 + 內容圖片。
+          const anchors = [];
           for (const p of articleEl.querySelectorAll('p')) {
             if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
-            if ((p.textContent || '').trim().length >= 80) longParas.push(p);
+            if ((p.textContent || '').trim().length >= 80) anchors.push(p);
           }
-          for (const p of longParas) {
-            let cur = p.parentElement;
+          // v0.8.68：content media 也當 anchor——christies stories 把直幅素描
+          // 放進 flex-row 的 66.67% 欄（DIV flex: 0 0 calc(66.6667% - 8px)），
+          // 欄內只有 <a><picture><img>、沒有長 <p>，上面 longParas 路徑漏掉、
+          // 圖被鎖在 2/3 欄寬 = 397px（card 內容寬 608），偏左又縮小（Jimmy
+          // 2026-06-14 截圖）。galleryFlex 只認「flex/grid 直接子是 picture/
+          // img/figure」的並列圖，這裡的媒體深埋在欄 wrapper div 內、不命中。
+          // 補上：>= 100px 的 content img 當 anchor，沿用同一「< 容器內容寬
+          // 70% → 塌欄」結構訊號。inline emoji（INLINE_IMG_ATTR）與純 icon-link
+          // （a > img 未標 content-img）排除，與 styler media 規則同準則。
+          for (const m of articleEl.querySelectorAll('img')) {
+            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
+            if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
+            if (m.parentElement && m.parentElement.tagName === 'A' &&
+                !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
+            const mr = m.getBoundingClientRect();
+            if (mr.width >= 100 && mr.height >= 100) anchors.push(m);
+          }
+          for (const anchor of anchors) {
+            let cur = anchor.parentElement;
             while (cur && cur !== articleEl) {
               if (!textColSeen.has(cur) &&
                   !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1')) {
@@ -2902,8 +2925,8 @@ html [${ARTICLE_ATTR}="1"] a {
                 if (isFlexRow || isGridMulti) {
                   const r = cur.getBoundingClientRect();
                   const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-                  const pw = p.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
-                  if (contentW > 0 && pw > 0 && pw < contentW * 0.7) {
+                  const aw = anchor.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
+                  if (contentW > 0 && aw > 0 && aw < contentW * 0.7) {
                     textColSeen.add(cur);
                     textColFlex.push({
                       el: cur,

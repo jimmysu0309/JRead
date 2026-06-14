@@ -50,6 +50,25 @@
       <a id="b3" href="#">Print</a>
     </div>
   </section>
+
+  <!-- 正例 3：flex-row 把內容圖片鎖在 66.67% 欄（christies 直幅素描形狀）。
+       欄內只有 <a><picture><img>、沒有長 <p>——v0.8.68 補的 image anchor path。 -->
+  <section>
+    <div id="imgrow" style="display:flex;flex-direction:row;">
+      <div id="imgcol">
+        <a href="#"><picture><img id="bigimg" src="celia.jpg" alt="Celia"></picture></a>
+      </div>
+      <div id="imgsidecol"><p id="imgside1">£201,600</p></div>
+    </div>
+  </section>
+
+  <!-- 反例 D：flex-row 內是 emoji / 小 icon img（< 100px）→ 不可塌 -->
+  <section>
+    <div id="emojirow" style="display:flex;flex-direction:row;">
+      <div id="emojicol"><img id="emojiimg" src="emoji.png" alt=""></div>
+      <div id="emojisidecol"><span>tag</span></div>
+    </div>
+  </section>
 </article>
 </body>
 </html>

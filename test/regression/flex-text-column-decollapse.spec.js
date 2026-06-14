@@ -57,6 +57,13 @@ function setup() {
   stubRect($('cp1'), { top: 1100, width: 580, height: 100 });
   // 反例 C：button row 600，短連結（無長段落）
   stubRect($('btnrow'), { top: 1300, width: 600, height: 40 });
+  // 正例 3：flex-row 600，內容圖片鎖在 66.67% 欄 = 397（< 420）。
+  // 圖說 p 短（£201,600）→ 只有 image anchor path 能塌這層（隔離新 code path）。
+  stubRect($('imgrow'), { top: 1500, width: 600, height: 480 });
+  stubRect($('bigimg'), { top: 1500, width: 397, height: 480 });
+  // 反例 D：flex-row 600，但欄內只有 emoji / 小 icon（24px）→ 非 content img、不塌
+  stubRect($('emojirow'), { top: 2100, width: 600, height: 40 });
+  stubRect($('emojiimg'), { top: 2100, width: 24, height: 24 });
 
   const art = $('art');
   const snapshot = env.NS.styler.apply(art, DEFAULT_SETTINGS);
@@ -96,6 +103,16 @@ describe('styler — de-column flex/grid 文字欄塌成單欄（v0.8.66）', ()
       'button / 分享列無 >= 80 字長段落，不該被 de-column 命中');
   });
 
+  it('flex-row 把內容圖片鎖在 66.67% 欄 → 容器塌成 block（v0.8.68 image anchor）', () => {
+    assert.strictEqual($('imgrow').style.display, 'block',
+      '欄內只有圖、沒有長 <p>，content img 當 anchor 仍應塌欄，否則圖偏左變小');
+  });
+
+  it('防誤殺 D：欄內只有 emoji / 小 icon（< 100px）不可塌', () => {
+    assert.notStrictEqual($('emojirow').style.display, 'block',
+      'inline emoji / 小 icon 非 content img，不該觸發 de-column');
+  });
+
   it('restore 後塌欄容器的 inline display 還原（無殘留）', () => {
     // fixture 原始 inline 是 display:flex / display:grid，restore 應還原回去
     env.NS.styler.restore(art, snapshot);
@@ -103,5 +120,7 @@ describe('styler — de-column flex/grid 文字欄塌成單欄（v0.8.66）', ()
       'restore 後 flex-row 容器 display 應還原成原 inline flex');
     assert.strictEqual($('gridrow').style.display, 'grid',
       'restore 後 grid 容器 display 應還原成原 inline grid');
+    assert.strictEqual($('imgrow').style.display, 'flex',
+      'restore 後 image 欄容器 display 應還原成原 inline flex');
   });
 });
