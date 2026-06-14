@@ -825,11 +825,35 @@ ${MEDIA_CAP_SEL} {
    min-height:0，容器自然撐到媒體實際高度（不綁 class，與既有 placeholder /
    ratio / imageRow flex 修法同精神）。
    排除：inline emoji img（不撐其 p 容器）、已標記 player 的容器。:has 不命中
-   時（無媒體直接子）規則不套，對純文字段落零影響。 */
+   時（無媒體直接子）規則不套，對純文字段落零影響。
+   v0.8.59：補 max-height:none——原站常用「固定 height + max-height 容器 +
+   object-fit:cover」把圖裁成 banner（myartbroker MagazineImage_imageWrap
+   height/max-height:460px，Jimmy 2026-06-14 截圖揭穿）。reader mode 把圖片
+   object-fit 改成 contain 顯示全圖（rendered 607 > 容器 460），height:auto 被
+   殘留 max-height:460 頂死、圖片 overflow:visible 溢出蓋住下方圖說。height
+   reset 必須連 max-height 一起解除，容器才撐到圖片實際高度。圖片本體自身
+   仍有 90vh / 翻頁單頁 cap（在 img 選擇器上）、不會無限長。 */
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video) {
   height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+/* v0.8.59：被隱藏的 hero / header 圖殘留 min-height → 標題上方一大截空白。
+   原站把「標題疊在 hero 圖上」的 header 容器設 min-height = hero 圖高（撐到等高
+   再 flex 把標題靠底對齊）。cleaner 隱藏 hero img（data-jread-hidden）後，那層
+   min-height 還在 → 標題被頂到框底、上方留一大截空白（myartbroker
+   ArticleHeader_base min-height:240px + 同 header 內 hero img 被隱藏，Jimmy
+   2026-06-14 截圖揭穿）。上面 :has(> img) 規則只 reset「直接含媒體的容器」自身，
+   但 min-height 是掛在「標題疊圖層」這個 sibling 子樹的 descendant 上、漏網。
+   通則：任何「直接子是被隱藏媒體」的容器，其自身與後代都不該再為那張不存在的
+   圖保留 min-height。keyed on JRead 自己的 data-jread-hidden marker——只在 hero
+   真的被隱藏時觸發，不誤傷可見圖容器（可見圖容器走上面 :has(> img) 撐高）。 */
+[${ARTICLE_ATTR}="1"] *:has(> img[data-jread-hidden="1"]),
+[${ARTICLE_ATTR}="1"] *:has(> img[data-jread-hidden="1"]) *,
+[${ARTICLE_ATTR}="1"] *:has(> picture[data-jread-hidden="1"]),
+[${ARTICLE_ATTR}="1"] *:has(> picture[data-jread-hidden="1"]) * {
   min-height: 0 !important;
 }
 /* [class*="placeholder"] 解釋：lazy-load wrapper 慣例命名（today.line.me
