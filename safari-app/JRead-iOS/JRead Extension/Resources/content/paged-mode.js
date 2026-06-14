@@ -327,13 +327,30 @@
   //   - locked（第一頁已收合鎖定 / 第二頁起）：擋全部
   //   - 第一頁未鎖：只擋水平支配（放行垂直滑去收工具列）
   // 純函式（jsdom spec 直接測），vLocked 由薄包裝 shouldBlockTouchMove 餵入。
-  function blockTouchDecision(dx, dy, pageIdx, locked) {
+  // v0.8.57：hasSelection——作用中文字選取時無條件放行（return false），不擋
+  // 任何單指 touchmove。原因：iOS 拖曳選取控制點（selection handle）靠原生 touch
+  // 行為，本模組對水平滑動 preventDefault 會一併把控制點拖曳擋掉 → Jimmy 回報
+  // 「選取段落時手指無法移動游標位置」。控制點不在 DOM 內、無法以 target 命中，
+  // 用「存在非 collapse 選取」這個結構訊號當代理：有選取就交還原生（放行擴選 /
+  // 控制點拖曳），代價是選取期間滑動不翻頁（點空白處取消選取後即恢復翻頁）。
+  function blockTouchDecision(dx, dy, pageIdx, locked, hasSelection) {
+    if (hasSelection) return false;
     if (locked) return true;
     if (pageIdx !== 0) return true;
     return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > HMOVE_BLOCK_PX;
   }
   function shouldBlockTouchMove(dx, dy, pageIdx) {
-    return blockTouchDecision(dx, dy, pageIdx, vLocked);
+    return blockTouchDecision(dx, dy, pageIdx, vLocked, hasActiveSelection());
+  }
+
+  // v0.8.57：是否存在「作用中文字選取」——非 collapse 且有實際文字。用於放行 iOS
+  // 選取控制點拖曳（見 blockTouchDecision）與避免選取期間 touchend 誤翻頁。
+  // 即時讀取（非 touchstart 快照）才能涵蓋「長按選字後不放手直接拖曳擴選」的單一手勢。
+  function hasActiveSelection() {
+    try {
+      const sel = window.getSelection && window.getSelection();
+      return !!(sel && !sel.isCollapsed && String(sel).length > 0);
+    } catch (e) { return false; }
   }
 
   // v0.7.245：套用/解除第一頁收合鎖。鎖時把卡片 touch-action 收成擋掉原生 pan
@@ -478,6 +495,9 @@
 
   function onTouchEnd(e) {
     if (!touchState || e.touches.length > 0) return;
+    // v0.8.57：選取控制點拖曳放手時選取仍在 → 不翻頁（與 onTouchMove 放行一致），
+    // 否則拖曳擴選的水平位移會被 classifySwipe 判成翻頁、選到一半被切走。
+    if (hasActiveSelection()) { touchState = null; return; }
     const t = e.changedTouches && e.changedTouches[0];
     if (!t) { touchState = null; return; }
     const dir = classifySwipe({
@@ -496,6 +516,8 @@
   // 若仍構成水平 swipe（classifySwipe 同款 threshold / 角度 / 邊緣 guard），照樣翻頁。
   // tap / 微動 / 垂直滑 / 邊緣手勢都不會通過 classifySwipe，不會誤翻。
   function onTouchCancel(e) {
+    // v0.8.57：選取作用中時 iOS 對選取手勢送 touchcancel，補判翻頁會誤翻 → 放行
+    if (touchState && hasActiveSelection()) { touchState = null; return; }
     if (touchState) {
       // 取「lastX（touchmove 累積）」與「changedTouches（cancel 當下位置）」中
       // 水平位移最大者——涵蓋兩種 iOS 變體：(a) 有派發 touchmove → lastX 準；
