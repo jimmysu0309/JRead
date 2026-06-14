@@ -64,18 +64,30 @@ function setup() {
   // 反例 D：flex-row 600，但欄內只有 emoji / 小 icon（24px）→ 非 content img、不塌
   stubRect($('emojirow'), { top: 2100, width: 600, height: 40 });
   stubRect($('emojiimg'), { top: 2100, width: 24, height: 24 });
+  // 正例 4：lazy hero——apply 當下圖 0x0（未載入），naturalWidth=0 走 lazy 分支
+  // 掛 load listener；不可在 apply 當下立即塌。
+  stubRect($('lazyrow'), { top: 2700, width: 600, height: 480 });
+  stubRect($('lazyimg'), { top: 2700, width: 0, height: 0 });
 
   const art = $('art');
   const snapshot = env.NS.styler.apply(art, DEFAULT_SETTINGS);
-  return { env, document, $, art, snapshot };
+
+  // apply 後模擬 hero 載入：rect 變 405（66.67% 欄、< 600×70%），dispatch load
+  // → onLoad 重量、補跑 de-column 塌掉 lazyrow。
+  const lazyCollapsedBeforeLoad = $('lazyrow').style.display === 'block';
+  stubRect($('lazyimg'), { top: 2700, width: 405, height: 300 });
+  $('lazyimg').dispatchEvent(new env.window.Event('load'));
+
+  return { env, document, $, art, snapshot, lazyCollapsedBeforeLoad };
 }
 
 describe('styler — de-column flex/grid 文字欄塌成單欄（v0.8.66）', () => {
-  let document, $, env, art, snapshot;
+  let document, $, env, art, snapshot, lazyCollapsedBeforeLoad;
 
   before(() => {
     const r = setup();
     document = r.document; $ = r.$; env = r.env; art = r.art; snapshot = r.snapshot;
+    lazyCollapsedBeforeLoad = r.lazyCollapsedBeforeLoad;
   });
 
   it('flex-row 把主文擠成半欄 → 容器 display 被塌成 block（核心驗證點）', () => {
@@ -113,6 +125,16 @@ describe('styler — de-column flex/grid 文字欄塌成單欄（v0.8.66）', ()
       'inline emoji / 小 icon 非 content img，不該觸發 de-column');
   });
 
+  it('lazy hero：apply 當下圖 0x0 不立即塌（避免誤判）', () => {
+    assert.strictEqual(lazyCollapsedBeforeLoad, false,
+      'apply 當下 hero 還沒載入（0x0），不該立即塌欄');
+  });
+
+  it('lazy hero：載入後（load 事件）補跑 de-column 塌欄（v0.8.69 核心驗證點）', () => {
+    assert.strictEqual($('lazyrow').style.display, 'block',
+      'hero 載入後量到 405px（撐窄欄），load listener 應補塌欄，否則 hero 卡 66.67% 欄偏左');
+  });
+
   it('restore 後塌欄容器的 inline display 還原（無殘留）', () => {
     // fixture 原始 inline 是 display:flex / display:grid，restore 應還原回去
     env.NS.styler.restore(art, snapshot);
@@ -122,5 +144,7 @@ describe('styler — de-column flex/grid 文字欄塌成單欄（v0.8.66）', ()
       'restore 後 grid 容器 display 應還原成原 inline grid');
     assert.strictEqual($('imgrow').style.display, 'flex',
       'restore 後 image 欄容器 display 應還原成原 inline flex');
+    assert.strictEqual($('lazyrow').style.display, 'flex',
+      'restore 後 lazy hero 欄容器 display 應還原成原 inline flex');
   });
 });

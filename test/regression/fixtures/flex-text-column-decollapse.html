@@ -69,6 +69,17 @@
       <div id="emojisidecol"><span>tag</span></div>
     </div>
   </section>
+
+  <!-- 正例 4：lazy hero——toggle 當下圖未載入（0x0），不滿足立即 anchor 門檻；
+       載入後（load 事件）才知道撐窄欄。christies hero 形狀（above-fold 卻 lazy）。 -->
+  <section>
+    <div id="lazyrow" style="display:flex;flex-direction:row;">
+      <div id="lazycol">
+        <a href="#"><picture><img id="lazyimg" src="hero.jpg" alt="hero"></picture></a>
+      </div>
+      <div id="lazysidecol"><p id="lazyside1">£201,600</p></div>
+    </div>
+  </section>
 </article>
 </body>
 </html>
