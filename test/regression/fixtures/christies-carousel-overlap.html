@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Remembering David Hockney (1937–2026)</title>
+  <meta property="og:title" content="Remembering David Hockney (1937–2026)">
+</head>
+<body>
+  <!-- 複製 christies.com stories 頁的 pure-react-carousel 結構：
+       horizontalSlider___ carousel__slider（overflow:hidden + JS 寫死 height）
+       > sliderTray___ carousel__slider-tray（display:flex + transform:translateX）
+       > slide___ carousel__slide（padding-bottom aspect hack）
+       > slideInner___ carousel__inner-slide（position:absolute inset:0）。
+       reader 模式拆掉 overflow/transform 後，JS 寫死的 height 與 slide 的 absolute
+       內層仍在 → slide 圖片溢出自己被壓縮的 box、疊到上一張 slide 的圖說上。
+       spec 只驗 styler CSS 字串注入（jsdom 不計算 layout）。 -->
+  <article>
+    <h1>Remembering David Hockney (1937–2026)</h1>
+    <div class="ArticleBody">
+      <p>David Hockney, who has died at the age of 88, was one of the most influential and beloved British artists of the 20th and 21st centuries, a painter whose joyful palette and restless curiosity reshaped how a generation saw colour, light and the everyday world around them.</p>
+      <p>Born in Bradford in 1937, Hockney rose to prominence in the 1960s with a body of work that fused pop sensibility with a deeply personal vision, from the sun-drenched swimming pools of Los Angeles to the rolling landscapes of his native Yorkshire.</p>
+      <div class="horizontalSlider___281Ls carousel__slider" style="height:2885px;overflow:hidden">
+        <div class="carousel__slider-tray-wrapper carousel__slider-tray-wrap-horizontal">
+          <div class="sliderTray___-vHFQ sliderAnimation___300FY carousel__slider-tray" style="transform:translateX(-100%);display:flex;width:5472px">
+            <div class="slide___3-Nqo slideHorizontal___1NzNV carousel__slide" style="padding-bottom:47.5%;width:608px;float:left">
+              <div class="slideInner___2mfX9 carousel__inner-slide" style="position:absolute;top:0;left:0;right:0;bottom:0">
+                <span>20th &amp; 21st Century Art</span> | <span>Auction Highlights</span>
+                <img src="https://www.christies.com/img/hockney-pool.jpg" width="575" height="359" alt="Portrait of an Artist">
+                <a href="/stories/portrait-of-an-artist">David Hockney’s Portrait of an Artist (Pool with Two Figures)</a>
+              </div>
+            </div>
+            <div class="slide___3-Nqo slideHorizontal___1NzNV carousel__slide" style="padding-bottom:47.5%;width:608px;float:left">
+              <div class="slideInner___2mfX9 carousel__inner-slide" style="position:absolute;top:0;left:0;right:0;bottom:0">
+                <span>Galleries &amp; Museums</span> | <span>Events &amp; Exhibitions</span>
+                <img src="https://www.christies.com/img/arts-council.jpg" width="575" height="359" alt="The Arts Council Collection">
+                <a href="/stories/arts-council-collection">The Arts Council Collection: 80 years of the ‘museum without walls’</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p>Hockney never lost his ravenous appetite for new tools and techniques, embracing the fax machine, the photocopier and, in his later years, the iPad, which he used to capture the changing seasons outside his one-time studio in Normandy with the same delight he once brought to oil and acrylic.</p>
+      <p>He is survived by a body of work that spans more than six decades and a public that adored him not just for the pictures but for the irrepressible curiosity and joy with which he made them, right up until the very end of his long and extraordinary life.</p>
+    </div>
+  </article>
+</body>
+</html>
