@@ -801,6 +801,29 @@
     // 標題——不需升。wya 案例 12 H1 = section heading 不受影響。
     if (articleEl.querySelectorAll('h1').length === 1) return null;
 
+    // 路徑 0（v0.8.58 myartbroker translate-first 修法）：全頁恰好 1 個 H1 且
+    // 不在 articleEl 內 → 該 H1 必是文章 hero 標題，升到 LCA（不靠文字比對）。
+    //
+    // 結構訊號：整頁唯一的 H1 不可能是某一節的副標——section 副標慣例用 H2+，
+    // 唯一 H1 = 文章主標。場景：myartbroker「5 幅畫作」這類多節長文，每節是一個
+    // 獨立 textblock 容器，heuristic bubble-up（只給 parent/grandparent 2 層分數）
+    // 搆不到「裝所有節的文章 body 容器」、只選中第一節的容器。英文原文靠
+    // promoteForTitle 的 og-match LCA fallback（dist Infinity、line 896）爬回含 H1
+    // 的文章容器；但翻譯擴充把 H1 換中文後 og:title 比對失效 → 卡在單一 section
+    // （只剩第一幅畫）。改用「唯一 H1」純結構訊號補這條 translate-first 缺口。
+    //
+    // 與 path 1 的差異：(a) 不受 articleIsSelfTitled 擋——section 開頭的 H2 副標
+    // 會讓 articleIsSelfTitled 誤判 self-titled；(b) dist 放寬到 Infinity（og-match
+    // fallback 同樣 Infinity，「全頁唯一 H1」已是強訊號、不需 dist 限制）。
+    // 安全保證：findTitleViaLca 仍拒絕 LCA===body/html——唯一 H1 與 articleEl 必須
+    // 共享非 body 容器才升，masthead logo H1 在 <header>、主文在 <main> 時 LCA=body
+    // 被拒。ChinaTalk（多 H1）/ wya（12 H1）allH1.length !== 1 不觸發此路徑。
+    const allH1 = document.querySelectorAll('h1');
+    if (allH1.length === 1 && !articleEl.contains(allH1[0])) {
+      const r = findTitleViaLca(articleEl, allH1[0], Infinity);
+      if (r) return r;
+    }
+
     // 路徑 1：頁面 DOM-order 第一個 H1 不在 articleEl 內 → 升 LCA。
     // self-titled guard：article 開頭已是自己的標題區時，頁面 DOM-first H1 是
     // 站名 masthead logo（非 post hero），升上去會把留言/推薦括進主文。
