@@ -481,9 +481,15 @@ readwiseBtn.addEventListener('click', async () => {
     return;
   }
 
-  const result = await chrome.runtime.sendMessage({
-    type: 'SAVE_TO_READWISE',
-    payload: extracted.payload
+  // v0.8.65：直接在 popup（extension 頁）發 Readwise fetch，不繞 background。
+  // iOS Safari 背景頁掛起會讓 SAVE_TO_READWISE 往返 / 背景 fetch silently 失敗
+  // （見 popup-core.saveReaderPayload 註解）。token 用 callback 形式讀（與
+  // hasReadwiseToken 同款，不依賴 storage.sync.get 回 Promise）。
+  const result = await window.__JReadPopup.saveReaderPayload({
+    payload: extracted.payload,
+    getToken: () => new Promise((resolve) => {
+      chrome.storage.sync.get({ readwiseToken: '' }, (v) => resolve((v && v.readwiseToken) || ''));
+    })
   });
 
   if (result && result.ok) {
@@ -495,7 +501,10 @@ readwiseBtn.addEventListener('click', async () => {
   } else if (result && result.error === 'NETWORK') {
     setReadwiseStatus('網路錯誤，請稍後再試', 'err');
   } else {
-    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    // v0.8.65：generic 分支帶上 error code（INTERNAL / INVALID_PAYLOAD / HTTP 碼）
+    // 方便日後 iOS 真機回報時直接看出失敗層次，不再是不透明的「送出失敗」
+    const detail = result && result.status ? `（HTTP ${result.status}）`
+                 : result && result.error ? `（${result.error}）` : '';
     setReadwiseStatus(`送出失敗${detail}`, 'err');
   }
   readwiseBtn.disabled = false;

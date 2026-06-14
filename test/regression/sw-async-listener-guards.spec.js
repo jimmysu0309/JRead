@@ -61,27 +61,30 @@ describe('A1: onInstalled async listener 防護（v0.8.15）', () => {
   });
 });
 
-describe('A2: SAVE_TO_READWISE async IIFE 防護（v0.8.15）', () => {
-  let caseBody = '';
+// v0.8.65：popup SAVE_TO_READWISE 訊息 + SW handler 已移除（popup 改 extension
+// 頁直送，見 readwise-save.spec.js）。原 A2 守的「SW 內送 Readwise 的 async 流程
+// 不留 unhandled rejection」這層改由鍵盤快速鍵軌 sendToReadwiseFromCommand 承接
+// ——它仍在 SW 內 storage.get + buildReadwisePayload + saveToReadwise（無 popup
+// 可承接、必須各自 try/catch 給 toast 回饋，不可裸跑 reject 整個 function 靜默死）。
+describe('A2: sendToReadwiseFromCommand async 防護（v0.8.65：原 SAVE_TO_READWISE IIFE 退役）', () => {
+  let fnBody = '';
   before(() => {
-    const m = SW_SRC.match(/case\s+['"]SAVE_TO_READWISE['"]:\s*\{([\s\S]*?)\n\s{4}default:/);
-    assert.ok(m, '必須能找到 SAVE_TO_READWISE case body');
-    caseBody = m[1];
+    const m = SW_SRC.match(/async function sendToReadwiseFromCommand\s*\([\s\S]*$/);
+    assert.ok(m, '必須能找到 sendToReadwiseFromCommand 函式 body');
+    fnBody = m[0];
   });
 
-  it('async IIFE 有外層 try/catch，保證任何路徑都回 sendResponse', () => {
-    // 至少兩個 try（外層 IIFE + 內層 buildReadwisePayload）
-    const tryCount = (caseBody.match(/try\s*\{/g) || []).length;
-    assert.ok(tryCount >= 2,
-      `SAVE_TO_READWISE 應有外層 IIFE try + 內層 payload try（至少 2 個 try），實際 ${tryCount}`);
+  it('storage.get / buildReadwisePayload / saveToReadwise 三步都包 try/catch（至少 3 個 try）', () => {
+    const tryCount = (fnBody.match(/try\s*\{/g) || []).length;
+    assert.ok(tryCount >= 3,
+      `三步 async / 可拋呼叫都要 try（至少 3 個 try），實際 ${tryCount}`);
   });
 
-  it('catch 分支會 sendResponse（不讓 popup 卡在送出中）', () => {
-    assert.match(caseBody, /INTERNAL/,
-      'catch 應回一個 INTERNAL 錯誤碼經 sendResponse 通知 popup');
-    const respCount = (caseBody.match(/sendResponse\(/g) || []).length;
-    assert.ok(respCount >= 3,
-      `成功 / INVALID_PAYLOAD / INTERNAL 三條路徑都要 sendResponse（至少 3 次），實際 ${respCount}`);
+  it('每條失敗路徑都 showToast（不讓 reject 變 unhandled / function 靜默死）', () => {
+    // 失敗 toast：storage 讀取失敗 / payload 無效 / 網路錯誤 至少各一
+    const toastCount = (fnBody.match(/showToast\(/g) || []).length;
+    assert.ok(toastCount >= 4,
+      `成功 + 多條失敗路徑都要 showToast（至少 4 次），實際 ${toastCount}`);
   });
 });
 

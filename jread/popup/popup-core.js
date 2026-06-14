@@ -162,12 +162,38 @@
     return { ok: false, status: res.status, error: 'HTTP' };
   }
 
+  // v0.8.65：popup 端「送 Readwise」整段流程（讀 token → build payload → save），
+  // 走 extension 頁自己的 fetch，**不繞 background**。
+  // 理由：iOS Safari Web Extension 的背景頁（event page、persistent:false）被系統
+  // 掛起得遠比 macOS 積極——popup → background 的 SAVE_TO_READWISE 非同步往返
+  // （async sendResponse）與背景頁 fetch 在 iOS 上會 silently 失敗（popup 端 await
+  // 拿到 undefined → 顯示無 HTTP 碼的純「送出失敗」；macOS Chrome / Safari 全正常）。
+  // options 頁「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走
+  // 同一條 extension-page fetch 路徑。getToken / fetchImpl 依賴注入便於單測。
+  // 註：鍵盤快速鍵送出（無 popup）仍走 background sendToReadwiseFromCommand。
+  async function saveReaderPayload({ payload, getToken, fetchImpl } = {}) {
+    let token;
+    try {
+      token = await getToken();
+    } catch (e) {
+      return { ok: false, error: 'INTERNAL', message: String(e && e.message || e) };
+    }
+    let body;
+    try {
+      body = buildReadwisePayload(payload || {});
+    } catch (e) {
+      return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
+    }
+    return saveToReadwise({ token, payload: body, fetchImpl });
+  }
+
   const api = {
     sendWithInjectionFallback,
     toggleWithInjectionFallback,
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
     saveToReadwise,
+    saveReaderPayload,
     validateReadwiseToken,
     READWISE_API_URL,
     READWISE_AUTH_URL
