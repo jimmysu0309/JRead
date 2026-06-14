@@ -52,7 +52,7 @@ describe('styler — 媒體直接容器不可塌陷（v0.8.11 cnbc inline video�
       'CSS 必須含 :has(> video) selector');
   });
 
-  it('該 rule body 必須含 height: auto + min-height: 0', () => {
+  it('該 rule body 必須含 height: auto + min-height: 0 + max-height: none', () => {
     const css = getInjectedCss();
     const m = css.match(/:has\(>\s*video\)\s*\{([^}]*)\}/);
     assert.ok(m, '必須找到媒體容器 :has rule 區塊');
@@ -61,12 +61,21 @@ describe('styler — 媒體直接容器不可塌陷（v0.8.11 cnbc inline video�
       'rule body 必須含 height: auto !important（容器撐到媒體實際高度）');
     assert.ok(/min-height\s*:\s*0\s*!important/.test(body),
       'rule body 必須含 min-height: 0 !important');
+    // v0.8.59：myartbroker MagazineImage_imageWrap 用 height + max-height:460px +
+    // object-fit:cover 把圖裁成 banner。reader 改 object-fit:contain 顯示全圖
+    // （607 > 460），height:auto 被殘留 max-height 頂死、img 溢出蓋住圖說。
+    // 必須連 max-height 一起解除，容器才撐到 img 實際高度。
+    assert.ok(/max-height\s*:\s*none\s*!important/.test(body),
+      'rule body 必須含 max-height: none !important（解除原站固定 banner 高、容器撐到全圖）');
   });
 
   it('媒體容器 selector 必須排除 player 容器（:not([data-jread-player="1"]))', () => {
     const css = getInjectedCss();
-    // 三條 :has selector 每條都應帶 :not([data-jread-player])
-    const hasLines = css.split(',').filter(s => /:has\(>\s*(img|picture|video)/.test(s));
+    // 三條媒體塌陷 :has selector 每條都應帶 :not([data-jread-player])。
+    // 排除 v0.8.59 hidden-hero min-height reset 規則（:has(> img[data-jread-hidden]))
+    // ——那條 keyed on 隱藏 marker、形狀不同、不在本 rule 範圍。
+    const hasLines = css.split(',').filter(s =>
+      /:has\(>\s*(img|picture|video)/.test(s) && !/data-jread-hidden/.test(s));
     assert.ok(hasLines.length >= 3, `應有 3 條媒體 :has selector（實際 ${hasLines.length}）`);
     for (const line of hasLines) {
       assert.ok(/:not\(\[data-jread-player="1"\]\)/.test(line),
