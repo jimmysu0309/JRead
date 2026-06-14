@@ -2795,6 +2795,71 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v0.8.66：文字欄多欄塌成單欄（de-column flex/grid text columns）。
+      // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
+      // 正確」）：原站把主文段落排進 flex-row / 多欄 grid 容器做雜誌式雙欄
+      // layout（christies `div.sc-kLokBR` 是 display:flex 把內文擠成 292px 半欄、
+      // 另半欄留給側欄圖說、本文沒側欄時右半整片留白）。reader card 是單欄
+      // layout，這類橫向分欄讓內文只佔卡片版心一部分、大量浪費可讀寬度。
+      // 上方 galleryFlex 只處理「含 picture/img/figure 直接子」的 flex/grid
+      // （並列圖），純文字欄的橫向分欄是另一條 path——這裡補上。
+      //
+      // 通則（非站點特判，符合硬規則 3）：以「主文長段落實際被渲染得比它的
+      // flex/grid 祖先的內容寬窄一截（< 70%）」為結構訊號——往上找出真正在分欄
+      // 的那層容器，塌成 display:block 讓段落退回正常 block flow 撐滿版心（既有
+      // `[data-jread-active] div { width:auto }` 規則接手讓中間 wrapper 也撐滿）。
+      // 防誤殺：
+      //   - 只認 flex-direction:row(-reverse) 或 grid 多欄（>= 2 column track）；
+      //     flex-column 本來就垂直堆疊、不命中。
+      //   - 必須含 >= 80 字的長 <p>——button row / tag 列 / 麵包屑 / metadata
+      //     這類橫向 UI 沒有長段落、不命中。
+      //   - 段落寬必須 < 容器內容寬 70%——單一全寬 flex/grid 子（沒真的分欄）
+      //     比例接近 1、不動。
+      // 每塌一層後重量段落寬：內層 splitter 塌掉後段落已撐滿，外層若非 splitter
+      // 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
+      const textColFlex = [];
+      const textColSeen = new Set();
+      {
+        const win = articleEl.ownerDocument?.defaultView;
+        if (win) {
+          const longParas = [];
+          for (const p of articleEl.querySelectorAll('p')) {
+            if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
+            if ((p.textContent || '').trim().length >= 80) longParas.push(p);
+          }
+          for (const p of longParas) {
+            let cur = p.parentElement;
+            while (cur && cur !== articleEl) {
+              if (!textColSeen.has(cur) &&
+                  !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1')) {
+                const cs = win.getComputedStyle(cur);
+                const disp = cs.display;
+                const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
+                  /^row/.test(cs.flexDirection);
+                const cols = cs.gridTemplateColumns;
+                const isGridMulti = (disp === 'grid' || disp === 'inline-grid') &&
+                  cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
+                if (isFlexRow || isGridMulti) {
+                  const r = cur.getBoundingClientRect();
+                  const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+                  const pw = p.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
+                  if (contentW > 0 && pw > 0 && pw < contentW * 0.7) {
+                    textColSeen.add(cur);
+                    textColFlex.push({
+                      el: cur,
+                      display: cur.style.getPropertyValue('display'),
+                      displayPriority: cur.style.getPropertyPriority('display'),
+                    });
+                    cur.style.setProperty('display', 'block', 'important');
+                  }
+                }
+              }
+              cur = cur.parentElement;
+            }
+          }
+        }
+      }
+
       // v0.7.179：WordPress constrained layout inline override。
       // CSS stylesheet `html [data-jread-active] p { max-width: none !important }`
       // 在某些 WP theme 下 computed 仍未生效（疑似 WP 動態注入的 inline style
@@ -2822,7 +2887,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3011,6 +3076,18 @@ html [${ARTICLE_ATTR}="1"] a {
             } else {
               g.el.style.removeProperty('margin-bottom');
             }
+          }
+        }
+      }
+
+      // v0.8.66：還原 de-column flex/grid 容器的 display inline override
+      if (Array.isArray(snapshot.textColFlex)) {
+        for (const t of snapshot.textColFlex) {
+          if (!t || !t.el) continue;
+          if (t.display) {
+            t.el.style.setProperty('display', t.display, t.displayPriority || '');
+          } else {
+            t.el.style.removeProperty('display');
           }
         }
       }
