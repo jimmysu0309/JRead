@@ -141,7 +141,13 @@
     // v0.8.45：audio 系 token 放寬分隔符——cw.com.tw 用 BEM 雙底線
     // `audio__player`（「文章語音朗讀」player 文字殘留實測），原 `audio-player`
     // 只認單連字號。[-_]* 同時涵蓋 audio-player / audio__player / audioplayer。
-    { t: 'audio[-_]*player' }, { t: 'audio[-_]*widget' }, { t: 'article[-_]+audio' },
+    // v0.8.61 theatlantic 實測：「Listen to this article」TTS 播放器 wrapper
+    // 為 CSS module camelCase 連寫 `ArticleAudio_root`（article 與 audio 間無
+    // 分隔符），原 `article[-_]+audio` 要求至少一個分隔符 → 漏網；該 widget
+    // 內含一張與 hero 同源的 80×80 縮圖，被 styler 放大成滿版 → 重複 hero。
+    // 放寬為 [-_]* 同時涵蓋 articleaudio / article-audio / article_audio，與
+    // 上方 audio[-_]*player 同一手法（CMS 命名慣例通則，非站點特判）。
+    { t: 'audio[-_]*player' }, { t: 'audio[-_]*widget' }, { t: 'article[-_]*audio' },
     { t: 'controls' }, { t: 'partner' },
     { t: 'postlisting' }, { t: 'post-listing' }, { t: 'thread' }, { t: 'threads' },
     { t: 'reposted' }, { t: 'repost' }, { t: 'follow' }, { t: 'follow-us' }, { t: 'following' },
