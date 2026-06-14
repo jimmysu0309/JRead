@@ -844,6 +844,83 @@ pageFns.collectReaderImages = function () {
       loaded: i.naturalW >= 200 && i.naturalH >= 100 && i.w >= 100 && i.h >= 50 }));
 };
 
+// ---- 內文掉圖 audit（高精度窄版，2026-06-14 myartbroker 修法後補洞）----
+// 動機：hero audit 只驗頁面頂端 top<800 的前 3 張 hero，文章深處的內容圖被
+// cleaner 誤殺抓不到（myartbroker「Christopher Isherwood and Don Bachardy」那
+// 幅畫 y≈6800 被 hide，hero audit silent）。本 audit 補「文章內單張內容圖被
+// 誤殺」這一層。
+//
+// 為何窄：實測通用「原頁 vs reader 大圖 diff」先天低精度——相關文章縮圖與
+// 內容圖結構幾乎相同（同樣 img 包 <a>、標題在 <a> 外），myartbroker 天真版報
+// 5 張其中 4 張是 RelatedArticles 卡片 FP。高精度靠「排除 widget / 推薦 / 卡片
+// / 輪播 / 列表 / chrome 容器」把 FP 壓到 0（myartbroker 實測修好版 0 dropped、
+// 破壞修法版正中 Isherwood 1 張）。
+//
+// 驗的訊號層：「原頁的單張內容圖（非 widget 容器內），toggle 後落在 reader
+// article 內卻被標 data-jread-hidden / display:none」= cleaner 誤殺。
+// 不驗：① widget / 推薦 / 卡片 / 輪播容器內的圖（reader 本來就該清，排除）；
+// ② article 外被清的圖（正確行為，不算掉圖）；③ < 300×150 且無 srcset 的小圖
+// （icon / avatar / spacer，非內容圖）；④ 圖「呈現是否正確」（尺寸 / 對齊 /
+// lazy 載入時序）——那是 hero / gap / styler 層的事。
+//
+// 節點識別：reader 就地套用（NS.state.articleEl = 原 article 元素、非 clone），
+// 原 img 節點留存 → 用 data-pr-cfig 標記回找同一節點（src 會因 srcset 變、節點
+// identity 穩定）。data-pr-* 命名避開 cleaner 的 data-jread-* 處理。
+// module 層級 const（非 pageFns——pageFns 命名空間只放 browser 端 evaluate
+// 的函式，放陣列會踩「每支 pageFns 須 toString round-trip 成函式」的合約）。
+// node runner 透過 page.evaluate 第二參數送進瀏覽器。
+const CFIG_NOISE_TOKENS = ['related', 'recommend', 'swiper', 'slider', 'carousel',
+  'card', 'preview', 'popular', 'trending', 'readnext', 'upnext', 'up-next',
+  'widget', 'promo', 'popup', 'sidebar', 'share', 'social', 'author', 'byline',
+  'comment', 'sponsor', 'advert', 'banner', 'cta', 'thumb', 'header', 'footer'];
+
+// toggle 前呼叫：標記內容圖候選，回標記數。
+pageFns.tagOriginalContentFigures = function (noiseTokens) {
+  const MAX_ASPECT = 4;
+  const SPACER_RE = /^data:|spacer|placeholder|blank\.|1x1\./i;
+  const NOISE_SEL = noiseTokens.map(t => `[class*="${t}" i]`).join(',') +
+    ',nav,aside,footer,header,li';
+  let n = 0;
+  for (const img of document.querySelectorAll('img')) {
+    if (img.hasAttribute('data-pr-cfig')) continue;
+    const src = img.src || '';
+    if (SPACER_RE.test(src)) continue;
+    // 內容尺寸訊號：已載入大圖 OR 有 srcset（lazy 內容圖，toggle 前常 0×0）
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const loadedBig = nw >= 300 && nh >= 150 && nw / nh < MAX_ASPECT && nh / nw < MAX_ASPECT;
+    const hasSrcset = !!(img.getAttribute('srcset') || img.getAttribute('data-srcset'));
+    if (!loadedBig && !hasSrcset) continue;
+    // widget / 推薦 / 卡片 / 列表 / chrome 容器內 → 非內容圖
+    try { if (img.closest(NOISE_SEL)) continue; } catch (e) {}
+    img.setAttribute('data-pr-cfig', String(n));
+    n++;
+  }
+  return n;
+};
+
+// toggle 後呼叫：分類每張 tagged 內容圖，回 dropped 清單。
+pageFns.collectDroppedContentFigures = function () {
+  const art = document.querySelector('[data-jread-active="1"]');
+  const res = { tagged: 0, insideVisible: 0, outside: 0, dropped: [] };
+  for (const img of document.querySelectorAll('img[data-pr-cfig]')) {
+    res.tagged++;
+    const inside = art ? art.contains(img) : false;
+    let hidden = false;
+    try {
+      hidden = !!(img.closest('[data-jread-hidden="1"]')) ||
+        getComputedStyle(img).display === 'none';
+    } catch (e) {}
+    if (!inside) { res.outside++; continue; }
+    if (hidden) res.dropped.push({
+      id: img.getAttribute('data-pr-cfig'),
+      alt: (img.alt || '').slice(0, 80),
+      src: img.src ? img.src.slice(0, 120) : ''
+    });
+    else res.insideVisible++;
+  }
+  return res;
+};
+
 // =============================================================================
 // node-side runner（對外 API——call site 用這層，不直接碰 pageFns）
 // =============================================================================
@@ -862,6 +939,9 @@ const runTailAudit = (page) => page.evaluate(pageFns.auditTail);
 const runContentStats = (page) => page.evaluate(pageFns.auditContentStats);
 const captureOriginalHeroImages = (page) => page.evaluate(pageFns.captureOriginalHeroImages);
 const collectOriginalTextStats = (page) => page.evaluate(pageFns.collectOriginalTextStats);
+// 內文掉圖 audit：tag 在 toggle 前、collect 在 toggle 後（兩段呼叫）。
+const tagOriginalContentFigures = (page) => page.evaluate(pageFns.tagOriginalContentFigures, CFIG_NOISE_TOKENS);
+const runDroppedFigureAudit = (page) => page.evaluate(pageFns.collectDroppedContentFigures);
 
 // Hero image audit：原頁 top-3 大圖是否在 reader mode 中存活。
 // 比對三軌：src 全等、URL pathname 相同（srcset / CDN 變體切換會換 query
@@ -996,6 +1076,7 @@ module.exports = {
   NOISE_KEYWORDS_STRICT,
   NOISE_KEYWORDS_CONTEXTUAL,
   NOISE_KEYWORD_TIERS,
+  CFIG_NOISE_TOKENS,
   pageFns,
   runResidualText,
   runResidualLinks,
@@ -1012,6 +1093,8 @@ module.exports = {
   captureOriginalHeroImages,
   collectOriginalTextStats,
   runHeroImageAudit,
+  tagOriginalContentFigures,
+  runDroppedFigureAudit,
   waitForReaderImagesLoaded,
   takePagedScreenshots,
   setThemeAndVerify
