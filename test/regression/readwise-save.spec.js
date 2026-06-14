@@ -372,6 +372,14 @@ describe('readwise: 訊息協定常數同步', () => {
       'extractReaderTitle 必須跳過 [data-jread-hidden] 內的 h1（站名 logo h1 類雜訊）');
     assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,1200}stripSiteSuffix/,
       'extractReaderTitle 的 document.title fallback 必須沿用 NS.stripSiteSuffix 去站名尾綴');
+    // v0.8.62：title 去重——buildCleanHtml 必須收 title 參數並移除 body 內同名
+    // heading（Readwise 用 title 欄位另渲染主標，body 殘留同名 heading 會重複）。
+    assert.match(mainSrc, /function\s+buildCleanHtml\s*\(\s*rootEl\s*,\s*title\s*\)/,
+      'buildCleanHtml 必須收 title 參數（用來去重 body 內同名主標 heading）');
+    assert.match(mainSrc, /=\s*buildCleanHtml\s*\(\s*NS\.state\.articleEl\s*,\s*title\s*\)/,
+      'extractReaderPayload 必須把 title 傳給 buildCleanHtml');
+    assert.match(mainSrc, /foldTitlePunct[\s\S]{0,400}querySelectorAll\(\s*['"]h1, h2, h3, h4, h5, h6['"]\s*\)/,
+      'buildCleanHtml 必須折疊標點後比對、移除與 title 同文的 h1-h6（防 Readwise 重複主標）');
   });
 });
 
@@ -381,7 +389,19 @@ describe('readwise: 訊息協定常數同步', () => {
 // 上面 forcing function 抓「實作存在 + 用對 attribute」、這裡 spec 抓「演算法效果正確」。
 const { JSDOM } = require('jsdom');
 
-function buildCleanHtmlImpl(rootEl) {
+// fold：與 NS.foldTitlePunct 等價（折引號家族 + 刪節號 + collapse 空白）後再
+// lowercase，給 title 去重比對用。
+function foldTitleImpl(s) {
+  return (s || '')
+    .replace(/[‘’‚‛`´]/g, "'")
+    .replace(/[“”„‟«»]/g, '"')
+    .replace(/…/g, '...')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function buildCleanHtmlImpl(rootEl, title) {
   const clone = rootEl.cloneNode(true);
   clone.querySelectorAll('[data-jread-hidden="1"]').forEach(n => n.remove());
   clone.querySelectorAll('style#__jread-style, style[data-jread]').forEach(n => n.remove());
@@ -422,6 +442,16 @@ function buildCleanHtmlImpl(rootEl) {
     for (const child of node.children) strip(child);
   }
   strip(clone);
+  // v0.8.62 title 去重（與 main.js buildCleanHtml 步驟 4 等價）
+  if (title) {
+    const foldedTitle = foldTitleImpl(title);
+    if (foldedTitle) {
+      clone.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+        const t = foldTitleImpl(h.textContent || '');
+        if (t && t === foldedTitle) h.remove();
+      });
+    }
+  }
   return clone.outerHTML;
 }
 
@@ -495,6 +525,60 @@ describe('readwise: buildCleanHtml 行為契約', () => {
     assert.ok(html.includes('<div>媒體 wrapper 不該被轉</div>'), '非 fb-para div 必須維持 <div>');
     // 改寫後不可留下 fb-para 標的舊 div
     assert.ok(!/<div[^>]*data-jread-fb-para/.test(html), '改寫後不可留下 data-jread-fb-para 的 div');
+  });
+
+  // v0.8.62 title 去重：Readwise 端用 payload title 欄位另渲染一條主標 header，
+  // body 內若殘留同名 heading 會被重複渲染（theatlantic 實證：detector 注入的
+  // 可見主標 h1 + 站方原生 ArticleTitle h1（display:none 但未標 data-jread-hidden）
+  // 兩份都進了 outerHTML → 加上 title 欄位共 3 條標題，Jimmy 2026-06-14 截圖回報）。
+  it('與 payload title 同文的 heading 必須移除（防 Readwise 重複渲染主標）', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <h1 style="font-size: 2em">How Britain Became as Poor as Mississippi</h1>
+        <header>
+          <div style="display: none"><h1 class="ArticleTitle_root">How Britain Became as Poor as Mississippi</h1></div>
+          <p>A case study in self-sabotage</p>
+        </header>
+        <p>主文第一段</p>
+        <h2>An actual section heading</h2>
+        <p>主文第二段</p>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root, 'How Britain Became as Poor as Mississippi');
+    // 兩份主標 h1 都必須消失
+    assert.ok(!/<h1[^>]*>How Britain Became as Poor as Mississippi<\/h1>/.test(html),
+      'body 內與 title 同文的 h1 必須全部移除');
+    assert.ok(!html.includes('How Britain Became as Poor as Mississippi'),
+      '主標文字不可殘留在 body（title 欄位已承擔）');
+    // 副標 / 主文 / 真正的 section heading 必須保留
+    assert.ok(html.includes('A case study in self-sabotage'), '副標（dek）必須保留');
+    assert.ok(html.includes('主文第一段') && html.includes('主文第二段'), '主文必須保留');
+    assert.ok(html.includes('An actual section heading'),
+      '與 title 不同文的 section heading 不可被誤殺');
+  });
+
+  it('title 比對折疊標點 + 大小寫（smart quote vs ASCII 不影響去重）', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <h1>It’s a Trap, Britain’s Economy</h1>
+        <p>主文</p>
+      </article>
+    `);
+    // title 欄位來源用 ASCII 直引號、body h1 用 smart quote，折疊後須視為相等
+    const html = buildCleanHtmlImpl(root, "It's a Trap, Britain's Economy");
+    assert.ok(!/It’s a Trap/.test(html), 'smart quote 與 ASCII 折疊後同文的 h1 必須移除');
+    assert.ok(html.includes('主文'));
+  });
+
+  it('title 為空時不去重（X / 無標題頁不誤殺 heading）', () => {
+    const root = makeDoc(`
+      <article data-jread-active="1">
+        <h1>唯一的標題</h1>
+        <p>主文</p>
+      </article>
+    `);
+    const html = buildCleanHtmlImpl(root, '');
+    assert.ok(html.includes('唯一的標題'), 'title 空字串時 heading 必須原樣保留');
   });
 
   it('保留非 jread 的 data-* attribute（不誤殺站點原有資料屬性）', () => {
