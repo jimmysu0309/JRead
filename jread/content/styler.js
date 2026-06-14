@@ -2891,7 +2891,15 @@ html [${ARTICLE_ATTR}="1"] a {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
           // 對單一 anchor 沿祖先鏈塌分欄容器（長段落 / content img 共用同一邏輯）。
-          const decolumnFrom = (anchor) => {
+          // ratio = anchor 渲染寬 / 容器內容寬 的「塌欄門檻」：anchor 比這比例
+          // 還窄才視為「真的被分欄擠窄」。長段落用 0.7（pull-quote / 縮排引言等
+          // 合法窄段落比例落在 0.7~1，不該誤塌）；content 圖片用 0.9——v0.8.70：
+          // 圖片在單欄閱讀模式只有「撐滿」或「被分欄擠窄」兩種狀態、沒有中間
+          // 地帶，hero 是 440px 小圖卡在 flex 欄 = 72%（> 0.7 漏掉、Jimmy 截圖
+          // 仍偏左），把圖片門檻放寬到 0.9 讓「沒撐滿（< 90%）的 flex/grid 欄內
+          // 圖」都塌欄 → 退回 block 流、margin auto 置中（且 picture srcset 重評
+          // 常順帶載入更寬來源撐滿）。真正撐滿（>= 90%）的單一全寬圖比例近 1、不動。
+          const decolumnFrom = (anchor, ratio) => {
             let cur = anchor.parentElement;
             while (cur && cur !== articleEl) {
               if (!textColSeen.has(cur) &&
@@ -2907,7 +2915,7 @@ html [${ARTICLE_ATTR}="1"] a {
                   const r = cur.getBoundingClientRect();
                   const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
                   const aw = anchor.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
-                  if (contentW > 0 && aw > 0 && aw < contentW * 0.7) {
+                  if (contentW > 0 && aw > 0 && aw < contentW * ratio) {
                     textColSeen.add(cur);
                     textColFlex.push({
                       el: cur,
@@ -2925,7 +2933,7 @@ html [${ARTICLE_ATTR}="1"] a {
           // anchor 1：長段落（toggle 當下已在 DOM、文字不 lazy）。
           for (const p of articleEl.querySelectorAll('p')) {
             if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
-            if ((p.textContent || '').trim().length >= 80) decolumnFrom(p);
+            if ((p.textContent || '').trim().length >= 80) decolumnFrom(p, 0.7);
           }
           // anchor 2：content 圖片（v0.8.68）——christies stories 把直幅素描 /
           // hero 放進 flex-row 的 66.67% 欄（DIV flex: 0 0 calc(66.6667% - 8px)），
@@ -2948,12 +2956,12 @@ html [${ARTICLE_ATTR}="1"] a {
                 !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
             const mr = m.getBoundingClientRect();
             if (mr.width >= 100 && mr.height >= 100) {
-              decolumnFrom(m);
+              decolumnFrom(m, 0.9);
             } else if (!m.complete || (m.naturalWidth || 0) === 0) {
               const onLoad = () => {
                 if (m.hasAttribute(INLINE_IMG_ATTR)) return;
                 const rr = m.getBoundingClientRect();
-                if (rr.width >= 100 && rr.height >= 100) decolumnFrom(m);
+                if (rr.width >= 100 && rr.height >= 100) decolumnFrom(m, 0.9);
               };
               m.addEventListener('load', onLoad, { once: true });
               decolumnLoadCleanup.push({ img: m, onLoad });
