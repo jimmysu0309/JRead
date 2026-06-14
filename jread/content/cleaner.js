@@ -1456,6 +1456,10 @@
           for (const m of medias) {
             if (!m.closest || !m.closest('a')) { hasStandaloneMedia = true; break; }
           }
+          // v0.8.63 myartbroker 修法：單張「被連結包住的大圖」也是主文媒體
+          // （藝術／作品站把內容插圖整張包進 <a> 連到作品頁），不是 sidebar
+          // 縮圖列表——共用 isStandaloneFigureBlock guard 放行（見其註解）。
+          if (!hasStandaloneMedia && isStandaloneFigureBlock(sib)) hasStandaloneMedia = true;
           if (hasStandaloneMedia) continue;
         }
         // byline 分支（v0.7.96 udn 主筆室文章修法）：sibling 短小且含 `<time>`
@@ -2280,6 +2284,31 @@
     return false;
   }
 
+  // ---- 單張內容圖區塊判定（多 rule 共用 guard，v0.8.63 myartbroker 修法）----
+  // 問題：藝術 / 作品站慣例把「文章正在討論的那幅畫」整張包進 `<a>` 連到作品
+  // 詳情 / 購買頁（myartbroker DIV.artworkimage = 單張 img + 短圖說「© 畫家 年份」
+  // + 一個 Buy/Sell CTA link）。形狀是「單張圖 + 短文字 + 高 link 密度」——與
+  // sidebar 縮圖列表 / link-heavy widget 撞型，narrowPromotedSiblings 的「img 不在
+  // <a> 內才保留」guard 與 hideInsideArticleSidebarColumns 條件 A（textLen 小 +
+  // linkDensity > 0.5）會各自把它誤殺。Jimmy 2026-06-14 實測：該幅畫進閱讀模式後
+  // 消失。
+  //
+  // 結構性通則（非站點特判）：sidebar / 推薦縮圖是「多個連結縮圖排成 <ul><li>
+  // 列表」（ttv sidebox 實測 3 個 li，每個 <a><img>）；單張內容插圖是「整塊只有
+  // 一個 img/picture/video、該媒體不在 list-item 內、且文字量小（圖說 + 出處 +
+  // 至多一個 CTA，非塞滿連結文字的 widget）」。據此放行單張內容圖、多縮圖列表
+  // 仍照砍。圖說放寬到 200 chars（myartbroker 實測 114）給長出處 headroom。
+  const FIGURE_BLOCK_MAX_TEXT = 200;
+  function isStandaloneFigureBlock(el) {
+    if (!el || !el.querySelectorAll) return false;
+    const medias = el.querySelectorAll('img, picture, video');
+    if (medias.length !== 1) return false;            // 多媒體 = 縮圖列表 / rail
+    const m = medias[0];
+    if (m.closest && m.closest('li')) return false;   // 在 <li> = sidebar 縮圖列表
+    if (norm(el.textContent).length > FIGURE_BLOCK_MAX_TEXT) return false; // link-heavy widget
+    return true;
+  }
+
   // ---- 自連結 permalink 標題判定（translate-proof 結構訊號） ---------------
   // v0.8.47 翻譯場景修法（sharptext / david-smith 實證）：WordPress 等 CMS 慣用
   // 自連結標題 `<h1><a href="本文 permalink">標題</a></h1>`——文字短 + 連結密度
@@ -2381,6 +2410,9 @@
       for (const s of stats) {
         if (s === main) continue;
         if (isInPreserved(s.el)) continue;
+        // v0.8.63 myartbroker 修法：單張內容圖區塊（圖整張包 <a> + 短圖說/CTA）
+        // 形狀與 link-heavy widget 撞型，條件 A 會誤殺——共用 guard 放行
+        if (isStandaloneFigureBlock(s.el)) continue;
         // promoted title heading 白名單（v0.7.97 Stratechery 修法）：detector
         // promote 命中的 title heading（h1-h4），若 sibling 是該 heading 或含該
         // heading 則 skip。理由：WordPress block theme 預設 post-title 是 <a>

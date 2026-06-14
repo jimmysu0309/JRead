@@ -3705,6 +3705,92 @@ describe('cleaner — ttv-flex-layout-hero-figure（三處聯動修法）', () =
 });
 
 // -----------------------------------------------------------------------------
+// v0.8.63 myartbroker：「文章正在討論的那幅畫」進閱讀模式後整張消失。
+// 藝術／作品站把內容插圖整張包進 <a> 連到作品詳情/購買頁，形狀（單張圖 + 短圖說
+// + 高 link 密度）與 sidebar 縮圖列表撞型，被 narrowPromotedSiblings 與
+// hideInsideArticleSidebarColumns 條件 A 各自誤殺。
+// 修法：共用 isStandaloneFigureBlock guard（單一媒體 + 不在 <li> + 文字 <= 200）
+// 放行單張內容圖；多縮圖 <ul><li> 列表仍照砍。
+// fixture forcing：作品圖必須保留 + sidebar 縮圖列表必須被 hide（雙邊界）。
+// -----------------------------------------------------------------------------
+describe('cleaner — myartbroker-linked-figure（單張內容圖整張包 <a> 被誤殺）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'myartbroker-linked-figure.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中主文');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('promote 後 articleEl 同時含作品圖與 sidebar（驗 narrow + sidebar-columns 都掃得到）', () => {
+    assert.ok(result.el.querySelector('.artworkimage'),
+      'articleEl 必須包含 .artworkimage（promote 升到 article-wrap 的場景）');
+    assert.ok(result.el.querySelector('.sidebar'),
+      'articleEl 必須包含 .sidebar（邊界對照組）');
+  });
+
+  it('作品圖區塊（單張圖整張包 <a>，不在 list 內）必須保留，img 祖先鏈不被 hide', () => {
+    const img = document.querySelector('.artworkimage img');
+    assert.ok(img, 'fixture 必須含作品圖 img');
+    let cur = img, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden,
+      '作品圖祖先鏈不得被 hide；forcing：拿掉 isStandaloneFigureBlock guard → narrowPromotedSiblings ' +
+      '或 hideInsideArticleSidebarColumns 條件 A 會把它砍掉（單張圖 + 短圖說 + 高 link 密度撞縮圖型）');
+  });
+
+  it('邊界：多縮圖 <ul><li> sidebar 列表必須照砍（isStandaloneFigureBlock 多媒體不放行）', () => {
+    const sidebar = document.querySelector('.sidebar');
+    assert.ok(sidebar);
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('SIDEBAR_MARK'));
+    assert.ok(marks.length >= 3, 'fixture 應含至少 3 個 SIDEBAR_MARK');
+    for (const p of marks) {
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(inHidden,
+        `SIDEBAR_MARK 段落必須在 hidden 祖先內（多縮圖列表不享單張圖豁免）：${p.textContent.slice(0, 30)}`);
+    }
+  });
+
+  it('主文 MAIN_MARK 段落全保留', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('MAIN_MARK'));
+    assert.ok(marks.length >= 4, `fixture 應含 4 段主文；實際 ${marks.length}`);
+    for (const p of marks) {
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `MAIN_MARK 段落不得被 hide：${p.textContent.slice(0, 40)}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.28 cnyes.com 多項末段 widget + 左側社交 nav rail 漏清
 // 五處修法（全部結構性通則、非站點特判）：
 //   1. 新規則 hideInsideArticleNav：articleEl 內 <nav> 不含主文長段落 → hide
