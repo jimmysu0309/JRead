@@ -424,6 +424,25 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // v0.8.57：blockTouchDecision 第 5 參 hasSelection——作用中文字選取時無條件放行
+  // （return false），讓 iOS 選取控制點（selection handle）能被拖曳。代理訊號 =
+  // 存在非 collapse 選取；onTouchMove 對水平滑動 preventDefault 會把控制點拖曳一併
+  // 擋掉（Jimmy 回報「選取段落時手指無法移動游標位置」）。
+  describe('blockTouchDecision hasSelection 放行（v0.8.57 選取控制點拖曳）', () => {
+    it('有選取 → false（即使第二頁起 / 已鎖 / 水平支配，都放行原生控制點拖曳）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(40, 5, 1, false, true), false);
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, true, true), false);
+      assert.strictEqual(pagedApi.blockTouchDecision(100, 100, 5, true, true), false);
+    });
+    it('無選取（hasSelection=false）→ 維持原決策（不影響既有翻頁攔截）', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(40, 5, 1, false, false), true);
+      assert.strictEqual(pagedApi.blockTouchDecision(2, 80, 0, false, false), false);
+    });
+    it('hasSelection 省略（4 參舊呼叫）→ 視為無選取，向後相容', () => {
+      assert.strictEqual(pagedApi.blockTouchDecision(40, 5, 1, false), true);
+    });
+  });
+
   describe('classifyKey', () => {
     const k = (key, mods) => pagedApi.classifyKey({ key, ...(mods || {}) });
     it('→ / PageDown / Space = next', () => {
