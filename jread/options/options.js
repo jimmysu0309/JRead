@@ -211,6 +211,56 @@ fields.forEach((id) => {
   });
 });
 
+// ---- Readwise token 測試（v0.8.64）-----------------------------------
+// 讀 input 目前值（含尚未 blur 存檔的輸入）→ 走 popup-core.validateReadwiseToken
+// 打官方 auth 端點驗證。fetch 在 options 頁直接發（extension 頁有 <all_urls>
+// host_permission，免 CORS）。結果雙通道呈現（色 + ✓ / ✗ 符號）。
+const readwiseTestBtn = document.getElementById('readwiseTest');
+const readwiseTestResultEl = document.getElementById('readwiseTestResult');
+
+function setReadwiseTestResult(kind, text) {
+  readwiseTestResultEl.textContent = text;
+  readwiseTestResultEl.className = 'token-test-result is-' + kind;
+}
+
+if (readwiseTestBtn && readwiseTestResultEl) {
+  readwiseTestBtn.addEventListener('click', async () => {
+    const token = document.getElementById('readwiseToken').value.trim();
+    if (!token) {
+      setReadwiseTestResult('error', '✗ 請先貼上 token');
+      return;
+    }
+    const PopupAPI = window.__JReadPopup;
+    if (!PopupAPI || typeof PopupAPI.validateReadwiseToken !== 'function') {
+      setReadwiseTestResult('error', '✗ 無法載入驗證模組');
+      return;
+    }
+    setReadwiseTestResult('pending', '測試中…');
+    readwiseTestBtn.disabled = true;
+    let result;
+    try {
+      result = await PopupAPI.validateReadwiseToken({ token });
+    } catch (_) {
+      result = { ok: false, error: 'NETWORK' };
+    }
+    readwiseTestBtn.disabled = false;
+    if (result.ok) {
+      setReadwiseTestResult('ok', '✓ Token 有效');
+    } else if (result.error === 'AUTH') {
+      setReadwiseTestResult('error', '✗ Token 無效或已過期');
+    } else if (result.error === 'NETWORK') {
+      setReadwiseTestResult('error', '✗ 無法連線，請檢查網路');
+    } else {
+      setReadwiseTestResult('error', '✗ 測試失敗（' + (result.status || result.error || '未知') + '）');
+    }
+  });
+
+  // 使用者重新編輯 token 時清掉上次測試結果（避免舊結果誤導）
+  document.getElementById('readwiseToken').addEventListener('input', () => {
+    setReadwiseTestResult('', '');
+  });
+}
+
 // autoEnableDomains 走獨立路徑：textarea 多行字串 → parseList → 寫回 sync。
 // 用 'change'（blur 觸發）而非 'input'，避免使用者打字途中每按一鍵就 set
 // 觸發 chrome.storage.sync 寫入配額 + 跨 tab broadcast。

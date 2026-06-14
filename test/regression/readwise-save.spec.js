@@ -5,7 +5,7 @@
 const path = require('path');
 const assert = require('assert');
 
-const { buildReadwisePayload, saveToReadwise, READWISE_API_URL } = require(
+const { buildReadwisePayload, saveToReadwise, validateReadwiseToken, READWISE_API_URL, READWISE_AUTH_URL } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
 
@@ -208,6 +208,102 @@ describe('readwise: saveToReadwise', () => {
     } finally {
       if (originalFetch) global.fetch = originalFetch;
     }
+  });
+});
+
+// v0.8.64：options 頁「測試 token」按鈕走 validateReadwiseToken（純函式 +
+// 注入 fetch）。驗 token 缺漏 / 有效（204）/ 無效（401·403）/ 其他 HTTP /
+// 網路錯誤 / 無 fetch，以及打對 GET 端點 + Authorization header。
+describe('readwise: validateReadwiseToken', () => {
+  it('沒 token：回 NO_TOKEN，不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
+    const r = await validateReadwiseToken({ token: '', fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'NO_TOKEN');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('token 全空白：回 NO_TOKEN', async () => {
+    const r = await validateReadwiseToken({ token: '   ', fetchImpl: async () => ({}) });
+    assert.strictEqual(r.error, 'NO_TOKEN');
+  });
+
+  it('有效（204 No Content）：回 ok=true，且打對 GET 端點 + Authorization header', async () => {
+    const { fetchImpl, calls } = makeFetch(async () => ({ ok: false, status: 204 }));
+    const r = await validateReadwiseToken({ token: '  good-token  ', fetchImpl });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.status, 204);
+    assert.strictEqual(calls[0][0], READWISE_AUTH_URL);
+    assert.strictEqual(calls[0][1].method, 'GET');
+    // token 前後空白須 trim
+    assert.strictEqual(calls[0][1].headers['Authorization'], 'Token good-token');
+  });
+
+  it('有效（200 OK 其他 2xx）：也回 ok=true', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: true, status: 200 }));
+    const r = await validateReadwiseToken({ token: 'xyz', fetchImpl });
+    assert.strictEqual(r.ok, true);
+  });
+
+  it('401：回 AUTH（token 無效或過期）', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 401 }));
+    const r = await validateReadwiseToken({ token: 'bad', fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'AUTH');
+    assert.strictEqual(r.status, 401);
+  });
+
+  it('403：回 AUTH', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 403 }));
+    const r = await validateReadwiseToken({ token: 'bad', fetchImpl });
+    assert.strictEqual(r.error, 'AUTH');
+  });
+
+  it('500：回 HTTP', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 500 }));
+    const r = await validateReadwiseToken({ token: 'xyz', fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'HTTP');
+    assert.strictEqual(r.status, 500);
+  });
+
+  it('網路錯誤：回 NETWORK', async () => {
+    const fetchImpl = async () => { throw new Error('Failed to fetch'); };
+    const r = await validateReadwiseToken({ token: 'xyz', fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'NETWORK');
+    assert.match(r.message, /Failed to fetch/);
+  });
+
+  it('沒 fetchImpl 也沒 global fetch：回 NO_FETCH', async () => {
+    const originalFetch = global.fetch;
+    delete global.fetch;
+    try {
+      const r = await validateReadwiseToken({ token: 'xyz' });
+      assert.strictEqual(r.error, 'NO_FETCH');
+    } finally {
+      if (originalFetch) global.fetch = originalFetch;
+    }
+  });
+
+  // forcing function：options 頁的測試按鈕 wiring 不可斷
+  it('options.html 必須載入 popup-core.js 並含測試按鈕 + 結果列', () => {
+    const fs = require('fs');
+    const html = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'options', 'options.html'), 'utf8'
+    );
+    assert.match(html, /src="\.\.\/popup\/popup-core\.js"/, 'options.html 必須載入 popup-core.js（validateReadwiseToken 來源）');
+    assert.match(html, /id="readwiseTest"/, 'options.html 必須有測試按鈕 #readwiseTest');
+    assert.match(html, /id="readwiseTestResult"/, 'options.html 必須有結果列 #readwiseTestResult');
+  });
+
+  it('options.js 必須呼叫 validateReadwiseToken 並 wire 測試按鈕', () => {
+    const fs = require('fs');
+    const js = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'options', 'options.js'), 'utf8'
+    );
+    assert.match(js, /validateReadwiseToken/, 'options.js 必須呼叫 validateReadwiseToken');
+    assert.match(js, /getElementById\(['"]readwiseTest['"]\)/, 'options.js 必須抓 #readwiseTest 按鈕');
   });
 });
 
