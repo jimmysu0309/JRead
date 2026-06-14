@@ -137,12 +137,59 @@
       border-radius: var(--jr-radius-sm);
       transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
-    /* Readwise token 欄位較長，撐到區塊右緣 */
-    input#readwiseToken {
+    /* Readwise token 控制群：input + 測試按鈕同一列，整列固定 280px、右緣對齊
+       區塊右緣（與其他控制群一致）；input 撐滿剩餘寬、按鈕固定寬。結果文字
+       另起一列在下方右對齊。 */
+    .readwise-token-control {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+    .readwise-token-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       width: 280px;
+    }
+    input#readwiseToken {
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 0;
       font-family: var(--jr-font-mono);
       font-size: 12px;
     }
+    .token-test-btn {
+      flex: 0 0 auto;
+      height: 32px;
+      padding: 0 14px;
+      font-family: var(--jr-font-ui);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--jr-neutral-900);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      cursor: pointer;
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .token-test-btn:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    .token-test-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    /* 結果文字：雙通道（色 + 符號 ✓ / ✗）避免只靠顏色辨識 */
+    .token-test-result {
+      font-size: 12px;
+      font-weight: 500;
+      min-height: 16px;
+      line-height: 16px;
+    }
+    .token-test-result.is-ok { color: var(--jr-success-600, #1a7f37); }
+    .token-test-result.is-error { color: var(--jr-danger-600, #c0362c); }
+    .token-test-result.is-pending { color: var(--jr-neutral-500); }
     /* v0.7.155：自動啟動網域 textarea。獨佔整個區塊寬度（不走 .field 左右
        分欄）；mono 字型 + 較小字級對齊「網域 = 機器辨識字串」語意。 */
     textarea#autoEnableDomains {
@@ -620,7 +667,13 @@
       Readwise Access Token
       <span class="desc">空白 = 不啟用</span>
     </label>
-    <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
+    <div class="readwise-token-control">
+      <div class="readwise-token-row">
+        <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
+        <button type="button" id="readwiseTest" class="token-test-btn">測試</button>
+      </div>
+      <span id="readwiseTestResult" class="token-test-result"></span>
+    </div>
   </div>
 
   <section class="license">
@@ -637,6 +690,7 @@
   <script src="../content/settings-defaults.js"></script>
   <script src="../content/domain-match.js"></script>
   <script src="../content/shortcut-utils.js"></script>
+  <script src="../popup/popup-core.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.63**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.64**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -508,6 +508,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - 欄位：`readwiseToken`（string，預設 `''`），存於 `chrome.storage.sync`
 - 取得方式：`https://readwise.io/access_token`
 - 設定位置：options 頁「Readwise Reader 整合」區塊（password input）
+- **測試按鈕（v0.8.64）**：token input 旁的「測試」按鈕，讓使用者在儲存前驗證 token 是否正確。讀 input 目前值（含尚未 blur 存檔的輸入）→ `popup-core.validateReadwiseToken({ token })` 打官方驗證端點 `GET https://readwise.io/api/v2/auth/`（header `Authorization: Token <token>`，有效回 `204 No Content`、無效回 `401`；比 `POST /save/` 輕量、不建任何文件）。fetch 在 options 頁直接發（extension 頁有 `<all_urls>` host_permission、免 CORS）。結果在按鈕下方雙通道呈現（色 + ✓/✗ 符號）：`✓ Token 有效`（綠）/ `✗ Token 無效或已過期`（AUTH，紅）/ `✗ 無法連線，請檢查網路`（NETWORK，紅）/ `✗ 請先貼上 token`（空，紅）/ `✗ 測試失敗（N）`（其他 HTTP，紅）。使用者重新編輯 token（`input` 事件）即清掉上次結果。`validateReadwiseToken` 為 popup-core 純函式（注入 fetch、回傳 `{ ok, error, status }` 與 `saveToReadwise` 對齊），regression 在 `test/regression/readwise-save.spec.js`。
 
 ### Popup UI 行為
 

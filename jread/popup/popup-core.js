@@ -74,6 +74,10 @@
   // 註：Readwise Reader API 沒 `language` 欄位（送了會被忽略）——所以 JRead
   // 不抽 / 不送 language。
   const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
+  // v0.8.64：token 驗證端點。官方 GET /api/v2/auth/ 帶 Authorization: Token <token>，
+  // 有效回 204 No Content、無效回 401——比 POST /save/ 輕量（不建任何文件、不需 payload），
+  // 是 options 頁「測試 token」按鈕的正解。
+  const READWISE_AUTH_URL = 'https://readwise.io/api/v2/auth/';
 
   function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate } = {}) {
     if (!url || typeof url !== 'string') {
@@ -133,13 +137,40 @@
     return { ok: true, status: res.status, data };
   }
 
+  // v0.8.64：驗證 Readwise token 是否有效。打官方 auth 端點（GET），不送任何內容。
+  // 回傳值與 saveToReadwise 對齊（ok / error / status），讓 options / popup 共用同一套
+  // 分支判斷。NO_TOKEN（空）/ AUTH（401·403 → token 無效或過期）/ NETWORK（連不上）/
+  // HTTP（其他非 2xx）/ NO_FETCH（環境無 fetch）。
+  async function validateReadwiseToken({ token, fetchImpl } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return { ok: false, error: 'NO_TOKEN' };
+    }
+    let res;
+    try {
+      res = await f(READWISE_AUTH_URL, {
+        method: 'GET',
+        headers: { 'Authorization': `Token ${token.trim()}` }
+      });
+    } catch (networkErr) {
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    // 有效：204 No Content（也容忍其他 2xx，保險）
+    if (res.status === 204 || res.ok) return { ok: true, status: res.status };
+    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
+    return { ok: false, status: res.status, error: 'HTTP' };
+  }
+
   const api = {
     sendWithInjectionFallback,
     toggleWithInjectionFallback,
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
     saveToReadwise,
-    READWISE_API_URL
+    validateReadwiseToken,
+    READWISE_API_URL,
+    READWISE_AUTH_URL
   };
 
   if (typeof module !== 'undefined' && module.exports) {
