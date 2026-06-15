@@ -131,6 +131,48 @@
       return '';
     },
 
+    // v0.8.76：把 rootEl 子樹內媒體載體（img/source/video/audio/iframe）的
+    // src / poster / srcset 以 base 為基準轉成絕對 URL（就地改 attribute）。
+    // 動機：buildCleanHtml 送 Readwise 的是 `outerHTML`——序列化的是 src 的
+    // 「屬性原值」、非瀏覽器解析後的絕對 URL。原站用根相對（`/assets/x.png`）
+    // 或文件相對路徑寫圖時，Readwise 伺服器端收到相對 URL 無原站 base 可解析 →
+    // 全部破圖（0xkato.xyz Ghost 站實證，Jimmy 2026-06-15）。抽成 NS 純函式
+    // （單一資料源 + jsdom 可測，比對 main.js source-string forcing function
+    // 強）。已是絕對 URL（含 data:/blob:/http(s)）的 new URL(s, base) 回原值不變。
+    absolutizeResourceUrls(rootEl, base) {
+      if (!rootEl || !rootEl.querySelectorAll || !base) return;
+      const toAbs = (raw) => {
+        if (!raw || typeof raw !== 'string') return null;
+        const s = raw.trim();
+        if (!s) return null;
+        try { return new URL(s, base).href; } catch (_) { return null; }
+      };
+      // srcset：逗號分隔 candidate list，每項 "URL [descriptor]"（1x / 2x / 640w）。
+      // 只轉 URL 段、保留 descriptor。
+      const absSrcset = (val) => val.split(',').map((cand) => {
+        const part = cand.trim();
+        if (!part) return null;
+        const sp = part.indexOf(' ');
+        const url = sp === -1 ? part : part.slice(0, sp);
+        const desc = sp === -1 ? '' : part.slice(sp + 1).trim();
+        const abs = toAbs(url);
+        if (!abs) return null;
+        return desc ? `${abs} ${desc}` : abs;
+      }).filter(Boolean).join(', ');
+      rootEl.querySelectorAll('img, source, video, audio, iframe').forEach((el) => {
+        for (const attr of ['src', 'poster']) {
+          if (el.hasAttribute(attr)) {
+            const abs = toAbs(el.getAttribute(attr));
+            if (abs) el.setAttribute(attr, abs);
+          }
+        }
+        if (el.hasAttribute('srcset')) {
+          const abs = absSrcset(el.getAttribute('srcset'));
+          if (abs) el.setAttribute('srcset', abs);
+        }
+      });
+    },
+
     // v0.8.17：編輯/互動類 element focus 判定（paged-mode 翻頁鍵 + space-scroll
     // 共用，單一資料源）。原本兩處各寫一份且 paged 版漏了 BUTTON——按鈕 focus 時
     // 方向鍵 / Space 被翻頁攔截、吃掉按鈕的鍵盤啟用（同一份事實雙實作的 drift，

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>How LLMs Actually Work</title></head>
+<body>
+<!--
+  最小重現容器：0xkato.xyz 送 Readwise 圖片相對路徑破圖（Jimmy 2026-06-15）。
+  buildCleanHtml 的 outerHTML 序列化 src 屬性原值（相對路徑），Readwise 端無
+  base 可解析 → 破圖。spec 用 NS.absolutizeResourceUrls 就地轉絕對後驗 attribute。
+  base url 由 helper 的 url 選項設為 https://www.0xkato.xyz/how-llms-actually-work/。
+-->
+<main><article><h1>How LLMs Actually Work</h1></article></main>
+</body>
+</html>
