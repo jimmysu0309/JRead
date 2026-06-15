@@ -693,6 +693,13 @@ html [${ARTICLE_ATTR}="1"] main {
      min-height 頂住、object-fit:contain 下影像 letterbox 置中 → 主圖
      上下各 ~118px 假空白。reader 縮窄後媒體高度一律按比例算。 */
   min-height: 0 !important;
+  /* v0.8.75：min-width 一併清——0xkato.xyz（Ghost 站）對 .bigger-image 設
+     min-width: 130%（讓配圖向版心外 bleed 成寬圖）。CSS 規範 min-width 勝過
+     max-width，故 max-width:100% 壓不回去、圖被頂在 130% 寬（608→790px）衝出
+     720px 卡片右緣 126px 爆版。reader card 單欄 layout 不需要 bleed，min-width
+     歸零讓 max-width:100% 生效、媒體一律縮回版心寬。結構通則：任何站對媒體設
+     min-width bleed 都被覆蓋（與上方 p 規則 min-width:0 同款）。 */
+  min-width: 0 !important;
 }
 /* v0.7.93：picture 與含 img/picture 的容器強制不被 flex stretch / 不維持
    固定 height——substack imageRow 類 gallery 修法。
