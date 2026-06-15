@@ -264,6 +264,55 @@ if (readwiseTestBtn && readwiseTestResultEl) {
   });
 }
 
+// ---- Gemini API key 測試（v0.8.74）---------------------------------
+// 讀 input 目前值 → 走 popup-core.validateGeminiKey 打 models list 端點（GET、
+// 零 token 成本）。與 Readwise 測試同一套呈現（色 + ✓ / ✗ 雙通道）。
+const geminiTestBtn = document.getElementById('geminiTest');
+const geminiTestResultEl = document.getElementById('geminiTestResult');
+
+function setGeminiTestResult(kind, text) {
+  geminiTestResultEl.textContent = text;
+  geminiTestResultEl.className = 'token-test-result is-' + kind;
+}
+
+if (geminiTestBtn && geminiTestResultEl) {
+  geminiTestBtn.addEventListener('click', async () => {
+    const apiKey = document.getElementById('geminiApiKey').value.trim();
+    if (!apiKey) {
+      setGeminiTestResult('error', '✗ 請先貼上 API key');
+      return;
+    }
+    const PopupAPI = window.__JReadPopup;
+    if (!PopupAPI || typeof PopupAPI.validateGeminiKey !== 'function') {
+      setGeminiTestResult('error', '✗ 無法載入驗證模組');
+      return;
+    }
+    setGeminiTestResult('pending', '測試中…');
+    geminiTestBtn.disabled = true;
+    let result;
+    try {
+      result = await PopupAPI.validateGeminiKey({ apiKey });
+    } catch (_) {
+      result = { ok: false, error: 'NETWORK' };
+    }
+    geminiTestBtn.disabled = false;
+    if (result.ok) {
+      setGeminiTestResult('ok', '✓ API key 有效');
+    } else if (result.error === 'AUTH') {
+      setGeminiTestResult('error', '✗ API key 無效');
+    } else if (result.error === 'NETWORK') {
+      setGeminiTestResult('error', '✗ 無法連線，請檢查網路');
+    } else {
+      setGeminiTestResult('error', '✗ 測試失敗（' + (result.status || result.error || '未知') + '）');
+    }
+  });
+
+  // 使用者重新編輯 key 時清掉上次測試結果
+  document.getElementById('geminiApiKey').addEventListener('input', () => {
+    setGeminiTestResult('', '');
+  });
+}
+
 // autoEnableDomains 走獨立路徑：textarea 多行字串 → parseList → 寫回 sync。
 // 用 'change'（blur 觸發）而非 'input'，避免使用者打字途中每按一鍵就 set
 // 觸發 chrome.storage.sync 寫入配額 + 跨 tab broadcast。

@@ -102,6 +102,13 @@
       border-bottom: none;
       padding-bottom: 0;
     }
+    /* v0.8.74：同一功能的子設定群（Readwise 整合的 Token + 摘要 + Gemini key）。
+       彼此間不放分隔線——分隔線只用於切分不同設定，子設定被切開會讓人誤以為
+       是三個獨立功能。群的下緣也不畫線（後接 .license 已有 40px margin-top
+       提供區段間距）。 */
+    .field-group .field {
+      border-bottom: none;
+    }
     .field label {
       font-weight: 500;
       color: var(--jr-neutral-900);
@@ -140,6 +147,13 @@
     /* Readwise token 控制群：input + 測試按鈕同一列，整列固定 280px、右緣對齊
        區塊右緣（與其他控制群一致）；input 撐滿剩餘寬、按鈕固定寬。結果文字
        另起一列在下方右對齊。 */
+    /* token-control 欄位：label 與控制群頂端對齊。控制群是直向（input 列 +
+       結果列）比 label 高，.field 預設 align-items:center 會把控制群置中、
+       input 反而比 label 高 6px → 視覺沒對齊（Jimmy 2026-06-15 截圖）。改頂
+       對齊讓 input 列與 label 名稱同高。 */
+    .field:has(.readwise-token-control) {
+      align-items: flex-start;
+    }
     .readwise-token-control {
       display: flex;
       flex-direction: column;
@@ -591,7 +605,7 @@
   <div class="field">
     <label for="pangu">
       中英文間自動補空白 + 中文標點全形化
-      <span class="desc">閱讀模式下兩件事同時做：（1）中英文（含數字、<strong>%</strong>、<strong>°</strong>）相鄰時自動插入空白，例如 <code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>、<code>60%以上</code> → <code>60% 以上</code>；（2）中文邊界的半形標點 <strong>, . : ; ? !</strong> 轉成 <strong>，。：；？！</strong>，半形括號 <strong>( )</strong> 兩側都是中文時轉 <strong>（）</strong>，例如 <code>他說,然後</code> → <code>他說，然後</code>。中文段落內的半形逗號（即使前後緊鄰英數字）也會轉全形，例如 <code>叫 Google Alerts,2003 年</code> → <code>叫 Google Alerts，2003 年</code>。<code>example.com</code> / <code>1.5kg</code> / <code>Mr.Smith</code> 等純 ASCII 邊界不會動。程式碼、連結內文字不會被動</span>
+      <span class="desc">閱讀模式下中英文 / 數字相鄰處自動補空白（<code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>），中文邊界的半形標點 <strong>, . : ; ? ! ( )</strong> 轉全形（<code>他說,然後</code> → <code>他說，然後</code>）。純 ASCII（<code>example.com</code> / <code>Mr.Smith</code>）與程式碼、連結不受影響</span>
     </label>
     <input type="checkbox" id="pangu">
   </div>
@@ -660,37 +674,44 @@
 
   <h2 class="section-heading">Readwise Reader 整合</h2>
   <p class="section-desc">
-    在 popup 點「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
-    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器
+    在工具列圖示選單點擊「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
+    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器
   </p>
-  <div class="field">
-    <label>
-      Readwise Access Token
-      <span class="desc">空白 = 不啟用</span>
-    </label>
-    <div class="readwise-token-control">
-      <div class="readwise-token-row">
-        <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
-        <button type="button" id="readwiseTest" class="token-test-btn">測試</button>
+  <!-- v0.8.74：三項同屬「Readwise 整合」一個功能的設定（Token + 摘要開關 +
+       Gemini key），用 .field-group 包住、移除彼此間的分隔線（分隔線只用於
+       分隔不同設定，同一功能的子設定不該被切開）。 -->
+  <div class="field-group">
+    <div class="field">
+      <label>
+        Readwise Access Token
+        <span class="desc">空白 = 不啟用</span>
+      </label>
+      <div class="readwise-token-control">
+        <div class="readwise-token-row">
+          <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
+          <button type="button" id="readwiseTest" class="token-test-btn">測試</button>
+        </div>
+        <span id="readwiseTestResult" class="token-test-result"></span>
       </div>
-      <span id="readwiseTestResult" class="token-test-result"></span>
     </div>
-  </div>
-  <div class="field">
-    <label>
-      送出時自動產生摘要
-      <span class="desc">送到 Readwise Reader 時，用 Google Gemini Flash Lite 先產生<strong>繁體中文三句摘要</strong>一起送出，取代 Readwise 內建的英文自動摘要。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出、由 Readwise 自行處理</span>
-    </label>
-    <input type="checkbox" id="readwiseSummary">
-  </div>
-  <div class="field">
-    <label>
-      Gemini API Key
-      <span class="desc">從 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器。開啟摘要時，文章內容會送往 Google Gemini 產生摘要</span>
-    </label>
-    <div class="readwise-token-control">
-      <div class="readwise-token-row">
-        <input type="password" id="geminiApiKey" autocomplete="off" spellcheck="false" placeholder="貼上 API key">
+    <div class="field">
+      <label>
+        送出時自動產生摘要
+        <span class="desc">送到 Readwise Reader 時，用 Google Gemini Flash Lite 先產生<strong>繁體中文三句摘要</strong>一起送出，取代 Readwise 內建的英文自動摘要。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出、由 Readwise 自行處理</span>
+      </label>
+      <input type="checkbox" id="readwiseSummary">
+    </div>
+    <div class="field">
+      <label>
+        Gemini API Key
+        <span class="desc">API Key 僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器</span>
+      </label>
+      <div class="readwise-token-control">
+        <div class="readwise-token-row">
+          <input type="password" id="geminiApiKey" autocomplete="off" spellcheck="false" placeholder="貼上 API key">
+          <button type="button" id="geminiTest" class="token-test-btn">測試</button>
+        </div>
+        <span id="geminiTestResult" class="token-test-result"></span>
       </div>
     </div>
   </div>

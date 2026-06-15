@@ -5,7 +5,7 @@
 const path = require('path');
 const assert = require('assert');
 
-const { buildReadwisePayload, saveToReadwise, saveReaderPayload, validateReadwiseToken, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
+const { buildReadwisePayload, saveToReadwise, saveReaderPayload, validateReadwiseToken, validateGeminiKey, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
 
@@ -399,6 +399,122 @@ describe('readwise: validateReadwiseToken', () => {
   });
 });
 
+describe('readwise: validateGeminiKey (v0.8.74)', () => {
+  it('沒 key：回 NO_KEY，不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
+    const r = await validateGeminiKey({ apiKey: '', fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'NO_KEY');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('key 全空白：回 NO_KEY', async () => {
+    const r = await validateGeminiKey({ apiKey: '   ', fetchImpl: async () => ({}) });
+    assert.strictEqual(r.error, 'NO_KEY');
+  });
+
+  it('有效（200）：回 ok=true，打對 models list GET 端點（無尾斜線）+ key 已 trim/encode', async () => {
+    const { fetchImpl, calls } = makeFetch(async () => ({ ok: true, status: 200 }));
+    const r = await validateGeminiKey({ apiKey: '  good key  ', fetchImpl });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(calls[0][1].method, 'GET');
+    // models 端點不可有尾斜線（.../models?key= 而非 .../models/?key=）
+    assert.match(calls[0][0], /\/v1beta\/models\?key=/);
+    assert.ok(!/\/models\/\?key=/.test(calls[0][0]), 'models 端點不可有尾斜線');
+    // 前後空白 trim、含空白的 key URL-encode（不會破壞 query）
+    assert.match(calls[0][0], /key=good%20key$/);
+  });
+
+  it('400 INVALID_ARGUMENT：回 AUTH（key 無效）', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 400 }));
+    const r = await validateGeminiKey({ apiKey: 'bad', fetchImpl });
+    assert.strictEqual(r.error, 'AUTH');
+    assert.strictEqual(r.status, 400);
+  });
+
+  it('403 PERMISSION_DENIED：回 AUTH', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 403 }));
+    const r = await validateGeminiKey({ apiKey: 'bad', fetchImpl });
+    assert.strictEqual(r.error, 'AUTH');
+  });
+
+  it('500：回 HTTP', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 500 }));
+    const r = await validateGeminiKey({ apiKey: 'xyz', fetchImpl });
+    assert.strictEqual(r.error, 'HTTP');
+    assert.strictEqual(r.status, 500);
+  });
+
+  it('網路錯誤：回 NETWORK', async () => {
+    const fetchImpl = async () => { throw new Error('Failed to fetch'); };
+    const r = await validateGeminiKey({ apiKey: 'xyz', fetchImpl });
+    assert.strictEqual(r.error, 'NETWORK');
+    assert.match(r.message, /Failed to fetch/);
+  });
+
+  it('沒 fetchImpl 也沒 global fetch：回 NO_FETCH', async () => {
+    const originalFetch = global.fetch;
+    delete global.fetch;
+    try {
+      const r = await validateGeminiKey({ apiKey: 'xyz' });
+      assert.strictEqual(r.error, 'NO_FETCH');
+    } finally {
+      if (originalFetch) global.fetch = originalFetch;
+    }
+  });
+
+  // forcing function：Gemini 測試按鈕 wiring + 三設定不分隔線編排不可斷
+  it('options.html 必須含 Gemini 測試按鈕 + 結果列 + .field-group 包三設定', () => {
+    const fs = require('fs');
+    const html = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'options', 'options.html'), 'utf8'
+    );
+    assert.match(html, /id="geminiTest"/, 'options.html 必須有 Gemini 測試按鈕 #geminiTest');
+    assert.match(html, /id="geminiTestResult"/, 'options.html 必須有 Gemini 結果列 #geminiTestResult');
+    // 三設定（readwiseToken / readwiseSummary / geminiApiKey）必須包在同一個
+    // .field-group 內（同一功能不放分隔線，Jimmy 2026-06-15 編排要求）
+    assert.match(html, /class="field-group"/, 'options.html 必須有 .field-group 包住 Readwise 整合三設定');
+    const m = html.match(/<div class="field-group">[\s\S]*?<\/div>\s*<section class="license"/);
+    assert.ok(m, '.field-group 必須緊鄰 license section（區塊邊界正確）');
+    assert.ok(/id="readwiseToken"/.test(m[0]) && /id="readwiseSummary"/.test(m[0]) && /id="geminiApiKey"/.test(m[0]),
+      '.field-group 內必須含 readwiseToken + readwiseSummary + geminiApiKey 三設定');
+  });
+
+  it('options.html CSS 必須移除 .field-group 內 .field 的分隔線', () => {
+    const fs = require('fs');
+    const html = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'options', 'options.html'), 'utf8'
+    );
+    assert.match(html, /\.field-group\s+\.field\s*\{[^}]*border-bottom:\s*none/,
+      '.field-group .field 必須 border-bottom: none（同一功能子設定不分隔）');
+  });
+
+  it('options.html CSS：token-control 欄位必須頂對齊（label 與 input 同高）', () => {
+    const fs = require('fs');
+    const html = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'options', 'options.html'), 'utf8'
+    );
+    // 控制群（input 列 + 結果列）比 label 高，.field 預設 align-items:center 會把
+    // input 推得比 label 高 6px（Jimmy 2026-06-15 截圖）；必須對含 .readwise-token-
+    // control 的 field 改 flex-start，讓 input 列與 label 名稱頂端對齊。
+    assert.match(html, /\.field:has\(\.readwise-token-control\)\s*\{[^}]*align-items:\s*flex-start/,
+      '.field:has(.readwise-token-control) 必須 align-items: flex-start（label 與 input 頂對齊）');
+  });
+
+  it('options.js 必須呼叫 validateGeminiKey 並 wire Gemini 測試按鈕', () => {
+    const fs = require('fs');
+    const js = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'options', 'options.js'), 'utf8'
+    );
+    assert.match(js, /validateGeminiKey/, 'options.js 必須呼叫 validateGeminiKey');
+    assert.match(js, /getElementById\(['"]geminiTest['"]\)/, 'options.js 必須抓 #geminiTest 按鈕');
+  });
+
+  it('popup-core 必須 export validateGeminiKey', () => {
+    assert.strictEqual(typeof validateGeminiKey, 'function', 'validateGeminiKey 必須被 export');
+  });
+});
+
 describe('readwise: 訊息協定常數同步', () => {
   it('namespace.js MSG 必須含 Readwise 用兩條 popup→content 訊息（forcing function）', () => {
     const fs = require('fs');
@@ -572,17 +688,29 @@ describe('readwise: 訊息協定常數同步', () => {
       `JSON-LD querySelectorAll 只能在 getJsonLd 出現一次（C8 共用單次 parse），實際 ${ldQueryCount} 處`);
     assert.match(mainSrc, /resetJsonLdCache\(\)[\s\S]{0,200}buildCleanHtml/,
       'extractReaderPayload 必須在抽取前 resetJsonLdCache()（換頁後重新解析 LD）');
-    // v0.8.50：title 來源改以 reader card 內可見 h1 為主（document.title 是
+    // v0.8.50：title 來源改以 reader card 內可見 heading 為主（document.title 是
     // 載入時靜態 metadata，翻譯擴充改寫 DOM 後不會跟著變——送出去的是原文
     // 標題，Jimmy 2026-06-12 回報）。
+    // v0.8.74：選主標 heading 的邏輯收斂到 NS.findCardTitleHeading（單一資料源
+    // + jsdom 可測，h1 優先、無 h1 取內文前首個 h2——Stratechery post-title 是
+    // h2，Jimmy 2026-06-15 回報）。hidden-skip 行為移到 namespace.js，行為層
+    // spec 見 readwise-h2-title.spec.js。
     assert.match(mainSrc, /function\s+extractReaderTitle\s*\(/,
-      'main.js 必須定義 extractReaderTitle（v0.8.50：card h1 優先、document.title fallback）');
+      'main.js 必須定義 extractReaderTitle');
     assert.match(mainSrc, /=\s*extractReaderTitle\s*\(\s*\)/,
       'extractReaderPayload 的 title 必須來自 extractReaderTitle()——forcing：直接讀 document.title 會回退到「譯後標題送原文」bug');
-    assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,800}data-jread-hidden/,
-      'extractReaderTitle 必須跳過 [data-jread-hidden] 內的 h1（站名 logo h1 類雜訊）');
-    assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,1200}stripSiteSuffix/,
+    assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,600}NS\.findCardTitleHeading\s*\(/,
+      'extractReaderTitle 必須走 NS.findCardTitleHeading 單一資料源（v0.8.74）');
+    assert.match(mainSrc, /function\s+extractReaderTitle[\s\S]{0,800}stripSiteSuffix/,
       'extractReaderTitle 的 document.title fallback 必須沿用 NS.stripSiteSuffix 去站名尾綴');
+    // findCardTitleHeading 必須跳過 [data-jread-hidden]（站名 logo / cleaner 標記
+    // 的雜訊 heading）+ 涵蓋 h1 與 h2 兩種主標 tag。
+    const nsSrc = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'namespace.js'), 'utf8');
+    assert.match(nsSrc, /findCardTitleHeading\s*\(/,
+      'namespace.js 必須定義 findCardTitleHeading（選主標 heading 單一資料源）');
+    assert.match(nsSrc, /findCardTitleHeading[\s\S]{0,1200}data-jread-hidden/,
+      'findCardTitleHeading 必須跳過 [data-jread-hidden] 內的 heading（站名 logo 類雜訊）');
     // v0.8.62：title 去重——buildCleanHtml 必須收 title 參數並移除 body 內同名
     // heading（Readwise 用 title 欄位另渲染主標，body 殘留同名 heading 會重複）。
     assert.match(mainSrc, /function\s+buildCleanHtml\s*\(\s*rootEl\s*,\s*title\s*\)/,
