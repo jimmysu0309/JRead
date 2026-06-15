@@ -487,6 +487,18 @@ describe('readwise: 訊息協定常數同步', () => {
       /function\s+extractAuthor\s*\(/,
       'main.js 必須定義 extractAuthor 函式（v0.7.167）'
     );
+    // v0.8.73：og:site_name「刊物名 by 作者」最低優先序 fallback——definition +
+    // 走對 selector。與 readwise-author-date-extract.spec 的等價 helper 雙保防 drift。
+    assert.match(
+      mainSrc,
+      /function\s+extractAuthorFromSiteName\s*\(/,
+      'main.js 必須定義 extractAuthorFromSiteName 函式（v0.8.73 og:site_name fallback）'
+    );
+    assert.match(
+      mainSrc,
+      /meta\[property="og:site_name"\]/,
+      'extractAuthorFromSiteName 必須讀 og:site_name'
+    );
     assert.match(
       mainSrc,
       /function\s+extractPublishedDate\s*\(/,

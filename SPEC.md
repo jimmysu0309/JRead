@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.72**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.73**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -504,7 +504,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - **`author`（v0.7.167）**：`main.js extractAuthor()` — 三條分支：
   - Facebook 合成 reader（`[data-jread-fb-reader]`）：`NS.fbPost.extractAuthorVanityFromUrl()` 抽 `/<user>/posts/<id>` 第一段 vanity username,reserved path（`groups` / `permalink.php` / `story.php` / `share` / `profile.php` / `permalink` / `people` / `pages`）沒 vanity → fallback 讀合成 header `[data-jread-fb-author] strong` 的 displayName。
   - X / Twitter 合成 reader（`[data-jread-x-reader]`）：`/<handle>/status/<id>` → `@handle`（hostname 嚴格比對 `x.com` / `twitter.com`，防 hostname 混淆攻擊）。
-  - 一般網站：JSON-LD `Article.author.name`（含 `string` / `object` / `array` / `@graph` 多 schema）→ `meta[name="author"]` → `meta[property="article:author"]`（filter `^https?://` URL 形式）→ byline 元素：`[itemprop="author"] [itemprop="name"]` / `[itemprop="author"]` / `[rel="author"]` / `.byline-author` / `.author-name` / `.byline .author` / `.byline`。文字長度 >= 100 字拒絕（避免抓到段落）。
+  - 一般網站：JSON-LD `Article.author.name`（含 `string` / `object` / `array` / `@graph` 多 schema）→ `meta[name="author"]` → `meta[property="article:author"]`（filter `^https?://` URL 形式）→ byline 元素：`[itemprop="author"] [itemprop="name"]` / `[itemprop="author"]` / `[rel="author"]` / `.byline-author` / `.author-name` / `.byline .author` / `.byline`（文字長度 >= 100 字拒絕，避免抓到段落）→ **`og:site_name` 的「刊物名 by 作者」尾段**（v0.8.73，`extractAuthorFromSiteName`，**最低優先序 fallback**）。動機：單人部落格 / newsletter（Substack / Ghost / 個人 WordPress）常省略文章層級署名，作者只活在站名（`Sharp Text by Andrew Sharp` / `Stratechery by Ben Thompson` / `Money Stuff by Matt Levine`）。結構通則、非站點特判：任何 `og:site_name` 走同一 regex `/(?:^|\s)by\s+(.+?)\s*$/i`。guard 壓低誤判——需空白邊界的 `by`（不誤命中 standby / rugby）、作者段 2–60 字、含字母（含 CJK）、不含 URL / `@` / 斜線（排除把網址或 handle 當作者）。只在前 4 條正規信號全失敗才用，避免誤蓋有正式 byline 的站。
 - **`published_date`（v0.7.167–168）**:`main.js extractPublishedDate()` 三條分支（v0.7.168 加 FB / X 分流）:
   - Facebook 合成 reader(`[data-jread-fb-reader]`):**不送**——FB DOM 結構性沒絕對日期（只有「N 分鐘前」相對時間 `aria-label`），倒推精度不夠 Jimmy 寧可空白。
   - X / Twitter 合成 reader(`[data-jread-x-reader]`)：從合成容器第一個 `:scope > article`（主推文 clone,`x-thread.js collectThreadArticles` 排序保證）取**最後一個** `<time datetime>` —— X 主推文 article 內若有 quoted tweet,quoted 時間在前、主推文 timestamp 在後；沒 quoted tweet 時只 1 個 time 也是主推文。**不退回** document head meta（X 整站共用 OG metadata 無法代表單則推文）。

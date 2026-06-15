@@ -90,7 +90,25 @@ function extractGenericAuthor(doc) {
     const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
     if (t && t.length < 100) return t;
   }
+  // v0.8.73：og:site_name「刊物名 by 作者」尾段 fallback
+  const fromSite = extractAuthorFromSiteName(doc);
+  if (fromSite) return fromSite;
   return '';
+}
+
+// v0.8.73：與 main.js extractAuthorFromSiteName 等價 helper
+function extractAuthorFromSiteName(doc) {
+  const m = doc.head && doc.head.querySelector('meta[property="og:site_name"]');
+  if (!m) return '';
+  const site = (m.getAttribute('content') || '').replace(/\s+/g, ' ').trim();
+  if (!site) return '';
+  const match = site.match(/(?:^|\s)by\s+(.+?)\s*$/i);
+  if (!match) return '';
+  const name = match[1].trim();
+  if (name.length < 2 || name.length > 60) return '';
+  if (/[\/@]|https?:/i.test(name)) return '';
+  if (!/[A-Za-z一-鿿]/.test(name)) return '';
+  return name;
 }
 
 function extractXAuthorHandle(url) {
@@ -312,6 +330,76 @@ describe('extractAuthor — byline 元素 fallback', () => {
     const doc = makeDoc(`<!doctype html><html><head></head><body>
       <div class="byline">${longText}</div>
     </body></html>`);
+    assert.strictEqual(extractGenericAuthor(doc), '');
+  });
+});
+
+// v0.8.73：og:site_name「刊物名 by 作者」最低優先序 fallback
+describe('extractAuthor — og:site_name「X by Y」fallback', () => {
+  it('sharptext 實例：Sharp Text by Andrew Sharp → Andrew Sharp', () => {
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Sharp Text by Andrew Sharp" />
+    </head><body><p>無任何 byline</p></body></html>`);
+    assert.strictEqual(extractGenericAuthor(doc), 'Andrew Sharp');
+  });
+
+  it('其他 newsletter 慣例：Stratechery by Ben Thompson / Money Stuff by Matt Levine', () => {
+    const d1 = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Stratechery by Ben Thompson" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(d1), 'Ben Thompson');
+    const d2 = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Money Stuff by Matt Levine" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(d2), 'Matt Levine');
+  });
+
+  it('中文站名也可：科技隨筆 by 王小明 → 王小明', () => {
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="科技隨筆 by 王小明" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(doc), '王小明');
+  });
+
+  it('正規 byline 存在時不走 fallback（最低優先序）', () => {
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta name="author" content="Real Byline" />
+      <meta property="og:site_name" content="Some Site by Wrong Person" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(doc), 'Real Byline');
+  });
+
+  it('og:site_name 無「by」：不誤判（單純刊物名）', () => {
+    const doc = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="The New York Times" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(doc), '');
+  });
+
+  it('「by」非獨立字（standby / rugby）不命中', () => {
+    const d1 = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Standby" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(d1), '');
+    const d2 = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Rugby" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(d2), '');
+  });
+
+  it('作者段含 URL / @ / 斜線：拒絕（排除把網址或 handle 當作者）', () => {
+    const d1 = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Site by https://x.com/foo" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(d1), '');
+    const d2 = makeDoc(`<!doctype html><html><head>
+      <meta property="og:site_name" content="Site by @handle" />
+    </head><body></body></html>`);
+    assert.strictEqual(extractGenericAuthor(d2), '');
+  });
+
+  it('無 og:site_name：回空字串', () => {
+    const doc = makeDoc(`<!doctype html><html><head></head><body></body></html>`);
     assert.strictEqual(extractGenericAuthor(doc), '');
   });
 });
