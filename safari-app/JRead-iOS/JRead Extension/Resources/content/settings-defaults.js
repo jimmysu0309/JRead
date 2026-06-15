@@ -43,6 +43,13 @@
     autoEnableDomains: [],
     // Readwise Reader integration（v0.7.33）。空字串 = 未設定。
     readwiseToken: '',
+    // v0.8.72：送 Readwise 時用 Gemini Flash Lite 先產生摘要（繁中三句）一起送出，
+    // 取代 Readwise server 端自動生成的英文摘要。預設 false = 不產生（仍可送，由
+    // Readwise 自動處理）。需同時設 geminiApiKey 才會實際呼叫。
+    readwiseSummary: false,
+    // v0.8.72：Gemini API key（從 Google AI Studio 取得）。空字串 = 未設定 = 即使
+    // readwiseSummary 開著也不產生摘要。僅存本機 storage.sync，不上傳 JRead 伺服器。
+    geminiApiKey: '',
     // v0.7.131：閱讀模式啟動時攔截原站快速鍵。
     blockPageShortcuts: true,
     // 中英文字之間自動補空白（盤古之白）。
