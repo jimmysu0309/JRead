@@ -1695,20 +1695,33 @@
       // interactive、但已 hide）→ 過去會把此 p 當真內文、action bar 被誤
       // 跳過。修法：路徑經過 `data-jread-hidden="1"` 的祖先也視為「已
       // 處理、不算真內文」，繼續掃下一個候選。
+      // v0.8.71：媒體（img/picture/video/iframe）與文字 label 分流判定。
+      // 文字（p/heading）被 interactive 祖先包住 → 視為「按鈕的文字 label」
+      // 不算真內文（Medium `<button><p>Listen</p></button>` action bar 的解法）。
+      // 但**媒體永遠不會是按鈕的文字 label**——連結圖（`<a href><picture><img>`，
+      // 圖連到原圖/來源）是極常見的合法內容（ChinaTalk/Substack hero 圖、
+      // captioned-image-container 內 `A.image-link` 包圖）。若沿用文字規則把
+      // interactive 包覆的媒體也貶為非內容，整個圖容器會被誤判成按鈕叢集
+      // 隱藏（Jimmy 2026-06-15 回報 chinatalk hero 消失：圖說只有「Source.」
+      // 短連結 + 2 顆 Substack icon button，4 interactive 命中規則整塊清掉）。
+      // 修法：媒體只受「已 hide 祖先」貶值（Medium clap tooltip 內媒體場景），
+      // 不受 interactive 包覆貶值。
+      const MEDIA_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'IFRAME']);
       const contentCandidates = el.querySelectorAll(
         'p, h1, h2, h3, h4, h5, h6, img, picture, video, iframe');
       let hasContentOutsideInteractive = false;
       for (const n of contentCandidates) {
+        const isMedia = MEDIA_TAGS.has(n.tagName);
         let p = n.parentElement;
-        let wrappedByInteractiveOrHidden = false;
+        let discounted = false;
         while (p && p !== el) {
-          if (isInteractiveLeaf(p)) { wrappedByInteractiveOrHidden = true; break; }
+          if (!isMedia && isInteractiveLeaf(p)) { discounted = true; break; }
           if (p.dataset && p.dataset.jreadHidden === '1') {
-            wrappedByInteractiveOrHidden = true; break;
+            discounted = true; break;
           }
           p = p.parentElement;
         }
-        if (!wrappedByInteractiveOrHidden) {
+        if (!discounted) {
           hasContentOutsideInteractive = true;
           break;
         }
@@ -2301,7 +2314,14 @@
   const FIGURE_BLOCK_MAX_TEXT = 200;
   function isStandaloneFigureBlock(el) {
     if (!el || !el.querySelectorAll) return false;
-    const medias = el.querySelectorAll('img, picture, video');
+    // v0.8.71：`<picture><img></picture>` 是同一個媒體單元——響應式圖
+    // （Substack/ChinaTalk hero 用 `<picture><source><img></picture>`）會被
+    // querySelectorAll 同時抓到 picture + 內層 img 計成 2，誤判成「多媒體 =
+    // 縮圖列表」讓 guard 失效、單張內容圖被 sidebar-column 條件 A 砍掉
+    // （Jimmy 2026-06-15 chinatalk hero 消失第二層）。img 若在 picture 內
+    // 不重複計，只算外層 picture / 獨立 img / video。
+    const medias = Array.from(el.querySelectorAll('img, picture, video'))
+      .filter(m => !(m.tagName === 'IMG' && m.closest('picture')));
     if (medias.length !== 1) return false;            // 多媒體 = 縮圖列表 / rail
     const m = medias[0];
     if (m.closest && m.closest('li')) return false;   // 在 <li> = sidebar 縮圖列表
