@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>How LLMs Actually Work</title></head>
+<body>
+<!--
+  最小重現：0xkato.xyz（Ghost 站）標題下 tag chip 列翻譯後跑進閱讀模式
+  （Jimmy 2026-06-15 截圖）。tag chip 的 `#` 是 CSS `.item::before{content:'#'}`
+  裝飾、不在 anchor textContent 內，且 anchor 文字翻譯後變中文 → 純看文字起手
+  `#` 的舊 hideInsideArticleHashtagClusters 0 命中、整列漏網。
+  修法（v0.8.77）：加判 href 指向 taxonomy 頁（/tags/ /tag/ /category/ /topic/
+  /label/）——href 不隨翻譯改、跨 CMS 通用結構訊號。
+  class（post-tags / item）刻意都不在 NOISE_KEYWORD_RE 內，確保 hide 只能來自
+  taxonomy-href tag-bar path，是有效 forcing function。
+-->
+<main>
+  <article>
+    <h1>How LLMs Actually Work</h1>
+    <div class="post-meta">Monday, June 01, 2026 · 26 min</div>
+    <div class="post-tags">
+      <a class="item" href="https://example.com/tags/#machine-learning">Machine Learning</a>
+      <a class="item" href="https://example.com/tags/#transformers">Transformers</a>
+      <a class="item" href="https://example.com/tags/#llm">LLM</a>
+      <a class="item" href="https://example.com/tags/#neural-networks">Neural Networks</a>
+      <a class="item" href="https://example.com/tags/#ai">AI</a>
+    </div>
+    <p>This article walks through how large language models actually work, from the raw text you type all the way to the tokens they generate in response. Modern LLMs are built by stacking Transformer blocks, so once you understand a single block you have understood the whole machine.</p>
+    <p>We will cover tokenization, embeddings, the attention mechanism, the feed-forward network, and the residual stream that carries information forward through the layers. Along the way we link to the original <a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a> paper for the curious reader.</p>
+    <p>By the end you should have a solid mental model of the full pipeline and be able to reason about why these models behave the way they do in practice, including their strengths and their characteristic failure modes.</p>
+  </article>
+</main>
+</body>
+</html>

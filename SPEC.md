@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.76**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.77**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -314,6 +314,7 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 - `cta`、`call-to-action`
 - `related-(articles|news|posts|stories)`、反序命名 `(post|article|news|story)-related`（v0.8.44 eettaiwan `post-related`）、`more-(news|stories|posts|articles)`、`recommended`、`recommend`、`recommendation`、`read-more`、`read-next`、`up-next`、`taboola`、`outbrain`、`zergnet`、`revcontent`
 - `hash-tag`、`tag(s)-list`（v0.8.44 補複數變體：eettaiwan 文末 tag 列 class 用 `tags-list`，原 `tag-list` token 不命中）
+  - **結構型 tag chip 列偵測（`hideInsideArticleHashtagClusters`）**：上述靠 class keyword、漏掉 class 不含 tag 字樣的 tag bar。結構通則補強——容器內 `>= 3` 個 anchor 且多數是 tag chip 時整列 hide。tag chip 認定：anchor 文字起手 `#`（文字型 hashtag），**或 href 指向 taxonomy 頁**（v0.8.77，`/tags?/`・`/categor(y\|ies)/`・`/topics?/`・`/labels?/`）。後者解 0xkato.xyz Ghost 站 `<a class="item">機器學習</a>` + `.item::before{content:'#'}`——`#` 是 CSS 裝飾不在 textContent、且翻譯後文字變中文，純看文字 `#` 0 命中整列漏網；href 不隨翻譯改、跨 CMS 通用（Ghost / WP / Medium）。guard：含媒體 / direct text > 5 字 / 內含 >= 50 字長段落的 wrapper 都 skip（防誤殺含主文的外層）。forcing：`ghost-post-tags-taxonomy-href.spec.js` + `roomie-mobile-hashtag-meta-bar.spec.js`
 - `breadcrumb(s)`、`pagination`、`page-nav`、`pager`、`author-(bio|card|info|box|meta|widget)`
 - `follow`、`follow-us`、`subscribe`、`subscription`、`newsletter-(signup|form|cta)`、`email-(signup|capture|subscribe)`
 - `cookie-(banner|notice|consent|bar)`、`gdpr`、`consent`、`privacy-(banner|notice)`
