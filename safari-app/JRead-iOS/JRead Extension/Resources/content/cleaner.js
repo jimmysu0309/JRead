@@ -2121,6 +2121,13 @@
   const HASHTAG_NARRATIVE_TEXT_MAX = 5;
   const HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN = 50;
   const TAG_BAR_ANCHOR_MAX_LEN = 24;  // 分類/標籤連結屬短文字；超過視為敘述性連結
+  // v0.8.77：taxonomy href 訊號——tag chip 的 `#` 常是 CSS `::before` 裝飾、不在
+  // anchor textContent 內（0xkato.xyz Ghost 站 `<a class="item">機器學習</a>` +
+  // `.item::before{content:'#'}`，翻譯後文字變中文、`#` 仍只在 ::before）。純看
+  // 文字起手 `#` 會 0 命中、整列 tag chip 漏網。改加判 href 是否指向分類/標籤
+  // taxonomy 頁（Ghost `/tags/#x`、WP `/tag/x/`・`/category/x/`、Medium `/tag/x`
+  // 等跨 CMS 慣例）——href 不隨翻譯改、是比文字 / class 更穩的結構訊號。
+  const TAXONOMY_HREF_RE = /\/(tags?|categor(?:y|ies)|topics?|labels?)(\/|$|#|\?)/i;
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
     const candidates = articleEl.querySelectorAll('p, div');
     for (const el of candidates) {
@@ -2130,11 +2137,14 @@
       if (el.contains && el.contains(articleEl)) continue;
       const anchors = el.querySelectorAll('a');
       if (anchors.length < HASHTAG_MIN_COUNT) continue;
+      // tag chip 認定：anchor 文字起手 `#`（文字型 hashtag）或 href 指向 taxonomy
+      // 頁（裝飾型 #、純分類連結）。兩者皆「navigation chrome、非主文」。
       let hashtagHits = 0;
       let nonHashAllShort = true;
       for (const a of anchors) {
         const at = norm(a.textContent);
-        if (at.startsWith('#')) hashtagHits++;
+        const href = a.getAttribute('href') || '';
+        if (at.startsWith('#') || TAXONOMY_HREF_RE.test(href)) hashtagHits++;
         else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
       }
       const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
