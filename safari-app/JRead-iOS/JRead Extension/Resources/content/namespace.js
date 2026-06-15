@@ -80,6 +80,57 @@
         .trim();
     },
 
+    // v0.8.74：送 Readwise 的「主標」單一資料源——從 reader card 找使用者實際
+    // 看到的主標 heading 文字（main.js extractReaderTitle 呼叫）。
+    //
+    // 動機：v0.8.50 把 title 來源從靜態 document.title 改成 card 內可見 h1，解決
+    // 「單語翻譯原地替換 h1 → 送 Readwise 卻是原文」。但部分站主標不是 h1——
+    // Stratechery 用 wp-block `<h2>` post-title（Jimmy 2026-06-15 回報該站）。
+    // 原本只查 h1 → card 內找不到 → fallback document.title（單語翻譯不改它）
+    // → 送出原文、譯後 h2 主標又留在 body 重複出現（buildCleanHtml dedup 只比
+    // 「與 title 同文的 heading」，title 是原文故比不中譯文 h2）。
+    //
+    // 結構性通則（與 detector articleIsSelfTitled 同款、tag-agnostic）：
+    //   1. 優先取第一個可見 <h1>（多數文章主標、v0.8.50 行為延續）
+    //   2. 無 h1 時 DOM order 走訪，取「第一個內文長段落（<p> 文字 > 80 字）之前
+    //      出現的第一個可見 <h2>」當主標——post-header 主標必在內文之前，藉此
+    //      避開文中 section <h2>
+    // 隱藏節點（[data-jread-hidden] 自身或子孫，站名 logo / cleaner 標記的雜訊
+    // heading）跳過；文字 > 300 字視為非主標（detector 誤圈整塊容器時的防線）。
+    // innerText 取可見文字（display:none 子節點不入列）；jsdom 無 innerText 時退
+    // textContent（僅測試環境會走到）。
+    findCardTitleHeading(card) {
+      if (!card || !card.querySelectorAll) return '';
+      const visibleText = (el) => {
+        if (el.closest && el.closest('[data-jread-hidden="1"]')) return null;
+        const raw = el.innerText != null ? el.innerText : el.textContent;
+        const text = (raw || '').replace(/\s+/g, ' ').trim();
+        return (text && text.length <= 300) ? text : null;
+      };
+      // 1) 第一個可見 h1
+      for (const h of card.querySelectorAll('h1')) {
+        const t = visibleText(h);
+        if (t) return t;
+      }
+      // 2) 無 h1：DOM order 取內文段落前的首個可見 h2
+      const doc = card.ownerDocument;
+      if (doc && doc.createTreeWalker) {
+        const walker = doc.createTreeWalker(card, 0x1 /* SHOW_ELEMENT */);
+        let n;
+        while ((n = walker.nextNode())) {
+          const tag = n.tagName;
+          if (tag === 'H2') {
+            const t = visibleText(n);
+            if (t) return t;
+          } else if (tag === 'P') {
+            const raw = n.innerText != null ? n.innerText : n.textContent;
+            if ((raw || '').replace(/\s+/g, ' ').trim().length > 80) break;
+          }
+        }
+      }
+      return '';
+    },
+
     // v0.8.17：編輯/互動類 element focus 判定（paged-mode 翻頁鍵 + space-scroll
     // 共用，單一資料源）。原本兩處各寫一份且 paged 版漏了 BUTTON——按鈕 focus 時
     // 方向鍵 / Space 被翻頁攔截、吃掉按鈕的鍵盤啟用（同一份事實雙實作的 drift，
