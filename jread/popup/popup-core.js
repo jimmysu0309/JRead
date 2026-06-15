@@ -79,7 +79,7 @@
   // 是 options 頁「測試 token」按鈕的正解。
   const READWISE_AUTH_URL = 'https://readwise.io/api/v2/auth/';
 
-  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate } = {}) {
+  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate, summary } = {}) {
     if (!url || typeof url !== 'string') {
       throw new Error('buildReadwisePayload: url 必填');
     }
@@ -104,7 +104,93 @@
       const t = publishedDate.trim();
       if (t) body.published_date = t;
     }
+    // v0.8.72：summary 由 Gemini Flash Lite 端產生（繁中三句）後帶入。提供 summary
+    // 會覆蓋 Readwise server 端自動生成的英文摘要（官方 API 有 summary 欄位）。
+    if (summary && typeof summary === 'string') {
+      const t = summary.trim();
+      if (t) body.summary = t;
+    }
     return body;
+  }
+
+  // ---- Gemini Flash Lite 摘要（v0.8.72）---------------------------------
+  // 送 Readwise 前用 Gemini 產生繁中三句摘要，取代 Readwise server 端的英文自動
+  // 摘要。Prompt 移植自 Readwise Reader 網站內建 summarize prompt（Jimmy 提供），
+  // 去掉 Jinja num_tokens 分支（central_paragraphs / central_sentences 是 Readwise
+  // server 端 filter，client 無法重現）——改為 client 端把內文 head-truncate 到
+  // GEMINI_MAX_CHARS 內直接送，三句摘要靠開頭段落已足夠（長文末段對 big idea
+  // 貢獻低）。model 用 -latest 別名自動指向最新 flash-lite。
+  const GEMINI_MODEL = 'gemini-flash-lite-latest';
+  const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+  // 內文上限（字元）。Flash Lite context 很大，但限長控制 latency / 成本——超過
+  // 部分截掉（head truncate）。約 40K 字元 ≈ 一般長文全文，極長文取開頭。
+  const GEMINI_MAX_CHARS = 40000;
+
+  function buildGeminiSummaryUrl(apiKey) {
+    return `${GEMINI_API_BASE}${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  }
+
+  // 組 summarize prompt。text 為主文純文字（呼叫端已 head-truncate；此處再防呆截一次）。
+  function buildSummaryPrompt({ title, author, domain, text } = {}) {
+    const body = (text || '').slice(0, GEMINI_MAX_CHARS);
+    return [
+      'Write three easy-to-read sentences summarizing the following text in Taiwanese Traditional Chinese:',
+      '',
+      '===',
+      `Title: ${title || ''}`,
+      `Author: ${author || ''}`,
+      `Domain: ${domain || ''}`,
+      '',
+      body,
+      '',
+      'DO NOT translate names of people, emoji symbols, and abbreviations',
+      'DO NOT translate company/organization name',
+      'IMPORTANT: Write no more than THREE sentences. Each sentence should be short and easy-to-read. Use words sparingly and please capture the big idea.'
+    ].join('\n');
+  }
+
+  // 從 Gemini generateContent 回應抽出文字（candidates[0].content.parts[*].text 串接）。
+  function extractGeminiText(data) {
+    if (!data || !Array.isArray(data.candidates) || !data.candidates.length) return '';
+    const cand = data.candidates[0];
+    const parts = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts : [];
+    return parts.map((p) => (p && typeof p.text === 'string' ? p.text : '')).join('').trim();
+  }
+
+  // 呼叫 Gemini 產生摘要。回 { ok:true, summary } 或 { ok:false, error }。
+  // 任何失敗（無 key / 無內文 / 網路 / 非 2xx / 空回應）都回 ok:false，呼叫端據此
+  // 決定 fallback（不帶 summary 照送，讓 Readwise 自行處理）。
+  async function generateGeminiSummary({ apiKey, title, author, domain, text, fetchImpl } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return { ok: false, error: 'NO_KEY' };
+    }
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return { ok: false, error: 'NO_TEXT' };
+    }
+    const prompt = buildSummaryPrompt({ title, author, domain, text });
+    let res;
+    try {
+      res = await f(buildGeminiSummaryUrl(apiKey.trim()), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+    } catch (networkErr) {
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* 非 JSON 忽略 */ }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, error: 'AUTH', data };
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: 'HTTP', data };
+    }
+    const summary = extractGeminiText(data);
+    if (!summary) return { ok: false, error: 'EMPTY', data };
+    return { ok: true, summary };
   }
 
   async function saveToReadwise({ token, payload, fetchImpl } = {}) {
@@ -195,8 +281,13 @@
     saveToReadwise,
     saveReaderPayload,
     validateReadwiseToken,
+    buildSummaryPrompt,
+    extractGeminiText,
+    generateGeminiSummary,
     READWISE_API_URL,
-    READWISE_AUTH_URL
+    READWISE_AUTH_URL,
+    GEMINI_MODEL,
+    GEMINI_MAX_CHARS
   };
 
   if (typeof module !== 'undefined' && module.exports) {

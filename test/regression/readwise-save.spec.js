@@ -5,7 +5,7 @@
 const path = require('path');
 const assert = require('assert');
 
-const { buildReadwisePayload, saveToReadwise, saveReaderPayload, validateReadwiseToken, READWISE_API_URL, READWISE_AUTH_URL } = require(
+const { buildReadwisePayload, saveToReadwise, saveReaderPayload, validateReadwiseToken, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
 
@@ -95,6 +95,20 @@ describe('readwise: buildReadwisePayload', () => {
     assert.strictEqual(buildReadwisePayload({ ...bases, publishedDate: '' }).published_date, undefined);
     assert.strictEqual(buildReadwisePayload({ ...bases, publishedDate: null }).published_date, undefined);
     assert.strictEqual(buildReadwisePayload({ ...bases, publishedDate: 123 }).published_date, undefined);
+  });
+
+  // v0.8.72：summary 欄位（Gemini Flash Lite 產生的繁中三句摘要）
+  it('summary 是非空字串：trim 後送 summary', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', summary: '  三句摘要。  ' });
+    assert.strictEqual(body.summary, '三句摘要。');
+  });
+
+  it('summary 空字串 / null / 非 string：略過 summary', () => {
+    const bases = { url: 'https://x.com' };
+    assert.strictEqual(buildReadwisePayload({ ...bases, summary: '' }).summary, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, summary: '   ' }).summary, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, summary: null }).summary, undefined);
+    assert.strictEqual(buildReadwisePayload({ ...bases, summary: 123 }).summary, undefined);
   });
 
   // v0.7.167：language 欄位不存在於 Readwise Reader API,buildReadwisePayload
@@ -944,5 +958,124 @@ describe('readwise: extractReaderTitle 行為契約（v0.8.50）', () => {
       'whatever'
     );
     assert.strictEqual(extractReaderTitleImpl(card, doc), '標題 分兩行 多空白');
+  });
+});
+
+// ---- Gemini Flash Lite 摘要（v0.8.72）---------------------------------
+describe('readwise: buildSummaryPrompt', () => {
+  it('帶入 title / author / domain / 內文 + 繁中三句指令', () => {
+    const p = buildSummaryPrompt({
+      title: '標題T', author: '作者A', domain: 'example.com', text: '這是內文。'
+    });
+    assert.match(p, /Taiwanese Traditional Chinese/);
+    assert.match(p, /Title: 標題T/);
+    assert.match(p, /Author: 作者A/);
+    assert.match(p, /Domain: example\.com/);
+    assert.match(p, /這是內文。/);
+    assert.match(p, /no more than THREE sentences/);
+  });
+
+  it('內文超過 GEMINI_MAX_CHARS：head-truncate（超出部分截掉）', () => {
+    const long = 'A'.repeat(GEMINI_MAX_CHARS) + 'ZZZ_PAST_LIMIT_MARKER';
+    const p = buildSummaryPrompt({ title: 'T', author: '', domain: '', text: long });
+    assert.ok(!p.includes('ZZZ_PAST_LIMIT_MARKER'), '超過上限的內文段必須被截掉');
+    assert.ok(p.includes('A'.repeat(100)), '上限內的內文必須保留');
+  });
+
+  it('缺欄位不炸（空字串安全）', () => {
+    const p = buildSummaryPrompt({});
+    assert.match(p, /Title: /);
+    assert.match(p, /Taiwanese Traditional Chinese/);
+  });
+});
+
+describe('readwise: extractGeminiText', () => {
+  it('正常回應：串接 parts[*].text', () => {
+    const data = { candidates: [{ content: { parts: [{ text: '第一句。' }, { text: '第二句。' }] } }] };
+    assert.strictEqual(extractGeminiText(data), '第一句。第二句。');
+  });
+  it('無 candidates / 結構缺漏：回空字串', () => {
+    assert.strictEqual(extractGeminiText(null), '');
+    assert.strictEqual(extractGeminiText({}), '');
+    assert.strictEqual(extractGeminiText({ candidates: [] }), '');
+    assert.strictEqual(extractGeminiText({ candidates: [{}] }), '');
+    assert.strictEqual(extractGeminiText({ candidates: [{ content: {} }] }), '');
+  });
+});
+
+describe('readwise: generateGeminiSummary', () => {
+  const base = { title: 'T', author: 'A', domain: 'd.com', text: '內文內容' };
+
+  it('沒 apiKey：回 NO_KEY，不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
+    const r = await generateGeminiSummary({ ...base, apiKey: '', fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'NO_KEY');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('apiKey 全空白：回 NO_KEY', async () => {
+    const r = await generateGeminiSummary({ ...base, apiKey: '   ', fetchImpl: async () => ({}) });
+    assert.strictEqual(r.error, 'NO_KEY');
+  });
+
+  it('沒內文：回 NO_TEXT，不打 API', async () => {
+    const { fetchImpl, calls } = makeFetch(() => { throw new Error('nope'); });
+    const r = await generateGeminiSummary({ ...base, text: '', apiKey: 'k', fetchImpl });
+    assert.strictEqual(r.error, 'NO_TEXT');
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('成功：回 ok=true + summary；打對 endpoint（key 在 query）+ body 帶 prompt', async () => {
+    const { fetchImpl, calls } = makeFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ candidates: [{ content: { parts: [{ text: '三句繁中摘要。' }] } }] })
+    }));
+    const r = await generateGeminiSummary({ ...base, apiKey: 'mykey', fetchImpl });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.summary, '三句繁中摘要。');
+    assert.match(calls[0][0], /generativelanguage\.googleapis\.com\/v1beta\/models\/.*:generateContent\?key=mykey/);
+    assert.strictEqual(calls[0][1].method, 'POST');
+    const body = JSON.parse(calls[0][1].body);
+    assert.match(body.contents[0].parts[0].text, /Taiwanese Traditional Chinese/);
+    assert.match(body.contents[0].parts[0].text, /內文內容/);
+  });
+
+  it('apiKey 含特殊字元：URL-encode 進 query', async () => {
+    const { fetchImpl, calls } = makeFetch(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    }));
+    await generateGeminiSummary({ ...base, apiKey: 'a/b+c', fetchImpl });
+    assert.match(calls[0][0], /key=a%2Fb%2Bc/);
+  });
+
+  it('401 / 403：回 AUTH', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 403, json: async () => ({}) }));
+    const r = await generateGeminiSummary({ ...base, apiKey: 'bad', fetchImpl });
+    assert.strictEqual(r.error, 'AUTH');
+    assert.strictEqual(r.status, 403);
+  });
+
+  it('500：回 HTTP', async () => {
+    const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    const r = await generateGeminiSummary({ ...base, apiKey: 'k', fetchImpl });
+    assert.strictEqual(r.error, 'HTTP');
+    assert.strictEqual(r.status, 500);
+  });
+
+  it('回應空摘要：回 EMPTY', async () => {
+    const { fetchImpl } = makeFetch(async () => ({
+      ok: true, status: 200, json: async () => ({ candidates: [] })
+    }));
+    const r = await generateGeminiSummary({ ...base, apiKey: 'k', fetchImpl });
+    assert.strictEqual(r.error, 'EMPTY');
+  });
+
+  it('網路錯誤：回 NETWORK', async () => {
+    const fetchImpl = async () => { throw new Error('Failed to fetch'); };
+    const r = await generateGeminiSummary({ ...base, apiKey: 'k', fetchImpl });
+    assert.strictEqual(r.error, 'NETWORK');
+    assert.match(r.message, /Failed to fetch/);
   });
 });

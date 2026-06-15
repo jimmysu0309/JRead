@@ -9,7 +9,7 @@
 // 不影響儲存範圍。titleFontSize 等欄位自動齊備（修掉 popup 缺 titleFontSize 的舊 drift）。
 const DEFAULTS = window.__JReadSettingsDefaults;
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio', 'positionMemoryDays'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'spaceScrollRatio', 'positionMemoryDays'];
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -152,9 +152,9 @@ function readFieldFromDom(id) {
       if (typeof el.max === 'string' && el.max !== '') n = Math.min(Number(el.max), n);
       return n;
     }
-    case 'blockPageShortcuts': case 'pangu':
+    case 'blockPageShortcuts': case 'pangu': case 'readwiseSummary':
       return el.checked;
-    case 'readwiseToken':
+    case 'readwiseToken': case 'geminiApiKey':
       return el.value.trim();
     default:
       return el.value;
@@ -171,7 +171,10 @@ function applyFieldToDom(id, value) {
     el.value = [300, 400, 600].includes(Number(value)) ? String(Number(value)) : '400';
   } else if (id === 'blockPageShortcuts' || id === 'pangu') {
     el.checked = value !== false;
-  } else if (id === 'readwiseToken') {
+  } else if (id === 'readwiseSummary') {
+    // 預設 false——只有明確為 true 才勾選
+    el.checked = value === true;
+  } else if (id === 'readwiseToken' || id === 'geminiApiKey') {
     el.value = value || '';
   } else {
     el.value = value;
