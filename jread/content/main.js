@@ -900,16 +900,11 @@
   //     並沿用 NS.stripSiteSuffix 去站名尾綴。h1 路徑不做尾綴切割——站名尾綴
   //     是 document.title 的慣例，h1 本文常含合法的「 — 」分隔，切了會截斷標題
   function extractReaderTitle() {
-    const card = NS.state.articleEl;
-    if (card) {
-      const headings = card.querySelectorAll('h1');
-      for (const h of headings) {
-        if (h.closest('[data-jread-hidden="1"]')) continue;
-        const raw = h.innerText != null ? h.innerText : h.textContent;
-        const text = (raw || '').replace(/\s+/g, ' ').trim();
-        if (text && text.length <= 300) return text;
-      }
-    }
+    // v0.8.74：選主標 heading 的邏輯收斂到 NS.findCardTitleHeading（單一資料源
+    // + jsdom 可測）。h1 優先、無 h1 時取內文前首個 h2（Stratechery wp-block
+    // post-title 是 h2，原本只查 h1 → fallback document.title 送出原文）。
+    const fromCard = NS.findCardTitleHeading(NS.state.articleEl);
+    if (fromCard) return fromCard;
     const rawTitle = (document.title || '').trim();
     // v0.8.37：站名尾綴切法收斂到 NS.stripSiteSuffix（單一資料源）
     return NS.stripSiteSuffix(rawTitle) || rawTitle;

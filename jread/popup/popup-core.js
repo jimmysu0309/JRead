@@ -248,6 +248,31 @@
     return { ok: false, status: res.status, error: 'HTTP' };
   }
 
+  // v0.8.74：驗證 Gemini API key 是否有效。打 models list 端點（GET，不送內文、
+  // 零 token 成本），key 無效時 Google 回 400/401/403。回傳值與 validateReadwiseToken
+  // 對齊（ok / error / status），讓 options 共用同一套分支判斷。NO_KEY（空）/
+  // AUTH（400·401·403 → key 無效）/ NETWORK（連不上）/ HTTP（其他非 2xx）/
+  // NO_FETCH（環境無 fetch）。
+  async function validateGeminiKey({ apiKey, fetchImpl } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return { ok: false, error: 'NO_KEY' };
+    }
+    let res;
+    try {
+      res = await f(`${GEMINI_API_BASE.replace(/\/$/, '')}?key=${encodeURIComponent(apiKey.trim())}`, { method: 'GET' });
+    } catch (networkErr) {
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    if (res.ok) return { ok: true, status: res.status };
+    // Google 對無效 key 回 400 INVALID_ARGUMENT 或 403 PERMISSION_DENIED
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, error: 'AUTH' };
+    }
+    return { ok: false, status: res.status, error: 'HTTP' };
+  }
+
   // v0.8.65：popup 端「送 Readwise」整段流程（讀 token → build payload → save），
   // 走 extension 頁自己的 fetch，**不繞 background**。
   // 理由：iOS Safari Web Extension 的背景頁（event page、persistent:false）被系統
@@ -281,6 +306,7 @@
     saveToReadwise,
     saveReaderPayload,
     validateReadwiseToken,
+    validateGeminiKey,
     buildSummaryPrompt,
     extractGeminiText,
     generateGeminiSummary,
