@@ -631,7 +631,8 @@
   //      第一段是 handle,送 @handle 形式。
   //   3. 一般網站:多層 fallback —— JSON-LD Article.author.name → meta
   //      [name="author"] / [property="article:author"](filter URL 形式)→
-  //      [rel="author"] / [itemprop="author"] / .byline 等 byline 元素。
+  //      [rel="author"] / [itemprop="author"] / .byline 等 byline 元素 →
+  //      og:site_name 的「刊物名 by 作者」尾段（v0.8.73，最低優先序）。
   // 找不到回空字串,buildReadwisePayload 端會省略該欄。
   function extractAuthor() {
     if (document.querySelector('[data-jread-fb-reader]')) {
@@ -718,7 +719,32 @@
       const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
       if (t && t.length < 100) return t;
     }
+    // 5. og:site_name 的「刊物名 by 作者」格式（v0.8.73）——單人部落格 /
+    //    newsletter（Substack / Ghost / 個人 WordPress）常省略文章層級署名，
+    //    作者只活在站名裡（Sharp Text by Andrew Sharp / Stratechery by Ben
+    //    Thompson / Money Stuff by Matt Levine）。**只在前 4 條正規信號全失敗
+    //    才用**（最低優先序 fallback，避免誤蓋有正式 byline 的站）。
+    const fromSite = extractAuthorFromSiteName();
+    if (fromSite) return fromSite;
     return '';
+  }
+
+  // v0.8.73：從 og:site_name 解析「<刊物名> by <作者>」尾段。結構通則、非站點
+  // 特判——任何 og:site_name 走同一條 regex。多重 guard 壓低誤判：必須有空白
+  // 邊界的「by」（不誤命中 standby / rugby 等）、作者段 2–60 字、含字母、不含
+  // URL / @ / 斜線（排除把網址或 handle 當作者）。抓不到回空字串。
+  function extractAuthorFromSiteName() {
+    const m = document.head && document.head.querySelector('meta[property="og:site_name"]');
+    if (!m) return '';
+    const site = (m.getAttribute('content') || '').replace(/\s+/g, ' ').trim();
+    if (!site) return '';
+    const match = site.match(/(?:^|\s)by\s+(.+?)\s*$/i);
+    if (!match) return '';
+    const name = match[1].trim();
+    if (name.length < 2 || name.length > 60) return '';
+    if (/[\/@]|https?:/i.test(name)) return '';
+    if (!/[A-Za-z一-鿿]/.test(name)) return '';
+    return name;
   }
 
   function findJsonLdAuthor(data) {
