@@ -3791,6 +3791,78 @@ describe('cleaner — myartbroker-linked-figure（單張內容圖整張包 <a> �
 });
 
 // -----------------------------------------------------------------------------
+// v0.8.71 chinatalk.media hero 圖消失（Jimmy 2026-06-15）
+// Substack hero 是「連結圖」：`<a class="image-link" href><picture><source><img></picture></a>`，
+// 圖說只有「Source.」短連結 + 2 顆 icon button。舊 code 兩條規則各自誤殺整個
+// .captioned-image-container：
+//   1. hideInsideArticleButtonClusters：img/picture 被 a[href] 包住被當「按鈕 label」
+//      不算內文（Medium `<button><p>Listen</p></button>` 解法的副作用）→ 容器被視為
+//      按鈕叢集（≥2 interactive + ≥1 button + outsideText ≤ 10）整塊 hide。
+//      修法：媒體永遠不是按鈕文字 label、連結圖是合法內容，img/picture/video/iframe
+//      不受 interactive 包覆貶為非內容（只受已 hide 祖先貶值）。
+//   2. hideInsideArticleSidebarColumns 條件 A：容器 textLen 7 < main×10% + linkDensity
+//      0.857 > 0.5；isStandaloneFigureBlock guard 因 `<picture><img>` 被 querySelectorAll
+//      同時數成 2（誤判多媒體 = 縮圖列表）而失效。
+//      修法：img 在 picture 內不重複計，只算外層 picture / 獨立 img / video。
+// 多層 fallback 各自有獨立盲點，兩層都修才放行（sanity：逐一還原任一修法 → fail）。
+// -----------------------------------------------------------------------------
+describe('cleaner — chinatalk-hero-linked-picture（Substack 連結 hero 圖被誤殺消失）', () => {
+  let window, document, result, hidden;
+
+  before(() => {
+    const html = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'chinatalk-hero-linked-picture.html'),
+      'utf8'
+    );
+    const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });
+    window = dom.window;
+    document = window.document;
+    window.chrome = window.chrome || { runtime: { getManifest: () => ({ version: "0.0.0-test" }), id: "t", sendMessage: () => {}, getURL: (p) => "x/" + p } };
+    window.eval(require("../helpers").SRC.namespace);
+    window.eval(DETECTOR_SRC);
+    window.eval(CLEANER_SRC);
+    result = window.__JRead.detector.detect();
+    assert.ok(result, 'detector 應命中主文');
+    hidden = window.__JRead.cleaner.clean(result.el, {
+      promotedFrom: result.promotedFrom,
+      promotedTitleHead: result.promotedTitleHead
+    });
+  });
+
+  after(() => {
+    window.__JRead.cleaner.restore(hidden);
+  });
+
+  it('hero 連結圖容器與 img 祖先鏈不得被 hide（forcing：還原任一層修法 → button-cluster 或 sidebar-column 條件 A 把它砍掉）', () => {
+    const img = document.querySelector('.hero-mark');
+    assert.ok(img, 'fixture 必須含 hero img');
+    const container = document.querySelector('.captioned-image-container');
+    assert.ok(container, 'fixture 必須含 captioned-image-container');
+    assert.notStrictEqual(container.dataset.jreadHidden, '1',
+      'hero 連結圖容器不得被 hide（button-cluster 媒體-非-label 修法 + isStandaloneFigureBlock picture+img 單一計數修法）');
+    let cur = img, inHidden = false;
+    while (cur && cur !== document.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!inHidden, 'hero img 祖先鏈任一層都不得被 hide');
+  });
+
+  it('主文 MAIN_MARK 段落全保留', () => {
+    const marks = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.includes('MAIN_MARK'));
+    assert.ok(marks.length >= 4, `fixture 應含 4 段主文；實際 ${marks.length}`);
+    for (const p of marks) {
+      let cur = p, inHidden = false;
+      while (cur && cur !== document.body) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { inHidden = true; break; }
+        cur = cur.parentElement;
+      }
+      assert.ok(!inHidden, `MAIN_MARK 段落不得被 hide：${p.textContent.slice(0, 40)}`);
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
 // v0.7.28 cnyes.com 多項末段 widget + 左側社交 nav rail 漏清
 // 五處修法（全部結構性通則、非站點特判）：
 //   1. 新規則 hideInsideArticleNav：articleEl 內 <nav> 不含主文長段落 → hide
