@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><title>How LLMs Actually Work</title></head>
+<body>
+<!--
+  最小重現：0xkato.xyz（Ghost 站）文末「Related Posts」相關文章區塊，經 Shinkansen
+  翻譯後 heading 變「相關貼文」（Jimmy 2026-06-15 截圖）。
+  英文「Related Posts」原本被 NOISE_HEADING_TEXT_RE 的 `^(related|...)` 命中、
+  resolveHeadingNoiseTarget walk-up 到 DIV.related 整塊 hide；翻譯後「相關貼文」
+  （貼文=posts）不在中文 `相關(新聞|文章|報導|...)` 分支內 → 0 命中 → 整列漏網。
+  修法（v0.8.77）：中文分支補 `相關(...|貼文|影片|內容)` 涵蓋翻譯變體。
+  class（related / relatedPost）刻意不在 NOISE_KEYWORD_RE 內，確保 hide 只能來自
+  heading-text path，是有效 forcing function。
+-->
+<div class="wrapper-normal">
+  <div class="post">
+    <h1>How LLMs Actually Work</h1>
+    <p>This article walks through how large language models actually work, from the raw text you type all the way to the tokens they generate in response. Modern LLMs are built by stacking Transformer blocks, so once you understand a single block you have understood the whole machine and can reason about its behaviour.</p>
+    <p>We will cover tokenization, embeddings, the attention mechanism, the feed-forward network, and the residual stream that carries information forward through the layers, building a complete mental model of the pipeline from input to output one stage at a time.</p>
+    <p>By the end you should have a solid mental model of the full pipeline and be able to reason about why these models behave the way they do in practice, including their characteristic strengths and their failure modes when pushed outside the training distribution.</p>
+    <div class="related">
+      <h4>相關貼文</h4>
+      <a class="relatedPost" href="https://example.com/post-a/">深入理解注意力機制</a>
+      <a class="relatedPost" href="https://example.com/post-b/">從零實作一個 Tokenizer</a>
+      <a class="relatedPost" href="https://example.com/post-c/">殘差連接為何如此重要</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>
