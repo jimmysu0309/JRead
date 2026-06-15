@@ -521,6 +521,11 @@
       for (const child of node.children) stripDataAttrs(child);
     }
     stripDataAttrs(clone);
+    // 3.5 媒體資源 URL 轉絕對（v0.8.76）。outerHTML 序列化的是 src / srcset 的
+    // 「屬性原值」（相對路徑），Readwise 伺服器端無原站 base 可解析 → 破圖
+    // （0xkato.xyz Ghost 站 `/assets/transformer-*.png` 實證，Jimmy 2026-06-15）。
+    // 邏輯抽在 NS.absolutizeResourceUrls（單一資料源 + jsdom 可測）。
+    if (NS && NS.absolutizeResourceUrls) NS.absolutizeResourceUrls(clone, location.href);
     // 4. 去重「與 payload title 同文的主標 heading」（v0.8.62）。
     // Readwise Reader 端用 payload 的 title 欄位另外渲染一條主標 header，body 內
     // 若殘留同名 heading 會被重複渲染成第 2、第 3 條標題（theatlantic 實證：
