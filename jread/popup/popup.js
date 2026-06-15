@@ -481,6 +481,27 @@ readwiseBtn.addEventListener('click', async () => {
     return;
   }
 
+  // v0.8.72：若開啟「自動摘要」且已設 Gemini key，先用 Gemini Flash Lite 產生繁中
+  // 三句摘要塞進 payload.summary（覆蓋 Readwise 自動英文摘要）。任何失敗都 fallback
+  // 不帶 summary 照送（讓 Readwise 自行處理），不阻斷儲存。
+  const summaryCfg = await new Promise((resolve) => {
+    chrome.storage.sync.get({ readwiseSummary: false, geminiApiKey: '' }, (v) => resolve(v || {}));
+  });
+  if (summaryCfg.readwiseSummary && summaryCfg.geminiApiKey && extracted.payload && extracted.payload.text) {
+    setReadwiseStatus('產生摘要中…', 'info');
+    try {
+      const sum = await window.__JReadPopup.generateGeminiSummary({
+        apiKey: summaryCfg.geminiApiKey,
+        title: extracted.payload.title,
+        author: extracted.payload.author,
+        domain: extracted.payload.domain,
+        text: extracted.payload.text
+      });
+      if (sum && sum.ok) extracted.payload.summary = sum.summary;
+    } catch (_) { /* 摘要失敗不阻斷，照送 */ }
+    setReadwiseStatus('送出中…', 'info');
+  }
+
   // v0.8.65：直接在 popup（extension 頁）發 Readwise fetch，不繞 background。
   // iOS Safari 背景頁掛起會讓 SAVE_TO_READWISE 往返 / 背景 fetch silently 失敗
   // （見 popup-core.saveReaderPayload 註解）。token 用 callback 形式讀（與

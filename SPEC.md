@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.71**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.72**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -491,9 +491,10 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 - Endpoint：`POST https://readwise.io/api/v3/save/`
 - Header：`Authorization: Token <user_access_token>`
-- Body：`{ url, html?, title?, image_url?, author?, published_date? }`（除 `url` 外皆可省，Readwise 會自抓，但帶上 JRead 處理過的欄位才能繞過原站 parser 問題與補強冷門站缺漏 metadata）
+- Body：`{ url, html?, title?, image_url?, author?, published_date?, summary? }`（除 `url` 外皆可省，Readwise 會自抓，但帶上 JRead 處理過的欄位才能繞過原站 parser 問題與補強冷門站缺漏 metadata）
 - 回傳：`200`（已存在）/ `201`（新建）
 - **注意**：Readwise Reader API 沒 `language` 欄位（送了會被忽略），JRead 不抽 / 不送 `language`。
+- **`summary`（v0.8.72）**：可選。由 Gemini Flash Lite 端產生的繁中三句摘要（見「Gemini 摘要」章節）。提供時覆蓋 Readwise server 端自動生成的英文摘要；未提供則由 Readwise 自行處理。
 
 ### 欄位抽取策略（v0.7.166–167）
 
@@ -516,14 +517,28 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - 設定位置：options 頁「Readwise Reader 整合」區塊（password input）
 - **測試按鈕（v0.8.64）**：token input 旁的「測試」按鈕，讓使用者在儲存前驗證 token 是否正確。讀 input 目前值（含尚未 blur 存檔的輸入）→ `popup-core.validateReadwiseToken({ token })` 打官方驗證端點 `GET https://readwise.io/api/v2/auth/`（header `Authorization: Token <token>`，有效回 `204 No Content`、無效回 `401`；比 `POST /save/` 輕量、不建任何文件）。fetch 在 options 頁直接發（extension 頁有 `<all_urls>` host_permission、免 CORS）。結果在按鈕下方雙通道呈現（色 + ✓/✗ 符號）：`✓ Token 有效`（綠）/ `✗ Token 無效或已過期`（AUTH，紅）/ `✗ 無法連線，請檢查網路`（NETWORK，紅）/ `✗ 請先貼上 token`（空，紅）/ `✗ 測試失敗（N）`（其他 HTTP，紅）。使用者重新編輯 token（`input` 事件）即清掉上次結果。`validateReadwiseToken` 為 popup-core 純函式（注入 fetch、回傳 `{ ok, error, status }` 與 `saveToReadwise` 對齊），regression 在 `test/regression/readwise-save.spec.js`。
 
+### Gemini 摘要（v0.8.72）
+
+送 Readwise 時可選用 Google Gemini Flash Lite 先產生**繁體中文三句摘要**塞進 `summary` 欄位，取代 Readwise server 端自動生成的英文摘要。動機：Readwise 自動摘要為英文，且品質受其 server parser 影響；改由 client 端用使用者自己的 Gemini key 產生繁中摘要。
+
+- **設定**（皆存 `chrome.storage.sync`，options 頁「Readwise Reader 整合」區塊）：
+  - `readwiseSummary`（boolean，預設 `false`）：「送出時自動產生摘要」開關（checkbox）
+  - `geminiApiKey`（string，預設 `''`）：Gemini API key（password input），從 `https://aistudio.google.com/apikey` 取得
+- **觸發條件**：`readwiseSummary === true` **且** `geminiApiKey` 非空 **且** payload 有 `text`（主文純文字）才呼叫；任一不成立則不產生、照常送出（由 Readwise 自處理）。
+- **API**：`POST https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=<KEY>`，body `{ contents: [{ parts: [{ text: <prompt> }] }] }`，回應取 `candidates[0].content.parts[*].text` 串接。model 用 `-latest` 別名自動指向最新 flash-lite。fetch 在 extension 頁（popup）/ SW 直接發（`<all_urls>` host_permission）。
+- **Prompt**：移植自 Readwise Reader 網站內建 summarize prompt（繁中版），去掉 Jinja `num_tokens` 分支（`central_paragraphs` / `central_sentences` 是 Readwise server 端 filter、client 無法重現）——改為 client 端把主文純文字 head-truncate 到 `GEMINI_MAX_CHARS`（40K 字元）內直接送。組裝在 `popup-core.buildSummaryPrompt({ title, author, domain, text })`。
+- **payload 新增欄位（content script 端）**：`extractReaderPayload()` 多回 `text`（`articleEl.innerText` collapse 後 head-truncate 50K 字元）+ `domain`（`location.hostname`），供摘要使用；這兩欄**不**送進 Readwise body（只是摘要原料）。
+- **fallback**：任何失敗（無 key / 無內文 / 網路 / 非 2xx / 空回應）都不阻斷儲存，照送不帶 `summary`。`generateGeminiSummary` 為 popup-core 純函式（注入 fetch、回 `{ ok, summary }` 或 `{ ok:false, error }`，error 碼 `NO_KEY` / `NO_TEXT` / `NETWORK` / `AUTH` / `HTTP` / `EMPTY` / `NO_FETCH`）。
+- **兩條送出軌共用**：popup 按鈕（`popup.js`）與快速鍵（SW `sendToReadwiseFromCommand`）都呼叫 `generateGeminiSummary`，單一資料源。regression 在 `test/regression/readwise-save.spec.js`。
+
 ### Popup UI 行為
 
 - 「送到 Readwise Reader」按鈕放在「切換閱讀模式」下方，次級樣式（白底灰邊）
 - popup 開啟時透過 `GET_READER_STATE` 查 reader mode 狀態，按鈕可見性（v0.7.130 起整顆 `hidden`、非 disabled；`disabled` 軸保留給送出中防連點）：
   - reader mode 已啟動 **且** 非 cinema mode **且** 已設定 `readwiseToken`（trim 後非空，v0.8.50）→ 按鈕顯示
   - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
-- 點擊（v0.8.65）：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title）→ **popup 自己**讀 `readwiseToken` + `popup-core.saveReaderPayload`（buildReadwisePayload + fetch `POST /api/v3/save/`）回結果。**不再繞 SW**（iOS 背景頁掛起會 silently 失敗，見訊息協定段 v0.8.65 註）。快速鍵送出（無 popup）仍走 SW `sendToReadwiseFromCommand`
-- 狀態條訊息：`已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位）
+- 點擊（v0.8.65）：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title + text + domain）→ **若開啟 `readwiseSummary` 且有 `geminiApiKey`**，先 `popup-core.generateGeminiSummary` 產生摘要塞進 payload（v0.8.72）→ **popup 自己**讀 `readwiseToken` + `popup-core.saveReaderPayload`（buildReadwisePayload + fetch `POST /api/v3/save/`）回結果。**不再繞 SW**（iOS 背景頁掛起會 silently 失敗，見訊息協定段 v0.8.65 註）。快速鍵送出（無 popup）仍走 SW `sendToReadwiseFromCommand`
+- 狀態條訊息：`產生摘要中…`（v0.8.72，僅開啟摘要時）/ `送出中…` / `已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位）
 
 ## 自動啟動網域（v0.7.155）
 

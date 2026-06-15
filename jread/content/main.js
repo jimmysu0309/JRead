@@ -906,6 +906,12 @@
     const imageUrl = extractHeroImage(NS.state.articleEl);
     const author = extractAuthor();
     const publishedDate = extractPublishedDate();
+    // v0.8.72：主文純文字 + domain 供 Gemini 摘要使用（popup / SW 端視
+    // readwiseSummary 設定決定是否呼叫）。head-truncate 到 50K 字元——避免極長文
+    // 灌爆 message channel；popup-core 端會再依 GEMINI_MAX_CHARS 截一次。
+    const rawText = NS.state.articleEl.innerText || NS.state.articleEl.textContent || '';
+    const text = rawText.replace(/\n{3,}/g, '\n\n').trim().slice(0, 50000);
+    const domain = location.hostname || '';
     return {
       ok: true,
       payload: {
@@ -914,7 +920,9 @@
         title,
         imageUrl,
         author,
-        publishedDate
+        publishedDate,
+        text,
+        domain
       }
     };
   }

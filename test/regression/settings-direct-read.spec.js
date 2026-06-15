@@ -78,6 +78,8 @@ describe('settings-defaults.js 單一資料源', () => {
     assert.strictEqual(sharedDefaults.spaceScrollRatio, 50);
     assert.strictEqual(sharedDefaults.titleFontSize, 0);
     assert.strictEqual(sharedDefaults.readwiseToken, '');
+    assert.strictEqual(sharedDefaults.readwiseSummary, false);
+    assert.strictEqual(sharedDefaults.geminiApiKey, '');
     assert.deepStrictEqual(sharedDefaults.autoEnableDomains, []);
     assert.deepStrictEqual(Object.keys(sharedDefaults.customShortcuts).sort(), [
       'send-to-readwise', 'toggle-reader-mode', 'toggle-youtube-borderless'

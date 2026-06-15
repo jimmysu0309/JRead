@@ -464,17 +464,29 @@ async function sendToReadwiseFromCommand(tabId) {
   // v0.8.36：storage 讀取與 fetch 都包 try/catch——與 popup 軌 SAVE_TO_READWISE
   // 的 v0.8.15 修法精神一致（保證任何路徑都有 toast 回饋，不留 unhandled
   // rejection）。command 軌原本這兩步裸跑，reject 時整個 function 無聲死掉。
-  let readwiseToken;
+  let readwiseToken, readwiseSummary, geminiApiKey;
   try {
-    ({ readwiseToken } = await chrome.storage.sync.get({ readwiseToken: '' }));
+    ({ readwiseToken, readwiseSummary, geminiApiKey } = await chrome.storage.sync.get({
+      readwiseToken: '', readwiseSummary: false, geminiApiKey: ''
+    }));
   } catch {
     showToast('無法讀取設定，請稍後再試', 'error');
     return;
   }
-  const { buildReadwisePayload, saveToReadwise } = self.__JReadPopup;
+  const { buildReadwisePayload, saveToReadwise, generateGeminiSummary } = self.__JReadPopup;
+  // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（與 popup 軌一致）。失敗 fallback 照送。
+  const p = extracted.payload || {};
+  if (readwiseSummary && geminiApiKey && p.text) {
+    try {
+      const sum = await generateGeminiSummary({
+        apiKey: geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text
+      });
+      if (sum && sum.ok) p.summary = sum.summary;
+    } catch (_) { /* 摘要失敗不阻斷 */ }
+  }
   let body;
   try {
-    body = buildReadwisePayload(extracted.payload || {});
+    body = buildReadwisePayload(p);
   } catch (e) {
     showToast('送出失敗：payload 無效', 'error');
     return;

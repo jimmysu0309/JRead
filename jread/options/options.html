@@ -152,7 +152,8 @@
       gap: 8px;
       width: 280px;
     }
-    input#readwiseToken {
+    input#readwiseToken,
+    input#geminiApiKey {
       flex: 1 1 auto;
       width: auto;
       min-width: 0;
@@ -673,6 +674,24 @@
         <button type="button" id="readwiseTest" class="token-test-btn">測試</button>
       </div>
       <span id="readwiseTestResult" class="token-test-result"></span>
+    </div>
+  </div>
+  <div class="field">
+    <label>
+      送出時自動產生摘要
+      <span class="desc">送到 Readwise Reader 時，用 Google Gemini Flash Lite 先產生<strong>繁體中文三句摘要</strong>一起送出，取代 Readwise 內建的英文自動摘要。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出、由 Readwise 自行處理</span>
+    </label>
+    <input type="checkbox" id="readwiseSummary">
+  </div>
+  <div class="field">
+    <label>
+      Gemini API Key
+      <span class="desc">從 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> 取得，僅儲存在你本機的瀏覽器同步空間（chrome.storage.sync），不會上傳到任何 JRead 伺服器。開啟摘要時，文章內容會送往 Google Gemini 產生摘要</span>
+    </label>
+    <div class="readwise-token-control">
+      <div class="readwise-token-row">
+        <input type="password" id="geminiApiKey" autocomplete="off" spellcheck="false" placeholder="貼上 API key">
+      </div>
     </div>
   </div>
 
