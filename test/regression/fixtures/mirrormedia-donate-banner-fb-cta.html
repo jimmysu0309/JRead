@@ -1,0 +1,47 @@
+<!--
+  Fixture: mirrormedia 文末促銷殘留（v0.8.88）。兩條真實殘留結構：
+
+  (A) 募款 banner——article direct child DIV.support-mirrormedia-banner__Container，
+      內含「支持鏡週刊／小額贊助鏡週刊！／贊助本文／每期 $35 元…」。容器 class
+      命中新增 token `support[-_]...banner`，整塊 hide。
+
+  (B) 主文內社群追蹤 CTA 段落——Draft.js block DIV 含「按讚加入《鏡文化》臉書
+      粉絲專頁，關注最新貼文動態！」+ 內嵌 facebook fan page anchor。anchor 文字
+      「臉書粉絲專頁」命中 NOISE_LINK_TEXT_RE、parent 文字命中 CTA_PROMO_P_RE →
+      升級 hide 整段。
+
+  Trigger: Page Rounds 2026-06-16 mirrormedia.mg/story/20190308cul003 文末殘留。
+-->
+<html><body>
+<article id="test-article">
+  <h1>【朱天心專欄】從一隻叫「大頭」的貓說起</h1>
+  <div class="brief"><p>夜黑風高，把這些「有生命的垃圾」移除於我們的生活空間外，從此我們又可健康自在繼續美好的生活，難道你不慶幸這一切嗎？這是一篇足夠長的引言段落。</p></div>
+
+  <section class="article-content__Wrapper">
+    <div class="public-DraftEditor-content">
+      <div class="public-DraftStyleDefault-block"><span>去年初的一場酷寒寒流入境，我們家後巷的流浪貓們縮成一團取暖，那是我第一次認真注視牠們的存在，這段主文必須夠長才能被視為真正的內文段落。</span></div>
+      <div class="public-DraftStyleDefault-block"><span>那隻被我們喚作「大頭」的虎斑貓，總在傍晚時分準時出現在後門的台階上，等待著我們留下的食物，牠的眼神裡有一種說不出的溫柔與警戒並存的神情。</span></div>
+      <!-- (B) 社群追蹤 CTA 段落（最後一段、非主文）。class 刻意與主文段落同名
+           `public-DraftStyleDefault-block`（無 noise keyword）、用 id 選取——
+           避免 fixture class 夾帶 noise token 被 keyword rule 誤抓的假陽性。 -->
+      <div id="last-para-x" class="public-DraftStyleDefault-block">按讚加入<a class="sc-olbas" href="https://www.facebook.com/mirrormediacult">《鏡文化》臉書粉絲專頁</a>，關注最新貼文動態！</div>
+    </div>
+  </section>
+
+  <div class="normal__Date">更新時間｜2023.09.12 20:29 臺北時間</div>
+
+  <!-- (A) 募款 banner（article direct child） -->
+  <div class="support-mirrormedia-banner__Container-sc-4d0e9 abcDEF">
+    <div class="support-mirrormedia-banner__InnerWrapper-sc-4d0e9">
+      <div class="support-mirrormedia-banner__InnerBox-sc-4d0e9">
+        <p class="title">支持鏡週刊</p>
+        <p class="desc">小心意大意義小額贊助鏡週刊！</p>
+        <a class="donate-link__Link-sc-410e3a5d-0 INAOL banner-donate" href="/donate"><span>贊助本文</span></a>
+      </div>
+      <div class="support-mirrormedia-banner__InnerBox-sc-4d0e9">
+        <p class="desc">每期 $35 元動態話題報導無限閱讀解鎖新鮮事</p>
+      </div>
+    </div>
+  </div>
+</article>
+</body></html>
