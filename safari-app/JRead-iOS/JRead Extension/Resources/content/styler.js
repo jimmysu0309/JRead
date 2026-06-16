@@ -23,6 +23,13 @@
   const ANCESTOR_ATTR = 'data-jread-ancestor';
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
+  // v0.8.90：作者刻意縮小的小圖（icon / 版面 badge / 作者頭像）標記。裸 img
+  // （非 a 包）若原站把大來源圖「顯示縮小」到 < CONTENT_IMG_MIN，width:auto
+  // 會退回 naturalWidth 反向放大成滿版巨圖（washingtonpost Opinion 區
+  // lightbulb badge：HTML width=160 / CSS 顯示 56px / natural 1200 → 撐成 788px
+  // 巨圖佔滿標題上方）。apply() 量 pre-reader rendered rect、natural 明顯大於
+  // rendered 即標記並用 inline !important max-width 釘回原始顯示寬。
+  const ICON_IMG_ATTR = 'data-jread-icon-img';
   const PLAYER_ATTR = 'data-jread-player';
   // v0.8.86：responsive embed（relative wrapper + position:absolute iframe 填滿
   // 16:9 padding-bottom hack）的 iframe 標記。apply() 量到 computed
@@ -2330,7 +2337,21 @@ html [${ARTICLE_ATTR}="1"] a {
       // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
       const inlineImgs = [];
       const contentImgs = [];
+      const iconImgs = [];
       const contentImgLoadCleanup = [];
+      // v0.8.90：把作者刻意縮小的小圖釘回原始顯示寬。量到的 renderedW 以 inline
+      // !important max-width 覆寫，杜絕 img:not(a>img) 的 width:auto 退回
+      // naturalWidth 放大。記 prev 供 restore 對稱還原（與 titleFsSnap 同款）。
+      const capIconImg = (img, renderedW) => {
+        if (img.hasAttribute(ICON_IMG_ATTR)) return;
+        iconImgs.push({
+          img,
+          prevMw: img.style.getPropertyValue('max-width'),
+          prevMwP: img.style.getPropertyPriority('max-width'),
+        });
+        img.setAttribute(ICON_IMG_ATTR, '1');
+        img.style.setProperty('max-width', Math.round(renderedW) + 'px', 'important');
+      };
       // 量 img 尺寸（natural 優先、不可靠時 fallback rect），>= CONTENT_IMG_MIN 即標
       // content-img；回傳是否已標（含先前已標）。load listener 補標時重用。
       const tryMarkContentImg = (img) => {
@@ -2359,19 +2380,39 @@ html [${ARTICLE_ATTR}="1"] a {
       // 1×1 視覺消失）。此時跳過 natural 判定、一律改用 rect（站點通常已用
       // padding-bottom sizer 預留 reserved 尺寸，rect 可信）。
       const classifyImg = (img) => {
-        if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR)) return;
+        if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return;
         const w = img.naturalWidth || img.width;
         const h = img.naturalHeight || img.height;
         // natPlaceholder 用 naturalX || X 為基準（與下方 w/h 同源）——img 有真實
         // width 屬性（如 lazy a>img width=608）時不可誤判成 1×1 placeholder。
         const natPlaceholder = w <= 1 && h <= 1;
         let isInline = !natPlaceholder && w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
+        let r = null;
         if (!isInline) {
-          const r = img.getBoundingClientRect();
+          r = img.getBoundingClientRect();
           isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
                      r.height > 0 && r.height <= INLINE_IMG_MAX;
         }
         if (isInline) { img.setAttribute(INLINE_IMG_ATTR, '1'); inlineImgs.push(img); return; }
+        // v0.8.90：裸 img（非 a 包、非 player）的「作者刻意縮小」防放大。INLINE_IMG_MAX
+        // (48px) 與 CONTENT_IMG_MIN (200px) 之間的小圖（48 < rect < 200）落在兩個門檻
+        // 中間：不算 inline emoji、不算內容照片，落入 img:not(a>img) 的 width:auto →
+        // 退回 naturalWidth 撐成滿版（washingtonpost lightbulb badge 56→788px 實證）。
+        // 結構訊號：已載入（complete + natural > 1）、pre-reader rendered rect 兩維皆
+        // < CONTENT_IMG_MIN、且 natural 明顯大於 rendered（作者把大來源圖顯示縮小）→
+        // reader 不該反向放大，釘回原始顯示寬。natural ≈ rendered 的真實小圖不命中
+        // （width:auto 本來就給 natural≈rendered、無放大、不必釘）。lazy placeholder
+        // （!complete / natural<=1）此刻量不準，交給上方 load listener 載入後重判。
+        if (img.complete && img.naturalWidth > 1 && !img.closest('a') &&
+            img.getAttribute(PLAYER_ATTR) !== '1') {
+          if (!r) r = img.getBoundingClientRect();
+          if (r.width > INLINE_IMG_MAX && r.width < CONTENT_IMG_MIN &&
+              r.height > INLINE_IMG_MAX && r.height < CONTENT_IMG_MIN &&
+              img.naturalWidth > r.width * 1.5) {
+            capIconImg(img, r.width);
+            return;
+          }
+        }
         // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
         // block + margin 規則會漏掉它 → 維持原站 display:inline + 小 margin（巴哈
         // forum.gamer.com.tw a.photoswipe-image > img 實測 inline + 4px margin、
@@ -3103,7 +3144,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, contentImgs, iconImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3141,6 +3182,15 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.contentImgs)) {
         for (const img of snapshot.contentImgs) {
           if (img && img.removeAttribute) img.removeAttribute(CONTENT_IMG_ATTR);
+        }
+      }
+      // v0.8.90：還原 icon 圖的 inline max-width 釘寬 + 移除標記
+      if (Array.isArray(snapshot.iconImgs)) {
+        for (const s of snapshot.iconImgs) {
+          if (!s || !s.img) continue;
+          if (s.prevMw) s.img.style.setProperty('max-width', s.prevMw, s.prevMwP || '');
+          else s.img.style.removeProperty('max-width');
+          if (s.img.removeAttribute) s.img.removeAttribute(ICON_IMG_ATTR);
         }
       }
       // 移除尚未觸發的 lazy-load content-img 標記 listener（避免退出後圖載入仍
