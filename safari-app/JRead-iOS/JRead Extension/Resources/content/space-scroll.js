@@ -37,6 +37,7 @@
   // 巢狀清單經 nesting filter 自動歸屬最外層 li。其餘巢狀（blockquote > p
   // 等）取最外層。
   const BLOCK_SEL = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, figure, table';
+  const SPACE_SCROLL_DURATION_MS = 450;
   // 卷動後焦點段落的落點（viewport 比例）：段落 top 卷到離上緣 10% 處。
   // Readwise 實測卷距不固定（442 / 475px 同站不同段）——它是「卷到落點」
   // 模型，不是固定距離；落點固定在偏上位置，讓門檻內可容納多個後續段落、
@@ -54,6 +55,26 @@
   let articleEl = null;
   let focusedBlock = null;
   let barEl = null;
+  let animId = null;
+  let scrollGuardTimer = null;
+
+  // easeInOutCubic：實測 Readwise 軌跡為慢→快→慢的對稱 S 曲線
+  function spaceScrollEase(p) {
+    return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+  }
+
+  // 使用者滾輪 / 觸控介入時立即取消進行中的平滑動畫 + 落點兜底（手動卷動優先，
+  // 不被動畫或兜底覆寫）。
+  function cancelSpaceScrollAnim() {
+    if (animId !== null) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+    if (scrollGuardTimer !== null) {
+      clearTimeout(scrollGuardTimer);
+      scrollGuardTimer = null;
+    }
+  }
 
 
   // 內容圖片的最小高度——低於此視為 inline 小圖（emoji / icon），不當焦點單位
@@ -344,23 +365,45 @@
     }) || blocks[0] || null;
   }
 
-  // 卷到落點：**同步**設 scrollTop（v0.8.84）。原本走 requestAnimationFrame
-  // 逐 frame 平滑卷動（easeInOutCubic 450ms），但 rAF callback 在「分頁非 OS
-  // 焦點視窗 / 被瀏覽器節流」時不發 → 動畫永遠到不了落點、頁面幾乎不卷，焦點
-  // 段落停在 viewport 外 → 下次 advance 把它判成 offscreen 往回 re-anchor 到
-  // 可視區第一段 → 焦點指示條在同一屏內往回循環跳（Jimmy 2026-06-16 實機回報
-  // paulgraham.com/boss.html）。實證（隱藏分頁直接量）：rAF 式卷動 afterRaf=0、
-  // 原生 scrollTo({behavior:'smooth'}) afterNative=0（背景 smooth 被延遲）、
-  // 同步 scrollTop=X afterSync=900 ——只有同步寫入在任何情境都即時生效。改同步
-  // 瞬移保證焦點段落必被卷進可視區、advance 永遠順序推進不循環。指示條本身的
-  // CSS `transition: top 0.25s`（compositor 驅動、背景仍生效）保留視覺平滑。
-  function scrollToRest(delta) {
+  // 卷到落點：rAF 平滑動畫（easeInOutCubic 450ms）+ **落點兜底保證**（v0.8.85）。
+  //
+  // 背景：純 rAF 動畫（v0.7.216~v0.8.83）在「分頁非 OS 焦點視窗 / 被瀏覽器節流」
+  // 時，rAF callback **不發** → 動畫永遠到不了落點、頁面幾乎不卷，焦點段落停在
+  // viewport 外 → 下次 advance 把它判成 offscreen 往回 re-anchor 到可視區第一段
+  // → 焦點指示條在同一屏內往回循環跳（Jimmy 2026-06-16 實機 paulgraham.com/
+  // boss.html 回報）。實證（隱藏分頁直接量）：rAF afterRaf=0、原生 scrollTo
+  // ({behavior:'smooth'}) afterNative=0（背景 smooth 也被延遲）、**同步 scrollTop=X
+  // afterSync=900**——只有同步寫入在任何情境即時生效。
+  //
+  // v0.8.84 曾全改同步瞬移，但 Jimmy 要平滑（瞬移不可接受）。v0.8.85 改回平滑
+  // rAF + setTimeout 落點兜底：前景分頁 rAF 正常 → 拿到完整平滑動畫；rAF 被節流
+  // 沒跑完時，動畫時長後 setTimeout（背景仍會 fire，雖節流）同步把 scrollTop 補
+  // 到落點 + 清 animId（讓被 handler guard 吞掉的後續 Space 能繼續）→ 焦點段落
+  // 必進可視區、不再循環。完成（rAF 正常跑完）時 step 內順手清掉兜底計時器。
+  function startSpaceScrollAnim(delta) {
     const scroller = document.scrollingElement || document.documentElement;
     const from = scroller.scrollTop;
     const maxTop = Math.max(0, scroller.scrollHeight - window.innerHeight);
     const to = Math.max(0, Math.min(maxTop, from + delta));
     if (Math.abs(to - from) < 1) return; // 已在頂/底，無可卷
-    scroller.scrollTop = to;
+    cancelSpaceScrollAnim(); // 取消前一個未完成動畫 / 兜底（連按 Space retarget）
+    const t0 = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / SPACE_SCROLL_DURATION_MS);
+      scroller.scrollTop = from + (to - from) * spaceScrollEase(p);
+      animId = p < 1 ? requestAnimationFrame(step) : null;
+      // rAF 正常跑完落點 → 清兜底計時器（不需再同步補位）
+      if (animId === null && scrollGuardTimer !== null) {
+        clearTimeout(scrollGuardTimer);
+        scrollGuardTimer = null;
+      }
+    };
+    animId = requestAnimationFrame(step);
+    scrollGuardTimer = setTimeout(() => {
+      scrollGuardTimer = null;
+      if (animId !== null) { cancelAnimationFrame(animId); animId = null; }
+      if (Math.abs(scroller.scrollTop - to) > 1) scroller.scrollTop = to;
+    }, SPACE_SCROLL_DURATION_MS + 80);
   }
 
   // 門檻判定（Jimmy 2026-06-05 訂正語意）：settings.spaceScrollRatio = 焦點
@@ -382,7 +425,7 @@
       if (r.top >= 0) return;
     }
     // 卷到落點：delta 正 = 往下、負 = 往上，同一條式子雙向通用
-    scrollToRest(r.top - rest);
+    startSpaceScrollAnim(r.top - rest);
   }
 
   // 滑鼠點某段文字 / 圖片 → 指示條跳到那段（Jimmy 2026-06-05 指定行為）。
@@ -451,6 +494,7 @@
     if (!shouldHandle(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+    if (animId !== null) return; // 平滑動畫進行中：吞掉事件、不疊加
     advance(e.shiftKey ? -1 : 1);
   }
 
@@ -465,6 +509,8 @@
     if (installed) return;
     window.addEventListener('keydown', spaceScrollHandler, true);
     window.addEventListener('click', onClickFocus, true);
+    window.addEventListener('wheel', cancelSpaceScrollAnim, { passive: true });
+    window.addEventListener('touchmove', cancelSpaceScrollAnim, { passive: true });
     window.addEventListener('resize', onResize);
     installed = true;
   }
@@ -473,8 +519,11 @@
     if (!installed && !barEl) return;
     window.removeEventListener('keydown', spaceScrollHandler, true);
     window.removeEventListener('click', onClickFocus, true);
+    window.removeEventListener('wheel', cancelSpaceScrollAnim);
+    window.removeEventListener('touchmove', cancelSpaceScrollAnim);
     window.removeEventListener('resize', onResize);
     installed = false;
+    cancelSpaceScrollAnim();
     focusedBlock = null;
     articleEl = null;
     if (barEl) { barEl.remove(); barEl = null; }
