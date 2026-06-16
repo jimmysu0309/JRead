@@ -927,6 +927,23 @@
         if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
+      // v0.8.80（mirrormedia 修法）：含「非連結包裹」的內容級大圖（hero）的
+      // link-heavy 區塊不整塊 hide——這是「hero 主圖 + meta header」群集（新聞
+      // CMS 慣用結構：主圖 + 日期/作者/分享/tags 同一 wrapper），不是推薦
+      // card grid（縮圖一律包 <a>、無 standalone 大圖）。整塊 hide 會連 hero
+      // 一起吞掉（Jimmy 2026-06-16 mirrormedia.mg 回報主圖消失）。改 walk direct
+      // children：保留含 hero 的子塊，只把不含 hero 的 link-only 子塊（日期/分享/
+      // 訂閱/tags meta）個別 hide。mirrormedia 主文段落是 DraftStyle div/span 非
+      // <p>，hasLongP 永遠 false 無法 guard，此 hero 訊號才是正解。
+      if (containsStandaloneContentImg(child)) {
+        for (const sub of Array.from(child.children)) {
+          if (sub.dataset && sub.dataset.jreadHidden === '1') continue;
+          if (isInPreserved(sub)) continue;
+          if (containsStandaloneContentImg(sub)) continue; // hero 子塊保留
+          if (isLinkOnlyBlock(sub)) hide(sub, hidden);
+        }
+        continue;
+      }
       hide(child, hidden);
     }
   }
@@ -2679,6 +2696,27 @@
   function containsContentScaleImg(el) {
     if (!el.querySelectorAll) return false;
     for (const img of el.querySelectorAll('img')) {
+      const w = img.naturalWidth || 0;
+      const h = img.naturalHeight || 0;
+      if (w <= 8) return true; // 未載入 / placeholder：保守保護
+      if (w >= 200 && h >= 150) return true;
+      let r;
+      try { r = img.getBoundingClientRect(); } catch (_) { r = null; }
+      if (r && r.width >= 150 && r.height >= 100) return true;
+    }
+    return false;
+  }
+
+  // v0.8.80：含「非連結包裹」的內容級大圖（standalone hero）。img 不在 <a> /
+  // <li> 內（排除推薦卡縮圖 / sidebar 列表縮圖——這些一律包連結），且尺寸達
+  // 內容級（natural >= 200×150 或 rendered >= 150×100，或未載入 placeholder
+  // naturalWidth <= 8 保守視為內容圖）。用來把「hero + meta header 群集」與
+  // 「推薦 card grid」區分開：card grid 縮圖全包在 <a> 內、必為 false；hero
+  // figure 的主圖直接露出、為 true。結構訊號（img 是否連結包裹 + 尺寸），不綁站點。
+  function containsStandaloneContentImg(el) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const img of el.querySelectorAll('img')) {
+      if (img.closest && img.closest('a, li')) continue; // 連結縮圖 / 列表縮圖排除
       const w = img.naturalWidth || 0;
       const h = img.naturalHeight || 0;
       if (w <= 8) return true; // 未載入 / placeholder：保守保護
