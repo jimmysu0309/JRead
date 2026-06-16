@@ -32,5 +32,21 @@
     <a href="/ref4">Reference four with details</a>
     <a href="/ref5">Reference five with details</a>
   </div>
+
+  <!-- v0.8.80 mirrormedia 修法：hero 主圖 + meta header 群集。direct child DIV
+       含 >= 5 anchor、無長 <p>（與推薦 card grid 同形），但內含「非連結包裹」的
+       standalone hero <img>。整塊 hide 會吞掉主圖；應保留含 hero 的子塊、只 hide
+       不含 hero 的 link-only meta 子塊（日期/分享/訂閱/tags）。 -->
+  <div class="hero-and-meta">
+    <figure class="hero-fig"><img src="about:blank" width="640" height="427" alt="hero"></figure>
+    <div class="article-info">
+      <a href="/author/x">Author Name</a>
+      <a href="/share/fb">Share FB</a>
+      <a href="/share/tw">Share TW</a>
+      <a href="/donate">Donate</a>
+      <a href="/subscribe">Subscribe</a>
+      <a href="/tag/cats">Cats</a>
+    </div>
+  </div>
 </article>
 </body></html>

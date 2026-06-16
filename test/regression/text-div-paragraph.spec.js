@@ -46,11 +46,20 @@ describe('styler — CMS「div 當段落」標記與字級覆寫（v0.8.49）', 
 
   it('裸 div 主文段落必須標記 data-jread-text-div', () => {
     const marked = articleEl.querySelectorAll(`[${ATTR}="1"]`);
-    assert.strictEqual(marked.length, 3, '三段裸 div 主文段落都必須標記');
+    // 3 段裸 div（直接 text node）+ 1 段 Draft.js span-wrapped div = 4
+    assert.strictEqual(marked.length, 4, '三段裸 div + 一段 span-wrapped div 都必須標記');
     for (const el of marked) {
       assert.strictEqual(el.tagName, 'DIV');
       assert.ok(el.textContent.length >= 40, '標記到的應是長段落 div');
     }
+  });
+
+  it('WYSIWYG（Draft.js）span-wrapped 段落 div 必須標記（v0.8.80 mirrormedia）', () => {
+    const block = articleEl.querySelector('.draft-block');
+    assert.ok(block, 'fixture 應有 .draft-block');
+    // div 無直接 text node、文字全在 inline span 內——只看 direct text 會漏標
+    assert.strictEqual(block.getAttribute(ATTR), '1',
+      'span-wrapped 段落 div 必須標記，否則 line-height 只套到 span、block strut 壓過設定');
   });
 
   it('字級比主流小的圖說 div 不可標記（caption 階層保留）', () => {

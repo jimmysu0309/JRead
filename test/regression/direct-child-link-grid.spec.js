@@ -56,4 +56,28 @@ describe('cleaner — direct child link-grid hide (v0.7.194)', () => {
         'main text <p> must not be hidden');
     }
   });
+
+  // v0.8.80 mirrormedia 修法：hero + meta 群集不整塊 hide
+  it('(d) 含 standalone hero 大圖的 link-heavy 群集不整塊 hide', () => {
+    const cluster = articleEl.querySelector('.hero-and-meta');
+    assert.ok(cluster, 'hero-and-meta DIV must exist');
+    assert.notStrictEqual(cluster.dataset.jreadHidden, '1',
+      'hero+meta 群集不可整塊 hide（會吞掉主圖）');
+  });
+
+  it('(e) 群集內的 hero figure / img 保留', () => {
+    const fig = articleEl.querySelector('.hero-fig');
+    const img = fig && fig.querySelector('img');
+    assert.ok(fig && img, 'hero figure + img must exist');
+    assert.notStrictEqual(fig.dataset.jreadHidden, '1', 'hero figure 必須保留');
+    assert.ok(!(img.closest && img.closest('[data-jread-hidden="1"]')),
+      'hero img 不可在任何 hidden 祖先內');
+  });
+
+  it('(f) 群集內不含 hero 的 link-only meta 子塊被 hide', () => {
+    const meta = articleEl.querySelector('.article-info');
+    assert.ok(meta, 'article-info meta sub-block must exist');
+    assert.strictEqual(meta.dataset.jreadHidden, '1',
+      'link-only meta 子塊（分享/訂閱/tags）必須個別 hide');
+  });
 });
