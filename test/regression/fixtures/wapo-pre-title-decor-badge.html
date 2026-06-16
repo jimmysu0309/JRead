@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!--
+  washingtonpost Opinion lightbulb badge 最小重現（v0.8.91）。
+  裝飾性 badge 是裸 <img>（HTML width=160 / 顯示 56 / natural 1200），與
+  Opinion / Editorial Board kicker 同住一個 pre-title 分支（kxYKtF）。
+  期望：只清掉裝飾 img、保留 kicker + 標題 + 主文。各 img 的 natural / rect
+  由 spec stub（jsdom 不算 layout）。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <!-- 主 case：badge 與 kicker 同分支 -->
+  <article data-test="article-root">
+    <header>
+      <div data-test="badge-branch">
+        <div class="img-wrap"><img data-test="badge" width="160" height="160" src="badge.png" alt=""></div>
+        <a data-test="kicker-section" href="/opinion">Opinion</a>
+        <a data-test="kicker-byline" href="/board">Editorial Board</a>
+      </div>
+      <h1 data-test="main-h1">Why Europe won’t have the new Siri</h1>
+      <p data-test="subtitle">The Digital Markets Act was supposed to create more choices. Instead, people get worse technology.</p>
+    </header>
+    <div data-test="main-content">
+      <p>In the name of fairness and competition, Europe has written laws that leave its citizens as the only people in the free world without access to the most advanced technology available today.</p>
+      <p>Case in point: Apple’s newly announced artificial intelligence assistant will launch on iPhones this fall in London and Toronto, but not in Paris or Berlin under heavy-handed European tech regulation.</p>
+    </div>
+  </article>
+
+  <!-- 控制組 A：標題前的真 hero 圖（顯示大）不可被清 -->
+  <article data-test="article-root-hero">
+    <div data-test="pre-title-hero"><img data-test="hero-img" src="hero.jpg" alt="hero"></div>
+    <h1>Real hero above title</h1>
+    <p>Body paragraph long enough to be main content of this control article variant for the regression.</p>
+  </article>
+
+  <!-- 控制組 B：標題前 natural ≈ displayed 的真小圖（無放大）不可被清 -->
+  <article data-test="article-root-small">
+    <div data-test="pre-title-small"><img data-test="small-img" src="small.png" alt=""></div>
+    <h1>Small genuine image above title</h1>
+    <p>Body paragraph long enough to be main content of this control article variant for the regression.</p>
+  </article>
+</body>
+</html>

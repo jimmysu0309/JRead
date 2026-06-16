@@ -1366,6 +1366,61 @@
     }
   }
 
+  // ---- 標題前的裝飾性縮小圖（section badge / topic icon）----------------------
+  // 對應 bug（washingtonpost Opinion 文章，Jimmy 2026-06-16 截圖回報「燈泡是
+  // 雜訊請清除」）：Opinion 區的橘底電燈泡 badge 是裸 <img>，原站 HTML
+  // width=160 height=160、CSS 顯示 56×56，但來源檔 naturalWidth/Height=1200——
+  // 作者把大來源圖「顯示縮小」成標題上方的版面裝飾。
+  //
+  // 為什麼 hideInsideArticlePreTitleNoise 漏掉它：那條的 preTitleBranchIsProtected
+  // 把「含未隱藏 content media 的分支」整支保護住（避免誤殺 pre-title hero 圖）。
+  // badge rect 56 > ICON_MEDIA_MAX(32)、imgIsContentMedia 又因 rect > 5 判 true →
+  // 整個 kxYKtF 分支被當「含 hero」保護。但該分支同時含 Opinion / Editorial Board
+  // kicker（section + 作者），整支 hide 會誤殺 byline——所以不能放寬 branch guard，
+  // 必須「只清那張裝飾 img、保留 kicker」。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：位於第一個 h1 之前（document order）、
+  // 非 <a> 包（icon-link 結構另有保留語意）、顯示尺寸兩維皆 <= DECOR_MAX 但
+  // 來源 naturalWidth 明顯更大（>= 1.5×，作者刻意縮小 = 裝飾 badge，不是被縮放
+  // 的內容照片）。顯示尺寸 rect 可信用 rect、否則退回 width/height 屬性；兩者都
+  // 拿不到（未載入又無屬性）= 不確定 → 不動（保守，寧可殘留不誤殺真 hero）。
+  // 真 pre-title hero（顯示 >= 200px）與 natural ≈ displayed 的真小圖都不命中。
+  // 放在 hideInsideArticlePreTitleNoise **之後**呼叫：讓該 walker 先靠 badge
+  // （此刻仍未隱藏）保護住 kxYKtF 分支、不誤殺 kicker，再由本條單獨清掉 img。
+  const PRE_TITLE_DECOR_MAX = 200;
+  function imgIsDownscaledPreTitleDecor(img) {
+    let dispW = 0;
+    let dispH = 0;
+    const r = img.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      dispW = r.width;
+      dispH = r.height;
+    } else {
+      dispW = parseFloat(img.getAttribute('width')) || 0;
+      dispH = parseFloat(img.getAttribute('height')) || 0;
+    }
+    if (dispW <= 0 || dispH <= 0) return false;
+    if (dispW > PRE_TITLE_DECOR_MAX || dispH > PRE_TITLE_DECOR_MAX) return false;
+    const nat = img.naturalWidth || 0;
+    return nat > dispW * 1.5;
+  }
+
+  function hidePreTitleDecorativeImages(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const anchor = findFirstVisibleH1(articleEl);
+    if (!anchor) return;
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      if (img.closest && img.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(img)) continue;
+      if (img.closest('a')) continue; // icon-link 結構保留
+      // 只處理 document order 在標題之前者（DOCUMENT_POSITION_PRECEDING = 2）
+      if (!(anchor.compareDocumentPosition(img) & 2)) continue;
+      if (!imgIsDownscaledPreTitleDecor(img)) continue;
+      hide(img, hidden);
+    }
+  }
+
   // ---- overwide img promote：把超寬容器內的大圖拉進 article flow ----------
   // Swiper / carousel JS library 把 slide 寬設為 viewport 寬。reader card
   // 縮窄後 CSS max-width:100% 相對超寬 parent 無效，Swiper runtime 會
@@ -5544,6 +5599,10 @@
       // 不重複處理）、collapse 類之前（emptied flex / grid 規則能看到本條
       // 標的 hidden 狀態）
       safeRun(hideInsideArticlePreTitleNoise, articleEl, hidden);
+      // v0.8.91 標題前裝飾性縮小圖（washingtonpost Opinion lightbulb badge）：
+      // 必須在 hideInsideArticlePreTitleNoise **之後**——讓 walker 先靠未隱藏的
+      // badge 保護住同分支的 kicker（Opinion / Editorial Board），再單獨清掉 img
+      safeRun(hidePreTitleDecorativeImages, articleEl, hidden);
       // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在
       // 所有 hide 類規則之後、collapse 之前（hide 殘殼後 collapse 才看得到
       // hidden child 觸發條件 A）
