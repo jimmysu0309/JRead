@@ -1420,6 +1420,12 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
     // v0.8.49：加 [TEXT_DIV_ATTR]——CMS「div 當段落」站（upmedia 等）的主文
     // 段落載體由 apply() runtime 標記（見 markTextDivs），列舉 tag 攔不到的
     // 裸 div 段落才能吃到使用者字級/字型/行距/字重設定。
+    // v0.8.83：加 font——老式 table 排版內容頁（Paul Graham essays / 早期手寫
+    // HTML）整篇主文包在 `<font size="2">` 裡，`size` 是 HTML4 呈現屬性、會把
+    // font-size 重設成固定 px（boss.html 實測 13px），截斷從 `<p>` 繼承的使用者
+    // 字級（fontSize=24 設定下 p=24px ✓ 但 font 仍 13px ✗）。font 進 selector 後
+    // 強制套使用者字級/字型/行距/字重。`<font>` 在現代主文罕見、且 cleaner 已清
+    // 掉 noise font（短/高連結密度），保留的必是內文載體——零誤傷風險。
     const BODY_TEXT_CORE =
       `[${ARTICLE_ATTR}="1"],` +
       `[${ARTICLE_ATTR}="1"] p,` +
@@ -1429,6 +1435,7 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
       `[${ARTICLE_ATTR}="1"] dt,` +
       `[${ARTICLE_ATTR}="1"] td,` +
       `[${ARTICLE_ATTR}="1"] th,` +
+      `[${ARTICLE_ATTR}="1"] font,` +
       `[${ARTICLE_ATTR}="1"] caption,` +
       `[${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"],`;
     const BODY_TEXT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL;
