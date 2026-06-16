@@ -56,6 +56,10 @@ URLS=(
   "https://dev.to/isocyanideisgood/2026-web-dev-trends-that-actually-matter-5520"
   "https://github.blog/engineering/architecture-optimization/from-latency-to-instant-modernizing-github-issues-navigation-performance/"
   "https://telefoncek.si/2025/02/2025-02-10-hidden-microphone-on-nanokvm/"
+  "https://www.thenewslens.com/article/975"
+  "https://paulgraham.com/boss.html"
+  "https://www.mirrormedia.mg/story/20190308cul003"
+  "https://mag.clab.org.tw/clabo-article/about-commuteforme-podcast/"
 )
 
 PASS=0
