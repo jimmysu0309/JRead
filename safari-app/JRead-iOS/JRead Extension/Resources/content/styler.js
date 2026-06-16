@@ -694,6 +694,14 @@ html [${ARTICLE_ATTR}="1"] main {
 [${ARTICLE_ATTR}="1"] picture {
   max-width: 100% !important;
   height: auto !important;
+  /* v0.8.89：width 一併歸 auto——kknews.cc 用 lazy library 把未進視窗的圖
+     凍在 width:1px（cross-origin CDN sheet 的 placeholder 狀態，原站 JS
+     載入後才解除；reader mode 下原站 lazy observer 不跑、狀態凍結）。原本只設
+     max-width:100% 擋不住固定 width:1px → 整片內容圖縮成 1×1 視覺消失。與下方
+     min-width:0 / min-height:0 / height:auto 同款：reader card 單欄 layout 一律
+     按 intrinsic 比例算媒體尺寸、忽略站點施加的維度 CSS。a > img（icon-link）
+     已被 selector 排除、不受影響。 */
+  width: auto !important;
   /* v0.8.45：min-height 一併清——cw.com.tw 實測站點對 hero img 設
      min-height: 645px（為原站滿版寬的響應式設計），height:auto 被
      min-height 頂住、object-fit:contain 下影像 letterbox 置中 → 主圖
@@ -2337,33 +2345,39 @@ html [${ARTICLE_ATTR}="1"] a {
         if (big) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
         return false;
       };
-      for (const img of articleEl.querySelectorAll('img')) {
+      // img 分類（inline emoji / content-img）。抽成 classifyImg 供「即時」與
+      // 「lazy 圖 load 後補分類」共用。
+      // v0.7.214：natural 尺寸對「無 intrinsic size 的 SVG」不可靠——Chrome 對
+      // 只有 viewBox 的 SVG 回報 CSS replaced element 預設 150×150（X/Twitter
+      // 的 Twemoji emoji SVG 實測命中），高解析 emoji PNG（Twemoji PNG 原檔
+      // 72×72）也會超過上限。rendered 尺寸才是「這張圖在文中是 icon / emoji」的
+      // 視覺事實：natural 判定 miss 時 fallback 量 rect，兩維皆 > 0 且 <=
+      // INLINE_IMG_MAX 即標 inline。只在 miss 時量、避免對每張內容圖都 force layout。
+      // v0.8.89：natural 兩維皆 <= 1 = lazy library 的 1×1 blank gif placeholder
+      // 簽名（kknews.cc 實測），**不可**據此判 inline——否則整片未載入的內容照片
+      // 被當 inline emoji 標記、載入後維持 inline 不被 media block 規則撐開（全圖
+      // 1×1 視覺消失）。此時跳過 natural 判定、一律改用 rect（站點通常已用
+      // padding-bottom sizer 預留 reserved 尺寸，rect 可信）。
+      const classifyImg = (img) => {
+        if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR)) return;
         const w = img.naturalWidth || img.width;
         const h = img.naturalHeight || img.height;
-        let isInline = w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
-        // v0.7.214：natural 尺寸對「無 intrinsic size 的 SVG」不可靠——Chrome
-        // 對只有 viewBox 的 SVG 回報 CSS replaced element 預設 150×150（X/
-        // Twitter 的 Twemoji emoji SVG 實測命中），高解析 emoji PNG（Twemoji
-        // PNG 原檔 72×72）也會超過上限。rendered 尺寸才是「這張圖在文中是
-        // icon / emoji」的視覺事實：natural 判定 miss 時 fallback 量 rect，
-        // 兩維皆 > 0 且 <= INLINE_IMG_MAX 即標 inline。只在 miss 時量、
-        // 避免對每張內容圖都 force layout。
+        // natPlaceholder 用 naturalX || X 為基準（與下方 w/h 同源）——img 有真實
+        // width 屬性（如 lazy a>img width=608）時不可誤判成 1×1 placeholder。
+        const natPlaceholder = w <= 1 && h <= 1;
+        let isInline = !natPlaceholder && w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
         if (!isInline) {
           const r = img.getBoundingClientRect();
           isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
                      r.height > 0 && r.height <= INLINE_IMG_MAX;
         }
-        if (isInline) {
-          img.setAttribute(INLINE_IMG_ATTR, '1');
-          inlineImgs.push(img);
-          continue;
-        }
+        if (isInline) { img.setAttribute(INLINE_IMG_ATTR, '1'); inlineImgs.push(img); return; }
         // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
         // block + margin 規則會漏掉它 → 維持原站 display:inline + 小 margin（巴哈
         // forum.gamer.com.tw a.photoswipe-image > img 實測 inline + 4px margin、
         // 圖文幾乎貼著）。量到 >= CONTENT_IMG_MIN 且祖先有 `<a>` 的 img 標記為
         // content-img，CSS 對它強制 block + 對稱 margin。inline emoji 已在上面
-        // continue 排除、不會誤標。
+        // 排除、不會誤標。
         //
         // 自適應 lazy-load（v0.8.11 修正）：apply() 在 document_idle 跑，巴哈這類
         // 整篇 lazyload 圖在 toggle 當下多數還沒載入——naturalWidth=0、無 width 屬性、
@@ -2379,6 +2393,23 @@ html [${ARTICLE_ATTR}="1"] a {
             contentImgLoadCleanup.push({ img, onLoad });
           }
         }
+      };
+      for (const img of articleEl.querySelectorAll('img')) {
+        // v0.8.89：natural 1×1 placeholder 且連 rect 都還沒 reliable（0×0 未渲染）
+        // → 此刻完全無從分類，掛 once load listener 等圖真正載入後再 classifyImg
+        // （hydrateLazyImages 換上真 src 後會觸發 load）。站點有預留 reserved 尺寸
+        // 的 lazy 圖 rect 非 0、直接 classifyImg 走 rect fallback 即可。
+        const natPlaceholder = (img.naturalWidth || img.width) <= 1 && (img.naturalHeight || img.height) <= 1;
+        if (natPlaceholder) {
+          const r = img.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) {
+            const onLoad = () => classifyImg(img);
+            img.addEventListener('load', onLoad, { once: true });
+            contentImgLoadCleanup.push({ img, onLoad });
+            continue;
+          }
+        }
+        classifyImg(img);
       }
 
       // v0.8.49：「div 當段落」標記必須在 ARTICLE_ATTR 設定**前**跑——主流字級

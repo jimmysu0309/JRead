@@ -4136,7 +4136,13 @@
   // 風險極低。reader mode「實機 vs Playwright」差異（headless 下 gamer
   // lazysizes 未把 src 設成 none.gif、停在空 src 反而被認得）使此 bug 只在
   // 實機 Chrome 顯現，故此修法以 harness 強制注入 spacer 狀態驗證根因。
-  const SPACER_SRC_RE = /\/(?:none|blank|spacer|pixel|transparent|trans|grey|gray|loading|placeholder|placehold|1x1|1px|px|dummy|empty|clear|noimage|no-image)\.(?:gif|png|svg|webp)(?:[?#].*)?$/i;
+  // v0.8.89：token 後容許 hash / 版本後綴（`[-_.]<hash>`）——kknews.cc 用
+  // `//a.kknews.cc/blank-ad4b0f60.gif` 當 lazy placeholder，舊版 regex 要求
+  // token 緊接 `.gif`、被中間的 `-ad4b0f60` 擋掉 → 整片 below-fold 圖（src
+  // 停在 blank gif、真圖在 data-src）永遠補不上。後綴限定 `[-_.][0-9a-z]+`
+  // （hash / `v2` / `2x` 等），不會吃到 `blanket.webp` / `blankenship.png`
+  // 這類「token 後直接接字母、無分隔符」的合法檔名。
+  const SPACER_SRC_RE = /\/(?:none|blank|spacer|pixel|transparent|trans|grey|gray|loading|placeholder|placehold|1x1|1px|px|dummy|empty|clear|noimage|no-image)(?:[-_.][0-9a-z]+)*\.(?:gif|png|svg|webp)(?:[?#].*)?$/i;
   // 圖片檔 URL 判定：副檔名為常見圖片格式（忽略 query / hash）。用於辨識
   // 「指向圖片檔的 <a>」= lightbox / photoswipe /「看原圖」連結（內容圖檢視
   // 連結，非 icon/CTA）。
