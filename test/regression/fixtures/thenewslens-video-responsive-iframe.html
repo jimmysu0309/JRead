@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>responsive embed iframe 偏右破版 fixture</title>
+  <meta property="og:title" content="responsive embed video fixture">
+</head>
+<body>
+  <article>
+    <h1>responsive embed video fixture</h1>
+    <p>主文前導段落，文字量需足以讓 detector 過 MIN_TEXT_LEN 門檻。本 fixture 重現 thenewslens.com/article/975 的影片嵌入結構：figure.video-responsive 用 position:relative + padding-bottom 16:9 hack 撐高度，內含 iframe position:absolute; left:0; width:100% 填滿。閱讀模式媒體置中規則對 iframe 套 margin:auto，但對 abs-pos iframe 會解出非零 left 把它推右破版。FILL_IFRAME_INTRO_MARK</p>
+
+    <!-- TED embed：relative wrapper + abs iframe（padding-bottom hack 以 inline 模擬，
+         jsdom 不 cascade stylesheet 的 position，故 position:absolute 直接寫 inline
+         讓 getComputedStyle 讀得到。 -->
+    <figure class="op-social video-responsive" style="position:relative;padding-bottom:56.25%;">
+      <iframe id="ted-iframe" src="https://embed.ted.com/talks/lang/zh-tw/apollo_robbins_the_art_of_misdirection" style="position:absolute;top:0;left:0;width:100%;height:100%;" allowfullscreen></iframe>
+    </figure>
+
+    <p>中段文字，讓兩支影片之間有真實主文段落。FILL_IFRAME_MID_MARK 再補一些字確保 article 密度足夠、detector 穩定命中主文容器。</p>
+
+    <figure class="op-social video-responsive" style="position:relative;padding-bottom:56.25%;">
+      <iframe id="yt-iframe" src="https://www.youtube.com/embed/LoUSO_Mj1TQ" style="position:absolute;top:0;left:0;width:100%;height:100%;" allowfullscreen></iframe>
+    </figure>
+
+    <!-- 控制組：一般 in-flow iframe（無 position）——不該被標 fill，仍走置中 margin:auto -->
+    <p>控制組段落。下面這支 iframe 沒有 position:absolute，是正常 block flow 嵌入，閱讀模式應維持 margin:auto 置中、不被標 fill。FILL_IFRAME_CONTROL_MARK</p>
+    <iframe id="inflow-iframe" src="https://example.com/widget" width="560" height="315"></iframe>
+
+    <p>結尾段落補足主文長度，避免 detector 因內容過短而 no-op。FILL_IFRAME_AFTER_MARK</p>
+  </article>
+</body>
+</html>
