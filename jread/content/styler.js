@@ -1942,9 +1942,19 @@ html [${ARTICLE_ATTR}="1"] a {
       for (const node of div.childNodes) {
         if (node.nodeType === 3 /* TEXT_NODE */) {
           directLen += node.textContent.trim().length;
-        } else if (node.nodeType === 1 /* ELEMENT_NODE */ && !INLINE_TAGS.has(node.tagName)) {
-          hasBlockChild = true;
-          break;
+        } else if (node.nodeType === 1 /* ELEMENT_NODE */) {
+          if (!INLINE_TAGS.has(node.tagName)) {
+            hasBlockChild = true;
+            break;
+          }
+          // v0.8.80：inline 子元素（span / a / strong…）內的文字也計入。WYSIWYG
+          // 編輯器（Draft.js / Lexical 等）把段落文字包成 <div><span>文字</span></div>，
+          // div 無直接 text node 但功能上就是段落——只看 direct text 會漏標，
+          // line-height 只套到 inline span、parent block div 仍保留站點行高，block
+          // strut（max(block lh, span lh)）壓過設定值（Jimmy 2026-06-16 mirrormedia
+          // 行距不遵從設定的根因）。標記 block div 後 BODY_TEXT_SEL 把 line-height
+          // 注到 div 自身、strut 跟著設定縮放。有 block 子元素仍判定為容器、不標記。
+          directLen += node.textContent.trim().length;
         }
       }
       if (hasBlockChild || directLen < 4) continue;

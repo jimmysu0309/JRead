@@ -25,6 +25,11 @@
       <div class="fig-caption" style="font-size: 17px">figure 內的圖說 div，不可被標記。</div>
     </figure>
     <div style="font-size: 22px">輿情分析指出，討論焦點主要集中在食安標準本身，而非政治操作，這是第三段裸 div 主文段落，用來確保主流字級的文字量加權壓倒圖說。</div>
+    <!-- v0.8.80 mirrormedia 類 WYSIWYG（Draft.js）段落：div 無直接 text node，
+         文字全包在 inline <span> 內。markTextDivs 只看 direct text 會漏標，
+         line-height 只套到 span、parent block div 仍保留站點行高、block strut
+         壓過設定值。inline 子文字計入後此 div 應被標記。 -->
+    <div class="draft-block" style="font-size: 22px"><span>這是 Draft.js 編輯器輸出的段落，整段文字被包在 span 裡，div 本身沒有直接的 text node，但功能上就是一個主文段落，必須被標記才能讓行高設定生效。</span></div>
   </div>
 </body>
 </html>
