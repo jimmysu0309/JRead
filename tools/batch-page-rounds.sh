@@ -21,6 +21,8 @@ URLS=(
   "https://www.twreporter.org/a/hello-world-2026-04-08"
   "https://www.roomie.tw/posts/73403"
   "https://www.shoppingdesign.com.tw/post/view/13485"
+  "https://kknews.cc/zh-tw/entertainment/952bz4l.html"
+  "https://www.gq.com.tw/article/%E7%B6%93%E5%85%B8%E8%AA%BF%E9%85%92-highball-%E9%AB%98%E7%88%BE%E5%A4%AB%E7%90%83"
   "https://www.bbc.com/culture/article/20260423-the-enchanting-story-of-oxfords-medieval-library"
   "https://www.bbc.com/news/articles/clyepyy82kxo"
   "https://edition.cnn.com/2026/05/24/us/ai-flying-airplanes"
