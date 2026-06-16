@@ -43,11 +43,14 @@ describe('cleaner — absolute overlay h1 guard (TBIJ, v0.7.148)', () => {
   it('(a) fixture: hero h1 結構符合最小重現條件', () => {
     const wrapper = articleEl.querySelector('[data-test="absolute-h1-wrapper"]');
     assert.ok(wrapper, 'absolute h1 wrapper 必須存在');
-    const cs = window.getComputedStyle(wrapper);
-    assert.strictEqual(cs.position, 'absolute',
-      'wrapper 必須 position:absolute（v0.7.111 absolute rule 觸發條件）');
     assert.ok(wrapper.querySelector('h1'),
       'wrapper 必須含 h1（v0.7.148 guard 觸發條件）');
+    // v0.8.87：fixture 源是 position:absolute（v0.7.111 absolute rule 觸發
+    // 條件 + v0.7.148 h1-guard 保留它），但 clean 後 h1-guard 會把保留的
+    // title overlay reflow 回 static（讓標題回歸 normal flow、不與內文重疊，
+    // 見 clab-absolute-title-overlap.spec.js）。故此處驗 clean 後 = static。
+    assert.strictEqual(wrapper.style.getPropertyValue('position'), 'static',
+      'clean 後 h1-guard 保留的 absolute title overlay 應被 reflow 回 static（v0.8.87）');
   });
 
   // -------- (b) absolute-h1-wrapper 不可被 hide（核心保護點）--------
