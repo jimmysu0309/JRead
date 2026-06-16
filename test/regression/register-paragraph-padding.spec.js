@@ -8,8 +8,11 @@
 //   html [data-jread-active="1"] p { padding-left: 0 !important; padding-right: 0 !important; }
 //
 // 通則特徵：reader card 是 single-column layout，原站的水平 padding（通常用於多欄
-// layout 內縮）在 reader card 內失去意義，只會擠窄文字。只清 left/right、保留
-// top/bottom（站點可能用它做段落間距）。
+// layout 內縮）在 reader card 內失去意義，只會擠窄文字。本條只清 left/right。
+// （v0.8.92 補記：top/bottom 的歸零移到 paragraphSpacing 注入分支處理——站點用
+// padding-bottom 撐段距會與 reader margin 疊成雙倍間距，見
+// wapo-paragraph-padding-stack.spec.js。Auto 模式不注入 margin、也不清垂直
+// padding，本條原「保留 top/bottom 給原站段距」的語意在 Auto 下仍成立。）
 //
 // 2 條 forcing function：
 //   (a) 注入 CSS 含 p 的 padding-left: 0 !important 規則

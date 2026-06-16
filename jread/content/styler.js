@@ -1572,6 +1572,18 @@ ${BODY_TEXT_SEL} {
 [${ARTICLE_ATTR}="1"] blockquote {
   margin-bottom: ${opts.paragraphSpacing}em !important;
 }
+/* v0.8.92：消除「站點用 <p> 垂直 padding 撐段距」與 reader margin 疊加的雙倍
+   間距。washingtonpost article-body 對每個 <p> 設 padding-bottom: 24px（不是
+   margin），與上面 reader margin-bottom 1em(16px) 疊成 40px 段距——cage 實測
+   washingtonpost Opinion 文章「段落之間額外空白」根因。段落垂直間距改由 reader
+   margin 單一決定（單一資料源原則）：清掉 <p> 的 padding-top/bottom。
+   只清 <p>：list 縮排是 padding-left（垂直 padding 罕見）、blockquote 引言框
+   常靠 padding 撐內距且 reader 保留其背景（BG_PRESERVE_NOT 含 blockquote），
+   都不在此清除範圍。padding-left/right 不動（不影響水平版心）。 */
+[${ARTICLE_ATTR}="1"] p {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
 [${ARTICLE_ATTR}="1"] [data-jread-fb-para="1"] {
   margin-top: ${opts.paragraphSpacing}em !important;
   margin-bottom: ${opts.paragraphSpacing}em !important;
