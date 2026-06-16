@@ -440,9 +440,18 @@
     const candidates = [];
 
     for (const [el, raw] of scoreMap.entries()) {
-      // 限定「容器型」元素（避免 li / p 自己也被選為主文）
+      // 限定「容器型」元素（避免 li / p 自己也被選為主文）。
+      // TD 納入白名單（v0.8.82）：老式 table 排版的內容頁（Paul Graham essays、
+      // 早期 blog / newsletter / 純手寫 HTML）把整篇主文放在一個 <td> 裡，內文
+      // 段落用 <p> 或 <font>+<br> 呈現。signal 的 bubble-up 會把分數記到 parent
+      // /grandparent，這類頁面的 signal <p> 祖先鏈是 P → FONT → TD，grandparent
+      // 是 TD——舊白名單只收 DIV/SECTION/MAIN/ARTICLE，TD 被排除 → candidates
+      // 為空 → heuristic 回 null → 整頁無法偵測（paulgraham.com/boss.html 實證）。
+      // TD 是通用 HTML 容器、非站點特判（硬規則 3）；linkDensity penalty + textLen
+      // bonus + class 權重仍會讓真正的內容容器勝出，資料表 / infobox 的高連結密度
+      // 小 TD 不會搶贏低連結密度的長文 TD。
       const tag = el.tagName;
-      if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'MAIN' && tag !== 'ARTICLE') continue;
+      if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'MAIN' && tag !== 'ARTICLE' && tag !== 'TD') continue;
 
       const textLen = scoredTextLen(el);
       if (textLen < MIN_TEXT_LEN) continue;
