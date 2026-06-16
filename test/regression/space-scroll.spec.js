@@ -3,10 +3,11 @@
 // Reader mode 下 Space / Shift+Space 推進「目前閱讀段落」焦點（左側 4px 主題
 // 色指示條 #__jread-focus-bar），新焦點段落 top 超過 viewport 中線門檻才卷動
 // viewport × settings.spaceScrollRatio%。規格：Jimmy 2026-06-05 指定行為。
-// v0.8.84：卷動由 rAF 動畫（450ms easeInOutCubic）改**同步 scrollTop 瞬移**——
-// rAF callback 在分頁非 OS 焦點 / 被節流時不發、動畫到不了落點、頁面幾乎不卷，
+// 卷動：rAF 平滑動畫（450ms easeInOutCubic）+ **setTimeout 落點兜底**（v0.8.85）。
+// 純 rAF 在分頁非 OS 焦點 / 被節流時不發 callback、動畫到不了落點、頁面幾乎不卷，
 // 焦點段落停 viewport 外 → advance 往回 re-anchor 循環（Jimmy paulgraham 實機）。
-// 同步寫入在任何情境即時生效；指示條的 CSS transition 保留視覺平滑。
+// 兜底計時器在動畫時長後同步補到落點 + 清 animId，保證不循環；前景拿到完整平滑。
+// （v0.8.84 曾全改同步瞬移、Jimmy 要平滑故 v0.8.85 改回平滑 + 兜底。）
 //
 // 本檔訊號層次（CLAUDE.md 工作流原則 3）：
 //   驗 —— source 結構（handler guard、焦點/門檻邏輯存在、install/uninstall
@@ -204,7 +205,7 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
       const body = extractFnBody(MODULE_SRC, 'maybeScroll');
       assert.match(body, /rest\s*=\s*Math\.min\s*\(\s*vh\s*\*\s*REST_FRACTION\s*,\s*threshold\s*\)/,
         '落點必須 Math.min(REST, threshold)——forcing：極小 ratio 設定時落點高於門檻、卷完仍判定超標、每按必卷');
-      assert.match(body, /scrollToRest\s*\(\s*r\.top\s*-\s*rest\s*\)/,
+      assert.match(body, /startSpaceScrollAnim\s*\(\s*r\.top\s*-\s*rest\s*\)/,
         '卷距必須 = r.top - rest（段落相依、雙向通用）——forcing：固定卷距會讓深處段落卷不回門檻內（指示條停頁面底部，Jimmy 截圖實證）');
     });
 
@@ -335,28 +336,57 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
     });
   });
 
-  describe('space-scroll.js 卷動實作（v0.8.84 同步瞬移）', () => {
-    // v0.8.84：rAF 平滑動畫改同步 scrollTop。背景分頁 / 被節流時 rAF callback
-    // 不發、動畫到不了落點、頁面幾乎不卷 → 焦點停 viewport 外、advance 往回
-    // re-anchor 循環（Jimmy paulgraham 實機）。同步寫入在任何情境即時生效。
-    it('卷動必須同步寫 scrollTop（不依賴 requestAnimationFrame）', () => {
-      const body = extractFnBody(MODULE_SRC, 'scrollToRest');
-      assert.ok(body, '必須有 scrollToRest function');
-      assert.match(body, /scroller\.scrollTop\s*=\s*to\b/,
-        'scrollToRest 必須同步設 scroller.scrollTop = to——forcing：rAF 動畫在背景分頁不發 callback、焦點往回循環');
-      assert.ok(!/requestAnimationFrame/.test(body),
-        'scrollToRest 不可用 requestAnimationFrame——forcing：rAF 被節流時捲動失效（Jimmy 實機隱藏分頁實證 afterRaf=0、afterSync=900）');
+  describe('space-scroll.js 卷動實作（v0.8.85 平滑 rAF + 落點兜底）', () => {
+    // v0.8.85：rAF 平滑動畫（450ms easeInOutCubic）+ setTimeout 落點兜底。純 rAF
+    // 在分頁非 OS 焦點 / 被節流時不發 callback、動畫到不了落點、頁面不卷 → 焦點
+    // 段落停 viewport 外、advance 往回 re-anchor 循環（Jimmy paulgraham 實機）。
+    // 兜底計時器在動畫時長後同步補到落點 + 清 animId，保證不循環；前景 rAF 正常
+    // 時拿到完整平滑。（v0.8.84 曾全改同步瞬移、Jimmy 要平滑故 v0.8.85 改回）。
+    it('ease 函式必須是 easeInOutCubic（實測 Readwise 軌跡：慢→快→慢對稱 S 曲線）', () => {
+      const easeBody = extractFnBody(MODULE_SRC, 'spaceScrollEase');
+      assert.ok(easeBody, '必須有 spaceScrollEase function');
+      // eslint-disable-next-line no-new-func
+      const ease = new Function('p', 'return (' + easeBody.replace(/^\s*return\s*/, '').replace(/;\s*$/, '') + ');');
+      assert.strictEqual(ease(0), 0, 'ease(0) 必須 = 0');
+      assert.strictEqual(ease(1), 1, 'ease(1) 必須 = 1');
+      assert.strictEqual(ease(0.5), 0.5, 'ease(0.5) 必須 = 0.5（對稱中點）');
+      assert.ok(ease(0.1) < 0.1, 'ease-in 慢起步：ease(0.1) < 0.1');
     });
 
-    it('卷動目標必須 clamp 在 [0, scrollHeight - viewport]', () => {
-      const body = extractFnBody(MODULE_SRC, 'scrollToRest');
+    it('動畫時長必須 450ms（實測 Readwise ~430–450ms）', () => {
+      assert.match(MODULE_SRC, /SPACE_SCROLL_DURATION_MS\s*=\s*450\b/,
+        '動畫時長常數必須 450——forcing：時長亂改會偏離實測手感規格');
+    });
+
+    it('卷動走 rAF 平滑動畫 + clamp 落點', () => {
+      const body = extractFnBody(MODULE_SRC, 'startSpaceScrollAnim');
+      assert.ok(body, '必須有 startSpaceScrollAnim function');
+      assert.match(body, /requestAnimationFrame/,
+        '必須用 requestAnimationFrame 平滑動畫（Jimmy 要平滑、瞬移不可接受）');
+      assert.match(body, /spaceScrollEase/, '必須用 easeInOutCubic');
       assert.match(body, /Math\.max\s*\(\s*0\s*,\s*Math\.min\s*\(/,
         '目標位置必須 Math.max(0, Math.min(max, ...)) clamp——forcing：頂/底邊界 overscroll');
     });
 
-    it('已不再有 rAF 動畫機制殘留（ease / 時長常數 / cancel）', () => {
-      assert.ok(!/spaceScrollEase|SPACE_SCROLL_DURATION_MS|cancelSpaceScrollAnim|startSpaceScrollAnim/.test(MODULE_SRC),
-        'rAF 動畫機制（ease / 450ms / cancel / startSpaceScrollAnim）必須全移除，改同步瞬移');
+    it('必須有 setTimeout 落點兜底（rAF 被節流時同步補到位 + 清 animId）', () => {
+      const body = extractFnBody(MODULE_SRC, 'startSpaceScrollAnim');
+      assert.match(body, /setTimeout\s*\(/,
+        '必須有 setTimeout 兜底——forcing：rAF 在背景分頁不發 callback、動畫到不了落點、焦點往回循環（Jimmy 實機隱藏分頁實證 afterRaf=0、setTimeout 仍 fire）');
+      assert.match(body, /scroller\.scrollTop\s*=\s*to\b/,
+        '兜底必須同步設 scroller.scrollTop = to（rAF 不可靠時的唯一保證、afterSync=900）');
+      assert.match(body, /animId\s*=\s*null/,
+        '兜底必須清 animId——forcing：不清會讓被 handler guard 吞掉的後續 Space 永久卡死');
+    });
+
+    it('wheel / touchmove 必須取消進行中動畫 + 兜底（使用者手動介入優先）', () => {
+      const installBody = extractFnBody(MODULE_SRC, 'install');
+      assert.match(installBody, /addEventListener\s*\(\s*['"]wheel['"]\s*,\s*cancelSpaceScrollAnim/,
+        'install 必須掛 wheel → cancelSpaceScrollAnim');
+      assert.match(installBody, /addEventListener\s*\(\s*['"]touchmove['"]\s*,\s*cancelSpaceScrollAnim/,
+        'install 必須掛 touchmove → cancelSpaceScrollAnim');
+      const cancelBody = extractFnBody(MODULE_SRC, 'cancelSpaceScrollAnim');
+      assert.match(cancelBody, /scrollGuardTimer/,
+        'cancelSpaceScrollAnim 必須一併清兜底計時器——forcing：手動卷動後兜底仍 fire 會把使用者卷的位置覆寫回舊落點');
     });
   });
 
@@ -367,9 +397,11 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
         '必須 capture phase（第三參 true）——forcing：bubble phase 晚於頁面 capture listener、preventDefault 前事件已被原站消費');
     });
 
-    it('uninstall 必須移除指示條 + 清焦點狀態', () => {
+    it('uninstall 必須移除指示條 + 取消進行中動畫/兜底 + 清焦點狀態', () => {
       const body = extractFnBody(MODULE_SRC, 'uninstall');
       assert.ok(body, '必須有 uninstall function');
+      assert.match(body, /cancelSpaceScrollAnim\s*\(/,
+        'uninstall 必須 cancelSpaceScrollAnim——forcing：退出 reader mode 瞬間動畫/兜底殘留、繼續覆寫 scrollTop');
       assert.match(body, /barEl\.remove\s*\(/,
         'uninstall 必須移除指示條元素——forcing：退出後藍色 bar 殘留在原頁面上');
       assert.match(body, /focusedBlock\s*=\s*null/,
