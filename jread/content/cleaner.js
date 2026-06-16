@@ -4466,12 +4466,29 @@
   // **inline 廣告 / PR 推廣**插播時用它（改字色 / 加 emoji 吸睛），正文排
   // 版都改走 CSS class。udn 實測：主文段落中插入 `<font><a>🎮想成為超強
   // 飼主？玩問答遊戲拿課程金</a></font>` PR 連結，無 class / id、沒祖先
-  // section，既有 rule 全攔不到。直接 hide 主文內所有 `<font>` tag——損失
-  // 風險極低（現代主文不該有 font tag）。
+  // section，既有 rule 全攔不到。
+  //
+  // v0.8.82 修正：不可無條件 hide 所有 font——老式 table 排版的內容頁
+  // （Paul Graham essays、早期手寫 HTML / newsletter）**整篇主文就包在
+  // `<font>` 裡**，無條件 hide 會把整篇正文清光（boss.html 實證：14K 字
+  // essay font 被 hide → reader card 只剩標題）。改用結構訊號區分：
+  //   - noise font（udn PR）：text 短 or 連結密度高（基本上是 <font><a>連結
+  //     </a></font>）→ 仍 hide
+  //   - content font（PG 主文）：text 長（>= FONT_CONTENT_MIN_LEN）且連結密度
+  //     低（< FONT_CONTENT_MAX_LD）→ 保留
+  // 純結構特徵（文字量 + 連結密度），非站點特判（硬規則 3）。
+  const FONT_CONTENT_MIN_LEN = 200;
+  const FONT_CONTENT_MAX_LD = 0.5;
   function hideInsideArticleFontTags(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll('font')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const len = norm(el.textContent).length;
+      if (len >= FONT_CONTENT_MIN_LEN) {
+        let linkLen = 0;
+        for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
+        if (linkLen / len < FONT_CONTENT_MAX_LD) continue; // 長文 + 低連結密度 = 主文載體，保留
+      }
       hide(el, hidden);
     }
   }

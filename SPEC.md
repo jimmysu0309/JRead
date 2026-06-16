@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.81**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.82**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -233,7 +233,7 @@ Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold �
 1. 語意標籤：`<article>`（單一或明顯最長者；多個相近篇幅判為列表頁而降級）。多個 `<article>` 挑選前先做**視口相交過濾**（v0.8.45）：無限捲動站把「下一篇」preload 成同文件的第二個 article 且可能比本文長（thenewslens 實證），「挑最長」會選到使用者沒在看的那篇——有視口相交者只在相交者中挑；全部不相交或 rect 不可用（jsdom）退回全集合
 2. Schema.org：`[itemtype*="Article"]`、`[itemtype*="NewsArticle"]`、`[itemtype*="BlogPosting"]`
 3. OpenGraph：`meta[property="og:type"][content="article"]` 搭配啟發式（暫未實作）
-4. 內容密度啟發式（Readability-style bubble-up）：對 `<p>` / `<li>` / `<h2-4>` / `<blockquote>` / `<pre>` 算 contentScore（文字長 + 逗號數），向 parent 100% / grandparent 50% 累加；容器型元素以累積分勝出。此法避免「站體外殼因後代 p 總數多而贏過真主文容器」
+4. 內容密度啟發式（Readability-style bubble-up）：對 `<p>` / `<li>` / `<h2-4>` / `<blockquote>` / `<pre>` 算 contentScore（文字長 + 逗號數），向 parent 100% / grandparent 50% 累加；容器型元素（`DIV` / `SECTION` / `MAIN` / `ARTICLE` / `TD`）以累積分勝出。此法避免「站體外殼因後代 p 總數多而贏過真主文容器」。**`TD` 納入候選白名單（v0.8.82）**：老式 table 排版的內容頁（Paul Graham essays、早期手寫 HTML / newsletter）整篇主文放在一個 `<td>` 裡（signal `<p>` 的祖先鏈 `P → FONT → TD`），不收 TD 會讓 `candidates` 為空、整頁偵測失敗（paulgraham.com/boss.html 實證）；linkDensity penalty + textLen bonus 仍讓真內容容器勝出，資料表 / infobox 的高連結密度小 TD 不會搶贏低連結密度的長文 TD
 5. 兜底：`<main>` 本身作為主文（順序最後，避免多欄 layout 的 `<main>` 吞 sidebar）
 6. 降級：若分數低於閾值，**不啟動閱讀模式**（no-op），不硬套
 
