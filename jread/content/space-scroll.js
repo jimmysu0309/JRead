@@ -202,6 +202,11 @@
   // 但閱讀順序＝由上到下，Y 座標排序對真元素 / 虛擬段落一致適用。
   function expandBrParagraphs(blocks, root) {
     let containers = [];
+    // root 自身也可能是 br 容器：RSS reader（miniflux）/ 轉貼的 FB 貼文等把整篇
+    // 正文當 text node + <br><br> 直接掛在偵測到的主文容器上、無逐段 wrapper。
+    // querySelectorAll('*') 不含 root → 整篇正文漏收，焦點條只追得到標題 / header
+    // 小區塊、無法在正文標示閱讀進度（Jimmy 2026-06-16 reader.miniflux.app 回報）。
+    if (isBrParagraphed(root)) containers.push(root);
     for (const el of root.querySelectorAll('*')) {
       if (el.closest('[data-jread-hidden="1"]')) continue;
       if (isBrParagraphed(el)) containers.push(el);
