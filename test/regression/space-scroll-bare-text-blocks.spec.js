@@ -77,4 +77,23 @@ describe('space-scroll v0.8.11 — 焦點段落收裸文字 block（forum.gamer.
     assert.ok(/blocks\.some\(/.test(body),
       'guard 3：候選巢狀於已收 block 必須跳過');
   });
+
+  // v0.8.81 mirrormedia：WYSIWYG span-wrapped 段落（<div><span>文字</span></div>）
+  // 文字在 inline 子元素內、無直接 text node。只算 direct text node 會漏收 →
+  // Space 焦點條跳過這些段落。真實 DOM probe 實證：mirrormedia DraftStyle 段落
+  // directLen=0 / inlineLen 80-110，修法後 collectBlocks 多收 6 段中間段落。
+  it('collectBlocks 必須把 inline 子元素（span 等）內的文字一起算（span-wrapped 段落）', () => {
+    assert.ok(/const\s+INLINE_TEXT_TAGS\s*=\s*new Set\(/.test(MODULE_SRC),
+      'space-scroll.js 必須定義 INLINE_TEXT_TAGS 集（WYSIWYG inline 文字載體）');
+    assert.ok(/INLINE_TEXT_TAGS\.has\(/.test(MODULE_SRC),
+      'INLINE_TEXT_TAGS 必須被使用');
+    const body = extractFnBody(MODULE_SRC, 'collectBlocks');
+    // directLen 累計必須同時涵蓋 text node 與 inline 子元素文字
+    assert.ok(/INLINE_TEXT_TAGS\.has\(\s*n\.tagName\s*\)/.test(body),
+      'collectBlocks 的 directLen 累計必須把 INLINE_TEXT_TAGS 子元素的文字算進去');
+    // SPAN 必須在集內（DraftStyle / Lexical 段落最常見的 inline 包裹）
+    const setM = MODULE_SRC.match(/const\s+INLINE_TEXT_TAGS\s*=\s*new Set\(\[([^\]]*)\]/);
+    assert.ok(setM && /'SPAN'/.test(setM[1]),
+      'INLINE_TEXT_TAGS 必須含 SPAN');
+  });
 });

@@ -76,6 +76,13 @@
   // 裸文字 block 焦點單位的最小直接文字長度——短標題 / 短句（如「一：上半部分大部分解」
   // 10 字）也算段落，但濾掉 wrapper 偶含的零星標籤字
   const MIN_TEXT_BLOCK = 4;
+  // v0.8.81：行內 tag 集——計算 block 的「段落文字量」時，把包在這些 inline
+  // 子元素內的文字一起算。WYSIWYG 編輯器（Draft.js / Lexical 等）把段落文字
+  // 包成 <div><span>文字</span></div>，div 無直接 text node，只算 direct text
+  // node 會漏收 → Space 焦點條跳過這些段落（Jimmy 2026-06-16 mirrormedia 回報）。
+  // 與 styler markTextDivs 的 INLINE_TAGS 同款（兩處都在判「div 是不是段落」，
+  // 平行邏輯——改一處時另一處一起檢視）。BR 不列入（無文字、且常用於排版斷行）。
+  const INLINE_TEXT_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR', 'FONT', 'Q', 'CITE', 'BDI', 'BDO']);
 
   // 多圖容器（圖庫）判定：含 >= 2 張內容圖、且圖說以外幾乎沒有正文。
   // Jimmy 2026-06-05 訂正：照片以每張為單位——圖庫容器讓位給個別圖片；
@@ -127,8 +134,15 @@
     const textCandidates = [];
     for (const el of root.querySelectorAll('div, font, section, td')) {
       if (el.closest('[data-jread-hidden="1"]')) continue;
+      // 段落文字量 = 直接 text node + inline 子元素（span/a/…）內的文字。
+      // 只算 inline 子（block 子不算）確保 wrapper（子為 block div 的容器）
+      // directLen 仍為 0、不誤收；leaf-most 段落（子為 span 的 DraftStyle block）
+      // 才被收（v0.8.81 mirrormedia span-wrapped 段落修法，同 markTextDivs）。
       let directLen = 0;
-      for (const n of el.childNodes) if (n.nodeType === 3) directLen += n.textContent.trim().length;
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3) directLen += n.textContent.trim().length;
+        else if (n.nodeType === 1 && INLINE_TEXT_TAGS.has(n.tagName)) directLen += n.textContent.trim().length;
+      }
       if (directLen < MIN_TEXT_BLOCK) continue;
       const disp = (el.ownerDocument.defaultView || window).getComputedStyle(el).display;
       if (!/^(block|list-item|table-cell|flow-root|table)$/.test(disp)) continue;
