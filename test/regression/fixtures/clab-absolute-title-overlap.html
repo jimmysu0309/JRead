@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<!--
+  最小重現：mag.clab.org.tw（WordPress）hero banner 用「父 position:relative
+  預留高度 + 子 position:absolute 把標題置中疊在 hero 背景圖上」的 layout。
+
+  Jimmy 2026-06-16 回報 https://mag.clab.org.tw/clabo-article/about-commuteforme-podcast/
+  「Hero image 消失，標題和內文打架」。
+
+  真實 DOM 結構（probe-clab*.js dump）：
+    <div class="inner mpsrel">                               <-- articleEl
+      <div class="art-banner" style="position:relative;height:640px">
+        <div class="bgcover" style="background-image:url(hero.jpg)"></div>  <-- 純 CSS 背景 hero
+        <div class="bgcolor" style="position:absolute;top:0">  <-- 含 h1 的 title overlay
+          <div class="flex-txt"><h1>標題</h1></div>
+        </div>
+      </div>
+      <p>第一段內文…</p>
+    </div>
+
+  bug 機制：
+   1. styler 後代 background strip 把 .bgcover 的 background-image 清成 none
+      → empty-wrapper collapse 把空的 bgcover hide（hero 消失，CSS 背景圖
+      非 <img> 內容、JRead 設計上不還原——Jimmy 2026-06-16 確認維持現狀）。
+   2. ancestor reset 把 art-banner 預留的 640px 高度打成 auto；art-banner 內
+      唯一 in-flow 內容 bgcolor 是 absolute → art-banner 塌成 height:0。
+   3. hideInsideArticleAbsoluteOverlays 的 h1-guard 保留 bgcolor（含 h1），
+      但 v0.8.86 以前留它 position:absolute → 脫離 flow、不佔垂直空間，
+      第一段內文 flow 上來與標題重疊（實機量到 -60px）。
+
+  v0.8.87 修法：h1-guard 保留 wrapper 時，若它是 absolute/fixed，強制
+  position:static（可逆），讓標題回歸 normal flow、撐起塌掉的 banner 父、
+  內文 flow 到標題下方。本 fixture 是該行為的 forcing function。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta property="og:title" content="關於我們這些異男，你不知道的臺灣通勤第一品牌">
+  <title>關於我們這些異男，你不知道的臺灣通勤第一品牌</title>
+</head>
+<body>
+  <div class="container">
+    <div class="inner mpsrel" data-test="article-root">
+      <!-- ====== Hero banner：relative 父預留高度 + absolute 子置中標題 ====== -->
+      <div class="art-banner" style="position: relative; height: 640px;" data-test="art-banner">
+        <!-- 純 CSS 背景 hero（無 <img>），styler strip 後被 collapse hide -->
+        <div class="bgcover"
+             style="background-image: url(https://example.com/hero.jpg);"
+             data-test="bgcover"></div>
+        <!-- 含 h1 的 absolute title overlay（核心保護 + reflow 點）-->
+        <div class="bgcolor"
+             style="position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: center; align-items: center;"
+             data-test="absolute-h1-wrapper">
+          <div class="flex-txt">
+            <h1 data-test="hero-h1">關於我們這些異男，你不知道的臺灣通勤第一品牌</h1>
+          </div>
+        </div>
+      </div>
+
+      <p data-test="body-p-1">「異男」也被稱為「直男」，可以說是地球上最多的「人類物種」，從生物學的角度來看，異性戀男性是繁衍後代的主力，但在當代社會的語境裡，「異男」這個詞卻越來越常帶著一絲調侃的意味，本篇專訪臺灣通勤第一品牌的兩位主持人，聊聊他們眼中的異男樣貌。</p>
+      <p data-test="body-p-2">兩個月跳升台灣 Podcast Top 3，從開便當店到當起主持人，臺通到底紅在哪裡？這篇文章帶你一探究竟。</p>
+    </div>
+  </div>
+</body>
+</html>

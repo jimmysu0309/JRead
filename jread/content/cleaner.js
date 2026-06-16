@@ -2731,6 +2731,7 @@
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
+    const titleOverlayResets = [];
     const seenParents = new Set();
     for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
@@ -2766,7 +2767,33 @@
       // （site banner h1 overlay 殘留）遠低於誤殺成本（主標題消失）。
       // 不擴及 h2-h6：section heading 包在 absolute wrapper 罕見也通常無
       // semantic 主文意義，保留現有 hide 行為。
-      if (el.querySelector && el.querySelector('h1')) continue;
+      //
+      // v0.8.87：h1-guard 保留 wrapper 但不能讓它停在 position:absolute——
+      // absolute 的 title overlay 脫離正常 flow、不佔垂直空間，緊接其後的
+      // 內文段落會 flow 上來與標題重疊。mag.clab.org.tw 實機：
+      //   <div.art-banner position:relative height:0>   ← reader 下塌成 0
+      //     <div.bgcolor position:absolute top:0>        ← 標題 overlay
+      //       <div.flex-txt><h1>標題</h1></div>
+      // art-banner 內唯一 in-flow 內容（bgcolor）是 absolute → 父高度 0、
+      // 標題浮在頂端、第一段內文 top 比標題 bottom 還高 60px（重疊）。
+      // 通則：含 h1 的 title overlay 在 reader mode 應回歸 normal flow
+      //（flow > overlay，與本函式整體原則一致）——強制 position:static 讓
+      // 標題佔回垂直空間、撐起塌掉的 hero banner 父、內文 flow 到標題下方。
+      // 可逆：snapshot inline → 退出 reader mode 還原。
+      if (el.querySelector && el.querySelector('h1')) {
+        const cur = cs.position;
+        if (cur === 'absolute' || cur === 'fixed') {
+          titleOverlayResets.push({
+            el,
+            prev: snapshotStyles(el, ['position', 'top', 'left', 'right', 'bottom'])
+          });
+          applyImportant(el, {
+            'position': 'static',
+            'top': 'auto', 'left': 'auto', 'right': 'auto', 'bottom': 'auto'
+          });
+        }
+        continue;
+      }
       // v0.7.170 guard：含 picture / img / video 後代 → 視為「aspect-ratio
       // 媒體 wrapper」（lazy-load padding-bottom hack + 內層 absolute container
       // 包 picture 是跨 CMS 通用 pattern）。CNBC InlineImage 實機:
@@ -2848,6 +2875,7 @@
       }
     }
     addStyleResets(hidden, parentHeightResets);
+    addStyleResets(hidden, titleOverlayResets);
   }
 
   // ---- 主文內：negative z-index 後代 reset -------------------------------
