@@ -87,6 +87,15 @@
     { t: 'advertisement' }, { t: 'advert' }, { t: 'adbox' }, { t: 'adsense' }, { t: 'adslot' },
     { t: 'adhesion' }, { t: 'metered' }, { t: 'interstitial' }, { t: 'takeover' },
     { t: 'sponsored' }, { t: 'sponsor' }, { t: 'donation' }, { t: 'donate' },
+    // v0.8.88 mirrormedia 實測：文末「支持鏡週刊／小額贊助／贊助本文／每期 $35
+    // 元」募款 banner，wrapper class `support-mirrormedia-banner__Container`。
+    // bare `donate` token 只命中內部 `donate-link` anchor（被個別 hide）、整塊
+    // banner 容器（含「支持鏡週刊」標題 + 募款描述 p）因容器 class 無 noise
+    // token 而殘留。「support/donate/membership … banner」是募款／會員制媒體跨站
+    // 慣例命名（Guardian「Support the Guardian」/ Wikipedia「Support Wikipedia」
+    // 同型），主文 wrapper 絕不會這樣命名；中間 `{0,2}` 容許品牌名 / 描述詞 infix
+    //（support-mirrormedia-banner），不綁站點。
+    { t: '(?:support|donate|donation|membership|pledge|patreon|contribut\\w*)[-_](?:[a-z]+[-_]){0,2}banner' },
     { t: 'call-to-action' }, { t: 'cta' }, { t: 'callout' },
     { t: 'related[-_]?(?:articles?|news|posts|stories|content)', strong: true },
     // v0.8.44 eettaiwan 實測：CMS 也用名詞在前的反序命名（`post-related` /
@@ -251,7 +260,7 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -289,7 +298,12 @@
   // 領取優惠」訂閱促銷行——「首次訂閱 / 訂閱…只要$N / 原價…優惠」是訂閱制
   // 媒體跨站促銷句式，主文段落不會這樣寫。「早鳥優惠」同型（cage 重驗時
   // cw 換檔成「AI 時代下…提升競爭力？早鳥優惠」課程促銷行，同位置同結構）。
-  const CTA_PROMO_P_RE = /(加入.{0,15}會員|訂閱.{0,15}電子報|下載.{0,8}(APP|app)|現在用\s*APP|用\s*APP\s*看|天天中獎|保證.{0,6}中獎|首次訂閱|訂閱.{0,12}(只要|優惠)|原價.{0,12}優惠|早鳥(優惠|價|票|方案|報名)|download\s+(the\s+)?app|get\s+the\s+app|install\s+(the\s+)?app)/i;
+  // v0.8.88 mirrormedia 實測：文末主文內「按讚加入《鏡文化》臉書粉絲專頁，
+  // 關注最新貼文動態！」社群追蹤 CTA 段落（Draft.js block div，內嵌 facebook
+  // fan page anchor）。anchor 文字「臉書粉絲專頁」命中 NOISE_LINK_TEXT_RE 但占
+  // parent 文字 < 80%，需 CTA_PROMO_P_RE 升級 hide 整段。「按讚加入…粉絲專頁」
+  //「關注…貼文/動態」是社群追蹤 CTA 跨站句式，主文敘述段落不會這樣寫。
+  const CTA_PROMO_P_RE = /(加入.{0,15}會員|訂閱.{0,15}電子報|下載.{0,8}(APP|app)|現在用\s*APP|用\s*APP\s*看|天天中獎|保證.{0,6}中獎|首次訂閱|訂閱.{0,12}(只要|優惠)|原價.{0,12}優惠|早鳥(優惠|價|票|方案|報名)|按讚加入|加入.{0,12}粉絲(專頁|團)|關注.{0,8}(最新)?(貼文|動態)|download\s+(the\s+)?app|get\s+the\s+app|install\s+(the\s+)?app)/i;
 
   // v0.7.109：byline 文字 pattern——hideInsideArticleSidebarColumns
   // 條件 A（textLen < main × 10% + linkDensity > 0.5）會誤殺短篇 byline
