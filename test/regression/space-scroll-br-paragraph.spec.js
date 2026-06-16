@@ -1,7 +1,12 @@
-// JRead — 焦點段落切 <br><br> 分段（v0.8.83 paulgraham.com/boss.html）
+// JRead — 焦點段落切 <br><br> 分段（v0.8.83 paulgraham.com/boss.html；
+//          v0.8.93 擴充：root 自身為 br 容器，reader.miniflux.app）
 //
 // Bug（Jimmy 2026-06-16 回報）：boss.html 進閱讀模式後，閱讀進度指示條把整篇
 // 內文視為一段（Space 無法逐段定位）。
+// 同類 Bug（Jimmy 2026-06-16 reader.miniflux.app 回報）：RSS reader / 轉貼 FB 貼文
+// 把整篇正文當 text node + <br><br> 直接掛在偵測到的 <article> 上、無逐段 wrapper，
+// 焦點條只追得到標題、無法在正文標示閱讀進度——br 容器就是 root 自身，被
+// expandBrParagraphs 的 querySelectorAll('*') 漏掉（querySelectorAll 不含 root）。
 //
 // 根因（real DOM probe 實證）：老式 table 排版內容頁整篇主文是「一個 <p>/<font>
 // 內用 <br><br> 分段」、沒有逐段 <p>，collectBlocks 的 BLOCK_SEL 與裸文字 block
@@ -75,6 +80,19 @@ describe('space-scroll v0.8.83 — <br><br> 分段焦點單位（paulgraham）',
     const body = extractFnBody(SRC, 'makeBrUnit');
     assert.ok(body && /brUnitCache\.get\(startNode\)/.test(body) && /brUnitCache\.set\(startNode/.test(body),
       'makeBrUnit 必須以 startNode 查 / 存快取（advance 的 indexOf 靠穩定參照）');
+  });
+
+  it('expandBrParagraphs 把 root 自身也納入 br 容器候選（RSS reader：正文 text node + <br> 直掛主文容器）', () => {
+    // v0.8.93（Jimmy 2026-06-16 reader.miniflux.app 回報）：miniflux / 轉貼 FB 貼文
+    // 把整篇正文當 text node + <br><br> 直接掛在偵測到的 <article> 上、無逐段 wrapper。
+    // querySelectorAll('*') 不含 root → 整篇正文漏收，焦點條只追得到標題。
+    // probe 實證（真實 miniflux 頁）：root 直接 br=14、修法後正文切出 7 段。
+    const body = extractFnBody(SRC, 'expandBrParagraphs');
+    assert.ok(body, '必須有 expandBrParagraphs');
+    assert.ok(/isBrParagraphed\(root\)/.test(body),
+      'expandBrParagraphs 必須對 root 自身跑 isBrParagraphed（querySelectorAll(\'*\') 不含 root，否則 br 直掛 root 的正文整篇漏收）');
+    assert.ok(/containers\.push\(root\)/.test(body),
+      'root 命中 isBrParagraphed 時必須 push 進 containers');
   });
 
   it('expandBrParagraphs 接進 collectBlocks 出口、取最外層 br 容器、丟外層 wrapper', () => {
