@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!--
+  washingtonpost Opinion 區 lightbulb badge 撐版面最小重現（v0.8.90）。
+  裸 img（非 a 包）原站 HTML width=160 / CSS 顯示 56px / 大來源圖 natural 1200。
+  reader mode 的 img:not(a>img){ width:auto } 退回 naturalWidth 撐成滿版巨圖
+  佔滿標題上方。各 img 的 natural / rect 由 spec stub（jsdom 不算 layout）。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <img id="downscaled-icon" class="section-badge" width="160" height="160" src="badge.png" alt="">
+    <a href="/opinion">Opinion</a>
+    <h1>Why Europe won’t have the new Siri</h1>
+    <p>The Digital Markets Act was supposed to create more choices. Instead, people get worse technology in every corner of the European market.</p>
+    <img id="content-photo" src="hero.jpg" alt="hero">
+    <p>In the name of fairness and competition, Europe has written laws that leave its citizens as the only people in the free world without access.</p>
+    <img id="genuine-small" src="small.png" alt="">
+    <a href="/lightbox"><img id="linked-icon" src="linked.png" alt=""></a>
+  </article>
+</body>
+</html>
