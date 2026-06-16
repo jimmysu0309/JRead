@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+  kknews.cc 圖片全部消失 regression fixture（v0.8.89）
+  ---------------------------------------------------------------------------
+  根因兩層：
+  1) cleaner hydration miss：站點 lazy library 用「帶 hash 後綴的 spacer gif」
+     當 placeholder（//a.kknews.cc/blank-ad4b0f60.gif），真圖在 data-src。
+     舊 SPACER_SRC_RE 要求 spacer token 緊接 .gif、被中間的 -ad4b0f60 擋掉 →
+     hydrateLazyImages 認不出未 hydrate、真圖永遠補不上。
+  2) styler 誤分類 + width 凍結：apply() 當下 lazy 圖 naturalWidth=1（blank gif），
+     被當 inline emoji 標記；且站點 cross-origin sheet 凍 width:1px、原本 media
+     規則只設 max-width:100% 蓋不掉 → 內容圖縮成 1×1 視覺消失。
+-->
+<html lang="zh-TW">
+<head><meta charset="utf-8"><title>有生之年我愛的樂隊能重組嗎？</title></head>
+<body>
+  <header><nav>站台導覽</nav></header>
+  <article id="post" class="post type-post status-publish">
+    <h1>有生之年我愛的樂隊能重組嗎？</h1>
+    <p>雖然對他們來說整個過程毫無波瀾，但消息一公布，在樂迷中仿佛掀起了驚濤駭浪，樂隊誕生十周年之際 Joyside 回來了。Joyside 出其不意，達達也繼而投下炸彈，即將重組出演音樂節。不少朋友趁此機會許願熱愛的樂隊重組。</p>
+    <!-- hash 後綴 spacer placeholder + data-src 真圖（below-fold lazy 內容圖） -->
+    <span class="sizer">
+      <img id="lazy-hash-spacer"
+           src="//a.kknews.cc/blank-ad4b0f60.gif"
+           data-src="https://i1.kknews.cc/Wlh50bt3r3mm0pb9Z8Frx7YqmpT69wkvfA/0.jpg"
+           width="640" height="640">
+    </span>
+    <p>其實是先聽到張震岳改編的版本後，才知道的原曲。怎麼說呢，80 年代的齊秦怎麼都好。八年前我大一剛進美院的時候在豆瓣搜杭州樂隊，在美院看到了他們，是當年的校園偶像。</p>
+    <span class="sizer">
+      <img id="lazy-hash-spacer-2"
+           src="//a.kknews.cc/blank-ad4b0f60.gif"
+           data-src="https://i2.kknews.cc/Eu6xGVJwSs2IRW5EqblJ_p46U_qkbolxVA/0.jpg"
+           width="600" height="440">
+    </span>
+    <p>第一次聽到是在他們練團室隔壁練團，Solo 的時候覺得天啊這 Solo 也太好聽了吧！而且他們的歌詞很有畫面感。想看看經歷過更豐富的人生經歷後，他們重新開始寫歌會選擇一些什麼樣的命題和表達方式。</p>
+  </article>
+  <footer><p>頁尾版權</p></footer>
+</body>
+</html>
