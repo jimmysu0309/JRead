@@ -67,3 +67,29 @@ describe('detector/cleaner — 老式 table 排版內容頁（v0.8.82 paulgraham
     assert.ok(isHidden(prFont), 'PR noise font（<font><a>連結</a></font>）必須仍被 hide');
   });
 });
+
+// styler — <font> 進 BODY_TEXT_SEL，font-size 尊重設定（v0.8.83）
+// Bug：boss.html essay 包在 <font size="2"> 裡，`size` 是 HTML4 呈現屬性、把
+// font-size 重設成固定 13px、截斷從 <p> 繼承的使用者字級（fontSize=24 下 p=24px
+// 但 font 仍 13px）。修法：font 加進 BODY_TEXT_SEL，強制套使用者字級。
+describe('styler — font 進 BODY_TEXT_SEL（v0.8.83 paulgraham font-size）', () => {
+  it('非預設 fontSize 時，注入的 CSS 必須以 <font> 為 body text selector', () => {
+    const env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_PATH,
+      scripts: ['detector', 'styler'],
+      pretendToBeVisual: true
+    });
+    const detected = env.NS.detector.detect();
+    assert.ok(detected && detected.el, 'detector 應命中 fixture 主文');
+    env.NS.styler.apply(detected.el, {
+      theme: 'light', fontSize: 24, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 1.7, paragraphSpacing: 1.0
+    });
+    const css = env.document.getElementById('__jread-style').textContent;
+    assert.ok(css.includes('[data-jread-active="1"] font'),
+      'BODY_TEXT_SEL 必須含 [data-jread-active="1"] font（否則 <font size> 字級不尊重設定）');
+    // 該 selector 必須落在含 font-size: 24px 的規則段
+    assert.ok(/font[\s\S]{0,400}font-size:\s*24px\s*!important/.test(css),
+      'font selector 必須套上使用者 font-size: 24px');
+  });
+});

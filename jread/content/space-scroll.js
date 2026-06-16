@@ -100,6 +100,123 @@
     return textLen < 100;
   }
 
+  // ---- br 分段虛擬焦點單位（v0.8.83）----------------------------------------
+  // 老式 table 排版內容頁（Paul Graham essays / 早期手寫 HTML / newsletter）整篇
+  // 主文是「一個 <p>/<font> 內用 <br><br> 分段」、沒有逐段 <p>，BLOCK_SEL 與裸
+  // 文字 block 都只收到單一 block → Space 焦點條把全文視為一段（Jimmy 2026-06-16
+  // 回報 boss.html）。把「br-paragraphed」block 就地展開成「每段一個虛擬焦點
+  // 單位」：以 Range 量段落 rect（不動 DOM、不需 restore、不影響 styler/cleaner/
+  // Readwise export）。虛擬單位以段落起始 text node 為 key 快取，跨 collectBlocks
+  // 呼叫維持同一物件參照——advance() 的 blocks.indexOf(focusedBlock) 才找得到、
+  // 焦點才能連續推進（每次重建 Range 物件會讓 indexOf 失效、Space 永遠跳回首段）。
+  const BR_PARA_MIN_BR = 3;          // 至少 3 個 <br> 才視為 br 分段（排除單一換行）
+  const BR_PARA_MIN_RUN_TEXT = 12;   // 每段最少文字（跳過 br 間空白 / 短碎片）
+  const BR_PARA_SKIP_SEL = 'pre, figure, table, ul, ol';  // 程式碼 / 圖 / 表 / 列表不切
+  const brUnitCache = new WeakMap(); // startNode → 虛擬焦點單位（穩定參照）
+
+  // br 容器判定：用「直接 <br> 子數」（非後代 querySelectorAll('br')）。直接子
+  // 計數天然只命中「實際裝 br 分段文字的那一層」——boss/todo 都是 <font>（brs
+  // 是 font 的直接子）；外層 <p> / root <td> 的直接 br 子數低（boss <p> 直接子
+  // 只有 font；todo <td> 直接 br 只有 2）自然被排除，免去 querySelectorAll('br')
+  // 把後代 br 往上冒泡誤判祖先容器的問題。內嵌 block 子（blockquote / figure，
+  // 如 PG todo「Don't ignore your dreams」blockquote）不影響判定——它自己仍由
+  // BLOCK_SEL 收成獨立單位、splitBrRuns 把它當段落邊界跳過。
+  function brDirectChildCount(el) {
+    let n = 0;
+    for (const c of el.childNodes) if (c.nodeType === 1 && c.tagName === 'BR') n++;
+    return n;
+  }
+  function isBrParagraphed(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.matches && el.matches(BR_PARA_SKIP_SEL)) return false;
+    return brDirectChildCount(el) >= BR_PARA_MIN_BR;
+  }
+
+  function makeBrUnit(startNode, range) {
+    let unit = brUnitCache.get(startNode);
+    if (!unit) {
+      unit = {
+        __jreadBrUnit: true,
+        startNode,
+        range,
+        getBoundingClientRect() { return this.range.getBoundingClientRect(); },
+        get isConnected() { return !!(this.startNode && this.startNode.isConnected); }
+      };
+      brUnitCache.set(startNode, unit);
+    } else {
+      unit.range = range;   // 同一 startNode、刷新 range（rect 即時重算）
+    }
+    return unit;
+  }
+
+  // 把 br 容器切成「每段一虛擬單位」：手動走訪子樹，以 <br>（連續視為單一邊界）
+  // 與子 BLOCK_SEL（blockquote / figure 等內嵌 block）為段落邊界；inline 子
+  // （a / i / font / span…）下探、文字計入當段；子 BLOCK_SEL 整顆跳過（它自己
+  // 是獨立焦點單位）。每段以首/尾 text node 建 Range（虛擬單位、不動 DOM）。
+  function splitBrRuns(container) {
+    const doc = container.ownerDocument;
+    const units = [];
+    let runStart = null, runEnd = null, runText = '';
+    const flush = () => {
+      if (runStart && runText.trim().length >= BR_PARA_MIN_RUN_TEXT) {
+        const range = doc.createRange();
+        range.setStartBefore(runStart);
+        range.setEndAfter(runEnd);
+        if (range.getBoundingClientRect().height >= 4) units.push(makeBrUnit(runStart, range));
+      }
+      runStart = runEnd = null; runText = '';
+    };
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3) {                       // text node
+          if (!child.textContent.trim() && !runStart) continue;
+          if (!runStart) runStart = child;
+          runEnd = child; runText += child.textContent;
+        } else if (child.nodeType === 1) {
+          if (child.tagName === 'BR') flush();
+          else if (child.matches && child.matches(BLOCK_SEL)) flush();  // 內嵌 block = 邊界、跳子樹
+          else if (INLINE_TEXT_TAGS.has(child.tagName)) walk(child);    // inline 下探收文字
+          // 其他（img / hr 等）忽略，不計入文字段
+        }
+      }
+    };
+    walk(container);
+    flush();
+    return units;
+  }
+
+  // 把 article 內的 br 容器（老式 <br><br> 分段、無逐段 <p>）切成「每段一虛擬
+  // 單位」、取代外層包住容器的舊 block。容器可能是 block 級也可能是 inline
+  // <font>（todo.html 的 font 直接掛 <td>、預設 display:inline、被裸文字 block 的
+  // display:block 濾掉）——故直接掃全 DOM 找 br 容器、不靠 blocks 先收到。巢狀
+  // 容器（祖先也是 br 容器）只取最外層、避免重複切。kept 只丟「包住容器」的舊
+  // block（boss 外層 <p> 含 font → 丟，否則變成 <p> 整段 + 45 runs 重複）；
+  // 「被容器包住」的舊 block（todo 的內嵌 blockquote）保留成獨立單位。最終以
+  // getBoundingClientRect().top（文件 Y）排序：虛擬單位無 compareDocumentPosition，
+  // 但閱讀順序＝由上到下，Y 座標排序對真元素 / 虛擬段落一致適用。
+  function expandBrParagraphs(blocks, root) {
+    let containers = [];
+    for (const el of root.querySelectorAll('*')) {
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      if (isBrParagraphed(el)) containers.push(el);
+    }
+    // 巢狀去重：只留最外層 br 容器（被其他容器包住的不獨立切）
+    containers = containers.filter((c) => !containers.some((o) => o !== c && o.contains(c)));
+    if (!containers.length) return blocks;
+    // 丟掉「包住任一 br 容器」的舊 block（外層 wrapper）；其餘（標題圖、容器內
+    // 嵌 blockquote / figure 等）保留
+    const kept = blocks.filter((b) =>
+      !(b.nodeType === 1 && containers.some((c) => b === c || b.contains(c)))
+    );
+    const out = kept.slice();
+    for (const c of containers) {
+      const runs = splitBrRuns(c);
+      for (const u of runs) out.push(u);
+    }
+    out.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    return out;
+  }
+
   // v0.8.40：root 參數讓 position-memory（閱讀位置記憶）共用同一份段落收集
   // 規則（單一資料源——li 單位 / 圖庫拆圖 / 裸文字 block 等規則不雙實作）。
   // 不傳 root 時用模組自己的 articleEl（既有呼叫端行為不變）。
@@ -174,7 +291,8 @@
     blocks.sort((a, b) =>
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1
     );
-    return blocks;
+    // br 容器（老式 <br><br> 分段、無逐段 <p>）展開成段落虛擬單位
+    return expandBrParagraphs(blocks, root);
   }
 
   function ensureBar() {
@@ -297,6 +415,12 @@
         return;
       }
       el = el.parentElement;
+    }
+    // 元素歸屬找不到——br 段落是虛擬單位（非真元素），改用點擊 Y 命中段落 rect
+    for (const b of blocks) {
+      if (!b.__jreadBrUnit) continue;
+      const r = b.getBoundingClientRect();
+      if (e.clientY >= r.top && e.clientY <= r.bottom) { setFocus(b); return; }
     }
   }
 
