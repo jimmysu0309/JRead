@@ -830,13 +830,27 @@ ${MEDIA_CAP_SEL} {
   height: auto !important;
   min-height: 0 !important;
 }
-/* placeholder 內部 wrapper 一併拉回 static flow：padding-bottom hack 的配套
-   結構是「placeholder position:relative + 子層 position:absolute 填滿 padding
-   區域」。styler 已把 img/video 強制 static（line ~303），但 img 與 placeholder
-   之間若有中間 wrapper div 仍保持 absolute，該 div 不佔 flow 高度→文字疊在
-   圖片上（CNBC DIV.imageContainer 結構實測）。清 padding hack 時一併清所有
-   後代的 absolute positioning，讓圖片容器自然撐高度。 */
-[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]) * {
+/* placeholder / ratio / object-fit 內部 wrapper 一併拉回 static flow：
+   padding-bottom hack 的配套結構是「容器 position:relative（或 aspect-ratio
+   撐高）+ 子層 position:absolute inset:0 填滿」。styler 已把 img/video 強制
+   static（line ~303），但 img 與容器之間若有中間 wrapper div 仍保持 absolute，
+   該 div 不佔 flow 高度→文字疊在圖片上（CNBC DIV.imageContainer 結構實測）。
+   清 padding hack / aspect-ratio 時一併清所有後代的 absolute positioning，讓
+   圖片容器自然撐高度。
+   v0.8.94：選擇器補 [class*="ratio"] / [class*="object-fit"]，與上方 aspect-
+   ratio/height reset 的容器集合對齊（原本只 placeholder 有配套 static-flow，
+   ratio/object-fit 漏網）。根因實證：New Yorker（Condé Nast）hero 用
+   DIV.AspectRatioContainer（CSS aspect-ratio 撐高）> SPAN > DIV.aspect-ratio
+   --overlay-container（position:absolute inset:0 + overflow:hidden）> picture
+   > img。上方 reset 把 AspectRatioContainer 的 aspect-ratio 清成 auto → 容器
+   失去高度來源；但 overlay 仍是 absolute（class 是 ratio 不是 placeholder、
+   漏掉 static-flow 配套）→ 不佔 flow 高度 → 容器塌成 0 → overlay inset:0 隨之
+   0 高 + overflow:hidden 把 166px picture 整個裁掉 → hero 整張不見（Jimmy
+   2026-06-16 截圖回報）。把 ratio 容器後代拉回 static，overlay 正常 flow、
+   height:auto 撐到 picture 實際高度，hero 重新顯示。 */
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]) *,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]:not([${PLAYER_ATTR}="1"]) *,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i]:not([${PLAYER_ATTR}="1"]) * {
   position: static !important;
   top: auto !important;
   left: auto !important;
