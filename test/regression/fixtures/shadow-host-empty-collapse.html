@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shadow-host empty-collapse guard</title>
+  <meta property="og:title" content="Shadow Host Collapse Guard">
+</head>
+<body>
+  <!-- v0.8.79 MDN 實測衍生：reader card 內 <mdn-code-example>（程式碼在 shadow DOM）
+       被 collapseEmptyWrappersAfterClean 當空殼 collapse——light DOM 的 innerText /
+       querySelector('img') 看不到 shadow 內容 → 誤判 empty wrapper。
+       <mdn-code-example> 不在 CONTAINER_SEL，故 spacer / sidebar / keyword rule 不碰它，
+       只有 collapse（遍歷全元素）會 hit——本 fixture 隔離 collapse 路徑做 forcing。
+       修法：collapseEmptyWrappersAfterClean / collapseEmptyBlockSpacers 跳過 shadowRoot host。 -->
+  <article id="story">
+    <h1 id="title">Shadow Host Collapse Guard</h1>
+    <p id="prose">A long descriptive paragraph that exceeds one hundred characters so the detector reliably anchors on this article element and runs the cleaner over its descendants, including the shadow host element below.</p>
+    <mdn-code-example id="code-host" class="brush: js"></mdn-code-example>
+    <p id="prose2">Another body paragraph after the code example to keep the article structure realistic and ensure the cleaner has substantial prose to keep.</p>
+  </article>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Array.prototype.at() - JavaScript | MDN</title>
+  <meta property="og:title" content="Array.prototype.at()">
+</head>
+<body>
+  <!-- v0.8.79 MDN 實測 repro：developer.mozilla.org/.../Array/at 進閱讀模式後
+       Examples 的程式碼範例（<mdn-code-example> web component，<pre> 在 shadow DOM）
+       + Specifications / Browser compatibility 表格整段消失。
+       Probe 確認三條 rule 共同誤殺（narrowPromotedSiblings / hideInsideArticleEmptySpacers
+       / hideInsideArticleSidebarColumns）：這些 section 無 <p>、內容在 shadow DOM /
+       custom element / table，既有「有長 p / media / h1」白名單全 miss → 當 chrome 砍。
+       修法：共用 helper hasCodeOrDataTableContent 放行含程式碼塊（light <pre> 或
+       tag 含 CODE/TABLE 的 web component）/ 資料表（>= 2 tr）的 section。
+       本 fixture 結構：detector 落在最長 prose 的 Description、promote 到 #root，
+       narrow 從 promotedFrom 沿祖先鏈砍兄弟 section——code/table section 須保留、
+       See also（純連結列）+ sidebar（nav 連結）須仍 hide。 -->
+  <main class="layout__content"><div class="layout__body" id="root">
+    <h1 id="title">Array.prototype.at()</h1>
+
+    <!-- Description：最長 prose，detector 落點 + promotedFrom 來源 -->
+    <section class="content-section" id="sec-description">
+      <h2>Description</h2>
+      <p id="desc-p">The at() method is equivalent to the bracket notation when index is a non-negative integer. For example, both array[0] and array.at(0) return the first item, and array[array.length - 1] and array.at(-1) return the last item. This long descriptive paragraph exceeds one hundred characters so the detector anchors on this section and promotes up to the article root, making the sibling sections candidates for narrowing.</p>
+      <p id="desc-p2">When counting elements from the end of the array with a negative index, you cannot use array[-1] like you may in Python or R, because all values inside the square brackets are treated literally as string properties, so you end up reading array["-1"], which is just a normal string property instead of an array index.</p>
+    </section>
+
+    <!-- Syntax：<mdn-code-example>（程式碼在 shadow DOM）+ 無 <p> → 須由 code guard 保留 -->
+    <section class="content-section" id="sec-syntax">
+      <h2>Syntax</h2>
+      <mdn-code-example class="brush: js" id="syntax-code"></mdn-code-example>
+    </section>
+
+    <!-- Examples：light-DOM <pre> + 短 prose → 須由 code guard 保留 -->
+    <section class="content-section" id="sec-example">
+      <h3>Return the last value of an array</h3>
+      <pre id="example-pre">const cart = ['apple', 'banana', 'pear'];
+console.log(cart.at(-1)); // 'pear'</pre>
+    </section>
+
+    <!-- Specifications：資料 <table>（>= 2 tr）→ 須由 table guard 保留 -->
+    <section class="content-section" id="sec-spec">
+      <h2>Specifications</h2>
+      <table id="spec-table">
+        <tbody>
+          <tr><th>Specification</th></tr>
+          <tr><td>ECMAScript Language Specification</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Browser compatibility：<mdn-compat-table-lazy>（lazy 表格 web component）
+         → 須由 code/table guard 保留（tag 名含 TABLE） -->
+    <section class="content-section" id="sec-compat">
+      <h2>Browser compatibility</h2>
+      <mdn-compat-table-lazy id="compat-widget"></mdn-compat-table-lazy>
+    </section>
+
+    <!-- See also：純連結列、無程式碼 / 表格 → 須仍 hide（chrome） -->
+    <section class="content-section" id="sec-seealso">
+      <h2>See also</h2>
+      <ul>
+        <li><a href="/indexOf">Array.prototype.indexOf()</a></li>
+        <li><a href="/find">Array.prototype.find()</a></li>
+      </ul>
+    </section>
+
+    <!-- 導覽表（Wikipedia navbox 型）：用 <table> 排版但 role=navigation = nav chrome，
+         table guard 須排除（zh.wikipedia 珍珠奶茶 底部 navbox 誤保留 regression）→ 仍 hide -->
+    <section class="content-section" id="sec-navbox">
+      <table role="navigation" id="navbox-table">
+        <tbody>
+          <tr><th>相關條目</th></tr>
+          <tr><td><a href="/a">連結一</a> · <a href="/b">連結二</a> · <a href="/c">連結三</a></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- sidebar nav：連結列 chrome → 須仍 hide -->
+    <aside class="sidebar" id="sidebar">
+      <nav>
+        <ul>
+          <li><a href="/concat">concat()</a></li>
+          <li><a href="/at">at()</a></li>
+          <li><a href="/find">find()</a></li>
+        </ul>
+      </nav>
+    </aside>
+  </div></main>
+</body>
+</html>

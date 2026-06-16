@@ -1414,6 +1414,41 @@
   //
   // 不動深層後代（各 rule 由 hideInsideArticle* 處理）。isInPreserved
   // 保護仍生效（figure/figcaption/blockquote/summary 內部不動）。
+  //
+  // 元素是否含主文級「非段落內容」（程式碼塊 / 資料表）。docs / wiki 站的主要
+  // 內容常以程式碼塊或資料表呈現、不一定有長 <p>；且常做成 web component
+  // （內容在 shadow DOM，light DOM 的 innerText / <pre> 查不到）→ 多條「低文字 /
+  // 空殼 / sidebar」heuristic（narrowPromotedSiblings / hideInsideArticleEmptySpacers
+  // / hideInsideArticleSidebarColumns）共同誤殺。此 helper 供三者共用 guard（單一
+  // 資料源，CLAUDE.md 硬規則 5），只放行、不新增 hide，誤判風險僅止於「少清」。
+  function hasCodeOrDataTableContent(el) {
+    if (!el || !el.querySelectorAll) return false;
+    // light DOM 程式碼塊（排除被 <a> 包的——理論上極罕見、保險）
+    for (const pre of el.querySelectorAll('pre')) {
+      if (!pre.closest || !pre.closest('a')) return true;
+    }
+    // 程式碼 / 表格 web component：用 tag 名（元件宣告自己的用途）判定——race-free，
+    // 不依賴 shadow root 何時 hydrate（peek shadow 內容會與 hydration 競態，Syntax
+    // 段曾因此 run-to-run 飄忽）。MDN：<mdn-code-example> / <mdn-compat-table-lazy>。
+    // tagName 全大寫。
+    for (const ce of el.querySelectorAll('*')) {
+      const t = ce.tagName;
+      if (t.indexOf('-') === -1) continue;
+      if (t.indexOf('CODE') !== -1 || t.indexOf('TABLE') !== -1) return true;
+    }
+    // 資料表：>= 2 列 <tr>，排除卡片式（<a>/<li> 內）排版 + 導覽表。
+    // 導覽表（Wikipedia navbox 等）用 <table> 排版但屬 nav chrome、非主文資料表——
+    // role="navigation" / <nav> 內的 table 不算（zh.wikipedia 珍珠奶茶 底部 navbox
+    // 實案：13 列連結導覽表 + 淡紫底，誤保留後底色連結 contrast 2.93 < 3）。用 ARIA
+    // role / HTML5 語意判定（portable，非 .navbox class 特判）；MDN 的 Specifications
+    // 純 <table> 不在 nav 內、照常保留。
+    for (const tbl of el.querySelectorAll('table')) {
+      if (tbl.closest && tbl.closest('a, li, [role="navigation"], nav')) continue;
+      if (tbl.querySelectorAll('tr').length >= 2) return true;
+    }
+    return false;
+  }
+
   function narrowPromotedSiblings(articleEl, promotedFrom, hidden, promotedTitleHead) {
     if (!articleEl || !promotedFrom) return;
     if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
@@ -1518,6 +1553,15 @@
           }
           if (mainContentFound) continue;
         }
+        // 主文非段落內容分支（v0.8.79 MDN 修法）：文件 / wiki 站的主要內容常以
+        // 程式碼塊（<pre> 或把 <pre> 放 shadow DOM 的 web component，如 MDN 的
+        // <mdn-code-example>）、資料 <table> 形式存在，不一定有長 <p>。既有白名單
+        // （h1 / media / time / byline / p>=100）全 miss → narrow 把 Syntax /
+        // Examples / Specifications / Browser compatibility 等內容區當 chrome 砍。
+        // 結構通則：含「不在 <a>/<li> 內」的程式碼塊或 >= 2 列資料表 → 主文內容保留。
+        // sidebar「相關文章」widget 用 <ul><li><a> 縮圖排版、不放程式碼塊 / 資料表，
+        // 結構特徵可區分（此 guard 只放行、不新增 hide，誤判風險僅止於「少清」）。
+        if (hasCodeOrDataTableContent(sib)) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);
@@ -1779,6 +1823,10 @@
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      // v0.8.79 MDN：含程式碼塊 / 資料表 web component 的區塊（內容在 shadow DOM，
+      // light textContent 空）不是 empty spacer——MDN Syntax 段（h2 + <mdn-code-example>）
+      // 實案。見 hasCodeOrDataTableContent 註解。
+      if (hasCodeOrDataTableContent(el)) continue;
       // iframe / video / audio 本身是媒體，不是 spacer。cross-origin iframe
       // 的 textContent 空、querySelector 讀不到內部 DOM，rect 又有高度——三條
       // spacer 條件全命中，會被誤殺（2026-04-21 Dwarkesh YouTube embed 實測）。
@@ -2443,6 +2491,10 @@
         // v0.8.63 myartbroker 修法：單張內容圖區塊（圖整張包 <a> + 短圖說/CTA）
         // 形狀與 link-heavy widget 撞型，條件 A 會誤殺——共用 guard 放行
         if (isStandaloneFigureBlock(s.el)) continue;
+        // v0.8.79 MDN：程式碼塊 / 資料表 web component 區塊（內容在 shadow DOM，
+        // light text 短）形狀像 sidebar column（低文字）——MDN Browser compatibility
+        // 段（h2 + <mdn-compat-table-lazy>）實案。見 hasCodeOrDataTableContent 註解。
+        if (hasCodeOrDataTableContent(s.el)) continue;
         // promoted title heading 白名單（v0.7.97 Stratechery 修法）：detector
         // promote 命中的 title heading（h1-h4），若 sibling 是該 heading 或含該
         // heading 則 skip。理由：WordPress block theme 預設 post-title 是 <a>
@@ -3638,6 +3690,11 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
+      // v0.8.79 MDN 修法：host 了 shadow root 的 web component（mdn-code-example
+      // 把 <pre> 程式碼塊放 shadow DOM）其渲染內容在 shadow root 內，light DOM
+      // 的 innerText / querySelector('img') 全看不到 → 被誤判成 empty wrapper
+      // collapse 掉。結構通則：元素有 shadowRoot = 內容在 shadow 內、非空殼，保留。
+      if (el.shadowRoot) continue;
       const rect = el.getBoundingClientRect();
       if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
@@ -3681,6 +3738,7 @@
       if (isInPreserved(el)) continue;
       if (!EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
       if (MEDIA_SELF_TAGS.has(el.tagName)) continue;
+      if (el.shadowRoot) continue; // shadow-host web component，內容在 shadow DOM，非空殼
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs || cs.display !== 'block') continue;
@@ -4856,6 +4914,13 @@
       while (cur && cur !== articleEl) {
         if (cur.contains && cur.contains(articleEl)) break;
         if (norm(cur.textContent).length > BIO_CARD_MAX_TEXT) break;
+        // 主標題界線（v0.8.79 dev.to 修法）：author bio 卡結構上絕不會包文章
+        // 主標題 <h1>。dev.to 把 cover 大圖 + h1 標題 + 作者頭像列全裝在
+        // <header class="crayons-article__header">，walk-up 從頭像往上吞到
+        // header → 連 cover 一起被當 bio 卡砍（既有 big-img guard 因 cover
+        // rect clean-time 時序未必 > 門檻而失靈）。h1 訊號不受 rect 時序影響、
+        // 是 bio 卡 vs 文章 header 的可靠結構區分。
+        if (cur.querySelector && cur.querySelector('h1')) break;
         // 內容媒體界線：figure / picture / video / iframe 是主文媒體慣例載體，
         // bio 卡不會包它們；含其一即停（不往上吞 lede / 主文 wrapper）
         if (cur.querySelector && cur.querySelector('figure, picture, video, iframe')) break;
