@@ -24,6 +24,12 @@
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
   const PLAYER_ATTR = 'data-jread-player';
+  // v0.8.86：responsive embed（relative wrapper + position:absolute iframe 填滿
+  // 16:9 padding-bottom hack）的 iframe 標記。apply() 量到 computed
+  // position:absolute 的 article iframe 標此 attr，CSS 把它 pin 回 inset:0
+  // 填滿 wrapper——否則媒體置中規則的 margin:auto 對 abs-pos iframe 會解出
+  // 非零 left/right 把 iframe 推出 wrapper 偏右破版（thenewslens 實證）。
+  const FILL_IFRAME_ATTR = 'data-jread-fill-iframe';
   // v0.8.49：「div 當段落」標記。部分 CMS（upmedia 等）把主文段落輸出成無
   // class 的裸 <div>（不是 <p>），BODY_TEXT_SEL 列舉的段落 tag 都不命中 →
   // 使用者 fontSize / fontFamily / lineHeight / fontWeight 設定對主文整段失效、
@@ -1311,6 +1317,32 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   margin-left: auto !important;
   margin-right: auto !important;
 }
+/* v0.8.86：responsive embed 的 abs-pos iframe pin 回填滿 wrapper。
+   原站慣例（thenewslens figure.video-responsive / WP wp-embed / Substack /
+   Medium 等）用「wrapper position:relative + padding-bottom 16:9 hack +
+   iframe position:absolute; left:0; width:100% 填滿」嵌入 YouTube/TED/Vimeo。
+   上方置中規則對 iframe 套 margin-left/right:auto——但對 abs-pos 元素 margin
+   auto 會依 CSS 定位方程式解出非零 left/right，把 iframe 推到 wrapper 寬一半
+   的偏右位置破版（thenewslens.com/article/975 兩支影片 left=304px 實證）。
+   apply() JS 量 computed position:absolute 標 [FILL_IFRAME_ATTR]（keyed on
+   結構特徵非站點 class，placeholder reset 後變 static 的 iframe 不被標）、
+   這條 pin 回 inset:0 + width/height:100% 填滿 wrapper，wrapper 自身仍走
+   figure 置中規則對齊版心。
+   selector 重複 [FILL_IFRAME_ATTR] 兩次是刻意提高 specificity：下方
+   border-clear 通則（* 配 15 個 :not(tag) 保留鏈）specificity 累加到
+   (0,2,15)，會對 iframe 套 left/right:auto 把它退回 static position（=破版
+   位置）、壓過單一 attribute 的 (0,2,1)。雙 attr → (0,3,1)，第二欄 3>2 確保
+   本規則的 left:0/right:0 勝出。 */
+[${ARTICLE_ATTR}="1"] iframe[${FILL_IFRAME_ATTR}][${FILL_IFRAME_ATTR}] {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+}
 /* left/right: auto 解釋：原站常用 position: relative + left/right 偏移做
    「圖片向左/右溢出版心做視覺擴張」hack（businessweekly.com.tw .Single-image
    套 position:relative; left: -90px; right: 90px——讓主圖在二欄 layout 中向
@@ -2405,6 +2437,25 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v0.8.86：responsive embed 的 abs-pos iframe 標 [FILL_IFRAME_ATTR]，讓
+      // CSS pin 回填滿 wrapper（見上方 FILL_IFRAME_ATTR rule 註解）。必須在
+      // ARTICLE_ATTR 設定**後**量——reader CSS 對 [class*="placeholder"] 後代
+      // 強制 position:static，那類 iframe 量到 static 不被標（已在 flow 內
+      // 正常置中），只命中「reader CSS 未改其定位、仍 absolute」的真 embed。
+      const fillIframes = [];
+      {
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (_win && _win.getComputedStyle) {
+          for (const ifr of articleEl.querySelectorAll('iframe')) {
+            if (ifr.hasAttribute(PLAYER_ATTR)) continue;
+            if (_win.getComputedStyle(ifr).position === 'absolute') {
+              ifr.setAttribute(FILL_IFRAME_ATTR, '1');
+              fillIframes.push(ifr);
+            }
+          }
+        }
+      }
+
       const ancestors = markAncestors(articleEl);
 
       const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
@@ -3021,7 +3072,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, contentImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3071,6 +3122,12 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.playerMarked)) {
         for (const el of snapshot.playerMarked) {
           if (el && el.removeAttribute) el.removeAttribute(PLAYER_ATTR);
+        }
+      }
+      // v0.8.86：移除 responsive embed iframe fill 標記
+      if (Array.isArray(snapshot.fillIframes)) {
+        for (const ifr of snapshot.fillIframes) {
+          if (ifr && ifr.removeAttribute) ifr.removeAttribute(FILL_IFRAME_ATTR);
         }
       }
       // v0.8.49：移除「div 當段落」標記
