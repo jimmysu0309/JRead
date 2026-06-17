@@ -75,6 +75,37 @@ describe('x-emoji-inline-img — natural 尺寸不可靠時以 rendered 尺寸�
       'Twemoji SVG 必須被標 inline-img（否則 forced block 置中、脫離文字行）');
   });
 
+  it('viewBox-only SVG emoji 釘上原站 rendered width/height（v0.8.98 防 width:auto 撐滿欄）', () => {
+    // 根因（2026-06-17 Jimmy 截圖回報 itsmicracing.xyz WordPress 站）：wp-emoji 的
+    // 國旗 SVG natural 回報 150×150 不可靠，通用 width:auto 規則對「無 intrinsic
+    // size 的 SVG」解析成容器寬 → emoji 17px 撐成 603px 滿欄。inline-img CSS 規則
+    // 只設 display:inline、未約束 width，救不了。修法：rect fallback 標 inline 時釘
+    // 量到的 rendered px（分類在 ARTICLE_ATTR 前跑、rect 仍是原站 1em ≈ 20px）。
+    const { NS, articleEl, emojiSvg } = setup();
+    NS.styler.apply(articleEl, SETTINGS);
+    assert.strictEqual(emojiSvg.style.getPropertyValue('width'), '20px',
+      'viewBox-only SVG emoji 必須釘 rendered width，否則 width:auto 把它撐成容器寬');
+    assert.strictEqual(emojiSvg.style.getPropertyValue('height'), '20px',
+      'viewBox-only SVG emoji 必須釘 rendered height');
+    assert.strictEqual(emojiSvg.style.getPropertyPriority('width'), 'important',
+      '釘寬須 !important 才壓得過通用圖片規則的 width:auto !important');
+  });
+
+  it('natural 可靠的小圖 emoji（natural <= INLINE_IMG_MAX）不釘 width（width:auto 已正確退回 natural）', () => {
+    // 反向 forcing：natural ≈ rendered 的真實小圖不命中 rect fallback、不該被釘。
+    const { NS, articleEl, document } = setup();
+    const tiny = document.createElement('img');
+    tiny.id = 'tiny-png-emoji';
+    stubNatural(tiny, 24, 24); // natural 24 <= INLINE_IMG_MAX(48) → natural 路徑判 inline
+    stubRect(tiny, { top: 100, left: 700, width: 24, height: 24 });
+    articleEl.appendChild(tiny);
+    NS.styler.apply(articleEl, SETTINGS);
+    assert.strictEqual(tiny.getAttribute('data-jread-inline-img'), '1',
+      'natural 24×24 仍應標 inline');
+    assert.strictEqual(tiny.style.getPropertyValue('width'), '',
+      'natural 可靠的小圖不需釘 width（width:auto 已正確）');
+  });
+
   it('高解析 emoji PNG（natural 72×72、rendered 20×20）也標上 data-jread-inline-img', () => {
     const { NS, articleEl, emojiPng } = setup();
     NS.styler.apply(articleEl, SETTINGS);
@@ -123,5 +154,10 @@ describe('x-emoji-inline-img — natural 尺寸不可靠時以 rendered 尺寸�
     NS.styler.restore(articleEl, snapshot);
     assert.strictEqual(emojiSvg.getAttribute('data-jread-inline-img'), null);
     assert.strictEqual(emojiPng.getAttribute('data-jread-inline-img'), null);
+    // v0.8.98：釘的 width/height 也要還原（原站無 inline style → 清空）
+    assert.strictEqual(emojiSvg.style.getPropertyValue('width'), '',
+      'restore 必須移除釘上的 inline width');
+    assert.strictEqual(emojiSvg.style.getPropertyValue('height'), '',
+      'restore 必須移除釘上的 inline height');
   });
 });
