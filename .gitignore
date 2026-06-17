@@ -10,6 +10,8 @@ docs/excluded/
 .playwright-mcp/
 # Playwright 執行追蹤產物（page-rounds / debug harness 跑完留下）
 test-results/
+# debug-harness 載 unpacked extension 用的 persistent profile（每次跑重建）
+.debug-profile/
 # Page Rounds 視覺驗收截圖（在 docs/excluded/ 下，已被 docs/excluded/ 規則涵蓋）
 # 舊 Playwright MCP 設定檔（目前已改用 tools/debug-harness.js 不再需要）
 .playwright-mcp.json
