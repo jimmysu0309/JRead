@@ -131,6 +131,45 @@
       return '';
     },
 
+    // v0.8.96：srcset candidate 解析（單一資料源，namespace.js absSrcset /
+    // main.js extractHeroImage / cleaner.js lazy-hydrate 共用）。
+    // 動機：原本三處都用 naive `val.split(',')` 拆 candidate——但 srcset 的 URL
+    // 本身可以含字面逗號（Condé Nast / Cloudinary 變形參數 `w_2240,c_limit`），
+    // 逗號切會把一個 URL 從中剖成兩段，後半 `c_limit/x.jpg` 再被當相對路徑以
+    // 頁面 base 解析成破 URL（GQ Taiwan hero 圖送 Readwise 全破，Jimmy 2026-06-17）。
+    // 改用 WHATWG srcset parsing algorithm 的精神：URL 是「一段非空白字元」、
+    // candidate 分隔逗號只認「URL 尾端逗號」或「descriptor 之後的逗號」，URL 內
+    // 部逗號一律保留。回傳 [{ url, desc }] 依原順序。
+    parseSrcset(val) {
+      if (!val || typeof val !== 'string') return [];
+      const out = [];
+      const len = val.length;
+      const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f';
+      let pos = 0;
+      while (pos < len) {
+        // 跳過前導空白與分隔逗號
+        while (pos < len && (isWS(val[pos]) || val[pos] === ',')) pos++;
+        if (pos >= len) break;
+        // URL：一段非空白字元（含內部逗號）
+        const urlStart = pos;
+        while (pos < len && !isWS(val[pos])) pos++;
+        let url = val.slice(urlStart, pos);
+        let desc = '';
+        if (url.endsWith(',')) {
+          // URL 以逗號結尾 → 該逗號是 candidate 分隔、此 candidate 無 descriptor
+          url = url.replace(/,+$/, '');
+        } else {
+          // URL 後接 descriptor（1x / 2x / 640w），收到下一個 top-level 逗號為止
+          while (pos < len && isWS(val[pos])) pos++;
+          const descStart = pos;
+          while (pos < len && val[pos] !== ',') pos++;
+          desc = val.slice(descStart, pos).trim();
+        }
+        if (url) out.push({ url, desc });
+      }
+      return out;
+    },
+
     // v0.8.76：把 rootEl 子樹內媒體載體（img/source/video/audio/iframe）的
     // src / poster / srcset 以 base 為基準轉成絕對 URL（就地改 attribute）。
     // 動機：buildCleanHtml 送 Readwise 的是 `outerHTML`——序列化的是 src 的
@@ -147,14 +186,9 @@
         if (!s) return null;
         try { return new URL(s, base).href; } catch (_) { return null; }
       };
-      // srcset：逗號分隔 candidate list，每項 "URL [descriptor]"（1x / 2x / 640w）。
+      // srcset：用共用 parseSrcset 拆 candidate（URL 可含字面逗號，見上），
       // 只轉 URL 段、保留 descriptor。
-      const absSrcset = (val) => val.split(',').map((cand) => {
-        const part = cand.trim();
-        if (!part) return null;
-        const sp = part.indexOf(' ');
-        const url = sp === -1 ? part : part.slice(0, sp);
-        const desc = sp === -1 ? '' : part.slice(sp + 1).trim();
+      const absSrcset = (val) => this.parseSrcset(val).map(({ url, desc }) => {
         const abs = toAbs(url);
         if (!abs) return null;
         return desc ? `${abs} ${desc}` : abs;

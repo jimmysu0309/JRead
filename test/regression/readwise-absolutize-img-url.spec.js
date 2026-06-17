@@ -85,4 +85,34 @@ describe('readwise — NS.absolutizeResourceUrls 圖片相對 URL 轉絕對 (v0.
     assert.match(mainSrc, /absolutizeResourceUrls\(clone,\s*location\.href\)/,
       'buildCleanHtml 必須對 clone 以 location.href 為 base 呼叫 absolutizeResourceUrls');
   });
+
+  // v0.8.96：Condé Nast / Cloudinary URL 含字面逗號（`w_2240,c_limit`）。
+  // naive split(',') 會把一個 URL 從中剖兩段，後半 `c_limit/x.jpg` 再被當相對
+  // 路徑以頁面 base 解析成破 URL（GQ Taiwan hero 圖送 Readwise 全破）。
+  it('(H) srcset URL 含字面逗號（Condé Nast w_,c_limit）→ 不剖破、逗號保留在 URL 內', () => {
+    const ss = 'https://media.gq.com.tw/photos/abc/16:9/w_120,c_limit/img.jpg 120w, '
+             + 'https://media.gq.com.tw/photos/abc/16:9/w_240,c_limit/img.jpg 240w';
+    const div = build(`<picture><source srcset="${ss}"><img src="/x.jpg"></picture>`);
+    assert.strictEqual(div.querySelector('source').getAttribute('srcset'),
+      'https://media.gq.com.tw/photos/abc/16:9/w_120,c_limit/img.jpg 120w, '
+      + 'https://media.gq.com.tw/photos/abc/16:9/w_240,c_limit/img.jpg 240w');
+  });
+
+  it('(I) parseSrcset 直接驗：含逗號 URL 不剖破、descriptor 正確分離', () => {
+    assert.ok(typeof NS.parseSrcset === 'function', 'NS.parseSrcset 必須存在（單一資料源）');
+    const ss = 'https://cdn/x/w_120,c_limit/a.jpg 120w, https://cdn/x/w_240,c_limit/a.jpg 240w';
+    const cands = JSON.parse(JSON.stringify(NS.parseSrcset(ss)));
+    assert.deepStrictEqual(cands, [
+      { url: 'https://cdn/x/w_120,c_limit/a.jpg', desc: '120w' },
+      { url: 'https://cdn/x/w_240,c_limit/a.jpg', desc: '240w' }
+    ]);
+  });
+
+  it('(J) parseSrcset：無 descriptor 的 URL（含 URL 尾端逗號分隔）', () => {
+    const cands = JSON.parse(JSON.stringify(NS.parseSrcset("https://cdn/a.jpg, https://cdn/b.jpg 2x")));
+    assert.deepStrictEqual(cands, [
+      { url: 'https://cdn/a.jpg', desc: '' },
+      { url: 'https://cdn/b.jpg', desc: '2x' }
+    ]);
+  });
 });

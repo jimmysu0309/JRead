@@ -590,13 +590,12 @@
         if (rect.width < 200 || rect.height < 120) continue;
       }
       // srcset 優先取最大解析度（無 srcset 退回 src / currentSrc）
+      // v0.8.96：用共用 NS.parseSrcset 拆 candidate——URL 可含字面逗號
+      // （Condé Nast `w_2240,c_limit`），naive split(',') 會剖破 URL。
       let candidate = '';
       const srcset = img.getAttribute('srcset');
-      if (srcset) {
-        const entries = srcset.split(',').map(e => e.trim()).filter(Boolean).map(e => {
-          const parts = e.split(/\s+/);
-          const url = parts[0];
-          const desc = parts[1] || '';
+      if (srcset && NS && NS.parseSrcset) {
+        const entries = NS.parseSrcset(srcset).map(({ url, desc }) => {
           const wMatch = desc.match(/^(\d+)w$/);
           return { url, w: wMatch ? Number(wMatch[1]) : 0 };
         });
