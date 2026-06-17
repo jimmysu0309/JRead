@@ -2362,9 +2362,30 @@ html [${ARTICLE_ATTR}="1"] a {
       // 在 ARTICLE_ATTR 前量 = reader 規則尚未 active = 量到原站 inline 尺寸，
       // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
       const inlineImgs = [];
+      const inlineImgPins = [];
       const contentImgs = [];
       const iconImgs = [];
       const contentImgLoadCleanup = [];
+      // v0.8.98：viewBox-only SVG 的 inline emoji（WordPress wp-emoji 的國旗 SVG、
+      // X Twemoji）naturalWidth 回報 Chrome 預設 150×150 不可靠——通用圖片規則的
+      // width:auto 對「無 intrinsic size 的 SVG」解析成容器寬，把 emoji 撐成滿欄
+      // （itsmicracing.xyz WordPress 站實測 17px → 603px）。inline-img CSS 規則只設
+      // display:inline、未約束 width，救不了。修法：classifyImg 走 rect fallback
+      // （natural 不可靠）標 inline 時，把量到的 rendered px 釘成 inline !important
+      // width/height——分類在 ARTICLE_ATTR 設定前跑，rect 仍是原站 emoji 尺寸（1em ≈
+      // 17px）。natural 可靠的 PNG emoji（natural ≈ rendered）走 width:auto 即正確、
+      // 不需 pin。記 prev 供 restore 對稱還原（與 capIconImg 同款）。
+      const pinInlineImg = (img, w, h) => {
+        inlineImgPins.push({
+          img,
+          prevW: img.style.getPropertyValue('width'),
+          prevWP: img.style.getPropertyPriority('width'),
+          prevH: img.style.getPropertyValue('height'),
+          prevHP: img.style.getPropertyPriority('height'),
+        });
+        img.style.setProperty('width', Math.round(w) + 'px', 'important');
+        img.style.setProperty('height', Math.round(h) + 'px', 'important');
+      };
       // v0.8.90：把作者刻意縮小的小圖釘回原始顯示寬。量到的 renderedW 以 inline
       // !important max-width 覆寫，杜絕 img:not(a>img) 的 width:auto 退回
       // naturalWidth 放大。記 prev 供 restore 對稱還原（與 titleFsSnap 同款）。
@@ -2414,12 +2435,23 @@ html [${ARTICLE_ATTR}="1"] a {
         const natPlaceholder = w <= 1 && h <= 1;
         let isInline = !natPlaceholder && w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
         let r = null;
+        let inlineViaRect = false;
         if (!isInline) {
           r = img.getBoundingClientRect();
           isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
                      r.height > 0 && r.height <= INLINE_IMG_MAX;
+          inlineViaRect = isInline;
         }
-        if (isInline) { img.setAttribute(INLINE_IMG_ATTR, '1'); inlineImgs.push(img); return; }
+        if (isInline) {
+          img.setAttribute(INLINE_IMG_ATTR, '1');
+          inlineImgs.push(img);
+          // natural 不可靠（viewBox-only SVG 等）時走 rect fallback 標到的 inline——
+          // 釘原站 rendered 尺寸，杜絕 width:auto 把無 intrinsic size 的 SVG 撐成滿欄
+          // （見 inlineImgPins 註解）。natural 可靠（natural <= INLINE_IMG_MAX）的小圖
+          // 不需釘：width:auto 已正確退回 natural 尺寸。
+          if (inlineViaRect && r) pinInlineImg(img, r.width, r.height);
+          return;
+        }
         // v0.8.90：裸 img（非 a 包、非 player）的「作者刻意縮小」防放大。INLINE_IMG_MAX
         // (48px) 與 CONTENT_IMG_MIN (200px) 之間的小圖（48 < rect < 200）落在兩個門檻
         // 中間：不算 inline emoji、不算內容照片，落入 img:not(a>img) 的 width:auto →
@@ -3170,7 +3202,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, contentImgs, iconImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3203,6 +3235,16 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.inlineImgs)) {
         for (const img of snapshot.inlineImgs) {
           if (img && img.removeAttribute) img.removeAttribute(INLINE_IMG_ATTR);
+        }
+      }
+      // v0.8.98：還原 viewBox-only SVG emoji 的 inline width/height 釘寬
+      if (Array.isArray(snapshot.inlineImgPins)) {
+        for (const s of snapshot.inlineImgPins) {
+          if (!s || !s.img || !s.img.style) continue;
+          if (s.prevW) s.img.style.setProperty('width', s.prevW, s.prevWP || '');
+          else s.img.style.removeProperty('width');
+          if (s.prevH) s.img.style.setProperty('height', s.prevH, s.prevHP || '');
+          else s.img.style.removeProperty('height');
         }
       }
       if (Array.isArray(snapshot.contentImgs)) {
