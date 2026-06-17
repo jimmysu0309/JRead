@@ -4238,10 +4238,13 @@
       }
       // srcset fallback：取第一個 URL（忽略後面的 `1x` / `300w` descriptor）。
       // 僅限前兩類（src 確定是 placeholder）；lazy class 路徑不走（見上）。
+      // v0.8.96：用共用 NS.parseSrcset 拆——URL 可含字面逗號（Condé Nast
+      // `w_2240,c_limit`），naive split(',')[0] 會剖破 URL。
       if (!newSrc && isUnhydrated) {
         const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset');
-        if (srcset) {
-          const first = srcset.split(',')[0].trim().split(/\s+/)[0];
+        if (srcset && NS && NS.parseSrcset) {
+          const cands = NS.parseSrcset(srcset);
+          const first = cands.length ? cands[0].url : '';
           if (first && !LAZY_PLACEHOLDER_RE.test(first) && !SPACER_SRC_RE.test(first)) newSrc = first;
         }
       }
