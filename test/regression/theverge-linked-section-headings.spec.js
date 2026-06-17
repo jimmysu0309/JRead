@@ -76,6 +76,15 @@ describe('cleaner — theverge 連結式 section 標題不可被 cleaner 砍（v
       'class 訊號；lone section 標題須被 guard 保護不被 hideInsideArticleByKeyword 誤殺');
   });
 
+  it('float 排版的連結式 section 標題不可被 inset-link-card rule hide（核心保護點 3）', () => {
+    const link = document.querySelector('[data-test="heading-link-inset"]');
+    assert.ok(!isHiddenWithin(link),
+      'real Chrome 幾何下 theverge 較長 section 標題（>= 15 chars）落入 ' +
+      'hideInsideArticleInsetLinkCards 的 text 區間 + linkDensity 1.0 + floated → ' +
+      '被當嵌入式相關文章卡誤殺（短標題 < 15 chars 才倖免，即「只有前面幾個出來」病徵）；' +
+      'lone section 標題須被 isLoneSectionHeadingColumn guard 保護');
+  });
+
   it('主文 block 保留（main 不可被誤殺）', () => {
     const main = document.querySelector('[data-test="main-block"]');
     assert.notStrictEqual(main.dataset.jreadHidden, '1');

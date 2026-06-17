@@ -59,6 +59,20 @@
       </div>
     </div>
 
+    <!-- 連結式 section 標題 block C：>= 15 chars + float:left（觸發
+         hideInsideArticleInsetLinkCards 的 floated 條件；real Chrome 幾何下
+         theverge 較長 section 標題就是走這條被吃，短標題如「Gemini 3.5」<15 chars
+         才倖免——「只有前面幾個出來」病徵）。jsdom getBoundingClientRect 量到 0、
+         narrow 不成立，靠 inline float:left 讓 floated 成立、確保本規則在 jsdom
+         確實會嘗試 hide → forcing function -->
+    <div class="duet--article--article-body-component" data-test="heading-block-inset" style="float: left;">
+      <div class="duet--article--standard-heading">
+        <h2 class="duet--article--dangerously-set-cms-markup">
+          <a href="/tech/933700/google-project-aura-smart-glasses-xreal-io-2026" data-test="heading-link-inset"><strong>Project Aura smart glasses</strong></a>
+        </h2>
+      </div>
+    </div>
+
     <!-- 真噪 section 標題 block：lone heading 但文字命中 NOISE_HEADING_TEXT_RE
          （^recommended）→ guard 放行 sidebar/keyword rule 後，仍須被 heading-text
          rule 兜底 hide。斷言守住「guard 不可過度保護真噪標題」-->
