@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><title>東協硬起來 阻止中國「切香腸」</title></head>
+<body>
+<!--
+  最小重現：cw.com.tw（天下雜誌）內文廣告槽 placeholder 文字洩漏。v0.8.102
+  Page Rounds C4（cage 揪出，Playwright 被 bot-detection 假 block）。article body
+  內 `<div id="bpc_nofix">BPC > no fix</div>` 是廣告系統 slot 定位指令，原頁也
+  visible（12px），JRead 抽 article body 一起帶進閱讀模式。
+  修法：NOISE_INLINE_AD_TEXT_RE 加 ad-slot 指令格式（`XXX > no fix`），葉節點
+  文字命中即 hide。本 fixture 故意用中性 class（不用 bpc_nofix id）證明是文字
+  訊號、非 id 特判。
+-->
+<main>
+  <article class="article-body">
+    <h1>東協硬起來　阻止中國「切香腸」</h1>
+    <p class="lead">南海島礁爭議擴大，從菲律賓到馬來西亞，亞洲國家開始在南海對中國「硬起來」，這場圍繞主權與航行自由的角力，正在重新塑造整個區域的地緣政治格局與安全秩序。</p>
+    <div class="slot-inner">BPC &gt; no fix</div>
+    <p>年初，台灣似乎是亞洲最危險的引爆點，但隨著情勢演變，關注的焦點可能向南轉移，在南海，島礁控制權的長期摩擦已經升級為海上的直接衝突，各方都不願讓步。</p>
+    <p>一個值得注意的地方是仙賓礁，這塊南沙群島的淺灘位於菲律賓巴拉望島以西約一百五十公里處，中國、越南和台灣也都聲稱擁有主權，使它成為新的角力場域。</p>
+    <p>分析人士指出，爭端主要發生在中國和菲律賓海警船隻之間，但雙方都不願讓步，爭端可能迅速升級為海軍對峙，進而把美國拖入這個區域的安全困境之中。</p>
+  </article>
+</main>
+</body>
+</html>
