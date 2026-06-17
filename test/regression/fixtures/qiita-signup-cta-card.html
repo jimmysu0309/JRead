@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Markdown 記法 チートシート</title></head>
+<body>
+<!--
+  最小重現：qiita.com 文末註冊招攬卡。v0.8.102 Page Rounds C2（Playwright
+  review→看截圖升 FAIL）。文末 footnotes 之後殘留「Register as a new user and
+  use Qiita more conveniently / 1. You get... / What you can do with signing up
+  / Login」。無 <form>、class 全是 Qiita hash（style-*）→ 不可綁。hit P 文字 54
+  chars > heading MAX_LEN_EXT(40) → 繞過 heading rule。
+  修法：hideInsideArticleSignupCtaCards 以 NOISE_SIGNUP_CTA_RE 命中文字、從該
+  元素往上走到「不含主文長 <p>」最外層卡片整塊 hide。
+-->
+<main>
+  <article>
+    <h1>Markdown 記法 チートシート</h1>
+    <p>この記事では、Qiita で使える Markdown の記法をまとめて紹介します。見出し、リスト、コードブロック、テーブル、リンクなど、日常的に使う書き方を一通り押さえておけば、読みやすい記事をすばやく書けるようになります。</p>
+    <h2>見出し</h2>
+    <p>見出しはシャープ記号の数でレベルを表します。記事の構造を整理するうえで欠かせない要素なので、適切なレベルを選んで階層を明確にしましょう。深すぎる見出しは読み手を混乱させます。</p>
+    <h2>リンク</h2>
+    <p>リンクは角括弧と丸括弧を組み合わせて書きます。URL をそのまま貼るとリンクカードとして展開される場合もあり、文章の流れを邪魔しない範囲で活用すると読み手にとって親切です。</p>
+    <p>最初の脚注です。二番目の脚注です。三番目の脚注です。</p>
+    <div class="style-rwy56f">
+      <p class="style-1nyasl8">Register as a new user and use Qiita more conveniently</p>
+      <span class="style-a">1. You get articles that match your needs</span>
+      <span class="style-b">2. You can efficiently read back useful information</span>
+      <span class="style-c">3. You can use dark theme</span>
+      <a class="style-dzaums" href="/signup">What you can do with signing up</a>
+      <a class="style-tfrxbl" href="/login">Login</a>
+    </div>
+  </article>
+</main>
+</body>
+</html>

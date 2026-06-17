@@ -285,7 +285,13 @@
   // （hash class SPA、僅 text 可辨識）。「為什麼(會)看到(這則)廣告」是廣告
   // 平台通用的 ad-transparency 標籤（Facebook / Google / vocus 同款句式），
   // 主文段落不會以此開頭——direct textNode + 40 chars 上限雙保險。
-  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^(為什麼|为什么)(我)?(會|会|你會)?看到(這個|這則|这个|这则|此)?(廣告|广告)|^why\s+am\s+i\s+seeing\s+this\s+ad/i;
+  // v0.8.102（cw.com.tw C4，cage 揪出）末段 alternation：廣告槽 placeholder
+  // 指令文字洩漏。天下雜誌 article__body 內 `<div id="bpc_nofix">BPC > no
+  // fix</div>`——廣告系統的 slot 定位指令（`<slot> > no fix`）原頁也 visible
+  // （12px），JRead 抽 article__body 一起帶進閱讀模式。結構通則（非綁 id）：
+  // 葉節點短文字呈 ad-slot 定位指令格式（`XXX > no fix`）或 ad 程式庫 token
+  // （googletag / adsbygoogle）= 廣告槽殘渣，非 prose。
+  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^(為什麼|为什么)(我)?(會|会|你會)?看到(這個|這則|这个|这则|此)?(廣告|广告)|^why\s+am\s+i\s+seeing\s+this\s+ad|^[a-z0-9_]{2,8}\s*[>＞]\s*no[\s_-]*fix$|^(googletag|adsbygoogle)\b/i;
   const NOISE_INLINE_AD_MAX_LEN = 40;
 
   // CTA 推廣段落 heuristic：當 hideInsideArticleByLinkText 命中 noise link
@@ -5301,6 +5307,108 @@
     }
   }
 
+  // ---- 主文內：訂閱表單 + 註冊招攬卡片（v0.8.102 Page Rounds C2）----------
+  // chinatalk（Substack）文末「Subscribe to X / Hundreds of paid subscribers /
+  // By subscribing...」訂閱卡：H4 標題被 heading rule 清掉，但兄弟 pitch div +
+  // <form> 殘留可見；qiita 文末「Register as a new user / What you can do with
+  // signing up / Login」註冊招攬卡（無 form、class 全是 hash style-*）。兩者都
+  // 是「站點 CTA 卡片」雜訊，繞過 heading / link / keyword rule。
+  //
+  // 結構性通則（非站點特判）：
+  //   (a) 主文內 <form> = 訂閱 / 搜尋 / 留言表單，純閱讀下一律雜訊
+  //   (b) 元素 direct text 命中高特異性 signup / register CTA 慣用語
+  // 從 trigger 往上走到「不含主文長 <p>」的最外層卡片容器整塊 hide——主文
+  // paragraph 用 <p>，CTA 卡片用 div/span/label/button/form 包裝，<p> 邊界
+  // 精確隔開「卡片」與「主文」（cardHasContentParagraph guard 防 walk-up
+  // 吃進主文）。
+  const NOISE_SIGNUP_CTA_RE = /register\s+as\s+a\s+new\s+user|use\s+\S+\s+more\s+conveniently|what\s+you\s+can\s+do\s+with\s+signing\s+up|sign\s+(in|up)\s+to\s+(read|continue|comment|see|view|unlock|get|join)|create\s+(a\s+)?(free\s+)?account\s+to\s+(read|continue|comment|view|see)/i;
+  const NOISE_SIGNUP_CTA_MAX_LEN = 80;
+  const NOISE_CARD_CONTENT_P_MIN = 80; // 視為主文 paragraph 的 textContent 長度
+
+  // 卡片是否含主文長 <p>（未 hidden、textContent >= MIN）→ 含則不可 hide（會吃主文）
+  function cardHasContentParagraph(el) {
+    if (!el.querySelectorAll) return false;
+    for (const p of el.querySelectorAll('p')) {
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      if (norm(p.textContent).length >= NOISE_CARD_CONTENT_P_MIN) return true;
+    }
+    return false;
+  }
+
+  // canonical 標題（og:title / document.title）。walk-up 邊界 guard 用——CTA 卡
+  // 與標題區的精確分界（Substack reader hub header 把訂閱 <form> 與標題 <a> 放
+  // 同層、全用 div 無 <p>，content-<p> 邊界擋不住、walk-up 會吃掉標題；v0.7.140
+  // 已踩過同型 bug）。標題用 h1 或 canonical title 文字定位（與
+  // hideInsideArticleDirectChildLinkBlocks 同源訊號，非站點特判）。
+  function getCanonicalTitleText() {
+    const ogMeta = document.querySelector('meta[property="og:title"]');
+    const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
+    const docTitle = NS && NS.stripSiteSuffix
+      ? normTitle(NS.stripSiteSuffix(document.title || ''))
+      : normTitle(document.title || '');
+    return ogText || docTitle;
+  }
+  function elContainsArticleTitle(el, canonical) {
+    if (!el || !el.querySelector) return false;
+    if (el.querySelector('h1')) return true;
+    if (!canonical || canonical.length < 5) return false;
+    for (const n of el.querySelectorAll('a, h2, h3, h4, div, span, p')) {
+      const dt = normTitle(Array.from(n.childNodes)
+        .filter(c => c.nodeType === 3).map(c => c.textContent).join(''));
+      if (dt && dt === canonical) return true;
+    }
+    return false;
+  }
+
+  // 從 trigger 往上走，回傳最外層「不含主文長 <p>、不含文章標題」的卡片祖先
+  // （仍在 articleEl 內）。trigger 自身就含主文 <p> 或標題 → 回 null（放棄）。
+  function findContentFreeCard(triggerEl, articleEl) {
+    if (cardHasContentParagraph(triggerEl)) return null;
+    const canonical = getCanonicalTitleText();
+    if (elContainsArticleTitle(triggerEl, canonical)) return null;
+    let candidate = triggerEl;
+    let cur = triggerEl;
+    while (cur.parentElement && cur.parentElement !== articleEl &&
+           articleEl.contains(cur.parentElement)) {
+      const pp = cur.parentElement;
+      if (cardHasContentParagraph(pp)) break;      // 含主文長 <p> → 不擴
+      if (elContainsArticleTitle(pp, canonical)) break; // 含文章標題 → 不擴（避免吃 header）
+      candidate = pp;
+      cur = pp;
+    }
+    return candidate;
+  }
+
+  function hideNoiseCardFromTrigger(trigger, articleEl, hidden) {
+    const card = findContentFreeCard(trigger, articleEl);
+    if (!card || card === articleEl || (card.contains && card.contains(articleEl))) return;
+    if (card.dataset && card.dataset.jreadHidden === '1') return;
+    if (isInPreserved(card)) return;
+    hide(card, hidden);
+  }
+
+  function hideInsideArticleSubscribeForms(articleEl, hidden) {
+    for (const form of articleEl.querySelectorAll('form')) {
+      if (isInPreserved(form)) continue;
+      if (form.dataset && form.dataset.jreadHidden === '1') continue;
+      hideNoiseCardFromTrigger(form, articleEl, hidden);
+    }
+  }
+
+  function hideInsideArticleSignupCtaCards(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('p, div, span, h1, h2, h3, h4, h5, h6')) {
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const direct = Array.from(el.childNodes)
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent).join('');
+      const text = norm(direct);
+      if (!text || text.length > NOISE_SIGNUP_CTA_MAX_LEN) continue;
+      if (!NOISE_SIGNUP_CTA_RE.test(text)) continue;
+      hideNoiseCardFromTrigger(el, articleEl, hidden);
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -5675,6 +5783,8 @@
       safeRun(hideTailCuratedLinkLists, articleEl, hidden);
       safeRun(hideInsideArticleByInlineAdText, articleEl, hidden);
       safeRun(hideInsideArticleCTAParagraphs, articleEl, hidden);
+      safeRun(hideInsideArticleSubscribeForms, articleEl, hidden);
+      safeRun(hideInsideArticleSignupCtaCards, articleEl, hidden);
       safeRun(hideInsideArticleFontTags, articleEl, hidden);
       safeRun(hideInsideArticleCommentPanels, articleEl, hidden);
       safeRun(hideInsideArticleAllButtons, articleEl, hidden);

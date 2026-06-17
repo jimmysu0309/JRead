@@ -48,7 +48,13 @@ const NOISE_KEYWORDS_STRICT = [
   'related articles', 'related stories', 'recommended for you',
   'you may like', 'you might like', 'most read', 'most popular',
   'read more', 'more from', 'read next', 'up next',
-  'follow us', 'share this', "don't miss"
+  'follow us', 'share this', "don't miss",
+  // v0.8.102（Page Rounds 2026-06-18 訊號層補洞）：訂閱/註冊招攬卡高精度措辭。
+  // chinatalk「Hundreds of paid subscribers」/ qiita「Register as a new user」
+  // 原 residual audit 漏抓（只因 content-img-dropped 連帶進 review）。現 cleaner
+  // 已清，這兩條當未來變體的安全網（bare 'subscribe' 已在名單、但這兩句更不會
+  // 誤命中正文）。
+  'paid subscribers', 'register as a new user'
 ];
 const NOISE_KEYWORDS_CONTEXTUAL = [
   // 中文常用詞（短文字 / 高占比才警告）
