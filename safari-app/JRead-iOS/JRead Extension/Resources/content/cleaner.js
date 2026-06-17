@@ -4969,6 +4969,13 @@
       if (!el.querySelector('h2 a, h3 a, h4 a')) continue;
       // 自連結 permalink 標題（本文標題卡）保護——translate-proof URL 訊號
       if (containsSelfLinkTitleHeading(el)) continue;
+      // v0.8.100 theverge：lone section 標題 guard（與 sidebar 條件 A 同款）。
+      // 嵌入卡的結構是「縮圖 + kicker 連結 + 標題連結」多元素；本 block 若內容
+      // 就是一個 heading（heading 文字 ≈ block 全文）＝ 連結式 section 標題、非
+      // 嵌入卡，放行。theverge 較長的 section 標題（>= 15 chars）會落入本規則
+      // text 區間 + linkDensity 1.0，real Chrome 幾何命中 floated/narrow 被誤殺
+      //（短標題如「Gemini 3.5」因 < 15 chars 才倖免——「只有前面幾個出來」病徵）。
+      if (isLoneSectionHeadingColumn(el)) continue;
       // byline 保護（與 sidebar-column 條件 A 同款）：短文 + byline pattern
       if (t.length < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(t)) continue;
       let cs, r;
