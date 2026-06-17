@@ -408,6 +408,30 @@
     return STRONG_NOISE_KEYWORD_RE.test(m);
   }
 
+  // v0.8.99：keyword 命中是否「僅來自自動產生的標題錨點 id（= 標題文字 slug）」。
+  // theverge / Chorus 等 CMS 給每個 section 標題 wrapper 自動產生 id = 標題文字
+  // slug；slug 裡的主題用字（…-based-on-comments）會被 markerOf（查 class + id）
+  // 當留言區雜訊命中。但這是內容標題的自身 slug、非 widget class 訊號。判定：
+  //   - class 自身**不含**任何雜訊 token（純 id 命中）
+  //   - 元素內 heading 文字（去除所有非英數字後）== id（同樣處理）
+  // 兩者皆成立 → spurious，放行。只要 class 本身帶雜訊 token（newsletter-marquee
+  // / related-news / ad-slot 等真 widget 命名）就回 false、照常 hide——避免把
+  // 「class 是真噪、內容剛好只有一個 heading」的 widget 誤豁免（newtalk 實測）。
+  function keywordHitIsOnlyHeadingSlugId(el) {
+    const id = (el.id || '').toLowerCase();
+    if (!id) return false;
+    const clsMarker = Array.from(el.classList || []).join(' ').toLowerCase();
+    if (clsMarker && (NOISE_KEYWORD_RE.test(clsMarker) ||
+        AD_BOUNDARY_RE.test(clsMarker) || AD_SUFFIX_RE.test(clsMarker))) return false;
+    const h = el.querySelector && el.querySelector('h1, h2, h3, h4, h5, h6');
+    if (!h) return false;
+    const alnum = (s) => norm(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const idAlnum = alnum(id);
+    const hAlnum = alnum(h.textContent);
+    if (!idAlnum || !hAlnum) return false;
+    return idAlnum === hAlnum;
+  }
+
   // whitespace-normalize：jsdom textContent 保留 HTML 縮排 `\n    `，真實
   // Chrome innerText 會 collapse——兩端統一 collapse `\s+` → 單一空格並 trim，
   // 讓 fixture 與真實站點量到同一個 textLen。sidebar / button-cluster 規則共用。
@@ -2032,6 +2056,19 @@
       // wrapper 內含 H3/H4.title 卻被誤當主文 wrapper 保護。twz paywall wrapper
       // 含 47 個長 p（命中 P-only guard）仍正確豁免——通則屬性不變。
       // （此 guard 已併入上方 keywordWrapperIsProtected，註解保留紀錄修法脈絡）
+      // v0.8.99 theverge：lone section 標題 wrapper guard。CMS（theverge Chorus）
+      // 給每個 section 標題 wrapper 自動產生錨點 id = 標題文字 slug
+      // （id="googles-new-pics-app-edits-ai-images-based-on-comments"），slug 裡的
+      // 主題用字「comments」被 markerOf（查 class + id）當留言區雜訊命中、整個
+      // section 標題被砍。結構性區別同 sidebar 條件 A：wrapper 內容就是一個
+      // heading（heading 文字 ≈ wrapper 全文）＝ 內容標題、非 widget 容器。真噪
+      // section 標題（Subscribe / Most Popular / Top Stories 等）由
+      // NOISE_HEADING_TEXT_RE 文字訊號兜底，不靠本 class/id 規則。例外：ad / 強
+      // 語意 sidebar class 命名（廣告槽、article-sidebar 等）內容標題 wrapper 絕不
+      // 會帶 → 不適用本 guard、照常 hide。命中只認「class 乾淨 + id = 標題 slug」
+      // 的純 id 誤觸（keywordHitIsOnlyHeadingSlugId）；class 自身帶雜訊 token 的
+      // 真 widget（newsletter-marquee 等）即使內容只有一個 heading 仍照常 hide。
+      if (isLoneSectionHeadingColumn(el) && keywordHitIsOnlyHeadingSlugId(el)) continue;
       hide(el, hidden);
     }
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在
@@ -2541,6 +2578,32 @@
     return heads.some(headingHasSelfLinkPermalink);
   }
 
+  // v0.8.99 theverge：「單一 section 標題」block 判定（sidebar-column 條件 A
+  // guard）。theverge 文章 body 是一排扁平 block 元件（每個 <p> / <figure> /
+  // section 標題各自一個 div.article-body-component sibling）；section 標題常做成
+  // 「整個 heading 包一個連到深入文章的 <a>」（<h2><a href="/tech/…">Gemini 3.5
+  // </a></h2>）。這種 block textLen 極短 + linkDensity = 1.0，撞上條件 A
+  // （textLen < 主欄 10% 且 ld > 0.5），被誤判成 link-heavy sidebar widget 砍掉。
+  // 連到的是別篇文章（非本文 permalink），containsSelfLinkTitleHeading guard 不
+  // 命中。結構性區別：section 標題 block 的內容「就是一個 heading」（heading 文字
+  // ≈ block 全文）；條件 A 原本要抓的 Substack Dwarkesh 高 link-density 卡片是
+  // 「縮圖 + kicker + 標題 + 摘要」多元素卡（heading 文字遠少於卡全文）。故以
+  // 「block 內恰一個 heading 且 heading 文字佔 block 全文 >= 90%」放行——純結構
+  // 訊號、不綁站點 / class，翻譯後 heading 與 block 文字同步縮放、比例仍成立。
+  function isLoneSectionHeadingColumn(el) {
+    if (!el) return false;
+    const heads = [];
+    if (el.matches && el.matches('h1, h2, h3, h4, h5, h6')) heads.push(el);
+    if (el.querySelectorAll) {
+      for (const h of el.querySelectorAll('h1, h2, h3, h4, h5, h6')) heads.push(h);
+    }
+    if (heads.length !== 1) return false;
+    const hText = norm(heads[0].textContent || '');
+    const elText = norm(el.textContent || '');
+    if (!hText || !elText) return false;
+    return hText.length >= elText.length * 0.9;
+  }
+
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
@@ -2624,6 +2687,9 @@
         // v0.8.47 自連結 permalink 標題 guard：文字比對在翻譯後失效，URL 訊號
         // 不受翻譯影響（見 headingHasSelfLinkPermalink 註解）
         if (containsSelfLinkTitleHeading(s.el)) continue;
+        // v0.8.99 theverge section 標題 guard：sibling 就是一個 heading（連結式
+        // section 標題）→ 非 sidebar widget，放行（見 isLoneSectionHeadingColumn）
+        if (isLoneSectionHeadingColumn(s.el)) continue;
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
         if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
