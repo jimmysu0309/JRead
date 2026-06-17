@@ -1245,6 +1245,28 @@
       if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
       return;
     }
+    // v0.8.97：articleEl 內已有 visible 的「strict 標題 class」h2/h3（主標題語意）
+    // → 主標題已在 reader card 內，不需 promote。只認帶 strict 標題 class 者
+    // （wp-block-post-title / entry-title / article-title 等複合 token），section
+    // heading（wp-block-heading）不命中——故 Stratechery 類「articleEl 內只有
+    // section h2、主標題 h2 在外」場景仍照常 promote（inner 無 title-class h2）。
+    //
+    // 對應 bug（itsmicracing WordPress block theme，Jimmy 2026-06-17 截圖）：
+    // 主標題是 articleEl 內的 h2.wp-block-post-title（純文字置中），但頁面另有
+    // 一張 compact post-header 卡片（分類 chip + 自連結 post-title + 作者）在
+    // articleEl 外。舊版只 check inner h1（此站無 h1）→ 去 page-wide 找第一個
+    // title-class heading＝那張卡的自連結 post-title → wrapper 文字 ≈ 標題 →
+    // 連整張卡 clone 進 reader card 頂部，成「標題上方雜訊」。inner h2 主標題
+    // 已存在時根本不該 promote，這層 guard 補上 h2/h3 標題的偵測。
+    for (const h of articleEl.querySelectorAll('h2, h3')) {
+      if (h.dataset && h.dataset.jreadHidden === '1') continue;
+      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      if (!looksLikeArticleTitleStrict(h)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(h); } catch (_) { cs = null; }
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) continue;
+      return;
+    }
     // 已 promote 過（v0.7.141 機制）→ skip
     if (articleEl.querySelector('[data-jread-title-clone="1"]')) return;
     // 已 inject 過（markPromotedTitleIfMissing 機制）→ skip
