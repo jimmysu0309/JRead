@@ -574,12 +574,34 @@ pageFns.auditBodyWidthRatio = function () {
 // 驗：reader card 內元素 rect 是否超出 card 右緣 > 2px、整頁是否出現水平
 // scrollbar。<source> 等非渲染 tag 排除（原站 CSS 可能把 display 改成非
 // none 造成 rect 非零的 false positive，cna.com.tw 實測）。
+//
+// 2026-06-17 scroll-clip 豁免：code block / 寬表格慣例用 overflow-x:auto|scroll
+// 內捲——超出內容被祖先的捲軸吸收、使用者捲得到、視覺無破版（rust-book /
+// kubernetes 的 hljs code span、k8s YAML 實證：每個超出元素都在 card 內的
+// <pre>/<code> overflow-x:auto 裡，docScrollWidth==docClientWidth 整頁無 H-scroll）。
+// getBoundingClientRect 回報的是 layout 位置、不管 scroll 裁切，所以這類超出
+// 元素會被天真版誤報。豁免條件嚴格限「auto|scroll」（使用者捲得到）且祖先
+// 自身在 card 內——「hidden|clip」或被 card 本身裁切的情況不豁免（內容被切掉、
+// 看不到也捲不到 = 真破版，arxiv 寬公式被 card overflow:hidden 切掉仍須報）。
 pageFns.auditOverflow = function () {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { error: 'no article', overflow: false, items: [] };
   const cardRect = art.getBoundingClientRect();
   const docOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
   const NON_RENDERING_TAGS = new Set(['SOURCE', 'TRACK', 'META', 'LINK', 'STYLE', 'SCRIPT', 'HEAD', 'TITLE', 'TEMPLATE', 'PARAM']);
+  // 超出元素是否被一個「可捲到（auto|scroll）且自身在 card 內」的祖先裁切。
+  // 從 el 父節點往上走到 card 外為止（含 card 本身）。
+  function absorbedByScrollAncestor(el) {
+    let cur = el.parentElement;
+    while (cur && cur !== art.parentElement) {
+      const ox = window.getComputedStyle(cur).overflowX;
+      if (ox === 'auto' || ox === 'scroll') {
+        if (cur.getBoundingClientRect().right <= cardRect.right + 2) return true;
+      }
+      cur = cur.parentElement;
+    }
+    return false;
+  }
   const items = [];
   for (const el of art.querySelectorAll('*')) {
     if (NON_RENDERING_TAGS.has(el.tagName)) continue;
@@ -588,6 +610,7 @@ pageFns.auditOverflow = function () {
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
     if (r.right > cardRect.right + 2) {
+      if (absorbedByScrollAncestor(el)) continue;
       items.push({
         tag: el.tagName,
         cls: (el.className || '').toString().slice(0, 80),

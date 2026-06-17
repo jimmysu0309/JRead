@@ -3196,13 +3196,63 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v0.8.101：寬語意內容（table / pre）超出 card → 卡內水平捲，不被切掉。
+      // 根因（arxiv HTML 全文）：LaTeXML 把展示公式輸出成 <table class="ltx_equation">，
+      // 內含不可斷行的數學運算式，intrinsic min-width 撐破卡片版心；styler 既有
+      // 全後代 max-width:100%（line 1314）限縮 box 寬卻擋不住內容 min-width，
+      // table 仍溢出右緣被 card 的 overflow-x:hidden 切掉——公式右側 + 式號被截、
+      // 使用者看不到也捲不到（probe 實測溢出 54-144px）。
+      // 通則（非站點特判，符合硬規則 3）：table / pre 是「內容無法 wrap」的語意
+      // 載體，渲染寬撐破 card 時改 display:block + overflow-x:auto + max-width:100%
+      // 讓它在卡內水平捲（標準 responsive-table pattern）——使用者捲得到 = 視覺
+      // 無破版（probe 套後 fitsCard + innerScroll 110-200px）。防誤殺：
+      //   - 只處理「實際溢出右緣」的——能正常 wrap 的窄表格 / 文字不命中。
+      //   - 排除 player 結構（與 galleryFlex 同原則）。
+      //   - 排除已被既有 overflow-x:auto/scroll 祖先（在卡內）吸收的——原站
+      //     已給 code block 內捲（rust-book / k8s 的 <pre> overflow-x:auto）就不
+      //     重複處理，避免雙重 scroll container。
+      const wideScroll = [];
+      {
+        const win = articleEl.ownerDocument?.defaultView;
+        if (win) {
+          const cardRight = articleEl.getBoundingClientRect().right;
+          for (const el of articleEl.querySelectorAll('table, pre')) {
+            if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+            const r = el.getBoundingClientRect();
+            if (r.width < 1 || r.height < 1) continue;
+            if (r.right <= cardRight + 2) continue; // 沒溢出右緣 → 不動
+            // 已被「在卡內、可捲到」的祖先吸收 → 不重複處理
+            let absorbed = false, cur = el.parentElement;
+            while (cur && cur !== articleEl.parentElement) {
+              const ox = win.getComputedStyle(cur).overflowX;
+              if ((ox === 'auto' || ox === 'scroll') &&
+                  cur.getBoundingClientRect().right <= cardRight + 2) { absorbed = true; break; }
+              cur = cur.parentElement;
+            }
+            if (absorbed) continue;
+            wideScroll.push({
+              el,
+              display: el.style.getPropertyValue('display'),
+              displayPriority: el.style.getPropertyPriority('display'),
+              overflowX: el.style.getPropertyValue('overflow-x'),
+              overflowXPriority: el.style.getPropertyPriority('overflow-x'),
+              maxWidth: el.style.getPropertyValue('max-width'),
+              maxWidthPriority: el.style.getPropertyPriority('max-width'),
+            });
+            el.style.setProperty('display', 'block', 'important');
+            el.style.setProperty('max-width', '100%', 'important');
+            el.style.setProperty('overflow-x', 'auto', 'important');
+          }
+        }
+      }
+
       // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
       // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
       // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3416,6 +3466,20 @@ html [${ARTICLE_ATTR}="1"] a {
             } else {
               g.el.style.removeProperty('margin-bottom');
             }
+          }
+        }
+      }
+
+      // v0.8.101：還原寬語意內容（table / pre）的 display / overflow-x / max-width
+      // inline override（apply 時設的水平捲）。
+      if (Array.isArray(snapshot.wideScroll)) {
+        for (const w of snapshot.wideScroll) {
+          if (!w || !w.el) continue;
+          for (const prop of ['display', 'overflow-x', 'max-width']) {
+            const key = prop === 'overflow-x' ? 'overflowX' : (prop === 'max-width' ? 'maxWidth' : prop);
+            const value = w[key];
+            if (value) w.el.style.setProperty(prop, value, w[key + 'Priority'] || '');
+            else w.el.style.removeProperty(prop);
           }
         }
       }

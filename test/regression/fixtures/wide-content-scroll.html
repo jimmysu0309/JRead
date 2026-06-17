@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>wide content scroll fixture</title></head>
+<body>
+<article id="art">
+  <h1>Wide content horizontal scroll fixture</h1>
+  <p>This paragraph is long enough to be treated as real article body text so the
+     detector and styler run their normal passes over the document content here.</p>
+
+  <!-- 正例 1：寬公式 table（LaTeXML <table class="ltx_equation"> 模型）→ 溢出 card -->
+  <table id="wide-eq" class="ltx_equation"><tbody><tr><td>K = Diag(a) K_{n-1} + (1-a) K_n very wide unbreakable equation</td></tr></tbody></table>
+
+  <!-- 反例：窄 table（內容會 wrap、不溢出）→ 不該被動 -->
+  <table id="narrow"><tbody><tr><td>narrow</td></tr></tbody></table>
+
+  <!-- 正例 2：寬 pre（無自身內捲）→ 溢出 card -->
+  <pre id="wide-pre">a very long preformatted line that exceeds the reader card width without wrapping</pre>
+
+  <!-- 反例：寬 table 但已被 overflow-x:auto wrapper 吸收（在 card 內）→ 不重複處理 -->
+  <div id="scrollwrap" style="overflow-x:auto"><table id="absorbed"><tbody><tr><td>wide table already inside a scrolling wrapper div</td></tr></tbody></table></div>
+
+  <p>Trailing paragraph to give the article a reasonable amount of body content so
+     it is not rejected as too short by the detector heuristics during the test.</p>
+</article>
+</body>
+</html>
