@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.100**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.101**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -372,6 +372,12 @@ v0.7.247 從「沿段落祖先鏈走」改為「全面遍歷」：roomie 可見�
 `apply()` runtime 自我檢查：原站把主文段落排進 **flex-row** 或 **多欄 grid** 容器做雜誌式雙欄 layout 時（christies.com/en/stories `div.sc-kLokBR` 是 `display:flex`，文字欄被擠成 292px 半欄、另半欄留給側欄圖說、本文沒側欄時純留白，Jimmy 2026-06-14 回報「內文寬度不正確」），把分欄容器塌成 `display:block`、讓段落退回正常 block flow 撐滿版心。既有 `galleryFlex`（v0.7.93）只塌「含 `picture` / `img` / `figure` 直接子」的 flex/grid（並列圖），純文字欄分欄是另一條 path——此 pass 補上。
 
 結構訊號（非站點特判）：掃所有 **>= 80 字的長 `<p>`**，沿祖先鏈往上找 `display:flex` 且 `flex-direction:row(-reverse)`、或 `display:grid` 且 `grid-template-columns` >= 2 column track 的容器；若該長段落**實際渲染寬 < 容器內容寬 70%**（確認真的在分欄、非單一全寬子），把容器塌成 `display:block`（inline `!important`）。中間 wrapper 由既有 `[data-jread-active] div { width:auto }` 規則接手撐滿。防誤殺：`flex-direction:column`（本來就垂直堆疊）、橫向 UI 列（button / 分享列無長段落）、單一全寬子（比例接近 1）皆不命中；player 容器（`data-jread-player`）排除。每塌一層後重量段落寬，內層 splitter 塌掉後外層比例回到 ~1 不會被誤塌。`restore()` 還原原 inline `display`。Forcing function：`test/regression/flex-text-column-decollapse.spec.js`（flex-row / grid 正例塌成 block + 三類防誤殺 guard + restore 還原）；真實 Chromium flex 解析寬度走 `tools/debug-harness.js` 截圖自驗。
+
+### 寬語意內容水平捲（wide table / pre overflow scroll，v0.8.101）
+
+`apply()` runtime 自我檢查：`table` / `pre` 是「內容無法 wrap」的語意載體——表格資料、preformatted code、LaTeXML 把展示公式輸出成的 `<table class="ltx_equation">`（內含不可斷行運算式）等。當其內容的 intrinsic min-width 撐破 card 版心時，既有全後代 `max-width:100%`（line 1314）只能限縮 box 寬、擋不住內容 min-width，元素仍溢出右緣被 reader card 的 `overflow-x:hidden` 切掉（arxiv.org/html 全文頁實證：公式溢出 54–144px、右側 + 式號被截，看不到也捲不到）。此 pass 對溢出者改 `display:block` + `overflow-x:auto` + `max-width:100%`（inline `!important`）讓它在卡內水平捲（標準 responsive-table pattern，使用者捲得到 = 視覺無破版）。
+
+結構訊號（非站點特判，硬規則 3）：掃 `table` / `pre`，只處理「**實際渲染右緣 > card 右緣**（真溢出）+ 非 player（`data-jread-player`）+ **未被既有 `overflow-x:auto|scroll` 祖先（自身在卡內）吸收**（原站已給 code block 內捲就不重複處理、避免雙重 scroll container）」者。能正常 wrap 的窄表格、已內捲的 code block 不受影響。`restore()` 對稱還原原 inline `display` / `overflow-x` / `max-width`。同一份「水平溢出」事實在 harness 端由 `tools/audit-lib.js` 的 `auditOverflow` 把關：被 `overflow-x:auto|scroll`（可捲到）祖先吸收的超出元素豁免不報（rust-book / kubernetes code span 近誤報）、`hidden`/clip 或被 card 本身裁切的（看不到也捲不到）仍報。Forcing function：`test/regression/styler-wide-content-scroll.spec.js`（寬 table/pre 套修法 + 窄 table 不動 + 已吸收不重複 + restore 還原）+ `test/regression/audit-overflow-scroll-clip.spec.js`（audit 豁免層）；真實 Chromium overflow 走 `tools/page-rounds-harness.js` 的 OVERFLOW audit + 截圖自驗。
 
 ### 僅在「使用者改過預設值」時才注入的 override
 
