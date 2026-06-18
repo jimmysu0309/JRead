@@ -26,6 +26,97 @@ Chrome Extension 開發有三個 LLM 痛點：
 
 ---
 
+## 背景除錯的三層分工（不干擾 Jimmy 前景的單一資料源）
+
+> 痛點：cage（Claude in Chrome）能用 Jimmy 的真實 profile 除錯，但它會把分頁帶到**前景**、搶焦點，嚴重干擾 Jimmy 工作。以下三層由輕到重，目標是「該用哪一層就用哪一層，盡量別動到 Jimmy 的前景 Chrome」。**選層原則：能用低層就別跳高層。**
+
+| 層 | 適用場景 | 工具 | 對 Jimmy 的干擾 | DOM 精度 |
+|---|---|---|---|---|
+| **Tier 1** | 一般站、不需登入態 | `debug-harness.js`（獨立 /tmp profile） | 零（headless + 螢幕外） | 完整（CDP 讀 DOM/rect/computed） |
+| **Tier 2** | 需登入態，但可在專用 profile 登入一次 | `debug-harness.js --profile <name>` | 零（背景跑） | 完整 |
+| **Tier 3** | **必須是 Jimmy 活的主 Chrome**（live session、無法在他處重登） | cua-driver（背景像素驅動） | 不搶焦點（背景） | 受限（像素/AX，見下） |
+
+### Tier 1 — 獨立 profile 背景 harness（預設、最常用）
+
+現成的 `tools/debug-harness.js`：用獨立 persistent profile（`/tmp/jread-pw-profile`）、`--headless=new` + 視窗推到螢幕外（`--window-position=-2400,-2400`）載入 dev 版 JRead，CDP 讀 DOM。本來就完全不碰 Jimmy 的 Chrome。
+
+```bash
+node tools/debug-harness.js --url https://example.com/article
+```
+
+JRead 大多數 bug（cleaner/styler/detector，不需登入）都走這層。
+
+### Tier 2 — 帶登入態的持久 profile（背景）
+
+`--profile <name>` 用 `~/.jread-debug/profiles/<name>` 這個**跨 run 重用**的持久 profile 取代 /tmp。在該 profile 登入過的站台 cookie/session 會留存（已驗證：run 後 `Default/Cookies` + `Local Storage` 落地），之後背景跑就自動帶登入態。
+
+一次性登入（視窗會上螢幕，登入完關掉視窗即可）：
+
+```bash
+node tools/debug-harness.js --profile work --login --url https://paywalled-site.com
+```
+
+之後背景除錯（headless、螢幕外、不干擾）：
+
+```bash
+node tools/debug-harness.js --profile work --url https://paywalled-site.com/some-article
+```
+
+**相容性重點**：content script（cleaner/styler/detector）每次從磁碟重載 → 改這些**不需 `--fresh`**，登入態保得住；只有改 background SW 才需 `--fresh`（會清掉該 profile 登入態，要重登）。
+
+**為什麼不直接複製 Jimmy 的真實 Chrome profile**：macOS 上 Chrome cookie 用 Keychain 的「Chrome Safe Storage」金鑰加密，複製到 Playwright Chromium（不同 app、不同 Safe Storage 金鑰）解不開；且 Chrome 137+ 擋 `--load-extension`，用真 Chrome 載不了 dev 版 JRead。專用 profile 一次登入是更穩、更乾淨、零侵入的解。
+
+### Tier 3 — cua-driver 背景驅動 Jimmy 活的主 Chrome
+
+> 不可化約的場景：必須是 Jimmy **正在跑的主 Chrome、活的 profile**（無法在 Tier 2 專用 profile 重登的 session）。cage 碰得到但搶前景；[cua-driver](https://github.com/trycua/cua) 是唯一能在**背景、不搶焦點**碰它的工具。
+
+**狀態（2026-06-18）：已安裝 + 授權 + MCP 註冊並 Connected；背景枚舉/AX 讀取 CLI 已 smoke 過。完整「背景驅動 Chrome 讀 JRead 頁」的 drive-and-read 驗證留待第一個真實除錯任務（需新 session 載入 MCP 工具）。**
+
+已裝版本：cua-driver 0.5.7（Rust backend，maintainer 現行預設；macOS 背景 AX 表現若不佳可改 `--backend=swift` 重裝）。
+
+#### 安裝（已完成，重裝/他機照這步）
+
+TCC 權限對話框只認 app bundle 身分，**授權開關只能由人親手點**，Claude 代點不了。
+
+```bash
+# 1. 安裝（sudo-free：CuaDriver.app → /Applications，binary symlink → ~/.local/bin/cua-driver）
+#    副作用：會在 ~/.claude/skills/ 放一個 cua-driver skill symlink（uninstall 會移除）
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh)"
+
+# 2. 啟背景 daemon（-g：不帶到前景）+ 授權
+open -n -g -a CuaDriver --args serve
+cua-driver permissions grant          # 開系統設定面板，等人授權後自動完成
+#    在 系統設定 → 隱私權與安全性 把 CuaDriver 兩項都打開：
+#      ① 輔助使用 Accessibility（讀 AX tree、送點擊/鍵盤）
+#      ② 螢幕錄製 Screen Recording（截單一視窗）
+#    打開螢幕錄製通常要求「結束並重新打開」CuaDriver → daemon 會被結束，
+#    重跑 `open -n -g -a CuaDriver --args serve` 再驗證。
+cua-driver permissions status --json  # 確認 accessibility/screen_recording/capturable 三者皆 true
+
+# 3. 接 MCP（Claude Code computer-use 相容模式；指令由 `cua-driver mcp-config --client claude` 印出）
+claude mcp add-json cua-computer-use '{"args":["mcp","--claude-code-computer-use-compat"],"command":"'"$HOME"'/.local/bin/cua-driver"}'
+claude mcp list | grep cua            # 應顯示 ✔ Connected
+```
+
+**MCP 工具要新開一個 Claude Code session 才會載入**——裝完當下的 session 沒有工具（但可用 `cua-driver call <tool> <json>` 從 CLI 直接驗）。
+
+#### 驅動模型 + 工具集（實測）
+
+輸入工具（`click` / `double_click` / `type_text` / `press_key` / `hotkey` / `scroll`）經 `CGEventPostToPid` 送到**指定 pid**，**背景、不搶前景**（不必 `bring_to_front`）。鎖定 Jimmy 的 Chrome 視窗用 `pid` + `window_id`。
+
+讀取分三個訊號層（由結構化到像素）：
+1. **`get_accessibility_tree`** → 列出 app + 可見視窗（title / bounds / z-order / window_id）。先用它找到 Chrome 視窗的 pid+window_id。
+2. **`get_window_state`** → 走該視窗 AX tree，回傳 **Markdown 呈現的 UI、每個可互動元素標 `[element_index N]`**。Chrome 把網頁內容曝給 AX，所以這層**讀得到頁面標題 / 連結 / 殘留文字的結構**——這是 Tier 3 主要的「DOM-ish」讀取管道，殘留雜訊類驗收靠它，不必 OCR。`click` 可直接吃 `element_index` + `window_id`（不必算座標）。
+3. **`screenshot`（單一視窗，吃 pid+window_id）/ `zoom`（裁切區域 JPEG）** → 視覺層。排版破壞、配圖大小、對齊、低對比這類「眼睛看的」bug 靠截圖直判。
+
+**精確幾何（gap/寬度 px）的對策**：AX tree 給結構不給精確 rect。需要量 px 時用 JRead 既有「instrument 印到頁面紅框 div」pattern（見 memory／iOS instrument 套路），讓 content script 把 `getBoundingClientRect`/computed 值**渲染進頁面 overlay**，cua 截圖/AX 讀回；或退回 Tier 2 用專用 profile（有完整 CDP）重現。
+
+#### 風險
+
+cua 是 pre-release、API 變動快（README 自承 expect rough edges）；且授予了 Accessibility + Screen Recording 兩個高權限給 `com.trycua.driver`。因此 **Tier 3 只在 Tier 1/2 都搆不到的活 profile 場景才用**，不是常態。uninstall：`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/uninstall.sh)"`。
+
+---
+
 ## 必要條件
 
 1. **Node.js** ≥ 18（Playwright 需要）

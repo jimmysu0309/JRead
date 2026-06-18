@@ -15,12 +15,15 @@
 //   JREAD_URL=https://example.com node tools/debug-harness.js
 //   node tools/debug-harness.js --fresh              # 清 profile 後啟動
 //   node tools/debug-harness.js --keep               # 跑完不關瀏覽器（方便肉眼驗證）
+//   node tools/debug-harness.js --profile work       # Tier 2：用持久 profile（跨 run 留登入態）
+//   node tools/debug-harness.js --profile work --login --url https://site.com  # 一次性登入該站
 //   node tools/debug-harness.js --shinkansen         # toggle 後翻譯（驗 body 層殘留）
 //   node tools/debug-harness.js --translate-first    # 先翻譯→再 toggle（對應 Safari 實機順序）
 // -----------------------------------------------------------------------------
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwright'));
 // audit 邏輯與 NOISE_AUDIT_KEYWORDS 的單一資料源（v0.8.39 抽出，與
 // page-rounds-harness 共用；anti-drift forcing function 見
@@ -30,7 +33,19 @@ const { NOISE_KEYWORD_TIERS } = audits;
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const EXT_PATH = path.join(PROJECT_ROOT, 'jread');
-const PROFILE_DIR = '/tmp/jread-pw-profile';
+// --profile <name>（Tier 2，登入態除錯）：用 ~/.jread-debug/profiles/<name> 這個
+// 穩定持久 profile 取代預設 /tmp（重開機不會清）。同一 name 跨 run 重用 →
+// 在該 profile 登入過的站台 cookie/session 會留存，之後背景跑就帶著登入態。
+// 不給 --profile 時維持舊行為（/tmp/jread-pw-profile）。
+const profileArgIdx = process.argv.indexOf('--profile');
+const PROFILE_NAME = (profileArgIdx >= 0 && process.argv[profileArgIdx + 1]) || null;
+const PROFILE_DIR = PROFILE_NAME
+  ? path.join(os.homedir(), '.jread-debug', 'profiles', PROFILE_NAME)
+  : '/tmp/jread-pw-profile';
+// --login（Tier 2 一次性登入）：把視窗放到螢幕上、headed、不關閉，且跳過
+// toggle/audit——純粹開站台讓 Jimmy 手動登入一次。登入後該 --profile 的 session
+// 留存，之後同 --profile 的背景跑（headless、螢幕外）就自動帶登入態，不再干擾。
+const LOGIN = process.argv.includes('--login');
 const SCREENSHOT_OUT = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-viewport.png');
 const FULLPAGE_OUT = path.join(PROJECT_ROOT, '.playwright-mcp', 'jread-reader-fullpage.png');
 
@@ -147,8 +162,11 @@ async function triggerShinkansenTranslate(page) {
       `--load-extension=${extList}`,
       '--no-first-run',
       '--no-default-browser-check',
-      '--window-position=-2400,-2400',
-      ...(HEADED ? [] : ['--headless=new'])
+      // --login 時把視窗放到螢幕左上角讓 Jimmy 操作登入；其餘情境一律推到
+      // 螢幕外（-2400,-2400），背景跑不干擾。
+      LOGIN ? '--window-position=40,40' : '--window-position=-2400,-2400',
+      // --login 必須 headed（要看得到頁面登入）；其餘維持 --headed 決策。
+      ...((HEADED || LOGIN) ? [] : ['--headless=new'])
     ]
   });
 
@@ -179,6 +197,26 @@ async function triggerShinkansenTranslate(page) {
     await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
   }
   await sleep(2500); // 等 content script 於 document_idle 注入
+
+  // ===== --login 短路（Tier 2 一次性登入）=====
+  // 純粹開站台讓 Jimmy 在螢幕上手動登入，跳過 toggle + 所有 audit + 截圖。
+  // 登入完成後關掉視窗即可——session 已寫進該 --profile，之後同 --profile 的
+  // 背景跑（headless、螢幕外）會自動帶登入態。
+  if (LOGIN) {
+    if (!PROFILE_NAME) {
+      console.error('⚠️  --login 必須搭配 --profile <name>，否則登入態存進 /tmp 重開機就沒了');
+    }
+    console.log('\n===== LOGIN 模式 =====');
+    console.log(`profile: ${PROFILE_DIR}`);
+    console.log('視窗已開在螢幕左上角，請在裡面手動登入這個站台。');
+    console.log('登入完成後直接關閉該 Chromium 視窗即可（session 會留存）。');
+    console.log(`之後背景除錯跑：node tools/debug-harness.js --profile ${PROFILE_NAME || '<name>'} --url <文章URL>`);
+    console.log('======================\n');
+    // 不關 context——等 Jimmy 自己關視窗。偵測視窗關閉後結束 process。
+    await new Promise((resolve) => ctx.on('close', resolve));
+    console.log('視窗已關閉，登入態已存入 profile。');
+    return;
+  }
 
   // 找 tab id
   const tabId = await sw.evaluate(async (u) => {
