@@ -409,6 +409,18 @@ function hasReadwiseToken() {
   });
 }
 
+// v0.8.109：編輯模式按鈕受 options「編輯模式」開關控制。預設 true（!== false）
+// ——關閉後 popup 不顯示「編輯模式：移除雜訊」按鈕。
+function isEditModeEnabled() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.sync.get({ editModeEnabled: true }, (v) => {
+        resolve(!v || v.editModeEnabled !== false);
+      });
+    } catch (_) { resolve(true); }
+  });
+}
+
 async function refreshPopupForActiveTab() {
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') {
@@ -445,8 +457,8 @@ async function refreshPopupForActiveTab() {
     }
     // v0.8.108：編輯模式按鈕——閱讀模式啟動且非 cinema 才露出（cinema 無主文
     // 可編輯）。文字依編輯模式自身狀態切換：未啟動「編輯模式：移除雜訊」、
-    // 已啟動「完成編輯」。
-    if (active && !cinemaActive) {
+    // 已啟動「完成編輯」。v0.8.109：另受 options editModeEnabled 開關 gate。
+    if (active && !cinemaActive && await isEditModeEnabled()) {
       editBtn.hidden = false;
       editBtn.textContent = editModeActive ? '完成編輯' : '編輯模式：移除雜訊';
     } else {
