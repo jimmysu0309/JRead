@@ -55,6 +55,9 @@
   let articleEl = null;
   let focusedBlock = null;
   let barEl = null;
+  let geomObserver = null;   // article 幾何變化 → 重定位指示條（v0.8.103）
+  let geomObservedEl = null; // 目前 observe 的 articleEl（避免重複 observe 觸發迴圈）
+  let repositionRaf = 0;
   let animId = null;
   let scrollGuardTimer = null;
 
@@ -351,14 +354,52 @@
     if (focusedBlock && focusedBlock.isConnected) setFocus(focusedBlock);
   }
 
+  // v0.8.103：article 幾何變化時重定位焦點指示條。指示條掛 <html>（逃
+  // hideAncestorSiblings）、用 absolute 文件座標一次定位；article 在 body 內，
+  // body `zoom` 改變版面後（版心寬翻倍、重新置中）指示條停在原座標 → 偏離主文
+  // 欄左方（Page Rounds zoom 0.5 截圖左側藍條瑕疵，Jimmy 2026-06-18 回報）。
+  // positionBar 用 getBoundingClientRect（visual 座標、已含 zoom），只要幾何變
+  // 化後重跑就會對齊。ResizeObserver 觀察 article（zoom / lazy-load reflow /
+  // 視窗縮放都觸發），rAF 去抖避免 reflow 連發抖動。window resize 已有 onResize
+  // 監聽；本 observer 補 zoom / 程式化 layout 變化（不發 resize 事件）。
+  function scheduleReposition() {
+    if (repositionRaf) return;
+    repositionRaf = requestAnimationFrame(() => {
+      repositionRaf = 0;
+      if (focusedBlock && focusedBlock.isConnected) setFocus(focusedBlock);
+    });
+  }
+
+  function ensureGeomObserver() {
+    if (typeof ResizeObserver === 'undefined' || !articleEl) return;
+    if (geomObserver && geomObservedEl === articleEl) return; // 已觀察當前 article
+    if (!geomObserver) geomObserver = new ResizeObserver(scheduleReposition);
+    geomObserver.disconnect();
+    // documentElement：抓 body zoom / 視窗變化（articleEl 為老式 table-cell 佈局
+    // 如 paulgraham 的 <td> 時，TD 在 zoom 下尺寸不變、ResizeObserver 不發 →
+    // 需靠 <html> layout px 改變觸發；cage probe 實證 TD 1→1、HTML 1→2）。
+    // articleEl：抓主文 reflow（lazy-load 圖載入增高、字級調整）。
+    geomObserver.observe(document.documentElement);
+    geomObserver.observe(articleEl);
+    geomObservedEl = articleEl;
+  }
+
+  function teardownGeomObserver() {
+    if (repositionRaf) { cancelAnimationFrame(repositionRaf); repositionRaf = 0; }
+    if (geomObserver) { geomObserver.disconnect(); geomObserver = null; }
+    geomObservedEl = null;
+  }
+
   function setFocus(block) {
     focusedBlock = block;
     // 單頁文章不顯示指示條——移除已建的 bar（涵蓋 resize 由多頁變單頁的情境）
     if (isSinglePage()) {
       if (barEl) { barEl.remove(); barEl = null; }
+      teardownGeomObserver();
       return;
     }
     ensureBar();
+    ensureGeomObserver();
     positionBar(block);
   }
 
@@ -529,6 +570,7 @@
     window.removeEventListener('resize', onResize);
     installed = false;
     cancelSpaceScrollAnim();
+    teardownGeomObserver();
     focusedBlock = null;
     articleEl = null;
     if (barEl) { barEl.remove(); barEl = null; }
