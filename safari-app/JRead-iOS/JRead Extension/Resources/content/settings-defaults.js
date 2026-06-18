@@ -54,6 +54,9 @@
     blockPageShortcuts: true,
     // 中英文字之間自動補空白（盤古之白）。
     pangu: true,
+    // v0.8.109：編輯模式（閱讀模式下手動點掉雜訊段落）。預設 true = popup 顯示
+    // 「編輯模式：移除雜訊」按鈕；false = 整顆隱藏（不需要此功能者可關掉）。
+    editModeEnabled: true,
     titleFontSize: 0,
     // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用。
     spaceScrollRatio: 50,
