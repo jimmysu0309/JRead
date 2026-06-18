@@ -56,12 +56,27 @@ describe('cleaner — 文中「本期雜誌」推廣區清除（v0.8.113）', ()
     assert.ok(isHidden(a), 'View More 在被 hide 的推廣 section 內');
   });
 
-  it('主文長段落必須完整保留', () => {
+  it('翻譯後譯文 heading「探索 2024 年 12 月號」推廣 section 仍必須被 hide（translate-first）', () => {
+    const sec = document.querySelector('section.x7q_root__zh');
+    assert.ok(sec, 'fixture 應有譯文變體 section');
+    assert.ok(isHidden(sec),
+      'EXT regex 雜誌期數 pattern〔年〕年〔月〕月(號|刊)$ 必須命中譯文 heading——英文 pattern 翻譯後失效');
+  });
+
+  it('譯文變體的封面圖與「查看更多」連結也必須隨 section 消失', () => {
+    const img = document.querySelector('img.x7q_img__zh');
+    const a = document.querySelector('a.x7q_link__zh');
+    assert.ok(img && a, 'fixture 應有譯文封面圖與 CTA');
+    assert.ok(isHidden(img), '譯文封面圖在被 hide 的 section 內');
+    assert.ok(isHidden(a), '譯文 CTA 連結在被 hide 的 section 內');
+  });
+
+  it('主文長段落必須完整保留（含譯文後接續主文）', () => {
     let visible = 0;
     for (const p of articleEl.querySelectorAll('p')) {
-      if (p.closest('section.x7q_root__kenOr')) continue;
-      if (p.textContent.replace(/\s+/g, '').length >= 50 && !isHidden(p)) visible++;
+      if (p.closest('section.x7q_root__kenOr') || p.closest('section.x7q_root__zh')) continue;
+      if (p.textContent.replace(/\s+/g, '').length >= 20 && !isHidden(p)) visible++;
     }
-    assert.ok(visible >= 3, `主文長段落必須保留（visible=${visible}，預期 >= 3）`);
+    assert.ok(visible >= 4, `主文長段落必須保留（visible=${visible}，預期 >= 4）`);
   });
 });
