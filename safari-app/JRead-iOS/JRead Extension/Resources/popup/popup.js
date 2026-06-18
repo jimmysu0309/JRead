@@ -411,6 +411,8 @@ function hasReadwiseToken() {
 async function refreshPopupForActiveTab() {
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') {
+    // 無有效分頁 = 沒有可啟動的閱讀模式，toggle 文字回到「啟動」態（off）。
+    toggleBtn.textContent = '啟動閱讀模式';
     readwiseBtn.hidden = true;
     borderlessBtn.hidden = true;
     return;
@@ -421,10 +423,14 @@ async function refreshPopupForActiveTab() {
     const active = !!(res && res.active);
     const cinemaActive = !!(res && res.cinemaActive);
     const borderlessActive = !!(res && res.borderlessActive);
-    // YouTube watch 頁：toggle 按鈕文字改「啟動 / 退出影院模式」；其他站維持
-    // popup.html 的 default「切換閱讀模式」。
+    // YouTube watch 頁：toggle 按鈕文字改「啟動 / 退出影院模式」。
+    // v0.8.104：其他站不再固定顯示「切換閱讀模式」，改為反映 reader mode 狀態
+    //（已啟動 → 「退出閱讀模式」、未啟動 → 「啟動閱讀模式」），與影院模式按鈕
+    // 同一套狀態化詞彙——使用者一眼看出按下去會進還是出。
     if (siteMode === 'youtube-cinema') {
       toggleBtn.textContent = cinemaActive ? '退出影院模式' : '啟動影院模式';
+    } else {
+      toggleBtn.textContent = active ? '退出閱讀模式' : '啟動閱讀模式';
     }
     // v0.7.134：無邊模式按鈕——YouTube watch 頁才露出（與 cinema 完全獨立、
     // 兩者可同時 toggle）。按鈕文字依 borderless 自己的 active 狀態切換。
@@ -438,6 +444,9 @@ async function refreshPopupForActiveTab() {
     // （cinema 沒主文可送；沒 token 按了必失敗，v0.8.50 整顆隱藏）
     readwiseBtn.hidden = !active || cinemaActive || !(await hasReadwiseToken());
   } catch (_) {
+    // content script 未注入（禁注入頁 / 尚未載入）= reader mode 必為 off，
+    // toggle 文字回到「啟動」態（按下去會走 inject fallback 嘗試進入）。
+    toggleBtn.textContent = '啟動閱讀模式';
     readwiseBtn.hidden = true;
     borderlessBtn.hidden = true;
   }
