@@ -178,7 +178,8 @@
        兩顆共用次級按鈕樣式：白底 / 灰邊 / 黑字
        ========================================================== */
     #borderless-btn,
-    #readwise-btn {
+    #readwise-btn,
+    #edit-btn {
       width: 100%;
       margin-top: var(--jr-space-2);
       padding: 9px 14px;
@@ -194,12 +195,14 @@
       letter-spacing: 0.01em;
     }
     #borderless-btn:hover:not(:disabled),
-    #readwise-btn:hover:not(:disabled) {
+    #readwise-btn:hover:not(:disabled),
+    #edit-btn:hover:not(:disabled) {
       background: var(--jr-neutral-50);
       border-color: var(--jr-neutral-500);
     }
     #borderless-btn:focus-visible,
-    #readwise-btn:focus-visible {
+    #readwise-btn:focus-visible,
+    #edit-btn:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
@@ -523,6 +526,7 @@
   <button id="toggle-btn">啟動閱讀模式</button>
   <button id="borderless-btn" hidden title="影片填滿視窗 + 自動 resize 視窗高度匹配影片比例（YouTube watch 頁專用）">啟動無邊模式</button>
   <button id="readwise-btn" hidden title="把當前 reader card 內容送到 Readwise Reader">送到 Readwise Reader</button>
+  <button id="edit-btn" hidden title="進入編輯模式，點擊頁面上的雜訊段落即可移除（重新整理頁面後復原）">編輯模式：移除雜訊</button>
   <div id="readwise-status" hidden></div>
 
   <section class="settings">
