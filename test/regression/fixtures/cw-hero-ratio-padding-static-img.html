@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>cw hero ratio-padding placeholder（img 已被 styler 解 absolute）</title>
+</head>
+<!--
+  最小重現：crossing.cw.com.tw/article/7004 hero 圖下方一大塊空白（v0.8.117）。
+
+  站方原生結構：
+      <figure class="main-img">
+        <div class="main-img__pic" style="position:relative; padding-bottom:61%">  ← ratio 撐高
+          <img style="position:absolute; inset:0; ...">                           ← 絕對填滿
+        </div>
+        <figcaption>…</figcaption>
+      </figure>
+
+  真實 pipeline 的順序是 styler.apply（強制 `img{position:static}`）先跑、
+  cleaner.clean 後跑。等 cleaner 的 resetMediaPlaceholderPadding 執行時，hero img
+  已被 styler 解成 static —— 本 fixture 直接把 img 設 position:static 來「emulate
+  post-styler 狀態」（jsdom 不跑 styler）。
+
+  v0.8.117 之前：resetMediaPlaceholderPadding 以「media 仍是 position:absolute」
+  當必要條件，量到 static 直接 continue，padding-bottom 殘留 → 主圖下方空白。
+  forcing function：img 為 static 時，cleaner 仍必須以 parent 的 padding-bottom/
+  width 比例（這裡 inline 61% > 20%）判定為 ratio hack 並 reset padding-bottom:0。
+
+  jsdom 限制：computed % padding-bottom 不 resolve 成 px，偵測走 inline 字串分支
+  （parent.style.paddingBottom 命中 /%$/ 且 > 20），故 padding-bottom 必須寫 inline。
+-->
+<body>
+  <article>
+    <h1>關於印度的「低級騙術」，與我們視而不見的偏見</h1>
+
+    <figure class="main-img" data-test="hero-figure">
+      <div class="main-img__pic" data-test="ratio-wrapper"
+           style="position: relative; padding-bottom: 61%;">
+        <!-- img 為 static：emulate styler 已把站方原生 absolute 解成 static -->
+        <img data-test="hero-img" src="https://example.com/hero.jpg"
+             alt="hero" style="position: static; width: 100%; height: auto;">
+      </div>
+      <figcaption data-test="hero-caption">Photo Credit：Lei　提供</figcaption>
+    </figure>
+
+    <p data-test="body-p-1">臨行出發前，友人不斷耳提面命著印度的可怕治安和各種騙術，我 google 查了一下，去過印度的旅人對當地治安評價也很兩極，但本著好人有好運和死愛冒險的精神，我還是一個人出發了。</p>
+    <p data-test="body-p-2">到達了柯欽（kochi）機場，小心翼翼地再三確認是否真的有網路上提到，「假巴士」或「假司機」的可能，經過詢問後，平安地上了巴士來到柯欽漁港。</p>
+  </article>
+</body>
+</html>
