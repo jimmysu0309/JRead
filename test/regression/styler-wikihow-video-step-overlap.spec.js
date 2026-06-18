@@ -125,4 +125,40 @@ describe('styler — wikiHow inline 影片步驟壓字（v0.8.105）', () => {
         '媒體容器 position:static 規則必須排除 player 容器（真 responsive embed 靠 absolute 填滿 relative 框）');
     });
   });
+
+  // v0.8.106：v0.8.105 把容器拉回 flow 後，poster img（static）與 video（absolute
+  // overlay）兩者都顯示且偏移 → 兩張疊圖（Jimmy 2026-06-18 截圖）。修法：容器同時
+  // 直接含 <img> + <video> 時，純 CSS :has 隱藏其 <video>，只留 poster img 顯示單張。
+  // 用 :has 而非 JS 標記——wikiHow poster img 是 lazy/JS 注入、apply() 標記當下常
+  // 不在 DOM；:has live 求值無 timing 競態。
+  // 註：jsdom 不算 :has，本段只驗 CSS 字串注入；實際隱藏 / 單張視覺由
+  // tools/probe-wikihow.js 在真實站點驗（maxVisiblePerContainer 2→1）。
+  describe('styler CSS：poster + video 同容器時隱藏 redundant video overlay', () => {
+    let css, rule;
+    before(() => {
+      css = applyStyler().document.getElementById('__jread-style').textContent;
+      // 找「同時含 :has(> img...) + :has(> video) + > video + display:none」的 rule 區塊
+      const blocks = css.split('}').map(b => b + '}');
+      rule = blocks.find(b =>
+        /:has\(>\s*img/.test(b) && /:has\(>\s*video\)/.test(b) &&
+        />\s*video\s*\{/.test(b) && /display\s*:\s*none\s*!important/.test(b));
+    });
+
+    it('必須有「容器 :has(>img):has(>video) > video { display:none }」規則', () => {
+      assert.ok(rule,
+        '必須有「直接含 img + video 的容器 → 隱藏 > video」規則——forcing：移除後 poster img 與 absolute video 兩者都顯示偏移成兩張疊圖');
+    });
+
+    it('該隱藏規則的 img 條件須排除 inline emoji（:not([data-jread-inline-img]))', () => {
+      assert.ok(rule);
+      assert.ok(/:has\(>\s*img:not\(\[data-jread-inline-img\]\)\)/.test(rule),
+        '隱藏規則的 img 條件須排除 inline emoji——避免「段落有 emoji + 內嵌 video」誤殺 video');
+    });
+
+    it('該隱藏規則須排除 player 容器（:not([data-jread-player="1"]))', () => {
+      assert.ok(rule);
+      assert.ok(/:not\(\[data-jread-player="1"\]\)/.test(rule),
+        '隱藏規則須排除真 player root（JW 式 player 的 video 不該被隱藏）');
+    });
+  });
 });
