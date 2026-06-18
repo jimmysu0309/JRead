@@ -4508,6 +4508,21 @@
 
   function keywordWrapperIsProtected(el, articleEl) {
     if (shouldHideByStrongKeyword(el)) return false;
+    // v0.8.119 autosport 修法：只被「非 strong keyword」命中、但內含 standalone
+    // content image（hero / 內文大圖、非連結縮圖）的 wrapper 一律保留。
+    // 場景：autosport.com（Motorsport CMS）主圖容器 class 為
+    // `ms-entity-promo`（= 「主推內容實體」結構命名），其中 `promo` token 命中
+    // NOISE_KEYWORD_RE 但該 div 內只有一張 hero <picture>（無 h1 / 無 p / 無
+    // 文字），既有 h1 guard 與 main-content-p guard 全 miss → 整塊被 hide、
+    // 主圖連帶 0×0 消失。通則依據：standalone content image（img 不包在
+    // a/li 內、natural 或 rendered 達內容圖尺寸）是內容本身；圖片式廣告 /
+    // promo banner 的圖幾乎都包在 <a>（點擊跳廣告主）→ containsStandaloneContentImg
+    // 已用「img.closest('a, li')」排除。誤殺主圖（成本高）vs 漏清少數無連結
+    // image banner（成本低）取捨明確，且與 narrowPromotedSiblings /
+    // hideInsideArticleAbsoluteOverlays 既有的 standalone-media 保護一致。
+    // strong keyword（billboard / sponsored / related 等明確廣告語意）在上方
+    // 已 return false，不享本豁免——圖片式廣告 banner 照清。
+    if (containsStandaloneContentImg(el)) return true;
     if (el.querySelector && el.querySelector('h1') && wrapperH1IsMainTitle(el)) return true;
     if (articleEl && CONTENT_BEARING_NOISE_RE.test(markerOf(el))) {
       const articleLen = norm(articleEl.textContent).length;
