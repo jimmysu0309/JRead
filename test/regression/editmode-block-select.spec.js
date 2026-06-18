@@ -70,6 +70,54 @@ describe('編輯模式 — block 邊界選取（演算法 C，v0.8.108）', () =
   });
 });
 
+describe('編輯模式 — 段落提示 markBlocks（v0.8.109，仿 Shinkansen）', () => {
+  let env, doc, NS;
+  before(() => {
+    env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_PATH,
+      scripts: ['cleaner', 'editMode'],
+      viewport: { width: 1280, height: 900 },
+      pretendToBeVisual: true
+    });
+    doc = env.document; NS = env.NS;
+    NS.editMode.enter(doc.getElementById('post'), {});
+  });
+  after(() => { if (NS && NS.editMode) NS.editMode.exit(true); });
+
+  it('collectBlocks 以 chooseBlock 把主文切成自然 block 分割（提示範圍 = 可選範圍）', () => {
+    const ids = NS.editMode._collectBlocks().map(b => b.id).sort();
+    assert.strictEqual(ids.join(','), 'para1,para2,para3,para4,related,wrap1',
+      '可選 block = 各段 + 單一子 wrapper 鏈外層 wrap1 + 整個推薦 widget related');
+  });
+
+  it('進入編輯模式 → 每個可選 block 標 data-jread-edit-block', () => {
+    for (const id of ['para1', 'para2', 'para3', 'para4', 'wrap1', 'related']) {
+      assert.strictEqual(doc.getElementById(id).getAttribute('data-jread-edit-block'), '1',
+        `${id} 應被標記為可選 block`);
+    }
+  });
+
+  it('不可選的元素不標記：dominant wrapper / 已被合併的內層 / article 本身', () => {
+    assert.ok(!doc.getElementById('dominant').hasAttribute('data-jread-edit-block'), 'dominant wrapper 不標（over-select guard）');
+    assert.ok(!doc.getElementById('promo').hasAttribute('data-jread-edit-block'), 'promo 已合併進 wrap1、不單獨標');
+    assert.ok(!doc.getElementById('post').hasAttribute('data-jread-edit-block'), 'article 本身不標');
+  });
+
+  it('注入提示 stylesheet（虛線外框 + hover 強化）', () => {
+    const style = doc.getElementById('__jread-editmode-style');
+    assert.ok(style, '應注入 __jread-editmode-style');
+    assert.ok(/data-jread-edit-block/.test(style.textContent) && /dashed/.test(style.textContent),
+      'stylesheet 須含 [data-jread-edit-block] 虛線外框規則');
+    assert.ok(/:hover/.test(style.textContent), 'stylesheet 須含 hover 強化規則');
+  });
+
+  it('退出編輯模式 → 清除所有標記 + 移除提示 stylesheet', () => {
+    NS.editMode.exit(true);
+    assert.strictEqual(doc.querySelectorAll('[data-jread-edit-block]').length, 0, '標記須全清');
+    assert.ok(!doc.getElementById('__jread-editmode-style'), '提示 stylesheet 須移除');
+  });
+});
+
 describe('編輯模式 — hideElement / restore 整合（v0.8.108）', () => {
   let env, doc, NS, articleEl;
   before(() => {
