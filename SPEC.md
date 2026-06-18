@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.111**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.112**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -293,6 +293,12 @@ collapse 後對 visible children 的寬度 reset（`width: auto !important` + fl
 
 flex 兩欄 layout 的推薦 / 廣告 rail 在 clean 當下有完整內容（theverge instrument 實測 2123 chars，sidebar 各條件不命中），之後**內部**被其他 rule 逐個清空只剩殘殼——wrapper 本身仍 visible、`flexGrow:1` 照樣占走 50% 寬、主文被壓到卡片 42%。`hideEmptiedFlexColumns`（跑在所有 hide 規則之後、collapse 之前）：flex-row container 內非主欄（主欄粗文字 ≥ 500）+ **可見**文字 < 100 chars + 含 ≥ 1 個被 jread hide 的後代（證明被清空、非原生 spacer）+ 無 visible 大媒體 → hide 殘殼欄，緊接的 collapse 看到 hidden child 自然觸發退化、主欄回滿寬。
 
+### 次要全文 aside（v0.8.112 通則）
+
+無限捲動 / 嵌入把「下一篇文章」整篇注入成 `<aside>`（womany.net `.article-root` 含自己的 `<h1>` 實證）。`asideIsSecondaryArticleBlock`：`<aside>` 滿足任一 → 「次要全文區塊」整塊 hide——(a) 內含自己的 `<h1>`（次要 aside 不該帶 page-level h1，這是「另一篇完整文章」最強且 **layout-independent** 的訊號，根治偵測選到哪層 articleEl / 注入時序的非決定性漏網）、(b) rectH > `SIDEBAR_ASIDE_MIN_HEIGHT`(400)、(c) textContent > `ASIDE_DYN_MIN_TEXT`(400)（layout 未就緒 fallback：動態一次注入完整 aside 時 `getBoundingClientRect` 回 0）。guard：必須 `<aside>` tag、非 articleEl 自身 / 祖先、非 preserved。pull-quote / infobox（無 h1、矮、短）不命中。靜態 `hideSecondaryArticleAsides` 掃整棵 `querySelectorAll('aside')`（補條件 B 只查 direct-child sibling 的限制）+ 動態 `checkDynamicNoise`（node 自身 / 其內 / `closest('aside')` 祖先補查涵蓋「空殼後 hydrate」時序）共用此 helper 單一資料源。
+
+**圖片式廣告 banner（strong keyword 內容圖連結，v0.8.112）**：`<a class="related-block" href="/redirects/...">` 包大促銷圖（文字烤進圖、a 無文字，womany 塔羅 app 跨宣傳實證）結構與 lightbox 大圖連結撞型，被 `anchorIsContentImageLink` 豁免殘留。修法：(1) `related` 雜訊 token suffix 補 `block`（CMS「相關/推薦內容區塊」通用命名，boundary 後置不誤中 `related-blockquote`）；(2) **strong keyword**（related / sponsored / 品牌 widget 命名）命中時靜態 / 動態 keyword `<a>` path 皆不套內容圖豁免——正當內容照片的 lightbox 連結絕不命名 related/sponsored，零誤殺；weak keyword（popup 等）內容圖連結仍受豁免保護。
+
 ### heading 旁動作連結（v0.8.45 通則）
 
 MediaWiki 類站每節標題旁有「[編輯]」動作連結（zh.wikipedia WK4）。結構通則：heading（h1-h6）**內部**或 **heading wrapper 內 sibling**（新版 MediaWiki `DIV.mw-heading > H2 + SPAN`）的含 `<a>` 的 `<span>`、文字 ≤ 12 chars、括號包裹（`[編輯]` / `(edit)` 跨站視覺慣例）或占 heading 文字 < 30% → 連 wrapper 一起 hide（只清 `<a>` 會留括號殘渣）。sibling 掃描限「wrapper 純粹包標題」（wrapper 文字 ≤ heading + 15 chars）。連結式標題（a 占整個 heading）不命中。
@@ -362,6 +368,7 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 8. `[data-jread-hidden="1"] { display: none !important }`（v0.6.11 補 cleaner hide 漏洞——cleaner 只設 inline `style.display = 'none'` 無 !important，站點 JS scroll/timer handler 主動寫 `el.style.display = 'block'` 會覆寫 inline display + 清掉 priority。stylesheet !important 優先級 > inline 無 priority 值，browser 層級勝出，擋得住 JS 覆寫）
 9. 閱讀進度條（v0.7.191）：`#__jread-progress` 固定在 viewport 頂端的 3px 細線，寬度隨捲動即時更新（`scrollTop / (scrollHeight - clientHeight) * 100%`）。顏色跟主題連動：light `#4A90D9` / dark `#7fb5e6` / sepia `#2c5282`。`z-index: 2147483647` + `pointer-events: none`。apply() 建立 DOM + scroll listener、restore() 清除
 10. `<meta name="theme-color">` 覆蓋（v0.8.24）：閱讀模式下 apply() 把頁面所有 theme-color meta 的 `content` 覆蓋成 reader card 色（`theme.articleBg`：light `#ffffff` / dark `#1a1a1a` / sepia `#f4ecd8`），restore() 還原（原有的還回原 content、自建的移除）。多個 light/dark media 變體全部覆蓋成同一 JRead 色、完全沒宣告時自建一個。通則不綁站點。DOM 操作層由 `styler-theme-color-meta.spec.js` 把關。**平台效果**：Chrome / Android Chrome（位址列）/ 桌面會用 theme-color 染瀏覽器 chrome、本覆蓋有效；**iOS Safari 完全不理 theme-color**（2026-06-09 iOS 26.5 模擬器實證），iOS 狀態列/工具列染色取自頁面 `<html>` 背景、載入時取一次後凍結，content script 之後任何背景變更（theme-color / stylesheet / inline / document_start / 程式捲動）都不觸發重取樣，只有真實使用者觸控會（分頁模式又攔掉觸控）。**故 iOS 上分頁模式螢幕上下端的原站色無法由 JRead 代換**——WebKit 架構限制、非 bug，詳見 memory `project_ios_statusbar_chrome_uncontrollable`
+11. 裸內容圖放大填欄寬（v0.8.112）：裸 `<img>`（非 `<a>` 包、非 inline emoji、非 capIcon 作者縮小圖）且 content-size（natural / rect 任一維 >= `CONTENT_IMG_MIN`(200)）標 `data-jread-upscale-img`、CSS `width: 100% !important` 撐滿欄寬。站點常把低解析配圖（natural < 版心寬）以原尺寸顯示，reader 的 `img:not(a>img){width:auto}` 退回 naturalWidth → 在 720 版心裡偏小、與 `<a>` 包大圖（填欄寬）不一致（womany.net 卡蘿配圖 natural 285px 在 608px 欄只佔半寬實證）。Safari / Firefox 閱讀模式同款「內容圖一律填欄寬」。icon / logo（< 200px）不標、維持原尺寸（不反向放大成滿版）；裸大圖 width:100% = cap、無害。`max-height: 90vh` + `object-fit: contain` 由既有 MEDIA_CAP_SEL 收斂直式長圖。restore() 移除標記。DOM 標記由 `womany-bare-content-img-upscale.spec.js` 把關
 
 ### 版心自我檢查（enforce content width，v0.7.246 / v0.7.247）
 
