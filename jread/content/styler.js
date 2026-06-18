@@ -882,6 +882,27 @@ ${MEDIA_CAP_SEL} {
   min-height: 0 !important;
   max-height: none !important;
 }
+/* v0.8.105：含媒體的直接容器若自身 position:absolute / fixed，脫離 normal flow
+   →不貢獻高度給 in-flow 祖先→祖先塌陷→絕對定位的圖疊在後續文字上（wikiHow
+   Tie-a-Tie 影片步驟 DIV.video-container.content-fill position:absolute、
+   父 DIV.video-player / DIV.mwimg.whvid 因此塌成 0/16px，圖壓住右側 step 文字，
+   Jimmy 2026-06-18 寬版心截圖揭穿）。上面 height:auto reset 把容器高度解開了，
+   但 absolute 容器自己不參與流、祖先仍量不到它 → 必須把含媒體的容器一併拉回
+   static，圖回到正常 inline-block flow、祖先才撐得到它的高度。
+   通則（硬規則 3，非站點/class 特判）：與既有「媒體 img/video 自身 static」
+   （line ~760）、「placeholder/ratio 容器後代 static」（line ~851）同精神，
+   差別是此條 keyed on「直接含媒體」的結構事實、補到無語意 class 的影片嵌入
+   wrapper。排除已標記 player（responsive embed 靠 absolute 填滿 relative 框，
+   見 PLAYER_ATTR 段）與 inline emoji。 */
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video) {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+}
 /* v0.8.59：被隱藏的 hero / header 圖殘留 min-height → 標題上方一大截空白。
    原站把「標題疊在 hero 圖上」的 header 容器設 min-height = hero 圖高（撐到等高
    再 flex 把標題靠底對齊）。cleaner 隱藏 hero img（data-jread-hidden）後，那層
@@ -2544,6 +2565,10 @@ html [${ARTICLE_ATTR}="1"] a {
           }
           cur = cur.parentElement;
         }
+        // v0.8.105：是否找到「真 player root」（relative + overflow:hidden 的
+        // 自包覆容器，JW Player 等成熟播放器的 chrome wrapper 結構）。沒找到時
+        // 走下面 fallback；fallback 只標 <video> 本身、不標站點包裝容器（理由見下）。
+        const foundGenuineRoot = !!container;
         if (!container) container = vid.parentElement || vid;
         // v0.7.225：container 含主文長段落（>= 100 chars 的 p / li）= 它不是
         // player 結構、是 layout wrapper——縮回 video 自身。tymscar 實測：
@@ -2559,6 +2584,18 @@ html [${ARTICLE_ATTR}="1"] a {
           }
           if (hasLongText) container = vid;
         }
+        // v0.8.105：沒有真 player root（relative+overflow:hidden）時，只標 <video>
+        // 本身、不把站點的 fallback 包裝容器整支標 PLAYER_ATTR。
+        // 根因：wikiHow Tie-a-Tie 步驟用「inline 自動播放示範影片」結構——
+        // DIV.video-container.content-fill（position:absolute，內含 poster img +
+        // video，無 relative+overflow:hidden 自包覆 root）。整支標 player 會把這個
+        // absolute 容器凍結在所有 position/height reset 之外 → 容器不貢獻 flow 高度
+        // → 祖先（.mwimg.whvid）塌成 16px → 309px 的 absolute 圖壓住後續 step 文字
+        //（Jimmy 2026-06-18 寬版心截圖）。只標 video 後，container 與 poster img
+        // 改走一般媒體正規化（:has(>media) height:auto + 含媒體容器 position:static）
+        // 回到流內撐高、不再壓字；video 播放層自身仍受 player 保護不被 strip。
+        // 真 player root（JW 等）找得到時不受影響——subtree chrome 保護照舊。
+        if (!foundGenuineRoot) container = vid;
         container.setAttribute(PLAYER_ATTR, '1');
         playerMarked.push(container);
         for (const el of container.querySelectorAll('*')) {
