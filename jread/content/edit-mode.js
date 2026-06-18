@@ -1,19 +1,25 @@
 // JRead — 編輯模式（手動移除雜訊段落）
 // v0.8.108：閱讀模式啟動時，使用者可進編輯模式手動點掉 cleaner 漏網的雜訊
-// 區塊。hover 標亮合理 block 邊界、點擊隱藏、頁內 toolbar 提供「復原 / 完成」。
+// 區塊。
+// v0.8.109：段落提示改仿 Shinkansen 編輯模式——進入時枚舉所有可選 block、注入
+// CSS 給每塊持久虛線外框，hover 那塊外框加深 + 淡底色（純 CSS，不再需要 shadow
+// overlay + mousemove 追蹤）。頁內 toolbar（復原 / 完成）仍走 Shadow DOM。
 //
 // 設計重點：
 //   - block 邊界用「演算法 C」選取（inline-level 正規化到所屬 block → tight-
-//     wrapper climb），real-site probe 驗證：點段落內連結→整段、點段落→該段、
-//     點圖→figure wrapper，且絕不誤選把全文包住的 dominant wrapper（probe 抓到
-//     演算法 A「爬到 articleEl 直接子」的 over-select 陷阱）。
+//     wrapper climb → dominant-wrapper guard），real-site probe 驗證：點段落內
+//     連結→整段、點段落→該段、點圖→figure wrapper，且絕不誤選把全文包住的
+//     dominant wrapper（probe 抓到演算法 A「爬到 articleEl 直接子」的 over-
+//     select 陷阱）。
+//   - 段落提示（v0.8.109）：markBlocks 以同一個 chooseBlock 枚舉「使用者可點掉
+//     的 block 集合」（單一資料源——提示範圍 = 實際可選範圍），各設
+//     data-jread-edit-block，注入單一 stylesheet 畫虛線外框 + hover 強化。
 //   - 隱藏複用 NS.cleaner.hideElement(el, NS.state.hiddenEls)：同一條 inline
 //     `display:none !important` + restyle observer 機制；記錄塞進 hiddenEls →
 //     退出閱讀模式時既有 cleaner.restore 一併還原（單一資料源，本模組不自寫
 //     還原路徑）。送 Readwise 的 buildCleanHtml 也已剔除 [data-jread-hidden]，
 //     手動移除的段落自動不進 Readwise。
-//   - overlay + toolbar 以 Shadow DOM 封裝（host pointer-events:none，事件穿透
-//     到頁面元素；toolbar 子層 pointer-events:auto 可點）。
+//   - undo：toolbar「復原」+ Cmd/Ctrl+Z 都走 LIFO undo——還原最後一次移除。
 //   - keyguard / ESC / space-scroll / paged-mode 的暫停與還原由 main.js 主導
 //     （那些 interaction layer 的生命週期本就住在 main.js）；本模組只負責編輯
 //     互動本身，退出時透過 onExit callback 通知 main.js 還原。
@@ -25,13 +31,14 @@
   if (NS.editMode) return; // 重複注入保險
 
   const HOST_ID = '__jread-editmode-host';
+  const STYLE_ID = '__jread-editmode-style';
+  const BLOCK_ATTR = 'data-jread-edit-block';
 
   let active = false;
   let articleEl = null;
   let articleLen = 0;       // 進入時主文字數，dominant-wrapper guard 用
   let onExitCb = null;
-  let host = null, shadow = null, overlay = null, hint = null, undoBtn = null, doneBtn = null;
-  let hoverTarget = null;   // 目前 hover 選中的 block
+  let host = null, shadow = null, hint = null, undoBtn = null, doneBtn = null;
   const editStack = [];     // 本 session 移除的還原記錄（undo 用）
 
   // ---- block 邊界選取（演算法 C，real-site probe 驗證）-----------------------
@@ -73,33 +80,91 @@
     return c;
   }
 
-  // ---- Shadow DOM overlay + toolbar -----------------------------------------
-  function buildUI() {
+  // ---- 段落提示：枚舉可選 block + 注入外框 CSS（v0.8.109，仿 Shinkansen）-------
+  const MEDIA_TAGS = new Set(['IMG', 'PICTURE', 'VIDEO', 'AUDIO', 'IFRAME', 'SVG', 'CANVAS', 'EMBED', 'OBJECT']);
+
+  // 以 chooseBlock 把主文切成「使用者可點掉的 block 集合」——提示範圍 = 實際可
+  // 選範圍（單一資料源）。content leaf（直接含文字的元素 + 媒體）各自 resolve
+  // 到所屬 block，去重後即自然分割。
+  function collectBlocks() {
+    const set = new Set();
+    if (!articleEl) return [];
+    let all;
+    try { all = articleEl.querySelectorAll('*'); } catch (_) { return []; }
+    for (const el of all) {
+      if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+      const isMedia = MEDIA_TAGS.has(el.tagName);
+      let hasDirectText = false;
+      if (!isMedia) {
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3 && n.textContent && n.textContent.trim()) { hasDirectText = true; break; }
+        }
+      }
+      if (!hasDirectText && !isMedia) continue;
+      const block = chooseBlock(el);
+      if (block) set.add(block);
+    }
+    let arr = Array.from(set);
+    // 去巢狀（保留更精確的內層）：理論上各 leaf resolve 到同一 block、不會巢狀，
+    // 但媒體 + 文字混排的邊角可能讓外層也入列——移除「包含集合內另一 block」的
+    // 外層。O(n²) 對一般文章（< 400 塊）可忽略；超大文件跳過（提示稍粗無妨）。
+    if (arr.length > 1 && arr.length <= 400) {
+      arr = arr.filter(b => !arr.some(other => other !== b && b.contains(other)));
+    }
+    return arr;
+  }
+
+  function ensureBlockStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    // 持久虛線外框標出每個可選 block（仿 Shinkansen `.shinkansen-editable`）；
+    // hover 那塊外框加深 + 淡底色 + cursor:pointer 提示可點移除。!important 勝過
+    // 站點 / reader card 樣式。
+    style.textContent = [
+      `[${BLOCK_ATTR}]{`,
+      'outline:1.5px dashed rgba(43,108,176,.45)!important;',
+      'outline-offset:2px;border-radius:3px;cursor:pointer!important;',
+      'transition:outline-color .1s ease,background-color .1s ease;}',
+      `[${BLOCK_ATTR}]:hover{`,
+      'outline:2px solid rgba(43,108,176,.9)!important;',
+      'background-color:rgba(43,108,176,.1)!important;}',
+    ].join('');
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function markBlocks() {
+    try {
+      ensureBlockStyle();
+      for (const b of collectBlocks()) {
+        if (b && b.setAttribute) b.setAttribute(BLOCK_ATTR, '1');
+      }
+    } catch (_) { /* 提示失敗不阻斷編輯互動本身 */ }
+  }
+
+  function unmarkBlocks() {
+    try {
+      document.querySelectorAll('[' + BLOCK_ATTR + ']').forEach(el => el.removeAttribute(BLOCK_ATTR));
+      const style = document.getElementById(STYLE_ID);
+      if (style && style.parentNode) style.parentNode.removeChild(style);
+    } catch (_) { /* noop */ }
+  }
+
+  // ---- Shadow DOM toolbar（復原 / 完成）-------------------------------------
+  function buildToolbar() {
     if (host && document.documentElement.contains(host)) return;
     host = document.createElement('div');
     host.id = HOST_ID;
     host.style.cssText = [
       'all: initial',
       'position: fixed',
-      'inset: 0',
+      'left: 0', 'right: 0', 'bottom: 0',
       'z-index: 2147483646',
       'pointer-events: none', // 事件穿透到頁面元素；toolbar 子層自行開 auto
     ].join('; ');
     shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
       <style>
-        .overlay {
-          position: fixed;
-          left: 0; top: 0;
-          box-sizing: border-box;
-          display: none;
-          border: 2px solid #2b6cb0;
-          background: rgba(43, 108, 176, 0.16);
-          border-radius: 4px;
-          pointer-events: none;
-          z-index: 1;
-          transition: none;
-        }
         .toolbar {
           position: fixed;
           left: 50%;
@@ -115,7 +180,6 @@
           box-shadow: 0 6px 24px rgba(0, 0, 0, 0.32);
           font: 14px -apple-system, system-ui, "Noto Sans TC", sans-serif;
           pointer-events: auto;
-          z-index: 2;
           user-select: none;
         }
         .hint { color: #cbd5e0; white-space: nowrap; }
@@ -128,27 +192,18 @@
           cursor: pointer;
           line-height: 1;
         }
-        .undo {
-          background: transparent;
-          color: #fff;
-          border-color: #4a5568;
-        }
+        .undo { background: transparent; color: #fff; border-color: #4a5568; }
         .undo:hover:not(:disabled) { background: #4a5568; }
         .undo:disabled { color: #718096; border-color: #3a4453; cursor: not-allowed; }
-        .done {
-          background: #2b6cb0;
-          color: #fff;
-        }
+        .done { background: #2b6cb0; color: #fff; }
         .done:hover { background: #2c5282; }
       </style>
-      <div class="overlay"></div>
       <div class="toolbar">
-        <span class="hint">點擊要移除的雜訊段落</span>
+        <span class="hint">點擊有虛線框的雜訊段落即可移除</span>
         <button class="undo" type="button" disabled>復原</button>
         <button class="done" type="button">完成</button>
       </div>
     `;
-    overlay = shadow.querySelector('.overlay');
     hint = shadow.querySelector('.hint');
     undoBtn = shadow.querySelector('.undo');
     doneBtn = shadow.querySelector('.done');
@@ -159,45 +214,24 @@
 
   function teardownUI() {
     if (host && host.parentNode) host.parentNode.removeChild(host);
-    host = shadow = overlay = hint = undoBtn = doneBtn = null;
-  }
-
-  function positionOverlay(el) {
-    if (!overlay) return;
-    const r = el.getBoundingClientRect();
-    overlay.style.display = 'block';
-    overlay.style.left = r.left + 'px';
-    overlay.style.top = r.top + 'px';
-    overlay.style.width = r.width + 'px';
-    overlay.style.height = r.height + 'px';
-  }
-
-  function clearOverlay() {
-    hoverTarget = null;
-    if (overlay) overlay.style.display = 'none';
+    host = shadow = hint = undoBtn = doneBtn = null;
   }
 
   function updateToolbar() {
     if (!undoBtn || !hint) return;
     const n = editStack.length;
     undoBtn.disabled = n === 0;
-    hint.textContent = n === 0 ? '點擊要移除的雜訊段落' : `已移除 ${n}　點擊繼續移除`;
+    hint.textContent = n === 0
+      ? '點擊有虛線框的雜訊段落即可移除'
+      : `已移除 ${n}　誤刪可按「復原」或 Cmd/Ctrl+Z`;
   }
 
   // ---- 互動 -----------------------------------------------------------------
   // host 在 composedPath 內 = 事件落在 toolbar 上（host 是 shadow 邊界、外部
-  // 看到的 retarget 目標就是 host）；此時不對頁面元素做標亮 / 隱藏。
+  // 看到的 retarget 目標就是 host）；此時不對頁面元素做隱藏。
   function pathHitsHost(e) {
     const path = e.composedPath ? e.composedPath() : [];
     return host && path.indexOf(host) !== -1;
-  }
-
-  function onMouseMove(e) {
-    if (pathHitsHost(e)) { clearOverlay(); return; }
-    const block = chooseBlock(e.target);
-    if (!block) { clearOverlay(); return; }
-    hoverTarget = block;
-    positionOverlay(block);
   }
 
   function onMouseDown(e) {
@@ -211,7 +245,9 @@
     if (pathHitsHost(e)) return; // toolbar 按鈕自有 listener 處理
     e.preventDefault();
     e.stopPropagation();
-    if (hoverTarget) hideTarget(hoverTarget);
+    // 點擊當下即時 resolve block（演算法 C），與虛線外框/hover 標亮同一資料源
+    const block = chooseBlock(e.target);
+    if (block) hideTarget(block);
   }
 
   function onKeyDown(e) {
@@ -219,6 +255,14 @@
       e.preventDefault();
       e.stopPropagation();
       exit();
+      return;
+    }
+    // Cmd/Ctrl+Z = 復原最後一次移除（誤刪救回；Shift+Z 不接管，留給瀏覽器 redo）
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey &&
+        (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ')) {
+      e.preventDefault();
+      e.stopPropagation();
+      undo();
     }
   }
 
@@ -227,7 +271,6 @@
     const rec = NS.cleaner.hideElement(el, NS.state.hiddenEls);
     if (!rec) return;
     editStack.push(rec);
-    clearOverlay();
     updateToolbar();
   }
 
@@ -253,7 +296,8 @@
   // ---- 對外介面 -------------------------------------------------------------
   // enter / exit 由 main.js 包在 suspend/restore reader interaction layer 之間
   // 呼叫。exit(silent=true) 用於 reader mode 自身 teardown（SPA 導航 / 退出閱讀
-  // 模式）——只拆編輯 UI + listener，不觸發 onExit（reader teardown 自理還原）。
+  // 模式）——只拆編輯 UI + 提示 + listener，不觸發 onExit（reader teardown 自理
+  // 還原）。
   function enter(art, opts) {
     if (active || !art) return false;
     active = true;
@@ -261,9 +305,9 @@
     articleLen = textLen(art);
     onExitCb = (opts && opts.onExit) || null;
     editStack.length = 0;
-    buildUI();
+    markBlocks();
+    buildToolbar();
     updateToolbar();
-    document.addEventListener('mousemove', onMouseMove, true);
     document.addEventListener('mousedown', onMouseDown, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeyDown, true);
@@ -273,12 +317,11 @@
   function exit(silent) {
     if (!active) return;
     active = false;
-    document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('mousedown', onMouseDown, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
+    unmarkBlocks();
     teardownUI();
-    hoverTarget = null;
     editStack.length = 0; // 隱藏記錄續留 NS.state.hiddenEls（隨閱讀 session 還原）
     articleEl = null;
     articleLen = 0;
@@ -291,7 +334,8 @@
     enter,
     exit,
     isActive() { return active; },
-    // 測試掛載點：jsdom regression 直接驗 block 邊界演算法與 hide/undo
+    // 測試掛載點：jsdom regression 直接驗 block 邊界演算法與 block 枚舉
     _chooseBlock: chooseBlock,
+    _collectBlocks: collectBlocks,
   };
 })();
