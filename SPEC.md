@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.109**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.110**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -564,7 +564,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - **隱藏 / 還原（單一資料源）**：複用 `NS.cleaner.hideElement(el, NS.state.hiddenEls)`——同一條 inline `display:none !important` + restyle observer 機制；記錄塞進 `NS.state.hiddenEls`，退出閱讀模式時既有 `cleaner.restore` 一併還原，**編輯模式不自寫還原路徑**。手動移除**僅當次有效**（退出閱讀模式 / SPA 導航 / reload 即還原）；移除段落自動不進 Readwise（`buildCleanHtml` 已剔除 `[data-jread-hidden]`）。
 - **undo（誤刪救回）**：toolbar「復原」按鈕 + **`Cmd/Ctrl+Z` 快速鍵**（v0.8.109）都走 LIFO undo——還原最後一次移除（`editStack` pop → 還原 inline display + 刪 `data-jread-hidden`，restyle observer guard 自動停止補回 `none`、不需 unregister）。toolbar hint 在已移除時顯示「已移除 N　誤刪可按『復原』或 Cmd/Ctrl+Z」。
 - **interaction layer 暫停 / 還原（main.js 主導）**：keyguard / ESC / space-scroll / paged-mode 與編輯模式 click 衝突，由 `main.js` 的 `suspendReaderInteractions` / `restoreReaderInteractions` 在進 / 出編輯模式時暫停與依 settings 裝回（生命週期本就住 main.js）；`edit-mode.js` 只負責編輯互動，退出時 `onExit` 回呼通知 main.js 還原。退出閱讀模式 / SPA 導航時 `exitReaderModeImpl` 先 `NS.editMode.exit(true)`（silent，不觸發 onExit）拆編輯 UI + 段落提示。
-- **UI**：toolbar（復原 / 完成）以 Shadow DOM（`all:initial` host、`pointer-events:none` 讓事件穿透到頁面元素、toolbar 子層 `pointer-events:auto` 可點）封裝避免站點 CSS 污染；ESC 鍵在編輯模式內改為退出編輯模式。
+- **UI**：toolbar（復原 / 完成 + 「已移除 N」提示）以 Shadow DOM（`all:initial` host、`pointer-events:none` 讓事件穿透到頁面元素、toolbar 子層 `pointer-events:auto` 可點）封裝避免站點 CSS 污染；ESC 鍵在編輯模式內改為退出編輯模式。**host 必須掛 `document.documentElement`（`<html>`）而非 body**（v0.8.110）——閱讀模式中 cleaner 的 dynamic-append observer 監看 body + article 子樹、會把 body 下新 append 的元素當動態雜訊 `display:none` 藏掉，toolbar 掛 body 會整條看不見（與 space-scroll 焦點條 / paged 頁碼指示同款規避；forcing：`editmode-block-select.spec.js` 驗 `host.parentNode === documentElement`）。
 - **regression**：`test/regression/editmode-block-select.spec.js`（演算法 C 五種顆粒度 + 段落提示 markBlocks/collectBlocks/stylesheet/退出清除 + hideElement/restore 整合）+ `editmode-options-toggle.spec.js`（editModeEnabled 四處 wire-up forcing），fixture `editmode-blocks.html` 仿 Substack dominant-wrapper 結構。
 
 ## 自動啟動網域（v0.7.155）

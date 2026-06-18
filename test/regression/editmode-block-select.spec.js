@@ -103,6 +103,16 @@ describe('編輯模式 — 段落提示 markBlocks（v0.8.109，仿 Shinkansen�
     assert.ok(!doc.getElementById('post').hasAttribute('data-jread-edit-block'), 'article 本身不標');
   });
 
+  it('toolbar host 掛 documentElement（<html>）而非 body——規避 cleaner 動態 observer 隱藏', () => {
+    // 閱讀模式中 cleaner 的 dynamic-append observer 監看 body + article 子樹、會把
+    // body 下新 append 的元素當動態雜訊 hide。toolbar 掛 body 會被整個藏掉（v0.8.110
+    // 修法：改掛 <html>，與 space-scroll 焦點條 / paged 頁碼指示同款規避）。
+    const host = doc.getElementById('__jread-editmode-host');
+    assert.ok(host, '應建立 toolbar host');
+    assert.strictEqual(host.parentNode, doc.documentElement,
+      'host 必須掛在 documentElement（<html>）下，不可掛 body（會被 cleaner 動態 observer 藏掉、toolbar 不可見）');
+  });
+
   it('注入提示 stylesheet（虛線外框 + hover 強化）', () => {
     const style = doc.getElementById('__jread-editmode-style');
     assert.ok(style, '應注入 __jread-editmode-style');
