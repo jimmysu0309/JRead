@@ -65,6 +65,28 @@
     return sendWithInjectionFallback(tabId, { type: 'TOGGLE_READER_MODE' }, deps);
   }
 
+  /**
+   * v0.8.115：toggle 按鈕失敗時的狀態訊息。toggleWithInjectionFallback 已先試
+   * sendMessage、再 executeScript 重注入後重送——在「可注入頁」上仍回 ok:false，
+   * 代表 content script 連不上。最常見成因是 iOS Safari 偶發把擴充訊息層（SW /
+   * WebKit 擴充基礎設施程序）回收後不再喚醒（Apple Forums 758346）：此時
+   * sendMessage / executeScript 都石沉大海，但 content script 仍活、三指手勢
+   * （content 本地派送、零訊息）仍可切換閱讀模式，只能重啟 Safari 才復原訊息層。
+   *
+   * 區分兩種失敗，避免把「暫時連不上」誤報成「這頁不支援」害使用者誤判：
+   *  - injectable=false（chrome:// / about: 等非 http(s) 頁）→ 真的不支援
+   *  - injectable=true（http(s) 頁卻連不上）→ 連線中斷，導向可靠逃生口：
+   *    touch 裝置給三指手勢；否則給重新整理
+   * @param {{injectable:boolean, touch:boolean}} opts
+   */
+  function toggleFailureMessage(opts) {
+    const o = opts || {};
+    if (!o.injectable) return '此頁面無法啟動閱讀模式';
+    return o.touch
+      ? '無法連線到此頁面，請改用三指手勢切換或重新整理頁面'
+      : '無法連線到此頁面，請重新整理頁面後再試';
+  }
+
   // ---- Readwise Reader integration（v0.7.33）-----------------------------
   // 依官方 API（https://readwise.io/reader_api）：
   //   POST https://readwise.io/api/v3/save/
@@ -302,6 +324,7 @@
   const api = {
     sendWithInjectionFallback,
     toggleWithInjectionFallback,
+    toggleFailureMessage,
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
     saveToReadwise,
