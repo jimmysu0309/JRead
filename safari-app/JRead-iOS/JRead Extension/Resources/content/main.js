@@ -384,6 +384,13 @@
   }
 
   function exitReaderModeImpl() {
+    // v0.8.108：先拆編輯模式（silent：reader teardown 自己會還原 interaction
+    // layer + cleaner.restore 還原手動隱藏的元素，不需 editMode 的 onExit 再
+    // 裝回 keyguard 等）。必須在 cleaner.restore 之前——只移除編輯 UI / listener，
+    // 手動隱藏的記錄續留 NS.state.hiddenEls 由下方 cleaner.restore 一併還原。
+    if (NS.editMode && NS.editMode.isActive()) {
+      try { NS.editMode.exit(true); } catch (_) { /* 拆 UI 失敗不阻斷退出 */ }
+    }
     // v0.8.40：先 flush 閱讀位置記憶——必須在 pagedMode.uninstall（頁碼歸零）
     // 與 styler.restore（捲動位置還原成原站排版）之前，位置此刻才有效。
     // 未開始 session（cinema / 停用 / enter 失敗 rollback）時 no-op。
@@ -952,6 +959,56 @@
     };
   }
 
+  // v0.8.108：編輯模式（手動移除雜訊段落，NS.editMode）的 reader-interaction
+  // 暫停 / 還原。編輯模式的 hover / click 與閱讀模式的 keyguard / ESC / space-
+  // scroll / paged-mode 互相衝突（capture-phase 鍵盤攔截 + 翻頁鎖捲動）——進
+  // 編輯模式前全部暫停，退出時依當前 settings 重新裝回。這些 interaction layer
+  // 的生命週期本就住在 main.js，故由 main.js 主導 suspend/restore，edit-mode.js
+  // 只負責編輯互動本身、退出時 onExit 回呼通知這裡還原。
+  function suspendReaderInteractions() {
+    window.removeEventListener('keydown', onEscKey, true);
+    uninstallKeyguard();
+    if (NS.spaceScroll) NS.spaceScroll.uninstall();
+    // 翻頁模式鎖垂直捲動、Space / 方向鍵接管為翻頁，與編輯模式 hover 衝突——
+    // 暫時 uninstall，restore 時依 settings 重新 sync（重算頁數）。
+    if (NS.pagedMode) NS.pagedMode.uninstall();
+  }
+
+  async function restoreReaderInteractions() {
+    // 退出編輯模式時 reader mode 可能已被退出（使用者按完成的同時 SPA 導航等）——
+    // 守住才還原，否則會對 inactive 狀態裝 listener。
+    if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl) return;
+    const settings = await getSettings();
+    window.removeEventListener('keydown', onEscKey, true);
+    window.addEventListener('keydown', onEscKey, true);
+    syncPagedModeFromSettings(settings);
+    syncSpaceScrollFromSettings(settings);
+    if (!settings || settings.blockPageShortcuts !== false) installKeyguard();
+    else uninstallKeyguard();
+  }
+
+  function enterEditMode() {
+    if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl) {
+      return { ok: false, active: false, reason: 'NOT_ACTIVE' };
+    }
+    if (!NS.editMode) return { ok: false, active: false, reason: 'NO_MODULE' };
+    if (NS.editMode.isActive()) return { ok: true, active: true };
+    suspendReaderInteractions();
+    const ok = NS.editMode.enter(NS.state.articleEl, { onExit: () => { restoreReaderInteractions(); } });
+    if (!ok) {
+      // enter 失敗（理論上不會）：立即還原 interaction layer，不留半套
+      restoreReaderInteractions();
+      return { ok: false, active: false, reason: 'ENTER_FAILED' };
+    }
+    return { ok: true, active: true };
+  }
+
+  function exitEditMode() {
+    // 使用者主動退出（popup 再點 / 完成 / ESC 已在模組內處理）：exit() 觸發
+    // onExit → restoreReaderInteractions。
+    if (NS.editMode && NS.editMode.isActive()) NS.editMode.exit();
+  }
+
   // v0.7.228：toggle 主體抽成具名函式——onMessage handler 與 dispatchLocalCommand
   // 共用，單一資料源。
   async function toggleReader() {
@@ -1054,6 +1111,8 @@
         // v0.7.134：borderless 跟 reader / cinema 完全獨立，自己一條軸；popup
         // 用此值切「啟動 / 退出無邊模式」按鈕文字。
         borderlessActive: !!(NS.borderless && NS.borderless.isActive && NS.borderless.isActive()),
+        // v0.8.108：編輯模式是否啟動——popup 用來切「編輯模式 / 完成編輯」按鈕文字
+        editModeActive: !!(NS.editMode && NS.editMode.isActive()),
         siteMode
       });
       return; // sync
@@ -1061,6 +1120,18 @@
 
     if (msg.type === NS.MSG.EXTRACT_READER_HTML) {
       sendResponse(extractReaderPayload());
+      return; // sync
+    }
+
+    // v0.8.108：編輯模式 toggle（popup 按鈕觸發）。已啟動 → 退出；未啟動 →
+    // 進入（enterEditMode 內 guard 閱讀模式須 active）。
+    if (msg.type === NS.MSG.EDIT_MODE_TOGGLE) {
+      if (NS.editMode && NS.editMode.isActive()) {
+        exitEditMode();
+        sendResponse({ ok: true, active: false });
+      } else {
+        sendResponse(enterEditMode());
+      }
       return; // sync
     }
 

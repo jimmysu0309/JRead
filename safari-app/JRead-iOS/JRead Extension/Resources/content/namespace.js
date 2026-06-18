@@ -28,6 +28,7 @@
     borderless: null,       // v0.7.134：YouTube borderless mode（youtube-borderless.js 掛載）
     xThread: null,          // v0.7.135：X / Twitter status thread reader（x-thread.js 掛載）
     fbPost: null,           // v0.7.157：Facebook permalink post reader（fb-post.js 掛載）
+    editMode: null,         // v0.8.108：編輯模式手動移除雜訊（edit-mode.js 掛載）
 
     // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼
@@ -235,6 +236,8 @@
       // Readwise integration（v0.7.33）
       GET_READER_STATE: 'GET_READER_STATE',         // popup → content：reader mode 是否啟動，決定 popup 按鈕 disable 狀態
       EXTRACT_READER_HTML: 'EXTRACT_READER_HTML',   // popup → content：抽 reader card outerHTML + url + title
+      // v0.8.108：編輯模式（手動移除雜訊段落）
+      EDIT_MODE_TOGGLE: 'EDIT_MODE_TOGGLE',         // popup → content：切換編輯模式（僅閱讀模式啟動時可用）
       // v0.8.65：SAVE_TO_READWISE 訊息已移除——popup 改在 extension 頁直接 fetch
       // （popup-core.saveReaderPayload），不再 popup → SW（iOS 背景頁掛起會 silently
       // 失敗）。快速鍵送出走 SW sendToReadwiseFromCommand，不經訊息。
