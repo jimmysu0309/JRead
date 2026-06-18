@@ -903,6 +903,22 @@ ${MEDIA_CAP_SEL} {
   right: auto !important;
   bottom: auto !important;
 }
+/* v0.8.106：inline 自動播放示範影片的 redundant <video> overlay 隱藏。
+   wikiHow Tie-a-Tie 步驟在同一容器內放 poster <img> + <video>（video 是 absolute
+   overlay，原站靠精準疊放讓兩者重合）。v0.8.105 把容器拉回 normal flow 後，static
+   的 poster img 與仍 absolute 的 video 兩者都顯示且偏移 → 看到「兩張疊圖」（Jimmy
+   2026-06-18 截圖）。
+   通則（硬規則 3，純 CSS :has 結構判定，非站點/class 特判）：容器若同時直接含
+   <img> 與 <video>（poster + overlay 慣例結構），隱藏其 <video>、只留 in-flow 的
+   poster img 顯示單張。用純 CSS :has 而非 apply() JS 標記——wikiHow poster img 是
+   lazy/JS 注入、apply() 標記當下常還不在 DOM；:has live 求值，img 一進 DOM 規則
+   即生效、無 timing 競態。無 poster img 的步驟 :has(> img) 不命中 → video 照常
+   顯示（唯一內容不誤殺）。退出移除整張 stylesheet 即還原 video 顯示。
+   排除真 player root（:not([player])）——JW 式 player 的 video 包在 jw-media 內、
+   非 img+video 直接兄弟、本不命中，:not([player]) 再保險一層。 */
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])):has(> video) > video {
+  display: none !important;
+}
 /* v0.8.59：被隱藏的 hero / header 圖殘留 min-height → 標題上方一大截空白。
    原站把「標題疊在 hero 圖上」的 header 容器設 min-height = hero 圖高（撐到等高
    再 flex 把標題靠底對齊）。cleaner 隱藏 hero img（data-jread-hidden）後，那層
