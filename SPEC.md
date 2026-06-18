@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.115**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.116**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -312,6 +312,10 @@ player 的佔位高度常由 aspect spacer（padding-top hack）/ grid rows / ab
 3. `collapseInnerGridFlex`：子樹含 visible video / iframe 的 grid 跳過 collapse
 
 styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0.7.182 bg strip 同原則）；媒體寬高規則加 `min-height: 0 !important`（cw.com.tw 站點對 hero img 設 min-height 645px，height:auto 被頂住、object-fit contain letterbox 出上下假空白）。
+
+### 可播放原生 audio/video 還原寬度（v0.8.116）
+
+站方自訂播放器常用一組 flex wrapper（如 `flex-direction:column; width:0`）把原生 `<audio controls>` / `<video controls>` 擠成 0 寬、改由自訂 JS UI 呈現控制條（Stratechery passport-podcast-player 實證）。reader mode 清掉自訂 UI 後只剩 0 寬裸媒體 + 短標籤＝一大塊空白，但媒體本身 controls + 有效 src 本來可播放。styler 通則（純 CSS `:has`，非站點/class 特判）：reader scope 內任何含 `audio[controls]` / `video[controls]` 的祖先鏈解除 flex/0 寬壓縮（`display:block` + `width:auto` + `min-width:0`），媒體本體還原可用寬度（`width:100%` + `min-width:min(100%,320px)` 兜底）。只命中 `[controls]`（使用者可播放介面），裝飾/背景 JS-driven 媒體不誤撐；`display` 不下在媒體本體（會把原生 replaced 控制條高度壓成 0）。
 
 ### 主文內雜訊（跨站通用 keyword heuristic）
 

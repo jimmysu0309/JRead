@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>The State of Fable, The Jailbreak Problem, SpaceX Acquires Cursor</title>
+  <meta property="og:title" content="The State of Fable, The Jailbreak Problem, SpaceX Acquires Cursor">
+</head>
+<body>
+  <!-- 複製 Stratechery passport-podcast-player 結構（Jimmy 2026-06-18 cage 真實 DOM probe）：
+       「Listen to this post:」短標籤 + 一組 flex wrapper（title-container flex-column 等）把
+       原生 <audio controls> 擠成 width:0、改由自訂 JS player UI 呈現播放鍵/進度軸。reader mode
+       清掉自訂 UI 後只剩 0 寬裸 <audio> + 標籤＝一大塊空白。但 <audio> 有 controls + 有效 src
+       本來可播放。styler v0.8.116 通則：reader scope 內含 audio[controls]/video[controls] 的
+       祖先鏈解除 flex/0 寬壓縮，媒體本體還原可用寬度。jsdom 不算 layout，本 fixture 供 spec
+       驗 CSS 字串注入；真實 0→608 寬度行為由 Playwright harness probe 驗。 -->
+  <article>
+    <h1>The State of Fable, The Jailbreak Problem, SpaceX Acquires Cursor</h1>
+    <div class="entry-content wp-block-post-content">
+      <div class="wp-block-group has-border-color is-nowrap">
+        <div class="wp-block-group wp-container-content-9cfa9a5a has-global-padding is-layout-constrained">
+          <p class="has-small-font-size wp-block-paragraph">Listen to this post:</p>
+          <div class="wp-block-passport-podcast-player">
+            <div class="passport-logged-in wp-block-passport-podcast-player-inner">
+              <div class="passport-podcast-player-summary-container" style="display:flex;flex-direction:column">
+                <div class="passport-podcast-player-container" style="display:flex;flex-direction:row">
+                  <div class="passport-podcast-player-title-container" style="display:flex;flex-direction:column;width:0">
+                    <audio controls src="https://stratechery.passport.online/assets/withchapters.mp3">Your browser does not support the audio element.</audio>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p>Good morning,</p>
+      <p>On this week's Greatest of All Talk, Andrew and Adam went deep on the blood-pumping, ultimately New York Knicks-winning NBA Finals. Well, since we're on the subject, congratulations to all the Knicks fans out there!</p>
+      <p>Onto the Update: the state of Fable is one of the more interesting questions in technology right now, and it bears directly on the broader trajectory of the industry over the coming years and how the various players are positioned against each other.</p>
+      <p>The jailbreak problem remains stubbornly unsolved, and the economics of running these models at scale continue to shape who can compete and who cannot in this rapidly evolving landscape.</p>
+    </div>
+  </article>
+</body>
+</html>
