@@ -61,7 +61,7 @@ v0.7.217 起提供 Safari Web Extension，**單一 iOS binary 同時涵蓋 iPhon
 2. 啟用擴充功能：
    - **iPhone / iPad**：設定 → App → Safari → 延伸功能 → 啟用 JRead，並允許「所有網站」
    - **Mac**（以 iPad App 執行）：Safari → 設定 →「擴充功能」分頁勾選 JRead，並允許「所有網站」
-3. Safari 工具列點 J 圖示 → 「切換閱讀模式」
+3. Safari 工具列點 J 圖示 → 「啟動閱讀模式」（已在閱讀模式時按鈕會顯示「退出閱讀模式」）
 
 發佈走 `safari-app/ios-build.sh`（手動觸發、與 Chrome / Firefox release 解耦；需 Xcode + Apple Distribution cert + ASC API key，簽章資源由 `tools/asc-provision-ios.js` 管理）。
 

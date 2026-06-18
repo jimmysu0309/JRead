@@ -517,7 +517,10 @@
   </div>
 
   <div id="status" hidden></div>
-  <button id="toggle-btn">切換閱讀模式</button>
+  <!-- v0.8.104：初始文字用「啟動閱讀模式」（最常見的 off 開啟態），popup.js
+       refreshPopupForActiveTab 依 GET_READER_STATE 即時改成「退出閱讀模式」
+       （已在閱讀模式時）/ 影院模式文字。 -->
+  <button id="toggle-btn">啟動閱讀模式</button>
   <button id="borderless-btn" hidden title="影片填滿視窗 + 自動 resize 視窗高度匹配影片比例（YouTube watch 頁專用）">啟動無邊模式</button>
   <button id="readwise-btn" hidden title="把當前 reader card 內容送到 Readwise Reader">送到 Readwise Reader</button>
   <div id="readwise-status" hidden></div>
