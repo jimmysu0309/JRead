@@ -70,7 +70,7 @@ node tools/debug-harness.js --profile work --url https://paywalled-site.com/some
 
 > 不可化約的場景：必須是 Jimmy **正在跑的主 Chrome、活的 profile**（無法在 Tier 2 專用 profile 重登的 session）。cage 碰得到但搶前景；[cua-driver](https://github.com/trycua/cua) 是唯一能在**背景、不搶焦點**碰它的工具。
 
-**狀態（2026-06-18）：已安裝 + 授權 + MCP 註冊並 Connected；背景枚舉/AX 讀取 CLI 已 smoke 過。完整「背景驅動 Chrome 讀 JRead 頁」的 drive-and-read 驗證留待第一個真實除錯任務（需新 session 載入 MCP 工具）。**
+**狀態（2026-06-18）：drive-and-read 已實測通過。** 在新 session 載入 `cua-computer-use` MCP 工具後，對 Jimmy 活的主 Chrome（pid + window_id，全程 `is_on_screen:false`／前景在別的 Space）跑完整四步：(1) `check_permissions` 三項皆 true 且歸屬 `com.trycua.driver` daemon；(2) `get_window_state` 背景讀到該分頁 AX tree（標題／連結／訂閱頁尾等殘留文字結構讀得到，element_count 1381）；(3) `hotkey ["option","r"]` 不帶 window_id（auth-message 路徑、不搶前景）背景觸發 JRead 閱讀模式；(4) 再讀 AX（element_count 902，少 479 個元素）+ `vision` 截背景視窗確認 reader card 已渲染、雜訊退出主視覺。全程 Chrome 未被帶到前景。<br>（前置歷史：已安裝 + 授權 + MCP 註冊並 Connected；背景枚舉/AX 讀取 CLI 已 smoke 過。）
 
 已裝版本：cua-driver 0.5.7（Rust backend，maintainer 現行預設；macOS 背景 AX 表現若不佳可改 `--backend=swift` 重裝）。
 
