@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.112**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.113**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -331,7 +331,7 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 - `social-(bar|links|icons|share|media)`、`share`、`social`
 - `comment`、`comments`、`comment-form`、`discussion`、`discuss`、`disqus`、`livefyre`、`hyvor`（跨站 CMS 留言區 anchor 慣例：Substack `#discussion`、WordPress `.comments-page`、Disqus `#disqus_thread`、Ghost `#comments`）
 
-**英文網頁 heading 文字慣用語**（`NOISE_HEADING_TEXT_RE`）：Related Articles / Recommended for you / More from X / More in X（v0.8.54）/ You may also like / Read more / Up next / Continue reading / See also / See more on（v0.8.54）/ Further reading / Editor's Picks（含複數所有格 Editors' Picks，v0.8.54）/ Sponsored content / Comments(N) / Discussion(N) / Responses / Replies / Newsletter / Subscribe / Follow us / Trending / Popular / Top Stories / AI Summary / AI Digest / Hot / New / Top。錨定推薦字樣 `^(related|recommended|popular|trending|latest|featured)…$` 同步收進 EXT 層（max_len 40，v0.8.54——「Trending in The Times」21 chars 超過 base 的 20 漏網實證）
+**英文網頁 heading 文字慣用語**（`NOISE_HEADING_TEXT_RE`）：Related Articles / Recommended for you / More from X / More in X（v0.8.54）/ You may also like / Read more / Up next / Continue reading / See also / See more on（v0.8.54）/ Further reading / Editor's Picks（含複數所有格 Editors' Picks，v0.8.54）/ Sponsored content / Comments(N) / Discussion(N) / Responses / Replies / Newsletter / Subscribe / Follow us / Trending / Popular / Top Stories / AI Summary / AI Digest / Hot / New / Top。錨定推薦字樣 `^(related|recommended|popular|trending|latest|featured)…$` 同步收進 EXT 層（max_len 40，v0.8.54——「Trending in The Times」21 chars 超過 base 的 20 漏網實證）。文中雜誌期數推廣 `^explore\s+the\b.*\bissue$`（v0.8.113——The Atlantic「Explore the December 2024 Issue」文中插入的本期雜誌推廣 section，封面圖被 styler 撐成整頁大 + 「View More」連該期 TOC；31 chars 走 EXT max_len，`closest('section')` 整段清除）
 
 **中文 heading 文字慣用語**：延伸閱讀 / 同場加映 / `相關(新聞｜文章｜報導｜行情｜議題｜貼文｜影片｜內容)`（v0.8.77 補 貼文／影片／內容——Shinkansen 把 Ghost「Related Posts」翻成「相關貼文」，原僅 新聞／文章／報導／行情／議題 不命中、整列 recirculation 漏網；翻譯後文字才現形，href 結構 `resolveHeadingNoiseTarget` 兩模式相同、純卡 regex）/ 推薦閱讀 / 推薦文章 / 最新消息 / 更多相關 / 看更多 / 你可能喜歡 / 繼續看下去 / 文章標籤 等。命中後 `resolveHeadingNoiseTarget` walk-up 到「不含主文長段落 / 標題 anchor」的最深 wrapper 整塊 hide
 
