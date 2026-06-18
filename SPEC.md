@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.103**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.104**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -544,7 +544,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 ### Popup UI 行為
 
-- 「送到 Readwise Reader」按鈕放在「切換閱讀模式」下方，次級樣式（白底灰邊）
+- 「送到 Readwise Reader」按鈕放在閱讀模式 toggle 按鈕下方，次級樣式（白底灰邊）
 - popup 開啟時透過 `GET_READER_STATE` 查 reader mode 狀態，按鈕可見性（v0.7.130 起整顆 `hidden`、非 disabled；`disabled` 軸保留給送出中防連點）：
   - reader mode 已啟動 **且** 非 cinema mode **且** 已設定 `readwiseToken`（trim 後非空，v0.8.50）→ 按鈕顯示
   - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
@@ -652,10 +652,11 @@ ESC 鍵（`onEscKey` listener 共用，跟 reader mode 一致）或 popup「退�
 
 ### Popup 按鈕文字切換
 
-`refreshPopupForActiveTab()` 開啟 popup 時 `chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' })`，依 response 的 `siteMode` 切按鈕文字：
+`refreshPopupForActiveTab()` 開啟 popup 時 `chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' })`，依 response 的 `siteMode` / `active` 切按鈕文字：
 
 - `siteMode === 'youtube-cinema'`：`cinemaActive=false → '啟動影院模式'`、`cinemaActive=true → '退出影院模式'`
-- 其他站維持 `popup.html` 的 default `切換閱讀模式`（不動）
+- 其他站（v0.8.104 起反映 reader mode 狀態，不再固定「切換閱讀模式」）：`active=true → '退出閱讀模式'`、`active=false → '啟動閱讀模式'`
+- off 狀態 fallback：無有效分頁（早期 return）或 content script 未注入（`GET_READER_STATE` reject 的 catch）一律設回 `'啟動閱讀模式'`；`popup.html` 初始文字亦為 `'啟動閱讀模式'`（最常見 off 開啟態，減少 GET_READER_STATE 回來前的閃動）
 
 ### 與 reader mode 的關係
 
