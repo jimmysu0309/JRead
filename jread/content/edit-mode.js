@@ -209,7 +209,11 @@
     doneBtn = shadow.querySelector('.done');
     undoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); undo(); });
     doneBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); exit(); });
-    (document.body || document.documentElement).appendChild(host);
+    // 掛 documentElement（<html>）而非 body——閱讀模式中 cleaner 的 dynamic-
+    // append observer 監看 body + article 子樹、會把 body 下新 append 的元素當
+    // 動態雜訊 hide（display:none !important），toolbar 掛 body 會被整個藏掉、
+    // 看不見（與 space-scroll 焦點條 / paged 頁碼指示同款，皆掛 <html> 規避）。
+    document.documentElement.appendChild(host);
   }
 
   function teardownUI() {
