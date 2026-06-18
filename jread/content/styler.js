@@ -937,6 +937,36 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])):has(> video) > video {
   display: none !important;
 }
+/* v0.8.116：可播放原生 <audio controls> 被站方自訂播放器 flex wrapper 擠成 0 寬。
+   原站「聽取本文音訊」類 podcast 區塊慣例：用一組 flex wrapper（title-container
+   flex-column 等）把原生 <audio> 寬度壓成 0、改由自訂 JS player UI 呈現播放鍵 /
+   進度軸（Stratechery passport-podcast-player 實證，Jimmy 2026-06-18 cage 真實
+   DOM probe 量到 audio rectW=0、外層 flex 容器 width:0）。reader mode 清掉自訂 JS
+   player 的 UI 元素後，只剩這個 0 寬的裸 <audio> + 一行短標籤 → 看起來是一大塊空白。
+   但 <audio> 本身有 controls + 有效 src，本來就可播放。
+   通則（硬規則 3，純 CSS :has 結構判定，非站點/class 特判）：reader scope 內任何
+   含「使用者可播放」原生媒體（audio[controls] / video[controls]）的祖先鏈，解除
+   flex/0 寬壓縮（display:block + width:auto + min-width:0），媒體本體還原可用寬度
+   （min-width 兜底，避免父鏈塌陷時再被擠回 0），讓原生控制條正常渲染。
+   只命中 [controls]——無 controls 的純 JS-driven <audio>/<video>（裝飾 / 背景音）
+   不是使用者可播放介面，不在此列、不誤撐。display 不下在媒體本體上（會把原生
+   replaced 元素的控制條高度壓成 0，probe 實證）；只放寬尺寸。退出移除整張
+   stylesheet 即還原。 */
+[${ARTICLE_ATTR}="1"] *:has(audio[controls]),
+[${ARTICLE_ATTR}="1"] *:has(video[controls]) {
+  display: block !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+}
+[${ARTICLE_ATTR}="1"] audio[controls],
+[${ARTICLE_ATTR}="1"] video[controls] {
+  width: 100% !important;
+  min-width: min(100%, 320px) !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
 /* v0.8.59：被隱藏的 hero / header 圖殘留 min-height → 標題上方一大截空白。
    原站把「標題疊在 hero 圖上」的 header 容器設 min-height = hero 圖高（撐到等高
    再 flex 把標題靠底對齊）。cleaner 隱藏 hero img（data-jread-hidden）後，那層
