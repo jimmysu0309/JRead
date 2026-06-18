@@ -299,6 +299,40 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
       assert.match(body, /head[\s\S]*parentElement|documentElement/,
         '指示條必須掛 <html> 直下——forcing：掛 body 內會被 styler 的非主文鏈隱藏規則藏掉（v0.7.215 probe input 同坑）');
     });
+
+    // v0.8.103：指示條掛 <html>（zoom 1）、article 在 body 內；body zoom 改版面
+    // 後指示條停原座標 → 偏離主文欄（Page Rounds zoom 0.5 截圖左方藍條）。
+    // ResizeObserver 觀察 article、幾何變化重跑 positionBar（cage probe 驗 zoom
+    // 0.5 後 left 266→446 對齊；jsdom 無 ResizeObserver / 無 layout，驗 source wiring）。
+    it('幾何變化重定位：setFocus 接 ensureGeomObserver、scheduleReposition 重走 setFocus', () => {
+      const ensureBody = extractFnBody(MODULE_SRC, 'ensureGeomObserver');
+      assert.ok(ensureBody, '必須有 ensureGeomObserver function');
+      assert.match(ensureBody, /new\s+ResizeObserver\s*\(\s*scheduleReposition\s*\)/,
+        'ensureGeomObserver 必須用 scheduleReposition 當 ResizeObserver callback');
+      assert.match(ensureBody, /observe\s*\(\s*articleEl\s*\)/,
+        'ensureGeomObserver 必須 observe articleEl（lazy-load reflow 觸發）');
+      assert.match(ensureBody, /observe\s*\(\s*document\.documentElement\s*\)/,
+        'ensureGeomObserver 必須 observe document.documentElement——forcing：articleEl 為老式 table-cell（paulgraham <td>）時 zoom 下不發 ResizeObserver，須靠 <html> layout 變化觸發（cage probe 實證 TD 1→1、HTML 1→2）');
+      assert.match(ensureBody, /geomObservedEl\s*===\s*articleEl/,
+        'ensureGeomObserver 必須避免重複 observe 同一 article——forcing：每次重 observe 觸發初始 callback → scheduleReposition → setFocus → 重 observe 無限迴圈');
+
+      const schedBody = extractFnBody(MODULE_SRC, 'scheduleReposition');
+      assert.ok(schedBody, '必須有 scheduleReposition function');
+      assert.match(schedBody, /requestAnimationFrame/,
+        'scheduleReposition 必須 rAF 去抖——forcing：reflow 連發逐次 reposition 抖動');
+      assert.match(schedBody, /setFocus\s*\(\s*focusedBlock\s*\)/,
+        'scheduleReposition 必須重走 setFocus（重跑 positionBar 用最新 visual 座標對齊）');
+
+      const setFocusBody = extractFnBody(MODULE_SRC, 'setFocus');
+      assert.match(setFocusBody, /ensureGeomObserver\s*\(\s*\)/,
+        'setFocus 多頁分支必須 ensureGeomObserver——forcing：沒接 observer，zoom / reflow 後指示條停原處偏離主文（Jimmy 2026-06-18 Page Rounds 回報）');
+      assert.match(setFocusBody, /isSinglePage[\s\S]*teardownGeomObserver\s*\(\s*\)/,
+        'setFocus 單頁分支必須 teardownGeomObserver（移除 bar 時一併拆 observer）');
+
+      const uninstallBody = extractFnBody(MODULE_SRC, 'uninstall');
+      assert.match(uninstallBody, /teardownGeomObserver\s*\(\s*\)/,
+        'uninstall 必須 teardownGeomObserver——forcing：退出 reader 不拆 observer 洩漏');
+    });
   });
 
   describe('styler.js v0.7.91 onSpaceScroll 讓位 guard（雙重卷動根因）', () => {
