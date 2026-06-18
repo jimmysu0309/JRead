@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wikiHow Community Q&A widget 最小重現</title>
+</head>
+<body>
+<!-- wikiHow Tie-a-Tie 實測（Jimmy 2026-06-18 截圖）：文末 Community Q&A 社群論壇
+     widget——含「Community Q&A」heading + 多組 Question/Community Answer + Ask a
+     Question 表單 + Submit。avatar / label 用 absolute 定位，reader 單欄流下圖文/
+     文字交疊錯亂。Jimmy 決定整塊當雜訊清除。
+     關鍵結構：Q&A 答案都很短（< 100 chars），但累計輕易破 300 chars → generic
+     heading walk-up 的 wrapperContainsMainContentP「累計 >= 300」guard 誤把整個
+     .qa 當主文保護、只 hide 得掉標題框。dedicated hideCommunityQaWidget 改用
+     hasLongMainParagraph（只認單一 >= 100 chars 長段落）當邊界 → 略過累計誤保護、
+     整塊 hide；主文步驟（單一長描述 >= 100）仍把 .article-body 擋在邊界外不誤殺。 -->
+<main>
+  <article id="post">
+    <h1>How to Tie a Tie</h1>
+    <div class="article-body mf-section-2">
+      <ol class="steps_list_2">
+        <li>
+          <p>Drape the tie around your neck so the wide end hangs roughly twelve
+          inches lower than the narrow end, giving you enough length to wrap and
+          tuck the knot without running short before you finish tying it.</p>
+        </li>
+        <li>
+          <p>Cross the wide end over the narrow end near your collar, keeping the
+          crossing point snug against your neck so the finished knot sits cleanly
+          rather than drooping loosely down the front of your shirt all day.</p>
+        </li>
+      </ol>
+      <!-- Community Q&A widget：整塊應被 hideCommunityQaWidget 清除 -->
+      <div class="qa section sticky font_test">
+        <div class="headline_container block_header">
+          <div class="headline_info">
+            <h2 class="qa_heading">Community Q&amp;A</h2>
+          </div>
+        </div>
+        <!-- 每段問答都 < 100 chars，但累計輕易破 300 chars——這是觸發 generic
+             walk-up「累計 >= 300」誤保護的條件（真實 wikiHow 有更多組）。 -->
+        <div class="qa_answers">
+          <span class="qa_q_label">Question</span>
+          <p class="qa_q">Can I use a scarf as a tie instead of a normal one?</p>
+          <span class="qa_a_label">Community Answer</span>
+          <p class="qa_a">Yes, you can use a scarf as a tie if it is long enough.</p>
+        </div>
+        <div class="qa_answers">
+          <span class="qa_q_label">Question</span>
+          <p class="qa_q">What type of knot should I use for a school uniform?</p>
+          <span class="qa_a_label">Community Answer</span>
+          <p class="qa_a">The four-in-hand knot should work fine for most school looks.</p>
+        </div>
+        <div class="qa_answers">
+          <span class="qa_q_label">Question</span>
+          <p class="qa_q">What is the quickest way to tie a tie in a hurry?</p>
+          <span class="qa_a_label">Community Answer</span>
+          <p class="qa_a">The four-in-hand knot is quickest. It barely takes a minute.</p>
+        </div>
+        <div class="qa_answers">
+          <span class="qa_q_label">Question</span>
+          <p class="qa_q">Does the knot type depend on my collar style at all?</p>
+          <span class="qa_a_label">Community Answer</span>
+          <p class="qa_a">Yes, wider spread collars usually pair better with a Windsor.</p>
+        </div>
+        <a class="qa_ask" href="#">Ask a Question</a>
+        <button class="qa_submit" type="submit">Submit</button>
+      </div>
+    </div>
+    <p class="article-tail">With these methods you can confidently tie a tie for
+    any occasion, from a relaxed day at school to a formal evening event, in just
+    a minute or two once the basic motions become second nature to you.</p>
+  </article>
+</main>
+</body>
+</html>
