@@ -252,7 +252,13 @@
   //     剛好超過 base max_len（20）漏網；pattern 本身 ^$ 錨定 + 後綴字數上限
   //     {0,3}，主文副標以推薦字樣開頭又整句收束在四個字內的機率極低，放寬到
   //     40 chars 誤殺風險可控（walk-up 主文保護仍兜底）
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
+  // v0.8.113 新增（theatlantic 文中雜誌期數推廣區實證）：
+  //   ^explore\s+the\b.*\bissue$ — The Atlantic「Explore the December 2024 Issue」
+  //     文章中段插入的「本期雜誌」推廣 section（封面圖被 styler 撐成整頁大 +
+  //     「View More」連到該期 TOC）。pattern 描述 CTA 句式「Explore the〔某期〕
+  //     Issue」而非綁站點 class；^ 錨定開頭動詞 explore、$ 錨定收尾 issue，主文
+  //     副標極少以「Explore the」開頭又恰好以「Issue」收束（walk-up 主文保護兜底）
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^explore\s+the\b.*\bissue$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
