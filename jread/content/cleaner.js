@@ -5523,6 +5523,35 @@
     }
   }
 
+  // ---- 主文內「整塊就是一個多行連結」的 banner / 招攬 CTA（v0.8.118 eet-china）----
+  // 結構特徵（非站點特判、翻譯無關）：一個 <a> 同時滿足
+  //   1) 是 block-level standalone anchor——不在 p / li / heading / figcaption /
+  //      blockquote / 表格 / dl 等行內文脈內（prose 連結都嵌在段落裡，不會是
+  //      內容容器的 block 子節點）
+  //   2) 自身含 <br> 子節點——多行 banner 排版（prose 連結不用 <br> 斷行）
+  //   3) 不含 content <img>——排除 figure / hero 圖片連結
+  // → 整個 anchor 是站方塞進主文流的招攬 banner。
+  //
+  // eet-china 實案：文末「【6场直播，玩转瑞萨RA MCU开发实战】一键报名六场…」
+  // 整塊就是**一個** <a>（href 指 mbb.eet-china.com/member.php 會員頁），內含
+  // <strong> 標題 + 4×<br> 的 CTA 文字共 173 chars。173 > NOISE_LINK_TEXT_MAX_LEN
+  // (60) 逃過 link-text 規則、「一键报名」無「立即/点击」前綴逃過 STRICT_RE、
+  // 單一 anchor 逃過 link-only block（需 >= 2 anchor）。其 CTA 文字翻譯後改變、
+  // 純文字規則失準（Jimmy 回報「翻譯後尾巴才出現」），但「standalone <a> 內含
+  // <br>」的結構訊號不受翻譯影響——對應 v0.8.47「URL / 結構訊號優於文字比對」。
+  const BANNER_LINK_PROSE_CONTEXT_SEL = 'p, li, h1, h2, h3, h4, h5, h6, figcaption, blockquote, td, th, dt, dd';
+  function hideInsideArticleBannerLinks(articleEl, hidden) {
+    for (const a of articleEl.querySelectorAll('a')) {
+      if (isInPreserved(a)) continue;
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      if (a.closest(BANNER_LINK_PROSE_CONTEXT_SEL)) continue;   // prose 內嵌連結 skip
+      if (!a.querySelector('br')) continue;                      // 非多行 banner 排版 skip
+      if (a.querySelector('img')) continue;                      // 圖片 / hero 連結 skip
+      if (norm(a.textContent).length < 30) continue;             // 過短多行連結 skip（保守）
+      hideNoiseCardFromTrigger(a, articleEl, hidden);
+    }
+  }
+
   // ---- Reader mode 下凍結主文祖先鏈：攔截 dynamic append ----------------
   // 場景：infinite-scroll 站點（news.ltn.com.tw 自由時報 popIn Discovery /
   // 相似 CMS）、延遲 lazy-load 側邊欄、動態 inject 的廣告 / 推薦列表。
@@ -5925,6 +5954,7 @@
       safeRun(hideInsideArticleCTAParagraphs, articleEl, hidden);
       safeRun(hideInsideArticleSubscribeForms, articleEl, hidden);
       safeRun(hideInsideArticleSignupCtaCards, articleEl, hidden);
+      safeRun(hideInsideArticleBannerLinks, articleEl, hidden);
       safeRun(hideInsideArticleFontTags, articleEl, hidden);
       safeRun(hideInsideArticleCommentPanels, articleEl, hidden);
       safeRun(hideInsideArticleAllButtons, articleEl, hidden);
