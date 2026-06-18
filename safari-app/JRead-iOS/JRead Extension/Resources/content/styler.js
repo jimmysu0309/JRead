@@ -85,6 +85,15 @@
   // 規則對它生效（一般 img:not(a > img) 排除把這類大圖當 icon-link 漏掉）。
   const CONTENT_IMG_ATTR = 'data-jread-content-img';
   const CONTENT_IMG_MIN = 200; // 任一維 >= 200px 視為內容照片、非 icon（icon 規則上限 200）
+  // v0.8.112：bare img（非 a 包）來源解析度小於版心時的「放大填滿欄寬」標記。
+  // 站點常把低解析配圖（natural < 版心寬）以原尺寸或小幅放大顯示——reader 的
+  // img:not(a>img) 走 width:auto 退回 naturalWidth，這類圖在 720 版心裡顯得特別
+  // 小、與 a 包大圖（填滿欄寬）視覺不一致（womany 卡蘿配圖 natural 285px portrait
+  // 在 608px 欄中只佔半寬實證）。apply() 量到 content-size（>= CONTENT_IMG_MIN 一維）
+  // 的 bare 圖標此 attr、CSS 強制 width:100% 撐滿欄寬。與 a 包 content-img 視覺一致
+  // （Safari / Firefox 閱讀模式同款「內容圖一律填欄寬」）。capIcon（natural >> rendered
+  // 的作者刻意縮小大圖）已在分類前攔截、不會落到這裡被反向放大成滿版。
+  const UPSCALE_IMG_ATTR = 'data-jread-upscale-img';
 
   // 內嵌襯線 CJK 字型（Noto Serif TC 全 TC 集，woff2）。
   // 為什麼必須內嵌：iOS Safari「網頁路徑」的預設襯線字型缺「夠」「查」等常用字的
@@ -806,6 +815,15 @@ ${MEDIA_CAP_SEL} {
 }
 [${ARTICLE_ATTR}="1"] a:has(> img[${CONTENT_IMG_ATTR}]) {
   display: block !important;
+}
+/* v0.8.112：bare 內容圖（非 a 包、來源解析度 < 版心）放大填滿欄寬。width:100%
+   覆寫一般 img:not(a>img) 規則的 width:auto（後者退回 naturalWidth → 低解析配圖
+   在版心裡偏小、與 a 包大圖不一致）。specificity (0,2,1) > 一般規則 img:not(a>img)
+   的 (0,1,3)（第二段 attribute 數 2 > 1）→ 兩邊皆 !important 時本條勝。display:block
+   / margin / max-height:90vh / object-fit:contain 已由 MEDIA_CAP_SEL 對 bare img 提供，
+   不重複；直式長圖被 90vh + contain 收斂、不溢出。 */
+[${ARTICLE_ATTR}="1"] img[${UPSCALE_IMG_ATTR}] {
+  width: 100% !important;
 }
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
@@ -2402,6 +2420,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const inlineImgPins = [];
       const contentImgs = [];
       const iconImgs = [];
+      const upscaleImgs = [];
       const contentImgLoadCleanup = [];
       // v0.8.98：viewBox-only SVG 的 inline emoji（WordPress wp-emoji 的國旗 SVG、
       // X Twemoji）naturalWidth 回報 Chrome 預設 150×150 不可靠——通用圖片規則的
@@ -2448,6 +2467,21 @@ html [${ARTICLE_ATTR}="1"] a {
           big = r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
         }
         if (big) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
+        return false;
+      };
+      // v0.8.112：bare 內容圖（非 a 包）放大填滿欄寬。量 content-size（natural 優先、
+      // 不可靠時 rect fallback）>= CONTENT_IMG_MIN 即標 upscale；回傳是否已標。lazy
+      // bare 圖 load 後補標重用（與 tryMarkContentImg 同款）。
+      const tryMarkUpscaleImg = (img) => {
+        if (img.hasAttribute(UPSCALE_IMG_ATTR)) return true;
+        if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return false;
+        let big = (img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
+                  (img.naturalHeight || img.height) >= CONTENT_IMG_MIN;
+        if (!big) {
+          const r = img.getBoundingClientRect();
+          big = r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
+        }
+        if (big) { img.setAttribute(UPSCALE_IMG_ATTR, '1'); upscaleImgs.push(img); return true; }
         return false;
       };
       // img 分類（inline emoji / content-img）。抽成 classifyImg 供「即時」與
@@ -2525,6 +2559,20 @@ html [${ARTICLE_ATTR}="1"] a {
         if (img.closest('a')) {
           if (!tryMarkContentImg(img) && !img.complete) {
             const onLoad = () => tryMarkContentImg(img);
+            img.addEventListener('load', onLoad);
+            contentImgLoadCleanup.push({ img, onLoad });
+          }
+          return;
+        }
+        // v0.8.112：bare 內容圖（非 a 包、非 player）來源解析度小於版心時放大填滿
+        // 欄寬。走到這裡的 bare img 已排除 inline emoji（上面 return）、capIcon（作者
+        // 刻意縮小的大圖，上面 return）——剩下的就是「站點以原尺寸或小幅放大顯示的
+        // 配圖」。content-size（>= CONTENT_IMG_MIN 一維）標 upscale、CSS width:100%
+        // 撐滿欄寬；< CONTENT_IMG_MIN 的小圖（logo / 短橫幅）不標、維持 width:auto
+        // 原尺寸（不反向放大成滿版）。lazy bare 圖同 a 包路徑掛 load listener 補標。
+        if (img.getAttribute(PLAYER_ATTR) !== '1') {
+          if (!tryMarkUpscaleImg(img) && !img.complete) {
+            const onLoad = () => tryMarkUpscaleImg(img);
             img.addEventListener('load', onLoad);
             contentImgLoadCleanup.push({ img, onLoad });
           }
@@ -3305,7 +3353,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3353,6 +3401,12 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.contentImgs)) {
         for (const img of snapshot.contentImgs) {
           if (img && img.removeAttribute) img.removeAttribute(CONTENT_IMG_ATTR);
+        }
+      }
+      // v0.8.112：移除 bare 內容圖放大標記（CSS-only、無 inline style，移 attr 即還原）
+      if (Array.isArray(snapshot.upscaleImgs)) {
+        for (const img of snapshot.upscaleImgs) {
+          if (img && img.removeAttribute) img.removeAttribute(UPSCALE_IMG_ATTR);
         }
       }
       // v0.8.90：還原 icon 圖的 inline max-width 釘寬 + 移除標記

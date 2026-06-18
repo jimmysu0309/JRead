@@ -97,7 +97,10 @@
     //（support-mirrormedia-banner），不綁站點。
     { t: '(?:support|donate|donation|membership|pledge|patreon|contribut\\w*)[-_](?:[a-z]+[-_]){0,2}banner' },
     { t: 'call-to-action' }, { t: 'cta' }, { t: 'callout' },
-    { t: 'related[-_]?(?:articles?|news|posts|stories|content)', strong: true },
+    // v0.8.112：補 `block` 變體——womany 文末塔羅 app 跨宣傳 banner 是
+    // `<a class="related-block" href="/redirects/...">`（圖片式廣告），`related[-_]?block`
+    // 是 CMS「相關/推薦內容區塊」通用命名（boundary 後置 → 不誤中 related-blockquote）。
+    { t: 'related[-_]?(?:articles?|news|posts|stories|content|block)', strong: true },
     // v0.8.44 eettaiwan 實測：CMS 也用名詞在前的反序命名（`post-related` /
     // `article-related`），原 token 只涵蓋 `related-posts` 順序 → 漏網。
     { t: '(?:posts?|articles?|news|stor(?:y|ies))[-_]related', strong: true },
@@ -2151,7 +2154,11 @@
       // href 圖檔判定 + lazy content src 豁免（原本只有 icon-only rule 有，
       // 本 path 漏網：class 命中 keyword 且圖尚未 lazy-load 的 lightbox 連結
       // 會被誤殺，圖載入後父 a 已 display:none——與巴哈姆特 bug 同型）。
-      if (el.tagName === 'A' && anchorIsContentImageLink(el)) continue;
+      // v0.8.112：strong keyword（related / sponsored / 品牌 widget 命名）命中時
+      // 不套內容圖豁免——圖片式廣告 banner（womany `<a class="related-block">` 包
+      // 608px 促銷圖、無文字）結構與 lightbox 大圖撞型，但 strong class 是明確促銷
+      // 訊號；正當內容照片的 lightbox 連結絕不會命名 related/sponsored，零誤殺。
+      if (el.tagName === 'A' && anchorIsContentImageLink(el) && !shouldHideByStrongKeyword(el)) continue;
       hide(el, hidden);
     }
   }
@@ -2523,6 +2530,11 @@
   // ratio 上漏網；Engadget 過往靠此條 B 命中也不依賴 ratio，因為 aside
   // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
+  // v0.8.112：動態注入 <aside> 的「夠大」文字門檻（layout-independent，補 rectH 在
+  // 一次注入完整 aside 時量到 0 的 harness flaky）。下一篇文章 ~2K 字遠超此值；
+  // pull-quote / byline / 短 widget 通常 < 400 → 不誤殺。只用於 checkDynamicNoise
+  // 動態側（靜態條件 B 在 clean-time layout 已就緒、續用 rectH 即可）。
+  const ASIDE_DYN_MIN_TEXT = 400;
   // 條件 E（flex 拉伸的近空直立 rail）：flex 主文旁的細長側欄——垂直
   // byline / 直書社群分享列 / 書籤 rail（verse.com.tw `.meta` 實案：
   // `<div>` 裝 `<ul.authors>` 直書「文字、攝影／TC」+ 書籤 icon）。
@@ -2658,6 +2670,42 @@
     const elText = norm(el.textContent || '');
     if (!hText || !elText) return false;
     return hText.length >= elText.length * 0.9;
+  }
+
+  // v0.8.112：判定 <aside> 是否為「次要全文區塊」（無限捲動下一篇文章 / 嵌入的
+  // 完整文章 / 大型 related-content widget）。三訊號任一成立即是：
+  //   (a) 內含自己的 <h1>（文章級標題）—— 次要 aside 不該帶 page-level h1，這是
+  //       「另一篇完整文章」最強且 layout-independent 的訊號（womany .article-root
+  //       下一篇專訪 ASIDE 實證；靜態 + 動態同款命中、不受偵測選到哪層 articleEl /
+  //       注入時序 / layout 時序影響——根治本案的非決定性漏網）
+  //   (b) rectH > SIDEBAR_ASIDE_MIN_HEIGHT（與靜態條件 B 同門檻、layout 就緒時）
+  //   (c) textContent > ASIDE_DYN_MIN_TEXT（layout 未就緒 fallback：動態一次注入
+  //       完整 aside 時 getBoundingClientRect 回 0，文字長度不依賴 layout）
+  // guard：必須 <aside> tag、非 articleEl 自身 / 祖先（避免把主文 wrapper 當次要區塊
+  // 砍）、非 preserved、未 hide。pull-quote / byline / infobox（無 h1、矮、短）不命中。
+  // 靜態 hideSecondaryArticleAsides 與動態 checkDynamicNoise 共用此單一資料源。
+  function asideIsSecondaryArticleBlock(aside, articleEl) {
+    if (!aside || aside.tagName !== 'ASIDE') return false;
+    if (aside === articleEl || (aside.contains && aside.contains(articleEl))) return false;
+    if (isInPreserved(aside)) return false;
+    if (aside.dataset && aside.dataset.jreadHidden === '1') return false;
+    if (aside.querySelector && aside.querySelector('h1')) return true;
+    const r = aside.getBoundingClientRect && aside.getBoundingClientRect();
+    if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) return true;
+    if (norm(aside.textContent || '').length > ASIDE_DYN_MIN_TEXT) return true;
+    return false;
+  }
+
+  // v0.8.112：靜態 sweep——次要全文 aside 在 clean 當下已存在於 DOM（非 lazy）時，
+  // 條件 B 只查「被偵測 main column 的 direct-child sibling aside」會漏掉「巢狀深處
+  // 的下一篇文章 aside」（womany 偵測選到高層 content-container、article33485 巢在
+  // #w-main-content 內、非 direct child → 條件 B miss、harness 實證殘留）。改用
+  // querySelectorAll('aside') 掃整棵、套 asideIsSecondaryArticleBlock 結構判定。
+  function hideSecondaryArticleAsides(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const aside of articleEl.querySelectorAll('aside')) {
+      if (asideIsSecondaryArticleBlock(aside, articleEl)) hide(aside, hidden);
+    }
   }
 
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
@@ -5487,6 +5535,21 @@
   //   - 含 h2/h3/h4 文字命中 NOISE_HEADING_TEXT_RE（跨站 section 標題慣用語）
   function checkDynamicNoise(articleEl, node, hiddenList) {
     if (isInPreserved(node)) return;
+    // v0.8.112：lazy 注入 / clean 後才現形的「次要全文 <aside>」（無限捲動下一篇
+    // 文章 / 嵌入的完整文章）——判定與 hide 收斂到 asideIsSecondaryArticleBlock
+    // （靜態 sweep 與動態 observer 單一資料源）。node 自身 / 其內 / 其祖先命中即整塊
+    // hide（祖先補查涵蓋「先空殼後 hydrate」時序）。命中即停（observer 每次處理一
+    // 個 node）。
+    if (asideIsSecondaryArticleBlock(node, articleEl)) { hide(node, hiddenList); return; }
+    if (node.querySelectorAll) {
+      for (const a of node.querySelectorAll('aside')) {
+        if (asideIsSecondaryArticleBlock(a, articleEl)) { hide(a, hiddenList); return; }
+      }
+    }
+    if (node.closest) {
+      const ancAside = node.closest('aside');
+      if (ancAside && asideIsSecondaryArticleBlock(ancAside, articleEl)) { hide(ancAside, hiddenList); return; }
+    }
     // 雜訊 class/id 直接 hide 整個 node。
     // v0.8.36（B2）：補上與靜態 hideInsideArticleByKeyword 同一組主文保護
     // （keywordWrapperIsProtected：H1 guard + 主文 wrapper guard）——Shinkansen
@@ -5539,7 +5602,9 @@
         // v0.8.36（B2）：補 lightbox / lazy 內容圖豁免（與靜態 keyword <a>
         // path / icon-only rule 共用 anchorIsContentImageLink）。
         if (el.tagName === 'A') {
-          if (shouldHideByKeyword(el) && !anchorIsContentImageLink(el)) hide(el, hiddenList);
+          // v0.8.112：strong keyword 命中時不套內容圖豁免（與靜態 keyword path 同源——
+          // 圖片式廣告 banner related-block 等）。
+          if (shouldHideByKeyword(el) && (!anchorIsContentImageLink(el) || shouldHideByStrongKeyword(el))) hide(el, hiddenList);
           continue;
         }
         // button / role=button / input button 系列：一律 hide
@@ -5860,6 +5925,7 @@
       safeRun(hideInsideArticleDirectChildLinkBlocks, articleEl, hidden);
       safeRun(hideInsideArticleEmptySpacers, articleEl, hidden, containers);
       safeRun(hideInsideArticleSidebarColumns, articleEl, hidden, containers, opts && opts.promotedTitleHead);
+      safeRun(hideSecondaryArticleAsides, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteOverlays, articleEl, hidden);
       safeRun(resetNegativeZIndex, articleEl, hidden);
       safeRun(resetNegativeHorizontalMargins, articleEl, hidden);
