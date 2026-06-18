@@ -258,7 +258,14 @@
   //     「View More」連到該期 TOC）。pattern 描述 CTA 句式「Explore the〔某期〕
   //     Issue」而非綁站點 class；^ 錨定開頭動詞 explore、$ 錨定收尾 issue，主文
   //     副標極少以「Explore the」開頭又恰好以「Issue」收束（walk-up 主文保護兜底）
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^explore\s+the\b.*\bissue$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
+  //   (?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$ — 上面 explore-issue 的譯文變體
+  //     （v0.8.114，Shinkansen translate-first 實證）。頁面先被翻譯再進閱讀模式
+  //     時英文 pattern 全失效，譯文措辭隨引擎浮動（「探索 2024 年 12 月號」實測
+  //     Google / 預設引擎兩款）。錨定「翻譯無關的語意核心」而非賭動詞譯法：
+  //     「〔年〕年〔月〕月(號|刊)」是雜誌期數出版標記——日期不翻譯、號/刊是出版
+  //     用語，跨引擎穩定。$ 錨定收尾「月號/月刊」，主文副標恰好以「N月號」收束
+  //     的機率極低（純日期「2024年12月」無號/刊不命中，walk-up 主文保護仍兜底）
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
