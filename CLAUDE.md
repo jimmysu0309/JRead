@@ -228,6 +228,8 @@ JRead 的核心是「從一堆雜訊 DOM 中找出主文」，這件事沒有銀
 
 ## 自動化除錯 harness
 
+**除錯一律優先走背景三層、不要預設開 cage 前景**（cage 會搶 Jimmy 焦點干擾工作）。三層分工單一資料源在 `docs/CHROME_EXTENSION_DEBUG.md`「背景除錯的三層分工」：Tier 1（一般站，`debug-harness.js` 獨立 profile，零干擾）→ Tier 2（需登入態，`--profile <name>` + 一次性 `--login`，背景）→ Tier 3（必須 Jimmy 活的主 Chrome 才用 cua-driver 背景驅動）。能用低層就別跳高層。
+
 `tools/debug-harness.js` 是主要自驗工具。關鍵細節：
 
 - **為什麼 `page.evaluate(() => !!window.__JRead)` 永遠 false**：content script 在 isolated world，`page.evaluate` 在 main world，兩個 window 互不相通。驗證 content script 的效果必須看「shared DOM 的副作用」——`data-jread-active` / injected `<style id="__jread-style">` / `getBoundingClientRect` 等。
