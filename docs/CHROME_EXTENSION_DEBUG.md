@@ -115,6 +115,22 @@ claude mcp list | grep cua            # 應顯示 ✔ Connected
 
 cua 是 pre-release、API 變動快（README 自承 expect rough edges）；且授予了 Accessibility + Screen Recording 兩個高權限給 `com.trycua.driver`。因此 **Tier 3 只在 Tier 1/2 都搆不到的活 profile 場景才用**，不是常態。uninstall：`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/uninstall.sh)"`。
 
+### 本輪建置心得（2026-06-18）
+
+從「cage 除錯都得在前景、干擾 Jimmy」這個痛點出發、研究 cua 並建好三層的過程中，幾條值得記下的教訓：
+
+1. **先盤點現有工具能力，再決定要不要引入新依賴**。原本以為要靠 cua 才能背景除錯，實際盤點後發現：Tier 1（現有 `debug-harness.js`）本來就 `--headless=new` + 視窗推到螢幕外＝零干擾；Tier 2 只差「視窗上螢幕登入一次」一個 flag——持久 profile 跨 run 留登入態的機制早就在（不加 `--fresh` 就重用）。**大半需求是把既有能力框成策略，而非寫新東西**。差點為了已有的能力裝一個重權限 app。
+
+2. **cua-driver 的定位是「補最後一格」，不是「取代 cage」**。它的獨特價值只有一個：背景驅動「Jimmy 活的主 Chrome / 活 profile」這個 Tier 1/2 搆不到的場景。它不是更好的 DOM 工具。**選層原則：能用低層就別跳高層**——一般站 Tier 1、登入態 Tier 2、只有非用活 profile 不可才 Tier 3。
+
+3. **工具真實能力要實測，別憑 README 推斷**（呼應 probe-before-code）。動手前以為「cua = 只能像素截圖、會丟失 DOM 精度」，差點為此先設計一套 on-page overlay 補償。實際 `cua-driver list-tools` 一看，`get_window_state` 把網頁 AX tree 轉成帶 `element_index` 的 Markdown——結構化讀取頁面文字/連結根本沒丟。**先入為主的限制假設會導致過度設計**。
+
+4. **不要複製真實 Chrome profile 來拿登入態**：macOS cookie 用 Keychain「Chrome Safe Storage」金鑰加密，複製到 Playwright Chromium（不同 app、不同金鑰）解不開；加上 Chrome 137+ 擋 `--load-extension`。**專用持久 profile + 一次性登入**是更穩、零侵入的解，繞開整串加解密與 profile lock 問題。
+
+5. **安裝/授權的兩個坑**：(a) 打開「螢幕錄製」授權時 macOS 要求重啟 CuaDriver → 背景 daemon 被殺 → 必須 `open -n -g -a CuaDriver --args serve` 重啟才驗得到權限；(b) `permissions status` 反映的是 daemon 自己的 TCC 身分（`com.trycua.driver`），daemon 沒在跑就回 `unknown`，不是真的沒授權。
+
+6. **MCP server 接線當下 session 不會有工具**——MCP 工具只在 Claude Code session 啟動時載入。接好線要驗，先用 `cua-driver call <tool> <json>` 從 CLI 直接驗；真正用 MCP 工具要開新 session。
+
 ---
 
 ## 必要條件
