@@ -218,7 +218,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?))/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -561,6 +561,56 @@
       cur = pp;
     }
     return lastSafeWrapper;
+  }
+
+  // 「單一長段落」主文邊界：wrapper 內有任一 >= 100 chars 的 <p> 或 <div> direct
+  // text 即視為含主文。是 wrapperContainsMainContentP 的「強訊號子集」——不含
+  // 「累計短文字 >= 300」那道 guard。供 hideCommunityQaWidget walk-up 用：論壇
+  // 類 widget 由大量短文字組成、累計輕易破 300 而被當主文誤保護，但其單一段落
+  // 都很短；改只認單一長段落 / 標題 anchor 當邊界，widget 自己的短文字不再誤觸。
+  function hasLongMainParagraph(wrapper) {
+    if (!wrapper || !wrapper.querySelectorAll) return false;
+    for (const para of wrapper.querySelectorAll('p')) {
+      if (norm(para.textContent).length >= 100) return true;
+    }
+    for (const div of wrapper.querySelectorAll('div')) {
+      const direct = Array.from(div.childNodes)
+        .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
+      if (norm(direct).length >= 100) return true;
+    }
+    return false;
+  }
+
+  // Community Q&A 社群論壇 widget 整塊清（wikiHow Tie-a-Tie 實測，Jimmy 2026-06-18
+  // 截圖：頭像 / 標籤 absolute 定位在 reader 單欄流交疊、圖文錯亂）。主流 reader
+  //（Safari / Firefox / Readability）都排除社群問答，JRead 同philosophy 整塊當雜訊。
+  // 識別：heading（h2-h4）文字命中 /community q&a/（內容型態文字 heuristic、非站點/
+  // class 特判）。hide 範圍：從 heading walk-up 到「不含主文標題 anchor、不含單一
+  // >= 100 chars 長段落」的最外層 wrapper 整塊 hide——刻意用 hasLongMainParagraph
+  // 而非 wrapperContainsMainContentP，繞過「累計短問答 >= 300」的誤保護（generic
+  // heading walk-up 因此只 hide 得掉標題框、留下問答主體，實證 resolveTarget 停在
+  // .headline_container）。單一長段落 guard 仍把真正的主文容器（步驟長描述）擋在
+  // 邊界外、不誤殺。
+  function hideCommunityQaWidget(articleEl, hidden) {
+    for (const h of articleEl.querySelectorAll('h2, h3, h4')) {
+      const t = norm(h.textContent);
+      if (t.length > 24 || !/community\s+q\s*&\s*a/i.test(t)) continue;
+      if (isInPreserved(h)) continue;
+      let cur = h, lastSafe = null;
+      while (cur.parentElement && cur.parentElement !== articleEl &&
+             articleEl.contains(cur.parentElement)) {
+        const pp = cur.parentElement;
+        if (hasArticleTitleAnchor(pp, h) || hasLongMainParagraph(pp)) break;
+        lastSafe = pp;
+        cur = pp;
+      }
+      const target = lastSafe;
+      if (target && target !== articleEl && articleEl.contains(target) &&
+          !target.contains(articleEl) &&
+          !(target.dataset && target.dataset.jreadHidden === '1')) {
+        hide(target, hidden);
+      }
+    }
   }
 
   // strict CTA（立即報名 / 立即下載 等）promo block 整塊清：esmchina 類站把
@@ -5527,6 +5577,14 @@
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
       if (h.closest('button')) continue;
+      // v0.8.107：dynamic 注入的 Community Q&A widget 走 dedicated 整塊清（與靜態
+      // hideCommunityQaWidget 同源）——generic resolveHeadingNoiseTarget 對 Q&A
+      // 只 hide 得掉標題框（累計短問答 >= 300 誤觸主文保護，見 hideCommunityQaWidget
+      // 註解）。命中即停。
+      if (isHeading && /community\s+q\s*&\s*a/i.test(text)) {
+        hideCommunityQaWidget(articleEl, hiddenList);
+        return;
+      }
       // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget（與
       // 靜態 hideInsideArticleByHeadingText 單一資料源）。dynamic 因此補齊靜態的
       // tail-cleanup + 最後防線 hide(h)——歷史上 dynamic 漏同步這兩段（cnyes
@@ -5774,6 +5832,7 @@
       safeRun(hideInsideArticleFloatedPromoAsides, articleEl, hidden);
       safeRun(hideInsideArticleFigureWidgetIframes, articleEl, hidden);
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
+      safeRun(hideCommunityQaWidget, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
