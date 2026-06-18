@@ -26,6 +26,17 @@ describe('cleaner — article-audio camelCase keyword（v0.8.61）', () => {
     document = env.document;
     articleEl = document.querySelector('article#story');
     assert.ok(articleEl);
+    // 模擬真實載入尺寸（v0.8.119）：TTS 播放器內的縮圖實機是 80×80 小圖
+    // （cleaner.js article[-_]*audio 註解），不符 standalone content image 尺寸
+    // 門檻 → widget 照常被 keyword hide；真 hero 是滿版大圖。jsdom 不載圖、
+    // naturalWidth 預設 0，會誤觸 containsStandaloneContentImg 的 unloaded 保守
+    // 豁免，故在此明確 stub 還原實機尺寸關係。
+    const dupThumb = document.querySelector('.ArticleAudio_img__BFda3');
+    Object.defineProperty(dupThumb, 'naturalWidth', { value: 80, configurable: true });
+    Object.defineProperty(dupThumb, 'naturalHeight', { value: 80, configurable: true });
+    const realHero = document.querySelector('.ArticleLeadArt_image__HZS4B');
+    Object.defineProperty(realHero, 'naturalWidth', { value: 1200, configurable: true });
+    Object.defineProperty(realHero, 'naturalHeight', { value: 800, configurable: true });
     env.window.__JRead.cleaner.clean(articleEl);
   });
 
