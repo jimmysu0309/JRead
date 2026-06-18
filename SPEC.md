@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.107**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.108**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -24,6 +24,7 @@
 7. **Debug 工具鏈**：Claude 自主跑完 reproduce + forensic 循環（Playwright + localStorage instrument bridge），避開 chrome.downloads MV3 SW data URL 限制，免使用者每步截圖（[[feedback-autonomous-debug]] memory 教訓）。
 8. **YouTube Cinema Mode**（v0.7.133）：YouTube watch page（`/watch`）detector short-circuit 不跑主文偵測、改注入 CSS 把 `#movie_player` `position: fixed + translate(-50%, -50%)` 釘 viewport 中央、`min(100vw, 177.78vh)` 雙軸 clamp 16:9、黑底鋪滿、隱藏 masthead/留言/描述/推薦/endscreen 浮層。popup 偵測到 youtube-cinema 時 toggle 按鈕文字改「啟動 / 退出影院模式」；ESC 退出；不 install keyguard（保留 YouTube j/k/l/space/f 等 player shortcut）。詳見「YouTube Cinema Mode（v0.7.133）」章節。
 9. **YouTube Borderless Mode**（v0.7.134，從 Shinkansen 移植）：YouTube watch page 第二個獨立沉浸模式——影片以 100vw × 100vh 撐滿視窗、強制 theater、隱藏所有 YouTube UI（masthead / secondary / 留言 / 描述 / chat / 推薦），並透過 SW `RESIZE_OWN_WINDOW` 訊息呼叫 `chrome.windows.update` 把瀏覽器視窗高度 resize 成匹配影片寬高比。manifest 註冊 `toggle-youtube-borderless` 命令但**無 suggested_key**，使用者自行至 `chrome://extensions/shortcuts` 綁；popup 在 YouTube watch 頁多一顆「啟動 / 退出無邊模式」按鈕。與 cinema mode **完全獨立**：各自管自己的 state、各自 toggle、各自 CSS（兩者可同時開，但 CSS 會搶 `#movie_player` rule，使用者自決優先順序）。詳見「YouTube Borderless Mode（v0.7.134）」章節。
+10. **編輯模式（手動移除雜訊段落）**（v0.8.108）：閱讀模式啟動時 popup 多一顆「編輯模式：移除雜訊」按鈕（active 且非 cinema 才露出）。進入後 hover 主文以藍框標亮合理 block 邊界、點擊隱藏該塊、頁內 toolbar（復原 / 完成）。block 邊界用演算法 C（inline 正規化 → tight-wrapper climb → dominant-wrapper guard，real-site probe 驗證、避免誤選整篇 dominant wrapper）。隱藏複用 `NS.cleaner.hideElement` 塞進 `NS.state.hiddenEls`，**僅當次有效**——退出閱讀模式 / SPA 導航 / reload 即由既有 `cleaner.restore` 全還原；移除段落自動不進 Readwise。詳見「編輯模式（v0.8.108）」章節。
 
 ### 硬規則（繼承）
 
@@ -97,7 +98,8 @@ JRead/
 │   │   ├── x-thread.js          # X（Twitter）thread 合成容器
 │   │   ├── fb-post.js           # Facebook post 合成容器
 │   │   ├── detector.js          # 主文偵測
-│   │   ├── cleaner.js           # 雜訊隱藏
+│   │   ├── cleaner.js           # 雜訊隱藏（含 hideElement 給編輯模式複用）
+│   │   ├── edit-mode.js         # 編輯模式：手動點擊移除雜訊段落（v0.8.108）
 │   │   ├── styler.js            # 套用乾淨排版
 │   │   ├── space-scroll.js      # Space 段落焦點卷動 + 指示條（v0.7.216）
 │   │   ├── paged-mode.js        # 翻頁模式：手勢/鍵盤/滾輪翻頁 + 頁碼指示（v0.7.227）
@@ -466,7 +468,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 
 詞彙單一資料源：`content/namespace.js` 的 `NS.MSG` 表；三方一致（MSG 表 ↔ content 發送 ↔ SW case）由 `test/regression/message-protocol-consistency.spec.js` 強制（v0.8.37）。
 
-- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）
+- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）/ `EDIT_MODE_TOGGLE`（v0.8.108，切換編輯模式；content 端 guard 閱讀模式須 active。`GET_READER_STATE` 回應含 `editModeActive` 供 popup 切「編輯模式 / 完成編輯」按鈕文字）
 - `popup → background`：（無）。popup / options 的設定讀寫一律直接走 `chrome.storage.sync`、不經 SW。**v0.8.65 起送 Readwise 不再走 SW**——原 `SAVE_TO_READWISE`（v0.7.33）popup → SW 往返已移除，改在 popup（extension 頁、有 `<all_urls>` host_permission）直接 fetch（`popup-core.saveReaderPayload`）。動機：iOS Safari 背景頁（event page、`persistent:false`）被系統掛起得遠比 macOS 積極，popup → SW 非同步往返 + 背景頁 fetch 在 iOS 會 silently 失敗（popup `await` 拿到 `undefined` → 純「送出失敗」無 HTTP 碼；macOS Chrome / Safari 正常）。options「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走同一路徑
 - `content → background`：
   - `GET_SETTINGS`：**v0.7.235** 起 content 端 `getSettings` 不再走 round-trip——改直讀 `chrome.storage.sync.get(defaults)`（defaults 來自 `content/settings-defaults.js` 單一資料源）；iOS Safari background 訊息會無聲掉包（thread 758346 / 787958），掉包時舊版回 `undefined` → 所有設定 fallback 預設值（pagedMode 永遠 false = 「翻頁模式 iOS 沒功能」根因）。handler 保留，僅作 content 端 storage 失效（context invalidated）時的 fallback
@@ -550,6 +552,17 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
 - 點擊（v0.8.65）：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title + text + domain）→ **若開啟 `readwiseSummary` 且有 `geminiApiKey`**，先 `popup-core.generateGeminiSummary` 產生摘要塞進 payload（v0.8.72）→ **popup 自己**讀 `readwiseToken` + `popup-core.saveReaderPayload`（buildReadwisePayload + fetch `POST /api/v3/save/`）回結果。**不再繞 SW**（iOS 背景頁掛起會 silently 失敗，見訊息協定段 v0.8.65 註）。快速鍵送出（無 popup）仍走 SW `sendToReadwiseFromCommand`
 - 狀態條訊息：`產生摘要中…`（v0.8.72，僅開啟摘要時）/ `送出中…` / `已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位）
+
+## 編輯模式（v0.8.108）
+
+閱讀模式啟動時讓使用者手動點掉 cleaner 漏網的雜訊區塊。模組 `content/edit-mode.js`（`NS.editMode`）。
+
+- **入口**：popup「編輯模式：移除雜訊」按鈕——`refreshPopupForActiveTab` 依 `GET_READER_STATE` 的 `active && !cinemaActive` 顯隱、依 `editModeActive` 切「編輯模式：移除雜訊 / 完成編輯」文字。點下送 `EDIT_MODE_TOGGLE` 給 content 後關 popup（編輯互動在頁面內進行）。
+- **block 邊界選取（演算法 C，real-site probe 驗證）**：從游標 `e.target` 起——(1) **inline 正規化**：`getComputedStyle.display` 為 inline 系（inline / inline-block / inline-flex / contents）的元素往上爬到所屬 block（點段落內連結 → 選整段而非只選連結）；(2) **tight-wrapper climb**：parent 為純包裝（`children.length <= 1` 或 `textLen(parent) <= max(textLen(child)×1.3, child+30)`）才上爬，遇含多個實質子的容器停手；(3) **dominant-wrapper guard**：拒絕「子 ≥ 3 且文字 ≥ 主文 60%」的塊回 `null`。probe 在 Substack（`<article>` 下單一 div 佔全文 99%）抓到「爬到 articleEl 直接子」會災難性誤選整篇的 over-select 陷阱、演算法 C 在 Substack 巢狀 + Wikipedia 扁平結構都正確（硬規則 3 結構通則、非站點/class 特判）。
+- **隱藏 / 還原（單一資料源）**：複用 `NS.cleaner.hideElement(el, NS.state.hiddenEls)`——同一條 inline `display:none !important` + restyle observer 機制；記錄塞進 `NS.state.hiddenEls`，退出閱讀模式時既有 `cleaner.restore` 一併還原，**編輯模式不自寫還原路徑**。手動移除**僅當次有效**（退出閱讀模式 / SPA 導航 / reload 即還原）；移除段落自動不進 Readwise（`buildCleanHtml` 已剔除 `[data-jread-hidden]`）。**undo** 只刪 `data-jread-hidden` + 還原 inline display——restyle observer guard（`jreadHidden !== '1'` 即略過）自動停止對它補回 `none`，不需 unregister observer。
+- **interaction layer 暫停 / 還原（main.js 主導）**：keyguard / ESC / space-scroll / paged-mode 與編輯模式 hover / click 衝突，由 `main.js` 的 `suspendReaderInteractions` / `restoreReaderInteractions` 在進 / 出編輯模式時暫停與依 settings 裝回（生命週期本就住 main.js）；`edit-mode.js` 只負責編輯互動，退出時 `onExit` 回呼通知 main.js 還原。退出閱讀模式 / SPA 導航時 `exitReaderModeImpl` 先 `NS.editMode.exit(true)`（silent，不觸發 onExit）拆編輯 UI。
+- **UI**：overlay（藍框標亮）+ toolbar（復原 / 完成）以 Shadow DOM（`all:initial` host、`pointer-events:none` 讓事件穿透到頁面元素、toolbar 子層 `pointer-events:auto` 可點）封裝避免站點 CSS 污染；ESC 鍵在編輯模式內改為退出編輯模式。
+- **regression**：`test/regression/editmode-block-select.spec.js`（演算法 C 五種顆粒度 + hideElement/restore 整合），fixture `editmode-blocks.html` 仿 Substack dominant-wrapper 結構。
 
 ## 自動啟動網域（v0.7.155）
 

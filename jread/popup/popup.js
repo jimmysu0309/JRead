@@ -10,6 +10,7 @@ const statusEl = document.getElementById('status');
 const toggleBtn = document.getElementById('toggle-btn');
 const borderlessBtn = document.getElementById('borderless-btn');
 const readwiseBtn = document.getElementById('readwise-btn');
+const editBtn = document.getElementById('edit-btn');
 const readwiseStatusEl = document.getElementById('readwise-status');
 const openOptionsLink = document.getElementById('open-options');
 const shortcutEl = document.getElementById('shortcut-hint');
@@ -414,6 +415,7 @@ async function refreshPopupForActiveTab() {
     // 無有效分頁 = 沒有可啟動的閱讀模式，toggle 文字回到「啟動」態（off）。
     toggleBtn.textContent = '啟動閱讀模式';
     readwiseBtn.hidden = true;
+    editBtn.hidden = true;
     borderlessBtn.hidden = true;
     return;
   }
@@ -423,6 +425,7 @@ async function refreshPopupForActiveTab() {
     const active = !!(res && res.active);
     const cinemaActive = !!(res && res.cinemaActive);
     const borderlessActive = !!(res && res.borderlessActive);
+    const editModeActive = !!(res && res.editModeActive);
     // YouTube watch 頁：toggle 按鈕文字改「啟動 / 退出影院模式」。
     // v0.8.104：其他站不再固定顯示「切換閱讀模式」，改為反映 reader mode 狀態
     //（已啟動 → 「退出閱讀模式」、未啟動 → 「啟動閱讀模式」），與影院模式按鈕
@@ -440,6 +443,15 @@ async function refreshPopupForActiveTab() {
     } else {
       borderlessBtn.hidden = true;
     }
+    // v0.8.108：編輯模式按鈕——閱讀模式啟動且非 cinema 才露出（cinema 無主文
+    // 可編輯）。文字依編輯模式自身狀態切換：未啟動「編輯模式：移除雜訊」、
+    // 已啟動「完成編輯」。
+    if (active && !cinemaActive) {
+      editBtn.hidden = false;
+      editBtn.textContent = editModeActive ? '完成編輯' : '編輯模式：移除雜訊';
+    } else {
+      editBtn.hidden = true;
+    }
     // Readwise 按鈕：active=true 且 非 cinema 且 已設 token 才露出
     // （cinema 沒主文可送；沒 token 按了必失敗，v0.8.50 整顆隱藏）
     readwiseBtn.hidden = !active || cinemaActive || !(await hasReadwiseToken());
@@ -448,6 +460,7 @@ async function refreshPopupForActiveTab() {
     // toggle 文字回到「啟動」態（按下去會走 inject fallback 嘗試進入）。
     toggleBtn.textContent = '啟動閱讀模式';
     readwiseBtn.hidden = true;
+    editBtn.hidden = true;
     borderlessBtn.hidden = true;
   }
 }
@@ -460,6 +473,19 @@ borderlessBtn.addEventListener('click', async () => {
   if (typeof tabId !== 'number') return;
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
+  } catch (_) { /* content script 沒注入時 silently fail */ }
+  flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
+  window.close();
+});
+
+// v0.8.108：編輯模式 toggle。送 EDIT_MODE_TOGGLE 給 content script 後關閉
+// popup——編輯互動在頁面內進行（hover 標亮 + 點擊移除 + 頁內 toolbar），popup
+// 留著沒意義。content 端 enterEditMode 內 guard 閱讀模式須 active。
+editBtn.addEventListener('click', async () => {
+  const tabId = await getActiveTabId();
+  if (typeof tabId !== 'number') return;
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'EDIT_MODE_TOGGLE' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
   flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();

@@ -5933,6 +5933,27 @@
     },
 
     /**
+     * v0.8.108：對外暴露單一元素 hide（編輯模式手動移除雜訊用，NS.editMode）。
+     * 複用內部 hide()——inline `display:none !important` + data-jread-hidden +
+     * registerHiddenForRestyle（站點 JS 之後覆寫 style 時補回 !important）。把
+     * 還原記錄 push 進傳入的 hiddenArray；呼叫端傳 NS.state.hiddenEls，退出閱讀
+     * 模式時既有 restore() 一併還原（單一資料源，編輯模式不需自寫還原路徑）。
+     * 回傳該記錄供 undo 用——undo 只需刪掉 data-jread-hidden + 還原 inline
+     * display，restyle observer 的 guard（jreadHidden !== '1' 即略過）會自動
+     * 停止對它補回 none，不必 unregister observer。
+     * @param {Element} el 要隱藏的元素
+     * @param {Array} hiddenArray 還原清單（通常為 NS.state.hiddenEls）
+     * @returns {Object|null} 還原記錄 { el, prevDisplay, prevDisplayPriority }
+     */
+    hideElement(el, hiddenArray) {
+      if (!el || el.nodeType !== 1 || !Array.isArray(hiddenArray)) return null;
+      if (el.dataset && el.dataset.jreadHidden === '1') return null; // 已隱藏
+      const before = hiddenArray.length;
+      hide(el, hiddenArray);
+      return hiddenArray.length > before ? hiddenArray[hiddenArray.length - 1] : null;
+    },
+
+    /**
      * 還原 clean() 所隱藏的元素。
      * @param {Array<{el: Element, prevDisplay: string}>} hiddenEls
      */

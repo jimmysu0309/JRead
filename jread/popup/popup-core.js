@@ -26,6 +26,7 @@
     'content/fb-post.js',
     'content/detector.js',
     'content/cleaner.js',
+    'content/edit-mode.js',
     'content/styler.js',
     'content/space-scroll.js',
     'content/paged-mode.js',

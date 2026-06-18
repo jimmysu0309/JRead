@@ -14,6 +14,7 @@ const SRC = {
   namespace:     fs.readFileSync(path.join(JREAD_DIR, 'content', 'namespace.js'), 'utf8'),
   detector:      fs.readFileSync(path.join(JREAD_DIR, 'content', 'detector.js'), 'utf8'),
   cleaner:       fs.readFileSync(path.join(JREAD_DIR, 'content', 'cleaner.js'), 'utf8'),
+  editMode:      fs.readFileSync(path.join(JREAD_DIR, 'content', 'edit-mode.js'), 'utf8'),
   styler:        fs.readFileSync(path.join(JREAD_DIR, 'content', 'styler.js'), 'utf8'),
   toast:         fs.readFileSync(path.join(JREAD_DIR, 'content', 'toast.js'), 'utf8'),
   // SW 不能 eval 在 jsdom（chrome API 不存在），只取 source 給結構 assertion 用
