@@ -43,6 +43,9 @@
 
   // ---- block 邊界選取（演算法 C，real-site probe 驗證）-----------------------
   const INLINE_DISPLAYS = new Set(['inline', 'inline-block', 'inline-flex', 'contents']);
+  // tight-climb 判定「parent 的其他子元素可忽略」的文字門檻——< 此值視為空殼 /
+  // 圖示 / 短分隔，不算「相異的實質行」（v0.8.111）。
+  const MIN_SIBLING_TEXT = 8;
 
   function textLen(el) {
     const raw = el.innerText != null ? el.innerText : el.textContent;
@@ -68,8 +71,20 @@
     //    的 over-select 陷阱：Substack `<article>` 下單一 div 佔全文 99%）。
     while (c.parentElement && c.parentElement !== articleEl && articleEl.contains(c.parentElement)) {
       const p = c.parentElement;
-      const pLen = textLen(p), cLen = textLen(c);
-      const tight = p.children.length <= 1 || pLen <= Math.max(cLen * 1.3, cLen + 30);
+      // tight = parent 只是 cand 的純包裝：單一子，或「parent 的其他子元素全是
+      // 可忽略的」（文字 < MIN_SIBLING_TEXT）——即 cand 承載了 parent 幾乎全部
+      // 內容、其餘子是空殼 / void / 圖示。**不可用字數比例邊界**（cLen×1.3 或
+      // cLen+30 floor）：對「相異的短行」太脆弱——restofworld 日期行 38 字、同層
+      // 『翻譯成中文』連結 12 字，meta=50 與 38×1.3=49.4 只差 0.6 字就決定要不要
+      // 把日期併進整個 header（Jimmy 2026-06-18 回報點日期連刪多行）。改判「有沒有
+      // 另一個實質子」直接捕捉「parent 是不是純包裝」、不靠邊界：日期的 meta 有個
+      // ≥8 字的翻譯連結兄弟 → 不 climb，停在日期行（與確切字數無關）。figure 仍
+      // 合併（img 是 0 字 void 子、figcaption 跟 img 同 parent 時其他子皆 tiny）。
+      let otherChildrenAllTiny = true;
+      for (const ch of p.children) {
+        if (ch !== c && textLen(ch) >= MIN_SIBLING_TEXT) { otherChildrenAllTiny = false; break; }
+      }
+      const tight = p.children.length <= 1 || otherChildrenAllTiny;
       if (!tight) break;
       c = p;
     }

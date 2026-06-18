@@ -52,9 +52,21 @@ describe('編輯模式 — block 邊界選取（演算法 C，v0.8.108）', () =
       'promo → wrap2 → wrap1 皆單一子（純包裝）應合併；wrap1 的 parent 是多子 dominant → 停在 wrap1');
   });
 
-  it('點短文字推薦 widget 內的項目 → 抓整個 widget（短文字 cLen+30 floor 允許上爬）', () => {
-    assert.strictEqual(choose('rel1'), doc.getElementById('related'),
-      'rel1 短連結 → ul → #related 逐層 tight；#related parent 是多子 dominant → 停在 #related（整塊推薦）');
+  it('點推薦 widget 內的項目 → 選該項目（不 over-select 整塊；v0.8.111 移除 +30 floor）', () => {
+    // v0.8.111：移除 cLen+30 絕對 floor 後，rel1(短連結)→ul 的 ratio 50% 不再
+    // tight（純 1.3× 下短的相異行各自獨立），停在 rel1 li。整塊 widget 仍可由
+    // hover 容器區域選取（見下一條）。動機：restofworld 日期行被 +30 floor 併到
+    // 整個 header 的 over-select bug（Jimmy 2026-06-18）。
+    assert.strictEqual(choose('rel1'), doc.getElementById('rel1'),
+      'rel1 短連結 inline 正規化到所屬 li；li → ul ratio 不足 1.3× → 停在 rel1（該項目）');
+  });
+
+  it('hover 推薦 widget 容器區域（ul）→ 仍選整塊（單一子 climb 到 #related）', () => {
+    // 使用者 hover widget 自身留白（e.target = ul）時，ul 無直接文字、單一子
+    // climb：ul → #related（#related 只含 ul）；#related parent 是多子 dominant
+    // → 停在 #related。整塊移除仍可達成、只是改由 hover 容器而非點單一項目。
+    assert.strictEqual(choose('related-list'), doc.getElementById('related'),
+      'ul 單一子 climb 到 #related（整塊推薦 widget），不被 dominant guard 擋（#related 僅 1 子）');
   });
 
   it('直接 hover dominant wrapper 自身 → null（dominant guard，不選整篇）', () => {
@@ -67,6 +79,42 @@ describe('編輯模式 — block 邊界選取（演算法 C，v0.8.108）', () =
       'articleEl 自身不可選');
     assert.strictEqual(NS.editMode._chooseBlock(doc.body), null,
       'articleEl 外的元素不可選');
+  });
+});
+
+describe('編輯模式 — 短的相異行不 over-select（v0.8.111，restofworld 日期行）', () => {
+  let env, doc, NS;
+  const ROW_FIXTURE = path.join(__dirname, 'fixtures', 'editmode-row-block.html');
+  before(() => {
+    env = loadFixtureWithScripts({
+      fixturePath: ROW_FIXTURE,
+      scripts: ['cleaner', 'editMode'],
+      viewport: { width: 1280, height: 900 },
+      pretendToBeVisual: true
+    });
+    doc = env.document; NS = env.NS;
+    NS.editMode.enter(doc.getElementById('post'), {});
+  });
+  after(() => { if (NS && NS.editMode) NS.editMode.exit(true); });
+  const choose = (id) => NS.editMode._chooseBlock(doc.getElementById(id));
+
+  it('點日期行 → 選日期行本身（不爬併到含翻譯連結的 meta / 整個 header）', () => {
+    // forcing：cLen+30 floor 還在時 dateline(38)→meta(50≤68)→header，dt 一路爬到
+    // header；移除 floor 後純 1.3× → meta(50) > 38×1.3 → 停在 dateline。
+    assert.strictEqual(choose('dt'), doc.getElementById('dateline'),
+      'time「18 MAY 2026」inline 正規化到 dateline；dateline→meta ratio 不足 → 停在 dateline');
+  });
+
+  it('點 byline → 選 byline 本身（不與日期 / meta 合併）', () => {
+    assert.strictEqual(choose('byline'), doc.getElementById('byline'),
+      'byline 與日期是相異短行，不應被併成同一塊');
+  });
+
+  it('日期行與 byline 各自獨立成可選 block（markBlocks）', () => {
+    assert.strictEqual(doc.getElementById('dateline').getAttribute('data-jread-edit-block'), '1', '日期行須有自己的框');
+    assert.strictEqual(doc.getElementById('byline').getAttribute('data-jread-edit-block'), '1', 'byline 須有自己的框');
+    assert.ok(!doc.getElementById('header').hasAttribute('data-jread-edit-block'), 'header 整塊不應被標（會 over-select）');
+    assert.ok(!doc.getElementById('meta').hasAttribute('data-jread-edit-block'), 'meta 不應被標');
   });
 });
 
@@ -86,12 +134,12 @@ describe('編輯模式 — 段落提示 markBlocks（v0.8.109，仿 Shinkansen�
 
   it('collectBlocks 以 chooseBlock 把主文切成自然 block 分割（提示範圍 = 可選範圍）', () => {
     const ids = NS.editMode._collectBlocks().map(b => b.id).sort();
-    assert.strictEqual(ids.join(','), 'para1,para2,para3,para4,related,wrap1',
-      '可選 block = 各段 + 單一子 wrapper 鏈外層 wrap1 + 整個推薦 widget related');
+    assert.strictEqual(ids.join(','), 'para1,para2,para3,para4,rel1,rel2,wrap1',
+      '可選 block = 各段 + 單一子 wrapper 鏈外層 wrap1 + 推薦 widget 各項目 rel1/rel2（v0.8.111 per-item，非整塊）');
   });
 
   it('進入編輯模式 → 每個可選 block 標 data-jread-edit-block', () => {
-    for (const id of ['para1', 'para2', 'para3', 'para4', 'wrap1', 'related']) {
+    for (const id of ['para1', 'para2', 'para3', 'para4', 'wrap1', 'rel1', 'rel2']) {
       assert.strictEqual(doc.getElementById(id).getAttribute('data-jread-edit-block'), '1',
         `${id} 應被標記為可選 block`);
     }
