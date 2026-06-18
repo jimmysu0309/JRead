@@ -358,7 +358,15 @@ toggleBtn.addEventListener('click', async () => {
     flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
     window.close();
   } else {
-    statusEl.textContent = '此頁面無法啟動閱讀模式';
+    // v0.8.115：區分「真的不支援的頁面」vs「可注入頁但連不上」。後者多半是 iOS
+    // Safari 偶發把擴充訊息層回收（Apple Forums 758346）——此頁仍能閱讀、三指
+    // 手勢仍可切換，誤報「此頁無法啟動」會害使用者以為頁面壞掉。injectable 判定
+    // 複用 getActiveTabUrlInfo（只認 http(s)）；三指提示 gate 在 popup 自身觸控能力。
+    const urlInfo = await getActiveTabUrlInfo();
+    statusEl.textContent = window.__JReadPopup.toggleFailureMessage({
+      injectable: !!urlInfo,
+      touch: (navigator.maxTouchPoints || 0) >= 3
+    });
     statusEl.hidden = false;
   }
 });
