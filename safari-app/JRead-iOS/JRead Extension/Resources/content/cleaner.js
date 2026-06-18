@@ -4288,19 +4288,22 @@
     for (const media of articleEl.querySelectorAll('img, picture, video')) {
       const parent = media.parentElement;
       if (!parent || parent === articleEl) continue;
-      // v0.7.143：先過 absolute / preserved / 共享 parent 早期判斷，**最後**才
-      // visited.add(parent)。原 bug：visited 在 absolute check 前 mark parent，
-      // 第一個 media 不是 absolute（continue）會把 parent 過早 mark；第二個
-      // 共享 parent 的 absolute media（典型 <picture><source><source><img>
-      // 多 source 結構、或 lazy-load placeholder 配 real img 共用 wrapper）
-      // 被 visited.has() skip，整個 placeholder reset 邏輯漏跑、主圖下方留白。
       if (visited.has(parent)) continue;
       if (isInPreserved(parent) && parent.matches && parent.matches('figcaption')) continue;
-
-      const mediaCs = window.getComputedStyle(media);
-      if (mediaCs.position !== 'absolute') continue;
-      // 通過 absolute 判斷後才 mark parent（同 parent 後續 absolute media 仍跳過、
-      // 但前面被 continue 掉的 non-absolute media 不會浪費 mark）。
+      // v0.8.117：**不再**以「media 仍是 position:absolute」當必要條件。
+      // main.js enterReaderMode 的順序是 styler.apply → cleaner.clean
+      // （styler 先把 `img{position:static !important}` 注入），等執行到這裡時，
+      // 站方原本 `position:absolute` 填滿 ratio 容器的 hero img 早已被 styler
+      // 解成 static。舊版在這裡量到 static 直接 continue，導致「relative 容器 +
+      // padding-bottom ratio hack + 已被 styler 解 absolute 的 img」整類漏網，
+      // 容器 padding-bottom 殘留成主圖下方一大塊空白（crossing.cw.com.tw
+      // .main-img__pic：原生 position:relative + padding-bottom 61% 寬、img
+      // 原生 absolute，styler 解 static 後 padding 殘留 ~400px 空白實證）。
+      // 改以 parent 的 padding-bottom/width 比例 + aspect-ratio 為唯一結構特徵
+      // （見下 isHack / hasAspectRatio），media 當下位置不影響判定。
+      // 多 source（<picture><source><img>）/ placeholder 配 real img 共用 wrapper
+      // 的情境：由第一個 media child 觸發 parent reset（清 padding-bottom 才是
+      // 消除空白的關鍵動作），後續共用 parent 的 media 經 visited.has 跳過即可。
       visited.add(parent);
 
       const pCs = window.getComputedStyle(parent);
