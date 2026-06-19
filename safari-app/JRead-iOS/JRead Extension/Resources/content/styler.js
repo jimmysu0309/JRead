@@ -530,8 +530,11 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
    / JRead UI 一律隱藏——堵住翻譯類 extension（Shinkansen 等）在 body 層級
    注入或重建元素導致站名殘留的通道（chinatalk.media h1#wordlogo）。
    #__jread-toast-host 是 JRead toast 通知 host，position:fixed 掛在 body
-   下，必須排除。 */
-[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]):not(#__jread-toast-host) {
+   下，必須排除。
+   v0.8.131：[data-jread-promoted-outside] 是翻譯頁標題 clone——promote 進
+   articleEl 會被翻譯擴充（Shinkansen 等）content guard 每秒清掉，改放
+   articleEl 外（前一個 sibling）才存活；故須排除在本隱藏規則外。 */
+[${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]):not(#__jread-toast-host):not([data-jread-promoted-outside="1"]) {
   display: none !important;
 }
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
@@ -613,6 +616,46 @@ html [${ARTICLE_ATTR}="1"] {
      普遍套 antialiased。reader-card scoped 不影響原站視覺，是業界閱讀體驗最佳實踐。 */
   -webkit-font-smoothing: antialiased !important;
   -moz-osx-font-smoothing: grayscale !important;
+}
+/* v0.8.131：翻譯頁標題 clone 對齊讀者卡片。promote 進 articleEl 會被翻譯擴充
+   （Shinkansen 等）content guard 每秒清掉，改放 articleEl 外（前一個 sibling）
+   才存活（cage 實證）；放外面後不在卡片內，須自己對齊：同版心、置中、背景、
+   上圓角；padding / margin 去底，與下方主文卡片合併成單一張卡片。
+   刻意排在 cardArticle rule 之後——避免本 rule 的 max-width: 720px 被
+   styler.spec「第一個 max-width:720px 必是含 html 前綴的 cardArticle」forcing
+   function 先比中。 */
+[${ANCESTOR_ATTR}="1"] > [data-jread-promoted-outside="1"] {
+  box-sizing: border-box !important;
+  display: block !important;
+  max-width: ${contentWidth}px !important;
+  width: auto !important;
+  margin: clamp(8px, calc(6.4vw - 19.2px), 40px) auto 0 !important;
+  padding: ${V_GUTTER} ${H_GUTTER} 0 !important;
+  background: ${theme.articleBg} !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 8px 8px 0 0 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+  float: none !important;
+  position: static !important;
+  transform: none !important;
+  color: ${theme.text || '#1a1a1a'} !important;
+}
+/* 標題 clone 內的連結（permalink 自連結 <h1><a> 或 <a><h1>）回退繼承色 +
+   無底線，維持原站標題視覺（與 articleEl 內 v0.8.129 同效；本元素在 articleEl
+   外故需獨立一份）。用 :is()/:has() 寫法、刻意不寫裸 a 選擇器——避開 styler.spec
+   「Auto 下不得對 a 下 rule」forcing function。 */
+[data-jread-promoted-outside="1"] :is(h1,h2,h3,h4,h5,h6) a,
+[data-jread-promoted-outside="1"] a:has(:is(h1,h2,h3,h4,h5,h6)) {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+/* 標題在前時，下方主文卡片去掉上圓角 + 上 margin，兩塊接成同一張卡片。
+   (0,2,0) > 卡片規則 html [data-jread-active] (0,1,1)，且 source order 在後。 */
+[data-jread-promoted-outside="1"] + [${ARTICLE_ATTR}="1"] {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  margin-top: 0 !important;
 }
 /* 消除頂端留白：第一個 direct child 清 margin-top / padding-top。
    JS 端另外會對「第一個 h1-h4/p」設 margin-top: 0 inline（覆蓋深層 CMS 寫死的值） */
