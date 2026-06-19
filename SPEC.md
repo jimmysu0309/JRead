@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.122**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.123**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -378,7 +378,16 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 
 `apply()` runtime 自我檢查：圖片撐滿 reader card 版心、但內文 / 標題 / 分類列被中間 wrapper 的水平 padding 夾窄時（roomie.tw 內文 `div.content { padding: 0 20px }`、標題列 `div.mobile-info { padding: 0 24px }`，Jimmy iPhone 回報），把內容撐回滿版。reader card 是單欄 layout、card padding 是唯一應有的閱讀內距——**遍歷 card 內所有通用 block wrapper（`div` / `section` / `article` / `main` / `aside` / `header` / `footer` / `nav`）+ 文字 block（`p` / `h1`–`h6`）**，把水平 `padding` / `margin` 清零（inline `!important`）。
 
-v0.7.247 從「沿段落祖先鏈走」改為「全面遍歷」：roomie 可見標題是 `<span>`（語意 `h1` 是 sr-only `display:none` 又空），沿段落鏈走不到標題 wrapper——直接遍歷才涵蓋標題。排除規則：(1) 語意縮排容器（`blockquote` / `ul` / `ol` / `dl` / `li` / `figure` / `figcaption` / `table` 及其 cell / `pre` / `details`）自身與其後代不動，保留引言 / 清單 / 表格 / 程式碼縮排；(2) `data-jread-hidden`（cleaner 清掉的雜訊）不動。水平 `margin` 清零安全的理由：既有規則已對這些元素設 `width: auto` / `max-width: 100%`，滿版元素的 auto margin 算成 0，故 computed 水平 margin > 0 必是「顯式非置中 margin」。既有 `width: auto` / `max-width: 100%` 只擋「超寬」、擋不掉「被內距夾窄」，此檢查補反向兜底。捲動與翻頁（multicol）模式同根因同修法——走「水平內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），兩模式通用。`restore()` 對稱還原原 inline 值。Forcing function：`test/regression/content-width-self-check.spec.js`（內文 wrapper + 標題列 wrapper padding 清零 / blockquote + ul 縮排保留 / restore 還原）+ `tools/debug-harness.js` 的 **WIDTH AUDIT**（捲動模式量內文 p content-box 寬 vs card 版心寬，窄 > 2px 印 ⚠️；`--paged` 跳過）。
+v0.7.247 從「沿段落祖先鏈走」改為「全面遍歷」：roomie 可見標題是 `<span>`（語意 `h1` 是 sr-only `display:none` 又空），沿段落鏈走不到標題 wrapper——直接遍歷才涵蓋標題。排除規則：(1) 語意縮排容器（`blockquote` / `ul` / `ol` / `dl` / `li` / `figure` / `figcaption` / `table` 及其 cell / `pre` / `details`）自身與其後代不動，保留引言 / 清單 / 表格 / 程式碼縮排；(2) `data-jread-hidden`（cleaner 清掉的雜訊）不動。水平 `margin` 清零安全的理由：既有規則已對這些元素設 `width: auto` / `max-width: 100%`，滿版元素的 auto margin 算成 0，故 computed 水平 margin 非 0 必是「顯式非置中 margin」。**v0.8.123：判定改用 `Math.abs(margin) > 0.5`，同時清正 margin（narrowing / offset）與負 margin（full-bleed overhang）**——theverge.com（Duet design system）把 in-body 圖片包在 `div.duet--article--block-placement`（`margin-left: -100px` 讓圖片向版心左外延伸成 full-bleed），reader 單欄 card 下這個負 margin 殘留會把圖片推到內文左側 100px、未與文字欄對齊（Jimmy 2026-06-19 回報「圖片沒置中而破圖」）。舊版 `ml > 0.5` 只清正 margin、且 early-return guard 把 `ml <= 0.5` 當「無事可做」整支跳過 → 漏掉負 margin；改 abs 後負 margin 一併歸零、圖片 wrapper 退回 column 起點對齊文字。媒體置中（img/picture/video/figure `margin: auto`）另由既有規則處理、不在遍歷 TARGET_SEL 內、互不干擾。既有 `width: auto` / `max-width: 100%` 只擋「超寬」、擋不掉「被內距夾窄」或「被負 margin 外移」，此檢查補反向兜底。捲動與翻頁（multicol）模式同根因同修法——走「水平內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），兩模式通用。`restore()` 對稱還原原 inline 值。Forcing function：`test/regression/content-width-self-check.spec.js`（內文 wrapper + 標題列 wrapper padding 清零 / blockquote + ul 縮排保留 / restore 還原）+ `test/regression/styler-neg-margin-image-tiny-caption.spec.js`（負 margin full-bleed 圖清零 + restore）+ `tools/debug-harness.js` 的 **WIDTH AUDIT**（捲動模式量內文 p content-box 寬 vs card 版心寬，窄 > 2px 印 ⚠️；`--paged` 跳過）。
+
+### 圖說（figcaption）可讀性（v0.8.123）
+
+`figcaption` 自 v0.7.120 起排除在 `BODY_TEXT_SEL` 外、保留原站 caption typography（caption 比 body 小一階是合理階層差異化）。但部分站把 caption 設得過小 / 過淡，淺色模式難讀（theverge.com 實測 `11px` / `#4a4a4a`，Jimmy 2026-06-19 回報）。兩道補強（皆結構通則、非站點特判）：
+
+1. **字級下限（`captionFsSnap`，全 theme）**：`apply()` runtime 量每個 figcaption computed font-size，小於 `floor = max(14px, round(body × 0.78))` 才撐到 floor（已 >= floor 的不動、不縮大字、不抹平正常階層）。floor 隨使用者字級縮放（`opts.fontSize` 為 0 = Auto 時用 18 估計）、`0.78` 係數保留 caption < body 階層。inline `!important` 蓋站點 caption class rule；`restore()` 對稱還原。
+2. **顏色加深（light theme 限定）**：dark / sepia 下 figcaption 已由 `* { color: theme.text }` 接管（v0.8.45）；light theme（`!theme.text`）注入 `figcaption, figcaption * { color: #333333 !important }`（白底 12.6:1，比原站 `#4a4a4a` 更深、又仍比內文近黑淺一階保留階層）。`figcaption *` 一併覆寫——photo credit 常包在 figcaption 內 `<em>` / `<span>`、inline 子元素自身有色規則需顯式蓋。規則放進 `(theme, contentWidth)` 記憶化的 base 骨架、cache-safe。
+
+Forcing function：`test/regression/styler-neg-margin-image-tiny-caption.spec.js`（11px→14px floor / body 28→22 縮放 / restore / light 注入 #333 / dark 不注入）。
 
 ### 文字欄塌成單欄（de-column flex/grid text columns，v0.8.66）
 
