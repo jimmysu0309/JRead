@@ -567,6 +567,12 @@ describe('readwise: 訊息協定常數同步', () => {
     // 時不可通過——sanity check 實證鬆 regex 會被註解行騙過）
     assert.match(mainSrc, /^\s*pruneEmptyHusks\(clone\);/m,
       'main.js buildCleanHtml 必須對 clone 執行 pruneEmptyHusks（不可是註解）');
+    // v0.8.126：Shinkansen 雙語只留中文——buildCleanHtml 必須對 clone 呼叫
+    // NS.collapseShinkansenDual（移除原文、留譯文）+ stripDataAttrs 一併剝 shinkansen 標記
+    assert.match(mainSrc, /^\s*if \(NS && NS\.collapseShinkansenDual\) NS\.collapseShinkansenDual\(clone\);/m,
+      'main.js buildCleanHtml 必須對 clone 呼叫 NS.collapseShinkansenDual（不可是註解）');
+    assert.match(mainSrc, /startsWith\(['"]data-shinkansen['"]\)/,
+      'stripDataAttrs 必須剝掉 data-shinkansen* attribute（dual collapse 後殘留標記）');
     // v0.8.121：文首 byline / dateline meta 移除——buildCleanHtml 必須呼叫
     // NS.markLeadingBylineForExport（live DOM 標記）+ 在 clone 上移除標記節點。
     // 拆兩條 assert 各指向 call site / removal，任一被移除都會 fail（^\s* + m flag
