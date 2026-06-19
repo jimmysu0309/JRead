@@ -459,6 +459,84 @@
       return ce === 'true' || ce === '';
     },
 
+    // v0.8.130：CSP-safe 樣式注入（單一資料源，CLAUDE.md 硬規則 5）。styler /
+    // edit-mode / cinema / youtube-borderless 原本各自 `document.createElement('style')`
+    // → 4 份相同實作、同一個潛在 bug 各踩各的。
+    //
+    // 根因：頁面若下嚴格 `style-src 'nonce-...'`（無 unsafe-inline，例如 Miniflux
+    // 自架閱讀頁）會擋掉「沒帶 nonce 的注入 <style>」。Chrome 對 content-script 注入
+    // 的 <style> 有豁免（照樣生效），**WebKit / Safari 不豁免**——套頁面 CSP 把它擋掉，
+    // 所以同一頁在 iPhone 沒版型、在 Chrome 正常（Jimmy 2026-06-19 Miniflux 回報）。
+    // cleaner 用 el.style.setProperty（CSSOM 賦值不受 style-src 管轄）故雜訊照清，
+    // 只有 styler 的版型 CSS 被擋。
+    //
+    // 結構性通則（非站點特判）：注入 <style> 後若 `styleEl.sheet === null`（非空 CSS
+    // 卻沒產生 CSSOM sheet＝被 CSP 擋的訊號），退回 constructable stylesheet 經
+    // `document.adoptedStyleSheets` 套用——adoptedStyleSheets 不受 style-src 管轄、
+    // cascade 排在作者樣式之後（與晚注入 <style> 同序，配合既有 !important 不影響勝負）。
+    // 一般站 sheet 非 null → 完全不走 fallback、行為與舊版一致（零回歸風險）。
+    // <style id> element 全程保留當 marker，既有 `getElementById(id)` 的「已注入?」
+    // guard 與還原 remove 不變。WebKit 16.4+ 支援 adoptedStyleSheets + replaceSync。
+    _adoptedStyles: (typeof Map !== 'undefined') ? new Map() : null,
+
+    _canAdoptStyles() {
+      return typeof CSSStyleSheet === 'function'
+        && typeof Document !== 'undefined'
+        && Document.prototype
+        && 'adoptedStyleSheets' in Document.prototype
+        && typeof (new CSSStyleSheet()).replaceSync === 'function';
+    },
+
+    // 注入 / 更新 id 的樣式（css 為完整 CSS 字串）。回傳 marker <style> 元素。
+    injectCssText(id, css) {
+      let styleEl = document.getElementById(id);
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = id;
+        (document.head || document.documentElement).appendChild(styleEl);
+      }
+      styleEl.textContent = css;
+
+      const map = this._adoptedStyles;
+      if (!map) return styleEl;
+      let sheet = map.get(id);
+
+      // 已在 fallback 模式 → 直接更新 adopted sheet（styleEl 仍被擋、無作用）
+      if (sheet) {
+        try { sheet.replaceSync(css); } catch (_) {}
+        return styleEl;
+      }
+
+      // 偵測本次注入是否被 CSP 擋（非空 CSS 卻無 sheet）
+      if (css && !styleEl.sheet) {
+        let canAdopt = false;
+        try { canAdopt = this._canAdoptStyles(); } catch (_) { canAdopt = false; }
+        if (canAdopt) {
+          try {
+            sheet = new CSSStyleSheet();
+            sheet.replaceSync(css);
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+            map.set(id, sheet);
+          } catch (_) { /* fallback 失敗就維持原 <style>（最壞回到 bug 前狀態） */ }
+        }
+      }
+      return styleEl;
+    },
+
+    // 移除 id 的樣式（marker <style> + 可能的 adopted sheet 一起清）。
+    removeCssText(id) {
+      const styleEl = document.getElementById(id);
+      if (styleEl) styleEl.remove();
+      const map = this._adoptedStyles;
+      if (map && map.has(id)) {
+        const sheet = map.get(id);
+        try {
+          document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+        } catch (_) {}
+        map.delete(id);
+      }
+    },
+
     // 訊息常數（與 popup / background 對齊）。
     // v0.8.37：REPORT_DETECTION_RESULT（7 處發送、全 repo 零接收、每次偵測
     // 白喚醒 SW 一次）與 UPDATE_SETTINGS（SW 有 case、零發送端——popup /
