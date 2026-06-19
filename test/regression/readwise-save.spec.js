@@ -567,6 +567,14 @@ describe('readwise: 訊息協定常數同步', () => {
     // 時不可通過——sanity check 實證鬆 regex 會被註解行騙過）
     assert.match(mainSrc, /^\s*pruneEmptyHusks\(clone\);/m,
       'main.js buildCleanHtml 必須對 clone 執行 pruneEmptyHusks（不可是註解）');
+    // v0.8.121：文首 byline / dateline meta 移除——buildCleanHtml 必須呼叫
+    // NS.markLeadingBylineForExport（live DOM 標記）+ 在 clone 上移除標記節點。
+    // 拆兩條 assert 各指向 call site / removal，任一被移除都會 fail（^\s* + m flag
+    // 確保 removal 行不可被註解掉騙過）。
+    assert.match(mainSrc, /NS\.markLeadingBylineForExport\(rootEl\)/,
+      'main.js buildCleanHtml 必須呼叫 NS.markLeadingBylineForExport(rootEl) 標記文首 byline');
+    assert.match(mainSrc, /^\s*clone\.querySelectorAll\(['"]\[data-jread-rw-strip="1"\]['"]\)\.forEach\(n => n\.remove\(\)\);/m,
+      'main.js buildCleanHtml 必須在 clone 上移除 [data-jread-rw-strip] 標記節點（不可是註解）');
     // v0.7.165：FB permalink 段落（div + data-jread-fb-para）送 Readwise 前必須
     // 改寫成 <p>，否則對方 sanitizer 砍 inline style 後段落擠成一團（Jimmy
     // 2026-05-22 回報）。anchor 在 querySelectorAll('[data-jread-fb-para...]') 之後

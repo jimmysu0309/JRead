@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  Readwise 匯出移除文首 byline / dateline meta（v0.8.121，autosport.com）。
+  autosport.com 結構：entity-header 內含 kicker + h1 標題 + author-toolbar
+  （作者連結 + Published <time> + 「Add as a preferred source」+ 分享鈕）+ hero。
+  Readwise metadata 已記錄作者/日期 → author-toolbar 整塊對 Readwise 是垃圾。
+
+  控制組（驗判別力）：
+  - h1 標題 / kicker / hero figure：必須保留（NS.markLeadingBylineForExport 的
+    heading / content-img guard 不可越界標記它們）。
+  - 內文 <p> 內的 prose <time>（「back in May 2026」）：不可標記（在 <p> 內）。
+-->
+<html>
+<head><meta charset="utf-8"><title>Why Gasly's penalty saga risks a regulatory labyrinth</title></head>
+<body>
+  <article id="story">
+    <div class="entity-header">
+      <span class="kicker" id="kicker">Formula 1</span>
+      <h1 id="title">Why Gasly's Monaco GP penalty saga risks a regulatory labyrinth</h1>
+      <div class="flex-wrap">
+        <div class="author-toolbar" id="author-toolbar">
+          <div class="contents"><a class="btn" href="#"><span>Add as a preferred source</span></a></div>
+          <div class="author"><a href="/info/about-us/gianluca/265984/" id="author-link">Gianluca D'Alessandro</a></div>
+          <div class="date text-fg-muted">
+            <span>Published:</span>
+            <time datetime="2026-06-18T14:39:16+00:00" id="pub-time">18 Jun 2026, 22:39</time>
+          </div>
+          <div class="share"><a href="#" class="copy">Copy link</a><a href="#" class="fb">Share on Facebook</a></div>
+        </div>
+      </div>
+      <figure id="hero-fig"><img id="hero-img" class="hero" src="https://cdn.example.com/gasly.jpg" alt="Gasly"></figure>
+    </div>
+
+    <p id="p1">After stating last their intentions to appeal against the stewards' decision to restore Gasly's Monaco podium, the rival teams have formally lodged the appeal.</p>
+    <p id="p2">The original penalties were handed down back in <time datetime="2026-05-25" id="prose-time">May 2026</time>, and the stewards have since reconsidered the timing data.</p>
+  </article>
+</body>
+</html>
