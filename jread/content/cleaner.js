@@ -356,7 +356,18 @@
   // 18:20:00」（年月日格式）與 vocus「2026/04/24 發佈」（slash 格式）的 byline
   // 都不含英文月份 / ISO 連字號日期，舊 regex 全 miss。4 位年開頭限定，不會
   // 誤命中版本號（1.2.3）或一般數字。
-  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  // v0.8.128：翻譯後裸 byline 前綴——theverge translate-first 實測（cage real
+  // Chrome 預設引擎）：英文 byline 前綴 "by" 被翻成「作者」（Google MT 則翻
+  // 「透過」，各引擎不一），但既有中文 byline pattern `作者[:：]` 強制冒號、
+  // 翻譯產出的是「作者 Andrew Liszewski」（裸詞 + 空格，無冒號）→ 全 miss →
+  // isBylineNameChip / 條件 A 等所有 byline 保護路徑連坐失效、作者名 chip 被清。
+  // 連日期 fallback 也救不回：站點 byline 名字與日期間無空格（"LiszewskiJun
+  // 16, 2026"），英文月份 pattern 的 `\bjun` word-boundary 在 i→J 之間不成立。
+  // 修法：新增「行首裸 CJK byline 前綴詞」alternative——作者/撰文/編輯/整理/
+  // 報導/編譯 出現在字串開頭、後接空白 / 冒號 / 拉丁字母（= 後面是名字）時即
+  // 命中，不強制冒號。lookahead 後接 CJK 字（作者群 / 作者的話 / 作者簡介）則不
+  // 命中，避免吃到一般正文。`^\s*` 錨定 + 短 textLen 雙閘，誤判風險低。
+  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|^\s*(?:作者|撰文|編輯|整理|報導|編譯)(?=[\s:：]|[A-Za-z])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
   const BYLINE_MAX_TEXT_LEN = 200;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
