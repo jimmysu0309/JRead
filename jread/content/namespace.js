@@ -280,6 +280,54 @@
       return marked;
     },
 
+    // v0.8.126：Shinkansen 雙語（dual）模式送 Readwise 時只留中文譯文、移除原文。
+    // 在**傳入的 clone** 上就地操作（呼叫端 buildCleanHtml 的 clone，不動 live reader
+    // ——閱讀模式仍維持雙語顯示）。動機：Shinkansen dual 模式對每段保留原文
+    // element（標 data-shinkansen-dual-source）+ 注入 <shinkansen-translation> wrapper
+    // （內含 inner = 真實 block tag 的譯文）。JRead 送 Readwise 的 outerHTML 把兩份
+    // 都帶上 → 同段原文 + 譯文重複（Jimmy 2026-06-19 theverge.com PopSockets 翻譯後
+    // 回報）。Jimmy 選「只留中文譯文」。
+    // Shinkansen 注入結構（content-inject.js injectDual，已對源碼核實）：
+    //   - block（P/BLOCKQUOTE 等）：wrapper 為 original 的 afterend sibling
+    //   - LI/TD/TH：wrapper 為 original 的 appendChild（在 original 內）
+    //   - inline（被當段落的 SPAN/A 等）：wrapper 插在 block 祖先 afterend
+    // 演算法（結構通則，非站點 / class 特判）：
+    //   1. 每個 [data-shinkansen-dual-source] 原文 O——若 O **內含** wrapper（LI/TD/TH
+    //      append 模式），把 O 自身內容換成 wrapper 的 inner（只留譯文、保留 O 的 tag）；
+    //      否則（sibling 模式）整個移除 O（其 wrapper 為獨立 sibling、下一步 unwrap）。
+    //   2. 剩餘所有 <shinkansen-translation> wrapper → unwrap（用其子節點 inner 取代
+    //      wrapper 本身，inner 已是 p/div 等 block tag、Readwise 直接 render）。
+    // 未翻譯段落（無 dual-source / 無 wrapper）與 nodevalue-mutated 就地譯文（標題等，
+    // 原文已不在 DOM）不受影響。未翻譯頁面（無相關節點）為 no-op。data-shinkansen* /
+    // data-sk* 殘留 attribute 由 buildCleanHtml 的 stripDataAttrs 一併清除。
+    collapseShinkansenDual(root) {
+      if (!root || !root.querySelectorAll) return;
+      const WRAP = 'shinkansen-translation';
+      const doc = root.ownerDocument;
+      // 1. 處理 dual-source 原文
+      for (const orig of Array.from(root.querySelectorAll('[data-shinkansen-dual-source]'))) {
+        const innerWrap = orig.querySelector ? orig.querySelector(WRAP) : null;
+        if (innerWrap) {
+          // LI/TD/TH append 模式：wrapper 在 original 內——把 original 內容換成譯文
+          const frag = doc.createDocumentFragment();
+          while (innerWrap.firstChild) frag.appendChild(innerWrap.firstChild);
+          while (orig.firstChild) orig.removeChild(orig.firstChild);
+          orig.appendChild(frag);
+        } else {
+          // sibling 模式：整個移除原文（wrapper 為獨立 sibling、下一步 unwrap）
+          if (orig.remove) orig.remove();
+          else if (orig.parentNode) orig.parentNode.removeChild(orig);
+        }
+      }
+      // 2. unwrap 剩餘 wrapper（sibling 模式留下的）
+      for (const w of Array.from(root.querySelectorAll(WRAP))) {
+        const parent = w.parentNode;
+        if (!parent) continue;
+        while (w.firstChild) parent.insertBefore(w.firstChild, w);
+        parent.removeChild(w);
+      }
+    },
+
     // v0.8.96：srcset candidate 解析（單一資料源，namespace.js absSrcset /
     // main.js extractHeroImage / cleaner.js lazy-hydrate 共用）。
     // 動機：原本三處都用 naive `val.split(',')` 拆 candidate——但 srcset 的 URL
