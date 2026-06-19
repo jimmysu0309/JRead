@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!--
+  theverge.com translate-first byline 作者名消失最小重現（v0.8.128）。
+  真實結構（cage real Chrome 預設翻譯引擎實測）：英文 byline 前綴 "by" 被翻成
+  「作者」（無冒號 + 空格），作者名 "Andrew Liszewski"（專有名詞）保持英文，
+  做成 <span role="button">（hover-card chip）；hover-card bio 在 <aside> 內。
+  bug：既有中文 byline pattern `作者[:：]` 強制冒號 → 翻譯產出「作者 Andrew
+  Liszewski」（裸詞）全 miss → isBylineNameChip 失配 → all-buttons 規則清掉
+  作者名 chip，byline 只剩「作者」+ 日期。連日期 fallback 也救不回（名字與
+  日期間無空格 "LiszewskiJun"，英文月份 `\bjun` word-boundary 不成立）。
+  修法：BYLINE_TEXT_RE 加「行首裸 CJK byline 前綴詞」alternative（作者/撰文/
+  編輯… 後接空白 / 冒號 / 拉丁字母即命中，不強制冒號）。
+  forcing function：本 fixture 刻意「不放」inline 日期——讓「作者」裸前綴成為
+  chip 的唯一保護來源（若留日期，jsdom textSansAsides 移除 aside 後殘留空白會
+  讓日期 pattern 在 byline-block hop 命中、把修法 sanity 掩蓋掉）。
+  控制組：Share chip（CTA 字樣）仍被清；正文段保留。
+-->
+<html>
+<head><meta property="og:title" content="The new PopSockets grip is so thin"></head>
+<body>
+  <article id="story">
+    <h1>The new PopSockets grip is so thin</h1>
+    <div class="duet--article--article-byline" id="byline-block">
+      <span id="byline-inner">
+        <span id="prefix">作者</span>
+        <span role="button" id="author-chip"><span id="name">Andrew Liszewski</span><svg width="8" height="8"></svg></span><aside id="bio-popup">Close 安德魯·利澤夫斯基 新聞資深記者 Posts from this author will be added to your daily email digest and your homepage feed.</aside></span>
+      <span role="button" id="share-chip">Share</span>
+    </div>
+    <p>If you asked me a week ago to recommend a thinner PopSockets magnetic phone grip alternative, I would have told you to buy the OhSnap Snap Grip instead because it stayed reliably attached.</p>
+    <p>The new Low-Pro grip from PopSockets is about as thick as two dimes stacked together when collapsed, making it one of the thinnest MagSafe-compatible grips you can currently buy for a modern smartphone.</p>
+  </article>
+</body>
+</html>
