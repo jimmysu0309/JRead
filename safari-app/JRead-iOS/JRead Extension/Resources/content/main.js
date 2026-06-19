@@ -465,7 +465,16 @@
   // 抓 document.title 的分隔前首段當 title——多數站把站名接在「| Site Name」之後，
   // 切掉避免 Readwise 顯示「文章標題 | 中央社 CNA」這種尾巴。
   function buildCleanHtml(rootEl, title) {
+    // v0.8.121：先在 live DOM 標記文首 byline meta（邏輯單一資料源在
+    // NS.markLeadingBylineForExport），clone 後移除標記節點、再還原 live 標記
+    //（不影響閱讀模式顯示）。layout / naturalWidth 在 detached clone 上量不到，
+    // 故偵測必須跑在 live rootEl。
+    const bylineMarked = (NS && NS.markLeadingBylineForExport)
+      ? NS.markLeadingBylineForExport(rootEl) : [];
     const clone = rootEl.cloneNode(true);
+    // 0. 移除文首 byline / dateline meta（Readwise metadata 已記錄作者 + 發表日期）
+    clone.querySelectorAll('[data-jread-rw-strip="1"]').forEach(n => n.remove());
+    bylineMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
     // 1. 移除被 cleaner 標記隱藏的節點
     const hidden = clone.querySelectorAll('[data-jread-hidden="1"]');
     hidden.forEach(n => n.remove());
