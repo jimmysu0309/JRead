@@ -132,6 +132,52 @@
       return '';
     },
 
+    // v0.8.121：標記文首 byline / dateline meta block 供 Readwise 匯出移除，回傳
+    // 被標記的 live 元素陣列（呼叫端 clone 後負責還原標記）。動機：Readwise Reader
+    // metadata 已記錄作者 + 發表日期，body 內重複的作者名 +「Published: ...」+ 站方
+    // 作者工具列 CTA（Add as a preferred source / 分享鈕）對 Readwise 而言是垃圾
+    //（Jimmy 2026-06-19 autosport.com 回報）。結構訊號（非站點 / class 特判）：以
+    // <time>（HTML5 發表日期語意）為錨——位於第一個內文 <p> 之前、且 <time> 不在
+    // prose（p / li / figure / figcaption / blockquote）內的「純 meta 區塊」。從
+    // <time> 往上爬，取「不含 heading / 不含 <p> / 不含內容圖」的最高祖先（= 作者
+    // 工具列，天然停在含 h1 / hero 的 entity-header 之下、不誤殺標題或主圖；kicker
+    // 分類標籤是 entity-header 直屬、不在此區塊、保留）標記。文章無 <p> 時不動
+    //（避免誤殺整篇純 div 文章）。閱讀模式仍保留 byline 顯示——標記只加在 clone
+    // 來源的 live DOM、clone 後即移除（buildCleanHtml 負責）。content-img 門檻用
+    // natural / rect >= 內容圖尺寸，確保 hero 永不被併入移除範圍。
+    markLeadingBylineForExport(rootEl) {
+      const marked = [];
+      if (!rootEl || !rootEl.querySelector) return marked;
+      const firstP = rootEl.querySelector('p');
+      if (!firstP) return marked;
+      const hasContentImg = (el) => {
+        for (const img of el.querySelectorAll('img')) {
+          const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
+          if (nw >= 200 && nh >= 150) return true;
+          let r; try { r = img.getBoundingClientRect(); } catch (_) { r = null; }
+          if (r && r.width >= 200 && r.height >= 120) return true;
+        }
+        return false;
+      };
+      const FOLLOWING = (typeof Node !== 'undefined' && Node.DOCUMENT_POSITION_FOLLOWING) || 0x04;
+      for (const time of Array.from(rootEl.querySelectorAll('time'))) {
+        if (time.closest('p, li, figure, figcaption, blockquote')) continue;
+        if (!(time.compareDocumentPosition(firstP) & FOLLOWING)) continue;
+        let cand = time, top = null;
+        while (cand && cand !== rootEl) {
+          if (cand.querySelector('p, h1, h2, h3, h4, h5, h6')) break;
+          if (hasContentImg(cand)) break;
+          top = cand;
+          cand = cand.parentElement;
+        }
+        if (top && top !== rootEl && !top.hasAttribute('data-jread-rw-strip')) {
+          top.setAttribute('data-jread-rw-strip', '1');
+          marked.push(top);
+        }
+      }
+      return marked;
+    },
+
     // v0.8.96：srcset candidate 解析（單一資料源，namespace.js absSrcset /
     // main.js extractHeroImage / cleaner.js lazy-hydrate 共用）。
     // 動機：原本三處都用 naive `val.split(',')` 拆 candidate——但 srcset 的 URL
