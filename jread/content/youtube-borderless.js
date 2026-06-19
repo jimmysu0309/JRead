@@ -71,15 +71,11 @@
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
-    const s = document.createElement('style');
-    s.id = STYLE_ID;
-    s.textContent = CSS_TEXT;
-    (document.head || document.documentElement).appendChild(s);
+    NS.injectCssText(STYLE_ID, CSS_TEXT); // v0.8.130：CSP-safe（見 namespace.js）
   }
 
   function removeStyle() {
-    const el = document.getElementById(STYLE_ID);
-    if (el) el.remove();
+    NS.removeCssText(STYLE_ID);
   }
 
   function snapshotAndSetTheater() {

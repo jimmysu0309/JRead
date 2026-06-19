@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.129**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.130**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -85,7 +85,7 @@ JRead/
 │   ├── background/
 │   │   └── service-worker.js
 │   ├── content/                 # Content scripts（按載入順序）
-│   │   ├── namespace.js         # window.__JRead 初始化
+│   │   ├── namespace.js         # window.__JRead 初始化（含 NS.injectCssText/removeCssText：CSP-safe 樣式注入單一資料源，v0.8.130）
 │   │   ├── keepalive.js         # Safari 限定 background keep-alive port（v0.8.30，WPA / iOS 回收喚不醒對策）
 │   │   ├── settings-defaults.js # DEFAULT_SETTINGS 單一資料源（content / SW / Safari、Firefox event page 共用，v0.7.235）
 │   │   ├── domain-match.js      # 萬用字元網域比對（content / popup / options / spec 共用）
