@@ -217,22 +217,24 @@
       return null;
     },
 
-    // v0.8.124：標記重複的文首 hero 主圖供 Readwise 匯出移除，回傳被標記的 live
-    // 元素陣列（呼叫端 clone 後負責還原標記）。動機：Readwise Reader 收到 payload
-    // 的 image_url（= hero URL）後另 render 一張 cover，body 內若殘留同一張 hero img
-    // 就會重複顯示（Jimmy 2026-06-19 theverge.com hands-on 回報——cover + 內文 hero
-    // 兩份）。結構訊號（非站點 / class 特判）：findLeadingHeroImage 選到的主圖
-    // ——image_url 必然取自它，故 body 內**所有與其同一張圖**的 img 都是 cover 的
-    // 重複、一律移除。為何不只移第一張：站點常用 art-direction 把 hero 渲染成
-    // 多張響應式 <img>（theverge.com `duet--layout--entry-image` 內 `_1044qizn`
-    // 桌機版 + `_1044qizm` 手機版兩張同圖、各自 media query 顯示），只移第一張會
-    // 殘留另一張、Readwise 端無 CSS 兩張都現 → 仍重複。比對用 URL **pathname**
-    // （忽略 query）——同檔不同尺寸變體（`?w=376` / `?w=2400`）pathname 相同、能
-    // 一網打盡；pathname 含檔名故不同圖不會誤中。標記 picture 祖先（若有）整支
-    // 移除、避免空 <picture>（在 prune keep-list 內）殘留；裸 img 標 img。
-    // figcaption 不在標記範圍 → 主圖圖說保留（Readwise 端顯示成 cover 下方說明，
-    // 資訊不流失）。與 markLeadingBylineForExport 共用 data-jread-rw-strip 標記、
-    // 由同一段 clone 移除邏輯處理。
+    // v0.8.125：標記**多餘的重複** hero 主圖供 Readwise 匯出移除，回傳被標記的 live
+    // 元素陣列（呼叫端 clone 後負責還原標記）。
+    // 動機演進：
+    //   v0.8.124 原以為 Readwise 用 image_url 另 render in-view cover、body 殘留
+    //   同圖即重複，故移除 body 內**全部**同圖 → Jimmy 2026-06-19 回報「hero 不見了」。
+    //   實證修正：Readwise **不在 reading view render image_url**（只當資料庫縮圖），
+    //   reading view 的 hero 完全來自 body。theverge.com 原本「重複」的根因是
+    //   art-direction 把 hero 渲染成**兩張** <img>（`duet--layout--entry-image` 內
+    //   `_1044qizn` 桌機 + `_1044qizm` 手機，同圖、各自 media query 顯示）——Readwise
+    //   端無 CSS 兩張都現 → 重複。
+    // 正解（結構通則，非站點 / class 特判）：**保留第一張（findLeadingHeroImage 選到
+    // 的最佳/可見那張），只移除其餘 pathname 相同的多餘副本**。單一 hero（無
+    // art-direction）站點 → 只命中保留那張、不移除任何東西。比對用 URL **pathname**
+    // （忽略 `?w=` / `crop=` query）——同檔不同尺寸變體 pathname 相同、能抓到所有副本；
+    // pathname 含檔名故不同圖不誤中。標記 picture 祖先（若有）整支移除、避免空
+    // <picture>（在 prune keep-list 內）殘留；裸 img 標 img。figcaption 不在標記範圍
+    // → 圖說保留。與 markLeadingBylineForExport 共用 data-jread-rw-strip 標記、由
+    // 同一段 clone 移除邏輯處理。
     markHeroImageForExport(rootEl) {
       const marked = [];
       if (!rootEl || !rootEl.querySelectorAll) return marked;
@@ -251,7 +253,7 @@
       const heroPath = pathOf(hero.url);
       if (!heroPath) return marked;
       // img 的所有 candidate URL（src + currentSrc + srcset 各 entry）任一 pathname
-      // 等於 heroPath → 視為 cover 的重複
+      // 等於 heroPath → 與 hero 同一張圖
       const imgMatchesHero = (img) => {
         if (pathOf(img.currentSrc || img.src || img.getAttribute('src') || '') === heroPath) return true;
         const srcset = img.getAttribute('srcset');
@@ -262,10 +264,14 @@
         }
         return false;
       };
+      // 保留的那張（findLeadingHeroImage 選到的可見最佳副本）——其本身或 picture 祖先
+      // 不可被標記，否則 hero 整個消失。
+      const keepTarget = (hero.img.closest && hero.img.closest('picture')) || hero.img;
       for (const img of rootEl.querySelectorAll('img')) {
         if (img.closest('[data-jread-hidden="1"]')) continue;
         if (!imgMatchesHero(img)) continue;
         const target = (img.closest && img.closest('picture')) || img;
+        if (target === keepTarget) continue; // 保留一張 hero
         if (target && target.setAttribute && !target.hasAttribute('data-jread-rw-strip')) {
           target.setAttribute('data-jread-rw-strip', '1');
           marked.push(target);
