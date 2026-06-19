@@ -571,6 +571,12 @@ describe('readwise: 訊息協定常數同步', () => {
     // NS.collapseShinkansenDual（移除原文、留譯文）+ stripDataAttrs 一併剝 shinkansen 標記
     assert.match(mainSrc, /^\s*if \(NS && NS\.collapseShinkansenDual\) NS\.collapseShinkansenDual\(clone\);/m,
       'main.js buildCleanHtml 必須對 clone 呼叫 NS.collapseShinkansenDual（不可是註解）');
+    // v0.8.127：移除 reader 內 display:none 子樹（站點響應式重複版本、隱藏 byline）——
+    // buildCleanHtml 必須呼叫 NS.stripHiddenForExport（標記 live）+ 在還原步驟 unmark
+    assert.match(mainSrc, /NS\.stripHiddenForExport\(rootEl\)/,
+      'main.js buildCleanHtml 必須呼叫 NS.stripHiddenForExport(rootEl) 標記 display:none 子樹');
+    assert.match(mainSrc, /^\s*hiddenMarked\.forEach\(el => el\.removeAttribute\(['"]data-jread-rw-strip['"]\)\);/m,
+      'main.js buildCleanHtml 必須在 live DOM 還原 hiddenMarked 標記（不可是註解）');
     assert.match(mainSrc, /startsWith\(['"]data-shinkansen['"]\)/,
       'stripDataAttrs 必須剝掉 data-shinkansen* attribute（dual collapse 後殘留標記）');
     // v0.8.121：文首 byline / dateline meta 移除——buildCleanHtml 必須呼叫
