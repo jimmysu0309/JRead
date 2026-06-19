@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Readwise 隱藏響應式重複版本 fixture</title></head>
+<body>
+  <article id="story">
+    <!-- 響應式重複：dek 渲染兩份，桌機可見 + 手機 display:none。單語翻譯只譯到可見
+         那份（中文），隱藏份留原文（英文）。outerHTML 兩份都序列化 → Readwise 重複。 -->
+    <div class="lede">
+      <p id="dek-visible" data-shinkansen-nodevalue-mutated="1">Low-Pro 在收合時的厚度約等於兩枚 10 分錢硬幣疊在一起。</p>
+      <div id="dek-hidden-wrap" style="display: none;">
+        <p id="dek-hidden">The Low-Pro is about as thick as two stacked dimes when collapsed.</p>
+      </div>
+    </div>
+
+    <!-- 隱藏的響應式 byline 變體（display:none、含作者 + 日期），使用者看不到、不該送 -->
+    <div id="byline-hidden" style="display:none;">
+      <span id="author-label">作者</span>
+      <time id="pub-time" datetime="2026-06-16T21:30">Jun 16, 2026, 9:30 PM GMT+8</time>
+    </div>
+
+    <!-- 可見內文段落：保留 -->
+    <p id="body1">It is the thinnest MagSafe grip PopSockets has made.</p>
+
+    <!-- 隱藏元素內含 noscript（lazy image 來源）——整棵 display:none 仍移除；本案例
+         測「display:none 子樹移除」，noscript 保留規則的獨立測試見 readwise-save。 -->
+    <p id="body2">Pricing starts at $20.</p>
+  </article>
+</body>
+</html>

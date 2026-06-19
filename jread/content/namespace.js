@@ -280,6 +280,47 @@
       return marked;
     },
 
+    // v0.8.127：標記 reader 內 display:none 的子樹供 Readwise 匯出移除，回傳被標記的
+    // live 元素陣列（呼叫端 clone 後負責還原標記）。
+    // 根因（Jimmy 2026-06-19 單語模式翻譯 theverge.com PopSockets 回報 dek 中英重複 +
+    // 隱藏 byline 殘留——cage 真實 reader DOM probe 揪出）：站點用「響應式重複版本」把
+    // 同一塊內容渲染成桌機 + 手機兩份、用 media query 顯示其一（The Verge lede 把標題
+    // / dek / byline 各兩份）。reader 內非當前斷點那份是 display:none、使用者看不到，
+    // 但 buildCleanHtml 的 outerHTML 仍序列化它 → Readwise 端無原站 CSS、把隱藏份也
+    // render 出來。單語翻譯時更明顯：Shinkansen 只就地譯到可見那份（中文）、隱藏份留
+    // 原文（英文）→ Readwise 同段中英重複。實測該頁 reader 內 10+ 個含文字的
+    // display:none 子樹（dek / byline / 其他重複變體）。
+    // 通則（結構性、非站點 / class 特判）：reader 顯示時 display:none 的子樹 = 使用者
+    // 不可見 = 不屬於閱讀內容，整棵不送 Readwise。標記在 live DOM（clone 已 detach、
+    // 無 layout、getComputedStyle 量不到 display）、clone 後由共用 data-jread-rw-strip
+    // 移除邏輯處理、再還原 live（不影響閱讀模式顯示）。找到 display:none 即標記、不再
+    // 遞迴其子樹（整棵移除）。排除 <noscript>（display:none 但 textContent 是 lazy
+    // image 原始 HTML、是 Readwise 端圖片來源、buildCleanHtml 刻意保留）+ script/style。
+    stripHiddenForExport(rootEl) {
+      const marked = [];
+      if (!rootEl || !rootEl.querySelectorAll) return marked;
+      const win = rootEl.ownerDocument && rootEl.ownerDocument.defaultView;
+      if (!win || !win.getComputedStyle) return marked;
+      const walk = (el) => {
+        for (const c of el.children) {
+          const tag = c.tagName;
+          if (tag === 'NOSCRIPT' || tag === 'SCRIPT' || tag === 'STYLE') continue;
+          const cs = win.getComputedStyle(c);
+          if (cs.display === 'none') {
+            if (c.setAttribute && !c.hasAttribute('data-jread-rw-strip')) {
+              c.setAttribute('data-jread-rw-strip', '1');
+              marked.push(c);
+            }
+            // 整棵 display:none 子樹一併移除、不遞迴
+          } else {
+            walk(c);
+          }
+        }
+      };
+      walk(rootEl);
+      return marked;
+    },
+
     // v0.8.126：Shinkansen 雙語（dual）模式送 Readwise 時只留中文譯文、移除原文。
     // 在**傳入的 clone** 上就地操作（呼叫端 buildCleanHtml 的 clone，不動 live reader
     // ——閱讀模式仍維持雙語顯示）。動機：Shinkansen dual 模式對每段保留原文
