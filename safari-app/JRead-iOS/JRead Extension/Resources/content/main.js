@@ -471,10 +471,16 @@
     // 故偵測必須跑在 live rootEl。
     const bylineMarked = (NS && NS.markLeadingBylineForExport)
       ? NS.markLeadingBylineForExport(rootEl) : [];
+    // v0.8.124：標記重複的文首 hero 主圖（Readwise 用 image_url 另 render cover、
+    // body 殘留同張 hero 會重複）。與 byline 共用 data-jread-rw-strip 標記。
+    const heroMarked = (NS && NS.markHeroImageForExport)
+      ? NS.markHeroImageForExport(rootEl) : [];
     const clone = rootEl.cloneNode(true);
     // 0. 移除文首 byline / dateline meta（Readwise metadata 已記錄作者 + 發表日期）
+    //    + 重複的 hero 主圖（image_url 另 render cover）
     clone.querySelectorAll('[data-jread-rw-strip="1"]').forEach(n => n.remove());
     bylineMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
+    heroMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
     // 1. 移除被 cleaner 標記隱藏的節點
     const hidden = clone.querySelectorAll('[data-jread-hidden="1"]');
     hidden.forEach(n => n.remove());
@@ -593,37 +599,10 @@
       }
     };
     // 1. reader card 內第一張符合條件的 img
-    const imgs = articleEl.querySelectorAll('img');
-    for (const img of imgs) {
-      if (img.closest('[data-jread-hidden="1"]')) continue;
-      const nw = img.naturalWidth || 0;
-      const nh = img.naturalHeight || 0;
-      if (nw && nh) {
-        if (nw < 200 || nh < 200) continue;
-      } else {
-        const rect = img.getBoundingClientRect && img.getBoundingClientRect();
-        if (!rect) continue;
-        if (rect.width < 200 || rect.height < 120) continue;
-      }
-      // srcset 優先取最大解析度（無 srcset 退回 src / currentSrc）
-      // v0.8.96：用共用 NS.parseSrcset 拆 candidate——URL 可含字面逗號
-      // （Condé Nast `w_2240,c_limit`），naive split(',') 會剖破 URL。
-      let candidate = '';
-      const srcset = img.getAttribute('srcset');
-      if (srcset && NS && NS.parseSrcset) {
-        const entries = NS.parseSrcset(srcset).map(({ url, desc }) => {
-          const wMatch = desc.match(/^(\d+)w$/);
-          return { url, w: wMatch ? Number(wMatch[1]) : 0 };
-        });
-        if (entries.length) {
-          entries.sort((a, b) => b.w - a.w);
-          candidate = entries[0].url;
-        }
-      }
-      if (!candidate) candidate = img.currentSrc || img.src || img.getAttribute('src') || '';
-      const u = isUsable(candidate);
-      if (u) return u;
-    }
+    // v0.8.124：選擇邏輯抽到 NS.findLeadingHeroImage——與 markHeroImageForExport
+    // 共用同一張 hero（杜絕「送的 cover」與「body 去重的圖」drift，硬規則 5）。
+    const hero = (NS && NS.findLeadingHeroImage) ? NS.findLeadingHeroImage(articleEl, base) : null;
+    if (hero && hero.url) return hero.url;
     // 2. fallback：og:image / twitter:image meta
     const metaSelectors = [
       'meta[property="og:image"]',
