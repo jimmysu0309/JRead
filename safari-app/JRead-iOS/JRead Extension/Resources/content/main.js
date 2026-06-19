@@ -475,12 +475,19 @@
     // body 殘留同張 hero 會重複）。與 byline 共用 data-jread-rw-strip 標記。
     const heroMarked = (NS && NS.markHeroImageForExport)
       ? NS.markHeroImageForExport(rootEl) : [];
+    // v0.8.127：標記 reader 內 display:none 的子樹（站點響應式重複版本中非當前斷點
+    // 那份；使用者看不到、但 outerHTML 會序列化 → Readwise 無 CSS 全 render 出來，
+    // 翻譯時造成同段中英重複 + 隱藏 byline 殘留）。必須在 clone 前標記 live（clone
+    // 無 layout 量不到 computed display）。與 byline / hero 共用 data-jread-rw-strip。
+    const hiddenMarked = (NS && NS.stripHiddenForExport)
+      ? NS.stripHiddenForExport(rootEl) : [];
     const clone = rootEl.cloneNode(true);
     // 0. 移除文首 byline / dateline meta（Readwise metadata 已記錄作者 + 發表日期）
-    //    + 重複的 hero 主圖（image_url 另 render cover）
+    //    + 重複的 hero 主圖（image_url 另 render cover）+ display:none 隱藏子樹
     clone.querySelectorAll('[data-jread-rw-strip="1"]').forEach(n => n.remove());
     bylineMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
     heroMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
+    hiddenMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
     // 0.5 Shinkansen 雙語（dual）模式：只留中文譯文、移除原文（避免同段原文 + 譯文
     //     重複送進 Readwise）。在 clone 上操作、不動 live reader 的雙語顯示。
     //     未翻譯 / 非 dual 頁面為 no-op。邏輯單一資料源在 NS.collapseShinkansenDual。
