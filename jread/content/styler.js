@@ -1198,7 +1198,22 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] figcaption {
   width: auto !important;
   max-width: 100% !important;
-}
+}${!theme.text ? `
+/* v0.8.123：light theme 圖說顏色加深。dark / sepia 下 figcaption 已由
+   userOverrides 的 *-color-theme.text 規則強制接管文字色（v0.8.45）、
+   對比足夠；但 light theme 不注入文字色（theme.text 為 null），figcaption
+   保留原站灰（theverge.com 實測 #4a4a4a / 8.86:1——對比其實不差，但比內文
+   #1a1a1a 淺一截、配 11px 小字視覺上偏淡，Jimmy 2026-06-19 回報「淺色模式
+   圖說對比不夠、閱讀困難」）。不同站原站 caption 灰深淺不一（部分站 #999
+   ~ 2.8:1 確實低對比）→ light theme 統一強制深灰 #333（白底 12.6:1，比
+   原站 #4a4a4a 更深、又仍比內文近黑淺一階，保留 caption < body 的階層）。
+   figcaption * 一併覆寫——photo credit 常包在 figcaption 內的 <em> / <span>
+   （theverge 實測），inline 子元素自身若有色規則不靠 inherit、需顯式覆寫。
+   結構通則（非站點特判）：light theme 所有 figcaption 一律套此可讀深灰。 */
+[${ARTICLE_ATTR}="1"] figcaption,
+[${ARTICLE_ATTR}="1"] figcaption * {
+  color: #333333 !important;
+}` : ''}
 /* v0.7.100：h1-h6 上下 margin。BBC Culture 類站點原站 CSS 把 heading 的
    margin 全砍光（styled-components hash class 預設 margin: 0），reader mode 下
    段落 p 結束 → h2 標題 → 下一段 p 三者直接接壤、無視覺斷層、難辨章節。
@@ -3009,8 +3024,17 @@ html [${ARTICLE_ATTR}="1"] a {
       //     自身與其後代不動——縮排是刻意的。
       //   - cleaner 清掉的隱藏雜訊（data-jread-hidden）不動。
       //   - 水平 margin：既有規則已對這些元素設 width:auto / max-width:100%，
-      //     滿版元素的 auto margin 會算成 0，故 computed 水平 margin > 0 必是
+      //     滿版元素的 auto margin 會算成 0，故 computed 水平 margin 非 0 必是
       //     「顯式非置中 margin」（narrowing / offset），清掉安全。
+      // v0.8.123：水平 margin 改用「絕對值 > 0.5」判定——既清正 margin（narrowing
+      //   / offset），也清**負 margin**（full-bleed overhang）。theverge.com 實測：
+      //   in-body 圖片包在 `div.duet--article--block-placement` 帶 margin-left:-100px，
+      //   原站用負 margin 讓圖片向版心左外延伸成 full-bleed；reader 單欄 card 下圖片
+      //   被推到內文左側 100px、未與文字欄對齊（Jimmy 2026-06-19 回報「圖片沒置中」）。
+      //   既有 `ml > 0.5` 只清正 margin、漏掉負 margin，且 early-return guard 把
+      //   `ml<=0.5` 當「無事可做」整支跳過。改 abs 判定後負 margin 一併歸零、圖片
+      //   wrapper 退回 column 起點對齊文字。媒體置中（img/picture/video/figure margin:
+      //   auto）另由上方規則處理、不在 TARGET_SEL 內，互不干擾。
       // 圖片若是 wrapper 外的 full-bleed 子元素本就滿版，清零後內容與圖片同寬
       // = 符合設定寬度。翻頁模式（multicol）與捲動模式同根因同修法——走「水平
       // 內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），通用。
@@ -3031,7 +3055,7 @@ html [${ARTICLE_ATTR}="1"] a {
             const pr = parseFloat(cs.paddingRight) || 0;
             const ml = parseFloat(cs.marginLeft) || 0;
             const mr = parseFloat(cs.marginRight) || 0;
-            if (pl <= 0.5 && pr <= 0.5 && ml <= 0.5 && mr <= 0.5) return;
+            if (pl <= 0.5 && pr <= 0.5 && Math.abs(ml) <= 0.5 && Math.abs(mr) <= 0.5) return;
             contentWidthSnap.push({
               el,
               pl: el.style.getPropertyValue('padding-left'), plP: el.style.getPropertyPriority('padding-left'),
@@ -3041,8 +3065,8 @@ html [${ARTICLE_ATTR}="1"] a {
             });
             if (pl > 0.5) el.style.setProperty('padding-left', '0', 'important');
             if (pr > 0.5) el.style.setProperty('padding-right', '0', 'important');
-            if (ml > 0.5) el.style.setProperty('margin-left', '0', 'important');
-            if (mr > 0.5) el.style.setProperty('margin-right', '0', 'important');
+            if (Math.abs(ml) > 0.5) el.style.setProperty('margin-left', '0', 'important');
+            if (Math.abs(mr) > 0.5) el.style.setProperty('margin-right', '0', 'important');
           };
           for (const el of articleEl.querySelectorAll(TARGET_SEL)) {
             // 自身是語意縮排容器 → 不清（保留引言 / 清單 / 表格縮排）
@@ -3057,6 +3081,39 @@ html [${ARTICLE_ATTR}="1"] a {
             }
             if (insideIndent) continue;
             zeroHoriz(el);
+          }
+        }
+      }
+
+      // v0.8.123：圖說字級下限（caption font-size floor）。
+      // v0.7.120 刻意把 figcaption 排除在 BODY_TEXT_SEL 外、保留原站 caption
+      // typography（caption 普遍比 body 小一階是合理的階層差異化）。但部分站把
+      // caption 設得過小（theverge.com 實測 figcaption 11px 配 ~18px 內文 →
+      // 太小難讀，Jimmy 2026-06-19 回報「圖說閱讀困難」）。修法不回到「caption =
+      // body」（會抹平階層、撞 v0.7.120 已知問題），改設**下限**：只把小於 floor
+      // 的 caption 撐到 floor，已 >= floor 的 caption 維持原站字級不動（不縮大字、
+      // 不抹平正常 caption 階層）。floor = max(14px, round(body * 0.78))——隨使用者
+      // 字級縮放（body 大時 caption floor 同步變大）、且 14px 絕對下限保底；0.78
+      // 係數讓 caption 仍明顯小於 body、保留階層。opts.fontSize 為 0（Auto sentinel、
+      // 保留原站 body 字級）時用 18 當 body 估計值。inline !important 蓋站點 caption
+      // class rule。snapshot 對稱還原（與 titleFsSnap 同款）。
+      const captionFsSnap = [];
+      {
+        const _w = articleEl.ownerDocument?.defaultView;
+        if (_w) {
+          const bodyFs = opts.fontSize || 18;
+          const capFloor = Math.max(14, Math.round(bodyFs * 0.78));
+          for (const fc of articleEl.querySelectorAll('figcaption')) {
+            if (fc.closest('[data-jread-hidden="1"]')) continue;
+            const curFs = parseFloat(_w.getComputedStyle(fc).fontSize) || 0;
+            if (curFs > 0 && curFs < capFloor - 0.5) {
+              captionFsSnap.push({
+                el: fc,
+                fs: fc.style.getPropertyValue('font-size'),
+                fsP: fc.style.getPropertyPriority('font-size'),
+              });
+              fc.style.setProperty('font-size', capFloor + 'px', 'important');
+            }
           }
         }
       }
@@ -3398,7 +3455,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3554,6 +3611,15 @@ html [${ARTICLE_ATTR}="1"] a {
           else s.el.style.removeProperty('margin-left');
           if (s.mr) s.el.style.setProperty('margin-right', s.mr, s.mrP || '');
           else s.el.style.removeProperty('margin-right');
+        }
+      }
+
+      // v0.8.123：還原 figcaption 字級下限 inline override
+      if (Array.isArray(snapshot.captionFsSnap)) {
+        for (const s of snapshot.captionFsSnap) {
+          if (!s || !s.el) continue;
+          if (s.fs) s.el.style.setProperty('font-size', s.fs, s.fsP || '');
+          else s.el.style.removeProperty('font-size');
         }
       }
 
