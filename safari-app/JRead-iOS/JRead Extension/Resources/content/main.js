@@ -481,6 +481,10 @@
     clone.querySelectorAll('[data-jread-rw-strip="1"]').forEach(n => n.remove());
     bylineMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
     heroMarked.forEach(el => el.removeAttribute('data-jread-rw-strip'));
+    // 0.5 Shinkansen 雙語（dual）模式：只留中文譯文、移除原文（避免同段原文 + 譯文
+    //     重複送進 Readwise）。在 clone 上操作、不動 live reader 的雙語顯示。
+    //     未翻譯 / 非 dual 頁面為 no-op。邏輯單一資料源在 NS.collapseShinkansenDual。
+    if (NS && NS.collapseShinkansenDual) NS.collapseShinkansenDual(clone);
     // 1. 移除被 cleaner 標記隱藏的節點
     const hidden = clone.querySelectorAll('[data-jread-hidden="1"]');
     hidden.forEach(n => n.remove());
@@ -531,12 +535,16 @@
       node.remove();
     }
     pruneEmptyHusks(clone);
-    // 3. 剝掉所有 data-jread-* attribute
+    // 3. 剝掉所有 data-jread-* attribute（v0.8.126：一併剝 data-shinkansen* /
+    //    data-sk*——dual collapse 後未翻譯段落 / inner 上殘留的 Shinkansen 標記、
+    //    mark 樣式屬性，送 Readwise 是雜訊）
     function stripDataAttrs(node) {
       if (node.attributes) {
         const toRemove = [];
         for (const attr of node.attributes) {
-          if (attr.name.startsWith('data-jread')) toRemove.push(attr.name);
+          if (attr.name.startsWith('data-jread') ||
+              attr.name.startsWith('data-shinkansen') ||
+              attr.name.startsWith('data-sk')) toRemove.push(attr.name);
         }
         toRemove.forEach(name => node.removeAttribute(name));
       }
