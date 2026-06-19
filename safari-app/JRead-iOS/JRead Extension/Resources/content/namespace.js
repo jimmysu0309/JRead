@@ -178,6 +178,102 @@
       return marked;
     },
 
+    // v0.8.124：reader card 內第一張「可用主圖」img 元素（hero）+ 其 cover URL。
+    // 單一資料源（CLAUDE.md 硬規則 5）：main.js extractHeroImage 取 .url 當 Readwise
+    // image_url；markHeroImageForExport 標記 .img 供 buildCleanHtml 從 body 去重。
+    // 兩者必須選到同一張圖，否則「送的 cover」與「body 去重的圖」會 drift。
+    // 條件與舊 extractHeroImage path-1 一致：natural >= 200×200（或無 natural 時
+    // rect >= 200×120）、不在 [data-jread-hidden] 子孫內、srcset 最大或 src 是可用
+    // http(s) URL（非 data:/blob:）。回傳 { img, url } 或 null。
+    findLeadingHeroImage(rootEl, base) {
+      if (!rootEl || !rootEl.querySelectorAll) return null;
+      const NS = window.__JRead;
+      const isUsable = (raw) => {
+        if (!raw || typeof raw !== 'string') return null;
+        const s = raw.trim();
+        if (!s || /^data:/i.test(s) || /^blob:/i.test(s)) return null;
+        try { const abs = new URL(s, base).href; return /^https?:\/\//i.test(abs) ? abs : null; }
+        catch (_) { return null; }
+      };
+      const pickCandidate = (img) => {
+        const srcset = img.getAttribute('srcset');
+        if (srcset && NS && NS.parseSrcset) {
+          const entries = NS.parseSrcset(srcset).map(({ url, desc }) => {
+            const m = desc.match(/^(\d+)w$/);
+            return { url, w: m ? Number(m[1]) : 0 };
+          });
+          if (entries.length) { entries.sort((a, b) => b.w - a.w); return entries[0].url; }
+        }
+        return img.currentSrc || img.src || img.getAttribute('src') || '';
+      };
+      for (const img of rootEl.querySelectorAll('img')) {
+        if (img.closest('[data-jread-hidden="1"]')) continue;
+        const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
+        if (nw && nh) { if (nw < 200 || nh < 200) continue; }
+        else { let r; try { r = img.getBoundingClientRect(); } catch (_) { r = null; } if (!r || r.width < 200 || r.height < 120) continue; }
+        const url = isUsable(pickCandidate(img));
+        if (url) return { img, url };
+      }
+      return null;
+    },
+
+    // v0.8.124：標記重複的文首 hero 主圖供 Readwise 匯出移除，回傳被標記的 live
+    // 元素陣列（呼叫端 clone 後負責還原標記）。動機：Readwise Reader 收到 payload
+    // 的 image_url（= hero URL）後另 render 一張 cover，body 內若殘留同一張 hero img
+    // 就會重複顯示（Jimmy 2026-06-19 theverge.com hands-on 回報——cover + 內文 hero
+    // 兩份）。結構訊號（非站點 / class 特判）：findLeadingHeroImage 選到的主圖
+    // ——image_url 必然取自它，故 body 內**所有與其同一張圖**的 img 都是 cover 的
+    // 重複、一律移除。為何不只移第一張：站點常用 art-direction 把 hero 渲染成
+    // 多張響應式 <img>（theverge.com `duet--layout--entry-image` 內 `_1044qizn`
+    // 桌機版 + `_1044qizm` 手機版兩張同圖、各自 media query 顯示），只移第一張會
+    // 殘留另一張、Readwise 端無 CSS 兩張都現 → 仍重複。比對用 URL **pathname**
+    // （忽略 query）——同檔不同尺寸變體（`?w=376` / `?w=2400`）pathname 相同、能
+    // 一網打盡；pathname 含檔名故不同圖不會誤中。標記 picture 祖先（若有）整支
+    // 移除、避免空 <picture>（在 prune keep-list 內）殘留；裸 img 標 img。
+    // figcaption 不在標記範圍 → 主圖圖說保留（Readwise 端顯示成 cover 下方說明，
+    // 資訊不流失）。與 markLeadingBylineForExport 共用 data-jread-rw-strip 標記、
+    // 由同一段 clone 移除邏輯處理。
+    markHeroImageForExport(rootEl) {
+      const marked = [];
+      if (!rootEl || !rootEl.querySelectorAll) return marked;
+      const NS = window.__JRead;
+      const doc = rootEl.ownerDocument;
+      const base = (doc && doc.defaultView && doc.defaultView.location && doc.defaultView.location.href)
+        || (typeof location !== 'undefined' ? location.href : '');
+      const hero = NS && NS.findLeadingHeroImage ? NS.findLeadingHeroImage(rootEl, base) : null;
+      if (!hero || !hero.url) return marked;
+      const pathOf = (raw) => {
+        if (!raw || typeof raw !== 'string') return null;
+        const s = raw.trim();
+        if (!s || /^data:/i.test(s) || /^blob:/i.test(s)) return null;
+        try { return new URL(s, base).pathname; } catch (_) { return null; }
+      };
+      const heroPath = pathOf(hero.url);
+      if (!heroPath) return marked;
+      // img 的所有 candidate URL（src + currentSrc + srcset 各 entry）任一 pathname
+      // 等於 heroPath → 視為 cover 的重複
+      const imgMatchesHero = (img) => {
+        if (pathOf(img.currentSrc || img.src || img.getAttribute('src') || '') === heroPath) return true;
+        const srcset = img.getAttribute('srcset');
+        if (srcset && NS && NS.parseSrcset) {
+          for (const { url } of NS.parseSrcset(srcset)) {
+            if (pathOf(url) === heroPath) return true;
+          }
+        }
+        return false;
+      };
+      for (const img of rootEl.querySelectorAll('img')) {
+        if (img.closest('[data-jread-hidden="1"]')) continue;
+        if (!imgMatchesHero(img)) continue;
+        const target = (img.closest && img.closest('picture')) || img;
+        if (target && target.setAttribute && !target.hasAttribute('data-jread-rw-strip')) {
+          target.setAttribute('data-jread-rw-strip', '1');
+          marked.push(target);
+        }
+      }
+      return marked;
+    },
+
     // v0.8.96：srcset candidate 解析（單一資料源，namespace.js absSrcset /
     // main.js extractHeroImage / cleaner.js lazy-hydrate 共用）。
     // 動機：原本三處都用 naive `val.split(',')` 拆 candidate——但 srcset 的 URL
