@@ -1683,6 +1683,21 @@ ${BODY_TEXT_SEL} {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
+/* v0.8.120：消除「站點 flex/grid 容器 row-gap」與 reader 段落 margin 疊加的
+   雙倍間距。autosport.com（Motorsport CMS）的 .ms-article-content 是
+   display:flex; flex-direction:column; gap:32px，flex 的 row-gap(32px) 與上面
+   reader 段落 margin-bottom 1em(~17px) 疊成 49px 段距——使用者調 paragraphSpacing
+   只改 margin、改不動 flex gap → Jimmy 2026-06-19 回報「段落間距變很寬、沒尊重
+   設定」。段落垂直間距改由 reader margin 單一決定（單一資料源原則）：清掉 reader
+   內所有元素的 row-gap。row-gap 僅對 flex/grid/multicol 容器生效（一般 block 元素
+   設了是 no-op）→ 非 flex/grid 容器零副作用。只清 row-gap、不清 column-gap：
+   flex-column 下 column-gap 不貢獻垂直空間，且翻頁模式版心 column-gap 必須保留
+   （styler 僅注入 column-gap、從不注入 row-gap，故零誤清）。Auto 模式（sentinel
+   -1）不進此分支、保留原站 flex gap typography。結構通則、非站點/class 特判。 */
+[${ARTICLE_ATTR}="1"],
+[${ARTICLE_ATTR}="1"] * {
+  row-gap: 0 !important;
+}
 [${ARTICLE_ATTR}="1"] [data-jread-fb-para="1"] {
   margin-top: ${opts.paragraphSpacing}em !important;
   margin-bottom: ${opts.paragraphSpacing}em !important;
