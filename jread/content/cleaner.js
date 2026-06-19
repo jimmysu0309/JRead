@@ -5946,8 +5946,23 @@
       // 原本各 rule 獨立 querySelectorAll 5 次 article descendant，合併成 1 次。
       // 規則內仍有 `continue` 排除 & `if (dataset.jreadHidden === '1') continue;`
       // 共享 hidden 標記，等同前後鏈接。
+      // v0.8.122：custom element（hyphenated tag，如 <msnt-survey-promo>）也納入
+      // keyword 掃描。autosport（Motorsport CMS）把文末問卷招攬 widget 做成 web
+      // component `<msnt-survey-promo class="msnt-survey-promo">`（內含「We want to
+      // hear from you / Take our survey / - The X Team」），class 帶 noise token
+      // `promo` 卻因 tag 不在 CONTAINER_SEL（純標準容器）漏掃 → reader 0 高度看不見
+      // 但殘留進 Readwise outerHTML（Jimmy 2026-06-19 文末垃圾回報）。custom element
+      // 的 hyphenated tag 是 widget / component 慣例命名，內容型（<mdn-code-example>
+      // 等）class 不含 noise token、shouldHideByKeyword 不命中 → 不受影響；只有
+      // class/id 命中 noise keyword 的 widget 會被 hide（結構通則、非站點特判）。
+      // 只併進「keyword 規則」的 candidates、不污染共享 containers——後者也餵
+      // hideInsideArticleEmptySpacers，shadow-DOM web component（<mdn-code-example>，
+      // light DOM 空 + rect 有高度）會被 empty-spacer 誤殺（v0.8.79 的 shadowRoot
+      // guard 只在 collapse 軌，spacer 軌靠「不在 CONTAINER_SEL」隔離）。
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
-      safeRun(hideInsideArticleByKeyword, articleEl, hidden, containers);
+      const customEls = _getArticleAllElements(articleEl).filter(el => el.tagName.indexOf('-') >= 0);
+      const keywordCandidates = customEls.length ? [...containers, ...customEls] : containers;
+      safeRun(hideInsideArticleByKeyword, articleEl, hidden, keywordCandidates);
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
