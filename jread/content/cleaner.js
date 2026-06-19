@@ -1255,6 +1255,27 @@
   // 通則：page 唯一 h1（多數新聞站慣例）視為主文標題；跨站適用、不綁 eet-china。
   // 多 h1 站點（早期 wheresyoured.at 12 個 H1、ChinaTalk Substack site title H1
   // 假信號等）不豁免，避免誤 promote 非主標題。
+  // v0.8.131：翻譯擴充（Shinkansen 等）的 content guard 每秒 reconcile 被翻譯的
+  // articleEl 子節點，會把 JRead promote 進 articleEl 的標題 clone 當外來節點清掉
+  // （cage 實證：插入後 ~200ms 內被移走、後續每秒重清；換 plain h1 / div wrap /
+  // 移 Shinkansen 自己的 h1 進去全部撐不過幾秒）。唯一存活位置是 articleEl「外」
+  // （前一個 sibling / 祖先）——guard 只 reconcile 被翻譯容器的子節點、不碰外層。
+  // translate-first 場景改把標題 clone 插在 articleEl 前一個 sibling，標 data-
+  // jread-promoted-outside 供 styler 對齊卡片寬度/置中/背景；非翻譯頁維持原本
+  // in-article promote（baseline 不動）。
+  function translationGuardActive() {
+    return !!document.querySelector('[data-shinkansen-translated], [data-shinkansen-dual-source]');
+  }
+  function placePromotedTitleClone(articleEl, clone, hidden) {
+    if (translationGuardActive() && articleEl.parentNode && articleEl.parentNode.nodeType === 1) {
+      clone.setAttribute('data-jread-promoted-outside', '1');
+      articleEl.parentNode.insertBefore(clone, articleEl);
+    } else {
+      articleEl.insertBefore(clone, articleEl.firstChild);
+    }
+    if (Array.isArray(hidden)) hidden.push({ el: clone, __titleClone: true });
+  }
+
   function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
     const pageH1s = document.querySelectorAll('h1');
@@ -1310,13 +1331,11 @@
       }
     }
     sanitizeTitleClone(clone);
-    articleEl.insertBefore(clone, articleEl.firstChild);
     // v0.7.143：clone 進 hidden array、走特殊 __titleClone path 在 restore() 時
     // removeChild（標準 hide() 走 inline display 還原，對 clone 不適用——要整個拿掉）。
     // 不加進 array 的話 exit reader mode 後 clone 永遠殘留、同 tab 多次進出會堆疊 N 份 H1。
-    if (Array.isArray(hidden)) {
-      hidden.push({ el: clone, __titleClone: true });
-    }
+    // v0.8.131：插入位置由 placePromotedTitleClone 決定（翻譯頁插 articleEl 外）。
+    placePromotedTitleClone(articleEl, clone, hidden);
   }
 
   // v0.7.149：擴充 v0.7.141 修法處理「主標題不是 h1 而是 h1/h2/h3 + article-title
@@ -1417,10 +1436,9 @@
         }
       }
       sanitizeTitleClone(clone);
-      articleEl.insertBefore(clone, articleEl.firstChild);
-      if (Array.isArray(hidden)) {
-        hidden.push({ el: clone, __titleClone: true });
-      }
+      // v0.8.131：插入位置由 placePromotedTitleClone 決定（翻譯頁插 articleEl 外，
+      // 避開翻譯擴充 content guard 對 articleEl 子節點的 reconcile）。
+      placePromotedTitleClone(articleEl, clone, hidden);
       return; // 只 promote DOM order 第一個
     }
   }

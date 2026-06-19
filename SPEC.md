@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.130**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.131**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -246,6 +246,8 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
 **唯一 H1 結構升級（`ensureArticleContainsTitleH1` path 0，v0.8.58）**：上述 promote 全靠文字比對 og:title，translate-first（Shinkansen 等把 H1 換成中文、`og:title`/`<title>` 維持原文）會讓比對全失效。detect() 結尾無條件兜底加一條純結構訊號：**全頁恰好 1 個 H1 且不在 articleEl 內 → 該 H1 必是文章 hero（section 副標慣例用 H2+，整頁唯一 H1 不可能是某節副標）**，升到 `findLCA(articleEl, h1)`、`dist=Infinity`、不靠文字。場景：myartbroker「5 幅畫作」這類無 `<article>`/`<main>` 的多節長文，每節是深層巢狀獨立容器，heuristic bubble-up（只給 parent/grandparent 2 層）只選中第一節 → 翻譯後卡單一 section（reader 只剩第一幅畫）。安全保證：`findTitleViaLca` 的 body/html guard 確保唯一 H1 與 articleEl 須共享非 body 容器才升、不吞整頁；ChinaTalk（多 H1）/ wya（12 H1）`allH1.length !== 1` 不觸發。
 
 **標題注入 fallback（`markPromotedTitleIfMissing`，v0.7.87/v0.7.88）**：站若把標題寫在非 heading tag（newtalk `<p class="name">` 等），cleaner 跑完後掃 articleEl 內 og:title 相符的 text element（bestCand），注入獨立 `h1[data-jread-injected-title]` 在 articleEl 開頭並 hide 原元素。guard 鏈：可見 h1-h4 文字等同 og:title → 不注入（v0.8.3）；**bestCand 候選必須「視覺上有呈現」——自身 + 祖先鏈無 `display:none` / `visibility:hidden|collapse` / `opacity≈0`（v0.8.55，nytimes translate-first 實證：站方 sticky masthead 留有「當前文章標題」隱形英文副本，翻譯擴充只翻可見文字 → 真 h1 已中文不 match 英文 og:title、bestCand 卻命中隱形英文副本 → 注入英文 H1 又被翻譯 guard 譯成另一版中文 → 重複標題。注入的存在理由是「站方以非 heading 呈現標題」，隱形元素不構成呈現；可見副本必然已被翻譯而自然落選，兩側閉環）**。可見性判定不用 getBoundingClientRect（jsdom fixture rect 全 0 會誤殺），逐祖先檢查各自 computed style。
+
+**翻譯頁標題 clone 放 articleEl 外（`placePromotedTitleClone`，v0.8.131）**：`promoteUniqueTitleH1Into` / `promoteArticleTitleClassHeadingInto` clone 標題後的插入位置統一由 `placePromotedTitleClone` 決定。`translationGuardActive()`（頁面存在 `[data-shinkansen-translated]` / `[data-shinkansen-dual-source]`）為真時，把 clone 插在 articleEl **前一個 sibling**（非 articleEl 子節點）、標 `data-jread-promoted-outside="1"`；否則維持原本 in-article prepend。動機（cage 真實 Chrome + Shinkansen 證實）：翻譯擴充的 content guard 每秒 reconcile 被翻譯 articleEl 的子節點、會把 JRead promote 進去的標題 clone 當外來節點清掉（插入後 ~200ms 內被移走，且 plain h1 / div wrap / 移 Shinkansen 自己的 h1 進去全部撐不過幾秒）；clone 移到 articleEl 外才存活（guard 只碰被翻譯容器的子節點）。styler 對 `[data-jread-promoted-outside]` 套讀者卡片同版心/置中/背景/上圓角、去底 padding/margin，與下方主文卡片合併成單一張卡片；該 attr 也排除在祖先鏈隱藏規則外。restore 走既有 `__titleClone` removeChild path（與 in-article clone 同）。非翻譯頁 baseline 零變動。
 
 ### SPA 導航偵測與無限捲動豁免（v0.8.21 / v0.8.45）
 

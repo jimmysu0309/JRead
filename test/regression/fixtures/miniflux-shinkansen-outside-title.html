@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!--
+  Fixture：Miniflux 條目 + Shinkansen 單語翻譯（v0.8.131）
+  -----------------------------------------------------------------------------
+  結構複刻 https://afu.jacob-themis.ts.net:8443/history/entry/1803（Jimmy
+  2026-06-19 回報「Shinkansen 翻譯後進入閱讀模式，大標題就不見了」）：
+
+    <main>
+      <header class="entry-header">
+        <h1 id="page-header-title" data-shinkansen-translated>...</h1>  ← 主標，articleEl 外
+        ...meta...
+      </header>
+      <article class="entry-content"> ...主文 p... </article>            ← articleEl
+    </main>
+
+  關鍵訊號：
+    - h1 帶 data-shinkansen-translated（Shinkansen 翻譯標記）→ 頁面被翻譯擴充
+      接管，其 content guard 每秒 reconcile articleEl 子節點、會清掉 promote
+      進 articleEl 的標題 clone（cage 實證）。
+    - 故 placePromotedTitleClone 須把 clone 放 articleEl「外」（前一個 sibling、
+      標 data-jread-promoted-outside）才存活。
+    - document.title 仍英文（Shinkansen 不翻 <title> tag）→ h1Text(中) !==
+      docT(英) strict eq fail → 走 looksLikeArticleTitleH1 fallback（id
+      page-header-title 命中 title token）。
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ferrari to blend past and future with early July reveal - Miniflux</title>
+</head>
+<body>
+  <main>
+    <header class="entry-header">
+      <h1 id="page-header-title" dir="auto" data-shinkansen-translated="1" lang="zh-TW"><a href="https://www.example.com/car-news/ferrari-reveal" target="_blank">Ferrari 將於七月初發表新作，完美融合過去與未來</a></h1>
+      <div class="entry-meta">
+        <span data-test="meta-source">Autocar RSS Feed</span>
+        <time>19 小時前</time>
+      </div>
+    </header>
+    <article class="entry-content">
+      <p data-test="body-p-1">Ferrari 執行長 Benedetto Vigna 暗示，這家義大利超跑製造商將在七月初發表一款意義重大的新車型，並承諾這部座駕將結合公司的歷史傳承與未來發展方向。</p>
+      <p data-test="body-p-2">本週稍早，Vigna 在拉斯維加斯一場由經銷商軟體公司 Tekion 主辦的會議上向美國汽車經銷商發表談話。</p>
+      <p data-test="body-p-3">他表示再過幾個禮拜大家就會看到一些新東西，把過去的元素與展望未來的視野融合在一起。</p>
+    </article>
+  </main>
+</body>
+</html>
