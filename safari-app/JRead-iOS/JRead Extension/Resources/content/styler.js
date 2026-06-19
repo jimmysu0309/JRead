@@ -1369,6 +1369,22 @@ html [${ARTICLE_ATTR}="1"] dl {
 [${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]) * {
   color: ${theme.link} !important;
 }
+/* v0.8.129：clickable 標題維持原本標題樣式。標題本身常是連結（permalink 形
+   <h1><a href>標題</a></h1>）或被連結整顆包住（<a href><h1>標題</h1></a>）；
+   上方 body-link 規則會把整個大標題染成 theme.link 藍字 + 底線，看起來像一條
+   連結而非標題。通則：heading（h1-h6）內含或包住的 <a> 一律回退成繼承色
+   （inherit → reader text color，跟非連結標題同色）+ 無底線，維持原站標題視覺。
+   純結構訊號（heading tag），不綁站點 / class。:has 已在本檔他處使用（a:has(>img)）。
+   specificity (0,2,2) > body-link 規則 (0,2,1) 且 source order 在後，穩定覆蓋。 */
+[${ARTICLE_ATTR}="1"] :is(h1,h2,h3,h4,h5,h6) a:not([${PLAYER_ATTR}="1"]),
+[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]):has(:is(h1,h2,h3,h4,h5,h6)) {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+[${ARTICLE_ATTR}="1"] :is(h1,h2,h3,h4,h5,h6) a:not([${PLAYER_ATTR}="1"]) *,
+[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]):has(:is(h1,h2,h3,h4,h5,h6)) * {
+  color: inherit !important;
+}
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
    bar、callout 框、圖片框等視覺裝飾。reader card 本身已有圓角 + 陰影邊界，
    內部任何裝飾 border 都會打斷閱讀流，且會占空間（border-width 計入 box
