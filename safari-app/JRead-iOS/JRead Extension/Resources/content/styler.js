@@ -2475,13 +2475,10 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
-      let styleEl = document.getElementById(STYLE_ID);
-      if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = STYLE_ID;
-        (document.head || document.documentElement).appendChild(styleEl);
-      }
-      styleEl.textContent = buildCss(theme, opts, overrides);
+      // v0.8.130：改走 NS.injectCssText（CSP-safe）——嚴格 style-src nonce-only 站
+      // （Miniflux 自架閱讀頁）在 WebKit 會擋掉注入 <style>，退回 adoptedStyleSheets。
+      // 詳見 namespace.js injectCssText 註解。
+      NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
 
       // inline emoji / icon 標記必須在 ARTICLE_ATTR 設定**前**跑——標記用 rect
       // fallback（viewBox-only SVG / 高解析 emoji PNG 的 naturalWidth 不可靠時
@@ -3481,8 +3478,8 @@ html [${ARTICLE_ATTR}="1"] a {
      */
     restore(_articleEl, snapshot) {
       if (!snapshot) return;
-      const styleEl = document.getElementById(STYLE_ID);
-      if (styleEl) styleEl.remove();
+      // v0.8.130：清 marker <style> + 可能的 adopted sheet（CSP fallback 對稱還原）
+      NS.removeCssText(STYLE_ID);
 
       // v0.7.90：移除 scroll listener、清 timer 與 scrolling attr，避免閱讀
       // 模式關閉後仍在 html 留下 [data-jread-scrolling] / 殘留 timer 觸發 attr 設定。

@@ -97,10 +97,7 @@
 
   function enter() {
     if (document.getElementById(STYLE_ID)) return false; // 已啟用
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = buildCss();
-    document.documentElement.appendChild(style);
+    NS.injectCssText(STYLE_ID, buildCss()); // v0.8.130：CSP-safe（見 namespace.js）
     document.documentElement.setAttribute(ACTIVE_ATTR, '1');
     // YouTube 的 video 元素 inline width/height 由內部 resize handler 算；CSS 釘
     // 容器後必須 dispatch resize 觸發 YouTube 把 video tag size 重算進 1040x585
@@ -113,8 +110,7 @@
   }
 
   function exit() {
-    const el = document.getElementById(STYLE_ID);
-    if (el) el.remove();
+    NS.removeCssText(STYLE_ID);
     document.documentElement.removeAttribute(ACTIVE_ATTR);
     uninstallNavListener();
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {

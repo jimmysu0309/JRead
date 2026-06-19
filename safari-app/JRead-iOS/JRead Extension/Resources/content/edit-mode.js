@@ -131,12 +131,10 @@
 
   function ensureBlockStyle() {
     if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
     // 持久虛線外框標出每個可選 block（仿 Shinkansen `.shinkansen-editable`）；
     // hover 那塊外框加深 + 淡底色 + cursor:pointer 提示可點移除。!important 勝過
-    // 站點 / reader card 樣式。
-    style.textContent = [
+    // 站點 / reader card 樣式。v0.8.130：走 NS.injectCssText（CSP-safe，見 namespace.js）。
+    NS.injectCssText(STYLE_ID, [
       `[${BLOCK_ATTR}]{`,
       'outline:1.5px dashed rgba(43,108,176,.45)!important;',
       'outline-offset:2px;border-radius:3px;cursor:pointer!important;',
@@ -144,8 +142,7 @@
       `[${BLOCK_ATTR}]:hover{`,
       'outline:2px solid rgba(43,108,176,.9)!important;',
       'background-color:rgba(43,108,176,.1)!important;}',
-    ].join('');
-    (document.head || document.documentElement).appendChild(style);
+    ].join(''));
   }
 
   function markBlocks() {
@@ -160,8 +157,7 @@
   function unmarkBlocks() {
     try {
       document.querySelectorAll('[' + BLOCK_ATTR + ']').forEach(el => el.removeAttribute(BLOCK_ATTR));
-      const style = document.getElementById(STYLE_ID);
-      if (style && style.parentNode) style.parentNode.removeChild(style);
+      NS.removeCssText(STYLE_ID);
     } catch (_) { /* noop */ }
   }
 
