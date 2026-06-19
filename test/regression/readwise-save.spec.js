@@ -575,6 +575,17 @@ describe('readwise: 訊息協定常數同步', () => {
       'main.js buildCleanHtml 必須呼叫 NS.markLeadingBylineForExport(rootEl) 標記文首 byline');
     assert.match(mainSrc, /^\s*clone\.querySelectorAll\(['"]\[data-jread-rw-strip="1"\]['"]\)\.forEach\(n => n\.remove\(\)\);/m,
       'main.js buildCleanHtml 必須在 clone 上移除 [data-jread-rw-strip] 標記節點（不可是註解）');
+    // v0.8.124：重複 hero 主圖移除——buildCleanHtml 必須呼叫 NS.markHeroImageForExport
+    // （標記 body 內與 cover 同圖的 hero）+ 在還原步驟 unmark heroMarked。與 byline
+    // 共用同一段 clone 移除邏輯（上面那條 removal assert 同時保護 hero）。
+    assert.match(mainSrc, /NS\.markHeroImageForExport\(rootEl\)/,
+      'main.js buildCleanHtml 必須呼叫 NS.markHeroImageForExport(rootEl) 標記重複 hero 主圖');
+    assert.match(mainSrc, /^\s*heroMarked\.forEach\(el => el\.removeAttribute\(['"]data-jread-rw-strip['"]\)\);/m,
+      'main.js buildCleanHtml 必須在 live DOM 還原 heroMarked 的標記（不可是註解）');
+    // extractHeroImage 與 markHeroImageForExport 共用 NS.findLeadingHeroImage 選同一張
+    // hero（杜絕 cover 與去重圖 drift，硬規則 5）
+    assert.match(mainSrc, /NS\.findLeadingHeroImage\s*\(\s*articleEl\s*,/,
+      'extractHeroImage 必須透過 NS.findLeadingHeroImage 選 hero（與去重共用單一資料源）');
     // v0.7.165：FB permalink 段落（div + data-jread-fb-para）送 Readwise 前必須
     // 改寫成 <p>，否則對方 sanitizer 砍 inline style 後段落擠成一團（Jimmy
     // 2026-05-22 回報）。anchor 在 querySelectorAll('[data-jread-fb-para...]') 之後

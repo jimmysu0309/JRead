@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Readwise hero 重複 fixture</title>
+  <meta property="og:image" content="https://cdn.example.com/uploads/2026/06/hero.jpg?w=1200">
+</head>
+<body>
+  <article id="story">
+    <h1 id="title">Logitech's new Mobi Fold mouse hands-on</h1>
+    <!-- lede：art-direction 把 hero 渲染成兩張同圖（桌機 + 手機變體，?w= 不同、
+         pathname 相同），各自 media query 顯示。Readwise 端無 CSS 兩張都現 →
+         必須兩張都移除。另含 hero 圖說（保留）。 -->
+    <div class="entry-image">
+      <div class="art-direction-desktop">
+        <img id="hero-desktop" src="https://cdn.example.com/uploads/2026/06/hero.jpg?w=2400"
+             srcset="https://cdn.example.com/uploads/2026/06/hero.jpg?w=376 376w, https://cdn.example.com/uploads/2026/06/hero.jpg?w=750 750w" alt="Mobi Fold">
+      </div>
+      <div class="art-direction-mobile">
+        <img id="hero-mobile" src="https://cdn.example.com/uploads/2026/06/hero.jpg?w=640" alt="Mobi Fold mobile">
+      </div>
+      <figcaption id="hero-cap">The Mobi Fold feels like a full-sized mouse when opened.</figcaption>
+    </div>
+    <p id="p1">Logitech finally announced its new ultraportable travel mouse following leaked marketing images that spoiled the surprise last month.</p>
+    <p id="p2">The arch-shaped Mobi Fold looks similar to other folding devices, like the Surface Arc mouse.</p>
+    <!-- 內文配圖：不同 pathname（usbc.jpg）→ 不可被當 hero 去重 -->
+    <figure id="inline-fig">
+      <img id="inline-img" src="https://cdn.example.com/uploads/2026/06/usbc.jpg?w=2400"
+           srcset="https://cdn.example.com/uploads/2026/06/usbc.jpg?w=750 750w" alt="USB-C 充電埠">
+      <figcaption id="inline-cap">A USB-C port charges the mouse.</figcaption>
+    </figure>
+    <p id="p3">For $80, the Mobi Fold delivers a lot of functionality.</p>
+  </article>
+</body>
+</html>
