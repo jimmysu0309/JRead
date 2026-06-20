@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Aspect-ratio box gap fixture</title></head>
+<body>
+<article id="art">
+  <h1>Our long national sunscreen nightmare is almost over</h1>
+  <p>This is the opening paragraph of a long article with enough text content that the
+     detector reliably scores this article element as the main content of the page.</p>
+  <p>A second substantial paragraph follows so the article has clear textual mass beyond
+     the media wrappers, mirroring a real news column layout with figures interspersed.</p>
+
+  <!-- 正例：媒體 wrapper 用 hashed class 模式的 aspect-ratio:1.5/1 預留固定比例，
+       實際載入的 landscape 圖比例不同 → box 撐出超過圖片的高度 = 圖下假空白。
+       reset 後 box 應退回圖片自然高度（aspect-ratio: auto）。 -->
+  <section>
+    <div id="gapbox" style="aspect-ratio:1.5 / 1;">
+      <a href="#"><img id="gapimg" src="hands.jpg" alt="Applying sunscreen"></a>
+    </div>
+    <p id="gapcap">You need a quarter teaspoon for your face alone.</p>
+  </section>
+
+  <!-- collapse guard：歸 auto 後 box 塌到比內圖渲染高度還矮（內容本身 absolute、
+       aspect-ratio 是唯一高度來源，但 class 不含 "ratio" 漏掉 static-flow 配套）。
+       應還原 aspect-ratio 避免把圖裁掉（New Yorker overlay 類）。 -->
+  <section>
+    <div id="guardbox" style="aspect-ratio:1 / 1;">
+      <div id="guardoverlay"><picture id="guardpic"><img id="guardimg" src="overlay.jpg" alt="overlay"></picture></div>
+    </div>
+  </section>
+
+  <!-- lazy：apply 當下圖未載入（0x0），無要保護的高度 → 仍 reset，box 跟著塌、
+       載入後 height:auto 自然撐起。 -->
+  <section>
+    <div id="lazybox" style="aspect-ratio:16 / 9;">
+      <a href="#"><img id="lazyimg" src="lazy.jpg" alt="lazy hero"></a>
+    </div>
+  </section>
+
+  <!-- 反例：wrapper 無 aspect-ratio（正常 figure）→ 完全不該被動到。 -->
+  <section>
+    <figure id="plainbox">
+      <img id="plainimg" src="plain.jpg" alt="plain figure">
+      <figcaption>A normal figure with no aspect-ratio reservation.</figcaption>
+    </figure>
+  </section>
+</article>
+</body>
+</html>
