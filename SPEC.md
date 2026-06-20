@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.141**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.142**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -249,7 +249,7 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
 
 **翻譯頁標題 clone 放 articleEl 外（`placePromotedTitleClone`，v0.8.131）**：`promoteUniqueTitleH1Into` / `promoteArticleTitleClassHeadingInto` clone 標題後的插入位置統一由 `placePromotedTitleClone` 決定。`translationGuardActive()`（頁面存在 `[data-shinkansen-translated]` / `[data-shinkansen-dual-source]`）為真時，把 clone 插在 articleEl **前一個 sibling**（非 articleEl 子節點）、標 `data-jread-promoted-outside="1"`；否則維持原本 in-article prepend。動機（cage 真實 Chrome + Shinkansen 證實）：翻譯擴充的 content guard 每秒 reconcile 被翻譯 articleEl 的子節點、會把 JRead promote 進去的標題 clone 當外來節點清掉（插入後 ~200ms 內被移走，且 plain h1 / div wrap / 移 Shinkansen 自己的 h1 進去全部撐不過幾秒）；clone 移到 articleEl 外才存活（guard 只碰被翻譯容器的子節點）。styler 對 `[data-jread-promoted-outside]` 套讀者卡片同版心/置中/背景/上圓角、去底 padding/margin，與下方主文卡片合併成單一張卡片；該 attr 也排除在祖先鏈隱藏規則外。restore 走既有 `__titleClone` removeChild path（與 in-article clone 同）。非翻譯頁 baseline 零變動。
 
-**標題最小長度門檻 CJK 加權（`titleTextWeight`，v0.8.141）**：`promoteUniqueTitleH1Into`（h1Text / baseTitle）與 `promoteArticleTitleClassHeadingInto`（heading text）三處的「太短不像主標題」過濾，從 raw `text.length < 5` 改用 `titleTextWeight(text) < 5`。`titleTextWeight` 對 CJK 字元（漢字 `㐀-䶿`/`一-鿿` + 假名 `぀-ヿ` + 諺文 `가-힯`）計權重 2、其餘字元權重 1。動機：原 `length < 5` 用於過濾 "Home" / "News" 類 site-logo 垃圾 h1，但按拉丁文字校準——中文是表意文字、每字資訊量 ≈ 一個拉丁單詞，4 字標題（Miniflux「儲存空間」entry）被誤殺 → 不 promote → reader card 內無標題。加權後拉丁行為不變（5 字仍過、4 字仍擋）、CJK 只需 ≥3 字即過。結構通則、非站點特判。forcing：`miniflux-short-cjk-title.spec.js`。
+**標題最小長度門檻 CJK 加權（`titleTextWeight`，v0.8.141 起）**：`promoteUniqueTitleH1Into`（h1Text / baseTitle）與 `promoteArticleTitleClassHeadingInto`（heading text）三處的「太短不像主標題」過濾，從 raw `text.length < 5` 改用 `titleTextWeight(text) < 5`。`titleTextWeight` 對 CJK 字元（漢字 `㐀-䶿`/`一-鿿` + 假名 `぀-ヿ` + 諺文 `가-힯`）計權重 3、其餘字元權重 1（v0.8.142 由 2 提到 3）。動機：原 `length < 5` 用於過濾 "Home" / "News" 類 site-logo 垃圾 h1，但按拉丁文字校準——中文是表意文字、每字資訊量 ≈ 一個拉丁單詞，4 字標題（Miniflux「儲存空間」entry）被 v0.8.141 前的 `< 5` 誤殺；v0.8.141 設權重 2 時門檻 5 仍需 ≥3 CJK 字才過，2 字標題（Miniflux「微光」entry）照樣被誤殺 → 不 promote → reader card 內無標題。權重 3 後拉丁行為不變（5 字仍過、4 字仍擋）、CJK 只需 ≥2 字即過（2×3=6）、單一 CJK 字（weight 3 < 5）仍被擋保留單字 junk 防線。promote 兩條路徑另有 strict equality（h1===document.title）/ strict title-class guard 擋 junk h1，故放寬門檻不會誤 promote 2 字 site-logo。結構通則、非站點特判。forcing：`miniflux-short-cjk-title.spec.js`（4 字）+ `miniflux-short-cjk-title-2char.spec.js`（2 字）。
 
 ### SPA 導航偵測與無限捲動豁免（v0.8.21 / v0.8.45）
 

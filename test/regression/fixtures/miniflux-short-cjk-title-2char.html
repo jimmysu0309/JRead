@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <title>微光 - Miniflux</title>
+  <!-- 無 og:title：真實 Miniflux entry 頁不輸出 og:title（Jimmy 2026-06-20
+       cage probe 確認 ogTitle:null），baseTitle 只能從 document.title 去
+       stripSiteSuffix 取得「微光」。 -->
+</head>
+<body>
+  <!-- v0.8.142 兩字中文標題仍被最小長度門檻誤殺 bug forcing fixture。
+       對應 bug：Miniflux「微光」entry 進入閱讀模式後標題整個消失
+       （Jimmy 2026-06-20 回報 /unread/category/2/entry/2018）。
+
+       根因：v0.8.141 已把門檻改 titleTextWeight（CJK 權重 2、門檻 5），但
+       2 字中文標題「微光」= weight 4 仍 < 5 被擋 → 不 promote → 無標題。
+
+       修法：CJK 權重 2 → 3，「微光」= weight 6 過關；單一 CJK 字（weight 3）
+       仍被擋，保留單字 site-logo junk 防線。
+
+       forcing：
+       - 有修法（CJK 權重 3）：title clone 存在、含「微光」
+       - 無修法（CJK 權重 2）：2 字標題被擋、無 clone、spec fail -->
+  <main>
+    <section class="entry">
+      <header class="entry-header">
+        <h1 id="page-header-title">
+          <a href="https://take.surf/2026/05/12/glimmer" target="_blank">微光</a>
+        </h1>
+        <div class="entry-actions">
+          <ul>
+            <li><button class="page-button" data-toggle-status="true">標記為未讀</button></li>
+            <li><button class="page-button" data-save-entry="true">儲存</button></li>
+          </ul>
+        </div>
+        <div class="entry-meta">
+          <span class="entry-website"><a href="/feed/2/entries">Take（翻譯）</a></span>
+        </div>
+        <div class="entry-external-link">
+          <a href="https://take.surf/2026/05/12/glimmer" target="_blank">https://take.surf/2026/05/12/glimmer</a>
+        </div>
+        <div class="entry-date"><time datetime="2026-06-19">昨天</time></div>
+      </header>
+      <article class="entry-content">
+        <p>來聊聊那些在日常縫隙裡閃爍的微光。這是本文的主文第一段，需要足夠的文字長度讓 detector 把 entry-content 判定為主文容器、通過最小文字門檻才會被選為 articleEl。</p>
+        <p>我們常常在最疲憊的時刻，被一點不起眼的光亮拉回來。那可能是一句話、一個畫面，或是一段久違的旋律。第二段主文累積文字量，確保 article 文字遠超其他分支。</p>
+        <p>微光之所以珍貴，正是因為它出現在黑暗最濃的地方。它不需要照亮整個房間，只要足夠讓你看清下一步該往哪裡走。第三段補足內文密度與語意完整。</p>
+        <p>於是我們學會在微光裡前行，不再執著於一次看清全程。每一步都是一次選擇，每一道微光都是一次提醒。第四段確保主文文字量壓過 header chrome、被正確選中。</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
