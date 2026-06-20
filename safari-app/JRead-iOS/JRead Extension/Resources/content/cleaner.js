@@ -486,6 +486,26 @@
   // 同折疊才不會因 ' vs ' 假性不等。詳見 namespace.js foldTitlePunct。
   const normTitle = (s) => (NS && NS.foldTitlePunct ? NS.foldTitlePunct(s) : norm(s));
 
+  // 標題「夠不夠長到像主文標題」的最小長度門檻——CJK 加權版（v0.8.141）。
+  // 動機：title-promote 機制原本一律用 `text.length < 5` 過濾「太短的 site-logo
+  // 垃圾 h1」（"Home" / "News" 之類），但這門檻是按拉丁文字校準的。中文是
+  // 表意文字，每字 ≈ 一個拉丁單詞的資訊量，4 字的「儲存空間」是完全正常的
+  // 主文標題，卻被 `< 5` 誤殺 → reader card 內無標題（Jimmy 2026-06-20 Miniflux
+  // 「儲存空間」entry 回報）。
+  //
+  // 通則：CJK 字元（漢字 + 擴充 A + 假名 + 諺文）權重 2、其餘字元權重 1，門檻
+  // 維持 5。結果：拉丁標題行為不變（"Title" 5 字仍 = 5、"News" 4 字仍 < 5 被擋）；
+  // CJK 標題只需 ≥3 字即過（3×2=6），短中文標題不再被誤殺。站點身份無關、純
+  // 文字 script 結構特徵，符合硬規則 3。
+  const CJK_TITLE_CHAR_RE = /[㐀-䶿一-鿿぀-ヿ가-힯]/;
+  function titleTextWeight(str) {
+    let w = 0;
+    for (const ch of (str || '')) {
+      w += CJK_TITLE_CHAR_RE.test(ch) ? 2 : 1;
+    }
+    return w;
+  }
+
   // 「主文標題級」class anchor token list。命中於 wrapper 子樹則該 wrapper
   // 視為「含主文標題」、hideInsideArticleByHeadingText 的 walk-up fallback
   // 必須停（不再升級 hide），避免把含主標的 article-header wrapper 誤殺。
@@ -1295,12 +1315,12 @@
     // 誤觸發 promote。markPromotedTitleIfMissing（v0.7.87/88）負責 article 內
     // 沒 visible h1 的場景找 p.name promote、與本機制互補。
     const h1Text = normTitle(h1.textContent || '');
-    if (h1Text.length < 5) return;
+    if (titleTextWeight(h1Text) < 5) return;
     const og = document.querySelector('meta[property="og:title"]');
     const ogText = og && og.content ? normTitle(og.content) : '';
     const docT = normTitle(NS.stripSiteSuffix(document.title || ''));
     const baseTitle = ogText || docT;
-    if (!baseTitle || baseTitle.length < 5) return;
+    if (!baseTitle || titleTextWeight(baseTitle) < 5) return;
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
     // prefix 但 partial includes baseTitle 而誤觸發 promote——markPromotedTitleIfMissing
     // 處理那條 case，本機制只負責「h1 自身就是主文標題完整字串」場景）。
@@ -1429,7 +1449,7 @@
       // 本函式無該 guard，必須靠 class signal 本身夠精準。
       if (!looksLikeArticleTitleStrict(h)) continue;
       const text = norm(h.textContent || '');
-      if (text.length < 5) continue;
+      if (titleTextWeight(text) < 5) continue;
       // promote：clone heading wrapper 或 heading 自己 prepend 進 articleEl 開頭。
       // 規則：若 wrapper 文字長度 ≈ heading（差 <= 30 chars），用 wrapper（保留
       // wrapper styling，例 eet-china .rowPage.row-article-title 含 article-title
