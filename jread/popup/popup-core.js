@@ -133,6 +133,19 @@
       const t = summary.trim();
       if (t) body.summary = t;
     }
+    // v0.8.134：should_clean_html=true——讓 Readwise server 端跑它自己的解析 pipeline。
+    // 根因：部分 CDN 對內文圖開防盜連（hotlink protection），無 `Referer: <來源站>`
+    // 時回 403（sspai cdnfile.sspai.com 實證：有 referer→200、無→403）。送 html 但
+    // 不開 should_clean_html 時 Readwise 原樣存我們的 HTML、不改寫圖片 URL，於是 reader
+    // 端載入裸 CDN URL（無來源 referer）→ 內文圖全破。封面圖（image_url）因 Readwise
+    // 存檔時 server 端先抓下自存而倖存，造成「封面有、內文破」。
+    //   開 should_clean_html 後 Readwise 把每個 <img src> 改寫成自家簽章代理
+    // `imgproxy.readwise.io/?url=…&hash=…&referer=<來源站>`——帶上來源 referer 繞過防盜連
+    // （hash 用 Readwise 私鑰簽，client 無法自行偽造，故只能讓它自己跑 pipeline）。
+    // 副作用評估（cage 真實 Readwise 帳號實測 sspai WWDC26 文，2026-06-20）：Readwise
+    // 重清 JRead 已清好的 HTML 後內文 15 段逐段一致（無內容流失）、Gemini 繁中摘要保留、
+    // 標題單一無重複、內文圖 0 破圖（對照不開時 7 破圖）。通則修法、非站點特判。
+    body.should_clean_html = true;
     return body;
   }
 
