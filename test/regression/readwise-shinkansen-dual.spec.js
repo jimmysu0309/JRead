@@ -38,6 +38,22 @@ describe('readwise — Shinkansen 雙語只留中文譯文（v0.8.126）', () =>
     assert.strictEqual(typeof NS.collapseShinkansenDual, 'function');
   });
 
+  // v0.8.138：翻譯偵測單一資料源——cleaner translationGuardActive（標題 promote 位置）
+  // 與 main extractReaderPayload（Readwise should_clean_html gate）共用。本 fixture 含
+  // data-shinkansen-dual-source 元素 → 視為翻譯頁。
+  it('NS.isTranslatedPage：含 data-shinkansen-dual-source → true', () => {
+    const { NS } = setup();
+    assert.strictEqual(typeof NS.isTranslatedPage, 'function');
+    assert.strictEqual(NS.isTranslatedPage(), true);
+  });
+
+  it('NS.isTranslatedPage：清掉翻譯標記 → false（非翻譯頁）', () => {
+    const { document, NS } = setup();
+    document.querySelectorAll('[data-shinkansen-dual-source]').forEach(el => el.removeAttribute('data-shinkansen-dual-source'));
+    document.querySelectorAll('[data-shinkansen-translated]').forEach(el => el.removeAttribute('data-shinkansen-translated'));
+    assert.strictEqual(NS.isTranslatedPage(), false);
+  });
+
   it('(block) 原文 <p> 移除、譯文保留', () => {
     const { document, NS } = setup();
     const root = document.getElementById('story');
