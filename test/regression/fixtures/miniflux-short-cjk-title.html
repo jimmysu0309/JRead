@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <title>儲存空間 - Miniflux</title>
+  <!-- 無 og:title：真實 Miniflux entry 頁不輸出 og:title（Jimmy 2026-06-20
+       cage probe 確認 ogTitle:null），baseTitle 只能從 document.title 去
+       stripSiteSuffix 取得「儲存空間」。 -->
+</head>
+<body>
+  <!-- v0.8.141 短中文標題被最小長度門檻誤殺 bug forcing fixture。
+       對應 bug：Miniflux「儲存空間」entry 進入閱讀模式後標題整個消失
+       （Jimmy 2026-06-20 回報 /unread/category/2/entry/2030）。
+
+       根因：detector 選 article.entry-content 為 articleEl，主標題 h1（純
+       4 字「儲存空間」）在外層 header.entry-header、被 cleaner 當 chrome hide。
+       promoteUniqueTitleH1Into 本應把 h1 clone 進 reader card，但開頭的
+       `h1Text.length < 5` / `baseTitle.length < 5` 門檻（按拉丁文字校準，用來
+       過濾 "Home" / "News" 類 site-logo 垃圾 h1）把 4 字中文標題誤殺 → 不
+       promote → reader card 內無標題。
+
+       修法：門檻改用 titleTextWeight（CJK 字權重 2、其餘 1，門檻維持 5）——
+       拉丁行為不變、CJK 標題只需 ≥3 字即過，「儲存空間」(4 字、weight 8) 過關。
+
+       forcing：
+       - 有修法：title clone 存在、含「儲存空間」
+       - 無修法（length < 5）：4 字標題被擋、無 clone、spec fail -->
+  <main>
+    <section class="entry">
+      <header class="entry-header">
+        <h1 id="page-header-title">
+          <a href="https://take.surf/2026/05/12/storage" target="_blank">儲存空間</a>
+        </h1>
+        <div class="entry-actions">
+          <ul>
+            <li><button class="page-button" data-toggle-status="true">標記為未讀</button></li>
+            <li><button class="page-button" data-save-entry="true">儲存</button></li>
+          </ul>
+        </div>
+        <div class="entry-meta">
+          <span class="entry-website"><a href="/feed/2/entries">Take（翻譯）</a></span>
+        </div>
+        <div class="entry-external-link">
+          <a href="https://take.surf/2026/05/12/storage" target="_blank">https://take.surf/2026/05/12/storage</a>
+        </div>
+        <div class="entry-date"><time datetime="2026-06-19">昨天</time></div>
+      </header>
+      <article class="entry-content">
+        <p>來聊聊儲存裝置吧。這是本文的主文第一段，需要足夠的文字長度讓 detector 把 entry-content 判定為主文容器、通過最小文字門檻才會被選為 articleEl。</p>
+        <p>我們談談為什麼儲存裝置的日常使用體驗，多年來幾乎沒有任何實質性的改進。二十年前的隨身碟與外接硬碟，跟今天的操作流程相比並沒有本質差異。第二段主文累積文字量。</p>
+        <p>那麼，網路儲存裝置的進步又在哪裡呢？為什麼我們依然執著於個別的共享資料夾？或者說，為什麼備份這件事到現在還是這麼麻煩又容易出錯？第三段補足內文密度。</p>
+        <p>多年來，我們已經擁有雲端服務，你只需要指定一個資料夾，存進去的所有內容就會同步到雲端。但這套模式的問題在於它把控制權交了出去。第四段確保 article 文字遠超其他分支、被正確選中。</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

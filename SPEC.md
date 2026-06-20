@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.140**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.141**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -248,6 +248,8 @@ Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 p
 **標題注入 fallback（`markPromotedTitleIfMissing`，v0.7.87/v0.7.88）**：站若把標題寫在非 heading tag（newtalk `<p class="name">` 等），cleaner 跑完後掃 articleEl 內 og:title 相符的 text element（bestCand），注入獨立 `h1[data-jread-injected-title]` 在 articleEl 開頭並 hide 原元素。guard 鏈：可見 h1-h4 文字等同 og:title → 不注入（v0.8.3）；**bestCand 候選必須「視覺上有呈現」——自身 + 祖先鏈無 `display:none` / `visibility:hidden|collapse` / `opacity≈0`（v0.8.55，nytimes translate-first 實證：站方 sticky masthead 留有「當前文章標題」隱形英文副本，翻譯擴充只翻可見文字 → 真 h1 已中文不 match 英文 og:title、bestCand 卻命中隱形英文副本 → 注入英文 H1 又被翻譯 guard 譯成另一版中文 → 重複標題。注入的存在理由是「站方以非 heading 呈現標題」，隱形元素不構成呈現；可見副本必然已被翻譯而自然落選，兩側閉環）**。可見性判定不用 getBoundingClientRect（jsdom fixture rect 全 0 會誤殺），逐祖先檢查各自 computed style。
 
 **翻譯頁標題 clone 放 articleEl 外（`placePromotedTitleClone`，v0.8.131）**：`promoteUniqueTitleH1Into` / `promoteArticleTitleClassHeadingInto` clone 標題後的插入位置統一由 `placePromotedTitleClone` 決定。`translationGuardActive()`（頁面存在 `[data-shinkansen-translated]` / `[data-shinkansen-dual-source]`）為真時，把 clone 插在 articleEl **前一個 sibling**（非 articleEl 子節點）、標 `data-jread-promoted-outside="1"`；否則維持原本 in-article prepend。動機（cage 真實 Chrome + Shinkansen 證實）：翻譯擴充的 content guard 每秒 reconcile 被翻譯 articleEl 的子節點、會把 JRead promote 進去的標題 clone 當外來節點清掉（插入後 ~200ms 內被移走，且 plain h1 / div wrap / 移 Shinkansen 自己的 h1 進去全部撐不過幾秒）；clone 移到 articleEl 外才存活（guard 只碰被翻譯容器的子節點）。styler 對 `[data-jread-promoted-outside]` 套讀者卡片同版心/置中/背景/上圓角、去底 padding/margin，與下方主文卡片合併成單一張卡片；該 attr 也排除在祖先鏈隱藏規則外。restore 走既有 `__titleClone` removeChild path（與 in-article clone 同）。非翻譯頁 baseline 零變動。
+
+**標題最小長度門檻 CJK 加權（`titleTextWeight`，v0.8.141）**：`promoteUniqueTitleH1Into`（h1Text / baseTitle）與 `promoteArticleTitleClassHeadingInto`（heading text）三處的「太短不像主標題」過濾，從 raw `text.length < 5` 改用 `titleTextWeight(text) < 5`。`titleTextWeight` 對 CJK 字元（漢字 `㐀-䶿`/`一-鿿` + 假名 `぀-ヿ` + 諺文 `가-힯`）計權重 2、其餘字元權重 1。動機：原 `length < 5` 用於過濾 "Home" / "News" 類 site-logo 垃圾 h1，但按拉丁文字校準——中文是表意文字、每字資訊量 ≈ 一個拉丁單詞，4 字標題（Miniflux「儲存空間」entry）被誤殺 → 不 promote → reader card 內無標題。加權後拉丁行為不變（5 字仍過、4 字仍擋）、CJK 只需 ≥3 字即過。結構通則、非站點特判。forcing：`miniflux-short-cjk-title.spec.js`。
 
 ### SPA 導航偵測與無限捲動豁免（v0.8.21 / v0.8.45）
 
