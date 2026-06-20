@@ -321,6 +321,15 @@
       return marked;
     },
 
+    // v0.8.138：偵測當前頁是否已被翻譯擴充（Shinkansen 等）翻譯。單一資料源——
+    // cleaner.js 的 translationGuardActive（標題 promote 位置決策）與 main.js 的
+    // extractReaderPayload（Readwise gate 決策）共用。訊號：Shinkansen 翻譯後在
+    // 被翻譯節點留下 data-shinkansen-translated（就地譯文）或 data-shinkansen-dual-
+    // source（雙語原文）。任一存在即視為翻譯頁。
+    isTranslatedPage() {
+      return !!document.querySelector('[data-shinkansen-translated], [data-shinkansen-dual-source]');
+    },
+
     // v0.8.126：Shinkansen 雙語（dual）模式送 Readwise 時只留中文譯文、移除原文。
     // 在**傳入的 clone** 上就地操作（呼叫端 buildCleanHtml 的 clone，不動 live reader
     // ——閱讀模式仍維持雙語顯示）。動機：Shinkansen dual 模式對每段保留原文

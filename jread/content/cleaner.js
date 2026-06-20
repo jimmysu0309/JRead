@@ -1271,7 +1271,8 @@
   // jread-promoted-outside 供 styler 對齊卡片寬度/置中/背景；非翻譯頁維持原本
   // in-article promote（baseline 不動）。
   function translationGuardActive() {
-    return !!document.querySelector('[data-shinkansen-translated], [data-shinkansen-dual-source]');
+    // 單一資料源：偵測邏輯住在 NS.isTranslatedPage（v0.8.138）。
+    return !!(NS && NS.isTranslatedPage && NS.isTranslatedPage());
   }
   function placePromotedTitleClone(articleEl, clone, hidden) {
     if (translationGuardActive() && articleEl.parentNode && articleEl.parentNode.nodeType === 1) {

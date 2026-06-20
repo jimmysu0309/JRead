@@ -112,14 +112,27 @@ describe('readwise: buildReadwisePayload', () => {
     assert.strictEqual(buildReadwisePayload({ ...bases, summary: 123 }).summary, undefined);
   });
 
-  // v0.8.134：should_clean_html=true 永遠送出——讓 Readwise server 端跑解析 pipeline，
+  // v0.8.134：非翻譯頁 should_clean_html=true——讓 Readwise server 端跑解析 pipeline，
   // 把內文 <img> 改寫成自家簽章代理（imgproxy.readwise.io，帶來源 referer）以繞過防盜連
   // CDN 的 403（sspai cdnfile 實證：無 referer→403）。不開時內文圖在 reader 端裸載 → 全破。
-  it('should_clean_html 恆為 true（繞過防盜連 CDN 的內文圖代理）', () => {
+  it('非翻譯頁 should_clean_html=true（繞過防盜連 CDN 的內文圖代理）', () => {
     assert.strictEqual(buildReadwisePayload({ url: 'https://x.com' }).should_clean_html, true);
     assert.strictEqual(
       buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>', title: 'T' }).should_clean_html,
       true
+    );
+    // isTranslated 明確為 false 或 falsy → 仍走 true
+    assert.strictEqual(buildReadwisePayload({ url: 'https://x.com', isTranslated: false }).should_clean_html, true);
+  });
+
+  // v0.8.138：翻譯頁（Shinkansen 譯文）should_clean_html=false——關掉 Readwise readability
+  // pipeline 原樣保留注入的譯文。開啟時 Readwise 會把譯文當外來節點清掉（reader 端只剩
+  // 英文原文）、熱門站如 The Verge 還會被導去 server 端快取原文完全略過上傳 body
+  //（Jimmy 2026-06-20 The Verge 譯文回報，v0.8.134 加 should_clean_html 後退步）。
+  it('翻譯頁 should_clean_html=false（原樣保留 Shinkansen 譯文）', () => {
+    assert.strictEqual(
+      buildReadwisePayload({ url: 'https://theverge.com/x', html: '<p>譯文</p>', isTranslated: true }).should_clean_html,
+      false
     );
   });
 
