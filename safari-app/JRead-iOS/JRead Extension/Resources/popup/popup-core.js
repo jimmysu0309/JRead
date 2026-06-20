@@ -102,7 +102,7 @@
   // 是 options 頁「測試 token」按鈕的正解。
   const READWISE_AUTH_URL = 'https://readwise.io/api/v2/auth/';
 
-  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate, summary } = {}) {
+  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate, summary, isTranslated } = {}) {
     if (!url || typeof url !== 'string') {
       throw new Error('buildReadwisePayload: url 必填');
     }
@@ -145,7 +145,14 @@
     // 副作用評估（cage 真實 Readwise 帳號實測 sspai WWDC26 文，2026-06-20）：Readwise
     // 重清 JRead 已清好的 HTML 後內文 15 段逐段一致（無內容流失）、Gemini 繁中摘要保留、
     // 標題單一無重複、內文圖 0 破圖（對照不開時 7 破圖）。通則修法、非站點特判。
-    body.should_clean_html = true;
+    //   v0.8.138 翻譯頁例外（Jimmy 2026-06-20 The Verge 譯文回報）：should_clean_html
+    // 開啟時 Readwise 的 readability pipeline 會把 Shinkansen 注入的譯文當外來節點
+    // 清掉、reader 端只剩英文原文（熱門站如 The Verge 還會被導去 server 端快取原文、
+    // 完全略過上傳 body）。翻譯頁改關 should_clean_html、原樣保留譯文逐字。代價：翻譯
+    // 頁的內文圖不再經 Readwise imgproxy 改寫（若該站防盜連會破圖）——但翻譯頁本來
+    // 在 v0.8.134 之前就是這行為，非新退步，且 The Verge 等實測圖正常。非翻譯頁維持
+    // should_clean_html=true 保住 sspai 防盜連修法。
+    body.should_clean_html = !isTranslated;
     return body;
   }
 

@@ -947,6 +947,12 @@
     const rawText = NS.state.articleEl.innerText || NS.state.articleEl.textContent || '';
     const text = rawText.replace(/\n{3,}/g, '\n\n').trim().slice(0, 50000);
     const domain = location.hostname || '';
+    // v0.8.138：翻譯頁標記——供 buildReadwisePayload 決定 should_clean_html。
+    // 翻譯擴充（Shinkansen）注入的譯文（dual collapse 後留在 body 的 <p> / 就地
+    // 譯文）會被 Readwise 的 should_clean_html readability pipeline 當外來節點清掉
+    //（reader 端只剩英文原文）；翻譯頁必須關 should_clean_html 原樣保留。偵測在
+    // live document（collapse 前），html 字串裡的 data-shinkansen* 已被剝掉、判不了。
+    const isTranslated = !!(NS.isTranslatedPage && NS.isTranslatedPage());
     return {
       ok: true,
       payload: {
@@ -957,7 +963,8 @@
         author,
         publishedDate,
         text,
-        domain
+        domain,
+        isTranslated
       }
     };
   }
