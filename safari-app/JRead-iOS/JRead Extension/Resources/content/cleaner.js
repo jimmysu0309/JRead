@@ -221,7 +221,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -729,9 +729,18 @@
 
   // walk-up 找不到安全容器時的尾段清除 + 最後防線（v0.7.31 cnyes / v0.8.11
   // roomie / v0.7.190 upmedia 累積修法）。tail-cleanup：heading 之前含主文長 p
-  // （確認 h 在某內容區塊尾段、不是整塊 noise wrapper）且 heading 之後 sibling
-  // 全為 widget（無主文長 p）→ hide heading + 之後所有 sibling。tail 不適用時的
-  // 最後防線：至少 hide heading 自己（不影響主文）。回傳是否有 hide。
+  // （確認 h 在某內容區塊尾段、不是整塊 noise wrapper）→ hide heading + 之後
+  // 連續 widget，遇到第一個含主文長段的 sibling 即停。tail 不適用時的最後
+  // 防線：至少 hide heading 自己（不影響主文）。回傳是否有 hide。
+  //
+  // v0.8.133（The Verge 行內 Related widget 截斷正文修法）：舊版是 all-or-
+  // nothing——「heading 之後 sibling 全為 widget → 藏到文末；否則只藏 heading」，
+  // 且 after-check 只查 `next.querySelectorAll('p')`（後代 p）。The Verge 正文段落
+  // 是 article 的「直接 <p> 子節點」，行內 Related 推薦 widget（無 class、3 連結
+  // link feed）之後的真段落 querySelectorAll('p') 為空 → 被誤判成 widget →
+  // allWidgetsAfter 維持 true → 從 Related 一路藏到文末、把後半正文整段截斷。
+  // 改成逐 sibling 走、遇第一個含主文長段者即停：文末整段 widget（無後續主文）
+  // 仍藏到底（與舊行為等價），行內 widget 則只藏到正文段前、保住後續主文。
   function hideHeadingNoiseTail(h, articleEl, hidden) {
     const tailParent = h.parentElement;
     let tailApplies = tailParent === articleEl;
@@ -747,28 +756,26 @@
       }
     }
     if (tailApplies) {
-      let allWidgetsAfter = true;
-      let next = h.nextElementSibling;
-      while (next) {
-        let hasLongP2 = false;
-        for (const para of next.querySelectorAll('p')) {
-          if (norm(para.textContent).length >= 100) { hasLongP2 = true; break; }
+      // sibling 含主文長段判定：自身是長 <p>（The Verge 直接子段落）或內含長 <p>
+      // （含內容塊 div 包裝）。與上方 before-check 對稱——舊 after-check 漏「自身
+      // 是直接 <p>」是本次截斷 bug 根因。
+      const hasMainContent = (el) => {
+        if (el.tagName === 'P' && norm(el.textContent).length >= 100) return true;
+        for (const para of el.querySelectorAll('p')) {
+          if (norm(para.textContent).length >= 100) return true;
         }
-        if (hasLongP2) { allWidgetsAfter = false; break; }
-        next = next.nextElementSibling;
-      }
-      if (allWidgetsAfter) {
-        hide(h, hidden);
-        let s = h.nextElementSibling;
-        while (s) {
-          const nx = s.nextElementSibling;
-          if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
-            hide(s, hidden);
-          }
-          s = nx;
+        return false;
+      };
+      hide(h, hidden);
+      let s = h.nextElementSibling;
+      while (s && !hasMainContent(s)) {
+        const nx = s.nextElementSibling;
+        if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
+          hide(s, hidden);
         }
-        return true;
+        s = nx;
       }
+      return true;
     }
     // 最後防線：tail-cleanup 不適用（heading 不是內容區塊尾段）→ 至少 hide
     // heading 自己（upmedia.mg H3「延伸閱讀」在主文孫層、tail 條件不滿足，
