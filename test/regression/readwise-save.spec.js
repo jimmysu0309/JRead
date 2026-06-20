@@ -19,13 +19,14 @@ describe('readwise: buildReadwisePayload', () => {
     assert.deepStrictEqual(body, {
       url: 'https://example.com/post/1',
       html: '<article><h1>Hi</h1><p>Body</p></article>',
-      title: 'Hi'
+      title: 'Hi',
+      should_clean_html: true
     });
   });
 
   it('只給 url：可送（Readwise 容許僅 url，會自抓）', () => {
     const body = buildReadwisePayload({ url: 'https://example.com/post/1' });
-    assert.deepStrictEqual(body, { url: 'https://example.com/post/1' });
+    assert.deepStrictEqual(body, { url: 'https://example.com/post/1', should_clean_html: true });
   });
 
   it('沒給 url：必拋（Readwise API 強制要求）', () => {
@@ -36,7 +37,7 @@ describe('readwise: buildReadwisePayload', () => {
 
   it('html / title 是空字串或非 string：略過該欄', () => {
     const body = buildReadwisePayload({ url: 'https://x.com', html: '', title: null });
-    assert.deepStrictEqual(body, { url: 'https://x.com' });
+    assert.deepStrictEqual(body, { url: 'https://x.com', should_clean_html: true });
   });
 
   // v0.7.166：image_url 主圖
@@ -109,6 +110,17 @@ describe('readwise: buildReadwisePayload', () => {
     assert.strictEqual(buildReadwisePayload({ ...bases, summary: '   ' }).summary, undefined);
     assert.strictEqual(buildReadwisePayload({ ...bases, summary: null }).summary, undefined);
     assert.strictEqual(buildReadwisePayload({ ...bases, summary: 123 }).summary, undefined);
+  });
+
+  // v0.8.134：should_clean_html=true 永遠送出——讓 Readwise server 端跑解析 pipeline，
+  // 把內文 <img> 改寫成自家簽章代理（imgproxy.readwise.io，帶來源 referer）以繞過防盜連
+  // CDN 的 403（sspai cdnfile 實證：無 referer→403）。不開時內文圖在 reader 端裸載 → 全破。
+  it('should_clean_html 恆為 true（繞過防盜連 CDN 的內文圖代理）', () => {
+    assert.strictEqual(buildReadwisePayload({ url: 'https://x.com' }).should_clean_html, true);
+    assert.strictEqual(
+      buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>', title: 'T' }).should_clean_html,
+      true
+    );
   });
 
   // v0.7.167：language 欄位不存在於 Readwise Reader API,buildReadwisePayload
@@ -246,7 +258,8 @@ describe('readwise: saveReaderPayload（popup extension-page 直送，v0.8.65）
     assert.strictEqual(calls[0][0], READWISE_API_URL);
     assert.strictEqual(calls[0][1].method, 'POST');
     assert.strictEqual(calls[0][1].headers['Authorization'], 'Token tok-123');
-    assert.deepStrictEqual(JSON.parse(calls[0][1].body), goodPayload);
+    // saveReaderPayload 內部經 buildReadwisePayload → 必帶 should_clean_html:true（v0.8.134）
+    assert.deepStrictEqual(JSON.parse(calls[0][1].body), { ...goodPayload, should_clean_html: true });
   });
 
   it('getToken 回空字串：saveToReadwise 端回 NO_TOKEN，不打 API', async () => {
