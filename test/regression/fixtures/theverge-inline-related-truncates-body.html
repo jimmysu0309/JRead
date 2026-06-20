@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Inline Related widget truncates body</title></head>
+<body>
+<main>
+  <!--
+    The Verge / Miniflux share 頁實構最小化（Jimmy 2026-06-20 截圖）：
+    主文段落是 <article> 的「直接 <p> 子節點」，文章中段插一個行內
+    「Related」推薦 widget（<h3>Related</h3> + 無 class 的 3 連結 <ul>）。
+    舊 tail-cleanup 的 after-check 只查 next.querySelectorAll('p')（後代 p），
+    對「sibling 自身就是直接 <p>」回傳空 → 把 Related 之後的真段落誤判成
+    widget → allWidgetsAfter 維持 true → 從 Related 一路藏到文末截斷正文。
+  -->
+  <article class="entry-content">
+    <h1>Our long national sunscreen nightmare is almost over</h1>
+    <p data-test="body-before-1">On TikTok, the tanned youths are explaining why they no longer wear sunscreen, describing how you can naturally build up a solar callus or sun tolerance to getting burned, which is of course completely false and dangerous advice.</p>
+    <p data-test="body-before-2">For the past 26 years, American sunscreens have been stuck with an outdated roster of chemical filters because the FDA regulates sunscreen as an over-the-counter drug, a far higher bar than the cosmetics rules used across Europe and Asia.</p>
+
+    <h3 data-test="inline-related-heading">Related</h3>
+    <ul data-test="inline-related-list">
+      <li><a href="/pendant">This exposure-tracking pendant will help you stay safe in the sun</a></li>
+      <li><a href="/skincare">How the skincare industry is encouraging more women into science</a></li>
+      <li><a href="/salmon">The latest skincare trend is rubbing salmon sperm on your face</a></li>
+    </ul>
+
+    <p data-test="body-after-1">That has consequences. Teens are purportedly flocking back to tanning beds, and the broader anti-sunscreen movement keeps gaining traction online even though the underlying claims have no scientific support whatsoever.</p>
+    <p data-test="body-after-2">The new filter is bemotrizinol, also known as Tinosorb S or BEMT, and the reason it is such a big deal is that it offers broad-spectrum protection against both UVA and UVB rays while being far more photostable than older filters.</p>
+    <p data-test="body-after-3">Another side effect of the FDA's laborious approvals process is that it creates a gray market for the good stuff, with people badgering friends traveling abroad to bring back bottles of Korean and Japanese sunscreen.</p>
+
+    <h2 data-test="trailing-most-popular">Most Popular</h2>
+    <h2 data-test="trailing-noise-heading">Top Stories</h2>
+    <ul data-test="trailing-noise-list">
+      <li><a href="/p1">Some unrelated trending story one</a></li>
+      <li><a href="/p2">Some unrelated trending story two</a></li>
+      <li><a href="/p3">Some unrelated trending story three</a></li>
+    </ul>
+  </article>
+</main>
+</body>
+</html>
