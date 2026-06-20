@@ -21,9 +21,18 @@
 // + collapseEmptyWrappersAfterClean / collapseEmptyBlockSpacers 跳過 shadowRoot host
 //   （內容在 shadow DOM、light textContent 空，非空殼——見 shadow-host spec）
 //
-// 本 spec 走 narrowPromotedSiblings 路徑（rect-independent，jsdom 可重現）：detector
-// 落在最長 prose 的 Description、promote 到 #root，narrow 砍 promotedFrom 兄弟 section。
+// 本 spec 走 narrowPromotedSiblings 路徑（rect-independent，jsdom 可重現）：narrow
+// 砍 promotedFrom 兄弟 section、guard 放行 code/table section。
 // forcing：拿掉 hasCodeOrDataTableContent guard → code/table section 全被 hide（實證）。
+//
+// v0.8.132 解耦說明：detector heuristic 把 <section> 納入 signal（修微信公眾號偵測、
+// 對標 Readability DEFAULT_TAGS_TO_SCORE）後，本 fixture 的扁平 section 結構讓
+// detector 直接落在 #root、不再 promote（#root 才是真正的主文容器、落點正確）。
+// 但 narrowPromotedSiblings + guard 是 cleaner 對「promote 後 articleEl」的處理，
+// 是真實會在「div 內文 + 標題在 article 外」站點觸發的 cleaner code path。為了讓
+// guard 仍有 rect-independent 的 jsdom forcing function，本 spec 把 cleaner 測試與
+// detector 落點解耦：detector 落點單獨驗（lands on #root），narrow + guard 則用顯式
+// promotedFrom = sec-description 餵 cleaner 驗（articleEl 仍是 detector 的 #root）。
 
 const fs = require('fs');
 const path = require('path');
@@ -49,17 +58,21 @@ describe('cleaner — MDN 程式碼塊 / 資料表 section 保留（v0.8.79）',
     window.eval(CLEANER_SRC);
     result = window.__JRead.detector.detect();
     assert.ok(result, 'detector 應命中');
-    window.__JRead.cleaner.clean(result.el, { promotedFrom: result.promotedFrom });
+    // 解耦（見檔頭 v0.8.132 說明）：detector 落 #root、不再 promote；narrow + guard
+    // 是 cleaner 對「promote 後 articleEl」的處理，用顯式 promotedFrom = sec-description
+    // 餵 cleaner 驗——articleEl 仍是 detector 真實落點 #root，sec-description 是其後代，
+    // narrow 從它沿祖先鏈砍兄弟 section、guard 放行 code/table。
+    const promotedFrom = document.getElementById('sec-description');
+    window.__JRead.cleaner.clean(result.el, { promotedFrom });
   });
 
-  it('forcing: detector 必須 promote（promotedFrom 為 Description section、articleEl 為 #root）', () => {
-    // narrow 路徑只在 promotedFrom 為 articleEl 後代時才走——此 forcing 確保
-    // 將來改 fixture 不會讓 detector 改走 article-tag 策略（promotedFrom 消失）導致
-    // narrow 不執行、spec 變成空轉假綠。
-    assert.strictEqual(result.el.id, 'root', 'articleEl 應 promote 到 #root');
-    assert.ok(result.promotedFrom, 'detector 應有 promotedFrom（否則 narrow 不執行）');
-    assert.strictEqual(result.promotedFrom.id, 'sec-description',
-      'promotedFrom 應為最長 prose 的 Description section');
+  it('forcing: detector 落在 #root 主文容器（heuristic、section 納入 signal 後）', () => {
+    // section-as-signal（v0.8.132）後 detector 直接落 #root（含全部 section 的主文
+    // 容器）。此 forcing 確保將來改 fixture 不會讓 detector 改走別的策略或落錯層，
+    // 使下方 narrow + guard 的 articleEl 前提失效。narrow 路徑本身由 before() 顯式
+    // promotedFrom 觸發、與此落點解耦。
+    assert.strictEqual(result.el.id, 'root', 'articleEl 應為 #root');
+    assert.strictEqual(result.strategy, 'heuristic', 'detector 應走 heuristic 策略');
   });
 
   it('Syntax section（<mdn-code-example>，程式碼在 shadow DOM）保留', () => {
