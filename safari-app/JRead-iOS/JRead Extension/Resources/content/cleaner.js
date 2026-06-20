@@ -486,22 +486,30 @@
   // 同折疊才不會因 ' vs ' 假性不等。詳見 namespace.js foldTitlePunct。
   const normTitle = (s) => (NS && NS.foldTitlePunct ? NS.foldTitlePunct(s) : norm(s));
 
-  // 標題「夠不夠長到像主文標題」的最小長度門檻——CJK 加權版（v0.8.141）。
+  // 標題「夠不夠長到像主文標題」的最小長度門檻——CJK 加權版（v0.8.141 起）。
   // 動機：title-promote 機制原本一律用 `text.length < 5` 過濾「太短的 site-logo
   // 垃圾 h1」（"Home" / "News" 之類），但這門檻是按拉丁文字校準的。中文是
   // 表意文字，每字 ≈ 一個拉丁單詞的資訊量，4 字的「儲存空間」是完全正常的
   // 主文標題，卻被 `< 5` 誤殺 → reader card 內無標題（Jimmy 2026-06-20 Miniflux
   // 「儲存空間」entry 回報）。
   //
-  // 通則：CJK 字元（漢字 + 擴充 A + 假名 + 諺文）權重 2、其餘字元權重 1，門檻
-  // 維持 5。結果：拉丁標題行為不變（"Title" 5 字仍 = 5、"News" 4 字仍 < 5 被擋）；
-  // CJK 標題只需 ≥3 字即過（3×2=6），短中文標題不再被誤殺。站點身份無關、純
-  // 文字 script 結構特徵，符合硬規則 3。
+  // 通則：CJK 字元（漢字 + 擴充 A + 假名 + 諺文）權重 3、其餘字元權重 1，門檻
+  // 維持 5。結果：
+  //   - 拉丁標題行為不變（"Title" 5 字仍 = 5、"News" 4 字仍 < 5 被擋）
+  //   - CJK 標題只需 ≥2 字即過（2×3=6），短中文標題不再被誤殺
+  //   - 單一 CJK 字（3 < 5）仍被擋，保留對單字 site-logo junk 的防線
+  // 站點身份無關、純文字 script 結構特徵，符合硬規則 3。
+  //
+  // v0.8.142：CJK 權重由 2 提到 3——v0.8.141 設 2 時門檻 5 需 ≥3 CJK 字才過，
+  // 仍把 2 字中文標題誤殺（Jimmy 2026-06-20 回報 Miniflux「微光」entry /entry/2018
+  // 標題消失）。改 3 後 2 字標題（微光=6）過關、單字仍擋。promote 兩條路徑都另有
+  // strict equality（h1===document.title）/ strict title-class guard 擋 junk h1，
+  // 故 2 字 junk（首頁/選單）不會因放寬門檻而誤 promote。
   const CJK_TITLE_CHAR_RE = /[㐀-䶿一-鿿぀-ヿ가-힯]/;
   function titleTextWeight(str) {
     let w = 0;
     for (const ch of (str || '')) {
-      w += CJK_TITLE_CHAR_RE.test(ch) ? 2 : 1;
+      w += CJK_TITLE_CHAR_RE.test(ch) ? 3 : 1;
     }
     return w;
   }
