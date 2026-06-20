@@ -3431,6 +3431,65 @@ html [${ARTICLE_ATTR}="1"] a {
               decolumnLoadCleanup.push({ img: m, onLoad });
             }
           }
+
+          // v0.8.136：互補 case——「固定 px grid/flex track 不隨 card 縮窄」造成
+          // 內文被撐寬往右溢出。上方 decolumnFrom 的 ratio 閘只認「anchor 被擠得
+          // 比容器窄」（< 70%/90%），認不出「anchor 反而比 card 還寬、右移溢出」。
+          // NYT Wirecutter 實測（snoo-smart-sleeper）：article > div（display:grid，
+          // 寬度已正確縮到 card content box 608px）的 grid 子項用站點寫死的 1024px
+          // content track → 內含 h1/p/figure 全部 1024 寬、左緣右移 64px、右緣
+          // 衝出 card content box 被 overflow-x:hidden 切掉 → 視覺上「圖文偏右 +
+          // 右側被切」。decolumnFrom 對長 <p> 走到此 grid 時 anchor 寬 1024 >
+          // 容器 608、不滿足 narrower 閘 → 漏網。
+          // 通則（結構，非站點特判，符合硬規則 3）：任何 grid/flex 容器，其直接子
+          // 渲染右緣溢出 card 右緣 → 固定 track / 並列 layout 在單欄閱讀無保留價值，
+          // 塌成 display:block 讓子項退回 block flow（width 退回父寬、靠左對齊）。
+          // overflow 幾何閘只動真破版的容器、放過正常 grid/flex。
+          // 效能：先用 rect 收「溢出右緣」節點 → 往上收祖先 Set → 只對 Set 跑
+          // getComputedStyle（同 galleryFlex mediaAncestors 思路，避免 O(全 DOM)
+          // getComputedStyle）。
+          {
+            const cardRight = articleEl.getBoundingClientRect().right;
+            const overflowAncestors = new Set();
+            for (const el of articleEl.querySelectorAll('*')) {
+              const rr = el.getBoundingClientRect();
+              if (rr.width < 1 || rr.height < 1) continue;
+              if (rr.right <= cardRight + 2) continue;
+              let cur = el.parentElement;
+              while (cur && cur !== articleEl.parentElement) {
+                overflowAncestors.add(cur);
+                cur = cur.parentElement;
+              }
+            }
+            for (const el of overflowAncestors) {
+              if (textColSeen.has(el)) continue;
+              if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+              const cs = win.getComputedStyle(el);
+              const disp = cs.display;
+              // 同 decolumnFrom 的容器判定：只認真做橫向並列的 flex-row /
+              // 多欄 grid——flex-column 本來就垂直堆疊、單欄 grid 沒分欄，不該
+              // 因「某後代溢出」被誤塌。
+              const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
+                /^row/.test(cs.flexDirection);
+              const cols = cs.gridTemplateColumns;
+              const isGridMulti = (disp === 'grid' || disp === 'inline-grid') &&
+                cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
+              if (!isFlexRow && !isGridMulti) continue;
+              let overflows = false;
+              for (const c of el.children) {
+                const cr = c.getBoundingClientRect();
+                if (cr.width >= 1 && cr.right > cardRight + 2) { overflows = true; break; }
+              }
+              if (!overflows) continue;
+              textColSeen.add(el);
+              textColFlex.push({
+                el,
+                display: el.style.getPropertyValue('display'),
+                displayPriority: el.style.getPropertyPriority('display'),
+              });
+              el.style.setProperty('display', 'block', 'important');
+            }
+          }
         }
       }
 
