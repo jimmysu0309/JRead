@@ -5122,6 +5122,77 @@
     }
   }
 
+  // ---- 主文內：JS 影片播放器函式庫 widget（v0.8.140 inc.com 實證）---------
+  // 場景：站點在主文段落間注入「Featured Video / 推薦影片」widget——JWPlayer 等
+  // JS 影片播放器函式庫實例化的播放器，內容與本文無關（inc.com Domino's 文章中
+  // 插「Patty Arvielo on Hiring」推薦影片），iPhone 上影片載入後標題 + 畫面疊在
+  // 內文段落上嚴重干擾閱讀（Jimmy 2026-06-20 截圖實證）。
+  //
+  // 為何既有規則漏：inc.com 桌面版（cage）此 widget 由 hideInsideArticleByHeadingText
+  // 命中「Featured Video」標籤文字清掉；但該文字標籤 + `.jwplayer` class 都是
+  // JWPlayer JS **初始化時才加上**——iOS 上 JWPlayer 初始化在 cleaner 跑之後，
+  // clean() 當下 wrapper 還是空殼、文字軌與 keyword 軌全認不出 → 漏網（cage 桌面
+  // JWPlayer 在 page load 即 init 故碰巧接得到，iOS 不然）。hideInsideArticleVideoInterludes
+  // 只接 <figure> + interlude <a> 也接不到（這是 <div> wrapper + 純 <p> 標題）。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：
+  //   - anchor 在 JS 播放器函式庫 root class（`.jwplayer`——函式庫通用簽章、跨站
+  //     同一份 class，與 styler 既有 flickity / Swiper 處理同類；非站點 class）。
+  //     `.jwplayer` 一旦出現（不論早晚）就是播放器已實例化的明確訊號
+  //   - 從 root 往上爬找「注入 wrapper」：父層文字量未暴增（<= 當前 ×3 + 80）就
+  //     繼續上爬、暴增（碰到 article body 段落）即停——把播放器 + 其標題 /
+  //     「Featured Video」標籤一整塊框住，不誤含主文段落（cage probe 實證：
+  //     featuredVideo wrapper 722 字、再上一層 article-container 跳到 5210 字、界線清楚）
+  //   - 碰到 articleEl / ARTICLE / MAIN / BODY 邊界即停
+  //   - 雙保險：wrapper 含 >= 100 chars 主文 <p>（不在播放器 root 內）→ 不 hide
+  //
+  // 時序覆蓋（單一資料源 hideVideoPlayerWidgetFrom，硬規則 5）：clean() 靜態掃
+  // （`.jwplayer` 已存在時）+ checkDynamicNoise 動態接（iOS 晚 init 時 observer
+  // subtree 捕捉新增的 `.jwplayer`）兩條 path 共用同一 wrapper 判定 + hide。
+  //
+  // 訊號層次（CLAUDE.md 工作流原則 3）：本條驗「主文內 JS 播放器函式庫 widget」
+  // 一層；編輯性影片（<figure><video><figcaption> / YouTube iframe embed）不走
+  // 函式庫 root class、不命中（inc 文中討論的 Domino's YouTube embed 正常保留）。
+  const VIDEO_PLAYER_WIDGET_ROOT_SEL = '.jwplayer';
+
+  function pickVideoWidgetWrapper(root, articleEl) {
+    let el = root;
+    const tlen = (e) => norm(e.textContent).length;
+    while (el.parentElement) {
+      const p = el.parentElement;
+      if (p === articleEl || (p.hasAttribute && p.hasAttribute('data-jread-active')) ||
+          p.tagName === 'ARTICLE' || p.tagName === 'MAIN' || p.tagName === 'BODY') break;
+      // 父層文字量比當前大很多 = 父層已含主文段落，停在當前層
+      if (tlen(p) > tlen(el) * 3 + 80) break;
+      el = p;
+    }
+    return el;
+  }
+
+  // 單一資料源：靜態（clean）與動態（observer）共用。root = 命中的 .jwplayer。
+  function hideVideoPlayerWidgetFrom(root, articleEl, hidden) {
+    if (!root || root === articleEl) return;
+    if (root.contains && root.contains(articleEl)) return;
+    if (isInPreserved(root)) return;
+    const wrapper = pickVideoWidgetWrapper(root, articleEl);
+    if (!wrapper || wrapper === articleEl) return;
+    if (wrapper.contains && wrapper.contains(articleEl)) return;
+    if (wrapper.dataset && wrapper.dataset.jreadHidden === '1') return;
+    // 雙保險：wrapper 誤含實質主文段落（>= 100 chars 的 <p>，不在播放器 root
+    // 內）→ ratio 漏判時不 hide，避免吞主文
+    for (const p of wrapper.querySelectorAll('p')) {
+      if (root.contains(p)) continue;
+      if (norm(p.textContent).length >= 100) return;
+    }
+    hide(wrapper, hidden);
+  }
+
+  function hideInsideArticleVideoPlayerWidgets(articleEl, hidden) {
+    for (const root of articleEl.querySelectorAll(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
+      hideVideoPlayerWidgetFrom(root, articleEl, hidden);
+    }
+  }
+
   // ---- 主文內：inset 相關文章嵌入卡（v0.8.48 npr 實測）-------------------
   // 新聞站在主文段落間插「相關文章嵌入卡」：縮圖 + kicker 連結 + 標題連結，
   // 常以 float / 窄欄 inset 排版（npr `.bucketwrap.internallink.insettwocolumn`，
@@ -5659,6 +5730,19 @@
       const ancAside = node.closest('aside');
       if (ancAside && asideIsSecondaryArticleBlock(ancAside, articleEl)) { hide(ancAside, hiddenList); return; }
     }
+    // v0.8.140：JS 影片播放器函式庫晚 init（iOS 上 JWPlayer 在 clean() 之後才
+    // 實例化，`.jwplayer` 此刻才出現）——observer subtree 捕捉到新增的 `.jwplayer`
+    // 即從注入點 hide 整個 widget wrapper（與靜態 hideInsideArticleVideoPlayerWidgets
+    // 共用 hideVideoPlayerWidgetFrom）。node 自身 / 其內任一 `.jwplayer` 都查。
+    if (node.matches && node.matches(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
+      hideVideoPlayerWidgetFrom(node, articleEl, hiddenList); return;
+    }
+    if (node.querySelector && node.querySelector(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
+      for (const jw of node.querySelectorAll(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
+        hideVideoPlayerWidgetFrom(jw, articleEl, hiddenList);
+      }
+      return;
+    }
     // 雜訊 class/id 直接 hide 整個 node。
     // v0.8.36（B2）：補上與靜態 hideInsideArticleByKeyword 同一組主文保護
     // （keywordWrapperIsProtected：H1 guard + 主文 wrapper guard）——Shinkansen
@@ -6015,6 +6099,7 @@
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
+      safeRun(hideInsideArticleVideoPlayerWidgets, articleEl, hidden);
       // v0.8.48 三條新規則：須在 collapse / styler reflow 前跑（float / 寬度
       // / iframe 高度量測要反映原站 layout）
       safeRun(hideInsideArticleInsetLinkCards, articleEl, hidden);
