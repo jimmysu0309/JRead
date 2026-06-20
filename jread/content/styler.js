@@ -1395,6 +1395,21 @@ html [${ARTICLE_ATTR}="1"] dl {
 [${ARTICLE_ATTR}="1"] *${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
 }
+/* v0.8.137：drop cap（::first-letter）顏色跟隨主文文字色。原站常對首段
+   ::first-letter 設顯式 color + -webkit-text-fill-color（The Verge 暗色站對
+   首段設白字 96px float drop cap）。reader mode 把段落文字色覆寫成 theme.text，
+   但 ::first-letter 是獨立 pseudo-element、不繼承我們對段落的 color override，
+   站點顯式白字殘留 → 淺底白字 drop cap 隱形（float 仍占位 → 首字位置空一格、
+   看似「段落首字不見了」，Jimmy 2026-06-20 The Verge 截圖回報）。
+   通則（結構訊號、非 class / hostname 特判，符合硬規則 3）：任何主文
+   ::first-letter 一律 color: inherit（跟隨已被 reader 覆寫的段落色）+
+   -webkit-text-fill-color: currentColor（蓋過站點 text-fill）。exclude 鏈與上方
+   color inherit 規則一致（a / code / figcaption 等不動）。dark/sepia theme 的
+   全域 color 覆寫選不到 ::first-letter（pseudo-element 不被 * 選到），本規則補上。 */
+[${ARTICLE_ATTR}="1"] *${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"])::first-letter {
+  color: inherit !important;
+  -webkit-text-fill-color: currentColor !important;
+}
 /* v0.7.197：顯式 link color（所有 theme）。v0.7.179 加 color: inherit 時排除
    <a>（保留原站 link 色），但原站 link 色常配合已被 strip 的深色背景設計——
    TWZ (thewarzone.com) 作者連結原色 rgb(248,248,248)（近白），strip 背景後
@@ -3319,6 +3334,46 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v0.8.137：媒體 wrapper 用 aspect-ratio 預留固定比例 placeholder（lazy-load
+      // 占位），但實際載入的圖片比例 ≠ 預留比例時，wrapper 高度按 aspect-ratio 撐
+      // 出超過圖片內容的空間 → 圖片下方一大塊假空白（Jimmy 2026-06-20 The Verge
+      // lede / gallery wrapper 用雜湊 atomic class 設 aspect-ratio:1/1、實際 landscape
+      // 圖渲染 405px、box 撐 608px → 203px 假空白；截圖回報）。
+      // 上方 CSS [class*="ratio" i] reset 只認 class 名含 "ratio" 的容器（New Yorker
+      // AspectRatioContainer 類），SPA 站把 aspect-ratio 塞進 hash class（_1m5y14k5）
+      // 漏網。改用 computed aspect-ratio !== 'auto' 這個結構訊號（非 class / hostname
+      // 特判，符合硬規則 3）：mediaAncestors 內任何帶實際 aspect-ratio 的 wrapper
+      // 一律歸 auto，讓 box 高度退回圖片 static flow 的自然高度。
+      // 安全性：
+      //   - mediaAncestors 由 picture/img/figure 上溯收集，純 iframe 影片 embed
+      //     （aspect-ratio:16/9 + iframe absolute 撐高、無 img）不在集合內、不誤殺。
+      //   - player 結構額外排除（與 galleryFlex 同原則）。
+      //   - 自驗 collapse guard：歸 auto 後若 box 塌到比內圖渲染高度還矮（內容本身
+      //     absolute、aspect-ratio 是唯一高度來源，例 New Yorker overlay 類但 class
+      //     不含 "ratio" 漏掉 static-flow 配套）→ 還原 aspect-ratio 避免裁切。內圖
+      //     尚未載入（高度 0）時仍 reset：未載圖沒有要保護的高度，box 跟著塌、載入
+      //     後 height:auto 自然撐起。
+      const ratioBoxes = [];
+      for (const el of mediaAncestors) {
+        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+        const win = el.ownerDocument?.defaultView;
+        const cs = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
+        if (!cs || !cs.aspectRatio || cs.aspectRatio === 'auto') continue;
+        const innerMedia = el.querySelector('img, picture, video');
+        const imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+        const priorAR = el.style.getPropertyValue('aspect-ratio');
+        const priorARP = el.style.getPropertyPriority('aspect-ratio');
+        el.style.setProperty('aspect-ratio', 'auto', 'important');
+        // getBoundingClientRect 同步 flush layout，afterH 反映 reset 後高度。
+        const afterH = el.getBoundingClientRect().height;
+        if (imgH > 0 && afterH < imgH * 0.8) {
+          if (priorAR) el.style.setProperty('aspect-ratio', priorAR, priorARP || '');
+          else el.style.removeProperty('aspect-ratio');
+          continue;
+        }
+        ratioBoxes.push({ el, aspectRatio: priorAR, aspectRatioPriority: priorARP });
+      }
+
       // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。
       // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
       // 正確」+「圖片偏左變小」）：原站把主文段落 / 內容圖片排進 flex-row /
@@ -3570,7 +3625,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
     },
 
     /**
@@ -3800,6 +3855,15 @@ html [${ARTICLE_ATTR}="1"] a {
               g.el.style.removeProperty('margin-bottom');
             }
           }
+        }
+      }
+
+      // v0.8.137：還原 aspect-ratio box reset 的 inline override
+      if (Array.isArray(snapshot.ratioBoxes)) {
+        for (const r of snapshot.ratioBoxes) {
+          if (!r || !r.el) continue;
+          if (r.aspectRatio) r.el.style.setProperty('aspect-ratio', r.aspectRatio, r.aspectRatioPriority || '');
+          else r.el.style.removeProperty('aspect-ratio');
         }
       }
 
