@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>10 Years Ago, 'Cardboard' Pizza Almost Killed Domino's — Inc.com (fixture)</title>
+</head>
+<body>
+  <!--
+    最小重現：inc.com 在主文段落間注入的影片 widget——JWPlayer JS 播放器，內容與
+    本文無關（Domino's 文章中插「Patty Arvielo on Hiring」推薦影片）。
+    Jimmy 2026-06-20 iPhone 截圖：影片標題 + 畫面疊在內文上嚴重干擾。
+
+    ★ 本 fixture 刻意「不放」inc.com 桌面版的「Featured Video」標籤文字——模擬
+      iOS 上 JWPlayer 晚 init、文字標籤軌接不到的失效情境，讓本 spec 成為
+      hideInsideArticleVideoPlayerWidgets（結構 .jwplayer 軌）的純 forcing function：
+      唯一能 hide 這個 wrapper 的就是結構規則，破壞它即 fail。
+
+    結構鏡像 cage probe 實證：
+      article-container
+        > content-chunk > p（主文段落）
+        > featuredVideo-268538（注入 wrapper，無 noise keyword / 無 heading 文字）
+            > div > p 影片標題（純文字非連結，非 heading tag）
+            > div.min-h-225 > div.relative > div.jwplayer > video.jw-video
+        > figure > video + figcaption（合法編輯性影片，無 .jwplayer）
+        > content-chunk > p（主文段落）
+  -->
+  <article>
+    <h1>10 Years Ago, 'Cardboard' Pizza Almost Killed Domino's. Then, Domino's Did Something Brilliant</h1>
+    <div class="article-container px-[5px] mt-[45px] pb-7">
+
+      <div class="content-chunk">
+        <p data-test="body-p-1">In 2010, Domino's had a problem. Sure, Domino's was one of the biggest pizza delivery chains in the world. In fact, research firm Brand Keys named it the top overall pizza chain that year by a comfortable margin.</p>
+        <p data-test="body-p-2">Speed of delivery and convenience of ordering — Domino's was the first in the industry to introduce mobile ordering, to gamify the ordering process, and to allow customers to track their orders — were unmatched across the entire category.</p>
+      </div>
+
+      <!-- 注入的影片 widget（雜訊）：JWPlayer + 無關影片標題、無「Featured Video」標籤 -->
+      <div data-test="featured-video" class="featuredVideo-268538 border-y-inc-gray-200 mb-[1.56rem] gap-[30px] border-y py-[30px] md:flex md:flex-col lg:flex-row-reverse">
+        <div class="flex flex-col">
+          <p data-test="featured-video-title">Patty Arvielo on Hiring People Better Than You</p>
+        </div>
+        <div class="min-h-[225px] w-full shrink-0 lg:w-[400px]">
+          <div class="relative">
+            <div data-test="jwplayer-root" id="_r_5_" class="jwplayer jw-reset jw-state-idle jw-stretch-uniform jw-flag-aspect-mode">
+              <div class="jw-wrapper jw-reset">
+                <div class="jw-media jw-reset">
+                  <video data-test="jw-video" class="jw-video jw-reset"></video>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主文內的合法編輯性影片（<figure><video><figcaption>，無 .jwplayer）：
+           確認規則 anchor 在 .jwplayer、不誤抓普通 <video> -->
+      <figure data-test="legit-editorial-figure">
+        <video data-test="legit-editorial-video"></video>
+        <figcaption>A Domino's franchise owner explains the rebrand in this 2011 interview.</figcaption>
+      </figure>
+
+      <div class="content-chunk">
+        <p data-test="body-p-3">When it came to taste, though, Domino's came in tied for last with Chuck E. Cheese, the children's pizza-party chain. The good news was that you could get your pizza really, really fast. The bad news was that you then had to eat it.</p>
+        <p data-test="body-p-4">"This is a company," said CEO Patrick Doyle, "that had built the whole brand around fast and reliable delivery, and we realized that everyone in the world who wanted fast, convenient pizza was already buying from us, and the people who wanted a great pie simply were not."</p>
+      </div>
+
+    </div>
+  </article>
+</body>
+</html>
