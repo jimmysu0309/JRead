@@ -227,6 +227,53 @@
     }
   }
 
+  // v0.8.139：正規化 host 頁 viewport meta = width=device-width, initial-scale=1。
+  // iOS Safari（與其他行動瀏覽器）拿 viewport meta 算 layout viewport 寬度與初始
+  // 縮放。站點若宣告 initial-scale < 1（daringfireball `initial-scale=0.5`、故意讓
+  // 寬版面在手機縮一半顯示）、width 為固定值（width=980）、或根本沒宣告（Safari
+  // 預設用 980px layout viewport 再縮到螢幕寬），reader card 換成行動寬度後整張卡
+  // 仍被釘在縮小的初始縮放上，視覺上「縮小一半」。閱讀模式下強制行動標準 viewport，
+  // 退出還原。桌面瀏覽器忽略 viewport meta → 此覆寫對桌面 no-op。通則：對任何
+  // viewport 非行動標準的站一律生效，不綁站點。
+  //
+  // 沒宣告 viewport meta 時自建一個（Safari 預設 980px layout viewport，不自建
+  // 覆蓋不到）。多個 viewport meta（理論少見）全部正規化。回傳 snapshot 供 restore：
+  // created=true 的移除、其餘還原原 content。
+  const READER_VIEWPORT = 'width=device-width, initial-scale=1';
+  function applyViewportFix() {
+    if (typeof document === 'undefined') return null;
+    const head = document.head || document.documentElement;
+    if (!head) return null;
+    const snap = [];
+    const existing = head.querySelectorAll('meta[name="viewport"]');
+    if (existing && existing.length) {
+      for (const m of existing) {
+        snap.push({ el: m, prev: m.getAttribute('content'), created: false });
+        m.setAttribute('content', READER_VIEWPORT);
+      }
+    } else {
+      const m = document.createElement('meta');
+      m.setAttribute('name', 'viewport');
+      m.setAttribute('content', READER_VIEWPORT);
+      head.appendChild(m);
+      snap.push({ el: m, prev: null, created: true });
+    }
+    return snap;
+  }
+  function restoreViewport(snap) {
+    if (!Array.isArray(snap)) return;
+    for (const s of snap) {
+      if (!s || !s.el) continue;
+      if (s.created) {
+        s.el.remove();
+      } else if (s.prev === null) {
+        s.el.removeAttribute('content');
+      } else {
+        s.el.setAttribute('content', s.prev);
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // v0.7.225：保留原站色容器的對比守門（contrast guard）
   // Trigger：Jimmy 2026-06-07 回報 blog.tymscar.com（dark scheme）code block
@@ -2826,6 +2873,9 @@ html [${ARTICLE_ATTR}="1"] a {
       // v0.8.24：覆蓋 theme-color meta = reader card 色（狀態列 / 底部工具列染色）
       const themeColorSnap = applyThemeColor(theme.articleBg);
 
+      // v0.8.139：正規化 viewport meta（行動裝置「縮小一半」修法，見函式註解）
+      const viewportSnap = applyViewportFix();
+
       // v0.7.225 contrast guard phase 2：CSS 全生效後（ARTICLE_ATTR + HTML_CLASS
       // 都已就位）以 card bg 為基底重算每個容器的新 effective bg。半透明 pre bg
       // 疊白卡 = 近白；wrapper 載 bg 的站則已被 background strip 清掉——兩種
@@ -3625,7 +3675,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap, viewportSnap };
     },
 
     /**
@@ -3729,6 +3779,9 @@ html [${ARTICLE_ATTR}="1"] a {
 
       // v0.8.24：還原 theme-color meta（自建的移除、原有的還原 content）
       restoreThemeColor(snapshot.themeColorSnap);
+
+      // v0.8.139：還原 viewport meta（自建的移除、原有的還原 content）
+      restoreViewport(snapshot.viewportSnap);
 
       if (snapshot.firstInk) {
         if (snapshot.firstInkPriorMt) {
