@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>選項已所剩無幾，Apple 何時會調漲價格 - Miniflux</title>
+  <meta property="og:title" content="選項已所剩無幾，Apple 何時會調漲價格">
+</head>
+<body>
+  <!-- v0.8.135 Miniflux entry-header title-clone bug forcing fixture。
+       對應 bug：Miniflux（RSS 閱讀器）的文章頁進入閱讀模式後，主文標題下方
+       出現散落的工具列按鈕、來源 icon、作者 / 日期 byline，排版亂七八糟。
+
+       根因：detector 選 article.entry-content 為 articleEl（純內文），主標題
+       h1 在外層 header.entry-header（與 articleEl 是 section.entry 內兄弟）。
+       promoteUniqueTitleH1Into 把 h1 的 wrapper（整個 entry-header）clone 進
+       reader card —— 但 entry-header 還包了 entry-actions 工具列（標記為未讀 /
+       收藏 / 分享 等按鈕）+ entry-meta（來源 icon + 作者）+ entry-date。
+       entry-header 自身 display:flex flex-wrap，clone 後這些 chrome 全成 flex
+       children 散落在標題周圍。
+
+       修法：promoteUniqueTitleH1Into 補上 wrapper 文字長度 guard（與
+       promoteArticleTitleClassHeadingInto 同款）——wrapper 文字遠長於標題
+       （差 > 30 chars）代表包了標題以外的 chrome，改 clone h1 自己只帶純標題。
+
+       forcing：
+       - 有 guard：title clone 只含 h1 純標題，不含工具列按鈕 / byline 文字
+       - 無 guard：整個 entry-header 被 clone、含「標記為未讀」「Horace Dediu」
+         等 chrome 文字、spec fail -->
+  <main>
+    <section class="entry">
+      <header class="entry-header">
+        <h1 id="page-header-title">
+          <a href="https://asymco.com/2026/06/18/the-range-of-options/" target="_blank">選項已所剩無幾，Apple 何時會調漲價格</a>
+        </h1>
+        <div class="entry-actions">
+          <ul>
+            <li><button class="page-button" data-toggle-status="true">標記為未讀</button></li>
+            <li><button class="page-button" data-toggle-starred="true">新增收藏</button></li>
+            <li><button class="page-button" data-save-entry="true">儲存</button></li>
+            <li><button class="page-button" data-share-status="true">分享</button></li>
+          </ul>
+        </div>
+        <div class="entry-meta">
+          <span class="entry-website">
+            <img src="/feed-icon/abc123" width="16" height="16" alt="asymco">
+            <a href="/feed/114/entries">asymco</a>
+          </span>
+          <span class="entry-author">– <em>Horace Dediu</em></span>
+          <span class="category"><a href="/category/2/entries">Priority</a></span>
+        </div>
+        <div class="entry-date"><time datetime="2026-06-19">昨天</time></div>
+      </header>
+      <article class="entry-content">
+        <p>Tim Cook 確認，Apple 將無法吸收所有的記憶體與儲存晶片成本。這是本文的主文第一段，需要足夠的文字長度讓 detector 把 entry-content 判定為主文容器、通過最小文字門檻。</p>
+        <p>「很遺憾地，調漲價格已是無可避免，」他說。「我們正盡全力減輕轉嫁到我們身上的巨額成本壓力，也試圖保護顧客免受漲價影響。」這是第二段主文，繼續累積內文文字量確保偵測命中。</p>
+        <p>回顧 4 月份發布的本季財務指引，當時顯示出與上季一致的成長與毛利率表現。本季還有 12 天結束，我們推測漲價價格可能緊接在後。第三段主文，補足文字密度。</p>
+        <p>這讓定價與毛利率得以維持穩定，但在上一次的財報電話會議中，Tim Cook 曾警告記憶體成本上升的影響。第四段主文，確保 article 整體文字遠超過其他分支、被 detector 正確選中。</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
