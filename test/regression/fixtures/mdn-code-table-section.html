@@ -20,7 +20,12 @@
   <main class="layout__content"><div class="layout__body" id="root">
     <h1 id="title">Array.prototype.at()</h1>
 
-    <!-- Description：最長 prose，detector 落點 + promotedFrom 來源 -->
+    <!-- Description：最長 prose。v0.8.132 起 detector heuristic 把 <section> 納入
+         signal（對標 Readability DEFAULT_TAGS_TO_SCORE、修微信公眾號偵測）後，本
+         fixture 的扁平 section 結構會讓 detector 直接落在容納全部 section 的 #root、
+         不再 promote。narrowPromotedSiblings + hasCodeOrDataTableContent guard 是
+         cleaner 對「promote 後 articleEl」的處理，spec 改用顯式 promotedFrom 餵
+         cleaner 驗（與 detector 落點解耦，見 spec before() 說明）。 -->
     <section class="content-section" id="sec-description">
       <h2>Description</h2>
       <p id="desc-p">The at() method is equivalent to the bracket notation when index is a non-negative integer. For example, both array[0] and array.at(0) return the first item, and array[array.length - 1] and array.at(-1) return the last item. This long descriptive paragraph exceeds one hundred characters so the detector anchors on this section and promotes up to the article root, making the sibling sections candidates for narrowing.</p>
