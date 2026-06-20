@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.138**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.139**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -377,6 +377,7 @@ styler 的設計哲學：**盡量貼近原站點，只清雜訊、提供讀者�
 9. 閱讀進度條（v0.7.191）：`#__jread-progress` 固定在 viewport 頂端的 3px 細線，寬度隨捲動即時更新（`scrollTop / (scrollHeight - clientHeight) * 100%`）。顏色跟主題連動：light `#4A90D9` / dark `#7fb5e6` / sepia `#2c5282`。`z-index: 2147483647` + `pointer-events: none`。apply() 建立 DOM + scroll listener、restore() 清除
 10. `<meta name="theme-color">` 覆蓋（v0.8.24）：閱讀模式下 apply() 把頁面所有 theme-color meta 的 `content` 覆蓋成 reader card 色（`theme.articleBg`：light `#ffffff` / dark `#1a1a1a` / sepia `#f4ecd8`），restore() 還原（原有的還回原 content、自建的移除）。多個 light/dark media 變體全部覆蓋成同一 JRead 色、完全沒宣告時自建一個。通則不綁站點。DOM 操作層由 `styler-theme-color-meta.spec.js` 把關。**平台效果**：Chrome / Android Chrome（位址列）/ 桌面會用 theme-color 染瀏覽器 chrome、本覆蓋有效；**iOS Safari 完全不理 theme-color**（2026-06-09 iOS 26.5 模擬器實證），iOS 狀態列/工具列染色取自頁面 `<html>` 背景、載入時取一次後凍結，content script 之後任何背景變更（theme-color / stylesheet / inline / document_start / 程式捲動）都不觸發重取樣，只有真實使用者觸控會（分頁模式又攔掉觸控）。**故 iOS 上分頁模式螢幕上下端的原站色無法由 JRead 代換**——WebKit 架構限制、非 bug，詳見 memory `project_ios_statusbar_chrome_uncontrollable`
 11. 裸內容圖放大填欄寬（v0.8.112）：裸 `<img>`（非 `<a>` 包、非 inline emoji、非 capIcon 作者縮小圖）且 content-size（natural / rect 任一維 >= `CONTENT_IMG_MIN`(200)）標 `data-jread-upscale-img`、CSS `width: 100% !important` 撐滿欄寬。站點常把低解析配圖（natural < 版心寬）以原尺寸顯示，reader 的 `img:not(a>img){width:auto}` 退回 naturalWidth → 在 720 版心裡偏小、與 `<a>` 包大圖（填欄寬）不一致（womany.net 卡蘿配圖 natural 285px 在 608px 欄只佔半寬實證）。Safari / Firefox 閱讀模式同款「內容圖一律填欄寬」。icon / logo（< 200px）不標、維持原尺寸（不反向放大成滿版）；裸大圖 width:100% = cap、無害。`max-height: 90vh` + `object-fit: contain` 由既有 MEDIA_CAP_SEL 收斂直式長圖。restore() 移除標記。DOM 標記由 `womany-bare-content-img-upscale.spec.js` 把關
+12. `<meta name="viewport">` 正規化（v0.8.139）：閱讀模式下 apply() 把頁面所有 viewport meta 的 `content` 正規化成 `width=device-width, initial-scale=1`（完全沒宣告時自建一個），restore() 還原（原有的還回原 content、自建的移除）。**根因**：行動瀏覽器拿 viewport meta 算 layout viewport 寬度與初始縮放；站點宣告 `initial-scale < 1`（daringfireball `initial-scale=0.5`，故意讓寬版面在手機縮一半顯示）、固定 `width=980`、或根本沒宣告（Safari 預設 980px layout viewport 再縮到螢幕寬）時，reader card 換成行動寬度後整張卡仍被釘在縮小的初始縮放上、視覺上「縮小一半」。通則不綁站點。**平台效果**：桌面瀏覽器忽略 viewport meta、本覆蓋對桌面 no-op；iOS Safari 確實會在 post-load 動態改寫 viewport meta 後重算縮放（2026-06-20 模擬器 standalone HTML 實證 `initial-scale=0.5 → 1` 從縮小跳回滿版），故本修法在 iOS 有效。DOM 操作層由 `styler-viewport-meta.spec.js` 把關
 
 ### 版心自我檢查（enforce content width，v0.7.246 / v0.7.247）
 
