@@ -290,10 +290,20 @@
   // 直接搶走第一名。
   //
   // 改走 Readability.js 的 bubble-up：對每個「訊號元素」(p / li / h2-4 /
-  // blockquote / pre) 算基礎 contentScore（文字長度 + 逗號數），把分數往上
-  // 累加——parent 拿 100%、grandparent 拿 50%。這樣「主文直系容器」拿到
-  // 最高的累積分，而遠祖外殼只拿到很淺的折扣分，自然選對層級。
-  const SIGNAL_SEL = 'p, pre, blockquote, h2, h3, h4, li';
+  // blockquote / pre / section) 算基礎 contentScore（文字長度 + 逗號數），把
+  // 分數往上累加——parent 拿 100%、grandparent 拿 50%。這樣「主文直系容器」
+  // 拿到最高的累積分，而遠祖外殼只拿到很淺的折扣分，自然選對層級。
+  //
+  // `section` 納入 signal（v0.8.132）：對標 Readability.js 的
+  // DEFAULT_TAGS_TO_SCORE = "section,h2,h3,h4,h5,h6,p,td,pre"——它把 <section>
+  // 當內文段落計分。場景：微信公眾號文章（mp.weixin.qq.com）整篇內文段落用
+  // <section>（外加 <span>）排版、幾乎不用 <p>，`#js_content` 主文容器下只有
+  // 個位數 <p>。舊 signal 名單漏掉 <section> → 收不到任何 signal → candidates
+  // 空 → heuristic 回 null →「此頁無法偵測本文」。加入後 `#js_content` 以
+  // 大幅分差勝出（probe 實證 238.8 vs 第二名 147）。<section> 是 HTML5 通用
+  // 語意容器、非站點特判（硬規則 3）；section/p 並存的站點雖會雙重計分，但
+  // linkDensity penalty + textLen bonus 仍讓真主文勝出，與 Readability 一致。
+  const SIGNAL_SEL = 'p, pre, blockquote, section, h2, h3, h4, li';
   const SIGNAL_MIN_TEXT = 25;
 
   // Signal 元素排除規則：祖先鏈含 ARIA UI-chrome 語意（dialog / alertdialog /
