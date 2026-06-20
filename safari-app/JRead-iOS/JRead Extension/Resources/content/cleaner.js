@@ -1324,6 +1324,18 @@
     if (!wrapper || wrapper === document.body || wrapper === document.documentElement) {
       // h1 是 body 的 direct child — 沒 wrapper，clone h1 自己
       wrapper = h1;
+    } else {
+      // v0.8.135：wrapper 文字遠長於標題 → wrapper 包了標題以外的 chrome（action
+      // 按鈕列 / byline / meta / date 等），整支 clone 進來會在 reader card 頂部
+      // 擠成亂版（Miniflux entry-header = h1 + entry-actions 工具列 + entry-meta +
+      // entry-date，全是 flex children，clone 後標題下方散落按鈕與作者 icon）。
+      // 跟 promoteArticleTitleClassHeadingInto 同款 guard：wrapper 文字 ≈ 標題
+      // （差 <= 30 chars）才保留 wrapper styling（eet-china article-title 配色
+      // class 場景）；遠大於則改 clone h1 自己，只帶純標題。
+      const wrapperText = normTitle(wrapper.textContent || '');
+      if (wrapperText.length > h1Text.length + 30) {
+        wrapper = h1;
+      }
     }
     const clone = wrapper.cloneNode(true);
     clone.setAttribute('data-jread-title-clone', '1');
