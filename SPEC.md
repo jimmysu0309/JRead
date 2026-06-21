@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.143**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.144**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -462,6 +462,10 @@ v0.7.140 起 popup 多了「字型」select，提供 4 個內建 stack：
 
 option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐字一致（forcing function spec 校對）。styler 注入時會在使用者 stack 末尾再串自己的 fallback chain，即使具名字型都沒裝也能 fall back 到對應的 generic family。
 
+**英文（拉丁）fallback 字型自訂（v0.8.144，`latinSerif` / `latinSans`）**：「字型」選**襯線 / 無襯線**時，下方多一個「英文字型」select，可單獨指定英文 / 數字用哪個拉丁字型（中文仍由該 stack 的 CJK 字體渲染）。襯線 / 無襯線**各自記一個**選擇（`latinSerif` / `latinSans`，預設 `'auto'`）；系統預設（不覆寫）與等寬沒有這個維度，select 整 row 隱藏（`render()` 依 `fontFamily` 控制顯隱）。清單：自動 / Georgia / Times New Roman / Charter / Palatino / Helvetica Neue / Arial / Verdana / SF Mono / Consolas（鍵集中於 `settings-defaults.js` 的 `LATIN_FONTS`）。
+
+組合方式：`fontFamily` **仍存 base stack 整串字面值不變**（既有儲存契約不動、不需遷移既有使用者），`composeFontStack(settings)` 在讀取邊界（`main.js` `getSettings`）把選定拉丁字型**前接**到 base stack 前面——CSS 逐字 fallback 下英文先命中前接字型、中文穿到後段 CJK 字體。前接值只放**具名**字型（不含泛型 serif / sans-serif）：泛型放中段會被 iOS WebKit 當「只解析拉丁」攔截、CJK 反 fallback 到後綴 sans（同襯線 stack 的鐵律）；具名字型缺字時自然往後落到 base stack 原有的 Georgia / -apple-system / 泛型，安全。`'auto'` = 不前接。styler 下游維持「只認 `fontFamily` 整串字面值」不變。forcing function `test/regression/latin-font-fallback.spec.js`。
+
 **內嵌襯線 CJK 字型（v0.7.253 內嵌 / v0.7.257 三字重）**：iOS Safari「網頁路徑」的預設襯線字型缺「夠」「查」等常用字的字形（iOS 26.5 模擬器實證），且 Safari 網頁不認 CSS 指定的系統字型名（`"Songti TC"` 等一律 resolve 到那套有缺漏的預設 serif）——v0.7.221 的字型名 stack 只把「整段全黑體」改善到「多數字襯線、少數字仍缺」。根治：styler 打包完整的 **Noto Serif TC（全 TC 集，6,606 字）**，用 `@font-face`（family 名 `"Noto Serif TC"` 對齊 stack 第一順位）經 `chrome.runtime.getURL` 載入；CJK 字元改由 JRead 自帶完整字型渲染，跨平台（尤其 iOS）零缺字。
 
 **v0.7.257 三字重**：v0.7.253 只內嵌單一 Regular 字面 + `@font-face` 宣告涵蓋整段 100~900 weight 範圍——等於告訴瀏覽器「這一個字面已涵蓋整段 weight」，於是使用者選的細（300）/中（400）/粗（600） 全對映到同一字面、且關閉 faux-bold 合成，**襯線字重三段渲染完全相同（字重選擇沒效果）**；無襯線走系統字（PingFang/JhengHei）有真實多字重故正常。字重無法無中生有（瀏覽器只能合成較粗、不能變細），故改為**三個真實字重各一個靜態字面**：`noto-serif-tc-light.woff2`（300）/ `noto-serif-tc-regular.woff2`（400）/ `noto-serif-tc-semibold.woff2`（600），同一份 6,606 字覆蓋、由 Noto Serif TC 可變字型 pin 出，各約 1.3MB（合計約 3.9MB）。三個 `@font-face` 同 family 名、各自單值 `font-weight`，瀏覽器依 `BODY_TEXT_SEL` 注入的 `font-weight` 精準命中對應字面。
@@ -476,6 +480,8 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `titleFontSize` | `number`（px） | `0` | `storage.sync` | ✅（options「標題字級」；0 = Auto 保留原站 h1 大小、非 0 覆寫 h1 font-size，v0.7.175） |
 | `contentWidth` | `number`（px） | `720` | `storage.sync` | ✅（頁面寬度）—— popup stepper [480, 1600] step 40 / options input [480, 1600] step 20（**v0.7.237 上限 1200 → 1600**：寬視窗 / iPad desktop-class layout viewport 可達 1120pt+，舊上限填不滿螢幕、主觀變「調了沒變寬」；styler clamp [300, 2000] 為最終防線）。注意手機 viewport < contentWidth 時 card 受 viewport clamp，調大無感（物理限制，非 bug；iPad simulator instrument 實證 innerWidth=1120 時 card rect.width 精確 = 設定值） |
 | `fontFamily` | `string` | `'system-ui'` | `storage.sync` | ✅（popup「字型」select：系統預設/襯線/無襯線/等寬，v0.7.140） |
+| `latinSerif` | `string`（`LATIN_FONTS` key） | `'auto'` | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 襯線時顯示**；指定襯線下英文/數字的拉丁字型，`'auto'` = 沿用內建 Georgia，v0.8.144） |
+| `latinSans` | `string`（`LATIN_FONTS` key） | `'auto'` | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 無襯線時顯示**；指定無襯線下英文/數字的拉丁字型，`'auto'` = 沿用內建 -apple-system，v0.8.144） |
 | `fontWeight` | `300 \| 400 \| 600` | `400`（中） | `storage.sync` | ✅（popup「字重」segmented 細/中/粗 + options select，v0.7.254）—— 真正的 `font-weight`、**全平台一致生效**（取代 v0.7.157 `boldText` 的 macOS-only `-webkit-font-smoothing`）。只接受 300/400/600 三值（其餘回退 400）。**三段一律注入**（含 400）：原站若對內文設非 400 字重（如 shoppingdesign `.htmlview p { font-weight: 300 }`），中（400） 不注入會退回原站 300 與細（300） 撞成同色——故 400 也強制 `!important` 蓋掉。粗用 **600 Semibold** 而非 700：700 視覺太重，600 比中明顯重又不過粗；**不用 500**（Windows 微軟正黑無 500 face 會退回 400 與中撞色）。只套 `BODY_TEXT_SEL`（內文載體 p/li/blockquote/td/span 等，含 CMS「div 當段落」站的裸 div——`data-jread-text-div` runtime 標記，v0.8.49，**不含 h1-h6**——標題字重交給原站/UA bold 維持章節階層；`strong`/`b` 等有自身明確 weight 的元素也不受影響）。storage.onChanged 即時 reapply（main.js relevantKeys 含 `fontWeight`）。**舊 `boldText` 已退役**：SW `onInstalled` 一次性遷移 `boldText:true → fontWeight 600`、其餘 → 400，並刪除 `boldText` 殘留 key |
 | `lineHeight` | `number` | `1.7` | `storage.sync` | ✅（popup「行距」stepper [1.0, 3.0] / step 0.1 / Auto sentinel = 0 不注入 line-height 保留原站，v0.7.162） |
 | `paragraphSpacing` | `number` | `1.0` | `storage.sync` | ✅（popup「段落間距」stepper [0, 3.0]em / step 0.25 / Auto sentinel = -1 不注入 p/ul/ol/blockquote margin-bottom 規則保留原站 typography，v0.7.162） |

@@ -35,8 +35,18 @@
   async function getSettings() {
     const defaults = window.__JReadSettingsDefaults || {};
     return new Promise(resolve => {
+      // v0.8.144：在讀取邊界把英文（拉丁）fallback 字型選擇前接到 fontFamily
+      // base stack——styler 下游維持「只認 fontFamily 整串字面值」的契約不變。
+      const finish = (values) => {
+        const compose = window.__JReadComposeFontStack;
+        if (values && typeof compose === 'function') {
+          const composed = compose(values);
+          if (composed) values.fontFamily = composed;
+        }
+        resolve(values);
+      };
       const fallbackViaBackground = () => {
-        safeSendMessage({ type: NS.MSG.GET_SETTINGS }, resolve);
+        safeSendMessage({ type: NS.MSG.GET_SETTINGS }, finish);
       };
       try {
         chrome.storage.sync.get(defaults, (values) => {
@@ -44,7 +54,7 @@
             fallbackViaBackground();
             return;
           }
-          resolve(values);
+          finish(values);
         });
       } catch (_) {
         fallbackViaBackground();
@@ -1232,7 +1242,7 @@
       if (!NS.state.articleEl || !NS.styler) return;
       // v0.7.227：pagedMode 走 reapply 路徑——CSS 注入/移除需要 styler 重建
       // stylesheet，模組 install/uninstall 在 scheduleReapply 尾端同步
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
+      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();
