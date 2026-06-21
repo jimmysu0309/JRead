@@ -80,7 +80,7 @@ describe('內嵌襯線 CJK 字型（v0.7.253 內嵌 / v0.7.257 三字重 forcing
     assert.ok(!/font-weight:\s*100 900/.test(STYLER_SRC),
       '禁止 font-weight: 100 900——單一字面涵蓋整段 weight 會讓襯線字重三段渲染相同（Bug 二）');
     assert.match(STYLER_SRC, /format\("woff2"\)/, 'src 必須宣告 format("woff2")');
-    assert.match(STYLER_SRC, /overrides\.fontFamily \? FONT_FACE_CSS : ''/,
+    assert.match(STYLER_SRC, /overrides\.fontFamily \? FONT_FACE_CSS/,
       '@font-face 必須 gate 在 overrides.fontFamily（與 font-family override 同觸發條件、lazy-load、不污染預設 CSS）');
   });
 

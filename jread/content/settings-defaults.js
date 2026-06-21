@@ -129,15 +129,24 @@
   // 會被 iOS WebKit 當「只解析拉丁」攔截、CJK 反而 fallback 到後綴 sans（詳見上方
   // FONT_STACKS 註解）；具名字型缺字時自然往後落到 base stack 原有的 Georgia /
   // -apple-system / 泛型，安全。'auto' = 不前接（沿用 base stack 內建西文字型）。
+  // v0.8.146：內嵌拉丁可變字型（Literata / Source Serif / Piazzolla 襯線、
+  // Public Sans / Source Sans 無襯線）——family 名對齊 styler 的 BUNDLED_LATIN_FACES
+  // @font-face。為什麼要自帶：Charter / Palatino 等是系統字、iOS 仍可點名，但這幾支
+  // 非系統字必須內嵌 woff2 才能在 iOS Safari 網頁路徑生效（同 Noto Serif TC 內嵌理由）。
   const LATIN_FONTS = {
     auto: '',
     georgia: 'Georgia',
     times: '"Times New Roman"',
     charter: 'Charter',
     palatino: 'Palatino, "Palatino Linotype", "Book Antiqua"',
+    literata: '"Literata"',
+    sourceserif: '"Source Serif"',
+    piazzolla: '"Piazzolla"',
     helvetica: '"Helvetica Neue"',
     arial: 'Arial',
     verdana: 'Verdana',
+    publicsans: '"Public Sans"',
+    sourcesans: '"Source Sans"',
     sfmono: '"SF Mono"',
     consolas: 'Consolas'
   };
