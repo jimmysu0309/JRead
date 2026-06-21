@@ -18,7 +18,10 @@
 //     拖曳走完 viewport 寬 = 涵蓋全部頁範圍（小空間大跳幅）；touch 走 window
 //     touch 管線（起點命中指示器 → 進 scrub、不另判翻頁 swipe），桌面滑鼠走
 //     指示器 mousedown + window mousemove/up；指示器在 styler 設 pointer-events:
-//     auto + touch-action:none 才接得到事件
+//     auto + touch-action:none 才接得到事件。**v0.8.151**：(a) 按住起拖時出現
+//     scrub 進度條（#__jread-scrub-track，fill 寬 = 目前頁占全文比例、放手淡出）；
+//     (b) 每跨一頁觸發觸覺回饋（triggerHaptic：navigator.vibrate 優先，iOS Safari
+//     不支援 vibrate → iOS 17.4+ switch checkbox haptic 的 label.click() hack）
 //   - resize / 旋轉時重算頁數、保持目前閱讀比例位置
 //
 // stride 恆等式：styler CSS 設 column-gap = 左右視覺內距和（左 padding +
@@ -59,6 +62,9 @@
   'use strict';
 
   const INDICATOR_ID = '__jread-page-indicator';
+  const SCRUB_TRACK_ID = '__jread-scrub-track'; // v0.8.151 scrub 進度條容器
+  const SCRUB_FILL_ID = '__jread-scrub-fill';   // 進度條 fill（寬 = 目前頁占比）
+  const HAPTIC_ID = '__jread-haptic';            // v0.8.151 iOS 觸覺載體（switch checkbox）
   // styler.js PROGRESS_ID 的鏡像字面值（兩檔是同一事實的雙實作，regression
   // spec paged-mode.spec.js 會校對兩邊字面值一致）
   const PROGRESS_ID = '__jread-progress';
@@ -180,6 +186,9 @@
   // 正在拖頁碼快速捲動（與 touchState swipe 互斥——拖頁碼時不另判翻頁 swipe）。
   let scrubState = null;
   let mouseScrubBound = false; // 桌面滑鼠 scrub 的 window mousemove/up 是否已掛
+  let scrubTrackEl = null;     // v0.8.151 scrub 進度條容器
+  let scrubFillEl = null;      // v0.8.151 scrub 進度條 fill
+  let hapticEl = null;         // v0.8.151 iOS 觸覺載體（switch checkbox）
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
@@ -494,21 +503,78 @@
     try { return indicatorEl.contains(target); } catch (e) { return false; }
   }
 
+  // v0.8.151：scrub 進度條（按住起拖時出現、放手淡出）。掛 <html> 下（同指示器，
+  // 避開 styler ancestor-sibling 隱藏規則）；styler CSS 給樣式，本模組只增/移與更新 fill。
+  function ensureScrubTrack() {
+    if (scrubTrackEl && scrubTrackEl.isConnected) return;
+    scrubTrackEl = document.createElement('div');
+    scrubTrackEl.id = SCRUB_TRACK_ID;
+    scrubFillEl = document.createElement('div');
+    scrubFillEl.id = SCRUB_FILL_ID;
+    scrubTrackEl.appendChild(scrubFillEl);
+    (document.head?.parentElement || document.documentElement).appendChild(scrubTrackEl);
+  }
+  function updateScrubFill() {
+    if (!scrubFillEl) return;
+    const total = pageCount();
+    // 目前頁占全文比例（第一頁 0%、末頁 100%——對應拖曳位置）
+    scrubFillEl.style.width = (total <= 1 ? 100 : (idx / (total - 1)) * 100) + '%';
+  }
+  function showScrubTrack() {
+    ensureScrubTrack();
+    updateScrubFill();
+    // 下一個 frame 才加 visible class，讓 opacity transition 真的 fade-in（同 frame
+    // 建立 + 設 opacity:1 不會有過場）
+    requestAnimationFrame(() => { if (scrubTrackEl) scrubTrackEl.classList.add('__jread-scrub-visible'); });
+  }
+  function hideScrubTrack() {
+    if (scrubTrackEl) scrubTrackEl.classList.remove('__jread-scrub-visible');
+  }
+
+  // v0.8.151：觸覺回饋。優先 navigator.vibrate（Android / 支援平台）；iOS Safari
+  // 不支援 vibrate → 退回 iOS 17.4+ 的 switch checkbox haptic（隱藏 label.click()
+  // 在 touch 手勢內切換 switch 觸發系統觸覺 tick）。桌面無觸覺馬達 → vibrate no-op、無害。
+  function ensureHaptic() {
+    if (hapticEl && hapticEl.isConnected) return;
+    hapticEl = document.createElement('label');
+    hapticEl.id = HAPTIC_ID;
+    const inp = document.createElement('input');
+    inp.type = 'checkbox';
+    inp.setAttribute('switch', ''); // iOS 原生 switch 外觀，切換時系統發觸覺
+    hapticEl.appendChild(inp);
+    (document.head?.parentElement || document.documentElement).appendChild(hapticEl);
+  }
+  function triggerHaptic() {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) { navigator.vibrate(8); return; }
+    } catch (e) { /* 某些平台 vibrate 受限 */ }
+    try {
+      ensureHaptic();
+      hapticEl.click(); // iOS switch haptic（必須在 user gesture 內，scrub 由 touchmove 觸發符合）
+    } catch (e) { /* 無 haptic 環境 */ }
+  }
+
   // 開始 / 更新 / 結束 scrub（touch 與 mouse 共用）。
   function beginScrub(clientX) {
     scrubState = { startX: clientX, startIdx: idx, scrubWidth: window.innerWidth || 0 };
     if (indicatorEl) indicatorEl.classList.add('__jread-scrubbing');
+    showScrubTrack(); // v0.8.151：按住起拖時出現進度條
   }
   function updateScrub(clientX) {
     if (!scrubState) return;
     const target = computeScrubTarget(
       scrubState.startIdx, clientX - scrubState.startX, scrubState.scrubWidth, pageCount());
-    if (target !== idx) goTo(target, false); // 即時跳頁、無動畫（live preview）
+    if (target !== idx) {
+      goTo(target, false); // 即時跳頁、無動畫（live preview）
+      triggerHaptic();     // v0.8.151：每跨一頁觸發觸覺（picker 滾輪式回饋）
+    }
+    updateScrubFill();
   }
   function endScrub() {
     if (!scrubState) return;
     scrubState = null;
     if (indicatorEl) indicatorEl.classList.remove('__jread-scrubbing');
+    hideScrubTrack(); // v0.8.151：放手淡出進度條
   }
 
   // 桌面滑鼠 scrub：頁碼上 mousedown 起拖，window 收 mousemove/up（拖出指示器
@@ -730,6 +796,9 @@
       mouseScrubBound = false;
     }
     if (indicatorEl) { indicatorEl.remove(); indicatorEl = null; }
+    // v0.8.151：移除 scrub 進度條 + 觸覺載體
+    if (scrubTrackEl) { scrubTrackEl.remove(); scrubTrackEl = null; scrubFillEl = null; }
+    if (hapticEl) { hapticEl.remove(); hapticEl = null; }
     if (art) art.scrollLeft = 0;
     // 還原進場前的文件卷動位置（overflow hidden 期間 scrollTop 歸零，
     // CSS 移除後不還原會讓使用者掉回頁首）。styler restore 在本 uninstall
