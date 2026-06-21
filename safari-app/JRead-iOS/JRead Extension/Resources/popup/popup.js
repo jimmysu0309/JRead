@@ -22,6 +22,8 @@ const paragraphSpacingValEl = document.getElementById('paragraph-spacing-val');
 const paragraphSpacingAutoBtn = document.getElementById('paragraph-spacing-auto-btn');
 const contentWidthValEl = document.getElementById('content-width-val');
 const fontFamilySelect = document.getElementById('font-family-select');
+const latinFontSelect = document.getElementById('latin-font-select');
+const latinFontRow = document.getElementById('latin-font-row');
 const fontWeightBtns = document.querySelectorAll('[data-weight]');
 const themeBtns = document.querySelectorAll('.theme-btn');
 const autoDomainRow = document.getElementById('auto-domain-row');
@@ -159,6 +161,23 @@ function render(settings) {
   if (fontFamilySelect) {
     fontFamilySelect.value = settings.fontFamily;
     if (fontFamilySelect.value === '') fontFamilySelect.value = FONT_STACKS.system;
+  }
+  // v0.8.144：英文（拉丁）fallback 字型 row——只在字型選襯線 / 無襯線時顯示，
+  // 各自載入記住的選擇（latinSerif / latinSans）。系統預設 / 等寬 / 外部自訂
+  // stack 時整 row 隱藏（英文 fallback 對這些選項無意義）。
+  if (latinFontSelect && latinFontRow) {
+    const ff = settings.fontFamily;
+    if (ff === FONT_STACKS.serif) {
+      latinFontRow.hidden = false;
+      latinFontSelect.value = settings.latinSerif || 'auto';
+    } else if (ff === FONT_STACKS.sans) {
+      latinFontRow.hidden = false;
+      latinFontSelect.value = settings.latinSans || 'auto';
+    } else {
+      latinFontRow.hidden = true;
+    }
+    // value 對不到 option（外部寫入怪值）時 fall back 顯示「自動」
+    if (latinFontSelect.value === '') latinFontSelect.value = 'auto';
   }
   // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
   if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
@@ -321,6 +340,15 @@ document.querySelector('[data-action="width-inc"]').addEventListener('click', ()
 if (fontFamilySelect) {
   fontFamilySelect.addEventListener('change', (e) => {
     save({ fontFamily: e.target.value });
+  });
+}
+
+// v0.8.144：英文（拉丁）fallback 字型——寫進當前字型對應的 key（襯線 → latinSerif、
+// 無襯線 → latinSans）。兩者各自記，切回另一個字型時載回各自的選擇。
+if (latinFontSelect) {
+  latinFontSelect.addEventListener('change', (e) => {
+    if (current.fontFamily === FONT_STACKS.serif) save({ latinSerif: e.target.value });
+    else if (current.fontFamily === FONT_STACKS.sans) save({ latinSans: e.target.value });
   });
 }
 

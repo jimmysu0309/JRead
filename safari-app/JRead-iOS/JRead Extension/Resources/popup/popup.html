@@ -621,6 +621,31 @@
       </select>
     </div>
 
+    <!-- v0.8.144：英文（拉丁）fallback 字型。只在「字型」選襯線 / 無襯線時顯示
+         （render() 控制 hidden），各自記住選擇（latinSerif / latinSans）。
+         「自動」= 沿用該選項內建西文字型（襯線 Georgia、無襯線 -apple-system）。 -->
+    <div class="setting-row" id="latin-font-row" hidden>
+      <label for="latin-font-select">英文字型</label>
+      <select id="latin-font-select" class="font-family-select" aria-label="英文字型">
+        <option value="auto">自動</option>
+        <optgroup label="襯線">
+          <option value="georgia">Georgia</option>
+          <option value="times">Times New Roman</option>
+          <option value="charter">Charter</option>
+          <option value="palatino">Palatino</option>
+        </optgroup>
+        <optgroup label="無襯線">
+          <option value="helvetica">Helvetica Neue</option>
+          <option value="arial">Arial</option>
+          <option value="verdana">Verdana</option>
+        </optgroup>
+        <optgroup label="等寬">
+          <option value="sfmono">SF Mono</option>
+          <option value="consolas">Consolas</option>
+        </optgroup>
+      </select>
+    </div>
+
     <!-- v0.7.227：翻頁模式——電子書式水平翻頁（左右滑動 / ←→ 鍵 / 滾輪），
          圖片自動縮放至單頁內。 -->
     <div class="setting-row">
