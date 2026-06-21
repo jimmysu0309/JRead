@@ -14,6 +14,11 @@
 //   - 滾輪 / 觸控板翻頁（水平或垂直 delta 累積過門檻，含慣性尾巴鎖定）
 //   - 頁碼指示（#__jread-page-indicator，底部置中「3 / 43」）+ 復用
 //     styler 的 #__jread-progress 進度條（寬度 = 已讀頁比例）
+//   - 頁碼 scrubber（v0.8.150）：按住頁碼指示器水平拖曳即時跳頁（快速捲動）。
+//     拖曳走完 viewport 寬 = 涵蓋全部頁範圍（小空間大跳幅）；touch 走 window
+//     touch 管線（起點命中指示器 → 進 scrub、不另判翻頁 swipe），桌面滑鼠走
+//     指示器 mousedown + window mousemove/up；指示器在 styler 設 pointer-events:
+//     auto + touch-action:none 才接得到事件
 //   - resize / 旋轉時重算頁數、保持目前閱讀比例位置
 //
 // stride 恆等式：styler CSS 設 column-gap = 左右視覺內距和（左 padding +
@@ -113,6 +118,22 @@
     return maxScrollLeft / k;
   }
 
+  // v0.8.150：頁碼指示器當 scrubber——按住頁碼水平拖曳即時跳頁（快速捲動）。
+  // 純邏輯：給定起拖時的頁碼 startIdx、本次水平拖曳位移 dx、scrub 寬度
+  // scrubWidth（「拖曳走完此寬度 = 涵蓋全部頁範圍」，install 時取 viewport 寬）、
+  // 總頁數 total，回傳目標頁（clamp 0..total-1）。
+  //   - 往右拖（dx 正）→ 後面的頁；往左拖（dx 負）→ 前面的頁（slider 直覺，
+  //     與左滑翻下一頁的 swipe 方向相反——scrubber 是「把進度條往右拉 = 往後」）。
+  //   - scrubWidth = 全 viewport 寬 → 小空間大跳幅（64 頁時每頁約 6px），達成
+  //     「快速捲動」；total <= 1 / 退化輸入 → clamp 回 startIdx，不動頁。
+  function computeScrubTarget(startIdx, dx, scrubWidth, total) {
+    const t = total > 0 ? total : 1;
+    const base = Math.max(0, Math.min(t - 1, startIdx || 0));
+    if (!(t > 1) || !(scrubWidth > 0) || !isFinite(dx)) return base;
+    const n = Math.round(base + (dx / scrubWidth) * (t - 1));
+    return Math.max(0, Math.min(t - 1, n));
+  }
+
   // swipe 手勢分類。輸入純物件 { dx, dy, startX, viewportW }：
   //   dx/dy = touchend − touchstart 位移；startX = 起點 clientX。
   // 回傳 'next'（往左滑 = 翻下一頁）/ 'prev' / null。
@@ -155,6 +176,10 @@
   let wheelAccum = 0;
   let wheelLockUntil = 0;
   let touchState = null;    // { startX, startY, multi }
+  // v0.8.150：頁碼 scrubber 拖曳狀態。{ startX, startIdx, scrubWidth }；非 null =
+  // 正在拖頁碼快速捲動（與 touchState swipe 互斥——拖頁碼時不另判翻頁 swipe）。
+  let scrubState = null;
+  let mouseScrubBound = false; // 桌面滑鼠 scrub 的 window mousemove/up 是否已掛
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
@@ -293,6 +318,9 @@
         // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
         // markAncestors 標記，不受該規則影響。
         (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
+        // v0.8.150：頁碼當 scrubber——桌面滑鼠在指示器上按下起拖（touch 走
+        // window touch 管線，靠 isIndicatorTarget 判定，不在此掛）
+        indicatorEl.addEventListener('mousedown', onIndicatorMouseDown);
       }
       renderIndicator();
     } else if (indicatorEl) {
@@ -456,9 +484,68 @@
     wheelLockUntil = now + WHEEL_LOCKOUT_MS;
   }
 
+  // v0.8.150：本次手勢起點是否落在頁碼指示器上（= 要進 scrub 模式）。指示器在
+  // styler CSS 設 pointer-events:auto 才會成為 hit-test target；showIndicator 關
+  // 時無指示器，自然不會命中。
+  function isIndicatorTarget(target) {
+    if (!indicatorEl || !target) return false;
+    if (target === indicatorEl) return true;
+    // target 可能不是 Node（如 window，jsdom 對非 Node 的 contains 會 throw）→ 包 try
+    try { return indicatorEl.contains(target); } catch (e) { return false; }
+  }
+
+  // 開始 / 更新 / 結束 scrub（touch 與 mouse 共用）。
+  function beginScrub(clientX) {
+    scrubState = { startX: clientX, startIdx: idx, scrubWidth: window.innerWidth || 0 };
+    if (indicatorEl) indicatorEl.classList.add('__jread-scrubbing');
+  }
+  function updateScrub(clientX) {
+    if (!scrubState) return;
+    const target = computeScrubTarget(
+      scrubState.startIdx, clientX - scrubState.startX, scrubState.scrubWidth, pageCount());
+    if (target !== idx) goTo(target, false); // 即時跳頁、無動畫（live preview）
+  }
+  function endScrub() {
+    if (!scrubState) return;
+    scrubState = null;
+    if (indicatorEl) indicatorEl.classList.remove('__jread-scrubbing');
+  }
+
+  // 桌面滑鼠 scrub：頁碼上 mousedown 起拖，window 收 mousemove/up（拖出指示器
+  // 外仍持續）。touch 裝置走 touch 管線、不會觸發 mouse 事件，故兩軌不重複。
+  function onIndicatorMouseDown(e) {
+    if (e.button !== 0) return; // 只認左鍵
+    e.preventDefault();
+    beginScrub(e.clientX);
+    if (!mouseScrubBound) {
+      window.addEventListener('mousemove', onWindowMouseMove, true);
+      window.addEventListener('mouseup', onWindowMouseUp, true);
+      mouseScrubBound = true;
+    }
+  }
+  function onWindowMouseMove(e) {
+    if (!scrubState) return;
+    e.preventDefault();
+    updateScrub(e.clientX);
+  }
+  function onWindowMouseUp() {
+    endScrub();
+    if (mouseScrubBound) {
+      window.removeEventListener('mousemove', onWindowMouseMove, true);
+      window.removeEventListener('mouseup', onWindowMouseUp, true);
+      mouseScrubBound = false;
+    }
+  }
+
   function onTouchStart(e) {
-    if (e.touches.length !== 1) { touchState = null; return; } // 多指讓位（3 指 toggle 等）
+    if (e.touches.length !== 1) { touchState = null; endScrub(); return; } // 多指讓位（3 指 toggle 等）
     const t = e.touches[0];
+    // v0.8.150：起點落在頁碼指示器 → 進 scrub 模式（不另判翻頁 swipe）
+    if (isIndicatorTarget(e.target)) {
+      touchState = null;
+      beginScrub(t.clientX);
+      return;
+    }
     // lastX/lastY：追蹤手指最後位置——iOS 在可點擊圖片/連結上啟動原生 image-
     // drag / callout 時，會對進行中的單指水平 swipe 送 touchcancel（不送 touchend）。
     // onTouchCancel 靠這個累積位移補判翻頁（changedTouches 在 cancel 時可能位移
@@ -474,6 +561,14 @@
   // 第一頁無上一頁可翻，但 Safari 仍把邊緣滑動解讀成返回；preventDefault 後
   // Safari 收不到該手勢、不再導航（翻頁仍由 touchend 的 classifySwipe 處理）。
   function onTouchMove(e) {
+    // v0.8.150：scrub 進行中——拖頁碼即時跳頁，preventDefault 擋住底層文件捲動/
+    // iOS 返回手勢（指示器 touch-action:none 已擋大部分，preventDefault 兜底）。
+    if (scrubState) {
+      if (e.touches.length !== 1) { endScrub(); return; }
+      if (e.cancelable) e.preventDefault();
+      updateScrub(e.touches[0].clientX);
+      return;
+    }
     if (!touchState) return;
     if (e.touches.length !== 1) { touchState = null; return; }
     const t = e.touches[0];
@@ -494,6 +589,12 @@
   }
 
   function onTouchEnd(e) {
+    // v0.8.150：scrub 結束（手指離開 → 停在目前預覽頁，不再翻動）
+    if (scrubState) {
+      if (e.touches.length > 0) return;
+      endScrub();
+      return;
+    }
     if (!touchState || e.touches.length > 0) return;
     // v0.8.57：選取控制點拖曳放手時選取仍在 → 不翻頁（與 onTouchMove 放行一致），
     // 否則拖曳擴選的水平位移會被 classifySwipe 判成翻頁、選到一半被切走。
@@ -516,6 +617,8 @@
   // 若仍構成水平 swipe（classifySwipe 同款 threshold / 角度 / 邊緣 guard），照樣翻頁。
   // tap / 微動 / 垂直滑 / 邊緣手勢都不會通過 classifySwipe，不會誤翻。
   function onTouchCancel(e) {
+    // v0.8.150：scrub 進行中被 cancel（iOS 中斷）→ 收尾停在目前頁，不補判翻頁
+    if (scrubState) { endScrub(); touchState = null; return; }
     // v0.8.57：選取作用中時 iOS 對選取手勢送 touchcancel，補判翻頁會誤翻 → 放行
     if (touchState && hasActiveSelection()) { touchState = null; return; }
     if (touchState) {
@@ -618,6 +721,14 @@
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
     unlockVScroll();
+    // v0.8.150：清 scrub 狀態 + 解除桌面滑鼠 scrub 的 window listener（拖曳中離開
+    // 也不殘留）。indicator.remove() 連帶移除其 mousedown listener。
+    endScrub();
+    if (mouseScrubBound) {
+      window.removeEventListener('mousemove', onWindowMouseMove, true);
+      window.removeEventListener('mouseup', onWindowMouseUp, true);
+      mouseScrubBound = false;
+    }
     if (indicatorEl) { indicatorEl.remove(); indicatorEl = null; }
     if (art) art.scrollLeft = 0;
     // 還原進場前的文件卷動位置（overflow hidden 期間 scrollTop 歸零，
@@ -686,6 +797,7 @@
     computePageCount,
     computePageCountFromExtent,
     quantizeStride,
+    computeScrubTarget,
     classifySwipe,
     classifyKey,
     shouldBlockTouchMove,
