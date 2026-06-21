@@ -2205,6 +2205,47 @@ html [${ARTICLE_ATTR}="1"] a {
 /* 拖曳中（paged-mode.js 加 class）：淡底回饋「已抓住」，不拖時看不出差異維持低調 */
 #__jread-page-indicator.__jread-scrubbing {
   background: rgba(128, 128, 128, 0.18);
+}
+/* v0.8.151 scrub 進度條：按住頁碼起拖時才出現（paged-mode.js 加 .__jread-scrub-visible
+   fade-in）、放手淡出。位置在頁碼指示器上方置中、fill 寬 = 目前頁占全文比例，
+   讓使用者拖曳時看得到在全文的哪個位置。fill 用 theme.progressBar 與頂部進度條同色。 */
+#__jread-scrub-track {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(72vw, 360px);
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.25);
+  z-index: 2147483647;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+#__jread-scrub-track.__jread-scrub-visible {
+  opacity: 1;
+}
+#__jread-scrub-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: ${theme.progressBar};
+}
+/* v0.8.151 觸覺回饋載體：iOS Safari 不支援 navigator.vibrate，改用 iOS 17.4+ 的
+   原生 switch checkbox——隱藏的 <label><input type=checkbox switch>，在 touch 手勢內
+   label.click() 切換 switch 觸發系統觸覺 tick（paged-mode.js triggerHaptic）。
+   不可 display:none（會讓 switch 不渲染、觸覺不發）→ 用 1px + opacity:0 藏起來。 */
+#__jread-haptic {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
 }`;
     }
 
