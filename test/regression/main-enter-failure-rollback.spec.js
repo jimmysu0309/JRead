@@ -69,7 +69,8 @@ describe('main.js — enter pipeline 容錯（v0.8.36）', () => {
   });
 
   it('scheduleReapply 在 await getSettings() 之後必須重跑 state guard', () => {
-    const m = MAIN_SRC.match(/const scheduleReapply = [\s\S]*?\n    \};/);
+    // v0.8.148：scheduleReapply 從 onChanged 閉包的 const arrow 改為模組層 function 宣告
+    const m = MAIN_SRC.match(/function scheduleReapply\(\) \{[\s\S]*?\n  \}/);
     assert.ok(m, '抓得到 scheduleReapply');
     const afterAwait = m[0].split('await getSettings()')[1] || '';
     assert.ok(/if \(!NS\.state\.active \|\| NS\.state\.cinemaActive\) return;/.test(afterAwait) &&

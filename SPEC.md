@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.147**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.148**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -465,7 +465,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 **英文（拉丁）fallback 字型自訂（v0.8.144，`latinSerif` / `latinSans`）**：「字型」選**襯線 / 無襯線**時，下方多一個「英文字型」select，可單獨指定英文 / 數字用哪個拉丁字型（中文仍由該 stack 的 CJK 字體渲染）。襯線 / 無襯線**各自記一個**選擇（`latinSerif` / `latinSans`，預設 `'auto'`）；系統預設（不覆寫）與等寬沒有這個維度，select 整 row 隱藏（`render()` 依 `fontFamily` 控制顯隱）。清單（鍵集中於 `settings-defaults.js` 的 `LATIN_FONTS`）：
 
 - 自動（沿用 base stack 內建西文字型）
-- **襯線群**：Georgia / Times New Roman / Charter / Palatino（系統字，只點名）／ **Literata / Source Serif / Piazzolla**（v0.8.146 自帶 woff2，見下）
+- **襯線群**：Georgia / Charter / Palatino（系統字，只點名；v0.8.148 移除 Times New Roman——Georgia 已涵蓋襯線系統字需求）／ **Literata / Source Serif / Piazzolla**（v0.8.146 自帶 woff2，見下）
 - **無襯線群**：Helvetica Neue / Arial / Verdana（系統字）／ **Public Sans / Source Sans**（v0.8.146 自帶 woff2）
 - 等寬群（無襯線 base 不顯示，襯線 base 才出現於 select）：SF Mono / Consolas
 
@@ -512,7 +512,8 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 
 詞彙單一資料源：`content/namespace.js` 的 `NS.MSG` 表；三方一致（MSG 表 ↔ content 發送 ↔ SW case）由 `test/regression/message-protocol-consistency.spec.js` 強制（v0.8.37）。
 
-- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）/ `EDIT_MODE_TOGGLE`（v0.8.108，切換編輯模式；content 端 guard 閱讀模式須 active。`GET_READER_STATE` 回應含 `editModeActive` 供 popup 切「編輯模式 / 完成編輯」按鈕文字）
+- `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）/ `EDIT_MODE_TOGGLE`（v0.8.108，切換編輯模式；content 端 guard 閱讀模式須 active。`GET_READER_STATE` 回應含 `editModeActive` 供 popup 切「編輯模式 / 完成編輯」按鈕文字）/ `REAPPLY_SETTINGS`（v0.8.148，設定即時重套的 iOS 兜底）
+  - **`REAPPLY_SETTINGS`（v0.8.148）**：設定即時重套**主要**走 content script 的 `chrome.storage.onChanged` 廣播（popup 寫 `storage.sync` → content 收到 → `scheduleReapply`），桌機 Chrome 即時生效。但 **iOS Safari popup 開啟時底層頁面被掛起、`storage.onChanged` 事件被丟掉**（不排隊、不補送）→ iPhone 改主題 / 字級閱讀模式不即時生效、要重整。修法：popup 每次 `commitSave` 後額外送 `REAPPLY_SETTINGS` 給當前分頁，content `onMessage` 收到就 `scheduleReapply`（同 `active` / `cinemaActive` / `articleEl` guard）——runtime 訊息在 iOS 仍會送達（`TOGGLE_READER_MODE` 走同路徑、iPhone 可用為證）。`scheduleReapply` 自 `onChanged` 閉包搬到模組層、與訊息 handler 共用（單一資料源）；桌機與 `onChanged` 經 200ms debounce 合併、不雙重重套。forcing function `test/regression/ios-reapply-settings-message.spec.js`
 - `popup → background`：（無）。popup / options 的設定讀寫一律直接走 `chrome.storage.sync`、不經 SW。**v0.8.65 起送 Readwise 不再走 SW**——原 `SAVE_TO_READWISE`（v0.7.33）popup → SW 往返已移除，改在 popup（extension 頁、有 `<all_urls>` host_permission）直接 fetch（`popup-core.saveReaderPayload`）。動機：iOS Safari 背景頁（event page、`persistent:false`）被系統掛起得遠比 macOS 積極，popup → SW 非同步往返 + 背景頁 fetch 在 iOS 會 silently 失敗（popup `await` 拿到 `undefined` → 純「送出失敗」無 HTTP 碼；macOS Chrome / Safari 正常）。options「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走同一路徑
 - `content → background`：
   - `GET_SETTINGS`：**v0.7.235** 起 content 端 `getSettings` 不再走 round-trip——改直讀 `chrome.storage.sync.get(defaults)`（defaults 來自 `content/settings-defaults.js` 單一資料源）；iOS Safari background 訊息會無聲掉包（thread 758346 / 787958），掉包時舊版回 `undefined` → 所有設定 fallback 預設值（pagedMode 永遠 false = 「翻頁模式 iOS 沒功能」根因）。handler 保留，僅作 content 端 storage 失效（context invalidated）時的 fallback
