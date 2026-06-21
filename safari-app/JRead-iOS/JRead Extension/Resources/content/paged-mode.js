@@ -540,27 +540,38 @@
     if (scrubTrackEl) scrubTrackEl.classList.remove('__jread-scrub-visible');
   }
 
-  // v0.8.151：觸覺回饋。優先 navigator.vibrate（Android / 支援平台）；iOS Safari
-  // 不支援 vibrate → 退回 iOS 17.4+ 的 switch checkbox haptic（隱藏 label.click()
-  // 在 touch 手勢內切換 switch 觸發系統觸覺 tick）。桌面無觸覺馬達 → vibrate no-op、無害。
+  // v0.8.151/153：觸覺回饋。iOS Safari 不支援 navigator.vibrate，唯一可行的 web 觸覺是
+  // iOS 17.4+ 的原生 switch checkbox——對 <label><input type=checkbox switch>] 程式
+  // label.click() 在 user gesture 內切換 switch、系統發觸覺 tick。
+  // v0.8.153 比照實證可動的 ios-haptics 套件精確做法（v0.8.151/152 仍無觸覺）：
+  //   - 載體掛 document.body（非 <html>）、inline display:none（套件證明 display:none
+  //     不影響觸覺——觸覺由 click 切換 switch 狀態觸發、與是否渲染無關）
+  //   - aria-hidden（無障礙不讀）
+  //   - 不論 navigator.vibrate 是否存在都跑 switch click（避免 vibrate 提早 return：
+  //     某些 iOS WebView 可能定義 vibrate stub 但 no-op，舊版會卡在 vibrate 不跑 switch）
   function ensureHaptic() {
     if (hapticEl && hapticEl.isConnected) return;
     hapticEl = document.createElement('label');
     hapticEl.id = HAPTIC_ID;
+    hapticEl.setAttribute('aria-hidden', 'true');
+    hapticEl.style.display = 'none';
     const inp = document.createElement('input');
     inp.type = 'checkbox';
-    inp.setAttribute('switch', ''); // iOS 原生 switch 外觀，切換時系統發觸覺
+    inp.setAttribute('switch', ''); // iOS 17.4+ 原生 switch，切換時系統發觸覺
     hapticEl.appendChild(inp);
-    (document.head?.parentElement || document.documentElement).appendChild(hapticEl);
+    (document.body || document.documentElement).appendChild(hapticEl);
   }
   function triggerHaptic() {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.vibrate) { navigator.vibrate(8); return; }
-    } catch (e) { /* 某些平台 vibrate 受限 */ }
+    // iOS：switch click（主路徑）。Android / 支援平台：navigator.vibrate 也補一發。
+    // 兩者並行：iOS vibrate 不存在只剩 switch、Android switch 不發觸覺只剩 vibrate，
+    // 各平台都恰好一次觸覺（桌面兩者皆 no-op、無害）。
     try {
       ensureHaptic();
-      hapticEl.click(); // iOS switch haptic（必須在 user gesture 內，scrub 由 touchmove 觸發符合）
+      hapticEl.click(); // 必須在 user gesture（scrub touchmove）內同步呼叫，不可丟 rAF
     } catch (e) { /* 無 haptic 環境 */ }
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8);
+    } catch (e) { /* 某些平台 vibrate 受限 */ }
   }
 
   // 開始 / 更新 / 結束 scrub（touch 與 mouse 共用）。
