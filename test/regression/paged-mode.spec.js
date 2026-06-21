@@ -274,6 +274,18 @@ describe('翻頁模式（v0.7.227）', () => {
         'forcing：不得殘留 pointer-events: none（會讓頁碼 scrub 全滅）');
     });
 
+    it('pagedMode: true → 注入 scrub 進度條 + 觸覺載體樣式（v0.8.151）', () => {
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      assert.ok(css.includes('#__jread-scrub-track'), '須含 scrub 進度條容器樣式');
+      assert.ok(css.includes('#__jread-scrub-fill'), '須含 scrub 進度條 fill 樣式');
+      assert.ok(css.includes('#__jread-haptic'), '須含觸覺載體樣式');
+      // 觸覺載體不可 display:none——iOS switch checkbox display:none 時不渲染、觸覺不發
+      const hm = css.match(/#__jread-haptic\s*\{([^}]*)\}/);
+      assert.ok(hm, '須有 #__jread-haptic 規則');
+      assert.ok(!/display:\s*none/.test(hm[1]),
+        'forcing：#__jread-haptic 不可 display:none（iOS switch 須渲染才發觸覺，用 1px+opacity:0 藏）');
+    });
+
     it('pagedMode 未設定（預設）→ 翻頁 CSS 一行都不注入（垂直模式零改動）', () => {
       const css = applyAndGetCss(BASE_SETTINGS);
       assert.ok(!css.includes('column-fill'), '預設不得含翻頁 column 規則');
@@ -877,6 +889,58 @@ describe('翻頁模式（v0.7.227）', () => {
       env.window.dispatchEvent(mu);
       assert.ok(!ind.classList.contains('__jread-scrubbing'), 'mouseup 後移除 scrubbing class');
       api.uninstall();
+    });
+
+    // v0.8.151：按住起拖出現 scrub 進度條、fill 寬 = 目前頁占比；放手 / uninstall 清除
+    it('按住頁碼起拖 → 出現 scrub 進度條，拖動時 fill 寬隨頁更新', () => {
+      const { env, api } = loadInstalled();
+      const W = env.window.innerWidth;
+      fireTouchOn(env, indicator(env), 'touchstart', [{ clientX: 10, clientY: 700 }]);
+      const fill = env.document.getElementById('__jread-scrub-fill');
+      assert.ok(env.document.getElementById('__jread-scrub-track'), 'beginScrub 後須建立 scrub 進度條');
+      assert.ok(fill, '須有 fill 子元素');
+      assert.strictEqual(fill.style.width, '0%', '第一頁 fill = 0%');
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 10 + W, clientY: 700 }]); // 拖到末頁
+      assert.strictEqual(fill.style.width, '100%', '末頁 fill = 100%');
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 10, clientY: 700 }]); // 拖回起點
+      assert.strictEqual(fill.style.width, '0%', '拖回第一頁 fill = 0%');
+      fireTouchOn(env, env.window, 'touchend', []);
+      assert.ok(!env.document.getElementById('__jread-scrub-track').classList.contains('__jread-scrub-visible'),
+        '放手後進度條淡出（移除 visible class）');
+      api.uninstall();
+      assert.strictEqual(env.document.getElementById('__jread-scrub-track'), null,
+        'uninstall 後移除 scrub 進度條');
+    });
+
+    it('拖動跨頁觸發觸覺回饋（navigator.vibrate 優先）', () => {
+      const { env, api } = loadInstalled();
+      let vibes = 0;
+      Object.defineProperty(env.window.navigator, 'vibrate',
+        { value: () => { vibes++; return true; }, configurable: true });
+      const W = env.window.innerWidth;
+      fireTouchOn(env, indicator(env), 'touchstart', [{ clientX: 10, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 10 + W, clientY: 700 }]); // 0 → 末頁，跨頁
+      assert.ok(vibes >= 1, '拖動跨頁必須觸發 navigator.vibrate');
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 10, clientY: 700 }]); // 同位置不跨頁
+      assert.strictEqual(vibes, 2, '每次跨頁各觸發一次（末頁 → 回第一頁 = 第二次）');
+      fireTouchOn(env, env.window, 'touchend', []);
+      api.uninstall();
+    });
+
+    it('無 navigator.vibrate（iOS）→ 退回 switch checkbox haptic 載體', () => {
+      const { env, api } = loadInstalled();
+      try { delete env.window.navigator.vibrate; } catch (e) { /* */ }
+      const W = env.window.innerWidth;
+      fireTouchOn(env, indicator(env), 'touchstart', [{ clientX: 10, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 10 + W, clientY: 700 }]);
+      const haptic = env.document.getElementById('__jread-haptic');
+      assert.ok(haptic, '無 vibrate 時須建立 switch haptic 載體');
+      assert.ok(haptic.querySelector('input[type="checkbox"][switch]'),
+        'haptic 載體須含 iOS switch checkbox');
+      fireTouchOn(env, env.window, 'touchend', []);
+      api.uninstall();
+      assert.strictEqual(env.document.getElementById('__jread-haptic'), null,
+        'uninstall 後移除觸覺載體');
     });
   });
 
