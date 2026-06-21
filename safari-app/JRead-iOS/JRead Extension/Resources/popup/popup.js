@@ -221,6 +221,21 @@ function commitSave() {
     const p = chrome.storage.sync.set(patch);
     if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch (_) { /* callback 模式（無 promise 回傳）的同步 throw 兜底 */ }
+  notifyContentReapply();
+}
+
+// v0.8.148：主動叫 content script 即時重套設定。為什麼需要：iOS Safari popup 開啟時
+// 底層頁面被掛起，content 的 storage.onChanged 廣播被丟掉（桌機 Chrome 頁面在 popup
+// 後仍存活故照收）→ 改主題 / 字級閱讀模式不即時生效、要重整。runtime 訊息在 iOS 仍
+// 會送達（toggle 走同路徑可用為證），故額外送 REAPPLY_SETTINGS 補上。fire-and-forget：
+// 非注入頁 / 連不上 / 非閱讀模式都會被 content 端 guard 或 reject 吞掉；桌機與
+// onChanged 經 content 端 200ms debounce 合併、不雙重重套。
+function notifyContentReapply() {
+  getActiveTabId().then((tabId) => {
+    if (typeof tabId !== 'number') return;
+    const p = chrome.tabs.sendMessage(tabId, { type: 'REAPPLY_SETTINGS' });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  }).catch(() => {});
 }
 
 function save(patch) {

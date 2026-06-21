@@ -1083,6 +1083,41 @@
   }
   NS.dispatchLocalCommand = dispatchLocalCommand;
 
+  // v0.7.143：reapply 走 debounce 合併。popup 連點 stepper 字級/版心會觸發多次
+  // storage.sync.set → 多次 restore + await getSettings + apply 並發纏繞——
+  // originalStyles 可能 snapshot 已套樣式的中間狀態，最後 exit 還原不回原貌。
+  // 200ms 對人類連點足夠合併、對「單次調整」無感。
+  // v0.8.148：從 storage.onChanged 閉包內搬到模組層——onMessage 的 REAPPLY_SETTINGS
+  // handler（iOS onChanged 丟事件的兜底）也要呼叫同一個 scheduleReapply，單一資料源。
+  let reapplyTimer = null;
+  function scheduleReapply() {
+    if (reapplyTimer) clearTimeout(reapplyTimer);
+    reapplyTimer = setTimeout(async () => {
+      reapplyTimer = null;
+      // v0.7.143：cinema mode active 時 articleEl=null，styler.restore null 無意義
+      // 且可能 throw；明確 guard 避免誤觸發。reader mode 中途切到 cinema 不該踩。
+      if (!NS.state.active || NS.state.cinemaActive) return;
+      if (!NS.state.articleEl || !NS.styler) return;
+      NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
+      const settings = await getSettings();
+      // v0.8.36：await 期間使用者可能已按 ESC 退出 / 切 cinema / SPA 導航
+      // 拆卡（exit 是同步的、不被 enterInFlight 擋）——此時 articleEl 已是
+      // null，繼續 apply 會注入無主 stylesheet 並在 inactive 狀態下覆寫
+      // originalStyles。await 之後必須重跑同一組 guard。
+      if (!NS.state.active || NS.state.cinemaActive) return;
+      if (!NS.state.articleEl || !NS.styler) return;
+      // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
+      // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
+      if (NS.pagedMode) NS.pagedMode.captureScrollY();
+      NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
+      // v0.7.227：reapply 後重同步翻頁模組（pagedMode 切換 / 字級版心調整
+      // 都會改頁面切割，模組內部重算頁數並回到原閱讀比例）；spaceScroll
+      // 跟著重同步（依 pagedMode installed 狀態讓位或恢復）
+      syncPagedModeFromSettings(settings);
+      syncSpaceScrollFromSettings(settings);
+    }, 200);
+  }
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg.type !== 'string') return;
 
@@ -1091,6 +1126,18 @@
         sendResponse(await toggleReader());
       })();
       return true;
+    }
+
+    // v0.8.148：popup commitSave 後送來的「即時重套」訊息——iOS Safari popup 開啟時
+    // 底層頁面被掛起、storage.onChanged 廣播被丟掉（桌機 Chrome 無此問題），靠這條
+    // 主動訊息補上即時重套。閱讀模式未啟動 / cinema 下 guard no-op（同 onChanged 路徑）。
+    // scheduleReapply 200ms debounce 與 onChanged 合併，桌機不會雙重重套。
+    if (msg.type === NS.MSG.REAPPLY_SETTINGS) {
+      if (NS.state.active && !NS.state.cinemaActive && NS.state.articleEl && NS.styler) {
+        scheduleReapply();
+      }
+      sendResponse({ ok: true });
+      return; // 同步回應
     }
 
     // v0.7.228：SW dispatchCommand 委派（manifest 預設鍵路徑）。command 白名單
@@ -1180,39 +1227,7 @@
   // 走 storage.onChanged 而非訊息，好處是即使同時有多個分頁開啟閱讀模式，
   // 每個 tab 的 content script 都會收到事件、各自更新。
   if (chrome.storage && chrome.storage.onChanged) {
-    // v0.7.143：reapply 走 debounce 合併。popup 連點 stepper 字級/版心會觸發多次
-    // storage.sync.set → 多次 restore + await getSettings + apply 並發纏繞——
-    // originalStyles 可能 snapshot 已套樣式的中間狀態，最後 exit 還原不回原貌。
-    // 200ms 對人類連點足夠合併、對「單次調整」無感。
-    let reapplyTimer = null;
-    const scheduleReapply = () => {
-      if (reapplyTimer) clearTimeout(reapplyTimer);
-      reapplyTimer = setTimeout(async () => {
-        reapplyTimer = null;
-        // v0.7.143：cinema mode active 時 articleEl=null，styler.restore null 無意義
-        // 且可能 throw；明確 guard 避免誤觸發。reader mode 中途切到 cinema 不該踩。
-        if (!NS.state.active || NS.state.cinemaActive) return;
-        if (!NS.state.articleEl || !NS.styler) return;
-        NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
-        const settings = await getSettings();
-        // v0.8.36：await 期間使用者可能已按 ESC 退出 / 切 cinema / SPA 導航
-        // 拆卡（exit 是同步的、不被 enterInFlight 擋）——此時 articleEl 已是
-        // null，繼續 apply 會注入無主 stylesheet 並在 inactive 狀態下覆寫
-        // originalStyles。await 之後必須重跑同一組 guard。
-        if (!NS.state.active || NS.state.cinemaActive) return;
-        if (!NS.state.articleEl || !NS.styler) return;
-        // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
-        // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
-        if (NS.pagedMode) NS.pagedMode.captureScrollY();
-        NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
-        // v0.7.227：reapply 後重同步翻頁模組（pagedMode 切換 / 字級版心調整
-        // 都會改頁面切割，模組內部重算頁數並回到原閱讀比例）；spaceScroll
-        // 跟著重同步（依 pagedMode installed 狀態讓位或恢復）
-        syncPagedModeFromSettings(settings);
-        syncSpaceScrollFromSettings(settings);
-      }, 200);
-    };
-
+    // scheduleReapply 已搬到模組層（v0.8.148，與 onMessage REAPPLY_SETTINGS 共用）。
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
       if (!NS.state.active) return;

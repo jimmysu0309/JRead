@@ -560,6 +560,12 @@
       // Readwise integration（v0.7.33）
       GET_READER_STATE: 'GET_READER_STATE',         // popup → content：reader mode 是否啟動，決定 popup 按鈕 disable 狀態
       EXTRACT_READER_HTML: 'EXTRACT_READER_HTML',   // popup → content：抽 reader card outerHTML + url + title
+      // v0.8.148：popup → content「設定已改、請即時重套」。為什麼需要：iOS Safari
+      // popup 開啟時底層頁面被掛起，storage.onChanged 廣播被丟掉（桌機 Chrome 頁面
+      // 在 popup 後仍存活故照收）→ 改設定閱讀模式不即時生效、要重整。popup 每次
+      // commitSave 後額外送本訊息主動觸發重套（runtime 訊息在 iOS 仍會送達——toggle
+      // 走同路徑可用為證）。桌機與 onChanged 經 scheduleReapply 200ms debounce 合併。
+      REAPPLY_SETTINGS: 'REAPPLY_SETTINGS',          // popup → content：設定已改、即時重套（iOS onChanged 丟事件的兜底）
       // v0.8.108：編輯模式（手動移除雜訊段落）
       EDIT_MODE_TOGGLE: 'EDIT_MODE_TOGGLE',         // popup → content：切換編輯模式（僅閱讀模式啟動時可用）
       // v0.8.65：SAVE_TO_READWISE 訊息已移除——popup 改在 extension 頁直接 fetch
