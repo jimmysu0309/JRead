@@ -68,26 +68,30 @@ function getStaticFlowSelectors(css) {
 }
 
 describe('styler — ratio / object-fit 容器後代 static flow（v0.8.94 New Yorker hero）', () => {
+  // v0.8.155：三條選擇器各補 :not(:has(iframe))——排除 responsive 影片嵌入
+  // 子樹（aspect 容器內含 iframe）不被打回 static，避免 YouTube/Vimeo iframe 失去
+  // absolute 後高度塌成 150px（見 styler-wp-aspect-ratio-embed-iframe.spec.js）。
+  // 圖片塌陷容器（無 iframe）行為不變、仍命中。
   it('static-flow 規則必須覆蓋 [class*="ratio"] 後代（核心修法）', () => {
     const css = getInjectedCss();
     assert.ok(
-      /\[class\*="ratio" i\]:not\(\[data-jread-player="1"\]\)\s*\*/.test(css),
-      'CSS 必須含 [class*="ratio" i]:not([data-jread-player="1"]) * selector（ratio 容器內 absolute overlay 拉回 static flow）'
+      /\[class\*="ratio" i\]:not\(\[data-jread-player="1"\]\):not\(:has\(iframe\)\)\s*\*/.test(css),
+      'CSS 必須含 [class*="ratio" i]:not([data-jread-player="1"]):not(:has(iframe)) * selector（ratio 容器內 absolute overlay 拉回 static flow，但排除 iframe 影片嵌入）'
     );
   });
 
   it('static-flow 規則必須覆蓋 [class*="object-fit"] 後代', () => {
     const css = getInjectedCss();
     assert.ok(
-      /\[class\*="object-fit" i\]:not\(\[data-jread-player="1"\]\)\s*\*/.test(css),
-      'CSS 必須含 [class*="object-fit" i]:not([data-jread-player="1"]) * selector'
+      /\[class\*="object-fit" i\]:not\(\[data-jread-player="1"\]\):not\(:has\(iframe\)\)\s*\*/.test(css),
+      'CSS 必須含 [class*="object-fit" i]:not([data-jread-player="1"]):not(:has(iframe)) * selector'
     );
   });
 
   it('既有 [class*="placeholder"] 後代 static-flow 不退步', () => {
     const css = getInjectedCss();
     assert.ok(
-      /\[class\*="placeholder" i\]:not\(\[data-jread-player="1"\]\)\s*\*/.test(css),
+      /\[class\*="placeholder" i\]:not\(\[data-jread-player="1"\]\):not\(:has\(iframe\)\)\s*\*/.test(css),
       'CSS 必須仍含 placeholder 後代 static-flow selector（v0.7.x 行為延續）'
     );
   });

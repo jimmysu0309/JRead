@@ -1011,10 +1011,23 @@ ${MEDIA_CAP_SEL} {
    漏掉 static-flow 配套）→ 不佔 flow 高度 → 容器塌成 0 → overlay inset:0 隨之
    0 高 + overflow:hidden 把 166px picture 整個裁掉 → hero 整張不見（Jimmy
    2026-06-16 截圖回報）。把 ratio 容器後代拉回 static，overlay 正常 flow、
-   height:auto 撐到 picture 實際高度，hero 重新顯示。 */
-[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]) *,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]:not([${PLAYER_ATTR}="1"]) *,
-[${ARTICLE_ATTR}="1"] [class*="object-fit" i]:not([${PLAYER_ATTR}="1"]) * {
+   height:auto 撐到 picture 實際高度，hero 重新顯示。
+   v0.8.155：三條選擇器各補 :not(:has(iframe))——aspect 容器若內含 iframe 是
+   responsive 影片嵌入（YouTube/Vimeo/TED 等 WP wp-embed / Substack / Medium
+   慣例：wrapper position:relative + ::before padding-top 16:9 hack 撐高 + iframe
+   position:absolute inset:0 填滿）。這條 static-flow 配套是給「圖片塌陷容器」
+   （New Yorker AspectRatioContainer / CNBC imageContainer）用的，套到影片嵌入
+   子樹會把 wrapper（relative→static）+ iframe（absolute→static）一起打回 static
+   → iframe 失去 absolute 後 height 掉回 HTML 預設 150px（reader iframe 規則只
+   cap 寬不動高）、wrapper 的 ::before aspect box 仍在 → 上方一塊空白 + 下方被
+   壓扁的影片（militaryrealism.blog wp-has-aspect-ratio YouTube 嵌入實證）。且
+   FILL_IFRAME 偵測在量 computed position 時看到 static→不標記→修不到。排除
+   :has(iframe) 子樹後 wrapper 維持 relative、iframe 維持 absolute，下方
+   FILL_IFRAME 機制接手 pin 回 inset:0 填滿 aspect box。圖片塌陷容器無 iframe、
+   不受此排除影響；圖片本身另有 :has(>img) static 配套（line ~1062）兜底。 */
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]):not(:has(iframe)) *,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]:not([${PLAYER_ATTR}="1"]):not(:has(iframe)) *,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i]:not([${PLAYER_ATTR}="1"]):not(:has(iframe)) * {
   position: static !important;
   top: auto !important;
   left: auto !important;
