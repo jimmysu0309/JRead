@@ -32,6 +32,14 @@
     fontSize: 18,
     contentWidth: 720,
     fontFamily: 'system-ui',
+    // v0.8.144：英文（拉丁）fallback 字型。襯線 / 無襯線各自記一個英文字型選擇
+    //（latinSerif / latinSans），'auto' = 沿用該 stack 內建的西文字型（襯線 = Georgia、
+    // 無襯線 = -apple-system）。只在 fontFamily 為襯線 / 無襯線 stack 時生效——
+    // 系統預設（不覆寫）與等寬無此維度。實際組合（前接到 base stack 前面）由
+    // composeFontStack() 在讀取邊界（main.js getSettings）執行，fontFamily 仍存
+    // base stack 字面值不變（既有契約不動、不需遷移既有使用者）。
+    latinSerif: 'auto',
+    latinSans: 'auto',
     // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。用真正的
     // font-weight 全平台生效，取代 v0.7.157 boldText（-webkit-font-smoothing 只在
     // macOS 有差異）。三段一律注入（含 400，避免原站內文非 400 時中退回原站與細撞色）。
@@ -114,11 +122,49 @@
     sans: '"Noto Sans TC", -apple-system, "Helvetica Neue", sans-serif'
   };
 
+  // v0.8.144：英文（拉丁）fallback 字型可選清單。value（key）存進 latinSerif /
+  // latinSans，composeFontStack() 把對應字面值「前接」到 fontFamily base stack 前面
+  //——CSS 逐字 fallback 下英文 / 數字先命中前接的拉丁字型，中文穿到 base stack 後段
+  // 的 CJK 字體。前接值只放**具名**字型（不含泛型 serif / sans-serif）：泛型放中段
+  // 會被 iOS WebKit 當「只解析拉丁」攔截、CJK 反而 fallback 到後綴 sans（詳見上方
+  // FONT_STACKS 註解）；具名字型缺字時自然往後落到 base stack 原有的 Georgia /
+  // -apple-system / 泛型，安全。'auto' = 不前接（沿用 base stack 內建西文字型）。
+  const LATIN_FONTS = {
+    auto: '',
+    georgia: 'Georgia',
+    times: '"Times New Roman"',
+    charter: 'Charter',
+    palatino: 'Palatino, "Palatino Linotype", "Book Antiqua"',
+    helvetica: '"Helvetica Neue"',
+    arial: 'Arial',
+    verdana: 'Verdana',
+    sfmono: '"SF Mono"',
+    consolas: 'Consolas'
+  };
+
+  // settings → 最終 font-family stack 字面值。base stack（fontFamily）維持不變，
+  // 依 latinSerif / latinSans 在前面接上選定的拉丁字型。fontFamily 仍存 base stack
+  // 字面值（system-ui / 襯線 / 無襯線 / 等寬整串）——既有儲存契約不變，無需遷移。
+  // 只有襯線 / 無襯線兩個 base stack 開放自訂英文字型（Jimmy：跟著襯線 / 無襯線各自選）。
+  function composeFontStack(s) {
+    if (!s || !s.fontFamily) return s ? s.fontFamily : undefined;
+    const base = s.fontFamily;
+    let choice = null;
+    if (base === FONT_STACKS.serif) choice = s.latinSerif;
+    else if (base === FONT_STACKS.sans) choice = s.latinSans;
+    if (choice && choice !== 'auto' && LATIN_FONTS[choice]) {
+      return LATIN_FONTS[choice] + ', ' + base;
+    }
+    return base;
+  }
+
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
   // globalThis；jsdom regression spec 走 module.exports。
   global.__JReadSettingsDefaults = DEFAULT_SETTINGS;
   global.__JReadFontStacks = FONT_STACKS;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
+  global.__JReadLatinFonts = LATIN_FONTS;
+  global.__JReadComposeFontStack = composeFontStack;
   // module.exports 維持 === DEFAULT_SETTINGS（既有呼叫端契約，不可附掛其他 key
   // 否則污染 Object.keys / 被當設定欄位寫進 storage）。jsdom spec 需要 font
   // stacks 時 require 本檔後讀 globalThis.__JReadFontStacks。
