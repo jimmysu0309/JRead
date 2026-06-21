@@ -258,6 +258,22 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(css.includes('#__jread-page-indicator'), '須含頁碼指示樣式');
     });
 
+    it('pagedMode: true → 頁碼指示器可拖曳（pointer-events:auto + touch-action:none，v0.8.150 scrubber）', () => {
+      // 頁碼當 scrubber（按住拖曳快速跳頁）：必須 pointer-events:auto 才會成為
+      // touch/mouse hit-test target（paged-mode.js 靠 isIndicatorTarget 判定）；
+      // touch-action:none 擋掉 iOS 在指示器上的原生捲動/縮放/返回。forcing：任何人
+      // 把 pointer-events 改回 none → 頁碼接不到事件、scrub 全滅。
+      const css = applyAndGetCss({ ...BASE_SETTINGS, pagedMode: true });
+      const m = css.match(/#__jread-page-indicator\s*\{([^}]*)\}/);
+      assert.ok(m, '須有 #__jread-page-indicator 規則');
+      assert.ok(/pointer-events:\s*auto/.test(m[1]),
+        '頁碼指示器必須 pointer-events: auto（scrubber 才接得到 touch/mouse）');
+      assert.ok(/touch-action:\s*none/.test(m[1]),
+        '頁碼指示器必須 touch-action: none（擋 iOS 原生捲動/縮放/返回）');
+      assert.ok(!/pointer-events:\s*none/.test(m[1]),
+        'forcing：不得殘留 pointer-events: none（會讓頁碼 scrub 全滅）');
+    });
+
     it('pagedMode 未設定（預設）→ 翻頁 CSS 一行都不注入（垂直模式零改動）', () => {
       const css = applyAndGetCss(BASE_SETTINGS);
       assert.ok(!css.includes('column-fill'), '預設不得含翻頁 column 規則');
@@ -343,6 +359,37 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.strictEqual(pagedApi.quantizeStride(25747, 0), 0);
       assert.strictEqual(pagedApi.quantizeStride(25747, -1), -1);
       assert.ok(Number.isNaN(pagedApi.quantizeStride(25747, NaN)));
+    });
+  });
+
+  describe('computeScrubTarget（v0.8.150 頁碼 scrubber）', () => {
+    const W = 393; // iPhone 視窗寬（scrubWidth = 拖曳走完此寬 = 全部頁範圍）
+    it('從第 0 頁往右拖滿整個寬度 → 末頁（total-1）', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(0, W, W, 43), 42);
+    });
+    it('從末頁往左拖滿整個寬度 → 第 0 頁', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(42, -W, W, 43), 0);
+    });
+    it('往右拖半個寬度（從第 0 頁）→ 約中間頁（round）', () => {
+      // (W/2 / W) * 42 = 21
+      assert.strictEqual(pagedApi.computeScrubTarget(0, W / 2, W, 43), 21);
+    });
+    it('位移 0 → 維持起拖頁（不動）', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(10, 0, W, 43), 10);
+    });
+    it('往右拖超過末頁 → clamp 在末頁（不溢出）', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(40, W * 2, W, 43), 42);
+    });
+    it('往左拖超過第 0 頁 → clamp 在 0（不負）', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(2, -W * 2, W, 43), 0);
+    });
+    it('單頁（total <= 1）→ 恆回 0（無頁可捲）', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(0, W, W, 1), 0);
+    });
+    it('退化輸入（scrubWidth 0 / NaN dx / total 0）→ clamp 回起拖頁、不爆', () => {
+      assert.strictEqual(pagedApi.computeScrubTarget(5, 100, 0, 43), 5);
+      assert.strictEqual(pagedApi.computeScrubTarget(5, NaN, W, 43), 5);
+      assert.strictEqual(pagedApi.computeScrubTarget(0, 100, W, 0), 0);
     });
   });
 
@@ -733,6 +780,102 @@ describe('翻頁模式（v0.7.227）', () => {
       fireTouch(env, 'touchcancel', [{ clientX: 300, clientY: 302 }]);
       assert.strictEqual(pageText(env), '2 / 3',
         'touchcancel 的 changedTouches 位移足夠時必須翻頁');
+      api.uninstall();
+    });
+  });
+
+  // ---- C5. 頁碼 scrubber 拖曳（v0.8.150）---------------------------------
+  // Jimmy 需求：翻頁模式下按住頁碼滑動 = 快速捲動頁面。修法：頁碼指示器當
+  // scrubber，touchstart 起點命中指示器 → 進 scrub，touchmove 依水平位移即時跳頁
+  // （computeScrubTarget 全 viewport 寬 = 全部頁範圍），touchend 停在預覽頁、不翻頁。
+  // 訊號層次：驗「scrub 起/移/止」對 idx / 指示文字的影響 + scrub 中不誤判翻頁
+  // swipe（jsdom 合成事件 + stub layout 讓頁數>1）。不驗真實 iOS 觸控/touch-action
+  // 是否尊重 preventDefault（系統行為，只能真機驗）。
+  describe('頁碼 scrubber 拖曳（v0.8.150）', () => {
+    function loadInstalled() {
+      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+      env.window.eval(PAGED_SRC);
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      // jsdom 無 layout：stub 讓 pageCount = round(scrollWidth/stride) = 3
+      Object.defineProperty(art, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(art, 'scrollWidth', { value: 1200, configurable: true });
+      api.sync({ pagedMode: true }, art);
+      return { env, api };
+    }
+    function indicator(env) { return env.document.getElementById('__jread-page-indicator'); }
+    function pageText(env) { const i = indicator(env); return i ? i.textContent : null; }
+    // touchstart 派發在指定 target（scrub 靠 e.target 命中指示器才啟動）。
+    // changed 預設同 touches；touchend 時 touches=[]（手指離開）、changed 帶最終位置。
+    function fireTouchOn(env, target, type, touches, changed) {
+      const ev = new env.window.Event(type, { bubbles: true, cancelable: true });
+      ev.touches = touches;
+      ev.changedTouches = changed || touches;
+      target.dispatchEvent(ev);
+    }
+
+    it('按住頁碼往右拖滿整個寬度 → 跳到末頁（快速捲動）', () => {
+      const { env, api } = loadInstalled();
+      assert.strictEqual(pageText(env), '1 / 3', '初始第 1 頁');
+      const ind = indicator(env);
+      const W = env.window.innerWidth;
+      fireTouchOn(env, ind, 'touchstart', [{ clientX: 10, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 10 + W, clientY: 700 }]); // 右拖滿寬
+      assert.strictEqual(pageText(env), '3 / 3', '拖滿整個寬度 → 末頁');
+      fireTouchOn(env, env.window, 'touchend', []);
+      assert.strictEqual(pageText(env), '3 / 3', 'touchend 停在預覽頁');
+      assert.ok(!ind.classList.contains('__jread-scrubbing'), 'touchend 後移除 scrubbing class');
+      api.uninstall();
+    });
+
+    it('拖到末頁後往左拖回起點 → 回第 1 頁（雙向）', () => {
+      const { env, api } = loadInstalled();
+      const ind = indicator(env);
+      const W = env.window.innerWidth;
+      fireTouchOn(env, ind, 'touchstart', [{ clientX: 200, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 200 + W, clientY: 700 }]);
+      assert.strictEqual(pageText(env), '3 / 3');
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 200, clientY: 700 }]); // 拖回起點 dx=0
+      assert.strictEqual(pageText(env), '1 / 3', '拖回起點 → 回起拖頁');
+      fireTouchOn(env, env.window, 'touchend', []);
+      api.uninstall();
+    });
+
+    it('scrub 結束（touchend dx=0）不誤判翻頁 swipe（scrubState 攔截）', () => {
+      const { env, api } = loadInstalled();
+      const ind = indicator(env);
+      // 在頁碼上短拖再放手（dx 不足跳頁），不得因落差被 classifySwipe 翻頁
+      fireTouchOn(env, ind, 'touchstart', [{ clientX: 200, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 210, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchend', [], [{ clientX: 210, clientY: 700 }]);
+      assert.strictEqual(pageText(env), '1 / 3', 'scrub 路徑不走 swipe 翻頁');
+      api.uninstall();
+    });
+
+    it('touchstart 不在頁碼上 → 維持原翻頁 swipe（scrub 不誤啟動）', () => {
+      const { env, api } = loadInstalled();
+      // 在內文（非指示器）上左滑 → 翻下一頁（既有 swipe 行為不受 scrub 影響）
+      fireTouchOn(env, env.window, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 300, clientY: 302 }]);
+      fireTouchOn(env, env.window, 'touchend', [], [{ clientX: 300, clientY: 302 }]);
+      assert.strictEqual(pageText(env), '2 / 3', '非指示器起點仍走 swipe 翻頁');
+      api.uninstall();
+    });
+
+    it('桌面滑鼠：頁碼 mousedown + window mousemove 拖曳 → 跳頁', () => {
+      const { env, api } = loadInstalled();
+      const ind = indicator(env);
+      const W = env.window.innerWidth;
+      const md = new env.window.Event('mousedown', { bubbles: true, cancelable: true });
+      md.button = 0; md.clientX = 10; md.clientY = 700;
+      ind.dispatchEvent(md);
+      const mm = new env.window.Event('mousemove', { bubbles: true, cancelable: true });
+      mm.clientX = 10 + W; mm.clientY = 700;
+      env.window.dispatchEvent(mm);
+      assert.strictEqual(pageText(env), '3 / 3', '滑鼠右拖滿寬 → 末頁');
+      const mu = new env.window.Event('mouseup', { bubbles: true, cancelable: true });
+      env.window.dispatchEvent(mu);
+      assert.ok(!ind.classList.contains('__jread-scrubbing'), 'mouseup 後移除 scrubbing class');
       api.uninstall();
     });
   });
