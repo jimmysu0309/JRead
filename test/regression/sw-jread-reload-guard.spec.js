@@ -66,7 +66,7 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
     assert.ok(m, 'SW 必須有 JREAD_DEBUG_SET_THEME case（debug bridge set-theme 改經 SW 中繼）');
     assert.ok(/runIfDevelopmentInstall\(\s*['"]JREAD_DEBUG_SET_THEME['"]/.test(m[1]),
       'set-theme 必須與 reload 同款 development gate——任意網頁可 dispatch __jread_debug，store 安裝不可被改 theme');
-    assert.ok(/\[\s*'light',\s*'dark',\s*'sepia'\s*\]\.includes\(theme\)/.test(m[1]),
+    assert.ok(/\[\s*'light',\s*'dark',\s*'sepia',\s*'gray'\s*\]\.includes\(theme\)/.test(m[1]),
       'SW 端必須再驗一次 theme 白名單（第二道防線）');
   });
 

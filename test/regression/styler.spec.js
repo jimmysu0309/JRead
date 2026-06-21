@@ -989,11 +989,13 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(css.includes('#ececec'), 'light 頁面底色應為 #ececec');
-    // v0.7.179：reader card 必須有 base text color（#1a1a1a），搭配後代
-    // color: inherit 確保 CMS 彩色 banner 白字在 bg strip 後仍可讀。
+    // v0.7.179：reader card 必須有 base text color，搭配後代 color: inherit
+    // 確保 CMS 彩色 banner 白字在 bg strip 後仍可讀。
+    // v0.8.143：light base text 由 #1a1a1a 改 #000000（proseText，對齊 Apple Books
+    // 純黑）；code/table/figcaption/彩色 inline 仍由 COLOR_PRESERVE_NOT 排除保留。
     assert.ok(
-      /color:\s*#1a1a1a/.test(css),
-      'light theme reader card 需設 base text color #1a1a1a（v0.7.179 white-text fix）'
+      /color:\s*#000000/.test(css),
+      'light theme reader card 需設 base text color #000000（v0.8.143 Apple Books 純黑）'
     );
     // 後代必須有 color: inherit 規則
     assert.ok(
@@ -1026,7 +1028,7 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
     const css = document.getElementById('__jread-style').textContent;
-    const themeColorRules = css.match(/\[data-jread-active="1"\]\s*\*[^{]*\{[^}]*color:\s*#d4d4d4/g);
+    const themeColorRules = css.match(/\[data-jread-active="1"\]\s*\*[^{]*\{[^}]*color:\s*#ecebf1/g);
     assert.ok(themeColorRules, 'dark theme 必須有 * { color } 規則');
     const hasExclusion = themeColorRules.some(r => r.includes(':not(figcaption)'));
     assert.ok(!hasExclusion, 'dark theme * { color } 規則不可排除 figcaption（成對覆寫）');
@@ -1048,8 +1050,8 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'dark' });
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(css.includes('#0b0b0b'), 'dark 頁面底色');
-    assert.ok(css.includes('#1a1a1a'), 'dark 卡片底色');
-    assert.ok(/color:\s*#d4d4d4/.test(css), 'dark 文字色必須注入（覆蓋原站色）');
+    assert.ok(css.includes('#4a494d'), 'dark 卡片底色（v0.8.143 對齊 Apple Books）');
+    assert.ok(/color:\s*#ecebf1/.test(css), 'dark 文字色必須注入（v0.8.143 對齊 Apple Books 近白）');
     assert.ok(/color:\s*#7fb5e6/.test(css), 'dark link 色必須是 #7fb5e6');
     assert.ok(/text-decoration:\s*underline/.test(css), 'dark link 必須有 underline（色 + 線雙通道差異化）');
   });
@@ -1059,10 +1061,21 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'sepia' });
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(css.includes('#cdb891'), 'sepia 頁面底色');
-    assert.ok(css.includes('#f4ecd8'), 'sepia 卡片底色');
-    assert.ok(/color:\s*#5b4636/.test(css), 'sepia 文字色');
+    assert.ok(css.includes('#eee2cb'), 'sepia 卡片底色（v0.8.143 對齊 Apple Books）');
+    assert.ok(/color:\s*#000000/.test(css), 'sepia 文字色（v0.8.143 對齊 Apple Books 純黑）');
     assert.ok(/color:\s*#2c5282/.test(css), 'sepia link 色必須是 #2c5282（JRead primary-700）');
     assert.ok(/text-decoration:\s*underline/.test(css), 'sepia link 必須有 underline');
+  });
+
+  it('gray theme → 注入文字色 + 卡片底色 + 可讀 link 色', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, theme: 'gray' });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(css.includes('#d8d8d8'), 'gray 頁面底色');
+    assert.ok(css.includes('#ededed'), 'gray 卡片底色（v0.8.143 對齊 Apple Books）');
+    assert.ok(/color:\s*#000000/.test(css), 'gray 文字色（v0.8.143 對齊 Apple Books 純黑）');
+    assert.ok(/color:\s*#2c5282/.test(css), 'gray link 色必須是 #2c5282（JRead primary-700）');
+    assert.ok(/text-decoration:\s*underline/.test(css), 'gray link 必須有 underline');
   });
 
   it('contentWidth 永遠注入（卡片骨架不可缺）', () => {

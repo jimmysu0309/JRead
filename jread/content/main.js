@@ -1247,7 +1247,7 @@
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'toggle' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'enter' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'exit' } }));
-  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-theme', theme: 'dark' } }));  // 'light' | 'dark' | 'sepia'
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-theme', theme: 'dark' } }));  // 'light' | 'dark' | 'sepia' | 'gray'
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
   // reload 走 sendMessage('JREAD_RELOAD') → SW handler 呼叫 chrome.runtime.reload()。
   // 不可從 content script 直接呼 chrome.runtime.reload —— 該 API 只 SW / popup /
@@ -1273,7 +1273,7 @@
       // dispatch 本 event 改寫使用者 theme（sync 會同步到所有裝置）。Store /
       // 正式安裝一律拒絕；unpacked（Claude 自主 debug / cage）照常可用。
       const theme = e && e.detail && e.detail.theme;
-      if (theme && ['light', 'dark', 'sepia'].includes(theme)) {
+      if (theme && ['light', 'dark', 'sepia', 'gray'].includes(theme)) {
         safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SET_THEME, payload: { theme } });
       }
     } else if (type === 'translate') {

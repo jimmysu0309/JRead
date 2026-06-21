@@ -170,13 +170,27 @@
   //   跟正文完全同色無法辨識。必須回補一個在該 theme 下夠對比的 link 色。
   //   light 不注入（light 連文字色都不注入，保留原站 link 色）。
   //   dark #7fb5e6：在 #1a1a1a 底對比 > 7:1
-  //   sepia #2c5282（JRead primary-700）：在 #f4ecd8 底對比 > 6:1
+  //   sepia #2c5282（JRead primary-700）：在 #eee2cb 底對比 > 6:1
   //   scrollThumb：v0.7.90 auto-hide scrollbar 顯色用，配 page bg 對比夠辨識
   //   又不過度搶眼。dark theme 用淺色 thumb、light/sepia 用深色 thumb。
   const THEMES = {
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, link: '#1a73e8', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
-    dark:  { pageBg: '#0b0b0b', articleBg: '#1a1a1a', text: '#d4d4d4', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', progressBar: '#7fb5e6' },
-    sepia: { pageBg: '#cdb891', articleBg: '#f4ecd8', text: '#5b4636', link: '#2c5282', scrollThumb: 'rgba(91, 70, 54, 0.45)', inlineCodeBg: 'rgba(91,70,54,0.08)', progressBar: '#2c5282' }
+    // v0.8.143：白色閱讀區內文段落字色對齊 Apple Books 純黑 #000000（Jimmy 截圖
+    //   逐像素採樣：背景 #ffffff、內文 glyph core 主色 #000000）。light 維持
+    //   text: null（仍是「保留原站色」主題、保留 pre/table 對比保護 + figcaption
+    //   #333 機制），另用 proseText 只對內文段落容器（p / 標題 / li …）強制黑字，
+    //   不碰 pre/code/table/figcaption/彩色 inline span（Jimmy 選折衷方案）
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, proseText: '#000000', link: '#1a73e8', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
+    // v0.8.143：暗色閱讀區配色對齊 Apple Books——底 #4a494d、內文 #ecebf1
+    //   （Jimmy 截圖逐像素採樣：背景主色 #4a494d 帶微冷調、內文 #ecebf1）。
+    //   原 #1a1a1a/#d4d4d4 偏黑，Apple Books 是中性偏亮的深灰底 + 近白字
+    dark:  { pageBg: '#0b0b0b', articleBg: '#4a494d', text: '#ecebf1', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', progressBar: '#7fb5e6' },
+    // v0.8.143：米色閱讀區配色對齊 Apple Books——底 #eee2cb、內文純黑 #000000
+    //   （Jimmy 截圖逐像素採樣：背景 5 點皆 #eee2cb、內文 glyph core 主色 #000000）
+    sepia: { pageBg: '#cdb891', articleBg: '#eee2cb', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(60, 50, 38, 0.45)', inlineCodeBg: 'rgba(60,50,38,0.08)', progressBar: '#2c5282' },
+    // v0.8.143：灰色主題對齊 Apple Books 灰色配色——底 #ededed、內文純黑 #000000
+    //   （Jimmy 截圖逐像素採樣：背景 #ededed、內文 glyph core 主色 #000000）。
+    //   中性灰、無暖色；text 非 null 故比照 dark/sepia 注入文字 + 卡片色覆寫
+    gray:  { pageBg: '#d8d8d8', articleBg: '#ededed', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#2c5282' }
   };
 
   function themeOf(name) {
@@ -649,7 +663,7 @@ html [${ARTICLE_ATTR}="1"] {
      後代 color: inherit 規則，確保 CMS 彩色 banner 內白字不會在背景
      被 strip 後殘留不可見。light theme 之前不設 color（交給原站），但
      原站 color 常配合已被 strip 的 background 設計，留下等於留 bug。 */
-  color: ${theme.text || '#1a1a1a'} !important;
+  color: ${theme.text || theme.proseText || '#1a1a1a'} !important;
   /* WordPress Gutenberg constrained layout override：WP 用 CSS custom
      property 限制 content width（通常 560-650px），在 reader card 內多
      餘且讓內文過窄。override 到 100% 讓內文撐滿 card 版心。 */
@@ -686,7 +700,7 @@ html [${ARTICLE_ATTR}="1"] {
   float: none !important;
   position: static !important;
   transform: none !important;
-  color: ${theme.text || '#1a1a1a'} !important;
+  color: ${theme.text || theme.proseText || '#1a1a1a'} !important;
 }
 /* 標題 clone 內的連結（permalink 自連結 <h1><a> 或 <a><h1>）回退繼承色 +
    無底線，維持原站標題視覺（與 articleEl 內 v0.8.129 同效；本元素在 articleEl
