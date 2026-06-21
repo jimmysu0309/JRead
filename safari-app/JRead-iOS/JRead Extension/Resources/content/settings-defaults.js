@@ -68,6 +68,15 @@
     titleFontSize: 0,
     // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用。
     spaceScrollRatio: 50,
+    // v0.8.154：3 指輕點切換閱讀模式。預設 true = 啟用（維持 v0.7.223 引入以來
+    // 的「永遠開啟」行為）；false = 停用（touch-gestures.js 不安裝辨識器）。觸控
+    // 裝置才有意義（桌面滑鼠 maxTouchPoints < 3 自然不裝）。
+    threeFingerTap: true,
+    // v0.8.154：懸浮控制 icon（頁面邊緣常駐按鈕）的透明度（0.1–1.0）。
+    // floatingIcon 啟用旗標本身是平台分流的三態（未設過時 Safari 預設開、Chrome
+    // 預設關），由 __JReadResolveFloatingIconEnabled 在讀取邊界解析，不放此固定值；
+    // 位置 floatingIconPos 為 runtime 拖移狀態，由 floating-icon.js 直讀 storage。
+    floatingIconOpacity: 0.7,
     // v0.7.227：翻頁模式（電子書式水平翻頁）。預設 false = 垂直卷動。
     pagedMode: false,
     // v0.7.237：翻頁模式底部頁碼指示（「3 / 43」）。預設 true = 顯示；
@@ -166,9 +175,28 @@
     return base;
   }
 
+  // v0.8.154：懸浮控制 icon 啟用旗標的平台分流解析（單一資料源，content
+  // floating-icon.js + options.js 共用）。floatingIcon 存進 storage.sync 的是
+  // 三態：boolean（使用者在 options 明確設過）或 undefined（未設過）。未設過時
+  // 依 runtime 平台決定預設——Safari（safari-web-extension://，涵蓋 iOS / iPadOS /
+  // macOS Safari）popup 入口藏在位址列選單兩層深、預設開；桌面 Chrome 有工具列
+  // 按鈕 + 快速鍵、預設關。訊號用 runtime URL scheme（結構性平台訊號，與
+  // keepalive.js isSafariRuntime / options.js runtime 偵測同款），非 OS sniff。
+  function __jreadIsSafariRuntime() {
+    try {
+      const u = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+        ? chrome.runtime.getURL('') : '';
+      return typeof u === 'string' && u.startsWith('safari-web-extension://');
+    } catch (_) { return false; }
+  }
+  function resolveFloatingIconEnabled(raw) {
+    return typeof raw === 'boolean' ? raw : __jreadIsSafariRuntime();
+  }
+
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
   // globalThis；jsdom regression spec 走 module.exports。
   global.__JReadSettingsDefaults = DEFAULT_SETTINGS;
+  global.__JReadResolveFloatingIconEnabled = resolveFloatingIconEnabled;
   global.__JReadFontStacks = FONT_STACKS;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
   global.__JReadLatinFonts = LATIN_FONTS;
