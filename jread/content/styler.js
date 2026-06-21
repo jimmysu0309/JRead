@@ -2231,22 +2231,11 @@ html [${ARTICLE_ATTR}="1"] a {
   width: 0%;
   border-radius: 999px;
   background: ${theme.progressBar};
-}
-/* v0.8.151 觸覺回饋載體：iOS Safari 不支援 navigator.vibrate，改用 iOS 17.4+ 的
-   原生 switch checkbox——隱藏的 <label><input type=checkbox switch>，在 touch 手勢內
-   label.click() 切換 switch 觸發系統觸覺 tick（paged-mode.js triggerHaptic）。
-   v0.8.152：switch 必須真的「被渲染」觸覺才發——原本 1px + overflow:hidden 會把
-   控制項夾掉可能不渲染（Jimmy 回報沒觸覺）。改成移出畫面外（left:-200px）但維持
-   自然尺寸渲染、opacity:0 看不見；不可 display:none（同理不渲染）。pointer-events:
-   none 不影響程式 click（.click() 不走 hit-test）。 */
-#__jread-haptic {
-  position: fixed;
-  left: -200px;
-  bottom: 0;
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
 }`;
+      // v0.8.153 觸覺回饋載體（#__jread-haptic）不再需要 styler CSS——比照實證可動的
+      // ios-haptics 套件，paged-mode.js ensureHaptic 直接 inline display:none 建立
+      // <label><input switch>] 並掛 document.body，觸覺由 label.click() 切換 switch
+      // 狀態觸發、與渲染無關（v0.8.151/152 用 CSS 隱藏 + body 外掛載皆無觸覺）。
     }
 
     // 內嵌襯線 CJK 字型只在使用者實際選了自訂字型（overrides.fontFamily）時注入，
