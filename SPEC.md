@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.144**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.145**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -451,7 +451,7 @@ styler 刻意保留 `pre` / `table` 的原站文字色（syntax highlight / cell
 
 使用者三項必要設定（來自需求）：**頁面寬度、日夜間模式、字型大小**。其餘欄位先保留後端預設，未來 Options UI 決定是否曝露給使用者。
 
-v0.7.140 起 popup 多了「字型」select，提供 4 個內建 stack：
+v0.7.140 起 popup 多了「字型」select（v0.8.145 起 label 改「中文字型」，明示這顆控中文 / base 字型、與 v0.8.144 新增的「英文字型」select 區分），提供 4 個內建 stack：
 
 | popup 選項 | storage `fontFamily` 字面值 |
 | --- | --- |
@@ -479,7 +479,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `fontSize` | `number`（px） | `18` | `storage.sync` | ✅ |
 | `titleFontSize` | `number`（px） | `0` | `storage.sync` | ✅（options「標題字級」；0 = Auto 保留原站 h1 大小、非 0 覆寫 h1 font-size，v0.7.175） |
 | `contentWidth` | `number`（px） | `720` | `storage.sync` | ✅（頁面寬度）—— popup stepper [480, 1600] step 40 / options input [480, 1600] step 20（**v0.7.237 上限 1200 → 1600**：寬視窗 / iPad desktop-class layout viewport 可達 1120pt+，舊上限填不滿螢幕、主觀變「調了沒變寬」；styler clamp [300, 2000] 為最終防線）。注意手機 viewport < contentWidth 時 card 受 viewport clamp，調大無感（物理限制，非 bug；iPad simulator instrument 實證 innerWidth=1120 時 card rect.width 精確 = 設定值） |
-| `fontFamily` | `string` | `'system-ui'` | `storage.sync` | ✅（popup「字型」select：系統預設/襯線/無襯線/等寬，v0.7.140） |
+| `fontFamily` | `string` | `'system-ui'` | `storage.sync` | ✅（popup「中文字型」select：系統預設/襯線/無襯線/等寬，v0.7.140；label v0.8.145 由「字型」改「中文字型」） |
 | `latinSerif` | `string`（`LATIN_FONTS` key） | `'auto'` | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 襯線時顯示**；指定襯線下英文/數字的拉丁字型，`'auto'` = 沿用內建 Georgia，v0.8.144） |
 | `latinSans` | `string`（`LATIN_FONTS` key） | `'auto'` | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 無襯線時顯示**；指定無襯線下英文/數字的拉丁字型，`'auto'` = 沿用內建 -apple-system，v0.8.144） |
 | `fontWeight` | `300 \| 400 \| 600` | `400`（中） | `storage.sync` | ✅（popup「字重」segmented 細/中/粗 + options select，v0.7.254）—— 真正的 `font-weight`、**全平台一致生效**（取代 v0.7.157 `boldText` 的 macOS-only `-webkit-font-smoothing`）。只接受 300/400/600 三值（其餘回退 400）。**三段一律注入**（含 400）：原站若對內文設非 400 字重（如 shoppingdesign `.htmlview p { font-weight: 300 }`），中（400） 不注入會退回原站 300 與細（300） 撞成同色——故 400 也強制 `!important` 蓋掉。粗用 **600 Semibold** 而非 700：700 視覺太重，600 比中明顯重又不過粗；**不用 500**（Windows 微軟正黑無 500 face 會退回 400 與中撞色）。只套 `BODY_TEXT_SEL`（內文載體 p/li/blockquote/td/span 等，含 CMS「div 當段落」站的裸 div——`data-jread-text-div` runtime 標記，v0.8.49，**不含 h1-h6**——標題字重交給原站/UA bold 維持章節階層；`strong`/`b` 等有自身明確 weight 的元素也不受影響）。storage.onChanged 即時 reapply（main.js relevantKeys 含 `fontWeight`）。**舊 `boldText` 已退役**：SW `onInstalled` 一次性遷移 `boldText:true → fontWeight 600`、其餘 → 400，並刪除 `boldText` 殘留 key |

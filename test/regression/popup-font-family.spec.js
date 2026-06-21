@@ -80,7 +80,8 @@ describe('popup 字型 select（v0.7.140）', () => {
         'label[for="font-family-select"]'
       );
       assert.ok(label, '必須有 <label for="font-family-select">，點 label 才能聚焦 select');
-      assert.strictEqual(label.textContent.trim(), '字型');
+      // v0.8.145：「字型」→「中文字型」（旁邊已有「英文字型」select，明示這顆控中文/base 字型）
+      assert.strictEqual(label.textContent.trim(), '中文字型');
     });
   });
 
