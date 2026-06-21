@@ -20,6 +20,7 @@
     'content/custom-shortcuts.js',
     'content/touch-gestures.js',
     'content/toast.js',
+    'content/floating-icon.js',
     'content/cinema-mode.js',
     'content/youtube-borderless.js',
     'content/x-thread.js',
