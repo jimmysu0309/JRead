@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.145**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.146**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -462,7 +462,14 @@ v0.7.140 起 popup 多了「字型」select（v0.8.145 起 label 改「中文字
 
 option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐字一致（forcing function spec 校對）。styler 注入時會在使用者 stack 末尾再串自己的 fallback chain，即使具名字型都沒裝也能 fall back 到對應的 generic family。
 
-**英文（拉丁）fallback 字型自訂（v0.8.144，`latinSerif` / `latinSans`）**：「字型」選**襯線 / 無襯線**時，下方多一個「英文字型」select，可單獨指定英文 / 數字用哪個拉丁字型（中文仍由該 stack 的 CJK 字體渲染）。襯線 / 無襯線**各自記一個**選擇（`latinSerif` / `latinSans`，預設 `'auto'`）；系統預設（不覆寫）與等寬沒有這個維度，select 整 row 隱藏（`render()` 依 `fontFamily` 控制顯隱）。清單：自動 / Georgia / Times New Roman / Charter / Palatino / Helvetica Neue / Arial / Verdana / SF Mono / Consolas（鍵集中於 `settings-defaults.js` 的 `LATIN_FONTS`）。
+**英文（拉丁）fallback 字型自訂（v0.8.144，`latinSerif` / `latinSans`）**：「字型」選**襯線 / 無襯線**時，下方多一個「英文字型」select，可單獨指定英文 / 數字用哪個拉丁字型（中文仍由該 stack 的 CJK 字體渲染）。襯線 / 無襯線**各自記一個**選擇（`latinSerif` / `latinSans`，預設 `'auto'`）；系統預設（不覆寫）與等寬沒有這個維度，select 整 row 隱藏（`render()` 依 `fontFamily` 控制顯隱）。清單（鍵集中於 `settings-defaults.js` 的 `LATIN_FONTS`）：
+
+- 自動（沿用 base stack 內建西文字型）
+- **襯線群**：Georgia / Times New Roman / Charter / Palatino（系統字，只點名）／ **Literata / Source Serif / Piazzolla**（v0.8.146 自帶 woff2，見下）
+- **無襯線群**：Helvetica Neue / Arial / Verdana（系統字）／ **Public Sans / Source Sans**（v0.8.146 自帶 woff2）
+- 等寬群（無襯線 base 不顯示，襯線 base 才出現於 select）：SF Mono / Consolas
+
+**內嵌拉丁可變字型（v0.8.146）**：上列 5 支（Literata / Source Serif / Piazzolla 襯線、Public Sans / Source Sans 無襯線）非系統字、iOS Safari 網頁路徑沒有，只點名載不到——比照 Noto Serif TC 自帶 Latin-subset woff2（各 26–51KB，皆 OFL，授權見 `jread/assets/fonts/LICENSE.txt`），styler 以 `chrome.runtime.getURL` 注入 `@font-face`。5 支都是**真·可變字型**（`fvar` wght 軸），單一 `@font-face` 用 weight range 即真實多字重（細 300 / 中 400 / 粗 600 各有差別），**不踩 Noto 三靜態字面那個「range 涵蓋整段 → 三段塌成同一字面」的坑**（v0.7.257）。`@font-face` 只注入**被選到**那一支（`latinFontFaceFor` 掃 `opts.fontFamily` 是否含該 family）+ `font-display: swap` lazy-load——選 Georgia / 系統字時零下載。顯示名稱不帶 VF / 字重後綴。forcing function `test/regression/bundled-latin-fonts.spec.js`。
 
 組合方式：`fontFamily` **仍存 base stack 整串字面值不變**（既有儲存契約不動、不需遷移既有使用者），`composeFontStack(settings)` 在讀取邊界（`main.js` `getSettings`）把選定拉丁字型**前接**到 base stack 前面——CSS 逐字 fallback 下英文先命中前接字型、中文穿到後段 CJK 字體。前接值只放**具名**字型（不含泛型 serif / sans-serif）：泛型放中段會被 iOS WebKit 當「只解析拉丁」攔截、CJK 反 fallback 到後綴 sans（同襯線 stack 的鐵律）；具名字型缺字時自然往後落到 base stack 原有的 Georgia / -apple-system / 泛型，安全。`'auto'` = 不前接。styler 下游維持「只認 `fontFamily` 整串字面值」不變。forcing function `test/regression/latin-font-fallback.spec.js`。
 

@@ -7,6 +7,33 @@ Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 
 -----------------------------------------------------------
+
+Latin variable fonts bundled with JRead (英文／拉丁 fallback 字型，Latin-subset
+woff2 — 由各字型的可變字型 wght 軸 subset 出，皆 SIL Open Font License v1.1):
+
+literata.woff2 — Literata.
+  Copyright 2018 The Literata Project Authors
+  (https://github.com/googlefonts/literata)
+
+source-serif.woff2 — Source Serif.
+  Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name
+  'Source'.
+
+piazzolla.woff2 — Piazzolla.
+  Copyright 2019 The Piazzolla Project Authors
+  (https://github.com/huertatipografica/piazzolla)
+
+public-sans.woff2 — Public Sans.
+  Copyright 2019 The Public Sans Project Authors
+  (https://github.com/uswds/public-sans)
+
+source-sans.woff2 — Source Sans.
+  Copyright 2010-2020 Adobe (http://www.adobe.com/), with Reserved Font Name
+  'Source'.
+
+All Font Software above is licensed under the SIL Open Font License, Version 1.1.
+
+-----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
 -----------------------------------------------------------
 

@@ -136,6 +136,48 @@
     FONT_FACE_CSS = '';
   }
 
+  // v0.8.146：內嵌拉丁可變字型（Latin-subset woff2，皆 OFL）。襯線群 Literata /
+  // Source Serif / Piazzolla、無襯線群 Public Sans / Source Sans——由 popup「英文字型」
+  // 選單選定（latinSerif / latinSans），composeFontStack 把選定 family 前接到 base
+  // stack 前，故 opts.fontFamily 會含 "Family" 字面。family 名對齊 LATIN_FONTS 的值。
+  //
+  // 與 Noto 三靜態字面不同：這五支都是真·可變字型（wght 軸），單一 @font-face 用
+  // weight range 即真實多字重（細 300 / 中 400 / 粗 600 各有差別），不會踩 v0.7.257
+  // 那個「單一字面涵蓋整段 weight → 三段渲染相同」的坑（範圍是字面真實 fvar 軸、
+  // 非假裝涵蓋的靜態 pin）。font-display: swap + lazy-load——@font-face 只在 stack
+  // 實際引用該 family 時才下載，故只注入「被選到」的那一支（latinFontFaceFor 掃描
+  // opts.fontFamily），不像 Noto 三檔同 family 必須一起宣告。
+  const BUNDLED_LATIN_FACES = {
+    'Literata':     { file: 'literata.woff2',     range: '200 900' },
+    'Source Serif': { file: 'source-serif.woff2', range: '200 900' },
+    'Piazzolla':    { file: 'piazzolla.woff2',    range: '100 900' },
+    'Public Sans':  { file: 'public-sans.woff2',  range: '100 900' },
+    'Source Sans':  { file: 'source-sans.woff2',  range: '200 900' },
+  };
+  function latinFontFaceFor(fontStack) {
+    if (!fontStack) return '';
+    let css = '';
+    try {
+      if (chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.getURL) {
+        for (const family of Object.keys(BUNDLED_LATIN_FACES)) {
+          if (fontStack.indexOf('"' + family + '"') === -1) continue;
+          const def = BUNDLED_LATIN_FACES[family];
+          css += `@font-face {
+  font-family: "${family}";
+  font-style: normal;
+  font-weight: ${def.range};
+  font-display: swap;
+  src: url("${chrome.runtime.getURL('assets/fonts/' + def.file)}") format("woff2");
+}
+`;
+        }
+      }
+    } catch (e) {
+      css = '';
+    }
+    return css;
+  }
+
   // 預設值。theme / fontFamily / titleFontSize：預設＝「未設定」、對應 CSS 不
   // 注入（保留原站樣式）；fontSize / fontWeight 為刻意例外、預設也注入——
   // 見檔頭設計哲學與各注入點註解（v0.8.37 勘誤舊「全部不注入」敘述）。
@@ -2157,7 +2199,10 @@ html [${ARTICLE_ATTR}="1"] a {
     // 與上方 font-family override rule 的觸發條件一致——預設無襯線時不污染 CSS。
     // 接在最末（user font-family rule 之後）：woff2 lazy-load、且不打亂「CSS 第一個
     // font-family block = user override rule」的既有結構（styler.spec 倚賴此順序）。
-    return base + userOverrides + (overrides.fontFamily ? FONT_FACE_CSS : '');
+    // v0.8.146：再接「被選到的內嵌拉丁字型」@font-face（latinFontFaceFor 只在 stack
+    // 含該 family 時回傳非空，故 latin = auto / 系統字時為空、不變 face 數）。
+    return base + userOverrides +
+      (overrides.fontFamily ? FONT_FACE_CSS + latinFontFaceFor(opts.fontFamily) : '');
   }
 
   // v0.7.90 auto-hide scrollbar：scroll 事件觸發後立刻 set
