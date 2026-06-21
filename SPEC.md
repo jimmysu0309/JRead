@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.148**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.149**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -514,6 +514,8 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 
 - `popup → content`：`TOGGLE_READER_MODE` / `GET_READER_STATE`（v0.7.33）/ `EXTRACT_READER_HTML`（v0.7.33）/ `TOGGLE_YT_BORDERLESS`（v0.7.134）/ `EDIT_MODE_TOGGLE`（v0.8.108，切換編輯模式；content 端 guard 閱讀模式須 active。`GET_READER_STATE` 回應含 `editModeActive` 供 popup 切「編輯模式 / 完成編輯」按鈕文字）/ `REAPPLY_SETTINGS`（v0.8.148，設定即時重套的 iOS 兜底）
   - **`REAPPLY_SETTINGS`（v0.8.148）**：設定即時重套**主要**走 content script 的 `chrome.storage.onChanged` 廣播（popup 寫 `storage.sync` → content 收到 → `scheduleReapply`），桌機 Chrome 即時生效。但 **iOS Safari popup 開啟時底層頁面被掛起、`storage.onChanged` 事件被丟掉**（不排隊、不補送）→ iPhone 改主題 / 字級閱讀模式不即時生效、要重整。修法：popup 每次 `commitSave` 後額外送 `REAPPLY_SETTINGS` 給當前分頁，content `onMessage` 收到就 `scheduleReapply`（同 `active` / `cinemaActive` / `articleEl` guard）——runtime 訊息在 iOS 仍會送達（`TOGGLE_READER_MODE` 走同路徑、iPhone 可用為證）。`scheduleReapply` 自 `onChanged` 閉包搬到模組層、與訊息 handler 共用（單一資料源）；桌機與 `onChanged` 經 200ms debounce 合併、不雙重重套。forcing function `test/regression/ios-reapply-settings-message.spec.js`
+- `content → 翻譯擴充（Shinkansen）`：`jread-reader-mode` DOM CustomEvent（v0.8.149，`detail.active` true/false）
+  - **`jread-reader-mode`（v0.8.149）**：Shinkansen 翻譯後進 JRead 閱讀模式，畫面每秒閃一下（像在重排版；未翻譯無）。根因（已知家族，見 `cleaner.js` v0.8.131 註解）：Shinkansen 每秒跑 content guard sweep，把 JRead 重排成閱讀卡片的 `articleEl` 誤判成「譯文被 SPA 覆蓋」而重建子節點 → 每秒 reflow 閃動。閱讀卡片即 `articleEl` 本身、在 guard 管轄區內，無法像 v0.8.131 標題那樣挪到 `articleEl` 外閃避。修法（握手、非站點特判）：JRead 進 / 出閱讀模式時 `window.dispatchEvent(new CustomEvent('jread-reader-mode', { detail: { active } }))`（`signalReaderModeToTranslator`，`finalizeEnter` 送 true、`exitReaderModeImpl` 送 false），Shinkansen content script 收到就暫停 / 恢復其 content guard（跨 extension content script DOM event，同觸發 Shinkansen 翻譯的 `shinkansen-debug-request` 機制、已實證跨 isolated world）。**需搭配 Shinkansen ≥ v1.10.65**（guard 暫停邏輯在 Shinkansen repo）；舊 Shinkansen 無 listener、純 no-op（向後相容）。forcing function `test/regression/shinkansen-guard-pause-handshake.spec.js`
 - `popup → background`：（無）。popup / options 的設定讀寫一律直接走 `chrome.storage.sync`、不經 SW。**v0.8.65 起送 Readwise 不再走 SW**——原 `SAVE_TO_READWISE`（v0.7.33）popup → SW 往返已移除，改在 popup（extension 頁、有 `<all_urls>` host_permission）直接 fetch（`popup-core.saveReaderPayload`）。動機：iOS Safari 背景頁（event page、`persistent:false`）被系統掛起得遠比 macOS 積極，popup → SW 非同步往返 + 背景頁 fetch 在 iOS 會 silently 失敗（popup `await` 拿到 `undefined` → 純「送出失敗」無 HTTP 碼；macOS Chrome / Safari 正常）。options「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走同一路徑
 - `content → background`：
   - `GET_SETTINGS`：**v0.7.235** 起 content 端 `getSettings` 不再走 round-trip——改直讀 `chrome.storage.sync.get(defaults)`（defaults 來自 `content/settings-defaults.js` 單一資料源）；iOS Safari background 訊息會無聲掉包（thread 758346 / 787958），掉包時舊版回 `undefined` → 所有設定 fallback 預設值（pagedMode 永遠 false = 「翻頁模式 iOS 沒功能」根因）。handler 保留，僅作 content 端 storage 失效（context invalidated）時的 fallback

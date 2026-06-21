@@ -206,6 +206,20 @@
     return true;
   }
 
+  // v0.8.149：通知翻譯擴充（Shinkansen）JRead 閱讀模式進入 / 退出，讓它在閱讀模式
+  // 期間暫停每秒的 content guard reconcile。否則 guard 把 JRead 排版誤判成「譯文被
+  // 覆蓋」、每秒重建被翻譯 articleEl 的子節點 → 畫面每秒閃一下（translate-first 才會、
+  // 與 v0.8.131 標題被清同根因；2026-06-10 曾 WONTFIX，改以本握手根治）。閱讀卡片是
+  // articleEl 本身、在 guard 管轄區內，無法像 v0.8.131 標題那樣挪到 articleEl 外閃避。
+  // 跨 extension content script 用 DOM CustomEvent 溝通（與 JRead 觸發 Shinkansen 翻譯
+  // 的 shinkansen-debug-request 同機制、已實證可跨 isolated world）。無 Shinkansen 時
+  // 無 listener、純 no-op；只是一個 window event，零成本。
+  function signalReaderModeToTranslator(active) {
+    try {
+      window.dispatchEvent(new CustomEvent('jread-reader-mode', { detail: { active: !!active } }));
+    } catch (_) { /* dispatch 失敗不阻斷 reader 流程 */ }
+  }
+
   // v0.8.37：三條 enter 路徑（generic / x-thread / fb-post）的共用收尾。
   // 歷史上三段 ~80% 重複且實際 drift 過（silent flag 只有 generic path 尊重、
   // v0.8.36 才補齊——同一份事實三實作的典型代價）。差異點只剩「容器怎麼來、
@@ -237,6 +251,8 @@
       uninstallKeyguard();
     }
     safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: true } });
+    // v0.8.149：閱讀模式已就緒，叫翻譯擴充暫停 content guard（防每秒閃動）
+    signalReaderModeToTranslator(true);
     return true;
   }
 
@@ -394,6 +410,9 @@
   }
 
   function exitReaderModeImpl() {
+    // v0.8.149：退出閱讀模式——恢復翻譯擴充的 content guard（任一退出路徑都送、
+    // idempotent；Shinkansen 端未暫停時設 false 無副作用）。
+    signalReaderModeToTranslator(false);
     // v0.8.108：先拆編輯模式（silent：reader teardown 自己會還原 interaction
     // layer + cleaner.restore 還原手動隱藏的元素，不需 editMode 的 onExit 再
     // 裝回 keyguard 等）。必須在 cleaner.restore 之前——只移除編輯 UI / listener，
