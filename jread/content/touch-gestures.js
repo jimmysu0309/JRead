@@ -73,8 +73,12 @@
 
   // DOM 銜接。支援 3 點以上觸控的環境才註冊（桌面滑鼠環境零成本）。
   // capture + passive：頁面 stopPropagation 前就看得到事件、不阻塞捲動。
-  function install(doc, nav, onTrigger) {
+  // v0.8.154：辨識器的「啟用」由外部 isEnabled() 動態查（storage.sync
+  // threeFingerTap）——listener 一律掛上（移除 / 重掛 listener 在 onChanged
+  // 即時切換時易漏拔殘留），停用時辨識器命中也不觸發 onTrigger。預設 true。
+  function install(doc, nav, onTrigger, isEnabled) {
     if (!doc || !nav || (nav.maxTouchPoints || 0) < FINGERS) return false;
+    const enabled = typeof isEnabled === 'function' ? isEnabled : () => true;
     const rec = createRecognizer();
     const toPlain = (touchList) => Array.from(touchList, (t) => ({
       id: t.identifier, x: t.clientX, y: t.clientY
@@ -83,7 +87,7 @@
     doc.addEventListener('touchstart', (e) => rec.touchStart(toPlain(e.touches)), opts);
     doc.addEventListener('touchmove', (e) => rec.touchMove(toPlain(e.touches)), opts);
     doc.addEventListener('touchend', (e) => {
-      if (rec.touchEnd(e.touches.length)) onTrigger();
+      if (rec.touchEnd(e.touches.length) && enabled()) onTrigger();
     }, opts);
     doc.addEventListener('touchcancel', () => rec.cancel(), opts);
     return true;
@@ -97,6 +101,20 @@
   // NS.MSG 已就緒；spec 的 require 走 Node，無 window / chrome，不進這段）
   if (typeof window !== 'undefined' && typeof chrome !== 'undefined' && chrome.runtime) {
     const NS = window.__JRead = window.__JRead || {};
+    // v0.8.154：threeFingerTap 設定（預設 true）動態查——listener 常駐，停用時
+    // 命中不觸發。讀一次快取、onChanged 即時更新（storage 失效時保守留 true）。
+    let threeFingerEnabled = true;
+    try {
+      chrome.storage.sync.get({ threeFingerTap: true }, (s) => {
+        if (chrome.runtime && chrome.runtime.lastError) return;
+        threeFingerEnabled = s.threeFingerTap !== false;
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'sync' && changes.threeFingerTap) {
+          threeFingerEnabled = changes.threeFingerTap.newValue !== false;
+        }
+      });
+    } catch (_e) {}
     api.install(document, navigator, () => {
       // v0.7.228：直接本地 dispatch、不再 round-trip SW。iOS Safari 的 MV3 SW
       // 被系統回收後不再喚醒（Apple Forums thread 758346）——舊版 CUSTOM_COMMAND
@@ -112,6 +130,6 @@
         type: NS.MSG.CUSTOM_COMMAND,
         payload: { command: 'toggle-reader-mode' }
       });
-    });
+    }, () => threeFingerEnabled);
   }
 })(typeof window !== 'undefined' ? window : globalThis);

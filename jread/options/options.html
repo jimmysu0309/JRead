@@ -299,6 +299,39 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
 
+    /* v0.8.154：懸浮 icon 透明度滑桿 — 控制區固定寬 var(--jr-control-w)（與同
+       column 的 number / select 右緣對齊，CLAUDE.md UI grid 規則），滑桿吃剩餘
+       寬、右側固定寬 % 讀數用 tabular-nums 不跳動。 */
+    .opacity-control {
+      flex: 0 0 var(--jr-control-w);
+      width: var(--jr-control-w);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .opacity-control input[type="range"] {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      accent-color: var(--jr-primary-600);
+      cursor: pointer;
+    }
+    .opacity-control .opacity-val {
+      flex: 0 0 38px;
+      text-align: right;
+      font-family: var(--jr-font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      color: var(--jr-neutral-700, #444);
+    }
+    /* v0.8.154：field 直接後接 section-heading 時去掉 field 下緣線 + padding，
+       避免與 heading border-top 並列成雙線（既有 #save-status / #shortcut-hint
+       夾層版同款）。 */
+    .field:has(+ .section-heading) {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
     /* ==========================================================
        Section heading — 兩段 section 之間用 border-top 作為分隔線，視覺
        上「分隔線 + 標題」一體成形，避免無 border 純靠 margin 產生鬆散
@@ -620,6 +653,38 @@
   </div>
 
   <div id="save-status"></div>
+
+  <h2 class="section-heading">觸控與懸浮控制</h2>
+  <p class="section-desc">
+    觸控裝置（iPhone / iPad）與懸浮按鈕的入口設定。桌面滑鼠環境下三指輕點無作用
+  </p>
+
+  <div class="field">
+    <label for="floatingIcon">
+      懸浮控制 icon
+      <span class="desc">頁面邊緣常駐一顆小圖示：<strong>短按</strong>切換閱讀模式、<strong>長按</strong>開選單（送到 Readwise Reader、切換分頁模式）、<strong>拖曳</strong>可換到左 / 右緣與上下位置。Safari 預設開、桌面瀏覽器預設關</span>
+    </label>
+    <input type="checkbox" id="floatingIcon">
+  </div>
+
+  <div class="field">
+    <label for="floatingIconOpacity">
+      懸浮 icon 透明度
+      <span class="desc">懸浮 icon 的不透明度，數值越低越淡、越不干擾畫面。範圍 10–100%</span>
+    </label>
+    <div class="opacity-control">
+      <input type="range" id="floatingIconOpacity" min="0.1" max="1" step="0.05">
+      <span class="opacity-val" id="floatingIconOpacityVal"></span>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="threeFingerTap">
+      三指輕點切換閱讀模式
+      <span class="desc">觸控裝置上同時三指輕點頁面即切換閱讀模式——iPhone / iPad 的主要入口（popup 藏在位址列選單兩層深）。桌面滑鼠環境無作用</span>
+    </label>
+    <input type="checkbox" id="threeFingerTap">
+  </div>
 
   <h2 class="section-heading">快速鍵</h2>
   <p class="section-desc intro-desktop">

@@ -133,6 +133,44 @@ describe('3 指輕點手勢（v0.7.223）', () => {
       doc.listeners.touchend.fn(mk([]));
       assert.strictEqual(fired, 1);
     });
+
+    // v0.8.154：threeFingerTap 設定 gate——listener 常駐、停用時命中不觸發。
+    const mk = (arr) => ({ touches: arr.map((p, i) => ({ identifier: i, clientX: p[0], clientY: p[1] })) });
+    function completeGesture(doc) {
+      doc.listeners.touchstart.fn(mk([[100, 100], [150, 100], [200, 100]]));
+      doc.listeners.touchend.fn(mk([]));
+    }
+
+    it('isEnabled() = false → 手勢命中也不觸發（停用時 listener 仍掛、辨識器仍跑）', () => {
+      const doc = fakeDoc();
+      let fired = 0;
+      gesture.install(doc, { maxTouchPoints: 5 }, () => { fired++; }, () => false);
+      for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+        assert.ok(doc.listeners[type], `停用時 ${type} listener 仍應掛上`);
+      }
+      completeGesture(doc);
+      assert.strictEqual(fired, 0, '停用時完整手勢不應觸發 onTrigger');
+    });
+
+    it('isEnabled() 動態切換：先 false 不觸發、改 true 後觸發（onChanged 即時生效）', () => {
+      const doc = fakeDoc();
+      let fired = 0;
+      let enabled = false;
+      gesture.install(doc, { maxTouchPoints: 5 }, () => { fired++; }, () => enabled);
+      completeGesture(doc);
+      assert.strictEqual(fired, 0);
+      enabled = true;
+      completeGesture(doc);
+      assert.strictEqual(fired, 1, '啟用後同樣手勢應觸發');
+    });
+
+    it('未傳 isEnabled（預設）→ 視為啟用（向後相容）', () => {
+      const doc = fakeDoc();
+      let fired = 0;
+      gesture.install(doc, { maxTouchPoints: 5 }, () => { fired++; });
+      completeGesture(doc);
+      assert.strictEqual(fired, 1);
+    });
   });
 
   describe('wiring forcing function', () => {
