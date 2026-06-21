@@ -398,6 +398,18 @@ describe('翻頁模式（v0.7.227）', () => {
     it('單頁（total <= 1）→ 恆回 0（無頁可捲）', () => {
       assert.strictEqual(pagedApi.computeScrubTarget(0, W, W, 1), 0);
     });
+    it('v0.8.152 靈敏度：few-page 文章每頁拖曳上限 14px（3 頁拖 14px 即換一頁）', () => {
+      // 純全寬均分時 3 頁 = W/2 ≈ 196px/頁（要拖很遠）；上限 14px 讓它靈敏
+      assert.strictEqual(pagedApi.computeScrubTarget(0, 14, W, 3), 1);
+      assert.strictEqual(pagedApi.computeScrubTarget(0, 28, W, 3), 2);
+      assert.strictEqual(pagedApi.computeScrubTarget(0, 7, W, 3), 1); // round(0.5)=1
+      assert.strictEqual(pagedApi.computeScrubTarget(0, 6, W, 3), 0); // round(0.43)=0
+    });
+    it('v0.8.152 靈敏度：many-page 文章（均分 < 14px）維持拖滿全寬 ≈ 走完全文', () => {
+      // total=43 → 均分 W/42 ≈ 9.4px < 14，上限不生效，拖滿全寬仍到末頁
+      assert.strictEqual(pagedApi.computeScrubTarget(0, W, W, 43), 42);
+      assert.strictEqual(pagedApi.computeScrubTarget(0, W / 2, W, 43), 21);
+    });
     it('退化輸入（scrubWidth 0 / NaN dx / total 0）→ clamp 回起拖頁、不爆', () => {
       assert.strictEqual(pagedApi.computeScrubTarget(5, 100, 0, 43), 5);
       assert.strictEqual(pagedApi.computeScrubTarget(5, NaN, W, 43), 5);
@@ -853,14 +865,14 @@ describe('翻頁模式（v0.7.227）', () => {
       api.uninstall();
     });
 
-    it('scrub 結束（touchend dx=0）不誤判翻頁 swipe（scrubState 攔截）', () => {
+    it('scrub 結束（dx=0 放手）不誤判翻頁 swipe（scrubState 攔截）', () => {
       const { env, api } = loadInstalled();
       const ind = indicator(env);
-      // 在頁碼上短拖再放手（dx 不足跳頁），不得因落差被 classifySwipe 翻頁
+      // 在頁碼上原地按放（dx=0、不跳頁），不得因 touchend 走 classifySwipe 翻頁
       fireTouchOn(env, ind, 'touchstart', [{ clientX: 200, clientY: 700 }]);
-      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 210, clientY: 700 }]);
-      fireTouchOn(env, env.window, 'touchend', [], [{ clientX: 210, clientY: 700 }]);
-      assert.strictEqual(pageText(env), '1 / 3', 'scrub 路徑不走 swipe 翻頁');
+      fireTouchOn(env, env.window, 'touchmove', [{ clientX: 200, clientY: 700 }]);
+      fireTouchOn(env, env.window, 'touchend', [], [{ clientX: 200, clientY: 700 }]);
+      assert.strictEqual(pageText(env), '1 / 3', 'scrub 路徑不走 swipe 翻頁、dx=0 不跳頁');
       api.uninstall();
     });
 
