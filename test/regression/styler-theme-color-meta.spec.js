@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // THEMES.articleBg 鏡像（styler.js 內部常數）——bump theme 配色時這裡要同步
-const ARTICLE_BG = { light: '#ffffff', dark: '#1a1a1a', sepia: '#f4ecd8' };
+const ARTICLE_BG = { light: '#ffffff', dark: '#4a494d', sepia: '#eee2cb', gray: '#ededed' };
 
 function setup() {
   const env = loadFixtureWithScripts({
@@ -58,8 +58,8 @@ describe('styler — theme-color meta 覆蓋', () => {
     assert.strictEqual(metas(document).length, 1, '不應殘留多餘 meta');
   });
 
-  it('dark / sepia 主題覆蓋成各自 articleBg', () => {
-    for (const t of ['dark', 'sepia']) {
+  it('dark / sepia / gray 主題覆蓋成各自 articleBg', () => {
+    for (const t of ['dark', 'sepia', 'gray']) {
       const { document, NS, articleEl } = setup();
       const meta = document.createElement('meta');
       meta.setAttribute('name', 'theme-color');

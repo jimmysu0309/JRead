@@ -33,10 +33,12 @@
       /* Reading themes — WYSIWYG swatches */
       --jr-read-light-bg:   #ffffff;
       --jr-read-light-fg:   #222222;
-      --jr-read-dark-bg:    #1a1a1a;
-      --jr-read-dark-fg:    #e4e4e4;
-      --jr-read-sepia-bg:   #f4ecd8;
-      --jr-read-sepia-fg:   #3a3226;
+      --jr-read-dark-bg:    #4a494d;
+      --jr-read-dark-fg:    #ecebf1;
+      --jr-read-sepia-bg:   #eee2cb;
+      --jr-read-sepia-fg:   #000000;
+      --jr-read-gray-bg:    #ededed;
+      --jr-read-gray-fg:    #000000;
 
       /* Type stacks */
       --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
@@ -268,9 +270,20 @@
     .theme-group {
       display: flex;
       /* 對齊下方 stepper 總寬（26 + 56 + 26 + 2 border = 110px），使用
-         space-between 讓三顆按鈕自動撐開到同寬 row。 */
+         space-between 讓按鈕撐開到同寬 row。字重組 3 顆維持 32px、space-between
+         自然產生間隔。 */
       width: 110px;
       justify-content: space-between;
+    }
+    /* 主題組 4 顆（亮/暗/米/灰）：4×32=128 > 110、space-between 會被擠到零間隔。
+       改 gap + flex 等分——4 顆等寬 (110-3×6)/4≈23px、彼此 6px 間隔，左右邊緣
+       仍對齊 110px stepper。只 scope 主題組，不影響字重組。 */
+    .theme-group[aria-label="主題"] {
+      gap: 6px;
+    }
+    .theme-group[aria-label="主題"] .theme-btn {
+      flex: 1 1 0;
+      width: auto;
     }
     .theme-btn {
       width: 32px;
@@ -289,6 +302,7 @@
     .theme-btn[data-theme="light"] { background: var(--jr-read-light-bg); color: var(--jr-read-light-fg); }
     .theme-btn[data-theme="dark"]  { background: var(--jr-read-dark-bg);  color: var(--jr-read-dark-fg);  border-color: var(--jr-read-dark-bg); }
     .theme-btn[data-theme="sepia"] { background: var(--jr-read-sepia-bg); color: var(--jr-read-sepia-fg); border-color: #e4d9bf; }
+    .theme-btn[data-theme="gray"]  { background: var(--jr-read-gray-bg);  color: var(--jr-read-gray-fg);  border-color: #d8d8d8; }
 
     .theme-btn:hover { transform: translateY(-0.5px); }
     .theme-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
@@ -536,6 +550,7 @@
         <button class="theme-btn" data-theme="light" title="亮色">亮</button>
         <button class="theme-btn" data-theme="dark"  title="暗色">暗</button>
         <button class="theme-btn" data-theme="sepia" title="米色">米</button>
+        <button class="theme-btn" data-theme="gray"  title="灰色">灰</button>
       </div>
     </div>
 

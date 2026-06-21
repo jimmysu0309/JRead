@@ -93,7 +93,7 @@ describe('styler — dark/sepia 前景背景成對覆寫 + contrast 兜底層 (v
     // jsdom 不套 stylesheet → computed color 停在 inline 深灰 = 模擬站點
     // !important 贏局（twz author-bio 實案）。兜底層必須 inline 修掉。
     const bio = env.document.getElementById('bio-span');
-    assert.strictEqual(bio.style.getPropertyValue('color'), 'rgb(212, 212, 212)',
+    assert.strictEqual(bio.style.getPropertyValue('color'), 'rgb(236, 235, 241)',
       '深灰 on 暗卡 ratio 2.55 < 3 的文字載體必須被兜底層 inline 修成 theme.text');
     assert.strictEqual(bio.style.getPropertyPriority('color'), 'important',
       '修色必須帶 !important（inline important 是 author origin 最高優先級）');
@@ -113,14 +113,14 @@ describe('styler — dark/sepia 前景背景成對覆寫 + contrast 兜底層 (v
     // 正解：th 是中和清單成員，effective bg 跳過它的亮底 → 以暗卡為底 →
     // 站點深字 rgb(51,51,51) ratio < 3 → 修成 theme.text（亮字），不是深字。
     const th = env.document.getElementById('th-cell');
-    assert.strictEqual(th.style.getPropertyValue('color'), 'rgb(212, 212, 212)',
+    assert.strictEqual(th.style.getPropertyValue('color'), 'rgb(236, 235, 241)',
       'th 的修色必須配「中和後的暗卡底」（theme.text 亮字），不可配當下還亮著的底選深字');
   });
 
   it('(g) restore: 兜底層 inline 修色完整還原', () => {
     const { env, detected, snapshot } = setup('dark');
     const bio = env.document.getElementById('bio-span');
-    assert.strictEqual(bio.style.getPropertyValue('color'), 'rgb(212, 212, 212)');
+    assert.strictEqual(bio.style.getPropertyValue('color'), 'rgb(236, 235, 241)');
     env.NS.styler.restore(detected.el, snapshot);
     assert.strictEqual(bio.style.getPropertyValue('color'), 'rgb(84, 92, 96)',
       'restore 後 inline color 必須回到站點原值');
