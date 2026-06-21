@@ -58,6 +58,19 @@
     }
 
     /* ==========================================================
+       內嵌拉丁字型 @font-face（v0.8.147）——「英文字型」select 預覽用。
+       popup 是獨立頁面、跟內文 styler 那份 @font-face 不共用，要自帶一份。
+       relative URL 從 popup/ 指到 assets/fonts/；font-display: swap + lazy-load
+       ——只有 select 顯示值實際引用該 family 時才下載（選系統字 / 預設時零成本）。
+       weight range = 各字型真實 fvar wght 軸（可變字型，與 styler 端一致）。
+       ========================================================== */
+    @font-face { font-family: "Literata";     font-weight: 200 900; font-display: swap; src: url("../assets/fonts/literata.woff2")     format("woff2"); }
+    @font-face { font-family: "Source Serif";  font-weight: 200 900; font-display: swap; src: url("../assets/fonts/source-serif.woff2") format("woff2"); }
+    @font-face { font-family: "Piazzolla";     font-weight: 100 900; font-display: swap; src: url("../assets/fonts/piazzolla.woff2")    format("woff2"); }
+    @font-face { font-family: "Public Sans";   font-weight: 100 900; font-display: swap; src: url("../assets/fonts/public-sans.woff2")  format("woff2"); }
+    @font-face { font-family: "Source Sans";   font-weight: 200 900; font-display: swap; src: url("../assets/fonts/source-sans.woff2")  format("woff2"); }
+
+    /* ==========================================================
        Base
        ========================================================== */
     * { box-sizing: border-box; }
@@ -627,6 +640,10 @@
     <div class="setting-row" id="latin-font-row" hidden>
       <label for="latin-font-select">英文字型</label>
       <select id="latin-font-select" class="font-family-select" aria-label="英文字型">
+        <!-- v0.8.147：中文字型 = 系統預設 / 等寬 時英文無 base stack 可前接、不可
+             自訂，此 sentinel（hidden、render 設 disabled + 動態文字）顯示「跟隨
+             中文字型」狀態，讓 row 永遠在、不跳版。value 非 LATIN_FONTS key。 -->
+        <option value="__follow" hidden>系統預設</option>
         <option value="auto">自動</option>
         <optgroup label="襯線">
           <option value="georgia">Georgia</option>

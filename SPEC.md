@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v0.8.146**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v0.8.147**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -472,6 +472,8 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 **內嵌拉丁可變字型（v0.8.146）**：上列 5 支（Literata / Source Serif / Piazzolla 襯線、Public Sans / Source Sans 無襯線）非系統字、iOS Safari 網頁路徑沒有，只點名載不到——比照 Noto Serif TC 自帶 Latin-subset woff2（各 26–51KB，皆 OFL，授權見 `jread/assets/fonts/LICENSE.txt`），styler 以 `chrome.runtime.getURL` 注入 `@font-face`。5 支都是**真·可變字型**（`fvar` wght 軸），單一 `@font-face` 用 weight range 即真實多字重（細 300 / 中 400 / 粗 600 各有差別），**不踩 Noto 三靜態字面那個「range 涵蓋整段 → 三段塌成同一字面」的坑**（v0.7.257）。`@font-face` 只注入**被選到**那一支（`latinFontFaceFor` 掃 `opts.fontFamily` 是否含該 family）+ `font-display: swap` lazy-load——選 Georgia / 系統字時零下載。顯示名稱不帶 VF / 字重後綴。forcing function `test/regression/bundled-latin-fonts.spec.js`。
 
 組合方式：`fontFamily` **仍存 base stack 整串字面值不變**（既有儲存契約不動、不需遷移既有使用者），`composeFontStack(settings)` 在讀取邊界（`main.js` `getSettings`）把選定拉丁字型**前接**到 base stack 前面——CSS 逐字 fallback 下英文先命中前接字型、中文穿到後段 CJK 字體。前接值只放**具名**字型（不含泛型 serif / sans-serif）：泛型放中段會被 iOS WebKit 當「只解析拉丁」攔截、CJK 反 fallback 到後綴 sans（同襯線 stack 的鐵律）；具名字型缺字時自然往後落到 base stack 原有的 Georgia / -apple-system / 泛型，安全。`'auto'` = 不前接。styler 下游維持「只認 `fontFamily` 整串字面值」不變。forcing function `test/regression/latin-font-fallback.spec.js`。
+
+**v0.8.147 兩項 UI 改進**：① **所見即所得預覽**——`applyLatinPreview()` 把「英文字型」select 的顯示值用**選定字型本身**渲染（`select.style.fontFamily = LATIN_FONTS[value]`，單一資料源同 `composeFontStack`）。iOS Safari 對 `<select>` 自身 font-family 有效（顯示值換字型）；但展開後的原生滾輪清單 iOS 仍以系統字渲染、無法逐項預覽（平台限制，桌機 Chrome 下拉清單才逐項）。popup 為獨立頁面、`popup.html` 自帶這 5 支內嵌字型的 `@font-face`（relative URL `../assets/fonts/*.woff2`，`font-display: swap` lazy-load，與內文 styler 那份不共用）。② **row 永遠顯示不跳版**——中文字型 = 系統預設 / 等寬（或外部自訂 stack）時，英文無 base stack 可前接、不可自訂，select 改為 `disabled` 並顯示「跟隨中文字型」狀態（`__follow` sentinel option，hidden、文字隨系統預設 / 等寬動態切換），取代 v0.8.144 原本的整 row 隱藏。
 
 **內嵌襯線 CJK 字型（v0.7.253 內嵌 / v0.7.257 三字重）**：iOS Safari「網頁路徑」的預設襯線字型缺「夠」「查」等常用字的字形（iOS 26.5 模擬器實證），且 Safari 網頁不認 CSS 指定的系統字型名（`"Songti TC"` 等一律 resolve 到那套有缺漏的預設 serif）——v0.7.221 的字型名 stack 只把「整段全黑體」改善到「多數字襯線、少數字仍缺」。根治：styler 打包完整的 **Noto Serif TC（全 TC 集，6,606 字）**，用 `@font-face`（family 名 `"Noto Serif TC"` 對齊 stack 第一順位）經 `chrome.runtime.getURL` 載入；CJK 字元改由 JRead 自帶完整字型渲染，跨平台（尤其 iOS）零缺字。
 

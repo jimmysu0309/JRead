@@ -162,22 +162,31 @@ function render(settings) {
     fontFamilySelect.value = settings.fontFamily;
     if (fontFamilySelect.value === '') fontFamilySelect.value = FONT_STACKS.system;
   }
-  // v0.8.144：英文（拉丁）fallback 字型 row——只在字型選襯線 / 無襯線時顯示，
-  // 各自載入記住的選擇（latinSerif / latinSans）。系統預設 / 等寬 / 外部自訂
-  // stack 時整 row 隱藏（英文 fallback 對這些選項無意義）。
+  // v0.8.144：英文（拉丁）fallback 字型 row——襯線 / 無襯線時可自訂，各自載入記住
+  // 的選擇（latinSerif / latinSans）。
+  // v0.8.147：row 改為**永遠顯示**（不跳版）；系統預設 / 等寬 / 外部自訂 stack 時
+  // 英文無 base stack 可前接、不可自訂，select 設 disabled 並顯示「跟隨中文字型」
+  // 狀態（__follow sentinel，文字隨中文字型 = 系統預設 / 等寬 動態切換）。
   if (latinFontSelect && latinFontRow) {
     const ff = settings.fontFamily;
+    latinFontRow.hidden = false;
     if (ff === FONT_STACKS.serif) {
-      latinFontRow.hidden = false;
+      latinFontSelect.disabled = false;
       latinFontSelect.value = settings.latinSerif || 'auto';
     } else if (ff === FONT_STACKS.sans) {
-      latinFontRow.hidden = false;
+      latinFontSelect.disabled = false;
       latinFontSelect.value = settings.latinSans || 'auto';
     } else {
-      latinFontRow.hidden = true;
+      // 不可自訂：顯示跟隨中文字型的狀態（系統預設 / 等寬）
+      latinFontSelect.disabled = true;
+      const followOpt = latinFontSelect.querySelector('option[value="__follow"]');
+      if (followOpt) followOpt.textContent = ff === FONT_STACKS.mono ? '等寬' : '系統預設';
+      latinFontSelect.value = '__follow';
     }
     // value 對不到 option（外部寫入怪值）時 fall back 顯示「自動」
     if (latinFontSelect.value === '') latinFontSelect.value = 'auto';
+    // v0.8.147：把 select 顯示值用「選定字型」本身渲染（預覽）
+    applyLatinPreview();
   }
   // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
   if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
@@ -343,12 +352,26 @@ if (fontFamilySelect) {
   });
 }
 
+// v0.8.147：把「英文字型」select 的顯示值用**選定字型本身**渲染（所見即所得預覽）。
+// iOS Safari 對 <select> 自身的 font-family 有效（顯示值會換字型）；但展開後的原生
+// 滾輪清單 iOS 仍以系統字渲染、無法逐項預覽（平台限制，桌機 Chrome 下拉清單才逐項）。
+// 具名字型（含內嵌 woff2 family）取 LATIN_FONTS 值；auto / __follow / 未知 → 清掉
+// inline、回到 popup 預設 UI 字型（顯示中文「自動 / 系統預設 / 等寬」用預設字即可）。
+function applyLatinPreview() {
+  if (!latinFontSelect) return;
+  const v = latinFontSelect.value;
+  const LATIN = (typeof window !== 'undefined' && window.__JReadLatinFonts) || {};
+  latinFontSelect.style.fontFamily =
+    (v && v !== 'auto' && v !== '__follow' && LATIN[v]) ? LATIN[v] : '';
+}
+
 // v0.8.144：英文（拉丁）fallback 字型——寫進當前字型對應的 key（襯線 → latinSerif、
 // 無襯線 → latinSans）。兩者各自記，切回另一個字型時載回各自的選擇。
 if (latinFontSelect) {
   latinFontSelect.addEventListener('change', (e) => {
     if (current.fontFamily === FONT_STACKS.serif) save({ latinSerif: e.target.value });
     else if (current.fontFamily === FONT_STACKS.sans) save({ latinSans: e.target.value });
+    applyLatinPreview();   // v0.8.147：即時更新預覽字型
   });
 }
 
