@@ -222,7 +222,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       const theme = msg.payload && msg.payload.theme;
-      if (!['light', 'dark', 'sepia'].includes(theme)) return;
+      if (!['light', 'dark', 'sepia', 'gray'].includes(theme)) return;
       runIfDevelopmentInstall('JREAD_DEBUG_SET_THEME', () => {
         chrome.storage.sync.set({ theme }).catch(() => {});
       });
