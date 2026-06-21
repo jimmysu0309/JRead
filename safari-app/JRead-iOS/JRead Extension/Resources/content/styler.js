@@ -2235,17 +2235,17 @@ html [${ARTICLE_ATTR}="1"] a {
 /* v0.8.151 觸覺回饋載體：iOS Safari 不支援 navigator.vibrate，改用 iOS 17.4+ 的
    原生 switch checkbox——隱藏的 <label><input type=checkbox switch>，在 touch 手勢內
    label.click() 切換 switch 觸發系統觸覺 tick（paged-mode.js triggerHaptic）。
-   不可 display:none（會讓 switch 不渲染、觸覺不發）→ 用 1px + opacity:0 藏起來。 */
+   v0.8.152：switch 必須真的「被渲染」觸覺才發——原本 1px + overflow:hidden 會把
+   控制項夾掉可能不渲染（Jimmy 回報沒觸覺）。改成移出畫面外（left:-200px）但維持
+   自然尺寸渲染、opacity:0 看不見；不可 display:none（同理不渲染）。pointer-events:
+   none 不影響程式 click（.click() 不走 hit-test）。 */
 #__jread-haptic {
   position: fixed;
+  left: -200px;
   bottom: 0;
-  left: 0;
-  width: 1px;
-  height: 1px;
+  margin: 0;
   opacity: 0;
-  overflow: hidden;
   pointer-events: none;
-  z-index: -1;
 }`;
     }
 
