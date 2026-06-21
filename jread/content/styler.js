@@ -2179,19 +2179,32 @@ html [${ARTICLE_ATTR}="1"] a {
   -webkit-user-drag: none !important;
   -webkit-touch-callout: none !important;
 }
-/* 頁碼指示（paged-mode.js 建立 / 更新文字）：固定底部置中、不擋互動。
-   色用中性灰——白卡 / 黑卡 / 米卡上都可讀，不依賴 theme 欄位。 */
+/* 頁碼指示（paged-mode.js 建立 / 更新文字）：固定底部置中。
+   色用中性灰——白卡 / 黑卡 / 米卡上都可讀，不依賴 theme 欄位。
+   v0.8.150：頁碼當 scrubber（按住拖曳快速跳頁）——必須 pointer-events: auto 才
+   接得到 touch/mouse；touch-action: none 擋住 iOS 在指示器上的原生捲動/縮放/返回
+   （翻頁由 JS 程式控）；padding 放大命中區好按；cursor ew-resize 暗示可左右拖。 */
 #__jread-page-indicator {
   position: fixed;
-  bottom: 10px;
+  bottom: 6px;
   left: 50%;
   transform: translateX(-50%);
+  padding: 4px 12px;
   font: 11px/1 ui-monospace, Menlo, monospace;
   font-variant-numeric: tabular-nums;
   color: rgba(128, 128, 128, 0.95);
   z-index: 2147483647;
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: ew-resize;
   user-select: none;
+  -webkit-user-select: none;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
+}
+/* 拖曳中（paged-mode.js 加 class）：淡底回饋「已抓住」，不拖時看不出差異維持低調 */
+#__jread-page-indicator.__jread-scrubbing {
+  background: rgba(128, 128, 128, 0.18);
 }`;
     }
 
