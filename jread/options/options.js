@@ -9,7 +9,12 @@
 // 不影響儲存範圍。titleFontSize 等欄位自動齊備（修掉 popup 缺 titleFontSize 的舊 drift）。
 const DEFAULTS = window.__JReadSettingsDefaults;
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity'];
+
+// v0.8.154：懸浮 icon 啟用旗標的平台分流解析（settings-defaults.js 單一資料源）。
+// 未設過（非 boolean）時 Safari 預設勾、Chrome 預設不勾——checkbox 顯示初值與
+// content/floating-icon.js 走同一個 resolver，不在 options 另寫一份平台判定。
+const resolveFloatingIconEnabled = window.__JReadResolveFloatingIconEnabled || ((v) => v === true);
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
 
@@ -141,7 +146,8 @@ function readFieldFromDom(id) {
   const el = document.getElementById(id);
   switch (id) {
     case 'fontSize': case 'titleFontSize': case 'contentWidth':
-    case 'fontWeight': case 'spaceScrollRatio': case 'positionMemoryDays': {
+    case 'fontWeight': case 'spaceScrollRatio': case 'positionMemoryDays':
+    case 'floatingIconOpacity': {
       // v0.8.36：number input 的 min/max 屬性不阻止手動輸入超界值或留空
       // （Number('') = 0 → contentWidth 存 0）。以 input 自身的 min/max 為
       // clamp 範圍（單一資料源在 HTML），空值 / NaN 退回 shared 預設值——
@@ -152,6 +158,7 @@ function readFieldFromDom(id) {
       if (typeof el.max === 'string' && el.max !== '') n = Math.min(Number(el.max), n);
       return n;
     }
+    case 'threeFingerTap': case 'floatingIcon':
     case 'blockPageShortcuts': case 'pangu': case 'editModeEnabled': case 'readwiseSummary':
       return el.checked;
     case 'readwiseToken': case 'geminiApiKey':
@@ -159,6 +166,12 @@ function readFieldFromDom(id) {
     default:
       return el.value;
   }
+}
+
+// 透明度 % 讀數（input 拖動即時更新，與 storage 無關）
+function updateOpacityReadout(frac) {
+  const out = document.getElementById('floatingIconOpacityVal');
+  if (out) out.textContent = Math.round(Number(frac) * 100) + '%';
 }
 
 function applyFieldToDom(id, value) {
@@ -169,8 +182,15 @@ function applyFieldToDom(id, value) {
   if (id === 'fontWeight') {
     // 字重 select：值非 300/400/600（舊資料 / 損壞）時顯示「中」（400）
     el.value = [300, 400, 600].includes(Number(value)) ? String(Number(value)) : '400';
-  } else if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled') {
+  } else if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled' || id === 'threeFingerTap') {
     el.checked = value !== false;
+  } else if (id === 'floatingIcon') {
+    // 三態：boolean 尊重使用者設定；未設過（null / undefined）依平台預設（Safari 勾）
+    el.checked = resolveFloatingIconEnabled(value);
+  } else if (id === 'floatingIconOpacity') {
+    const n = typeof value === 'number' && isFinite(value) ? value : Number(DEFAULTS.floatingIconOpacity);
+    el.value = String(n);
+    updateOpacityReadout(n);
   } else if (id === 'readwiseSummary') {
     // 預設 false——只有明確為 true 才勾選
     el.checked = value === true;
@@ -182,7 +202,9 @@ function applyFieldToDom(id, value) {
 }
 
 function load() {
-  chrome.storage.sync.get(DEFAULTS, (values) => {
+  // floatingIcon 不在 DEFAULTS（平台分流三態）——以 null fallback 一併請求，
+  // applyFieldToDom 收到 null 時走 resolveFloatingIconEnabled 解析平台預設。
+  chrome.storage.sync.get(Object.assign({ floatingIcon: null }, DEFAULTS), (values) => {
     fields.forEach((id) => applyFieldToDom(id, values[id]));
     // autoEnableDomains：array → textarea 多行字串（每行一個正規化過的網域）
     const helper = window.__JReadDomainMatch;
@@ -213,6 +235,12 @@ fields.forEach((id) => {
     chrome.storage.sync.set({ [id]: readFieldFromDom(id) }, flashSaved);
   });
 });
+
+// 透明度滑桿拖動途中即時更新 % 讀數（change 才存檔；input 只更新顯示）
+const opacityRange = document.getElementById('floatingIconOpacity');
+if (opacityRange) {
+  opacityRange.addEventListener('input', () => updateOpacityReadout(opacityRange.value));
+}
 
 // ---- Readwise token 測試（v0.8.64）-----------------------------------
 // 讀 input 目前值（含尚未 blur 存檔的輸入）→ 走 popup-core.validateReadwiseToken
