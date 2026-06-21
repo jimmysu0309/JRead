@@ -21,7 +21,9 @@
 //     auto + touch-action:none 才接得到事件。**v0.8.151**：(a) 按住起拖時出現
 //     scrub 進度條（#__jread-scrub-track，fill 寬 = 目前頁占全文比例、放手淡出）；
 //     (b) 每跨一頁觸發觸覺回饋（triggerHaptic：navigator.vibrate 優先，iOS Safari
-//     不支援 vibrate → iOS 17.4+ switch checkbox haptic 的 label.click() hack）
+//     不支援 vibrate → iOS 17.4+ switch checkbox haptic 的 label.click() hack）。
+//     **v0.8.152**：靈敏度——每頁拖曳距離上限 14px（少頁文章不必拖很遠）；觸覺載體
+//     改移出畫面外但維持渲染（原 1px 夾掉可能不渲染、觸覺不發）
 //   - resize / 旋轉時重算頁數、保持目前閱讀比例位置
 //
 // stride 恆等式：styler CSS 設 column-gap = 左右視覺內距和（左 padding +
@@ -84,6 +86,11 @@
   const HMOVE_BLOCK_PX = 6;         // v0.7.237：水平位移超此值即 preventDefault（擋 Safari 邊緣返回手勢）
   const SETTLE_LOCK_MS = 250;       // v0.7.245：捲動停止判定（此毫秒內無 scroll = 捲軸消失 = 已停止）
   const SETTLE_LOCK_MIN_SY = 2;     // v0.7.245：停止時 scrollY 超此值（已捲離頂端 = 已收合）才鎖
+  // v0.8.152：scrub 每頁拖曳距離上限（px）。原本「全寬均分」讓 few-page 文章每頁要
+  // 拖很遠（3 頁 → 半個螢幕才換一頁，Jimmy 回報「相當不靈敏」）；改成「全寬均分」與
+  // 此上限取小——少頁文章維持 14px/頁的靈敏度、多頁文章（均分 < 14）仍維持拖滿全寬
+  // ≈ 走完全文。
+  const SCRUB_MAX_PX_PER_PAGE = 14;
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
@@ -126,17 +133,19 @@
 
   // v0.8.150：頁碼指示器當 scrubber——按住頁碼水平拖曳即時跳頁（快速捲動）。
   // 純邏輯：給定起拖時的頁碼 startIdx、本次水平拖曳位移 dx、scrub 寬度
-  // scrubWidth（「拖曳走完此寬度 = 涵蓋全部頁範圍」，install 時取 viewport 寬）、
-  // 總頁數 total，回傳目標頁（clamp 0..total-1）。
+  // scrubWidth（install 時取 viewport 寬）、總頁數 total，回傳目標頁（clamp 0..total-1）。
   //   - 往右拖（dx 正）→ 後面的頁；往左拖（dx 負）→ 前面的頁（slider 直覺，
   //     與左滑翻下一頁的 swipe 方向相反——scrubber 是「把進度條往右拉 = 往後」）。
-  //   - scrubWidth = 全 viewport 寬 → 小空間大跳幅（64 頁時每頁約 6px），達成
-  //     「快速捲動」；total <= 1 / 退化輸入 → clamp 回 startIdx，不動頁。
+  //   - v0.8.152 靈敏度：每頁拖曳距離 = min(全寬均分, SCRUB_MAX_PX_PER_PAGE)。原本
+  //     純「全寬均分」（scrubWidth/(total-1)）讓 few-page 文章每頁要拖很遠（3 頁 →
+  //     ~半個螢幕，Jimmy 回報不靈敏）；上限讓少頁文章維持 14px/頁靈敏，多頁文章
+  //     （均分 < 14px）仍維持拖滿全寬 ≈ 走完全文。total <= 1 / 退化輸入 → 回 startIdx。
   function computeScrubTarget(startIdx, dx, scrubWidth, total) {
     const t = total > 0 ? total : 1;
     const base = Math.max(0, Math.min(t - 1, startIdx || 0));
     if (!(t > 1) || !(scrubWidth > 0) || !isFinite(dx)) return base;
-    const n = Math.round(base + (dx / scrubWidth) * (t - 1));
+    const perPage = Math.min(SCRUB_MAX_PX_PER_PAGE, scrubWidth / (t - 1));
+    const n = Math.round(base + dx / perPage);
     return Math.max(0, Math.min(t - 1, n));
   }
 
