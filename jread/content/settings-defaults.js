@@ -136,7 +136,6 @@
   const LATIN_FONTS = {
     auto: '',
     georgia: 'Georgia',
-    times: '"Times New Roman"',
     charter: 'Charter',
     palatino: 'Palatino, "Palatino Linotype", "Book Antiqua"',
     literata: '"Literata"',

@@ -38,7 +38,7 @@ describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
 
   describe('LATIN_FONTS map', () => {
     it('含 auto + 預期的具名字型 key', () => {
-      for (const k of ['auto', 'georgia', 'times', 'charter', 'palatino',
+      for (const k of ['auto', 'georgia', 'charter', 'palatino',
         'literata', 'sourceserif', 'piazzolla',
         'helvetica', 'arial', 'verdana', 'publicsans', 'sourcesans',
         'sfmono', 'consolas']) {
