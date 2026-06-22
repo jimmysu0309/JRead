@@ -432,4 +432,109 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(host.style.left, 'auto');
     });
   });
+
+  // ── 觸控角落保留區（v0.8.161）：iPadOS 左下角 = 視窗縮放把手、上方角落 = 系統手勢區，
+  //    按鈕停太靠近會被 OS 攔走觸控而拖不出來，故觸控裝置把 y 夾離上下角落 ───────────
+  describe('觸控角落夾邊 cornerClampTop（v0.8.161）', () => {
+    it('CORNER_DEADZONE_PX = 44', () => {
+      const { NS } = setup();
+      assert.strictEqual(NS.floating.CORNER_DEADZONE_PX, 44);
+    });
+
+    it('非觸控：只夾在可視範圍、不留角落間距', () => {
+      const { NS } = setup();
+      const f = NS.floating;
+      assert.strictEqual(f.cornerClampTop(768, 800, 32, false), 768);
+      assert.strictEqual(f.cornerClampTop(-10, 800, 32, false), 0, '上界夾 0');
+      assert.strictEqual(f.cornerClampTop(9999, 800, 32, false), 768, '下界夾 vh-hit');
+    });
+
+    it('觸控：top 夾離上下角落 44px', () => {
+      const { NS } = setup();
+      const f = NS.floating;
+      // minTop=44、maxTop=800-32-44=724
+      assert.strictEqual(f.cornerClampTop(768, 800, 32, true), 724, '底部角落夾到 maxTop');
+      assert.strictEqual(f.cornerClampTop(0, 800, 32, true), 44, '頂部角落夾到 minTop');
+      assert.strictEqual(f.cornerClampTop(400, 800, 32, true), 400, '中段不動');
+    });
+
+    it('觸控 + 視窗太矮夾不出安全區 → 置中', () => {
+      const { NS } = setup();
+      // vh=60、hit=32：maxFree=28、maxTop=60-32-44=-16 < minTop=44 → round(28/2)=14
+      assert.strictEqual(NS.floating.cornerClampTop(999, 60, 32, true), 14);
+    });
+
+    it('setTouchForTest(true)：預設左下角（offsetY=1）被夾離底角', () => {
+      const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      // 桌面（jsdom maxTouchPoints=0）：top = 800-32 = 768
+      assert.strictEqual(host.style.top, '768px');
+      NS.floating.setTouchForTest(true);
+      // 觸控：top 夾到 maxTop = 800-32-44 = 724
+      assert.strictEqual(host.style.top, '724px', '觸控時按鈕離底角 44px、不卡縮放把手');
+      NS.floating.setTouchForTest(false);
+      assert.strictEqual(host.style.top, '768px', '還原非觸控不留間距');
+    });
+  });
+
+  // ── disable → 重新 enable 回到預設位置（v0.8.161）────────────────────────────
+  describe('重新 enable 回預設位置（v0.8.161）', () => {
+    it('初始載入不重置：尊重 storage 存的位置', () => {
+      const { NS } = setup({ store: { floatingIcon: true, floatingIconPos: { edge: 'right', offsetY: 0.3 } } });
+      assert.deepStrictEqual({ ...NS.floating.getPos() }, { edge: 'right', offsetY: 0.3 },
+        '初始載入（lastEnabled=null）不可重置位置');
+    });
+
+    it('disable 再 enable → 位置回預設左下角 + 持久化', () => {
+      const { NS, chrome } = setup({ store: { floatingIcon: true, floatingIconPos: { edge: 'right', offsetY: 0.2 } } });
+      assert.deepStrictEqual({ ...NS.floating.getPos() }, { edge: 'right', offsetY: 0.2 });
+      chrome._emit({ floatingIcon: { newValue: false } });
+      chrome._emit({ floatingIcon: { newValue: true } });
+      assert.deepStrictEqual({ ...NS.floating.getPos() }, { edge: 'left', offsetY: 1 },
+        'false→true 轉移應重置回預設左下角');
+      assert.deepStrictEqual({ ...chrome._data.floatingIconPos }, { edge: 'left', offsetY: 1 },
+        '重置後位置應持久化進 storage');
+    });
+
+    it('連續 enable（無中間 disable）不重置', () => {
+      const { NS, chrome } = setup({ store: { floatingIcon: true, floatingIconPos: { edge: 'right', offsetY: 0.4 } } });
+      chrome._emit({ floatingIcon: { newValue: true } });
+      assert.deepStrictEqual({ ...NS.floating.getPos() }, { edge: 'right', offsetY: 0.4 },
+        'true→true 不算重新 enable，不重置');
+    });
+  });
+
+  // ── 長按選單比照 Shinkansen 重繪（v0.8.161）──────────────────────────────────
+  describe('長按選單 Shinkansen style（v0.8.161）', () => {
+    it('menu-item .ico 是藍色圓角 badge（非裸 emoji）', () => {
+      assert.match(FLOATING_SRC, /\.menu-item \.ico \{[^}]*background:\s*#0071e3/,
+        'menu badge 必須是 Shinkansen 藍色 #0071e3');
+      assert.match(FLOATING_SRC, /\.menu-item \.ico \{[^}]*border-radius:\s*5px/,
+        'menu badge 必須有圓角');
+    });
+
+    it('label 過長 ellipsis 收尾', () => {
+      assert.match(FLOATING_SRC, /\.menu-item \.label \{[^}]*text-overflow:\s*ellipsis/);
+    });
+  });
+
+  describe('options 透明度範例 icon（v0.8.161）', () => {
+    const OPTIONS_HTML = fs.readFileSync(path.join(JREAD, 'options', 'options.html'), 'utf8');
+    const OPTIONS_JS = fs.readFileSync(path.join(JREAD, 'options', 'options.js'), 'utf8');
+
+    it('options.html opacity-control 含範例 icon（floatingIconOpacityDemo）', () => {
+      assert.match(OPTIONS_HTML, /id=["']floatingIconOpacityDemo["']/,
+        '缺透明度範例 icon 容器');
+      assert.match(OPTIONS_HTML, /floatingIconOpacityDemo["'][^>]*>\s*<img/,
+        '範例 icon 容器內必須有 img');
+    });
+
+    it('options.js 範例 icon 跟著透明度 + 尺寸變動', () => {
+      assert.match(OPTIONS_JS, /function updateOpacityDemo\(\)/,
+        '缺 updateOpacityDemo——範例 icon 不會更新');
+      // 尺寸 select change → 更新範例 icon 大小
+      assert.match(OPTIONS_JS, /floatingIconSize[\s\S]{0,200}addEventListener\(['"]change['"],\s*updateOpacityDemo/,
+        '尺寸 select 改變必須即時更新範例 icon 大小');
+    });
+  });
 });
