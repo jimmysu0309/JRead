@@ -103,6 +103,25 @@
            實機回報仍偏小，再放大一檔。 */
         zoom: 1.35;
       }
+      /* iPad（device-ipad，popup.js 依螢幕短邊 ≥ 600 + 觸控標記）：工具列圖示的
+         popover 高度由 OS 固定、裝不下 12 設定列的全展開內容（zoom 1.35 下 ~845px），
+         底部「此網域自動啟動 / 進階設定」被切（Jimmy 2026-06-22 iPad 截圖）。zoom 與
+         popover sizing 不一致時溢出部分不捲動、直接截斷。iPhone 是整螢幕底部 sheet、
+         空間較足，維持 1.35 readability、不套此區塊。修法：iPad 降 zoom 1.35→1.2 +
+         收斂垂直節奏，把全展開壓到 ~700px 落進 popover（Shinkansen v1.10.41 同款
+         「OS 固定高度只能壓矮內容適配」）。 */
+      body.device-ipad { zoom: 1.2; }
+      body.device-ipad .brand { margin-bottom: 6px; }
+      body.device-ipad #toggle-btn,
+      body.device-ipad #readwise-btn,
+      body.device-ipad #edit-btn,
+      body.device-ipad #borderless-btn {
+        margin-bottom: 8px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
+      body.device-ipad .settings { margin-top: 8px; padding-top: 8px; }
+      body.device-ipad .setting-row { margin-bottom: 4px; min-height: 22px; }
     }
 
     /* ==========================================================
