@@ -133,15 +133,16 @@
   const INTERACT_EVENTS = ['wheel', 'touchend', 'touchcancel', 'keydown', 'click'];
 
   function localGet(cb) {
+    // v0.8.164：browser.storage.local.get 原生 Promise（reject → cb(null)，與舊
+    // lastError 分支同語意）。
     try {
-      chrome.storage.local.get({ [STORAGE_KEY]: {} }, (v) => {
-        if (chrome.runtime.lastError) { cb(null); return; }
+      browser.storage.local.get({ [STORAGE_KEY]: {} }).then((v) => {
         cb((v && v[STORAGE_KEY]) || {});
-      });
+      }).catch(() => cb(null));
     } catch (_) { cb(null); }
   }
   function localSet(map) {
-    try { chrome.storage.local.set({ [STORAGE_KEY]: map }); } catch (_) { /* context invalidated */ }
+    try { browser.storage.local.set({ [STORAGE_KEY]: map }); } catch (_) { /* context invalidated */ }
   }
 
   // 讀目前閱讀位置。翻頁模式 → 頁碼；捲動模式 → 進度比例 + 段落錨點

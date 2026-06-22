@@ -73,7 +73,7 @@
   }
 
   const iconUrl = (() => {
-    try { return chrome.runtime.getURL('assets/icons/icon-32.png'); }
+    try { return browser.runtime.getURL('assets/icons/icon-32.png'); }
     catch (_e) { return ''; }
   })();
 
@@ -191,14 +191,14 @@
   // onChanged → reapply 即時生效，未啟動時下次進閱讀模式生效（與 popup 切換
   // 同一份事實）。本地動作、不依賴 SW。
   function togglePaged() {
+    // v0.8.164：browser.storage.sync get/set 原生 Promise（reject 即 no-op）。
     try {
-      chrome.storage.sync.get({ pagedMode: false }, (s) => {
-        if (chrome.runtime && chrome.runtime.lastError) return;
+      browser.storage.sync.get({ pagedMode: false }).then((s) => {
         const next = !(s && s.pagedMode);
-        chrome.storage.sync.set({ pagedMode: next }, () => {
+        return browser.storage.sync.set({ pagedMode: next }).then(() => {
           if (NS.toast) NS.toast.show('分頁模式：' + (next ? '開' : '關'), { kind: 'info' });
         });
-      });
+      }).catch(() => {});
     } catch (_e) {}
   }
 
@@ -218,7 +218,7 @@
   //     chrome.tabs.query({active:true}) 仍取得底層內容頁，分頁耦合不斷。
   // runtime 偵測依 getURL scheme（與 options.js / namespace 同款），非 OS flag。
   function isSafariRuntime() {
-    try { return (chrome.runtime.getURL('') || '').startsWith('safari-web-extension://'); }
+    try { return (browser.runtime.getURL('') || '').startsWith('safari-web-extension://'); }
     catch (_e) { return false; }
   }
 
@@ -266,7 +266,7 @@
   function openFeaturePanelIframe() {
     if (panelHost) return;   // 已開著不重複開
     let popupUrl = '';
-    try { popupUrl = chrome.runtime.getURL('popup/popup.html') + '?panel=1'; } catch (_e) { return; }
+    try { popupUrl = browser.runtime.getURL('popup/popup.html') + '?panel=1'; } catch (_e) { return; }
     let pHost, pShadow;
     try {
       pHost = document.createElement('div');
@@ -388,7 +388,7 @@
   }
 
   function persistPos() {
-    try { chrome.storage.sync.set({ floatingIconPos: pos }); } catch (_e) {}
+    try { browser.storage.sync.set({ floatingIconPos: pos }); } catch (_e) {}
   }
 
   // ─── 長按選單 ───────────────────────────────────────────────────────────
@@ -564,22 +564,24 @@
   // ─── 初始化：讀 storage + onChanged 即時生效 ─────────────────────────────
   const RESOLVE = window.__JReadResolveFloatingIconEnabled || ((v) => v === true);
 
+  // v0.8.164：browser.storage.sync.get 原生 Promise（reject → 全套 undefined fallback，
+  // 與舊 lastError 分支同語意）。
+  const applyDefaults = () => {
+    applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
+  };
   try {
-    chrome.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize'], (s) => {
-      if (chrome.runtime && chrome.runtime.lastError) {
-        applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
-        return;
-      }
+    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize']).then((s) => {
+      if (!s) { applyDefaults(); return; }
       applySize(s.floatingIconSize);
       applyOpacity(s.floatingIconOpacity);
       applyPos(s.floatingIconPos);
       applyEnabled(RESOLVE(s.floatingIcon));
-    });
+    }).catch(applyDefaults);
   } catch (_e) {
-    applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
+    applyDefaults();
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  browser.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
     if (changes.floatingIcon) applyEnabled(RESOLVE(changes.floatingIcon.newValue));
     if (changes.floatingIconOpacity) applyOpacity(changes.floatingIconOpacity.newValue);

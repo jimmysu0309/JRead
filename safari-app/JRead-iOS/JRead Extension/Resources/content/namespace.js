@@ -1,13 +1,25 @@
 // JRead — Content Script 命名空間初始化
 // Manifest V3 的 content script 不能用 ES module import，
 // 因此子模組透過 window.__JRead 共用狀態。此檔必須最先載入。
+
+// ─── 跨瀏覽器 API shim（v0.8.164，比照姊妹專案 Shinkansen content-ns.js）───────
+// content script 不能 import ES module → 用全域方式讓後續所有 content script
+// （keepalive / detector / cleaner / styler / main 等）繼承同一個 `browser`。
+// Chrome：globalThis.browser 不存在 → 退回 globalThis.chrome（MV3 無 callback
+// 時 chrome.* 一樣回 Promise，行為零變化）。Safari / Firefox：用原生 browser.*
+// （Promise，比 Safari 的 chrome 相容層可靠——iOS 訊息掉包修法的核心）。
+// namespace.js 是 content_scripts 第一個檔，此行必須在任何 browser/chrome 使用前。
+// 同款 shim 另一份在 content/settings-defaults.js 頂端（popup / options / SW
+// 三個 context 的第一個載入檔，與本行單一語意、互為鏡像）。
+globalThis.browser = globalThis.browser ?? globalThis.chrome;
+
 (function () {
   'use strict';
 
   if (window.__JRead) return; // 避免重複注入（SPA 導航、重新注入時保險）
 
   window.__JRead = {
-    version: chrome.runtime.getManifest().version,
+    version: browser.runtime.getManifest().version,
 
     // 閱讀模式狀態
     state: {
@@ -34,17 +46,31 @@
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼
     // chrome.runtime.sendMessage 沒 guard）。提到 namespace 後**所有** content
     // script 共用同一個 entry point。invalidated 時（extension reload 後既有
-    // content script 仍在跑但 chrome.runtime 失效，chrome.runtime.id === undefined）
+    // content script 仍在跑但 browser.runtime 失效，browser.runtime.id === undefined）
     // silently no-op；fire-and-forget call site 不影響使用體驗，callback 版本
     // invoke null 讓 caller 走「沒回應」分支。
+    //
+    // v0.8.164：改用 browser.runtime.sendMessage（原生 Promise，比 Safari 的
+    // chrome 相容層可靠——iOS 訊息可靠度修法核心）。對外仍維持 (msg, cb) callback
+    // 介面（call site 不必改）：內部把 Promise resolve → cb(res)、reject → cb(null)。
+    // 一律 .then(onFulfilled, onRejected) 消費 Promise，fire-and-forget（無 cb）時
+    // 也不會留下 unhandled rejection。
     safeSendMessage(msg, cb) {
-      if (!chrome || !chrome.runtime || !chrome.runtime.id) {
+      if (!browser || !browser.runtime || !browser.runtime.id) {
         if (cb) { try { cb(null); } catch (_) {} }
         return;
       }
       try {
-        if (cb) chrome.runtime.sendMessage(msg, cb);
-        else chrome.runtime.sendMessage(msg);
+        const p = browser.runtime.sendMessage(msg);
+        if (p && typeof p.then === 'function') {
+          p.then(
+            (res) => { if (cb) { try { cb(res); } catch (_) {} } },
+            () => { if (cb) { try { cb(null); } catch (_) {} } }
+          );
+        } else if (cb) {
+          // 非 Promise 回傳（理論上 browser.* 一律回 Promise，保險分支）
+          try { cb(null); } catch (_) {}
+        }
       } catch (_) {
         // race condition：guard 通過後 context 才失效（極罕見，但保留安全網）
         if (cb) { try { cb(null); } catch (_) {} }

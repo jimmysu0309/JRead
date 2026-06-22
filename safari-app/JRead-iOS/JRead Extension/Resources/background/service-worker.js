@@ -1,6 +1,6 @@
 // JRead — Background Service Worker（Manifest V3）
 // 注意：service worker 隨時可能被終止，不可用全域變數保存狀態，
-// 所有需要跨請求保留的資料一律走 chrome.storage。
+// 所有需要跨請求保留的資料一律走 browser.storage。
 
 // 共用 popup 端已測試過的注入 fallback 核心函式 + DEFAULT_SETTINGS 單一資料源。
 // 注意：importScripts 的相對路徑是相對 service worker 自己的所在目錄
@@ -60,7 +60,7 @@ const ICONS_IDLE = {
 const BADGE_ACTIVE_COLOR = '#10b981';
 const BADGE_ACTIVE_TEXT  = '✓';
 
-// v0.7.129：吞掉 chrome.action.* / chrome.tabs.sendMessage 在 tab 已關閉時的
+// v0.7.129：吞掉 browser.action.* / browser.tabs.sendMessage 在 tab 已關閉時的
 // promise rejection。MV3 API 是 async：事件入隊→實際執行之間若 tab 被使用者
 // 關掉，會 reject `No tab with id: <id>`，預設變成 uncaught (in promise) 堆進
 // chrome 通知中心。對 SW handler 而言這是 benign race（tab 都沒了，setIcon /
@@ -82,7 +82,7 @@ const LEGACY_SANS_STACK = globalThis.__JReadLegacyFontStacks.sans;
 const SANS_STACK = globalThis.__JReadFontStacks.sans;
 
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
-chrome.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async () => {
   // v0.8.15：改為「只寫 diff」而非整包 get(null)+set(merged) 全量回寫。
   // 全量回寫的問題：(1) 每次版本 bump 都把所有欄位（含可能很長的
   // autoEnableDomains / customShortcuts）重寫一次，徒增 storage.sync 配額壓力
@@ -90,7 +90,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   // 任一 await reject（配額 / 暫時錯誤）變成 unhandled rejection。
   // 現在只把「真的需要補 / 遷移」的 key 收進 patch，其餘不動。
   try {
-    const current = await chrome.storage.sync.get(null);
+    const current = await browser.storage.sync.get(null);
     const patch = {};
     // 補上 current 缺漏的預設 key（已存在的欄位不覆蓋）
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
@@ -107,11 +107,11 @@ chrome.runtime.onInstalled.addListener(async () => {
       patch.fontWeight = 600;
     }
     if (Object.keys(patch).length > 0) {
-      await chrome.storage.sync.set(patch);
+      await browser.storage.sync.set(patch);
     }
     // 遷移後刪掉 boldText 殘留 key（已退役、不再有任何 path 讀它）
     if ('boldText' in current) {
-      await chrome.storage.sync.remove('boldText');
+      await browser.storage.sync.remove('boldText');
     }
   } catch (e) {
     console.warn('[JRead] onInstalled 設定遷移失敗:', e);
@@ -119,20 +119,23 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 // v0.8.36：debug bridge 訊息的共用 gate——只在 unpacked / development 安裝
-// 執行（Claude 自主 debug / cage 場景）。chrome.management.getSelf() 不需要
+// 執行（Claude 自主 debug / cage 場景）。browser.management.getSelf() 不需要
 // "management" permission（自己 query 自己）。store / 正式安裝 silently
 // reject（console.warn 留訊號、不彈 toast，避免網頁端探測 extension 存在）。
 function runIfDevelopmentInstall(label, fn) {
-  chrome.management.getSelf((info) => {
+  // v0.8.164：browser.management.getSelf 原生 Promise（reject 視為非 development、拒絕）。
+  browser.management.getSelf().then((info) => {
     if (info && info.installType === 'development') {
       fn();
     } else {
       console.warn('[JRead]', label, 'rejected: installType=', info && info.installType);
     }
+  }).catch(() => {
+    console.warn('[JRead]', label, 'rejected: management.getSelf failed');
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
 
   switch (msg.type) {
@@ -148,7 +151,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // v0.8.36：get reject（storage 失效等罕見場景）時也要回應——sendResponse
       // 永不呼叫會讓 content fallback 軌的 callback 懸空。回 null 讓 caller
       // 走自己的 defaults fallback。
-      chrome.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse).catch(() => sendResponse(null));
+      browser.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse).catch(() => sendResponse(null));
       return true; // async
     }
     case 'CUSTOM_COMMAND': {
@@ -167,11 +170,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'OPEN_FEATURE_MENU': {
       // v0.8.162：懸浮按鈕長按選單的「功能選單」（Safari path）。content script 不能
       // 在 https 網頁裡用 iframe 載入擴充頁（Safari 已知限制，iOS 上會整頁 refresh），
-      // 改由 SW 開原生工具列 popup（chrome.action.openPopup，Safari 16+ / Chrome 支援）。
+      // 改由 SW 開原生工具列 popup（browser.action.openPopup，Safari 16+ / Chrome 支援）。
       // openPopup 不支援 / 失敗（需手勢等）→ 退而開新分頁載 popup.html。皆無 iframe →
       // 不 refresh。非 Safari（Chrome / FF）走 content 端 iframe 浮層、不送本訊息。
       // iOS Safari 的 action API 可能缺 openPopup → 直接退新分頁（fall through）。
-      const action = chrome.action || chrome.browserAction;
+      const action = browser.action || browser.browserAction;
       (async () => {
         if (action && typeof action.openPopup === 'function') {
           try {
@@ -179,7 +182,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           } catch (_e) { /* 不支援 / 需手勢 → fall through 開新分頁 */ }
         }
-        try { await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') }); }
+        try { await browser.tabs.create({ url: browser.runtime.getURL('popup/popup.html') }); }
         catch (_e) {}
       })();
       return;
@@ -192,24 +195,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // v0.7.217 iOS Safari guard：iOS 的 action API 子集可能缺 setIcon /
       // badge 系列——缺就整段跳過（badge 純裝飾，無功能損失），避免 TypeError
       // 炸掉 onMessage listener。
-      if (!chrome.action || !chrome.action.setIcon || !chrome.action.setBadgeText) return;
+      if (!browser.action || !browser.action.setIcon || !browser.action.setBadgeText) return;
       const active = !!(msg.payload && msg.payload.active);
-      swallowTabGone(chrome.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE }));
+      swallowTabGone(browser.action.setIcon({ tabId, path: active ? ICONS_ACTIVE : ICONS_IDLE }));
       if (active) {
-        swallowTabGone(chrome.action.setBadgeBackgroundColor({ color: BADGE_ACTIVE_COLOR, tabId }));
+        swallowTabGone(browser.action.setBadgeBackgroundColor({ color: BADGE_ACTIVE_COLOR, tabId }));
         // 某些舊版 Chrome 沒 setBadgeTextColor、ignore 即可
-        if (chrome.action.setBadgeTextColor) {
-          swallowTabGone(chrome.action.setBadgeTextColor({ color: '#ffffff', tabId }));
+        if (browser.action.setBadgeTextColor) {
+          swallowTabGone(browser.action.setBadgeTextColor({ color: '#ffffff', tabId }));
         }
-        swallowTabGone(chrome.action.setBadgeText({ text: BADGE_ACTIVE_TEXT, tabId }));
+        swallowTabGone(browser.action.setBadgeText({ text: BADGE_ACTIVE_TEXT, tabId }));
       } else {
-        swallowTabGone(chrome.action.setBadgeText({ text: '', tabId }));
+        swallowTabGone(browser.action.setBadgeText({ text: '', tabId }));
       }
       return;
     }
     case 'JREAD_RELOAD': {
       // v0.7.126：content script bridge (`__jread_debug` type='reload')
-      // 中繼觸發。chrome.runtime.reload() 只能從 SW / popup / options 呼叫，
+      // 中繼觸發。browser.runtime.reload() 只能從 SW / popup / options 呼叫，
       // content script 直接呼會 TypeError。SW handler 收到後重啟 extension。
       // 設計給 Claude 自主 debug 用——dispatch event → bridge → sendMessage
       // → SW reload，整條 chain 無 popup / 鍵盤 shortcut 介入。
@@ -218,39 +221,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 可任意 dispatch `__jread_debug` event 觸發 reload。雖然 reload 不洩漏
       // 資料、不權限提升，但會打斷使用者所有 tab 的 reader mode。Store 安裝的
       // 使用者不該被網頁端任意打擾——只允許 unpacked / development 安裝（Claude
-      // 自主 debug 場景）執行 reload。chrome.management.getSelf() 不需要
+      // 自主 debug 場景）執行 reload。browser.management.getSelf() 不需要
       // "management" permission（自己 query 自己）。
-      // v0.7.217 iOS Safari guard：iOS 無 chrome.management / runtime.reload，
+      // v0.7.217 iOS Safari guard：iOS 無 browser.management / runtime.reload，
       // 缺 API 直接 reject——debug bridge 只在桌面 unpacked（Claude 自主 debug）
       // 場景有意義，iOS 上不存在這個使用情境。
-      if (!(chrome.management && chrome.management.getSelf) || !chrome.runtime.reload) {
+      if (!(browser.management && browser.management.getSelf) || !browser.runtime.reload) {
         console.warn('[JRead] JREAD_RELOAD rejected: management/reload API unavailable');
         return;
       }
-      runIfDevelopmentInstall('JREAD_RELOAD', () => chrome.runtime.reload());
+      runIfDevelopmentInstall('JREAD_RELOAD', () => browser.runtime.reload());
       return;
     }
     case 'JREAD_DEBUG_SET_THEME': {
       // v0.8.36 安全 hardening：debug bridge 的 set-theme 原本由 content 直寫
-      // chrome.storage.sync——任意網頁 JS 可 dispatch `__jread_debug` 改使用者
+      // browser.storage.sync——任意網頁 JS 可 dispatch `__jread_debug` 改使用者
       // theme（sync 同步到所有裝置）。改經 SW 中繼 + 與 JREAD_RELOAD 同款
       // development install gate：unpacked（Claude 自主 debug / cage Page
       // Rounds）照常可用，store / 正式安裝 silently reject。theme 白名單在
       // SW 端再驗一次（第二道防線，不信 content 端 payload）。
-      if (!(chrome.management && chrome.management.getSelf)) {
+      if (!(browser.management && browser.management.getSelf)) {
         console.warn('[JRead] JREAD_DEBUG_SET_THEME rejected: management API unavailable');
         return;
       }
       const theme = msg.payload && msg.payload.theme;
       if (!['light', 'dark', 'sepia', 'gray'].includes(theme)) return;
       runIfDevelopmentInstall('JREAD_DEBUG_SET_THEME', () => {
-        chrome.storage.sync.set({ theme }).catch(() => {});
+        browser.storage.sync.set({ theme }).catch(() => {});
       });
       return;
     }
     case 'RESIZE_OWN_WINDOW': {
       // v0.7.134：YouTube 無邊模式 — content side 算完目標視窗高度後請 SW
-      // 呼 chrome.windows.update。失敗（PWA 限制 / windowId 不在 / 權限缺）
+      // 呼 browser.windows.update。失敗（PWA 限制 / windowId 不在 / 權限缺）
       // 沉默吞掉——CSS 已套上、影片以 object-fit:contain 顯示（會有黑邊但
       // 仍可看），不需要 escalate 給使用者。
       //
@@ -275,7 +278,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return; // sync
       }
       try {
-        const p = chrome.windows.update(wid, { height });
+        const p = browser.windows.update(wid, { height });
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch (_) {}
       sendResponse({ ok: true });
@@ -304,8 +307,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // 保活。listener 的**存在本身**就是啟動觸發器，handler 不需做事。
 // Chrome 軌也有 onStartup（瀏覽器啟動時喚 SW 一次）、無副作用。
 // iOS guard：API 缺席就跳過（與 commands guard 同款，缺了也只是 WPA 軌沒救）。
-if (chrome.runtime.onStartup && chrome.runtime.onStartup.addListener) {
-  chrome.runtime.onStartup.addListener(() => {
+if (browser.runtime.onStartup && browser.runtime.onStartup.addListener) {
+  browser.runtime.onStartup.addListener(() => {
     // 空 handler：喚起 background 本身就是目的。content/keepalive.js 的
     // port 會在頁面載入後接上、讓 background 維持存活（兩段式：onStartup
     // 拉起 → keep-alive 保活，缺一不可——WPA 不會 on-demand 重啟死掉的 appex）
@@ -331,18 +334,18 @@ if (chrome.runtime.onStartup && chrome.runtime.onStartup.addListener) {
 // listener 無條件註冊（Chrome 無 alarm 永不觸發，零行為差異）。
 const IS_SAFARI_RUNTIME = (() => {
   try {
-    return chrome.runtime.getURL('').startsWith('safari-web-extension://');
+    return browser.runtime.getURL('').startsWith('safari-web-extension://');
   } catch (_) {
     return false;
   }
 })();
-if (chrome.alarms && chrome.alarms.onAlarm) {
+if (browser.alarms && browser.alarms.onAlarm) {
   // 空 handler：被喚醒本身就是目的（喚醒後 keep-alive port 會在 content
   // 重連時接上、接手保活）
-  chrome.alarms.onAlarm.addListener(() => {});
+  browser.alarms.onAlarm.addListener(() => {});
   if (IS_SAFARI_RUNTIME) {
     try {
-      chrome.alarms.create('jread-bg-wake', { delayInMinutes: 5, periodInMinutes: 5 });
+      browser.alarms.create('jread-bg-wake', { delayInMinutes: 5, periodInMinutes: 5 });
     } catch (_) { /* alarms 不可用環境（舊版 Safari）silently skip */ }
   }
 }
@@ -356,7 +359,7 @@ if (chrome.alarms && chrome.alarms.onAlarm) {
 // 無條件註冊（不以平台 gate）：Chrome 軌 content 端 gate 在
 // safari-web-extension:// scheme、永不開這條 port → 此 listener 在 Chrome
 // 不觸發，零行為差異；無條件註冊讓 Chromium harness 能驗 port 接線。
-chrome.runtime.onConnect.addListener((port) => {
+browser.runtime.onConnect.addListener((port) => {
   if (!port || port.name !== 'jread-keepalive') return;
   port.onMessage.addListener(() => {
     try { port.postMessage({ pong: true }); } catch (_) {}
@@ -367,16 +370,16 @@ chrome.runtime.onConnect.addListener((port) => {
 // state 也是 inactive，但 setIcon 的 per-tab 設定會跨 navigation 殘留，
 // 需主動清空。監聽 tab.onUpdated 的 status === 'loading' 是新頁載入最早
 // 的訊號點。
-chrome.tabs.onUpdated.addListener((tabId, info) => {
+browser.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === 'loading') {
     // v0.8.36 iOS guard：與 SET_ACTIVE_ICON case 同款——iOS 的 action API
     // 子集可能缺 setIcon / badge 系列，缺就跳過（swallowTabGone 只吞 promise
     // rejection，API 不存在是同步 TypeError、會在每次任何 tab 進 loading 時
     // 炸一次 listener）。同一平台事實、兩條 path 防護必須對稱。
-    if (!chrome.action || !chrome.action.setIcon || !chrome.action.setBadgeText) return;
-    swallowTabGone(chrome.action.setIcon({ tabId, path: ICONS_IDLE }));
+    if (!browser.action || !browser.action.setIcon || !browser.action.setBadgeText) return;
+    swallowTabGone(browser.action.setIcon({ tabId, path: ICONS_IDLE }));
     // 同步清掉 reader-active badge（避免新頁面殘留前一頁的綠燈）
-    swallowTabGone(chrome.action.setBadgeText({ tabId, text: '' }));
+    swallowTabGone(browser.action.setBadgeText({ tabId, text: '' }));
   }
 });
 
@@ -402,8 +405,8 @@ async function dispatchCommand(command, tabId) {
       type: 'DISPATCH_COMMAND',
       payload: { command }
     }, {
-      sendMessage: (id, m) => chrome.tabs.sendMessage(id, m),
-      executeScript: (opts) => chrome.scripting.executeScript(opts)
+      sendMessage: (id, m) => browser.tabs.sendMessage(id, m),
+      executeScript: (opts) => browser.scripting.executeScript(opts)
     });
     return;
   }
@@ -419,9 +422,9 @@ async function dispatchCommand(command, tabId) {
 // 缺席）——top-level 直呼 onCommand.addListener 若 API 整個缺席會 TypeError
 // 炸掉 SW 註冊階段，連 onMessage listener 都掛。guard 後 iOS 上預設鍵不可用
 // 也沒關係：自訂快速鍵（content keydown → CUSTOM_COMMAND）是 iOS 的主通道。
-if (chrome.commands && chrome.commands.onCommand) {
-  chrome.commands.onCommand.addListener(async (command) => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+if (browser.commands && browser.commands.onCommand) {
+  browser.commands.onCommand.addListener(async (command) => {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!tab || typeof tab.id !== 'number') return;
     await dispatchCommand(command, tab.id);
   });
@@ -437,7 +440,7 @@ if (chrome.commands && chrome.commands.onCommand) {
 // SW 沒 UI、結果只能靠 toast 反饋；toast 失敗（chrome:// 等禁止注入頁）silent
 // fail——使用者按快速鍵沒反應就是限制。
 async function sendToReadwiseFromCommand(tabId) {
-  const sendMessage = (id, m) => chrome.tabs.sendMessage(id, m);
+  const sendMessage = (id, m) => browser.tabs.sendMessage(id, m);
   const showToast = (message, kind) => {
     sendMessage(tabId, { type: 'SHOW_TOAST', payload: { message, kind } }).catch(() => {});
   };
@@ -455,7 +458,7 @@ async function sendToReadwiseFromCommand(tabId) {
     const { toggleWithInjectionFallback } = self.__JReadPopup;
     const toggleResult = await toggleWithInjectionFallback(tabId, {
       sendMessage,
-      executeScript: (opts) => chrome.scripting.executeScript(opts)
+      executeScript: (opts) => browser.scripting.executeScript(opts)
     });
     if (!toggleResult || !toggleResult.ok) {
       // 連注入 + toggle 都失敗，無法顯示 toast（content script 沒跑起來）
@@ -486,7 +489,7 @@ async function sendToReadwiseFromCommand(tabId) {
   // rejection）。command 軌原本這兩步裸跑，reject 時整個 function 無聲死掉。
   let readwiseToken, readwiseSummary, geminiApiKey;
   try {
-    ({ readwiseToken, readwiseSummary, geminiApiKey } = await chrome.storage.sync.get({
+    ({ readwiseToken, readwiseSummary, geminiApiKey } = await browser.storage.sync.get({
       readwiseToken: '', readwiseSummary: false, geminiApiKey: ''
     }));
   } catch {
