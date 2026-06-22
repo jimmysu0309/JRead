@@ -12,26 +12,30 @@
        JRead Design Tokens
        ========================================================== */
     :root {
-      --jr-primary-50:  #ebf4ff;
-      --jr-primary-600: #2b6cb0;
-      --jr-primary-700: #2c5282;
+      /* v0.8.158：配色 / 字型 / 圓角 / 版面改採姊妹專案 Shinkansen 的 Apple
+         風格——淺灰底 + 白卡片、Apple 藍 #0071e3 主色、-apple-system 字型，
+         欄位一律「label 在上、控制項整寬在下」的 block 版面（手機寬度排版更
+         合理，Jimmy 2026-06-22）。token 名沿用 --jr-*，值換成 Apple 系統色。 */
+      --jr-primary-50:  #e8f2fe;   /* focus ring 淡藍 */
+      --jr-primary-600: #0071e3;   /* Apple 藍主色 */
+      --jr-primary-700: #0077ed;   /* hover 略亮 */
 
-      --jr-neutral-50:  #fafafa;
-      --jr-neutral-100: #f0f0f0;
-      --jr-neutral-300: #cccccc;
-      --jr-neutral-500: #888888;
-      --jr-neutral-700: #444444;
-      --jr-neutral-900: #222222;
+      --jr-neutral-50:  #f5f5f7;   /* 頁面底 / ghost 按鈕底 */
+      --jr-neutral-100: #ededf0;   /* 分隔線 */
+      --jr-neutral-300: #d2d2d7;   /* 控制項邊框 */
+      --jr-neutral-500: #86868b;   /* 次級文字 */
+      --jr-neutral-700: #6e6e73;   /* 內文次級 */
+      --jr-neutral-900: #1d1d1f;   /* 主文字 */
 
       --jr-surface:     #ffffff;
 
-      --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
-      --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+      --jr-font-ui:      -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+      --jr-font-mono:    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-      --jr-radius-sm: 4px;
-      --jr-radius-md: 6px;
+      --jr-radius-sm: 6px;
+      --jr-radius-md: 8px;
 
-      --jr-control-w: 140px;
+      --jr-control-h: 36px;
     }
 
     * { box-sizing: border-box; }
@@ -42,30 +46,53 @@
       -webkit-font-smoothing: antialiased;
     }
     body {
-      /* v0.7.219：560px → 760px（Jimmy iPad 模擬器驗收反映太窄）。
-         options 以 open_in_tab 整頁開啟，560px 在 iPad / 桌面整頁下
-         留白過多、desc 長段落被擠成高窄柱。 */
-      max-width: 760px;
-      margin: 40px auto;
-      padding: 0 24px;
-      background: var(--jr-surface);
+      /* Shinkansen 風格——淺灰頁面底 + 置中白卡片（.container）。 */
+      margin: 0;
+      background: var(--jr-neutral-50);
       line-height: 1.5;
     }
+    .container {
+      /* v0.7.219：760px（Jimmy iPad 模擬器驗收反映 560 太窄）。
+         options 以 open_in_tab 整頁開啟。 */
+      max-width: 760px;
+      margin: 40px auto;
+      padding: 32px;
+      background: var(--jr-surface);
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    }
     /* v0.7.223：觸控裝置字級放大（device-width 下 base 15px 仍偏小 →
-       ~18px）。options 走 open_in_tab 整頁，無桌面 popup 視窗 sizing
-       循環問題，僅以 pointer 區分；zoom 等比放大觸控目標與排版。 */
+       ~18px）。block 版面為區塊元素、寬度受父層 .container 約束，zoom 後不會
+       橫向溢出；zoom 只縮放、不降觸控目標。 */
     @media (pointer: coarse) {
       body { zoom: 1.2; }
+    }
+    /* 窄版（iPhone / 窄視窗）：白卡片收掉留白、撐滿整寬（Shinkansen 同款）。 */
+    @media (max-width: 480px) {
+      .container {
+        margin: 0;
+        padding: 20px 16px;
+        border-radius: 0;
+        box-shadow: none;
+      }
     }
 
     /* ==========================================================
        Header
        ========================================================== */
     h1 {
-      font-size: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 22px;
       font-weight: 600;
       letter-spacing: -0.005em;
       margin: 0 0 4px;
+    }
+    .page-title-icon {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
     }
     .version {
       color: var(--jr-neutral-500);
@@ -76,43 +103,16 @@
     }
 
     /* ==========================================================
-       Field rows
+       Field block — label 在上、desc 次之、控制項整寬在下（Shinkansen 版面）
        ========================================================== */
     .field {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--jr-neutral-100);
-    }
-    /* 避免 .field border-bottom 與下一個 .section-heading 的 border-top
-       並列成雙線（Jimmy 2026-05-18 截圖反饋）；同時 padding-bottom: 0
-       讓「攔截原站快速鍵 → YouTube 模式 heading」與「無邊模式 desc →
-       Readwise heading」線距上方一致（皆 20px）。:has() 在 Chrome 105+
-       支援。 */
-    .field:has(+ #save-status + .section-heading) {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-    /* v0.7.218：快速鍵區最後一列 field 後接 #shortcut-hint + 下一個
-       section-heading——同樣避免 field border-bottom 與 heading border-top
-       並列成雙線 */
-    .field:has(+ #shortcut-hint + .section-heading) {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-    /* v0.8.74：同一功能的子設定群（Readwise 整合的 Token + 摘要 + Gemini key）。
-       彼此間不放分隔線——分隔線只用於切分不同設定，子設定被切開會讓人誤以為
-       是三個獨立功能。群的下緣也不畫線（後接 .license 已有 40px margin-top
-       提供區段間距）。 */
-    .field-group .field {
-      border-bottom: none;
+      margin: 18px 0;
     }
     .field label {
+      display: block;
+      font-size: 14px;
       font-weight: 500;
       color: var(--jr-neutral-900);
-      font-size: 14px;
     }
     .field .desc {
       display: block;
@@ -120,127 +120,54 @@
       font-size: 12px;
       color: var(--jr-neutral-500);
       margin-top: 2px;
+      line-height: 1.5;
     }
     .field .desc strong {
       color: var(--jr-primary-600);
       font-weight: 600;
     }
 
+    /* checkbox 列：checkbox 在左、文字 + 說明在右（Shinkansen checkbox-label）。 */
+    .field-checkbox {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .field-checkbox > label {
+      flex: 1 1 auto;
+      cursor: pointer;
+    }
+
     /* ==========================================================
-       Form controls — compact, aligned, tokenized
+       Form controls — 整寬 block（Shinkansen）
        ========================================================== */
-    select,
-    input[type="number"],
-    input[type="password"],
-    input[type="text"] {
-      width: var(--jr-control-w);
-      height: 32px;
+    .field select,
+    .field input[type="number"],
+    .field input[type="password"],
+    .field input[type="text"] {
+      display: block;
+      width: 100%;
+      height: var(--jr-control-h);
+      margin-top: 6px;
       padding: 0 10px;
       font-family: var(--jr-font-ui);
-      font-size: 13px;
+      font-size: 14px;
       color: var(--jr-neutral-900);
       background: var(--jr-surface);
       border: 1px solid var(--jr-neutral-300);
       border-radius: var(--jr-radius-sm);
       transition: border-color 0.12s ease, box-shadow 0.12s ease;
-    }
-    /* Readwise token 控制群：input + 測試按鈕同一列，整列固定 280px、右緣對齊
-       區塊右緣（與其他控制群一致）；input 撐滿剩餘寬、按鈕固定寬。結果文字
-       另起一列在下方右對齊。 */
-    /* token-control 欄位：label 與控制群頂端對齊。控制群是直向（input 列 +
-       結果列）比 label 高，.field 預設 align-items:center 會把控制群置中、
-       input 反而比 label 高 6px → 視覺沒對齊（Jimmy 2026-06-15 截圖）。改頂
-       對齊讓 input 列與 label 名稱同高。 */
-    .field:has(.readwise-token-control) {
-      align-items: flex-start;
-    }
-    .readwise-token-control {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 6px;
-    }
-    .readwise-token-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 280px;
-    }
-    input#readwiseToken,
-    input#geminiApiKey {
-      flex: 1 1 auto;
-      width: auto;
-      min-width: 0;
-      font-family: var(--jr-font-mono);
-      font-size: 12px;
-    }
-    .token-test-btn {
-      flex: 0 0 auto;
-      height: 32px;
-      padding: 0 14px;
-      font-family: var(--jr-font-ui);
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--jr-neutral-900);
-      background: var(--jr-surface);
-      border: 1px solid var(--jr-neutral-300);
-      border-radius: var(--jr-radius-sm);
-      cursor: pointer;
-      transition: border-color 0.12s ease, background 0.12s ease;
-    }
-    .token-test-btn:hover {
-      border-color: var(--jr-neutral-500);
-    }
-    .token-test-btn:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-    /* 結果文字：雙通道（色 + 符號 ✓ / ✗）避免只靠顏色辨識 */
-    .token-test-result {
-      font-size: 12px;
-      font-weight: 500;
-      min-height: 16px;
-      line-height: 16px;
-    }
-    .token-test-result.is-ok { color: var(--jr-success-600, #1a7f37); }
-    .token-test-result.is-error { color: var(--jr-danger-600, #c0362c); }
-    .token-test-result.is-pending { color: var(--jr-neutral-500); }
-    /* v0.7.155：自動啟動網域 textarea。獨佔整個區塊寬度（不走 .field 左右
-       分欄）；mono 字型 + 較小字級對齊「網域 = 機器辨識字串」語意。 */
-    textarea#autoEnableDomains {
-      width: 100%;
-      min-height: 110px;
-      padding: 10px 12px;
-      font-family: var(--jr-font-mono);
-      font-size: 12px;
-      line-height: 1.6;
-      color: var(--jr-neutral-900);
-      background: var(--jr-surface);
-      border: 1px solid var(--jr-neutral-300);
-      border-radius: var(--jr-radius-sm);
-      resize: vertical;
-      transition: border-color 0.12s ease, box-shadow 0.12s ease;
-    }
-    textarea#autoEnableDomains:hover {
-      border-color: var(--jr-neutral-500);
-    }
-    textarea#autoEnableDomains:focus {
-      outline: none;
-      border-color: var(--jr-primary-600);
-      box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
     input[type="number"] {
       font-family: var(--jr-font-mono);
       font-variant-numeric: tabular-nums;
-      text-align: right;
-      padding-right: 12px;
     }
     select {
       appearance: none;
       -webkit-appearance: none;
       background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
-      background-position: right 10px center;
+      background-position: right 12px center;
       padding-right: 28px;
     }
     select:hover,
@@ -258,10 +185,9 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
 
-    /* v0.7.131：toggle checkbox — 對齊既有 field row 右側 control 區寬度。
-       `.field` 是 flex container；checkbox 必須 flex-shrink:0 + flex-basis
-       (width)，否則 label 內 desc 較長時 checkbox 會被壓扁成細長條（v0.7.131
-       Jimmy 截圖 bug：箭頭狀變形 + 對勾位置走位）。 */
+    /* v0.7.131：toggle checkbox。`.field-checkbox` 是 flex container；checkbox
+       必須 flex-shrink:0 + flex-basis，否則 label 內 desc 較長時 checkbox 會被
+       壓扁成細長條（v0.7.131 Jimmy 截圖 bug）。 */
     .field input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
@@ -269,6 +195,7 @@
       height: 18px;
       flex: 0 0 18px;
       margin: 0;
+      margin-top: 2px;
       border: 1px solid var(--jr-neutral-300);
       border-radius: var(--jr-radius-sm);
       background: var(--jr-surface);
@@ -299,52 +226,67 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
     }
 
-    /* v0.8.154：懸浮 icon 透明度滑桿 — 控制區固定寬 var(--jr-control-w)（與同
-       column 的 number / select 右緣對齊，CLAUDE.md UI grid 規則），滑桿吃剩餘
-       寬、右側固定寬 % 讀數用 tabular-nums 不跳動。 */
+    /* 自動啟動網域 textarea。獨佔整個區塊寬度；mono 字型對齊「網域 = 機器
+       辨識字串」語意。 */
+    textarea#autoEnableDomains {
+      display: block;
+      width: 100%;
+      min-height: 120px;
+      margin-top: 4px;
+      padding: 10px 12px;
+      font-family: var(--jr-font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--jr-neutral-900);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      resize: vertical;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    textarea#autoEnableDomains:hover {
+      border-color: var(--jr-neutral-500);
+    }
+    textarea#autoEnableDomains:focus {
+      outline: none;
+      border-color: var(--jr-primary-600);
+      box-shadow: 0 0 0 3px var(--jr-primary-50);
+    }
+
+    /* v0.8.154：懸浮按鈕透明度滑桿——整寬，滑桿吃剩餘寬、右側固定寬 % 讀數
+       用 tabular-nums 不跳動。 */
     .opacity-control {
-      flex: 0 0 var(--jr-control-w);
-      width: var(--jr-control-w);
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      margin-top: 8px;
     }
     .opacity-control input[type="range"] {
-      flex: 1;
+      flex: 1 1 auto;
       min-width: 0;
       margin: 0;
       accent-color: var(--jr-primary-600);
       cursor: pointer;
     }
     .opacity-control .opacity-val {
-      flex: 0 0 38px;
+      flex: 0 0 44px;
       text-align: right;
       font-family: var(--jr-font-mono);
       font-variant-numeric: tabular-nums;
       font-size: 13px;
-      color: var(--jr-neutral-700, #444);
-    }
-    /* v0.8.154：field 直接後接 section-heading 時去掉 field 下緣線 + padding，
-       避免與 heading border-top 並列成雙線（既有 #save-status / #shortcut-hint
-       夾層版同款）。 */
-    .field:has(+ .section-heading) {
-      border-bottom: none;
-      padding-bottom: 0;
+      color: var(--jr-neutral-700);
     }
 
     /* ==========================================================
-       Section heading — 兩段 section 之間用 border-top 作為分隔線，視覺
-       上「分隔線 + 標題」一體成形，避免無 border 純靠 margin 產生鬆散
-       空白（v0.7.134：Jimmy 反映「無邊模式 → Readwise Reader 整合」中間
-       少分隔線、且「攔截原站快速鍵」到「YouTube 模式」中間空白過大）。
+       Section heading — Apple 藍 + 底線（Shinkansen h2）
        ========================================================== */
     .section-heading {
-      margin: 20px 0 8px;
-      padding-top: 16px;
-      border-top: 1px solid var(--jr-neutral-100);
-      font-size: 14px;
+      margin: 28px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--jr-neutral-100);
+      font-size: 15px;
       font-weight: 600;
-      color: var(--jr-neutral-900);
+      color: var(--jr-primary-600);
       letter-spacing: -0.005em;
     }
     .section-desc {
@@ -377,10 +319,7 @@
       letter-spacing: 0.02em;
     }
 
-    /* YouTube 模式說明區的次級小標——比 section-heading 小一階，
-       讓「影院模式 / 無邊模式」並列在「YouTube 模式」大標下。
-       上方 margin 16px 跟 section-heading margin-top 20px 構成
-       「section > subsection」兩層節奏（subsection 較緊跟父說明）。 */
+    /* YouTube 模式說明區的次級小標——比 section-heading 小一階。 */
     .subsection-heading {
       margin: 16px 0 4px;
       font-size: 13px;
@@ -390,24 +329,22 @@
     }
 
     /* ==========================================================
-       快速鍵 recorder（v0.7.218）
-       控制群（recorder + 還原）固定總寬 = --jr-control-w，右緣與其他
-       field 的 select / input 對齊（UI grid 規則：同 column 兄弟元件
-       左右邊緣全對齊、固定寬不用 min-width）。
+       快速鍵 recorder（v0.7.218）——整寬 block，recorder 吃剩餘寬、還原鍵固定寬。
+       上限 280px：桌面整寬太空、手機正好填滿。
        ========================================================== */
     .shortcut-controls {
       display: flex;
       gap: 6px;
-      flex: 0 0 var(--jr-control-w);
-      width: var(--jr-control-w);
+      margin-top: 6px;
+      max-width: 280px;
     }
     .shortcut-recorder {
       flex: 1 1 auto;
       min-width: 0;
-      height: 32px;
-      padding: 0 8px;
+      height: var(--jr-control-h);
+      padding: 0 10px;
       font-family: var(--jr-font-mono);
-      font-size: 12px;
+      font-size: 13px;
       letter-spacing: 0.02em;
       color: var(--jr-neutral-900);
       background: var(--jr-surface);
@@ -428,8 +365,7 @@
       box-shadow: 0 0 0 3px var(--jr-primary-50);
       color: var(--jr-primary-600);
     }
-    /* 驗證被拒（Safari 按 ⌥／⌘ 等）：紅框 + 抖動，明顯提示。
-       options.js flashRecorderInvalid 加上 .invalid、1.2s 後移除 */
+    /* 驗證被拒（Safari 按 ⌥／⌘ 等）：紅框 + 抖動，明顯提示。 */
     .shortcut-recorder.invalid {
       border-color: #ff3b30;                       /* iOS 系統紅 */
       box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.18);
@@ -442,10 +378,10 @@
       75% { transform: translateX(3px); }
     }
     .shortcut-clear {
-      flex: 0 0 28px;
-      height: 32px;
+      flex: 0 0 var(--jr-control-h);
+      height: var(--jr-control-h);
       padding: 0;
-      font-size: 13px;
+      font-size: 14px;
       line-height: 1;
       color: var(--jr-neutral-500);
       background: var(--jr-surface);
@@ -457,8 +393,7 @@
     .shortcut-clear:hover { border-color: var(--jr-neutral-500); color: var(--jr-neutral-700); }
     .shortcut-clear:disabled { opacity: 0.35; cursor: default; }
     .shortcut-clear:disabled:hover { border-color: var(--jr-neutral-300); color: var(--jr-neutral-500); }
-    /* 錄製驗證失敗原因。空字串時不撐空間（同 #save-status 邏輯）；
-       有文字時上 amber 底框 + ⚠（options.js 加前綴），不只是一行小灰字 */
+    /* 錄製驗證失敗原因。空字串時不撐空間；有文字時上 amber 底框 + ⚠。 */
     #shortcut-hint {
       margin: 0;
       min-height: 0;
@@ -476,9 +411,67 @@
     }
 
     /* ==========================================================
+       Readwise / Gemini token 控制群——整寬：input 列（input 撐滿 + 測試鈕）
+       + 結果列。
+       ========================================================== */
+    .readwise-token-control {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .readwise-token-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    input#readwiseToken,
+    input#geminiApiKey {
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 0;
+      margin-top: 0;
+      font-family: var(--jr-font-mono);
+      font-size: 13px;
+    }
+    /* Shinkansen ghost-btn 風格——淺灰底、hover 加深。 */
+    .token-test-btn {
+      flex: 0 0 auto;
+      height: var(--jr-control-h);
+      padding: 0 16px;
+      font-family: var(--jr-font-ui);
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--jr-neutral-900);
+      background: var(--jr-neutral-50);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .token-test-btn:hover {
+      background: #ececef;
+      border-color: var(--jr-neutral-500);
+    }
+    .token-test-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    /* 結果文字：雙通道（色 + 符號 ✓ / ✗）避免只靠顏色辨識 */
+    .token-test-result {
+      font-size: 12px;
+      font-weight: 500;
+      min-height: 16px;
+      line-height: 16px;
+    }
+    .token-test-result.is-ok { color: var(--jr-success-600, #1a7f37); }
+    .token-test-result.is-error { color: var(--jr-danger-600, #c0362c); }
+    .token-test-result.is-pending { color: var(--jr-neutral-500); }
+
+    /* ==========================================================
        快速鍵說明文字依 runtime 引擎切換（options.js 加 body.runtime-*）。
-       桌面（Chrome / Firefox）可用 ⌥ 或 ⌃；Safari 僅 ⌃（⌥／⌘ 被系統攔截）。
-       純 CSS 顯示切換、不需額外 JS。
        ========================================================== */
     .intro-desktop,
     .intro-safari { display: none; }
@@ -487,16 +480,10 @@
     body.runtime-safari .intro-safari { display: block; }
 
     /* ==========================================================
-       Save status — 「已儲存」訊息暫存區。沒有訊息時完全不撐空間
-       （margin 0 + min-height 0），訊息出現時下方 layout 整體下推
-       14px、1.5s 後消失彈回——必要的 layout shift，換取「攔截原站
-       快速鍵」field 到「YouTube 模式」分隔線之間 20px 一致節奏。
-       v0.7.134：Jimmy 反映 #save-status 撐空白讓 YouTube heading
-       上方距離（32px）跟 Readwise heading 上方距離（20px）不一致；
-       一致統一節奏方案 = margin/min-height 全 0。
+       Save status — 「已儲存」訊息暫存區。沒有訊息時不撐空間。
        ========================================================== */
     #save-status {
-      margin: 0;
+      margin: 4px 0 0;
       color: var(--jr-primary-600);
       font-family: var(--jr-font-mono);
       font-size: 12px;
@@ -505,21 +492,22 @@
     }
 
     /* ==========================================================
-       回復預設設定（v0.8.157）——區段頂 border-top 與其他 section 分隔；
-       按鈕右對齊與同 column 控制項右緣一致。danger 雙態：第一次點進入
-       「再按一次確認」狀態（紅框不填色，WYSIWYG active 慣例），4s 未確認
-       自動還原，避免誤觸把所有設定洗掉。
+       回復預設設定（v0.8.157）——區段頂 border-top；danger 雙態：第一次點進入
+       「再按一次確認」（紅框不填色），4s 未確認自動還原，避免誤觸。
        ========================================================== */
     .reset-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      margin-top: 20px;
-      padding-top: 16px;
+      gap: 12px;
+      margin-top: 28px;
+      padding-top: 20px;
       border-top: 1px solid var(--jr-neutral-100);
     }
+    .reset-row .reset-text { flex: 1 1 200px; }
     .reset-row .reset-label {
+      display: block;
       font-size: 14px;
       font-weight: 600;
       color: var(--jr-neutral-900);
@@ -533,10 +521,10 @@
     }
     .reset-btn {
       flex: 0 0 auto;
-      height: 32px;
+      height: var(--jr-control-h);
       padding: 0 16px;
       font-family: var(--jr-font-ui);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 500;
       color: var(--jr-danger-600, #c0362c);
       background: var(--jr-surface);
@@ -609,96 +597,47 @@
   </style>
 </head>
 <body>
-  <h1>JRead 偏好設定</h1>
+  <div class="container">
+  <h1><img src="../assets/icons/icon-32.png" alt="" class="page-title-icon">JRead 偏好設定</h1>
   <div class="version">v<span id="version"></span></div>
 
-  <div class="field">
-    <label>
-      主題
-      <span class="desc">日/夜間 / 米色 / 灰色</span>
-    </label>
-    <select id="theme">
-      <option value="light">亮色</option>
-      <option value="dark">暗色</option>
-      <option value="sepia">米色</option>
-      <option value="gray">灰色</option>
-    </select>
-  </div>
+  <!-- v0.8.158：主題 / 字級 / 標題字級 / 版心寬度 / 字重 已移到工具列圖示選單
+       （popup）即時調整，options 不再重複列出，避免雙入口 drift。 -->
 
-  <div class="field">
-    <label>
-      字級（px）
-      <span class="desc">主文字體大小；<strong>0 = 自動</strong>（保留原站）</span>
-    </label>
-    <input type="number" id="fontSize" min="0" max="32" step="1">
-  </div>
-
-  <div class="field">
-    <label>
-      標題字級（px）
-      <span class="desc">文章主標題大小；<strong>0 = 自動</strong>（保留原站）</span>
-    </label>
-    <input type="number" id="titleFontSize" min="0" max="200" step="1">
-  </div>
-
-  <div class="field">
-    <label>
-      版心寬度（px）
-      <span class="desc">主文欄寬</span>
-    </label>
-    <input type="number" id="contentWidth" min="480" max="1600" step="20">
-  </div>
-
-  <div class="field">
-    <label for="fontWeight">
-      字重
-      <span class="desc">內文字體粗細，<strong>全平台一致生效</strong>；標題不受影響</span>
-    </label>
-    <select id="fontWeight">
-      <option value="300">細</option>
-      <option value="400">中</option>
-      <option value="600">粗</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label for="blockPageShortcuts">
-      攔截原站快速鍵
-      <span class="desc">閱讀模式下擋掉網站的鍵盤快速鍵，避免誤按 <strong>j / k / e</strong> 觸發操作；打字輸入不受影響</span>
-    </label>
+  <div class="field field-checkbox">
     <input type="checkbox" id="blockPageShortcuts">
+    <label for="blockPageShortcuts">
+      進入閱讀模式時攔截原站快速鍵
+      <span class="desc">閱讀模式下擋掉網站的鍵盤快速鍵，避免誤按觸發背景的原頁面操作</span>
+    </label>
   </div>
 
   <div class="field">
-    <label>
-      Space 顯示門檻（%）
-      <span class="desc">閱讀模式按 <strong>Space</strong> 前進段落（<strong>Shift+Space</strong> 回上一段）；段落超過畫面此比例即平滑卷回上方。預設 <strong>50</strong>；<strong>0 = 停用</strong>（整頁卷動）</span>
-    </label>
+    <label for="spaceScrollRatio">Space 顯示門檻（%）</label>
+    <span class="desc">閱讀模式按 <strong>Space</strong> 前進段落（<strong>Shift+Space</strong> 回上一段）；段落超過畫面此比例即平滑卷回上方。預設 <strong>50</strong>；<strong>0 = 停用</strong>（整頁卷動）</span>
     <input type="number" id="spaceScrollRatio" min="0" max="90" step="5">
   </div>
 
   <div class="field">
-    <label>
-      閱讀位置記憶（天）
-      <span class="desc">離開時記住閱讀位置，效期內重進自動回到上次位置。預設 <strong>3</strong>、最長 <strong>7</strong>；<strong>0 = 停用</strong></span>
-    </label>
+    <label for="positionMemoryDays">閱讀位置記憶（天）</label>
+    <span class="desc">離開時記住閱讀位置，效期內進入閱讀模式自動回到上次位置。預設 <strong>3</strong>、最長 <strong>7</strong>；<strong>0 = 停用</strong></span>
     <input type="number" id="positionMemoryDays" min="0" max="7" step="1">
   </div>
 
-  <div class="field">
+  <div class="field field-checkbox">
+    <input type="checkbox" id="pangu">
     <label for="pangu">
       中英文間自動補空白 + 中文標點全形化
       <span class="desc">中英文 / 數字相鄰處自動補空白，中文邊界半形標點轉全形；程式碼與連結不受影響</span>
     </label>
-    <input type="checkbox" id="pangu">
   </div>
 
-  <div class="field">
+  <div class="field field-checkbox">
+    <input type="checkbox" id="editModeEnabled">
     <label for="editModeEnabled">
       編輯模式
-      <span class="desc">popup 顯示「移除雜訊」按鈕，手動點掉 cleaner 漏網的雜訊段落（誤刪按 <strong>Cmd/Ctrl+Z</strong>，重整即復原）。關閉則隱藏該按鈕</span>
+      <span class="desc">工具列圖示選單顯示「移除雜訊」按鈕，手動點掉 cleaner 漏網的雜訊段落（誤刪按 <strong>Cmd/Ctrl+Z</strong>，重整即復原）。關閉則隱藏該按鈕</span>
     </label>
-    <input type="checkbox" id="editModeEnabled">
   </div>
 
   <div id="save-status"></div>
@@ -708,22 +647,18 @@
     觸控裝置（iPhone / iPad）與懸浮按鈕的入口設定
   </p>
 
-  <!-- v0.8.157：四項同屬「觸控與懸浮控制」一個區段的設定，用 .field-group 包住
-       移除彼此間的分隔線（分隔線只切分不同設定群）。 -->
   <div class="field-group">
-    <div class="field">
-      <label for="floatingIcon">
-        懸浮控制 icon
-        <span class="desc">頁面邊緣常駐小圖示：<strong>短按</strong>切換閱讀模式、<strong>長按</strong>開選單、<strong>拖曳</strong>換位置。Safari 預設開、桌面預設關</span>
-      </label>
+    <div class="field field-checkbox">
       <input type="checkbox" id="floatingIcon">
+      <label for="floatingIcon">
+        懸浮按鈕
+        <span class="desc">頁面邊緣常駐按鈕：<strong>短按</strong>切換閱讀模式、<strong>長按</strong>開選單、<strong>拖曳</strong>換位置</span>
+      </label>
     </div>
 
     <div class="field">
-      <label for="floatingIconSize">
-        懸浮 icon 尺寸
-        <span class="desc">圖示大小：<strong>小</strong> = 16px（預設）、<strong>大</strong> = 32px</span>
-      </label>
+      <label for="floatingIconSize">懸浮按鈕尺寸</label>
+      <span class="desc">按鈕大小：<strong>小</strong> = 16px（預設）、<strong>大</strong> = 32px</span>
       <select id="floatingIconSize">
         <option value="small">小</option>
         <option value="large">大</option>
@@ -731,22 +666,20 @@
     </div>
 
     <div class="field">
-      <label for="floatingIconOpacity">
-        懸浮 icon 透明度
-        <span class="desc">數值越低越淡。範圍 10–100%</span>
-      </label>
+      <label for="floatingIconOpacity">懸浮按鈕透明度</label>
+      <span class="desc">數值越低越淡。範圍 10–100%</span>
       <div class="opacity-control">
         <input type="range" id="floatingIconOpacity" min="0.1" max="1" step="0.05">
         <span class="opacity-val" id="floatingIconOpacityVal"></span>
       </div>
     </div>
 
-    <div class="field">
+    <div class="field field-checkbox">
+      <input type="checkbox" id="threeFingerTap">
       <label for="threeFingerTap">
         三指輕點切換閱讀模式
-        <span class="desc">觸控裝置三指輕點頁面即切換閱讀模式（iPhone / iPad 主要入口）</span>
+        <span class="desc">觸控裝置三指輕點頁面即切換閱讀模式</span>
       </label>
-      <input type="checkbox" id="threeFingerTap">
     </div>
   </div>
 
@@ -758,30 +691,24 @@
     點欄位後直接按下想要的組合鍵（Safari 需用 <strong>⌃ Control</strong> 組合，按 <strong>ESC</strong> 取消錄製）。<strong>⌥ Option／⌘ Command 組合會被 Safari 系統層攔截、傳不到網頁</strong>，自訂鍵一定要含 ⌃ Control。<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂。</strong>內建預設鍵仍然有效
   </p>
   <div class="field">
-    <label>
-      切換純閱讀模式
-      <span class="desc">內建預設 <strong>⌥R</strong></span>
-    </label>
+    <label>切換純閱讀模式</label>
+    <span class="desc">內建預設 <strong>⌥R</strong></span>
     <div class="shortcut-controls">
       <button type="button" class="shortcut-recorder" id="sc-toggle-reader-mode" data-command="toggle-reader-mode"></button>
       <button type="button" class="shortcut-clear" id="sc-clear-toggle-reader-mode" data-command="toggle-reader-mode" title="還原預設">✕</button>
     </div>
   </div>
   <div class="field">
-    <label>
-      送到 Readwise Reader
-      <span class="desc">內建預設 <strong>⌥⇧R</strong></span>
-    </label>
+    <label>送到 Readwise Reader</label>
+    <span class="desc">內建預設 <strong>⌥⇧R</strong></span>
     <div class="shortcut-controls">
       <button type="button" class="shortcut-recorder" id="sc-send-to-readwise" data-command="send-to-readwise"></button>
       <button type="button" class="shortcut-clear" id="sc-clear-send-to-readwise" data-command="send-to-readwise" title="還原預設">✕</button>
     </div>
   </div>
   <div class="field">
-    <label>
-      切換 YouTube 無邊模式
-      <span class="desc">內建預設 <strong>⌥Y</strong></span>
-    </label>
+    <label>切換 YouTube 無邊模式</label>
+    <span class="desc">內建預設 <strong>⌥Y</strong></span>
     <div class="shortcut-controls">
       <button type="button" class="shortcut-recorder" id="sc-toggle-youtube-borderless" data-command="toggle-youtube-borderless"></button>
       <button type="button" class="shortcut-clear" id="sc-clear-toggle-youtube-borderless" data-command="toggle-youtube-borderless" title="還原預設">✕</button>
@@ -791,7 +718,7 @@
 
   <h2 class="section-heading">自動啟動網域</h2>
   <p class="section-desc">
-    符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在 popup 用「此網域自動啟動」開關快速加入目前網域
+    符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在工具列圖示選單用「此網域自動啟動」開關快速加入目前網域
   </p>
   <textarea id="autoEnableDomains" spellcheck="false" autocomplete="off" placeholder="abc.com&#10;news.example.org"></textarea>
 
@@ -815,15 +742,10 @@
     在工具列圖示選單點擊「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
     Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器
   </p>
-  <!-- v0.8.74：三項同屬「Readwise 整合」一個功能的設定（Token + 摘要開關 +
-       Gemini key），用 .field-group 包住、移除彼此間的分隔線（分隔線只用於
-       分隔不同設定，同一功能的子設定不該被切開）。 -->
   <div class="field-group">
     <div class="field">
-      <label>
-        Readwise Access Token
-        <span class="desc">空白 = 不啟用</span>
-      </label>
+      <label for="readwiseToken">Readwise Access Token</label>
+      <span class="desc">空白 = 不啟用</span>
       <div class="readwise-token-control">
         <div class="readwise-token-row">
           <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
@@ -832,18 +754,16 @@
         <span id="readwiseTestResult" class="token-test-result"></span>
       </div>
     </div>
-    <div class="field">
-      <label>
+    <div class="field field-checkbox">
+      <input type="checkbox" id="readwiseSummary">
+      <label for="readwiseSummary">
         送出時自動產生摘要
         <span class="desc">送到 Readwise Reader 時，用 Google Gemini Flash Lite 先產生<strong>文章摘要</strong>一起送出，取代 Readwise 內建的英文自動摘要。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出、由 Readwise 自行處理</span>
       </label>
-      <input type="checkbox" id="readwiseSummary">
     </div>
     <div class="field">
-      <label>
-        Gemini API Key
-        <span class="desc">API Key 僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器</span>
-      </label>
+      <label for="geminiApiKey">Gemini API Key</label>
+      <span class="desc">API Key 僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器</span>
       <div class="readwise-token-control">
         <div class="readwise-token-row">
           <input type="password" id="geminiApiKey" autocomplete="off" spellcheck="false" placeholder="貼上 API key">
@@ -855,7 +775,7 @@
   </div>
 
   <div class="reset-row">
-    <div>
+    <div class="reset-text">
       <span class="reset-label">回復預設設定</span>
       <span class="reset-desc">把所有設定複寫回預設值（Readwise / Gemini 的 API key 會保留）</span>
     </div>
@@ -873,6 +793,7 @@
   </section>
 
   <p class="footer-easter-egg">No coding skills were harmed in the making of this shit.</p>
+  </div>
 
   <script src="../content/settings-defaults.js"></script>
   <script src="../content/domain-match.js"></script>

@@ -136,8 +136,8 @@
     FONT_FACE_CSS = '';
   }
 
-  // v0.8.146：內嵌拉丁可變字型（Latin-subset woff2，皆 OFL）。襯線群 Literata /
-  // Source Serif / Piazzolla、無襯線群 Public Sans / Source Sans——由 popup「英文字型」
+  // v0.8.146：內嵌拉丁可變字型（Latin-subset woff2，皆 OFL）。襯線群 Source Serif /
+  // Piazzolla、無襯線群 Public Sans / Source Sans——由 popup「英文字型」
   // 選單選定（latinSerif / latinSans），composeFontStack 把選定 family 前接到 base
   // stack 前，故 opts.fontFamily 會含 "Family" 字面。family 名對齊 LATIN_FONTS 的值。
   //
@@ -148,7 +148,6 @@
   // 實際引用該 family 時才下載，故只注入「被選到」的那一支（latinFontFaceFor 掃描
   // opts.fontFamily），不像 Noto 三檔同 family 必須一起宣告。
   const BUNDLED_LATIN_FACES = {
-    'Literata':     { file: 'literata.woff2',     range: '200 900' },
     'Source Serif': { file: 'source-serif.woff2', range: '200 900' },
     'Piazzolla':    { file: 'piazzolla.woff2',    range: '100 900' },
     'Public Sans':  { file: 'public-sans.woff2',  range: '100 900' },

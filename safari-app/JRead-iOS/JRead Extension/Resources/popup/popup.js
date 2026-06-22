@@ -16,6 +16,8 @@ const openOptionsLink = document.getElementById('open-options');
 const shortcutEl = document.getElementById('shortcut-hint');
 const fontSizeValEl = document.getElementById('font-size-val');
 const fontAutoBtn = document.getElementById('font-auto-btn');
+const titleFontSizeValEl = document.getElementById('title-font-size-val');
+const titleFontAutoBtn = document.getElementById('title-font-auto-btn');
 const lineHeightValEl = document.getElementById('line-height-val');
 const lineHeightAutoBtn = document.getElementById('line-height-auto-btn');
 const paragraphSpacingValEl = document.getElementById('paragraph-spacing-val');
@@ -36,6 +38,9 @@ const pageNumberCb = document.getElementById('page-number-cb');
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
 const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
+// v0.8.158：標題字級（h1）從 options 移來。0 = Auto（保留原站標題大小）；stepper
+// 範圍 [16, 96] step 2、default 32；styler clamp [8, 200] 為最終防線。
+const TITLE_FONT_SIZE = { min: 16, max: 96, step: 2, default: 32, auto: 0 };
 // v0.7.237：上限 1200 → 1600。寬視窗（iPad 橫向 / 桌面寬螢幕）下版心可調更
 // 寬；styler 端 clamp [300, 2000] 仍是最終防線（1600 < 2000 安全）。窄視窗
 // （手機）下 card 受 viewport clamp，上限拉高不影響——viewport < contentWidth
@@ -116,6 +121,11 @@ function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function render(settings) {
   const isAuto = settings.fontSize === FONT_SIZE.auto;
   fontSizeValEl.textContent = isAuto ? 'Auto' : String(settings.fontSize);
+  // 標題字級：Auto sentinel = 0
+  const isTitleAuto = settings.titleFontSize === TITLE_FONT_SIZE.auto;
+  if (titleFontSizeValEl) {
+    titleFontSizeValEl.textContent = isTitleAuto ? 'Auto' : String(settings.titleFontSize);
+  }
   contentWidthValEl.textContent = String(settings.contentWidth);
   // 行距：Auto sentinel = 0；其他顯示 roundStep 後的數字（避免浮點 trailing 9）
   const isLhAuto = settings.lineHeight === LINE_HEIGHT.auto;
@@ -136,6 +146,11 @@ function render(settings) {
     isAuto || settings.fontSize <= FONT_SIZE.min;
   document.querySelector('[data-action="font-inc"]').disabled =
     !isAuto && settings.fontSize >= FONT_SIZE.max;
+  // 標題字級邊界 disable（Auto 模式下 - disable、+ 從 Auto 跳到 default）
+  const tfDec = document.querySelector('[data-action="title-font-dec"]');
+  const tfInc = document.querySelector('[data-action="title-font-inc"]');
+  if (tfDec) tfDec.disabled = isTitleAuto || settings.titleFontSize <= TITLE_FONT_SIZE.min;
+  if (tfInc) tfInc.disabled = !isTitleAuto && settings.titleFontSize >= TITLE_FONT_SIZE.max;
   // 行距 / 段落間距同 Auto 處理邏輯
   const lhDec = document.querySelector('[data-action="line-height-dec"]');
   const lhInc = document.querySelector('[data-action="line-height-inc"]');
@@ -149,6 +164,7 @@ function render(settings) {
   document.querySelector('[data-action="width-inc"]').disabled = settings.contentWidth >= CONTENT_WIDTH.max;
   // Auto 按鈕 active 狀態
   if (fontAutoBtn) fontAutoBtn.classList.toggle('active', isAuto);
+  if (titleFontAutoBtn) titleFontAutoBtn.classList.toggle('active', isTitleAuto);
   if (lineHeightAutoBtn) lineHeightAutoBtn.classList.toggle('active', isLhAuto);
   if (paragraphSpacingAutoBtn) paragraphSpacingAutoBtn.classList.toggle('active', isPsAuto);
   // 字重 segmented（細 300 / 中 400 / 粗 600）
@@ -311,6 +327,27 @@ if (fontAutoBtn) {
       ? FONT_SIZE.default
       : FONT_SIZE.auto;
     save({ fontSize: next });
+  });
+}
+
+// 標題字級：與字級同 Auto + stepper 模式（v0.8.158 從 options 移來）
+const tfDecBtn = document.querySelector('[data-action="title-font-dec"]');
+const tfIncBtn = document.querySelector('[data-action="title-font-inc"]');
+if (tfDecBtn) tfDecBtn.addEventListener('click', () => {
+  if (current.titleFontSize === TITLE_FONT_SIZE.auto) return;
+  save({ titleFontSize: clamp(current.titleFontSize - TITLE_FONT_SIZE.step, TITLE_FONT_SIZE.min, TITLE_FONT_SIZE.max) });
+});
+if (tfIncBtn) tfIncBtn.addEventListener('click', () => {
+  if (current.titleFontSize === TITLE_FONT_SIZE.auto) {
+    save({ titleFontSize: TITLE_FONT_SIZE.default });
+    return;
+  }
+  save({ titleFontSize: clamp(current.titleFontSize + TITLE_FONT_SIZE.step, TITLE_FONT_SIZE.min, TITLE_FONT_SIZE.max) });
+});
+if (titleFontAutoBtn) {
+  titleFontAutoBtn.addEventListener('click', () => {
+    const next = current.titleFontSize === TITLE_FONT_SIZE.auto ? TITLE_FONT_SIZE.default : TITLE_FONT_SIZE.auto;
+    save({ titleFontSize: next });
   });
 }
 

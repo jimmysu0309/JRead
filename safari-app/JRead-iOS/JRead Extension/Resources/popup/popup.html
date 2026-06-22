@@ -64,7 +64,6 @@
        ——只有 select 顯示值實際引用該 family 時才下載（選系統字 / 預設時零成本）。
        weight range = 各字型真實 fvar wght 軸（可變字型，與 styler 端一致）。
        ========================================================== */
-    @font-face { font-family: "Literata";     font-weight: 200 900; font-display: swap; src: url("../assets/fonts/literata.woff2")     format("woff2"); }
     @font-face { font-family: "Source Serif";  font-weight: 200 900; font-display: swap; src: url("../assets/fonts/source-serif.woff2") format("woff2"); }
     @font-face { font-family: "Piazzolla";     font-weight: 100 900; font-display: swap; src: url("../assets/fonts/piazzolla.woff2")    format("woff2"); }
     @font-face { font-family: "Public Sans";   font-weight: 100 900; font-display: swap; src: url("../assets/fonts/public-sans.woff2")  format("woff2"); }
@@ -261,9 +260,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      /* v0.7.248：列間距 12→8（popup 高度收斂主力——10 列省 ~36px） */
-      margin-bottom: var(--jr-space-2);
-      min-height: 28px;
+      /* v0.7.248：列間距 12→8（popup 高度收斂主力）。v0.8.158：新增「標題字級」列
+         後再收斂 8→6 + min-height 28→26，把全展開高度壓回瀏覽器 popup ~600px 上限內。 */
+      margin-bottom: 6px;
+      min-height: 26px;
     }
     .setting-row:last-child { margin-bottom: 0; }
     /* v0.7.237：.setting-row 的 display:flex（author origin）會蓋過 [hidden]
@@ -581,6 +581,19 @@
     </div>
 
     <div class="setting-row">
+      <label>標題字級</label>
+      <div class="font-controls">
+        <button class="auto-btn" id="title-font-auto-btn"
+          title="保留各站點原本的標題大小（不覆寫）">自動</button>
+        <div class="stepper">
+          <button data-action="title-font-dec" aria-label="標題字級減小">−</button>
+          <span class="val" id="title-font-size-val">Auto</span>
+          <button data-action="title-font-inc" aria-label="標題字級放大">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-row">
       <label>行距</label>
       <div class="font-controls">
         <button class="auto-btn" id="line-height-auto-btn"
@@ -647,9 +660,7 @@
         <option value="auto">自動</option>
         <optgroup label="襯線">
           <option value="georgia">Georgia</option>
-          <option value="charter">Charter</option>
           <option value="palatino">Palatino</option>
-          <option value="literata">Literata</option>
           <option value="sourceserif">Source Serif</option>
           <option value="piazzolla">Piazzolla</option>
         </optgroup>

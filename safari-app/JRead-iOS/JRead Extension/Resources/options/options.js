@@ -1,5 +1,5 @@
 // JRead — Options
-// 使用者可調欄位：theme / fontSize / contentWidth（對齊 SPEC.md）。
+// 進階設定欄位（主題 / 字級 / 標題字級 / 版心寬度 / 字重 已移到 popup 即時調整）。
 
 // v0.8.16：DEFAULTS 改讀 settings-defaults.js 單一資料源（由 options.html
 // `<script src="../content/settings-defaults.js">` 在 options.js 之前載入）。
@@ -9,11 +9,13 @@
 // 不影響儲存範圍。titleFontSize 等欄位自動齊備（修掉 popup 缺 titleFontSize 的舊 drift）。
 const DEFAULTS = window.__JReadSettingsDefaults;
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
+// v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
+// popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
+const fields = ['readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
 
-// v0.8.154：懸浮 icon 啟用旗標的平台分流解析（settings-defaults.js 單一資料源）。
-// 未設過（非 boolean）時 Safari 預設勾、Chrome 預設不勾——checkbox 顯示初值與
-// content/floating-icon.js 走同一個 resolver，不在 options 另寫一份平台判定。
+// v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
+// 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
+// content/floating-icon.js 走同一個 resolver，不在 options 另寫一份判定。
 const resolveFloatingIconEnabled = window.__JReadResolveFloatingIconEnabled || ((v) => v === true);
 
 document.getElementById('version').textContent = chrome.runtime.getManifest().version;
@@ -145,8 +147,7 @@ window.addEventListener('keydown', (e) => {
 function readFieldFromDom(id) {
   const el = document.getElementById(id);
   switch (id) {
-    case 'fontSize': case 'titleFontSize': case 'contentWidth':
-    case 'fontWeight': case 'spaceScrollRatio': case 'positionMemoryDays':
+    case 'spaceScrollRatio': case 'positionMemoryDays':
     case 'floatingIconOpacity': {
       // v0.8.36：number input 的 min/max 屬性不阻止手動輸入超界值或留空
       // （Number('') = 0 → contentWidth 存 0）。以 input 自身的 min/max 為
@@ -179,16 +180,13 @@ function applyFieldToDom(id, value) {
   if (!el) return;
   // 使用者正在編輯的欄位不回寫（避免打字途中被外部變更清掉）
   if (el === document.activeElement) return;
-  if (id === 'fontWeight') {
-    // 字重 select：值非 300/400/600（舊資料 / 損壞）時顯示「中」（400）
-    el.value = [300, 400, 600].includes(Number(value)) ? String(Number(value)) : '400';
-  } else if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled') {
+  if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled') {
     el.checked = value !== false;
   } else if (id === 'threeFingerTap') {
     // v0.8.157：預設 false——只有明確為 true 才勾選
     el.checked = value === true;
   } else if (id === 'floatingIcon') {
-    // 三態：boolean 尊重使用者設定；未設過（null / undefined）依平台預設（Safari 勾）
+    // 三態：boolean 尊重使用者設定；未設過（null / undefined）一律預設勾（v0.8.158）
     el.checked = resolveFloatingIconEnabled(value);
   } else if (id === 'floatingIconOpacity') {
     const n = typeof value === 'number' && isFinite(value) ? value : Number(DEFAULTS.floatingIconOpacity);
@@ -208,8 +206,8 @@ function applyFieldToDom(id, value) {
 }
 
 function load() {
-  // floatingIcon 不在 DEFAULTS（平台分流三態）——以 null fallback 一併請求，
-  // applyFieldToDom 收到 null 時走 resolveFloatingIconEnabled 解析平台預設。
+  // floatingIcon 不在 DEFAULTS（三態）——以 null fallback 一併請求，
+  // applyFieldToDom 收到 null 時走 resolveFloatingIconEnabled 解析（未設過預設開）。
   chrome.storage.sync.get(Object.assign({ floatingIcon: null }, DEFAULTS), (values) => {
     fields.forEach((id) => applyFieldToDom(id, values[id]));
     // autoEnableDomains：array → textarea 多行字串（每行一個正規化過的網域）
@@ -390,8 +388,8 @@ if (chrome.storage && chrome.storage.onChanged) {
 // ---- 回復預設設定（v0.8.157）-----------------------------------------
 // 把所有設定複寫回 settings-defaults.js 的預設值，但保留兩個 API key
 //（readwiseToken / geminiApiKey——使用者貼過的憑證，重 reset 不該被洗掉）。
-// floatingIcon 三態回復為「未設過」（null → resolveFloatingIconEnabled 走平台
-// 預設）、floatingIconPos 拖移位置一併清掉。danger 雙態：第一次點進入確認狀態，
+// floatingIcon 三態回復為「未設過」（null → resolveFloatingIconEnabled 走預設開）、
+// floatingIconPos 拖移位置一併清掉。danger 雙態：第一次點進入確認狀態，
 // 4s 未再點自動還原，避免誤觸。
 const resetBtn = document.getElementById('resetDefaults');
 const resetStatusEl = document.getElementById('reset-status');
@@ -422,7 +420,7 @@ if (resetBtn) {
     const payload = Object.assign({}, DEFAULTS);
     delete payload.readwiseToken; // 保留使用者憑證
     delete payload.geminiApiKey;  // 保留使用者憑證
-    payload.floatingIcon = null;  // 回復平台分流三態（未設過）
+    payload.floatingIcon = null;  // 回復三態（未設過 → 預設開）
     payload.floatingIconPos = null; // 清掉拖移位置
     chrome.storage.sync.set(payload, () => {
       if (chrome.runtime.lastError) {
