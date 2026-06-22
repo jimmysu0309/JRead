@@ -48,15 +48,22 @@
       const fallbackViaBackground = () => {
         safeSendMessage({ type: NS.MSG.GET_SETTINGS }, finish);
       };
+      // v0.8.164：browser.storage.sync.get 原生 Promise（無 callback / lastError）；
+      // reject 或回空值 → 退回 GET_SETTINGS round-trip（Chrome SW 正常時仍可救），
+      // 兩邊都死則 finish(undefined) → resolve(undefined)，與舊行為降級結果一致。
+      let p;
       try {
-        chrome.storage.sync.get(defaults, (values) => {
-          if (chrome.runtime.lastError || !values) {
-            fallbackViaBackground();
-            return;
-          }
-          finish(values);
-        });
+        p = browser.storage.sync.get(defaults);
       } catch (_) {
+        fallbackViaBackground();
+        return;
+      }
+      if (p && typeof p.then === 'function') {
+        p.then((values) => {
+          if (!values) { fallbackViaBackground(); return; }
+          finish(values);
+        }).catch(() => fallbackViaBackground());
+      } else {
         fallbackViaBackground();
       }
     });
@@ -1137,7 +1144,7 @@
     }, 200);
   }
 
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (msg.type === NS.MSG.TOGGLE_READER_MODE) {
@@ -1245,9 +1252,9 @@
   // 這裡監聽變更，若閱讀模式正在開啟就 restore + 重新 apply styler。
   // 走 storage.onChanged 而非訊息，好處是即使同時有多個分頁開啟閱讀模式，
   // 每個 tab 的 content script 都會收到事件、各自更新。
-  if (chrome.storage && chrome.storage.onChanged) {
+  if (browser.storage && browser.storage.onChanged) {
     // scheduleReapply 已搬到模組層（v0.8.148，與 onMessage REAPPLY_SETTINGS 共用）。
-    chrome.storage.onChanged.addListener((changes, area) => {
+    browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
       if (!NS.state.active) return;
       // v0.7.131：blockPageShortcuts 即時切換——options 改 toggle 後立刻生效，
@@ -1282,6 +1289,34 @@
       scheduleReapply();
     });
   }
+
+  // v0.8.164：頁面恢復（pageshow / 由隱藏轉可見）重讀 storage 重套設定——iOS
+  // 訊息不可靠的結構性兜底，與 browser.* Promise 遷移互補。
+  //
+  // 根因（memory project_ios_popup_suspends_page_onchanged_dropped）：iOS Safari
+  // popup 開啟時底層頁面 JS 被掛起，期間的 storage.onChanged 廣播被「丟掉」（不排隊、
+  // 不補送）；popup 內改字級 / 主題其實已持久化到 storage.sync.set，但 content 收不到
+  // 變更事件→不重套，使用者要重整網頁才生效（= Jimmy 回報「popup 套設定字體 +/- 沒
+  // 反應」的直接根因）。popup commitSave 後主動送的 REAPPLY_SETTINGS（v0.8.148）是第一道
+  // 兜底，但 iOS 偶發回收整個擴充訊息層時連那發也會掉。
+  //
+  // 本層是「不依賴任何訊息送達」的最終兜底：頁面恢復可見時，content 自己重讀 storage
+  // （scheduleReapply 內 await getSettings 直讀 browser.storage.sync）重套——只要使用者
+  // 在 popup 改過設定（已落 storage），回到頁面就一定看到最新版型。閱讀模式未啟動 /
+  // cinema 由 scheduleReapply 內 guard no-op；桌機 Chrome 頁面不掛起、onChanged 照收，
+  // 此處只是冪等重套（200ms debounce 與 onChanged 合併，無重複套用）。
+  function reapplyFromStorageOnResume() {
+    if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl || !NS.styler) return;
+    scheduleReapply();
+  }
+  // pageshow：bfcache 還原（e.persisted=true）與一般導航顯示都涵蓋；不分 persisted，
+  // guard 在 reapplyFromStorageOnResume 內。
+  window.addEventListener('pageshow', () => reapplyFromStorageOnResume());
+  // visibilitychange → visible：popup 收合 / 切回分頁時底層頁恢復的主訊號（iOS popup
+  // 掛起底層頁，收合即觸發 visible）。
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reapplyFromStorageOnResume();
+  });
 
   // Page-world debug bridge：允許 main-world JS（chrome-in-chrome MCP /
   // devtools console）透過 dispatchEvent 觸發 reader mode toggle、reload

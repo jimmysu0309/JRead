@@ -39,18 +39,18 @@
 
   function loadTable() {
     // context invalidated guard（extension reload 後舊 content script 殘留）
-    if (!chrome || !chrome.runtime || !chrome.runtime.id || !chrome.storage || !chrome.storage.sync) return;
+    if (!browser || !browser.runtime || !browser.runtime.id || !browser.storage || !browser.storage.sync) return;
     try {
-      chrome.storage.sync.get({ customShortcuts: {} }, (values) => {
-        if (chrome.runtime.lastError) return;
+      // v0.8.164：browser.storage.sync.get 原生 Promise（reject 即 no-op，保留舊 table）
+      browser.storage.sync.get({ customShortcuts: {} }).then((values) => {
         table = SC.sanitizeTable(values && values.customShortcuts);
-      });
+      }).catch(() => {});
     } catch (_) { /* context 失效 race，silently no-op */ }
   }
 
   // options 改鍵即時生效（不必 reload 頁面）
-  if (chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener((changes, area) => {
+  if (browser.storage && browser.storage.onChanged) {
+    browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync' || !('customShortcuts' in changes)) return;
       table = SC.sanitizeTable(changes.customShortcuts.newValue);
     });
