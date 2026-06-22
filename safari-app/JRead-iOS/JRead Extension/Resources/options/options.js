@@ -78,6 +78,7 @@ function renderShortcuts() {
 }
 
 function saveShortcuts() {
+  showSaving();
   chrome.storage.sync.set({ customShortcuts: shortcutTable }, flashSaved);
 }
 
@@ -243,21 +244,42 @@ function load() {
   });
 }
 
+// ---- 儲存狀態提示條（v0.8.162，參考姊妹專案 Shinkansen save-bar）----------
+// 固定頂端的提示條，三態：存檔中（紅）→ 已存檔（綠、3s 淡出）／儲存失敗（紅、停留）。
+// 任一寫入 path（欄位 change / 快速鍵 / 自動啟動網域）寫入前呼 showSaving()、
+// chrome.storage.sync.set 的 callback 呼 flashSaved() 收尾。
+const saveBarEl = document.getElementById('save-bar');
+let saveBarHideTimer = null;
+function showSaveBar(state, text) {
+  if (!saveBarEl) return;
+  saveBarEl.textContent = text;
+  saveBarEl.className = 'save-bar ' + state;
+  saveBarEl.hidden = false;
+  if (saveBarHideTimer) { clearTimeout(saveBarHideTimer); saveBarHideTimer = null; }
+  // 成功才自動淡出；存檔中持續顯示等 callback、失敗停久一點讓使用者看清
+  if (state === 'saved') {
+    saveBarHideTimer = setTimeout(() => { saveBarEl.hidden = true; }, 3000);
+  } else if (state === 'error') {
+    saveBarHideTimer = setTimeout(() => { saveBarEl.hidden = true; }, 4000);
+  }
+}
+// 寫入前：先亮「存檔中」（紅）。set callback 很快 → 短暫閃過後轉「已存檔」
+function showSaving() {
+  showSaveBar('saving', '存檔中…');
+}
 function flashSaved() {
-  const s = document.getElementById('save-status');
-  // v0.8.35：set 失敗（quota / 寫入頻率超限）不可閃「已儲存」假訊號
+  // v0.8.35：set 失敗（quota / 寫入頻率超限）不可閃「已存檔」假訊號
   if (chrome.runtime.lastError) {
-    s.textContent = '儲存失敗，請稍後再試';
-    setTimeout(() => { s.textContent = ''; }, 3000);
+    showSaveBar('error', '儲存失敗，請稍後再試');
     return;
   }
-  s.textContent = '已儲存';
-  setTimeout(() => { s.textContent = ''; }, 1500);
+  showSaveBar('saved', '已存檔');
 }
 
 // 任何欄位變更即存檔——只寫該欄（diff write，見上方 v0.8.35 註解）
 fields.forEach((id) => {
   document.getElementById(id).addEventListener('change', () => {
+    showSaving();
     chrome.storage.sync.set({ [id]: readFieldFromDom(id) }, flashSaved);
   });
 });
@@ -383,6 +405,7 @@ document.getElementById('autoEnableDomains').addEventListener('change', (e) => {
   const helper = window.__JReadDomainMatch;
   const raw = e.target.value;
   const list = helper ? helper.parseList(raw) : raw.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+  showSaving();
   chrome.storage.sync.set({ autoEnableDomains: list }, () => {
     // 把正規化結果寫回 textarea（含 lowercase / 去 scheme / 去 path / 去重），
     // 讓使用者立刻看到實際生效的清單

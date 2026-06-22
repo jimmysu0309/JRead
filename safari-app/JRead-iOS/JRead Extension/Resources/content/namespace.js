@@ -618,6 +618,9 @@
       // v0.7.218：自訂快速鍵——custom-shortcuts.js 命中後請 SW 走 manifest
       // commands 同一條 dispatch（payload: { command }，與 commands key 同字彙）
       CUSTOM_COMMAND: 'CUSTOM_COMMAND',             // content → SW：自訂快速鍵觸發指令
+      // v0.8.162：懸浮按鈕長按選單「功能選單」（Safari path）——content 不能在 https
+      // 頁 iframe 載擴充頁（Safari 限制），交 SW 開原生 popup（openPopup）/ 退新分頁
+      OPEN_FEATURE_MENU: 'OPEN_FEATURE_MENU',       // content → SW：開工具列圖示選單 popup（Safari）
       // v0.7.228：統一指令 dispatch 落地 content 端（iOS SW 終止後手勢/自訂鍵
       // 仍可本地觸發）；SW 只在 manifest 預設鍵（browser 層事件）時委派此訊息
       DISPATCH_COMMAND: 'DISPATCH_COMMAND',         // SW → content：dispatchLocalCommand(payload.command)
