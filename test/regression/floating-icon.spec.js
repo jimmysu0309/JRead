@@ -195,6 +195,53 @@ describe('懸浮控制 icon（v0.8.154）', () => {
     });
   });
 
+  describe('尺寸切換（v0.8.156）', () => {
+    it('預設（未設過）→ small：footprint 32 / icon 16', () => {
+      const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      assert.strictEqual(NS.floating.getHitSize(), 32);
+      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '32px');
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '16px');
+    });
+
+    it('store floatingIconSize=large → footprint 48 / icon 32', () => {
+      const { NS, document } = setup({ store: { floatingIconSize: 'large' } });
+      const host = document.getElementById('__jread-floating-host');
+      assert.strictEqual(NS.floating.getHitSize(), 48);
+      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '48px');
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '32px');
+    });
+
+    it('applySize 非法值退回 small', () => {
+      const { NS, document } = setup({ store: { floatingIconSize: 'large' } });
+      const host = document.getElementById('__jread-floating-host');
+      NS.floating.applySize('bogus');
+      assert.strictEqual(NS.floating.getHitSize(), 32);
+      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '32px');
+    });
+
+    it('尺寸變更後 applyPos 依新 footprint 重算 top（offsetY=1）', () => {
+      const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      // small：top = 800 - 32 = 768
+      NS.floating.applyPos({ edge: 'left', offsetY: 1 });
+      assert.strictEqual(host.style.top, '768px');
+      // large：footprint 48 → top = 800 - 48 = 752（applySize 內部已重貼一次）
+      NS.floating.applySize('large');
+      assert.strictEqual(host.style.top, '752px');
+    });
+
+    it('storage.onChanged floatingIconSize 即時生效', () => {
+      const { NS, document, chrome } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      chrome._emit({ floatingIconSize: { newValue: 'large' } });
+      assert.strictEqual(NS.floating.getHitSize(), 48);
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '32px');
+      chrome._emit({ floatingIconSize: { newValue: 'small' } });
+      assert.strictEqual(NS.floating.getHitSize(), 32);
+    });
+  });
+
   describe('短按：切換閱讀模式', () => {
     it('handleShortPress 呼叫 NS.dispatchLocalCommand("toggle-reader-mode")', () => {
       const { NS, dispatched } = setup();
@@ -263,6 +310,10 @@ describe('懸浮控制 icon（v0.8.154）', () => {
       assert.strictEqual(DEFAULTS.floatingIconOpacity, 0.7);
     });
 
+    it('floatingIconSize 預設 small（v0.8.156，不動既有使用者尺寸）', () => {
+      assert.strictEqual(DEFAULTS.floatingIconSize, 'small');
+    });
+
     it('floatingIcon 不放固定預設（平台分流三態，由 resolver 解析）', () => {
       assert.ok(!('floatingIcon' in DEFAULTS),
         'floatingIcon 不可放 DEFAULT_SETTINGS 固定布林——否則 Safari 預設開的平台分流會被覆蓋');
@@ -283,19 +334,23 @@ describe('懸浮控制 icon（v0.8.154）', () => {
     const OPTIONS_HTML = fs.readFileSync(path.join(JREAD, 'options', 'options.html'), 'utf8');
     const OPTIONS_JS = fs.readFileSync(path.join(JREAD, 'options', 'options.js'), 'utf8');
 
-    it('options.html 含 floatingIcon / threeFingerTap checkbox + floatingIconOpacity range', () => {
+    it('options.html 含 floatingIcon / threeFingerTap checkbox + floatingIconOpacity range + floatingIconSize select', () => {
       assert.match(OPTIONS_HTML, /<input[^>]+type=["']checkbox["'][^>]+id=["']floatingIcon["']/,
         '缺懸浮 icon 啟用 checkbox');
       assert.match(OPTIONS_HTML, /<input[^>]+type=["']checkbox["'][^>]+id=["']threeFingerTap["']/,
         '缺三指輕點 checkbox');
       assert.match(OPTIONS_HTML, /<input[^>]+type=["']range["'][^>]+id=["']floatingIconOpacity["']/,
         '缺透明度 range 滑桿');
+      assert.match(OPTIONS_HTML, /<select[^>]+id=["']floatingIconSize["']/,
+        '缺懸浮 icon 尺寸 select');
+      assert.match(OPTIONS_HTML, /<option value=["']large["']/,
+        '缺尺寸 large 選項');
     });
 
-    it('options.js fields 陣列含三個新欄位（load / save / onChanged 同步）', () => {
+    it('options.js fields 陣列含四個新欄位（load / save / onChanged 同步）', () => {
       const m = OPTIONS_JS.match(/const fields = \[([^\]]*)\]/);
       assert.ok(m, '找不到 fields 陣列');
-      for (const id of ['threeFingerTap', 'floatingIcon', 'floatingIconOpacity']) {
+      for (const id of ['threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize']) {
         assert.ok(m[1].includes(`'${id}'`), `fields 缺 ${id}——options 不會同步該欄`);
       }
     });
