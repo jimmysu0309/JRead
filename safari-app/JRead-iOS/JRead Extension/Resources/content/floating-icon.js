@@ -14,6 +14,11 @@
 // - 拖移（pointermove 超過 DRAG_THRESHOLD_PX）= 進入拖移模式，放開時吸附最近的
 //   左／右緣，垂直位置存比例（floatingIconPos = { edge, offsetY }），視窗縮放後
 //   按比例還原。預設貼**左下角**（左緣 + offsetY=1，v0.8.160；原置中）。
+// - 觸控裝置（iPhone / iPad）渲染時把 top 夾離上下角落 CORNER_DEADZONE_PX（v0.8.161，
+//   cornerClampTop）：iPadOS 視窗左下角是縮放拖曳把手、上方角落是系統手勢區，按鈕停太
+//   靠近會被 OS 攔走觸控而拖不出來。比照 Shinkansen content-floating-icon.js。
+// - disable → 重新 enable 時按鈕回到預設位置（v0.8.161，applyEnabled 偵測 false→true
+//   轉移時 applyPos(null)+persist；初始載入不重置，尊重 storage 存的位置）。
 // - enable / 透明度 / 位置走 storage.sync，onChanged 即時生效（比照 toast.js）。
 //   floatingIcon 啟用旗標未設過（非 boolean）時一律預設開（v0.8.158，原平台分流
 //   取消，__JReadResolveFloatingIconEnabled，settings-defaults.js 單一資料源）。
@@ -40,6 +45,15 @@
   };
   let hitSize = SIZE_MAP.small.hit;      // 目前 footprint（applyPos / 拖移用，applySize 更新）
   const EDGE_MARGIN = 6;                 // 吸附邊緣時與視窗邊的間距
+  // 觸控裝置（iPhone / iPad）角落 OS 保留區邊長（v0.8.161）。iPadOS 視窗左下角是縮放
+  // 拖曳把手、上方角落是系統手勢區：按鈕停太靠近角落會被 OS 攔走觸控，使用者再也按不到 /
+  // 拖不出來。按鈕 x 永遠貼左／右緣，故只需把 y 夾離上下角落這段距離（比照 Shinkansen
+  // content-floating-icon.js cornerClampTop）。
+  const CORNER_DEADZONE_PX = 44;
+  // maxTouchPoints ≥ 1 = 真觸控裝置（iPad 偽裝 Mac 仍 = 5；桌面 = 0）。content script 不能
+  // import lib，故就地判。可被 regression（NS.floating.setTouchForTest）覆寫以驗夾邊路徑
+  // （實機 Chromium / jsdom maxTouchPoints = 0）。
+  let isTouch = (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) >= 1);
   const DEFAULT_OPACITY = 0.7;
   // v0.8.158：長按開選單時把整顆 host（含選單）調到全不透明，避免使用者設的
   // 淡透明度（預設 0.7）讓選單文字看不清；收選單時還原使用者設定的透明度。
@@ -96,10 +110,12 @@
       user-drag: none;
     }
     .fab.dragging img { filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+    /* 長按選單（v0.8.161 比照 Shinkansen content-floating-icon.js 重繪：藍色圓角
+       badge icon、13px 字、緊湊間距、label 過長 ellipsis） */
     .menu {
       position: absolute;
       bottom: 0;
-      min-width: 180px;
+      min-width: 168px;
       background: #ffffff;
       border-radius: 12px;
       box-shadow: 0 8px 28px rgba(0,0,0,.22);
@@ -107,7 +123,7 @@
       display: none;
       flex-direction: column;
       gap: 2px;
-      font: 14px -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+      font: 13px -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
     }
     .menu.show { display: flex; }
     .menu.side-left  { left: calc(var(--fab-hit) + 8px); }
@@ -115,8 +131,8 @@
     .menu-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
+      gap: 8px;
+      padding: 9px 12px;
       border-radius: 8px;
       background: none;
       border: none;
@@ -130,11 +146,19 @@
     .menu-item:hover { background: #f0f0f3; }
     .menu-item .ico {
       flex: 0 0 auto;
-      width: 20px;
-      text-align: center;
-      font-size: 16px;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: #0071e3;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .menu-item .label { flex: 1; }
+    .menu-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
   `;
 
   shadow.innerHTML = `
@@ -184,7 +208,15 @@
   // ─── 設定狀態 ───────────────────────────────────────────────────────────
   let pos = { edge: 'left', offsetY: 1 };     // 預設左下角（v0.8.160，offsetY=1=底）
 
+  // disable → 重新 enable 時按鈕回到預設位置（v0.8.161）：使用者把按鈕拖到不順手的角落後，
+  // 關掉再開即重置。初始載入（lastEnabled = null）不重置，尊重 storage 存的位置。
+  let lastEnabled = null;
   function applyEnabled(enabled) {
+    if (lastEnabled === false && enabled === true) {
+      applyPos(null);     // sanitizePos(null) → 預設左下角
+      persistPos();
+    }
+    lastEnabled = enabled;
     host.style.display = enabled ? 'block' : 'none';
     if (!enabled) closeMenu();
   }
@@ -215,11 +247,25 @@
     return { edge, offsetY };
   }
 
+  // 觸控裝置：把 top 夾到「按鈕 hit 區不碰上下角落 OS 保留區」範圍，避免停進 iPadOS
+  // 視窗縮放把手 / 系統手勢角落而再也拖不出來。純函式（吃 viewportH / hit / touch）方便
+  // regression 直接驗，不依賴實機是否觸控。非觸控（桌面）只夾在可視範圍、不留角落間距。
+  function cornerClampTop(top, viewportH, hit, touch) {
+    const maxFree = Math.max(0, viewportH - hit);          // 不夾角落時 top 的合法上限
+    if (!touch) return Math.max(0, Math.min(maxFree, top));
+    const minTop = CORNER_DEADZONE_PX;                     // 離頂部角落安全距
+    const maxTop = viewportH - hit - CORNER_DEADZONE_PX;   // 離底部角落安全距
+    // 視窗太矮（maxTop < minTop）夾不出安全區 → 置中，至少不卡在角落極端
+    if (maxTop < minTop) return Math.max(0, Math.min(maxFree, Math.round(maxFree / 2)));
+    return Math.max(minTop, Math.min(maxTop, top));
+  }
+
   // 依 pos 把 host 貼到邊緣（offsetY 比例 → top px）
   function applyPos(p) {
     pos = sanitizePos(p);
     const vh = window.innerHeight || 0;
-    const top = Math.round(pos.offsetY * Math.max(0, vh - hitSize));
+    const rawTop = Math.round(pos.offsetY * Math.max(0, vh - hitSize));
+    const top = cornerClampTop(rawTop, vh, hitSize, isTouch);
     host.style.top = top + 'px';
     host.style.bottom = 'auto';
     if (pos.edge === 'left') {
@@ -415,8 +461,12 @@
     openMenu, closeMenu, buildMenu,
     handleShortPress, sendToReadwise, togglePaged,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
+    cornerClampTop, CORNER_DEADZONE_PX,
     isMenuOpen: () => menuOpen,
     getPos: () => ({ ...pos }),
-    getHitSize: () => hitSize
+    getHitSize: () => hitSize,
+    getTop: () => host.style.top,
+    // regression 用：覆寫觸控旗標以驗角落夾邊路徑（實機 Chromium / jsdom maxTouchPoints=0）
+    setTouchForTest: (v) => { isTouch = !!v; applyPos(pos); }
   };
 })();
