@@ -496,7 +496,7 @@ async function sendToReadwiseFromCommand(tabId) {
     showToast('無法讀取設定，請稍後再試', 'error');
     return;
   }
-  const { buildReadwisePayload, saveToReadwise, generateGeminiSummary } = self.__JReadPopup;
+  const { buildReadwisePayload, saveToReadwise, generateGeminiSummary, readwiseResultToast } = self.__JReadPopup;
   // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（與 popup 軌一致）。失敗 fallback 照送。
   const p = extracted.payload || {};
   if (readwiseSummary && geminiApiKey && p.text) {
@@ -522,18 +522,8 @@ async function sendToReadwiseFromCommand(tabId) {
     return;
   }
 
-  // 4. 結果 toast
-  if (result && result.ok) {
-    const msg = result.status === 200 ? '已存在於 Readwise Reader' : '已送到 Readwise Reader';
-    showToast(msg, 'success');
-  } else if (result && result.error === 'NO_TOKEN') {
-    showToast('尚未設定 Readwise token，請到設定頁填入', 'error');
-  } else if (result && result.error === 'AUTH') {
-    showToast('Readwise token 無效或已過期', 'error');
-  } else if (result && result.error === 'NETWORK') {
-    showToast('網路錯誤，請稍後再試', 'error');
-  } else {
-    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
-    showToast(`送出失敗${detail}`, 'error');
-  }
+  // 4. 結果 toast（v0.8.165：訊息文字對映抽到 popup-core.readwiseResultToast，
+  // 與懸浮按鈕長按選單的 content 端直送軌共用同一份字串，不雙實作）
+  const { message, kind } = readwiseResultToast(result);
+  showToast(message, kind);
 }
