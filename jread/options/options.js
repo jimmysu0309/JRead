@@ -182,8 +182,11 @@ function applyFieldToDom(id, value) {
   if (id === 'fontWeight') {
     // 字重 select：值非 300/400/600（舊資料 / 損壞）時顯示「中」（400）
     el.value = [300, 400, 600].includes(Number(value)) ? String(Number(value)) : '400';
-  } else if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled' || id === 'threeFingerTap') {
+  } else if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled') {
     el.checked = value !== false;
+  } else if (id === 'threeFingerTap') {
+    // v0.8.157：預設 false——只有明確為 true 才勾選
+    el.checked = value === true;
   } else if (id === 'floatingIcon') {
     // 三態：boolean 尊重使用者設定；未設過（null / undefined）依平台預設（Safari 勾）
     el.checked = resolveFloatingIconEnabled(value);
@@ -381,6 +384,56 @@ if (chrome.storage && chrome.storage.onChanged) {
         ta.value = helper ? helper.serializeList(list) : list.join('\n');
       }
     }
+  });
+}
+
+// ---- 回復預設設定（v0.8.157）-----------------------------------------
+// 把所有設定複寫回 settings-defaults.js 的預設值，但保留兩個 API key
+//（readwiseToken / geminiApiKey——使用者貼過的憑證，重 reset 不該被洗掉）。
+// floatingIcon 三態回復為「未設過」（null → resolveFloatingIconEnabled 走平台
+// 預設）、floatingIconPos 拖移位置一併清掉。danger 雙態：第一次點進入確認狀態，
+// 4s 未再點自動還原，避免誤觸。
+const resetBtn = document.getElementById('resetDefaults');
+const resetStatusEl = document.getElementById('reset-status');
+let resetConfirming = false;
+let resetConfirmTimer = null;
+
+function exitResetConfirm() {
+  resetConfirming = false;
+  if (resetConfirmTimer) { clearTimeout(resetConfirmTimer); resetConfirmTimer = null; }
+  if (resetBtn) {
+    resetBtn.classList.remove('confirming');
+    resetBtn.textContent = '回復預設';
+  }
+}
+
+if (resetBtn) {
+  resetBtn.addEventListener('click', () => {
+    if (!resetConfirming) {
+      // 第一次點：進入確認狀態
+      resetConfirming = true;
+      resetBtn.classList.add('confirming');
+      resetBtn.textContent = '再按一次確認';
+      resetConfirmTimer = setTimeout(exitResetConfirm, 4000);
+      return;
+    }
+    // 第二次點：執行回復
+    exitResetConfirm();
+    const payload = Object.assign({}, DEFAULTS);
+    delete payload.readwiseToken; // 保留使用者憑證
+    delete payload.geminiApiKey;  // 保留使用者憑證
+    payload.floatingIcon = null;  // 回復平台分流三態（未設過）
+    payload.floatingIconPos = null; // 清掉拖移位置
+    chrome.storage.sync.set(payload, () => {
+      if (chrome.runtime.lastError) {
+        resetStatusEl.textContent = '回復失敗，請稍後再試';
+        setTimeout(() => { resetStatusEl.textContent = ''; }, 3000);
+        return;
+      }
+      load(); // 重讀 storage 刷新整個表單顯示
+      resetStatusEl.textContent = '已回復預設設定';
+      setTimeout(() => { resetStatusEl.textContent = ''; }, 2000);
+    });
   });
 }
 
