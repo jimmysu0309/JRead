@@ -68,6 +68,21 @@ if (IS_PANEL) {
   setTimeout(postPanelSize, 0);
 }
 
+// v0.8.163：iPad 工具列 popover 高度受限，全展開內容（zoom 1.35 下 ~845px）底部被
+// 截斷（Jimmy iPad 截圖）。CSS 的 pointer:coarse 媒體查詢分不出 iPad（popover）與
+// iPhone（底部 sheet，空間較足）——兩者 popup viewport 寬度相近。改用 screen 短邊
+// 判別（iPad mini 短邊 744、最大 iPhone Pro Max 約 430，門檻 600 乾淨分離；Mac 上
+// 跑 iOS build 時 maxTouchPoints=0 排除）標記 body.device-ipad，CSS 對 iPad 降 zoom
+// + 壓縮間距。screen 回的是裝置螢幕（非 popover viewport），popover 內仍可靠。
+(function markIpad() {
+  try {
+    const shortEdge = Math.min(screen.width || 0, screen.height || 0);
+    if ((navigator.maxTouchPoints || 0) >= 3 && shortEdge >= 600) {
+      document.body.classList.add('device-ipad');
+    }
+  } catch (_e) { /* screen 缺席等罕見環境：不標記，維持 1.35 */ }
+})();
+
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
 const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };

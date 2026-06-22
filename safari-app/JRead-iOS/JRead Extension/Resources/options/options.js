@@ -41,6 +41,16 @@ else if (extUrl.startsWith('moz-extension://')) runtime = 'firefox';
 document.body.classList.add('runtime-' + runtime);
 const isSafariRuntime = (runtime === 'safari');
 
+// v0.8.163：三指輕點切換是觸控裝置（iPhone / iPad，maxTouchPoints >= 3）專屬手勢。
+// 桌面 Chrome / macOS Safari（含 iOS build 跑在 Mac，無觸控螢幕 maxTouchPoints=0）
+// 顯示這個開關只會誤導——touch-gestures.js 在非觸控裝置根本不安裝辨識器（同門檻
+// maxTouchPoints >= 3），開了也無效。門檻與 popup footer 手勢提示一致。非觸控整列隱藏。
+if ((navigator.maxTouchPoints || 0) < 3) {
+  const tfField = document.getElementById('threeFingerTap');
+  const field = tfField && tfField.closest('.field');
+  if (field) field.hidden = true;
+}
+
 // hint 文字加 ⚠ 前綴（空字串不撐空間，CSS :not(:empty) 才上 amber 底框）
 function shortcutHint(msg) {
   document.getElementById('shortcut-hint').textContent = msg ? '⚠ ' + msg : '';

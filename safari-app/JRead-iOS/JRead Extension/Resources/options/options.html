@@ -108,6 +108,10 @@
     .field {
       margin: 18px 0;
     }
+    /* v0.8.163：`.field.hidden`（如三指選項在非觸控裝置隱藏）必須蓋過
+       `.field-checkbox` 的 display:flex（author display 贏過 UA [hidden] 的
+       display:none，與 specificity 無關）——比照 popup `.setting-row[hidden]`。 */
+    .field[hidden] { display: none !important; }
     .field label {
       display: block;
       font-size: 14px;
