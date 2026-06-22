@@ -68,10 +68,10 @@
     titleFontSize: 0,
     // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用。
     spaceScrollRatio: 50,
-    // v0.8.154：3 指輕點切換閱讀模式。預設 true = 啟用（維持 v0.7.223 引入以來
-    // 的「永遠開啟」行為）；false = 停用（touch-gestures.js 不安裝辨識器）。觸控
-    // 裝置才有意義（桌面滑鼠 maxTouchPoints < 3 自然不裝）。
-    threeFingerTap: true,
+    // v0.8.157：3 指輕點切換閱讀模式。預設 false = 停用（Jimmy 2026-06-22 改預設關
+    // ——三指輕點易誤觸、且懸浮 icon 已是觸控主入口）；true = 啟用辨識器。觸控裝置
+    // 才有意義（桌面滑鼠 maxTouchPoints < 3 自然不裝）。
+    threeFingerTap: false,
     // v0.8.154：懸浮控制 icon（頁面邊緣常駐按鈕）的透明度（0.1–1.0）。
     // floatingIcon 啟用旗標本身是平台分流的三態（未設過時 Safari 預設開、Chrome
     // 預設關），由 __JReadResolveFloatingIconEnabled 在讀取邊界解析，不放此固定值；

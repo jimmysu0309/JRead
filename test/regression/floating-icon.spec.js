@@ -302,8 +302,8 @@ describe('懸浮控制 icon（v0.8.154）', () => {
   describe('settings-defaults 新欄位 + 平台 resolver', () => {
     const DEFAULTS = require(path.join(JREAD, 'content', 'settings-defaults.js'));
 
-    it('threeFingerTap 預設 true（維持永遠開啟行為，可關）', () => {
-      assert.strictEqual(DEFAULTS.threeFingerTap, true);
+    it('threeFingerTap 預設 false（v0.8.157 改預設關，可開）', () => {
+      assert.strictEqual(DEFAULTS.threeFingerTap, false);
     });
 
     it('floatingIconOpacity 預設 0.7', () => {
