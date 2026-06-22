@@ -179,11 +179,21 @@
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
-  // 送到 Readwise：content script 受 CORS 擋無法直接 fetch Readwise API，轉給
-  // background SW 走 sendToReadwiseFromCommand（與快速鍵送出同一條，必要時自動
-  // 啟動閱讀模式、SW 端顯示結果 toast）。iOS SW 偶被回收時會失敗——與快速鍵
-  // 送出同一先天限制（Jimmy 2026-06-21 確認可接受）。
+  // 送到 Readwise（v0.8.165 兩條 path，依 runtime 分流）：
+  //   - 點擊當下先彈「送出到 Readwise Reader…」info toast（視覺提示，兩平台都有；
+  //     原本 iOS 上 SW 死亡連結果 toast 都回不來、使用者完全沒回饋）。
+  //   - Safari（iOS / iPadOS / macOS）：改由 content script 直接 fetch
+  //     （NS.sendCurrentPageToReadwise，main.js）。iOS Safari SW 背景 fetch 不可靠，
+  //     content script 在前景分頁不會被掛起、且帶 host_permissions CORS 豁免，可靠送達；
+  //     結果 toast 由 sendCurrentPageToReadwise 自行顯示。
+  //   - Chrome / Firefox：content fetch 受頁面來源 CORS 擋，仍轉給 SW
+  //     sendToReadwiseFromCommand（Chrome SW 可靠，與快速鍵送出同一條）；SW 端顯示結果 toast。
   function sendToReadwise() {
+    if (NS.toast) NS.toast.show('送出到 Readwise Reader…', { kind: 'info' });
+    if (isSafariRuntime() && typeof NS.sendCurrentPageToReadwise === 'function') {
+      try { NS.sendCurrentPageToReadwise(); } catch (_e) {}
+      return;
+    }
     NS.safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: 'send-to-readwise' } });
   }
 

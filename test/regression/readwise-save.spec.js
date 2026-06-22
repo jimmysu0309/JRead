@@ -5,7 +5,7 @@
 const path = require('path');
 const assert = require('assert');
 
-const { buildReadwisePayload, saveToReadwise, saveReaderPayload, validateReadwiseToken, validateGeminiKey, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
+const { buildReadwisePayload, saveToReadwise, saveReaderPayload, readwiseResultToast, validateReadwiseToken, validateGeminiKey, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
 
@@ -1280,5 +1280,46 @@ describe('readwise: generateGeminiSummary', () => {
     const r = await generateGeminiSummary({ ...base, apiKey: 'k', fetchImpl });
     assert.strictEqual(r.error, 'NETWORK');
     assert.match(r.message, /Failed to fetch/);
+  });
+});
+
+// v0.8.165：結果 toast 訊息對映（SW 快速鍵軌 + 懸浮按鈕長按選單 content 直送軌共用）
+describe('readwise: readwiseResultToast（結果 → toast 文字/kind 單一資料源）', () => {
+  it('成功 201（新存）→ 已送到 Readwise Reader / success', () => {
+    assert.deepStrictEqual(readwiseResultToast({ ok: true, status: 201 }),
+      { message: '已送到 Readwise Reader', kind: 'success' });
+  });
+
+  it('成功 200（已存在）→ 已存在於 Readwise Reader / success', () => {
+    assert.deepStrictEqual(readwiseResultToast({ ok: true, status: 200 }),
+      { message: '已存在於 Readwise Reader', kind: 'success' });
+  });
+
+  it('NO_TOKEN → 提示去設定頁填 token / error', () => {
+    const r = readwiseResultToast({ ok: false, error: 'NO_TOKEN' });
+    assert.strictEqual(r.kind, 'error');
+    assert.match(r.message, /尚未設定 Readwise token/);
+  });
+
+  it('AUTH → token 無效或已過期 / error', () => {
+    assert.deepStrictEqual(readwiseResultToast({ ok: false, error: 'AUTH', status: 401 }),
+      { message: 'Readwise token 無效或已過期', kind: 'error' });
+  });
+
+  it('NETWORK → 網路錯誤 / error', () => {
+    assert.deepStrictEqual(readwiseResultToast({ ok: false, error: 'NETWORK' }),
+      { message: '網路錯誤，請稍後再試', kind: 'error' });
+  });
+
+  it('其他 HTTP 錯誤帶 status → 送出失敗（HTTP nnn）/ error', () => {
+    assert.deepStrictEqual(readwiseResultToast({ ok: false, error: 'HTTP', status: 500 }),
+      { message: '送出失敗（HTTP 500）', kind: 'error' });
+  });
+
+  it('undefined / 無 status 的泛用失敗 → 送出失敗（不帶 HTTP）/ error', () => {
+    assert.deepStrictEqual(readwiseResultToast(undefined),
+      { message: '送出失敗', kind: 'error' });
+    assert.deepStrictEqual(readwiseResultToast({ ok: false }),
+      { message: '送出失敗', kind: 'error' });
   });
 });

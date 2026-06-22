@@ -13,6 +13,12 @@
   // NS.toast=null 使 toast 提示靜默失效；v0.7.19 補上並加 spec 防呆。）
   const CONTENT_SCRIPT_FILES = [
     'content/namespace.js',
+    // v0.8.165：popup-core 自己也當 content script 載入——懸浮按鈕長按選單在 Safari
+    // （iOS / iPadOS）改由 content script 直接 fetch Readwise（SW 背景 fetch 在 iOS
+    // 不可靠，見 floating-icon.js sendToReadwise / main.js sendCurrentPageToReadwise）。
+    // content 端共用同一份 buildReadwisePayload / saveToReadwise / readwiseResultToast，
+    // 不雙實作。放 namespace.js 之後（無相依、純邏輯），inject fallback 不漏。
+    'popup/popup-core.js',
     'content/keepalive.js',
     'content/settings-defaults.js',
     'content/domain-match.js',
@@ -326,6 +332,31 @@
   // options 頁「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走
   // 同一條 extension-page fetch 路徑。getToken / fetchImpl 依賴注入便於單測。
   // 註：鍵盤快速鍵送出（無 popup）仍走 background sendToReadwiseFromCommand。
+  // v0.8.165：把 saveToReadwise 的結果（ok / error / status）對映成 toast 文字 + kind，
+  // 讓「快速鍵送出（SW）」與「懸浮按鈕長按選單送出（Safari content script）」兩條
+  // toast 路徑共用同一份訊息文字，不雙實作（CLAUDE.md 單一資料源）。kind 對齊
+  // toast.js 的 'info' | 'success' | 'error'。註：popup 軌用自己的 setReadwiseStatus
+  // 文字（含「進階設定」字樣），不走這條。
+  function readwiseResultToast(result) {
+    if (result && result.ok) {
+      return {
+        message: result.status === 200 ? '已存在於 Readwise Reader' : '已送到 Readwise Reader',
+        kind: 'success'
+      };
+    }
+    if (result && result.error === 'NO_TOKEN') {
+      return { message: '尚未設定 Readwise token，請到設定頁填入', kind: 'error' };
+    }
+    if (result && result.error === 'AUTH') {
+      return { message: 'Readwise token 無效或已過期', kind: 'error' };
+    }
+    if (result && result.error === 'NETWORK') {
+      return { message: '網路錯誤，請稍後再試', kind: 'error' };
+    }
+    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    return { message: `送出失敗${detail}`, kind: 'error' };
+  }
+
   async function saveReaderPayload({ payload, getToken, fetchImpl } = {}) {
     let token;
     try {
@@ -350,6 +381,7 @@
     buildReadwisePayload,
     saveToReadwise,
     saveReaderPayload,
+    readwiseResultToast,
     validateReadwiseToken,
     validateGeminiKey,
     buildSummaryPrompt,
