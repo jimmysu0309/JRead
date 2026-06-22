@@ -505,6 +505,55 @@
     }
 
     /* ==========================================================
+       回復預設設定（v0.8.157）——區段頂 border-top 與其他 section 分隔；
+       按鈕右對齊與同 column 控制項右緣一致。danger 雙態：第一次點進入
+       「再按一次確認」狀態（紅框不填色，WYSIWYG active 慣例），4s 未確認
+       自動還原，避免誤觸把所有設定洗掉。
+       ========================================================== */
+    .reset-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--jr-neutral-100);
+    }
+    .reset-row .reset-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--jr-neutral-900);
+    }
+    .reset-row .reset-desc {
+      display: block;
+      font-weight: 400;
+      font-size: 12px;
+      color: var(--jr-neutral-500);
+      margin-top: 2px;
+    }
+    .reset-btn {
+      flex: 0 0 auto;
+      height: 32px;
+      padding: 0 16px;
+      font-family: var(--jr-font-ui);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--jr-danger-600, #c0362c);
+      background: var(--jr-surface);
+      border: 1px solid var(--jr-neutral-300);
+      border-radius: var(--jr-radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+    }
+    .reset-btn:hover { border-color: var(--jr-danger-600, #c0362c); }
+    .reset-btn.confirming {
+      border-color: var(--jr-danger-600, #c0362c);
+      box-shadow: 0 0 0 3px rgba(192, 54, 44, 0.15);
+      font-weight: 600;
+    }
+
+    /* ==========================================================
        License section
        ========================================================== */
     .license {
@@ -579,7 +628,7 @@
   <div class="field">
     <label>
       字級（px）
-      <span class="desc">主文字體大小；<strong>0 = 自動</strong>（保留原站字級，不覆寫）</span>
+      <span class="desc">主文字體大小；<strong>0 = 自動</strong>（保留原站）</span>
     </label>
     <input type="number" id="fontSize" min="0" max="32" step="1">
   </div>
@@ -587,7 +636,7 @@
   <div class="field">
     <label>
       標題字級（px）
-      <span class="desc">文章主標題（h1）大小；<strong>0 = 自動</strong>（保留原站標題大小）</span>
+      <span class="desc">文章主標題大小；<strong>0 = 自動</strong>（保留原站）</span>
     </label>
     <input type="number" id="titleFontSize" min="0" max="200" step="1">
   </div>
@@ -603,7 +652,7 @@
   <div class="field">
     <label for="fontWeight">
       字重
-      <span class="desc">調整內文字體粗細（細 = 300 / 中 = 400 / 粗 = 600 Semibold）。用真正的 <code>font-weight</code>，<strong>全平台一致生效</strong>。標題字重不受影響（保留章節階層）</span>
+      <span class="desc">內文字體粗細，<strong>全平台一致生效</strong>；標題不受影響</span>
     </label>
     <select id="fontWeight">
       <option value="300">細</option>
@@ -615,7 +664,7 @@
   <div class="field">
     <label for="blockPageShortcuts">
       攔截原站快速鍵
-      <span class="desc">閱讀模式啟動時擋掉 Gmail、YouTube 等站的鍵盤快速鍵（避免誤按 <strong>j / k / e</strong> 觸發 archive、send 等操作）。瀏覽器原生 shortcut 與打字輸入不受影響</span>
+      <span class="desc">閱讀模式下擋掉網站的鍵盤快速鍵，避免誤按 <strong>j / k / e</strong> 觸發操作；打字輸入不受影響</span>
     </label>
     <input type="checkbox" id="blockPageShortcuts">
   </div>
@@ -623,7 +672,7 @@
   <div class="field">
     <label>
       Space 顯示門檻（%）
-      <span class="desc">閱讀模式下按 <strong>Space</strong> 把左側段落指示條移到下一段（<strong>Shift+Space</strong> 回上一段）。段落位置若低於畫面高度的此比例，會自動平滑卷動把段落帶回畫面上方；門檻內則只移指示條、不卷動。仿 Readwise Reader：預設 <strong>50</strong>%（畫面中線）；<strong>0 = 停用</strong>（回到整頁卷動）。建議範圍 30–90</span>
+      <span class="desc">閱讀模式按 <strong>Space</strong> 前進段落（<strong>Shift+Space</strong> 回上一段）；段落超過畫面此比例即平滑卷回上方。預設 <strong>50</strong>；<strong>0 = 停用</strong>（整頁卷動）</span>
     </label>
     <input type="number" id="spaceScrollRatio" min="0" max="90" step="5">
   </div>
@@ -631,7 +680,7 @@
   <div class="field">
     <label>
       閱讀位置記憶（天）
-      <span class="desc">文章看到一半離開時記住閱讀位置——捲動模式記目前段落、翻頁模式記頁數。效期內重新進入閱讀模式會自動回到上次位置。預設 <strong>3</strong> 天、最長 <strong>7</strong> 天；<strong>0 = 停用</strong></span>
+      <span class="desc">離開時記住閱讀位置，效期內重進自動回到上次位置。預設 <strong>3</strong>、最長 <strong>7</strong>；<strong>0 = 停用</strong></span>
     </label>
     <input type="number" id="positionMemoryDays" min="0" max="7" step="1">
   </div>
@@ -639,7 +688,7 @@
   <div class="field">
     <label for="pangu">
       中英文間自動補空白 + 中文標點全形化
-      <span class="desc">閱讀模式下中英文 / 數字相鄰處自動補空白（<code>NAND快閃記憶體</code> → <code>NAND 快閃記憶體</code>），中文邊界的半形標點 <strong>, . : ; ? ! ( )</strong> 轉全形（<code>他說,然後</code> → <code>他說，然後</code>）。純 ASCII（<code>example.com</code> / <code>Mr.Smith</code>）與程式碼、連結不受影響</span>
+      <span class="desc">中英文 / 數字相鄰處自動補空白，中文邊界半形標點轉全形；程式碼與連結不受影響</span>
     </label>
     <input type="checkbox" id="pangu">
   </div>
@@ -647,7 +696,7 @@
   <div class="field">
     <label for="editModeEnabled">
       編輯模式
-      <span class="desc">閱讀模式啟動時，popup 顯示「編輯模式：移除雜訊」按鈕——進入後頁面上 cleaner 漏掉的雜訊段落會以虛線框標出，點一下即移除，誤刪可按「復原」或 <strong>Cmd/Ctrl+Z</strong>。移除僅當次有效，退出閱讀模式或重新整理頁面即復原。關閉此項則 popup 不顯示該按鈕</span>
+      <span class="desc">popup 顯示「移除雜訊」按鈕，手動點掉 cleaner 漏網的雜訊段落（誤刪按 <strong>Cmd/Ctrl+Z</strong>，重整即復原）。關閉則隱藏該按鈕</span>
     </label>
     <input type="checkbox" id="editModeEnabled">
   </div>
@@ -656,45 +705,49 @@
 
   <h2 class="section-heading">觸控與懸浮控制</h2>
   <p class="section-desc">
-    觸控裝置（iPhone / iPad）與懸浮按鈕的入口設定。桌面滑鼠環境下三指輕點無作用
+    觸控裝置（iPhone / iPad）與懸浮按鈕的入口設定
   </p>
 
-  <div class="field">
-    <label for="floatingIcon">
-      懸浮控制 icon
-      <span class="desc">頁面邊緣常駐一顆小圖示：<strong>短按</strong>切換閱讀模式、<strong>長按</strong>開選單（送到 Readwise Reader、切換分頁模式）、<strong>拖曳</strong>可換到左 / 右緣與上下位置。Safari 預設開、桌面瀏覽器預設關</span>
-    </label>
-    <input type="checkbox" id="floatingIcon">
-  </div>
-
-  <div class="field">
-    <label for="floatingIconSize">
-      懸浮 icon 尺寸
-      <span class="desc">覺得 icon 太小不好點時可放大：<strong>小</strong> = 圖示 16px（footprint 32px，預設）、<strong>大</strong> = 圖示 32px（footprint 48px，觸控更好按）</span>
-    </label>
-    <select id="floatingIconSize">
-      <option value="small">小</option>
-      <option value="large">大</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label for="floatingIconOpacity">
-      懸浮 icon 透明度
-      <span class="desc">懸浮 icon 的不透明度，數值越低越淡、越不干擾畫面。範圍 10–100%</span>
-    </label>
-    <div class="opacity-control">
-      <input type="range" id="floatingIconOpacity" min="0.1" max="1" step="0.05">
-      <span class="opacity-val" id="floatingIconOpacityVal"></span>
+  <!-- v0.8.157：四項同屬「觸控與懸浮控制」一個區段的設定，用 .field-group 包住
+       移除彼此間的分隔線（分隔線只切分不同設定群）。 -->
+  <div class="field-group">
+    <div class="field">
+      <label for="floatingIcon">
+        懸浮控制 icon
+        <span class="desc">頁面邊緣常駐小圖示：<strong>短按</strong>切換閱讀模式、<strong>長按</strong>開選單、<strong>拖曳</strong>換位置。Safari 預設開、桌面預設關</span>
+      </label>
+      <input type="checkbox" id="floatingIcon">
     </div>
-  </div>
 
-  <div class="field">
-    <label for="threeFingerTap">
-      三指輕點切換閱讀模式
-      <span class="desc">觸控裝置上同時三指輕點頁面即切換閱讀模式——iPhone / iPad 的主要入口（popup 藏在位址列選單兩層深）。桌面滑鼠環境無作用</span>
-    </label>
-    <input type="checkbox" id="threeFingerTap">
+    <div class="field">
+      <label for="floatingIconSize">
+        懸浮 icon 尺寸
+        <span class="desc">圖示大小：<strong>小</strong> = 16px（預設）、<strong>大</strong> = 32px</span>
+      </label>
+      <select id="floatingIconSize">
+        <option value="small">小</option>
+        <option value="large">大</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="floatingIconOpacity">
+        懸浮 icon 透明度
+        <span class="desc">數值越低越淡。範圍 10–100%</span>
+      </label>
+      <div class="opacity-control">
+        <input type="range" id="floatingIconOpacity" min="0.1" max="1" step="0.05">
+        <span class="opacity-val" id="floatingIconOpacityVal"></span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="threeFingerTap">
+        三指輕點切換閱讀模式
+        <span class="desc">觸控裝置三指輕點頁面即切換閱讀模式（iPhone / iPad 主要入口）</span>
+      </label>
+      <input type="checkbox" id="threeFingerTap">
+    </div>
   </div>
 
   <h2 class="section-heading">快速鍵</h2>
@@ -800,6 +853,15 @@
       </div>
     </div>
   </div>
+
+  <div class="reset-row">
+    <div>
+      <span class="reset-label">回復預設設定</span>
+      <span class="reset-desc">把所有設定複寫回預設值（Readwise / Gemini 的 API key 會保留）</span>
+    </div>
+    <button type="button" id="resetDefaults" class="reset-btn">回復預設</button>
+  </div>
+  <div id="reset-status" style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
 
   <section class="license">
     <h2>授權資訊</h2>
