@@ -506,25 +506,31 @@ describe('readwise: validateGeminiKey (v0.8.74)', () => {
       '.field-group 內必須含 readwiseToken + readwiseSummary + geminiApiKey 三設定');
   });
 
-  it('options.html CSS 必須移除 .field-group 內 .field 的分隔線', () => {
+  it('options.html CSS：.field 不畫 per-field 分隔線（block 版面靠間距分區）', () => {
+    // v0.8.158：改 Shinkansen block 版面後，欄位之間一律靠 margin 間距分區、
+    // 不畫 border-bottom 分隔線（原本兩欄版用分隔線、Readwise 子設定群還得特地
+    // 移除）。forcing：若有人替 .field 加回 per-field border-bottom，同功能子設定
+    // （Readwise Token + 摘要 + Gemini key）又會被線切開誤以為是獨立功能。
     const fs = require('fs');
     const html = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'options', 'options.html'), 'utf8'
     );
-    assert.match(html, /\.field-group\s+\.field\s*\{[^}]*border-bottom:\s*none/,
-      '.field-group .field 必須 border-bottom: none（同一功能子設定不分隔）');
+    const m = html.match(/\.field\s*\{([\s\S]*?)\}/);
+    assert.ok(m, '能在 options.html 找到 .field rule');
+    assert.ok(!/border-bottom/.test(m[1]),
+      '.field base rule 不可含 border-bottom——block 版面靠間距分區，加分隔線會切開同功能子設定');
   });
 
-  it('options.html CSS：token-control 欄位必須頂對齊（label 與 input 同高）', () => {
+  it('options.html CSS：token-control 整寬直向堆疊（input 列 + 結果列）', () => {
+    // v0.8.158：block 版面下 label 在上、控制群整寬在下，token-control 為直向
+    // flex（input 列 + 測試結果列）。forcing：改回 row / 拿掉 column 會讓結果文字
+    // 擠到 input 同列、整寬排版破版。
     const fs = require('fs');
     const html = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'options', 'options.html'), 'utf8'
     );
-    // 控制群（input 列 + 結果列）比 label 高，.field 預設 align-items:center 會把
-    // input 推得比 label 高 6px（Jimmy 2026-06-15 截圖）；必須對含 .readwise-token-
-    // control 的 field 改 flex-start，讓 input 列與 label 名稱頂端對齊。
-    assert.match(html, /\.field:has\(\.readwise-token-control\)\s*\{[^}]*align-items:\s*flex-start/,
-      '.field:has(.readwise-token-control) 必須 align-items: flex-start（label 與 input 頂對齊）');
+    assert.match(html, /\.readwise-token-control\s*\{[^}]*flex-direction:\s*column/,
+      '.readwise-token-control 必須 flex-direction: column（整寬直向堆疊）');
   });
 
   it('options.js 必須呼叫 validateGeminiKey 並 wire Gemini 測試按鈕', () => {

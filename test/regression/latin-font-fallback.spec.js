@@ -30,20 +30,24 @@ const compose = globalThis.__JReadComposeFontStack;
 
 describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
   describe('預設值', () => {
-    it('DEFAULT_SETTINGS.latinSerif / latinSans 預設 "auto"', () => {
-      assert.strictEqual(SHARED.latinSerif, 'auto');
-      assert.strictEqual(SHARED.latinSans, 'auto');
+    it('DEFAULT_SETTINGS.latinSerif=sourceserif / latinSans=sourcesans（v0.8.158）', () => {
+      assert.strictEqual(SHARED.latinSerif, 'sourceserif');
+      assert.strictEqual(SHARED.latinSans, 'sourcesans');
     });
   });
 
   describe('LATIN_FONTS map', () => {
     it('含 auto + 預期的具名字型 key', () => {
-      for (const k of ['auto', 'georgia', 'charter', 'palatino',
-        'literata', 'sourceserif', 'piazzolla',
+      for (const k of ['auto', 'georgia', 'palatino',
+        'sourceserif', 'piazzolla',
         'helvetica', 'arial', 'verdana', 'publicsans', 'sourcesans',
         'sfmono', 'consolas']) {
         assert.ok(k in LATIN_FONTS, `LATIN_FONTS 必須含 "${k}"`);
       }
+    });
+    it('v0.8.158 移除的 charter / literata 不再是 key', () => {
+      assert.ok(!('charter' in LATIN_FONTS), 'charter 已移除');
+      assert.ok(!('literata' in LATIN_FONTS), 'literata 已移除');
     });
     it('auto = 空字串（不前接）', () => {
       assert.strictEqual(LATIN_FONTS.auto, '');
@@ -67,8 +71,8 @@ describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
 
     it('襯線 + 指定英文字型 → 前接到 serif base stack 前', () => {
       assert.strictEqual(
-        compose({ fontFamily: FONT_STACKS.serif, latinSerif: 'charter' }),
-        'Charter, ' + FONT_STACKS.serif);
+        compose({ fontFamily: FONT_STACKS.serif, latinSerif: 'georgia' }),
+        'Georgia, ' + FONT_STACKS.serif);
       assert.strictEqual(
         compose({ fontFamily: FONT_STACKS.serif, latinSerif: 'palatino' }),
         'Palatino, "Palatino Linotype", "Book Antiqua", ' + FONT_STACKS.serif);
@@ -83,7 +87,7 @@ describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
     it('latinSerif 只在 base = 襯線時生效；latinSans 只在 base = 無襯線時生效', () => {
       // base 是無襯線時，latinSerif 不該被套用（用 latinSans）
       assert.strictEqual(
-        compose({ fontFamily: FONT_STACKS.sans, latinSerif: 'charter', latinSans: 'auto' }),
+        compose({ fontFamily: FONT_STACKS.sans, latinSerif: 'georgia', latinSans: 'auto' }),
         FONT_STACKS.sans);
       // base 是襯線時，latinSans 不該被套用
       assert.strictEqual(
@@ -93,10 +97,10 @@ describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
 
     it('系統預設 / 等寬不前接英文字型（無此維度）', () => {
       assert.strictEqual(
-        compose({ fontFamily: FONT_STACKS.system, latinSerif: 'charter', latinSans: 'arial' }),
+        compose({ fontFamily: FONT_STACKS.system, latinSerif: 'georgia', latinSans: 'arial' }),
         FONT_STACKS.system);
       assert.strictEqual(
-        compose({ fontFamily: FONT_STACKS.mono, latinSerif: 'charter', latinSans: 'arial' }),
+        compose({ fontFamily: FONT_STACKS.mono, latinSerif: 'georgia', latinSans: 'arial' }),
         FONT_STACKS.mono);
     });
 
@@ -108,7 +112,7 @@ describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
 
     it('未遷移的舊 literal / 外部自訂 stack → 原樣回傳', () => {
       const custom = 'Comic Sans MS, cursive';
-      assert.strictEqual(compose({ fontFamily: custom, latinSerif: 'charter' }), custom);
+      assert.strictEqual(compose({ fontFamily: custom, latinSerif: 'georgia' }), custom);
     });
   });
 
@@ -159,14 +163,16 @@ describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
     let doc;
     before(() => { doc = new JSDOM(POPUP_HTML).window.document; });
 
-    it('popup.html 自帶 5 支內嵌字型的 @font-face（select 顯示值預覽用）', () => {
+    it('popup.html 自帶 4 支內嵌字型的 @font-face（select 顯示值預覽用）', () => {
       // popup 是獨立頁面、不共用內文 styler 那份；relative URL 指到 assets/fonts/
-      for (const fam of ['Literata', 'Source Serif', 'Piazzolla', 'Public Sans', 'Source Sans']) {
+      // v0.8.158：移除 literata，剩 Source Serif / Piazzolla / Public Sans / Source Sans
+      for (const fam of ['Source Serif', 'Piazzolla', 'Public Sans', 'Source Sans']) {
         const re = new RegExp(`@font-face\\s*\\{[^}]*font-family:\\s*"${fam.replace(/ /g, '\\s')}"`, 'm');
         assert.ok(re.test(POPUP_HTML), `popup.html 必須有 "${fam}" 的 @font-face（預覽用）`);
       }
-      assert.ok(/\.\.\/assets\/fonts\/literata\.woff2/.test(POPUP_HTML),
+      assert.ok(/\.\.\/assets\/fonts\/source-serif\.woff2/.test(POPUP_HTML),
         'popup @font-face 必須以 relative URL 從 popup/ 指到 assets/fonts/');
+      assert.ok(!/literata\.woff2/.test(POPUP_HTML), 'v0.8.158 literata @font-face 已移除');
     });
 
     it('latin select 含 __follow sentinel option（hidden、非字型 key）', () => {

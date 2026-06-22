@@ -57,18 +57,20 @@ function buildOptionsEnv() {
 }
 
 describe('options — 設定 diff write（v0.8.35）', () => {
-  it('改單一欄位只寫該欄，不可整包 9 欄重寫（防 stale overwrite）', () => {
+  // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
+  // popup，options 改用剩餘的 number 欄位（spaceScrollRatio / positionMemoryDays）驗 diff write。
+  it('改單一欄位只寫該欄，不可整包重寫（防 stale overwrite）', () => {
     const { window, document, setCalls } = buildOptionsEnv();
     setCalls.length = 0; // 清掉 load 階段（若有）的呼叫
 
-    const fontSize = document.getElementById('fontSize');
-    fontSize.value = '20';
-    fontSize.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const el = document.getElementById('spaceScrollRatio');
+    el.value = '40';
+    el.dispatchEvent(new window.Event('change', { bubbles: true }));
 
     assert.strictEqual(setCalls.length, 1, 'change 一次只該觸發一次 set');
-    assert.deepStrictEqual(Object.keys(setCalls[0]), ['fontSize'],
-      `patch 只能含變更欄位 fontSize，實際：${JSON.stringify(setCalls[0])}`);
-    assert.strictEqual(setCalls[0].fontSize, 20, '數值欄位必須 Number 轉型');
+    assert.deepStrictEqual(Object.keys(setCalls[0]), ['spaceScrollRatio'],
+      `patch 只能含變更欄位 spaceScrollRatio，實際：${JSON.stringify(setCalls[0])}`);
+    assert.strictEqual(setCalls[0].spaceScrollRatio, 40, '數值欄位必須 Number 轉型');
   });
 
   it('checkbox 與字串欄位同樣只寫單 key', () => {
@@ -93,52 +95,48 @@ describe('options — 設定 diff write（v0.8.35）', () => {
   it('storage.onChanged 必須把其他 context 的欄位變更同步回 DOM（不只 autoEnableDomains）', () => {
     const { document, fireOnChanged } = buildOptionsEnv();
 
-    fireOnChanged({ theme: { newValue: 'dark' } });
-    assert.strictEqual(document.getElementById('theme').value, 'dark',
-      'popup 改 theme 後 options DOM 必須跟著刷新');
+    fireOnChanged({ floatingIconSize: { newValue: 'large' } });
+    assert.strictEqual(document.getElementById('floatingIconSize').value, 'large',
+      '其他 context 改 floatingIconSize 後 options DOM 必須跟著刷新');
 
-    fireOnChanged({ fontSize: { newValue: 22 } });
-    assert.strictEqual(document.getElementById('fontSize').value, '22');
+    fireOnChanged({ spaceScrollRatio: { newValue: 30 } });
+    assert.strictEqual(document.getElementById('spaceScrollRatio').value, '30');
 
     fireOnChanged({ pangu: { newValue: false } });
     assert.strictEqual(document.getElementById('pangu').checked, false);
-
-    // 損壞的 fontWeight 值顯示退回 400（與 load 同一條 applyFieldToDom path）
-    fireOnChanged({ fontWeight: { newValue: 999 } });
-    assert.strictEqual(document.getElementById('fontWeight').value, '400');
   });
 
   it('數值欄位超界 / 留空必須 clamp 到 input min/max、退回預設（v0.8.36）', () => {
     const { window, document, setCalls } = buildOptionsEnv();
     setCalls.length = 0;
 
-    // 超界：fontSize max=32
-    const fontSize = document.getElementById('fontSize');
-    fontSize.value = '999';
-    fontSize.dispatchEvent(new window.Event('change', { bubbles: true }));
-    assert.strictEqual(setCalls.pop().fontSize, 32, '超過 max 必須 clamp 到 input max（32）');
+    // 超界：spaceScrollRatio max=90
+    const ssr = document.getElementById('spaceScrollRatio');
+    ssr.value = '999';
+    ssr.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.strictEqual(setCalls.pop().spaceScrollRatio, 90, '超過 max 必須 clamp 到 input max（90）');
 
-    // 留空：Number('') = 0 舊版會把 contentWidth 存 0；必須退回預設再 clamp
-    const cw = document.getElementById('contentWidth');
-    cw.value = '';
-    cw.dispatchEvent(new window.Event('change', { bubbles: true }));
-    const v = setCalls.pop().contentWidth;
-    assert.ok(v >= 480, `留空不可存 0（實際 ${v}，必須 >= input min 480）`);
+    // 留空：Number('') = 0；必須退回預設（positionMemoryDays 預設 3）再 clamp，不可存成空帶來的 0
+    const pmd = document.getElementById('positionMemoryDays');
+    pmd.value = '';
+    pmd.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const v = setCalls.pop().positionMemoryDays;
+    assert.strictEqual(v, 3, `留空必須退回預設 3（實際 ${v}），不可因空字串存成 0`);
   });
 
   it('onChanged 同步後再改欄位，寫回的是 storage 最新值（端到端防互蓋）', () => {
     const { window, document, setCalls, fireOnChanged } = buildOptionsEnv();
 
-    // 模擬 popup 在另一 context 改 theme
-    fireOnChanged({ theme: { newValue: 'dark' } });
+    // 模擬其他 context 改 floatingIconSize
+    fireOnChanged({ floatingIconSize: { newValue: 'large' } });
     setCalls.length = 0;
 
-    // 使用者在 options 改字級——舊版這裡會把 theme:'light'（DOM 殘留）一起蓋回
-    const fontSize = document.getElementById('fontSize');
-    fontSize.value = '21';
-    fontSize.dispatchEvent(new window.Event('change', { bubbles: true }));
+    // 使用者在 options 改 spaceScrollRatio——舊版這裡會把殘留欄位一起蓋回
+    const ssr = document.getElementById('spaceScrollRatio');
+    ssr.value = '35';
+    ssr.dispatchEvent(new window.Event('change', { bubbles: true }));
 
-    assert.ok(setCalls.every((p) => !('theme' in p)),
-      '改字級不可夾帶 theme 寫回（popup 的 dark 不可被無聲還原）');
+    assert.ok(setCalls.every((p) => !('floatingIconSize' in p)),
+      '改 spaceScrollRatio 不可夾帶 floatingIconSize 寫回（其他 context 的 large 不可被無聲還原）');
   });
 });

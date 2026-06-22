@@ -1,9 +1,9 @@
-// JRead — 懸浮控制 icon regression spec（v0.8.154）
+// JRead — 懸浮按鈕 regression spec（v0.8.154）
 //
 // 驗 content/floating-icon.js 的 DOM 行為與 wiring：
 //   - host 掛 documentElement（不掛 body——body children 會被 cleaner 動態
 //     observer 隱藏，memory feedback_reader_injected_ui_append_html）
-//   - 啟用旗標平台分流（Safari 預設開、Chrome 預設關）
+//   - 啟用旗標未設過一律預設開（v0.8.158，原平台分流取消）
 //   - 透明度 clamp、位置 sanitize（預設左緣）
 //   - 短按 → NS.dispatchLocalCommand('toggle-reader-mode')
 //   - 長按選單兩項：送 Readwise（CUSTOM_COMMAND send-to-readwise）、切換分頁模式
@@ -89,7 +89,7 @@ function setup({ scheme, store } = {}) {
   return { window, document: window.document, NS: window.__JRead, chrome: window.chrome, dispatched };
 }
 
-describe('懸浮控制 icon（v0.8.154）', () => {
+describe('懸浮按鈕（v0.8.154）', () => {
   describe('wiring forcing function', () => {
     it('manifest content_scripts 含 floating-icon.js，在 namespace.js / toast.js 之後、main.js 之前', () => {
       const js = manifest.content_scripts[0].js;
@@ -132,17 +132,17 @@ describe('懸浮控制 icon（v0.8.154）', () => {
     });
   });
 
-  describe('啟用旗標平台分流', () => {
+  describe('啟用旗標未設過一律預設開（v0.8.158）', () => {
     it('未設過時：Safari runtime → 預設顯示（開）', () => {
       const { document } = setup({ scheme: 'safari-web-extension://' });
       const host = document.getElementById('__jread-floating-host');
       assert.strictEqual(host.style.display, 'block', 'Safari 未設過應預設開');
     });
 
-    it('未設過時：Chrome runtime → 預設隱藏（關）', () => {
+    it('未設過時：Chrome runtime → 預設顯示（開，v0.8.158 改全平台預設開）', () => {
       const { document } = setup({ scheme: 'chrome-extension://' });
       const host = document.getElementById('__jread-floating-host');
-      assert.strictEqual(host.style.display, 'none', 'Chrome 未設過應預設關');
+      assert.strictEqual(host.style.display, 'block', 'Chrome 未設過 v0.8.158 起也預設開');
     });
 
     it('使用者明確設 false → 即使 Safari 也隱藏（尊重設定）', () => {
@@ -192,6 +192,32 @@ describe('懸浮控制 icon（v0.8.154）', () => {
       assert.strictEqual(host.style.left, 'auto');
       // offsetY=1 → top = (800-32) = 768
       assert.strictEqual(host.style.top, '768px');
+    });
+  });
+
+  describe('長按選單期間 host 全不透明（v0.8.158）', () => {
+    it('openMenu → host opacity 1；closeMenu → 還原使用者設定透明度', () => {
+      const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      NS.floating.applyOpacity(0.4);          // 使用者設淡透明度 0.4
+      assert.strictEqual(host.style.opacity, '0.4');
+      NS.floating.openMenu();
+      assert.ok(NS.floating.isMenuOpen(), '選單應開啟');
+      assert.strictEqual(host.style.opacity, '1', '選單開著時 host 全不透明，讓選單看得清楚');
+      NS.floating.closeMenu();
+      assert.strictEqual(host.style.opacity, '0.4', '收選單還原使用者設定透明度');
+    });
+
+    it('選單開著時改透明度設定 → 不覆蓋全不透明，收選單後套用新值', () => {
+      const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      NS.floating.applyOpacity(0.5);
+      NS.floating.openMenu();
+      assert.strictEqual(host.style.opacity, '1');
+      NS.floating.applyOpacity(0.3);          // 選單開著時 onChanged 改值
+      assert.strictEqual(host.style.opacity, '1', '選單開著時不被新設定覆蓋');
+      NS.floating.closeMenu();
+      assert.strictEqual(host.style.opacity, '0.3', '收選單後套用期間更新的新透明度');
     });
   });
 
@@ -314,19 +340,19 @@ describe('懸浮控制 icon（v0.8.154）', () => {
       assert.strictEqual(DEFAULTS.floatingIconSize, 'small');
     });
 
-    it('floatingIcon 不放固定預設（平台分流三態，由 resolver 解析）', () => {
+    it('floatingIcon 不放固定預設（三態，由 resolver 解析）', () => {
       assert.ok(!('floatingIcon' in DEFAULTS),
-        'floatingIcon 不可放 DEFAULT_SETTINGS 固定布林——否則 Safari 預設開的平台分流會被覆蓋');
+        'floatingIcon 不可放 DEFAULT_SETTINGS 固定布林——三態（含未設過）由 resolver 解析');
     });
 
-    it('resolveFloatingIconEnabled：boolean 直通、非 boolean 走平台偵測', () => {
+    it('resolveFloatingIconEnabled：boolean 直通、非 boolean 一律預設開（v0.8.158）', () => {
       const resolve = global.__JReadResolveFloatingIconEnabled;
       assert.strictEqual(typeof resolve, 'function', 'resolver 必須掛上 global');
       assert.strictEqual(resolve(true), true);
       assert.strictEqual(resolve(false), false);
-      // node 環境無 chrome → 非 Safari → 非 boolean 解析為 false（平台分支由 host 顯示測試覆蓋）
-      assert.strictEqual(resolve(undefined), false);
-      assert.strictEqual(resolve(null), false);
+      // v0.8.158：未設過（非 boolean）一律預設開，不再依平台分流
+      assert.strictEqual(resolve(undefined), true);
+      assert.strictEqual(resolve(null), true);
     });
   });
 

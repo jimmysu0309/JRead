@@ -1,8 +1,8 @@
 // JRead — 內嵌拉丁可變字型 forcing function（v0.8.146）
 //
-// 功能：popup「英文字型」選單新增 5 支自帶 woff2 的拉丁字型——襯線群 Literata /
-// Source Serif / Piazzolla、無襯線群 Public Sans / Source Sans。為什麼要內嵌（而非
-// 像 Georgia / Charter 只點名系統字）：這幾支非系統字，iOS Safari 網頁路徑沒有、
+// 功能：popup「英文字型」選單自帶 woff2 的拉丁字型——襯線群 Source Serif /
+// Piazzolla、無襯線群 Public Sans / Source Sans（v0.8.158 移除 literata，剩 4 支）。
+// 為什麼要內嵌（而非像 Georgia / Palatino 只點名系統字）：這幾支非系統字，iOS Safari 網頁路徑沒有、
 // 只點名不載入會 fall back 到別的字（同 Noto Serif TC 內嵌理由）。自帶 woff2 才能在
 // iOS 真的生效。
 //
@@ -32,7 +32,6 @@ const compose = globalThis.__JReadComposeFontStack;
 
 // key（popup option value / latinSerif|latinSans 存值）→ { file, family, group }
 const BUNDLED = {
-  literata:    { file: 'literata.woff2',     family: 'Literata',     group: 'serif' },
   sourceserif: { file: 'source-serif.woff2', family: 'Source Serif', group: 'serif' },
   piazzolla:   { file: 'piazzolla.woff2',    family: 'Piazzolla',    group: 'serif' },
   publicsans:  { file: 'public-sans.woff2',  family: 'Public Sans',  group: 'sans'  },
@@ -46,7 +45,7 @@ const DEFAULT_SETTINGS = {
 };
 
 describe('內嵌拉丁可變字型（v0.8.146 forcing function）', () => {
-  it('5 支 woff2 都存在、為合法 woff2、體積合理（Latin-subset 應 < 200KB）', () => {
+  it('4 支 woff2 都存在、為合法 woff2、體積合理（Latin-subset 應 < 200KB）', () => {
     for (const { file } of Object.values(BUNDLED)) {
       const p = path.join(FONT_DIR, file);
       assert.ok(fs.existsSync(p), `jread/assets/fonts/${file} 必須存在`);
@@ -58,7 +57,7 @@ describe('內嵌拉丁可變字型（v0.8.146 forcing function）', () => {
     }
   });
 
-  it('LATIN_FONTS 把 5 個 key 對映到對應 family 字面（具名、引號包覆）', () => {
+  it('LATIN_FONTS 把 4 個 key 對映到對應 family 字面（具名、引號包覆）', () => {
     for (const [key, { family }] of Object.entries(BUNDLED)) {
       assert.strictEqual(LATIN_FONTS[key], `"${family}"`,
         `LATIN_FONTS.${key} 必須是 '"${family}"'（family 名對齊 styler @font-face）`);
@@ -87,20 +86,20 @@ describe('內嵌拉丁可變字型（v0.8.146 forcing function）', () => {
     }
   });
 
-  it('選襯線內嵌字型時只注入「被選到」那一支拉丁 @font-face（+ 3 Noto = 4），不含其餘 4 支', () => {
+  it('選襯線內嵌字型時只注入「被選到」那一支拉丁 @font-face（+ 3 Noto = 4），不含其餘', () => {
     const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: ['detector', 'styler'] });
     const detected = env.NS.detector.detect();
     assert.ok(detected, 'detector 必須命中主文');
-    const fontFamily = compose({ fontFamily: FONT_STACKS.serif, latinSerif: 'literata' });
+    const fontFamily = compose({ fontFamily: FONT_STACKS.serif, latinSerif: 'sourceserif' });
     env.NS.styler.apply(detected.el, { ...DEFAULT_SETTINGS, fontFamily });
     const css = env.document.getElementById('__jread-style').textContent;
 
     const faceCount = (css.match(/@font-face/g) || []).length;
-    assert.strictEqual(faceCount, 4, `應注入 4 個 @font-face（3 Noto + 1 Literata），實得 ${faceCount}`);
-    assert.ok(css.includes('"Literata"'), '注入 CSS 必須宣告 "Literata" family');
-    assert.ok(css.includes('assets/fonts/literata.woff2'), '必須含 literata.woff2 URL');
-    // 不可注入其他 4 支（lazy：只注入被選到的）
-    for (const file of ALL_FILES.filter((f) => f !== 'literata.woff2')) {
+    assert.strictEqual(faceCount, 4, `應注入 4 個 @font-face（3 Noto + 1 Source Serif），實得 ${faceCount}`);
+    assert.ok(css.includes('"Source Serif"'), '注入 CSS 必須宣告 "Source Serif" family');
+    assert.ok(css.includes('assets/fonts/source-serif.woff2'), '必須含 source-serif.woff2 URL');
+    // 不可注入其他支（lazy：只注入被選到的）
+    for (const file of ALL_FILES.filter((f) => f !== 'source-serif.woff2')) {
       assert.ok(!css.includes(file), `不該注入未選的拉丁字型 ${file}`);
     }
   });
@@ -130,7 +129,7 @@ describe('內嵌拉丁可變字型（v0.8.146 forcing function）', () => {
     }
   });
 
-  it('popup.html 在正確 optgroup 內含 5 支內嵌字型 option（顯示名稱不帶 VF）', () => {
+  it('popup.html 在正確 optgroup 內含 4 支內嵌字型 option（顯示名稱不帶 VF）', () => {
     const { JSDOM } = require('jsdom');
     const doc = new JSDOM(POPUP_HTML).window.document;
     const sel = doc.getElementById('latin-font-select');

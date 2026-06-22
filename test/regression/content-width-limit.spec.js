@@ -27,10 +27,11 @@ describe('版心寬度上限放寬（v0.7.237）', () => {
     assert.ok(Number(m[1]) >= 1600, `CONTENT_WIDTH.max 必須 >= 1600（目前 ${m[1]}）`);
   });
 
-  it('options.html contentWidth input max 必須 >= 1600', () => {
-    const m = OPTIONS_HTML.match(/id="contentWidth"[^>]*max="(\d+)"/);
-    assert.ok(m, 'options.html 須含 #contentWidth max');
-    assert.ok(Number(m[1]) >= 1600, `options max 必須 >= 1600（目前 ${m[1]}）`);
+  // v0.8.158：版心寬度從 options 移到 popup（工具列圖示選單）即時調整，options
+  // 不再有 #contentWidth input——上限由 popup CONTENT_WIDTH.max + styler clamp 守。
+  it('options.html 不再含 #contentWidth（已移到 popup）', () => {
+    assert.ok(!/id="contentWidth"/.test(OPTIONS_HTML),
+      'contentWidth 已移到 popup，options 不該再有此 input');
   });
 
   it('styler contentWidth clamp 上限必須容得下 popup max（>= 1600）', () => {
