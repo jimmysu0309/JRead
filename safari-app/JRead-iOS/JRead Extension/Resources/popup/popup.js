@@ -35,6 +35,39 @@ const pagedModeCb = document.getElementById('paged-mode-cb');
 const pageNumberRow = document.getElementById('page-number-row');
 const pageNumberCb = document.getElementById('page-number-cb');
 
+// ---- 頁內浮層模式（v0.8.162，?panel=1）-------------------------------------
+// 懸浮按鈕長按選單的「功能選單」在非 Safari 把本 popup 以 iframe 嵌進網頁當頁內
+// 浮層（src 帶 ?panel=1，floating-icon.js openFeaturePanelIframe）。嵌入頁無法
+// 自關（window.close 無效）→ 改 postMessage 通知外層 content script 收掉浮層；
+// 並回報內容高/寬讓外層 iframe 收緊到內容尺寸（不留白）。非 panel（原生工具列
+// popup）一律 no-op，維持原本行為。
+const IS_PANEL = (() => {
+  try { return new URLSearchParams(location.search).get('panel') === '1'; }
+  catch (_e) { return false; }
+})();
+function closePanel() {
+  if (!IS_PANEL) return;
+  try { window.parent.postMessage({ type: 'jread-close-panel' }, '*'); } catch (_e) {}
+}
+if (IS_PANEL) {
+  document.body.classList.add('panel-mode');
+  const postPanelSize = () => {
+    try {
+      const rect = document.body.getBoundingClientRect();
+      window.parent.postMessage({
+        type: 'jread-panel-size',
+        height: Math.ceil(rect.height),
+        width: Math.ceil(rect.width)
+      }, '*');
+    } catch (_e) {}
+  };
+  window.addEventListener('load', postPanelSize);
+  if (window.ResizeObserver) {
+    try { new ResizeObserver(postPanelSize).observe(document.body); } catch (_e) {}
+  }
+  setTimeout(postPanelSize, 0);
+}
+
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
 const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
@@ -477,6 +510,8 @@ toggleBtn.addEventListener('click', async () => {
 openOptionsLink.addEventListener('click', (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
+  // panel 浮層模式：設定頁在新分頁開啟後收掉頁內浮層（避免覆蓋在底層頁上殘留）
+  closePanel();
 });
 
 // ---- Readwise Reader 整合 ----------------------------------------------

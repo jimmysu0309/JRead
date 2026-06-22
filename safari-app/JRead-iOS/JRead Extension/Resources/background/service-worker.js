@@ -164,6 +164,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       dispatchCommand(command, tabId);
       return;
     }
+    case 'OPEN_FEATURE_MENU': {
+      // v0.8.162：懸浮按鈕長按選單的「功能選單」（Safari path）。content script 不能
+      // 在 https 網頁裡用 iframe 載入擴充頁（Safari 已知限制，iOS 上會整頁 refresh），
+      // 改由 SW 開原生工具列 popup（chrome.action.openPopup，Safari 16+ / Chrome 支援）。
+      // openPopup 不支援 / 失敗（需手勢等）→ 退而開新分頁載 popup.html。皆無 iframe →
+      // 不 refresh。非 Safari（Chrome / FF）走 content 端 iframe 浮層、不送本訊息。
+      // iOS Safari 的 action API 可能缺 openPopup → 直接退新分頁（fall through）。
+      const action = chrome.action || chrome.browserAction;
+      (async () => {
+        if (action && typeof action.openPopup === 'function') {
+          try {
+            await action.openPopup();
+            return;
+          } catch (_e) { /* 不支援 / 需手勢 → fall through 開新分頁 */ }
+        }
+        try { await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') }); }
+        catch (_e) {}
+      })();
+      return;
+    }
     case 'SET_ACTIVE_ICON': {
       // content main.js 在 enter/exit reader mode 時呼叫，切 action icon 彩色/灰階
       // + 同步切換綠色 badge（active）/ 清空 badge（inactive）
