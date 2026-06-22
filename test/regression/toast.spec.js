@@ -84,6 +84,16 @@ describe('toast', () => {
     assert.strictEqual(s.pointerEvents, 'none');
   });
 
+  // v0.8.160：shadow CSS 走 NS.injectShadowCss（CSP-safe）——嚴格 style-src
+  // nonce-only 站（自架 Miniflux）在 WebKit 會擋掉 shadow 內注入的 <style>，
+  // toast 文字會無樣式 / 透明看不見（與懸浮按鈕 v0.8.159 同根因）。
+  it('shadow CSS 走 NS.injectShadowCss（CSP-safe），不可裸 <style> 進 innerHTML', () => {
+    assert.match(TOAST_SRC, /NS\.injectShadowCss\(\s*shadow\s*,\s*CSS\s*\)/,
+      'toast 必須用 NS.injectShadowCss 注入 shadow CSS（CSP-safe）');
+    assert.ok(!/innerHTML\s*=\s*`[^`]*<style>/.test(TOAST_SRC),
+      '不可把 <style> 塞進 shadow.innerHTML——嚴格 style-src 站在 WebKit 會被擋');
+  });
+
   it('多次 show 共用同一個 host（不重複建立）', () => {
     const { document, NS } = setup();
     NS.toast.show('a', { duration: 50 });
