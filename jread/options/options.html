@@ -494,16 +494,26 @@
     body.runtime-safari .intro-safari { display: block; }
 
     /* ==========================================================
-       Save status — 「已儲存」訊息暫存區。沒有訊息時不撐空間。
+       Save bar — 儲存狀態提示條（固定頁面頂端，參考姊妹專案 Shinkansen）。
+       任一欄位變更 → 存檔中（紅）→ 已存檔（綠、3s 淡出）；失敗顯示紅色錯誤
+       並停留較久。hidden 時完全不佔空間。
        ========================================================== */
-    #save-status {
-      margin: 4px 0 0;
-      color: var(--jr-primary-600);
-      font-family: var(--jr-font-mono);
-      font-size: 12px;
-      min-height: 0;
-      letter-spacing: 0.02em;
+    .save-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      color: #fff;
+      transition: opacity 0.3s ease;
     }
+    .save-bar.saving { background: #ff3b30; }
+    .save-bar.saved { background: #34c759; }
+    .save-bar.error { background: #ff3b30; }
 
     /* ==========================================================
        回復預設設定（v0.8.157）——區段頂 border-top；danger 雙態：第一次點進入
@@ -611,6 +621,8 @@
   </style>
 </head>
 <body>
+  <!-- 儲存狀態提示條（固定頂端，參考 Shinkansen）。options.js showSaveBar 控制 -->
+  <div id="save-bar" class="save-bar" hidden></div>
   <div class="container">
   <h1><img src="../assets/icons/icon-32.png" alt="" class="page-title-icon">JRead 偏好設定</h1>
   <div class="version">v<span id="version"></span></div>
@@ -653,8 +665,6 @@
       <span class="desc">工具列圖示選單顯示「移除雜訊」按鈕，手動點掉 cleaner 漏網的雜訊段落（誤刪按 <strong>Cmd/Ctrl+Z</strong>，重整即復原）。關閉則隱藏該按鈕</span>
     </label>
   </div>
-
-  <div id="save-status"></div>
 
   <h2 class="section-heading">觸控與懸浮控制</h2>
   <p class="section-desc">
