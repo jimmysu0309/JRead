@@ -241,7 +241,9 @@ describe('position-memory — 註冊與設定接線', () => {
     const fieldsMatch = OPTIONS_SRC.match(/const fields = \[[^\]]*\]/);
     assert.ok(fieldsMatch && fieldsMatch[0].includes('positionMemoryDays'),
       'options.js fields 必須含 positionMemoryDays（change 寫入 + onChanged 回灌）');
-    const numCase = OPTIONS_SRC.match(/case 'fontSize':[\s\S]*?return n;/);
+    // v0.8.158：number clamp case 起頭從 'fontSize' 改 'spaceScrollRatio'
+    //（theme/fontSize/contentWidth/fontWeight 已移到 popup）
+    const numCase = OPTIONS_SRC.match(/case 'spaceScrollRatio':[\s\S]*?return n;/);
     assert.ok(numCase && numCase[0].includes("case 'positionMemoryDays'"),
       'readFieldFromDom 必須把 positionMemoryDays 走 number clamp case');
   });

@@ -1,4 +1,4 @@
-// JRead — 懸浮控制 icon（floating action button，v0.8.154）
+// JRead — 懸浮按鈕（floating action button，v0.8.154）
 //
 // 設計（參考 Shinkansen content-floating-icon.js）：
 // - 頁面左／右緣常駐的浮動 icon，用工具列方形 icon（assets/icons/icon-32.png 經
@@ -15,8 +15,8 @@
 //   左／右緣，垂直位置存比例（floatingIconPos = { edge, offsetY }），視窗縮放後
 //   按比例還原。預設貼**左緣**、垂直置中。
 // - enable / 透明度 / 位置走 storage.sync，onChanged 即時生效（比照 toast.js）。
-//   floatingIcon 啟用旗標的預設值平台分流：未設過（非 boolean）時 Safari build 開、
-//   桌面 Chrome 關（__JReadResolveFloatingIconEnabled，settings-defaults.js 單一資料源）。
+//   floatingIcon 啟用旗標未設過（非 boolean）時一律預設開（v0.8.158，原平台分流
+//   取消，__JReadResolveFloatingIconEnabled，settings-defaults.js 單一資料源）。
 // - 比照 toast 用獨立 Shadow DOM host，掛在 documentElement（**不掛 body**——body
 //   children 會被 cleaner 動態 observer 當雜訊隱藏，injected UI 一律 append
 //   documentElement，CLAUDE.md / memory feedback_reader_injected_ui_append_html）。
@@ -41,6 +41,9 @@
   let hitSize = SIZE_MAP.small.hit;      // 目前 footprint（applyPos / 拖移用，applySize 更新）
   const EDGE_MARGIN = 6;                 // 吸附邊緣時與視窗邊的間距
   const DEFAULT_OPACITY = 0.7;
+  // v0.8.158：長按開選單時把整顆 host（含選單）調到全不透明，避免使用者設的
+  // 淡透明度（預設 0.7）讓選單文字看不清；收選單時還原使用者設定的透明度。
+  let currentOpacity = DEFAULT_OPACITY;  // 使用者設定的透明度（選單收合時的還原值）
   const HOST_ID = '__jread-floating-host';
 
   // ─── Shadow DOM host（掛 documentElement，CSP-safe）─────────────────────
@@ -48,7 +51,7 @@
   try {
     host = document.createElement('div');
     host.id = HOST_ID;
-    host.style.cssText = 'all: initial; position: fixed; z-index: 2147483600; display: none;';
+    host.style.cssText = 'all: initial; position: fixed; z-index: 2147483600; display: none; transition: opacity .15s ease;';
     shadow = host.attachShadow({ mode: 'open' }); // open：regression spec 可驗內部結構
   } catch (_e) {
     // 非 HTML 文件（XMLDocument 等）attachShadow / style 會 throw → 不放 icon
@@ -186,7 +189,10 @@
 
   function applyOpacity(v) {
     const o = typeof v === 'number' ? v : DEFAULT_OPACITY;
-    host.style.opacity = String(Math.max(0.1, Math.min(1, o)));
+    currentOpacity = Math.max(0.1, Math.min(1, o));
+    // 選單開著時 host 維持全不透明（見 openMenu）；新設定值記在 currentOpacity，
+    // 等 closeMenu 還原。沒開選單時直接套用。
+    if (!menuOpen) host.style.opacity = String(currentOpacity);
   }
 
   // 尺寸切換：寫 CSS 變數（視覺即時生效）+ 同步 hitSize（貼邊 / 拖移夾擠用），
@@ -263,6 +269,8 @@
     buildMenu();
     menuEl.classList.add('show');
     menuOpen = true;
+    // 選單開著時整顆 host 全不透明，讓選單文字清楚可讀（不受使用者淡透明度影響）
+    host.style.opacity = '1';
     outsideHandler = (ev) => {
       const path = ev.composedPath ? ev.composedPath() : [];
       if (path.includes(host)) return;
@@ -276,6 +284,8 @@
     if (!menuOpen) return;
     menuEl.classList.remove('show');
     menuOpen = false;
+    // 還原使用者設定的透明度（選單期間被調成全不透明）
+    host.style.opacity = String(currentOpacity);
     if (outsideHandler) {
       document.removeEventListener('pointerdown', outsideHandler, true);
       outsideHandler = null;

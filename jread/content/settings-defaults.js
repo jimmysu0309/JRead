@@ -33,13 +33,15 @@
     contentWidth: 720,
     fontFamily: 'system-ui',
     // v0.8.144：英文（拉丁）fallback 字型。襯線 / 無襯線各自記一個英文字型選擇
-    //（latinSerif / latinSans），'auto' = 沿用該 stack 內建的西文字型（襯線 = Georgia、
+    //（latinSerif / latinSans）；'auto' = 沿用該 stack 內建的西文字型（襯線 = Georgia、
     // 無襯線 = -apple-system）。只在 fontFamily 為襯線 / 無襯線 stack 時生效——
     // 系統預設（不覆寫）與等寬無此維度。實際組合（前接到 base stack 前面）由
     // composeFontStack() 在讀取邊界（main.js getSettings）執行，fontFamily 仍存
     // base stack 字面值不變（既有契約不動、不需遷移既有使用者）。
-    latinSerif: 'auto',
-    latinSans: 'auto',
+    // v0.8.158（Jimmy 2026-06-22）：預設改用內嵌可變字型 Source Serif / Source Sans
+    //（取代原本 'auto'）——選襯線 / 無襯線時英文 / 數字直接走自帶 woff2、iOS 也生效。
+    latinSerif: 'sourceserif',
+    latinSans: 'sourcesans',
     // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。用真正的
     // font-weight 全平台生效，取代 v0.7.157 boldText（-webkit-font-smoothing 只在
     // macOS 有差異）。三段一律注入（含 400，避免原站內文非 400 時中退回原站與細撞色）。
@@ -72,12 +74,12 @@
     // ——三指輕點易誤觸、且懸浮 icon 已是觸控主入口）；true = 啟用辨識器。觸控裝置
     // 才有意義（桌面滑鼠 maxTouchPoints < 3 自然不裝）。
     threeFingerTap: false,
-    // v0.8.154：懸浮控制 icon（頁面邊緣常駐按鈕）的透明度（0.1–1.0）。
-    // floatingIcon 啟用旗標本身是平台分流的三態（未設過時 Safari 預設開、Chrome
-    // 預設關），由 __JReadResolveFloatingIconEnabled 在讀取邊界解析，不放此固定值；
+    // v0.8.154：懸浮按鈕（頁面邊緣常駐按鈕）的透明度（0.1–1.0）。
+    // floatingIcon 啟用旗標本身是三態（未設過一律預設開，v0.8.158），由
+    // __JReadResolveFloatingIconEnabled 在讀取邊界解析，不放此固定值；
     // 位置 floatingIconPos 為 runtime 拖移狀態，由 floating-icon.js 直讀 storage。
     floatingIconOpacity: 0.7,
-    // v0.8.156：懸浮控制 icon 尺寸。'small' = 視覺 16px / 可點 footprint 32px
+    // v0.8.156：懸浮按鈕尺寸。'small' = 視覺 16px / 可點 footprint 32px
     //（v0.8.154 以來的原始尺寸，預設）；'large' = 視覺 32px / footprint 48px
     //（觸控嫌小者可放大，Jimmy 回報部分使用者覺得太小）。
     floatingIconSize: 'small',
@@ -142,16 +144,15 @@
   // 會被 iOS WebKit 當「只解析拉丁」攔截、CJK 反而 fallback 到後綴 sans（詳見上方
   // FONT_STACKS 註解）；具名字型缺字時自然往後落到 base stack 原有的 Georgia /
   // -apple-system / 泛型，安全。'auto' = 不前接（沿用 base stack 內建西文字型）。
-  // v0.8.146：內嵌拉丁可變字型（Literata / Source Serif / Piazzolla 襯線、
-  // Public Sans / Source Sans 無襯線）——family 名對齊 styler 的 BUNDLED_LATIN_FACES
-  // @font-face。為什麼要自帶：Charter / Palatino 等是系統字、iOS 仍可點名，但這幾支
-  // 非系統字必須內嵌 woff2 才能在 iOS Safari 網頁路徑生效（同 Noto Serif TC 內嵌理由）。
+  // v0.8.146：內嵌拉丁可變字型（Source Serif / Piazzolla 襯線、Public Sans /
+  // Source Sans 無襯線）——family 名對齊 styler 的 BUNDLED_LATIN_FACES @font-face。
+  // 為什麼要自帶：Palatino 等是系統字、iOS 仍可點名，但這幾支非系統字必須內嵌
+  // woff2 才能在 iOS Safari 網頁路徑生效（同 Noto Serif TC 內嵌理由）。
+  // v0.8.158（Jimmy 2026-06-22）：移除 charter / literata 兩支字型選項。
   const LATIN_FONTS = {
     auto: '',
     georgia: 'Georgia',
-    charter: 'Charter',
     palatino: 'Palatino, "Palatino Linotype", "Book Antiqua"',
-    literata: '"Literata"',
     sourceserif: '"Source Serif"',
     piazzolla: '"Piazzolla"',
     helvetica: '"Helvetica Neue"',
@@ -179,22 +180,13 @@
     return base;
   }
 
-  // v0.8.154：懸浮控制 icon 啟用旗標的平台分流解析（單一資料源，content
-  // floating-icon.js + options.js 共用）。floatingIcon 存進 storage.sync 的是
-  // 三態：boolean（使用者在 options 明確設過）或 undefined（未設過）。未設過時
-  // 依 runtime 平台決定預設——Safari（safari-web-extension://，涵蓋 iOS / iPadOS /
-  // macOS Safari）popup 入口藏在位址列選單兩層深、預設開；桌面 Chrome 有工具列
-  // 按鈕 + 快速鍵、預設關。訊號用 runtime URL scheme（結構性平台訊號，與
-  // keepalive.js isSafariRuntime / options.js runtime 偵測同款），非 OS sniff。
-  function __jreadIsSafariRuntime() {
-    try {
-      const u = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
-        ? chrome.runtime.getURL('') : '';
-      return typeof u === 'string' && u.startsWith('safari-web-extension://');
-    } catch (_) { return false; }
-  }
+  // v0.8.154：懸浮按鈕啟用旗標的解析（單一資料源，content floating-icon.js +
+  // options.js 共用）。floatingIcon 存進 storage.sync 的是三態：boolean（使用者
+  // 在 options 明確設過）或 undefined（未設過）。
+  // v0.8.158（Jimmy 2026-06-22）：未設過時一律預設開——原本平台分流（Safari 開、
+  // 桌面關）取消，懸浮按鈕在所有平台都是預設入口；使用者明確設 false 仍尊重關閉。
   function resolveFloatingIconEnabled(raw) {
-    return typeof raw === 'boolean' ? raw : __jreadIsSafariRuntime();
+    return typeof raw === 'boolean' ? raw : true;
   }
 
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
