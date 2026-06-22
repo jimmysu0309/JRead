@@ -12,6 +12,36 @@
   const FADE_MS = 200;
   const HOST_ID = '__jread-toast-host';
 
+  // v0.8.160：shadow 內樣式抽成 CSS 字串、改走 NS.injectShadowCss（CSP-safe）——
+  // 嚴格 style-src nonce-only 站（自架 Miniflux）在 WebKit 會擋掉 shadow 內注入的
+  // <style>，toast 文字會變透明 / 無樣式看不見（與懸浮按鈕 v0.8.159 同根因）。
+  // 被擋時退回 shadow.adoptedStyleSheets。詳見 namespace.js injectShadowCss 註解。
+  const CSS = `
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .toast {
+      background: #2d3748;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font: 14px -apple-system, system-ui, "Noto Sans TC", sans-serif;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      max-width: 320px;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms ease;
+      pointer-events: auto;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { background: #2f855a; }
+    .toast.error   { background: #c53030; }
+    .toast.info    { background: #2b6cb0; }
+  `;
+
   let host = null;
   let shadow = null;
   let stack = null;
@@ -33,35 +63,10 @@
 
     // open mode 讓 regression spec 可以驗證內部結構
     shadow = host.attachShadow({ mode: 'open' });
-    shadow.innerHTML = `
-      <style>
-        .stack {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          align-items: flex-end;
-        }
-        .toast {
-          background: #2d3748;
-          color: #fff;
-          padding: 10px 16px;
-          border-radius: 6px;
-          font: 14px -apple-system, system-ui, "Noto Sans TC", sans-serif;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-          max-width: 320px;
-          opacity: 0;
-          transform: translateY(6px);
-          transition: opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms ease;
-          pointer-events: auto;
-        }
-        .toast.show { opacity: 1; transform: translateY(0); }
-        .toast.success { background: #2f855a; }
-        .toast.error   { background: #c53030; }
-        .toast.info    { background: #2b6cb0; }
-      </style>
-      <div class="stack"></div>
-    `;
-    stack = shadow.querySelector('.stack');
+    stack = document.createElement('div');
+    stack.className = 'stack';
+    shadow.appendChild(stack);
+    NS.injectShadowCss(shadow, CSS);
 
     (document.body || document.documentElement).appendChild(host);
   }

@@ -13,7 +13,7 @@
 //   分頁模式。點任一列執行後收選單；點選單外 / 捲動 = 收選單。
 // - 拖移（pointermove 超過 DRAG_THRESHOLD_PX）= 進入拖移模式，放開時吸附最近的
 //   左／右緣，垂直位置存比例（floatingIconPos = { edge, offsetY }），視窗縮放後
-//   按比例還原。預設貼**左緣**、垂直置中。
+//   按比例還原。預設貼**左下角**（左緣 + offsetY=1，v0.8.160；原置中）。
 // - enable / 透明度 / 位置走 storage.sync，onChanged 即時生效（比照 toast.js）。
 //   floatingIcon 啟用旗標未設過（非 boolean）時一律預設開（v0.8.158，原平台分流
 //   取消，__JReadResolveFloatingIconEnabled，settings-defaults.js 單一資料源）。
@@ -182,7 +182,7 @@
   ];
 
   // ─── 設定狀態 ───────────────────────────────────────────────────────────
-  let pos = { edge: 'left', offsetY: 0.5 };   // 預設左緣置中（spec 點 4）
+  let pos = { edge: 'left', offsetY: 1 };     // 預設左下角（v0.8.160，offsetY=1=底）
 
   function applyEnabled(enabled) {
     host.style.display = enabled ? 'block' : 'none';
@@ -209,8 +209,9 @@
 
   function sanitizePos(p) {
     const edge = (p && (p.edge === 'left' || p.edge === 'right')) ? p.edge : 'left';
-    let offsetY = p && typeof p.offsetY === 'number' ? p.offsetY : 0.5;
-    if (!(offsetY >= 0 && offsetY <= 1)) offsetY = 0.5;
+    // 預設左下角（v0.8.160）：未設過 / 非法值一律退回 offsetY=1（底）
+    let offsetY = p && typeof p.offsetY === 'number' ? p.offsetY : 1;
+    if (!(offsetY >= 0 && offsetY <= 1)) offsetY = 1;
     return { edge, offsetY };
   }
 

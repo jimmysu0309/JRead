@@ -182,13 +182,22 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(host.style.opacity, '0.7', '非數值退回預設 0.7');
     });
 
-    it('sanitizePos 預設左緣置中、消毒非法值', () => {
+    it('sanitizePos 預設左下角（v0.8.160 offsetY=1）、消毒非法值', () => {
       const { NS } = setup();
       const f = NS.floating;
       // 跨 realm（window.eval）物件 prototype ≠ Node，spread 成 Node 物件再比
-      assert.deepStrictEqual({ ...f.sanitizePos(undefined) }, { edge: 'left', offsetY: 0.5 });
-      assert.deepStrictEqual({ ...f.sanitizePos({ edge: 'bogus', offsetY: 9 }) }, { edge: 'left', offsetY: 0.5 });
+      assert.deepStrictEqual({ ...f.sanitizePos(undefined) }, { edge: 'left', offsetY: 1 });
+      assert.deepStrictEqual({ ...f.sanitizePos({ edge: 'bogus', offsetY: 9 }) }, { edge: 'left', offsetY: 1 });
       assert.deepStrictEqual({ ...f.sanitizePos({ edge: 'right', offsetY: 0.2 }) }, { edge: 'right', offsetY: 0.2 });
+    });
+
+    it('未設過 floatingIconPos → host 貼左下角（left=6、top=底）', () => {
+      const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      // innerHeight=800、small footprint 32 → top = 1 * (800-32) = 768
+      assert.deepStrictEqual({ ...NS.floating.getPos() }, { edge: 'left', offsetY: 1 });
+      assert.strictEqual(host.style.left, '6px');
+      assert.strictEqual(host.style.top, '768px');
     });
 
     it('applyPos 左緣 → 設 left、清 right；右緣相反', () => {
