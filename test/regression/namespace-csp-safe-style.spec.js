@@ -50,6 +50,9 @@ describe('namespace — NS.injectCssText / removeCssText（v0.8.130 CSP-safe 注
     if (window.Document && window.Document.prototype) {
       delete window.Document.prototype.adoptedStyleSheets;
     }
+    if (window.ShadowRoot && window.ShadowRoot.prototype) {
+      delete window.ShadowRoot.prototype.adoptedStyleSheets;
+    }
     delete document.adoptedStyleSheets;
   });
 
@@ -124,5 +127,55 @@ describe('namespace — NS.injectCssText / removeCssText（v0.8.130 CSP-safe 注
     assert.ok(el, 'marker <style> 仍存在（最壞回到 bug 前狀態）');
     assert.strictEqual(el.textContent, CSS);
     assert.ok(!NS._adoptedStyles.has(STYLE_ID));
+  });
+
+  // NS.injectShadowCss：同根因的 Shadow DOM 版（v0.8.159 懸浮按鈕尺寸修復）。
+  // 懸浮按鈕 / toast 用獨立 Shadow DOM host，CSS 注入 shadow 內的 <style>；自架
+  // Miniflux 嚴格 style-src 在 WebKit 連 shadow <style> 都擋 → .fab 拿不到
+  // var(--fab-hit) 寬高、icon 退回 <img> 原生 32px 無視尺寸設定 → 退回
+  // shadow.adoptedStyleSheets。本段驗 fallback 邏輯；WebKit 真會擋那層靠 iOS 真機。
+  describe('NS.injectShadowCss — Shadow DOM 內的 CSP-safe 注入', () => {
+    function makeShadow() {
+      const hostEl = document.createElement('div');
+      document.body.appendChild(hostEl);
+      const shadow = hostEl.attachShadow({ mode: 'open' });
+      // jsdom 的 ShadowRoot 沒有 adoptedStyleSheets，用實例屬性模擬可讀寫
+      let adopted = [];
+      Object.defineProperty(shadow, 'adoptedStyleSheets', {
+        get() { return adopted; },
+        set(v) { adopted = v; },
+        configurable: true
+      });
+      return shadow;
+    }
+
+    it('一般站（sheet 非 null）：只注入 <style>，不掛 adoptedStyleSheets', () => {
+      sheetGetter.value = {};
+      const shadow = makeShadow();
+      const el = NS.injectShadowCss(shadow, CSS);
+      assert.ok(el && el.tagName === 'STYLE', '回傳 marker <style>');
+      assert.strictEqual(shadow.querySelector('style').textContent, CSS);
+      assert.strictEqual(shadow.adoptedStyleSheets.length, 0, '未被擋不可走 fallback');
+    });
+
+    it('被 CSP 擋（sheet=null）+ 環境支援：退回 shadow.adoptedStyleSheets', () => {
+      const replaceCalls = stubAdoptable();
+      window.ShadowRoot.prototype.adoptedStyleSheets = []; // canAdopt 檢查需要
+      sheetGetter.value = null;
+      const shadow = makeShadow();
+      NS.injectShadowCss(shadow, CSS);
+      assert.ok(shadow.querySelector('style'), 'marker <style> 仍保留');
+      assert.strictEqual(shadow.adoptedStyleSheets.length, 1, '應掛一份 adopted sheet');
+      assert.strictEqual(shadow.adoptedStyleSheets[0].cssText, CSS, 'adopted sheet 帶正確 CSS');
+      assert.deepStrictEqual(replaceCalls, [CSS]);
+    });
+
+    it('被擋但環境不支援 adopted：graceful，不丟例外、保留 <style>', () => {
+      sheetGetter.value = null;
+      const shadow = makeShadow();
+      assert.doesNotThrow(() => NS.injectShadowCss(shadow, CSS));
+      assert.ok(shadow.querySelector('style'), 'marker <style> 仍存在');
+      assert.strictEqual(shadow.adoptedStyleSheets.length, 0, '不支援時不掛 adopted');
+    });
   });
 });
