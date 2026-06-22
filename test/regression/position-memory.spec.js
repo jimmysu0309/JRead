@@ -1,7 +1,7 @@
 // JRead — regression spec: 閱讀位置記憶（v0.8.40）
 //
 // 功能：文章看到一半離開時記住閱讀位置（捲動模式記段落簽名 + 進度比例、
-// 翻頁模式記頁碼 + 總頁數，存 chrome.storage.local），效期內
+// 翻頁模式記頁碼 + 總頁數，存 browser.storage.local），效期內
 // （settings.positionMemoryDays，預設 3 天、上限 7、0 = 停用）重新進入
 // 閱讀模式自動回到上次位置。
 //

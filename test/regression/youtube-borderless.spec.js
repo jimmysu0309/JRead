@@ -1,7 +1,7 @@
 // JRead — YouTube Borderless Mode regression (v0.7.134)
 //
 // 動機：v0.7.134 從 Shinkansen 移植「無邊模式」進 JRead。隱藏所有 YouTube UI、
-// 強制 theater、影片 100vw × 100vh 撐滿視窗，並 SW 端 `chrome.windows.update`
+// 強制 theater、影片 100vw × 100vh 撐滿視窗，並 SW 端 `browser.windows.update`
 // 把瀏覽器視窗高度 resize 成匹配影片比例。v0.7.251 起內建預設鍵 ⌥4（原本
 // 無 suggested_key）、亦可自綁；popup 在 YouTube watch 頁多一顆「切換無邊模式」按鈕。
 //
@@ -174,7 +174,7 @@ describe('youtube-borderless v0.7.134 — namespace + MSG 常數', () => {
     assert.match(NAMESPACE_SRC, /TOGGLE_YT_BORDERLESS\s*:\s*['"]TOGGLE_YT_BORDERLESS['"]/,
       'namespace.js MSG 必須含 TOGGLE_YT_BORDERLESS 常數（SW / popup 觸發無邊模式 toggle）');
     assert.match(NAMESPACE_SRC, /RESIZE_OWN_WINDOW\s*:\s*['"]RESIZE_OWN_WINDOW['"]/,
-      'namespace.js MSG 必須含 RESIZE_OWN_WINDOW 常數（content → SW 呼叫 chrome.windows.update）');
+      'namespace.js MSG 必須含 RESIZE_OWN_WINDOW 常數（content → SW 呼叫 browser.windows.update）');
   });
 });
 
@@ -228,12 +228,12 @@ describe('youtube-borderless — cross-mode 退出邏輯（v0.7.228 落地 conte
 
   const DISPATCH_SLICE = SW_SRC.slice(
     SW_SRC.indexOf('async function dispatchCommand'),
-    SW_SRC.indexOf('chrome.commands.onCommand')
+    SW_SRC.indexOf('browser.commands.onCommand')
   );
 
   it('SW onCommand listener 必須把 command 轉交 dispatchCommand（預設鍵接回同一條 dispatch）', () => {
-    const listenerSlice = SW_SRC.slice(SW_SRC.indexOf('chrome.commands.onCommand.addListener'));
-    assert.ok(listenerSlice.length > 0, '抓不到 chrome.commands.onCommand listener');
+    const listenerSlice = SW_SRC.slice(SW_SRC.indexOf('browser.commands.onCommand.addListener'));
+    assert.ok(listenerSlice.length > 0, '抓不到 browser.commands.onCommand listener');
     assert.match(listenerSlice, /dispatchCommand\(command,\s*tab\.id\)/,
       'onCommand listener 必須呼叫 dispatchCommand——預設鍵與自訂鍵不可雙實作 dispatch');
   });
@@ -287,19 +287,19 @@ describe('youtube-borderless — cross-mode 退出邏輯（v0.7.228 落地 conte
 });
 
 describe('youtube-borderless v0.7.134 — SW handler', () => {
-  it('SW 必須處理 RESIZE_OWN_WINDOW 訊息呼叫 chrome.windows.update', () => {
+  it('SW 必須處理 RESIZE_OWN_WINDOW 訊息呼叫 browser.windows.update', () => {
     assert.match(SW_SRC, /case\s+['"]RESIZE_OWN_WINDOW['"]/,
       'SW onMessage 必須有 RESIZE_OWN_WINDOW case');
-    assert.match(SW_SRC, /chrome\.windows\.update/,
-      'SW RESIZE_OWN_WINDOW handler 必須呼叫 chrome.windows.update');
+    assert.match(SW_SRC, /browser\.windows\.update/,
+      'SW RESIZE_OWN_WINDOW handler 必須呼叫 browser.windows.update');
   });
 
-  it('RESIZE_OWN_WINDOW handler 必須吞掉 chrome.windows.update 的 promise reject（PWA / 視窗已關 race）', () => {
+  it('RESIZE_OWN_WINDOW handler 必須吞掉 browser.windows.update 的 promise reject（PWA / 視窗已關 race）', () => {
     // 抓 RESIZE_OWN_WINDOW case 開始到下一個 case / closing 為止
     const m = SW_SRC.match(/case\s+['"]RESIZE_OWN_WINDOW['"][\s\S]*?(?=case\s+['"]|^\s*default\s*:|^\s*\}\s*\n\s*\})/m);
     assert.ok(m, 'SW 找不到 RESIZE_OWN_WINDOW case slice');
     assert.match(m[0], /\.catch\s*\(/,
-      'RESIZE_OWN_WINDOW handler 必須 .catch 吞掉 chrome.windows.update reject——避免 tab 關閉 / PWA 限制時 uncaught rejection');
+      'RESIZE_OWN_WINDOW handler 必須 .catch 吞掉 browser.windows.update reject——避免 tab 關閉 / PWA 限制時 uncaught rejection');
   });
 
   it('SW onCommand 必須處理 toggle-youtube-borderless 分支', () => {

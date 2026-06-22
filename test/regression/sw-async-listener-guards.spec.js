@@ -47,7 +47,7 @@ describe('A1: onInstalled async listener 防護（v0.8.15）', () => {
 
   it('不再整包 set(merged) 全量回寫，改為只寫 diff patch', () => {
     assert.ok(!/set\(\s*merged\s*\)/.test(stripComments(body)),
-      'onInstalled 不該再 chrome.storage.sync.set(merged) 全量回寫整個物件');
+      'onInstalled 不該再 browser.storage.sync.set(merged) 全量回寫整個物件');
     assert.match(body, /patch/, 'onInstalled 必須建 patch（只收需補/遷移的 key）');
     assert.match(body, /Object\.keys\(\s*patch\s*\)/,
       'onInstalled 必須在 patch 有內容時才 set（Object.keys(patch).length 判斷）');

@@ -1,7 +1,7 @@
 // JRead — ESC 鍵退出閱讀模式 regression（v0.7.101）
 // 對應功能：reader mode 啟動期間按下 ESC 鍵 → 退出閱讀模式
 //
-// main.js 包在 IIFE 且依賴 chrome.runtime API（無法直接 require），這裡採
+// main.js 包在 IIFE 且依賴 browser.runtime API（無法直接 require），這裡採
 // 雙層測試策略：
 //   (1) Source-level forcing function：grep main.js 確認 onEscKey listener
 //       的關鍵邏輯（key 判斷、修飾鍵排除、focus 元素白名單、install/uninstall

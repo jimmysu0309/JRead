@@ -8,7 +8,7 @@
 // stopImmediatePropagation()（阻 page JS listener），不 preventDefault（保留
 // 瀏覽器原生 default action）。settings.blockPageShortcuts 控制 on/off，預設 on。
 //
-// 本檔做純 source 結構 assertion——chrome.* / window.addEventListener 走真實
+// 本檔做純 source 結構 assertion——browser.* / window.addEventListener 走真實
 // 瀏覽器才能驗，jsdom 跑不到（content script 在 isolated world）。
 
 const fs = require('fs');
@@ -121,7 +121,7 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
 
     it('storage.onChanged 必須處理 blockPageShortcuts 動態切換', () => {
       // 抓 storage.onChanged.addListener body
-      const m = MAIN_SRC.match(/chrome\.storage\.onChanged\.addListener\(([\s\S]*?)\n\s\s\}\)\s*;/);
+      const m = MAIN_SRC.match(/browser\.storage\.onChanged\.addListener\(([\s\S]*?)\n\s\s\}\)\s*;/);
       assert.ok(m, '能抓到 storage.onChanged listener body');
       assert.match(m[0], /blockPageShortcuts/,
         'storage.onChanged 必須處理 blockPageShortcuts 變更——forcing：options toggle 後不能即時生效，得退出/重進 reader mode');

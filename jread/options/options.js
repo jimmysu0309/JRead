@@ -18,7 +18,7 @@ const fields = ['readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageSh
 // content/floating-icon.js 走同一個 resolver，不在 options 另寫一份判定。
 const resolveFloatingIconEnabled = window.__JReadResolveFloatingIconEnabled || ((v) => v === true);
 
-document.getElementById('version').textContent = chrome.runtime.getManifest().version;
+document.getElementById('version').textContent = browser.runtime.getManifest().version;
 
 // ---- 快速鍵 recorder（v0.7.218）--------------------------------------
 // 點 recorder 進入錄製狀態 → window keydown capture 抓組合 → validate →
@@ -34,7 +34,7 @@ let recordingCmd = null;                    // 錄製中的 command（null = 沒
 //   （safari-web-extension:// 涵蓋 macOS / iPadOS / iOS Safari）。
 // body class 讓「說明文字依引擎切換」純 CSS 完成（不需額外 JS）；
 // isSafariRuntime 餵給 validate 的 requireCtrl——Safari 自訂鍵必含 ⌃ Control。
-const extUrl = chrome.runtime.getURL('');
+const extUrl = browser.runtime.getURL('');
 let runtime = 'safari';
 if (extUrl.startsWith('chrome-extension://')) runtime = 'chrome';
 else if (extUrl.startsWith('moz-extension://')) runtime = 'firefox';
@@ -89,7 +89,7 @@ function renderShortcuts() {
 
 function saveShortcuts() {
   showSaving();
-  chrome.storage.sync.set({ customShortcuts: shortcutTable }, flashSaved);
+  browser.storage.sync.set({ customShortcuts: shortcutTable }).then(flashSaved).catch(flashSaveError);
 }
 
 SC.COMMANDS.forEach((cmd) => {
@@ -240,7 +240,8 @@ function applyFieldToDom(id, value) {
 function load() {
   // floatingIcon 不在 DEFAULTS（三態）——以 null fallback 一併請求，
   // applyFieldToDom 收到 null 時走 resolveFloatingIconEnabled 解析（未設過預設開）。
-  chrome.storage.sync.get(Object.assign({ floatingIcon: null }, DEFAULTS), (values) => {
+  // v0.8.164：browser.storage.sync.get 原生 Promise（reject 即不刷新，保留 DOM 預設）。
+  browser.storage.sync.get(Object.assign({ floatingIcon: null }, DEFAULTS)).then((values) => {
     fields.forEach((id) => applyFieldToDom(id, values[id]));
     // autoEnableDomains：array → textarea 多行字串（每行一個正規化過的網域）
     const helper = window.__JReadDomainMatch;
@@ -251,13 +252,13 @@ function load() {
     shortcutTable = SC.sanitizeTable(values.customShortcuts);
     renderShortcuts();
     updateOpacityDemo();   // 範例 icon 套初始透明度 + 尺寸
-  });
+  }).catch(() => {});
 }
 
 // ---- 儲存狀態提示條（v0.8.162，參考姊妹專案 Shinkansen save-bar）----------
 // 固定頂端的提示條，三態：存檔中（紅）→ 已存檔（綠、3s 淡出）／儲存失敗（紅、停留）。
 // 任一寫入 path（欄位 change / 快速鍵 / 自動啟動網域）寫入前呼 showSaving()、
-// chrome.storage.sync.set 的 callback 呼 flashSaved() 收尾。
+// browser.storage.sync.set 的 callback 呼 flashSaved() 收尾。
 const saveBarEl = document.getElementById('save-bar');
 let saveBarHideTimer = null;
 function showSaveBar(state, text) {
@@ -277,20 +278,21 @@ function showSaveBar(state, text) {
 function showSaving() {
   showSaveBar('saving', '存檔中…');
 }
+// v0.8.164：set 改用 browser.storage.sync.set 原生 Promise——成功走 flashSaved、
+// 失敗（quota / 寫入頻率超限，Promise reject）走 flashSaveError，不再讀 lastError。
 function flashSaved() {
-  // v0.8.35：set 失敗（quota / 寫入頻率超限）不可閃「已存檔」假訊號
-  if (chrome.runtime.lastError) {
-    showSaveBar('error', '儲存失敗，請稍後再試');
-    return;
-  }
   showSaveBar('saved', '已存檔');
+}
+function flashSaveError() {
+  // set 失敗不可閃「已存檔」假訊號（v0.8.35 語意維持）
+  showSaveBar('error', '儲存失敗，請稍後再試');
 }
 
 // 任何欄位變更即存檔——只寫該欄（diff write，見上方 v0.8.35 註解）
 fields.forEach((id) => {
   document.getElementById(id).addEventListener('change', () => {
     showSaving();
-    chrome.storage.sync.set({ [id]: readFieldFromDom(id) }, flashSaved);
+    browser.storage.sync.set({ [id]: readFieldFromDom(id) }).then(flashSaved).catch(flashSaveError);
   });
 });
 
@@ -410,25 +412,25 @@ if (geminiTestBtn && geminiTestResultEl) {
 
 // autoEnableDomains 走獨立路徑：textarea 多行字串 → parseList → 寫回 sync。
 // 用 'change'（blur 觸發）而非 'input'，避免使用者打字途中每按一鍵就 set
-// 觸發 chrome.storage.sync 寫入配額 + 跨 tab broadcast。
+// 觸發 browser.storage.sync 寫入配額 + 跨 tab broadcast。
 document.getElementById('autoEnableDomains').addEventListener('change', (e) => {
   const helper = window.__JReadDomainMatch;
   const raw = e.target.value;
   const list = helper ? helper.parseList(raw) : raw.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
   showSaving();
-  chrome.storage.sync.set({ autoEnableDomains: list }, () => {
+  browser.storage.sync.set({ autoEnableDomains: list }).then(() => {
     // 把正規化結果寫回 textarea（含 lowercase / 去 scheme / 去 path / 去重），
     // 讓使用者立刻看到實際生效的清單
     if (helper) e.target.value = helper.serializeList(list);
     flashSaved();
-  });
+  }).catch(flashSaveError);
 });
 
 // 其他 context（popup / 另一個 options 分頁）寫入時，options 開著要跟著刷新。
 // v0.8.35：從只同步 autoEnableDomains 擴成全欄位 + customShortcuts——這是
 // diff-write 修法的另一半（DOM 永遠反映 storage 最新值，殘留 stale 值的面消失）
-if (chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
+if (browser.storage && browser.storage.onChanged) {
+  browser.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
     for (const id of fields) {
       if (id in changes) applyFieldToDom(id, changes[id].newValue);
@@ -486,15 +488,14 @@ if (resetBtn) {
     delete payload.geminiApiKey;  // 保留使用者憑證
     payload.floatingIcon = null;  // 回復三態（未設過 → 預設開）
     payload.floatingIconPos = null; // 清掉拖移位置
-    chrome.storage.sync.set(payload, () => {
-      if (chrome.runtime.lastError) {
-        resetStatusEl.textContent = '回復失敗，請稍後再試';
-        setTimeout(() => { resetStatusEl.textContent = ''; }, 3000);
-        return;
-      }
+    // v0.8.164：browser.storage.sync.set 原生 Promise——reject（失敗）走錯誤訊息。
+    browser.storage.sync.set(payload).then(() => {
       load(); // 重讀 storage 刷新整個表單顯示
       resetStatusEl.textContent = '已回復預設設定';
       setTimeout(() => { resetStatusEl.textContent = ''; }, 2000);
+    }).catch(() => {
+      resetStatusEl.textContent = '回復失敗，請稍後再試';
+      setTimeout(() => { resetStatusEl.textContent = ''; }, 3000);
     });
   });
 }

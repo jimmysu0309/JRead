@@ -4,12 +4,12 @@
 // event type='reload' → content script bridge → SW JREAD_RELOAD → reload。
 // reload 不洩漏資料但會打斷使用者所有 tab 的 reader mode（攻擊者：低成本 nuisance）。
 //
-// 修法：SW JREAD_RELOAD handler 用 chrome.management.getSelf() 拿 installType
+// 修法：SW JREAD_RELOAD handler 用 browser.management.getSelf() 拿 installType
 // （不需 "management" permission，self-query），只在 development（unpacked / Claude
 // 自主 debug 場景）允許 reload；store / normal install 拒絕。
 //
 // 本 spec 是 forcing function：
-//   - SW JREAD_RELOAD case body 必須含 chrome.management.getSelf
+//   - SW JREAD_RELOAD case body 必須含 browser.management.getSelf
 //   - reload() 必須包在 development guard 內
 
 const fs = require('fs');
@@ -29,9 +29,9 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
     caseBody = match[1];
   });
 
-  it('JREAD_RELOAD case body 必須呼叫 chrome.management.getSelf', () => {
-    assert.ok(/chrome\.management\.getSelf/.test(caseBody),
-      'JREAD_RELOAD handler 必須用 chrome.management.getSelf 檢查 installType。實際 case body:\n' + caseBody);
+  it('JREAD_RELOAD case body 必須呼叫 browser.management.getSelf', () => {
+    assert.ok(/browser\.management\.getSelf/.test(caseBody),
+      'JREAD_RELOAD handler 必須用 browser.management.getSelf 檢查 installType。實際 case body:\n' + caseBody);
   });
 
   // v0.8.36：installType check 抽進共用 runIfDevelopmentInstall（JREAD_RELOAD
@@ -52,13 +52,13 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
     assert.ok(installTypeLine < fnCallLine, 'installType check 必須在 fn() 之前（先驗證再執行）');
   });
 
-  it('JREAD_RELOAD 的 chrome.runtime.reload() 必須包在 runIfDevelopmentInstall callback 內', () => {
-    assert.ok(/runIfDevelopmentInstall\(\s*['"]JREAD_RELOAD['"]\s*,\s*\(\)\s*=>\s*chrome\.runtime\.reload\(\)\s*\)/.test(caseBody),
+  it('JREAD_RELOAD 的 browser.runtime.reload() 必須包在 runIfDevelopmentInstall callback 內', () => {
+    assert.ok(/runIfDevelopmentInstall\(\s*['"]JREAD_RELOAD['"]\s*,\s*\(\)\s*=>\s*browser\.runtime\.reload\(\)\s*\)/.test(caseBody),
       'reload 必須委派 runIfDevelopmentInstall（不可裸呼）');
     // 不可有 guard 外的裸 reload 呼叫
     const bare = caseBody.split('\n').filter(l =>
-      !/^\s*(\/\/|\*)/.test(l) && /chrome\.runtime\.reload\s*\(\)/.test(l) && !/runIfDevelopmentInstall/.test(l) && !/!chrome\.runtime\.reload/.test(l));
-    assert.strictEqual(bare.length, 0, 'case body 不可有 gate 外的裸 chrome.runtime.reload() 呼叫');
+      !/^\s*(\/\/|\*)/.test(l) && /browser\.runtime\.reload\s*\(\)/.test(l) && !/runIfDevelopmentInstall/.test(l) && !/!browser\.runtime\.reload/.test(l));
+    assert.strictEqual(bare.length, 0, 'case body 不可有 gate 外的裸 browser.runtime.reload() 呼叫');
   });
 
   it('JREAD_DEBUG_SET_THEME 也必須走 runIfDevelopmentInstall + theme 白名單（v0.8.36）', () => {
@@ -70,12 +70,12 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
       'SW 端必須再驗一次 theme 白名單（第二道防線）');
   });
 
-  it('content set-theme 分支不可再直寫 chrome.storage.sync（必須經 SW 中繼）', () => {
+  it('content set-theme 分支不可再直寫 browser.storage.sync（必須經 SW 中繼）', () => {
     const MAIN_SRC = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'content', 'main.js'), 'utf8');
     const m = MAIN_SRC.match(/type === 'set-theme'[\s\S]*?else if/);
     assert.ok(m, '抓得到 set-theme 分支');
-    assert.ok(!/chrome\.storage\.sync\.set/.test(m[0]),
+    assert.ok(!/browser\.storage\.sync\.set/.test(m[0]),
       'set-theme 分支不可直寫 storage.sync（任意網頁 JS 可觸發、會同步到所有裝置）');
     assert.ok(/JREAD_DEBUG_SET_THEME/.test(m[0]), 'set-theme 必須改送 JREAD_DEBUG_SET_THEME 給 SW');
   });
@@ -85,6 +85,6 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     const perms = manifest.permissions || [];
     assert.ok(!perms.includes('management'),
-      'manifest 不應有 "management" permission——chrome.management.getSelf 不需要 permission（self-query），加 permission 會觸發 Chrome Store 重審');
+      'manifest 不應有 "management" permission——browser.management.getSelf 不需要 permission（self-query），加 permission 會觸發 Chrome Store 重審');
   });
 });

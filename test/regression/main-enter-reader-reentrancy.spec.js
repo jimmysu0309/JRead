@@ -14,7 +14,7 @@
 // 「exitInFlight 不得復活」（再加 exit 端 async gap 時必須重新設計互斥，
 // 不可沿用舊死 guard）。
 //
-// jsdom 無法乾淨模擬 chrome.runtime + storage + async race，本 spec 是 forcing
+// jsdom 無法乾淨模擬 browser.runtime + storage + async race，本 spec 是 forcing
 // function：直接掃 main.js source 結構確認 guard 存在。
 
 const fs = require('fs');

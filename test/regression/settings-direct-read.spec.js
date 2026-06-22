@@ -6,9 +6,9 @@
 // iOS 18.4+ sendMessage 掉包 regression thread 787958）。掉包時 callback 收到
 // undefined → 下游所有設定 fallback 預設值：theme / fontSize 靜默退化難察覺，
 // pagedMode 永遠 false。iOS simulator instrument 實證：round-trip 回 undefined、
-// content 直讀 chrome.storage.sync 正常回 pagedMode=true。
+// content 直讀 browser.storage.sync 正常回 pagedMode=true。
 //
-// 修法：getSettings 直讀 chrome.storage.sync（defaults 來自單一資料源
+// 修法：getSettings 直讀 browser.storage.sync（defaults 來自單一資料源
 // content/settings-defaults.js），round-trip 降為 storage 失效（context
 // invalidated）時的 fallback。
 //
@@ -51,8 +51,11 @@ function sliceGetSettings(src) {
 const GET_SETTINGS_FN = sliceGetSettings(MAIN_SRC);
 
 // 以 stub 執行 getSettings 切片，回傳 promise
+// v0.8.164：getSettings 改用 browser.storage.sync.get（原生 Promise），factory
+// 注入 browser（= 傳入的 stub）。stub 的 storage.sync.get 回 Promise（resolve 值
+// 或 reject）模擬真實 browser.* 行為。
 function runGetSettings({ chromeStub, sharedDefaultsObj, onBackgroundCall }) {
-  const factory = new Function('window', 'chrome', 'NS', 'safeSendMessage',
+  const factory = new Function('window', 'browser', 'NS', 'safeSendMessage',
     GET_SETTINGS_FN + '\nreturn getSettings;');
   const NS = { MSG: { GET_SETTINGS: 'GET_SETTINGS' } };
   const safeSendMessage = (msg, cb) => {
@@ -118,8 +121,8 @@ describe('main.js getSettings 直讀 storage', () => {
     const res = await runGetSettings({
       sharedDefaultsObj: sharedDefaults,
       chromeStub: {
-        runtime: { lastError: null },
-        storage: { sync: { get: (defaults, cb) => cb({ ...defaults, pagedMode: true, theme: 'dark' }) } }
+        runtime: { id: 'test' },
+        storage: { sync: { get: (defaults) => Promise.resolve({ ...defaults, pagedMode: true, theme: 'dark' }) } }
       },
       onBackgroundCall: () => { backgroundCalled = true; }
     });
@@ -133,8 +136,8 @@ describe('main.js getSettings 直讀 storage', () => {
     await runGetSettings({
       sharedDefaultsObj: sharedDefaults,
       chromeStub: {
-        runtime: { lastError: null },
-        storage: { sync: { get: (defaults, cb) => { passedDefaults = defaults; cb(defaults); } } }
+        runtime: { id: 'test' },
+        storage: { sync: { get: (defaults) => { passedDefaults = defaults; return Promise.resolve(defaults); } } }
       }
     });
     assert.strictEqual(passedDefaults, sharedDefaults,
@@ -155,17 +158,31 @@ describe('main.js getSettings 直讀 storage', () => {
     assert.strictEqual(res, null, '兩邊都死時 resolve(null)（與舊降級行為一致）');
   });
 
-  it('storage callback 帶 lastError → 走 background fallback', async () => {
+  it('storage.get resolve 空值（undefined）→ 走 background fallback', async () => {
     let backgroundCalled = false;
     await runGetSettings({
       sharedDefaultsObj: sharedDefaults,
       chromeStub: {
-        runtime: { lastError: { message: 'boom' } },
-        storage: { sync: { get: (defaults, cb) => cb(undefined) } }
+        runtime: { id: 'test' },
+        storage: { sync: { get: () => Promise.resolve(undefined) } }
       },
       onBackgroundCall: () => { backgroundCalled = true; }
     });
-    assert.strictEqual(backgroundCalled, true, 'lastError 必須退回 GET_SETTINGS round-trip');
+    assert.strictEqual(backgroundCalled, true, 'resolve 空值必須退回 GET_SETTINGS round-trip');
+  });
+
+  it('storage.get reject（Promise 失敗）→ 走 background fallback（v0.8.164 browser.* reject 路徑）', async () => {
+    let backgroundCalled = false;
+    const res = await runGetSettings({
+      sharedDefaultsObj: sharedDefaults,
+      chromeStub: {
+        runtime: { id: 'test' },
+        storage: { sync: { get: () => Promise.reject(new Error('boom')) } }
+      },
+      onBackgroundCall: () => { backgroundCalled = true; }
+    });
+    assert.strictEqual(backgroundCalled, true, 'Promise reject 必須退回 GET_SETTINGS round-trip');
+    assert.strictEqual(res, null, '兩邊都死時 resolve(null)（與舊降級行為一致）');
   });
 });
 

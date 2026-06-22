@@ -42,7 +42,7 @@ const MAIN_SRC      = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.
 const POPUP_CORE    = fs.readFileSync(path.join(ROOT, 'jread', 'popup', 'popup-core.js'), 'utf8');
 const MANIFEST      = JSON.parse(fs.readFileSync(path.join(ROOT, 'jread', 'manifest.json'), 'utf8'));
 
-// 建一個 JSDOM 環境，eval namespace.js + x-thread.js。chrome.runtime.getManifest
+// 建一個 JSDOM 環境，eval namespace.js + x-thread.js。browser.runtime.getManifest
 // 要 stub，否則 namespace.js 取版本號會炸。
 function setupJsdom(url, extraScripts = []) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {

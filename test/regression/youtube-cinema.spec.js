@@ -33,14 +33,14 @@ const POPUP_JS     = fs.readFileSync(path.join(ROOT, 'jread', 'popup', 'popup.js
 const MANIFEST     = JSON.parse(fs.readFileSync(path.join(ROOT, 'jread', 'manifest.json'), 'utf8'));
 
 // 建立一個帶 url 的 JSDOM 環境，eval namespace.js + cinema-mode.js（+ detector.js
-// 視需要）。chrome.runtime.getManifest 要 stub，否則 namespace.js 取版本號會炸。
+// 視需要）。browser.runtime.getManifest 要 stub，否則 namespace.js 取版本號會炸。
 function setupJsdom(url, extraScripts = []) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url,
     runScripts: 'outside-only'
   });
   const { window } = dom;
-  // stub chrome.runtime.getManifest（namespace.js 用來取 version）
+  // stub browser.runtime.getManifest（namespace.js 用來取 version）
   window.chrome = {
     runtime: {
       getManifest: () => ({ version: '0.7.133' })

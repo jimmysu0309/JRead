@@ -786,7 +786,7 @@ describe('readwise: 訊息協定常數同步', () => {
 });
 
 // 行為層 spec：jsdom 重現 buildCleanHtml 預期效果。
-// 因 main.js 包在 IIFE 且依賴 chrome.runtime，無法直接 require；改在這裡
+// 因 main.js 包在 IIFE 且依賴 browser.runtime，無法直接 require；改在這裡
 // 重寫一份等價函式，確保「漏掉 hidden = 雜訊重現」這條核心契約有具體 spec 護住。
 // 上面 forcing function 抓「實作存在 + 用對 attribute」、這裡 spec 抓「演算法效果正確」。
 const { JSDOM } = require('jsdom');

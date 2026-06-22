@@ -2,8 +2,8 @@
 //
 // content 端（floating-icon.js：Safari 送 OPEN_FEATURE_MENU / 非 Safari 開頁內
 // iframe 浮層）已由 floating-icon.spec.js 驗。本檔守住另兩端的 forcing function：
-//   - service-worker.js：OPEN_FEATURE_MENU case → chrome.action.openPopup()，
-//     失敗 / 不支援退而 chrome.tabs.create 開 popup.html（Safari path）
+//   - service-worker.js：OPEN_FEATURE_MENU case → browser.action.openPopup()，
+//     失敗 / 不支援退而 browser.tabs.create 開 popup.html（Safari path）
 //   - popup.js：?panel=1 浮層模式偵測 + 回報內容尺寸 + close-panel postMessage
 //     （非 Safari iframe 浮層用）
 // SW / popup 行為需 Jimmy 本機 Chrome / iOS 才完整重現，這裡鎖「程式碼存在且
@@ -31,12 +31,12 @@ describe('功能選單 → popup wiring（v0.8.162）', () => {
         'SW 必須處理 OPEN_FEATURE_MENU');
     });
 
-    it('優先 chrome.action.openPopup()，失敗退而 tabs.create 開 popup.html', () => {
+    it('優先 browser.action.openPopup()，失敗退而 tabs.create 開 popup.html', () => {
       const m = SW_SRC.match(/case\s*'OPEN_FEATURE_MENU'\s*:\s*\{([\s\S]*?)\n\s{4}\}/);
       assert.ok(m, '找得到 OPEN_FEATURE_MENU case body');
       const body = m[1];
       assert.match(body, /openPopup\s*\(/, '必須嘗試 action.openPopup()');
-      assert.match(body, /tabs\.create\(\s*\{\s*url:\s*chrome\.runtime\.getURL\('popup\/popup\.html'\)/,
+      assert.match(body, /tabs\.create\(\s*\{\s*url:\s*browser\.runtime\.getURL\('popup\/popup\.html'\)/,
         'openPopup 失敗必須退而開新分頁載 popup.html');
     });
   });

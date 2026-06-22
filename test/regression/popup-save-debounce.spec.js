@@ -1,7 +1,7 @@
 // JRead — popup save() debounce（v0.7.143）
 //
-// Bug：popup 連點 stepper 字級/版心每次 click 觸發 chrome.storage.sync.set。
-// chrome.storage.sync quota：MAX_WRITE_OPERATIONS_PER_MINUTE = 120、
+// Bug：popup 連點 stepper 字級/版心每次 click 觸發 browser.storage.sync.set。
+// browser.storage.sync quota：MAX_WRITE_OPERATIONS_PER_MINUTE = 120、
 // MAX_WRITE_OPERATIONS_PER_HOUR = 1800。連點 fontSize 跨 20 step + contentWidth
 // 跨 18 step + 觸發 storage.onChanged 廣播 → 多 tab content script 連環 reapply。
 // 一分鐘內可踩 quota。
@@ -49,8 +49,8 @@ describe('popup.js save() debounce（v0.7.143）', () => {
     assert.ok(/setTimeout/.test(body),
       'save() body 必須含 setTimeout（debounce 延後 storage.sync.set）');
     // save() body 不可直接呼 storage.sync.set（必須透過 commitSave 延後）
-    assert.ok(!/chrome\.storage\.sync\.set/.test(body),
-      `save() 不可直接呼 chrome.storage.sync.set —— 必須走 debounce + commitSave。實際 body:\n${body}`);
+    assert.ok(!/browser\.storage\.sync\.set/.test(body),
+      `save() 不可直接呼 browser.storage.sync.set —— 必須走 debounce + commitSave。實際 body:\n${body}`);
   });
 
   it('save() 必須先 clearTimeout（合併連續事件）', () => {

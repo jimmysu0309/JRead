@@ -245,7 +245,7 @@ describe('(D) custom-shortcuts.js source 結構', () => {
   });
   it('必須透過 NS.safeSendMessage 送 CUSTOM_COMMAND（context-invalidated guard）', () => {
     assert.match(CUSTOM_SRC, /safeSendMessage\(\s*\{\s*type:\s*NS\.MSG\.CUSTOM_COMMAND/,
-      '必須走 NS.safeSendMessage——直呼 chrome.runtime.sendMessage 在 extension reload 後會 throw');
+      '必須走 NS.safeSendMessage——直呼 browser.runtime.sendMessage 在 extension reload 後會 throw');
   });
   it('toggle 類指令必須優先本地 dispatch（v0.7.228：iOS SW 死亡後仍可用）、send-to-readwise 走 SW', () => {
     // iOS Safari SW 被回收後不再喚醒（Apple Forums 758346）——toggle 類指令
@@ -279,8 +279,8 @@ describe('(E) service worker', () => {
       '缺 dispatchCommand——onCommand 與 CUSTOM_COMMAND 必須共用同一條 dispatch（YouTube 模式重導邏輯不可雙實作）');
   });
   it('commands.onCommand 註冊必須在 existence guard 內（iOS 無完整 commands API）', () => {
-    assert.match(SW_SRC, /if\s*\(chrome\.commands\s*&&\s*chrome\.commands\.onCommand\)/,
-      '缺 chrome.commands guard——iOS API 缺席時 top-level addListener 會 TypeError 炸掉 SW');
+    assert.match(SW_SRC, /if\s*\(browser\.commands\s*&&\s*browser\.commands\.onCommand\)/,
+      '缺 browser.commands guard——iOS API 缺席時 top-level addListener 會 TypeError 炸掉 SW');
   });
   it('onMessage 必須有 CUSTOM_COMMAND case + command 白名單 + sender.tab.id', () => {
     const m = SW_SRC.match(/case 'CUSTOM_COMMAND':\s*\{([\s\S]*?)\n    \}/);
@@ -317,7 +317,7 @@ describe('(F) namespace / options / popup wire-up', () => {
       'options.js DEFAULTS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
     assert.ok(SHARED_DEFAULTS.customShortcuts && typeof SHARED_DEFAULTS.customShortcuts === 'object',
       'shared DEFAULTS 缺 customShortcuts');
-    assert.match(OPTIONS_JS, /chrome\.storage\.sync\.set\(\s*\{\s*customShortcuts:\s*shortcutTable\s*\}/,
+    assert.match(OPTIONS_JS, /browser\.storage\.sync\.set\(\s*\{\s*customShortcuts:\s*shortcutTable\s*\}/,
       '必須整張表寫回（partial set 會讓其他 command 的設定 drift）');
   });
   it('options.js recorder 必須做「與其他指令生效鍵衝突」檢查', () => {
@@ -325,7 +325,7 @@ describe('(F) namespace / options / popup wire-up', () => {
       '衝突檢查必須比對其他指令的生效鍵（自訂值 || 內建預設），缺了會讓兩個指令吃同一組合');
   });
   it('options.js 必須依 extension URL 前綴偵測 runtime 並加 body.runtime-* class', () => {
-    assert.match(OPTIONS_JS, /chrome\.runtime\.getURL\(''\)/, '缺 runtime 偵測（getURL 前綴）');
+    assert.match(OPTIONS_JS, /browser\.runtime\.getURL\(''\)/, '缺 runtime 偵測（getURL 前綴）');
     assert.match(OPTIONS_JS, /startsWith\('chrome-extension:\/\/'\)/, '缺 chrome-extension:// 判定');
     assert.match(OPTIONS_JS, /startsWith\('moz-extension:\/\/'\)/, '缺 moz-extension:// 判定');
     assert.match(OPTIONS_JS, /classList\.add\('runtime-'\s*\+\s*runtime\)/, '缺 body.runtime-* class');
@@ -370,12 +370,12 @@ describe('(G) popup 快速鍵提示（v0.7.220）', () => {
   const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup', 'popup.html'), 'utf8');
 
   it('提示必須先讀 storage customShortcuts、自訂鍵存在時優先顯示', () => {
-    const m = POPUP_JS.match(/chrome\.storage\.sync\.get\(\s*\{\s*customShortcuts:[\s\S]*?\n\}\);/);
+    const m = POPUP_JS.match(/browser\.storage\.sync\.get\(\s*\{\s*customShortcuts:[\s\S]*?\n\}\);/);
     assert.ok(m, 'popup 快速鍵提示必須以 storage.sync.get(customShortcuts) 開頭');
     const body = m[0];
     assert.match(body, /SCU\.format\(custom\)/, '自訂鍵存在時必須 format 顯示');
     // 自訂鍵分支必須在 getAll fallback 之前（順位：自訂 → browser 層 → 未設定）
-    assert.ok(body.indexOf('SCU.format(custom)') < body.indexOf('chrome.commands.getAll'),
+    assert.ok(body.indexOf('SCU.format(custom)') < body.indexOf('browser.commands.getAll'),
       '自訂鍵顯示必須先於 commands.getAll fallback');
   });
 
@@ -395,7 +395,7 @@ describe('(G) popup 快速鍵提示（v0.7.220）', () => {
 
   it('觸控裝置提示必須顯示 3 指輕點手勢、且優先於自訂鍵（v0.7.232）', () => {
     // Jimmy 2026-06-07：有觸控的版本，popup 下方快速鍵提示以三指觸控代替。
-    const m = POPUP_JS.match(/chrome\.storage\.sync\.get\(\s*\{\s*customShortcuts:[\s\S]*?\n\}\);/);
+    const m = POPUP_JS.match(/browser\.storage\.sync\.get\(\s*\{\s*customShortcuts:[\s\S]*?\n\}\);/);
     assert.ok(m, 'popup 快速鍵提示 block 不存在');
     const body = m[0];
     // 注意：必須驗 if 述句本身（含 navigator. 前綴 + 完整條件），不能只 grep
