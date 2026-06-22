@@ -2243,6 +2243,21 @@ html [${ARTICLE_ATTR}="1"] a {
   width: 0%;
   border-radius: 999px;
   background: ${theme.progressBar};
+}
+/* v0.8.162：觸控裝置把整組 scrubber（頁碼指示器 + scrub 進度條）往上抬離視窗
+   底部——iPadOS / iPhone Safari 底部有系統工具列 + home indicator 手勢區，頁碼
+   停在 bottom:6px 會貼著系統 bar，手指拖曳選頁時被 OS 攔走觸控（Jimmy 2026-06-22
+   iPad 截圖回報「頁碼太靠底部、拖不動」）。env(safe-area-inset-bottom) 補 home
+   indicator 高度（桌面為 0、不影響）、外加 coarse-pointer 基底間距。指示器與
+   scrub-track 同抬同量、維持原本 24px 間距（track 在指示器上方）。結構訊號
+   （pointer: coarse + safe-area-inset），非站點特判。 */
+@media (pointer: coarse) {
+  #__jread-page-indicator {
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  #__jread-scrub-track {
+    bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  }
 }`;
       // v0.8.153 觸覺回饋載體（#__jread-haptic）不再需要 styler CSS——比照實證可動的
       // ios-haptics 套件，paged-mode.js ensureHaptic 直接 inline display:none 建立

@@ -144,6 +144,8 @@
       white-space: nowrap;
     }
     .menu-item:hover { background: #f0f0f3; }
+    /* 分隔線 +「功能選單」項（v0.8.162，比照 Shinkansen content-floating-icon.js） */
+    .menu-divider { height: 1px; background: #e5e5ea; margin: 4px 8px; }
     .menu-item .ico {
       flex: 0 0 auto;
       width: 18px;
@@ -204,6 +206,112 @@
     { id: 'readwise', icon: '↗', label: '送到 Readwise Reader', action: sendToReadwise },
     { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged }
   ];
+
+  // ─── 功能選單入口（v0.8.162，比照 Shinkansen content-floating-icon.js）──────
+  // 長按選單最下方「功能選單」叫出工具列圖示選單（popup）當頁內浮層。兩條 path：
+  //   - Safari（macOS / iOS）：不能在 https 網頁裡用 iframe 載入擴充頁
+  //     （safari-web-extension:// 在 https 頁的 iframe 是 Safari 已知限制，iOS 上
+  //     會整頁 refresh）→ 交給 background 開原生工具列 popup（chrome.action.openPopup，
+  //     Safari 16+ 支援），失敗則 background 退而開新分頁載入 popup.html。
+  //   - 非 Safari（Chrome / Firefox）：頁內 iframe 浮層載 popup.html?panel=1，維持
+  //     單一資料源（popup 邏輯不複製一份）。iframe 在當前分頁內、popup 的
+  //     chrome.tabs.query({active:true}) 仍取得底層內容頁，分頁耦合不斷。
+  // runtime 偵測依 getURL scheme（與 options.js / namespace 同款），非 OS flag。
+  function isSafariRuntime() {
+    try { return (chrome.runtime.getURL('') || '').startsWith('safari-web-extension://'); }
+    catch (_e) { return false; }
+  }
+
+  function openFeaturePanel() {
+    if (isSafariRuntime()) {
+      NS.safeSendMessage({ type: NS.MSG.OPEN_FEATURE_MENU });
+      return;
+    }
+    openFeaturePanelIframe();
+  }
+
+  const PANEL_CSS = `
+    :host, * { box-sizing: border-box; }
+    .backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.4);
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 24px 16px;
+      overflow: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .frame {
+      border: none;
+      width: min(94vw, 360px);
+      height: min(86vh, 640px);
+      max-height: 86vh;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 18px 56px rgba(0,0,0,.4);
+      overflow: hidden;
+    }
+  `;
+
+  let panelHost = null, panelFrame = null, panelMsgHandler = null, panelKeyHandler = null;
+
+  function closeFeaturePanel() {
+    if (!panelHost) return;
+    try { panelHost.remove(); } catch (_e) {}
+    panelHost = null;
+    panelFrame = null;
+    if (panelMsgHandler) { window.removeEventListener('message', panelMsgHandler); panelMsgHandler = null; }
+    if (panelKeyHandler) { window.removeEventListener('keydown', panelKeyHandler, true); panelKeyHandler = null; }
+  }
+
+  function openFeaturePanelIframe() {
+    if (panelHost) return;   // 已開著不重複開
+    let popupUrl = '';
+    try { popupUrl = chrome.runtime.getURL('popup/popup.html') + '?panel=1'; } catch (_e) { return; }
+    let pHost, pShadow;
+    try {
+      pHost = document.createElement('div');
+      pHost.id = '__jread-panel-host';
+      pHost.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483640;';
+      pShadow = pHost.attachShadow({ mode: 'open' });
+    } catch (_e) { return; }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    const frame = document.createElement('iframe');
+    frame.className = 'frame';
+    frame.setAttribute('title', 'JRead');
+    frame.src = popupUrl;
+    backdrop.appendChild(frame);
+    // 點浮層外圍（backdrop 本體、非 iframe）→ 收
+    backdrop.addEventListener('pointerdown', (e) => {
+      if (e.target === backdrop) closeFeaturePanel();
+    });
+    // CSP-safe：嚴格 style-src 站用 adoptedStyleSheets，比照 NS.injectShadowCss
+    NS.injectShadowCss(pShadow, PANEL_CSS);
+    pShadow.appendChild(backdrop);
+    document.documentElement.appendChild(pHost);
+    panelHost = pHost;
+    panelFrame = frame;
+    // popup.js（?panel=1）postMessage（驗 source 為本 iframe）：
+    //   jread-close-panel → 收浮層；jread-panel-size → 依 popup 內容高/寬收緊 iframe。
+    panelMsgHandler = (ev) => {
+      if (!panelFrame || ev.source !== panelFrame.contentWindow || !ev.data) return;
+      if (ev.data.type === 'jread-close-panel') {
+        closeFeaturePanel();
+      } else if (ev.data.type === 'jread-panel-size') {
+        if (typeof ev.data.height === 'number') {
+          const capH = Math.round(window.innerHeight * 0.86);
+          panelFrame.style.height = Math.max(200, Math.min(ev.data.height, capH)) + 'px';
+        }
+        if (typeof ev.data.width === 'number' && ev.data.width > 0) {
+          const capW = Math.round(window.innerWidth * 0.94);
+          panelFrame.style.width = Math.max(240, Math.min(ev.data.width, capW)) + 'px';
+        }
+      }
+    };
+    window.addEventListener('message', panelMsgHandler);
+    panelKeyHandler = (ev) => { if (ev.key === 'Escape') closeFeaturePanel(); };
+    window.addEventListener('keydown', panelKeyHandler, true);
+  }
 
   // ─── 設定狀態 ───────────────────────────────────────────────────────────
   let pos = { edge: 'left', offsetY: 1 };     // 預設左下角（v0.8.160，offsetY=1=底）
@@ -311,6 +419,30 @@
       });
       menuEl.appendChild(item);
     }
+    // 分隔線 +「功能選單」：叫出工具列圖示選單（popup）當頁內浮層（v0.8.162）
+    const divider = document.createElement('div');
+    divider.className = 'menu-divider';
+    menuEl.appendChild(divider);
+    const featureItem = document.createElement('button');
+    featureItem.className = 'menu-item feature';
+    featureItem.type = 'button';
+    featureItem.setAttribute('role', 'menuitem');
+    featureItem.dataset.action = 'feature-menu';
+    const fIco = document.createElement('span');
+    fIco.className = 'ico';
+    fIco.textContent = '☰';
+    const fLabel = document.createElement('span');
+    fLabel.className = 'label';
+    fLabel.textContent = '功能選單';
+    featureItem.appendChild(fIco);
+    featureItem.appendChild(fLabel);
+    featureItem.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      try { openFeaturePanel(); } catch (_err) {}
+    });
+    menuEl.appendChild(featureItem);
   }
 
   function openMenu() {
@@ -460,6 +592,8 @@
     host, btn, menuEl, MENU_ITEMS,
     openMenu, closeMenu, buildMenu,
     handleShortPress, sendToReadwise, togglePaged,
+    openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
+    isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
     cornerClampTop, CORNER_DEADZONE_PX,
     isMenuOpen: () => menuOpen,

@@ -311,16 +311,20 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.deepStrictEqual(ids, ['readwise', 'paged']);
     });
 
-    it('buildMenu 渲染兩個 menu-item，帶 data-action + label', () => {
+    it('buildMenu 渲染三個 menu-item（readwise / paged / 功能選單）+ 分隔線', () => {
       const { NS, document } = setup();
       NS.floating.buildMenu();
-      const items = document.getElementById('__jread-floating-host')
-        .shadowRoot.querySelectorAll('.menu-item');
-      assert.strictEqual(items.length, 2);
+      const shadow = document.getElementById('__jread-floating-host').shadowRoot;
+      const items = shadow.querySelectorAll('.menu-item');
+      assert.strictEqual(items.length, 3, 'v0.8.162 起含「功能選單」共三項');
       assert.strictEqual(items[0].dataset.action, 'readwise');
       assert.strictEqual(items[1].dataset.action, 'paged');
+      assert.strictEqual(items[2].dataset.action, 'feature-menu');
       assert.ok(/Readwise/.test(items[0].textContent));
       assert.ok(/分頁/.test(items[1].textContent));
+      assert.ok(/功能選單/.test(items[2].textContent));
+      // 「功能選單」前必須有分隔線（與翻譯/閱讀動作區隔）
+      assert.ok(shadow.querySelector('.menu-divider'), '功能選單前必須有分隔線');
     });
 
     it('送 Readwise：CORS 擋直接 fetch → 轉 SW CUSTOM_COMMAND send-to-readwise', () => {
@@ -341,6 +345,68 @@ describe('懸浮按鈕（v0.8.154）', () => {
       const { NS, chrome } = setup({ store: { pagedMode: true } });
       NS.floating.togglePaged();
       assert.strictEqual(chrome._data.pagedMode, false);
+    });
+  });
+
+  // ── 功能選單：叫出工具列圖示選單 popup（v0.8.162，比照 Shinkansen）───────────
+  describe('功能選單 → 叫出 popup（v0.8.162）', () => {
+    it('Safari runtime → 送 SW OPEN_FEATURE_MENU（不在頁內 iframe，避免 iOS 整頁 refresh）', () => {
+      const { NS, chrome, document } = setup({ scheme: 'safari-web-extension://' });
+      assert.strictEqual(NS.floating.isSafariRuntime(), true);
+      NS.floating.openFeaturePanel();
+      const msg = chrome._sent.find((m) => m && m.type === NS.MSG.OPEN_FEATURE_MENU);
+      assert.ok(msg, 'Safari 必須送 OPEN_FEATURE_MENU 給 SW');
+      // 不可在 Safari 開頁內 iframe 浮層
+      assert.strictEqual(document.getElementById('__jread-panel-host'), null);
+    });
+
+    it('非 Safari（Chrome）→ 頁內 iframe 浮層載 popup.html?panel=1（不送 SW）', () => {
+      const { NS, chrome, document } = setup({ scheme: 'chrome-extension://' });
+      assert.strictEqual(NS.floating.isSafariRuntime(), false);
+      NS.floating.openFeaturePanel();
+      assert.ok(!chrome._sent.find((m) => m && m.type === NS.MSG.OPEN_FEATURE_MENU),
+        'Chrome 不可送 OPEN_FEATURE_MENU（走頁內 iframe）');
+      const panelHost = document.getElementById('__jread-panel-host');
+      assert.ok(panelHost, '必須建立頁內浮層 host');
+      assert.strictEqual(panelHost.parentNode, document.documentElement,
+        'panel host 掛 documentElement（不掛 body）');
+      const frame = panelHost.shadowRoot.querySelector('iframe.frame');
+      assert.ok(frame, '浮層內必須有 iframe');
+      assert.ok(/popup\/popup\.html\?panel=1$/.test(frame.src), 'iframe 必須載 popup.html?panel=1');
+      assert.ok(NS.floating.isPanelOpen(), 'isPanelOpen 應回 true');
+    });
+
+    it('重複開啟不產生第二個浮層', () => {
+      const { NS, document } = setup({ scheme: 'chrome-extension://' });
+      NS.floating.openFeaturePanel();
+      NS.floating.openFeaturePanel();
+      assert.strictEqual(document.querySelectorAll('#__jread-panel-host').length, 1);
+    });
+
+    it('closeFeaturePanel 移除浮層 + 清狀態', () => {
+      const { NS, document } = setup({ scheme: 'chrome-extension://' });
+      NS.floating.openFeaturePanel();
+      assert.ok(NS.floating.isPanelOpen());
+      NS.floating.closeFeaturePanel();
+      assert.strictEqual(document.getElementById('__jread-panel-host'), null);
+      assert.strictEqual(NS.floating.isPanelOpen(), false);
+    });
+
+    it('點選單「功能選單」項 → 收選單 + 呼 openFeaturePanel（Chrome 開浮層）', () => {
+      const { NS, document, window } = setup({ scheme: 'chrome-extension://' });
+      NS.floating.openMenu();
+      const featureBtn = document.getElementById('__jread-floating-host')
+        .shadowRoot.querySelector('.menu-item[data-action="feature-menu"]');
+      assert.ok(featureBtn, '選單必須有功能選單項');
+      featureBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      assert.strictEqual(NS.floating.isMenuOpen(), false, '點功能選單後長按選單應收合');
+      assert.ok(document.getElementById('__jread-panel-host'), '應開出頁內浮層');
+    });
+
+    it('manifest popup/popup.html 列入 web_accessible_resources（iframe 浮層可載）', () => {
+      const war = manifest.web_accessible_resources || [];
+      const ok = war.some((e) => (e.resources || []).some((r) => r === 'popup/popup.html'));
+      assert.ok(ok, 'popup.html 要當 iframe src 必須列入 web_accessible_resources');
     });
   });
 
