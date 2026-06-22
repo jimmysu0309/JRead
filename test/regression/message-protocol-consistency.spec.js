@@ -88,6 +88,6 @@ describe('訊息協定三方一致（v0.8.37）', () => {
     assert.ok(!/REPORT_DETECTION_RESULT/.test(all),
       'REPORT_DETECTION_RESULT 已移除（零接收端、白喚醒 SW）——要回報偵測結果請先加接收端再恢復');
     assert.ok(!/UPDATE_SETTINGS/.test(all),
-      'UPDATE_SETTINGS 已移除（零發送端）——設定寫入一律直寫 chrome.storage.sync');
+      'UPDATE_SETTINGS 已移除（零發送端）——設定寫入一律直寫 browser.storage.sync');
   });
 });

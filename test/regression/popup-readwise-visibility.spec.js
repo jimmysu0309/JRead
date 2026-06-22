@@ -66,7 +66,7 @@ describe('popup v0.7.130 — 送到 Readwise Reader 按鈕可見性', () => {
     assert.match(body, /readwiseToken/,
       'hasReadwiseToken 必須讀 readwiseToken 欄位');
     assert.match(body, /storage\.sync\.get/,
-      'hasReadwiseToken 必須走 chrome.storage.sync（token 存放處，與 options 同一資料源）');
+      'hasReadwiseToken 必須走 browser.storage.sync（token 存放處，與 options 同一資料源）');
     assert.match(body, /\.trim\(\)/,
       'hasReadwiseToken 必須 trim 後判空——全空白 token 等同未設定（saveToReadwise 端也以 trim 判 NO_TOKEN）');
   });

@@ -117,7 +117,7 @@
   // BODY_TEXT_SEL 注入的 font-weight 精準命中對應字面。
   let FONT_FACE_CSS = '';
   try {
-    if (chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.getURL) {
+    if (browser && browser.runtime && browser.runtime.id && browser.runtime.getURL) {
       const faces = [
         { weight: 300, file: 'noto-serif-tc-light.woff2' },
         { weight: 400, file: 'noto-serif-tc-regular.woff2' },
@@ -128,7 +128,7 @@
   font-style: normal;
   font-weight: ${f.weight};
   font-display: swap;
-  src: url("${chrome.runtime.getURL('assets/fonts/' + f.file)}") format("woff2");
+  src: url("${browser.runtime.getURL('assets/fonts/' + f.file)}") format("woff2");
 }
 `).join('');
     }
@@ -157,7 +157,7 @@
     if (!fontStack) return '';
     let css = '';
     try {
-      if (chrome && chrome.runtime && chrome.runtime.id && chrome.runtime.getURL) {
+      if (browser && browser.runtime && browser.runtime.id && browser.runtime.getURL) {
         for (const family of Object.keys(BUNDLED_LATIN_FACES)) {
           if (fontStack.indexOf('"' + family + '"') === -1) continue;
           const def = BUNDLED_LATIN_FACES[family];
@@ -166,7 +166,7 @@
   font-style: normal;
   font-weight: ${def.range};
   font-display: swap;
-  src: url("${chrome.runtime.getURL('assets/fonts/' + def.file)}") format("woff2");
+  src: url("${browser.runtime.getURL('assets/fonts/' + def.file)}") format("woff2");
 }
 `;
         }

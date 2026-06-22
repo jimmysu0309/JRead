@@ -7,7 +7,7 @@
 // storage），第二次點才真正寫入。
 //
 // 本 spec 用真 options.html + 真 options.js 在 jsdom 跑（stub chrome）。
-// 訊號層次：驗 set 呼叫的 payload 內容與雙態確認流；不驗真實 chrome.storage 行為。
+// 訊號層次：驗 set 呼叫的 payload 內容與雙態確認流；不驗真實 browser.storage 行為。
 
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +21,19 @@ const SRC_DOMAIN = fs.readFileSync(path.join(JREAD_DIR, 'content', 'domain-match
 const SRC_SHORTCUTS = fs.readFileSync(path.join(JREAD_DIR, 'content', 'shortcut-utils.js'), 'utf8');
 const SRC_OPTIONS = fs.readFileSync(path.join(JREAD_DIR, 'options', 'options.js'), 'utf8');
 
+// v0.8.164：options.js 改用 browser.storage.sync 原生 Promise；mock 回同步 resolve
+// 的 thenable 以保留既有同步斷言。
+function _syncResolved(value) {
+  return {
+    then(onF) {
+      if (typeof onF !== 'function') return _syncResolved(value);
+      let r; try { r = onF(value); } catch (e) { return _syncResolved(undefined); }
+      return (r && typeof r.then === 'function') ? r : _syncResolved(r);
+    },
+    catch() { return this; }
+  };
+}
+
 function buildOptionsEnv() {
   const dom = new JSDOM(OPTIONS_HTML, { runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
@@ -30,13 +43,12 @@ function buildOptionsEnv() {
     runtime: {
       getManifest: () => ({ version: '0.0.0-test' }),
       id: 'test-ext',
-      getURL: () => 'chrome-extension://test-ext/',
-      lastError: undefined
+      getURL: () => 'chrome-extension://test-ext/'
     },
     storage: {
       sync: {
-        get: (defaults, cb) => cb({ ...defaults }),
-        set: (patch, cb) => { setCalls.push(patch); if (cb) cb(); }
+        get: (defaults) => _syncResolved({ ...defaults }),
+        set: (patch) => { setCalls.push(patch); return _syncResolved(undefined); }
       },
       onChanged: { addListener: (fn) => onChangedListeners.push(fn) }
     }

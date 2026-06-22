@@ -58,15 +58,15 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
 
   it('SET_ACTIVE_ICON handler：必須 try 設 white text color（舊版 Chrome 無此 API 則 ignore）', () => {
     const body = getCaseBody('SET_ACTIVE_ICON');
-    assert.match(body, /if\s*\(\s*chrome\.action\.setBadgeTextColor\s*\)/,
-      '必須 feature-detect chrome.action.setBadgeTextColor（舊 Chrome 版相容）');
+    assert.match(body, /if\s*\(\s*browser\.action\.setBadgeTextColor\s*\)/,
+      '必須 feature-detect browser.action.setBadgeTextColor（舊 Chrome 版相容）');
     assert.match(body, /setBadgeTextColor\s*\(\s*\{\s*color:\s*['"]#ffffff['"]/,
       'badge text color 必須是白色 #ffffff（綠底白字對比清晰）');
   });
 
   it('tabs.onUpdated status=loading 必須同步清掉 badge（避免跨頁殘留）', () => {
     // 抓 tabs.onUpdated listener
-    const m = src.match(/chrome\.tabs\.onUpdated\.addListener\(([\s\S]*?)\}\s*\}\s*\)\s*;/);
+    const m = src.match(/browser\.tabs\.onUpdated\.addListener\(([\s\S]*?)\}\s*\}\s*\)\s*;/);
     assert.ok(m, '能找到 tabs.onUpdated.addListener');
     const body = m[1];
     assert.match(body, /info\.status\s*===\s*['"]loading['"]/,
@@ -84,57 +84,57 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
   });
 
   // ─── v0.7.126：JREAD_RELOAD handler（content script → SW reload bridge）─
-  // chrome.runtime.reload() 在 content script context 不存在
-  // （Uncaught TypeError: chrome.runtime.reload is not a function）。
+  // browser.runtime.reload() 在 content script context 不存在
+  // （Uncaught TypeError: browser.runtime.reload is not a function）。
   // 必須 SW 中繼。bridge 從 content script sendMessage 給 SW、SW 收到後呼叫
-  // chrome.runtime.reload()。
+  // browser.runtime.reload()。
   describe('v0.7.126 JREAD_RELOAD handler（content → SW reload 中繼）', () => {
-    it('SW message handler 必須含 JREAD_RELOAD case 並呼叫 chrome.runtime.reload', () => {
+    it('SW message handler 必須含 JREAD_RELOAD case 並呼叫 browser.runtime.reload', () => {
       const start = src.search(/case\s+['"]JREAD_RELOAD['"]:/);
       assert.ok(start >= 0,
         'SW 必須含 JREAD_RELOAD case——forcing：content bridge 觸發 reload 時走 sendMessage 中繼，handler 缺席則 reload 不會發生');
       const rest = src.slice(start);
       const nextCase = rest.search(/\n\s*case\s+['"][A-Z_]+['"]:|\n\s*default:/);
       const body = nextCase >= 0 ? rest.slice(0, nextCase) : rest;
-      assert.match(body, /chrome\.runtime\.reload\s*\(\s*\)/,
-        'JREAD_RELOAD handler 必須呼叫 chrome.runtime.reload()——forcing：handler 收到但漏接 reload call');
+      assert.match(body, /browser\.runtime\.reload\s*\(\s*\)/,
+        'JREAD_RELOAD handler 必須呼叫 browser.runtime.reload()——forcing：handler 收到但漏接 reload call');
     });
   });
 
   // ─── v0.7.129：tab-gone race condition 必須吞掉 ─────────────────────
-  // MV3 chrome.action.* / chrome.tabs.sendMessage 是 async promise，事件入隊
+  // MV3 browser.action.* / browser.tabs.sendMessage 是 async promise，事件入隊
   // → 實際執行間若 tab 被使用者關掉，會 reject `No tab with id: <id>`、
   // 變成 uncaught (in promise) 堆進 chrome 通知中心。SW handler 對 tab 已關
   // 的情境 setIcon / setBadgeText 也無意義，必須 silently swallow。
-  describe('v0.7.129 chrome.action.* 必須 silently swallow tab-gone reject', () => {
+  describe('v0.7.129 browser.action.* 必須 silently swallow tab-gone reject', () => {
     it('必須宣告 swallowTabGone helper（吞掉 tab 已關的 promise reject）', () => {
       assert.match(src, /const\s+swallowTabGone\s*=/,
-        '必須宣告 swallowTabGone helper——forcing：直接 chrome.action.set* 不接 .catch 會讓「No tab with id」變 uncaught rejection 堆進 chrome 通知中心');
+        '必須宣告 swallowTabGone helper——forcing：直接 browser.action.set* 不接 .catch 會讓「No tab with id」變 uncaught rejection 堆進 chrome 通知中心');
       // helper 必須真的吞 reject（.catch handler 存在）
       const m = src.match(/const\s+swallowTabGone\s*=[\s\S]*?\};/);
       assert.ok(m && /\.catch\s*\(/.test(m[0]),
         'swallowTabGone 內部必須有 .catch(...)——forcing：宣告但沒 .catch 等於沒吞，rejection 仍會 uncaught');
     });
 
-    it('所有 chrome.action.set* 呼叫必須被 swallowTabGone 包住', () => {
-      // 抓每處 chrome.action.setIcon / setBadgeText / setBadgeBackgroundColor /
+    it('所有 browser.action.set* 呼叫必須被 swallowTabGone 包住', () => {
+      // 抓每處 browser.action.setIcon / setBadgeText / setBadgeBackgroundColor /
       // setBadgeTextColor，檢查每個前面緊鄰 swallowTabGone(
-      const calls = src.match(/chrome\.action\.set(Icon|Badge\w+)\s*\(/g) || [];
+      const calls = src.match(/browser\.action\.set(Icon|Badge\w+)\s*\(/g) || [];
       assert.ok(calls.length >= 5,
-        `SW 至少應有 5 處 chrome.action.set* 呼叫（SET_ACTIVE_ICON handler + tabs.onUpdated handler），實測 ${calls.length}`);
-      // 整份 src 不能出現「沒被 swallowTabGone 包」的 chrome.action.set*。
-      // pattern：行內 `chrome.action.set*(` 前面非 `swallowTabGone(`
+        `SW 至少應有 5 處 browser.action.set* 呼叫（SET_ACTIVE_ICON handler + tabs.onUpdated handler），實測 ${calls.length}`);
+      // 整份 src 不能出現「沒被 swallowTabGone 包」的 browser.action.set*。
+      // pattern：行內 `browser.action.set*(` 前面非 `swallowTabGone(`
       const lines = src.split('\n');
       const offenders = [];
       lines.forEach((line, i) => {
-        if (/chrome\.action\.set(Icon|Badge\w+)\s*\(/.test(line)) {
-          if (!/swallowTabGone\s*\(\s*chrome\.action\.set/.test(line)) {
+        if (/browser\.action\.set(Icon|Badge\w+)\s*\(/.test(line)) {
+          if (!/swallowTabGone\s*\(\s*browser\.action\.set/.test(line)) {
             offenders.push(`L${i + 1}: ${line.trim()}`);
           }
         }
       });
       assert.deepStrictEqual(offenders, [],
-        `所有 chrome.action.set* 呼叫都必須 swallowTabGone(chrome.action.set...)——forcing：漏包就會在 tab 關閉時噴 uncaught rejection。違規行：\n${offenders.join('\n')}`);
+        `所有 browser.action.set* 呼叫都必須 swallowTabGone(browser.action.set...)——forcing：漏包就會在 tab 關閉時噴 uncaught rejection。違規行：\n${offenders.join('\n')}`);
     });
   });
 
@@ -145,7 +145,7 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
       'utf8'
     );
 
-    it('reload 分支必須走 chrome.runtime.sendMessage({type:"JREAD_RELOAD"})（不可直接呼 chrome.runtime.reload）', () => {
+    it('reload 分支必須走 browser.runtime.sendMessage({type:"JREAD_RELOAD"})（不可直接呼 browser.runtime.reload）', () => {
       // 抓 `else if (type === 'reload')` 分支起點——只命中真實 code、不誤撞
       // 上方 comment 內的 'type: reload' 範例字串。
       const idx = mainSrc.search(/else\s+if\s*\(\s*type\s*===\s*['"]reload['"]\s*\)/);
@@ -156,7 +156,7 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
       const body = endIdx >= 0 ? after.slice(0, endIdx + 1) : after;
       // v0.8.37：type 字面值收進 NS.MSG 詞彙表（單一詞彙源）
       assert.match(body, /safeSendMessage\s*\(\s*\{\s*type:\s*NS\.MSG\.JREAD_RELOAD/,
-        "reload 分支必須 safeSendMessage({type: NS.MSG.JREAD_RELOAD})——forcing：直接呼 chrome.runtime.reload() 會炸 TypeError（content script 沒此 API）；v0.7.140 起 main.js 所有 sendMessage 統一走 safeSendMessage helper 加 context-invalidated guard");
+        "reload 分支必須 safeSendMessage({type: NS.MSG.JREAD_RELOAD})——forcing：直接呼 browser.runtime.reload() 會炸 TypeError（content script 沒此 API）；v0.7.140 起 main.js 所有 sendMessage 統一走 safeSendMessage helper 加 context-invalidated guard");
     });
   });
 });

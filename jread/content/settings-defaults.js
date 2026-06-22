@@ -1,5 +1,15 @@
 // JRead — DEFAULT_SETTINGS 單一資料源（v0.7.235）
 //
+// ─── 跨瀏覽器 API shim（v0.8.164）───────────────────────────────────────────
+// 本檔是 popup.html / options.html 的第一個 <script>，也是 SW（Chrome
+// importScripts 在 service-worker.js 頂端 / Safari·Firefox event page 的
+// background.scripts 第二筆，皆早於 service-worker.js）的早期載入檔——三個
+// context 共用此處設好的全域 `browser`。Chrome：退回 chrome（MV3 回 Promise，
+// 行為零變化）；Safari / Firefox：原生 browser.*（Promise，iOS 訊息可靠度修法）。
+// content script 軌另有一份同款 shim 在 content/namespace.js 頂端（content_scripts
+// 第一個檔）；兩處單一語意、互為鏡像（CLAUDE.md 硬規則 5 的受控雙寫，改一處要同步）。
+globalThis.browser = globalThis.browser ?? globalThis.chrome;
+//
 // 四個 context 共用同一份預設值：
 //   1. content script（manifest content_scripts；main.js getSettings 直讀
 //      chrome.storage.sync 時的 merge defaults）

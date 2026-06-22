@@ -1,6 +1,6 @@
 // JRead — options 設定寫入必須是 diff write（v0.8.35）
 //
-// Bug：舊版 save() 把 9 欄全部從 DOM 讀回、整包 chrome.storage.sync.set。
+// Bug：舊版 save() 把 9 欄全部從 DOM 讀回、整包 browser.storage.sync.set。
 // options 分頁開著時：popup 改 theme（直寫 sync）→ 回 options 分頁改任一欄
 // （例如字級）→ save() 把 options DOM 殘留的舊 theme 一起寫回 → popup 的變更
 // 被無聲還原（stale overwrite，CLAUDE.md 工作流原則 5「同一份事實多條 path
@@ -14,7 +14,7 @@
 //
 // 本 spec 用真 options.html + 真 options.js 在 jsdom 跑功能驗證（stub chrome）。
 // 訊號層次：驗 set 呼叫的 patch key 集合與 onChanged → DOM 回寫；不驗真實
-// chrome.storage 的跨 context broadcast 時序（只能實機）。
+// browser.storage 的跨 context broadcast 時序（只能實機）。
 
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +28,19 @@ const SRC_DOMAIN = fs.readFileSync(path.join(JREAD_DIR, 'content', 'domain-match
 const SRC_SHORTCUTS = fs.readFileSync(path.join(JREAD_DIR, 'content', 'shortcut-utils.js'), 'utf8');
 const SRC_OPTIONS = fs.readFileSync(path.join(JREAD_DIR, 'options', 'options.js'), 'utf8');
 
+// v0.8.164：options.js 改用 browser.storage.sync 原生 Promise；mock 回同步 resolve
+// 的 thenable 以保留既有同步斷言（真實 Chrome callback 也非同步，舊 mock 同步 cb）。
+function _syncResolved(value) {
+  return {
+    then(onF) {
+      if (typeof onF !== 'function') return _syncResolved(value);
+      let r; try { r = onF(value); } catch (e) { return _syncResolved(undefined); }
+      return (r && typeof r.then === 'function') ? r : _syncResolved(r);
+    },
+    catch() { return this; }
+  };
+}
+
 function buildOptionsEnv() {
   const dom = new JSDOM(OPTIONS_HTML, { runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
@@ -37,13 +50,12 @@ function buildOptionsEnv() {
     runtime: {
       getManifest: () => ({ version: '0.0.0-test' }),
       id: 'test-ext',
-      getURL: () => 'chrome-extension://test-ext/',
-      lastError: undefined
+      getURL: () => 'chrome-extension://test-ext/'
     },
     storage: {
       sync: {
-        get: (defaults, cb) => cb({ ...defaults }),
-        set: (patch, cb) => { setCalls.push(patch); if (cb) cb(); }
+        get: (defaults) => _syncResolved({ ...defaults }),
+        set: (patch) => { setCalls.push(patch); return _syncResolved(undefined); }
       },
       onChanged: { addListener: (fn) => onChangedListeners.push(fn) }
     }

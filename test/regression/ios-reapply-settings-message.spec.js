@@ -4,7 +4,7 @@
 // 生效、要重整網頁再進閱讀模式才看得到；桌機 Chrome 即時生效。
 //
 // 根因（症狀 anchor：主題 / 字級 / 行距全部要重整 → 共用同一條 path）：設定即時重套
-// 走 content script 的 chrome.storage.onChanged 廣播。iOS Safari popup 開啟時底層頁面
+// 走 content script 的 browser.storage.onChanged 廣播。iOS Safari popup 開啟時底層頁面
 // 被掛起，storage.onChanged 事件被丟掉（不排隊、不補送）；桌機 Chrome 頁面在 popup
 // 後仍存活故照收。→ iOS 改設定 content 收不到、不重套。
 //

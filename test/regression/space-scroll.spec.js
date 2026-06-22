@@ -494,7 +494,7 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
     });
 
     it('storage.onChanged 必須處理 spaceScrollRatio 動態切換', () => {
-      const m = MAIN_SRC.match(/chrome\.storage\.onChanged\.addListener\(([\s\S]*?)\n\s\s\}\)\s*;/);
+      const m = MAIN_SRC.match(/browser\.storage\.onChanged\.addListener\(([\s\S]*?)\n\s\s\}\)\s*;/);
       assert.ok(m, '能抓到 storage.onChanged listener body');
       assert.match(m[0], /spaceScrollRatio/,
         'storage.onChanged 必須處理 spaceScrollRatio 變更——forcing：options 調整後不能即時生效、得退出/重進 reader mode');

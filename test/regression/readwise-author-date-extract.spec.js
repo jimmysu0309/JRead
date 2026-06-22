@@ -1,6 +1,6 @@
 // JRead — extractAuthor / extractPublishedDate 行為 spec（v0.7.167）
 //
-// content/main.js 包在 IIFE 內、依賴 chrome.runtime 訊息傳遞，無法直接
+// content/main.js 包在 IIFE 內、依賴 browser.runtime 訊息傳遞，無法直接
 // require。本檔重現等價 helper 並用 jsdom 驗演算法效果——配 readwise-save.spec
 // 的 forcing function 雙保:那邊保「實作存在 + 用對 selector」、這邊保
 // 「不同 DOM 結構下回傳正確結果」。

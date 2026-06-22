@@ -40,7 +40,7 @@
 
   function isSafariRuntime() {
     try {
-      return chrome.runtime.getURL('').startsWith('safari-web-extension://');
+      return browser.runtime.getURL('').startsWith('safari-web-extension://');
     } catch (_) {
       return false;
     }
@@ -53,9 +53,9 @@
 
   function start() {
     if (port || document.hidden) return;               // 已連線 / 不可見 → 不開
-    if (!chrome.runtime || !chrome.runtime.id) return; // context 失效（reload 中）
+    if (!browser.runtime || !browser.runtime.id) return; // context 失效（reload 中）
     try {
-      port = chrome.runtime.connect({ name: PORT_NAME });
+      port = browser.runtime.connect({ name: PORT_NAME });
     } catch (_) {
       port = null;
       return;
@@ -95,11 +95,11 @@
 
   if (!isSafariRuntime()) return;
 
-  // (A) wake ping：Safari 全平台。fire-and-forget；callback 讀 lastError
-  // 吞掉「background 沒回應」的 console 警告。
-  NS.safeSendMessage({ type: NS.MSG.BG_WAKE_PING }, () => {
-    void (chrome.runtime && chrome.runtime.lastError);
-  });
+  // (A) wake ping：Safari 全平台。fire-and-forget。
+  // v0.8.164：browser.* Promise 模式無 lastError；safeSendMessage 內部已用
+  // .then(onFulfilled, onRejected) 消費 reject（background 沒回應不留 unhandled
+  // rejection），這裡 cb 留空即可。
+  NS.safeSendMessage({ type: NS.MSG.BG_WAKE_PING }, () => {});
 
   // (B) keep-alive port：Safari 全平台（iOS 防回收 + macOS WPA 接力 alarm 保活）
   document.addEventListener('visibilitychange', () => {

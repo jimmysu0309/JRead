@@ -2,8 +2,8 @@
 // 綁 DOM 事件、呼叫 chrome API、委派核心邏輯給 popup-core.js。
 // 狀態提示主要走頁面 toast（content script 負責渲染）；popup 本身僅在
 // toast 進不去的禁止注入頁面（例如 chrome://）顯示錯誤。
-// 頁面設定直接寫入 chrome.storage.sync，content script 透過
-// chrome.storage.onChanged 即時套用（不需要額外訊息協定）。
+// 頁面設定直接寫入 browser.storage.sync，content script 透過
+// browser.storage.onChanged 即時套用（不需要額外訊息協定）。
 
 const versionEl = document.getElementById('version');
 const statusEl = document.getElementById('status');
@@ -123,7 +123,7 @@ function roundStep(v) { return Math.round(v * 100) / 100; }
 const FONT_STACKS = window.__JReadFontStacks;
 const DEFAULT_SETTINGS = window.__JReadSettingsDefaults;
 
-versionEl.textContent = chrome.runtime.getManifest().version;
+versionEl.textContent = browser.runtime.getManifest().version;
 
 // ---- 快速鍵提示 --------------------------------------------------------
 // v0.7.220：優先顯示 options 錄的自訂快速鍵（storage.sync.customShortcuts，
@@ -132,9 +132,9 @@ versionEl.textContent = chrome.runtime.getManifest().version;
 // 順位：觸控手勢（v0.7.232）→ 自訂鍵 → browser 層指派（commands.getAll）→
 // 未設定提示（指向進階設定的 recorder，不再指 chrome://extensions/shortcuts
 // ——Safari 沒有那頁）→ commands API 缺席且無自訂才整列隱藏。
-// v0.7.217 iOS Safari guard 保留：chrome.commands 可能缺席，top-level 直呼
+// v0.7.217 iOS Safari guard 保留：browser.commands 可能缺席，top-level 直呼
 // 會 TypeError 中斷整個 popup。
-chrome.storage.sync.get({ customShortcuts: DEFAULT_SETTINGS.customShortcuts }, (v) => {
+browser.storage.sync.get({ customShortcuts: DEFAULT_SETTINGS.customShortcuts }).then((v) => {
   if (!shortcutEl) return;
   // v0.7.232：觸控裝置（maxTouchPoints >= 3，門檻與 touch-gestures.js 安裝
   // 條件一致）的主 toggle 通道是 3 指輕點、不是鍵盤——footer 提示改顯示
@@ -150,18 +150,19 @@ chrome.storage.sync.get({ customShortcuts: DEFAULT_SETTINGS.customShortcuts }, (
     shortcutEl.textContent = `快速鍵：${SCU.format(custom)}`;
     return;
   }
-  if (chrome.commands && chrome.commands.getAll) {
-    chrome.commands.getAll((commands) => {
+  // v0.8.164：browser.commands.getAll 原生 Promise（reject → 隱藏整列）。
+  if (browser.commands && browser.commands.getAll) {
+    browser.commands.getAll().then((commands) => {
       const cmd = (commands || []).find(c => c.name === 'toggle-reader-mode');
       const shortcut = cmd && cmd.shortcut;
       shortcutEl.textContent = shortcut
         ? `快速鍵：${shortcut}`
         : '快速鍵未設定——可在進階設定錄製';
-    });
+    }).catch(() => { shortcutEl.hidden = true; });
   } else {
     shortcutEl.hidden = true;
   }
-});
+}).catch(() => {});
 
 // ---- 設定面板 ----------------------------------------------------------
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -262,10 +263,10 @@ function render(settings) {
 
 let current = { ...DEFAULT_SETTINGS };
 
-// v0.7.143：debounce storage.sync.set 防 chrome.storage.sync quota 踩線。
+// v0.7.143：debounce storage.sync.set 防 browser.storage.sync quota 踩線。
 // 連點 stepper（fontSize 12-32 跨 20 step、contentWidth 480-1200 跨 18 step）
 // 每 click 觸發一次 set，加上 storage.onChanged broadcast 到所有 tab 的 content
-// script、各自跑 styler restore+apply，連環 cost。chrome.storage.sync quota：
+// script、各自跑 styler restore+apply，連環 cost。browser.storage.sync quota：
 // MAX_WRITE_OPERATIONS_PER_MINUTE = 120、MAX_WRITE_OPERATIONS_PER_HOUR = 1800。
 // 200ms debounce 對人類連點足夠合併、單次調整無感。
 //
@@ -282,7 +283,7 @@ function commitSave() {
     // v0.8.35：MV3 promise 模式下 set() 失敗（QuotaExceeded / 寫入頻率超限）是
     // promise rejection，同步 try/catch 接不到——必須 .catch 吞掉，否則 unhandled
     // rejection。current 已有最新值，下次 popup 開啟仍會走 storage.get。
-    const p = chrome.storage.sync.set(patch);
+    const p = browser.storage.sync.set(patch);
     if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch (_) { /* callback 模式（無 promise 回傳）的同步 throw 兜底 */ }
   notifyContentReapply();
@@ -297,7 +298,7 @@ function commitSave() {
 function notifyContentReapply() {
   getActiveTabId().then((tabId) => {
     if (typeof tabId !== 'number') return;
-    const p = chrome.tabs.sendMessage(tabId, { type: 'REAPPLY_SETTINGS' });
+    const p = browser.tabs.sendMessage(tabId, { type: 'REAPPLY_SETTINGS' });
     if (p && typeof p.catch === 'function') p.catch(() => {});
   }).catch(() => {});
 }
@@ -328,12 +329,12 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushPendingSave();
 });
 
-chrome.storage.sync.get(DEFAULT_SETTINGS, (values) => {
-  // v0.8.36：merge pendingPatch——popup 開啟瞬間使用者已點擊的變更（callback
-  // 抵達前累積在 pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI
+browser.storage.sync.get(DEFAULT_SETTINGS).then((values) => {
+  // v0.8.36：merge pendingPatch——popup 開啟瞬間使用者已點擊的變更（Promise
+  // resolve 前累積在 pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI
   current = { ...DEFAULT_SETTINGS, ...values, ...pendingPatch };
   render(current);
-});
+}).catch(() => {});
 
 for (const btn of themeBtns) {
   btn.addEventListener('click', () => save({ theme: btn.dataset.theme }));
@@ -484,7 +485,7 @@ for (const btn of fontWeightBtns) {
 
 // ---- 切換閱讀模式 ------------------------------------------------------
 async function getActiveTabId() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   // tab.id 理論上一定是 number，但 DevTools / 特殊頁可能回 TAB_ID_NONE(-1)
   // 或缺值；統一正規化成「number 或 null」，呼叫端一律用 typeof 判定，
   // 避免 `if (!tabId)` 把合法的 tab.id===0 誤判為失敗（v0.8.15）。
@@ -501,8 +502,8 @@ toggleBtn.addEventListener('click', async () => {
 
   const { toggleWithInjectionFallback } = window.__JReadPopup;
   const result = await toggleWithInjectionFallback(tabId, {
-    sendMessage: (id, msg) => chrome.tabs.sendMessage(id, msg),
-    executeScript: (opts) => chrome.scripting.executeScript(opts)
+    sendMessage: (id, msg) => browser.tabs.sendMessage(id, msg),
+    executeScript: (opts) => browser.scripting.executeScript(opts)
   });
 
   if (result.ok) {
@@ -524,7 +525,7 @@ toggleBtn.addEventListener('click', async () => {
 
 openOptionsLink.addEventListener('click', (e) => {
   e.preventDefault();
-  chrome.runtime.openOptionsPage();
+  browser.runtime.openOptionsPage();
   // panel 浮層模式：設定頁在新分頁開啟後收掉頁內浮層（避免覆蓋在底層頁上殘留）
   closePanel();
 });
@@ -560,26 +561,24 @@ function setReadwiseStatus(text, kind) {
 // 在 popup 開啟期間於 options 填入的情境不需即時反映（開 options 時 popup
 // 已關閉，下次開啟重新讀取）。
 function hasReadwiseToken() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.sync.get({ readwiseToken: '' }, (v) => {
-        const t = v && v.readwiseToken;
-        resolve(typeof t === 'string' && t.trim() !== '');
-      });
-    } catch (_) { resolve(false); }
-  });
+  // v0.8.164：browser.storage.sync.get 原生 Promise（reject / throw → false）。
+  try {
+    return browser.storage.sync.get({ readwiseToken: '' }).then((v) => {
+      const t = v && v.readwiseToken;
+      return typeof t === 'string' && t.trim() !== '';
+    }).catch(() => false);
+  } catch (_) { return Promise.resolve(false); }
 }
 
 // v0.8.109：編輯模式按鈕受 options「編輯模式」開關控制。預設 true（!== false）
 // ——關閉後 popup 不顯示「編輯模式：移除雜訊」按鈕。
 function isEditModeEnabled() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.sync.get({ editModeEnabled: true }, (v) => {
-        resolve(!v || v.editModeEnabled !== false);
-      });
-    } catch (_) { resolve(true); }
-  });
+  // v0.8.164：browser.storage.sync.get 原生 Promise（reject / throw → 預設 true）。
+  try {
+    return browser.storage.sync.get({ editModeEnabled: true })
+      .then((v) => !v || v.editModeEnabled !== false)
+      .catch(() => true);
+  } catch (_) { return Promise.resolve(true); }
 }
 
 async function refreshPopupForActiveTab() {
@@ -593,7 +592,7 @@ async function refreshPopupForActiveTab() {
     return;
   }
   try {
-    const res = await chrome.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
+    const res = await browser.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
     const siteMode = res && res.siteMode;
     const active = !!(res && res.active);
     const cinemaActive = !!(res && res.cinemaActive);
@@ -645,7 +644,7 @@ borderlessBtn.addEventListener('click', async () => {
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') return;
   try {
-    await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
+    await browser.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
   flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();
@@ -658,7 +657,7 @@ editBtn.addEventListener('click', async () => {
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') return;
   try {
-    await chrome.tabs.sendMessage(tabId, { type: 'EDIT_MODE_TOGGLE' });
+    await browser.tabs.sendMessage(tabId, { type: 'EDIT_MODE_TOGGLE' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
   flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();
@@ -677,7 +676,7 @@ readwiseBtn.addEventListener('click', async () => {
 
   let extracted;
   try {
-    extracted = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
+    extracted = await browser.tabs.sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
   } catch (e) {
     setReadwiseStatus('無法取得頁面內容（請重新啟動閱讀模式）', 'err');
     readwiseBtn.disabled = false;
@@ -692,9 +691,8 @@ readwiseBtn.addEventListener('click', async () => {
   // v0.8.72：若開啟「自動摘要」且已設 Gemini key，先用 Gemini Flash Lite 產生繁中
   // 三句摘要塞進 payload.summary（覆蓋 Readwise 自動英文摘要）。任何失敗都 fallback
   // 不帶 summary 照送（讓 Readwise 自行處理），不阻斷儲存。
-  const summaryCfg = await new Promise((resolve) => {
-    chrome.storage.sync.get({ readwiseSummary: false, geminiApiKey: '' }, (v) => resolve(v || {}));
-  });
+  const summaryCfg = await browser.storage.sync.get({ readwiseSummary: false, geminiApiKey: '' })
+    .then((v) => v || {}).catch(() => ({}));
   if (summaryCfg.readwiseSummary && summaryCfg.geminiApiKey && extracted.payload && extracted.payload.text) {
     setReadwiseStatus('產生摘要中…', 'info');
     try {
@@ -712,13 +710,12 @@ readwiseBtn.addEventListener('click', async () => {
 
   // v0.8.65：直接在 popup（extension 頁）發 Readwise fetch，不繞 background。
   // iOS Safari 背景頁掛起會讓 SAVE_TO_READWISE 往返 / 背景 fetch silently 失敗
-  // （見 popup-core.saveReaderPayload 註解）。token 用 callback 形式讀（與
-  // hasReadwiseToken 同款，不依賴 storage.sync.get 回 Promise）。
+  // （見 popup-core.saveReaderPayload 註解）。v0.8.164：token 改用
+  // browser.storage.sync.get 原生 Promise（與 hasReadwiseToken 同款）。
   const result = await window.__JReadPopup.saveReaderPayload({
     payload: extracted.payload,
-    getToken: () => new Promise((resolve) => {
-      chrome.storage.sync.get({ readwiseToken: '' }, (v) => resolve((v && v.readwiseToken) || ''));
-    })
+    getToken: () => browser.storage.sync.get({ readwiseToken: '' })
+      .then((v) => (v && v.readwiseToken) || '').catch(() => '')
   });
 
   if (result && result.ok) {
@@ -750,7 +747,7 @@ refreshPopupForActiveTab();
 //   tooltip 已說明此語意。
 async function getActiveTabUrlInfo() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.url) return null;
     const u = new URL(tab.url);
     // 只認 http/https；其他 scheme（chrome://、about:、file://、chrome-extension://）
@@ -772,17 +769,17 @@ async function refreshAutoDomainRow() {
   currentHostname = info.hostname;
   autoDomainHostEl.textContent = info.hostname;
   autoDomainRow.hidden = false;
-  chrome.storage.sync.get({ autoEnableDomains: [] }, (values) => {
+  browser.storage.sync.get({ autoEnableDomains: [] }).then((values) => {
     const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains : [];
     autoDomainCb.checked = helper.matchHostname(currentHostname, list);
-  });
+  }).catch(() => {});
 }
 
 autoDomainCb.addEventListener('change', () => {
   const helper = window.__JReadDomainMatch;
   if (!helper || !currentHostname) return;
   const wantOn = autoDomainCb.checked;
-  chrome.storage.sync.get({ autoEnableDomains: [] }, (values) => {
+  browser.storage.sync.get({ autoEnableDomains: [] }).then((values) => {
     const list = Array.isArray(values.autoEnableDomains) ? values.autoEnableDomains.slice() : [];
     let next;
     if (wantOn) {
@@ -793,13 +790,14 @@ autoDomainCb.addEventListener('change', () => {
     } else {
       next = helper.removeMatching(currentHostname, list);
     }
-    chrome.storage.sync.set({ autoEnableDomains: helper.parseList(next.join('\n')) });
-  });
+    const p = browser.storage.sync.set({ autoEnableDomains: helper.parseList(next.join('\n')) });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  }).catch(() => {});
 });
 
 // 跨 tab / options 同步：清單在他處變動時，popup checkbox 立刻反映
-if (chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
+if (browser.storage && browser.storage.onChanged) {
+  browser.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync' || !('autoEnableDomains' in changes)) return;
     const helper = window.__JReadDomainMatch;
     if (!helper || !currentHostname) return;

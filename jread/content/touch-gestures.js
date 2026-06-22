@@ -99,17 +99,17 @@
 
   // content script 環境：立即安裝（namespace.js 先載入，NS.safeSendMessage /
   // NS.MSG 已就緒；spec 的 require 走 Node，無 window / chrome，不進這段）
-  if (typeof window !== 'undefined' && typeof chrome !== 'undefined' && chrome.runtime) {
+  if (typeof window !== 'undefined' && typeof browser !== 'undefined' && browser.runtime) {
     const NS = window.__JRead = window.__JRead || {};
     // v0.8.157：threeFingerTap 設定（預設 false）動態查——listener 常駐，停用時
     // 命中不觸發。讀一次快取、onChanged 即時更新（storage 失效時保守留 false）。
+    // v0.8.164：browser.storage.sync.get 原生 Promise（reject 保守留 false）。
     let threeFingerEnabled = false;
     try {
-      chrome.storage.sync.get({ threeFingerTap: false }, (s) => {
-        if (chrome.runtime && chrome.runtime.lastError) return;
-        threeFingerEnabled = s.threeFingerTap === true;
-      });
-      chrome.storage.onChanged.addListener((changes, area) => {
+      browser.storage.sync.get({ threeFingerTap: false }).then((s) => {
+        threeFingerEnabled = s && s.threeFingerTap === true;
+      }).catch(() => {});
+      browser.storage.onChanged.addListener((changes, area) => {
         if (area === 'sync' && changes.threeFingerTap) {
           threeFingerEnabled = changes.threeFingerTap.newValue === true;
         }

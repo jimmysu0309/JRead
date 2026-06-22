@@ -169,12 +169,12 @@ describe('(B) options.html / options.js wire-up', () => {
     assert.deepStrictEqual(SHARED.autoEnableDomains, [],
       'shared DEFAULTS.autoEnableDomains 必須 === []');
   });
-  it('options.js textarea change handler 走 chrome.storage.sync.set', () => {
+  it('options.js textarea change handler 走 browser.storage.sync.set', () => {
     // 確保 textarea 變動會寫回 sync.autoEnableDomains（不是只在 textarea 暫存）
     assert.match(OPTIONS_JS, /autoEnableDomains[\s\S]{0,200}?addEventListener\(['"]change['"]/,
       'options.js 必須對 #autoEnableDomains 綁 change listener');
-    assert.match(OPTIONS_JS, /chrome\.storage\.sync\.set\(\s*\{\s*autoEnableDomains/,
-      'options.js change handler 必須 chrome.storage.sync.set({ autoEnableDomains: ... })');
+    assert.match(OPTIONS_JS, /browser\.storage\.sync\.set\(\s*\{\s*autoEnableDomains/,
+      'options.js change handler 必須 browser.storage.sync.set({ autoEnableDomains: ... })');
   });
 });
 

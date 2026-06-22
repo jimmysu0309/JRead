@@ -8,7 +8,7 @@
 // 修法：偵測路由變化 → 先 exitReaderMode → 視情況重觸發（使用者原本就在 reader
 // mode、或新路由命中 auto-enable 網域 → silent 重進）。
 //
-// main.js 包在 IIFE 且依賴 chrome.runtime 訊息傳遞，無法 require（同 readwise-save
+// main.js 包在 IIFE 且依賴 browser.runtime 訊息傳遞，無法 require（同 readwise-save
 // 等既有 main.js spec 慣例）——本 spec 走 source 結構 forcing，鎖住關鍵 wiring。
 // 真實 Chrome 上的「live SPA 路由重觸發」行為見 PENDING_REGRESSION（harness 載
 // 靜態頁、模擬不到 SPA 換路由）。

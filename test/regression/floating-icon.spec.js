@@ -27,6 +27,32 @@ const FLOATING_SRC = fs.readFileSync(path.join(JREAD, 'content', 'floating-icon.
 const manifest = JSON.parse(fs.readFileSync(path.join(JREAD, 'manifest.json'), 'utf8'));
 const POPUP_CORE_SRC = fs.readFileSync(path.join(JREAD, 'popup', 'popup-core.js'), 'utf8');
 
+// v0.8.164：browser.storage.* 改用 Promise。本 spec 的多數斷言在呼叫後**同步**檢查
+// 狀態（真實 Chrome 的 callback 也是非同步、但舊 mock 同步 resolve 以利測試）。
+// 為保留既有同步斷言、又模擬 Promise 介面，mock 回「同步 resolve 的 thenable」
+// ——.then 的 callback 在當下同步執行（非 microtask），支援 .then().catch() 與
+// .then 內 return 巢狀 thenable（togglePaged 的 get→set 鏈）。
+function _syncResolved(value) {
+  return {
+    then(onF) {
+      if (typeof onF !== 'function') return _syncResolved(value);
+      let r;
+      try { r = onF(value); } catch (e) { return _syncRejected(e); }
+      return (r && typeof r.then === 'function') ? r : _syncResolved(r);
+    },
+    catch() { return this; }
+  };
+}
+function _syncRejected(err) {
+  return {
+    then(_onF, onR) {
+      if (typeof onR === 'function') { try { return _syncResolved(onR(err)); } catch (e) { return _syncRejected(e); } }
+      return this;
+    },
+    catch(onR) { try { return _syncResolved(onR(err)); } catch (e) { return _syncRejected(e); } }
+  };
+}
+
 // 可配置的 chrome mock：runtime URL scheme（平台分流訊號）+ storage.sync 假實作
 function makeChrome({ scheme = 'chrome-extension://', store = {} } = {}) {
   const data = Object.assign({}, store);
@@ -38,11 +64,11 @@ function makeChrome({ scheme = 'chrome-extension://', store = {} } = {}) {
       lastError: null,
       getManifest: () => ({ version: '0.0.0-test' }),
       getURL: (p) => scheme + 'abc/' + (p || ''),
-      sendMessage: (msg) => { sent.push(msg); }
+      sendMessage: (msg) => { sent.push(msg); return _syncResolved(undefined); }
     },
     storage: {
       sync: {
-        get(keys, cb) {
+        get(keys) {
           const out = {};
           const list = Array.isArray(keys) ? keys
             : (keys && typeof keys === 'object') ? Object.keys(keys) : [keys];
@@ -50,16 +76,16 @@ function makeChrome({ scheme = 'chrome-extension://', store = {} } = {}) {
             out[k] = (k in data) ? data[k]
               : (keys && typeof keys === 'object' && !Array.isArray(keys)) ? keys[k] : undefined;
           }
-          cb(out);
+          return _syncResolved(out);
         },
-        set(obj, cb) {
+        set(obj) {
           const changes = {};
           for (const k of Object.keys(obj)) {
             changes[k] = { oldValue: data[k], newValue: obj[k] };
             data[k] = obj[k];
           }
           onChangedListeners.forEach((fn) => fn(changes, 'sync'));
-          if (cb) cb();
+          return _syncResolved(undefined);
         }
       },
       onChanged: { addListener(fn) { onChangedListeners.push(fn); } }
@@ -108,7 +134,7 @@ describe('懸浮按鈕（v0.8.154）', () => {
     it('assets/* 在 web_accessible_resources（icon 經 getURL 載入）', () => {
       const war = manifest.web_accessible_resources || [];
       const ok = war.some((e) => (e.resources || []).some((r) => r === 'assets/*' || r.startsWith('assets/')));
-      assert.ok(ok, 'icon 走 chrome.runtime.getURL("assets/...") 必須列入 web_accessible_resources');
+      assert.ok(ok, 'icon 走 browser.runtime.getURL("assets/...") 必須列入 web_accessible_resources');
     });
   });
 

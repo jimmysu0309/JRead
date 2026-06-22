@@ -1,6 +1,6 @@
 // JRead — options 儲存狀態提示條（v0.8.162，參考姊妹專案 Shinkansen save-bar）
 //
-// 任一欄位變更 → 固定頂端提示條亮「存檔中…」（紅，.saving）→ chrome.storage.sync.set
+// 任一欄位變更 → 固定頂端提示條亮「存檔中…」（紅，.saving）→ browser.storage.sync.set
 // callback → 轉「已存檔」（綠，.saved、3s 後 hidden）；set 失敗（lastError）→
 // 「儲存失敗…」（紅，.error）不可閃假的「已存檔」。
 //
@@ -19,24 +19,56 @@ const SRC_SHORTCUTS = fs.readFileSync(path.join(JREAD_DIR, 'content', 'shortcut-
 const SRC_OPTIONS = fs.readFileSync(path.join(JREAD_DIR, 'options', 'options.js'), 'utf8');
 
 // set 可同步或延後回 callback（驗存檔中→已存檔的中間態）
+// v0.8.164：options.js 改用 browser.storage.sync.set 原生 Promise（成功 → flashSaved、
+// reject → flashSaveError）。mock 回「同步 resolve 的 thenable」保留既有同步斷言；
+// deferCallback 時回「可延後 resolve 的 thenable」（flushCallbacks 才觸發 .then），
+// lastError 時回 reject 的 thenable（走 flashSaveError）。
+function _syncResolved(value) {
+  return {
+    then(onF) {
+      if (typeof onF !== 'function') return _syncResolved(value);
+      let r; try { r = onF(value); } catch (e) { return _syncRejected(e); }
+      return (r && typeof r.then === 'function') ? r : _syncResolved(r);
+    },
+    catch() { return this; }
+  };
+}
+function _syncRejected(err) {
+  return {
+    then(_onF, onR) {
+      if (typeof onR === 'function') { try { return _syncResolved(onR(err)); } catch (e) { return _syncRejected(e); } }
+      return this;
+    },
+    catch(onR) { try { return _syncResolved(onR(err)); } catch (e) { return _syncRejected(e); } }
+  };
+}
+
 function buildOptionsEnv({ deferCallback = false, lastError } = {}) {
   const dom = new JSDOM(OPTIONS_HTML, { runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
-  const pendingCallbacks = [];
+  const pendingThens = [];
   window.chrome = {
     runtime: {
       getManifest: () => ({ version: '0.0.0-test' }),
       id: 'test-ext',
-      getURL: () => 'chrome-extension://test-ext/',
-      get lastError() { return lastError; }
+      getURL: () => 'chrome-extension://test-ext/'
     },
     storage: {
       sync: {
-        get: (defaults, cb) => cb({ ...defaults }),
-        set: (patch, cb) => {
-          if (!cb) return;
-          if (deferCallback) pendingCallbacks.push(cb);
-          else cb();
+        get: (defaults) => _syncResolved({ ...defaults }),
+        set: (patch) => {
+          if (lastError) return _syncRejected(lastError);
+          if (deferCallback) {
+            // 延後 resolve：先記住 .then 的 onFulfilled，flushCallbacks 才執行
+            const t = {
+              _onF: null,
+              then(onF) { this._onF = onF || null; return _syncResolved(undefined); },
+              catch() { return this; }
+            };
+            pendingThens.push(t);
+            return t;
+          }
+          return _syncResolved(undefined);
         }
       },
       onChanged: { addListener: () => {} }
@@ -46,7 +78,7 @@ function buildOptionsEnv({ deferCallback = false, lastError } = {}) {
   window.eval(SRC_DOMAIN);
   window.eval(SRC_SHORTCUTS);
   window.eval(SRC_OPTIONS);
-  const flushCallbacks = () => { while (pendingCallbacks.length) pendingCallbacks.shift()(); };
+  const flushCallbacks = () => { while (pendingThens.length) { const t = pendingThens.shift(); if (t._onF) t._onF(); } };
   return { window, document: window.document, flushCallbacks };
 }
 

@@ -101,8 +101,10 @@ function loadKeepalive(opts = {}) {
     }
   };
 
+  // v0.8.164：keepalive.js 改用 browser.*（原生 Promise）；closure 注入 browser
+  // （= chromeMock，模擬 shim 後 browser === chrome）。
   const fn = new Function(
-    'window', 'document', 'chrome', 'navigator',
+    'window', 'document', 'browser', 'navigator',
     'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
     KEEPALIVE_SRC
   );
@@ -167,7 +169,7 @@ describe('(B) keep-alive port — Safari 全平台', () => {
 
   it('context invalidated（runtime.id 空）→ 不 connect', () => {
     // 註：傳 null 而非 undefined——undefined 會被 loadKeepalive 的 destructuring
-    // 預設值蓋回 'ext-id'；keepalive 的 `!chrome.runtime.id` guard 兩者都擋
+    // 預設值蓋回 'ext-id'；keepalive 的 `!browser.runtime.id` guard 兩者都擋
     const env = loadKeepalive({ runtimeId: null });
     assert.strictEqual(env.realConnects().length, 0);
   });
@@ -222,8 +224,8 @@ describe('(C) wire-up 結構', () => {
   });
 
   it('SW 必須有 onConnect listener、比對 port 名、回 pong', () => {
-    assert.ok(/chrome\.runtime\.onConnect\.addListener/.test(SW_SRC),
-      'SW 必須註冊 chrome.runtime.onConnect listener');
+    assert.ok(/browser\.runtime\.onConnect\.addListener/.test(SW_SRC),
+      'SW 必須註冊 browser.runtime.onConnect listener');
     assert.ok(new RegExp(`port\\.name !== '${PORT_NAME}'`).test(SW_SRC),
       `SW onConnect 必須比對 port 名 '${PORT_NAME}'（其他 port 不可誤吃）`);
     assert.ok(/port\.postMessage\(\s*\{\s*pong:\s*true\s*\}\s*\)/.test(SW_SRC),
@@ -239,11 +241,11 @@ describe('(C) wire-up 結構', () => {
   });
 
   it('SW 必須註冊 runtime.onStartup listener（WPA background 啟動觸發器，v0.8.32）', () => {
-    // 注意帶開括號——guard 行的 `&& chrome.runtime.onStartup.addListener)` 是
+    // 注意帶開括號——guard 行的 `&& browser.runtime.onStartup.addListener)` 是
     // existence 檢查不是註冊，不可被當成命中（sanity 實測踩過）
-    assert.ok(/chrome\.runtime\.onStartup\.addListener\(/.test(SW_SRC),
-      'SW 必須實際呼叫 chrome.runtime.onStartup.addListener(...)（空 handler 即可，存在本身是啟動觸發器）');
-    assert.ok(/chrome\.runtime\.onStartup\s*&&\s*chrome\.runtime\.onStartup\.addListener/.test(SW_SRC),
+    assert.ok(/browser\.runtime\.onStartup\.addListener\(/.test(SW_SRC),
+      'SW 必須實際呼叫 browser.runtime.onStartup.addListener(...)（空 handler 即可，存在本身是啟動觸發器）');
+    assert.ok(/browser\.runtime\.onStartup\s*&&\s*browser\.runtime\.onStartup\.addListener/.test(SW_SRC),
       'onStartup 註冊前必須有 existence guard（iOS API 可能缺席）');
   });
 
@@ -261,11 +263,11 @@ describe('(C) wire-up 結構', () => {
   it('manifest 必須含 alarms 權限；SW 必須註冊 onAlarm + Safari 限定建立週期 alarm（v0.8.34）', () => {
     assert.ok(MANIFEST.permissions.includes('alarms'),
       'manifest permissions 必須含 alarms（WPA background 啟動觸發器）');
-    assert.ok(/chrome\.alarms\.onAlarm\.addListener\(/.test(SW_SRC),
+    assert.ok(/browser\.alarms\.onAlarm\.addListener\(/.test(SW_SRC),
       'SW 必須註冊 onAlarm listener（空 handler 即可，被喚醒本身是目的）');
-    assert.ok(/chrome\.alarms\.create\('jread-bg-wake'/.test(SW_SRC),
+    assert.ok(/browser\.alarms\.create\('jread-bg-wake'/.test(SW_SRC),
       "SW 必須建立 'jread-bg-wake' 週期 alarm");
-    const m = SW_SRC.match(/if \(IS_SAFARI_RUNTIME\) \{[\s\S]{0,300}chrome\.alarms\.create/);
+    const m = SW_SRC.match(/if \(IS_SAFARI_RUNTIME\) \{[\s\S]{0,300}browser\.alarms\.create/);
     assert.ok(m, 'alarms.create 必須 gate 在 IS_SAFARI_RUNTIME 內（Chrome 不建、省無謂喚醒）');
   });
 });
