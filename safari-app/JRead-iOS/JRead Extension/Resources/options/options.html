@@ -276,6 +276,20 @@
       font-size: 13px;
       color: var(--jr-neutral-700);
     }
+    /* 透明度範例 icon：跟著透明度滑桿（即時不透明度）與尺寸 select（icon 大小）變動。
+       固定 32px footprint（= large 視覺尺寸）置中，換尺寸不跳版（UI 對齊 grid）。 */
+    .opacity-control .opacity-demo {
+      flex: 0 0 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .opacity-control .opacity-demo img {
+      display: block;
+      border-radius: 4px;
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,.4));
+    }
 
     /* ==========================================================
        Section heading — Apple 藍 + 底線（Shinkansen h2）
@@ -671,6 +685,9 @@
       <div class="opacity-control">
         <input type="range" id="floatingIconOpacity" min="0.1" max="1" step="0.05">
         <span class="opacity-val" id="floatingIconOpacityVal"></span>
+        <span class="opacity-demo" id="floatingIconOpacityDemo" aria-hidden="true">
+          <img src="../assets/icons/icon-32.png" alt="">
+        </span>
       </div>
     </div>
 

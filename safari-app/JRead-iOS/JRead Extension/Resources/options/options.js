@@ -175,6 +175,25 @@ function updateOpacityReadout(frac) {
   if (out) out.textContent = Math.round(Number(frac) * 100) + '%';
 }
 
+// 範例 icon 跟著透明度滑桿（即時不透明度）+ 尺寸 select（icon 大小）變動。
+// 尺寸對照與 content/floating-icon.js SIZE_MAP 一致：small=16 / large=32（視覺）。
+function updateOpacityDemo() {
+  const demo = document.getElementById('floatingIconOpacityDemo');
+  if (!demo) return;
+  const opacityEl = document.getElementById('floatingIconOpacity');
+  const sizeEl = document.getElementById('floatingIconSize');
+  if (opacityEl) {
+    const o = Number(opacityEl.value);
+    demo.style.opacity = String(Math.max(0.1, Math.min(1, Number.isFinite(o) ? o : 0.7)));
+  }
+  const img = demo.querySelector('img');
+  if (img) {
+    const px = (sizeEl && sizeEl.value === 'large') ? 32 : 16;
+    img.style.width = px + 'px';
+    img.style.height = px + 'px';
+  }
+}
+
 function applyFieldToDom(id, value) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -192,9 +211,11 @@ function applyFieldToDom(id, value) {
     const n = typeof value === 'number' && isFinite(value) ? value : Number(DEFAULTS.floatingIconOpacity);
     el.value = String(n);
     updateOpacityReadout(n);
+    updateOpacityDemo();
   } else if (id === 'floatingIconSize') {
     // 'small' / 'large' 兩值；舊資料 / 損壞退回預設 'small'
     el.value = value === 'large' ? 'large' : 'small';
+    updateOpacityDemo();
   } else if (id === 'readwiseSummary') {
     // 預設 false——只有明確為 true 才勾選
     el.checked = value === true;
@@ -218,6 +239,7 @@ function load() {
     // v0.7.218：自訂快速鍵——storage 讀回值消毒後渲染 recorder 顯示
     shortcutTable = SC.sanitizeTable(values.customShortcuts);
     renderShortcuts();
+    updateOpacityDemo();   // 範例 icon 套初始透明度 + 尺寸
   });
 }
 
@@ -240,10 +262,19 @@ fields.forEach((id) => {
   });
 });
 
-// 透明度滑桿拖動途中即時更新 % 讀數（change 才存檔；input 只更新顯示）
+// 透明度滑桿拖動途中即時更新 % 讀數 + 範例 icon（change 才存檔；input 只更新顯示）
 const opacityRange = document.getElementById('floatingIconOpacity');
 if (opacityRange) {
-  opacityRange.addEventListener('input', () => updateOpacityReadout(opacityRange.value));
+  opacityRange.addEventListener('input', () => {
+    updateOpacityReadout(opacityRange.value);
+    updateOpacityDemo();
+  });
+}
+
+// 尺寸 select 切換即時更新範例 icon 大小（change 才存檔；本 listener 只更新預覽）
+const sizeSelect = document.getElementById('floatingIconSize');
+if (sizeSelect) {
+  sizeSelect.addEventListener('change', updateOpacityDemo);
 }
 
 // ---- Readwise token 測試（v0.8.64）-----------------------------------
