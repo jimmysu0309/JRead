@@ -143,9 +143,11 @@
     </button>
     <div class="menu" id="menu" role="menu"></div>
   `;
-  const styleEl = document.createElement('style');
-  styleEl.textContent = CSS;
-  shadow.prepend(styleEl);
+  // v0.8.159：改走 NS.injectShadowCss（CSP-safe）——嚴格 style-src nonce-only 站
+  // （自架 Miniflux 閱讀頁）在 WebKit 會擋掉 shadow 內注入的 <style>，使 .fab 拿不到
+  // var(--fab-hit) 寬高、icon 退回 <img> 原生 32px 無視尺寸設定。退回
+  // shadow.adoptedStyleSheets。詳見 namespace.js injectShadowCss 註解。
+  NS.injectShadowCss(shadow, CSS);
   btn = shadow.getElementById('fab');
   menuEl = shadow.getElementById('menu');
   document.documentElement.appendChild(host);

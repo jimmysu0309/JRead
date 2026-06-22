@@ -130,6 +130,16 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.ok(host.shadowRoot.querySelector('.fab img'), '必須有 icon img');
       assert.ok(host.shadowRoot.querySelector('.menu'), '必須有長按選單容器');
     });
+
+    // v0.8.159：shadow 內 CSS 必須走 NS.injectShadowCss（CSP-safe）——嚴格 style-src
+    // nonce-only 站（自架 Miniflux）在 WebKit 會擋掉 shadow 內注入的 <style>，使 .fab
+    // 拿不到 var(--fab-hit) 寬高、icon 退回 <img> 原生 32px 無視尺寸設定。
+    it('shadow CSS 走 NS.injectShadowCss（CSP-safe），不可裸 prepend <style>', () => {
+      assert.match(FLOATING_SRC, /NS\.injectShadowCss\(\s*shadow\s*,\s*CSS\s*\)/,
+        'floating-icon 必須用 NS.injectShadowCss 注入 shadow CSS（CSP-safe）');
+      assert.ok(!/shadow\.prepend\(\s*styleEl\s*\)/.test(FLOATING_SRC),
+        '不可裸 shadow.prepend(styleEl)——嚴格 style-src 站在 WebKit 會被擋');
+    });
   });
 
   describe('啟用旗標未設過一律預設開（v0.8.158）', () => {

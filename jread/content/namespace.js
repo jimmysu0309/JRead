@@ -546,6 +546,45 @@
       }
     },
 
+    // CSP-safe：把 css 注入指定 ShadowRoot（floating-icon / toast 這類獨立 Shadow
+    // DOM host）。與 injectCssText 同根因：嚴格 `style-src 'nonce-...'`（自架 Miniflux
+    // 閱讀頁）在 WebKit 連 shadow 內的 <style> 都擋掉 → styleEl.sheet === null → 同一
+    // shadow 在 iPhone 套不到內部 CSS（懸浮按鈕 .fab 拿不到 var(--fab-hit) 寬高、退回
+    // <img> 原生 32px，使用者設定的尺寸被無視；Jimmy 2026-06-22 Miniflux 回報），在
+    // Chrome 正常（Chrome 對注入 <style> 有豁免）。被擋時退回 shadow.adoptedStyleSheets
+    // （constructable stylesheet，不受 style-src 管轄）。一般站 sheet 非 null → 不走
+    // fallback、行為與舊版一致（零回歸）。
+    //
+    // 注意：<style> 被擋時 CSS 內的 `:host { --var: ... }` 預設值也一起失效，故呼叫端
+    // 的動態值（尺寸 / 顏色 / 位置）務必另走 host 元素的 inline style——custom property
+    // 會繼承進 shadow tree——不可只仰賴 CSS 裡的 :host 預設。
+    injectShadowCss(shadow, css) {
+      let styleEl;
+      try {
+        styleEl = document.createElement('style');
+        styleEl.textContent = css;
+        shadow.prepend(styleEl);
+      } catch (_) { return null; }
+
+      if (css && !styleEl.sheet) {
+        let canAdopt = false;
+        try {
+          canAdopt = this._canAdoptStyles()
+            && typeof ShadowRoot !== 'undefined'
+            && ShadowRoot.prototype
+            && 'adoptedStyleSheets' in ShadowRoot.prototype;
+        } catch (_) { canAdopt = false; }
+        if (canAdopt) {
+          try {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(css);
+            shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+          } catch (_) { /* fallback 失敗就維持原 <style>（最壞回到 bug 前狀態） */ }
+        }
+      }
+      return styleEl;
+    },
+
     // 訊息常數（與 popup / background 對齊）。
     // v0.8.37：REPORT_DETECTION_RESULT（7 處發送、全 repo 零接收、每次偵測
     // 白喚醒 SW 一次）與 UPDATE_SETTINGS（SW 有 case、零發送端——popup /
