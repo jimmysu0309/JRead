@@ -9,7 +9,7 @@
 // 不影響儲存範圍。titleFontSize 等欄位自動齊備（修掉 popup 缺 titleFontSize 的舊 drift）。
 const DEFAULTS = window.__JReadSettingsDefaults;
 
-const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity'];
+const fields = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontWeight', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
 
 // v0.8.154：懸浮 icon 啟用旗標的平台分流解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時 Safari 預設勾、Chrome 預設不勾——checkbox 顯示初值與
@@ -191,6 +191,9 @@ function applyFieldToDom(id, value) {
     const n = typeof value === 'number' && isFinite(value) ? value : Number(DEFAULTS.floatingIconOpacity);
     el.value = String(n);
     updateOpacityReadout(n);
+  } else if (id === 'floatingIconSize') {
+    // 'small' / 'large' 兩值；舊資料 / 損壞退回預設 'small'
+    el.value = value === 'large' ? 'large' : 'small';
   } else if (id === 'readwiseSummary') {
     // 預設 false——只有明確為 true 才勾選
     el.checked = value === true;
