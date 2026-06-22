@@ -3,7 +3,9 @@
 // 設計（參考 Shinkansen content-floating-icon.js）：
 // - 頁面左／右緣常駐的浮動 icon，用工具列方形 icon（assets/icons/icon-32.png 經
 //   chrome.runtime.getURL 載入；assets/* 已列入 manifest web_accessible_resources）。
-//   視覺尺寸 16×16，可點 footprint 32×32（透明 padding 包住 icon，觸控好點）。
+//   尺寸由 floatingIconSize 設定切換（v0.8.156）：'small' = 視覺 16×16 / 可點
+//   footprint 32×32（預設）、'large' = 視覺 32×32 / footprint 48×48（觸控嫌小者放大）。
+//   尺寸走 CSS 變數（--fab-hit / --fab-icon）讓 storage.onChanged 即時生效。
 // - 短按（放開前長按計時器未觸發、未拖移）= 切換閱讀模式，走
 //   NS.dispatchLocalCommand('toggle-reader-mode')（與 3 指輕點 / 快速鍵同一條
 //   content 端本地 dispatch，含 YouTube 模式重導、不 round-trip SW）。
@@ -30,8 +32,13 @@
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
   const DRAG_THRESHOLD_PX = 8;           // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）
-  const ICON_SIZE = 16;                  // icon 視覺尺寸（方形 icon 顯示邊長，spec 點 1）
-  const HIT_SIZE = 32;                   // 按鈕可點 footprint（透明 padding 包住 icon，spec 點 1）
+  // 尺寸對照（v0.8.156）：透明 padding 維持每側 8px（icon + 16 = footprint）。
+  // 視覺尺寸走 CSS 變數即時切換；hitSize（footprint）同步進 JS 給貼邊 / 拖移夾擠用。
+  const SIZE_MAP = {
+    small: { icon: 16, hit: 32 },        // 預設（v0.8.154 以來的原始尺寸）
+    large: { icon: 32, hit: 48 }         // 觸控嫌小者放大
+  };
+  let hitSize = SIZE_MAP.small.hit;      // 目前 footprint（applyPos / 拖移用，applySize 更新）
   const EDGE_MARGIN = 6;                 // 吸附邊緣時與視窗邊的間距
   const DEFAULT_OPACITY = 0.7;
   const HOST_ID = '__jread-floating-host';
@@ -55,10 +62,11 @@
 
   const CSS = `
     :host, * { box-sizing: border-box; }
+    :host { --fab-hit: ${SIZE_MAP.small.hit}px; --fab-icon: ${SIZE_MAP.small.icon}px; }
     .fab {
       position: relative;
-      width: ${HIT_SIZE}px;
-      height: ${HIT_SIZE}px;
+      width: var(--fab-hit);
+      height: var(--fab-hit);
       border: none;
       padding: 0;
       background: none;
@@ -74,8 +82,8 @@
     }
     .fab:active { transform: scale(.92); }
     .fab img {
-      width: ${ICON_SIZE}px;
-      height: ${ICON_SIZE}px;
+      width: var(--fab-icon);
+      height: var(--fab-icon);
       display: block;
       border-radius: 4px;
       /* drop-shadow 讓 icon 在淺色 / 同色頁面也看得見 */
@@ -99,8 +107,8 @@
       font: 14px -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
     }
     .menu.show { display: flex; }
-    .menu.side-left  { left: ${HIT_SIZE + 8}px; }
-    .menu.side-right { right: ${HIT_SIZE + 8}px; }
+    .menu.side-left  { left: calc(var(--fab-hit) + 8px); }
+    .menu.side-right { right: calc(var(--fab-hit) + 8px); }
     .menu-item {
       display: flex;
       align-items: center;
@@ -181,6 +189,16 @@
     host.style.opacity = String(Math.max(0.1, Math.min(1, o)));
   }
 
+  // 尺寸切換：寫 CSS 變數（視覺即時生效）+ 同步 hitSize（貼邊 / 拖移夾擠用），
+  // 再依新 footprint 重貼一次（offsetY 比例對 vh−hit 重算）。非 'large' 一律 small。
+  function applySize(v) {
+    const s = SIZE_MAP[v === 'large' ? 'large' : 'small'];
+    hitSize = s.hit;
+    host.style.setProperty('--fab-hit', s.hit + 'px');
+    host.style.setProperty('--fab-icon', s.icon + 'px');
+    applyPos(pos);
+  }
+
   function sanitizePos(p) {
     const edge = (p && (p.edge === 'left' || p.edge === 'right')) ? p.edge : 'left';
     let offsetY = p && typeof p.offsetY === 'number' ? p.offsetY : 0.5;
@@ -192,7 +210,7 @@
   function applyPos(p) {
     pos = sanitizePos(p);
     const vh = window.innerHeight || 0;
-    const top = Math.round(pos.offsetY * Math.max(0, vh - HIT_SIZE));
+    const top = Math.round(pos.offsetY * Math.max(0, vh - hitSize));
     host.style.top = top + 'px';
     host.style.bottom = 'auto';
     if (pos.edge === 'left') {
@@ -308,9 +326,9 @@
     }
     if (press.moved) {
       // 自由跟手（拖移期間），放開再吸附
-      const half = HIT_SIZE / 2;
-      const left = Math.max(0, Math.min(window.innerWidth - HIT_SIZE, e.clientX - half));
-      const top = Math.max(0, Math.min(window.innerHeight - HIT_SIZE, e.clientY - half));
+      const half = hitSize / 2;
+      const left = Math.max(0, Math.min(window.innerWidth - hitSize, e.clientX - half));
+      const top = Math.max(0, Math.min(window.innerHeight - hitSize, e.clientY - half));
       host.style.left = left + 'px';
       host.style.right = 'auto';
       host.style.top = top + 'px';
@@ -329,7 +347,7 @@
       // 吸附最近邊緣：pointer 在視窗左半 → 左緣，右半 → 右緣
       const edge = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
       const offsetY = Math.max(0, Math.min(1,
-        (e.clientY - HIT_SIZE / 2) / Math.max(1, window.innerHeight - HIT_SIZE)));
+        (e.clientY - hitSize / 2) / Math.max(1, window.innerHeight - hitSize)));
       applyPos({ edge, offsetY });
       persistPos();
       return;
@@ -356,17 +374,18 @@
   const RESOLVE = window.__JReadResolveFloatingIconEnabled || ((v) => v === true);
 
   try {
-    chrome.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos'], (s) => {
+    chrome.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize'], (s) => {
       if (chrome.runtime && chrome.runtime.lastError) {
-        applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
+        applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
         return;
       }
+      applySize(s.floatingIconSize);
       applyOpacity(s.floatingIconOpacity);
       applyPos(s.floatingIconPos);
       applyEnabled(RESOLVE(s.floatingIcon));
     });
   } catch (_e) {
-    applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
+    applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -374,6 +393,7 @@
     if (changes.floatingIcon) applyEnabled(RESOLVE(changes.floatingIcon.newValue));
     if (changes.floatingIconOpacity) applyOpacity(changes.floatingIconOpacity.newValue);
     if (changes.floatingIconPos) applyPos(changes.floatingIconPos.newValue);
+    if (changes.floatingIconSize) applySize(changes.floatingIconSize.newValue);
   });
 
   // regression spec（isolated world）用：暴露內部 handler 與狀態
@@ -381,8 +401,9 @@
     host, btn, menuEl, MENU_ITEMS,
     openMenu, closeMenu, buildMenu,
     handleShortPress, sendToReadwise, togglePaged,
-    applyEnabled, applyOpacity, applyPos, sanitizePos,
+    applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
     isMenuOpen: () => menuOpen,
-    getPos: () => ({ ...pos })
+    getPos: () => ({ ...pos }),
+    getHitSize: () => hitSize
   };
 })();
