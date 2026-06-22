@@ -353,12 +353,42 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.ok(shadow.querySelector('.menu-divider'), '功能選單前必須有分隔線');
     });
 
-    it('送 Readwise：CORS 擋直接 fetch → 轉 SW CUSTOM_COMMAND send-to-readwise', () => {
-      const { NS, chrome } = setup();
+    // v0.8.165：送 Readwise 依 runtime 分流——Chrome（content fetch 受 CORS 擋）轉 SW；
+    // Safari（iOS / iPadOS，SW 背景 fetch 不可靠）改 content script 直送。
+    it('Chrome runtime：content fetch 受 CORS 擋 → 轉 SW CUSTOM_COMMAND send-to-readwise', () => {
+      const { NS, chrome } = setup({ scheme: 'chrome-extension://' });
       NS.floating.sendToReadwise();
       const msg = chrome._sent.find((m) => m && m.type === NS.MSG.CUSTOM_COMMAND);
       assert.ok(msg, '必須送 CUSTOM_COMMAND');
       assert.strictEqual(msg.payload.command, 'send-to-readwise');
+    });
+
+    it('Safari runtime：呼叫 NS.sendCurrentPageToReadwise（content 直送），不送 SW CUSTOM_COMMAND', () => {
+      const { NS, chrome } = setup({ scheme: 'safari-web-extension://' });
+      let called = 0;
+      NS.sendCurrentPageToReadwise = () => { called += 1; };
+      NS.floating.sendToReadwise();
+      assert.strictEqual(called, 1, 'Safari 必須走 content 端直送');
+      assert.ok(!chrome._sent.find((m) => m && m.type === NS.MSG.CUSTOM_COMMAND),
+        'Safari 不可再轉 SW CUSTOM_COMMAND（SW 背景 fetch 在 iOS 不可靠）');
+    });
+
+    it('Safari runtime 但 sendCurrentPageToReadwise 尚未就緒（注入競態）→ 退回 SW CUSTOM_COMMAND', () => {
+      const { NS, chrome } = setup({ scheme: 'safari-web-extension://' });
+      // 不設 NS.sendCurrentPageToReadwise（模擬 main.js 尚未 eval）
+      NS.floating.sendToReadwise();
+      const msg = chrome._sent.find((m) => m && m.type === NS.MSG.CUSTOM_COMMAND);
+      assert.ok(msg, '函式缺席時必須 fallback 走 SW CUSTOM_COMMAND，不可靜默失敗');
+      assert.strictEqual(msg.payload.command, 'send-to-readwise');
+    });
+
+    it('點擊當下先彈 info toast（視覺提示，兩平台都有）', () => {
+      const { NS, document } = setup({ scheme: 'safari-web-extension://' });
+      NS.sendCurrentPageToReadwise = () => {};
+      NS.floating.sendToReadwise();
+      const toastHost = document.getElementById('__jread-toast-host');
+      const text = toastHost ? (toastHost.shadowRoot || toastHost).textContent : '';
+      assert.match(text, /Readwise/, '送出當下必須有「送出到 Readwise Reader…」視覺提示 toast');
     });
 
     it('切換分頁模式：翻轉 storage.sync.pagedMode（false→true）', () => {
