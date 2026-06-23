@@ -950,6 +950,110 @@ pageFns.collectDroppedContentFigures = function () {
   return res;
 };
 
+// ---- 誤殺長段落 audit（2026-06-23（v0.8.168 漏抓後補 harness），Miniflux 開頭段落消失修法後補洞）-----------
+// 動機：retention ratio 是全域純量、位置盲——掉文末 RSS footer（正常）與掉文章
+// 開頭標題+前三段（災難）同樣只是把 ratio 拉低，且留言/推薦也是 <p> 被合法清掉
+// 會降 ratio，所以 retention 只能當 < 0.3 的粗 review 信號。v0.8.168 Miniflux
+// Ineos 案：cleaner pre-title 規則誤殺開頭 502 chars 正文，retention 仍 76% 印綠燈
+// 漏抓（Jimmy 2026-06-23 截圖打臉）。
+//
+// 本 audit 補「cleaner 誤殺 article 內長散文」這一層，高精度位置無關：
+//   toggle 前標記「可見的 leaf 長散文塊」（own text >= 100 chars、無 >= 100 子塊、
+//   非 chrome/comment/related 容器內）；toggle 後若該塊落在 reader article 內卻
+//   被 data-jread-hidden / display:none = cleaner 誤殺主文。
+// 門檻 100 與 cleaner 的 wrapperContainsMainContentP「單一 p >= 100」同源——
+// cleaner 的職責是清雜訊不是清長散文，藏掉一塊 >= 100 字散文幾乎必是 bug。
+//
+// 為何低 FP：① 只標 toggle 前「可見」塊 → 站點響應式重複版（mobile/desktop 各一、
+// 隱藏那份 display:none）天生被濾掉；② 排除 chrome/comment/related/sidebar 容器
+// → 留言/推薦長段（合法清除）不誤報；③ leaf 限定（無 >= 100 子塊）→ 不數整個
+// article wrapper、只數實際段落。
+// 驗的訊號層：「cleaner 沒誤殺 article 內長散文」。不驗：styler 排版、視覺對齊。
+pageFns.tagOriginalLongProse = function (noiseTokens) {
+  function isVisible(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+      const cs = window.getComputedStyle(cur);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      if (cur === document.body) break;
+      cur = cur.parentElement;
+    }
+    return true;
+  }
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const NOISE_SEL = noiseTokens.map(t => `[class*="${t}" i]`).join(',') +
+    ',nav,aside,footer,header';
+  let n = 0;
+  for (const el of document.querySelectorAll('p, li, blockquote')) {
+    if (el.hasAttribute('data-pr-prose')) continue;
+    const t = norm(el.textContent);
+    if (t.length < 100) continue;
+    // leaf 限定：任一子元素自己就 >= 100 chars → 這是 wrapper、不是段落本身
+    let hasLongChild = false;
+    for (const c of el.children) {
+      if (norm(c.textContent).length >= 100) { hasLongChild = true; break; }
+    }
+    if (hasLongChild) continue;
+    if (!isVisible(el)) continue;
+    try { if (el.closest(NOISE_SEL)) continue; } catch (e) {}
+    el.setAttribute('data-pr-prose', String(n));
+    n++;
+  }
+  return n;
+};
+
+// toggle 後呼叫：分類每塊 tagged 長散文，回 dropped 清單（reader article 內被 hide）。
+pageFns.collectDroppedProse = function () {
+  const art = document.querySelector('[data-jread-active="1"]');
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const res = { tagged: 0, insideVisible: 0, outside: 0, dropped: [] };
+  for (const el of document.querySelectorAll('[data-pr-prose]')) {
+    res.tagged++;
+    const inside = art ? art.contains(el) : false;
+    let hidden = false;
+    try {
+      hidden = !!(el.closest('[data-jread-hidden="1"]')) ||
+        getComputedStyle(el).display === 'none';
+    } catch (e) {}
+    if (!inside) { res.outside++; continue; }
+    if (hidden) res.dropped.push({
+      id: el.getAttribute('data-pr-prose'),
+      tag: el.tagName.toLowerCase(),
+      text: norm(el.textContent).slice(0, 60)
+    });
+    else res.insideVisible++;
+  }
+  return res;
+};
+
+// ---- 標題進 reader card audit（2026-06-23（v0.8.168 漏抓後補 harness），Miniflux 標題消失修法後補洞）---------
+// 動機：v0.8.168 Ineos 案標題（feed 容器外的 .entry-title）整個沒進 reader card，
+// harness 無任何信號。本 audit 驗「article 標題文字有出現在 reader 可見內容」。
+//   baseTitle = og:title 或 stripSiteSuffix(document.title)；在 reader article 的
+//   可見文字（排除 data-jread-hidden 子樹）裡找不到 → missing。
+// review-tier（低 stakes、strict 字串存在性）：少數站 reader 刻意不重複標題、或
+// og/doc title 與頁面標題用字不同 → 由 Claude 看截圖確認。為壓 FP，og 與 doc 兩個
+// 候選任一命中即算 found。
+pageFns.auditTitlePresence = function () {
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const stripSuffix = s => norm(s).replace(/\s*[|\-–—·]\s*[^|\-–—·]{1,40}$/, '');
+  const og = document.querySelector('meta[property="og:title"]');
+  const ogTitle = og && og.content ? norm(og.content) : '';
+  const docTitle = stripSuffix(document.title || '');
+  const candidates = [ogTitle, docTitle].filter(c => c && c.length >= 4);
+  if (!candidates.length) return { checked: false };
+  const art = document.querySelector('[data-jread-active="1"]');
+  if (!art) return { checked: false };
+  // reader 可見文字：clone 後移除 data-jread-hidden 子樹（textContent 不管 display）
+  const clone = art.cloneNode(true);
+  for (const h of clone.querySelectorAll('[data-jread-hidden="1"]')) h.remove();
+  const visText = norm(clone.textContent);
+  const found = candidates.some(c => visText.includes(c));
+  return { checked: true, missing: !found, found,
+    title: (ogTitle || docTitle).slice(0, 80) };
+};
+
 // =============================================================================
 // node-side runner（對外 API——call site 用這層，不直接碰 pageFns）
 // =============================================================================
@@ -971,6 +1075,12 @@ const collectOriginalTextStats = (page) => page.evaluate(pageFns.collectOriginal
 // 內文掉圖 audit：tag 在 toggle 前、collect 在 toggle 後（兩段呼叫）。
 const tagOriginalContentFigures = (page) => page.evaluate(pageFns.tagOriginalContentFigures, CFIG_NOISE_TOKENS);
 const runDroppedFigureAudit = (page) => page.evaluate(pageFns.collectDroppedContentFigures);
+// 誤殺長段落 audit：tag 在 toggle 前、collect 在 toggle 後（兩段呼叫）。
+// 共用 CFIG_NOISE_TOKENS 排除 chrome/comment/related 容器。
+const tagOriginalLongProse = (page) => page.evaluate(pageFns.tagOriginalLongProse, CFIG_NOISE_TOKENS);
+const runDroppedProseAudit = (page) => page.evaluate(pageFns.collectDroppedProse);
+// 標題進 reader card audit（toggle 後單段呼叫）。
+const runTitlePresenceAudit = (page) => page.evaluate(pageFns.auditTitlePresence);
 
 // Hero image audit：原頁 top-3 大圖是否在 reader mode 中存活。
 // 比對三軌：src 全等、URL pathname 相同（srcset / CDN 變體切換會換 query
@@ -1124,6 +1234,9 @@ module.exports = {
   runHeroImageAudit,
   tagOriginalContentFigures,
   runDroppedFigureAudit,
+  tagOriginalLongProse,
+  runDroppedProseAudit,
+  runTitlePresenceAudit,
   waitForReaderImagesLoaded,
   takePagedScreenshots,
   setThemeAndVerify
