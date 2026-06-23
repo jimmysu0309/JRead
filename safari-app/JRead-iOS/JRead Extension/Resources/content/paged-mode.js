@@ -230,6 +230,7 @@
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
+  let relocatedTitle = null; // v1.0.2：翻頁模式期間暫時移進 articleEl 的翻譯頁外置標題（uninstall 時移回）
   // v0.7.245：第一頁「捲動停止後」鎖死垂直卷動（Jimmy 要保留「捲軸消失後可鎖住」）。
   // 與 v0.7.240→243 已撤回的鎖不同：觸發點是「捲動完全停止（debounce）」、不是捲動中
   // ——在慣性中設 touch-action:none 會害捲動彈回頂端 + 工具列重展開（真機 instrument
@@ -831,6 +832,23 @@
     art = articleEl;
     vLocked = false; // v0.7.245：新進場（同篇 reapply 走上面 early return 不重置）
 
+    // v1.0.2：翻譯頁標題消失（翻頁模式）修法。非翻頁模式時 cleaner 把翻譯頁的
+    // 主標題 clone 放在 articleEl「外」（前一個 sibling，data-jread-promoted-outside），
+    // 避開 Shinkansen content guard 對 articleEl 子節點的 reconcile（v0.8.131）。
+    // 但翻頁模式把 articleEl 變成 fixed 滿版 multicol 容器、蓋住所有外置兄弟，
+    // 外置標題渲染在卡片底下看不到（cage 實證：page 1 頂端是付費牆內容、無標題）。
+    // 翻頁模式需要標題進到 multicol 流裡才會出現在第 1 頁——install 時暫時把這個
+    // 外置標題移進 articleEl 開頭，uninstall 時移回原位。in-article 標題在閱讀模式
+    // 期間靠 jread-reader-mode 握手暫停 guard 不被清掉（見 main.js
+    // signalReaderModeToTranslator + Shinkansen setContentGuardPaused）。
+    const prevSib = articleEl.previousElementSibling;
+    if (prevSib && prevSib.getAttribute && prevSib.getAttribute('data-jread-promoted-outside') === '1') {
+      relocatedTitle = prevSib;
+      articleEl.insertBefore(prevSib, articleEl.firstChild);
+    } else {
+      relocatedTitle = null;
+    }
+
     // v0.7.237：頁碼指示器依 showIndicator 增/移除（settings.showPageNumber）
     reconcileIndicator();
 
@@ -890,6 +908,13 @@
       window.removeEventListener('mousemove', onWindowMouseMove, true);
       window.removeEventListener('mouseup', onWindowMouseUp, true);
       mouseScrubBound = false;
+    }
+    // v1.0.2：把翻頁模式期間移進 articleEl 的翻譯頁外置標題移回原位（articleEl 前），
+    // 還原非翻頁模式的 promoted-outside 版面契約（styler 對 ANCESTOR > promoted-outside
+    // 有獨立卡片規則）。art 仍在原 parent 才移得回。
+    if (relocatedTitle) {
+      if (art && art.parentNode) art.parentNode.insertBefore(relocatedTitle, art);
+      relocatedTitle = null;
     }
     if (indicatorEl) { indicatorEl.remove(); indicatorEl = null; }
     // v0.8.151：移除 scrub 進度條 + 觸覺載體
