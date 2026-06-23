@@ -874,3 +874,89 @@ describe('x-thread v0.7.135 — manifest / popup-core / namespace 同步', () =>
       'namespace.js 必須有 xThread: null 佔位——讓 NS.xThread 在 x-thread.js 載入前不是 undefined');
   });
 });
+
+// v1.0.0 — normalizeCloneForPaging：翻頁模式 X 推文 layout 正規化
+// -----------------------------------------------------------------------------
+// Bug（Page Rounds 2026-06-23 cage 補測 x.com #100）：長推文（長文 + 多圖）在
+// 翻頁模式下 page 1 只剩合成作者頭 + 一大片空白，內容整塊被推到第 2 欄且寬度
+// 不受欄寬約束、右側溢出被 card overflow-x:hidden 裁掉。
+//
+// 根因（cage rect 實證）：x-thread enter() 用 cloneNode(true) 把 X 推文整套巢狀
+// flex 容器 clone 進合成 <article>，最外層 X <article> 帶 overflow:hidden。
+// styler 翻頁模式用 CSS 多欄分頁，但 (1) flex/grid 容器不跨欄分裂、(2) overflow
+// 非 visible 的元素是 monolithic box 規範上不可被欄邊界分裂 → 整塊被推到下一欄。
+//
+// 修法 normalizeCloneForPaging：把 clone 內所有容器中和為 display:block +
+// overflow:visible（img/figure 排除——媒體排版交給 styler、img overflow:clip 無害），
+// 讓推文內容像一般 article 散文流跨欄分頁、受欄寬約束。
+//
+// 訊號層次：jsdom 不算 CSS 多欄 layout/rect，本 spec 只驗「函式對 flex/grid +
+// overflow 非 visible 的容器中和、且 img/figure 不動」的邏輯；真實跨欄分頁
+// + page 1 可讀已由 cage rect + 截圖驗過（2026-06-23，text 回 column 1）。
+
+describe('x-thread v1.0.0 — normalizeCloneForPaging（翻頁 layout 正規化）', () => {
+  it('x-thread.js 必須宣告 normalizeCloneForPaging 並掛在 NS.xThread', () => {
+    assert.match(XTHREAD_SRC, /function\s+normalizeCloneForPaging\s*\(/,
+      'x-thread.js 必須有 normalizeCloneForPaging 函式');
+    assert.match(XTHREAD_SRC, /normalizeCloneForPaging,/,
+      'NS.xThread 必須 export normalizeCloneForPaging');
+  });
+
+  it('enter() 必須在合成容器插入 DOM 後呼叫 normalizeCloneForPaging', () => {
+    const enterFn = XTHREAD_SRC.match(/function\s+enter\s*\(\)[\s\S]*?\n  \}/);
+    assert.ok(enterFn, '必須能抓到 enter() body');
+    assert.match(enterFn[0], /insertBefore\(container[\s\S]*normalizeCloneForPaging\(container\)/,
+      'normalizeCloneForPaging 必須在 container 插入 DOM 之後呼叫（getComputedStyle 需 live DOM）');
+  });
+
+  function setupContainer() {
+    const { window, NS } = setupJsdom('https://x.com/u/status/2056');
+    const doc = window.document;
+    const container = doc.createElement('article');
+    container.setAttribute('data-jread-x-reader', '1');
+    // 模擬 X clone 結構：flex 容器 + overflow:hidden 的 <article> + 內含 img/figure
+    container.innerHTML =
+      '<article style="display:flex;overflow:hidden">' +
+        '<div id="flexwrap" style="display:flex">' +
+          '<div id="tweettext" style="display:block">推文內文</div>' +
+          '<div id="gridwrap" style="display:grid;overflow:clip"></div>' +
+          '<figure id="fig" style="overflow:hidden"><img id="img" style="display:block;overflow:hidden"></figure>' +
+        '</div>' +
+      '</article>';
+    doc.body.appendChild(container);
+    NS.xThread.normalizeCloneForPaging(container);
+    return { doc, container };
+  }
+
+  it('flex / grid 容器被中和為 display:block !important', () => {
+    const { doc } = setupContainer();
+    const xArticle = doc.querySelector('[data-jread-x-reader] > article');
+    const flexwrap = doc.getElementById('flexwrap');
+    const gridwrap = doc.getElementById('gridwrap');
+    for (const [name, el] of [['X article', xArticle], ['flexwrap', flexwrap], ['gridwrap', gridwrap]]) {
+      assert.strictEqual(el.style.getPropertyValue('display'), 'block', `${name} display 應被中和為 block`);
+      assert.strictEqual(el.style.getPropertyPriority('display'), 'important', `${name} display:block 必須帶 !important`);
+    }
+  });
+
+  it('overflow 非 visible 的容器被中和為 overflow:visible !important（含 hidden / clip）', () => {
+    const { doc } = setupContainer();
+    const xArticle = doc.querySelector('[data-jread-x-reader] > article');
+    const gridwrap = doc.getElementById('gridwrap');
+    for (const [name, el] of [['X article(hidden)', xArticle], ['gridwrap(clip)', gridwrap]]) {
+      assert.strictEqual(el.style.getPropertyValue('overflow'), 'visible', `${name} overflow 應被中和為 visible`);
+      assert.strictEqual(el.style.getPropertyPriority('overflow'), 'important', `${name} overflow:visible 必須帶 !important`);
+    }
+  });
+
+  it('img / figure 不被動（媒體排版交給 styler、img overflow:clip 無害）', () => {
+    const { doc } = setupContainer();
+    const img = doc.getElementById('img');
+    const fig = doc.getElementById('fig');
+    // img 原 inline display:block / overflow:hidden 不被函式改寫成 visible
+    assert.strictEqual(img.style.getPropertyValue('overflow'), 'hidden',
+      'img overflow 不可被函式改動（函式排除 IMG）');
+    assert.strictEqual(fig.style.getPropertyValue('overflow'), 'hidden',
+      'figure overflow 不可被函式改動（函式排除 FIGURE）');
+  });
+});
