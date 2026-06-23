@@ -1314,20 +1314,34 @@
 
   function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
-    const pageH1s = document.querySelectorAll('h1');
-    if (pageH1s.length !== 1) return;
-    const h1 = pageH1s[0];
-    if (articleEl.contains(h1)) return;
+    const og = document.querySelector('meta[property="og:title"]');
+    const ogText = og && og.content ? normTitle(og.content) : '';
+    const docT = normTitle(NS.stripSiteSuffix(document.title || ''));
+    const baseTitle = ogText || docT;
+
+    // candidate h1 選取：
+    //   舊路徑：全頁剛好 1 個 h1、且在 articleEl 外（v0.7.141 起的保守 gate）。
+    //   新路徑（v0.8.168）：全頁有多個 h1 時——典型為 Miniflux/RSS reader 把 feed
+    //     body 當 articleEl，feed body 內含「中段章節 h1」，加上 feed 容器外的
+    //     Miniflux .entry-title h1，共 2 個 → 舊 gate `!== 1` 直接 bail、標題進不了
+    //     reader card。改取「articleEl 外唯一 strict-match baseTitle 的 h1」。strict
+    //     equality（非 class / partial）避免多 h1 場景誤選到別的 header h1。
+    const allH1s = document.querySelectorAll('h1');
+    const outsideH1s = [...allH1s].filter(h => !articleEl.contains(h));
+    let h1 = null;
+    if (allH1s.length === 1 && outsideH1s.length === 1) {
+      h1 = outsideH1s[0];
+    } else if (allH1s.length > 1 && baseTitle && titleTextWeight(baseTitle) >= 5) {
+      const matches = outsideH1s.filter(h => normTitle(h.textContent || '') === baseTitle);
+      if (matches.length === 1) h1 = matches[0];
+    }
+    if (!h1) return;
     // v0.7.141 guard：h1 text 必須 matches og:title / document.title 才視為主文
     // 標題，避免 newtalk.tw 類「site logo h1（page-wide unique 但語義非主文）」
     // 誤觸發 promote。markPromotedTitleIfMissing（v0.7.87/88）負責 article 內
     // 沒 visible h1 的場景找 p.name promote、與本機制互補。
     const h1Text = normTitle(h1.textContent || '');
     if (titleTextWeight(h1Text) < 5) return;
-    const og = document.querySelector('meta[property="og:title"]');
-    const ogText = og && og.content ? normTitle(og.content) : '';
-    const docT = normTitle(NS.stripSiteSuffix(document.title || ''));
-    const baseTitle = ogText || docT;
     if (!baseTitle || titleTextWeight(baseTitle) < 5) return;
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
     // prefix 但 partial includes baseTitle 而誤觸發 promote——markPromotedTitleIfMissing
@@ -1546,10 +1560,32 @@
     return fallback;
   }
 
+  // anchor h1 之前（DOM order）是否已有主文長段落。有 → 這個 h1 不是領頭標題
+  // 而是文章中段的章節標題，pre-title 規則的「標題前皆雜訊」前提不成立。
+  // 門檻沿用 wrapperContainsMainContentP（單一 p >= 100 / 累計 >= 300）。
+  function mainContentPrecedesAnchor(articleEl, anchor) {
+    let acc = 0;
+    for (const el of articleEl.querySelectorAll('p, li')) {
+      // 只看 DOM order 在 anchor 之前者
+      if (!(anchor.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      const t = norm(el.textContent);
+      if (t.length >= 100) return true;
+      acc += t.length;
+      if (acc >= 300) return true;
+    }
+    return false;
+  }
+
   function hideInsideArticlePreTitleNoise(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const anchor = findFirstVisibleH1(articleEl);
     if (!anchor) return;
+    // v0.8.168：anchor h1 前已有主文長段落 → 它是章節標題不是領頭標題，整條中止。
+    // 真實場景：Miniflux/RSS reader 把 feed body 當 articleEl，文章真標題在 feed
+    // 容器外（Miniflux 自己的 .entry-title），feed body 內第一個 h1 是中段章節標
+    // 題；原本把它當標題、誤殺前面 byline + 開頭兩三段正文（502 chars 全沒）。
+    if (mainContentPrecedesAnchor(articleEl, anchor)) return;
     // 從 anchor 往 articleEl 爬，每一層的 preceding sibling 都在「標題前」
     let chainNode = anchor;
     while (chainNode && chainNode !== articleEl) {

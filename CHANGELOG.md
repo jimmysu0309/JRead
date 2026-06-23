@@ -4,6 +4,8 @@
 
 ---
 
+**v0.8.168** — Miniflux/RSS reader 開頭標題 + 段落消失修正（Jimmy 2026-06-23 page-rounds 驗收回報，Ineos 文章 reader mode 後標題與開頭兩三段正文全沒、retention 僅 76%）。兩條結構性根因：（1）`hideInsideArticlePreTitleNoise`「標題前皆雜訊」通則假設 articleEl 內第一個可見 h1 是領頭標題；但 Miniflux 把 feed body（`article.entry-content`）當 articleEl、文章真標題在 feed 容器外，feed body 內第一個 h1 其實是中段章節標題 → 它前面的 byline + 開頭 502 chars 正文被誤殺。修法加 `mainContentPrecedesAnchor` guard（門檻沿用 `wrapperContainsMainContentP`：單一 p ≥ 100 / 累計 ≥ 300）：anchor h1 前已有主文長段落 → 該 h1 非領頭標題、整條 pre-title 隱藏中止。（2）`promoteUniqueTitleH1Into` 原 gate「全頁剛好 1 個 h1」，這頁有 2 個 h1（feed 容器外 entry-title + feed body 內中段章節 h1）→ bail、標題進不了 reader card。修法放寬：多 h1 時取 articleEl 外唯一 strict-match `document.title`（去站名尾綴）的 h1 promote，strict equality 避免誤選。兩條皆結構性通則（非 hostname / class 特判）。驗證：retention 76% → 103%，reader card 開頭恢復「標題 → hero → byline → 第一段」。forcing：`miniflux-midarticle-h1-pretitle.spec.js`（6 案，含正當 medium/wapo pre-title badge 仍被 hide 不回歸）。另：page-rounds harness 加 `--profile <name>` / `--login`（比照 debug-harness），可帶登入態驗需登入站（Miniflux / 付費牆）
+
 **v0.8.167** — iOS extension 選單 badge tofu 修正：Jimmy 2026-06-23 iPhone 截圖回報閱讀模式啟動後「管理延伸功能」選單 JRead 旁出現怪符號（◆? tofu）。根因——閱讀模式啟動時 SW 對 toolbar icon 設綠色 badge（`BADGE_ACTIVE_TEXT = '✓'` U+2713），iOS / iPadOS Safari 的 extension 選單把 badge 文字直接當字形渲染、該情境無 '✓' 字形 → 顯示 missing-glyph tofu（桌面 Chrome / macOS Safari 正常）。badge 純裝飾、無功能損失，修法平台分流：新增 `IS_IOS_SAFARI`（UA `/iPhone|iPad|iPod/` 結構訊號）→ iOS / iPadOS 用空字串（無字形＝無 tofu＝等同無 badge），Chrome / macOS Safari 維持 '✓'。forcing：`sw-badge.spec.js` 改驗 `BADGE_ACTIVE_TEXT = IS_IOS_SAFARI ? '' : '✓'` + UA 偵測存在。**iOS 真機 extension 選單渲染只能 TestFlight 驗**（jsdom / harness 測不到 Safari 原生選單；若此修法後仍有符號，次一嫌疑為 manifest commands 的快速鍵字形，再處理）
 
 ---

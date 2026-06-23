@@ -10,6 +10,13 @@
 //   JREAD_URL="https://udn.com/..." node tools/page-rounds-harness.js
 //   node tools/page-rounds-harness.js --url "https://udn.com/..."
 //   node tools/page-rounds-harness.js --keep    # 跑完不關瀏覽器
+//   node tools/page-rounds-harness.js --profile miniflux --login --url https://site/  # Tier 2 一次性登入
+//   node tools/page-rounds-harness.js --profile miniflux --url https://site/entry/...  # 帶登入態跑驗收
+//
+// --profile <name>（Tier 2，需登入態的站）：用 ~/.jread-debug/profiles/<name>
+// 持久 profile 取代預設 /tmp 暫存 profile，登入態跨 run 留存（與 debug-harness
+// 共用同一 profile 目錄，登入過一次兩支工具都帶登入態）。不給時維持舊行為。
+// --login：搭配 --profile，headed 開站讓 Jimmy 手動登入一次後關視窗，跳過所有驗收。
 //
 // 輸出：
 //   docs/excluded/page-rounds/<pass|review|failed|blocked>/<hostname>_<path-hash>/
@@ -49,6 +56,13 @@ const TARGET_URL = (urlArg ? process.argv[process.argv.indexOf('--url') + 1] : n
   || process.env.JREAD_URL
   || 'https://www.chinatalk.media/p/best-books-q1-2026';
 const KEEP = process.argv.includes('--keep');
+
+// --profile <name>：用 ~/.jread-debug/profiles/<name> 持久 profile（與 debug-harness
+// 共用），登入態跨 run 留存。不給時用 /tmp 暫存 profile（每跑必清，無登入態）。
+const profileArgIdx = process.argv.indexOf('--profile');
+const PROFILE_NAME = (profileArgIdx >= 0 && process.argv[profileArgIdx + 1]) || null;
+// --login：搭配 --profile，headed 開站手動登入一次後關視窗，跳過驗收。
+const LOGIN = process.argv.includes('--login');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -111,12 +125,16 @@ async function setZoom(page, z) {
   if (fs.existsSync(outDir)) fs.rmSync(outDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  const PROFILE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'jread-pr-'));
+  const PROFILE_DIR = PROFILE_NAME
+    ? path.join(os.homedir(), '.jread-debug', 'profiles', PROFILE_NAME)
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'jread-pr-'));
+  if (PROFILE_NAME) fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
   console.log(`Page Rounds: ${TARGET_URL}`);
   console.log(`Output: ${outDir}`);
 
   // ---- 1. 啟動 Chromium + extension ----
+  // --login 必須 headed + 視窗上螢幕讓 Jimmy 登入；其餘推到螢幕外背景跑。
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',
     headless: false,
@@ -127,8 +145,8 @@ async function setZoom(page, z) {
       `--load-extension=${EXT_PATH}`,
       '--no-first-run',
       '--no-default-browser-check',
-      '--window-position=-2400,-2400',
-      '--headless=new'
+      LOGIN ? '--window-position=40,40' : '--window-position=-2400,-2400',
+      ...(LOGIN ? [] : ['--headless=new'])
     ]
   });
 
@@ -151,6 +169,25 @@ async function setZoom(page, z) {
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
   }
   await sleep(2500);
+
+  // ===== --login 短路（Tier 2 一次性登入）=====
+  // 純粹開站讓 Jimmy 在螢幕上手動登入，跳過 toggle + 所有 audit + 截圖。
+  // 登入完成後關閉視窗即可——session 寫進該 --profile，之後同 --profile 的
+  // 背景跑（螢幕外）會自動帶登入態。
+  if (LOGIN) {
+    if (!PROFILE_NAME) {
+      console.error('⚠️  --login 必須搭配 --profile <name>，否則登入態存進 /tmp 重開機就沒了');
+    }
+    console.log('\n===== LOGIN 模式 =====');
+    console.log(`profile: ${PROFILE_DIR}`);
+    console.log('視窗已開在螢幕左上角，請在裡面手動登入這個站台。');
+    console.log('登入完成後直接關閉該 Chromium 視窗即可（session 會留存）。');
+    console.log(`之後驗收跑：node tools/page-rounds-harness.js --profile ${PROFILE_NAME || '<name>'} --url <文章URL>`);
+    console.log('======================\n');
+    await new Promise((resolve) => ctx.on('close', resolve));
+    console.log('視窗已關閉，登入態已存入 profile。');
+    return;
+  }
 
   // ---- 3. 原頁截圖 ----
   console.log('Phase: original');
@@ -563,7 +600,8 @@ async function setZoom(page, z) {
 
   if (!KEEP) {
     await ctx.close();
-    fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
+    // 持久 profile（--profile）保留登入態，不刪；只清暫存 profile
+    if (!PROFILE_NAME) fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
   } else {
     console.log('--keep, leaving browser open');
   }
