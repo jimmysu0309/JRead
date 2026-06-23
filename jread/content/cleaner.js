@@ -1450,6 +1450,14 @@
     for (const h of innerH1s) {
       if (h.dataset && h.dataset.jreadHidden === '1') continue;
       if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      // v1.0.1：無文字的 h1（logo 圖 heading、純裝飾 heading）不算「已有標題」，
+      // 不可擋 promote。Stratechery 翻譯後 detector 評分變動、把付費牆
+      // passport-marketing-page 選成 articleEl，其內 STRATECHERY PLUS logo 被站點
+      // 包成 <h1>（textContent 空、只含 <img>）→ 舊 guard 誤判「articleEl 內已有
+      // h1 標題」早退 → 真標題（articleEl 外的 wp-block-post-title）沒 promote 進
+      // reader card → 標題消失。要求 inner h1 有實質文字才視為已存在的主標題。
+      // 通則：空 heading 不是標題（純結構/文字特徵，不綁站點，符合硬規則 3）。
+      if (titleTextWeight(norm(h.textContent || '')) < 1) continue;
       return;
     }
     // v0.8.97：articleEl 內已有 visible 的「strict 標題 class」h2/h3（主標題語意）
