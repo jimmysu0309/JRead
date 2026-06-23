@@ -618,6 +618,56 @@ describe('翻頁模式（v0.7.227）', () => {
       api.sync({ pagedMode: true }, null);
       assert.strictEqual(api.isInstalled(), false);
     });
+
+    // ---- v1.0.2：翻譯頁外置標題在翻頁模式移進 articleEl（forcing function）----
+    // 非翻頁時 cleaner 把翻譯頁主標題放 articleEl 外（data-jread-promoted-outside，
+    // 避 Shinkansen guard reconcile）。翻頁模式 articleEl 變 fixed 滿版 multicol 容器、
+    // 蓋住外置兄弟 → 標題看不到。install 須把外置標題移進 articleEl 開頭（multicol
+    // 流內、出現在第 1 頁），uninstall 移回原位。jsdom 驗 DOM 搬移、不驗 layout。
+    it('install：翻譯頁 promoted-outside 標題移進 articleEl 開頭', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      const title = env.document.createElement('h2');
+      title.setAttribute('data-jread-promoted-outside', '1');
+      title.setAttribute('data-jread-title-clone', '1');
+      title.textContent = '翻譯後的主標題';
+      art.parentNode.insertBefore(title, art); // articleEl 前一個 sibling（cleaner 的放法）
+      assert.strictEqual(title.nextElementSibling, art, '前置條件：標題是 articleEl 前一個 sibling');
+
+      api.sync({ pagedMode: true }, art);
+      assert.strictEqual(art.firstElementChild, title,
+        'install 後外置標題必須變成 articleEl 第一個 child（進 multicol 流）');
+      assert.ok(art.contains(title), '標題必須在 articleEl 內');
+      api.uninstall();
+    });
+
+    it('uninstall：移進的標題移回 articleEl 外（前一個 sibling）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      const title = env.document.createElement('h2');
+      title.setAttribute('data-jread-promoted-outside', '1');
+      title.textContent = '翻譯後的主標題';
+      art.parentNode.insertBefore(title, art);
+
+      api.sync({ pagedMode: true }, art);
+      api.sync({ pagedMode: false }, art); // uninstall
+      assert.strictEqual(title.nextElementSibling, art,
+        'uninstall 後標題必須移回 articleEl 前一個 sibling（還原非翻頁版面契約）');
+      assert.ok(!art.contains(title), '標題不可再留在 articleEl 內');
+    });
+
+    it('install：無 promoted-outside 兄弟時不動 DOM（非翻譯頁不受影響）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      const firstBefore = art.firstElementChild;
+      api.sync({ pagedMode: true }, art);
+      assert.strictEqual(art.firstElementChild, firstBefore,
+        '無外置標題時 install 不可改 articleEl 第一個 child');
+      api.uninstall();
+    });
   });
 
   // ---- C2. 頁碼指示開關 showPageNumber（v0.7.237）------------------------
