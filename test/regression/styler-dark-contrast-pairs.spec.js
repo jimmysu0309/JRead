@@ -78,14 +78,19 @@ describe('styler — dark/sepia 前景背景成對覆寫 + contrast 兜底層 (v
       'dark 字色覆寫不可排除 figcaption——排除會讓原站深灰圖說留在暗卡上（A 群 6 站實證）');
   });
 
-  it('(c) light theme: 不注入中和與字色覆寫（保留 light 成對保留設計）', () => {
+  it('(c) light theme: 不注入 dark 中和規則群、兜底層不跑（圖說正規化改走 v0.8.169 light rule）', () => {
     const { css, env } = setup('light');
+    // FIGCAPTION_BG_RULE 比對的是 dark 的 html.__jread-active 前綴中和規則群——
+    // 那組 light 不該有。light theme 的 figcaption 背景正規化改由
+    // `[data-jread-active="1"] figcaption` rule 承載（v0.8.169，配 v0.8.123 #333
+    // 字色成對），見 styler-light-figcaption-bg-normalize.spec.js。
     assert.ok(!FIGCAPTION_BG_RULE.test(css),
-      'light theme 不該注入 figcaption background transparent（v0.7.195 成對保留仍有效）');
-    // light 下兜底層不跑（theme.text 為 null），fixture 內深灰圖說不被動
+      'light theme 不該注入 dark 的 html.__jread-active 中和規則群');
+    // 兜底層（apply phase 3）在 light 不跑（theme.text 為 null）——inline 色不被動，
+    // light 的圖說正規化是靜態 CSS 規則、不是 runtime inline 修色
     const cap = env.document.getElementById('cap');
     assert.strictEqual(cap.style.getPropertyValue('color'), 'rgb(84, 86, 88)',
-      'light theme 兜底層不可動 figcaption 原站色');
+      'light theme 兜底層不可動 figcaption inline 原站色');
   });
 
   it('(d) dark 兜底層: 站點 cascade 贏局的深灰文字被 inline !important 修色', () => {

@@ -1367,10 +1367,20 @@ ${MEDIA_CAP_SEL} {
    原站 #4a4a4a 更深、又仍比內文近黑淺一階，保留 caption < body 的階層）。
    figcaption * 一併覆寫——photo credit 常包在 figcaption 內的 <em> / <span>
    （theverge 實測），inline 子元素自身若有色規則不靠 inherit、需顯式覆寫。
-   結構通則（非站點特判）：light theme 所有 figcaption 一律套此可讀深灰。 */
+   結構通則（非站點特判）：light theme 所有 figcaption 一律套此可讀深灰。
+
+   v0.8.169（TWZ 圖說黑條修法）：一併把 figcaption 背景正規化為透明。bg-preserve
+   邏輯（v0.7.195，BG_PRESERVE_NOT 排除 figcaption）原意是保留站點「淺字 + 深底」
+   成對的可讀圖說；但本條 light theme 規則已強制圖說文字為卡片色深灰 #333，與
+   「保留深底」直接矛盾——站點若給 figcaption 設深色背景（twz.com
+   .article-featured-image-caption 深底 #2a3439 + 站點圖說字 #333 = 1.01:1），
+   深字落深底＝整條黑條、credit 文字完全看不見。既然 light theme 已決定圖說用卡片色
+   文字，背景就必須跟著卡片走（透明讓白卡透出）。dark / sepia 不受影響（gated 在
+   !theme.text、theme bg/text 另由 *-color-theme 規則接管）。 */
 [${ARTICLE_ATTR}="1"] figcaption,
 [${ARTICLE_ATTR}="1"] figcaption * {
   color: #333333 !important;
+  background-color: transparent !important;
 }` : ''}
 /* v0.7.100：h1-h6 上下 margin。BBC Culture 類站點原站 CSS 把 heading 的
    margin 全砍光（styled-components hash class 預設 margin: 0），reader mode 下
