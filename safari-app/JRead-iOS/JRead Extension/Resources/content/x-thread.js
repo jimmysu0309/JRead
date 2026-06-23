@@ -297,6 +297,45 @@
     return unwrapped;
   }
 
+  // v1.0.0：X 推文 clone 為翻頁模式正規化 layout。
+  // X 把推文內容包在多層 flex 容器、最外層 <article> 還帶 overflow:hidden。
+  // styler 翻頁模式（pagedMode）用 CSS 多欄（column-width）切頁，兩種 X 結構特性
+  // 都會破壞跨欄分頁：
+  //   (1) flex / grid 容器不會把子內容跨欄分裂（整塊當一個 fragmentation box）
+  //   (2) overflow 非 visible 的元素是 monolithic box，CSS columns 規範上不可被
+  //       欄邊界分裂——X 的推文 <article overflow:hidden> 即此類
+  // 結果：「內容高於單欄」的長推文（長文 + 多圖）整塊被推到第 2 欄，page 1 只剩
+  // 合成作者頭 + 一大片空白，且該塊寬度不受欄寬約束、右側溢出被 card overflow-x
+  // hidden 裁掉（cage rect 實證：reader card 可視 x160–880，內容卻整塊落在
+  // x936–1544 被切；overflow:hidden 的 X <article> 是主因）。
+  // 修法：把 clone 內所有容器中和為 display:block + overflow:visible，讓推文內容
+  // 像一般 article 散文流自然跨欄分頁、受欄寬約束（cage 驗證：text 回 column 1、
+  // 圖各自分到後續頁、page 1 恢復「作者頭 + 全文」可讀）。img / figure 不動——
+  // 媒體排版交給 styler（max-width:100% / height:auto / 置中）、img 自身
+  // overflow:clip 是 leaf 不影響分欄。clone 退出時整個合成容器 remove、無 restore
+  // 顧慮（exit() 直接 c.remove()）。結構性訊號（computed display / overflow），
+  // 非站點 class 特判——此檔本就是 X 專屬模組。
+  function normalizeCloneForPaging(container) {
+    if (!container || !container.querySelectorAll) return 0;
+    const win = container.ownerDocument && container.ownerDocument.defaultView;
+    if (!win || !win.getComputedStyle) return 0;
+    let n = 0;
+    for (const el of container.querySelectorAll('*')) {
+      if (el.tagName === 'IMG' || el.tagName === 'FIGURE') continue;
+      const cs = win.getComputedStyle(el);
+      const d = cs.display;
+      if (d === 'flex' || d === 'inline-flex' || d === 'grid' || d === 'inline-grid') {
+        el.style.setProperty('display', 'block', 'important');
+        n++;
+      }
+      if (cs.overflow !== 'visible') {
+        el.style.setProperty('overflow', 'visible', 'important');
+        n++;
+      }
+    }
+    return n;
+  }
+
   function enter() {
     const existing = document.querySelector('[' + READER_ATTR + ']');
     if (existing) return existing;
@@ -329,6 +368,10 @@
     }
 
     document.body.insertBefore(container, document.body.firstChild);
+    // 插入後（live DOM、X stylesheet 已對 clone 的 class 生效）才能 getComputedStyle
+    // 偵測 flex / overflow → 中和成可跨欄分頁的 block。在 cleaner / styler 之前跑、
+    // inline !important 持續整個 reader 生命週期。
+    normalizeCloneForPaging(container);
     return container;
   }
 
@@ -370,6 +413,7 @@
     extractAuthorInfo,
     createAuthorHeader,
     unwrapTweetMedia,
+    normalizeCloneForPaging,
     enter,
     injectAuthorHeaders,
     exit,
