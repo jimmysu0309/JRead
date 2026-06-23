@@ -21,13 +21,21 @@ describe('background/service-worker.js — v0.7.125 reader-active 綠色 badge',
       'BADGE_ACTIVE_COLOR 必須是 #10b981——forcing：色值偏離（例如改回 #22c55e 等其他綠）會破壞 v0.7.125 視覺設計');
   });
 
-  it('必須宣告 BADGE_ACTIVE_TEXT 常數 = "✓" (U+2713 CHECK MARK)', () => {
+  it('BADGE_ACTIVE_TEXT 必須平台分流：iOS/iPadOS 空字串、其餘 "✓" (U+2713)', () => {
     // v0.7.128：從純空格改 ✓——純色塊「不太好看」（Jimmy 2026-05-14），加對勾
     // 既保留合理寬度（✓ 是窄字元、不撐 badge background 像 ● 那樣）又帶語意
-    // 「閱讀模式已啟用」。U+2713 比 ● (U+25CF) 窄一截、比 emoji ✅ 中性、跨
-    // 平台一致渲染。
-    assert.match(src, /const\s+BADGE_ACTIVE_TEXT\s*=\s*['"]✓['"]/,
-      'BADGE_ACTIVE_TEXT 必須是 U+2713 CHECK MARK——forcing：改回 ● 或寬字元會撐滿 badge、改回空格會失去「已啟用」語意');
+    // 「閱讀模式已啟用」。U+2713 比 ● (U+25CF) 窄一截、比 emoji ✅ 中性。
+    // v0.8.167：iOS / iPadOS Safari 的「管理延伸功能」選單把 badge 文字當字形
+    // 渲染、'✓' 在該情境無字形 → tofu「◆?」（Jimmy 2026-06-23 iPhone 截圖，閱讀
+    // 模式啟動後）。改平台分流：IS_IOS_SAFARI ? '' : '✓'。forcing：(1) 必須有
+    // IS_IOS_SAFARI UA 偵測（/iPhone|iPad|iPod/）；(2) BADGE_ACTIVE_TEXT 必須據此
+    // 三元——漏 iOS 分支 → iOS 又冒 tofu、寫死 '' → 桌面失去對勾語意。
+    assert.match(src, /const\s+IS_IOS_SAFARI\s*=/,
+      '必須宣告 IS_IOS_SAFARI（UA 偵測 iOS/iPadOS Safari）——forcing：iOS badge tofu 修正的判別來源');
+    assert.match(src, /\/iPhone\|iPad\|iPod\//,
+      'IS_IOS_SAFARI 必須以 /iPhone|iPad|iPod/ 結構訊號判 iOS——非站點特判');
+    assert.match(src, /const\s+BADGE_ACTIVE_TEXT\s*=\s*IS_IOS_SAFARI\s*\?\s*['"]['"]\s*:\s*['"]✓['"]/,
+      'BADGE_ACTIVE_TEXT 必須 = IS_IOS_SAFARI ? "" : "✓"——forcing：iOS 空字串避 tofu、桌面維持 U+2713 對勾');
   });
 
   // 抓 SET_ACTIVE_ICON case 完整 body：從 `case 'SET_ACTIVE_ICON'` 到下一個

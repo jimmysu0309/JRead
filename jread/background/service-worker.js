@@ -57,8 +57,20 @@ const ICONS_IDLE = {
 // v0.7.128：' ' → '✓' (U+2713 CHECK MARK) —— Jimmy 反映純色塊「不太好看」，
 // 加對勾既保留純色塊的合理寬度（✓ 是窄字元、不會撐 badge background）又
 // 帶語意「閱讀模式已啟用」。
+// v0.8.167：iOS / iPadOS Safari 的「管理延伸功能」選單把 action badge 文字直接
+// 當字形渲染，'✓'(U+2713) 在該情境無對應字形 → 顯示 tofu「◆?」（Jimmy 2026-06-23
+// iPhone 截圖，閱讀模式啟動後 extension 選單出現怪符號）。badge 純裝飾、無功能
+// 損失，故平台分流：iOS / iPadOS Safari 用空字串（無字形＝無 tofu＝等同無 badge），
+// Chrome / macOS Safari 維持 '✓'（桌面正常渲染）。UA 結構訊號（iPhone/iPad/iPod），
+// 非站點特判；event page / SW context 皆有 navigator.userAgent。
+const IS_IOS_SAFARI = (() => {
+  try {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    return /iPhone|iPad|iPod/.test(ua);
+  } catch (e) { return false; }
+})();
 const BADGE_ACTIVE_COLOR = '#10b981';
-const BADGE_ACTIVE_TEXT  = '✓';
+const BADGE_ACTIVE_TEXT  = IS_IOS_SAFARI ? '' : '✓';
 
 // v0.7.129：吞掉 browser.action.* / browser.tabs.sendMessage 在 tab 已關閉時的
 // promise rejection。MV3 API 是 async：事件入隊→實際執行之間若 tab 被使用者

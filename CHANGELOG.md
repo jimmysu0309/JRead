@@ -4,6 +4,10 @@
 
 ---
 
+**v0.8.167** — iOS extension 選單 badge tofu 修正：Jimmy 2026-06-23 iPhone 截圖回報閱讀模式啟動後「管理延伸功能」選單 JRead 旁出現怪符號（◆? tofu）。根因——閱讀模式啟動時 SW 對 toolbar icon 設綠色 badge（`BADGE_ACTIVE_TEXT = '✓'` U+2713），iOS / iPadOS Safari 的 extension 選單把 badge 文字直接當字形渲染、該情境無 '✓' 字形 → 顯示 missing-glyph tofu（桌面 Chrome / macOS Safari 正常）。badge 純裝飾、無功能損失，修法平台分流：新增 `IS_IOS_SAFARI`（UA `/iPhone|iPad|iPod/` 結構訊號）→ iOS / iPadOS 用空字串（無字形＝無 tofu＝等同無 badge），Chrome / macOS Safari 維持 '✓'。forcing：`sw-badge.spec.js` 改驗 `BADGE_ACTIVE_TEXT = IS_IOS_SAFARI ? '' : '✓'` + UA 偵測存在。**iOS 真機 extension 選單渲染只能 TestFlight 驗**（jsdom / harness 測不到 Safari 原生選單；若此修法後仍有符號，次一嫌疑為 manifest commands 的快速鍵字形，再處理）
+
+---
+
 **v0.8.166** — 分頁模式頁碼 tap-to-arm 互動 + 懸浮按鈕尺寸預設改中 + Readwise 退出長按選單 + iPhone 頁碼定位修正 + popup 全展開高度修正：
 
 - **分頁模式頁碼 tap-to-arm 互動**（Jimmy 2026-06-23 需求，重整「點頁碼後的動作」）：頁碼指示器的「點按」（按下→放開、未拖移）切換 armed 模式——進度條常駐、整個畫面變成 scrub 拖曳面。三條規則：(1) **按住頁碼拖移** = 短暫 scrub 翻頁（放手收起進度條，= 既有 v0.8.150 行為）；(2) **點選頁碼放開** = 出現常駐進度條，此後**畫面任意處左右滑** = scrub 拖曳翻頁，**再次點頁碼** = 收起進度條退出；(3) **armed 中任意處點選** = 收起進度條。tap 與 drag 由位移門檻 `TAP_SLOP_PX=6px` 分流（超門檻或實際跨頁 = drag）。狀態機抽純函式 `resolveScrubGesture(armed, moved)` →「arm / end / keep / disarm」四象限（jsdom spec 直接測），DOM 端 `finishScrubGesture` 套用。armed 時整個 window 單指起手都進 scrub（非 armed 維持原行為：指示器拖 = scrub、內文滑 = 單頁翻頁）。桌面滑鼠維持短暫 drag scrub、不進 armed（「畫面任意處滑」是觸控專屬手勢）。修掉一個 race：`showScrubTrack` 的 rAF fade-in 加 `scrubArmed || scrubState` 守衛，防「armed 中點按收起」時 touchstart 排的 show rAF 在 touchend 同步 hide 後又把進度條加回。regression：`paged-mode.spec.js` 補 `resolveScrubGesture` 四象限純函式 + jsdom 合成 touch DOM 流（頁碼拖移多頁不 armed / 點頁碼進 armed 任意處滑多頁 / 再次點頁碼 disarm / armed 任意處點按 disarm / uninstall 重置）。**真實 iOS 觸控時序 / 進度條 fade 須 TestFlight 實機驗**（jsdom 測不到觸控時序）
