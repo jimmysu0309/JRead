@@ -203,6 +203,10 @@ async function setZoom(page, z) {
   // 補 hero audit 的洞——hero 只驗頂端前 3 張，文章深處內容圖被誤殺抓不到。
   const taggedFigures = await audits.tagOriginalContentFigures(page);
   console.log(`  content figures tagged: ${taggedFigures}`);
+  // 誤殺長段落 audit：toggle 前標記可見 leaf 長散文塊（高精度位置無關，補 retention
+  // 全域純量的洞——v0.8.168 Miniflux 開頭 502 chars 被誤殺仍 retention 76% 漏抓）。
+  const taggedProse = await audits.tagOriginalLongProse(page);
+  console.log(`  long-prose blocks tagged: ${taggedProse}`);
   // B3 基準：原頁 visible p 文字總量（retention ratio 用，見 audit-lib 頭註解）
   const originalTextStats = await audits.collectOriginalTextStats(page);
   console.log(`  original p text: ${originalTextStats.pTextLength} chars (${originalTextStats.pCount} p)`);
@@ -216,6 +220,7 @@ async function setZoom(page, z) {
     contrast: { light: null, dark: null },
     theme: { dark: null, lightRestore: null },
     overflow: null, tail: null, restored: null, droppedFigures: null,
+    droppedProse: null, titlePresence: null,
     failReasons: [], reviewReasons: [] };
 
   // verdict 收尾共用：寫 audit.json、移目錄、印 VERDICT 行（batch script 解析這行）
@@ -416,6 +421,33 @@ async function setZoom(page, z) {
     console.log('  ℹ️  內文掉圖: 原頁無內容圖候選');
   }
 
+  // 誤殺長段落（A，high-precision → fail）：cleaner 把 article 內可見長散文藏掉
+  if (taggedProse > 0) {
+    audit.droppedProse = await audits.runDroppedProseAudit(page);
+    if (audit.droppedProse.dropped.length > 0) {
+      console.log(`  ⚠️  誤殺長段落: ${audit.droppedProse.dropped.length}/${audit.droppedProse.tagged}（cleaner 吃掉主文散文）`);
+      for (const d of audit.droppedProse.dropped) {
+        console.log(`    DROPPED-PROSE <${d.tag}> "${d.text}"`);
+      }
+    } else {
+      console.log(`  ✅ 長段落: ${audit.droppedProse.tagged} 塊主文散文全保留`);
+    }
+  } else {
+    console.log('  ℹ️  長段落: 原頁無長散文候選');
+  }
+
+  // 標題進 reader card（B，review-tier）：article 標題文字要出現在 reader 可見內容
+  audit.titlePresence = await audits.runTitlePresenceAudit(page);
+  if (audit.titlePresence.checked) {
+    if (audit.titlePresence.missing) {
+      console.log(`  ⚠️  標題缺失: reader 可見內容找不到標題「${audit.titlePresence.title}」`);
+    } else {
+      console.log('  ✅ 標題: 已出現在 reader card');
+    }
+  } else {
+    console.log('  ℹ️  標題: 無 og/doc title 基準或 reader 未啟動，跳過');
+  }
+
   audit.narrowText = await audits.runNarrowTextAudit(page);
   if (audit.narrowText.narrow) {
     console.log(`  ⚠️  narrow text: ${audit.narrowText.narrowCount} paragraphs with < 10 chars/line`);
@@ -589,6 +621,11 @@ async function setZoom(page, z) {
   // 內文掉圖：review-tier（高精度窄版，FP 已壓到近 0，但仍歸低精度由 Claude
   // 看截圖確認——保守不 fail build，與 hero-missing 同層）
   if (audit.droppedFigures?.dropped?.length > 0) review.push(`content-img-dropped x${audit.droppedFigures.dropped.length}`);
+  // 誤殺長段落（A）：high-precision → fail（cleaner 吃掉 article 內可見長散文，
+  // 近乎必為真 bug——v0.8.168 Miniflux 開頭段落消失正是此 family）
+  if (audit.droppedProse?.dropped?.length > 0) fail.push(`prose-dropped x${audit.droppedProse.dropped.length}`);
+  // 標題缺失（B）：review-tier（strict 字串存在性、低 stakes，由 Claude 看截圖確認）
+  if (audit.titlePresence?.missing) review.push('title-missing');
   if (audit.narrowText?.narrow) fail.push('narrow-text');
   if (audit.figcaption?.cramped) fail.push('figcaption-cramped');
   if (audit.bodyWidth?.narrow) fail.push('body-width-narrow');

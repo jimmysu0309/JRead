@@ -303,6 +303,98 @@ describe('harness audit-lib — 單一資料源合約', () => {
     });
   });
 
+  // 2026-06-23（v0.8.168 漏抓後補 harness）：誤殺長段落 + 標題缺失 audit（補 v0.8.168 Miniflux 漏抓那一層）。
+  // 這兩條驗 jsdom 可驗的部分：tag/collect 的 DOM 標記與分類邏輯、title 字串比對。
+  // 不驗 layout（無 rect 依賴，故 jsdom 完整可驗）。
+  describe('誤殺長段落 audit（tagOriginalLongProse + collectDroppedProse，2026-06-23（v0.8.168 漏抓後補 harness））', () => {
+    const NOISE = auditLib.CFIG_NOISE_TOKENS;
+    function build(html) {
+      const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`,
+        { runScripts: 'outside-only', pretendToBeVisual: true });
+      return dom.window;
+    }
+    const tag = (w) => w.eval(`(${auditLib.pageFns.tagOriginalLongProse.toString()})`)(NOISE);
+    const collect = (w) => w.eval(`(${auditLib.pageFns.collectDroppedProse.toString()})`)();
+    const LONG = '在極廣的懸吊行程與轉向虛位間如何判斷該不該轉向身旁教練給了個意味深長的眼神靠經驗這句話聽似玩笑卻道盡了越野駕駛的精髓所在反覆練習累積而來的肌肉記憶與默契明明知道車輛底盤足以應付眼前的地形雙手卻仍不自覺地握緊了方向盤深怕一個閃神就讓整趟旅程留下難以挽回的遺憾';
+
+    it('toggle 前可見、toggle 後被 jread hide 的 article 內長散文 → dropped', () => {
+      const w = build(`<article class="entry-content"><p data-test="lead">${LONG}</p></article>`);
+      const n = tag(w);
+      assert.strictEqual(n, 1, '應標記 1 塊可見長散文');
+      // 模擬 detector / cleaner：article 設 active、lead 段被誤殺 hide
+      w.document.querySelector('.entry-content').setAttribute('data-jread-active', '1');
+      const lead = w.document.querySelector('[data-test="lead"]');
+      lead.setAttribute('data-jread-hidden', '1');
+      lead.style.display = 'none';
+      const res = collect(w);
+      assert.strictEqual(res.dropped.length, 1, 'cleaner 誤殺主文長散文應被抓到');
+      assert.ok(res.dropped[0].text.includes('在極廣的懸吊'), '應回報被誤殺段落文字');
+    });
+
+    it('長散文保留可見 → 不算 dropped（無誤報）', () => {
+      const w = build(`<article class="entry-content"><p>${LONG}</p></article>`);
+      tag(w);
+      w.document.querySelector('.entry-content').setAttribute('data-jread-active', '1');
+      const res = collect(w);
+      assert.strictEqual(res.dropped.length, 0);
+      assert.strictEqual(res.insideVisible, 1);
+    });
+
+    it('chrome/comment/related 容器內的長段不標記（留言/推薦合法清除不誤報）', () => {
+      const w = build(`<article class="entry-content"><p>${LONG}</p></article>
+        <div class="related"><p>${LONG}</p></div>
+        <div class="comment"><p>${LONG}</p></div>`);
+      assert.strictEqual(tag(w), 1, '只標 article 那塊、排除 related / comment 容器');
+    });
+
+    it('toggle 前已 display:none 的長段（響應式重複版）不標記', () => {
+      const w = build(`<article class="entry-content">
+        <p data-test="vis">${LONG}</p>
+        <p style="display:none">${LONG}</p></article>`);
+      assert.strictEqual(tag(w), 1, '只標可見那份、隱藏的重複版濾掉');
+    });
+
+    it('< 100 chars 的短段不標記（byline / kicker 不算長散文）', () => {
+      const w = build(`<article class="entry-content"><p>Words：Shawn ZHANG　Pictures：Ray CHAO</p></article>`);
+      assert.strictEqual(tag(w), 0);
+    });
+  });
+
+  describe('標題進 reader card audit（auditTitlePresence，2026-06-23（v0.8.168 漏抓後補 harness））', () => {
+    const run = (w) => w.eval(`(${auditLib.pageFns.auditTitlePresence.toString()})`)();
+    function build(title, articleHtml) {
+      const dom = new JSDOM(`<!DOCTYPE html><head><title>${title}</title></head><body>${articleHtml}</body>`,
+        { runScripts: 'outside-only', pretendToBeVisual: true });
+      return dom.window;
+    }
+
+    it('標題文字未出現在 reader → missing（document.title 去站名尾綴後比對）', () => {
+      const w = build('Ineos Grenadier 擲彈訓練所:第一次投擲 - Miniflux',
+        `<article data-jread-active="1"><p>內文段落但完全沒有標題字樣出現在這裡</p></article>`);
+      const res = run(w);
+      assert.strictEqual(res.checked, true);
+      assert.strictEqual(res.missing, true, '標題沒進 card 應 flag');
+    });
+
+    it('標題文字出現在 reader → 不 missing', () => {
+      const w = build('Ineos Grenadier 擲彈訓練所:第一次投擲 - Miniflux',
+        `<article data-jread-active="1"><h1>Ineos Grenadier 擲彈訓練所:第一次投擲</h1><p>內文</p></article>`);
+      const res = run(w);
+      assert.strictEqual(res.missing, false);
+    });
+
+    it('標題在 data-jread-hidden 子樹內（被誤藏）→ 仍算 missing（只看可見文字）', () => {
+      const w = build('擲彈訓練所第一次投擲 - Miniflux',
+        `<article data-jread-active="1"><h1 data-jread-hidden="1">擲彈訓練所第一次投擲</h1><p>內文</p></article>`);
+      assert.strictEqual(run(w).missing, true, '藏起來的標題不算「出現在 reader card」');
+    });
+
+    it('reader 未啟動 / 無 title 基準 → checked:false（不誤判）', () => {
+      const w1 = build('某文章 - 站名', `<article><p>沒有 data-jread-active</p></article>`);
+      assert.strictEqual(run(w1).checked, false);
+    });
+  });
+
   describe('node-side API 形狀', () => {
     it('exports 齊全（兩支 harness 的 call site 依賴）', () => {
       const required = ['NOISE_AUDIT_KEYWORDS', 'NOISE_KEYWORD_TIERS', 'pageFns',
@@ -311,7 +403,8 @@ describe('harness audit-lib — 單一資料源合約', () => {
         'runOverflowAudit', 'runNarrowTextAudit', 'runFigcaptionAudit',
         'runTailAudit', 'runContentStats', 'captureOriginalHeroImages',
         'collectOriginalTextStats', 'runHeroImageAudit', 'waitForReaderImagesLoaded',
-        'takePagedScreenshots', 'setThemeAndVerify'];
+        'takePagedScreenshots', 'setThemeAndVerify',
+        'tagOriginalLongProse', 'runDroppedProseAudit', 'runTitlePresenceAudit'];
       for (const name of required) {
         assert.ok(name in auditLib, `audit-lib 缺 export: ${name}`);
       }
