@@ -732,6 +732,25 @@
     return linkText / total >= 0.5;
   }
 
+  // 行內強調 ≠ section heading（v0.8.169 stratechery 修法）：strong/em/b/span
+  // 候選若只是某散文塊（li/p/td/dd/blockquote/figcaption）裡的一小段 inline
+  // 強調（自身文字遠短於所在塊），就是內文的一部分、不是標題。誤判成 heading
+  // 會讓 resolveHeadingNoiseTarget walk-up 殺掉整個祖先容器。
+  // stratechery 實案：<li>（681 chars）內一個 <em>see also</em>（命中 base
+  // pattern `^see\s+also`）→ resolveHeadingNoiseTarget 從 em walk-up 把整個
+  // <ol>（含主文第 2、3 點）當 safe wrapper hide。
+  // upmedia.mg 的標準 <strong>（延伸閱讀：<a>…</a>）</strong> 不在此列：它自身
+  // 即整個塊（block 文字 ≈ 候選文字），不命中「埋在長散文裡」條件，仍照清。
+  // 靜態 hideInsideArticleByHeadingText 與動態 checkDynamicNoise 單一資料源。
+  function isInlineEmphasisInProse(h) {
+    if (!/^(?:STRONG|EM|B|SPAN)$/.test(h.tagName)) return false;
+    const block = h.closest('li, p, dd, dt, td, th, blockquote, figcaption');
+    if (!block || block === h) return false;
+    const blockLen = norm(block.textContent).length;
+    const elLen = norm(h.textContent).length;
+    return blockLen - elLen >= 40 && elLen / (blockLen || 1) < 0.5;
+  }
+
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
     let target = h.closest('section, aside');
     // tooWide 的主文保護對 link-feed 容器不適用（v0.8.54）：累計短 teaser
@@ -2372,6 +2391,8 @@
       //
       // 結構性通則：button 內 text 對 heading rule 來說恆是 false positive。
       if (h.closest('button')) continue;
+      // 行內強調 ≠ section heading（v0.8.169 stratechery 修法、靜態+動態單一資料源）
+      if (isInlineEmphasisInProse(h)) continue;
       // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget
       // （含 closest('section,aside') → tooWide → walk-up fallback → tail-cleanup
       // / 最後防線 hide(h)）。與 checkDynamicNoise 單一資料源，消雙實作 drift。
@@ -5899,6 +5920,8 @@
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
       if (h.closest('button')) continue;
+      // 行內強調 ≠ section heading（v0.8.169，與靜態 path 單一資料源）
+      if (isInlineEmphasisInProse(h)) continue;
       // v0.8.107：dynamic 注入的 Community Q&A widget 走 dedicated 整塊清（與靜態
       // hideCommunityQaWidget 同源）——generic resolveHeadingNoiseTarget 對 Q&A
       // 只 hide 得掉標題框（累計短問答 >= 300 誤觸主文保護，見 hideCommunityQaWidget
