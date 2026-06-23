@@ -52,7 +52,6 @@
       ],
       "js": [
         "content/namespace.js",
-        "popup/popup-core.js",
         "content/keepalive.js",
         "content/settings-defaults.js",
         "content/domain-match.js",

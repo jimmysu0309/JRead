@@ -89,10 +89,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // __JReadResolveFloatingIconEnabled 在讀取邊界解析，不放此固定值；
     // 位置 floatingIconPos 為 runtime 拖移狀態，由 floating-icon.js 直讀 storage。
     floatingIconOpacity: 0.7,
-    // v0.8.156：懸浮按鈕尺寸。'small' = 視覺 16px / 可點 footprint 32px
-    //（v0.8.154 以來的原始尺寸，預設）；'large' = 視覺 32px / footprint 48px
-    //（觸控嫌小者可放大，Jimmy 回報部分使用者覺得太小）。
-    floatingIconSize: 'small',
+    // v0.8.156：懸浮按鈕尺寸。'small' = 視覺 16px / footprint 32px；'medium' = 視覺
+    // 24px / footprint 40px（v0.8.166 新增、並改為**預設**，Jimmy 2026-06-23——原 small
+    // 部分使用者覺得太小）；'large' = 視覺 32px / footprint 48px。content 端
+    // floating-icon.js applySize 的 fallback 與此預設一致（未設過 / 損壞 → medium）。
+    floatingIconSize: 'medium',
     // v0.7.227：翻頁模式（電子書式水平翻頁）。預設 false = 垂直卷動。
     pagedMode: false,
     // v0.7.237：翻頁模式底部頁碼指示（「3 / 43」）。預設 true = 顯示；

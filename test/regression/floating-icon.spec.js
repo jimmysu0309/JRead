@@ -6,8 +6,9 @@
 //   - 啟用旗標未設過一律預設開（v0.8.158，原平台分流取消）
 //   - 透明度 clamp、位置 sanitize（預設左緣）
 //   - 短按 → NS.dispatchLocalCommand('toggle-reader-mode')
-//   - 長按選單兩項：送 Readwise（CUSTOM_COMMAND send-to-readwise）、切換分頁模式
-//     （翻轉 storage.sync.pagedMode）
+//   - 長按選單：切換分頁模式（翻轉 storage.sync.pagedMode）+ 功能選單（叫出 popup）；
+//     v0.8.166 移除「送到 Readwise Reader」直送項（content 直送在 iOS toast 不顯示、
+//     無回饋，Readwise 改走 popup 內按鈕）
 //   - storage.onChanged 即時生效
 //
 // 訊號層次：本檔驗 jsdom DOM 副作用 + 純邏輯 + wiring 字面值。真實 pointer
@@ -218,7 +219,8 @@ describe('懸浮按鈕（v0.8.154）', () => {
     });
 
     it('未設過 floatingIconPos → host 貼左下角（left=6、top=底）', () => {
-      const { NS, document } = setup();
+      // 尺寸 pin small（footprint 32）解耦預設尺寸——本案驗位置邏輯非尺寸
+      const { NS, document } = setup({ store: { floatingIconSize: 'small' } });
       const host = document.getElementById('__jread-floating-host');
       // innerHeight=800、small footprint 32 → top = 1 * (800-32) = 768
       assert.deepStrictEqual({ ...NS.floating.getPos() }, { edge: 'left', offsetY: 1 });
@@ -227,7 +229,7 @@ describe('懸浮按鈕（v0.8.154）', () => {
     });
 
     it('applyPos 左緣 → 設 left、清 right；右緣相反', () => {
-      const { NS, document } = setup();
+      const { NS, document } = setup({ store: { floatingIconSize: 'small' } });
       const host = document.getElementById('__jread-floating-host');
       NS.floating.applyPos({ edge: 'left', offsetY: 0 });
       assert.strictEqual(host.style.left, '6px');
@@ -267,12 +269,28 @@ describe('懸浮按鈕（v0.8.154）', () => {
   });
 
   describe('尺寸切換（v0.8.156）', () => {
-    it('預設（未設過）→ small：footprint 32 / icon 16', () => {
+    it('預設（未設過）→ medium：footprint 40 / icon 24（v0.8.166 預設改中）', () => {
       const { NS, document } = setup();
+      const host = document.getElementById('__jread-floating-host');
+      assert.strictEqual(NS.floating.getHitSize(), 40);
+      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '40px');
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '24px');
+    });
+
+    it('store floatingIconSize=small → footprint 32 / icon 16', () => {
+      const { NS, document } = setup({ store: { floatingIconSize: 'small' } });
       const host = document.getElementById('__jread-floating-host');
       assert.strictEqual(NS.floating.getHitSize(), 32);
       assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '32px');
       assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '16px');
+    });
+
+    it('store floatingIconSize=medium → footprint 40 / icon 24（v0.8.166）', () => {
+      const { NS, document } = setup({ store: { floatingIconSize: 'medium' } });
+      const host = document.getElementById('__jread-floating-host');
+      assert.strictEqual(NS.floating.getHitSize(), 40);
+      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '40px');
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '24px');
     });
 
     it('store floatingIconSize=large → footprint 48 / icon 32', () => {
@@ -283,16 +301,17 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '32px');
     });
 
-    it('applySize 非法值退回 small', () => {
+    it('applySize 非法值退回預設 medium（v0.8.166）', () => {
       const { NS, document } = setup({ store: { floatingIconSize: 'large' } });
       const host = document.getElementById('__jread-floating-host');
       NS.floating.applySize('bogus');
-      assert.strictEqual(NS.floating.getHitSize(), 32);
-      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '32px');
+      assert.strictEqual(NS.floating.getHitSize(), 40);
+      assert.strictEqual(host.style.getPropertyValue('--fab-hit'), '40px');
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '24px');
     });
 
     it('尺寸變更後 applyPos 依新 footprint 重算 top（offsetY=1）', () => {
-      const { NS, document } = setup();
+      const { NS, document } = setup({ store: { floatingIconSize: 'small' } });
       const host = document.getElementById('__jread-floating-host');
       // small：top = 800 - 32 = 768
       NS.floating.applyPos({ edge: 'left', offsetY: 1 });
@@ -302,12 +321,15 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(host.style.top, '752px');
     });
 
-    it('storage.onChanged floatingIconSize 即時生效', () => {
+    it('storage.onChanged floatingIconSize 即時生效（small↔medium↔large）', () => {
       const { NS, document, chrome } = setup();
       const host = document.getElementById('__jread-floating-host');
       chrome._emit({ floatingIconSize: { newValue: 'large' } });
       assert.strictEqual(NS.floating.getHitSize(), 48);
       assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '32px');
+      chrome._emit({ floatingIconSize: { newValue: 'medium' } });
+      assert.strictEqual(NS.floating.getHitSize(), 40);
+      assert.strictEqual(host.style.getPropertyValue('--fab-icon'), '24px');
       chrome._emit({ floatingIconSize: { newValue: 'small' } });
       assert.strictEqual(NS.floating.getHitSize(), 32);
     });
@@ -331,64 +353,35 @@ describe('懸浮按鈕（v0.8.154）', () => {
   });
 
   describe('長按選單', () => {
-    it('MENU_ITEMS 含 readwise + paged 兩項（順序固定）', () => {
+    // v0.8.166：移除「送到 Readwise Reader」直送項——content 直送在 iOS toast 不顯示、
+    // 無回饋（Jimmy 2026-06-23 實機）；Readwise 送出改走「功能選單」叫出的 popup 內按鈕。
+    it('MENU_ITEMS 只剩 paged 一項（readwise 直送項已移除）', () => {
       const { NS } = setup();
       const ids = Array.from(NS.floating.MENU_ITEMS, (i) => i.id);
-      assert.deepStrictEqual(ids, ['readwise', 'paged']);
+      assert.deepStrictEqual(ids, ['paged']);
+      assert.ok(!ids.includes('readwise'), 'Readwise 直送項必須移除（改走 popup）');
     });
 
-    it('buildMenu 渲染三個 menu-item（readwise / paged / 功能選單）+ 分隔線', () => {
+    it('floating-icon.js 不再有 sendToReadwise / content 直送殘留（防回歸）', () => {
+      assert.ok(!/sendToReadwise/.test(FLOATING_SRC),
+        '不可殘留 sendToReadwise（v0.8.166 Readwise 改走 popup）');
+      assert.ok(!/sendCurrentPageToReadwise/.test(FLOATING_SRC),
+        '不可殘留 content 直送呼叫');
+    });
+
+    it('buildMenu 渲染兩個 menu-item（paged / 功能選單）+ 分隔線', () => {
       const { NS, document } = setup();
       NS.floating.buildMenu();
       const shadow = document.getElementById('__jread-floating-host').shadowRoot;
       const items = shadow.querySelectorAll('.menu-item');
-      assert.strictEqual(items.length, 3, 'v0.8.162 起含「功能選單」共三項');
-      assert.strictEqual(items[0].dataset.action, 'readwise');
-      assert.strictEqual(items[1].dataset.action, 'paged');
-      assert.strictEqual(items[2].dataset.action, 'feature-menu');
-      assert.ok(/Readwise/.test(items[0].textContent));
-      assert.ok(/分頁/.test(items[1].textContent));
-      assert.ok(/功能選單/.test(items[2].textContent));
-      // 「功能選單」前必須有分隔線（與翻譯/閱讀動作區隔）
+      assert.strictEqual(items.length, 2, 'v0.8.166 起：切換分頁模式 + 功能選單共兩項');
+      assert.strictEqual(items[0].dataset.action, 'paged');
+      assert.strictEqual(items[1].dataset.action, 'feature-menu');
+      assert.ok(!/Readwise/.test(shadow.textContent), '選單不可再出現 Readwise 項');
+      assert.ok(/分頁/.test(items[0].textContent));
+      assert.ok(/功能選單/.test(items[1].textContent));
+      // 「功能選單」前必須有分隔線（與一般動作區隔）
       assert.ok(shadow.querySelector('.menu-divider'), '功能選單前必須有分隔線');
-    });
-
-    // v0.8.165：送 Readwise 依 runtime 分流——Chrome（content fetch 受 CORS 擋）轉 SW；
-    // Safari（iOS / iPadOS，SW 背景 fetch 不可靠）改 content script 直送。
-    it('Chrome runtime：content fetch 受 CORS 擋 → 轉 SW CUSTOM_COMMAND send-to-readwise', () => {
-      const { NS, chrome } = setup({ scheme: 'chrome-extension://' });
-      NS.floating.sendToReadwise();
-      const msg = chrome._sent.find((m) => m && m.type === NS.MSG.CUSTOM_COMMAND);
-      assert.ok(msg, '必須送 CUSTOM_COMMAND');
-      assert.strictEqual(msg.payload.command, 'send-to-readwise');
-    });
-
-    it('Safari runtime：呼叫 NS.sendCurrentPageToReadwise（content 直送），不送 SW CUSTOM_COMMAND', () => {
-      const { NS, chrome } = setup({ scheme: 'safari-web-extension://' });
-      let called = 0;
-      NS.sendCurrentPageToReadwise = () => { called += 1; };
-      NS.floating.sendToReadwise();
-      assert.strictEqual(called, 1, 'Safari 必須走 content 端直送');
-      assert.ok(!chrome._sent.find((m) => m && m.type === NS.MSG.CUSTOM_COMMAND),
-        'Safari 不可再轉 SW CUSTOM_COMMAND（SW 背景 fetch 在 iOS 不可靠）');
-    });
-
-    it('Safari runtime 但 sendCurrentPageToReadwise 尚未就緒（注入競態）→ 退回 SW CUSTOM_COMMAND', () => {
-      const { NS, chrome } = setup({ scheme: 'safari-web-extension://' });
-      // 不設 NS.sendCurrentPageToReadwise（模擬 main.js 尚未 eval）
-      NS.floating.sendToReadwise();
-      const msg = chrome._sent.find((m) => m && m.type === NS.MSG.CUSTOM_COMMAND);
-      assert.ok(msg, '函式缺席時必須 fallback 走 SW CUSTOM_COMMAND，不可靜默失敗');
-      assert.strictEqual(msg.payload.command, 'send-to-readwise');
-    });
-
-    it('點擊當下先彈 info toast（視覺提示，兩平台都有）', () => {
-      const { NS, document } = setup({ scheme: 'safari-web-extension://' });
-      NS.sendCurrentPageToReadwise = () => {};
-      NS.floating.sendToReadwise();
-      const toastHost = document.getElementById('__jread-toast-host');
-      const text = toastHost ? (toastHost.shadowRoot || toastHost).textContent : '';
-      assert.match(text, /Readwise/, '送出當下必須有「送出到 Readwise Reader…」視覺提示 toast');
     });
 
     it('切換分頁模式：翻轉 storage.sync.pagedMode（false→true）', () => {
@@ -477,8 +470,8 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(DEFAULTS.floatingIconOpacity, 0.7);
     });
 
-    it('floatingIconSize 預設 small（v0.8.156，不動既有使用者尺寸）', () => {
-      assert.strictEqual(DEFAULTS.floatingIconSize, 'small');
+    it('floatingIconSize 預設 medium（v0.8.166 預設改中，Jimmy 2026-06-23）', () => {
+      assert.strictEqual(DEFAULTS.floatingIconSize, 'medium');
     });
 
     it('floatingIcon 不放固定預設（三態，由 resolver 解析）', () => {
@@ -501,17 +494,21 @@ describe('懸浮按鈕（v0.8.154）', () => {
     const OPTIONS_HTML = fs.readFileSync(path.join(JREAD, 'options', 'options.html'), 'utf8');
     const OPTIONS_JS = fs.readFileSync(path.join(JREAD, 'options', 'options.js'), 'utf8');
 
-    it('options.html 含 floatingIcon / threeFingerTap checkbox + floatingIconOpacity range + floatingIconSize select', () => {
+    it('options.html 含 floatingIcon / threeFingerTap checkbox + floatingIconOpacity range + floatingIconSize radio 群', () => {
       assert.match(OPTIONS_HTML, /<input[^>]+type=["']checkbox["'][^>]+id=["']floatingIcon["']/,
         '缺懸浮 icon 啟用 checkbox');
       assert.match(OPTIONS_HTML, /<input[^>]+type=["']checkbox["'][^>]+id=["']threeFingerTap["']/,
         '缺三指輕點 checkbox');
       assert.match(OPTIONS_HTML, /<input[^>]+type=["']range["'][^>]+id=["']floatingIconOpacity["']/,
         '缺透明度 range 滑桿');
-      assert.match(OPTIONS_HTML, /<select[^>]+id=["']floatingIconSize["']/,
-        '缺懸浮 icon 尺寸 select');
-      assert.match(OPTIONS_HTML, /<option value=["']large["']/,
-        '缺尺寸 large 選項');
+      // v0.8.166：尺寸控制改 Shinkansen 風格 radio 群（小 / 中 / 大），不用下拉 select
+      assert.match(OPTIONS_HTML, /id=["']floatingIconSize["'][^>]*role=["']radiogroup["']/,
+        '尺寸控制必須是 radio 群（role=radiogroup），不可用下拉 select');
+      assert.ok(!/<select[^>]+id=["']floatingIconSize["']/.test(OPTIONS_HTML),
+        '不可再用下拉 select 做尺寸控制（Jimmy 2026-06-23）');
+      assert.match(OPTIONS_HTML, /name=["']floatingIconSize["'][^>]*value=["']small["']/, '缺尺寸 小 radio');
+      assert.match(OPTIONS_HTML, /name=["']floatingIconSize["'][^>]*value=["']medium["']/, '缺尺寸 中 radio（v0.8.166）');
+      assert.match(OPTIONS_HTML, /name=["']floatingIconSize["'][^>]*value=["']large["']/, '缺尺寸 大 radio');
     });
 
     it('options.js fields 陣列含四個新欄位（load / save / onChanged 同步）', () => {
@@ -555,15 +552,42 @@ describe('懸浮按鈕（v0.8.154）', () => {
     });
   });
 
-  // ── 觸控角落保留區（v0.8.161）：iPadOS 左下角 = 視窗縮放把手、上方角落 = 系統手勢區，
-  //    按鈕停太靠近會被 OS 攔走觸控而拖不出來，故觸控裝置把 y 夾離上下角落 ───────────
-  describe('觸控角落夾邊 cornerClampTop（v0.8.161）', () => {
+  // ── iPadOS 角落保留區（v0.8.161；v0.8.166 改為僅 iPadOS）：iPadOS 視窗角落 = 縮放把手 /
+  //    系統手勢區，按鈕停太靠近會被 OS 攔走觸控而拖不出來，故 iPadOS 把 y 夾離上下角落；
+  //    iPhone / 桌面不設禁制區（Jimmy 2026-06-23）───────────────────────────────────
+  describe('iPadOS 角落夾邊 cornerClampTop（v0.8.161 / v0.8.166 僅 iPadOS）', () => {
     it('CORNER_DEADZONE_PX = 44', () => {
       const { NS } = setup();
       assert.strictEqual(NS.floating.CORNER_DEADZONE_PX, 44);
     });
 
-    it('非觸控：只夾在可視範圍、不留角落間距', () => {
+    // isIPadOSEnv：禁制區只認 iPadOS（觸控 + iPad/Macintosh UA），iPhone / Android / 桌面排除
+    it('isIPadOSEnv：iPad UA + 觸控 → true', () => {
+      const { NS } = setup();
+      assert.strictEqual(NS.floating.isIPadOSEnv('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)', 5), true);
+    });
+
+    it('isIPadOSEnv：iPadOS 13+ 桌面模式偽裝 Macintosh + 觸控 → true', () => {
+      const { NS } = setup();
+      assert.strictEqual(NS.floating.isIPadOSEnv('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)', 5), true);
+    });
+
+    it('isIPadOSEnv：iPhone（即使帶 like Mac OS X）→ false（不設禁制區）', () => {
+      const { NS } = setup();
+      assert.strictEqual(NS.floating.isIPadOSEnv('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', 5), false);
+    });
+
+    it('isIPadOSEnv：桌面 Mac / iPad app on Mac（maxTouchPoints=0）→ false', () => {
+      const { NS } = setup();
+      assert.strictEqual(NS.floating.isIPadOSEnv('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)', 0), false);
+    });
+
+    it('isIPadOSEnv：Android 觸控 → false（無 iPad 視窗縮放角問題）', () => {
+      const { NS } = setup();
+      assert.strictEqual(NS.floating.isIPadOSEnv('Mozilla/5.0 (Linux; Android 14)', 5), false);
+    });
+
+    it('非 iPadOS：只夾在可視範圍、不留角落間距', () => {
       const { NS } = setup();
       const f = NS.floating;
       assert.strictEqual(f.cornerClampTop(768, 800, 32, false), 768);
@@ -571,7 +595,7 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(f.cornerClampTop(9999, 800, 32, false), 768, '下界夾 vh-hit');
     });
 
-    it('觸控：top 夾離上下角落 44px', () => {
+    it('iPadOS：top 夾離上下角落 44px', () => {
       const { NS } = setup();
       const f = NS.floating;
       // minTop=44、maxTop=800-32-44=724
@@ -580,22 +604,23 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(f.cornerClampTop(400, 800, 32, true), 400, '中段不動');
     });
 
-    it('觸控 + 視窗太矮夾不出安全區 → 置中', () => {
+    it('iPadOS + 視窗太矮夾不出安全區 → 置中', () => {
       const { NS } = setup();
       // vh=60、hit=32：maxFree=28、maxTop=60-32-44=-16 < minTop=44 → round(28/2)=14
       assert.strictEqual(NS.floating.cornerClampTop(999, 60, 32, true), 14);
     });
 
-    it('setTouchForTest(true)：預設左下角（offsetY=1）被夾離底角', () => {
-      const { NS, document } = setup();
+    it('setIPadOSForTest(true)：預設左下角（offsetY=1）被夾離底角；false 還原不留間距', () => {
+      // 尺寸 pin small（footprint 32）解耦預設尺寸——本案驗夾邊幾何
+      const { NS, document } = setup({ store: { floatingIconSize: 'small' } });
       const host = document.getElementById('__jread-floating-host');
-      // 桌面（jsdom maxTouchPoints=0）：top = 800-32 = 768
+      // 桌面 / iPhone（jsdom 非 iPadOS）：top = 800-32 = 768
       assert.strictEqual(host.style.top, '768px');
-      NS.floating.setTouchForTest(true);
-      // 觸控：top 夾到 maxTop = 800-32-44 = 724
-      assert.strictEqual(host.style.top, '724px', '觸控時按鈕離底角 44px、不卡縮放把手');
-      NS.floating.setTouchForTest(false);
-      assert.strictEqual(host.style.top, '768px', '還原非觸控不留間距');
+      NS.floating.setIPadOSForTest(true);
+      // iPadOS：top 夾到 maxTop = 800-32-44 = 724
+      assert.strictEqual(host.style.top, '724px', 'iPadOS 時按鈕離底角 44px、不卡縮放把手');
+      NS.floating.setIPadOSForTest(false);
+      assert.strictEqual(host.style.top, '768px', '還原非 iPadOS 不留間距（iPhone / 桌面）');
     });
   });
 

@@ -107,9 +107,11 @@ describe('options — 設定 diff write（v0.8.35）', () => {
   it('storage.onChanged 必須把其他 context 的欄位變更同步回 DOM（不只 autoEnableDomains）', () => {
     const { document, fireOnChanged } = buildOptionsEnv();
 
+    // v0.8.166：floatingIconSize 改 radio 群（小 / 中 / 大）；onChanged 同步勾選對應 radio
     fireOnChanged({ floatingIconSize: { newValue: 'large' } });
-    assert.strictEqual(document.getElementById('floatingIconSize').value, 'large',
-      '其他 context 改 floatingIconSize 後 options DOM 必須跟著刷新');
+    const checkedSize = document.querySelector('input[name="floatingIconSize"]:checked');
+    assert.strictEqual(checkedSize && checkedSize.value, 'large',
+      '其他 context 改 floatingIconSize 後 options DOM radio 必須跟著刷新');
 
     fireOnChanged({ spaceScrollRatio: { newValue: 30 } });
     assert.strictEqual(document.getElementById('spaceScrollRatio').value, '30');

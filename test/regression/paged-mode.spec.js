@@ -415,6 +415,39 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // v0.8.166：頁碼 scrubber tap-to-arm 互動狀態機。一次手勢結束時依
+  // （目前 armed 與否、本次有無拖移 moved）決定動作。Jimmy 2026-06-23 需求：
+  //   1. 按住頁碼拖移 → 拖曳翻頁（短暫 scrub，放手收起）= 非 armed + moved → 'end'
+  //   2. 點按頁碼放開 → 出現常駐進度條（armed）= 非 armed + !moved → 'arm'
+  //      armed 中畫面任意處滑 = scrub 翻頁、armed 維持 = armed + moved → 'keep'
+  //      再次點頁碼 = 收起 = armed + !moved → 'disarm'
+  //   3. armed 中任意處點按 = 收起 = armed + !moved → 'disarm'（同 2 末項）
+  describe('resolveScrubGesture（v0.8.166 tap-to-arm 狀態機）', () => {
+    it('非 armed + 點按（!moved）→ arm（展開常駐進度條）', () => {
+      assert.strictEqual(pagedApi.resolveScrubGesture(false, false), 'arm');
+    });
+    it('非 armed + 拖移（moved）→ end（按住拖曳翻頁，放手收起）', () => {
+      assert.strictEqual(pagedApi.resolveScrubGesture(false, true), 'end');
+    });
+    it('armed + 拖移（moved）→ keep（畫面任意處滑翻頁，進度條續留）', () => {
+      assert.strictEqual(pagedApi.resolveScrubGesture(true, true), 'keep');
+    });
+    it('armed + 點按（!moved）→ disarm（再次點頁碼 / 任意處點按收起）', () => {
+      assert.strictEqual(pagedApi.resolveScrubGesture(true, false), 'disarm');
+    });
+    // forcing：四象限互斥且窮舉，狀態機不可漏接任一組合（漏接 = 進度條卡住收不起 /
+    // 點按無反應）。改動回傳值映射時這四條同步校對 finishScrubGesture 的分支。
+    it('四象限窮舉皆有定義動作（不回 undefined）', () => {
+      for (const armed of [true, false]) {
+        for (const moved of [true, false]) {
+          const a = pagedApi.resolveScrubGesture(armed, moved);
+          assert.ok(['arm', 'end', 'keep', 'disarm'].includes(a),
+            `armed=${armed} moved=${moved} 必須回有效動作，得到 ${a}`);
+        }
+      }
+    });
+  });
+
   describe('classifySwipe', () => {
     const W = 393; // iPhone 視窗寬
     it('往左滑（dx 負）= next', () => {
@@ -956,6 +989,125 @@ describe('翻頁模式（v0.7.227）', () => {
       api.uninstall();
       assert.strictEqual(env.document.getElementById('__jread-haptic'), null,
         'uninstall 後移除觸覺載體');
+    });
+  });
+
+  // ---- C6. 頁碼 tap-to-arm 互動（v0.8.166）------------------------------
+  // Jimmy 2026-06-23 需求（分頁模式點頁碼後的動作）：
+  //   1. 按住頁碼拖移 → 拖曳翻頁（短暫 scrub，放手收起，= 既有 v0.8.150 行為）
+  //   2. 點選頁碼後放開 → 出現常駐進度條（armed），此後畫面任意處左右滑 = scrub 翻頁，
+  //      再次點頁碼收起進度條
+  //   3. armed 中任意處點選 → 收起進度條
+  // 訊號層次：jsdom 合成 touch 事件走真實 handler，以「一次手勢能跨幾頁」觀測 armed
+  //   是否生效（armed → scrub 可多頁；非 armed → swipe 單頁）。不驗真實 iOS 觸控時序 /
+  //   touch-action / 進度條 fade（rAF visible class）——需 TestFlight 實機驗。
+  // tap 與 drag 的純狀態機另見上方 resolveScrubGesture describe。
+  describe('頁碼 tap-to-arm 互動 DOM 流（v0.8.166）', () => {
+    function loadInstalled() {
+      const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+      env.window.eval(PAGED_SRC);
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      // jsdom 無 layout：stub 讓 pageCount = round(4000/400) = 10（多頁才看得出 scrub 跨多頁）
+      Object.defineProperty(art, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(art, 'scrollWidth', { value: 4000, configurable: true });
+      api.sync({ pagedMode: true }, art);
+      return { env, api, art };
+    }
+    function indicator(env) { return env.document.getElementById('__jread-page-indicator'); }
+    function pageNum(env) { const i = indicator(env); return i ? parseInt(i.textContent, 10) : null; }
+    function fireOn(env, target, type, touches, changed) {
+      const ev = new env.window.Event(type, { bubbles: true, cancelable: true });
+      ev.touches = touches;
+      ev.changedTouches = changed || touches;
+      target.dispatchEvent(ev);
+    }
+    // tap = down→up 無拖移（touchstart 在 target、touchend 無位移）
+    function tapOn(env, target) {
+      fireOn(env, target, 'touchstart', [{ clientX: 200, clientY: 500 }]);
+      fireOn(env, env.window, 'touchend', [], [{ clientX: 200, clientY: 500 }]);
+    }
+    // 內文（非指示器）單頁翻頁 swipe（左滑 100px = next）
+    function swipeNext(env) {
+      fireOn(env, env.window, 'touchstart', [{ clientX: 400, clientY: 300 }]);
+      fireOn(env, env.window, 'touchmove', [{ clientX: 300, clientY: 302 }]);
+      fireOn(env, env.window, 'touchend', [], [{ clientX: 300, clientY: 302 }]);
+    }
+
+    it('req1：按住頁碼拖移 → 短暫 scrub 翻多頁、放手不進 armed（之後滑動仍單頁）', () => {
+      const { env, api } = loadInstalled();
+      // 頁碼上拖移（touchstart 命中指示器 + touchmove）→ scrub
+      fireOn(env, indicator(env), 'touchstart', [{ clientX: 10, clientY: 500 }]);
+      fireOn(env, env.window, 'touchmove', [{ clientX: 110, clientY: 502 }]); // 右拖 100px
+      fireOn(env, env.window, 'touchend', []);
+      const afterScrub = pageNum(env);
+      assert.ok(afterScrub > 2, `按住頁碼拖移必須 scrub 多頁，得到第 ${afterScrub} 頁`);
+      // 放手後非 armed：內文滑動只翻一頁
+      swipeNext(env);
+      assert.strictEqual(pageNum(env), afterScrub + 1, '頁碼拖移放手後非 armed，滑動恢復單頁翻頁');
+      api.uninstall();
+    });
+
+    it('req2：點選頁碼放開 → 進 armed，此後畫面任意處滑 = scrub 多頁', () => {
+      const { env, api } = loadInstalled();
+      assert.strictEqual(pageNum(env), 1, '初始第 1 頁');
+      tapOn(env, indicator(env)); // 點頁碼 → arm
+      // 在內文（非指示器）右拖 100px → scrub 多頁（armed 前同位置同手勢只會單頁翻 / 不動）
+      fireOn(env, env.window, 'touchstart', [{ clientX: 50, clientY: 300 }]);
+      fireOn(env, env.window, 'touchmove', [{ clientX: 150, clientY: 302 }]); // 右拖 100px
+      fireOn(env, env.window, 'touchend', []);
+      assert.ok(pageNum(env) > 2, `armed 後畫面任意處滑必須 scrub 多頁，得到第 ${pageNum(env)} 頁`);
+      api.uninstall();
+    });
+
+    it('req2 末項：再次點頁碼 → 收起 armed（滑動恢復單頁翻頁）', () => {
+      const { env, api } = loadInstalled();
+      tapOn(env, indicator(env)); // arm
+      tapOn(env, indicator(env)); // 再次點頁碼 → disarm
+      const before = pageNum(env);
+      swipeNext(env);
+      assert.strictEqual(pageNum(env), before + 1, '再次點頁碼 disarm 後滑動恢復單頁翻頁');
+      api.uninstall();
+    });
+
+    it('req3：armed 中任意處點選 → 收起 armed（滑動恢復單頁翻頁）', () => {
+      const { env, api } = loadInstalled();
+      tapOn(env, indicator(env));      // arm
+      tapOn(env, env.document.body);   // 任意處點按 → disarm
+      const before = pageNum(env);
+      swipeNext(env);
+      assert.strictEqual(pageNum(env), before + 1, 'armed 任意處點按 disarm 後滑動恢復單頁翻頁');
+      api.uninstall();
+    });
+
+    it('armed scrub（多頁手勢）後維持 armed，下一次任意處滑仍 scrub', () => {
+      const { env, api } = loadInstalled();
+      tapOn(env, indicator(env)); // arm
+      // 第一次 armed scrub
+      fireOn(env, env.window, 'touchstart', [{ clientX: 10, clientY: 300 }]);
+      fireOn(env, env.window, 'touchmove', [{ clientX: 110, clientY: 302 }]);
+      fireOn(env, env.window, 'touchend', []);
+      const p1 = pageNum(env);
+      assert.ok(p1 > 2, 'armed 第一次 scrub 多頁');
+      // 第二次仍 scrub（armed 未因拖移而 disarm）→ 從 p1 再往後 scrub
+      fireOn(env, env.window, 'touchstart', [{ clientX: 10, clientY: 300 }]);
+      fireOn(env, env.window, 'touchmove', [{ clientX: 60, clientY: 302 }]); // 右拖 50px
+      fireOn(env, env.window, 'touchend', []);
+      assert.ok(pageNum(env) > p1, 'armed 維持 → 第二次滑動仍 scrub 前進');
+      api.uninstall();
+    });
+
+    it('uninstall 重置 armed（重新 install 後滑動為單頁、不殘留 scrub 模式）', () => {
+      const { env, api, art } = loadInstalled();
+      tapOn(env, indicator(env)); // arm
+      api.uninstall();
+      Object.defineProperty(art, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(art, 'scrollWidth', { value: 4000, configurable: true });
+      api.sync({ pagedMode: true }, art); // 重新 install
+      const before = pageNum(env);
+      swipeNext(env);
+      assert.strictEqual(pageNum(env), before + 1, 'uninstall 後 armed 須重置，滑動回單頁翻頁');
+      api.uninstall();
     });
   });
 

@@ -30,8 +30,10 @@
 #   結束前 diff -r jread/ Resources/，non-empty 視為 drift，中止。
 #
 # CFBundleVersion 注意：
-#   MARKETING_VERSION 與 CURRENT_PROJECT_VERSION 都用 manifest version。
+#   MARKETING_VERSION 用 manifest version；CURRENT_PROJECT_VERSION（build）預設亦同。
 #   JRead 每改必 bump（三段式遞增），同版本號重傳 ASC 會被拒——重傳前先 bump。
+#   不 bump marketing version 而要重傳 TestFlight 時，用 BUILD_NUMBER 覆寫成唯一的更高
+#   build（見下方 BUILD_NUMBER 區段），例：BUILD_NUMBER=0.8.165.1 ./safari-app/ios-build.sh
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -69,7 +71,14 @@ if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
   echo "ERROR: 無法從 manifest 讀 version。" >&2
   exit 1
 fi
-echo "Building iOS Safari Extension for version: ${VERSION}（TestFlight 軌）"
+# BUILD_NUMBER（CFBundleVersion / CURRENT_PROJECT_VERSION）預設 = manifest version。
+# 一般 release 每次 bump marketing version、build 跟著等於它即唯一，無需覆寫。
+# 例外：要在「不 bump marketing version」下重傳 TestFlight（同 0.8.165 改了內容再測），
+# ASC 以 (short version, build) 去重、同 build 重傳被拒——此時用環境變數覆寫成更高的
+# 唯一 build（加第四段 .N，保持 0.8.165 < 0.8.165.1 < 下個 release 的 0.8.166 單調）：
+#   BUILD_NUMBER=0.8.165.1 ./safari-app/ios-build.sh
+BUILD_NUMBER="${BUILD_NUMBER:-$VERSION}"
+echo "Building iOS Safari Extension for version: ${VERSION}（build ${BUILD_NUMBER}，TestFlight 軌）"
 
 # 1. 同步 jread/ → Resources/（--delete 移除已不存在舊檔）
 echo "==> Sync extension Resources..."
@@ -86,7 +95,7 @@ bash safari-app/patch-safari-manifest.sh "$EXTENSION_RESOURCES"
 # 2. 版本號同步進 pbxproj
 echo "==> Sync version to project.pbxproj..."
 sed -i '' -E "s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = ${VERSION};/g" "$PBXPROJ"
-sed -i '' -E "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = ${VERSION};/g" "$PBXPROJ"
+sed -i '' -E "s/CURRENT_PROJECT_VERSION = [^;]+;/CURRENT_PROJECT_VERSION = ${BUILD_NUMBER};/g" "$PBXPROJ"
 
 # 3. archive（manual signing，profile 缺失時先跑 tools/asc-provision-ios.js）
 echo "==> xcodebuild archive（iOS device, manual signing: Apple Distribution）..."

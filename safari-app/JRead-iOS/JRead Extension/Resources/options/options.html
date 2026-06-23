@@ -280,7 +280,7 @@
       font-size: 13px;
       color: var(--jr-neutral-700);
     }
-    /* 透明度範例 icon：跟著透明度滑桿（即時不透明度）與尺寸 select（icon 大小）變動。
+    /* 透明度範例 icon：跟著透明度滑桿（即時不透明度）與尺寸 radio 群（icon 大小）變動。
        固定 32px footprint（= large 視覺尺寸）置中，換尺寸不跳版（UI 對齊 grid）。 */
     .opacity-control .opacity-demo {
       flex: 0 0 32px;
@@ -293,6 +293,31 @@
       display: block;
       border-radius: 4px;
       filter: drop-shadow(0 1px 3px rgba(0,0,0,.4));
+    }
+
+    /* 懸浮按鈕尺寸：水平 radio 群（小 / 中 / 大），比照 Shinkansen floating-size-options
+       風格——非下拉選單，三個選項一字排開即見即選。內層 label 覆寫 .field label 的
+       block / font-weight:500（更高 specificity 勝出），維持 inline + 一般字重。 */
+    .field .size-options {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 18px;
+      margin-top: 8px;
+    }
+    .field .size-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--jr-neutral-900);
+      cursor: pointer;
+    }
+    .field .size-options input[type="radio"] {
+      margin: 0;
+      accent-color: var(--jr-primary-600);
+      cursor: pointer;
     }
 
     /* ==========================================================
@@ -685,12 +710,13 @@
     </div>
 
     <div class="field">
-      <label for="floatingIconSize">懸浮按鈕尺寸</label>
-      <span class="desc">按鈕大小：<strong>小</strong> = 16px（預設）、<strong>大</strong> = 32px</span>
-      <select id="floatingIconSize">
-        <option value="small">小</option>
-        <option value="large">大</option>
-      </select>
+      <label>懸浮按鈕尺寸</label>
+      <span class="desc">按鈕大小：<strong>小</strong> = 16px（預設）、<strong>中</strong> = 24px、<strong>大</strong> = 32px</span>
+      <div class="size-options" id="floatingIconSize" role="radiogroup" aria-label="懸浮按鈕尺寸">
+        <label><input type="radio" name="floatingIconSize" value="small"><span>小</span></label>
+        <label><input type="radio" name="floatingIconSize" value="medium"><span>中</span></label>
+        <label><input type="radio" name="floatingIconSize" value="large"><span>大</span></label>
+      </div>
     </div>
 
     <div class="field">
