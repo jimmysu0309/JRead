@@ -1,1070 +1,806 @@
-<!doctype html>
-<html lang="zh-Hant">
+<!DOCTYPE html>
+<html lang="zh-TW">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JRead — 一鍵純閱讀，還你乾淨文字</title>
-<meta name="description" content="JRead is a Chrome extension that strips ads, sidebars and popups from any article — leaving only words, arranged for reading.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-/* ---------- JRead tokens ---------- */
-:root {
-  --jr-primary-50:  #ebf4ff;
-  --jr-primary-600: #2b6cb0;
-  --jr-primary-700: #2c5282;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JRead｜一鍵純閱讀，還你乾淨文字</title>
+  <meta name="description" content="純閱讀模式擴充功能，一鍵隱藏廣告、側欄、彈窗、推薦列，只留下乾淨排版的主文。全程在你的瀏覽器本機處理，不上傳任何內容">
 
-  --jr-neutral-50:  #fafafa;
-  --jr-neutral-100: #f0f0f0;
-  --jr-neutral-300: #cccccc;
-  --jr-neutral-500: #888888;
-  --jr-neutral-700: #444444;
-  --jr-neutral-900: #222222;
+  <!-- Open Graph / Social Preview -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="JRead — 一鍵純閱讀，還你乾淨文字">
+  <meta property="og:description" content="一鍵隱藏廣告、側欄、彈窗、推薦列，只留下乾淨排版的主文。全程本機處理，不上傳任何內容">
+  <meta property="og:image" content="https://jimmysu0309.github.io/JRead/og-image.png">
+  <meta property="og:url" content="https://jimmysu0309.github.io/JRead/">
 
-  --jr-surface:     #ffffff;
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JRead — 一鍵純閱讀，還你乾淨文字">
+  <meta name="twitter:description" content="一鍵隱藏廣告、側欄、彈窗、推薦列，只留下乾淨排版的主文。全程本機處理，不上傳任何內容">
+  <meta name="twitter:image" content="https://jimmysu0309.github.io/JRead/og-image.png">
 
-  --jr-read-light-bg:   #ffffff;
-  --jr-read-light-fg:   #222222;
-  --jr-read-dark-bg:    #1a1a1a;
-  --jr-read-dark-fg:    #e4e4e4;
-  --jr-read-sepia-bg:   #f4ecd8;
-  --jr-read-sepia-fg:   #3a3226;
+  <link rel="icon" type="image/png" href="icon-512.png">
+  <link rel="alternate" hreflang="zh-TW" href="https://jimmysu0309.github.io/JRead/?lang=zh-TW">
+  <link rel="alternate" hreflang="en" href="https://jimmysu0309.github.io/JRead/?lang=en">
+  <link rel="alternate" hreflang="x-default" href="https://jimmysu0309.github.io/JRead/">
 
-  --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
-  --jr-font-reading: "Noto Serif TC", Georgia, "Times New Roman", serif;
-  --jr-font-mono:    ui-monospace, Menlo, Consolas, monospace;
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&display=swap" rel="stylesheet">
 
-  --jr-radius-sm: 4px;
-  --jr-radius-md: 6px;
+  <!-- Early language detection — runs before render to pick lang and avoid flash -->
+  <script>
+    (function () {
+      var supported = ['zh-TW', 'en'];
+      var fromQuery = null;
+      try { fromQuery = new URLSearchParams(location.search).get('lang'); } catch (e) {}
+      var saved = null;
+      try { saved = localStorage.getItem('jread_lang'); } catch (e) {}
+      var nav = (navigator.language || 'en').toLowerCase();
+      var auto = nav.indexOf('zh') === 0 ? 'zh-TW' : 'en';
+      var lang = fromQuery || saved || auto;
+      if (supported.indexOf(lang) === -1) lang = 'en';
+      document.documentElement.lang = lang === 'zh-TW' ? 'zh-Hant' : 'en';
+      document.documentElement.setAttribute('data-lang', lang);
+    })();
+  </script>
 
-  --jr-border: 1px solid var(--jr-neutral-300);
-  --jr-border-soft: 1px solid var(--jr-neutral-100);
+  <style>
+    /* Reset & Base */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    :root {
+      --accent: #2b6cb0;
+      --accent-hover: #2c5282;
+      --accent-soft: #ebf4ff;
+      --serif: "Noto Serif TC", Georgia, "Times New Roman", serif;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+      color: #1a1a1a;
+      background: #fff;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
 
-  --page-max: 1200px;
-  --page-pad: 56px;
-}
+    /* Hide elements not matching current language until JS runs */
+    html[data-lang="en"] [data-only="zh-TW"],
+    html[data-lang="zh-TW"] [data-only="en"] { display: none; }
 
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: var(--jr-font-ui);
-  color: var(--jr-neutral-900);
-  background: var(--jr-surface);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  line-height: 1.5;
-}
-a { color: inherit; text-decoration: none; }
+    /* Layout */
+    .container { max-width: 720px; margin: 0 auto; padding: 0 24px; }
 
-.wrap {
-  max-width: var(--page-max);
-  margin: 0 auto;
-  padding: 0 var(--page-pad);
-}
+    /* Language switcher */
+    .lang-switcher {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      gap: 0;
+      font-size: 0.78rem;
+      z-index: 100;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .lang-btn {
+      background: transparent;
+      border: none;
+      color: #555;
+      padding: 6px 12px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 500;
+      line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+    .lang-btn + .lang-btn { border-left: 1px solid #e5e7eb; }
+    .lang-btn:hover { color: var(--accent); }
+    .lang-btn.active { background: var(--accent); color: #fff; }
 
-/* ---------- Nav ---------- */
-.nav {
-  padding: 24px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: var(--jr-border-soft);
-}
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.brand .mark {
-  width: 28px; height: 28px;
-  background: var(--jr-primary-600);
-  color: #fff;
-  border-radius: var(--jr-radius-sm);
-  display: grid; place-items: center;
-  font-family: var(--jr-font-reading);
-  font-weight: 600;
-  font-size: 17px;
-  letter-spacing: -0.02em;
-}
-.brand .word {
-  font-family: var(--jr-font-reading);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.brand .word em { color: var(--jr-primary-600); font-style: normal; }
+    /* Hero */
+    .hero {
+      padding: 80px 0 48px;
+      text-align: center;
+    }
+    .hero-icon {
+      width: 132px;
+      height: 132px;
+      border-radius: 30px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 24px rgba(43,108,176,0.16);
+    }
+    .hero h1 {
+      font-family: var(--serif);
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+    .hero h1 .hero-subtitle {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: #555;
+      letter-spacing: 0;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    @media (max-width: 600px) {
+      .hero h1 .hero-subtitle {
+        display: block;
+        font-size: 0.95rem;
+        margin-top: 6px;
+      }
+      .hero h1 .hero-sep { display: none; }
+    }
+    .hero .tagline {
+      font-size: 1.15rem;
+      color: #555;
+      max-width: 540px;
+      margin: 0 auto 32px;
+    }
+    .btn-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .btn-download {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 600;
+      padding: 14px 24px;
+      border-radius: 10px;
+      text-decoration: none;
+      transition: background 0.2s, border-color 0.2s;
+      text-align: center;
+      box-sizing: border-box;
+      min-height: 74px;
+    }
+    .btn-download:hover { background: var(--accent-hover); }
+    .btn-download.secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+    }
+    .btn-download.secondary:hover { background: var(--accent-soft); }
+    .btn-download.disabled {
+      background: #f3f4f6;
+      color: #9aa1ab;
+      cursor: default;
+      pointer-events: none;
+    }
+    .btn-download .btn-version {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 400;
+      opacity: 0.85;
+      margin-top: 3px;
+    }
+    @media (max-width: 600px) {
+      .btn-row {
+        grid-template-columns: 1fr;
+        max-width: none;
+      }
+    }
+    .hero-sub {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    .hero-sub a { color: var(--accent); text-decoration: none; }
+    .hero-sub a:hover { text-decoration: underline; }
 
-.nav .right {
-  display: inline-flex;
-  align-items: center;
-  gap: 24px;
-  font-size: 13px;
-  color: var(--jr-neutral-700);
-}
-.nav .right a:hover { color: var(--jr-neutral-900); }
-.nav .ver {
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--jr-neutral-500);
-}
+    /* Sections */
+    section { padding: 48px 0; }
+    section h2 {
+      font-family: var(--serif);
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      text-align: center;
+      letter-spacing: -0.01em;
+    }
 
-/* ---------- Shared ---------- */
-.eyebrow {
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--jr-neutral-500);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
+    /* Recent updates */
+    .recent-updates {
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0 0;
+      display: grid;
+      gap: 0.6rem;
+      max-width: 640px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .recent-updates li {
+      padding: 0.85rem 1.1rem;
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      color: #1f2a37;
+    }
+    .recent-updates li strong { color: #11324f; }
 
-/* ---------- Buttons ---------- */
-.btn {
-  font-family: var(--jr-font-ui);
-  font-size: 14px;
-  font-weight: 500;
-  padding: 12px 18px;
-  border-radius: var(--jr-radius-md);
-  border: 1px solid transparent;
-  line-height: 1.2;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.btn.primary { background: var(--jr-primary-600); color: #fff; border-color: var(--jr-primary-600); }
-.btn.primary:hover { background: var(--jr-primary-700); border-color: var(--jr-primary-700); }
-.btn.ghost { background: var(--jr-surface); color: var(--jr-neutral-900); border-color: var(--jr-neutral-300); }
-.btn.ghost:hover { background: var(--jr-neutral-50); }
-.btn .chevron { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+    /* Privacy Hero */
+    .privacy-hero {
+      background: #f0f5fa;
+      border-radius: 16px;
+      padding: 36px;
+      margin: 8px 0 48px;
+      text-align: left;
+    }
+    .privacy-hero h2 {
+      font-size: 1.35rem;
+      margin-bottom: 12px;
+      text-align: left;
+    }
+    .privacy-hero > p {
+      font-size: 0.95rem;
+      color: #555;
+      margin-bottom: 8px;
+      line-height: 1.7;
+    }
+    .privacy-points {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .privacy-point {
+      font-size: 0.95rem;
+      color: #555;
+      padding-left: 16px;
+      border-left: 3px solid var(--accent);
+    }
+    .privacy-point strong { color: #1a1a1a; }
 
-/* ---------- Hero ---------- */
-.hero {
-  padding: 88px 0 96px;
-  border-bottom: var(--jr-border-soft);
-}
-.hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 80px;
-  align-items: center;
-}
-.hero h1 {
-  font-family: var(--jr-font-reading);
-  font-size: 60px;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-  font-weight: 600;
-  margin: 20px 0 20px;
-  color: var(--jr-neutral-900);
-  text-wrap: balance;
-}
-.hero h1 em { color: var(--jr-primary-600); font-style: normal; }
-.hero .sub-en {
-  font-family: var(--jr-font-reading);
-  font-size: 19px;
-  font-style: italic;
-  color: var(--jr-neutral-500);
-  letter-spacing: -0.005em;
-  margin: 0 0 12px;
-}
-.hero .lede {
-  font-size: 16px;
-  color: var(--jr-neutral-700);
-  line-height: 1.6;
-  max-width: 44ch;
-  margin: 0 0 32px;
-}
-.hero .ctas {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.hero .meta-row {
-  margin-top: 28px;
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--jr-neutral-500);
-  text-transform: uppercase;
-}
-.hero .meta-row .dot {
-  width: 4px; height: 4px; border-radius: 50%;
-  background: var(--jr-neutral-300);
-}
+    /* Before / After comparison (CSS mockups) */
+    .comparison { padding: 16px 0 48px; }
+    .comparison .container { max-width: 960px; }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .compare-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .compare-item.after .compare-label { color: var(--accent); }
+    .compare-caption {
+      margin-top: 18px;
+      font-size: 0.85rem;
+      color: #888;
+      text-align: center;
+    }
+    @media (max-width: 600px) { .compare-grid { grid-template-columns: 1fr; } }
 
-/* ---------- Before / After (Marquee style) ---------- */
-.ba {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 32px 1fr;
-  gap: 8px;
-  align-items: center;
-}
-.ba .mock-cell {
-  position: relative;
-  padding-top: 28px;
-}
-.ba .arrow {
-  align-self: center;
-  justify-self: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--jr-primary-600);
-  font-family: var(--jr-font-reading);
-  font-size: 26px;
-  font-weight: 600;
-  line-height: 1;
-  padding-top: 28px;
-}
+    /* Mock shell */
+    .mock {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      aspect-ratio: 1 / 1;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+    }
+    .mock .chrome {
+      height: 22px;
+      background: #fafafa;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 10px;
+    }
+    .mock .chrome i { width: 7px; height: 7px; border-radius: 50%; background: #cccccc; display: inline-block; }
+    .mock .chrome .url { margin-left: 12px; height: 11px; flex: 1; background: #f0f0f0; border-radius: 2px; }
 
-/* Shared mockup shell */
-.mock {
-  background: var(--jr-surface);
-  border: var(--jr-border);
-  border-radius: var(--jr-radius-md);
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  position: relative;
-  box-sizing: border-box;
-}
-.mock .chrome {
-  height: 22px;
-  background: var(--jr-neutral-50);
-  border-bottom: 1px solid var(--jr-neutral-100);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-}
-.mock .chrome i {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--jr-neutral-300);
-  display: inline-block;
-}
-.mock .chrome .url {
-  margin-left: 12px;
-  height: 11px;
-  flex: 1;
-  background: var(--jr-neutral-100);
-  border-radius: 2px;
-}
-.mock-label {
-  position: absolute;
-  top: 6px;
-  left: 0;
-  font-family: var(--jr-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--jr-neutral-500);
-}
-.mock-cell:has(.mock.after) .mock-label { left: auto; right: 0; color: var(--jr-primary-600); }
+    /* BEFORE (noisy site) */
+    .mock.before .body { display: grid; grid-template-columns: 110px 1fr; height: calc(100% - 22px); position: relative; }
+    .mock.before .site-header { position: absolute; top: 0; left: 0; right: 0; height: 32px; background: #2a2a2a; display: flex; align-items: center; padding: 0 12px; gap: 10px; z-index: 1; }
+    .mock.before .site-header .logo { width: 44px; height: 9px; background: #fff; border-radius: 1px; }
+    .mock.before .site-header .nav { display: flex; gap: 8px; margin-left: auto; }
+    .mock.before .site-header .nav span { width: 22px; height: 6px; background: #555; border-radius: 1px; }
+    .mock.before .side { border-right: 1px solid #f0f0f0; padding: 42px 10px 10px; background: #fafafa; }
+    .mock.before .side .ad { width: 100%; height: 130px; background: repeating-linear-gradient(45deg, #ffe8a8 0 6px, #ffd96b 6px 12px); border: 1px solid #e5b83a; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-family: ui-monospace, Menlo, monospace; font-size: 9px; color: #6b4e00; letter-spacing: 0.1em; margin-bottom: 10px; }
+    .mock.before .side .widget { padding: 8px; border: 1px solid #f0f0f0; border-radius: 2px; background: #fff; }
+    .mock.before .side .widget div { height: 6px; background: #f0f0f0; border-radius: 1px; margin-bottom: 5px; }
+    .mock.before .side .widget div:nth-child(2) { width: 80%; }
+    .mock.before .side .widget div:nth-child(3) { width: 65%; }
+    .mock.before .main { padding: 42px 14px 10px; position: relative; overflow: hidden; }
+    .mock.before .main .title { height: 11px; background: #222; width: 80%; border-radius: 1px; }
+    .mock.before .main .title2 { height: 11px; background: #222; width: 55%; border-radius: 1px; margin-top: 5px; }
+    .mock.before .main .byline { height: 5px; width: 30%; background: #ccc; border-radius: 1px; margin-top: 10px; }
+    .mock.before .main .banner-ad { margin-top: 12px; height: 50px; background: linear-gradient(90deg, #c53030 0 35%, #b7791f 35% 70%, #2c7a7b 70% 100%); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-family: ui-monospace, Menlo, monospace; font-size: 9px; color: rgba(255,255,255,0.7); letter-spacing: 0.2em; }
+    .mock.before .main .para { margin-top: 10px; }
+    .mock.before .main .para div { height: 4px; background: #ccc; border-radius: 1px; margin-bottom: 5px; }
+    .mock.before .main .para div:nth-child(1) { width: 96%; }
+    .mock.before .main .para div:nth-child(2) { width: 92%; }
+    .mock.before .main .para div:nth-child(3) { width: 88%; }
+    .mock.before .main .para div:nth-child(4) { width: 70%; }
+    .mock.before .scrim { position: absolute; inset: 0; background: rgba(30,30,30,0.55); z-index: 2; }
+    .mock.before .popup { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 76%; background: #fff; border-radius: 3px; padding: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); z-index: 3; }
+    .mock.before .popup .x { position: absolute; top: 6px; right: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #888; line-height: 1; }
+    .mock.before .popup .h { height: 9px; width: 70%; background: #222; border-radius: 1px; }
+    .mock.before .popup .l1 { height: 4px; width: 92%; background: #ccc; border-radius: 1px; margin-top: 8px; }
+    .mock.before .popup .l2 { height: 4px; width: 80%; background: #ccc; border-radius: 1px; margin-top: 4px; }
+    .mock.before .popup .pbtn { margin-top: 10px; height: 18px; width: 68px; background: var(--accent); border-radius: 2px; }
 
-/* -------- BEFORE (noisy news site) -------- */
-.mock.before .body {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  height: calc(100% - 22px);
-  position: relative;
-}
-.mock.before .site-header {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 34px;
-  background: #2a2a2a;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  gap: 10px;
-  z-index: 1;
-}
-.mock.before .site-header .logo {
-  width: 46px; height: 10px; background: #fff; border-radius: 1px;
-}
-.mock.before .site-header .nav {
-  display: flex; gap: 8px; margin-left: auto;
-}
-.mock.before .site-header .nav span {
-  width: 24px; height: 6px; background: #555; border-radius: 1px;
-}
-.mock.before .side {
-  border-right: 1px solid var(--jr-neutral-100);
-  padding: 44px 10px 10px;
-  background: var(--jr-neutral-50);
-}
-.mock.before .side .ad {
-  width: 100%;
-  height: 140px;
-  background: repeating-linear-gradient(
-    45deg,
-    #ffe8a8 0 6px,
-    #ffd96b 6px 12px
-  );
-  border: 1px solid #e5b83a;
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--jr-font-mono);
-  font-size: 9px;
-  color: #6b4e00;
-  letter-spacing: 0.1em;
-  margin-bottom: 10px;
-}
-.mock.before .side .widget {
-  padding: 8px;
-  border: 1px solid var(--jr-neutral-100);
-  border-radius: 2px;
-  background: #fff;
-}
-.mock.before .side .widget div {
-  height: 6px; background: var(--jr-neutral-100); border-radius: 1px;
-  margin-bottom: 5px;
-}
-.mock.before .side .widget div:nth-child(2) { width: 80%; }
-.mock.before .side .widget div:nth-child(3) { width: 65%; }
-.mock.before .side .widget div:nth-child(4) { width: 72%; }
+    /* AFTER (reading mode) */
+    .mock.after .body { padding: 30px 34px 24px; height: calc(100% - 22px); background: #fff; }
+    .mock.after .kicker { font-family: ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #888; }
+    .mock.after .title { font-family: var(--serif); font-size: 20px; line-height: 1.25; letter-spacing: -0.01em; color: #222; margin: 10px 0 0; font-weight: 600; }
+    .mock.after .byline { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #888; margin-top: 12px; letter-spacing: 0.04em; }
+    .mock.after .rule { height: 1px; background: #f0f0f0; margin: 14px 0 16px; }
+    .mock.after .prose { font-family: var(--serif); font-size: 13px; line-height: 1.8; color: #444; }
+    .mock.after .prose p { margin: 0 0 10px; }
 
-.mock.before .main {
-  padding: 44px 14px 10px;
-  position: relative;
-  overflow: hidden;
-}
-.mock.before .main .title {
-  height: 12px; background: var(--jr-neutral-900); width: 80%; border-radius: 1px;
-}
-.mock.before .main .title2 { height: 12px; background: var(--jr-neutral-900); width: 55%; border-radius: 1px; margin-top: 5px; }
-.mock.before .main .byline {
-  height: 5px; width: 30%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 10px;
-}
-.mock.before .main .banner-ad {
-  margin-top: 12px;
-  height: 54px;
-  background:
-    linear-gradient(90deg, #c53030 0 35%, #b7791f 35% 70%, #2c7a7b 70% 100%);
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--jr-font-mono);
-  font-size: 9px;
-  color: rgba(255,255,255,0.7);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-.mock.before .main .para {
-  margin-top: 10px;
-}
-.mock.before .main .para div {
-  height: 4px; background: var(--jr-neutral-300); border-radius: 1px; margin-bottom: 5px;
-}
-.mock.before .main .para div:nth-child(1) { width: 96%; }
-.mock.before .main .para div:nth-child(2) { width: 92%; }
-.mock.before .main .para div:nth-child(3) { width: 88%; }
-.mock.before .main .para div:nth-child(4) { width: 94%; }
-.mock.before .main .para div:nth-child(5) { width: 70%; }
+    /* Features */
+    .features { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .feature h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+    .feature p { font-size: 0.88rem; color: #555; }
 
-/* Popup overlay */
-.mock.before .scrim {
-  position: absolute;
-  inset: 0;
-  background: rgba(30, 30, 30, 0.55);
-  z-index: 2;
-}
-.mock.before .popup {
-  position: absolute;
-  left: 50%; top: 50%;
-  transform: translate(-50%, -50%);
-  width: 78%;
-  background: #fff;
-  border-radius: 3px;
-  padding: 14px 14px 12px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-  z-index: 3;
-}
-.mock.before .popup .x {
-  position: absolute;
-  top: 6px; right: 8px;
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  color: var(--jr-neutral-500);
-  line-height: 1;
-}
-.mock.before .popup .h {
-  height: 9px; width: 70%; background: var(--jr-neutral-900); border-radius: 1px;
-}
-.mock.before .popup .l1 {
-  height: 4px; width: 92%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 8px;
-}
-.mock.before .popup .l2 { height: 4px; width: 80%; background: var(--jr-neutral-300); border-radius: 1px; margin-top: 4px; }
-.mock.before .popup .btn {
-  margin-top: 10px;
-  height: 18px; width: 70px;
-  background: var(--jr-primary-600);
-  border-radius: 2px;
-}
+    /* Steps */
+    .steps { display: flex; flex-direction: column; gap: 20px; }
+    .step { display: flex; align-items: flex-start; gap: 16px; }
+    .step-num {
+      flex-shrink: 0;
+      width: 36px; height: 36px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 1rem;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .step-body h3 { font-size: 1rem; font-weight: 600; margin-bottom: 2px; }
+    .step-body p { font-size: 0.92rem; color: #555; }
+    .step-body code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-family: ui-monospace, Menlo, monospace; }
 
-/* -------- AFTER (reading mode) -------- */
-.mock.after .body {
-  padding: 32px 36px 24px;
-  height: calc(100% - 22px);
-  box-sizing: border-box;
-  background: var(--jr-read-light-bg);
-}
-.mock.after .kicker {
-  font-family: var(--jr-font-mono);
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--jr-neutral-500);
-}
-.mock.after .title {
-  font-family: var(--jr-font-reading);
-  font-size: 22px;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-  color: var(--jr-neutral-900);
-  margin: 10px 0 0;
-  font-weight: 600;
-  text-wrap: balance;
-}
-.mock.after .byline {
-  font-family: var(--jr-font-mono);
-  font-size: 10px;
-  color: var(--jr-neutral-500);
-  margin-top: 12px;
-  letter-spacing: 0.04em;
-}
-.mock.after .rule {
-  height: 1px;
-  background: var(--jr-neutral-100);
-  margin: 14px 0 16px;
-}
-.mock.after .prose {
-  font-family: var(--jr-font-reading);
-  font-size: 13px;
-  line-height: 1.75;
-  color: var(--jr-neutral-700);
-  letter-spacing: 0.005em;
-}
-.mock.after .prose p { margin: 0 0 10px; }
-.mock.after .prose p:last-child { margin-bottom: 0; }
+    /* Footer */
+    footer {
+      padding: 48px 0 32px;
+      text-align: center;
+      font-size: 0.82rem;
+      color: #aaa;
+      border-top: 1px solid #f0f0f0;
+      margin-top: 48px;
+    }
+    footer a { color: #888; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
 
-/* ---------- Problem section ---------- */
-section.problem {
-  padding: 112px 0 96px;
-  border-bottom: var(--jr-border-soft);
-}
-.section-head { max-width: 640px; margin-bottom: 64px; }
-.section-head h2 {
-  font-family: var(--jr-font-reading);
-  font-size: 40px;
-  line-height: 1.2;
-  letter-spacing: -0.015em;
-  font-weight: 600;
-  margin: 16px 0 12px;
-  text-wrap: balance;
-}
-.section-head .dek {
-  font-size: 16px;
-  color: var(--jr-neutral-700);
-  line-height: 1.6;
-  margin: 0;
-  max-width: 52ch;
-}
-
-.three-up {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0;
-  border-top: var(--jr-border);
-}
-.three-up .cell {
-  padding: 40px 32px 40px 0;
-  border-right: var(--jr-border);
-}
-.three-up .cell:last-child { border-right: 0; padding-right: 0; }
-.three-up .cell + .cell { padding-left: 32px; }
-.three-up .num {
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--jr-primary-600);
-}
-.three-up .ico {
-  width: 44px; height: 44px;
-  margin: 20px 0 24px;
-  display: grid; place-items: center;
-  border: var(--jr-border);
-  border-radius: var(--jr-radius-md);
-  color: var(--jr-neutral-900);
-}
-.three-up .ico svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.three-up h3 {
-  font-family: var(--jr-font-reading);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  margin: 0 0 10px;
-  line-height: 1.3;
-}
-.three-up p {
-  font-size: 14px;
-  color: var(--jr-neutral-700);
-  line-height: 1.65;
-  margin: 0;
-  max-width: 32ch;
-}
-
-/* ---------- Themes preview ---------- */
-section.themes {
-  padding: 112px 0 96px;
-  border-bottom: var(--jr-border-soft);
-}
-.theme-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-.theme {
-  border: var(--jr-border);
-  border-radius: var(--jr-radius-md);
-  overflow: hidden;
-  background: var(--jr-surface);
-  display: flex;
-  flex-direction: column;
-}
-.theme .tab {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: var(--jr-border);
-  background: var(--jr-surface);
-}
-.theme .name {
-  font-size: 13px;
-  font-weight: 600;
-}
-.theme .swatches { display: inline-flex; gap: 4px; }
-.theme .sw {
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0,0,0,0.08);
-}
-.theme .canvas {
-  padding: 28px 28px 30px;
-  font-family: var(--jr-font-reading);
-  flex: 1;
-}
-.theme .kicker {
-  font-family: var(--jr-font-mono);
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.55;
-  margin-bottom: 10px;
-}
-.theme .canvas h4 {
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.005em;
-  margin: 0 0 6px;
-  text-wrap: balance;
-}
-.theme .canvas .by {
-  font-family: var(--jr-font-mono);
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  opacity: 0.55;
-  margin-bottom: 16px;
-}
-.theme .canvas p {
-  font-size: 12px;
-  line-height: 1.8;
-  margin: 0 0 6px;
-}
-.theme.light .canvas { background: var(--jr-read-light-bg); color: var(--jr-read-light-fg); }
-.theme.dark .canvas { background: var(--jr-read-dark-bg); color: var(--jr-read-dark-fg); }
-.theme.sepia .canvas { background: var(--jr-read-sepia-bg); color: var(--jr-read-sepia-fg); }
-
-.theme .meta {
-  padding: 10px 16px;
-  border-top: var(--jr-border);
-  background: var(--jr-neutral-50);
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--jr-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--jr-neutral-500);
-  text-transform: uppercase;
-}
-.theme .meta .val { color: var(--jr-neutral-700); }
-
-/* ---------- Steps ---------- */
-section.steps { padding: 112px 0 104px; border-bottom: var(--jr-border-soft); }
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  margin-top: 56px;
-}
-.step {
-  position: relative;
-  padding: 0 28px;
-  display: flex;
-  flex-direction: column;
-}
-.step:first-child { padding-left: 0; }
-.step:last-child { padding-right: 0; }
-.step + .step { border-left: var(--jr-border); }
-.step .circle {
-  width: 52px; height: 52px;
-  border-radius: 50%;
-  border: 1px solid var(--jr-neutral-300);
-  display: grid; place-items: center;
-  font-family: var(--jr-font-reading);
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--jr-neutral-900);
-  background: var(--jr-surface);
-  margin-bottom: 24px;
-  letter-spacing: -0.01em;
-}
-.step.active .circle {
-  background: var(--jr-primary-600);
-  border-color: var(--jr-primary-600);
-  color: #fff;
-}
-.step h3 {
-  font-family: var(--jr-font-reading);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  margin: 0 0 10px;
-  line-height: 1.3;
-}
-.step p {
-  font-size: 14px;
-  color: var(--jr-neutral-700);
-  line-height: 1.65;
-  margin: 0 0 14px;
-  max-width: 32ch;
-}
-.step > .kbd-label,
-.step > .kbd-row { margin-top: auto; }
-.kbd-row { display: inline-flex; gap: 4px; align-items: center; }
-.kbd {
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  padding: 3px 7px;
-  border: 1px solid var(--jr-neutral-300);
-  border-bottom-width: 2px;
-  border-radius: var(--jr-radius-sm);
-  background: var(--jr-neutral-50);
-  color: var(--jr-neutral-900);
-  line-height: 1;
-}
-.kbd-label {
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--jr-neutral-500);
-  text-transform: uppercase;
-  margin-right: 6px;
-}
-
-/* ---------- Footer ---------- */
-footer {
-  padding: 56px 0 72px;
-  font-family: var(--jr-font-ui);
-}
-.foot-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-.foot-left {
-  display: inline-flex;
-  align-items: center;
-  gap: 18px;
-  font-family: var(--jr-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--jr-neutral-500);
-  text-transform: uppercase;
-}
-.foot-left .sep { width: 4px; height: 4px; border-radius: 50%; background: var(--jr-neutral-300); }
-.foot-right {
-  display: inline-flex;
-  gap: 20px;
-  font-size: 13px;
-  color: var(--jr-neutral-700);
-}
-.foot-right a:hover { color: var(--jr-neutral-900); }
-.foot-tag {
-  margin-top: 18px;
-  font-size: 12px;
-  color: var(--jr-neutral-500);
-}
-
-/* ---------- Responsive ---------- */
-@media (max-width: 900px) {
-  :root { --page-pad: 24px; }
-
-  .nav .right .link-text { display: none; }
-
-  .hero { padding: 56px 0 64px; }
-  .hero-grid { grid-template-columns: 1fr; gap: 48px; }
-  .hero h1 { font-size: 40px; }
-  .hero .sub-en { font-size: 16px; }
-  .hero .lede { font-size: 15px; }
-
-  .ba { grid-template-columns: 1fr; gap: 40px; padding-top: 28px; }
-  .ba .arrow { transform: rotate(90deg); }
-  .mock { aspect-ratio: 4 / 3; }
-  .mock.after .body { padding: 24px; }
-  .mock.after .title { font-size: 17px; }
-  .mock.after .prose { font-size: 11px; line-height: 1.8; }
-
-  section.problem, section.themes, section.steps { padding: 72px 0 64px; }
-  .section-head h2 { font-size: 28px; }
-  .section-head .dek { font-size: 15px; }
-
-  .three-up { grid-template-columns: 1fr; }
-  .three-up .cell {
-    padding: 32px 0;
-    border-right: 0;
-    border-bottom: var(--jr-border);
-  }
-  .three-up .cell:last-child { border-bottom: 0; }
-  .three-up .cell + .cell { padding-left: 0; }
-
-  .theme-grid { grid-template-columns: 1fr; gap: 16px; }
-
-  .steps-grid { grid-template-columns: 1fr; gap: 16px; margin-top: 40px; }
-  .step { padding-right: 0; padding-bottom: 24px; border-bottom: var(--jr-border); }
-  .step + .step { padding-left: 0; border-left: 0; padding-top: 24px; }
-  .step:last-child { border-bottom: 0; }
-
-  .foot-row { flex-direction: column; align-items: flex-start; }
-
-  .hero .ctas { width: 100%; }
-  .hero .ctas .btn { flex: 1; justify-content: center; }
-}
-</style>
+    /* Responsive */
+    @media (max-width: 600px) {
+      .hero { padding: 64px 0 36px; }
+      .hero h1 { font-size: 1.8rem; }
+      .hero-icon { width: 108px; height: 108px; border-radius: 24px; }
+      .features { grid-template-columns: 1fr; }
+      .lang-switcher { top: 10px; right: 10px; }
+      .privacy-hero { padding: 24px; }
+    }
+  </style>
 </head>
 <body>
 
-<!-- NAV -->
-<div class="wrap">
-  <div class="nav">
-    <a class="brand" href="#">
-      <div class="mark">J</div>
-      <div class="word">J<em>Read</em></div>
-    </a>
-    <div class="right">
-      <a class="link-text" href="#problem">功能</a>
-      <a class="link-text" href="#themes">主題</a>
-      <a class="link-text" href="#steps">使用</a>
-      <span class="ver">v0.6.26</span>
-      <a class="btn primary" href="#" aria-label="加入 Chrome">加入 Chrome</a>
-    </div>
+  <!-- Language switcher -->
+  <div class="lang-switcher" role="group" aria-label="Language">
+    <button class="lang-btn" data-lang="zh-TW" type="button">繁中</button>
+    <button class="lang-btn" data-lang="en" type="button">EN</button>
   </div>
-</div>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="wrap">
-    <div class="hero-grid">
-      <div class="hero-copy">
-        <div class="eyebrow">Reader Mode Chrome Extension</div>
-        <h1>一鍵純閱讀<br>還你乾淨文字</h1>
-        <p class="sub-en" style="margin-bottom: 32px;">One click to quiet the web.</p>
-        <div class="ctas">
-          <a class="btn primary" href="#">
-            加入 Chrome
-            <svg class="chevron" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>
-          </a>
-          <a class="btn ghost" href="#">
-            在 GitHub 看原始碼
-            <svg class="chevron" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
-          </a>
-        </div>
-        <div class="meta-row">
-          <span>FREE · OPEN SOURCE · PRIVACY</span>
-        </div>
-      </div>
-
-      <!-- BEFORE / AFTER ILLUSTRATION -->
-      <div class="ba" role="img" aria-label="Before and after comparison: a cluttered webpage on the left, and a clean JRead reading view on the right.">
-        <!-- BEFORE -->
-        <div class="mock-cell">
-          <span class="mock-label">Before</span>
-          <div class="mock before">
-          <div class="chrome">
-            <i></i><i></i><i></i>
-            <div class="url"></div>
-          </div>
-          <div class="body">
-            <div class="site-header">
-              <div class="logo"></div>
-              <div class="nav"><span></span><span></span><span></span><span></span></div>
-            </div>
-            <aside class="side">
-              <div class="ad">AD · 300×250</div>
-              <div class="widget">
-                <div style="width:55%"></div>
-                <div></div>
-                <div></div>
-                <div></div>
-              </div>
-            </aside>
-            <div class="main">
-              <div class="title"></div>
-              <div class="title2"></div>
-              <div class="byline"></div>
-              <div class="banner-ad">SPONSORED</div>
-              <div class="para">
-                <div></div><div></div><div></div><div></div><div></div>
-              </div>
-            </div>
-            <!-- Popup overlay -->
-            <div class="scrim"></div>
-            <div class="popup">
-              <span class="x">✕</span>
-              <div class="h"></div>
-              <div class="l1"></div>
-              <div class="l2"></div>
-              <div class="btn"></div>
-            </div>
-          </div>
-          </div>
-        </div>
-
-        <!-- ARROW -->
-        <div class="arrow" aria-hidden="true">→</div>
-
-        <!-- AFTER -->
-        <div class="mock-cell">
-          <span class="mock-label">After JRead</span>
-          <div class="mock after">
-          <div class="chrome">
-            <i></i><i></i><i></i>
-            <div class="url"></div>
-          </div>
-          <div class="body">
-            <div class="kicker">Essay · 12 min read</div>
-            <h3 class="title">論專注：為什麼我們越來越讀不完一篇長文</h3>
-            <div class="byline">By 林書宇 — Mar 2026</div>
-            <div class="rule"></div>
-            <div class="prose">
-              <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力：橫幅、側欄、彈窗、訂閱框</p>
-              <p>JRead 的做法很簡單——把它們通通移走，只留下文字、段落與留白</p>
-            </div>
-          </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- PROBLEM -->
-<section class="problem" id="problem">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>把雜訊滿滿的網頁<br>變成乾淨可讀的文章</h2>
-    </div>
-
-    <div class="three-up">
-      <div class="cell">
-        <div class="num">01</div>
-        <div class="ico" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <rect x="3" y="4" width="18" height="16" rx="1.5"/>
-            <line x1="3" y1="20" x2="21" y2="4"/>
-          </svg>
-        </div>
-        <h3>隱藏廣告與側邊欄</h3>
-        <p>橫幅、彈窗、"你可能也喜歡"，一次全部移除。資料都在本機處理，完全不傳給第三方</p>
-      </div>
-
-      <div class="cell">
-        <div class="num">02</div>
-        <div class="ico" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <line x1="4" y1="7" x2="20" y2="7"/>
-            <line x1="4" y1="12" x2="16" y2="12"/>
-            <line x1="4" y1="17" x2="18" y2="17"/>
-          </svg>
-        </div>
-        <h3>乾淨排版</h3>
-        <p>Noto Serif TC 襯線字、1.75 行高、58–66 字的版心，中英文都讀得舒服</p>
-      </div>
-
-      <div class="cell">
-        <div class="num">03</div>
-        <div class="ico" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="8"/>
-            <path d="M12 4 A8 8 0 0 1 12 20 Z" fill="currentColor" stroke="none"/>
-          </svg>
-        </div>
-        <h3>三種閱讀主題</h3>
-        <p>Light、Dark、Sepia，OLED 夜間友善</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- THEMES -->
-<section class="themes" id="themes">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>同一段文字<br>三種閱讀心情</h2>
-    </div>
-
-    <div class="theme-grid">
-      <div class="theme light">
-        <div class="tab">
-          <span class="name">Light</span>
-          <div class="swatches" aria-hidden="true">
-            <span class="sw" style="background:#ffffff;"></span>
-            <span class="sw" style="background:#222222;"></span>
-          </div>
-        </div>
-        <div class="canvas">
-          <div class="kicker">Essay · 2026</div>
-          <h4>論專注：為什麼我們越來越讀不完一篇長文</h4>
-          <div class="by">林 書 宇 · 12 min read</div>
-          <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
-          <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
-        </div>
-        <div class="meta">
-          <span>日間 · default</span>
-          <span class="val">AAA · 16.1:1</span>
-        </div>
-      </div>
-
-      <div class="theme dark">
-        <div class="tab">
-          <span class="name">Dark</span>
-          <div class="swatches" aria-hidden="true">
-            <span class="sw" style="background:#1a1a1a;"></span>
-            <span class="sw" style="background:#e4e4e4;"></span>
-          </div>
-        </div>
-        <div class="canvas">
-          <div class="kicker">Essay · 2026</div>
-          <h4>論專注：為什麼我們越來越讀不完一篇長文</h4>
-          <div class="by">林 書 宇 · 12 min read</div>
-          <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
-          <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
-        </div>
-        <div class="meta" style="background: #111; color: #888; border-top-color: #222;">
-          <span>夜間 · OLED-safe</span>
-          <span class="val" style="color: #ccc;">AAA · 14.8:1</span>
-        </div>
-      </div>
-
-      <div class="theme sepia">
-        <div class="tab">
-          <span class="name">Sepia</span>
-          <div class="swatches" aria-hidden="true">
-            <span class="sw" style="background:#f4ecd8;"></span>
-            <span class="sw" style="background:#3a3226;"></span>
-          </div>
-        </div>
-        <div class="canvas">
-          <div class="kicker">Essay · 2026</div>
-          <h4>論專注：為什麼我們越來越讀不完一篇長文</h4>
-          <div class="by">林 書 宇 · 12 min read</div>
-          <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
-          <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
-        </div>
-        <div class="meta" style="background: #efe6cf; color: #8a7a5a; border-top-color: #e2d6b8;">
-          <span>長時間閱讀 · paper</span>
-          <span class="val" style="color: #3a3226;">AAA · 10.3:1</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- STEPS -->
-<section class="steps" id="steps">
-  <div class="wrap">
-    <div class="section-head">
-      <h2>三步驟移除雜訊開始閱讀</h2>
-    </div>
-
-    <div class="steps-grid">
-      <div class="step">
-        <div class="circle">1</div>
-        <h3>安裝</h3>
-        <p>在 Chrome Web Store 點一下「加入 Chrome」，工具列就會出現 J 圖示</p>
-        <span class="kbd-label">~ 10s</span>
-      </div>
-      <div class="step">
-        <div class="circle">2</div>
-        <h3>打開任一文章</h3>
-        <p>新聞、部落格、論文、Medium、Substack，任何以文字為主的頁面</p>
-        <span class="kbd-label">any article</span>
-      </div>
-      <div class="step active">
-        <div class="circle">3</div>
-        <h3>按 JRead 圖示</h3>
-        <p>點工具列的 J，雜訊消失</p>
-        <span class="kbd-row">
-          <span class="kbd-label">shortcut</span>
-          <span class="kbd">⌥</span>
-          <span class="kbd">R</span>
-        </span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FOOTER -->
-<footer>
-  <div class="wrap">
-    <div class="foot-row">
-      <div class="foot-left">
-        <a class="brand" href="#" style="gap: 8px;">
-          <div class="mark" style="width: 22px; height: 22px; font-size: 13px;">J</div>
-          <span style="font-family: var(--jr-font-reading); font-size: 15px; font-weight: 600; color: var(--jr-neutral-900); letter-spacing: -0.01em; text-transform: none;">JRead</span>
+  <!-- Hero -->
+  <div class="hero">
+    <div class="container">
+      <img src="icon-512.png" alt="JRead" class="hero-icon">
+      <h1>JRead<span class="hero-sep">｜</span><span class="hero-subtitle" data-i18n="hero.subtitle">一鍵純閱讀，還你乾淨文字</span></h1>
+      <p class="tagline" data-i18n="hero.tagline">廣告、側欄、彈窗、推薦列通通移走，只留下乾淨排版的主文<br>全程在你的瀏覽器本機完成，不上傳任何內容</p>
+      <div class="btn-row">
+        <a class="btn-download disabled" aria-disabled="true">
+          <span data-i18n="btn.cws.text">Chrome Web Store</span>
+          <span class="btn-version">v<!-- version-start -->1.0.0<!-- version-end --> · <span data-i18n="btn.cws.status">即將上架</span></span>
         </a>
-        <span class="sep"></span>
-        <span>v0.6.26</span>
-        <span class="sep"></span>
-        <span>© 2026</span>
+        <a href="https://github.com/jimmysu0309/JRead/releases" class="btn-download">
+          <span data-i18n="btn.github.text">從 GitHub 下載手動安裝</span>
+          <span class="btn-version">v1.0.0 · <span data-i18n="btn.github.status">Chrome 載入未封裝</span></span>
+        </a>
+        <a href="https://github.com/jimmysu0309/JRead/releases" class="btn-download secondary">
+          <span data-i18n="btn.firefox.text">Firefox 手動安裝</span>
+          <span class="btn-version">v1.0.0 · <span data-i18n="btn.firefox.status">GitHub 下載</span></span>
+        </a>
+        <a href="mailto:jimmy.zm.su@gmail.com?subject=JRead%20TestFlight%20invite" class="btn-download secondary">
+          <span data-i18n="btn.ios.text">iOS / iPadOS / macOS（TestFlight）</span>
+          <span class="btn-version">v1.0.0 · <span data-i18n="btn.ios.status">邀請制 beta</span></span>
+        </a>
       </div>
-      <div class="foot-right">
-        <a href="#">GitHub</a>
-        <a href="#">Chrome Web Store</a>
-        <a href="#">Changelog</a>
-        <a href="#">Privacy</a>
+      <p class="hero-sub" data-i18n="hero.sub">開放原始碼 · <a href="https://github.com/jimmysu0309/JRead#readme">使用說明</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">更新紀錄</a> · <a href="https://github.com/jimmysu0309/JRead">GitHub</a></p>
+    </div>
+  </div>
+
+  <!-- Recent updates -->
+  <section>
+    <div class="container">
+      <h2 data-i18n="recent.heading">近期重大更新</h2>
+      <ul class="recent-updates">
+        <li data-i18n="recent.v1"><strong>v1.0.0 釋出</strong>：主要功能穩定，主文偵測、雜訊清除、排版與翻頁體驗全面打磨</li>
+        <li data-i18n="recent.floating">新增<strong>懸浮按鈕</strong>：頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換位置</li>
+        <li data-i18n="recent.editmode">新增<strong>編輯模式</strong>：cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Privacy -->
+  <div class="container">
+    <div class="privacy-hero">
+      <h2 data-i18n="privacy.heading">為什麼做 JRead？</h2>
+      <p data-i18n="privacy.intro1">閱讀工具不該變成另一個盯著你的東西。市面上不少「閱讀器」會把你看的每一篇文章送到它們的伺服器處理</p>
+      <p data-i18n="privacy.intro2">JRead 把「乾淨閱讀」和「隱私」綁在一起：</p>
+      <div class="privacy-points">
+        <div class="privacy-point" data-i18n="privacy.point1"><strong>全本機處理</strong>：主文偵測、雜訊清除、排版全部在你的瀏覽器跑，頁面內容不上傳任何伺服器</div>
+        <div class="privacy-point" data-i18n="privacy.point2"><strong>設定留在本地</strong>：偏好只存在你的瀏覽器，跨裝置同步走瀏覽器內建機制，不經第三方</div>
+        <div class="privacy-point" data-i18n="privacy.point3"><strong>開放原始碼</strong>：程式碼完全公開，任何人都能檢視，確認沒有後門</div>
+        <div class="privacy-point" data-i18n="privacy.point4"><strong>選用整合才連網</strong>：只有你主動送到 Readwise 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key</div>
       </div>
     </div>
-    <div class="foot-tag">No coding skills were harmed in the making of this.</div>
   </div>
-</footer>
+
+  <!-- Before / After -->
+  <div class="comparison">
+    <div class="container">
+      <div class="compare-grid">
+        <div class="compare-item before">
+          <p class="compare-label" data-i18n="compare.before">啟動前</p>
+          <div class="mock before" role="img" aria-label="A cluttered web page full of ads, a sidebar and a popup.">
+            <div class="chrome"><i></i><i></i><i></i><div class="url"></div></div>
+            <div class="body">
+              <div class="site-header"><div class="logo"></div><div class="nav"><span></span><span></span><span></span></div></div>
+              <aside class="side">
+                <div class="ad">AD · 300×250</div>
+                <div class="widget"><div style="width:55%"></div><div></div><div></div></div>
+              </aside>
+              <div class="main">
+                <div class="title"></div><div class="title2"></div><div class="byline"></div>
+                <div class="banner-ad">SPONSORED</div>
+                <div class="para"><div></div><div></div><div></div><div></div></div>
+              </div>
+              <div class="scrim"></div>
+              <div class="popup"><span class="x">✕</span><div class="h"></div><div class="l1"></div><div class="l2"></div><div class="pbtn"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="compare-item after">
+          <p class="compare-label" data-i18n="compare.after">JRead 啟動後</p>
+          <div class="mock after" role="img" aria-label="The same page in JRead reading mode: just the title and clean paragraphs.">
+            <div class="chrome"><i></i><i></i><i></i><div class="url"></div></div>
+            <div class="body">
+              <div class="kicker">Essay · 12 min read</div>
+              <div class="title">論專注：為什麼我們越來越讀不完一篇長文</div>
+              <div class="byline">By 林書宇 — Mar 2026</div>
+              <div class="rule"></div>
+              <div class="prose">
+                <p>每一次打開一篇長文，你都在跟頁面上至少七個其他訊號搶注意力</p>
+                <p>JRead 把它們通通移走，只留下文字、段落與留白</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="compare-caption" data-i18n="compare.caption">同一個頁面，雜訊清掉、排版重整，讀起來像一本書</p>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section>
+    <div class="container">
+      <h2 data-i18n="features.heading">功能特色</h2>
+      <div class="features">
+        <div class="feature">
+          <h3 data-i18n="feature.detect.title">智慧主文偵測</h3>
+          <p data-i18n="feature.detect.body">用 article 標籤、Schema.org、內容密度啟發式找出主文；找不到就不動原頁，不亂套排版</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.type.title">乾淨排版</h3>
+          <p data-i18n="feature.type.body">可選襯線或無襯線、三段字重、可調行高與版心寬度，中英文都讀得舒服</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.theme.title">三種閱讀主題</h3>
+          <p data-i18n="feature.theme.body">亮、暗、米色隨時切換，OLED 夜間友善</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.latin.title">英文字型自選</h3>
+          <p data-i18n="feature.latin.body">可單獨指定英文 / 數字用哪支拉丁字型，中文照襯線 / 無襯線渲染；內附多支跨平台可變字型</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.clean.title">雜訊隱藏</h3>
+          <p data-i18n="feature.clean.body">廣告、sticky header、彈窗、相關文章列表通通清掉，全是結構通則、非站點特判</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.edit.title">編輯模式</h3>
+          <p data-i18n="feature.edit.body">cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原或 Cmd/Ctrl+Z</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.focus.title">段落焦點捲動</h3>
+          <p data-i18n="feature.focus.body">左側指示條標記目前段落，按 Space 跳下一段、低於門檻自動平滑捲回，仿 Readwise Reader</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.paged.title">翻頁模式</h3>
+          <p data-i18n="feature.paged.body">像電子書一樣左右翻頁——手機滑動、桌面方向鍵或滾輪，底部頁碼可當快速捲動器</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.floating.title">懸浮按鈕</h3>
+          <p data-i18n="feature.floating.body">頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換到左右緣與上下位置</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.resume.title">閱讀位置記憶</h3>
+          <p data-i18n="feature.resume.body">看到一半離開，效期內重新進入閱讀模式自動回到上次位置——捲動模式記段落、翻頁模式記頁數</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.readwise.title">送到 Readwise Reader</h3>
+          <p data-i18n="feature.readwise.body">把處理過的乾淨主文一鍵送進 Readwise，繞過原站 parser 問題；可選用 Gemini 自動產生摘要</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.shortcuts.title">自訂快速鍵</h3>
+          <p data-i18n="feature.shortcuts.body">可為切換閱讀模式 / 送 Readwise / YouTube 無邊模式錄製自訂組合鍵，Chrome 與 Safari 皆通用</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install Steps -->
+  <section>
+    <div class="container">
+      <h2 data-i18n="install.heading">三步驟，開始乾淨閱讀</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3 data-i18n="install.step1.title">下載並載入</h3>
+            <p data-i18n="install.step1.body">從 GitHub 下載 <code>.zip</code> 解壓，開啟 Chrome 前往 <code>chrome://extensions/</code>，打開右上角「開發人員模式」，點「載入未封裝項目」選擇 <code>jread</code> 資料夾</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3 data-i18n="install.step2.title">打開任一文章</h3>
+            <p data-i18n="install.step2.body">新聞、部落格、論文、Medium、Substack，任何以文字為主的頁面都可以</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3 data-i18n="install.step3.title">啟動閱讀模式</h3>
+            <p data-i18n="install.step3.body">點工具列的 JRead 圖示，或用懸浮按鈕、自訂快速鍵，雜訊立刻消失</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Report an issue -->
+  <section>
+    <div class="container">
+      <h2 data-i18n="report.heading">回報問題</h2>
+      <p style="text-align:center; color:#555;" data-i18n="report.body">遇到 bug 或有功能建議？歡迎到 <a href="https://github.com/jimmysu0309/JRead/issues" style="color:#2b6cb0;">GitHub Issues</a> 回報</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p data-i18n="footer.license">JRead 採用 <a href="https://github.com/jimmysu0309/JRead/blob/main/LICENSE">Elastic License 2.0</a> 授權 · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">更新紀錄</a> · <a href="https://github.com/jimmysu0309/JRead">原始碼</a></p>
+      <p style="margin-top:8px; font-style:italic;">No coding skills were harmed in the making of this.</p>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var I18N = {
+        'zh-TW': {
+          'meta.title': 'JRead｜一鍵純閱讀，還你乾淨文字',
+          'meta.description': '純閱讀模式擴充功能，一鍵隱藏廣告、側欄、彈窗、推薦列，只留下乾淨排版的主文。全程在你的瀏覽器本機處理，不上傳任何內容',
+
+          'hero.subtitle': '一鍵純閱讀，還你乾淨文字',
+          'hero.tagline': '廣告、側欄、彈窗、推薦列通通移走，只留下乾淨排版的主文<br>全程在你的瀏覽器本機完成，不上傳任何內容',
+          'btn.cws.text': 'Chrome Web Store',
+          'btn.cws.status': '即將上架',
+          'btn.github.text': '從 GitHub 下載手動安裝',
+          'btn.github.status': 'Chrome 載入未封裝',
+          'btn.firefox.text': 'Firefox 手動安裝',
+          'btn.firefox.status': 'GitHub 下載',
+          'btn.ios.text': 'iOS / iPadOS / macOS（TestFlight）',
+          'btn.ios.status': '邀請制 beta',
+          'hero.sub': '開放原始碼 · <a href="https://github.com/jimmysu0309/JRead#readme">使用說明</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">更新紀錄</a> · <a href="https://github.com/jimmysu0309/JRead">GitHub</a>',
+
+          'recent.heading': '近期重大更新',
+          'recent.v1': '<strong>v1.0.0 釋出</strong>：主要功能穩定，主文偵測、雜訊清除、排版與翻頁體驗全面打磨',
+          'recent.floating': '新增<strong>懸浮按鈕</strong>：頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換位置',
+          'recent.editmode': '新增<strong>編輯模式</strong>：cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原',
+
+          'privacy.heading': '為什麼做 JRead？',
+          'privacy.intro1': '閱讀工具不該變成另一個盯著你的東西。市面上不少「閱讀器」會把你看的每一篇文章送到它們的伺服器處理',
+          'privacy.intro2': 'JRead 把「乾淨閱讀」和「隱私」綁在一起：',
+          'privacy.point1': '<strong>全本機處理</strong>：主文偵測、雜訊清除、排版全部在你的瀏覽器跑，頁面內容不上傳任何伺服器',
+          'privacy.point2': '<strong>設定留在本地</strong>：偏好只存在你的瀏覽器，跨裝置同步走瀏覽器內建機制，不經第三方',
+          'privacy.point3': '<strong>開放原始碼</strong>：程式碼完全公開，任何人都能檢視，確認沒有後門',
+          'privacy.point4': '<strong>選用整合才連網</strong>：只有你主動送到 Readwise 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key',
+
+          'compare.before': '啟動前',
+          'compare.after': 'JRead 啟動後',
+          'compare.caption': '同一個頁面，雜訊清掉、排版重整，讀起來像一本書',
+
+          'features.heading': '功能特色',
+          'feature.detect.title': '智慧主文偵測',
+          'feature.detect.body': '用 article 標籤、Schema.org、內容密度啟發式找出主文；找不到就不動原頁，不亂套排版',
+          'feature.type.title': '乾淨排版',
+          'feature.type.body': '可選襯線或無襯線、三段字重、可調行高與版心寬度，中英文都讀得舒服',
+          'feature.theme.title': '三種閱讀主題',
+          'feature.theme.body': '亮、暗、米色隨時切換，OLED 夜間友善',
+          'feature.latin.title': '英文字型自選',
+          'feature.latin.body': '可單獨指定英文 / 數字用哪支拉丁字型，中文照襯線 / 無襯線渲染；內附多支跨平台可變字型',
+          'feature.clean.title': '雜訊隱藏',
+          'feature.clean.body': '廣告、sticky header、彈窗、相關文章列表通通清掉，全是結構通則、非站點特判',
+          'feature.edit.title': '編輯模式',
+          'feature.edit.body': 'cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原或 Cmd/Ctrl+Z',
+          'feature.focus.title': '段落焦點捲動',
+          'feature.focus.body': '左側指示條標記目前段落，按 Space 跳下一段、低於門檻自動平滑捲回，仿 Readwise Reader',
+          'feature.paged.title': '翻頁模式',
+          'feature.paged.body': '像電子書一樣左右翻頁——手機滑動、桌面方向鍵或滾輪，底部頁碼可當快速捲動器',
+          'feature.floating.title': '懸浮按鈕',
+          'feature.floating.body': '頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換到左右緣與上下位置',
+          'feature.resume.title': '閱讀位置記憶',
+          'feature.resume.body': '看到一半離開，效期內重新進入閱讀模式自動回到上次位置——捲動模式記段落、翻頁模式記頁數',
+          'feature.readwise.title': '送到 Readwise Reader',
+          'feature.readwise.body': '把處理過的乾淨主文一鍵送進 Readwise，繞過原站 parser 問題；可選用 Gemini 自動產生摘要',
+          'feature.shortcuts.title': '自訂快速鍵',
+          'feature.shortcuts.body': '可為切換閱讀模式 / 送 Readwise / YouTube 無邊模式錄製自訂組合鍵，Chrome 與 Safari 皆通用',
+
+          'install.heading': '三步驟，開始乾淨閱讀',
+          'install.step1.title': '下載並載入',
+          'install.step1.body': '從 GitHub 下載 <code>.zip</code> 解壓，開啟 Chrome 前往 <code>chrome://extensions/</code>，打開右上角「開發人員模式」，點「載入未封裝項目」選擇 <code>jread</code> 資料夾',
+          'install.step2.title': '打開任一文章',
+          'install.step2.body': '新聞、部落格、論文、Medium、Substack，任何以文字為主的頁面都可以',
+          'install.step3.title': '啟動閱讀模式',
+          'install.step3.body': '點工具列的 JRead 圖示，或用懸浮按鈕、自訂快速鍵，雜訊立刻消失',
+
+          'report.heading': '回報問題',
+          'report.body': '遇到 bug 或有功能建議？歡迎到 <a href="https://github.com/jimmysu0309/JRead/issues" style="color:#2b6cb0;">GitHub Issues</a> 回報',
+
+          'footer.license': 'JRead 採用 <a href="https://github.com/jimmysu0309/JRead/blob/main/LICENSE">Elastic License 2.0</a> 授權 · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">更新紀錄</a> · <a href="https://github.com/jimmysu0309/JRead">原始碼</a>'
+        },
+        'en': {
+          'meta.title': 'JRead | One click to quiet the web',
+          'meta.description': 'A reader-mode extension that hides ads, sidebars, popups and related rails with one click, leaving only the article in clean typography. Everything runs locally in your browser; nothing is uploaded.',
+
+          'hero.subtitle': 'One click to quiet the web',
+          'hero.tagline': 'Ads, sidebars, popups and related rails — all gone, leaving just the article in clean type<br>Everything runs locally in your browser; nothing is uploaded.',
+          'btn.cws.text': 'Chrome Web Store',
+          'btn.cws.status': 'coming soon',
+          'btn.github.text': 'Manual install from GitHub',
+          'btn.github.status': 'Chrome load unpacked',
+          'btn.firefox.text': 'Firefox (manual)',
+          'btn.firefox.status': 'from GitHub',
+          'btn.ios.text': 'iOS / iPadOS / macOS (TestFlight)',
+          'btn.ios.status': 'invite-only beta',
+          'hero.sub': 'Open source · <a href="https://github.com/jimmysu0309/JRead#readme">Documentation</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/jimmysu0309/JRead">GitHub</a>',
+
+          'recent.heading': 'Recent major updates',
+          'recent.v1': '<strong>v1.0.0 released</strong> — core features are stable: article detection, noise removal, typography and page-flip reading all polished.',
+          'recent.floating': 'Added a <strong>floating button</strong> — a small icon pinned to the page edge: tap to toggle reading mode, long-press for the menu, drag to reposition.',
+          'recent.editmode': 'Added <strong>edit mode</strong> — noise the cleaner missed is outlined with a dashed box; tap to remove, and undo if you tap the wrong thing.',
+
+          'privacy.heading': 'Why JRead?',
+          'privacy.intro1': "A reading tool shouldn't become one more thing watching you. Many \"readers\" send every article you open to their servers for processing.",
+          'privacy.intro2': 'JRead ties clean reading to privacy:',
+          'privacy.point1': '<strong>Fully local</strong>: detection, cleanup and typography all run in your browser — page content is never uploaded to any server.',
+          'privacy.point2': "<strong>Settings stay local</strong>: preferences live in your own browser; cross-device sync uses the browser's built-in mechanism, no third party.",
+          'privacy.point3': "<strong>Open source</strong>: the code is fully public — anyone can inspect it and verify there's no backdoor.",
+          'privacy.point4': '<strong>Network only when you opt in</strong>: it only reaches out when you send to Readwise or enable Gemini summaries — using your own account and API key.',
+
+          'compare.before': 'Before',
+          'compare.after': 'After JRead',
+          'compare.caption': 'Same page — noise stripped, layout rebuilt, reads like a book.',
+
+          'features.heading': 'Features',
+          'feature.detect.title': 'Smart article detection',
+          'feature.detect.body': 'Finds the main content via the article tag, Schema.org and content-density heuristics — and leaves the page untouched when it can\'t.',
+          'feature.type.title': 'Clean typography',
+          'feature.type.body': 'Serif or sans, three font weights, adjustable line height and column width — comfortable for both Chinese and English.',
+          'feature.theme.title': 'Three reading themes',
+          'feature.theme.body': 'Switch between light, dark and sepia anytime — easy on OLED screens at night.',
+          'feature.latin.title': 'Latin font picker',
+          'feature.latin.body': 'Pick a separate font for Latin letters and digits while Chinese keeps its serif/sans rendering — several cross-platform variable fonts bundled in.',
+          'feature.clean.title': 'Noise removal',
+          'feature.clean.body': 'Ads, sticky headers, popups and related-article rails all removed — by structural rules, never per-site hacks.',
+          'feature.edit.title': 'Edit mode',
+          'feature.edit.body': 'Noise the cleaner missed is outlined with a dashed box; tap to remove, undo with the button or Cmd/Ctrl+Z.',
+          'feature.focus.title': 'Paragraph focus scroll',
+          'feature.focus.body': 'A side rail marks the current paragraph; press Space to jump to the next, with smooth scroll-back — Readwise Reader style.',
+          'feature.paged.title': 'Page-flip mode',
+          'feature.paged.body': 'Flip left/right like an e-book — swipe on mobile, arrow keys or wheel on desktop; the page number doubles as a fast scrubber.',
+          'feature.floating.title': 'Floating button',
+          'feature.floating.body': 'A small icon pinned to the page edge: tap to toggle reading mode, long-press for the menu, drag to any edge or corner.',
+          'feature.resume.title': 'Resume reading position',
+          'feature.resume.body': 'Leave mid-article and re-enter reading mode to pick up where you left off — by paragraph in scroll mode, by page in flip mode.',
+          'feature.readwise.title': 'Send to Readwise Reader',
+          'feature.readwise.body': 'Push the cleaned article straight into Readwise, bypassing the original site\'s parser; optional Gemini auto-summary.',
+          'feature.shortcuts.title': 'Custom shortcuts',
+          'feature.shortcuts.body': 'Record your own key combos for toggle reading mode / send to Readwise / YouTube borderless — works in Chrome and Safari.',
+
+          'install.heading': 'Three steps to clean reading',
+          'install.step1.title': 'Download and load',
+          'install.step1.body': 'Download the <code>.zip</code> from GitHub and unzip it, open Chrome at <code>chrome://extensions/</code>, enable Developer mode (top right), click "Load unpacked" and pick the <code>jread</code> folder.',
+          'install.step2.title': 'Open any article',
+          'install.step2.body': 'News, blogs, papers, Medium, Substack — any text-first page works.',
+          'install.step3.title': 'Start reading mode',
+          'install.step3.body': 'Click the JRead icon in the toolbar, or use the floating button or a custom shortcut — the noise disappears.',
+
+          'report.heading': 'Report an issue',
+          'report.body': 'Found a bug or have a feature request? Open an issue on <a href="https://github.com/jimmysu0309/JRead/issues" style="color:#2b6cb0;">GitHub Issues</a>.',
+
+          'footer.license': 'JRead is licensed under <a href="https://github.com/jimmysu0309/JRead/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/jimmysu0309/JRead">Source code</a>'
+        }
+      };
+
+      function applyI18n(lang) {
+        var dict = I18N[lang] || I18N['en'];
+        document.documentElement.lang = lang === 'zh-TW' ? 'zh-Hant' : 'en';
+        document.documentElement.setAttribute('data-lang', lang);
+
+        if (dict['meta.title']) document.title = dict['meta.title'];
+        var sel = function (q) { return document.querySelector(q); };
+        var setMeta = function (q, v) { var el = sel(q); if (el && v) el.setAttribute('content', v); };
+        setMeta('meta[name="description"]', dict['meta.description']);
+        setMeta('meta[property="og:title"]', dict['meta.title']);
+        setMeta('meta[property="og:description"]', dict['meta.description']);
+        setMeta('meta[name="twitter:title"]', dict['meta.title']);
+        setMeta('meta[name="twitter:description"]', dict['meta.description']);
+
+        var nodes = document.querySelectorAll('[data-i18n]');
+        for (var i = 0; i < nodes.length; i++) {
+          var key = nodes[i].getAttribute('data-i18n');
+          if (dict[key] !== undefined) nodes[i].innerHTML = dict[key];
+        }
+
+        var btns = document.querySelectorAll('.lang-btn');
+        for (var k = 0; k < btns.length; k++) {
+          btns[k].classList.toggle('active', btns[k].getAttribute('data-lang') === lang);
+        }
+      }
+
+      function setLang(lang) {
+        try { localStorage.setItem('jread_lang', lang); } catch (e) {}
+        applyI18n(lang);
+      }
+
+      var initial = document.documentElement.getAttribute('data-lang') || 'en';
+      applyI18n(initial);
+
+      var btns = document.querySelectorAll('.lang-btn');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].addEventListener('click', function () {
+          setLang(this.getAttribute('data-lang'));
+        });
+      }
+    })();
+  </script>
 
 </body>
 </html>
