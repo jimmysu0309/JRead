@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!--
+  最小重現：Stratechery 翻譯後標題消失（v1.0.1，付費牆變體）
+  Jimmy 2026-06-23 回報 https://stratechery.com/2026/memory-chips-and-china-microsoft-and-chinese-models/
+  「Shinkansen 翻譯後進入閱讀模式，標題會消失」。
+
+  Root cause（cage probe + cleaner instrument 實證）：自動翻譯改文字後 detector
+  評分變動，登出/付費牆狀態下把付費牆容器 `div.passport-marketing-page` 選成
+  articleEl。該容器內把「STRATECHERY PLUS」logo 圖包成一個 **textContent 空的
+  <h1>**（只含 <img>）。promoteArticleTitleClassHeadingInto 的「articleEl 內已有
+  visible h1 → skip」guard 把這個空 h1 誤判成「已有主標題」而早退 → 真標題
+  （articleEl 外的 h2.wp-block-post-title）沒被 promote → reader card 內無標題。
+
+  v1.0.1 修法：inner h1 guard 加 titleTextWeight >= 1 門檻——無文字的裝飾/ logo
+  h1 不算「已有標題」，不可擋 promote。通則：空 heading 不是標題（純文字/結構
+  特徵、不綁站點）。
+
+  fixture 結構：
+    <main>
+      <h2 class="wp-block-post-title">記憶體晶片與中國、微軟與中國模式</h2>  <-- 真標題（articleEl 外，要被 promote）
+      <div class="passport-marketing-page">                              <-- 付費牆 = articleEl
+        <h1 class="wp-block-heading"><img></h1>                          <-- 空 logo h1（誤觸發早退的元兇）
+        <p>付費牆文字...</p>
+      </div>
+    </main>
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta property="og:title" content="記憶體晶片與中國、微軟與中國模式">
+  <title>Memory Chips and China, Microsoft and Chinese Models – Stratechery by Ben Thompson</title>
+</head>
+<body>
+  <main>
+    <h2 class="wp-block-post-title has-xxxx-large-font-size" data-test="main-h2">
+      <a href="/2026/memory-chips-and-china-microsoft-and-chinese-models/">記憶體晶片與中國、微軟與中國模式</a>
+    </h2>
+
+    <div class="wp-block-group passport-marketing-page has-global-padding" data-test="article-root">
+      <h1 class="wp-block-heading has-text-align-center" data-test="empty-logo-h1"><img src="stratechery-plus-logo.png" alt=""></h1>
+      <p data-test="paywall-p-1">訂閱 Stratechery Plus 即可獲得完整存取權限。</p>
+      <p data-test="paywall-p-2">透過 Stratechery Plus，您可以造訪僅限訂閱者的內容、每日更新與完整 podcast 庫。每週三封電子郵件或播客傳遞當天新聞的實質分析，深入解讀科技產業的策略走向與商業模式。</p>
+    </div>
+  </main>
+</body>
+</html>
