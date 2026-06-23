@@ -3,20 +3,24 @@
 // 設計（參考 Shinkansen content-floating-icon.js）：
 // - 頁面左／右緣常駐的浮動 icon，用工具列方形 icon（assets/icons/icon-32.png 經
 //   chrome.runtime.getURL 載入；assets/* 已列入 manifest web_accessible_resources）。
-//   尺寸由 floatingIconSize 設定切換（v0.8.156）：'small' = 視覺 16×16 / 可點
-//   footprint 32×32（預設）、'large' = 視覺 32×32 / footprint 48×48（觸控嫌小者放大）。
+//   尺寸由 floatingIconSize 設定切換（v0.8.156，v0.8.166 加 medium）：'small' = 視覺
+//   16×16 / footprint 32×32（預設）、'medium' = 視覺 24×24 / footprint 40×40、'large' =
+//   視覺 32×32 / footprint 48×48（觸控嫌小者放大）。
 //   尺寸走 CSS 變數（--fab-hit / --fab-icon）讓 storage.onChanged 即時生效。
 // - 短按（放開前長按計時器未觸發、未拖移）= 切換閱讀模式，走
 //   NS.dispatchLocalCommand('toggle-reader-mode')（與 3 指輕點 / 快速鍵同一條
 //   content 端本地 dispatch，含 YouTube 模式重導、不 round-trip SW）。
-// - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：送到 Readwise Reader、切換
-//   分頁模式。點任一列執行後收選單；點選單外 / 捲動 = 收選單。
+// - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：切換分頁模式、功能選單（叫出
+//   工具列圖示選單 popup；Readwise 送出走 popup 內按鈕，v0.8.166 移除選單直送項，
+//   因 content 直送在 iOS toast 不顯示、無回饋）。點任一列執行後收選單；點選單外 /
+//   捲動 = 收選單。
 // - 拖移（pointermove 超過 DRAG_THRESHOLD_PX）= 進入拖移模式，放開時吸附最近的
 //   左／右緣，垂直位置存比例（floatingIconPos = { edge, offsetY }），視窗縮放後
 //   按比例還原。預設貼**左下角**（左緣 + offsetY=1，v0.8.160；原置中）。
-// - 觸控裝置（iPhone / iPad）渲染時把 top 夾離上下角落 CORNER_DEADZONE_PX（v0.8.161，
-//   cornerClampTop）：iPadOS 視窗左下角是縮放拖曳把手、上方角落是系統手勢區，按鈕停太
-//   靠近會被 OS 攔走觸控而拖不出來。比照 Shinkansen content-floating-icon.js。
+// - **只有 iPadOS** 渲染時把 top 夾離上下角落 CORNER_DEADZONE_PX（v0.8.161；v0.8.166 起
+//   改為僅 iPadOS、原本套到所有觸控裝置）：iPadOS 視窗下方角落是縮放拖曳把手、上方角落是
+//   系統手勢區，按鈕停太靠近會被 OS 攔走觸控而拖不出來。iPhone（無視窗縮放角）與桌面瀏覽器
+//   不設禁制區。比照 Shinkansen content-floating-icon.js。
 // - disable → 重新 enable 時按鈕回到預設位置（v0.8.161，applyEnabled 偵測 false→true
 //   轉移時 applyPos(null)+persist；初始載入不重置，尊重 storage 存的位置）。
 // - enable / 透明度 / 位置走 storage.sync，onChanged 即時生效（比照 toast.js）。
@@ -37,23 +41,38 @@
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
   const DRAG_THRESHOLD_PX = 8;           // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）
-  // 尺寸對照（v0.8.156）：透明 padding 維持每側 8px（icon + 16 = footprint）。
+  // 尺寸對照（v0.8.156；v0.8.166 加 medium）：透明 padding 維持每側 8px（icon + 16 = footprint）。
   // 視覺尺寸走 CSS 變數即時切換；hitSize（footprint）同步進 JS 給貼邊 / 拖移夾擠用。
   const SIZE_MAP = {
     small: { icon: 16, hit: 32 },        // 預設（v0.8.154 以來的原始尺寸）
+    medium: { icon: 24, hit: 40 },       // 中（v0.8.166）
     large: { icon: 32, hit: 48 }         // 觸控嫌小者放大
   };
-  let hitSize = SIZE_MAP.small.hit;      // 目前 footprint（applyPos / 拖移用，applySize 更新）
+  let hitSize = SIZE_MAP.medium.hit;     // 目前 footprint（預設 medium，v0.8.166；applyPos / 拖移用，applySize 更新）
   const EDGE_MARGIN = 6;                 // 吸附邊緣時與視窗邊的間距
-  // 觸控裝置（iPhone / iPad）角落 OS 保留區邊長（v0.8.161）。iPadOS 視窗左下角是縮放
-  // 拖曳把手、上方角落是系統手勢區：按鈕停太靠近角落會被 OS 攔走觸控，使用者再也按不到 /
-  // 拖不出來。按鈕 x 永遠貼左／右緣，故只需把 y 夾離上下角落這段距離（比照 Shinkansen
-  // content-floating-icon.js cornerClampTop）。
+  // iPadOS 角落 OS 保留區邊長（v0.8.161）。iPadOS 視窗下方角落是縮放拖曳把手、上方角落
+  // 是系統手勢區：按鈕停太靠近角落會被 OS 攔走觸控，使用者再也按不到 / 拖不出來。按鈕 x
+  // 永遠貼左／右緣，故只需把 y 夾離上下角落這段距離（比照 Shinkansen content-floating-icon.js
+  // cornerClampTop）。
   const CORNER_DEADZONE_PX = 44;
-  // maxTouchPoints ≥ 1 = 真觸控裝置（iPad 偽裝 Mac 仍 = 5；桌面 = 0）。content script 不能
-  // import lib，故就地判。可被 regression（NS.floating.setTouchForTest）覆寫以驗夾邊路徑
-  // （實機 Chromium / jsdom maxTouchPoints = 0）。
-  let isTouch = (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) >= 1);
+  // 角落禁制區**只針對 iPadOS**（v0.8.166，Jimmy 2026-06-23；原 v0.8.161 套到所有觸控裝置
+  // 含 iPhone）。判斷：真觸控（maxTouchPoints ≥ 1）+ iPad UA 訊號。iPadOS 13+ 桌面模式把 UA
+  // 偽裝成 Macintosh，但 maxTouchPoints 仍 ≥ 1（桌面 Mac = 0、iPad app on Mac = 0），故
+  // 「Macintosh + 觸控」視為 iPad。iPhone / iPod 先排除（它們 UA 也帶「like Mac OS X」，只認
+  // Macintosh 不比對 Mac OS X）。iPhone / Android / 桌面（含 iPad app on Mac，maxTouchPoints=0）
+  // 皆不設禁制區——它們沒有 iPad 的視窗縮放角／系統手勢角問題。純函式吃 (ua, touchPoints) 方便
+  // regression 驗各平台 UA 分支；可被 NS.floating.setIPadOSForTest 覆寫驗夾邊路徑（實機 Chromium
+  // / jsdom maxTouchPoints = 0、UA 非 iPad）。
+  function isIPadOSEnv(ua, touchPoints) {
+    if (!((touchPoints || 0) >= 1)) return false;
+    ua = ua || '';
+    if (/iPhone|iPod/.test(ua)) return false;
+    return /iPad/.test(ua) || /Macintosh/.test(ua);
+  }
+  let isIPadOS = isIPadOSEnv(
+    (typeof navigator !== 'undefined' && navigator.userAgent) || '',
+    (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0
+  );
   const DEFAULT_OPACITY = 0.7;
   // v0.8.158：長按開選單時把整顆 host（含選單）調到全不透明，避免使用者設的
   // 淡透明度（預設 0.7）讓選單文字看不清；收選單時還原使用者設定的透明度。
@@ -79,7 +98,7 @@
 
   const CSS = `
     :host, * { box-sizing: border-box; }
-    :host { --fab-hit: ${SIZE_MAP.small.hit}px; --fab-icon: ${SIZE_MAP.small.icon}px; }
+    :host { --fab-hit: ${SIZE_MAP.medium.hit}px; --fab-icon: ${SIZE_MAP.medium.icon}px; }
     .fab {
       position: relative;
       width: var(--fab-hit);
@@ -179,23 +198,12 @@
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
-  // 送到 Readwise（v0.8.165 兩條 path，依 runtime 分流）：
-  //   - 點擊當下先彈「送出到 Readwise Reader…」info toast（視覺提示，兩平台都有；
-  //     原本 iOS 上 SW 死亡連結果 toast 都回不來、使用者完全沒回饋）。
-  //   - Safari（iOS / iPadOS / macOS）：改由 content script 直接 fetch
-  //     （NS.sendCurrentPageToReadwise，main.js）。iOS Safari SW 背景 fetch 不可靠，
-  //     content script 在前景分頁不會被掛起、且帶 host_permissions CORS 豁免，可靠送達；
-  //     結果 toast 由 sendCurrentPageToReadwise 自行顯示。
-  //   - Chrome / Firefox：content fetch 受頁面來源 CORS 擋，仍轉給 SW
-  //     sendToReadwiseFromCommand（Chrome SW 可靠，與快速鍵送出同一條）；SW 端顯示結果 toast。
-  function sendToReadwise() {
-    if (NS.toast) NS.toast.show('送出到 Readwise Reader…', { kind: 'info' });
-    if (isSafariRuntime() && typeof NS.sendCurrentPageToReadwise === 'function') {
-      try { NS.sendCurrentPageToReadwise(); } catch (_e) {}
-      return;
-    }
-    NS.safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: 'send-to-readwise' } });
-  }
+  // v0.8.166：長按選單移除「送到 Readwise Reader」項——content script 直送（v0.8.165）
+  // 在 iOS 雖可送達但 toast 視覺提示不顯示（Jimmy 2026-06-23 實機），無回饋的一鍵
+  // 送出體感不確定。Readwise 送出改走唯一可靠且有狀態回饋的入口：長按選單最下方
+  // 「功能選單」叫出工具列圖示選單（popup），使用者在 popup 按「送到 Readwise Reader」
+  // 送出（popup 是 extension 頁、直接 fetch 在 iOS 可靠，且有「送出中…/已送到…」
+  // 狀態文字回饋）。
 
   // 切換分頁模式：翻轉 storage.sync.pagedMode；閱讀模式啟動時 content 端
   // onChanged → reapply 即時生效，未啟動時下次進閱讀模式生效（與 popup 切換
@@ -213,7 +221,6 @@
   }
 
   const MENU_ITEMS = [
-    { id: 'readwise', icon: '↗', label: '送到 Readwise Reader', action: sendToReadwise },
     { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged }
   ];
 
@@ -348,9 +355,11 @@
   }
 
   // 尺寸切換：寫 CSS 變數（視覺即時生效）+ 同步 hitSize（貼邊 / 拖移夾擠用），
-  // 再依新 footprint 重貼一次（offsetY 比例對 vh−hit 重算）。非 'large' 一律 small。
+  // 再依新 footprint 重貼一次（offsetY 比例對 vh−hit 重算）。合法值（small/medium/large）
+  // 取對應，其餘（含未設過 / 非法值）退回**預設 medium**（v0.8.166，與 settings-defaults
+  // 的 floatingIconSize 預設一致）。
   function applySize(v) {
-    const s = SIZE_MAP[v === 'large' ? 'large' : 'small'];
+    const s = SIZE_MAP[v] || SIZE_MAP.medium;
     hitSize = s.hit;
     host.style.setProperty('--fab-hit', s.hit + 'px');
     host.style.setProperty('--fab-icon', s.icon + 'px');
@@ -365,12 +374,12 @@
     return { edge, offsetY };
   }
 
-  // 觸控裝置：把 top 夾到「按鈕 hit 區不碰上下角落 OS 保留區」範圍，避免停進 iPadOS
-  // 視窗縮放把手 / 系統手勢角落而再也拖不出來。純函式（吃 viewportH / hit / touch）方便
-  // regression 直接驗，不依賴實機是否觸控。非觸控（桌面）只夾在可視範圍、不留角落間距。
-  function cornerClampTop(top, viewportH, hit, touch) {
+  // iPadOS：把 top 夾到「按鈕 hit 區不碰上下角落 OS 保留區」範圍，避免停進 iPadOS 視窗
+  // 縮放把手 / 系統手勢角落而再也拖不出來。純函式（吃 viewportH / hit / ipad）方便
+  // regression 直接驗，不依賴實機平台。非 iPadOS（iPhone / 桌面）只夾在可視範圍、不留角落間距。
+  function cornerClampTop(top, viewportH, hit, ipad) {
     const maxFree = Math.max(0, viewportH - hit);          // 不夾角落時 top 的合法上限
-    if (!touch) return Math.max(0, Math.min(maxFree, top));
+    if (!ipad) return Math.max(0, Math.min(maxFree, top));
     const minTop = CORNER_DEADZONE_PX;                     // 離頂部角落安全距
     const maxTop = viewportH - hit - CORNER_DEADZONE_PX;   // 離底部角落安全距
     // 視窗太矮（maxTop < minTop）夾不出安全區 → 置中，至少不卡在角落極端
@@ -383,7 +392,7 @@
     pos = sanitizePos(p);
     const vh = window.innerHeight || 0;
     const rawTop = Math.round(pos.offsetY * Math.max(0, vh - hitSize));
-    const top = cornerClampTop(rawTop, vh, hitSize, isTouch);
+    const top = cornerClampTop(rawTop, vh, hitSize, isIPadOS);
     host.style.top = top + 'px';
     host.style.bottom = 'auto';
     if (pos.edge === 'left') {
@@ -603,16 +612,16 @@
   NS.floating = {
     host, btn, menuEl, MENU_ITEMS,
     openMenu, closeMenu, buildMenu,
-    handleShortPress, sendToReadwise, togglePaged,
+    handleShortPress, togglePaged,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
     isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
-    cornerClampTop, CORNER_DEADZONE_PX,
+    cornerClampTop, CORNER_DEADZONE_PX, isIPadOSEnv,
     isMenuOpen: () => menuOpen,
     getPos: () => ({ ...pos }),
     getHitSize: () => hitSize,
     getTop: () => host.style.top,
-    // regression 用：覆寫觸控旗標以驗角落夾邊路徑（實機 Chromium / jsdom maxTouchPoints=0）
-    setTouchForTest: (v) => { isTouch = !!v; applyPos(pos); }
+    // regression 用：覆寫 iPadOS 旗標以驗角落夾邊路徑（實機 Chromium / jsdom 非 iPadOS）
+    setIPadOSForTest: (v) => { isIPadOS = !!v; applyPos(pos); }
   };
 })();

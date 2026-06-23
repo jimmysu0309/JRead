@@ -2041,6 +2041,15 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
     // 卡片規則已設）下 max-width 720 = 56 padding + 608 content + 56 border
     //（v0.7.234 寬度一致後的桌面值），content box 寬 = column-width 算出值。
     if (opts.pagedMode) {
+      // v0.8.166：頁碼指示器 / scrub-track 在 coarse-pointer 的底部抬升（24px，v0.8.162
+      // 為 iPad 系統 bar / 縮放把手避讓而加）在 **iPhone** 上把頁碼推進內文造成重疊
+      // （Jimmy 2026-06-23 截圖）。iPhone 沒有 iPad 的視窗縮放把手問題，回到接近底緣的
+      // 低位即可。故 coarse 抬升的量依平台分流：iPhone 退回近底（6 / 30px，等同非 coarse
+      // base），iPad / 其他 coarse 維持 24 / 48px。純 UA 結構訊號（iPhone / iPod），非站點特判。
+      const _ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+      const _isIPhone = /iPhone|iPod/.test(_ua);
+      const _indicatorCoarseBottom = _isIPhone ? '6px' : '24px';
+      const _scrubTrackCoarseBottom = _isIPhone ? '30px' : '48px';
       userOverrides += `
 /* 翻頁模式：桌面鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
    overscroll-behavior 擋 macOS 觸控板水平 swipe 的歷史導航誤觸 +
@@ -2245,18 +2254,18 @@ html [${ARTICLE_ATTR}="1"] a {
   background: ${theme.progressBar};
 }
 /* v0.8.162：觸控裝置把整組 scrubber（頁碼指示器 + scrub 進度條）往上抬離視窗
-   底部——iPadOS / iPhone Safari 底部有系統工具列 + home indicator 手勢區，頁碼
-   停在 bottom:6px 會貼著系統 bar，手指拖曳選頁時被 OS 攔走觸控（Jimmy 2026-06-22
-   iPad 截圖回報「頁碼太靠底部、拖不動」）。env(safe-area-inset-bottom) 補 home
-   indicator 高度（桌面為 0、不影響）、外加 coarse-pointer 基底間距。指示器與
-   scrub-track 同抬同量、維持原本 24px 間距（track 在指示器上方）。結構訊號
-   （pointer: coarse + safe-area-inset），非站點特判。 */
+   底部——iPad 底部是視窗縮放把手 / 系統手勢區，頁碼停太低拖曳選頁會被 OS 攔走觸控
+   （Jimmy 2026-06-22 iPad 截圖「頁碼太靠底部、拖不動」）。env(safe-area-inset-bottom)
+   補 home indicator 高度（桌面為 0、不影響）。
+   v0.8.166：抬升量依平台分流——iPhone 沒有 iPad 縮放把手問題，原 24px 抬升反而把頁碼
+   推進內文重疊（Jimmy 2026-06-23 iPhone 截圖），故 iPhone 退回近底 6/30px；iPad / 其他
+   coarse 維持 24/48px。指示器與 scrub-track 同抬同量、維持 24px 間距（track 在上方）。 */
 @media (pointer: coarse) {
   #__jread-page-indicator {
-    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(${_indicatorCoarseBottom} + env(safe-area-inset-bottom, 0px));
   }
   #__jread-scrub-track {
-    bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(${_scrubTrackCoarseBottom} + env(safe-area-inset-bottom, 0px));
   }
 }`;
       // v0.8.153 觸覺回饋載體（#__jread-haptic）不再需要 styler CSS——比照實證可動的

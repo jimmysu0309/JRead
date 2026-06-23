@@ -24,6 +24,15 @@
 //     不支援 vibrate → iOS 17.4+ switch checkbox haptic 的 label.click() hack）。
 //     **v0.8.152**：靈敏度——每頁拖曳距離上限 14px（少頁文章不必拖很遠）；觸覺載體
 //     改移出畫面外但維持渲染（原 1px 夾掉可能不渲染、觸覺不發）
+//     **v0.8.166（tap-to-arm 互動，觸控）**：頁碼點按（down→up 未拖移）切換 armed
+//     模式——進度條常駐、整個畫面變成 scrub 面：
+//       1. 按住頁碼「拖移」→ 短暫 scrub 翻頁（放手收起進度條，= 原 v0.8.150 行為）
+//       2. 點按頁碼「放開」→ 展開常駐進度條，此後畫面任意處左右滑 = scrub 翻頁；
+//          再次點頁碼（或任意處點按）= 收起進度條退出 armed
+//       3. armed 中任意處點按（無拖移）= 收起進度條
+//     tap/drag 由 TAP_SLOP_PX 位移門檻分流；狀態機純邏輯在 resolveScrubGesture
+//     （jsdom spec 直接測），DOM 端 finishScrubGesture 套用。桌面滑鼠維持短暫 drag
+//     scrub（無 armed——「畫面任意處滑」是觸控專屬手勢）。
 //   - resize / 旋轉時重算頁數、保持目前閱讀比例位置
 //
 // stride 恆等式：styler CSS 設 column-gap = 左右視覺內距和（左 padding +
@@ -91,6 +100,10 @@
   // 此上限取小——少頁文章維持 14px/頁的靈敏度、多頁文章（均分 < 14）仍維持拖滿全寬
   // ≈ 走完全文。
   const SCRUB_MAX_PX_PER_PAGE = 14;
+  // v0.8.166：tap（點按）vs drag（拖移）的位移門檻（px）。手指起手後位移未超此值
+  // = tap（觸發 armed 模式切換），超過 = drag（即時 scrub 翻頁）。取 6（= HMOVE_BLOCK_PX）：
+  // 比「scrub 跨一頁所需最小位移」（perPage/2 ≥ 7px）略小，確保任何實際翻頁都已先判為 drag。
+  const TAP_SLOP_PX = 6;
 
   // ---- 純邏輯（jsdom spec 直接測）----
 
@@ -149,6 +162,18 @@
     return Math.max(0, Math.min(t - 1, n));
   }
 
+  // v0.8.166：頁碼 scrubber 互動狀態機（tap-to-arm）。一次手勢（touchstart→touchend）
+  // 結束時，依「目前是否 armed」與「本次手勢有無拖移（moved）」決定下一步動作：
+  //   - 非 armed + 點按（!moved）→ 'arm'：展開常駐進度條，進 armed 模式
+  //   - 非 armed + 拖移（moved）  → 'end'：本次是「按住頁碼拖曳翻頁」的短暫 scrub，放手收起進度條
+  //   - armed   + 拖移（moved）  → 'keep'：本次是「畫面任意處左右滑翻頁」的 scrub，維持 armed、進度條續留
+  //   - armed   + 點按（!moved）→ 'disarm'：收起進度條、退出 armed（含「再次點頁碼」與「任意處點按」）
+  // 純函式（jsdom spec 直接測）——DOM 端 finishScrubGesture 依此回傳值套用 setArmed / hideScrubTrack。
+  function resolveScrubGesture(armed, moved) {
+    if (armed) return moved ? 'keep' : 'disarm';
+    return moved ? 'end' : 'arm';
+  }
+
   // swipe 手勢分類。輸入純物件 { dx, dy, startX, viewportW }：
   //   dx/dy = touchend − touchstart 位移；startX = 起點 clientX。
   // 回傳 'next'（往左滑 = 翻下一頁）/ 'prev' / null。
@@ -194,6 +219,10 @@
   // v0.8.150：頁碼 scrubber 拖曳狀態。{ startX, startIdx, scrubWidth }；非 null =
   // 正在拖頁碼快速捲動（與 touchState swipe 互斥——拖頁碼時不另判翻頁 swipe）。
   let scrubState = null;
+  // v0.8.166：armed 模式（頁碼點按後常駐進度條）。true = 進度條常駐、畫面任意處左右滑
+  // 即 scrub 翻頁、任意處點按收起。與 scrubState 正交：scrubState 是「當下有手指在拖」、
+  // scrubArmed 是「進度條常駐的模式旗標」。
+  let scrubArmed = false;
   let mouseScrubBound = false; // 桌面滑鼠 scrub 的 window mousemove/up 是否已掛
   let scrubTrackEl = null;     // v0.8.151 scrub 進度條容器
   let scrubFillEl = null;      // v0.8.151 scrub 進度條 fill
@@ -533,8 +562,13 @@
     ensureScrubTrack();
     updateScrubFill();
     // 下一個 frame 才加 visible class，讓 opacity transition 真的 fade-in（同 frame
-    // 建立 + 設 opacity:1 不會有過場）
-    requestAnimationFrame(() => { if (scrubTrackEl) scrubTrackEl.classList.add('__jread-scrub-visible'); });
+    // 建立 + 設 opacity:1 不會有過場）。
+    // v0.8.166：rAF 內要再確認「此刻仍該顯示」（scrubArmed 或 scrubState 仍在）——否則
+    // 「armed 中點按收起」的 touchstart 排了 show rAF、touchend 同步 hide 後，這個 rAF
+    // 才補跑會把已收起的進度條又加回 visible（race）。
+    requestAnimationFrame(() => {
+      if (scrubTrackEl && (scrubArmed || scrubState)) scrubTrackEl.classList.add('__jread-scrub-visible');
+    });
   }
   function hideScrubTrack() {
     if (scrubTrackEl) scrubTrackEl.classList.remove('__jread-scrub-visible');
@@ -574,9 +608,19 @@
     } catch (e) { /* 某些平台 vibrate 受限 */ }
   }
 
+  // v0.8.166：armed 模式切換（進度條常駐 + 畫面任意處 scrub）。setArmed 是進度條
+  // 可見性在「armed 層」的單一出入口；transient drag 的可見性另由 beginScrub/endScrub 控。
+  function setArmed(on) {
+    scrubArmed = !!on;
+    if (scrubArmed) showScrubTrack();
+    else hideScrubTrack();
+  }
+
   // 開始 / 更新 / 結束 scrub（touch 與 mouse 共用）。
-  function beginScrub(clientX) {
-    scrubState = { startX: clientX, startIdx: idx, scrubWidth: window.innerWidth || 0 };
+  // v0.8.166：moved 旗標記錄本次手勢是否拖移（區分 tap 與 drag，見 resolveScrubGesture）。
+  function beginScrub(clientX, onIndicator) {
+    scrubState = { startX: clientX, startIdx: idx, scrubWidth: window.innerWidth || 0,
+      moved: false, onIndicator: !!onIndicator };
     if (indicatorEl) indicatorEl.classList.add('__jread-scrubbing');
     showScrubTrack(); // v0.8.151：按住起拖時出現進度條
   }
@@ -585,16 +629,31 @@
     const target = computeScrubTarget(
       scrubState.startIdx, clientX - scrubState.startX, scrubState.scrubWidth, pageCount());
     if (target !== idx) {
+      scrubState.moved = true; // v0.8.166：實際翻頁 = 必為 drag（不可能是 tap）
       goTo(target, false); // 即時跳頁、無動畫（live preview）
       triggerHaptic();     // v0.8.151：每跨一頁觸發觸覺（picker 滾輪式回饋）
     }
     updateScrubFill();
   }
+  // 中止 scrub 拖曳狀態（不切換 armed）。armed 時進度條續留、非 armed 時淡出。
+  // 用於非「乾淨手勢完成」的收尾：多指讓位、touchcancel、uninstall、桌面 mouseup。
   function endScrub() {
     if (!scrubState) return;
     scrubState = null;
     if (indicatorEl) indicatorEl.classList.remove('__jread-scrubbing');
-    hideScrubTrack(); // v0.8.151：放手淡出進度條
+    if (!scrubArmed) hideScrubTrack(); // v0.8.151：放手淡出進度條（armed 時常駐不淡）
+  }
+  // v0.8.166：一次乾淨手勢（touchstart→touchend）完成 → 依狀態機切換 armed。
+  function finishScrubGesture() {
+    if (!scrubState) return;
+    const moved = scrubState.moved;
+    scrubState = null;
+    if (indicatorEl) indicatorEl.classList.remove('__jread-scrubbing');
+    const action = resolveScrubGesture(scrubArmed, moved);
+    if (action === 'arm') setArmed(true);
+    else if (action === 'disarm') setArmed(false);
+    else if (action === 'end') hideScrubTrack();
+    // 'keep'：armed 維持、進度條續留，無動作
   }
 
   // 桌面滑鼠 scrub：頁碼上 mousedown 起拖，window 收 mousemove/up（拖出指示器
@@ -602,7 +661,9 @@
   function onIndicatorMouseDown(e) {
     if (e.button !== 0) return; // 只認左鍵
     e.preventDefault();
-    beginScrub(e.clientX);
+    // v0.8.166：桌面滑鼠維持「按住拖曳」短暫 scrub（mouseup 走 endScrub、不進 armed）——
+    // armed 的「畫面任意處滑」是觸控專屬手勢，桌面無對應，故桌面只保留 transient drag。
+    beginScrub(e.clientX, true);
     if (!mouseScrubBound) {
       window.addEventListener('mousemove', onWindowMouseMove, true);
       window.addEventListener('mouseup', onWindowMouseUp, true);
@@ -626,10 +687,18 @@
   function onTouchStart(e) {
     if (e.touches.length !== 1) { touchState = null; endScrub(); return; } // 多指讓位（3 指 toggle 等）
     const t = e.touches[0];
-    // v0.8.150：起點落在頁碼指示器 → 進 scrub 模式（不另判翻頁 swipe）
-    if (isIndicatorTarget(e.target)) {
+    const onIndicator = isIndicatorTarget(e.target);
+    // v0.8.166：armed 模式——進度條常駐，整個畫面都是 scrub 面：任何單指起手都進 scrub
+    //（拖移 = 即時翻頁、點按 = 收起進度條，由 finishScrubGesture 依 moved 分流）。
+    if (scrubArmed) {
       touchState = null;
-      beginScrub(t.clientX);
+      beginScrub(t.clientX, onIndicator);
+      return;
+    }
+    // v0.8.150：起點落在頁碼指示器 → 進 scrub（拖移 = 翻頁；v0.8.166 點按 = 展開常駐進度條）
+    if (onIndicator) {
+      touchState = null;
+      beginScrub(t.clientX, true);
       return;
     }
     // lastX/lastY：追蹤手指最後位置——iOS 在可點擊圖片/連結上啟動原生 image-
@@ -652,7 +721,11 @@
     if (scrubState) {
       if (e.touches.length !== 1) { endScrub(); return; }
       if (e.cancelable) e.preventDefault();
-      updateScrub(e.touches[0].clientX);
+      const x = e.touches[0].clientX;
+      // v0.8.166：位移超 tap 門檻即標記 drag（涵蓋「拖很慢還沒跨頁」的情況；跨頁本身
+      // 已在 updateScrub 內標 moved）。決定 finishScrubGesture 走 tap 還是 drag 分支。
+      if (Math.abs(x - scrubState.startX) > TAP_SLOP_PX) scrubState.moved = true;
+      updateScrub(x);
       return;
     }
     if (!touchState) return;
@@ -676,9 +749,10 @@
 
   function onTouchEnd(e) {
     // v0.8.150：scrub 結束（手指離開 → 停在目前預覽頁，不再翻動）
+    // v0.8.166：乾淨手勢完成 → finishScrubGesture 依 tap/drag 切換 armed 模式
     if (scrubState) {
       if (e.touches.length > 0) return;
-      endScrub();
+      finishScrubGesture();
       return;
     }
     if (!touchState || e.touches.length > 0) return;
@@ -809,6 +883,8 @@
     unlockVScroll();
     // v0.8.150：清 scrub 狀態 + 解除桌面滑鼠 scrub 的 window listener（拖曳中離開
     // 也不殘留）。indicator.remove() 連帶移除其 mousedown listener。
+    // v0.8.166：先退出 armed（進度條常駐旗標），endScrub 才會淡出而非續留。
+    scrubArmed = false;
     endScrub();
     if (mouseScrubBound) {
       window.removeEventListener('mousemove', onWindowMouseMove, true);
@@ -887,6 +963,7 @@
     computePageCountFromExtent,
     quantizeStride,
     computeScrubTarget,
+    resolveScrubGesture,
     classifySwipe,
     classifyKey,
     shouldBlockTouchMove,

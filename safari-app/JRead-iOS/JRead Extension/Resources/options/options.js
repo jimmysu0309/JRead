@@ -173,6 +173,13 @@ function readFieldFromDom(id) {
     case 'threeFingerTap': case 'floatingIcon':
     case 'blockPageShortcuts': case 'pangu': case 'editModeEnabled': case 'readwiseSummary':
       return el.checked;
+    case 'floatingIconSize': {
+      // v0.8.166：radio 群（小 / 中 / 大）取代下拉 select；el 是 wrapper（id 在容器上）。
+      // 讀已勾選的 radio；損壞 / 無勾選退回預設 'small'。
+      const checked = el.querySelector('input[name="floatingIconSize"]:checked');
+      const v = checked ? checked.value : 'small';
+      return (v === 'medium' || v === 'large') ? v : 'small';
+    }
     case 'readwiseToken': case 'geminiApiKey':
       return el.value.trim();
     default:
@@ -186,8 +193,8 @@ function updateOpacityReadout(frac) {
   if (out) out.textContent = Math.round(Number(frac) * 100) + '%';
 }
 
-// 範例 icon 跟著透明度滑桿（即時不透明度）+ 尺寸 select（icon 大小）變動。
-// 尺寸對照與 content/floating-icon.js SIZE_MAP 一致：small=16 / large=32（視覺）。
+// 範例 icon 跟著透明度滑桿（即時不透明度）+ 尺寸 radio 群（icon 大小）變動。
+// 尺寸對照與 content/floating-icon.js SIZE_MAP 一致：small=16 / medium=24 / large=32（視覺）。
 function updateOpacityDemo() {
   const demo = document.getElementById('floatingIconOpacityDemo');
   if (!demo) return;
@@ -199,7 +206,10 @@ function updateOpacityDemo() {
   }
   const img = demo.querySelector('img');
   if (img) {
-    const px = (sizeEl && sizeEl.value === 'large') ? 32 : 16;
+    // v0.8.166：尺寸來源改 radio 群（wrapper id=floatingIconSize 內的 checked radio）
+    const checked = sizeEl && sizeEl.querySelector('input[name="floatingIconSize"]:checked');
+    const v = checked ? checked.value : 'small';
+    const px = v === 'large' ? 32 : v === 'medium' ? 24 : 16;
     img.style.width = px + 'px';
     img.style.height = px + 'px';
   }
@@ -224,8 +234,10 @@ function applyFieldToDom(id, value) {
     updateOpacityReadout(n);
     updateOpacityDemo();
   } else if (id === 'floatingIconSize') {
-    // 'small' / 'large' 兩值；舊資料 / 損壞退回預設 'small'
-    el.value = value === 'large' ? 'large' : 'small';
+    // v0.8.166：radio 群（小 / 中 / 大）；勾選對應值，舊資料 / 損壞退回 'small'
+    const v = (value === 'large' || value === 'medium') ? value : 'small';
+    const radio = el.querySelector('input[name="floatingIconSize"][value="' + v + '"]');
+    if (radio) radio.checked = true;
     updateOpacityDemo();
   } else if (id === 'readwiseSummary') {
     // 預設 false——只有明確為 true 才勾選
@@ -305,10 +317,11 @@ if (opacityRange) {
   });
 }
 
-// 尺寸 select 切換即時更新範例 icon 大小（change 才存檔；本 listener 只更新預覽）
-const sizeSelect = document.getElementById('floatingIconSize');
-if (sizeSelect) {
-  sizeSelect.addEventListener('change', updateOpacityDemo);
+// 尺寸 radio 群切換即時更新範例 icon 大小（v0.8.166；radio change 冒泡到 wrapper，
+// wrapper id=floatingIconSize；存檔由 fields 通用 change listener 處理，本 listener 只更新預覽）
+const sizeGroup = document.getElementById('floatingIconSize');
+if (sizeGroup) {
+  sizeGroup.addEventListener('change', updateOpacityDemo);
 }
 
 // ---- Readwise token 測試（v0.8.64）-----------------------------------
