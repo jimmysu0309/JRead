@@ -5286,6 +5286,61 @@
     }
   }
 
+  // ---- 主文內：裝飾性 hero 背景影片（position:absolute → 閱讀模式留白）------
+  // NYT 等站文章開頭以 cinemagraph（自動循環、無 controls 的背景影片）當 hero，
+  // 結構是「固定高度 wrapper + position:absolute 的 <video> 填滿」。閱讀模式把
+  // 卡片變窄後，absolute 影片不 reflow 回填，wrapper 仍靠固定高度撐 ~600px →
+  // 整塊全白（Jimmy 2026-06-24 NYT china-robots-humanoid 截圖實證：第一屏空白、
+  // 影片 computed position:absolute、paused、341×606 撐在 687px wrapper 內）。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：
+  //   - <video> computed position 為 absolute / fixed —— 脫離 flow＝wrapper 靠
+  //     固定高度撐空間、影片不參與排版的明確訊號（inline 編輯影片是 static）
+  //   - 無 controls 屬性 —— cinemagraph 背景影片無播放控制；可播放的編輯影片有
+  //   - 從 video 往上爬到「父層含 heading（h1-h3）/ 碰語意邊界前的最後一層」當
+  //     hide 目標：該 wrapper 含影片 + 其說明文字、不含標題、不含 article body
+  //     （NYT header 含 h1 → 停在 header 下一層，保住標題與內文）
+  //
+  // 為何不直接 hide video：只藏影片本身、撐高度的 wrapper 與孤兒說明文字仍在；
+  // 要連 wrapper + 影片說明整塊清掉才消除空白。
+  //
+  // 訊號層次（CLAUDE.md 工作流原則 3）：本條只清「absolute 無 controls 的裝飾
+  // 背景影片」一層；<figure><video controls> 編輯影片（static + 有 controls）
+  // 不命中、正常保留。雙保險：wrapper 含 heading 或 >= 3 個 <p>（疑似誤含 body）
+  // → 不 hide。
+  function pickDecorativeVideoWrapper(video, articleEl) {
+    let el = video;
+    while (el.parentElement) {
+      const p = el.parentElement;
+      if (p === articleEl || (p.hasAttribute && p.hasAttribute('data-jread-active')) ||
+          p.tagName === 'ARTICLE' || p.tagName === 'MAIN' || p.tagName === 'BODY' ||
+          p.tagName === 'HEADER') break;
+      // 父層含任何標題 = 已涵蓋 h1 / 章節標題，停在當前層保住標題
+      if (p.querySelector('h1, h2, h3')) break;
+      el = p;
+    }
+    return el;
+  }
+
+  function hideInsideArticleDecorativeHeroVideos(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const video of articleEl.querySelectorAll('video')) {
+      if (video.hasAttribute('controls')) continue;
+      if (isInPreserved(video)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(video); } catch (_) { continue; }
+      if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
+      const wrapper = pickDecorativeVideoWrapper(video, articleEl);
+      if (!wrapper || wrapper === articleEl || wrapper === video) continue;
+      if (wrapper.contains && wrapper.contains(articleEl)) continue;
+      if (wrapper.dataset && wrapper.dataset.jreadHidden === '1') continue;
+      // 雙保險：wrapper 含 heading 或 >= 3 個 <p>（疑似誤含主文 body）→ 不 hide
+      if (wrapper.querySelector('h1, h2, h3')) continue;
+      if (wrapper.querySelectorAll('p').length >= 3) continue;
+      hide(wrapper, hidden);
+    }
+  }
+
   // ---- 主文內：inset 相關文章嵌入卡（v0.8.48 npr 實測）-------------------
   // 新聞站在主文段落間插「相關文章嵌入卡」：縮圖 + kicker 連結 + 標題連結，
   // 常以 float / 窄欄 inset 排版（npr `.bucketwrap.internallink.insettwocolumn`，
@@ -6195,6 +6250,7 @@
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
       safeRun(hideInsideArticleVideoPlayerWidgets, articleEl, hidden);
+      safeRun(hideInsideArticleDecorativeHeroVideos, articleEl, hidden);
       // v0.8.48 三條新規則：須在 collapse / styler reflow 前跑（float / 寬度
       // / iframe 高度量測要反映原站 layout）
       safeRun(hideInsideArticleInsetLinkCards, articleEl, hidden);
