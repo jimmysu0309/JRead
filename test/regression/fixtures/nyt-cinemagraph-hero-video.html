@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<!--
+  Fixture: NYT cinemagraph hero 背景影片（position:absolute → 閱讀模式留白）
+  -------------------------------------------------------------------------
+  重現 Jimmy 2026-06-24 NYT china-robots-humanoid 截圖：文章開頭 <header> 內一支
+  position:absolute 的 cinemagraph <video>（無 controls）撐在固定高度 wrapper 裡，
+  閱讀模式變窄後不 reflow → 第一屏整片全白。
+
+  真實巢狀（cage DevTools probe 實證）：
+    article
+      header（含 h1 標題）          ← 不可 hide
+        div.media-block            ← div.css-4zd7u9，hide 目標：影片 + 說明、無標題
+          div.sizeFull
+            div > div > video.cinemagraph_video（position:absolute、無 controls）
+          p.caption（影片說明，157 字級）
+        h1（標題）                  ← 必須保留
+        p.summary（摘要）            ← 必須保留
+      section.body（內文）          ← 必須保留
+
+  ★ 影片 position:absolute 用 inline style（jsdom getComputedStyle 讀得到）。
+  ★ 編輯性 <figure><video controls> 必須保留（controls + static 雙保險）。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article data-test="article">
+    <header data-test="hero-header">
+      <div class="media-block css-4zd7u9" data-test="hero-media">
+        <div class="sizeFull css-f776a5">
+          <div class="css-201wrs">
+            <div class="css-122y91a">
+              <video class="cinemagraph_video css-gvnats" autoplay loop muted playsinline
+                     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+                     data-test="hero-video"></video>
+            </div>
+          </div>
+        </div>
+        <p class="caption" data-test="hero-caption">China’s lead in humanoid robots was evident at last month’s Humanoids Summit, a robotics conference in Tokyo. Videos by Qilai Shen and Hiroko Masuike</p>
+      </div>
+      <h1 data-test="title">Why It’s Nearly Impossible to Build a Robot Without China</h1>
+      <p class="summary" data-test="summary">Building on the country’s electric vehicle and battery dominance, Chinese companies are racing ahead in humanoid robots.</p>
+    </header>
+
+    <section class="body" data-test="body">
+      <p data-test="body-p-1">Japan led the world in robotics for decades.</p>
+      <p data-test="body-p-2">More than 50 years ago, Japanese researchers captured imaginations with the first robot capable of grasping objects and walking on two legs. In 1984, a team in Japan built one that could read sheet music and play the piano.</p>
+      <p data-test="body-p-3">But now, just as tech investors, start-up founders and government officials around the world are betting that artificial intelligence will spur growth for robots, that lead no longer belongs to Japan.</p>
+
+      <!-- 編輯性影片：有 controls + position static → 必須保留 -->
+      <figure data-test="legit-figure">
+        <video controls data-test="legit-video" src="clip.mp4"></video>
+        <figcaption>A demonstration clip from the Humanoids Summit.</figcaption>
+      </figure>
+
+      <p data-test="body-p-4">Last month at the Humanoids Summit, a robotics conference in Tokyo, what could have been a victory lap instead centered on how Japanese companies can break through in a market increasingly dominated by Chinese rivals.</p>
+    </section>
+  </article>
+</body>
+</html>
