@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.0.9**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.0.10**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -349,6 +349,8 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 **英文網頁 heading 文字慣用語**（`NOISE_HEADING_TEXT_RE`）：Related Articles / Recommended for you / More from X / More in X（v0.8.54）/ You may also like / Read more / Up next / Continue reading / See also / See more on（v0.8.54）/ Further reading / Editor's Picks（含複數所有格 Editors' Picks，v0.8.54）/ Sponsored content / Comments(N) / Discussion(N) / Responses / Replies / Newsletter / Subscribe / Follow us / Trending / Popular / Top Stories / AI Summary / AI Digest / Hot / New / Top。錨定推薦字樣 `^(related|recommended|popular|trending|latest|featured)…$` 同步收進 EXT 層（max_len 40，v0.8.54——「Trending in The Times」21 chars 超過 base 的 20 漏網實證）。文中雜誌期數推廣 `^explore\s+the\b.*\bissue$`（v0.8.113——The Atlantic「Explore the December 2024 Issue」文中插入的本期雜誌推廣 section，封面圖被 styler 撐成整頁大 + 「View More」連該期 TOC；31 chars 走 EXT max_len，`closest('section')` 整段清除）。譯文變體 `(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$`（v0.8.114——Shinkansen translate-first 後 heading 譯成「探索 2024 年 12 月號」英文 pattern 失效；錨定翻譯無關的「雜誌期數出版標記」語意核心而非賭動詞譯法，純日期無號/刊不命中）
 
 **中文 heading 文字慣用語**：延伸閱讀 / 同場加映 / `相關(新聞｜文章｜報導｜行情｜議題｜貼文｜影片｜內容)`（v0.8.77 補 貼文／影片／內容——Shinkansen 把 Ghost「Related Posts」翻成「相關貼文」，原僅 新聞／文章／報導／行情／議題 不命中、整列 recirculation 漏網；翻譯後文字才現形，href 結構 `resolveHeadingNoiseTarget` 兩模式相同、純卡 regex）/ 推薦閱讀 / 推薦文章 / 最新消息 / 更多相關 / 看更多 / 你可能喜歡 / 繼續看下去 / 文章標籤 等。命中後 `resolveHeadingNoiseTarget` walk-up 到「不含主文長段落 / 標題 anchor」的最深 wrapper 整塊 hide
+
+**贊助 / 商業推薦 widget**（`hideSponsoredPartnershipWidgets` / `SPONSOR_WIDGET_HEADING_RE`，v1.0.10）：heading（h1-h4，≤ 60 chars）文字含贊助標記 `in partnership with` / `presented by` / `brought to you by` / `sponsored by` → 從 heading 用 `hasArticleTitleAnchor` / `hasLongMainParagraph` 邊界 walk-up（**繞過** generic `resolveHeadingNoiseTarget` 的「累計短文字 ≥ 300」主文保護，與 `hideCommunityQaWidget` 同款——link-heavy 推薦 widget 的車輛/產品連結累計輕易破 300 會誤觸保護只藏 heading）找「不含主文長段落的最外層 wrapper」整塊 hide。對應 autocar.co.uk 文末 heycar「USED CARS FOR SALE / in partnership with Autotrader」車輛推薦 carousel（Jimmy 2026-06-25「文末這些都是廣告」）——heading / 品牌 / 多車是 client 端 JS 晚注入（server HTML 只有空殼 wrapper + 1 車），clean() 時序漏抓 → 靜態 sweep + 動態 `checkDynamicNoise` 共用 `hideSponsorWidgetFromHeading`（lazy 注入兜底，放在 dynHit 門檻前）。自帶安全性：只 hide 不含長段落的 widget block——贊助標記引導真內容區（含 prose）時 walk-up 第一層即 break、不 hide。Forcing：`sponsored-partnership-widget.spec.js`（結構 + 靜態 + 動態 lazy 兜底 + 真內容守衛）
 
 **英文網頁 link/button 文字慣用語**（`NOISE_LINK_TEXT_RE`）：View original / Read the full article / Back to top / Show more / Load more / Learn more / Get the app / Download app / Open in app / Subscribe / Follow / Like / Share / Repost / Reply / Comment / Save / Bookmark / Sign up / Log in / Clap / Join our newsletter / Follow us on Twitter / Subscribe to our newsletter / N hours ago / N minutes ago / Order Reprints（v0.8.54）/ Today's Paper（v0.8.54）
 
