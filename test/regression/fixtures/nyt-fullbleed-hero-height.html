@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+  Fixture: NYT full-bleed hero header 殘留 viewport 高度空白（v1.0.4）
+  -------------------------------------------------------------------------
+  接續 v1.0.3：cinemagraph 影片被 decorative-hero rule hide 後，包住它的
+  full-bleed <header>（stylesheet `height: 100vh` 讓影片填滿整個螢幕）仍維持
+  viewport 高度、內容只占約 180px → 標題下方一整頁純空白。
+  cage DevTools probe 實證（China-robots-humanoid）：
+    header.css-2fao3f  computed height 1167px（= 100vh），內容（標題容器）僅 179px
+    → 988px blank；fbhc(#fullBleedHeaderContent) 是 auto 高度、跟著 header 縮。
+
+  collapse 命中路徑（條件 A）：header 是 `display:flex; flex-direction:row`，
+  內含被 v1.0.3 hide 的影片 media block（hidden child）+ visible 標題容器
+  → triggerHiddenSibling。修法：collapse 偵測「容器 rect 高 >= 80% viewport
+  且最後一個 visible child 底距容器底 > 30% viewport」= viewport blank reserve
+  → 連 height/min-height 一起 reset 為 auto。
+
+  ★ header `display:flex; flex-direction:row` 用 inline style（jsdom getComputedStyle 讀得到）。
+  ★ 影片 position:absolute 用 inline style（v1.0.3 rule 命中條件）。
+  ★ 真實 viewport 高度與各層 rect 在 spec 用 stubRect / viewport 注入
+    （jsdom 無 layout engine，getBoundingClientRect 全回 0）。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article id="story" data-test="article">
+    <div id="fullBleedHeaderContent" data-test="fbhc">
+      <header class="css-2fao3f" data-test="hero-header"
+              style="display: flex; flex-direction: row;">
+        <div class="media-block css-4zd7u9" data-test="hero-media">
+          <div class="sizeFull css-f776a5">
+            <div class="css-201wrs">
+              <div class="css-122y91a">
+                <video class="cinemagraph_video css-gvnats" autoplay loop muted playsinline
+                       style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+                       data-test="hero-video"></video>
+              </div>
+            </div>
+          </div>
+          <p class="caption" data-test="hero-caption">China’s lead in humanoid robots was evident at last month’s Humanoids Summit, a robotics conference in Tokyo. Videos by Qilai Shen and Hiroko Masuike</p>
+        </div>
+        <div class="css-1xqucq6" data-test="title-block">
+          <h1 data-test="title">Why It’s Nearly Impossible to Build a Robot Without China</h1>
+          <p class="summary" data-test="summary">Building on the country’s electric vehicle and battery dominance, Chinese companies are racing ahead in humanoid robots.</p>
+        </div>
+      </header>
+    </div>
+
+    <section class="body" data-test="body">
+      <p data-test="body-p-1">Japan led the world in robotics for decades.</p>
+      <p data-test="body-p-2">More than 50 years ago, Japanese researchers captured imaginations with the first robot capable of grasping objects and walking on two legs.</p>
+      <p data-test="body-p-3">But now, just as tech investors and government officials around the world are betting that artificial intelligence will spur growth for robots, that lead no longer belongs to Japan.</p>
+    </section>
+  </article>
+</body>
+</html>
