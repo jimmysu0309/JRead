@@ -32,7 +32,8 @@
 //   pass    — 全部信號乾淨（Claude 仍應抽看 light-page-01 首屏）
 //   review  — 只命中低精度信號（contextual residual / hero / links /
 //             retention），需 Claude 看截圖判定真偽，截圖保留
-//   failed  — 命中高精度信號（strict residual / overflow / contrast /
+//   failed  — 命中高精度信號（strict residual / overflow / text-image-overlap /
+//             contrast /
 //             narrowText / gap>=200(delayed) / theme / restore），近乎必為真 bug
 //   blocked — bot challenge / 空頁，環境問題非 JRead bug，改用 cage 重測
 // -----------------------------------------------------------------------------
@@ -219,7 +220,7 @@ async function setZoom(page, z) {
     gaps: { initial: null, delayed: null },
     contrast: { light: null, dark: null },
     theme: { dark: null, lightRestore: null },
-    overflow: null, tail: null, restored: null, droppedFigures: null,
+    overflow: null, textImageOverlap: null, tail: null, restored: null, droppedFigures: null,
     droppedProse: null, titlePresence: null,
     failReasons: [], reviewReasons: [] };
 
@@ -388,8 +389,20 @@ async function setZoom(page, z) {
   }
 
   // ---- 7c. 需要 zoom 1.0 的 audit 集中跑（hero / narrowText / figcaption /
-  // bodyWidth；v0.8.39 合併——舊版各自切 zoom 來回 5 次）----
+  // bodyWidth / text-image-overlap；v0.8.39 合併——舊版各自切 zoom 來回 5 次）----
   await setZoom(page, 1);
+
+  // Text-image overlap audit（圖疊文）：跑在 zoom 1.0 讓 imgSize 報告為真實尺寸
+  // （frac 是 zoom 無關，偵測本就正確；只有顯示尺寸需真值）
+  audit.textImageOverlap = await audits.runTextImageOverlapAudit(page);
+  if (audit.textImageOverlap.overlap) {
+    console.log(`  ⚠️  TEXT-IMAGE OVERLAP (${audit.textImageOverlap.overlapCount} 段文字疊在圖片上):`);
+    for (const it of audit.textImageOverlap.items.slice(0, 5)) {
+      console.log(`    ${it.textEl} 疊 ${it.img}(${it.imgSize}) frac=${it.frac} "${it.text}"`);
+    }
+  } else {
+    console.log('  ✅ text-image overlap: 無圖疊文');
+  }
 
   if (originalHeroImages.length > 0) {
     await audits.waitForReaderImagesLoaded(page);
@@ -617,6 +630,9 @@ async function setZoom(page, z) {
   if (audit.contrast?.dark?.warnings?.length > 0) fail.push(`contrast(dark)x${audit.contrast.dark.warnings.length}`);
   if (!audit.theme?.dark?.applied) fail.push('dark-theme-not-applied');
   if (audit.overflow?.overflow) fail.push('overflow');
+  // 圖疊文：high-precision → fail（reader mode 清過 overlay，content 文字疊大圖
+  // 近乎必為真破版——autocar 作者欄 float 頭像溢出實案，2026-06-25 補洞）
+  if (audit.textImageOverlap?.overlap) fail.push(`text-image-overlap x${audit.textImageOverlap.overlapCount}`);
   if (audit.heroImage?.missing?.length > 0) review.push(`hero-missing x${audit.heroImage.missing.length}`);
   // 內文掉圖：review-tier（高精度窄版，FP 已壓到近 0，但仍歸低精度由 Claude
   // 看截圖確認——保守不 fail build，與 hero-missing 同層）

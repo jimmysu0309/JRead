@@ -487,6 +487,23 @@ async function triggerShinkansenTranslate(page) {
           console.log(`   ${it.tag}.${it.cls.split(' ')[0]} width=${it.width}px overflow=${it.overflowPx}px "${it.text}"`);
         }
       }
+
+      // ===== TEXT-IMAGE OVERLAP AUDIT（圖疊文，2026-06-25）=====
+      // 補洞：reader mode 應線性流，content 文字不該疊在圖片上。autocar 作者欄
+      // float 頭像溢出裁切容器、bio 文字疊上去——overflow/gap/contrast 全測不到，
+      // 只有文字 rect vs img rect 幾何重疊能抓。詳見 audit-lib.js auditTextImageOverlap。
+      const overlapAudit = await audits.runTextImageOverlapAudit(page);
+      console.log('\n===== TEXT-IMAGE OVERLAP AUDIT =====');
+      if (overlapAudit.error) {
+        console.log('  ', overlapAudit.error);
+      } else if (!overlapAudit.overlap) {
+        console.log('✅ 無圖疊文');
+      } else {
+        console.log(`⚠️ 圖疊文：${overlapAudit.overlapCount} 段文字疊在圖片上`);
+        for (const it of overlapAudit.items.slice(0, 5)) {
+          console.log(`   ${it.textEl} 疊 ${it.img}(${it.imgSize}) frac=${it.frac} "${it.text}"`);
+        }
+      }
     }
 
     // 第 2 次 audit（+3s，捕 Jimmy 回報的「文章出現後約 3 秒按鈕才注入」

@@ -638,6 +638,81 @@ pageFns.auditOverflow = function () {
     docClientWidth: document.documentElement.clientWidth, cardWidth: Math.round(cardRect.width), items: unique };
 };
 
+// ---- Text-image overlap audit（圖疊文，2026-06-25 autocar 作者欄補洞）----
+// 動機：reader mode 應是乾淨線性流，content 文字不該疊在圖片上。autocar 作者
+// bio 區用 float 圓形頭像裁切容器（DIV.personality.clearfix），reader 攤平
+// float 後 608px 頭像溢出 142px 裁切容器、bio 文字落到圖片上 100% 重疊（圖疊
+// 文）——既有 overflow / gap / contrast / narrow audit 全測不到這層（文字 rect
+// 在 card 內、無水平溢出、對比夠、寬度正常），只有「文字 rect 與 img rect 的
+// 幾何重疊面積」能抓。Jimmy 2026-06-25 截圖揭穿（harness 判 review、實際嚴重
+// 破版）。
+//
+// 訊號層次（明確標注，見 CLAUDE.md 工作流原則 3）：本 audit 驗「可見 block
+// 文字元素 rect vs 可見大圖 rect 的幾何重疊比例」一層；不驗 z-order（文字疊上
+// ＝讀起來髒、疊下＝直接看不見，兩者都是 bug，純幾何即可）、不驗祖孫包含
+// （inline emoji / icon 在文字元素內＝合法，排除）、不驗 figcaption overlay
+// （部分 hero 設計刻意把圖說疊在圖上，故文字選擇器不含 figcaption）。
+// 高精度：reader mode 已清過 overlay，content 段落疊大圖近乎必為真破版。
+pageFns.auditTextImageOverlap = function () {
+  const art = document.querySelector('[data-jread-active="1"]');
+  if (!art) return { error: 'no article', overlap: false, items: [] };
+  function isVisible(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') return false;
+      const cs = window.getComputedStyle(cur);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      if (cur === document.body) break;
+      cur = cur.parentElement;
+    }
+    return true;
+  }
+  function rectOf(el) { return el.getBoundingClientRect(); }
+  function overlapArea(a, b) {
+    const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+    const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+    return x * y;
+  }
+  // 可見大圖（雙維 >= 80px，排除 icon / inline 小圖）
+  const imgs = [];
+  for (const img of art.querySelectorAll('img, picture, video')) {
+    if (!isVisible(img)) continue;
+    const r = rectOf(img);
+    if (r.width < 80 || r.height < 80) continue;
+    imgs.push({ el: img, r });
+  }
+  if (!imgs.length) return { overlap: false, overlapCount: 0, items: [] };
+  const OVERLAP_FRAC = 0.5; // 文字 rect 過半面積落在圖片矩形內 = 圖疊文
+  const items = [];
+  for (const t of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
+    if (items.length >= 8) break;
+    if (!isVisible(t)) continue;
+    // 只看自身有直接文字的元素（避免 wrapper 重複計數）
+    const direct = Array.from(t.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim();
+    if (direct.length < 4) continue;
+    const tr = rectOf(t);
+    if (tr.width < 10 || tr.height < 8) continue;
+    const tArea = tr.width * tr.height;
+    if (tArea <= 0) continue;
+    for (const im of imgs) {
+      // 排除祖孫包含（圖在文字元素內＝inline 合法；文字在圖容器內＝保險）
+      if (t.contains(im.el) || im.el.contains(t)) continue;
+      const frac = overlapArea(tr, im.r) / tArea;
+      if (frac >= OVERLAP_FRAC) {
+        items.push({
+          text: direct.slice(0, 40),
+          textEl: t.tagName + (t.className ? '.' + t.className.toString().split(' ').filter(Boolean)[0] : ''),
+          img: im.el.tagName + (im.el.className ? '.' + im.el.className.toString().split(' ').filter(Boolean)[0] : ''),
+          imgSize: Math.round(im.r.width) + 'x' + Math.round(im.r.height),
+          frac: Math.round(frac * 100) / 100
+        });
+        break; // 一個文字元素命中一張圖即足夠
+      }
+    }
+  }
+  return { overlap: items.length > 0, overlapCount: items.length, items };
+};
+
 // ---- Narrow text audit（極端窄欄）----
 // 用「平均每行字元數」偵測：正常段落每行 40+ 字元（英文）或 15+ 字元（中文）。
 // 每行 < 10 字元 = 文字被壓成窄條。不受 zoom、box model、float 影響。
@@ -1066,6 +1141,7 @@ const runContrastAudit = (page) => page.evaluate(pageFns.auditContrast);
 const runContentWidthAudit = (page) => page.evaluate(pageFns.auditContentWidth);
 const runBodyWidthAudit = (page) => page.evaluate(pageFns.auditBodyWidthRatio);
 const runOverflowAudit = (page) => page.evaluate(pageFns.auditOverflow);
+const runTextImageOverlapAudit = (page) => page.evaluate(pageFns.auditTextImageOverlap);
 const runNarrowTextAudit = (page) => page.evaluate(pageFns.auditNarrowText);
 const runFigcaptionAudit = (page) => page.evaluate(pageFns.auditFigcaption);
 const runTailAudit = (page) => page.evaluate(pageFns.auditTail);
@@ -1225,6 +1301,7 @@ module.exports = {
   runContentWidthAudit,
   runBodyWidthAudit,
   runOverflowAudit,
+  runTextImageOverlapAudit,
   runNarrowTextAudit,
   runFigcaptionAudit,
   runTailAudit,
