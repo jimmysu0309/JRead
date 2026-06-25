@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.0.8**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.0.9**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -409,6 +409,8 @@ Forcing function：`test/regression/styler-neg-margin-image-tiny-caption.spec.js
 `apply()` runtime 自我檢查：原站把主文段落排進 **flex-row** 或 **多欄 grid** 容器做雜誌式雙欄 layout 時（christies.com/en/stories `div.sc-kLokBR` 是 `display:flex`，文字欄被擠成 292px 半欄、另半欄留給側欄圖說、本文沒側欄時純留白，Jimmy 2026-06-14 回報「內文寬度不正確」），把分欄容器塌成 `display:block`、讓段落退回正常 block flow 撐滿版心。既有 `galleryFlex`（v0.7.93）只塌「含 `picture` / `img` / `figure` 直接子」的 flex/grid（並列圖），純文字欄分欄是另一條 path——此 pass 補上。
 
 結構訊號（非站點特判）：掃所有 **>= 80 字的長 `<p>`**，沿祖先鏈往上找 `display:flex` 且 `flex-direction:row(-reverse)`、或 `display:grid` 且 `grid-template-columns` >= 2 column track 的容器；若該長段落**實際渲染寬 < 容器內容寬 70%**（確認真的在分欄、非單一全寬子），把容器塌成 `display:block`（inline `!important`）。中間 wrapper 由既有 `[data-jread-active] div { width:auto }` 規則接手撐滿。防誤殺：`flex-direction:column`（本來就垂直堆疊）、橫向 UI 列（button / 分享列無長段落）、單一全寬子（比例接近 1）皆不命中；player 容器（`data-jread-player`）排除。每塌一層後重量段落寬，內層 splitter 塌掉後外層比例回到 ~1 不會被誤塌。`restore()` 還原原 inline `display`。Forcing function：`test/regression/flex-text-column-decollapse.spec.js`（flex-row / grid 正例塌成 block + 三類防誤殺 guard + restore 還原）；真實 Chromium flex 解析寬度走 `tools/debug-harness.js` 截圖自驗。
+
+**窄圖欄擠寬文欄的作者 / meta 卡塌成單欄（stackLopsidedImgCol，v1.0.9）**：互補上述 ratio 閘漏網的反向 case——被擠的不是主文寬欄、而是窄的**圖欄**。autocar.co.uk 作者卡（`.personality` flex-row）= 窄欄（頭像 + Title / Follow 標籤）+ 寬欄（bio 長文），reader card 單欄下窄欄被擠到 min-content（`.author-left` 渲染 39px = card 6%）、頭像被壓扁、標籤逐字斷行疊到 bio 文字（Jimmy 2026-06-25「文字疊在一起」回報）。`decolumnFrom` 以「主文 anchor 被擠窄 < 70%」為訊號，但寬 bio 欄佔 82% > 70% 故漏網。結構訊號（非站點特判）：對每張**非 inline**（rect > 48px、排除小 byline 頭像）的 `<img>` 沿祖先鏈走，遇 flex-row / 多欄 grid 容器時——若含該圖的欄渲染寬 **< 容器內容寬 25%**、且另有 sibling 欄 **>= 50%**（lopsided sidebar + main 分欄）→ 容器塌成 `display:block` 垂直堆疊（窄圖欄回全寬、頭像回原顯示寬、標籤不再逐字斷行；寬欄落到下方）。防誤殺：純窄文字欄（無圖、= 分類標籤交給 cleaner sidebar 規則 hide）、三等欄（無 >= 50% sibling）、`flex-direction:column`、byline root（`data-jread-byline`）、player 皆不命中。`restore()` 還原原 inline `display`。Forcing function：`test/regression/lopsided-img-column-stack.spec.js`（正例塌成 block + 5 類防誤殺 + restore）；真實 Chromium 走 `tools/debug-harness.js` 截圖自驗（headless 幾何量到並排不重疊＝偽陰性，real Chrome 才疊字）。
 
 ### 寬語意內容水平捲（wide table / pre overflow scroll，v0.8.101）
 
