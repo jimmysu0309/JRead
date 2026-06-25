@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Why steering wheels should always be round, not square</title>
+</head>
+<body>
+  <article>
+    <h1>Why steering wheels should always be round, not square</h1>
+    <p>I have an affliction that, when I begin to think about how difficult it is to
+       find a pleasing steering wheel in a new car, begins to play on repeat in my head.</p>
+
+    <!-- caption-as-blockquote：站點把圖說做成深色不透明底的 blockquote
+         （autocar.co.uk image-field-caption bg rgb(48,48,48)）。light theme 下
+         blockquote 文字被 reader color:inherit 強制成卡片深色（inline color 模擬
+         注入後結果）→ 深字落深底 1.59:1 不可讀。本元素必須被 contrast gate 命中、
+         背景正規化為透明。 -->
+    <blockquote class="image-field-caption" data-test="dark-caption-bq"
+      style="background-color: rgb(48, 48, 48); color: rgb(0, 0, 0);">
+      Audi had more than 100 steering wheel designs &ndash; so over time it will have one too, of course
+    </blockquote>
+
+    <p>I've learned to live with it as something as inevitable as getting into a new
+       car and being faced with an unnaturally awkward primary control surface.</p>
+
+    <!-- 正常引言框：站點用淺底 + 深字的合理設計。light theme 下深字落淺底對比高
+         （~18:1），contrast gate 不可觸發、背景必須原封不動（保守邊界）。 -->
+    <blockquote data-test="light-quote-bq"
+      style="background-color: rgb(245, 245, 245); color: rgb(0, 0, 0);">
+      The square steering wheel was so widely ridiculed when it featured in the 1973 Austin Allegro
+      that the industry gave up on them for a while.
+    </blockquote>
+
+    <p>I still can't pinpoint the exact moment that un-round steering wheels became the
+       term even though I suspect it isn't grammatically accurate.</p>
+  </article>
+</body>
+</html>
