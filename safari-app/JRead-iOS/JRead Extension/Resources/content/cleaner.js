@@ -3658,6 +3658,37 @@
       // 仍生效、reader card 保留居中。BBC byline 等 inner container case 仍
       // 走完整 reset（el !== articleEl）。
       const isArticleSelf = (el === articleEl);
+      // v1.0.4：full-bleed hero header 殘留 viewport 高度空白偵測。
+      // 場景：NYT full-bleed hero `<header>` stylesheet 給 `height: 100vh`
+      // 讓 cinemagraph 影片填滿整個螢幕；影片被 v1.0.3 decorative-hero rule
+      // hide 後，header（flex-row + hidden 影片 child → 命中本 collapse
+      // 條件 A）仍維持 `height: 100vh`、內容（標題＋摘要）只占約 180px →
+      // 標題下方留一整頁（100vh）純空白（China-robots 實測 1167px header
+      // 內容僅 179px、988px blank；只在桌面寬度命中＝full-bleed 設計）。
+      // collapse 既有 decls 只清 display/grid/width/margin/padding，不含
+      // height → 空白殘留。
+      // 結構特徵（不綁站點 / class）：collapse 容器自身 rect 高度 >= 80%
+      // viewport，且最後一個 visible child 的 rect 底距容器底 > 30% viewport
+      //（= 容器 height 在 reserve 一大片空白、非內容撐出）→ 連 height /
+      // min-height 一起 reset 為 auto，讓 linearize 後高度由內容決定。
+      // 只對 non-articleSelf 做：articleEl 高度由 styler 控制、且本來就是
+      // 內容撐出的長頁，不會誤判。jsdom 環境 rect 全 0 → 自動不命中（需
+      // stubRect 才驗得到，見 nyt-cinemagraph-hero-video.spec.js）。
+      let hasViewportBlankReserve = false;
+      if (!isArticleSelf) {
+        const vh = window.innerHeight || 0;
+        if (vh > 0) {
+          const r = el.getBoundingClientRect();
+          if (r.height >= vh * 0.8) {
+            let maxChildBottom = r.top;
+            for (const c of visibleChildren) {
+              const cb = c.getBoundingClientRect().bottom;
+              if (cb > maxChildBottom) maxChildBottom = cb;
+            }
+            if (r.bottom - maxChildBottom > vh * 0.3) hasViewportBlankReserve = true;
+          }
+        }
+      }
       // v0.7.118：non-articleSelf case 加 padding-left/right reset——
       // 我們把 grid/flex/float container 強制 `display: block + width: 100%`
       // 後，content-box 預設下 `width: 100%` = 父 content area。container
@@ -3680,7 +3711,8 @@
         'display', 'grid-template-columns', 'grid-template-rows',
         'grid-template-areas', 'flex-direction',
         'width', 'max-width', 'margin-left', 'margin-right',
-        'padding-left', 'padding-right'
+        'padding-left', 'padding-right',
+        ...(hasViewportBlankReserve ? ['height', 'min-height'] : [])
       ];
       collapsed.push({ el, kind: 'container', prev: snapshotStyles(el, CONTAINER_PROPS) });
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
@@ -3703,6 +3735,10 @@
         'padding-left': '0',
         'padding-right': '0'
       };
+      if (hasViewportBlankReserve) {
+        containerDecls['height'] = 'auto';
+        containerDecls['min-height'] = '0';
+      }
       if (isFlexRow) containerDecls['flex-direction'] = 'column';
       // phase2 寫：container decls + jreadCollapsed 標記
       writes.push({ el, decls: containerDecls, markCollapsed: true });
