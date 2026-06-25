@@ -1228,11 +1228,34 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::after,
 [${ARTICLE_ATTR}="1"] [class*="ratio" i]::before,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after {
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after,
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]::before,
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]::after {
   content: none !important;
   display: none !important;
   padding-bottom: 0 !important;
   height: 0 !important;
+}
+/* v1.0.5：lazy-load placeholder 容器的 ::before aspect 佔位補進中和清單——
+   [class*="placeholder"] 之前只在 aspect-ratio/height reset（line ~989）與
+   static-flow reset（line ~1027）兩條，漏掉本條 ::before 中和；object-fit/ratio
+   都有、placeholder 沒有。fiaformulae.com 實機揭穿：DIV.w-embeddable-photo__
+   image-container.o-placeholder 用 ::before { padding-bottom: 56.25% } 撐 aspect
+   佔位 + 子層 DIV.js-lazy-load { position:absolute; inset:0 } 填滿。static-flow
+   reset 把 js-lazy-load 打回 static → 圖掉出 overlay 堆到「仍存活的 ::before
+   佔位」下方 → 標題下方一大塊空白（Jimmy 2026-06-25 截圖回報）。placeholder
+   ::before 一併中和後佔位消失，static 化的圖以 intrinsic 高度自然撐起。 */
+/* v1.0.5：lazy-load 容器內的 loading spinner <svg> 隱藏——placeholder / ratio /
+   object-fit 這類 lazy-load wrapper 的 direct child <svg> 是載入動畫 spinner
+   （fiaformulae js-lazy-load wrapper 內 <svg><use></use></svg>），reader mode 下
+   原站 lazy observer 凍結、spinner 不會被站方 JS 隱藏。媒體 element display:block
+   規則讓無 viewBox/height 的 svg 露出 replaced-element 預設 150px 高度，在圖片
+   上方撐出空白。direct child <svg> 是「lazy 佔位 spinner」的結構訊號（內容用
+   svg 圖表掛在 figure/content div、不會是 lazy wrapper 的 direct child）。 */
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i] > svg,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i] > svg,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i] > svg {
+  display: none !important;
 }
 /* CSS side-bleed 裝飾 pseudo（::before / ::after + position:absolute + bg-color
    + transform: translate）—— 原站慣例用來把卡片底色「溢出」到 article 左右側，
@@ -3086,6 +3109,60 @@ html [${ARTICLE_ATTR}="1"] a {
               relLuminance(finalBg) > 0.5 ? '#1a1a1a' : '#f0f0f0',
               'important'
             );
+          }
+        }
+      }
+
+      // v1.0.6 light theme：bg 保留但文字色被強制的語意元素（blockquote /
+      // summary）深底深字守門。
+      // Root cause（通則，非站點特例）：BG_PRESERVE_NOT 保留 figure/figcaption/
+      // summary/blockquote 的原站背景，但 COLOR_PRESERVE_NOT 只排除 figcaption——
+      // blockquote / summary 的文字在 light theme 被 color: inherit 強制成 reader
+      // 卡片深色。站點若把這類元素配深色不透明背景（autocar.co.uk 把圖說做成
+      // <blockquote class="image-field-caption"> bg rgb(48,48,48)），深字落深底＝
+      // 整條黑條不可讀（cage 量 1.59:1）。與 figcaption v0.8.169「文字已決定走
+      // 卡片色 → 背景跟著透明」同款修法形狀。
+      //
+      // 為什麼用 contrast gate 而非比照 figcaption 無條件清背景：blockquote 引言框
+      // 可能有「淺底 + 深字」的合理設計（行 1917 註解：引言框靠 padding + 背景
+      // 撐視覺）——無條件清會弄丟正常引言框的底色。以實際對比 gate：只有「強制
+      // 文字色對保留 effective bg < 3:1（占比 >= 40%）」才把背景正規化為透明
+      // （讓白卡透出、深字變可讀），高對比的淺底引言框一律不動（保守邊界，同
+      // pre/table contrast guard 與 v0.7.225 light guard）。figure 直接文字罕見、
+      // figcaption 已另條 light 規則處理，故只掃 blockquote / summary。
+      //
+      // 訊號層次：本層驗「blockquote/summary 直接文字載體 vs 保留 bg 的 WCAG
+      // 對比」一層；dark / sepia 不走（theme.text 非 null → 由下方 phase 3 兜底
+      // 接管全 card 文字色）。restore 走 contrastBgSnap 既有通道。
+      if (!theme.text) {
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (_win && _win.getComputedStyle) {
+          const cardBg = parseCssColor(theme.articleBg) || WHITE;
+          let bqScanned = 0;
+          for (const el of articleEl.querySelectorAll('blockquote, summary')) {
+            if (bqScanned >= CONTRAST_MAX_TARGETS) break;
+            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+            const cs = _win.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+            // 無自身背景（透明）→ effective bg 由白卡決定、不可能深底深字，跳過
+            const ownBg = parseCssColor(cs.backgroundColor);
+            if (!ownBg || ownBg.a < 0.05) continue;
+            bqScanned++;
+            // 注入後實際文字色（color: inherit 已走新 cascade，見
+            // collectTextCarriers 註解——用注入前舊色會誤判）
+            const carriers = collectTextCarriers(el, _win);
+            if (!carriers.length) continue;
+            for (const c of carriers) c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
+            const effBg = compositeBgOver(el, articleEl, cardBg, _win);
+            if (lowContrastFraction(carriers, effBg, 'newColor') >= CONTRAST_LOW_FRACTION) {
+              contrastBgSnap.push({
+                el,
+                prop: 'background-color',
+                prev: el.style.getPropertyValue('background-color'),
+                prevP: el.style.getPropertyPriority('background-color')
+              });
+              el.style.setProperty('background-color', 'transparent', 'important');
+            }
           }
         }
       }
