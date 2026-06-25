@@ -3113,6 +3113,60 @@ html [${ARTICLE_ATTR}="1"] a {
         }
       }
 
+      // v1.0.6 light theme：bg 保留但文字色被強制的語意元素（blockquote /
+      // summary）深底深字守門。
+      // Root cause（通則，非站點特例）：BG_PRESERVE_NOT 保留 figure/figcaption/
+      // summary/blockquote 的原站背景，但 COLOR_PRESERVE_NOT 只排除 figcaption——
+      // blockquote / summary 的文字在 light theme 被 color: inherit 強制成 reader
+      // 卡片深色。站點若把這類元素配深色不透明背景（autocar.co.uk 把圖說做成
+      // <blockquote class="image-field-caption"> bg rgb(48,48,48)），深字落深底＝
+      // 整條黑條不可讀（cage 量 1.59:1）。與 figcaption v0.8.169「文字已決定走
+      // 卡片色 → 背景跟著透明」同款修法形狀。
+      //
+      // 為什麼用 contrast gate 而非比照 figcaption 無條件清背景：blockquote 引言框
+      // 可能有「淺底 + 深字」的合理設計（行 1917 註解：引言框靠 padding + 背景
+      // 撐視覺）——無條件清會弄丟正常引言框的底色。以實際對比 gate：只有「強制
+      // 文字色對保留 effective bg < 3:1（占比 >= 40%）」才把背景正規化為透明
+      // （讓白卡透出、深字變可讀），高對比的淺底引言框一律不動（保守邊界，同
+      // pre/table contrast guard 與 v0.7.225 light guard）。figure 直接文字罕見、
+      // figcaption 已另條 light 規則處理，故只掃 blockquote / summary。
+      //
+      // 訊號層次：本層驗「blockquote/summary 直接文字載體 vs 保留 bg 的 WCAG
+      // 對比」一層；dark / sepia 不走（theme.text 非 null → 由下方 phase 3 兜底
+      // 接管全 card 文字色）。restore 走 contrastBgSnap 既有通道。
+      if (!theme.text) {
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (_win && _win.getComputedStyle) {
+          const cardBg = parseCssColor(theme.articleBg) || WHITE;
+          let bqScanned = 0;
+          for (const el of articleEl.querySelectorAll('blockquote, summary')) {
+            if (bqScanned >= CONTRAST_MAX_TARGETS) break;
+            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+            const cs = _win.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+            // 無自身背景（透明）→ effective bg 由白卡決定、不可能深底深字，跳過
+            const ownBg = parseCssColor(cs.backgroundColor);
+            if (!ownBg || ownBg.a < 0.05) continue;
+            bqScanned++;
+            // 注入後實際文字色（color: inherit 已走新 cascade，見
+            // collectTextCarriers 註解——用注入前舊色會誤判）
+            const carriers = collectTextCarriers(el, _win);
+            if (!carriers.length) continue;
+            for (const c of carriers) c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
+            const effBg = compositeBgOver(el, articleEl, cardBg, _win);
+            if (lowContrastFraction(carriers, effBg, 'newColor') >= CONTRAST_LOW_FRACTION) {
+              contrastBgSnap.push({
+                el,
+                prop: 'background-color',
+                prev: el.style.getPropertyValue('background-color'),
+                prevP: el.style.getPropertyPriority('background-color')
+              });
+              el.style.setProperty('background-color', 'transparent', 'important');
+            }
+          }
+        }
+      }
+
       // v0.8.45 dark / sepia contrast 兜底層（phase 3）：CSS 通則層管不到的
       // 低對比文字逐元素修色。CSS cascade 有結構性輸局——站點高 specificity
       // !important rule（twz `.recurrent-author-widgets .recurrent-author-widget
