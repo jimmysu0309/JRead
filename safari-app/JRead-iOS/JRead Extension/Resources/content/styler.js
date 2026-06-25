@@ -31,6 +31,22 @@
   // rendered 即標記並用 inline !important max-width 釘回原始顯示寬。
   const ICON_IMG_ATTR = 'data-jread-icon-img';
   const PLAYER_ATTR = 'data-jread-player';
+  // v1.0.8：byline meta 區一行正規化標記（Jimmy 2026-06-25 autocar 作者欄要求）。
+  // 站點 byline（kicker / 作者 / 日期 / 閱讀時間 / 小頭像）reader mode 下各自
+  // block 散成多行、字級不一、頭像縮排。偵測「標題與第一段內文之間、含日期訊號」
+  // 的 meta 區（結構訊號、非站點 class 特判），CSS flex 一行排列、字級統一、頭像
+  // inline 對齊內容左緣、隱藏閱讀時間。BYLINE_ATTR=root（flex 容器）、
+  // BYLINE_WRAP_ATTR=純 wrapper（display:contents 打平任意巢狀讓 leaf 升為 root 的
+  // flex item）、BYLINE_ITEM_ATTR=可見 leaf（flex item）、BYLINE_RT_ATTR=閱讀時間
+  // （CSS 隱藏）。
+  const BYLINE_ATTR = 'data-jread-byline';
+  const BYLINE_WRAP_ATTR = 'data-jread-byline-wrap';
+  const BYLINE_ITEM_ATTR = 'data-jread-byline-item';
+  const BYLINE_RT_ATTR = 'data-jread-byline-rt';
+  // 日期訊號（DD Mon YYYY / Mon DD, YYYY / YYYY-M-D / YYYY年M月D日）——byline root
+  // 偵測的錨點。閱讀時間（N min(s) read / 閱讀時間 / N 分鐘閱讀）——byline 內隱藏。
+  const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/i;
+  const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|閱讀時間|\d+\s*分鐘閱讀/i;
   // v0.8.86：responsive embed（relative wrapper + position:absolute iframe 填滿
   // 16:9 padding-bottom hack）的 iframe 標記。apply() 量到 computed
   // position:absolute 的 article iframe 標此 attr，CSS 把它 pin 回 inset:0
@@ -1427,6 +1443,47 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] h6 {
   margin-top: clamp(16px, 1em, 32px) !important;
   margin-bottom: clamp(8px, 0.4em, 16px) !important;
+}
+/* v1.0.8：byline meta 區一行正規化（標記由 apply() 結構偵測，見 BYLINE_ATTR
+   常數註解）。root flex 一行、wrapper display:contents 打平任意巢狀讓 leaf 升為
+   root 的 flex item、item 字級統一、頭像 inline 對齊內容左緣、隱藏閱讀時間。
+   全 theme 適用（byline 文字色交給 reader 文字色 inherit、作者連結維持 link 色
+   雙通道）。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  column-gap: 0.5em !important;
+  row-gap: 0.2em !important;
+  margin: 0.2em 0 1.4em 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+}
+[${ARTICLE_ATTR}="1"] [${BYLINE_WRAP_ATTR}] {
+  display: contents !important;
+}
+[${ARTICLE_ATTR}="1"] [${BYLINE_ITEM_ATTR}] {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  float: none !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+}
+[${ARTICLE_ATTR}="1"] [${BYLINE_RT_ATTR}] {
+  display: none !important;
+}
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] img {
+  width: auto !important;
+  height: 2em !important;
+  max-height: 2.2em !important;
+  margin: 0 !important;
+  border-radius: 50% !important;
+  flex: 0 0 auto !important;
+  object-fit: cover !important;
 }
 /* v0.7.102：p / ul / ol / blockquote 段落間距已搬到 userOverrides 條件注入
    （v0.7.162 起 paragraphSpacing 可調）。預設 paragraphSpacing=1.0 + Auto 兩種
@@ -3309,6 +3366,105 @@ html [${ARTICLE_ATTR}="1"] a {
         firstInk.style.setProperty('margin-top', '0', 'important');
       }
 
+      // v1.0.8：byline meta 區一行正規化（見頂部 BYLINE_ATTR 常數註解）。
+      // 偵測（結構訊號、非站點 class 特判）：date 訊號（<time> 或 date-regex 短文）
+      // 與 author 訊號（行首 by / rel=author）的共同祖先，往上爬到「不含第一段內文
+      // （>= 120 chars 的 p）、且 visible 文字 <= 200」的最高祖先 = byline root。
+      // 只標 visible 元素（避免把站點隱藏的作者 hover card / 分享列重新顯示）。
+      // 多站驗證（autocar / npr / techcrunch / bbc / theverge）選到乾淨 byline 區。
+      const bylineMarks = [];
+      const bylineDispSnap = [];
+      {
+        const win = articleEl.ownerDocument?.defaultView;
+        if (win && win.getComputedStyle && !articleEl.querySelector(`[${BYLINE_ATTR}]`)) {
+          const bnorm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+          const bvisible = (el) => {
+            if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
+            const cs = win.getComputedStyle(el);
+            return cs.display !== 'none' && cs.visibility !== 'hidden';
+          };
+          const bdirect = (el) => bnorm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+          let firstBodyP = null;
+          for (const p of articleEl.querySelectorAll('p')) {
+            if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
+          }
+          const beforeBody = (el) => !firstBodyP ||
+            !!(el.compareDocumentPosition(firstBodyP) & Node.DOCUMENT_POSITION_FOLLOWING);
+          // date 訊號：<time> 優先、否則 date-regex 短文
+          let dateEl = null;
+          for (const t of articleEl.querySelectorAll('time')) {
+            if (bvisible(t) && beforeBody(t) && bnorm(t.textContent)) { dateEl = t; break; }
+          }
+          if (!dateEl) {
+            for (const el of articleEl.querySelectorAll('span, div, p, li, a')) {
+              if (!beforeBody(el) || !bvisible(el)) continue;
+              const dt = bdirect(el);
+              if (dt && dt.length < 40 && BYLINE_DATE_RE.test(dt)) { dateEl = el; break; }
+            }
+          }
+          if (dateEl) {
+            // author 訊號（選填、用於擴大 root 的 LCA）
+            let authorEl = null;
+            for (const el of articleEl.querySelectorAll('a[rel~="author"], span, div, p, a')) {
+              if (!beforeBody(el) || !bvisible(el)) continue;
+              const t = bnorm(el.textContent);
+              if (/^(by|words by|written by)\b/i.test(t) && t.length < 60) { authorEl = el; break; }
+            }
+            let seed = dateEl;
+            if (authorEl && authorEl !== dateEl) {
+              const anc = new Set();
+              for (let x = dateEl; x && x !== articleEl.parentElement; x = x.parentElement) anc.add(x);
+              for (let y = authorEl; y && y !== articleEl.parentElement; y = y.parentElement) {
+                if (anc.has(y)) { seed = y; break; }
+              }
+            }
+            // 爬到「不含 body、visible 文字 <= 200」的最高祖先
+            let root = seed;
+            while (root.parentElement && root.parentElement !== articleEl &&
+                   beforeBody(root.parentElement) &&
+                   (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
+                   bnorm(root.parentElement.textContent).length <= 200) {
+              root = root.parentElement;
+            }
+            const setMark = (el, attr) => { el.setAttribute(attr, '1'); bylineMarks.push({ el, attr }); };
+            // 設 inline display（覆蓋 cleaner collapseGridWithHiddenCell 的 inline
+            // display:block !important——byline 容器常是 flex/grid + hidden 社群分享
+            // child 被 collapse；stylesheet 的 byline flex 贏不過 inline !important）。
+            // snapshot prev 供 styler.restore 還原；styler.restore 在 cleaner.restore
+            // 之前（main.js 458→459），collapsed 元素還原成 cleaner 值、cleaner 再
+            // 還原成原始。
+            const setStyleImp = (el, prop, val) => {
+              bylineDispSnap.push({ el, prop, prev: el.style.getPropertyValue(prop), prevP: el.style.getPropertyPriority(prop) });
+              el.style.setProperty(prop, val, 'important');
+            };
+            setMark(root, BYLINE_ATTR);
+            setStyleImp(root, 'display', 'flex');
+            // cleaner collapseGridWithHiddenCell 攤平 flex-row 時設了 inline
+            // flex-direction:column（display:block 下無作用、但 byline 翻回 flex 後
+            // 會生效成直排）——一併用 inline row 覆蓋
+            setStyleImp(root, 'flex-direction', 'row');
+            // 遞迴標 item（可見 leaf / 有直接文字 / 媒體）與 wrap（純 wrapper）
+            const walk = (el) => {
+              for (const child of el.children) {
+                if (!bvisible(child)) continue;
+                const tag = child.tagName.toUpperCase();
+                const isMedia = tag === 'IMG' || tag === 'PICTURE' || tag === 'TIME' || tag === 'SVG';
+                const hasText = bdirect(child).length > 0;
+                if (hasText || isMedia || child.children.length === 0) {
+                  setMark(child, BYLINE_ITEM_ATTR);
+                  if (BYLINE_RT_RE.test(bnorm(child.textContent))) setMark(child, BYLINE_RT_ATTR);
+                } else {
+                  setMark(child, BYLINE_WRAP_ATTR);
+                  setStyleImp(child, 'display', 'contents');
+                  walk(child);
+                }
+              }
+            };
+            walk(root);
+          }
+        }
+      }
+
       // v0.7.179：strip excessive padding on ancestors between firstInk and
       // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
       // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
@@ -3572,6 +3728,9 @@ html [${ARTICLE_ATTR}="1"] a {
         // 蓋住 dek 文字 + 流空間錯位出 245px 假空白（gap audit y=206 實證）。
         // player 內部 layout 由 player JS 自己管理，jread 不該動。
         if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+        // v1.0.8：byline 區自管 flex 一行 layout（見 BYLINE_ATTR），不被 gallery
+        // flatten 成 block——否則 inline display:block !important 蓋掉 byline flex
+        if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
         const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
         if (!cs) continue;
         if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
@@ -3708,7 +3867,8 @@ html [${ARTICLE_ATTR}="1"] a {
             let cur = anchor.parentElement;
             while (cur && cur !== articleEl) {
               if (!textColSeen.has(cur) &&
-                  !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1')) {
+                  !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
+                  !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
                 const cs = win.getComputedStyle(cur);
                 const disp = cs.display;
                 const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
@@ -3911,7 +4071,7 @@ html [${ARTICLE_ATTR}="1"] a {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap, viewportSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
     },
 
     /**
@@ -3998,6 +4158,22 @@ html [${ARTICLE_ATTR}="1"] a {
       if (Array.isArray(snapshot.textDivMarked)) {
         for (const el of snapshot.textDivMarked) {
           if (el && el.removeAttribute) el.removeAttribute(TEXT_DIV_ATTR);
+        }
+      }
+
+      // v1.0.8：還原 byline inline display（在 cleaner.restore 之前——main.js
+      // 458→459——collapsed 元素還回 cleaner 值、cleaner 再還回原始）+ 移除標記
+      if (Array.isArray(snapshot.bylineDispSnap)) {
+        for (const s of snapshot.bylineDispSnap) {
+          if (!s || !s.el) continue;
+          const prop = s.prop || 'display';
+          if (s.prev) s.el.style.setProperty(prop, s.prev, s.prevP || '');
+          else s.el.style.removeProperty(prop);
+        }
+      }
+      if (Array.isArray(snapshot.bylineMarks)) {
+        for (const m of snapshot.bylineMarks) {
+          if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
         }
       }
 
