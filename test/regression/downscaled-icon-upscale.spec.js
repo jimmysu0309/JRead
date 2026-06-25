@@ -60,10 +60,17 @@ function setup() {
   stubNatural(small, 60, 60); stubComplete(small);
   stubRect(small, { top: 800, left: 360, width: 56, height: 56 });
 
-  // a 包的 icon（natural 1200、rect 56）→ icon-link 結構、交給既有 a>img 規則、不走本支
+  // a 包的縮小大圖（natural 1200、rect 56）→ v1.0.7 起同樣走 capIcon 釘小
+  // （autocar 作者頭像 <a><img> 結構：舊行為被 tryMarkContentImg 標 content-img →
+  // 放大滿欄溢出容器疊文；新行為 capIcon 釘回 rendered 寬）
   const linked = env.document.getElementById('linked-icon');
   stubNatural(linked, 1200, 1200); stubComplete(linked);
   stubRect(linked, { top: 900, left: 360, width: 56, height: 56 });
+
+  // a 包的大內容圖（lightbox：natural 1200、rect 600 >= 200）→ 不命中 capIcon
+  // 幾何 gate、照走 content-img 分支（forcing：確認移除 !closest('a') 後 lightbox 不退步）
+  const linkedBig = env.document.getElementById('linked-content');
+  if (linkedBig) { stubNatural(linkedBig, 1200, 800); stubComplete(linkedBig); stubRect(linkedBig, { top: 1100, left: 0, width: 600, height: 400 }); }
 
   return { ...env, articleEl, icon, photo, small, linked };
 }
@@ -101,11 +108,27 @@ describe('downscaled-icon-upscale — 作者縮小的小圖不被 width:auto 反
       'natural ≈ rendered 的小圖 width:auto 本來就不放大、不必釘（避免無謂副作用）');
   });
 
-  it('a 包的 icon（icon-link 結構）不走本支、不標 icon-img', () => {
+  it('a 包的縮小大圖（natural 1200 / rect 56）v1.0.7 起標 icon-img 釘小', () => {
     const { NS, articleEl, linked } = setup();
     NS.styler.apply(articleEl, SETTINGS);
-    assert.strictEqual(linked.getAttribute('data-jread-icon-img'), null,
-      'a > img 是 icon-link 結構，交給既有 :not(a>img) 排除 + a>img 規則處理');
+    assert.strictEqual(linked.getAttribute('data-jread-icon-img'), '1',
+      'a 包的縮小大圖（autocar 作者頭像家族）必須走 capIcon 釘小；' +
+      '舊行為被 tryMarkContentImg 標 content-img 放大滿欄、溢出容器疊到 bio 文字');
+    assert.strictEqual(linked.style.getPropertyValue('max-width'), '56px',
+      'inline max-width 釘回 rendered 寬 56px');
+    assert.strictEqual(linked.style.getPropertyPriority('max-width'), 'important');
+    assert.strictEqual(linked.getAttribute('data-jread-content-img'), null,
+      '縮小頭像不可被標 content-img（capIcon 必須在 content-img 分支之前命中）');
+  });
+
+  it('a 包的大內容圖（lightbox：rect 600 >= 200）不命中 capIcon、仍標 content-img', () => {
+    const { NS, articleEl, linkedBig } = setup();
+    if (!linkedBig) return; // fixture 無此元素時跳過
+    NS.styler.apply(articleEl, SETTINGS);
+    assert.strictEqual(linkedBig.getAttribute('data-jread-icon-img'), null,
+      'lightbox 大圖 render >= 200 不命中 capIcon 幾何 gate');
+    assert.strictEqual(linkedBig.getAttribute('data-jread-content-img'), '1',
+      '移除 !closest(a) 後 lightbox 大內容圖必須仍標 content-img（不退步）');
   });
 
   it('restore() 移除 icon-img 標記與 inline max-width（可逆性）', () => {

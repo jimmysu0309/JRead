@@ -2872,16 +2872,27 @@ html [${ARTICLE_ATTR}="1"] a {
           if (inlineViaRect && r) pinInlineImg(img, r.width, r.height);
           return;
         }
-        // v0.8.90：裸 img（非 a 包、非 player）的「作者刻意縮小」防放大。INLINE_IMG_MAX
-        // (48px) 與 CONTENT_IMG_MIN (200px) 之間的小圖（48 < rect < 200）落在兩個門檻
-        // 中間：不算 inline emoji、不算內容照片，落入 img:not(a>img) 的 width:auto →
+        // v0.8.90：「作者刻意縮小的大圖」防放大。INLINE_IMG_MAX (48px) 與
+        // CONTENT_IMG_MIN (200px) 之間的小圖（48 < rect < 200）落在兩個門檻中間：
+        // 不算 inline emoji、不算內容照片。裸 img 落入 img:not(a>img) 的 width:auto →
         // 退回 naturalWidth 撐成滿版（washingtonpost lightbulb badge 56→788px 實證）。
         // 結構訊號：已載入（complete + natural > 1）、pre-reader rendered rect 兩維皆
         // < CONTENT_IMG_MIN、且 natural 明顯大於 rendered（作者把大來源圖顯示縮小）→
         // reader 不該反向放大，釘回原始顯示寬。natural ≈ rendered 的真實小圖不命中
         // （width:auto 本來就給 natural≈rendered、無放大、不必釘）。lazy placeholder
         // （!complete / natural<=1）此刻量不準，交給上方 load listener 載入後重判。
-        if (img.complete && img.naturalWidth > 1 && !img.closest('a') &&
+        //
+        // v1.0.7：移除原本的 `!img.closest('a')` 排除——a 包的縮小大圖同樣會破版，
+        // 只是路徑不同：a-wrapped 不走 width:auto blowup（被 :not(a>img) 排除），而是
+        // 落入下方 a-wrapped 分支被 tryMarkContentImg 標成 content-img → 強制 block +
+        // 撐滿欄寬（autocar.co.uk 作者欄 <a><div.personality-image><img></div></a>
+        // 頭像 natural 3309 / rect 142 被放大成 608、溢出固定高 142px 的裁切容器、疊到
+        // bio 文字上＝圖疊文，cage probe 實證）。capIcon 幾何 gate（兩維皆 48~200 +
+        // natural > rect×1.5）夠精確：lightbox 內容圖 render >= 200 不命中本支、照走下方
+        // content-img 分支（styler-lightbox-content-image-margin.spec 不退步）。capIcon
+        // 必須在 a-wrapped content-img 分支**之前**（縮小頭像優先當 icon 釘小，不當內容圖
+        // 放大）——本判斷已在該分支上方，移除排除即生效。
+        if (img.complete && img.naturalWidth > 1 &&
             img.getAttribute(PLAYER_ATTR) !== '1') {
           if (!r) r = img.getBoundingClientRect();
           if (r.width > INLINE_IMG_MAX && r.width < CONTENT_IMG_MIN &&
