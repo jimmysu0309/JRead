@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>EXPLAINED: Formula E's new sporting format</title>
+  <meta property="og:title" content="EXPLAINED: Formula E's new sporting format">
+  <style>
+    /* 複製 fiaformulae.com lazy-load placeholder 結構的關鍵 CSS：
+       容器 .o-placeholder 用 ::before { padding-bottom } 撐 aspect 佔位，
+       子層 .js-lazy-load { position:absolute; inset:0 } 填滿。 */
+    .w-embeddable-photo__image-container.o-placeholder::before {
+      content: "";
+      display: block;
+      padding-bottom: 56.25%;
+    }
+    .w-embeddable-photo__image-container .js-lazy-load {
+      position: absolute;
+      inset: 0;
+    }
+    /* lazy-load spinner svg：站方只設 width，未設 height → reader mode
+       的 svg display:block 會露出 replaced-element 預設 150px 高度。 */
+    .w-embeddable-photo__image-container > svg {
+      width: 20px;
+    }
+  </style>
+</head>
+<body>
+  <!-- 複製 fiaformulae.com 文章主圖結構（Jimmy 2026-06-25 截圖回報「標題下方
+       一大段空白」）：
+       DIV.w-article__image
+         > DIV.w-embeddable-photo
+           > FIGURE.w-embeddable-photo__media
+             > DIV.w-embeddable-photo__image-container.o-placeholder
+               （::before padding-bottom 撐 aspect 佔位）
+               > SVG（lazy-load spinner）
+               > DIV.js-lazy-load（position:absolute inset:0 填滿佔位）
+                 > PICTURE.object-fit-cover-picture > IMG
+       styler 的 [class*="placeholder"] * static-flow reset 把 js-lazy-load
+       打回 static → 圖掉出 overlay 堆到「仍存活的 ::before 佔位」下方（placeholder
+       ::before 之前沒被中和）→ 標題下方一大塊空白 + spinner svg 又撐 150px。
+       jsdom 不算 layout，spec 只驗 styler CSS 字串注入（CLAUDE.md「驗哪層訊號」）。 -->
+  <article>
+    <h1>EXPLAINED: Formula E's new sporting format for the 2026/27 season</h1>
+    <p class="w-article__summary">Here's an inside look at how Formula E is rewriting the racing rulebook for Season 13.</p>
+    <div class="w-article__image">
+      <div class="w-embeddable-photo w-embeddable-photo--full-width">
+        <figure class="w-embeddable-photo__media">
+          <div class="w-embeddable-photo__image-container o-placeholder">
+            <svg aria-hidden="true"><use href="#icon-spinner"></use></svg>
+            <div class="js-lazy-load u-observed lazy-image-wrapper">
+              <picture class="w-embeddable-photo__image object-fit-cover-picture">
+                <img src="https://example.com/gen4-car.jpg" width="1440" height="810" alt="GEN4 Formula E car">
+              </picture>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </div>
+    <p>The ABB FIA Formula E World Championship is introducing a brand-new sporting format for Season 13, designed to deliver more wheel-to-wheel racing and clearer strategy for fans.</p>
+    <p>As part of this new chapter for the all-electric series, races will now be defined as either a thirty-minute sprint or a forty-five-minute E-Prix, each with its own distinct rules and energy management challenge.</p>
+    <p>Free Practice has been extended to forty-five minutes, giving teams and drivers more time to dial in their setups before qualifying and the race itself begins in earnest.</p>
+  </article>
+</body>
+</html>

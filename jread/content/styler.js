@@ -1228,11 +1228,34 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::after,
 [${ARTICLE_ATTR}="1"] [class*="ratio" i]::before,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after {
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after,
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]::before,
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]::after {
   content: none !important;
   display: none !important;
   padding-bottom: 0 !important;
   height: 0 !important;
+}
+/* v1.0.5：lazy-load placeholder 容器的 ::before aspect 佔位補進中和清單——
+   [class*="placeholder"] 之前只在 aspect-ratio/height reset（line ~989）與
+   static-flow reset（line ~1027）兩條，漏掉本條 ::before 中和；object-fit/ratio
+   都有、placeholder 沒有。fiaformulae.com 實機揭穿：DIV.w-embeddable-photo__
+   image-container.o-placeholder 用 ::before { padding-bottom: 56.25% } 撐 aspect
+   佔位 + 子層 DIV.js-lazy-load { position:absolute; inset:0 } 填滿。static-flow
+   reset 把 js-lazy-load 打回 static → 圖掉出 overlay 堆到「仍存活的 ::before
+   佔位」下方 → 標題下方一大塊空白（Jimmy 2026-06-25 截圖回報）。placeholder
+   ::before 一併中和後佔位消失，static 化的圖以 intrinsic 高度自然撐起。 */
+/* v1.0.5：lazy-load 容器內的 loading spinner <svg> 隱藏——placeholder / ratio /
+   object-fit 這類 lazy-load wrapper 的 direct child <svg> 是載入動畫 spinner
+   （fiaformulae js-lazy-load wrapper 內 <svg><use></use></svg>），reader mode 下
+   原站 lazy observer 凍結、spinner 不會被站方 JS 隱藏。媒體 element display:block
+   規則讓無 viewBox/height 的 svg 露出 replaced-element 預設 150px 高度，在圖片
+   上方撐出空白。direct child <svg> 是「lazy 佔位 spinner」的結構訊號（內容用
+   svg 圖表掛在 figure/content div、不會是 lazy wrapper 的 direct child）。 */
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i] > svg,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i] > svg,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i] > svg {
+  display: none !important;
 }
 /* CSS side-bleed 裝飾 pseudo（::before / ::after + position:absolute + bg-color
    + transform: translate）—— 原站慣例用來把卡片底色「溢出」到 article 左右側，
