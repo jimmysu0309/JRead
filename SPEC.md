@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.0.7**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.0.8**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -309,6 +309,10 @@ flex 兩欄 layout 的推薦 / 廣告 rail 在 clean 當下有完整內容（the
 ### heading 旁動作連結（v0.8.45 通則）
 
 MediaWiki 類站每節標題旁有「[編輯]」動作連結（zh.wikipedia WK4）。結構通則：heading（h1-h6）**內部**或 **heading wrapper 內 sibling**（新版 MediaWiki `DIV.mw-heading > H2 + SPAN`）的含 `<a>` 的 `<span>`、文字 ≤ 12 chars、括號包裹（`[編輯]` / `(edit)` 跨站視覺慣例）或占 heading 文字 < 30% → 連 wrapper 一起 hide（只清 `<a>` 會留括號殘渣）。sibling 掃描限「wrapper 純粹包標題」（wrapper 文字 ≤ heading + 15 chars）。連結式標題（a 占整個 heading）不命中。
+
+### byline meta 區一行正規化（v1.0.8 通則）
+
+reader mode 下站點 byline（kicker / 作者 / 日期 / 閱讀時間 / 小頭像）原各自 block 散成多行、字級不一、頭像縮排。styler.apply 偵測「標題與第一段內文（≥ 120 chars 的 p）之間、含日期訊號（`<time>` 或 date-regex 短文：DD Mon YYYY / Mon DD YYYY / YYYY-M-D / YYYY年M月D日 / YYYY/M/D）」的 meta 區，與作者訊號（行首 by / `rel=author`）取共同祖先，往上爬到「不含第一段內文、visible 文字 ≤ 200」的最高祖先 = byline root。標記 `data-jread-byline`=root（CSS flex 一行）、`-wrap`=純 wrapper（`display:contents` 打平任意巢狀讓 leaf 升為 root 的 flex item）、`-item`=可見 leaf（flex item、字重統一 400）、`-rt`=閱讀時間（`N min(s) read` / 閱讀時間 / N 分鐘閱讀，CSS `display:none` 移除）。頭像為首個 flex item、對齊內容左緣。只標 visible 元素（不重新顯示站點隱藏的作者 hover card / 分享列）。cleaner `collapseGridWithHiddenCell` 對 byline flex/grid 容器設的 inline `display:block` + `flex-direction:column` 由 byline pass 以 inline 覆蓋（root flex/row、wrap contents，snapshot 還原，styler.restore 在 cleaner.restore 之前）；gallery-flex / decolumn pass 跳過 byline 區。結構訊號、非站點 class 特判，多站驗證 autocar / npr / techcrunch / bbc / cna / newtalk。
 
 ### video player 佔位保護（v0.8.45 三 guard）
 
