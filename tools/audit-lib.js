@@ -54,7 +54,15 @@ const NOISE_KEYWORDS_STRICT = [
   // 原 residual audit 漏抓（只因 content-img-dropped 連帶進 review）。現 cleaner
   // 已清，這兩條當未來變體的安全網（bare 'subscribe' 已在名單、但這兩句更不會
   // 誤命中正文）。
-  'paid subscribers', 'register as a new user'
+  'paid subscribers', 'register as a new user',
+  // v1.0.10（autocar heycar 文末廣告訊號層補洞）：贊助 / 商業合作推薦 widget 的
+  // 品牌掛名措辭。autocar「USED CARS FOR SALE / in partnership with Autotrader」
+  // 車輛推薦 carousel 是 client 端晚注入——**本 audit 當初沒抓到不是因為缺這些詞，
+  // 而是 headless 時序下該 block 在 toggle 前已注入並被 cleaner 條件 C hide、
+  // residual audit 只掃 visible 元素故看不到**（見下方 auditResidualText 的時序層
+  // 次說明）。這些詞當「萬一 visible sponsored widget 逃過 cleaner」的安全網，
+  // 不誤命中正文（短 direct text 才掃）。
+  'in partnership with', 'presented by', 'brought to you by'
 ];
 const NOISE_KEYWORDS_CONTEXTUAL = [
   // 中文常用詞（短文字 / 高占比才警告）
@@ -81,6 +89,23 @@ const pageFns = {};
 // 驗：reader card 內 visible element 的 direct textNode（<= 60 chars）是否命中
 // keyword 名單；不驗：> 60 chars 的長文案雜訊（整段推薦文字會逃過，已知
 // tradeoff——keyword 比對對長文誤報率太高）、圖片內文字、iframe 內部。
+//
+// 訊號層次限制（CLAUDE.md 工作流原則 3，2026-06-26 autocar heycar 廣告實證）：
+// 本 audit 是 **visible-only**（isVisible 對祖先 data-jread-hidden=1 回 false），
+// 且只驗「toggle + delayed 兩個時間點的 DOM 快照」。因此**驗不到**這兩類：
+//   (a) cleaner 已 hide 的雜訊（正確：那就是已清乾淨）——但若該雜訊只在 headless
+//       時序下被 hide、real Chrome 時序下沒被 hide，audit 的「乾淨」是 headless
+//       DOM 的真值、不代表 real Chrome 乾淨；
+//   (b) clean() 跑完之後才 lazy 注入的雜訊，且 headless 的內容載入節奏與 real
+//       Chrome 不同——headless 可能在 toggle 前就注入完並被 cleaner 靜態規則 hide，
+//       於是 audit 看到的是「已 hide」狀態，永遠抓不到 real Chrome 的 inject-after-
+//       clean race（autocar heycar carousel：server 端只空殼、heading/多車 client
+//       端注入；headless 注入在 toggle 前、被 sidebar-column 條件 C hide → audit 綠，
+//       但 real Chrome 注入在 clean 後 → 殘留可見）。
+// 這類「lazy 注入 race」的 forcing function 不在本視覺 harness，而在 jsdom 動態
+// observer 重現 spec（如 sponsored-partnership-widget.spec.js 的動態案、
+// dynamic-next-article-aside.spec.js）——deterministic 重現 + 斷言 checkDynamicNoise
+// 兜底。本 harness 維持「視覺/整合層快照」定位、不嘗試重現非確定性時序。
 // 入參 tiers = { strict, contextual }（NOISE_KEYWORD_TIERS）；傳純 array 視為
 // 全 strict（向後相容）。命中分兩級 severity：
 //   - strict：CTA 專屬措辭直接命中
