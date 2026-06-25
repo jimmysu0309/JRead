@@ -1,0 +1,98 @@
+// JRead — byline meta 區一行正規化（v1.0.8）
+// -----------------------------------------------------------------------------
+// Jimmy 2026-06-25 autocar 作者欄要求：reader mode 下站點 byline（kicker / 作者 /
+// 日期 / 閱讀時間 / 小頭像）各自 block 散成多行、字級不一、頭像縮排。三要求：
+//   1. 作者及日期整理成一行、字體格式一致
+//   2. 不需要閱讀時間
+//   3. 頭像與內容對齊
+//
+// 修法（結構訊號、非站點 class 特判）：偵測「標題與第一段內文（>= 120 chars 的 p）
+// 之間、含日期訊號（<time> 或 date-regex 短文）」的 meta 區，往上爬到「不含第一段
+// 內文、visible 文字 <= 200」的最高祖先 = byline root。標 BYLINE_ATTR=root（flex
+// 一行）、WRAP=純 wrapper（display:contents 打平巢狀）、ITEM=可見 leaf（flex item）、
+// RT=閱讀時間（CSS 隱藏）。只標 visible 元素（避免把站點隱藏的作者 hover card 重新
+// 顯示）。多站驗證 autocar / npr / techcrunch / bbc / cna / newtalk。
+//
+// 訊號層次：偵測 + 標記不依賴 layout（textContent + compareDocumentPosition +
+// visibility），jsdom 可驗。CSS flex 一行 / 頭像對齊的視覺結果由 page-rounds /
+// debug-harness 在真實站驗（jsdom 無 layout engine）。
+//
+// forcing：byline root / wrap / item / rt 標記正確 + 閱讀時間命中 + 內文不被誤標
+// + restore 移除標記與還原 inline display + 無日期訊號時不誤偵測。
+
+const path = require('path');
+const assert = require('assert');
+const { loadFixtureWithScripts } = require('../helpers');
+
+const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'byline-oneline-normalize.html');
+const SETTINGS = { theme: 'light', fontSize: 18, contentWidth: 720, fontFamily: 'system-ui', lineHeight: 1.7, paragraphSpacing: 1.0 };
+
+function setup() {
+  const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: ['styler'] });
+  const articleEl = env.document.querySelector('article');
+  assert.ok(articleEl, 'fixture 應有 <article>');
+  const snapshot = env.NS.styler.apply(articleEl, SETTINGS);
+  return { env, articleEl, snapshot };
+}
+const q = (env, t) => env.document.querySelector(`[data-test="${t}"]`);
+
+describe('styler — byline 一行正規化 (v1.0.8)', () => {
+
+  it('byline root 偵測 + 標 data-jread-byline + inline display:flex/row', () => {
+    const { env } = setup();
+    const root = q(env, 'byline-root');
+    assert.strictEqual(root.getAttribute('data-jread-byline'), '1',
+      'meta 區（含日期訊號、不含第一段內文的最高祖先）必須被標 byline root');
+    assert.strictEqual(root.style.getPropertyValue('display'), 'flex',
+      'root 必須 inline display:flex（覆蓋 cleaner collapse 的 block）');
+    assert.strictEqual(root.style.getPropertyValue('flex-direction'), 'row',
+      'root 必須 inline flex-direction:row（覆蓋站點/collapse 的 column → 一行）');
+  });
+
+  it('閱讀時間 item 標 data-jread-byline-rt（CSS 隱藏）', () => {
+    const { env } = setup();
+    const rt = q(env, 'readtime');
+    assert.strictEqual(rt.getAttribute('data-jread-byline-rt'), '1',
+      '「4 mins read」必須標 rt（CSS display:none 移除閱讀時間）');
+    assert.strictEqual(rt.getAttribute('data-jread-byline-item'), '1',
+      'rt 同時是 byline item');
+  });
+
+  it('kicker / 作者 / 日期 / 頭像 標 byline item（可見 leaf）', () => {
+    const { env } = setup();
+    assert.strictEqual(q(env, 'kicker').getAttribute('data-jread-byline-item'), '1', 'kicker 是 item');
+    assert.strictEqual(q(env, 'author').getAttribute('data-jread-byline-item'), '1', '作者（有直接文字 by）是 item');
+    assert.strictEqual(q(env, 'avatar').getAttribute('data-jread-byline-item'), '1', '頭像 img 是 item');
+    // 日期包在 <time>：pdate 是 wrap、time 是 item
+    assert.strictEqual(q(env, 'date').getAttribute('data-jread-byline-item'), '1', '<time> 日期是 item');
+  });
+
+  it('純 wrapper 標 byline wrap + inline display:contents（打平巢狀）', () => {
+    const { env } = setup();
+    const details = env.document.querySelector('.author-details');
+    assert.strictEqual(details.getAttribute('data-jread-byline-wrap'), '1',
+      '無直接文字、有子元素的 wrapper 必須標 wrap');
+    assert.strictEqual(details.style.getPropertyValue('display'), 'contents',
+      'wrap 必須 inline display:contents（讓 leaf 升為 root 的 flex item、一行排列）');
+  });
+
+  it('第一段內文不被誤標 byline（root 不含 body）', () => {
+    const { env } = setup();
+    const body = q(env, 'body');
+    assert.strictEqual(body.getAttribute('data-jread-byline'), null, '內文 p 不可被標 byline root');
+    assert.strictEqual(body.getAttribute('data-jread-byline-item'), null, '內文 p 不可被標 byline item');
+    assert.ok(!body.closest('[data-jread-byline="1"]'), '內文 p 不可落在 byline root 子樹內');
+  });
+
+  it('restore 移除所有 byline 標記 + 還原 inline display', () => {
+    const { env, articleEl, snapshot } = setup();
+    env.NS.styler.restore(articleEl, snapshot);
+    const root = q(env, 'byline-root');
+    assert.strictEqual(root.getAttribute('data-jread-byline'), null, 'restore 移除 byline root 標記');
+    assert.strictEqual(root.style.getPropertyValue('display'), '', 'restore 還原 root inline display（fixture 原無）');
+    assert.strictEqual(root.style.getPropertyValue('flex-direction'), '', 'restore 還原 root inline flex-direction');
+    assert.strictEqual(q(env, 'readtime').getAttribute('data-jread-byline-rt'), null, 'restore 移除 rt 標記');
+    const details = env.document.querySelector('.author-details');
+    assert.strictEqual(details.style.getPropertyValue('display'), '', 'restore 還原 wrap inline display:contents');
+  });
+});

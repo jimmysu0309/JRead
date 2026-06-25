@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!--
+  byline 一行正規化最小重現（v1.0.8，autocar 作者欄結構）。
+  標題與第一段內文之間的 meta 區（avatar / kicker / 作者 / 閱讀時間 / 日期），
+  原站各自 block 散成多行。styler.apply 偵測「含日期訊號、不含第一段內文」的 root，
+  標 byline / wrap / item / rt，CSS flex 一行。偵測不依賴 layout（textContent +
+  compareDocumentPosition + visibility），jsdom 可驗 marking。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>Why steering wheels should always be round, not square</h1>
+    <div class="content--author-region" data-test="byline-root">
+      <div class="personality-wrapper">
+        <div class="author-picture"><a href="/author"><img data-test="avatar" src="mug.jpg" alt=""></a></div>
+        <div class="author-details">
+          <div class="ptype"><div class="type" data-test="kicker">Opinion</div></div>
+          <div class="pauthor" data-test="author">by <a href="/author">Matt Prior</a></div>
+          <span class="read-time" data-test="readtime">4 mins read</span>
+          <div class="pdate"><time data-test="date">13 June 2026</time></div>
+        </div>
+      </div>
+    </div>
+    <p data-test="body">I have an affliction that, when I begin to think about how difficult it is to find a pleasing steering wheel in a new car, it plays on repeat in my head.</p>
+    <p>I've learned to live with it as something as inevitable as getting into a new car and being faced with an unnaturally awkward primary control surface.</p>
+  </article>
+</body>
+</html>
