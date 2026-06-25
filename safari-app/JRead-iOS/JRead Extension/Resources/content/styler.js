@@ -3895,6 +3895,63 @@ html [${ARTICLE_ATTR}="1"] a {
             }
           };
 
+          // v1.0.9：作者 bio / meta 卡的「窄圖欄擠寬文欄」塌成單欄（stack）。
+          // 根因（Jimmy 2026-06-25 autocar.co.uk 作者欄「文字疊在一起」回報）：
+          // 站點把作者卡排成 flex-row 兩欄——窄欄（頭像 + Title/Follow 標籤）+
+          // 寬欄（bio 長文）。reader card 單欄下窄欄被擠到 min-content（autocar
+          // .author-left 渲染 39px = card 6%），頭像（capIcon 釘 max-width 142）
+          // 被壓到 39px、標籤逐字斷行，與寬欄 bio 文字擠在一起（real Chrome 疊字、
+          // headless 並排但同樣破版）。decolumnFrom 的 ratio 閘以「主文 anchor 被
+          // 擠窄」為訊號，這裡被擠的是窄圖欄、寬 bio 欄佔 82% > 70% 漏網。
+          // 通則（結構，非站點特判，符合硬規則 3）：flex-row / 多欄 grid 容器，其中
+          // 一個「含圖的內容欄」被渲染得極窄（< 25% 容器內容寬）、另有一欄佔 >= 50%
+          // （lopsided sidebar + main 分欄）→ 單欄閱讀無保留價值，塌成 display:block
+          // 讓兩欄垂直堆疊（窄圖欄回全寬、頭像回原顯示寬、標籤不再逐字斷行；寬欄
+          // 落到下方）。防誤殺：narrow 欄必須含 img（純窄文字欄 = 分類標籤，交給
+          // cleaner sidebar 規則 hide，不在此塌欄）；排除 byline root / player。
+          // 沿 img 祖先鏈走（path child 即含 img 的欄），bounded by img 數 × 深度。
+          const stackLopsidedImgCol = (img) => {
+            let child = img, cur = img.parentElement;
+            while (cur && cur !== articleEl) {
+              if (!textColSeen.has(cur) &&
+                  !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
+                  !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
+                const cs = win.getComputedStyle(cur);
+                const disp = cs.display;
+                const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
+                  /^row/.test(cs.flexDirection);
+                const cols = cs.gridTemplateColumns;
+                const isGridMulti = (disp === 'grid' || disp === 'inline-grid') &&
+                  cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
+                if (isFlexRow || isGridMulti) {
+                  const r = cur.getBoundingClientRect();
+                  const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+                  const childW = child.getBoundingClientRect().width;
+                  if (contentW > 0 && childW > 0 && childW < contentW * 0.25) {
+                    // 另需一個 >= 50% 寬的 sibling 欄（確認是 lopsided 分欄、非單欄）
+                    let wideSibling = false;
+                    for (const c of cur.children) {
+                      if (c === child) continue;
+                      const cr = c.getBoundingClientRect();
+                      if (cr.height >= 1 && cr.width >= contentW * 0.5) { wideSibling = true; break; }
+                    }
+                    if (wideSibling) {
+                      textColSeen.add(cur);
+                      textColFlex.push({
+                        el: cur,
+                        display: cur.style.getPropertyValue('display'),
+                        displayPriority: cur.style.getPropertyPriority('display'),
+                      });
+                      cur.style.setProperty('display', 'block', 'important');
+                    }
+                  }
+                }
+              }
+              child = cur;
+              cur = cur.parentElement;
+            }
+          };
+
           // anchor 1：長段落（toggle 當下已在 DOM、文字不 lazy）。
           for (const p of articleEl.querySelectorAll('p')) {
             if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
@@ -3990,6 +4047,16 @@ html [${ARTICLE_ATTR}="1"] a {
               });
               el.style.setProperty('display', 'block', 'important');
             }
+          }
+
+          // v1.0.9：窄圖欄擠寬文欄的作者 / meta 卡塌成單欄（見 stackLopsidedImgCol
+          // 註解）。對每張非 inline-emoji 圖沿祖先鏈找 lopsided flex-row / grid。
+          // 圖小（avatar capIcon 39px）被上方 decolumnFrom 的 >= 100px 門檻漏掉，
+          // 故獨立掃。
+          for (const m of articleEl.querySelectorAll('img')) {
+            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
+            if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
+            stackLopsidedImgCol(m);
           }
         }
       }
