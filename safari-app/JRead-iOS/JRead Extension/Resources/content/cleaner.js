@@ -668,6 +668,51 @@
     }
   }
 
+  // 贊助 / 商業推薦 widget（「in partnership with X」/「presented by」/「sponsored
+  // by」/「brought to you by」等贊助標記的推薦區塊）整塊清。
+  // 對應 bug：autocar.co.uk 文末 heycar「USED CARS FOR SALE / in partnership with
+  // Autotrader」車輛推薦 carousel（Jimmy 2026-06-25「文末這些都是廣告」）——heading
+  // + 多個車輛連結 + 價格。server HTML 只有空殼 wrapper + 1 車，heading / 品牌 /
+  // 多車是 client 端 JS 晚注入：clean() 當下 block 未 populate 時靜態
+  // hideInsideArticleSidebarColumns 條件 C（link-heavy widget）漏抓、注入後又因
+  // class 無 keyword / heading 走 resolveHeadingNoiseTarget 被「累計短文字 >= 300」
+  // 主文保護擋成只藏 heading（同 Community Q&A 問題）→ 殘留可見。
+  // 結構訊號（跨站通用、非站點 class 特判，符合硬規則 3）：heading（h1-h4）文字含
+  // 贊助標記 → 從 heading 用 hasArticleTitleAnchor / hasLongMainParagraph 邊界
+  // walk-up（繞過累計短文字誤保護，與 hideCommunityQaWidget 同款）找「不含主文長
+  // 段落的最外層 wrapper」整塊 hide。自帶安全性：只 hide 不含長段落的 widget block
+  // ——若「in partnership with」heading 引導真內容區（含 prose 長段），walk-up 在
+  // 第一層即 break、lastSafe=null、不 hide。靜態（hideSponsoredPartnershipWidgets）
+  // 與動態（checkDynamicNoise）共用 hideSponsorWidgetFromHeading（lazy 注入兜底）。
+  const SPONSOR_WIDGET_HEADING_RE = /\bin\s+partnership\s+with\b|\bpresented\s+by\b|\bbrought\s+to\s+you\s+by\b|\bsponsored\s+by\b/i;
+  const SPONSOR_WIDGET_HEADING_MAX_LEN = 60;
+  function hideSponsorWidgetFromHeading(h, articleEl, hidden) {
+    if (isInPreserved(h)) return false;
+    let cur = h, lastSafe = null;
+    while (cur.parentElement && cur.parentElement !== articleEl &&
+           articleEl.contains(cur.parentElement)) {
+      const pp = cur.parentElement;
+      if (hasArticleTitleAnchor(pp, h) || hasLongMainParagraph(pp)) break;
+      lastSafe = pp;
+      cur = pp;
+    }
+    const target = lastSafe;
+    if (target && target !== articleEl && articleEl.contains(target) &&
+        !target.contains(articleEl) &&
+        !(target.dataset && target.dataset.jreadHidden === '1')) {
+      hide(target, hidden);
+      return true;
+    }
+    return false;
+  }
+  function hideSponsoredPartnershipWidgets(articleEl, hidden) {
+    for (const h of articleEl.querySelectorAll('h1, h2, h3, h4')) {
+      const t = norm(h.textContent);
+      if (t.length > SPONSOR_WIDGET_HEADING_MAX_LEN || !SPONSOR_WIDGET_HEADING_RE.test(t)) continue;
+      hideSponsorWidgetFromHeading(h, articleEl, hidden);
+    }
+  }
+
   // strict CTA（立即報名 / 立即下載 等）promo block 整塊清：esmchina 類站把
   // 整段活動推廣文字塞進單一 `<a>`、hide 該 `<a>` 即清乾淨；但 shoppingdesign
   // 類站把推廣 banner 拆成「標題 div + 描述 div + 報名 <a>」多個 sibling
@@ -6012,6 +6057,14 @@
         ? normHeading(h.textContent)
         : normHeading(Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
       if (!text) continue;
+      // 贊助 / 商業推薦 widget lazy 注入兜底（與靜態 hideSponsoredPartnershipWidgets
+      // 單一資料源）——heading 含贊助標記即整塊 walk-up hide。必須放在下面 dynHit
+      // 門檻**之前**：贊助標記不在 NOISE_HEADING_TEXT_RE / EXT 內，否則被 continue
+      // 濾掉（autocar heycar carousel client 端晚注入實案）。
+      if (text.length <= SPONSOR_WIDGET_HEADING_MAX_LEN && SPONSOR_WIDGET_HEADING_RE.test(text) &&
+          !isInPreserved(h) && !h.closest('button')) {
+        if (hideSponsorWidgetFromHeading(h, articleEl, hiddenList)) return;
+      }
       const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
       const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
       if (!dynHitBase && !dynHitExt) continue;
@@ -6294,6 +6347,7 @@
       safeRun(hideInsideArticleFigureWidgetIframes, articleEl, hidden);
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
       safeRun(hideCommunityQaWidget, articleEl, hidden);
+      safeRun(hideSponsoredPartnershipWidgets, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
