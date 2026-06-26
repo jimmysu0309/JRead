@@ -136,6 +136,18 @@
     return Math.max(0, Math.min(total - 1, Math.round(r * (total - 1))));
   }
 
+  // v1.0.21：退出同步——把目前閱讀段落的 viewport 相對位置（rectTop）換算成
+  // 還原後原網頁該捲到的絕對 scrollTop。錨點段落上方留 margin × viewport 高度
+  // 的呼吸空間（不要把段落頂死在 viewport 最上緣）。負值 clamp 到 0。
+  // 純函式：DOM 量測（scrollTop / rectTop / innerHeight）在呼叫端取得，這裡只算
+  // 數值，jsdom spec 可直接測。
+  const EXIT_SCROLL_MARGIN = 0.12;
+  function computeExitScrollTop(scrollTop, rectTop, innerHeight, margin) {
+    const m = Number.isFinite(margin) ? margin : EXIT_SCROLL_MARGIN;
+    const top = Number(scrollTop) + Number(rectTop) - Number(innerHeight) * m;
+    return Math.max(0, top);
+  }
+
   // 位置值不值得記：開頭不記（回復無意義，殘留反而誤導）
   function shouldPersist(pos) {
     if (!pos) return false;
@@ -396,6 +408,7 @@
     writeWithSelfHeal,
     findBlockIndex,
     resolvePageIndex,
+    computeExitScrollTop,
     shouldPersist,
     beginSession,
     endSession,

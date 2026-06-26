@@ -488,7 +488,10 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
     it('exitReaderMode 必須無條件呼叫 NS.spaceScroll.uninstall', () => {
       const idx = MAIN_SRC.search(/function\s+exitReaderModeImpl/);
       assert.ok(idx >= 0);
-      const slice = MAIN_SRC.slice(idx, idx + 1200);
+      // v1.0.21：window 1200→1800——退出函式新增捲動同步 capture 步驟（見
+      // exit-scroll-sync.spec.js），spaceScroll.uninstall 下移。仍只驗「退出有呼叫
+      // uninstall」，window 純為避開後段 buildCleanHtml 的無關 spaceScroll 字樣。
+      const slice = MAIN_SRC.slice(idx, idx + 1800);
       assert.match(slice, /NS\.spaceScroll[\s\S]{0,40}\.uninstall\s*\(/,
         'exitReaderModeImpl 必須 NS.spaceScroll.uninstall——forcing：退出後 Space 仍被攔截 + 指示條殘留原頁面');
     });

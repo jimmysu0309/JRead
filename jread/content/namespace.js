@@ -28,7 +28,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       articleEl: null,        // 偵測到的主文容器
       confidence: 0,          // 偵測信心分數（0–1）
       hiddenEls: [],          // 被隱藏的雜訊元素快照，還原用
-      originalStyles: null    // 主文容器原始 inline style，還原用
+      originalStyles: null,   // 主文容器原始 inline style，還原用
+      syncScrollOnExit: true  // v1.0.21：退出時把原網頁捲回閱讀段落（進場 stash settings）
     },
 
     // 子模組佔位，後續由各 script 自行掛載
