@@ -4761,8 +4761,37 @@
   // paywall / subscribe 不收——twz 實證主文 wrapper 會帶 paywall class。
   const CONTENT_BEARING_NOISE_RE = /(^|[^a-z0-9])(comments?|comment-form|discussion|discuss|replies|respond|promo|promotion|donation|donate|plea)([^a-z0-9]|$)/i;
 
+  // byline / 發佈日期 meta wrapper 豁免（v1.0.16 space.com translate-first 實測）。
+  // 場景：CMS 常把「作者列 + 發佈日期 + 分享按鈕」包在同一個 wrapper，class
+  // 同時帶內容/meta 語意 token（byline）與雜訊語意 token（social）——例 space.com
+  // `div.byline-social`。markerOf 命中 `social` keyword → 整支被
+  // hideInsideArticleByKeyword 砍掉，作者 + 日期連帶消失。
+  //
+  // 為什麼只在翻譯後爆：未翻譯時該 wrapper 內含一段 standfirst <p>（>= 100
+  // chars）偶然觸發 wrapperContainsMainContentP 保護；Shinkansen 翻譯改寫
+  // <time> 與 standfirst 結構後，mainContentP 失效、<time> 語意元素也被換成
+  // 純文字 span → 既有保護全失效、整列被 hide。這份「靠 standfirst 長度」的
+  // 保護本來就是偶然，byline 自身缺乏結構性保護。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：wrapper 的 class / id 帶 byline / dateline
+  // meta 語意 token——CMS 慣例命名（byline / article-byline / post-byline /
+  // byline-social / dateline 等），語意同 TITLE_ANCHOR_TOKENS 家族，宣告「這支
+  // 包作者 / 日期 meta」。翻譯不改 class → 此訊號對 translate-first 穩定，且不
+  // 依賴文字長度（避免 BYLINE_MAX_TEXT_LEN 對資訊密度高的 CJK 文字誤判——含
+  // <time> 的中文相關文章卡片列字數常 < 200，文字 / <time> 訊號會誤豁免它）。
+  // 控制：純社群 / 分享 widget（social-share / share-bar / article-social-feed
+  // 等）class 不帶 byline / dateline token → 不享本豁免、照常 hide。wrapper 內
+  // 的 share / social 按鈕仍由下方 a/button keyword scan 各自清除。strong keyword
+  // （related / recommended / billboard 等）在 keywordWrapperIsProtected 上方
+  // 已 return false，不享本豁免。
+  const BYLINE_META_CLASS_RE = /(^|[^a-z])(byline|dateline)([^a-z]|$)/i;
+  function keywordWrapperIsByline(el) {
+    return BYLINE_META_CLASS_RE.test(markerOf(el));
+  }
+
   function keywordWrapperIsProtected(el, articleEl) {
     if (shouldHideByStrongKeyword(el)) return false;
+    if (keywordWrapperIsByline(el)) return true;
     // v0.8.119 autosport 修法：只被「非 strong keyword」命中、但內含 standalone
     // content image（hero / 內文大圖、非連結縮圖）的 wrapper 一律保留。
     // 場景：autosport.com（Motorsport CMS）主圖容器 class 為
