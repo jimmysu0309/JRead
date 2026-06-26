@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+  byline 頭像 <picture> margin reset 最小重現（v1.0.19，culpium.com Substack 結構）。
+  Substack post-header byline：頭像是 <picture> 包 <img>（flex item 是 picture），
+  與作者名 + 日期同列。reader mode 下 hero 媒體置中通則（[ARTICLE] picture {
+  margin-left/right: auto }，specificity 0,2,1）會把 byline 頭像 picture 也當區塊
+  媒體置中——在 byline flex 一行內 auto margin 吃光自由空間、把頭像推到列中央、
+  justify-content:flex-start 失效，頭像與作者/日期散開。
+  修法：byline 媒體（picture/img/video）用 doubled [byline] attr 提 specificity
+  (0,3,1) 壓過置中通則、鎖 margin:0。jsdom 無 layout engine、驗 CSS 規則存在 +
+  picture 被標 byline item（視覺左排由 debug-harness 在真實站驗）。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>War and chips and the KMT</h1>
+    <div class="post-header" data-test="byline-root">
+      <div class="meta-row">
+        <div class="avatar-wrap">
+          <a href="/author">
+            <picture data-test="avatar-picture"><img data-test="avatar-img" src="bull.jpg" alt=""></picture>
+          </a>
+        </div>
+        <div class="name-date">
+          <a class="author" href="/author" data-test="author">Tim Culpan</a>
+          <div class="date" data-test="date">Mar 25, 2026</div>
+        </div>
+      </div>
+    </div>
+    <p data-test="body">Taiwan sits at the center of the global semiconductor supply chain, and that position has become both its greatest strength and its most acute vulnerability in an era of rising tension.</p>
+    <p>Keeping the peace, and keeping the chips flowing, is of increasing importance as the geopolitical landscape continues to shift around the island.</p>
+  </article>
+</body>
+</html>

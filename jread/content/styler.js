@@ -1491,6 +1491,20 @@ ${MEDIA_CAP_SEL} {
   flex: 0 0 auto !important;
   object-fit: cover !important;
 }
+/* v1.0.19：byline 內頭像媒體（picture / img / video）margin reset。頭像在
+   Substack 等站是 <picture> 包 <img>、flex item 是 picture（不是 img）。上方
+   hero 媒體置中通則（[ARTICLE] picture { margin-left/right: auto }，specificity
+   0,2,1）會把 byline 頭像 picture 也當區塊媒體置中——在 byline flex 一行內，
+   auto margin 解析成「吃光自由空間」（culpium.com 實證頭像 margin 兩側各 190px、
+   把頭像推到列中央），justify-content:flex-start 因無自由空間可分配而失效，頭像
+   與作者/日期散開。doubled [BYLINE] attr 把 specificity 提到 (0,3,1) 壓過置中
+   通則，鎖 byline 媒體 margin:0 + flex:0 0 auto，靠 root 的 flex-start 左排。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}][${BYLINE_ATTR}] picture,
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}][${BYLINE_ATTR}] img,
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}][${BYLINE_ATTR}] video {
+  margin: 0 !important;
+  flex: 0 0 auto !important;
+}
 /* v0.7.102：p / ul / ol / blockquote 段落間距已搬到 userOverrides 條件注入
    （v0.7.162 起 paragraphSpacing 可調）。預設 paragraphSpacing=1.0 + Auto 兩種
    切分後不再永遠注入，Auto 模式下完全保留原站 typography。注入點見 buildCss
