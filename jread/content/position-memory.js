@@ -34,6 +34,7 @@
   'use strict';
 
   const STORAGE_KEY = 'readingPositions';
+  const DIAG_KEY = 'readingPositionsDiag';  // 寫入失敗診斷（獨立 key，options 除錯區塊讀取顯示）
   const DEFAULT_DAYS = 3;     // 預設效期（settings-defaults.js positionMemoryDays 的鏡像，spec 校對）
   const MAX_DAYS = 7;         // 效期上限（Jimmy 2026-06-11 指定）
   const MAX_ENTRIES = 100;    // map 超量淘汰上限（舊的先丟）
@@ -74,9 +75,33 @@
     return out;
   }
 
-  // 段落文字簽名：collapse 空白後取前 SIG_LEN 字。圖片等無文字單位簽名為空字串。
+  // 移除孤兒 surrogate（合法代理對保留、單獨的高位或低位移除）。
+  // 兩個來源：① slice(0, SIG_LEN) 可能從中切斷一個代理對、留下孤兒高位；
+  // ② 少數頁面文字本身就含非法 UTF-16。孤兒 surrogate 進到 storage 值裡，
+  // iOS Safari 的 storage.local.set 可能整包寫入失敗（Chrome 容忍）——一筆壞
+  // 簽名就能讓「讀回整包 → 改一筆 → 整包寫回」的後續存檔全部卡死（即使總量
+  // 只有幾 KB，與容量無關）。簽名只用於段落比對、丟掉個別字元無損功能。
+  function stripLoneSurrogates(s) {
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF) {
+        const n = s.charCodeAt(i + 1);
+        if (n >= 0xDC00 && n <= 0xDFFF) { out += s[i] + s[i + 1]; i++; } // 合法代理對
+        // else：孤兒高位 → 略過
+      } else if (c >= 0xDC00 && c <= 0xDFFF) {
+        // 孤兒低位 → 略過
+      } else {
+        out += s[i];
+      }
+    }
+    return out;
+  }
+
+  // 段落文字簽名：collapse 空白後取前 SIG_LEN 字、再消毒孤兒 surrogate。
+  // 圖片等無文字單位簽名為空字串。
   function blockSignature(text) {
-    return (text || '').replace(/\s+/g, ' ').trim().slice(0, SIG_LEN);
+    return stripLoneSurrogates((text || '').replace(/\s+/g, ' ').trim().slice(0, SIG_LEN));
   }
 
   // 在段落簽名清單內找回儲存的段落：
@@ -141,8 +166,37 @@
       }).catch(() => cb(null));
     } catch (_) { cb(null); }
   }
-  function localSet(map) {
-    try { browser.storage.local.set({ [STORAGE_KEY]: map }); } catch (_) { /* context invalidated */ }
+
+  // 對 storage.local.set 的單一封裝：一律回 Promise（同步 throw——context
+  // invalidated——也包成 reject 統一處理）。
+  function rawSet(obj) {
+    try { return Promise.resolve(browser.storage.local.set(obj)); }
+    catch (e) { return Promise.reject(e); }
+  }
+
+  // 寫入失敗診斷：另存獨立 key 給 options 除錯區塊讀。poison 是 readingPositions
+  // 值專屬時、乾淨小 key 仍寫得進；整個 store 全 wedge 時這也會失敗（best-effort、
+  // 吞掉）。同步印 console 一份。
+  function recordWriteError(err) {
+    const msg = String((err && (err.message || err)) || 'unknown').slice(0, 200);
+    try { rawSet({ [DIAG_KEY]: { ts: Date.now(), error: msg } }).catch(() => {}); } catch (_) {}
+    try { if (typeof console !== 'undefined') console.warn('[JRead] 閱讀位置寫入失敗：' + msg); } catch (_) {}
+  }
+
+  // 寫入整包 map + 自癒。setter(payloadObj) 回傳 Promise。整包寫入失敗（iOS
+  // Safari 偶發 set reject）→ 退回只寫當前這一筆 { key: entry }、丟掉可能毀損的
+  // 歷史 map，避免一筆壞資料卡死所有後續存檔（使用者不必手動清快取也會自癒）。
+  // setter 注入以利 jsdom spec 純測。回傳 Promise<'ok'|'healed'|'failed'>。
+  function writeWithSelfHeal(setter, key, entry, fullMap) {
+    return Promise.resolve(setter({ [STORAGE_KEY]: fullMap })).then(
+      () => 'ok',
+      (err) => {
+        recordWriteError(err);
+        if (!key || !entry) return 'failed'; // 刪除情境（回到開頭）沒有可救的當前 entry
+        const minimal = {}; minimal[key] = entry;
+        return Promise.resolve(setter({ [STORAGE_KEY]: minimal })).then(() => 'healed', () => 'failed');
+      }
+    );
   }
 
   // 讀目前閱讀位置。翻頁模式 → 頁碼；捲動模式 → 進度比例 + 段落錨點
@@ -183,12 +237,14 @@
       if (!map) return;
       const now = Date.now();
       const next = pruneMap(map, now, days, MAX_ENTRIES);
+      let entry = null;
       if (shouldPersist(pos)) {
-        next[key] = Object.assign({ ts: now }, pos);
+        entry = Object.assign({ ts: now }, pos);
+        next[key] = entry;
       } else {
         delete next[key]; // 回到開頭：清掉舊記錄
       }
-      localSet(next);
+      writeWithSelfHeal(rawSet, key, entry, next);
     });
   }
 
@@ -280,7 +336,7 @@
       const now = Date.now();
       if (!isFresh(entry, now, days)) {
         // 過期殘留：順手清掉（不等下次寫入）
-        if (entry) localSet(pruneMap(map, now, days, MAX_ENTRIES));
+        if (entry) rawSet({ [STORAGE_KEY]: pruneMap(map, now, days, MAX_ENTRIES) }).catch(() => {});
         return;
       }
       applyEntry(entry, el);
@@ -336,6 +392,8 @@
     isFresh,
     pruneMap,
     blockSignature,
+    stripLoneSurrogates,
+    writeWithSelfHeal,
     findBlockIndex,
     resolvePageIndex,
     shouldPersist,
@@ -343,7 +401,7 @@
     endSession,
     setDays,
     isTracking: () => !!sessionKey,
-    STORAGE_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION
+    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

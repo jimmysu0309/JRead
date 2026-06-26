@@ -158,6 +158,68 @@ describe('position-memory — shouldPersist（開頭不記）', () => {
   });
 });
 
+describe('position-memory — blockSignature 消毒孤兒 surrogate（v1.0.14 iOS 寫入卡死防護）', () => {
+  it('合法代理對（emoji）保留', () => {
+    assert.strictEqual(pm.blockSignature('a😀b'), 'a😀b');
+  });
+  it('孤兒高位 surrogate 移除', () => {
+    assert.strictEqual(pm.blockSignature('ok\uD83D'), 'ok');
+  });
+  it('孤兒低位 surrogate 移除', () => {
+    assert.strictEqual(pm.blockSignature('x\uDE00y'), 'xy');
+  });
+  it('slice 在第 120 字切斷代理對 → 孤兒高位被移除（不殘留非法 UTF-16）', () => {
+    const s = 'a'.repeat(119) + '😀'; // slice(0,120) 會切到代理對中間
+    assert.strictEqual(pm.blockSignature(s), 'a'.repeat(119));
+  });
+  it('消毒後再消毒為冪等（結果保證 well-formed）', () => {
+    const sig = pm.blockSignature('hi\uD800中\uDC00文😀');
+    assert.strictEqual(sig, pm.stripLoneSurrogates(sig));
+  });
+});
+
+describe('position-memory — writeWithSelfHeal（整包寫入失敗自癒，v1.0.14）', () => {
+  const KEY = 'https://x/a';
+  const ENTRY = { ts: 1, mode: 'scroll', ratio: 0.5 };
+  const FULL = { [KEY]: ENTRY, 'https://x/b': { ts: 2 } };
+
+  it('寫入成功 → ok，只呼叫一次、payload 是整包 map', async () => {
+    const calls = [];
+    const setter = (obj) => { calls.push(obj); return Promise.resolve(); };
+    const r = await pm.writeWithSelfHeal(setter, KEY, ENTRY, FULL);
+    assert.strictEqual(r, 'ok');
+    assert.strictEqual(calls.length, 1);
+    assert.deepStrictEqual(calls[0], { readingPositions: FULL });
+  });
+
+  it('整包失敗、最小寫入成功 → healed，第二次只寫當前這一筆（丟歷史 map）', async () => {
+    const calls = [];
+    const setter = (obj) => {
+      calls.push(obj);
+      return calls.length === 1 ? Promise.reject(new Error('serialize')) : Promise.resolve();
+    };
+    const r = await pm.writeWithSelfHeal(setter, KEY, ENTRY, FULL);
+    assert.strictEqual(r, 'healed');
+    assert.strictEqual(calls.length, 2);
+    assert.deepStrictEqual(calls[1], { readingPositions: { [KEY]: ENTRY } },
+      '自癒只寫當前 entry——一筆壞歷史資料不再卡死後續存檔');
+  });
+
+  it('兩次都失敗 → failed', async () => {
+    const setter = () => Promise.reject(new Error('wedged'));
+    const r = await pm.writeWithSelfHeal(setter, KEY, ENTRY, FULL);
+    assert.strictEqual(r, 'failed');
+  });
+
+  it('刪除情境（無當前 entry）整包失敗 → failed，不嘗試最小寫入', async () => {
+    const calls = [];
+    const setter = (obj) => { calls.push(obj); return Promise.reject(new Error('x')); };
+    const r = await pm.writeWithSelfHeal(setter, KEY, null, FULL);
+    assert.strictEqual(r, 'failed');
+    assert.strictEqual(calls.length, 1);
+  });
+});
+
 describe('position-memory — 模組 API 形狀', () => {
   it('session API 齊備', () => {
     for (const fn of ['beginSession', 'endSession', 'setDays', 'isTracking']) {
