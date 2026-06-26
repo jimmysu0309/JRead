@@ -103,6 +103,13 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     //（捲動模式記段落、翻頁模式記頁數，存 storage.local），效期內重進
     // 閱讀模式自動回到上次位置。0 = 停用、上限 7（position-memory.js clamp）。
     positionMemoryDays: 3,
+    // v1.0.21：退出閱讀模式時把原網頁捲到「剛剛讀到的段落」。預設 true。
+    // 捲動模式下主文 card 留在原文件流、雜訊只是被隱藏；退出還原雜訊後版面整個
+    // 變高，原本的 scrollTop 對到的內容偏移（看起來像回到開頭）。開啟時退出前
+    // 抓目前閱讀段落的真實 DOM 節點（NS.spaceScroll.currentAnchor，與閱讀位置
+    // 記憶同一份「正在讀哪段」事實），還原後捲回該節點。只作用於捲動模式（翻頁
+    // 模式退出仍還原進場前的文件位置，見 paged-mode.js savedScrollY）。
+    syncScrollOnExit: true,
     // v0.7.218：自訂快速鍵。null = 未自訂。
     customShortcuts: {
       'toggle-reader-mode': null,
