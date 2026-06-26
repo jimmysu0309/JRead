@@ -713,6 +713,38 @@
     }
   }
 
+  // Substack publication 推薦卡（文末「Recommend X to your readers」recommendation
+  // footer widget）整塊清。
+  // 對應 bug（Jimmy 2026-06-26 chinatalk.media 截圖「向您的讀者推薦 ChinaTalk」小
+  // logo 圖疊在文字上）：widget = 小 logo img(48px) + heading「Recommend <pub> to
+  // your readers」+ 簡介段 + Subscribe 按鈕。Substack 的 class 全是 emotion hash
+  //（`pencraft pc-...`）無 keyword 可命中 → 靜態 hideInsideArticleByKeyword 漏；
+  // heading 走 walk-up 又因簡介短段時而觸 hasLongMainParagraph 邊界不穩 → heading
+  // 軌也不可靠。唯一穩定訊號是 Substack 平台慣例屬性 data-testid="recommendation-
+  // footer"。
+  // 結構訊號（符合硬規則 3，非站點 hostname / 單站 class 特判）：data-testid 的語意
+  // 值含「recommendation」＝跨站「推薦 widget」語意標記，與既有 NOISE_KEYWORD_RE 的
+  // `recommendation`（strong）/ THIRD_PARTY_AD_SEL 的 `[data-testid="ad-unit"]`
+  // 同類——對 class 是 hash 的 React/CSS-in-JS 站，data attribute 是唯一可命中的語意
+  // 載體。且翻譯不改屬性 → translate-first Safari（Jimmy 實機）同樣命中。
+  const RECOMMENDATION_WIDGET_SEL = '[data-testid*="recommendation"]';
+  function hideRecommendationWidgetFrom(el, articleEl, hidden) {
+    if (!el || el === articleEl) return false;
+    if (el.contains && el.contains(articleEl)) return false;
+    if (isInPreserved(el)) return false;
+    if (el.dataset && el.dataset.jreadHidden === '1') return true;
+    // 巢狀 testid（內層 button 等也帶 recommendation testid）：祖先已被 hide 則跳過，
+    // 只 hide 最外層 widget 容器。
+    if (el.parentElement && el.parentElement.closest('[data-jread-hidden="1"]')) return false;
+    hide(el, hidden);
+    return true;
+  }
+  function hideRecommendationWidgets(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll(RECOMMENDATION_WIDGET_SEL)) {
+      hideRecommendationWidgetFrom(el, articleEl, hidden);
+    }
+  }
+
   // strict CTA（立即報名 / 立即下載 等）promo block 整塊清：esmchina 類站把
   // 整段活動推廣文字塞進單一 `<a>`、hide 該 `<a>` 即清乾淨；但 shoppingdesign
   // 類站把推廣 banner 拆成「標題 div + 描述 div + 報名 <a>」多個 sibling
@@ -5972,6 +6004,19 @@
       }
       return;
     }
+    // Substack recommendation footer lazy 注入兜底（與靜態 hideRecommendationWidgets
+    // 單一資料源）——React 端常在 clean() 之後才 render 文末推薦卡，class 是 hash、
+    // 唯有 data-testid="recommendation-footer" 可命中。node 自身 / 其內任一 testid
+    // 都查（涵蓋「先空殼後 hydrate」時序）。
+    if (node.matches && node.matches(RECOMMENDATION_WIDGET_SEL)) {
+      if (hideRecommendationWidgetFrom(node, articleEl, hiddenList)) return;
+    }
+    if (node.querySelector && node.querySelector(RECOMMENDATION_WIDGET_SEL)) {
+      for (const el of node.querySelectorAll(RECOMMENDATION_WIDGET_SEL)) {
+        hideRecommendationWidgetFrom(el, articleEl, hiddenList);
+      }
+      return;
+    }
     // 雜訊 class/id 直接 hide 整個 node。
     // v0.8.36（B2）：補上與靜態 hideInsideArticleByKeyword 同一組主文保護
     // （keywordWrapperIsProtected：H1 guard + 主文 wrapper guard）——Shinkansen
@@ -6348,6 +6393,7 @@
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
       safeRun(hideCommunityQaWidget, articleEl, hidden);
       safeRun(hideSponsoredPartnershipWidgets, articleEl, hidden);
+      safeRun(hideRecommendationWidgets, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
