@@ -2150,6 +2150,27 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
   height: 100% !important;
   overscroll-behavior: none !important;
 }
+/* v1.0.15：翻頁模式 WebKit（Safari macOS/iOS）整頁空白根治——祖先鏈 overflow
+   還原 visible。reader card 在翻頁模式是 position:fixed；JRead 祖先 reset
+   （ANCESTOR_ATTR 規則）把祖先 height 收成 auto、position 收 static，但**不動
+   overflow**。Readwise Reader 這類「文件在內層 overflow:auto/hidden 捲動容器、
+   非 window 捲動」的 SPA，祖先鏈多個節點帶 overflow:hidden/auto；reader mode
+   下非主文兄弟被 display:none、祖先 height 全塌成 0（real page cage 實證：
+   #document-reader-root / _appMain / appContent / #document-inbox / body 5 個
+   overflow!=visible 的祖先全塌 0 高）。WebKit 會把 position:fixed 後代「裁切到
+   帶非 visible overflow 的祖先 box」——祖先塌成 0 高 → 裁成空 → **整頁空白**
+   （Chrome 對 containing block 為 viewport 的 fixed 後代不套祖先 overflow 裁切，
+   故只在 Safari 炸；iOS 26.5 模擬器 standalone 重現 + 修法實證）。一般站祖先鏈
+   overflow 多為 visible、不觸發，故捲動模式與多數站翻頁模式無此症狀。
+   還原 visible 拿掉這個錯誤裁切；祖先此刻 height 0 且非主文兄弟 display:none，
+   visible 不會多露任何內容（Chrome 端零視覺變化）。body 的 scroll-lock
+   overflow:hidden 由上方 html 前綴規則（specificity 0,1,1 > 本規則 0,1,0）維持、
+   不被覆蓋；body 為滿版 viewport 高、overflow:hidden 裁到 viewport 無害。
+   結構性規則（描述「祖先帶 overflow 裁切」的 DOM 結構特徵 + 主文 fixed），
+   不綁站點身份。 */
+[${ANCESTOR_ATTR}="1"] {
+  overflow: visible !important;
+}
 /* v0.7.238 iOS 工具列自動收合 hack：觸控裝置放行垂直卷動 + 略撐高 body。
    翻頁卡片是 position:fixed（視覺釘住、不隨 document 捲動），但底下 document
    可垂直捲——使用者垂直滑一下 → document 捲動 → iOS Safari 偵測到「真實手勢
