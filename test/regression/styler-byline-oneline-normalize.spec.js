@@ -82,6 +82,24 @@ describe('styler — byline 一行正規化 (v1.0.8)', () => {
       'byline-item rule 必須含 column-gap（還原 "By 作者" / "published 日期" 內部詞距）');
   });
 
+  it('byline 子樹 font 統一 inherit（v1.0.20 culpium 作者 vs 日期字體/字級不同）', () => {
+    // 站點常對作者連結與日期各設不同 font-family / font-size（culpium 實證：作者
+    // 18px、日期 11px，且都非 reader 內文字體）。byline 正規化須把整條 byline 字體
+    // 收斂到 root 的 reader 字體與字級。用 `font: inherit` shorthand 完整繼承
+    // （family/size/weight/style/line-height），同時避開多站 typography spec 守的
+    // 「預設不注入 font-family/font-size longhand override」不變式。jsdom 無字體
+    // cascade resolution——驗注入 CSS 含 [byline] 子樹 font:inherit 規則；視覺一致
+    // 由 debug-harness 在真實 culpium 驗（作者/日期由 SF Compact/11px → reader 字體/
+    // 18px、translate-first 下 CJK 日期與作者同字體）。
+    const { env } = setup();
+    const styleEl = env.document.getElementById('__jread-style');
+    assert.ok(styleEl, '必須注入 __jread-style');
+    const m = styleEl.textContent.match(/\[data-jread-byline\]\s+\*\s*\{([^}]*)\}/);
+    assert.ok(m, '必須有 [data-jread-byline] * 子樹字體統一規則');
+    assert.ok(/(?:^|[;{\s])font\s*:\s*inherit\s*!important/.test(m[1]),
+      'byline 子樹規則必須 font: inherit（shorthand 完整繼承 root reader 字體 + 字級，消除作者/日期字體與日期 11px 不一致）');
+  });
+
   it('純 wrapper 標 byline wrap + inline display:contents（打平巢狀）', () => {
     const { env } = setup();
     const details = env.document.querySelector('.author-details');
