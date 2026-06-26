@@ -1467,6 +1467,12 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${BYLINE_ITEM_ATTR}] {
   display: inline-flex !important;
   align-items: center !important;
+  /* v1.0.18：item 內若同時含直接文字 + 子元素（"By <a>作者</a>"、"published
+     <time>…"、小頭像 + 名字），inline-flex 會把文字與元素變成相鄰 flex item、
+     吃掉它們之間的空白（space.com byline 實測 "ByTereza" 黏在一起）。補一個
+     正常字距 column-gap 還原詞距；純單一文字 / 單一媒體的 item 只有一個 flex
+     child、gap 無作用故不受影響。 */
+  column-gap: 0.25em !important;
   margin: 0 !important;
   padding: 0 !important;
   float: none !important;
