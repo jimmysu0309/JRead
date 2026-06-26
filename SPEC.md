@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.0.13**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.0.14**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -518,6 +518,7 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `positionMemoryDays` | `number`（天） | `3` | `storage.sync` | ✅（options 「閱讀位置記憶」number input [0, 7] step 1，v0.8.40）—— 閱讀位置記憶效期。**0 = 停用 sentinel**、上限 7 天（`position-memory.js clampDays` 消毒：缺值 / null / 非數字回預設 3——`Number(null) === 0` 不可誤判成停用；超界 clamp）。storage.onChanged 即時生效（改 0 停止當前追蹤；0 → 正值下次進入閱讀模式生效）。詳見「閱讀位置記憶（v0.8.40）」章節 |
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |
 | `readingPositions` | `object` | `{}` | `storage.local`（快取） | ❌（內部用，v0.8.40）—— 閱讀位置記憶的 entry map（`{ urlKey: { ts, mode, page/pages 或 ratio/blockIndex/blockText } }`），寫入時自動淘汰過期 + 超量（上限 100 筆、舊的先丟） |
+| `readingPositionsDiag` | `object` | （無） | `storage.local`（快取） | ❌（內部用，v1.0.14）—— 位置記憶寫入失敗診斷 `{ ts, error }`，由 `recordWriteError` 寫入、options 除錯區塊顯示；`storage.local.clear` 一併清掉 |
 
 ---
 
@@ -685,6 +686,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - `beginSession` 在 finalizeEnter 內、`syncPagedModeFromSettings` 之後（翻頁模組裝好才能 goToPage）、`installKeyguard` 之前（keydown listener 先於 keyguard 註冊，否則 stopImmediatePropagation 吃掉翻頁鍵；spec forcing）。
 - 位置還在開頭（翻頁第 1 頁 / 捲動進度 < 2% 且段落 index 0）不記、並刪舊 entry；寫入時淘汰過期 + 超量（上限 100 筆）。
 - 與 v0.7.227「退出 reader mode 從第一頁起」的關係：`resetPosition()` 照舊歸零，記憶功能啟用且效期內由 restore 蓋回上次頁碼——停用（0）時行為與 v0.8.39 以前完全相同。
+- **寫入韌性（v1.0.14，iOS storage 卡死防護）**：寫入採「讀回整包 → 改一筆 → 整包寫回」，所以一筆毀損 entry 會讓 iOS Safari 的 `storage.local.set` 整包失敗、卡死所有後續存檔（即使總量只有幾 KB，與容量無關——Jimmy 2026-06-26 回報 iPhone 用一段時間後全部不記、清快取即恢復）。三道防護：① `blockSignature` 出口 `stripLoneSurrogates` 消毒孤兒 surrogate（`slice(0,120)` 切斷代理對 / 頁面文字本身含非法 UTF-16 都是來源）；② `writeWithSelfHeal` 偵測整包寫入失敗時自動退回「只寫當前這一筆」（丟歷史 map），不必使用者手動清快取也會自癒；③ `recordWriteError` 把失敗原因另存 `storage.local.readingPositionsDiag`（獨立 key），options「本機快取（除錯）」區塊顯示「上次寫入失敗：…」。options 同區塊另有用量 / 筆數顯示 + 一鍵清除（`storage.local.clear`，雙態確認）。
 
 ### 驗證分層
 

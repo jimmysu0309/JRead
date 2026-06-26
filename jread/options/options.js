@@ -540,20 +540,23 @@ function refreshStorageInfo() {
   try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
   if (!local || typeof local.get !== 'function') { storageInfoEl.textContent = ''; return; }
   storageInfoEl.textContent = '計算中…';
-  local.get({ readingPositions: {} }).then((v) => {
+  local.get({ readingPositions: {}, readingPositionsDiag: null }).then((v) => {
     const map = (v && v.readingPositions) || {};
+    const diag = v && v.readingPositionsDiag;
     const count = Object.keys(map).length;
     let bytes = NaN;
     try { bytes = new TextEncoder().encode(JSON.stringify(map)).length; } catch (_) {}
     const line = '閱讀位置記憶：' + count + ' 筆，約 ' + formatBytes(bytes);
+    // 寫入失敗診斷（position-memory recordWriteError 寫入）——有就附在後面
+    const diagSuffix = (diag && diag.error) ? '　⚠ 上次寫入失敗：' + diag.error : '';
     let probe = null;
     try { probe = local.getBytesInUse ? local.getBytesInUse(null) : null; } catch (_) { probe = null; }
     if (probe && typeof probe.then === 'function') {
       probe.then((b) => {
-        storageInfoEl.textContent = Number.isFinite(b) ? line + '　|　本機快取總用量 ' + formatBytes(b) : line;
-      }).catch(() => { storageInfoEl.textContent = line; });
+        storageInfoEl.textContent = (Number.isFinite(b) ? line + '　|　本機快取總用量 ' + formatBytes(b) : line) + diagSuffix;
+      }).catch(() => { storageInfoEl.textContent = line + diagSuffix; });
     } else {
-      storageInfoEl.textContent = line;
+      storageInfoEl.textContent = line + diagSuffix;
     }
   }).catch(() => { storageInfoEl.textContent = '無法讀取本機快取'; });
 }
