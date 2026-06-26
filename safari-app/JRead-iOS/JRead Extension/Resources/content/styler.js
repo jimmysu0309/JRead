@@ -3418,11 +3418,19 @@ html [${ARTICLE_ATTR}="1"] a {
                 if (anc.has(y)) { seed = y; break; }
               }
             }
-            // 爬到「不含 body、visible 文字 <= 200」的最高祖先
+            // 爬到「不含 body、不含標題/副標 heading、visible 文字 <= 200」的最高祖先。
+            // v1.0.12：heading guard——byline（作者/日期 meta）結構上絕不會包住文章
+            // 標題或副標（h1/h2/h3）。原本只用「文字 <= 200」當天花板，但翻譯後中文
+            // 比英文緊湊（chinatalk Substack post-header 英文 113 字 → 中文 59 字），
+            // 整個 post-header（含 h1 標題 + h3 副標 + byline）落在 200 內 → climb 把
+            // post-header 當 byline root，h1/h3 被打平成 flex-wrap item，窄的中文副標
+            // 與作者名同列（英文因 heading 夠寬各佔一列而僥倖沒露餡）。加 heading guard
+            // 後 climb 在 heading 邊界前停住，root 落在真正的 author+date wrapper。
             let root = seed;
             while (root.parentElement && root.parentElement !== articleEl &&
                    beforeBody(root.parentElement) &&
                    (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
+                   !root.parentElement.querySelector('h1, h2, h3') &&
                    bnorm(root.parentElement.textContent).length <= 200) {
               root = root.parentElement;
             }
