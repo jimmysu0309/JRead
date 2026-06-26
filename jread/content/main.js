@@ -237,6 +237,9 @@
   // keyguard（依 settings.blockPageShortcuts；註冊順序在 onEscKey 之後，同
   // 階段 listener 按註冊順序執行、ESC 先給 onEscKey）→ SET_ACTIVE_ICON。
   function finalizeEnter(container, settings) {
+    // v1.0.21：記住此 session 是否要在退出時把原網頁捲回閱讀段落（退出流程沒有
+    // settings 參數，進場時 stash）。預設 true，明確設 false 才關。
+    NS.state.syncScrollOnExit = !(settings && settings.syncScrollOnExit === false);
     if (NS.pagedMode) NS.pagedMode.captureScrollY();
     NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
     NS.state.active = true;
@@ -416,6 +419,36 @@
     exitReaderModeImpl();
   }
 
+  // v1.0.21：退出捲動同步——抓「目前閱讀段落」的真實 DOM 節點，退出還原雜訊後
+  // 把原網頁捲回該節點（否則退出停在原站開頭附近：主文 card 留在原文件流、雜訊
+  // 只是被隱藏，還原後版面變高、原 scrollTop 對到的內容偏移）。錨點段落是
+  // articleEl 內的真實節點、styler/cleaner.restore 不移除它，故還原後仍可量測。
+  // 必須在 spaceScroll.uninstall 之前呼叫——uninstall 清掉 focusedBlock，之後抓
+  // 只能退 firstVisibleBlock。與閱讀位置記憶共用同一份「正在讀哪段」事實。
+  // 只作用於捲動模式：翻頁模式由 pagedMode.uninstall 還原進場前文件位置，回
+  // null 跳過——CSS multicolumn 的 getBoundingClientRect 是 as-if-unfragmented，
+  // per-page 段落偵測不可靠、頁碼↔段落數又非線性（三種對位法 Chromium probe
+  // 皆失準），暫不支援翻頁退出捲回（見 PENDING_REGRESSION）。
+  function captureExitScrollAnchor() {
+    if (!NS.state.syncScrollOnExit || !NS.state.articleEl) return null;
+    if (NS.pagedMode && NS.pagedMode.isInstalled()) return null;
+    if (!NS.spaceScroll || typeof NS.spaceScroll.currentAnchor !== 'function') return null;
+    const a = NS.spaceScroll.currentAnchor(NS.state.articleEl);
+    return a && a.el ? a.el : null;
+  }
+
+  // v1.0.21：原站版面已完全還原——把原網頁捲到退出前讀到的段落（節點仍在 DOM）。
+  function applyExitScrollAnchor(el) {
+    if (!el || !el.isConnected) return;
+    const scroller = document.scrollingElement || document.documentElement;
+    if (!scroller) return;
+    const rectTop = el.getBoundingClientRect().top;
+    const top = NS.positionMemory
+      ? NS.positionMemory.computeExitScrollTop(scroller.scrollTop, rectTop, window.innerHeight)
+      : Math.max(0, scroller.scrollTop + rectTop - window.innerHeight * 0.12);
+    scroller.scrollTo(0, top);
+  }
+
   function exitReaderModeImpl() {
     // v0.8.149：退出閱讀模式——恢復翻譯擴充的 content guard（任一退出路徑都送、
     // idempotent；Shinkansen 端未暫停時設 false 無副作用）。
@@ -431,6 +464,8 @@
     // 與 styler.restore（捲動位置還原成原站排版）之前，位置此刻才有效。
     // 未開始 session（cinema / 停用 / enter 失敗 rollback）時 no-op。
     if (NS.positionMemory) NS.positionMemory.endSession();
+    // v1.0.21：退出捲動同步——還原前先抓閱讀段落（detail + 為何在 uninstall 前見函式）
+    const exitScrollAnchorEl = captureExitScrollAnchor();
     // v0.7.101：移除 ESC keydown listener（避免 reader mode 關閉後 ESC 仍被攔）
     window.removeEventListener('keydown', onEscKey, true);
     // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
@@ -485,6 +520,8 @@
     if (NS.fbPost && typeof NS.fbPost.exit === 'function') {
       NS.fbPost.exit();
     }
+    // v1.0.21：原站版面已完全還原——捲回退出前讀到的段落。
+    applyExitScrollAnchor(exitScrollAnchorEl);
     NS.state.active = false;
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
