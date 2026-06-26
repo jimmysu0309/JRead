@@ -67,6 +67,21 @@ describe('styler — byline 一行正規化 (v1.0.8)', () => {
     assert.strictEqual(q(env, 'date').getAttribute('data-jread-byline-item'), '1', '<time> 日期是 item');
   });
 
+  it('byline item 內含直接文字 + 子元素時 CSS 補 column-gap 還原詞距（v1.0.18 space.com "ByTereza" 黏字）', () => {
+    const { env } = setup();
+    // author item = 「by <a>Matt Prior</a>」（直接文字 + 子連結），inline-flex 會
+    // 把文字與連結變相鄰 flex item、吃掉空白；byline-item rule 必須帶 column-gap。
+    const author = q(env, 'author');
+    assert.strictEqual(author.getAttribute('data-jread-byline-item'), '1',
+      '前提：含直接文字 + 子元素的 author 是 byline item');
+    const styleEl = env.document.getElementById('__jread-style');
+    assert.ok(styleEl, '必須注入 __jread-style');
+    const m = styleEl.textContent.match(/\[data-jread-byline-item\][^{]*\{([^}]*)\}/);
+    assert.ok(m, '必須找到 data-jread-byline-item rule 區塊');
+    assert.ok(/column-gap\s*:\s*[0-9.]+em\s*!important/.test(m[1]),
+      'byline-item rule 必須含 column-gap（還原 "By 作者" / "published 日期" 內部詞距）');
+  });
+
   it('純 wrapper 標 byline wrap + inline display:contents（打平巢狀）', () => {
     const { env } = setup();
     const details = env.document.querySelector('.author-details');
