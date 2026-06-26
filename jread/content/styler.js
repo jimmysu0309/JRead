@@ -2411,7 +2411,32 @@ html [${ARTICLE_ATTR}="1"] a {
     // font-family block = user override rule」的既有結構（styler.spec 倚賴此順序）。
     // v0.8.146：再接「被選到的內嵌拉丁字型」@font-face（latinFontFaceFor 只在 stack
     // 含該 family 時回傳非空，故 latin = auto / 系統字時為空、不變 face 數）。
-    return base + userOverrides +
+    // v1.0.20：byline 字體統一。站點常對作者連結與日期各設不同 font-family /
+    // font-size（culpium.com Substack 實證：root/內文 SF Pro Display 18px，但作者
+    // 與日期都被站點設成 SF Compact、且日期僅 11px——作者 18px、日期 11px，字體與
+    // 字級都不一致）。翻譯後更明顯：CJK 日期 fallback 到系統 sans CJK、作者連結走
+    // 站點 serif 顯示字體，視覺「作者與日期字體不同」（Jimmy 2026-06-26 回報）。
+    // v1.0.8 byline 正規化只統一 font-weight / letter-spacing、漏了 family / size。
+    // 修法（結構性、非站點特判）：byline 子樹所有元素用 `font: inherit` shorthand
+    // 完整繼承上層字體（family / size / weight / style / line-height 全收斂），
+    // 逐層繼承到 byline root 的 reader 字體與字級（root inherit 內文 = 使用者選的
+    // reader 字型 + 字級），整條 byline 字體徹底一致。不碰 color（作者連結色雙通道
+    // 由既有規則維持；font shorthand 不含 color）。
+    // 兩個刻意決策：
+    // (1) 接在 userOverrides（conditional typography 規則）之後、不放進 base
+    //     skeleton——base 刻意不含 font-size 宣告（typography 字級全走 userOverrides），
+    //     多站 typography spec 用「第一個 font-size 規則」的寬鬆 regex 取
+    //     SPAN_TEXT_SEL，排前面會被誤抓；排後面 → first-match 仍命中 typography。
+    // (2) 用 `font` shorthand 而非 font-family / font-size 兩條 longhand——byline 是
+    //     「預設值仍正規化」的特例（一行 flex / 隱藏閱讀時間都在預設套用），但多站
+    //     typography spec 守「預設不注入 font-family/font-size override」不變式（尊重
+    //     原站內文 typography），用 longhand 會誤觸；shorthand 達成同樣完整繼承、語意
+    //     正確（byline 要的就是全套字體繼承），且不撞那些 longhand 字面 regex。
+    const bylineFontNorm = `
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] * {
+  font: inherit !important;
+}`;
+    return base + userOverrides + bylineFontNorm +
       (overrides.fontFamily ? FONT_FACE_CSS + latinFontFaceFor(opts.fontFamily) : '');
   }
 
