@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!--
+  space.com translate-first byline + 日期消失最小重現（v1.0.16）。
+  真實結構（Playwright translate-first 實測，Shinkansen Google MT）：CMS 把
+  「section chip + 作者列 + 發佈日期 + 分享按鈕」包在同一個 div.byline-social。
+  class 同時帶內容語意 token（byline）與雜訊語意 token（social）→ markerOf 命中
+  `social` keyword → hideInsideArticleByKeyword 整支砍掉、作者 + 日期連帶消失。
+
+  為什麼只在翻譯後爆：未翻譯時 byline-social 內含一段 standfirst <p>（>= 100
+  chars）偶然觸發 wrapperContainsMainContentP 保護；Shinkansen 翻譯把 <time>
+  語意元素換成純文字 span、又改寫 standfirst 結構 → mainContentP 失效、<time>
+  也不在了 → 既有保護全失效、整列被 hide。
+
+  forcing function：本 fixture 模擬「翻譯後」狀態——byline-social 內**不放** <time>、
+  **不放** >= 100 chars 的 standfirst <p>，讓 wrapper class 的 byline token 成為
+  唯一保護來源（破壞 keywordWrapperIsByline 修法即整列被 social keyword 砍掉）。
+  控制組 A：byline 內 share 連結（class 含 share）仍被 a/button keyword scan 清。
+  控制組 B（防過度豁免）：純社群 feed widget（class 含 social、不含 byline/dateline
+  token，含多個 <time> 且 CJK 文字 < 200）仍被 hide——keywordWrapperIsByline 只
+  認 class 的 byline/dateline 語意 token，不靠文字 / <time> 訊號，故不誤豁免它。
+-->
+<html>
+<head><meta property="og:title" content="衛星揭示了 GPS 訊號大規模篡改的情況"></head>
+<body>
+  <article id="story">
+    <h1>「這比我們預期的要多得多」：衛星揭示了 GPS 訊號大規模篡改的情況</h1>
+    <div class="byline-social" id="byline-social">
+      <div class="byline" id="byline-inner">
+        <a href="/news" id="section-chip">新聞動態</a>
+        <span id="prefix">By</span>
+        <a href="/author/tereza" id="author-chip">特蕾莎·普爾塔羅娃</a>
+        <span id="pubdate">發佈於 2026 年 6 月 18 日</span>
+      </div>
+      <a href="#" class="social-share-link" id="share-link">分享</a>
+    </div>
+    <p id="standfirst">一顆實驗衛星首次從太空繪製了歐洲和中東地區 GPS 幹擾的規模，揭示了問題的真實規模。</p>
+    <p>研究人員表示，這比先前任何地面觀測所能捕捉到的範圍都要廣泛得多，幾乎涵蓋了整個衝突地區的上空。</p>
+    <div class="article-social-feed" id="social-feed">
+      <a href="/a1">科學家表示，SpaceX Starlink 巨星座正在創造不受監管的地球工程實驗 <time>2026 年 6 月 1 日</time></a>
+      <a href="/a2">月球隕石坑中的雷射可以創造月球 GPS 系統，為未來探測任務鋪路 <time>2026 年 5 月 20 日</time></a>
+      <a href="/a3">我對衛星的安靜迷戀──以及它們如何在無形之中毀掉一切的故事 <time>2026 年 4 月 15 日</time></a>
+    </div>
+  </article>
+</body>
+</html>
