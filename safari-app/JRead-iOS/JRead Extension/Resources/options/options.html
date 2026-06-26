@@ -831,6 +831,20 @@
     </div>
   </div>
 
+  <h2 class="section-heading">本機快取（除錯）</h2>
+  <p class="section-desc">
+    閱讀位置記憶存在瀏覽器本機快取（不佔偏好設定空間）。若閱讀位置忽然記不住，可在這裡看用量與筆數，再一鍵清除重置
+  </p>
+  <div id="storage-info" style="margin-top:8px;min-height:0;color:var(--jr-neutral-700);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;">計算中…</div>
+  <div class="reset-row">
+    <div class="reset-text">
+      <span class="reset-label">清除閱讀位置記憶</span>
+      <span class="reset-desc">清掉所有已記住的閱讀位置（不影響字體、主題等任何偏好設定）</span>
+    </div>
+    <button type="button" id="clearLocalCache" class="reset-btn">清除快取</button>
+  </div>
+  <div id="clear-cache-status" style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
+
   <div class="reset-row">
     <div class="reset-text">
       <span class="reset-label">回復預設設定</span>
