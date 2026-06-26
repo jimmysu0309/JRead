@@ -4789,6 +4789,59 @@
     return BYLINE_META_CLASS_RE.test(markerOf(el));
   }
 
+  // v1.0.17 space.com：byline 起首的「分類 / 版塊 chip」(News / Politics /
+  // Science & Environment)——一個短連結，排在「By 作者」前綴之前、連到版塊索引頁。
+  // 整支 byline wrapper 已由 keywordWrapperIsByline 保護不被整支 hide（v1.0.16），
+  // 但 chip 本身對閱讀是分類示意雜訊（Jimmy 2026-06-26 回報「News 這種分類示意請
+  // 去掉」）。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：byline wrapper（class / id 帶 byline /
+  // dateline meta token）內、文字排在 author prefix（by / written by / 作者 等）
+  // 之前、且短（<= CATEGORY_LABEL_MAX_LEN）的 <a> = 版塊 eyebrow → hide。
+  //   - author 連結一律排在 prefix 之後（"By <a>作者</a>" 慣例）→ start >= prefixIdx
+  //     不命中，作者名安全。
+  //   - 無 author prefix 的 byline 不套用（只有日期時，避免把唯一的作者/來源連結
+  //     當 chip 誤殺）。
+  //   - 文字長度門檻沿用 CATEGORY_LABEL_MAX_LEN（分類標籤 1-3 詞），author 名通常
+  //     不在 prefix 之前故不靠長度區分，但短門檻多一層保險。
+  const BYLINE_AUTHOR_PREFIX_RE = /\b(?:by|written\s+by|posted\s+by|authors?)\b|作者|撰文|編輯|整理|報導|編譯/i;
+  function hideBylineCategoryChips(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const wraps = [];
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (keywordWrapperIsByline(el)) wraps.push(el);
+    }
+    for (const wrap of wraps) {
+      if (wrap.dataset && wrap.dataset.jreadHidden === '1') continue;
+      // 依文件順序累積文字、記錄每個 <a> 的文字起點 offset（raw-text 座標，與
+      // prefix search 同基準）。start 在「進入 <a> 前」記錄 = 該連結文字起點。
+      let acc = '';
+      const links = [];
+      (function walk(node) {
+        for (const child of node.childNodes) {
+          if (child.nodeType === 3) {
+            acc += child.nodeValue || '';
+          } else if (child.nodeType === 1) {
+            if (child.tagName === 'A') {
+              links.push({ el: child, start: acc.length });
+            }
+            walk(child);
+          }
+        }
+      })(wrap);
+      const prefixIdx = acc.search(BYLINE_AUTHOR_PREFIX_RE);
+      if (prefixIdx < 0) continue; // 無 author prefix → 不套用
+      for (const { el, start } of links) {
+        if (start >= prefixIdx) continue; // 排在 prefix 之後 = 作者 / 內容連結
+        const text = norm(el.textContent);
+        if (!text || text.length > CATEGORY_LABEL_MAX_LEN) continue;
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        if (isInPreserved(el)) continue;
+        hide(el, hidden);
+      }
+    }
+  }
+
   function keywordWrapperIsProtected(el, articleEl) {
     if (shouldHideByStrongKeyword(el)) return false;
     if (keywordWrapperIsByline(el)) return true;
@@ -6425,6 +6478,7 @@
       safeRun(hideRecommendationWidgets, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
+      safeRun(hideBylineCategoryChips, articleEl, hidden);
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
