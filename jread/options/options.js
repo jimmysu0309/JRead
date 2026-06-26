@@ -513,4 +513,82 @@ if (resetBtn) {
   });
 }
 
+// ---- 本機快取除錯（v1.0.13）-----------------------------------------
+// storage.local 只存 readingPositions（閱讀位置記憶，見 content/position-memory.js）。
+// 位置記憶忽然失效時，這裡顯示用量 / 筆數方便判斷是否 storage 滿了，並提供一鍵
+// 清除。清 local 不動任何偏好——所有偏好都在 storage.sync。danger 雙態同
+// resetDefaults：第一次點進入確認、4s 未再點自動還原、第二次點才真正清除。
+const storageInfoEl = document.getElementById('storage-info');
+const clearCacheBtn = document.getElementById('clearLocalCache');
+const clearCacheStatusEl = document.getElementById('clear-cache-status');
+let clearCacheConfirming = false;
+let clearCacheConfirmTimer = null;
+
+function formatBytes(n) {
+  if (!Number.isFinite(n)) return '?';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+// 讀本機快取現況顯示。storage.local 不存在（既有 spec stub 只給 sync）→ 直接
+// 返回，不可讓載入期 throw 波及其他 options 測試。getBytesInUse 在 Safari / iOS
+// 可能不支援 → 退回用 readingPositions 的 JSON byte 長度估算。
+function refreshStorageInfo() {
+  if (!storageInfoEl) return;
+  let local;
+  try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
+  if (!local || typeof local.get !== 'function') { storageInfoEl.textContent = ''; return; }
+  storageInfoEl.textContent = '計算中…';
+  local.get({ readingPositions: {} }).then((v) => {
+    const map = (v && v.readingPositions) || {};
+    const count = Object.keys(map).length;
+    let bytes = NaN;
+    try { bytes = new TextEncoder().encode(JSON.stringify(map)).length; } catch (_) {}
+    const line = '閱讀位置記憶：' + count + ' 筆，約 ' + formatBytes(bytes);
+    let probe = null;
+    try { probe = local.getBytesInUse ? local.getBytesInUse(null) : null; } catch (_) { probe = null; }
+    if (probe && typeof probe.then === 'function') {
+      probe.then((b) => {
+        storageInfoEl.textContent = Number.isFinite(b) ? line + '　|　本機快取總用量 ' + formatBytes(b) : line;
+      }).catch(() => { storageInfoEl.textContent = line; });
+    } else {
+      storageInfoEl.textContent = line;
+    }
+  }).catch(() => { storageInfoEl.textContent = '無法讀取本機快取'; });
+}
+
+function exitClearCacheConfirm() {
+  clearCacheConfirming = false;
+  if (clearCacheConfirmTimer) { clearTimeout(clearCacheConfirmTimer); clearCacheConfirmTimer = null; }
+  if (clearCacheBtn) { clearCacheBtn.classList.remove('confirming'); clearCacheBtn.textContent = '清除快取'; }
+}
+
+if (clearCacheBtn) {
+  clearCacheBtn.addEventListener('click', () => {
+    if (!clearCacheConfirming) {
+      clearCacheConfirming = true;
+      clearCacheBtn.classList.add('confirming');
+      clearCacheBtn.textContent = '再按一次確認';
+      clearCacheConfirmTimer = setTimeout(exitClearCacheConfirm, 4000);
+      return;
+    }
+    exitClearCacheConfirm();
+    browser.storage.local.clear().then(() => {
+      if (clearCacheStatusEl) {
+        clearCacheStatusEl.textContent = '已清除本機快取';
+        setTimeout(() => { clearCacheStatusEl.textContent = ''; }, 2000);
+      }
+      refreshStorageInfo();
+    }).catch(() => {
+      if (clearCacheStatusEl) {
+        clearCacheStatusEl.textContent = '清除失敗，請稍後再試';
+        setTimeout(() => { clearCacheStatusEl.textContent = ''; }, 3000);
+      }
+    });
+  });
+}
+
+refreshStorageInfo();
+
 load();
