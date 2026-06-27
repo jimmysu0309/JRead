@@ -229,7 +229,8 @@
   let hapticEl = null;         // v0.8.151 iOS 觸覺載體（switch checkbox）
   let remeasureTimers = [];
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
-  let showIndicator = true; // v0.7.237：是否顯示底部頁碼指示（settings.showPageNumber）
+  // v1.5.4：底部頁碼指示器一律顯示——翻頁模式拿掉頂端進度條（v1.5.2）後它是唯一
+  // 進度載體，無理由讓使用者關掉。原 showPageNumber 開關 + setShowIndicator 已移除。
   let relocatedTitle = null; // v1.0.2：翻頁模式期間暫時移進 articleEl 的翻譯頁外置標題（uninstall 時移回）
   // v0.7.245：第一頁「捲動停止後」鎖死垂直卷動（Jimmy 要保留「捲軸消失後可鎖住」）。
   // 與 v0.7.240→243 已撤回的鎖不同：觸發點是「捲動完全停止（debounce）」、不是捲動中
@@ -350,31 +351,26 @@
     return measuredPages > 0 ? measuredPages : computePageCount(art.scrollWidth, stride());
   }
 
-  // v0.7.237：依 showIndicator 增/移除底部頁碼指示器。install 與 sync（設定
-  // 即時切換）共用——頁碼是純顯示層，切換不需重建 multicol layout。
+  // v0.7.237：建立底部頁碼指示器（install 時呼叫）。v1.5.4：一律建立——頁碼指示
+  // 已是翻頁模式唯一進度載體，不再有開關。uninstall 負責移除。
   function reconcileIndicator() {
-    if (showIndicator) {
-      if (!indicatorEl) {
-        indicatorEl = document.getElementById(INDICATOR_ID);
-      }
-      if (!indicatorEl) {
-        indicatorEl = document.createElement('div');
-        indicatorEl.id = INDICATOR_ID;
-        // 必須掛在 <html> 下（與 styler progressEl 同層），不能掛 body——
-        // body 帶 data-jread-ancestor，styler 的 sibling 隱藏規則
-        // `[ancestor] > *:not(...)` 會把 body 下的非主文子元素全部 display:none，
-        // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
-        // markAncestors 標記，不受該規則影響。
-        (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
-        // v0.8.150：頁碼當 scrubber——桌面滑鼠在指示器上按下起拖（touch 走
-        // window touch 管線，靠 isIndicatorTarget 判定，不在此掛）
-        indicatorEl.addEventListener('mousedown', onIndicatorMouseDown);
-      }
-      renderIndicator();
-    } else if (indicatorEl) {
-      indicatorEl.remove();
-      indicatorEl = null;
+    if (!indicatorEl) {
+      indicatorEl = document.getElementById(INDICATOR_ID);
     }
+    if (!indicatorEl) {
+      indicatorEl = document.createElement('div');
+      indicatorEl.id = INDICATOR_ID;
+      // 必須掛在 <html> 下（與 styler progressEl 同層），不能掛 body——
+      // body 帶 data-jread-ancestor，styler 的 sibling 隱藏規則
+      // `[ancestor] > *:not(...)` 會把 body 下的非主文子元素全部 display:none，
+      // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
+      // markAncestors 標記，不受該規則影響。
+      (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
+      // v0.8.150：頁碼當 scrubber——桌面滑鼠在指示器上按下起拖（touch 走
+      // window touch 管線，靠 isIndicatorTarget 判定，不在此掛）
+      indicatorEl.addEventListener('mousedown', onIndicatorMouseDown);
+    }
+    renderIndicator();
   }
 
   function renderIndicator() {
@@ -532,8 +528,8 @@
   }
 
   // v0.8.150：本次手勢起點是否落在頁碼指示器上（= 要進 scrub 模式）。指示器在
-  // styler CSS 設 pointer-events:auto 才會成為 hit-test target；showIndicator 關
-  // 時無指示器，自然不會命中。
+  // styler CSS 設 pointer-events:auto 才會成為 hit-test target；尚未 install
+  // （無指示器）時自然不會命中。
   function isIndicatorTarget(target) {
     if (!indicatorEl || !target) return false;
     if (target === indicatorEl) return true;
@@ -955,14 +951,6 @@
     goTo(n, false);
   }
 
-  // v0.7.237：頁碼指示即時切換（popup showPageNumber toggle）。純顯示層——
-  // 只增/移除指示器、不重建 multicol layout（避免 full styler reapply 的
-  // 捲動→翻頁閃爍）。installed 時才 reconcile（未裝時只更新旗標，下次 install 生效）。
-  function setShowIndicator(show) {
-    showIndicator = show !== false;
-    if (installed) reconcileIndicator();
-  }
-
   // 文件卷動位置捕捉：必須在 styler 注入 overflow hidden **之前**呼叫——
   // 注入後文件不可卷動、window.scrollY 已被 clamp 成 0，事後讀必丟失。
   // main.js 在 enterReaderMode / scheduleReapply 的 styler.apply 前呼叫；
@@ -974,9 +962,6 @@
   // settings → 模組狀態同步（與 space-scroll.sync 同形）：pagedMode = true
   // 且有 articleEl 才 install。
   function sync(settings, articleEl) {
-    // v0.7.237：頁碼指示開關（嚴格 !== false → 預設顯示）。install 前先更新，
-    // reconcileIndicator 才能據此增/移除。
-    showIndicator = !(settings && settings.showPageNumber === false);
     const on = !!(settings && settings.pagedMode === true);
     if (on && articleEl) install(articleEl);
     else uninstall();
@@ -996,7 +981,6 @@
     install,
     uninstall,
     resetPosition,
-    setShowIndicator,
     captureScrollY,
     getPosition,
     goToPage,
