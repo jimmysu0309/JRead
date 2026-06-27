@@ -2141,6 +2141,19 @@
     return false;
   }
 
+  // v1.5：容器是否含「作者個人頁連結」（/@user、authors/、profiles/… 等路徑）——
+  // byline 作者列的可靠結構訊號。AUTHOR_PAGE_PATH_RE 雖宣告在後段（module 常數），
+  // 本函式僅在 clean() runtime 呼叫，屆時已初始化。
+  function clusterContainsAuthorProfileLink(el) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const a of el.querySelectorAll('a[href]')) {
+      let pn = '';
+      try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
+      if (pn && AUTHOR_PAGE_PATH_RE.test(pn)) return true;
+    }
+    return false;
+  }
+
   function hideInsideArticleButtonClusters(articleEl, hidden, containers) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of containers) {
@@ -2229,6 +2242,13 @@
       for (const n of topInteractive) interactiveText += norm(n.textContent).length;
       const outsideText = text.length - interactiveText;
       if (outsideText > BUTTON_CLUSTER_MAX_OUTSIDE_TEXT) continue;
+
+      // v1.5 byline 作者保護：cluster 若含「作者個人頁連結」（/@user、authors/…）
+      // = byline 作者列（頭像 + 作者名 + Follow 鈕），非純動作按鈕叢集 → 保留。
+      // 解 Medium：作者頭像/名與 Follow 鈕同包一小 wrapper，被當 button cluster
+      // 整塊砍、作者名連坐消失（Jimmy 2026-06-27 回報）。Follow 等鈕另由
+      // hideInsideArticleAllButtons 個別清，不影響。
+      if (clusterContainsAuthorProfileLink(el)) continue;
 
       hide(el, hidden);
     }
@@ -5745,6 +5765,18 @@
   const BIO_CARD_LONG_P = 500;
   const AUTHOR_PAGE_PATH_RE = /(^|\/)(authors?|people|staff|contributors?|profiles?|writers?|team)(\/|$)|^\/?@[\w.-]+\/?$/i;
   const AVATAR_SRC_RE = /avatar|head-?shot|author[\W_]*profile|profile[\W_]*(?:pic|photo|image)/i;
+  // v1.5：文章頭部 byline / meta 訊號——「發表日期」或「閱讀時間估計（N min read）」。
+  // 這兩者是文章開頭 byline 列的標誌，底部「作者 bio 卡」（avatar +「Written by X」
+  // + bio + follow）絕不會有。用「嚴格日期 pattern」（不含 BYLINE_TEXT_RE 的寬鬆
+  // `\bby\s`，以免 bio 內文含 by 誤命）+ read-time，掃候選**整段文字**保護頭部 byline。
+  // 修 Medium：頭部把「副標 + 作者列 + 日期/閱讀時間 + 互動鈕」包成同塊、副標排最前，
+  // 既有 `BYLINE_TEXT_RE.test(t.slice(0,60))` 只看前 60 字被副標佔滿、漏掉後面的日期，
+  // 整塊（含作者+日期）被當 bio 卡砍（Jimmy 2026-06-27 回報）。
+  // 注意：不可依賴年份 / 數字的 word boundary——Medium 等 flex 版面的 textContent
+  // **元素間無空白**串接（"…read·Jun 3, 20261.1K463Listen…"、"Follow11 min read"），
+  // `\b\d{4}\b` / 前綴 `\b\d+` 會因數字黏在一起失配。改用最穩的 "min read" 估計閱讀
+  // 時間（去掉前綴數字需求）+ 日期 pattern（去掉年份尾端 \b）。
+  const ARTICLE_META_RE = /\bmin(?:ute)?s?\s+read\b|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2},?\s+\d{4}|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}|\d{4}-\d{2}-\d{2}|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[./]\d{1,2}[./]\d{1,2}/i;
 
   function hideInsideArticleAuthorBioCards(articleEl, hidden) {
     for (const img of articleEl.querySelectorAll('img')) {
@@ -5810,6 +5842,10 @@
       if (t.length < BIO_CARD_MIN_TEXT) continue;
       // byline 保護：署名列（by X / 日期開頭）不是 bio 卡
       if (BYLINE_TEXT_RE.test(t.slice(0, 60))) continue;
+      // v1.5 文章頭部 byline 保護：候選整段含發表日期 / 閱讀時間估計 = 文章開頭
+      // byline/meta（非底部 bio 卡）→ 保留。解 Medium「副標佔滿前 60 字、byline
+      // 日期被擠到後面」漏網（slice(0,60) 看不到）。
+      if (ARTICLE_META_RE.test(t)) continue;
       if (containsSelfLinkTitleHeading(candidate)) continue;
       hide(candidate, hidden);
     }

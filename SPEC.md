@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.0.25**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.5.0**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -358,6 +358,8 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 **英文網頁 link/button 文字慣用語**（`NOISE_LINK_TEXT_RE`）：View original / Read the full article / Back to top / Show more / Load more / Learn more / Get the app / Download app / Open in app / Subscribe / Follow / Like / Share / Repost / Reply / Comment / Save / Bookmark / Sign up / Log in / Clap / Join our newsletter / Follow us on Twitter / Subscribe to our newsletter / N hours ago / N minutes ago / Order Reprints（v0.8.54）/ Today's Paper（v0.8.54）
 
 **byline 文字 pattern**（`BYLINE_TEXT_RE`，保護用——短篇 byline 不被 link-density killer / all-buttons / inset-card 等規則誤殺）：英文前綴 `by` / `written by` / `posted by` / `author(s):`、各式英文 / ISO / 中文年月日日期、中文 byline 前綴 `撰文：` / `作者：` / `編輯：` 等（**帶冒號**形式）。**v0.8.128**：補「行首裸 CJK byline 前綴詞」——`作者` / `撰文` / `編輯` / `整理` / `報導` / `編譯` 出現在字串開頭、後接空白 / 冒號 / 拉丁字母即命中，**不強制冒號**。動機：translate-first 時翻譯引擎把英文前綴 `by` 譯成裸「作者」（無冒號，名字保留英文 → `作者 Andrew Liszewski`），既有 `作者[:：]` 強制冒號全 miss → byline 保護路徑連坐失效、`<span role="button">` 作者名 chip 被 all-buttons 規則清掉（The Verge translate-first 實測、cage real Chrome）。lookahead 後接 CJK 字（作者群 / 作者的話 / 作者簡介）則不命中、避免吃到正文；`^\s*` 錨定 + 短 textLen 雙閘控誤判。Forcing：`theverge-translated-byline.spec.js`
+
+**v1.5 Medium 頭部 byline 兩道補強保護**（Jimmy 2026-06-27 medium.com/it-chronicles「作者+日期消失」，cage 真實站 probe + instrument 揪兩條誤殺 path）：(1) `ARTICLE_META_RE`——`hideInsideArticleAuthorBioCards` 的既有 byline 保護只看候選**前 60 字**（`BYLINE_TEXT_RE.test(t.slice(0,60))`），但 Medium 把「副標 + 作者列 + 閱讀時間·日期 + 動作鈕」包成同塊、副標排最前佔滿 60 字、byline 日期被擠到後面看不到 → 整塊（含作者+日期）被當 bio 卡砍。補強：候選**整段**含發表日期或閱讀時間估計（`min read`）= 文章頭部 byline/meta（底部作者 bio 卡絕不會有）→ 保留。**regex 必須 spacing-robust**：Medium flex 版面 textContent 元素間無空白、數字黏在一起（`Jun 3, 20261.1K`、`Follow11 min read`），不可依賴年份/前綴數字的 `\b`（去年份尾端 `\b`、read-time 去前綴數字需求）。(2) `clusterContainsAuthorProfileLink`——`hideInsideArticleButtonClusters` 把 author-row（頭像 + 作者名 + Follow 鈕）當 button cluster 整塊砍；補強：cluster 含作者個人頁連結（`/@user`、`authors/`…，`AUTHOR_PAGE_PATH_RE`）= byline 作者列、非純動作叢集 → 保留（Follow 等鈕另由 all-buttons 個別清）。Forcing：`medium-byline-header.spec.js`（含負控制：底部無發表日期的 bio 卡仍被砍＝不過度保護）；cage 真實站截圖驗「huizhou92 · Jun 3, 2026」。
 
 **文末 link-feed 與 curated 區塊（v0.8.54，nytimes 實證）**：
 - **link-feed 覆寫 tooWide 主文保護**（`isLinkFeedContainer`）：heading 命中雜訊 pattern 後，目標 section 若「無任何 >= 100 chars `<p>` + link density >= 0.5 + >= 3 連結」即視為推薦 feed，不受 `wrapperContainsMainContentP` 累計門檻（短 teaser p 累計 >= 300）保護，整塊 hide

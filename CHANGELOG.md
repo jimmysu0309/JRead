@@ -4,6 +4,8 @@
 
 ---
 
+**v1.5.0** — 修 Medium 進閱讀模式後作者+日期（byline）消失（Jimmy 2026-06-27 回報，medium.com/it-chronicles）。cage 真實站 probe + instrument stack trace 揪出**兩條 path 各自誤殺**：(1) `hideInsideArticleAuthorBioCards` 從頭像 walk-up 把「副標 + 作者列 + 閱讀時間·日期 + 動作鈕」整塊砍——既有 byline 保護只看候選**前 60 字**（`BYLINE_TEXT_RE.test(t.slice(0,60))`），但 Medium 副標排最前佔滿 60 字、byline 日期被擠到後面看不到；(2) `hideInsideArticleButtonClusters` 把 author-row（頭像 + 作者名 + Follow 鈕）當 button cluster 整塊砍、作者名連坐。修法（結構性通則，非站點特判）：(1) 新增 `ARTICLE_META_RE`——候選**整段**含發表日期或閱讀時間估計（`min read`）= 文章頭部 byline/meta（底部作者 bio 卡絕不會有）→ 保留；**regex 必須 spacing-robust**：Medium flex 版面 textContent 元素間無空白、數字黏在一起（`Jun 3, 20261.1K`、`Follow11 min read`），不可依賴年份/前綴數字的 `\b`（去掉年份尾端 `\b`、read-time 去掉前綴數字需求）。(2) 新增 `clusterContainsAuthorProfileLink`——button cluster 含作者個人頁連結（`/@user`、`authors/`…）= byline 作者列、非純動作叢集 → 保留（Follow 等鈕另由 `hideInsideArticleAllButtons` 個別清）。驗證：cage 真實 medium.com reader mode 截圖確認 byline 顯示「huizhou92 · Jun 3, 2026」；jsdom forcing `medium-byline-header.spec.js`（9 條，含負控制：底部無發表日期的 bio 卡仍被砍＝不過度保護 + ARTICLE_META_RE spacing-robust regex + 破壞修法→4 條 byline fail sanity）；real Chromium debug-harness residual audit 無過度隱藏退步。
+
 **v1.0.25** — Reader 整合一批（Jimmy 2026-06-27 多輪回報，iOS 模擬器自驗）：
 
 **根因修正——iOS 進入 Reader 全白**：模擬器拆 bundle 實證 reader.html 完全空白＝`reader/` 整個資料夾**沒被打包進 iOS .appex**（`content/`/`popup/`… 都在、唯獨缺 `reader/`）。Xcode 專案逐個資料夾參照打包，新增 `jread/reader/` 後只 rsync 到 Resources 鏡像、**沒人把 reader 加進 `.pbxproj` 的 folder reference + Copy Bundle Resources phase**；ios-build 的 drift 檢查只比對「Resources 磁碟==jread/」、抓不到「Xcode 有沒有真的打包」這層。故 v1.0.22–v1.0.24 的 iOS 每一版都缺 reader.html、與 WAR/tabs.create 都無關。修法：pbxproj 補 reader folder 參照（4 處，比照 content）。forcing：`ios-resources-bundled.spec.js`（jread/ 每個資料夾都必須在 pbxproj 有 folder reference + 列入 build phase）。
