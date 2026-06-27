@@ -33,8 +33,6 @@ const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
 const autoDomainHostEl = document.getElementById('auto-domain-host');
 const pagedModeCb = document.getElementById('paged-mode-cb');
-const pageNumberRow = document.getElementById('page-number-row');
-const pageNumberCb = document.getElementById('page-number-cb');
 
 // ---- 頁內浮層模式（v0.8.162，?panel=1）-------------------------------------
 // 懸浮按鈕長按選單的「功能選單」在非 Safari 把本 popup 以 iframe 嵌進網頁當頁內
@@ -256,10 +254,6 @@ function render(settings) {
   }
   // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
   if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
-  // v0.7.237：頁碼指示 checkbox（嚴格 !== false → 預設顯示）；該 row 只在
-  // 翻頁模式開啟時才顯示（非翻頁模式無頁碼可言，避免雞肋控制項佔空間）。
-  if (pageNumberCb) pageNumberCb.checked = settings.showPageNumber !== false;
-  if (pageNumberRow) pageNumberRow.hidden = settings.pagedMode !== true;
 }
 
 let current = { ...DEFAULT_SETTINGS };
@@ -346,15 +340,7 @@ for (const btn of themeBtns) {
 if (pagedModeCb) {
   pagedModeCb.addEventListener('change', () => {
     save({ pagedMode: pagedModeCb.checked });
-    // 翻頁模式 row 切換時，頁碼指示 row 跟著顯隱（render 也會處理，這裡即時反映）
-    if (pageNumberRow) pageNumberRow.hidden = !pagedModeCb.checked;
   });
-}
-
-// v0.7.237：頁碼指示 toggle。寫入後 content script 走 storage.onChanged →
-// scheduleReapply → syncPagedModeFromSettings 即時增/移除底部頁碼指示器。
-if (pageNumberCb) {
-  pageNumberCb.addEventListener('change', () => save({ showPageNumber: pageNumberCb.checked }));
 }
 
 document.querySelector('[data-action="font-dec"]').addEventListener('click', () => {
@@ -554,6 +540,17 @@ async function isReaderHostTab() {
     return tab.url.startsWith(browser.runtime.getURL('reader/'));
   } catch (_) { return false; }
 }
+
+// v1.5.4：當前作用分頁是否為 reader feed 列表頁（reader/reader.html）。feed 是
+// 文章清單、不是內容頁，「啟動閱讀模式」在此無意義（沒有主文可進閱讀模式）→ 隱藏
+// toggle。article.html（reader/article.html）不在此列——它的 toggle = 退出閱讀模式。
+async function isReaderFeedTab() {
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.url) return false;
+    return tab.url.startsWith(browser.runtime.getURL('reader/reader.html'));
+  } catch (_) { return false; }
+}
 readerBtn.addEventListener('click', async () => {
   try {
     await browser.tabs.create({ url: browser.runtime.getURL('reader/reader.html') });
@@ -615,6 +612,19 @@ function isEditModeEnabled() {
 }
 
 async function refreshPopupForActiveTab() {
+  // v1.5.4：reader feed 列表頁（reader/reader.html）——「啟動閱讀模式」沒有意義
+  // （feed 是文章清單、非內容頁），整顆 toggle + 次級按鈕全隱藏，只留設定（主題 /
+  // 字型…影響點進文章後的閱讀體驗）。article.html 不在此列（toggle = 退出閱讀模式）。
+  try {
+    if (await isReaderFeedTab()) {
+      toggleBtn.hidden = true;
+      readerBtn.hidden = true;
+      readwiseBtn.hidden = true;
+      editBtn.hidden = true;
+      borderlessBtn.hidden = true;
+      return;
+    }
+  } catch (_) { /* 判定失敗則照常跑下方一般邏輯 */ }
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') {
     // 無有效分頁 = 沒有可啟動的閱讀模式，toggle 文字回到「啟動」態（off）。

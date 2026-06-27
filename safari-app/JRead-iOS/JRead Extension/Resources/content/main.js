@@ -1336,11 +1336,8 @@
       if ('spaceScrollRatio' in changes) {
         syncSpaceScrollFromSettings({ spaceScrollRatio: changes.spaceScrollRatio.newValue });
       }
-      // v0.7.237：showPageNumber 即時切換——純顯示層，直接增/移除頁碼指示器，
-      // 不走 styler reapply（避免捲動→翻頁閃爍）。翻頁模式未啟動時無感。
-      if ('showPageNumber' in changes && NS.pagedMode) {
-        NS.pagedMode.setShowIndicator(changes.showPageNumber.newValue !== false);
-      }
+      // v1.5.4：頁碼指示開關已移除（頁碼一律顯示，是翻頁模式唯一進度載體），原本
+      // 的即時切換 listener 連同設定一併刪除。
       // v0.8.40：閱讀位置記憶效期即時切換——改成 0 停止當前追蹤；0 → 正值
       // 下次進入閱讀模式生效（當前 session 不回溯補追蹤）。
       if ('positionMemoryDays' in changes && NS.positionMemory) {
