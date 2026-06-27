@@ -671,52 +671,42 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
-  // ---- C2. 頁碼指示開關 showPageNumber（v0.7.237）------------------------
-  // Jimmy 回報：翻頁模式底部頁碼「3 / 43」佔顯示空間，做成 option。
-  // 訊號層次：驗 sync/setShowIndicator 對指示器 DOM 的增/移除 + 模組不被
-  // uninstall（純顯示層）。不驗真實 layout（jsdom 無 layout）。
-  describe('頁碼指示開關 showPageNumber（v0.7.237）', () => {
+  // ---- C2. 頁碼指示一律顯示（v1.5.4，移除 showPageNumber 開關）----------------
+  // v1.5.4：頁碼指示是翻頁模式唯一進度載體（v1.5.2 拿掉頂端進度條後），不再有開關
+  // ——install 一律建指示器、忽略任何 showPageNumber 設定。setShowIndicator API 已移除。
+  describe('頁碼指示一律顯示（v1.5.4）', () => {
     function loadModuleEnv() {
       const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
       env.window.eval(PAGED_SRC);
       return env;
     }
 
-    it('sync(pagedMode: true, showPageNumber: false) → installed 但無頁碼指示器', () => {
+    it('sync(pagedMode: true) → 頁碼指示器一律出現', () => {
       const env = loadModuleEnv();
       const api = env.window.__JRead.pagedMode;
       const art = env.document.querySelector('article');
+      api.sync({ pagedMode: true }, art);
+      assert.ok(env.document.getElementById('__jread-page-indicator'),
+        'install 必建頁碼指示器（唯一進度載體）');
+      api.uninstall();
+    });
+
+    it('殘留 showPageNumber: false 設定被忽略——指示器仍顯示（嚮後相容）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      // 舊使用者 storage 可能殘留 showPageNumber:false；v1.5.4 起一律忽略、仍顯示。
       api.sync({ pagedMode: true, showPageNumber: false }, art);
-      assert.strictEqual(api.isInstalled(), true, 'showPageNumber=false 不得影響翻頁模式啟動');
-      assert.strictEqual(env.document.getElementById('__jread-page-indicator'), null,
-        'showPageNumber=false → 不建頁碼指示器');
+      assert.ok(env.document.getElementById('__jread-page-indicator'),
+        '殘留 showPageNumber:false 不得再隱藏指示器（開關已移除）');
       api.uninstall();
     });
 
-    it('sync 預設（showPageNumber 未設）→ 顯示頁碼指示器（嚮後相容）', () => {
+    it('setShowIndicator API 已移除（不再有頁碼開關）', () => {
       const env = loadModuleEnv();
       const api = env.window.__JRead.pagedMode;
-      const art = env.document.querySelector('article');
-      api.sync({ pagedMode: true }, art);
-      assert.ok(env.document.getElementById('__jread-page-indicator'),
-        'showPageNumber 未設 → 預設顯示（!== false）');
-      api.uninstall();
-    });
-
-    it('setShowIndicator 即時增/移除頁碼指示器、不 uninstall 模組（輕量路徑）', () => {
-      const env = loadModuleEnv();
-      const api = env.window.__JRead.pagedMode;
-      const art = env.document.querySelector('article');
-      api.sync({ pagedMode: true }, art);
-      assert.ok(env.document.getElementById('__jread-page-indicator'), '初始顯示');
-      api.setShowIndicator(false);
-      assert.strictEqual(env.document.getElementById('__jread-page-indicator'), null,
-        'setShowIndicator(false) → 移除指示器');
-      assert.strictEqual(api.isInstalled(), true, 'setShowIndicator 不得 uninstall 翻頁模組');
-      api.setShowIndicator(true);
-      assert.ok(env.document.getElementById('__jread-page-indicator'),
-        'setShowIndicator(true) → 重新建立指示器');
-      api.uninstall();
+      assert.strictEqual(typeof api.setShowIndicator, 'undefined',
+        'setShowIndicator 不該再 export——forcing：頁碼開關復活 = 唯一進度載體可被關掉');
     });
   });
 
@@ -1211,25 +1201,23 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(/save\(\{\s*pagedMode:/.test(POPUP_SRC), 'popup.js 須在 change 時 save({ pagedMode })');
     });
 
-    it('shared defaults / popup DEFAULT_SETTINGS.showPageNumber 預設都是 true（v0.7.237）', () => {
-      // v0.8.16：popup 收斂到單一資料源，不再自帶 literal——驗 reference + shared 正準值。
+    it('settings-defaults.js 不再有 showPageNumber（v1.5.4 開關移除）', () => {
       const sharedDefaults = require('../../jread/content/settings-defaults.js');
-      assert.strictEqual(sharedDefaults.showPageNumber, true,
-        'settings-defaults.js showPageNumber 預設必須 true（嚮後相容：原本一律顯示）');
+      assert.ok(!('showPageNumber' in sharedDefaults),
+        'settings-defaults.js 不該再有 showPageNumber——forcing：頁碼開關設定復活 = 唯一進度載體可被關掉');
       assert.match(POPUP_SRC, /const DEFAULT_SETTINGS = window\.__JReadSettingsDefaults\b/,
         'popup.js DEFAULT_SETTINGS 必須取自 window.__JReadSettingsDefaults（單一資料源）');
     });
 
-    it('popup.html 須含 #page-number-cb / #page-number-row + .setting-row[hidden] 修正（v0.7.237）', () => {
-      assert.ok(POPUP_HTML.includes('id="page-number-cb"'), 'popup.html 須含頁碼指示 checkbox');
-      assert.ok(POPUP_HTML.includes('id="page-number-row"'), 'popup.html 須含頁碼指示 row');
-      assert.ok(/save\(\{\s*showPageNumber:/.test(POPUP_SRC), 'popup.js 須在 change 時 save({ showPageNumber })');
-      // .setting-row { display:flex }（author origin）會蓋過 [hidden] 屬性的 UA
-      // display:none——沒這條顯式規則，JS 對 setting-row 設 .hidden=true 完全無效
-      // （iOS simulator 實證：頁碼指示 row 在翻頁模式關閉時仍顯示）。
+    it('popup 不再有頁碼指示 toggle（#page-number-cb / #page-number-row 移除）v1.5.4', () => {
+      assert.ok(!POPUP_HTML.includes('id="page-number-cb"'), 'popup.html 不該再含頁碼指示 checkbox');
+      assert.ok(!POPUP_HTML.includes('id="page-number-row"'), 'popup.html 不該再含頁碼指示 row');
+      assert.ok(!/save\(\{\s*showPageNumber:/.test(POPUP_SRC), 'popup.js 不該再 save({ showPageNumber })');
+      // .setting-row[hidden] 顯式規則仍需保留——auto-domain-row / latin-font-row 等仍用
+      // [hidden] 屬性顯隱，沒這條 JS 設 .hidden=true 對 display:flex 的 setting-row 無效。
       assert.ok(
         /\.setting-row\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(POPUP_HTML),
-        'popup.html 須有 .setting-row[hidden] { display:none !important }（修 hidden 屬性對 setting-row 失效）');
+        'popup.html 須保留 .setting-row[hidden] { display:none !important }（其他動態顯隱 row 仍依賴）');
     });
   });
 
@@ -1240,15 +1228,11 @@ describe('翻頁模式（v0.7.227）', () => {
       assert.ok(m && m[1].includes("'pagedMode'"), 'relevantKeys 必須含 pagedMode');
     });
 
-    it('showPageNumber 走獨立輕量路徑（setShowIndicator）、不在 relevantKeys（v0.7.237）', () => {
-      // 頁碼指示是純顯示層——full reapply 會造成捲動→翻頁閃爍，改直接 reconcile。
-      assert.ok(/'showPageNumber' in changes/.test(MAIN_SRC),
-        'main.js 須獨立處理 showPageNumber 變更');
-      assert.ok(/NS\.pagedMode\.setShowIndicator\(/.test(MAIN_SRC),
-        'main.js 須呼叫 NS.pagedMode.setShowIndicator');
-      const m = MAIN_SRC.match(/const relevantKeys = \[([^\]]+)\]/);
-      assert.ok(m && !m[1].includes('showPageNumber'),
-        'showPageNumber 不應在 relevantKeys（純顯示層、不需 full styler reapply）');
+    it('main.js 不再引用 showPageNumber / setShowIndicator（v1.5.4 開關移除）', () => {
+      assert.ok(!/showPageNumber/.test(MAIN_SRC),
+        'main.js 不該再引用 showPageNumber——頁碼開關已移除');
+      assert.ok(!/setShowIndicator/.test(MAIN_SRC),
+        'main.js 不該再呼叫 setShowIndicator——該 API 已移除');
     });
 
     it('exitReaderModeImpl 必須 uninstall 翻頁模組 + resetPosition', () => {

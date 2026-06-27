@@ -94,4 +94,25 @@ describe('popup v1.0.22 — 進入 Reader 按鈕', () => {
     assert.match(m[1], /readerHostPage:\s*!!\s*NS\.state\.readerHostPage/,
       'GET_READER_STATE 回應須帶 readerHostPage: !!NS.state.readerHostPage——forcing：少了它，popup 在 reader 自有頁無法判定該隱藏三顆按鈕');
   });
+
+  // v1.5.4：reader feed 列表頁（reader/reader.html）「啟動閱讀模式」無意義（feed 是
+  // 文章清單、非內容頁）——整顆 toggle 隱藏（Jimmy 2026-06-27）。
+  it('isReaderFeedTab 必須以 runtime.getURL("reader/reader.html") 前綴判定（feed 專屬，不含 article.html）', () => {
+    const m = POPUP_JS.match(/function\s+isReaderFeedTab\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    assert.ok(m, 'popup.js 必須定義 isReaderFeedTab');
+    assert.match(m[0], /startsWith\(\s*browser\.runtime\.getURL\(['"]reader\/reader\.html['"]\)\s*\)/,
+      'isReaderFeedTab 必須用 tab.url.startsWith(runtime.getURL("reader/reader.html")) 判定——只命中 feed 列表頁、不含 article.html');
+  });
+
+  it('refreshPopupForActiveTab 在 feed 頁隱藏 toggle 按鈕並提前 return', () => {
+    const m = POPUP_JS.match(/async\s+function\s+refreshPopupForActiveTab\s*\(\s*\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(m, '抓不到 refreshPopupForActiveTab body');
+    const body = m[1];
+    // feed 分支：isReaderFeedTab() 為真時隱藏 toggleBtn 並 return
+    const branch = body.match(/if\s*\(\s*await\s+isReaderFeedTab\(\)\s*\)\s*\{[\s\S]*?return;[\s\S]*?\n\s*\}/);
+    assert.ok(branch, 'refreshPopupForActiveTab 必須有 if (await isReaderFeedTab()) 分支');
+    assert.match(branch[0], /toggleBtn\.hidden\s*=\s*true/,
+      'feed 分支必須隱藏 toggleBtn——forcing：feed 頁露出「啟動閱讀模式」= 無意義按鈕');
+    assert.match(branch[0], /return/, 'feed 分支須提前 return');
+  });
 });
