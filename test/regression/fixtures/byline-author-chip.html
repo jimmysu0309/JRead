@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!--
+  techcrunch 實測最小重現（Page Rounds 2026-06-28）：作者署名是「裸 author-page
+  連結」（`wp-block-techcrunch-post-authors-list` 內只有 <a href="/author/…">
+  Anthony Ha</a>），無「By」前綴、無日期文字 → BYLINE_TEXT_RE 漏抓。
+    - byline-chip 位於 h1 之前 → 命中 hideInsideArticlePreTitleNoise；textLen 短 +
+      linkDensity=1 → 命中 hideInsideArticleSidebarColumns 條件 A。兩條規則都應因
+      「含 author-page 連結」放行（clusterContainsAuthorProfileLink）。
+    - article 用 >4 直接 children（忠實對應 WP block theme 多 block 結構），避免誤觸
+      condition D「分類標籤微型欄」（2-4 children）這條本案未涉及的規則。
+    - related-rail：taxonomy 連結列（非 author）→ 仍應被清，證明保護沒把規則關掉。
+-->
+<html>
+<head><meta property="og:title" content="Anthropic says evil portrayals of AI were responsible"></head>
+<body>
+  <article data-test="article-root">
+    <div data-test="byline-chip" class="wp-block-techcrunch-post-authors-list"><a href="/author/anthony-ha">Anthony Ha</a></div>
+    <h1>Anthropic says evil portrayals of AI were responsible</h1>
+    <p data-test="main-1">Fictional portrayals of artificial intelligence can have a real effect on AI models, according to Anthropic, the company said this week in a detailed blog post about its research.</p>
+    <p data-test="main-2">Last year, the company said that during pre-release tests involving a fictional company, an earlier model would often try to blackmail engineers to avoid being replaced by another.</p>
+    <p data-test="main-3">Apparently the company has done more work around that behavior, claiming the original source of the behavior was internet text that portrays AI as evil and interested in self-preservation.</p>
+    <p data-test="main-4">The company went into more detail in a blog post, stating that since its latest model, those models never engage in blackmail during testing where previous models would sometimes do so.</p>
+    <div data-test="related-rail" class="related"><a href="/category/ai">AI</a> <a href="/category/security">Security</a> <a href="/tag/anthropic">Anthropic</a></div>
+  </article>
+</body>
+</html>
