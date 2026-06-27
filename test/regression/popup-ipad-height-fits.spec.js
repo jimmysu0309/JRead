@@ -45,9 +45,10 @@ describe('popup — iPad popover 全展開高度落進 OS 固定高（v0.8.163�
     });
     const page = await ctx.newPage();
     await page.goto(POPUP_URL);
-    // 最高內容狀態：reader active（Readwise / 編輯鈕）+ 翻頁（頁碼列）+ 有 host（自動啟動列）
+    // 最高內容狀態：reader active（Readwise / 編輯鈕）+ 有 host（自動啟動列）。
+    // v1.5.4：頁碼指示 row 已移除（頁碼一律顯示），不再計入。
     await page.evaluate(() => {
-      for (const id of ['readwise-btn', 'edit-btn', 'page-number-row', 'auto-domain-row']) {
+      for (const id of ['readwise-btn', 'edit-btn', 'auto-domain-row']) {
         const el = document.getElementById(id);
         if (el) el.hidden = false;
       }

@@ -47,12 +47,13 @@ describe('popup — 全展開高度低於瀏覽器 popup 上限（v0.7.248）', 
     const page = await browser.newPage({ viewport: { width: 360, height: 1400 } });
     await page.goto(POPUP_URL);
     // 真正最高內容狀態：一般文章閱讀模式同時顯示「退出閱讀模式 + 送 Readwise +
-    // 編輯模式」三顆按鈕 + 翻頁開的頁碼列 + 英文字型列 + 有 host 的自動啟動列。
+    // 編輯模式」三顆按鈕 + 英文字型列 + 有 host 的自動啟動列。
     // borderless（無邊模式）是 YouTube cinema 專屬、與 readwise/edit 互斥，不計入。
+    // v1.5.4：頁碼指示 row 已移除（頁碼一律顯示），不再計入最高超集。
     await page.evaluate(() => {
       const t = document.getElementById('toggle-btn');
       if (t) t.textContent = '退出閱讀模式';
-      for (const id of ['readwise-btn', 'edit-btn', 'page-number-row', 'latin-font-row', 'auto-domain-row']) {
+      for (const id of ['readwise-btn', 'edit-btn', 'latin-font-row', 'auto-domain-row']) {
         const el = document.getElementById(id);
         if (el) el.hidden = false;
       }

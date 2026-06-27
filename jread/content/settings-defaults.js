@@ -96,9 +96,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     floatingIconSize: 'medium',
     // v0.7.227：翻頁模式（電子書式水平翻頁）。預設 false = 垂直卷動。
     pagedMode: false,
-    // v0.7.237：翻頁模式底部頁碼指示（「3 / 43」）。預設 true = 顯示；
-    // false = 隱藏（Jimmy 回報頁碼佔用顯示空間）。只在 pagedMode 時有意義。
-    showPageNumber: true,
+    // v1.5.4：原 showPageNumber 開關已移除——翻頁模式底部頁碼指示（「3 / 43」）
+    // 一律顯示（拿掉頂端進度條後它是唯一進度載體）。
     // v0.8.40：閱讀位置記憶效期（天）。文章看到一半離開時記住閱讀位置
     //（捲動模式記段落、翻頁模式記頁數，存 storage.local），效期內重進
     // 閱讀模式自動回到上次位置。0 = 停用、上限 7（position-memory.js clamp）。
