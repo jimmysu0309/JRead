@@ -17,6 +17,7 @@
 - 偏好設定：主題（亮/暗/米色）、字級、版心寬度
 - Space / Shift+Space 段落焦點卷動（v0.7.216）：閱讀模式下左側指示條標記目前段落，按 Space 跳到下一段；段落低於顯示門檻時自動平滑卷回畫面上方（仿 Readwise Reader，門檻可在 options 調整）
 - Readwise Reader 整合（v0.7.33）：把 JRead 處理過的乾淨主文一鍵送到 Readwise Reader，繞過原站 parser 問題
+- 進入 Reader（v1.0.22）：popup 按「進入 Reader」開新分頁，直接列出 Readwise 收件匣最新十篇文章、跳過 Readwise 網站。每篇可一鍵「封存」；點進文章用 JRead 原本的閱讀版型呈現，主題 / 字型 / 字級 / 翻頁全部沿用原本的控制（不用另學新 UI），也會記住閱讀位置（需在進階設定填入 Readwise token）
 - Readwise 摘要（v0.8.72）：選用 Google Gemini Flash Lite，在送出時自動產生文章摘要一起送出，取代 Readwise 內建的英文自動摘要（需在 options 填入自己的 Gemini API key）
 - 自訂快速鍵（v0.7.218）：options 「快速鍵」區可為「切換閱讀模式 / 送 Readwise / YouTube 無邊模式」錄製自訂組合鍵——Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，這裡是唯一通道；Chrome 也通用
 - 3 指輕點切換閱讀模式（v0.7.223）：iPhone / iPad 觸控環境直接 3 指輕點頁面即可進出閱讀模式，不用每次開 Safari 選單找 popup

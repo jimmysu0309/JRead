@@ -322,6 +322,21 @@
     return finalizeEnter(container, settings);
   }
 
+  // v1.0.22：Readwise Reader 整合——reader.html（擴充自有頁）自建 article 容器
+  // （內容來自 Reader API 的 html_content），走與 x-thread / fb-post 同款「繞過
+  // detector → finalizeEnter」路徑，重用真 styler + positionMemory（單一資料源，
+  // 不另造排版）。container 已是 Readwise 清乾淨的主文，跳過通用 cleaner
+  // （hiddenEls=[]，比照 enterFbPostMode——通用 cleaner 為 live web DOM 雜訊調校，
+  // 對乾淨文章 HTML 會過度修剪）。reader-app.js 建好 container 後直接呼叫。
+  async function enterFromContainer(container, opts) {
+    if (!container) return false;
+    const settings = await getSettings();
+    NS.state.articleEl = container;
+    NS.state.confidence = 1;
+    NS.state.hiddenEls = [];
+    return finalizeEnter(container, settings);
+  }
+
   // v0.7.143：in-flight guard 防快速雙擊快速鍵造成的 race。
   // enterReaderMode 是 async（有 await getSettings），中間時間窗若第二次 toggle
   // 進來會看到 NS.state.active 還是 false、再跑一次 enterReaderMode——
@@ -416,6 +431,14 @@
 
   function exitReaderMode() {
     if (!NS.state.active) return;
+    // v1.0.22：reader.html（擴充自有頁）的退出語意是「回 feed」，不是把版型從
+    // 合成 article 剝掉留下裸文章。reader-app.js 進文章時設 NS.state.readerHostPage
+    // = true + NS.onReaderExit（導回 reader.html feed）。對一般內容頁惰性
+    // （flag 預設未設、hook 不存在）。ESC / floating-icon 短按都會走到這裡。
+    if (NS.state.readerHostPage && typeof NS.onReaderExit === 'function') {
+      NS.onReaderExit();
+      return;
+    }
     exitReaderModeImpl();
   }
 
@@ -1145,6 +1168,10 @@
     return { ok: false };
   }
   NS.dispatchLocalCommand = dispatchLocalCommand;
+  // v1.0.22：給 reader.html（擴充自有頁）的 reader-app.js 呼叫——自建 container
+  // 直接進入閱讀模式，重用 finalizeEnter 全套收尾（styler / positionMemory /
+  // keyguard / 模組同步）。
+  NS.enterFromContainer = enterFromContainer;
 
   // v0.7.143：reapply 走 debounce 合併。popup 連點 stepper 字級/版心會觸發多次
   // storage.sync.set → 多次 restore + await getSettings + apply 並發纏繞——

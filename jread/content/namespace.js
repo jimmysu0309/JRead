@@ -29,7 +29,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       confidence: 0,          // 偵測信心分數（0–1）
       hiddenEls: [],          // 被隱藏的雜訊元素快照，還原用
       originalStyles: null,   // 主文容器原始 inline style，還原用
-      syncScrollOnExit: true  // v1.0.21：退出時把原網頁捲回閱讀段落（進場 stash settings）
+      syncScrollOnExit: true, // v1.0.21：退出時把原網頁捲回閱讀段落（進場 stash settings）
+      readerHostPage: false   // v1.0.22：本頁是否為 reader.html（擴充自有頁）——true 時退出走 NS.onReaderExit 導回 feed，不剝版型
     },
 
     // 子模組佔位，後續由各 script 自行掛載
@@ -42,6 +43,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     xThread: null,          // v0.7.135：X / Twitter status thread reader（x-thread.js 掛載）
     fbPost: null,           // v0.7.157：Facebook permalink post reader（fb-post.js 掛載）
     editMode: null,         // v0.8.108：編輯模式手動移除雜訊（edit-mode.js 掛載）
+    onReaderExit: null,     // v1.0.22：reader.html 退出 hook（reader-app.js 掛載；state.readerHostPage 為 true 時 exitReaderMode 呼叫它導回 feed）
 
     // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼

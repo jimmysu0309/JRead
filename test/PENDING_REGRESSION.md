@@ -18,6 +18,18 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
+## [2026-06-27] Reader 整合 iOS Safari 真機驗證（v1.0.22）
+- 觸發頁面：擴充自有頁 `reader/reader.html`（feed）+ `reader/article.html?id=<docId>`（文章），iOS / iPadOS Safari Web Extension
+- 症狀：尚未在 iOS 真機驗證。Chromium（`tools/reader-harness.js`）已實證 styler 套用 / 改主題即時重套 / 位置記憶跨 reload / feed 渲染+封存皆 PASS；但 WebKit 行為與 Chromium 有別（CLAUDE.md），下列只能真機驗：
+  1. **真實 Readwise fetch 可靠性**：擴充頁直接 fetch readwise.io（list / update）在 iOS 是否穩定（floating-icon.js:205 註解曾實證擴充頁 fetch 在 iOS 可靠、content script 不可靠；reader 頁是擴充頁理應 OK，但 list/update 是新呼叫點待證）
+  2. **即時重套兜底**：iOS popup 開啟掛起底層頁時 `storage.onChanged` 會丟事件——reader 文章頁是否靠既有 `visibilitychange` 重套（main.js）+ REAPPLY_SETTINGS onMessage 接回（popup 關閉、reader tab refocus 時重套主題/字型）
+  3. **floating-icon 頁內面板降級**：Safari 不能在頁內 iframe 載擴充頁（floating-icon.js:229 `isSafariRuntime` → 改開新分頁載 popup.html）——article.html 上長按 floating-icon 開功能選單在 iOS 是否正常降級
+  4. **位置記憶 storage.local**：article.html?id= 的閱讀位置在 iOS storage.local 寫入/回復是否正常（position-memory 已有 stripLoneSurrogates + writeWithSelfHeal 處理 iOS set reject，沿用未改）
+- 推測根因：無（功能在 Chromium 正常，純缺 iOS 平台覆驗）
+- 未補 spec 原因：需 Jimmy 真機 Readwise 帳號 + token + 網路；jsdom / Chromium harness 模擬不到 WebKit + iOS 訊息層回收 + 真實 API 限流。新增的 reader 頁全部沿用既有 iOS 修法（擴充頁 fetch、visibilitychange 兜底、storage.local 自癒），無新平台機制。
+- 將來如何補：TestFlight build（ios-build.sh 已 rsync 自動含 reader/ 新檔，無需改 build 腳本）→ 真機填 token → 進入 Reader → 開一篇 → 切主題/字型驗即時重套 → 捲動退出再進驗位置記憶 → feed 封存一篇驗移除。模擬器可用既有 SyncStorage.db 直寫 readwiseToken + openurl article.html?id= 自驗渲染（需網路）。
+- 責任人/目標日期：Jimmy 下次 TestFlight 驗收
+
 ## [2026-06-26] 翻頁模式退出捲回閱讀位置（v1.0.21 暫不支援）
 - 觸發頁面：任何長文 + 翻頁模式（settings.pagedMode=true），如 chinatalk.media/p/best-books-q1-2026
 - 症狀：捲動模式已支援「退出時捲回閱讀段落」（v1.0.21 syncScrollOnExit）；翻頁模式退出仍由 `pagedMode.uninstall` 還原「進場前文件位置」（從頭進入 = 回開頭），未捲到目前頁所讀內容。Jimmy 2026-06-26 問「翻頁能否比照辦理」。
