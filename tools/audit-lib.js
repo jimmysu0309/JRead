@@ -1127,6 +1127,129 @@ pageFns.collectDroppedProse = function () {
   return res;
 };
 
+// ---- Byline（作者 + 日期）進 reader card audit（v1.5.1，Medium byline 消失修法後補洞）----
+// 動機：v1.5 Medium 案文章頭部作者 + 日期被兩條 cleaner 規則（author-bio-card /
+//   button-cluster）各自誤殺，Page Rounds 卻全綠漏抓——既有 audit 只覆蓋標題
+//   （auditTitlePresence）與長散文（droppedProse，>= 80 chars），byline 是短文字、
+//   兩層都不驗。命中 CLAUDE.md 工作流原則 3「綠燈 ≠ 品質沒問題，補 missing 那層 check」。
+//
+// 兩相位（比照 droppedProse 的 tag→toggle→collect）：
+//   tagOriginalByline（toggle 前）：用 JSON-LD / meta 的作者名 + 發表日期當 ground
+//     truth，在「首個長段落之前」的 masthead 區，找文字緊貼作者名 / 日期的最深 carrier
+//     元素標記之。限定 masthead 是為了排掉文末作者 bio 卡——它在 body 之後、本就該被
+//     清，不該誤判成 byline 掉失（負控制）。短文章無長段落基準 → 不標記、跳過（保守）。
+//   collectDroppedByline（toggle 後）：某維度的 carrier 全部被 hide（data-jread-hidden
+//     祖先 / 無 client rect / visibility hidden）→ 該維度判定掉失。
+// review-tier（strict 字串存在性、meta 與頁面顯示用字可能差異）：由 Claude 看截圖確認。
+//
+// 為什麼用 ground truth + 最深 carrier 而非「名字有出現在可見文字」：作者名可能也
+// 出現在內文句子裡（false negative）；鎖定 masthead 那顆 carrier 元素是否存活才精準。
+pageFns.tagOriginalByline = function () {
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  // 發表日期 → 頁面可能顯示的多種字面（meta 是 ISO、畫面常是 "Jun 3, 2026"）
+  function dateForms(iso) {
+    const m = String(iso || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return [];
+    const y = m[1], mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return [];
+    const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const FULL = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return [
+      MON[mo] + ' ' + d + ', ' + y,
+      FULL[mo] + ' ' + d + ', ' + y,
+      d + ' ' + MON[mo] + ' ' + y,
+      d + ' ' + FULL[mo] + ' ' + y,
+      y + '-' + m[2] + '-' + m[3],
+      y + '年' + mo + '月' + d + '日'
+    ];
+  }
+  // --- 1. ground truth：作者名 + 發表日期字面（來源在 <head>，toggle 後仍在）---
+  let author = '';
+  let forms = [];
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    let data; try { data = JSON.parse(s.textContent); } catch (e) { continue; }
+    const arr = Array.isArray(data) ? data : (data && data['@graph'] ? data['@graph'] : [data]);
+    for (const node of arr) {
+      if (!node || typeof node !== 'object') continue;
+      if (!author && node.author) {
+        const a = Array.isArray(node.author) ? node.author[0] : node.author;
+        const name = a && (typeof a === 'string' ? a : a.name);
+        if (name && typeof name === 'string') author = norm(name);
+      }
+      if (!forms.length && (node.datePublished || node.dateCreated)) {
+        forms = dateForms(node.datePublished || node.dateCreated);
+      }
+    }
+  }
+  if (!author) {
+    const m = document.querySelector('meta[name="author"], meta[property="article:author"]');
+    if (m && m.content && !/^https?:/i.test(m.content)) author = norm(m.content);
+  }
+  if (!forms.length) {
+    const m = document.querySelector('meta[property="article:published_time"], meta[itemprop="datePublished"]');
+    if (m && m.content) forms = dateForms(m.content);
+  }
+  if (author && (author.length < 2 || author.length > 60 || /https?:|\/@/.test(author))) author = '';
+  // --- 2. masthead 邊界：首個 >= 200 chars 的段落（lead paragraph）---
+  let bodyStartEl = null;
+  for (const el of document.querySelectorAll('p, li, blockquote')) {
+    if (norm(el.textContent).length >= 200) { bodyStartEl = el; break; }
+  }
+  if (!bodyStartEl) return { tagged: 0, reason: 'no-body-anchor' };
+  const isBeforeBody = el => el !== bodyStartEl && !el.contains(bodyStartEl) &&
+    !!(el.compareDocumentPosition(bodyStartEl) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const tightlyContains = (el, needle) => {
+    const t = norm(el.textContent);
+    return t.includes(needle) && t.length <= needle.length + 40;
+  };
+  const SEL = 'a,span,p,h1,h2,h3,h4,h5,h6,div,header,address,time,em,strong,small,li,figcaption,b';
+  // --- 3. 標記最深 carrier（任一後代也 tight → 讓後代來標）---
+  function tagCarriers(needles, kind) {
+    let count = 0;
+    for (const el of document.querySelectorAll(SEL)) {
+      if (!isBeforeBody(el)) continue;
+      const hit = needles.find(n => n && tightlyContains(el, n));
+      if (!hit) continue;
+      let deeper = false;
+      for (const c of el.querySelectorAll(SEL)) {
+        if (tightlyContains(c, hit)) { deeper = true; break; }
+      }
+      if (deeper) continue;
+      el.setAttribute('data-pr-byline', kind);
+      count++;
+    }
+    return count;
+  }
+  let tagged = 0;
+  if (author) tagged += tagCarriers([author], 'author');
+  if (forms.length) tagged += tagCarriers(forms, 'date');
+  return { tagged, author: author || null, dateExpected: forms.length > 0 };
+};
+
+// toggle 後呼叫：tagged byline carrier 哪些被 hide。某維度 carrier 全 hide → 該維度掉失。
+pageFns.collectDroppedByline = function () {
+  const res = { checked: false, author: { tagged: 0, dropped: 0 },
+    date: { tagged: 0, dropped: 0 }, missing: false, authorDropped: false, dateDropped: false };
+  const tagged = document.querySelectorAll('[data-pr-byline]');
+  if (!tagged.length) return res;
+  res.checked = true;
+  for (const el of tagged) {
+    const bucket = el.getAttribute('data-pr-byline') === 'date' ? res.date : res.author;
+    bucket.tagged++;
+    let hidden = false;
+    try {
+      if (el.closest('[data-jread-hidden="1"]')) hidden = true;
+      else if (!el.getClientRects().length) hidden = true;
+      else if (getComputedStyle(el).visibility === 'hidden') hidden = true;
+    } catch (e) { hidden = true; }
+    if (hidden) bucket.dropped++;
+  }
+  res.authorDropped = res.author.tagged > 0 && res.author.dropped === res.author.tagged;
+  res.dateDropped = res.date.tagged > 0 && res.date.dropped === res.date.tagged;
+  res.missing = res.authorDropped || res.dateDropped;
+  return res;
+};
+
 // ---- 標題進 reader card audit（2026-06-23（v0.8.168 漏抓後補 harness），Miniflux 標題消失修法後補洞）---------
 // 動機：v0.8.168 Ineos 案標題（feed 容器外的 .entry-title）整個沒進 reader card，
 // harness 無任何信號。本 audit 驗「article 標題文字有出現在 reader 可見內容」。
@@ -1182,6 +1305,9 @@ const tagOriginalLongProse = (page) => page.evaluate(pageFns.tagOriginalLongPros
 const runDroppedProseAudit = (page) => page.evaluate(pageFns.collectDroppedProse);
 // 標題進 reader card audit（toggle 後單段呼叫）。
 const runTitlePresenceAudit = (page) => page.evaluate(pageFns.auditTitlePresence);
+// Byline（作者 + 日期）audit：tag 在 toggle 前、collect 在 toggle 後（兩段呼叫）。
+const tagOriginalByline = (page) => page.evaluate(pageFns.tagOriginalByline);
+const runDroppedBylineAudit = (page) => page.evaluate(pageFns.collectDroppedByline);
 
 // Hero image audit：原頁 top-3 大圖是否在 reader mode 中存活。
 // 比對三軌：src 全等、URL pathname 相同（srcset / CDN 變體切換會換 query
@@ -1339,6 +1465,8 @@ module.exports = {
   tagOriginalLongProse,
   runDroppedProseAudit,
   runTitlePresenceAudit,
+  tagOriginalByline,
+  runDroppedBylineAudit,
   waitForReaderImagesLoaded,
   takePagedScreenshots,
   setThemeAndVerify
