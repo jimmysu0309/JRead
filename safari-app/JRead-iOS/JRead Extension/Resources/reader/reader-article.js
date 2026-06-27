@@ -53,8 +53,31 @@
     const body = document.createElement('div');
     body.setAttribute('data-jread-reader-body', '1');
     body.innerHTML = sanitizeHtml(doc && doc.html_content, document);
+    // v1.0.25：所有圖片明確 eager（退掉任何懶載傾向）——配合 preloadImages 解翻頁
+    // 模式 WebKit 對遠處欄位圖片延遲載入的問題。
+    const imgs = body.querySelectorAll('img');
+    for (let i = 0; i < imgs.length; i++) {
+      imgs[i].setAttribute('loading', 'eager');
+      imgs[i].setAttribute('decoding', 'async');
+    }
     article.appendChild(body);
     return article;
+  }
+
+  // v1.0.25：主動預載文章內所有圖片 URL。off-DOM 的 Image 物件不在 render tree、
+  // 不受多欄翻頁版面的「離視窗很遠 → 延遲載入」WebKit 最佳化影響，會立即抓取；
+  // 抓進 HTTP 快取後，翻頁到後面欄位時 in-DOM 的 <img> 即時從快取命中顯示。
+  // 修法根因：Chromium 翻頁模式 10/10 圖正常，iOS WebKit 對遠欄圖延遲載入（probe
+  // tools/paged-img-probe.js 實證 Chromium 不重現），故 WebKit 軌專屬問題。
+  function preloadImages(container, ImageCtor) {
+    if (!container || !ImageCtor || !container.querySelectorAll) return 0;
+    let n = 0;
+    const imgs = container.querySelectorAll('img');
+    for (let i = 0; i < imgs.length; i++) {
+      const u = imgs[i].getAttribute('src');
+      if (u) { try { const p = new ImageCtor(); p.src = u; n++; } catch (_) {} }
+    }
+    return n;
   }
 
   // published_date 可能是 ISO 字串或 epoch 秒/毫秒。轉成 YYYY-MM-DD；失敗回空字串。
@@ -79,27 +102,84 @@
   // documentElement（不掛 body：styler.apply 會隱藏 body 兄弟節點，injected UI
   // 一律 append documentElement，比照 floating-icon）。固定定位、高 z-index、
   // 半透明藥丸樣式在四個主題下都看得到。
-  function createBackButton(document, onClick) {
+  // v1.0.25：返回鈕配色融入背景——bg 對齊 styler THEMES 的閱讀卡片底色
+  //（articleBg），arrow 用低調文字色。整顆藥丸跟卡片同色 → 視覺上只剩一個淡箭頭。
+  function themeButtonColors(theme) {
+    switch (theme) {
+      case 'dark':  return { bg: '#4a494d', fg: 'rgba(236,235,241,0.72)' };
+      case 'sepia': return { bg: '#eee2cb', fg: 'rgba(0,0,0,0.42)' };
+      case 'gray':  return { bg: '#ededed', fg: 'rgba(0,0,0,0.42)' };
+      default:      return { bg: '#ffffff', fg: 'rgba(0,0,0,0.42)' }; // light
+    }
+  }
+
+  function createBackButton(document, onClick, theme) {
     const btn = document.createElement('button');
     btn.id = '__jread-reader-back';
     btn.type = 'button';
-    btn.textContent = '← Reader';
+    // v1.0.25：只留箭頭、無文字、配色融入背景（Jimmy 回報文字 + 白底干擾閱讀）。
+    // aria-label 保留語意給輔助技術。
+    btn.textContent = '←';
+    btn.setAttribute('aria-label', '返回 Reader');
+    const VISIBLE_OPACITY = '0.9';
+    const c = themeButtonColors(theme);
     btn.style.cssText = [
-      'position:fixed', 'top:12px', 'left:12px', 'z-index:2147483640',
-      'font:600 13px/1 -apple-system,system-ui,sans-serif', 'color:#1a1a1a',
-      'background:rgba(255,255,255,0.92)', 'border:1px solid rgba(0,0,0,0.12)',
-      'border-radius:999px', 'padding:8px 14px', 'cursor:pointer',
-      'box-shadow:0 2px 10px rgba(0,0,0,0.18)', '-webkit-backdrop-filter:blur(6px)',
-      'backdrop-filter:blur(6px)'
+      'position:fixed', 'top:4px', 'left:4px', 'z-index:2147483640',
+      'font:600 15px/1 -apple-system,system-ui,sans-serif', 'color:' + c.fg,
+      'background:' + c.bg, 'border:0',
+      'border-radius:999px', 'width:28px', 'height:28px', 'padding:0',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'cursor:pointer', 'opacity:' + VISIBLE_OPACITY,
+      'transition:opacity 0.2s ease, transform 0.2s ease'
     ].join(';');
+    // 主題即時變更時更新配色（reader-article 的 storage.onChanged 呼叫）
+    btn.__setTheme = function (t) {
+      const cc = themeButtonColors(t);
+      btn.style.background = cc.bg;
+      btn.style.color = cc.fg;
+    };
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       if (typeof onClick === 'function') onClick();
     });
+
+    // v1.0.25：往下捲（閱讀中）淡出隱藏、往上捲（想離開）淡入——讀文章時完全不
+    // 干擾。近頁首一律顯示。位置記憶的瞬跳會觸發一次 onScroll，落在閱讀位置時
+    // 自然隱藏（合理）。
+    const win = document.defaultView || (typeof window !== 'undefined' ? window : null);
+    if (win) {
+      let lastY = 0, hidden = false;
+      const setHidden = (h) => {
+        if (h === hidden) return;
+        hidden = h;
+        btn.style.opacity = h ? '0' : VISIBLE_OPACITY;
+        btn.style.transform = h ? 'translateY(-14px)' : '';
+        btn.style.pointerEvents = h ? 'none' : '';
+      };
+      win.addEventListener('scroll', () => {
+        const se = document.scrollingElement || document.documentElement;
+        const y = (se && se.scrollTop) || 0;
+        if (y <= 80) setHidden(false);          // 近頁首一律顯示
+        else if (y > lastY + 4) setHidden(true);  // 往下捲 → 隱藏
+        else if (y < lastY - 4) setHidden(false); // 往上捲 → 顯示
+        lastY = y;
+      }, { passive: true });
+    }
     return btn;
   }
 
-  const api = { sanitizeHtml, buildArticleContainer, formatDate, createBackButton };
+  // v1.0.25：返回鈕位置依卡片左緣自適應。窄螢幕（手機，卡片幾乎滿版、cardLeft≈0）
+  // 貼左上角；寬螢幕（iPad / 桌面，卡片置中有大留白）往下往右對齊卡片左上、落在卡片上
+  //（才能融入卡片底色，不會孤懸在留白的角落）。
+  function backButtonPosition(cardLeft) {
+    const wide = cardLeft > 20;
+    return {
+      top: wide ? '14px' : '4px',
+      left: wide ? (Math.round(cardLeft) + 8) + 'px' : '4px'
+    };
+  }
+
+  const api = { sanitizeHtml, buildArticleContainer, formatDate, createBackButton, themeButtonColors, backButtonPosition, preloadImages };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -142,13 +222,13 @@
           setStatus('找不到這篇文章的內容', true);
           return;
         }
-        renderArticle(article, { NS, doc });
+        renderArticle(article, { NS, doc, browser, theme: (s && s.theme) || 'light' });
       });
     }).catch(() => setStatus('讀取設定失敗，請重新整理', true));
   }
 
   function renderArticle(docData, ctx) {
-    const { NS, doc } = ctx;
+    const { NS, doc, browser, theme } = ctx;
     if (docData.title) doc.title = docData.title;
     const statusEl = doc.getElementById('jr-status');
     if (statusEl) statusEl.remove();
@@ -156,17 +236,42 @@
     const container = buildArticleContainer(docData, doc);
     doc.body.appendChild(container);
 
+    // 主動預載全部圖片（翻頁模式 WebKit 遠欄圖延遲載入修法，見 preloadImages 註解）
+    preloadImages(container, global.Image);
+
     // reader 頁退出語意：回 feed（不剝版型）。必須在 enterFromContainer 之前設好，
     // 之後 ESC / floating-icon 短按都會走到 main.js exitReaderMode 的 hook。
     const backToFeed = function () { global.location.href = 'reader.html'; };
     NS.state.readerHostPage = true;
     NS.onReaderExit = backToFeed;
 
-    // 左上角「← Reader」返回鈕（掛 documentElement，免被 styler 隱藏 body 兄弟）
-    doc.documentElement.appendChild(createBackButton(doc, backToFeed));
+    // 左上角箭頭返回鈕（掛 documentElement，免被 styler 隱藏 body 兄弟；配色融入主題）
+    const backBtn = createBackButton(doc, backToFeed, theme);
+    doc.documentElement.appendChild(backBtn);
+    // 主題即時變更時同步返回鈕配色（與 styler reapply 同步）
+    if (browser && browser.storage && browser.storage.onChanged) {
+      browser.storage.onChanged.addListener(function (changes, area) {
+        if (area === 'sync' && changes.theme && typeof backBtn.__setTheme === 'function') {
+          backBtn.__setTheme(changes.theme.newValue);
+        }
+      });
+    }
+    // 依卡片左緣自適應定位（窄螢幕貼角、寬螢幕對齊卡片）
+    function positionBack() {
+      const r = container.getBoundingClientRect();
+      const pos = backButtonPosition(r.left);
+      backBtn.style.top = pos.top;
+      backBtn.style.left = pos.left;
+    }
+    if (global.addEventListener) global.addEventListener('resize', positionBack);
 
     if (typeof NS.enterFromContainer === 'function') {
-      NS.enterFromContainer(container);
+      // styler.apply 後卡片才置中（enterFromContainer 是 async）——等它跑完 + 一個
+      // frame 再量卡片左緣定位返回鈕。
+      Promise.resolve(NS.enterFromContainer(container)).then(function () {
+        if (global.requestAnimationFrame) global.requestAnimationFrame(positionBack);
+        else positionBack();
+      });
     }
   }
 

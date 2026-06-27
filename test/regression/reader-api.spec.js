@@ -37,6 +37,12 @@ describe('reader-api: listReaderDocuments', () => {
     assert.strictEqual(opts.headers.Authorization, 'Token xyz');
   });
 
+  it('帶 tag：query 帶 tag=jread（JRead 分頁撈 jread tag）', async () => {
+    const { fetchImpl, calls } = makeFetch(async () => ({ ok: true, status: 200, json: async () => ({ results: [] }) }));
+    await listReaderDocuments({ token: 'xyz', tag: 'jread', fetchImpl });
+    assert.match(calls[0][0], /[?&]tag=jread/);
+  });
+
   it('帶 id + withHtmlContent：query 帶 id 與 withHtmlContent=true（單篇取主文）', async () => {
     const { fetchImpl, calls } = makeFetch(async () => ({
       ok: true, status: 200,

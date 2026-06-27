@@ -306,7 +306,7 @@
 
   // 列文件。location='new'=inbox 收件匣；帶 id 取單篇；withHtmlContent=true 取主文 HTML。
   // 回 { ok:true, results, nextPageCursor } 或 { ok:false, error, status }。
-  async function listReaderDocuments({ token, location, id, withHtmlContent, pageCursor, fetchImpl } = {}) {
+  async function listReaderDocuments({ token, location, id, tag, withHtmlContent, pageCursor, fetchImpl } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -315,6 +315,7 @@
     const params = new URLSearchParams();
     if (location) params.set('location', location);
     if (id) params.set('id', id);
+    if (tag) params.set('tag', tag);  // v1.0.25：依 tag 過濾（JRead 分頁撈 jread tag）
     if (withHtmlContent) params.set('withHtmlContent', 'true');
     if (pageCursor) params.set('pageCursor', pageCursor);
     const qs = params.toString();

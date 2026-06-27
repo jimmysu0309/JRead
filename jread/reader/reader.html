@@ -57,13 +57,26 @@
   .jr-msg { color: var(--muted); font-size: 15px; line-height: 1.7; padding: 40px 4px; text-align: center; }
   .jr-msg a { color: var(--link); }
   .jr-msg.jr-error { color: var(--text); }
+
+  /* v1.0.25：來源分頁 Inbox / Later / JRead（segmented control，主題色） */
+  .jr-tabs {
+    display: flex; gap: 4px; margin: 0 0 18px;
+    background: var(--line); border-radius: 11px; padding: 4px;
+  }
+  .jr-tab {
+    flex: 1; padding: 8px 0; border: 0; background: transparent;
+    color: var(--muted); font-family: inherit; font-size: 14px; font-weight: 600;
+    border-radius: 8px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .jr-tab.is-active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 </style>
 </head>
 <body>
   <main class="jr-wrap">
-    <div class="jr-head">
-      <h1>Reader</h1>
-      <span class="jr-sub" id="jr-sub"></span>
+    <div class="jr-tabs" id="jr-tabs">
+      <button class="jr-tab is-active" type="button" data-src="new">Inbox</button>
+      <button class="jr-tab" type="button" data-src="later">Later</button>
+      <button class="jr-tab" type="button" data-src="jread">JRead</button>
     </div>
     <div class="jr-list" id="jr-list"></div>
     <!-- 預設可見「載入中…」：即使 JS 因故沒跑（iOS 平台問題）頁面也不會全白，

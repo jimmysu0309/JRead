@@ -23,6 +23,7 @@
 		9EE3FEBB2FD28B7200CD167D /* popup in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB42FD28B7200CD167D /* popup */; };
 		9EE3FEBC2FD28B7200CD167D /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB52FD28B7200CD167D /* LICENSE */; };
 		9EE3FEBD2FD28B7200CD167D /* content in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB62FD28B7200CD167D /* content */; };
+		9EE3FEC12FD28B7200CD167D /* reader in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEC02FD28B7200CD167D /* reader */; };
 		9EE3FEBE2FD28B7200CD167D /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB72FD28B7200CD167D /* manifest.json */; };
 		9EE3FEBF2FD28B7200CD167D /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB82FD28B7200CD167D /* assets */; };
 /* End PBXBuildFile section */
@@ -71,6 +72,7 @@
 		9EE3FEB42FD28B7200CD167D /* popup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = popup; path = Resources/popup; sourceTree = "<group>"; };
 		9EE3FEB52FD28B7200CD167D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = Resources/LICENSE; sourceTree = "<group>"; };
 		9EE3FEB62FD28B7200CD167D /* content */ = {isa = PBXFileReference; lastKnownFileType = folder; name = content; path = Resources/content; sourceTree = "<group>"; };
+		9EE3FEC02FD28B7200CD167D /* reader */ = {isa = PBXFileReference; lastKnownFileType = folder; name = reader; path = Resources/reader; sourceTree = "<group>"; };
 		9EE3FEB72FD28B7200CD167D /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = Resources/manifest.json; sourceTree = "<group>"; };
 		9EE3FEB82FD28B7200CD167D /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = Resources/assets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -154,6 +156,7 @@
 				9EE3FEB42FD28B7200CD167D /* popup */,
 				9EE3FEB52FD28B7200CD167D /* LICENSE */,
 				9EE3FEB62FD28B7200CD167D /* content */,
+				9EE3FEC02FD28B7200CD167D /* reader */,
 				9EE3FEB72FD28B7200CD167D /* manifest.json */,
 				9EE3FEB82FD28B7200CD167D /* assets */,
 			);
@@ -267,6 +270,7 @@
 				9EE3FEBA2FD28B7200CD167D /* options in Resources */,
 				9EE3FEBE2FD28B7200CD167D /* manifest.json in Resources */,
 				9EE3FEBD2FD28B7200CD167D /* content in Resources */,
+				9EE3FEC12FD28B7200CD167D /* reader in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
