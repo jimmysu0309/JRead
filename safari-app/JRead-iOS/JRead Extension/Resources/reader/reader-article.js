@@ -75,7 +75,31 @@
     } catch (_) { return ''; }
   }
 
-  const api = { sanitizeHtml, buildArticleContainer, formatDate };
+  // v1.0.24：文章頁左上角「← Reader」返回鈕——導回 feed（reader.html）。掛
+  // documentElement（不掛 body：styler.apply 會隱藏 body 兄弟節點，injected UI
+  // 一律 append documentElement，比照 floating-icon）。固定定位、高 z-index、
+  // 半透明藥丸樣式在四個主題下都看得到。
+  function createBackButton(document, onClick) {
+    const btn = document.createElement('button');
+    btn.id = '__jread-reader-back';
+    btn.type = 'button';
+    btn.textContent = '← Reader';
+    btn.style.cssText = [
+      'position:fixed', 'top:12px', 'left:12px', 'z-index:2147483640',
+      'font:600 13px/1 -apple-system,system-ui,sans-serif', 'color:#1a1a1a',
+      'background:rgba(255,255,255,0.92)', 'border:1px solid rgba(0,0,0,0.12)',
+      'border-radius:999px', 'padding:8px 14px', 'cursor:pointer',
+      'box-shadow:0 2px 10px rgba(0,0,0,0.18)', '-webkit-backdrop-filter:blur(6px)',
+      'backdrop-filter:blur(6px)'
+    ].join(';');
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof onClick === 'function') onClick();
+    });
+    return btn;
+  }
+
+  const api = { sanitizeHtml, buildArticleContainer, formatDate, createBackButton };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -134,8 +158,12 @@
 
     // reader 頁退出語意：回 feed（不剝版型）。必須在 enterFromContainer 之前設好，
     // 之後 ESC / floating-icon 短按都會走到 main.js exitReaderMode 的 hook。
+    const backToFeed = function () { global.location.href = 'reader.html'; };
     NS.state.readerHostPage = true;
-    NS.onReaderExit = function () { global.location.href = 'reader.html'; };
+    NS.onReaderExit = backToFeed;
+
+    // 左上角「← Reader」返回鈕（掛 documentElement，免被 styler 隱藏 body 兄弟）
+    doc.documentElement.appendChild(createBackButton(doc, backToFeed));
 
     if (typeof NS.enterFromContainer === 'function') {
       NS.enterFromContainer(container);
