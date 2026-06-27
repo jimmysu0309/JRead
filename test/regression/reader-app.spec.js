@@ -3,6 +3,7 @@
 // 失敗插回原位 + toast）、article 容器組裝 + html_content 清理。
 // 真實版型套用 / 即時重套 / 位置記憶由 Playwright harness + 真機驗。
 
+const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { JSDOM } = require('jsdom');
@@ -215,57 +216,28 @@ describe('reader-article: preloadImages（翻頁模式 WebKit 遠欄圖修法）
   });
 });
 
-describe('reader-article: createBackButton', () => {
-  it('產出 #__jread-reader-back 固定箭頭鈕（只箭頭無文字）、aria-label 保留語意、click 觸發回呼', () => {
-    const document = freshDoc();
-    let clicked = false;
-    const btn = ARTICLE.createBackButton(document, () => { clicked = true; }, 'light');
-    assert.strictEqual(btn.id, '__jread-reader-back');
-    assert.strictEqual(btn.textContent, '←', 'v1.0.25：只留箭頭、不含文字（Jimmy 回報文字干擾閱讀）');
-    assert.ok(!/Reader/.test(btn.textContent), '不可再含 Reader 文字');
-    assert.strictEqual(btn.getAttribute('aria-label'), '返回 Reader', 'aria-label 保留語意給輔助技術');
-    assert.match(btn.style.cssText, /position:\s*fixed/, '必須 fixed 定位');
-    assert.match(btn.style.cssText, /z-index:\s*2147483640/, '高 z-index 蓋在版面上');
-    btn.click();
-    assert.ok(clicked, 'click 必須觸發回呼（回 feed）');
+// v1.5.3：移除文章頁左上角返回箭頭鈕——與「點 JRead 工具列圖示 → 退出閱讀模式」
+// 重複（兩者都走 NS.onReaderExit 導回 feed）。退出 hook 保留、箭頭 + 其配色 / 定位
+// helper 全數移除。下面鎖住「不得復活」。
+describe('reader-article: 返回箭頭已移除（v1.5.3）', () => {
+  const ART_SRC = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'jread', 'reader', 'reader-article.js'), 'utf8');
+
+  it('createBackButton / themeButtonColors / backButtonPosition 全數移除（不在 api，原始碼也不再宣告）', () => {
+    assert.strictEqual(ARTICLE.createBackButton, undefined, 'createBackButton 不該再 export');
+    assert.strictEqual(ARTICLE.themeButtonColors, undefined, 'themeButtonColors 不該再 export');
+    assert.strictEqual(ARTICLE.backButtonPosition, undefined, 'backButtonPosition 不該再 export');
+    assert.doesNotMatch(ART_SRC, /function\s+createBackButton/,
+      'reader-article.js 不該再宣告 createBackButton——forcing：返回箭頭復活 = 與 JRead 圖示功能重複');
+    assert.doesNotMatch(ART_SRC, /__jread-reader-back/,
+      'reader-article.js 不該再出現 #__jread-reader-back id');
   });
 
-  it('配色融入主題背景：bg 用該主題卡片底色、無白底框影（融入背景，Jimmy 要求）', () => {
-    const document = freshDoc();
-    // sepia：bg 應為 sepia 卡片色 #eee2cb，不可是白色 / 不可有 border / box-shadow
-    const sepia = ARTICLE.createBackButton(document, () => {}, 'sepia');
-    assert.match(sepia.style.background, /#eee2cb|238,\s*226,\s*203/i, 'sepia bg 應融入卡片底色');
-    assert.ok(!/box-shadow/i.test(sepia.style.cssText), '不可有 box-shadow（會凸出）');
-    assert.ok(!/255,\s*255,\s*255|#fff/i.test(sepia.style.background), 'sepia 不可是白底');
-    // dark：深色卡片底
-    const dark = ARTICLE.createBackButton(document, () => {}, 'dark');
-    assert.match(dark.style.background, /#4a494d|74,\s*73,\s*77/i, 'dark bg 應為深色卡片底');
-  });
-
-  it('themeButtonColors 對映四主題、預設 light', () => {
-    assert.strictEqual(ARTICLE.themeButtonColors('dark').bg, '#4a494d');
-    assert.strictEqual(ARTICLE.themeButtonColors('sepia').bg, '#eee2cb');
-    assert.strictEqual(ARTICLE.themeButtonColors('gray').bg, '#ededed');
-    assert.strictEqual(ARTICLE.themeButtonColors('light').bg, '#ffffff');
-    assert.strictEqual(ARTICLE.themeButtonColors(undefined).bg, '#ffffff', '未知主題退 light');
-  });
-
-  it('__setTheme 即時更新配色（主題切換時返回鈕跟著變）', () => {
-    const document = freshDoc();
-    const btn = ARTICLE.createBackButton(document, () => {}, 'light');
-    btn.__setTheme('dark');
-    assert.match(btn.style.background, /#4a494d|74,\s*73,\s*77/i, '切 dark 後 bg 應更新為深色');
-  });
-
-  it('backButtonPosition：窄螢幕貼角(4/4)、寬螢幕對齊卡片往下往右', () => {
-    // 窄（手機，卡片滿版 cardLeft≈0）
-    assert.deepStrictEqual(ARTICLE.backButtonPosition(0), { top: '4px', left: '4px' });
-    assert.deepStrictEqual(ARTICLE.backButtonPosition(20), { top: '4px', left: '4px' }, '<=20 仍算窄');
-    // 寬（iPad/桌面，卡片置中、左緣有留白）→ 往下(14)往右(對齊卡片左緣+8)
-    assert.deepStrictEqual(ARTICLE.backButtonPosition(190), { top: '14px', left: '198px' });
-    const wide = ARTICLE.backButtonPosition(300);
-    assert.strictEqual(wide.top, '14px');
-    assert.strictEqual(wide.left, '308px');
+  it('退出 hook NS.onReaderExit 仍保留（JRead 圖示 / ESC 退出仍導回 feed）', () => {
+    assert.match(ART_SRC, /NS\.onReaderExit\s*=\s*backToFeed/,
+      'NS.onReaderExit 必須仍設為 backToFeed——移除的是箭頭、不是退出能力');
+    assert.match(ART_SRC, /reader\.html/,
+      'backToFeed 必須仍導回 reader.html feed');
   });
 });
 

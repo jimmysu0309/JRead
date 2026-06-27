@@ -175,6 +175,28 @@ describe('styler — 骨架與可逆性', () => {
       'reader card 水平 padding 必須是 clamp(16px, calc(7.4vw - 12.8px), 56px)——固定/過大 padding 會讓手機內文比原站還窄');
   });
 
+  // v1.5.3：reader 文章頁（NS.state.readerHostPage）拿掉左上角返回箭頭後，卡片
+  // 「上緣」用較緊縮的 READER_HOST_TOP_GUTTER（min(16px, 2vw)），標題往上長；下緣
+  // 與左右維持原值。一般網站閱讀模式（readerHostPage=false）維持上方四值對稱不變。
+  it('readerHostPage=true → 卡片上緣 padding 收斂為 min(16px, 2vw)、下緣 / 左右不變', () => {
+    const { document, NS, articleEl } = setup();
+    NS.state.readerHostPage = true;
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 4 值：上 min(16px,2vw) / 右 clamp(...) / 下 min(48px,6vw) / 左 clamp(...)
+    assert.ok(/padding:\s*min\(16px,\s*2vw\)\s+clamp\(16px,\s*calc\(7\.4vw\s*-\s*12\.8px\),\s*56px\)\s+min\(48px,\s*6vw\)\s+clamp\(16px,\s*calc\(7\.4vw\s*-\s*12\.8px\),\s*56px\)\s*!important/.test(css),
+      'reader 文章頁卡片上緣 padding 必須收斂為 min(16px, 2vw)、下緣維持 min(48px, 6vw)——forcing：上緣改回 V_GUTTER = 沒利用拿掉返回箭頭騰出的區域');
+  });
+
+  it('readerHostPage=false（一般網站）→ 卡片 padding 維持上下對稱 min(48px, 6vw)（reader 頁收斂不外溢）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.state.readerHostPage = false;
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(/padding:\s*min\(48px,\s*6vw\)\s+clamp\(16px,\s*calc\(7\.4vw\s*-\s*12\.8px\),\s*56px\)\s*!important/.test(css),
+      '一般網站閱讀模式卡片 padding 必須維持 2 值 min(48px,6vw) clamp(...)——reader 文章頁的上緣收斂不可外溢到一般站');
+  });
+
   it('CSS reader card 垂直 margin 必須是 clamp(8px, calc(6.4vw - 19.2px), 40px)（手機收斂灰條）', () => {
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, DEFAULT_SETTINGS);
