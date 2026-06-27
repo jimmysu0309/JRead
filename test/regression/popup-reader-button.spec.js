@@ -14,6 +14,7 @@ const assert = require('assert');
 const ROOT = path.join(__dirname, '..', '..');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'jread', 'popup', 'popup.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'jread', 'popup', 'popup.js'), 'utf8');
+const MAIN_JS = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'), 'utf8');
 
 describe('popup v1.0.22 — 進入 Reader 按鈕', () => {
   it('popup.html 必須有 <button id="reader-btn">，初始 hidden（token gate 前不閃現）', () => {
@@ -46,11 +47,51 @@ describe('popup v1.0.22 — 進入 Reader 按鈕', () => {
   it('reader-btn 可見性必須由 token gate（refreshReaderButton 走 hasReadwiseToken）', () => {
     assert.match(POPUP_JS, /function\s+refreshReaderButton/,
       'popup.js 必須有 refreshReaderButton——依 token 決定 reader-btn 顯隱');
-    const m = POPUP_JS.match(/function\s+refreshReaderButton[\s\S]{0,200}?\}/);
+    // refreshReaderButton body 取到下一個 top-level async function 之前（v1.5.1 起內含
+    // reader-host 短路 + token gate 兩段，不再是單一行）。
+    const m = POPUP_JS.match(/function\s+refreshReaderButton\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     assert.ok(m, '抓不到 refreshReaderButton body');
-    assert.match(m[0], /readerBtn\.hidden\s*=\s*![\s\S]*hasReadwiseToken\(\)/,
+    assert.match(m[0], /readerBtn\.hidden\s*=\s*!\s*\(?\s*await\s+hasReadwiseToken\(\)/,
       'refreshReaderButton 必須以 hasReadwiseToken() 結果設 readerBtn.hidden');
     assert.match(POPUP_JS, /refreshReaderButton\(\)\s*;/,
       'popup.js 必須在載入時呼叫 refreshReaderButton() 套用初始可見性');
+  });
+
+  // v1.5.1：在 reader 自有頁（reader/ 下 feed／article 閱讀）三顆按鈕（進入 Reader /
+  // 送到 Readwise / 編輯模式）都是雜訊，整批隱藏（Jimmy 2026-06-27）。
+  it('refreshReaderButton 必須先以 reader-host 判定短路隱藏 reader-btn', () => {
+    const m = POPUP_JS.match(/function\s+refreshReaderButton\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    assert.ok(m, '抓不到 refreshReaderButton body');
+    assert.match(m[0], /isReaderHostTab\(\)[\s\S]*?readerBtn\.hidden\s*=\s*true[\s\S]*?return/,
+      'refreshReaderButton 必須在 token gate 前先判 isReaderHostTab()→隱藏並 return——forcing：少了這段，reader 自有頁仍露出「進入 Reader」');
+  });
+
+  it('isReaderHostTab 必須以 runtime.getURL("reader/") 前綴判定當前分頁', () => {
+    const m = POPUP_JS.match(/function\s+isReaderHostTab\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    assert.ok(m, 'popup.js 必須定義 isReaderHostTab');
+    assert.match(m[0], /startsWith\(\s*browser\.runtime\.getURL\(['"]reader\/['"]\)\s*\)/,
+      'isReaderHostTab 必須用 tab.url.startsWith(runtime.getURL("reader/")) 結構判定，不可硬編 hostname');
+  });
+
+  it('refreshPopupForActiveTab 在 readerHostPage 時整批隱藏三顆按鈕並 return', () => {
+    const m = POPUP_JS.match(/async\s+function\s+refreshPopupForActiveTab\s*\(\s*\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(m, '抓不到 refreshPopupForActiveTab body');
+    const body = m[1];
+    assert.match(body, /readerHostPage/,
+      'refreshPopupForActiveTab 必須讀 GET_READER_STATE 回傳的 readerHostPage');
+    // readerHostPage 分支須隱藏三顆並提前 return
+    const branch = body.match(/if\s*\(\s*readerHostPage\s*\)\s*\{[\s\S]*?return;[\s\S]*?\n\s*\}/);
+    assert.ok(branch, 'refreshPopupForActiveTab 必須有 if (readerHostPage) 分支');
+    assert.match(branch[0], /readerBtn\.hidden\s*=\s*true/, 'readerHostPage 分支須隱藏 readerBtn');
+    assert.match(branch[0], /readwiseBtn\.hidden\s*=\s*true/, 'readerHostPage 分支須隱藏 readwiseBtn');
+    assert.match(branch[0], /editBtn\.hidden\s*=\s*true/, 'readerHostPage 分支須隱藏 editBtn');
+    assert.match(branch[0], /return/, 'readerHostPage 分支須提前 return，不跑下方一般可見性邏輯');
+  });
+
+  it('main.js GET_READER_STATE 回應必須含 readerHostPage 欄位（取自 NS.state.readerHostPage）', () => {
+    const m = MAIN_JS.match(/msg\.type\s*===\s*NS\.MSG\.GET_READER_STATE[\s\S]*?sendResponse\(\{([\s\S]*?)\n\s*\}\);/);
+    assert.ok(m, '抓不到 GET_READER_STATE 的 sendResponse payload');
+    assert.match(m[1], /readerHostPage:\s*!!\s*NS\.state\.readerHostPage/,
+      'GET_READER_STATE 回應須帶 readerHostPage: !!NS.state.readerHostPage——forcing：少了它，popup 在 reader 自有頁無法判定該隱藏三顆按鈕');
   });
 });
