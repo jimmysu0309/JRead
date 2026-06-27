@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JRead</title>
+<style>
+  /* 進入閱讀模式前的過場底色（對齊 styler THEMES，避免白閃）。reader 模式套用後
+     由 styler 接管頁面樣式。 */
+  :root { --bg:#ececec; --muted:#6b6b6b; }
+  :root[data-theme="dark"]  { --bg:#0b0b0b; --muted:#9a99a2; }
+  :root[data-theme="sepia"] { --bg:#cdb891; --muted:#6f6149; }
+  :root[data-theme="gray"]  { --bg:#d8d8d8; --muted:#6b6b6b; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  #jr-status {
+    color: var(--muted); font: 15px/1.7 system-ui, -apple-system, "PingFang TC", sans-serif;
+    text-align: center; padding: 80px 20px;
+  }
+  #jr-status a { color: #1a73e8; }
+</style>
+</head>
+<body>
+  <div id="jr-status">載入中…</div>
+
+  <!-- 載入完整 reader 閱讀模式模組堆疊（重用真 styler / positionMemory）。
+       不載 detector（繞過自建 container）/ cleaner（內容已是 Readwise 乾淨主文）。 -->
+  <script src="../content/namespace.js"></script>
+  <script src="../content/settings-defaults.js"></script>
+  <script src="../content/toast.js"></script>
+  <script src="../content/floating-icon.js"></script>
+  <script src="../content/styler.js"></script>
+  <script src="../content/space-scroll.js"></script>
+  <script src="../content/paged-mode.js"></script>
+  <script src="../content/position-memory.js"></script>
+  <script src="../content/main.js"></script>
+  <script src="../popup/popup-core.js"></script>
+  <script src="reader-article.js"></script>
+</body>
+</html>

@@ -212,6 +212,7 @@
        Secondary CTA — YouTube Borderless（v0.7.134）/ Readwise
        兩顆共用次級按鈕樣式：白底 / 灰邊 / 黑字
        ========================================================== */
+    #reader-btn,
     #borderless-btn,
     #readwise-btn,
     #edit-btn {
@@ -230,12 +231,14 @@
       transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
       letter-spacing: 0.01em;
     }
+    #reader-btn:hover:not(:disabled),
     #borderless-btn:hover:not(:disabled),
     #readwise-btn:hover:not(:disabled),
     #edit-btn:hover:not(:disabled) {
       background: var(--jr-neutral-50);
       border-color: var(--jr-neutral-500);
     }
+    #reader-btn:focus-visible,
     #borderless-btn:focus-visible,
     #readwise-btn:focus-visible,
     #edit-btn:focus-visible {
@@ -578,6 +581,9 @@
        refreshPopupForActiveTab 依 GET_READER_STATE 即時改成「退出閱讀模式」
        （已在閱讀模式時）/ 影院模式文字。 -->
   <button id="toggle-btn">啟動閱讀模式</button>
+  <!-- v1.0.22：進入 Reader——開新分頁列 Readwise 收件匣最新文章，用 JRead 版型閱讀。
+       與當前分頁的閱讀狀態無關（全域入口），僅在已設 readwiseToken 時顯示。 -->
+  <button id="reader-btn" hidden title="開啟 Readwise Reader 收件匣最新文章，用 JRead 版型閱讀">進入 Reader</button>
   <button id="borderless-btn" hidden title="影片填滿視窗 + 自動 resize 視窗高度匹配影片比例（YouTube watch 頁專用）">啟動無邊模式</button>
   <button id="readwise-btn" hidden title="把當前 reader card 內容送到 Readwise Reader">送到 Readwise Reader</button>
   <button id="edit-btn" hidden title="進入編輯模式，點擊頁面上的雜訊段落即可移除（重新整理頁面後復原）">編輯模式：移除雜訊</button>
