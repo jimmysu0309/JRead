@@ -250,6 +250,133 @@ describe('readwise: saveToReadwise', () => {
   });
 });
 
+// v1.5.7：Readwise 非 2xx 回應原因浮出（Jimmy 2026-06-28 macstories club 付費牆頁
+// 送出 HTTP 400 回報）。原本 saveToReadwise 只 res.json()，非 JSON body 失敗就把
+// 唯一的失敗原因丟掉、toast 只剩不透明的「HTTP 400」無從定位。改先讀 text 再 parse、
+// 萃出 detail 帶回 result，readwiseResultToast / popup status 顯示具體原因。
+const { readwiseErrorDetail } = require(
+  path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
+);
+
+// 真實 Response 一定有 .text()；此 helper 產出忠實替身（body 為原始字串）。
+function makeFetchText(impl) {
+  const calls = [];
+  const fn = async (...args) => { calls.push(args); return impl(...args); };
+  return { fetchImpl: fn, calls };
+}
+
+describe('readwise: readwiseErrorDetail（萃 4xx 原因）', () => {
+  it('DRF 風格 { detail }：回 detail 句', () => {
+    assert.strictEqual(readwiseErrorDetail({ detail: 'Invalid input.' }, ''), 'Invalid input.');
+  });
+
+  it('欄位錯誤物件 { field: [msg] }：串成「field: msg」', () => {
+    const d = readwiseErrorDetail({ url: ['This field is required.'], html: ['Too large.'] }, '');
+    assert.match(d, /url: This field is required\./);
+    assert.match(d, /html: Too large\./);
+  });
+
+  it('欄位值為字串（非陣列）：照樣萃出', () => {
+    assert.strictEqual(readwiseErrorDetail({ published_date: 'wrong format' }, ''), 'published_date: wrong format');
+  });
+
+  it('非 JSON（data=null）：回原始 text', () => {
+    assert.strictEqual(readwiseErrorDetail(null, '  Bad Request  '), 'Bad Request');
+  });
+
+  it('detail 優先於泛欄位掃描', () => {
+    assert.strictEqual(readwiseErrorDetail({ detail: '主因', url: ['次要'] }, 'raw'), '主因');
+  });
+
+  it('空物件 + 無 text：回空字串', () => {
+    assert.strictEqual(readwiseErrorDetail({}, ''), '');
+    assert.strictEqual(readwiseErrorDetail(null, ''), '');
+  });
+
+  it('過長內容截斷到 200 字以內（避免灌爆 toast）', () => {
+    const long = 'x'.repeat(500);
+    const d = readwiseErrorDetail(null, long);
+    assert.ok(d.length <= 200, `截斷後長度應 <= 200，實際 ${d.length}`);
+    assert.ok(d.endsWith('…'), '截斷應以刪節號收尾');
+  });
+});
+
+describe('readwise: saveToReadwise 帶 detail（v1.5.7）', () => {
+  const goodPayload = { url: 'https://example.com/post/1', html: '<p>x</p>' };
+
+  it('400 + JSON body { detail }：回 HTTP + status=400 + detail 萃出', async () => {
+    const { fetchImpl } = makeFetchText(async () => ({
+      ok: false, status: 400, text: async () => JSON.stringify({ detail: 'Document too large.' })
+    }));
+    const r = await saveToReadwise({ token: 'xyz', payload: goodPayload, fetchImpl });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'HTTP');
+    assert.strictEqual(r.status, 400);
+    assert.strictEqual(r.detail, 'Document too large.');
+  });
+
+  it('400 + 非 JSON body（純文字）：detail = 原始 text', async () => {
+    const { fetchImpl } = makeFetchText(async () => ({
+      ok: false, status: 400, text: async () => 'Bad Request'
+    }));
+    const r = await saveToReadwise({ token: 'xyz', payload: goodPayload, fetchImpl });
+    assert.strictEqual(r.status, 400);
+    assert.strictEqual(r.detail, 'Bad Request');
+  });
+
+  it('401 + body：error=AUTH 仍帶 detail（診斷用）', async () => {
+    const { fetchImpl } = makeFetchText(async () => ({
+      ok: false, status: 401, text: async () => JSON.stringify({ detail: 'Invalid token.' })
+    }));
+    const r = await saveToReadwise({ token: 'bad', payload: goodPayload, fetchImpl });
+    assert.strictEqual(r.error, 'AUTH');
+    assert.strictEqual(r.detail, 'Invalid token.');
+  });
+
+  it('成功（201）走 text()：仍能 JSON.parse 出 data', async () => {
+    const { fetchImpl } = makeFetchText(async () => ({
+      ok: true, status: 201, text: async () => JSON.stringify({ id: 'abc' })
+    }));
+    const r = await saveToReadwise({ token: 'xyz', payload: goodPayload, fetchImpl });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.data.id, 'abc');
+  });
+
+  it('向後相容：只實作 json() 的舊替身仍回 ok + data（不取 detail）', async () => {
+    const { fetchImpl } = makeFetch(async () => ({
+      ok: true, status: 201, json: async () => ({ id: 'legacy' })
+    }));
+    const r = await saveToReadwise({ token: 'xyz', payload: goodPayload, fetchImpl });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.data.id, 'legacy');
+  });
+});
+
+describe('readwise: readwiseResultToast 帶 detail（v1.5.7）', () => {
+  it('HTTP 400 + detail：toast 文字含 HTTP 碼與具體原因', () => {
+    const t = readwiseResultToast({ ok: false, status: 400, error: 'HTTP', detail: 'Document too large.' });
+    assert.strictEqual(t.kind, 'error');
+    assert.match(t.message, /送出失敗/);
+    assert.match(t.message, /HTTP 400/);
+    assert.match(t.message, /Document too large\./);
+  });
+
+  it('無 detail：退回原本「送出失敗（HTTP 碼）」', () => {
+    const t = readwiseResultToast({ ok: false, status: 500, error: 'HTTP' });
+    assert.strictEqual(t.message, '送出失敗（HTTP 500）');
+  });
+
+  // forcing function：popup status 與 SW toast 兩條送出回饋都必須帶上 detail
+  it('popup.js generic 分支必須引用 result.detail（狀態列顯示具體原因）', () => {
+    const fs = require('fs');
+    const js = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'popup', 'popup.js'), 'utf8'
+    );
+    assert.match(js, /result\s*&&\s*result\.detail/,
+      'popup.js 送出失敗分支必須引用 result.detail（不可回退到只顯示 HTTP 碼）');
+  });
+});
+
 // v0.8.65：popup「送到 Readwise」改走 popup-core.saveReaderPayload，在 extension
 // 頁直接 fetch（不繞 background）。iOS Safari 背景頁掛起讓 SAVE_TO_READWISE 往返 /
 // 背景 fetch silently 失敗（macOS Chrome/Safari 正常）；options「測試 token」GET 從

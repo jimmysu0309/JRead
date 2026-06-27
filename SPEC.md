@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.5.6**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.5.7**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -610,7 +610,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - **Prompt**：移植自 Readwise Reader 網站內建 summarize prompt（繁中版），去掉 Jinja `num_tokens` 分支（`central_paragraphs` / `central_sentences` 是 Readwise server 端 filter、client 無法重現）——改為 client 端把主文純文字 head-truncate 到 `GEMINI_MAX_CHARS`（40K 字元）內直接送。組裝在 `popup-core.buildSummaryPrompt({ title, author, domain, text })`。
 - **payload 新增欄位（content script 端）**：`extractReaderPayload()` 多回 `text`（`articleEl.innerText` collapse 後 head-truncate 50K 字元）+ `domain`（`location.hostname`），供摘要使用；這兩欄**不**送進 Readwise body（只是摘要原料）。
 - **fallback**：任何失敗（無 key / 無內文 / 網路 / 非 2xx / 空回應）都不阻斷儲存，照送不帶 `summary`。`generateGeminiSummary` 為 popup-core 純函式（注入 fetch、回 `{ ok, summary }` 或 `{ ok:false, error }`，error 碼 `NO_KEY` / `NO_TEXT` / `NETWORK` / `AUTH` / `HTTP` / `EMPTY` / `NO_FETCH`）。
-- **送出軌共用**：popup 按鈕（`popup.js`）與快速鍵（SW `sendToReadwiseFromCommand`）都共用 popup-core 的 `buildReadwisePayload` / `saveToReadwise` / `generateGeminiSummary`，單一資料源。**結果 toast 文字**（`已送到` / `已存在` / `尚未設定 token` / `token 無效` / `網路錯誤` / `送出失敗（HTTP N）`）抽到 popup-core `readwiseResultToast(result) → { message, kind }`，供快速鍵 SW 軌（無 popup UI、結果只能靠 toast）使用（v0.8.165；v0.8.166 起懸浮按鈕長按選單不再有 Readwise 直送項，Readwise 一律走 popup）。regression 在 `test/regression/readwise-save.spec.js`（含 `readwiseResultToast` 對映）。
+- **送出軌共用**：popup 按鈕（`popup.js`）與快速鍵（SW `sendToReadwiseFromCommand`）都共用 popup-core 的 `buildReadwisePayload` / `saveToReadwise` / `generateGeminiSummary`，單一資料源。**結果 toast 文字**（`已送到` / `已存在` / `尚未設定 token` / `token 無效` / `網路錯誤` / `送出失敗（HTTP N）`）抽到 popup-core `readwiseResultToast(result) → { message, kind }`，供快速鍵 SW 軌（無 popup UI、結果只能靠 toast）使用（v0.8.165；v0.8.166 起懸浮按鈕長按選單不再有 Readwise 直送項，Readwise 一律走 popup）。**v1.5.7 起非 2xx 浮出 Readwise 回應的具體原因**（Jimmy 2026-06-28 macstories club 付費牆頁送出 HTTP 400 回報）：`saveToReadwise` 改先讀 `res.text()` 再 `JSON.parse`（Readwise 4xx 的 body 未必是 JSON、原本只 `res.json()` 失敗就把唯一失敗原因丟掉），用 `readwiseErrorDetail(data, rawText)` 萃成一句（吃 `{detail}` / DRF 欄位錯誤物件 / 純文字三型、collapse 空白 + 截 200 字）帶進 `result.detail`；`readwiseResultToast` 與 popup status 的 generic 分支顯示「送出失敗（HTTP N）：<原因>」，非 2xx 並 `console.warn` 完整 body 供真機回報。regression 在 `test/regression/readwise-save.spec.js`（含 `readwiseResultToast` 對映 + `readwiseErrorDetail` 萃取 + saveToReadwise 帶 detail）。
 
 ### Popup UI 行為
 
@@ -619,7 +619,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - reader mode 已啟動 **且** 非 cinema mode **且** 已設定 `readwiseToken`（trim 後非空，v0.8.50）→ 按鈕顯示
   - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
 - 點擊（v0.8.65）：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title + text + domain）→ **若開啟 `readwiseSummary` 且有 `geminiApiKey`**，先 `popup-core.generateGeminiSummary` 產生摘要塞進 payload（v0.8.72）→ **popup 自己**讀 `readwiseToken` + `popup-core.saveReaderPayload`（buildReadwisePayload + fetch `POST /api/v3/save/`）回結果。**不再繞 SW**（iOS 背景頁掛起會 silently 失敗，見訊息協定段 v0.8.65 註）。快速鍵送出（無 popup）走 SW `sendToReadwiseFromCommand`。**懸浮按鈕長按選單**不提供 Readwise 直送（v0.8.166 移除）——改走「功能選單」叫出 popup 後按 popup 內的 Readwise 按鈕（理由：v0.8.165 曾試 Safari content script 直送，iOS 可送達但 toast 不顯示、無回饋，故回退到有狀態文字回饋的 popup 軌）
-- 狀態條訊息：`產生摘要中…`（v0.8.72，僅開啟摘要時）/ `送出中…` / `已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位）
+- 狀態條訊息：`產生摘要中…`（v0.8.72，僅開啟摘要時）/ `送出中…` / `已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位；v1.5.7 起若 Readwise 回應有可萃原因再接「：<原因>」）
 
 ## 編輯模式（v0.8.108，v0.8.109 段落提示）
 
@@ -872,7 +872,7 @@ popup 關閉後其 fetch 會中斷；放 SW 即便使用者立刻關掉 popup，
 
 ### 純函式抽離
 
-`jread/popup/popup-core.js` 暴露 `buildReadwisePayload` / `saveToReadwise`（依賴注入 fetchImpl），可被 popup（瀏覽器端）與 SW（importScripts）共用、Node 端直接 require 做單測。`test/regression/readwise-save.spec.js` 14 條 spec 覆蓋 payload 結構 / NO_TOKEN / AUTH(401) / HTTP(500) / NETWORK / 成功 200/201 + forcing function 比對 namespace.js / SW 訊息協定常數。
+`jread/popup/popup-core.js` 暴露 `buildReadwisePayload` / `saveToReadwise`（依賴注入 fetchImpl），可被 popup（瀏覽器端）與 SW（importScripts）共用、Node 端直接 require 做單測。`test/regression/readwise-save.spec.js` 覆蓋 payload 結構 / NO_TOKEN / AUTH(401) / HTTP(500) / NETWORK / 成功 200/201 / 非 2xx 原因萃取（`readwiseErrorDetail` + `result.detail`，v1.5.7）+ forcing function 比對 namespace.js / SW 訊息協定常數。
 
 ---
 
