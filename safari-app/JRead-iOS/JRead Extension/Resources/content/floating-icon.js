@@ -220,8 +220,16 @@
     } catch (_e) {}
   }
 
+  // v1.0.23：進入 Reader——開 reader/reader.html（Readwise inbox feed）。content
+  // script 無 tabs 權限，交 SW 開新分頁（與 popup「進入 Reader」按鈕同一目標頁）。
+  // iOS SW 被回收時訊息可能掉包（與「功能選單」同款限制）——popup 按鈕仍是可靠入口。
+  function openReader() {
+    NS.safeSendMessage({ type: NS.MSG.OPEN_READER });
+  }
+
   const MENU_ITEMS = [
-    { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged }
+    { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
+    { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
   ];
 
   // ─── 功能選單入口（v0.8.162，比照 Shinkansen content-floating-icon.js）──────
@@ -612,7 +620,7 @@
   NS.floating = {
     host, btn, menuEl, MENU_ITEMS,
     openMenu, closeMenu, buildMenu,
-    handleShortPress, togglePaged,
+    handleShortPress, togglePaged, openReader,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
     isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
