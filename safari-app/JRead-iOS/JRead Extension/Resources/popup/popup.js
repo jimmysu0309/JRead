@@ -9,6 +9,7 @@ const versionEl = document.getElementById('version');
 const statusEl = document.getElementById('status');
 const toggleBtn = document.getElementById('toggle-btn');
 const borderlessBtn = document.getElementById('borderless-btn');
+const readerBtn = document.getElementById('reader-btn');
 const readwiseBtn = document.getElementById('readwise-btn');
 const editBtn = document.getElementById('edit-btn');
 const readwiseStatusEl = document.getElementById('readwise-status');
@@ -529,6 +530,23 @@ openOptionsLink.addEventListener('click', (e) => {
   // panel 浮層模式：設定頁在新分頁開啟後收掉頁內浮層（避免覆蓋在底層頁上殘留）
   closePanel();
 });
+
+// ---- v1.0.22：進入 Reader（Readwise 收件匣 feed）-----------------------------
+// 開新分頁載 reader/reader.html（擴充自有頁），列 Readwise inbox 最新十篇。全域
+// 入口，與當前分頁閱讀狀態無關；僅在已設 readwiseToken 時顯示（沒 token 進去也
+// 只會看到「請填 token」訊息，按鈕露出只是雜訊，比照 readwise-btn 的 token gate）。
+async function refreshReaderButton() {
+  try { readerBtn.hidden = !(await hasReadwiseToken()); }
+  catch (_) { readerBtn.hidden = true; }
+}
+readerBtn.addEventListener('click', async () => {
+  try {
+    await browser.tabs.create({ url: browser.runtime.getURL('reader/reader.html') });
+  } catch (_) { /* tabs.create 失敗（極罕見）靜默吞掉 */ }
+  flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
+  window.close();
+});
+refreshReaderButton();
 
 // ---- Readwise Reader 整合 ----------------------------------------------
 // popup 開啟時查 reader mode 是否啟動，沒啟動就把按鈕 disable。
