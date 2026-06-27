@@ -12,6 +12,14 @@
 
   const MAX_ITEMS = 10;
 
+  // v1.0.25：feed 來源分頁。Inbox / Later 走 location；JRead 走 tag=jread
+  //（撈標記 jread 的文章）。query 直接展開進 listReaderDocuments。
+  const SOURCES = {
+    new:   { query: { location: 'new' },   empty: '收件匣目前沒有文章' },
+    later: { query: { location: 'later' }, empty: 'Later 目前沒有文章' },
+    jread: { query: { tag: 'jread' },      empty: '沒有標記 jread 的文章' }
+  };
+
   // 卡片副標：作者 · 來源（空欄略過，無前後贅分隔）。v1.0.24 起不顯示字數
   //（Jimmy 2026-06-27：word_count 中英文語意不一、雜訊）。
   function formatMeta(doc) {
@@ -117,7 +125,7 @@
     return `封存失敗${detail}`;
   }
 
-  const api = { formatMeta, createCard, renderFeed, archiveCard, archiveErrorMessage, MAX_ITEMS };
+  const api = { formatMeta, createCard, renderFeed, archiveCard, archiveErrorMessage, MAX_ITEMS, SOURCES };
 
   // ---- 頁面 bootstrap（只在擴充頁環境跑）----
   function init() {
@@ -138,7 +146,6 @@
 
     const listEl = doc.getElementById('jr-list');
     const msgEl = doc.getElementById('jr-msg');
-    const subEl = doc.getElementById('jr-sub');
 
     function showMsg(text, isError) {
       if (listEl) listEl.textContent = '';
@@ -167,33 +174,48 @@
         showMsg(span, true);
         return;
       }
-      if (subEl) subEl.textContent = '載入中…';
-      PC.listReaderDocuments({ token: token, location: 'new' }).then((r) => {
-        if (!r || !r.ok) {
-          if (subEl) subEl.textContent = '';
-          showMsg(archiveErrorMessage(r).replace('封存', '載入'), true);
-          return;
-        }
-        const docs = r.results || [];
-        if (subEl) subEl.textContent = '';
-        if (!docs.length) {
-          showMsg('收件匣目前沒有文章', false);
-          return;
-        }
-        const onArchive = (card, id) => {
-          archiveCard(card, id, {
-            archiveFn: ({ id }) => PC.archiveReaderDocument({ token, id }),
-            toastFn: toast,
-            onEmpty: () => showMsg('收件匣目前沒有文章', false)
-          });
-        };
-        hideMsg();
-        renderFeed(listEl, docs, onArchive);
-      }, (err) => {
-        // list fetch reject（iOS 偶發）：surface 出來，不要卡在「載入中…」
-        if (subEl) subEl.textContent = '';
-        showMsg('載入失敗：' + String(err && err.message || err), true);
-      });
+      // 載入某個來源分頁的清單（Inbox / Later / JRead）
+      function loadList(src) {
+        const cfg = SOURCES[src] || SOURCES.new;
+        showMsg('載入中…', false);
+        PC.listReaderDocuments(Object.assign({ token: token }, cfg.query)).then((r) => {
+          if (!r || !r.ok) {
+            showMsg(archiveErrorMessage(r).replace('封存', '載入'), true);
+            return;
+          }
+          const docs = r.results || [];
+          if (!docs.length) {
+            showMsg(cfg.empty, false);
+            return;
+          }
+          const onArchive = (card, id) => {
+            archiveCard(card, id, {
+              archiveFn: ({ id }) => PC.archiveReaderDocument({ token, id }),
+              toastFn: toast,
+              onEmpty: () => showMsg(cfg.empty, false)
+            });
+          };
+          hideMsg();
+          renderFeed(listEl, docs, onArchive);
+        }, (err) => {
+          // list fetch reject（iOS 偶發）：surface 出來，不要卡在「載入中…」
+          showMsg('載入失敗：' + String(err && err.message || err), true);
+        });
+      }
+
+      // 分頁切換：點 .jr-tab 切 is-active + 重載對應來源
+      const tabsEl = doc.getElementById('jr-tabs');
+      if (tabsEl) {
+        tabsEl.addEventListener('click', (e) => {
+          const t = e.target && e.target.closest && e.target.closest('.jr-tab');
+          if (!t) return;
+          const all = tabsEl.querySelectorAll('.jr-tab');
+          for (const x of all) x.classList.toggle('is-active', x === t);
+          loadList(t.getAttribute('data-src'));
+        });
+      }
+
+      loadList('new');  // 預設 Inbox
     }).catch((err) => {
       showMsg('讀取設定失敗：' + String(err && err.message || err), true);
     });

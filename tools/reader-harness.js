@@ -117,6 +117,16 @@ async function main() {
   });
   console.log('A styler:', JSON.stringify(A));
 
+  // 寬螢幕（1100px）：返回鈕應對齊卡片左緣（往右），不孤懸在視窗角落
+  const wideBtn = await page.evaluate(() => {
+    const b = document.getElementById('__jread-reader-back');
+    const card = document.querySelector('article[data-jread-reader-doc]') || document.querySelector('article');
+    if (!b || !card) return null;
+    return { btnLeft: Math.round(b.getBoundingClientRect().left), cardLeft: Math.round(card.getBoundingClientRect().left), btnTop: Math.round(b.getBoundingClientRect().top) };
+  });
+  const wideAligned = wideBtn && Math.abs(wideBtn.btnLeft - wideBtn.cardLeft) <= 12 && wideBtn.cardLeft > 20;
+  console.log(`A2 back-btn wide(1100): ${JSON.stringify(wideBtn)} aligned=${wideAligned}`);
+
   await page.evaluate(() => { document.body.style.zoom = '0.5'; });
   await sleep(300);
   await page.screenshot({ path: path.join(OUT_DIR, 'reader-article-light.png'), fullPage: true });
@@ -157,6 +167,39 @@ async function main() {
   await page.evaluate(() => { document.body.style.zoom = '0.5'; });
   await sleep(300);
   await page.screenshot({ path: path.join(OUT_DIR, 'reader-feed.png'), fullPage: true });
+
+  // ---- E. iPhone 寬度（390px）文章頂部：驗返回鈕 vs 標題的實際干擾 ----
+  const ip = await ctx.newPage();
+  await ip.setViewportSize({ width: 390, height: 844 });
+  await ip.addInitScript((doc) => {
+    const real = window.fetch;
+    window.fetch = async (url, opts) => {
+      const u = typeof url === 'string' ? url : (url && url.url) || '';
+      if (u.includes('readwise.io/api/v3/list/')) {
+        return new Response(JSON.stringify({ count: 1, nextPageCursor: null, results: [doc] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return real(url, opts);
+    };
+  }, FAKE_DOC);
+  await ip.goto(url, { waitUntil: 'load', timeout: 30000 });
+  await sleep(1500);
+  // 捲到頂（按鈕應顯示）→ 截圖看返回鈕 vs 標題
+  await ip.evaluate(() => { (document.scrollingElement || document.documentElement).scrollTop = 0; });
+  await sleep(400);
+  await ip.screenshot({ path: path.join(OUT_DIR, 'reader-back-btn-iphone.png'), clip: { x: 0, y: 0, width: 390, height: 260 } });
+  const topState = await ip.evaluate(() => {
+    const b = document.getElementById('__jread-reader-back');
+    return { opacity: b && b.style.opacity, w: b && Math.round(b.getBoundingClientRect().width) };
+  });
+  // 往下捲 → 按鈕應淡出隱藏（opacity 0）
+  await ip.evaluate(() => { (document.scrollingElement || document.documentElement).scrollTop = 600; document.defaultView.dispatchEvent(new Event('scroll')); });
+  await sleep(400);
+  const downOpacity = await ip.evaluate(() => document.getElementById('__jread-reader-back').style.opacity);
+  // 往上捲 → 應淡入顯示
+  await ip.evaluate(() => { const se = document.scrollingElement || document.documentElement; se.scrollTop = 400; document.defaultView.dispatchEvent(new Event('scroll')); });
+  await sleep(400);
+  const upOpacity = await ip.evaluate(() => document.getElementById('__jread-reader-back').style.opacity);
+  console.log(`E back-btn (iPhone 390): top=${JSON.stringify(topState)} afterScrollDown opacity=${downOpacity} afterScrollUp opacity=${upOpacity}`);
 
   console.log('\n結果：');
   console.log(`  A styler 套用：${A.active && A.hasStyle ? 'PASS' : 'FAIL'}（active=${A.active} style=${A.hasStyle} title="${A.title}" imgs=${A.imgCount}）`);

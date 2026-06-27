@@ -4,6 +4,18 @@
 
 ---
 
+**v1.0.25** — Reader 整合一批（Jimmy 2026-06-27 多輪回報，iOS 模擬器自驗）：
+
+**根因修正——iOS 進入 Reader 全白**：模擬器拆 bundle 實證 reader.html 完全空白＝`reader/` 整個資料夾**沒被打包進 iOS .appex**（`content/`/`popup/`… 都在、唯獨缺 `reader/`）。Xcode 專案逐個資料夾參照打包，新增 `jread/reader/` 後只 rsync 到 Resources 鏡像、**沒人把 reader 加進 `.pbxproj` 的 folder reference + Copy Bundle Resources phase**；ios-build 的 drift 檢查只比對「Resources 磁碟==jread/」、抓不到「Xcode 有沒有真的打包」這層。故 v1.0.22–v1.0.24 的 iOS 每一版都缺 reader.html、與 WAR/tabs.create 都無關。修法：pbxproj 補 reader folder 參照（4 處，比照 content）。forcing：`ios-resources-bundled.spec.js`（jread/ 每個資料夾都必須在 pbxproj 有 folder reference + 列入 build phase）。
+
+**翻頁模式靠後的圖不載入**：probe（`tools/paged-img-probe.js`，真實遠端圖 + 翻頁）實證 **Chromium 翻頁 10/10 圖正常**＝iOS WebKit 專屬——WebKit 對「離視窗很遠的圖」積極延遲載入，水平多欄翻頁下遠欄圖永不抓（捲動模式垂直、捲過去即載入故正常）。非 lazy 屬性問題（Readwise 圖 src 為真實 URL、無 `loading=lazy`）。修法：進文章時 `preloadImages` 用 off-DOM `Image` 物件預載全部圖 URL（不在 render tree、不受版面位置延遲）→ 翻到後頁即時從快取命中；所有圖另標 `loading=eager`。
+
+**Article feed 三來源分頁**：頂端 segmented control `Inbox / Later / JRead`——Inbox=`location=new`、Later=`location=later`、**JRead=`tag=jread`**（撈標記 jread 的文章；`listReaderDocuments` 加 `tag` 參數，Reader API 伺服器端過濾）。切換即時重載。
+
+**返回鈕全面打磨**：只留箭頭去文字 → 配色融入主題卡片底色（`themeButtonColors`，切主題即時變色）→ 自適應位置（窄螢幕貼左上角 4/4、iPad/桌面對齊卡片左上、往下往右 `backButtonPosition`）→ 往下捲讀文章時自動淡出隱藏、往上捲淡入。feed 卡片不再顯示字數（v1.0.24 已做）。
+
+forcing：`reader-app.spec.js`（SOURCES 三來源 + createBackButton 主題配色/位置/preloadImages）、`reader-api.spec.js`（tag 參數）、`ios-resources-bundled.spec.js`。real Chromium `reader-harness.js`（A2 寬螢幕返回鈕對齊卡片 + E iPhone 窄螢幕貼角 + 自動隱藏）+ `paged-img-probe.js`。iOS 模擬器（XcodeBuildMCP build/install）Jimmy 實機自驗全部功能正常。
+
 **v1.0.24** — Reader 整合三項（Jimmy 2026-06-27 回報）：(1) **文章頁左上角加「← Reader」返回鈕**——固定定位半透明藥丸、掛 `documentElement`（不掛 body：styler 會隱藏 body 兄弟節點，injected UI 一律掛 documentElement，比照 floating-icon），點了 `location.href='reader.html'` 回 feed（與 ESC / floating-icon 短按同一個 `NS.onReaderExit` 目標）。(2) **feed 卡片不再顯示字數**——`formatMeta` 移除 `word_count`（中英文 word_count 語意不一、屬雜訊），只留作者 · 來源。(3) **iOS 進入 Reader 仍空白**之續修——沿用 v1.0.23 的 `web_accessible_resources`（reader 頁）+ feed 頁硬化。診斷定論：reader.html 在 iOS **完全空白**（連靜態「Reader」標頭都沒有）= Safari 因頁面非 web-accessible 拒絕導航的簽名（既有 `OPEN_FEATURE_MENU` 註解本就預期 `tabs.create(popup.html)` 這種 WAR 頁在 iOS 可開）——reader.html 直到 v1.0.23 才列入 WAR，故 v1.0.22 必空白、v1.0.23 WAR 應修好。請 Jimmy 確認 TestFlight 測的是 v1.0.23+（若仍空白，v1.0.23 硬化會顯示可見訊息而非全白，據訊息再定位）。forcing：`reader-app.spec.js`（formatMeta 無字數 + `createBackButton` fixed/z-index/click 回 feed）。real Chromium `reader-harness.js` 不退步。
 
 **v1.0.23** — Reader 整合兩項（Jimmy 2026-06-27 回報）：(1) **iOS 進入 Reader 後新分頁空白、沒顯示 feed**——硬化 feed 頁讓它在任何情況都不會全白：`reader.html` 的 `#jr-msg` 預設可見「載入中…」（JS 因故沒跑也看得到頁面），`reader-feed.js` 成功渲染卡片時才 `hideMsg` 收起；缺關鍵相依（browser / storage / popup-core）或 list fetch reject / storage 讀取失敗時，一律 surface 出可見錯誤訊息（「初始化失敗（缺少…）」/「載入失敗：…」），不再靜默卡白——把「無法診斷的空白」轉成「看得到失敗點」的可診斷狀態（article.html 同款硬化 `#jr-status`）。另把 `reader/reader.html` + `reader/article.html` 列入 `web_accessible_resources`（belt：popup.html 在 WAR 可正常開、reader 頁原本不在；options.html 不在 WAR 也能開，故 WAR 未必是根因，但低風險先補）。(2) **一般瀏覽網頁長按懸浮按鈕選單加「進入 Reader」**——`MENU_ITEMS` 新增 `{ id:'reader', icon:'📖', label:'進入 Reader' }`，content script 無 tabs 權限故 `openReader` 送 `OPEN_READER` 訊息給 SW、由 SW `tabs.create` 開 `reader/reader.html`（與 popup「進入 Reader」按鈕同一目標頁；iOS SW 被回收時訊息可能掉包，與「功能選單」同款限制，popup 按鈕仍是可靠入口）。forcing：`reader-open-wiring.spec.js`（MSG.OPEN_READER + SW handler + WAR）、`floating-icon.spec.js`（MENU_ITEMS = paged + reader、buildMenu 三項、openReader 送 OPEN_READER）。real Chromium `reader-harness.js` 確認 feed / 文章 / 位置記憶不退步。iOS feed 空白實際失敗點待 Jimmy 下個 TestFlight 看可見訊息回報。
