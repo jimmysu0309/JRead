@@ -237,6 +237,32 @@
     return { ok: true, summary };
   }
 
+  // v1.5.7：把 Readwise 非 2xx 回應內容萃成一句可讀原因（送 toast / status / log）。
+  // Readwise 的 4xx body 形態不固定，三種都吃：
+  //   { detail: "..." }                          → DRF 風格單句錯誤
+  //   { url: ["This field is required."], ... }   → DRF 欄位錯誤物件（值為字串或字串陣列）
+  //   "<plain text / html>"                       → 非 JSON（JSON.parse 失敗時的原字串）
+  // 回傳已 collapse 空白 + 截斷（避免灌爆 toast）；無可萃內容回 ''。純診斷字串、
+  // 不參與任何控制流（呼叫端仍以 status / error code 判斷分支）。
+  function readwiseErrorDetail(data, rawText) {
+    const clip = (s) => {
+      const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+      return t.length > 200 ? t.slice(0, 197) + '…' : t;
+    };
+    if (data && typeof data === 'object') {
+      if (typeof data.detail === 'string' && data.detail.trim()) return clip(data.detail);
+      // 欄位錯誤物件：{ field: ["msg"] | "msg" } → "field: msg" 串接
+      const parts = [];
+      for (const [k, v] of Object.entries(data)) {
+        const msg = Array.isArray(v) ? v.join(' ') : (typeof v === 'string' ? v : '');
+        if (msg && msg.trim()) parts.push(`${k}: ${msg.trim()}`);
+      }
+      if (parts.length) return clip(parts.join('；'));
+    }
+    if (typeof rawText === 'string' && rawText.trim()) return clip(rawText);
+    return '';
+  }
+
   async function saveToReadwise({ token, payload, fetchImpl } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
@@ -256,13 +282,25 @@
     } catch (networkErr) {
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
+    // v1.5.7：先讀原始 text 再嘗試 JSON.parse——Readwise 4xx 的 body 未必是 JSON
+    //（曾見純文字 / HTML 錯誤頁），原本只 res.json() 失敗就把唯一的失敗原因整個
+    // 丟掉、toast 只剩不透明的「送出失敗（HTTP 400）」無從定位。真實 Response 一定
+    // 有 .text()；舊測試替身只實作 .json()，故 fallback 到 json() 保相容。一個
+    // body 只能讀一次，兩者擇一不可並用。
+    let rawText = '';
     let data = null;
-    try { data = await res.json(); } catch (_) { /* 非 JSON response 忽略 */ }
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, error: 'AUTH', data };
+    if (typeof res.text === 'function') {
+      try { rawText = await res.text(); } catch (_) { /* 無 body / 已被讀走 */ }
+      if (rawText) { try { data = JSON.parse(rawText); } catch (_) { /* 非 JSON，留 rawText */ } }
+    } else if (typeof res.json === 'function') {
+      try { data = await res.json(); } catch (_) { /* 非 JSON response 忽略 */ }
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, error: 'HTTP', data };
+      const detail = readwiseErrorDetail(data, rawText);
+      // 診斷：非 2xx 一律印完整 body（popup / SW console 都看得到，供真機回報）
+      try { console.warn('[JRead] Readwise save 失敗', res.status, rawText || data); } catch (_) {}
+      const error = (res.status === 401 || res.status === 403) ? 'AUTH' : 'HTTP';
+      return { ok: false, status: res.status, error, data, detail };
     }
     return { ok: true, status: res.status, data };
   }
@@ -429,7 +467,9 @@
       return { message: '網路錯誤，請稍後再試', kind: 'error' };
     }
     const detail = result && result.status ? `（HTTP ${result.status}）` : '';
-    return { message: `送出失敗${detail}`, kind: 'error' };
+    // v1.5.7：帶上 Readwise 回應的具體原因（若有）——不再是不透明的「送出失敗」
+    const reason = result && result.detail ? `：${result.detail}` : '';
+    return { message: `送出失敗${detail}${reason}`, kind: 'error' };
   }
 
   async function saveReaderPayload({ payload, getToken, fetchImpl } = {}) {
@@ -457,6 +497,7 @@
     saveToReadwise,
     saveReaderPayload,
     readwiseResultToast,
+    readwiseErrorDetail,
     validateReadwiseToken,
     listReaderDocuments,
     archiveReaderDocument,
