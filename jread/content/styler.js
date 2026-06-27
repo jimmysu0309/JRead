@@ -994,8 +994,21 @@ ${MEDIA_CAP_SEL} {
    的 (0,1,3)（第二段 attribute 數 2 > 1）→ 兩邊皆 !important 時本條勝。display:block
    / margin / max-height:90vh / object-fit:contain 已由 MEDIA_CAP_SEL 對 bare img 提供，
    不重複；直式長圖被 90vh + contain 收斂、不溢出。 */
-[${ARTICLE_ATTR}="1"] img[${UPSCALE_IMG_ATTR}] {
+/* v1.5.5：補 height:auto + 提 specificity——站點若對 bare hero img 釘死 height
+   （搭配 aspect-ratio: auto W/H）會反推壓垮寬度。The Atlantic ArticleLeadArt hero
+   實證：img 因 width="960" height="540" 屬性自帶 aspect-ratio auto 960/540，站點
+   stylesheet 又用一條 (0,2,1) specificity 的 height 規則把它釘成 36px → 寬度反推成
+   64px（width:100% 只解析成 picture flex item 的 64px）；height:auto 解除釘高後
+   width:100% 才撐回滿版心 608px。a 包 content-img 規則（上方 984）早有 height:auto，
+   bare upscale 漏這條。
+   為何 attribute 加倍：站點那條 height 規則 specificity 恰 (0,2,1)、與本規則原本相等，
+   且站點 sheet 後注入（cascade tie → 後者勝）→ 單純加 height:auto 仍輸。把
+   [UPSCALE] 寫兩次拉到 (0,3,1) 穩贏（與 byline doubled-attr 同手法）；width 同提一致。
+   結構通則（非站點特判）：任何站對 bare 內容圖釘死 height + aspect-ratio → 寬度塌掉，
+   height:auto 讓寬度由版心 width:100% 主導、高度依長寬比自然跟隨（90vh + contain 收斂）。 */
+[${ARTICLE_ATTR}="1"] img[${UPSCALE_IMG_ATTR}][${UPSCALE_IMG_ATTR}] {
   width: 100% !important;
+  height: auto !important;
 }
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
