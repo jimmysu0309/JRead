@@ -292,6 +292,87 @@
     return { ok: false, status: res.status, error: 'HTTP' };
   }
 
+  // ---- Readwise Reader 整合（v1.0.22）----------------------------------
+  // reader.html（擴充自有頁）用這兩支讀 Reader 文章清單 + 歸檔。重用 saveToReadwise
+  // 同款 `Authorization: Token <token>` header + 錯誤分類（NO_TOKEN / AUTH 401·403 /
+  // NETWORK / HTTP / NO_FETCH），fetchImpl 依賴注入便於 jsdom 純測。host 權限
+  // <all_urls> 覆蓋 readwise.io，擴充頁直接 fetch 不卡 CORS。
+  //   List：GET https://readwise.io/api/v3/list/ —— 公開 API **無 limit 參數**，回整頁
+  // （上限 100，依 updated 由新到舊）+ nextPageCursor，取「最新十篇」由呼叫端 slice。
+  // html_content 只在 withHtmlContent=true 時回（該模式 server 端重度 rate-limit、較慢），
+  // 故 feed 列表不帶、點開單篇文章才帶（兩段式抓取，分散限流）。
+  const READER_LIST_URL = 'https://readwise.io/api/v3/list/';
+  const READER_UPDATE_URL = 'https://readwise.io/api/v3/update/'; // + <id>/
+
+  // 列文件。location='new'=inbox 收件匣；帶 id 取單篇；withHtmlContent=true 取主文 HTML。
+  // 回 { ok:true, results, nextPageCursor } 或 { ok:false, error, status }。
+  async function listReaderDocuments({ token, location, id, withHtmlContent, pageCursor, fetchImpl } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return { ok: false, error: 'NO_TOKEN' };
+    }
+    const params = new URLSearchParams();
+    if (location) params.set('location', location);
+    if (id) params.set('id', id);
+    if (withHtmlContent) params.set('withHtmlContent', 'true');
+    if (pageCursor) params.set('pageCursor', pageCursor);
+    const qs = params.toString();
+    const url = qs ? `${READER_LIST_URL}?${qs}` : READER_LIST_URL;
+    let res;
+    try {
+      res = await f(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Token ${token.trim()}` }
+      });
+    } catch (networkErr) {
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, error: 'AUTH' };
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: 'HTTP' };
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* 非 JSON */ }
+    const results = data && Array.isArray(data.results) ? data.results : [];
+    return { ok: true, status: res.status, results, nextPageCursor: data && data.nextPageCursor || null };
+  }
+
+  // 歸檔文件：PATCH https://readwise.io/api/v3/update/<id>/ body { location:'archive' }。
+  // Reader API 沒有獨立 archive 端點，改 location 即歸檔。回 { ok, status } / 錯誤分類。
+  async function archiveReaderDocument({ token, id, fetchImpl } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return { ok: false, error: 'NO_TOKEN' };
+    }
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      return { ok: false, error: 'NO_ID' };
+    }
+    let res;
+    try {
+      res = await f(`${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Token ${token.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ location: 'archive' })
+      });
+    } catch (networkErr) {
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, error: 'AUTH' };
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: 'HTTP' };
+    }
+    return { ok: true, status: res.status };
+  }
+
   // v0.8.74：驗證 Gemini API key 是否有效。打 models list 端點（GET，不送內文、
   // 零 token 成本），key 無效時 Google 回 400/401/403。回傳值與 validateReadwiseToken
   // 對齊（ok / error / status），讓 options 共用同一套分支判斷。NO_KEY（空）/
@@ -376,6 +457,8 @@
     saveReaderPayload,
     readwiseResultToast,
     validateReadwiseToken,
+    listReaderDocuments,
+    archiveReaderDocument,
     validateGeminiKey,
     buildSummaryPrompt,
     extractGeminiText,

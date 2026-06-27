@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reader — JRead</title>
+<style>
+  /* 主題色對齊 jread/content/styler.js 的 THEMES（light / dark / sepia / gray） */
+  :root { --bg:#ececec; --card:#ffffff; --text:#1a1a1a; --muted:#6b6b6b; --link:#1a73e8; --line:rgba(0,0,0,0.08); }
+  :root[data-theme="dark"]  { --bg:#0b0b0b; --card:#1f1f22; --text:#ecebf1; --muted:#9a99a2; --link:#7fb5e6; --line:rgba(255,255,255,0.1); }
+  :root[data-theme="sepia"] { --bg:#cdb891; --card:#eee2cb; --text:#1a1a1a; --muted:#6f6149; --link:#2c5282; --line:rgba(60,50,38,0.14); }
+  :root[data-theme="gray"]  { --bg:#d8d8d8; --card:#ededed; --text:#1a1a1a; --muted:#6b6b6b; --link:#2c5282; --line:rgba(0,0,0,0.1); }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .jr-wrap { max-width: 680px; margin: 0 auto; padding: 32px 20px 80px; }
+  .jr-head { display: flex; align-items: baseline; gap: 12px; margin: 0 0 20px; }
+  .jr-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  .jr-head .jr-sub { font-size: 13px; color: var(--muted); }
+  .jr-list { display: flex; flex-direction: column; gap: 12px; }
+
+  .jr-card {
+    display: flex; align-items: stretch; gap: 12px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    overflow: hidden;
+  }
+  .jr-card-link {
+    display: flex; gap: 14px; align-items: center; flex: 1 1 auto; min-width: 0;
+    padding: 14px 16px; text-decoration: none; color: inherit;
+  }
+  .jr-thumb {
+    flex: 0 0 auto; width: 64px; height: 64px; border-radius: 8px;
+    object-fit: cover; background: var(--line);
+  }
+  .jr-card-body { min-width: 0; }
+  .jr-card-title {
+    font-size: 16px; font-weight: 600; line-height: 1.35; margin: 0 0 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .jr-card-meta {
+    font-size: 12.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .jr-archive {
+    flex: 0 0 auto; align-self: stretch; border: none; border-left: 1px solid var(--line);
+    background: transparent; color: var(--muted); cursor: pointer;
+    font: inherit; font-size: 13px; padding: 0 16px;
+  }
+  .jr-archive:hover { background: var(--line); color: var(--text); }
+  .jr-archive:disabled { opacity: 0.5; cursor: default; }
+
+  .jr-msg { color: var(--muted); font-size: 15px; line-height: 1.7; padding: 40px 4px; text-align: center; }
+  .jr-msg a { color: var(--link); }
+  .jr-msg.jr-error { color: var(--text); }
+</style>
+</head>
+<body>
+  <main class="jr-wrap">
+    <div class="jr-head">
+      <h1>Reader</h1>
+      <span class="jr-sub" id="jr-sub"></span>
+    </div>
+    <div class="jr-list" id="jr-list"></div>
+    <div class="jr-msg" id="jr-msg" hidden></div>
+  </main>
+
+  <!-- 只載 feed 需要的最小集合：NS 命名空間、預設值、toast、Reader API、feed app。
+       不載 styler / floating-icon / main 等 reader 閱讀模式模組（那些在 article.html）。 -->
+  <script src="../content/namespace.js"></script>
+  <script src="../content/settings-defaults.js"></script>
+  <script src="../content/toast.js"></script>
+  <script src="../popup/popup-core.js"></script>
+  <script src="reader-feed.js"></script>
+</body>
+</html>
