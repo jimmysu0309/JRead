@@ -98,88 +98,12 @@
     } catch (_) { return ''; }
   }
 
-  // v1.0.24：文章頁左上角「← Reader」返回鈕——導回 feed（reader.html）。掛
-  // documentElement（不掛 body：styler.apply 會隱藏 body 兄弟節點，injected UI
-  // 一律 append documentElement，比照 floating-icon）。固定定位、高 z-index、
-  // 半透明藥丸樣式在四個主題下都看得到。
-  // v1.0.25：返回鈕配色融入背景——bg 對齊 styler THEMES 的閱讀卡片底色
-  //（articleBg），arrow 用低調文字色。整顆藥丸跟卡片同色 → 視覺上只剩一個淡箭頭。
-  function themeButtonColors(theme) {
-    switch (theme) {
-      case 'dark':  return { bg: '#4a494d', fg: 'rgba(236,235,241,0.72)' };
-      case 'sepia': return { bg: '#eee2cb', fg: 'rgba(0,0,0,0.42)' };
-      case 'gray':  return { bg: '#ededed', fg: 'rgba(0,0,0,0.42)' };
-      default:      return { bg: '#ffffff', fg: 'rgba(0,0,0,0.42)' }; // light
-    }
-  }
+  // v1.5.3：移除文章頁左上角返回箭頭鈕——與「點 JRead 工具列圖示 → 退出閱讀模式」
+  // 功能重複（兩者都走 NS.onReaderExit 導回 feed）。退出 hook（NS.onReaderExit）
+  // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
+  //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  function createBackButton(document, onClick, theme) {
-    const btn = document.createElement('button');
-    btn.id = '__jread-reader-back';
-    btn.type = 'button';
-    // v1.0.25：只留箭頭、無文字、配色融入背景（Jimmy 回報文字 + 白底干擾閱讀）。
-    // aria-label 保留語意給輔助技術。
-    btn.textContent = '←';
-    btn.setAttribute('aria-label', '返回 Reader');
-    const VISIBLE_OPACITY = '0.9';
-    const c = themeButtonColors(theme);
-    btn.style.cssText = [
-      'position:fixed', 'top:4px', 'left:4px', 'z-index:2147483640',
-      'font:600 15px/1 -apple-system,system-ui,sans-serif', 'color:' + c.fg,
-      'background:' + c.bg, 'border:0',
-      'border-radius:999px', 'width:28px', 'height:28px', 'padding:0',
-      'display:flex', 'align-items:center', 'justify-content:center',
-      'cursor:pointer', 'opacity:' + VISIBLE_OPACITY,
-      'transition:opacity 0.2s ease, transform 0.2s ease'
-    ].join(';');
-    // 主題即時變更時更新配色（reader-article 的 storage.onChanged 呼叫）
-    btn.__setTheme = function (t) {
-      const cc = themeButtonColors(t);
-      btn.style.background = cc.bg;
-      btn.style.color = cc.fg;
-    };
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (typeof onClick === 'function') onClick();
-    });
-
-    // v1.0.25：往下捲（閱讀中）淡出隱藏、往上捲（想離開）淡入——讀文章時完全不
-    // 干擾。近頁首一律顯示。位置記憶的瞬跳會觸發一次 onScroll，落在閱讀位置時
-    // 自然隱藏（合理）。
-    const win = document.defaultView || (typeof window !== 'undefined' ? window : null);
-    if (win) {
-      let lastY = 0, hidden = false;
-      const setHidden = (h) => {
-        if (h === hidden) return;
-        hidden = h;
-        btn.style.opacity = h ? '0' : VISIBLE_OPACITY;
-        btn.style.transform = h ? 'translateY(-14px)' : '';
-        btn.style.pointerEvents = h ? 'none' : '';
-      };
-      win.addEventListener('scroll', () => {
-        const se = document.scrollingElement || document.documentElement;
-        const y = (se && se.scrollTop) || 0;
-        if (y <= 80) setHidden(false);          // 近頁首一律顯示
-        else if (y > lastY + 4) setHidden(true);  // 往下捲 → 隱藏
-        else if (y < lastY - 4) setHidden(false); // 往上捲 → 顯示
-        lastY = y;
-      }, { passive: true });
-    }
-    return btn;
-  }
-
-  // v1.0.25：返回鈕位置依卡片左緣自適應。窄螢幕（手機，卡片幾乎滿版、cardLeft≈0）
-  // 貼左上角；寬螢幕（iPad / 桌面，卡片置中有大留白）往下往右對齊卡片左上、落在卡片上
-  //（才能融入卡片底色，不會孤懸在留白的角落）。
-  function backButtonPosition(cardLeft) {
-    const wide = cardLeft > 20;
-    return {
-      top: wide ? '14px' : '4px',
-      left: wide ? (Math.round(cardLeft) + 8) + 'px' : '4px'
-    };
-  }
-
-  const api = { sanitizeHtml, buildArticleContainer, formatDate, createBackButton, themeButtonColors, backButtonPosition, preloadImages };
+  const api = { sanitizeHtml, buildArticleContainer, formatDate, preloadImages };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -222,13 +146,13 @@
           setStatus('找不到這篇文章的內容', true);
           return;
         }
-        renderArticle(article, { NS, doc, browser, theme: (s && s.theme) || 'light' });
+        renderArticle(article, { NS, doc });
       });
     }).catch(() => setStatus('讀取設定失敗，請重新整理', true));
   }
 
   function renderArticle(docData, ctx) {
-    const { NS, doc, browser, theme } = ctx;
+    const { NS, doc } = ctx;
     if (docData.title) doc.title = docData.title;
     const statusEl = doc.getElementById('jr-status');
     if (statusEl) statusEl.remove();
@@ -240,38 +164,14 @@
     preloadImages(container, global.Image);
 
     // reader 頁退出語意：回 feed（不剝版型）。必須在 enterFromContainer 之前設好，
-    // 之後 ESC / floating-icon 短按都會走到 main.js exitReaderMode 的 hook。
+    // 之後 JRead 圖示「退出閱讀模式」/ ESC / floating-icon 短按都會走到 main.js
+    // exitReaderMode 的這個 hook 導回 feed（v1.5.3 移除返回箭頭後，這是唯一退出入口）。
     const backToFeed = function () { global.location.href = 'reader.html'; };
     NS.state.readerHostPage = true;
     NS.onReaderExit = backToFeed;
 
-    // 左上角箭頭返回鈕（掛 documentElement，免被 styler 隱藏 body 兄弟；配色融入主題）
-    const backBtn = createBackButton(doc, backToFeed, theme);
-    doc.documentElement.appendChild(backBtn);
-    // 主題即時變更時同步返回鈕配色（與 styler reapply 同步）
-    if (browser && browser.storage && browser.storage.onChanged) {
-      browser.storage.onChanged.addListener(function (changes, area) {
-        if (area === 'sync' && changes.theme && typeof backBtn.__setTheme === 'function') {
-          backBtn.__setTheme(changes.theme.newValue);
-        }
-      });
-    }
-    // 依卡片左緣自適應定位（窄螢幕貼角、寬螢幕對齊卡片）
-    function positionBack() {
-      const r = container.getBoundingClientRect();
-      const pos = backButtonPosition(r.left);
-      backBtn.style.top = pos.top;
-      backBtn.style.left = pos.left;
-    }
-    if (global.addEventListener) global.addEventListener('resize', positionBack);
-
     if (typeof NS.enterFromContainer === 'function') {
-      // styler.apply 後卡片才置中（enterFromContainer 是 async）——等它跑完 + 一個
-      // frame 再量卡片左緣定位返回鈕。
-      Promise.resolve(NS.enterFromContainer(container)).then(function () {
-        if (global.requestAnimationFrame) global.requestAnimationFrame(positionBack);
-        else positionBack();
-      });
+      NS.enterFromContainer(container);
     }
   }
 
