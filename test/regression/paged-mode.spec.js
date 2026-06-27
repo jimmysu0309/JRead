@@ -158,8 +158,9 @@ describe('翻頁模式（v0.7.227）', () => {
       const rule = ruleMatch[0];
       assert.ok(rule.includes(`border-right: ${H_GUTTER} solid transparent !important`),
         '右內距必須用 transparent border-right（scrollable overflow 不含 border）');
-      // padding 簡寫的 right 槽位必須是 0（4 值簡寫第二值）
-      const padRe = new RegExp('padding:\\s*min\\(48px, 6vw\\) 0 min\\(48px, 6vw\\) ' +
+      // padding 簡寫的 right 槽位必須是 0（4 值簡寫第二值）。v1.5.2：上緣（第一值）
+      // 改用 PAGED_TOP_GUTTER = min(16px, 2vw)、下緣（第三值）維持 V_GUTTER = min(48px, 6vw)。
+      const padRe = new RegExp('padding:\\s*min\\(16px, 2vw\\) 0 min\\(48px, 6vw\\) ' +
         H_GUTTER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' !important');
       assert.ok(padRe.test(rule),
         '翻頁容器 padding-right 必須為 0（WebKit 不把尾端 padding 算進 scrollable overflow）');
@@ -1163,12 +1164,33 @@ describe('翻頁模式（v0.7.227）', () => {
 
   // ---- D. 跨檔字面值同步（forcing function）------------------------------
   describe('跨檔同步', () => {
-    it('paged-mode.js PROGRESS_ID 必須與 styler.js PROGRESS_ID 字面一致', () => {
-      const m1 = PAGED_SRC.match(/PROGRESS_ID = '([^']+)'/);
-      const m2 = STYLER_SRC.match(/PROGRESS_ID = '([^']+)'/);
-      assert.ok(m1 && m2, '兩檔都須宣告 PROGRESS_ID');
-      assert.strictEqual(m1[1], m2[1],
-        'paged-mode.js 與 styler.js 的 PROGRESS_ID 是同一事實的雙實作，必須一致');
+    // v1.5.2：翻頁模式不再驅動頂端進度條（重複功能，底部頁碼已表進度；Jimmy
+    // 2026-06-27）。進度條生命週期單一資料源回歸 styler.js——paged-mode.js 完全
+    // 不碰它。下面三條鎖住「單一資料源 + paged gate」不回退。
+    it('paged-mode.js 不可再引用頂端進度條（PROGRESS_ID / #__jread-progress 皆不出現）', () => {
+      assert.doesNotMatch(PAGED_SRC, /PROGRESS_ID/,
+        'paged-mode.js 不該再宣告或引用 PROGRESS_ID——forcing：回頭驅動進度條 = 翻頁模式重複功能復活');
+      assert.doesNotMatch(PAGED_SRC, /__jread-progress/,
+        'paged-mode.js 不該再出現 #__jread-progress 字面——進度條生命週期單一資料源在 styler.js');
+    });
+
+    it('styler.js 進度條注入必須 gate 在非翻頁模式（opts.pagedMode 時不注入並移除既有）', () => {
+      // 抓進度條注入區塊：opts.pagedMode 分支須 remove 既有並把 progressEl 設 null
+      const m = STYLER_SRC.match(/閱讀進度條[\s\S]*?onScrollProgress\(\);\s*\n\s*\}/);
+      assert.ok(m, '抓不到 styler.js 進度條注入區塊');
+      const block = m[0];
+      assert.match(block, /if\s*\(\s*opts\.pagedMode\s*\)/,
+        'styler 進度條注入必須以 opts.pagedMode 分流——forcing：翻頁模式仍注入 = 重複功能');
+      assert.match(block, /getElementById\(PROGRESS_ID\)[\s\S]*?\.remove\(\)/,
+        'opts.pagedMode 分支須移除既有進度條（scroll→paged reapply 不殘留）');
+    });
+
+    it('styler.js 翻頁卡片上緣用 PAGED_TOP_GUTTER（拿掉進度條後文章往上長）', () => {
+      assert.match(STYLER_SRC, /const PAGED_TOP_GUTTER = '[^']+'/,
+        'styler.js 必須宣告 PAGED_TOP_GUTTER');
+      // 翻頁卡片 padding：上緣 = PAGED_TOP_GUTTER、下緣 = V_GUTTER（不對稱，下緣留給頁碼）
+      assert.match(STYLER_SRC, /padding:\s*\$\{PAGED_TOP_GUTTER\}\s+0\s+\$\{V_GUTTER\}\s+\$\{H_GUTTER\}/,
+        '翻頁卡片上緣 padding 必須是 PAGED_TOP_GUTTER、下緣 V_GUTTER——forcing：上緣改回 V_GUTTER = 沒利用騰出的區域');
     });
 
     it('shared defaults / popup DEFAULT_SETTINGS.pagedMode 預設都是 false', () => {

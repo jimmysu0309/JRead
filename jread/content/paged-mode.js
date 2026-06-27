@@ -12,8 +12,9 @@
 //   - 鍵盤翻頁：← / PageUp / Shift+Space = 上一頁；→ / PageDown / Space =
 //     下一頁；Home / End = 首頁 / 末頁
 //   - 滾輪 / 觸控板翻頁（水平或垂直 delta 累積過門檻，含慣性尾巴鎖定）
-//   - 頁碼指示（#__jread-page-indicator，底部置中「3 / 43」）+ 復用
-//     styler 的 #__jread-progress 進度條（寬度 = 已讀頁比例）
+//   - 頁碼指示（#__jread-page-indicator，底部置中「3 / 43」）= 翻頁模式唯一的
+//     進度載體。v1.5.2 起不再驅動 styler 的頂端閱讀進度條（重複功能，
+//     styler 端依 opts.pagedMode gate 不注入）
 //   - 頁碼 scrubber（v0.8.150）：按住頁碼指示器水平拖曳即時跳頁（快速捲動）。
 //     拖曳走完 viewport 寬 = 涵蓋全部頁範圍（小空間大跳幅）；touch 走 window
 //     touch 管線（起點命中指示器 → 進 scrub、不另判翻頁 swipe），桌面滑鼠走
@@ -76,9 +77,8 @@
   const SCRUB_TRACK_ID = '__jread-scrub-track'; // v0.8.151 scrub 進度條容器
   const SCRUB_FILL_ID = '__jread-scrub-fill';   // 進度條 fill（寬 = 目前頁占比）
   const HAPTIC_ID = '__jread-haptic';            // v0.8.151 iOS 觸覺載體（switch checkbox）
-  // styler.js PROGRESS_ID 的鏡像字面值（兩檔是同一事實的雙實作，regression
-  // spec paged-mode.spec.js 會校對兩邊字面值一致）
-  const PROGRESS_ID = '__jread-progress';
+  // v1.5.2：翻頁模式不再驅動頂端閱讀進度條（重複功能，styler 端依 opts.pagedMode
+  // gate 不注入）；該進度條生命週期單一資料源回歸 styler.js，本模組完全不碰。
 
   // swipe 判定參數（結構性，不綁平台）
   const SWIPE_MIN_DX = 48;          // 水平位移門檻（px）
@@ -380,10 +380,9 @@
   function renderIndicator() {
     const total = pageCount();
     if (indicatorEl) indicatorEl.textContent = (idx + 1) + ' / ' + total;
-    // 復用 styler 進度條：翻頁模式下文件不卷動、onScrollProgress 收不到事件，
-    // 由本模組直接驅動寬度 = 已讀頁比例
-    const bar = document.getElementById(PROGRESS_ID);
-    if (bar) bar.style.width = (total <= 1 ? 100 : ((idx + 1) / total) * 100) + '%';
+    // v1.5.2：翻頁模式不再驅動 styler 的頂端閱讀進度條——底部頁碼指示器已表閱讀
+    // 進度，頂端進度條為重複功能（Jimmy 2026-06-27）。該進度條生命週期單一資料源
+    // 在 styler.js（依 opts.pagedMode gate 注入與否），本模組完全不碰。
   }
 
   // v0.7.239：iOS 工具列收合「只在第一頁可滑」（Jimmy 要求：第一頁垂直滑收
@@ -1003,7 +1002,7 @@
     goToPage,
     isInstalled: () => installed,
     SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD,
-    INDICATOR_ID, PROGRESS_ID
+    INDICATOR_ID
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

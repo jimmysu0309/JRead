@@ -92,10 +92,16 @@
   const BORDER_PRESERVE_NOT = notChain([...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS, 'hr']);
   const COLOR_PRESERVE_NOT = notChain(['a', ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS, 'figcaption']);
 
-  // v0.8.37：垂直 gutter 單一資料源——base 卡片 padding / 翻頁卡片 padding /
+  // v0.8.37：垂直 gutter 單一資料源——base 卡片 padding / 翻頁卡片「下緣」padding /
   // 翻頁媒體單頁 cap 的 calc 必須同一值（與 H_GUTTER 同款 drift 防護；v0.8.1
   // 事故：改了連續模式 gutter、翻頁漏改，兩模式行寬 drift）。
+  // v1.5.2：翻頁卡片「上緣」改用 PAGED_TOP_GUTTER（較小）——其餘三處仍是 V_GUTTER。
   const V_GUTTER = 'min(48px, 6vw)';
+  // v1.5.2：分頁模式「上緣」gutter——比 V_GUTTER 收斂，把拿掉頂端進度條後騰出的
+  // 區域讓給文章排版（文章往上長、每頁多容幾行；Jimmy 2026-06-27）。只收上緣、
+  // 下緣維持 V_GUTTER 給底部頁碼指示器留呼吸空間（上下不對稱由底部頁碼平衡）。
+  // 保留 ~16px 上緣不貼齊螢幕頂、避免首行壓到 Safari 工具列收合動態邊。
+  const PAGED_TOP_GUTTER = 'min(16px, 2vw)';
   // 大內容圖（lightbox / photoswipe 等 `<a>` 包圖結構）標記：apply() runtime 量到
   // >= CONTENT_IMG_MIN 的 a-wrapped img 標 [CONTENT_IMG_ATTR]，讓 block + margin
   // 規則對它生效（一般 img:not(a > img) 排除把這類大圖當 icon-link 漏掉）。
@@ -2247,7 +2253,7 @@ html [${ARTICLE_ATTR}="1"] {
   height: auto !important;
   max-width: ${contentWidth}px !important;
   margin: 0 auto !important;
-  padding: ${V_GUTTER} 0 ${V_GUTTER} ${H_GUTTER} !important;
+  padding: ${PAGED_TOP_GUTTER} 0 ${V_GUTTER} ${H_GUTTER} !important;
   border-right: ${H_GUTTER} solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
@@ -2292,8 +2298,8 @@ html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
 html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] svg,
 html [${ARTICLE_ATTR}="1"] iframe {
-  max-height: calc(100vh - ${V_GUTTER} * 2 - 120px) !important;
-  max-height: calc(100dvh - ${V_GUTTER} * 2 - 120px) !important;
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
   width: auto !important;
   max-width: 100% !important;
   object-fit: contain !important;
@@ -2303,8 +2309,8 @@ html [${ARTICLE_ATTR}="1"] iframe {
    cascade 輸給 base 媒體 cap (0,3,3)——裸 img（非 a 包）的直式長圖在翻頁
    模式有效 max-height 變 90vh、超過欄高被跨頁切割。 */
 ${MEDIA_CAP_SEL} {
-  max-height: calc(100vh - ${V_GUTTER} * 2 - 120px) !important;
-  max-height: calc(100dvh - ${V_GUTTER} * 2 - 120px) !important;
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
 }
 html [${ARTICLE_ATTR}="1"] figure,
 html [${ARTICLE_ATTR}="1"] picture,
@@ -3382,16 +3388,26 @@ html [${ARTICLE_ATTR}="1"] a {
       window.removeEventListener('scroll', onScrollFlash, { passive: true });
       window.addEventListener('scroll', onScrollFlash, { passive: true });
 
-      // 閱讀進度條
-      progressEl = document.getElementById(PROGRESS_ID);
-      if (!progressEl) {
-        progressEl = document.createElement('div');
-        progressEl.id = PROGRESS_ID;
-        (document.head?.parentElement || document.documentElement).appendChild(progressEl);
-      }
+      // 閱讀進度條——v1.5.2：分頁模式不注入（底部頁碼指示器已表閱讀進度，頂端進度條
+      // 為重複功能；Jimmy 2026-06-27）。styler 是進度條生命週期的單一資料源：依
+      // opts.pagedMode 決定注入與否，paged-mode.js 不再碰它。切到分頁模式（scroll→
+      // paged reapply）時把既有的移除，騰出頂端區域給文章排版（paged 卡片上緣 gutter
+      // 同步收斂，見上方 PAGED_TOP_GUTTER）。
       window.removeEventListener('scroll', onScrollProgress, { passive: true });
-      window.addEventListener('scroll', onScrollProgress, { passive: true });
-      onScrollProgress();
+      if (opts.pagedMode) {
+        const existing = document.getElementById(PROGRESS_ID);
+        if (existing) existing.remove();
+        progressEl = null;
+      } else {
+        progressEl = document.getElementById(PROGRESS_ID);
+        if (!progressEl) {
+          progressEl = document.createElement('div');
+          progressEl.id = PROGRESS_ID;
+          (document.head?.parentElement || document.documentElement).appendChild(progressEl);
+        }
+        window.addEventListener('scroll', onScrollProgress, { passive: true });
+        onScrollProgress();
+      }
 
       // v0.7.91：install SPACE keydown listener（capture phase 比原站 bubble
       // listener 早攔，比原站 keydown 攔截先收到 SPACE）。重複 apply 時保險先 remove。
