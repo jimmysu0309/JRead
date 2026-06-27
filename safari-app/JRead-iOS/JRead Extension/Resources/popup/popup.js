@@ -790,7 +790,10 @@ readwiseBtn.addEventListener('click', async () => {
     // 方便日後 iOS 真機回報時直接看出失敗層次，不再是不透明的「送出失敗」
     const detail = result && result.status ? `（HTTP ${result.status}）`
                  : result && result.error ? `（${result.error}）` : '';
-    setReadwiseStatus(`送出失敗${detail}`, 'err');
+    // v1.5.7：帶上 Readwise 回應的具體原因（4xx body 萃出的一句）——HTTP 400
+    // 不再是黑盒，使用者直接從狀態列看到 Readwise 拒收的真正欄位/原因
+    const reason = result && result.detail ? `：${result.detail}` : '';
+    setReadwiseStatus(`送出失敗${detail}${reason}`, 'err');
   }
   readwiseBtn.disabled = false;
 });
