@@ -21,10 +21,14 @@ const sampleDocs = [
 ];
 
 describe('reader-feed: formatMeta', () => {
-  it('作者 · 來源 · 字數，空欄略過', () => {
-    assert.strictEqual(FEED.formatMeta(sampleDocs[0]), 'Ben　·　Stratechery　·　774 字');
-    assert.strictEqual(FEED.formatMeta(sampleDocs[1]), 'sspai　·　848 字');
+  it('作者 · 來源（不含字數，v1.0.24），空欄略過', () => {
+    assert.strictEqual(FEED.formatMeta(sampleDocs[0]), 'Ben　·　Stratechery');
+    assert.strictEqual(FEED.formatMeta(sampleDocs[1]), 'sspai');
     assert.strictEqual(FEED.formatMeta(sampleDocs[2]), '');
+  });
+  it('不顯示字數（word_count 不進 meta）', () => {
+    assert.ok(!/字/.test(FEED.formatMeta(sampleDocs[0])), 'meta 不可含字數');
+    assert.ok(!/774/.test(FEED.formatMeta(sampleDocs[0])));
   });
 });
 
@@ -181,6 +185,20 @@ describe('reader-article: buildArticleContainer', () => {
     assert.strictEqual(article.querySelector('h1'), null);
     assert.strictEqual(article.querySelector('[data-jread-reader-byline]'), null);
     assert.ok(article.querySelector('[data-jread-reader-body]').textContent.includes('內文'));
+  });
+});
+
+describe('reader-article: createBackButton', () => {
+  it('產出 #__jread-reader-back 固定鈕、文字「← Reader」、click 觸發回呼', () => {
+    const document = freshDoc();
+    let clicked = false;
+    const btn = ARTICLE.createBackButton(document, () => { clicked = true; });
+    assert.strictEqual(btn.id, '__jread-reader-back');
+    assert.ok(/Reader/.test(btn.textContent), '文字應含 Reader');
+    assert.match(btn.style.cssText, /position:\s*fixed/, '必須 fixed 定位');
+    assert.match(btn.style.cssText, /z-index:\s*2147483640/, '高 z-index 蓋在版面上');
+    btn.click();
+    assert.ok(clicked, 'click 必須觸發回呼（回 feed）');
   });
 });
 
