@@ -116,4 +116,38 @@ describe('womany-bare-content-img-upscale — 裸內容圖放大填滿欄寬（v
     assert.strictEqual(small.getAttribute(ATTR), null,
       'restore 必須移除 data-jread-upscale-img');
   });
+
+  // v1.5.5：The Atlantic ArticleLeadArt hero「縮成小方塊」forcing function。
+  // 根因（Jimmy 2026-06-27 回報 theatlantic.com/.../683884）：hero img 因 width/
+  // height 屬性自帶 aspect-ratio auto 960/540，站點 stylesheet 用一條 (0,2,1)
+  // specificity 的 height 規則把它釘成 36px → 寬度反推成 64px（width:100% 只解析成
+  // picture flex item 的 64px）。修法：UPSCALE 規則補 height:auto（解除釘高、寬度由
+  // 版心 width:100% 主導）+ attribute 加倍把 specificity 拉到 (0,3,1) 壓過站點那條
+  // 後注入的 (0,2,1) height 規則（real-Chrome probe 實證 64×36 → 608×342）。
+  // 本層驗注入 CSS 字串的結構（jsdom 無 layout、實際幾何由 probe-atlantic-hero +
+  // debug-harness 截圖實證）。
+  it('注入 CSS 的 upscale 規則同時含 width:100% 與 height:auto', () => {
+    const { NS, articleEl, document } = setup();
+    NS.styler.apply(articleEl, SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 抓 upscale 規則 block（選擇器含 upscale-img attr、到下一個 } 為止）
+    const m = css.match(/\[data-jread-upscale-img\][^{]*\{[^}]*\}/);
+    assert.ok(m, '必須有 upscale-img CSS 規則');
+    const block = m[0];
+    assert.ok(/width:\s*100%\s*!important/.test(block),
+      'upscale 規則必須保留 width:100%（撐滿欄寬）');
+    assert.ok(/height:\s*auto\s*!important/.test(block),
+      'upscale 規則必須含 height:auto——否則站點釘死的 height + aspect-ratio 會反推壓垮寬度（Atlantic hero 64×36 bug）');
+  });
+
+  it('upscale 規則選擇器把 [upscale-img] 寫兩次拉高 specificity（壓過站點同級 height 規則）', () => {
+    const { NS, articleEl, document } = setup();
+    NS.styler.apply(articleEl, SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // doubled attribute：選擇器內 [data-jread-upscale-img] 連續出現兩次
+    assert.ok(
+      /\[data-jread-upscale-img\]\[data-jread-upscale-img\]\s*\{/.test(css),
+      'upscale 選擇器必須 doubled attr（(0,3,1) 壓過站點後注入的 (0,2,1) height 規則）；' +
+      '降回單一 attr 會在 cascade tie 輸給站點 → Atlantic hero 退回 64×36');
+  });
 });
