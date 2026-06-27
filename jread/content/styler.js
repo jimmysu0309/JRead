@@ -102,6 +102,11 @@
   // 下緣維持 V_GUTTER 給底部頁碼指示器留呼吸空間（上下不對稱由底部頁碼平衡）。
   // 保留 ~16px 上緣不貼齊螢幕頂、避免首行壓到 Safari 工具列收合動態邊。
   const PAGED_TOP_GUTTER = 'min(16px, 2vw)';
+  // v1.5.3：reader 文章頁（article feed 點進的單篇，NS.state.readerHostPage）拿掉
+  // 左上角返回箭頭後，捲動模式卡片「上緣」同樣收斂——與翻頁上緣共用同一「頂端無
+  // chrome 時的緊縮上緣」值（單一資料源、避免兩處 drift），標題往上移、每屏多容幾行。
+  // 只套 reader 文章頁；一般網站閱讀模式維持 V_GUTTER（opts.readerHostPage gate）。
+  const READER_HOST_TOP_GUTTER = PAGED_TOP_GUTTER;
   // 大內容圖（lightbox / photoswipe 等 `<a>` 包圖結構）標記：apply() runtime 量到
   // >= CONTENT_IMG_MIN 的 a-wrapped img 標 [CONTENT_IMG_ATTR]，讓 block + margin
   // 規則對它生效（一般 img:not(a > img) 排除把這類大圖當 icon-link 漏掉）。
@@ -709,7 +714,7 @@ html [${ARTICLE_ATTR}="1"] {
      垂直 padding 維持 min(48px, 6vw)（v0.7.226）——頂部空白是縱向體感、與
      水平可讀寬無關，不需同步收到 16px。
      v0.8.14：水平 gutter 值抽成 H_GUTTER 常數，與翻頁模式共用同一資料源。 */
-  padding: ${V_GUTTER} ${H_GUTTER} !important;
+  padding: ${opts.readerHostPage ? `${READER_HOST_TOP_GUTTER} ${H_GUTTER} ${V_GUTTER} ${H_GUTTER}` : `${V_GUTTER} ${H_GUTTER}`} !important;
   background: ${theme.articleBg} !important;
   background-image: none !important;
   border-radius: 8px !important;
@@ -2835,7 +2840,11 @@ html [${ARTICLE_ATTR}="1"] a {
         })(),
         // v0.7.227：翻頁模式（電子書式水平翻頁）。boolean、預設 false——
         // 嚴格 === true 判定，storage 損壞 / 外部寫入非 boolean 值一律當關。
-        pagedMode: s.pagedMode === true
+        pagedMode: s.pagedMode === true,
+        // v1.5.3：本頁是否為 reader 文章頁（article feed 點進的單篇）——true 時
+        // 卡片上緣用較緊縮的 READER_HOST_TOP_GUTTER（拿掉返回箭頭後文章往上長）。
+        // 由 reader-article.js 在 enterFromContainer 前設 NS.state.readerHostPage。
+        readerHostPage: !!(NS.state && NS.state.readerHostPage)
       };
       const theme = themeOf(s.theme);
 
