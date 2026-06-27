@@ -536,8 +536,23 @@ openOptionsLink.addEventListener('click', (e) => {
 // 入口，與當前分頁閱讀狀態無關；僅在已設 readwiseToken 時顯示（沒 token 進去也
 // 只會看到「請填 token」訊息，按鈕露出只是雜訊，比照 readwise-btn 的 token gate）。
 async function refreshReaderButton() {
+  // v1.5.1：在 reader 自有頁（reader/ 下的 feed／article）本就「已在 Reader」，
+  // 這顆全域入口是雜訊——直接隱藏（與 refreshPopupForActiveTab 的 readerHostPage
+  // 隱藏一致，URL 前綴判定不依賴 GET_READER_STATE round-trip，無 async 競態）。
+  try {
+    if (await isReaderHostTab()) { readerBtn.hidden = true; return; }
+  } catch (_) { /* 判定失敗則回退到 token gate */ }
   try { readerBtn.hidden = !(await hasReadwiseToken()); }
   catch (_) { readerBtn.hidden = true; }
+}
+
+// 當前作用分頁是否為 reader 自有頁（chrome-extension://<id>/reader/…）。
+async function isReaderHostTab() {
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.url) return false;
+    return tab.url.startsWith(browser.runtime.getURL('reader/'));
+  } catch (_) { return false; }
 }
 readerBtn.addEventListener('click', async () => {
   try {
@@ -616,6 +631,22 @@ async function refreshPopupForActiveTab() {
     const cinemaActive = !!(res && res.cinemaActive);
     const borderlessActive = !!(res && res.borderlessActive);
     const editModeActive = !!(res && res.editModeActive);
+    // v1.5.1：reader 自有頁（article feed 閱讀／feed 列表）——「進入 Reader /
+    // 送到 Readwise / 編輯模式」三顆在此情境都是雜訊（已在 Reader、文章本就來自
+    // Readwise、reader 版型不需手動移雜訊），整批隱藏並提前 return，不跑下方一般邏輯。
+    const readerHostPage = !!(res && res.readerHostPage);
+    if (readerHostPage) {
+      if (siteMode === 'youtube-cinema') {
+        toggleBtn.textContent = cinemaActive ? '退出影院模式' : '啟動影院模式';
+      } else {
+        toggleBtn.textContent = active ? '退出閱讀模式' : '啟動閱讀模式';
+      }
+      readerBtn.hidden = true;
+      readwiseBtn.hidden = true;
+      editBtn.hidden = true;
+      borderlessBtn.hidden = true;
+      return;
+    }
     // YouTube watch 頁：toggle 按鈕文字改「啟動 / 退出影院模式」。
     // v0.8.104：其他站不再固定顯示「切換閱讀模式」，改為反映 reader mode 狀態
     //（已啟動 → 「退出閱讀模式」、未啟動 → 「啟動閱讀模式」），與影院模式按鈕

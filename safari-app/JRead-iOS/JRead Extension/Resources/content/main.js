@@ -1270,6 +1270,10 @@
         borderlessActive: !!(NS.borderless && NS.borderless.isActive && NS.borderless.isActive()),
         // v0.8.108：編輯模式是否啟動——popup 用來切「編輯模式 / 完成編輯」按鈕文字
         editModeActive: !!(NS.editMode && NS.editMode.isActive()),
+        // v1.5.1：本頁是否為 reader 自有頁（article feed 閱讀／feed 列表）。popup 用來
+        // 隱藏「進入 Reader / 送到 Readwise / 編輯模式」三顆——這些在 Reader 內都是雜訊
+        //（已在 Reader、文章本就來自 Readwise、reader 版型無需手動移雜訊）。
+        readerHostPage: !!NS.state.readerHostPage,
         siteMode
       });
       return; // sync
