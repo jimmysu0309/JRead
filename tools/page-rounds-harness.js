@@ -208,6 +208,11 @@ async function setZoom(page, z) {
   // 全域純量的洞——v0.8.168 Miniflux 開頭 502 chars 被誤殺仍 retention 76% 漏抓）。
   const taggedProse = await audits.tagOriginalLongProse(page);
   console.log(`  long-prose blocks tagged: ${taggedProse}`);
+  // Byline audit：toggle 前用 JSON-LD/meta 作者+日期當 ground truth，標記 masthead
+  //（首個長段落之前）緊貼作者名/日期的 carrier。補 byline 短文字被誤殺的洞
+  //（v1.5 Medium 作者+日期消失，標題/長散文 audit 都不覆蓋）。
+  const taggedByline = await audits.tagOriginalByline(page);
+  console.log(`  byline carriers tagged: ${taggedByline.tagged}${taggedByline.author ? ' (author: ' + taggedByline.author + ')' : ''}`);
   // B3 基準：原頁 visible p 文字總量（retention ratio 用，見 audit-lib 頭註解）
   const originalTextStats = await audits.collectOriginalTextStats(page);
   console.log(`  original p text: ${originalTextStats.pTextLength} chars (${originalTextStats.pCount} p)`);
@@ -221,7 +226,7 @@ async function setZoom(page, z) {
     contrast: { light: null, dark: null },
     theme: { dark: null, lightRestore: null },
     overflow: null, textImageOverlap: null, tail: null, restored: null, droppedFigures: null,
-    droppedProse: null, titlePresence: null,
+    droppedProse: null, titlePresence: null, bylinePresence: null,
     failReasons: [], reviewReasons: [] };
 
   // verdict 收尾共用：寫 audit.json、移目錄、印 VERDICT 行（batch script 解析這行）
@@ -461,6 +466,19 @@ async function setZoom(page, z) {
     console.log('  ℹ️  標題: 無 og/doc title 基準或 reader 未啟動，跳過');
   }
 
+  // Byline（作者+日期）進 reader card（B，review-tier）：masthead carrier 要存活
+  if (taggedByline.tagged > 0) {
+    audit.bylinePresence = await audits.runDroppedBylineAudit(page);
+    if (audit.bylinePresence.missing) {
+      const lost = [audit.bylinePresence.authorDropped && '作者', audit.bylinePresence.dateDropped && '日期'].filter(Boolean).join('+');
+      console.log(`  ⚠️  byline 缺失: ${lost}被 cleaner 整塊砍（masthead carrier 全 hide）`);
+    } else {
+      console.log(`  ✅ byline: 作者/日期 carrier 存活（author ${audit.bylinePresence.author.dropped}/${audit.bylinePresence.author.tagged} hide, date ${audit.bylinePresence.date.dropped}/${audit.bylinePresence.date.tagged} hide）`);
+    }
+  } else {
+    console.log('  ℹ️  byline: 無 JSON-LD/meta 作者+日期基準或無 masthead 錨，跳過');
+  }
+
   audit.narrowText = await audits.runNarrowTextAudit(page);
   if (audit.narrowText.narrow) {
     console.log(`  ⚠️  narrow text: ${audit.narrowText.narrowCount} paragraphs with < 10 chars/line`);
@@ -642,6 +660,10 @@ async function setZoom(page, z) {
   if (audit.droppedProse?.dropped?.length > 0) fail.push(`prose-dropped x${audit.droppedProse.dropped.length}`);
   // 標題缺失（B）：review-tier（strict 字串存在性、低 stakes，由 Claude 看截圖確認）
   if (audit.titlePresence?.missing) review.push('title-missing');
+  // Byline 缺失（B）：review-tier（masthead carrier 全 hide；meta 與顯示用字可能差異）
+  if (audit.bylinePresence?.missing) {
+    review.push([audit.bylinePresence.authorDropped && 'author', audit.bylinePresence.dateDropped && 'date'].filter(Boolean).map(k => `byline-${k}-missing`).join(', '));
+  }
   if (audit.narrowText?.narrow) fail.push('narrow-text');
   if (audit.figcaption?.cramped) fail.push('figcaption-cramped');
   if (audit.bodyWidth?.narrow) fail.push('body-width-narrow');
