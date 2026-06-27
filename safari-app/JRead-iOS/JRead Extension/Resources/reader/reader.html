@@ -66,7 +66,9 @@
       <span class="jr-sub" id="jr-sub"></span>
     </div>
     <div class="jr-list" id="jr-list"></div>
-    <div class="jr-msg" id="jr-msg" hidden></div>
+    <!-- 預設可見「載入中…」：即使 JS 因故沒跑（iOS 平台問題）頁面也不會全白，
+         JS 接手後由 reader-feed.js 換成卡片或對應訊息。 -->
+    <div class="jr-msg" id="jr-msg">載入中…</div>
   </main>
 
   <!-- 只載 feed 需要的最小集合：NS 命名空間、預設值、toast、Reader API、feed app。

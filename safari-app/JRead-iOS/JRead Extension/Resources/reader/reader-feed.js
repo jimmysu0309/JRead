@@ -125,7 +125,16 @@
     const NS = global.__JRead;
     const PC = global.__JReadPopup;
     const doc = global.document;
-    if (!browser || !browser.storage || !PC || !doc) return;
+    // 缺關鍵相依（理論上不會發生；iOS 載入順序 / 模組沒掛時 surface 出來，不靜默卡白）
+    if (!browser || !browser.storage || !PC || !doc) {
+      const m = doc && doc.getElementById('jr-msg');
+      if (m) {
+        m.hidden = false;
+        m.textContent = 'Reader 初始化失敗（缺少：' +
+          [!browser && 'browser', !(browser && browser.storage) && 'storage', !PC && 'popup-core'].filter(Boolean).join(' / ') + '）';
+      }
+      return;
+    }
 
     const listEl = doc.getElementById('jr-list');
     const msgEl = doc.getElementById('jr-msg');
@@ -141,6 +150,8 @@
       if (typeof text === 'string') msgEl.textContent = text;
       else if (text && text.nodeType) msgEl.appendChild(text);
     }
+    // 成功渲染卡片時收起「載入中…」訊息
+    function hideMsg() { if (msgEl) { msgEl.hidden = true; msgEl.textContent = ''; } }
 
     function toast(message, kind) {
       if (NS && NS.toast && typeof NS.toast.show === 'function') NS.toast.show(message, { kind });
@@ -176,10 +187,15 @@
             onEmpty: () => showMsg('收件匣目前沒有文章', false)
           });
         };
+        hideMsg();
         renderFeed(listEl, docs, onArchive);
+      }, (err) => {
+        // list fetch reject（iOS 偶發）：surface 出來，不要卡在「載入中…」
+        if (subEl) subEl.textContent = '';
+        showMsg('載入失敗：' + String(err && err.message || err), true);
       });
-    }).catch(() => {
-      showMsg('讀取設定失敗，請重新整理', true);
+    }).catch((err) => {
+      showMsg('讀取設定失敗：' + String(err && err.message || err), true);
     });
   }
 

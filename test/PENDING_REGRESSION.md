@@ -18,9 +18,10 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
-## [2026-06-27] Reader 整合 iOS Safari 真機驗證（v1.0.22）
+## [2026-06-27] Reader 整合 iOS Safari 真機驗證（v1.0.22；v1.0.23 feed 空白硬化待驗）
 - 觸發頁面：擴充自有頁 `reader/reader.html`（feed）+ `reader/article.html?id=<docId>`（文章），iOS / iPadOS Safari Web Extension
-- 症狀：尚未在 iOS 真機驗證。Chromium（`tools/reader-harness.js`）已實證 styler 套用 / 改主題即時重套 / 位置記憶跨 reload / feed 渲染+封存皆 PASS；但 WebKit 行為與 Chromium 有別（CLAUDE.md），下列只能真機驗：
+- **v1.0.23 進展**：Jimmy 2026-06-27 真機回報「iOS 進入 Reader 開出新分頁但空白、沒顯示 feed」。已硬化讓 feed 頁不再靜默空白——下個 TestFlight build 看**頁面顯示什麼訊息**即可定位失敗層：「載入中…」卡住不動＝scripts 沒跑完 / fetch hang；「初始化失敗（缺少 …）」＝模組沒載；「載入失敗：…」＝list fetch reject；「尚未設定 Readwise token…」＝storage 沒讀到 token；仍全白＝scripts 根本沒執行（CSP / WAR / 載入錯誤，需 Safari Web Inspector 連線看 console）。WAR 已補 reader 頁（但 options.html 不在 WAR 也能開，WAR 未必是根因）。**請 Jimmy 裝 v1.0.23 後回報看到的訊息**，據此再修真正失敗點。
+- 症狀（其餘維度，Chromium `tools/reader-harness.js` 已實證 styler 套用 / 改主題即時重套 / 位置記憶跨 reload / feed 渲染+封存皆 PASS；但 WebKit 只能真機驗）：
   1. **真實 Readwise fetch 可靠性**：擴充頁直接 fetch readwise.io（list / update）在 iOS 是否穩定（floating-icon.js:205 註解曾實證擴充頁 fetch 在 iOS 可靠、content script 不可靠；reader 頁是擴充頁理應 OK，但 list/update 是新呼叫點待證）
   2. **即時重套兜底**：iOS popup 開啟掛起底層頁時 `storage.onChanged` 會丟事件——reader 文章頁是否靠既有 `visibilitychange` 重套（main.js）+ REAPPLY_SETTINGS onMessage 接回（popup 關閉、reader tab refocus 時重套主題/字型）
   3. **floating-icon 頁內面板降級**：Safari 不能在頁內 iframe 載擴充頁（floating-icon.js:229 `isSafariRuntime` → 改開新分頁載 popup.html）——article.html 上長按 floating-icon 開功能選單在 iOS 是否正常降級
