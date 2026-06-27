@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!--
+  byline/dateline 含 <time> 元素保護（Page Rounds 2026-06-28）。兩個真 bug + 兩個負控：
+    [真] byline-row（dev.to）：頭像 + 作者名 + <time>「Posted on Jan 6」。被
+         hideInsideArticleAuthorBioCards 當 bio 卡砍；ARTICLE_META_RE 漏抓 CJK/無年
+         日期。修法：候選含 <time> → 放行。
+    [真] dateline-meta（bellingcat）：<time> 發表日期 + 分類 taxonomy 連結同一 div。
+         被 hideInsideArticleHashtagClusters 當 tag bar 砍、日期連坐。修法：含 <time> → 放行。
+    [負] hashtag-bar：純 taxonomy 連結列、無 <time> → 仍應被清。
+    [負] bio-card：頭像 + 作者 bio 散文、無 <time> → 仍應被當 bio 卡清。
+  （頭像 rect 在 jsdom 需 stubRect；<time> 訊號本身不依賴 rect。）
+-->
+<html>
+<head><meta property="og:title" content="A debugging manifesto"></head>
+<body>
+  <article data-test="article-root">
+    <h1>A debugging manifesto</h1>
+    <div data-test="byline-row">
+      <a href="/u/abhijeet"><img data-test="byline-avatar" src="https://res.cloudinary.com/avatar/abhijeet.png" width="48" height="48"></a>
+      <span>Abhijeet Bhale</span>
+      <time datetime="2026-01-06">Posted on Jan 6</time>
+    </div>
+    <p data-test="main-1">When you run into a bug, the natural instinct is to try to fix it as fast as possible, but it is generally more effective to leave the bug in place and understand it first.</p>
+    <p data-test="main-2">Sometimes I get really demoralized when debugging and it feels like I will never make progress, so I remind myself that I have fixed a lot of bugs before and will fix this one too.</p>
+    <div data-test="dateline-meta">
+      <time datetime="2026-04-09">April 9, 2026</time>
+      <a href="/category/cybersecurity">Cybersecurity</a>
+      <a href="/category/hacking">Hacking</a>
+      <a href="/tags/hungary">Hungary</a>
+    </div>
+    <div data-test="hashtag-bar">
+      <a href="/tags/debugging">#debugging</a>
+      <a href="/tags/programming">#programming</a>
+      <a href="/tags/career">#career</a>
+    </div>
+    <div data-test="bio-card">
+      <img data-test="bio-avatar" src="https://res.cloudinary.com/avatar/jane.png" width="64" height="64">
+      <span>Jane Author</span>
+      <p>Jane is a senior writer who has been covering technology and science for this publication for over ten years.</p>
+    </div>
+  </article>
+</body>
+</html>

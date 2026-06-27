@@ -221,7 +221,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -1647,6 +1647,11 @@
     const text = norm(visibleRenderedText(sib));
     if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
         (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE))) return true;
+    // v1.5.6 byline 作者 chip 保護：含「作者個人頁連結」的短分支＝置於標題上方的
+    // 作者署名（techcrunch 把 authors-list 放在 h1 之前，裸作者名「Anthony Ha」
+    // 無 by 前綴/日期 → BYLINE_TEXT_RE 漏抓被當 pre-title 雜訊砍）。與條件 A /
+    // button cluster 的 clusterContainsAuthorProfileLink 保護同源、跨 rule 一致。
+    if (text.length <= BYLINE_MAX_TEXT_LEN && clusterContainsAuthorProfileLink(sib)) return true;
     return false;
   }
 
@@ -2685,6 +2690,12 @@
         }
       }
       if (hasMainBlock) continue;
+      // v1.5.6 byline/dateline 保護：cluster 含 <time> = 發表日期 + 分類 tag 的
+      // meta 列（非純 hashtag bar）。bellingcat `.singular__content__text__meta`
+      // 實測：「April 9, 2026」(<time>) 與分類連結 Cybersecurity/Hacking/Hungary
+      // 同 div，taxonomy href 命中 hashtag 判定整列被砍、發表日期連坐消失。
+      // 純 hashtag/tag bar 不含 <time>，此 guard 只放行「日期 + tag」dateline。
+      if (el.querySelector('time')) continue;
       hide(el, hidden);
     }
   }
@@ -3057,6 +3068,15 @@
           // byline 結構特徵跨站通用，誤殺風險可控。
           const sText = norm(s.el.textContent || '');
           if (s.textLen < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(sText)) continue;
+          // v1.5.6 byline 作者 chip 保護：短小元素若含「作者個人頁連結」
+          // （/author/、/authors/、/@user 等）= 裸作者署名（無「By」前綴、無日期
+          // 文字，BYLINE_TEXT_RE 漏抓）。techcrunch `wp-block-techcrunch-post-
+          // authors-list` 實測：作者名「Anthony Ha」整段是 author-page <a> →
+          // ld=1、textLen=10 落入條件 A 被當 link-dense widget 砍、作者名消失。
+          // author-page 連結是跨站通用的 byline 結構訊號（與 button cluster 的
+          // clusterContainsAuthorProfileLink 保護同源）；短小門檻避免誤放
+          // 「more from author」類較大 widget。
+          if (s.textLen < BYLINE_MAX_TEXT_LEN && clusterContainsAuthorProfileLink(s.el)) continue;
           hide(s.el, hidden);
           continue;
         }
@@ -5846,6 +5866,13 @@
       // byline/meta（非底部 bio 卡）→ 保留。解 Medium「副標佔滿前 60 字、byline
       // 日期被擠到後面」漏網（slice(0,60) 看不到）。
       if (ARTICLE_META_RE.test(t)) continue;
+      // v1.5.6 byline 保護：候選含 <time> 元素 = 文章頭部 byline / 發表日期列
+      // （`<time>` 是 HTML5 日期語意標記，author bio 卡「關於作者」絕不含）。
+      // dev.to byline row `DIV.flex…`「Abhijeet Bhale Posted on 1月6日」實測：
+      // 含頭像 + 作者名 + <time>，rect/文字短被當 bio 卡砍、作者+日期連坐消失。
+      // ARTICLE_META_RE 漏抓「Posted on 1月6日」（CJK 月日無「年」），<time>
+      // tag 是不受日期格式 / 語言影響的結構訊號。
+      if (candidate.querySelector && candidate.querySelector('time')) continue;
       if (containsSelfLinkTitleHeading(candidate)) continue;
       hide(candidate, hidden);
     }
