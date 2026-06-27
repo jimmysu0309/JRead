@@ -12,12 +12,12 @@
 
   const MAX_ITEMS = 10;
 
-  // 卡片副標：作者 · 來源 · 字數（空欄略過，無前後贅分隔）。
+  // 卡片副標：作者 · 來源（空欄略過，無前後贅分隔）。v1.0.24 起不顯示字數
+  //（Jimmy 2026-06-27：word_count 中英文語意不一、雜訊）。
   function formatMeta(doc) {
     const parts = [];
     if (doc.author) parts.push(String(doc.author));
     if (doc.site_name) parts.push(String(doc.site_name));
-    if (doc.word_count) parts.push(`${doc.word_count} 字`);
     return parts.join('　·　');
   }
 
