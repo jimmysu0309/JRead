@@ -199,6 +199,16 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       })();
       return;
     }
+    case 'OPEN_READER': {
+      // v1.0.23：懸浮按鈕長按選單「進入 Reader」。content script 無 tabs 權限，
+      // 由 SW 開 reader/reader.html（Readwise inbox feed）新分頁。與 popup「進入
+      // Reader」按鈕同一個目標頁；reader.html 已列入 web_accessible_resources。
+      (async () => {
+        try { await browser.tabs.create({ url: browser.runtime.getURL('reader/reader.html') }); }
+        catch (_e) {}
+      })();
+      return;
+    }
     case 'SET_ACTIVE_ICON': {
       // content main.js 在 enter/exit reader mode 時呼叫，切 action icon 彩色/灰階
       // + 同步切換綠色 badge（active）/ 清空 badge（inactive）

@@ -355,10 +355,10 @@ describe('懸浮按鈕（v0.8.154）', () => {
   describe('長按選單', () => {
     // v0.8.166：移除「送到 Readwise Reader」直送項——content 直送在 iOS toast 不顯示、
     // 無回饋（Jimmy 2026-06-23 實機）；Readwise 送出改走「功能選單」叫出的 popup 內按鈕。
-    it('MENU_ITEMS 只剩 paged 一項（readwise 直送項已移除）', () => {
+    it('MENU_ITEMS = paged + reader（v1.0.23 新增進入 Reader；readwise 直送項仍不存在）', () => {
       const { NS } = setup();
       const ids = Array.from(NS.floating.MENU_ITEMS, (i) => i.id);
-      assert.deepStrictEqual(ids, ['paged']);
+      assert.deepStrictEqual(ids, ['paged', 'reader']);
       assert.ok(!ids.includes('readwise'), 'Readwise 直送項必須移除（改走 popup）');
     });
 
@@ -369,19 +369,28 @@ describe('懸浮按鈕（v0.8.154）', () => {
         '不可殘留 content 直送呼叫');
     });
 
-    it('buildMenu 渲染兩個 menu-item（paged / 功能選單）+ 分隔線', () => {
+    it('buildMenu 渲染三個 menu-item（paged / reader / 功能選單）+ 分隔線', () => {
       const { NS, document } = setup();
       NS.floating.buildMenu();
       const shadow = document.getElementById('__jread-floating-host').shadowRoot;
       const items = shadow.querySelectorAll('.menu-item');
-      assert.strictEqual(items.length, 2, 'v0.8.166 起：切換分頁模式 + 功能選單共兩項');
+      assert.strictEqual(items.length, 3, 'v1.0.23 起：切換分頁模式 + 進入 Reader + 功能選單共三項');
       assert.strictEqual(items[0].dataset.action, 'paged');
-      assert.strictEqual(items[1].dataset.action, 'feature-menu');
-      assert.ok(!/Readwise/.test(shadow.textContent), '選單不可再出現 Readwise 項');
+      assert.strictEqual(items[1].dataset.action, 'reader');
+      assert.strictEqual(items[2].dataset.action, 'feature-menu');
       assert.ok(/分頁/.test(items[0].textContent));
-      assert.ok(/功能選單/.test(items[1].textContent));
+      assert.ok(/進入 Reader/.test(items[1].textContent), '第二項必須是「進入 Reader」');
+      assert.ok(/功能選單/.test(items[2].textContent));
       // 「功能選單」前必須有分隔線（與一般動作區隔）
       assert.ok(shadow.querySelector('.menu-divider'), '功能選單前必須有分隔線');
+    });
+
+    it('openReader 送 OPEN_READER 給 SW（content 無 tabs 權限，交 SW 開 reader.html）', () => {
+      const { NS } = setup();
+      let sent = null;
+      NS.safeSendMessage = (msg) => { sent = msg; };
+      NS.floating.openReader();
+      assert.ok(sent && sent.type === NS.MSG.OPEN_READER, 'openReader 必須送 OPEN_READER 訊息');
     });
 
     it('切換分頁模式：翻轉 storage.sync.pagedMode（false→true）', () => {

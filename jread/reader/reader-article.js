@@ -83,7 +83,13 @@
     const NS = global.__JRead;
     const PC = global.__JReadPopup;
     const doc = global.document;
-    if (!browser || !browser.storage || !PC || !NS || !doc) return;
+    // 缺關鍵相依時 surface 出來、不靜默卡在「載入中…」（iOS 模組載入問題診斷用）
+    if (!browser || !browser.storage || !PC || !NS || !doc) {
+      const m = doc && doc.getElementById('jr-status');
+      if (m) m.textContent = '初始化失敗（缺少：' +
+        [!browser && 'browser', !PC && 'popup-core', !NS && 'namespace'].filter(Boolean).join(' / ') + '）';
+      return;
+    }
 
     const statusEl = doc.getElementById('jr-status');
     const setStatus = (text, isError) => {
