@@ -25,7 +25,7 @@
   1. **真實 Readwise fetch 可靠性**：擴充頁直接 fetch readwise.io（list / update）在 iOS 是否穩定（floating-icon.js:205 註解曾實證擴充頁 fetch 在 iOS 可靠、content script 不可靠；reader 頁是擴充頁理應 OK，但 list/update 是新呼叫點待證）
   2. **即時重套兜底**：iOS popup 開啟掛起底層頁時 `storage.onChanged` 會丟事件——reader 文章頁是否靠既有 `visibilitychange` 重套（main.js）+ REAPPLY_SETTINGS onMessage 接回（popup 關閉、reader tab refocus 時重套主題/字型）
   3. **floating-icon 頁內面板降級**：Safari 不能在頁內 iframe 載擴充頁（floating-icon.js:229 `isSafariRuntime` → 改開新分頁載 popup.html）——article.html 上長按 floating-icon 開功能選單在 iOS 是否正常降級
-  4. **位置記憶 storage.local**：article.html?id= 的閱讀位置在 iOS storage.local 寫入/回復是否正常（position-memory 已有 stripLoneSurrogates + writeWithSelfHeal 處理 iOS set reject，沿用未改）
+  4. **位置記憶 storage.local**：article.html?id= 的閱讀位置在 iOS storage.local 寫入/回復是否正常（position-memory 已有 stripLoneSurrogates + writeWithSelfHeal 處理 iOS set reject）。**v1.5.9 修強制關閉 Safari 後不記位置**：Jimmy 2026-06-28 真機回報「Reader 文章頁翻頁模式讀到一半、強制關閉 Safari 再開回到第 1 頁」——根因 iOS 背景化凍結 event loop，`persistNow` 舊路徑「先 async `localGet` 讀回再寫」的回呼永遠等不到、`set` 從未發出；修法進場 seed `memMap` 記憶體副本、flush 走同步寫入（`computeNextMap` + 同步 `set`，IPC 在 handler 內送達即落地）。jsdom 驗結構（memMap 分支 set 在 localGet 前 + restore seed + endSession 清回）、Chromium reload 本就正常——**背景凍結時序只能真機驗：裝 v1.5.9 後 Reader 翻頁讀到第 N 頁 → 強制關閉 Safari → 重開應回第 N 頁附近（非第 1 頁）**
 - 推測根因：無（功能在 Chromium 正常，純缺 iOS 平台覆驗）
 - 未補 spec 原因：需 Jimmy 真機 Readwise 帳號 + token + 網路；jsdom / Chromium harness 模擬不到 WebKit + iOS 訊息層回收 + 真實 API 限流。新增的 reader 頁全部沿用既有 iOS 修法（擴充頁 fetch、visibilitychange 兜底、storage.local 自癒），無新平台機制。
 - 將來如何補：TestFlight build（ios-build.sh 已 rsync 自動含 reader/ 新檔，無需改 build 腳本）→ 真機填 token → 進入 Reader → 開一篇 → 切主題/字型驗即時重套 → 捲動退出再進驗位置記憶 → feed 封存一篇驗移除。模擬器可用既有 SyncStorage.db 直寫 readwiseToken + openurl article.html?id= 自驗渲染（需網路）。

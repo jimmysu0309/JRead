@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.5.8**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.5.9**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -691,6 +691,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - 位置還在開頭（翻頁第 1 頁 / 捲動進度 < 2% 且段落 index 0）不記、並刪舊 entry；寫入時淘汰過期 + 超量（上限 100 筆）。
 - 與 v0.7.227「退出 reader mode 從第一頁起」的關係：`resetPosition()` 照舊歸零，記憶功能啟用且效期內由 restore 蓋回上次頁碼——停用（0）時行為與 v0.8.39 以前完全相同。
 - **寫入韌性（v1.0.14，iOS storage 卡死防護）**：寫入採「讀回整包 → 改一筆 → 整包寫回」，所以一筆毀損 entry 會讓 iOS Safari 的 `storage.local.set` 整包失敗、卡死所有後續存檔（即使總量只有幾 KB，與容量無關——Jimmy 2026-06-26 回報 iPhone 用一段時間後全部不記、清快取即恢復）。三道防護：① `blockSignature` 出口 `stripLoneSurrogates` 消毒孤兒 surrogate（`slice(0,120)` 切斷代理對 / 頁面文字本身含非法 UTF-16 都是來源）；② `writeWithSelfHeal` 偵測整包寫入失敗時自動退回「只寫當前這一筆」（丟歷史 map），不必使用者手動清快取也會自癒；③ `recordWriteError` 把失敗原因另存 `storage.local.readingPositionsDiag`（獨立 key），options「本機快取（除錯）」區塊顯示「上次寫入失敗：…」。options 同區塊另有用量 / 筆數顯示 + 一鍵清除（`storage.local.clear`，雙態確認）。
+- **背景凍結同步寫入（v1.5.9，iOS 強制關閉防護）**：iOS Safari 頁面一背景化（切 app 切換器準備強制關閉）就立刻凍結 JS event loop——舊版 `persistNow` 是「先 `localGet` async 讀回整包 → 回呼裡才 async `set`」，那個讀取回應永遠等不到、回呼不執行、`set` 從未發出 → 強制關閉前讀到一半的位置沒寫入 → 重開停在第 1 頁（Jimmy 2026-06-28 Reader 文章頁翻頁模式真機回報；Chromium reload 正常、純 iOS async 時序）。修法：進場 `restore` 時把整包 map seed 進記憶體副本 `memMap`；之後 `persistNow` 走同步路徑——用 `memMap` + 純函式 `computeNextMap`（prune + 套用/刪除當前 entry，與舊 inline 邏輯逐字相同）同步算好 payload、**同步發出 `set`**（不再先 async 讀），即使回呼被凍結，`set` 的 IPC 已在 `visibilitychange` / `pagehide` handler 內同步送達 background 落地。`memMap` 未 seed 時退回原 async 路徑兜底；`endSession` / 停用清回 null。取捨：改用進場快照後多分頁同開時各自快照理論上可能蓋掉別分頁剛存的別篇記錄，但每篇各自 urlKey 實務極少撞、且 ② 的 iOS fallback 本就會丟整包——此取捨現已存在、改完只更穩。iOS 真機時序 jsdom / Chromium 模擬不到，待 TestFlight 驗（`PENDING_REGRESSION.md` 2026-06-27 Reader iOS 子項 4）。
 
 ### 驗證分層
 

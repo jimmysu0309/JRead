@@ -6,14 +6,16 @@
 // 閱讀模式自動回到上次位置。
 //
 // 訊號層次（本 spec 驗 X、不驗 Y）：
-//   驗：純邏輯（效期 / 淘汰 / 段落簽名比對 / 頁碼換算 / 該不該存）、
-//       模組 API 形狀、main.js wiring 的結構性順序（beginSession 在
-//       installKeyguard 前、endSession 在 pagedMode.uninstall 前）、
-//       manifest 載入順序、settings-defaults / options 欄位接線、
-//       跨檔鏡像字面值（DEFAULT_DAYS / REST_FRACTION）。
+//   驗：純邏輯（效期 / 淘汰 / 段落簽名比對 / 頁碼換算 / 該不該存 /
+//       computeNextMap 算寫入 payload）、模組 API 形狀、main.js wiring 的
+//       結構性順序（beginSession 在 installKeyguard 前、endSession 在
+//       pagedMode.uninstall 前）、persistNow 同步寫入路徑的結構（memMap
+//       分支的 set 在 localGet 之前）、manifest 載入順序、settings-defaults /
+//       options 欄位接線、跨檔鏡像字面值（DEFAULT_DAYS / REST_FRACTION）。
 //   不驗：真實瀏覽器的 storage.local 寫入 / scrollTop 回復 / goToPage 視覺
-//       落點（jsdom 無 layout）——那層由 Playwright harness 驗；pagehide
-//       flush 的時序只能實機觀察。
+//       落點（jsdom 無 layout）——那層由 Playwright harness 驗；iOS Safari
+//       背景化凍結 event loop 的真實時序只能真機 / TestFlight 觀察（本 spec
+//       只驗「flush 的關鍵 set 不依賴 async 讀回」這個結構性前提）。
 
 const fs = require('fs');
 const path = require('path');
@@ -217,6 +219,55 @@ describe('position-memory — writeWithSelfHeal（整包寫入失敗自癒，v1.
     const r = await pm.writeWithSelfHeal(setter, KEY, null, FULL);
     assert.strictEqual(r, 'failed');
     assert.strictEqual(calls.length, 1);
+  });
+});
+
+describe('position-memory — computeNextMap（記憶體 map 算寫入 payload，v1.5.9 iOS 同步寫入）', () => {
+  const now = 1000 * DAY;
+  it('shouldPersist 為 true → next 含當前 entry（帶 ts）、回該 entry', () => {
+    const r = pm.computeNextMap({}, 'k', { mode: 'paged', page: 5, pages: 20 }, now, 3, 100);
+    assert.deepStrictEqual(r.next.k, { ts: now, mode: 'paged', page: 5, pages: 20 });
+    assert.strictEqual(r.entry, r.next.k);
+  });
+  it('回到開頭（shouldPersist false）→ 刪掉 key、回 null entry', () => {
+    const r = pm.computeNextMap({ k: { ts: now - 1, mode: 'paged', page: 3 } }, 'k',
+      { mode: 'paged', page: 0 }, now, 3, 100);
+    assert.strictEqual(r.next.k, undefined, '第 1 頁清掉舊記錄');
+    assert.strictEqual(r.entry, null);
+  });
+  it('順手 prune 過期 + 超量（沿用 pruneMap），不 mutate 原 map', () => {
+    const src = { old: { ts: now - 9 * DAY }, fresh: { ts: now - 1 } };
+    const r = pm.computeNextMap(src, 'k', { mode: 'paged', page: 2, pages: 5 }, now, 7, 100);
+    assert.strictEqual(r.next.old, undefined, '過期 entry 被 prune');
+    assert.ok(r.next.fresh, '新鮮 entry 保留');
+    assert.ok(r.next.k, '當前 entry 寫入（prune 後才加，不被自己過期判定誤殺）');
+    assert.ok(src.k === undefined && src.old, '原 map 不可被 mutate');
+  });
+  it('null map 安全（memMap 尚未 seed 的退化輸入）', () => {
+    const r = pm.computeNextMap(null, 'k', { mode: 'scroll', ratio: 0.5 }, now, 3, 100);
+    assert.ok(r.next.k);
+  });
+});
+
+describe('position-memory — persistNow 同步寫入路徑（iOS 背景凍結防護，v1.5.9）', () => {
+  it('persistNow 有 memMap 同步分支：先 computeNextMap + writeWithSelfHeal、才退 localGet', () => {
+    const m = PM_SRC.match(/function persistNow\(\)[\s\S]*?\n  \}/);
+    assert.ok(m, 'position-memory.js 必須有 persistNow');
+    const body = m[0];
+    assert.ok(/if \(memMap\)/.test(body), 'persistNow 必須有 memMap 同步分支');
+    const firstWrite = body.indexOf('writeWithSelfHeal(rawSet');
+    const firstGet = body.indexOf('localGet(');
+    assert.ok(firstWrite !== -1, 'persistNow 必須呼叫 writeWithSelfHeal');
+    assert.ok(firstGet !== -1, 'persistNow 必須保留 localGet 退路（memMap 未 seed 時）');
+    assert.ok(firstWrite < firstGet,
+      '同步 set 必須在 localGet 之前——flush 的關鍵寫入不可依賴 async 讀回（iOS 背景化會凍結 event loop、localGet 回呼永遠等不到）');
+  });
+  it('restore 會 seed memMap、endSession / setDays 停用會清回 null', () => {
+    assert.ok(/function restore[\s\S]*?memMap = map/.test(PM_SRC),
+      'restore 必須 seed memMap（之後寫入走同步路徑）');
+    const end = PM_SRC.match(/function endSession\(\)[\s\S]*?\n  \}/);
+    assert.ok(end && /memMap = null/.test(end[0]),
+      'endSession 必須清 memMap（避免跨 session 用到舊快照）');
   });
 });
 
