@@ -136,6 +136,37 @@ describe('readwise: buildReadwisePayload', () => {
     );
   });
 
+  // v1.5.8：should_clean_html=false 時 Readwise 強制要求 author + title（缺則回 400
+  // non_field_errors，Jimmy 2026-06-28 macstories 譯文頁實證）。翻譯頁抽不到作者名
+  // 時補來源網域、缺 title 補 url，確保兩欄必存在。
+  it('翻譯頁缺 author：補來源網域（hostname 去 www）', () => {
+    const body = buildReadwisePayload({ url: 'https://www.macstories.net/club/x', html: '<p>譯文</p>', isTranslated: true });
+    assert.strictEqual(body.should_clean_html, false);
+    assert.strictEqual(body.author, 'macstories.net', 'author 必須補成去 www 的 hostname');
+  });
+
+  it('翻譯頁有 author：原樣保留、不被網域覆蓋', () => {
+    const body = buildReadwisePayload({ url: 'https://www.macstories.net/x', html: '<p>譯文</p>', author: 'Federico Viticci', isTranslated: true });
+    assert.strictEqual(body.author, 'Federico Viticci');
+  });
+
+  it('翻譯頁缺 title：補 url（極端缺漏防線）', () => {
+    const body = buildReadwisePayload({ url: 'https://example.com/translated', html: '<p>譯文</p>', isTranslated: true });
+    assert.strictEqual(body.title, 'https://example.com/translated');
+  });
+
+  it('翻譯頁 url 無法 parse hostname：author 退回「未知作者」', () => {
+    const body = buildReadwisePayload({ url: 'not-a-valid-url', html: '<p>譯文</p>', isTranslated: true });
+    assert.strictEqual(body.author, '未知作者');
+  });
+
+  it('非翻譯頁（should_clean_html=true）缺 author：不補（讓 Readwise 自抓 metadata）', () => {
+    const body = buildReadwisePayload({ url: 'https://www.macstories.net/x', html: '<p>x</p>' });
+    assert.strictEqual(body.should_clean_html, true);
+    assert.strictEqual(body.author, undefined, 'should_clean_html=true 時不可硬補 author（避免污染、Readwise 會自抓真作者）');
+    assert.strictEqual(body.title, undefined, 'should_clean_html=true 時不可硬補 title');
+  });
+
   // v0.7.167：language 欄位不存在於 Readwise Reader API,buildReadwisePayload
   // 絕對不可在 body 內輸出 language key(避免使用者 / 上游誤以為有支援)。
   it('絕對不送 language 欄位（Readwise API 不接受）', () => {
