@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <!-- 注意：刻意「不」放 apple-mobile-web-app-capable。standalone WebView 不跑 Safari
+       擴充 content script，跳板轉址就不會發生；必須開在正常 Safari 分頁。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>開啟 JReader</title>
+  <link rel="icon" type="image/png" href="icon-512.png">
+  <style>
+    :root { --accent: #2b6cb0; --ink: #1a1a1a; --muted: #6b7280; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+      color: var(--ink);
+      background: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      -webkit-text-size-adjust: 100%;
+    }
+    .card { width: 100%; max-width: 340px; text-align: center; }
+    .spinner {
+      width: 36px; height: 36px; margin: 0 auto 20px;
+      border: 3px solid #e5e7eb;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+    p { font-size: 14px; line-height: 1.6; color: var(--muted); margin: 0; }
+    /* fallback：content script 沒轉址時才顯示（擴充未裝 / 未啟用 / 開在 standalone） */
+    .fallback { display: none; }
+    .fallback.show { display: block; }
+    .fallback .spinner { display: none; }
+    .fallback ol { text-align: left; font-size: 14px; line-height: 1.7; color: var(--ink); padding-left: 20px; margin: 14px 0 0; }
+    .fallback ol b { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="loading">
+      <div class="spinner"></div>
+      <h1>正在開啟 JReader</h1>
+      <p>稍候，正在切換到閱讀清單</p>
+    </div>
+    <div class="fallback" id="fallback">
+      <h1>沒有自動開啟 JReader</h1>
+      <p>這頁是 JReader 的快速入口，需要 JRead 擴充功能在 Safari 啟用才會自動跳轉</p>
+      <ol>
+        <li>確認已安裝 JRead，並在 Safari <b>設定 → 擴充功能</b>啟用</li>
+        <li>用 Safari 開啟本頁（不要從以「獨立視窗」加入主畫面的捷徑開）</li>
+        <li>啟用後重新整理本頁</li>
+      </ol>
+    </div>
+  </div>
+  <script>
+    // 本頁自身 JS 不負責轉址——它拿不到擴充當下的 UUID。轉址由 JRead content script
+    // 即時用 browser.runtime.getURL 完成。這裡只做 fallback：等一小段時間，若 content
+    // script 沒把我們帶走（仍停在本頁），顯示啟用指引。
+    setTimeout(function () {
+      var fb = document.getElementById('fallback');
+      var loading = document.querySelector('.loading');
+      if (loading) loading.style.display = 'none';
+      if (fb) fb.classList.add('show');
+    }, 2500);
+  </script>
+</body>
+</html>
