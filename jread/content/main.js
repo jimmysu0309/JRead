@@ -1493,7 +1493,27 @@
   // 保留進比對 key（剝掉會讓 hash-router 站換頁後 reader card 綁舊內容）。
   // 判別是結構性的：錨點 fragment 不會以 `/` 或 `!` 開頭，router hash 慣例以
   // `#/` 或 `#!` 開頭。
+  // 擴充自有頁的 origin 是揮發性的：iOS Safari 的 `safari-web-extension://<UUID>/`
+  // host 每次 Safari 重啟換一組新 UUID（2026-06-28 模擬器實證：terminate→relaunch
+  // base URL 由 2F7E8BA1… 變 F78F88DC…；磁碟上 readingPositions 的 Article View
+  // 記錄散落在多組死 UUID host 下）。位置記憶 key 若含這段 origin，重啟後同一篇
+  // JReader Article View（reader/article.html?id=<docId>）就變成新 key、上次存的
+  // 記錄變孤兒 → 強制關閉 Safari 後回不到上次頁碼（options 診斷顯示 found=否、但
+  // 磁碟筆數沒少＝資料在、key 對不上）。對擴充自有頁改用「path+search(+hash)」當
+  // 穩定身分（docId 在 search、跨 UUID 不變）；http(s) 一般網頁 origin 有意義（區
+  // 分站點）必須保留。結構性通則（描述 URL scheme 結構、非站點特判）。
+  function stripVolatileExtensionOrigin(href) {
+    try {
+      const u = new URL(href);
+      if (u.protocol === 'safari-web-extension:' || u.protocol === 'chrome-extension:' || u.protocol === 'moz-extension:') {
+        return u.pathname + u.search + u.hash;
+      }
+    } catch (_) {}
+    return href;
+  }
+
   function spaRouteKey(href) {
+    href = stripVolatileExtensionOrigin(href);
     const i = href.indexOf('#');
     if (i === -1) return href;
     const hash = href.slice(i);
