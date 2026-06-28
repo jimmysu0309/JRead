@@ -154,6 +154,22 @@
     // 在 v0.8.134 之前就是這行為，非新退步，且 The Verge 等實測圖正常。非翻譯頁維持
     // should_clean_html=true 保住 sspai 防盜連修法。
     body.should_clean_html = !isTranslated;
+    // v1.5.8：should_clean_html=false 時 Readwise 強制要求 author + title 兩欄都在
+    //（缺則回 400 `non_field_errors: The fields 'author' and 'title' are required
+    // when you don't use should_clean_html`，Jimmy 2026-06-28 macstories 譯文頁實證）。
+    // 翻譯頁（isTranslated → should_clean_html false）若該站抽不到作者名（如 JSON-LD
+    // author 只有 @id 參照、無 name 字串，extractGenericAuthor 回 ''）就缺 author →
+    // 整包被退。補保底確保兩欄必存在：缺 author 用來源網域（hostname 去 www）、缺
+    // title 退回 url（title 幾乎一定有，此為極端缺漏的防線）。should_clean_html=true
+    // 時 Readwise 自抓 metadata、不受此限，不補（避免污染非翻譯頁送出的 author）。
+    if (body.should_clean_html === false) {
+      if (!body.author) {
+        let host = '';
+        try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) {}
+        body.author = host || '未知作者';
+      }
+      if (!body.title) body.title = url;
+    }
     return body;
   }
 
