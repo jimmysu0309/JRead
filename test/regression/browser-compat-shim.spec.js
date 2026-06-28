@@ -51,6 +51,7 @@ describe('browser shim — 跨瀏覽器相容（v0.8.164）', () => {
   // 全擴充原始碼不可殘留 chrome.*（async API 直呼）——shim 行的 `globalThis.chrome`
   // fallback 與註解除外。掃 content / background / popup / options 全部 .js。
   const FILES = [
+    'content/home-launcher.js',
     'content/namespace.js', 'content/keepalive.js', 'content/settings-defaults.js',
     'content/custom-shortcuts.js', 'content/touch-gestures.js', 'content/position-memory.js',
     'content/floating-icon.js', 'content/youtube-borderless.js', 'content/styler.js',

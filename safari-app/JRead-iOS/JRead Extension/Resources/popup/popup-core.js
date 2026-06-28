@@ -13,6 +13,7 @@
   // NS.toast=null 使 toast 提示靜默失效；v0.7.19 補上並加 spec 防呆。）
   const CONTENT_SCRIPT_FILES = [
     'content/namespace.js',
+    'content/home-launcher.js',
     'content/keepalive.js',
     'content/settings-defaults.js',
     'content/domain-match.js',

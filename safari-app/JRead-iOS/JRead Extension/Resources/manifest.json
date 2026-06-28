@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "1.5.11",
+  "version": "1.5.12",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文。",
   "permissions": [
     "storage",
@@ -13,12 +13,7 @@
     "<all_urls>"
   ],
   "background": {
-    "scripts": [
-      "popup/popup-core.js",
-      "content/settings-defaults.js",
-      "background/service-worker.js"
-    ],
-    "persistent": false
+    "service_worker": "background/service-worker.js"
   },
   "browser_specific_settings": {
     "gecko": {
@@ -52,6 +47,7 @@
       ],
       "js": [
         "content/namespace.js",
+        "content/home-launcher.js",
         "content/keepalive.js",
         "content/settings-defaults.js",
         "content/domain-match.js",
