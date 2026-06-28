@@ -155,9 +155,30 @@
     return pos.ratio > MIN_RATIO || pos.blockIndex > 0;
   }
 
+  // 從記憶體 map 算出寫入 payload：先 prune（過期 + 超量）再套用/刪除當前 entry。
+  // shouldPersist 為 true → 寫入 { ts, ...pos } 並回該 entry；否則刪掉 key、回
+  // null entry（回到開頭，殘留反而誤導）。回 { next, entry }。
+  // 抽成純函式：persistNow 的同步寫入路徑（iOS 背景凍結防護）靠它在 handler 內
+  // 同步算好 payload，不必先 async 讀回 storage。jsdom spec 直接測。
+  function computeNextMap(map, key, pos, now, days, cap) {
+    const next = pruneMap(map || {}, now, days, cap || MAX_ENTRIES);
+    let entry = null;
+    if (shouldPersist(pos)) {
+      entry = Object.assign({ ts: now }, pos);
+      next[key] = entry;
+    } else {
+      delete next[key];
+    }
+    return { next: next, entry: entry };
+  }
+
   // ---- DOM 模組 ----
 
   let sessionKey = null;   // 進入閱讀模式時的 urlKey（SPA 換頁後 location 已變，flush 必須用進場時的 key）
+  let memMap = null;       // 進場 restore 時 seed 的 readingPositions 整包記憶體副本——
+                           // 讓 flush 能同步算 payload + 同步發 set（iOS 背景凍結 event
+                           // loop 時，先 async 讀回再寫的舊路徑回呼永遠等不到 → set 從未
+                           // 發出 → 強制關閉前位置丟失）。endSession 清回 null。
   let days = DEFAULT_DAYS;
   let articleEl = null;
   let listening = false;
@@ -245,18 +266,24 @@
     if (!sessionKey || !(days > 0)) return;
     const key = sessionKey;
     const pos = capture();
+    const now = Date.now();
+    if (memMap) {
+      // 同步寫入路徑（iOS 背景凍結防護）：用進場 seed 的記憶體 map 同步算出
+      // payload + 同步發出 set，不先 async 讀回。iOS Safari 頁面背景化會立刻凍結
+      // event loop——「先 localGet 再於回呼裡 set」的舊路徑回呼永遠等不到、set 從
+      // 未發出 → 使用者強制關閉前的位置丟失（重開停在第 1 頁）。直接 set 的 IPC 在
+      // visibilitychange / pagehide handler 內同步送達 background 即落地。
+      const r = computeNextMap(memMap, key, pos, now, days, MAX_ENTRIES);
+      memMap = r.next;
+      writeWithSelfHeal(rawSet, key, r.entry, r.next);
+      return;
+    }
+    // memMap 尚未 seed（剛進場、restore 的讀取還沒回）→ 退回 async 讀改寫，順手 seed
     localGet((map) => {
       if (!map) return;
-      const now = Date.now();
-      const next = pruneMap(map, now, days, MAX_ENTRIES);
-      let entry = null;
-      if (shouldPersist(pos)) {
-        entry = Object.assign({ ts: now }, pos);
-        next[key] = entry;
-      } else {
-        delete next[key]; // 回到開頭：清掉舊記錄
-      }
-      writeWithSelfHeal(rawSet, key, entry, next);
+      const r = computeNextMap(map, key, pos, now, days, MAX_ENTRIES);
+      memMap = r.next;
+      writeWithSelfHeal(rawSet, key, r.entry, r.next);
     });
   }
 
@@ -344,11 +371,16 @@
   function restore(key, el) {
     localGet((map) => {
       if (!map) return;
+      memMap = map; // seed 記憶體 map：之後寫入走同步路徑（不再 async 讀回）
       const entry = map[key];
       const now = Date.now();
       if (!isFresh(entry, now, days)) {
         // 過期殘留：順手清掉（不等下次寫入）
-        if (entry) rawSet({ [STORAGE_KEY]: pruneMap(map, now, days, MAX_ENTRIES) }).catch(() => {});
+        if (entry) {
+          const pruned = pruneMap(map, now, days, MAX_ENTRIES);
+          memMap = pruned;
+          rawSet({ [STORAGE_KEY]: pruned }).catch(() => {});
+        }
         return;
       }
       applyEntry(entry, el);
@@ -384,6 +416,7 @@
     removeListeners();
     sessionKey = null;
     articleEl = null;
+    memMap = null; // 下次進場 restore 重新 seed（避免跨 session 用到舊快照）
   }
 
   // 設定即時變更（storage.onChanged）。改成 0 = 停用：停止追蹤（既有記錄
@@ -396,6 +429,7 @@
       removeListeners();
       sessionKey = null;
       articleEl = null;
+      memMap = null;
     }
   }
 
@@ -410,6 +444,7 @@
     resolvePageIndex,
     computeExitScrollTop,
     shouldPersist,
+    computeNextMap,
     beginSession,
     endSession,
     setDays,
