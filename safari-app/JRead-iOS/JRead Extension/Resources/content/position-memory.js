@@ -35,6 +35,7 @@
 
   const STORAGE_KEY = 'readingPositions';
   const DIAG_KEY = 'readingPositionsDiag';  // 寫入失敗診斷（獨立 key，options 除錯區塊讀取顯示）
+  const RESTORE_DIAG_KEY = 'readingPositionsRestoreDiag';  // v1.5.10 診斷：還原當下 found/total/resolved（options 顯示，釘 H2b vs H2c；確認後移除）
   const DEFAULT_DAYS = 3;     // 預設效期（settings-defaults.js positionMemoryDays 的鏡像，spec 校對）
   const MAX_DAYS = 7;         // 效期上限（Jimmy 2026-06-11 指定）
   const MAX_ENTRIES = 100;    // map 超量淘汰上限（舊的先丟）
@@ -185,6 +186,7 @@
   let saveTimer = null;
   let reassertTimer = null;
   let interacted = false;  // 回復後使用者是否互動過（互動過就不做二次對位）
+  let _restoreBase = null; // v1.5.10 診斷：restore 算好的 found/page/pages，applyEntry 補 total/resolved 後寫出
 
   // keydown 涵蓋翻頁鍵（←/→/Space）；click 涵蓋 space-scroll 點段落移指示條；
   // touchcancel 涵蓋 iOS 圖片上滑動翻頁（paged-mode onTouchCancel 補判路徑）
@@ -214,6 +216,14 @@
     const msg = String((err && (err.message || err)) || 'unknown').slice(0, 200);
     try { rawSet({ [DIAG_KEY]: { ts: Date.now(), error: msg } }).catch(() => {}); } catch (_) {}
     try { if (typeof console !== 'undefined') console.warn('[JRead] 閱讀位置寫入失敗：' + msg); } catch (_) {}
+  }
+
+  // v1.5.10 診斷儀器（確認 H2b/H2c 後整段移除）：把還原當下的關鍵事實寫進獨立
+  // key，options 除錯區塊讀取顯示。釘「強關後那篇記錄在不在磁碟 / 翻頁總頁數有沒
+  // 有算好」——found=false → H2c（記錄沒刷到磁碟）；found=true 但 total<=1 → H2b
+  //（冷啟動翻頁總頁數沒就緒）。best-effort、吞掉所有錯。
+  function recordRestoreDiag(d) {
+    try { rawSet({ [RESTORE_DIAG_KEY]: Object.assign({ ts: Date.now() }, d) }).catch(() => {}); } catch (_) {}
   }
 
   // 寫入整包 map + 自癒。setter(payloadObj) 回傳 Promise。整包寫入失敗（iOS
@@ -339,6 +349,8 @@
       const p = NS.pagedMode.getPosition();
       if (!p) return;
       const n = resolvePageIndex(entry, p.total);
+      // v1.5.10 診斷：補 total / resolved 寫出（reassert 會再寫一次＝版面 settle 後的最終值）
+      recordRestoreDiag(Object.assign({ stage: 'apply-paged' }, _restoreBase || {}, { total: p.total, resolved: n, goTo: n > 0 }));
       if (n > 0) NS.pagedMode.goToPage(n);
       return;
     }
@@ -370,11 +382,19 @@
 
   function restore(key, el) {
     localGet((map) => {
-      if (!map) return;
+      if (!map) { recordRestoreDiag({ stage: 'read-null' }); return; }
       memMap = map; // seed 記憶體 map：之後寫入走同步路徑（不再 async 讀回）
       const entry = map[key];
       const now = Date.now();
+      // v1.5.10 診斷：強關後那篇記錄在不在磁碟（found）+ 它的頁碼，applyEntry 補 total/resolved
+      _restoreBase = {
+        keyTail: String(key).slice(-48), found: !!entry,
+        fresh: isFresh(entry, now, days), mode: entry && entry.mode,
+        page: entry && entry.page, pages: entry && entry.pages,
+        mapCount: Object.keys(map).length
+      };
       if (!isFresh(entry, now, days)) {
+        recordRestoreDiag(Object.assign({ stage: 'not-fresh' }, _restoreBase));
         // 過期殘留：順手清掉（不等下次寫入）
         if (entry) {
           const pruned = pruneMap(map, now, days, MAX_ENTRIES);
