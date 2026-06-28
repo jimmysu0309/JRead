@@ -76,8 +76,12 @@ describe('main.js — spaRouteKey 錨點 hash 不算導航（v0.8.35）', () => 
   // 捲動位置全失）。spaRouteKey 是純函式，抽出 source 直接功能驗證。
   const fnMatch = SRC.match(/function\s+spaRouteKey\s*\(href\)\s*\{[\s\S]*?\n  \}/);
   assert.ok(fnMatch, 'main.js 必須有 spaRouteKey（路由比對 key 單一資料源）');
-  // eslint-disable-next-line no-eval
-  const spaRouteKey = eval('(' + fnMatch[0] + ')');
+  // v1.5.11：spaRouteKey 開頭呼叫 stripVolatileExtensionOrigin（去揮發性擴充 origin），
+  // 一併抽進 eval scope 才能獨立執行（node 有 global URL）。
+  const helperMatch = SRC.match(/function\s+stripVolatileExtensionOrigin[\s\S]*?\n  \}/);
+  assert.ok(helperMatch, 'main.js 必須有 stripVolatileExtensionOrigin');
+  // eslint-disable-next-line no-new-func
+  const spaRouteKey = new Function(helperMatch[0] + '\n' + fnMatch[0] + '\nreturn spaRouteKey;')();
 
   it('錨點型 hash 變化不改變路由 key（點註腳不退出閱讀模式）', () => {
     assert.strictEqual(
