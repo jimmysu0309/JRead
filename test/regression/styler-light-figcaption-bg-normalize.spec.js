@@ -35,17 +35,27 @@ function lightCss() {
 }
 
 describe('styler — light theme figcaption 背景正規化（v0.8.169 TWZ）', () => {
-  // 同一條 light rule 必須同時含 color #333 與 background-color transparent
-  const LIGHT_FIGCAPTION_RULE =
-    /\[data-jread-active="1"\] figcaption,\s*\[data-jread-active="1"\] figcaption \*\s*\{([^}]*)\}/;
+  // v1.5.15：figcaption + figcaption * 這個 selector 現在有兩條規則——本條 light
+  // theme 色彩正規化（color #333 + bg transparent），以及 styler-figcaption-
+  // absolute-static-flow 的版面 static-flow（position:static + width:auto，全主題）。
+  // 兩者 selector 相同，因此不能只用 selector 抓「第一條」（會抓到 static-flow 那
+  // 條）——改用 rule body 特徵（含 #333333）定位本條色彩規則。
+  function lightFigcaptionColorBody(css) {
+    const re = /\[data-jread-active="1"\] figcaption,\s*\[data-jread-active="1"\] figcaption \*\s*\{([^}]*)\}/g;
+    let m;
+    while ((m = re.exec(css)) !== null) {
+      if (/#333333/.test(m[1])) return m[1];
+    }
+    return null;
+  }
 
   it('light theme：figcaption rule 同時強制 #333 字色 + 透明背景（成對正規化）', () => {
     const css = lightCss();
-    const m = css.match(LIGHT_FIGCAPTION_RULE);
-    assert.ok(m, 'light stylesheet 必須有 figcaption + figcaption * 規則');
-    assert.match(m[1], /color:\s*#333333\s*!important/i,
+    const body = lightFigcaptionColorBody(css);
+    assert.ok(body, 'light stylesheet 必須有含 #333 的 figcaption + figcaption * 色彩規則');
+    assert.match(body, /color:\s*#333333\s*!important/i,
       'light figcaption 文字色強制 #333（v0.8.123）');
-    assert.match(m[1], /background-color:\s*transparent\s*!important/i,
+    assert.match(body, /background-color:\s*transparent\s*!important/i,
       'light figcaption 背景強制 transparent（v0.8.169，配 #333 字色避免站點深底黑條）');
   });
 
@@ -53,8 +63,8 @@ describe('styler — light theme figcaption 背景正規化（v0.8.169 TWZ）', 
     // 防 drift：若哪天有人把 background-color 從這條 rule 拿掉、只留 color #333，
     // twz 黑條會復發（深字 on 深底）。兩者綁同一 rule body。
     const css = lightCss();
-    const m = css.match(LIGHT_FIGCAPTION_RULE);
-    assert.ok(m && /#333333/.test(m[1]) && /transparent/.test(m[1]),
+    const body = lightFigcaptionColorBody(css);
+    assert.ok(body && /#333333/.test(body) && /transparent/.test(body),
       'figcaption 的 #333 字色與透明背景必須成對出現在同一條 light rule');
   });
 });

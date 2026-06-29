@@ -1119,6 +1119,27 @@ ${MEDIA_CAP_SEL} {
   right: auto !important;
   bottom: auto !important;
 }
+/* v1.5.15：figcaption 內被站點「寬版面 scrollytelling 側欄 caption」拉成
+   position:absolute 的圖說文字 wrapper，脫離 normal flow → 在寬 viewport + 窄版心
+   組合下塌成 0 寬、文字一字一行疊在主文上（New Republic data-center oral history
+   實證：.caption-text-wrapper position:absolute、computed width 0；站點 media query
+   以 viewport 寬為準、量不到 JRead 把版心收成 720 → 進寬版 side-caption 模式，
+   Jimmy 2026-06-29 版心寬 720 + 灰主題截圖揭穿、Chromium 寬 viewport probe 重現）。
+   通則（硬規則 3，純結構 + 語意標籤判定，非站點/class 特判）：reader scope 內
+   figcaption 語意是「圖說文字塊」，其本體與後代都應在 normal flow 內排版於圖片
+   附近；任何被站點定位 hack（position:absolute/fixed）拉出流的 caption 子樹一律
+   打回 static，並解除其塌陷寬度（width:auto）讓圖說文字回到圖片正常位置。窄版
+   flex 版面（display:flex column-reverse、子層本就 static）不受影響——relative→static
+   與既有 width 皆等效。退出移除整張 stylesheet 即還原。 */
+[${ARTICLE_ATTR}="1"] figcaption,
+[${ARTICLE_ATTR}="1"] figcaption * {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: auto !important;
+}
 /* v0.8.106：inline 自動播放示範影片的 redundant <video> overlay 隱藏。
    wikiHow Tie-a-Tie 步驟在同一容器內放 poster <img> + <video>（video 是 absolute
    overlay，原站靠精準疊放讓兩者重合）。v0.8.105 把容器拉回 normal flow 後，static
