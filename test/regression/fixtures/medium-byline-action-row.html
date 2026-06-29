@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Medium byline action-row</title></head>
+<body>
+<!-- Medium 文章頭部 byline（v1.5.17，真實 medium.com/ddsakura-blog cage 還原）：
+     作者列把「頭像」與「作者名 + Follow 鈕」拆成兩個 sibling 分支。作者名 + Follow
+     鈕同包一層 text < 20 的內 wrapper（「ddsakuraFollowing」），子樹內**沒有** img
+     （頭像在另一分支）。
+     誤殺 path：hideInsideArticleActionRows——内 wrapper textContent < 20 觸發
+     shell short-circuit（繞過「直接子互動比例 < 50% = 內容 wrapper」保護），
+     iconCount（Follow button + svg）>= 2 → 被當動作圖示列整塊砍、作者名連坐消失。
+     修法 clusterContainsAuthorProfileLink：含作者個人頁連結（/@user）→ byline 作者列、
+     非純動作列，保留（與 button-cluster / sidebar-column 保護同源）。
+
+     重要：id 一律用中性命名（real Medium 是 hash class `ke v j` / `v j kf`，
+     無 follow/social 等雜訊關鍵字）。若 id 帶 "follow" 會被 hideInsideArticleByKeyword
+     假命中、掩蓋真兇 action-row（2026-06-29 第一版 fixture 踩過這個坑）。 -->
+<article id="story">
+  <h1 id="title">用 npx skills 分享自己的 AI Skills</h1>
+  <div id="bl-row">
+    <div id="ava-branch"><a id="ava-link" href="/@ddsakura?source=post_page---byline--abc"><span><img id="avatar" src="https://miro.medium.com/avatar.jpg" alt="ddsakura"></span></a></div>
+    <span id="name-span"><div id="bl-outer"><div id="bl-inner"><div id="name-wrap"><span><a id="author-link" href="/@ddsakura?source=post_page---byline--abc" data-testid="authorName">ddsakura</a></span></div><div id="bl-spacer"></div><div id="act-wrap"><button id="act-btn"><span>Following</span><svg id="act-icon" viewBox="0 0 24 24"><path d="M0 0h24v24"/></svg></button></div></div></div></span>
+  </div>
+  <div id="meta-row"><span id="readtime" data-testid="storyReadTime">4 min read</span><span aria-hidden="true">·</span><span id="date" data-testid="storyPublishDate">Jun 6, 2026</span></div>
+  <div id="body">
+    <p id="p1">只要 repository 裡的 skill 遵循標準結構，就可以透過 npx skills add owner/repo 直接被發現並安裝，這是整個工具設計的核心，讓分享變得跟安裝一樣簡單。Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor.</p>
+    <p id="p2">最近整理了一個小工具叫做 code-review-handoff-and-fix，把 review 跟修法的流程串起來，省下很多手動轉手的成本。It works across many editors and continuous integration pipelines without any extra configuration at all.</p>
+    <p id="p3">這篇文章記錄整個設計過程，希望對其他想分享自己 skill 的人有幫助，也歡迎大家提出改進的想法跟回饋意見。The whole point is to make distribution trivially easy for everyone involved here.</p>
+    <pre id="code1"><code>npx skills add owner/repo</code></pre>
+  </div>
+  <!-- 負控制：文末真正的動作列（讚 / 回應 / 分享 / 收藏 / 更多），text < 20、
+       iconCount >= 2、**無**作者個人頁連結 → 仍應被 action-row 規則砍。 -->
+  <div id="tail-bar"><button id="b-clap"><svg viewBox="0 0 24 24"><path d="M1 1"/></svg></button><button id="b-resp"><svg viewBox="0 0 24 24"><path d="M2 2"/></svg></button><button id="b-share"><svg viewBox="0 0 24 24"><path d="M3 3"/></svg></button><button id="b-more"><svg viewBox="0 0 24 24"><path d="M4 4"/></svg></button></div>
+</article>
+</body>
+</html>

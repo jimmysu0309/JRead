@@ -2072,6 +2072,18 @@
       const iconCount = el.querySelectorAll('button, [role="button"], svg').length;
       if (iconCount < ACTION_MIN_ICONS) continue;
 
+      // v1.5.17 byline 作者保護：action row 若含「作者個人頁連結」（/@user、
+      // authors/… 等 AUTHOR_PAGE_PATH_RE）＝ byline 作者列（頭像 + 作者名 +
+      // Follow 鈕），非純動作圖示列 → 保留。解 Medium：作者名與 Follow 鈕同包
+      // 一層 text < 20 的內 wrapper（如 `div.ke v j` / `v j kf`「ddsakuraFollowing」），
+      // 觸發 shell short-circuit 落入本規則、iconCount（Follow button + svg）>= 2
+      // 被當動作列整塊砍、作者名連坐消失（Jimmy 2026-06-29 medium 實測）。Follow
+      // 等鈕另由 hideInsideArticleAllButtons / hideInsideArticleByLinkText 個別清，
+      // 不影響。與 button-cluster (clusterContainsAuthorProfileLink 行 2299) /
+      // sidebar-column（行 3122）保護同源、跨 rule 一致。真動作 bar（clap / comment /
+      // bookmark / share）不含作者頁連結，零誤放。
+      if (clusterContainsAuthorProfileLink(el)) continue;
+
       hide(el, hidden);
     }
   }

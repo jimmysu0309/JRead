@@ -22,11 +22,13 @@
 // 6 條 forcing function：
 //   (a) dark scheme 設計的 pre：guard 還原原始 effective bg rgb(37, 37, 37)
 //       （= 0.05 白疊 rgb(26,26,26)）+ priority important
-//   (b) light 設計的 pre（深字無 bg）：guard 不動
+//   (b) light 設計的 pre（深字透明底）：contrast guard 不動，但 v1.5.17 code-block
+//       背景 pass 補 codeBlockBg panel（框邊界辨識，與對比修法正交）
 //   (c) 原站自身低對比的 pre：guard 保守不動（不是 jread 造成）
 //   (d) dark scheme 設計的 table：同條通則修
 //   (e) restore：pre inline bg 還回原值 rgba(255, 255, 255, 0.05)（無 priority）
-//   (f) dark theme：guard 整段跳過（* { color: theme.text } 已蓋 token 色）
+//   (f) dark theme：contrast guard 整段跳過（* { color: theme.text } 已蓋 token 色），
+//       但近透明 pre 由 v1.5.17 code-block pass 補 dark codeBlockBg panel
 
 const path = require('path');
 const assert = require('assert');
@@ -63,11 +65,18 @@ describe('styler — pre/table contrast guard (v0.7.225)', () => {
       'inline bg 必須帶 !important（防原站 stylesheet !important 反覆寫）');
   });
 
-  it('(b) light theme：light 設計的 pre 不動', () => {
+  it('(b) light theme：light 設計（透明底）的 pre 由 v1.5.17 code-block pass 補 codeBlockBg', () => {
     const { env } = setup('light');
     const pre = env.document.querySelector('[data-test="light-pre"]');
-    assert.strictEqual(pre.style.getPropertyValue('background-color'), '',
-      'light 設計（深字）的 pre 對白卡對比本來就高，guard 不可加 inline bg');
+    // v0.7.225 contrast guard 對「深字 + 透明底」的 light-pre 不動（文字對白卡對比
+    // 本來就高，不是對比問題）。但 v1.5.17 code-block 背景 pass 接手另一個維度——
+    // 透明底 pre 在卡片上無邊界（Jimmy medium 回報）→ 補主題 codeBlockBg
+    // （light = rgba(0,0,0,0.05)）給程式碼框一個可辨識 panel。兩條 pass 不衝突：
+    // 前者管「文字可讀」、後者管「框邊界辨識」。
+    assert.strictEqual(pre.style.getPropertyValue('background-color').replace(/\s/g, ''), 'rgba(0,0,0,0.05)',
+      'light theme 透明底 pre 應由 v1.5.17 pass 補 codeBlockBg panel');
+    assert.strictEqual(pre.style.getPropertyPriority('background-color'), 'important',
+      'codeBlockBg 必須 !important');
   });
 
   it('(c) light theme：原站自身低對比的 pre 保守不動', () => {
@@ -122,11 +131,16 @@ describe('styler — pre/table contrast guard (v0.7.225)', () => {
       'td 不可被加上 !important（guard 不該動它）');
   });
 
-  it('(f) dark theme：guard 整段跳過', () => {
+  it('(f) dark theme：contrast guard 整段跳過，但 v1.5.17 code-block pass 補 codeBlockBg', () => {
     const { env } = setup('dark');
     const pre = env.document.querySelector('[data-test="dark-pre"]');
-    assert.strictEqual(pre.style.getPropertyValue('background-color'), 'rgba(255, 255, 255, 0.05)',
-      'dark theme 下 `* { color: theme.text }` 已蓋掉 token 色 + v0.7.164 已清 pre bg transparent，guard 不可再動 inline bg');
+    // contrast guard 在 dark theme 整段跳過（* { color: theme.text } 已接管文字色、
+    // v0.7.164 CSS 已清 pre bg transparent）——guard 本身不動 inline bg（forcing
+    // 仍在：guard 不該寫 rgb(37,37,37) 那類還原值）。但 dark-pre 自身 bg
+    // = rgba(255,255,255,0.05)（alpha 0.05 < 0.1，近透明、無區隔載體）→ v1.5.17
+    // code-block 背景 pass 補 dark codeBlockBg rgba(0,0,0,0.22) panel。
+    assert.strictEqual(pre.style.getPropertyValue('background-color').replace(/\s/g, ''), 'rgba(0,0,0,0.22)',
+      'dark theme 近透明 pre 由 v1.5.17 code-block pass 補 codeBlockBg（非 contrast guard 的還原值）');
   });
 
   // --- player 標記外溢 guard（同輪發現的第二條根因，v0.7.225）---
