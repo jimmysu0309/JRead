@@ -91,4 +91,48 @@ describe('styler — figcaption 子樹 static flow（v1.5.15 New Republic scroll
         `figcaption static-flow selector 每條都須 scope 在 data-jread-active：${line.trim()}`);
     }
   });
+
+  // v1.5.16：同頁同根源——站點寬版面把 figure 內圖片塞進比版心窄的 sub-column
+  // wrapper（width 設死 + margin-left:auto），reader 單欄下圖片靠右、左側留空白。
+  // styler 注入 `figure *:has(img/picture)` 強制 width:auto + 水平 margin auto，
+  // 把圖片 wrapper 撐回版心單欄寬、不被單側 margin 推偏。
+  function getFigureImageWrapperBlock(css) {
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    let m;
+    while ((m = re.exec(css)) !== null) {
+      const sel = m[1].trim();
+      const body = m[2];
+      if (/figure\s+\*[^,{]*:has\(\s*img/.test(sel) &&
+          /width\s*:\s*auto\s*!important/.test(body) &&
+          /margin-left\s*:\s*auto\s*!important/.test(body)) {
+        return { sel, body };
+      }
+    }
+    return null;
+  }
+
+  it('注入的 CSS 必須含 figure 圖片 wrapper width/margin 正規化規則（descendant :has(img)）', () => {
+    const css = getInjectedCss();
+    const block = getFigureImageWrapperBlock(css);
+    assert.ok(block, 'CSS 必須含 figure *:has(img...) 的 width:auto + margin auto 規則');
+    for (const prop of ['width\\s*:\\s*auto', 'margin-left\\s*:\\s*auto', 'margin-right\\s*:\\s*auto']) {
+      assert.ok(new RegExp(prop + '\\s*!important').test(block.body),
+        `figure 圖片 wrapper rule body 必須含 ${prop} !important`);
+    }
+  });
+
+  it('figure 圖片 wrapper 規則排除 inline 小圖與 player 容器、且 scope 在 reader 內', () => {
+    const css = getInjectedCss();
+    const block = getFigureImageWrapperBlock(css);
+    assert.ok(block, '必須找到 figure 圖片 wrapper 規則');
+    for (const line of block.sel.split(',')) {
+      assert.ok(/\[data-jread-active="1"\]\s*figure/.test(line),
+        `figure 圖片 wrapper selector 須 scope 在 data-jread-active figure：${line.trim()}`);
+      assert.ok(/:not\(\[data-jread-player="1"\]\)/.test(line),
+        `figure 圖片 wrapper selector 須排除 player 容器：${line.trim()}`);
+    }
+    // img 分支須排除 inline 小圖（icon-link）
+    assert.ok(/:has\(img:not\(\[data-jread-inline-img\]\)\)/.test(block.sel),
+      'img 分支須排除 [data-jread-inline-img]（icon-link 不被撐成版心寬）');
+  });
 });
