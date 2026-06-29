@@ -247,18 +247,18 @@
     //   text: null（仍是「保留原站色」主題、保留 pre/table 對比保護 + figcaption
     //   #333 機制），另用 proseText 只對內文段落容器（p / 標題 / li …）強制黑字，
     //   不碰 pre/code/table/figcaption/彩色 inline span（Jimmy 選折衷方案）
-    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, proseText: '#000000', link: '#1a73e8', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#4A90D9' },
+    light: { pageBg: '#ececec', articleBg: '#ffffff', text: null, proseText: '#000000', link: '#1a73e8', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', codeBlockBg: 'rgba(0,0,0,0.05)', progressBar: '#4A90D9' },
     // v0.8.143：暗色閱讀區配色對齊 Apple Books——底 #4a494d、內文 #ecebf1
     //   （Jimmy 截圖逐像素採樣：背景主色 #4a494d 帶微冷調、內文 #ecebf1）。
     //   原 #1a1a1a/#d4d4d4 偏黑，Apple Books 是中性偏亮的深灰底 + 近白字
-    dark:  { pageBg: '#0b0b0b', articleBg: '#4a494d', text: '#ecebf1', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', progressBar: '#7fb5e6' },
+    dark:  { pageBg: '#0b0b0b', articleBg: '#4a494d', text: '#ecebf1', link: '#7fb5e6', scrollThumb: 'rgba(255, 255, 255, 0.3)', inlineCodeBg: 'rgba(255,255,255,0.1)', codeBlockBg: 'rgba(0,0,0,0.22)', progressBar: '#7fb5e6' },
     // v0.8.143：米色閱讀區配色對齊 Apple Books——底 #eee2cb、內文純黑 #000000
     //   （Jimmy 截圖逐像素採樣：背景 5 點皆 #eee2cb、內文 glyph core 主色 #000000）
-    sepia: { pageBg: '#cdb891', articleBg: '#eee2cb', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(60, 50, 38, 0.45)', inlineCodeBg: 'rgba(60,50,38,0.08)', progressBar: '#2c5282' },
+    sepia: { pageBg: '#cdb891', articleBg: '#eee2cb', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(60, 50, 38, 0.45)', inlineCodeBg: 'rgba(60,50,38,0.08)', codeBlockBg: 'rgba(60,50,38,0.1)', progressBar: '#2c5282' },
     // v0.8.143：灰色主題對齊 Apple Books 灰色配色——底 #ededed、內文純黑 #000000
     //   （Jimmy 截圖逐像素採樣：背景 #ededed、內文 glyph core 主色 #000000）。
     //   中性灰、無暖色；text 非 null 故比照 dark/sepia 注入文字 + 卡片色覆寫
-    gray:  { pageBg: '#d8d8d8', articleBg: '#ededed', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', progressBar: '#2c5282' }
+    gray:  { pageBg: '#d8d8d8', articleBg: '#ededed', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', codeBlockBg: 'rgba(0,0,0,0.08)', progressBar: '#2c5282' }
   };
 
   function themeOf(name) {
@@ -3441,6 +3441,47 @@ html [${ARTICLE_ATTR}="1"] a {
             });
             el.style.setProperty('color', best, 'important');
             fixed++;
+          }
+        }
+      }
+
+      // v1.5.17 code block 背景辨識度（phase 4，所有主題）：原站常把 `<pre>`
+      // 程式碼框做成「透明底 + 細淺色邊框」（Medium 實測 bg rgba(0,0,0,0)、
+      // border 1px #e5e5e5）。reader card 在 sepia(#eee2cb) / gray(#ededed) 主題
+      // 下，淺邊框 ≈ 卡片色幾乎不可見、透明底又透出卡片色 → code block 與主文
+      // 完全融在一起、看不出邊界（Jimmy 2026-06-29 medium 截圖回報）。
+      //
+      // Root cause（通則）：BG_PRESERVE_NOT 保留 pre 背景（語法高亮塊的實心底 +
+      // token 色是配套設計、不能清）。但「自身背景透明」的純文字 code 塊沒有任何
+      // 區隔載體，靠原站淺邊框在深/暖卡上失效。
+      //
+      // 修法：只對「自身 background-color alpha < 0.1（透明 / 近透明）」的 pre
+      // 補主題協調底色 theme.codeBlockBg（半透明、疊在卡片上產生 recessed panel）。
+      // gate 在 alpha：語法高亮塊（實心 #282c34 之類，alpha=1）一律跳過、原樣保留，
+      // 零誤傷其 token 對比。所有主題都跑（sepia/gray 是回報情境、light/dark 同樣
+      // 受益）。snapshot 走 contrastBgSnap 既有還原通道（theme 切換 restore→apply
+      // 重算，inline 不殘留）。
+      if (theme.codeBlockBg) {
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (_win && _win.getComputedStyle) {
+          let preScanned = 0;
+          for (const pre of articleEl.querySelectorAll('pre')) {
+            if (preScanned >= CONTRAST_MAX_TARGETS) break;
+            if (pre.closest && pre.closest('[data-jread-hidden="1"]')) continue;
+            // 嵌套（pre 內 pre，罕見）只處理最外層，避免疊兩層底色
+            if (pre.parentElement && pre.parentElement.closest &&
+                pre.parentElement.closest('pre')) continue;
+            preScanned++;
+            const ownBg = parseCssColor(_win.getComputedStyle(pre).backgroundColor);
+            // 自身有實心 / 明顯底色（語法高亮塊）→ 保留原設計，不補
+            if (ownBg && ownBg.a >= 0.1) continue;
+            contrastBgSnap.push({
+              el: pre,
+              prop: 'background-color',
+              prev: pre.style.getPropertyValue('background-color'),
+              prevP: pre.style.getPropertyPriority('background-color')
+            });
+            pre.style.setProperty('background-color', theme.codeBlockBg, 'important');
           }
         }
       }
