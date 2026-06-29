@@ -1168,6 +1168,19 @@
     return { ok: false };
   }
   NS.dispatchLocalCommand = dispatchLocalCommand;
+
+  // v1.5.13：給 floating-icon 長按選單（YouTube watch 專用）用的明確語意 toggle。
+  // 不走 dispatchLocalCommand 的快速鍵跨模式重導——選單列的標籤是「啟動/關閉影院模式」
+  // 與「啟動/關閉無邊模式」，動作必須與標籤一致，不能被重導成「退出另一個 active 模式」。
+  // cinema / borderless 互斥仍由 enterCinemaMode（啟動 cinema 前先退 borderless）與
+  // toggleBorderless（willEnter 時先 exitReaderMode 退 cinema）各自的 mutex 處理：
+  //   - 影院：toggleReader() 在 YouTube watch 上 enterReaderMode→enterCinemaMode；
+  //     cinema active 時（NS.state.active=true）走 exitReaderMode 退出；borderless active 時
+  //     NS.state.active=false → 進 cinema，enterCinemaMode mutex 自動退掉 borderless。
+  //   - 無邊：toggleBorderless() 已含 mutex，borderless active 直接退、否則先退 cinema 再進。
+  NS.toggleYouTubeCinema = () => toggleReader();
+  NS.toggleYouTubeBorderless = () => toggleBorderless();
+
   // v1.0.22：給 reader.html（擴充自有頁）的 reader-app.js 呼叫——自建 container
   // 直接進入閱讀模式，重用 finalizeEnter 全套收尾（styler / positionMemory /
   // keyguard / 模組同步）。
