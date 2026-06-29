@@ -31,9 +31,16 @@
 
     <p>When you go into the belly of the beast, you can see what unconstrained data center growth looks like—and how the digital world is crowding out our own. You come over this ramp and look in front of you. As far as the eye can see are sprawling buildings. Cranes everywhere. Substations, transmission lines. It is a mechanical overgrowth.</p>
 
-    <!-- ====== scrollytelling 側欄 caption（核心修復點）====== -->
+    <!-- ====== scrollytelling 側欄 caption（v1.5.15 修復點）+ 寬版面 sub-column
+         圖片靠右偏移（v1.5.16 修復點）====== -->
     <figure class="article-embed image-embed text-width figure-active">
-      <img src="https://example.com/stratos.jpg" alt="The area where the Stratos Project will be built">
+      <!-- DIV.image：站點寬版面把圖片塞進比版心窄的 sub-column（width 設死 +
+           margin-left:auto 靠右）→ reader 單欄下圖片靠右、左側留空白 -->
+      <div class="image" style="width: 481px; margin-left: auto;">
+        <div class="img-responsive-wrapper">
+          <img src="https://example.com/stratos.jpg" alt="The area where the Stratos Project will be built">
+        </div>
+      </div>
       <figcaption class="caption default">
         <span class="credit">Natalie Behring/Getty Images</span>
         <div class="caption-text-wrapper" style="position: absolute; left: 0; top: 0;">

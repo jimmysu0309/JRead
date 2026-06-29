@@ -1119,6 +1119,26 @@ ${MEDIA_CAP_SEL} {
   right: auto !important;
   bottom: auto !important;
 }
+/* v1.5.16：站點寬版面把 figure 內圖片塞進一個比版心窄的 sub-column wrapper
+   （width 設死 + margin-left:auto 靠右），在 reader 單欄版面下圖片被推到右側、
+   左邊留一段空白（New Republic data-center oral history 實證：figure > div >
+   DIV.image[width:481px; margin-left:auto] > .img-responsive-wrapper > img，608
+   版心內圖片靠右、左側 127px gap，Jimmy 2026-06-29 截圖揭穿。與同頁 scrollytelling
+   側欄 caption（v1.5.15）同根源——站點 2 欄寬版面以 viewport 寬判斷、量不到
+   JRead 收窄的版心）。
+   通則（硬規則 3，純結構 + 語意標籤判定、非站點/class 特判）：reader scope 內
+   figure 是「配圖區塊」語意，其內任何「含圖片」的 wrapper 都應撐滿版心單欄、不被
+   站點 sub-column 寬度與單側 auto margin 推偏——一律 width:auto（回填版心寬）+
+   水平 margin auto（內層若仍有 max-width 限制則置中、不靠單側），圖片回到版心
+   左右對齊。:has(img) 用 descendant 匹配（offset wrapper 常隔一層 responsive
+   wrapper、非直接父）。排除被標記的 inline 小圖（icon-link）與 player 容器。
+   退出移除整張 stylesheet 即還原。 */
+[${ARTICLE_ATTR}="1"] figure *:not([${PLAYER_ATTR}="1"]):has(img:not([${INLINE_IMG_ATTR}])),
+[${ARTICLE_ATTR}="1"] figure *:not([${PLAYER_ATTR}="1"]):has(picture) {
+  width: auto !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
 /* v1.5.15：figcaption 內被站點「寬版面 scrollytelling 側欄 caption」拉成
    position:absolute 的圖說文字 wrapper，脫離 normal flow → 在寬 viewport + 窄版心
    組合下塌成 0 寬、文字一字一行疊在主文上（New Republic data-center oral history
