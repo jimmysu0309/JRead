@@ -10,10 +10,15 @@
 // - 短按（放開前長按計時器未觸發、未拖移）= 切換閱讀模式，走
 //   NS.dispatchLocalCommand('toggle-reader-mode')（與 3 指輕點 / 快速鍵同一條
 //   content 端本地 dispatch，含 YouTube 模式重導、不 round-trip SW）。
-// - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：切換分頁模式、功能選單（叫出
-//   工具列圖示選單 popup；Readwise 送出走 popup 內按鈕，v0.8.166 移除選單直送項，
-//   因 content 直送在 iOS toast 不顯示、無回饋）。點任一列執行後收選單；點選單外 /
-//   捲動 = 收選單。
+// - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：切換分頁模式、進入 Reader、
+//   功能選單（叫出工具列圖示選單 popup；Readwise 送出走 popup 內按鈕，v0.8.166 移除
+//   選單直送項，因 content 直送在 iOS toast 不顯示、無回饋）。點任一列執行後收選單；
+//   點選單外 / 捲動 = 收選單。
+// - v1.5.13：在 YouTube watch 頁（/watch）長按選單改顯示 YouTube 專屬兩列——
+//   「啟動/關閉影院模式」「啟動/關閉無邊模式」（標籤依目前是否 active 動態切換），
+//   最下方仍保留「功能選單」。一般閱讀頁的「切換分頁模式 / 進入 Reader」對 YouTube
+//   watch 無意義（無主文可閱讀），故換成 YouTube 兩功能的入口。選單於每次長按重建
+//   （buildMenu），故標籤每次都反映當下 active 狀態。
 // - 拖移（pointermove 超過 DRAG_THRESHOLD_PX）= 進入拖移模式，放開時吸附最近的
 //   左／右緣，垂直位置存比例（floatingIconPos = { edge, offsetY }），視窗縮放後
 //   按比例還原。預設貼**左下角**（左緣 + offsetY=1，v0.8.160；原置中）。
@@ -232,6 +237,52 @@
     { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
   ];
 
+  // ─── YouTube watch 專屬選單（v1.5.13）────────────────────────────────────
+  // 在 YouTube /watch 頁，一般選單的「分頁模式 / 進入 Reader」無意義（YouTube
+  // watch 沒主文可閱讀，detector no-op）；改顯示 YouTube 兩功能入口：影院模式 +
+  // 無邊模式。判定走 NS.cinema.isYouTubeWatch（cinema-mode.js 載入後即可用，
+  // 與 youtube-borderless.js 互為鏡像，cinema-mode.js 是兩者單一參考點）；該模組
+  // 尚未載入時用同款 URL fallback（與兩模組同判定，避免 drift）。
+  function isYouTubeWatchPage() {
+    try {
+      if (NS.cinema && typeof NS.cinema.isYouTubeWatch === 'function') {
+        return NS.cinema.isYouTubeWatch();
+      }
+    } catch (_e) {}
+    try {
+      const u = new URL(location.href);
+      if (!/^(www\.|m\.)?youtube\.com$/.test(u.hostname)) return false;
+      return u.pathname === '/watch';
+    } catch (_e) { return false; }
+  }
+
+  function cinemaIsOn() {
+    return !!(NS.state && NS.state.cinemaActive);
+  }
+  function borderlessIsOn() {
+    return !!(NS.borderless && typeof NS.borderless.isActive === 'function' && NS.borderless.isActive());
+  }
+
+  // YouTube 兩功能 toggle：優先呼 main.js 暴露的明確語意 toggle（不走快速鍵跨模式
+  // 重導，讓選單標籤與動作一致）；main.js 尚未載入（SPA 注入競態）時退回
+  // dispatchLocalCommand（含跨模式重導，仍能切換）。
+  function toggleYtCinema() {
+    if (typeof NS.toggleYouTubeCinema === 'function') { try { NS.toggleYouTubeCinema(); } catch (_e) {} return; }
+    if (typeof NS.dispatchLocalCommand === 'function') NS.dispatchLocalCommand('toggle-reader-mode');
+  }
+  function toggleYtBorderless() {
+    if (typeof NS.toggleYouTubeBorderless === 'function') { try { NS.toggleYouTubeBorderless(); } catch (_e) {} return; }
+    if (typeof NS.dispatchLocalCommand === 'function') NS.dispatchLocalCommand('toggle-youtube-borderless');
+  }
+
+  // 動態建構 YouTube 選單列（標籤依目前 active 狀態切「啟動 / 關閉」前綴）
+  function youtubeMenuItems() {
+    return [
+      { id: 'yt-cinema', icon: '🎬', label: (cinemaIsOn() ? '關閉' : '啟動') + '影院模式', action: toggleYtCinema },
+      { id: 'yt-borderless', icon: '⛶', label: (borderlessIsOn() ? '關閉' : '啟動') + '無邊模式', action: toggleYtBorderless }
+    ];
+  }
+
   // ─── 功能選單入口（v0.8.162，比照 Shinkansen content-floating-icon.js）──────
   // 長按選單最下方「功能選單」叫出工具列圖示選單（popup）當頁內浮層。兩條 path：
   //   - Safari（macOS / iOS）：不能在 https 網頁裡用 iframe 載入擴充頁
@@ -424,7 +475,10 @@
 
   function buildMenu() {
     menuEl.textContent = '';
-    for (const it of MENU_ITEMS) {
+    // YouTube watch 頁顯示 YouTube 兩功能（影院 / 無邊）；其餘頁顯示一般動作。
+    // 每次長按重建 → YouTube 標籤每次都反映當下 active 狀態。
+    const items = isYouTubeWatchPage() ? youtubeMenuItems() : MENU_ITEMS;
+    for (const it of items) {
       const item = document.createElement('button');
       item.className = 'menu-item';
       item.type = 'button';
@@ -620,6 +674,7 @@
   NS.floating = {
     host, btn, menuEl, MENU_ITEMS,
     openMenu, closeMenu, buildMenu,
+    isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
     handleShortPress, togglePaged, openReader,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
     isPanelOpen: () => !!panelHost,

@@ -98,10 +98,10 @@ function makeChrome({ scheme = 'chrome-extension://', store = {} } = {}) {
   return chrome;
 }
 
-function setup({ scheme, store } = {}) {
-  const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+function setup({ scheme, store, url } = {}) {
+  const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', Object.assign({
     runScripts: 'outside-only', pretendToBeVisual: true
-  });
+  }, url ? { url } : {}));
   const { window } = dom;
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(window, 'innerWidth', { value: 400, configurable: true });
@@ -403,6 +403,126 @@ describe('懸浮按鈕（v0.8.154）', () => {
       const { NS, chrome } = setup({ store: { pagedMode: true } });
       NS.floating.togglePaged();
       assert.strictEqual(chrome._data.pagedMode, false);
+    });
+  });
+
+  // ── YouTube watch 專屬長按選單（v1.5.13）──────────────────────────────────
+  // 在 YouTube /watch 頁，選單改顯示影院模式 + 無邊模式（標籤依 active 動態切「啟動/關閉」），
+  // 最下方仍保留功能選單；一般頁不受影響。
+  describe('YouTube watch 專屬選單（v1.5.13）', () => {
+    const YT_WATCH = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+    it('isYouTubeWatchPage：/watch 頁 → true（fallback URL 判定，cinema 模組未載入時）', () => {
+      const { NS } = setup({ url: YT_WATCH });
+      assert.strictEqual(NS.floating.isYouTubeWatchPage(), true);
+    });
+
+    it('isYouTubeWatchPage：YouTube 首頁（非 /watch）→ false', () => {
+      const { NS } = setup({ url: 'https://www.youtube.com/' });
+      assert.strictEqual(NS.floating.isYouTubeWatchPage(), false);
+    });
+
+    it('isYouTubeWatchPage：非 YouTube 站 → false', () => {
+      const { NS } = setup({ url: 'https://example.com/watch' });
+      assert.strictEqual(NS.floating.isYouTubeWatchPage(), false);
+    });
+
+    it('優先用 NS.cinema.isYouTubeWatch（cinema 模組載入後）', () => {
+      const { NS } = setup({ url: 'https://example.com/' });
+      // 注入後掛上 cinema stub 回 true → 即使 URL 非 YouTube 也以模組判定為準
+      NS.cinema = { isYouTubeWatch: () => true };
+      assert.strictEqual(NS.floating.isYouTubeWatchPage(), true);
+    });
+
+    it('buildMenu 在 YouTube watch → 影院 + 無邊 + 功能選單（三項 + 分隔線）', () => {
+      const { NS, document } = setup({ url: YT_WATCH });
+      NS.floating.buildMenu();
+      const shadow = document.getElementById('__jread-floating-host').shadowRoot;
+      const items = shadow.querySelectorAll('.menu-item');
+      assert.strictEqual(items.length, 3, 'YouTube watch：影院 + 無邊 + 功能選單共三項');
+      assert.strictEqual(items[0].dataset.action, 'yt-cinema');
+      assert.strictEqual(items[1].dataset.action, 'yt-borderless');
+      assert.strictEqual(items[2].dataset.action, 'feature-menu');
+      assert.ok(/影院模式/.test(items[0].textContent), '第一項影院模式');
+      assert.ok(/無邊模式/.test(items[1].textContent), '第二項無邊模式');
+      assert.ok(/功能選單/.test(items[2].textContent), '最下方仍保留功能選單');
+      assert.ok(shadow.querySelector('.menu-divider'), '功能選單前必須有分隔線');
+      // 一般動作（分頁 / 進入 Reader）在 YouTube watch 不出現
+      assert.ok(!/分頁/.test(shadow.textContent), 'YouTube watch 不應有分頁模式');
+      assert.ok(!/進入 Reader/.test(shadow.textContent), 'YouTube watch 不應有進入 Reader');
+    });
+
+    it('標籤依 active 狀態動態切「啟動 / 關閉」', () => {
+      const { NS, document } = setup({ url: YT_WATCH });
+      const shadow = document.getElementById('__jread-floating-host').shadowRoot;
+      // 預設都未 active → 「啟動」
+      NS.floating.buildMenu();
+      let items = shadow.querySelectorAll('.menu-item');
+      assert.ok(/啟動影院模式/.test(items[0].textContent));
+      assert.ok(/啟動無邊模式/.test(items[1].textContent));
+      // cinema active → 影院列改「關閉」
+      NS.state.cinemaActive = true;
+      NS.floating.buildMenu();
+      items = shadow.querySelectorAll('.menu-item');
+      assert.ok(/關閉影院模式/.test(items[0].textContent), 'cinema active → 關閉影院模式');
+      // borderless active → 無邊列改「關閉」
+      NS.state.cinemaActive = false;
+      NS.borderless = { isActive: () => true };
+      NS.floating.buildMenu();
+      items = shadow.querySelectorAll('.menu-item');
+      assert.ok(/啟動影院模式/.test(items[0].textContent));
+      assert.ok(/關閉無邊模式/.test(items[1].textContent), 'borderless active → 關閉無邊模式');
+    });
+
+    it('點影院列 → 收選單 + 呼 NS.toggleYouTubeCinema', () => {
+      const { NS, document, window } = setup({ url: YT_WATCH });
+      let calledCinema = 0;
+      NS.toggleYouTubeCinema = () => { calledCinema++; };
+      NS.floating.openMenu();
+      const btn = document.getElementById('__jread-floating-host')
+        .shadowRoot.querySelector('.menu-item[data-action="yt-cinema"]');
+      btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      assert.strictEqual(calledCinema, 1, '應呼 NS.toggleYouTubeCinema 一次');
+      assert.strictEqual(NS.floating.isMenuOpen(), false, '點完應收選單');
+    });
+
+    it('點無邊列 → 呼 NS.toggleYouTubeBorderless', () => {
+      const { NS, document, window } = setup({ url: YT_WATCH });
+      let calledBorderless = 0;
+      NS.toggleYouTubeBorderless = () => { calledBorderless++; };
+      NS.floating.openMenu();
+      const btn = document.getElementById('__jread-floating-host')
+        .shadowRoot.querySelector('.menu-item[data-action="yt-borderless"]');
+      btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      assert.strictEqual(calledBorderless, 1, '應呼 NS.toggleYouTubeBorderless 一次');
+    });
+
+    it('toggle helper：main.js 未載入時 fallback 走 dispatchLocalCommand', () => {
+      const { NS, dispatched } = setup({ url: YT_WATCH });
+      delete NS.toggleYouTubeCinema;
+      delete NS.toggleYouTubeBorderless;
+      NS.floating.toggleYtCinema();
+      NS.floating.toggleYtBorderless();
+      assert.deepStrictEqual(dispatched, ['toggle-reader-mode', 'toggle-youtube-borderless']);
+    });
+
+    it('非 YouTube 頁 buildMenu 仍是一般動作（不受影響）', () => {
+      const { NS, document } = setup({ url: 'https://example.com/article' });
+      NS.floating.buildMenu();
+      const shadow = document.getElementById('__jread-floating-host').shadowRoot;
+      const items = shadow.querySelectorAll('.menu-item');
+      assert.strictEqual(items[0].dataset.action, 'paged');
+      assert.strictEqual(items[1].dataset.action, 'reader');
+      assert.strictEqual(items[2].dataset.action, 'feature-menu');
+    });
+  });
+
+  // ── main.js 暴露的 YouTube 選單 toggle wiring（v1.5.13）─────────────────────
+  describe('main.js YouTube toggle 暴露（v1.5.13）', () => {
+    const MAIN_SRC = fs.readFileSync(path.join(JREAD, 'content', 'main.js'), 'utf8');
+    it('main.js 暴露 NS.toggleYouTubeCinema / NS.toggleYouTubeBorderless（選單用明確語意 toggle）', () => {
+      assert.match(MAIN_SRC, /NS\.toggleYouTubeCinema\s*=/, '缺 NS.toggleYouTubeCinema');
+      assert.match(MAIN_SRC, /NS\.toggleYouTubeBorderless\s*=/, '缺 NS.toggleYouTubeBorderless');
     });
   });
 
