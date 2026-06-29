@@ -2076,6 +2076,49 @@
     }
   }
 
+  // ---- 主文內：reaction count bar（文末「N Likes / N Restacks」反應列）-------
+  // 結構特徵（非站點特判）：容器整段 textContent 只有一串「互動計數」
+  // （「3 Likes」「12 Restacks」「3 Likes · 2 Restacks」），無其他文字、不含
+  // <p> / heading 子，且內含計數連結或按讚者頭像 img。這類「純計數」區塊永遠
+  // 是文末互動雜訊、絕非主文。
+  //
+  // 為何 hideInsideArticleActionRows 漏網：那條規則明確排除「含 img/picture/
+  // video 的容器」（保護 captioned-image-container，見上方註解）。Substack
+  // like bar 含一張按讚者頭像 img → 被排除；它又沒有 <button>（讚數做成 <a>）、
+  // 沒有 data-testid（與 recommendation-footer widget 不同）→ 既有 action-row /
+  // button-cluster / recommendation 規則全數錯過。
+  //
+  // 為何用「整段文字＝純計數」當訊號而非 class：Substack class 全是 pencraft /
+  // emotion hash（實測 like bar 外層 `border-top-detail-themed-k9TZAY` 帶 hash
+  // 尾綴），class-based 規則完全不可靠；「整個容器文字僅一串計數」是跨站穩定
+  // 的結構語意。為何要求 no <p>/heading + 含 a/img：避免誤殺剛好內容為「3
+  // Likes」的正當段落（極罕見，但加 guard 零成本）。
+  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*(likes?|restacks?|reactions?)\s*[·•、,|/]*)+$/i;
+
+  function isReactionCountBar(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (!/^(DIV|SECTION|ASIDE|FOOTER|UL|OL)$/.test(el.tagName)) return false;
+    const text = (el.textContent || '').trim();
+    if (!REACTION_COUNT_RE.test(text)) return false;
+    // 不誤殺含段落 / heading 的容器
+    if (Array.from(el.children).some(c => c.tagName === 'P' || /^H[1-6]$/.test(c.tagName))) return false;
+    // 互動列特徵：含計數連結 / 按鈕 / 頭像 img（否則放行——純文字「3 Likes」不動）
+    if (!el.querySelector('a, button, img')) return false;
+    return true;
+  }
+
+  function hideInsideArticleReactionBars(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('div, section, aside, footer, ul, ol')) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      // 祖先已 hide（外層 bar 先命中、querySelectorAll 文件序）→ 跳過 descendant
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      if (!isReactionCountBar(el)) continue;
+      hide(el, hidden);
+    }
+  }
+
   // ---- 主文內：button cluster（byline 區塊裡的 Share/Save/Add-as-preferred）
   // 結構特徵（非站點特判）：container 自身短文字（≤ 80 chars）+ 遞迴含 ≥ 2 個
   // `<button>` 或 `a[role="button"]` + 不含任何 p/h1-h6/媒體元素。專門對付
@@ -6162,6 +6205,21 @@
       }
       return;
     }
+    // Substack reaction bar（文末「N Likes / N Restacks」）lazy 注入兜底——
+    // 與靜態 hideInsideArticleReactionBars 共用 isReactionCountBar。React 端
+    // 常在 clean() 之後才 hydrate 讚數列；node 自身 / 其內任一 bar 都查。
+    if (articleEl.contains(node) && !isInPreserved(node) &&
+        !(node.dataset && node.dataset.jreadHidden === '1') && isReactionCountBar(node)) {
+      hide(node, hiddenList); return;
+    }
+    if (node.querySelector && articleEl.contains(node)) {
+      for (const el of node.querySelectorAll('div, section, aside, footer, ul, ol')) {
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        if (el.closest('[data-jread-hidden="1"]')) continue;
+        if (isInPreserved(el)) continue;
+        if (isReactionCountBar(el)) hide(el, hiddenList);
+      }
+    }
     // 雜訊 class/id 直接 hide 整個 node。
     // v0.8.36（B2）：補上與靜態 hideInsideArticleByKeyword 同一組主文保護
     // （keywordWrapperIsProtected：H1 guard + 主文 wrapper guard）——Shinkansen
@@ -6561,6 +6619,7 @@
       // icon rect 量測才反映原站尺寸
       safeRun(hideHeaderZoneDecorativeIcons, articleEl, hidden);
       safeRun(hideInsideArticleActionRows, articleEl, hidden, containers);
+      safeRun(hideInsideArticleReactionBars, articleEl, hidden);
       safeRun(hideInsideArticleButtonClusters, articleEl, hidden, containers);
       safeRun(hideInsideArticleHorizontalRules, articleEl, hidden);
       safeRun(hideInsideArticleNav, articleEl, hidden);
