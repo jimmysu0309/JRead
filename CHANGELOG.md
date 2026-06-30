@@ -4,6 +4,10 @@
 
 ---
 
+**v1.5.25** — upmedia.mg 文末標籤列（tag chip 連 `/search/`）殘留清除。Jimmy 2026-06-30 回報「文章末尾還有些許雜訊」，cage（real Chrome、過 Cloudflare）probe：`.news-foot > .news-label` 內數個 tag chip `<a href="/search/<關鍵字>">` 殘留。根因：tag chip 連到站內搜尋頁（用 search 結果頁當 tag landing，跨 CMS 慣例），但 `hideInsideArticleHashtagClusters` 的 `TAXONOMY_HREF_RE` 只認 `/tags?/` `/category/` `/topics?/` `/labels?/`、不認 `/search/` → hashtagHits 0、整列漏網。修法：`TAXONOMY_HREF_RE` 加 `search(?:es)?`（搜尋頁＝關鍵字 landing、navigation chrome；cluster guard「>=3 短 anchor + 無主文長段落 + 無媒體 + 無 `<time>`」防單一 /search/ 連結誤殺）。**坑**：`search(?:es)?` 不可寫成 `searches?`（後者 `?` 只作用於末字 s、要 "searche"）。結構通則、非站點特判。forcing：`upmedia-search-href-tag-foot.spec.js`（核心 hide + chip 不可見 + 主文無誤殺；移除 search 驗 fail）；full suite 2872 passing。
+
+---
+
 **v1.5.24** — upmedia.mg「div 當段落」站三處間距問題修正。Jimmy 2026-06-30 回報三症狀，cage（real Chrome、過 Cloudflare）+ instrument 釘出兩個結構根因：(1)**段落無間距 / 文末緊貼圖片**——站點主文段落是裸 `<div>`（非 `<p>`、margin/padding 全 0），`markTextDivs` 雖已標 `[data-jread-text-div]` 卻只被字級/行距規則命中、漏掉段落間距 margin → styler 段距 rule 加入 `[data-jread-text-div="1"]` selector（比照 p/ul/ol/blockquote；caption 因字級小於主流已被 markTextDivs 排除、不誤套）；(2)**圖說底下一段空白**——content 容器內留有游離「nbsp(U+00A0)+換行」純空白文字節點，nbsp 不被 HTML 空白 collapse → 渲染成幽靈空行 box 並阻止下方 h2 的 margin collapse、撐出約 40px 多餘垂直空白 → cleaner 新增 `stripPhantomWhitespaceTextNodes`（clean() 末段、snapshot 可逆）：清空「純空白且含不可 collapse 空白字元（nbsp / 全形空白 / ZWSP / BOM）」+ 父為 block 級 + 非兩側 inline 字間間隔的游離文字節點，figure/figcaption/blockquote/pre/code 內保留。兩者皆結構通則、非站點特判。forcing：`styler.spec.js`（text-div 段距 selector）+ `cleaner-phantom-whitespace-nodes.spec.js`（清空 / 還原 / 純空白不動 / inline 字間保留 / figure 保留）；full suite 2868 passing。
 
 ---

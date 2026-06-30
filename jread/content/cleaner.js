@@ -2699,7 +2699,12 @@
   // 文字起手 `#` 會 0 命中、整列 tag chip 漏網。改加判 href 是否指向分類/標籤
   // taxonomy 頁（Ghost `/tags/#x`、WP `/tag/x/`・`/category/x/`、Medium `/tag/x`
   // 等跨 CMS 慣例）——href 不隨翻譯改、是比文字 / class 更穩的結構訊號。
-  const TAXONOMY_HREF_RE = /\/(tags?|categor(?:y|ies)|topics?|labels?)(\/|$|#|\?)/i;
+  // v1.5.25：加 `search`——upmedia.mg 文末標籤列（.news-foot > .news-label）的
+  // tag chip 連到站內搜尋頁 `/search/<關鍵字>`（用 search 結果頁當 tag landing，
+  // 跨 CMS 慣例）。Jimmy 2026-06-30 回報「文章末尾還有些許雜訊」根因。cluster
+  // guard（>=3 短 anchor + 無主文長段落 + 無媒體 + 無 <time>）防單一 /search/
+  // 連結誤殺。注意 `search(?:es)?` 不可寫成 `searches?`（後者要 "searche"）。
+  const TAXONOMY_HREF_RE = /\/(tags?|categor(?:y|ies)|topics?|labels?|search(?:es)?)(\/|$|#|\?)/i;
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
     const candidates = articleEl.querySelectorAll('p, div');
     for (const el of candidates) {
