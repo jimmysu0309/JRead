@@ -33,6 +33,8 @@ function runDetect({ kagi = false, screenHeight = 956 } = {}) {
     style: { setProperty: (k, v) => { props[k] = v; } },
   };
   const sandbox = {
+    // 隔離世界（content_scripts[0] entry）：有擴充 API → 走三法偵測路徑（Orion 主力）
+    browser: { runtime: { id: 'jread@test' } },
     window: {
       screen: { height: screenHeight },
       addEventListener: () => {},
@@ -91,16 +93,24 @@ describe('Orion edge-to-edge top safe-area 補償（v1.5.18）', () => {
       '須有注入 inline <script> 偵測（最通用、不依賴 world:MAIN 支援）');
   });
 
-  it('manifest：orion-detect 同時掛隔離世界 + world:MAIN 兩個 entry（document_start）', () => {
+  it('manifest：orion-detect 在主清單 content_scripts[0]（Orion 必跑）+ world:MAIN entry', () => {
     const entries = MANIFEST.content_scripts || [];
-    const orionEntries = entries.filter((e) => (e.js || []).includes('content/orion-detect.js'));
-    assert.strictEqual(orionEntries.length, 2,
-      'orion-detect.js 須掛兩個 entry（隔離世界 + world:MAIN）');
-    const mainWorld = orionEntries.find((e) => e.world === 'MAIN');
-    const isolated = orionEntries.find((e) => e.world !== 'MAIN');
-    assert.ok(mainWorld, '須有 world:MAIN entry（引擎支援時直接讀 window.kagi）');
-    assert.ok(isolated, '須有隔離世界 entry（Orion world:MAIN 不支援時的主力，走 wrappedJSObject / 注入 script）');
+    // 主清單（[0]）必須含 orion-detect.js——Orion 疑似只跑 content_scripts[0]，分開的
+    // entry 不執行（v1.5.18→19 實機全無效），故偵測必須在主清單內。
+    const mainList = entries[0];
+    assert.ok((mainList.js || []).includes('content/orion-detect.js'),
+      'orion-detect.js 必須在 content_scripts[0] 主清單（Orion 只跑此 entry）');
+    // world:MAIN entry 保留（引擎支援時直接讀 window.kagi）
+    const mainWorld = entries.find((e) => e.world === 'MAIN' && (e.js || []).includes('content/orion-detect.js'));
+    assert.ok(mainWorld, '須保留 world:MAIN entry（引擎支援時直接讀 window.kagi）');
     assert.strictEqual(mainWorld.run_at, 'document_start', 'world:MAIN entry 須 document_start');
-    assert.strictEqual(isolated.run_at, 'document_start', '隔離 entry 須 document_start');
+  });
+
+  it('popup-core CONTENT_SCRIPT_FILES 與 content_scripts[0].js 一致（含 orion-detect.js）', () => {
+    const popupCore = readFileSync(path.join(JREAD_DIR, 'popup', 'popup-core.js'), 'utf8');
+    const m = popupCore.match(/CONTENT_SCRIPT_FILES\s*=\s*\[([\s\S]*?)\]/);
+    assert.ok(m, 'popup-core.js 須宣告 CONTENT_SCRIPT_FILES');
+    assert.ok(/content\/orion-detect\.js/.test(m[1]),
+      'CONTENT_SCRIPT_FILES 須含 content/orion-detect.js（與 content_scripts[0] 同步）');
   });
 });

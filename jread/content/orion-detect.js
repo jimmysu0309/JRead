@@ -1,28 +1,40 @@
 // content/orion-detect.js — 偵測 Orion（Kagi）瀏覽器，替 <html> 蓋 .jread-orion +
 // 設 --jread-orion-top，交給 styler 用 CSS gating 補頂端 safe-area。
 //
-// 【為什麼三種偵測 + 兩個 world 都掛】
-// Orion 雖跑 WebExtension（Jimmy 實機用的是 Firefox build），但底層是 WebKit + 相容層、
-// 非真 Gecko，且 Orion 把專屬指紋（window.kagi / window.KAGI / window.__kagi_native_*）
-// 注入「頁面 main world」。從擴充偵測它要跨越 isolated↔main world，各引擎做法不同：
-//   1. 直接 window.kagi —— 若 Orion 的 isolated world 隔離不完全（相容層常見）即可讀到。
-//   2. window.wrappedJSObject.kagi —— Gecko 從 content script 讀頁面 main world 的 idiom。
-//   3. 注入 inline <script> 到頁面 —— 該 script 在 page main world 執行讀 window.kagi、
-//      stamp 一個 shared DOM 屬性回傳。最通用、不依賴 world:MAIN 支援，幾乎所有擴充環境
-//      都 work（唯一例外：頁面嚴格 CSP script-src 擋 inline → 該站偵測失敗、優雅降級）。
-// 本檔同時掛兩個 content_scripts entry：world:MAIN（若引擎支援，直接讀 window.kagi）+
-// 隔離世界（必跑，走上面三法）。兩世界同檔、idempotent，命中一個即蓋 class。
+// 【掛在哪】此檔掛兩處 content_scripts entry：
+//   - content_scripts[0] 主清單（隔離世界，document_idle）—— JReader 其他功能在 Orion
+//     能跑＝此 entry 必執行（v1.5.18→19 用「分開的 entry」在 Orion 完全沒生效，疑似
+//     Orion 只跑 content_scripts[0]、忽略額外 entry；故移進主清單）。
+//   - 獨立 world:MAIN entry（document_start）—— 引擎支援時直接讀頁面 window.kagi。
 //
-// 【為什麼偵測 Orion 而非用 env() / UA】（docs/orion-probe 實機探針實證）
-//   - UA 死：Orion 把 navigator.userAgent 完全偽裝成 Safari（無 "Orion"）。
-//   - env() 死：Orion 不回報 env(safe-area-inset-*)，四向全 0、即使 viewport-fit=cover。
-//   - 只有 window.kagi 乾淨。Safari 完全沒有這些 global → 本檔在 Safari 不蓋 class、零回歸。
-// 結構性條件（瀏覽器注入專屬 global + edge-to-edge 不保留 top safe area），偵測隔離在本檔。
+// 【偵測法】Orion 把專屬指紋（window.kagi / window.__kagi_native_*）注入「頁面 main
+// world」；從擴充跨 isolated↔main world 各引擎做法不同，三法輪試命中即套：
+//   1. 直接 window.kagi（隔離不完全的相容層）
+//   2. window.wrappedJSObject.kagi（Gecko content script 穿 main world idiom）
+//   3. 注入 inline <script> 到頁面讀 window.kagi → stamp shared DOM 屬性回傳（最通用）
 //
-// 【top inset 為何用常數】Orion 不吐 env，沒 API 拿真實 inset；依 screen.height 分檔：
-// >=812 長螢幕（瀏海 / Dynamic Island）59px、其餘舊機 20px（瀏海機多 ~12px 上緣留白、可接受）。
+// 【為何偵測 Orion 而非 env()/UA】UA 偽裝 Safari、env(safe-area) 全 0（docs/orion-probe
+// 實機探針），只有 window.kagi 乾淨；Safari 無此 global → 不蓋 class、零回歸。
+//
+// 【ORION_DIAG 診斷橫幅】Orion 是黑盒（模擬器裝不了、無法本機重現），三法在 Orion 全
+// 失效時無從得知哪一法該調。開 ORION_DIAG 時每頁頂端顯示偵測結果（哪一法讀到 kagi、
+// world:MAIN entry 有沒有跑、UA、screen.height），Jimmy 截一張圖即可定位。確認修法生效
+// 後把 ORION_DIAG 設 false（或移除本診斷段）。
 (function () {
   'use strict';
+
+  var ORION_DIAG = true; // ← 確認 Orion 修法生效後設 false
+
+  // world 判定：隔離世界有擴充 API（browser/chrome.runtime.id），main world 沒有
+  function inMainWorld() {
+    try {
+      if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.id) return false;
+    } catch (e) {}
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) return false;
+    } catch (e) {}
+    return true;
+  }
 
   function topInset() {
     var h = 0;
@@ -30,23 +42,22 @@
     return h >= 812 ? 59 : 20;
   }
 
-  // 法 1：直接讀（main world，或隔離不完全的相容層）
   function directKagi() {
     try {
       return !!(window.kagi || window.KAGI ||
                 window.__kagi_native_fetch || window.__kagi_native_XHR_open);
     } catch (e) { return false; }
   }
-
-  // 法 2：Gecko wrappedJSObject —— 從 content script 隔離世界穿到頁面 main world
+  function wrappedExists() {
+    try { return typeof window.wrappedJSObject !== 'undefined' && !!window.wrappedJSObject; }
+    catch (e) { return false; }
+  }
   function wrappedKagi() {
     try {
       var w = window.wrappedJSObject;
       return !!(w && (w.kagi || w.KAGI || w.__kagi_native_fetch));
     } catch (e) { return false; }
   }
-
-  // 法 3：注入 inline <script> 到頁面 main world 讀 window.kagi、stamp shared DOM 屬性
   function injectedKagi() {
     try {
       var FLAG = 'data-jread-orion-probe';
@@ -62,29 +73,76 @@
     } catch (e) { return false; }
   }
 
-  function isOrion() {
-    return directKagi() || wrappedKagi() || injectedKagi();
-  }
-
-  function mark() {
+  function applyOrion() {
     try {
-      if (!isOrion()) return false;
       var de = document.documentElement;
       if (!de) return false;
       de.classList.add('jread-orion');
       de.style.setProperty('--jread-orion-top', topInset() + 'px');
       return true;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   }
 
-  // window.kagi 的注入時機相對本 script 未知——先試一次，沒中再在
-  // DOMContentLoaded / load 補試（注入頁面腳本與 wrappedJSObject 都要 DOM ready）。
-  if (!mark()) {
+  // 診斷橫幅：只在隔離世界（有 DOM + 較穩）渲染一次，讀各訊號
+  function renderDiag(sig) {
     try {
-      document.addEventListener('DOMContentLoaded', mark, { once: true });
-      window.addEventListener('load', mark, { once: true });
+      if (!ORION_DIAG) return;
+      if (document.getElementById('__jread-orion-diag')) return;
+      var de = document.documentElement;
+      var mwRan = de.getAttribute('data-jread-orion-mw') === '1';
+      var bar = document.createElement('div');
+      bar.id = '__jread-orion-diag';
+      bar.setAttribute('style',
+        'position:fixed;top:0;left:0;right:0;z-index:2147483647;' +
+        'background:#111;color:#0f0;font:11px/1.45 ui-monospace,Menlo,monospace;' +
+        'padding:6px 8px;white-space:normal;word-break:break-all;border-bottom:2px solid #0f0;');
+      var ua = '';
+      try { ua = navigator.userAgent || ''; } catch (e) {}
+      var sh = 0;
+      try { sh = (window.screen && window.screen.height) || 0; } catch (e) {}
+      bar.textContent =
+        'JR-ORION-DIAG  orion=' + (sig.orion ? 'YES' : 'no') +
+        ' | direct=' + (sig.direct ? 'Y' : 'n') +
+        ' wrapExists=' + (sig.wrapExists ? 'Y' : 'n') +
+        ' wrap=' + (sig.wrap ? 'Y' : 'n') +
+        ' inject=' + (sig.inject ? 'Y' : 'n') +
+        ' | mainWorldEntryRan=' + (mwRan ? 'Y' : 'n') +
+        ' | sh=' + sh +
+        ' | UA=' + ua;
+      var mount = function () {
+        try { (document.body || document.documentElement).appendChild(bar); } catch (e) {}
+      };
+      if (document.body) mount();
+      else document.addEventListener('DOMContentLoaded', mount, { once: true });
+    } catch (e) {}
+  }
+
+  function run() {
+    var main = inMainWorld();
+    if (main) {
+      // world:MAIN entry：標記「我跑了」+ 直接讀 kagi（main world 看得到就設 class）
+      try { document.documentElement.setAttribute('data-jread-orion-mw', '1'); } catch (e) {}
+      if (directKagi()) applyOrion();
+      return true; // main world 不渲染橫幅（避免雙重）
+    }
+    // 隔離世界：三法輪試
+    var sig = {
+      direct: directKagi(),
+      wrapExists: wrappedExists(),
+      wrap: wrappedKagi(),
+      inject: injectedKagi(),
+    };
+    sig.orion = sig.direct || sig.wrap || sig.inject;
+    if (sig.orion) applyOrion();
+    renderDiag(sig);
+    return sig.orion;
+  }
+
+  // kagi 注入時機未知——先試一次，沒中再在 DOMContentLoaded / load 補試。
+  if (!run()) {
+    try {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+      window.addEventListener('load', run, { once: true });
     } catch (e) {}
   }
 })();
