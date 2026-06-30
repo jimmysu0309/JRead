@@ -4377,6 +4377,59 @@
     return false;
   }
 
+  // ---- v1.5.24：游離「不可 collapse 空白」文字節點清除 ---------------------
+  // 場景：WYSIWYG 編輯器 / CMS（upmedia 等）在 block 容器內留下純空白文字節點，
+  // 內含 nbsp(U+00A0)/全形空白(U+3000)/ZWSP(U+200B)/BOM(U+FEFF) 等「不會被
+  // HTML 空白 collapse 規則消除」的字元 → 渲染成幽靈空行 box，且阻止相鄰 block
+  // 元素（如 h2）的 margin collapse，撐出多餘垂直空白。upmedia 實測：圖說
+  // 後、章節 h2 前各有一個 " \n" 游離節點，造成 caption 與標題間約 40px
+  // 額外空白（Jimmy 2026-06-30 回報「(中科院官網) 底下出現一段空白」根因）。
+  //
+  // 通則（非站點特判）：節點內容「只有空白、且含至少一個不可 collapse 空白
+  // 字元」+ 父元素是 block 級 + 該節點不是「兩側都是 inline 可見內容」的字間
+  // 間隔 → 清空其文字（snapshot 還原）。純一般空白（space/tab/newline）節點
+  // 不動——本來就會被 HTML collapse、清了無視覺差異徒增 churn；保留可逆性。
+  // figure/figcaption/blockquote/pre/code 內保留（語意空白可能有意義）。
+  const PHANTOM_NONCOLLAPSE_RE = /[\u00A0\u2007\u202F\u3000\u200B\uFEFF]/;
+  const PHANTOM_WS_ONLY_RE = /^[\s\u00A0\u2007\u202F\u3000\u200B\uFEFF]+$/;
+  // node 是否為「inline 可見內容」（判斷游離空白是否為刻意字間間隔）：
+  // 含非空白字元的文字節點，或 display 為 inline 系的元素。
+  function isInlineRenderable(node) {
+    if (!node) return false;
+    if (node.nodeType === 3) return /[^\s]/.test(node.textContent) || PHANTOM_NONCOLLAPSE_RE.test(node.textContent);
+    if (node.nodeType !== 1) return false;
+    let cs;
+    try { cs = window.getComputedStyle(node); } catch (_) { return false; }
+    if (!cs || cs.display === 'none') return false;
+    return cs.display.indexOf('inline') === 0;
+  }
+  function stripPhantomWhitespaceTextNodes(articleEl, hidden) {
+    if (!articleEl || !articleEl.ownerDocument || !articleEl.ownerDocument.createTreeWalker) return;
+    const doc = articleEl.ownerDocument;
+    const walker = doc.createTreeWalker(articleEl, NodeFilter.SHOW_TEXT, null);
+    const snaps = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      const t = node.textContent;
+      if (!t || !PHANTOM_WS_ONLY_RE.test(t)) continue;     // 非「純空白」
+      if (!PHANTOM_NONCOLLAPSE_RE.test(t)) continue;        // 不含不可 collapse 空白 → 會自然 collapse、不動
+      const p = node.parentElement;
+      if (!p) continue;
+      if (isInPreserved(p)) continue;                       // figure/figcaption/blockquote 內保留
+      if (p.closest && p.closest('pre, code, textarea')) continue;
+      let cs;
+      try { cs = window.getComputedStyle(p); } catch (_) { cs = null; }
+      if (cs && cs.display.indexOf('inline') === 0) continue; // 父為 inline 容器：空白屬正常 inline flow
+      // 字間間隔守則：兩側都是 inline 可見內容 → 是刻意的字間 nbsp，保留
+      if (isInlineRenderable(node.previousSibling) && isInlineRenderable(node.nextSibling)) continue;
+      snaps.push({ node, orig: t });
+      node.textContent = '';
+    }
+    if (snaps.length) {
+      hidden.__phantomText = (hidden.__phantomText || []).concat(snaps);
+    }
+  }
+
   function collapseEmptyWrappersAfterClean(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const el of _getArticleAllElements(articleEl)) {
@@ -6685,6 +6738,10 @@
       // 上方註解。
       safeRun(collapseEmptyWrappersAfterClean, articleEl, hidden);
       safeRun(collapseEmptyBlockSpacers, articleEl, hidden);
+      // v1.5.24：游離 nbsp / 全形空白等「不可 collapse 空白」文字節點清除——放在
+      // empty-spacer / collapse 規則之後（空 <p> 等已 hide，phantom 文字節點是
+      // 其後遺留的最後一類垂直空白殘渣）。詳見函式上方註解。
+      safeRun(stripPhantomWhitespaceTextNodes, articleEl, hidden);
       safeRun(capWrapperSpacing, articleEl, hidden);
       // v0.7.141：eet-china 類站點 page-wide unique h1 在 articleEl 外（與
       // articleEl 是 body 兄弟、detector LCA=body 被 reject 不 promote），h1
@@ -6749,6 +6806,14 @@
         }
       }
       restoreLazyImages(hiddenEls);
+      // v1.5.24：還原 stripPhantomWhitespaceTextNodes 清空的游離空白文字節點
+      if (hiddenEls && Array.isArray(hiddenEls.__phantomText)) {
+        for (const s of hiddenEls.__phantomText) {
+          if (s && s.node) {
+            try { s.node.textContent = s.orig; } catch (_) { /* node detached */ }
+          }
+        }
+      }
       if (Array.isArray(hiddenEls)) {
         for (const item of hiddenEls) {
           if (!item || !item.el) continue;

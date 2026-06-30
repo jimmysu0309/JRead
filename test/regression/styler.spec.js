@@ -1173,6 +1173,31 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     assert.ok(/margin-bottom\s*:\s*1em\s*!important/.test(body),
       'p/ul/ol/blockquote rule 必須含 margin-bottom: 1em !important；forcing：拿掉 → BBC 三段 p 緊貼無視覺斷層');
   });
+
+  // v1.5.24：div 當段落站（upmedia 等 CMS 用裸 <div> 排段落）的 text-div 段落
+  // 必須一併吃到段落間距 margin-bottom——否則 markTextDivs 雖標了 [data-jread-
+  // text-div]、卻只被字級/行距規則命中、margin 全 0，上下段緊貼、文末緊貼圖片
+  // （Jimmy 2026-06-30 upmedia 回報）。forcing：移除 styler 段距 rule 內的
+  // [data-jread-text-div] selector → 本 spec 失敗。
+  it('paragraphSpacing rule 必須含 [data-jread-text-div] selector（div 當段落站段距）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, DEFAULT_SETTINGS);
+    const css = document.getElementById('__jread-style').textContent;
+    // 精準鎖段距 rule：唯一「以 blockquote 為末 selector、body 僅 margin-bottom:
+    // Nem」的 rule block。擷取完整 selector 串（capture 1），必須含 text-div。
+    const m = css.match(/((?:\[data-jread-active="1"\][^,{}]*,\s*)+\[data-jread-active="1"\]\s+blockquote)\s*\{\s*margin-bottom:\s*[\d.]+em\s*!important;\s*\}/);
+    assert.ok(m, '必須有 …blockquote { margin-bottom: Nem } 段距 rule block');
+    assert.ok(/\[data-jread-active="1"\]\s+\[data-jread-text-div="1"\]/.test(m[1]),
+      '段距 rule block 的 selector 串必須含 [data-jread-text-div="1"]（upmedia div 段落間距修法）');
+  });
+
+  it('paragraphSpacing = -1（Auto）→ text-div 也不注入段距（保留原站 typography）', () => {
+    const { document, NS, articleEl } = setup();
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, paragraphSpacing: -1 });
+    const css = document.getElementById('__jread-style').textContent;
+    assert.ok(!/\[data-jread-text-div="1"\][^{]*\{[^}]*margin-bottom/.test(css),
+      'Auto 模式不得對 text-div 注入 margin-bottom');
+  });
 });
 
 // -----------------------------------------------------------------------------
