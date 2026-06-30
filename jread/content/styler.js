@@ -2043,10 +2043,18 @@ ${BODY_TEXT_SEL} {
     // margin-bottom。預設 1.0em 行為等價於 v0.7.102 base 內舊版固定規則（已搬
     // 離 base、改放此處受 Auto sentinel 控制）。
     if (opts.paragraphSpacing >= 0) {
+      // v1.5.24：div 當段落站（upmedia 等 CMS 用裸 <div> 而非 <p> 排段落）的主文
+      // 段落由 markTextDivs runtime 標記 [TEXT_DIV_ATTR]，比照 <p> 套段落間距——
+      // 否則 text-div 段落 margin 全 0、上下段緊貼、也緊貼下方圖片（Jimmy 2026-06-30
+      // upmedia 回報「段落無間距 / 文末與圖片無間距」根因）。caption（.mbt-text 類）
+      // 字級小於主流、markTextDivs 已排除、不會被誤套段距。text-div selector 排在
+      // blockquote 之前、保持 blockquote 為 rule 末 selector（既有 spec 以
+      // `blockquote {` 為錨比對此 rule block）。
       userOverrides += `
 [${ARTICLE_ATTR}="1"] p,
 [${ARTICLE_ATTR}="1"] ul,
 [${ARTICLE_ATTR}="1"] ol,
+[${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] blockquote {
   margin-bottom: ${opts.paragraphSpacing}em !important;
 }

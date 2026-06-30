@@ -4,6 +4,10 @@
 
 ---
 
+**v1.5.24** — upmedia.mg「div 當段落」站三處間距問題修正。Jimmy 2026-06-30 回報三症狀，cage（real Chrome、過 Cloudflare）+ instrument 釘出兩個結構根因：(1)**段落無間距 / 文末緊貼圖片**——站點主文段落是裸 `<div>`（非 `<p>`、margin/padding 全 0），`markTextDivs` 雖已標 `[data-jread-text-div]` 卻只被字級/行距規則命中、漏掉段落間距 margin → styler 段距 rule 加入 `[data-jread-text-div="1"]` selector（比照 p/ul/ol/blockquote；caption 因字級小於主流已被 markTextDivs 排除、不誤套）；(2)**圖說底下一段空白**——content 容器內留有游離「nbsp(U+00A0)+換行」純空白文字節點，nbsp 不被 HTML 空白 collapse → 渲染成幽靈空行 box 並阻止下方 h2 的 margin collapse、撐出約 40px 多餘垂直空白 → cleaner 新增 `stripPhantomWhitespaceTextNodes`（clean() 末段、snapshot 可逆）：清空「純空白且含不可 collapse 空白字元（nbsp / 全形空白 / ZWSP / BOM）」+ 父為 block 級 + 非兩側 inline 字間間隔的游離文字節點，figure/figcaption/blockquote/pre/code 內保留。兩者皆結構通則、非站點特判。forcing：`styler.spec.js`（text-div 段距 selector）+ `cleaner-phantom-whitespace-nodes.spec.js`（清空 / 還原 / 純空白不動 / inline 字間保留 / figure 保留）；full suite 2868 passing。
+
+---
+
 **v1.5.23** — Orion 修法實機確認生效 + 移除診斷儀器（乾淨版）。Jimmy 2026-06-30 Orion 實機驗證：閱讀模式標題 `titleTop` 從被島蓋（0~20）→ **94**（島約 59px、標題完整在島下方），`bodyPadTop=59px` 正確套上、`direct=Y inject=Y` 兩法在 Orion 都讀得到 `window.kagi`。**確認哪一法生效**：Orion 隔離世界（content_scripts[0]）讀得到頁面 window.kagi（direct），且注入 inline script 也 work（inject）；`world: "MAIN"` 與 `wrappedJSObject` 在 Orion 無效（前者不執行、後者非真 Gecko）——關鍵是偵測必須在 `content_scripts[0]` + `document_idle`（kagi 已就緒）。本版移除 `ORION_DIAG` 診斷橫幅與相關 instrument（renderDiag / inMainWorld 標記），orion-detect.js 精簡為 world-agnostic 三法偵測（direct / wrappedJSObject / 注入 script，後二為其他環境備援）→ applyOrion；保留 content_scripts[0] + world:MAIN 兩 entry。移除 `docs/orion-probe.html` 探針頁（已完成任務）。forcing：`orion-safe-area-top.spec.js`（8 passing）；full suite 全綠。Safari 零回歸維持（無 window.kagi → 不蓋 class）。
 
 **v1.5.22** — Orion 診斷橫幅閱讀模式下被 cleaner 藏掉修正（純診斷）。Jimmy 2026-06-30 回報 v1.5.21 進閱讀模式後橫幅右半看不到——根因：診斷橫幅掛在 `<body>` 下，JReader cleaner 動態 observer 把非主文元素當雜訊藏掉（已知行為，閱讀模式注入 UI 要掛 `<html>` 不掛 body）。修正：橫幅改掛 `document.documentElement`（<html>）+ `refresh` 每 700ms 強制重設 inline `!important` 樣式（蓋過 cleaner 的 display:none）+ 斷線自動重掛。讓閱讀模式下橫幅持續可見，才讀得到 `RM activeCls/bodyPadTop/cardTop/titleTop` 即時值定位修法卡點。full suite 全綠。**仍是診斷建置**。
