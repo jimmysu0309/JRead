@@ -2501,7 +2501,25 @@ html [${ARTICLE_ATTR}="1"] a {
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] * {
   font: inherit !important;
 }`;
-    return base + userOverrides + bylineFontNorm +
+    // Orion（Kagi）edge-to-edge top safe-area 補償。Orion 把頁面內容鑽進 Dynamic
+    // Island / 狀態列下（捲動與翻頁兩模式都會，Jimmy 2026-06-30 實機回報），且不
+    // 回報 env(safe-area-inset-*)（四向全 0）、UA 完全偽裝 Safari → env 與 UA 兩路
+    // 皆無法分流。改由 content/orion-detect.js（world:MAIN）讀 window.kagi，在 <html>
+    // 蓋 .jread-orion + 設 --jread-orion-top（依 screen.height 分檔的島/舊機高度）。
+    // 本 CSS 只在 .jread-orion 命中時生效 → Safari 永遠不套、零回歸風險。
+    //   捲動模式：body 補 top padding，scroll=0 時標題落在島下方。
+    //   翻頁模式：fixed 卡片 top:0 → 下推 inset，標題清開島。
+    // gating selector specificity (0,3,1) 贏過翻頁 base 的 html [data-jread-active] (0,1,1)。
+    const orionSafeTop = opts.pagedMode
+      ? `
+html.${HTML_CLASS}.jread-orion [${ARTICLE_ATTR}="1"] {
+  top: var(--jread-orion-top, 59px) !important;
+}`
+      : `
+html.${HTML_CLASS}.jread-orion body {
+  padding-top: var(--jread-orion-top, 59px) !important;
+}`;
+    return base + userOverrides + bylineFontNorm + orionSafeTop +
       (overrides.fontFamily ? FONT_FACE_CSS + latinFontFaceFor(opts.fontFamily) : '');
   }
 
