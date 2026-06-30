@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><title>中科院內部自嘲淪「買辦」</title></head>
+<body>
+<!--
+  最小重現：upmedia.mg 文末標籤列（Jimmy 2026-06-30 回報「文章末尾還有些許雜訊」）。
+  結構：.news-box-text 內 .news-foot > .news-label，內含數個 tag chip
+  `<a href="/search/<關鍵字>"><span>關鍵字</span></a>` —— tag chip 連到站內
+  搜尋頁（用 search 結果頁當 tag landing，跨 CMS 慣例）。
+  舊 TAXONOMY_HREF_RE 只認 /tags?/ /category/ /topics?/ /labels?/、不認 /search/
+  → hideInsideArticleHashtagClusters 0 命中、整列漏網。
+  修法（v1.5.25）：TAXONOMY_HREF_RE 加 search(?:es)?。
+  class（news-foot / news-label）刻意不在 NOISE_KEYWORD_RE 內，且 anchor 僅 4 個
+  （< hideInsideArticleDirectChildLinkBlocks 的 5 門檻）、巢狀於 .news-box-text
+  （非 article 直接子）→ 確保 hide 只能來自 search-href tag-bar path，是有效
+  forcing function。
+-->
+<main>
+  <article>
+    <h1>中科院內部自嘲淪「買辦」　合作案切忌不可因小失大</h1>
+    <div class="news-box-text">
+      <p>不可否認中科院在天弓、天劍系列飛彈、雷達等領域有研發出一定的成果，雖隨著國防自主政策下，電接到各軍種的訂單也增加，據了解，中科院內部卻自嘲只是買辦的角色，採購法規沒有整體配套，這是長期累積下來的結構問題。</p>
+      <p>因此中科院這次與多家美商合作案中，應可從合作經驗中找出真正有意義的外購需求，遵守國際規範來洗刷過去因無法採購，採用了一些不光彩手法，讓國防自主真正的落實本土。（責任編輯：王晨芝）</p>
+      <div class="news-foot clearfix">
+        <div class="news-label">
+          <a href="/search/虹弧靶機"><span>虹弧靶機</span></a>
+          <a href="/search/以色列"><span>以色列</span></a>
+          <a href="/search/天弓飛彈"><span>天弓飛彈</span></a>
+          <a href="/search/神龍小組"><span>神龍小組</span></a>
+        </div>
+      </div>
+    </div>
+  </article>
+</main>
+</body>
+</html>
