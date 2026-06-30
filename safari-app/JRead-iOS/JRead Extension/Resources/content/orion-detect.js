@@ -10,10 +10,18 @@
 //   - 獨立 world:MAIN entry（document_start）—— 保留，引擎支援時直接讀（無害備援）。
 //
 // 【偵測法】Orion 把專屬指紋（window.kagi / window.__kagi_native_*）注入「頁面 main
-// world」。三法輪試命中即套（實機 direct + inject 皆 Y）：
-//   1. 直接 window.kagi（Orion 隔離世界讀得到）
+// world」。兩法輪試命中即套（實機 direct=Y）：
+//   1. 直接 window.kagi（Orion 隔離世界讀得到）—— 主力，實機實證命中
 //   2. window.wrappedJSObject.kagi（Gecko content script 穿 main world idiom）
-//   3. 注入 inline <script> 到頁面讀 window.kagi → stamp shared DOM 屬性回傳（最通用）
+//
+// 【為何拿掉「注入 inline <script>」第三法】（Jimmy 2026-06-30，Chrome console 實證）
+//   早期第三法注入 inline <script> 到頁面讀 window.kagi、stamp DOM 屬性回傳。但：
+//   - Orion 實機 direct=Y，短路求值第一法就命中，注入法在 Orion 永遠走不到。
+//   - 在 Chrome / Safari（非 Orion）前兩法必 false → 一定 fall through 到注入法；
+//     遇嚴格 CSP 站（script-src 無 'unsafe-inline'，如 upmedia.mg）inline script 執行
+//     被瀏覽器層擋下，狂噴 CSP 違規 console error。且該 error 是非同步瀏覽器層阻擋、
+//     try/catch 抓不掉。
+//   => 注入法對 Orion 冗餘、對其他瀏覽器是純 console 噪音，移除。零功能損失。
 //
 // 【為何偵測 Orion 而非 env()/UA】（docs/orion-probe 實機探針實證）
 //   - UA 死：Orion 把 navigator.userAgent 完全偽裝成 Safari（無 "Orion"）；連 content
@@ -45,23 +53,8 @@
       return !!(w && (w.kagi || w.KAGI || w.__kagi_native_fetch));
     } catch (e) { return false; }
   }
-  function injectedKagi() {
-    try {
-      var FLAG = 'data-jread-orion-probe';
-      var s = document.createElement('script');
-      s.textContent =
-        "try{if(window.kagi||window.KAGI||window.__kagi_native_fetch||window.__kagi_native_XHR_open)" +
-        "{document.documentElement.setAttribute('" + FLAG + "','1')}}catch(e){}";
-      (document.head || document.documentElement || document).appendChild(s);
-      s.remove();
-      var hit = document.documentElement.getAttribute(FLAG) === '1';
-      if (hit) document.documentElement.removeAttribute(FLAG);
-      return hit;
-    } catch (e) { return false; }
-  }
-
   function isOrion() {
-    return directKagi() || wrappedKagi() || injectedKagi();
+    return directKagi() || wrappedKagi();
   }
 
   function mark() {
@@ -77,8 +70,8 @@
     }
   }
 
-  // kagi 注入時機未知——先試一次，沒中再在 DOMContentLoaded / load 補試
-  // （注入頁面腳本與 wrappedJSObject 都需 DOM ready）。
+  // kagi 暴露時機未知——先試一次，沒中再在 DOMContentLoaded / load 補試
+  // （wrappedJSObject 需 DOM ready）。
   if (!mark()) {
     try {
       document.addEventListener('DOMContentLoaded', mark, { once: true });

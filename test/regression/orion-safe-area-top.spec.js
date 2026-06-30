@@ -85,12 +85,20 @@ describe('Orion edge-to-edge top safe-area 補償（v1.5.18）', () => {
       '翻頁模式須對 .jread-orion 卡片下推 top');
   });
 
-  it('orion-detect：三種跨 world 偵測法都在（direct / wrappedJSObject / 注入 script）', () => {
+  it('orion-detect：保留 direct / wrappedJSObject 兩法偵測', () => {
     assert.ok(/window\.kagi/.test(DETECT_SRC), '須有 direct window.kagi 偵測');
     assert.ok(/wrappedJSObject/.test(DETECT_SRC),
       '須有 window.wrappedJSObject 偵測（Gecko content script 穿到 main world）');
-    assert.ok(/createElement\(['"]script['"]\)/.test(DETECT_SRC),
-      '須有注入 inline <script> 偵測（最通用、不依賴 world:MAIN 支援）');
+  });
+
+  it('orion-detect：不得注入 inline <script>（CSP 噪音根除，v1.5.26）', () => {
+    // 早期第三法注入 inline <script> 讀 window.kagi。但 Orion direct=Y 短路命中、注入法
+    // 永遠走不到；在非 Orion 瀏覽器遇嚴格 CSP 站（script-src 無 'unsafe-inline'）只會狂噴
+    // CSP 違規 console error（Chrome 實證）。對 Orion 冗餘、對其他純噪音，已移除。
+    assert.ok(!/createElement\(['"]script['"]\)/.test(DETECT_SRC),
+      'orion-detect 不可注入 inline <script>（嚴格 CSP 站會噴 console error）');
+    assert.ok(!/\.textContent\s*=/.test(DETECT_SRC),
+      'orion-detect 不可用 inline script textContent 注入偵測');
   });
 
   it('manifest：orion-detect 在主清單 content_scripts[0]（Orion 必跑）+ world:MAIN entry', () => {
