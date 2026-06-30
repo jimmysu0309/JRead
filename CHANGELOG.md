@@ -4,6 +4,8 @@
 
 ---
 
+**v1.5.23** — Orion 修法實機確認生效 + 移除診斷儀器（乾淨版）。Jimmy 2026-06-30 Orion 實機驗證：閱讀模式標題 `titleTop` 從被島蓋（0~20）→ **94**（島約 59px、標題完整在島下方），`bodyPadTop=59px` 正確套上、`direct=Y inject=Y` 兩法在 Orion 都讀得到 `window.kagi`。**確認哪一法生效**：Orion 隔離世界（content_scripts[0]）讀得到頁面 window.kagi（direct），且注入 inline script 也 work（inject）；`world: "MAIN"` 與 `wrappedJSObject` 在 Orion 無效（前者不執行、後者非真 Gecko）——關鍵是偵測必須在 `content_scripts[0]` + `document_idle`（kagi 已就緒）。本版移除 `ORION_DIAG` 診斷橫幅與相關 instrument（renderDiag / inMainWorld 標記），orion-detect.js 精簡為 world-agnostic 三法偵測（direct / wrappedJSObject / 注入 script，後二為其他環境備援）→ applyOrion；保留 content_scripts[0] + world:MAIN 兩 entry。移除 `docs/orion-probe.html` 探針頁（已完成任務）。forcing：`orion-safe-area-top.spec.js`（8 passing）；full suite 全綠。Safari 零回歸維持（無 window.kagi → 不蓋 class）。
+
 **v1.5.22** — Orion 診斷橫幅閱讀模式下被 cleaner 藏掉修正（純診斷）。Jimmy 2026-06-30 回報 v1.5.21 進閱讀模式後橫幅右半看不到——根因：診斷橫幅掛在 `<body>` 下，JReader cleaner 動態 observer 把非主文元素當雜訊藏掉（已知行為，閱讀模式注入 UI 要掛 `<html>` 不掛 body）。修正：橫幅改掛 `document.documentElement`（<html>）+ `refresh` 每 700ms 強制重設 inline `!important` 樣式（蓋過 cleaner 的 display:none）+ 斷線自動重掛。讓閱讀模式下橫幅持續可見，才讀得到 `RM activeCls/bodyPadTop/cardTop/titleTop` 即時值定位修法卡點。full suite 全綠。**仍是診斷建置**。
 
 **v1.5.21** — Orion 診斷橫幅升級為即時 reader-mode computed 值（純診斷，無修法）。v1.5.20 證實偵測成功（`orion=YES direct=Y inject=Y`、class 會蓋上、`--jread-orion-top` 會設）但 Jimmy 2026-06-30 回報「進閱讀模式還是被島蓋」——代表 styler 的 `.jread-orion` gated CSS 在 Orion 沒把內容推下去（class 被重置 / CSS 沒套 / padding 套了但無效，無法本機重現 Orion 釐清）。診斷橫幅加 `setInterval` 每 700ms 刷新即時值：`orionCls`（html 是否仍有 .jread-orion）、`activeCls`（__jread-active）、`var`（--jread-orion-top computed）、`bodyPadTop`（body computed padding-top）、`cardPos/cardTop/titleTop`（reader card 位置與標題 viewport 頂距）。Jimmy 進閱讀模式截圖即可定位卡在哪層。full suite 全綠。**仍是診斷建置**（ORION_DIAG=true）。
