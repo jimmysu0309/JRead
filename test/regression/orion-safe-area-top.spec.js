@@ -83,13 +83,24 @@ describe('Orion edge-to-edge top safe-area 補償（v1.5.18）', () => {
       '翻頁模式須對 .jread-orion 卡片下推 top');
   });
 
-  it('manifest：宣告 world:MAIN 的 orion-detect 偵測 script（document_start）', () => {
+  it('orion-detect：三種跨 world 偵測法都在（direct / wrappedJSObject / 注入 script）', () => {
+    assert.ok(/window\.kagi/.test(DETECT_SRC), '須有 direct window.kagi 偵測');
+    assert.ok(/wrappedJSObject/.test(DETECT_SRC),
+      '須有 window.wrappedJSObject 偵測（Gecko content script 穿到 main world）');
+    assert.ok(/createElement\(['"]script['"]\)/.test(DETECT_SRC),
+      '須有注入 inline <script> 偵測（最通用、不依賴 world:MAIN 支援）');
+  });
+
+  it('manifest：orion-detect 同時掛隔離世界 + world:MAIN 兩個 entry（document_start）', () => {
     const entries = MANIFEST.content_scripts || [];
-    const mainWorld = entries.find((e) => e.world === 'MAIN');
-    assert.ok(mainWorld, 'manifest 須有一個 world:MAIN content_scripts entry');
-    assert.ok((mainWorld.js || []).includes('content/orion-detect.js'),
-      'world:MAIN entry 須載入 content/orion-detect.js');
-    assert.strictEqual(mainWorld.run_at, 'document_start',
-      'orion-detect 須 run_at document_start（早於頁面初始化蓋 class）');
+    const orionEntries = entries.filter((e) => (e.js || []).includes('content/orion-detect.js'));
+    assert.strictEqual(orionEntries.length, 2,
+      'orion-detect.js 須掛兩個 entry（隔離世界 + world:MAIN）');
+    const mainWorld = orionEntries.find((e) => e.world === 'MAIN');
+    const isolated = orionEntries.find((e) => e.world !== 'MAIN');
+    assert.ok(mainWorld, '須有 world:MAIN entry（引擎支援時直接讀 window.kagi）');
+    assert.ok(isolated, '須有隔離世界 entry（Orion world:MAIN 不支援時的主力，走 wrappedJSObject / 注入 script）');
+    assert.strictEqual(mainWorld.run_at, 'document_start', 'world:MAIN entry 須 document_start');
+    assert.strictEqual(isolated.run_at, 'document_start', '隔離 entry 須 document_start');
   });
 });
