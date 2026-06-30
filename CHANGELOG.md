@@ -4,6 +4,8 @@
 
 ---
 
+**v1.5.26** — orion-detect 移除注入 inline `<script>` 偵測法（根除非 Orion 瀏覽器的 CSP console 噪音）。Jimmy 2026-06-30 在 Chrome 開 upmedia.mg 看到 `content/orion-detect.js:55 (injectedKagi)` 噴 CSP 違規（`Executing inline script violates ... 'script-src' ... 沒給 'unsafe-inline'`）。根因：orion-detect 的第三法 `injectedKagi` 把 inline `<script>` 塞進頁面讀 `window.kagi`，但短路求值 `directKagi() || wrappedKagi() || injectedKagi()` —— Orion 實機 `direct=Y` 第一法就命中、注入法在 Orion 永遠走不到；在 Chrome / Safari（非 Orion）前兩法必 false → 一定 fall through 到注入法，遇嚴格 CSP 站（`script-src` 無 `'unsafe-inline'`）inline script 執行被瀏覽器層擋下狂噴 console error，且該 error 非同步、`try/catch` 抓不掉。注入法對 Orion 冗餘、對其他瀏覽器純噪音，移除（零功能損失，Orion 偵測續靠實證穩定的 direct / wrappedJSObject 兩法）。forcing：`orion-safe-area-top.spec.js` 翻成負向斷言（`createElement('script')` / `.textContent=` 不得出現，重新加回必 fail）；full suite 2873 passing。
+
 **v1.5.25** — upmedia.mg 文末標籤列（tag chip 連 `/search/`）殘留清除。Jimmy 2026-06-30 回報「文章末尾還有些許雜訊」，cage（real Chrome、過 Cloudflare）probe：`.news-foot > .news-label` 內數個 tag chip `<a href="/search/<關鍵字>">` 殘留。根因：tag chip 連到站內搜尋頁（用 search 結果頁當 tag landing，跨 CMS 慣例），但 `hideInsideArticleHashtagClusters` 的 `TAXONOMY_HREF_RE` 只認 `/tags?/` `/category/` `/topics?/` `/labels?/`、不認 `/search/` → hashtagHits 0、整列漏網。修法：`TAXONOMY_HREF_RE` 加 `search(?:es)?`（搜尋頁＝關鍵字 landing、navigation chrome；cluster guard「>=3 短 anchor + 無主文長段落 + 無媒體 + 無 `<time>`」防單一 /search/ 連結誤殺）。**坑**：`search(?:es)?` 不可寫成 `searches?`（後者 `?` 只作用於末字 s、要 "searche"）。結構通則、非站點特判。forcing：`upmedia-search-href-tag-foot.spec.js`（核心 hide + chip 不可見 + 主文無誤殺；移除 search 驗 fail）；full suite 2872 passing。
 
 ---
