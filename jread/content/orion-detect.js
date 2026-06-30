@@ -125,17 +125,30 @@
             ' ' + artInfo;
         } catch (e) { return 'RM err'; }
       }
-      function refresh() { try { bar.textContent = staticLine + '  ||  ' + liveLine(); } catch (e) {} }
+      var BAR_STYLE =
+        'position:fixed !important;top:0 !important;left:0 !important;right:0 !important;' +
+        'z-index:2147483647 !important;display:block !important;visibility:visible !important;' +
+        'opacity:1 !important;background:#111 !important;color:#0f0 !important;' +
+        'font:10px/1.4 ui-monospace,Menlo,monospace !important;padding:5px 8px !important;' +
+        'white-space:normal !important;word-break:break-all !important;border-bottom:2px solid #0f0 !important;';
+      function refresh() {
+        try {
+          // cleaner 動態 observer 在閱讀模式會藏掉非主文元素 / 設 display:none——
+          // 每次刷新都重掛到 <html>（不掛 body）+ 強制重設 inline !important 樣式蓋回。
+          if (!bar.isConnected) { try { document.documentElement.appendChild(bar); } catch (e) {} }
+          bar.setAttribute('style', BAR_STYLE);
+          bar.textContent = staticLine + '  ||  ' + liveLine();
+        } catch (e) {}
+      }
       var mount = function () {
         try {
-          (document.body || document.documentElement).appendChild(bar);
+          document.documentElement.appendChild(bar); // 掛 <html> 不掛 body，避開 cleaner observer
           refresh();
-          // 閱讀模式在進場後才套——每 700ms 刷新即時值，捕捉 reader-mode 後的 computed 狀態
+          // 閱讀模式在進場後才套——每 700ms 刷新即時值 + 重掛，捕捉 reader-mode 後的 computed 狀態
           setInterval(refresh, 700);
         } catch (e) {}
       };
-      if (document.body) mount();
-      else document.addEventListener('DOMContentLoaded', mount, { once: true });
+      mount();
     } catch (e) {}
   }
 
