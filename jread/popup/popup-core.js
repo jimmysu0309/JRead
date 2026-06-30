@@ -14,6 +14,7 @@
   const CONTENT_SCRIPT_FILES = [
     'content/namespace.js',
     'content/home-launcher.js',
+    'content/orion-detect.js',
     'content/keepalive.js',
     'content/settings-defaults.js',
     'content/domain-match.js',
