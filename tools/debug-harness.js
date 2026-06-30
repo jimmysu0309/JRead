@@ -94,6 +94,11 @@ const PAGED = process.argv.includes('--paged');
 // 類 bot challenge 會偵測 headless 模式直接出驗證頁（upmedia.mg 實證——
 // headless 下 detector 撿到的是 challenge 頁、驗收全失真），這類站必加。
 const HEADED = process.argv.includes('--headed');
+// --orion：模擬 iOS Orion（Kagi）瀏覽器——進閱讀模式後，手動在 <html> 蓋
+// .jread-orion + 設 --jread-orion-top（正常由 content/orion-detect.js 讀 window.kagi
+// 蓋上，但 Chromium harness 沒有 window.kagi）。驗 styler 的 .jread-orion gated CSS
+// specificity 在真實引擎下真的把標題推下去（jsdom regex 驗不到 cascade）。
+const ORION = process.argv.includes('--orion');
 const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -269,6 +274,45 @@ async function triggerShinkansenTranslate(page) {
     };
   });
   console.log('DOM state:', state);
+
+  // ===== ORION SIMULATION AUDIT（--orion）=====
+  // 模擬 Orion：蓋 .jread-orion + --jread-orion-top，量標題（reader card 第一個
+  // 可見內容元素）的 viewport 頂距是否被推下約 inset。驗 styler gated CSS 的
+  // specificity / cascade 在真實引擎生效（Safari 永遠不會有此 class、零回歸）。
+  if (ORION && state.articleFound) {
+    const orionState = await page.evaluate(async (paged) => {
+      const art = document.querySelector('[data-jread-active="1"]');
+      const firstTop = () => {
+        // reader card 第一個有高度的內容元素（標題）距 viewport 頂的距離
+        const el = art.querySelector('h1, h2, h3, p, [data-jread-byline]') || art;
+        return Math.round(el.getBoundingClientRect().top);
+      };
+      const before = firstTop();
+      const cardTopBefore = Math.round(art.getBoundingClientRect().top);
+      const de = document.documentElement;
+      de.classList.add('jread-orion');
+      de.style.setProperty('--jread-orion-top', '59px');
+      await new Promise(r => setTimeout(r, 350)); // reflow
+      const after = firstTop();
+      const cardTopAfter = Math.round(art.getBoundingClientRect().top);
+      const cs = getComputedStyle(document.body);
+      const artCs = getComputedStyle(art);
+      return {
+        mode: paged ? 'paged' : 'scroll',
+        titleTopBefore: before, titleTopAfter: after, titleShift: after - before,
+        cardTopBefore, cardTopAfter, cardShift: cardTopAfter - cardTopBefore,
+        bodyPaddingTop: cs.paddingTop,
+        cardPosition: artCs.position, cardTop: artCs.top,
+      };
+    }, PAGED);
+    console.log('\n===== ORION SIMULATION =====');
+    console.log(orionState);
+    const shift = PAGED ? orionState.cardShift : orionState.titleShift;
+    const ok = shift >= 50; // 約 59px，留一點容差
+    console.log(ok
+      ? `✅ Orion gated CSS 生效：${PAGED ? '卡片' : '標題'}下推 ${shift}px（約 59）`
+      : `❌ Orion gated CSS 未生效：位移僅 ${shift}px（specificity/cascade 沒贏）`);
+  }
 
   // ===== PAGED AUDIT（--paged）=====
   // 驗：multicol 分頁 CSS 算出值（column-width 不可為 auto——auto 代表退回
