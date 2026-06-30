@@ -83,34 +83,56 @@
     } catch (e) { return false; }
   }
 
-  // 診斷橫幅：只在隔離世界（有 DOM + 較穩）渲染一次，讀各訊號
+  // 診斷橫幅：靜態偵測結果 + 即時（interval）閱讀模式 computed 值，定位卡在哪一層
   function renderDiag(sig) {
     try {
       if (!ORION_DIAG) return;
       if (document.getElementById('__jread-orion-diag')) return;
-      var de = document.documentElement;
-      var mwRan = de.getAttribute('data-jread-orion-mw') === '1';
       var bar = document.createElement('div');
       bar.id = '__jread-orion-diag';
       bar.setAttribute('style',
         'position:fixed;top:0;left:0;right:0;z-index:2147483647;' +
-        'background:#111;color:#0f0;font:11px/1.45 ui-monospace,Menlo,monospace;' +
-        'padding:6px 8px;white-space:normal;word-break:break-all;border-bottom:2px solid #0f0;');
-      var ua = '';
-      try { ua = navigator.userAgent || ''; } catch (e) {}
+        'background:#111;color:#0f0;font:10px/1.4 ui-monospace,Menlo,monospace;' +
+        'padding:5px 8px;white-space:normal;word-break:break-all;border-bottom:2px solid #0f0;');
       var sh = 0;
       try { sh = (window.screen && window.screen.height) || 0; } catch (e) {}
-      bar.textContent =
-        'JR-ORION-DIAG  orion=' + (sig.orion ? 'YES' : 'no') +
-        ' | direct=' + (sig.direct ? 'Y' : 'n') +
-        ' wrapExists=' + (sig.wrapExists ? 'Y' : 'n') +
-        ' wrap=' + (sig.wrap ? 'Y' : 'n') +
+      var staticLine =
+        'JR-ORION-DIAG orion=' + (sig.orion ? 'YES' : 'no') +
+        ' direct=' + (sig.direct ? 'Y' : 'n') +
         ' inject=' + (sig.inject ? 'Y' : 'n') +
-        ' | mainWorldEntryRan=' + (mwRan ? 'Y' : 'n') +
-        ' | sh=' + sh +
-        ' | UA=' + ua;
+        ' sh=' + sh;
+      function liveLine() {
+        try {
+          var de = document.documentElement;
+          var orionCls = de.classList.contains('jread-orion');
+          var activeCls = de.classList.contains('__jread-active');
+          var cssVar = '';
+          try { cssVar = getComputedStyle(de).getPropertyValue('--jread-orion-top').trim(); } catch (e) {}
+          var bodyPad = '';
+          try { bodyPad = getComputedStyle(document.body).paddingTop; } catch (e) {}
+          var art = document.querySelector('[data-jread-active="1"]');
+          var artInfo = 'noCard';
+          if (art) {
+            var acs = getComputedStyle(art);
+            var titleEl = art.querySelector('h1,h2,h3,p,[data-jread-byline]') || art;
+            var tTop = Math.round(titleEl.getBoundingClientRect().top);
+            artInfo = 'cardPos=' + acs.position + ' cardTop=' + acs.top + ' titleTop=' + tTop;
+          }
+          return 'RM orionCls=' + (orionCls ? 'Y' : 'n') +
+            ' activeCls=' + (activeCls ? 'Y' : 'n') +
+            ' var=' + (cssVar || '∅') +
+            ' bodyPadTop=' + (bodyPad || '?') +
+            ' ' + artInfo;
+        } catch (e) { return 'RM err'; }
+      }
+      function refresh() { try { bar.textContent = staticLine + '  ||  ' + liveLine(); } catch (e) {} }
       var mount = function () {
-        try { (document.body || document.documentElement).appendChild(bar); } catch (e) {}
+        try {
+          (document.body || document.documentElement).appendChild(bar);
+          refresh();
+          // 閱讀模式在進場後才套——每 700ms 刷新即時值，捕捉 reader-mode 後的 computed 狀態
+          setInterval(refresh, 700);
+        } catch (e) {}
       };
       if (document.body) mount();
       else document.addEventListener('DOMContentLoaded', mount, { once: true });
