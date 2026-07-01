@@ -1592,4 +1592,31 @@
   }
 
   installSpaNavigationWatch();
+
+  // v1.5.27：列印防護（print guard）。JRead 注入頁面的常駐 / 浮動 UI（懸浮按鈕、
+  // 閱讀進度條、翻頁頁碼、toast、編輯工具列等）都是 position:fixed / absolute 的
+  // 高 z-index 元素，掛在 documentElement。使用者按 Ctrl+P（或站點自身的列印，如
+  // Google Docs）時瀏覽器會把這些浮動 UI 一起印進去（Jimmy 2026-07-01 回報，
+  // 姊妹專案 Shinkansen 同款 bug）。修法：注入一條 @media print 規則把所有 JRead
+  // 注入 UI 的 host id 隱藏。這些 host 本身在 light DOM，用 id 選取即隱藏整顆
+  // （含 Shadow DOM 內容）。結構性通則（列舉 JRead 自有 id、非站點特判），且
+  // 與閱讀模式開關無關——懸浮按鈕在非閱讀模式也常駐，故獨立注入、不綁 styler。
+  // 走 NS.injectCssText 沿用 CSP-safe fallback（嚴格 style-src 站在 WebKit 退
+  // adoptedStyleSheets）。只在 top frame 注入一次（浮動 UI 皆在 top frame）。
+  (function injectPrintGuard() {
+    try {
+      if (window.top !== window.self) return;
+      if (!NS.injectCssText) return;
+      NS.injectCssText('__jread-print-guard', `@media print {
+  #__jread-floating-host,
+  #__jread-panel-host,
+  #__jread-toast-host,
+  #__jread-editmode-host,
+  #__jread-page-indicator,
+  #__jread-scrub-track,
+  #__jread-focus-bar,
+  #__jread-progress { display: none !important; }
+}`);
+    } catch (_) { /* 注入失敗不阻斷其他功能 */ }
+  })();
 })();
