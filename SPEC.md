@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.5.26**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.5.27**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -107,7 +107,7 @@ JRead/
 │   │   ├── paged-mode.js        # 翻頁模式：手勢/鍵盤/滾輪翻頁 + 頁碼指示（v0.7.227）
 │   │   ├── position-memory.js   # 閱讀位置記憶：段落/頁碼持久化 + 回復（v0.8.40）
 │   │   ├── orion-detect.js      # Orion（Kagi）偵測：在 content_scripts[0] 主清單內（namespace→home-launcher 後）+ 另掛 world:MAIN entry；三法讀 window.kagi（direct / wrappedJSObject / 注入 script）→ 蓋 .jread-orion + --jread-orion-top（v1.5.18 起，v1.5.23 Orion 實機確認生效）
-│   │   └── main.js              # 進入點、事件串接
+│   │   └── main.js              # 進入點、事件串接、列印防護（v1.5.27 top frame 注入 @media print 隱藏所有 JRead 注入 UI）
 │   ├── popup/
 │   │   ├── popup.html
 │   │   └── popup.js
