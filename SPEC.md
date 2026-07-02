@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.6.0**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.6.1**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -640,7 +640,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - `instapaperToken` / `instapaperTokenSecret`（string，預設 `''`）：Instapaper Full API 的 OAuth token + secret（xAuth 換得）。存 `chrome.storage.sync`
 - `instapaperUsername`（string，預設 `''`）：僅供 options 顯示「已連結：<帳號>」；密碼用完即丟不存
 - `readwiseSummary` + `geminiApiKey`：**兩服務共用**（Readwise 對映 `summary` 欄位、Instapaper 對映 `description` 欄位）
-- options 頁「儲存服務整合」段：服務選擇器（`<select id="storageService">`）+ 依選擇顯示對應憑證區（readwise=token+測試；instapaper=email/密碼「連結」/已連結顯示帳號+「解除連結」）+ 摘要/Gemini key 永遠顯示
+- options 頁「稍後閱讀服務整合」段：服務選擇器（`#storageService` 兩顆並排分段 toggle，radio 語意二擇一、選中填品牌色，讓使用者一眼看到有哪些選擇）+ 依選擇顯示對應憑證區（readwise=token+測試；instapaper=email/密碼「連結」/已連結顯示帳號+「解除連結」）+ 摘要/Gemini key 永遠顯示
 
 ### dispatcher（`popup-core.js`，服務無關抽象層）
 

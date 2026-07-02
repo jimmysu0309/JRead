@@ -183,6 +183,13 @@ function readFieldFromDom(id) {
     }
     case 'readwiseToken': case 'geminiApiKey':
       return el.value.trim();
+    case 'storageService': {
+      // v1.6.0：兩顆分段 toggle（radio 群，wrapper id=storageService）。讀已勾選值；
+      // 損壞 / 無勾選退回 'readwise'。
+      const checked = el.querySelector('input[name="storageService"]:checked');
+      const v = checked ? checked.value : 'readwise';
+      return v === 'instapaper' ? 'instapaper' : 'readwise';
+    }
     default:
       return el.value;
   }
@@ -243,6 +250,11 @@ function applyFieldToDom(id, value) {
   } else if (id === 'readwiseSummary') {
     // 預設 false——只有明確為 true 才勾選
     el.checked = value === true;
+  } else if (id === 'storageService') {
+    // v1.6.0：分段 toggle radio 群；勾選對應值，舊資料 / 損壞退回 'readwise'
+    const v = value === 'instapaper' ? 'instapaper' : 'readwise';
+    const radio = el.querySelector('input[name="storageService"][value="' + v + '"]');
+    if (radio) radio.checked = true;
   } else if (id === 'readwiseToken' || id === 'geminiApiKey') {
     el.value = value || '';
   } else {
@@ -437,7 +449,8 @@ const IP = window.__JReadInstapaper;
 
 function updateServiceVisibility() {
   const sel = document.getElementById('storageService');
-  const svc = sel && sel.value === 'instapaper' ? 'instapaper' : 'readwise';
+  const checked = sel && sel.querySelector('input[name="storageService"]:checked');
+  const svc = checked && checked.value === 'instapaper' ? 'instapaper' : 'readwise';
   const blocks = document.querySelectorAll('[data-service-block]');
   for (const el of blocks) el.hidden = el.getAttribute('data-service-block') !== svc;
 }

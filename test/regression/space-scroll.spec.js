@@ -97,8 +97,9 @@ describe('space-scroll v0.7.216 — Space 段落焦點卷動（仿 Readwise Read
     });
 
     it('options.html desc 必須標注 0 = 停用 sentinel（UI 語意指引）', () => {
-      const idx = OPTIONS_HTML.indexOf('Space 顯示門檻');
-      assert.ok(idx >= 0, 'options.html 必須有「Space 顯示門檻」label');
+      // v1.6.0：label 文案改「按 space 鍵行為設定」，改以穩定 id spaceScrollRatio 定錨
+      const idx = OPTIONS_HTML.indexOf('spaceScrollRatio');
+      assert.ok(idx >= 0, 'options.html 必須有 spaceScrollRatio 欄位');
       const block = OPTIONS_HTML.slice(idx, idx + 600);
       assert.match(block, /<strong>0 = 停用<\/strong>/,
         'desc 必須用 <strong> 標注 0 = 停用 sentinel——forcing：sentinel 值不標注使用者只能猜');
