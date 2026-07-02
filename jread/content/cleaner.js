@@ -811,7 +811,16 @@
     if (!total) return false;
     let linkText = 0;
     for (const a of links) linkText += norm(a.textContent).length;
-    return linkText / total >= 0.5;
+    if (linkText / total >= 0.5) return true;
+    // v1.6.5：縮圖卡片式推薦 feed——teaser 標題 / 圖說常在 <a> 外（NYT 文末「Related
+    // Content / 編輯精選」lazy feed 實測：link 文字占比僅 0.31、25 連結 + 22 縮圖、
+    // 無任一 >= 100 字長段落），純看 link 文字占比會漏、只 hide 得掉 heading。補媒體
+    // 訊號：無長段落（上方 gate 已確認）+ 大量縮圖卡（img/picture >= 3 且 link >= 5）
+    // = 卡片 feed、非主文。安全性：本函式只在 resolveHeadingNoiseTarget 的 tooWide 判定
+    // 內呼叫（前提已命中 recirculation noise heading 如「Related Content」），真主文區塊
+    // 不帶此類 heading、且有長段落會被上方 gate 擋，photo essay 主文也不會命中。
+    const mediaCount = el.querySelectorAll('img, picture').length;
+    return mediaCount >= 3 && links.length >= 5;
   }
 
   // 行內強調 ≠ section heading（v0.8.169 stratechery 修法）：strong/em/b/span

@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.6.4**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.6.5**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -369,7 +369,7 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 **v1.5 Medium 頭部 byline 兩道補強保護**（Jimmy 2026-06-27 medium.com/it-chronicles「作者+日期消失」，cage 真實站 probe + instrument 揪兩條誤殺 path）：(1) `ARTICLE_META_RE`——`hideInsideArticleAuthorBioCards` 的既有 byline 保護只看候選**前 60 字**（`BYLINE_TEXT_RE.test(t.slice(0,60))`），但 Medium 把「副標 + 作者列 + 閱讀時間·日期 + 動作鈕」包成同塊、副標排最前佔滿 60 字、byline 日期被擠到後面看不到 → 整塊（含作者+日期）被當 bio 卡砍。補強：候選**整段**含發表日期或閱讀時間估計（`min read`）= 文章頭部 byline/meta（底部作者 bio 卡絕不會有）→ 保留。**regex 必須 spacing-robust**：Medium flex 版面 textContent 元素間無空白、數字黏在一起（`Jun 3, 20261.1K`、`Follow11 min read`），不可依賴年份/前綴數字的 `\b`（去年份尾端 `\b`、read-time 去前綴數字需求）。(2) `clusterContainsAuthorProfileLink`——`hideInsideArticleButtonClusters` 把 author-row（頭像 + 作者名 + Follow 鈕）當 button cluster 整塊砍；補強：cluster 含作者個人頁連結（`/@user`、`authors/`…，`AUTHOR_PAGE_PATH_RE`）= byline 作者列、非純動作叢集 → 保留（Follow 等鈕另由 all-buttons 個別清）。Forcing：`medium-byline-header.spec.js`（含負控制：底部無發表日期的 bio 卡仍被砍＝不過度保護）；cage 真實站截圖驗「huizhou92 · Jun 3, 2026」。
 
 **文末 link-feed 與 curated 區塊（v0.8.54，nytimes 實證）**：
-- **link-feed 覆寫 tooWide 主文保護**（`isLinkFeedContainer`）：heading 命中雜訊 pattern 後，目標 section 若「無任何 >= 100 chars `<p>` + link density >= 0.5 + >= 3 連結」即視為推薦 feed，不受 `wrapperContainsMainContentP` 累計門檻（短 teaser p 累計 >= 300）保護，整塊 hide
+- **link-feed 覆寫 tooWide 主文保護**（`isLinkFeedContainer`）：heading 命中雜訊 pattern 後，目標 section 若「無任何 >= 100 chars `<p>`」+ 下列任一即視為推薦 feed，不受 `wrapperContainsMainContentP` 累計門檻（短 teaser p 累計 >= 300）保護，整塊 hide：(a) link density >= 0.5 + >= 3 連結；(b) **縮圖卡片訊號**（v1.6.5）`img/picture >= 3 且 link >= 5`——NYT 文末「Related Content / 編輯精選」lazy feed 的 teaser 標題 / 圖說放在 `<a>` 外、link 文字占比僅 0.31 走不到 (a)，但 25 連結 + 22 縮圖是強卡片 feed 訊號（Jimmy 2026-07-02 截圖，作者簡介之後整區推薦卡殘留）。本函式只在 `resolveHeadingNoiseTarget` 的 tooWide 判定內呼叫（前提已命中 recirculation heading），真主文 / photo essay 不帶此類 heading、長段落被 gate 擋，不誤殺。Forcing：`nyt-related-content-thumbnail-feed.spec.js`
 - **印刷版出處聲明行**（`hideInsideArticlePrintEditionNote`）：`appear(s|ed) in print on/in` 句式 + 區塊總文字 <= 250 + 無長 p → 整行 hide（含 Order Reprints / Today's Paper / Subscribe 連結與分隔符 span）
 - **文末 curated 故事集連結卡**（`hideTailCuratedLinkLists`）：位於最後主文長段落之後的 `<section>`、>= 2 個 li 且每 li 含 `<p>` teaser 與站內連結（hostname 相同、pathname 不同、非 # anchor）、無 li 外長 p、文字量 < 主文 30%。guard：Wikipedia References / See also（li 無 p wrapper）、外站 citation list、listicle 主體（占比 > 30%）皆不命中
 - **JS 影片播放器函式庫 widget**（`hideInsideArticleVideoPlayerWidgets`，v0.8.140 inc.com 實證）：站點在主文段落間注入的「Featured Video / 推薦影片」widget（JWPlayer 等 JS 播放器，內容與本文無關）。anchor 在函式庫 root class `.jwplayer`（跨站通用簽章、非站點 class），ratio walk-up（父層文字量 > 當前 ×3 + 80 視為碰到主文 body 即停）找出注入 wrapper 整塊 hide；雙保險：wrapper 含 >= 100 chars 主文 `<p>`（不在播放器 root 內）→ 不 hide。**時序覆蓋**：靜態 clean()（`.jwplayer` 已存在）+ `checkDynamicNoise` 動態接（iOS 上 JWPlayer 在 clean() 之後才 init、observer subtree 捕捉新增的 `.jwplayer`）兩 path 共用 `hideVideoPlayerWidgetFrom`。編輯性影片（`<figure><video><figcaption>` / YouTube iframe embed）不走函式庫 root class、不命中。forcing：`inc-featured-video-jwplayer-widget.spec.js`
