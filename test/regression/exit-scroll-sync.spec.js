@@ -78,16 +78,18 @@ describe('main.js — 退出捲動同步接線存在', () => {
       'forcing：進場沒 stash → 退出讀不到設定 → 功能失效');
   });
 
-  it('captureExitScrollAnchor 必須檢查 syncScrollOnExit + 排除翻頁模式 + 走 currentAnchor', () => {
+  it('captureExitScrollAnchor：捲動模式走 currentAnchor、翻頁模式走 pagedMode.captureExitAnchor（v1.6.8）', () => {
     const start = MAIN_SRC.search(/function\s+captureExitScrollAnchor\s*\(/);
     assert.ok(start >= 0, 'forcing：captureExitScrollAnchor 函式必須存在');
-    const region = MAIN_SRC.slice(start, start + 600);
+    const region = MAIN_SRC.slice(start, start + 900);
     assert.match(region, /NS\.state\.syncScrollOnExit/,
       'forcing：設定關閉時不得抓錨點');
     assert.match(region, /NS\.pagedMode\.isInstalled\(\)/,
-      'forcing：翻頁模式 currentAnchor 回報文章開頭不準，必須排除');
+      'forcing：必須判斷翻頁模式（currentAnchor 在 multicol 下回報文章開頭不準）');
+    assert.match(region, /NS\.pagedMode\.captureExitAnchor/,
+      'forcing：翻頁模式必須走 fragment coverage 對映（v1.6.8），不得回退 null/currentAnchor');
     assert.match(region, /NS\.spaceScroll\.currentAnchor\(\s*NS\.state\.articleEl/,
-      'forcing：必須以 articleEl 抓目前閱讀段落（與閱讀位置記憶同一份事實）');
+      'forcing：捲動模式必須以 articleEl 抓目前閱讀段落（與閱讀位置記憶同一份事實）');
   });
 
   it('applyExitScrollAnchor 必須檢查 isConnected + 用 computeExitScrollTop + scrollTo', () => {
@@ -100,6 +102,22 @@ describe('main.js — 退出捲動同步接線存在', () => {
       'forcing：必須用 position-memory 單一資料源換算（與閱讀位置記憶共用 math）');
     assert.match(region, /scroller\.scrollTo\(/,
       'forcing：必須實際捲動原網頁');
+  });
+
+  it('exitAnchorRectTop：text node anchor 必須以 Range rect 量、不得退 parentElement（v1.6.8）', () => {
+    const start = MAIN_SRC.search(/function\s+exitAnchorRectTop\s*\(/);
+    assert.ok(start >= 0,
+      'forcing：exitAnchorRectTop 必須存在——翻頁 anchor 是 text node，' +
+      'element rect 對巨型單一容器站（整篇文章一個元素）會捲回文首（probe 實證假綠燈）');
+    const region = MAIN_SRC.slice(start, start + 600);
+    assert.match(region, /nodeType\s*===\s*3/,
+      'forcing：必須分流 text node');
+    assert.match(region, /createRange\(\)/,
+      'forcing：text node 必須用 Range 量 line box rect');
+    // applyExitScrollAnchor 必須實際採用這個量法
+    const applyStart = MAIN_SRC.search(/function\s+applyExitScrollAnchor\s*\(/);
+    assert.match(MAIN_SRC.slice(applyStart, applyStart + 600), /exitAnchorRectTop\(/,
+      'forcing：applyExitScrollAnchor 必須經 exitAnchorRectTop 取 top');
   });
 
   it('退出流程：capture 必須在 styler.restore 之前呼叫（還原前版面才有閱讀段落）', () => {
@@ -132,20 +150,27 @@ describe('退出捲動同步 behavior-level（jsdom 模擬 rect + scrollTo）', 
   });
 
   // 複製 main.js 退出捲動同步的核心序：抓 anchor → restore（版面變化）→ 算目標 → scrollTo
-  function runExitSync({ syncOn, paged, anchorEl, scrollTopAfter, rectTopAfter, innerHeight }) {
+  // v1.6.8：paged 不再是排除路徑——改走 pagedMode.captureExitAnchor（stub 以
+  // pagedAnchor 餵入，模擬 fragment coverage 對映的回傳節點或 null）。
+  function runExitSync({ syncOn, paged, anchorEl, pagedAnchor, scrollTopAfter, rectTopAfter, innerHeight }) {
     const NS = {
       state: { syncScrollOnExit: syncOn, articleEl: document.body },
-      pagedMode: paged ? { isInstalled: () => true } : { isInstalled: () => false },
+      pagedMode: paged
+        ? { isInstalled: () => true, captureExitAnchor: () => pagedAnchor || null }
+        : { isInstalled: () => false },
       spaceScroll: { currentAnchor: () => (anchorEl ? { el: anchorEl, index: 0 } : null) },
       positionMemory: posMem
     };
-    // capture（還原前）
+    // capture（還原前）——同 main.js captureExitScrollAnchor 的分流
     let captured = null;
-    if (NS.state.syncScrollOnExit && NS.state.articleEl &&
-        !(NS.pagedMode && NS.pagedMode.isInstalled()) &&
-        NS.spaceScroll && typeof NS.spaceScroll.currentAnchor === 'function') {
-      const a = NS.spaceScroll.currentAnchor(NS.state.articleEl);
-      if (a && a.el) captured = a.el;
+    if (NS.state.syncScrollOnExit && NS.state.articleEl) {
+      if (NS.pagedMode && NS.pagedMode.isInstalled()) {
+        captured = typeof NS.pagedMode.captureExitAnchor === 'function'
+          ? NS.pagedMode.captureExitAnchor() : null;
+      } else if (NS.spaceScroll && typeof NS.spaceScroll.currentAnchor === 'function') {
+        const a = NS.spaceScroll.currentAnchor(NS.state.articleEl);
+        if (a && a.el) captured = a.el;
+      }
     }
     // restore 後的 scroller 狀態（模擬還原雜訊後版面）
     const scroller = {
@@ -181,14 +206,36 @@ describe('退出捲動同步 behavior-level（jsdom 模擬 rect + scrollTo）', 
     assert.strictEqual(target, null, '關閉時保持還原預設行為、不主動捲動');
   });
 
-  it('翻頁模式：跳過捲動同步（交給 pagedMode 還原進場位置）', () => {
-    const el = document.createElement('p');
-    document.body.appendChild(el);
+  it('翻頁模式 + captureExitAnchor 回節點：捲到換算目標（v1.6.8）', () => {
+    const p = document.createElement('p');
+    p.textContent = '第 k 頁的段落';
+    document.body.appendChild(p);
+    const textNode = p.firstChild; // 翻頁 anchor 是 text node
     const target = runExitSync({
-      syncOn: true, paged: true, anchorEl: el,
+      syncOn: true, paged: true, pagedAnchor: textNode,
       scrollTopAfter: 2000, rectTopAfter: 400, innerHeight: 800
     });
-    assert.strictEqual(target, null, '翻頁模式不走此 path');
+    assert.strictEqual(target, 2000 + 400 - 96, '翻頁退出也捲回閱讀位置 = 2304');
+  });
+
+  it('翻頁模式 + captureExitAnchor 回 null（jsdom 等量不到環境）：不捲動', () => {
+    const target = runExitSync({
+      syncOn: true, paged: true, pagedAnchor: null,
+      scrollTopAfter: 2000, rectTopAfter: 400, innerHeight: 800
+    });
+    assert.strictEqual(target, null,
+      '量不到時維持原行為（pagedMode.uninstall 還原進場前位置）');
+  });
+
+  it('翻頁模式 + 設定關閉：不抓 anchor、不捲動', () => {
+    const p = document.createElement('p');
+    p.textContent = 'x';
+    document.body.appendChild(p);
+    const target = runExitSync({
+      syncOn: false, paged: true, pagedAnchor: p.firstChild,
+      scrollTopAfter: 2000, rectTopAfter: 400, innerHeight: 800
+    });
+    assert.strictEqual(target, null, 'syncScrollOnExit 關閉時翻頁路徑也不捲動');
   });
 
   it('currentAnchor 回 null（找不到段落）：不捲動', () => {

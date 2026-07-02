@@ -162,6 +162,34 @@
     return Math.max(0, Math.min(t - 1, n));
   }
 
+  // v1.6.8：退出捲回——fragment rect 左緣 → 頁碼。colStart = 第 0 欄內容左緣
+  // 的 viewport x（art rect.left + border-left + padding-left，scrollLeft=0 時量）。
+  // +2px epsilon 兜 sub-pixel 抖動（欄左緣理論上恰為 k×stride，浮點誤差可能
+  // 落在 k×stride − ε）。line box 永不落在 column-gap 內，floor 即正確欄號。
+  function pageOfLeft(left, colStart, stride, total) {
+    const t = total > 0 ? total : 1;
+    if (!(stride > 0)) return 0;
+    return Math.max(0, Math.min(t - 1, Math.floor((left - colStart + 2) / stride)));
+  }
+
+  // v1.6.8：一個節點的 fragment rects → 頁碼覆蓋區間 { min, max }；無可見
+  // fragment（rect 全 0 = 隱藏節點 / jsdom 無 layout）回 null。輸入 rect-like
+  // 陣列（{ left, width, height }），純函式給 jsdom spec 直接測。
+  // 為什麼用 per-fragment rect：element.getBoundingClientRect() 對跨欄 block
+  // 回 as-if-unfragmented 聯集（左緣落在起始欄），PENDING_REGRESSION 三個舊法
+  // 失準的共同根因；Range.getClientRects() 的 line box 按 fragment 正確回報
+  //（v0.7.231 頁數計算同款量法，兩引擎實證可靠）。
+  function fragmentPageCoverage(rects, colStart, stride, total) {
+    let min = Infinity, max = -Infinity;
+    for (const r of rects) {
+      if (!(r.width > 0) || !(r.height > 0)) continue;
+      const p = pageOfLeft(r.left, colStart, stride, total);
+      if (p < min) min = p;
+      if (p > max) max = p;
+    }
+    return min === Infinity ? null : { min, max };
+  }
+
   // v0.8.166：頁碼 scrubber 互動狀態機（tap-to-arm）。一次手勢（touchstart→touchend）
   // 結束時，依「目前是否 armed」與「本次手勢有無拖移（moved）」決定下一步動作：
   //   - 非 armed + 點按（!moved）→ 'arm'：展開常駐進度條，進 armed 模式
@@ -239,6 +267,11 @@
   // 收合後幾乎立刻鎖、左右滑乾淨（真機驗過鎖得住、工具列維持收合）。
   let vLocked = false;
   let settleTimer = null;
+  // v1.6.8：退出捲回 handoff——captureExitAnchor 成功抓到 anchor 時設 true，
+  // uninstall 據此跳過 savedScrollY 的 rAF 還原（否則該 rAF 晚於 main.js
+  // applyExitScrollAnchor 的同步捲動、會把 anchor 位置蓋回進場前位置）。
+  // settings reapply 的 uninstall→install 不經 capture，旗標恆 false 不受影響。
+  let exitAnchorHandoff = false;
 
   // stride = column 寬 + gap = (content box 寬) + column-gap。
   // v0.8.56：寬度改用 getBoundingClientRect().width（分數精度）減 computed
@@ -919,8 +952,11 @@
     // 還原進場前的文件卷動位置（overflow hidden 期間 scrollTop 歸零，
     // CSS 移除後不還原會讓使用者掉回頁首）。styler restore 在本 uninstall
     // 之後才移除 overflow hidden——延後一個 frame 等文件恢復可卷動。
+    // v1.6.8：exit anchor handoff 時跳過——退出捲回（applyExitScrollAnchor）
+    // 接管捲動目標，這個 rAF 晚一 frame 跑、不跳過會把 anchor 位置蓋掉。
     const y = savedScrollY;
-    if (y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
+    if (y > 0 && !exitAnchorHandoff) requestAnimationFrame(() => window.scrollTo(0, y));
+    exitAnchorHandoff = false;
     // v0.8.17：消費後歸零——避免殘留值在下一輪 install 失敗 / captureScrollY
     // 沒重抓時被誤用，把使用者捲到與當前頁面無關的位置。
     savedScrollY = 0;
@@ -936,6 +972,65 @@
   }
 
   function resetPosition() { lastRatio = 0; }
+
+  // v1.6.8：退出捲回 anchor——文件順序第一個「fragment 頁碼覆蓋含目前頁」的
+  // 內容節點（text node 或 img 等替換元素）。main.js captureExitScrollAnchor
+  // 在 uninstall 之前呼叫（此刻 idx / 版面仍有效），退出還原後由
+  // applyExitScrollAnchor 以該節點的 Range rect 捲回原網頁對應位置。
+  //
+  // 量測鐵則：必在 scrollLeft = 0 下量、量完還原（同一 frame 同步讀寫無
+  // repaint）——Safari 對已捲動狀態的 overflow column fragment rect 回報會
+  // 偏移（measureContentEndX 同款迴避法，頁數計算已在 Safari 實證可靠）。
+  //
+  // 回傳 node 本身（非 parentElement）：巨型單一容器站（如整篇文章一個
+  // <font>）的 parentElement 高數萬 px，捲它的頂 = 回文首（probe 實證假綠燈）。
+  // 跨欄段落靠 coverage 區間命中：讀第 k 頁時該段 max >= k，正確選到延續段。
+  // 找不到覆蓋節點時取第一個「起始頁 > 目前頁」的節點兜底（該頁唯一內容
+  // 是量不到的型態時，就近捲到下一段內容）；全量不到（jsdom）回 null。
+  function captureExitAnchor() {
+    if (!installed || !art) return null;
+    const s = stride();
+    const total = pageCount();
+    if (!(s > 0)) return null;
+    const prev = art.scrollLeft;
+    let found = null;
+    try {
+      art.scrollLeft = 0;
+      const cs = getComputedStyle(art);
+      const padL = parseFloat(cs.paddingLeft) || 0;
+      const bL = parseFloat(cs.borderLeftWidth) || 0;
+      const colStart = art.getBoundingClientRect().left + bL + padL;
+      const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+        acceptNode(n) {
+          if (n.nodeType === 3) {
+            return (n.nodeValue && n.nodeValue.trim())
+              ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+          }
+          // 替換元素 = atomic fragment，bounding rect 可靠（文首/頁首是圖片的頁靠這層）
+          return /^(IMG|VIDEO|IFRAME|SVG)$/i.test(n.tagName)
+            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+      });
+      let node;
+      while ((node = walker.nextNode())) {
+        let rects;
+        if (node.nodeType === 3) {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          rects = range.getClientRects();
+        } else {
+          rects = node.getClientRects();
+        }
+        const cov = fragmentPageCoverage(rects, colStart, s, total);
+        // 文件順序下起始頁單調遞增：第一個 max >= idx 的節點即「覆蓋目前頁」
+        //（min <= idx）或「目前頁無可量內容時的下一段」（min > idx，兜底就近）
+        if (cov && cov.max >= idx) { found = node; break; }
+      }
+    } catch (e) { found = null; }
+    art.scrollLeft = prev;
+    if (found) exitAnchorHandoff = true;
+    return found;
+  }
 
   // v0.8.40：閱讀位置記憶（position-memory.js）共用 API。getPosition 在
   // exitReaderMode 的 endSession flush 時讀（main.js 保證在 uninstall 之前
@@ -973,6 +1068,8 @@
     quantizeStride,
     computeScrubTarget,
     resolveScrubGesture,
+    pageOfLeft,
+    fragmentPageCoverage,
     classifySwipe,
     classifyKey,
     shouldBlockTouchMove,
@@ -984,6 +1081,7 @@
     captureScrollY,
     getPosition,
     goToPage,
+    captureExitAnchor,
     isInstalled: () => installed,
     SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD,
     INDICATOR_ID

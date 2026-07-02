@@ -449,6 +449,111 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // ---- 退出捲回 anchor（v1.6.8）------------------------------------------
+  // 功能：翻頁模式退出時捲回目前頁所讀內容（比照 v1.0.21 捲動模式）。核心是
+  // 「fragment rect 左緣 → 頁碼」與「節點 fragment rects → 頁碼覆蓋區間」兩個
+  // 純函式；DOM 端 captureExitAnchor 在 scrollLeft=0 下逐 text node/替換元素
+  // 量 Range.getClientRects 建覆蓋、取第一個覆蓋目前頁的節點。
+  //
+  // 訊號層次：本段驗「純換算數學 + 退化環境防衛 + handoff 接線存在」。不驗真實
+  // multicol fragment rect（jsdom 無 layout、rect 全 0）——那層由 Chromium probe
+  // 實證（chinatalk 18 頁 / Wikipedia 128 頁 / paulgraham 巨型單一容器 56 頁，
+  // 三站對映與端到端退出捲回全過）+ harness 驗收。
+  describe('退出捲回 anchor（v1.6.8）', () => {
+    describe('pageOfLeft（fragment 左緣 → 頁碼）', () => {
+      it('第 0 欄左緣 → 0；第 k 欄左緣 → k', () => {
+        assert.strictEqual(pagedApi.pageOfLeft(100, 100, 720, 10), 0);
+        assert.strictEqual(pagedApi.pageOfLeft(820, 100, 720, 10), 1);
+        assert.strictEqual(pagedApi.pageOfLeft(100 + 5 * 720, 100, 720, 10), 5);
+      });
+      it('欄內縮排內容（左緣不在欄起點）仍歸同欄', () => {
+        // blockquote / list 縮排 40px：仍在第 2 欄範圍內
+        assert.strictEqual(pagedApi.pageOfLeft(100 + 2 * 720 + 40, 100, 720, 10), 2);
+      });
+      it('sub-pixel 抖動（欄左緣 − 1px）靠 +2 epsilon 歸正確欄', () => {
+        assert.strictEqual(pagedApi.pageOfLeft(100 + 3 * 720 - 1, 100, 720, 10), 3);
+      });
+      it('clamp：超出總頁數 → total−1；colStart 左側 → 0', () => {
+        assert.strictEqual(pagedApi.pageOfLeft(100 + 99 * 720, 100, 720, 10), 9);
+        assert.strictEqual(pagedApi.pageOfLeft(-500, 100, 720, 10), 0);
+      });
+      it('退化輸入（stride 0 / total 0）不 throw、回 0', () => {
+        assert.strictEqual(pagedApi.pageOfLeft(500, 100, 0, 10), 0);
+        assert.strictEqual(pagedApi.pageOfLeft(500, 100, 720, 0), 0);
+      });
+    });
+
+    describe('fragmentPageCoverage（fragment rects → 頁碼覆蓋區間）', () => {
+      it('跨欄段落：兩欄各一個 line box → {min, max} 覆蓋兩頁', () => {
+        const rects = [
+          { left: 100, width: 600, height: 20 },       // 第 0 欄
+          { left: 100 + 720, width: 600, height: 20 }  // 第 1 欄
+        ];
+        assert.deepStrictEqual(
+          pagedApi.fragmentPageCoverage(rects, 100, 720, 10), { min: 0, max: 1 });
+      });
+      it('單欄節點：min === max', () => {
+        const rects = [{ left: 100 + 4 * 720, width: 300, height: 20 }];
+        assert.deepStrictEqual(
+          pagedApi.fragmentPageCoverage(rects, 100, 720, 10), { min: 4, max: 4 });
+      });
+      it('rect 全 0（隱藏節點 / jsdom 無 layout）→ null', () => {
+        assert.strictEqual(
+          pagedApi.fragmentPageCoverage([{ left: 0, width: 0, height: 0 }], 100, 720, 10), null);
+        assert.strictEqual(pagedApi.fragmentPageCoverage([], 100, 720, 10), null);
+      });
+      it('零寬 / 零高 fragment 被過濾、不影響覆蓋計算', () => {
+        const rects = [
+          { left: 100, width: 0, height: 20 },              // 零寬（collapsed）
+          { left: 100 + 2 * 720, width: 300, height: 20 }
+        ];
+        assert.deepStrictEqual(
+          pagedApi.fragmentPageCoverage(rects, 100, 720, 10), { min: 2, max: 2 });
+      });
+    });
+
+    describe('captureExitAnchor（DOM 端）', () => {
+      function loadModuleEnv() {
+        const env = loadFixtureWithScripts({
+          fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true
+        });
+        env.window.eval(PAGED_SRC);
+        return env;
+      }
+      it('未 install → null（防衛）', () => {
+        const env = loadModuleEnv();
+        assert.strictEqual(env.window.__JRead.pagedMode.captureExitAnchor(), null);
+      });
+      it('jsdom 無 layout（stride / rect 量不到）→ null、不 throw', () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        api.sync({ pagedMode: true }, env.document.querySelector('article'));
+        assert.strictEqual(api.captureExitAnchor(), null,
+          '退化環境必須安靜回 null（main.js 收到 null = 不捲動，維持原行為）');
+        api.uninstall();
+      });
+    });
+
+    // ---- source-level forcing：handoff 接線 --------------------------------
+    // captureExitAnchor 成功時 uninstall 必須跳過 savedScrollY 的 rAF 還原——
+    // 該 rAF 晚於 applyExitScrollAnchor 的同步捲動一個 frame，不跳過會把
+    // anchor 位置蓋回進場前位置（功能靜默失效、且測不到：兩者都是「有捲動」）。
+    describe('exitAnchorHandoff 接線（forcing）', () => {
+      it('captureExitAnchor 成功時必須設 handoff 旗標', () => {
+        assert.match(PAGED_SRC, /if\s*\(found\)\s*exitAnchorHandoff\s*=\s*true/,
+          'forcing：旗標沒設 → uninstall 的 rAF 蓋掉 anchor 捲動');
+      });
+      it('uninstall 的 savedScrollY 還原必須被 handoff 旗標 gate', () => {
+        assert.match(PAGED_SRC, /y\s*>\s*0\s*&&\s*!exitAnchorHandoff/,
+          'forcing：gate 被移除 → 退出捲回被進場前位置覆寫');
+      });
+      it('uninstall 必須重置 handoff 旗標（避免殘留到下一輪 session）', () => {
+        assert.match(PAGED_SRC, /exitAnchorHandoff\s*=\s*false/,
+          'forcing：不重置 → 下一次「無 anchor」退出也不還原進場位置');
+      });
+    });
+  });
+
   describe('classifySwipe', () => {
     const W = 393; // iPhone 視窗寬
     it('往左滑（dx 負）= next', () => {

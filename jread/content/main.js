@@ -448,16 +448,37 @@
   // articleEl 內的真實節點、styler/cleaner.restore 不移除它，故還原後仍可量測。
   // 必須在 spaceScroll.uninstall 之前呼叫——uninstall 清掉 focusedBlock，之後抓
   // 只能退 firstVisibleBlock。與閱讀位置記憶共用同一份「正在讀哪段」事實。
-  // 只作用於捲動模式：翻頁模式由 pagedMode.uninstall 還原進場前文件位置，回
-  // null 跳過——CSS multicolumn 的 getBoundingClientRect 是 as-if-unfragmented，
-  // per-page 段落偵測不可靠、頁碼↔段落數又非線性（三種對位法 Chromium probe
-  // 皆失準），暫不支援翻頁退出捲回（見 PENDING_REGRESSION）。
+  // 翻頁模式（v1.6.8）：改走 pagedMode.captureExitAnchor——逐 text node/替換
+  // 元素的 Range fragment rect（scrollLeft=0 下量）建頁碼覆蓋對映，取目前頁
+  // 第一個內容節點。舊三法失準的根因是 element bounding rect 對跨欄 block 回
+  // as-if-unfragmented 聯集；fragment line box 量法與頁數計算（v0.7.231）同款、
+  // 兩引擎實證可靠。回傳可能是 text node（applyExitScrollAnchor 以 Range 量）。
   function captureExitScrollAnchor() {
     if (!NS.state.syncScrollOnExit || !NS.state.articleEl) return null;
-    if (NS.pagedMode && NS.pagedMode.isInstalled()) return null;
+    if (NS.pagedMode && NS.pagedMode.isInstalled()) {
+      return typeof NS.pagedMode.captureExitAnchor === 'function'
+        ? NS.pagedMode.captureExitAnchor() : null;
+    }
     if (!NS.spaceScroll || typeof NS.spaceScroll.currentAnchor !== 'function') return null;
     const a = NS.spaceScroll.currentAnchor(NS.state.articleEl);
     return a && a.el ? a.el : null;
+  }
+
+  // v1.6.8：anchor 的還原後 viewport top。翻頁模式的 anchor 是 text node——
+  // 必以自身 Range rect 量，不可退 parentElement（巨型單一容器站的 parent 高
+  // 數萬 px、rect.top = 文首，probe 實證假綠燈）；取第一個可見 line box 的 top。
+  function exitAnchorRectTop(target) {
+    if (target.nodeType === 3) {
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        for (const r of range.getClientRects()) {
+          if (r.width > 0 && r.height > 0) return r.top;
+        }
+        return range.getBoundingClientRect().top;
+      } catch (e) { return 0; }
+    }
+    return target.getBoundingClientRect().top;
   }
 
   // v1.0.21：原站版面已完全還原——把原網頁捲到退出前讀到的段落（節點仍在 DOM）。
@@ -465,7 +486,7 @@
     if (!el || !el.isConnected) return;
     const scroller = document.scrollingElement || document.documentElement;
     if (!scroller) return;
-    const rectTop = el.getBoundingClientRect().top;
+    const rectTop = exitAnchorRectTop(el);
     const top = NS.positionMemory
       ? NS.positionMemory.computeExitScrollTop(scroller.scrollTop, rectTop, window.innerHeight)
       : Math.max(0, scroller.scrollTop + rectTop - window.innerHeight * 0.12);
