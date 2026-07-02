@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><title>耗資 25 億美元的偵探小說</title></head>
+<body>
+<!--
+  最小重現（真實機制）：Shinkansen 翻譯後作者簡介連坐消失（Jimmy 2026-07-02 cage
+  instrument 揪出的真兇 = heading walk-up，非 hashtag hasMainBlock）。
+  tag 列 label 這裡用「看更多」——**命中** NOISE_HEADING_TEXT_RE（Google MT 常見譯法）。
+  hideInsideArticleByHeadingText 把「看更多」當 section heading → resolveHeadingNoiseTarget
+  找不到 section/aside → findSafeWrapperForHeading 從 tag div 往上爬找「不含主文的最深
+  wrapper」。作者簡介 <p> 是短中文（每段 raw ~30 字、累計 raw ~120 < 300），舊版
+  wrapperContainsMainContentP raw 門檻（單段 >= 100 / 累計 >= 300）判 .bottom-of-article
+  與 .css-outer 皆「無主文」→ walk-up 一路爬到 .css-outer 整塊 hide、作者簡介連坐消失。
+  修法（v1.6.4）：wrapperContainsMainContentP 長度改 CJK 加權（每段 ~90、累計 ~360 >= 300）
+  → .bottom-of-article 被認定含主文 → walk-up 立即 break、只有 tag heading 被 tail-clean、
+  作者簡介保留。
+  主文本體（meteredContent）刻意放在 .css-outer 之外（sibling），確保 walk-up 只在
+  bio/tag 子樹內、不會誤把主文長段落算進 .css-outer。
+-->
+<main>
+  <article id="story">
+    <h1>耗資 25 億美元的偵探小說：削弱英國經濟的駭客攻擊</h1>
+    <section class="meteredContent">
+      <div class="css-body">
+        <p>去年，駭客潛入捷豹路虎的電腦系統，引發一連串事件，在接下來的數月間衝擊了整個英國經濟，這是一場讓整個產業鏈都受到牽連的重大資安事故。</p>
+        <p>攻擊者警告捷豹路虎不要尋求英國當局的協助，並表示會在七十二小時內再度聯繫，該公司無視警告，反而邀請英國調查人員進入其位於中部地區的作戰室協助釐清。</p>
+      </div>
+    </section>
+    <div class="css-outer">
+      <div class="bottom-of-article">
+        <!-- bio 長度比照真實 NYT 翻譯後版本（Jane Bradley 段 raw >= 50，其餘 ~30-40）：
+             有一段 raw >= 50 讓 hashtag cluster 的 hasMainBlock（raw 門檻）保護住外層
+             wrapper、排除「hashtag tagBarPass 連坐」路徑，隔離出**唯一**失敗模式 = heading
+             walk-up（tag label「看更多」），forcing v1.6.4 的 in-place-hide 修法。 -->
+        <div class="css-bios">
+          <div class="css-bio"><p><a href="/by/adam-goldman">Adam Goldman</a> 是《紐約時報》駐倫敦記者，長期撰寫全球安全議題。</p></div>
+          <div class="css-bio"><p><a href="/by/jane-bradley">Jane Bradley</a> 是國際新聞組的調查記者，常駐倫敦，長期關注權力濫用、國家安全與各類社會不公事件的深度報導。</p></div>
+          <div class="css-bio"><p><a href="/by/dustin-volz">Dustin Volz</a> 為《紐約時報》撰寫網路安全與情報領域報導，常駐華盛頓。</p></div>
+          <div class="css-bio"><p><a href="/by/michael-schwirtz">Michael Schwirtz</a> 是《紐約時報》全球情報特派員，長期常駐倫敦。</p></div>
+        </div>
+        <div class="css-tags" style="margin-top: 16px;">看更多：<a href="/topic/organizations/jaguar-land-rover-ltd">捷豹路虎</a>、<a href="/topic/organizations/federal-bureau-of-investigation">聯邦調查局</a>、<a href="/topic/organizations/microsoft-corp">微軟公司</a></div>
+      </div>
+    </div>
+  </article>
+</main>
+</body>
+</html>

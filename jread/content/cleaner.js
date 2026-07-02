@@ -2563,6 +2563,15 @@
       if (h.closest('button')) continue;
       // 行內強調 ≠ section heading（v0.8.169 stratechery 修法、靜態+動態單一資料源）
       if (isInlineEmphasisInProse(h)) continue;
+      // v1.6.4：heading 本身即 taxonomy tag chip 列（Shinkansen 翻譯後 tag label 如
+      // 「看更多 / 更多主題」命中 heading regex）→ 該列自身即自足雜訊，hide 它就好、
+      // **不 walk-up**。否則 resolveHeadingNoiseTarget 的 walk-up 會爬出這個小 tag 列、
+      // 把含作者簡介的共用外層 wrapper（NYT `.bottom-of-article` 上層）整塊誤殺——翻譯後
+      // 短中文 bio 段落達不到 wrapperContainsMainContentP 的 raw 100/300 門檻、被判「無主文
+      // safe wrapper」（Jimmy 2026-07-02 cage instrument 揪出的作者簡介消失真兇）。tag 列
+      // 判定走 hashtagClusterHideTarget（anchor 全 taxonomy href、與 label 語言無關），故
+      // 翻譯成任何語言都命中；非 tag 列的一般 noise heading（<3 anchor）回 null、照常 walk-up。
+      if (hashtagClusterHideTarget(h, articleEl)) { hide(h, hidden); continue; }
       // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget
       // （含 closest('section,aside') → tooWide → walk-up fallback → tail-cleanup
       // / 最後防線 hide(h)）。與 checkDynamicNoise 單一資料源，消雙實作 drift。
@@ -6455,6 +6464,9 @@
       // tail-cleanup + 最後防線 hide(h)——歷史上 dynamic 漏同步這兩段（cnyes
       // lazy-inject「討論區」widget 整篇主文+widget 同 ARTICLE wrapper、walk-up
       // 回 null 時 dynamic 舊版直接放棄）。命中即停（observer 每次只處理一個 node）。
+      // v1.6.4：heading 本身即 taxonomy tag chip 列 → hide 它、不 walk-up（與靜態
+      // hideInsideArticleByHeadingText 單一資料源，見該處註解）。
+      if (hashtagClusterHideTarget(h, articleEl)) { hide(h, hiddenList); return; }
       if (resolveHeadingNoiseTarget(h, articleEl, hiddenList)) return;
     }
   }
