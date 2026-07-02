@@ -1422,6 +1422,35 @@
     if (Array.isArray(hidden)) hidden.push({ el: clone, __titleClone: true });
   }
 
+  // v1.6.7：判斷 articleEl 是否已有 JRead promote 進來的主標題。
+  // 去重 guard 用——promoteArticleTitleClassHeadingInto 在 promoteUniqueTitleH1Into
+  // 之後跑，若前者已 promote 過就不該再 promote 一份。舊 guard 只查
+  // `articleEl.querySelector('[data-jread-title-clone]')`，但翻譯頁（Shinkansen 等）
+  // placePromotedTitleClone 把 clone 放 articleEl「外」（前一個 sibling、標
+  // data-jread-promoted-outside，避開翻譯 content guard reconcile）——articleEl 內
+  // 查不到 → 第二條 path 再 clone 一份 → 兩張標題卡（eet-china translate-first
+  // 實證：body 內兩個 promoted-outside clone、渲染成上下重複標題）。
+  // 本 helper 同時涵蓋兩種放置位置：in-article（clone / injected-title）與翻譯頁
+  // 外置（articleEl 前一個 sibling 且同時帶 promoted-outside + title-clone 標記，
+  // 確認是 JRead 自建標題節點、非其他 promoted-outside 類元素）。結構性判定
+  // （放置位置 + JRead attribute），不綁站點。
+  function articleHasPromotedTitle(articleEl) {
+    if (!articleEl) return false;
+    if (articleEl.querySelector('[data-jread-title-clone="1"]')) return true;
+    if (articleEl.querySelector('[data-jread-injected-title="1"]')) return true;
+    const parent = articleEl.parentNode;
+    if (parent && parent.children) {
+      for (const el of parent.children) {
+        if (el !== articleEl && el.getAttribute &&
+            el.getAttribute('data-jread-promoted-outside') === '1' &&
+            el.getAttribute('data-jread-title-clone') === '1') {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
     const og = document.querySelector('meta[property="og:title"]');
@@ -1573,10 +1602,11 @@
       if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) continue;
       return;
     }
-    // 已 promote 過（v0.7.141 機制）→ skip
-    if (articleEl.querySelector('[data-jread-title-clone="1"]')) return;
-    // 已 inject 過（markPromotedTitleIfMissing 機制）→ skip
-    if (articleEl.querySelector('[data-jread-injected-title="1"]')) return;
+    // 已 promote 過（v0.7.141 promoteUniqueTitleH1Into / markPromotedTitleIfMissing
+    // inject / 翻譯頁外置 clone）→ skip。翻譯頁 clone 放 articleEl 外、須用
+    // articleHasPromotedTitle 涵蓋兩種放置位置，否則重複標題（v1.6.7 eet-china
+    // translate-first 修法）。
+    if (articleHasPromotedTitle(articleEl)) return;
 
     // page-wide 找 DOM order 第一個含 article-title class signal 的 h1/h2/h3
     const candidates = document.querySelectorAll('h1, h2, h3');
