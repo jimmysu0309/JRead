@@ -4,6 +4,8 @@
 
 ---
 
+**v1.6.10** — 修正部分網站 hero image 變成橢圓 / 圓框（應為方形，Jimmy 2026-07-02 回報 The Atlantic）。**真根因（非站方 border-radius）**：站方 `<header class="ArticleHero_root">` 依序含 h1 標題 → 作者「By …」→ hero `<figure>` → 日期 `<time>`；byline 偵測以 author + date 的 LCA 當 seed，作者在 hero 上方、日期在 hero 下方 → LCA engulf 整個 header（含 h1 + hero）。下方 climb 的 heading guard 只擋「往上爬進含 heading 的 parent」、擋不住 seed 自身已含 heading → root = header 被標 `[data-jread-byline]`，JRead 自己的 byline 頭像規則 `[data-jread-byline] img { border-radius: 50% }` 於是套上 hero img（608×342 矩形）→ render 成橢圓框（probe 實證：inline `!important border-radius:0` 能覆寫、純提 CSS specificity 打不過，最終定位到 byline 過度捕捉才是根因）。**改動**：styler byline 偵測加 LCA seed 有效性 guard——`seed` 自身含 `h1/h2/h3` 時退回只用 `dateEl` 當 seed，climb 在 header 邊界前停住，root 落在純日期 wrapper、不罩 h1 與 hero。regression：`styler-byline-hero-overcapture.spec.js`（含 h1 的 header 不被標 byline + hero img 無 byline 祖先 + 日期仍被 byline 涵蓋）+ fixture `atlantic-hero-byline-overcapture.html`，sanity check（disable guard → 2 fail → 還原 → pass）。Chromium probe 實證 hero border-radius 50%→0px + 全頁截圖方正。full suite passing。
+
 **v1.6.9** — 「退出時捲回閱讀位置」固定啟用、移除 options 開關（Jimmy 2026-07-02 要求）。此行為（`syncScrollOnExit`）自 v1.0.21 引入、v1.6.8 起捲動與翻頁模式皆穩定運作，無理由讓使用者關掉 → 拿掉 options 頁的「退出時捲回閱讀位置」checkbox，行為恆定開啟。**改動**：options.html 移除該 `field-checkbox` 區塊；options.js 從 `fields` 陣列 / `getFieldValue` case / `applyFieldToDom` 條件移除 `syncScrollOnExit`。**保留**：settings-defaults.js `syncScrollOnExit: true` default 不動（content 端 main.js 仍讀取），舊 storage 若殘留 `false` 仍尊重，只是不再有 UI 可切換。regression：exit-scroll-sync.spec.js 新增「options — syncScrollOnExit 開關已移除」describe（驗 options.html 無 `id="syncScrollOnExit"` + options.js 無該欄位引用），sanity check（加回 checkbox → fail → 還原 → pass）。full suite passing。
 
 ---

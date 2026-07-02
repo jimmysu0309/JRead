@@ -3680,6 +3680,16 @@ html.${HTML_CLASS}.jread-orion body {
                 if (anc.has(y)) { seed = y; break; }
               }
             }
+            // v1.6.10：LCA seed 有效性 guard——byline meta 區塊結構上絕不含文章標題/
+            // 副標 heading。「作者在 hero 上方、日期在 hero 下方」的版面（The Atlantic
+            // ArticleHero header：kicker → h1 標題 → dek → 作者 → hero figure → 日期）
+            // 使 author+date 的 LCA engulf 整個 header（含 h1 + hero）。下方 climb 的
+            // heading guard 只擋「往上爬進含 heading 的 parent」、擋不住 seed 自身已含
+            // heading。若 seed 已含 heading，退回只用 dateEl 當 seed——climb 從日期
+            // 往上會在 header（含 h1）邊界前停住，root 落在純日期 wrapper、不罩住 h1 與
+            // hero figure。否則 byline root 罩住 hero img → 被 [BYLINE] img 頭像 50%
+            // 圓角規則 render 成橢圓框（Jimmy 2026-07-02 回報 Atlantic hero 變圓框）。
+            if (seed !== dateEl && seed.querySelector('h1, h2, h3')) seed = dateEl;
             // 爬到「不含 body、不含標題/副標 heading、visible 文字 <= 200」的最高祖先。
             // v1.0.12：heading guard——byline（作者/日期 meta）結構上絕不會包住文章
             // 標題或副標（h1/h2/h3）。原本只用「文字 <= 200」當天花板，但翻譯後中文

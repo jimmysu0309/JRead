@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Atlantic ArticleHero byline over-capture → hero 變圓框（v1.6.10）</title>
+</head>
+<!--
+  最小重現：theatlantic.com「Why Is Everything Spicy Now?」hero image 進 reader
+  mode 變橢圓 / 圓框、應為方形（Jimmy 2026-07-02 回報）。
+
+  真實根因（probe 實測、非站方 border-radius）：站方 <header class="ArticleHero_root">
+  依序含 kicker → h1 標題 → dek → 作者「By …」→ hero <figure>(picture>img) →
+  figcaption → 日期 <time>。byline 偵測以 author + date 的 LCA 當 seed——作者在 hero
+  上方、日期在 hero 下方，LCA engulf 整個 header（含 h1 + hero）。climb 的 heading
+  guard 只擋「往上爬進含 heading 的 parent」、擋不住 seed 自身已含 heading，故
+  root = header、被標 [data-jread-byline]。JRead 自己的 byline 頭像規則
+  [data-jread-byline] img { border-radius: 50% } 於是套上 hero img（608×342 矩形）
+  → render 成橢圓框。
+
+  修法（v1.6.10）：LCA seed 若自身含 h1/h2/h3 → 退回只用 dateEl 當 seed，climb 從
+  日期往上在 header（含 h1）邊界前停住，root 落在純日期 wrapper、不罩 h1 與 hero。
+
+  本 spec 驗：apply 後含 h1 的 header 不被標 byline、hero img 無 byline 祖先。
+-->
+<body>
+  <article class="ArticleLayout_article article-content-body">
+    <header class="ArticleHero_root ArticleHero_articleStandard">
+      <a class="ArticleEyebrow_link" href="/culture/">Culture</a>
+      <h1>Why Is Everything Spicy Now?</h1>
+      <p class="ArticleDek_root">More Americans are setting their mouth on fire—for extreme sport, and for everyday thrills.</p>
+      <p class="ArticleByline_root">By <a rel="author" href="/author/ellen-cushing/">Ellen Cushing</a></p>
+
+      <figure class="ArticleLeadFigure_root ArticleLeadFigure_standard">
+        <div class="ArticleLeadFigure_media">
+          <picture>
+            <img class="Image_root ArticleLeadArt_image" data-test="hero-img"
+                 src="https://cdn.example.com/spicy-hero.jpg" alt="A chili pepper"
+                 width="608" height="342">
+          </picture>
+        </div>
+        <figcaption>Illustration by Jonelle Afurong / The Atlantic.</figcaption>
+      </figure>
+
+      <time class="ArticleTimestamp_root" datetime="2025-08-18" data-test="date">August 18, 2025</time>
+    </header>
+
+    <p data-test="body-p-1">A decade ago, ordering the spiciest thing on the menu was a niche pursuit, the province of chile-heads and masochists trading tips on obscure internet forums late into the night.</p>
+    <p data-test="body-p-2">Today it is a mainstream American pastime, and the appetite shows no sign of cooling as hot sauce sales climb year after year across every region of the country.</p>
+    <p data-test="body-p-3">Researchers who study why people willingly subject themselves to pain call it benign masochism: the pleasure of a threat your body registers as dangerous but your mind knows is safe.</p>
+    <p data-test="body-p-4">Whatever the cause, the trend has reshaped grocery aisles, restaurant menus, and the way a whole generation of eaters thinks about flavor, thrill, and a mouth that will not stop burning.</p>
+  </article>
+</body>
+</html>
