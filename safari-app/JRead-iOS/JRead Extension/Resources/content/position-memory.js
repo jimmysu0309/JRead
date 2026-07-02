@@ -192,9 +192,24 @@
   // touchcancel 涵蓋 iOS 圖片上滑動翻頁（paged-mode onTouchCancel 補判路徑）
   const INTERACT_EVENTS = ['wheel', 'touchend', 'touchcancel', 'keydown', 'click'];
 
+  // v1.5.28：擴充 context 是否仍有效。擴充 reload / 自動更新後，已開分頁的舊
+  // content script 變孤兒——`browser.storage`（Chrome 下 = chrome.storage）被
+  // 剝離、`browser.runtime.id` 變 undefined（namespace.js 也用此訊號）。此時任何
+  // 寫入都會丟「Cannot read properties of undefined (reading 'local')」，那是預期
+  // 情況、非真正寫入失敗，應安靜略過不噴 warn 給使用者（Jimmy 2026-07-02 Instapaper
+  // 舊分頁實測）。
+  function contextValid() {
+    try {
+      return !!(typeof browser !== 'undefined' && browser &&
+        browser.runtime && browser.runtime.id &&
+        browser.storage && browser.storage.local);
+    } catch (_) { return false; }
+  }
+
   function localGet(cb) {
     // v0.8.164：browser.storage.local.get 原生 Promise（reject → cb(null)，與舊
-    // lastError 分支同語意）。
+    // lastError 分支同語意）。context 失效 → cb(null)（安靜略過）。
+    if (!contextValid()) { cb(null); return; }
     try {
       browser.storage.local.get({ [STORAGE_KEY]: {} }).then((v) => {
         cb((v && v[STORAGE_KEY]) || {});
@@ -203,8 +218,10 @@
   }
 
   // 對 storage.local.set 的單一封裝：一律回 Promise（同步 throw——context
-  // invalidated——也包成 reject 統一處理）。
+  // invalidated——也包成 reject 統一處理）。context 失效 → resolve no-op（無有效
+  // storage 可寫，安靜當成功、不觸發 self-heal / warn）。
   function rawSet(obj) {
+    if (!contextValid()) return Promise.resolve();
     try { return Promise.resolve(browser.storage.local.set(obj)); }
     catch (e) { return Promise.reject(e); }
   }
@@ -213,6 +230,9 @@
   // 值專屬時、乾淨小 key 仍寫得進；整個 store 全 wedge 時這也會失敗（best-effort、
   // 吞掉）。同步印 console 一份。
   function recordWriteError(err) {
+    // context 失效（reload / 更新後舊分頁孤兒）造成的寫入失敗是預期情況，
+    // 安靜略過——不寫 diag、不噴 warn（否則使用者看到誤導性錯誤通知）。
+    if (!contextValid()) return;
     const msg = String((err && (err.message || err)) || 'unknown').slice(0, 200);
     try { rawSet({ [DIAG_KEY]: { ts: Date.now(), error: msg } }).catch(() => {}); } catch (_) {}
     try { if (typeof console !== 'undefined') console.warn('[JRead] 閱讀位置寫入失敗：' + msg); } catch (_) {}
@@ -274,6 +294,7 @@
 
   function persistNow() {
     if (!sessionKey || !(days > 0)) return;
+    if (!contextValid()) return;  // 擴充 context 失效（reload / 更新後舊分頁孤兒）→ 安靜略過
     const key = sessionKey;
     const pos = capture();
     const now = Date.now();
@@ -460,6 +481,8 @@
     blockSignature,
     stripLoneSurrogates,
     writeWithSelfHeal,
+    contextValid,
+    recordWriteError,
     findBlockIndex,
     resolvePageIndex,
     computeExitScrollTop,
