@@ -323,6 +323,47 @@
       cursor: pointer;
     }
 
+    /* 稍後閱讀服務：兩顆並排分段 toggle（Readwise / Instapaper 都可見、二擇一）。
+       radio 語意（互斥），視覺做成分段按鈕：選中填品牌色。讓使用者一眼看到有哪些選擇
+       而非藏在下拉。內層 label 覆寫 .field label 的 block / font-weight:500。 */
+    .field .service-toggle {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+      padding: 4px;
+      background: var(--jr-neutral-100);
+      border-radius: var(--jr-radius-sm);
+    }
+    .field .service-toggle label {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--jr-neutral-700);
+      background: transparent;
+      border-radius: calc(var(--jr-radius-sm) - 2px);
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    .field .service-toggle input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+      margin: 0;
+    }
+    .field .service-toggle label:has(input:checked) {
+      background: var(--jr-primary-600);
+      color: #fff;
+    }
+    .field .service-toggle label:has(input:focus-visible) {
+      outline: 2px solid var(--jr-primary-600);
+      outline-offset: 2px;
+    }
+
     /* ==========================================================
        Section heading — Apple 藍 + 底線（Shinkansen h2）
        ========================================================== */
@@ -671,14 +712,14 @@
   </div>
 
   <div class="field">
-    <label for="spaceScrollRatio">Space 顯示門檻（%）</label>
-    <span class="desc">閱讀模式按 <strong>Space</strong> 前進段落（<strong>Shift+Space</strong> 回上一段）；段落超過畫面此比例即平滑卷回上方。預設 <strong>50</strong>；<strong>0 = 停用</strong>（整頁卷動）</span>
+    <label for="spaceScrollRatio">按 space 鍵行為設定</label>
+    <span class="desc">捲動閱讀模式時，按 <strong>space</strong> 鍵每次前進一個段落（<strong>shift+space</strong> 回上一段），畫面中段落超過此處比例即平滑捲回螢幕頂端。預設 <strong>50%</strong>，<strong>0 = 停用</strong>（整頁捲動）</span>
     <input type="number" id="spaceScrollRatio" min="0" max="90" step="5">
   </div>
 
   <div class="field">
-    <label for="positionMemoryDays">閱讀位置記憶（天）</label>
-    <span class="desc">離開時記住閱讀位置，效期內進入閱讀模式自動回到上次位置。預設 <strong>3</strong>、最長 <strong>7</strong>；<strong>0 = 停用</strong></span>
+    <label for="positionMemoryDays">閱讀位置記憶</label>
+    <span class="desc">離開閱讀模式時記住閱讀位置，再進入閱讀模式自動回到上次位置。預設記憶 <strong>3 天</strong>、最長 <strong>7 天</strong>；<strong>0 = 停用</strong></span>
     <input type="number" id="positionMemoryDays" min="0" max="7" step="1">
   </div>
 
@@ -767,8 +808,8 @@
     </div>
   </div>
   <div class="field">
-    <label>送到儲存服務</label>
-    <span class="desc">送到你選的儲存服務（Readwise / Instapaper）。內建預設 <strong>⌥⇧R</strong></span>
+    <label>送到稍後閱讀服務</label>
+    <span class="desc">送到你選的稍後閱讀服務（Readwise / Instapaper）。內建預設 <strong>⌥⇧R</strong></span>
     <div class="shortcut-controls">
       <button type="button" class="shortcut-recorder" id="sc-send-to-readwise" data-command="send-to-readwise"></button>
       <button type="button" class="shortcut-clear" id="sc-clear-send-to-readwise" data-command="send-to-readwise" title="還原預設">✕</button>
@@ -805,17 +846,17 @@
     影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗
   </p>
 
-  <h2 class="section-heading">儲存服務整合</h2>
+  <h2 class="section-heading">稍後閱讀服務整合</h2>
   <p class="section-desc">
     選一個「稍後閱讀」服務並二擇一連結。啟用後在工具列圖示選單點「送到<服務>」會把 JRead 處理過的乾淨內容存進去，也能在 JReader 內直接讀取該服務的文章。憑證僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器
   </p>
   <div class="field-group">
     <div class="field">
-      <label for="storageService">儲存服務</label>
-      <select id="storageService">
-        <option value="readwise">Readwise Reader</option>
-        <option value="instapaper">Instapaper</option>
-      </select>
+      <label>稍後閱讀服務</label>
+      <div class="service-toggle" id="storageService" role="radiogroup" aria-label="稍後閱讀服務">
+        <label><input type="radio" name="storageService" value="readwise"><span>Readwise Reader</span></label>
+        <label><input type="radio" name="storageService" value="instapaper"><span>Instapaper</span></label>
+      </div>
     </div>
 
     <!-- Readwise 憑證（storageService=readwise 時顯示） -->
@@ -865,7 +906,7 @@
       <input type="checkbox" id="readwiseSummary">
       <label for="readwiseSummary">
         送出時自動產生摘要
-        <span class="desc">送出時用 Google Gemini Flash Lite 先產生<strong>文章摘要</strong>一起送到你選的儲存服務。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出</span>
+        <span class="desc">送出時用 Google Gemini Flash Lite 先產生<strong>文章摘要</strong>一起送到你選的稍後閱讀服務。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出</span>
       </label>
     </div>
     <div class="field">
