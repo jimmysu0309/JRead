@@ -1260,9 +1260,22 @@ pageFns.collectDroppedByline = function () {
 // 候選任一命中即算 found。
 pageFns.auditTitlePresence = function () {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-  const stripSuffix = s => norm(s).replace(/\s*[|\-–—·]\s*[^|\-–—·]{1,40}$/, '');
+  // 站名 / 麵包屑尾綴剝除：反覆砍掉每一段 ` <sep> 短字串`（<=40 chars）尾綴。
+  // 兩個修正（2026-07-02 page rounds title-missing 幾乎每站誤報）：
+  //   1. 原本只砍「一段」，但很多站 document.title 是多段麵包屑
+  //      （udn:「標題 | 賴總統暫緩出訪 | 要聞 | 聯合新聞網」）→ 砍一段還剩兩段。
+  //   2. 原本只對 document.title 砍尾綴、og:title 只 norm 沒砍
+  //      → og:title 帶「 | 聯合新聞網」永遠不 match。兩候選都必須砍。
+  // 過度砍只會得到更短前綴，仍是完整可見標題的子字串 → 仍 found（安全）；
+  // 只在低精度 review 層有極小誤配風險，length>=4 門檻擋掉。
+  const stripSuffix = s => {
+    let r = norm(s), prev;
+    do { prev = r; r = r.replace(/\s*[|\-–—·»]\s*[^|\-–—·»]{1,40}$/, ''); }
+    while (r !== prev && r.length >= 4);
+    return r;
+  };
   const og = document.querySelector('meta[property="og:title"]');
-  const ogTitle = og && og.content ? norm(og.content) : '';
+  const ogTitle = stripSuffix(og && og.content ? og.content : '');
   const docTitle = stripSuffix(document.title || '');
   const candidates = [ogTitle, docTitle].filter(c => c && c.length >= 4);
   if (!candidates.length) return { checked: false };
@@ -1272,7 +1285,14 @@ pageFns.auditTitlePresence = function () {
   const clone = art.cloneNode(true);
   for (const h of clone.querySelectorAll('[data-jread-hidden="1"]')) h.remove();
   const visText = norm(clone.textContent);
-  const found = candidates.some(c => visText.includes(c));
+  // 比對時把兩邊所有空白去掉（2026-07-02 chinatimes 實測）：中文站的 rendered
+  // H1 常用 pangu 式 CJK↔Latin/數字間距（「收紅 340 點」），但 og:title /
+  // document.title 沒補空格（「收紅340點」）→ 一般 includes() 因空白差異永遠 miss。
+  // 標題是長字串、去空白後跨字串碰撞風險可忽略；且只影響低精度 review 信號、
+  // 目標是抓「標題整個沒進 card」。
+  const squash = s => s.replace(/\s+/g, '');
+  const vis = squash(visText);
+  const found = candidates.some(c => vis.includes(squash(c)));
   return { checked: true, missing: !found, found,
     title: (ogTitle || docTitle).slice(0, 80) };
 };

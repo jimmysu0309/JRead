@@ -362,8 +362,9 @@ describe('harness audit-lib — 單一資料源合約', () => {
 
   describe('標題進 reader card audit（auditTitlePresence，2026-06-23（v0.8.168 漏抓後補 harness））', () => {
     const run = (w) => w.eval(`(${auditLib.pageFns.auditTitlePresence.toString()})`)();
-    function build(title, articleHtml) {
-      const dom = new JSDOM(`<!DOCTYPE html><head><title>${title}</title></head><body>${articleHtml}</body>`,
+    function build(title, articleHtml, ogTitle) {
+      const ogMeta = ogTitle ? `<meta property="og:title" content="${ogTitle}">` : '';
+      const dom = new JSDOM(`<!DOCTYPE html><head><title>${title}</title>${ogMeta}</head><body>${articleHtml}</body>`,
         { runScripts: 'outside-only', pretendToBeVisual: true });
       return dom.window;
     }
@@ -392,6 +393,36 @@ describe('harness audit-lib — 單一資料源合約', () => {
     it('reader 未啟動 / 無 title 基準 → checked:false（不誤判）', () => {
       const w1 = build('某文章 - 站名', `<article><p>沒有 data-jread-active</p></article>`);
       assert.strictEqual(run(w1).checked, false);
+    });
+
+    // 2026-07-02：page rounds 幾乎每站誤報 title-missing 的根因回歸。
+    // 標題確實在 reader card 內，但候選字串帶站名 / 麵包屑尾綴沒剝乾淨 →
+    // includes() 永遠 miss。這兩條驗「多段麵包屑 doc.title」與「og:title 尾綴」。
+    it('多段麵包屑 document.title 去尾綴後仍 match（udn 型：標題 | 分類 | 站名）', () => {
+      const w = build('美中一中交集賴總統走不出去也不見了 | 賴總統暫緩出訪 | 要聞 | 聯合新聞網',
+        `<article data-jread-active="1"><h1>美中一中交集賴總統走不出去也不見了</h1><p>內文</p></article>`);
+      const res = run(w);
+      assert.strictEqual(res.missing, false,
+        '多段尾綴必須全部剝除，否則帶麵包屑的候選永遠 miss → 每站誤報 missing');
+    });
+
+    it('og:title 帶站名尾綴也要剝除（og 不能只 norm）', () => {
+      // document.title 故意設成完全不相干、避免 doc 候選救場——強制走 og 候選
+      const w = build('unrelated placeholder doc title string',
+        `<article data-jread-active="1"><h1>The Enchanting Story of Oxford</h1><p>body</p></article>`,
+        'The Enchanting Story of Oxford | BBC Culture');
+      assert.strictEqual(run(w).missing, false,
+        'og:title 的「 | BBC Culture」尾綴必須剝除，否則 includes() 永遠 miss');
+    });
+
+    // 2026-07-02 chinatimes 實測：rendered H1 用 pangu 式 CJK↔數字/Latin 間距
+    //（收紅 340 點），但 og/doc title 沒補空格（收紅340點）→ 一般 includes()
+    // 因空白差異 miss。比對必須去空白。
+    it('CJK↔數字 pangu 間距差異不得誤報 missing（rendered H1 補空格、meta 沒補）', () => {
+      const w = build('美伊延長停火！美股道瓊收紅340點、台積電ADR漲5.26％ - 財經',
+        `<article data-jread-active="1"><h1>美伊延長停火！美股道瓊收紅 340 點、台積電 ADR 漲 5.26％</h1><p>內文</p></article>`);
+      assert.strictEqual(run(w).missing, false,
+        '去空白後 H1 與 meta title 應相等，pangu 間距差異不算標題消失');
     });
   });
 
