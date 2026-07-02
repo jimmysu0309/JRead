@@ -2433,19 +2433,26 @@ html [${ARTICLE_ATTR}="1"] iframe {
    （Jimmy 2026-06-09 culpium/Substack）圖片 draggable=true，iPhone 上水平拖曳
    圖片會啟動 iOS 原生 drag-and-drop（lift）搶走左右滑手勢 → 「圖片上滑不翻頁、
    內文正常」。卡片設 touch-action: pan-y 但 touch-action **不繼承**，圖片預設
-   auto 仍放行原生手勢。對 media + 連結明確補 touch-action: pan-y pinch-zoom（同
-   卡片，水平 swipe 不被瀏覽器原生攔）+ -webkit-user-drag/touch-callout: none
-   （停掉圖片 drag-lift 與長按選單），水平 swipe 一律交給 paged-mode.js JS 翻頁。
+   auto 仍放行原生手勢。對 media 明確補 touch-action: pan-y pinch-zoom（同卡片，
+   水平 swipe 不被瀏覽器原生攔）+ -webkit-user-drag/touch-callout: none（停掉圖片
+   drag-lift 與長按選單），水平 swipe 一律交給 paged-mode.js JS 翻頁。
    只在翻頁模式注入（此 block 在 if(opts.pagedMode) 內）；垂直模式不影響長按存圖。 */
 html [${ARTICLE_ATTR}="1"] img,
 html [${ARTICLE_ATTR}="1"] picture,
 html [${ARTICLE_ATTR}="1"] figure,
 html [${ARTICLE_ATTR}="1"] video,
-html [${ARTICLE_ATTR}="1"] svg,
-html [${ARTICLE_ATTR}="1"] a {
+html [${ARTICLE_ATTR}="1"] svg {
   touch-action: pan-y pinch-zoom !important;
   -webkit-user-drag: none !important;
   -webkit-touch-callout: none !important;
+}
+/* v1.6.6：連結不套 -webkit-touch-callout: none——長按是靜止手勢，不與水平翻頁
+   swipe 衝突，touch-action: pan-y pinch-zoom + -webkit-user-drag: none 已足夠保護
+   翻頁手勢。callout 保留讓 iOS 長按連結仍能開「在新標籤頁開啟 / 拷貝連結」選單
+   （Jimmy 2026-07-02 回報翻頁模式長按連結無此選單）。 */
+html [${ARTICLE_ATTR}="1"] a {
+  touch-action: pan-y pinch-zoom !important;
+  -webkit-user-drag: none !important;
 }
 /* 頁碼指示（paged-mode.js 建立 / 更新文字）：固定底部置中。
    色用中性灰——白卡 / 黑卡 / 米卡上都可讀，不依賴 theme 欄位。
