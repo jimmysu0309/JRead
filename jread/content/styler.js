@@ -43,10 +43,32 @@
   const BYLINE_WRAP_ATTR = 'data-jread-byline-wrap';
   const BYLINE_ITEM_ATTR = 'data-jread-byline-item';
   const BYLINE_RT_ATTR = 'data-jread-byline-rt';
+  // v1.5.28：byline 內「時刻」（HH:MM AM/PM TZ）子元素標記。閱讀模式的日期訊號
+  //   保留日期即可、發稿時刻是雜訊（Jimmy 2026-07-02 NPR「1:59 PM ET」要求拿掉）。
+  const BYLINE_TIME_ATTR = 'data-jread-byline-time';
+  // v1.5.28：廣播節目出處 chip（"Heard on / Aired on <節目>"）標記——閱讀模式
+  //   非必要 metadata（Jimmy 2026-07-02 NPR「HEARD ON MORNING EDITION」要求清）。
+  const BYLINE_PROGRAM_ATTR = 'data-jread-byline-program';
+  const BYLINE_PROGRAM_RE = /^(heard|aired|broadcast(?:ed)?)\s+on\b/i;
+  // 節目出處連結 URL 訊號（翻譯無關——href 不會被 Shinkansen 翻譯，英文文字
+  //   regex 在譯後 DOM 失效時靠這條接住）。NPR「Heard on」連到 /programs/<節目>/。
+  const BYLINE_PROGRAM_URL_RE = /\/(programs?|shows?|podcasts?|episodes?)\//i;
+  // v1.5.28：日期 item 標記——CSS order:1 把日期推到 byline 最後，作者（及頭像等
+  //   其餘 item）維持預設 order:0 排在前，達成「作者排在日期前」（Jimmy 2026-07-02）。
+  const BYLINE_DATE_ITEM_ATTR = 'data-jread-byline-date-item';
+  // v1.5.28：分類 kicker / eyebrow 標記——標題「之前」、連到分類頁的短連結
+  //   （NPR「BUSINESS」→ /sections/business/）。閱讀模式移除（Safari / Firefox
+  //   Reader 同做法）。Jimmy 2026-07-02。SECTION_URL_RE：分類頁 URL 慣例（href
+  //   不被翻譯，譯後 DOM 照樣命中）。
+  const KICKER_ATTR = 'data-jread-kicker';
+  const SECTION_URL_RE = /\/(sections?|category|categories|topics?)\//i;
   // 日期訊號（DD Mon YYYY / Mon DD, YYYY / YYYY-M-D / YYYY年M月D日）——byline root
   // 偵測的錨點。閱讀時間（N min(s) read / 閱讀時間 / N 分鐘閱讀）——byline 內隱藏。
   const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/i;
   const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|閱讀時間|\d+\s*分鐘閱讀/i;
+  // 時刻訊號：整段直接文字＝「HH:MM(:SS)? (AM/PM)? TZ?」（例 "1:59 PM ET"、
+  //   "13:59"、"9:30 a.m. EST"）。冒號是關鍵——日期字串無冒號，故不誤殺日期。
+  const BYLINE_TIME_RE = /^\d{1,2}:\d{2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)?\s*[a-z]{0,5}$/i;
   // v0.8.86：responsive embed（relative wrapper + position:absolute iframe 填滿
   // 16:9 padding-bottom hack）的 iframe 標記。apply() 量到 computed
   // position:absolute 的 article iframe 標此 attr，CSS 把它 pin 回 inset:0
@@ -1518,11 +1540,16 @@ ${MEDIA_CAP_SEL} {
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: wrap !important;
-  align-items: center !important;
+  /* v1.5.28：align-items center → baseline。center 讓等高 item 中線對齊，但站點
+     item 內容（date span / 含 <a> 的 program-block）盒內基線位置不一，中線對齊後
+     文字看起來上下錯位（NPR「HEARD ON」比日期高 9px）。baseline 直接對齊各 item
+     文字基線，文字齊一行；byline 以文字為主，基線對齊比中線穩（頭像 item 由下方
+     img 規則控高、baseline 下對齊亦自然）。 */
+  align-items: baseline !important;
   justify-content: flex-start !important;
   column-gap: 0.5em !important;
   row-gap: 0.2em !important;
-  margin: 0.2em 0 1.4em 0 !important;
+  margin: 0.2em 0 0.8em 0 !important;
   padding: 0 !important;
   text-align: left !important;
 }
@@ -1545,6 +1572,22 @@ ${MEDIA_CAP_SEL} {
   letter-spacing: normal !important;
 }
 [${ARTICLE_ATTR}="1"] [${BYLINE_RT_ATTR}] {
+  display: none !important;
+}
+/* v1.5.28：byline 內發稿時刻（HH:MM AM/PM TZ）隱藏，只留日期。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_TIME_ATTR}] {
+  display: none !important;
+}
+/* v1.5.28：廣播節目出處 chip（"Heard on <節目>"）隱藏——閱讀模式非必要 metadata。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_PROGRAM_ATTR}] {
+  display: none !important;
+}
+/* v1.5.28：日期 item order:1 推到最後 → 作者（預設 order:0）排在日期前。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_DATE_ITEM_ATTR}] {
+  order: 1 !important;
+}
+/* v1.5.28：標題前的分類 kicker（連分類頁的短連結）隱藏。 */
+[${ARTICLE_ATTR}="1"] [${KICKER_ATTR}] {
   display: none !important;
 }
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] img {
@@ -3681,6 +3724,86 @@ html.${HTML_CLASS}.jread-orion body {
               }
             };
             walk(root);
+            // v1.5.28：日期 item = 含 dateEl 的最近 byline item（NPR 即 <time> 自身）。
+            // 下面時刻隱藏（結構訊號）與作者排序（order）都以它為錨。
+            let dateItem = dateEl;
+            while (dateItem && dateItem !== root && !dateItem.hasAttribute(BYLINE_ITEM_ATTR)) {
+              dateItem = dateItem.parentElement;
+            }
+            const dateItemValid = dateItem && dateItem !== root && dateItem.hasAttribute(BYLINE_ITEM_ATTR);
+
+            // v1.5.28：隱藏 byline 內的發稿時刻（"1:59 PM ET"），只留日期。
+            // 結構訊號（翻譯無關，Jimmy 2026-07-02 Shinkansen 譯後「東岸時間下午
+            // 1:59」殘留實測）：日期 item（<time>）內若有子元素文字符合 BYLINE_DATE_RE
+            //（此 regex 含中文「2026 年 6 月 1 日」），把**不符日期**的兄弟子元素
+            //（時刻/時區）隱藏。BYLINE_DATE_RE 判別日期 vs 時刻、不靠英文時刻字面，
+            // 故 Shinkansen 就地譯文（結構不變、僅換文字）照樣命中。
+            if (dateItemValid) {
+              const kids = Array.from(dateItem.querySelectorAll('*')).filter(bvisible);
+              const hasDateKid = kids.some((c) => BYLINE_DATE_RE.test(bnorm(bdirect(c))));
+              if (hasDateKid) {
+                for (const c of kids) {
+                  const dt = bnorm(bdirect(c));
+                  if (dt && !BYLINE_DATE_RE.test(dt)) setMark(c, BYLINE_TIME_ATTR);
+                }
+              }
+            }
+            // 補充（英文、時刻為獨立 byline item 而非日期 item 子元素的情況）：整段
+            // 直接文字＝純時刻（HH:MM AM/PM TZ）的葉元素也隱藏。譯後 DOM 不命中此
+            // regex，靠上面結構訊號接住。安全閘：隱藏後 root 仍須有日期訊號才動手。
+            const rootHasDateWithout = (el) =>
+              BYLINE_DATE_RE.test(bnorm(root.textContent).replace(bnorm(el.textContent), ''));
+            for (const el of root.querySelectorAll('*')) {
+              if (!bvisible(el)) continue;
+              const dt = bdirect(el);
+              if (dt && BYLINE_TIME_RE.test(dt) && rootHasDateWithout(el)) {
+                setMark(el, BYLINE_TIME_ATTR);
+              }
+            }
+            // v1.5.28：清掉「Heard on <節目>」廣播節目出處 chip（閱讀模式非必要
+            // metadata）。兩訊號並用：① 英文句式開頭（Heard/Aired/Broadcast on）；
+            // ② item 內連結 href 命中 /programs|shows|podcasts|episodes/（翻譯無關
+            // ——href 不被 Shinkansen 翻譯，譯後 DOM 靠這條接住「聽過《早晨版》」）。
+            for (const el of root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`)) {
+              const hitText = BYLINE_PROGRAM_RE.test(bnorm(el.textContent));
+              // 連結含自身（item 本身即 <a> 時 querySelectorAll('a') 不含它）
+              const links = [el, ...el.querySelectorAll('a[href]')]
+                .filter((a) => a.tagName === 'A' && a.getAttribute('href'));
+              const hitUrl = !hitText && links.some((a) => BYLINE_PROGRAM_URL_RE.test(a.getAttribute('href')));
+              if (hitText || hitUrl) setMark(el, BYLINE_PROGRAM_ATTR);
+            }
+            // v1.5.28：作者排在日期前——把日期 item order:1 推到最後，其餘 item 維持
+            // 預設 order:0 排前。不必逐站辨識作者（NPR 作者無 rel=author / By 前綴，
+            // 辨識 fragile），只認可靠的日期錨（<time>，翻譯無關）。
+            if (dateItemValid) setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
+          }
+          // v1.5.28：移除標題前的分類 kicker / eyebrow（NPR「BUSINESS」連到
+          // /sections/business/）。結構訊號（非站點特判）：標題 H1「之前」、連到
+          // 分類頁（SECTION_URL_RE）的短連結。往上爬到「文字仍等於 kicker 文字」的
+          // 最高 wrapper 一併隱藏（避免只藏連結、留空的 slug 容器殘留高度），比照
+          // byline root 的 climb。href 不被翻譯 → 譯後 DOM 照樣命中（Shinkansen
+          // 把「Business」譯成「商業」，wrapper 文字同步變、climb 仍成立）。獨立於
+          // byline 偵測（無日期的頁面也要清 kicker）。restore 走 bylineMarks 移除標記。
+          const titleH1 = articleEl.querySelector('h1');
+          if (titleH1) {
+            const beforeTitle = (el) =>
+              !!(el.compareDocumentPosition(titleH1) & Node.DOCUMENT_POSITION_FOLLOWING);
+            for (const a of articleEl.querySelectorAll('a[href]')) {
+              if (!bvisible(a) || !beforeTitle(a)) continue;
+              if (!SECTION_URL_RE.test(a.getAttribute('href') || '')) continue;
+              const t = bnorm(a.textContent);
+              if (!t || t.length > 30) continue;
+              let k = a;
+              while (k.parentElement && k.parentElement !== articleEl &&
+                     beforeTitle(k.parentElement) &&
+                     bnorm(k.parentElement.textContent) === t) {
+                k = k.parentElement;
+              }
+              if (!k.hasAttribute(KICKER_ATTR)) {
+                k.setAttribute(KICKER_ATTR, '1');
+                bylineMarks.push({ el: k, attr: KICKER_ATTR });
+              }
+            }
           }
         }
       }

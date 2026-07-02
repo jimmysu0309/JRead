@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!--
+  byline 時刻/節目隱藏 — Shinkansen 譯後 DOM（v1.5.28）。
+  Shinkansen 就地翻譯：替換文字節點、在元素上加 data-shinkansen-translated + lang，
+  不包裹、結構完整保留（NPR 實測）。此 fixture 複製譯後 DOM：日期/時刻/節目文字皆
+  中文。驗「翻譯無關的結構訊號」：
+    - 時刻隱藏靠「日期 item 內不符 BYLINE_DATE_RE 的兄弟子元素」（非英文 HH:MM 字面）
+    - 節目隱藏靠連結 href /programs/（非英文「Heard on」字面）
+  英文 pattern（BYLINE_TIME_RE / BYLINE_PROGRAM_RE）在此皆不命中，全靠結構訊號接住。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article class="story">
+    <div class="slug-wrap" data-test="kicker"><h3 class="slug"><a href="/sections/business/" data-shinkansen-translated="1" lang="zh-TW">商業</a></h3></div>
+    <h1 data-shinkansen-translated="1" lang="zh-TW">研究發現：讓社會新鮮人坐冷板凳的罪魁禍首不是 AI，而是遠距工作</h1>
+    <div class="story-meta has-byline" data-test="byline-root">
+      <div class="story-meta__one">
+        <div class="dateblock">
+          <time data-test="date" datetime="2026-06-01T13:59:52-04:00"><span class="date" data-test="date-part" data-shinkansen-translated="1" lang="zh-TW">2026 年 6 月 1 日</span><span class="time" data-test="time-part" data-shinkansen-translated="1" lang="zh-TW">下午 1:59（美國東部時間）</span></time>
+        </div>
+        <div class="program-block" data-test="program" data-shinkansen-translated="1" lang="zh-TW">聽過<a href="https://www.npr.org/programs/morning-edition/nx-s1-5795979/">早晨版</a></div>
+      </div>
+      <div class="story-meta__two">
+        <div class="byline"><p class="byline__name"><a href="/people/andrea-hsu" data-test="author" data-shinkansen-translated="1" lang="zh-TW">許安琪</a></p></div>
+      </div>
+    </div>
+    <p data-test="body" data-shinkansen-translated="1" lang="zh-TW">大學校園裡盛傳人工智慧正在擾亂年輕大學畢業生的就業市場，但新研究發現真正的罪魁禍首或許另有其人：大型雇主的遠距工作安排才是關鍵所在。</p>
+    <p data-shinkansen-translated="1" lang="zh-TW">對聯邦就業數據的分析顯示，企業比較不願意把應屆大學畢業生招聘進可以遠距完成的職務。</p>
+  </article>
+</body>
+</html>
