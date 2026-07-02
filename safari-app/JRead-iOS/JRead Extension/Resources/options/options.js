@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'syncScrollOnExit', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
+const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -172,7 +172,6 @@ function readFieldFromDom(id) {
     }
     case 'threeFingerTap': case 'floatingIcon':
     case 'blockPageShortcuts': case 'pangu': case 'editModeEnabled': case 'readwiseSummary':
-    case 'syncScrollOnExit':
       return el.checked;
     case 'floatingIconSize': {
       // v0.8.166：radio 群（小 / 中 / 大）取代下拉 select；el 是 wrapper（id 在容器上）。
@@ -228,7 +227,7 @@ function applyFieldToDom(id, value) {
   if (!el) return;
   // 使用者正在編輯的欄位不回寫（避免打字途中被外部變更清掉）
   if (el === document.activeElement) return;
-  if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled' || id === 'syncScrollOnExit') {
+  if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'editModeEnabled') {
     el.checked = value !== false;
   } else if (id === 'threeFingerTap') {
     // v0.8.157：預設 false——只有明確為 true 才勾選
