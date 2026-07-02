@@ -44,15 +44,15 @@ describe('popup v1.0.22 — 進入 Reader 按鈕', () => {
       'reader-btn 點擊後必須關閉 popup');
   });
 
-  it('reader-btn 可見性必須由 token gate（refreshReaderButton 走 hasReadwiseToken）', () => {
+  it('reader-btn 可見性必須由憑證 gate（refreshReaderButton 走 hasActiveServiceCredentials）', () => {
     assert.match(POPUP_JS, /function\s+refreshReaderButton/,
-      'popup.js 必須有 refreshReaderButton——依 token 決定 reader-btn 顯隱');
+      'popup.js 必須有 refreshReaderButton——依儲存服務憑證決定 reader-btn 顯隱');
     // refreshReaderButton body 取到下一個 top-level async function 之前（v1.5.1 起內含
-    // reader-host 短路 + token gate 兩段，不再是單一行）。
+    // reader-host 短路 + 憑證 gate 兩段）。v1.6.0：token gate 泛化為服務二擇一憑證。
     const m = POPUP_JS.match(/function\s+refreshReaderButton\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     assert.ok(m, '抓不到 refreshReaderButton body');
-    assert.match(m[0], /readerBtn\.hidden\s*=\s*!\s*\(?\s*await\s+hasReadwiseToken\(\)/,
-      'refreshReaderButton 必須以 hasReadwiseToken() 結果設 readerBtn.hidden');
+    assert.match(m[0], /readerBtn\.hidden\s*=\s*!\s*\(?\s*await\s+hasActiveServiceCredentials\(\)/,
+      'refreshReaderButton 必須以 hasActiveServiceCredentials() 結果設 readerBtn.hidden（服務二擇一憑證 gate）');
     assert.match(POPUP_JS, /refreshReaderButton\(\)\s*;/,
       'popup.js 必須在載入時呼叫 refreshReaderButton() 套用初始可見性');
   });

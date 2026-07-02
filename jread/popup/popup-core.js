@@ -506,6 +506,162 @@
     return saveToReadwise({ token, payload: body, fetchImpl });
   }
 
+  // ---- 儲存服務二擇一 dispatcher（v1.6.0）------------------------------
+  // 讓「送出」與「讀入 feed/文章」服務無關：呼叫端只給 service（'readwise' |
+  // 'instapaper'）+ creds + 資料，dispatcher 內部分派到對應底層函式（Readwise 走
+  // 本檔既有 saveToReadwise / listReaderDocuments / archiveReaderDocument；Instapaper
+  // 走 lib/instapaper.js 的 __JReadInstapaper）。回傳一律正規化成 JRead 共同文件
+  // 契約（沿用 Readwise 欄位命名，reader-feed / reader-article 只吃這個 shape）。
+  // instapaper 依賴以參數注入（測試用），預設抓全域 __JReadInstapaper（頁面 <script>
+  // / SW importScripts 已先載）。
+  function resolveInstapaper(dep) {
+    if (dep) return dep;
+    const g = (typeof globalThis !== 'undefined') ? globalThis
+      : (typeof self !== 'undefined') ? self
+        : (typeof window !== 'undefined') ? window : {};
+    return g && g.__JReadInstapaper;
+  }
+
+  function serviceLabel(service) {
+    return service === 'instapaper' ? 'Instapaper' : 'Readwise Reader';
+  }
+
+  // settings → { service, creds, ok }。單一憑證解析，popup / reader / SW 共用。
+  // readwise：creds={token}；instapaper：creds={token,tokenSecret}。ok=憑證齊備。
+  function resolveServiceCredentials(settings) {
+    const s = settings || {};
+    const service = s.storageService === 'instapaper' ? 'instapaper' : 'readwise';
+    if (service === 'instapaper') {
+      const token = typeof s.instapaperToken === 'string' ? s.instapaperToken.trim() : '';
+      const tokenSecret = typeof s.instapaperTokenSecret === 'string' ? s.instapaperTokenSecret.trim() : '';
+      return { service, creds: { token, tokenSecret }, ok: !!(token && tokenSecret) };
+    }
+    const token = typeof s.readwiseToken === 'string' ? s.readwiseToken.trim() : '';
+    return { service, creds: { token }, ok: !!token };
+  }
+
+  // 送出一篇。payload = extractReaderPayload 的 {url,html,title,summary,...}。
+  // 回正規化 result（ok / status / error:NO_CREDENTIALS|CONFIG|AUTH|NETWORK|HTTP|
+  // INVALID_PAYLOAD / detail?）。
+  async function sendDocument({ service, creds, payload, fetchImpl, instapaper } = {}) {
+    const c = creds || {};
+    if (service === 'instapaper') {
+      const IP = resolveInstapaper(instapaper);
+      if (!IP) return { ok: false, error: 'CONFIG' };
+      if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
+      let body;
+      try {
+        body = IP.buildInstapaperPayload({
+          url: payload && payload.url,
+          html: payload && payload.html,
+          title: payload && payload.title,
+          description: payload && payload.summary
+        });
+      } catch (e) {
+        return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
+      }
+      return IP.saveToInstapaper({ token: c.token, tokenSecret: c.tokenSecret, payload: body, fetchImpl });
+    }
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    let body;
+    try {
+      body = buildReadwisePayload(payload || {});
+    } catch (e) {
+      return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
+    }
+    return saveToReadwise({ token: c.token, payload: body, fetchImpl });
+  }
+
+  // 列 feed 文件。query 為 feedTab 描述的 query 物件——readwise:{location|tag}、
+  // instapaper:{folderId}。回 { ok, results:[共同 shape], nextPageCursor }。
+  async function listDocuments({ service, creds, query, limit, fetchImpl, instapaper } = {}) {
+    const c = creds || {};
+    const q = query || {};
+    if (service === 'instapaper') {
+      const IP = resolveInstapaper(instapaper);
+      if (!IP) return { ok: false, error: 'CONFIG' };
+      if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
+      return IP.listInstapaper({ token: c.token, tokenSecret: c.tokenSecret, folderId: q.folderId, limit: limit || 20, fetchImpl });
+    }
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    return listReaderDocuments({ token: c.token, location: q.location, tag: q.tag, fetchImpl });
+  }
+
+  // 取單篇全文。readwise 憑 id 一次拿齊 metadata+html_content；instapaper get_text
+  // 只回 html、metadata 用 feed 帶入的 meta 補。回 { ok, doc:共同 shape(含 html_content) }。
+  async function getArticle({ service, creds, id, meta, fetchImpl, instapaper } = {}) {
+    const c = creds || {};
+    if (service === 'instapaper') {
+      const IP = resolveInstapaper(instapaper);
+      if (!IP) return { ok: false, error: 'CONFIG' };
+      if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
+      const r = await IP.getInstapaperText({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl });
+      if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'HTTP', status: r && r.status };
+      const m = meta || {};
+      const doc = {
+        id: String(id),
+        title: m.title || '',
+        author: m.author || '',
+        site_name: m.site_name || '',
+        published_date: m.published_date || '',
+        source_url: m.source_url || '',
+        image_url: '',
+        html_content: r.html || ''
+      };
+      if (!doc.html_content) return { ok: false, error: 'EMPTY' };
+      return { ok: true, doc };
+    }
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    const r = await listReaderDocuments({ token: c.token, id, withHtmlContent: true, fetchImpl });
+    if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'HTTP', status: r && r.status };
+    const doc = (r.results || [])[0];
+    if (!doc || !doc.html_content) return { ok: false, error: 'EMPTY' };
+    return { ok: true, doc };
+  }
+
+  // 歸檔一篇。回 { ok, status } / 錯誤分類。
+  async function archiveDocument({ service, creds, id, fetchImpl, instapaper } = {}) {
+    const c = creds || {};
+    if (service === 'instapaper') {
+      const IP = resolveInstapaper(instapaper);
+      if (!IP) return { ok: false, error: 'CONFIG' };
+      if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
+      return IP.archiveInstapaper({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl });
+    }
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    return archiveReaderDocument({ token: c.token, id, fetchImpl });
+  }
+
+  // 送出結果 → toast 文字 + kind（服務感知，dispatcher 軌用）。既有 Readwise 專屬
+  // readwiseResultToast 保留不動（有 exact-string spec + SW 舊呼叫）；此為泛化版，
+  // serviceLabel 帶入服務名。existsOn200：Readwise 200=已存在、201=新建（Instapaper
+  // 無此區分，一律「已送到」）。
+  function saveResultToast(result, opts) {
+    const o = opts || {};
+    const label = o.serviceLabel || 'Readwise Reader';
+    if (result && result.ok) {
+      return {
+        message: (o.existsOn200 && result.status === 200) ? `已存在於 ${label}` : `已送到 ${label}`,
+        kind: 'success'
+      };
+    }
+    if (result && result.error === 'NO_CREDENTIALS') {
+      return { message: `尚未設定 ${label} 憑證，請到設定頁填入`, kind: 'error' };
+    }
+    if (result && result.error === 'CONFIG') {
+      return { message: `此版本未內建 ${label} 金鑰`, kind: 'error' };
+    }
+    if (result && result.error === 'AUTH') {
+      return { message: `${label} 憑證無效或已過期`, kind: 'error' };
+    }
+    if (result && result.error === 'NETWORK') {
+      return { message: '網路錯誤，請稍後再試', kind: 'error' };
+    }
+    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    const reason = result && result.detail ? `：${result.detail}` : '';
+    return { message: `送出失敗${detail}${reason}`, kind: 'error' };
+  }
+
   const api = {
     sendWithInjectionFallback,
     toggleWithInjectionFallback,
@@ -519,6 +675,14 @@
     validateReadwiseToken,
     listReaderDocuments,
     archiveReaderDocument,
+    // v1.6.0：儲存服務 dispatcher（服務無關抽象層）
+    resolveServiceCredentials,
+    serviceLabel,
+    sendDocument,
+    listDocuments,
+    getArticle,
+    archiveDocument,
+    saveResultToast,
     validateGeminiKey,
     buildSummaryPrompt,
     extractGeminiText,

@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'syncScrollOnExit', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
+const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'syncScrollOnExit', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -265,6 +265,10 @@ function load() {
     shortcutTable = SC.sanitizeTable(values.customShortcuts);
     renderShortcuts();
     updateOpacityDemo();   // 範例 icon 套初始透明度 + 尺寸
+    // v1.6.0：儲存服務顯隱 + Instapaper 連結狀態（instapaperUsername 不在 fields，
+    // 由 renderInstapaperLinkState 直接渲染）
+    renderInstapaperLinkState(values.instapaperUsername);
+    updateServiceVisibility();
   }).catch(() => {});
 }
 
@@ -424,6 +428,92 @@ if (geminiTestBtn && geminiTestResultEl) {
   });
 }
 
+// ---- 儲存服務二擇一：顯隱 + Instapaper 連結（v1.6.0）----------------------
+// storageService select 決定顯示哪個服務的憑證區（摘要 / Gemini key 兩服務共用、
+// 永遠顯示）。Instapaper 走 xAuth（email + 密碼換 OAuth token），密碼用完即丟；
+// 已連結顯示帳號 + 解除連結。__JReadInstapaper 由 lib/instapaper.js 掛（keys 缺檔
+// 時 hasInstapaperConsumerKeys() 回 false → 顯示「未內建金鑰」）。
+const IP = window.__JReadInstapaper;
+
+function updateServiceVisibility() {
+  const sel = document.getElementById('storageService');
+  const svc = sel && sel.value === 'instapaper' ? 'instapaper' : 'readwise';
+  const blocks = document.querySelectorAll('[data-service-block]');
+  for (const el of blocks) el.hidden = el.getAttribute('data-service-block') !== svc;
+}
+
+// 依「有無 username」切換 Instapaper 未連結（填帳密）/ 已連結（顯示帳號）兩態。
+// 無內建金鑰時兩態都收、只露「未內建金鑰」提示。
+function renderInstapaperLinkState(username) {
+  const form = document.getElementById('instapaper-link-form');
+  const linked = document.getElementById('instapaper-linked');
+  const noKeys = document.getElementById('instapaper-no-keys');
+  const linkedUser = document.getElementById('instapaper-linked-user');
+  const hasKeys = !!(IP && typeof IP.hasInstapaperConsumerKeys === 'function' && IP.hasInstapaperConsumerKeys());
+  if (noKeys) noKeys.hidden = hasKeys;
+  const isLinked = !!(username && String(username).trim());
+  if (form) form.hidden = !hasKeys || isLinked;
+  if (linked) linked.hidden = !isLinked;
+  if (isLinked && linkedUser) linkedUser.value = String(username);
+}
+
+// storageService 切換：存檔由通用 change listener 處理，本 listener 只更新顯隱
+const serviceSel = document.getElementById('storageService');
+if (serviceSel) serviceSel.addEventListener('change', updateServiceVisibility);
+
+// 連結：email + 密碼 → instapaperXAuth → 存 token/secret/username、密碼清空
+const ipConnectBtn = document.getElementById('instapaper-connect');
+const ipConnectResultEl = document.getElementById('instapaper-connect-result');
+function setIpConnectResult(kind, text) {
+  if (!ipConnectResultEl) return;
+  ipConnectResultEl.textContent = text;
+  ipConnectResultEl.className = 'token-test-result is-' + kind;
+}
+if (ipConnectBtn) {
+  ipConnectBtn.addEventListener('click', async () => {
+    const email = (document.getElementById('instapaper-email').value || '').trim();
+    const password = document.getElementById('instapaper-password').value || '';
+    if (!email || !password) { setIpConnectResult('error', '✗ 請輸入帳號與密碼'); return; }
+    if (!IP || typeof IP.instapaperXAuth !== 'function') { setIpConnectResult('error', '✗ 無法載入 Instapaper 模組'); return; }
+    setIpConnectResult('pending', '連結中…');
+    ipConnectBtn.disabled = true;
+    let r;
+    try { r = await IP.instapaperXAuth({ email, password }); }
+    catch (_) { r = { ok: false, error: 'NETWORK' }; }
+    ipConnectBtn.disabled = false;
+    if (r && r.ok) {
+      showSaving();
+      browser.storage.sync.set({
+        instapaperToken: r.token,
+        instapaperTokenSecret: r.tokenSecret,
+        instapaperUsername: email
+      }).then(flashSaved).catch(flashSaveError);
+      document.getElementById('instapaper-password').value = '';  // 密碼用完即丟
+      setIpConnectResult('', '');
+      renderInstapaperLinkState(email);
+    } else if (r && r.error === 'AUTH') {
+      setIpConnectResult('error', '✗ 帳號或密碼錯誤');
+    } else if (r && r.error === 'CONFIG') {
+      setIpConnectResult('error', '✗ 此版本未內建 Instapaper 金鑰');
+    } else if (r && r.error === 'NETWORK') {
+      setIpConnectResult('error', '✗ 無法連線，請檢查網路');
+    } else {
+      setIpConnectResult('error', '✗ 連結失敗（' + ((r && (r.status || r.error)) || '未知') + '）');
+    }
+  });
+}
+
+// 解除連結：清 token/secret/username，回未連結態
+const ipUnlinkBtn = document.getElementById('instapaper-unlink');
+if (ipUnlinkBtn) {
+  ipUnlinkBtn.addEventListener('click', () => {
+    showSaving();
+    browser.storage.sync.set({ instapaperToken: '', instapaperTokenSecret: '', instapaperUsername: '' })
+      .then(flashSaved).catch(flashSaveError);
+    renderInstapaperLinkState('');
+  });
+}
+
 // autoEnableDomains 走獨立路徑：textarea 多行字串 → parseList → 寫回 sync。
 // 用 'change'（blur 觸發）而非 'input'，避免使用者打字途中每按一鍵就 set
 // 觸發 browser.storage.sync 寫入配額 + 跨 tab broadcast。
@@ -462,6 +552,9 @@ if (browser.storage && browser.storage.onChanged) {
         ta.value = helper ? helper.serializeList(list) : list.join('\n');
       }
     }
+    // v1.6.0：跨 context 切服務 / 連結變更 → 同步顯隱與 Instapaper 連結狀態
+    if ('storageService' in changes) updateServiceVisibility();
+    if ('instapaperUsername' in changes) renderInstapaperLinkState(changes.instapaperUsername.newValue);
   });
 }
 
@@ -500,6 +593,9 @@ if (resetBtn) {
     const payload = Object.assign({}, DEFAULTS);
     delete payload.readwiseToken; // 保留使用者憑證
     delete payload.geminiApiKey;  // 保留使用者憑證
+    delete payload.instapaperToken;       // 保留 Instapaper 連結
+    delete payload.instapaperTokenSecret; // 保留 Instapaper 連結
+    delete payload.instapaperUsername;    // 保留 Instapaper 連結
     payload.floatingIcon = null;  // 回復三態（未設過 → 預設開）
     payload.floatingIconPos = null; // 清掉拖移位置
     // v0.8.164：browser.storage.sync.set 原生 Promise——reject（失敗）走錯誤訊息。

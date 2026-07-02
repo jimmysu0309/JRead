@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.5.28**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.6.0**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -568,6 +568,8 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 
 ## Readwise Reader 整合（v0.7.33）
 
+> **v1.6.0：儲存服務二擇一。** JRead 現支援 Readwise Reader **或** Instapaper（options 二擇一）。本章描述 Readwise 端的欄位抽取 / 摘要 / API 細節；「送出」與「讀入」皆已抽象成服務無關的 dispatcher，Instapaper 端與抽象層見下方「儲存服務二擇一（Readwise / Instapaper）」章。以下 payload 抽取策略（buildCleanHtml / hero / byline / author / date）為兩服務共用。
+
 popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文 outerHTML 送到使用者的 Readwise Reader 帳號。動機：Readwise 的官方 extension 在某些難解析的頁面（重 JS、奇異 DOM）會失效，而那些頁面 JRead 多半已經處理乾淨。
 
 ### API
@@ -627,6 +629,47 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - 其餘（未啟動 / cinema / 無 token / chrome:// 等 sendMessage reject / 無 tab）→ 整顆 `hidden`——沒 token 按下去必然失敗，露出只是雜訊
 - 點擊（v0.8.65）：popup → content（`EXTRACT_READER_HTML` 抽 outerHTML + url + title + text + domain）→ **若開啟 `readwiseSummary` 且有 `geminiApiKey`**，先 `popup-core.generateGeminiSummary` 產生摘要塞進 payload（v0.8.72）→ **popup 自己**讀 `readwiseToken` + `popup-core.saveReaderPayload`（buildReadwisePayload + fetch `POST /api/v3/save/`）回結果。**不再繞 SW**（iOS 背景頁掛起會 silently 失敗，見訊息協定段 v0.8.65 註）。快速鍵送出（無 popup）走 SW `sendToReadwiseFromCommand`。**懸浮按鈕長按選單**不提供 Readwise 直送（v0.8.166 移除）——改走「功能選單」叫出 popup 後按 popup 內的 Readwise 按鈕（理由：v0.8.165 曾試 Safari content script 直送，iOS 可送達但 toast 不顯示、無回饋，故回退到有狀態文字回饋的 popup 軌）
 - 狀態條訊息：`產生摘要中…`（v0.8.72，僅開啟摘要時）/ `送出中…` / `已送到 Readwise Reader` / `已存在於 Readwise Reader` / `尚未設定 Readwise token` / `Readwise token 無效或已過期` / `網路錯誤` / `送出失敗（HTTP N）`／`送出失敗（INTERNAL / INVALID_PAYLOAD）`（v0.8.65 起 generic 分支帶 error code 便於 iOS 真機回報定位；v1.5.7 起若 Readwise 回應有可萃原因再接「：<原因>」）
+
+## 儲存服務二擇一（Readwise / Instapaper，v1.6.0）
+
+使用者在 options 選一個「稍後閱讀」服務，送出儲存 + 摘要 + 在 JReader 讀入（feed / 文章）三向都照選定服務走。**核心：服務無關 dispatcher + 共同文件契約**（沿用 Readwise 欄位命名 `{id,title,author,site_name,published_date,source_url,image_url,html_content}`），所有「哪個服務」的分歧集中在 `popup-core.js` 的 dispatcher + `lib/instapaper.js`，reader / options / popup UI 服務無關（硬規則 5，不複製 path）。
+
+### 設定
+
+- `storageService`（string，預設 `'readwise'`，`'readwise'|'instapaper'`）：決定送出 / 讀入走哪個服務。存 `chrome.storage.sync`
+- `instapaperToken` / `instapaperTokenSecret`（string，預設 `''`）：Instapaper Full API 的 OAuth token + secret（xAuth 換得）。存 `chrome.storage.sync`
+- `instapaperUsername`（string，預設 `''`）：僅供 options 顯示「已連結：<帳號>」；密碼用完即丟不存
+- `readwiseSummary` + `geminiApiKey`：**兩服務共用**（Readwise 對映 `summary` 欄位、Instapaper 對映 `description` 欄位）
+- options 頁「儲存服務整合」段：服務選擇器（`<select id="storageService">`）+ 依選擇顯示對應憑證區（readwise=token+測試；instapaper=email/密碼「連結」/已連結顯示帳號+「解除連結」）+ 摘要/Gemini key 永遠顯示
+
+### dispatcher（`popup-core.js`，服務無關抽象層）
+
+- `resolveServiceCredentials(settings)` → `{ service, creds, ok }`（憑證解析單一資料源，popup / reader / SW 共用）
+- `sendDocument({service,creds,payload})` → readwise `buildReadwisePayload`+`saveToReadwise`；instapaper `buildInstapaperPayload`+`saveToInstapaper`
+- `listDocuments({service,creds,query})` → readwise `listReaderDocuments`；instapaper `listInstapaper`（映射成共同 shape）
+- `getArticle({service,creds,id,meta})` → readwise `list?id&withHtmlContent`；instapaper `getInstapaperText`（get_text 只回 HTML、metadata 用 feed 帶入的 `meta` 補）
+- `archiveDocument({service,creds,id})` → readwise PATCH `location:archive`；instapaper `bookmarks/archive`
+- `saveResultToast(result,{serviceLabel,existsOn200})`：結果 → toast 文字（服務感知；Readwise 200=已存在、Instapaper 一律「已送到」）。既有 `readwiseResultToast` 保留（Readwise 專屬）
+
+### Instapaper Full API（`lib/instapaper.js`）
+
+- **認證：OAuth 1.0a + xAuth**。使用者填 email + 密碼 → `POST /api/1/oauth/access_token`（`x_auth_mode=client_auth`）→ 換 OAuth token + secret，之後只存 token、密碼用完即丟。每個請求以 HMAC-SHA1（`crypto.subtle`）簽章（RFC 5849 base string + signing key）。移植自姊妹專案 Shinkansen（送出端已 iOS 實測可行）
+- **送出**：`POST /api/1/bookmarks/add`，`content`=完整 HTML（Instapaper 端跑 readability）、`title`、`description`=Gemini 摘要。不設 `is_private_from_source`（保留原始 source URL 連結）
+- **讀入**：`POST /api/1/bookmarks/list`（`folder_id`=`unread`|`starred`|`archive`，回 bookmark 陣列，正規化 bookmark_id→id、url→source_url、time(epoch)→published_date、hostname→site_name；**無 author / 無縮圖**，UI 端 falsy guard 自動降級）；`POST /api/1/bookmarks/get_text`（回文章 HTML body、無 metadata）；`POST /api/1/bookmarks/archive`
+- **feed 分頁**：`reader-feed.js` `FEED_TABS[service]` 動態建 tab——readwise=Inbox/Later/JRead、instapaper=未讀/已加星/封存。`reader.html` 不再寫死 tab
+- **文章 metadata 傳遞**：feed 卡片連結帶 `article.html?id=<id>&meta=<encodeURIComponent(JSON)>`（兩服務統一）。Instapaper 文章頁用 `meta` 補 byline（get_text 無 metadata）；Readwise 忽略 meta（憑 id 一次拿齊）
+
+### consumer key 打包
+
+- consumer key / secret 存 `lib/instapaper-keys.js`（**gitignored**，含 Safari `Resources/lib` 鏡像路徑）。缺檔（fresh clone / CI / store build 未注入）→ `getInstapaperConsumerKeys()` 回 null → Instapaper 停用（不報錯，Readwise 照常）。測試全走依賴注入不需真 key
+- 開發期借用 Shinkansen consumer key；正式發佈是否含 Instapaper + store build 的 key 注入方式為 open decision
+- client 端 secret 本質不可保密（解 bundle 即得）；「不上公開 repo」只擋 bot 濫用
+- 載入：popup / options / reader / article 頁以 `<script>` 載 `lib/instapaper-keys.js` + `lib/instapaper.js`（popup-core 前）；Chrome SW `importScripts`（keys try/catch 容忍缺檔）
+- **限制**：Firefox / Safari event-page 的 `background.scripts` **不含** instapaper client，故快速鍵送 Instapaper 只在 Chrome 生效（Firefox/Safari event page 回 CONFIG）；popup 送出與讀入各平台皆正常（見 `BUILD.md`）
+
+### iOS
+
+送出端 OAuth `crypto.subtle` Shinkansen 已 iOS 實測可行；讀入端（list / get_text）在 iOS WebKit 未驗，列 `PENDING_REGRESSION.md`。讀入 / 送出一律 extension 頁自己 fetch（沿用 v0.8.65 擴充頁 fetch 可靠路徑）
 
 ## 編輯模式（v0.8.108，v0.8.109 段落提示）
 

@@ -11,6 +11,12 @@
 // / firefox-build.sh 同列同序），importScripts 在該 context 不存在——typeof
 // guard 跳過即可（v0.7.229 教訓：scripts 陣列漏列 = Safari 直接 TypeError）。
 if (typeof importScripts === 'function') {
+  // v1.6.0：Instapaper client + gitignored 金鑰。keys 那行用 try/catch 容忍缺檔
+  //（fresh clone / CI / store build 未注入 → __JReadInstapaper 仍載入、
+  // getInstapaperConsumerKeys 回 null、Instapaper 功能停用，Readwise 照常）。
+  // 須在 popup-core 之前（dispatcher resolveInstapaper 讀 self.__JReadInstapaper）。
+  try { importScripts('/lib/instapaper-keys.js'); } catch (_) { /* 無金鑰檔 */ }
+  importScripts('/lib/instapaper.js');
   importScripts('/popup/popup-core.js');
   importScripts('/content/settings-defaults.js');
 }
@@ -505,47 +511,47 @@ async function sendToReadwiseFromCommand(tabId) {
     return;
   }
 
-  // 3. 送 Readwise（重用 popup-core 既有 buildReadwisePayload + saveToReadwise）
-  // v0.8.36：storage 讀取與 fetch 都包 try/catch——與 popup 軌 SAVE_TO_READWISE
-  // 的 v0.8.15 修法精神一致（保證任何路徑都有 toast 回饋，不留 unhandled
-  // rejection）。command 軌原本這兩步裸跑，reject 時整個 function 無聲死掉。
-  let readwiseToken, readwiseSummary, geminiApiKey;
+  // 3. 送出（v1.6.0：走 popup-core.sendDocument dispatcher，依儲存服務二擇一分派
+  // 到 Readwise / Instapaper；與 popup 軌共用同一條抽象層）。
+  // v0.8.36：storage 讀取與 fetch 都包 try/catch——保證任何路徑都有 toast 回饋。
+  let settings;
   try {
-    ({ readwiseToken, readwiseSummary, geminiApiKey } = await browser.storage.sync.get({
-      readwiseToken: '', readwiseSummary: false, geminiApiKey: ''
-    }));
+    settings = await browser.storage.sync.get({
+      storageService: (DEFAULT_SETTINGS && DEFAULT_SETTINGS.storageService) || 'readwise',
+      readwiseToken: '', instapaperToken: '', instapaperTokenSecret: '',
+      readwiseSummary: false, geminiApiKey: ''
+    });
   } catch {
     showToast('無法讀取設定，請稍後再試', 'error');
     return;
   }
-  const { buildReadwisePayload, saveToReadwise, generateGeminiSummary, readwiseResultToast } = self.__JReadPopup;
-  // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（與 popup 軌一致）。失敗 fallback 照送。
+  const { resolveServiceCredentials, sendDocument, generateGeminiSummary, saveResultToast, serviceLabel } = self.__JReadPopup;
+  const { service, creds, ok } = resolveServiceCredentials(settings);
+  const label = serviceLabel(service);
+  if (!ok) {
+    showToast(`尚未設定 ${label} 憑證，請到設定頁填入`, 'error');
+    return;
+  }
+  // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（兩服務共用）。失敗 fallback 照送。
   const p = extracted.payload || {};
-  if (readwiseSummary && geminiApiKey && p.text) {
+  if (settings.readwiseSummary && settings.geminiApiKey && p.text) {
     try {
       const sum = await generateGeminiSummary({
-        apiKey: geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text
+        apiKey: settings.geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text
       });
       if (sum && sum.ok) p.summary = sum.summary;
     } catch (_) { /* 摘要失敗不阻斷 */ }
   }
-  let body;
-  try {
-    body = buildReadwisePayload(p);
-  } catch (e) {
-    showToast('送出失敗：payload 無效', 'error');
-    return;
-  }
   let result;
   try {
-    result = await saveToReadwise({ token: readwiseToken, payload: body });
+    result = await sendDocument({ service, creds, payload: p });
   } catch {
     showToast('網路錯誤，請稍後再試', 'error');
     return;
   }
 
-  // 4. 結果 toast（v0.8.165：訊息文字對映抽到 popup-core.readwiseResultToast，
-  // 與懸浮按鈕長按選單的 content 端直送軌共用同一份字串，不雙實作）
-  const { message, kind } = readwiseResultToast(result);
+  // 4. 結果 toast（v1.6.0：saveResultToast 服務感知——訊息文字單一資料源，
+  // 與 popup 軌共用；Readwise 200=已存在、Instapaper 一律「已送到」）。
+  const { message, kind } = saveResultToast(result, { serviceLabel: label, existsOn200: service === 'readwise' });
   showToast(message, kind);
 }

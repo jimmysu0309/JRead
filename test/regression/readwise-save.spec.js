@@ -473,13 +473,15 @@ describe('readwise: saveReaderPayload（popup extension-page 直送，v0.8.65）
   });
 
   // forcing function：popup 按鈕必須走 extension-page 直送、不可回退到繞 background
-  it('popup.js 必須用 saveReaderPayload 直送、不得用 runtime.sendMessage 送 SAVE_TO_READWISE', () => {
+  it('popup.js 必須用 sendDocument 直送、不得用 runtime.sendMessage 送 SAVE_TO_READWISE', () => {
     const fs = require('fs');
     const js = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'popup', 'popup.js'), 'utf8'
     );
-    assert.match(js, /saveReaderPayload/,
-      'popup.js 必須呼叫 window.__JReadPopup.saveReaderPayload（extension 頁直送）');
+    // v1.6.0：saveReaderPayload 泛化為 sendDocument dispatcher（服務二擇一），
+    // 仍是「extension 頁自己 fetch、不繞 background」的直送語意。
+    assert.match(js, /sendDocument/,
+      'popup.js 必須呼叫 window.__JReadPopup.sendDocument（extension 頁直送 dispatcher）');
     assert.ok(
       !/sendMessage\(\s*\{\s*[^}]*SAVE_TO_READWISE/.test(js),
       'popup.js 不可用 runtime.sendMessage 送 SAVE_TO_READWISE（iOS 背景頁掛起會 silently 失敗）'

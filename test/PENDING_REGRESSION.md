@@ -18,6 +18,14 @@
 
 <!-- 待辦條目從這裡往下加 -->
 
+## [2026-07-02] Instapaper 讀入端 iOS Safari 真機驗證（v1.6.0）
+- 觸發頁面：擴充自有頁 `reader/reader.html`（feed，Instapaper 未讀/已加星/封存分頁）+ `reader/article.html?id=<id>&meta=…`（get_text 單篇），iOS / iPadOS Safari
+- 症狀（尚未驗）：Instapaper 讀入端（`bookmarks/list` + `get_text` + `archive`）在 iOS WebKit 從未跑過。**Chromium 已用 standalone probe 實證全 PASS**：服務切換、動態 folder 分頁（未讀/已加星/封存）、list 正規化成共同 shape、meta 經 URL 帶入文章頁補 byline、get_text HTML 套 JRead styler（active:true）、樂觀封存。送出端（`bookmarks/add`）的 OAuth 簽章 Shinkansen 已在 iOS 實測可行、風險低。
+- 推測根因：無（Chromium 正常，純缺 iOS WebKit + 真實 Instapaper API 覆驗）
+- 未補 spec 原因：需 Jimmy 真機 Instapaper 帳號 + 已連結 token + 網路；jsdom / Chromium 模擬不到 WebKit + iOS 訊息層 + 真實 Full API 限流 / `get_text` 是否限訂閱戶。所有讀入 fetch 走 extension 頁自己發（沿用 v0.8.65 擴充頁 fetch 可靠路徑），無新平台機制。
+- 待驗清單：options 選 Instapaper → email/密碼連結成功 → popup「送到 Instapaper」存一篇（查帳號含摘要 description）→ 進 Reader → 三分頁列出 → 點卡片 get_text 渲染 + 套版 → 封存鈕樂觀移除。快速鍵送 Instapaper 在 iOS Safari event page 為 CONFIG 降級（見 BUILD.md，popup 送出正常）
+- 責任人/目標日期：Jimmy 下次 TestFlight 驗收
+
 ## [2026-06-27] Reader 整合 iOS Safari 真機驗證（v1.0.22；v1.0.23 feed 空白硬化待驗）
 - 觸發頁面：擴充自有頁 `reader/reader.html`（feed）+ `reader/article.html?id=<docId>`（文章），iOS / iPadOS Safari Web Extension
 - **v1.0.23 進展**：Jimmy 2026-06-27 真機回報「iOS 進入 Reader 開出新分頁但空白、沒顯示 feed」。已硬化讓 feed 頁不再靜默空白——下個 TestFlight build 看**頁面顯示什麼訊息**即可定位失敗層：「載入中…」卡住不動＝scripts 沒跑完 / fetch hang；「初始化失敗（缺少 …）」＝模組沒載；「載入失敗：…」＝list fetch reject；「尚未設定 Readwise token…」＝storage 沒讀到 token；仍全白＝scripts 根本沒執行（CSP / WAR / 載入錯誤，需 Safari Web Inspector 連線看 console）。WAR 已補 reader 頁（但 options.html 不在 WAR 也能開，WAR 未必是根因）。**請 Jimmy 裝 v1.0.23 後回報看到的訊息**，據此再修真正失敗點。
