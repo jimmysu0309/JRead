@@ -36,7 +36,7 @@ JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**�
 ### 稍後閱讀服務整合
 
 - **Readwise Reader 或 Instapaper（二擇一）**：在進階設定選定服務後，可把 JRead 處理過的乾淨主文一鍵送出，繞過原站解析問題；Instapaper 走官方 Full API（xAuth，填一次 email／密碼換存取權杖，密碼用完即丟），Readwise 走 access token
-- **進入 Reader**：直接在新分頁列出所選服務的最新文章，點進去用 JRead 原本的閱讀版型呈現，主題／字型／字級／翻頁全部沿用同一套控制，也會記住閱讀位置；每篇可一鍵封存。頂端分頁依服務切換：Readwise 為 Inbox／Later／JRead（標記 `jread` 的文章），Instapaper 為未讀／已加星／封存
+- **進入 Reader**：直接在新分頁列出所選服務的最新文章，點進去用 JRead 原本的閱讀版型呈現，主題／字型／字級／翻頁全部沿用同一套控制，也會記住閱讀位置；每篇可一鍵封存。頂端分頁依服務切換：Readwise 為 Inbox／Later／JRead（在 Readwise 標記為 JRead 的文章），Instapaper 為未讀／已加星／封存
 - **送出摘要**：選用 Google Gemini Flash Lite，在送出時一併產生文章摘要（Readwise 取代其內建英文摘要、Instapaper 放進項目描述），需在設定填入自己的 Gemini API key，兩個服務共用此設定
 
 ### 操作方式

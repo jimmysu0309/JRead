@@ -416,19 +416,19 @@
       <div class="btn-row">
         <a class="btn-download disabled" aria-disabled="true">
           <span data-i18n="btn.cws.text">Chrome Web Store</span>
-          <span class="btn-version">v<!-- version-start -->1.0.0<!-- version-end --> · <span data-i18n="btn.cws.status">即將上架</span></span>
+          <span class="btn-version">v<!-- version-start -->1.6.1<!-- version-end --> · <span data-i18n="btn.cws.status">即將上架</span></span>
         </a>
         <a href="https://github.com/jimmysu0309/JRead/releases" class="btn-download">
           <span data-i18n="btn.github.text">從 GitHub 下載手動安裝</span>
-          <span class="btn-version">v1.0.0 · <span data-i18n="btn.github.status">Chrome 載入未封裝</span></span>
+          <span class="btn-version">v1.6.1 · <span data-i18n="btn.github.status">Chrome 載入未封裝</span></span>
         </a>
         <a href="https://github.com/jimmysu0309/JRead/releases" class="btn-download secondary">
           <span data-i18n="btn.firefox.text">Firefox 手動安裝</span>
-          <span class="btn-version">v1.0.0 · <span data-i18n="btn.firefox.status">GitHub 下載</span></span>
+          <span class="btn-version">v1.6.1 · <span data-i18n="btn.firefox.status">GitHub 下載</span></span>
         </a>
         <a href="mailto:jimmy.zm.su@gmail.com?subject=JRead%20TestFlight%20invite" class="btn-download secondary">
           <span data-i18n="btn.ios.text">iOS / iPadOS / macOS（TestFlight）</span>
-          <span class="btn-version">v1.0.0 · <span data-i18n="btn.ios.status">邀請制 beta</span></span>
+          <span class="btn-version">v1.6.1 · <span data-i18n="btn.ios.status">邀請制 beta</span></span>
         </a>
       </div>
       <p class="hero-sub" data-i18n="hero.sub">開放原始碼 · <a href="https://github.com/jimmysu0309/JRead#readme">使用說明</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">更新紀錄</a> · <a href="https://github.com/jimmysu0309/JRead">GitHub</a></p>
@@ -440,9 +440,9 @@
     <div class="container">
       <h2 data-i18n="recent.heading">近期重大更新</h2>
       <ul class="recent-updates">
-        <li data-i18n="recent.v1"><strong>v1.0.0 釋出</strong>：主要功能穩定，主文偵測、雜訊清除、排版與翻頁體驗全面打磨</li>
-        <li data-i18n="recent.floating">新增<strong>懸浮按鈕</strong>：頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換位置</li>
-        <li data-i18n="recent.editmode">新增<strong>編輯模式</strong>：cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原</li>
+        <li data-i18n="recent.v1">新增 <strong>Instapaper</strong>：稍後閱讀服務可在 Readwise Reader 與 Instapaper 之間二擇一，送出、摘要、讀入完整一致</li>
+        <li data-i18n="recent.floating">新增 <strong>進入 Reader</strong>：在 JRead 內直接讀取所選服務的最新文章，沿用同一套主題 / 字型 / 翻頁閱讀版型</li>
+        <li data-i18n="recent.editmode">新增 <strong>懸浮按鈕</strong>：頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換到左右緣與上下位置</li>
       </ul>
     </div>
   </section>
@@ -457,7 +457,7 @@
         <div class="privacy-point" data-i18n="privacy.point1"><strong>全本機處理</strong>：主文偵測、雜訊清除、排版全部在你的瀏覽器跑，頁面內容不上傳任何伺服器</div>
         <div class="privacy-point" data-i18n="privacy.point2"><strong>設定留在本地</strong>：偏好只存在你的瀏覽器，跨裝置同步走瀏覽器內建機制，不經第三方</div>
         <div class="privacy-point" data-i18n="privacy.point3"><strong>開放原始碼</strong>：程式碼完全公開，任何人都能檢視，確認沒有後門</div>
-        <div class="privacy-point" data-i18n="privacy.point4"><strong>選用整合才連網</strong>：只有你主動送到 Readwise 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key</div>
+        <div class="privacy-point" data-i18n="privacy.point4"><strong>選用整合才連網</strong>：只有你主動送到 Readwise / Instapaper 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key</div>
       </div>
     </div>
   </div>
@@ -534,15 +534,15 @@
         </div>
         <div class="feature">
           <h3 data-i18n="feature.edit.title">編輯模式</h3>
-          <p data-i18n="feature.edit.body">cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原或 Cmd/Ctrl+Z</p>
+          <p data-i18n="feature.edit.body">cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原或 Cmd/Ctrl+Z；讓文章在列印或送稍後閱讀服務時更乾淨</p>
         </div>
         <div class="feature">
           <h3 data-i18n="feature.focus.title">段落焦點捲動</h3>
-          <p data-i18n="feature.focus.body">左側指示條標記目前段落，按 Space 跳下一段、低於門檻自動平滑捲回，仿 Readwise Reader</p>
+          <p data-i18n="feature.focus.body">捲動模式下左側指示條標記目前段落，按 Space 跳下一段、低於門檻自動平滑捲回，仿 Readwise Reader</p>
         </div>
         <div class="feature">
           <h3 data-i18n="feature.paged.title">翻頁模式</h3>
-          <p data-i18n="feature.paged.body">像電子書一樣左右翻頁——手機滑動、桌面方向鍵或滾輪，底部頁碼可當快速捲動器</p>
+          <p data-i18n="feature.paged.body">捲動 / 翻頁二選一：翻頁像電子書一樣左右翻頁——手機滑動、桌面方向鍵或滾輪，底部頁碼可當快速捲動器</p>
         </div>
         <div class="feature">
           <h3 data-i18n="feature.floating.title">懸浮按鈕</h3>
@@ -553,12 +553,16 @@
           <p data-i18n="feature.resume.body">看到一半離開，效期內重新進入閱讀模式自動回到上次位置——捲動模式記段落、翻頁模式記頁數</p>
         </div>
         <div class="feature">
-          <h3 data-i18n="feature.readwise.title">送到 Readwise Reader</h3>
-          <p data-i18n="feature.readwise.body">把處理過的乾淨主文一鍵送進 Readwise，繞過原站 parser 問題；可選用 Gemini 自動產生摘要</p>
+          <h3 data-i18n="feature.readwise.title">送到稍後閱讀服務</h3>
+          <p data-i18n="feature.readwise.body">把處理過的乾淨主文一鍵送進 Readwise Reader 或 Instapaper（二擇一），繞過原站 parser 問題；可選用 Gemini 自動產生摘要</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.reader.title">進入 Reader</h3>
+          <p data-i18n="feature.reader.body">在新分頁列出所選服務的最新文章，點進去用 JRead 的閱讀版型呈現，主題 / 字型 / 字級 / 翻頁全部沿用，也記住閱讀位置</p>
         </div>
         <div class="feature">
           <h3 data-i18n="feature.shortcuts.title">自訂快速鍵</h3>
-          <p data-i18n="feature.shortcuts.body">可為切換閱讀模式 / 送 Readwise / YouTube 無邊模式錄製自訂組合鍵，Chrome 與 Safari 皆通用</p>
+          <p data-i18n="feature.shortcuts.body">可為切換閱讀模式 / 送到稍後閱讀服務 / YouTube 無邊模式錄製自訂組合鍵，Chrome 與 Safari 皆通用</p>
         </div>
       </div>
     </div>
@@ -630,9 +634,9 @@
           'hero.sub': '開放原始碼 · <a href="https://github.com/jimmysu0309/JRead#readme">使用說明</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">更新紀錄</a> · <a href="https://github.com/jimmysu0309/JRead">GitHub</a>',
 
           'recent.heading': '近期重大更新',
-          'recent.v1': '<strong>v1.0.0 釋出</strong>：主要功能穩定，主文偵測、雜訊清除、排版與翻頁體驗全面打磨',
-          'recent.floating': '新增<strong>懸浮按鈕</strong>：頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換位置',
-          'recent.editmode': '新增<strong>編輯模式</strong>：cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原',
+          'recent.v1': '新增 <strong>Instapaper</strong>：稍後閱讀服務可在 Readwise Reader 與 Instapaper 之間二擇一，送出、摘要、讀入完整一致',
+          'recent.floating': '新增 <strong>進入 Reader</strong>：在 JRead 內直接讀取所選服務的最新文章，沿用同一套主題 / 字型 / 翻頁閱讀版型',
+          'recent.editmode': '新增 <strong>懸浮按鈕</strong>：頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換到左右緣與上下位置',
 
           'privacy.heading': '為什麼做 JRead？',
           'privacy.intro1': '不少閱讀器會把你開啟的文章送到自家伺服器處理。JRead 的做法相反，所有處理都留在你的瀏覽器',
@@ -640,7 +644,7 @@
           'privacy.point1': '<strong>全本機處理</strong>：主文偵測、雜訊清除、排版全部在你的瀏覽器跑，頁面內容不上傳任何伺服器',
           'privacy.point2': '<strong>設定留在本地</strong>：偏好只存在你的瀏覽器，跨裝置同步走瀏覽器內建機制，不經第三方',
           'privacy.point3': '<strong>開放原始碼</strong>：程式碼完全公開，任何人都能檢視，確認沒有後門',
-          'privacy.point4': '<strong>選用整合才連網</strong>：只有你主動送到 Readwise 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key',
+          'privacy.point4': '<strong>選用整合才連網</strong>：只有你主動送到 Readwise / Instapaper 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key',
 
           'compare.before': '啟動前',
           'compare.after': 'JRead 啟動後',
@@ -658,19 +662,21 @@
           'feature.clean.title': '雜訊隱藏',
           'feature.clean.body': '廣告、sticky header、彈窗、相關文章列表通通清掉，全是結構通則、非站點特判',
           'feature.edit.title': '編輯模式',
-          'feature.edit.body': 'cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原或 Cmd/Ctrl+Z',
+          'feature.edit.body': 'cleaner 漏掉的雜訊段落以虛線框標出，點一下即移除，誤刪可復原或 Cmd/Ctrl+Z；讓文章在列印或送稍後閱讀服務時更乾淨',
           'feature.focus.title': '段落焦點捲動',
-          'feature.focus.body': '左側指示條標記目前段落，按 Space 跳下一段、低於門檻自動平滑捲回，仿 Readwise Reader',
+          'feature.focus.body': '捲動模式下左側指示條標記目前段落，按 Space 跳下一段、低於門檻自動平滑捲回，仿 Readwise Reader',
           'feature.paged.title': '翻頁模式',
-          'feature.paged.body': '像電子書一樣左右翻頁——手機滑動、桌面方向鍵或滾輪，底部頁碼可當快速捲動器',
+          'feature.paged.body': '捲動 / 翻頁二選一：翻頁像電子書一樣左右翻頁——手機滑動、桌面方向鍵或滾輪，底部頁碼可當快速捲動器',
           'feature.floating.title': '懸浮按鈕',
           'feature.floating.body': '頁面邊緣常駐小圖示，短按切換閱讀模式、長按開選單、可拖曳換到左右緣與上下位置',
           'feature.resume.title': '閱讀位置記憶',
           'feature.resume.body': '看到一半離開，效期內重新進入閱讀模式自動回到上次位置——捲動模式記段落、翻頁模式記頁數',
-          'feature.readwise.title': '送到 Readwise Reader',
-          'feature.readwise.body': '把處理過的乾淨主文一鍵送進 Readwise，繞過原站 parser 問題；可選用 Gemini 自動產生摘要',
+          'feature.readwise.title': '送到稍後閱讀服務',
+          'feature.readwise.body': '把處理過的乾淨主文一鍵送進 Readwise Reader 或 Instapaper（二擇一），繞過原站 parser 問題；可選用 Gemini 自動產生摘要',
+          'feature.reader.title': '進入 Reader',
+          'feature.reader.body': '在新分頁列出所選服務的最新文章，點進去用 JRead 的閱讀版型呈現，主題 / 字型 / 字級 / 翻頁全部沿用，也記住閱讀位置',
           'feature.shortcuts.title': '自訂快速鍵',
-          'feature.shortcuts.body': '可為切換閱讀模式 / 送 Readwise / YouTube 無邊模式錄製自訂組合鍵，Chrome 與 Safari 皆通用',
+          'feature.shortcuts.body': '可為切換閱讀模式 / 送到稍後閱讀服務 / YouTube 無邊模式錄製自訂組合鍵，Chrome 與 Safari 皆通用',
 
           'install.heading': '三步驟，開始乾淨閱讀',
           'install.step1.title': '下載並載入',
@@ -702,9 +708,9 @@
           'hero.sub': 'Open source · <a href="https://github.com/jimmysu0309/JRead#readme">Documentation</a> · <a href="https://github.com/jimmysu0309/JRead/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/jimmysu0309/JRead">GitHub</a>',
 
           'recent.heading': 'Recent major updates',
-          'recent.v1': '<strong>v1.0.0 released</strong> — core features are stable: article detection, noise removal, typography and page-flip reading all polished.',
-          'recent.floating': 'Added a <strong>floating button</strong> — a small icon pinned to the page edge: tap to toggle reading mode, long-press for the menu, drag to reposition.',
-          'recent.editmode': 'Added <strong>edit mode</strong> — noise the cleaner missed is outlined with a dashed box; tap to remove, and undo if you tap the wrong thing.',
+          'recent.v1': '<strong>Instapaper support</strong> — the read-later service can now be either Readwise Reader or Instapaper: sending, summaries and in-app reading all work the same way.',
+          'recent.floating': '<strong>Enter Reader</strong> — read your chosen service\'s latest articles right inside JRead, in the same theme / font / paging layout.',
+          'recent.editmode': '<strong>Floating button</strong> — a small icon pinned to the page edge: tap to toggle reading mode, long-press for the menu, drag to any edge or corner.',
 
           'privacy.heading': 'Why JRead?',
           'privacy.intro1': 'Many reader tools send the articles you open to their own servers for processing. JRead does the opposite — everything stays in your browser.',
@@ -712,7 +718,7 @@
           'privacy.point1': '<strong>Fully local</strong>: detection, cleanup and typography all run in your browser — page content is never uploaded to any server.',
           'privacy.point2': "<strong>Settings stay local</strong>: preferences live in your own browser; cross-device sync uses the browser's built-in mechanism, no third party.",
           'privacy.point3': "<strong>Open source</strong>: the code is fully public — anyone can inspect it and verify there's no backdoor.",
-          'privacy.point4': '<strong>Network only when you opt in</strong>: it only reaches out when you send to Readwise or enable Gemini summaries — using your own account and API key.',
+          'privacy.point4': '<strong>Network only when you opt in</strong>: it only reaches out when you send to Readwise / Instapaper or enable Gemini summaries — using your own account and API key.',
 
           'compare.before': 'Before',
           'compare.after': 'After JRead',
@@ -730,19 +736,21 @@
           'feature.clean.title': 'Noise removal',
           'feature.clean.body': 'Ads, sticky headers, popups and related-article rails all removed — by structural rules, never per-site hacks.',
           'feature.edit.title': 'Edit mode',
-          'feature.edit.body': 'Noise the cleaner missed is outlined with a dashed box; tap to remove, undo with the button or Cmd/Ctrl+Z.',
+          'feature.edit.body': 'Noise the cleaner missed is outlined with a dashed box; tap to remove, undo with the button or Cmd/Ctrl+Z — for a cleaner printout or read-later export.',
           'feature.focus.title': 'Paragraph focus scroll',
-          'feature.focus.body': 'A side rail marks the current paragraph; press Space to jump to the next, with smooth scroll-back — Readwise Reader style.',
+          'feature.focus.body': 'In scroll mode, a side rail marks the current paragraph; press Space to jump to the next, with smooth scroll-back — Readwise Reader style.',
           'feature.paged.title': 'Page-flip mode',
-          'feature.paged.body': 'Flip left/right like an e-book — swipe on mobile, arrow keys or wheel on desktop; the page number doubles as a fast scrubber.',
+          'feature.paged.body': 'Scroll or paged — your choice. Paged flips left/right like an e-book: swipe on mobile, arrow keys or wheel on desktop; the page number doubles as a fast scrubber.',
           'feature.floating.title': 'Floating button',
           'feature.floating.body': 'A small icon pinned to the page edge: tap to toggle reading mode, long-press for the menu, drag to any edge or corner.',
           'feature.resume.title': 'Resume reading position',
           'feature.resume.body': 'Leave mid-article and re-enter reading mode to pick up where you left off — by paragraph in scroll mode, by page in flip mode.',
-          'feature.readwise.title': 'Send to Readwise Reader',
-          'feature.readwise.body': 'Push the cleaned article straight into Readwise, bypassing the original site\'s parser; optional Gemini auto-summary.',
+          'feature.readwise.title': 'Send to a read-later service',
+          'feature.readwise.body': 'Push the cleaned article straight into Readwise Reader or Instapaper (your choice), bypassing the original site\'s parser; optional Gemini auto-summary.',
+          'feature.reader.title': 'Enter Reader',
+          'feature.reader.body': 'List your chosen service\'s latest articles in a new tab and open them in JRead\'s reading layout — same theme / font / size / paging, and it remembers your position.',
           'feature.shortcuts.title': 'Custom shortcuts',
-          'feature.shortcuts.body': 'Record your own key combos for toggle reading mode / send to Readwise / YouTube borderless — works in Chrome and Safari.',
+          'feature.shortcuts.body': 'Record your own key combos for toggle reading mode / send to a read-later service / YouTube borderless — works in Chrome and Safari.',
 
           'install.heading': 'Three steps to clean reading',
           'install.step1.title': 'Download and load',

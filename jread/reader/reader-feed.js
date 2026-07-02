@@ -20,6 +20,9 @@
     readwise: [
       { id: 'new',   label: 'Inbox', query: { location: 'new' },   empty: '收件匣目前沒有文章' },
       { id: 'later', label: 'Later', query: { location: 'later' }, empty: 'Later 目前沒有文章' },
+      // tag 必須小寫：Readwise 每條 tag 存 key（小寫正規化，API filter 比對此值）+
+      // name（顯示大小寫，如 'JRead'）；filter 走 key，故此處固定 'jread'——寫 'JRead'
+      // 會匹配不到而撈空（2026-07-02 real-account reader_list_tags 實證 key=jread/name=JRead）。
       { id: 'jread', label: 'JRead', query: { tag: 'jread' },      empty: '沒有標記 jread 的文章' }
     ],
     instapaper: [
