@@ -2717,6 +2717,16 @@
   // 剝掉 chip 間分隔符後若整段剛好**只是** tag label（非敘述）就放行敘述 guard。
   // 錨定 `^…$` 確保只放行純 label，narrative 段落（含 label 起手 + 後續敘述）不命中。
   const TAG_LABEL_RE = /^(see\s+more\s+(on|about|from)|more\s+(on|from|about)|filed\s+under|related\s+topics?|topics?|tags?|labels?|categor(?:y|ies)|explore\s+(more\s+)?(on|about)|in\s+this\s+(article|story))$/i;
+  // v1.6.3：TAG_LABEL_RE 是英文白名單，Shinkansen 翻譯後 label 變中文（Google MT
+  // 把「See more on」譯成「看更多 / 更多主題 / 更多關於 / 參見」等不定字串），英文
+  // rule 全 miss、中文 heading regex 只湊巧命中「看更多 / 查看更多」等少數詞——tag 列
+  // 翻譯後漏網（Jimmy 2026-07-02 NYT translate-first 實測，「更多主題」類譯法逃過兩條
+  // 文字 path）。翻譯無關的純結構訊號＝anchor href：taxonomy 連結（/topic/ /tag/ …）
+  // 不隨翻譯改。故補「**全部** anchor 皆 taxonomy chip（hashtagHits === anchors.length）
+  // + 自身 label 文字夠短」時豁免敘述 guard，不看 label 語言。label 長度上限防「短敘述
+  // + 3 個剛好都 taxonomy 的連結」誤殺（純 tag label 通常 <= 8 CJK 字；敘述句更長 or
+  // 走 <p> 被 hasMainBlock guard 擋）。
+  const TAG_LABEL_MAX_LEN = 16;
   // 單一 element 是否為 taxonomy / tag-chip 列（靜態 sweep 與動態 observer 單一資料源）。
   // 命中回傳該 el（呼叫端 hide），否則 null。
   function hashtagClusterHideTarget(el, articleEl) {
@@ -2750,8 +2760,13 @@
       .filter(n => n.nodeType === 3)
       .map(n => n.textContent).join(''));
     // v1.6.2：剝分隔符後若整段是 tag label（見 TAG_LABEL_RE）就豁免敘述文字 guard。
+    // v1.6.3：或「全 anchor 皆 taxonomy chip + label 夠短」（翻譯無關結構訊號，見
+    // TAG_LABEL_MAX_LEN 註解）——涵蓋 Shinkansen 翻譯後 label 變任意語言的情況。
     const directTextSansSep = directText.replace(/[,:;|·•/、，；：]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!TAG_LABEL_RE.test(directTextSansSep) && directText.length > HASHTAG_NARRATIVE_TEXT_MAX) return null;
+    const allTaxonomyChips = hashtagHits === anchors.length;
+    const labelExempt = TAG_LABEL_RE.test(directTextSansSep) ||
+      (allTaxonomyChips && directTextSansSep.length <= TAG_LABEL_MAX_LEN);
+    if (!labelExempt && directText.length > HASHTAG_NARRATIVE_TEXT_MAX) return null;
     // 主文 guard：el 內若有任一非 anchor 的長 text block（p / h* / li /
     // blockquote 自身 textContent >= 50 字），代表 el 是含主文的 wrapper、
     // 非純 tag cluster。skip。

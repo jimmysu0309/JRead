@@ -20,6 +20,7 @@ const assert = require('assert');
 const { loadFixtureWithScripts } = require('../helpers');
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'nyt-see-more-on-tag-label.html');
+const FIXTURE_TRANSLATED_PATH = path.join(__dirname, 'fixtures', 'nyt-see-more-on-tag-label-translated.html');
 
 function isHiddenOrAncestorHidden(el) {
   let cur = el;
@@ -81,5 +82,55 @@ describe('cleaner — NYT 文末 See more on tag 列（v1.6.2 tag-label 前綴�
     for (const p of ps) {
       assert.ok(!isHiddenOrAncestorHidden(p), `主文段落「${p.textContent.slice(0, 14)}…」必須保留`);
     }
+  });
+});
+
+// v1.6.3：Shinkansen 翻譯後 label 變中文「更多主題：」——既不在英文 TAG_LABEL_RE、
+// 也不在中文 NOISE_HEADING_TEXT_RE，靠翻譯無關的「全 anchor taxonomy + 短 label」
+// 結構 path 命中。tag anchor href 仍全指 /topic/（翻譯不改 href）。
+describe('cleaner — NYT 文末 tag 列翻譯後 label 變中文（v1.6.3 全 taxonomy + 短 label 結構豁免）', () => {
+  let document;
+
+  before(() => {
+    const env = loadFixtureWithScripts({
+      fixturePath: FIXTURE_TRANSLATED_PATH,
+      scripts: ['detector', 'cleaner'],
+      pretendToBeVisual: true
+    });
+    document = env.document;
+    const detected = env.window.__JRead.detector.detect();
+    assert.ok(detected && detected.el, 'detector 應命中 fixture 主文容器');
+    env.window.__JRead.cleaner.clean(detected.el);
+  });
+
+  it('前置：label「更多主題」不在任一文字 regex（確認走純結構 path）', () => {
+    const TAG_LABEL_RE = /^(see\s+more\s+(on|about|from)|more\s+(on|from|about)|filed\s+under|related\s+topics?|topics?|tags?|labels?|categor(?:y|ies)|explore\s+(more\s+)?(on|about)|in\s+this\s+(article|story))$/i;
+    assert.ok(!TAG_LABEL_RE.test('更多主題'), '「更多主題」不可命中英文 TAG_LABEL_RE（否則非結構 path 驗證）');
+    const tags = document.querySelector('.css-tags');
+    const anchors = Array.from(tags.querySelectorAll('a'));
+    assert.strictEqual(anchors.length, 3, 'tag 列應有 3 個 anchor');
+    assert.ok(anchors.every(a => /^\/topic\//.test(a.getAttribute('href') || '')),
+      '所有 tag chip 的 href 都仍指 /topic/（翻譯不改 href）');
+  });
+
+  it('核心：翻譯後「更多主題」tag 列被 hide', () => {
+    const tags = document.querySelector('.css-tags');
+    assert.ok(isHiddenOrAncestorHidden(tags),
+      '.css-tags（更多主題：3 個 /topic/ tag chip）必須被全-taxonomy 結構 path hide');
+  });
+
+  // 註：作者簡介在翻譯後（CJK bio 段落 < 50 字 Latin 門檻）會被 link-block 規則
+  // 連坐 hide——與本結構 tag path 無關的獨立議題（raw length 門檻按拉丁校準、遇短
+  // 中文誤殺，見 memory cjk-short-title-length-threshold）。bio 保留由英文 fixture
+  // 驗證（Jimmy 決定保留、英文情境）；此處只驗結構 tag path 不誤殺主文。
+
+  it('核心不誤殺：tag 列命中不連坐主文（tag 列 hide 但主文段落保留）', () => {
+    const ps = Array.from(document.querySelectorAll('.css-body > p'));
+    assert.strictEqual(ps.length, 3, 'fixture 有三段主文 p');
+    for (const p of ps) {
+      assert.ok(!isHiddenOrAncestorHidden(p), `主文段落「${p.textContent.slice(0, 14)}…」必須保留`);
+    }
+    const h1 = document.querySelector('h1');
+    assert.ok(h1 && !isHiddenOrAncestorHidden(h1), 'h1 主標題保留');
   });
 });

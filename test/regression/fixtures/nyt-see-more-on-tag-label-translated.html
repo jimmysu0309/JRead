@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><title>耗資 25 億美元的偵探小說</title></head>
+<body>
+<!--
+  最小重現：NYT 文末 taxonomy tag 列經 Shinkansen 翻譯後 label 變中文（Jimmy
+  2026-07-02 translate-first 實測）。label 這裡刻意用「更多主題：」——**既不在**英文
+  TAG_LABEL_RE、**也不在**中文 NOISE_HEADING_TEXT_RE（Google MT 常見譯法「看更多 /
+  查看更多」湊巧在 heading regex 內、但「更多主題 / 更多關於 / 參見」等逃過），forcing
+  翻譯無關的結構 path。
+  tag 列 3 個 anchor 的 href 仍全指 /topic/（翻譯不改 href），只有可見文字被譯成中文。
+  修法（v1.6.3）：全 anchor 皆 taxonomy chip + label 夠短 → 豁免敘述文字 guard，不看
+  label 語言。作者簡介 anchor 連 /by/（非 taxonomy）→ hashtagHits 0 → 不命中、保留。
+-->
+<main>
+  <article id="story">
+    <h1>耗資 25 億美元的偵探小說：削弱英國經濟的駭客攻擊</h1>
+    <section class="meteredContent">
+      <div class="css-body">
+        <p>去年，駭客潛入捷豹路虎的電腦系統，引發一連串事件，在接下來的數月間衝擊了整個英國經濟，據熟悉此次入侵調查的人士表示。</p>
+        <p>攻擊者警告捷豹路虎不要尋求英國當局的協助，並表示會在七十二小時內再度聯繫。該公司無視警告，反而邀請英國調查人員與其他人進入其位於中部地區的作戰室。</p>
+        <p>要判定俄羅斯政府是否指使該駭客組織破壞捷豹路虎、或只是默許，是一件困難但並非不可能的工作，根據先前發表的<a href="/2024/story/evil-corp">一份關於 Evil Corp 的報告</a>。</p>
+      </div>
+    </section>
+    <div class="css-outer">
+      <div class="bottom-of-article">
+        <!-- 作者簡介 <p> 刻意寫足 >= 50 字：讓 hasMainBlock guard 保護外層 wrapper，
+             隔離出 .css-tags 交給結構 tag path 單獨處理（否則短 CJK bio 會讓外層走
+             tagBarPass 連坐 hide，掩蓋本 fixture 要 forcing 的結構豁免）。 -->
+        <div class="css-bios">
+          <div class="css-bio"><p><a href="/by/adam-goldman">Adam Goldman</a> 是《紐約時報》一名常駐倫敦的記者，長期撰寫全球安全與情報相關議題，涵蓋跨國網路犯罪與國家級駭客行動的深度調查報導。</p></div>
+          <div class="css-bio"><p><a href="/by/jane-bradley">Jane Bradley</a> 是國際新聞組的調查記者，常駐倫敦，長期關注權力濫用、國家安全與各類社會不公事件，並參與多起跨國調查專題。</p></div>
+          <div class="css-bio"><p><a href="/by/dustin-volz">Dustin Volz</a> 為《紐約時報》撰寫網路安全與情報領域的報導，常駐華盛頓，長期追蹤政府與企業之間關於資安與監控政策的角力。</p></div>
+          <div class="css-bio"><p><a href="/by/michael-schwirtz">Michael Schwirtz</a> 是《紐約時報》的全球情報特派員，常駐倫敦，長期報導俄羅斯情報機構與國際間諜活動的相關新聞與調查。</p></div>
+        </div>
+        <div class="css-tags" style="margin-top: 16px;">更多主題：<a href="/topic/organizations/jaguar-land-rover-ltd">捷豹路虎</a>、<a href="/topic/organizations/federal-bureau-of-investigation">聯邦調查局</a>、<a href="/topic/organizations/microsoft-corp">微軟公司</a></div>
+      </div>
+    </div>
+  </article>
+</main>
+</body>
+</html>
