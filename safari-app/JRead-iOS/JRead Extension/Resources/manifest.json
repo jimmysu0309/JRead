@@ -13,7 +13,12 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background/service-worker.js"
+    "scripts": [
+      "popup/popup-core.js",
+      "content/settings-defaults.js",
+      "background/service-worker.js"
+    ],
+    "persistent": false
   },
   "browser_specific_settings": {
     "gecko": {
