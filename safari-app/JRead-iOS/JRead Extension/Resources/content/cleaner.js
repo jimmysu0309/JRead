@@ -811,7 +811,16 @@
     if (!total) return false;
     let linkText = 0;
     for (const a of links) linkText += norm(a.textContent).length;
-    return linkText / total >= 0.5;
+    if (linkText / total >= 0.5) return true;
+    // v1.6.5：縮圖卡片式推薦 feed——teaser 標題 / 圖說常在 <a> 外（NYT 文末「Related
+    // Content / 編輯精選」lazy feed 實測：link 文字占比僅 0.31、25 連結 + 22 縮圖、
+    // 無任一 >= 100 字長段落），純看 link 文字占比會漏、只 hide 得掉 heading。補媒體
+    // 訊號：無長段落（上方 gate 已確認）+ 大量縮圖卡（img/picture >= 3 且 link >= 5）
+    // = 卡片 feed、非主文。安全性：本函式只在 resolveHeadingNoiseTarget 的 tooWide 判定
+    // 內呼叫（前提已命中 recirculation noise heading 如「Related Content」），真主文區塊
+    // 不帶此類 heading、且有長段落會被上方 gate 擋，photo essay 主文也不會命中。
+    const mediaCount = el.querySelectorAll('img, picture').length;
+    return mediaCount >= 3 && links.length >= 5;
   }
 
   // 行內強調 ≠ section heading（v0.8.169 stratechery 修法）：strong/em/b/span
@@ -2563,6 +2572,15 @@
       if (h.closest('button')) continue;
       // 行內強調 ≠ section heading（v0.8.169 stratechery 修法、靜態+動態單一資料源）
       if (isInlineEmphasisInProse(h)) continue;
+      // v1.6.4：heading 本身即 taxonomy tag chip 列（Shinkansen 翻譯後 tag label 如
+      // 「看更多 / 更多主題」命中 heading regex）→ 該列自身即自足雜訊，hide 它就好、
+      // **不 walk-up**。否則 resolveHeadingNoiseTarget 的 walk-up 會爬出這個小 tag 列、
+      // 把含作者簡介的共用外層 wrapper（NYT `.bottom-of-article` 上層）整塊誤殺——翻譯後
+      // 短中文 bio 段落達不到 wrapperContainsMainContentP 的 raw 100/300 門檻、被判「無主文
+      // safe wrapper」（Jimmy 2026-07-02 cage instrument 揪出的作者簡介消失真兇）。tag 列
+      // 判定走 hashtagClusterHideTarget（anchor 全 taxonomy href、與 label 語言無關），故
+      // 翻譯成任何語言都命中；非 tag 列的一般 noise heading（<3 anchor）回 null、照常 walk-up。
+      if (hashtagClusterHideTarget(h, articleEl)) { hide(h, hidden); continue; }
       // C5（v0.8.22）：target 解析 + hide 收斂到 resolveHeadingNoiseTarget
       // （含 closest('section,aside') → tooWide → walk-up fallback → tail-cleanup
       // / 最後防線 hide(h)）。與 checkDynamicNoise 單一資料源，消雙實作 drift。
@@ -2710,58 +2728,87 @@
   // guard（>=3 短 anchor + 無主文長段落 + 無媒體 + 無 <time>）防單一 /search/
   // 連結誤殺。注意 `search(?:es)?` 不可寫成 `searches?`（後者要 "searche"）。
   const TAXONOMY_HREF_RE = /\/(tags?|categor(?:y|ies)|topics?|labels?|search(?:es)?)(\/|$|#|\?)/i;
+  // v1.6.2：tag chip 列常帶 label 前綴（「See more on:」「Filed under」「Topics」
+  // 等 CMS 慣例）。label 文字會超過 HASHTAG_NARRATIVE_TEXT_MAX 被敘述文字 guard
+  // 誤擋——NYT 文末 `.bottom-of-article > div`（「See more on: <a>topic</a>…」，
+  // anchor 全指 /topic/ taxonomy 頁）漏網根因（Jimmy 2026-07-02 NYT 實測）。
+  // 剝掉 chip 間分隔符後若整段剛好**只是** tag label（非敘述）就放行敘述 guard。
+  // 錨定 `^…$` 確保只放行純 label，narrative 段落（含 label 起手 + 後續敘述）不命中。
+  const TAG_LABEL_RE = /^(see\s+more\s+(on|about|from)|more\s+(on|from|about)|filed\s+under|related\s+topics?|topics?|tags?|labels?|categor(?:y|ies)|explore\s+(more\s+)?(on|about)|in\s+this\s+(article|story))$/i;
+  // v1.6.3：TAG_LABEL_RE 是英文白名單，Shinkansen 翻譯後 label 變中文（Google MT
+  // 把「See more on」譯成「看更多 / 更多主題 / 更多關於 / 參見」等不定字串），英文
+  // rule 全 miss、中文 heading regex 只湊巧命中「看更多 / 查看更多」等少數詞——tag 列
+  // 翻譯後漏網（Jimmy 2026-07-02 NYT translate-first 實測，「更多主題」類譯法逃過兩條
+  // 文字 path）。翻譯無關的純結構訊號＝anchor href：taxonomy 連結（/topic/ /tag/ …）
+  // 不隨翻譯改。故補「**全部** anchor 皆 taxonomy chip（hashtagHits === anchors.length）
+  // + 自身 label 文字夠短」時豁免敘述 guard，不看 label 語言。label 長度上限防「短敘述
+  // + 3 個剛好都 taxonomy 的連結」誤殺（純 tag label 通常 <= 8 CJK 字；敘述句更長 or
+  // 走 <p> 被 hasMainBlock guard 擋）。
+  const TAG_LABEL_MAX_LEN = 16;
+  // 單一 element 是否為 taxonomy / tag-chip 列（靜態 sweep 與動態 observer 單一資料源）。
+  // 命中回傳該 el（呼叫端 hide），否則 null。
+  function hashtagClusterHideTarget(el, articleEl) {
+    if (!el || el === articleEl) return null;
+    if (el.dataset && el.dataset.jreadHidden === '1') return null;
+    if (isInPreserved(el)) return null;
+    if (el.contains && el.contains(articleEl)) return null;
+    const anchors = el.querySelectorAll('a');
+    if (anchors.length < HASHTAG_MIN_COUNT) return null;
+    // tag chip 認定：anchor 文字起手 `#`（文字型 hashtag）或 href 指向 taxonomy
+    // 頁（裝飾型 #、純分類連結）。兩者皆「navigation chrome、非主文」。
+    let hashtagHits = 0;
+    let nonHashAllShort = true;
+    for (const a of anchors) {
+      const at = norm(a.textContent);
+      const href = a.getAttribute('href') || '';
+      if (at.startsWith('#') || TAXONOMY_HREF_RE.test(href)) hashtagHits++;
+      else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
+    }
+    const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
+    const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
+    if (!ratioPass && !tagBarPass) return null;
+    // 媒體 guard：純 tag bar 不含媒體。`querySelectorAll('a')` 是遞迴的，
+    // 若 el 是外層 wrapper（含 .single-meta tag 列 + 主圖 figure），會在此
+    // 被命中而把 hero 圖一起 hide（roomie.tw .mobile-info 實測：6 hashtag
+    // + hero 768x461 同一 DIV 內 → 修法初版誤殺 hero）。含媒體 → skip 外層，
+    // 留給內層純 tag bar（.single-meta，無 img）被精準命中。
+    if (el.querySelector('img, picture, video, iframe, figure, svg')) return null;
+    // direct text 扣除子孫 = 自身 textNode
+    const directText = norm(Array.from(el.childNodes)
+      .filter(n => n.nodeType === 3)
+      .map(n => n.textContent).join(''));
+    // v1.6.2：剝分隔符後若整段是 tag label（見 TAG_LABEL_RE）就豁免敘述文字 guard。
+    // v1.6.3：或「全 anchor 皆 taxonomy chip + label 夠短」（翻譯無關結構訊號，見
+    // TAG_LABEL_MAX_LEN 註解）——涵蓋 Shinkansen 翻譯後 label 變任意語言的情況。
+    const directTextSansSep = directText.replace(/[,:;|·•/、，；：]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const allTaxonomyChips = hashtagHits === anchors.length;
+    const labelExempt = TAG_LABEL_RE.test(directTextSansSep) ||
+      (allTaxonomyChips && directTextSansSep.length <= TAG_LABEL_MAX_LEN);
+    if (!labelExempt && directText.length > HASHTAG_NARRATIVE_TEXT_MAX) return null;
+    // 主文 guard：el 內若有任一非 anchor 的長 text block（p / h* / li /
+    // blockquote 自身 textContent >= 50 字），代表 el 是含主文的 wrapper、
+    // 非純 tag cluster。skip。
+    let hasMainBlock = false;
+    for (const block of el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
+      if (block.closest && block.closest('a')) continue;
+      if (norm(block.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
+        hasMainBlock = true;
+        break;
+      }
+    }
+    if (hasMainBlock) return null;
+    // v1.5.6 byline/dateline 保護：cluster 含 <time> = 發表日期 + 分類 tag 的
+    // meta 列（非純 hashtag bar）。bellingcat `.singular__content__text__meta`
+    // 實測：「April 9, 2026」(<time>) 與分類連結 Cybersecurity/Hacking/Hungary
+    // 同 div，taxonomy href 命中 hashtag 判定整列被砍、發表日期連坐消失。
+    // 純 hashtag/tag bar 不含 <time>，此 guard 只放行「日期 + tag」dateline。
+    if (el.querySelector('time')) return null;
+    return el;
+  }
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
     const candidates = articleEl.querySelectorAll('p, div');
     for (const el of candidates) {
-      if (el === articleEl) continue;
-      if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (isInPreserved(el)) continue;
-      if (el.contains && el.contains(articleEl)) continue;
-      const anchors = el.querySelectorAll('a');
-      if (anchors.length < HASHTAG_MIN_COUNT) continue;
-      // tag chip 認定：anchor 文字起手 `#`（文字型 hashtag）或 href 指向 taxonomy
-      // 頁（裝飾型 #、純分類連結）。兩者皆「navigation chrome、非主文」。
-      let hashtagHits = 0;
-      let nonHashAllShort = true;
-      for (const a of anchors) {
-        const at = norm(a.textContent);
-        const href = a.getAttribute('href') || '';
-        if (at.startsWith('#') || TAXONOMY_HREF_RE.test(href)) hashtagHits++;
-        else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
-      }
-      const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
-      const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
-      if (!ratioPass && !tagBarPass) continue;
-      // 媒體 guard：純 tag bar 不含媒體。`querySelectorAll('a')` 是遞迴的，
-      // 若 el 是外層 wrapper（含 .single-meta tag 列 + 主圖 figure），會在此
-      // 被命中而把 hero 圖一起 hide（roomie.tw .mobile-info 實測：6 hashtag
-      // + hero 768x461 同一 DIV 內 → 修法初版誤殺 hero）。含媒體 → skip 外層，
-      // 留給內層純 tag bar（.single-meta，無 img）被精準命中。
-      if (el.querySelector('img, picture, video, iframe, figure, svg')) continue;
-      // direct text 扣除子孫 = 自身 textNode
-      const directText = norm(Array.from(el.childNodes)
-        .filter(n => n.nodeType === 3)
-        .map(n => n.textContent).join(''));
-      if (directText.length > HASHTAG_NARRATIVE_TEXT_MAX) continue;
-      // 主文 guard：el 內若有任一非 anchor 的長 text block（p / h* / li /
-      // blockquote 自身 textContent >= 50 字），代表 el 是含主文的 wrapper、
-      // 非純 tag cluster。skip。
-      let hasMainBlock = false;
-      for (const block of el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
-        if (block.closest && block.closest('a')) continue;
-        if (norm(block.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
-          hasMainBlock = true;
-          break;
-        }
-      }
-      if (hasMainBlock) continue;
-      // v1.5.6 byline/dateline 保護：cluster 含 <time> = 發表日期 + 分類 tag 的
-      // meta 列（非純 hashtag bar）。bellingcat `.singular__content__text__meta`
-      // 實測：「April 9, 2026」(<time>) 與分類連結 Cybersecurity/Hacking/Hungary
-      // 同 div，taxonomy href 命中 hashtag 判定整列被砍、發表日期連坐消失。
-      // 純 hashtag/tag bar 不含 <time>，此 guard 只放行「日期 + tag」dateline。
-      if (el.querySelector('time')) continue;
-      hide(el, hidden);
+      if (hashtagClusterHideTarget(el, articleEl)) hide(el, hidden);
     }
   }
 
@@ -6295,6 +6342,22 @@
         if (isReactionCountBar(el)) hide(el, hiddenList);
       }
     }
+    // taxonomy / tag-chip 列 lazy 注入兜底（與靜態 hideInsideArticleHashtagClusters
+    // 單一資料源）——NYT `.bottom-of-article` 文末「See more on: <a>topic</a>…」
+    // 常在捲到文末才 lazy render，clean() 已跑完、靜態 sweep 漏接（Jimmy 2026-07-02
+    // NYT 實測）。node 自身 / 其內任一 p/div cluster 都查。命中即停。
+    if (articleEl.contains(node)) {
+      if (node.matches && node.matches('p, div') && hashtagClusterHideTarget(node, articleEl)) {
+        hide(node, hiddenList); return;
+      }
+      if (node.querySelectorAll) {
+        for (const el of node.querySelectorAll('p, div')) {
+          if (el.dataset && el.dataset.jreadHidden === '1') continue;
+          if (el.closest('[data-jread-hidden="1"]')) continue;
+          if (hashtagClusterHideTarget(el, articleEl)) hide(el, hiddenList);
+        }
+      }
+    }
     // 雜訊 class/id 直接 hide 整個 node。
     // v0.8.36（B2）：補上與靜態 hideInsideArticleByKeyword 同一組主文保護
     // （keywordWrapperIsProtected：H1 guard + 主文 wrapper guard）——Shinkansen
@@ -6410,6 +6473,9 @@
       // tail-cleanup + 最後防線 hide(h)——歷史上 dynamic 漏同步這兩段（cnyes
       // lazy-inject「討論區」widget 整篇主文+widget 同 ARTICLE wrapper、walk-up
       // 回 null 時 dynamic 舊版直接放棄）。命中即停（observer 每次只處理一個 node）。
+      // v1.6.4：heading 本身即 taxonomy tag chip 列 → hide 它、不 walk-up（與靜態
+      // hideInsideArticleByHeadingText 單一資料源，見該處註解）。
+      if (hashtagClusterHideTarget(h, articleEl)) { hide(h, hiddenList); return; }
       if (resolveHeadingNoiseTarget(h, articleEl, hiddenList)) return;
     }
   }
