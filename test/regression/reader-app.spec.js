@@ -34,17 +34,36 @@ describe('reader-feed: formatMeta', () => {
 });
 
 describe('reader-feed: createCard', () => {
-  it('建卡片：連結導到 article.html?id=、含標題 / meta / 封存鈕', () => {
+  it('建卡片：連結導到 article.html?id=&meta=、含標題 / meta / 封存鈕', () => {
     const document = freshDoc();
     const card = FEED.createCard(sampleDocs[0], document);
     assert.strictEqual(card.getAttribute('data-doc-id'), 'a1');
     const link = card.querySelector('.jr-card-link');
-    assert.strictEqual(link.getAttribute('href'), 'article.html?id=a1');
+    // v1.6.0：連結帶 meta query param（Instapaper 文章頁靠它補 byline）
+    assert.ok(link.getAttribute('href').startsWith('article.html?id=a1&meta='),
+      'href 必須是 article.html?id=a1&meta=…');
     assert.strictEqual(card.querySelector('.jr-card-title').textContent, '第一篇');
     assert.ok(card.querySelector('.jr-card-meta').textContent.includes('Stratechery'));
     const btn = card.querySelector('.jr-archive');
     assert.ok(btn, '必須有封存鈕');
     assert.strictEqual(btn.getAttribute('data-doc-id'), 'a1');
+  });
+
+  it('meta query param 可解回 title / author / site_name（v1.6.0）', () => {
+    const document = freshDoc();
+    const card = FEED.createCard(sampleDocs[0], document);
+    const href = card.querySelector('.jr-card-link').getAttribute('href');
+    const metaEnc = href.split('&meta=')[1];
+    const meta = JSON.parse(decodeURIComponent(metaEnc));
+    assert.strictEqual(meta.title, '第一篇');
+    assert.strictEqual(meta.author, 'Ben');
+    assert.strictEqual(meta.site_name, 'Stratechery');
+  });
+
+  it('只有 id（無 metadata）不帶 meta param、URL 保持精簡', () => {
+    const document = freshDoc();
+    const card = FEED.createCard({ id: 'x1' }, document);
+    assert.strictEqual(card.querySelector('.jr-card-link').getAttribute('href'), 'article.html?id=x1');
   });
 
   it('有 image_url（http）：含縮圖；沒有則無縮圖', () => {
@@ -61,7 +80,8 @@ describe('reader-feed: createCard', () => {
   it('id 放進 href 時 encode（避免特殊字元破 URL）', () => {
     const document = freshDoc();
     const card = FEED.createCard({ id: 'a/b', title: 't' }, document);
-    assert.strictEqual(card.querySelector('.jr-card-link').getAttribute('href'), 'article.html?id=a%2Fb');
+    assert.ok(card.querySelector('.jr-card-link').getAttribute('href').startsWith('article.html?id=a%2Fb&meta='),
+      'id 需 encode，且帶 meta param');
   });
 });
 
@@ -241,16 +261,43 @@ describe('reader-article: 返回箭頭已移除（v1.5.3）', () => {
   });
 });
 
-describe('reader-feed: SOURCES（Inbox / Later / JRead 分頁）', () => {
-  it('三來源對映正確：new=location new、later=location later、jread=tag jread', () => {
-    assert.deepStrictEqual(FEED.SOURCES.new.query, { location: 'new' });
-    assert.deepStrictEqual(FEED.SOURCES.later.query, { location: 'later' });
-    assert.deepStrictEqual(FEED.SOURCES.jread.query, { tag: 'jread' }, 'JRead 分頁用 tag=jread');
+describe('reader-feed: FEED_TABS（per-service 分頁，v1.6.0）', () => {
+  it('readwise：Inbox=location new / Later=location later / JRead=tag jread', () => {
+    const tabs = FEED.FEED_TABS.readwise;
+    const byId = Object.fromEntries(tabs.map((t) => [t.id, t]));
+    assert.deepStrictEqual(byId.new.query, { location: 'new' });
+    assert.deepStrictEqual(byId.later.query, { location: 'later' });
+    assert.deepStrictEqual(byId.jread.query, { tag: 'jread' }, 'JRead 分頁用 tag=jread');
   });
-  it('每個來源都有空清單訊息', () => {
-    for (const k of ['new', 'later', 'jread']) {
-      assert.ok(FEED.SOURCES[k].empty && typeof FEED.SOURCES[k].empty === 'string');
+  it('instapaper：未讀 / 已加星 / 封存 走 folderId', () => {
+    const tabs = FEED.FEED_TABS.instapaper;
+    const byId = Object.fromEntries(tabs.map((t) => [t.id, t]));
+    assert.deepStrictEqual(byId.unread.query, { folderId: 'unread' });
+    assert.deepStrictEqual(byId.starred.query, { folderId: 'starred' });
+    assert.deepStrictEqual(byId.archive.query, { folderId: 'archive' });
+  });
+  it('每個分頁都有 label 與空清單訊息', () => {
+    for (const svc of ['readwise', 'instapaper']) {
+      for (const t of FEED.FEED_TABS[svc]) {
+        assert.ok(t.label && typeof t.label === 'string', `${svc}/${t.id} 需 label`);
+        assert.ok(t.empty && typeof t.empty === 'string', `${svc}/${t.id} 需空清單訊息`);
+      }
     }
+  });
+});
+
+describe('reader-article: parseMeta（v1.6.0）', () => {
+  it('解回 feed 帶入的 meta（encodeURIComponent(JSON)）', () => {
+    const enc = encodeURIComponent(JSON.stringify({ title: '標題', author: 'A', source_url: 'https://s.com' }));
+    const m = ARTICLE.parseMeta(enc);
+    assert.strictEqual(m.title, '標題');
+    assert.strictEqual(m.author, 'A');
+    assert.strictEqual(m.source_url, 'https://s.com');
+  });
+  it('空 / 壞值 → null（不炸）', () => {
+    assert.strictEqual(ARTICLE.parseMeta(''), null);
+    assert.strictEqual(ARTICLE.parseMeta(null), null);
+    assert.strictEqual(ARTICLE.parseMeta('%%%not-json'), null);
   });
 });
 

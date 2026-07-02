@@ -22,6 +22,12 @@ tools/batch-page-rounds.sh
 # Claude Design 原始下載（HTML/zip/uploads），已抽取必要 source 至 store-assets/sources/
 Claude design/
 
+# Instapaper Full API consumer 金鑰（app 層 secret，不進 public repo / git 歷史）
+# 源檔 + ios-build.sh rsync 到 Safari Resources 的鏡像都要擋，否則 commit
+# 「iOS build artifacts — Resources mirror」時會透過鏡像洩漏金鑰。
+jread/lib/instapaper-keys.js
+safari-app/**/Resources/lib/instapaper-keys.js
+
 # Safari build 中間產物
 # iOS build 的 BUILD_DIR 已移到 $TMPDIR（避開 iCloud Drive 同步衝突），不生在 repo 內。
 # 規則保留作保險：萬一未來改回本地路徑、或 safari-app/ 殘留歷史 .pkg，不會誤 commit。

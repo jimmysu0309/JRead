@@ -100,7 +100,22 @@ This:
    no JRead-controlled server is involved.)
 
 All other files (`background/*.js`, `content/*.js`, `popup/*`,
-`options/*`, icons, CSS) are copied unchanged.
+`options/*`, `lib/*`, icons, CSS) are copied unchanged.
+
+### Instapaper (v1.6.0) — background scripts note
+
+The Instapaper client (`lib/instapaper.js`) and its gitignored consumer keys
+(`lib/instapaper-keys.js`) are loaded into the popup / options / reader pages via
+`<script>` tags, and into the Chrome service worker via `importScripts` (keys
+wrapped in try/catch so a missing keys file is a no-op). They are **not** added
+to the Firefox / Safari event-page `background.scripts` array. Consequently the
+keyboard-shortcut send path (`send-to-readwise` command, handled in the SW) can
+dispatch to Instapaper only on Chrome; on Firefox / Safari event pages it reports
+`CONFIG` ("此版本未內建 Instapaper 金鑰"). The popup "送到 Instapaper" button and
+the in-JReader read-in feed work on all platforms (they run in extension pages
+that load the client directly). This is a deliberate trade-off: adding the
+gitignored keys file to `background.scripts` would break the whole event page in
+store builds where the file is absent.
 
 ---
 

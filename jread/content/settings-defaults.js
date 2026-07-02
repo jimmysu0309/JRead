@@ -61,8 +61,17 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // v0.7.162：段落間距（em）。1.0 對應 v0.7.102 baseline。
     paragraphSpacing: 1.0,
     autoEnableDomains: [],
+    // v1.6.0：儲存服務二擇一——'readwise'（預設，維持既有行為）| 'instapaper'。
+    // 決定「送出儲存」與「讀入 feed/文章」走哪個服務的憑證與 API。摘要（readwiseSummary
+    // + geminiApiKey）兩服務共用。
+    storageService: 'readwise',
     // Readwise Reader integration（v0.7.33）。空字串 = 未設定。
     readwiseToken: '',
+    // v1.6.0：Instapaper Full API 憑證（xAuth 換得的 OAuth token + secret）。空字串
+    // = 未連結。username 僅供 options UI 顯示「已連結：<帳號>」，密碼用完即丟不存。
+    instapaperToken: '',
+    instapaperTokenSecret: '',
+    instapaperUsername: '',
     // v0.8.72：送 Readwise 時用 Gemini Flash Lite 先產生摘要（繁中三句）一起送出，
     // 取代 Readwise server 端自動生成的英文摘要。預設 false = 不產生（仍可送，由
     // Readwise 自動處理）。需同時設 geminiApiKey 才會實際呼叫。

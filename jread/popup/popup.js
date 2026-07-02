@@ -528,7 +528,7 @@ async function refreshReaderButton() {
   try {
     if (await isReaderHostTab()) { readerBtn.hidden = true; return; }
   } catch (_) { /* 判定失敗則回退到 token gate */ }
-  try { readerBtn.hidden = !(await hasReadwiseToken()); }
+  try { readerBtn.hidden = !(await hasActiveServiceCredentials()); }
   catch (_) { readerBtn.hidden = true; }
 }
 
@@ -590,14 +590,43 @@ function setReadwiseStatus(text, kind) {
 // 沒 token 按下去必然走到「尚未設定 token」錯誤，按鈕露出只是雜訊。token
 // 在 popup 開啟期間於 options 填入的情境不需即時反映（開 options 時 popup
 // 已關閉，下次開啟重新讀取）。
-function hasReadwiseToken() {
-  // v0.8.164：browser.storage.sync.get 原生 Promise（reject / throw → false）。
+// v1.6.0：儲存服務二擇一——依 storageService 判斷當前服務的憑證是否齊備
+//（readwise：readwiseToken；instapaper：instapaperToken + instapaperTokenSecret）。
+// 憑證解析單一資料源在 popup-core.resolveServiceCredentials（reader / SW 共用）。
+// 沿用 hasReadwiseToken 舊語意（沒憑證 → 送出 / 進 Reader 按鈕整顆隱藏）。
+function hasActiveServiceCredentials() {
   try {
-    return browser.storage.sync.get({ readwiseToken: '' }).then((v) => {
-      const t = v && v.readwiseToken;
-      return typeof t === 'string' && t.trim() !== '';
+    const DEF = window.__JReadSettingsDefaults || {};
+    return browser.storage.sync.get({
+      storageService: DEF.storageService || 'readwise',
+      readwiseToken: '',
+      instapaperToken: '',
+      instapaperTokenSecret: ''
+    }).then((v) => {
+      const r = window.__JReadPopup.resolveServiceCredentials(v || {});
+      return !!(r && r.ok);
     }).catch(() => false);
   } catch (_) { return Promise.resolve(false); }
+}
+
+// 當前儲存服務（'readwise' | 'instapaper'），供送出按鈕 label 用。
+function getStorageService() {
+  try {
+    const DEF = window.__JReadSettingsDefaults || {};
+    return browser.storage.sync.get({ storageService: DEF.storageService || 'readwise' })
+      .then((v) => (v && v.storageService === 'instapaper') ? 'instapaper' : 'readwise')
+      .catch(() => 'readwise');
+  } catch (_) { return Promise.resolve('readwise'); }
+}
+
+// 送出按鈕文字 + tooltip 依當前儲存服務切換。
+async function updateSendButtonLabel() {
+  try {
+    const service = await getStorageService();
+    const label = window.__JReadPopup.serviceLabel(service);
+    readwiseBtn.textContent = '送到 ' + label;
+    readwiseBtn.title = '把當前 reader card 內容送到 ' + label;
+  } catch (_) { /* 讀取失敗保留 HTML 預設文字 */ }
 }
 
 // v0.8.109：編輯模式按鈕受 options「編輯模式」開關控制。預設 true（!== false）
@@ -683,9 +712,11 @@ async function refreshPopupForActiveTab() {
     } else {
       editBtn.hidden = true;
     }
-    // Readwise 按鈕：active=true 且 非 cinema 且 已設 token 才露出
-    // （cinema 沒主文可送；沒 token 按了必失敗，v0.8.50 整顆隱藏）
-    readwiseBtn.hidden = !active || cinemaActive || !(await hasReadwiseToken());
+    // 送出按鈕：active=true 且 非 cinema 且 當前服務憑證齊備才露出
+    // （cinema 沒主文可送；沒憑證按了必失敗，v0.8.50 整顆隱藏）。v1.6.0：label
+    // 依儲存服務動態切換（送到 Readwise Reader / 送到 Instapaper）。
+    readwiseBtn.hidden = !active || cinemaActive || !(await hasActiveServiceCredentials());
+    if (!readwiseBtn.hidden) await updateSendButtonLabel();
   } catch (_) {
     // content script 未注入（禁注入頁 / 尚未載入）= reader mode 必為 off，
     // toggle 文字回到「啟動」態（按下去會走 inject fallback 嘗試進入）。
@@ -747,16 +778,32 @@ readwiseBtn.addEventListener('click', async () => {
     return;
   }
 
+  // v1.6.0：讀儲存服務二擇一設定 + 兩服務憑證 + 摘要開關。
+  const DEF = window.__JReadSettingsDefaults || {};
+  const cfg = await browser.storage.sync.get({
+    storageService: DEF.storageService || 'readwise',
+    readwiseToken: '',
+    instapaperToken: '',
+    instapaperTokenSecret: '',
+    readwiseSummary: false,
+    geminiApiKey: ''
+  }).then((v) => v || {}).catch(() => ({}));
+  const { service, creds, ok } = window.__JReadPopup.resolveServiceCredentials(cfg);
+  const label = window.__JReadPopup.serviceLabel(service);
+  if (!ok) {
+    setReadwiseStatus(`尚未設定 ${label} 憑證，請到「進階設定」填入`, 'err');
+    readwiseBtn.disabled = false;
+    return;
+  }
+
   // v0.8.72：若開啟「自動摘要」且已設 Gemini key，先用 Gemini Flash Lite 產生繁中
-  // 三句摘要塞進 payload.summary（覆蓋 Readwise 自動英文摘要）。任何失敗都 fallback
-  // 不帶 summary 照送（讓 Readwise 自行處理），不阻斷儲存。
-  const summaryCfg = await browser.storage.sync.get({ readwiseSummary: false, geminiApiKey: '' })
-    .then((v) => v || {}).catch(() => ({}));
-  if (summaryCfg.readwiseSummary && summaryCfg.geminiApiKey && extracted.payload && extracted.payload.text) {
+  // 三句摘要塞進 payload.summary（兩服務共用——Readwise 對映 summary、Instapaper
+  // 對映 description）。任何失敗都 fallback 不帶 summary 照送，不阻斷儲存。
+  if (cfg.readwiseSummary && cfg.geminiApiKey && extracted.payload && extracted.payload.text) {
     setReadwiseStatus('產生摘要中…', 'info');
     try {
       const sum = await window.__JReadPopup.generateGeminiSummary({
-        apiKey: summaryCfg.geminiApiKey,
+        apiKey: cfg.geminiApiKey,
         title: extracted.payload.title,
         author: extracted.payload.author,
         domain: extracted.payload.domain,
@@ -767,31 +814,26 @@ readwiseBtn.addEventListener('click', async () => {
     setReadwiseStatus('送出中…', 'info');
   }
 
-  // v0.8.65：直接在 popup（extension 頁）發 Readwise fetch，不繞 background。
-  // iOS Safari 背景頁掛起會讓 SAVE_TO_READWISE 往返 / 背景 fetch silently 失敗
-  // （見 popup-core.saveReaderPayload 註解）。v0.8.164：token 改用
-  // browser.storage.sync.get 原生 Promise（與 hasReadwiseToken 同款）。
-  const result = await window.__JReadPopup.saveReaderPayload({
-    payload: extracted.payload,
-    getToken: () => browser.storage.sync.get({ readwiseToken: '' })
-      .then((v) => (v && v.readwiseToken) || '').catch(() => '')
-  });
+  // v1.6.0：走 sendDocument dispatcher，在 popup（extension 頁）自己 fetch、不繞
+  // background（iOS Safari 背景頁掛起會 silently 失敗，見 popup-core 註解）。
+  const result = await window.__JReadPopup.sendDocument({ service, creds, payload: extracted.payload });
 
   if (result && result.ok) {
-    setReadwiseStatus(result.status === 200 ? '已存在於 Readwise Reader' : '已送到 Readwise Reader', 'ok');
-  } else if (result && result.error === 'NO_TOKEN') {
-    setReadwiseStatus('尚未設定 Readwise token，請到「進階設定」填入', 'err');
+    // Readwise 200=已存在、201=新建；Instapaper 無此區分，一律「已送到」
+    setReadwiseStatus((service === 'readwise' && result.status === 200)
+      ? `已存在於 ${label}` : `已送到 ${label}`, 'ok');
+  } else if (result && result.error === 'NO_CREDENTIALS') {
+    setReadwiseStatus(`尚未設定 ${label} 憑證，請到「進階設定」填入`, 'err');
+  } else if (result && result.error === 'CONFIG') {
+    setReadwiseStatus(`此版本未內建 ${label} 金鑰`, 'err');
   } else if (result && result.error === 'AUTH') {
-    setReadwiseStatus('Readwise token 無效或已過期', 'err');
+    setReadwiseStatus(`${label} 憑證無效或已過期`, 'err');
   } else if (result && result.error === 'NETWORK') {
     setReadwiseStatus('網路錯誤，請稍後再試', 'err');
   } else {
-    // v0.8.65：generic 分支帶上 error code（INTERNAL / INVALID_PAYLOAD / HTTP 碼）
-    // 方便日後 iOS 真機回報時直接看出失敗層次，不再是不透明的「送出失敗」
+    // generic 分支帶上 error code（INVALID_PAYLOAD / HTTP 碼）方便真機回報看出失敗層次
     const detail = result && result.status ? `（HTTP ${result.status}）`
                  : result && result.error ? `（${result.error}）` : '';
-    // v1.5.7：帶上 Readwise 回應的具體原因（4xx body 萃出的一句）——HTTP 400
-    // 不再是黑盒，使用者直接從狀態列看到 Readwise 拒收的真正欄位/原因
     const reason = result && result.detail ? `：${result.detail}` : '';
     setReadwiseStatus(`送出失敗${detail}${reason}`, 'err');
   }
