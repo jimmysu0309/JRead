@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.5.27**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.5.28**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -317,6 +317,8 @@ MediaWiki 類站每節標題旁有「[編輯]」動作連結（zh.wikipedia WK4�
 ### byline meta 區一行正規化（v1.0.8 通則）
 
 reader mode 下站點 byline（kicker / 作者 / 日期 / 閱讀時間 / 小頭像）原各自 block 散成多行、字級不一、頭像縮排。styler.apply 偵測「標題與第一段內文（≥ 120 chars 的 p）之間、含日期訊號（`<time>` 或 date-regex 短文：DD Mon YYYY / Mon DD YYYY / YYYY-M-D / YYYY年M月D日 / YYYY/M/D）」的 meta 區，與作者訊號（行首 by / `rel=author`）取共同祖先，往上爬到「不含第一段內文、visible 文字 ≤ 200」的最高祖先 = byline root。標記 `data-jread-byline`=root（CSS flex 一行）、`-wrap`=純 wrapper（`display:contents` 打平任意巢狀讓 leaf 升為 root 的 flex item）、`-item`=可見 leaf（flex item、字重統一 400）、`-rt`=閱讀時間（`N min(s) read` / 閱讀時間 / N 分鐘閱讀，CSS `display:none` 移除）。頭像為首個 flex item、對齊內容左緣。只標 visible 元素（不重新顯示站點隱藏的作者 hover card / 分享列）。cleaner `collapseGridWithHiddenCell` 對 byline flex/grid 容器設的 inline `display:block` + `flex-direction:column` 由 byline pass 以 inline 覆蓋（root flex/row、wrap contents，snapshot 還原，styler.restore 在 cleaner.restore 之前）；gallery-flex / decolumn pass 跳過 byline 區。結構訊號、非站點 class 特判，多站驗證 autocar / npr / techcrunch / bbc / cna / newtalk。**v1.0.12**：往上爬的天花板補 heading guard——`!parent.querySelector('h1, h2, h3')`。原本天花板只有「visible 文字 ≤ 200」一條，而 Substack post-header 同時包住 h1 標題 + h3 副標 + byline，整塊文字翻成中文後更緊湊（chinatalk 英文 113 字 → 中文 59 字）落在 200 內 → climb 把整個 post-header 當 byline root、h1/h3 被打平成 flex-wrap item，窄的中文副標與作者名擠同列（英文版因 heading 夠寬各自佔一列而僥倖沒露餡；Jimmy 2026-06-26 translate-first 截圖）。byline 是作者/日期 meta、結構上絕不會包住標題或副標，遇含 heading 的祖先即停。Forcing：`styler-byline-root-skip-heading.spec.js`
+
+**v1.5.28 byline 精修 + 標題前分類 kicker 移除**（Jimmy 2026-07-02 NPR 多輪，英文與 Shinkansen translate-first 皆涵蓋）：以**翻譯無關的結構訊號**（英文文字 regex 譯後失效，一律備結構訊號接住）新增五項——(1) **發稿時刻隱藏**（`data-jread-byline-time`，CSS `display:none`）：日期 item（`<time>`）內若有子元素文字符合日期 regex（含中文「2026 年 6 月 1 日」），把**不符日期**的兄弟子元素（時刻 / 時區，如「1:59 PM ET」/「東岸時間下午 1:59」）隱藏；補英文 `BYLINE_TIME_RE`（HH:MM AM/PM TZ 獨立 item）。(2) **廣播節目出處 chip 隱藏**（`data-jread-byline-program`）：英文句式 `^(heard|aired|broadcast) on` **或** item 內連結 href 命中 `/programs|shows|podcasts|episodes/`（href 不翻譯，接住譯文「聽過《早晨版》」）。(3) **作者排在日期前**（`data-jread-byline-date-item`，CSS `order:1`）：只把日期 item（`<time>`，翻譯無關的可靠錨）推到最後，其餘 item 維持預設 `order:0` 排前，不必逐站辨識作者。(4) **root 對齊 `align-items: center → baseline`**：等高 item 中線對齊在盒內基線不一時仍上下錯位（NPR「HEARD ON」比日期高 9px），改文字基線對齊。(5) **root 下邊距 `1.4em → 0.8em`** 收窄 byline 與 hero 間距。**標題前分類 kicker / eyebrow 移除**（`data-jread-kicker`，CSS `display:none`，Safari / Firefox Reader 同做法）：標題 H1「之前」+ 連分類頁（`/sections|category|topics/`）的短連結 → 往上爬到「文字仍等於 kicker 文字」的最高 wrapper 一併隱藏（NPR `.slug-wrap`「BUSINESS」→ 譯文「商業」，href 不翻譯故譯後照樣命中）；獨立於 byline 偵測。restore 走 bylineMarks 移除所有標記。Forcing：`styler-byline-time-of-day.spec.js`（英文：時刻 / 節目 / date-item / kicker）、`styler-byline-translated-signals.spec.js`（Shinkansen 譯後 DOM：結構訊號接住中文時刻 / 節目 / kicker）；真實 NPR 走 `debug-harness.js` + `--translate-first` 截圖自驗。
 
 ### video player 佔位保護（v0.8.45 三 guard）
 

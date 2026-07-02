@@ -159,7 +159,12 @@
     // 內含一張與 hero 同源的 80×80 縮圖，被 styler 放大成滿版 → 重複 hero。
     // 放寬為 [-_]* 同時涵蓋 articleaudio / article-audio / article_audio，與
     // 上方 audio[-_]*player 同一手法（CMS 命名慣例通則，非站點特判）。
-    { t: 'audio[-_]*player' }, { t: 'audio[-_]*widget' }, { t: 'article[-_]*audio' },
+    // v1.5.28 NPR 實測：主文前的音訊播放器 wrapper class `audio-module`
+    // （Listen 鈕 + 「2-Minute Listen」時長 + queue + Transcript/download/embed
+    // 工具列）——閱讀模式是雜訊、真實 Chrome 會撐開播放器造成大片空白 +
+    // 殘留 Transcript 連結。`module` 是 CMS 對 widget 區塊的通用命名，配 audio
+    // 前綴即音訊播放器模組，與下方 audio-player/widget 同 family（非站點特判）。
+    { t: 'audio[-_]*player' }, { t: 'audio[-_]*widget' }, { t: 'audio[-_]*module' }, { t: 'article[-_]*audio' },
     { t: 'controls' }, { t: 'partner' },
     { t: 'postlisting' }, { t: 'post-listing' }, { t: 'thread' }, { t: 'threads' },
     { t: 'reposted' }, { t: 'repost' }, { t: 'follow' }, { t: 'follow-us' }, { t: 'following' },

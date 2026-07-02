@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!--
+  NPR audio-module 播放器 widget 最小重現（v1.5.28）。
+  主文前的音訊播放器（Listen 鈕 + 「2-Minute Listen」時長 + queue + Transcript /
+  download / embed 工具列），閱讀模式是雜訊：真實 Chrome 撐開播放器造成大片空白、
+  且殘留 Transcript 連結。class `audio-module` 未被原 audio-player / audio-widget
+  token 涵蓋 → 漏網。修法把 `audio[-_]*module` 加入 audio 系 noise token。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article id="story">
+    <h1>Remote work has sidelined recent college graduates</h1>
+    <div class="audio-module" id="player">
+      <h4 class="audio-module-title">Remote work has sidelined younger workers</h4>
+      <div class="audio-module-controls-wrap">
+        <div class="audio-module-controls">
+          <button class="audio-module-listen">Listen</button>
+          <time class="audio-module-duration">2-Minute Listen</time>
+          <button class="audio-module-queue">Add to queue</button>
+        </div>
+      </div>
+      <div class="audio-module-tools">
+        <a class="audio-tool audio-tool-transcript" href="#transcript"><b class="audio-tool-label">Transcript</b></a>
+        <button class="audio-module-tools-toggle">Toggle more options</button>
+      </div>
+    </div>
+    <p>The buzz on college campuses is that AI is disrupting the job market for young college graduates, but new research finds the culprit may be something else entirely: remote work arrangements at large employers.</p>
+    <p>An analysis of federal employment data reveals that companies are less likely to hire recent college grads into occupations that can be done remotely, the researchers found.</p>
+  </article>
+</body>
+</html>
