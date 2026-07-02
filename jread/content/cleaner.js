@@ -2710,58 +2710,72 @@
   // guard（>=3 短 anchor + 無主文長段落 + 無媒體 + 無 <time>）防單一 /search/
   // 連結誤殺。注意 `search(?:es)?` 不可寫成 `searches?`（後者要 "searche"）。
   const TAXONOMY_HREF_RE = /\/(tags?|categor(?:y|ies)|topics?|labels?|search(?:es)?)(\/|$|#|\?)/i;
+  // v1.6.2：tag chip 列常帶 label 前綴（「See more on:」「Filed under」「Topics」
+  // 等 CMS 慣例）。label 文字會超過 HASHTAG_NARRATIVE_TEXT_MAX 被敘述文字 guard
+  // 誤擋——NYT 文末 `.bottom-of-article > div`（「See more on: <a>topic</a>…」，
+  // anchor 全指 /topic/ taxonomy 頁）漏網根因（Jimmy 2026-07-02 NYT 實測）。
+  // 剝掉 chip 間分隔符後若整段剛好**只是** tag label（非敘述）就放行敘述 guard。
+  // 錨定 `^…$` 確保只放行純 label，narrative 段落（含 label 起手 + 後續敘述）不命中。
+  const TAG_LABEL_RE = /^(see\s+more\s+(on|about|from)|more\s+(on|from|about)|filed\s+under|related\s+topics?|topics?|tags?|labels?|categor(?:y|ies)|explore\s+(more\s+)?(on|about)|in\s+this\s+(article|story))$/i;
+  // 單一 element 是否為 taxonomy / tag-chip 列（靜態 sweep 與動態 observer 單一資料源）。
+  // 命中回傳該 el（呼叫端 hide），否則 null。
+  function hashtagClusterHideTarget(el, articleEl) {
+    if (!el || el === articleEl) return null;
+    if (el.dataset && el.dataset.jreadHidden === '1') return null;
+    if (isInPreserved(el)) return null;
+    if (el.contains && el.contains(articleEl)) return null;
+    const anchors = el.querySelectorAll('a');
+    if (anchors.length < HASHTAG_MIN_COUNT) return null;
+    // tag chip 認定：anchor 文字起手 `#`（文字型 hashtag）或 href 指向 taxonomy
+    // 頁（裝飾型 #、純分類連結）。兩者皆「navigation chrome、非主文」。
+    let hashtagHits = 0;
+    let nonHashAllShort = true;
+    for (const a of anchors) {
+      const at = norm(a.textContent);
+      const href = a.getAttribute('href') || '';
+      if (at.startsWith('#') || TAXONOMY_HREF_RE.test(href)) hashtagHits++;
+      else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
+    }
+    const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
+    const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
+    if (!ratioPass && !tagBarPass) return null;
+    // 媒體 guard：純 tag bar 不含媒體。`querySelectorAll('a')` 是遞迴的，
+    // 若 el 是外層 wrapper（含 .single-meta tag 列 + 主圖 figure），會在此
+    // 被命中而把 hero 圖一起 hide（roomie.tw .mobile-info 實測：6 hashtag
+    // + hero 768x461 同一 DIV 內 → 修法初版誤殺 hero）。含媒體 → skip 外層，
+    // 留給內層純 tag bar（.single-meta，無 img）被精準命中。
+    if (el.querySelector('img, picture, video, iframe, figure, svg')) return null;
+    // direct text 扣除子孫 = 自身 textNode
+    const directText = norm(Array.from(el.childNodes)
+      .filter(n => n.nodeType === 3)
+      .map(n => n.textContent).join(''));
+    // v1.6.2：剝分隔符後若整段是 tag label（見 TAG_LABEL_RE）就豁免敘述文字 guard。
+    const directTextSansSep = directText.replace(/[,:;|·•/、，；：]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!TAG_LABEL_RE.test(directTextSansSep) && directText.length > HASHTAG_NARRATIVE_TEXT_MAX) return null;
+    // 主文 guard：el 內若有任一非 anchor 的長 text block（p / h* / li /
+    // blockquote 自身 textContent >= 50 字），代表 el 是含主文的 wrapper、
+    // 非純 tag cluster。skip。
+    let hasMainBlock = false;
+    for (const block of el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
+      if (block.closest && block.closest('a')) continue;
+      if (norm(block.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
+        hasMainBlock = true;
+        break;
+      }
+    }
+    if (hasMainBlock) return null;
+    // v1.5.6 byline/dateline 保護：cluster 含 <time> = 發表日期 + 分類 tag 的
+    // meta 列（非純 hashtag bar）。bellingcat `.singular__content__text__meta`
+    // 實測：「April 9, 2026」(<time>) 與分類連結 Cybersecurity/Hacking/Hungary
+    // 同 div，taxonomy href 命中 hashtag 判定整列被砍、發表日期連坐消失。
+    // 純 hashtag/tag bar 不含 <time>，此 guard 只放行「日期 + tag」dateline。
+    if (el.querySelector('time')) return null;
+    return el;
+  }
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
     const candidates = articleEl.querySelectorAll('p, div');
     for (const el of candidates) {
-      if (el === articleEl) continue;
-      if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (isInPreserved(el)) continue;
-      if (el.contains && el.contains(articleEl)) continue;
-      const anchors = el.querySelectorAll('a');
-      if (anchors.length < HASHTAG_MIN_COUNT) continue;
-      // tag chip 認定：anchor 文字起手 `#`（文字型 hashtag）或 href 指向 taxonomy
-      // 頁（裝飾型 #、純分類連結）。兩者皆「navigation chrome、非主文」。
-      let hashtagHits = 0;
-      let nonHashAllShort = true;
-      for (const a of anchors) {
-        const at = norm(a.textContent);
-        const href = a.getAttribute('href') || '';
-        if (at.startsWith('#') || TAXONOMY_HREF_RE.test(href)) hashtagHits++;
-        else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
-      }
-      const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
-      const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
-      if (!ratioPass && !tagBarPass) continue;
-      // 媒體 guard：純 tag bar 不含媒體。`querySelectorAll('a')` 是遞迴的，
-      // 若 el 是外層 wrapper（含 .single-meta tag 列 + 主圖 figure），會在此
-      // 被命中而把 hero 圖一起 hide（roomie.tw .mobile-info 實測：6 hashtag
-      // + hero 768x461 同一 DIV 內 → 修法初版誤殺 hero）。含媒體 → skip 外層，
-      // 留給內層純 tag bar（.single-meta，無 img）被精準命中。
-      if (el.querySelector('img, picture, video, iframe, figure, svg')) continue;
-      // direct text 扣除子孫 = 自身 textNode
-      const directText = norm(Array.from(el.childNodes)
-        .filter(n => n.nodeType === 3)
-        .map(n => n.textContent).join(''));
-      if (directText.length > HASHTAG_NARRATIVE_TEXT_MAX) continue;
-      // 主文 guard：el 內若有任一非 anchor 的長 text block（p / h* / li /
-      // blockquote 自身 textContent >= 50 字），代表 el 是含主文的 wrapper、
-      // 非純 tag cluster。skip。
-      let hasMainBlock = false;
-      for (const block of el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
-        if (block.closest && block.closest('a')) continue;
-        if (norm(block.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
-          hasMainBlock = true;
-          break;
-        }
-      }
-      if (hasMainBlock) continue;
-      // v1.5.6 byline/dateline 保護：cluster 含 <time> = 發表日期 + 分類 tag 的
-      // meta 列（非純 hashtag bar）。bellingcat `.singular__content__text__meta`
-      // 實測：「April 9, 2026」(<time>) 與分類連結 Cybersecurity/Hacking/Hungary
-      // 同 div，taxonomy href 命中 hashtag 判定整列被砍、發表日期連坐消失。
-      // 純 hashtag/tag bar 不含 <time>，此 guard 只放行「日期 + tag」dateline。
-      if (el.querySelector('time')) continue;
-      hide(el, hidden);
+      if (hashtagClusterHideTarget(el, articleEl)) hide(el, hidden);
     }
   }
 
@@ -6293,6 +6307,22 @@
         if (el.closest('[data-jread-hidden="1"]')) continue;
         if (isInPreserved(el)) continue;
         if (isReactionCountBar(el)) hide(el, hiddenList);
+      }
+    }
+    // taxonomy / tag-chip 列 lazy 注入兜底（與靜態 hideInsideArticleHashtagClusters
+    // 單一資料源）——NYT `.bottom-of-article` 文末「See more on: <a>topic</a>…」
+    // 常在捲到文末才 lazy render，clean() 已跑完、靜態 sweep 漏接（Jimmy 2026-07-02
+    // NYT 實測）。node 自身 / 其內任一 p/div cluster 都查。命中即停。
+    if (articleEl.contains(node)) {
+      if (node.matches && node.matches('p, div') && hashtagClusterHideTarget(node, articleEl)) {
+        hide(node, hiddenList); return;
+      }
+      if (node.querySelectorAll) {
+        for (const el of node.querySelectorAll('p, div')) {
+          if (el.dataset && el.dataset.jreadHidden === '1') continue;
+          if (el.closest('[data-jread-hidden="1"]')) continue;
+          if (hashtagClusterHideTarget(el, articleEl)) hide(el, hiddenList);
+        }
       }
     }
     // 雜訊 class/id 直接 hide 整個 node。
