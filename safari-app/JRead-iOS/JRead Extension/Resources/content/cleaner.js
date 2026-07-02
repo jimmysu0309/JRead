@@ -136,6 +136,13 @@
     { t: 'recirc', strong: true }, { t: 'smartfeed', strong: true }, { t: 'taboola', strong: true },
     { t: 'trc_[a-z_]+' }, { t: 'outbrain', strong: true }, { t: 'zergnet', strong: true },
     { t: 'revcontent', strong: true }, { t: 'popin', strong: true }, { t: 'dianomi', strong: true },
+    // v1.6.11 chinatimes 實測：文末「Prism intelligence」AI 推薦 widget
+    //（DIV#prism-widget-container，含「您的專屬推薦：深度解析」+ AI Q&A ↗ 連結）殘留。
+    // 「Prism」是中時的 AI 推薦 widget 產品名，與上方 taboola / outbrain / popin /
+    // dianomi 同屬「第三方推薦 widget 產品名 token」慣例——比對的是 widget 產品的
+    // 容器命名（prism-widget-*），非站點 hostname 特判。必帶 `-widget` 後綴：
+    // 裸 `prism` 會誤中 PrismJS 語法高亮的 `prism` / `language-* prism` code class。
+    { t: 'prism-widget', strong: true },
     { t: 'addthis', strong: true }, { t: 'sharedaddy', strong: true },
     { t: 'sociable' }, { t: 'ai2html' }, { t: 'onesignal' }, { t: 'intercom' },
     { t: 'printfriendly' }, { t: 'instapaper_ignore' }, { t: 'blogger-labels' }, { t: 'mpu' },
