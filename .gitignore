@@ -42,4 +42,5 @@ xcuserdata/
 # Claude Code 本機協作規則與 session 狀態（含個人資訊 / 專案流程），不進公開 repo
 # 比照姊妹專案 Shinkansen：CLAUDE.md 與整個 .claude/（含 skills）僅存本機
 CLAUDE.md
+CLAUDE-TEMPLATE-*.md
 .claude/
