@@ -148,6 +148,7 @@
     .field select,
     .field input[type="number"],
     .field input[type="password"],
+    .field input[type="email"],
     .field input[type="text"] {
       display: block;
       width: 100%;
@@ -177,12 +178,14 @@
     select:hover,
     input[type="number"]:hover,
     input[type="password"]:hover,
+    input[type="email"]:hover,
     input[type="text"]:hover {
       border-color: var(--jr-neutral-500);
     }
     select:focus,
     input[type="number"]:focus,
     input[type="password"]:focus,
+    input[type="email"]:focus,
     input[type="text"]:focus {
       outline: none;
       border-color: var(--jr-primary-600);
@@ -764,8 +767,8 @@
     </div>
   </div>
   <div class="field">
-    <label>送到 Readwise Reader</label>
-    <span class="desc">內建預設 <strong>⌥⇧R</strong></span>
+    <label>送到儲存服務</label>
+    <span class="desc">送到你選的儲存服務（Readwise / Instapaper）。內建預設 <strong>⌥⇧R</strong></span>
     <div class="shortcut-controls">
       <button type="button" class="shortcut-recorder" id="sc-send-to-readwise" data-command="send-to-readwise"></button>
       <button type="button" class="shortcut-clear" id="sc-clear-send-to-readwise" data-command="send-to-readwise" title="還原預設">✕</button>
@@ -802,15 +805,23 @@
     影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗
   </p>
 
-  <h2 class="section-heading">Readwise Reader 整合</h2>
+  <h2 class="section-heading">儲存服務整合</h2>
   <p class="section-desc">
-    在工具列圖示選單點擊「送到 Readwise Reader」會把 JRead 處理過的乾淨內容透過 Readwise API 儲存。
-    Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得，僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器
+    選一個「稍後閱讀」服務並二擇一連結。啟用後在工具列圖示選單點「送到<服務>」會把 JRead 處理過的乾淨內容存進去，也能在 JReader 內直接讀取該服務的文章。憑證僅儲存在你本機的瀏覽器同步空間，不會上傳到任何第三方伺服器
   </p>
   <div class="field-group">
     <div class="field">
+      <label for="storageService">儲存服務</label>
+      <select id="storageService">
+        <option value="readwise">Readwise Reader</option>
+        <option value="instapaper">Instapaper</option>
+      </select>
+    </div>
+
+    <!-- Readwise 憑證（storageService=readwise 時顯示） -->
+    <div class="field" data-service-block="readwise">
       <label for="readwiseToken">Readwise Access Token</label>
-      <span class="desc">空白 = 不啟用</span>
+      <span class="desc">空白 = 不啟用。Token 從 <a href="https://readwise.io/access_token" target="_blank" rel="noopener">readwise.io/access_token</a> 取得</span>
       <div class="readwise-token-control">
         <div class="readwise-token-row">
           <input type="password" id="readwiseToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
@@ -819,11 +830,42 @@
         <span id="readwiseTestResult" class="token-test-result"></span>
       </div>
     </div>
+
+    <!-- Instapaper 憑證（storageService=instapaper 時顯示）：未連結填帳密、已連結顯示帳號 -->
+    <div data-service-block="instapaper">
+      <div class="field" id="instapaper-no-keys" hidden>
+        <span class="desc">此版本未內建 Instapaper 金鑰，無法連結</span>
+      </div>
+      <div class="field" id="instapaper-link-form">
+        <label for="instapaper-email">Instapaper 帳號 Email</label>
+        <input type="email" id="instapaper-email" autocomplete="username" spellcheck="false" placeholder="you@example.com">
+        <label for="instapaper-password" style="margin-top:12px">Instapaper 密碼</label>
+        <div class="readwise-token-control">
+          <div class="readwise-token-row">
+            <input type="password" id="instapaper-password" autocomplete="current-password" placeholder="輸入密碼以連結">
+            <button type="button" id="instapaper-connect" class="token-test-btn">連結</button>
+          </div>
+          <span id="instapaper-connect-result" class="token-test-result"></span>
+        </div>
+        <span class="desc">密碼只用於換取一組存取權杖，用完即丟不會儲存</span>
+      </div>
+      <div class="field" id="instapaper-linked" hidden>
+        <label>Instapaper 帳號</label>
+        <div class="readwise-token-control">
+          <div class="readwise-token-row">
+            <input type="text" id="instapaper-linked-user" readonly tabindex="-1">
+            <button type="button" id="instapaper-unlink" class="token-test-btn">解除連結</button>
+          </div>
+          <span class="desc">已連結。解除連結會清掉本機存取權杖</span>
+        </div>
+      </div>
+    </div>
+
     <div class="field field-checkbox">
       <input type="checkbox" id="readwiseSummary">
       <label for="readwiseSummary">
         送出時自動產生摘要
-        <span class="desc">送到 Readwise Reader 時，用 Google Gemini Flash Lite 先產生<strong>文章摘要</strong>一起送出，取代 Readwise 內建的英文自動摘要。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出、由 Readwise 自行處理</span>
+        <span class="desc">送出時用 Google Gemini Flash Lite 先產生<strong>文章摘要</strong>一起送到你選的儲存服務。需在下方填入 Gemini API key 才會生效；產生失敗時照常送出</span>
       </label>
     </div>
     <div class="field">
@@ -856,7 +898,7 @@
   <div class="reset-row">
     <div class="reset-text">
       <span class="reset-label">回復預設設定</span>
-      <span class="reset-desc">把所有設定複寫回預設值（Readwise / Gemini 的 API key 會保留）</span>
+      <span class="reset-desc">把所有設定複寫回預設值（Readwise / Gemini 的 API key 與 Instapaper 連結會保留）</span>
     </div>
     <button type="button" id="resetDefaults" class="reset-btn">回復預設</button>
   </div>
@@ -877,6 +919,9 @@
   <script src="../content/settings-defaults.js"></script>
   <script src="../content/domain-match.js"></script>
   <script src="../content/shortcut-utils.js"></script>
+  <!-- v1.6.0：Instapaper client + gitignored 金鑰（須在 popup-core 前）。 -->
+  <script src="../lib/instapaper-keys.js"></script>
+  <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="options.js"></script>
 </body>

@@ -103,7 +103,7 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  const api = { sanitizeHtml, buildArticleContainer, formatDate, preloadImages };
+  const api = { sanitizeHtml, buildArticleContainer, formatDate, preloadImages, parseMeta };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -126,29 +126,44 @@
       if (isError) statusEl.style.color = 'var(--muted)';
     };
 
-    const id = new URLSearchParams(global.location.search).get('id');
+    const params = new URLSearchParams(global.location.search);
+    const id = params.get('id');
     if (!id) { setStatus('缺少文章 ID'); return; }
+    const meta = parseMeta(params.get('meta'));
 
-    browser.storage.sync.get({ theme: 'light', readwiseToken: '' }).then((s) => {
+    // v1.6.0：讀設定（含儲存服務二擇一 + 兩服務憑證），走 PC.getArticle dispatcher。
+    const DEF = global.__JReadSettingsDefaults || {};
+    browser.storage.sync.get({
+      theme: 'light',
+      storageService: DEF.storageService || 'readwise',
+      readwiseToken: '',
+      instapaperToken: '',
+      instapaperTokenSecret: ''
+    }).then((s) => {
       if (s && s.theme) doc.documentElement.setAttribute('data-theme', s.theme);
-      const token = s && s.readwiseToken;
-      if (!token || !String(token).trim()) {
-        setStatus('尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
+      const { service, creds, ok } = PC.resolveServiceCredentials(s);
+      if (!ok) {
+        setStatus(service === 'instapaper'
+          ? '尚未連結 Instapaper 帳號，請到擴充功能的進階設定連結'
+          : '尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
         return;
       }
-      PC.listReaderDocuments({ token, id, withHtmlContent: true }).then((r) => {
+      PC.getArticle({ service, creds, id, meta }).then((r) => {
         if (!r || !r.ok) {
+          if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
           setStatus(loadErrorMessage(r), true);
           return;
         }
-        const article = (r.results || [])[0];
-        if (!article || !article.html_content) {
-          setStatus('找不到這篇文章的內容', true);
-          return;
-        }
-        renderArticle(article, { NS, doc });
+        renderArticle(r.doc, { NS, doc });
       });
     }).catch(() => setStatus('讀取設定失敗，請重新整理', true));
+  }
+
+  // v1.6.0：解析 feed 卡片帶入的 meta query param（encodeURIComponent(JSON)）。
+  // Instapaper 文章頁靠它補 byline（get_text 無 metadata）；Readwise 忽略。壞值回 null。
+  function parseMeta(raw) {
+    if (!raw) return null;
+    try { return JSON.parse(decodeURIComponent(raw)); } catch (_) { return null; }
   }
 
   function renderArticle(docData, ctx) {
@@ -176,7 +191,7 @@
   }
 
   function loadErrorMessage(result) {
-    if (result && result.error === 'AUTH') return 'Readwise token 無效或已過期';
+    if (result && (result.error === 'AUTH' || result.error === 'NO_CREDENTIALS')) return '登入憑證無效或已過期';
     if (result && result.error === 'NETWORK') return '網路錯誤，載入失敗，請稍後再試';
     const detail = result && result.status ? `（HTTP ${result.status}）` : '';
     return `載入失敗${detail}`;

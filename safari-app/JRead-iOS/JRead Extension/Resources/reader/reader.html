@@ -73,11 +73,9 @@
 </head>
 <body>
   <main class="jr-wrap">
-    <div class="jr-tabs" id="jr-tabs">
-      <button class="jr-tab is-active" type="button" data-src="new">Inbox</button>
-      <button class="jr-tab" type="button" data-src="later">Later</button>
-      <button class="jr-tab" type="button" data-src="jread">JRead</button>
-    </div>
+    <!-- v1.6.0：分頁由 reader-feed.js 依 FEED_TABS[service] 動態建立
+         （readwise=Inbox/Later/JRead、instapaper=未讀/已加星/封存）。 -->
+    <div class="jr-tabs" id="jr-tabs"></div>
     <div class="jr-list" id="jr-list"></div>
     <!-- 預設可見「載入中…」：即使 JS 因故沒跑（iOS 平台問題）頁面也不會全白，
          JS 接手後由 reader-feed.js 換成卡片或對應訊息。 -->
@@ -89,6 +87,10 @@
   <script src="../content/namespace.js"></script>
   <script src="../content/settings-defaults.js"></script>
   <script src="../content/toast.js"></script>
+  <!-- v1.6.0：Instapaper client + gitignored 金鑰（keys 缺檔時 __JReadInstapaper
+       仍載入、getInstapaperConsumerKeys 回 null，Readwise 照常）。須在 popup-core 前。 -->
+  <script src="../lib/instapaper-keys.js"></script>
+  <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="reader-feed.js"></script>
 </body>
