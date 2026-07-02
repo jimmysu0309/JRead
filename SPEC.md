@@ -673,7 +673,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 ## 編輯模式（v0.8.108，v0.8.109 段落提示）
 
-閱讀模式啟動時讓使用者手動點掉 cleaner 漏網的雜訊區塊。模組 `content/edit-mode.js`（`NS.editMode`）。
+閱讀模式啟動時讓使用者手動點掉 cleaner 漏網的雜訊區塊。**用途**：讓文章在**列印**或**送到稍後閱讀服務**時更乾淨——移除段落走 inline `display:none !important`，列印時不會印出、匯出時 `buildCleanHtml` 也已剔除 `[data-jread-hidden]`。模組 `content/edit-mode.js`（`NS.editMode`）。
 
 - **入口**：popup「編輯模式：移除雜訊」按鈕——`refreshPopupForActiveTab` 依 `GET_READER_STATE` 的 `active && !cinemaActive` **且 options `editModeEnabled !== false`**（v0.8.109）顯隱、依 `editModeActive` 切「編輯模式：移除雜訊 / 完成編輯」文字。點下送 `EDIT_MODE_TOGGLE` 給 content 後關 popup（編輯互動在頁面內進行）。**options 開關 `editModeEnabled`**（v0.8.109，預設 true）：不需要此功能者可在 options 關掉，popup 不再顯示按鈕。
 - **段落提示（v0.8.109，仿 Shinkansen 編輯模式）**：進入時 `markBlocks` 以 `chooseBlock` 枚舉「使用者可點掉的 block 集合」（content leaf 各 resolve 到所屬 block、去重 + 去巢狀 = 主文自然分割，**提示範圍 = 實際可選範圍單一資料源**），各設 `data-jread-edit-block`、注入單一 stylesheet（`__jread-editmode-style`）給每塊持久虛線外框（`1.5px dashed` 藍 + `outline-offset:2px` + `border-radius:3px`），hover 那塊外框加深 + 淡底色——一眼看到所有可選區塊範圍。hover 標亮純 CSS（`[data-jread-edit-block]:hover`）、點擊當下才 `chooseBlock(e.target)` resolve，**不再用 shadow overlay + mousemove 追蹤**（toolbar 仍走 Shadow DOM）。退出 `unmarkBlocks` 清 attr + 移除 style。

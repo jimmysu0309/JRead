@@ -39,8 +39,7 @@ safari-app/*.pkg
 *.xcuserdata/
 xcuserdata/
 
-# Claude Code 本機 session 狀態（權限設定 / lock），不進 repo
-# 例外：.claude/skills/ 是專案流程的單一資料源（release / harness-verify / probe
-# / new-noise-rule / ios-release），必須進版控
-.claude/*
-!.claude/skills/
+# Claude Code 本機協作規則與 session 狀態（含個人資訊 / 專案流程），不進公開 repo
+# 比照姊妹專案 Shinkansen：CLAUDE.md 與整個 .claude/（含 skills）僅存本機
+CLAUDE.md
+.claude/

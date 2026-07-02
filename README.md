@@ -1,119 +1,56 @@
+[English](README.en.md) | **繁體中文**
+
 # JRead
 
-純閱讀模式，一鍵隱藏廣告、側邊欄、彈窗、浮動元素，將主文以乾淨排版呈現。
+純閱讀模式的 Chrome / Firefox / Safari 擴充功能。一鍵隱藏廣告、側邊欄、彈窗與浮動元素，把主文抽出來、套上乾淨排版，讓網頁回到「只有文字與圖片」的閱讀狀態。
+
+適用於新聞網站、部落格平台、Wikipedia、技術文件等以文章為主的頁面。偵測不到主文時會直接不動作，不會硬套版型破壞原頁面。
 
 **目前版本**：見 [CHANGELOG.md](CHANGELOG.md) 頂部條目。
 
 ---
 
-## 功能
+## 功能簡介
 
-- 主文偵測（`<article>` / Schema.org / 內容密度啟發式）
-- 閱讀模式一鍵切換
-- 乾淨排版（字體、字級、字重、行高、版心寬度）；字重三段細/中/粗（v0.7.254，真正的 font-weight、全平台一致生效）；版心自我檢查（v0.7.246／標題列 v0.7.247）確保內文、標題、分類列都撐滿設定寬度，不被原站 wrapper 內距夾窄
-- 英文字型自選（v0.8.144，v0.8.146 擴充）：「字型」選襯線或無襯線時，下方多一個「英文字型」選單，可單獨指定英文/數字用哪個拉丁字型，中文仍照襯線/無襯線的字體渲染；襯線、無襯線各自記住選擇。系統字（Georgia / Times / Charter / Palatino / Helvetica / Arial / Verdana / SF Mono / Consolas）外，v0.8.146 起再內附 5 支可變字型 woff2——襯線 Literata / Source Serif / Piazzolla、無襯線 Public Sans / Source Sans，跨平台（含 iOS）皆可用
-- 雜訊隱藏（廣告、sticky header、彈窗、相關文章列表）
-- 編輯模式（v0.8.108，v0.8.109 段落提示）：閱讀模式下 popup 按「編輯模式：移除雜訊」，頁面上 cleaner 漏掉的雜訊段落會以虛線框標出全部可選範圍，點一下即移除，誤刪可按「復原」或 <strong>Cmd/Ctrl+Z</strong>，頁內有工具列。移除僅當次有效（退出閱讀模式或重新整理頁面即復原），移除的段落也不會被送進 Readwise。不需要此功能可在進階設定「編輯模式」關閉，popup 就不顯示該按鈕
-- 偏好設定：主題（亮/暗/米色）、字級、版心寬度
-- Space / Shift+Space 段落焦點卷動（v0.7.216）：閱讀模式下左側指示條標記目前段落，按 Space 跳到下一段；段落低於顯示門檻時自動平滑卷回畫面上方（仿 Readwise Reader，門檻可在 options 調整）
-- 儲存服務整合（v0.7.33 Readwise / v1.6.0 Instapaper 二擇一）：在進階設定選 **Readwise Reader 或 Instapaper**，把 JRead 處理過的乾淨主文一鍵送到你選的服務，繞過原站 parser 問題。Instapaper 走官方 Full API（xAuth：填一次 email / 密碼換存取權杖，密碼用完即丟），Readwise 走 access token
-- 進入 Reader（v1.0.22，v1.6.0 支援 Instapaper）：popup 按「進入 Reader」開新分頁，直接列出你選的服務最新十篇文章、跳過該服務網站。每篇可一鍵「封存」；點進文章用 JRead 原本的閱讀版型呈現，主題 / 字型 / 字級 / 翻頁全部沿用原本的控制（不用另學新 UI），也會記住閱讀位置（需先在進階設定連結該服務）。也可在一般網頁長按懸浮按鈕從選單「進入 Reader」（v1.0.23）。feed 頂端分頁依服務切換：Readwise = Inbox / Later / JRead（JRead = 撈標記 `jread` 的文章，v1.0.25）；Instapaper = 未讀 / 已加星 / 封存（v1.6.0）
-- 送出摘要（v0.8.72）：選用 Google Gemini Flash Lite，在送出時自動產生文章摘要一起送出（Readwise 取代其內建英文摘要、Instapaper 放進項目描述），需在 options 填入自己的 Gemini API key。兩個儲存服務共用此設定
-- 自訂快速鍵（v0.7.218）：options 「快速鍵」區可為「切換閱讀模式 / 送 Readwise / YouTube 無邊模式」錄製自訂組合鍵——Safari（含 iPad 外接鍵盤）沒有瀏覽器層改鍵入口，這裡是唯一通道；Chrome 也通用
-- 3 指輕點切換閱讀模式（v0.7.223）：iPhone / iPad 觸控環境直接 3 指輕點頁面即可進出閱讀模式，不用每次開 Safari 選單找 popup
-- 閱讀位置記憶（v0.8.40）：文章看到一半離開（退出閱讀模式、關分頁、瀏覽器重啟）會記住閱讀位置——捲動模式記目前段落、翻頁模式記頁數，效期內重新進入閱讀模式自動回到上次位置。效期可在 options 調整（預設 3 天、最長 7 天、0 = 停用）
-- 翻頁模式（v0.7.227）：popup 開啟後像電子書一樣左右翻頁——手機左右滑動、桌面 ← → 鍵或滾輪，圖片自動縮放至單頁內，底部頁碼可開關（v0.7.237）。iOS 翻頁時攔截 Safari 邊緣返回手勢，避免第一頁左滑誤觸返回；iOS 翻頁第一頁垂直滑一下可收合 Safari 工具列、多顯示一行（v0.7.238；v0.7.239 起整頁皆可滑翻頁、工具列收合限第一頁、第二頁起維持鎖定；v0.7.244 把垂直捲動範圍壓到最低、第一頁左右滑更乾淨；v0.7.245 第一頁收合且捲動停止後自動鎖住垂直、維持收合）。底部頁碼可當快速捲動器（v0.8.150）：按住頁碼左右拖曳即可快速跳頁，拖滿整個畫面寬就從第一頁到最後一頁，手機觸控、桌面滑鼠皆可；按住起拖時會出現進度條顯示目前在全文的位置、每跨一頁有觸覺回饋（v0.8.151；v0.8.152 調高靈敏度，少頁文章不必拖很遠就換頁）
-- 懸浮按鈕（v0.8.154）：頁面邊緣常駐一顆小圖示——**短按**切換閱讀模式、**長按**開選單（送到 Readwise Reader、切換分頁模式、叫出功能選單 v0.8.162）、**拖曳**可換到左 / 右緣與上下位置（預設在左下角，v0.8.160）。觸控裝置會自動讓按鈕停在離上下角落安全距離的位置，避免擋到 iPad 視窗縮放把手而拖不出來，關掉再開也會回到預設位置（v0.8.161）。全平台預設開（v0.8.158），可在進階設定的「觸控與懸浮控制」開關、調整透明度與尺寸（小 16px / 大 32px，覺得太小不好點可放大，v0.8.156）
-- 三指輕點切換閱讀模式可關（v0.8.154）：觸控裝置三指輕點切換閱讀模式可在進階設定開關，v0.8.157 起預設關閉（易誤觸、懸浮按鈕已是觸控主入口）
-- 回復預設設定（v0.8.157）：options 頁最下方一顆「回復預設」按鈕，一鍵把所有設定還原成預設值（需點兩次確認避免誤觸），但會保留 Readwise / Gemini 的 API key 與 Instapaper 連結
+JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**。在這之上再疊加翻頁、閱讀位置記憶、稍後閱讀服務整合等閱讀習慣相關的功能，桌面與行動裝置（含 iOS Safari）共用同一套設定。
+
+### 閱讀模式核心
+
+- **主文偵測**：依序嘗試 `<article>`、Schema.org 標記、內容密度啟發式，找出頁面真正的文章區塊
+- **一鍵切換**：從工具列圖示選單、懸浮按鈕、快速鍵或三指輕點進出閱讀模式
+- **乾淨排版**：可調字體、字級、字重（細／中／粗）、行高與版心寬度；版心自我檢查會確保內文、標題、分類列都撐滿設定寬度，不被原站 wrapper 的內距夾窄
+- **英文字型自選**：字體選襯線或無襯線時，可另外指定英文與數字使用哪支拉丁字型，中文維持原本的襯線／無襯線渲染，兩種模式各自記住選擇；除系統字外另內附五支可變字型（Literata、Source Serif、Piazzolla、Public Sans、Source Sans），跨平台（含 iOS）皆可用
+
+### 雜訊處理
+
+- **雜訊隱藏**：自動移除廣告、sticky header、彈窗、相關文章列表等干擾元素
+- **編輯模式**：手動清掉 cleaner 漏網的雜訊段落，讓文章在**列印**或**送到稍後閱讀服務**時更乾淨。閱讀模式下框選要移除的段落，點一下即隱藏，誤刪可復原或按 Cmd/Ctrl+Z；移除只在當次有效（退出或重整即還原），被移除的段落不會出現在列印結果，也不會被送進稍後閱讀服務
+
+### 閱讀體驗
+
+- **主題**：亮／暗／米色三種配色
+- **兩種閱讀方式（二選一）**：預設是**捲動模式**（一般垂直捲動），可在設定切換成**翻頁模式**——像電子書一樣左右翻頁，手機左右滑動、桌面用方向鍵或滾輪，圖片自動縮放至單頁內；底部頁碼可當快速捲動器，按住左右拖曳即可跳頁，拖動時顯示進度條與每頁的觸覺回饋
+- **段落焦點捲動（僅捲動模式）**：左側指示條標記目前段落，按 Space 跳到下一段，段落低於顯示門檻時平滑捲回畫面上方（門檻可調）；翻頁模式下不適用
+- **閱讀位置記憶**：文章看到一半離開（退出閱讀模式、關分頁、重啟瀏覽器）會記住位置——捲動模式記段落、翻頁模式記頁數，效期內重新進入自動回到上次位置（效期可調，預設 3 天、最長 7 天、0 為停用）
+
+### 稍後閱讀服務整合
+
+- **Readwise Reader 或 Instapaper（二擇一）**：在進階設定選定服務後，可把 JRead 處理過的乾淨主文一鍵送出，繞過原站解析問題；Instapaper 走官方 Full API（xAuth，填一次 email／密碼換存取權杖，密碼用完即丟），Readwise 走 access token
+- **進入 Reader**：直接在新分頁列出所選服務的最新文章，點進去用 JRead 原本的閱讀版型呈現，主題／字型／字級／翻頁全部沿用同一套控制，也會記住閱讀位置；每篇可一鍵封存。頂端分頁依服務切換：Readwise 為 Inbox／Later／JRead（標記 `jread` 的文章），Instapaper 為未讀／已加星／封存
+- **送出摘要**：選用 Google Gemini Flash Lite，在送出時一併產生文章摘要（Readwise 取代其內建英文摘要、Instapaper 放進項目描述），需在設定填入自己的 Gemini API key，兩個服務共用此設定
+
+### 操作方式
+
+- **懸浮按鈕**：頁面邊緣常駐一顆小圖示，短按切換閱讀模式、長按開選單、拖曳可換到左右緣與上下位置；可在設定調整透明度與尺寸，或關閉
+- **三指輕點**：觸控裝置三指輕點頁面即可進出閱讀模式（預設關閉，可在設定開啟）
+- **自訂快速鍵**：可為「切換閱讀模式／送出到稍後閱讀服務／YouTube 無邊模式」錄製組合鍵；Safari（含 iPad 外接鍵盤）沒有瀏覽器層的改鍵入口，這裡是唯一通道，Chrome 也通用
+- **回復預設**：一鍵把所有設定還原成預設值（需二次確認），但會保留 Readwise／Gemini 的 API key 與 Instapaper 連結
 
 詳細規格見 [SPEC.md](SPEC.md)。
 
 ---
 
-## 安裝（開發中）
-
-### Chrome
-
-1. Clone 本 repo
-2. 打開 Chrome，進入 `chrome://extensions/`
-3. 右上角開啟「開發人員模式」
-4. 點「載入未封裝項目」，選擇 `jread/` 資料夾
-5. 點工具列上的 JRead 圖示即可使用
-
-每次改程式碼後請回 `chrome://extensions/` 按該擴充功能卡片上的重新載入按鈕。
-
-### Firefox
-
-每次 release 會自動產出 `jread-firefox-vX.Y.Z.zip`（見 GitHub Releases）。本機重建：
-
-```bash
-./tools/firefox-build.sh   # 需 jq
-```
-
-詳細的 Firefox build transform 說明見 [BUILD.md](BUILD.md)。
-
-### macOS Safari
-
-> **v0.7.249 起改用 iOS App 涵蓋 macOS。** 不再產獨立的 Developer ID `.pkg`——Safari 版本由**單一 iOS binary** 提供，在 Apple Silicon Mac 上以「iPad App 在 Mac 執行」模式跑（見下方 iOS / iPadOS 章節）。
->
-> 歷史 `.pkg`（v0.7.248 以前）仍保留在 GitHub Releases 可下載，但不再更新；既有以 `.pkg` 安裝的使用者請改裝 iOS App。
-
-### iOS / iPadOS / macOS Safari（TestFlight）
-
-v0.7.217 起提供 Safari Web Extension，**單一 iOS binary 同時涵蓋 iPhone / iPad / Apple Silicon Mac**，目前走 TestFlight internal testing（尚未公開上架 App Store）：
-
-1. 受邀測試者在 iPhone / iPad / Mac 裝 TestFlight App，接受邀請後安裝 JRead
-2. 啟用擴充功能：
-   - **iPhone / iPad**：設定 → App → Safari → 延伸功能 → 啟用 JRead，並允許「所有網站」
-   - **Mac**（以 iPad App 執行）：Safari → 設定 →「擴充功能」分頁勾選 JRead，並允許「所有網站」
-3. Safari 工具列點 J 圖示 → 「啟動閱讀模式」（已在閱讀模式時按鈕會顯示「退出閱讀模式」）
-
-發佈走 `safari-app/ios-build.sh`（手動觸發、與 Chrome / Firefox release 解耦；需 Xcode + Apple Distribution cert + ASC API key，簽章資源由 `tools/asc-provision-ios.js` 管理）。
-
----
-
 ## 開發
 
-- 骨架/協作規則：見 [CLAUDE.md](CLAUDE.md)
 - 完整規格：見 [SPEC.md](SPEC.md)
 - 變更紀錄：見 [CHANGELOG.md](CHANGELOG.md)
-
-### 測試
-
-```bash
-npm test
-```
-
-`test/version-check.spec.js` 是版本號 forcing function，每次 bump 版本號必須同步更新 `EXPECTED_VERSION`。
-
-### 自動化除錯
-
-```bash
-npm install
-npx playwright install chromium   # 首次：下載 bundled Chromium
-npm run debug                     # 或 node tools/debug-harness.js --fresh
-```
-
-會用 Playwright 內建 Chromium 載入 `jread/` 為 unpacked extension，打開目標頁（預設 ChinaTalk，可用 `JREAD_URL` 環境變數覆蓋），觸發閱讀模式，讀 DOM 狀態 + 量測 gap + 截圖到 `.playwright-mcp/jread-viewport.png`。詳見 [docs/CHROME_EXTENSION_DEBUG.md](docs/CHROME_EXTENSION_DEBUG.md)。
-
-### 發佈
-
-```bash
-./release.sh
-```
-
-`release.sh` 跑完整流程：
-
-1. `npm test`
-2. working tree clean check
-3. `git tag` + `git push && git push --tags`
-4. GitHub Actions（`.github/workflows/release.yml`）build Chrome + Firefox + Firefox source zip 上傳到 Release
-
-Safari（iOS／在 Mac 以 iPad App 執行）走獨立的 TestFlight 軌、與本流程解耦——人工跑 `./safari-app/ios-build.sh`。
-
-Release artifact：
-
-- `jread-vX.Y.Z.zip`（Chrome）
-- `jread-firefox-vX.Y.Z.zip`（Firefox sideload）
-- `jread-firefox-vX.Y.Z-source.zip`（AMO source 提交用）
