@@ -112,6 +112,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 閱讀模式自動回到上次位置。0 = 停用、上限 7（position-memory.js clamp）。
     positionMemoryDays: 3,
     // v1.0.21：退出閱讀模式時把原網頁捲到「剛剛讀到的段落」。預設 true。
+    // v1.6.9：options 開關已移除，此行為固定啟用（保留 default 供 content 端讀取，
+    // 舊 storage 若殘留 false 仍尊重，但不再有 UI 可切換）。
     // 捲動模式下主文 card 留在原文件流、雜訊只是被隱藏；退出還原雜訊後版面整個
     // 變高，原本的 scrollTop 對到的內容偏移（看起來像回到開頭）。開啟時退出前
     // 抓目前閱讀段落的真實 DOM 節點（NS.spaceScroll.currentAnchor，與閱讀位置

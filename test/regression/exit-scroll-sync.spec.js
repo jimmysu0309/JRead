@@ -61,6 +61,24 @@ describe('settings-defaults — syncScrollOnExit 預設開', () => {
   });
 });
 
+// ── options UI 已移除該開關（v1.6.9）───────────────────────────────────────
+// 此行為固定啟用（預設 true 已驗於上），不再提供 UI 切換。forcing：任何人把
+// checkbox 加回 options 頁 → 這裡 fail，提醒行為應恆定開啟。
+describe('options — syncScrollOnExit 開關已移除', () => {
+  const OPTIONS_HTML = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
+  const OPTIONS_JS = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
+
+  it('options.html 不得再有 syncScrollOnExit 的 UI 元素', () => {
+    assert.ok(!/id=["']syncScrollOnExit["']/.test(OPTIONS_HTML),
+      'forcing：options 頁不該再暴露退出捲回開關（行為已固定啟用）');
+  });
+
+  it('options.js fields 陣列不得再含 syncScrollOnExit', () => {
+    assert.ok(!/syncScrollOnExit/.test(OPTIONS_JS),
+      'forcing：options.js 不該再讀寫此欄位（無對應 UI 元素）');
+  });
+});
+
 // ── (2) Source-level forcing：main.js 接線 ────────────────────────────────
 // 抓 exitReaderModeImpl 函式 body（call-site 順序驗證用）。
 function exitBody() {
