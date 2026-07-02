@@ -22,10 +22,11 @@ describe('options-service-selector: settings-defaults 新增欄位', () => {
 });
 
 describe('options-service-selector: options.html 結構', () => {
-  it('有 storageService 選擇器，含 readwise / instapaper 兩選項', () => {
-    assert.match(HTML, /<select\s+id=["']storageService["']/);
-    assert.match(HTML, /value=["']readwise["']/);
-    assert.match(HTML, /value=["']instapaper["']/);
+  it('有 storageService 兩顆分段 toggle（radio 群，readwise / instapaper 都可見）', () => {
+    // v1.6.0：改用兩顆並排 toggle 取代下拉，讓使用者一眼看到有哪些選擇
+    assert.match(HTML, /id=["']storageService["'][^>]*role=["']radiogroup["']/);
+    assert.match(HTML, /name=["']storageService["']\s+value=["']readwise["']/);
+    assert.match(HTML, /name=["']storageService["']\s+value=["']instapaper["']/);
   });
   it('Readwise / Instapaper 憑證區各有 data-service-block 標記（二擇一顯示）', () => {
     assert.match(HTML, /data-service-block=["']readwise["']/);
