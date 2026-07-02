@@ -82,6 +82,8 @@
   // 「直接含文字的 div」，apply() 在 ARTICLE_ATTR 設定前（reader 規則尚未
   // 生效、量得到原站字級）runtime 標記，BODY_TEXT_CORE 把 marker 納入。
   const TEXT_DIV_ATTR = 'data-jread-text-div';
+  // v1.6.12：CJK 為主的內文段落標記——套 text-align: justify（見 markCjkParagraphs）。
+  const CJK_JUSTIFY_ATTR = 'data-jread-cjk-justify';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -2071,6 +2073,13 @@ ${BODY_WEIGHT_SEL} {
   font-weight: ${opts.fontWeight} !important;
 }`;
     }
+    // v1.6.12：CJK 為主段落兩端對齊——修 WebKit(iOS Safari) 對 CJK 內文每行少填
+    // 尾空間的內縮（見 markCjkParagraphs）。runtime 逐段標記 CJK_JUSTIFY_ATTR、
+    // 純英文段落不命中。末行 text-align-last 預設 auto → 自動靠左，不需另設。
+    userOverrides += `
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="1"] {
+  text-align: justify !important;
+}`;
     if (overrides.lineHeight && !overrides.fontSize) {
       // fontSize 已改過時 line-height 已連帶注入；這裡只處理「只改 lineHeight
       // 沒改 fontSize」的獨立分支，避免 CSS 重複 rule。
@@ -2738,6 +2747,43 @@ html.${HTML_CLASS}.jread-orion body {
     return marked;
   }
 
+  // ---- CJK 為主內文段落標記（v1.6.12）------------------------------------
+  // 根因：WebKit（iOS Safari）在 text-align: left 下對 CJK 內文每行少填約 4 個
+  // 字、留 30-88px 尾空間；同一份 DOM / 同字級 / 同 fallback 字型，Chromium 會
+  // 填滿。桌面版心寬看不出內縮比例，手機窄版心（~358px）就明顯「第二段起變窄」
+  // （Jimmy 2026-07-03 om.co 翻譯後回報）。翻譯（Shinkansen）把幾乎每段都包上
+  // inline 元素（<a>/<strong>/<em>），症狀遍及全文。
+  //
+  // 實測（Playwright WebKit 對照 Chromium）：word-break / line-break / overflow-wrap /
+  // 去斜體全部無效，唯一有效解是 text-align: justify（分散對齊撐回滿版，末行
+  // text-align-last 預設 auto → 自動靠左，不受影響）。justify 本就是中文排版慣例。
+  //
+  // 為什麼逐段落載體標記、不標整篇容器：text-align 會繼承，標容器會讓夾在中文
+  // 文章裡的純英文段落也被 justify（英文 justify 產生字間空隙 rivers、可讀性差）。
+  // 判定訊號是「CJK 佔比」——翻譯無關的純內容結構訊號（硬規則 3）：純英文段落
+  // ratio≈0 不命中、完全不受影響；只有中文為主的段落才 justify。
+  const CJK_HAN_RE = /[㐀-䶿一-鿿豈-﫿]/g;
+  const LATIN_LETTER_RE = /[A-Za-z]/g;
+  function markCjkParagraphs(articleEl) {
+    const carriers = articleEl.querySelectorAll(
+      `p, li, blockquote, dd, dt, [${TEXT_DIV_ATTR}="1"]`);
+    const marked = [];
+    for (const el of carriers) {
+      // byline / kicker 是 meta 列（作者 / 日期 / 分類），有自己的對齊規則，不 justify
+      if (el.closest(`[${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
+      const txt = el.textContent || '';
+      const han = (txt.match(CJK_HAN_RE) || []).length;
+      if (han < 4) continue; // 太短（標籤 / 單字）不套，避免誤傷
+      const latin = (txt.match(LATIN_LETTER_RE) || []).length;
+      // CJK 佔「有意義字元（漢字 + 拉丁字母）」>= 0.3 = 中文為主段落。純英文段
+      // 落 ratio≈0；中英混排（"使用 Aispire.ai 的…"）ratio 仍高、應 justify
+      if (han / (han + latin) < 0.3) continue;
+      el.setAttribute(CJK_JUSTIFY_ATTR, '1');
+      marked.push(el);
+    }
+    return marked;
+  }
+
   // ---- Pangu spacing（中英文間自動補空白）---------------------------------
   // 規則：
   //   CJK ↔ ASCII 英數字（LEAD）→ 補空白
@@ -3230,6 +3276,11 @@ html.${HTML_CLASS}.jread-orion body {
       const textDivMarked = markTextDivs(articleEl);
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
+
+      // v1.6.12：CJK 為主段落標記（須在 TEXT_DIV_ATTR 標記後，才含 div 當段落站）。
+      // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
+      // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
+      const cjkJustifyMarked = markCjkParagraphs(articleEl);
 
       // v0.7.182：mark video player container descendants——背景/色彩
       // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
@@ -4498,7 +4549,7 @@ html.${HTML_CLASS}.jread-orion body {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
     },
 
     /**
@@ -4585,6 +4636,12 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.textDivMarked)) {
         for (const el of snapshot.textDivMarked) {
           if (el && el.removeAttribute) el.removeAttribute(TEXT_DIV_ATTR);
+        }
+      }
+      // v1.6.12：移除 CJK 段落兩端對齊標記
+      if (Array.isArray(snapshot.cjkJustifyMarked)) {
+        for (const el of snapshot.cjkJustifyMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(CJK_JUSTIFY_ATTR);
         }
       }
 
