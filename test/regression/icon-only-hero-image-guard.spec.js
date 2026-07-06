@@ -33,6 +33,20 @@ describe('icon-only hero image guard', () => {
       Object.defineProperty(coverImg, 'naturalHeight', { value: 420 });
     }
 
+    // Stub RSS feed thumbnail hero: 190×125（小於舊 200px 門檻的內容縮圖）
+    const rssImg = doc.querySelector('img.rss-thumb-image');
+    if (rssImg) {
+      Object.defineProperty(rssImg, 'naturalWidth', { value: 190 });
+      Object.defineProperty(rssImg, 'naturalHeight', { value: 125 });
+    }
+
+    // Stub genuine icon-sized image: 48×48（下界，仍須被當 icon 清）
+    const iconImg = doc.querySelector('img.icon-img');
+    if (iconImg) {
+      Object.defineProperty(iconImg, 'naturalWidth', { value: 48 });
+      Object.defineProperty(iconImg, 'naturalHeight', { value: 48 });
+    }
+
     // Stub lazy-loaded hero image: naturalWidth=0 (not loaded yet),
     // but rendered size is large (from HTML width/height attributes).
     const lazyImg = doc.querySelector('img.lazy_imgs');
@@ -74,6 +88,25 @@ describe('icon-only hero image guard', () => {
     }
     assert.ok(!hidden,
       'lazy-loaded hero image link should not be hidden — rendered size guard must catch it');
+  });
+
+  it('RSS thumbnail hero link (190×125 <a><img>, no text) is NOT hidden', () => {
+    const rssLink = doc.querySelector('a.rss-thumb-link');
+    assert.ok(rssLink, 'rss thumb link exists');
+    let hidden = false, cur = rssLink;
+    while (cur && cur !== doc.body) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { hidden = true; break; }
+      cur = cur.parentElement;
+    }
+    assert.ok(!hidden,
+      '190×125 RSS 縮圖 hero 連結不可被誤判成 icon-only CTA 砍掉（Miniflux 主圖消失）');
+  });
+
+  it('genuine icon-sized image link (48×48, no text) IS hidden', () => {
+    const iconLink = doc.querySelector('a.icon-img-link');
+    assert.ok(iconLink, 'icon img link exists');
+    assert.strictEqual(iconLink.dataset.jreadHidden, '1',
+      '48×48 圖標連結仍須被當 icon-only 清（下界鎖定：兩維皆小 = icon）');
   });
 
   it('icon-only CTA link (svg, no text) IS hidden', () => {

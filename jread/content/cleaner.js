@@ -5141,9 +5141,19 @@
     if (href && IMG_URL_RE.test(href)) return true;
     const img = a.querySelector && a.querySelector('img');
     if (!img) return false;
-    const natOk = img.naturalWidth >= 200 && img.naturalHeight >= 100;
+    // 內容圖 vs icon 判別（v1.6.13）：icon / CTA 圖標在「兩維皆小」（社群鈕、
+    // 支持鈕、分享鈕多 <= 64px 見方）；內容縮圖（含 RSS feed 190×125 這種小
+    // hero）至少較長一維遠超 icon 尺度、且兩維皆大於 icon 見方。原本硬性
+    // 200×100 landscape 門檻把 190px 寬的 RSS thumbnail hero 誤判成 icon-only
+    // CTA 砍掉（Miniflux 分享頁 Autocar 主圖消失實證）。改用 min/max：兩維
+    // 皆 >= 64（超過任何 icon 見方）且較長維 >= 100（明確非圖標）才算內容圖。
+    const isContentSize = (w, h) => {
+      const lo = Math.min(w, h), hi = Math.max(w, h);
+      return lo >= 64 && hi >= 100;
+    };
+    const natOk = isContentSize(img.naturalWidth, img.naturalHeight);
     const rect = img.getBoundingClientRect();
-    const renOk = rect.width >= 200 && rect.height >= 100;
+    const renOk = isContentSize(rect.width, rect.height);
     const hasLazyContentSrc = LAZY_SRC_ATTRS.some(at => {
       const v = img.getAttribute(at);
       return v && !LAZY_PLACEHOLDER_RE.test(v) && !SPACER_SRC_RE.test(v);
