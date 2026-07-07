@@ -628,6 +628,72 @@ describe('翻頁模式（v0.7.227）', () => {
         assert.match(PAGED_SRC, /if \(sw === lastScrollWidth\) return/,
           'forcing：移掉 gate → 每張 reserved 圖載入都跑 measureContentEndX treewalker');
       });
+
+      // ---- v1.6.16：晚到圖持續強制 eager（「載入中就切翻頁模式」的 race）---------
+      // Bug（Jimmy 假設 + probe 實證）：forceEagerImages 只在進場掃一次。使用者在頁面
+      // 還在載入 / SPA 還在 mount 後段圖時就切翻頁模式 → 進場後才進 DOM 的圖掃不到，
+      // 帶著 loading="lazy" 落在畫面外後段欄，翻頁模式無垂直捲動觸發不了原生 lazy →
+      // 永遠空白（probe：進場後注入的 lazy 圖 rectLeft 4319/vw 430，9s 全程 loaded=false）。
+      // 修法：MutationObserver 盯 art 子樹整個閱讀期間，新增 img / 被改回 lazy 的 img
+      // 即時強制 eager。「強制後載入撐高→重測」需真 layout，jsdom 驗 observer 的 attribute
+      // 轉換 wiring（新增、改回、uninstall 斷開），端到端載入由 Chromium probe 驗。
+      const flush = () => new Promise(r => setTimeout(r, 0)); // 排空 MutationObserver microtask
+
+      it('(c) 進場後才新增的 lazy 圖被 observer 強制 eager', async () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        const art = env.document.querySelector('article');
+        api.sync({ pagedMode: true }, art);
+        // 進場後才進 DOM，且包一層 wrapper——驗 subtree + querySelectorAll 涵蓋巢狀 img
+        const late = env.document.createElement('img');
+        late.setAttribute('loading', 'lazy');
+        const fig = env.document.createElement('figure');
+        fig.appendChild(late);
+        art.appendChild(fig);
+        await flush();
+        assert.strictEqual(late.getAttribute('loading'), 'eager',
+          '晚到 lazy 圖須被 observer 強制 eager，否則落在畫面外欄永遠不載');
+        api.uninstall();
+      });
+
+      it('(c) 既有圖 loading 被改回 lazy（框架 re-render）→ observer 再強制 eager', async () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        const art = env.document.querySelector('article');
+        const img = env.document.createElement('img');
+        img.setAttribute('loading', 'lazy');
+        art.appendChild(img);
+        api.sync({ pagedMode: true }, art);
+        assert.strictEqual(img.getAttribute('loading'), 'eager', '進場 eager');
+        img.setAttribute('loading', 'lazy'); // 模擬框架 re-render 把 loading 改回
+        await flush();
+        assert.strictEqual(img.getAttribute('loading'), 'eager', 'observer 須再強制回 eager');
+        api.uninstall();
+      });
+
+      it('(c) uninstall 斷 observer——還原回 lazy 不被打斷、之後新增不強制', async () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        const art = env.document.querySelector('article');
+        const img = env.document.createElement('img');
+        img.setAttribute('loading', 'lazy');
+        art.appendChild(img);
+        api.sync({ pagedMode: true }, art);
+        api.uninstall();
+        await flush();
+        assert.strictEqual(img.getAttribute('loading'), 'lazy',
+          'uninstall 還原回 lazy 不可被 observer 又改成 eager（disconnect 須先於 restore）');
+        const after = env.document.createElement('img');
+        after.setAttribute('loading', 'lazy');
+        art.appendChild(after);
+        await flush();
+        assert.strictEqual(after.getAttribute('loading'), 'lazy', 'observer 已斷、退出後新增圖不動');
+      });
+
+      it('(c) forcing：uninstall 先 disconnect observer 再 restoreEagerImages', () => {
+        assert.match(PAGED_SRC, /mediaObserver\.disconnect\(\);[\s\S]*?restoreEagerImages\(\)/,
+          'forcing：順序反了 → 還原 setAttribute lazy 被 observer 又改回 eager、還原失敗');
+      });
     });
   });
 
