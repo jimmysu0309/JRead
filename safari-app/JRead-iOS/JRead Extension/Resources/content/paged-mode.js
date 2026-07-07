@@ -268,6 +268,7 @@
   //       （reserved-dimension 站省成本）。涵蓋整個閱讀期間，不只前 3 秒。
   let onDescendantLoadBound = null;   // 卡片 capture load 監聽（uninstall 移除）
   let eagerForced = [];               // 進場強制 eager 的圖 [{ img, prev }]，uninstall 還原
+  let mediaObserver = null;           // v1.6.16：盯 art 子樹、晚到/被改回 lazy 的圖即時強制 eager
   let remeasureDebounce = 0;          // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
@@ -431,16 +432,45 @@
   // 右側外，原生 lazy 判定「不在視窗附近」會延遲（iOS WebKit 尤甚）載入，內容末端
   // 遲遲不穩。強制 eager 讓所有圖即時載入；記錄原值 uninstall 還原（退回捲動模式後
   // lazy 仍是合理的效能預設）。結構性通則、不綁站點。
+  // v1.6.16：單圖 helper——供進場掃描與 MutationObserver 共用。只動 loading="lazy"
+  // 的圖（設成 eager 後不再是 lazy → observer 再看到不會重觸發、無無限迴圈）。
+  function forceEagerImg(img) {
+    try {
+      if (!img || !img.getAttribute) return;
+      if ((img.getAttribute('loading') || '').toLowerCase() === 'lazy') {
+        eagerForced.push({ img, prev: img.getAttribute('loading') });
+        img.setAttribute('loading', 'eager'); // 用 attribute 非 .loading 屬性——瀏覽器讀 attribute、且反射到 jsdom
+      }
+    } catch (e) { /* 退化環境 */ }
+  }
   function forceEagerImages() {
     if (!art) return;
     try {
-      for (const img of art.querySelectorAll('img')) {
-        if ((img.getAttribute('loading') || '').toLowerCase() === 'lazy') {
-          eagerForced.push({ img, prev: img.getAttribute('loading') });
-          img.setAttribute('loading', 'eager'); // 用 attribute 非 .loading 屬性——瀏覽器讀 attribute、且反射到 jsdom
+      for (const img of art.querySelectorAll('img')) forceEagerImg(img);
+    } catch (e) { /* 退化環境 */ }
+  }
+  // v1.6.16：進場一次性 forceEager 只掃「進場當下」的圖。使用者「頁面還在載入時就切
+  // 翻頁模式」→ 之後才進 DOM 的圖（框架晚 mount / SPA lazy-render / 框架把 loading
+  // 改回 lazy）掃不到，落在畫面外後段欄、翻頁模式無垂直捲動觸發不了原生 lazy → 永遠
+  // 空白（probe 實證：進場後注入的 lazy 圖 rectLeft 4085/vw 430，9s 全程 loaded=false）。
+  // MutationObserver 盯 art 子樹的整個閱讀期間：新增 img（或既有 img 的 loading 被改回
+  // lazy）即時強制 eager。強制後圖載入 → capture load 監聽接手 remeasure，頁數同步更新。
+  function observeMediaForEager() {
+    if (!art || typeof MutationObserver === 'undefined') return;
+    mediaObserver = new MutationObserver((records) => {
+      for (const rec of records) {
+        if (rec.type === 'attributes') {
+          if (rec.target && rec.target.tagName === 'IMG') forceEagerImg(rec.target);
+        } else {
+          for (const n of rec.addedNodes) {
+            if (!n || n.nodeType !== 1) continue;
+            if (n.tagName === 'IMG') forceEagerImg(n);
+            else if (n.querySelectorAll) { for (const im of n.querySelectorAll('img')) forceEagerImg(im); }
+          }
         }
       }
-    } catch (e) { /* 退化環境 */ }
+    });
+    mediaObserver.observe(art, { childList: true, subtree: true, attributes: true, attributeFilter: ['loading'] });
   }
   function restoreEagerImages() {
     for (const { img, prev } of eagerForced) {
@@ -967,6 +997,8 @@
     installed = true;
     // v1.6.15：進場強制 lazy 圖 eager（水平溢出的後段圖才會即時載入）
     forceEagerImages();
+    // v1.6.16：持續盯後續進 DOM / 被改回 lazy 的圖（涵蓋「載入中就切翻頁模式」的 race）
+    observeMediaForEager();
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
     remeasurePages();
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
@@ -1003,6 +1035,9 @@
     onDescendantLoadBound = null;
     if (remeasureDebounce) { clearTimeout(remeasureDebounce); remeasureDebounce = 0; }
     lastScrollWidth = 0;
+    // v1.6.16：先斷 observer 再還原——否則還原 setAttribute('loading','lazy') 會被
+    // observer 當成「圖變 lazy」又強制回 eager，還原失敗。
+    if (mediaObserver) { mediaObserver.disconnect(); mediaObserver = null; }
     restoreEagerImages();
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
