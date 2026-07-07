@@ -83,6 +83,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     blockPageShortcuts: true,
     // 中英文字之間自動補空白（盤古之白）。
     pangu: true,
+    // v1.6.14：閱讀模式下點文內連結時，目標頁（原分頁 / 新分頁）自動延續閱讀模式。
+    // 預設 true = 開；false = 只有原頁進閱讀模式、點連結後的目標頁維持原站。判定與
+    // intent list 讀寫在 content/link-follow.js，只認 http(s) 整頁導航（SPA 內部路由由
+    // main.js wasActive 路徑處理、不重複）。
+    linkFollowReader: true,
     // v0.8.109：編輯模式（閱讀模式下手動點掉雜訊段落）。預設 true = popup 顯示
     // 「編輯模式：移除雜訊」按鈕；false = 整顆隱藏（不需要此功能者可關掉）。
     editModeEnabled: true,
