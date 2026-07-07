@@ -256,6 +256,20 @@
   let scrubFillEl = null;      // v0.8.151 scrub 進度條 fill
   let hapticEl = null;         // v0.8.151 iOS 觸覺載體（switch checkbox）
   let remeasureTimers = [];
+  // v1.6.15：內容驅動重測（lazy-load 圖片修法）。固定 [1000,3000] 計時器只在進場
+  // 前 3 秒重算頁數——沒預留 width/height 的 lazy 圖若 3s 後才載完撐高，內容末端
+  // 右移但頁數停在舊值，goTo/End clamp 在 stale pageCount → 後段內容留在水平溢出
+  // 區外翻不到（probe 實證：注入 3s 後才變長的內容，End 差整整一欄翻不到）。改法：
+  //   (a) 進場時把 loading="lazy" 的圖強制 eager，讓水平溢出的圖也即時載入（iOS
+  //       WebKit 對 offscreen 欄的 lazy 圖延遲更兇；Chromium 實測仍會漸進載入但
+  //       eager 讓內容更快穩定）；uninstall 還原。
+  //   (b) 卡片掛 capture 的 load 監聽（img load 事件不 bubble，capture 仍達祖先），
+  //       任何後代 img/video/iframe 載入 → debounce 重測。scrollWidth 沒變則跳過
+  //       （reserved-dimension 站省成本）。涵蓋整個閱讀期間，不只前 3 秒。
+  let onDescendantLoadBound = null;   // 卡片 capture load 監聽（uninstall 移除）
+  let eagerForced = [];               // 進場強制 eager 的圖 [{ img, prev }]，uninstall 還原
+  let remeasureDebounce = 0;          // debounce timer handle
+  let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   // v1.5.4：底部頁碼指示器一律顯示——翻頁模式拿掉頂端進度條（v1.5.2）後它是唯一
   // 進度載體，無理由讓使用者關掉。原 showPageNumber 開關 + setShowIndicator 已移除。
@@ -377,6 +391,62 @@
     let padL = 0;
     try { padL = parseFloat(getComputedStyle(art).paddingLeft) || 0; } catch (e) { /* */ }
     measuredPages = computePageCountFromExtent(endX, padL, stride());
+  }
+
+  // v1.6.15：重測頁數並和目前狀態對齊——刷新頁碼指示文字；若目前頁碼已超過新頁數
+  // （內容縮水）clamp 回最後一頁，不然停在幽靈位置。內容驅動重測與固定計時器共用。
+  function remeasureAndReconcile() {
+    if (!installed || !art) return;
+    remeasurePages();
+    try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
+    const t = pageCount();
+    if (idx > t - 1) goTo(t - 1, false);
+    else renderIndicator();
+  }
+
+  // v1.6.15：後代媒體載入 → debounce 重測。scrollWidth 未變則跳過（reserved-
+  // dimension 站圖片載入不撐 layout、無需重算，省 measureContentEndX 的 treewalker
+  // 成本）。trailing debounce：一批同時載入的圖只重測一次，晚到的圖各自再觸發。
+  function scheduleRemeasure() {
+    if (remeasureDebounce) clearTimeout(remeasureDebounce);
+    remeasureDebounce = setTimeout(function () {
+      remeasureDebounce = 0;
+      if (!installed || !art) return;
+      let sw = 0;
+      try { sw = art.scrollWidth; } catch (e) { /* */ }
+      if (sw === lastScrollWidth) return; // 內容末端沒變（多為 reserved 尺寸圖）→ 不重算
+      remeasureAndReconcile();
+    }, 180);
+  }
+
+  // capture load 監聽 handler：img load 事件不 bubble，但 capture phase 仍會在
+  // 祖先觸發（非 bubbling 事件的 capture 監聽照樣跑）——一條卡片層 delegated 監聽
+  // 即涵蓋所有後代圖，不必逐圖掛 listener。
+  function onDescendantLoad(e) {
+    const tag = e.target && e.target.tagName;
+    if (tag === 'IMG' || tag === 'VIDEO' || tag === 'IFRAME') scheduleRemeasure();
+  }
+
+  // v1.6.15：進場把 loading="lazy" 的圖強制 eager——水平多欄溢出把後段圖推到畫面
+  // 右側外，原生 lazy 判定「不在視窗附近」會延遲（iOS WebKit 尤甚）載入，內容末端
+  // 遲遲不穩。強制 eager 讓所有圖即時載入；記錄原值 uninstall 還原（退回捲動模式後
+  // lazy 仍是合理的效能預設）。結構性通則、不綁站點。
+  function forceEagerImages() {
+    if (!art) return;
+    try {
+      for (const img of art.querySelectorAll('img')) {
+        if ((img.getAttribute('loading') || '').toLowerCase() === 'lazy') {
+          eagerForced.push({ img, prev: img.getAttribute('loading') });
+          img.setAttribute('loading', 'eager'); // 用 attribute 非 .loading 屬性——瀏覽器讀 attribute、且反射到 jsdom
+        }
+      }
+    } catch (e) { /* 退化環境 */ }
+  }
+  function restoreEagerImages() {
+    for (const { img, prev } of eagerForced) {
+      try { if (img && img.setAttribute) img.setAttribute('loading', prev); } catch (e) { /* */ }
+    }
+    eagerForced = [];
   }
 
   function pageCount() {
@@ -843,6 +913,7 @@
       resizeRaf = 0;
       if (!art) return;
       remeasurePages();
+      try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ } // v1.6.15：保持變動偵測 gate 準確
       const total = pageCount();
       goTo(Math.round(lastRatio * (total - 1)), false);
     });
@@ -894,20 +965,23 @@
     window.addEventListener('scroll', onScroll, { passive: true }); // v0.7.245：捲動停止後鎖
 
     installed = true;
+    // v1.6.15：進場強制 lazy 圖 eager（水平溢出的後段圖才會即時載入）
+    forceEagerImages();
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
     remeasurePages();
+    try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
     const total = pageCount();
     goTo(Math.round(lastRatio * (total - 1)), false);
 
-    // lazy-load 圖片 / 晚到內容會讓內容末端移動——延遲重測頁數
-    // （刷指示文字；頁數縮水時 clamp 回最後一頁，不然停在幽靈位置）
-    remeasureTimers = [1000, 3000].map(ms => setTimeout(() => {
-      if (!installed) return;
-      remeasurePages();
-      const t = pageCount();
-      if (idx > t - 1) goTo(t - 1, false);
-      else renderIndicator();
-    }, ms));
+    // v1.6.15：內容驅動重測——卡片掛 capture load 監聽，任何後代 img/video/iframe
+    // 載入撐大內容即 debounce 重測（涵蓋整個閱讀期間，不只前 3 秒）。
+    onDescendantLoadBound = onDescendantLoad;
+    art.addEventListener('load', onDescendantLoadBound, true);
+
+    // lazy-load 圖片 / 晚到內容會讓內容末端移動——固定計時器仍保留當安全網，
+    // 涵蓋非媒體載入的 reflow（web font 換字、晚到 CSS）；媒體載入主要靠上面的
+    // load 監聽即時接手，不再只賴這兩個時間點。
+    remeasureTimers = [1000, 3000].map(ms => setTimeout(remeasureAndReconcile, ms));
   }
 
   function uninstall() {
@@ -924,6 +998,12 @@
     if (resizeRaf) { cancelAnimationFrame(resizeRaf); resizeRaf = 0; }
     for (const t of remeasureTimers) clearTimeout(t);
     remeasureTimers = [];
+    // v1.6.15：移除內容驅動重測的 load 監聽 + debounce timer；還原強制 eager 的圖
+    if (art && onDescendantLoadBound) art.removeEventListener('load', onDescendantLoadBound, true);
+    onDescendantLoadBound = null;
+    if (remeasureDebounce) { clearTimeout(remeasureDebounce); remeasureDebounce = 0; }
+    lastScrollWidth = 0;
+    restoreEagerImages();
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
     unlockVScroll();

@@ -552,6 +552,83 @@ describe('翻頁模式（v0.7.227）', () => {
           'forcing：不重置 → 下一次「無 anchor」退出也不還原進場位置');
       });
     });
+
+    // ---- lazy-load 內容驅動重測（v1.6.15）--------------------------------
+    // Bug：沒預留 width/height 的 lazy 圖在進場 3s（固定 remeasure 計時器窗口）
+    // 後才載完撐高 → 內容末端右移但頁數停在舊值 → goTo/End clamp 在 stale
+    // pageCount → 後段內容留在水平溢出區外翻不到（Chromium probe 實證：注入
+    // 3s 後才變長的內容，End 差整整一欄翻不到；修法後 End 到得了真末端）。
+    // 修法兩半：(a) 進場強制 lazy 圖 eager、uninstall 還原；(b) 卡片掛 capture
+    // load 監聽，媒體載入撐大內容即 debounce 重測。
+    // 本檔驗不需 layout 的兩半 wiring（attribute 轉換 + 監聽增/移）；
+    // 「載入→重測→頁數更新」需真 scrollWidth，jsdom 無 layout，由 probe 驗。
+    describe('lazy-load 內容驅動重測（v1.6.15）', () => {
+      function loadModuleEnv() {
+        const env = loadFixtureWithScripts({
+          fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true
+        });
+        env.window.eval(PAGED_SRC);
+        return env;
+      }
+
+      it('(a) 進場把 loading="lazy" 的圖強制 eager；非 lazy 的不動', () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        const art = env.document.querySelector('article');
+        const mk = (loading) => {
+          const img = env.document.createElement('img');
+          if (loading) img.setAttribute('loading', loading);
+          art.appendChild(img);
+          return img;
+        };
+        const lazy = mk('lazy'), eager = mk('eager'), none = mk(null);
+        api.sync({ pagedMode: true }, art);
+        assert.strictEqual(lazy.getAttribute('loading'), 'eager', 'lazy 圖進場須強制 eager（水平溢出後段圖才即時載入）');
+        assert.strictEqual(eager.getAttribute('loading'), 'eager', '原 eager 不動');
+        assert.strictEqual(none.getAttribute('loading'), null, '無 loading 屬性的圖不動');
+        api.uninstall();
+      });
+
+      it('(a) uninstall 還原被強制 eager 的圖回 lazy（退回捲動模式後 lazy 仍是合理預設）', () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        const art = env.document.querySelector('article');
+        const lazy = env.document.createElement('img');
+        lazy.setAttribute('loading', 'lazy');
+        art.appendChild(lazy);
+        api.sync({ pagedMode: true }, art);
+        assert.strictEqual(lazy.getAttribute('loading'), 'eager', '進場 eager');
+        api.uninstall();
+        assert.strictEqual(lazy.getAttribute('loading'), 'lazy', 'uninstall 須還原回 lazy');
+      });
+
+      it('(b) install 在卡片掛 load capture 監聽；uninstall 移除', () => {
+        const env = loadModuleEnv();
+        const api = env.window.__JRead.pagedMode;
+        const art = env.document.querySelector('article');
+        const added = [], removed = [];
+        const origAdd = art.addEventListener.bind(art);
+        const origRem = art.removeEventListener.bind(art);
+        art.addEventListener = (t, f, o) => { added.push([t, o]); return origAdd(t, f, o); };
+        art.removeEventListener = (t, f, o) => { removed.push([t, o]); return origRem(t, f, o); };
+        api.sync({ pagedMode: true }, art);
+        assert.ok(added.some(([t, o]) => t === 'load' && o === true),
+          'install 須在卡片掛 load capture 監聽（img load 不 bubble、capture 才達祖先）');
+        api.uninstall();
+        assert.ok(removed.some(([t, o]) => t === 'load' && o === true),
+          'uninstall 須移除 load capture 監聽（否則卡片被 styler reapply 沿用時殘留）');
+      });
+
+      // source-level forcing：媒體 load → debounce 重測；scrollWidth 未變則跳過
+      it('(b) forcing：load handler 認 IMG/VIDEO/IFRAME → scheduleRemeasure', () => {
+        assert.match(PAGED_SRC, /tag === 'IMG' \|\| tag === 'VIDEO' \|\| tag === 'IFRAME'.*scheduleRemeasure/s,
+          'forcing：handler 不呼叫 scheduleRemeasure → 媒體載入不重測、頁數 stale 回歸');
+      });
+      it('(b) forcing：scheduleRemeasure scrollWidth 未變則跳過（reserved-dimension 站省成本）', () => {
+        assert.match(PAGED_SRC, /if \(sw === lastScrollWidth\) return/,
+          'forcing：移掉 gate → 每張 reserved 圖載入都跑 measureContentEndX treewalker');
+      });
+    });
   });
 
   describe('classifySwipe', () => {
