@@ -1358,6 +1358,11 @@
     // scheduleReapply 已搬到模組層（v0.8.148，與 onMessage REAPPLY_SETTINGS 共用）。
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
+      // v1.6.14：linkFollowReader 快取即時更新（click handler 同步讀）。放在 active guard
+      // 之前——設定改變時不論當前是否閱讀模式都要更新快取，下次點連結才對。
+      if ('linkFollowReader' in changes) {
+        _linkFollowReader = changes.linkFollowReader.newValue !== false;
+      }
       if (!NS.state.active) return;
       // v0.7.131：blockPageShortcuts 即時切換——options 改 toggle 後立刻生效，
       // 不需 toggle reader mode。獨立處理，不走 styler restore/apply 路徑。
@@ -1486,10 +1491,91 @@
     return !!helper.matchHostname(location.hostname, list);
   }
 
+  // v1.6.14：連結延續閱讀模式。閱讀模式下點文內連結 → 記 link intent 到 storage.local；
+  // 目標頁（原分頁 / 新分頁皆落在該 URL）載入時比對命中即 silent 進閱讀模式。
+  // 純決策 / list 讀寫在 content/link-follow.js（單一資料源 + forcing spec）；此處只做
+  // click 事件綁定 + storage 副作用。setting linkFollowReader 預設開；快取成模組變數供
+  // click handler 同步讀（click → 導航之間沒空間 await 設定）。
+  let _linkFollowReader = true;
+  (async function seedLinkFollowSetting() {
+    try {
+      const s = await getSettings();
+      if (s && typeof s.linkFollowReader === 'boolean') _linkFollowReader = s.linkFollowReader;
+    } catch (_) { /* 讀不到：維持預設開 */ }
+  })();
+
+  function recordLinkIntent(url) {
+    const LF = window.__JReadLinkFollow;
+    if (!LF) return;
+    try {
+      if (!(browser.storage && browser.storage.local)) return;
+      // read-modify-write：readerLinkIntent 這個 key 跨分頁共享，必須保留其他分頁的
+      // pending intent（naive set 整包覆蓋會洗掉別的分頁剛記的）。同分頁導航非即時
+      //（換頁需先抓目標頁 HTML），get→set 來得及；失敗則此頁不延續（安靜降級）。
+      browser.storage.local.get({ [LF.STORAGE_KEY]: [] }).then((v) => {
+        const cur = v && Array.isArray(v[LF.STORAGE_KEY]) ? v[LF.STORAGE_KEY] : [];
+        const next = LF.addIntent(cur, url, Date.now());
+        const p = browser.storage.local.set({ [LF.STORAGE_KEY]: next });
+        if (p && p.catch) p.catch(() => {});
+      }).catch(() => {});
+    } catch (_) { /* context invalidated 等：略過 */ }
+  }
+
+  function onReaderLinkClick(e) {
+    if (!NS.state.active) return;    // 只在閱讀模式下延續
+    if (!_linkFollowReader) return;  // 設定關閉
+    const LF = window.__JReadLinkFollow;
+    if (!LF) return;
+    const t = e.target;
+    const a = t && t.closest ? t.closest('a[href]') : null;
+    if (!a) return;
+    const decision = LF.shouldRecord({
+      button: e.button,
+      altKey: e.altKey,
+      defaultPrevented: e.defaultPrevented,
+      href: a.href,
+      currentHref: location.href,
+      hasDownload: a.hasAttribute('download')
+    });
+    if (!decision.record) return;
+    recordLinkIntent(decision.url);
+  }
+
+  (function installReaderLinkFollow() {
+    if (window.top !== window.self) return; // 導航延續只對主框架有意義
+    // bubble phase（capture:false）：站點 SPA router 的 preventDefault 已在此前發生，
+    // 才讀得到 e.defaultPrevented=true（capture phase 早於站點 handler、永遠讀到 false）。
+    document.addEventListener('click', onReaderLinkClick, false);
+    // 中鍵開新分頁多數瀏覽器發 auxclick（button 1）而非 click——同款處理。
+    document.addEventListener('auxclick', onReaderLinkClick, false);
+  })();
+
+  // 目標頁載入時消費 link intent：命中回 true（呼叫端 silent 進閱讀模式）。
+  // 設定關 / 無命中回 false。一律讀寫（即使命中也剪過期、寫回消費後 list）。
+  async function consumeLinkIntentForCurrentRoute() {
+    const LF = window.__JReadLinkFollow;
+    if (!LF || !(browser.storage && browser.storage.local)) return false;
+    const s = await getSettings();
+    if (!s || s.linkFollowReader === false) return false;
+    try {
+      const v = await browser.storage.local.get({ [LF.STORAGE_KEY]: [] });
+      const cur = v && Array.isArray(v[LF.STORAGE_KEY]) ? v[LF.STORAGE_KEY] : [];
+      const { matched, nextList } = LF.consumeMatch(cur, location.href, Date.now());
+      if (matched || nextList.length !== cur.length) {
+        const p = browser.storage.local.set({ [LF.STORAGE_KEY]: nextList });
+        if (p && p.catch) p.catch(() => {});
+      }
+      return matched;
+    } catch (_) { return false; }
+  }
+
   (async function tryAutoEnableOnLoad() {
     try {
       if (window.top !== window.self) return;
-      if (!(await autoEnableMatchesCurrentRoute())) return;
+      const auto = await autoEnableMatchesCurrentRoute();
+      // link intent 一律檢查（即使 auto 已 true 也消費 token、避免殘留）
+      const link = await consumeLinkIntentForCurrentRoute();
+      if (!auto && !link) return;
       if (NS.state.active) return;
       await enterReaderMode({ silent: true });
     } catch (_) { /* getSettings/detector 失敗：保持原頁面、不打擾 */ }
