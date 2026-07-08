@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.6.24**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.6.25**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -87,7 +87,7 @@ JRead/
 │   ├── background/
 │   │   └── service-worker.js
 │   ├── content/                 # Content scripts（按載入順序）
-│   │   ├── namespace.js         # window.__JRead 初始化（含 NS.injectCssText/removeCssText：CSP-safe 樣式注入單一資料源，v0.8.130；NS.injectShadowCss：Shadow DOM 版 CSP-safe 注入，v0.8.159）
+│   │   ├── namespace.js         # window.__JRead 初始化（含 NS.injectCssText/removeCssText：CSP-safe 樣式注入單一資料源，v0.8.130；NS.injectShadowCss：Shadow DOM 版 CSP-safe 注入，v0.8.159；NS.withInjectedCssDisabled：暫停全部注入 CSS 量原站 computed，v1.6.25）
 │   │   ├── keepalive.js         # Safari 限定 background keep-alive port（v0.8.30，WPA / iOS 回收喚不醒對策）
 │   │   ├── settings-defaults.js # DEFAULT_SETTINGS 單一資料源（content / SW / Safari、Firefox event page 共用，v0.7.235）
 │   │   ├── domain-match.js      # 萬用字元網域比對（content / popup / options / spec 共用）
@@ -617,9 +617,9 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
   - `readwiseSummary`（boolean，預設 `false`）：「送出時自動產生摘要」開關（checkbox）
   - `geminiApiKey`（string，預設 `''`）：Gemini API key（password input），從 `https://aistudio.google.com/apikey` 取得
 - **編排（v0.8.74）**：Token / 摘要開關 / Gemini key 三項同屬「Readwise 整合」一個功能，options 頁用 `.field-group` 包住、移除彼此間的分隔線（`.field-group .field { border-bottom: none }`——分隔線只切分不同設定，同功能子設定不切開）。
-- **Gemini key 測試按鈕（v0.8.74）**：key input 旁的「測試」按鈕（`#geminiTest` + `#geminiTestResult`），與 Readwise token 測試同款。讀 input 目前值 → `popup-core.validateGeminiKey({ apiKey })` 打 `GET https://generativelanguage.googleapis.com/v1beta/models?key=<KEY>`（models list，零 token 成本、不產生內容；無效 key 回 `400 INVALID_ARGUMENT` / `401` / `403 PERMISSION_DENIED` → AUTH）。雙通道呈現：`✓ API key 有效`（綠）/ `✗ API key 無效`（AUTH）/ `✗ 無法連線，請檢查網路`（NETWORK）/ `✗ 請先貼上 API key`（空）/ `✗ 測試失敗（N）`（其他 HTTP）。`validateGeminiKey` 為 popup-core 純函式（注入 fetch、回傳 `{ ok, error, status }` 與 `validateReadwiseToken` 對齊），regression 在 `test/regression/readwise-save.spec.js`。
+- **Gemini key 測試按鈕（v0.8.74）**：key input 旁的「測試」按鈕（`#geminiTest` + `#geminiTestResult`），與 Readwise token 測試同款。讀 input 目前值 → `popup-core.validateGeminiKey({ apiKey })` 打 `GET https://generativelanguage.googleapis.com/v1beta/models`（key 走 `x-goog-api-key` header，v1.6.25 起不放 URL query——URL 會進 proxy / server log；models list 零 token 成本、不產生內容；無效 key 回 `400 INVALID_ARGUMENT` / `401` / `403 PERMISSION_DENIED` → AUTH）。雙通道呈現：`✓ API key 有效`（綠）/ `✗ API key 無效`（AUTH）/ `✗ 無法連線，請檢查網路`（NETWORK）/ `✗ 請先貼上 API key`（空）/ `✗ 測試失敗（N）`（其他 HTTP）。`validateGeminiKey` 為 popup-core 純函式（注入 fetch、回傳 `{ ok, error, status }` 與 `validateReadwiseToken` 對齊），regression 在 `test/regression/readwise-save.spec.js`。
 - **觸發條件**：`readwiseSummary === true` **且** `geminiApiKey` 非空 **且** payload 有 `text`（主文純文字）才呼叫；任一不成立則不產生、照常送出（由 Readwise 自處理）。
-- **API**：`POST https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=<KEY>`，body `{ contents: [{ parts: [{ text: <prompt> }] }] }`，回應取 `candidates[0].content.parts[*].text` 串接。model 用 `-latest` 別名自動指向最新 flash-lite。fetch 在 extension 頁（popup）/ SW 直接發（`<all_urls>` host_permission）。
+- **API**：`POST https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent`（key 走 `x-goog-api-key` header，v1.6.25），body `{ contents: [{ parts: [{ text: <prompt> }] }] }`，回應取 `candidates[0].content.parts[*].text` 串接。model 用 `-latest` 別名自動指向最新 flash-lite。fetch 在 extension 頁（popup）/ SW 直接發（`<all_urls>` host_permission）。
 - **Prompt**：移植自 Readwise Reader 網站內建 summarize prompt（繁中版），去掉 Jinja `num_tokens` 分支（`central_paragraphs` / `central_sentences` 是 Readwise server 端 filter、client 無法重現）——改為 client 端把主文純文字 head-truncate 到 `GEMINI_MAX_CHARS`（40K 字元）內直接送。組裝在 `popup-core.buildSummaryPrompt({ title, author, domain, text })`。
 - **payload 新增欄位（content script 端）**：`extractReaderPayload()` 多回 `text`（`articleEl.innerText` collapse 後 head-truncate 50K 字元）+ `domain`（`location.hostname`），供摘要使用；這兩欄**不**送進 Readwise body（只是摘要原料）。
 - **fallback**：任何失敗（無 key / 無內文 / 網路 / 非 2xx / 空回應）都不阻斷儲存，照送不帶 `summary`。`generateGeminiSummary` 為 popup-core 純函式（注入 fetch、回 `{ ok, summary }` 或 `{ ok:false, error }`，error 碼 `NO_KEY` / `NO_TEXT` / `NETWORK` / `AUTH` / `HTTP` / `EMPTY` / `NO_FETCH`）。

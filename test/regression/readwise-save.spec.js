@@ -592,16 +592,17 @@ describe('readwise: validateGeminiKey (v0.8.74)', () => {
     assert.strictEqual(r.error, 'NO_KEY');
   });
 
-  it('有效（200）：回 ok=true，打對 models list GET 端點（無尾斜線）+ key 已 trim/encode', async () => {
+  it('有效（200）：回 ok=true，打對 models list GET 端點（無尾斜線）+ key 走 header 已 trim', async () => {
     const { fetchImpl, calls } = makeFetch(async () => ({ ok: true, status: 200 }));
     const r = await validateGeminiKey({ apiKey: '  good key  ', fetchImpl });
     assert.strictEqual(r.ok, true);
     assert.strictEqual(calls[0][1].method, 'GET');
-    // models 端點不可有尾斜線（.../models?key= 而非 .../models/?key=）
-    assert.match(calls[0][0], /\/v1beta\/models\?key=/);
-    assert.ok(!/\/models\/\?key=/.test(calls[0][0]), 'models 端點不可有尾斜線');
-    // 前後空白 trim、含空白的 key URL-encode（不會破壞 query）
-    assert.match(calls[0][0], /key=good%20key$/);
+    // models 端點不可有尾斜線
+    assert.match(calls[0][0], /\/v1beta\/models$/);
+    // v1.6.25：key 走 x-goog-api-key header、不得出現在 URL query
+    // （URL 會進 proxy / server log，query 帶金鑰＝到處留明文副本）
+    assert.ok(!/key=/.test(calls[0][0]), 'API key 不得放 URL query');
+    assert.strictEqual(calls[0][1].headers['x-goog-api-key'], 'good key');
   });
 
   it('400 INVALID_ARGUMENT：回 AUTH（key 無效）', async () => {
@@ -1382,7 +1383,7 @@ describe('readwise: generateGeminiSummary', () => {
     assert.strictEqual(calls.length, 0);
   });
 
-  it('成功：回 ok=true + summary；打對 endpoint（key 在 query）+ body 帶 prompt', async () => {
+  it('成功：回 ok=true + summary；打對 endpoint（key 走 header）+ body 帶 prompt', async () => {
     const { fetchImpl, calls } = makeFetch(async () => ({
       ok: true, status: 200,
       json: async () => ({ candidates: [{ content: { parts: [{ text: '三句繁中摘要。' }] } }] })
@@ -1390,20 +1391,24 @@ describe('readwise: generateGeminiSummary', () => {
     const r = await generateGeminiSummary({ ...base, apiKey: 'mykey', fetchImpl });
     assert.strictEqual(r.ok, true);
     assert.strictEqual(r.summary, '三句繁中摘要。');
-    assert.match(calls[0][0], /generativelanguage\.googleapis\.com\/v1beta\/models\/.*:generateContent\?key=mykey/);
+    assert.match(calls[0][0], /generativelanguage\.googleapis\.com\/v1beta\/models\/.*:generateContent$/);
+    // v1.6.25：key 走 x-goog-api-key header、不得出現在 URL query
+    assert.ok(!/key=/.test(calls[0][0]), 'API key 不得放 URL query');
+    assert.strictEqual(calls[0][1].headers['x-goog-api-key'], 'mykey');
     assert.strictEqual(calls[0][1].method, 'POST');
     const body = JSON.parse(calls[0][1].body);
     assert.match(body.contents[0].parts[0].text, /Taiwanese Traditional Chinese/);
     assert.match(body.contents[0].parts[0].text, /內文內容/);
   });
 
-  it('apiKey 含特殊字元：URL-encode 進 query', async () => {
+  it('apiKey 前後空白 trim 後進 header、特殊字元原樣（header 不需 URL-encode）', async () => {
     const { fetchImpl, calls } = makeFetch(async () => ({
       ok: true, status: 200,
       json: async () => ({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
     }));
-    await generateGeminiSummary({ ...base, apiKey: 'a/b+c', fetchImpl });
-    assert.match(calls[0][0], /key=a%2Fb%2Bc/);
+    await generateGeminiSummary({ ...base, apiKey: '  a/b+c  ', fetchImpl });
+    assert.strictEqual(calls[0][1].headers['x-goog-api-key'], 'a/b+c');
+    assert.ok(!/key=/.test(calls[0][0]), 'API key 不得放 URL query');
   });
 
   it('401 / 403：回 AUTH', async () => {
