@@ -1533,6 +1533,20 @@ ${MEDIA_CAP_SEL} {
   margin-top: clamp(16px, 1em, 32px) !important;
   margin-bottom: clamp(8px, 0.4em, 16px) !important;
 }
+/* v1.6.18：閱讀模式主文一律靠左對齊（Jimmy 2026-07-08）。原本未指定對齊、繼承站點
+   ——站點置中的標題 / 副標 / 段落（Fox News header.article-header text-align:center
+   → h1/h2/byline 置中）在閱讀模式維持置中、閱讀體感不一致。改成容器設預設左對齊 +
+   逐 text 元素覆蓋站點「直接宣告 / 繼承」的置中。specificity 刻意保持 (0,1,1) 以下：
+   CJK 段落 justify（data-jread-cjk-justify，0,2,0）與 byline 正規化（data-jread-byline，
+   0,2,0）specificity 較高、仍優先，不受本規則影響。媒體 / 卡片置中靠 margin:auto（非
+   text-align）不受影響；figure / figcaption / table cell 保留站點對齊（不列入 selector）。 */
+[${ARTICLE_ATTR}="1"] {
+  text-align: left !important;
+}
+[${ARTICLE_ATTR}="1"] :is(h1, h2, h3, h4, h5, h6, p, li, blockquote, dd, dt),
+[${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"] {
+  text-align: left !important;
+}
 /* v1.0.8：byline meta 區一行正規化（標記由 apply() 結構偵測，見 BYLINE_ATTR
    常數註解）。root flex 一行、wrapper display:contents 打平任意巢狀讓 leaf 升為
    root 的 flex item、item 字級統一、頭像 inline 對齊內容左緣、隱藏閱讀時間。
@@ -3792,6 +3806,43 @@ html.${HTML_CLASS}.jread-orion body {
               }
             };
             walk(root);
+            // v1.6.18：byline root 落在 date-only（seed 因 LCA 含標題退回 dateEl、
+            // 或 author 與 date 無共同乾淨祖先）時，作者列常是 date root 的「相鄰前一個
+            // sibling」而未被納入 → 維持站點 header 的 text-align:center，與已左對齊的
+            // 日期列不一致（Fox News `<header class="article-header">` text-align:center，
+            // `.author-byline`（頭像+作者）置中、日期 flex 列靠左，Jimmy 2026-07-08 回報
+            // 「byline 排版亂七八糟」）。把該相鄰作者列也標成 byline root（同 flex + 左
+            // 對齊 + item 正規化），兩列一致左排。
+            // guard（四道、皆結構訊號）：只認 date root 的「相鄰前一個 visible sibling」
+            // ——Atlantic 型（作者在 hero 上方、與日期非相鄰、中間隔 <figure>）不相鄰 →
+            // 不命中（見 v1.6.10 guard + atlantic-hero-byline-overcapture fixture）；且
+            // 該 sibling 須①不含 heading（h1/h2/h3）②不含內容大圖（>=150px，排除 hero）
+            // ③visible 文字 <= 200 ④含作者訊號（rel=author / 行首 By / 小頭像 img）。
+            {
+              let prevSib = root.previousElementSibling;
+              while (prevSib && !bvisible(prevSib)) prevSib = prevSib.previousElementSibling;
+              if (prevSib && !prevSib.hasAttribute(BYLINE_ATTR) && beforeBody(prevSib) &&
+                  !prevSib.querySelector('h1, h2, h3') &&
+                  bnorm(prevSib.textContent).length <= 200) {
+                const imgRect = (im) => {
+                  try { const r = im.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+                  catch (_) { return { w: 0, h: 0 }; }
+                };
+                const hasBigImg = Array.from(prevSib.querySelectorAll('img, picture'))
+                  .some((im) => { const r = imgRect(im); return r.w >= 150 || r.h >= 150; });
+                const hasAuthorSignal =
+                  !!prevSib.querySelector('a[rel~="author"]') ||
+                  /^(by|words by|written by|作者|文[／/])/i.test(bnorm(prevSib.textContent)) ||
+                  Array.from(prevSib.querySelectorAll('img'))
+                    .some((im) => { const r = imgRect(im); return r.w > 0 && r.w <= 96 && r.h <= 96; });
+                if (hasAuthorSignal && !hasBigImg) {
+                  setMark(prevSib, BYLINE_ATTR);
+                  setStyleImp(prevSib, 'display', 'flex');
+                  setStyleImp(prevSib, 'flex-direction', 'row');
+                  walk(prevSib);
+                }
+              }
+            }
             // v1.5.28：日期 item = 含 dateEl 的最近 byline item（NPR 即 <time> 自身）。
             // 下面時刻隱藏（結構訊號）與作者排序（order）都以它為錨。
             let dateItem = dateEl;

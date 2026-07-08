@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<!--
+  Regression fixture — 文章朗讀（TTS）廠商 BeyondWords 音訊 widget / 促銷移除（v1.6.18）。
+
+  真實案例：foxnews.com 文首「新功能／您現在可以聆聽 Fox News 的新聞文章了！」促銷 +
+  「聽這篇文章 3 分鐘」播放器，markup 為 `<div class="beyondwords-wrapper">`（含直排
+  「NEW」label-bg badge）+ `<div class="beyondwords-player">` + `<script class="beyondwords">`。
+  `beyondwords` 廠商品牌名命中即整組清（同 taboola/disqus/addthis 零誤殺 brand token）。
+
+  負例：class 含「beyond」/「words」但非 beyondwords（boundary 安全）的內容不被誤殺。
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>Fox BeyondWords audio promo</title></head>
+<body>
+  <article class="article-wrap">
+    <div class="article-body">
+      <div class="beyondwords-wrapper" id="bw-wrapper">
+        <div class="info"><span class="label-bg">NEW</span>You can now listen to Fox News articles!</div>
+        <div class="beyondwords-player bwp" id="bw-player">
+          <a class="beyondwords">Listen to this article 3 min</a>
+        </div>
+      </div>
+
+      <p id="body-1">Pennsylvania Gov. Josh Shapiro said Democrats need a battle over what we believe in after democratic socialist Darializa Avila Chevalier defeated Rep. Adriano Espaillat in New York's 13th Congressional District primary this week.</p>
+      <p id="body-2">Shapiro warned that the party faces a reckoning over its direction, urging colleagues to focus on delivering tangible results rather than litigating ideological purity tests.</p>
+
+      <!-- 負例：class 含 beyond / words 但非 beyondwords brand token，不可誤殺 -->
+      <div class="beyond-repair keywords-list" id="not-noise">
+        <p id="body-3">These keywords appear in an ordinary content block that must not be hidden.</p>
+      </div>
+    </div>
+  </article>
+</body>
+</html>
