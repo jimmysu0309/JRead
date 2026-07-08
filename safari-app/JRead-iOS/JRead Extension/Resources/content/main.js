@@ -1070,10 +1070,14 @@
     //（reader 端只剩英文原文）；翻譯頁必須關 should_clean_html 原樣保留。偵測在
     // live document（collapse 前），html 字串裡的 data-shinkansen* 已被剝掉、判不了。
     const isTranslated = !!(NS.isTranslatedPage && NS.isTranslatedPage());
+    // v1.6.19：RSS reader（Miniflux 等）內開閱讀模式時，location.href 是 reader 自己的
+    // URL、非文章原始出處。若偵測到主標包一個跨網域外連（RSS reader 通例），送 Readwise /
+    // Instapaper 用原文 URL（Readwise + Instapaper 共用此 payload.url，一改兩者受惠）。
+    const url = (NS.findOriginalArticleUrl && NS.findOriginalArticleUrl(NS.state.articleEl, location.href)) || location.href;
     return {
       ok: true,
       payload: {
-        url: location.href,
+        url,
         html,
         title,
         imageUrl,

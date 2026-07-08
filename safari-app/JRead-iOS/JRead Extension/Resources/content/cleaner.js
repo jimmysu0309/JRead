@@ -146,9 +146,29 @@
     { t: 'addthis', strong: true }, { t: 'sharedaddy', strong: true },
     { t: 'sociable' }, { t: 'ai2html' }, { t: 'onesignal' }, { t: 'intercom' },
     { t: 'printfriendly' }, { t: 'instapaper_ignore' }, { t: 'blogger-labels' }, { t: 'mpu' },
+    // v1.6.18：文章朗讀（TTS）廠商品牌名——「聆聽本文」音訊播放器 / 促銷提示。
+    // Fox News 實測：`<div class="beyondwords-wrapper">`（含直排「NEW」badge +「You can
+    // now listen to Fox News articles!」促銷）+ `.beyondwords-player`（播放器）+
+    // `<script class="beyondwords">`，`beyondwords` 廠商名命中即整組清（Jimmy 2026-07-08
+    // 譯後截圖回報「新功能／您現在可以聆聽…」）。beyondwords / trinity-audio / speechkit
+    // 是文章朗讀 TTS 業界品牌名（同 taboola / disqus / addthis 的零誤殺 brand token），
+    // 閱讀模式不需要「聽文章」widget；標 strong 跳過內容保護 guard（播放器內常含
+    // play 按鈕 img / 波形，避免誤觸 containsStandaloneContentImg）。通用（任何用這些
+    // 廠商的站都清，非 hostname 特判）。
+    { t: 'beyondwords', strong: true }, { t: 'trinity-audio', strong: true }, { t: 'speechkit', strong: true },
     { t: 'share' }, { t: 'social' }, { t: 'social-(?:bar|links|icons|share|media)' },
     { t: 'comment' }, { t: 'comments' }, { t: 'comment-form' },
-    { t: 'discussion' }, { t: 'discuss' }, { t: 'disqus', strong: true },
+    // v1.6.17：`discussion` / `discuss` 標 strong——「討論區」widget 的 class 命名
+    // （discuss-board / discussion-thread 等）永遠不是主文容器，且結構上常含 emoji
+    // picker / 頭像 / 大量使用者留言，會誤觸內容保護 guard → 非 strong 路徑被豁免
+    // 殘留。udn `.discuss-board` 實測：內含 6+ 張未載入的 emoji gif（naturalWidth=0）
+    // 觸發 containsStandaloneContentImg 的「w<=8 未載入圖保守保護」、整塊留言板存活
+    //（Chrome 多半在 clean 時 emoji 已載入不觸發、iOS/慢速時未載入觸發 → 只在 iOS
+    // 殘留的 load-timing flaky）。與 related-* / more-* strong 同型（v0.7.184 同因）。
+    // 刻意不連 `comment(s)` 一起 strong：`comment`/`comments` token 會出現在「真的
+    // 包住多數主文的 wrapper」class（article-with-comments-wrapper 類），須保留 50%
+    // 比例 guard 保護，見 content-bearing-noise-guard.spec / noise-token-defs spec。
+    { t: 'discussion', strong: true }, { t: 'discuss', strong: true }, { t: 'disqus', strong: true },
     { t: 'livefyre' }, { t: 'hyvor' }, { t: 'replies' }, { t: 'remark' }, { t: 'shoutbox' },
     { t: 'respond' }, { t: 'composer' }, { t: 'combx' },
     { t: 'article-sidebar', strong: true }, { t: 'article[-_]?others?', strong: true },
@@ -2179,6 +2199,60 @@
       if (el.closest('[data-jread-hidden="1"]')) continue;
       if (!isReactionCountBar(el)) continue;
       hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：互動 widget custom element（reaction / comment / vote 反應列）----
+  // 結構特徵（非站點特判）：custom element（hyphenated tag = web component 慣例，
+  // 必是元件而非內容）的 tag 名帶 reaction(s) / comment(s) / vote / voting / emoji /
+  // reactionbar / disqus / livefyre 等互動 widget 語意 → 整個元件即反應列 / 留言
+  // 嵌入雜訊。Fox News 文首 byline 下的 `<hedgehog-reactions>`（👍/爆米花/國旗/👎
+  // 反應列）+ `<hedgehog-comment-embed>` 實測：兩者無 class、id 是 UUID → class/id
+  // keyword 規則（markerOf 只查 class+id）全數漏網，靠 tag 名的語意訊號接住。
+  //
+  // 為何只認 custom element tag、不把 reaction/vote 加進 NOISE_TOKEN_DEFS：那些
+  // token 進通用 class 名單會誤殺主文（`chemical-reaction-diagram` 類科學文 figure
+  // class 帶 reaction、`vote-count` 選情內文等）；custom element 的 tag 名則是元件
+  // 身分訊號，內容型 web component（<mdn-code-example> / <amp-img> 等）tag 不帶這些
+  // token → 零誤傷。標準容器（div/section）不受影響。
+  const WIDGET_CUSTOM_TAG_RE = /(^|-)(reactions?|comments?|vote|voting|emoji|reactionbar|disqus|livefyre|hyvor)(-|$)/i;
+  function customElementIsInteractiveWidget(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const tag = el.tagName.toLowerCase();
+    if (tag.indexOf('-') < 0) return false; // 只認 custom element（hyphenated tag）
+    return WIDGET_CUSTOM_TAG_RE.test(tag);
+  }
+
+  // 隱藏 widget 後往上 collapse「唯一實質內容就是已隱藏 widget」的薄 wrapper——
+  // 否則 wrapper 自身的 min-height / margin 會留下空白（Fox `.hedgehog-container`
+  // min-height:24px + margin-bottom:16px，內含已隱藏的 `<hedgehog-reactions>`、
+  // 自身沒被清 → byline 與內文間殘留一段空白，Jimmy 2026-07-08 回報）。只收合
+  // 「直接文字為空 + 所有 element 子皆已隱藏」的容器，遇到含其他可見內容的 wrapper
+  // 即停（articleEl 為天花板），不會誤收主文容器。
+  function collapseHiddenWidgetWrapper(el, articleEl, hiddenList) {
+    let cur = el.parentElement;
+    while (cur && cur !== articleEl && articleEl.contains(cur)) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { cur = cur.parentElement; continue; }
+      const directText = Array.from(cur.childNodes)
+        .filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
+      if (directText) break;
+      const kids = Array.from(cur.children);
+      if (kids.length === 0) break;
+      const allHidden = kids.every(k => k.dataset && k.dataset.jreadHidden === '1');
+      if (!allHidden) break;
+      hide(cur, hiddenList);
+      cur = cur.parentElement;
+    }
+  }
+
+  function hideInsideArticleWidgetCustomElements(articleEl, hidden) {
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (!customElementIsInteractiveWidget(el)) continue;
+      hide(el, hidden);
+      collapseHiddenWidgetWrapper(el, articleEl, hidden);
     }
   }
 
@@ -6389,6 +6463,22 @@
         if (isReactionCountBar(el)) hide(el, hiddenList);
       }
     }
+    // 互動 widget custom element（reaction / comment / vote）lazy 注入兜底——與靜態
+    // hideInsideArticleWidgetCustomElements 共用 customElementIsInteractiveWidget。
+    // Fox News `<hedgehog-reactions>` 常在 clean() 之後才 hydrate；node 自身 / 其內
+    // 任一互動 widget custom element 都查。命中即停。
+    if (articleEl.contains(node) && !isInPreserved(node) &&
+        !(node.dataset && node.dataset.jreadHidden === '1') && customElementIsInteractiveWidget(node)) {
+      hide(node, hiddenList); collapseHiddenWidgetWrapper(node, articleEl, hiddenList); return;
+    }
+    if (node.querySelectorAll && articleEl.contains(node)) {
+      for (const el of node.querySelectorAll('*')) {
+        if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        if (el.closest('[data-jread-hidden="1"]')) continue;
+        if (isInPreserved(el)) continue;
+        if (customElementIsInteractiveWidget(el)) { hide(el, hiddenList); collapseHiddenWidgetWrapper(el, articleEl, hiddenList); }
+      }
+    }
     // taxonomy / tag-chip 列 lazy 注入兜底（與靜態 hideInsideArticleHashtagClusters
     // 單一資料源）——NYT `.bottom-of-article` 文末「See more on: <a>topic</a>…」
     // 常在捲到文末才 lazy render，clean() 已跑完、靜態 sweep 漏接（Jimmy 2026-07-02
@@ -6808,6 +6898,7 @@
       safeRun(hideHeaderZoneDecorativeIcons, articleEl, hidden);
       safeRun(hideInsideArticleActionRows, articleEl, hidden, containers);
       safeRun(hideInsideArticleReactionBars, articleEl, hidden);
+      safeRun(hideInsideArticleWidgetCustomElements, articleEl, hidden);
       safeRun(hideInsideArticleButtonClusters, articleEl, hidden, containers);
       safeRun(hideInsideArticleHorizontalRules, articleEl, hidden);
       safeRun(hideInsideArticleNav, articleEl, hidden);

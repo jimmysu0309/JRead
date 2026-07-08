@@ -161,6 +161,64 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return '';
     },
 
+    // v1.6.19：RSS reader（Miniflux / FreshRSS 等自架閱讀器）閱讀頁的「原始文章 URL」。
+    // 動機：在 RSS reader 內對某篇文章開閱讀模式、送 Readwise / Instapaper 儲存時，
+    // location.href 是 RSS reader 自己的 URL（如 https://miniflux.example/unread/entry/123），
+    // 存進去之後點回連的是 reader、不是文章原始出處。使用者要的是原始位置。
+    //
+    // 結構性訊號（非站點 / class 特判，CLAUDE.md 硬規則 3）：RSS reader 一律把「文章
+    // 主標」渲染成一個指向原文的超連結，且該連結必然**跨網域**（指向文章原始站，與
+    // reader 自身 origin 不同）。Miniflux entry.html：
+    //   <h1 id="page-header-title"><a href="{{ .entry.URL }}" target="_blank">標題</a></h1>
+    // FreshRSS / Tiny Tiny RSS 等同款把 entry 標題包成外連 <a>。一般新聞 / 部落格文章
+    // 頁的主標是純文字、不含連結；就算含連結也是**同 origin** 的自連結（self-link，見
+    // wordpress-pretitle-selflink），被 cross-origin gate 濾掉——故不會誤觸。
+    //
+    // 判定條件（全部成立才回傳）：
+    //   1. 目前頁面是 http(s)（擴充自有頁 chrome-extension:// 等直接不判）
+    //   2. 存在一個 <h1>，其可見文字整段就是單一 <a href>（anchor 文字涵蓋 >= 60%
+    //      標題文字——「整個標題是連結」，排除標題中夾帶一小段外連的情況）
+    //   3. 該 anchor 解析為 http(s) 絕對 URL 且 origin ≠ 目前頁面 origin
+    // 搜尋範圍先 articleEl（含 promote 進 card 的 title clone）、再退整份 document
+    //（Miniflux detector 選 article.entry-content，主標 h1 在外層 header.entry-header）。
+    // **不跳過 [data-jread-hidden]**：原始 header h1 在閱讀模式會被隱藏（改顯示 clone），
+    // 但仍是 URL 的事實來源；cross-origin gate 已足以擋掉站名 logo 自連結那類雜訊。
+    // 回傳原始文章 URL 字串，或 null（非 RSS reader / 找不到訊號 → 呼叫端退回 location.href）。
+    findOriginalArticleUrl(articleEl, currentUrl) {
+      let curOrigin;
+      try {
+        const cur = new URL(currentUrl);
+        if (!/^https?:$/i.test(cur.protocol)) return null;
+        curOrigin = cur.origin;
+      } catch (_) { return null; }
+      const roots = [];
+      if (articleEl && articleEl.querySelectorAll) roots.push(articleEl);
+      const doc = (articleEl && articleEl.ownerDocument) || (typeof document !== 'undefined' ? document : null);
+      if (doc && doc.documentElement && doc.documentElement.querySelectorAll) roots.push(doc.documentElement);
+      const seen = new Set();
+      for (const root of roots) {
+        for (const h of root.querySelectorAll('h1')) {
+          if (seen.has(h)) continue;
+          seen.add(h);
+          const raw = h.innerText != null ? h.innerText : h.textContent;
+          const hText = (raw || '').replace(/\s+/g, ' ').trim();
+          if (!hText || hText.length > 300) continue;
+          const anchors = h.querySelectorAll('a[href]');
+          if (anchors.length !== 1) continue;
+          const a = anchors[0];
+          const aRaw = a.innerText != null ? a.innerText : a.textContent;
+          const aText = (aRaw || '').replace(/\s+/g, ' ').trim();
+          if (aText.length < hText.length * 0.6) continue;
+          let abs;
+          try { abs = new URL(a.getAttribute('href'), currentUrl); } catch (_) { continue; }
+          if (!/^https?:$/i.test(abs.protocol)) continue;
+          if (abs.origin === curOrigin) continue; // 同 origin = 自連結 / 站內連結，非 RSS reader 外連
+          return abs.href;
+        }
+      }
+      return null;
+    },
+
     // v0.8.121：標記文首 byline / dateline meta block 供 Readwise 匯出移除，回傳
     // 被標記的 live 元素陣列（呼叫端 clone 後負責還原標記）。動機：Readwise Reader
     // metadata 已記錄作者 + 發表日期，body 內重複的作者名 +「Published: ...」+ 站方
