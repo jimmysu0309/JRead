@@ -1174,7 +1174,15 @@ ${MEDIA_CAP_SEL} {
    附近；任何被站點定位 hack（position:absolute/fixed）拉出流的 caption 子樹一律
    打回 static，並解除其塌陷寬度（width:auto）讓圖說文字回到圖片正常位置。窄版
    flex 版面（display:flex column-reverse、子層本就 static）不受影響——relative→static
-   與既有 width 皆等效。退出移除整張 stylesheet 即還原。 */
+   與既有 width 皆等效。退出移除整張 stylesheet 即還原。
+
+   v1.6.20（twreporter 圖說跑到圖右側破版）：position hack 之外再補 transform:none。
+   twreporter.org 用 transform 的 translateX(100%) 把 multimedia__Caption 推進圖片
+   右側 sidebar（原站 caption 180px、位移 180px；reader 下 width:auto 拉成版心寬
+   608px → 位移隨寬度變 608px 把整條圖說推到圖片右緣外，Jimmy 2026-07-08 截圖 +
+   Chromium probe 實證 computed translate x 為 608px）。position 重置到 static 只
+   還原 offset 定位，殘留的 translate 仍把已在流內的 caption 平移出去。通則同上：
+   被站點 transform 位移拉出正常位置的圖說子樹一律打回 transform:none。 */
 [${ARTICLE_ATTR}="1"] figcaption,
 [${ARTICLE_ATTR}="1"] figcaption * {
   position: static !important;
@@ -1183,6 +1191,7 @@ ${MEDIA_CAP_SEL} {
   right: auto !important;
   bottom: auto !important;
   width: auto !important;
+  transform: none !important;
 }
 /* v0.8.106：inline 自動播放示範影片的 redundant <video> overlay 隱藏。
    wikiHow Tie-a-Tie 步驟在同一容器內放 poster <img> + <video>（video 是 absolute
