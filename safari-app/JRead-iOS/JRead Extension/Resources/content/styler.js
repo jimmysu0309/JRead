@@ -84,6 +84,8 @@
   const TEXT_DIV_ATTR = 'data-jread-text-div';
   // v1.6.12：CJK 為主的內文段落標記——套 text-align: justify（見 markCjkParagraphs）。
   const CJK_JUSTIFY_ATTR = 'data-jread-cjk-justify';
+  // v1.6.23：內文裝飾性大寫 / 加寬字距標記——重設回一般（見 markDecorativeInlines）。
+  const DECOR_RESET_ATTR = 'data-jread-decor-reset';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -2103,6 +2105,16 @@ ${BODY_WEIGHT_SEL} {
 [${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="1"] {
   text-align: justify !important;
 }`;
+    // v1.6.23：內文裝飾性大寫 / 加寬字距中和——站方 lead-in 裝飾（uppercase +
+    // letter-spacing）殘留會讓內文名字全大寫、字距拉開；疊上 CJK justify 後大寫
+    // 長名字不可斷行，justify 把剩餘空間攤給整行字距 → 空隙忽大忽小（wired.com
+    // 翻譯後首段實證）。runtime 逐元素標記 DECOR_RESET_ATTR（見 markDecorativeInlines）。
+    userOverrides += `
+[${ARTICLE_ATTR}="1"] [${DECOR_RESET_ATTR}="1"] {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-variant-caps: normal !important;
+}`;
     if (overrides.lineHeight && !overrides.fontSize) {
       // fontSize 已改過時 line-height 已連帶注入；這裡只處理「只改 lineHeight
       // 沒改 fontSize」的獨立分支，避免 CSS 重複 rule。
@@ -2807,6 +2819,58 @@ html.${HTML_CLASS}.jread-orion body {
     return marked;
   }
 
+  // ---- 內文裝飾性大寫 / 加寬字距中和（v1.6.23）----------------------------
+  // 根因（Jimmy 2026-07-08 wired.com 翻譯後回報）：站方對首段套整段 lead-in
+  // 裝飾 span（text-transform: uppercase + letter-spacing: 1.5px）。閱讀模式
+  // 沿用原站 CSS，裝飾殘留 → 英文名字全大寫、字距拉開；疊上 CJK justify
+  // （v1.6.12）後大寫長名字不可斷行，justify 把剩餘空間攤給整行字距，空隙
+  // 忽大忽小、看起來像對齊壞掉。
+  // 通則訊號（硬規則 3——CSS computed 特徵，不綁站點 / class）：內文段落載體
+  // 與其 inline 後代若 computed 命中下列任一 → 標記重設：
+  //   1. text-transform: uppercase（正文內整句大寫必為裝飾；縮寫詞本身就是
+  //      大寫字元、不靠 transform，不受影響）
+  //   2. font-variant-caps 非 normal（small-caps 是同一 lead-in 裝飾家族）
+  //   3. letter-spacing >= 0.05em（裝飾級加寬；正文易讀性微調通常 < 0.03em，
+  //      wired 實測 0.1px/18px ≈ 0.006em 不命中、裝飾 1.5px/18px ≈ 0.083em 命中）
+  // 載體清單與 markCjkParagraphs 相同；標題不在清單、byline / kicker 明確排除
+  // ——正當的大寫標題 / meta 列樣式不受影響。
+  const DECOR_LS_EM = 0.05;
+  function markDecorativeInlines(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const isDecorated = (el) => {
+      const cs = win.getComputedStyle(el);
+      if (cs.textTransform === 'uppercase') return true;
+      if ((cs.fontVariantCaps || 'normal') !== 'normal') return true;
+      const ls = parseFloat(cs.letterSpacing); // 'normal' → NaN → 不命中
+      if (ls > 0) {
+        const fs = parseFloat(cs.fontSize) || 16;
+        if (ls / fs >= DECOR_LS_EM) return true;
+      }
+      return false;
+    };
+    const carriers = articleEl.querySelectorAll(
+      `p, li, blockquote, dd, dt, [${TEXT_DIV_ATTR}="1"]`);
+    const marked = [];
+    for (const carrier of carriers) {
+      if (carrier.closest(`[${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
+      // 載體本身 + inline 後代逐一檢查——裝飾可能設在載體（p:first-child
+      // uppercase）或內部 span（wired lead-in），各自有站方規則、要各自標記
+      // （只標祖先時後代自己的站方規則仍會蓋回來）。code/pre 類不在清單：
+      // 程式碼排版不可動。
+      const els = [carrier, ...carrier.querySelectorAll(
+        'a, span, strong, em, b, i, u, small, mark, abbr, time')];
+      for (const el of els) {
+        if (el.hasAttribute(DECOR_RESET_ATTR)) continue;
+        if (isDecorated(el)) {
+          el.setAttribute(DECOR_RESET_ATTR, '1');
+          marked.push(el);
+        }
+      }
+    }
+    return marked;
+  }
+
   // ---- Pangu spacing（中英文間自動補空白）---------------------------------
   // 規則：
   //   CJK ↔ ASCII 英數字（LEAD）→ 補空白
@@ -3304,6 +3368,11 @@ html.${HTML_CLASS}.jread-orion body {
       // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
       // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
       const cjkJustifyMarked = markCjkParagraphs(articleEl);
+
+      // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style，但注入
+      // CSS 不動內文 text-transform / letter-spacing（byline item 有動、已排除），
+      // ARTICLE_ATTR 先後皆可；放 TEXT_DIV_ATTR 標記後才含 div 當段落站。
+      const decorResetMarked = markDecorativeInlines(articleEl);
 
       // v0.7.182：mark video player container descendants——背景/色彩
       // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
@@ -4702,7 +4771,7 @@ html.${HTML_CLASS}.jread-orion body {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, decorResetMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
     },
 
     /**
@@ -4795,6 +4864,12 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.cjkJustifyMarked)) {
         for (const el of snapshot.cjkJustifyMarked) {
           if (el && el.removeAttribute) el.removeAttribute(CJK_JUSTIFY_ATTR);
+        }
+      }
+      // v1.6.23：移除內文裝飾性大寫 / 加寬字距標記
+      if (Array.isArray(snapshot.decorResetMarked)) {
+        for (const el of snapshot.decorResetMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(DECOR_RESET_ATTR);
         }
       }
 
