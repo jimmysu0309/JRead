@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><title>figure 不對稱水平 padding 定位 hack fixture</title></head>
+<body>
+  <article>
+    <h1>北歐社會民主的真實運作</h1>
+    <p>要理解北歐模式，得先看它在現實中如何運作。這套體系不是靠單一政策，而是由稅制、工會、公共服務三方長期磨合而成的一整組制度安排，缺一不可。</p>
+    <!-- 站點用 figure 的 padding-left（= 欄寬 − 照片寬）把小於欄寬的直幅照片在文字欄
+         內靠右對齊（cn.nytimes.com figure.article-inline-photo 實測 padding-left:285px
+         pr:0）。reader 單欄 card 下 figure 內容區被推偏、圖片整塊偏右、左側留白。
+         inline style 讓 jsdom getComputedStyle 讀得到。 -->
+    <figure class="article-inline-photo hack-offset" style="padding-left: 285px; padding-right: 0px;">
+      <div class="img-box"><img src="oslo.jpg" width="687" height="1024" alt="奧斯陸街景"></div>
+      <figcaption>MARTHE THU FOR THE NEW YORK TIMES</figcaption>
+    </figure>
+    <p>這個體系在現實中是如何運作的？答案藏在細節裡：高稅率換來的是全民醫療、教育與育兒補貼，而非單純的財富重分配口號。</p>
+    <!-- 反例：對稱水平 padding（合法的框內縮 / 帶背景 inset）差值小、不該被清。 -->
+    <figure class="article-inline-photo framed" style="padding-left: 12px; padding-right: 12px;">
+      <div class="img-box"><img src="bar.jpg" width="1024" height="683" alt="酒吧"></div>
+      <figcaption>攝於奧斯陸一間小酒館</figcaption>
+    </figure>
+    <p>制度的韌性不在於某一年的預算，而在於跨世代的社會共識能否延續下去，這才是外界最常誤讀的部分。</p>
+  </article>
+</body>
+</html>

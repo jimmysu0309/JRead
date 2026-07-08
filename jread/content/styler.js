@@ -3987,6 +3987,41 @@ html.${HTML_CLASS}.jread-orion body {
         }
       }
 
+      // v1.6.21：strip figure 的「不對稱水平 padding」定位 hack。
+      // 症狀（Jimmy cn.nytimes.com 回報）：小直幅照片整塊偏右、左側一大塊空白。
+      // 根因 = 站點對 <figure> 設 `padding-left`（= 欄寬 − 照片寬）把小於欄寬的
+      // 照片在文字欄內靠右對齊（NYT-cn `figure.article-inline-photo` 實證：
+      // padding-left:285px pr:0 → figure 內容區只剩 323px 靠在右緣、img wrapper
+      // width:auto 填滿的是那 323px）。reader mode 已把 figure 強制成滿版單欄
+      // 媒體容器、其 img wrapper 走 width:auto + margin:auto 置中，但沒清 figure
+      // 自身的水平 padding → 內容區被 padding 推偏、置中/填滿都在偏掉的內容區裡算。
+      // 結構通則（非站點特判）：single-column reader 內，figure 是「配圖區塊」、
+      // 其媒體應對齊閱讀軸；figure 上「兩側不對稱」的水平 padding 只可能是原站用
+      // 來把窄媒體推離軸線的定位 hack，清為 0。對稱水平 padding（合法的框內縮 /
+      // 帶背景 inset）差值小、不命中，保留。
+      const figurePaddingSnap = [];
+      {
+        const _w = articleEl.ownerDocument?.defaultView;
+        if (_w) {
+          for (const fig of articleEl.querySelectorAll('figure')) {
+            const cs = _w.getComputedStyle(fig);
+            const pl = parseFloat(cs.paddingLeft) || 0;
+            const pr = parseFloat(cs.paddingRight) || 0;
+            if (Math.abs(pl - pr) > 24) {
+              figurePaddingSnap.push({
+                el: fig,
+                pl: fig.style.getPropertyValue('padding-left'),
+                plP: fig.style.getPropertyPriority('padding-left'),
+                pr: fig.style.getPropertyValue('padding-right'),
+                prP: fig.style.getPropertyPriority('padding-right'),
+              });
+              fig.style.setProperty('padding-left', '0', 'important');
+              fig.style.setProperty('padding-right', '0', 'important');
+            }
+          }
+        }
+      }
+
       // v0.7.246：版心自我檢查（enforce content width）。
       // 症狀（Jimmy roomie.tw/posts/73403 iPhone 回報）：圖片撐滿 reader card
       // 版心，但內文段落（v0.7.246）+ 標題 / 分類列（v0.7.247）左右各窄一截。
@@ -4609,7 +4644,7 @@ html.${HTML_CLASS}.jread-orion body {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
     },
 
     /**
@@ -4775,6 +4810,17 @@ html.${HTML_CLASS}.jread-orion body {
           if (!s || !s.el) continue;
           if (s.mt) s.el.style.setProperty('margin-top', s.mt, s.mtP || '');
           else s.el.style.removeProperty('margin-top');
+        }
+      }
+
+      // v1.6.21：還原 figure 不對稱水平 padding strip
+      if (Array.isArray(snapshot.figurePaddingSnap)) {
+        for (const s of snapshot.figurePaddingSnap) {
+          if (!s || !s.el) continue;
+          if (s.pl) s.el.style.setProperty('padding-left', s.pl, s.plP || '');
+          else s.el.style.removeProperty('padding-left');
+          if (s.pr) s.el.style.setProperty('padding-right', s.pr, s.prP || '');
+          else s.el.style.removeProperty('padding-right');
         }
       }
 
