@@ -49,7 +49,7 @@
   // 尺寸對照（v0.8.156；v0.8.166 加 medium）：透明 padding 維持每側 8px（icon + 16 = footprint）。
   // 視覺尺寸走 CSS 變數即時切換；hitSize（footprint）同步進 JS 給貼邊 / 拖移夾擠用。
   const SIZE_MAP = {
-    small: { icon: 16, hit: 32 },        // 預設（v0.8.154 以來的原始尺寸）
+    small: { icon: 16, hit: 32 },        // v0.8.154 以來的原始尺寸（v0.8.166 起預設改 medium）
     medium: { icon: 24, hit: 40 },       // 中（v0.8.166）
     large: { icon: 32, hit: 48 }         // 觸控嫌小者放大
   };

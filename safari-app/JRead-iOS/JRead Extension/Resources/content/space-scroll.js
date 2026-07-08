@@ -149,7 +149,11 @@
         startNode,
         range,
         getBoundingClientRect() { return this.range.getBoundingClientRect(); },
-        get isConnected() { return !!(this.startNode && this.startNode.isConnected); }
+        get isConnected() { return !!(this.startNode && this.startNode.isConnected); },
+        // v1.6.24：position-memory 的段落簽名走 el.textContent——虛擬單位沒有這個
+        // 欄位時簽名恆為空字串，br 分段文章（PG essays / miniflux 轉貼）的位置記憶
+        // 靜默退化成 index-only（內容微改時錨點比對這層防線完全不作用）
+        get textContent() { try { return this.range.toString(); } catch (_) { return ''; } }
       };
       brUnitCache.set(startNode, unit);
     } else {

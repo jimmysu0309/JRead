@@ -301,7 +301,7 @@
   // 圖（例如 Jimmy 2026-05-21 回報 Nathan Chiu 貼文的 avatar 變成內文提到的
   // Sundar Pichai 演講照）。FB DOM 結構頻繁改版，穩定 selector 難維護。
   // reader mode 是純閱讀、作者名已足夠識別，移除 avatar 視覺更乾淨。
-  function extractAuthorInfo(author, mainMsg) {
+  function extractAuthorInfo(author) {
     const info = { displayName: null };
     if (!author) return info;
     info.displayName = (author.innerText || author.textContent || '').trim() || null;
@@ -452,7 +452,7 @@
     // 抽 author info 從原 DOM,合成 header 之後注入到 clone 開頭（取代被 prune
     // 掉的原 author header——原 header 含 timestamp / privacy icon / menu button
     // 等 UI chrome,清掉後我們補一個乾淨的）。
-    const info = extractAuthorInfo(author, mainMsg);
+    const info = extractAuthorInfo(author);
 
     // 建合成 reader card
     const reader = document.createElement('article');

@@ -68,7 +68,12 @@
     shadow.appendChild(stack);
     NS.injectShadowCss(shadow, CSS);
 
-    (document.body || document.documentElement).appendChild(host);
+    // v1.6.24：掛 <html> 直下、不掛 body——body 子元素會被 cleaner 動態 observer
+    // 與 styler sibling 隱藏規則掃到（floating-icon / paged 指示器 / progress bar
+    // 全都掛 documentElement 的既有教訓）。舊掛 body 靠 styler :not(#__jread-toast-host)
+    // 與 fb-post __jread 前綴兩條豁免撐著（v0.8.36 曾漏第二條被咬過），掛 html
+    // 從結構上根絕、不再依賴逐條豁免。
+    document.documentElement.appendChild(host);
   }
 
   /**

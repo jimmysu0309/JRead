@@ -4186,7 +4186,7 @@
   // 第二欄寬。我們 collapse 父為 display:block 後，458 < 608(父寬) + margin:auto
   // 觸發水平置中（resolved margin: 75px each side）→ author 從左對齊變中央偏移。
   // 修法：對 collapsed grid 內任意 descendant，computed margin-left === margin-right
-  // 且 > 4px（auto-center 痕跡）→ 強制 width:auto + margin:0 + grid-area:auto，
+  // 且 > 4px（auto-center 痕跡）→ 強制 width:100% + margin:0 + grid-area:auto，
   // 還原為 block flow 的左對齊。symmetric margin 是 auto-center 的結構特徵
   // ——非 auto-center 的 descendant（單側固定 margin / 0 margin / 不對稱 margin）
   // 完全不動，避免 v0.7.103 第一版「全 descendants reset」造成連鎖塌陷的回歸。
@@ -4239,7 +4239,10 @@
       for (const desc of el.querySelectorAll('*')) {
         if (desc.dataset && desc.dataset.jreadHidden === '1') continue;
         if (isInPreserved(desc)) continue;
-        const tag = desc.tagName;
+        // v1.6.24：toUpperCase——SVG namespace 元素 tagName 保留小寫，原本
+        // tag === 'SVG' 永遠 false，置中的 svg logo / 插圖會被套 width:100%
+        // 撐成滿欄寬（正是這個 skip 名單要防的事）
+        const tag = desc.tagName.toUpperCase();
         if (tag === 'IMG' || tag === 'PICTURE' || tag === 'VIDEO' || tag === 'SVG' ||
             tag === 'IFRAME' || tag === 'FIGURE') continue;
         let dcs;
@@ -4604,7 +4607,11 @@
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
+      // v1.6.24：必須 toUpperCase——SVG namespace 元素（svg / g / path…）tagName
+      // 保留小寫（同檔 media 掃描的 tagUp 處理），直查大寫 Set 永遠 miss，獨立
+      // 內容 SVG（不在 figure 內的圖表 / 插畫）會被當空殼 wrapper 藏掉
+      //（probe 實證：svg.tagName === 'svg'、Set.has('svg') === false）。
+      if (EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
       // v0.8.79 MDN 修法：host 了 shadow root 的 web component（mdn-code-example
       // 把 <pre> 程式碼塊放 shadow DOM）其渲染內容在 shadow root 內，light DOM
       // 的 innerText / querySelector('img') 全看不到 → 被誤判成 empty wrapper
@@ -4651,8 +4658,10 @@
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (isInPreserved(el)) continue;
-      if (!EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName)) continue;
-      if (MEDIA_SELF_TAGS.has(el.tagName)) continue;
+      // v1.6.24：toUpperCase 正規化（SVG namespace tagName 小寫）——svg 在
+      // MEDIA_SELF_TAGS 內被明確排除，不再靠「小寫比不進 SKIP_TAGS」的巧合
+      if (!EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
+      if (MEDIA_SELF_TAGS.has(el.tagName.toUpperCase())) continue;
       if (el.shadowRoot) continue; // shadow-host web component，內容在 shadow DOM，非空殼
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
@@ -6536,6 +6545,11 @@
       const allInteractive = node.querySelectorAll('a, ' + INTERACTIVE_BTN_SEL);
       for (const el of allInteractive) {
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
+        // v1.6.24：keyword <a> 補 isInPreserved（與靜態 keyword path 同源）——
+        // figure/figcaption 內 lazy 注入、class 帶 keyword 的 <a> 靜態保留、
+        // 動態不該砍。button 系列不套（硬教訓九：interactive button 無條件清，
+        // 靜態 hideInsideArticleAllButtons 同樣不看 preserved）。
+        if (el.tagName === 'A' && isInPreserved(el)) continue;
         // strict CTA（立即報名 等）：delayed lazy-inject 的活動 / 課程推廣
         // banner（class 無語意 keyword、a / button text 才是訊號）整塊清。
         // 放在 a / button 派發之前——對 a 也要走（btn-only2 類 class 不命中
@@ -6564,7 +6578,12 @@
     // aside、沒同步 v0.7.28 的 p/div/span 擴展 + walk-up fallback——對 cnyes
     // 這種 reader mode toggle 後 lazy-inject「討論區」widget（h3 結構、無
     // section 祖先、整篇主文+widget 同一 ARTICLE wrapper）漏網。
-    const DYN_TITLE_TAG_SEL = 'h2, h3, h4, p, div, span';
+    // v1.6.24：補齊與靜態側（hideInsideArticleByHeadingText）的 drift——靜態掃
+    // h5/h6（v0.8.4 roomie H5 CTA）與 strong/em/b（v0.7.190 upmedia「（延伸閱讀）」），
+    // 動態舊版漏列，lazy 注入的同款雜訊接不到。strong/em/b 在 h2-h4 內跳過
+    //（semantic heading 已是候選、避免 direct text 過短繞過 max_len guard，
+    // 與靜態 filter 同款）。
+    const DYN_TITLE_TAG_SEL = 'h2, h3, h4, h5, h6, p, div, span, strong, em, b';
     const candidates = [];
     if (node.matches && node.matches(DYN_TITLE_TAG_SEL)) candidates.push(node);
     if (node.querySelectorAll) {
@@ -6574,7 +6593,10 @@
       for (const el of node.querySelectorAll(DYN_TITLE_TAG_SEL)) candidates.push(el);
     }
     for (const h of candidates) {
-      const isHeading = /^H[234]$/.test(h.tagName);
+      const tagUp = h.tagName.toUpperCase();
+      if ((tagUp === 'STRONG' || tagUp === 'EM' || tagUp === 'B') &&
+          h.closest && h.closest('h2, h3, h4')) continue;
+      const isHeading = /^H[23456]$/.test(h.tagName);
       // v0.8.45：與靜態側同步用 normHeading（剝尾隨標點），見 normHeading 註解
       const text = isHeading
         ? normHeading(h.textContent)

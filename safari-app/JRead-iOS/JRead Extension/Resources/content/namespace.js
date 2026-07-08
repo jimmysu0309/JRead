@@ -9,8 +9,9 @@
 // 時 chrome.* 一樣回 Promise，行為零變化）。Safari / Firefox：用原生 browser.*
 // （Promise，比 Safari 的 chrome 相容層可靠——iOS 訊息掉包修法的核心）。
 // namespace.js 是 content_scripts 第一個檔，此行必須在任何 browser/chrome 使用前。
-// 同款 shim 另一份在 content/settings-defaults.js 頂端（popup / options / SW
-// 三個 context 的第一個載入檔，與本行單一語意、互為鏡像）。
+// 同款 shim 另兩份：content/settings-defaults.js 頂端（popup / options / SW
+// 三個 context 的第一個載入檔）與 content/home-launcher.js（獨立注入、有自己的
+// 防禦性理由註解）——三份單一語意、互為鏡像。
 globalThis.browser = globalThis.browser ?? globalThis.chrome;
 
 (function () {
@@ -695,7 +696,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       // v0.8.108：編輯模式（手動移除雜訊段落）
       EDIT_MODE_TOGGLE: 'EDIT_MODE_TOGGLE',         // popup → content：切換編輯模式（僅閱讀模式啟動時可用）
       // v0.8.65：SAVE_TO_READWISE 訊息已移除——popup 改在 extension 頁直接 fetch
-      // （popup-core.saveReaderPayload），不再 popup → SW（iOS 背景頁掛起會 silently
+      // （popup-core.sendDocument dispatcher），不再 popup → SW（iOS 背景頁掛起會 silently
       // 失敗）。快速鍵送出走 SW sendToReadwiseFromCommand，不經訊息。
       // v0.7.89：SW 透過快速鍵觸發送 Readwise 後，需要在頁面顯示結果 toast
       SHOW_TOAST: 'SHOW_TOAST',                     // SW → content：顯示 toast（payload: { message, kind }）

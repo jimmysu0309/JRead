@@ -14,13 +14,27 @@
   'use strict';
 
   // 移除 html_content 內不該在閱讀模式出現的節點（script/style/iframe/link/meta/
-  // base/object/embed）。innerHTML 設值本來就不會執行 script，這裡額外清乾淨避免殘留
-  // 樣式 / 第三方 iframe 干擾版型。回傳清理後的 innerHTML 字串。
+  // base/object/embed）。innerHTML 設值不會執行 <script>，但事件屬性（<img onerror>
+  // / <svg onload>）與 javascript: URL 是另一條執行向量——article.html 是擴充頁
+  //（有 storage 憑證 + fetch 權限），不能只押在 MV3 預設 CSP 那一層（Safari 轉換
+  // / 未來 CSP 調整都可能讓它裸奔），v1.6.24 起一併清除。回傳清理後的 innerHTML 字串。
   function sanitizeHtml(html, document) {
     const tmp = document.createElement('div');
     tmp.innerHTML = String(html || '');
     const kill = tmp.querySelectorAll('script, style, iframe, link, meta, base, object, embed, noscript');
     for (const el of Array.from(kill)) el.remove();
+    // 事件屬性（on*）全部剝除；href/src/xlink:href 帶 javascript: 的整個屬性移除
+    for (const el of tmp.querySelectorAll('*')) {
+      for (const attr of Array.from(el.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) { el.removeAttribute(attr.name); continue; }
+        if (name === 'href' || name === 'src' || name === 'xlink:href' || name === 'formaction') {
+          // 去掉控制字元/空白再比對——"java\tscript:" 這類繞法也要擋
+          const v = String(attr.value || '').replace(/[\u0000-\u0020]/g, '').toLowerCase();
+          if (v.startsWith('javascript:')) el.removeAttribute(attr.name);
+        }
+      }
+    }
     return tmp.innerHTML;
   }
 

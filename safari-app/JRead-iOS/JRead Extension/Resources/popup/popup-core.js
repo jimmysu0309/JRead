@@ -465,47 +465,9 @@
   // options 頁「測試 token」的 GET 從 extension 頁直接發、iOS 實測可行，save 改走
   // 同一條 extension-page fetch 路徑。getToken / fetchImpl 依賴注入便於單測。
   // 註：鍵盤快速鍵送出（無 popup）仍走 background sendToReadwiseFromCommand。
-  // v0.8.165：把 saveToReadwise 的結果（ok / error / status）對映成 toast 文字 + kind，
-  // 供快速鍵送出（SW sendToReadwiseFromCommand，無 popup UI、結果只能靠 toast）使用，
-  // 集中訊息文字單一資料源（CLAUDE.md）。kind 對齊 toast.js 的 'info' | 'success' |
-  // 'error'。註：popup 軌用自己的 setReadwiseStatus 文字（含「進階設定」字樣），不走這條。
-  function readwiseResultToast(result) {
-    if (result && result.ok) {
-      return {
-        message: result.status === 200 ? '已存在於 Readwise Reader' : '已送到 Readwise Reader',
-        kind: 'success'
-      };
-    }
-    if (result && result.error === 'NO_TOKEN') {
-      return { message: '尚未設定 Readwise token，請到設定頁填入', kind: 'error' };
-    }
-    if (result && result.error === 'AUTH') {
-      return { message: 'Readwise token 無效或已過期', kind: 'error' };
-    }
-    if (result && result.error === 'NETWORK') {
-      return { message: '網路錯誤，請稍後再試', kind: 'error' };
-    }
-    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
-    // v1.5.7：帶上 Readwise 回應的具體原因（若有）——不再是不透明的「送出失敗」
-    const reason = result && result.detail ? `：${result.detail}` : '';
-    return { message: `送出失敗${detail}${reason}`, kind: 'error' };
-  }
-
-  async function saveReaderPayload({ payload, getToken, fetchImpl } = {}) {
-    let token;
-    try {
-      token = await getToken();
-    } catch (e) {
-      return { ok: false, error: 'INTERNAL', message: String(e && e.message || e) };
-    }
-    let body;
-    try {
-      body = buildReadwisePayload(payload || {});
-    } catch (e) {
-      return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
-    }
-    return saveToReadwise({ token, payload: body, fetchImpl });
-  }
+  // v1.6.24：移除死 code readwiseResultToast / saveReaderPayload——v1.6.0 服務
+  // 二擇一後 SW 改用 saveResultToast、popup 改用 sendDocument dispatcher，兩函式
+  // runtime 呼叫端歸零（訊息文字已由 saveResultToast 單一資料源承接）。
 
   // ---- 儲存服務二擇一 dispatcher（v1.6.0）------------------------------
   // 讓「送出」與「讀入 feed/文章」服務無關：呼叫端只給 service（'readwise' |
@@ -633,10 +595,9 @@
     return archiveReaderDocument({ token: c.token, id, fetchImpl });
   }
 
-  // 送出結果 → toast 文字 + kind（服務感知，dispatcher 軌用）。既有 Readwise 專屬
-  // readwiseResultToast 保留不動（有 exact-string spec + SW 舊呼叫）；此為泛化版，
-  // serviceLabel 帶入服務名。existsOn200：Readwise 200=已存在、201=新建（Instapaper
-  // 無此區分，一律「已送到」）。
+  // 送出結果 → toast 文字 + kind（服務感知；SW 快速鍵軌與 popup 進階軌之外的
+  // 訊息文字單一資料源）。serviceLabel 帶入服務名。existsOn200：Readwise 200=
+  // 已存在、201=新建（Instapaper 無此區分，一律「已送到」）。
   function saveResultToast(result, opts) {
     const o = opts || {};
     const label = o.serviceLabel || 'Readwise Reader';
@@ -670,8 +631,6 @@
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
     saveToReadwise,
-    saveReaderPayload,
-    readwiseResultToast,
     readwiseErrorDetail,
     validateReadwiseToken,
     listReaderDocuments,

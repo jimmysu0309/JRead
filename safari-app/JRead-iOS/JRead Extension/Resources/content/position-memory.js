@@ -335,7 +335,17 @@
     persistNow();
   }
   function onVisibilityChange() {
-    if (document.visibilityState === 'hidden') flushNow();
+    if (document.visibilityState === 'hidden') { flushNow(); return; }
+    // v1.6.24：恢復可見時重新 seed memMap——同步寫入路徑用「進場 seed 的快照 +
+    // 本分頁 entry」整包覆蓋 readingPositions，若使用者在其他分頁也在閱讀並存了
+    // 位置，本分頁的舊快照會把對方剛存的 entry 整包抹掉（跨分頁 last-writer-wins）。
+    // 頁面可見時 event loop 未凍結、async 讀取安全（iOS 背景凍結防護只影響
+    // hidden 路徑）；本分頁最後位置已在轉 hidden 時 flush 落盤，重讀不掉資料。
+    if (document.visibilityState === 'visible' && sessionKey) {
+      localGet((map) => {
+        if (map && sessionKey) memMap = map;
+      });
+    }
   }
 
   function installListeners() {

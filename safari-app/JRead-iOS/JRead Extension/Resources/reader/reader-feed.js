@@ -140,8 +140,14 @@
       if (typeof deps.onEmpty === 'function' && parent && parent.children.length === 0) deps.onEmpty();
       return result;
     }
-    // 失敗：插回原位 + 還原鈕 + toast
-    if (parent) parent.insertBefore(card, nextSibling);
+    // 失敗：插回原位 + 還原鈕 + toast。
+    // v1.6.24：nextSibling 可能已不在 parent 內（相鄰卡片也在 in-flight 封存中被
+    // 移除）——直接 insertBefore 會丟 NotFoundError、本卡既沒還原也沒 toast。
+    // 參照失效時退回 append（位置可能略移，卡片不消失比較重要）。
+    if (parent) {
+      const ref = (nextSibling && nextSibling.parentNode === parent) ? nextSibling : null;
+      parent.insertBefore(card, ref);
+    }
     if (btn) btn.disabled = false;
     if (typeof deps.toastFn === 'function') deps.toastFn(archiveErrorMessage(result), 'error');
     return result;
@@ -216,11 +222,16 @@
 
       const tabs = FEED_TABS[service] || FEED_TABS.readwise;
 
-      // 載入某個分頁的清單（服務無關，走 PC.listDocuments dispatcher）
+      // 載入某個分頁的清單（服務無關，走 PC.listDocuments dispatcher）。
+      // v1.6.24：世代 token 防 race——快速切分頁時前一發慢回應晚到，若不丟棄會
+      // 蓋掉新分頁已渲染的內容（畫面內容與分頁 highlight 不一致）。
+      let loadGen = 0;
       function loadList(tab) {
         const cfg = tab || tabs[0];
+        const gen = ++loadGen;
         showMsg('載入中…', false);
         PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
+          if (gen !== loadGen) return; // 已切到別的分頁——過期回應丟棄
           if (!r || !r.ok) {
             showMsg(archiveErrorMessage(r).replace('封存', '載入'), true);
             return;
@@ -240,6 +251,7 @@
           hideMsg();
           renderFeed(listEl, docs, onArchive);
         }, (err) => {
+          if (gen !== loadGen) return; // 過期回應丟棄（同上）
           // list fetch reject（iOS 偶發）：surface 出來，不要卡在「載入中…」
           showMsg('載入失敗：' + String(err && err.message || err), true);
         });
