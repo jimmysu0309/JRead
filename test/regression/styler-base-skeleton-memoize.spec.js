@@ -26,8 +26,10 @@ describe('styler — base 骨架 memoize（C6）', () => {
     assert.match(STYLER_SRC, /_baseSkeletonCache\s*=\s*new\s+WeakMap\(\)/, '必須有 _baseSkeletonCache WeakMap');
     assert.match(STYLER_SRC, /function\s+baseSkeletonCacheGet\s*\(/, '必須有 baseSkeletonCacheGet');
     assert.match(STYLER_SRC, /function\s+baseSkeletonCacheSet\s*\(/, '必須有 baseSkeletonCacheSet');
-    assert.match(STYLER_SRC, /base\s*=\s*baseSkeletonCacheGet\(theme,\s*contentWidth\)/, 'buildCss 必須先查 cache');
-    assert.match(STYLER_SRC, /baseSkeletonCacheSet\(theme,\s*contentWidth,\s*base\)/, 'cache miss 後必須寫回 cache');
+    // v1.6.24：readerHostPage 納入 cache key——base 內卡片上緣 padding 依它分流
+    //（v1.5.3），key 沒帶會拿到 stale padding
+    assert.match(STYLER_SRC, /base\s*=\s*baseSkeletonCacheGet\(theme,\s*contentWidth,\s*opts\.readerHostPage\)/, 'buildCss 必須以 (theme, contentWidth, readerHostPage) 查 cache');
+    assert.match(STYLER_SRC, /baseSkeletonCacheSet\(theme,\s*contentWidth,\s*opts\.readerHostPage,\s*base\)/, 'cache miss 後必須以同一組 key 寫回 cache');
   });
 
   it('anti-stale：base template literal 區段不得引用 theme/contentWidth 以外的使用者變數', () => {
@@ -35,17 +37,16 @@ describe('styler — base 骨架 memoize（C6）', () => {
     const startMarker = 'base = `';
     const start = STYLER_SRC.indexOf(startMarker);
     assert.ok(start >= 0, '找不到 base template literal 起點');
-    const endMarker = '\nbaseSkeletonCacheSet(theme, contentWidth, base);';
-    // closing backtick 在 baseSkeletonCacheSet 上方；用 `;\n 後接 cache set 定位
-    const setIdx = STYLER_SRC.indexOf('baseSkeletonCacheSet(theme, contentWidth, base);', start);
+    const setIdx = STYLER_SRC.indexOf('baseSkeletonCacheSet(theme, contentWidth, opts.readerHostPage, base);', start);
     assert.ok(setIdx > start, '找不到 base 區段結尾');
     const baseRegion = STYLER_SRC.slice(start, setIdx);
 
-    // base 只允許 theme.* 與 contentWidth 兩種動態插值；其餘使用者變數禁止出現
+    // base 只允許 theme.* / contentWidth / readerHostPage（皆為 cache key 成員）
+    // 三種動態插值；其餘使用者變數禁止出現
     const forbidden = ['opts.fontSize', 'opts.lineHeight', 'opts.fontFamily', 'opts.fontWeight', 'opts.titleFontSize', 'opts.paragraphSpacing', 'opts.pagedMode'];
     for (const tok of forbidden) {
       assert.ok(!baseRegion.includes(tok),
-        `base 區段不得引用 ${tok}——memoize key 只有 (theme, contentWidth)，引用它會回 stale base`);
+        `base 區段不得引用 ${tok}——memoize key 只有 (theme, contentWidth, readerHostPage)，引用它會回 stale base`);
     }
   });
 

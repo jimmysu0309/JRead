@@ -105,3 +105,17 @@ describe('toast', () => {
     assert.strictEqual(toasts.length, 3);
   });
 });
+
+// v1.6.24：host 掛 <html> 直下、不掛 body——body 子元素會被 cleaner 動態 observer
+// 與 styler sibling 隱藏規則掃到（floating-icon / paged 指示器同款教訓）。掛 body
+// 的舊版靠兩條逐點豁免（styler :not(#__jread-toast-host) + fb-post __jread 前綴）
+// 撐著，任何新增 body 級隱藏規則都可能再漏。
+describe('toast v1.6.24 — host 掛 documentElement', () => {
+  it('host 的 parent 必須是 <html>、不可是 body', () => {
+    const { document, NS } = setup();
+    NS.toast.show('mount test', { duration: 50 });
+    const host = document.getElementById('__jread-toast-host');
+    assert.strictEqual(host.parentElement, document.documentElement,
+      'toast host 必須掛 <html> 直下（掛 body 會被 cleaner / styler 的 body 級隱藏規則咬到）');
+  });
+});

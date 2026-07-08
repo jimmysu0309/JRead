@@ -110,3 +110,19 @@ describe('space-scroll v0.8.83 — <br><br> 分段焦點單位（paulgraham）',
       '必須用 getBoundingClientRect().top 排序（虛擬單位無 compareDocumentPosition）');
   });
 });
+
+// v1.6.24：br 虛擬單位必須帶 textContent getter（Range.toString）。
+// 根因：position-memory 的段落簽名走 el.textContent（capture 與 applyEntry 兩處），
+// 虛擬單位沒有這個欄位時 blockSignature(undefined) 恆回空字串——br 分段文章
+//（PG essays / miniflux 轉貼）的閱讀位置記憶靜默退化成 index-only fallback，
+// 內容微改（廣告段增減 / lazy 內容晚到改變 block 數）時錨點比對完全不作用。
+describe('space-scroll v1.6.24 — br 虛擬單位 textContent getter', () => {
+  it('makeBrUnit 建立的單位必須有 textContent getter、以 range.toString() 供簽名', () => {
+    const body = extractFnBody(SRC, 'makeBrUnit');
+    assert.ok(body, '必須有 makeBrUnit');
+    assert.match(body, /get\s+textContent\s*\(\)/,
+      '虛擬單位缺 textContent getter——position-memory 段落簽名恆為空字串');
+    assert.match(body, /range\.toString\(\)/,
+      'textContent 必須來自 range.toString()（該段實際文字）');
+  });
+});

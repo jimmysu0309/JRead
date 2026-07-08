@@ -45,8 +45,17 @@
         }
         resolve(values);
       };
+      // v1.6.24：fallback 加 timeout 兜底——iOS SW 死亡後 sendMessage 可能石沉大海
+      //（callback 永不回），getSettings 懸空會讓 enterReaderMode 的 enterInFlight
+      // 永久卡 true、之後所有 toggle 靜默失效。逾時以 undefined resolve（與「兩邊
+      // 都死」的既有降級結果一致）；finish 重複呼叫無害（resolve 二次是 no-op）。
+      const FALLBACK_TIMEOUT_MS = 3000;
       const fallbackViaBackground = () => {
-        safeSendMessage({ type: NS.MSG.GET_SETTINGS }, finish);
+        const t = setTimeout(() => finish(undefined), FALLBACK_TIMEOUT_MS);
+        safeSendMessage({ type: NS.MSG.GET_SETTINGS }, (values) => {
+          clearTimeout(t);
+          finish(values);
+        });
       };
       // v0.8.164：browser.storage.sync.get 原生 Promise（無 callback / lastError）；
       // reject 或回空值 → 退回 GET_SETTINGS round-trip（Chrome SW 正常時仍可救），
@@ -75,6 +84,10 @@
   // focus 時放行——使用者在主文 input 留言或編輯時 ESC 通常用於取消輸入 /
   // 關閉自己 focus 的下拉選單，不該被搶走當退出觸發。退出時必 remove listener
   // 避免 reader mode 關閉後 ESC 仍被攔。
+  // editable 判定刻意不用 NS.isEditableTarget（含 BUTTON）——button focus 時 ESC
+  // 仍應退出閱讀模式（button 沒有「取消輸入」語意）；keyguardHandler 同理。
+  // NS.isEditableTarget 的 BUTTON 豁免是給 paged-mode 翻頁鍵用的（space 觸發
+  // button click 的原生行為要保留）。
   function onEscKey(e) {
     if (e.key !== 'Escape' && e.code !== 'Escape') return;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -328,7 +341,7 @@
   // 不另造排版）。container 已是 Readwise 清乾淨的主文，跳過通用 cleaner
   // （hiddenEls=[]，比照 enterFbPostMode——通用 cleaner 為 live web DOM 雜訊調校，
   // 對乾淨文章 HTML 會過度修剪）。reader-app.js 建好 container 後直接呼叫。
-  async function enterFromContainer(container, opts) {
+  async function enterFromContainer(container) {
     if (!container) return false;
     const settings = await getSettings();
     NS.state.articleEl = container;
@@ -784,6 +797,9 @@
     return extractGenericAuthor();
   }
 
+  // 註：x.com/twitter.com hostname 比對是 X 合成 reader（x-thread.js site module）
+  // 的配套邏輯，屬硬規則 3 允許的「明確隔離站點特例」——只在 data-jread-x-reader
+  // 分支內執行，不影響通用偵測路徑。
   function extractXAuthorHandle() {
     try {
       const u = new URL(location.href);
@@ -1110,6 +1126,11 @@
     // 守住才還原，否則會對 inactive 狀態裝 listener。
     if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl) return;
     const settings = await getSettings();
+    // v1.6.24：await 期間閱讀模式可能被退出（SPA 導航 / popup toggle / debug bridge
+    // 的 exit 都是同步、不被 enterInFlight 擋）——必須重跑 guard，否則會對已退出
+    // 的原站頁面 installKeyguard + 重掛 onEscKey，keyguard 持續吞掉頁面快速鍵
+    //（同 scheduleReapply 的 v0.8.36 await 後重跑 guard 處理）。
+    if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl) return;
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
     syncPagedModeFromSettings(settings);
@@ -1370,7 +1391,10 @@
       if (!NS.state.active) return;
       // v0.7.131：blockPageShortcuts 即時切換——options 改 toggle 後立刻生效，
       // 不需 toggle reader mode。獨立處理，不走 styler restore/apply 路徑。
-      if ('blockPageShortcuts' in changes) {
+      // v1.6.24：cinema mode 排除——影院模式 active=true 但刻意不裝 keyguard
+      //（YouTube 的 j/k/l/space/f/m 是 player 控制必備，見 keyguard 註解），
+      // 下方的 cinemaActive early return 在本分支之後、擋不到這條。
+      if ('blockPageShortcuts' in changes && !NS.state.cinemaActive) {
         const next = changes.blockPageShortcuts.newValue;
         if (next === false) uninstallKeyguard();
         else installKeyguard();

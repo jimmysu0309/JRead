@@ -23,8 +23,9 @@ const MAIN_SRC = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'main.js'),
 const NS_SRC = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'namespace.js'), 'utf8');
 
 describe('enterFromContainer v1.0.22 — main.js 結構', () => {
-  it('main.js 必須宣告 async function enterFromContainer(container, opts)', () => {
-    assert.match(MAIN_SRC, /async function\s+enterFromContainer\s*\(\s*container\s*,\s*opts\s*\)/,
+  it('main.js 必須宣告 async function enterFromContainer(container)', () => {
+    // v1.6.24：移除從未使用的 opts 死參數
+    assert.match(MAIN_SRC, /async function\s+enterFromContainer\s*\(\s*container\s*\)/,
       'main.js 缺 enterFromContainer——reader.html 自建 container 的進入點');
   });
 

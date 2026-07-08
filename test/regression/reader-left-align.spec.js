@@ -2,8 +2,10 @@
 //
 // Trigger: Fox News header text-align:center → 閱讀模式標題/副標維持置中、與內文左排
 //   不一致（Jimmy 2026-07-08「閱讀模式沒有指定對齊模式，請指定為靠左對齊」）。
-// 修法: styler 注入 base 規則——容器 [data-jread-active="1"] 設 text-align:left +
+// 修法: styler 注入 base 規則——容器 [data-jread-active="1"] 設 text-align:start +
 //   逐 text 元素（h1-h6 / p / li / blockquote / dd / dt / [text-div]）覆蓋站點置中。
+//   v1.6.24：left → start——LTR 行為相同（靠左），RTL 文章（dir=rtl）start 解析為
+//   右對齊、不被錯誤推去左緣。
 //   specificity 保持 (0,1,1) 以下，CJK 段落 justify（0,2,0）與 byline（0,2,0）仍優先。
 //
 // 訊號層次：本檔驗「左對齊規則進入注入 CSS + CJK justify 規則仍共存」；真實 Chrome
@@ -37,15 +39,15 @@ describe('styler — 閱讀模式主文一律靠左對齊（v1.6.18）', () => {
     css = styleEl.textContent;
   });
 
-  it('注入 CSS：容器 [data-jread-active="1"] 設 text-align:left', () => {
-    const re = /\[data-jread-active="1"\]\s*\{[^}]*text-align:\s*left\s*!important/;
-    assert.match(css, re, 'CSS 必須含容器層 text-align:left 規則');
+  it('注入 CSS：容器 [data-jread-active="1"] 設 text-align:start（RTL 安全）', () => {
+    const re = /\[data-jread-active="1"\]\s*\{[^}]*text-align:\s*start\s*!important/;
+    assert.match(css, re, 'CSS 必須含容器層 text-align:start 規則（不可退回 left——RTL 會被推去左緣）');
   });
 
-  it('注入 CSS：標題 + 段落 text 元素 text-align:left', () => {
-    // [data-jread-active="1"] :is(h1, ... p, ...) { text-align: left !important }
-    const re = /\[data-jread-active="1"\]\s*:is\([^)]*\bh1\b[^)]*\bp\b[^)]*\)[^{]*\{[^}]*text-align:\s*left\s*!important/;
-    assert.match(css, re, 'CSS 必須含標題/段落 :is() text-align:left 規則');
+  it('注入 CSS：標題 + 段落 text 元素 text-align:start', () => {
+    // [data-jread-active="1"] :is(h1, ... p, ...) { text-align: start !important }
+    const re = /\[data-jread-active="1"\]\s*:is\([^)]*\bh1\b[^)]*\bp\b[^)]*\)[^{]*\{[^}]*text-align:\s*start\s*!important/;
+    assert.match(css, re, 'CSS 必須含標題/段落 :is() text-align:start 規則');
   });
 
   it('CJK 段落 justify 規則仍共存（未被左對齊改動移除）', () => {
@@ -56,7 +58,7 @@ describe('styler — 閱讀模式主文一律靠左對齊（v1.6.18）', () => {
   it('左對齊規則 specificity 不得高過 CJK justify（不可用雙屬性 / *）', () => {
     // 防呆：若日後把左對齊 selector 加成 [data-jread-active][data-jread-active]（0,2,x）
     // 或 [data-jread-active] *，會蓋掉 CJK justify。禁止這兩種寫法出現在左對齊規則附近。
-    assert.doesNotMatch(css, /\[data-jread-active="1"\]\[data-jread-active="1"\][^{]*text-align:\s*left/,
+    assert.doesNotMatch(css, /\[data-jread-active="1"\]\[data-jread-active="1"\][^{]*text-align:\s*(left|start)/,
       '左對齊不可用雙屬性提升 specificity（會蓋 CJK justify）');
   });
 });

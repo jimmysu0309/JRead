@@ -64,7 +64,9 @@
   const SECTION_URL_RE = /\/(sections?|category|categories|topics?)\//i;
   // 日期訊號（DD Mon YYYY / Mon DD, YYYY / YYYY-M-D / YYYY年M月D日）——byline root
   // 偵測的錨點。閱讀時間（N min(s) read / 閱讀時間 / N 分鐘閱讀）——byline 內隱藏。
-  const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/i;
+  // v1.6.24：第二 alternative（Mon DD, YYYY）補開頭 \b——否則 "Demar 3, 2024"
+  // 這類字串內的 "mar 3, 2024" 子字串會誤命中（與第一 alternative 對稱）。
+  const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/i;
   const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|閱讀時間|\d+\s*分鐘閱讀/i;
   // 時刻訊號：整段直接文字＝「HH:MM(:SS)? (AM/PM)? TZ?」（例 "1:59 PM ET"、
   //   "13:59"、"9:30 a.m. EST"）。冒號是關鍵——日期字串無冒號，故不誤殺日期。
@@ -539,17 +541,25 @@
     return total > 0 ? low / total : 0;
   }
 
-  // v0.8.18 C6：base 骨架 memoize cache（theme 物件 → Map(contentWidth → base 字串)）。
-  // base 只依賴 theme + contentWidth，3 個 THEMES 是穩定 module 物件、可當 WeakMap key。
+  // v0.8.18 C6：base 骨架 memoize cache（theme 物件 → Map(key → base 字串)）。
+  // base 依賴 theme + contentWidth + readerHostPage（v1.5.3 起卡片上緣 padding
+  // 依 readerHostPage 分流、住在 base 模板內），THEMES（4 個，含 v0.8.143 gray）
+  // 是穩定 module 物件、可當 WeakMap key。
+  // v1.6.24：readerHostPage 納入 cache key——原本 key 只有 (theme, contentWidth)，
+  // 同組合下 readerHostPage 變化會拿到 stale 的錯誤上緣 padding（cache 內容依賴
+  // 它、key 卻沒有，invariant 破壞）。
   const _baseSkeletonCache = new WeakMap();
-  function baseSkeletonCacheGet(theme, contentWidth) {
-    const m = _baseSkeletonCache.get(theme);
-    return m ? m.get(contentWidth) : undefined;
+  function _baseSkeletonKey(contentWidth, readerHostPage) {
+    return contentWidth + (readerHostPage ? ':reader' : '');
   }
-  function baseSkeletonCacheSet(theme, contentWidth, base) {
+  function baseSkeletonCacheGet(theme, contentWidth, readerHostPage) {
+    const m = _baseSkeletonCache.get(theme);
+    return m ? m.get(_baseSkeletonKey(contentWidth, readerHostPage)) : undefined;
+  }
+  function baseSkeletonCacheSet(theme, contentWidth, readerHostPage, base) {
     let m = _baseSkeletonCache.get(theme);
     if (!m) { m = new Map(); _baseSkeletonCache.set(theme, m); }
-    m.set(contentWidth, base);
+    m.set(_baseSkeletonKey(contentWidth, readerHostPage), base);
   }
 
   function buildCss(theme, opts, overrides) {
@@ -567,13 +577,19 @@
     const H_GUTTER = 'clamp(16px, calc(7.4vw - 12.8px), 56px)';
 
     // ---- 骨架：頁面 reset + 祖先鏈 reset + 卡片容器（永遠注入）----
-    // v0.8.18 C6：base 骨架只依賴 theme + contentWidth（不含 fontSize / lineHeight
-    // / fontFamily / pagedMode 等使用者變數），~800 行卻每次 apply() 重組。改成以
-    // (theme, contentWidth) memoize：同組合只算一次，使用者調字級 / 字型 / 行距
+    // v0.8.18 C6：base 骨架只依賴 theme + contentWidth + readerHostPage（不含
+    // fontSize / lineHeight / fontFamily / pagedMode 等使用者變數），~800 行卻每次
+    // apply() 重組。改成 memoize：同組合只算一次，使用者調字級 / 字型 / 行距
     // （只動 userOverrides）時 base 直接命中 cache、不再重建。輸出逐字相等
     // （tools/probe-c6-buildcss.js 驗過 27 組 snapshot identical）。
-    let base = baseSkeletonCacheGet(theme, contentWidth);
+    let base = baseSkeletonCacheGet(theme, contentWidth, opts.readerHostPage);
     if (base === undefined) {
+      // 「媒體直接容器」selector 清單單一資料源——height reset 與 position reset
+      // 兩個 rule block 共用（v1.6.24 抽常數；原本兩份手寫清單逐字相同，是
+      // MEDIA_CAP_SEL 註解記錄過的同型 drift 候選）。
+      const MEDIA_DIRECT_WRAP_SEL = `[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video)`;
       base = `
 /* 補 cleaner hide 漏洞：cleaner 只設 inline style.display = 'none' 無
    !important，站點 JS（例如商周 .postnav.fixed 的 scroll handler 主動
@@ -1117,9 +1133,7 @@ ${MEDIA_CAP_SEL} {
    殘留 max-height:460 頂死、圖片 overflow:visible 溢出蓋住下方圖說。height
    reset 必須連 max-height 一起解除，容器才撐到圖片實際高度。圖片本體自身
    仍有 90vh / 翻頁單頁 cap（在 img 選擇器上）、不會無限長。 */
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video) {
+${MEDIA_DIRECT_WRAP_SEL} {
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
@@ -1136,9 +1150,7 @@ ${MEDIA_CAP_SEL} {
    差別是此條 keyed on「直接含媒體」的結構事實、補到無語意 class 的影片嵌入
    wrapper。排除已標記 player（responsive embed 靠 absolute 填滿 relative 框，
    見 PLAYER_ATTR 段）與 inline emoji。 */
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video) {
+${MEDIA_DIRECT_WRAP_SEL} {
   position: static !important;
   top: auto !important;
   left: auto !important;
@@ -1547,16 +1559,19 @@ ${MEDIA_CAP_SEL} {
 /* v1.6.18：閱讀模式主文一律靠左對齊（Jimmy 2026-07-08）。原本未指定對齊、繼承站點
    ——站點置中的標題 / 副標 / 段落（Fox News header.article-header text-align:center
    → h1/h2/byline 置中）在閱讀模式維持置中、閱讀體感不一致。改成容器設預設左對齊 +
-   逐 text 元素覆蓋站點「直接宣告 / 繼承」的置中。specificity 刻意保持 (0,1,1) 以下：
+   逐 text 元素覆蓋站點「直接宣告 / 繼承」的置中。
+   v1.6.24：left → start——LTR 內容行為完全相同（仍靠左），RTL 文章（阿拉伯文 /
+   希伯來文，dir=rtl）start 解析為右對齊、不再被錯誤推去左緣。
+   specificity 刻意保持 (0,1,1) 以下：
    CJK 段落 justify（data-jread-cjk-justify，0,2,0）與 byline 正規化（data-jread-byline，
    0,2,0）specificity 較高、仍優先，不受本規則影響。媒體 / 卡片置中靠 margin:auto（非
    text-align）不受影響；figure / figcaption / table cell 保留站點對齊（不列入 selector）。 */
 [${ARTICLE_ATTR}="1"] {
-  text-align: left !important;
+  text-align: start !important;
 }
 [${ARTICLE_ATTR}="1"] :is(h1, h2, h3, h4, h5, h6, p, li, blockquote, dd, dt),
 [${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"] {
-  text-align: left !important;
+  text-align: start !important;
 }
 /* v1.0.8：byline meta 區一行正規化（標記由 apply() 結構偵測，見 BYLINE_ATTR
    常數註解）。root flex 一行、wrapper display:contents 打平任意巢狀讓 leaf 升為
@@ -1929,7 +1944,7 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   vertical-align: -0.1em !important;
 }
 `;
-      baseSkeletonCacheSet(theme, contentWidth, base);
+      baseSkeletonCacheSet(theme, contentWidth, opts.readerHostPage, base);
     }
 
     // ---- 使用者 override：僅在非預設值才注入 ----
@@ -3364,15 +3379,11 @@ html.${HTML_CLASS}.jread-orion body {
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
 
-      // v1.6.12：CJK 為主段落標記（須在 TEXT_DIV_ATTR 標記後，才含 div 當段落站）。
-      // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
-      // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
-      const cjkJustifyMarked = markCjkParagraphs(articleEl);
-
-      // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style，但注入
-      // CSS 不動內文 text-transform / letter-spacing（byline item 有動、已排除），
-      // ARTICLE_ATTR 先後皆可；放 TEXT_DIV_ATTR 標記後才含 div 當段落站。
-      const decorResetMarked = markDecorativeInlines(articleEl);
+      // v1.6.24：markCjkParagraphs / markDecorativeInlines 移到 byline / kicker
+      // 標記之後（見 bylineMarks 區塊尾）——兩函式的
+      // `closest([BYLINE_ATTR], [KICKER_ATTR])` 排除 guard 需要標記已存在，
+      // 舊順序（此處）跑在 byline 標記前，guard 永遠 miss、中文 byline
+      //（「文／某某」CJK 佔比達標）會被 justify。
 
       // v0.7.182：mark video player container descendants——背景/色彩
       // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
@@ -4004,6 +4015,17 @@ html.${HTML_CLASS}.jread-orion body {
           }
         }
       }
+
+      // v1.6.12：CJK 為主段落標記（須在 TEXT_DIV_ATTR 標記後，才含 div 當段落站）。
+      // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
+      // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
+      // v1.6.24：移到 byline / kicker 標記之後——排除 guard（closest BYLINE_ATTR /
+      // KICKER_ATTR）需要標記已存在，否則中文 byline（「文／某某」）被 justify。
+      const cjkJustifyMarked = markCjkParagraphs(articleEl);
+
+      // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
+      // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
+      const decorResetMarked = markDecorativeInlines(articleEl);
 
       // v0.7.179：strip excessive padding on ancestors between firstInk and
       // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
@@ -4639,7 +4661,12 @@ html.${HTML_CLASS}.jread-orion body {
           // 效能：先用 rect 收「溢出右緣」節點 → 往上收祖先 Set → 只對 Set 跑
           // getComputedStyle（同 galleryFlex mediaAncestors 思路，避免 O(全 DOM)
           // getComputedStyle）。
-          {
+          // v1.6.24：gate 在非翻頁模式——翻頁的 multicol card（position:fixed +
+          // column-width）第 2 欄起所有元素 rect.right 天然超過 card 右緣（probe
+          // 實證：正常 flex-row / 窄 table 全被誤判「溢出」），量 card 寬在 multicol
+          // 下不可靠（同 contentWidthSnap v0.7.246 註解的既有原則）。翻頁模式
+          // 溢出破版由 column layout 自然裁切，不做 rect 幾何修法。
+          if (!opts.pagedMode) {
             const cardRight = articleEl.getBoundingClientRect().right;
             const overflowAncestors = new Set();
             for (const el of articleEl.querySelectorAll('*')) {
@@ -4730,8 +4757,11 @@ html.${HTML_CLASS}.jread-orion body {
       //   - 排除已被既有 overflow-x:auto/scroll 祖先（在卡內）吸收的——原站
       //     已給 code block 內捲（rust-book / k8s 的 <pre> overflow-x:auto）就不
       //     重複處理，避免雙重 scroll container。
+      // v1.6.24：同上——翻頁 multicol 下 cardRight 幾何不可靠（第 2 欄起的正常
+      // table/pre 全被誤判溢出、套上 display:block + overflow-x:auto 造成與第 1
+      // 頁排版不一致），gate 在非翻頁模式。
       const wideScroll = [];
-      {
+      if (!opts.pagedMode) {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
           const cardRight = articleEl.getBoundingClientRect().right;

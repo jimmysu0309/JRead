@@ -369,3 +369,16 @@ describe('youtube-borderless v0.7.134 — popup UI', () => {
       'borderlessBtn click handler 必須 sendMessage TOGGLE_YT_BORDERLESS');
   });
 });
+
+// v1.6.24：apply() 排程的 300ms requestResize 必須帶 active guard。
+// 失效情境：使用者開啟無邊模式後 300ms 內再 toggle off（快速鍵連按）——unapply()
+// 不取消這顆 timer，回呼若不查 active 仍會送 RESIZE_OWN_WINDOW，把已回到一般
+// 版面的瀏覽器視窗壓扁且不會自動還原。
+describe('youtube-borderless v1.6.24 — 300ms requestResize 的 active guard', () => {
+  it('apply() 的 setTimeout requestResize 回呼必須檢查 active', () => {
+    const m = BORDERLESS_SRC.match(/setTimeout\(\s*\(\)\s*=>\s*\{?[^}]*requestResize\(\)/);
+    assert.ok(m, '抓不到 apply() 內排程 requestResize 的 setTimeout');
+    assert.match(m[0], /if\s*\(\s*active\s*\)/,
+      '300ms requestResize 回呼缺 active guard——toggle off 後仍會 resize 視窗');
+  });
+});

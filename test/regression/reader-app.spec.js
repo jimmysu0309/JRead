@@ -313,3 +313,66 @@ describe('reader-article: formatDate', () => {
     assert.strictEqual(ARTICLE.formatDate(null), '');
   });
 });
+
+// v1.6.24：sanitizeHtml 硬化——事件屬性與 javascript: URL 也要清。
+// article.html 是擴充頁（有 storage 憑證 + fetch 權限），html_content 來自任意
+// 網頁經 readability 處理的內容；<img onerror> / <svg onload> / <a href="javascript:">
+// 不清的話，安全性完全押在 MV3 預設 CSP 單層（Safari 轉換 / CSP 調整就裸奔）。
+describe('reader-article: sanitizeHtml 事件屬性 / javascript: URL（v1.6.24）', () => {
+  it('剝除所有 on* 事件屬性', () => {
+    const document = freshDoc();
+    const dirty = '<p>內文</p><img src="https://x/a.jpg" onerror="alert(1)"><svg onload="alert(2)"><rect onclick="x()"/></svg><div ONMOUSEOVER="y()">t</div>';
+    const clean = ARTICLE.sanitizeHtml(dirty, document);
+    assert.ok(!/on\w+\s*=/i.test(clean), 'on* 事件屬性必須全部剝除');
+    assert.ok(clean.includes('<img'), '內容圖保留');
+    assert.ok(clean.includes('內文'));
+  });
+
+  it('移除 javascript: 的 href / src（含控制字元繞法），一般連結保留', () => {
+    const document = freshDoc();
+    const dirty = '<a href="javascript:alert(1)">a</a><a href="java\tscript:alert(2)">b</a><a href="https://example.com/">c</a>';
+    const clean = ARTICLE.sanitizeHtml(dirty, document);
+    assert.ok(!/javascript:/i.test(clean), 'javascript: URL 必須移除');
+    assert.ok(clean.includes('https://example.com/'), '一般 https 連結保留');
+  });
+});
+
+// v1.6.24：併發封存——相鄰兩張都 in-flight、參照卡片已 detached 時，失敗還原
+// 不可 throw（舊版 insertBefore 丟 NotFoundError → 卡片永久消失 + 無 toast）。
+describe('reader-feed: archiveCard 併發參照失效（v1.6.24）', () => {
+  it('nextSibling 已被移出 DOM 時失敗還原退回 append、不 throw、照樣 toast', async () => {
+    const document = freshDoc();
+    const listEl = document.querySelector('.jr-list');
+    FEED.renderFeed(listEl, sampleDocs, () => {});
+    const a1 = listEl.querySelector('[data-doc-id="a1"]');
+    const a2 = listEl.querySelector('[data-doc-id="a2"]'); // a1 的 nextSibling
+    let resolveA2;
+    const a2Pending = new Promise((res) => { resolveA2 = res; });
+    // a2 先進 in-flight（把自己移出 DOM、掛著等）
+    const p2 = FEED.archiveCard(a2, 'a2', { archiveFn: () => a2Pending });
+    let toasted = false;
+    // a1 封存失敗——此刻它 captured 的 nextSibling（a2）已 detached
+    const r1 = await FEED.archiveCard(a1, 'a1', {
+      archiveFn: async () => ({ ok: false, error: 'NETWORK' }),
+      toastFn: () => { toasted = true; }
+    });
+    assert.strictEqual(r1.ok, false);
+    assert.ok(listEl.querySelector('[data-doc-id="a1"]'), 'a1 必須還原回清單（不可因參照失效消失）');
+    assert.ok(toasted, '失敗必須 toast');
+    resolveA2({ ok: true });
+    await p2;
+  });
+});
+
+// v1.6.24：loadList 世代 token——快速切分頁時慢回應晚到不可蓋掉新分頁內容。
+// loadList 在 init() closure 內、無法直接單測，驗 source 結構（token 遞增 + 兩個
+// callback 都先比對世代）。
+describe('reader-feed: loadList 過期回應丟棄（v1.6.24）', () => {
+  const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'jread', 'reader', 'reader-feed.js'), 'utf8');
+  it('loadList 必須有世代 token 且 resolve/reject 兩側都比對', () => {
+    assert.match(SRC, /let\s+loadGen\s*=\s*0/, '缺 loadGen 世代計數');
+    assert.match(SRC, /const\s+gen\s*=\s*\+\+loadGen/, 'loadList 開頭必須遞增並 capture 世代');
+    const guards = SRC.match(/if\s*\(\s*gen\s*!==\s*loadGen\s*\)\s*return/g) || [];
+    assert.ok(guards.length >= 2, 'resolve 與 reject 兩個 callback 都必須丟棄過期回應（找到 ' + guards.length + ' 處）');
+  });
+});

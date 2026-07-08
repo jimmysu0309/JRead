@@ -487,8 +487,10 @@
   // v0.7.237：建立底部頁碼指示器（install 時呼叫）。v1.5.4：一律建立——頁碼指示
   // 已是翻頁模式唯一進度載體，不再有開關。uninstall 負責移除。
   function reconcileIndicator() {
+    let adopted = false;
     if (!indicatorEl) {
       indicatorEl = document.getElementById(INDICATOR_ID);
+      adopted = !!indicatorEl; // 撿到既存 DOM（extension reload 後舊 context 殘留的孤兒）
     }
     if (!indicatorEl) {
       indicatorEl = document.createElement('div');
@@ -499,8 +501,15 @@
       // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
       // markAncestors 標記，不受該規則影響。
       (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
+      adopted = true;
+    }
+    if (adopted) {
       // v0.8.150：頁碼當 scrubber——桌面滑鼠在指示器上按下起拖（touch 走
-      // window touch 管線，靠 isIndicatorTarget 判定，不在此掛）
+      // window touch 管線，靠 isIndicatorTarget 判定，不在此掛）。
+      // v1.6.24：撿到孤兒 DOM 時也必須掛——舊 context 的 listener 隨 context 死亡
+      // 失效，只在「新建」分支掛會讓該 session 桌面滑鼠 scrub 完全沒反應。
+      // 先 remove 再 add 保冪等（同 context 重複 reconcile 不會疊 listener）。
+      indicatorEl.removeEventListener('mousedown', onIndicatorMouseDown);
       indicatorEl.addEventListener('mousedown', onIndicatorMouseDown);
     }
     renderIndicator();
@@ -646,7 +655,10 @@
   // 滾輪 / 觸控板：水平或垂直 delta 都映射成翻頁（文件不可垂直卷動，垂直
   // 滾輪閒置不用反而違反直覺）。翻頁後鎖定一段時間吃掉慣性尾巴。
   function onWheel(e) {
-    e.preventDefault(); // 文件鎖卷動下無原生用途；防 macOS 觸控板水平 swipe 觸發歷史導航
+    // 文件鎖卷動下無原生用途；防 macOS 觸控板水平 swipe 觸發歷史導航。
+    // 已知取捨：主文內的巢狀可捲元素（overflow-x:auto 的寬 <pre>/表格）滾輪
+    // 也被吃掉轉成翻頁——翻頁模式下滾輪語意統一為翻頁，內捲內容用拖曳捲。
+    e.preventDefault();
     const now = performance.now();
     if (now < wheelLockUntil) return;
     const d = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;

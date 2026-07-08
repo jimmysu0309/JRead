@@ -5,7 +5,7 @@
 const path = require('path');
 const assert = require('assert');
 
-const { buildReadwisePayload, saveToReadwise, saveReaderPayload, readwiseResultToast, validateReadwiseToken, validateGeminiKey, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
+const { buildReadwisePayload, saveToReadwise, sendDocument, saveResultToast, validateReadwiseToken, validateGeminiKey, buildSummaryPrompt, extractGeminiText, generateGeminiSummary, GEMINI_MAX_CHARS, READWISE_API_URL, READWISE_AUTH_URL } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
 
@@ -284,7 +284,7 @@ describe('readwise: saveToReadwise', () => {
 // v1.5.7：Readwise 非 2xx 回應原因浮出（Jimmy 2026-06-28 macstories club 付費牆頁
 // 送出 HTTP 400 回報）。原本 saveToReadwise 只 res.json()，非 JSON body 失敗就把
 // 唯一的失敗原因丟掉、toast 只剩不透明的「HTTP 400」無從定位。改先讀 text 再 parse、
-// 萃出 detail 帶回 result，readwiseResultToast / popup status 顯示具體原因。
+// 萃出 detail 帶回 result，saveResultToast / popup status 顯示具體原因。
 const { readwiseErrorDetail } = require(
   path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
 );
@@ -383,9 +383,11 @@ describe('readwise: saveToReadwise 帶 detail（v1.5.7）', () => {
   });
 });
 
-describe('readwise: readwiseResultToast 帶 detail（v1.5.7）', () => {
+// v1.6.24：readwiseResultToast 已移除（死 code，v1.6.0 起 SW 用 saveResultToast、
+// popup 用自己的 setReadwiseStatus 文字）——v1.5.7 的 detail 行為由 saveResultToast 承接
+describe('readwise: saveResultToast 帶 detail（v1.5.7 行為承接）', () => {
   it('HTTP 400 + detail：toast 文字含 HTTP 碼與具體原因', () => {
-    const t = readwiseResultToast({ ok: false, status: 400, error: 'HTTP', detail: 'Document too large.' });
+    const t = saveResultToast({ ok: false, status: 400, error: 'HTTP', detail: 'Document too large.' });
     assert.strictEqual(t.kind, 'error');
     assert.match(t.message, /送出失敗/);
     assert.match(t.message, /HTTP 400/);
@@ -393,7 +395,7 @@ describe('readwise: readwiseResultToast 帶 detail（v1.5.7）', () => {
   });
 
   it('無 detail：退回原本「送出失敗（HTTP 碼）」', () => {
-    const t = readwiseResultToast({ ok: false, status: 500, error: 'HTTP' });
+    const t = saveResultToast({ ok: false, status: 500, error: 'HTTP' });
     assert.strictEqual(t.message, '送出失敗（HTTP 500）');
   });
 
@@ -408,20 +410,23 @@ describe('readwise: readwiseResultToast 帶 detail（v1.5.7）', () => {
   });
 });
 
-// v0.8.65：popup「送到 Readwise」改走 popup-core.saveReaderPayload，在 extension
-// 頁直接 fetch（不繞 background）。iOS Safari 背景頁掛起讓 SAVE_TO_READWISE 往返 /
-// 背景 fetch silently 失敗（macOS Chrome/Safari 正常）；options「測試 token」GET 從
-// extension 頁直接發 iOS 實測可行，save 改走同一路徑。
-describe('readwise: saveReaderPayload（popup extension-page 直送，v0.8.65）', () => {
+// v0.8.65：popup「送到 Readwise」在 extension 頁直接 fetch（不繞 background）。
+// iOS Safari 背景頁掛起讓 SAVE_TO_READWISE 往返 / 背景 fetch silently 失敗
+//（macOS Chrome/Safari 正常）；options「測試 token」GET 從 extension 頁直接發
+// iOS 實測可行，save 走同一路徑。v1.6.0 起入口泛化為 sendDocument dispatcher
+//（saveReaderPayload 死 code 已於 v1.6.24 移除），直送語意不變——本組 spec 驗
+// dispatcher 的 readwise 軌行為。
+describe('readwise: sendDocument readwise 軌（extension-page 直送）', () => {
   const goodPayload = { url: 'https://example.com/post/1', html: '<p>x</p>' };
 
-  it('成功：讀 token → build → POST /save/，回 ok=true + 帶對 token', async () => {
+  it('成功：creds.token → build → POST /save/，回 ok=true + 帶對 token', async () => {
     const { fetchImpl, calls } = makeFetch(async () => ({
       ok: true, status: 201, json: async () => ({ id: 'abc' })
     }));
-    const r = await saveReaderPayload({
+    const r = await sendDocument({
+      service: 'readwise',
+      creds: { token: 'tok-123' },
       payload: goodPayload,
-      getToken: async () => 'tok-123',
       fetchImpl
     });
     assert.strictEqual(r.ok, true);
@@ -429,35 +434,23 @@ describe('readwise: saveReaderPayload（popup extension-page 直送，v0.8.65）
     assert.strictEqual(calls[0][0], READWISE_API_URL);
     assert.strictEqual(calls[0][1].method, 'POST');
     assert.strictEqual(calls[0][1].headers['Authorization'], 'Token tok-123');
-    // saveReaderPayload 內部經 buildReadwisePayload → 必帶 should_clean_html:true（v0.8.134）
+    // 內部經 buildReadwisePayload → 必帶 should_clean_html:true（v0.8.134）
     assert.deepStrictEqual(JSON.parse(calls[0][1].body), { ...goodPayload, should_clean_html: true });
   });
 
-  it('getToken 回空字串：saveToReadwise 端回 NO_TOKEN，不打 API', async () => {
+  it('token 空字串：回 NO_CREDENTIALS，不打 API', async () => {
     const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
-    const r = await saveReaderPayload({ payload: goodPayload, getToken: async () => '', fetchImpl });
-    assert.strictEqual(r.error, 'NO_TOKEN');
-    assert.strictEqual(calls.length, 0);
-  });
-
-  it('getToken throw（storage 讀取失敗）：回 INTERNAL、不打 API', async () => {
-    const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
-    const r = await saveReaderPayload({
-      payload: goodPayload,
-      getToken: async () => { throw new Error('storage boom'); },
-      fetchImpl
-    });
-    assert.strictEqual(r.ok, false);
-    assert.strictEqual(r.error, 'INTERNAL');
-    assert.match(r.message, /storage boom/);
+    const r = await sendDocument({ service: 'readwise', creds: { token: '' }, payload: goodPayload, fetchImpl });
+    assert.strictEqual(r.error, 'NO_CREDENTIALS');
     assert.strictEqual(calls.length, 0);
   });
 
   it('payload 缺 url：回 INVALID_PAYLOAD、不打 API', async () => {
     const { fetchImpl, calls } = makeFetch(() => { throw new Error('should not be called'); });
-    const r = await saveReaderPayload({
+    const r = await sendDocument({
+      service: 'readwise',
+      creds: { token: 'tok-123' },
       payload: { html: '<p>x</p>' },
-      getToken: async () => 'tok-123',
       fetchImpl
     });
     assert.strictEqual(r.ok, false);
@@ -467,7 +460,7 @@ describe('readwise: saveReaderPayload（popup extension-page 直送，v0.8.65）
 
   it('401：透傳 saveToReadwise 的 AUTH', async () => {
     const { fetchImpl } = makeFetch(async () => ({ ok: false, status: 401, json: async () => ({}) }));
-    const r = await saveReaderPayload({ payload: goodPayload, getToken: async () => 'bad', fetchImpl });
+    const r = await sendDocument({ service: 'readwise', creds: { token: 'bad' }, payload: goodPayload, fetchImpl });
     assert.strictEqual(r.error, 'AUTH');
     assert.strictEqual(r.status, 401);
   });
@@ -726,7 +719,7 @@ describe('readwise: 訊息協定常數同步', () => {
       path.join(__dirname, '..', '..', 'jread', 'background', 'service-worker.js'), 'utf8'
     );
     assert.ok(!/case\s+['"]SAVE_TO_READWISE['"]/.test(swSrc),
-      'SW 不可再有 SAVE_TO_READWISE case（iOS 背景頁掛起會 silently 失敗，已改 popup-core.saveReaderPayload 直送）');
+      'SW 不可再有 SAVE_TO_READWISE case（iOS 背景頁掛起會 silently 失敗，已改 popup-core.sendDocument 直送）');
   });
 
   it('namespace.js 不得再把 SAVE_TO_READWISE 宣告為 live MSG 常數（v0.8.65）', () => {
@@ -1443,43 +1436,58 @@ describe('readwise: generateGeminiSummary', () => {
   });
 });
 
-// v0.8.165：結果 toast 訊息對映（SW 快速鍵軌 + 懸浮按鈕長按選單 content 直送軌共用）
-describe('readwise: readwiseResultToast（結果 → toast 文字/kind 單一資料源）', () => {
+// v0.8.165：結果 toast 訊息對映（SW 快速鍵軌用）。v1.6.24：Readwise 專屬
+// readwiseResultToast 死 code 移除，訊息文字單一資料源 = saveResultToast
+//（Readwise 語境 = serviceLabel 預設 'Readwise Reader' + existsOn200:true）。
+describe('readwise: saveResultToast Readwise 語境（結果 → toast 文字/kind 單一資料源）', () => {
+  const RW = { serviceLabel: 'Readwise Reader', existsOn200: true };
+
   it('成功 201（新存）→ 已送到 Readwise Reader / success', () => {
-    assert.deepStrictEqual(readwiseResultToast({ ok: true, status: 201 }),
+    assert.deepStrictEqual(saveResultToast({ ok: true, status: 201 }, RW),
       { message: '已送到 Readwise Reader', kind: 'success' });
   });
 
   it('成功 200（已存在）→ 已存在於 Readwise Reader / success', () => {
-    assert.deepStrictEqual(readwiseResultToast({ ok: true, status: 200 }),
+    assert.deepStrictEqual(saveResultToast({ ok: true, status: 200 }, RW),
       { message: '已存在於 Readwise Reader', kind: 'success' });
   });
 
-  it('NO_TOKEN → 提示去設定頁填 token / error', () => {
-    const r = readwiseResultToast({ ok: false, error: 'NO_TOKEN' });
+  it('NO_CREDENTIALS → 提示去設定頁填憑證 / error', () => {
+    const r = saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, RW);
     assert.strictEqual(r.kind, 'error');
-    assert.match(r.message, /尚未設定 Readwise token/);
+    assert.match(r.message, /尚未設定 Readwise Reader 憑證/);
   });
 
-  it('AUTH → token 無效或已過期 / error', () => {
-    assert.deepStrictEqual(readwiseResultToast({ ok: false, error: 'AUTH', status: 401 }),
-      { message: 'Readwise token 無效或已過期', kind: 'error' });
+  it('AUTH → 憑證無效或已過期 / error', () => {
+    assert.deepStrictEqual(saveResultToast({ ok: false, error: 'AUTH', status: 401 }, RW),
+      { message: 'Readwise Reader 憑證無效或已過期', kind: 'error' });
   });
 
   it('NETWORK → 網路錯誤 / error', () => {
-    assert.deepStrictEqual(readwiseResultToast({ ok: false, error: 'NETWORK' }),
+    assert.deepStrictEqual(saveResultToast({ ok: false, error: 'NETWORK' }, RW),
       { message: '網路錯誤，請稍後再試', kind: 'error' });
   });
 
   it('其他 HTTP 錯誤帶 status → 送出失敗（HTTP nnn）/ error', () => {
-    assert.deepStrictEqual(readwiseResultToast({ ok: false, error: 'HTTP', status: 500 }),
+    assert.deepStrictEqual(saveResultToast({ ok: false, error: 'HTTP', status: 500 }, RW),
       { message: '送出失敗（HTTP 500）', kind: 'error' });
   });
 
   it('undefined / 無 status 的泛用失敗 → 送出失敗（不帶 HTTP）/ error', () => {
-    assert.deepStrictEqual(readwiseResultToast(undefined),
+    assert.deepStrictEqual(saveResultToast(undefined, RW),
       { message: '送出失敗', kind: 'error' });
-    assert.deepStrictEqual(readwiseResultToast({ ok: false }),
+    assert.deepStrictEqual(saveResultToast({ ok: false }, RW),
       { message: '送出失敗', kind: 'error' });
+  });
+
+  it('popup-core 不得再有 readwiseResultToast / saveReaderPayload 死 code', () => {
+    const fs = require('fs');
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js'), 'utf8'
+    );
+    assert.ok(!/function\s+readwiseResultToast/.test(src),
+      'readwiseResultToast 已於 v1.6.24 移除，不可回歸');
+    assert.ok(!/function\s+saveReaderPayload/.test(src),
+      'saveReaderPayload 已於 v1.6.24 移除，不可回歸');
   });
 });

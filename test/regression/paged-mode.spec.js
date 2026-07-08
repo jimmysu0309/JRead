@@ -1602,3 +1602,37 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 });
+
+// v1.6.24：reconcileIndicator 撿到孤兒指示器（extension reload 後舊 context 殘留
+// 的 DOM）時必須補掛 mousedown listener。舊版只在「新建」分支掛——孤兒被
+// getElementById 撿到後跳過掛載，該 session 桌面滑鼠 scrub 完全沒反應（touch 走
+// window 管線不受影響，所以只有桌面壞、更難察覺）。
+describe('paged-mode v1.6.24 — 孤兒指示器補掛 mousedown', () => {
+  it('install 前 DOM 已有殘留指示器 → mousedown scrub 仍要有反應', () => {
+    const env = loadFixtureWithScripts({ fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true });
+    // 先種孤兒（模擬舊 context 殘留：同 id、掛 <html> 下）
+    const orphan = env.document.createElement('div');
+    orphan.id = '__jread-page-indicator';
+    env.document.documentElement.appendChild(orphan);
+    env.window.eval(PAGED_SRC);
+    const api = env.window.__JRead.pagedMode;
+    const art = env.document.querySelector('article');
+    Object.defineProperty(art, 'clientWidth', { value: 400, configurable: true });
+    Object.defineProperty(art, 'scrollWidth', { value: 1200, configurable: true });
+    api.sync({ pagedMode: true }, art);
+    const ind = env.document.getElementById('__jread-page-indicator');
+    assert.strictEqual(ind, orphan, 'reconcile 應撿用既存孤兒、不另建');
+    assert.strictEqual(ind.textContent, '1 / 3');
+    const W = env.window.innerWidth;
+    const md = new env.window.Event('mousedown', { bubbles: true, cancelable: true });
+    md.button = 0; md.clientX = 10; md.clientY = 700;
+    ind.dispatchEvent(md);
+    const mm = new env.window.Event('mousemove', { bubbles: true, cancelable: true });
+    mm.clientX = 10 + W; mm.clientY = 700;
+    env.window.dispatchEvent(mm);
+    assert.strictEqual(ind.textContent, '3 / 3', '孤兒指示器上的滑鼠 scrub 必須可用（listener 有補掛）');
+    const mu = new env.window.Event('mouseup', { bubbles: true, cancelable: true });
+    env.window.dispatchEvent(mu);
+    api.uninstall();
+  });
+});

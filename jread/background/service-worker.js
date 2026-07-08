@@ -182,7 +182,9 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const allowed = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless'];
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId !== 'number' || !allowed.includes(command)) return;
-      dispatchCommand(command, tabId);
+      // fire-and-forget：內部錯誤路徑多回錯誤物件而非 throw，但極端故障
+      //（__JReadPopup 缺席等）會 reject——補 catch 免得堆 unhandled rejection
+      dispatchCommand(command, tabId).catch(() => {});
       return;
     }
     case 'OPEN_FEATURE_MENU': {
@@ -314,7 +316,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     default:
       // v0.8.65：原 popup → SW 的 SAVE_TO_READWISE case 已移除——popup「送到
-      // Readwise」改在 extension 頁直接 fetch（popup-core.saveReaderPayload）。
+      // Readwise」改在 extension 頁直接 fetch（popup-core.sendDocument dispatcher，v1.6.0 起服務二擇一）。
       // iOS Safari 背景頁被掛起得太積極，popup → SW 非同步往返 + 背景 fetch 會
       // silently 失敗（純「送出失敗」無 HTTP 碼；macOS Chrome / Safari 正常）。
       // 快速鍵送出（無 popup）走 sendToReadwiseFromCommand，仍在 SW 內直送。
@@ -452,9 +454,14 @@ async function dispatchCommand(command, tabId) {
 // 也沒關係：自訂快速鍵（content keydown → CUSTOM_COMMAND）是 iOS 的主通道。
 if (browser.commands && browser.commands.onCommand) {
   browser.commands.onCommand.addListener(async (command) => {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!tab || typeof tab.id !== 'number') return;
-    await dispatchCommand(command, tab.id);
+    // async listener 的 rejection 沒人接（tabs.query 或 dispatch 極端故障）
+    // 會變 unhandled rejection——整包 try/catch 吞掉（快速鍵失效已由 toast /
+    // 使用者按鍵無反應呈現，不需要再堆 console 噪音）
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (!tab || typeof tab.id !== 'number') return;
+      await dispatchCommand(command, tab.id);
+    } catch (_) { /* 見上方註解 */ }
   });
 }
 

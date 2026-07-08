@@ -171,7 +171,9 @@
     window.dispatchEvent(new Event('resize'));
     setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
     setTimeout(() => window.dispatchEvent(new Event('resize')), 600);
-    setTimeout(() => requestResize(), 300);
+    // 排程後 300ms 內使用者可能已 toggle off（快速鍵連按）——unapply 不取消這顆
+    // timer，必須在回呼內查 active，否則關閉後仍送 RESIZE_OWN_WINDOW 把視窗壓扁
+    setTimeout(() => { if (active) requestResize(); }, 300);
   }
 
   function unapply() {

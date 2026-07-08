@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!--
+  v1.6.24：markCjkParagraphs / markDecorativeInlines 執行順序最小重現。
+  中文站 byline（「文／王小明」＋日期）漢字 >= 4、CJK 佔比 >= 0.3——若 CJK 標記
+  跑在 byline 標記之前，closest([data-jread-byline]) 排除 guard 永遠 miss、
+  byline 被標 cjk-justify 而 justify（byline 的 text-align:left 同 specificity
+  下後注入者勝）。修法後順序：byline 標記 → CJK 標記，guard 生效。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>測試報導標題：閱讀模式的排版驗證</h1>
+    <div class="content--author-region" data-test="byline-root">
+      <div class="pauthor" data-test="byline-author">文／王小明（測試媒體資深記者）</div>
+      <div class="pdate"><time data-test="date">2026-07-08</time></div>
+    </div>
+    <p data-test="body-cjk">這是第一段主文內容，字數必須足夠長以通過第一段內文的門檻判定，因此這裡持續填充中文字元，說明閱讀模式在中文段落的排版行為，包含兩端對齊與行寬計算，再補一些描述性文字讓總長度超過一百二十個字元，確保 byline 偵測把它視為第一段內文而非 meta 區的一部分，繼續填充直到長度足夠為止。</p>
+    <p>第二段主文內容，同樣是中文為主的段落，維持足夠的長度避免被其他規則誤判，並確認一般內文段落仍會被標記為兩端對齊。</p>
+  </article>
+</body>
+</html>

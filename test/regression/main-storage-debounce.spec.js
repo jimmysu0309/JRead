@@ -47,7 +47,7 @@ describe('main.js storage.onChanged debounce + cinema guard（v0.7.143 / v0.8.14
   it('onChanged listener 仍引用 scheduleReapply + cinema guard（hoist 後不可斷線）', () => {
     const idx = MAIN_SRC.search(/if\s*\(\s*browser\.storage\s*&&\s*browser\.storage\.onChanged\s*\)/);
     assert.ok(idx >= 0, '必須找到 browser.storage.onChanged 包裝區塊');
-    const block = MAIN_SRC.slice(idx, idx + 2000);
+    const block = MAIN_SRC.slice(idx, idx + 3000); // v1.6.24：cinema guard 註解加長，掃描窗同步放寬
     assert.ok(/scheduleReapply\(\)/.test(block), 'onChanged listener 必須呼叫 scheduleReapply()');
     assert.ok(/cinemaActive/.test(block), 'onChanged listener 必須仍有 cinemaActive guard');
   });
