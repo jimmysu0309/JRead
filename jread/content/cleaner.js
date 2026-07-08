@@ -148,7 +148,17 @@
     { t: 'printfriendly' }, { t: 'instapaper_ignore' }, { t: 'blogger-labels' }, { t: 'mpu' },
     { t: 'share' }, { t: 'social' }, { t: 'social-(?:bar|links|icons|share|media)' },
     { t: 'comment' }, { t: 'comments' }, { t: 'comment-form' },
-    { t: 'discussion' }, { t: 'discuss' }, { t: 'disqus', strong: true },
+    // v1.6.17：`discussion` / `discuss` 標 strong——「討論區」widget 的 class 命名
+    // （discuss-board / discussion-thread 等）永遠不是主文容器，且結構上常含 emoji
+    // picker / 頭像 / 大量使用者留言，會誤觸內容保護 guard → 非 strong 路徑被豁免
+    // 殘留。udn `.discuss-board` 實測：內含 6+ 張未載入的 emoji gif（naturalWidth=0）
+    // 觸發 containsStandaloneContentImg 的「w<=8 未載入圖保守保護」、整塊留言板存活
+    //（Chrome 多半在 clean 時 emoji 已載入不觸發、iOS/慢速時未載入觸發 → 只在 iOS
+    // 殘留的 load-timing flaky）。與 related-* / more-* strong 同型（v0.7.184 同因）。
+    // 刻意不連 `comment(s)` 一起 strong：`comment`/`comments` token 會出現在「真的
+    // 包住多數主文的 wrapper」class（article-with-comments-wrapper 類），須保留 50%
+    // 比例 guard 保護，見 content-bearing-noise-guard.spec / noise-token-defs spec。
+    { t: 'discussion', strong: true }, { t: 'discuss', strong: true }, { t: 'disqus', strong: true },
     { t: 'livefyre' }, { t: 'hyvor' }, { t: 'replies' }, { t: 'remark' }, { t: 'shoutbox' },
     { t: 'respond' }, { t: 'composer' }, { t: 'combx' },
     { t: 'article-sidebar', strong: true }, { t: 'article[-_]?others?', strong: true },
