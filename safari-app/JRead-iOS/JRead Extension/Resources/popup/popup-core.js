@@ -189,8 +189,11 @@
   // 部分截掉（head truncate）。約 40K 字元 ≈ 一般長文全文，極長文取開頭。
   const GEMINI_MAX_CHARS = 40000;
 
-  function buildGeminiSummaryUrl(apiKey) {
-    return `${GEMINI_API_BASE}${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  // v1.6.25：API key 改走 x-goog-api-key header、不放 URL query——URL 會被
+  // proxy / server log / DevTools 記錄，query 帶金鑰等於到處留明文副本。
+  // Google 官方兩種驗證方式等價，header 版不進 URL 紀錄面。
+  function buildGeminiSummaryUrl() {
+    return `${GEMINI_API_BASE}${GEMINI_MODEL}:generateContent`;
   }
 
   // 組 summarize prompt。text 為主文純文字（呼叫端已 head-truncate；此處再防呆截一次）。
@@ -235,9 +238,9 @@
     const prompt = buildSummaryPrompt({ title, author, domain, text });
     let res;
     try {
-      res = await f(buildGeminiSummaryUrl(apiKey.trim()), {
+      res = await f(buildGeminiSummaryUrl(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
     } catch (networkErr) {
@@ -444,7 +447,11 @@
     }
     let res;
     try {
-      res = await f(`${GEMINI_API_BASE.replace(/\/$/, '')}?key=${encodeURIComponent(apiKey.trim())}`, { method: 'GET' });
+      // key 走 header 不放 query（同 generateGeminiSummary，v1.6.25）
+      res = await f(GEMINI_API_BASE.replace(/\/$/, ''), {
+        method: 'GET',
+        headers: { 'x-goog-api-key': apiKey.trim() }
+      });
     } catch (networkErr) {
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }

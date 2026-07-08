@@ -584,8 +584,13 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
         && typeof (new CSSStyleSheet()).replaceSync === 'function';
     },
 
+    // injectCssText 注入過的 id 登記簿——withInjectedCssDisabled 用它找出所有
+    // JRead 注入的 stylesheet（v1.6.25）
+    _injectedCssIds: (typeof Set !== 'undefined') ? new Set() : null,
+
     // 注入 / 更新 id 的樣式（css 為完整 CSS 字串）。回傳 marker <style> 元素。
     injectCssText(id, css) {
+      if (this._injectedCssIds) this._injectedCssIds.add(id);
       let styleEl = document.getElementById(id);
       if (!styleEl) {
         styleEl = document.createElement('style');
@@ -622,6 +627,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
 
     // 移除 id 的樣式（marker <style> + 可能的 adopted sheet 一起清）。
     removeCssText(id) {
+      if (this._injectedCssIds) this._injectedCssIds.delete(id);
       const styleEl = document.getElementById(id);
       if (styleEl) styleEl.remove();
       const map = this._adoptedStyles;
@@ -631,6 +637,37 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
           document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
         } catch (_) {}
         map.delete(id);
+      }
+    },
+
+    // 暫時停用所有 injectCssText 注入的 stylesheet、同步執行 fn 後復原（v1.6.25）。
+    // 用途：量測「原站 cascade 下」的 computed style——styler 的持久規則（例
+    // article img display:block !important）注入後，直接 getComputedStyle 讀到的
+    // 是 JRead 覆寫後的值，看不到站方原意（如 embed fallback img 的 stylesheet
+    // display:none）。停用→量測→復原全程在同一個 JS task 內，瀏覽器不會在中間
+    // paint，無閃爍；代價是每次呼叫觸發兩次 style recalc，呼叫端自行節制
+    // （只在候選存在時才呼叫）。<style> 走 sheet.disabled、CSP fallback 的
+    // adopted sheet 同步停用。
+    withInjectedCssDisabled(fn) {
+      const toggled = [];
+      if (this._injectedCssIds) {
+        for (const id of this._injectedCssIds) {
+          const styleEl = document.getElementById(id);
+          if (styleEl && styleEl.sheet && !styleEl.sheet.disabled) {
+            try { styleEl.sheet.disabled = true; toggled.push(styleEl.sheet); } catch (_) {}
+          }
+          const adopted = this._adoptedStyles && this._adoptedStyles.get(id);
+          if (adopted && !adopted.disabled) {
+            try { adopted.disabled = true; toggled.push(adopted); } catch (_) {}
+          }
+        }
+      }
+      try {
+        return fn();
+      } finally {
+        for (const s of toggled) {
+          try { s.disabled = false; } catch (_) {}
+        }
       }
     },
 

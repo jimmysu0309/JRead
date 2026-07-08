@@ -6639,6 +6639,104 @@
     }
   }
 
+  // ---- late-mount embed 的原站隱藏 fallback img 釘死（v1.6.25 動態兜底）----
+  // 靜態 hideInsideArticleOriginallyHiddenImgs（v0.8.48）只在 clean() 跑一次；
+  // lazy embed（datawrapper 類）在 clean 之後才 mount 時，其 stylesheet
+  // display:none 的 no-JS fallback img 會被 styler 持久 `display:block
+  // !important` 復活——每張圖表出現兩份（Chromium probe 於 healthsystemtracker
+  // 實證：clean 後注入 embed clone，fallback img computed block、rect 608x316）。
+  //
+  // 兩個與靜態版不同的設計點：
+  // 1. 量測：動態時刻 styler sheet 已生效，直接 getComputedStyle 永遠讀到
+  //    block、看不到「原站隱藏」。用 NS.withInjectedCssDisabled 暫停 JRead
+  //    注入的 stylesheet 還原站方 cascade 再量（同一 JS task 內開關、無 paint）。
+  // 2. 誤殺防護：clean 後動態插入的 img 大宗是 lazy-load 內容圖（先藏後顯），
+  //    無條件釘死會把「即將顯示」的合法圖永久鎖死（inline !important 贏過站方
+  //    reveal）。只釘命中「embed fallback 簽名」者：
+  //      A. 近祖先容器（<= FALLBACK_ANCESTOR_DEPTH 層）內有可見（computed
+  //         display 非 none 且未被 JRead hide）的 iframe/embed/object——live
+  //         embed 已渲染、img 是站方藏起來的 no-JS fallback。iframe 被 cleaner
+  //         藏掉（unknown-host）時 fallback img 是唯一內容，不釘。
+  //      B. articleEl 內已有另一張可見同 src img——真雙圖訊號。
+  //    兩訊號都 layout-independent（不靠 rect，jsdom 可測；隱藏分頁 rect 全 0
+  //    也不誤判）。
+  // embed 分段 mount（img 先到、iframe 後到）時序：iframe 到達的那批 mutation
+  // 會把其近祖先容器內既有 img 一併納入候選補查。
+  const EMBED_FRAME_SEL = 'iframe, embed, object';
+  const FALLBACK_ANCESTOR_DEPTH = 3;
+
+  function imgSrcKey(img) {
+    return ((img.currentSrc || img.src || '').split('?')[0]) || '';
+  }
+
+  function elementIsShown(el) {
+    if (el.dataset && el.dataset.jreadHidden === '1') return false;
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (_) { return false; }
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden';
+  }
+
+  function dynamicImgIsEmbedFallback(img, articleEl) {
+    // 訊號 A：近祖先容器內有可見 embed frame
+    let c = img.parentElement;
+    for (let d = 0; c && d < FALLBACK_ANCESTOR_DEPTH && c !== articleEl; d++, c = c.parentElement) {
+      for (const fr of c.querySelectorAll(EMBED_FRAME_SEL)) {
+        if (elementIsShown(fr)) return true;
+      }
+    }
+    // 訊號 B：articleEl 內已有另一張可見同 src img
+    const key = imgSrcKey(img);
+    if (key) {
+      for (const other of articleEl.querySelectorAll('img')) {
+        if (other === img) continue;
+        if (imgSrcKey(other) !== key) continue;
+        if (elementIsShown(other)) return true;
+      }
+    }
+    return false;
+  }
+
+  function pinDynamicEmbedFallbackImgs(articleEl, node, hiddenList) {
+    // 候選收集：node 自身 / 其內的 img；node 是（或含）embed frame 時，frame
+    // 近祖先容器內既有 img 也納入（分段 mount 補查）
+    const candidates = new Set();
+    if (node.matches && node.matches('img')) candidates.add(node);
+    if (node.querySelectorAll) {
+      for (const i of node.querySelectorAll('img')) candidates.add(i);
+    }
+    const frames = [];
+    if (node.matches && node.matches(EMBED_FRAME_SEL)) frames.push(node);
+    if (node.querySelectorAll) {
+      for (const f of node.querySelectorAll(EMBED_FRAME_SEL)) frames.push(f);
+    }
+    for (const fr of frames) {
+      let c = fr.parentElement;
+      for (let d = 0; c && d < FALLBACK_ANCESTOR_DEPTH && c !== articleEl; d++, c = c.parentElement) {
+        for (const i of c.querySelectorAll('img')) candidates.add(i);
+      }
+    }
+    if (!candidates.size) return;
+    // gate 先過（不觸發 recalc），過了才做「停用注入 CSS 量原站 display」
+    // （兩次 style recalc）——一般 lazy-load 內容圖在 gate 就被濾掉、零成本
+    const gated = [];
+    for (const img of candidates) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      if (dynamicImgIsEmbedFallback(img, articleEl)) gated.push(img);
+    }
+    if (!gated.length) return;
+    const toPin = [];
+    const measure = () => {
+      for (const img of gated) {
+        let cs;
+        try { cs = window.getComputedStyle(img); } catch (_) { continue; }
+        if (cs && cs.display === 'none') toPin.push(img);
+      }
+    };
+    if (NS.withInjectedCssDisabled) NS.withInjectedCssDisabled(() => measure());
+    else measure();
+    for (const img of toPin) hide(img, hiddenList);
+  }
+
   function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
     if (!articleEl || !articleEl.parentElement) return;
@@ -6648,6 +6746,15 @@
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
           if (STRUCTURAL_TAGS.has(node.tagName.toLowerCase())) continue;
+          // late-mount embed fallback img 釘死：放 isInPreserved guard **之前**
+          // ——figure 內 lazy mount 的 embed，其 fallback img 一樣會被 styler
+          // 復活，與靜態版同刻意不豁免 preserved（釘「原本就看不見的東西」
+          // 沒有誤殺面）。也在 checkDynamicNoise 之前，不受其命中即 return
+          // 短路影響（embed 容器整塊被當雜訊 hide 時先釘 img 也無害，restore
+          // 統一回復）。
+          if (articleEl.contains(node)) {
+            pinDynamicEmbedFallbackImgs(articleEl, node, hiddenList);
+          }
           if (isInPreserved(node)) continue;
 
           // 祖先鏈上 append 的 node（articleEl scope 外）：hide 整塊（v0.7.31
