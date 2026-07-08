@@ -4325,6 +4325,64 @@ html.${HTML_CLASS}.jread-orion body {
         ratioBoxes.push({ el, aspectRatio: priorAR, aspectRatioPriority: priorARP });
       }
 
+      // v1.6.22：媒體祖先帶「明確固定 px height」但內容比它矮 → 容器底部一大塊
+      // 死空間（Jimmy 2026-07-08 wired.com 回報 hero 圖下方一大段空白）。根因：
+      //   IMG → PICTURE → SPAN(.responsive-asset) → DIV.SplitScreenContentHeaderLedeBlock
+      //   (height:895px) → LeadWrapper(895) → GridItem(895) — WIRED 桌面版
+      //   split-screen header 的「圖欄」在原站是雙欄 grid，圖欄固定高 895px 與
+      //   文字欄等高。reader 把 grid 線性化成單欄後圖只渲染 356px、但三層 wrapper
+      //   的固定 height:895 還在 → 圖下方 539px 純死空間頂開後續內文。
+      // galleryFlex 只認 flex/grid（此鏈是 display:block）、ratioBoxes 只認
+      //   aspect-ratio（此鏈無 aspect-ratio）→ 都漏網；這類「block + 明確 px
+      //   height」是第三條 path。
+      // 通則（硬規則 3，非站點/class 特判）：mediaAncestors 內、display 非 inline
+      //   的容器，暫設 height:auto 後量自然高——若自然高比原渲染高矮 > 40px（固定
+      //   height 撐出的死空間）→ 保持 auto 塌掉。computed height 永遠回 px（無法
+      //   從樣式判斷是否明確設高），故一律「reset 後量差」判定：本來就 auto 的
+      //   容器 reset 無變化（差 0）自動略過，只有真被 height 頂高的才命中。
+      //   mediaAncestors 由 picture/img/figure 上溯，純文字段落不在集合、零影響。
+      // 安全：
+      //   - galleryFlex 已設 inline height:auto 的容器（flex/grid 並列圖）略過，
+      //     避免重複判定 / restore 雙重還原。
+      //   - 只覆寫 height（不動 min-height）：死空間若來自 min-height 由既有
+      //     min-height:0 規則群處理，此條專注 height 這條已證實的 path。
+      //   - collapse guard（與 ratioBoxes 同精神）：reset 後若比內圖渲染高度還矮
+      //     （內容 absolute、固定 height 是唯一高度來源）→ 還原避免裁切。
+      //   - 內圖含 caption 的 figure：height 本來就 auto（內容驅動），reset 無變化
+      //     → 差 0 略過，caption 空間不受影響。
+      const fixedHeightBoxes = [];
+      for (const el of mediaAncestors) {
+        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+        if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
+        const win = el.ownerDocument?.defaultView;
+        const cs = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
+        if (!cs) continue;
+        if (cs.display === 'inline' || cs.display === 'none') continue;
+        // galleryFlex 已塌成 block + height:auto 的容器不重複處理
+        if (el.style.getPropertyValue('height') === 'auto') continue;
+        const beforeH = el.getBoundingClientRect().height;
+        if (!(beforeH > 0)) continue;
+        const priorH = el.style.getPropertyValue('height');
+        const priorHP = el.style.getPropertyPriority('height');
+        el.style.setProperty('height', 'auto', 'important');
+        const afterH = el.getBoundingClientRect().height;
+        // 死空間門檻：固定高比自然高多出 > 40px 才算，避免 rounding 級抖動誤動
+        if (beforeH - afterH <= 40) {
+          if (priorH) el.style.setProperty('height', priorH, priorHP || '');
+          else el.style.removeProperty('height');
+          continue;
+        }
+        // collapse guard：塌到比內圖渲染高度還矮 → 還原（內容本身脫離 flow）
+        const innerMedia = el.querySelector('img, picture, video');
+        const imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+        if (imgH > 0 && afterH < imgH * 0.8) {
+          if (priorH) el.style.setProperty('height', priorH, priorHP || '');
+          else el.style.removeProperty('height');
+          continue;
+        }
+        fixedHeightBoxes.push({ el, height: priorH, heightPriority: priorHP });
+      }
+
       // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。
       // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
       // 正確」+「圖片偏左變小」）：原站把主文段落 / 內容圖片排進 flex-row /
@@ -4644,7 +4702,7 @@ html.${HTML_CLASS}.jread-orion body {
       const panguEnabled = s.pangu !== false;
       const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
+      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
     },
 
     /**
@@ -4919,6 +4977,15 @@ html.${HTML_CLASS}.jread-orion body {
           if (!r || !r.el) continue;
           if (r.aspectRatio) r.el.style.setProperty('aspect-ratio', r.aspectRatio, r.aspectRatioPriority || '');
           else r.el.style.removeProperty('aspect-ratio');
+        }
+      }
+
+      // v1.6.22：還原固定 px height 死空間 collapse 的 height inline override。
+      if (Array.isArray(snapshot.fixedHeightBoxes)) {
+        for (const f of snapshot.fixedHeightBoxes) {
+          if (!f || !f.el) continue;
+          if (f.height) f.el.style.setProperty('height', f.height, f.heightPriority || '');
+          else f.el.style.removeProperty('height');
         }
       }
 
