@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>選項已所剩無幾，Apple 何時會調漲價格 - Miniflux</title>
+</head>
+<body>
+  <!-- v1.6.19 RSS reader 原始文章 URL forcing fixture。
+       對應功能：在 RSS reader（Miniflux 等自架閱讀器）內對某篇文章開閱讀模式、
+       送 Readwise / Instapaper 儲存時，URL 應用文章原始位置、非 reader 自己的 URL。
+
+       結構訊號：RSS reader 把「文章主標」渲染成指向原文的外連 <a>，且跨網域
+       （指向文章原始站，與 reader 自身 origin 不同）。Miniflux entry.html：
+       <h1 id="page-header-title"><a href="{{ .entry.URL }}" target="_blank">標題</a></h1>
+
+       此 fixture 複製 Miniflux 版面：detector 選 article.entry-content 為 articleEl，
+       主標 h1 在外層 header.entry-header（articleEl 之外）。NS.findOriginalArticleUrl
+       先搜 articleEl、再退整份 document 找到 header 內的跨網域主標連結。 -->
+  <main>
+    <section class="entry">
+      <header class="entry-header">
+        <h1 id="page-header-title">
+          <a href="https://asymco.com/2026/06/18/the-range-of-options/" target="_blank">選項已所剩無幾，Apple 何時會調漲價格</a>
+        </h1>
+        <div class="entry-meta">
+          <span class="entry-website">
+            <a href="/feed/114/entries">asymco</a>
+          </span>
+          <span class="entry-author">– <em>Horace Dediu</em></span>
+        </div>
+      </header>
+      <article class="entry-content">
+        <p>Tim Cook 確認，Apple 將無法吸收所有的記憶體與儲存晶片成本。這是本文的主文第一段，需要足夠的文字長度讓 detector 把 entry-content 判定為主文容器、通過最小文字門檻。</p>
+        <p>「很遺憾地，調漲價格已是無可避免，」他說。「我們正盡全力減輕轉嫁到我們身上的巨額成本壓力，也試圖保護顧客免受漲價影響。」這是第二段主文，繼續累積內文文字量確保偵測命中。</p>
+        <p>回顧 4 月份發布的本季財務指引，當時顯示出與上季一致的成長與毛利率表現。本季還有 12 天結束，我們推測漲價價格可能緊接在後。第三段主文，補足文字密度。</p>
+        <p>這讓定價與毛利率得以維持穩定，但在上一次的財報電話會議中，Tim Cook 曾警告記憶體成本上升的影響。第四段主文，確保 article 整體文字遠超過其他分支、被 detector 正確選中。</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
