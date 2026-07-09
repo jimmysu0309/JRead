@@ -707,8 +707,12 @@
   //
   // 通用語意：算 articleEl 與 candidate heading h 的最近共同祖先 LCA，安全 guard：
   // (1) LCA 不可為 body / html（避免吞整頁）；(2) LCA 必須真的 contains articleEl
-  // （trivial）；(3) maxDist：articleEl 沿 parent 鏈到 LCA 步數上限（避免遠距 LCA
-  // 把不相關 chrome 一起吃進來）。傳 maxDist=Infinity 跳過此 guard。
+  // （trivial）；(3) maxDist：articleEl 沿 parent 鏈到 LCA 的 hop 數上限（避免遠距
+  // LCA 把不相關 chrome 一起吃進來）。傳 maxDist=Infinity 跳過此 guard。
+  // v1.6.27 語意明確化：maxDist = 「最多允許幾個 parent hop」。歷史上迴圈寫
+  // `dist <= maxDist`、傳 5 實際允許 6 hops（off-by-one），而 6 hops 才是被
+  // 幾十版真實站點校準過的行為——改寫為 `dist < maxDist` + 呼叫端傳
+  // LCA_PROMOTE_MAX_HOPS = 6，行為逐位元不變、只把「6」寫成明文。
   function findTitleViaLca(articleEl, h, maxDist) {
     if (!articleEl || !h) return null;
     const lca = findLCA(articleEl, h);
@@ -718,7 +722,7 @@
     if (typeof maxDist === 'number' && Number.isFinite(maxDist)) {
       let dist = 0;
       let cur = articleEl;
-      while (cur && cur !== lca && dist <= maxDist) { cur = cur.parentElement; dist++; }
+      while (cur && cur !== lca && dist < maxDist) { cur = cur.parentElement; dist++; }
       if (cur !== lca) return null;
     }
     return { el: lca, titleHead: h };
@@ -786,8 +790,13 @@
     // Stratechery wp-block-column promotedTitleHead=H2 post-title（堅實）→ skip ✓。
     if (promotedTitleHead && /^H[1-4]$/.test(promotedTitleHead.tagName)) return null;
 
-    // 本層走 maxDist=5（避免 articleEl 與 LCA 距離太遠把 site chrome 吞進）。
-    const tryLcaPromote = (h) => findTitleViaLca(articleEl, h, 5);
+    // 本層限制 articleEl 到 LCA 最多 LCA_PROMOTE_MAX_HOPS 個 parent hop（避免
+    // articleEl 與 LCA 距離太遠把 site chrome 吞進）。
+    // v1.6.27：6 = 歷史校準值（舊寫法 maxDist=5 + off-by-one 迴圈實允許 6 hops，
+    // 商周等真實站多版校準以此為前提）。改動此值形同重新校準 detector，必須
+    // 全站 probe 重驗；forcing spec 鎖 6（lca-promote-hop-budget.spec.js）。
+    const LCA_PROMOTE_MAX_HOPS = 6;
+    const tryLcaPromote = (h) => findTitleViaLca(articleEl, h, LCA_PROMOTE_MAX_HOPS);
 
     // v0.7.92 wya 修法（含 ChinaTalk 防回歸）：
     //
@@ -1272,4 +1281,7 @@
   // heading，才 promote 主標）。在 detect() 結尾呼叫時序錯誤——cleaner 還沒
   // 跑、被 hide 的 heading 仍視為 visible，guard 誤觸不 promote。
   NS.detector.markPromotedTitleIfMissing = markPromotedTitleIfMissing;
+  // v1.6.27：暴露給 regression spec 行為驗證 hop 預算語意（dist < maxDist）；
+  // runtime 無其他呼叫端
+  NS.detector.findTitleViaLca = findTitleViaLca;
 })();

@@ -40,7 +40,8 @@ describe('cleaner.js walk cache（v0.7.144 #11）', () => {
   });
 
   it('clean() 入口必須 reset cache 為 null（避免 stale array）', () => {
-    const m = CLEANER_SRC.match(/clean\s*\(\s*articleEl[\s\S]{0,500}/);
+    // v1.6.27：clean() 開頭新增 opts.out 累加器註解，窗加寬到 1500 涵蓋 reset 行
+    const m = CLEANER_SRC.match(/clean\s*\(\s*articleEl[\s\S]{0,1500}/);
     assert.ok(m, '必須能抓到 clean() body 開頭');
     assert.ok(/_cachedArticleAll\s*=\s*null/.test(m[0]),
       'clean() 開頭必須 reset _cachedArticleAll = null（避免 SPA 多 articleEl 拿 stale array）');

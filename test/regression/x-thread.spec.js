@@ -456,7 +456,8 @@ describe('x-thread v0.7.135 — main.js 整合', () => {
     // cleaner.clean(container) 是 x-thread 路徑特有、仍在本函式內
     const m = MAIN_SRC.match(/function\s+enterXThreadMode[\s\S]+?(?=\n {0,2}(?:async )?function )/);
     assert.ok(m, '抓不到 enterXThreadMode body');
-    assert.match(m[0], /NS\.cleaner\s*\?\s*NS\.cleaner\.clean\s*\(\s*container/,
+    // v1.6.27 rollback 修法後寫法為 if (NS.cleaner) NS.cleaner.clean(container, { out: ... })
+    assert.match(m[0], /NS\.cleaner\.clean\s*\(\s*container/,
       'enterXThreadMode 必須對合成容器呼叫 cleaner.clean(container)');
     assert.match(m[0], /return finalizeEnter\(container, settings\)/,
       'enterXThreadMode 必須走 finalizeEnter 共用收尾（styler.apply / 模組同步 / keyguard）');

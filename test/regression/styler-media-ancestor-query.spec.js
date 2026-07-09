@@ -45,7 +45,9 @@ describe('styler gallery flex/grid 媒體祖先查找優化（v0.7.144 #13）', 
 
   it('原本 `articleEl.querySelectorAll(\'*\')` + computedStyle 不可再出現於 styler.apply 內 gallery 區段', () => {
     // gallery 區段（galleryFlex 變數附近）不可有 articleEl.querySelectorAll('*') for-loop
-    const match = STYLER_SRC.match(/const\s+galleryFlex\s*=[\s\S]*?galleryFlex\.push/);
+    // v1.6.27：galleryFlex 宣告提升到 apply 開頭（rollback 修法），區段改錨
+    // mediaAncestors 掃描起點到第一個 galleryFlex.push
+    const match = STYLER_SRC.match(/const\s+mediaAncestors\s*=\s*new Set\(\)[\s\S]*?galleryFlex\.push/);
     assert.ok(match, '必須找到 galleryFlex 區段');
     // 在 galleryFlex push 之前不可有 articleEl.querySelectorAll('*') 形式
     assert.ok(!/articleEl\.querySelectorAll\(['"]\*['"]\)/.test(match[0]),

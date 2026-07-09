@@ -6926,7 +6926,13 @@
      * @returns {Array<{el: Element, prevDisplay: string}>} 被隱藏的元素清單
      */
     clean(articleEl, opts) {
-      const hidden = [];
+      // v1.6.27：opts.out = 呼叫端傳入的累加器陣列（rollback 缺口修法）。
+      // 舊契約「做完才 return hidden」在 clean 中途 throw 時清單交不出去、
+      // 已 hide 的元素永遠無法還原。改成呼叫端先把空陣列掛上 NS.state 再
+      // 傳進來，每條規則邊做邊 push——中途炸掉時 state 上已有做過的每一筆，
+      // exit 流程照樣逐筆還原。不傳 out 維持舊行為（內建陣列、return 交付），
+      // 所有既有呼叫端 / spec 不受影響。
+      const hidden = (opts && Array.isArray(opts.out)) ? opts.out : [];
       if (!articleEl || articleEl.nodeType !== 1) return hidden;
       // v0.7.144：每次 clean() 重建 element cache（避免 SPA / 多 articleEl 場景共用 stale array）
       _cachedArticleAll = null;

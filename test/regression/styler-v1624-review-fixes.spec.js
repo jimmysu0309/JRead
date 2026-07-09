@@ -60,9 +60,10 @@ describe('styler v1.6.24 — CJK 標記在 byline 標記之後（排除 guard �
   });
 
   it('source 順序 forcing：markCjkParagraphs / markDecorativeInlines 呼叫必須在 bylineMarks 區塊之後', () => {
-    const bylineIdx = STYLER_SRC.indexOf('const bylineMarks = []');
-    const cjkIdx = STYLER_SRC.indexOf('const cjkJustifyMarked = markCjkParagraphs(articleEl)');
-    const decorIdx = STYLER_SRC.indexOf('const decorResetMarked = markDecorativeInlines(articleEl)');
+    // v1.6.27：bylineMarks 宣告提升到 apply 開頭，順序 forcing 改錨「填入點」
+    const bylineIdx = STYLER_SRC.indexOf('bylineMarks.push({ el, attr })');
+    const cjkIdx = STYLER_SRC.indexOf('cjkJustifyMarked = markCjkParagraphs(articleEl)');
+    const decorIdx = STYLER_SRC.indexOf('decorResetMarked = markDecorativeInlines(articleEl)');
     assert.ok(bylineIdx > 0 && cjkIdx > 0 && decorIdx > 0, '三個錨點都必須存在');
     assert.ok(cjkIdx > bylineIdx, 'markCjkParagraphs 必須在 byline 標記之後呼叫');
     assert.ok(decorIdx > bylineIdx, 'markDecorativeInlines 必須在 byline 標記之後呼叫');
@@ -80,10 +81,12 @@ describe('styler v1.6.24 — 翻頁模式 cardRight 幾何 pass gate', () => {
   });
 
   it('v0.8.101 wideScroll 區塊必須 gate 在 !opts.pagedMode', () => {
-    const idx = STYLER_SRC.indexOf('const wideScroll = []');
+    // v1.6.27：wideScroll 宣告提升到 apply 開頭，gate forcing 改錨填入點往前找
+    const idx = STYLER_SRC.indexOf('wideScroll.push({');
     assert.ok(idx > 0, '找不到 wideScroll 區塊');
-    const after = STYLER_SRC.slice(idx, idx + 200);
-    assert.match(after, /if\s*\(!opts\.pagedMode\)/,
+    // gate 在填入點之前（區塊註解 + 掃描迴圈約 2K 字），往前窗找
+    const before = STYLER_SRC.slice(Math.max(0, idx - 2500), idx);
+    assert.match(before, /if\s*\(!opts\.pagedMode\)/,
       'wideScroll pass 缺 pagedMode gate——multicol 第 2 欄起的 table/pre 全被誤套');
   });
 });
