@@ -659,6 +659,17 @@ html.${HTML_CLASS} {
 html.${HTML_CLASS}[data-jread-scrolling="1"] {
   scrollbar-color: ${theme.scrollThumb} transparent !important;
 }
+/* v1.6.29（#12 效能）：scrollbar-color 是 inherited property——捲動 flash 在
+   <html> 上 toggle attribute 改變它時，繼承傳播會強制整份文件 style recalc
+   （Chromium 實測 wiki 37K 節點每次 toggle ~50ms、連續捲動累計數秒＝捲動 jank
+   主兇；stub A/B：5 輪捲動 recalc 3930ms → 74ms）。body 釘明確值讓傳播止於
+   body（recalc 範圍縮到 html+body）。唯一視覺差：頁面捲動 flash 時內層
+   scroller（code block 等）thumb 不再連帶顯色——它們自身捲動本就不觸發 flash
+   （scroll 事件不 bubble 到 window），無感知差異。Safari 不支援 scrollbar-color
+   （走下方 ::-webkit-scrollbar pseudo 軌），行為不變。 */
+html.${HTML_CLASS} body {
+  scrollbar-color: transparent transparent !important;
+}
 html.${HTML_CLASS}::-webkit-scrollbar {
   width: 8px !important;
   height: 8px !important;
@@ -4188,25 +4199,12 @@ html.${HTML_CLASS}.jread-orion body {
             'PRE', 'DETAILS', 'SUMMARY']);
           // 清水平內距對象：通用 block wrapper + 內文文字 block
           const TARGET_SEL = 'div, section, article, main, aside, header, footer, nav, p, h1, h2, h3, h4, h5, h6';
-          const zeroHoriz = (el) => {
-            const cs = win.getComputedStyle(el);
-            const pl = parseFloat(cs.paddingLeft) || 0;
-            const pr = parseFloat(cs.paddingRight) || 0;
-            const ml = parseFloat(cs.marginLeft) || 0;
-            const mr = parseFloat(cs.marginRight) || 0;
-            if (pl <= 0.5 && pr <= 0.5 && Math.abs(ml) <= 0.5 && Math.abs(mr) <= 0.5) return;
-            contentWidthSnap.push({
-              el,
-              pl: el.style.getPropertyValue('padding-left'), plP: el.style.getPropertyPriority('padding-left'),
-              pr: el.style.getPropertyValue('padding-right'), prP: el.style.getPropertyPriority('padding-right'),
-              ml: el.style.getPropertyValue('margin-left'), mlP: el.style.getPropertyPriority('margin-left'),
-              mr: el.style.getPropertyValue('margin-right'), mrP: el.style.getPropertyPriority('margin-right'),
-            });
-            if (pl > 0.5) el.style.setProperty('padding-left', '0', 'important');
-            if (pr > 0.5) el.style.setProperty('padding-right', '0', 'important');
-            if (Math.abs(ml) > 0.5) el.style.setProperty('margin-left', '0', 'important');
-            if (Math.abs(mr) > 0.5) el.style.setProperty('margin-right', '0', 'important');
-          };
+          // v1.6.29 批次化：讀（getComputedStyle）與寫（inline setProperty）分
+          // 兩個 pass——舊版逐元素「讀完就寫」，下一個元素的 computed 讀取被前
+          // 一個元素的寫入弄髒、每個元素各觸發一次強制 style recalc，大頁面
+          // O(n) 次 recalc 是 enter 延遲主要來源之一。先全讀（layout 乾淨、
+          // 只 flush 一次）再全寫，判定值全取自「寫入前」的原站 layout。
+          const zeroHorizPending = [];
           for (const el of articleEl.querySelectorAll(TARGET_SEL)) {
             // 自身是語意縮排容器 → 不清（保留引言 / 清單 / 表格縮排）
             if (INDENT_TAGS.has(el.tagName)) continue;
@@ -4219,7 +4217,26 @@ html.${HTML_CLASS}.jread-orion body {
               a = a.parentElement;
             }
             if (insideIndent) continue;
-            zeroHoriz(el);
+            const cs = win.getComputedStyle(el);
+            const pl = parseFloat(cs.paddingLeft) || 0;
+            const pr = parseFloat(cs.paddingRight) || 0;
+            const ml = parseFloat(cs.marginLeft) || 0;
+            const mr = parseFloat(cs.marginRight) || 0;
+            if (pl <= 0.5 && pr <= 0.5 && Math.abs(ml) <= 0.5 && Math.abs(mr) <= 0.5) continue;
+            zeroHorizPending.push({ el, pl, pr, ml, mr });
+          }
+          for (const { el, pl, pr, ml, mr } of zeroHorizPending) {
+            contentWidthSnap.push({
+              el,
+              pl: el.style.getPropertyValue('padding-left'), plP: el.style.getPropertyPriority('padding-left'),
+              pr: el.style.getPropertyValue('padding-right'), prP: el.style.getPropertyPriority('padding-right'),
+              ml: el.style.getPropertyValue('margin-left'), mlP: el.style.getPropertyPriority('margin-left'),
+              mr: el.style.getPropertyValue('margin-right'), mrP: el.style.getPropertyPriority('margin-right'),
+            });
+            if (pl > 0.5) el.style.setProperty('padding-left', '0', 'important');
+            if (pr > 0.5) el.style.setProperty('padding-right', '0', 'important');
+            if (Math.abs(ml) > 0.5) el.style.setProperty('margin-left', '0', 'important');
+            if (Math.abs(mr) > 0.5) el.style.setProperty('margin-right', '0', 'important');
           }
         }
       }
@@ -4241,17 +4258,21 @@ html.${HTML_CLASS}.jread-orion body {
         if (_w) {
           const bodyFs = opts.fontSize || 18;
           const capFloor = Math.max(14, Math.round(bodyFs * 0.78));
+          // v1.6.29 批次化：先全讀 computed font-size 再全寫（同 zeroHoriz，
+          // 避免逐元素讀寫交錯的 O(n) 強制 recalc）
+          const capPending = [];
           for (const fc of articleEl.querySelectorAll('figcaption')) {
             if (fc.closest('[data-jread-hidden="1"]')) continue;
             const curFs = parseFloat(_w.getComputedStyle(fc).fontSize) || 0;
-            if (curFs > 0 && curFs < capFloor - 0.5) {
-              captionFsSnap.push({
-                el: fc,
-                fs: fc.style.getPropertyValue('font-size'),
-                fsP: fc.style.getPropertyPriority('font-size'),
-              });
-              fc.style.setProperty('font-size', capFloor + 'px', 'important');
-            }
+            if (curFs > 0 && curFs < capFloor - 0.5) capPending.push(fc);
+          }
+          for (const fc of capPending) {
+            captionFsSnap.push({
+              el: fc,
+              fs: fc.style.getPropertyValue('font-size'),
+              fsP: fc.style.getPropertyPriority('font-size'),
+            });
+            fc.style.setProperty('font-size', capFloor + 'px', 'important');
           }
         }
       }
@@ -4342,6 +4363,9 @@ html.${HTML_CLASS}.jread-orion body {
           cur = cur.parentElement;
         }
       }
+      // v1.6.29 批次化：先全讀（computed display + 直接子媒體判定）再全寫——
+      // 舊版逐元素讀寫交錯，每個 gallery 容器各觸發一次強制 recalc
+      const galleryPending = [];
       for (const el of mediaAncestors) {
         // v0.8.45：排除 player 結構（與 v0.7.182 background strip 同原則）。
         // ms.now 實測：JW Player 的 jw-wrapper（含 poster img、computed flex）
@@ -4364,6 +4388,9 @@ html.${HTML_CLASS}.jread-orion body {
           }
         }
         if (!hasMediaChild) continue;
+        galleryPending.push(el);
+      }
+      for (const el of galleryPending) {
         // snapshot 原 inline value/priority for restore
         const prior = {
           el,
@@ -4420,6 +4447,14 @@ html.${HTML_CLASS}.jread-orion body {
       //     不含 "ratio" 漏掉 static-flow 配套）→ 還原 aspect-ratio 避免裁切。內圖
       //     尚未載入（高度 0）時仍 reset：未載圖沒有要保護的高度，box 跟著塌、載入
       //     後 height:auto 自然撐起。
+      // v1.6.29 批次化：write-then-measure guard 改成「全讀（aspect-ratio +
+      // 內圖高）→ 全 reset → 一次 flush 量全部 afterH → 還原失敗者」——舊版逐
+      // 元素 reset + getBoundingClientRect，每個 ratio box 各觸發一次強制
+      // reflow。批次量測下 afterH 反映「全部 ratio box 都已 reset」的 layout；
+      // 舊版是逐一累進量測——巢狀 ratio wrapper 極端場景下 guard 判定時點不同，
+      // 但兩者最終狀態一致（通過者本來就全會被 reset），wired/theverge harness
+      // 驗證行為不變。
+      const ratioPending = [];
       for (const el of mediaAncestors) {
         if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
         const win = el.ownerDocument?.defaultView;
@@ -4427,17 +4462,34 @@ html.${HTML_CLASS}.jread-orion body {
         if (!cs || !cs.aspectRatio || cs.aspectRatio === 'auto') continue;
         const innerMedia = el.querySelector('img, picture, video');
         const imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
-        const priorAR = el.style.getPropertyValue('aspect-ratio');
-        const priorARP = el.style.getPropertyPriority('aspect-ratio');
-        el.style.setProperty('aspect-ratio', 'auto', 'important');
-        // getBoundingClientRect 同步 flush layout，afterH 反映 reset 後高度。
-        const afterH = el.getBoundingClientRect().height;
-        if (imgH > 0 && afterH < imgH * 0.8) {
-          if (priorAR) el.style.setProperty('aspect-ratio', priorAR, priorARP || '');
-          else el.style.removeProperty('aspect-ratio');
-          continue;
-        }
-        ratioBoxes.push({ el, aspectRatio: priorAR, aspectRatioPriority: priorARP });
+        ratioPending.push({
+          el, imgH,
+          priorAR: el.style.getPropertyValue('aspect-ratio'),
+          priorARP: el.style.getPropertyPriority('aspect-ratio')
+        });
+      }
+      // 寫入前先 push 進 snapshot 陣列（rollback 安全：批次中途拋錯時 v1.6.27
+      // 的部分快照自我還原才涵蓋已寫入的元素）；guard 失敗者事後還原並自陣列移除
+      const ratioPushStart = ratioBoxes.length;
+      for (const r of ratioPending) {
+        ratioBoxes.push({ el: r.el, aspectRatio: r.priorAR, aspectRatioPriority: r.priorARP });
+        r.el.style.setProperty('aspect-ratio', 'auto', 'important');
+      }
+      // getBoundingClientRect 同步 flush layout（整批只 flush 一次），afterH
+      // 反映 reset 後高度
+      for (const r of ratioPending) r.afterH = r.el.getBoundingClientRect().height;
+      {
+        const keptRatio = [];
+        ratioPending.forEach((r, i) => {
+          if (r.imgH > 0 && r.afterH < r.imgH * 0.8) {
+            if (r.priorAR) r.el.style.setProperty('aspect-ratio', r.priorAR, r.priorARP || '');
+            else r.el.style.removeProperty('aspect-ratio');
+            return;
+          }
+          keptRatio.push(ratioBoxes[ratioPushStart + i]);
+        });
+        ratioBoxes.length = ratioPushStart;
+        for (const k of keptRatio) ratioBoxes.push(k);
       }
 
       // v1.6.22：媒體祖先帶「明確固定 px height」但內容比它矮 → 容器底部一大塊
@@ -4465,6 +4517,11 @@ html.${HTML_CLASS}.jread-orion body {
       //     （內容 absolute、固定 height 是唯一高度來源）→ 還原避免裁切。
       //   - 內圖含 caption 的 figure：height 本來就 auto（內容驅動），reset 無變化
       //     → 差 0 略過，caption 空間不受影響。
+      // v1.6.29 批次化：同 ratioBoxes——「全讀 beforeH → 全 reset height:auto →
+      // 一次 flush 量全部 afterH（+ 內圖高，維持舊版『reset 後量 imgH』時點）→
+      // 還原失敗者」。WIRED 三層巢狀 895px wrapper 場景逐層/整批判定結果相同
+      // （通過者最終全 auto），harness 驗證行為不變。
+      const fixedHPending = [];
       for (const el of mediaAncestors) {
         if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
         if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
@@ -4476,25 +4533,39 @@ html.${HTML_CLASS}.jread-orion body {
         if (el.style.getPropertyValue('height') === 'auto') continue;
         const beforeH = el.getBoundingClientRect().height;
         if (!(beforeH > 0)) continue;
-        const priorH = el.style.getPropertyValue('height');
-        const priorHP = el.style.getPropertyPriority('height');
-        el.style.setProperty('height', 'auto', 'important');
-        const afterH = el.getBoundingClientRect().height;
-        // 死空間門檻：固定高比自然高多出 > 40px 才算，避免 rounding 級抖動誤動
-        if (beforeH - afterH <= 40) {
-          if (priorH) el.style.setProperty('height', priorH, priorHP || '');
-          else el.style.removeProperty('height');
-          continue;
-        }
-        // collapse guard：塌到比內圖渲染高度還矮 → 還原（內容本身脫離 flow）
-        const innerMedia = el.querySelector('img, picture, video');
-        const imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
-        if (imgH > 0 && afterH < imgH * 0.8) {
-          if (priorH) el.style.setProperty('height', priorH, priorHP || '');
-          else el.style.removeProperty('height');
-          continue;
-        }
-        fixedHeightBoxes.push({ el, height: priorH, heightPriority: priorHP });
+        fixedHPending.push({
+          el, beforeH,
+          priorH: el.style.getPropertyValue('height'),
+          priorHP: el.style.getPropertyPriority('height')
+        });
+      }
+      // 寫入前先 push 進 snapshot 陣列（rollback 安全，同 ratioBoxes）；guard
+      // 失敗者事後還原並自陣列移除
+      const fixedHPushStart = fixedHeightBoxes.length;
+      for (const f of fixedHPending) {
+        fixedHeightBoxes.push({ el: f.el, height: f.priorH, heightPriority: f.priorHP });
+        f.el.style.setProperty('height', 'auto', 'important');
+      }
+      for (const f of fixedHPending) {
+        f.afterH = f.el.getBoundingClientRect().height;
+        // collapse guard 的內圖高：與舊版同時點（reset 之後）量測
+        const innerMedia = f.el.querySelector('img, picture, video');
+        f.imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+      }
+      {
+        const keptFixedH = [];
+        fixedHPending.forEach((f, i) => {
+          // 死空間門檻：固定高比自然高多出 > 40px 才算，避免 rounding 級抖動誤動
+          // collapse guard：塌到比內圖渲染高度還矮 → 還原（內容本身脫離 flow）
+          if (f.beforeH - f.afterH <= 40 || (f.imgH > 0 && f.afterH < f.imgH * 0.8)) {
+            if (f.priorH) f.el.style.setProperty('height', f.priorH, f.priorHP || '');
+            else f.el.style.removeProperty('height');
+            return;
+          }
+          keptFixedH.push(fixedHeightBoxes[fixedHPushStart + i]);
+        });
+        fixedHeightBoxes.length = fixedHPushStart;
+        for (const k of keptFixedH) fixedHeightBoxes.push(k);
       }
 
       // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。

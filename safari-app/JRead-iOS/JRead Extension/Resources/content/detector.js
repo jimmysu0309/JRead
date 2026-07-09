@@ -977,25 +977,36 @@
      * 回傳 { siteMode } — 'youtube-cinema' / 'x-thread' / 'article' / null。
      */
     probe() {
+      // v1.6.29 記憶化（#12 效能）：heuristic 策略對候選跑 innerText（強制
+      // layout），大頁面單次 probe Chromium 實測 ~35ms。popup 開啟 / SW Readwise
+      // 快速鍵流程會在短時間內重複 GET_READER_STATE → 同 href 且 TTL 內直接回
+      // 快取。key 含 href（SPA 路由切換即失效）；TTL 短（3s）換取「同 href 下
+      // 內容 hydration 改變偵測結果」的暴露窗上限——popup siteMode 最多晚 3s。
+      const now = Date.now();
+      if (this._probeCache && this._probeCache.href === location.href &&
+          (now - this._probeCache.ts) < 3000) {
+        return this._probeCache.result;
+      }
+      let result;
       if (NS.cinema && typeof NS.cinema.isYouTubeWatch === 'function' && NS.cinema.isYouTubeWatch()) {
-        return { siteMode: 'youtube-cinema' };
+        result = { siteMode: 'youtube-cinema' };
+      } else if (NS.xThread && typeof NS.xThread.isXStatusPage === 'function' && NS.xThread.isXStatusPage()) {
+        result = { siteMode: 'x-thread' };
+      } else if (NS.fbPost && typeof NS.fbPost.isFacebookPost === 'function' && NS.fbPost.isFacebookPost()) {
+        result = { siteMode: 'fb-post' };
+      } else {
+        // 跑 4 個 read-only 策略；故意不走 detectByShadowDomFallback（會 appendChild
+        // 替身、有副作用），shadow DOM 站走 enter reader mode 時才建替身。
+        const hit = (
+          detectByArticleTag() ||
+          detectBySchemaOrg() ||
+          detectByHeuristic() ||
+          detectByMainTag()
+        );
+        result = { siteMode: (hit && hit.el) ? 'article' : null };
       }
-      if (NS.xThread && typeof NS.xThread.isXStatusPage === 'function' && NS.xThread.isXStatusPage()) {
-        return { siteMode: 'x-thread' };
-      }
-      if (NS.fbPost && typeof NS.fbPost.isFacebookPost === 'function' && NS.fbPost.isFacebookPost()) {
-        return { siteMode: 'fb-post' };
-      }
-      // 跑 4 個 read-only 策略；故意不走 detectByShadowDomFallback（會 appendChild
-      // 替身、有副作用），shadow DOM 站走 enter reader mode 時才建替身。
-      const result = (
-        detectByArticleTag() ||
-        detectBySchemaOrg() ||
-        detectByHeuristic() ||
-        detectByMainTag()
-      );
-      if (result && result.el) return { siteMode: 'article' };
-      return { siteMode: null };
+      this._probeCache = { href: location.href, ts: now, result };
+      return result;
     },
 
     /**

@@ -235,12 +235,70 @@
     return out;
   }
 
+  // ---- collectBlocks 結果快取（v1.6.29，#12 效能）--------------------------
+  // position-memory 每秒 debounce 存檔都呼 currentAnchor → collectBlocks 全 DOM
+  // 重掃（BLOCK_SEL 掃描 + div/font/section/td 逐一 computed display +
+  // querySelectorAll('*') br 容器掃描），Chromium 實測每輪存檔 ~660-840ms
+  // （wiki 37K 節點 / chinatalk 12K 節點）＝長文捲動 jank 主兇。純捲動不改
+  // DOM——無失效訊號時直接回用上次結果。
+  //
+  // 失效訊號（三路）：
+  //   1. MutationObserver（root subtree、childList + attributes + characterData）
+  //      ——cleaner 動態 hide（data-jread-hidden / inline style）、SPA 內容更新、
+  //      lazy 注入都命中。cache 命中時先 takeRecords() 同步排空 pending 紀錄，
+  //      「同一 tick 內先改 DOM 再查 blocks」也不會拿到 stale 清單（observer
+  //      callback 是 microtask，純非同步失效有一拍延遲）。
+  //   2. ResizeObserver（root）——lazy 圖載入 / 字級調整等幾何變化改變
+  //      「rect.height < 4 不收」與 MEDIA_MIN_HEIGHT 過濾結果（不改 DOM 也要重掃）。
+  //   3. window resize。
+  //
+  // 快取命中回傳**同一個 blocks 陣列參照**：advance() 的 indexOf(focusedBlock)
+  // 與 position-memory 的 index 對映天然一致。呼叫端只讀不寫此陣列。
+  let blocksCache = null;            // { root, blocks }
+  let blocksCacheMo = null;          // MutationObserver
+  let blocksCacheRo = null;          // ResizeObserver
+  let blocksCacheObservedRoot = null;
+  const invalidateBlocksCache = () => { blocksCache = null; };
+
+  function ensureBlocksCacheInvalidators(root) {
+    if (blocksCacheObservedRoot === root) return;
+    teardownBlocksCacheInvalidators();
+    try {
+      blocksCacheMo = new MutationObserver(invalidateBlocksCache);
+      blocksCacheMo.observe(root, {
+        childList: true, subtree: true, characterData: true, attributes: true
+      });
+    } catch (_) { blocksCacheMo = null; }
+    if (typeof ResizeObserver !== 'undefined') {
+      try {
+        blocksCacheRo = new ResizeObserver(invalidateBlocksCache);
+        blocksCacheRo.observe(root);
+      } catch (_) { blocksCacheRo = null; }
+    }
+    window.addEventListener('resize', invalidateBlocksCache);
+    blocksCacheObservedRoot = root;
+  }
+
+  function teardownBlocksCacheInvalidators() {
+    if (blocksCacheMo) { blocksCacheMo.disconnect(); blocksCacheMo = null; }
+    if (blocksCacheRo) { blocksCacheRo.disconnect(); blocksCacheRo = null; }
+    window.removeEventListener('resize', invalidateBlocksCache);
+    blocksCacheObservedRoot = null;
+    blocksCache = null;
+  }
+
   // v0.8.40：root 參數讓 position-memory（閱讀位置記憶）共用同一份段落收集
   // 規則（單一資料源——li 單位 / 圖庫拆圖 / 裸文字 block 等規則不雙實作）。
   // 不傳 root 時用模組自己的 articleEl（既有呼叫端行為不變）。
   function collectBlocks(rootEl) {
     const root = rootEl || articleEl;
     if (!root || !root.isConnected) return [];
+    if (blocksCache && blocksCache.root === root) {
+      // takeRecords 同步排空 pending mutation：非空代表快取已髒（失效 callback
+      // 還在 microtask queue 排隊），立即重掃
+      if (blocksCacheMo && blocksCacheMo.takeRecords().length) blocksCache = null;
+      if (blocksCache) return blocksCache.blocks;
+    }
     const blocks = [];
     // 一般 block 單位
     for (const el of root.querySelectorAll(BLOCK_SEL)) {
@@ -310,7 +368,10 @@
       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1
     );
     // br 容器（老式 <br><br> 分段、無逐段 <p>）展開成段落虛擬單位
-    return expandBrParagraphs(blocks, root);
+    const out = expandBrParagraphs(blocks, root);
+    ensureBlocksCacheInvalidators(root);
+    blocksCache = { root, blocks: out };
+    return out;
   }
 
   function ensureBar() {
@@ -566,6 +627,9 @@
   }
 
   function uninstall() {
+    // 快取失效器在 guard 之前拆——模組未 install（ratio=0）時 position-memory
+    // 走 getBlocks 也會建快取 observer，退出 reader mode 一樣要拆乾淨
+    teardownBlocksCacheInvalidators();
     if (!installed && !barEl) return;
     window.removeEventListener('keydown', spaceScrollHandler, true);
     window.removeEventListener('click', onClickFocus, true);

@@ -1196,19 +1196,9 @@
   // chars `<p>`）視為推薦 card grid，hide。guard：含 canonical title
   // （og:title / document.title）的容器視為文章標題區，skip。
   function hideInsideArticleDirectChildLinkBlocks(articleEl, hidden) {
-    const ogMeta = document.querySelector('meta[property="og:title"]');
-    const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
-    const docTitle = normTitle(NS.stripSiteSuffix(document.title || ''));
-    const canonical = ogText || docTitle;
-    function containsCanonicalTitle(el) {
-      if (!canonical || canonical.length < 5) return false;
-      for (const n of el.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
-        const dt = normTitle(Array.from(n.childNodes)
-          .filter(c => c.nodeType === 3).map(c => c.textContent).join(''));
-        if (dt && dt === canonical) return true;
-      }
-      return false;
-    }
+    // canonical title 推導 + direct-text 掃描走單一資料源（v1.6.29 合一）
+    const canonical = getCanonicalTitleText();
+    const containsCanonicalTitle = (el) => subtreeHasCanonicalTitleText(el, canonical);
     let divIdx = 0;
     for (const child of Array.from(articleEl.children)) {
       if (child.tagName !== 'DIV') continue;
@@ -1480,10 +1470,8 @@
 
   function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
-    const og = document.querySelector('meta[property="og:title"]');
-    const ogText = og && og.content ? normTitle(og.content) : '';
-    const docT = normTitle(NS.stripSiteSuffix(document.title || ''));
-    const baseTitle = ogText || docT;
+    // canonical title 推導走單一資料源（v1.6.29 合一）
+    const baseTitle = getCanonicalTitleText();
 
     // candidate h1 選取：
     //   舊路徑：全頁剛好 1 個 h1、且在 articleEl 外（v0.7.141 起的保守 gate）。
@@ -3217,21 +3205,10 @@
     // 不 hide。substack reader hub 實機踩過：標題 wrapper（含主標題 <a> 與
     // 多個 subscribe/share/avatar links）textLen 短 + linkDensity 高觸發條件 A、
     // 連坐 hide 整段標題區。通則：跨站適用、不綁 substack hostname / class。
-    const _ogMeta = document.querySelector('meta[property="og:title"]');
-    const _ogText = _ogMeta && _ogMeta.content ? normTitle(_ogMeta.content) : '';
-    const _docTitle = normTitle(NS.stripSiteSuffix(document.title || ''));
-    const _canonicalTitle = _ogText || _docTitle;
-    function siblingContainsCanonicalTitle(sib) {
-      if (!_canonicalTitle || _canonicalTitle.length < 5) return false;
-      if (!sib || !sib.querySelectorAll) return false;
-      for (const el of sib.querySelectorAll('a, h1, h2, h3, h4, div, span, p')) {
-        const directText = normTitle(Array.from(el.childNodes)
-          .filter(n => n.nodeType === 3)
-          .map(n => n.textContent).join(''));
-        if (directText && directText === _canonicalTitle) return true;
-      }
-      return false;
-    }
+    // canonical title 推導 + direct-text 掃描走單一資料源（v1.6.29 合一）
+    const _canonicalTitle = getCanonicalTitleText();
+    const siblingContainsCanonicalTitle = (sib) =>
+      subtreeHasCanonicalTitleText(sib, _canonicalTitle);
     const candidates = [articleEl, ...Array.from(containers).filter(c => c !== articleEl)];
     for (const el of candidates) {
       if (el !== articleEl && isInPreserved(el)) continue;
@@ -4217,6 +4194,13 @@
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
     const descResets = [];
+    // v1.6.29 批次化：讀寫分 pass——舊版「collapse 一個 grid → 立刻掃它的
+    // descendants 讀 computed margin」讓每個 grid 各觸發一次強制 recalc。
+    // 改成：pass 1 全讀（找出所有要 collapse 的 grid）→ pass 2 全寫 grid
+    // decls → pass 3 全讀 descendants margin（此時所有 grid 已 collapse，
+    // 與舊版「desc 在 parent collapse 後量測」同語意、單次 flush）→ pass 4
+    // 全寫 desc resets。
+    const gridTargets = [];
     for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -4239,13 +4223,22 @@
         }
       }
       if (hasLiveMedia) continue;
+      gridTargets.push(el);
+    }
+    for (const el of gridTargets) {
       resets.push({ el, prev: snapshotStyles(el, INNER_GRID_PROPS) });
       applyImportant(el, INNER_GRID_DECLS);
-      // 掃 descendants：只對 symmetric margin（margin-left ≈ margin-right > 4px）
-      // 元素 reset width/margin/grid-area。symmetric margin 是 styled-components
-      // 「fixed width child + margin: auto」auto-center 殘留的結構特徵。
-      // 排除 PRESERVE_SEL + 媒體 tag（widths 由 styler max-width 控管）。
+    }
+    // 掃 descendants：只對 symmetric margin（margin-left ≈ margin-right > 4px）
+    // 元素 reset width/margin/grid-area。symmetric margin 是 styled-components
+    // 「fixed width child + margin: auto」auto-center 殘留的結構特徵。
+    // 排除 PRESERVE_SEL + 媒體 tag（widths 由 styler max-width 控管）。
+    const descTargets = [];
+    const descSeen = new Set(); // 巢狀 grid 時同一 desc 會被內外兩層都掃到——只收第一次
+                                // （舊版靠外層先寫 margin:0、內層讀到 0 自然跳過，等價）
+    for (const el of gridTargets) {
       for (const desc of el.querySelectorAll('*')) {
+        if (descSeen.has(desc)) continue;
         if (desc.dataset && desc.dataset.jreadHidden === '1') continue;
         if (isInPreserved(desc)) continue;
         // v1.6.24：toUpperCase——SVG namespace 元素 tagName 保留小寫，原本
@@ -4261,9 +4254,13 @@
         const mr = parseFloat(dcs.marginRight) || 0;
         if (ml < SYMMETRIC_MARGIN_MIN || mr < SYMMETRIC_MARGIN_MIN) continue;
         if (Math.abs(ml - mr) > SYMMETRIC_MARGIN_TOLERANCE) continue;
-        descResets.push({ el: desc, prev: snapshotStyles(desc, INNER_GRID_DESC_PROPS) });
-        applyImportant(desc, INNER_GRID_DESC_DECLS);
+        descSeen.add(desc);
+        descTargets.push(desc);
       }
+    }
+    for (const desc of descTargets) {
+      descResets.push({ el: desc, prev: snapshotStyles(desc, INNER_GRID_DESC_PROPS) });
+      applyImportant(desc, INNER_GRID_DESC_DECLS);
     }
     addStyleResets(hidden, resets);
     addStyleResets(hidden, descResets);
@@ -5216,8 +5213,11 @@
     const h1 = el.querySelector('h1');
     if (!h1) return false;
     if (document.querySelector('h1') === h1) return true; // (b) 文件第一個 h1
-    const ogMeta = document.querySelector('meta[property="og:title"]');
-    const canonical = normTitle((ogMeta && ogMeta.content) || NS.stripSiteSuffix(document.title || ''));
+    // canonical title 推導走單一資料源（v1.6.29 合一）。與舊 inline 版唯一語意差：
+    // og:title 內容 normTitle 後為空（純空白/標點）時，舊版 canonical=''→保守保護，
+    // 新版 fallback 到 document.title 再比對——og:title 存在但全空白是病態頁面，
+    // 統一語意優於保留該病態分支。
+    const canonical = getCanonicalTitleText();
     if (!canonical || canonical.length < 5) return true; // 無 canonical：保守保護
     const h1Text = normTitle(h1.textContent || '');
     if (!h1Text) return false;
@@ -6294,11 +6294,11 @@
     return false;
   }
 
-  // canonical 標題（og:title / document.title）。walk-up 邊界 guard 用——CTA 卡
-  // 與標題區的精確分界（Substack reader hub header 把訂閱 <form> 與標題 <a> 放
-  // 同層、全用 div 無 <p>，content-<p> 邊界擋不住、walk-up 會吃掉標題；v0.7.140
-  // 已踩過同型 bug）。標題用 h1 或 canonical title 文字定位（與
-  // hideInsideArticleDirectChildLinkBlocks 同源訊號，非站點特判）。
+  // canonical 標題（og:title / document.title）推導的**單一資料源**（v1.6.29
+  // 合一——歷史上 hideInsideArticleDirectChildLinkBlocks / promoteUniqueTitleH1Into
+  // / hideInsideArticleSidebarColumns / wrapperH1IsMainTitle 各自 inline 一份同款
+  // 推導，四處 drift 風險）。og:title 優先（normTitle 後非空才算）、否則
+  // document.title 去站名。
   function getCanonicalTitleText() {
     const ogMeta = document.querySelector('meta[property="og:title"]');
     const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
@@ -6307,16 +6307,27 @@
       : normTitle(document.title || '');
     return ogText || docTitle;
   }
-  function elContainsArticleTitle(el, canonical) {
-    if (!el || !el.querySelector) return false;
-    if (el.querySelector('h1')) return true;
+  // 子樹內是否存在「direct text（僅 text node 子節點串接、不含後代元素文字）
+  // strict equals canonical title」的元素——「此區塊是文章標題區」的通用訊號
+  // （v1.6.29 合一：原 containsCanonicalTitle / siblingContainsCanonicalTitle /
+  // elContainsArticleTitle 三份同款掃描）。canonical 太短（< 5）不比對——短字串
+  // strict eq 誤命中面太大。
+  const CANONICAL_TITLE_SCAN_SEL = 'a, h1, h2, h3, h4, div, span, p';
+  function subtreeHasCanonicalTitleText(el, canonical, sel) {
     if (!canonical || canonical.length < 5) return false;
-    for (const n of el.querySelectorAll('a, h2, h3, h4, div, span, p')) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const n of el.querySelectorAll(sel || CANONICAL_TITLE_SCAN_SEL)) {
       const dt = normTitle(Array.from(n.childNodes)
         .filter(c => c.nodeType === 3).map(c => c.textContent).join(''));
       if (dt && dt === canonical) return true;
     }
     return false;
+  }
+  function elContainsArticleTitle(el, canonical) {
+    if (!el || !el.querySelector) return false;
+    if (el.querySelector('h1')) return true;
+    // 沿用本函式歷史 selector（不含 h1——上一行已短路處理）
+    return subtreeHasCanonicalTitleText(el, canonical, 'a, h2, h3, h4, div, span, p');
   }
 
   // 從 trigger 往上走，回傳最外層「不含主文長 <p>、不含文章標題」的卡片祖先
