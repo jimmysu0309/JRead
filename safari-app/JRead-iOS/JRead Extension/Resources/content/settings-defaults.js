@@ -222,9 +222,34 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     return typeof raw === 'boolean' ? raw : true;
   }
 
+  // v1.6.26：憑證欄位清單 + 裁剪（最小知情原則）。SW 的 GET_SETTINGS 是
+  // content script 直讀 storage 失效時的 fallback 通道，content 端只需要 UI
+  // 偏好欄位、從不使用任何憑證（grep 實證零呼叫端）——回應前把憑證欄位剔除，
+  // 敏感資料不流經用不到的路徑。isolated world 下頁面 JS 本就摸不到（非漏洞
+  // 修補），純防禦深度。popup / options / SW 內部送出流程自己直讀 storage，
+  // 不走本通道、不受影響。
+  const CREDENTIAL_SETTINGS_KEYS = [
+    'readwiseToken',
+    'instapaperToken',
+    'instapaperTokenSecret',
+    'instapaperUsername',
+    'geminiApiKey'
+  ];
+  function stripCredentialSettings(settings) {
+    if (!settings || typeof settings !== 'object') return settings;
+    const out = {};
+    for (const k of Object.keys(settings)) {
+      if (CREDENTIAL_SETTINGS_KEYS.indexOf(k) !== -1) continue;
+      out[k] = settings[k];
+    }
+    return out;
+  }
+
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
   // globalThis；jsdom regression spec 走 module.exports。
   global.__JReadSettingsDefaults = DEFAULT_SETTINGS;
+  global.__JReadCredentialSettingsKeys = CREDENTIAL_SETTINGS_KEYS;
+  global.__JReadStripCredentialSettings = stripCredentialSettings;
   global.__JReadResolveFloatingIconEnabled = resolveFloatingIconEnabled;
   global.__JReadFontStacks = FONT_STACKS;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
