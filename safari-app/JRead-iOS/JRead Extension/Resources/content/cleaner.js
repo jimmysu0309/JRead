@@ -262,7 +262,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -783,6 +783,44 @@
   function hideRecommendationWidgets(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll(RECOMMENDATION_WIDGET_SEL)) {
       hideRecommendationWidgetFrom(el, articleEl, hidden);
+    }
+  }
+
+  // Substack 平台文末互動 / 推薦嵌入雜訊（reaction bar / digest 推薦卡 / 分享 CTA
+  // 說明段）。對應 bug（Jimmy 2026-07-09 culpium translate-first 實測，接續 v1.6.31
+  // 訂閱 widget + 文字式 reaction bar）：翻譯後文末殘留「更多來自 X：」推薦文章卡
+  // 4 張 + 文首/文末 like/comment/restack/share 反應列 + 分享 CTA 說明。
+  // 三塊全是 Substack 平台慣例語意 class，且與主文段落同層（body.markup 直接子、
+  // 混在主文流裡）→ heading walk-up 第一層就撞含主文的 body.markup、被主文保護擋下
+  // 只能 hide heading 自己，清不掉卡片 / 反應列。故精確 selector hide（比照
+  // RECOMMENDATION_WIDGET_SEL：不 walk-up、零主文誤殺）。
+  // 結構訊號（符合硬規則 3，跨數十萬 Substack 站的平台角色 class，非站點 hostname /
+  // 單站身份，與既有 RECOMMENDATION_WIDGET_SEL data-testid / NOISE_KEYWORD_RE 語意
+  // class token 同類）：
+  //   .post-ufi                  = Universal Feedback Interface（讚 / 留言 / 轉發 / 分享
+  //                                反應列）——button 被 hideInsideArticleAllButtons 清掉後
+  //                                容器 + 讚數連結（「15 贊」「1 重新堆疊」）仍殘留，整塊清
+  //   [class*="digestPostEmbed"] = 文末 / 內文推薦文章嵌入卡（連結 + 縮圖 + 標題 + 相對
+  //                                日期），class 帶 emotion hash suffix（digestPostEmbed-xxxxx）
+  //                                故用 substring match
+  //   .cta-caption               = 分享 / 訂閱按鈕的說明段（「Easy to read. Easy to share.」）
+  // 翻譯不改 class → translate-first Safari（Jimmy 實機）同樣命中。
+  // 「更多來自 X：」推薦區 heading（class header-anchor-post 與主文章節 H4 共用、不可靠
+  // class）靠 NOISE_HEADING_TEXT_RE 的「更多來自」/ 英文「more from」文字訊號清（本函式不含）。
+  const SUBSTACK_PLATFORM_NOISE_SEL = '.post-ufi, [class*="digestPostEmbed"], .cta-caption';
+  function hideSubstackPlatformNoiseFrom(el, articleEl, hidden) {
+    if (!el || el === articleEl) return false;
+    if (el.contains && el.contains(articleEl)) return false;
+    if (isInPreserved(el)) return false;
+    if (el.dataset && el.dataset.jreadHidden === '1') return true;
+    // 巢狀（post-ufi 內含 post-ufi-button 等）：祖先已被 hide 則跳過，只 hide 最外層容器。
+    if (el.parentElement && el.parentElement.closest('[data-jread-hidden="1"]')) return false;
+    hide(el, hidden);
+    return true;
+  }
+  function hideSubstackPlatformNoise(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll(SUBSTACK_PLATFORM_NOISE_SEL)) {
+      hideSubstackPlatformNoiseFrom(el, articleEl, hidden);
     }
   }
 
@@ -2206,7 +2244,13 @@
   // Restack」），與既有分隔符類 `·`（U+00B7 MIDDLE DOT）/`•`（U+2022 BULLET）都不同
   // → 整串比對失敗漏網。分隔符類補 U+2219；三個視覺近似的圓點都要涵蓋（不同站 CMS
   // 各用一種，Substack 用 U+2219）。
-  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*(likes?|restacks?|reactions?)\s*[·•∙、,|/]*)+$/i;
+  // v1.7.1 culpium translate-first 實測：文末另有一條 UFI bar（class 全 pencraft hash、
+  // 無 post-ufi token → SUBSTACK_PLATFORM_NOISE_SEL 漏），整段 textContent 翻譯後成
+  // 「15 贊∙1 重新堆疊」（Shinkansen Google MT：Like→贊、Restack→重新堆疊）→ 英文
+  // unit 詞比對失敗漏網。unit 補常見中文 reaction 詞。「整段＝純計數格式」本身是極強
+  // 結構訊號（數字+短詞+分隔符 重複、無其他文字），主文段落絕不會整段長這樣，故認翻譯
+  // 詞的誤殺風險遠低於在 NOISE_LINK_TEXT_RE 認單一連結；英文原文仍由英文分支保底。
+  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*(likes?|restacks?|reactions?|comments?|shares?|贊|讚|喜歡|反應|重新堆疊|轉發|轉推|留言|回覆|評論|分享)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -6600,6 +6644,18 @@
       }
       return;
     }
+    // Substack 平台 widget（reaction bar / digest 推薦卡 / 分享 CTA 說明）lazy 注入
+    // 兜底（與靜態 hideSubstackPlatformNoise 單一資料源）——React 端常在 clean() 之後
+    // 才 hydrate 文末推薦卡與讚數列。node 自身 / 其內任一都查。
+    if (node.matches && node.matches(SUBSTACK_PLATFORM_NOISE_SEL)) {
+      if (hideSubstackPlatformNoiseFrom(node, articleEl, hiddenList)) return;
+    }
+    if (node.querySelector && node.querySelector(SUBSTACK_PLATFORM_NOISE_SEL)) {
+      for (const el of node.querySelectorAll(SUBSTACK_PLATFORM_NOISE_SEL)) {
+        hideSubstackPlatformNoiseFrom(el, articleEl, hiddenList);
+      }
+      return;
+    }
     // Substack reaction bar（文末「N Likes / N Restacks」）lazy 注入兜底——
     // 與靜態 hideInsideArticleReactionBars 共用 isReactionCountBar。React 端
     // 常在 clean() 之後才 hydrate 讚數列；node 自身 / 其內任一 bar 都查。
@@ -7166,6 +7222,7 @@
       safeRun(hideCommunityQaWidget, articleEl, hidden);
       safeRun(hideSponsoredPartnershipWidgets, articleEl, hidden);
       safeRun(hideRecommendationWidgets, articleEl, hidden);
+      safeRun(hideSubstackPlatformNoise, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
       safeRun(hideInsideArticleByLinkText, articleEl, hidden);
       safeRun(hideBylineCategoryChips, articleEl, hidden);
