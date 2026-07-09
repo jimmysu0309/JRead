@@ -944,7 +944,7 @@ popup 關閉後其 fetch 會中斷；放 SW 即便使用者立刻關掉 popup，
 
 - ~~Readability.js 要不要整包引入，還是自己寫簡化版？~~ **已裁定（Jimmy 2026-07-09）：徹底放棄引入 Readability.js**，維持自寫偵測管線（`<article>` → Schema.org → 自寫啟發式 → 備援），不要再提案
 - ~~SPA 導航（Medium、Substack）的 content script 重觸發時機~~ **已解（v0.8.21 SPA 導航偵測 + v0.8.45 無限捲動豁免，見「SPA 導航偵測與無限捲動豁免」節）**；僅存缺口為已文件化的刻意設計（X thread reader 不自動重套、home-launcher 不處理 SPA 內部路由）
-- 某些新聞網站有「文章分頁」機制，要不要處理？（MVP 範圍外）
+- ~~某些新聞網站有「文章分頁」機制（一篇文章拆多個 URL），要不要自動抓齊拼成一篇？~~ **WONTFIX（Jimmy 2026-07-09 裁定）**：multi-page stitching 成本高（跨頁 fetch + 去重 + 與 Readwise / 閱讀位置 / 翻頁模式互動），且此類站點日漸稀少；讀到底點「下一頁」由 auto-enable / link-follow 接手即可，不要再提案
 - **授權策略**：不參考 Unclutter 原始碼（AGPL-3.0），走 clean-room——只讀 docs、自行實作。JRead 本身未來授權由 Jimmy 決定。
 
 ---
