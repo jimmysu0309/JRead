@@ -942,7 +942,7 @@ popup 關閉後其 fetch 會中斷；放 SW 即便使用者立刻關掉 popup，
 
 ## 已知風險 / 待決議
 
-- Readability.js 要不要整包引入，還是自己寫簡化版？
+- ~~Readability.js 要不要整包引入，還是自己寫簡化版？~~ **已裁定（Jimmy 2026-07-09）：徹底放棄引入 Readability.js**，維持自寫偵測管線（`<article>` → Schema.org → 自寫啟發式 → 備援），不要再提案
 - SPA 導航（Medium、Substack）的 content script 重觸發時機
 - 某些新聞網站有「文章分頁」機制，要不要處理？（MVP 範圍外）
 - **授權策略**：不參考 Unclutter 原始碼（AGPL-3.0），走 clean-room——只讀 docs、自行實作。JRead 本身未來授權由 Jimmy 決定。
