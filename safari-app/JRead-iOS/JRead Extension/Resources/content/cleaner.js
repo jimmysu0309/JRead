@@ -2250,7 +2250,13 @@
   // unit 詞比對失敗漏網。unit 補常見中文 reaction 詞。「整段＝純計數格式」本身是極強
   // 結構訊號（數字+短詞+分隔符 重複、無其他文字），主文段落絕不會整段長這樣，故認翻譯
   // 詞的誤殺風險遠低於在 NOISE_LINK_TEXT_RE 認單一連結；英文原文仍由英文分支保底。
-  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*(likes?|restacks?|reactions?|comments?|shares?|贊|讚|喜歡|反應|重新堆疊|轉發|轉推|留言|回覆|評論|分享)\s*[·•∙、,|/]*)+$/i;
+  // v1.7.2 culpium translate-first 再測：同站另一 UFI facepile bar 翻成「15 個讚 · 1
+  // 次轉發」（Traditional TW 翻法：Like→個讚、Restack→次轉發）→ 數字與反應名詞之間夾了
+  // 量詞「個」「次」，而舊 pattern 要求數字後直接接名詞 → 漏網。修法：在數字與反應名詞
+  // 之間允許 0–3 字的短 CJK 前綴（量詞 個/次/則/位…），但仍要求每個 token 以「已知反應
+  // 名詞」收尾（不改成純 CJK run）——維持精準，主文的「3 天」「5 個重點」因不以反應名詞
+  // 收尾一律 miss，年份「2024 年」亦 miss（年非反應名詞）。止住逐版補譯詞的 drift。
+  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉推|转推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
