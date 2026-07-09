@@ -5373,7 +5373,8 @@ describe('cleaner — collapseInnerGridFlex descendants 殘留 auto-center reset
     // collapseInnerGridFlex 內必須有「比較 margin-left 與 margin-right」的邏輯
     const fnStart = src.search(/function\s+collapseInnerGridFlex\s*\(/);
     assert.ok(fnStart >= 0, '能找到 collapseInnerGridFlex 函式');
-    const fnRegion = src.slice(fnStart, fnStart + 3000);
+    // 視窗 4500：v1.6.29 讀寫批次化讓函式變長，3000 蓋不到 descendant margin 段
+    const fnRegion = src.slice(fnStart, fnStart + 4500);
     assert.match(fnRegion, /marginLeft/, 'collapseInnerGridFlex 必須讀 computed marginLeft');
     assert.match(fnRegion, /marginRight/, 'collapseInnerGridFlex 必須讀 computed marginRight');
     assert.match(fnRegion, /Math\.abs\s*\(\s*ml\s*-\s*mr\s*\)/, 'collapseInnerGridFlex 必須驗 |ml - mr| ≤ tolerance（symmetric margin 比對）');
@@ -5381,7 +5382,7 @@ describe('cleaner — collapseInnerGridFlex descendants 殘留 auto-center reset
 
   it('collapseInnerGridFlex 必須排除 PRESERVE_SEL + 媒體 tag（避免誤殺）', () => {
     const fnStart = src.search(/function\s+collapseInnerGridFlex\s*\(/);
-    const fnRegion = src.slice(fnStart, fnStart + 3000);
+    const fnRegion = src.slice(fnStart, fnStart + 4500);
     assert.match(fnRegion, /isInPreserved\(desc\)/, 'descendant 迴圈必須跑 isInPreserved guard');
     assert.match(fnRegion, /['"]IMG['"]/, '必須排除 IMG');
     assert.match(fnRegion, /['"]PICTURE['"]/, '必須排除 PICTURE');

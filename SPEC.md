@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.6.28**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.6.29**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -727,7 +727,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 ### 記什麼
 
-- **捲動模式**：「目前閱讀段落」的文字簽名（collapse 空白取前 120 字）+ 段落 index + 整篇進度比例。段落來源 = `NS.spaceScroll.currentAnchor`——焦點段落（指示條）還在 viewport 內就用它，否則 viewport 內第一個段落；段落收集規則與 space-scroll `collectBlocks` 同一份（v0.8.40 起 `collectBlocks(rootEl)` 接受容器參數、匯出 `getBlocks` / `currentAnchor` / `anchorTo`）。
+- **捲動模式**：「目前閱讀段落」的文字簽名（collapse 空白取前 120 字）+ 段落 index + 整篇進度比例。段落來源 = `NS.spaceScroll.currentAnchor`——焦點段落（指示條）還在 viewport 內就用它，否則 viewport 內第一個段落；段落收集規則與 space-scroll `collectBlocks` 同一份（v0.8.40 起 `collectBlocks(rootEl)` 接受容器參數、匯出 `getBlocks` / `currentAnchor` / `anchorTo`）。**v1.6.29 起 `collectBlocks` 結果有快取**：純捲動（無 DOM / 幾何變化）時每秒存檔 debounce 直接回用上次清單（同陣列參照）；失效訊號＝root subtree MutationObserver（命中時 `takeRecords()` 同步排空、同 tick 內改 DOM 再查也拿到新清單）+ root ResizeObserver + window resize，`uninstall` 一併拆除（Chromium 實測 wiki 37K 節點 5 輪捲動存檔 task 4202ms → 325ms）。
 - **翻頁模式**：頁碼 + 總頁數（`NS.pagedMode.getPosition`，v0.8.40 新 API）+ 進度比例。
 
 ### 回復策略（多層 fallback）

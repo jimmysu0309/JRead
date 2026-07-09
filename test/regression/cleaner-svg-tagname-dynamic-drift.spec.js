@@ -71,7 +71,9 @@ describe('cleaner v1.6.24 — 獨立內容 SVG 不被空殼 collapse（大小寫
   });
 
   it('collapseInnerGridFlex 後代 skip 名單必須以 toUpperCase 比對（含 SVG）', () => {
-    const m = CLEANER_SRC.match(/掃 descendants[\s\S]{0,700}/);
+    // 視窗 1300：v1.6.29 批次化在「掃 descendants」註解與 toUpperCase 判定間
+    // 插入 descSeen 去重 + pass 分離，700 不夠涵蓋
+    const m = CLEANER_SRC.match(/掃 descendants[\s\S]{0,1300}/);
     assert.ok(m, '抓不到 collapseInnerGridFlex 後代掃描段');
     assert.match(m[0], /tagName\.toUpperCase\(\)/,
       '後代 tag 判定必須 toUpperCase——svg 小寫 tagName 直比 "SVG" 永遠 false');
