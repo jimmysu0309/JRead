@@ -108,6 +108,20 @@ describe('substack-reaction-count-bar — 行為', () => {
     }
   });
 
+  it('靜態：三種圓點分隔符（U+00B7 · / U+2022 • / U+2219 ∙）多計數串皆命中（v1.6.31 culpium ∙）', () => {
+    // culpium.com 實測分隔符是 U+2219 BULLET OPERATOR（「13 Likes∙1 Restack」），
+    // 與 U+00B7 MIDDLE DOT / U+2022 BULLET 視覺近似但 code point 不同——分隔符類
+    // 三者都要涵蓋，否則「N Likes<sep>N Restack」整串比對失敗漏網。
+    const variants = ['13 Likes∙1 Restack', '3 Likes · 2 Restacks', '5 Likes • 2 Restacks'];
+    for (const ct of variants) {
+      const { doc, art, NS } = buildEnv({ withBar: true, countText: ct });
+      const hidden = NS.cleaner.clean(art);
+      assert.strictEqual(doc.getElementById('likebar').dataset.jreadHidden, '1',
+        `分隔符變體「${ct}」應命中`);
+      NS.cleaner.restore(hidden);
+    }
+  });
+
   it('動態（核心）：lazy 注入的 like bar 經 observer 整塊被 hide', async () => {
     const { doc, art, NS } = buildEnv({ withBar: false });
     const hidden = NS.cleaner.clean(art);
