@@ -297,7 +297,10 @@
     const settings = await getSettings();
     NS.state.articleEl = container;
     NS.state.confidence = 1;
-    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(container) : [];
+    // v1.6.27：與 generic path 同款累加器模式（rollback 缺口修法）
+    const xHiddenEls = [];
+    NS.state.hiddenEls = xHiddenEls;
+    if (NS.cleaner) NS.cleaner.clean(container, { out: xHiddenEls });
     if (NS.xThread && typeof NS.xThread.injectAuthorHeaders === 'function') {
       NS.xThread.injectAuthorHeaders();
     }
@@ -427,10 +430,17 @@
     // promotedFrom + promotedTitleHead 傳給 cleaner 做 narrowPromotedSiblings
     // （v0.7.12 ebc 深層 single-child wrapper 修法 + v0.7.21 Stratechery h2
     // post-title 白名單保護，讓 WordPress block theme h2 不被 narrow 誤殺）
-    NS.state.hiddenEls = NS.cleaner ? NS.cleaner.clean(result.el, {
+    // v1.6.27 rollback 缺口修法：累加器先掛上 state 再交給 cleaner 邊做邊
+    // 登記——clean 中途 throw 時 state.hiddenEls 已有做過的每一筆，上層 catch
+    // 走 exitReaderModeImpl 照樣逐筆還原（舊寫法「做完才賦值」炸掉時清單
+    // 交不出去、已 hide 的元素永遠掛著）。
+    const hiddenEls = [];
+    NS.state.hiddenEls = hiddenEls;
+    if (NS.cleaner) NS.cleaner.clean(result.el, {
       promotedFrom: result.promotedFrom,
-      promotedTitleHead: result.promotedTitleHead
-    }) : [];
+      promotedTitleHead: result.promotedTitleHead,
+      out: hiddenEls
+    });
     // v0.7.87：cleaner 跑完後才 promote 主標——cleaner 已 hide hidden h1-h4
     // 後，articleEl 內若無 visible heading，找等同 og:title 的 text element
     // 加 attribute + inline 大字 style（newtalk.tw 主標寫在 p.name 等非 h1-h4

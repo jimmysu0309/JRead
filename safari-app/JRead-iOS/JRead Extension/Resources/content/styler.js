@@ -3170,6 +3170,53 @@ html.${HTML_CLASS}.jread-orion body {
       // v0.8.130：改走 NS.injectCssText（CSP-safe）——嚴格 style-src nonce-only 站
       // （Miniflux 自架閱讀頁）在 WebKit 會擋掉注入 <style>，退回 adoptedStyleSheets。
       // 詳見 namespace.js injectCssText 註解。
+      // ─── v1.6.27 rollback 缺口修法：快照欄位提升宣告 ───────────────────
+      // 所有 snapshot 欄位在第一個 DOM mutation 之前先以中性值宣告，
+      // snapshotNow() 隨時可組出「目前為止做了什麼」的部分快照。apply 中途
+      // throw 時 catch 用它自我還原半套副作用後再拋（restore 對每個欄位都有
+      // Array.isArray / null 防護，部分快照安全）；上層 main.js catch 接手
+      // cleaner 側還原。各欄位的填入點仍在原位（宣告改為賦值）。
+      // 漏轉一處會 redeclare SyntaxError,parse 即炸——自帶 forcing。
+      let ancestors = [];
+      let htmlHadClass = false;
+      let firstInk = null;
+      let firstInkPriorMt = '';
+      let firstInkPriorMtPriority = '';
+      const ancestorPaddingSnap = [];
+      const negMarginSnap = [];
+      const figurePaddingSnap = [];
+      const contentWidthSnap = [];
+      const captionFsSnap = [];
+      let titleFsSnap = null;
+      let heroFloorSnap = null;
+      const galleryFlex = [];
+      const ratioBoxes = [];
+      const fixedHeightBoxes = [];
+      const textColFlex = [];
+      const decolumnLoadCleanup = [];
+      const wpConstrained = [];
+      const wideScroll = [];
+      let panguSnap = null;
+      const inlineImgs = [];
+      const inlineImgPins = [];
+      const contentImgs = [];
+      const iconImgs = [];
+      const upscaleImgs = [];
+      const contentImgLoadCleanup = [];
+      const playerMarked = [];
+      const fillIframes = [];
+      let textDivMarked = [];
+      let cjkJustifyMarked = [];
+      let decorResetMarked = [];
+      const contrastBgSnap = [];
+      let themeColorSnap = null;
+      let viewportSnap = null;
+      const bylineMarks = [];
+      const bylineDispSnap = [];
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, decorResetMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      try {
+      // ──────────────────────────────────────────────────────────────────
+
       NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
 
       // inline emoji / icon 標記必須在 ARTICLE_ATTR 設定**前**跑——標記用 rect
@@ -3181,12 +3228,6 @@ html.${HTML_CLASS}.jread-orion body {
       // emoji 滿版（v0.8.10 翻頁模式 X Twemoji 實機回報、probe 實證 chicken-egg）。
       // 在 ARTICLE_ATTR 前量 = reader 規則尚未 active = 量到原站 inline 尺寸，
       // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
-      const inlineImgs = [];
-      const inlineImgPins = [];
-      const contentImgs = [];
-      const iconImgs = [];
-      const upscaleImgs = [];
-      const contentImgLoadCleanup = [];
       // v0.8.98：viewBox-only SVG 的 inline emoji（WordPress wp-emoji 的國旗 SVG、
       // X Twemoji）naturalWidth 回報 Chrome 預設 150×150 不可靠——通用圖片規則的
       // width:auto 對「無 intrinsic size 的 SVG」解析成容器寬，把 emoji 撐成滿欄
@@ -3375,7 +3416,7 @@ html.${HTML_CLASS}.jread-orion body {
       // v0.8.49：「div 當段落」標記必須在 ARTICLE_ATTR 設定**前**跑——主流字級
       // 判定要量「原站 CSS 下的字級」；ARTICLE_ATTR 一旦設定，BODY_TEXT_SEL 的
       // font-size 規則對 article 根生效，繼承鏈被改、量到的是注入後的值。
-      const textDivMarked = markTextDivs(articleEl);
+      textDivMarked = markTextDivs(articleEl);
 
       articleEl.setAttribute(ARTICLE_ATTR, '1');
 
@@ -3398,7 +3439,6 @@ html.${HTML_CLASS}.jread-orion body {
       //   video → jw-media(abs) → jw-wrapper(abs) → jwplayer(rel+ovH) → layout wrappers
       // 外層 wrapper 必須被 card max-width/position 約束，否則 player 溢出遮字。
       // v0.7.182 走 4 層太高，把 wp-block-group layout wrapper 也排除了。
-      const playerMarked = [];
       for (const vid of articleEl.querySelectorAll('video')) {
         let container = null;
         const _win = articleEl.ownerDocument?.defaultView;
@@ -3455,7 +3495,6 @@ html.${HTML_CLASS}.jread-orion body {
       // ARTICLE_ATTR 設定**後**量——reader CSS 對 [class*="placeholder"] 後代
       // 強制 position:static，那類 iframe 量到 static 不被標（已在 flow 內
       // 正常置中），只命中「reader CSS 未改其定位、仍 absolute」的真 embed。
-      const fillIframes = [];
       {
         const _win = articleEl.ownerDocument?.defaultView;
         if (_win && _win.getComputedStyle) {
@@ -3469,16 +3508,16 @@ html.${HTML_CLASS}.jread-orion body {
         }
       }
 
-      const ancestors = markAncestors(articleEl);
+      ancestors = markAncestors(articleEl);
 
-      const htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
+      htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
       document.documentElement.classList.add(HTML_CLASS);
 
       // v0.8.24：覆蓋 theme-color meta = reader card 色（狀態列 / 底部工具列染色）
-      const themeColorSnap = applyThemeColor(theme.articleBg);
+      themeColorSnap = applyThemeColor(theme.articleBg);
 
       // v0.8.139：正規化 viewport meta（行動裝置「縮小一半」修法，見函式註解）
-      const viewportSnap = applyViewportFix();
+      viewportSnap = applyViewportFix();
 
       // v0.7.225 contrast guard phase 2：CSS 全生效後（ARTICLE_ATTR + HTML_CLASS
       // 都已就位）以 card bg 為基底重算每個容器的新 effective bg。半透明 pre bg
@@ -3488,7 +3527,6 @@ html.${HTML_CLASS}.jread-orion body {
       // syntax 色是配這個 bg 設計的，還原 bg = 還原設計時的對比）。
       // snapshot entry 通用化：{ el, prop, prev, prevP }——bg 還原與
       // per-carrier 色覆寫共用一個還原清單。
-      const contrastBgSnap = [];
       if (contrastProbe.length) {
         const _win = articleEl.ownerDocument?.defaultView;
         const cardBg = parseCssColor(theme.articleBg) || WHITE;
@@ -3757,7 +3795,6 @@ html.${HTML_CLASS}.jread-orion body {
       // P "Opinion" 類別標籤——querySelector DOM order 比 H1 早命中，導致
       // firstInk 指向隱藏 P、後續 ancestor padding strip 和 titleFontSize
       // inline override 都因此 miss。
-      let firstInk = null;
       {
         const _win = articleEl.ownerDocument?.defaultView;
         for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
@@ -3774,8 +3811,6 @@ html.${HTML_CLASS}.jread-orion body {
           break;
         }
       }
-      let firstInkPriorMt = '';
-      let firstInkPriorMtPriority = '';
       if (firstInk) {
         firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
         firstInkPriorMtPriority = firstInk.style.getPropertyPriority('margin-top');
@@ -3788,8 +3823,6 @@ html.${HTML_CLASS}.jread-orion body {
       // （>= 120 chars 的 p）、且 visible 文字 <= 200」的最高祖先 = byline root。
       // 只標 visible 元素（避免把站點隱藏的作者 hover card / 分享列重新顯示）。
       // 多站驗證（autocar / npr / techcrunch / bbc / theverge）選到乾淨 byline 區。
-      const bylineMarks = [];
-      const bylineDispSnap = [];
       {
         const win = articleEl.ownerDocument?.defaultView;
         if (win && win.getComputedStyle && !articleEl.querySelector(`[${BYLINE_ATTR}]`)) {
@@ -4021,18 +4054,17 @@ html.${HTML_CLASS}.jread-orion body {
       // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
       // v1.6.24：移到 byline / kicker 標記之後——排除 guard（closest BYLINE_ATTR /
       // KICKER_ATTR）需要標記已存在，否則中文 byline（「文／某某」）被 justify。
-      const cjkJustifyMarked = markCjkParagraphs(articleEl);
+      cjkJustifyMarked = markCjkParagraphs(articleEl);
 
       // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
       // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
-      const decorResetMarked = markDecorativeInlines(articleEl);
+      decorResetMarked = markDecorativeInlines(articleEl);
 
       // v0.7.179：strip excessive padding on ancestors between firstInk and
       // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
       // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
       // 純空白。沿 firstInk 往上走到 articleEl，每層 paddingTop > 48px
       // （reader card 自身 padding 大小）的元素清掉 padding。
-      const ancestorPaddingSnap = [];
       if (firstInk) {
         let cur = firstInk.parentElement;
         const win = articleEl.ownerDocument?.defaultView;
@@ -4060,7 +4092,6 @@ html.${HTML_CLASS}.jread-orion body {
       // header 的 100px padding 區域做視覺重疊。我們 strip padding 後、
       // 負 margin 殘留 → video 溢出遮住 subtitle。通則：reader card
       // 內負 margin-top > 20px 的元素 = layout hack，不適用單欄 card。
-      const negMarginSnap = [];
       {
         const _w = articleEl.ownerDocument?.defaultView;
         if (_w) {
@@ -4090,7 +4121,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 其媒體應對齊閱讀軸；figure 上「兩側不對稱」的水平 padding 只可能是原站用
       // 來把窄媒體推離軸線的定位 hack，清為 0。對稱水平 padding（合法的框內縮 /
       // 帶背景 inset）差值小、不命中，保留。
-      const figurePaddingSnap = [];
       {
         const _w = articleEl.ownerDocument?.defaultView;
         if (_w) {
@@ -4148,7 +4178,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 圖片若是 wrapper 外的 full-bleed 子元素本就滿版，清零後內容與圖片同寬
       // = 符合設定寬度。翻頁模式（multicol）與捲動模式同根因同修法——走「水平
       // 內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），通用。
-      const contentWidthSnap = [];
       {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
@@ -4207,7 +4236,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 係數讓 caption 仍明顯小於 body、保留階層。opts.fontSize 為 0（Auto sentinel、
       // 保留原站 body 字級）時用 18 當 body 估計值。inline !important 蓋站點 caption
       // class rule。snapshot 對稱還原（與 titleFsSnap 同款）。
-      const captionFsSnap = [];
       {
         const _w = articleEl.ownerDocument?.defaultView;
         if (_w) {
@@ -4243,7 +4271,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 獨立搜尋第一個可見 h1（不依賴 firstInk 是否 H tag）：firstInk 可能是
       // P（副標題/byline 在 DOM order 比 H1 早出現時），title override 不該
       // 因此 miss。
-      let titleFsSnap = null;
       if (overrides.titleFontSize) {
         const titleH1 = firstInk && /^H1$/.test(firstInk.tagName)
           ? firstInk
@@ -4265,7 +4292,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 夠大就不動。hero = detector inject 的 H1（[data-jread-injected-title]）
       // 優先，否則第一個可見 h1。override 模式由上方 titleFsSnap 精準覆寫、
       // 不走這條（exact size 已贏）。
-      let heroFloorSnap = null;
       if (!overrides.titleFontSize) {
         const floorPx = Math.round((opts.fontSize || DEFAULTS.fontSize) * 1.5);
         const heroEl = articleEl.querySelector('[data-jread-injected-title="1"]')
@@ -4301,7 +4327,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 通則 selector：祖先到 articleEl 為止，掃所有 display:flex / display:grid 且
       // 直接子含 picture / img / figure 的元素，runtime 設 inline !important
       // 蓋過原站 stylesheet。CSS :has() jsdom 不支持，改 runtime 解決。
-      const galleryFlex = [];
       // v0.7.144：原 code 對主文每個後代跑 getComputedStyle 找 flex/grid + 含
       // picture/img/figure 直接子的 wrapper。大頁面 + 多次設定變更時負荷重。
       // 改為先 querySelectorAll('picture, img, figure') 收媒體節點 → 各自往上
@@ -4395,7 +4420,6 @@ html.${HTML_CLASS}.jread-orion body {
       //     不含 "ratio" 漏掉 static-flow 配套）→ 還原 aspect-ratio 避免裁切。內圖
       //     尚未載入（高度 0）時仍 reset：未載圖沒有要保護的高度，box 跟著塌、載入
       //     後 height:auto 自然撐起。
-      const ratioBoxes = [];
       for (const el of mediaAncestors) {
         if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
         const win = el.ownerDocument?.defaultView;
@@ -4441,7 +4465,6 @@ html.${HTML_CLASS}.jread-orion body {
       //     （內容 absolute、固定 height 是唯一高度來源）→ 還原避免裁切。
       //   - 內圖含 caption 的 figure：height 本來就 auto（內容驅動），reset 無變化
       //     → 差 0 略過，caption 空間不受影響。
-      const fixedHeightBoxes = [];
       for (const el of mediaAncestors) {
         if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
         if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
@@ -4499,11 +4522,9 @@ html.${HTML_CLASS}.jread-orion body {
       //     比例接近 1、不動。
       // 每塌一層後重量 anchor 寬：內層 splitter 塌掉後 anchor 已撐滿，外層若非
       // splitter 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
-      const textColFlex = [];
       const textColSeen = new Set();
       // v0.8.69：lazy content img 載入後才補跑 de-column 的 load listener，
       // restore 時清除尚未觸發者（避免退出後仍在 detach 節點上塌欄 / 洩漏）。
-      const decolumnLoadCleanup = [];
       // galleryFlex 已塌成 block 的容器不再重複塌（避免 restore 雙重還原）。
       for (const g of galleryFlex) { if (g.el) textColSeen.add(g.el); }
       {
@@ -4726,7 +4747,6 @@ html.${HTML_CLASS}.jread-orion body {
       // 在某些 WP theme 下 computed 仍未生效（疑似 WP 動態注入的 inline style
       // 或 container query 機制覆蓋）。inline !important 是 CSS 最高優先級，
       // 任何 stylesheet rule 都無法打敗。
-      const wpConstrained = [];
       const CONTENT_BLOCK_SEL = 'p, h1, h2, h3, h4, h5, h6, ul, ol, dl';
       for (const el of articleEl.querySelectorAll(CONTENT_BLOCK_SEL)) {
         const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
@@ -4760,7 +4780,6 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.6.24：同上——翻頁 multicol 下 cardRight 幾何不可靠（第 2 欄起的正常
       // table/pre 全被誤判溢出、套上 display:block + overflow-x:auto 造成與第 1
       // 頁排版不一致），gate 在非翻頁模式。
-      const wideScroll = [];
       if (!opts.pagedMode) {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
@@ -4799,9 +4818,19 @@ html.${HTML_CLASS}.jread-orion body {
       // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
       // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
       const panguEnabled = s.pangu !== false;
-      const panguSnap = panguEnabled ? panguInstall(articleEl) : null;
+      panguSnap = panguEnabled ? panguInstall(articleEl) : null;
 
-      return { articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, decorResetMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap };
+      return snapshotNow();
+      } catch (err) {
+        // v1.6.27:apply 中途 throw → 半套 DOM 副作用（已注入 stylesheet /
+        // 已標 attr / 已寫 inline style）以部分快照自我還原後再拋，上層
+        // main.js catch 走 exitReaderModeImpl 接手 cleaner 側。還原自身再
+        // 失敗只留 console 訊號，原始錯誤照拋（對 caller 語意不變）。
+        try { styler.restore(articleEl, snapshotNow()); } catch (restoreErr) {
+          try { console.warn('[JRead] styler.apply 半套還原失敗:', restoreErr); } catch (_) { /* noop */ }
+        }
+        throw err;
+      }
     },
 
     /**
