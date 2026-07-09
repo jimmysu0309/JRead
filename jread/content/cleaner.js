@@ -1844,12 +1844,20 @@
   // 一份 bare <img> 直接 insertBefore 原容器，hide 原容器。clone 在 article
   // normal flow 中吃 styler 的 max-width:100% = card content width，自然
   // 等比縮放。restore() 時 removeChild clone + unhide 原容器。
+  // v1.6.28：多 carousel 支援——v0.7.203 原版處理完第一個命中就 break（當時
+  // 情境只有 yamatomichi 單一 hero Swiper、無註解說明），同頁第二個獨立
+  // carousel 不處理、繼續超寬破版。改為計數上限 OVERWIDE_PROMOTE_MAX：
+  // 保留原 break 的爆炸半徑保守精神（誤判簽名時最多藏 N 個分支、不會整頁
+  // 連環藏），又接得到多 carousel。同一 carousel 內其餘 img 由迴圈開頭的
+  // closest('[data-jread-hidden]') guard 自動略過，不會重複 promote。
+  const OVERWIDE_PROMOTE_MAX = 5;
   function promoteOverwideImages(articleEl, hidden) {
     if (!articleEl) return;
     // clean() 時 styler 尚未 apply card CSS，不能靠 getBoundingClientRect
     // 判斷超寬。改用結構特徵：ancestor 有 JS 設的 inline width > 720px
     // （Swiper 等 library 慣例 pattern）。
     const MAX_CARD = 720;
+    let promoted = 0;
     for (const img of articleEl.querySelectorAll('img')) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
       if (img.closest && img.closest('[data-jread-hidden="1"]')) continue;
@@ -1888,7 +1896,8 @@
       if (Array.isArray(hidden)) {
         hidden.push({ el: clone, __promotedImg: true });
       }
-      break;
+      promoted++;
+      if (promoted >= OVERWIDE_PROMOTE_MAX) break;
     }
   }
 

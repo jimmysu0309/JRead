@@ -393,16 +393,55 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.ok(sent && sent.type === NS.MSG.OPEN_READER, 'openReader 必須送 OPEN_READER 訊息');
     });
 
-    it('切換分頁模式：翻轉 storage.sync.pagedMode（false→true）', () => {
+    // v1.6.28：togglePaged 讀改寫串進 promise 佇列（TOCTOU 修法）——鏈頭是原生
+    // Promise.resolve()，get/set 不再同步執行，斷言前 flush microtask
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+
+    it('切換分頁模式：翻轉 storage.sync.pagedMode（false→true）', async () => {
       const { NS, chrome } = setup({ store: { pagedMode: false } });
       NS.floating.togglePaged();
+      await tick();
       assert.strictEqual(chrome._data.pagedMode, true, 'pagedMode 必須被翻成 true');
     });
 
-    it('切換分頁模式：true→false', () => {
+    it('切換分頁模式：true→false', async () => {
       const { NS, chrome } = setup({ store: { pagedMode: true } });
       NS.floating.togglePaged();
+      await tick();
       assert.strictEqual(chrome._data.pagedMode, false);
+    });
+
+    it('快速連點兩下：兩次都生效（TOCTOU regression，v1.6.28）', async () => {
+      const { NS, chrome } = setup({ store: { pagedMode: false } });
+      // 把 get/set 換成「真非同步 + 人工延遲」——舊寫法下第二下的 get 會搶在
+      // 第一下的 set 落地前執行（兩下同讀 false、同寫 true ＝ 第二下沒反應）
+      const data = chrome._data;
+      const setLog = [];
+      chrome.storage.sync.get = (defaults) => new Promise((resolve) => {
+        setTimeout(() => resolve({ pagedMode: ('pagedMode' in data) ? data.pagedMode : defaults.pagedMode }), 5);
+      });
+      chrome.storage.sync.set = (obj) => new Promise((resolve) => {
+        setTimeout(() => { Object.assign(data, obj); setLog.push(obj.pagedMode); resolve(); }, 5);
+      });
+      NS.floating.togglePaged();
+      NS.floating.togglePaged(); // 立刻連點第二下
+      await new Promise((r) => setTimeout(r, 60));
+      assert.deepStrictEqual(setLog, [true, false],
+        '兩下必須各自生效（true 再 false），不可兩下都寫 true');
+      assert.strictEqual(data.pagedMode, false, '連點兩下最終回到原狀');
+    });
+
+    it('佇列中某次失敗不卡死後續點擊（reject 後回 resolved 態）', async () => {
+      const { NS, chrome } = setup({ store: { pagedMode: false } });
+      const data = chrome._data;
+      let failNext = true;
+      chrome.storage.sync.get = (defaults) => failNext
+        ? (failNext = false, Promise.reject(new Error('storage 掛了')))
+        : Promise.resolve({ pagedMode: ('pagedMode' in data) ? data.pagedMode : defaults.pagedMode });
+      NS.floating.togglePaged(); // 這下失敗
+      NS.floating.togglePaged(); // 這下必須照常生效
+      await new Promise((r) => setTimeout(r, 20));
+      assert.strictEqual(data.pagedMode, true, '失敗後的下一次點擊必須照常翻轉');
     });
   });
 

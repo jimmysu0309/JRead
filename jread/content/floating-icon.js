@@ -213,13 +213,21 @@
   // 切換分頁模式：翻轉 storage.sync.pagedMode；閱讀模式啟動時 content 端
   // onChanged → reapply 即時生效，未啟動時下次進閱讀模式生效（與 popup 切換
   // 同一份事實）。本地動作、不依賴 SW。
+  // v1.6.28：讀改寫串進 promise 佇列（TOCTOU 修法）——舊寫法「讀目前值 → 寫
+  // 相反值」兩段非同步之間有時間差，快速連點時第二下的讀搶在第一下的寫落地
+  // 前執行，兩下讀到同一舊值、寫入同一新值＝第二下看起來沒反應。佇列讓每次
+  // toggle 的讀保證等前一次的寫完成，連點 N 下＝正確翻轉 N 次。單次失敗
+  // （reject）由尾端 catch 吞掉、佇列回到 resolved 態，不會卡死後續點擊。
+  let togglePagedQueue = Promise.resolve();
   function togglePaged() {
     // v0.8.164：browser.storage.sync get/set 原生 Promise（reject 即 no-op）。
     try {
-      browser.storage.sync.get({ pagedMode: false }).then((s) => {
-        const next = !(s && s.pagedMode);
-        return browser.storage.sync.set({ pagedMode: next }).then(() => {
-          if (NS.toast) NS.toast.show('分頁模式：' + (next ? '開' : '關'), { kind: 'info' });
+      togglePagedQueue = togglePagedQueue.then(() => {
+        return browser.storage.sync.get({ pagedMode: false }).then((s) => {
+          const next = !(s && s.pagedMode);
+          return browser.storage.sync.set({ pagedMode: next }).then(() => {
+            if (NS.toast) NS.toast.show('分頁模式：' + (next ? '開' : '關'), { kind: 'info' });
+          });
         });
       }).catch(() => {});
     } catch (_e) {}
