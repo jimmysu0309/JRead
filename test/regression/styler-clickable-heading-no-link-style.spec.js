@@ -53,10 +53,16 @@ describe('styler — clickable 標題維持標題樣式（v0.8.129）', () => {
       'heading-link 中和區塊必須 text-decoration: none（移除底線）');
   });
 
-  it('注入 CSS 含「<a> 包住 heading」中和規則（a:has(:is(h1..h6))）', () => {
+  it('注入 CSS 含「<a> 包住 heading」中和規則（heading-link marker，v1.6.30）', () => {
+    // v1.6.30（#13 insertion invalidation）：原 a:has(:is(h1..h6)) 的「 *」後代
+    // 變體是整頁 recalc 放大器，訊號載體改 apply() 期 markHeadingLinks 標
+    // data-jread-heading-link（標記行為 forcing 在 insertion-invalidation.spec）。
     const css = buildCss();
-    assert.ok(/a:not\([^)]*\):has\(:is\(h1,h2,h3,h4,h5,h6\)\)/.test(css),
-      'CSS 必須含 a:has(:is(h1..h6)) selector（heading 被連結包住的結構）');
+    assert.ok(/a\[data-jread-heading-link="1"\]:not\([^)]*\)/.test(css),
+      'CSS 必須含 a[data-jread-heading-link="1"] selector（heading 被連結包住的結構）');
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(!/a:not\([^)]*\):has\(:is\(h1/.test(stripped),
+      '舊 a:has(:is(h1..h6)) selector 不得回歸（#13 放大器）');
   });
 
   it('一般內文連結仍保留 link 樣式（body-link 規則未被破壞）', () => {

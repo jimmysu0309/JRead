@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!-- #13 insertion invalidation（v1.6.30）最小重現 fixture。
+     結構對應三個 :has 放大器改 marker attr 後的 JS 標記端：
+     1. aspect 容器（class 含 ratio / placeholder）內含 iframe → EMBED_WRAP
+     2. <a><h1> permalink 形 → HEADING_LINK
+     3. 容器直接子 img 被 cleaner 隱藏 → HIDDENMEDIA_WRAP（cleaner hide() 端）-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Insertion invalidation fixture</title>
+  <meta property="og:title" content="Insertion invalidation fixture">
+</head>
+<body>
+  <article id="main-article">
+    <a id="wrapping-heading-link" href="/post/1"><h1>Insertion invalidation fixture</h1></a>
+    <p>首段內文。這裡放一段足夠長的中文文字讓 detector 的內容密度啟發式有 signal 可收，
+       段落長度需要超過門檻才不會被當成雜訊，因此多寫幾句湊足字數與逗號，逗號，逗號。</p>
+    <div class="video-placeholder" id="embed-with-iframe">
+      <iframe src="about:blank" title="embed"></iframe>
+    </div>
+    <div class="ratio-box" id="ratio-no-iframe">
+      <img src="pic.jpg" alt="內文圖" id="visible-img">
+    </div>
+    <p>第二段內文。同樣需要足夠的長度與標點符號來累積 contentScore，讓主文容器在
+       候選清單中勝出，避免 fixture 過小導致 detector 回 null 的偽陰性，逗號，逗號。</p>
+    <div id="hero-wrap">
+      <img src="hero.jpg" alt="hero" id="hero-img">
+      <img src="hero2.jpg" alt="hero2" id="hero-img-2">
+    </div>
+    <figure id="pic-wrap">
+      <picture id="hero-picture"><img src="hero3.jpg" alt="p"></picture>
+    </figure>
+    <p>第三段內文。<a id="plain-link" href="/other">一般連結</a>不得被標 heading-link，
+       只有整顆包住標題的連結才標。再補一些字數讓段落夠長，逗號，逗號，逗號。</p>
+    <div id="late-mount-host"></div>
+  </article>
+</body>
+</html>

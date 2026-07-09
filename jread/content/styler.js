@@ -77,6 +77,33 @@
   // 填滿 wrapper——否則媒體置中規則的 margin:auto 對 abs-pos iframe 會解出
   // 非零 left/right 把 iframe 推出 wrapper 偏右破版（thenewslens 實證）。
   const FILL_IFRAME_ATTR = 'data-jread-fill-iframe';
+  // v1.6.30（#13 insertion invalidation）：stylesheet 內「:has() 錨點選擇器
+  // 接萬用後代尾巴（`X:has(...) *`）」是 Chromium style engine 的效能地雷——
+  // 只要 stylesheet 內同時存在任一 :has 規則（觸發器）與任一「:has 錨點 + ` *`
+  // 尾巴」規則（放大器），reader mode 下每次 DOM 插入都強制整頁 style recalc
+  // （wiki 37K 節點實測 600 個中性節點插入 recalc 65s；拔掉放大器後 29ms，
+  // 2000×）。SPA 站 hydration / lazy-load 持續插入時這是主要捲動卡頓源。
+  // 結構性不變式：**buildCss 內禁止寫「含 :has 的複合選擇器 + 萬用後代尾巴」**
+  // ——需要「錨點 + 後代」語意時，一律改成 apply() 期 JS 標記 attr（下列三個
+  // marker）+ attr-keyed CSS，動態場景由 remarkDynamicMarkers 接（cleaner 的
+  // dynamic-append observer 轉呼）。純錨點（無尾巴）的 :has 規則保留無妨
+  // （殘餘成本 0.2ms/插入，換到晚 mount 媒體零 timing 風險）。
+  //
+  // 三個 marker：
+  // 1. EMBED_WRAP_ATTR：aspect 容器（[class*=placeholder/ratio/object-fit]）
+  //    內含 iframe = responsive 影片嵌入，豁免 static-flow 配套（取代原
+  //    `:not(:has(iframe))` gate，v0.8.155 語意不變）。
+  // 2. HEADING_LINK_ATTR：包住 heading 的 <a>（<a><h1>…</h1></a> permalink
+  //    形），連結色規則回退 inherit（取代原 `a:has(:is(h1..h6))`，v0.8.129
+  //    語意不變）。
+  // 3. HIDDENMEDIA_WRAP_ATTR：直接子有被 cleaner 隱藏的 img / picture 的容器，
+  //    min-height 解除（取代原 `*:has(> img[data-jread-hidden]) *`，v0.8.59
+  //    語意不變）。設定端在 cleaner hide()（隱藏 img/picture 的當下標 parent，
+  //    與原 :has 對 data-jread-hidden attr 的反應同刻生效）、cleaner restore()
+  //    清除；本檔只負責 CSS 端。
+  const EMBED_WRAP_ATTR = 'data-jread-embed-wrap';
+  const HEADING_LINK_ATTR = 'data-jread-heading-link';
+  const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
   // v0.8.49：「div 當段落」標記。部分 CMS（upmedia 等）把主文段落輸出成無
   // class 的裸 <div>（不是 <p>），BODY_TEXT_SEL 列舉的段落 tag 都不命中 →
   // 使用者 fontSize / fontFamily / lineHeight / fontWeight 設定對主文整段失效、
@@ -825,10 +852,12 @@ html [${ARTICLE_ATTR}="1"] {
 }
 /* 標題 clone 內的連結（permalink 自連結 <h1><a> 或 <a><h1>）回退繼承色 +
    無底線，維持原站標題視覺（與 articleEl 內 v0.8.129 同效；本元素在 articleEl
-   外故需獨立一份）。用 :is()/:has() 寫法、刻意不寫裸 a 選擇器——避開 styler.spec
-   「Auto 下不得對 a 下 rule」forcing function。 */
+   外故需獨立一份）。用 :is()/marker 寫法、刻意不寫裸 a 選擇器——避開 styler.spec
+   「Auto 下不得對 a 下 rule」forcing function。
+   v1.6.30：<a><h1> 形原用 a:has(:is(h1..h6))，#13 效能改 HEADING_LINK_ATTR
+   marker（markHeadingLinks 的掃描範圍含 promoted-outside clone）。 */
 [data-jread-promoted-outside="1"] :is(h1,h2,h3,h4,h5,h6) a,
-[data-jread-promoted-outside="1"] a:has(:is(h1,h2,h3,h4,h5,h6)) {
+[data-jread-promoted-outside="1"] a[${HEADING_LINK_ATTR}="1"] {
   color: inherit !important;
   text-decoration: none !important;
 }
@@ -1104,7 +1133,12 @@ ${MEDIA_CAP_SEL} {
    0 高 + overflow:hidden 把 166px picture 整個裁掉 → hero 整張不見（Jimmy
    2026-06-16 截圖回報）。把 ratio 容器後代拉回 static，overlay 正常 flow、
    height:auto 撐到 picture 實際高度，hero 重新顯示。
-   v0.8.155：三條選擇器各補 :not(:has(iframe))——aspect 容器若內含 iframe 是
+   v0.8.155→v1.6.30：三條選擇器各補 :not([EMBED_WRAP_ATTR])（原為
+   :not(:has(iframe))，#13 效能改 marker attr——本規則帶「 *」萬用後代尾巴，
+   與任一 :has 規則共存即觸發整頁 insertion invalidation，見檔頭 v1.6.30
+   不變式註解；EMBED_WRAP_ATTR 由 apply() 的 markEmbedWrapIframes 標記、
+   晚 mount iframe 由 remarkDynamicMarkers 補標，語意不變）——aspect 容器
+   若內含 iframe 是
    responsive 影片嵌入（YouTube/Vimeo/TED 等 WP wp-embed / Substack / Medium
    慣例：wrapper position:relative + ::before padding-top 16:9 hack 撐高 + iframe
    position:absolute inset:0 填滿）。這條 static-flow 配套是給「圖片塌陷容器」
@@ -1117,9 +1151,9 @@ ${MEDIA_CAP_SEL} {
    :has(iframe) 子樹後 wrapper 維持 relative、iframe 維持 absolute，下方
    FILL_IFRAME 機制接手 pin 回 inset:0 填滿 aspect box。圖片塌陷容器無 iframe、
    不受此排除影響；圖片本身另有 :has(>img) static 配套（line ~1062）兜底。 */
-[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]):not(:has(iframe)) *,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]:not([${PLAYER_ATTR}="1"]):not(:has(iframe)) *,
-[${ARTICLE_ATTR}="1"] [class*="object-fit" i]:not([${PLAYER_ATTR}="1"]):not(:has(iframe)) * {
+[${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) *,
+[${ARTICLE_ATTR}="1"] [class*="ratio" i]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) *,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) * {
   position: static !important;
   top: auto !important;
   left: auto !important;
@@ -1272,12 +1306,15 @@ ${MEDIA_DIRECT_WRAP_SEL} {
    2026-06-14 截圖揭穿）。上面 :has(> img) 規則只 reset「直接含媒體的容器」自身，
    但 min-height 是掛在「標題疊圖層」這個 sibling 子樹的 descendant 上、漏網。
    通則：任何「直接子是被隱藏媒體」的容器，其自身與後代都不該再為那張不存在的
-   圖保留 min-height。keyed on JRead 自己的 data-jread-hidden marker——只在 hero
-   真的被隱藏時觸發，不誤傷可見圖容器（可見圖容器走上面 :has(> img) 撐高）。 */
-[${ARTICLE_ATTR}="1"] *:has(> img[data-jread-hidden="1"]),
-[${ARTICLE_ATTR}="1"] *:has(> img[data-jread-hidden="1"]) *,
-[${ARTICLE_ATTR}="1"] *:has(> picture[data-jread-hidden="1"]),
-[${ARTICLE_ATTR}="1"] *:has(> picture[data-jread-hidden="1"]) * {
+   圖保留 min-height。keyed on JRead 自己的 hidden marker——只在 hero
+   真的被隱藏時觸發，不誤傷可見圖容器（可見圖容器走上面 :has(> img) 撐高）。
+   v1.6.30（#13 效能）：原寫法「*:has(> img[data-jread-hidden="1"]) *」是
+   probe 實測最重的單條放大器（wiki 600 節點插入單條 37s＝每次插入整頁
+   recalc，見檔頭 v1.6.30 不變式註解）。改由 cleaner hide() 在隱藏 img /
+   picture 的當下對 parentElement 標 HIDDENMEDIA_WRAP_ATTR（同刻生效、無
+   timing 縫隙；動態階段的 hide 也走同一條 hide() path），restore() 清除。 */
+[${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"],
+[${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"] * {
   min-height: 0 !important;
 }
 /* ===== Carousel / slider 版面中和（v0.8.67）=====
@@ -1818,15 +1855,19 @@ html [${ARTICLE_ATTR}="1"] dl {
    上方 body-link 規則會把整個大標題染成 theme.link 藍字 + 底線，看起來像一條
    連結而非標題。通則：heading（h1-h6）內含或包住的 <a> 一律回退成繼承色
    （inherit → reader text color，跟非連結標題同色）+ 無底線，維持原站標題視覺。
-   純結構訊號（heading tag），不綁站點 / class。:has 已在本檔他處使用（a:has(>img)）。
-   specificity (0,2,2) > body-link 規則 (0,2,1) 且 source order 在後，穩定覆蓋。 */
+   純結構訊號（heading tag），不綁站點 / class。
+   v1.6.30（#13 效能）：「包住 heading 的 <a>」原用 a:has(:is(h1..h6)) 選——
+   其「 *」後代變體是放大器（見檔頭 v1.6.30 不變式註解），改由 apply() 的
+   markHeadingLinks 標 HEADING_LINK_ATTR（晚 mount 由 remarkDynamicMarkers
+   補標）。specificity：heading 內 a (0,2,2)、marker a (0,3,1)，均 >
+   body-link 規則 (0,2,1) 且 source order 在後，穩定覆蓋。 */
 [${ARTICLE_ATTR}="1"] :is(h1,h2,h3,h4,h5,h6) a:not([${PLAYER_ATTR}="1"]),
-[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]):has(:is(h1,h2,h3,h4,h5,h6)) {
+[${ARTICLE_ATTR}="1"] a[${HEADING_LINK_ATTR}="1"]:not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
   text-decoration: none !important;
 }
 [${ARTICLE_ATTR}="1"] :is(h1,h2,h3,h4,h5,h6) a:not([${PLAYER_ATTR}="1"]) *,
-[${ARTICLE_ATTR}="1"] a:not([${PLAYER_ATTR}="1"]):has(:is(h1,h2,h3,h4,h5,h6)) * {
+[${ARTICLE_ATTR}="1"] a[${HEADING_LINK_ATTR}="1"]:not([${PLAYER_ATTR}="1"]) * {
   color: inherit !important;
 }
 /* articleEl 內裝飾性 border 清除：原站常用 border / border-left 作為品牌 accent
@@ -3072,6 +3113,43 @@ html.${HTML_CLASS}.jread-orion body {
     }
   }
 
+  // ===== v1.6.30（#13）:has 放大器的 JS 標記端（見檔頭 v1.6.30 不變式註解）=====
+  // aspect 容器（placeholder / ratio / object-fit class）內含 iframe = responsive
+  // 影片嵌入 → 標 EMBED_WRAP_ATTR 豁免 static-flow 配套（v0.8.155 語意）。
+  // 已標過的跳過（idempotent，動態 remark 重跑安全）；新標的 push 進 marked
+  // 供 restore 移除。
+  const EMBED_WRAP_CANDIDATE_SEL =
+    '[class*="placeholder" i], [class*="ratio" i], [class*="object-fit" i]';
+  function markEmbedWrapIframes(articleEl, marked) {
+    for (const el of articleEl.querySelectorAll(EMBED_WRAP_CANDIDATE_SEL)) {
+      if (el.getAttribute(EMBED_WRAP_ATTR) === '1') continue;
+      if (el.querySelector('iframe')) {
+        el.setAttribute(EMBED_WRAP_ATTR, '1');
+        marked.push(el);
+      }
+    }
+  }
+  // 包住 heading 的 <a>（<a><h1>…</h1></a> permalink 形）→ 標 HEADING_LINK_ATTR
+  // 讓連結色規則回退 inherit（v0.8.129 語意）。掃描範圍：articleEl 子樹 +
+  // promoted-outside 標題 clone（v0.8.131 放 articleEl 外，cleaner 在 styler
+  // apply 之前建立，此時已存在）。
+  function markHeadingLinks(articleEl, marked) {
+    const scopes = [articleEl, ...document.querySelectorAll('[data-jread-promoted-outside="1"]')];
+    for (const scope of scopes) {
+      for (const a of scope.querySelectorAll('a')) {
+        if (a.getAttribute(HEADING_LINK_ATTR) === '1') continue;
+        if (a.querySelector('h1,h2,h3,h4,h5,h6')) {
+          a.setAttribute(HEADING_LINK_ATTR, '1');
+          marked.push(a);
+        }
+      }
+    }
+  }
+  // 動態補標狀態：apply() 標記完成後填入、restore() 清空。cleaner 的
+  // dynamic-append observer 對 articleEl 內新增節點轉呼 remarkDynamicMarkers
+  // （晚 mount 的 responsive embed iframe / heading link）。
+  let activeMarkState = null;
+
   const styler = {
     /**
      * 套用閱讀模式排版。
@@ -3216,6 +3294,8 @@ html.${HTML_CLASS}.jread-orion body {
       const contentImgLoadCleanup = [];
       const playerMarked = [];
       const fillIframes = [];
+      const embedWrapMarked = [];
+      const headingLinkMarked = [];
       let textDivMarked = [];
       let cjkJustifyMarked = [];
       let decorResetMarked = [];
@@ -3224,7 +3304,7 @@ html.${HTML_CLASS}.jread-orion body {
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, textDivMarked, cjkJustifyMarked, decorResetMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
       try {
       // ──────────────────────────────────────────────────────────────────
 
@@ -3500,6 +3580,14 @@ html.${HTML_CLASS}.jread-orion body {
           playerMarked.push(el);
         }
       }
+
+      // v1.6.30（#13）：EMBED_WRAP / HEADING_LINK 標記。必須在下方 FILL_IFRAME
+      // 量測**之前**跑——EMBED_WRAP_ATTR 讓 static-flow 規則豁免 embed 子樹，
+      // FILL_IFRAME 的 getComputedStyle 才量得到 absolute（與原 :not(:has(iframe))
+      // 的同刻語意一致；量測會 flush style、attr 已就位）。
+      markEmbedWrapIframes(articleEl, embedWrapMarked);
+      markHeadingLinks(articleEl, headingLinkMarked);
+      activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked };
 
       // v0.8.86：responsive embed 的 abs-pos iframe 標 [FILL_IFRAME_ATTR]，讓
       // CSS pin 回填滿 wrapper（見上方 FILL_IFRAME_ATTR rule 註解）。必須在
@@ -4984,6 +5072,18 @@ html.${HTML_CLASS}.jread-orion body {
           if (ifr && ifr.removeAttribute) ifr.removeAttribute(FILL_IFRAME_ATTR);
         }
       }
+      // v1.6.30（#13）：移除 embed-wrap / heading-link 標記 + 關閉動態補標
+      activeMarkState = null;
+      if (Array.isArray(snapshot.embedWrapMarked)) {
+        for (const el of snapshot.embedWrapMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(EMBED_WRAP_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.headingLinkMarked)) {
+        for (const el of snapshot.headingLinkMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(HEADING_LINK_ATTR);
+        }
+      }
       // v0.8.49：移除「div 當段落」標記
       if (Array.isArray(snapshot.textDivMarked)) {
         for (const el of snapshot.textDivMarked) {
@@ -5227,6 +5327,26 @@ html.${HTML_CLASS}.jread-orion body {
           }
         }
       }
+    },
+
+    /**
+     * v1.6.30（#13）：動態補標——cleaner 的 dynamic-append observer 對
+     * articleEl 內新增節點轉呼。晚 mount 的 responsive embed iframe（v0.8.155
+     * 場景：WP embed lazy 注入）與 heading link 補標記，取代原 :has 的自動
+     * 反應（差一個 observer microtask，視覺無感）。gate 在「新增子樹含
+     * iframe / heading」才全掃（罕見事件；平時每節點只付兩個 querySelector）。
+     * @param {Element} node dynamic-append 的新增節點（articleEl 內）
+     */
+    remarkDynamicMarkers(node) {
+      const s = activeMarkState;
+      if (!s || !s.articleEl || !s.articleEl.isConnected) return;
+      if (!node || node.nodeType !== 1 || !s.articleEl.contains(node)) return;
+      const hasIframe = (node.matches && node.matches('iframe')) ||
+        (node.querySelector && node.querySelector('iframe'));
+      if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked);
+      const hasHeading = (node.matches && node.matches('h1,h2,h3,h4,h5,h6,a')) ||
+        (node.querySelector && node.querySelector('h1,h2,h3,h4,h5,h6'));
+      if (hasHeading) markHeadingLinks(s.articleEl, s.headingLinkMarked);
     }
   };
 
