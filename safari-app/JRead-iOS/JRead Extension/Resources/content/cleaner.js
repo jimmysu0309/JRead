@@ -5787,6 +5787,96 @@
     }
   }
 
+  // ---- 主文內：空殼媒體 embed placeholder（v1.7.0 Wired CNE 實證）----------
+  //
+  // 場景：Condé Nast（Wired / Vogue / GQ 等）CMS 在段落間插入 CNE 影片 /
+  // 音訊 embed（`<figure class="cne-video-embed">` 內含 `<iframe>`）。實機
+  // 觀察：閱讀模式接手後 player 腳本沒 init，iframe 的 `src` 是空字串、
+  // 內部完全沒渲染任何東西——但外層 figure / 容器**仍保留 player 的預留
+  // 高度**（Wired 實測 1081px）。結果主文中段冒出「一大段空白」（Jimmy
+  // 2026-07-09 回報），視覺上像文章斷掉。
+  //
+  // 為何既有規則漏網：
+  //   - hideInsideArticleThirdPartyIframes 走 isInPreserved，figure 屬
+  //     PRESERVE_SEL、iframe 被保護不砍
+  //   - hideInsideArticleVideoInterludes 需要「>= 20 字外連標題 a」，這種
+  //     空 embed 一個字都沒有 → 不命中
+  //
+  // 結構性通則（不綁 hostname / class / data-testid，硬規則 3）：
+  //   - `<figure>` 內含 `<iframe>`，且**每個 iframe 的 src 皆空 / about:blank**
+  //     （player 從未載入的決定性訊號——真 embed 如 YouTube 一定有實 src）
+  //   - **且** figure 內無任何 `<img>`（排除有 poster 縮圖的 embed，那種還有
+  //     東西可看、保留）
+  //   - **且** figure 內無帶 src / `<source>` 的 `<video>`（排除真影片）
+  //   - **且** figure 的 textContent 為空（排除有圖說 / 標題文字的 embed）
+  //   → 判定為空殼 placeholder，hide 整個 figure（外層預留高度容器隨之塌陷）
+  //
+  // 為何純 DOM 屬性判定、不量 rect：本規則的 forcing spec 跑在 jsdom，
+  // getBoundingClientRect / innerText / naturalWidth 全不可靠；改用 iframe
+  // src / img 存在性 / textContent 這類 jsdom 與真實 Chrome 一致的訊號。
+  //
+  // 為何要動態兜底（checkDynamicNoise 共用本 predicate）：CNE player 靠
+  // intersection observer / 腳本 lazy-inject 那個空 iframe，常晚於 clean()
+  // 才出現（實測同頁 reload 有時 clean 當下根本沒 iframe、有時才注入 1081px
+  // 空殼）。純靜態 sweep 會 flaky 漏接——與 Substack recommendation / JWPlayer
+  // 同款 lazy-inject-after-clean race，故靜態 + 動態雙軌共用此 predicate。
+  function figureIsHollowMediaEmbed(fig, articleEl) {
+    if (!fig || fig.nodeType !== 1 || fig.tagName !== 'FIGURE') return false;
+    if (fig.dataset && fig.dataset.jreadHidden === '1') return false;
+    if (fig === articleEl) return false;
+    if (fig.contains && articleEl && fig.contains(articleEl)) return false;
+    const iframes = fig.querySelectorAll('iframe');
+    if (!iframes.length) return false;
+    // 每個 iframe 都必須是空 src（未載入的 player placeholder 訊號）
+    for (const f of iframes) {
+      const s = (f.getAttribute('src') || '').trim();
+      if (s !== '' && s !== 'about:blank') return false;
+    }
+    // 有 poster 縮圖（<img>）→ 還有東西可看，保留
+    if (fig.querySelector('img')) return false;
+    // 有帶 src / <source> 的真 <video> → 保留
+    for (const v of fig.querySelectorAll('video')) {
+      if ((v.getAttribute('src') || '').trim() || v.querySelector('source')) return false;
+    }
+    // 有圖說 / 標題等可見文字 → 不是空殼，保留
+    if (norm(fig.textContent || '')) return false;
+    return true;
+  }
+
+  function hideInsideArticleHollowMediaEmbeds(articleEl, hidden) {
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (figureIsHollowMediaEmbed(fig, articleEl)) hide(fig, hidden);
+    }
+  }
+
+  // 動態 lazy-inject 兜底（與靜態 hideInsideArticleHollowMediaEmbeds 共用
+  // figureIsHollowMediaEmbed）。三種 addedNode 時序都查：node 自身是 hollow
+  // figure、iframe 被注入既存空 figure（祖先查，涵蓋「先空 figure 後 inject
+  // iframe」hydrate 時序）、node 內含 hollow figure（外層 embed 容器整塊 inject）。
+  // 回傳是否有 hide（呼叫端據此決定是否 continue）。
+  //
+  // 為何 dynamic observer 端需獨立呼叫、不能只靠 checkDynamicNoise：hollow
+  // embed 載體是 `<figure>`（PRESERVE_SEL），observer callback 在呼叫
+  // checkDynamicNoise 之前就 `if (isInPreserved(node)) continue`，preserved 的
+  // figure / 其內 iframe node 會被短路。故本 helper 必須在 observer 的
+  // isInPreserved guard 之前呼叫（與 pinDynamicEmbedFallbackImgs 同款「刻意排在
+  // preserve 判定之前」）。
+  function hideHollowMediaEmbedFrom(articleEl, node, hiddenList) {
+    if (!articleEl.contains || !articleEl.contains(node)) return false;
+    if (figureIsHollowMediaEmbed(node, articleEl)) { hide(node, hiddenList); return true; }
+    if (node.closest) {
+      const ancFig = node.closest('figure');
+      if (ancFig && figureIsHollowMediaEmbed(ancFig, articleEl)) { hide(ancFig, hiddenList); return true; }
+    }
+    let any = false;
+    if (node.querySelectorAll) {
+      for (const fig of node.querySelectorAll('figure')) {
+        if (figureIsHollowMediaEmbed(fig, articleEl)) { hide(fig, hiddenList); any = true; }
+      }
+    }
+    return any;
+  }
+
   // ---- 主文內：JS 影片播放器函式庫 widget（v0.8.140 inc.com 實證）---------
   // 場景：站點在主文段落間注入「Featured Video / 推薦影片」widget——JWPlayer 等
   // JS 影片播放器函式庫實例化的播放器，內容與本文無關（inc.com Domino's 文章中
@@ -6814,6 +6904,11 @@
             if (NS.styler && NS.styler.remarkDynamicMarkers) {
               NS.styler.remarkDynamicMarkers(node);
             }
+            // v1.7.0：空殼媒體 embed（CNE player 晚注入的 src="" 空 iframe +
+            // 保留 player 高度）lazy 兜底。載體是 figure（PRESERVE_SEL），必須
+            // 排在下方 isInPreserved guard 之前，否則被短路漏接。命中即 continue
+            // （已整塊 hide，無需再走 keyword / button 等後續判定）。
+            if (hideHollowMediaEmbedFrom(articleEl, node, hiddenList)) continue;
           }
           if (isInPreserved(node)) continue;
 
@@ -7059,6 +7154,7 @@
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
+      safeRun(hideInsideArticleHollowMediaEmbeds, articleEl, hidden);
       safeRun(hideInsideArticleVideoPlayerWidgets, articleEl, hidden);
       safeRun(hideInsideArticleDecorativeHeroVideos, articleEl, hidden);
       // v0.8.48 三條新規則：須在 collapse / styler reflow 前跑（float / 寬度
