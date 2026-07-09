@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!--
+  最小重現：Wired (Condé Nast CMS) 主文中段空殼 CNE 影片 embed
+  Jimmy 2026-07-09 回報 https://www.wired.com/story/this-buried-apple-feature-...
+  「頁面中間有一大段空白」。
+
+  真實 DOM 結構（cage probe dump 結果）:
+    <div data-testid="cnevideoembed">                    <-- 保留高度的外層容器
+      <div data-testid="teaser-wrapper">
+        <figure class="cne-video-embed">                  <-- PRESERVE_SEL figure
+          <iframe src=""></iframe>                        <-- player 未 init、空 src
+        </figure>
+      </div>
+    </div>
+  實機量測：iframe src="" 不可見、figure 內 0 img / 0 可見文字，但外層容器
+  保留 ~1081px 高度 → 主文中段一大段空白。
+
+  漏網原因：
+    - hideInsideArticleThirdPartyIframes 走 isInPreserved，figure 屬
+      PRESERVE_SEL、iframe 被保護不砍
+    - hideInsideArticleVideoInterludes 需 >= 20 字外連標題 a，空 embed 無字不命中
+
+  cleaner rule hideInsideArticleHollowMediaEmbeds 條件（純 DOM 屬性、jsdom 可驗）:
+    figure 含 iframe 且每個 iframe src 空/about:blank
+    + figure 內無 <img>（無 poster）
+    + figure 內無帶 src/<source> 的 <video>
+    + figure textContent 為空
+    → hide 整個 figure
+
+  fixture 同放保護 case（真 YouTube embed / 有 poster 的空 iframe embed /
+  有圖說文字的空 embed / 真 lead 圖 figure），確認 rule 不誤殺合法主文媒體。
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta property="og:title" content="This Buried Apple Feature Turns an iPhone Into the Perfect Kids' Dumb Phone">
+  <title>This Buried Apple Feature Turns an iPhone Into the Perfect Kids' Dumb Phone | WIRED</title>
+</head>
+<body>
+  <article class="article main-content story" data-test="article-root">
+    <h1>This Buried Apple Feature Turns an iPhone Into the Perfect Kids' Dumb Phone</h1>
+
+    <!-- ====== 主文真實 lead 圖 figure（應保留）====== -->
+    <figure class="ContentHeaderLeadAssetContent" data-test="legit-lead-figure">
+      <img src="https://media.wired.com/photos/lead.jpg" alt="Photo illustration">
+      <figcaption>PHOTO-ILLUSTRATION: WIRED STAFF; GETTY IMAGES; COURTESY OF APPLE</figcaption>
+    </figure>
+
+    <p data-test="body-p-1">I have been looking at classic dumb phones for months. Not out of nostalgia, though the first phone I bought with my own money was the Nokia 8210, and I still think about it. But the day I have been dreading has come: it is finally time for my son to get his first phone.</p>
+
+    <p data-test="body-p-2">Come September, he will have to walk across town to school on his own. But if he is going to be walking around out in the world without me, then a tracking tag will not cut it. He is far too young to have unfettered access to the internet.</p>
+
+    <!-- ====== 空殼 CNE 影片 embed（應被 hide）====== -->
+    <div data-testid="cnevideoembed" data-test="hollow-video-container">
+      <div data-testid="teaser-wrapper">
+        <figure class="CneVideoEmbedFigure cne-video-embed" data-testid="video-embed-figure" data-test="hollow-video-figure">
+          <div data-testid="sticky-wrapper">
+            <div id="video-container">
+              <iframe src="" data-test="hollow-video-iframe"></iframe>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </div>
+    <!-- ====== END 空殼影片 ====== -->
+
+    <p data-test="body-p-3">In short, he needs a smartphone that is not a smartphone. As a family deeply embedded in the Apple ecosystem, we first looked to set draconian restrictions on my child's Apple account.</p>
+
+    <!-- ====== 空殼 CNE 音訊 embed（應被 hide，about:blank 變體）====== -->
+    <div data-testid="cneaudioembed" data-test="hollow-audio-container">
+      <figure class="CneAudioEmbedFigure cne-audio-embed" data-test="hollow-audio-figure">
+        <iframe src="about:blank" data-test="hollow-audio-iframe"></iframe>
+      </figure>
+    </div>
+    <!-- ====== END 空殼音訊 ====== -->
+
+    <p data-test="body-p-4">There are third-party apps such as Dumb Phone for iPhones, but what irks me is that they charge you for the privilege of removing access to applications.</p>
+
+    <!-- ====== 主文真實 YouTube embed（應保留：iframe 有實 src）====== -->
+    <figure data-test="legit-youtube-figure">
+      <iframe src="https://www.youtube.com/embed/abc123" data-test="legit-youtube-iframe"></iframe>
+      <figcaption>Video: Assistive Access walkthrough</figcaption>
+    </figure>
+    <!-- ====== END YOUTUBE ====== -->
+
+    <p data-test="body-p-5">Surely there must be a way to set up an iPhone as the perfect dumb phone for children, with access to only the apps you deem appropriate.</p>
+
+    <!-- ====== 空 iframe 但有 poster 縮圖（應保留：還有圖可看）====== -->
+    <figure data-test="legit-poster-figure">
+      <img src="https://media.wired.com/photos/poster.jpg" alt="Video poster">
+      <iframe src="" data-test="legit-poster-iframe"></iframe>
+    </figure>
+    <!-- ====== END POSTER ====== -->
+
+    <p data-test="body-p-6">It has been hiding in the iOS Accessibility menu the whole time. And, inexplicably, it is a feature Apple barely talks about.</p>
+
+    <!-- ====== 空 iframe 但有圖說文字（應保留：有文字內容）====== -->
+    <figure data-test="legit-caption-figure">
+      <iframe src="" data-test="legit-caption-iframe"></iframe>
+      <figcaption>My son's stripped-back iPhone running just six apps.</figcaption>
+    </figure>
+    <!-- ====== END CAPTION ====== -->
+
+    <p data-test="body-p-7">It's called Assistive Access. Introduced with iOS 17, it strips the interface down to a handful of large, high-contrast buttons that even a young child can navigate with ease.</p>
+  </article>
+</body>
+</html>

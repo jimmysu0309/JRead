@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.6.31**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.0**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -373,6 +373,7 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 - **印刷版出處聲明行**（`hideInsideArticlePrintEditionNote`）：`appear(s|ed) in print on/in` 句式 + 區塊總文字 <= 250 + 無長 p → 整行 hide（含 Order Reprints / Today's Paper / Subscribe 連結與分隔符 span）
 - **文末 curated 故事集連結卡**（`hideTailCuratedLinkLists`）：位於最後主文長段落之後的 `<section>`、>= 2 個 li 且每 li 含 `<p>` teaser 與站內連結（hostname 相同、pathname 不同、非 # anchor）、無 li 外長 p、文字量 < 主文 30%。guard：Wikipedia References / See also（li 無 p wrapper）、外站 citation list、listicle 主體（占比 > 30%）皆不命中
 - **JS 影片播放器函式庫 widget**（`hideInsideArticleVideoPlayerWidgets`，v0.8.140 inc.com 實證）：站點在主文段落間注入的「Featured Video / 推薦影片」widget（JWPlayer 等 JS 播放器，內容與本文無關）。anchor 在函式庫 root class `.jwplayer`（跨站通用簽章、非站點 class），ratio walk-up（父層文字量 > 當前 ×3 + 80 視為碰到主文 body 即停）找出注入 wrapper 整塊 hide；雙保險：wrapper 含 >= 100 chars 主文 `<p>`（不在播放器 root 內）→ 不 hide。**時序覆蓋**：靜態 clean()（`.jwplayer` 已存在）+ `checkDynamicNoise` 動態接（iOS 上 JWPlayer 在 clean() 之後才 init、observer subtree 捕捉新增的 `.jwplayer`）兩 path 共用 `hideVideoPlayerWidgetFrom`。編輯性影片（`<figure><video><figcaption>` / YouTube iframe embed）不走函式庫 root class、不命中。forcing：`inc-featured-video-jwplayer-widget.spec.js`
+- **空殼媒體 embed placeholder**（`hideInsideArticleHollowMediaEmbeds` / `figureIsHollowMediaEmbed`，v1.7.0 Wired CNE 實證）：Condé Nast CNE 影片/音訊 embed（`<figure class="cne-video-embed">` 內含 `<iframe>`）在閱讀模式接手後 player 腳本沒 init，iframe `src` 空、內部完全沒渲染，但外層容器仍保留 player 的預留高度（實測 1081px）→ 主文中段一大段空白。既有規則漏網：figure 屬 `PRESERVE_SEL`（`hideInsideArticleThirdPartyIframes` 走 `isInPreserved` 跳過 iframe）、`hideInsideArticleVideoInterludes` 需 >= 20 字外連標題 a 空 embed 不命中。predicate `figureIsHollowMediaEmbed`：figure 含 iframe 且**每個 iframe src 空/about:blank** + **無 `<img>`**（無 poster）+ **無帶 src/`<source>` 的 `<video>`** + **textContent 為空** → 空殼 placeholder、hide 整個 figure（外層預留高度容器塌陷）。純 DOM 屬性判定（不量 rect），jsdom 與真實 Chrome 一致。**時序覆蓋**：靜態 `hideInsideArticleHollowMediaEmbeds`（clean 當下 iframe 已存在）+ 動態 `hideHollowMediaEmbedFrom`（CNE 靠 intersection observer lazy-inject 空 iframe、常晚於 clean()）共用同一 predicate。動態端**必須排在 observer callback 的 `isInPreserved` continue guard 之前**（hollow embed 載體是 preserved figure，排在 guard 後會被短路漏接，與 `pinDynamicEmbedFallbackImgs` 同款刻意提前），三種注入時序全接（node 自身是 hollow figure / iframe 注入既存空 figure 的祖先查 / node 內含 hollow figure）。真 YouTube embed（iframe 有實 src）/ 有 poster 縮圖 / 有圖說文字的 embed 皆保留。forcing：`wired-hollow-cne-embed.spec.js`（靜態保護 case + 動態三時序 + 單一資料源）
 
 ### 主文內所有 interactive button 一律清除（無保留）
 
