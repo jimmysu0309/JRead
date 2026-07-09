@@ -82,6 +82,15 @@
   // NOISE source（tools/probe-c4-noise-tokens.js 驗過 byte-identical）。
   const NOISE_TOKEN_DEFS = [
     { t: 'paywall' }, { t: 'subscribe' }, { t: 'subscription' }, { t: 'newsletter[\\w-]*' },
+    // v1.6.31 culpium（Substack）實測：文末訂閱 widget wrapper
+    // `subscription-widget-wrap` > `subscription-widget` 內含一段 113 chars 的招攬
+    // 文案 p（「Join Fortune 500 CEOs, investment professionals, …. Subscribe now.」）
+    // → 觸發 wrapperContainsMainContentP 的「>= 100 chars 單一 p」guard，bare
+    // `subscription` weak token 命中卻被誤豁免殘留。與 related-* / more-* / discuss
+    // 家族同因（widget 招攬 p 過長誤觸內容保護）——「subscription widget」定義上就是
+    // 訂閱元件、絕非主文容器，標 strong 跳過內容保護 guard。通用（任何 subscription-
+    // widget 命名的站都清，非 hostname 特判）。
+    { t: 'subscription[-_]?widget', strong: true },
     { t: 'signup' }, { t: 'sign-up' }, { t: 'signin' }, { t: 'sign-in' }, { t: 'login' }, { t: 'register' },
     { t: 'promo' }, { t: 'promotion' }, { t: 'promote' },
     { t: 'advertisement' }, { t: 'advert' }, { t: 'adbox' }, { t: 'adsense' }, { t: 'adslot' },
@@ -2192,7 +2201,12 @@
   // 尾綴），class-based 規則完全不可靠；「整個容器文字僅一串計數」是跨站穩定
   // 的結構語意。為何要求 no <p>/heading + 含 a/img：避免誤殺剛好內容為「3
   // Likes」的正當段落（極罕見，但加 guard 零成本）。
-  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*(likes?|restacks?|reactions?)\s*[·•、,|/]*)+$/i;
+  //
+  // v1.6.31 culpium 實測：真站分隔符是「∙」U+2219 BULLET OPERATOR（「13 Likes∙1
+  // Restack」），與既有分隔符類 `·`（U+00B7 MIDDLE DOT）/`•`（U+2022 BULLET）都不同
+  // → 整串比對失敗漏網。分隔符類補 U+2219；三個視覺近似的圓點都要涵蓋（不同站 CMS
+  // 各用一種，Substack 用 U+2219）。
+  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*(likes?|restacks?|reactions?)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
