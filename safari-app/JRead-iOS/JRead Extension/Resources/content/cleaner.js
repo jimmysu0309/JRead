@@ -1034,6 +1034,15 @@
     }
   }
 
+  // v1.6.30（#13 insertion invalidation）：隱藏媒體的 parent 容器標記。styler
+  // 的 v0.8.59 min-height 解除規則原用 `*:has(> img[data-jread-hidden="1"]) *`
+  // ——「:has 錨點 + 萬用後代尾巴」是 Chromium 整頁 recalc 放大器（見 styler.js
+  // 檔頭 v1.6.30 不變式註解），改為 hide() 在隱藏 img / picture 的當下對
+  // parentElement 標此 attr（同刻生效、無 timing 縫隙；動態階段 hide 也走同一
+  // 條 path）。CSS 端住 styler buildCss（attr 字串兩檔一致，forcing 見
+  // insertion-invalidation.spec.js）；restore() 統一移除。
+  const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
+
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
@@ -1042,6 +1051,16 @@
       el.style.getPropertyPriority('display')) || '';
     hidden.push({ el, prevDisplay, prevDisplayPriority });
     if (el.dataset) el.dataset.jreadHidden = '1';
+    // v1.6.30：被隱藏的是 img / picture → parent 標 HIDDENMEDIA_WRAP_ATTR
+    // （v0.8.59 min-height 解除的 JS 端訊號）。同 parent 多張隱藏媒體只標一次；
+    // 編輯模式 undo 單張還原後標記留存＝該容器維持 min-height:0——與媒體容器
+    // 本就吃 :has(>img) height reset 的效果同向，無視覺差。
+    if ((el.tagName === 'IMG' || el.tagName === 'PICTURE') && el.parentElement &&
+        el.parentElement.getAttribute(HIDDENMEDIA_WRAP_ATTR) !== '1') {
+      el.parentElement.setAttribute(HIDDENMEDIA_WRAP_ATTR, '1');
+      if (!hidden.__hiddenMediaWrapEls) hidden.__hiddenMediaWrapEls = [];
+      hidden.__hiddenMediaWrapEls.push(el.parentElement);
+    }
     // inline `!important` —— 勝過任何 stylesheet rule（包括原站自己的
     // `display: flex !important`）。原本 `el.style.display = 'none'`（inline
     // 無 priority）在 stylesheet !important 戰中會輸 — udn LINE 分享按鈕
@@ -6774,6 +6793,13 @@
           // 統一回復）。
           if (articleEl.contains(node)) {
             pinDynamicEmbedFallbackImgs(articleEl, node, hiddenList);
+            // v1.6.30（#13）：晚 mount 的 responsive embed iframe / heading
+            // link 補標記（styler :has 放大器改 marker attr 後的動態端；
+            // gate 與掃描都在 styler 內，此處只轉呼）。放 isInPreserved 之前
+            // ——embed 常包在 figure（preserved）內，補標不可被短路。
+            if (NS.styler && NS.styler.remarkDynamicMarkers) {
+              NS.styler.remarkDynamicMarkers(node);
+            }
           }
           if (isInPreserved(node)) continue;
 
@@ -7175,6 +7201,12 @@
         }
       }
       restoreLazyImages(hiddenEls);
+      // v1.6.30：移除隱藏媒體 parent 容器標記（hide() 對 IMG / PICTURE 所標）
+      if (hiddenEls && Array.isArray(hiddenEls.__hiddenMediaWrapEls)) {
+        for (const p of hiddenEls.__hiddenMediaWrapEls) {
+          if (p && p.removeAttribute) p.removeAttribute(HIDDENMEDIA_WRAP_ATTR);
+        }
+      }
       // v1.5.24：還原 stripPhantomWhitespaceTextNodes 清空的游離空白文字節點
       if (hiddenEls && Array.isArray(hiddenEls.__phantomText)) {
         for (const s of hiddenEls.__phantomText) {
