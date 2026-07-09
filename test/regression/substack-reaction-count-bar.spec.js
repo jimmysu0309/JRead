@@ -122,6 +122,33 @@ describe('substack-reaction-count-bar — 行為', () => {
     }
   });
 
+  it('靜態：translate-first 量詞形態「15 個讚 · 1 次轉發」「1 次轉發」命中（v1.7.2 culpium）', () => {
+    // Traditional TW 翻法：Like→個讚、Restack→次轉發——數字與反應名詞之間夾了量詞
+    // 「個」「次」，舊 pattern 要求數字後直接接名詞 → 漏網。新 pattern 允許 0–3 字短
+    // CJK 前綴（量詞）但仍要求 token 以已知反應名詞收尾。同時涵蓋既有簡體翻法。
+    const variants = ['15 個讚 · 1 次轉發', '15 個讚·1 次轉發', '1 次轉發', '15 贊∙1 重新堆疊', '5 次分享 · 3 個讚'];
+    for (const ct of variants) {
+      const { doc, art, NS } = buildEnv({ withBar: true, countText: ct });
+      const hidden = NS.cleaner.clean(art);
+      assert.strictEqual(doc.getElementById('likebar').dataset.jreadHidden, '1',
+        `量詞翻譯變體「${ct}」應命中`);
+      NS.cleaner.restore(hidden);
+    }
+  });
+
+  it('守衛：主文含「數字＋量詞」但不以反應名詞收尾者不誤殺（如「3 個重點」「2024 年」）', () => {
+    // 新增的 0–3 字 CJK 前綴不可鬆到把主文短語吃進來——關鍵是 token 必須以「已知反應
+    // 名詞」收尾。這些短語結尾（重點 / 年）非反應名詞 → 一律 miss。
+    for (const txt of ['3 個重點', '2024 年', '花了 3 天', '共 5 則新聞']) {
+      const decoy = `<div id="decoy"><a href="/x"><img src="u.jpg"></a><span>${txt}</span></div>`;
+      const { doc, art, NS } = buildEnv({ withBar: false, decoyHtml: decoy });
+      const hidden = NS.cleaner.clean(art);
+      assert.notStrictEqual(doc.getElementById('decoy').dataset.jreadHidden, '1',
+        `「${txt}」不以反應名詞收尾，不可命中 reaction bar 規則`);
+      NS.cleaner.restore(hidden);
+    }
+  });
+
   it('動態（核心）：lazy 注入的 like bar 經 observer 整塊被 hide', async () => {
     const { doc, art, NS } = buildEnv({ withBar: false });
     const hidden = NS.cleaner.clean(art);
