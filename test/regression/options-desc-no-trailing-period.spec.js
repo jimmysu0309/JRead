@@ -19,6 +19,7 @@ const assert = require('assert');
 
 const ROOT = path.join(__dirname, '..', '..');
 const OPTIONS_HTML = fs.readFileSync(path.join(ROOT, 'jread', 'options', 'options.html'), 'utf8');
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'jread', 'manifest.json'), 'utf8'));
 
 describe('options 說明文字段落句末不加句號（v0.7.256）', () => {
   it('段落收尾 </p> 前不得是句號', () => {
@@ -29,6 +30,20 @@ describe('options 說明文字段落句末不加句號（v0.7.256）', () => {
   it('.desc / 段落收尾 </span> 前不得是句號', () => {
     const m = OPTIONS_HTML.match(/。\s*<\/span>/g);
     assert.ok(!m, `有 ${m ? m.length : 0} 個 .desc 段落以句號結尾（</span> 前）：\n${(m || []).join('\n')}`);
+  });
+
+  it('manifest description 句末不加句號（Jimmy 2026-07-09 裁定：manifest 描述算 UI 文字）', () => {
+    // manifest description 顯示在 chrome://extensions/ 與商店頁，屬使用者
+    // 面對的 UI 文字；commands 各項 description 同規則
+    const FULL_STOP = '。';
+    assert.ok(!MANIFEST.description.endsWith(FULL_STOP),
+      'manifest.json description 句末不得是句號');
+    for (const [name, cmd] of Object.entries(MANIFEST.commands || {})) {
+      if (cmd && typeof cmd.description === 'string') {
+        assert.ok(!cmd.description.endsWith(FULL_STOP),
+          `manifest.json commands.${name}.description 句末不得是句號`);
+      }
+    }
   });
 
   it('句中句號保留（只擋段末，不擋分句）', () => {

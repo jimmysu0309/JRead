@@ -169,7 +169,13 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // v0.8.36：get reject（storage 失效等罕見場景）時也要回應——sendResponse
       // 永不呼叫會讓 content fallback 軌的 callback 懸空。回 null 讓 caller
       // 走自己的 defaults fallback。
-      browser.storage.sync.get(DEFAULT_SETTINGS).then(sendResponse).catch(() => sendResponse(null));
+      // v1.6.26：回應前剔除憑證欄位（readwiseToken / instapaper* / geminiApiKey）
+      // ——content 端只需要 UI 偏好、從不使用憑證，最小知情原則（單一資料源
+      // settings-defaults.js stripCredentialSettings）。
+      const strip = globalThis.__JReadStripCredentialSettings || ((s) => s);
+      browser.storage.sync.get(DEFAULT_SETTINGS)
+        .then((s) => sendResponse(strip(s)))
+        .catch(() => sendResponse(null));
       return true; // async
     }
     case 'CUSTOM_COMMAND': {
