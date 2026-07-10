@@ -75,7 +75,14 @@
   // BYLINE_DATE_RE 的子字串比對嚴——「N days ago」也會出現在內文敘述句裡，
   // 全字串比對 + beforeBody guard 雙保險避免誤標內文。
   const BYLINE_REL_DATE_RE = /^(updated|published|posted)?\s*(about\s+)?(\d+|an?)\s*(second|sec|minute|min|hour|hr|day|week|month|year)s?\s+ago$|^(更新於?|發佈於?|發布於?)?\s*\d+\s*(秒|分鐘|小時|天|日|週|周|個月|年)前$/i;
-  const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|閱讀時間|\d+\s*分鐘閱讀/i;
+  // v1.7.4：相對日期比對前先按分隔符切段、任一段全字串命中即算——翻譯（Shinkansen
+  // →Google MT）常把整列 byline 合併成單一 text node（「閱讀 15 分鐘·5 天前」，
+  // 子元素結構消失），全字串錨定被閱讀時間前綴打敗。切段後「5 天前」獨立成段照樣
+  // 命中；散文句（「我 3 天前測試過」）無分隔符、切不出純日期段，錨定保障不變。
+  const BYLINE_SEG_SPLIT_RE = /[·•‧∙|／/—–]/;
+  // v1.7.4：中文閱讀時間補 Google 翻譯語序「閱讀 N 分鐘」（原僅「N 分鐘閱讀」）
+  // 與簡體形——翻譯後 DOM 的閱讀時間字面不受控，兩種語序 + 繁簡都收
+  const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|(閱讀|阅读)\s*(時間|时间)|(閱讀|阅读)\s*\d+\s*(分鐘|分钟)|\d+\s*(分鐘|分钟)(閱讀|阅读)/i;
   // v1.7.4：byline 內純分隔符 item（「·」「|」「—」…）。分隔符的語意是隔開兩個
   // 可見 item；相鄰 item 被隱藏（閱讀時間 / 發稿時刻 / 節目 chip）後分隔符變孤兒
   //（Medium「15 min read·5 days ago」藏掉閱讀時間 → 殘留「· 5 days ago」），
@@ -3950,6 +3957,8 @@ html.${HTML_CLASS}.jread-orion body {
             return cs.display !== 'none' && cs.visibility !== 'hidden';
           };
           const bdirect = (el) => bnorm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+          // v1.7.4：相對日期切段比對（見 BYLINE_SEG_SPLIT_RE 常數註解）
+          const brelDate = (s) => !!s && s.split(BYLINE_SEG_SPLIT_RE).some((seg) => BYLINE_REL_DATE_RE.test(seg.trim()));
           let firstBodyP = null;
           for (const p of articleEl.querySelectorAll('p')) {
             if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
@@ -3965,9 +3974,9 @@ html.${HTML_CLASS}.jread-orion body {
             for (const el of articleEl.querySelectorAll('span, div, p, li, a')) {
               if (!beforeBody(el) || !bvisible(el)) continue;
               const dt = bdirect(el);
-              // v1.7.4：絕對日期（子字串比對）或相對日期（全字串比對，見
-              // BYLINE_REL_DATE_RE 常數註解）皆可當日期錨。
-              if (dt && dt.length < 40 && (BYLINE_DATE_RE.test(dt) || BYLINE_REL_DATE_RE.test(dt))) { dateEl = el; break; }
+              // v1.7.4：絕對日期（子字串比對）或相對日期（切段全字串比對，見
+              // BYLINE_REL_DATE_RE / BYLINE_SEG_SPLIT_RE 常數註解）皆可當日期錨。
+              if (dt && dt.length < 40 && (BYLINE_DATE_RE.test(dt) || brelDate(dt))) { dateEl = el; break; }
             }
           }
           if (dateEl) {
@@ -4038,7 +4047,7 @@ html.${HTML_CLASS}.jread-orion body {
             //「·5 days ago」）。日期與閱讀時間同在 direct text 無法分離時保守不藏
             //（日期優先於「去閱讀時間」）。
             const hasDateSignal = (el) =>
-              BYLINE_DATE_RE.test(bnorm(el.textContent)) || BYLINE_REL_DATE_RE.test(bdirect(el));
+              BYLINE_DATE_RE.test(bnorm(el.textContent)) || brelDate(bdirect(el));
             const isSepEl = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
               !el.querySelector('img, svg, picture, video');
             const markRt = (el) => {
@@ -4158,6 +4167,18 @@ html.${HTML_CLASS}.jread-orion body {
             // 預設 order:0 排前。不必逐站辨識作者（NPR 作者無 rel=author / By 前綴，
             // 辨識 fragile），只認可靠的日期錨（<time>，翻譯無關）。
             if (dateItemValid) setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
+            // v1.7.5：撤銷 byline 子樹的段落載體標記——markTextDivs 依排序約束
+            //（v0.8.49：主流字級要量原站 CSS，須在 ARTICLE_ATTR 前跑）先於 byline
+            // 標記執行，無法用 closest guard 排除。翻譯合併後的 byline 列（div 直含
+            // 文字、無 block 子元素、字級不小於主流）會先被標 text-div，吃到段落
+            // 間距 margin-bottom（userOverrides 排在 byline item margin:0 之後、
+            // 同 specificity 後注入者贏）→ byline 下方多一行段距。byline 是 meta
+            // 列非段落，整棵撤標；restore 端 textDivMarked 的 removeAttribute 對
+            // 已撤元素是冪等 no-op，不需同步剔除。
+            for (const broot of articleEl.querySelectorAll(`[${BYLINE_ATTR}]`)) {
+              if (broot.hasAttribute(TEXT_DIV_ATTR)) broot.removeAttribute(TEXT_DIV_ATTR);
+              for (const d of broot.querySelectorAll(`[${TEXT_DIV_ATTR}]`)) d.removeAttribute(TEXT_DIV_ATTR);
+            }
             // v1.7.4：孤兒分隔符隱藏（見 BYLINE_SEP_ATTR 常數註解）。必須在所有
             // 隱藏標記（walk 的 RT、上方 TIME、PROGRAM）之後跑：純分隔符 item 的
             // 相鄰非分隔符 item（DOM 序、跳過其他分隔符）任一側缺席或已被隱藏 →
