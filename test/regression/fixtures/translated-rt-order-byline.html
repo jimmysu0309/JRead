@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!--
+  翻譯後結構保留的 byline（v1.7.4）：Shinkansen 就地換字、子元素結構仍在——
+  閱讀時間被翻成 Google 語序「閱讀 15 分鐘」（原「N min read」語序倒轉）。
+  驗 BYLINE_RT_RE 新增的中文語序命中 → rt 下沉隱藏 + 相鄰分隔符連帶。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>史上最慢的磁碟機</h1>
+    <div data-test="header-block">
+      <h2 data-test="subtitle">以及人們如何讓它起死回生，成為史上最快</h2>
+      <div data-test="byline-root">
+        <div data-test="rt-row" style="margin-bottom: 18px;">
+          <div data-test="mixed-item"><span data-test="readtime">閱讀 15 分鐘</span><span data-test="sep">·</span>5 天前</div>
+        </div>
+      </div>
+    </div>
+    <div data-test="body">
+      <p data-test="p1">Commodore 1541 被公認為史上最慢的消費級磁碟機。它剛出廠時，若與 Commodore 64 連接使用，資料傳輸速度大約只有每秒 400 位元組。要填滿機器內 64 KB 的記憶體，載入一個程式竟然需要耗費超過兩分鐘的時間才能完成。</p>
+    </div>
+  </article>
+</body>
+</html>

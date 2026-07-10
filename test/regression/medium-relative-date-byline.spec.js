@@ -149,3 +149,76 @@ describe('styler — 混合 date+readtime item 不可整顆隱藏（v1.7.4）', 
     }
   });
 });
+
+// 翻譯（Shinkansen→Google MT）把整列 byline 合併成單一 text node（「閱讀 15
+// 分鐘·5 天前」，子元素結構全消失）。Jimmy 2026-07-10 第二輪：英文修好、中文還在。
+describe('styler — 翻譯後合併 byline 切段偵測（v1.7.4）', () => {
+  const MERGED_FIXTURE = path.join(__dirname, 'fixtures', 'medium-translated-merged-byline.html');
+
+  function setupMerged() {
+    const env = loadFixtureWithScripts({ fixturePath: MERGED_FIXTURE, scripts: ['styler'] });
+    const articleEl = env.document.querySelector('article');
+    const snapshot = env.NS.styler.apply(articleEl, SETTINGS);
+    return { env, articleEl, snapshot };
+  }
+
+  it('合併 text node「閱讀 15 分鐘·5 天前」切段命中相對日期 → byline root 被標記', () => {
+    const { env } = setupMerged();
+    assert.strictEqual(q(env, 'byline-root').getAttribute('data-jread-byline'), '1',
+      '切段比對必須從合併 text node 切出「5 天前」段當日期錨');
+  });
+
+  it('帶站點 margin 的 rt-row 被標 wrap 打平（18px 空白根因修復）', () => {
+    const { env } = setupMerged();
+    const rtRow = q(env, 'rt-row');
+    assert.strictEqual(rtRow.getAttribute('data-jread-byline-wrap'), '1');
+    assert.strictEqual(rtRow.style.getPropertyValue('display'), 'contents');
+  });
+
+  it('日期與閱讀時間同 text node 無法分離 → 保守不藏（item 不標 rt，日期優先）', () => {
+    const { env } = setupMerged();
+    const merged = q(env, 'merged-item');
+    assert.strictEqual(merged.getAttribute('data-jread-byline-item'), '1');
+    assert.strictEqual(merged.getAttribute('data-jread-byline-rt'), null,
+      '整顆藏會連日期陪葬——同 text node 無法分離時必須保守不藏');
+  });
+
+  it('byline 子樹撤銷 text-div 段落標記（不吃段落間距 margin）', () => {
+    const { env } = setupMerged();
+    const merged = q(env, 'merged-item');
+    assert.strictEqual(merged.getAttribute('data-jread-text-div'), null,
+      'markTextDivs 先跑標到的 byline 列必須在 byline 標記後撤銷——否則吃到' +
+      '段落間距 margin-bottom（userOverrides 後注入贏過 item margin:0），' +
+      'byline 下方多一行段距（cage 真實站 17px 實測）');
+    assert.strictEqual(q(env, 'byline-root').querySelector('[data-jread-text-div]'), null,
+      'byline root 子樹內不得殘留任何 text-div 標記');
+  });
+});
+
+// 翻譯後結構保留（就地換字）：閱讀時間翻成 Google 語序「閱讀 15 分鐘」。
+describe('styler — 翻譯後 RT 語序「閱讀 N 分鐘」命中（v1.7.4）', () => {
+  const RT_ORDER_FIXTURE = path.join(__dirname, 'fixtures', 'translated-rt-order-byline.html');
+
+  it('「閱讀 15 分鐘」子元素標 rt 下沉隱藏 + 相鄰分隔符連帶標 sep', () => {
+    const env = loadFixtureWithScripts({ fixturePath: RT_ORDER_FIXTURE, scripts: ['styler'] });
+    env.NS.styler.apply(env.document.querySelector('article'), SETTINGS);
+    assert.strictEqual(q(env, 'byline-root').getAttribute('data-jread-byline'), '1');
+    assert.strictEqual(q(env, 'readtime').getAttribute('data-jread-byline-rt'), '1',
+      'Google 語序「閱讀 15 分鐘」必須命中 BYLINE_RT_RE');
+    assert.strictEqual(q(env, 'sep').getAttribute('data-jread-byline-sep'), '1');
+    assert.strictEqual(q(env, 'mixed-item').getAttribute('data-jread-byline-rt'), null,
+      '含日期的外層 item 不可整顆標 rt');
+  });
+});
+
+// 負控制：短散文句「編按：本文寫於 3 天前，內容已更新」無分隔符、切不出純日期段。
+describe('styler — 切段比對不誤標散文（v1.7.4 負控制）', () => {
+  const PROSE_FIXTURE = path.join(__dirname, 'fixtures', 'translated-prose-no-byline.html');
+
+  it('無真 byline 的頁面不得標任何 byline root', () => {
+    const env = loadFixtureWithScripts({ fixturePath: PROSE_FIXTURE, scripts: ['styler'] });
+    env.NS.styler.apply(env.document.querySelector('article'), SETTINGS);
+    assert.strictEqual(env.document.querySelector('[data-jread-byline]'), null,
+      '散文句含「3 天前」子字串（無分隔符）不可被切段比對誤當日期錨');
+  });
+});
