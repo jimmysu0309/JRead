@@ -80,6 +80,29 @@ describe('SW JREAD_RELOAD handler 安全 guard（v0.7.143）', () => {
     assert.ok(/JREAD_DEBUG_SET_THEME/.test(m[0]), 'set-theme 必須改送 JREAD_DEBUG_SET_THEME 給 SW');
   });
 
+  // v1.7.3：debug bridge 觸發送儲存服務（Claude 自主驗匯出 pipeline 用）。
+  // 若不 gate，任意網頁可 dispatch __jread_debug type='send-readwise' 把自己
+  // 偷送進使用者的 Readwise / Instapaper 帳號——比 reload / set-theme 更需要 gate。
+  it('JREAD_DEBUG_SEND_READWISE 也必須走 runIfDevelopmentInstall + sender.tab 檢查（v1.7.3）', () => {
+    const m = SW_SRC.match(/case\s+['"]JREAD_DEBUG_SEND_READWISE['"]:\s*\{([\s\S]*?)\}\s*(case|default)/);
+    assert.ok(m, 'SW 必須有 JREAD_DEBUG_SEND_READWISE case（debug bridge 送儲存服務）');
+    assert.ok(/runIfDevelopmentInstall\(\s*['"]JREAD_DEBUG_SEND_READWISE['"]/.test(m[1]),
+      'send-readwise 必須與 reload 同款 development gate——否則惡意頁可偷送內容進使用者帳號');
+    assert.ok(/sender\s*&&\s*sender\.tab\s*&&\s*sender\.tab\.id/.test(m[1]),
+      '必須從 sender.tab.id 取目標分頁（來源必須是 content script）');
+    assert.ok(/sendToReadwiseFromCommand\(senderTabId\)/.test(m[1]),
+      '必須走與快速鍵同一條 sendToReadwiseFromCommand 軌（單一資料源）');
+  });
+
+  it('content send-readwise 分支必須經 SW 中繼（JREAD_DEBUG_SEND_READWISE）', () => {
+    const MAIN_SRC = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'jread', 'content', 'main.js'), 'utf8');
+    const m = MAIN_SRC.match(/type === 'send-readwise'[\s\S]*?else if/);
+    assert.ok(m, '__jread_debug bridge 必須有 send-readwise 分支');
+    assert.ok(/JREAD_DEBUG_SEND_READWISE/.test(m[0]),
+      'send-readwise 分支必須送 JREAD_DEBUG_SEND_READWISE 給 SW（gate 在 SW 端）');
+  });
+
   it('manifest.json 不應加 "management" permission（getSelf 自查不需要）', () => {
     const manifestPath = path.join(__dirname, '..', '..', 'jread', 'manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));

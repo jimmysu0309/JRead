@@ -505,6 +505,80 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return out;
     },
 
+    // v1.7.3：把 embed-proxy iframe（embedly 代理殼）解包成殼內真正的 embed URL。
+    // 動機：Medium 等站的 YouTube / Vimeo embed 實際 iframe src 是
+    // `cdn.embedly.com/widgets/media.html?src=<URL-encoded 直連 embed URL>&...`
+    // 代理頁。本地閱讀模式 embedly 照常 render；但送 Readwise Reader 後對方前端
+    // 只 render 直連 embed host（youtube.com/embed 等）、代理殼 iframe 整顆不顯示
+    // （Jimmy 2026-07-10 medium.com Bonnie Tyler 悼文實證：Readwise html_content
+    // 內 5 個 embedly iframe 全在、Reader 端播放器全消失）。
+    // 通則層級：embedly 是跨站 embed proxy「服務」（Medium 只是其中一個用戶），
+    // 與 cleaner 的 KNOWN_MEDIA_IFRAME_SEL whitelist 同級的服務規則、非站點特判。
+    // 解包目標取 proxy 自己宣告的 `src` query param——embedly 契約它就是「可直接
+    // iframe 嵌入」的 URL，非我們自行拼裝；缺 src param 或非 http(s) 時保守不動。
+    // 只在匯出 clone 上呼叫（buildCleanHtml），不動 live reader 的 embedly 顯示。
+    unwrapEmbedProxyIframes(rootEl) {
+      if (!rootEl || !rootEl.querySelectorAll) return;
+      for (const f of rootEl.querySelectorAll('iframe[src]')) {
+        let u;
+        try { u = new URL(f.getAttribute('src')); } catch (_) { continue; }
+        const host = u.hostname.toLowerCase();
+        if (host !== 'embedly.com' && !host.endsWith('.embedly.com')) continue;
+        if (!/\/widgets\/media\.html$/.test(u.pathname)) continue;
+        const inner = u.searchParams.get('src');
+        if (!inner) continue;
+        let innerUrl;
+        try { innerUrl = new URL(inner); } catch (_) { continue; }
+        if (innerUrl.protocol !== 'https:' && innerUrl.protocol !== 'http:') continue;
+        f.setAttribute('src', innerUrl.href);
+      }
+    },
+
+    // v1.7.3：影片 embed iframe → 可點縮圖連結（翻譯頁匯出限定，呼叫端 gate）。
+    // 動機：翻譯頁送 Readwise 走 should_clean_html=false（v0.8.138 gate，護譯文
+    // 逐字），Readwise Reader 對「原樣 HTML」的前端 render 會剝掉**所有** iframe
+    // ——連直連 youtube.com/embed 都不顯示（2026-07-10 Bonnie Tyler 悼文兩輪實測：
+    // embedly 殼解包成直連後 html_content 內 iframe 完整、Reader 端仍無播放器）。
+    // 非翻譯頁走 should_clean_html=true，Readwise 自家 pipeline 會把 YouTube iframe
+    // 轉成內嵌播放器元件，不需也不可做本轉換（做了反而失去內嵌播放器）。
+    // 結構性通則：raw-HTML 模式下 iframe 必被 sanitizer 剝除，影片 embed 的可攜
+    // 形態是「縮圖 + 連結」（img / a 是 raw 模式必 render 的基本元素）。YouTube
+    // 家族縮圖可由 video id 組出（i.ytimg.com 公開縮圖端點）；其他平台（vimeo 等）
+    // 縮圖需打 API，保守不動、留待實案再擴充。
+    replaceVideoEmbedsForRawHtml(rootEl) {
+      if (!rootEl || !rootEl.querySelectorAll) return;
+      const doc = rootEl.ownerDocument;
+      for (const f of Array.from(rootEl.querySelectorAll('iframe[src]'))) {
+        let u;
+        try { u = new URL(f.getAttribute('src')); } catch (_) { continue; }
+        const host = u.hostname.toLowerCase();
+        let videoId = null;
+        const isYtHost = host === 'youtube.com' || host.endsWith('.youtube.com')
+          || host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com');
+        if (isYtHost) {
+          const m = u.pathname.match(/^\/embed\/([A-Za-z0-9_-]{6,})/);
+          if (m) videoId = m[1];
+        } else if (host === 'youtu.be') {
+          const m = u.pathname.match(/^\/([A-Za-z0-9_-]{6,})/);
+          if (m) videoId = m[1];
+        }
+        if (!videoId) continue;
+        const title = (f.getAttribute('title') || '').trim();
+        const watch = 'https://www.youtube.com/watch?v=' + videoId;
+        const a = doc.createElement('a');
+        a.setAttribute('href', watch);
+        const img = doc.createElement('img');
+        img.setAttribute('src', 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg');
+        img.setAttribute('alt', title || 'YouTube 影片');
+        a.appendChild(img);
+        if (title) {
+          a.appendChild(doc.createElement('br'));
+          a.appendChild(doc.createTextNode('▶ ' + title));
+        }
+        f.replaceWith(a);
+      }
+    },
+
     // v0.8.76：把 rootEl 子樹內媒體載體（img/source/video/audio/iframe）的
     // src / poster / srcset 以 base 為基準轉成絕對 URL（就地改 attribute）。
     // 動機：buildCleanHtml 送 Readwise 的是 `outerHTML`——序列化的是 src 的
@@ -755,7 +829,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       BG_WAKE_PING: 'BG_WAKE_PING',                 // content → SW：喚醒 background（Safari）
       // debug bridge（development install 限定，SW 端 runIfDevelopmentInstall gate）
       JREAD_RELOAD: 'JREAD_RELOAD',                 // content → SW：reload extension
-      JREAD_DEBUG_SET_THEME: 'JREAD_DEBUG_SET_THEME' // content → SW：代寫 theme（cage Page Rounds 用）
+      JREAD_DEBUG_SET_THEME: 'JREAD_DEBUG_SET_THEME', // content → SW：代寫 theme（cage Page Rounds 用）
+      JREAD_DEBUG_SEND_READWISE: 'JREAD_DEBUG_SEND_READWISE' // content → SW：debug bridge 觸發送儲存服務（Claude 自主驗匯出用）
     }
   };
 })();

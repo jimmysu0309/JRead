@@ -930,10 +930,12 @@ describe('readwise: 訊息協定常數同步', () => {
       'findCardTitleHeading 必須跳過 [data-jread-hidden] 內的 heading（站名 logo 類雜訊）');
     // v0.8.62：title 去重——buildCleanHtml 必須收 title 參數並移除 body 內同名
     // heading（Readwise 用 title 欄位另渲染主標，body 殘留同名 heading 會重複）。
-    assert.match(mainSrc, /function\s+buildCleanHtml\s*\(\s*rootEl\s*,\s*title\s*\)/,
-      'buildCleanHtml 必須收 title 參數（用來去重 body 內同名主標 heading）');
-    assert.match(mainSrc, /=\s*buildCleanHtml\s*\(\s*NS\.state\.articleEl\s*,\s*title\s*\)/,
-      'extractReaderPayload 必須把 title 傳給 buildCleanHtml');
+    // v1.7.3：第三參數 isTranslated——翻譯頁匯出把影片 embed 轉縮圖連結
+    //（raw 模式 Readwise 剝 iframe），gate 的 forcing 在 readwise-embed-proxy-unwrap.spec.js。
+    assert.match(mainSrc, /function\s+buildCleanHtml\s*\(\s*rootEl\s*,\s*title\s*,\s*isTranslated\s*\)/,
+      'buildCleanHtml 必須收 title 參數（用來去重 body 內同名主標 heading）+ isTranslated（影片 embed 轉縮圖 gate）');
+    assert.match(mainSrc, /=\s*buildCleanHtml\s*\(\s*NS\.state\.articleEl\s*,\s*title\s*,\s*isTranslated\s*\)/,
+      'extractReaderPayload 必須把 title + isTranslated 傳給 buildCleanHtml');
     assert.match(mainSrc, /foldTitlePunct[\s\S]{0,400}querySelectorAll\(\s*['"]h1, h2, h3, h4, h5, h6['"]\s*\)/,
       'buildCleanHtml 必須折疊標點後比對、移除與 title 同文的 h1-h6（防 Readwise 重複主標）');
   });
