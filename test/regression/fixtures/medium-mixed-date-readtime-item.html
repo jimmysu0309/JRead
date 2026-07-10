@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+  Medium 混合 date+readtime item 最小重現（v1.7.4，levelup.gitconnected.com
+  probe #4 實測 DOM）。日期「5 days ago」是 item 的 direct text、閱讀時間
+  「15 min read」與分隔符「·」是同一個 item 的子元素：
+
+    <div><span>15 min read</span><span>·</span>5 days ago</div>
+
+  第一版修法把整個 item 標 rt 藏掉（BYLINE_RT_RE 對整個 textContent 命中）→
+  日期陪葬、byline 整條變空。修法：item 含日期訊號時往下找「命中閱讀時間、
+  不含日期」的最深子元素只藏它 + 連帶藏相鄰純分隔符。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>The slowest disk drive ever sold</h1>
+    <div data-test="header-block">
+      <h2 data-test="subtitle">And how people made it the fastest</h2>
+      <div data-test="byline-root">
+        <div data-test="byline-mid">
+          <div data-test="author-row"><a href="/@enzo">Enzo Lombardi</a></div>
+          <div data-test="rt-row" style="margin-bottom: 18px;">
+            <div data-test="mixed-item"><span data-test="readtime">15 min read</span><span data-test="sep">·</span>5 days ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-test="body">
+      <p data-test="p1">The Commodore 1541 is widely called the slowest consumer disk drive ever made. Out of the box, paired with a Commodore 64, it transferred data at roughly 400 bytes per second and everyone simply accepted it.</p>
+      <p data-test="p2">Thirty years later, software running on the exact same unmodified hardware loads the same data at about sixteen thousand bytes per second, a forty-fold improvement extracted by hobbyists.</p>
+    </div>
+  </article>
+</body>
+</html>

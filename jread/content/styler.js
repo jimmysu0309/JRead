@@ -67,7 +67,21 @@
   // v1.6.24：第二 alternative（Mon DD, YYYY）補開頭 \b——否則 "Demar 3, 2024"
   // 這類字串內的 "mar 3, 2024" 子字串會誤命中（與第一 alternative 對稱）。
   const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/i;
+  // v1.7.4：相對日期訊號（"5 days ago" / "3 小時前"）——Medium 等站近期文章的
+  // byline 只顯示相對日期（無 <time>、無絕對日期字串），BYLINE_DATE_RE 不命中 →
+  // byline root 偵測整套 miss → 站點 byline 自帶的垂直 margin 留下（Medium 閱讀
+  // 時間列 margin-bottom:18px），byline 下方比正常段距多一段空白（Jimmy 2026-07-10
+  // levelup.gitconnected.com 回報）。錨定全字串（^…$，套在 direct text 上）比
+  // BYLINE_DATE_RE 的子字串比對嚴——「N days ago」也會出現在內文敘述句裡，
+  // 全字串比對 + beforeBody guard 雙保險避免誤標內文。
+  const BYLINE_REL_DATE_RE = /^(updated|published|posted)?\s*(about\s+)?(\d+|an?)\s*(second|sec|minute|min|hour|hr|day|week|month|year)s?\s+ago$|^(更新於?|發佈於?|發布於?)?\s*\d+\s*(秒|分鐘|小時|天|日|週|周|個月|年)前$/i;
   const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|閱讀時間|\d+\s*分鐘閱讀/i;
+  // v1.7.4：byline 內純分隔符 item（「·」「|」「—」…）。分隔符的語意是隔開兩個
+  // 可見 item；相鄰 item 被隱藏（閱讀時間 / 發稿時刻 / 節目 chip）後分隔符變孤兒
+  //（Medium「15 min read·5 days ago」藏掉閱讀時間 → 殘留「· 5 days ago」），
+  // 標此 attr 用 CSS 隱藏。
+  const BYLINE_SEP_ATTR = 'data-jread-byline-sep';
+  const BYLINE_SEP_RE = /^[·•‧∙|/／\\\-–—,、.。;；:：]+$/;
   // 時刻訊號：整段直接文字＝「HH:MM(:SS)? (AM/PM)? TZ?」（例 "1:59 PM ET"、
   //   "13:59"、"9:30 a.m. EST"）。冒號是關鍵——日期字串無冒號，故不誤殺日期。
   const BYLINE_TIME_RE = /^\d{1,2}:\d{2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)?\s*[a-z]{0,5}$/i;
@@ -1662,6 +1676,10 @@ ${MEDIA_DIRECT_WRAP_SEL} {
   letter-spacing: normal !important;
 }
 [${ARTICLE_ATTR}="1"] [${BYLINE_RT_ATTR}] {
+  display: none !important;
+}
+/* v1.7.4：孤兒分隔符（相鄰 item 被隱藏後失去隔開對象的「·」「|」等）隱藏。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_SEP_ATTR}] {
   display: none !important;
 }
 /* v1.5.28：byline 內發稿時刻（HH:MM AM/PM TZ）隱藏，只留日期。 */
@@ -3947,7 +3965,9 @@ html.${HTML_CLASS}.jread-orion body {
             for (const el of articleEl.querySelectorAll('span, div, p, li, a')) {
               if (!beforeBody(el) || !bvisible(el)) continue;
               const dt = bdirect(el);
-              if (dt && dt.length < 40 && BYLINE_DATE_RE.test(dt)) { dateEl = el; break; }
+              // v1.7.4：絕對日期（子字串比對）或相對日期（全字串比對，見
+              // BYLINE_REL_DATE_RE 常數註解）皆可當日期錨。
+              if (dt && dt.length < 40 && (BYLINE_DATE_RE.test(dt) || BYLINE_REL_DATE_RE.test(dt))) { dateEl = el; break; }
             }
           }
           if (dateEl) {
@@ -4010,6 +4030,28 @@ html.${HTML_CLASS}.jread-orion body {
             // 會生效成直排）——一併用 inline row 覆蓋
             setStyleImp(root, 'flex-direction', 'row');
             // 遞迴標 item（可見 leaf / 有直接文字 / 媒體）與 wrap（純 wrapper）
+            // v1.7.4：item 同時含日期訊號與閱讀時間時不可整顆標 rt——Medium 近期
+            // 文章的日期是 item 的 direct text、閱讀時間是同 item 的子元素
+            //（<div><span>15 min read</span><span>·</span>5 days ago</div>），整顆
+            // 藏會連日期一起消失（實測 byline 整條變空）。改往下找「命中閱讀時間、
+            // 不含日期訊號」的最深子元素只藏它，並連帶藏其相鄰純分隔符（否則殘留
+            //「·5 days ago」）。日期與閱讀時間同在 direct text 無法分離時保守不藏
+            //（日期優先於「去閱讀時間」）。
+            const hasDateSignal = (el) =>
+              BYLINE_DATE_RE.test(bnorm(el.textContent)) || BYLINE_REL_DATE_RE.test(bdirect(el));
+            const isSepEl = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
+              !el.querySelector('img, svg, picture, video');
+            const markRt = (el) => {
+              if (!hasDateSignal(el)) {
+                setMark(el, BYLINE_RT_ATTR);
+                if (isSepEl(el.previousElementSibling)) setMark(el.previousElementSibling, BYLINE_SEP_ATTR);
+                if (isSepEl(el.nextElementSibling)) setMark(el.nextElementSibling, BYLINE_SEP_ATTR);
+                return;
+              }
+              for (const c of el.children) {
+                if (BYLINE_RT_RE.test(bnorm(c.textContent))) { markRt(c); return; }
+              }
+            };
             const walk = (el) => {
               for (const child of el.children) {
                 if (!bvisible(child)) continue;
@@ -4018,7 +4060,7 @@ html.${HTML_CLASS}.jread-orion body {
                 const hasText = bdirect(child).length > 0;
                 if (hasText || isMedia || child.children.length === 0) {
                   setMark(child, BYLINE_ITEM_ATTR);
-                  if (BYLINE_RT_RE.test(bnorm(child.textContent))) setMark(child, BYLINE_RT_ATTR);
+                  if (BYLINE_RT_RE.test(bnorm(child.textContent))) markRt(child);
                 } else {
                   setMark(child, BYLINE_WRAP_ATTR);
                   setStyleImp(child, 'display', 'contents');
@@ -4116,6 +4158,27 @@ html.${HTML_CLASS}.jread-orion body {
             // 預設 order:0 排前。不必逐站辨識作者（NPR 作者無 rel=author / By 前綴，
             // 辨識 fragile），只認可靠的日期錨（<time>，翻譯無關）。
             if (dateItemValid) setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
+            // v1.7.4：孤兒分隔符隱藏（見 BYLINE_SEP_ATTR 常數註解）。必須在所有
+            // 隱藏標記（walk 的 RT、上方 TIME、PROGRAM）之後跑：純分隔符 item 的
+            // 相鄰非分隔符 item（DOM 序、跳過其他分隔符）任一側缺席或已被隱藏 →
+            // 分隔符失去被隔開的對象，一併隱藏。兩側都可見才保留。
+            {
+              const items = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
+              const isHiddenItem = (el) => el.hasAttribute(BYLINE_RT_ATTR) ||
+                el.hasAttribute(BYLINE_TIME_ATTR) || el.hasAttribute(BYLINE_PROGRAM_ATTR);
+              const isSep = (el) => BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
+                !el.querySelector('img, svg, picture, video');
+              items.forEach((el, i) => {
+                if (!isSep(el)) return;
+                let prev = null;
+                for (let j = i - 1; j >= 0; j--) { if (!isSep(items[j])) { prev = items[j]; break; } }
+                let next = null;
+                for (let j = i + 1; j < items.length; j++) { if (!isSep(items[j])) { next = items[j]; break; } }
+                if (!prev || isHiddenItem(prev) || !next || isHiddenItem(next)) {
+                  setMark(el, BYLINE_SEP_ATTR);
+                }
+              });
+            }
           }
           // v1.5.28：移除標題前的分類 kicker / eyebrow（NPR「BUSINESS」連到
           // /sections/business/）。結構訊號（非站點特判）：標題 H1「之前」、連到
