@@ -604,7 +604,9 @@
   // 同時剝掉 jread 內部用的 data-jread-* attribute 和 jread 注入的 style 元素。
   // 抓 document.title 的分隔前首段當 title——多數站把站名接在「| Site Name」之後，
   // 切掉避免 Readwise 顯示「文章標題 | 中央社 CNA」這種尾巴。
-  function buildCleanHtml(rootEl, title) {
+  // isTranslated：翻譯頁匯出走 should_clean_html=false 原樣模式（v0.8.138），
+  // Readwise 端剝 iframe——需把影片 embed 轉縮圖連結（步驟 3.45）。
+  function buildCleanHtml(rootEl, title, isTranslated) {
     // v0.8.121：先在 live DOM 標記文首 byline meta（邏輯單一資料源在
     // NS.markLeadingBylineForExport），clone 後移除標記節點、再還原 live 標記
     //（不影響閱讀模式顯示）。layout / naturalWidth 在 detached clone 上量不到，
@@ -698,6 +700,16 @@
       for (const child of node.children) stripDataAttrs(child);
     }
     stripDataAttrs(clone);
+    // 3.4 embed-proxy iframe 解包（v1.7.3）。embedly 代理殼 iframe 換成殼內
+    // 直連 embed URL——Readwise Reader 前端只 render 直連 embed host、代理殼
+    // 不顯示（播放器整顆消失）。邏輯單一資料源在 NS.unwrapEmbedProxyIframes。
+    if (NS && NS.unwrapEmbedProxyIframes) NS.unwrapEmbedProxyIframes(clone);
+    // 3.45 翻譯頁（should_clean_html=false 原樣模式）：影片 embed iframe → 縮圖
+    // 連結。Readwise raw-HTML render 剝掉所有 iframe（直連 youtube.com/embed 也
+    // 不例外）、影片在 Reader 端整顆消失；縮圖 + 連結是 raw 模式的可攜形態。
+    // 非翻譯頁不轉——Readwise 自家 clean pipeline 會把 YouTube iframe 轉成內嵌
+    // 播放器。邏輯單一資料源在 NS.replaceVideoEmbedsForRawHtml。
+    if (isTranslated && NS && NS.replaceVideoEmbedsForRawHtml) NS.replaceVideoEmbedsForRawHtml(clone);
     // 3.5 媒體資源 URL 轉絕對（v0.8.76）。outerHTML 序列化的是 src / srcset 的
     // 「屬性原值」（相對路徑），Readwise 伺服器端無原站 base 可解析 → 破圖
     // （0xkato.xyz Ghost 站 `/assets/transformer-*.png` 實證，Jimmy 2026-06-15）。
@@ -1078,9 +1090,17 @@
     if (!NS.state.active || !NS.state.articleEl) {
       return { ok: false, reason: 'NOT_ACTIVE' };
     }
+    // v0.8.138：翻譯頁標記——供 buildReadwisePayload 決定 should_clean_html。
+    // 翻譯擴充（Shinkansen）注入的譯文（dual collapse 後留在 body 的 <p> / 就地
+    // 譯文）會被 Readwise 的 should_clean_html readability pipeline 當外來節點清掉
+    //（reader 端只剩英文原文）；翻譯頁必須關 should_clean_html 原樣保留。偵測在
+    // live document（collapse 前），html 字串裡的 data-shinkansen* 已被剝掉、判不了。
+    // v1.7.3 移到 buildCleanHtml 之前：翻譯頁匯出需把影片 embed 轉縮圖連結
+    //（raw 模式 Readwise 剝 iframe），buildCleanHtml 要吃這個 flag。
+    const isTranslated = !!(NS.isTranslatedPage && NS.isTranslatedPage());
     resetJsonLdCache(); // v0.8.18 C8：每輪 payload 抽取重新解析 JSON-LD
     const title = extractReaderTitle();
-    const html = buildCleanHtml(NS.state.articleEl, title);
+    const html = buildCleanHtml(NS.state.articleEl, title, isTranslated);
     const imageUrl = extractHeroImage(NS.state.articleEl);
     const author = extractAuthor();
     const publishedDate = extractPublishedDate();
@@ -1090,12 +1110,6 @@
     const rawText = NS.state.articleEl.innerText || NS.state.articleEl.textContent || '';
     const text = rawText.replace(/\n{3,}/g, '\n\n').trim().slice(0, 50000);
     const domain = location.hostname || '';
-    // v0.8.138：翻譯頁標記——供 buildReadwisePayload 決定 should_clean_html。
-    // 翻譯擴充（Shinkansen）注入的譯文（dual collapse 後留在 body 的 <p> / 就地
-    // 譯文）會被 Readwise 的 should_clean_html readability pipeline 當外來節點清掉
-    //（reader 端只剩英文原文）；翻譯頁必須關 should_clean_html 原樣保留。偵測在
-    // live document（collapse 前），html 字串裡的 data-shinkansen* 已被剝掉、判不了。
-    const isTranslated = !!(NS.isTranslatedPage && NS.isTranslatedPage());
     // v1.6.19：RSS reader（Miniflux 等）內開閱讀模式時，location.href 是 reader 自己的
     // URL、非文章原始出處。若偵測到主標包一個跨網域外連（RSS reader 通例），送 Readwise /
     // Instapaper 用原文 URL（Readwise + Instapaper 共用此 payload.url，一改兩者受惠）。
@@ -1507,6 +1521,13 @@
       const action = engine ? 'TRANSLATE_ENGINE' : 'TRANSLATE';
       const detail = engine ? { action, engine } : { action };
       window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail }));
+    } else if (type === 'send-readwise') {
+      // v1.7.3：debug bridge 觸發「送到儲存服務」——與快速鍵 send-to-readwise
+      // 同一條 SW 軌（sendToReadwiseFromCommand）。設計給 Claude 自主驗匯出
+      // pipeline 用（cage 無法點 popup、鍵盤快速鍵被 WPA 吞）。SW 端與 reload
+      // 同款 development install gate：store / 正式安裝拒絕，任意網頁 dispatch
+      // 本 event 不會把使用者當前頁面偷送進他的 Readwise。
+      safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SEND_READWISE });
     } else if (type === 'reload') {
       // v0.7.126：chrome.runtime.reload() 在 content script context 不存在
       // （Uncaught TypeError: chrome.runtime.reload is not a function）——

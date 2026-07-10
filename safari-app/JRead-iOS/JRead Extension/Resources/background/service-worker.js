@@ -287,6 +287,26 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return;
     }
+    case 'JREAD_DEBUG_SEND_READWISE': {
+      // v1.7.3：debug bridge 觸發送儲存服務（content bridge type='send-readwise'
+      // 中繼）。走與快速鍵完全同一條 sendToReadwiseFromCommand 軌（含未啟動先
+      // toggle、EXTRACT_READER_HTML、dispatcher 分派、toast 回饋）。
+      // 安全 hardening：任意網頁 JS 可 dispatch `__jread_debug`——若不 gate，
+      // 惡意頁可把自己偷送進使用者的 Readwise / Instapaper 帳號。與 JREAD_RELOAD
+      // 同款 development install gate：只在 unpacked（Claude 自主 debug / cage）
+      // 執行，store / 正式安裝 silently reject。sender.tab 必須存在（來源必須
+      // 是 content script，非 popup / options）。
+      if (!(browser.management && browser.management.getSelf)) {
+        console.warn('[JRead] JREAD_DEBUG_SEND_READWISE rejected: management API unavailable');
+        return;
+      }
+      const senderTabId = sender && sender.tab && sender.tab.id;
+      if (typeof senderTabId !== 'number') return;
+      runIfDevelopmentInstall('JREAD_DEBUG_SEND_READWISE', () => {
+        sendToReadwiseFromCommand(senderTabId).catch(() => {});
+      });
+      return;
+    }
     case 'RESIZE_OWN_WINDOW': {
       // v0.7.134：YouTube 無邊模式 — content side 算完目標視窗高度後請 SW
       // 呼 browser.windows.update。失敗（PWA 限制 / windowId 不在 / 權限缺）
