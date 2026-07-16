@@ -4035,6 +4035,14 @@ html.${HTML_CLASS}.jread-orion body {
                 if (anc.has(y)) { seed = y; break; }
               }
             }
+            // 內容尺寸大圖判定（byline meta 區塊結構上絕不含內容大圖；頭像 <=96px、
+            // hero >=150px）。與下方 v1.6.18 prevSib guard 共用同一份判定。
+            const bimgRect = (im) => {
+              try { const r = im.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+              catch (_) { return { w: 0, h: 0 }; }
+            };
+            const bhasBigImg = (el) => Array.from(el.querySelectorAll('img, picture'))
+              .some((im) => { const r = bimgRect(im); return r.w >= 150 || r.h >= 150; });
             // v1.6.10：LCA seed 有效性 guard——byline meta 區塊結構上絕不含文章標題/
             // 副標 heading。「作者在 hero 上方、日期在 hero 下方」的版面（The Atlantic
             // ArticleHero header：kicker → h1 標題 → dek → 作者 → hero figure → 日期）
@@ -4044,7 +4052,12 @@ html.${HTML_CLASS}.jread-orion body {
             // 往上會在 header（含 h1）邊界前停住，root 落在純日期 wrapper、不罩住 h1 與
             // hero figure。否則 byline root 罩住 hero img → 被 [BYLINE] img 頭像 50%
             // 圓角規則 render 成橢圓框（Jimmy 2026-07-02 回報 Atlantic hero 變圓框）。
-            if (seed !== dateEl && seed.querySelector('h1, h2, h3')) seed = dateEl;
+            // v1.7.9：heading 之外加「內容大圖」訊號——Readwise Reader 把文件標題渲染
+            // 在 article 容器外，同款「作者在 hero 上、日期在 hero 下」版面（header：
+            // dek → 作者 → hero figure → 日期）內沒有 h1，heading guard 不觸發、LCA
+            // 又 engulf 整個 header → hero 變橢圓（Jimmy 2026-07-16 回報）。seed 含
+            // >=150px 大圖同樣代表過度捕捉，退回 dateEl。
+            if (seed !== dateEl && (seed.querySelector('h1, h2, h3') || bhasBigImg(seed))) seed = dateEl;
             // 爬到「不含 body、不含標題/副標 heading、visible 文字 <= 200」的最高祖先。
             // v1.0.12：heading guard——byline（作者/日期 meta）結構上絕不會包住文章
             // 標題或副標（h1/h2/h3）。原本只用「文字 <= 200」當天花板，但翻譯後中文
@@ -4053,11 +4066,15 @@ html.${HTML_CLASS}.jread-orion body {
             // post-header 當 byline root，h1/h3 被打平成 flex-wrap item，窄的中文副標
             // 與作者名同列（英文因 heading 夠寬各佔一列而僥倖沒露餡）。加 heading guard
             // 後 climb 在 heading 邊界前停住，root 落在真正的 author+date wrapper。
+            // v1.7.9：climb 同步加大圖 guard——無 heading 的 header（見上）文字常
+            // <= 200，seed 退回 dateEl 後 climb 仍會一路爬回含 hero 的 header，等於
+            // seed guard 白退。爬進含內容大圖的 parent 一律停住。
             let root = seed;
             while (root.parentElement && root.parentElement !== articleEl &&
                    beforeBody(root.parentElement) &&
                    (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
                    !root.parentElement.querySelector('h1, h2, h3') &&
+                   !bhasBigImg(root.parentElement) &&
                    bnorm(root.parentElement.textContent).length <= 200) {
               root = root.parentElement;
             }
@@ -4136,17 +4153,13 @@ html.${HTML_CLASS}.jread-orion body {
               if (prevSib && !prevSib.hasAttribute(BYLINE_ATTR) && beforeBody(prevSib) &&
                   !prevSib.querySelector('h1, h2, h3') &&
                   bnorm(prevSib.textContent).length <= 200) {
-                const imgRect = (im) => {
-                  try { const r = im.getBoundingClientRect(); return { w: r.width, h: r.height }; }
-                  catch (_) { return { w: 0, h: 0 }; }
-                };
-                const hasBigImg = Array.from(prevSib.querySelectorAll('img, picture'))
-                  .some((im) => { const r = imgRect(im); return r.w >= 150 || r.h >= 150; });
+                // v1.7.9：大圖/頭像尺寸判定改用上方 bimgRect / bhasBigImg 共用 helper
+                const hasBigImg = bhasBigImg(prevSib);
                 const hasAuthorSignal =
                   !!prevSib.querySelector('a[rel~="author"]') ||
                   /^(by|words by|written by|作者|文[／/])/i.test(bnorm(prevSib.textContent)) ||
                   Array.from(prevSib.querySelectorAll('img'))
-                    .some((im) => { const r = imgRect(im); return r.w > 0 && r.w <= 96 && r.h <= 96; });
+                    .some((im) => { const r = bimgRect(im); return r.w > 0 && r.w <= 96 && r.h <= 96; });
                 if (hasAuthorSignal && !hasBigImg) {
                   setMark(prevSib, BYLINE_ATTR);
                   setStyleImp(prevSib, 'display', 'flex');
