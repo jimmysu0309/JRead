@@ -50,6 +50,31 @@
     return linkLen / textLen;
   }
 
+  // ---- 連結目錄 reject gate（v1.7.8：404 / error 頁 no-op）-----------------
+  // 場景（udn「找不到網頁」404 頁實測）：頁面沒有任何文章內容，唯一過
+  // MIN_TEXT_LEN 的候選是站台產品選單（8 個 section、h4 標題 + 純連結、無任何
+  // 段落）。heuristic 的 linkDensity 懲罰只是乘法折扣——沒有競爭者時選單照樣
+  // 勝出、confidence clamp 到門檻必過 → 閱讀模式把整個站台選單當主文渲染
+  // （違反「偵測失敗 → no-op、不誤傷原頁面」的降級政策）。
+  // 結構訊號（硬規則 3，雙條件必須同時成立才 reject）：
+  //   1. 候選內不存在任何 >= 80 chars 的段落載體（p / li / blockquote / dd）
+  //      ——文章內文必有段落級文字；導覽選單 / 連結目錄只有短連結文字
+  //   2. linkDensity >= 0.5——可見文字一半以上是連結文字（udn 404 選單實測
+  //      0.727、真實文章 articleEl 實測 0.24）
+  // 只滿足其一不 reject，避免誤殺兩類合法文章：無段落但低連結密度（Paul
+  // Graham 型 font+br 純文字老頁，ld≈0）、有段落但連結多（link roundup 文摘，
+  // 通常至少有一段 >= 80 chars 的導言 / 註解）。
+  const LINK_DIR_MIN_PARA_LEN = 80;
+  const LINK_DIR_LD_REJECT = 0.5;
+  function isLinkDirectory(el, textLen) {
+    if (linkDensity(el, textLen) < LINK_DIR_LD_REJECT) return false;
+    for (const p of el.querySelectorAll('p, li, blockquote, dd')) {
+      const t = (p.innerText || p.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t.length >= LINK_DIR_MIN_PARA_LEN) return false;
+    }
+    return true;
+  }
+
   // ---- 策略 1：語意標籤 <article> ------------------------------------
   // 注意：<main> 本身作為兜底由 detectByMainTag() 處理，且排在 heuristic
   // 之後。理由：若頁面有 <main> 但無 <article>，且 <main> 內用 CSS grid /
@@ -124,7 +149,11 @@
   function detectByMainTag() {
     const main = document.querySelector('main');
     if (!main) return null;
-    if (scoredTextLen(main) < MIN_TEXT_LEN) return null;
+    const textLen = scoredTextLen(main);
+    if (textLen < MIN_TEXT_LEN) return null;
+    // v1.7.8：<main> 只包導覽選單 / 連結目錄（404 頁常見）→ no-op（見
+    // isLinkDirectory 註解）
+    if (isLinkDirectory(main, textLen)) return null;
     return { el: main, confidence: 0.75, strategy: 'main-tag' };
   }
 
@@ -465,6 +494,10 @@
 
       const textLen = scoredTextLen(el);
       if (textLen < MIN_TEXT_LEN) continue;
+
+      // v1.7.8：連結目錄候選直接 reject（404 頁站台選單，見 isLinkDirectory
+      // 註解）——linkDensity 乘法懲罰在「無競爭者」時擋不住
+      if (isLinkDirectory(el, textLen)) continue;
 
       // 連結密度懲罰：主文的連結密度應低；sidebar / 相關文章列表的連結密度高
       const ld = linkDensity(el, textLen);

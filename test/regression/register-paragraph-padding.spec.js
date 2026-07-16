@@ -5,10 +5,14 @@
 // （每行約 6.7 字元）——幾乎無法閱讀。
 //
 // 修法：styler 注入
-//   html [data-jread-active="1"] p { padding-left: 0 !important; padding-right: 0 !important; }
+//   html [data-jread-active="1"] p:not([data-jread-inline-flow-p="1"]) {
+//     padding-left: 0 !important; padding-right: 0 !important; }
 //
 // 通則特徵：reader card 是 single-column layout，原站的水平 padding（通常用於多欄
 // layout 內縮）在 reader card 內失去意義，只會擠窄文字。本條只清 left/right。
+// （v1.7.8 補記：inline-flow p（display:inline*）豁免——水平 padding 內縮的前提
+// 是 block-level p 撐滿容器寬；inline 流動 p 的水平 padding 是相鄰元素分隔，
+// 見 nyt-byline-inline-p-padding.spec.js。The Register 的 block p 不受豁免影響。）
 // （v0.8.92 補記：top/bottom 的歸零移到 paragraphSpacing 注入分支處理——站點用
 // padding-bottom 撐段距會與 reader margin 疊成雙倍間距，見
 // wapo-paragraph-padding-stack.spec.js。Auto 模式不注入 margin、也不清垂直
@@ -58,7 +62,7 @@ describe('styler — The Register paragraph padding reset', () => {
       'CSS 必須包含 padding-left: 0 !important（清除原站水平 padding）'
     );
     // 確認規則是針對 [data-jread-active] 內的 p
-    const ruleMatch = css.match(/\[data-jread-active="1"\]\s*p\s*\{[^}]*padding-left:\s*0\s*!important/);
+    const ruleMatch = css.match(/\[data-jread-active="1"\]\s*p[^{,]*\{[^}]*padding-left:\s*0\s*!important/);
     assert.ok(ruleMatch,
       'padding-left: 0 規則必須在 [data-jread-active="1"] p selector 內');
   });
@@ -68,7 +72,7 @@ describe('styler — The Register paragraph padding reset', () => {
       css.includes('padding-right: 0 !important'),
       'CSS 必須包含 padding-right: 0 !important（清除原站水平 padding）'
     );
-    const ruleMatch = css.match(/\[data-jread-active="1"\]\s*p\s*\{[^}]*padding-right:\s*0\s*!important/);
+    const ruleMatch = css.match(/\[data-jread-active="1"\]\s*p[^{,]*\{[^}]*padding-right:\s*0\s*!important/);
     assert.ok(ruleMatch,
       'padding-right: 0 規則必須在 [data-jread-active="1"] p selector 內');
   });

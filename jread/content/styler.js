@@ -136,6 +136,9 @@
   const CJK_JUSTIFY_ATTR = 'data-jread-cjk-justify';
   // v1.6.23：內文裝飾性大寫 / 加寬字距標記——重設回一般（見 markDecorativeInlines）。
   const DECOR_RESET_ATTR = 'data-jread-decor-reset';
+  // v1.7.8：inline-flow <p> 標記——豁免 v0.7.201 水平 padding reset（見
+  // markInlineFlowParagraphs）。
+  const INLINE_FLOW_P_ATTR = 'data-jread-inline-flow-p';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -1784,8 +1787,14 @@ ${MEDIA_DIRECT_WRAP_SEL} {
    320px）。reader card 是 single-column、已有 56px 側邊 padding，原站
    的水平 padding 只會把文字擠窄（The Register 每行僅 6.7 字元）。
    只清 left/right，保留 top/bottom（站點可能用它做段落間距）。
-   html 前綴提升 specificity。 */
-html [${ARTICLE_ATTR}="1"] p {
+   html 前綴提升 specificity。
+   v1.7.8：inline-flow p 豁免（:not INLINE_FLOW_P_ATTR）——多欄內縮只可能發生
+   在 block-level p（水平 padding 內縮的前提是元素撐滿容器寬）；inline /
+   inline-block 流動的 p 其水平 padding 是「相鄰元素分隔」用途（NYT byline
+   兩個相鄰 inline-block <p> 之間無空白 text node、分隔全靠 padding-right:
+   12px，被本規則清掉 → 「By Ben SisarioVisuals by Ryan Lowry」黏字）。
+   標記見 markInlineFlowParagraphs。 */
+html [${ARTICLE_ATTR}="1"] p:not([${INLINE_FLOW_P_ATTR}="1"]) {
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
@@ -2911,6 +2920,36 @@ html.${HTML_CLASS}.jread-orion body {
     return marked;
   }
 
+  // ---- inline-flow <p> 標記：v0.7.201 水平 padding reset 的豁免（v1.7.8）----
+  // 根因（Jimmy 2026-07-16 NYT mike-d-new-album「byline 黏字」回報）：NYT byline
+  // 把「By Ben Sisario」「Visuals by Ryan Lowry」輸出成兩個相鄰 inline-block
+  // <p>（React render、之間無空白 text node），視覺分隔完全靠站方
+  // `.css-1xuzukf { padding-right: 12px }`。v0.7.201 的
+  // `html [ARTICLE_ATTR] p { padding-left/right: 0 !important }`（The Register
+  // 多欄內縮 220px 修法）把分隔 padding 一起清掉 → 兩段黏成
+  // 「By Ben SisarioVisuals by Ryan Lowry」。
+  // 通則訊號（硬規則 3——CSS computed 特徵，不綁站點 / class）：v0.7.201 要解的
+  // 「多欄 layout 內縮」只可能發生在 block-level p（水平 padding 造成內縮的前提
+  // 是元素撐滿容器寬）；computed display 為 inline / inline-block / inline-flex
+  // 的 p 參與 inline 流動、其水平 padding 是「相鄰元素分隔」用途 → 標記
+  // INLINE_FLOW_P_ATTR 豁免、保留原站 padding。與 v1.0.18 byline-item
+  // column-gap 修法同一問題家族（容器 / 排版吃掉 inline 分隔），但載體不同：
+  // 該輪是 JRead 自己把 byline item 改 inline-flex 吃掉空白、這輪是站方本來
+  // 就無空白、JRead 清掉唯一的 padding 分隔。
+  function markInlineFlowParagraphs(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const marked = [];
+    for (const el of articleEl.querySelectorAll('p')) {
+      let cs;
+      try { cs = win.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || !/^inline/.test(cs.display)) continue;
+      el.setAttribute(INLINE_FLOW_P_ATTR, '1');
+      marked.push(el);
+    }
+    return marked;
+  }
+
   // ---- 內文裝飾性大寫 / 加寬字距中和（v1.6.23）----------------------------
   // 根因（Jimmy 2026-07-08 wired.com 翻譯後回報）：站方對首段套整段 lead-in
   // 裝飾 span（text-transform: uppercase + letter-spacing: 1.5px）。閱讀模式
@@ -3324,12 +3363,13 @@ html.${HTML_CLASS}.jread-orion body {
       let textDivMarked = [];
       let cjkJustifyMarked = [];
       let decorResetMarked = [];
+      let inlineFlowPMarked = [];
       const contrastBgSnap = [];
       let themeColorSnap = null;
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
       try {
       // ──────────────────────────────────────────────────────────────────
 
@@ -4243,6 +4283,11 @@ html.${HTML_CLASS}.jread-orion body {
       // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
       decorResetMarked = markDecorativeInlines(articleEl);
 
+      // v1.7.8：inline-flow p 標記（v0.7.201 水平 padding reset 豁免）。依賴
+      // computed display（站方 CSS 給的 inline / inline-block），與注入 CSS
+      // 無時序依賴——注入規則不改 p 的 display。
+      inlineFlowPMarked = markInlineFlowParagraphs(articleEl);
+
       // v0.7.179：strip excessive padding on ancestors between firstInk and
       // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
       // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
@@ -4380,6 +4425,13 @@ html.${HTML_CLASS}.jread-orion body {
           for (const el of articleEl.querySelectorAll(TARGET_SEL)) {
             // 自身是語意縮排容器 → 不清（保留引言 / 清單 / 表格縮排）
             if (INDENT_TAGS.has(el.tagName)) continue;
+            // v1.7.8：inline-flow p 豁免（與 v0.7.201 CSS 規則的 :not 豁免同一份
+            // 事實、雙 path 必須同步）——inline / inline-block p 的水平 padding /
+            // margin 是相鄰元素分隔用途、不是版心內縮（NYT byline 黏字實證：
+            // CSS 規則豁免後 computed padding 恢復 12px，本 pass 若不同步豁免
+            // 會在下一步把它寫成 inline 0 !important、黏字復發）。標記見
+            // markInlineFlowParagraphs（本 pass 之前已跑）。
+            if (el.getAttribute && el.getAttribute(INLINE_FLOW_P_ATTR) === '1') continue;
             // cleaner 清掉的隱藏雜訊不動
             if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
             // 在語意縮排脈絡內 → 縮排刻意，跳過
@@ -5178,6 +5230,12 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.cjkJustifyMarked)) {
         for (const el of snapshot.cjkJustifyMarked) {
           if (el && el.removeAttribute) el.removeAttribute(CJK_JUSTIFY_ATTR);
+        }
+      }
+      // v1.7.8：移除 inline-flow p 標記
+      if (Array.isArray(snapshot.inlineFlowPMarked)) {
+        for (const el of snapshot.inlineFlowPMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(INLINE_FLOW_P_ATTR);
         }
       }
       // v1.6.23：移除內文裝飾性大寫 / 加寬字距標記
