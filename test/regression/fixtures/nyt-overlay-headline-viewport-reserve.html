@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overlay Headline Viewport Reserve Test Article</title>
+<style>
+  /* 模擬 NYT full-bleed overlay-headline 變體（mike-d-new-album 實測結構）：
+     多層 wrapper 各自 stylesheet height:100vh。jsdom 無 layout engine，
+     ≥ 80% viewport 的幾何由 spec 端 stubRect 注入。 */
+  .hero-header { display: flex; flex-direction: row-reverse; height: 100vh; }
+  .media-col { width: 50%; }
+  .size-full { height: 100vh; }
+  .reserve-box { height: 100vh; }
+  .title-col { width: 50%; }
+</style>
+</head>
+<body>
+<article>
+  <header class="hero-header" data-test="hero-header">
+    <div class="media-col" data-test="media-col">
+      <div class="size-full" data-test="size-full">
+        <div class="reserve-box" data-test="reserve-box" style="position: relative; width: 100%; overflow: hidden;">
+          <!-- 媒體層「自身」同時含重複 h1（full-bleed 寬度疊圖上的標題）與
+               cinemagraph video：層含 h1 → 走 v0.8.87 title-overlay 分支 -->
+          <div class="overlay-layer" data-test="overlay-layer" style="position: absolute; top: 0; left: 0;">
+            <h1 data-test="dup-title">Overlay Headline Viewport Reserve Test Article</h1>
+            <video data-test="hero-video" muted loop playsinline src="hero.mp4"></video>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="title-col" data-test="title-col">
+      <div data-test="headline-block">
+        <h1 data-test="title">Overlay Headline Viewport Reserve Test Article</h1>
+        <p data-test="summary">Thanks to an assist from structural signals, the reader mode is set to release the byline from a full page of reserved blank space below the summary paragraph.</p>
+      </div>
+    </div>
+  </header>
+  <div data-test="byline">By Regression Spec</div>
+  <p data-test="body-p-1">The three-decade run of this fixture began when a full-bleed hero template stacked multiple viewport-height wrappers on top of each other, each one reserving an entire screen of vertical space for a cinemagraph that never participates in normal flow layout at reader card widths.</p>
+  <p data-test="body-p-2">In the aftermath, the absolute media layer carried its own duplicate headline element, which routed the cleanup through the title overlay branch instead of the hero media branch, so the containing block height reset never had a chance to run on any of the reserving ancestors.</p>
+  <p data-test="body-p-3">Again and again, the byline appeared a full viewport below the summary text, until the ancestor chain flattening pass measured each wrapper against the viewport height signature and collapsed the stylesheet reservations back to content-driven heights.</p>
+</article>
+</body>
+</html>

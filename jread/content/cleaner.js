@@ -3587,7 +3587,7 @@
   // 不命中的既有保護對象：CNBC aspect-ratio imageContainer（positioned 祖先
   // 是專屬媒體 wrapper、內無 h1）、player 結構（data-jread-player 明確跳過）、
   // title overlay（h1 在層內 → 走 v0.8.87 分支）。
-  function maybeRestoreHeroMediaOverlayFlow(el, articleEl, resets) {
+  function maybeRestoreHeroMediaOverlayFlow(el, articleEl, resets, heightSeen) {
     if (el.closest && el.closest('[data-jread-player]')) return;
     // containing block：最近 positioned 祖先。articleEl 自身不算——articleEl
     // 涵蓋整篇、其內必有 h1，把它當 containing block 會讓所有 absolute 媒體
@@ -3612,6 +3612,10 @@
       'top': 'auto', 'left': 'auto', 'right': 'auto', 'bottom': 'auto',
       'order': '1'
     });
+    // v1.7.7：祖先鏈 viewport-scale 高度佔位 flatten（見 helper 註解）。
+    // 放在 cb 高度 reset 之前：flatten 若已處理 cb，heightSeen 讓下面跳過，
+    // 反向亦然（同一 el 只 snapshot 一次，避免 restore 還原到我們自己的值）
+    flattenViewportHeightReserveChain(el, articleEl, resets, heightSeen);
     let cbCs = null;
     try { cbCs = window.getComputedStyle(cb); } catch (_) { cbCs = null; }
     if (!cbCs) return;
@@ -3622,7 +3626,9 @@
       cbDecls['display'] = 'flex';
       cbDecls['flex-direction'] = 'column';
     }
-    if (parseFloat(cbCs.minHeight) > 0 || parseFloat(cbCs.height) > 100) {
+    if (!heightSeen.has(cb) &&
+        (parseFloat(cbCs.minHeight) > 0 || parseFloat(cbCs.height) > 100)) {
+      heightSeen.add(cb);
       cbProps.push('min-height', 'height');
       cbDecls['min-height'] = '0';
       cbDecls['height'] = 'auto';
@@ -3633,12 +3639,60 @@
     }
   }
 
+  // v1.7.7：full-bleed「viewport-scale 高度佔位」祖先鏈 flatten。
+  // 場景（NYT Arts 版 mike-d-new-album 實測，cage live probe）：overlay-headline
+  // 的另一種模板變體——absolute 媒體層「自身」同時裝 hero <video> 與一份重複
+  // h1（原站 full-bleed 寬度疊在圖上的標題；窄版另 render 一份可見 h1 在兄弟
+  // 欄）。層含 h1 → 先命中 v0.8.87 title-overlay 分支（只還原 position:static、
+  // 不處理高度佔位），v1.7.6 hero-media 分支（有 containing block 高度 reset）
+  // 走不到；層內 h1 也讓 v1.0.3 cinemagraph 的 wrapper 爬升提前 break
+  //（wrapper === video → skip）。且高度佔位不只一層：實測三層 wrapper 各自
+  // stylesheet height:100vh——v1.7.6 cb reset 只碰單一 containing block、
+  // v1.0.4 掛 collapse 軌需 hidden child，全部接不住 → 摘要與 byline 之間
+  // 殘留一整頁（100vh）純空白。
+  // 規則（結構通則，不綁站點 / class，硬規則 3）：absolute overlay 層被還原回
+  // flow 時（title-overlay 與 hero-media 兩分支共用同一支 helper，避免雙實作
+  // drift），full-bleed 對位設計已被 linearize，祖先鏈上 viewport-scale 的
+  // 高度佔位失去設計意義——從層的 parent 沿鏈走到 articleEl（不含），rect
+  // 高度 >= 80% viewport（v1.0.4 同款簽名門檻）的祖先 reset height:auto /
+  // min-height:0。對「內容撐出」的高度 height:auto 是 no-op（視覺零風險）、
+  // 只有 stylesheet 固定佔位會塌回內容高；player 結構（data-jread-player）
+  // 高度是播放器佔位、整鏈跳過。由內往外逐層 apply：內層 reset 後同步
+  // reflow，外層若只是被內層撐高會自動掉出門檻、不誤碰。
+  // heightSeen：與 cb reset / absolute overlay parent reset 共用的「已寫過
+  // height 的元素」集合——同一元素只 snapshot 一次，否則第二次 snapshot 會
+  // 拍到我們自己寫入的 !important 值、退出 reader mode 還原成我們的值。
+  // jsdom rect 全 0 → 自動不命中（spec 用 stubRect 驗，見
+  // nyt-overlay-headline-viewport-reserve.spec.js）。
+  function flattenViewportHeightReserveChain(el, articleEl, resets, heightSeen) {
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!vh) return;
+    let p = el.parentElement;
+    while (p && p !== articleEl && p !== document.body) {
+      if (p.getAttribute && p.getAttribute('data-jread-player') === '1') return;
+      if (!heightSeen.has(p)) {
+        let r = null;
+        try { r = p.getBoundingClientRect(); } catch (_) { r = null; }
+        if (r && r.height >= vh * 0.8) {
+          heightSeen.add(p);
+          resets.push({ el: p, prev: snapshotStyles(p, ['height', 'min-height']) });
+          applyImportant(p, { 'height': 'auto', 'min-height': '0' });
+        }
+      }
+      p = p.parentElement;
+    }
+  }
+
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
     const titleOverlayResets = [];
     const heroMediaFlowResets = [];
     const seenParents = new Set();
+    // v1.7.7：本函式內所有「height/min-height reset」共用的去重集合——同一
+    // 元素只 snapshot 一次（第二次 snapshot 會拍到我們自己寫的 !important 值，
+    // 退出 reader mode 時還原成我們的值而非站方原值）
+    const heightSeen = new Set();
     for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -3697,6 +3751,11 @@
             'position': 'static',
             'top': 'auto', 'left': 'auto', 'right': 'auto', 'bottom': 'auto'
           });
+          // v1.7.7：title overlay 還原 flow 後，祖先鏈 viewport-scale 高度
+          // 佔位一併 flatten——NYT mike-d-new-album 變體把重複 h1 裝進媒體層
+          // 內，走本分支而非 hero-media 分支，100vh 佔位（實測三層）沒人清
+          // → 摘要與 byline 之間留一整頁空白（見 helper 註解）
+          flattenViewportHeightReserveChain(el, articleEl, titleOverlayResets, heightSeen);
         }
         continue;
       }
@@ -3724,7 +3783,7 @@
           containsContentScaleImg(el)) {
         // media wrapper：不 hide（v0.7.170 主圖保護），但 full-bleed
         // overlay-headline template 要還原 flow（見 helper 註解）
-        maybeRestoreHeroMediaOverlayFlow(el, articleEl, heroMediaFlowResets);
+        maybeRestoreHeroMediaOverlayFlow(el, articleEl, heroMediaFlowResets, heightSeen);
         continue;
       }
       // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
@@ -3772,10 +3831,11 @@
             if (!m.closest('[data-jread-hidden="1"]')) { hasVisibleMedia = true; break; }
           }
         }
-        if (!isPlayerStruct && !hasVisibleMedia) {
+        if (!isPlayerStruct && !hasVisibleMedia && !heightSeen.has(parent)) {
           let pcs;
           try { pcs = window.getComputedStyle(parent); } catch (_) { pcs = null; }
           if (pcs && (parseFloat(pcs.minHeight) > 0 || parseFloat(pcs.height) > 100)) {
+            heightSeen.add(parent);
             parentHeightResets.push({
               el: parent,
               prev: snapshotStyles(parent, ['min-height', 'height'])

@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.6**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.7**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -386,6 +386,8 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 NYT Style 版類 full-bleed header 結構：header（`position:relative` + `display:flex` + stylesheet `height:100vh`）內兩層——absolute 層裝 hero `<picture>`、static 兄弟層裝 h1＋摘要，原站桌寬下由設計對位（標題壓圖上）。reader card 縮窄後 absolute 層脫離 flow 直接蓋在標題文字上、100vh 佔位殘留整頁空白。既有規則接不住的原因：媒體層走 v0.7.170 media-wrapper guard（含 picture → 不 hide，主圖保護正確）但 `position:absolute` 原樣留下；v1.0.4 高度 reset 掛 collapse 軌、需 hidden child 觸發，本場景無任何 child 被 hide。
 
 修法 `maybeRestoreHeroMediaOverlayFlow`（`hideInsideArticleAbsoluteOverlays` 的 media-wrapper 分支，結構訊號、無 rect 條件、jsdom 可驗、翻譯無關）：absolute/fixed 媒體層的最近 positioned 祖先（articleEl 為界，articleEl 自身不算——其內必有 h1 會全部誤命中）內、層外存在 `<h1>` ＝ overlay-headline template → 與 v0.8.87 title overlay 同原則（reader mode 下 flow > overlay）：媒體層 `position:static` + `order:1`（標題先、圖後，同 NYT 自家 mobileBelowLede 窄版序）；positioned 祖先 flex/grid → 強制 flex column（原 flex-row 會讓還原後兩層並排）、stylesheet 高度 > 100px → reset auto。不命中：CNBC aspect-ratio 專屬媒體 wrapper（positioned 祖先無 h1）、player 結構（`data-jread-player` 跳過）、title overlay（h1 在層內走 v0.8.87 分支）。同輪補：`preTitleBranchIsProtected` tag 保護清單加 `<picture>`（hero 層 DOM 序在標題塊前，真實 Chrome 靠 rect 軌豁免、jsdom / lazy 未載入時 rect 全 0 會被 pre-title 雜訊規則誤殺；picture 是響應式內容圖慣例載體、icon 不用 picture）。Forcing：`nyt-fullbleed-hero-media-overlay.spec.js`（含 CNBC 負控制 + restore round-trip）。
+
+**v1.7.7 變體：祖先鏈 viewport 高度佔位 flatten**（`flattenViewportHeightReserveChain`）。NYT mike-d-new-album 實測同 template 家族變體——absolute 媒體層「自身」同時裝 hero `<video>`（cinemagraph）與一份重複 h1（full-bleed 寬度疊圖上的標題；窄版另 render 可見 h1 在兄弟欄）。層含 h1 → 命中 v0.8.87 title-overlay 分支（只還原 position、無高度處理），上述 hero-media 分支走不到；層內 h1 也讓 v1.0.3 cinemagraph wrapper 爬升提前 break。且佔位不只一層（實測三層 wrapper 各自 stylesheet `height:100vh`）。修法：absolute overlay 層被還原回 flow 時（title-overlay 與 hero-media 兩分支**共用同一支 helper**，避免雙實作 drift），從層的 parent 沿祖先鏈走到 articleEl（不含），rect 高度 >= 80% viewport（v1.0.4 同款簽名門檻）的祖先 reset `height:auto` / `min-height:0`——內容撐出的高度 height:auto 是 no-op、只有 stylesheet 固定佔位塌回內容高；player 結構整鏈跳過；由內往外逐層 apply。`heightSeen` 去重集合統一 `hideInsideArticleAbsoluteOverlays` 內所有 height reset 軌（flatten / hero-media cb reset / absolute overlay parent reset）——同一元素只 snapshot 一次，防第二次 snapshot 拍到自己的 `!important` 值、退出時還原錯值。Forcing：`nyt-overlay-headline-viewport-reserve.spec.js`（含 media-col 負控制 + restore round-trip）。
 
 ### 主文內所有 interactive button 一律清除（無保留）
 
