@@ -149,6 +149,19 @@ describe('substack-reaction-count-bar — 行為', () => {
     }
   });
 
+  it('靜態：translate-first「重推」譯法變體「16 個讚 · 1 次重推」命中（v1.7.11 culpium）', () => {
+    // Google MT 對 Restack 的第四種譯法「次重推」（Jimmy 實機截圖）；同頁 probe 本輪
+    // 跑出「16 贊∙1 重新堆疊」——再證譯法逐次不穩定，反應名詞清單補 重推（簡繁同形）。
+    const variants = ['16 個讚 · 1 次重推', '1 次重推', '16 个赞 · 1 次重推'];
+    for (const ct of variants) {
+      const { doc, art, NS } = buildEnv({ withBar: true, countText: ct });
+      const hidden = NS.cleaner.clean(art);
+      assert.strictEqual(doc.getElementById('likebar').dataset.jreadHidden, '1',
+        `「重推」翻譯變體「${ct}」應命中`);
+      NS.cleaner.restore(hidden);
+    }
+  });
+
   it('守衛：主文含「數字＋量詞」但不以反應名詞收尾者不誤殺（如「3 個重點」「2024 年」）', () => {
     // 新增的 0–3 字 CJK 前綴不可鬆到把主文短語吃進來——關鍵是 token 必須以「已知反應
     // 名詞」收尾。這些短語結尾（重點 / 年）非反應名詞 → 一律 miss。

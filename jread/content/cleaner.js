@@ -2267,7 +2267,10 @@
   // Restack 又出第三種譯法「次轉貼」（Jimmy 實機「551 個讚 · 72 次轉貼」；同頁 probe
   // 另一輪跑出「551 贊∙72 重新堆疊」——譯法逐次不穩定，變體只能逐一收進名詞清單）
   // → 反應名詞補 轉貼/转贴。
-  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉貼|转贴|轉推|转推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
+  // v1.7.11 culpium translate-first 四測：Restack 第四種譯法「次重推」（Jimmy 實機
+  // 「16 個讚 · 1 次重推」；同頁 probe 本輪跑出「16 贊∙1 重新堆疊」——再證譯法逐次
+  // 不穩定）→ 反應名詞補 重推（簡繁同形）。
+  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉貼|转贴|轉推|转推|重推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
