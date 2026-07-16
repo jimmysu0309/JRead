@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.5**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.6**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -380,6 +380,12 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 - **文末 curated 故事集連結卡**（`hideTailCuratedLinkLists`）：位於最後主文長段落之後的 `<section>`、>= 2 個 li 且每 li 含 `<p>` teaser 與站內連結（hostname 相同、pathname 不同、非 # anchor）、無 li 外長 p、文字量 < 主文 30%。guard：Wikipedia References / See also（li 無 p wrapper）、外站 citation list、listicle 主體（占比 > 30%）皆不命中
 - **JS 影片播放器函式庫 widget**（`hideInsideArticleVideoPlayerWidgets`，v0.8.140 inc.com 實證）：站點在主文段落間注入的「Featured Video / 推薦影片」widget（JWPlayer 等 JS 播放器，內容與本文無關）。anchor 在函式庫 root class `.jwplayer`（跨站通用簽章、非站點 class），ratio walk-up（父層文字量 > 當前 ×3 + 80 視為碰到主文 body 即停）找出注入 wrapper 整塊 hide；雙保險：wrapper 含 >= 100 chars 主文 `<p>`（不在播放器 root 內）→ 不 hide。**時序覆蓋**：靜態 clean()（`.jwplayer` 已存在）+ `checkDynamicNoise` 動態接（iOS 上 JWPlayer 在 clean() 之後才 init、observer subtree 捕捉新增的 `.jwplayer`）兩 path 共用 `hideVideoPlayerWidgetFrom`。編輯性影片（`<figure><video><figcaption>` / YouTube iframe embed）不走函式庫 root class、不命中。forcing：`inc-featured-video-jwplayer-widget.spec.js`
 - **空殼媒體 embed placeholder**（`hideInsideArticleHollowMediaEmbeds` / `figureIsHollowMediaEmbed`，v1.7.0 Wired CNE 實證）：Condé Nast CNE 影片/音訊 embed（`<figure class="cne-video-embed">` 內含 `<iframe>`）在閱讀模式接手後 player 腳本沒 init，iframe `src` 空、內部完全沒渲染，但外層容器仍保留 player 的預留高度（實測 1081px）→ 主文中段一大段空白。既有規則漏網：figure 屬 `PRESERVE_SEL`（`hideInsideArticleThirdPartyIframes` 走 `isInPreserved` 跳過 iframe）、`hideInsideArticleVideoInterludes` 需 >= 20 字外連標題 a 空 embed 不命中。predicate `figureIsHollowMediaEmbed`：figure 含 iframe 且**每個 iframe src 空/about:blank** + **無 `<img>`**（無 poster）+ **無帶 src/`<source>` 的 `<video>`** + **textContent 為空** → 空殼 placeholder、hide 整個 figure（外層預留高度容器塌陷）。純 DOM 屬性判定（不量 rect），jsdom 與真實 Chrome 一致。**時序覆蓋**：靜態 `hideInsideArticleHollowMediaEmbeds`（clean 當下 iframe 已存在）+ 動態 `hideHollowMediaEmbedFrom`（CNE 靠 intersection observer lazy-inject 空 iframe、常晚於 clean()）共用同一 predicate。動態端**必須排在 observer callback 的 `isInPreserved` continue guard 之前**（hollow embed 載體是 preserved figure，排在 guard 後會被短路漏接，與 `pinDynamicEmbedFallbackImgs` 同款刻意提前），三種注入時序全接（node 自身是 hollow figure / iframe 注入既存空 figure 的祖先查 / node 內含 hollow figure）。真 YouTube embed（iframe 有實 src）/ 有 poster 縮圖 / 有圖說文字的 embed 皆保留。forcing：`wired-hollow-cne-embed.spec.js`（靜態保護 case + 動態三時序 + 單一資料源）
+
+### full-bleed「圖疊標題」hero 媒體層還原 flow（v1.7.6 通則）
+
+NYT Style 版類 full-bleed header 結構：header（`position:relative` + `display:flex` + stylesheet `height:100vh`）內兩層——absolute 層裝 hero `<picture>`、static 兄弟層裝 h1＋摘要，原站桌寬下由設計對位（標題壓圖上）。reader card 縮窄後 absolute 層脫離 flow 直接蓋在標題文字上、100vh 佔位殘留整頁空白。既有規則接不住的原因：媒體層走 v0.7.170 media-wrapper guard（含 picture → 不 hide，主圖保護正確）但 `position:absolute` 原樣留下；v1.0.4 高度 reset 掛 collapse 軌、需 hidden child 觸發，本場景無任何 child 被 hide。
+
+修法 `maybeRestoreHeroMediaOverlayFlow`（`hideInsideArticleAbsoluteOverlays` 的 media-wrapper 分支，結構訊號、無 rect 條件、jsdom 可驗、翻譯無關）：absolute/fixed 媒體層的最近 positioned 祖先（articleEl 為界，articleEl 自身不算——其內必有 h1 會全部誤命中）內、層外存在 `<h1>` ＝ overlay-headline template → 與 v0.8.87 title overlay 同原則（reader mode 下 flow > overlay）：媒體層 `position:static` + `order:1`（標題先、圖後，同 NYT 自家 mobileBelowLede 窄版序）；positioned 祖先 flex/grid → 強制 flex column（原 flex-row 會讓還原後兩層並排）、stylesheet 高度 > 100px → reset auto。不命中：CNBC aspect-ratio 專屬媒體 wrapper（positioned 祖先無 h1）、player 結構（`data-jread-player` 跳過）、title overlay（h1 在層內走 v0.8.87 分支）。同輪補：`preTitleBranchIsProtected` tag 保護清單加 `<picture>`（hero 層 DOM 序在標題塊前，真實 Chrome 靠 rect 軌豁免、jsdom / lazy 未載入時 rect 全 0 會被 pre-title 雜訊規則誤殺；picture 是響應式內容圖慣例載體、icon 不用 picture）。Forcing：`nyt-fullbleed-hero-media-overlay.spec.js`（含 CNBC 負控制 + restore round-trip）。
 
 ### 主文內所有 interactive button 一律清除（無保留）
 
