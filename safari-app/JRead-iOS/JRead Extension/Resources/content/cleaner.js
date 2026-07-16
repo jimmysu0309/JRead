@@ -1767,7 +1767,14 @@
   //     ago + 作者」byline row 不用 <time> tag）
   function preTitleBranchIsProtected(sib) {
     if (wrapperContainsMainContentP(sib)) return true;
-    if (sib.querySelector && sib.querySelector('video, audio, iframe, h1, h2, h3, h4, h5, h6, time')) return true;
+    // v1.7.6：tag 保護清單補 <picture>——NYT full-bleed hero 媒體層（含
+    // <picture> 的 absolute 層）DOM 序在標題塊之前，真實 Chrome 靠下面
+    // hasUnhiddenContentMedia 的 rect 軌豁免，但 jsdom / lazy 未載入時
+    // rect 全 0、rect 軌失效 → hero 整層被當 pre-title 雜訊誤殺。
+    // <picture> 是響應式「內容圖」的慣例載體（裝飾 icon / 徽章用 img/svg、
+    // 不包 picture），tag 存在即是內容媒體訊號，與 video/audio/iframe
+    // 同款 jsdom-safe 補充；寧殘留不誤殺（本規則既定原則）。
+    if (sib.querySelector && sib.querySelector('picture, video, audio, iframe, h1, h2, h3, h4, h5, h6, time')) return true;
     if (hasUnhiddenContentMedia(sib)) return true;
     const text = norm(visibleRenderedText(sib));
     if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
@@ -3557,10 +3564,80 @@
     return false;
   }
 
+  // v1.7.6：full-bleed「圖疊標題」hero 媒體層還原 flow。
+  // 場景（NYT Style 版 too-many-books 實測，translate-first 與英文皆中）：
+  // header 兩層結構——absolute 層裝 hero <picture>、static 兄弟層裝 h1＋摘要、
+  // header 自身 stylesheet height:100vh（full-bleed 設計、兩層在原站桌寬下
+  // 由設計對位）。reader card 縮窄後 absolute 層脫離 flow 直接蓋在標題文字
+  // 上（標題被 hero 圖遮住）、100vh 高度殘留大片空白。
+  // 既有規則為何接不住：媒體層走 v0.7.170 media-wrapper guard（含 picture →
+  // 不 hide，保護正確——這是主文 hero）但 position:absolute 原樣留下；
+  // v1.0.4 高度 reset 掛在 collapse 軌、需要 hidden child 觸發，本場景
+  // 無任何 child 被 hide → collapse 不跑。
+  // 結構訊號（不綁站點 / class、無 rect 條件、jsdom 可驗、翻譯無關）：
+  // absolute/fixed 媒體層的 containing block（最近 positioned 祖先，articleEl
+  // 為界）內、媒體層之外存在 article 標題 <h1> ＝「overlay-headline
+  // template」。與 v0.8.87 title overlay 同原則（reader mode 下 flow >
+  // overlay）：
+  //   - 媒體層 position:static 還原 flow，並以 order:1 排到標題塊之後
+  //     （NYT 自家窄版 mobileBelowLede 設計同樣是標題先、圖在後）
+  //   - containing block 若是 flex/grid → 強制 flex column（原 flex-row 會
+  //     讓還原後的兩層並排壓縮）；stylesheet 高度佔位（100vh）reset 回
+  //     內容撐出（與 absolute overlay parent reset 同門檻）
+  // 不命中的既有保護對象：CNBC aspect-ratio imageContainer（positioned 祖先
+  // 是專屬媒體 wrapper、內無 h1）、player 結構（data-jread-player 明確跳過）、
+  // title overlay（h1 在層內 → 走 v0.8.87 分支）。
+  function maybeRestoreHeroMediaOverlayFlow(el, articleEl, resets) {
+    if (el.closest && el.closest('[data-jread-player]')) return;
+    // containing block：最近 positioned 祖先。articleEl 自身不算——articleEl
+    // 涵蓋整篇、其內必有 h1，把它當 containing block 會讓所有 absolute 媒體
+    // wrapper 全部誤命中
+    let cb = el.parentElement;
+    while (cb && cb !== articleEl) {
+      let ccs;
+      try { ccs = window.getComputedStyle(cb); } catch (_) { return; }
+      if (ccs && ccs.position !== 'static') break;
+      cb = cb.parentElement;
+    }
+    if (!cb || cb === articleEl || !cb.querySelector) return;
+    const h1 = cb.querySelector('h1');
+    if (!h1 || (el.contains && el.contains(h1))) return;
+    if (h1.closest && h1.closest('[data-jread-hidden="1"]')) return;
+    resets.push({
+      el,
+      prev: snapshotStyles(el, ['position', 'top', 'left', 'right', 'bottom', 'order'])
+    });
+    applyImportant(el, {
+      'position': 'static',
+      'top': 'auto', 'left': 'auto', 'right': 'auto', 'bottom': 'auto',
+      'order': '1'
+    });
+    let cbCs = null;
+    try { cbCs = window.getComputedStyle(cb); } catch (_) { cbCs = null; }
+    if (!cbCs) return;
+    const cbProps = [];
+    const cbDecls = {};
+    if (/flex|grid/.test(cbCs.display)) {
+      cbProps.push('display', 'flex-direction');
+      cbDecls['display'] = 'flex';
+      cbDecls['flex-direction'] = 'column';
+    }
+    if (parseFloat(cbCs.minHeight) > 0 || parseFloat(cbCs.height) > 100) {
+      cbProps.push('min-height', 'height');
+      cbDecls['min-height'] = '0';
+      cbDecls['height'] = 'auto';
+    }
+    if (cbProps.length) {
+      resets.push({ el: cb, prev: snapshotStyles(cb, cbProps) });
+      applyImportant(cb, cbDecls);
+    }
+  }
+
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
     const titleOverlayResets = [];
+    const heroMediaFlowResets = [];
     const seenParents = new Set();
     for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
@@ -3643,8 +3720,13 @@
       // 豁免 → reader 下塌縮成 0 寬、文字疊印在內文上。picture / video 不
       // 細分照舊保護；bare img 改由 containsContentScaleImg 判尺寸（未載入
       // / lazy placeholder 保守視為內容圖，CNBC lazy hero 教訓不回退）。
-      if (el.querySelector && el.querySelector('picture, video')) continue;
-      if (containsContentScaleImg(el)) continue;
+      if ((el.querySelector && el.querySelector('picture, video')) ||
+          containsContentScaleImg(el)) {
+        // media wrapper：不 hide（v0.7.170 主圖保護），但 full-bleed
+        // overlay-headline template 要還原 flow（見 helper 註解）
+        maybeRestoreHeroMediaOverlayFlow(el, articleEl, heroMediaFlowResets);
+        continue;
+      }
       // 主文段落保護：含 > 500 chars 的單一 <p> 後代 → 視為主文，skip
       let hasLongParagraph = false;
       const ps = el.querySelectorAll && el.querySelectorAll('p');
@@ -3705,6 +3787,7 @@
     }
     addStyleResets(hidden, parentHeightResets);
     addStyleResets(hidden, titleOverlayResets);
+    addStyleResets(hidden, heroMediaFlowResets);
   }
 
   // ---- 主文內：negative z-index 後代 reset -------------------------------
