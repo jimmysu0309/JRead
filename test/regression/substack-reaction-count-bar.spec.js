@@ -136,6 +136,19 @@ describe('substack-reaction-count-bar — 行為', () => {
     }
   });
 
+  it('靜態：translate-first「轉貼」譯法變體「551 個讚 · 72 次轉貼」命中（v1.7.10 honest-broker）', () => {
+    // Google MT 對 Restack 的第三種譯法「次轉貼」（Jimmy 實機截圖）；同頁 probe 另一輪
+    // 跑出「贊∙重新堆疊」——譯法逐次不穩定，反應名詞清單補 轉貼/转贴。
+    const variants = ['551 個讚 · 72 次轉貼', '72 次轉貼', '72 次转贴 · 551 个赞'];
+    for (const ct of variants) {
+      const { doc, art, NS } = buildEnv({ withBar: true, countText: ct });
+      const hidden = NS.cleaner.clean(art);
+      assert.strictEqual(doc.getElementById('likebar').dataset.jreadHidden, '1',
+        `「轉貼」翻譯變體「${ct}」應命中`);
+      NS.cleaner.restore(hidden);
+    }
+  });
+
   it('守衛：主文含「數字＋量詞」但不以反應名詞收尾者不誤殺（如「3 個重點」「2024 年」）', () => {
     // 新增的 0–3 字 CJK 前綴不可鬆到把主文短語吃進來——關鍵是 token 必須以「已知反應
     // 名詞」收尾。這些短語結尾（重點 / 年）非反應名詞 → 一律 miss。

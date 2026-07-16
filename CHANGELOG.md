@@ -4,6 +4,8 @@
 
 ---
 
+**v1.7.10** — **Substack 翻譯後文末 like/restack facepile bar 殘留：REACTION_COUNT_RE 反應名詞補「轉貼/转贴」**（Jimmy 2026-07-16 回報，honest-broker.com Odyssey 文，翻譯後殘留頭像 facepile＋「551 個讚 · 72 次轉貼」）。probe 真實站實證：同一條 bar，Google MT 譯法逐次不穩定——Jimmy 實機出「個讚／次轉貼」、probe 另一輪出「贊∙重新堆疊」（後者既有名詞清單已涵蓋、當輪即被 hide）。「次轉貼」是 Restack 的第三種譯法（v1.7.1 補「重新堆疊」、v1.7.2 補「次轉發」同族 drift），不以已知反應名詞收尾 → 整串比對失敗整條 bar 漏網。**修法**：反應名詞清單補 轉貼/转贴，量詞前綴機制（v1.7.2）不動；誤殺 guard 驗證「3 個重點」「2024 年」「看了 3 篇轉貼文」仍全 miss。**驗收**：jsdom `substack-reaction-count-bar.spec.js` 新增 v1.7.10 變體測項（破壞 sanity 過）、全套 3284 綠；harness honest-broker `--translate-first` RESIDUAL／GAP／CONTRAST 全 ✅、outline 尾端無互動列。
+
 **v1.7.9** — **Readwise Reader 方形 hero 進閱讀模式變橢圓：byline 偵測補「內容大圖」guard**（Jimmy 2026-07-16 回報，read.readwise.io The Atlantic Lizzo 文）。cage 真實站 probe 根因：v1.6.10 同家族——Reader 把文件標題渲染在 article 容器**外**，article > header 內只有 dek → 作者「By …」→ hero figure（608×342）→ 圖說 → 日期 `<time>`、**無任何 h1/h2/h3**。byline 的 author+date LCA seed engulf 整個 header（含 hero），v1.6.10 的 heading guard（seed 含 heading → 退回 dateEl）不觸發、climb 的文字門檻也擋不住（header 全文 125 字 ≤ 200）→ header 被標 `[data-jread-byline]`，頭像規則 `[data-jread-byline] img { border-radius:50% }` 套上矩形 hero → 橢圓。**修法**（結構通則）：byline meta 區塊結構上絕不含內容尺寸大圖（`bhasBigImg`：img/picture rect >= 150px，重用 v1.6.18 prevSib guard 的判定並提為共用 helper）——①seed guard：LCA seed 含大圖 → 退回 dateEl；②climb guard：爬進含大圖的 parent → 停住。兩層缺一不可（只修 seed，climb 仍會從 dateEl 一路爬回 header；逐層破壞 sanity 實證各自獨立必要）。**驗收**：cage 真實 Readwise 頁修後 hero 無 byline 祖先、圓角回站方 4px、日期仍被 byline 涵蓋（root 落純日期 wrapper）+ 截圖目視方形；harness theverge 全 audit 綠、byline 正規化無回歸；jsdom `styler-byline-bigimg-overcapture.spec.js` 3 案（jsdom rect 全 0、hero 用 stubRect stub 成 608×342）破壞 sanity 過，全套 3283 綠。
 
 ---

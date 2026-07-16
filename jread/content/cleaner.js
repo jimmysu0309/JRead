@@ -2263,7 +2263,11 @@
   // 之間允許 0–3 字的短 CJK 前綴（量詞 個/次/則/位…），但仍要求每個 token 以「已知反應
   // 名詞」收尾（不改成純 CJK run）——維持精準，主文的「3 天」「5 個重點」因不以反應名詞
   // 收尾一律 miss，年份「2024 年」亦 miss（年非反應名詞）。止住逐版補譯詞的 drift。
-  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉推|转推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
+  // v1.7.10 honest-broker translate-first 實測：同一條 facepile bar，Google MT 對
+  // Restack 又出第三種譯法「次轉貼」（Jimmy 實機「551 個讚 · 72 次轉貼」；同頁 probe
+  // 另一輪跑出「551 贊∙72 重新堆疊」——譯法逐次不穩定，變體只能逐一收進名詞清單）
+  // → 反應名詞補 轉貼/转贴。
+  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉貼|转贴|轉推|转推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
