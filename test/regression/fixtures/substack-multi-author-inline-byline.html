@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+  多作者 byline inline 文字流最小重現（v1.7.12，chinatalk.media Substack 結構）。
+  作者容器是單一 div，直含多條 <a> 與文字分隔符（、／以及）——本質是一句話的
+  inline 文字流。byline 正規化把它標成 byline-item → 強制 inline-flex（nowrap flex
+  row）後，寬內容（translate-first 常保留英文人名不翻）把每條連結擠到 min-content：
+  名字折成兩行、CJK 分隔符（以及）直排（Jimmy 2026-07-22 截圖）。
+  修法：>= 2 條 <a> + 直接分隔文字 + 無媒體的 item 加標 data-jread-byline-inline，
+  CSS 回歸 block + 子連結 inline，文字自然換行。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>China's Mythos Moment</h1>
+    <div class="post-header">
+      <div class="pencraft pc-display-flex" data-test="byline-root">
+        <div class="pencraft pc-display-flex" data-test="wrap-outer">
+          <div class="pencraft pc-display-flex" data-test="wrap-inner">
+            <div class="pencraft pc-reset color-pub-primary-text" data-test="authors">
+              <a href="/@jordan" data-test="author-1">JORDAN SCHNEIDER</a>、<a href="/@irene">IRENE ZHANG</a>、<a href="/@lily">LILY OTTINGER</a> 以及 <a href="/@aqib">AQIB ZAKARIA</a>
+            </div>
+            <div class="pencraft pc-display-flex" data-test="wrap-date">
+              <div class="pencraft color-pub-secondary-text" data-test="date">2026 年 7 月 21 日</div>
+              <div class="pencraft color-pub-secondary-text" data-test="paid">∙ 付費</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p data-test="body">Soon, a Chinese lab will release an AI model with capabilities rivaling frontier systems. The mythos of catastrophic network destruction may prompt preemptive controls before any consumer release happens at all.</p>
+    <p>We want to share our team's theories about what might happen next, and in our view there are three main scenarios worth considering in depth.</p>
+  </article>
+</body>
+</html>

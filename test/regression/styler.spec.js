@@ -1156,7 +1156,17 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
 
     // li / a 維持完全不下 rule（baseline 不動）
     assert.ok(!/\]\s*li\s*\{/.test(css), '不得對 li 下 rule');
-    assert.ok(!/\]\s*a\s*\{/.test(css), '不得對 a 下 rule（連結色保留原站）');
+    // v1.7.12 精修：本不變式擋的是「blanket 連結規則」（直接掛在 active root 下
+    // 的裸 a selector，會動到全文連結色 / typography）。功能性 marker attr 範圍內
+    // 的 a 規則（如 [data-jread-byline-inline] a { display:inline }，不含
+    // color / typography）不在禁止之列——typography 禁令由上方 TYPO_PROPS
+    // checkBlocks 另行把關。
+    assert.ok(!/\[data-jread-active="1"\]\s*a\s*\{/.test(css), '不得對 a 下 blanket rule（連結色保留原站）');
+    const scopedARules = css.match(/\][^{}]*\sa\s*\{[^}]*\}/g) || [];
+    for (const block of scopedARules) {
+      assert.ok(!/(?:^|[;{\s])(color|font-size|line-height|font-family|font-style)\s*:/i.test(block),
+        `scoped a rule 不得含 typography / color；違反 block: ${block.slice(0, 120)}`);
+    }
     assert.ok(!/font-size:\s*inherit/.test(css), '不得強制後代 font-size: inherit');
   });
 

@@ -89,6 +89,12 @@
   // 標此 attr 用 CSS 隱藏。
   const BYLINE_SEP_ATTR = 'data-jread-byline-sep';
   const BYLINE_SEP_RE = /^[·•‧∙|/／\\\-–—,、.。;；:：]+$/;
+  // v1.7.12：多作者 inline 文字流 item（>= 2 條 <a> + 直接分隔文字、無媒體）。
+  // 「A、B、C 以及 D」本質是一句話，byline-item 的 inline-flex（nowrap flex row）
+  // 在名字夠寬時（translate-first 常保留英文人名不翻）會把每條連結擠到
+  // min-content——名字折成兩行、CJK 分隔符直排（chinatalk Substack 實測）。
+  // 此類 item 標本 attr → CSS 回歸 block + 子連結 inline，文字自然換行。
+  const BYLINE_INLINE_ATTR = 'data-jread-byline-inline';
   // 時刻訊號：整段直接文字＝「HH:MM(:SS)? (AM/PM)? TZ?」（例 "1:59 PM ET"、
   //   "13:59"、"9:30 a.m. EST"）。冒號是關鍵——日期字串無冒號，故不誤殺日期。
   const BYLINE_TIME_RE = /^\d{1,2}:\d{2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)?\s*[a-z]{0,5}$/i;
@@ -1684,6 +1690,16 @@ ${MEDIA_DIRECT_WRAP_SEL} {
   float: none !important;
   font-weight: 400 !important;
   letter-spacing: normal !important;
+}
+/* v1.7.12：多作者 inline 文字流 item（標記條件見 BYLINE_INLINE_ATTR 常數註解）。
+   inline-flex 的 nowrap flex row 遇寬內容（translate-first 保留英文人名）會把每條
+   連結壓到 min-content、名字折行＋分隔符直排；作者清單是一句話、回歸自然文字流。
+   doubled attr (0,3,0) 壓過上方 byline-item inline-flex (0,2,0)。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_INLINE_ATTR}][${BYLINE_INLINE_ATTR}] {
+  display: block !important;
+}
+[${ARTICLE_ATTR}="1"] [${BYLINE_INLINE_ATTR}] a {
+  display: inline !important;
 }
 [${ARTICLE_ATTR}="1"] [${BYLINE_RT_ATTR}] {
   display: none !important;
@@ -4126,6 +4142,13 @@ html.${HTML_CLASS}.jread-orion body {
                 const hasText = bdirect(child).length > 0;
                 if (hasText || isMedia || child.children.length === 0) {
                   setMark(child, BYLINE_ITEM_ATTR);
+                  // v1.7.12：多作者 inline 文字流（>= 2 條連結 + 直接分隔文字、
+                  // 無媒體＝無頭像對齊需求）→ 標 inline attr 回歸自然文字換行，
+                  // 免被 inline-flex nowrap 擠壓（見 BYLINE_INLINE_ATTR 常數註解）
+                  if (hasText && child.querySelectorAll('a').length >= 2 &&
+                      !child.querySelector('img, picture, svg, video')) {
+                    setMark(child, BYLINE_INLINE_ATTR);
+                  }
                   if (BYLINE_RT_RE.test(bnorm(child.textContent))) markRt(child);
                 } else {
                   setMark(child, BYLINE_WRAP_ATTR);
