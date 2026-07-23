@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.12**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.13**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -248,6 +248,17 @@ Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold �
 
 **連結目錄 reject gate（`isLinkDirectory`，v1.7.8）**：heuristic 候選迴圈與 main-tag 兜底共用的 reject 條件——候選內**無任何 >= 80 chars 段落載體**（p / li / blockquote / dd）**且 linkDensity >= 0.5** → 判為導覽選單 / 連結目錄、直接排除。動機（udn 已下架文章 404「找不到網頁」頁實證）：頁面無文章內容時，唯一過 `MIN_TEXT_LEN` 的候選是站台產品選單（linkDensity 0.727、無段落），heuristic 的 linkDensity 懲罰只是乘法折扣、無競爭者時照樣勝出 → 閱讀模式渲染整個站台選單，違反上面第 6 條降級政策。雙條件缺一不 reject：Paul Graham 型 font+br 純文字老頁（無段落但 ld≈0）、link roundup 文摘（ld 高但有 >= 80 chars 導言段）都不受影響。forcing：`detector-link-directory-noop.spec.js`（404 選單 no-op + roundup 正控制）。
 
+### 接續兄弟區塊吸收（multi-block article，v1.7.13）
+
+CMS 可能把一篇文章切成**多個同層兄弟容器**、中間插廣告區塊（city.gvm.com.tw 實證：body 直下「主文塊 12 段 > ad > 主文塊 10 段 > ad > 主文塊 5 段」，唯一共同祖先是 body）——任一偵測策略都只選單一容器，後續區塊整段掉出閱讀模式（「文章被截斷」）。對齊 Readability.js 原作 sibling-merge 精神，`detect()` 出口（promote / narrow / ensureH1 之後、shadow-dom-fallback 除外）做**唯讀識別** `findContinuationSiblings`：從 articleEl 所在層級掃 following siblings（該層沒有才沿祖先鏈往上，上限 `CONT_MAX_HOPS = 2`），符合全部條件者判為接續區塊掛 `result.continuationEls`：
+
+- 容器型 tag（DIV / SECTION / ARTICLE）、class/id 不命中 `NEGATIVE_RE`、無 `textarea`（留言區特徵）
+- `scoredTextLen >= 200`、`linkDensity <= 0.3`（排除延伸閱讀 / 推薦連結列表）
+- **>= 2 段實質段落**（p / blockquote / dd，CJK 權重 2 的加權字數 >= 80——40 字中文段即過，對齊 `titleTextWeight` 的「raw length 門檻按拉丁校準會誤殺中文」教訓）
+- 掃描遇**含 h1 的兄弟即終止**——瀑布流站 preload 的下一篇自帶 h1 主標，其後內容屬於別篇（對齊 narrowToFirstArticleBlock 邊界語意）；吸收上限 `CONT_MAX_BLOCKS = 10`
+
+main.js 進場時（先於 cleaner.clean）呼叫 `NS.detector.absorbContinuationSiblings` 把接續區塊實際移進 articleEl 尾端（文件序不變），累加器 `NS.state.absorbedSiblings` 先掛 state 再逐筆「先記錄後移動」（中途 throw 時 exit 流程照樣逐筆移回）；退出時（styler / cleaner restore 之後）`restoreAbsorbedSiblings` **逆序**移回原位（相鄰兩塊都被吸收時錨點才存在；錨點已被站方腳本移除則退回 append 至原 parent 尾端）。吸收後區塊成為 articleEl 內容：cleaner in-article 規則照常處理其內部雜訊、翻頁模式 / 閱讀位置 / Readwise 匯出全部透明適用。forcing：`multiblock-sibling-article.spec.js`（識別正反例 + absorb/restore 可逆性 + main.js wiring）。
+
 ### Title promote（所有非兜底策略）
 
 Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
@@ -362,7 +373,9 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 
 **英文網頁 heading 文字慣用語**（`NOISE_HEADING_TEXT_RE`）：Related Articles / Recommended for you / More from X / More in X（v0.8.54）/ You may also like / Read more / Up next / Continue reading / See also / See more on（v0.8.54）/ Further reading / Editor's Picks（含複數所有格 Editors' Picks，v0.8.54）/ Sponsored content / Comments(N) / Discussion(N) / Responses / Replies / Newsletter / Subscribe / Follow us / Trending / Popular / Top Stories / AI Summary / AI Digest / Hot / New / Top。錨定推薦字樣 `^(related|recommended|popular|trending|latest|featured)…$` 同步收進 EXT 層（max_len 40，v0.8.54——「Trending in The Times」21 chars 超過 base 的 20 漏網實證）。文中雜誌期數推廣 `^explore\s+the\b.*\bissue$`（v0.8.113——The Atlantic「Explore the December 2024 Issue」文中插入的本期雜誌推廣 section，封面圖被 styler 撐成整頁大 + 「View More」連該期 TOC；31 chars 走 EXT max_len，`closest('section')` 整段清除）。譯文變體 `(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$`（v0.8.114——Shinkansen translate-first 後 heading 譯成「探索 2024 年 12 月號」英文 pattern 失效；錨定翻譯無關的「雜誌期數出版標記」語意核心而非賭動詞譯法，純日期無號/刊不命中）
 
-**中文 heading 文字慣用語**：延伸閱讀 / 同場加映 / `相關(新聞｜文章｜報導｜行情｜議題｜貼文｜影片｜內容)`（v0.8.77 補 貼文／影片／內容——Shinkansen 把 Ghost「Related Posts」翻成「相關貼文」，原僅 新聞／文章／報導／行情／議題 不命中、整列 recirculation 漏網；翻譯後文字才現形，href 結構 `resolveHeadingNoiseTarget` 兩模式相同、純卡 regex）/ 推薦閱讀 / 推薦文章 / 最新消息 / 更多相關 / 看更多 / 你可能喜歡 / 繼續看下去 / 文章標籤 等。命中後 `resolveHeadingNoiseTarget` walk-up 到「不含主文長段落 / 標題 anchor」的最深 wrapper 整塊 hide
+**中文 heading 文字慣用語**：延伸閱讀 / 同場加映 / `相關(新聞｜文章｜報導｜行情｜議題｜貼文｜影片｜內容)`（v0.8.77 補 貼文／影片／內容——Shinkansen 把 Ghost「Related Posts」翻成「相關貼文」，原僅 新聞／文章／報導／行情／議題 不命中、整列 recirculation 漏網；翻譯後文字才現形，href 結構 `resolveHeadingNoiseTarget` 兩模式相同、純卡 regex）/ 推薦閱讀 / 推薦文章 / 最新消息 / 更多相關 / 看更多 / 你可能喜歡 / 繼續看下去 / 文章標籤 等。命中後 `resolveHeadingNoiseTarget` walk-up 到「不含主文長段落 / 標題 anchor」的最深 wrapper 整塊 hide。**社群 join 句式（EXT 層，v1.7.13）**：`加入…(LINE｜官方帳號｜好友｜粉絲專頁)` / `(LINE｜官方帳號)…(加入｜訂閱)`——`NOISE_LINK_TEXT_RE` 既有句式抄進 heading 層（gvm 城市學把「👉 加入城市學 LINE 官方帳號，追蹤 IG…」做成 `<h4><strong>` 純文字 heading，載體不是 a/button、link 規則掃不到；max_len 40 + walk-up 主文保護兜底）
+
+**無 `<form>` 包裝的訂閱表單（email 輸入框結構訊號，v1.7.13）**：`hideInsideArticleSubscribeForms` 原本只掃主文內 `<form>`（v0.8.102）；gvm 城市學用裸 div 包 email input + 送出按鈕（`.emailTitle > .big-form > input#email`，無任何 form tag）——按鈕被 all-buttons 規則清掉後殘留「請訂閱…」pitch 文字 + 孤兒輸入框。結構性通則：主文散文流不會出現 email 輸入框——`type=email`，或 `type=text` 且 name / id / placeholder 帶 `mail` token，即為訂閱 / 註冊表單訊號；命中後走同一條 `findContentFreeCard`（含主文長 p / 文章標題邊界）往上找卡片整塊 hide。Forcing：`gvm-inarticle-cta.spec.js`（email 表單 + heading 社群 CTA + 主文保留）
 
 **贊助 / 商業推薦 widget**（`hideSponsoredPartnershipWidgets` / `SPONSOR_WIDGET_HEADING_RE`，v1.0.10）：heading（h1-h4，≤ 60 chars）文字含贊助標記 `in partnership with` / `presented by` / `brought to you by` / `sponsored by` → 從 heading 用 `hasArticleTitleAnchor` / `hasLongMainParagraph` 邊界 walk-up（**繞過** generic `resolveHeadingNoiseTarget` 的「累計短文字 ≥ 300」主文保護，與 `hideCommunityQaWidget` 同款——link-heavy 推薦 widget 的車輛/產品連結累計輕易破 300 會誤觸保護只藏 heading）找「不含主文長段落的最外層 wrapper」整塊 hide。對應 autocar.co.uk 文末 heycar「USED CARS FOR SALE / in partnership with Autotrader」車輛推薦 carousel（Jimmy 2026-06-25「文末這些都是廣告」）——heading / 品牌 / 多車是 client 端 JS 晚注入（server HTML 只有空殼 wrapper + 1 車），clean() 時序漏抓 → 靜態 sweep + 動態 `checkDynamicNoise` 共用 `hideSponsorWidgetFromHeading`（lazy 注入兜底，放在 dynHit 門檻前）。自帶安全性：只 hide 不含長段落的 widget block——贊助標記引導真內容區（含 prose）時 walk-up 第一層即 break、不 hide。Forcing：`sponsored-partnership-widget.spec.js`（結構 + 靜態 + 動態 lazy 兜底 + 真內容守衛）
 

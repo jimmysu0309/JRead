@@ -427,6 +427,17 @@
     const settings = await getSettings();
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
+    // v1.7.13：multi-block 文章——把 detector 識別的接續兄弟區塊移進 articleEl
+    // （必須先於 cleaner.clean：區塊進了 articleEl，cleaner 視為主文內容、不再
+    // 整塊 hide；區塊內的雜訊仍受 in-article 規則處理）。累加器先掛 state 再
+    // 交給 detector 邊移邊登記——中途 throw 時上層 catch 走 exitReaderModeImpl
+    // 照樣逐筆移回（對齊 v1.6.27 hiddenEls 教訓）。
+    const absorbedSiblings = [];
+    NS.state.absorbedSiblings = absorbedSiblings;
+    if (NS.detector && typeof NS.detector.absorbContinuationSiblings === 'function' &&
+        Array.isArray(result.continuationEls) && result.continuationEls.length > 0) {
+      NS.detector.absorbContinuationSiblings(result.el, result.continuationEls, absorbedSiblings);
+    }
     // promotedFrom + promotedTitleHead 傳給 cleaner 做 narrowPromotedSiblings
     // （v0.7.12 ebc 深層 single-child wrapper 修法 + v0.7.21 Stratechery h2
     // post-title 白名單保護，讓 WordPress block theme h2 不被 narrow 誤殺）
@@ -559,6 +570,13 @@
     }
     if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
     if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls);
+    // v1.7.13：把 multi-block 吸收的接續兄弟區塊移回原位。必須在 styler /
+    // cleaner restore 之後——restore 作用於「區塊仍在 articleEl 內」的狀態，
+    // 先移回會讓 in-article 還原漏掉這些節點。
+    if (NS.detector && typeof NS.detector.restoreAbsorbedSiblings === 'function') {
+      NS.detector.restoreAbsorbedSiblings(NS.state.absorbedSiblings);
+    }
+    NS.state.absorbedSiblings = [];
     // v0.7.86：移除 detector shadow-DOM fallback 建立的 light DOM 替身。
     // 替身是 deepClone 出來的、原 shadow content 不動，移除替身後原站視覺
     // 完全還原。多個替身（理論上不該發生，但保險）一起清。

@@ -306,7 +306,14 @@
   //     「〔年〕年〔月〕月(號|刊)」是雜誌期數出版標記——日期不翻譯、號/刊是出版
   //     用語，跨引擎穩定。$ 錨定收尾「月號/月刊」，主文副標恰好以「N月號」收束
   //     的機率極低（純日期「2024年12月」無號/刊不命中，walk-up 主文保護仍兜底）
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
+  // v1.7.13 新增（gvm 城市學實證）：
+  //   加入.{0,10}(LINE|官方帳號|好友|粉絲專頁) / (LINE|官方帳號).{0,10}(加入|訂閱)
+  //     ——NOISE_LINK_TEXT_RE 既有的社群 join 句式抄進 heading 層。站方把
+  //     「👉 加入城市學 LINE 官方帳號，追蹤 IG…」做成 <h4><strong> 純文字
+  //     heading（LINE / IG 是 inline <a>，但載體不是 a/button，link 規則掃
+  //     不到）。CTA 句式與 link 層同款、主文副標不會這樣寫，max_len 40 +
+  //     walk-up 主文保護仍兜底
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -6685,6 +6692,25 @@
       if (isInPreserved(form)) continue;
       if (form.dataset && form.dataset.jreadHidden === '1') continue;
       hideNoiseCardFromTrigger(form, articleEl, hidden);
+    }
+    // v1.7.13（gvm 城市學實證）：訂閱表單不一定包 <form>——站方用裸 div 包
+    // email 輸入框 + 送出按鈕（.emailTitle > .big-form > input#email，無任何
+    // form tag → 上方規則掃不到；按鈕被 all-buttons 規則清掉後留下「請訂閱…」
+    // pitch 文字 + 孤兒輸入框）。結構性通則：主文散文流不會出現 email 輸入框
+    // ——type=email，或 type=text 且 name / id / placeholder 帶 mail token，
+    // 即為訂閱 / 註冊表單的通用訊號。命中後走同一條 findContentFreeCard 往上
+    // 找不含主文長 p 的卡片整塊 hide（含主文保護與 form 規則共用、不另設）。
+    for (const input of articleEl.querySelectorAll('input')) {
+      if (input.closest('form')) continue; // 有 form 包裝的已由上方規則處理
+      if (isInPreserved(input)) continue;
+      if (input.dataset && input.dataset.jreadHidden === '1') continue;
+      const type = (input.getAttribute('type') || 'text').toLowerCase();
+      const marker = (input.name || '') + ' ' + (input.id || '') + ' ' +
+        (input.getAttribute('placeholder') || '');
+      const isEmailInput = type === 'email' ||
+        (type === 'text' && /mail/i.test(marker));
+      if (!isEmailInput) continue;
+      hideNoiseCardFromTrigger(input, articleEl, hidden);
     }
   }
 
