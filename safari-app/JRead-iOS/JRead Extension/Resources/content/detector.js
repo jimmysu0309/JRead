@@ -75,6 +75,110 @@
     return true;
   }
 
+  // ---- 接續兄弟區塊（multi-block article）-------------------------------
+  // 場景（city.gvm.com.tw 實測，2026-07-23）：CMS 把一篇文章切成多個同層兄弟
+  // 容器、中間插廣告區塊（body > 主文塊1 > ad > 主文塊2 > ad > 主文塊3），
+  // 唯一共同祖先是 body。detector 任一策略都只選單一容器（第一塊），後續
+  // 區塊整段掉出閱讀模式 →「文章被截斷」。對齊 Readability.js 原作的
+  // sibling-merge 精神：top candidate 選定後掃描同層兄弟，把「像文章內文」
+  // 的區塊併入輸出。判斷全部走 DOM / 文字結構特徵，不綁站點 / class
+  // （硬規則 3）。
+  //
+  // 段落門檻用 CJK 權重 2（對齊 cleaner titleTextWeight 的教訓：raw length
+  // 門檻按拉丁校準會誤殺中文——44 字中文段落是完整段落，×2 = 88 過 80）。
+  const CONT_MIN_PARA_WEIGHT = 80; // 實質段落的最低權重字數（拉丁 80 字 / CJK 40 字）
+  const CONT_MIN_PARAS = 2;        // 至少兩段實質段落才視為文章接續
+  const CONT_MAX_LD = 0.3;         // 連結密度上限（真主文實測 ~0.24；相關文章列表 > 0.5）
+  const CONT_MAX_HOPS = 2;         // 從 articleEl 沿祖先鏈找「有接續兄弟的層級」的上限
+  const CONT_MAX_BLOCKS = 10;      // 吸收數量保險上限
+
+  const CJK_CHAR_RE = /[㐀-䶿一-鿿぀-ヿ가-힯]/;
+  function cjkWeightedLen(str) {
+    let w = 0;
+    for (const ch of (str || '')) w += CJK_CHAR_RE.test(ch) ? 2 : 1;
+    return w;
+  }
+
+  function looksLikeContinuationBlock(el) {
+    const tag = el.tagName;
+    if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'ARTICLE') return false;
+    // 負向 class / id（comment / related / sponsor / widget…）直接排除
+    const marker = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
+    if (NEGATIVE_RE.test(marker)) return false;
+    // 留言區結構特徵：含回覆輸入框
+    if (el.querySelector && el.querySelector('textarea')) return false;
+    const textLen = scoredTextLen(el);
+    if (textLen < MIN_TEXT_LEN) return false;
+    // 高連結密度 = 導覽 / 推薦列表，不是內文接續
+    if (linkDensity(el, textLen) > CONT_MAX_LD) return false;
+    // 至少 N 段實質段落（p / blockquote / dd）——排除純連結目錄與 UI chrome
+    let paras = 0;
+    for (const p of el.querySelectorAll('p, blockquote, dd')) {
+      const t = ((p.innerText || p.textContent) || '').replace(/\s+/g, ' ').trim();
+      if (cjkWeightedLen(t) >= CONT_MIN_PARA_WEIGHT) {
+        paras += 1;
+        if (paras >= CONT_MIN_PARAS) return true;
+      }
+    }
+    return false;
+  }
+
+  // 唯讀識別：不動 DOM。從 articleEl 所在層級開始掃 following siblings，
+  // 該層沒有合格接續區塊才往上一層（articleEl 可能是巢狀 content div、
+  // 接續區塊在其 wrapper 的兄弟層），上限 CONT_MAX_HOPS。
+  // 掃描遇到「含 h1 的兄弟」即終止——瀑布流站把下一篇文章 preload 成後續
+  // 兄弟（本頁 script 有 waterfall helper 的站實見），下一篇自帶 h1 主標，
+  // 其後內容屬於別篇文章，不可吸收（對齊 narrowToFirstArticleBlock 的邊界
+  // 語意）。
+  function findContinuationSiblings(articleEl) {
+    return withAncestorCache(() => {
+      let base = articleEl;
+      for (let hop = 0; hop <= CONT_MAX_HOPS; hop++) {
+        if (!base || base === document.body || base === document.documentElement) break;
+        const found = [];
+        for (let sib = base.nextElementSibling; sib; sib = sib.nextElementSibling) {
+          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
+          if (looksLikeContinuationBlock(sib)) {
+            found.push(sib);
+            if (found.length >= CONT_MAX_BLOCKS) break;
+          }
+        }
+        if (found.length > 0) return found;
+        base = base.parentElement;
+      }
+      return [];
+    });
+  }
+
+  // 進場時由 main.js 呼叫：把接續區塊實際移進 articleEl 尾端（文件序不變
+  // ——它們本來就在 articleEl 之後）。out 累加器逐筆先記錄再移動：中途
+  // throw 時已移動的每一筆都有紀錄，exit 流程照樣逐筆移回（對齊 v1.6.27
+  // hiddenEls 累加器教訓）。
+  function absorbContinuationSiblings(articleEl, els, out) {
+    if (!articleEl || !Array.isArray(els) || !Array.isArray(out)) return;
+    for (const el of els) {
+      if (!el || el === articleEl || articleEl.contains(el) || !el.parentElement) continue;
+      out.push({ el, parent: el.parentElement, next: el.nextSibling });
+      el.setAttribute('data-jread-absorbed-sibling', '1');
+      articleEl.appendChild(el);
+    }
+  }
+
+  // 退出時移回原位。逆序還原：相鄰兩塊都被吸收時（block2.next === block3），
+  // 先把 block3 放回、block2 的 insertBefore 錨點才存在。錨點已不在原 parent
+  // （站方腳本改過 DOM）時退回 append 至 parent 尾端。
+  function restoreAbsorbedSiblings(records) {
+    if (!Array.isArray(records)) return;
+    for (let i = records.length - 1; i >= 0; i--) {
+      const rec = records[i];
+      try {
+        rec.el.removeAttribute('data-jread-absorbed-sibling');
+        const anchor = (rec.next && rec.next.parentNode === rec.parent) ? rec.next : null;
+        rec.parent.insertBefore(rec.el, anchor);
+      } catch (_) { /* 原位已不存在：節點留在 articleEl 內，不阻斷其餘還原 */ }
+    }
+  }
+
   // ---- 策略 1：語意標籤 <article> ------------------------------------
   // 注意：<main> 本身作為兜底由 detectByMainTag() 處理，且排在 heuristic
   // 之後。理由：若頁面有 <main> 但無 <article>，且 <main> 內用 CSS grid /
@@ -1140,6 +1244,12 @@
           result.promotedTitleHead = finalPromoted.titleHead;
         }
       }
+      // v1.7.13：multi-block 文章的接續兄弟區塊識別（唯讀；main.js 進場時才
+      // 真正移動 DOM、退出時移回）。shadow replica 是合成複本、兄弟掃描無
+      // 意義，跳過。
+      if (result && result.el && result.strategy !== 'shadow-dom-fallback') {
+        result.continuationEls = findContinuationSiblings(result.el);
+      }
       return result;
     }
   };
@@ -1328,4 +1438,8 @@
   // v1.6.27：暴露給 regression spec 行為驗證 hop 預算語意（dist < maxDist）；
   // runtime 無其他呼叫端
   NS.detector.findTitleViaLca = findTitleViaLca;
+  // v1.7.13：multi-block 文章接續區塊的移入 / 移回，由 main.js 在 enter /
+  // exit 時呼叫（識別本身在 detect() 內唯讀完成、掛 result.continuationEls）
+  NS.detector.absorbContinuationSiblings = absorbContinuationSiblings;
+  NS.detector.restoreAbsorbedSiblings = restoreAbsorbedSiblings;
 })();

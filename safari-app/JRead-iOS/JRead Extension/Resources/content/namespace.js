@@ -29,6 +29,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       articleEl: null,        // 偵測到的主文容器
       confidence: 0,          // 偵測信心分數（0–1）
       hiddenEls: [],          // 被隱藏的雜訊元素快照，還原用
+      absorbedSiblings: [],   // v1.7.13：multi-block 文章移進 articleEl 的接續兄弟區塊，退出移回用
       originalStyles: null,   // 主文容器原始 inline style，還原用
       syncScrollOnExit: true, // v1.0.21：退出時把原網頁捲回閱讀段落（進場 stash settings）
       readerHostPage: false   // v1.0.22：本頁是否為 reader.html（擴充自有頁）——true 時退出走 NS.onReaderExit 導回 feed，不剝版型
