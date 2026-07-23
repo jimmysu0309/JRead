@@ -44,6 +44,31 @@ describe('styler — titleFontSize（v0.7.175）', () => {
       'CSS 必須含 h1 * selector（穿透 h1 內 span 等子元素）');
   });
 
+  it('titleFontSize=72 → h1 rule 同步注入 line-height: 1.3（v1.7.14）', () => {
+    // NYT h1 64px 配 px 鎖死 line-height:67px，titleFontSize 縮小後行高
+    // 不縮 = 每行之間空出一行、標題像被拆成多段。override 字級必須連帶
+    // 注入 unitless 標題行高。
+    window.__JRead.styler.apply(articleEl, {
+      theme: 'light', fontSize: 18, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 1.7, titleFontSize: 72
+    });
+    const css = window.document.getElementById('__jread-style').textContent;
+    assert.ok(/h1\s*\*\s*\{[^}]*line-height:\s*1\.3\s*!important/.test(css),
+      'h1 rule 必須含 line-height: 1.3 !important');
+  });
+
+  it('titleFontSize=72 + lineHeight Auto(0) → h1 rule 不注入 line-height', () => {
+    // 行距 Auto sentinel = 使用者顯式要求保留原站行距，title 分支跟 body
+    // 分支同一 trade-off、一併跳過
+    window.__JRead.styler.apply(articleEl, {
+      theme: 'light', fontSize: 18, contentWidth: 720,
+      fontFamily: 'system-ui', lineHeight: 0, titleFontSize: 72
+    });
+    const css = window.document.getElementById('__jread-style').textContent;
+    assert.ok(!/h1\s*\*\s*\{[^}]*line-height/.test(css),
+      '行距 Auto 時 h1 rule 不可注入 line-height');
+  });
+
   it('titleFontSize=0 (Auto) → CSS 不含 h1 font-size rule', () => {
     window.__JRead.styler.apply(articleEl, {
       theme: 'light', fontSize: 18, contentWidth: 720,

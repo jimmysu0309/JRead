@@ -2185,10 +2185,20 @@ ${BODY_TEXT_SEL} {
     if (overrides.titleFontSize) {
       // h1 * 必須一起覆寫：CNA 等站把 h1 文字包在 <span> 裡，SPAN_TEXT_SEL
       // 會把 span 字級壓成 body fontSize，即使 h1 本身 50px 也無效。
+      // v1.7.14：同步注入 line-height——與上方 body fontSize 分支同一個坑：
+      // 原站大標題常用 px 鎖死行高（NYT h1 64px 配 line-height:67px），
+      // titleFontSize 縮到 32px 後 67px 行高留下＝每行之間空出一行、視覺像
+      // 標題被拆成多段（Jimmy 2026-07-23 NYT Magazine 截圖）。值用固定 1.3
+      // （標題慣用 1.2-1.4；不沿用 opts.lineHeight——那是內文行距，多行大標
+      // 套 1.7 會過鬆）。unitless 相對字級自動縮放、h1 * 後代照常繼承。
+      // lineHeight Auto sentinel（lhAuto）時一併跳過——尊重使用者「保留原站
+      // 行距」的顯式選擇，與 body 分支同一 trade-off。
+      const titleLhClause = lhAuto ? '' : `
+  line-height: 1.3 !important;`;
       userOverrides += `
 [${ARTICLE_ATTR}="1"] h1,
 [${ARTICLE_ATTR}="1"] h1 * {
-  font-size: ${opts.titleFontSize}px !important;
+  font-size: ${opts.titleFontSize}px !important;${titleLhClause}
 }`;
     }
     if (overrides.fontFamily) {

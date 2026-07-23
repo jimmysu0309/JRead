@@ -3578,6 +3578,92 @@
     return false;
   }
 
+  // v1.7.14：原版面「overflow clip 裁切在框外」的內容 hide。
+  // 場景（NYT Magazine data-center-heist cage 實測）：header 媒體 wrapper
+  // overflow:hidden、box 高度由設計對位到剛好裁在 hero 圖下緣，figure 的
+  // <figcaption>（含 sr-only「Credit...」label + credit 文字）整個落在 clip
+  // box 之外＝原頁刻意不顯示；可見的 credit 另外 render 成 article 內獨立
+  // <p>，兩份在原版面幾何上重疊、使用者只感知一份。reader mode 卡片縮窄後
+  // 圖跟著縮小、figcaption 順 reflow 滑進仍在的 clip 窗口 → 同一份 credit
+  // 顯示兩次、且 sr-only「Credit...」一併露出。
+  // 結構訊號（不綁站點 / class，硬規則 3）：clean 初期（styler reflow 前、
+  // 原站幾何仍在）掃 articleEl 內 overflow-y clip 的容器，其子樹中 rect
+  // 「完全落在容器 box 下緣之外」的元素＝設計性裁切、原頁不可見 → hide
+  // （維持原頁視覺）。只認垂直下緣裁切——水平出框是 carousel／滑動輪播的
+  // 正常結構，不碰。
+  // 量測時機硬性約束：本規則必須在 collapse / styler reflow 類規則之前跑
+  // ——reflow 後 clip 窗口內容物重排、「原本在框外」的訊號就消失了。前置的
+  // outside-article hide 使 clip 容器整體位移不影響本判斷（box 與內容物同
+  // 步位移、相對幾何不變）。
+  // guard：
+  //   - 含 img / picture / video / iframe 子樹（或自身）不 hide——lazy 媒體
+  //     rect 不可信（0 高圖可能誤判在框外），誤殺成本＝主圖消失；遞迴往下找
+  //     純文字部分
+  //   - 含 h1（或自身）不 hide——主標題保護，與 v0.7.148 同原則
+  //   - 含 >500 chars 的 <p> 不 hide——主文保護（「閱讀更多」max-height 截斷
+  //     閘門類站點的正文尾段不可誤殺；閘門在 reader 內維持原樣裁切，視覺同
+  //     原頁）
+  //   - data-jread-player 子樹整段跳過（播放器內部 off-view 控制項是功能結構）
+  //   - 刻意**不走 isInPreserved**：PRESERVE_SEL 含 figure / figcaption，但
+  //     preserve 的目的是保護「可見內容」不被雜訊規則誤殺；本規則標的是
+  //     「原頁不可見」的內容，figcaption 正是主要載體（NYT 場景）
+  //   - scrollHeight 快速閘門：> clientHeight 才可能有裁切；jsdom 兩者皆 0
+  //     → 閘門放行、rect 由 stubRect 提供（spec 見
+  //     nyt-clip-cropped-caption.spec.js）；jsdom 無 stub 時 box 高 < 1 自動
+  //     no-op
+  function hideInsideArticleClipCroppedContent(articleEl, hidden) {
+    for (const clipEl of _getArticleAllElements(articleEl)) {
+      if (clipEl === articleEl) continue;
+      if (clipEl.dataset && clipEl.dataset.jreadHidden === '1') continue;
+      if (clipEl.closest && clipEl.closest('[data-jread-player]')) continue;
+      let cs;
+      try { cs = window.getComputedStyle(clipEl); } catch (_) { continue; }
+      if (!cs) continue;
+      // overflowY 為主；jsdom 不展開 overflow shorthand 成 longhand（computed
+      // overflowY 回空字串）→ fallback 取 shorthand 末 token（雙值語法
+      // 「overflow: x y」的 y 在後，單值同時作用兩軸，取尾都正確）
+      const oy = cs.overflowY || String(cs.overflow || '').trim().split(/\s+/).pop() || '';
+      if (!/(hidden|clip)/.test(oy)) continue;
+      // 快速閘門：無內容溢出就不掃子樹（jsdom 兩者 0 → 放行走 rect 檢查）
+      if (clipEl.scrollHeight && clipEl.scrollHeight <= clipEl.clientHeight + 1) continue;
+      let box;
+      try { box = clipEl.getBoundingClientRect(); } catch (_) { continue; }
+      if (!box || box.height < 1 || box.width < 1) continue;
+      hideCroppedBelowBox(clipEl, box, hidden);
+    }
+  }
+
+  // 遞迴：完全落在 box 下緣外且無媒體 / h1 / 長段落 → hide；部分在框內或
+  // 帶保護對象 → 往下找更深的純出框子孫
+  function hideCroppedBelowBox(node, box, hidden) {
+    if (!node.children) return;
+    for (const child of node.children) {
+      if (child.dataset && child.dataset.jreadHidden === '1') continue;
+      const TAG = child.tagName;
+      const isMediaOrTitle = TAG === 'IMG' || TAG === 'PICTURE' ||
+        TAG === 'VIDEO' || TAG === 'IFRAME' || TAG === 'H1';
+      let r = null;
+      try { r = child.getBoundingClientRect(); } catch (_) { r = null; }
+      const fullyBelow = r && r.height > 0 && r.width > 0 &&
+        r.top >= box.bottom - 0.5;
+      if (fullyBelow && !isMediaOrTitle &&
+          !(child.querySelector &&
+            child.querySelector('img, picture, video, iframe, h1'))) {
+        let hasLongP = false;
+        const ps = child.querySelectorAll ? child.querySelectorAll('p') : [];
+        for (const p of ps) {
+          if ((p.textContent || '').length > 500) { hasLongP = true; break; }
+        }
+        if (TAG === 'P' && (child.textContent || '').length > 500) hasLongP = true;
+        if (!hasLongP) {
+          hide(child, hidden);
+          continue;
+        }
+      }
+      hideCroppedBelowBox(child, box, hidden);
+    }
+  }
+
   // v1.7.6：full-bleed「圖疊標題」hero 媒體層還原 flow。
   // 場景（NYT Style 版 too-many-books 實測，translate-first 與英文皆中）：
   // header 兩層結構——absolute 層裝 hero <picture>、static 兄弟層裝 h1＋摘要、
@@ -7367,6 +7453,11 @@
       safeRun(hideDialogs, articleEl, hidden);
       safeRun(hideOutsideArticleSemantic, articleEl, hidden);
       safeRun(hideFixedOutsideArticle, articleEl, hidden);
+      // v1.7.14 clip 裁切內容：必須在所有會位移 article 內部 layout 的規則
+      // （keyword hide / collapse / styler reflow）之前跑——判斷依據是「原站
+      // 幾何下 rect 是否完全在 clip box 外」，內部位移後訊號即失真。前面三條
+      // outside-article 規則只造成整體平移（box 與內容同步移動），不影響
+      safeRun(hideInsideArticleClipCroppedContent, articleEl, hidden);
       safeRun(hideSocialShareClusters, articleEl, hidden);
       // 5 條 CONTAINER_SEL 規則共用同一次掃描結果（v0.6.26 效能重構）——
       // 原本各 rule 獨立 querySelectorAll 5 次 article descendant，合併成 1 次。

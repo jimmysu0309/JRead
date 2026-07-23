@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.13**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.14**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -406,6 +406,12 @@ NYT Style 版類 full-bleed header 結構：header（`position:relative` + `disp
 
 **v1.7.7 變體：祖先鏈 viewport 高度佔位 flatten**（`flattenViewportHeightReserveChain`）。NYT mike-d-new-album 實測同 template 家族變體——absolute 媒體層「自身」同時裝 hero `<video>`（cinemagraph）與一份重複 h1（full-bleed 寬度疊圖上的標題；窄版另 render 可見 h1 在兄弟欄）。層含 h1 → 命中 v0.8.87 title-overlay 分支（只還原 position、無高度處理），上述 hero-media 分支走不到；層內 h1 也讓 v1.0.3 cinemagraph wrapper 爬升提前 break。且佔位不只一層（實測三層 wrapper 各自 stylesheet `height:100vh`）。修法：absolute overlay 層被還原回 flow 時（title-overlay 與 hero-media 兩分支**共用同一支 helper**，避免雙實作 drift），從層的 parent 沿祖先鏈走到 articleEl（不含），rect 高度 >= 80% viewport（v1.0.4 同款簽名門檻）的祖先 reset `height:auto` / `min-height:0`——內容撐出的高度 height:auto 是 no-op、只有 stylesheet 固定佔位塌回內容高；player 結構整鏈跳過；由內往外逐層 apply。`heightSeen` 去重集合統一 `hideInsideArticleAbsoluteOverlays` 內所有 height reset 軌（flatten / hero-media cb reset / absolute overlay parent reset）——同一元素只 snapshot 一次，防第二次 snapshot 拍到自己的 `!important` 值、退出時還原錯值。Forcing：`nyt-overlay-headline-viewport-reserve.spec.js`（含 media-col 負控制 + restore round-trip）。
 
+### 原版面 overflow clip 裁切在框外的內容 hide（v1.7.14 通則）
+
+NYT Magazine 類 lede 結構：header 媒體 wrapper `overflow:hidden`、box 高度由設計對位剛好裁在 hero 圖下緣，figure 的 `<figcaption>`（含 sr-only「Credit...」label + credit 文字）整個落在 clip box 之外＝**原頁刻意不顯示**；可見的 credit 另外 render 成 article 內獨立 `<p>`，兩份在原版面幾何上重疊、使用者只感知一份。reader 卡片縮窄後圖跟著縮小、figcaption 順 reflow 滑進仍在的 clip 窗口 → 同一份 credit 顯示兩次、sr-only「Credit...」一併露出。
+
+修法 `hideInsideArticleClipCroppedContent`（結構通則，clean **初期**跑——在所有會位移 article 內部 layout 的規則之前，原站幾何仍在；前置 outside-article hide 只造成 box 與內容同步平移、不影響判斷）：掃 articleEl 內 overflow-y hidden/clip 容器（jsdom 不展開 overflow shorthand → fallback 取 shorthand 末 token；`scrollHeight <= clientHeight` 快速閘門、jsdom 兩者 0 放行走 rect 檢查），子樹中 rect **完全落在容器 box 下緣之外**的元素 hide（遞迴：部分在框內往下找更深的純出框子孫）。**只認垂直下緣裁切**——水平出框是 carousel 輪播正常結構不碰。guard：含 img / picture / video / iframe 子樹不 hide（lazy 媒體 rect 不可信，誤殺成本＝主圖消失）、含 h1 不 hide（v0.7.148 同原則）、含 >500 chars 段落不 hide（read-more max-height 截斷閘門的主文保護）、`data-jread-player` 子樹跳過；刻意**不走 isInPreserved**（PRESERVE_SEL 的 figure / figcaption 保護針對「可見內容」，本規則標的正是原頁不可見的 figcaption）。Forcing：`nyt-clip-cropped-caption.spec.js`（stubRect 幾何 + 四負控制 + restore round-trip）。
+
 ### 主文內所有 interactive button 一律清除（無保留）
 
 Reader mode 定位為「純閱讀」——**所有** `<button>` / `[role="button"]` / `<input type="button|submit|reset">` 一律 hide，不看 class、不看文字、不受 `PRESERVE_SEL` 保護（figure/summary/figcaption/blockquote 內的 expand/zoom/play 按鈕也清）。規則 `hideInsideArticleAllButtons` 獨立於 NOISE_LINK_TEXT_RE / NOISE_KEYWORD_RE，對所有 interactive button 無條件 hide——包含分享 / 訂閱 / 追蹤 / 讚 / 收藏 / 播放 / 展開 / 任何 CTA。`<a>` 連結不屬此規則範圍（保留主文內超連結 / 引用 / 人名 wiki 連結），僅由 NOISE_LINK_TEXT_RE 對特定 CTA 文字匹配清除。
@@ -475,6 +481,7 @@ Forcing function：`test/regression/styler-neg-margin-image-tiny-caption.spec.js
 | `fontFamily` | `'system-ui'` | 改過 → 注入 font-family |
 | `fontWeight` | `400`（中） | **一律注入**（含 400）→ 對 `BODY_TEXT_SEL` 注入 `font-weight: N !important`（細 300 / 中 400 / 粗 600，不含 h1-h6）。連 400 也注入是因原站若對內文設非 400 字重時，中（400） 不注入會退回原站值與細撞色 |
 | `lineHeight` | `1.7` | 非 1.7 → 注入 line-height |
+| `titleFontSize` | `0`（Auto） | 非 0 → 注入 `h1, h1 *` font-size + **`line-height: 1.3`**（v1.7.14：原站大標題常 px 鎖死行高——NYT 64px 配 67px，字級縮小後行高不縮＝標題像被拆成多段；1.3 為標題慣用 unitless，不沿用內文 lineHeight。lineHeight = 0（Auto）時跳過，與 body 分支同 trade-off） |
 | `contentWidth` | `720` | 永遠注入（卡片骨架不可缺） |
 
 這樣「開啟閱讀模式但不改設定」＝ 原站字體 / 字級 / 行高 / 排版 + 讀者卡片容器。最貼近原站視覺。
