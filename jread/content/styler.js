@@ -3365,6 +3365,9 @@ html.${HTML_CLASS}.jread-orion body {
       const negMarginSnap = [];
       const figurePaddingSnap = [];
       const contentWidthSnap = [];
+      // v1.7.16：full-bleed translateX 置中對殘留 reset 的還原清單（見 zeroHoriz
+      // 後方 pass 註解）
+      const translateResetSnap = [];
       const captionFsSnap = [];
       let titleFsSnap = null;
       let heroFloorSnap = null;
@@ -3395,7 +3398,7 @@ html.${HTML_CLASS}.jread-orion body {
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
       try {
       // ──────────────────────────────────────────────────────────────────
 
@@ -4508,6 +4511,62 @@ html.${HTML_CLASS}.jread-orion body {
             if (Math.abs(ml) > 0.5) el.style.setProperty('margin-left', '0', 'important');
             if (Math.abs(mr) > 0.5) el.style.setProperty('margin-right', '0', 'important');
           }
+
+          // v1.7.16：full-bleed「translateX(-50%) 置中對」殘留 reset。
+          // 症狀（Netflix Tudum，Jimmy 2026-07-24 截圖）：主文 inline 圖左移
+          // 半個圖寬（wrapper computed transform: matrix(1,0,0,1,-304,0)）、
+          // 掛出 card 左緣被裁。根因：站方 full-bleed 置中 idiom 是成對的
+          // 「+50% 定位（grid 佈局 / left:50% / margin-left:50%）↔ stylesheet
+          // transform: translateX(-50%)」；reader 的 grid 塌平（cleaner
+          // collapseInnerGridFlex）/ 寬度正規化把 + 半邊拆掉、-50% translate
+          // 殘留 → 元素平移出框。margin 變體已由上方 zeroHoriz abs 判定清
+          // （v0.8.123 theverge 負 margin full-bleed），transform 變體這裡補。
+          // 結構訊號（不綁站點 / class，硬規則 3）：
+          //   - computed transform 是純水平位移（matrix 其餘分量 identity）、
+          //     |tx| > 8px（有意義的位移）
+          //   - 目前 rect 水平掛出 parent 內容框（左緣或右緣超出 > 8px）
+          //   - 位移歸零後恰好回到框內（±4px）→ 判定為被拆散的置中對
+          // carousel 滑軌不誤傷：軌寬 > parent、歸零後仍出框右緣 → fits 不
+          // 成立。合法裝飾性小位移（|tx| <= 8 或未出框）不碰。跑在 zeroHoriz
+          // 寫入之後——量的是 reader 最終 layout 的出框狀態。
+          {
+            const parseTx = (t) => {
+              if (!t || t === 'none') return null;
+              let m = /^matrix\(1,\s*0,\s*0,\s*1,\s*(-?[\d.]+),\s*0\)$/.exec(t);
+              if (m) return parseFloat(m[1]);
+              // jsdom computed 不解析成 matrix，退回 specified 語法
+              m = /^translateX\((-?[\d.]+)px\)$/i.exec(t);
+              if (m) return parseFloat(m[1]);
+              m = /^translate\((-?[\d.]+)px(?:\s*,\s*0(?:px)?)?\)$/i.exec(t);
+              if (m) return parseFloat(m[1]);
+              return null;
+            };
+            const translatePending = [];
+            for (const el of articleEl.querySelectorAll('div, section, figure, picture, img')) {
+              if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+              const cs = win.getComputedStyle(el);
+              const tx = parseTx(cs.transform);
+              if (tx === null || Math.abs(tx) <= 8) continue;
+              const parent = el.parentElement;
+              if (!parent) continue;
+              let r, pr2;
+              try { r = el.getBoundingClientRect(); pr2 = parent.getBoundingClientRect(); } catch (_) { continue; }
+              if (!r || !pr2 || r.width < 1 || pr2.width < 1) continue;
+              const overflows = r.left < pr2.left - 8 || r.right > pr2.right + 8;
+              if (!overflows) continue;
+              const fits = (r.left - tx) >= pr2.left - 4 && (r.right - tx) <= pr2.right + 4;
+              if (!fits) continue;
+              translatePending.push(el);
+            }
+            for (const el of translatePending) {
+              translateResetSnap.push({
+                el,
+                tf: el.style.getPropertyValue('transform'),
+                tfP: el.style.getPropertyPriority('transform')
+              });
+              el.style.setProperty('transform', 'none', 'important');
+            }
+          }
         }
       }
 
@@ -5387,6 +5446,15 @@ html.${HTML_CLASS}.jread-orion body {
           else s.el.style.removeProperty('margin-left');
           if (s.mr) s.el.style.setProperty('margin-right', s.mr, s.mrP || '');
           else s.el.style.removeProperty('margin-right');
+        }
+      }
+
+      // v1.7.16：還原 full-bleed translateX 置中對殘留 reset
+      if (Array.isArray(snapshot.translateResetSnap)) {
+        for (const s of snapshot.translateResetSnap) {
+          if (!s || !s.el) continue;
+          if (s.tf) s.el.style.setProperty('transform', s.tf, s.tfP || '');
+          else s.el.style.removeProperty('transform');
         }
       }
 

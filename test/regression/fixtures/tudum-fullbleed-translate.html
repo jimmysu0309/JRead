@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>fullbleed translate fixture</title>
+</head>
+<body>
+  <!-- Netflix Tudum full-bleed translateX 置中對殘留最小重現（v1.7.16）：
+       媒體 wrapper stylesheet 帶 translateX(-50%)（此處以 inline px 模擬
+       computed 結果），成對的 +50% 定位已被 reader 塌平拆掉 → wrapper
+       左移出 card。rect 幾何由 spec 以 stubRect 注入。 -->
+  <article data-test="article">
+    <h1>Full Bleed Translate Fixture Article</h1>
+    <p>Body paragraph one, long enough to look like real article content for the styler passes.</p>
+    <div data-test="media-parent">
+      <div data-test="shifted-wrap" style="transform: translateX(-304px);">
+        <img data-test="inline-img" src="photo.jpg" alt="">
+      </div>
+    </div>
+    <p>Body paragraph two, following the image block in the article flow.</p>
+    <!-- 負控制 A：carousel 滑軌（位移大但軌寬 > parent、歸零後仍出框）-->
+    <div data-test="carousel-viewport" style="overflow: hidden;">
+      <div data-test="carousel-track" style="transform: translateX(-608px);">
+        <div>slide one</div>
+        <div>slide two</div>
+      </div>
+    </div>
+    <!-- 負控制 B：小裝飾位移（|tx| <= 8）-->
+    <div data-test="decor-nudge" style="transform: translateX(-4px);">
+      <img src="decor.jpg" alt="">
+    </div>
+    <!-- 負控制 C：有位移但沒出框 -->
+    <div data-test="inbox-shift" style="transform: translateX(-40px);">
+      <img src="inbox.jpg" alt="">
+    </div>
+  </article>
+</body>
+</html>
