@@ -5786,6 +5786,67 @@
     }
   }
 
+  // ---- 主文內：background-image hero 雙胞胎還原（v1.7.17 biosmonthly）------
+  // 場景（biosmonthly.com 桌面版實測）：站方 hero 用容器 background-image 呈現
+  //（inline style 配 background-attachment: fixed 視差、height: calc(100vh -
+  // 60px) 滿版），容器內放同一張圖的 <img> 雙胞胎、桌面 stylesheet
+  // display:none（行動版變體改 visibility:hidden 當比例 spacer）。reader mode
+  // 下三條各自正確的規則疊成 hero 全滅：
+  //   1. hideInsideArticleOriginallyHiddenImgs 釘死站方隱藏的 img（v0.8.48）
+  //   2. styler 裝飾背景 strip 清掉容器 background-image（v0.7.179 家族）
+  //   3. hiddenmedia-wrap / 高度 flatten 把容器塌 0
+  // 修法（結構訊號，不綁站點 / class）：img 的 src 與祖先（≤3 層）的
+  // background-image URL 指向同一資產（完整 URL 相同、或同 pathname）＝同一張
+  // hero 的雙實作（單一資料源缺失的站方版）。還原 img 進 flow（display /
+  // visibility 打回可見），bg 交給既有裝飾 strip 清、不會重複顯示；容器高度
+  // reset 回內容撐出（bg-hero 容器高度是為 bg 設計的，bg 沒了佔位無意義）。
+  // 誤殺面：img 與祖先 bg 同 URL 的組合幾乎只出現在這種雙實作 idiom——lazy
+  // blur-up 的 bg 是低解析縮圖（URL 不同）、裝飾 bg 不會有同 URL 的 img
+  // 雙胞胎。data: URI 跳過（placeholder 恆不視為資產）。
+  // 順序：必須跑在 hideInsideArticleOriginallyHiddenImgs 之前——先翻可見，
+  // 釘死 pass 讀 computed display 就會自動跳過這張 img。
+  function restoreBgImageTwinHeroImgs(articleEl, hidden) {
+    const urlOf = (bg) => {
+      if (!bg || bg === 'none') return null;
+      const m = /url\(["']?([^"')]+)["']?\)/.exec(bg);
+      return m ? m[1] : null;
+    };
+    const pathOf = (u) => {
+      try { return new URL(u, location.href).pathname; } catch (_) { return null; }
+    };
+    const resets = [];
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      let cs;
+      try { cs = window.getComputedStyle(img); } catch (_) { continue; }
+      if (!cs) continue;
+      const displayNone = cs.display === 'none';
+      const visHidden = cs.visibility === 'hidden';
+      if (!displayNone && !visHidden) continue;
+      const src = img.currentSrc || img.src || '';
+      if (!src || /^data:/i.test(src)) continue;
+      const srcPath = pathOf(src);
+      let host = null;
+      let a = img.parentElement;
+      for (let depth = 0; a && a !== articleEl && depth < 3; depth++, a = a.parentElement) {
+        let acs;
+        try { acs = window.getComputedStyle(a); } catch (_) { break; }
+        const bgUrl = urlOf(acs && acs.backgroundImage);
+        if (bgUrl && (bgUrl === src || (srcPath && pathOf(bgUrl) === srcPath))) { host = a; break; }
+      }
+      if (!host) continue;
+      const imgProps = [];
+      if (displayNone) imgProps.push('display');
+      if (visHidden) imgProps.push('visibility');
+      resets.push({ el: img, prev: snapshotStyles(img, imgProps) });
+      if (displayNone) img.style.setProperty('display', 'block', 'important');
+      if (visHidden) img.style.setProperty('visibility', 'visible', 'important');
+      resets.push({ el: host, prev: snapshotStyles(host, ['height', 'min-height']) });
+      applyImportant(host, { 'height': 'auto', 'min-height': '0' });
+    }
+    addStyleResets(hidden, resets);
+  }
+
   // ---- 主文內：原站隱藏 img 釘死（v0.8.48 healthsystemtracker）------------
   // styler 對 article 內 img 一律 display:block !important（v0.7.87 newtalk
   // 修法），副作用是把原站「刻意 display:none」的 img 一併復活——datawrapper
@@ -7577,6 +7638,9 @@
       // （healthsystemtracker Bootstrap `.row` 多 child 在 reader card 縮窄下
       // wrap → 段落被擠成窄欄；既有兩條 collapse 規則都漏網的 case）
       safeRun(collapseInnerFlexWrap, articleEl, hidden);
+      // bg-image hero 雙胞胎還原：必須在釘死 pass 之前（先翻可見，釘死 pass
+      // 讀 computed display 自動跳過）
+      safeRun(restoreBgImageTwinHeroImgs, articleEl, hidden);
       // 原站隱藏 img 釘死（須在 styler 注入前完成——styler img display:block
       // 會復活 stylesheet 層的 display:none fallback 圖）
       safeRun(hideInsideArticleOriginallyHiddenImgs, articleEl, hidden);

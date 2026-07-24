@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<!--
+  background-image hero 雙胞胎全滅的最小重現（v1.7.17 biosmonthly.com）。
+  真實結構：桌面版 hero 用 .cover-wrap 的 inline background-image 呈現
+  （配 background-attachment: fixed 視差、height: calc(100vh - 60px)），
+  容器內放同一張圖的 <img> 雙胞胎、桌面 stylesheet display:none（行動版
+  變體改 visibility:hidden 當比例 spacer）。
+  reader mode 下三條各自正確的規則疊成 hero 全滅：
+    1. hideInsideArticleOriginallyHiddenImgs 釘死站方隱藏的 img（v0.8.48）
+    2. styler 裝飾背景 strip 清掉容器 background-image（v0.7.179 家族）
+    3. hiddenmedia-wrap / 高度 flatten 把容器塌 0
+  修法：restoreBgImageTwinHeroImgs——img src 與祖先（≤3 層）bg URL 同資產
+  → 還原 img 進 flow、容器高度回內容撐出。
+-->
+<html>
+<head>
+  <style>
+    .cover .cover-wrap img { display: none; }
+    .cover-mobile .cover-wrap-mobile img { visibility: hidden; }
+    .embed-fallback { display: none; }
+  </style>
+</head>
+<body>
+  <article id="story">
+    <!-- 桌面變體：display:none 雙胞胎 -->
+    <div class="cover full">
+      <div id="bg-host" class="cover-wrap"
+           style="background-image: url('https://site.example/storage/upload/article/coverphoto_abc.jpg'); height: 600px;">
+        <img id="twin-img" src="https://site.example/storage/upload/article/coverphoto_abc.jpg" alt="">
+      </div>
+      <div class="title-box"><h1>專訪：父權的受災戶們，都長大了</h1></div>
+    </div>
+    <p>2001 年《空間就是權力》出版時，書裡這樣介紹作者：小時候是老師眼中品學兼優的學生，只知道讀書，雖然就住在宜蘭的海邊，卻不會游泳。直到國小三年級之前，家中姊弟三人，不是只有他對宜蘭利澤簡的那片海陌生。</p>
+    <!-- 行動版變體：visibility:hidden 比例 spacer 雙胞胎 -->
+    <div class="cover-mobile">
+      <div id="bg-host-vis" class="cover-wrap-mobile"
+           style="background-image: url('https://site.example/storage/upload/article/coverphoto_def.jpg');">
+        <img id="twin-img-vis" src="https://site.example/storage/upload/article/coverphoto_def.jpg" alt="">
+      </div>
+    </div>
+    <p>大他四歲的大姊，對這裡的童年記憶停在國小六年級。在什麼都還不懂之前，她就被告誡不要接近沙灘。那片海和那個利澤簡的家，或許是姊弟二人最早認識性別的地方。</p>
+    <!-- 對照組：display:none 但祖先無同 URL bg（datawrapper no-JS fallback）
+         → 必須維持 v0.8.48 釘死行為 -->
+    <div class="embed">
+      <img id="fallback-img" class="embed-fallback" src="https://img.example/H1EeW/full.png" alt="">
+    </div>
+    <p>那時的他還沒有小畢老師的稱呼，也還沒開啟從女廁運動到同婚合法無役不與的性別倡議之路，他只是個在報紙寫專欄的學者。專欄以環境觀察為名，卻寫著寫著左轉性別研究，也寫回了自己的家。</p>
+  </article>
+</body>
+</html>
