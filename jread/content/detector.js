@@ -189,6 +189,40 @@
     // v0.8.38：策略期間共用祖先鏈 cache（理由見 withAncestorCache 註解）
     return withAncestorCache(_detectByArticleTagImpl);
   }
+
+  // v1.7.15：article 殼卡 guard（Netflix Tudum 實證）。CMS 把「推薦卡片 /
+  // header 卡」做成一堆 `<article class="content-card">`（各 0-236 字、無任何
+  // <p>），真正的主文段落全在 <article> 之外的 section 裡——article-tag 策略
+  // 選中殼卡（header 卡 236 字剛好過 MIN_TEXT_LEN 200）、reader 只剩標題卡＝
+  // 「文章大部分被截斷」。列表頁降級（sorted[2] 比較）接不住：其餘卡片都
+  // < 200 字、不構成「三篇長度相近」。
+  // 結構訊號（不綁站點 / class）：選中的 <article> 內**沒有任何**可見實質
+  // 段落（p / blockquote / dd，CJK 權重字數 >= CONT_MIN_PARA_WEIGHT），而
+  // 頁面其他可見位置有 >= BODYLESS_MIN_OUT 段 → 該 article 是 teaser 卡、
+  // 真主文在別處 → 策略讓位（fall through 到 schema-org / heuristic；Tudum
+  // 實測 heuristic 會選到含全部主文段落的 page 容器）。
+  // guard 不誤傷的場景：
+  //   - 留言比正文長的部落格：article 內有正文段落 → inCount >= 1 直接放行
+  //   - 付費牆 teaser（article 內 1-2 段預覽）：同上放行（維持現行為）
+  //   - 老站 body 文字在裸 div（無 p）：in/out 都數不到段落 → outCount < 4
+  //     不觸發，article-tag 照舊
+  //   - cookie / consent 面板長文：display:none → rect 0 → 可見性過濾排除
+  // jsdom rect 全 0 → outCount 0 → 恆不觸發（spec 用 stubRect 驗，見
+  // tudum-bodyless-article-card.spec.js）。
+  const BODYLESS_MIN_OUT = 4;
+  function articleIsBodylessCard(el) {
+    let outCount = 0;
+    for (const p of document.querySelectorAll('p, blockquote, dd')) {
+      const t = ((p.innerText || p.textContent) || '').replace(/\s+/g, ' ').trim();
+      if (cjkWeightedLen(t) < CONT_MIN_PARA_WEIGHT) continue;
+      let r = null;
+      try { r = p.getBoundingClientRect(); } catch (_) { r = null; }
+      if (!r || r.width <= 0 || r.height <= 0) continue;
+      if (el.contains(p)) return false; // 內有實質段落 → 不是殼卡
+      outCount += 1;
+    }
+    return outCount >= BODYLESS_MIN_OUT;
+  }
   function _detectByArticleTagImpl() {
     const articles = Array.from(document.querySelectorAll('article'));
     if (articles.length === 0) return null;
@@ -210,6 +244,8 @@
           return null;
         }
       }
+      // v1.7.15：殼卡讓位（見 articleIsBodylessCard 註解）
+      if (articleIsBodylessCard(el)) return null;
       return { el, confidence: 0.9, strategy: 'article-tag' };
     }
 
@@ -243,6 +279,10 @@
       top.len < sorted[2].len * 1.5;
 
     if (looksLikeListPage) return null;
+
+    // v1.7.15：殼卡讓位（見 articleIsBodylessCard 註解）——Tudum 場景走的是
+    // 本多 article 路徑（41 張 content-card，top = header 卡 236 字）
+    if (articleIsBodylessCard(top.el)) return null;
 
     return { el: top.el, confidence: 0.9, strategy: 'article-tag' };
   }

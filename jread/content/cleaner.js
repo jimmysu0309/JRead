@@ -337,7 +337,13 @@
   // 推廣 `<a>` 整段 80+ chars 包含完整描述 + 結尾「立即报名>>」CTA，被 60 chars
   // 上限 skip 漏網。將此類 strict CTA 拆出獨立 regex，hideInsideArticleByLinkText
   // 對 strict CTA 命中時跳過 length cap，僅保留 PRESERVE_SEL 與 article-self 保護。
-  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读|加入)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)/i;
+  // v1.7.15：英文祈使 CTA 補進 strict 家族（錨定 ^$ 全文比對、只吃完整按鈕
+  // 文字，不吃句中片語）——Netflix Tudum 主文內 promo banner（標題文字烙在
+  // 背景圖裡 + 「Discover Now」CTA 連到 topic 頁）唯一可抓的文字訊號就是
+  // CTA 本身；strict 軌走 hideStrictCtaPromoBlock 整塊清（只清連結會留下
+  // 圖卡殘殼）。主文敘述不會用「discover now/more」當完整連結文字，
+  // walk-up 又有主文長段落保護，誤殺面窄
+  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读|加入)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$/i;
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
   // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
@@ -6447,14 +6453,22 @@
   //   - 區塊位於「最後一個主文長段落」之後（tail 區；主文長段落 = >= 100
   //     chars 的 <p>，不在 li / a / figure / blockquote 內）
   //   - <section> 元素（CMS 對 supplementary 區塊的 semantic 慣例）
-  //   - 含 >= 2 個 li，且每個 li 都含 <p> 與站內連結（hostname 相同、pathname
-  //     不同於本頁、非純 # anchor；比 hostname 不比 origin——站點常有 http/
-  //     https 混用的 legacy 連結，scheme 差異不影響「站內」語意）
+  //   - 含 >= 2 個 teaser 形狀 li，每個都含站內連結（hostname 相同、pathname
+  //     不同於本頁、非純 # anchor、非圖檔直連；比 hostname 不比 origin——站點
+  //     常有 http/https 混用的 legacy 連結，scheme 差異不影響「站內」語意）
+  //     ＋ <p> 摘要**或**縮圖 img/picture（v1.7.15 Netflix Tudum 實證：推薦
+  //     卡軌「Discover More …」li 是 img 縮圖 + span 標題、無任何 <p>，原
+  //     「每 li 必含 p」條件漏接）
+  //   - 空 li（無文字、無連結）容忍跳過（v1.7.15：carousel 分頁圓點做成
+  //     空 li 混在同一 ul，「全 li teaser 形狀」的嚴格版會 fail）
+  //   - li 不含 figcaption（圖輯 gallery 界線——gallery li 是 figure +
+  //     figcaption，teaser 卡縮圖不用 figure 語意）
   //   - 無 li 外的 >= 100 chars <p>（區塊不含正文段落）
   //   - 區塊文字 < 主文總文字 30%——防誤殺「文章主體本身就是 curated list」
   //     的 listicle（那種 list 占比遠超 30%）
-  // Wikipedia References / See also 不命中：li 無 <p> wrapper（citation 用
-  // cite tag、see-also 用裸 <a>），references 的站內連結多為 # anchor 回鏈
+  // Wikipedia References / See also 不命中：li 無 <p> wrapper 也無縮圖
+  // （citation 用 cite tag、see-also 用裸 <a>），references 的站內連結多為
+  // # anchor 回鏈
   function hideTailCuratedLinkLists(articleEl, hidden) {
     let lastMainP = null;
     for (const p of articleEl.querySelectorAll('p')) {
@@ -6473,22 +6487,29 @@
       const lis = sec.querySelectorAll('li');
       if (lis.length < 2) continue;
       let teaserShaped = true;
+      let teaserCount = 0;
       for (const li of lis) {
-        if (!li.querySelector('p')) { teaserShaped = false; break; }
+        // v1.7.15：空 li（carousel 分頁圓點）容忍跳過、不計入 teaser 數
+        if (!norm(li.textContent) && !li.querySelector('a[href]')) continue;
+        // teaser 內容形狀：<p> 摘要或縮圖（v1.7.15 放寬）；gallery 界線
+        if (!li.querySelector('p') && !li.querySelector('img, picture')) { teaserShaped = false; break; }
+        if (li.querySelector('figcaption')) { teaserShaped = false; break; }
         let hasInternalLink = false;
         for (const a of li.querySelectorAll('a[href]')) {
           const href = a.getAttribute('href') || '';
           if (!href || href.startsWith('#')) continue;
           let u;
           try { u = new URL(href, location.href); } catch (_) { continue; }
+          if (/\.(?:jpe?g|png|gif|webp|avif|svg)$/i.test(u.pathname)) continue; // 圖檔直連＝gallery/lightbox
           if (u.hostname === location.hostname && u.pathname !== location.pathname) {
             hasInternalLink = true;
             break;
           }
         }
         if (!hasInternalLink) { teaserShaped = false; break; }
+        teaserCount += 1;
       }
-      if (!teaserShaped) continue;
+      if (!teaserShaped || teaserCount < 2) continue;
       let longPOutsideLi = false;
       for (const p of sec.querySelectorAll('p')) {
         if (norm(p.textContent).length >= 100 && !p.closest('li')) { longPOutsideLi = true; break; }

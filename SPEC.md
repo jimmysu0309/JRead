@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.14**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.15**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -259,6 +259,12 @@ CMS 可能把一篇文章切成**多個同層兄弟容器**、中間插廣告區
 
 main.js 進場時（先於 cleaner.clean）呼叫 `NS.detector.absorbContinuationSiblings` 把接續區塊實際移進 articleEl 尾端（文件序不變），累加器 `NS.state.absorbedSiblings` 先掛 state 再逐筆「先記錄後移動」（中途 throw 時 exit 流程照樣逐筆移回）；退出時（styler / cleaner restore 之後）`restoreAbsorbedSiblings` **逆序**移回原位（相鄰兩塊都被吸收時錨點才存在；錨點已被站方腳本移除則退回 append 至原 parent 尾端）。吸收後區塊成為 articleEl 內容：cleaner in-article 規則照常處理其內部雜訊、翻頁模式 / 閱讀位置 / Readwise 匯出全部透明適用。forcing：`multiblock-sibling-article.spec.js`（識別正反例 + absorb/restore 可逆性 + main.js wiring）。
 
+### article 殼卡 guard（bodyless card，v1.7.15）
+
+CMS 可能把「推薦卡片 / header 卡」全做成 `<article>`（Netflix Tudum 實證：41 張 `article.content-card` 各 0-236 字、無任何 `<p>`，真正的 16 段主文全在 `<article>` 之外的 section 裡）——article-tag 策略選中 header 卡（236 字剛好過 `MIN_TEXT_LEN` 200）、列表頁降級接不住（其餘卡 < 200 字、不構成三篇長度相近）→ reader 只剩標題卡（「文章大部分被截斷」）。
+
+修法 `articleIsBodylessCard`（detectByArticleTag 單一 / 多 article 兩出口共用的讓位 gate）：選中的 `<article>` 內**無任何可見實質段落**（p / blockquote / dd，CJK 權重 >= `CONT_MIN_PARA_WEIGHT` 80、rect 面積 > 0），且頁面其他**可見**位置有 >= `BODYLESS_MIN_OUT`（4）段 → 殼卡讓位 return null，schema-org / heuristic 接手（Tudum 實測 heuristic 選到含全部主文的 page 容器）。不誤傷：留言比正文長的部落格與付費牆 teaser（article 內有段落 → 直接放行）、老站裸 div 內文（in/out 都數不到段落 → outCount < 4 不觸發）、cookie/consent 面板長文（display:none → rect 0 過濾）。jsdom rect 全 0 → 恆不觸發（spec 用 stubRect）。forcing：`tudum-bodyless-article-card.spec.js`。
+
 ### Title promote（所有非兜底策略）
 
 Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
@@ -394,7 +400,8 @@ styler 端同輪：gallery flex 規則（v0.7.93）排除 player 結構（與 v0
 **文末 link-feed 與 curated 區塊（v0.8.54，nytimes 實證）**：
 - **link-feed 覆寫 tooWide 主文保護**（`isLinkFeedContainer`）：heading 命中雜訊 pattern 後，目標 section 若「無任何 >= 100 chars `<p>`」+ 下列任一即視為推薦 feed，不受 `wrapperContainsMainContentP` 累計門檻（短 teaser p 累計 >= 300）保護，整塊 hide：(a) link density >= 0.5 + >= 3 連結；(b) **縮圖卡片訊號**（v1.6.5）`img/picture >= 3 且 link >= 5`——NYT 文末「Related Content / 編輯精選」lazy feed 的 teaser 標題 / 圖說放在 `<a>` 外、link 文字占比僅 0.31 走不到 (a)，但 25 連結 + 22 縮圖是強卡片 feed 訊號（Jimmy 2026-07-02 截圖，作者簡介之後整區推薦卡殘留）。本函式只在 `resolveHeadingNoiseTarget` 的 tooWide 判定內呼叫（前提已命中 recirculation heading），真主文 / photo essay 不帶此類 heading、長段落被 gate 擋，不誤殺。Forcing：`nyt-related-content-thumbnail-feed.spec.js`
 - **印刷版出處聲明行**（`hideInsideArticlePrintEditionNote`）：`appear(s|ed) in print on/in` 句式 + 區塊總文字 <= 250 + 無長 p → 整行 hide（含 Order Reprints / Today's Paper / Subscribe 連結與分隔符 span）
-- **文末 curated 故事集連結卡**（`hideTailCuratedLinkLists`）：位於最後主文長段落之後的 `<section>`、>= 2 個 li 且每 li 含 `<p>` teaser 與站內連結（hostname 相同、pathname 不同、非 # anchor）、無 li 外長 p、文字量 < 主文 30%。guard：Wikipedia References / See also（li 無 p wrapper）、外站 citation list、listicle 主體（占比 > 30%）皆不命中
+- **文末 curated 故事集連結卡**（`hideTailCuratedLinkLists`）：位於最後主文長段落之後的 `<section>`、>= 2 個 teaser 形狀 li——每 li 含站內連結（hostname 相同、pathname 不同、非 # anchor、非圖檔直連）＋ `<p>` teaser **或**縮圖 img/picture（v1.7.15 Netflix Tudum「Discover More」卡軌：img + span 標題、無 p）；空 li（carousel 分頁圓點）容忍跳過；li 含 figcaption 視為圖輯 gallery 不 hide；無 li 外長 p、文字量 < 主文 30%。guard：Wikipedia References / See also（li 無 p wrapper 也無縮圖）、外站 citation list、lightbox 圖檔直連、listicle 主體（占比 > 30%）皆不命中。forcing：`tudum-discover-rail.spec.js` + `nyt-article-tail-junk.spec.js`
+- **英文祈使 CTA strict 家族**（v1.7.15）：`NOISE_LINK_TEXT_STRICT_RE` 補 `^discover (now|more)$`（錨定全文比對、只吃完整按鈕文字）——Tudum 主文內 promo banner 標題烙在背景圖裡、唯一文字訊號是「Discover Now」CTA；strict 軌走 `hideStrictCtaPromoBlock` 整塊清（只清連結會留圖卡殘殼）
 - **JS 影片播放器函式庫 widget**（`hideInsideArticleVideoPlayerWidgets`，v0.8.140 inc.com 實證）：站點在主文段落間注入的「Featured Video / 推薦影片」widget（JWPlayer 等 JS 播放器，內容與本文無關）。anchor 在函式庫 root class `.jwplayer`（跨站通用簽章、非站點 class），ratio walk-up（父層文字量 > 當前 ×3 + 80 視為碰到主文 body 即停）找出注入 wrapper 整塊 hide；雙保險：wrapper 含 >= 100 chars 主文 `<p>`（不在播放器 root 內）→ 不 hide。**時序覆蓋**：靜態 clean()（`.jwplayer` 已存在）+ `checkDynamicNoise` 動態接（iOS 上 JWPlayer 在 clean() 之後才 init、observer subtree 捕捉新增的 `.jwplayer`）兩 path 共用 `hideVideoPlayerWidgetFrom`。編輯性影片（`<figure><video><figcaption>` / YouTube iframe embed）不走函式庫 root class、不命中。forcing：`inc-featured-video-jwplayer-widget.spec.js`
 - **空殼媒體 embed placeholder**（`hideInsideArticleHollowMediaEmbeds` / `figureIsHollowMediaEmbed`，v1.7.0 Wired CNE 實證）：Condé Nast CNE 影片/音訊 embed（`<figure class="cne-video-embed">` 內含 `<iframe>`）在閱讀模式接手後 player 腳本沒 init，iframe `src` 空、內部完全沒渲染，但外層容器仍保留 player 的預留高度（實測 1081px）→ 主文中段一大段空白。既有規則漏網：figure 屬 `PRESERVE_SEL`（`hideInsideArticleThirdPartyIframes` 走 `isInPreserved` 跳過 iframe）、`hideInsideArticleVideoInterludes` 需 >= 20 字外連標題 a 空 embed 不命中。predicate `figureIsHollowMediaEmbed`：figure 含 iframe 且**每個 iframe src 空/about:blank** + **無 `<img>`**（無 poster）+ **無帶 src/`<source>` 的 `<video>`** + **textContent 為空** → 空殼 placeholder、hide 整個 figure（外層預留高度容器塌陷）。純 DOM 屬性判定（不量 rect），jsdom 與真實 Chrome 一致。**時序覆蓋**：靜態 `hideInsideArticleHollowMediaEmbeds`（clean 當下 iframe 已存在）+ 動態 `hideHollowMediaEmbedFrom`（CNE 靠 intersection observer lazy-inject 空 iframe、常晚於 clean()）共用同一 predicate。動態端**必須排在 observer callback 的 `isInPreserved` continue guard 之前**（hollow embed 載體是 preserved figure，排在 guard 後會被短路漏接，與 `pinDynamicEmbedFallbackImgs` 同款刻意提前），三種注入時序全接（node 自身是 hollow figure / iframe 注入既存空 figure 的祖先查 / node 內含 hollow figure）。真 YouTube embed（iframe 有實 src）/ 有 poster 縮圖 / 有圖說文字的 embed 皆保留。forcing：`wired-hollow-cne-embed.spec.js`（靜態保護 case + 動態三時序 + 單一資料源）
 
