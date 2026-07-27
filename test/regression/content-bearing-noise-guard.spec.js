@@ -58,6 +58,39 @@ describe('cleaner — content-bearing noise 家族 guard（v0.8.48）', () => {
     });
   });
 
+  describe('v1.7.19：主文先行訊號——佔比 >= 50% 的文末留言區仍要 hide', () => {
+    // archive.ph WSJ 存檔頁 + Shinkansen 翻譯實測：重留言頁（727 則）留言字數
+    // 佔比 0.51 壓過 0.5 門檻 → 舊佔比 guard 失效、長 p 保護復活 → 留言區整包
+    // 殘留。修法：主文內容（含裸 div direct text）在 wrapper 之前已開始 →
+    // strip 長 p 保護。本 fixture 主文是裸 div 段落（archive.today 改寫頁特
+    // 徵），留言佔比 0.604。
+    let document;
+
+    before(() => {
+      const env = loadEnv();
+      document = env.document;
+      const articleEl = document.querySelector('#story3-root');
+      assert.ok(articleEl);
+      env.window.__JRead.cleaner.clean(articleEl);
+    });
+
+    it('佔比 >= 50% 的留言區（前方已有主文裸 div 段落）被 hide', () => {
+      const comments = document.querySelector('#comments-block');
+      assert.ok(comments);
+      assert.strictEqual(comments.dataset.jreadHidden, '1',
+        '主文在留言區之前已開始 → 不得再被長 p guard / 佔比 guard 豁免');
+    });
+
+    it('主文裸 div 段落全保留', () => {
+      const root = document.querySelector('#story3-root');
+      for (const div of root.children) {
+        if (div.id === 'comments-block') continue;
+        assert.notStrictEqual(div.dataset.jreadHidden, '1',
+          `主文裸 div 不可被 hide: "${div.textContent.slice(0, 20)}…"`);
+      }
+    });
+  });
+
   describe('保護側：家族 token 但佔比 >= 50%（wrapper 真包主文）仍受保護', () => {
     it('article-with-comments-wrapper 不被 hide', () => {
       const env = loadEnv();
