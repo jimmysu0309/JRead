@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!--
+  Readwise 匯出裸 div 段落最小重現（v1.7.21）。
+  場景：存檔改寫頁正文段落是裸 <div>（零 <p>、直接含 text node），匯出到
+  Readwise 後無語意段落 → 間距全失。
+  控制組：含 block child 的 wrapper div 不可標；pre 內 div-per-line code 行不可標。
+-->
+<html>
+<body>
+  <main id="story">
+    <div id="wrapper">
+      <div id="para-1">斯洛維尼亞，盧布爾雅那——這對住在粉彩色調房屋裡的年輕夫妻，過著外表平凡的郊區生活，稅款總能準時繳納，甚至連一張停車罰單都沒收過。</div>
+      <div id="para-2">她經營一家線上藝廊，並告訴熟人自己離開的原因；她的丈夫則經營一家 <a href="https://example.com">IT 新創公司</a>，在鄰居眼中這對夫妻顯得正常且安靜。</div>
+      <pre id="code-block"><div>const spy = detect(neighbour);</div><div>if (spy.cover === 'art-gallery') report(spy);</div></pre>
+    </div>
+  </main>
+</body>
+</html>

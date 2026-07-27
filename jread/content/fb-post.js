@@ -138,6 +138,10 @@
     let count = 0;
     const INLINE_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE']);
     for (const div of divs) {
+      // v1.7.21：pre / code 內的 div 不標——highlighter 常用 div-per-line 排
+      // code 行，轉 <p>（Readwise 匯出路徑）會給每行 code 加段距、拆爛 code
+      // block。FB 貼文無 pre，對原 FB 路徑是 no-op。
+      if (div.closest && div.closest('pre, code')) continue;
       // 必須直接含 textNode 文字（textContent 不算，要直接 child text node）
       let hasDirectText = false;
       let hasBlockChild = false;

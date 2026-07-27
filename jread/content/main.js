@@ -658,6 +658,16 @@
     // 2. 移除 jread 注入的 style 元素（避免汙染 Readwise 端）
     const injected = clone.querySelectorAll('style#__jread-style, style[data-jread]');
     injected.forEach(n => n.remove());
+    // 2.45 通用「裸 div 段落」標記（v1.7.21）。archive.today 改寫頁 / 部分 CMS
+    // 的正文段落是裸 <div>（零 <p>），Readwise Reader 端 sanitizer 剝 inline
+    // style、raw 模式（翻譯頁）又不吃站方 stylesheet → 段落全擠在一起
+    // （archive.ph WSJ 翻譯頁實證，Jimmy 2026-07-27 截圖；本地 reader card 靠
+    // 站方 style 有間距、只有匯出端壞）。與 FB 段落 div 同一根因，直接重用
+    // markParagraphDivs 當單一資料源（「直接含 text node + 無 block child 的
+    // leaf div」才標，巢狀 wrapper / 含 block 子元素的 div 不會誤標；pre / code
+    // 內不標）。標記後由下方 2.5 統一轉 <p>，Readwise 以語意辨識段落結構。
+    // 只動 clone、不動 live reader 顯示。
+    if (NS && NS.fbPost && NS.fbPost.markParagraphDivs) NS.fbPost.markParagraphDivs(clone);
     // 2.5 FB permalink 段落 div → p。fb-post.js markParagraphDivs 把 FB 主貼文的
     // 「直接含文字的 leaf div」標 data-jread-fb-para="1" + 設 inline margin。本地
     // reader card 靠 inline margin（+ styler 注入的 [data-jread-fb-para] 規則）
