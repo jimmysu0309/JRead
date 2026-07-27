@@ -111,9 +111,25 @@ describe('cleaner — hollow media embed placeholder (Wired / Condé Nast CNE, v
     assert.notStrictEqual(fig.style.display, 'none');
   });
 
+  // -------- (b3) v1.7.18 frame-like stub（archive.today 改寫頁）--------
+  // allowfullscreen / frameborder 依 HTML 規範只在 iframe 上有意義；出現在
+  // 非 iframe 元素＝lazy-load / 存檔改寫工具把 iframe 抽換成佔位殼（The Times
+  // via archive.ph 實證：<div allowfullscreen frameborder old-src> 空殼 +
+  // padding-top span 撐 323px → 主文中段空白）。無 src 走同一條空 src 判定。
+  it('(b3) frame-like stub figure（div[allowfullscreen] 無 src）必須被 hide', () => {
+    const fig = articleEl.querySelector('[data-test="hollow-stub-figure"]');
+    assert.ok(fig, 'fixture 必須含 hollow-stub-figure');
+    assert.strictEqual(fig.querySelectorAll('iframe').length, 0,
+      'fixture 前提：stub figure 內不可有真 iframe（重現 archive 改寫形狀）');
+    assert.strictEqual(fig.dataset.jreadHidden, '1',
+      'frame-like stub figure 必須被標記 data-jread-hidden="1"');
+    assert.strictEqual(fig.style.display, 'none',
+      'frame-like stub figure 必須 inline display:none');
+  });
+
   // -------- (d) 主文內文段落保留 --------
-  it('(d) 主文內文段落（body-p-1 ~ body-p-7）全部保留', () => {
-    for (let i = 1; i <= 7; i++) {
+  it('(d) 主文內文段落（body-p-1 ~ body-p-8）全部保留', () => {
+    for (let i = 1; i <= 8; i++) {
       const p = articleEl.querySelector(`[data-test="body-p-${i}"]`);
       assert.ok(p, `主文 body-p-${i} 必須存在於 fixture`);
       assert.notStrictEqual(p.dataset.jreadHidden, '1',

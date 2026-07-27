@@ -102,6 +102,24 @@
     <!-- ====== END CAPTION ====== -->
 
     <p data-test="body-p-7">It's called Assistive Access. Introduced with iOS 17, it strips the interface down to a handful of large, high-contrast buttons that even a young child can navigate with ease.</p>
+
+    <!-- ====== v1.7.18 frame-like stub（應被 hide）======
+         archive.today 改寫頁實證（The Times via archive.ph）：原站 <iframe>
+         影片 embed 被存檔工具抽換成帶 allowfullscreen / frameborder / old-src
+         的 <div> 空殼，旁邊 <span> 以 padding-top 撐 323px 預留高度 → 主文
+         中段一塊空白。allowfullscreen / frameborder 依 HTML 規範只在 iframe
+         上有意義，出現在非 iframe 元素＝frame 被抽換成佔位殼的結構訊號。 -->
+    <figure data-test="hollow-stub-figure">
+      <div>
+        <span style="display:block;padding-top:323px;"></span>
+        <div allowfullscreen="true" frameborder="0" old-src="https://video.example.com/player/xyz" data-test="hollow-stub-div">
+          <div></div>
+        </div>
+      </div>
+    </figure>
+    <!-- ====== END frame-like stub ====== -->
+
+    <p data-test="body-p-8">One caveat: the stripped-back mode hides notifications from apps that are not on the approved list, which is exactly the point.</p>
   </article>
 </body>
 </html>

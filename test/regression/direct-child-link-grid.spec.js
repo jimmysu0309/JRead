@@ -80,4 +80,43 @@ describe('cleaner — direct child link-grid hide (v0.7.194)', () => {
     assert.strictEqual(meta.dataset.jreadHidden, '1',
       'link-only meta 子塊（分享/訂閱/tags）必須個別 hide');
   });
+
+  // v1.7.18 The Times via archive.ph：正文段落是裸 <div>（零 <p>）、wrapper
+  // 疊 promo widget 貢獻 >= 5 anchor → 舊三 guard（長 <p> / canonical title /
+  // standalone 大圖）全 miss、正文 wrapper 整塊被吞。新 guard
+  // subtreeHasLongNonAnchorText 靠「不在 <a> 內的長直屬文字」擔保。
+  it('(g) 段落為裸 <div> 的正文 wrapper（>= 5 anchor、零 <p>）不可整塊 hide', () => {
+    const wrapper = articleEl.querySelector('.body-wrapper-textdiv');
+    assert.ok(wrapper, 'body-wrapper-textdiv must exist');
+    assert.strictEqual(wrapper.querySelectorAll('p').length, 0,
+      'fixture 前提：wrapper 內不可有 <p>（重現無 <p> 站的形狀）');
+    assert.ok(wrapper.querySelectorAll('a').length >= 5,
+      'fixture 前提：wrapper 內 >= 5 anchor（重現 promo widget 疊正文）');
+    assert.notStrictEqual(wrapper.dataset.jreadHidden, '1',
+      '含長非連結直屬文字的正文 wrapper 不可被當推薦卡 grid 整塊 hide');
+  });
+
+  it('(h) 裸 <div> 正文段落不可在任何 hidden 祖先內', () => {
+    for (const cls of ['.text-para-1', '.text-para-2']) {
+      const para = articleEl.querySelector(cls);
+      assert.ok(para, `${cls} must exist`);
+      assert.ok(!(para.closest && para.closest('[data-jread-hidden="1"]')),
+        `裸 <div> 正文段落 ${cls} 不可被任何 hidden 祖先吞掉`);
+    }
+  });
+
+  it('(i) 新 guard 不弱化原規則：純連結 card grid（rec-posts）仍被 hide', () => {
+    const grid = articleEl.querySelector('.rec-posts');
+    assert.strictEqual(grid.dataset.jreadHidden, '1',
+      '推薦卡 grid（長文字全在 <a> 內）不可被新 guard 誤放行');
+  });
+
+  // v1.7.18：「Promoted Content」label（Taboola / Outbrain 系推薦區標題）
+  // forcing NOISE_HEADING_TEXT_RE 的 ^(sponsored|promoted)\s(content|stories|posts)
+  it('(j) 「Promoted Content」label 必須被 heading text 規則清掉', () => {
+    const label = articleEl.querySelector('.tail-label-x');
+    assert.ok(label, 'promo-label must exist');
+    assert.ok(label.closest('[data-jread-hidden="1"]'),
+      '「Promoted Content」label（或其容器）必須被 hide');
+  });
 });

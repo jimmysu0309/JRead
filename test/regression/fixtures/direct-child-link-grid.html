@@ -48,5 +48,37 @@
       <a href="/tag/cats">Cats</a>
     </div>
   </div>
+
+  <!-- v1.7.18 The Times via archive.ph 實證：正文 wrapper 的段落是「裸 <div>」
+       （非 <p>——DraftJS 系站與 archive.today 改寫頁的通例），wrapper 開頭又疊
+       一個含 >= 5 anchor 的每日測驗 promo widget。整個 wrapper：>= 5 anchor、
+       零 <p>、無 standalone 大圖 → 三道舊 guard 全 miss、整塊被當推薦卡 grid
+       吞掉（正文全滅、只剩標題）。新 guard subtreeHasLongNonAnchorText 靠
+       「不在 <a> 內的長直屬文字」認出正文。 -->
+  <div class="body-wrapper-textdiv">
+    <div class="quiz-promo">
+      <span>Today's Quiz</span>
+      <a href="/quiz/1">Play now</a>
+      <a href="/quiz/2">Yesterday's answers</a>
+      <a href="/quiz/3">Leaderboard</a>
+      <a href="/quiz/4">Weekly challenge</a>
+      <a href="/quiz/5">All quizzes</a>
+    </div>
+    <div class="body-flow">
+      <div class="text-para-1">In April 1985 the band went to China. It was a ten-day, two-gig tour designed by their manager as a counterintuitive publicity scheme to introduce the young singers to the media.</div>
+      <div class="text-para-2">Now all that original footage has been reclaimed, restored, reassembled and revivified with a wealth of contemporary recollections from the participants themselves.</div>
+    </div>
+    <div id="end-of-content"></div>
+  </div>
+
+  <!-- v1.7.18：Taboola / Outbrain 系「Promoted Content」推薦區 label（The Times
+       via archive.ph 實證：推薦卡沒載入、只剩空 label 殘留文末）。forcing
+       NOISE_HEADING_TEXT_RE 的 ^(sponsored|promoted) (content|stories|posts)。
+       注意：class 必須中性命名——真實 archive 改寫頁 class 全被 inline 化，
+       keyword class 軌不存在；fixture 若命名含 promo 會被 class keyword 規則
+       接走、regex 軌變成假 forcing -->
+  <div class="tail-section-x">
+    <div class="tail-label-x">Promoted Content</div>
+  </div>
 </article>
 </body></html>

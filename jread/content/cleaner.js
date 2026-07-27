@@ -262,7 +262,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^sponsored\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -1240,6 +1240,37 @@
   // 自 hideInsideArticleHashtagClusters 同源（HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN
   // = 50），確保主文段落（通常 >= 50 chars）能 guard 住、純連結 cluster
   // 命中。
+  //
+  // v1.7.18：長段落 guard 補第二訊號 subtreeHasLongNonAnchorText——「主文段落
+  // 一定是 <p>」是三條規則（本函式、DirectChildLinkBlocks、Footer）共用的
+  // 盲點：DraftJS 系站（mirrormedia）與 archive.today 改寫頁（class 全數
+  // inline 化、段落是裸 <div>）的正文完全沒有 <p>，hasLongP 永遠 false，
+  // 正文 wrapper 被當推薦卡 grid 整塊吞掉（The Times via archive.ph 實證：
+  // wrapper = [Quizle promo, 正文 flow-root, 空 end-of-content]，promo 貢獻
+  // 8 個 anchor、正文無 <p> 無裸圖，三道 guard 全 miss）。
+  // 第二訊號是 tag-agnostic：任何元素只要「不在 <a> 內、不在已隱藏子樹內」
+  // 的**直屬** text node 合計 >= minLen 即視為正文級文字。推薦卡 grid 的字
+  // 幾乎全包在 <a> 裡，不會誤 guard；已隱藏子樹的字排除（要被清掉的內容
+  // 不能替 wrapper 擔保）。原 <p> 檢查保留不動（textContent 全子樹量法對
+  // 「段落含長 inline link」比 direct-text 寬鬆，移除會產生新盲點）。
+  function subtreeHasLongNonAnchorText(root, minLen) {
+    if (!root || root.nodeType !== 1) return false;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let el = root;
+    while (el) {
+      if (el.tagName !== 'A' && !el.closest('a') &&
+          !el.closest('[data-jread-hidden="1"]')) {
+        let t = '';
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) t += n.textContent;
+        }
+        if (norm(t).length >= minLen) return true;
+      }
+      el = walker.nextNode();
+    }
+    return false;
+  }
+
   function isLinkOnlyBlock(el) {
     if (!el || el.nodeType !== 1) return false;
     const anchors = el.querySelectorAll('a');
@@ -1247,6 +1278,7 @@
     for (const p of el.querySelectorAll('p')) {
       if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) return false;
     }
+    if (subtreeHasLongNonAnchorText(el, HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN)) return false;
     return true;
   }
 
@@ -1258,6 +1290,8 @@
       for (const p of el.querySelectorAll('p')) {
         if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
       }
+      // v1.7.18：無 <p> 站的長文 guard（同 subtreeHasLongNonAnchorText 註解）
+      if (!hasLongP && subtreeHasLongNonAnchorText(el, 100)) hasLongP = true;
       if (!hasLongP) {
         hide(el, hidden);
         continue;
@@ -1293,6 +1327,9 @@
         if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
+      // v1.7.18：無 <p> 站（DraftJS / archive.today 改寫頁）的正文 guard，
+      // 詳見 subtreeHasLongNonAnchorText 註解
+      if (subtreeHasLongNonAnchorText(child, HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN)) continue;
       // v0.8.80（mirrormedia 修法）：含「非連結包裹」的內容級大圖（hero）的
       // link-heavy 區塊不整塊 hide——這是「hero 主圖 + meta header」群集（新聞
       // CMS 慣用結構：主圖 + 日期/作者/分享/tags 同一 wrapper），不是推薦
@@ -6185,9 +6222,16 @@
     if (fig.dataset && fig.dataset.jreadHidden === '1') return false;
     if (fig === articleEl) return false;
     if (fig.contains && articleEl && fig.contains(articleEl)) return false;
-    const iframes = fig.querySelectorAll('iframe');
+    // v1.7.18：frame slot 除了 <iframe> 本尊，也認「frame-like stub」——
+    // `allowfullscreen` / `frameborder` 依 HTML 規範只在 iframe 上有意義，
+    // 出現在非 iframe 元素上＝lazy-load / 存檔改寫工具把 iframe 抽換成
+    // 佔位殼（archive.today 實證：The Times 影片 embed 被改寫成
+    // `<div allowfullscreen frameborder old-src …>` 空殼、旁邊 padding-top
+    // span 撐 323px 預留高度 → 主文中段一塊空白）。stub 無 src 屬性
+    // 走同一條「空 src ＝未載入」判定。
+    const iframes = fig.querySelectorAll('iframe, [allowfullscreen], [frameborder]');
     if (!iframes.length) return false;
-    // 每個 iframe 都必須是空 src（未載入的 player placeholder 訊號）
+    // 每個 frame slot 都必須是空 src（未載入的 player placeholder 訊號）
     for (const f of iframes) {
       const s = (f.getAttribute('src') || '').trim();
       if (s !== '' && s !== 'about:blank') return false;
