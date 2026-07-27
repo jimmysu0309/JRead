@@ -3369,6 +3369,9 @@ html.${HTML_CLASS}.jread-orion body {
       // 後方 pass 註解）
       const translateResetSnap = [];
       const captionFsSnap = [];
+      // v1.7.19：figcaption 靠尾端對齊 reset 的還原清單（見 caption 字級下限
+      // pass 後方註解）
+      const captionAlignSnap = [];
       let titleFsSnap = null;
       let heroFloorSnap = null;
       const galleryFlex = [];
@@ -3398,7 +3401,7 @@ html.${HTML_CLASS}.jread-orion body {
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
       try {
       // ──────────────────────────────────────────────────────────────────
 
@@ -4606,6 +4609,44 @@ html.${HTML_CLASS}.jread-orion body {
         }
       }
 
+      // v1.7.19：圖說「credit 靠尾端」對齊 reset。
+      // 症狀（archive.ph WSJ 存檔頁，Jimmy 2026-07-27 截圖）：hero figcaption
+      // 帶站方 text-align:right（WSJ credit 靠右下慣例、archive.today 再 inline
+      // 化成 element style），reader 窄版心下 caption + credit 連排折成兩行 →
+      // 非末行填滿整寬、末行孤懸右緣，讀起來像斷版。原站語境「寬 hero 右下角
+      // 一小行 credit」在 reader 單欄不存在，靠尾端對齊失去意義。
+      // 通則（硬規則 3，語意標籤 + computed 值判定，非站點 / class 特判）：
+      // reader scope 內 figcaption 的 computed text-align 是「文向尾端」——
+      // ltr 的 right / rtl 的 left / 兩者的 end——→ inline text-align:start
+      // !important 打回自然流向（inline !important 蓋 archive.today inline 化
+      // 的站方值）。center 是排版意圖、自然流向（ltr left / rtl right / start）
+      // 本來就對，皆不碰。與 v1.5.15 / v1.6.20 figcaption 正規化家族同哲學：
+      // 圖說回到 normal flow 的自然排版。
+      {
+        const _w2 = articleEl.ownerDocument?.defaultView;
+        if (_w2) {
+          const alignPending = [];
+          for (const fc of articleEl.querySelectorAll('figcaption')) {
+            if (fc.closest('[data-jread-hidden="1"]')) continue;
+            const cs2 = _w2.getComputedStyle(fc);
+            const ta = cs2.textAlign;
+            const rtl = cs2.direction === 'rtl';
+            const tailAligned = ta === 'end' || (rtl
+              ? (ta === 'left' || ta === '-webkit-left')
+              : (ta === 'right' || ta === '-webkit-right'));
+            if (tailAligned) alignPending.push(fc);
+          }
+          for (const fc of alignPending) {
+            captionAlignSnap.push({
+              el: fc,
+              ta: fc.style.getPropertyValue('text-align'),
+              taP: fc.style.getPropertyPriority('text-align'),
+            });
+            fc.style.setProperty('text-align', 'start', 'important');
+          }
+        }
+      }
+
       // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
       // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
       // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
@@ -5464,6 +5505,15 @@ html.${HTML_CLASS}.jread-orion body {
           if (!s || !s.el) continue;
           if (s.fs) s.el.style.setProperty('font-size', s.fs, s.fsP || '');
           else s.el.style.removeProperty('font-size');
+        }
+      }
+
+      // v1.7.19：還原 figcaption 靠尾端對齊 reset
+      if (Array.isArray(snapshot.captionAlignSnap)) {
+        for (const s of snapshot.captionAlignSnap) {
+          if (!s || !s.el) continue;
+          if (s.ta) s.el.style.setProperty('text-align', s.ta, s.taP || '');
+          else s.el.style.removeProperty('text-align');
         }
       }
 
