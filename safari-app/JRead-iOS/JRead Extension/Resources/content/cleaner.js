@@ -5489,6 +5489,32 @@
     return BYLINE_META_CLASS_RE.test(markerOf(el));
   }
 
+  // 主文內容是否在 wrapper 之前（DOM order）已開始（v1.7.19）。與
+  // mainContentPrecedesAnchor 的差異：段落訊號多掃裸 <div> direct text——
+  // archive.today 改寫頁 / 部分 CMS 段落是裸 div 不是 p，p/li-only 掃描會全
+  // miss（archive.ph WSJ 存檔頁實測 false）。門檻沿用 100/300 累計。wrapper
+  // 自身的後代不計入：descendant 的 compareDocumentPosition 不帶 PRECEDING
+  // bit，天然被 continue 跳過。
+  function mainContentPrecedesWrapper(articleEl, wrapper) {
+    if (!articleEl || !articleEl.querySelectorAll || !wrapper) return false;
+    let acc = 0;
+    for (const el of articleEl.querySelectorAll('p, li, div')) {
+      if (!(wrapper.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      let t;
+      if (el.tagName === 'DIV') {
+        t = norm(Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+      } else {
+        t = norm(el.textContent);
+      }
+      if (t.length >= 100) return true;
+      acc += t.length;
+      if (acc >= 300) return true;
+    }
+    return false;
+  }
+
   // v1.0.17 space.com：byline 起首的「分類 / 版塊 chip」(News / Politics /
   // Science & Environment)——一個短連結，排在「By 作者」前綴之前、連到版塊索引頁。
   // 整支 byline wrapper 已由 keywordWrapperIsByline 保護不被整支 hide（v1.0.16），
@@ -5562,6 +5588,15 @@
     if (containsStandaloneContentImg(el)) return true;
     if (el.querySelector && el.querySelector('h1') && wrapperH1IsMainTitle(el)) return true;
     if (articleEl && CONTENT_BEARING_NOISE_RE.test(markerOf(el))) {
+      // v1.7.19 archive.ph WSJ 存檔頁翻譯後留言區實測：727 則留言的文字量佔
+      // article 46%（英文）～51%（Shinkansen 翻譯後）——下方 0.5 佔比門檻是刀
+      // 口，翻譯改變「正文散文 vs 留言短句」的字數壓縮比例，把佔比從門檻下推
+      // 到門檻上 → 長 p 保護復活、萬餘 px 留言區整包殘留在文末。
+      // 修法（翻譯無關結構訊號）：主文內容在 wrapper 之前（DOM order）已開始
+      // → wrapper 是文中 / 文末附屬區塊（留言串 / 促捐信），不是主文容器 →
+      // 不享長 p 保護。真主文 wrapper（twz paywall / article-with-comments-
+      // wrapper）從文首就包住內容、前方無主文 → 不命中，仍走下方佔比 guard。
+      if (mainContentPrecedesWrapper(articleEl, el)) return false;
       const articleLen = norm(articleEl.textContent).length;
       if (articleLen && norm(el.textContent).length < articleLen * 0.5) return false;
     }
