@@ -361,7 +361,12 @@
   // （12px），JRead 抽 article__body 一起帶進閱讀模式。結構通則（非綁 id）：
   // 葉節點短文字呈 ad-slot 定位指令格式（`XXX > no fix`）或 ad 程式庫 token
   // （googletag / adsbygoogle）= 廣告槽殘渣，非 prose。
-  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^(為什麼|为什么)(我)?(會|会|你會)?看到(這個|這則|这个|这则|此)?(廣告|广告)|^why\s+am\s+i\s+seeing\s+this\s+ad|^[a-z0-9_]{2,8}\s*[>＞]\s*no[\s_-]*fix$|^(googletag|adsbygoogle)\b/i;
+  // v1.7.24：加「整個元素文字＝單獨 Advertisement / 廣告」alternative——
+  // NYT / Wirecutter / Guardian 等站廣告位上方的純 label（無任何後綴），
+  // hash-class 站 keyword rule 靠不上、原 regex 要求後接 continue 類字樣
+  // 也不命中。完全等值比對（^…$）誤殺風險趨近零：正文段落不會整段只有
+  // 「Advertisement」一詞。「AD」縮寫刻意不收（內文年代縮寫 AD 誤殺）
+  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^(為什麼|为什么)(我)?(會|会|你會)?看到(這個|這則|这个|这则|此)?(廣告|广告)|^why\s+am\s+i\s+seeing\s+this\s+ad|^[a-z0-9_]{2,8}\s*[>＞]\s*no[\s_-]*fix$|^(googletag|adsbygoogle)\b|^(advertisement|廣告|广告)$/i;
   const NOISE_INLINE_AD_MAX_LEN = 40;
 
   // CTA 推廣段落 heuristic：當 hideInsideArticleByLinkText 命中 noise link
@@ -1404,6 +1409,71 @@
       if (isTopBar || isSideTool || isBottomPopup) {
         hide(el, hidden);
       }
+    }
+  }
+
+  // ---- 主文內：fixed 浮動 CTA / 工具列（v1.7.24）--------------------------
+  // 場景（nytimes.com/wirecutter podcast 頁實測，Jimmy 2026-07-30 截圖）：
+  // 「See all our picks」浮動 pill（fixed、281×50、三張商品縮圖 + 短文字）
+  // 掛在 articleEl **內部**——hideFixedOutsideArticle 的 isRelated 對主文
+  // 內部一律跳過（避免砍主文祖先鏈），主文內 fixed 成為規則盲區、pill 疊在
+  // 正文上跟著捲動。
+  // 通則：文章內容不會 fixed 定位——fixed = 脫離文章流、黏死 viewport =
+  // 工具列 / CTA / 浮動導覽的結構特徵。guard：
+  //   - 含 >= 100 chars 長段落（hasLongMainParagraph）不清——保險，正常
+  //     fixed CTA 不會含主文
+  //   - 含 <video> 不清——NYT cinemagraph 家族（v1.0.3）的 fixed/absolute
+  //     媒體層走還原軌不走 hide 軌，兩軌不可互踩
+  //   - PRESERVE / 已隱藏跳過
+  // sticky 刻意不清：主文內 sticky 有合法用途（章節側標 / 表頭），fixed 才
+  // 是強訊號。
+  function hideInsideArticleFixedOverlays(articleEl, hidden) {
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const cs = window.getComputedStyle(el);
+      if (cs.position !== 'fixed') continue;
+      // 不走 isInPreserved：fixed 元素就算掛在 figure / blockquote 內也是
+      // UI chrome（黏死 viewport 的東西不是圖文內容）——wirecutter 實測 CTA
+      // pill 藏在 figure 結構內，preserve 擋掉會漏清（比照「figure 內 zoom
+      // 按鈕也清」的先例）
+      if (el.querySelector && el.querySelector('video')) continue;
+      if (hasLongMainParagraph(el)) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：blur-up placeholder 假 hero（v1.7.24）----------------------
+  // 場景（同上 wirecutter 頁）：站方 lazy blur-up pattern——低解析 placeholder
+  // <img>（naturalWidth 150、CSS `filter: blur(10px)`）absolute 疊在真圖
+  // <picture><img>（1861×930）下，真圖載入後蓋掉。styler 的媒體 position
+  // static reset（防 absolute 圖亂飄）把 placeholder 拉回 normal flow →
+  // 模糊圖與真圖上下排成兩張、「hero 重複」。
+  // 通則：img 帶 author-declared `filter: blur()`（正常內容圖不會宣告 blur）
+  // 且近祖先（<= 4 hops、不出 articleEl）內存在另一張**非 blur** img（真圖
+  // 雙胞胎）→ 本張是 placeholder、hide。無 twin 的 blur 圖（頭像裝飾等）
+  // 不動——寧可少清不誤殺。同款 twin 家族前例：bg-image 雙胞胎
+  // （v1.7.17 restoreBgImageTwinHeroImgs）、Readwise hero 去重（v0.8.125）。
+  function hideBlurredPlaceholderTwins(articleEl, hidden) {
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      const cs = window.getComputedStyle(img);
+      if (!/blur\(/.test(cs.filter || '')) continue;
+      // 不走 isInPreserved：hero 圖天生在 <figure> 內，placeholder 也一定在
+      // figure 內——preserve 擋掉規則就永遠不命中（harness 實證）。判準已窄
+      // （blur + 同容器非 blur twin），不需要 preserve 兜底
+      let twin = null;
+      let hops = 0;
+      for (let p = img.parentElement; p && p !== articleEl && hops < 4; p = p.parentElement, hops++) {
+        for (const o of p.querySelectorAll('img')) {
+          if (o === img) continue;
+          if (o.dataset && o.dataset.jreadHidden === '1') continue;
+          if (/blur\(/.test(window.getComputedStyle(o).filter || '')) continue;
+          twin = o;
+          break;
+        }
+        if (twin) break;
+      }
+      if (twin) hide(img, hidden);
     }
   }
 
@@ -7626,6 +7696,8 @@
       safeRun(hideDialogs, articleEl, hidden);
       safeRun(hideOutsideArticleSemantic, articleEl, hidden);
       safeRun(hideFixedOutsideArticle, articleEl, hidden);
+      safeRun(hideInsideArticleFixedOverlays, articleEl, hidden);
+      safeRun(hideBlurredPlaceholderTwins, articleEl, hidden);
       // v1.7.14 clip 裁切內容：必須在所有會位移 article 內部 layout 的規則
       // （keyword hide / collapse / styler reflow）之前跑——判斷依據是「原站
       // 幾何下 rect 是否完全在 clip box 外」，內部位移後訊號即失真。前面三條

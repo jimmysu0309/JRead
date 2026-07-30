@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>告別化學塗層後的生活</title>
+</head>
+<body>
+<main>
+  <article>
+    <h1>告別化學塗層後的生活</h1>
+    <!-- 模擬 wirecutter blur-up hero：placeholder <img>（filter: blur）與真圖
+         <picture><img> 同在 <figure> 內的 span 容器。fixture 必須包 <figure>
+         ——PRESERVE_SEL 含 figure，規則若誤走 isInPreserved 會永遠不命中
+         （2026-07-30 harness 實證的偽陽性坑：無 figure 的 fixture 會假綠） -->
+    <figure>
+      <span class="media-frame">
+        <span class="media-inner">
+          <img id="blur-ph" src="ph.jpg" alt="" style="filter: blur(10px)">
+          <picture><img id="real-hero" src="hero.jpg" alt="產品照"></picture>
+        </span>
+      </span>
+      <figcaption>圖說：測試圖片來源說明</figcaption>
+      <!-- fixed CTA pill 藏在 figure 結構內（wirecutter 實測位置）：
+           三張縮圖 + 短文字，position: fixed -->
+      <div id="fixed-cta" style="position: fixed; bottom: 20px;">
+        <img src="t1.jpg" alt=""><img src="t2.jpg" alt=""><img src="t3.jpg" alt="">
+        查看我們所有的精選清單
+      </div>
+    </figure>
+    <p>你大概在過去幾年看過永久化學物質成為新聞焦點，這類化合物長期被用於製造不沾鍋具與高性能雨具，但由於健康風險，現在正逐步從特定產品類別中淘汰。</p>
+    <!-- 廣告位 label：整個 <p> 的文字就只有 Advertisement 一詞 -->
+    <p id="slot-label">Advertisement</p>
+    <p>本集節目中，永續主題編輯說明日常接觸這些化合物的潛在健康風險，並解析新一波無塗層鍋具、化妝品與戶外裝備，指出哪些替代品真正值得購買。</p>
+    <!-- 控制組一：無 twin 的 blur 頭像（裝飾用），不可清 -->
+    <div class="author-block">
+      <img id="lone-blur-avatar" src="avatar.jpg" alt="作者頭像" style="filter: blur(2px)">
+      <p>作者長期研究消費品安全議題，撰寫過多篇深入評測報導，並持續追蹤各國對於永久化學物質的法規變化與產業因應策略。</p>
+    </div>
+    <!-- 控制組二：fixed 容器含 <video>（cinemagraph 家族走還原軌），不可 hide -->
+    <div id="fixed-video-wrap" style="position: fixed; top: 0;">
+      <video src="bg.mp4"></video>
+    </div>
+    <!-- 控制組三：內文提到 advertisement 的長段落，不可清 -->
+    <p id="mention-para">The word advertisement appears frequently in modern media discussions, and this paragraph merely discusses the concept at length without being an ad slot label itself.</p>
+  </article>
+</main>
+</body>
+</html>
