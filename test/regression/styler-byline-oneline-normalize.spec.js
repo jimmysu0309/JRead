@@ -58,11 +58,17 @@ describe('styler — byline 一行正規化 (v1.0.8)', () => {
       'rt 同時是 byline item');
   });
 
-  it('kicker / 作者 / 日期 / 頭像 標 byline item（可見 leaf）', () => {
+  it('kicker / 作者 / 日期 標 byline item；頭像不標（v1.7.25 頭像不顯示）', () => {
     const { env } = setup();
     assert.strictEqual(q(env, 'kicker').getAttribute('data-jread-byline-item'), '1', 'kicker 是 item');
     assert.strictEqual(q(env, 'author').getAttribute('data-jread-byline-item'), '1', '作者（有直接文字 by）是 item');
-    assert.strictEqual(q(env, 'avatar').getAttribute('data-jread-byline-item'), '1', '頭像 img 是 item');
+    // v1.7.25（Jimmy 2026-07-30）：byline 頭像一律不顯示——注入 CSS
+    // `[data-jread-byline] img { display: none }` 讓頭像成為不可見 leaf、
+    // item 掃描跳過不標（jsdom 會 resolve 注入 stylesheet 的 attr selector）
+    assert.notStrictEqual(q(env, 'avatar').getAttribute('data-jread-byline-item'), '1',
+      '頭像 img 不標 item（新政策：byline 頭像 display:none 藏掉）');
+    assert.strictEqual(env.window.getComputedStyle(q(env, 'avatar')).display, 'none',
+      '頭像 img computed display 必須是 none（byline 頭像不顯示的 forcing）');
     // 日期包在 <time>：pdate 是 wrap、time 是 item
     assert.strictEqual(q(env, 'date').getAttribute('data-jread-byline-item'), '1', '<time> 日期是 item');
   });

@@ -1477,6 +1477,51 @@
     }
   }
 
+  // ---- 主文內：byline 作者頭像（v1.7.25）----------------------------------
+  // Jimmy 2026-07-30 需求：作者欄頭像一律不顯示、套用所有網站（wirecutter
+  // podcast 頁 4 張 50×50 作者頭像實測）。
+  // 結構訊號（跨站通則）：小圖（兩維 9–120px）+ 近祖先（<= 6 hops）存在
+  // 「短 byline 文字區塊」——textContent <= BYLINE_MAX_TEXT_LEN 且命中
+  // BYLINE_TEXT_RE（By 前綴 / 作者 / 日期 pattern），或區塊內存在文字與
+  // img alt 完全相同的 <a>（頭像 alt = 作者名連結，wirecutter 實測）。
+  // guard：
+  //   - <= 8px 不碰：未載入 emoji / tracking pixel 範圍（udn v1.6.17 的
+  //     containsStandaloneContentImg w<=8 保護語意，兩邊界互不重疊）
+  //   - figure 內豁免：figure 是 author-declared 內容媒體，小 chart 圖 +
+  //     含日期圖說（figcaption）會誤中日期 pattern——頭像不放 figure
+  //   - 祖先 textContent 一超過 BYLINE_MAX_TEXT_LEN 即 break（byline 區塊
+  //     尺度已超出，再往上只會更長）
+  // 同一份事實的雙實作註記：styler 的 `[data-jread-byline] img/picture`
+  // display:none（CSS 軌，吃 byline 標記子樹）與本規則（DOM 軌，吃標記外
+  // 的頭像列）都在做「byline 頭像不顯示」——byline 標記在 styler.apply、
+  // cleaner 跑在其前拿不到標記，兩軌並存；改頭像顯示政策時兩處同改。
+  const AVATAR_MAX_SIZE = 120;
+  const AVATAR_MIN_SIZE = 9;
+  function hideBylineAvatarImgs(articleEl, hidden) {
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      if (img.closest && img.closest('figure')) continue;
+      let r = { width: 0, height: 0 };
+      try { r = img.getBoundingClientRect(); } catch (_) { /* jsdom 等環境 */ }
+      const w = r.width || img.naturalWidth || img.width || 0;
+      const h = r.height || img.naturalHeight || img.height || 0;
+      if (!(w >= AVATAR_MIN_SIZE && w <= AVATAR_MAX_SIZE &&
+            h >= AVATAR_MIN_SIZE && h <= AVATAR_MAX_SIZE)) continue;
+      const alt = norm(img.getAttribute('alt') || '');
+      let hit = false;
+      let hops = 0;
+      for (let p = img.parentElement; p && p !== articleEl && hops < 6; p = p.parentElement, hops++) {
+        const t = norm(p.textContent);
+        if (t.length > BYLINE_MAX_TEXT_LEN) break;
+        if (t.length === 0) continue;
+        const altMatchesAuthorLink = alt.length >= 2 && p.querySelectorAll &&
+          Array.from(p.querySelectorAll('a')).some(a => norm(a.textContent) === alt);
+        if (BYLINE_TEXT_RE.test(t) || altMatchesAuthorLink) { hit = true; break; }
+      }
+      if (hit) hide(img, hidden);
+    }
+  }
+
   // ---- 主文外/內：社群分享 cluster --------------------------------------
   function hideSocialShareClusters(articleEl, hidden) {
     const anchors = document.querySelectorAll(SHARE_LINK_SEL);
@@ -7747,6 +7792,10 @@
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
+      // v1.7.25：byline 頭像規則排在 author-bio 卡之後——bio 卡判準含頭像訊號，
+      // 頭像先被本規則藏走會讓 bio 卡整卡失去命中（medium-byline-header spec
+      // 負控制實證）；順序反過來則 bio 卡先整卡砍、本規則對已 hidden 者 skip
+      safeRun(hideBylineAvatarImgs, articleEl, hidden);
       safeRun(hideInsideArticlePrintEditionNote, articleEl, hidden);
       safeRun(hideTailCuratedLinkLists, articleEl, hidden);
       safeRun(hideInsideArticleByInlineAdText, articleEl, hidden);

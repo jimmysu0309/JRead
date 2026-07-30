@@ -39,14 +39,20 @@ const q = (env, t) => env.document.querySelector(`[data-test="${t}"]`);
 
 describe('styler — byline 頭像 <picture> margin reset (v1.0.19)', () => {
 
-  it('byline root 偵測 + 頭像 picture 標 byline item', () => {
+  it('byline root 偵測 + 頭像 picture 藏掉（v1.7.25 頭像不顯示）', () => {
     const { env } = setup();
     const root = q(env, 'byline-root');
     assert.strictEqual(root.getAttribute('data-jread-byline'), '1',
       'post-header（含日期訊號、不含第一段內文）必須被標 byline root');
+    // v1.7.25（Jimmy 2026-07-30）：byline 頭像一律不顯示——`[data-jread-byline]
+    // picture { display: none }` 藏掉整個頭像 picture，item 掃描跳過不標。
+    // v1.0.19 的 margin reset 議題（頭像被 hero 置中通則推到列中央）隨頭像
+    // 隱藏而不復存在；margin-reset 規則仍保留給 byline 內 video（見 styler）
     const pic = q(env, 'avatar-picture');
-    assert.strictEqual(pic.getAttribute('data-jread-byline-item'), '1',
-      '頭像 <picture>（媒體 leaf）必須標 byline item');
+    assert.strictEqual(env.window.getComputedStyle(pic).display, 'none',
+      '頭像 <picture> computed display 必須是 none（byline 頭像不顯示的 forcing）');
+    assert.notStrictEqual(pic.getAttribute('data-jread-byline-item'), '1',
+      '頭像 picture 不標 item（display:none leaf 不進 item 掃描）');
   });
 
   it('注入 CSS 含 byline 媒體 margin-reset 規則（doubled-attr specificity 壓過 hero 置中通則）', () => {
