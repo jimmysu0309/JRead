@@ -1724,14 +1724,13 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${KICKER_ATTR}] {
   display: none !important;
 }
-[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] img {
-  width: auto !important;
-  height: 2em !important;
-  max-height: 2.2em !important;
-  margin: 0 !important;
-  border-radius: 50% !important;
-  flex: 0 0 auto !important;
-  object-fit: cover !important;
+/* v1.7.25（Jimmy 2026-07-30）：byline 頭像一律不顯示——原 2em 圓形縮圖規則
+   改為整個藏掉（img + picture wrapper 都藏，避免空 picture 殘留寬度）。
+   與 cleaner hideBylineAvatarImgs（吃 byline 標記外的頭像列）是同一份事實
+   的雙軌實作，改頭像顯示政策時兩處同改。 */
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] img,
+[${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] picture {
+  display: none !important;
 }
 /* v1.0.19：byline 內頭像媒體（picture / img / video）margin reset。頭像在
    Substack 等站是 <picture> 包 <img>、flex item 是 picture（不是 img）。上方
