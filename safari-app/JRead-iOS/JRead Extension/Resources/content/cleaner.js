@@ -109,7 +109,11 @@
     // v0.8.112：補 `block` 變體——womany 文末塔羅 app 跨宣傳 banner 是
     // `<a class="related-block" href="/redirects/...">`（圖片式廣告），`related[-_]?block`
     // 是 CMS「相關/推薦內容區塊」通用命名（boundary 後置 → 不誤中 related-blockquote）。
-    { t: 'related[-_]?(?:articles?|news|posts|stories|content|block)', strong: true },
+    // v1.7.26 NYT 實測：補 `links?` 變體——文中 lazy 注入的相關報導卡群
+    // `<div class="related-links-block ...">`（data-testid="RelatedLinksBlock"），
+    // 原 alternation 無 links → `related-block` 因中間隔 `links-` 也不命中。
+    // `related-links` 是 CMS「相關連結區塊」通用命名，非站點特判。
+    { t: 'related[-_]?(?:articles?|news|posts|stories|content|block|links?)', strong: true },
     // v0.8.44 eettaiwan 實測：CMS 也用名詞在前的反序命名（`post-related` /
     // `article-related`），原 token 只涵蓋 `related-posts` 順序 → 漏網。
     { t: '(?:posts?|articles?|news|stor(?:y|ies))[-_]related', strong: true },
@@ -216,6 +220,15 @@
     // （zh.wikipedia #siteSub 站台標語實測殘留）。閱讀模式語意 ≈ 列印視圖，
     // 站方自己標 noprint 的元素必然非內容。
     { t: 'noprint' },
+    // v1.7.26 NYT 實測：`printHide` / `hidden-print` = noprint 的 camelCase /
+    // Bootstrap 慣例變體（emotion 合成 class `css-8tdf5q-printHide-guideContainerClass`
+    // 的「Explore Our Coverage of X」文末連結包、`css-1smpwg-printHide` 的
+    // 「See more on:」tag 列、`StyledRelatedLinks-printHide` 相關報導卡群）。
+    // 語意同 noprint：站方自標「列印時隱藏」＝自我聲明非內容。標 strong 是因為
+    // 這類連結包內含 100+ chars 編輯摘要 p，會誤觸主文長段 guard 被豁免——
+    // 站方既已宣告 print-hide，主文 wrapper 絕不會帶此標記，跳 guard 零誤殺。
+    // 注意不可用裸 `print` token：NYT 主文段落 wrapper class 即 `css-8nuh3b-print`。
+    { t: 'print[-_]?hide', strong: true }, { t: 'hidden?[-_]?print', strong: true },
     { t: 'powered[-_]?by' }, { t: 'popup' }, { t: 'popover' }, { t: 'overlay' },
     { t: 'modal-(?:content|dialog|box|wrapper)' }, { t: 'backdrop' }, { t: 'drawer' },
     { t: 'floating-(?:bar|cta|widget)' }, { t: 'sticky-(?:bar|cta|banner|subscribe)' },
@@ -2779,9 +2792,12 @@
   }
 
   // ---- 主文內：keyword heuristic ----------------------------------------
-  function hideInsideArticleByKeyword(articleEl, hidden, containers) {
-    // 限定容器型元素；避免誤殺內文標題/段落/圖片
-    const candidates = containers || articleEl.querySelectorAll(CONTAINER_SEL);
+  // v1.7.26：container 迴圈抽成獨立函式——靜態 clean 與動態 checkDynamicNoise
+  // 共用（單一資料源）。動態 path 原本只查 addedNode 自身的 keyword，NYT 文末
+  // lazy 注入的連結包（printHide SECTION）包在無 class 外層 DIV 內 → 自身
+  // miss、整塊殘留；動態端改傳 addedNode 子孫的 CONTAINER_SEL 進來，guard
+  // （keywordWrapperIsProtected / slug id 豁免）自動帶上、不再雙實作。
+  function hideKeywordContainers(articleEl, hidden, candidates) {
     for (const el of candidates) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;           // 保留元素內部/本身跳過
@@ -2836,6 +2852,11 @@
       if (isLoneSectionHeadingColumn(el) && keywordHitIsOnlyHeadingSlugId(el)) continue;
       hide(el, hidden);
     }
+  }
+
+  function hideInsideArticleByKeyword(articleEl, hidden, containers) {
+    // 限定容器型元素；避免誤殺內文標題/段落/圖片
+    hideKeywordContainers(articleEl, hidden, containers || articleEl.querySelectorAll(CONTAINER_SEL));
     // 另外掃 `<button>` + `<a>`：CTA / 訂閱 / 追蹤 / 分享 / 社群等類型常在
     // class 命名帶 subscribe / follow / share / social / comment / sponsor 等
     // keyword。button / a 不在 CONTAINER_SEL（會影響 action-row / button-
@@ -7272,6 +7293,13 @@
         hide(node, hiddenList);
         return;
       }
+    }
+    // v1.7.26 NYT 實測：keyword container 也要掃 addedNode 的**子孫**——NYT 文末
+    // lazy 注入的「Explore Our Coverage of X」連結包（SECTION class 含 printHide
+    // strong token）包在無 class 外層 DIV 內注入，上面的自身檢查 miss。與靜態
+    // hideKeywordContainers 單一資料源（含 keywordWrapperIsProtected 全套 guard）。
+    if (node.querySelectorAll && articleEl.contains(node)) {
+      hideKeywordContainers(articleEl, hiddenList, node.querySelectorAll(CONTAINER_SEL));
     }
     // **所有** interactive button 一律 hide（Jimmy 要求：reader mode 下
     // 任何按鈕都不需要）。delayed lazy-inject 的按鈕走這條。
