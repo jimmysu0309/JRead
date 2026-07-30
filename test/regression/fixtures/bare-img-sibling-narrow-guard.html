@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>陶哲軒的AI洞見</title>
+</head>
+<body>
+<div id="page-shell">
+  <div class="top-bar">
+    <a href="/news">最新</a>
+    <a href="/focus">焦點</a>
+    <a href="/comment">評論</a>
+  </div>
+  <div class="outer-box">
+    <h1>陶哲軒的AI洞見</h1>
+    <!-- 模擬 upmedia.mg 主文容器：hero <img> 是容器 direct child（裸 img、
+         不包 figure / div / a），與段落 wrapper（裸 div、= heuristic 選中的
+         promotedFrom）互為 sibling。promoteForTitle 升到 .outer-box（h1 的
+         LCA）後 narrowPromotedSiblings 掃 promotedFrom 的兄弟——standalone
+         media guard 若只 querySelectorAll 後代、漏掉「sibling 自身就是
+         <img>」，hero 會被當 chrome 砍 -->
+    <div class="holder-block">
+      <img id="hero-img" src="hero.jpg" alt="人物在座談會上接受訪問的現場照片" data-test="hero">
+      <div data-test="para-wrapper">
+        <div data-test="para-1">人工智慧正在以前所未見的速度改變人類社會，從戰場上的無人機系統，到實驗室裡的自動化研究流程，各領域都在重新定義工作方式。</div>
+        <div>數學界同樣受到衝擊，一名年輕研究者沒有博士學位，卻透過大型語言模型的協助，在短短數月內解決了多個懸置已久的組合數學問題。</div>
+        <div>這並不是說模型本身具備了數學家的直覺，而是它能夠快速檢索、組合並驗證既有文獻中的技巧，讓人類研究者把時間花在真正的洞見上。</div>
+        <div>批評者認為，這類成果只是既有知識的重新排列，稱不上創造；支持者則反駁，人類數學家的多數工作，其實也是既有技巧的重組與延伸。</div>
+        <div>更重要的是協作平台的角色，像版本控制系統這樣的基礎工具，以及線上討論組這類協作機制，讓分散在全球的研究者能夠即時分工合作。</div>
+        <div>團隊在三個月內解決了兩千多個代數問題，最大的意義或許不在結果本身，而是清楚展示了人類如何利用適當的組織方式達成驚人的成果。</div>
+        <div>即使模型能夠產生並協助驗證高深的數學，兩者的關係也未必是媒體或大眾所關心的取代關係，反而可以是互補與分工合作的夥伴關係。</div>
+        <div>關鍵是知道如何應用這些工具來提高生產力，如何正確地組織與應用模型和其他工具，這或許是這項驚人計畫帶給當代人類最好的禮物。</div>
+      </div>
+      <!-- 非 media 的 sibling chrome（中性命名、無 noise keyword、無 button，
+           確保是 narrowPromotedSiblings 砍的、不是其他規則）：narrow 仍須清 -->
+      <div class="extra-panel" data-test="extra-panel">
+        <a href="/x1">下一代國造平台核心設計解析</a>
+        <a href="/x2">寬頻無線採購案流標課題整理</a>
+        <a href="/x3">火箭回收技術的虛實深度研析</a>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

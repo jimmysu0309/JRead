@@ -476,8 +476,29 @@
   // 大幅分差勝出（probe 實證 238.8 vs 第二名 147）。<section> 是 HTML5 通用
   // 語意容器、非站點特判（硬規則 3）；section/p 並存的站點雖會雙重計分，但
   // linkDensity penalty + textLen bonus 仍讓真主文勝出，與 Readability 一致。
-  const SIGNAL_SEL = 'p, pre, blockquote, section, h2, h3, h4, li';
+  const SIGNAL_SEL = 'p, pre, blockquote, section, h2, h3, h4, li, div';
   const SIGNAL_MIN_TEXT = 25;
+
+  // ---- 裸 div 段落 signal（v1.7.22）---------------------------------------
+  // 場景（upmedia.mg /tw/commentary/columnists/262918 實測）：整篇主文的段落
+  // 載體是無 class 裸 <div>（.news-box-text 內 42 段、0 個 <p>）。SIGNAL_SEL
+  // 原本只認 p / heading / li 等語意標籤 → 主文容器一分都拿不到、根本不進
+  // 候選；唯一過 MIN_TEXT_LEN 的候選是含 <p> 的 footer 公司簡介（396 字），
+  // heuristic 拍板 footer 後 promoteForTitle 再把容器升到與標題的 LCA =
+  // #wrapper，整頁 chrome（header / modal / 廣告 / footer）全被當主文。
+  //
+  // 通則（Readability.js 原作 div-to-p 同精神）：div 若不含任何 block-level
+  // 子元素（只有文字 + inline 標記），結構上就是「拿 div 當 <p> 用」的段落
+  // ——納入 signal 計分。含 block 子元素的 div 是容器、不是段落，維持不算
+  // signal（否則巢狀 wrapper 會層層自我灌分）。與 v1.7.21 Readwise 匯出端
+  // 「通用裸 div 段落 → <p>」同族根因：CMS 拿 div 當段落是跨站慣用結構。
+  const SIGNAL_BLOCK_CHILD_RE = /^(DIV|P|SECTION|ARTICLE|UL|OL|LI|TABLE|BLOCKQUOTE|PRE|H[1-6]|FIGURE|ASIDE|HEADER|FOOTER|FORM|DL|HR|NAV|VIDEO|IFRAME)$/;
+  function isParagraphLikeDiv(el) {
+    for (const c of el.children) {
+      if (SIGNAL_BLOCK_CHILD_RE.test(c.tagName)) return false;
+    }
+    return true;
+  }
 
   // Signal 元素排除規則：祖先鏈含 ARIA UI-chrome 語意（dialog / alertdialog /
   // tooltip / aria-modal）或明確隱藏標記（inline display:none / aria-hidden）
@@ -608,6 +629,9 @@
     const scoreMap = new Map();
     const signals = document.querySelectorAll(SIGNAL_SEL);
     for (const el of signals) {
+      // DIV 只有「段落型」（無 block 子元素）才算 signal——先跑便宜的
+      // children 掃再進 isSignalExcluded（後者沿祖先鏈 getComputedStyle 較貴）
+      if (el.tagName === 'DIV' && !isParagraphLikeDiv(el)) continue;
       if (isSignalExcluded(el)) continue;
       const text = (el.innerText || el.textContent || '').trim();
       if (text.length < SIGNAL_MIN_TEXT) continue;

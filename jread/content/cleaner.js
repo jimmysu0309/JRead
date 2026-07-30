@@ -2107,7 +2107,14 @@
         // 跳到其他文章」的連結 affordance。這個「img 是否包在 a 裡」的結構
         // 特徵跨 CMS 通用（不限 ttv）。
         if (sib.querySelectorAll) {
-          const medias = sib.querySelectorAll('img, picture, video');
+          // v1.7.22 upmedia 修法：sibling **自身**就是裸 <img>（hero 圖直接
+          // 當主文容器 direct child、不包 figure/div）時，querySelectorAll
+          // 只查後代查不到自己 → standalone media guard 全 miss、hero 被
+          // narrow 砍。把 sib 自身納入同一條「img 不在 <a> 內」檢查（同族
+          // 前例：v0.7.14 h1 guard 的「querySelector 不含自身」坑）。
+          const medias = [];
+          if (sib.matches && sib.matches('img, picture, video')) medias.push(sib);
+          for (const m of sib.querySelectorAll('img, picture, video')) medias.push(m);
           let hasStandaloneMedia = false;
           for (const m of medias) {
             if (!m.closest || !m.closest('a')) { hasStandaloneMedia = true; break; }
