@@ -44,3 +44,9 @@ xcuserdata/
 CLAUDE.md
 CLAUDE-TEMPLATE-*.md
 .claude/
+
+# Codex 本機協作規則與設定（AGENTS.md 為 CLAUDE.md 的 Codex 版），比照不進公開 repo
+# （Jimmy 2026-07-30 裁定）
+AGENTS.md
+.agents/
+.codex/
