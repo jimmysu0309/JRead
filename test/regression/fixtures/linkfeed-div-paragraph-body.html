@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>被斷油半年為什麼還沒崩潰</title>
+</head>
+<body>
+<main>
+  <div class="content-area">
+    <article class="story-wrap">
+      <h1>被斷油半年為什麼還沒崩潰</h1>
+      <!-- 模擬 cn.nytimes 正文 section：段落載體是 div（零長 <p>）、內嵌多張
+           報導照片（img >= 3）與內文超連結（a >= 5）、側欄「相關報導」嵌在
+           section 內部。isLinkFeedContainer 的長段落 gate 若只認 <p>，本
+           section 會命中 v1.6.5 媒體訊號分支（無長 p + img>=3 + a>=5）被誤判
+           成縮圖卡片 feed → tooWide 主文保護被繞過、整個正文 section 被 hide -->
+      <section class="body-section" data-test="body-section">
+        <div class="body-column">
+          <div class="passage" data-test="para-1">幾個月來，總統一直預言這個島國即將崩潰，他在年初告訴記者，這個國家就要撐不住了，此前一天他剛剛實施了石油封鎖，將這個島國推入了有史以來最嚴重的能源危機，然而結果是，這個國家在沒有燃料供應的情況下堅持得遠比外界預期的要久。</div>
+          <img src="photo-1.jpg" alt="空蕩蕩的加油站">
+          <div class="passage">本月<a href="/r1">我們前往該國</a>，以了解其中的原因。在實地考察了一周後，我們看到這場危機的影響顯而易見，但我們也看到這個國家仍在運轉，手機信號有時是暢通的，路邊攤也供應著由太陽能冰箱冷藏的冰啤酒，這個臨時拼湊的能源網也暴露了社會的不平等。</div>
+          <img src="photo-2.jpg" alt="後院煉油">
+          <div class="passage">居民將耗油量大的老式汽車換成來自外國的電動摩托車，商家安裝了太陽能電池板才得以繼續營業，除了三月的<a href="/r2">一艘外國油輪</a>，盟國都不願去挑戰實質性的石油封鎖，官員甚至嘗試<a href="/r3">提煉儲油罐底部的油泥狀殘渣</a>，他們真的是在想盡一切辦法。</div>
+          <img src="photo-3.jpg" alt="發電機供電看電影">
+          <div class="passage">目前最熱門的產品可能是便攜式鋰電池，這種電池可以在幾個小時內充滿電，然後為電視、風扇甚至冰箱提供臨時電力，有人只需把三輪車在陽光下停一天就能給電池充滿電，<a href="/r4">他說</a>這就是未來，我們將克服封鎖。</div>
+          <div class="passage">我們是這方面的行家，他指著屋頂說他正在那裡完成改造，準備開設他的第一家實體餐廳，由同一台發電機供電，當人們說這個國家即將崩潰時，<a href="/r5">他並不太清楚</a>他們到底是什麼意思。</div>
+        </div>
+        <div class="side-column">
+          <div class="refer-cont" data-test="related-block">
+            <h4 data-test="related-heading">相關報導</h4>
+            <ul>
+              <li><a href="/a1">外交政策如何重塑加勒比能源版圖</a></li>
+              <li><a href="/a2">島國太陽能革命的幕後推手</a></li>
+              <li><a href="/a3">石油封鎖下的黑市經濟觀察</a></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+      <footer class="author-note">
+        <p>兩位特約記者自哈瓦那對本文有報導貢獻。</p>
+      </footer>
+    </article>
+  </div>
+</main>
+</body>
+</html>

@@ -889,9 +889,14 @@
   //   - <a> 數 >= 3（排除「一小段引言 + 一兩個連結」的合法短區塊）
   function isLinkFeedContainer(el) {
     if (!el || !el.querySelectorAll) return false;
-    for (const p of el.querySelectorAll('p')) {
-      if (norm(p.textContent).length >= 100) return false;
-    }
+    // v1.7.23 cn.nytimes 修法：「無主文長段落」gate 原本只掃 <p>——div 段落站
+    // （cn.nytimes 正文 38 個 div.article-paragraph、<p> 只有 footer 短句）
+    // 全 miss，加上正文內嵌圖 >= 3 + 連結 >= 5 命中 v1.6.5 媒體訊號分支，
+    // 整個 section.article-body 被誤判成縮圖卡片 feed（實測 link 文字占比僅
+    // 0.031，正文特徵明顯）→ tooWide 主文保護被繞過、正文整段 hide。改用
+    // hasLongMainParagraph（p >= 100 **或** div direct text >= 100，與其他
+    // 主文 guard 同款「div 當段落」判準）當 gate。
+    if (hasLongMainParagraph(el)) return false;
     const links = el.querySelectorAll('a');
     if (links.length < 3) return false;
     const total = norm(el.textContent).length;
