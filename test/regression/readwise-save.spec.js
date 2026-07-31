@@ -167,19 +167,91 @@ describe('readwise: buildReadwisePayload', () => {
     assert.strictEqual(body.title, undefined, 'should_clean_html=true 時不可硬補 title');
   });
 
-  // v0.7.167：language 欄位不存在於 Readwise Reader API,buildReadwisePayload
-  // 絕對不可在 body 內輸出 language key(避免使用者 / 上游誤以為有支援)。
-  it('絕對不送 language 欄位（Readwise API 不接受）', () => {
-    const body = buildReadwisePayload({
-      url: 'https://x.com',
-      html: '<p>x</p>',
-      title: 'T',
-      author: 'A',
-      publishedDate: '2026-05-22T00:00:00Z',
-      imageUrl: 'https://x.com/i.jpg',
-      language: 'zh-TW'
-    });
-    assert.strictEqual(body.language, undefined, 'body 不可含 language');
+  // v1.7.28：language 欄位——v0.7.167 曾斷言「API 沒此欄位、絕不可送」，已證實
+  // 為誤（Shinkansen 專案 2026-07-31 實測：欄位存在且有效）。不帶時 Reader 對內容
+  // 跑自動語言偵測，會把純繁中誤判成 ko（韓文字體渲染漢字 → 缺字逐字 fallback
+  // 中文字體 → 同句字體混排），且完全無視提交 HTML 的 <html lang>。唯一可靠解
+  // 法＝save 時明確帶 language 讓 Reader 跳過偵測。
+  const ZH_TEXT = '這是一段繁體中文的測試內文，用來驗證漢字佔比門檻。閱讀模式會把主文抽出來送到儲存服務。';
+  const EN_TEXT = 'This is a plain English article body used to verify that Latin text never gets tagged as Chinese by the heuristic.';
+  const JA_TEXT = 'これは日本語のテスト本文です。漢字も含まれていますが、仮名が主導しているので中国語と誤判定してはいけません。';
+
+  it('翻譯頁（isTranslated）：無條件帶 language=zh-TW（譯文必為繁中，不走文字判斷）', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', html: '<p>譯文</p>', isTranslated: true });
+    assert.strictEqual(body.language, 'zh-TW');
+  });
+
+  it('非翻譯頁 + 繁中內文（漢字比 >= 15%、無假名）：帶 language=zh-TW', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>', text: ZH_TEXT });
+    assert.strictEqual(body.language, 'zh-TW');
+  });
+
+  it('非翻譯頁 + 英文內文：不帶 language（維持 Reader 自動偵測）', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>', text: EN_TEXT });
+    assert.strictEqual(body.language, undefined);
+  });
+
+  it('非翻譯頁 + 日文內文（假名主導）：不帶 language（漢字比高但不可誤標 zh-TW）', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>', text: JA_TEXT });
+    assert.strictEqual(body.language, undefined);
+  });
+
+  it('沒 text 也非翻譯頁：不帶 language', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>' });
+    assert.strictEqual(body.language, undefined);
+  });
+
+  it('上游硬塞 language 參數：忽略（language 只能由 isTranslated / 內容判斷導出）', () => {
+    const body = buildReadwisePayload({ url: 'https://x.com', html: '<p>x</p>', text: EN_TEXT, language: 'ko' });
+    assert.strictEqual(body.language, undefined);
+  });
+});
+
+describe('readwise: detectHanLanguage（內容語言判斷，v1.7.28）', () => {
+  const { detectHanLanguage } = require(
+    path.join(__dirname, '..', '..', 'jread', 'popup', 'popup-core.js')
+  );
+
+  it('純繁中：zh-TW', () => {
+    assert.strictEqual(detectHanLanguage('繁體中文內容測試，漢字佔比極高。'), 'zh-TW');
+  });
+
+  it('中英夾雜（漢字比仍 >= 15%）：zh-TW', () => {
+    assert.strictEqual(
+      detectHanLanguage('這篇文章介紹 Chrome Extension 的 Manifest V3 架構，內容以繁體中文為主，夾雜英文術語 service worker 與 content script。'),
+      'zh-TW'
+    );
+  });
+
+  it('英文為主、只點綴少量漢字（比 < 15%）：空字串', () => {
+    assert.strictEqual(
+      detectHanLanguage('This is a long English paragraph that only mentions the word 中文 once in passing while everything else is Latin text, so the han ratio stays far below the threshold.'),
+      ''
+    );
+  });
+
+  it('日文（假名佔比 >= 5%）：空字串', () => {
+    assert.strictEqual(
+      detectHanLanguage('日本語の記事本文です。漢字と仮名が混在していますが、仮名の割合が高いので中国語ではありません。'),
+      ''
+    );
+  });
+
+  it('韓文諺文：空字串（漢字比為零，不在誤標範圍）', () => {
+    assert.strictEqual(detectHanLanguage('한국어 기사 본문입니다. 한자가 없는 순수 한글 텍스트입니다.'), '');
+  });
+
+  it('空字串 / null / 非 string / 純空白：空字串', () => {
+    assert.strictEqual(detectHanLanguage(''), '');
+    assert.strictEqual(detectHanLanguage(null), '');
+    assert.strictEqual(detectHanLanguage(undefined), '');
+    assert.strictEqual(detectHanLanguage(12345), '');
+    assert.strictEqual(detectHanLanguage('   \n\t  '), '');
+  });
+
+  it('只取前 2000 字判斷：後段大量漢字不影響（前段純英文 → 空字串）', () => {
+    const longEn = 'english text '.repeat(160); // > 2000 字元
+    assert.strictEqual(detectHanLanguage(longEn + '中文'.repeat(500)), '');
   });
 });
 

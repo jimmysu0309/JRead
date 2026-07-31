@@ -96,17 +96,47 @@
   //   POST https://readwise.io/api/v3/save/
   //   Header: Authorization: Token <access_token>
   //   Body:   { url, html?, title?, image_url?, author?, summary?,
-  //            published_date?, location?, category?, tags?, notes? }
+  //            published_date?, location?, category?, tags?, notes?, language? }
   // 200 = 已存在、201 = 新建。
-  // 註：Readwise Reader API 沒 `language` 欄位（送了會被忽略）——所以 JRead
-  // 不抽 / 不送 language。
+  // 註：v0.7.167 曾記「API 沒 language 欄位」——已證實為誤（Shinkansen 專案
+  // 2026-07-31 實測：欄位存在且有效）。繁中內容必須帶 language，見
+  // detectHanLanguage 註解。
   const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
   // v0.8.64：token 驗證端點。官方 GET /api/v2/auth/ 帶 Authorization: Token <token>，
   // 有效回 204 No Content、無效回 401——比 POST /save/ 輕量（不建任何文件、不需 payload），
   // 是 options 頁「測試 token」按鈕的正解。
   const READWISE_AUTH_URL = 'https://readwise.io/api/v2/auth/';
 
-  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate, summary, isTranslated } = {}) {
+  // v1.7.28：內容語言判斷（決定 save payload 是否帶 language 欄位）。
+  // 為什麼要帶：Reader 沒收到 language 時會對內容跑自動語言偵測，該偵測器有
+  // 兩個實測重現的 bug（Shinkansen 專案 2026-07-31 確認）：
+  //   1. 純繁體中文內容被誤判成韓文（ko）→ reader 端用韓文字體渲染漢字，
+  //      缺字的字（如「為」「麼」）逐字 fallback 到中文字體 → 同一句字體混排、
+  //      標點變韓式窄標點
+  //   2. 提交 HTML 內的 <html lang="zh-TW"> 被完全無視，救不了
+  // 唯一可靠解法＝save 時明確帶 language，Reader 就跳過自動偵測。
+  //   判斷邏輯（結構性、非站點特判）：取主文純文字前 2000 字，漢字
+  // （一-鿿）佔非空白字元比 >= 15% 且假名（぀-ヿ）佔比 < 5%
+  // 才回 'zh-TW'——假名門檻排除日文（日文假名佔比通常 30% 以上，漢字比也高、
+  // 單看漢字會誤標）；韓文諺文、拉丁文內容漢字比遠低於門檻，不受影響。
+  // 判不出來回 ''（不帶欄位，維持 Reader 自動偵測，不誤標非中文內容）。
+  function detectHanLanguage(text) {
+    const sample = (typeof text === 'string' ? text : '').slice(0, 2000);
+    let han = 0;
+    let kana = 0;
+    let total = 0;
+    for (const ch of sample) {
+      if (/\s/.test(ch)) continue;
+      total++;
+      const code = ch.codePointAt(0);
+      if (code >= 0x4E00 && code <= 0x9FFF) han++;
+      else if (code >= 0x3040 && code <= 0x30FF) kana++;
+    }
+    if (!total) return '';
+    return (han / total >= 0.15 && kana / total < 0.05) ? 'zh-TW' : '';
+  }
+
+  function buildReadwisePayload({ url, html, title, imageUrl, author, publishedDate, summary, isTranslated, text } = {}) {
     if (!url || typeof url !== 'string') {
       throw new Error('buildReadwisePayload: url 必填');
     }
@@ -173,6 +203,13 @@
       }
       if (!body.title) body.title = url;
     }
+    // v1.7.28：language 欄位——擋 Reader 自動語言偵測把繁中誤判成 ko
+    //（根因與門檻見 detectHanLanguage 註解）。翻譯頁（Shinkansen 譯文）
+    // 匯出的 html 經 dual collapse 後必為繁中、直接標 zh-TW（live 頁
+    // innerText 可能雙語混排、漢字比會被原文稀釋，不走文字判斷）；
+    // 其他頁面用主文純文字判斷，判不出來不帶欄位（維持自動偵測）。
+    const language = isTranslated ? 'zh-TW' : detectHanLanguage(text);
+    if (language) body.language = language;
     return body;
   }
 
@@ -637,6 +674,7 @@
     toggleFailureMessage,
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
+    detectHanLanguage,
     saveToReadwise,
     readwiseErrorDetail,
     validateReadwiseToken,

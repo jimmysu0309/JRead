@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.27**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.28**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -628,9 +628,9 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 
 - Endpoint：`POST https://readwise.io/api/v3/save/`
 - Header：`Authorization: Token <user_access_token>`
-- Body：`{ url, html?, title?, image_url?, author?, published_date?, summary? }`（除 `url` 外皆可省，Readwise 會自抓，但帶上 JRead 處理過的欄位才能繞過原站 parser 問題與補強冷門站缺漏 metadata）
+- Body：`{ url, html?, title?, image_url?, author?, published_date?, summary?, language? }`（除 `url` 外皆可省，Readwise 會自抓，但帶上 JRead 處理過的欄位才能繞過原站 parser 問題與補強冷門站缺漏 metadata）
 - 回傳：`200`（已存在）/ `201`（新建）
-- **注意**：Readwise Reader API 沒 `language` 欄位（送了會被忽略），JRead 不抽 / 不送 `language`。
+- **`language`（v1.7.28）**：可選。v0.7.167 曾記「API 沒此欄位」——已證實為誤（Shinkansen 專案 2026-07-31 實測：欄位存在且有效）。**為什麼要帶**：不帶時 Reader 對內容跑自動語言偵測，該偵測器會把純繁中誤判成韓文（ko）→ reader 端用韓文字體渲染漢字、缺字的字（「為」「麼」）逐字 fallback 中文字體 → 同句字體混排、標點變韓式窄標點；且提交 HTML 的 `<html lang="zh-TW">` 被完全無視。唯一可靠解法＝save 時明確帶 `language` 讓 Reader 跳過偵測。**判斷邏輯**（`popup-core.detectHanLanguage`，結構性、非站點特判）：翻譯頁（`isTranslated`，Shinkansen 譯文經 dual collapse 後必為繁中）無條件帶 `zh-TW`；其他頁面取主文純文字（`payload.text`）前 2000 字，漢字（`一-鿿`）佔非空白字元比 >= 15% 且假名（`぀-ヿ`）佔比 < 5%（排除日文）才帶 `zh-TW`，否則不帶欄位維持 Reader 自動偵測（不誤標非中文內容）。驗證（2026-07-31）：實送繁中測試文件後 read.readwise.io 文章容器 `#document-text-content` 的 `lang="zh-TW"`（list API 回應 schema 無 language 欄位、讀不回，驗證走網頁層）。regression 在 `test/regression/readwise-save.spec.js`。
 - **`summary`（v0.8.72）**：可選。由 Gemini Flash Lite 端產生的繁中三句摘要（見「Gemini 摘要」章節）。提供時覆蓋 Readwise server 端自動生成的英文摘要；未提供則由 Readwise 自行處理。
 
 ### 欄位抽取策略（v0.7.166–167）
