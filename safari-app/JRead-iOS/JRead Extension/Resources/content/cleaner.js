@@ -2095,6 +2095,10 @@
   // 連環藏），又接得到多 carousel。同一 carousel 內其餘 img 由迴圈開頭的
   // closest('[data-jread-hidden]') guard 自動略過，不會重複 promote。
   const OVERWIDE_PROMOTE_MAX = 5;
+  // v1.7.27 爆炸半徑 guard：hide 目標（articleEl direct child）含大量文字＝主文
+  // wrapper，絕不可 hide。門檻 300 chars——carousel 殼的 slide caption 遠低於此、
+  // 主文 wrapper 遠高於此（agentm 實測 6050）。
+  const OVERWIDE_HIDE_TEXT_MAX = 300;
   function promoteOverwideImages(articleEl, hidden) {
     if (!articleEl) return;
     // clean() 時 styler 尚未 apply card CSS，不能靠 getBoundingClientRect
@@ -2102,6 +2106,7 @@
     // （Swiper 等 library 慣例 pattern）。
     const MAX_CARD = 720;
     let promoted = 0;
+    const defused = new Set();
     for (const img of articleEl.querySelectorAll('img')) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
       if (img.closest && img.closest('[data-jread-hidden="1"]')) continue;
@@ -2128,6 +2133,24 @@
         container = container.parentElement;
       }
       if (!container || container === articleEl) continue;
+      // v1.7.27：hide 目標升層到 direct child 後，若該 child 含大量文字＝它是
+      // 主文 wrapper 而非 carousel 殼（WordPress classic editor 的
+      // `.wp-caption[style="width: <圖寬+10>px"]` 就住在主文 flow 內，整篇內文
+      // 常在 articleEl 唯一的 direct child 裡——hide 它等於藏掉整篇文章；
+      // news.agentm.tw 實案）。此時不 promote 不 hide，改「拆彈」：中和
+      // overwideAncestor 的 inline width，讓 img 回歸 max-width:100% 正常縮放。
+      // 同一 ancestor 只中和一次；styler 端 reset 走統一 __styleResets 還原。
+      if (norm(container.textContent).length >= OVERWIDE_HIDE_TEXT_MAX) {
+        if (!defused.has(overwideAncestor)) {
+          defused.add(overwideAncestor);
+          addStyleResets(hidden, [{
+            el: overwideAncestor,
+            prev: snapshotStyles(overwideAncestor, ['width', 'max-width']),
+          }]);
+          applyImportant(overwideAncestor, { 'width': 'auto', 'max-width': '100%' });
+        }
+        continue;
+      }
       const clone = img.cloneNode(false);
       clone.setAttribute('data-jread-promoted-img', '1');
       clone.removeAttribute('style');
