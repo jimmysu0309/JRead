@@ -896,12 +896,10 @@ html [${ARTICLE_ATTR}="1"] {
 [data-jread-promoted-outside="1"] + [${ARTICLE_ATTR}="1"] {
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
-  margin-top: 0 !important;
 }
 /* 消除頂端留白：第一個 direct child 清 margin-top / padding-top。
    JS 端另外會對「第一個 h1-h4/p」設 margin-top: 0 inline（覆蓋深層 CMS 寫死的值） */
 [${ARTICLE_ATTR}="1"] > *:first-child {
-  margin-top: 0 !important;
   padding-top: 0 !important;
 }
 /* 消除底端留白：最後一個 direct child 清 margin-bottom / padding-bottom。
@@ -2042,6 +2040,13 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   object-fit: initial !important;
   margin-left: 0.15em !important;
   margin-right: 0.15em !important;
+  /* v1.7.29：垂直 margin 一併歸零——inline 圖的 margin-bottom 不產生流間距，
+     只把圖沿 baseline 往上抬（margin box 底緣對齊 baseline）。站點給 icon 的
+     margin 多為其原始 flex/block 版面設計（macstories club h1 flex-column icon
+     margin-bottom:.75rem 實證：icon 高於標題文字 12px），進 inline flow 後是
+     純錯位來源 */
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
   vertical-align: -0.1em !important;
 }
 `;
@@ -4782,6 +4787,12 @@ html.${HTML_CLASS}.jread-orion body {
         const mediaTags = new Set(['FIGURE', 'PICTURE', 'IMG', 'A', 'DIV']);
         for (const child of el.children) {
           if (!mediaTags.has(child.tagName)) continue;
+          // v1.7.29：inline emoji / icon 跳過 gap 補償——inline 圖的 margin-bottom
+          // 不產生流間距，只把圖沿 baseline 往上抬（錯位）。與上方 gallery 偵測
+          // guard 同一判定基礎（皆以 INLINE_IMG_ATTR 為準）但獨立兜底：真 gallery
+          // （另有大圖子）仍會攤平，此處確保混在其中的 icon 不被塞 margin
+          if (child.tagName === 'IMG' &&
+              (child.hasAttribute(INLINE_IMG_ATTR) || child.hasAttribute(ICON_IMG_ATTR))) continue;
           // 排除「不含媒體」的 div（gallery wrapper 內偶爾混 spacer / caption），
           // 只對「自身含 img/picture/figure 子孫」的 element 加 margin。
           const hasMediaDescendant = child.tagName === 'IMG' || child.tagName === 'PICTURE' || child.tagName === 'FIGURE' ||
