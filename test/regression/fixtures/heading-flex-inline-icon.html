@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>heading flex inline icon fixture</title>
+</head>
+<body>
+  <!-- 最小重現（macstories club 頁結構，2026-08-02 Jimmy 截圖回報 icon 與標題錯位）：
+       h1 為 flex 容器、直接子是 30px 品牌 icon <img> + 標題文字。原站以
+       flex-column + margin-bottom 疊排 icon 與標題；閱讀模式 gallery flex 攤平
+       規則把 h1 誤當圖片 gallery：攤成 block 後 gap 補償對 icon 塞 inline
+       margin-bottom:12px !important——inline 圖的 margin-bottom 不產生流間距，
+       只把圖沿 baseline 往上抬（icon 高於標題文字）。
+       spec 內以 defineProperty + stubRect 模擬 natural 60×60 / rendered 30×30
+       （natural > INLINE_IMG_MAX(48) → 走 rect fallback 標 inline）。 -->
+  <article>
+    <h1 id="icon-title" style="display: flex;"><img id="brand-icon" src="https://example.com/logo-shape-gold.svg" alt="Club Icon">MacStories Weekly: Issue 524</h1>
+    <p>主文段落一，提供足夠文字長度讓結構看起來像正常文章內容，避免其他規則干擾本測試的目標行為。</p>
+    <!-- 對照組：真 gallery（flex 容器 + 兩張大內容圖）——攤平後 gap 補償
+         必須照常對大圖子塞 margin-bottom（v0.7.94 行為不可被 guard 誤傷） -->
+    <div id="real-gallery" style="display: flex;">
+      <img id="gallery-photo-1" src="https://example.com/photo1.jpg" alt="照片一">
+      <img id="gallery-photo-2" src="https://example.com/photo2.jpg" alt="照片二">
+    </div>
+    <p>主文段落二，繼續提供文字內容支撐文章結構。</p>
+  </article>
+</body>
+</html>
