@@ -50,6 +50,19 @@ function load() {
   stubRectAt(d.querySelector('.wrap-tags-icon'), 18, 18, 2000);
   stubRectAt(d.querySelector('.wrap-links-a'), 300, 20, 2000);
   stubRectAt(d.querySelector('.wrap-links-b'), 300, 20, 2030);
+  // v1.7.30 today.line.me icon cell：byline grid 列的 rect（icon 連結 42px
+  // 定寬、名稱欄 200px 有文字、subscribe 按鈕 60px——按鈕會先被 hide）
+  stubRectAt(d.querySelector('.pub-row'), 600, 48, 2100);
+  stubRectAt(d.querySelector('.pub-icon-link'), 42, 42, 2100);
+  stubRectAt(d.querySelector('.pub-icon-figure'), 42, 42, 2100);
+  stubRectAt(d.querySelector('.pub-icon-img'), 42, 42, 2100);
+  stubRectAt(d.querySelector('.pub-name'), 300, 20, 2100);
+  stubRectAt(d.querySelector('.subscribe-button'), 60, 32, 2100);
+  // LINE Today 真實條件：icon img 的 natural 是 280×280（retina srcset）→
+  // anchorIsContentImageLink 豁免、icon-only <a> 規則不 hide（與真站一致；
+  // jsdom naturalWidth 恆 0 需 stub）
+  Object.defineProperty(d.querySelector('.pub-icon-img'), 'naturalWidth', { value: 280 });
+  Object.defineProperty(d.querySelector('.pub-icon-img'), 'naturalHeight', { value: 280 });
   return env.window;
 }
 
@@ -118,6 +131,23 @@ describe('eettaiwan — header zone 裝飾 icon + collapse svg icon 爆大', () 
     const linksA = document.querySelector('.wrap-links-a');
     assert.strictEqual(linksA.style.getPropertyValue('width'), 'auto',
       '非 replaced 的 div child 仍應被套 width:auto reset');
+  });
+
+  it('icon 級小 cell（包 figure 的連結）collapse 後釘住原寬、不套 width:auto（v1.7.30 today.line.me 巨圓）', () => {
+    const row = document.querySelector('.pub-row');
+    const iconLink = document.querySelector('.pub-icon-link');
+    const name = document.querySelector('.pub-name');
+    assert.strictEqual(document.querySelector('.subscribe-button').dataset.jreadHidden, '1',
+      'subscribe 按鈕應先被 hide（觸發 collapse 條件 A 的 hidden sibling）');
+    assert.strictEqual(row.dataset.jreadCollapsed, '1',
+      'pub-row（grid + hidden child）應被 collapseGridWithHiddenCell collapse');
+    assert.strictEqual(iconLink.style.getPropertyValue('width'), '42px',
+      'icon 級小 cell（<= 120px、無文字）應被釘住塌欄前量到的寬度');
+    assert.strictEqual(iconLink.style.getPropertyValue('display'), 'inline-block',
+      'icon 級小 cell 須設 display:inline-block——container 塌成 block 後 inline 元素寬度定義失效，' +
+      '內部相對寬度 figure 會撐滿容器（LINE Today 42px icon → 608px 巨圓實測）');
+    assert.strictEqual(name.style.getPropertyValue('width'), 'auto',
+      '有文字的一般 cell 仍應照舊套 width:auto reset（既有行為不可退化）');
   });
 
   it('「透過《Google 新聞》追蹤」follow CTA 被 link text heuristic hide', () => {

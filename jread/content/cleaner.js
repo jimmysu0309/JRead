@@ -4291,6 +4291,34 @@
   const COLLAPSE_ATTR = 'data-jread-collapsed';
   // collapse child reset 跳過的 replaced element（/i：SVG tagName 保留原小寫 case）
   const COLLAPSE_REPLACED_TAG_RE = /^(?:IMG|SVG|VIDEO|AUDIO|PICTURE|CANVAS|IFRAME|EMBED|OBJECT)$/i;
+  // v1.7.30 today.line.me 實測：byline 列 grid（發布者 icon 連結 42px 定寬 +
+  // 名稱 + subscribe 按鈕）因 subscribe 按鈕被 hide 觸發 collapse，icon 連結
+  // 的 42px stylesheet 寬被 CHILD_DECLS 的 `width:auto !important` 打掉 →
+  // 內部 FIGURE（site CSS width:100% + border-radius:50%）撐滿 608px，變成
+  // 蓋住 byline 與 hero 的巨大灰圓。replaced-tag 豁免（上一條）只保護 img/svg
+  // 自身、保護不到「包 icon 的連結 / figure wrapper」。
+  // 通則：collapse 前量測寬度 <= ICON_CELL_MAX_W 且無可見文字的 cell 是
+  // icon / avatar 級裝飾，不可能是「被欄位定義壓窄、需要撐滿」的主內容欄。
+  // 對它不套 CHILD_DECLS，改「釘住塌欄前量到的寬度」——只跳過不夠：grid /
+  // flex container 塌成 block 後，display:inline 的 cell（LINE Today 的
+  // `<a>` icon 連結實測）失去 grid-item blockify、stylesheet 定寬不再生效，
+  // 內部相對寬度元素照樣撐滿。釘住 = display:inline-block + width/max-width
+  // 鎖量測值（inline style !important，restore 走同一 snapshot 機制還原）。
+  // 門檻 120px：icon / avatar 常見 24-96px；真雙欄 layout 的媒體欄 / 文字欄
+  // 皆遠大於此（twoColLede 條件要求 >= 30% 容器寬），不受影響。
+  const ICON_CELL_MAX_W = 120;
+  const ICON_CELL_PIN_PROPS = ['display', 'width', 'max-width'];
+  // 回傳 icon 級 cell 的量測寬（px 整數）；非 icon 級回 null
+  function iconCellPinWidth(c) {
+    let rect;
+    try { rect = c.getBoundingClientRect(); } catch (_) { return null; }
+    if (!rect || rect.width <= 0 || rect.width > ICON_CELL_MAX_W) return null;
+    if (norm(c.textContent).length >= 4) return null;
+    return Math.round(rect.width);
+  }
+  function iconCellPinDecls(w) {
+    return { display: 'inline-block', width: w + 'px', 'max-width': w + 'px' };
+  }
 
   // ---- flex-row 殘殼欄（v0.8.45 theverge）---------------------------------
   // 場景：flex 兩欄 layout 的推薦 / 廣告 rail，clean 當下有完整內容（theverge
@@ -4645,6 +4673,15 @@
         // spec 退回撐滿 containing block（eettaiwan content-footer 的
         // tags.svg 18px → 603px 巨型 icon 實測）。
         if (COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
+        // icon / avatar 級小 cell：不套 CHILD_DECLS、改釘住原寬（v1.7.30，見
+        // iconCellPinWidth 定義處註解；此處在 phase1、container 尚未塌，量測
+        // 值是原始 layout）
+        const iconW = iconCellPinWidth(c);
+        if (iconW !== null) {
+          collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
+          writes.push({ el: c, decls: iconCellPinDecls(iconW) });
+          continue;
+        }
         collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, CHILD_PROPS) });
         writes.push({ el: c, decls: CHILD_DECLS });
       }
@@ -4926,6 +4963,13 @@
         }
       }
       if (maxTop - minTop <= 5 && !twoColLede) continue;
+      // icon 級小 cell 必須在 container 塌掉「之前」量測（塌完 child 寬度
+      // 已被 block flow 改變，量測失真）——v1.7.30，見 iconCellPinWidth 註解
+      const iconCellWidths = new Map();
+      for (const c of visibleChildren) {
+        const w = iconCellPinWidth(c);
+        if (w !== null) iconCellWidths.set(c, w);
+      }
       resets.push({ el, kind: 'container', prev: snapshotStyles(el, INNER_FLEX_PROPS) });
       applyImportant(el, INNER_FLEX_DECLS);
       if (el.dataset) el.dataset.jreadCollapsed = '1';
@@ -4941,6 +4985,12 @@
         // block（eettaiwan content-footer tags.svg 18px → 603px 實測——
         // tag 連結 wrap 多行觸發本條、不是 hidden-cell 那條）。
         if (COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
+        // icon / avatar 級小 cell：不套 reset、改釘住原寬（v1.7.30；塌前量測見上方）
+        if (iconCellWidths.has(c)) {
+          resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
+          applyImportant(c, iconCellPinDecls(iconCellWidths.get(c)));
+          continue;
+        }
         resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
         applyImportant(c, INNER_FLEX_CHILD_DECLS);
       }

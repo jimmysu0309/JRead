@@ -65,6 +65,18 @@ describe('detector — multi-block 文章接續兄弟區塊（gvm 截斷修法�
     const ids = new Set(result.continuationEls.map(el => el.id));
     assert.ok(!ids.has('next-article'), '含 h1 的兄弟是下一篇文章的開頭，不可吸收');
   });
+
+  it('反例不吸收：aside 內的長段落不構成接續證據（v1.7.30 theatlantic 訂閱區）', () => {
+    const ids = new Set(result.continuationEls.map(el => el.id));
+    assert.ok(!ids.has('reg-aside-block'),
+      '段落全在 <aside> 內的兄弟塊不可吸收——aside 語意即非主文附屬內容');
+  });
+
+  it('反例不吸收：newsletter / subscribe class 子樹內的長段落不構成接續證據（v1.7.30）', () => {
+    const ids = new Set(result.continuationEls.map(el => el.id));
+    assert.ok(!ids.has('leaflet-block'),
+      '段落全在訂閱 CTA class（CSS-module 命名）子樹內的兄弟塊不可吸收');
+  });
 });
 
 describe('detector — absorb / restore 接續區塊（DOM 可逆性）', () => {

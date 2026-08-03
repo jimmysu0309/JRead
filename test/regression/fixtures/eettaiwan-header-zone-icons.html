@@ -52,6 +52,17 @@
       <div class="google-jump-container">
         <a href="https://news.google.com/search?q=test"><p><img src="badge.png" alt="透過 《Google 新聞》 追蹤 EE Times"><span>透過 《Google 新聞》 追蹤 EE Times</span></p></a>
       </div>
+      <!-- v1.7.30 today.line.me 最小重現：byline grid 列（發布者 icon 連結
+           42px 定寬 + 名稱 + subscribe 按鈕）。subscribe 按鈕被 keyword hide
+           → 觸發 collapseGridWithHiddenCell（條件 A）→ 包 figure 的 icon
+           連結（非 replaced element、replaced-tag 豁免保護不到）不可被套
+           width:auto——內部 figure（site CSS width:100%）會撐滿容器變巨圓。
+           修法＝釘住塌欄前量到的 42px（rect 由 spec stub） -->
+      <div class="pub-row" style="display: grid; grid-template-columns: 42px 1fr auto;">
+        <a class="pub-icon-link" href="/publisher"><figure class="pub-icon-figure"><img class="pub-icon-img" src="pub.png" alt=""></figure></a>
+        <span class="pub-name">測試發布社 更新於 04 月 23 日 18:49・發布於 04 月 23 日 15:23</span>
+        <button class="subscribe-button">訂閱</button>
+      </div>
     </div>
   </div>
 </article>
