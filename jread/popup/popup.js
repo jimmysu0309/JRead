@@ -84,7 +84,7 @@ if (IS_PANEL) {
 
 // ---- 設定範圍常數（對齊 SPEC 預設值）----------------------------------
 // fontSize 特殊值 0 = "Auto / 原站字級"（styler 不注入任何 font-size override）
-const FONT_SIZE = { min: 12, max: 32, step: 1, default: 18, auto: 0 };
+const FONT_SIZE = { min: 12, max: 32, step: 1, default: 17, auto: 0 };
 // v0.8.158：標題字級（h1）從 options 移來。0 = Auto（保留原站標題大小）；stepper
 // 範圍 [16, 96] step 2、default 32；styler clamp [8, 200] 為最終防線。
 const TITLE_FONT_SIZE = { min: 16, max: 96, step: 2, default: 32, auto: 0 };
@@ -95,7 +95,7 @@ const TITLE_FONT_SIZE = { min: 16, max: 96, step: 2, default: 32, auto: 0 };
 const CONTENT_WIDTH = { min: 480, max: 1600, step: 40, default: 720 };
 // 行距：unitless ratio，clamp 對齊 styler [1.0, 3.0]；auto = 0 sentinel（不注入
 // line-height，保留原站行距）。step 0.1 配合人眼舒適區間細調。
-const LINE_HEIGHT = { min: 1.0, max: 3.0, step: 0.1, default: 1.7, auto: 0 };
+const LINE_HEIGHT = { min: 1.0, max: 3.0, step: 0.1, default: 1.5, auto: 0 };
 // 段落間距：em 為單位，clamp [0, 3.0]；auto = -1 sentinel（不注入 p/ul/ol/
 // blockquote margin-bottom 規則，保留原站 typography）。0 是合法值（段落貼緊）
 // 所以不能拿來當 sentinel，改用 -1。step 0.25 給「半段、一段、兩段」這類常見

@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.32**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.33**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -482,16 +482,18 @@ Forcing function：`test/regression/styler-neg-margin-image-tiny-caption.spec.js
 
 **只在非翻頁模式跑**（v1.6.24）：翻頁 multicol card（`position:fixed` + `column-width`）第 2 欄起所有元素 rect.right 天然超過 card 右緣，量 card 寬做溢出判定在 multicol 下不可靠（probe 實證正常窄 table 全被誤判），翻頁模式此 pass 不執行。結構訊號（非站點特判，硬規則 3）：掃 `table` / `pre`，只處理「**實際渲染右緣 > card 右緣**（真溢出）+ 非 player（`data-jread-player`）+ **未被既有 `overflow-x:auto|scroll` 祖先（自身在卡內）吸收**（原站已給 code block 內捲就不重複處理、避免雙重 scroll container）」者。能正常 wrap 的窄表格、已內捲的 code block 不受影響。`restore()` 對稱還原原 inline `display` / `overflow-x` / `max-width`。同一份「水平溢出」事實在 harness 端由 `tools/audit-lib.js` 的 `auditOverflow` 把關：被 `overflow-x:auto|scroll`（可捲到）祖先吸收的超出元素豁免不報（rust-book / kubernetes code span 近誤報）、`hidden`/clip 或被 card 本身裁切的（看不到也捲不到）仍報。Forcing function：`test/regression/styler-wide-content-scroll.spec.js`（寬 table/pre 套修法 + 窄 table 不動 + 已吸收不重複 + restore 還原）+ `test/regression/audit-overflow-scroll-clip.spec.js`（audit 豁免層）；真實 Chromium overflow 走 `tools/page-rounds-harness.js` 的 OVERFLOW audit + 截圖自驗。
 
-### 僅在「使用者改過預設值」時才注入的 override
+### 依明確 sentinel 決定是否注入的 override（v1.7.33 起與預設值脫鉤）
 
-| 欄位 | 預設 | 改過後注入 |
+v1.7.33 起預設值改為 Jimmy 慣用組合（gray / 17 / 無襯線 / 1.5 / 標題 32），「不注入、保留原站」不再由「值 == 預設」表達，改由**明確 sentinel** 承載：`fontSize` / `titleFontSize` 0、`lineHeight` 0、`paragraphSpacing` -1、`fontFamily` `'system-ui'`（popup「系統預設」）、theme 由 `theme.text` 是否為 null 決定（light 天生不注入文字色）。
+
+| 欄位 | 預設 | 注入條件 |
 | --- | --- | --- |
-| `theme` | `'light'` | dark / sepia / gray → 覆寫文字色 + 頁面/卡片底色 |
-| `fontSize` | `18` | 非 18 → 對 `BODY_TEXT_SEL` 注入 `font-size: Npx !important`（p/li/blockquote/td/th/**font**/span 等，含裸 div 段落）。**font 進 selector**（v0.8.83）：老式 table 排版頁主文包在 `<font size="2">`、`size` 呈現屬性把字級重設成固定 px 截斷繼承，不列入則 fontSize 設定對 essay 無效（boss.html 實證） |
-| `fontFamily` | `'system-ui'` | 改過 → 注入 font-family |
+| `theme` | `'gray'` | `theme.text` 非 null（dark / sepia / gray）→ 覆寫文字色 + 頁面/卡片底色；light 不注入文字色 |
+| `fontSize` | `17` | 非 0（Auto）→ 對 `BODY_TEXT_SEL` 注入 `font-size: Npx !important`（p/li/blockquote/td/th/**font**/span 等，含裸 div 段落）。**font 進 selector**（v0.8.83）：老式 table 排版頁主文包在 `<font size="2">`、`size` 呈現屬性把字級重設成固定 px 截斷繼承，不列入則 fontSize 設定對 essay 無效（boss.html 實證） |
+| `fontFamily` | 無襯線 stack（`FONT_STACKS.sans`） | 非 `'system-ui'` → 注入 font-family |
 | `fontWeight` | `400`（中） | **一律注入**（含 400）→ 對 `BODY_TEXT_SEL` 注入 `font-weight: N !important`（細 300 / 中 400 / 粗 600，不含 h1-h6）。連 400 也注入是因原站若對內文設非 400 字重時，中（400） 不注入會退回原站值與細撞色 |
-| `lineHeight` | `1.7` | 非 1.7 → 注入 line-height |
-| `titleFontSize` | `0`（Auto） | 非 0 → 注入 `h1, h1 *` font-size + **`line-height: 1.3`**（v1.7.14：原站大標題常 px 鎖死行高——NYT 64px 配 67px，字級縮小後行高不縮＝標題像被拆成多段；1.3 為標題慣用 unitless，不沿用內文 lineHeight。lineHeight = 0（Auto）時跳過，與 body 分支同 trade-off） |
+| `lineHeight` | `1.5` | 非 0（Auto）→ 注入 line-height（v1.7.33 起與 fontSize v0.7.140 同語意：popup 顯示值 = 實際生效值） |
+| `titleFontSize` | `32` | 非 0（Auto）→ 注入 `h1, h1 *` font-size + **`line-height: 1.3`**（v1.7.14：原站大標題常 px 鎖死行高——NYT 64px 配 67px，字級縮小後行高不縮＝標題像被拆成多段；1.3 為標題慣用 unitless，不沿用內文 lineHeight。lineHeight = 0（Auto）時跳過，與 body 分支同 trade-off） |
 | `contentWidth` | `720` | 永遠注入（卡片骨架不可缺） |
 
 這樣「開啟閱讀模式但不改設定」＝ 原站字體 / 字級 / 行高 / 排版 + 讀者卡片容器。最貼近原站視覺。
@@ -536,7 +538,7 @@ v0.7.140 起 popup 多了「字型」select（v0.8.145 起 label 改「中文字
 
 option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐字一致（forcing function spec 校對）。styler 注入時會在使用者 stack 末尾再串自己的 fallback chain，即使具名字型都沒裝也能 fall back 到對應的 generic family。
 
-**英文（拉丁）fallback 字型自訂（v0.8.144，`latinSerif` / `latinSans`）**：「字型」選**襯線 / 無襯線**時，下方多一個「英文字型」select，可單獨指定英文 / 數字用哪個拉丁字型（中文仍由該 stack 的 CJK 字體渲染）。襯線 / 無襯線**各自記一個**選擇（`latinSerif` / `latinSans`，v0.8.158 預設 `'sourceserif'` / `'sourcesans'`——選襯線 / 無襯線時英文 / 數字直接走自帶 Source Serif / Source Sans woff2、iOS 也生效）；系統預設（不覆寫）與等寬沒有這個維度，select 整 row 隱藏（`render()` 依 `fontFamily` 控制顯隱）。清單（鍵集中於 `settings-defaults.js` 的 `LATIN_FONTS`）：
+**英文（拉丁）fallback 字型自訂（v0.8.144，`latinSerif` / `latinSans`）**：「字型」選**襯線 / 無襯線**時，下方多一個「英文字型」select，可單獨指定英文 / 數字用哪個拉丁字型（中文仍由該 stack 的 CJK 字體渲染）。襯線 / 無襯線**各自記一個**選擇（`latinSerif` / `latinSans`，v1.7.33 起兩者預設皆 `'sourceserif'`——選襯線 / 無襯線時英文 / 數字直接走自帶 Source Serif woff2、iOS 也生效；latinSans 原 v0.8.158 預設 `'sourcesans'`）；系統預設（不覆寫）與等寬沒有這個維度，select 整 row 隱藏（`render()` 依 `fontFamily` 控制顯隱）。清單（鍵集中於 `settings-defaults.js` 的 `LATIN_FONTS`）：
 
 - 自動（沿用 base stack 內建西文字型）
 - **襯線群**：Georgia / Palatino（系統字，只點名；v0.8.148 移除 Times New Roman、v0.8.158 移除 Charter）／ **Source Serif / Piazzolla**（v0.8.146 自帶 woff2，見下；v0.8.158 移除 Literata）
@@ -558,15 +560,15 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 
 | 欄位 | 型別 | 預設值 | 儲存位置 | 使用者可調？ |
 | --- | --- | --- | --- | --- |
-| `theme` | `'light' \| 'dark' \| 'sepia' \| 'gray'` | `'light'` | `storage.sync` | ✅（日/夜間切換） |
-| `fontSize` | `number`（px） | `18` | `storage.sync` | ✅ |
-| `titleFontSize` | `number`（px） | `0` | `storage.sync` | ✅（popup「標題字級」stepper，v0.8.158 從 options 移來；自動鈕 = 0 = Auto 保留原站 h1 大小，stepper [16, 96] step 2、非 0 覆寫 h1 font-size，styler clamp [8, 200]，v0.7.175） |
+| `theme` | `'light' \| 'dark' \| 'sepia' \| 'gray'` | `'gray'`（v1.7.33） | `storage.sync` | ✅（日/夜間切換） |
+| `fontSize` | `number`（px） | `17`（v1.7.33） | `storage.sync` | ✅ |
+| `titleFontSize` | `number`（px） | `32`（v1.7.33） | `storage.sync` | ✅（popup「標題字級」stepper，v0.8.158 從 options 移來；自動鈕 = 0 = Auto 保留原站 h1 大小，stepper [16, 96] step 2、非 0 覆寫 h1 font-size，styler clamp [8, 200]，v0.7.175） |
 | `contentWidth` | `number`（px） | `720` | `storage.sync` | ✅（頁面寬度）—— popup stepper [480, 1600] step 40（**v0.7.237 上限 1200 → 1600**：寬視窗 / iPad desktop-class layout viewport 可達 1120pt+，舊上限填不滿螢幕、主觀變「調了沒變寬」；styler clamp [300, 2000] 為最終防線；v0.8.158 options input 移除、改 popup 唯一入口）。注意手機 viewport < contentWidth 時 card 受 viewport clamp，調大無感（物理限制，非 bug；iPad simulator instrument 實證 innerWidth=1120 時 card rect.width 精確 = 設定值） |
-| `fontFamily` | `string` | `'system-ui'` | `storage.sync` | ✅（popup「中文字型」select：系統預設/襯線/無襯線/等寬，v0.7.140；label v0.8.145 由「字型」改「中文字型」） |
+| `fontFamily` | `string` | 無襯線 stack（`FONT_STACKS.sans`，v1.7.33） | `storage.sync` | ✅（popup「中文字型」select：系統預設/襯線/無襯線/等寬，v0.7.140；label v0.8.145 由「字型」改「中文字型」；`'system-ui'` = 不覆寫 sentinel） |
 | `latinSerif` | `string`（`LATIN_FONTS` key） | `'sourceserif'` | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 襯線時顯示**；指定襯線下英文/數字的拉丁字型，v0.8.158 預設 `'sourceserif'`（內嵌 Source Serif woff2），v0.8.144） |
-| `latinSans` | `string`（`LATIN_FONTS` key） | `'sourcesans'` | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 無襯線時顯示**；指定無襯線下英文/數字的拉丁字型，v0.8.158 預設 `'sourcesans'`（內嵌 Source Sans woff2），v0.8.144） |
+| `latinSans` | `string`（`LATIN_FONTS` key） | `'sourceserif'`（v1.7.33） | `storage.sync` | ✅（popup「英文字型」select，**僅字型 = 無襯線時顯示**；指定無襯線下英文/數字的拉丁字型，v1.7.33 預設改 `'sourceserif'`——Jimmy 慣用中文無襯線 + 英文襯線混排，v0.8.144） |
 | `fontWeight` | `300 \| 400 \| 600` | `400`（中） | `storage.sync` | ✅（popup「字重」segmented 細/中/粗，v0.7.254；v0.8.158 options select 移除、改 popup 唯一入口）—— 真正的 `font-weight`、**全平台一致生效**（取代 v0.7.157 `boldText` 的 macOS-only `-webkit-font-smoothing`）。只接受 300/400/600 三值（其餘回退 400）。**三段一律注入**（含 400）：原站若對內文設非 400 字重（如 shoppingdesign `.htmlview p { font-weight: 300 }`），中（400） 不注入會退回原站 300 與細（300） 撞成同色——故 400 也強制 `!important` 蓋掉。粗用 **600 Semibold** 而非 700：700 視覺太重，600 比中明顯重又不過粗；**不用 500**（Windows 微軟正黑無 500 face 會退回 400 與中撞色）。只套 `BODY_TEXT_SEL`（內文載體 p/li/blockquote/td/span 等，含 CMS「div 當段落」站的裸 div——`data-jread-text-div` runtime 標記，v0.8.49，**不含 h1-h6**——標題字重交給原站/UA bold 維持章節階層；`strong`/`b` 等有自身明確 weight 的元素也不受影響）。storage.onChanged 即時 reapply（main.js relevantKeys 含 `fontWeight`）。**舊 `boldText` 已退役**：SW `onInstalled` 一次性遷移 `boldText:true → fontWeight 600`、其餘 → 400，並刪除 `boldText` 殘留 key |
-| `lineHeight` | `number` | `1.7` | `storage.sync` | ✅（popup「行距」stepper [1.0, 3.0] / step 0.1 / Auto sentinel = 0 不注入 line-height 保留原站，v0.7.162） |
+| `lineHeight` | `number` | `1.5`（v1.7.33） | `storage.sync` | ✅（popup「行距」stepper [1.0, 3.0] / step 0.1 / Auto sentinel = 0 不注入 line-height 保留原站，v0.7.162） |
 | `paragraphSpacing` | `number` | `1.0` | `storage.sync` | ✅（popup「段落間距」stepper [0, 3.0]em / step 0.25 / Auto sentinel = -1 不注入 p/ul/ol/blockquote margin-bottom 規則保留原站 typography，v0.7.162） |
 | `blockPageShortcuts` | `boolean` | `true` | `storage.sync` | ✅（options 「攔截原站快速鍵」） |
 | `linkFollowReader` | `boolean` | `true` | `storage.sync` | ✅（options 「點連結時自動延續閱讀模式」，v1.6.14）—— 閱讀模式下點文內連結，目標頁（原分頁 / 新分頁）自動 silent enterReaderMode；範圍限「點連結」（網址列輸入不受影響）。機制：`content/link-follow.js` 純邏輯模組——閱讀模式下點 `<a href>`（左 / 中鍵、http(s)、`e.defaultPrevented` 為 false 的真導航）→ main.js 記一筆正規化目標 URL + 時戳（link intent）到 `storage.local`（key `readerLinkIntent`，90s 效期 + cap 20 筆自剪 + read-modify-write 保留其他分頁 pending）；目標頁 content `tryAutoEnableOnLoad` 比對 `location.href` 命中即消費 + silent 進入。同分頁換頁與新分頁（cmd/ctrl/中鍵/target=_blank）都落在同一目標 URL、共用同一條 token path。**只認整頁導航**（SPA 內部路由由 `wasActive` 跨路由路徑處理，router preventDefault 的 click 不記）；排除 `mailto:`/`tel:`/`javascript:`/擴充自有頁 / `<a download>` / 同頁錨點 / 右鍵。forcing：`link-follow.spec.js`（決策 / normalize / list / wire-up 四層）。iOS 真機 click→storage→載入 timing 待 TestFlight 驗 |

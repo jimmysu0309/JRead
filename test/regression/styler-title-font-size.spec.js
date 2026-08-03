@@ -79,14 +79,17 @@ describe('styler — titleFontSize（v0.7.175）', () => {
       'Auto 模式不可注入 h1 * font-size rule');
   });
 
-  it('titleFontSize 未提供 → 預設 Auto、不注入 h1 font-size', () => {
+  it('titleFontSize 未提供 → 落到 DEFAULTS 32、注入 h1 font-size（v1.7.33 預設改 32）', () => {
+    // v1.7.33 前預設 0 = Auto；改版後未提供（storage 缺欄 / 損壞）落到預設 32。
+    // 「保留原站標題」仍可用明確 sentinel 0 表達（上一個 case 驗證）。
     window.__JRead.styler.apply(articleEl, {
       theme: 'light', fontSize: 18, contentWidth: 720,
       fontFamily: 'system-ui', lineHeight: 1.7
     });
     const css = window.document.getElementById('__jread-style').textContent;
-    assert.ok(!/h1\s*\*\s*\{[^}]*font-size:/.test(css),
-      '未提供 titleFontSize 時預設 Auto，不可注入 h1 * font-size rule');
+    assert.ok(/h1\s*\*\s*\{[^}]*font-size:\s*32px\s*!important/.test(css) ||
+      /font-size:\s*32px\s*!important/.test(css),
+      '未提供 titleFontSize 時必須落到預設 32、注入 h1 font-size: 32px');
   });
 
   it('titleFontSize=1e308 → clamp 到 200px 以下', () => {

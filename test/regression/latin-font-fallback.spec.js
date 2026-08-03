@@ -30,9 +30,11 @@ const compose = globalThis.__JReadComposeFontStack;
 
 describe('英文（拉丁）fallback 字型自訂（v0.8.144）', () => {
   describe('預設值', () => {
-    it('DEFAULT_SETTINGS.latinSerif=sourceserif / latinSans=sourcesans（v0.8.158）', () => {
+    it('DEFAULT_SETTINGS.latinSerif=sourceserif / latinSans=sourceserif（v1.7.33）', () => {
+      // v1.7.33：latinSans 預設由 sourcesans 改 sourceserif（Jimmy 慣用：
+      // 中文無襯線 + 英文襯線混排）
       assert.strictEqual(SHARED.latinSerif, 'sourceserif');
-      assert.strictEqual(SHARED.latinSans, 'sourcesans');
+      assert.strictEqual(SHARED.latinSans, 'sourceserif');
     });
   });
 

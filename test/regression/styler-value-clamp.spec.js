@@ -92,12 +92,15 @@ describe('styler — 數值 clamp（v0.7.143）', () => {
   });
 
   it('fontSize = 0（Auto sentinel）必須保留、不可 clamp 到 8', () => {
+    // titleFontSize 顯式傳 0：v1.7.33 起未提供會落到預設 32、注入 h1
+    // font-size，干擾本 case 對「無任何 font-size 注入」的斷言
     window.__JRead.styler.apply(articleEl, {
       theme: 'light',
       fontSize: 0,
       contentWidth: 720,
       fontFamily: 'system-ui',
-      lineHeight: 1.7
+      lineHeight: 1.7,
+      titleFontSize: 0
     });
     const styleEl = window.document.getElementById('__jread-style');
     const css = styleEl.textContent;

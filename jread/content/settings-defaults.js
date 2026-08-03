@@ -37,11 +37,40 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
 (function (global) {
   'use strict';
 
+  // v0.8.16：字型 stack 單一資料源。原本 SW（service-worker.js）與 popup
+  //（popup.js FONT_STACKS）各寫一份完整字面值、靠 serif-font-stack spec 人工
+  // 校對防 drift（CLAUDE.md 工作流原則 5 點名）。現在收斂到本檔，兩邊都讀同
+  // 一份。注意：popup.html 的 <option value> 是第三份**靜態 HTML 拷貝**（HTML
+  // 無法引用 JS 常數），仍由 serif-font-stack spec 校對 HTML↔JS 一致。
+  // v1.7.33：宣告位置移到 DEFAULT_SETTINGS 之前——預設字型改為無襯線 stack，
+  // DEFAULT_SETTINGS.fontFamily 直接引用 FONT_STACKS.sans（const TDZ 需先宣告）。
+  //
+  // serif：v0.8.25 起西文襯線（Georgia / Times）排在 CJK 字體之前——CSS 逐字
+  // fallback 下英文/數字命中 Georgia（西文襯線比 Noto Serif TC 拉丁字形更適合
+  // 螢幕閱讀），中文穿到後面的內嵌 "Noto Serif TC"（zero 缺字保證不變）。CJK
+  // 字體（內嵌 Noto Serif TC + macOS Songti + iOS Hiragino Mincho）仍放在泛型
+  // serif 之前——iOS WebKit 對清單中段泛型 serif 只解析拉丁字型，CJK 會 fallback
+  // 到後綴 sans，需明寫才不會襯線/無襯線看起來一樣。
+  // sans：系統 CJK 字型優先（-apple-system / PingFang TC / JhengHei），繞過部分
+  // 站點對「Noto Sans TC」family 名的 @font-face 劫持（weight→檔案對映壞掉導致
+  // 字重失效）；Noto Sans TC 留作末段 fallback。詳見各 stack 的演進註解歷史。
+  const FONT_STACKS = {
+    system: 'system-ui',
+    serif: 'Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
+    sans: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
+    mono: 'ui-monospace, Menlo, Consolas, monospace'
+  };
+
+  // v1.7.33（Jimmy 2026-08-03）：預設值改為 Jimmy 慣用組合——theme gray、
+  // fontSize 17、titleFontSize 32、lineHeight 1.5、中文字型無襯線 + 英文
+  // Source Serif。「預設 = 不注入」的 sentinel 自此與預設值脫鉤：不注入的
+  // 明確訊號是 fontSize/titleFontSize 0、lineHeight 0、paragraphSpacing -1、
+  // fontFamily 'system-ui'（見 styler.js overrides 計算）。
   const DEFAULT_SETTINGS = {
-    theme: 'light',
-    fontSize: 18,
+    theme: 'gray',
+    fontSize: 17,
     contentWidth: 720,
-    fontFamily: 'system-ui',
+    fontFamily: FONT_STACKS.sans,
     // v0.8.144：英文（拉丁）fallback 字型。襯線 / 無襯線各自記一個英文字型選擇
     //（latinSerif / latinSans）；'auto' = 沿用該 stack 內建的西文字型（襯線 = Georgia、
     // 無襯線 = -apple-system）。只在 fontFamily 為襯線 / 無襯線 stack 時生效——
@@ -50,14 +79,15 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // base stack 字面值不變（既有契約不動、不需遷移既有使用者）。
     // v0.8.158（Jimmy 2026-06-22）：預設改用內嵌可變字型 Source Serif / Source Sans
     //（取代原本 'auto'）——選襯線 / 無襯線時英文 / 數字直接走自帶 woff2、iOS 也生效。
+    // v1.7.33：latinSans 預設改 sourceserif（Jimmy 慣用：中文無襯線 + 英文襯線混排）。
     latinSerif: 'sourceserif',
-    latinSans: 'sourcesans',
+    latinSans: 'sourceserif',
     // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。用真正的
     // font-weight 全平台生效，取代 v0.7.157 boldText（-webkit-font-smoothing 只在
     // macOS 有差異）。三段一律注入（含 400，避免原站內文非 400 時中退回原站與細撞色）。
     // 舊 boldText 由 SW onInstalled 一次性遷移（boldText:true → 600）。詳見 styler.js。
     fontWeight: 400,
-    lineHeight: 1.7,
+    lineHeight: 1.5,
     // v0.7.162：段落間距（em）。1.0 對應 v0.7.102 baseline。
     paragraphSpacing: 1.0,
     autoEnableDomains: [],
@@ -91,7 +121,9 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // v0.8.109：編輯模式（閱讀模式下手動點掉雜訊段落）。預設 true = popup 顯示
     // 「編輯模式：移除雜訊」按鈕；false = 整顆隱藏（不需要此功能者可關掉）。
     editModeEnabled: true,
-    titleFontSize: 0,
+    // v1.7.33：預設 32（原 0 = Auto 保留原站標題大小；0 仍是合法 sentinel，
+    // popup 自動鈕可切回）。
+    titleFontSize: 32,
     // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用。
     spaceScrollRatio: 50,
     // v0.8.157：3 指輕點切換閱讀模式。預設 false = 停用（Jimmy 2026-06-22 改預設關
@@ -131,28 +163,6 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       'send-to-readwise': null,
       'toggle-youtube-borderless': null
     }
-  };
-
-  // v0.8.16：字型 stack 單一資料源。原本 SW（service-worker.js）與 popup
-  //（popup.js FONT_STACKS）各寫一份完整字面值、靠 serif-font-stack spec 人工
-  // 校對防 drift（CLAUDE.md 工作流原則 5 點名）。現在收斂到本檔，兩邊都讀同
-  // 一份。注意：popup.html 的 <option value> 是第三份**靜態 HTML 拷貝**（HTML
-  // 無法引用 JS 常數），仍由 serif-font-stack spec 校對 HTML↔JS 一致。
-  //
-  // serif：v0.8.25 起西文襯線（Georgia / Times）排在 CJK 字體之前——CSS 逐字
-  // fallback 下英文/數字命中 Georgia（西文襯線比 Noto Serif TC 拉丁字形更適合
-  // 螢幕閱讀），中文穿到後面的內嵌 "Noto Serif TC"（zero 缺字保證不變）。CJK
-  // 字體（內嵌 Noto Serif TC + macOS Songti + iOS Hiragino Mincho）仍放在泛型
-  // serif 之前——iOS WebKit 對清單中段泛型 serif 只解析拉丁字型，CJK 會 fallback
-  // 到後綴 sans，需明寫才不會襯線/無襯線看起來一樣。
-  // sans：系統 CJK 字型優先（-apple-system / PingFang TC / JhengHei），繞過部分
-  // 站點對「Noto Sans TC」family 名的 @font-face 劫持（weight→檔案對映壞掉導致
-  // 字重失效）；Noto Sans TC 留作末段 fallback。詳見各 stack 的演進註解歷史。
-  const FONT_STACKS = {
-    system: 'system-ui',
-    serif: 'Georgia, "Times New Roman", "Noto Serif TC", "Songti TC", "Songti SC", "Hiragino Mincho ProN", serif',
-    sans: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
-    mono: 'ui-monospace, Menlo, Consolas, monospace'
   };
 
   // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進

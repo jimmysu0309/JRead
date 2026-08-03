@@ -23,13 +23,18 @@ function setup() {
   return { window: env.window, document: env.document, NS: env.NS, articleEl: detected.el };
 }
 
+// 本 spec 的 baseline 設定：明確傳「不注入」sentinel（system-ui / titleFontSize 0）
+// 驗 styler 各 override 分支的獨立行為。v1.7.33 起 extension 實際預設值已改為
+// Jimmy 慣用組合（gray / 17 / 無襯線 / 1.5 / 標題 32，見 settings-defaults.js），
+// 與本 baseline 無關——這裡的值是顯式傳入的測試輸入，不是「預設值」快照。
 const DEFAULT_SETTINGS = {
   theme: 'light',
   fontSize: 18,
   contentWidth: 720,
   fontFamily: 'system-ui',
   lineHeight: 1.7,
-  paragraphSpacing: 1.0
+  paragraphSpacing: 1.0,
+  titleFontSize: 0
 };
 
 describe('styler — 骨架與可逆性', () => {
@@ -871,18 +876,19 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     }
   });
 
-  it('fontSize = 0（Auto / 原站字級）→ CSS 不注入 font-size 也不注入 line-height（每站保留原字級與行高）', () => {
+  it('fontSize = 0（Auto / 原站字級）→ 不注入 font-size；lineHeight 非 Auto 仍獨立注入（v1.7.33 語意）', () => {
     // popup「自動」按鈕用 sentinel 0 代表「使用者明確選擇保留原站字級」。
-    // styler 需: (1) 保留 0 值不被 `Number(0) || DEFAULT` 轉回 18；(2) override
-    // 判斷加 `> 0` 保護、0 不視為「改過 DEFAULT」→ 不注入任何 font-size /
-    // line-height 連帶 rule。每開一個站點都走原站原 typography。
+    // styler 需保留 0 值不被 `Number(0) || DEFAULT` 轉回預設。
+    // v1.7.33 語意更新：lineHeight 的「不注入」只認 Auto sentinel 0——非 0 值
+    //（含 == 預設值）一律注入（fontSize v0.7.140 同款修正：popup 顯示值 = 實際
+    // 生效值）。fontSize Auto 時 lineHeight 走獨立分支注入。
     const { document, NS, articleEl } = setup();
     NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 0 });
     const css = document.getElementById('__jread-style').textContent;
     assert.ok(!/font-size:\s*\d+px\s*!important/.test(css),
       'fontSize = 0 (Auto) 不得注入 font-size override');
-    assert.ok(!/line-height:\s*[\d.]+\s*!important/.test(css),
-      'fontSize = 0 (Auto) 不得連帶注入 line-height（baseline 預設完全不動原站）');
+    assert.ok(/line-height:\s*1\.7\s*!important/.test(css),
+      'lineHeight 1.7 非 Auto → fontSize Auto 下仍須走獨立分支注入（v1.7.33）');
   });
 
   it('非預設 fontSize 必須連帶注入 line-height（即使 lineHeight 是預設值）', () => {
@@ -1127,8 +1133,10 @@ describe('styler — 使用者設定 override（預設值不動原站）', () =>
     // fontSize=0 (Auto) 跑，確保「使用者明確選擇保留原站」時 styler 不主動
     // 對 p / li / blockquote 下 typography rule（baseline v0.6 精神）。
     // fontSize > 0 時的 BODY_TEXT_SEL rule 由另一條 spec 驗收。
+    // v1.7.33：lineHeight 也需顯式 Auto(0)——非 0 值現一律注入（sentinel 脫鉤），
+    // 本條驗的是「使用者全選保留原站」的 baseline，兩個 sentinel 都要給。
     const { document, NS, articleEl } = setup();
-    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 0 });
+    NS.styler.apply(articleEl, { ...DEFAULT_SETTINGS, fontSize: 0, lineHeight: 0 });
     const css = document.getElementById('__jread-style').textContent;
 
     // 可下 margin/padding rule 的 selector（v0.7.100 + v0.7.102 範圍）：

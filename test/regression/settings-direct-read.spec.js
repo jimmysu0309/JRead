@@ -69,17 +69,18 @@ function runGetSettings({ chromeStub, sharedDefaultsObj, onBackgroundCall }) {
 
 describe('settings-defaults.js 單一資料源', () => {
   it('module.exports 是完整 defaults 物件（關鍵欄位 + 型別）', () => {
+    // v1.7.33：預設值改為 Jimmy 慣用組合（gray / 17 / 無襯線 / 1.5 / 標題 32）
     assert.strictEqual(sharedDefaults.pagedMode, false);
-    assert.strictEqual(sharedDefaults.theme, 'light');
-    assert.strictEqual(sharedDefaults.fontSize, 18);
+    assert.strictEqual(sharedDefaults.theme, 'gray');
+    assert.strictEqual(sharedDefaults.fontSize, 17);
     assert.strictEqual(sharedDefaults.contentWidth, 720);
-    assert.strictEqual(sharedDefaults.fontFamily, 'system-ui');
-    assert.strictEqual(sharedDefaults.lineHeight, 1.7);
+    assert.strictEqual(sharedDefaults.fontFamily, globalThis.__JReadFontStacks.sans);
+    assert.strictEqual(sharedDefaults.lineHeight, 1.5);
     assert.strictEqual(sharedDefaults.paragraphSpacing, 1.0);
     assert.strictEqual(sharedDefaults.blockPageShortcuts, true);
     assert.strictEqual(sharedDefaults.pangu, true);
     assert.strictEqual(sharedDefaults.spaceScrollRatio, 50);
-    assert.strictEqual(sharedDefaults.titleFontSize, 0);
+    assert.strictEqual(sharedDefaults.titleFontSize, 32);
     assert.strictEqual(sharedDefaults.readwiseToken, '');
     assert.strictEqual(sharedDefaults.readwiseSummary, false);
     assert.strictEqual(sharedDefaults.geminiApiKey, '');

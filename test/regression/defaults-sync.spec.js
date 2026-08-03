@@ -82,23 +82,26 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
+  // v1.7.33（Jimmy 2026-08-03）：預設值改為 Jimmy 慣用組合——theme gray、
+  // fontSize 17、titleFontSize 32、lineHeight 1.5、fontFamily 無襯線 stack、
+  // latinSans sourceserif。本 spec 各欄期望值同步更新。
   describe('fontSize：popup / SW / styler / options 必須四邊一致', () => {
-    it('shared DEFAULT_SETTINGS.fontSize === 18', () => {
+    it('shared DEFAULT_SETTINGS.fontSize === 17', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'fontSize');
-      assert.strictEqual(v, '18', `shared DEFAULT_SETTINGS.fontSize 必須 === 18，實際 ${v}`);
+      assert.strictEqual(v, '17', `shared DEFAULT_SETTINGS.fontSize 必須 === 17，實際 ${v}`);
     });
-    it('styler DEFAULTS.fontSize === 18', () => {
+    it('styler DEFAULTS.fontSize === 17', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontSize');
-      assert.strictEqual(v, '18', `styler DEFAULTS.fontSize 必須 === 18，實際 ${v}`);
+      assert.strictEqual(v, '17', `styler DEFAULTS.fontSize 必須 === 17，實際 ${v}`);
     });
-    it('options/popup 生效 fontSize === 18（取自 shared 單一資料源）', () => {
-      assert.strictEqual(SHARED.fontSize, 18,
-        `shared（即 options/popup reference 的）fontSize 必須 === 18，實際 ${SHARED.fontSize}`);
+    it('options/popup 生效 fontSize === 17（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.fontSize, 17,
+        `shared（即 options/popup reference 的）fontSize 必須 === 17，實際 ${SHARED.fontSize}`);
     });
-    it('popup FONT_SIZE.default === 18', () => {
+    it('popup FONT_SIZE.default === 17', () => {
       const m = POPUP_SRC.match(/FONT_SIZE\s*=\s*\{[^}]*default:\s*(\d+)/);
       assert.ok(m, '必須能抓到 popup FONT_SIZE.default');
-      assert.strictEqual(m[1], '18', `popup FONT_SIZE.default 必須 === 18，實際 ${m[1]}`);
+      assert.strictEqual(m[1], '17', `popup FONT_SIZE.default 必須 === 17，實際 ${m[1]}`);
     });
   });
 
@@ -122,18 +125,27 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
-  describe('theme：四檔一致', () => {
-    it('shared DEFAULT_SETTINGS.theme === light', () => {
+  describe('theme：四檔一致（v1.7.33 預設 gray）', () => {
+    it('shared DEFAULT_SETTINGS.theme === gray', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'theme');
-      assert.strictEqual(v, "'light'", `SW theme 必須 === 'light'，實際 ${v}`);
+      assert.strictEqual(v, "'gray'", `SW theme 必須 === 'gray'，實際 ${v}`);
     });
-    it('styler DEFAULTS.theme === light', () => {
+    it('styler DEFAULTS.theme === gray', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'theme');
-      assert.strictEqual(v, "'light'", `styler theme 必須 === 'light'，實際 ${v}`);
+      assert.strictEqual(v, "'gray'", `styler theme 必須 === 'gray'，實際 ${v}`);
     });
-    it('options/popup 生效 theme === light（取自 shared 單一資料源）', () => {
-      assert.strictEqual(SHARED.theme, 'light',
-        `shared theme 必須 === 'light'，實際 ${SHARED.theme}`);
+    it('options/popup 生效 theme === gray（取自 shared 單一資料源）', () => {
+      assert.strictEqual(SHARED.theme, 'gray',
+        `shared theme 必須 === 'gray'，實際 ${SHARED.theme}`);
+    });
+    it('styler theme 注入判定不得再綁 DEFAULTS.theme（v1.7.33 sentinel 脫鉤）', () => {
+      // 預設 theme 改 gray 後，「哪個 theme 注入文字色」必須由 theme.text 判定
+      //（light 天生 null），不可再用「!== DEFAULTS.theme」——否則 gray 預設
+      // 使用者拿不到文字色覆寫、theme 視覺半套。
+      assert.ok(!/theme:\s*\(s\.theme\s*\|\|\s*DEFAULTS\.theme\)\s*!==\s*DEFAULTS\.theme/.test(STYLER_SRC),
+        'styler overrides.theme 不可再與 DEFAULTS.theme 比對');
+      assert.match(STYLER_SRC, /theme:\s*!!theme\.text/,
+        'styler overrides.theme 必須由 theme.text 判定');
     });
   });
 
@@ -221,14 +233,26 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
-  describe('fontFamily：popup / SW / styler 三邊一致（options 沒這欄）', () => {
-    it('shared DEFAULT_SETTINGS.fontFamily === system-ui', () => {
+  describe('fontFamily：popup / SW / styler 三邊一致（options 沒這欄；v1.7.33 預設無襯線）', () => {
+    it('shared DEFAULT_SETTINGS.fontFamily === FONT_STACKS.sans（引用單一資料源）', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'fontFamily');
-      assert.strictEqual(v, "'system-ui'", `SW fontFamily 必須 === 'system-ui'，實際 ${v}`);
+      assert.strictEqual(v, 'FONT_STACKS.sans',
+        `shared fontFamily 必須引用 FONT_STACKS.sans（不重複字面值），實際 ${v}`);
+      assert.strictEqual(SHARED.fontFamily, globalThis.__JReadFontStacks.sans,
+        'shared fontFamily 生效值必須 === FONT_STACKS.sans');
     });
-    it('styler DEFAULTS.fontFamily === system-ui', () => {
-      const v = extractField(STYLER_SRC, 'DEFAULTS', 'fontFamily');
-      assert.strictEqual(v, "'system-ui'", `styler fontFamily 必須 === 'system-ui'，實際 ${v}`);
+    it('styler DEFAULTS.fontFamily 字面值 === shared FONT_STACKS.sans', () => {
+      // styler 是獨立 fallback literal（唯一合法第二份），逐字比對 shared sans
+      // stack。extractField 對含逗號的 stack 字串會截斷，改直接 includes 比對。
+      assert.ok(STYLER_SRC.includes(`fontFamily: '${globalThis.__JReadFontStacks.sans}'`),
+        'styler DEFAULTS.fontFamily 必須逐字 === FONT_STACKS.sans');
+    });
+    it('styler fontFamily 注入判定用 system-ui sentinel（v1.7.33 與 DEFAULTS 脫鉤）', () => {
+      // 預設 fontFamily 改無襯線後，「系統預設 = 不注入」必須綁 'system-ui'
+      // 字面值，不可再用「!== DEFAULTS.fontFamily」——否則預設使用者拿不到
+      // 無襯線注入、選系統預設反而被注入。
+      assert.match(STYLER_SRC, /fontFamily:\s*opts\.fontFamily\s*!==\s*'system-ui'/,
+        "styler overrides.fontFamily 必須與 'system-ui' sentinel 比對");
     });
     it('popup FONT_STACKS 取自 shared、shared FONT_STACKS.system === system-ui', () => {
       // v0.8.16：popup FONT_STACKS 改 reference window.__JReadFontStacks 單一資料源。
@@ -239,19 +263,50 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
     });
   });
 
-  describe('lineHeight：popup / SW / styler 三邊一致（v0.7.162 popup 也宣告）', () => {
-    it('shared DEFAULT_SETTINGS.lineHeight === 1.7', () => {
+  describe('lineHeight：popup / SW / styler 三邊一致（v1.7.33 預設 1.5）', () => {
+    it('shared DEFAULT_SETTINGS.lineHeight === 1.5', () => {
       const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'lineHeight');
-      assert.strictEqual(v, '1.7', `SW lineHeight 必須 === 1.7，實際 ${v}`);
+      assert.strictEqual(v, '1.5', `SW lineHeight 必須 === 1.5，實際 ${v}`);
     });
-    it('styler DEFAULTS.lineHeight === 1.7', () => {
+    it('styler DEFAULTS.lineHeight === 1.5', () => {
       const v = extractField(STYLER_SRC, 'DEFAULTS', 'lineHeight');
-      assert.strictEqual(v, '1.7', `styler lineHeight 必須 === 1.7，實際 ${v}`);
+      assert.strictEqual(v, '1.5', `styler lineHeight 必須 === 1.5，實際 ${v}`);
     });
-    it('popup LINE_HEIGHT.default === 1.7', () => {
+    it('popup LINE_HEIGHT.default === 1.5', () => {
       const m = POPUP_SRC.match(/LINE_HEIGHT\s*=\s*\{[^}]*default:\s*([\d.]+)/);
       assert.ok(m, '必須能抓到 popup LINE_HEIGHT.default');
-      assert.strictEqual(m[1], '1.7', `popup LINE_HEIGHT.default 必須 === 1.7，實際 ${m[1]}`);
+      assert.strictEqual(m[1], '1.5', `popup LINE_HEIGHT.default 必須 === 1.5，實際 ${m[1]}`);
+    });
+    it('styler lineHeight 注入判定只看 Auto sentinel（v1.7.33 與 DEFAULTS 脫鉤）', () => {
+      // fontSize v0.7.140 同款修正：== 預設值不注入的隱晦語義去除，0 = Auto
+      // 之外一律注入（popup 顯示值 = 實際生效值）。
+      assert.match(STYLER_SRC, /lineHeight:\s*opts\.lineHeight\s*>\s*0/,
+        'styler overrides.lineHeight 必須是 opts.lineHeight > 0');
+    });
+  });
+
+  describe('titleFontSize：shared / styler / popup 三邊一致（v1.7.33 預設 32）', () => {
+    it('shared DEFAULT_SETTINGS.titleFontSize === 32', () => {
+      const v = extractField(SHARED_SRC, 'DEFAULT_SETTINGS', 'titleFontSize');
+      assert.strictEqual(v, '32', `shared titleFontSize 必須 === 32，實際 ${v}`);
+    });
+    it('styler DEFAULTS.titleFontSize === 32', () => {
+      const v = extractField(STYLER_SRC, 'DEFAULTS', 'titleFontSize');
+      assert.strictEqual(v, '32', `styler titleFontSize 必須 === 32，實際 ${v}`);
+    });
+    it('popup TITLE_FONT_SIZE.default === 32', () => {
+      const m = POPUP_SRC.match(/TITLE_FONT_SIZE\s*=\s*\{[^}]*default:\s*(\d+)/);
+      assert.ok(m, '必須能抓到 popup TITLE_FONT_SIZE.default');
+      assert.strictEqual(m[1], '32', `popup TITLE_FONT_SIZE.default 必須 === 32，實際 ${m[1]}`);
+    });
+  });
+
+  describe('latin 英文字型：預設值（v1.7.33 latinSans 改 sourceserif）', () => {
+    it('shared latinSerif === sourceserif、latinSans === sourceserif', () => {
+      assert.strictEqual(SHARED.latinSerif, 'sourceserif',
+        `shared latinSerif 必須 === 'sourceserif'，實際 ${SHARED.latinSerif}`);
+      assert.strictEqual(SHARED.latinSans, 'sourceserif',
+        `shared latinSans 必須 === 'sourceserif'，實際 ${SHARED.latinSans}`);
     });
   });
 

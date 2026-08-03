@@ -104,11 +104,11 @@ describe('popup 字型 select（v0.7.140）', () => {
         'shared FONT_STACKS.system 必須等於 "system-ui"');
     });
 
-    it('DEFAULT_SETTINGS.fontFamily 必須等於 FONT_STACKS.system（單一資料源內自洽）', () => {
-      // v0.8.16：popup 不再有自己的 DEFAULT_SETTINGS literal——「選系統預設 == 不
-      // 注入 override」要成立，shared 的 fontFamily 預設值必須恰為 FONT_STACKS.system。
-      assert.strictEqual(SHARED.fontFamily, SHARED_FONT_STACKS.system,
-        'shared DEFAULT_SETTINGS.fontFamily 必須等於 FONT_STACKS.system（system-ui）');
+    it('DEFAULT_SETTINGS.fontFamily 必須等於 FONT_STACKS.sans（v1.7.33 預設無襯線）', () => {
+      // v1.7.33：預設字型改無襯線 stack。「選系統預設 == 不注入 override」的
+      // sentinel 已與預設值脫鉤（styler 直接與 'system-ui' 字面值比對）。
+      assert.strictEqual(SHARED.fontFamily, SHARED_FONT_STACKS.sans,
+        'shared DEFAULT_SETTINGS.fontFamily 必須等於 FONT_STACKS.sans（無襯線）');
     });
 
     it('必須對 font-family-select 綁 change handler 寫進 storage', () => {
@@ -130,12 +130,13 @@ describe('popup 字型 select（v0.7.140）', () => {
     });
   });
 
-  describe('popup.js ↔ styler.js fontFamily DEFAULT 同步', () => {
-    it('styler DEFAULTS.fontFamily 必須等於 "system-ui"（與 popup FONT_STACKS.system 一致）', () => {
-      // styler DEFAULTS.fontFamily 字面值；drift 會造成「popup 選『系統預設』
-      // 仍注入 override」或反之
-      assert.ok(/fontFamily:\s*['"]system-ui['"]/.test(STYLER_JS),
-        'styler.js DEFAULTS.fontFamily 必須等於 "system-ui"——與 popup FONT_STACKS.system 對齊');
+  describe('popup.js ↔ styler.js fontFamily 同步（v1.7.33 sentinel 脫鉤）', () => {
+    it('styler overrides.fontFamily 必須與 "system-ui" sentinel 比對（不再綁 DEFAULTS.fontFamily）', () => {
+      // v1.7.33：DEFAULTS.fontFamily 改無襯線 stack，「popup 選『系統預設』= 不
+      // 注入」改由 'system-ui' 字面值 sentinel 承載；drift 會造成「選系統預設仍
+      // 注入 override」或「預設無襯線不注入」。
+      assert.ok(/fontFamily:\s*opts\.fontFamily\s*!==\s*'system-ui'/.test(STYLER_JS),
+        "styler.js overrides.fontFamily 必須與 'system-ui' 比對——與 popup「系統預設」option value 對齊");
     });
   });
 });
