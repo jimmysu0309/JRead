@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Readwise hero 保留目標落在隱藏副本 fixture</title>
+</head>
+<body>
+  <article id="story">
+    <h1 id="title">Folding phone as a laptop hands-on</h1>
+    <!-- lede：art-direction 雙副本、窄 viewport 情境——DOM 第一份（桌機）是
+         display:none、第二份（手機）可見。修法前 findLeadingHeroImage 按 DOM 順序
+         選到隱藏副本當保留目標：可見副本被 markHeroImageForExport 當重複剝除、
+         隱藏副本再被 stripHiddenForExport 剝除 → hero 全滅、只剩圖說。 -->
+    <div class="entry-image">
+      <div id="wrap-desktop" class="art-direction-desktop" style="display: none;">
+        <img id="hero-desktop" src="https://cdn.example.com/uploads/2026/08/hero.jpg?w=2400"
+             srcset="https://cdn.example.com/uploads/2026/08/hero.jpg?w=376 376w, https://cdn.example.com/uploads/2026/08/hero.jpg?w=750 750w" alt="Folding phone">
+      </div>
+      <div id="wrap-mobile" class="art-direction-mobile">
+        <img id="hero-mobile" src="https://cdn.example.com/uploads/2026/08/hero.jpg?w=640"
+             srcset="https://cdn.example.com/uploads/2026/08/hero.jpg?w=640 640w, https://cdn.example.com/uploads/2026/08/hero.jpg?w=1200 1200w" alt="Folding phone mobile">
+      </div>
+      <figcaption id="hero-cap">No combo more iconic than this one.</figcaption>
+    </div>
+    <p id="p1">A few days ago I walked fifteen minutes to a coffee shop thinking my brand-new folding keyboard was in my bag.</p>
+    <p id="p2">It was not in the bag, and I discovered this only upon arrival at my destination.</p>
+    <!-- 內文配圖：不同 pathname → 不受 hero 去重影響 -->
+    <figure id="inline-fig">
+      <img id="inline-img" src="https://cdn.example.com/uploads/2026/08/keyboard.jpg?w=2400"
+           srcset="https://cdn.example.com/uploads/2026/08/keyboard.jpg?w=750 750w" alt="Travel keyboard">
+      <figcaption id="inline-cap">Latte sold separately.</figcaption>
+    </figure>
+    <p id="p3">You do not have to be a purse person to use the purse computer.</p>
+  </article>
+</body>
+</html>
