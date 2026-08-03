@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aspect padding box behind display:contents clips avatar</title>
+</head>
+<body>
+<!--
+  最小重現：tomsguide.com 文末作者頭像被截斷（2026-08-03 Jimmy 截圖回報）。
+  結構特徵（中性命名，不綁站點 class）：
+    1. 高度全由 padding-bottom 撐的 hack 盒（height:0 + padding-bottom:56.25% +
+       overflow:hidden + position:relative）
+    2. hack 盒與 media 之間隔一層 display:contents wrapper（不產生 box）——
+       resetMediaPlaceholderPadding 舊版只看 media.parentElement，永遠量不到 hack 盒
+    3. img 已是 static（emulate styler 先跑、img{position:static !important} 已注入）
+  真實站症狀：JRead 給 media 套 block margin 後，img 在固定 70px 高 overflow:hidden
+  盒內被往下推、底部 ~27px 被裁掉（頭像圓形變成頂圓底平）。
+-->
+<article>
+  <h1>Testing the foldable as a laptop</h1>
+  <p data-test="body-p-1">The typing experience on the folding screen was better than
+  expected, and the desktop mode made multitasking feel almost natural over a full
+  work day of documents and calls.</p>
+  <p data-test="body-p-2">Battery life held up well enough, though the crease is
+  still visible at certain angles and the keyboard accessory adds bulk.</p>
+  <div data-test="bio-block">
+    <div data-test="hack-box" style="position:relative; height:0; padding-bottom:56.25%; overflow:hidden;">
+      <div data-test="contents-wrapper" style="display:contents">
+        <picture data-test="bio-picture">
+          <img data-test="bio-img" src="https://example.com/staff-photo.jpg" alt="Staff writer" style="position:static">
+        </picture>
+      </div>
+    </div>
+    <a href="/author/staff-writer">Staff Writer</a>
+    <p data-test="bio-p">Our staff writer has covered consumer technology since 2013
+    and has amassed bylines with several national outlets.</p>
+  </div>
+</article>
+</body>
+</html>
