@@ -295,15 +295,36 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
         }
         return img.currentSrc || img.src || img.getAttribute('src') || '';
       };
+      // v1.7.31：keep target 必須選「匯出後會存活」的副本。art-direction 站點
+      // （The Verge 桌機 + 手機雙 <img>、media query 各顯其一）在窄 viewport 下
+      // DOM 第一張是 display:none 的桌機副本——選到它當保留目標時，可見副本被
+      // markHeroImageForExport 當重複剝除、隱藏副本又被 stripHiddenForExport
+      // 剝除 → hero 兩張全滅、Readwise body 無 hero（雙規則共用同一盲點）。
+      // 故優先選「不在 display:none 子樹內」的可見副本；全部隱藏（lazy 未顯示等）
+      // 才退回 DOM 第一張可用副本（image_url 仍有值，維持原行為）。
+      const win = rootEl.ownerDocument && rootEl.ownerDocument.defaultView;
+      const inHiddenSubtree = (el) => {
+        if (!win || !win.getComputedStyle) return false;
+        let cur = el;
+        while (cur && cur !== rootEl) {
+          try { if (win.getComputedStyle(cur).display === 'none') return true; }
+          catch (_) { return false; }
+          cur = cur.parentElement;
+        }
+        return false;
+      };
+      let hiddenFallback = null;
       for (const img of rootEl.querySelectorAll('img')) {
         if (img.closest('[data-jread-hidden="1"]')) continue;
         const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
         if (nw && nh) { if (nw < 200 || nh < 200) continue; }
         else { let r; try { r = img.getBoundingClientRect(); } catch (_) { r = null; } if (!r || r.width < 200 || r.height < 120) continue; }
         const url = isUsable(pickCandidate(img));
-        if (url) return { img, url };
+        if (!url) continue;
+        if (!inHiddenSubtree(img)) return { img, url };
+        if (!hiddenFallback) hiddenFallback = { img, url };
       }
-      return null;
+      return hiddenFallback;
     },
 
     // v0.8.125：標記**多餘的重複** hero 主圖供 Readwise 匯出移除，回傳被標記的 live
