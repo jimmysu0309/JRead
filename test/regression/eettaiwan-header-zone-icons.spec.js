@@ -56,6 +56,8 @@ function load() {
   stubRectAt(d.querySelector('.pub-icon-link'), 42, 42, 2100);
   stubRectAt(d.querySelector('.pub-icon-figure'), 42, 42, 2100);
   stubRectAt(d.querySelector('.pub-icon-img'), 42, 42, 2100);
+  // v1.7.34 latepost byline 變體：窄 cell 有 3 字中文名（塌欄前量測 37px）
+  stubRectAt(d.querySelector('.pub-author'), 37, 19, 2100);
   stubRectAt(d.querySelector('.pub-name'), 300, 20, 2100);
   stubRectAt(d.querySelector('.subscribe-button'), 60, 32, 2100);
   // LINE Today 真實條件：icon img 的 natural 是 280×280（retina srcset）→
@@ -148,6 +150,20 @@ describe('eettaiwan — header zone 裝飾 icon + collapse svg icon 爆大', () 
       '內部相對寬度 figure 會撐滿容器（LINE Today 42px icon → 608px 巨圓實測）');
     assert.strictEqual(name.style.getPropertyValue('width'), 'auto',
       '有文字的一般 cell 仍應照舊套 width:auto reset（既有行為不可退化）');
+  });
+
+  it('窄 cell 有文字（3 字中文名）不被當 icon 釘寬、只轉 inline-block（v1.7.34 latepost byline）', () => {
+    // 原「文字 < 4 字才算 icon」是拉丁校準門檻——3 字中文作者名被釘死塌欄前
+    // 量測寬（37px），reader 17px 字級下 3 字需 ~51px → 折行成直向碎片。
+    // icon 的結構特徵是「零文字」；有文字的窄 cell 歸 inline 級：只轉
+    // display:inline-block 恢復水平排列、不鎖寬。
+    const author = document.querySelector('.pub-author');
+    assert.strictEqual(author.style.getPropertyValue('display'), 'inline-block',
+      '有文字的窄 cell 應轉 display:inline-block（container 塌 block 後恢復水平排列）');
+    assert.strictEqual(author.style.getPropertyValue('width'), '',
+      '有文字的窄 cell 不得被釘寬（字級改變後寬度必須自然重排）——也不得套 CHILD_DECLS width:auto');
+    assert.strictEqual(author.style.getPropertyValue('max-width'), '',
+      '有文字的窄 cell 不得被鎖 max-width');
   });
 
   it('「透過《Google 新聞》追蹤」follow CTA 被 link text heuristic hide', () => {

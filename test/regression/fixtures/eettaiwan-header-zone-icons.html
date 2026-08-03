@@ -58,8 +58,13 @@
            連結（非 replaced element、replaced-tag 豁免保護不到）不可被套
            width:auto——內部 figure（site CSS width:100%）會撐滿容器變巨圓。
            修法＝釘住塌欄前量到的 42px（rect 由 spec stub） -->
-      <div class="pub-row" style="display: grid; grid-template-columns: 42px 1fr auto;">
+      <!-- v1.7.34 latepost.com byline 變體：窄 cell **有文字**（3 字中文作者
+           名，塌欄前量測 37px）不可被當 icon 釘寬——reader 字級改變後 3 字
+           需 ~51px，釘 37px 會折行成直向碎片。有文字的窄 cell 只轉
+           display:inline-block、不鎖寬 -->
+      <div class="pub-row" style="display: grid; grid-template-columns: 42px auto 1fr auto;">
         <a class="pub-icon-link" href="/publisher"><figure class="pub-icon-figure"><img class="pub-icon-img" src="pub.png" alt=""></figure></a>
+        <a class="pub-author" href="/author">沈方伟</a>
         <span class="pub-name">測試發布社 更新於 04 月 23 日 18:49・發布於 04 月 23 日 15:23</span>
         <button class="subscribe-button">訂閱</button>
       </div>

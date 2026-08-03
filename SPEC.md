@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.33**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.34**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -309,7 +309,7 @@ v0.8.45 **無限捲動豁免**：URL 變了 ≠ 真導航——先驗 DOM 事實
 
 主文內若有 `display: grid` 或 `display: flex; flex-direction: row` 的容器，且其 direct children 中有 ≥ 1 個被 hide（`data-jread-hidden="1"` 或 `display: none` / `visibility: hidden`），代表原站 layout 設計了 N 欄但其中一欄內容已被清空——cleaner 給 container 加 inline `display: block !important; grid-template-columns: none !important` 等規則退化成自然 block。典型場景：Engadget / NYT / 許多新聞站用 CSS Grid 做「主文 + 廣告側欄」layout，AdBlocker 清廣告後殘留的 grid cell 空間壓擠主文。intentional 多欄圖文（無 hidden child）不會觸發。
 
-collapse 後對 visible children 的寬度 reset（`width: auto !important` + flex longhand 清零）**跳過 replaced element**（img / svg / video / picture / canvas / iframe / embed / object，v0.8.43）——reset 的對象是 Bootstrap col-* 類「layout 欄位」children，replaced element 不可能是欄位；且清掉原站 icon 圖的 stylesheet 寬度後，viewBox-only SVG 的 `<img>`（無內在尺寸）依 CSS spec 撐滿 containing block（eettaiwan content-footer tags.svg 18px → 603px 巨型 icon 實測）。`collapseGridWithHiddenCell` 與 `collapseInnerFlexWrap` 兩條 child reset path 同一豁免。
+collapse 後對 visible children 的寬度 reset（`width: auto !important` + flex longhand 清零）**跳過 replaced element**（img / svg / video / picture / canvas / iframe / embed / object，v0.8.43）——reset 的對象是 Bootstrap col-* 類「layout 欄位」children，replaced element 不可能是欄位；且清掉原站 icon 圖的 stylesheet 寬度後，viewBox-only SVG 的 `<img>`（無內在尺寸）依 CSS spec 撐滿 containing block（eettaiwan content-footer tags.svg 18px → 603px 巨型 icon 實測）。`collapseGridWithHiddenCell` 與 `collapseInnerFlexWrap` 兩條 child reset path 同一豁免。**窄 cell 三級分類（v1.7.30 `iconCellPinWidth` → v1.7.34 `narrowCellClass`，兩條 path 共用）**：寬 <= 120px 且**零文字** = icon / avatar 級，釘住塌欄前量測寬（today.line.me 42px icon 塌欄後變 608px 巨圓實案）；寬 <= 120px 且**有文字** = byline 碎片級（「文」「編輯」前綴、CJK 作者名），只轉 `display:inline-block` 恢復水平排列**不鎖寬**（v1.7.34 latepost：原「文字 < 4 字才算 icon」拉丁校準門檻把 3 字中文作者名釘死 37px、reader 字級下折行成直向碎片）；其餘照套 CHILD_DECLS。**容器 height reset 雙閘門（v1.0.4 + v1.7.34，不可無條件套）**：(1) viewport-blank-reserve——容器高 >= 80% viewport 且尾端空白 > 30% viewport（NYT 100vh hero）；(2) `containerMediaGrowthClips` 媒體成長裁切預測——visible child 子樹內容級圖（natural >= 200px）的 natural 比例投影到容器全寬 > 容器高 + 40px（latepost `.abstract-pic` stylesheet `height:2.8rem` 縮圖盒，塌欄後圖 upscale 至 486px 溢出 249px 盒疊壓段落）。命中任一 → 連 height / min-height reset 為 auto。
 
 ### 標題區（header zone）裝飾 icon（v0.8.43 通則）
 

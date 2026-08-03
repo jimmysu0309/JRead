@@ -4308,16 +4308,57 @@
   // 皆遠大於此（twoColLede 條件要求 >= 30% 容器寬），不受影響。
   const ICON_CELL_MAX_W = 120;
   const ICON_CELL_PIN_PROPS = ['display', 'width', 'max-width'];
-  // 回傳 icon 級 cell 的量測寬（px 整數）；非 icon 級回 null
-  function iconCellPinWidth(c) {
+  const INLINE_CELL_PROPS = ['display'];
+  const INLINE_CELL_DECLS = { display: 'inline-block' };
+  // 窄 cell 分級（collapse 塌欄前量測，v1.7.34 由 iconCellPinWidth 擴充）：
+  //   { kind: 'icon', w } — **零文字** + 寬 <= 120px：icon / avatar 級裝飾，
+  //     釘住塌欄前量到的寬（原 v1.7.30 行為）
+  //   { kind: 'inline' }  — **有文字** + 寬 <= 120px：byline 碎片級 inline 內容
+  //     （「文」「編輯」前綴、CJK 作者名），只轉 display:inline-block 恢復
+  //     水平排列、**不鎖寬**——reader 字級改變後寬度必須自然重排
+  //   null                — 一般 cell，照套 CHILD_DECLS
+  // v1.7.34 教訓（latepost.com byline）：原「文字 < 4 字才算 icon」是拉丁校準
+  // 門檻——3 字中文作者名（沈方伟）被當 icon 釘死 37px（塌欄前量測值），
+  // reader 17px 字級下 3 字需 ~51px → 折行成直向碎片。icon 的結構特徵是
+  // 「沒有文字」，不是「文字很短」；有任何可見文字的窄 cell 一律歸 inline 級。
+  function narrowCellClass(c) {
     let rect;
     try { rect = c.getBoundingClientRect(); } catch (_) { return null; }
     if (!rect || rect.width <= 0 || rect.width > ICON_CELL_MAX_W) return null;
-    if (norm(c.textContent).length >= 4) return null;
-    return Math.round(rect.width);
+    if (norm(c.textContent).length > 0) return { kind: 'inline' };
+    return { kind: 'icon', w: Math.round(rect.width) };
   }
   function iconCellPinDecls(w) {
     return { display: 'inline-block', width: w + 'px', 'max-width': w + 'px' };
+  }
+  // v1.7.34：collapse 容器的「媒體成長裁切」預測（latepost.com abstract 縮圖盒
+  // 實案，collapseGridWithHiddenCell 與 collapseInnerFlexWrap 兩條 path 共用）。
+  // 場景：容器 stylesheet 固定高度（.abstract-pic height:2.8rem=249px）為舊多欄
+  // 設計校準（右欄縮圖 267×249）；collapse 塌成 block 後 child 寬度撐滿容器、
+  // 內部內容圖被 styler upscale 到全寬（608×486），固定高度沒清 → 圖溢出盒外
+  // （overflow visible）疊壓後續段落（Jimmy 截圖「文字蓋在圖上」）。
+  // 結構特徵（不綁站點）：visible child 子樹內有內容級圖（natural >= 200px、
+  // rect 可見），其 natural 比例投影到容器全寬後的高度明顯超過容器目前高度
+  // （> 高度 + 40px）→ 塌欄後固定高度必然裁切 → 呼叫端連 height / min-height
+  // 一起 reset。誤命中 auto 高度容器是 no-op（computed auto 本來就是內容高）。
+  // jsdom rect / naturalWidth 全 0 → 自動不命中（spec 需 stub 才驗得到）。
+  function containerMediaGrowthClips(el, visibleChildren) {
+    let cr;
+    try { cr = el.getBoundingClientRect(); } catch (_) { return false; }
+    if (!cr || cr.width <= 0 || cr.height <= 0) return false;
+    for (const c of visibleChildren) {
+      const medias = (c.matches && c.matches('img, video')) ? [c] : [];
+      if (c.querySelectorAll) medias.push(...c.querySelectorAll('img, video'));
+      for (const m of medias) {
+        const nw = m.naturalWidth || m.videoWidth || 0;
+        const nh = m.naturalHeight || m.videoHeight || 0;
+        if (nw < 200 || nh <= 0) continue;
+        const mr = m.getBoundingClientRect();
+        if (mr.width <= 0 || mr.height <= 0) continue;
+        if (cr.width * (nh / nw) > cr.height + 40) return true;
+      }
+    }
+    return false;
   }
 
   // ---- flex-row 殘殼欄（v0.8.45 theverge）---------------------------------
@@ -4583,6 +4624,11 @@
           }
         }
       }
+      // v1.7.34：height reset 第二閘門——「媒體成長裁切」預測（詳見
+      // containerMediaGrowthClips 定義處註解）。上一條 viewport-blank 閘門在
+      // phase1 量不到 latepost 這型（塌欄前容器被內容填滿、無空白）。
+      const resetContainerHeight = hasViewportBlankReserve ||
+        (!isArticleSelf && containerMediaGrowthClips(el, visibleChildren));
       // v0.7.118：non-articleSelf case 加 padding-left/right reset——
       // 我們把 grid/flex/float container 強制 `display: block + width: 100%`
       // 後，content-box 預設下 `width: 100%` = 父 content area。container
@@ -4606,7 +4652,7 @@
         'grid-template-areas', 'flex-direction',
         'width', 'max-width', 'margin-left', 'margin-right',
         'padding-left', 'padding-right',
-        ...(hasViewportBlankReserve ? ['height', 'min-height'] : [])
+        ...(resetContainerHeight ? ['height', 'min-height'] : [])
       ];
       collapsed.push({ el, kind: 'container', prev: snapshotStyles(el, CONTAINER_PROPS) });
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
@@ -4629,7 +4675,7 @@
         'padding-left': '0',
         'padding-right': '0'
       };
-      if (hasViewportBlankReserve) {
+      if (resetContainerHeight) {
         containerDecls['height'] = 'auto';
         containerDecls['min-height'] = '0';
       }
@@ -4673,13 +4719,18 @@
         // spec 退回撐滿 containing block（eettaiwan content-footer 的
         // tags.svg 18px → 603px 巨型 icon 實測）。
         if (COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
-        // icon / avatar 級小 cell：不套 CHILD_DECLS、改釘住原寬（v1.7.30，見
-        // iconCellPinWidth 定義處註解；此處在 phase1、container 尚未塌，量測
-        // 值是原始 layout）
-        const iconW = iconCellPinWidth(c);
-        if (iconW !== null) {
-          collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
-          writes.push({ el: c, decls: iconCellPinDecls(iconW) });
+        // 窄 cell（icon 釘寬 / byline 碎片 inline）：不套 CHILD_DECLS（v1.7.30
+        // + v1.7.34，見 narrowCellClass 定義處註解；此處在 phase1、container
+        // 尚未塌，量測值是原始 layout）
+        const cellClass = narrowCellClass(c);
+        if (cellClass) {
+          if (cellClass.kind === 'icon') {
+            collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
+            writes.push({ el: c, decls: iconCellPinDecls(cellClass.w) });
+          } else {
+            collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, INLINE_CELL_PROPS) });
+            writes.push({ el: c, decls: INLINE_CELL_DECLS });
+          }
           continue;
         }
         collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, CHILD_PROPS) });
@@ -4963,15 +5014,23 @@
         }
       }
       if (maxTop - minTop <= 5 && !twoColLede) continue;
-      // icon 級小 cell 必須在 container 塌掉「之前」量測（塌完 child 寬度
-      // 已被 block flow 改變，量測失真）——v1.7.30，見 iconCellPinWidth 註解
-      const iconCellWidths = new Map();
+      // 窄 cell 必須在 container 塌掉「之前」量測（塌完 child 寬度已被
+      // block flow 改變，量測失真）——v1.7.30 + v1.7.34，見 narrowCellClass 註解
+      const narrowCells = new Map();
       for (const c of visibleChildren) {
-        const w = iconCellPinWidth(c);
-        if (w !== null) iconCellWidths.set(c, w);
+        const cls = narrowCellClass(c);
+        if (cls !== null) narrowCells.set(c, cls);
       }
-      resets.push({ el, kind: 'container', prev: snapshotStyles(el, INNER_FLEX_PROPS) });
-      applyImportant(el, INNER_FLEX_DECLS);
+      // v1.7.34：媒體成長裁切預測（latepost .abstract-pic twoColLede 實案走
+      // 本 path）——命中時連 height / min-height 一起 reset，見
+      // containerMediaGrowthClips 註解
+      const resetHeight = containerMediaGrowthClips(el, visibleChildren);
+      const containerProps = resetHeight
+        ? [...INNER_FLEX_PROPS, 'height', 'min-height'] : INNER_FLEX_PROPS;
+      const containerDecls = resetHeight
+        ? { ...INNER_FLEX_DECLS, height: 'auto', 'min-height': '0' } : INNER_FLEX_DECLS;
+      resets.push({ el, kind: 'container', prev: snapshotStyles(el, containerProps) });
+      applyImportant(el, containerDecls);
       if (el.dataset) el.dataset.jreadCollapsed = '1';
       // 對所有 visible children（含 absolute）套 CHILD_DECLS——把 absolute
       // 拉回 static、寬度回 auto，讓 layout 整體乾淨在 block flow
@@ -4985,10 +5044,17 @@
         // block（eettaiwan content-footer tags.svg 18px → 603px 實測——
         // tag 連結 wrap 多行觸發本條、不是 hidden-cell 那條）。
         if (COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
-        // icon / avatar 級小 cell：不套 reset、改釘住原寬（v1.7.30；塌前量測見上方）
-        if (iconCellWidths.has(c)) {
-          resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
-          applyImportant(c, iconCellPinDecls(iconCellWidths.get(c)));
+        // 窄 cell（icon 釘寬 / byline 碎片 inline）：不套 reset（v1.7.30 +
+        // v1.7.34；塌前量測見上方）
+        if (narrowCells.has(c)) {
+          const cls = narrowCells.get(c);
+          if (cls.kind === 'icon') {
+            resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
+            applyImportant(c, iconCellPinDecls(cls.w));
+          } else {
+            resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INLINE_CELL_PROPS) });
+            applyImportant(c, INLINE_CELL_DECLS);
+          }
           continue;
         }
         resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
