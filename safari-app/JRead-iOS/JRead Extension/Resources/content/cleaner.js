@@ -5462,7 +5462,17 @@
     const resets = [];
     const visited = new WeakSet();
     for (const media of articleEl.querySelectorAll('img, picture, video')) {
-      const parent = media.parentElement;
+      // v1.7.32：display:contents 中間層不產生 box、不是結構上的「容器」——
+      // padding-bottom hack 盒可能隔著它（tomsguide 文末作者頭像：
+      // .aspect-padding div > div[style=display:contents] > picture > img，
+      // 直接父層是 display:contents → Pattern A 永遠量不到 hack 盒 → 頭像被
+      // 固定高 overflow:hidden 盒裁掉底部）。往上跳過 display:contents 取
+      // 「產生 box 的最近祖先」當結構父層。
+      let parent = media.parentElement;
+      while (parent && parent !== articleEl &&
+             window.getComputedStyle(parent).display === 'contents') {
+        parent = parent.parentElement;
+      }
       if (!parent || parent === articleEl) continue;
       if (visited.has(parent)) continue;
       if (isInPreserved(parent) && parent.matches && parent.matches('figcaption')) continue;
@@ -5519,6 +5529,17 @@
       if (isHack) {
         parentProps.push('padding-bottom');
         parentDecls['padding-bottom'] = '0';
+        // v1.7.32：height:0 + padding-bottom 的 hack 變體（tomsguide 作者頭像盒：
+        // 高度全由 padding 撐、搭 overflow:hidden）。只清 padding-bottom 會讓盒子
+        // 塌成 0，overflow:hidden 把 media 整個裁掉（比不清更糟）。「content 高度
+        // ≈ 0」＝高度全由 padding 撐的簽名 → 一併解 height:auto，讓盒子由 flow 內
+        // 的 media 自然撐起。content 有實際高度的盒不動 height（維持既有行為）。
+        const contentH = (parent.clientHeight || 0) -
+          (parseFloat(pCs.paddingTop) || 0) - (parseFloat(pCs.paddingBottom) || 0);
+        if (contentH < 8) {
+          parentProps.push('height');
+          parentDecls['height'] = 'auto';
+        }
       }
       if (hasAspectRatio) {
         parentProps.push('aspect-ratio');
