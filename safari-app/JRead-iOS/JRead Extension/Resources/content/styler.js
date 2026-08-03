@@ -66,7 +66,11 @@
   // 偵測的錨點。閱讀時間（N min(s) read / 閱讀時間 / N 分鐘閱讀）——byline 內隱藏。
   // v1.6.24：第二 alternative（Mon DD, YYYY）補開頭 \b——否則 "Demar 3, 2024"
   // 這類字串內的 "mar 3, 2024" 子字串會誤命中（與第一 alternative 對稱）。
-  const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/i;
+  // v1.7.35：末段加無年份中文日期變體「M 月 D 日」（latepost「07 月 27 日
+  // 16:07」實案——新聞站當年文章常省年份，原 regex 中文變體強制 \d{4}年 開頭
+  // 全 miss → byline pass 不啟動、collapse 的破壞沒人接管）。誤命中風險受
+  // byline zone 約束（掃描限標題與第一段內文之間、direct text < 40 chars）。
+  const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日/i;
   // v1.7.4：相對日期訊號（"5 days ago" / "3 小時前"）——Medium 等站近期文章的
   // byline 只顯示相對日期（無 <time>、無絕對日期字串），BYLINE_DATE_RE 不命中 →
   // byline root 偵測整套 miss → 站點 byline 自帶的垂直 margin 留下（Medium 閱讀
@@ -4097,7 +4101,14 @@ html.${HTML_CLASS}.jread-orion body {
             // dek → 作者 → hero figure → 日期）內沒有 h1，heading guard 不觸發、LCA
             // 又 engulf 整個 header → hero 變橢圓（Jimmy 2026-07-16 回報）。seed 含
             // >=150px 大圖同樣代表過度捕捉，退回 dateEl。
-            if (seed !== dateEl && (seed.querySelector('h1, h2, h3') || bhasBigImg(seed))) seed = dateEl;
+            // v1.7.35：heading guard 擴充「promoted-title-source」——標題非
+            // h1/h2/h3 的站（latepost 標題是 div）由 detector title-promote
+            // 注入 h1 clone 到 articleEl 開頭、原標題元素標
+            // data-jread-promoted-title-source + display:none。原標題所在的
+            // 祖先（.article-header 級）等價於「含標題的祖先」，byline root
+            // 絕不可包含（否則 climb 把整個 header 吞進 byline flex）。
+            const BYLINE_STOP_SEL = 'h1, h2, h3, [data-jread-promoted-title-source]';
+            if (seed !== dateEl && (seed.querySelector(BYLINE_STOP_SEL) || bhasBigImg(seed))) seed = dateEl;
             // 爬到「不含 body、不含標題/副標 heading、visible 文字 <= 200」的最高祖先。
             // v1.0.12：heading guard——byline（作者/日期 meta）結構上絕不會包住文章
             // 標題或副標（h1/h2/h3）。原本只用「文字 <= 200」當天花板，但翻譯後中文
@@ -4113,7 +4124,7 @@ html.${HTML_CLASS}.jread-orion body {
             while (root.parentElement && root.parentElement !== articleEl &&
                    beforeBody(root.parentElement) &&
                    (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
-                   !root.parentElement.querySelector('h1, h2, h3') &&
+                   !root.parentElement.querySelector(BYLINE_STOP_SEL) &&
                    !bhasBigImg(root.parentElement) &&
                    bnorm(root.parentElement.textContent).length <= 200) {
               root = root.parentElement;
@@ -4182,6 +4193,23 @@ html.${HTML_CLASS}.jread-orion body {
               }
             };
             walk(root);
+            // v1.7.35：byline 子樹字體統一補 inline !important。v1.0.20 的 CSS
+            // 規則 `[BYLINE] * { font: inherit !important }` specificity 只有
+            // (0,2,0)，被同為 !important 的 BODY_TEXT_SEL span 規則（:not 鏈疊到
+            // (0,7,10)）打穿——byline 內的 span（latepost「文」「編輯」前綴）拿
+            // 到使用者字級 17px、旁邊的作者連結繼承 root 的 12.4px，同一行字級
+            // 不一致（Jimmy 2026-08-03 截圖）。inline style 必贏所有 stylesheet
+            // 規則；只寫 font-family / font-size 兩條 longhand（本 bug 的兩個
+            // 不一致維度），不動 font-weight——item 字重 400 正規化仍由既有
+            // CSS 規則負責。子樹元素數量小（十餘個）、snapshot/restore 走既有
+            // bylineDispSnap 機制。CSS `font: inherit` 規則保留當兜底。
+            const unifyFont = (rootEl) => {
+              for (const el of rootEl.querySelectorAll('*')) {
+                setStyleImp(el, 'font-family', 'inherit');
+                setStyleImp(el, 'font-size', 'inherit');
+              }
+            };
+            unifyFont(root);
             // v1.6.18：byline root 落在 date-only（seed 因 LCA 含標題退回 dateEl、
             // 或 author 與 date 無共同乾淨祖先）時，作者列常是 date root 的「相鄰前一個
             // sibling」而未被納入 → 維持站點 header 的 text-align:center，與已左對齊的
@@ -4198,7 +4226,7 @@ html.${HTML_CLASS}.jread-orion body {
               let prevSib = root.previousElementSibling;
               while (prevSib && !bvisible(prevSib)) prevSib = prevSib.previousElementSibling;
               if (prevSib && !prevSib.hasAttribute(BYLINE_ATTR) && beforeBody(prevSib) &&
-                  !prevSib.querySelector('h1, h2, h3') &&
+                  !prevSib.querySelector(BYLINE_STOP_SEL) &&
                   bnorm(prevSib.textContent).length <= 200) {
                 // v1.7.9：大圖/頭像尺寸判定改用上方 bimgRect / bhasBigImg 共用 helper
                 const hasBigImg = bhasBigImg(prevSib);
@@ -4212,6 +4240,7 @@ html.${HTML_CLASS}.jread-orion body {
                   setStyleImp(prevSib, 'display', 'flex');
                   setStyleImp(prevSib, 'flex-direction', 'row');
                   walk(prevSib);
+                  unifyFont(prevSib);
                 }
               }
             }
