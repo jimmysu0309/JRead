@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<title>中国公司去了巴西才知道的 81 件事 - 晚點 LatePost</title>
+</head>
+<body>
+<!--
+  最小重現：latepost.com dj_detail byline（v1.7.35）
+  1) 日期「07 月 27 日 16:07」**無年份**——舊 BYLINE_DATE_RE 中文變體強制
+     \d{4}年 開頭全 miss → byline pass 不啟動、collapse 的破壞沒人接管。
+  2) 標題不是 h1（div.article-header-title）——detector title-promote 注入
+     h1 clone 到 articleEl 開頭、原標題標 data-jread-promoted-title-source
+     + display:none（fixture 直接模擬 detector 輸出）。byline climb 的
+     heading guard 只認 h1/h2/h3，會爬進含（隱藏）原標題的 .article-header
+     把整個 header（含閱讀數）吞進 byline root。
+  訊號層次：本 spec 驗偵測 + 標記 + inline font 統一（jsdom 可驗）；flex
+  一行的視覺由 debug-harness 真站驗（rect 數值 probe 已實證同 top 同字級）。
+-->
+<article>
+  <h1 data-test="injected-title" data-jread-injected-title="1">中国公司去了巴西才知道的 81 件事</h1>
+  <div class="article-header" data-test="header">
+    <div class="article-header-title" data-test="orig-title" data-jread-promoted-title-source="1" style="display: none;">中国公司去了巴西才知道的 81 件事</div>
+    <div class="article-header-a-d" data-test="ad-row">
+      <div class="article-header-author">
+        <div class="author-link">
+          <span class="fg" data-test="prefix">文</span>
+          <a data-test="author-a" href="/news/author_news?id=68">沈方伟</a>
+          <a data-test="author-b" href="/news/author_news?id=21">管艺雯</a>
+        </div>
+      </div>
+      <div class="article-header-date" data-test="date">07 月 27 日 16:07</div>
+    </div>
+    <div class="read-count" data-test="read-count">阅读 14042</div>
+  </div>
+  <p>在巴西待了十天，聊了二十多位当地中国人后，我们整理了八十一个只有真正落地才会知道的细节，涵盖物流、支付、招聘、税务合规与在地化营运的方方面面，希望给准备出海南美的团队一份第一手的参考资料，避免重复踩坑。</p>
+  <p>三月我们去了一趟巴西，出发前一天赶上局势升级，原定经迪拜中转的航班被取消，改签绕道非洲，辗转三十多个小时才飞抵圣保罗。</p>
+</article>
+</body>
+</html>
