@@ -99,6 +99,25 @@
     return w;
   }
 
+  // v1.7.30 theatlantic 實測：regwall 晚注入的「newsletter 訂閱 + 訂閱雜誌
+  // leaflet」aside（含 4 個 p、其中 2 個 >= 100 chars 的說明/法務文字）被本
+  // 函式誤認成文章接續區塊吸進 articleEl，之後 cleaner 的 keyword hide 又被
+  // 長 p guard（說明 p 130 chars）與 standalone-image guard（雜誌封面圖）
+  // 各自豁免 → 訂閱區整包殘留文末。結構性修法：計算實質段落時，落在
+  // (a) <aside> 子樹（HTML 語意即「非主文附屬內容」）或 (b) 祖先 class/id
+  // 帶雜訊 token（NEGATIVE_RE + 訂閱 CTA 家族）的 p 不計入——這些子樹的
+  // 文字不構成「文章接續」證據。祖先鏈只走到候選塊為止。
+  const CONT_PARA_EXCLUDE_RE = /newsletter|subscri|signup|sign-up/i;
+  function contParaInExcludedSubtree(p, candidate) {
+    for (let cur = p; cur && cur !== candidate.parentElement; cur = cur.parentElement) {
+      if (cur.tagName === 'ASIDE') return true;
+      const m = ((cur.className || '') + ' ' + (cur.id || '')).toLowerCase();
+      if (m && (NEGATIVE_RE.test(m) || CONT_PARA_EXCLUDE_RE.test(m))) return true;
+      if (cur === candidate) break;
+    }
+    return false;
+  }
+
   function looksLikeContinuationBlock(el) {
     const tag = el.tagName;
     if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'ARTICLE') return false;
@@ -111,11 +130,13 @@
     if (textLen < MIN_TEXT_LEN) return false;
     // 高連結密度 = 導覽 / 推薦列表，不是內文接續
     if (linkDensity(el, textLen) > CONT_MAX_LD) return false;
-    // 至少 N 段實質段落（p / blockquote / dd）——排除純連結目錄與 UI chrome
+    // 至少 N 段實質段落（p / blockquote / dd）——排除純連結目錄與 UI chrome；
+    // aside / 雜訊子樹內的段落不計入（v1.7.30，見 contParaInExcludedSubtree）
     let paras = 0;
     for (const p of el.querySelectorAll('p, blockquote, dd')) {
       const t = ((p.innerText || p.textContent) || '').replace(/\s+/g, ' ').trim();
       if (cjkWeightedLen(t) >= CONT_MIN_PARA_WEIGHT) {
+        if (contParaInExcludedSubtree(p, el)) continue;
         paras += 1;
         if (paras >= CONT_MIN_PARAS) return true;
       }
