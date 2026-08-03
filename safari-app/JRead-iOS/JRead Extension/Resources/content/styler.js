@@ -289,20 +289,23 @@
     return css;
   }
 
-  // 預設值。theme / fontFamily / titleFontSize：預設＝「未設定」、對應 CSS 不
-  // 注入（保留原站樣式）；fontSize / fontWeight 為刻意例外、預設也注入——
-  // 見檔頭設計哲學與各注入點註解（v0.8.37 勘誤舊「全部不注入」敘述）。
+  // 預設值。v1.7.33（Jimmy 2026-08-03）起預設值改為 Jimmy 慣用組合，「預設＝
+  // 不注入」語意與預設值脫鉤——不注入改由明確 sentinel 判定：fontSize /
+  // titleFontSize 0、lineHeight 0、paragraphSpacing -1、fontFamily 'system-ui'
+  //（系統預設）、theme 由 theme.text 是否為 null 決定（light 天生不注入文字色）。
+  // 見 apply 內 overrides 計算。
   const DEFAULTS = {
-    theme: 'light',
-    fontSize: 18,
+    theme: 'gray',
+    fontSize: 17,
     contentWidth: 720,
-    fontFamily: 'system-ui',
+    // 與 settings-defaults.js FONT_STACKS.sans 逐字一致（defaults-sync spec 校對）
+    fontFamily: '-apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Helvetica Neue", sans-serif',
     // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。改用
     // 真正的 font-weight（取代 v0.7.157 boldText 的 -webkit-font-smoothing——後者
     // 只在 macOS 有視覺差異，Windows / Linux / iOS 看不出來，與 Jimmy「全平台適用」
     // 需求衝突）。三段一律注入（含 400）——見 buildCss 內 font-weight 注入註解。
     fontWeight: 400,
-    lineHeight: 1.7,
+    lineHeight: 1.5,
     // 段落間距（p / ul / ol / blockquote margin-bottom，em 為單位）。預設 1.0em
     // 對齊 user-agent stylesheet p margin，貼近大眾預期；多數新聞站本來就有此
     // margin、覆寫差別極小，BBC styled-components 把 p margin 砍光從 0 變 1em
@@ -315,7 +318,8 @@
     // 標題字級（h1）。0 = Auto（保留原站標題大小）；非 0 = 強制覆寫 h1
     // font-size 為該 px 值。使用者 body fontSize 調到 40px+ 時原站 h1 常只有
     // 30-36px，標題反而比內文小——此設定讓使用者自訂標題大小。
-    titleFontSize: 0
+    // v1.7.33：預設 32（0 仍是合法 Auto sentinel）。
+    titleFontSize: 32
   };
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
@@ -3307,24 +3311,24 @@ html.${HTML_CLASS}.jread-orion body {
         // 由 reader-article.js 在 enterFromContainer 前設 NS.state.readerHostPage。
         readerHostPage: !!(NS.state && NS.state.readerHostPage)
       };
-      const theme = themeOf(s.theme);
+      const theme = themeOf(s.theme || DEFAULTS.theme);
 
-      // 判斷哪些是「使用者改過」→ 需要 override；預設值 / Auto 不動原站
+      // 判斷哪些設定需要注入 override CSS。v1.7.33 起判定與「預設值」脫鉤
+      //（預設值已改為 Jimmy 慣用組合、不再等於「不注入」）——不注入一律由
+      // 明確 sentinel 表達：
       //   fontSize = 0 (Auto) → 不注入（保留原站字級的明確 sentinel）
-      //   fontSize > 0 → 一律注入（包括 == DEFAULT 18）。v0.7.140 修正：
-      //     舊版「fontSize == DEFAULT → 不注入」造成 popup 顯示 18 但實際看
-      //     到原站 20px / 22px 的 UX confusion——「未動設定 = 保留原站」這條
-      //     隱含語義太隱晦使用者無感知。Auto = 0 sentinel 已涵蓋「我要保留
-      //     原站」的明確意圖，DEFAULT skip 不再有獨立語義。Jimmy 2026-05-19
-      //     substack reader hub 截圖回報「設定為 18 仍顯示 20」實機觸發。
+      //   fontSize > 0 → 一律注入（含 == DEFAULT）。v0.7.140 修正：舊版
+      //     「fontSize == DEFAULT → 不注入」造成 popup 顯示 18 但實際看到原站
+      //     20px / 22px 的 UX confusion。lineHeight 同理（v1.7.33 起 0 = Auto
+      //     之外的值一律注入，去除「== 預設值 → 不注入」的隱晦語義）。
+      //   fontFamily = 'system-ui'（popup「系統預設」）→ 不注入；其餘 stack 注入
+      //   theme → 由 theme.text 判定（light 的 text 為 null、天生不注入文字色；
+      //     dark / sepia / gray 注入）
       const overrides = {
-        theme: (s.theme || DEFAULTS.theme) !== DEFAULTS.theme,
+        theme: !!theme.text,
         fontSize: opts.fontSize > 0,
-        fontFamily: opts.fontFamily !== DEFAULTS.fontFamily,
-        // v0.7.162：lineHeight Auto (0) 不算「override」—— 它代表「不注入」而
-        // 非「使用者自設值」。only 非預設且非 Auto 才算 override，避免 Auto 走
-        // 進獨立 line-height rule 分支。
-        lineHeight: opts.lineHeight !== DEFAULTS.lineHeight && opts.lineHeight !== 0,
+        fontFamily: opts.fontFamily !== 'system-ui',
+        lineHeight: opts.lineHeight > 0,
         titleFontSize: opts.titleFontSize > 0
       };
 
