@@ -323,8 +323,17 @@
     // font-size 為該 px 值。使用者 body fontSize 調到 40px+ 時原站 h1 常只有
     // 30-36px，標題反而比內文小——此設定讓使用者自訂標題大小。
     // v1.7.33：預設 32（0 仍是合法 Auto sentinel）。
-    titleFontSize: 32
+    titleFontSize: 32,
+    // v1.7.37：頂端進度條皮膚。'hairline' = 歷代行為（3px 純色實心條）。
+    progressBarStyle: 'hairline'
   };
+
+  // v1.7.37：合法皮膚白名單。正本在 content/settings-defaults.js（manifest
+  // content_scripts 順序排在 styler.js 之前，實務上一定已掛上 globalThis）；
+  // 這裡的 literal 只是 shared 缺席時的保險，兩份一致由 defaults-sync spec 守。
+  const PROGRESS_BAR_STYLES =
+    (typeof globalThis !== 'undefined' && globalThis.__JReadProgressBarStyles) ||
+    ['hairline', 'outline', 'track', 'thick'];
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
   //   link：dark / sepia 下因 `* { color: X }` 吞掉原站 link 顏色，導致內文連結
@@ -2760,7 +2769,51 @@ html.${HTML_CLASS}.jread-orion [${ARTICLE_ATTR}="1"] {
 html.${HTML_CLASS}.jread-orion body {
   padding-top: var(--jread-orion-top, 59px) !important;
 }`;
-    return base + userOverrides + bylineFontNorm + orionSafeTop +
+    // v1.7.37：頂端進度條皮膚（settings.progressBarStyle）。
+    // 為什麼是覆寫段落而不是改 base 骨架裡的 #__jread-progress 規則：base 有
+    // memoize cache，key 只含 theme + contentWidth + readerHostPage（_baseSkeletonKey）。
+    // 把依賴 progressBarStyle 的宣告寫進 base，切換皮膚時會命中同 key 的舊 cache
+    // 拿到 stale CSS——正是 line 614 註解記錄過的那類不變式破壞。接在後面覆寫則
+    // 完全不碰 cache 契約（同 bylineFontNorm 的決策）。
+    // 'hairline'（預設）回傳空字串 → 既有使用者的注入 CSS 逐字不變、零回歸面。
+    //
+    // 為什麼描邊是「黑 + 白」兩層而不是選一個更亮的顏色：進度條 position: fixed
+    // 疊在捲動內容上，底下的背景是任意的（hero 圖、深色引言區、程式碼黑塊），
+    // 任何單一顏色都會在某段背景上被吃掉。雙通道的不變式是「深底靠白邊、淺底
+    // 靠黑邊」，兩側總有一邊有對比，與背景無關 → 不是站點特判。
+    const PROGRESS_HALO =
+      'box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.55), 0 1.5px 0 0 rgba(255, 255, 255, 0.65);';
+    let progressSkin = '';
+    if (opts.progressBarStyle === 'outline') {
+      progressSkin = `
+#${PROGRESS_ID} {
+  ${PROGRESS_HALO}
+}`;
+    } else if (opts.progressBarStyle === 'track') {
+      // width: 100% 必須 !important——onScrollProgress 把百分比寫進 inline
+      // style.width，inline 宣告贏過無 !important 的 stylesheet 規則。進度改由
+      // linear-gradient 的硬色標（兩個 stop 同位置）表現，位置讀 setProgressPct
+      // 同步寫入的 --jread-progress。軌道用中性灰半透明：深底顯淺、淺底顯深，
+      // 不需要每個主題各配一個值。
+      progressSkin = `
+#${PROGRESS_ID} {
+  width: 100% !important;
+  background: linear-gradient(to right,
+    ${theme.progressBar} var(--jread-progress, 0%),
+    rgba(128, 128, 128, 0.42) var(--jread-progress, 0%));
+  ${PROGRESS_HALO}
+}`;
+    } else if (opts.progressBarStyle === 'thick') {
+      // 5px 是「還不至於吃到 iPhone 動態島 / 瀏海區安全距離」與「明顯比 3px 厚」
+      // 的折衷；右端圓角讓進度末端有明確端點，drop-shadow 提供與背景的分離。
+      progressSkin = `
+#${PROGRESS_ID} {
+  height: 5px;
+  border-radius: 0 3px 3px 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}`;
+    }
+    return base + userOverrides + bylineFontNorm + orionSafeTop + progressSkin +
       (overrides.fontFamily ? FONT_FACE_CSS + latinFontFaceFor(opts.fontFamily) : '');
   }
 
@@ -2775,6 +2828,17 @@ html.${HTML_CLASS}.jread-orion body {
 
   const PROGRESS_ID = '__jread-progress';
   let progressEl = null;
+  // v1.7.37：進度百分比的唯一寫入點。除了既有的 style.width，同步寫一份到
+  // CSS 變數 --jread-progress——progressBarStyle 'track' 皮膚需要「同一個元素
+  // 同時畫已讀段與未讀軌道」：軌道無法用 ::before 疊（父層 z-index 建立 stacking
+  // context 後，負 z-index 子元素仍排在父層 background 之上，半透明軌道會蓋在
+  // 條子顏色上把它濁掉），改用 width:100% + linear-gradient 硬色標在百分比處切
+  // 開兩色。width 與變數必須同一個 setter 寫，否則兩個皮膚各讀一份會 drift。
+  function setProgressPct(pct) {
+    if (!progressEl) return;
+    progressEl.style.width = pct + '%';
+    progressEl.style.setProperty('--jread-progress', pct + '%');
+  }
   function onScrollProgress() {
     if (!progressEl) return;
     // v0.7.238：翻頁模式下進度條由 paged-mode.js 依「頁比例」驅動。觸控裝置
@@ -2786,9 +2850,9 @@ html.${HTML_CLASS}.jread-orion body {
     const de = document.documentElement;
     const scrollTop = de.scrollTop || document.body.scrollTop;
     const scrollHeight = de.scrollHeight - de.clientHeight;
-    if (scrollHeight <= 0) { progressEl.style.width = '0%'; return; }
+    if (scrollHeight <= 0) { setProgressPct(0); return; }
     const pct = Math.min(100, (scrollTop / scrollHeight) * 100);
-    progressEl.style.width = pct + '%';
+    setProgressPct(pct);
   }
   function onScrollFlash() {
     const html = document.documentElement;
@@ -3313,7 +3377,14 @@ html.${HTML_CLASS}.jread-orion body {
         // v1.5.3：本頁是否為 reader 文章頁（article feed 點進的單篇）——true 時
         // 卡片上緣用較緊縮的 READER_HOST_TOP_GUTTER（拿掉返回箭頭後文章往上長）。
         // 由 reader-article.js 在 enterFromContainer 前設 NS.state.readerHostPage。
-        readerHostPage: !!(NS.state && NS.state.readerHostPage)
+        readerHostPage: !!(NS.state && NS.state.readerHostPage),
+        // v1.7.37：頂端進度條皮膚。白名單驗證——舊資料（此 key 不存在）、storage
+        // 損壞、外部寫入未知字串一律回退 'hairline'（= 歷代行為），與 fontWeight
+        // 的「只接受三個合法值」同準則。CSS 端拿到未知值只會少注入覆寫段落、不會
+        // 產出壞 CSS，但白名單讓回退行為明確而非碰巧安全。
+        progressBarStyle: PROGRESS_BAR_STYLES.indexOf(s.progressBarStyle) >= 0
+          ? s.progressBarStyle
+          : DEFAULTS.progressBarStyle
       };
       const theme = themeOf(s.theme || DEFAULTS.theme);
 

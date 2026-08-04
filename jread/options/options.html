@@ -323,6 +323,68 @@
       cursor: pointer;
     }
 
+    /* v1.7.37 閱讀進度條樣式預覽：三格不同底色（深 / 淺 / 照片）各畫一條 62% 的
+       進度條，套目前選中的皮膚。四種皮膚的差別（描邊、軌道、加高）用文字描述不
+       清楚，且「在什麼背景上看得見」正是這個設定的全部意義——預覽是功能性的，
+       不是裝飾。
+       ⚠ 雙實作標記：以下 .pp-bar 各皮膚的 box-shadow / height / gradient 與
+       content/styler.js buildCss 的 progressSkin 是**同一份事實的兩份實作**
+       （一份是靜態 options CSS、一份是注入頁面的動態字串，無法共用同一份宣告）。
+       改任一邊必須同步改另一邊——由 test/regression/progress-bar-style.spec.js
+       的「options 預覽與 styler 注入值一致」不變式守住。 */
+    .field .progress-preview {
+      display: flex;
+      margin-top: 10px;
+      border: 1px solid var(--jr-neutral-200);
+      border-radius: var(--jr-radius-sm);
+      overflow: hidden;
+    }
+    .field .progress-preview .pp-cell {
+      flex: 1;
+      height: 44px;
+      position: relative;
+    }
+    .field .progress-preview .pp-dark { background: #3a3d44; }
+    .field .progress-preview .pp-light { background: #ececec; }
+    .field .progress-preview .pp-photo {
+      background:
+        radial-gradient(120% 90% at 20% 0%, rgba(255,255,255,.32), transparent 58%),
+        linear-gradient(155deg, #3d4a5e 0%, #1e2733 48%, #55483a 100%);
+    }
+    .field .progress-preview .pp-bar {
+      position: absolute;
+      top: 13px;
+      left: 0;
+      width: 62%;
+      height: 3px;
+      background: #4A90D9;
+    }
+    /* 深底格用 dark 主題的 progressBar 色、其餘用 light 主題色（對照 styler THEMES） */
+    .field .progress-preview .pp-dark .pp-bar,
+    .field .progress-preview .pp-photo .pp-bar { background: #7fb5e6; }
+
+    .field .progress-preview[data-style="outline"] .pp-bar,
+    .field .progress-preview[data-style="track"] .pp-bar {
+      box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.55), 0 1.5px 0 0 rgba(255, 255, 255, 0.65);
+    }
+    .field .progress-preview[data-style="track"] .pp-bar {
+      width: 100%;
+      background: linear-gradient(to right,
+        #4A90D9 62%,
+        rgba(128, 128, 128, 0.42) 62%);
+    }
+    .field .progress-preview[data-style="track"] .pp-dark .pp-bar,
+    .field .progress-preview[data-style="track"] .pp-photo .pp-bar {
+      background: linear-gradient(to right,
+        #7fb5e6 62%,
+        rgba(128, 128, 128, 0.42) 62%);
+    }
+    .field .progress-preview[data-style="thick"] .pp-bar {
+      height: 5px;
+      border-radius: 0 3px 3px 0;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+    }
+
     /* 稍後閱讀服務：兩顆並排分段 toggle（Readwise / Instapaper 都可見、二擇一）。
        radio 語意（互斥），視覺做成分段按鈕：選中填品牌色。讓使用者一眼看到有哪些選擇
        而非藏在下拉。內層 label 覆寫 .field label 的 block / font-weight:500。 */
@@ -723,6 +785,22 @@
     <input type="number" id="positionMemoryDays" min="0" max="7" step="1">
   </div>
 
+  <div class="field">
+    <label>閱讀進度條樣式</label>
+    <span class="desc">閱讀模式頂端那條進度指示。它疊在捲動的內容上，底下可能是任何顏色的圖片或區塊，所以純色細線在同色系背景上會看不見。<strong>描邊</strong>加一圈深淺雙色輪廓，深底靠白邊、淺底靠黑邊；<strong>描邊＋軌道</strong>連未讀段也有底色；<strong>加高</strong>加厚到 5px 並加投影。翻頁模式沒有頂端進度條，看的是底部頁碼</span>
+    <div class="size-options" id="progressBarStyle" role="radiogroup" aria-label="閱讀進度條樣式">
+      <label><input type="radio" name="progressBarStyle" value="hairline"><span>細線</span></label>
+      <label><input type="radio" name="progressBarStyle" value="outline"><span>描邊</span></label>
+      <label><input type="radio" name="progressBarStyle" value="track"><span>描邊＋軌道</span></label>
+      <label><input type="radio" name="progressBarStyle" value="thick"><span>加高</span></label>
+    </div>
+    <div class="progress-preview" id="progressBarPreview" data-style="hairline" aria-hidden="true">
+      <div class="pp-cell pp-dark"><span class="pp-bar"></span></div>
+      <div class="pp-cell pp-light"><span class="pp-bar"></span></div>
+      <div class="pp-cell pp-photo"><span class="pp-bar"></span></div>
+    </div>
+  </div>
+
   <div class="field field-checkbox">
     <input type="checkbox" id="pangu">
     <label for="pangu">
@@ -763,7 +841,7 @@
 
     <div class="field">
       <label>懸浮按鈕尺寸</label>
-      <span class="desc">按鈕大小：<strong>小</strong> = 16px（預設）、<strong>中</strong> = 24px、<strong>大</strong> = 32px</span>
+      <span class="desc">按鈕大小：<strong>小</strong> = 16px、<strong>中</strong> = 24px（預設）、<strong>大</strong> = 32px</span>
       <div class="size-options" id="floatingIconSize" role="radiogroup" aria-label="懸浮按鈕尺寸">
         <label><input type="radio" name="floatingIconSize" value="small"><span>小</span></label>
         <label><input type="radio" name="floatingIconSize" value="medium"><span>中</span></label>
