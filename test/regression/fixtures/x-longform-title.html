@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- 登入態 x.com longform 的 document.title 實測是空字串（cage 2026-08-04），
+       fallback 到它只會拿到空 → 標題必須從 DOM 取 -->
+  <title></title>
+</head>
+<body>
+  <div data-testid="cellInnerDiv">
+    <div>
+      <div>
+        <article role="article" data-testid="tweet">
+          <div data-testid="Tweet-User-Avatar"><div>頭像</div></div>
+          <div data-testid="User-Name">
+            <a href="/thedankoe"><span>DAN KOE</span></a>
+            <a href="/thedankoe"><span>@thedankoe</span></a>
+            <!-- 時間戳連結：findMainTweet 靠 a[href*="/status/<ID>"] 認主推文 -->
+            <a href="/thedankoe/status/2081415714636996844"><time datetime="2026-08-01T12:00:00.000Z">3h</time></a>
+          </div>
+          <div data-testid="twitterArticleReadView">
+            <div>
+              <div>
+                <!-- 真正的文章標題：div 不是 heading tag（X longform 結構） -->
+                <div data-testid="twitter-article-title"><span>How to remember everything you read (stop trying)</span></div>
+              </div>
+              <div data-testid="twitterArticleRichTextView">
+                <div data-testid="longformRichTextComponent">
+                  <div><span><span>If you need to remember it, it is not important. If it is important, you will remember it. For some reason this is the part that everyone gets backwards when they start building a system.</span></span></div>
+                  <!-- longform 的 h2 是內文章節標題，不是文章主標。
+                       findCardTitleHeading 第 2 步會誤抓這個 -->
+                  <h2>How to actually learn anything fast</h2>
+                  <div><span><span>The bottleneck was never storage. It was retrieval, and retrieval only strengthens when you force yourself to reconstruct the idea without looking at your notes.</span></span></div>
+                  <h2>The Second Subconscious (Delete Your Note-Taking System)</h2>
+                  <div><span><span>Most note-taking systems are elaborate procrastination. They feel like progress because they produce artifacts, but the artifacts are not the point.</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

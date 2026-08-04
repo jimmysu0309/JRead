@@ -29,6 +29,8 @@
 
   const READER_ATTR = 'data-jread-x-reader';
   const AUTHOR_ATTR = 'data-jread-x-author';
+  // v1.7.37：longform 標題提升出來的 <h1> 標記（spec forcing / 除錯辨識用）
+  const TITLE_ATTR = 'data-jread-x-title';
 
   // 模組內保留主推文 thread member 的「原 article」參照——enter() 之後 cleaner
   // 會跑過合成容器（會 hide 原 article header 的 wrapper，連帶 avatar / display
@@ -336,6 +338,46 @@
     return n;
   }
 
+  // v1.7.37：X longform（Articles）文章標題提升成真 <h1>。
+  //
+  // Bug（Jimmy 2026-08-04 回報 x.com/thedankoe/status/2081415714636996844）：
+  // longform 貼文「進閱讀模式抓不到標題，送 Readwise 也沒送對標題」。cage 實測
+  // 登入態 DOM：
+  //   - 標題是 div[data-testid="twitter-article-title"] > span，34px/800 由 X
+  //     自家 stylesheet 給，**不是 heading tag**
+  //   - 它在 article[role="article"] 內，所以 clone 有帶進合成容器、也沒被
+  //     cleaner 標隱藏——但 styler 的 typography override 把它當內文渲染
+  //     （實測 17px / 400 / display:inline，與段落無異）＝ 使用者眼中「沒有標題」
+  //   - 合成容器內零個 <h1>，而 longform 的 <h2> 是**內文章節**標題 →
+  //     NS.findCardTitleHeading 退到第 2 步「取內文前首個 h2」，抓到章節標題
+  //     「How to actually learn anything fast」送去 Readwise
+  //   - document.title 在登入態是**空字串**，fallback 也救不了
+  //
+  // 兩個症狀是同一根因：文章標題沒有 heading 語意。轉成真 <h1> 一次解決兩邊
+  // ——styler 的 titleFontSize 規則自然套上（視覺回來），findCardTitleHeading
+  // 第 1 步就命中（Readwise 拿到正確標題），不必在通用邏輯裡開 X 分支。
+  //
+  // 為什麼可以用 data-testid：本檔是 site module（CLAUDE.md 硬規則 3 允許站點
+  // 特判放在明確隔離的模組），且 X 的 class 全是 hash、testid 是唯一穩定的語意
+  // 載體（同 Substack recommendation 的判例）。非 longform 推文沒有這個 testid，
+  // 整段 no-op、對既有推文 thread 行為零影響。
+  function promoteArticleTitle(clone) {
+    if (!clone || !clone.querySelector) return false;
+    const el = clone.querySelector('[data-testid="twitter-article-title"]');
+    if (!el || el.tagName === 'H1') return false;
+    // 只認有文字的標題——空殼 div 轉 h1 會讓 findCardTitleHeading 拿到空字串，
+    // 反而比 fallback 更糟
+    if (!(el.textContent || '').trim()) return false;
+    const doc = clone.ownerDocument || document;
+    const h1 = doc.createElement('h1');
+    h1.setAttribute(TITLE_ATTR, '1');
+    // 搬 childNodes 而非 textContent：保留 X 標題內的 inline 結構（span /
+    // emoji img），與 styler 對 h1 子樹的處理相容
+    while (el.firstChild) h1.appendChild(el.firstChild);
+    if (el.parentNode) el.parentNode.replaceChild(h1, el);
+    return true;
+  }
+
   function enter() {
     const existing = document.querySelector('[' + READER_ATTR + ']');
     if (existing) return existing;
@@ -364,6 +406,10 @@
       // 在 cleaner 跑完後重建合成 header 補回 author 顯示。
       const clone = art.cloneNode(true);
       unwrapTweetMedia(clone);
+      // v1.7.37：longform 標題轉 <h1>（見 promoteArticleTitle 註解）。必須在
+      // normalizeCloneForPaging 之前——後者用 getComputedStyle 中和 display，
+      // 換過 tag 才不會把舊 div 的 computed 值套到已消失的節點上
+      promoteArticleTitle(clone);
       container.appendChild(clone);
     }
 
@@ -414,11 +460,13 @@
     createAuthorHeader,
     unwrapTweetMedia,
     normalizeCloneForPaging,
+    promoteArticleTitle,
     enter,
     injectAuthorHeaders,
     exit,
     isActive,
     READER_ATTR,
-    AUTHOR_ATTR
+    AUTHOR_ATTR,
+    TITLE_ATTR
   };
 })();
