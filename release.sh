@@ -2,10 +2,11 @@
 # JRead — release 流程
 # 前置條件：版本號同步清單（CLAUDE.md 硬規則 1）已全部更新並 commit。
 # 動作：
-#   1. 跑測試
-#   2. 確認 working tree 乾淨（守門：避免雜進使用者未 commit 編輯）
-#   3. 建 git tag v<ver>
-#   4. push commits + tags（GitHub Actions 收到 tag 後建 Release 上傳
+#   1. 同步 landing page（docs/index.html）四顆下載鈕的版本號
+#   2. 跑測試
+#   3. 確認 working tree 乾淨（守門：避免雜進使用者未 commit 編輯）
+#   4. 建 git tag v<ver>
+#   5. push commits + tags（GitHub Actions 收到 tag 後建 Release 上傳
 #      Chrome / Firefox / Firefox source zip）
 #
 # 用法：
@@ -21,6 +22,40 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+VERSION="$(node -p "require('./jread/manifest.json').version")"
+TAG="v${VERSION}"
+
+# ---- landing page 版本號自動同步 -------------------------------------------
+# docs/index.html 四顆下載鈕各印一次版本號。它不在 CLAUDE.md 硬規則 1 的 6 檔
+# 同步清單裡、也沒有 forcing spec，實際下場是從 v1.6.1 一路 stale 到 v1.7.37
+# 才被發現（Jimmy 2026-08-04 要求檢查 landing page 時揪出）。原始碼裡本來就有
+# `<!-- version-start -->` 標記、卻沒有任何腳本在用它——這段補上那個缺口。
+# 放在 working tree 守門「之前」：替換若造成變更會自動 commit 一筆，否則守門
+# 會擋下自己剛改出來的 diff。
+LANDING="docs/index.html"
+if [[ -f "${LANDING}" ]]; then
+  MARKS="$(grep -c '<!-- version-start -->' "${LANDING}" || true)"
+  if [[ "${MARKS}" -eq 0 ]]; then
+    echo "警告：${LANDING} 找不到 <!-- version-start --> 標記，版本號未同步" >&2
+  else
+    # 先確認這個檔案沒有「別的」未 commit 編輯——否則下面的 git add 會把使用者
+    # 正在改的東西一起 commit 進版本號同步這筆
+    if [[ -n "$(git status --porcelain -- "${LANDING}")" ]]; then
+      echo "${LANDING} 有未 commit 變更，請先 commit 或 stash 再 release：" >&2
+      git status --short -- "${LANDING}"
+      exit 1
+    fi
+    perl -pi -e "s/(<!-- version-start -->)[^<]*(<!-- version-end -->)/\${1}${VERSION}\${2}/g" "${LANDING}"
+    if [[ -n "$(git status --porcelain -- "${LANDING}")" ]]; then
+      echo "==> landing page 版本號同步至 ${VERSION}（${MARKS} 處）"
+      git add "${LANDING}"
+      git commit -q -m "chore(docs): landing page 版本號同步至 ${TAG}"
+    else
+      echo "==> landing page 版本號已是 ${VERSION}，無需同步"
+    fi
+  fi
+fi
+
 echo "==> 跑 npm test"
 npm test
 
@@ -30,9 +65,6 @@ if [[ -n "$(git status --porcelain)" ]]; then
   git status --short
   exit 1
 fi
-
-VERSION="$(node -p "require('./jread/manifest.json').version")"
-TAG="v${VERSION}"
 
 echo "==> 目前版本：${VERSION}"
 

@@ -19,7 +19,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 - **Article detection**: tries `<article>`, then Schema.org markup, then a content-density heuristic to locate the real article block
 - **One-click toggle**: enter and exit reading mode from the toolbar menu, the floating button, a keyboard shortcut, or a three-finger tap
 - **Clean typography**: adjustable font, size, weight (light / regular / bold), line height, and content width; a width self-check makes sure body text, headings, and category rows all fill the configured width instead of being pinched by the original site's wrappers
-- **Latin font override**: when the font is set to serif or sans-serif, you can pick a separate Latin font for letters and numbers while Chinese keeps its serif / sans rendering; each mode remembers its own choice. Alongside system fonts, five variable fonts ship built in (Literata, Source Serif, Piazzolla, Public Sans, Source Sans), available across platforms including iOS
+- **Latin font override**: when the font is set to serif or sans-serif, you can pick a separate Latin font for letters and numbers while Chinese keeps its serif / sans rendering; each mode remembers its own choice. Alongside system fonts, four variable fonts ship built in (Source Serif, Piazzolla, Public Sans, Source Sans), available across platforms including iOS
 
 ### Noise handling
 
@@ -28,7 +28,8 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 
 ### Reading experience
 
-- **Themes**: light, dark, and sepia
+- **Themes**: light, dark, sepia, and gray (gray by default), with reading-area colours matched to Apple Books
+- **Reading progress bar**: a thin progress line at the top of the viewport in scroll mode. It sits above the scrolling content, so whatever passes underneath can be any colour — a plain hairline disappears against a background of a similar shade. Settings offer an outlined variant (white edge on dark backgrounds, black edge on light ones), outline plus a track, or a thicker bar with a shadow
 - **Two reading modes (pick one)**: the default is **scroll mode** (ordinary vertical scrolling); it can be switched to **paged mode** in settings — flip left/right like an e-book, swiping on phones or using arrow keys / the scroll wheel on desktop, with images scaled to fit a single page. The page-number footer doubles as a scrubber: hold and drag to jump through pages, with a progress bar and per-page haptic feedback while dragging
 - **Paragraph focus scrolling (scroll mode only)**: an indicator on the left marks the current paragraph; press Space to jump to the next one, and paragraphs below a threshold smoothly scroll back toward the top (threshold adjustable); not applicable in paged mode
 - **Position memory**: leave an article partway through (exit reading mode, close the tab, restart the browser) and JRead remembers where you were — the paragraph in scroll mode, the page in paged mode — restoring it on re-entry within the retention window (adjustable; default 3 days, max 7, 0 to disable)
