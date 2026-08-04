@@ -127,35 +127,59 @@
 
   // FB 主貼文文字用 <div> 不用 <p> 包段落，strip class 後失去原 emotion-hash
   // class 的 line-height / margin 規則，所有段落擠在一起難讀。
-  // 修法：walk clone，找「直接含文字的 leaf paragraph div」（children 只有
-  // text node 或 inline element 如 a/span/strong/em）標 data-jread-fb-para=1，
+  // 修法：walk clone，找「leaf paragraph div」（整棵子樹只有 text node 或
+  // inline element 如 a/span/strong/em、且有 >=4 字文字）標 data-jread-fb-para=1，
   // 再給合成 reader card 內 [data-jread-fb-para] inline 套 paragraph margin。
   // 不對 reader card 內所有 div 套規則——巢狀 wrapper div 會累積 margin、且
   // figure/img 包 div 不需要段落間距。
+  //
+  // ⚠ 雙實作注意：styler.js markTextDivs（TEXT_DIV_ATTR）是同一份事實
+  //（「哪些 div 其實是段落」）的另一條 path——它跑在 live reader（字級 / 行高 /
+  // 段距），本函式跑在 Readwise 匯出 clone（轉 <p>）。兩者的 predicate 必須同步：
+  // styler 端 v0.8.80 就已把「文字包在 inline 子元素裡」算進來，本端遲到
+  // v1.7.36 才補上（drift 的代價 = x.com longform 匯出段落全黏在一起）。改任一
+  // 端的 predicate 都要回頭看另一端。
   function markParagraphDivs(root) {
     if (!root || !root.querySelectorAll) return 0;
     const divs = root.querySelectorAll('div');
     let count = 0;
-    const INLINE_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE']);
+    // 與 styler.js markTextDivs 的 INLINE_TAGS 對齊（v1.7.36）
+    const INLINE_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR']);
+    // v1.7.36：inline style 宣告「不是 block box」的 div 不當段落——display
+    // contents / inline* 的 div 在 flow 裡不生成獨立區塊（styler 把 X 頁尾
+    // meta 列 flatten 成 display:contents 即為一例），轉 <p> 會把行內片段
+    // 拆成獨立段落。none 是隱藏節點、同樣不該變段落。
+    const NON_BLOCK_DISPLAY = /^(inline|inline-block|inline-flex|contents|none)$/;
     for (const div of divs) {
       // v1.7.21：pre / code 內的 div 不標——highlighter 常用 div-per-line 排
       // code 行，轉 <p>（Readwise 匯出路徑）會給每行 code 加段距、拆爛 code
       // block。FB 貼文無 pre，對原 FB 路徑是 no-op。
       if (div.closest && div.closest('pre, code')) continue;
-      // 必須直接含 textNode 文字（textContent 不算，要直接 child text node）
-      let hasDirectText = false;
+      if (div.style && NON_BLOCK_DISPLAY.test((div.style.display || '').trim())) continue;
+      // 直系 children 只能是 text node 或 inline element；出現任何非 inline
+      // 元素 child 代表這是 wrapper 不是段落（轉 <p> 會違反 p 不可含 block
+      // child 的 HTML 規則）。
       let hasBlockChild = false;
       for (const node of div.childNodes) {
-        if (node.nodeType === 3 /* TEXT_NODE */ && node.textContent.trim().length >= 4) {
-          hasDirectText = true;
-        } else if (node.nodeType === 1 /* ELEMENT_NODE */) {
-          if (!INLINE_TAGS.has(node.tagName)) {
-            hasBlockChild = true;
-            break;
-          }
+        if (node.nodeType === 1 /* ELEMENT_NODE */ && !INLINE_TAGS.has(node.tagName)) {
+          hasBlockChild = true;
+          break;
         }
       }
-      if (hasDirectText && !hasBlockChild) {
+      // v1.7.36：文字可以包在 inline 子孫裡，不必是 direct text node。
+      // 舊版只認 direct text node，漏掉「文字全被 inline wrapper 包起來」的
+      // 段落形態（X longform / Draft.js：div > span[data-offset-key] >
+      // span[data-text] > 文字，段落 div 自己零 direct text）——Jimmy
+      // 2026-08-04 回報 x.com longform 貼文送 Readwise 段落全黏在一起。
+      // 深掃子孫確認整棵子樹只有 inline 元素（`<a><div>` 在 HTML5 合法，
+      // 只看直系 children 會漏），再以整棵子樹的文字量過門檻。
+      if (!hasBlockChild) {
+        for (const el of div.querySelectorAll('*')) {
+          if (!INLINE_TAGS.has(el.tagName)) { hasBlockChild = true; break; }
+        }
+      }
+      const hasText = (div.textContent || '').trim().length >= 4;
+      if (hasText && !hasBlockChild) {
         div.setAttribute('data-jread-fb-para', '1');
         // v0.7.163：inline fallback margin（無 !important）——styler stylesheet
         // 端的 paragraphSpacing 規則 selector 已涵蓋 [data-jread-fb-para]，

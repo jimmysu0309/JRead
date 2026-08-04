@@ -8,9 +8,9 @@
   const NS = window.__JRead;
   if (!NS) return;
 
-  function showToast(message, kind) {
+  function showToast(message, kind, opts) {
     if (NS.toast && typeof NS.toast.show === 'function') {
-      NS.toast.show(message, { kind });
+      NS.toast.show(message, Object.assign({ kind }, opts || {}));
     }
   }
 
@@ -1410,7 +1410,12 @@
     // v0.7.89：SW（快速鍵觸發送 Readwise）→ content：顯示結果 toast
     if (msg.type === NS.MSG.SHOW_TOAST) {
       const p = msg.payload || {};
-      showToast(p.message || '', p.kind || 'info');
+      // v1.7.36：id / duration 由發送端決定——快速鍵送出流程用同一個 id 讓
+      // 「送出中…→產生摘要中…→結果」三則接替顯示（見 SW sendToReadwiseFromCommand）
+      showToast(p.message || '', p.kind || 'info', {
+        id: typeof p.id === 'string' ? p.id : '',
+        ...(typeof p.duration === 'number' ? { duration: p.duration } : {})
+      });
       sendResponse({ ok: true });
       return; // sync
     }
