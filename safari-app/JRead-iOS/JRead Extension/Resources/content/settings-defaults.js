@@ -157,6 +157,19 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 記憶同一份「正在讀哪段」事實），還原後捲回該節點。只作用於捲動模式（翻頁
     // 模式退出仍還原進場前的文件位置，見 paged-mode.js savedScrollY）。
     syncScrollOnExit: true,
+    // v1.7.37：頂端閱讀進度條的樣式。
+    //   'hairline'（預設 = 沿用歷代行為）3px 純色實心條，無描邊無軌道
+    //   'outline'  3px + 雙通道描邊（下緣半透明黑 + 再下一層半透明白）
+    //   'track'    outline 再加一條常駐軌道（未讀段也有底色）
+    //   'thick'    5px + 右端圓角 + drop-shadow
+    // 為什麼需要這個維度：進度條是 position: fixed; top: 0 且 z-index 拉到最高，
+    // 底下的背景**不是主題色**，是當下捲到畫面頂端的任何內容（hero 大圖、深色引言
+    // 區、程式碼黑塊）。所以「把 theme.progressBar 調成更好的顏色」救不了——任何
+    // 單一顏色都會在某段背景上被吃掉（Jimmy 2026-08-04 回報：深色背景旁難辨識）。
+    // outline / track 是背景無關的機制：深底靠白邊、淺底靠黑邊，兩側總有一邊有對比。
+    // 預設維持 hairline（Jimmy 裁定）——升級後既有使用者所見不變，要更清楚自己去切。
+    // 只作用於捲動模式：翻頁模式沒有頂端進度條，進度載體是底部頁碼（見 v1.5.4）。
+    progressBarStyle: 'hairline',
     // v0.7.218：自訂快速鍵。null = 未自訂。
     customShortcuts: {
       'toggle-reader-mode': null,
@@ -164,6 +177,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       'toggle-youtube-borderless': null
     }
   };
+
+  // v1.7.37：progressBarStyle 合法值白名單（單一資料源）。styler.js opts 驗證與
+  // options.js 讀 DOM 的回退共用同一份——兩端各自手寫清單是已知的 drift 型態。
+  // 順序即 options UI 的排列順序（細線 → 描邊 → 描邊＋軌道 → 加高）。
+  const PROGRESS_BAR_STYLES = ['hairline', 'outline', 'track', 'thick'];
 
   // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進
   // storage，改 FONT_STACKS 常數不會自動更新既有使用者的存值——SW onInstalled
@@ -262,6 +280,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadStripCredentialSettings = stripCredentialSettings;
   global.__JReadResolveFloatingIconEnabled = resolveFloatingIconEnabled;
   global.__JReadFontStacks = FONT_STACKS;
+  global.__JReadProgressBarStyles = PROGRESS_BAR_STYLES;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
   global.__JReadLatinFonts = LATIN_FONTS;
   global.__JReadComposeFontStack = composeFontStack;

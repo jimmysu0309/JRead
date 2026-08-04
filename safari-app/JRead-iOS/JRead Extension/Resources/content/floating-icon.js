@@ -4,8 +4,9 @@
 // - 頁面左／右緣常駐的浮動 icon，用工具列方形 icon（assets/icons/icon-32.png 經
 //   chrome.runtime.getURL 載入；assets/* 已列入 manifest web_accessible_resources）。
 //   尺寸由 floatingIconSize 設定切換（v0.8.156，v0.8.166 加 medium）：'small' = 視覺
-//   16×16 / footprint 32×32（預設）、'medium' = 視覺 24×24 / footprint 40×40、'large' =
-//   視覺 32×32 / footprint 48×48（觸控嫌小者放大）。
+//   16×16 / footprint 32×32、'medium' = 視覺 24×24 / footprint 40×40（**預設**，
+//   v0.8.166 起——原 small 部分使用者覺得太小）、'large' = 視覺 32×32 / footprint
+//   48×48（觸控嫌小者放大）。
 //   尺寸走 CSS 變數（--fab-hit / --fab-icon）讓 storage.onChanged 即時生效。
 // - 短按（放開前長按計時器未觸發、未拖移）= 切換閱讀模式，走
 //   NS.dispatchLocalCommand('toggle-reader-mode')（與 3 指輕點 / 快速鍵同一條
