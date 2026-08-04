@@ -3509,6 +3509,31 @@
     }
   }
 
+  // v1.7.38：sidebar-column 條件 A / C 的「內文散文」guard。
+  //
+  // 對應 bug（Jimmy 2026-08-04 回報，theverge Installer 電子報 + Shinkansen
+  // 翻譯後進閱讀模式，cage instrument 實證）：文內一段「句子裡嵌 10 個連結」的
+  // 推薦段落整段消失。命中路徑是條件 C——theverge 文章 body 是 33 個扁平 block
+  // 的垂直流，main（最長 block，1035 chars）>= 該段（304 chars）× 3、段落
+  // linkDensity 0.53 > 0.5、textLen >= 200，三條全中。
+  //
+  // 為什麼「翻譯後」才炸：linkDensity 用 raw char count 算，英文原文該段
+  // textLen 547 / linkLen 185 → ld 0.34 安全；翻成中文後散文字數壓到 ~40%
+  // （304 chars）但錨文字多是專有名詞維持拉丁字母（Version History / Mario
+  // Kart World…，161 chars 幾乎不變）→ ld 直接翻倍到 0.53 越線。這是所有
+  // ld 門檻在 CJK 譯文上的系統性偏移，不是 theverge 特有。
+  //
+  // 結構性通則：link widget cluster（sidebar 推薦列 / tag 列 / Listen-on 卡）
+  // 的文字幾乎全包在 <a> 裡，錨與錨之間只有分隔符與短 label；內文散文段落
+  // 則是「句子中嵌連結」——一定存在某個元素的 direct text node 累計成長句。
+  // 故沿用既有 subtreeHasLongNonAnchorText（isLinkOnlyBlock / footer /
+  // direct-child link block 三條 rule 共用的同一份判定），>= 50 chars 非連結
+  // 直接文字即視為散文、放行。條件 B（aside）/ D / E 不套此 guard：那些條件
+  // 靠 tag 語意與幾何訊號，本來就允許次要區塊帶散文（下一篇文章 aside 等）。
+  function sidebarSiblingIsProse(el) {
+    return subtreeHasLongNonAnchorText(el, HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN);
+  }
+
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
@@ -3584,9 +3609,13 @@
         // v0.8.99 theverge section 標題 guard：sibling 就是一個 heading（連結式
         // section 標題）→ 非 sidebar widget，放行（見 isLoneSectionHeadingColumn）
         if (isLoneSectionHeadingColumn(s.el)) continue;
+        // v1.7.38 散文 guard（條件 A / C 共用，見 sidebarSiblingIsProse 註解）：
+        // sibling 內含「非連結長句」= 內文段落，不是 link widget cluster
+        const sibIsProse = sidebarSiblingIsProse(s.el);
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
-        if (s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
+        if (!sibIsProse &&
+            s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
           // v0.7.109：byline 白名單——短篇（textLen < 200）+ 文字命中
           // BYLINE_TEXT_RE（"By X" / 日期 pattern / 中文撰文 等）→ skip。
@@ -3613,7 +3642,8 @@
         // 比條件 A 寬鬆但仍要求 sibling 是 link-heavy widget cluster + 有
         // 一定篇幅（avoid 單行短 nav 誤判），與條件 A 的「極小極密」場景
         // 互補不重疊。
-        if (main.textLen >= s.textLen * SIDEBAR_COLUMN_MAIN_SIBLING_RATIO &&
+        if (!sibIsProse &&
+            main.textLen >= s.textLen * SIDEBAR_COLUMN_MAIN_SIBLING_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY &&
             s.textLen >= SIDEBAR_COLUMN_MIN_SIBLING_TEXT) {
           hide(s.el, hidden);

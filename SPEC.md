@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.37**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.38**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -322,6 +322,12 @@ collapse 後對 visible children 的寬度 reset（`width: auto !important` + fl
 ### flex-row 殘殼欄（v0.8.45 通則）
 
 flex 兩欄 layout 的推薦 / 廣告 rail 在 clean 當下有完整內容（theverge instrument 實測 2123 chars，sidebar 各條件不命中），之後**內部**被其他 rule 逐個清空只剩殘殼——wrapper 本身仍 visible、`flexGrow:1` 照樣占走 50% 寬、主文被壓到卡片 42%。`hideEmptiedFlexColumns`（跑在所有 hide 規則之後、collapse 之前）：flex-row container 內非主欄（主欄粗文字 ≥ 500）+ **可見**文字 < 100 chars + 含 ≥ 1 個被 jread hide 的後代（證明被清空、非原生 spacer）+ 無 visible 大媒體 → hide 殘殼欄，緊接的 collapse 看到 hidden child 自然觸發退化、主欄回滿寬。
+
+### sidebar-column 的內文散文 guard（v1.7.38 通則）
+
+`hideInsideArticleSidebarColumns` 條件 A / C 都以 `linkDensity > 0.5` 當「這是 link widget cluster」的主訊號，但 linkDensity 用 raw char count 計算，**CJK 譯文會系統性把它推高**：散文翻成中文後字數壓到英文的 ~40%，錨文字多是未翻譯的專有名詞（拉丁字母）幾乎不縮 —— theverge Installer 電子報實測，同一段「句子裡嵌 10 個連結」的內文 ld 從 0.34（英文）跳到 0.53（中文），越過門檻後被條件 C（main ≥ sibling × 3 + ld > 0.5 + sibling ≥ 200 chars）整段 hide（Jimmy 2026-08-04 回報）。該站文章 body 是 33 個扁平 block 的垂直流，main 只是「最長的那個 block」，與該段根本不是主欄 / 側欄關係。
+
+修法（`sidebarSiblingIsProse`，條件 A / C 共用）：sibling 內若存在**非連結的長句**（某元素 direct text node 累計 ≥ 50 chars，沿用 `subtreeHasLongNonAnchorText` 這份既有判定，與 `isLinkOnlyBlock` / footer / direct-child link block 三條 rule 同一資料源）→ 視為內文散文段落，放行。真 link widget（推薦列 / tag 列 / Listen-on 卡）的文字幾乎全包在 `<a>` 內、錨與錨之間只有分隔符與短 label，不會有長句，照樣被清。條件 B（`<aside>` tag）/ D / E 不套此 guard —— 那幾條靠 tag 語意與幾何訊號，本來就允許次要區塊帶散文（下一篇文章 aside 等）。Forcing function：`test/regression/sidebar-column-prose-guard.spec.js`（散文段落保留 + 同樣命中條件 C 的推薦 widget 仍須被 hide）。
 
 ### 次要全文 aside（v0.8.112 通則）
 

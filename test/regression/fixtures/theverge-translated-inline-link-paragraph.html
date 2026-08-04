@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>本週編輯精選：閱讀工具特輯</title>
+  <meta property="og:title" content="本週編輯精選：閱讀工具特輯">
+</head>
+<body>
+<!--
+  v1.7.38 fixture：翻譯後「句子裡嵌多個連結」的內文段落被 sidebar-column 條件 C 誤殺。
+
+  實機 bug（Jimmy 2026-08-04 回報，theverge Installer 電子報 + Shinkansen 翻譯後
+  進閱讀模式；cage instrument 實證 hide 呼叫來自 hideInsideArticleSidebarColumns）：
+  文首第二段（作者列舉本週看了哪些東西、句子裡嵌 10 個連結）整段消失。
+
+  命中路徑＝條件 C（main >= sibling × 3 + sibling ld > 0.5 + sibling textLen >= 200）：
+  theverge（Chorus CMS）文章 body 是 33 個扁平 block 的垂直流，main 只是「最長的那個
+  block」（實測 1035 chars），與該段（304 chars）並非兩欄 layout 的主欄 / 側欄關係。
+
+  為何翻譯後才炸：linkDensity 用 raw char count 算——英文原文該段 textLen 547 /
+  linkLen 185 → ld 0.34 安全；翻成中文後散文壓到 ~40% 字數、錨文字多是專有名詞
+  維持拉丁字母幾乎不縮 → ld 0.53 越過 0.5 門檻。這是 ld 門檻在 CJK 譯文上的
+  系統性偏移，非 theverge 特有。
+
+  修法（v1.7.38）：條件 A / C 加 sidebarSiblingIsProse guard——sibling 內若存在
+  「非連結的長句」（某元素 direct text node 累計 >= 50 chars，沿用
+  subtreeHasLongNonAnchorText 這份既有判定）＝ 內文散文段落，不是 link widget
+  cluster，放行。link widget（推薦列 / tag 列）的文字幾乎全包在 <a> 內，錨與錨之間
+  只有分隔符與短 label，不會有長句 → 本 fixture 的 widget-block 仍須被 hide。
+
+  數值（fixture 實測，spec 內斷言守住）：
+    main-block   ~1000 chars、ld 低
+    prose-block   ~300 chars、ld > 0.5、非連結長句 > 50 chars → 必須保留
+    widget-block  ~230 chars、ld > 0.5、無非連結長句       → 必須照砍
+-->
+<article>
+  <div class="entry-body">
+    <!-- 主文 block：最長 block，會被選為 main 欄 -->
+    <div class="article-body-component" data-test="main-block">
+      <p>今年夏天的閱讀工具生態出現了不少變化，從筆記軟體到稍後閱讀服務都在重新思考自己的定位。過去幾年大家習慣把所有連結丟進同一個收件匣，然後在週末一次消化，但實際上多數人的待讀清單只會愈積愈多，最後變成一種心理負擔。今年開始有幾款工具改採不同做法，把重點放在「今天要讀什麼」而不是「總共欠了幾篇」，介面上只呈現三到五篇文章，其餘的先收起來。這種設計看似只是換個排版，實際使用一週之後的差別非常明顯，因為它把選擇的成本轉移到系統身上，使用者只需要決定讀或不讀。另一個明顯的趨勢是同步機制的簡化，過去要在手機與電腦之間維持一致的閱讀進度往往得忍受奇怪的延遲，現在多數服務都把進度寫在雲端並且在切換裝置時主動比對，實測下來幾乎感覺不到接縫。當然也不是每個改動都值得叫好，有些軟體為了塞進摘要功能反而讓啟動速度變慢，翻閱長文時還會出現排版跳動的狀況。整體而言，如果你這幾年沒有重新評估過自己的閱讀流程，現在是個不錯的時機，因為工具之間的差距已經拉開，選對的那一個確實會讓你每天多讀完一兩篇文章，而不是又累積一堆待讀。值得一提的還有離線處理的部分，先前幾款服務把摘要與翻譯全部丟到伺服器上，網路稍差就整頁卡住，這一季開始有兩三款把輕量模型放回裝置端，通勤在地下鐵的時候終於不會開一篇轉圈半分鐘。字型與排版設定也比以前細緻，行距、段距、版心寬度都可以各自調整，甚至能針對中日韓文字單獨指定字體，這對長期被預設襯線體折磨的讀者來說是實質改善。最後提醒一件事：多數服務的匯出功能仍然難用，換工具之前記得先確認自己的標註與筆記能不能完整帶走，否則累積兩年的閱讀紀錄就會卡在別人的資料庫裡。順帶一提，這一輪更新之後，付費方案的差異反而比功能差異更值得留意，有些服務把同步與標註放進免費層、把摘要放進訂閱層，也有反過來的做法；先想清楚自己最常用的是哪一段流程，再決定要不要每個月付這筆錢，比看評測排名實際得多。</p>
+    </div>
+
+    <!-- 內文散文段落：句子裡嵌多個連結，錨文字多為未翻譯的專有名詞（拉丁字母）。
+         textLen ~300、ld > 0.5、main 是它的 3 倍以上 → 舊版命中條件 C 被整塊 hide -->
+    <div class="article-body-component" data-test="prose-block">
+      <p>這禮拜我一直在錄製新一季的 <a href="/podcast/version-history">Version History</a>，讀了關於 <a href="/2026/07/12/data-center-heist">資料中心搶案</a>、<a href="/2026/07/13/backyard-baseball">Backyard Baseball</a> 以及 <a href="/p/calvin-and-hobbes-price">the creator of Calvin and Hobbes</a> 的文章，取消了十月所有計畫只為了進電影院看 <a href="/watch/digger">Digger</a>，還在 <a href="/game/knockout-tour">new Knockout Tour routes</a> 裡挑戰 <a href="/game/mario-kart-world">Mario Kart World</a>，托 <a href="/podcasts/revisionist-history">Revisionist History</a> 的福認識了史泰登島，順便研讀 <a href="/books/inventing-eliza">史上第一個聊天機器人</a> 的歷史，並且設定好了我的 <a href="/gadget/flipper-busy-bar">Flipper Busy Bar</a>。</p>
+    </div>
+
+    <!-- 真雜訊對照組：推薦連結 widget。錨文字佔滿全文、錨與錨之間只有分隔符，
+         沒有非連結長句 → guard 不放行，仍須被條件 C hide -->
+    <div class="article-body-component" data-test="widget-block">
+      <span>推薦</span>
+      <a href="/tech/920011/wearable-ai-pin-review-roundup">穿戴式 AI 裝置年度總評與購買指南</a>·
+      <a href="/tech/920012/smart-glasses-comparison-guide">智慧眼鏡選購比較：六款主流機型實測</a>·
+      <a href="/tech/920013/note-taking-apps-2026">二〇二六年最值得付費的筆記軟體</a>·
+      <a href="/tech/920014/photo-library-cleanup-tools">相簿整理工具大全與自動化技巧</a>·
+      <a href="/tech/920015/rss-reader-revival">RSS 閱讀器復興：訂閱源整併與去重技巧</a>·
+      <a href="/tech/920016/ereader-buying-guide">電子閱讀器選購指南：面板、重量與續航實測</a>·
+      <a href="/tech/920017/highlight-sync-tools">跨平台標註同步服務比較與匯出格式整理</a>·
+      <a href="/tech/920018/offline-first-reading">離線優先的閱讀流程：通勤族的設定範例</a>·
+      <a href="/tech/920019/newsletter-inbox-triage">電子報收件匣分流：三種常見整理法比較</a>·
+      <a href="/tech/920020/reading-stats-dashboard">閱讀統計儀表板：數字好看但真的有用嗎</a>·
+      <a href="/tech/920021/annotation-export-formats">標註匯出格式懶人包：純文字與結構化的取捨</a>
+    </div>
+  </div>
+</article>
+</body>
+</html>
