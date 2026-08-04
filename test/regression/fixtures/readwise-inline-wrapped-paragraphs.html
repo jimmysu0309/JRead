@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  Readwise 匯出「文字包在 inline 子孫裡的段落 div」最小重現（v1.7.36）。
+  取材自 x.com longform 貼文（Draft.js）實際匯出 HTML 的結構骨架：
+    div.longform-unstyled           ← 外層 wrapper（block child → 不可標）
+      └ div.public-DraftStyleDefault-block   ← 真正的段落（零 direct text node）
+          └ span[data-offset-key]
+              └ span[data-text]  文字
+
+  舊 predicate 要求「direct text node」，這種形態零命中 → 匯出到 Readwise
+  段落全黏在一起（Jimmy 2026-08-04 截圖）。
+
+  控制組：
+  - #meta-contents：inline style display:contents（styler flatten 過的頁尾 meta
+    列）不是 block box，不可標
+  - #deep-block：直系 children 全 inline，但 <a> 內藏 <div>（HTML5 合法）→ 深掃
+    要抓到，不可標
+  - #figure-wrap：含 <figure> block child，不可標
+  - #short：文字不足 4 字，不可標
+-->
+<html>
+<body>
+  <article id="story">
+    <div id="para-wrap-1" class="longform-unstyled" style="margin-bottom: 16px !important;">
+      <div id="para-1" class="public-DraftStyleDefault-block" style="overflow: visible !important;"><span data-offset-key="6ntpe-0-0"><span data-text="true">昨晚我看了一部名為《普通人》的紀錄片。這部片貼身紀錄了 Jerry Seinfeld 結束個人電視秀四年後的生活。</span></span></div>
+    </div>
+    <div id="para-wrap-2" class="longform-unstyled" style="margin-bottom: 16px !important;">
+      <div id="para-2" class="public-DraftStyleDefault-block" style="overflow: visible !important;"><span data-offset-key="47erl-0-0"><span data-text="true">這部片處處是亮點。他開著全新的跑車在各個表演場地間狂飆，往返於他在市區的豪宅與那棟海邊莊園。</span></span></div>
+    </div>
+    <div id="figure-wrap" style="display: block !important;">
+      <figure><img alt="圖片" src="https://example.com/media.jpg"></figure>
+    </div>
+    <div id="meta-contents" style="display: contents !important;"><span>112.1萬</span><span>次查看</span></div>
+    <div id="deep-block"><a href="https://example.com/status/1"><div>這是被 a 包起來的 block 子孫，整段不該當段落</div></a></div>
+    <div id="short"><span>·</span></div>
+  </article>
+</body>
+</html>

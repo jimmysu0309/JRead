@@ -82,15 +82,28 @@
    * @param {object} [opts]
    * @param {'info'|'success'|'error'} [opts.kind='info']
    * @param {number} [opts.duration=2500] 顯示時間 ms
+   * @param {string} [opts.id] 同 id 的既有 toast 會被本次取代（v1.7.36）——
+   *   多步驟流程（快速鍵送出：送出中… → 產生摘要中… → 結果）用同一個 id，
+   *   讓後一則接替前一則的位置，而不是往下疊成一排殘影。
    * @returns {Element} toast 元素（測試用；一般無需 retain）
    */
   function show(message, opts) {
-    const { kind = 'info', duration = DEFAULT_DURATION } = opts || {};
+    const { kind = 'info', duration = DEFAULT_DURATION, id = '' } = opts || {};
     ensureHost();
+
+    // 同 id 的前一則立即移除（不做淡出——視覺上是「同一則換文字」）。
+    // 逐個比對 attribute 而非 querySelector：id 由訊息傳入、不保證是合法
+    // CSS identifier，selector 字串拼接會炸。
+    if (id) {
+      for (const prev of Array.from(stack.children)) {
+        if (prev.getAttribute('data-jread-toast-id') === id) prev.remove();
+      }
+    }
 
     const el = shadow.ownerDocument.createElement('div');
     el.className = 'toast ' + kind;
     el.textContent = message;
+    if (id) el.setAttribute('data-jread-toast-id', id);
     stack.appendChild(el);
 
     // 連兩個 rAF 確保 transition 啟動（直接 add 會和 initial state 同 frame）

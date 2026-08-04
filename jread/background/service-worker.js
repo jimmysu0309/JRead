@@ -500,11 +500,39 @@ if (browser.commands && browser.commands.onCommand) {
 //   4. 結果透過 SHOW_TOAST 訊息回傳 content script，由 toast 顯示
 // SW 沒 UI、結果只能靠 toast 反饋；toast 失敗（chrome:// 等禁止注入頁）silent
 // fail——使用者按快速鍵沒反應就是限制。
+//
+// v1.7.36：按下去當下就要有反應（Jimmy 2026-08-04）。原本整條流程只在最後
+// 吐一則結果 toast，抽 payload + Gemini 摘要 + 上傳可能跑好幾秒，中間完全無
+// 回饋、使用者不知道有沒有按到。改成與 popup 狀態列同步的三段式：
+//   送出中… → （有開摘要才有）產生摘要中… → 結果
+// 三則共用同一個 toast id，後一則取代前一則（不疊成一排殘影）；文字取自
+// popup-core SAVE_PROGRESS，與 popup 軌同一份事實。
 async function sendToReadwiseFromCommand(tabId) {
   const sendMessage = (id, m) => browser.tabs.sendMessage(id, m);
+  const { SAVE_PROGRESS, SAVE_PROGRESS_TOAST_ID, SAVE_PROGRESS_TOAST_MS } = self.__JReadPopup;
+  // 結果 / 錯誤 toast：帶同一個 id 取代進行中那則，並用預設顯示時間
   const showToast = (message, kind) => {
-    sendMessage(tabId, { type: 'SHOW_TOAST', payload: { message, kind } }).catch(() => {});
+    sendMessage(tabId, {
+      type: 'SHOW_TOAST',
+      payload: { message, kind, id: SAVE_PROGRESS_TOAST_ID }
+    }).catch(() => {});
   };
+  // 進行中 toast：同 id + 長顯示上限（結果一到就被取代）
+  const showProgress = (message) => {
+    sendMessage(tabId, {
+      type: 'SHOW_TOAST',
+      payload: {
+        message, kind: 'info',
+        id: SAVE_PROGRESS_TOAST_ID,
+        duration: SAVE_PROGRESS_TOAST_MS
+      }
+    }).catch(() => {});
+  };
+
+  // 0. 立刻回饋——大宗情境（已在閱讀模式按快速鍵）content script 已注入，
+  //    這則會馬上出現。未注入的頁面此則 silent fail，改由步驟 1 toggle 成功
+  //    後補一則（那時 content script 才存在）。
+  showProgress(SAVE_PROGRESS.sending);
 
   // 1. 確認 reader mode 啟動；未啟動則先 toggle
   let state;
@@ -529,6 +557,9 @@ async function sendToReadwiseFromCommand(tabId) {
     // async）。800ms 對多數站夠；harness 實測 cleaner 跑 100-300ms + styler
     // 立即注入 + 安全 buffer。
     await new Promise(r => setTimeout(r, 800));
+    // v1.7.36：步驟 0 那則多半送不到（當時 content script 還沒注入），
+    // 此刻補一則——同 id，已顯示的話不會變兩則。
+    showProgress(SAVE_PROGRESS.sending);
   }
 
   // 2. 抽 reader card payload
@@ -568,12 +599,15 @@ async function sendToReadwiseFromCommand(tabId) {
   // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（兩服務共用）。失敗 fallback 照送。
   const p = extracted.payload || {};
   if (settings.readwiseSummary && settings.geminiApiKey && p.text) {
+    showProgress(SAVE_PROGRESS.summarizing);
     try {
       const sum = await generateGeminiSummary({
         apiKey: settings.geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text
       });
       if (sum && sum.ok) p.summary = sum.summary;
     } catch (_) { /* 摘要失敗不阻斷 */ }
+    // 摘要階段結束、回到「送出中…」（與 popup 狀態列同序）
+    showProgress(SAVE_PROGRESS.sending);
   }
   let result;
   try {

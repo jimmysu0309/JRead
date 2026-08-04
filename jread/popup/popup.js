@@ -755,7 +755,7 @@ editBtn.addEventListener('click', async () => {
 
 readwiseBtn.addEventListener('click', async () => {
   readwiseBtn.disabled = true;
-  setReadwiseStatus('送出中…', 'info');
+  setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.sending, 'info');
 
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') {
@@ -800,7 +800,7 @@ readwiseBtn.addEventListener('click', async () => {
   // 三句摘要塞進 payload.summary（兩服務共用——Readwise 對映 summary、Instapaper
   // 對映 description）。任何失敗都 fallback 不帶 summary 照送，不阻斷儲存。
   if (cfg.readwiseSummary && cfg.geminiApiKey && extracted.payload && extracted.payload.text) {
-    setReadwiseStatus('產生摘要中…', 'info');
+    setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.summarizing, 'info');
     try {
       const sum = await window.__JReadPopup.generateGeminiSummary({
         apiKey: cfg.geminiApiKey,
@@ -811,7 +811,7 @@ readwiseBtn.addEventListener('click', async () => {
       });
       if (sum && sum.ok) extracted.payload.summary = sum.summary;
     } catch (_) { /* 摘要失敗不阻斷，照送 */ }
-    setReadwiseStatus('送出中…', 'info');
+    setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.sending, 'info');
   }
 
   // v1.6.0：走 sendDocument dispatcher，在 popup（extension 頁）自己 fetch、不繞

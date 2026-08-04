@@ -639,6 +639,17 @@
     return archiveReaderDocument({ token: c.token, id, fetchImpl });
   }
 
+  // v1.7.36：送出流程的「進行中」文字。popup 狀態列與快速鍵 toast 共用同一份
+  // 事實——Jimmy 2026-08-04 回報快速鍵按下去只有最終結果、按當下沒反應；兩軌
+  // 各自寫死字串會 drift（結果文字已由 saveResultToast 收斂，進度文字同理）。
+  // SAVE_PROGRESS_TOAST_ID：快速鍵軌三則進度 toast 共用的 id，後一則取代前一則
+  // 而不是往下疊。SAVE_PROGRESS_TOAST_MS：進度 toast 的顯示上限——結果一到就被
+  // 同 id 取代，這個上限只是「流程中途死掉（SW 被回收 / 例外）不留孤兒 toast」
+  // 的保險。
+  const SAVE_PROGRESS = { sending: '送出中…', summarizing: '產生摘要中…' };
+  const SAVE_PROGRESS_TOAST_ID = 'jread-save';
+  const SAVE_PROGRESS_TOAST_MS = 15000;
+
   // 送出結果 → toast 文字 + kind（服務感知；SW 快速鍵軌與 popup 進階軌之外的
   // 訊息文字單一資料源）。serviceLabel 帶入服務名。existsOn200：Readwise 200=
   // 已存在、201=新建（Instapaper 無此區分，一律「已送到」）。
@@ -688,6 +699,9 @@
     getArticle,
     archiveDocument,
     saveResultToast,
+    SAVE_PROGRESS,
+    SAVE_PROGRESS_TOAST_ID,
+    SAVE_PROGRESS_TOAST_MS,
     validateGeminiKey,
     buildSummaryPrompt,
     extractGeminiText,
