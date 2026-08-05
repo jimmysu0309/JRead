@@ -173,6 +173,23 @@
     return { next: next, entry: entry };
   }
 
+  // v1.7.41（P2）：把其他分頁寫入 storage 的 readingPositions 合併進本分頁的
+  // memMap。兩分頁同時可見（並排視窗 / Split View）時 visibilitychange 不觸發、
+  // v1.6.24 的可見時 re-seed 接不到——各分頁持 stale 快照整包覆蓋 readingPositions
+  // 會互抹 entry（A 分頁關閉後 B 持續以缺 A entry 的快照寫回 → A 位置永久遺失）。
+  // 合併策略：以 storage 的 newValue 為基底（其他分頁的 entry 全收），本分頁自己
+  // 的 entry 取 ts 較新者保留（自己剛捲動、debounce 還沒 flush 時 memMap 比
+  // storage 新，不能被舊值蓋回）。純函式供 jsdom spec 直測。
+  function mergeExternalMap(mem, incoming, ownKey) {
+    const next = Object.assign({}, incoming || {});
+    if (ownKey && mem && mem[ownKey]) {
+      const own = mem[ownKey];
+      const inc = next[ownKey];
+      if (!inc || (own.ts || 0) >= (inc.ts || 0)) next[ownKey] = own;
+    }
+    return next;
+  }
+
   // ---- DOM 模組 ----
 
   let sessionKey = null;   // 進入閱讀模式時的 urlKey（SPA 換頁後 location 已變，flush 必須用進場時的 key）
@@ -348,6 +365,16 @@
     }
   }
 
+  // v1.7.41（P2）：storage.onChanged 即時合併其他分頁的寫入（詳見 mergeExternalMap
+  // 註解）。session 期間才掛（installListeners / removeListeners 生命週期一致）。
+  // 自己的寫入也會觸發——merge 冪等（newValue 已含自己剛寫的 entry、ts 相同取
+  // memMap 版本，結果不變）。
+  function onStorageChanged(changes, area) {
+    if (area !== 'local' || !changes || !changes[STORAGE_KEY]) return;
+    if (!sessionKey || !memMap) return;
+    memMap = mergeExternalMap(memMap, changes[STORAGE_KEY].newValue, sessionKey);
+  }
+
   function installListeners() {
     if (listening) return;
     // capture phase：必須先於 keyguard 收到 keydown（keyguard 對非 ESC 鍵
@@ -359,6 +386,12 @@
     }
     window.addEventListener('pagehide', flushNow);
     document.addEventListener('visibilitychange', onVisibilityChange);
+    try {
+      if (contextValid() && browser.storage.onChanged &&
+          typeof browser.storage.onChanged.addListener === 'function') {
+        browser.storage.onChanged.addListener(onStorageChanged);
+      }
+    } catch (_) { /* onChanged 不可用（孤兒 context 等）→ 退化為舊行為 */ }
     listening = true;
   }
   function removeListeners() {
@@ -369,6 +402,13 @@
     }
     window.removeEventListener('pagehide', flushNow);
     document.removeEventListener('visibilitychange', onVisibilityChange);
+    try {
+      if (typeof browser !== 'undefined' && browser && browser.storage &&
+          browser.storage.onChanged &&
+          typeof browser.storage.onChanged.removeListener === 'function') {
+        browser.storage.onChanged.removeListener(onStorageChanged);
+      }
+    } catch (_) { /* 對稱移除 best-effort */ }
     listening = false;
   }
 
@@ -505,6 +545,7 @@
     computeExitScrollTop,
     shouldPersist,
     computeNextMap,
+    mergeExternalMap,
     beginSession,
     endSession,
     setDays,

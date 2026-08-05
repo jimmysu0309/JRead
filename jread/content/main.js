@@ -91,6 +91,11 @@
   function onEscKey(e) {
     if (e.key !== 'Escape' && e.code !== 'Escape') return;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    // v1.7.41（M3）：懸浮圖示長按面板開啟時，ESC 讓 floating-icon 的
+    // panelKeyHandler 關面板——本 listener 註冊早、capture phase 先執行，
+    // 不讓位會 stopPropagation + 同時退出閱讀模式（一顆 ESC 撞兩層 UI）。
+    if (NS.floating && typeof NS.floating.isPanelOpen === 'function' &&
+        NS.floating.isPanelOpen()) return;
     const ae = document.activeElement;
     if (ae) {
       const tag = ae.tagName;
@@ -425,6 +430,12 @@
   async function enterGenericReaderMode(result, silent) {
     void silent; // generic path 目前無 toast；參數保留語意對齊三分支
     const settings = await getSettings();
+    // v1.7.41（M2）：await 期間 SPA 真導航會把 result.el 從 DOM 拆掉——
+    // onSpaRouteChange 在這個空窗看到 active=false 判定無事並更新 _spaLastUrl，
+    // await 回來後若照跑會對 disconnected 元素完成整套 enter：active=true 但
+    // 畫面沒有卡片，800ms 輪詢也不會修正（URL 已被記成「處理過」）。與
+    // scheduleReapply 的 isConnected guard 同款慣例。
+    if (!result.el || !result.el.isConnected) return false;
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
     // v1.7.13：multi-block 文章——把 detector 識別的接續兄弟區塊移進 articleEl
@@ -561,13 +572,16 @@
     uninstallKeyguard();
     // v0.7.216：一律拆掉 Space 段落焦點卷動（listener + 指示條 + 進行中動畫）
     safeStep(() => { if (NS.spaceScroll) NS.spaceScroll.uninstall(); });
-    // v0.7.227：一律拆掉翻頁模式（listener + 頁碼指示 + 還原文件卷動位置）。
-    // 必須在 styler.restore 之前呼叫——uninstall 內的 scrollTo 還原排在
-    // rAF，等本輪同步的 restore 移除 overflow hidden 後文件才可卷動。
-    // resetPosition：退出 reader mode = 閱讀 session 結束，下次進入從第一頁起。
+    // v0.7.227：一律拆掉翻頁模式（listener + 頁碼指示）。必須在 styler.restore
+    // 之前呼叫。resetPosition：退出 reader mode = 閱讀 session 結束，下次進入
+    // 從第一頁起。
+    // v1.7.41（P3b）：savedScrollY 還原改由本函式在 styler.restore 之後**同步**
+    // 執行（deferScrollRestore 拿回 y）——舊版 uninstall 內排 rAF，背景分頁 rAF
+    // 被 throttle / 凍結（v0.8.84 教訓），晚到的 scrollTo 會打在還原後的新狀態上。
+    let pagedExitScrollY = 0;
     safeStep(() => {
       if (NS.pagedMode) {
-        NS.pagedMode.uninstall();
+        pagedExitScrollY = NS.pagedMode.uninstall({ deferScrollRestore: true }) || 0;
         NS.pagedMode.resetPosition();
       }
     });
@@ -582,6 +596,10 @@
       return;
     }
     safeStep(() => { if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles); });
+    // v1.7.41（P3b）：styler.restore 已移除 overflow hidden、文件恢復可捲動——
+    // 同步還原進場前的卷動位置（fallback；退出捲動同步 anchor 存在時 uninstall
+    // 回 0，捲動由後面的 applyExitScrollAnchor 接管）。
+    safeStep(() => { if (pagedExitScrollY > 0) window.scrollTo(0, pagedExitScrollY); });
     safeStep(() => { if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls); });
     // v1.7.13：把 multi-block 吸收的接續兄弟區塊移回原位。必須在 styler /
     // cleaner restore 之後——restore 作用於「區塊仍在 articleEl 內」的狀態，
@@ -605,9 +623,20 @@
     document.querySelectorAll('[data-jread-injected-title="1"]').forEach(el => el.remove());
     document.querySelectorAll('[data-jread-promoted-title-source="1"]').forEach(el => {
       el.removeAttribute('data-jread-promoted-title-source');
+      // v1.7.41（D5）：detector hide 時 snapshot 過原 inline display（站方 JS 設過
+      // `style="display:flex"` 之類）→ 寫回原值；沒 snapshot（原本無 inline display）
+      // 才 removeProperty。舊版一律 removeProperty 會把站方 inline 值洗掉、退出後
+      // 原頁被永久改變（違反「退出完全還原」不變式；cleaner hide() 一直有 snapshot）。
       if (el.style && typeof el.style.removeProperty === 'function') {
-        el.style.removeProperty('display');
+        const prev = el.getAttribute('data-jread-prev-display');
+        if (prev !== null && typeof el.style.setProperty === 'function') {
+          el.style.setProperty('display', prev, el.getAttribute('data-jread-prev-display-priority') || '');
+        } else {
+          el.style.removeProperty('display');
+        }
       }
+      el.removeAttribute('data-jread-prev-display');
+      el.removeAttribute('data-jread-prev-display-priority');
     });
     document.querySelectorAll('[data-jread-promoted-title="1"]').forEach(el => {
       el.removeAttribute('data-jread-promoted-title');
@@ -1191,7 +1220,9 @@
     if (NS.spaceScroll) NS.spaceScroll.uninstall();
     // 翻頁模式鎖垂直捲動、Space / 方向鍵接管為翻頁，與編輯模式 hover 衝突——
     // 暫時 uninstall，restore 時依 settings 重新 sync（重算頁數）。
-    if (NS.pagedMode) NS.pagedMode.uninstall();
+    // v1.7.41（P3a）：suspend 語意——不消費 savedScrollY / 不捲動，保留給
+    // 之後真退出的 fallback 捲回（詳見 paged-mode.js uninstall 註解）。
+    if (NS.pagedMode) NS.pagedMode.uninstall({ suspend: true });
   }
 
   async function restoreReaderInteractions() {

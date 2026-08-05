@@ -169,6 +169,12 @@
           return;
         }
         renderArticle(r.doc, { NS, doc });
+      }, (err) => {
+        // v1.7.41（R1）：getArticle reject（iOS 偶發 / renderArticle 上游同步 throw
+        // 包成 rejection）要 surface，不要永遠卡「載入中」——與 reader-feed.js
+        // listDocuments 的雙 handler 同一教訓。外層 .catch 只接得到 storage 讀取
+        // 那段（本 Promise 沒 return 進外層 chain）。
+        setStatus('載入失敗：' + String(err && err.message || err), true);
       });
     }).catch(() => setStatus('讀取設定失敗，請重新整理', true));
   }

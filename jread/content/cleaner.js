@@ -2433,18 +2433,26 @@
       // 邏輯（iconCount、textLen 等仍會把關）。
       const directChildren = Array.from(el.children);
       if (directChildren.length > 0) {
+        // v1.7.41（C3）：SVG 元素的 tagName 是小寫 'svg'（SVG namespace 不做
+        // HTML 的大寫正規化），舊寫法 `tagName === 'SVG'` 恆 false——interactive
+        // 計數對「直接子是裸 svg icon」的 row 恆算 0。改 localName 比對
+        //（v1.6.24 修過同型坑，此處殘留；下方 iconCount 的 CSS selector 'svg'
+        // 一直是對的，兩處不一致即無意 drift 的證據）。
         const interactiveCount = directChildren.filter(c =>
-          c.tagName === 'BUTTON' || c.tagName === 'SVG' ||
+          c.tagName === 'BUTTON' || c.localName === 'svg' ||
           (c.getAttribute && c.getAttribute('role') === 'button')
         ).length;
         if (interactiveCount / directChildren.length < 0.5) {
-          const selfText = (el.textContent || '').trim();
+          // v1.7.41（C4）：raw textContent 含 HTML 縮排 whitespace，多行排版的
+          // action bar raw 長度會灌爆門檻——量法統一走 norm()（與 :2705 姊妹
+          // rule 及 sidebar / button-cluster 規則同一把尺）。
+          const selfText = norm(el.textContent);
           if (selfText.length >= 20) continue;
           // 文字極短：shell short-circuit，繼續走後面 iconCount/textLen 檢查
         }
       }
 
-      const text = (el.textContent || '').trim();
+      const text = norm(el.textContent);
       if (text.length > ACTION_TEXT_MAX) continue;
 
       const iconCount = el.querySelectorAll('button, [role="button"], svg').length;
@@ -2813,7 +2821,7 @@
       }
       if (hasVisibleBlocker) continue;
 
-      const text = (el.textContent || '').trim();
+      const text = norm(el.textContent);
       if (text.length > SPACER_TEXT_MAX) continue;
 
       const rect = el.getBoundingClientRect();
@@ -6726,21 +6734,25 @@
   }
 
   // 單一資料源：靜態（clean）與動態（observer）共用。root = 命中的 .jwplayer。
+  // v1.7.41（C5）：回傳「是否有處理」（hide 成功 / wrapper 已 hide 過視為已處理）
+  // ——checkDynamicNoise 據此決定要不要 early return（guard 擋下時不可 return，
+  // 否則同批注入的其他雜訊全跳過）。靜態 caller 忽略回傳值，語意不變。
   function hideVideoPlayerWidgetFrom(root, articleEl, hidden) {
-    if (!root || root === articleEl) return;
-    if (root.contains && root.contains(articleEl)) return;
-    if (isInPreserved(root)) return;
+    if (!root || root === articleEl) return false;
+    if (root.contains && root.contains(articleEl)) return false;
+    if (isInPreserved(root)) return false;
     const wrapper = pickVideoWidgetWrapper(root, articleEl);
-    if (!wrapper || wrapper === articleEl) return;
-    if (wrapper.contains && wrapper.contains(articleEl)) return;
-    if (wrapper.dataset && wrapper.dataset.jreadHidden === '1') return;
+    if (!wrapper || wrapper === articleEl) return false;
+    if (wrapper.contains && wrapper.contains(articleEl)) return false;
+    if (wrapper.dataset && wrapper.dataset.jreadHidden === '1') return true;
     // 雙保險：wrapper 誤含實質主文段落（>= 100 chars 的 <p>，不在播放器 root
     // 內）→ ratio 漏判時不 hide，避免吞主文
     for (const p of wrapper.querySelectorAll('p')) {
       if (root.contains(p)) continue;
-      if (norm(p.textContent).length >= 100) return;
+      if (norm(p.textContent).length >= 100) return false;
     }
     hide(wrapper, hidden);
+    return true;
   }
 
   function hideInsideArticleVideoPlayerWidgets(articleEl, hidden) {
@@ -7400,10 +7412,15 @@
     // hide（祖先補查涵蓋「先空殼後 hydrate」時序）。命中即停（observer 每次處理一
     // 個 node）。
     if (asideIsSecondaryArticleBlock(node, articleEl)) { hide(node, hiddenList); return; }
+    // v1.7.41（C5）：迴圈掃完所有 aside 再 return（舊版掃到第一個命中就 return，
+    // 同批注入含多個 aside / 其他雜訊時全跳過）；且「有 hide 才 return」——
+    // 什麼都沒 hide 就落下去讓後續分支處理同批的其他雜訊型態。
     if (node.querySelectorAll) {
+      let hidAside = false;
       for (const a of node.querySelectorAll('aside')) {
-        if (asideIsSecondaryArticleBlock(a, articleEl)) { hide(a, hiddenList); return; }
+        if (asideIsSecondaryArticleBlock(a, articleEl)) { hide(a, hiddenList); hidAside = true; }
       }
+      if (hidAside) return;
     }
     if (node.closest) {
       const ancAside = node.closest('aside');
@@ -7413,14 +7430,19 @@
     // 實例化，`.jwplayer` 此刻才出現）——observer subtree 捕捉到新增的 `.jwplayer`
     // 即從注入點 hide 整個 widget wrapper（與靜態 hideInsideArticleVideoPlayerWidgets
     // 共用 hideVideoPlayerWidgetFrom）。node 自身 / 其內任一 `.jwplayer` 都查。
+    // v1.7.41（C5）：「有 hide 才 return」——guard 擋下（例如 wrapper 誤含主文段落）
+    // 時舊版仍 return，同批 addedNode 的 keyword container / button / heading 全
+    // 漏清（React / Shinkansen 整棵 wrapper re-append 場景）。以下 recommendation /
+    // Substack 分支同款修法。
     if (node.matches && node.matches(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
-      hideVideoPlayerWidgetFrom(node, articleEl, hiddenList); return;
+      if (hideVideoPlayerWidgetFrom(node, articleEl, hiddenList)) return;
     }
     if (node.querySelector && node.querySelector(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
+      let hidJw = false;
       for (const jw of node.querySelectorAll(VIDEO_PLAYER_WIDGET_ROOT_SEL)) {
-        hideVideoPlayerWidgetFrom(jw, articleEl, hiddenList);
+        if (hideVideoPlayerWidgetFrom(jw, articleEl, hiddenList)) hidJw = true;
       }
-      return;
+      if (hidJw) return;
     }
     // Substack recommendation footer lazy 注入兜底（與靜態 hideRecommendationWidgets
     // 單一資料源）——React 端常在 clean() 之後才 render 文末推薦卡，class 是 hash、
@@ -7430,10 +7452,11 @@
       if (hideRecommendationWidgetFrom(node, articleEl, hiddenList)) return;
     }
     if (node.querySelector && node.querySelector(RECOMMENDATION_WIDGET_SEL)) {
+      let hidRec = false;
       for (const el of node.querySelectorAll(RECOMMENDATION_WIDGET_SEL)) {
-        hideRecommendationWidgetFrom(el, articleEl, hiddenList);
+        if (hideRecommendationWidgetFrom(el, articleEl, hiddenList)) hidRec = true;
       }
-      return;
+      if (hidRec) return;
     }
     // Substack 平台 widget（reaction bar / digest 推薦卡 / 分享 CTA 說明）lazy 注入
     // 兜底（與靜態 hideSubstackPlatformNoise 單一資料源）——React 端常在 clean() 之後
@@ -7442,10 +7465,11 @@
       if (hideSubstackPlatformNoiseFrom(node, articleEl, hiddenList)) return;
     }
     if (node.querySelector && node.querySelector(SUBSTACK_PLATFORM_NOISE_SEL)) {
+      let hidSub = false;
       for (const el of node.querySelectorAll(SUBSTACK_PLATFORM_NOISE_SEL)) {
-        hideSubstackPlatformNoiseFrom(el, articleEl, hiddenList);
+        if (hideSubstackPlatformNoiseFrom(el, articleEl, hiddenList)) hidSub = true;
       }
-      return;
+      if (hidSub) return;
     }
     // Substack reaction bar（文末「N Likes / N Restacks」）lazy 注入兜底——
     // 與靜態 hideInsideArticleReactionBars 共用 isReactionCountBar。React 端

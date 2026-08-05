@@ -494,6 +494,7 @@ toggleBtn.addEventListener('click', async () => {
   });
 
   if (result.ok) {
+    closePanel(); // v1.7.41（R2）：panel 模式自關無效（iframe 內），要 postMessage 收浮層；非 panel 時 closePanel 自身 no-op
     flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
     window.close();
   } else {
@@ -555,6 +556,7 @@ readerBtn.addEventListener('click', async () => {
   try {
     await browser.tabs.create({ url: browser.runtime.getURL('reader/reader.html') });
   } catch (_) { /* tabs.create 失敗（極罕見）靜默吞掉 */ }
+  closePanel(); // v1.7.41（R2）：panel 模式自關無效（iframe 內），要 postMessage 收浮層；非 panel 時 closePanel 自身 no-op
   flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();
 });
@@ -736,6 +738,7 @@ borderlessBtn.addEventListener('click', async () => {
   try {
     await browser.tabs.sendMessage(tabId, { type: 'TOGGLE_YT_BORDERLESS' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
+  closePanel(); // v1.7.41（R2）：panel 模式自關無效（iframe 內），要 postMessage 收浮層；非 panel 時 closePanel 自身 no-op
   flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();
 });
@@ -749,6 +752,7 @@ editBtn.addEventListener('click', async () => {
   try {
     await browser.tabs.sendMessage(tabId, { type: 'EDIT_MODE_TOGGLE' });
   } catch (_) { /* content script 沒注入時 silently fail */ }
+  closePanel(); // v1.7.41（R2）：panel 模式自關無效（iframe 內），要 postMessage 收浮層；非 panel 時 closePanel 自身 no-op
   flushPendingSave(); // 自家 close 路徑明確 flush，不賭 pagehide 時序
   window.close();
 });

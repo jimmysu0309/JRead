@@ -100,7 +100,14 @@
   // content script 環境：立即安裝（namespace.js 先載入，NS.safeSendMessage /
   // NS.MSG 已就緒；spec 的 require 走 Node，無 window / chrome，不進這段）
   if (typeof window !== 'undefined' && typeof browser !== 'undefined' && browser.runtime) {
-    const NS = window.__JRead = window.__JRead || {};
+    const NS = window.__JRead;
+    // v1.7.41（G1）：namespace 缺席即 bail——觸發時的 fallback 路徑用 NS.MSG /
+    // NS.safeSendMessage，缺席時是 TypeError；與其他 content 模組「!NS 即 bail」
+    // 慣例一致（舊寫法 `window.__JRead || {}` 會做出一個空 namespace 假象）。
+    // 防重複注入 guard（比照 custom-shortcuts）：重複注入時 touchstart/touchend
+    // 各掛兩份，3 指輕點會 toggle 兩次（開＋關＝看起來沒反應）。
+    if (NS && !NS._touchGesturesInstalled) {
+      NS._touchGesturesInstalled = true;
     // v0.8.157：threeFingerTap 設定（預設 false）動態查——listener 常駐，停用時
     // 命中不觸發。讀一次快取、onChanged 即時更新（storage 失效時保守留 false）。
     // v0.8.164：browser.storage.sync.get 原生 Promise（reject 保守留 false）。
@@ -131,5 +138,6 @@
         payload: { command: 'toggle-reader-mode' }
       });
     }, () => threeFingerEnabled);
+    }
   }
 })(typeof window !== 'undefined' ? window : globalThis);

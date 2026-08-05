@@ -315,7 +315,8 @@ describe('position-memory — main.js wiring（結構性順序）', () => {
     assert.ok(m, 'main.js 必須有 exitReaderModeImpl');
     const body = m[0];
     const end = body.indexOf('positionMemory.endSession');
-    const uninstall = body.indexOf('NS.pagedMode.uninstall()');
+    // v1.7.41（P3b）：exit 路徑改傳 { deferScrollRestore: true }，比對不含引數
+    const uninstall = body.indexOf('NS.pagedMode.uninstall(');
     const restore = body.indexOf('NS.styler.restore');
     assert.ok(end !== -1, 'exitReaderModeImpl 必須呼叫 endSession（flush 最後位置）');
     assert.ok(end < uninstall,

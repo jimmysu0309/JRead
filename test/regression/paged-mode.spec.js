@@ -1484,7 +1484,8 @@ describe('翻頁模式（v0.7.227）', () => {
     });
 
     it('exitReaderModeImpl 必須 uninstall 翻頁模組 + resetPosition', () => {
-      assert.ok(/NS\.pagedMode\.uninstall\(\)/.test(MAIN_SRC), '須呼叫 NS.pagedMode.uninstall()');
+      // v1.7.41（P3b）：exit 路徑改傳 { deferScrollRestore: true }，比對允許引數
+      assert.ok(/NS\.pagedMode\.uninstall\(/.test(MAIN_SRC), '須呼叫 NS.pagedMode.uninstall()');
       assert.ok(/NS\.pagedMode\.resetPosition\(\)/.test(MAIN_SRC), '須呼叫 NS.pagedMode.resetPosition()');
     });
 
@@ -1593,7 +1594,8 @@ describe('翻頁模式（v0.7.227）', () => {
     });
 
     it('uninstall：取消 pending resizeRaf + 消費後歸零 savedScrollY', () => {
-      const m = PAGED_SRC.match(/function uninstall\(\)\s*\{([\s\S]*?)\n {2}\}/);
+      // v1.7.41（P3）：uninstall 簽名加 opts（suspend / deferScrollRestore）
+      const m = PAGED_SRC.match(/function uninstall\(opts\)\s*\{([\s\S]*?)\n {2}\}/);
       assert.ok(m, '抓不到 uninstall');
       assert.match(m[1], /if \(resizeRaf\)\s*\{\s*cancelAnimationFrame\(resizeRaf\)/,
         'uninstall 必須取消 pending resizeRaf（避免離開後 rAF 仍跑）');
