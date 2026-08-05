@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Timestamp rotator fixture — absolute 錨定豁免（v1.7.45）</title>
+  <!--
+    最小重現：新聞站「日期輪播」慣例結構（WaPo 實案抽象化、class 中性命名）。
+    裁切窗（position:relative + overflow:hidden、高一行）內兩個日期 span 疊放：
+    - 長版日期 in-flow inline-block，站方用 transform: translateY(-110%) 移出窗外
+    - 短版日期 position:absolute + left:0/top:0 錨在窗左上（唯一可見的那份）
+    reader 的全域 left/right:auto inset 清除（v0.7.48 商周 relative hack 修法）
+    若打到 absolute span，left 錨點被拔 → span 跳回 static position（nowrap 下排在
+    長版 span 右側、超出窗寬被 overflow:hidden 裁掉）→ 兩個 span 都不可見 = 日期消失。
+    position 全用 inline style——jsdom getComputedStyle 讀得到 inline，markAbsAnchors
+    的 computed position 量測在 jsdom 下可驗。
+  -->
+</head>
+<body>
+<main>
+  <article>
+    <h1>A fixture headline long enough to look like a real article title</h1>
+    <div class="meta-stamp" style="overflow: hidden;">
+      <time datetime="2026-08-03T10:00:00.000Z">
+        <div class="stamp-window" style="position: relative; overflow: hidden; white-space: nowrap;">
+          <span class="stamp-full" style="display: inline-block; transform: translateY(-110%);">August 3, 2026 at 6:00 a.m. EDT</span>
+          <span class="stamp-short" style="display: inline-block; position: absolute; left: 0; top: 0;">August 3, 2026</span>
+        </div>
+      </time>
+    </div>
+    <p>Like so many people curious about their family history, a reader submitted a DNA profile to a company that offers insight into ancestry and relatives. The results opened a door that had been closed for more than three decades, connecting distant cousins across state lines.</p>
+    <p>Investigators say they believe the woman, whose case had gone unsolved for thirty-five years, was between seventeen and twenty-five years old when she was found. Detectives revisited the file after new genealogy techniques became widely available to police departments.</p>
+    <p>The case has always been personal to the founder of a volunteer network that catalogs unsolved cases. On the afternoon the report first aired, she was traveling along the same highway and soon heard news reports about the discovery near the road she had taken.</p>
+    <p>Volunteers helped build a much broader group of online researchers over the years, cross-referencing records, yearbooks, and missing person reports from neighboring counties. The work continues to weigh on everyone involved, and progress often arrives in small increments.</p>
+    <p>Years of quiet effort produced dozens of leads that went nowhere, but the team kept detailed notes on every tip. When the laboratory finally returned a probable family match, detectives said the file moved faster in one month than it had in three decades.</p>
+    <p>Officials cautioned that a final confirmation still requires additional testing, but relatives have been contacted and reference samples collected. If the identification holds, the case would join a growing list of cold cases resolved through investigative genetic genealogy.</p>
+  </article>
+</main>
+</body>
+</html>

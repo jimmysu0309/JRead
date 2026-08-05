@@ -480,10 +480,23 @@ describe('styler — 骨架與可逆性', () => {
     // right: 90px（原站讓主圖向左溢出 col-md-7 邊界視覺擴張的 hack）。reader
     // mode 單欄 layout 不需要這個 offset、否則圖被推出 card padding 範圍。
     // 通則：reader card 內非保留清單元素的 left/right inset 一律清 auto。
-    assert.ok(/left\s*:\s*auto\s*!important/.test(body),
-      'rule body 必須含 left: auto !important（清商周 .Single-image 類 position:relative + left:-90px 視覺溢出 hack）');
-    assert.ok(/right\s*:\s*auto\s*!important/.test(body),
-      'rule body 必須含 right: auto !important（清商周 .Single-image 類 position:relative + right:90px 視覺溢出 hack）');
+    // v1.7.45：left/right 拆到獨立規則 + :not([data-jread-abs-anchor="1"]) 豁免
+    // ——absolute/fixed 元素的 left/right 是錨點、清掉會跳回 static position
+    // （WaPo 日期輪播 absolute left:0 span 被打飛出 overflow 裁切窗、日期消失）。
+    // forcing 兩層：(1) inset 清除規則仍存在（v0.7.48 商周場景不回歸）；
+    // (2) 該規則 selector 必含 abs-anchor 豁免（v1.7.45 WaPo 場景不回歸）。
+    const insetRules = [...css.matchAll(
+      /\[data-jread-active="1"\]\s+\*:not\([^)]+\)(?::not\([^)]+\))*(?::not\(\[[^\]]+\][^)]*\))*\s*\{([^\}]*)\}/g
+    )].filter((r) => /left\s*:\s*auto\s*!important/.test(r[1]));
+    const insetRule = insetRules.find((r) => r[0].includes(':not([data-jread-abs-anchor="1"])'));
+    assert.ok(insetRule,
+      '必須有 left/right: auto inset 清除規則且 selector 含 :not([data-jread-abs-anchor="1"])（v0.7.48 商周 hack 清除 + v1.7.45 absolute 錨定豁免）');
+    assert.ok(/right\s*:\s*auto\s*!important/.test(insetRule[1]),
+      'inset 清除規則 body 必須含 right: auto !important');
+    // 反向 forcing：border 規則本體不可再夾帶 left/right（回歸 = absolute 元素
+    // 失去豁免、WaPo 類日期再度消失）
+    assert.ok(!/left\s*:\s*auto/.test(body),
+      'border-width 規則不可夾帶 left: auto——left/right 清除必須走帶 abs-anchor 豁免的獨立規則');
   });
 
   // v0.7.49 修法：原站常用 width: 1152px / 1080px 等寫死寬度給 article detail
