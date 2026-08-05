@@ -78,7 +78,10 @@
     if (linkDensity(el, textLen) < LINK_DIR_LD_REJECT) return false;
     for (const p of el.querySelectorAll('p, li, blockquote, dd')) {
       const t = (p.innerText || p.textContent || '').replace(/\s+/g, ' ').trim();
-      if (t.length >= LINK_DIR_MIN_PARA_LEN) return false;
+      // v1.7.40：段落門檻改 CJK 權重（批次 2 review D2——raw 80 讓中文 40-79 字
+      // 導言不被認作段落，配高連結密度整頁誤 no-op；404 護欄不受影響：選單
+      // 連結文字短、權重後仍遠低於門檻，udn 404 頁 probe 實證兩版都 reject）
+      if (NS.cjkWeightedLen(t) >= LINK_DIR_MIN_PARA_LEN) return false;
     }
     return true;
   }
@@ -100,12 +103,9 @@
   const CONT_MAX_HOPS = 2;         // 從 articleEl 沿祖先鏈找「有接續兄弟的層級」的上限
   const CONT_MAX_BLOCKS = 10;      // 吸收數量保險上限
 
-  const CJK_CHAR_RE = /[㐀-䶿一-鿿぀-ヿ가-힯]/;
-  function cjkWeightedLen(str) {
-    let w = 0;
-    for (const ch of (str || '')) w += CJK_CHAR_RE.test(ch) ? 2 : 1;
-    return w;
-  }
+  // v1.7.40：實作上提到 NS.cjkWeightedLen（批次 2 review D2——單一資料源，
+  // namespace.js findCardTitleHeading 原本的無權重雙實作一併收斂）。
+  const cjkWeightedLen = NS.cjkWeightedLen;
 
   // v1.7.30 theatlantic 實測：regwall 晚注入的「newsletter 訂閱 + 訂閱雜誌
   // leaflet」aside（含 4 個 p、其中 2 個 >= 100 chars 的說明/法務文字）被本
@@ -134,8 +134,14 @@
     if (NEGATIVE_RE.test(marker)) return false;
     // 留言區結構特徵：含回覆輸入框
     if (el.querySelector && el.querySelector('textarea')) return false;
-    const textLen = scoredTextLen(el);
-    if (textLen < MIN_TEXT_LEN) return false;
+    // v1.7.40：總字數 gate 改 CJK 權重（批次 2 review D2——原 raw 200 與下方
+    // 段落權重門檻並存：兩段各 45 字中文（權重各 90 過段落門檻）總 raw ~120
+    // < 200 整塊被此 gate 擋掉，段落權重白做）。linkDensity 分母維持 raw
+    // （分子 <a> 文字也是 raw，同單位相除才有意義）。權重 >= raw 恆成立，
+    // 拉丁頁行為不變。
+    const text = scoredText(el);
+    const textLen = text.length;
+    if (cjkWeightedLen(text) < MIN_TEXT_LEN) return false;
     // 高連結密度 = 導覽 / 推薦列表，不是內文接續
     if (linkDensity(el, textLen) > CONT_MAX_LD) return false;
     // 至少 N 段實質段落（p / blockquote / dd）——排除純連結目錄與 UI chrome；
@@ -621,8 +627,11 @@
   // textLen 計分共用：祖先鏈 hidden 的元素一律計 0，避免 getText 對隱藏節點
   // fallback textContent 灌水通過字數門檻。可見元素照常用 getText——innerText
   // 在真實瀏覽器已排除內部隱藏子樹，jsdom 退回 textContent（fixture 知情）。
+  function scoredText(el) {
+    return isAncestorChainHidden(el) ? '' : getText(el);
+  }
   function scoredTextLen(el) {
-    return isAncestorChainHidden(el) ? 0 : getText(el).length;
+    return scoredText(el).length;
   }
 
   function seedScore(text) {
@@ -786,13 +795,12 @@
   // 後代）裡有 h1/h2 文字與 document.title 或 og:title 高度相符，代表該
   // h1/h2 就是本文標題——把主文容器升級到它與 articleEl 的共同 parent，
   // 使標題納入主文 scope。
+  // v1.7.40：實作合一到 NS.normalizeTitle（批次 2 review D3——原本本檔兩份
+  // 同名實作已 drift：此處只折標點、markPromotedTitleIfMissing 版多剝 `[...]`）。
+  // 折疊語意見 namespace.js；foldTitlePunct 刻意不折破折號，getCanonicalTitle
+  // 的站名尾綴 split 仍有效。
   function normalizeTitle(s) {
-    // v0.7.251：折疊 typographic 引號/撇號/刪節號到 ASCII（og:title 常 ASCII、
-    // 渲染 h1 常 smart-quote，strict 比對需同折疊）。getCanonicalTitle 折疊後
-    // 才切 `–—|` 站名尾綴——foldTitlePunct 刻意不折破折號，split 仍有效。
-    return (NS && NS.foldTitlePunct
-      ? NS.foldTitlePunct(s)
-      : (s || '').replace(/\s+/g, ' ').trim());
+    return NS.normalizeTitle(s);
   }
 
   function getCanonicalTitle() {
@@ -824,14 +832,11 @@
     return !!(h && h.closest && h.closest('a'));
   }
 
-  function titleMatches(target, text) {
-    // 雙向包含，避免 og:title / document.title / h1 互有冗餘前後綴的差異
-    if (!target || !text) return false;
-    if (target === text) return true;
-    if (target.length >= 8 && target.includes(text) && text.length >= target.length * 0.6) return true;
-    if (text.length >= 8 && text.includes(target) && target.length >= text.length * 0.6) return true;
-    return false;
-  }
+  // v1.7.40：titleMatches 實作合一到 NS.titleSimilar（批次 2 review D3/D4——
+  // 與 markPromotedTitleIfMissing 的 matchesBaseTitle 原是同一份事實的雙實作、
+  // 閾值已 drift（8 vs 5）；合一版 containment gate 改 CJK 權重，短中文標題
+  // 不再只剩 exact-match 一條路）。
+  const titleMatches = NS.titleSimilar;
 
   // ---- 邊界修正：多篇 article 兄弟時限縮到第一個 ----------------------
   // 場景：infinite-scroll 新聞站（news.ltn.com.tw 自由時報）、部分 archive
@@ -982,7 +987,9 @@
     while ((n = walker.nextNode())) {
       const tag = n.tagName;
       if (/^H[1-4]$/.test(tag)) return true;                      // heading 先出現 → 自帶標題
-      if (tag === 'P' && getText(n).length > 80) return false;    // 內文先出現 → 不自帶標題
+      // v1.7.40：substantial 段落門檻改 CJK 權重（批次 2 review D2——raw 80
+      // 讓中文 41-79 字段落全篇不計，誤判 self-titled 跳過 LCA promote）
+      if (tag === 'P' && cjkWeightedLen(getText(n)) > 80) return false; // 內文先出現 → 不自帶標題
     }
     return false;
   }
@@ -1354,15 +1361,12 @@
   function markPromotedTitleIfMissing(articleEl) {
     if (!articleEl || !articleEl.querySelectorAll) return;
 
-    // 取 og:title / docTitle 作為比對基準
+    // 取 og:title / docTitle 作為比對基準。
+    // v1.7.40：實作合一到 NS.normalizeTitle（批次 2 review D3）——本函式比對
+    // og:title vs 可見 text element，需先剝 `[...]` site prefix 再折標點
+    // （v0.7.251），用 stripBrackets 參數與主 detect path 版區分。
     function normalizeTitle(s) {
-      // v0.7.251：先去 `[...]` site prefix，再折疊 typographic 標點（見上方
-      // 同名函式註解）——markPromotedTitleIfMissing 同樣比對 og:title vs
-      // 可見 text element，smart-quote 不折疊會漏 match。
-      const stripped = (s || '').replace(/\[.*?\]/g, '');
-      return (NS && NS.foldTitlePunct
-        ? NS.foldTitlePunct(stripped)
-        : stripped.replace(/\s+/g, ' ').trim());
+      return NS.normalizeTitle(s, { stripBrackets: true });
     }
     const og = document.querySelector('meta[property="og:title"]')?.content || '';
     const docT = document.title || '';
@@ -1373,16 +1377,14 @@
     // page rounds B1）。去尾綴後最壞情況是 baseTitle 變短導致不注入（no-op
     // 降級），不會再注入錯誤標題。
     const baseTitle = normalizeTitle(NS.stripSiteSuffix(og)) || normalizeTitle(NS.stripSiteSuffix(docT));
-    if (!baseTitle || baseTitle.length < 5) return;
+    // v1.7.40：入口 gate 改 CJK 權重（批次 2 review D2/D4 同族——raw 5 讓
+    // 4 字中文標題整支函式 bail；權重後 3 字中文（6）即過、2 字（4）仍擋）
+    if (!baseTitle || NS.cjkWeightedLen(baseTitle) < 5) return;
 
-    // 文字是否等同 baseTitle（精確或雙向 60% 包含）
-    function matchesBaseTitle(t) {
-      if (!t || t.length < 5) return false;
-      if (t === baseTitle) return true;
-      if (t.includes(baseTitle) && baseTitle.length >= t.length * 0.6) return true;
-      if (baseTitle.includes(t) && t.length >= baseTitle.length * 0.6) return true;
-      return false;
-    }
+    // 文字是否等同 baseTitle。v1.7.40：實作合一到 NS.titleSimilar（批次 2
+    // review D3——與 titleMatches 原是雙實作、閾值 drift 8 vs 5；合一後
+    // containment gate 統一為 CJK 權重 8，超短 fragment 由 60% 長度比擋）
+    const matchesBaseTitle = (t) => NS.titleSimilar(baseTitle, t);
 
     // v0.8.3：guard 只在「可見 h1-h4 文字等同 baseTitle」時才放棄注入——代表
     // 真標題已以 heading 呈現。舊邏輯「articleEl 內有任何 non-hidden h1-h4 就

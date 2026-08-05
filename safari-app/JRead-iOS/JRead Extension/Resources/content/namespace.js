@@ -112,6 +112,46 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
         .trim();
     },
 
+    // v1.7.40：CJK 權重字數單一資料源（原 detector 內部實作上提；批次 2 review
+    // D2/D3）。動機：raw length 門檻按拉丁校準會系統性誤殺中文——中文資訊密度
+    // 約為拉丁 2 倍（44 字中文段落是完整段落，×2 = 88 過 80 門檻）。CJK 字元
+    // （漢字 + 擴充 A + 假名 + 諺文）權重 2、其餘權重 1。
+    // 注意：cleaner titleTextWeight 是另一套「權重 3 + 門檻 5」的短標題判定
+    // （v0.8.142 校準），語意不同、刻意不合併。
+    cjkWeightedLen(str) {
+      const RE = /[㐀-䶿一-鿿぀-ヿ가-힯]/;
+      let w = 0;
+      for (const ch of (str || '')) w += RE.test(ch) ? 2 : 1;
+      return w;
+    },
+
+    // v1.7.40：標題正規化單一資料源（批次 2 review D3——原 detector 內兩份
+    // 同名實作：主 detect path 版只折標點、markPromotedTitleIfMissing 版多剝
+    // `[...]` site prefix（v0.7.251），合一後用 stripBrackets 參數區分）。
+    normalizeTitle(s, opts) {
+      const stripped = (opts && opts.stripBrackets)
+        ? (s || '').replace(/\[.*?\]/g, '')
+        : (s || '');
+      return window.__JRead.foldTitlePunct(stripped);
+    },
+
+    // v1.7.40：標題相似比對單一資料源（批次 2 review D3/D4——原 detector 內
+    // titleMatches（8 字 gate）與 matchesBaseTitle（5 字 gate）兩實作已 drift，
+    // 合一為對稱雙向包含 + 60% 長度比）。
+    // containment gate 用 CJK 權重長度（D4）：中文標題長度中位數落在 4-7 字，
+    // raw 8 字 gate 讓短中文標題只剩 exact-match 一條路（h1 多空格 / 書名號 /
+    // 站方附加字即 miss）——zh.wikipedia「珍珠奶茶」H1 innerText「珍珠奶茶編輯」
+    // probe 實證 raw miss、權重（4×2=8）命中。拉丁字權重 1，gate 行為不變。
+    // 60% 長度比維持 raw：比值是同單位相除，權重化分子分母同乘無意義。
+    titleSimilar(a, b) {
+      if (!a || !b) return false;
+      if (a === b) return true;
+      const NSref = window.__JRead;
+      if (NSref.cjkWeightedLen(a) >= 8 && a.includes(b) && b.length >= a.length * 0.6) return true;
+      if (NSref.cjkWeightedLen(b) >= 8 && b.includes(a) && a.length >= b.length * 0.6) return true;
+      return false;
+    },
+
     // v0.8.74：送 Readwise 的「主標」單一資料源——從 reader card 找使用者實際
     // 看到的主標 heading 文字（main.js extractReaderTitle 呼叫）。
     //
@@ -156,7 +196,10 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
             if (t) return t;
           } else if (tag === 'P') {
             const raw = n.innerText != null ? n.innerText : n.textContent;
-            if ((raw || '').replace(/\s+/g, ' ').trim().length > 80) break;
+            // v1.7.40：內文長段落門檻改 CJK 權重（批次 2 review D2——原 raw 80
+            // 讓中文 41-79 字完整段落不被認作內文，其後的 section h2 被誤取為主標）
+            const t = (raw || '').replace(/\s+/g, ' ').trim();
+            if (window.__JRead.cjkWeightedLen(t) > 80) break;
           }
         }
       }
