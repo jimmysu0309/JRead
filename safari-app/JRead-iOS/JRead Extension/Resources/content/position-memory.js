@@ -490,30 +490,35 @@
     restore(key, articleEl);
   }
 
-  // 退出閱讀模式：flush 最後位置 + 停止追蹤。必須在 pagedMode.uninstall /
-  // styler.restore 之前呼叫（位置此刻才有效）。未開始 session 時 no-op。
-  function endSession() {
-    if (!sessionKey) return;
+  // v1.7.43 T11：session 收尾共用（endSession 與 setDays(0) 停用路徑原本各寫
+  // 一份、逐項重複）。flush=true 把最後位置立即落盤（flushNow 內含 saveTimer
+  // 清理）；flush=false 只停止追蹤、丟棄 pending 寫入（設定改 0 = 使用者要求
+  // 停用，既有記錄保留、不再寫入）。
+  function teardown(opts) {
+    if (opts && opts.flush) {
+      flushNow();
+    } else if (saveTimer) {
+      clearTimeout(saveTimer); saveTimer = null;
+    }
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
-    flushNow();
     removeListeners();
     sessionKey = null;
     articleEl = null;
     memMap = null; // 下次進場 restore 重新 seed（避免跨 session 用到舊快照）
   }
 
+  // 退出閱讀模式：flush 最後位置 + 停止追蹤。必須在 pagedMode.uninstall /
+  // styler.restore 之前呼叫（位置此刻才有效）。未開始 session 時 no-op。
+  function endSession() {
+    if (!sessionKey) return;
+    teardown({ flush: true });
+  }
+
   // 設定即時變更（storage.onChanged）。改成 0 = 停用：停止追蹤（既有記錄
   // 保留，效期判定在讀取端）；0 → 正值在下次進入閱讀模式生效。
   function setDays(v) {
     days = clampDays(v);
-    if (!(days > 0) && sessionKey) {
-      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-      if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
-      removeListeners();
-      sessionKey = null;
-      articleEl = null;
-      memMap = null;
-    }
+    if (!(days > 0) && sessionKey) teardown({ flush: false });
   }
 
   const api = {

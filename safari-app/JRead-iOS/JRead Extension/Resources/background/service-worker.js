@@ -609,7 +609,9 @@ async function sendToReadwiseFromCommand(tabId) {
   const { service, creds, ok } = resolveServiceCredentials(settings);
   const label = serviceLabel(service);
   if (!ok) {
-    showToast(`尚未設定 ${label} 憑證，請到設定頁填入`, 'error');
+    // v1.7.43：與結果 toast 同走 saveResultToast 單一資料源（credsPlace 用預設「設定頁」）
+    const t = saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, { serviceLabel: label });
+    showToast(t.message, t.kind);
     return;
   }
   // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（兩服務共用）。失敗 fallback 照送。

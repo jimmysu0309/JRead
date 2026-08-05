@@ -385,26 +385,30 @@
   // JRead 色（reader card 色不隨裝置 scheme 變，覆蓋後不論 Safari 選哪個都是 JRead
   // 色）。完全沒宣告時自建一個（Safari 預設用白底染 chrome，自建才染得到 reader 色）。
   // 回傳 snapshot 供 restore：created=true 的移除、其餘還原原 content。
-  function applyThemeColor(color) {
+  // v1.7.43 T11：meta tag 覆寫共用機制（theme-color / viewport 原兩段同構重複
+  // 收斂）。站上同名 meta 全部覆寫成 content（多宣告全蓋）、完全沒宣告時自建
+  // 一個；回傳 snapshot 供 restoreMetaTag：created=true 的移除、其餘還原原 content。
+  function overrideMetaTag(name, content) {
     if (typeof document === 'undefined') return null;
-    const snap = [];
     const head = document.head || document.documentElement;
-    const existing = head ? head.querySelectorAll('meta[name="theme-color"]') : [];
+    if (!head) return null;
+    const snap = [];
+    const existing = head.querySelectorAll('meta[name="' + name + '"]');
     if (existing && existing.length) {
       for (const m of existing) {
         snap.push({ el: m, prev: m.getAttribute('content'), created: false });
-        m.setAttribute('content', color);
+        m.setAttribute('content', content);
       }
-    } else if (head) {
+    } else {
       const m = document.createElement('meta');
-      m.setAttribute('name', 'theme-color');
-      m.setAttribute('content', color);
+      m.setAttribute('name', name);
+      m.setAttribute('content', content);
       head.appendChild(m);
       snap.push({ el: m, prev: null, created: true });
     }
     return snap;
   }
-  function restoreThemeColor(snap) {
+  function restoreMetaTag(snap) {
     if (!Array.isArray(snap)) return;
     for (const s of snap) {
       if (!s || !s.el) continue;
@@ -417,6 +421,9 @@
       }
     }
   }
+
+  function applyThemeColor(color) { return overrideMetaTag('theme-color', color); }
+  function restoreThemeColor(snap) { restoreMetaTag(snap); }
 
   // v0.8.139：正規化 host 頁 viewport meta = width=device-width, initial-scale=1。
   // iOS Safari（與其他行動瀏覽器）拿 viewport meta 算 layout viewport 寬度與初始
@@ -431,39 +438,8 @@
   // 覆蓋不到）。多個 viewport meta（理論少見）全部正規化。回傳 snapshot 供 restore：
   // created=true 的移除、其餘還原原 content。
   const READER_VIEWPORT = 'width=device-width, initial-scale=1';
-  function applyViewportFix() {
-    if (typeof document === 'undefined') return null;
-    const head = document.head || document.documentElement;
-    if (!head) return null;
-    const snap = [];
-    const existing = head.querySelectorAll('meta[name="viewport"]');
-    if (existing && existing.length) {
-      for (const m of existing) {
-        snap.push({ el: m, prev: m.getAttribute('content'), created: false });
-        m.setAttribute('content', READER_VIEWPORT);
-      }
-    } else {
-      const m = document.createElement('meta');
-      m.setAttribute('name', 'viewport');
-      m.setAttribute('content', READER_VIEWPORT);
-      head.appendChild(m);
-      snap.push({ el: m, prev: null, created: true });
-    }
-    return snap;
-  }
-  function restoreViewport(snap) {
-    if (!Array.isArray(snap)) return;
-    for (const s of snap) {
-      if (!s || !s.el) continue;
-      if (s.created) {
-        s.el.remove();
-      } else if (s.prev === null) {
-        s.el.removeAttribute('content');
-      } else {
-        s.el.setAttribute('content', s.prev);
-      }
-    }
-  }
+  function applyViewportFix() { return overrideMetaTag('viewport', READER_VIEWPORT); }
+  function restoreViewport(snap) { restoreMetaTag(snap); }
 
   // ---------------------------------------------------------------------------
   // v0.7.225：保留原站色容器的對比守門（contrast guard）
@@ -1602,10 +1578,11 @@ ${MEDIA_DIRECT_WRAP_SEL} {
    做 sidebar-style 圖文並排 layout（twreporter.org figcaption width: 180px
    配主文 480px 雙欄）。reader mode 下 figure 已被強制 block，圖說殘留固定
    180px 窄寬會被擠成「每行 1-2 字」的窄欄。
-   width: auto 拉回 block-level 預設 = 100% of parent；max-width: 100% 防上限
-   超出 figure。不碰 background/color/font——保留原站 typography hierarchy。 */
+   width: auto（拉回 block-level 預設 = 100% of parent）由上方 v1.6.20 position
+   hack 規則統一注入（figcaption 與後代全蓋，v1.7.43 移除此處重複宣告）；本條
+   專責 max-width: 100% 防上限超出 figure。不碰 background/color/font——保留
+   原站 typography hierarchy。 */
 [${ARTICLE_ATTR}="1"] figcaption {
-  width: auto !important;
   max-width: 100% !important;
 }${!theme.text ? `
 /* v0.8.123：light theme 圖說顏色加深。dark / sepia 下 figcaption 已由
@@ -2946,10 +2923,34 @@ html.${HTML_CLASS}.jread-orion body {
   // 共 680 字 vs 圖說 17px ×2 共 76 字 → 主流 22px、圖說被排除）。
   // 文字量加權（不用 div 個數）：caption 短、段落長，個數多數決在「圖多文少」
   // 的相簿型文章會選錯邊，字數加權不會。
+  // v1.7.43 T4：「元素在閱讀模式下可見」判定 + 第一個可見 h1 的單一資料源。
+  // 原本三處各自實作、判定標準各異：firstInk 逐層 computed display、
+  // titleFontSize 只查 data-jread-hidden attribute、kicker 錨點完全不查。
+  // 以最嚴格版為正典：不在 data-jread-hidden 子樹內、且自身到 articleEl 之間
+  // 無 display:none 祖先（站點原生隱藏的 heading / 分類標籤都不該當錨點）。
+  function isVisiblyShown(el, articleEl) {
+    if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
+    const win = articleEl.ownerDocument?.defaultView;
+    if (win && win.getComputedStyle) {
+      for (let a = el; a && a !== articleEl; a = a.parentElement) {
+        if (win.getComputedStyle(a).display === 'none') return false;
+      }
+    }
+    return true;
+  }
+  function firstVisibleH1(articleEl) {
+    for (const h of articleEl.querySelectorAll('h1')) {
+      if (isVisiblyShown(h, articleEl)) return h;
+    }
+    return null;
+  }
+
   function markTextDivs(articleEl) {
     const win = articleEl.ownerDocument?.defaultView;
     if (!win || !win.getComputedStyle) return [];
-    const INLINE_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR']);
+    // v1.7.43：tag 集收斂到 NS.INLINE_TEXT_TAGS 單一資料源（與 space-scroll
+    // 段落文字量計算共用；drift 史見 namespace.js 該常數註解）
+    const INLINE_TAGS = NS.INLINE_TEXT_TAGS;
     const candidates = [];
     for (const div of articleEl.querySelectorAll('div')) {
       // figure 內 div = 圖說/媒體結構；pre/code 內保留程式碼排版；
@@ -3553,18 +3554,21 @@ html.${HTML_CLASS}.jread-orion body {
         img.setAttribute(ICON_IMG_ATTR, '1');
         img.style.setProperty('max-width', Math.round(renderedW) + 'px', 'important');
       };
-      // 量 img 尺寸（natural 優先、不可靠時 fallback rect），>= CONTENT_IMG_MIN 即標
-      // content-img；回傳是否已標（含先前已標）。load listener 補標時重用。
+      // v1.7.43 T11：content 尺寸量測（natural 優先、不可靠時 rect fallback，
+      // 任一維 >= CONTENT_IMG_MIN）——tryMarkContentImg / tryMarkUpscaleImg
+      // 共用（原兩份逐字重複）
+      const measureIsContentSize = (img) => {
+        if ((img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
+            (img.naturalHeight || img.height) >= CONTENT_IMG_MIN) return true;
+        const r = img.getBoundingClientRect();
+        return r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
+      };
+      // 量 img 尺寸 >= CONTENT_IMG_MIN 即標 content-img；回傳是否已標（含先前
+      // 已標）。load listener 補標時重用。
       const tryMarkContentImg = (img) => {
         if (img.hasAttribute(CONTENT_IMG_ATTR)) return true;
         if (img.hasAttribute(INLINE_IMG_ATTR)) return false;
-        let big = (img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
-                  (img.naturalHeight || img.height) >= CONTENT_IMG_MIN;
-        if (!big) {
-          const r = img.getBoundingClientRect();
-          big = r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
-        }
-        if (big) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
+        if (measureIsContentSize(img)) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
         return false;
       };
       // v0.8.112：bare 內容圖（非 a 包）放大填滿欄寬。量 content-size（natural 優先、
@@ -3573,13 +3577,7 @@ html.${HTML_CLASS}.jread-orion body {
       const tryMarkUpscaleImg = (img) => {
         if (img.hasAttribute(UPSCALE_IMG_ATTR)) return true;
         if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return false;
-        let big = (img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
-                  (img.naturalHeight || img.height) >= CONTENT_IMG_MIN;
-        if (!big) {
-          const r = img.getBoundingClientRect();
-          big = r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
-        }
-        if (big) { img.setAttribute(UPSCALE_IMG_ATTR, '1'); upscaleImgs.push(img); return true; }
+        if (measureIsContentSize(img)) { img.setAttribute(UPSCALE_IMG_ATTR, '1'); upscaleImgs.push(img); return true; }
         return false;
       };
       // img 分類（inline emoji / content-img）。抽成 classifyImg 供「即時」與
@@ -4095,21 +4093,11 @@ html.${HTML_CLASS}.jread-orion body {
       // P "Opinion" 類別標籤——querySelector DOM order 比 H1 早命中，導致
       // firstInk 指向隱藏 P、後續 ancestor padding strip 和 titleFontSize
       // inline override 都因此 miss。
-      {
-        const _win = articleEl.ownerDocument?.defaultView;
-        for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
-          if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-          if (_win) {
-            let hidden = false;
-            for (let a = el; a && a !== articleEl; a = a.parentElement) {
-              const d = _win.getComputedStyle(a).display;
-              if (d === 'none') { hidden = true; break; }
-            }
-            if (hidden) continue;
-          }
-          firstInk = el;
-          break;
-        }
+      // v1.7.43：可見性判定收斂到 isVisiblyShown（與 firstVisibleH1 同一份標準）
+      for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
+        if (!isVisiblyShown(el, articleEl)) continue;
+        firstInk = el;
+        break;
       }
       if (firstInk) {
         firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
@@ -4135,6 +4123,10 @@ html.${HTML_CLASS}.jread-orion body {
           const bdirect = (el) => bnorm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
           // v1.7.4：相對日期切段比對（見 BYLINE_SEG_SPLIT_RE 常數註解）
           const brelDate = (s) => !!s && s.split(BYLINE_SEG_SPLIT_RE).some((seg) => BYLINE_REL_DATE_RE.test(seg.trim()));
+          // v1.7.43：純分隔符 item 判定（null-safe）——markRt 相鄰分隔符標記與
+          // 孤兒分隔符掃描共用（原兩份 micro-dup）
+          const bisSep = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
+            !el.querySelector('img, svg, picture, video');
           let firstBodyP = null;
           for (const p of articleEl.querySelectorAll('p')) {
             if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
@@ -4248,13 +4240,11 @@ html.${HTML_CLASS}.jread-orion body {
             //（日期優先於「去閱讀時間」）。
             const hasDateSignal = (el) =>
               BYLINE_DATE_RE.test(bnorm(el.textContent)) || brelDate(bdirect(el));
-            const isSepEl = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
-              !el.querySelector('img, svg, picture, video');
             const markRt = (el) => {
               if (!hasDateSignal(el)) {
                 setMark(el, BYLINE_RT_ATTR);
-                if (isSepEl(el.previousElementSibling)) setMark(el.previousElementSibling, BYLINE_SEP_ATTR);
-                if (isSepEl(el.nextElementSibling)) setMark(el.nextElementSibling, BYLINE_SEP_ATTR);
+                if (bisSep(el.previousElementSibling)) setMark(el.previousElementSibling, BYLINE_SEP_ATTR);
+                if (bisSep(el.nextElementSibling)) setMark(el.nextElementSibling, BYLINE_SEP_ATTR);
                 return;
               }
               for (const c of el.children) {
@@ -4423,14 +4413,12 @@ html.${HTML_CLASS}.jread-orion body {
               const items = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
               const isHiddenItem = (el) => el.hasAttribute(BYLINE_RT_ATTR) ||
                 el.hasAttribute(BYLINE_TIME_ATTR) || el.hasAttribute(BYLINE_PROGRAM_ATTR);
-              const isSep = (el) => BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
-                !el.querySelector('img, svg, picture, video');
               items.forEach((el, i) => {
-                if (!isSep(el)) return;
+                if (!bisSep(el)) return;
                 let prev = null;
-                for (let j = i - 1; j >= 0; j--) { if (!isSep(items[j])) { prev = items[j]; break; } }
+                for (let j = i - 1; j >= 0; j--) { if (!bisSep(items[j])) { prev = items[j]; break; } }
                 let next = null;
-                for (let j = i + 1; j < items.length; j++) { if (!isSep(items[j])) { next = items[j]; break; } }
+                for (let j = i + 1; j < items.length; j++) { if (!bisSep(items[j])) { next = items[j]; break; } }
                 if (!prev || isHiddenItem(prev) || !next || isHiddenItem(next)) {
                   setMark(el, BYLINE_SEP_ATTR);
                 }
@@ -4444,7 +4432,9 @@ html.${HTML_CLASS}.jread-orion body {
           // byline root 的 climb。href 不被翻譯 → 譯後 DOM 照樣命中（Shinkansen
           // 把「Business」譯成「商業」，wrapper 文字同步變、climb 仍成立）。獨立於
           // byline 偵測（無日期的頁面也要清 kicker）。restore 走 bylineMarks 移除標記。
-          const titleH1 = articleEl.querySelector('h1');
+          // v1.7.43：改取第一個「可見」h1（原本裸 querySelector——站點隱藏的
+          // 響應式重複 h1 在 DOM order 較早時，kicker 錨點會錨錯位置）
+          const titleH1 = firstVisibleH1(articleEl);
           if (titleH1) {
             const beforeTitle = (el) =>
               !!(el.compareDocumentPosition(titleH1) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -4809,7 +4799,7 @@ html.${HTML_CLASS}.jread-orion body {
       if (overrides.titleFontSize) {
         const titleH1 = firstInk && /^H1$/.test(firstInk.tagName)
           ? firstInk
-          : articleEl.querySelector('h1:not([data-jread-hidden="1"])');
+          : firstVisibleH1(articleEl);
         if (titleH1) {
           titleFsSnap = {
             el: titleH1,
@@ -4832,7 +4822,7 @@ html.${HTML_CLASS}.jread-orion body {
         const heroEl = articleEl.querySelector('[data-jread-injected-title="1"]')
           || (firstInk && /^H1$/.test(firstInk.tagName)
             ? firstInk
-            : articleEl.querySelector('h1:not([data-jread-hidden="1"])'));
+            : firstVisibleH1(articleEl));
         if (heroEl && floorPx > 0) {
           const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
           const cur = win ? (parseFloat(win.getComputedStyle(heroEl).fontSize) || 0) : 0;
@@ -5121,6 +5111,17 @@ html.${HTML_CLASS}.jread-orion body {
       {
         const win = articleEl.ownerDocument?.defaultView;
         if (win) {
+          // v1.7.43：橫向多欄容器判定——decolumnFrom / stackLopsidedImgCol /
+          // overflow-right 塌欄三處共用（原三份逐字重複）。只認
+          // flex-direction:row(-reverse) 或 >= 2 column track 的 grid：
+          // flex-column 本來就垂直堆疊、單欄 grid 沒分欄，不該被塌。
+          const isMultiColumnContainer = (cs) => {
+            const disp = cs.display;
+            if ((disp === 'flex' || disp === 'inline-flex') && /^row/.test(cs.flexDirection)) return true;
+            const cols = cs.gridTemplateColumns;
+            return (disp === 'grid' || disp === 'inline-grid') &&
+              !!cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
+          };
           // 對單一 anchor 沿祖先鏈塌分欄容器（長段落 / content img 共用同一邏輯）。
           // ratio = anchor 渲染寬 / 容器內容寬 的「塌欄門檻」：anchor 比這比例
           // 還窄才視為「真的被分欄擠窄」。長段落用 0.7（pull-quote / 縮排引言等
@@ -5137,13 +5138,7 @@ html.${HTML_CLASS}.jread-orion body {
                   !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
                   !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
                 const cs = win.getComputedStyle(cur);
-                const disp = cs.display;
-                const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
-                  /^row/.test(cs.flexDirection);
-                const cols = cs.gridTemplateColumns;
-                const isGridMulti = (disp === 'grid' || disp === 'inline-grid') &&
-                  cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
-                if (isFlexRow || isGridMulti) {
+                if (isMultiColumnContainer(cs)) {
                   const r = cur.getBoundingClientRect();
                   const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
                   const aw = anchor.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
@@ -5184,13 +5179,7 @@ html.${HTML_CLASS}.jread-orion body {
                   !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
                   !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
                 const cs = win.getComputedStyle(cur);
-                const disp = cs.display;
-                const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
-                  /^row/.test(cs.flexDirection);
-                const cols = cs.gridTemplateColumns;
-                const isGridMulti = (disp === 'grid' || disp === 'inline-grid') &&
-                  cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
-                if (isFlexRow || isGridMulti) {
+                if (isMultiColumnContainer(cs)) {
                   const r = cur.getBoundingClientRect();
                   const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
                   const childW = child.getBoundingClientRect().width;
@@ -5295,16 +5284,9 @@ html.${HTML_CLASS}.jread-orion body {
               if (textColSeen.has(el)) continue;
               if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
               const cs = win.getComputedStyle(el);
-              const disp = cs.display;
-              // 同 decolumnFrom 的容器判定：只認真做橫向並列的 flex-row /
-              // 多欄 grid——flex-column 本來就垂直堆疊、單欄 grid 沒分欄，不該
-              // 因「某後代溢出」被誤塌。
-              const isFlexRow = (disp === 'flex' || disp === 'inline-flex') &&
-                /^row/.test(cs.flexDirection);
-              const cols = cs.gridTemplateColumns;
-              const isGridMulti = (disp === 'grid' || disp === 'inline-grid') &&
-                cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
-              if (!isFlexRow && !isGridMulti) continue;
+              // 同 decolumnFrom 的容器判定（isMultiColumnContainer 共用）——
+              // flex-column / 單欄 grid 不該因「某後代溢出」被誤塌。
+              if (!isMultiColumnContainer(cs)) continue;
               let overflows = false;
               for (const c of el.children) {
                 const cr = c.getBoundingClientRect();

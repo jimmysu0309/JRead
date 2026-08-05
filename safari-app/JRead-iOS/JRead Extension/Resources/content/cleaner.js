@@ -489,6 +489,13 @@
     return (classList + ' ' + id).toLowerCase();
   }
 
+  // v1.7.43 T11：class 字串讀取統一（與 markerOf 同理由——SVG 的 className 是
+  // SVGAnimatedString，`(el.className || '').toString()` 會得 "[object ...]"
+  // 垃圾字串；一律走 classList）。不含 id、不轉小寫（供 regex 比對原樣 class）。
+  function classStrOf(el) {
+    return Array.from((el && el.classList) || []).join(' ');
+  }
+
   function shouldHideByKeyword(el) {
     const m = markerOf(el);
     if (!m.trim()) return false;
@@ -619,7 +626,7 @@
     if (!wrapper.querySelectorAll) return false;
     for (const el of wrapper.querySelectorAll('[class]')) {
       if (el === exclude) continue;
-      const cls = (el.className || '').toString();
+      const cls = classStrOf(el);
       if (!cls) continue;
       let hit = false;
       for (const tok of cls.split(/\s+/)) {
@@ -1628,10 +1635,10 @@
       if (TITLE_CLASS_NEGATIVE_RE.test(s)) return false;
       return TITLE_CLASS_HIT_RE.test(s);
     }
-    if (check((h1.className || '').toString())) return true;
+    if (check(classStrOf(h1))) return true;
     if (check(h1.id || '')) return true;
     const p = h1.parentElement;
-    if (p && check((p.className || '').toString())) return true;
+    if (p && check(classStrOf(p))) return true;
     return false;
   }
 
@@ -1642,10 +1649,10 @@
       if (TITLE_CLASS_NEGATIVE_RE.test(s)) return false;
       return TITLE_CLASS_STRICT_RE.test(s);
     }
-    if (check((h.className || '').toString())) return true;
+    if (check(classStrOf(h))) return true;
     if (check(h.id || '')) return true;
     const p = h.parentElement;
-    if (p && check((p.className || '').toString())) return true;
+    if (p && check(classStrOf(p))) return true;
     return false;
   }
 
@@ -1702,6 +1709,26 @@
     // 單一資料源：偵測邏輯住在 NS.isTranslatedPage（v0.8.138）。
     return !!(NS && NS.isTranslatedPage && NS.isTranslatedPage());
   }
+  // v1.7.43 T5：promote 用標題 clone 製作（promoteUniqueTitleH1Into 與
+  // promoteArticleTitleClassHeadingInto 共用；原兩份逐字重複）。掛
+  // data-jread-title-clone 標記、清 inline display:none 與 data-jread-hidden
+  // （從已被 hide 處理過的原 wrapper 繼承來的），再就地清 clone 內雜訊
+  // （sanitizeTitleClone）。
+  function makeSanitizedTitleClone(wrapper) {
+    const clone = wrapper.cloneNode(true);
+    clone.setAttribute('data-jread-title-clone', '1');
+    if (clone.style) clone.style.removeProperty('display');
+    if (clone.removeAttribute) clone.removeAttribute('data-jread-hidden');
+    if (clone.querySelectorAll) {
+      for (const el of clone.querySelectorAll('[data-jread-hidden="1"]')) {
+        el.removeAttribute('data-jread-hidden');
+        if (el.style) el.style.removeProperty('display');
+      }
+    }
+    sanitizeTitleClone(clone);
+    return clone;
+  }
+
   function placePromotedTitleClone(articleEl, clone, hidden) {
     if (translationGuardActive() && articleEl.parentNode && articleEl.parentNode.nodeType === 1) {
       clone.setAttribute('data-jread-promoted-outside', '1');
@@ -1807,19 +1834,7 @@
         wrapper = h1;
       }
     }
-    const clone = wrapper.cloneNode(true);
-    clone.setAttribute('data-jread-title-clone', '1');
-    // 清 inline display:none + data-jread-hidden（從已被 hideAncestorSiblings
-    // 處理過的原 wrapper 繼承來的），再就地清 clone 內雜訊（見 sanitizeTitleClone）
-    if (clone.style) clone.style.removeProperty('display');
-    if (clone.removeAttribute) clone.removeAttribute('data-jread-hidden');
-    if (clone.querySelectorAll) {
-      for (const el of clone.querySelectorAll('[data-jread-hidden="1"]')) {
-        el.removeAttribute('data-jread-hidden');
-        if (el.style) el.style.removeProperty('display');
-      }
-    }
-    sanitizeTitleClone(clone);
+    const clone = makeSanitizedTitleClone(wrapper);
     // v0.7.143：clone 進 hidden array、走特殊 __titleClone path 在 restore() 時
     // removeChild（標準 hide() 走 inline display 還原，對 clone 不適用——要整個拿掉）。
     // 不加進 array 的話 exit reader mode 後 clone 永遠殘留、同 tab 多次進出會堆疊 N 份 H1。
@@ -1923,17 +1938,7 @@
           wrapper = h;
         }
       }
-      const clone = wrapper.cloneNode(true);
-      clone.setAttribute('data-jread-title-clone', '1');
-      if (clone.style) clone.style.removeProperty('display');
-      if (clone.removeAttribute) clone.removeAttribute('data-jread-hidden');
-      if (clone.querySelectorAll) {
-        for (const el of clone.querySelectorAll('[data-jread-hidden="1"]')) {
-          el.removeAttribute('data-jread-hidden');
-          if (el.style) el.style.removeProperty('display');
-        }
-      }
-      sanitizeTitleClone(clone);
+      const clone = makeSanitizedTitleClone(wrapper);
       // v0.8.131：插入位置由 placePromotedTitleClone 決定（翻譯頁插 articleEl 外，
       // 避開翻譯擴充 content guard 對 articleEl 子節點的 reconcile）。
       placePromotedTitleClone(articleEl, clone, hidden);
@@ -2790,6 +2795,20 @@
   const SPACER_MIN_HEIGHT = 60;
   const SPACER_TEXT_MAX = 10;
 
+  // v1.7.43 T6：player layout 輔助元素判定——el 的 parent 是否含 video/iframe
+  // sibling。JWPlayer 類 player 的空 div / 大 padding wrapper 是媒體佔位，
+  // 動它會打壞 player 或錯位出假空白；empty-spacer hide / empty-wrapper
+  // collapse / padding cap 三處共用此 guard（原三份逐字重複）。
+  function siblingHasMediaEmbed(el) {
+    if (!el.parentElement) return false;
+    for (const sib of el.parentElement.children) {
+      if (sib === el) continue;
+      if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') return true;
+      if (sib.querySelector && sib.querySelector('video, iframe')) return true;
+    }
+    return false;
+  }
+
   function hideInsideArticleEmptySpacers(articleEl, hidden, containers) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     for (const el of containers) {
@@ -2836,15 +2855,7 @@
       // `.jw-wrapper` 內），看起來 = empty spacer → 被 hide → player 高度
       // 歸零。通則：空 div 的 parent 含 video/iframe sibling = player layout
       // 輔助元素，不 hide。
-      if (el.parentElement) {
-        let siblingHasMedia = false;
-        for (const sib of el.parentElement.children) {
-          if (sib === el) continue;
-          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
-          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
-        }
-        if (siblingHasMedia) continue;
-      }
+      if (siblingHasMediaEmbed(el)) continue;
 
       hide(el, hidden);
     }
@@ -3931,10 +3942,11 @@
             child.querySelector('img, picture, video, iframe, h1'))) {
         let hasLongP = false;
         const ps = child.querySelectorAll ? child.querySelectorAll('p') : [];
+        // v1.7.43：長度過 norm()（raw textContent 的縮排/換行會灌爆門檻，同 C4）
         for (const p of ps) {
-          if ((p.textContent || '').length > 500) { hasLongP = true; break; }
+          if (norm(p.textContent).length > 500) { hasLongP = true; break; }
         }
-        if (TAG === 'P' && (child.textContent || '').length > 500) hasLongP = true;
+        if (TAG === 'P' && norm(child.textContent).length > 500) hasLongP = true;
         if (!hasLongP) {
           hide(child, hidden);
           continue;
@@ -4170,8 +4182,9 @@
       let hasLongParagraph = false;
       const ps = el.querySelectorAll && el.querySelectorAll('p');
       if (ps) {
+        // v1.7.43：長度過 norm()（raw textContent 的縮排/換行會灌爆門檻，同 C4）
         for (const p of ps) {
-          if ((p.textContent || '').length > 500) {
+          if (norm(p.textContent).length > 500) {
             hasLongParagraph = true;
             break;
           }
@@ -4354,7 +4367,8 @@
   // - 要求 hidden child 的 rect.width / rect.height 反映它「曾佔 layout 空間」
   //   （rect.width > 0 或者 dataset.jreadHidden="1"）
   // - 保留 container 原 inline display / grid-template 讓 restore 還原
-  const COLLAPSE_ATTR = 'data-jread-collapsed';
+  // （collapse 標記實際走 dataset.jreadCollapsed camelCase 慣用法，見 4750+；
+  //  v1.7.43 移除從未使用的 COLLAPSE_ATTR dead const）
   // collapse child reset 跳過的 replaced element（/i：SVG tagName 保留原小寫 case）
   const COLLAPSE_REPLACED_TAG_RE = /^(?:IMG|SVG|VIDEO|AUDIO|PICTURE|CANVAS|IFRAME|EMBED|OBJECT)$/i;
   // v1.7.30 today.line.me 實測：byline 列 grid（發布者 icon 連結 42px 定寬 +
@@ -5360,15 +5374,7 @@
       // `.jw-wrapper` 內），原本看起來 = empty wrapper → 被 collapse。
       // 通則：空 div 的 parent 含 video/iframe sibling → 本 div 可能是 player
       // 的 layout 輔助元素，collapse 會打壞 player，skip。
-      if (el.parentElement) {
-        let siblingHasMedia = false;
-        for (const sib of el.parentElement.children) {
-          if (sib === el) continue;
-          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
-          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
-        }
-        if (siblingHasMedia) continue;
-      }
+      if (siblingHasMediaEmbed(el)) continue;
       // background image → 視為合法 divider / decoration、保留
       const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
         window.getComputedStyle(el) : null;
@@ -5435,15 +5441,7 @@
       // 器、video 突出蓋住 dek + 流空間錯位出 245px 假空白）。通則：parent
       // 含 video / iframe sibling 的 wrapper 是 player layout 輔助元素，
       // 其大 padding 是媒體佔位、不是裝飾留白，不 cap。
-      if (el.parentElement) {
-        let siblingHasMedia = false;
-        for (const sib of el.parentElement.children) {
-          if (sib === el) continue;
-          if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') { siblingHasMedia = true; break; }
-          if (sib.querySelector && sib.querySelector('video, iframe')) { siblingHasMedia = true; break; }
-        }
-        if (siblingHasMedia) continue;
-      }
+      if (siblingHasMediaEmbed(el)) continue;
       const prev = snapshotStyles(el, WRAPPER_SPACING_PROPS);
       const decls = {};
       for (const prop of WRAPPER_SPACING_PROPS) {
@@ -6198,7 +6196,8 @@
       const tag = el.tagName;
       if (tag === 'P' || tag === 'LI' || tag === 'BLOCKQUOTE' || tag === 'PRE') {
         let t = '';
-        try { t = (el.textContent || '').trim(); } catch (_) { continue; }
+        // v1.7.43：過 norm()（trim 只去首尾、段內縮排/換行仍灌爆長度）
+        try { t = norm(el.textContent); } catch (_) { continue; }
         if (t.length < HEADER_ZONE_TEXT_MIN) continue;
         // 隱藏元素不可當 zone 終點（cleaner 已清的摘要 / 站方 display:none
         // teaser），否則 zone 提早結束、byline icon 漏掃。computed 讀取只在
@@ -7957,6 +7956,8 @@
     /**
      * 隱藏主文外與主文內的雜訊，回傳還原用的清單。
      * 規則順序：語意標籤 → fixed/sticky → 社群分享 cluster → 主文內 keyword。
+     * 「順序不可對調」的依賴配對由 cleaner-clean-rule-order.spec.js forcing
+     * （v1.7.43 T13）——新增順序依賴時：程式碼加註解 + 該 spec 的 PAIRS 加一條。
      * @param {Element} articleEl 主文容器（必要）
      * @param {Object} [opts] 可選參數
      * @param {Element} [opts.promotedFrom] detector promote 升級前的 el；

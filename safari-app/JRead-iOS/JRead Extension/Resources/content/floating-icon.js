@@ -79,7 +79,10 @@
     (typeof navigator !== 'undefined' && navigator.userAgent) || '',
     (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0
   );
-  const DEFAULT_OPACITY = 0.7;
+  // v1.7.43 T8：預設值改讀 settings-defaults 單一資料源（manifest 載入順序保證
+  // 先載）；fallback 字面值由 defaults-sync.spec 校對與正典一致
+  const SETTINGS_DEF = (typeof window !== 'undefined' && window.__JReadSettingsDefaults) || {};
+  const DEFAULT_OPACITY = SETTINGS_DEF.floatingIconOpacity ?? 0.7;
   // v0.8.158：長按開選單時把整顆 host（含選單）調到全不透明，避免使用者設的
   // 淡透明度（預設 0.7）讓選單文字看不清；收選單時還原使用者設定的透明度。
   let currentOpacity = DEFAULT_OPACITY;  // 使用者設定的透明度（選單收合時的還原值）
@@ -227,7 +230,7 @@
     // v0.8.164：browser.storage.sync get/set 原生 Promise（reject 即 no-op）。
     try {
       togglePagedQueue = togglePagedQueue.then(() => {
-        return browser.storage.sync.get({ pagedMode: false }).then((s) => {
+        return browser.storage.sync.get({ pagedMode: SETTINGS_DEF.pagedMode ?? false }).then((s) => {
           const next = !(s && s.pagedMode);
           return browser.storage.sync.set({ pagedMode: next }).then(() => {
             if (NS.toast) NS.toast.show('分頁模式：' + (next ? '開' : '關'), { kind: 'info' });
@@ -252,9 +255,10 @@
   // ─── YouTube watch 專屬選單（v1.5.13）────────────────────────────────────
   // 在 YouTube /watch 頁，一般選單的「分頁模式 / 進入 Reader」無意義（YouTube
   // watch 沒主文可閱讀，detector no-op）；改顯示 YouTube 兩功能入口：影院模式 +
-  // 無邊模式。判定走 NS.cinema.isYouTubeWatch（cinema-mode.js 載入後即可用，
-  // 與 youtube-borderless.js 互為鏡像，cinema-mode.js 是兩者單一參考點）；該模組
-  // 尚未載入時用同款 URL fallback（與兩模組同判定，避免 drift）。
+  // 無邊模式。判定走 NS.cinema.isYouTubeWatch（cinema-mode.js 載入後即可用）；
+  // 該模組尚未載入時用同款 URL fallback——此 fallback 與 cinema-mode.js /
+  // youtube-borderless.js 的 isYouTubeWatch 三方互為鏡像（v1.7.43 標記），改
+  // 判定時三處必須同步，forcing 見 youtube-watch-detect-mirror.spec.js。
   function isYouTubeWatchPage() {
     try {
       if (NS.cinema && typeof NS.cinema.isYouTubeWatch === 'function') {
@@ -658,7 +662,11 @@
   }, { passive: true });
 
   // ─── 初始化：讀 storage + onChanged 即時生效 ─────────────────────────────
-  const RESOLVE = window.__JReadResolveFloatingIconEnabled || ((v) => v === true);
+  // v1.7.43 T9：fallback 語意必須與正典 resolveFloatingIconEnabled 一致——
+  // 「未設過（非 boolean）一律預設開」（v0.8.158）。舊 fallback `v === true`
+  // 語意相反：settings-defaults 缺席時未設過的使用者會看不到懸浮按鈕。
+  const RESOLVE = window.__JReadResolveFloatingIconEnabled ||
+    ((v) => typeof v === 'boolean' ? v : true);
 
   // v0.8.164：browser.storage.sync.get 原生 Promise（reject → 全套 undefined fallback，
   // 與舊 lastError 分支同語意）。

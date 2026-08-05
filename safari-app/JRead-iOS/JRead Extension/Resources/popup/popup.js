@@ -822,8 +822,13 @@ readwiseBtn.addEventListener('click', async () => {
   }).then((v) => v || {}).catch(() => ({}));
   const { service, creds, ok } = window.__JReadPopup.resolveServiceCredentials(cfg);
   const label = window.__JReadPopup.serviceLabel(service);
+  // v1.7.43：文案走 saveResultToast 單一資料源（credsPlace 指向 popup 自己的
+  // 「進階設定」footer 連結；kind success/error → 狀態列的 ok/err）
+  const toastOpts = { serviceLabel: label, existsOn200: service === 'readwise', credsPlace: '「進階設定」' };
+  const statusKind = (kind) => kind === 'success' ? 'ok' : 'err';
   if (!ok) {
-    setReadwiseStatus(`尚未設定 ${label} 憑證，請到「進階設定」填入`, 'err');
+    const t = window.__JReadPopup.saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, toastOpts);
+    setReadwiseStatus(t.message, statusKind(t.kind));
     readwiseBtn.disabled = false;
     return;
   }
@@ -850,25 +855,8 @@ readwiseBtn.addEventListener('click', async () => {
   // background（iOS Safari 背景頁掛起會 silently 失敗，見 popup-core 註解）。
   const result = await window.__JReadPopup.sendDocument({ service, creds, payload: extracted.payload });
 
-  if (result && result.ok) {
-    // Readwise 200=已存在、201=新建；Instapaper 無此區分，一律「已送到」
-    setReadwiseStatus((service === 'readwise' && result.status === 200)
-      ? `已存在於 ${label}` : `已送到 ${label}`, 'ok');
-  } else if (result && result.error === 'NO_CREDENTIALS') {
-    setReadwiseStatus(`尚未設定 ${label} 憑證，請到「進階設定」填入`, 'err');
-  } else if (result && result.error === 'CONFIG') {
-    setReadwiseStatus(`此版本未內建 ${label} 金鑰`, 'err');
-  } else if (result && result.error === 'AUTH') {
-    setReadwiseStatus(`${label} 憑證無效或已過期`, 'err');
-  } else if (result && result.error === 'NETWORK') {
-    setReadwiseStatus('網路錯誤，請稍後再試', 'err');
-  } else {
-    // generic 分支帶上 error code（INVALID_PAYLOAD / HTTP 碼）方便真機回報看出失敗層次
-    const detail = result && result.status ? `（HTTP ${result.status}）`
-                 : result && result.error ? `（${result.error}）` : '';
-    const reason = result && result.detail ? `：${result.detail}` : '';
-    setReadwiseStatus(`送出失敗${detail}${reason}`, 'err');
-  }
+  const t = window.__JReadPopup.saveResultToast(result, toastOpts);
+  setReadwiseStatus(t.message, statusKind(t.kind));
   readwiseBtn.disabled = false;
 });
 

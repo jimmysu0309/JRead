@@ -650,9 +650,12 @@
   const SAVE_PROGRESS_TOAST_ID = 'jread-save';
   const SAVE_PROGRESS_TOAST_MS = 15000;
 
-  // 送出結果 → toast 文字 + kind（服務感知；SW 快速鍵軌與 popup 進階軌之外的
-  // 訊息文字單一資料源）。serviceLabel 帶入服務名。existsOn200：Readwise 200=
-  // 已存在、201=新建（Instapaper 無此區分，一律「已送到」）。
+  // 送出結果 → toast 文字 + kind（服務感知；快速鍵 toast 軌與 popup 狀態列軌的
+  // 訊息文字單一資料源——popup 端用 kind 轉換層對映 success/error → ok/err）。
+  // serviceLabel 帶入服務名。existsOn200：Readwise 200=已存在、201=新建
+  // （Instapaper 無此區分，一律「已送到」）。credsPlace：NO_CREDENTIALS 指引
+  // 使用者去填憑證的位置——快速鍵 toast 沒有 popup 可指，預設「設定頁」；popup
+  // 軌傳「『進階設定』」指向自己的 footer 連結。
   function saveResultToast(result, opts) {
     const o = opts || {};
     const label = o.serviceLabel || 'Readwise Reader';
@@ -663,7 +666,7 @@
       };
     }
     if (result && result.error === 'NO_CREDENTIALS') {
-      return { message: `尚未設定 ${label} 憑證，請到設定頁填入`, kind: 'error' };
+      return { message: `尚未設定 ${label} 憑證，請到${o.credsPlace || '設定頁'}填入`, kind: 'error' };
     }
     if (result && result.error === 'CONFIG') {
       return { message: `此版本未內建 ${label} 金鑰`, kind: 'error' };
@@ -674,7 +677,9 @@
     if (result && result.error === 'NETWORK') {
       return { message: '網路錯誤，請稍後再試', kind: 'error' };
     }
-    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    // generic 分支帶上 error code（INVALID_PAYLOAD / HTTP 碼）方便真機回報看出失敗層次
+    const detail = result && result.status ? `（HTTP ${result.status}）`
+                 : result && result.error ? `（${result.error}）` : '';
     const reason = result && result.detail ? `：${result.detail}` : '';
     return { message: `送出失敗${detail}${reason}`, kind: 'error' };
   }

@@ -212,7 +212,9 @@
   // - rect.height === 0 的 placeholder（hidden keyboard nav focus zone）
   // - 含留言區 wrapper 的直系子（textLen 通常較短但含多個 role="article"）
   // - reactions/share count wrapper（含「則留言」「次分享」等慣用語）
-  function pruneReaderClone(clone, original) {
+  // v1.7.43 T11：移除 dead 的 original 參數（v0.7.158 改「直接特徵」判定
+  // placeholder 後即未再使用，見下方 height=0 placeholder 註解）
+  function pruneReaderClone(clone) {
     // v0.7.158 主文後續 sibling chain 全清（chrome-in-chrome probe 真實 FB DOM
     // 後的最終版）。實機 Nathan Chiu 貼文 DOM 結構：
     //   findPostContainer 結果（commonAncestor）4 個 children：
@@ -467,18 +469,8 @@
 
     document.body.insertBefore(reader, document.body.firstChild);
 
-    // hide body 直系子（同 enter() 邏輯；JRead 自家 host 豁免，見 enter() 註解）
-    _hiddenBodySiblings = [];
-    for (var ci = 0; ci < document.body.children.length; ci++) {
-      var child = document.body.children[ci];
-      if (child === reader) continue;
-      if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
-      if (child.id && child.id.indexOf('__jread') === 0) continue;
-      var prevDisplay = child.style.getPropertyValue('display');
-      var prevPriority = child.style.getPropertyPriority('display');
-      child.style.setProperty('display', 'none', 'important');
-      _hiddenBodySiblings.push({ el: child, prevDisplay: prevDisplay, prevPriority: prevPriority });
-    }
+    // hide body 直系子（與 enter() 共用 hideBodySiblingsExcept）
+    hideBodySiblingsExcept(reader);
 
     return reader;
   }
@@ -510,7 +502,7 @@
 
     // clone 整個 container 進 reader（cloneNode true 保留所有圖片 src 與文字）
     const clone = container.cloneNode(true);
-    pruneReaderClone(clone, container);
+    pruneReaderClone(clone);
     // strip FB layout class/style 讓內容回瀏覽器預設 block layout（修 emotion-
     // hash class 在合成容器內因失去祖先 context 而 layout 算錯 0×0 的問題）
     stripFacebookLayout(clone);
@@ -527,32 +519,35 @@
 
     document.body.insertBefore(reader, document.body.firstChild);
 
-    // hide body 直系子（除了 reader card），相當於 cleaner.hideAncestorSiblings
-    // 的精神——FB permalink 頁會 render 主貼文 modal overlay（dialog 形式），
-    // 不 hide 就會跟 reader card 同時顯示。記下被 hide 的 element + 原始 inline
-    // display value，exit() 時還原。
-    _hiddenBodySiblings = [];
-    for (const child of Array.from(document.body.children)) {
-      if (child === reader) continue;
-      if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
-      // v0.8.36：JRead 自家掛在 body 上的 host（#__jread-toast-host /
-      // #__jread-page-indicator 等，一律 __jread 前綴）豁免——舊版只排除
-      // script/style，toast host 若在 enter 前已存在（本頁先前顯示過 toast）
-      // 會被 inline !important 蓋掉，FB reader 下送 Readwise 的結果 toast
-      // 不可見（styler 的同款 ancestor 規則有 :not(#__jread-toast-host)，
-      // 本 path 是該事實的第二實作、漏了排除——以 id 前綴做結構性豁免）。
-      if (child.id && child.id.indexOf('__jread') === 0) continue;
-      const prevDisplay = child.style.getPropertyValue('display');
-      const prevPriority = child.style.getPropertyPriority('display');
-      child.style.setProperty('display', 'none', 'important');
-      _hiddenBodySiblings.push({ el: child, prevDisplay, prevPriority });
-    }
+    // hide body 直系子（與 enterPhotoMode() 共用 hideBodySiblingsExcept——
+    // toast host 豁免等細節見該函式註解）
+    hideBodySiblingsExcept(reader);
 
     return reader;
   }
 
   // 記錄 enter() hide 的 body 直系子，exit() 還原（避免破壞原 FB SPA 狀態）
   let _hiddenBodySiblings = [];
+
+  // v1.7.43 T7：hide body 直系子（除了 reader card）——enter 與 enterPhotoMode
+  // 共用（原雙實作；v0.8.36 toast host 豁免曾只補一份、另一份漏掉）。相當於
+  // cleaner.hideAncestorSiblings 的精神：FB permalink 頁會 render 主貼文 modal
+  // overlay，不 hide 就跟 reader card 同時顯示。JRead 自家掛 body 的 host
+  // （#__jread-toast-host / #__jread-page-indicator 等，一律 __jread 前綴）以
+  // id 前綴做結構性豁免。記下被 hide 的 element + 原始 inline display，exit()
+  // 還原。
+  function hideBodySiblingsExcept(reader) {
+    _hiddenBodySiblings = [];
+    for (const child of Array.from(document.body.children)) {
+      if (child === reader) continue;
+      if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
+      if (child.id && child.id.indexOf('__jread') === 0) continue;
+      const prevDisplay = child.style.getPropertyValue('display');
+      const prevPriority = child.style.getPropertyPriority('display');
+      child.style.setProperty('display', 'none', 'important');
+      _hiddenBodySiblings.push({ el: child, prevDisplay, prevPriority });
+    }
+  }
 
   function exit() {
     // 還原 body sibling display

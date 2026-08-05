@@ -89,9 +89,9 @@
   // 子元素內的文字一起算。WYSIWYG 編輯器（Draft.js / Lexical 等）把段落文字
   // 包成 <div><span>文字</span></div>，div 無直接 text node，只算 direct text
   // node 會漏收 → Space 焦點條跳過這些段落（Jimmy 2026-06-16 mirrormedia 回報）。
-  // 與 styler markTextDivs 的 INLINE_TAGS 同款（兩處都在判「div 是不是段落」，
-  // 平行邏輯——改一處時另一處一起檢視）。BR 不列入（無文字、且常用於排版斷行）。
-  const INLINE_TEXT_TAGS = new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR', 'FONT', 'Q', 'CITE', 'BDI', 'BDO']);
+  // v1.7.43：收斂到 NS.INLINE_TEXT_TAGS 單一資料源（與 styler markTextDivs
+  // 共用；集合含 BR——BR 無文字，對本模組「收文字」用途天然無害）。
+  const INLINE_TEXT_TAGS = NS.INLINE_TEXT_TAGS;
 
   // 多圖容器（圖庫）判定：含 >= 2 張內容圖、且圖說以外幾乎沒有正文。
   // Jimmy 2026-06-05 訂正：照片以每張為單位——圖庫容器讓位給個別圖片；

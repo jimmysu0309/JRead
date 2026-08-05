@@ -109,11 +109,14 @@
     if (NS && !NS._touchGesturesInstalled) {
       NS._touchGesturesInstalled = true;
     // v0.8.157：threeFingerTap 設定（預設 false）動態查——listener 常駐，停用時
-    // 命中不觸發。讀一次快取、onChanged 即時更新（storage 失效時保守留 false）。
-    // v0.8.164：browser.storage.sync.get 原生 Promise（reject 保守留 false）。
-    let threeFingerEnabled = false;
+    // 命中不觸發。讀一次快取、onChanged 即時更新（storage 失效時保守留預設）。
+    // v0.8.164：browser.storage.sync.get 原生 Promise（reject 保守留預設）。
+    // v1.7.43 T8：預設值改讀 settings-defaults 單一資料源；fallback 字面值由
+    // defaults-sync.spec 校對與正典一致。
+    const tfDefault = (window.__JReadSettingsDefaults && window.__JReadSettingsDefaults.threeFingerTap) ?? false;
+    let threeFingerEnabled = tfDefault;
     try {
-      browser.storage.sync.get({ threeFingerTap: false }).then((s) => {
+      browser.storage.sync.get({ threeFingerTap: tfDefault }).then((s) => {
         threeFingerEnabled = s && s.threeFingerTap === true;
       }).catch(() => {});
       browser.storage.onChanged.addListener((changes, area) => {
