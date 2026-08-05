@@ -258,6 +258,14 @@ function render(settings) {
 
 let current = { ...DEFAULT_SETTINGS };
 
+// v1.7.42：storage.sync.get resolve 前 current 仍是 DEFAULT_SETTINGS——stepper /
+// Auto 切換這類「以 current 為基準的相對操作」此時點擊會以預設值算出絕對值寫回
+//（實際 fontSize 24 時按 + 卻寫回 20 = 倒退）。gate 到設定載回為止；絕對值操作
+//（theme / checkbox / 字重）寫入不依賴 current、不 gate。get 極快（<50ms），忽略
+// 這瞬間的點擊無感；v0.8.36 的 pendingPatch merge 保護的是「resolve 前的絕對值
+// 寫入不被舊值蓋回 UI」，救不了相對操作以錯誤基準計算，兩者互補。
+let settingsReady = false;
+
 // v0.7.143：debounce storage.sync.set 防 browser.storage.sync quota 踩線。
 // 連點 stepper（fontSize 12-32 跨 20 step、contentWidth 480-1200 跨 18 step）
 // 每 click 觸發一次 set，加上 storage.onChanged broadcast 到所有 tab 的 content
@@ -328,8 +336,13 @@ browser.storage.sync.get(DEFAULT_SETTINGS).then((values) => {
   // v0.8.36：merge pendingPatch——popup 開啟瞬間使用者已點擊的變更（Promise
   // resolve 前累積在 pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI
   current = { ...DEFAULT_SETTINGS, ...values, ...pendingPatch };
+  settingsReady = true;
   render(current);
-}).catch(() => {});
+}).catch(() => {
+  // get 失敗（storage 失效等罕見場景）也要解鎖——此時 current = 預設值，
+  // 相對操作以預設為基準是唯一可行 fallback，不可讓 stepper 永久卡死
+  settingsReady = true;
+});
 
 for (const btn of themeBtns) {
   btn.addEventListener('click', () => save({ theme: btn.dataset.theme }));
@@ -344,11 +357,13 @@ if (pagedModeCb) {
 }
 
 document.querySelector('[data-action="font-dec"]').addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard（見 settingsReady 註解）
   // Auto 模式下 - 不做事（按鈕 disabled，這裡只是 fallback）
   if (current.fontSize === FONT_SIZE.auto) return;
   save({ fontSize: clamp(current.fontSize - FONT_SIZE.step, FONT_SIZE.min, FONT_SIZE.max) });
 });
 document.querySelector('[data-action="font-inc"]').addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   // 從 Auto 按 + 直接跳到 DEFAULT（使用者從「保留原站」想回到手動控制）
   if (current.fontSize === FONT_SIZE.auto) {
     save({ fontSize: FONT_SIZE.default });
@@ -358,6 +373,7 @@ document.querySelector('[data-action="font-inc"]').addEventListener('click', () 
 });
 if (fontAutoBtn) {
   fontAutoBtn.addEventListener('click', () => {
+    if (!settingsReady) return; // v1.7.42 R3 guard
     // toggle：Auto ↔ DEFAULT。按 "自動" 切到 Auto（0）；已在 Auto 再按切回 DEFAULT
     const next = current.fontSize === FONT_SIZE.auto
       ? FONT_SIZE.default
@@ -370,10 +386,12 @@ if (fontAutoBtn) {
 const tfDecBtn = document.querySelector('[data-action="title-font-dec"]');
 const tfIncBtn = document.querySelector('[data-action="title-font-inc"]');
 if (tfDecBtn) tfDecBtn.addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   if (current.titleFontSize === TITLE_FONT_SIZE.auto) return;
   save({ titleFontSize: clamp(current.titleFontSize - TITLE_FONT_SIZE.step, TITLE_FONT_SIZE.min, TITLE_FONT_SIZE.max) });
 });
 if (tfIncBtn) tfIncBtn.addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   if (current.titleFontSize === TITLE_FONT_SIZE.auto) {
     save({ titleFontSize: TITLE_FONT_SIZE.default });
     return;
@@ -382,6 +400,7 @@ if (tfIncBtn) tfIncBtn.addEventListener('click', () => {
 });
 if (titleFontAutoBtn) {
   titleFontAutoBtn.addEventListener('click', () => {
+    if (!settingsReady) return; // v1.7.42 R3 guard
     const next = current.titleFontSize === TITLE_FONT_SIZE.auto ? TITLE_FONT_SIZE.default : TITLE_FONT_SIZE.auto;
     save({ titleFontSize: next });
   });
@@ -391,10 +410,12 @@ if (titleFontAutoBtn) {
 const lhDecBtn = document.querySelector('[data-action="line-height-dec"]');
 const lhIncBtn = document.querySelector('[data-action="line-height-inc"]');
 if (lhDecBtn) lhDecBtn.addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   if (current.lineHeight === LINE_HEIGHT.auto) return;
   save({ lineHeight: roundStep(clamp(current.lineHeight - LINE_HEIGHT.step, LINE_HEIGHT.min, LINE_HEIGHT.max)) });
 });
 if (lhIncBtn) lhIncBtn.addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   if (current.lineHeight === LINE_HEIGHT.auto) {
     save({ lineHeight: LINE_HEIGHT.default });
     return;
@@ -403,6 +424,7 @@ if (lhIncBtn) lhIncBtn.addEventListener('click', () => {
 });
 if (lineHeightAutoBtn) {
   lineHeightAutoBtn.addEventListener('click', () => {
+    if (!settingsReady) return; // v1.7.42 R3 guard
     const next = current.lineHeight === LINE_HEIGHT.auto ? LINE_HEIGHT.default : LINE_HEIGHT.auto;
     save({ lineHeight: next });
   });
@@ -412,10 +434,12 @@ if (lineHeightAutoBtn) {
 const psDecBtn = document.querySelector('[data-action="paragraph-spacing-dec"]');
 const psIncBtn = document.querySelector('[data-action="paragraph-spacing-inc"]');
 if (psDecBtn) psDecBtn.addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   if (current.paragraphSpacing === PARAGRAPH_SPACING.auto) return;
   save({ paragraphSpacing: roundStep(clamp(current.paragraphSpacing - PARAGRAPH_SPACING.step, PARAGRAPH_SPACING.min, PARAGRAPH_SPACING.max)) });
 });
 if (psIncBtn) psIncBtn.addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   if (current.paragraphSpacing === PARAGRAPH_SPACING.auto) {
     save({ paragraphSpacing: PARAGRAPH_SPACING.default });
     return;
@@ -424,14 +448,17 @@ if (psIncBtn) psIncBtn.addEventListener('click', () => {
 });
 if (paragraphSpacingAutoBtn) {
   paragraphSpacingAutoBtn.addEventListener('click', () => {
+    if (!settingsReady) return; // v1.7.42 R3 guard
     const next = current.paragraphSpacing === PARAGRAPH_SPACING.auto ? PARAGRAPH_SPACING.default : PARAGRAPH_SPACING.auto;
     save({ paragraphSpacing: next });
   });
 }
 document.querySelector('[data-action="width-dec"]').addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   save({ contentWidth: clamp(current.contentWidth - CONTENT_WIDTH.step, CONTENT_WIDTH.min, CONTENT_WIDTH.max) });
 });
 document.querySelector('[data-action="width-inc"]').addEventListener('click', () => {
+  if (!settingsReady) return; // v1.7.42 R3 guard
   save({ contentWidth: clamp(current.contentWidth + CONTENT_WIDTH.step, CONTENT_WIDTH.min, CONTENT_WIDTH.max) });
 });
 if (fontFamilySelect) {
@@ -457,6 +484,7 @@ function applyLatinPreview() {
 // 無襯線 → latinSans）。兩者各自記，切回另一個字型時載回各自的選擇。
 if (latinFontSelect) {
   latinFontSelect.addEventListener('change', (e) => {
+    if (!settingsReady) return; // v1.7.42 R3 guard（寫入哪個 key 依 current.fontFamily 判定）
     if (current.fontFamily === FONT_STACKS.serif) save({ latinSerif: e.target.value });
     else if (current.fontFamily === FONT_STACKS.sans) save({ latinSans: e.target.value });
     applyLatinPreview();   // v0.8.147：即時更新預覽字型
@@ -883,6 +911,16 @@ async function refreshAutoDomainRow() {
   }).catch(() => {});
 }
 
+// v1.7.42：寫入失敗不可靜默——還原 checkbox 並提示，與 options 同欄位的
+// 「儲存失敗」行為一致。autoEnableDomains 是唯一無上限成長的 sync 欄位，
+// QUOTA_BYTES_PER_ITEM 8KB 配額數百網域即踩線，失敗是真實可達路徑；靜默吞掉
+// 會讓使用者以為已加入、下次進站卻沒 auto-enter。
+function revertAutoDomainCb(wantOn) {
+  autoDomainCb.checked = !wantOn;
+  statusEl.textContent = '自動啟動設定儲存失敗，請稍後再試';
+  statusEl.hidden = false;
+}
+
 autoDomainCb.addEventListener('change', () => {
   const helper = window.__JReadDomainMatch;
   if (!helper || !currentHostname) return;
@@ -899,8 +937,8 @@ autoDomainCb.addEventListener('change', () => {
       next = helper.removeMatching(currentHostname, list);
     }
     const p = browser.storage.sync.set({ autoEnableDomains: helper.parseList(next.join('\n')) });
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-  }).catch(() => {});
+    if (p && typeof p.catch === 'function') p.catch(() => revertAutoDomainCb(wantOn));
+  }).catch(() => revertAutoDomainCb(wantOn));
 });
 
 // 跨 tab / options 同步：清單在他處變動時，popup checkbox 立刻反映

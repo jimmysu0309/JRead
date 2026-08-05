@@ -98,6 +98,19 @@ describe('cleaner — hidePreTitleDecorativeImages 標題前裝飾 badge（v0.8.
       'natural ≈ displayed 的小圖非作者刻意縮小、不命中裝飾 badge 訊號');
   });
 
+  it('控制組 C（v1.7.42）：標準 2x retina 內容小圖不可被清', () => {
+    // review C6：原 1.5× 門檻在 retina 時代幾乎恆真——內容小圖普遍出 2× 資源
+    //（natural 112 / displayed 56 = 2.0×），會被誤判為裝飾 badge。門檻提高到
+    // 2.5× 後 2× retina 圖豁免；真裝飾 badge 縮幅遠大於此（主 case 21×）不受影響。
+    const env = loadEnv();
+    const retina = env.document.querySelector('[data-test="retina-img"]');
+    stubNatural(retina, 112, 112);
+    stubRect(retina, { top: 0, left: 360, width: 56, height: 56 });
+    env.window.__JRead.cleaner.clean(env.document.querySelector('[data-test="article-root-retina"]'));
+    assert.notStrictEqual(retina.dataset.jreadHidden, '1',
+      '2x retina 內容圖（natural = 2× displayed）不可命中裝飾 badge 訊號（門檻 2.5×）');
+  });
+
   it('restore 可逆：clean snapshot 還原後 badge 不再 hidden', () => {
     const env = loadEnv();
     const badge = env.document.querySelector('[data-test="badge"]');

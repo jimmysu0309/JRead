@@ -8,6 +8,14 @@
   const NS = window.__JRead;
   if (!NS) return;
 
+  // v1.7.42：重複注入 guard（比照 touch-gestures / custom-shortcuts）。popup 的
+  // injection fallback（scripting.executeScript）可能在 manifest 注入已存在時把
+  // 整包 content scripts 再跑一次；namespace.js 的 guard 只保護 NS 物件本身，
+  // 保不到 main.js 掛的 onMessage / storage.onChanged / pageshow listener——
+  // 重複掛 = 每則訊息處理兩次（toggle 一按進又出）。
+  if (NS._mainInstalled) return;
+  NS._mainInstalled = true;
+
   function showToast(message, kind, opts) {
     if (NS.toast && typeof NS.toast.show === 'function') {
       NS.toast.show(message, Object.assign({ kind }, opts || {}));
@@ -1515,8 +1523,11 @@
         if (next === false) uninstallKeyguard();
         else installKeyguard();
       }
-      // v0.7.216：spaceScrollRatio 即時切換——options 改數值後立刻生效
-      if ('spaceScrollRatio' in changes) {
+      // v0.7.216：spaceScrollRatio 即時切換——options 改數值後立刻生效。
+      // v1.7.42：cinema mode 排除（比照上方 blockPageShortcuts 分支的 v1.6.24
+      // guard）——影院模式 active=true 但 articleEl=null、spaceScroll 刻意不裝，
+      // 這裡 sync 會以 null articleEl 誤裝模組。
+      if ('spaceScrollRatio' in changes && !NS.state.cinemaActive) {
         syncSpaceScrollFromSettings({ spaceScrollRatio: changes.spaceScrollRatio.newValue });
       }
       // v1.5.4：頁碼指示開關已移除（頁碼一律顯示，是翻頁模式唯一進度載體），原本

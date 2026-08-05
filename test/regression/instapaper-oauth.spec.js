@@ -20,6 +20,22 @@ describe('instapaper-oauth: oauthPercentEncode（RFC 3986）', () => {
     assert.strictEqual(IP.oauthPercentEncode("a b"), "a%20b");
     assert.strictEqual(IP.oauthPercentEncode("中"), "%E4%B8%AD");
   });
+  // v1.7.42（review I1）：lone surrogate（標題被上游截半的 emoji 等來源）原本
+  // 會讓 encodeURIComponent throw URIError、一路被上層誤分類成 NETWORK。
+  // 修法：編碼前把不成對的 surrogate 換成 U+FFFD（%EF%BF%BD）。
+  it('lone surrogate 不 throw、替換成 U+FFFD 編碼', () => {
+    // lone high surrogate（截半 emoji 的典型殘骸）
+    assert.strictEqual(IP.oauthPercentEncode('a\uD83Db'), 'a%EF%BF%BDb');
+    // lone low surrogate
+    assert.strictEqual(IP.oauthPercentEncode('a\uDC00b'), 'a%EF%BF%BDb');
+    // 字串尾端截半（真實場景：標題長度截斷剛好切在 pair 中間）
+    assert.strictEqual(IP.oauthPercentEncode('title\uD83D'), 'title%EF%BF%BD');
+  });
+  it('合法 surrogate pair（完整 emoji）不受影響', () => {
+    // 😀 U+1F600 = 😀 → UTF-8 F0 9F 98 80
+    assert.strictEqual(IP.oauthPercentEncode('😀'), '%F0%9F%98%80');
+    assert.strictEqual(IP.oauthPercentEncode('a😀b'), 'a%F0%9F%98%80b');
+  });
 });
 
 describe('instapaper-oauth: normalizeOAuthParams（字典序 + 編碼）', () => {

@@ -66,7 +66,10 @@
   // attribute。只有「原本沒 theater」才在 unapply removeAttribute，避免使用者
   // 本來就在劇院模式被誤關。
   let prevTheaterValue = null;
-  let pendingLoadedHandler = null;
+  // v1.7.42：{ el, fn } 成對記錄——SPA 換影片後 querySelector 拿到的是新 video
+  // 元素，removeEventListener 必須對「當初掛 listener 的那個元素」呼叫才移除得掉
+  //（對新元素呼叫是 no-op，舊 handler 殘留在舊元素上）
+  let pendingLoaded = null;
   let navListenerInstalled = false;
 
   function injectStyle() {
@@ -125,12 +128,13 @@
     if (!v) return;
     // videoWidth/Height 在 metadata 載入前是 0；掛 loadedmetadata 等再算
     if (!v.videoWidth || !v.videoHeight) {
-      if (pendingLoadedHandler) v.removeEventListener('loadedmetadata', pendingLoadedHandler);
-      pendingLoadedHandler = () => {
-        pendingLoadedHandler = null;
+      if (pendingLoaded) pendingLoaded.el.removeEventListener('loadedmetadata', pendingLoaded.fn);
+      const fn = () => {
+        pendingLoaded = null;
         if (active) requestResize();
       };
-      v.addEventListener('loadedmetadata', pendingLoadedHandler, { once: true });
+      pendingLoaded = { el: v, fn };
+      v.addEventListener('loadedmetadata', fn, { once: true });
       return;
     }
     const target = calcTargetWindowHeight(
@@ -181,10 +185,11 @@
     restoreTheater();
     clearVideoInline();
     uninstallNavListener();
-    if (pendingLoadedHandler) {
-      const v = document.querySelector('video.html5-main-video');
-      if (v) v.removeEventListener('loadedmetadata', pendingLoadedHandler);
-      pendingLoadedHandler = null;
+    if (pendingLoaded) {
+      // v1.7.42：對記下的元素移除（不重新 querySelector——SPA 換影片後查到的是
+      // 新元素，對它 remove 是 no-op、舊 handler 移不掉）
+      pendingLoaded.el.removeEventListener('loadedmetadata', pendingLoaded.fn);
+      pendingLoaded = null;
     }
     window.dispatchEvent(new Event('resize'));
   }

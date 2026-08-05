@@ -59,8 +59,24 @@
 
   // RFC 3986 percent-encode。encodeURIComponent 不編碼 - _ . ! ~ * ' ( )；
   // 其中 unreserved 只保留 - _ . ~，所以還要把 ! * ' ( ) 補編成 %XX。
+  // v1.7.42：不成對的 surrogate（標題被上游截半的 emoji 等來源）會讓
+  // encodeURIComponent throw URIError，錯誤一路被上層 catch 誤分類成 NETWORK
+  //（使用者看到「網路錯誤」但其實跟網路無關）。編碼前先把 lone surrogate 換成
+  // U+FFFD（替代字元）——內容只差一個字、送出流程不中斷。
+  function stripLoneSurrogates(s) {
+    return s.replace(/[\uD800-\uDFFF]/g, (c, i) => {
+      if (c <= '\uDBFF') {
+        // high surrogate：後面緊跟 low surrogate 才是合法 pair
+        const next = s.charCodeAt(i + 1);
+        return (next >= 0xDC00 && next <= 0xDFFF) ? c : '�';
+      }
+      // low surrogate：前面緊鄰 high surrogate 才是合法 pair
+      const prev = s.charCodeAt(i - 1);
+      return (prev >= 0xD800 && prev <= 0xDBFF) ? c : '�';
+    });
+  }
   function oauthPercentEncode(str) {
-    return encodeURIComponent(String(str)).replace(/[!*'()]/g, (c) =>
+    return encodeURIComponent(stripLoneSurrogates(String(str))).replace(/[!*'()]/g, (c) =>
       '%' + c.charCodeAt(0).toString(16).toUpperCase());
   }
 
