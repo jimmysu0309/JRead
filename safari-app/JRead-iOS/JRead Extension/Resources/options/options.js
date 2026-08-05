@@ -696,7 +696,9 @@ function refreshStorageInfo() {
   try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
   if (!local || typeof local.get !== 'function') { storageInfoEl.textContent = ''; return; }
   storageInfoEl.textContent = '計算中…';
-  local.get({ readingPositions: {}, readingPositionsDiag: null, readingPositionsRestoreDiag: null }).then((v) => {
+  // v1.7.42：readingPositionsRestoreDiag（v1.5.10 restore 診斷儀器）已移除，
+  // 不再讀取顯示（position-memory.js 端同步移除，Jimmy 2026-08-05 裁定觀察期結束）
+  local.get({ readingPositions: {}, readingPositionsDiag: null }).then((v) => {
     const map = (v && v.readingPositions) || {};
     const diag = v && v.readingPositionsDiag;
     const count = Object.keys(map).length;
@@ -705,24 +707,14 @@ function refreshStorageInfo() {
     const line = '閱讀位置記憶：' + count + ' 筆，約 ' + formatBytes(bytes);
     // 寫入失敗診斷（position-memory recordWriteError 寫入）——有就附在後面
     const diagSuffix = (diag && diag.error) ? '　⚠ 上次寫入失敗：' + diag.error : '';
-    // v1.5.10 診斷：上次還原當下的事實（釘 H2b/H2c，確認後移除）
-    const rd = v && v.readingPositionsRestoreDiag;
-    let restoreSuffix = '';
-    if (rd) {
-      if (rd.stage === 'read-null') restoreSuffix = '　⚑ 上次還原：讀取 storage 失敗';
-      else if (!rd.found) restoreSuffix = '　⚑ 上次還原：found=否（磁碟 ' + count + ' 筆內無此篇記錄）';
-      else restoreSuffix = '　⚑ 上次還原：found=是 page=' + rd.page + ' pages=' + rd.pages +
-        ' 當下total=' + (rd.total == null ? '?' : rd.total) + ' →resolved=' + (rd.resolved == null ? '?' : rd.resolved) +
-        (rd.fresh === false ? '（過期）' : '');
-    }
     let probe = null;
     try { probe = local.getBytesInUse ? local.getBytesInUse(null) : null; } catch (_) { probe = null; }
     if (probe && typeof probe.then === 'function') {
       probe.then((b) => {
-        storageInfoEl.textContent = (Number.isFinite(b) ? line + '　|　本機快取總用量 ' + formatBytes(b) : line) + diagSuffix + restoreSuffix;
-      }).catch(() => { storageInfoEl.textContent = line + diagSuffix + restoreSuffix; });
+        storageInfoEl.textContent = (Number.isFinite(b) ? line + '　|　本機快取總用量 ' + formatBytes(b) : line) + diagSuffix;
+      }).catch(() => { storageInfoEl.textContent = line + diagSuffix; });
     } else {
-      storageInfoEl.textContent = line + diagSuffix + restoreSuffix;
+      storageInfoEl.textContent = line + diagSuffix;
     }
   }).catch(() => { storageInfoEl.textContent = '無法讀取本機快取'; });
 }

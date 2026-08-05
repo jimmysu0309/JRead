@@ -2085,7 +2085,11 @@
     if (dispW <= 0 || dispH <= 0) return false;
     if (dispW > PRE_TITLE_DECOR_MAX || dispH > PRE_TITLE_DECOR_MAX) return false;
     const nat = img.naturalWidth || 0;
-    return nat > dispW * 1.5;
+    // v1.7.42：1.5× → 2.5×。retina 時代內容小圖普遍出 2× 資源（displayed 100 /
+    // natural 200 = 2.0×），1.5× 門檻對它們幾乎恆真、失去「作者刻意縮小 = 裝飾」
+    // 的鑑別力。2.5× 排除標準 2× retina 圖；真裝飾 badge 縮幅遠大於此（washingtonpost
+    // 案例 1200/56 ≈ 21×）不受影響。寧可殘留不誤殺（與本函式保守原則一致）。
+    return nat > dispW * 2.5;
   }
 
   function hidePreTitleDecorativeImages(articleEl, hidden) {
@@ -5787,7 +5791,10 @@
       hydrations.push({ el: img, prevSrc, hadSrcAttr });
       img.setAttribute('src', newSrc);
     }
-    hidden.__lazyImages = hydrations;
+    // v1.7.42：累加而非賦值（與 __phantomText 契約一致）——同一 hidden 物件上
+    // 若本函式跑第二次（動態批次補跑），賦值會覆蓋前一批 hydration 記錄、
+    // restore 時漏還原前批圖片的原始 src
+    hidden.__lazyImages = (hidden.__lazyImages || []).concat(hydrations);
   }
 
   function restoreLazyImages(hiddenEls) {

@@ -153,6 +153,9 @@
     .menu.show { display: flex; }
     .menu.side-left  { left: calc(var(--fab-hit) + 8px); }
     .menu.side-right { right: calc(var(--fab-hit) + 8px); }
+    /* v1.7.42：fab 在畫面上半部時選單改由 top:0 往下長——預設 bottom:0（往上長）
+       在 fab 貼近頂部時會超出畫面頂、選單項目點不到（openMenu 依 pos.offsetY 切換） */
+    .menu.anchor-top { top: 0; bottom: auto; }
     .menu-item {
       display: flex;
       align-items: center;
@@ -538,6 +541,9 @@
   function openMenu() {
     if (host.style.display === 'none') return;
     buildMenu();
+    // v1.7.42：依 fab 垂直位置切換選單錨定——上半部（offsetY < 0.5）往下長、
+    // 下半部維持 bottom:0 往上長，兩側都不會超出畫面
+    menuEl.classList.toggle('anchor-top', pos.offsetY < 0.5);
     menuEl.classList.add('show');
     menuOpen = true;
     // 選單開著時整顆 host 全不透明，讓選單文字清楚可讀（不受使用者淡透明度影響）

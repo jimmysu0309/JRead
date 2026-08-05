@@ -84,6 +84,11 @@
   // 子元素結構消失），全字串錨定被閱讀時間前綴打敗。切段後「5 天前」獨立成段照樣
   // 命中；散文句（「我 3 天前測試過」）無分隔符、切不出純日期段，錨定保障不變。
   const BYLINE_SEG_SPLIT_RE = /[·•‧∙|／/—–]/;
+  // v1.7.42：作者行前綴判定抽共用常數——原本 LCA seed 的 authorEl 偵測與相鄰
+  // prevSib 作者列兩處各寫一份（同一份事實雙實作），prevSib 版漏 \b、「Bypass…」
+  // 開頭誤命中 by。拉丁 alternatives 收尾 \b 防前綴誤中；CJK（作者 / 文／）不加
+  // \b（JS \b 以 \w=[A-Za-z0-9_] 邊界定義，對 CJK 字元無意義）。
+  const BYLINE_AUTHOR_PREFIX_RE = /^(?:(?:by|words by|written by)\b|作者|文[／/])/i;
   // v1.7.4：中文閱讀時間補 Google 翻譯語序「閱讀 N 分鐘」（原僅「N 分鐘閱讀」）
   // 與簡體形——翻譯後 DOM 的閱讀時間字面不受控，兩種語序 + 繁簡都收
   const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|(閱讀|阅读)\s*(時間|时间)|(閱讀|阅读)\s*\d+\s*(分鐘|分钟)|\d+\s*(分鐘|分钟)(閱讀|阅读)/i;
@@ -364,7 +369,9 @@
   };
 
   function themeOf(name) {
-    return THEMES[name] || THEMES.light;
+    // v1.7.42：非法值 fallback 對齊 DEFAULTS.theme（gray）——原本硬寫 light，
+    // storage 損壞 / 外部寫入未知字串時使用者拿到的主題與「從未設定過」不一致
+    return THEMES[name] || THEMES[DEFAULTS.theme];
   }
 
   // v0.8.24：覆蓋 <meta name="theme-color">——iOS Safari 拿這個 meta 的色去染
@@ -1686,7 +1693,9 @@ ${MEDIA_DIRECT_WRAP_SEL} {
   row-gap: 0.2em !important;
   margin: 0.2em 0 0.8em 0 !important;
   padding: 0 !important;
-  text-align: left !important;
+  /* v1.7.42：left → start——RTL（阿拉伯文 / 希伯來文）頁面 byline 應貼行起始側，
+     硬寫 left 違反 v1.6.24 RTL 政策；LTR 下 start === left、行為不變 */
+  text-align: start !important;
 }
 [${ARTICLE_ATTR}="1"] [${BYLINE_WRAP_ATTR}] {
   display: contents !important;
@@ -4152,7 +4161,7 @@ html.${HTML_CLASS}.jread-orion body {
             for (const el of articleEl.querySelectorAll('a[rel~="author"], span, div, p, a')) {
               if (!beforeBody(el) || !bvisible(el)) continue;
               const t = bnorm(el.textContent);
-              if (/^(by|words by|written by)\b/i.test(t) && t.length < 60) { authorEl = el; break; }
+              if (BYLINE_AUTHOR_PREFIX_RE.test(t) && t.length < 60) { authorEl = el; break; }
             }
             let seed = dateEl;
             if (authorEl && authorEl !== dateEl) {
@@ -4329,7 +4338,7 @@ html.${HTML_CLASS}.jread-orion body {
                 const hasBigImg = bhasBigImg(prevSib);
                 const hasAuthorSignal =
                   !!prevSib.querySelector('a[rel~="author"]') ||
-                  /^(by|words by|written by|作者|文[／/])/i.test(bnorm(prevSib.textContent)) ||
+                  BYLINE_AUTHOR_PREFIX_RE.test(bnorm(prevSib.textContent)) ||
                   Array.from(prevSib.querySelectorAll('img'))
                     .some((im) => { const r = bimgRect(im); return r.w > 0 && r.w <= 96 && r.h <= 96; });
                 if (hasAuthorSignal && !hasBigImg) {

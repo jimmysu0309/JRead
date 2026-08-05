@@ -172,7 +172,14 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // v1.6.26：回應前剔除憑證欄位（readwiseToken / instapaper* / geminiApiKey）
       // ——content 端只需要 UI 偏好、從不使用憑證，最小知情原則（單一資料源
       // settings-defaults.js stripCredentialSettings）。
-      const strip = globalThis.__JReadStripCredentialSettings || ((s) => s);
+      // v1.7.42：strip 缺席（importScripts 失敗等）時不可 identity fallback——那會
+      // 把含憑證的整包設定送進 content（正是 v1.6.26 要擋的洩漏面）。改回 null，
+      // content 端本就有 defaults fallback 軌，失效模式是「退回預設偏好」而非洩憑證。
+      const strip = globalThis.__JReadStripCredentialSettings;
+      if (typeof strip !== 'function') {
+        sendResponse(null);
+        return; // sync
+      }
       browser.storage.sync.get(DEFAULT_SETTINGS)
         .then((s) => sendResponse(strip(s)))
         .catch(() => sendResponse(null));
@@ -554,9 +561,18 @@ async function sendToReadwiseFromCommand(tabId) {
       return;
     }
     // 等 detector / cleaner / styler 跑完（content main.js enterReaderMode 是
-    // async）。800ms 對多數站夠；harness 實測 cleaner 跑 100-300ms + styler
-    // 立即注入 + 安全 buffer。
-    await new Promise(r => setTimeout(r, 800));
+    // async）。v1.7.42：原本固定等 800ms 是 race——慢站（重 SPA / 大量動態內容）
+    // 可能還沒 ready 就抽 payload、抽到殘缺內容。改輪詢 GET_READER_STATE 直到
+    // active（每 200ms、上限 4s）；就緒即早退，多數站（harness 實測 cleaner
+    // 100-300ms）比固定 800ms 更快。逾時不中斷——繼續往下走，由步驟 2 的
+    // extracted.ok 判定兜底（維持原本 800ms 到點就走的失效模式，不更差）。
+    for (let waited = 0; waited < 4000; waited += 200) {
+      await new Promise(r => setTimeout(r, 200));
+      try {
+        const s = await sendMessage(tabId, { type: 'GET_READER_STATE' });
+        if (s && s.active) break;
+      } catch { /* content script 尚未就緒——繼續輪詢 */ }
+    }
     // v1.7.36：步驟 0 那則多半送不到（當時 content script 還沒注入），
     // 此刻補一則——同 id，已顯示的話不會變兩則。
     showProgress(SAVE_PROGRESS.sending);

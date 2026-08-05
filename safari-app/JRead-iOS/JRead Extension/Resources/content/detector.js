@@ -1234,6 +1234,10 @@
       } else {
         // 跑 4 個 read-only 策略；故意不走 detectByShadowDomFallback（會 appendChild
         // 替身、有副作用），shadow DOM 站走 enter reader mode 時才建替身。
+        // 已知 UX 不一致（v1.7.42 記錄，刻意取捨不修）：MSN 類 shadow-DOM 站
+        // probe 因此回 null → popup 顯示「無法偵測主文」，但實際按 toggle 走
+        // 完整 detect()（含 shadow fallback）會成功。popup 開啟不可注入替身
+        // 是硬約束，寧可顯示保守於實際能力。
         const hit = (
           detectByArticleTag() ||
           detectBySchemaOrg() ||
