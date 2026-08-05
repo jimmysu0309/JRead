@@ -154,6 +154,13 @@
   // v1.7.8：inline-flow <p> 標記——豁免 v0.7.201 水平 padding reset（見
   // markInlineFlowParagraphs）。
   const INLINE_FLOW_P_ATTR = 'data-jread-inline-flow-p';
+  // v1.7.45：absolute / fixed 定位元素標記——豁免 v0.7.48 的全域 left/right:auto
+  // inset 清除（見 markAbsAnchors）。該清除的設計前提是「position:relative 保留、
+  // 無 offset 時等於 static 視覺」，只對 relative 成立；absolute 元素的 left/right
+  // 是錨點，清成 auto 會讓元素跳回 static position（WaPo 日期輪播實證：短日期
+  // span absolute left:0 錨在 overflow:hidden 裁切窗左上、長日期 in-flow span 被
+  // 站方 translateY(-110%) 移出窗——left 被清後短日期飛到窗外，日期整個消失）。
+  const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -1940,6 +1947,18 @@ html [${ARTICLE_ATTR}="1"] dl {
    設計也容易 debug。 */
 [${ARTICLE_ATTR}="1"] *${BORDER_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
   border-width: 0 !important;
+}
+/* left/right: auto 解釋（v0.7.48）：原站常用 position: relative + left/right 偏移做
+   「圖片向左/右溢出版心做視覺擴張」hack（businessweekly.com.tw .Single-image
+   套 position:relative; left: -90px; right: 90px）。reader mode 下單欄 card layout
+   沒這需求、offset 反而把圖推出 card padding 範圍變成「圖片偏左 + 右側溢出」破版。
+   清 inset 後 relative element 回到正常 layout 位置。top/bottom 不清（sticky 合法）。
+   v1.7.45：拆出獨立規則 + :not([ABS_ANCHOR])——v0.7.48 的「清了等於 static 視覺」
+   前提只對 relative 成立；absolute / fixed 元素 left/right 是錨點，清掉會跳回
+   static position（WaPo 日期輪播 absolute left:0 span 被打飛出 overflow 裁切窗、
+   日期消失實證）。markAbsAnchors 在 apply() 期標記 computed absolute/fixed 元素
+   豁免；已被其他 reader 規則打回 static 的媒體類子樹量到 static、不標、照舊清。 */
+[${ARTICLE_ATTR}="1"] *${BORDER_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]):not([${ABS_ANCHOR_ATTR}="1"]) {
   left: auto !important;
   right: auto !important;
 }
@@ -2027,15 +2046,6 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   height: 100% !important;
   margin: 0 !important;
 }
-/* left/right: auto 解釋：原站常用 position: relative + left/right 偏移做
-   「圖片向左/右溢出版心做視覺擴張」hack（businessweekly.com.tw .Single-image
-   套 position:relative; left: -90px; right: 90px——讓主圖在二欄 layout 中向
-   左溢出 col-md-7 邊界視覺撐大）。reader mode 下單欄 card layout 沒這需求、
-   offset 反而把圖推出 card padding 範圍變成「圖片偏左 + 右側溢出」破版。
-   清 inset 後 element 回到正常 layout 位置（position:relative 保留、無
-   offset 時等於 static 視覺）。preserve 清單跟 border 一致。
-   top/bottom 不清——sticky 元素用 top:0 是合法 layout（但 ancestor reset
-   已強制祖先 position:static、articleEl 內若有 sticky 是極少數合理場景）。 */
 /* inline emoji / icon：naturalWidth <= ${INLINE_IMG_MAX}（或 natural 不可靠時
    rendered rect <= ${INLINE_IMG_MAX}，見 apply() 內 v0.7.214 註解）的小圖片由
    apply() JS 標記 [${INLINE_IMG_ATTR}]，保留 inline flow 不被 block + margin
@@ -3342,9 +3352,49 @@ html.${HTML_CLASS}.jread-orion body {
       }
     }
   }
+  // v1.7.45：absolute / fixed 定位元素標 ABS_ANCHOR_ATTR，豁免全域 left/right:auto
+  // inset 清除（規則與動機見 buildCss 該規則註解）。必須在 ARTICLE_ATTR 設定**後**
+  // 量（與 FILL_IFRAME 同精神）：媒體類子樹已被 reader 規則打回 static、量到
+  // static 不標、照舊清；只豁免「reader CSS 未動其定位、仍 absolute/fixed」的
+  // 元素（這些元素的 left/right 是錨點、不是 relative 視覺偏移 hack）。
+  // 讀寫分離：先整輪量 computed、再整輪 setAttribute（避免 layout thrash）。
+  // scopeEl（選填）：dynamic path 只掃新增子樹（含自身）；靜態 path 掃 articleEl
+  // 後代 + promoted-outside 標題 clone（比照 markHeadingLinks 的掃描範圍）。
+  function markAbsAnchors(articleEl, marked, scopeEl) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const scopes = scopeEl
+      ? [scopeEl]
+      : [articleEl, ...articleEl.ownerDocument.querySelectorAll('[data-jread-promoted-outside="1"]')];
+    const found = [];
+    for (const scope of scopes) {
+      const els = scope === articleEl
+        ? scope.querySelectorAll('*')
+        : [scope, ...scope.querySelectorAll('*')];
+      for (const el of els) {
+        if (el.getAttribute(ABS_ANCHOR_ATTR) === '1') continue;
+        // 只吞 SyntaxError：jsdom（nwsapi）對站點 <style> 內 parse 不了的 selector
+        // 會讓 getComputedStyle 丟 SyntaxError（真瀏覽器不會）——該元素跳過即可。
+        // 其他錯誤照拋，維持 apply「中途炸掉 → rollback + rethrow」語意
+        // （enter-pipeline-rollback.spec 毒針 forcing）
+        let pos = '';
+        try {
+          pos = _win.getComputedStyle(el).position;
+        } catch (e) {
+          if (e && e.name === 'SyntaxError') continue;
+          throw e;
+        }
+        if (pos === 'absolute' || pos === 'fixed') found.push(el);
+      }
+    }
+    for (const el of found) {
+      el.setAttribute(ABS_ANCHOR_ATTR, '1');
+      marked.push(el);
+    }
+  }
   // 動態補標狀態：apply() 標記完成後填入、restore() 清空。cleaner 的
   // dynamic-append observer 對 articleEl 內新增節點轉呼 remarkDynamicMarkers
-  // （晚 mount 的 responsive embed iframe / heading link）。
+  // （晚 mount 的 responsive embed iframe / heading link / absolute 錨定元素）。
   let activeMarkState = null;
 
   const styler = {
@@ -3506,6 +3556,7 @@ html.${HTML_CLASS}.jread-orion body {
       const fillIframes = [];
       const embedWrapMarked = [];
       const headingLinkMarked = [];
+      const absAnchorMarked = [];
       let textDivMarked = [];
       let cjkJustifyMarked = [];
       let decorResetMarked = [];
@@ -3515,7 +3566,7 @@ html.${HTML_CLASS}.jread-orion body {
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
       try {
       // ──────────────────────────────────────────────────────────────────
 
@@ -3795,7 +3846,9 @@ html.${HTML_CLASS}.jread-orion body {
       // 的同刻語意一致；量測會 flush style、attr 已就位）。
       markEmbedWrapIframes(articleEl, embedWrapMarked);
       markHeadingLinks(articleEl, headingLinkMarked);
-      activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked };
+      // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
+      markAbsAnchors(articleEl, absAnchorMarked);
+      activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked, absAnchorMarked };
 
       // v0.8.86：responsive embed 的 abs-pos iframe 標 [FILL_IFRAME_ATTR]，讓
       // CSS pin 回填滿 wrapper（見上方 FILL_IFRAME_ATTR rule 註解）。必須在
@@ -5551,6 +5604,12 @@ html.${HTML_CLASS}.jread-orion body {
           if (el && el.removeAttribute) el.removeAttribute(HEADING_LINK_ATTR);
         }
       }
+      // v1.7.45：移除 absolute 錨定豁免標記
+      if (Array.isArray(snapshot.absAnchorMarked)) {
+        for (const el of snapshot.absAnchorMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(ABS_ANCHOR_ATTR);
+        }
+      }
       // v0.8.49：移除「div 當段落」標記
       if (Array.isArray(snapshot.textDivMarked)) {
         for (const el of snapshot.textDivMarked) {
@@ -5842,6 +5901,11 @@ html.${HTML_CLASS}.jread-orion body {
         // 可能是既有節點（node 之外），closest 往上補到該 <a> 為 scope
         const wrapA = (node.closest && node.closest('a')) || null;
         markHeadingLinks(s.articleEl, s.headingLinkMarked, wrapA || node);
+      }
+      // v1.7.45：晚 mount 的 absolute/fixed 錨定元素補標（只掃新增子樹；
+      // position 無 cheap selector gate、但子樹通常很小，直接量 computed）
+      if (Array.isArray(s.absAnchorMarked)) {
+        markAbsAnchors(s.articleEl, s.absAnchorMarked, node);
       }
     }
   };
