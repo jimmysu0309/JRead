@@ -75,8 +75,10 @@ describe('styler v1.6.24 — 翻頁模式 cardRight 幾何 pass gate', () => {
     // 錨在該區塊特徵字（overflowAncestors）往前 600 字內必須出現 gate
     const idx = STYLER_SRC.indexOf('const overflowAncestors = new Set()');
     assert.ok(idx > 0, '找不到 v0.8.136 overflow de-column 區塊');
-    const before = STYLER_SRC.slice(Math.max(0, idx - 600), idx);
-    assert.match(before, /if\s*\(!opts\.pagedMode\)/,
+    // v1.7.44 E5：gate 擴為複合條件（!pagedMode && scrollWidth cheap gate），
+    // regex 放寬到「條件以 !opts.pagedMode 開頭」——pagedMode gate 不變式不變
+    const before = STYLER_SRC.slice(Math.max(0, idx - 1200), idx);
+    assert.match(before, /if\s*\(!opts\.pagedMode\b/,
       'v0.8.136 pass 缺 pagedMode gate——multicol 第 2 欄起全被誤判溢出');
   });
 

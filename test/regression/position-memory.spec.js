@@ -251,7 +251,8 @@ describe('position-memory — computeNextMap（記憶體 map 算寫入 payload�
 
 describe('position-memory — persistNow 同步寫入路徑（iOS 背景凍結防護，v1.5.9）', () => {
   it('persistNow 有 memMap 同步分支：先 computeNextMap + writeWithSelfHeal、才退 localGet', () => {
-    const m = PM_SRC.match(/function persistNow\(\)[\s\S]*?\n  \}/);
+    // v1.7.44 E3：persistNow 增加 force 參數（flush 路徑略過寫入節流）
+    const m = PM_SRC.match(/function persistNow\(force\)[\s\S]*?\n  \}/);
     assert.ok(m, 'position-memory.js 必須有 persistNow');
     const body = m[0];
     assert.ok(/if \(memMap\)/.test(body), 'persistNow 必須有 memMap 同步分支');

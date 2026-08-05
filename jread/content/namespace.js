@@ -902,6 +902,10 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       OPEN_FEATURE_MENU: 'OPEN_FEATURE_MENU',       // content → SW：開工具列圖示選單 popup（Safari）
       // v1.0.23：懸浮按鈕長按選單「進入 Reader」——content 無 tabs 權限，交 SW 開
       OPEN_READER: 'OPEN_READER',                   // content → SW：開 reader/reader.html（Readwise feed）新分頁
+      // v1.7.44（X2）：panel 防 clickjacking——floating-icon 開頁內浮層前向 SW
+      // 登記（sender.tab 為證、頁面 JS 無法偽造），popup(?panel=1) 載入時以
+      // PANEL_HANDSHAKE（popup → SW，不在 content 詞彙）驗證後才接受互動
+      PANEL_OPENED: 'PANEL_OPENED',                 // content → SW：登記本 tab 剛合法開啟功能浮層
       // v0.7.228：統一指令 dispatch 落地 content 端（iOS SW 終止後手勢/自訂鍵
       // 仍可本地觸發）；SW 只在 manifest 預設鍵（browser 層事件）時委派此訊息
       DISPATCH_COMMAND: 'DISPATCH_COMMAND',         // SW → content：dispatchLocalCommand(payload.command)

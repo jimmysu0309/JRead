@@ -1295,17 +1295,26 @@
   // 「段落含長 inline link」比 direct-text 寬鬆，移除會產生新盲點）。
   function subtreeHasLongNonAnchorText(root, minLen) {
     if (!root || root.nodeType !== 1) return false;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    // v1.7.44 E8 效能：原版逐節點兩次 closest（O(n×depth)）。改①祖先鏈只在
+    // root 判一次——root 自身已在 <a> / 已隱藏子樹內時整棵子樹必然全數排除；
+    // ②子樹內的 <a> 與已隱藏節點用 TreeWalker filter REJECT 整枝跳過（其內
+    // 所有節點原本也會被 closest 排除，行為等價）。localName 比對同時涵蓋
+    // SVG namespace 的 <a>（tagName 保留小寫，closest('a') 原本就會命中）。
+    if (root.closest && (root.closest('a') || root.closest('[data-jread-hidden="1"]'))) return false;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
+      acceptNode(el) {
+        if (el.localName === 'a') return NodeFilter.FILTER_REJECT;
+        if (el.dataset && el.dataset.jreadHidden === '1') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
     let el = root;
     while (el) {
-      if (el.tagName !== 'A' && !el.closest('a') &&
-          !el.closest('[data-jread-hidden="1"]')) {
-        let t = '';
-        for (const n of el.childNodes) {
-          if (n.nodeType === 3) t += n.textContent;
-        }
-        if (norm(t).length >= minLen) return true;
+      let t = '';
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3) t += n.textContent;
       }
+      if (norm(t).length >= minLen) return true;
       el = walker.nextNode();
     }
     return false;
@@ -1419,12 +1428,27 @@
 
   // ---- 主文外：fixed / sticky 元素 --------------------------------------
   function hideFixedOutsideArticle(articleEl, hidden) {
-    const all = document.body ? document.body.querySelectorAll('*') : [];
+    if (!document.body) return;
     const vw = window.innerWidth || document.documentElement.clientWidth;
     const vh = window.innerHeight || document.documentElement.clientHeight;
 
-    for (const el of all) {
-      if (isRelated(articleEl, el)) continue;
+    // v1.7.44 E6 效能：TreeWalker REJECT 整枝，取代 querySelectorAll('*') 逐
+    // 元素 isRelated + getComputedStyle 全掃。主文子樹（大頁多數節點）在
+    // articleEl 一個節點就 REJECT 整枝；已被前面規則 hide 的子樹同樣 REJECT
+    // （display:none 子樹內的 fixed/sticky rect 為 0、原本也會被 rect guard
+    // 跳過，整枝略過行為等價、省整片 getComputedStyle）。主文祖先鏈 SKIP
+    // （自身不處理＝isRelated 同語意，但要走進去——site chrome 多掛在祖先層
+    // 的其他分支）。
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+      acceptNode(el) {
+        if (el === articleEl) return NodeFilter.FILTER_REJECT;
+        if (el.dataset && el.dataset.jreadHidden === '1') return NodeFilter.FILTER_REJECT;
+        if (el.contains(articleEl)) return NodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let el;
+    while ((el = walker.nextNode())) {
       const cs = window.getComputedStyle(el);
       const pos = cs.position;
       if (pos !== 'fixed' && pos !== 'sticky') continue;
@@ -5032,6 +5056,14 @@
   function collapseInnerFlexWrap(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
+    // v1.7.44 E9：讀寫分離（v0.8.20 C9 教訓補到本 rule——對照
+    // collapseGridWithHiddenCell 已 phase 分離）。phase 1 純讀：所有 computed /
+    // rect 量測與觸發決策都在未被 mutate 的原始 layout 上做、收進 writes
+    // worklist；phase 2 純寫：依 phase 1 的處理順序統一套用（snapshot 在寫入
+    // 當下取，巢狀 container 對同一元素的疊寫序與舊交錯版一致、restore round-trip
+    // 不變）。消除「後面 candidate 的 rect 讀到前面 collapse 寫入污染過的
+    // layout」的 forced reflow 抖動與誤判。
+    const writes = [];
     for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -5109,9 +5141,7 @@
         ? [...INNER_FLEX_PROPS, 'height', 'min-height'] : INNER_FLEX_PROPS;
       const containerDecls = resetHeight
         ? { ...INNER_FLEX_DECLS, height: 'auto', 'min-height': '0' } : INNER_FLEX_DECLS;
-      resets.push({ el, kind: 'container', prev: snapshotStyles(el, containerProps) });
-      applyImportant(el, containerDecls);
-      if (el.dataset) el.dataset.jreadCollapsed = '1';
+      const childActions = [];
       // 對所有 visible children（含 absolute）套 CHILD_DECLS——把 absolute
       // 拉回 static、寬度回 auto，讓 layout 整體乾淨在 block flow
       const directChildrenSet = new Set();
@@ -5129,16 +5159,13 @@
         if (narrowCells.has(c)) {
           const cls = narrowCells.get(c);
           if (cls.kind === 'icon') {
-            resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
-            applyImportant(c, iconCellPinDecls(cls.w));
+            childActions.push({ el: c, props: ICON_CELL_PIN_PROPS, decls: iconCellPinDecls(cls.w) });
           } else {
-            resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INLINE_CELL_PROPS) });
-            applyImportant(c, INLINE_CELL_DECLS);
+            childActions.push({ el: c, props: INLINE_CELL_PROPS, decls: INLINE_CELL_DECLS });
           }
           continue;
         }
-        resets.push({ el: c, kind: 'child', prev: snapshotStyles(c, INNER_FLEX_CHILD_PROPS) });
-        applyImportant(c, INNER_FLEX_CHILD_DECLS);
+        childActions.push({ el: c, props: INNER_FLEX_CHILD_PROPS, decls: INNER_FLEX_CHILD_DECLS });
       }
       // v0.7.108：deep absolute descendants 拉回 static——v0.7.107 只處理
       // direct children；absolute descendants（healthsystemtracker `.about`
@@ -5148,6 +5175,7 @@
       // 後代強制 position: static（reader mode flow > overlay 原則）。
       // 不動 width/top/left 等——這些後代寬度由 stylesheet 給合理值，
       // 只取消 absolute 定位讓元素回到 flow 位置就夠。
+      const descActions = [];
       for (const desc of el.querySelectorAll('*')) {
         if (directChildrenSet.has(desc)) continue;
         if (desc.dataset && desc.dataset.jreadHidden === '1') continue;
@@ -5157,6 +5185,26 @@
         try { dcs = window.getComputedStyle(desc); } catch (_) { continue; }
         if (!dcs) continue;
         if (dcs.position !== 'absolute' && dcs.position !== 'fixed') continue;
+        descActions.push(desc);
+      }
+      writes.push({ el, containerProps, containerDecls, childActions, descActions });
+    }
+    // phase 2 純寫：依 phase 1 順序統一套用。descWritten 去重巢狀 container
+    // 重複收到的同一 absolute 後代——舊交錯版第二輪讀到 computed position 已是
+    // static 會跳過，分離版讀在寫之前、必須顯式去重（否則第二份 snapshot 記到
+    // 第一份寫入的 static !important，restore 殘留）。
+    const descWritten = new Set();
+    for (const w of writes) {
+      resets.push({ el: w.el, kind: 'container', prev: snapshotStyles(w.el, w.containerProps) });
+      applyImportant(w.el, w.containerDecls);
+      if (w.el.dataset) w.el.dataset.jreadCollapsed = '1';
+      for (const a of w.childActions) {
+        resets.push({ el: a.el, kind: 'child', prev: snapshotStyles(a.el, a.props) });
+        applyImportant(a.el, a.decls);
+      }
+      for (const desc of w.descActions) {
+        if (descWritten.has(desc)) continue;
+        descWritten.add(desc);
         resets.push({ el: desc, kind: 'desc', prev: snapshotStyles(desc, ['position']) });
         applyImportant(desc, { 'position': 'static' });
       }
@@ -5213,6 +5261,10 @@
   // 對 inline style 仍 valid，所以兩端（jsdom + 真實 Chrome）都得到一致結果。
   // 比 element.innerText 更可靠（innerText 在 jsdom 退化成 textContent，會帶到 hidden text）。
   function visibleRenderedText(el) {
+    // v1.7.44 E2 效能：cheap 閘門——textContent（含 hidden 子樹的全集）正規化後
+    // 為空，visible 子集必為空，直接回空字串跳過逐節點 getComputedStyle 慢路。
+    // 呼叫端一律 trim()/norm() 後使用，whitespace-only 情境回 '' 等價。
+    if (el && el.textContent != null && norm(el.textContent).length === 0) return '';
     let out = '';
     function walk(node) {
       if (!node) return;
@@ -7502,6 +7554,11 @@
     }
     if (node.querySelectorAll && articleEl.contains(node)) {
       for (const el of node.querySelectorAll('*')) {
+        // v1.7.44 E7 效能：hyphenated tag 先篩（customElementIsInteractiveWidget
+        // 的第一道 gate 提前到迴圈）——React 整棵 wrapper re-append 時 addedNode
+        // 子樹可達數千節點，非 custom element（絕大多數）直接略過，省下逐元素
+        // closest + isInPreserved 的 O(depth) 慢檢查
+        if (el.localName.indexOf('-') < 0) continue;
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
         if (el.closest('[data-jread-hidden="1"]')) continue;
         if (isInPreserved(el)) continue;

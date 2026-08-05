@@ -1238,12 +1238,13 @@
         // probe 因此回 null → popup 顯示「無法偵測主文」，但實際按 toggle 走
         // 完整 detect()（含 shadow fallback）會成功。popup 開啟不可注入替身
         // 是硬約束，寧可顯示保守於實際能力。
-        const hit = (
+        // v1.7.44 E12：probe 的四策略同樣共用一份祖先鏈 cache（理由同 detect）
+        const hit = withAncestorCache(() => (
           detectByArticleTag() ||
           detectBySchemaOrg() ||
           detectByHeuristic() ||
           detectByMainTag()
-        );
+        ));
         result = { siteMode: (hit && hit.el) ? 'article' : null };
       }
       this._probeCache = { href: location.href, ts: now, result };
@@ -1301,6 +1302,16 @@
           isFbPost: true
         };
       }
+      // v1.7.44 E12：detect 全程共用祖先鏈 cache（withAncestorCache 支援巢狀
+      // 沿用——各策略內部的同名包裝直接吃外層 cache）。原本四策略各開各的
+      // cache、策略間 + promote / narrow / ensureH1 對同一條祖先鏈重複
+      // getComputedStyle。detect 過程唯一 DOM mutation 是 shadow replica
+      // appendChild（新節點必 cache miss、既有節點 hidden 狀態不變），cache
+      // 正確性不受影響。
+      return withAncestorCache(() => this._detectStrategiesAndRefine());
+    },
+
+    _detectStrategiesAndRefine() {
       const result = (
         detectByArticleTag() ||
         detectBySchemaOrg() ||
@@ -1464,8 +1475,16 @@
     // 限制 textLen 接近 baseTitle，避免命中包含主文整段的大 wrapper
     let bestCand = null;
     let bestScore = 0;
+    // v1.7.44 E14 效能：raw textContent 長度粗篩在 normalizeTitle 之前——
+    // normalize（多段 regex）對主文級大 wrapper 的整段文字是本函式最大成本。
+    // normalize 只會刪字元（折標點 / 收空白），raw < 10 ⇒ normalized < 10；
+    // raw 超過 baseTitle×4+40 的元素 normalize 後仍不可能落在 ≤ ×1.5 門檻內
+    // （標題載體不會有 60%+ 是可刪空白標點），直接跳過
+    const RAW_LEN_CAP = baseTitle.length * 4 + 40;
     for (const el of articleEl.querySelectorAll('p, div, span, h5, h6')) {
-      const t = normalizeTitle(el.textContent || '');
+      const rawT = el.textContent || '';
+      if (rawT.length < 10 || rawT.length > RAW_LEN_CAP) continue;
+      const t = normalizeTitle(rawT);
       if (t.length < 10 || t.length > baseTitle.length * 1.5) continue;
       // 包含 baseTitle 60%+ 字元
       let overlap = 0;
@@ -1525,13 +1544,30 @@
       // 在窄視窗顯示、bestCand 卻挑到 breadcrumb span，iOS 上 inject H1 + mobile
       // span 變成兩個標題）。只清 leaf-ish（後代 element ≤ 2）且文字長度近 baseTitle
       // 的節點——不碰含主文/meta 的大 wrapper，也不碰 inject H1 自己。
+      // v1.7.44 E14 效能：後代數 ≤ 2 的判定改 bounded 淺走訪（最多數 3 個
+      // 元素即定案），取代對每個元素 materialize 整包 querySelectorAll('*')
+      // NodeList 再取 length（大 wrapper 白付整棵掃描）
+      const hasAtMostNDescendants = (root, max) => {
+        let count = 0;
+        const stack = [root];
+        while (stack.length) {
+          const n = stack.pop();
+          for (let c = n.firstElementChild; c; c = c.nextElementSibling) {
+            if (++count > max) return false;
+            stack.push(c);
+          }
+        }
+        return true;
+      };
       for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, h5, h6, p, div, span')) {
         if (el === bestCand) continue;
         if (el.hasAttribute('data-jread-injected-title')) continue;
+        if (!hasAtMostNDescendants(el, 2)) continue;
         // 已被 cleaner hide 的不必再碰（不可見、且避免與 cleaner.restore 互踩）
         if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-        if (el.querySelectorAll('*').length > 2) continue;
-        const t = normalizeTitle(el.textContent || '');
+        const rawT = el.textContent || '';
+        if (rawT.length > RAW_LEN_CAP) continue; // raw 粗篩（理由同上方候選掃描）
+        const t = normalizeTitle(rawT);
         if (t.length > baseTitle.length * 1.5) continue;
         if (!matchesBaseTitle(t)) continue;
         hidePromotedTitleSource(el);

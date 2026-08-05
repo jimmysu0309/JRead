@@ -153,6 +153,45 @@ function runIfDevelopmentInstall(label, fn) {
   });
 }
 
+// v1.7.44（X2）：功能浮層 clickjacking 防線。popup.html 對 <all_urls>
+// web-accessible，任意網站可 iframe 嵌入 ?panel=1 蓋在誘餌 UI 上騙點擊。
+// floating-icon 開 iframe 浮層前以 PANEL_OPENED 登記（sender.tab 由瀏覽器填、
+// 頁面 JS 無法偽造）；popup(?panel=1) 載入時以 PANEL_HANDSHAKE 驗證同 tab
+// 30s 內有登記、驗過即銷毀（單次有效）。未登記的嵌入握手失敗 → popup 互動
+// no-op。狀態放 storage.session（SW 重啟不掉、不落磁碟）；不可用時退記憶體
+// map（SW 存活期內有效；重啟後最壞情況 = 合法浮層驗證失敗、重開浮層即恢復）。
+// 已知邊界：同 tab 內合法浮層開啟的 30s 窗口內，頁面若同時自行嵌入第二個
+// popup iframe 可搭便車通過——該情境需先誘發合法開啟流程，防線層級足夠。
+const PANEL_TOKEN_TTL_MS = 30 * 1000;
+const panelOpenMem = new Map();
+async function recordPanelOpen(tabId) {
+  const key = 'panelOpen:' + tabId;
+  const ts = Date.now();
+  try {
+    if (browser.storage && browser.storage.session) {
+      await browser.storage.session.set({ [key]: ts });
+      return;
+    }
+  } catch (_e) { /* storage.session 不可用 → 退記憶體 */ }
+  panelOpenMem.set(tabId, ts);
+}
+async function consumePanelOpen(tabId) {
+  const key = 'panelOpen:' + tabId;
+  let ts = null;
+  try {
+    if (browser.storage && browser.storage.session) {
+      const v = await browser.storage.session.get(key);
+      if (v && typeof v[key] === 'number') ts = v[key];
+      await browser.storage.session.remove(key);
+    }
+  } catch (_e) { /* 讀取失敗 → 試記憶體 fallback */ }
+  if (ts == null && panelOpenMem.has(tabId)) {
+    ts = panelOpenMem.get(tabId);
+    panelOpenMem.delete(tabId);
+  }
+  return ts != null && (Date.now() - ts) <= PANEL_TOKEN_TTL_MS;
+}
+
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
 
@@ -229,6 +268,23 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         catch (_e) {}
       })();
       return;
+    }
+    case 'PANEL_OPENED': {
+      // v1.7.44（X2）：floating-icon 開頁內浮層前的登記（防 clickjacking，見
+      // consumePanelOpen 註解）。sender.tab 由瀏覽器填、頁面 JS 無法偽造。
+      const panelTabId = sender && sender.tab && sender.tab.id;
+      if (typeof panelTabId === 'number') recordPanelOpen(panelTabId);
+      return; // fire-and-forget
+    }
+    case 'PANEL_HANDSHAKE': {
+      // v1.7.44（X2）：popup(?panel=1) 載入時驗證「本 tab 剛由 floating-icon
+      // 合法開啟浮層」。iframe 內擴充頁的 sender.tab = 宿主 tab。
+      const hsTabId = sender && sender.tab && sender.tab.id;
+      if (typeof hsTabId !== 'number') { sendResponse({ ok: false }); return; }
+      consumePanelOpen(hsTabId)
+        .then((ok) => sendResponse({ ok }))
+        .catch(() => sendResponse({ ok: false }));
+      return true; // async
     }
     case 'SET_ACTIVE_ICON': {
       // content main.js 在 enter/exit reader mode 時呼叫，切 action icon 彩色/灰階

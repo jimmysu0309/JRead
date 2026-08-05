@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.43**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.44**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -593,6 +593,15 @@ option value 寫死在 `popup.html`、與 `popup.js` 的 `FONT_STACKS` 常數逐
 | `lastDetectedForUrl` | `object` | `{}` | `storage.local`（快取） | ❌（內部用） |
 | `readingPositions` | `object` | `{}` | `storage.local`（快取） | ❌（內部用，v0.8.40）—— 閱讀位置記憶的 entry map（`{ urlKey: { ts, mode, page/pages 或 ratio/blockIndex/blockText } }`），寫入時自動淘汰過期 + 超量（上限 100 筆、舊的先丟） |
 | `readingPositionsDiag` | `object` | （無） | `storage.local`（快取） | ❌（內部用，v1.0.14）—— 位置記憶寫入失敗診斷 `{ ts, error }`，由 `recordWriteError` 寫入、options 除錯區塊顯示；`storage.local.clear` 一併清掉 |
+
+### 憑證儲存的安全 tradeoff（v1.7.44 記錄，X3）
+
+三組憑證——`readwiseToken`、`geminiApiKey`、`instapaperToken` + `instapaperTokenSecret`——以**明文**存於 `storage.sync`。這是平台限制下的刻意取捨，不是疏漏：
+
+- **為什麼不加密**：MV3 擴充拿不到 OS keychain；在擴充內自行加密的金鑰仍得存在同一個 storage，只是搬石頭擋自己（obfuscation、非加密）。`storage.sync` 的傳輸與雲端儲存加密由瀏覽器 sync pipeline 負責
+- **為什麼放 sync 不放 local**：跨裝置同步是功能需求（使用者不必在每台裝置重貼 token）
+- **已有的緩解**：v1.6.26 起 `GET_SETTINGS` 回應剔除憑證欄位（content script 拿不到、最小知情原則，`stripCredentialSettings` 單一資料源）；v1.7.42 起 strip 缺席時回 `null` 而非整包 fallback；options 憑證欄位用 password input；Instapaper consumer key 不進 repo（gitignored，含 iOS Resources 鏡像）
+- **殘餘風險（接受）**：能讀到本擴充 storage 的主體（同 profile 的本機使用者、有 debugger / 檔案系統存取權者）可讀出憑證。這與所有把 API token 存 browser storage 的擴充同級，不另行處理
 
 ---
 

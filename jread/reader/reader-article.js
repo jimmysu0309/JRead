@@ -13,29 +13,86 @@
 (function (global) {
   'use strict';
 
-  // 移除 html_content 內不該在閱讀模式出現的節點（script/style/iframe/link/meta/
-  // base/object/embed）。innerHTML 設值不會執行 <script>，但事件屬性（<img onerror>
-  // / <svg onload>）與 javascript: URL 是另一條執行向量——article.html 是擴充頁
-  //（有 storage 憑證 + fetch 權限），不能只押在 MV3 預設 CSP 那一層（Safari 轉換
-  // / 未來 CSP 調整都可能讓它裸奔），v1.6.24 起一併清除。回傳清理後的 innerHTML 字串。
-  function sanitizeHtml(html, document) {
+  // 清理 html_content。v1.7.44（X1）：denylist 改 allowlist——article.html 是
+  // 擴充頁（有 storage 憑證 + fetch 權限），MV3 預設 CSP 只是兜底層（Safari
+  // 轉換 / 未來 CSP 調整都可能讓它裸奔），sanitizer 必須自足。舊 denylist 的
+  // 已知缺口（v1.7.38 全面 review X1）：
+  //   - `<form action="javascript:">` 沒擋（action 不在 URL 屬性清單）
+  //   - SVG SMIL（<animate>）可事後把 href 改回 javascript:
+  //   - 未知標籤 / 屬性全數放行，新攻擊面出現即漏
+  // Allowlist 三層：
+  //   1. 標籤：EXCISE（主動內容 / 表單 / svg / math——文章內容幾乎用不到，
+  //      整棵移除；svg/math 同時是 mXSS 與 SMIL 載體）→ ALLOWED（語意內容
+  //      標籤，保留）→ 其餘未知標籤 unwrap（拆殼保留子內容，custom element /
+  //      舊式標籤不掉字）
+  //   2. 屬性：只留內容語意屬性 + data-*（data-jread* 除外——不讓內容預埋
+  //      jread 內部 marker 干擾 cleaner/styler）；on* 與其餘未知屬性一律剝除
+  //   3. URL：href/src/srcset 去控制字元後含 javascript:/vbscript: 即移除屬性
+  // id 保留（footnote 錨點跳轉需要）但 '__' 前綴移除（防與 jread 注入 UI 的
+  // id 衝突 / DOM clobbering 指向內部節點）。
+  const SANITIZE_EXCISE_TAGS = new Set([
+    'script', 'style', 'iframe', 'link', 'meta', 'base', 'object', 'embed',
+    'noscript', 'svg', 'math', 'form', 'input', 'button', 'select', 'textarea',
+    'option', 'optgroup', 'template', 'slot', 'dialog', 'canvas', 'map', 'area',
+    'frame', 'frameset', 'applet', 'portal'
+  ]);
+  const SANITIZE_ALLOWED_TAGS = new Set([
+    'a', 'abbr', 'address', 'article', 'aside', 'b', 'bdi', 'bdo', 'blockquote',
+    'br', 'caption', 'cite', 'code', 'col', 'colgroup', 'dd', 'del', 'details',
+    'dfn', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure', 'footer',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'i', 'img',
+    'ins', 'kbd', 'li', 'main', 'mark', 'nav', 'ol', 'p', 'picture', 'pre',
+    'q', 'rp', 'rt', 'ruby', 's', 'samp', 'section', 'small', 'source', 'span',
+    'strong', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th',
+    'thead', 'time', 'tr', 'u', 'ul', 'var', 'wbr', 'audio', 'video', 'track'
+  ]);
+  const SANITIZE_ALLOWED_ATTRS = new Set([
+    'href', 'src', 'srcset', 'sizes', 'alt', 'title', 'width', 'height',
+    'loading', 'decoding', 'colspan', 'rowspan', 'span', 'datetime', 'lang',
+    'dir', 'start', 'reversed', 'type', 'media', 'poster', 'controls',
+    'preload', 'kind', 'srclang', 'label', 'cite', 'target', 'rel', 'class', 'id'
+  ]);
+  const SANITIZE_URL_ATTRS = new Set(['href', 'src', 'srcset']);
+  // 控制字元 + 空白（"java\tscript:" 這類繞法要擋）；用 RegExp 建構避免字面
+  // 值在編輯工具鏈被實體化成控制字元
+  const SANITIZE_CTRL_RE = new RegExp('[\\u0000-\\u0020]', 'g');
+
+  // 回傳承載已清理內容的 off-DOM 容器 div。buildArticleContainer 直接搬移其
+  // 子節點——不走「serialize 成字串再二次 innerHTML parse」（兩次 parse 的
+  // 語境差是 mXSS 的典型載體）。
+  function sanitizeDom(html, document) {
     const tmp = document.createElement('div');
     tmp.innerHTML = String(html || '');
-    const kill = tmp.querySelectorAll('script, style, iframe, link, meta, base, object, embed, noscript');
-    for (const el of Array.from(kill)) el.remove();
-    // 事件屬性（on*）全部剝除；href/src/xlink:href 帶 javascript: 的整個屬性移除
-    for (const el of tmp.querySelectorAll('*')) {
+    for (const el of Array.from(tmp.querySelectorAll('*'))) {
+      if (!tmp.contains(el)) continue; // 祖先已被整棵移除
+      const tag = el.localName;
+      if (SANITIZE_EXCISE_TAGS.has(tag)) { el.remove(); continue; }
+      if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
+        // unwrap：保留子內容、拆掉元素本身（子節點在快照序列內、繼續被檢查）
+        const parent = el.parentNode;
+        if (parent) {
+          while (el.firstChild) parent.insertBefore(el.firstChild, el);
+          el.remove();
+        }
+        continue;
+      }
       for (const attr of Array.from(el.attributes)) {
         const name = attr.name.toLowerCase();
-        if (name.startsWith('on')) { el.removeAttribute(attr.name); continue; }
-        if (name === 'href' || name === 'src' || name === 'xlink:href' || name === 'formaction') {
-          // 去掉控制字元/空白再比對——"java\tscript:" 這類繞法也要擋
-          const v = String(attr.value || '').replace(/[\u0000-\u0020]/g, '').toLowerCase();
-          if (v.startsWith('javascript:')) el.removeAttribute(attr.name);
+        const isSafeData = name.startsWith('data-') && !name.startsWith('data-jread');
+        if (!SANITIZE_ALLOWED_ATTRS.has(name) && !isSafeData) { el.removeAttribute(attr.name); continue; }
+        if (name === 'id' && String(attr.value).startsWith('__')) { el.removeAttribute(attr.name); continue; }
+        if (SANITIZE_URL_ATTRS.has(name)) {
+          const v = String(attr.value || '').replace(SANITIZE_CTRL_RE, '').toLowerCase();
+          if (v.indexOf('javascript:') !== -1 || v.indexOf('vbscript:') !== -1) el.removeAttribute(attr.name);
         }
       }
     }
-    return tmp.innerHTML;
+    return tmp;
+  }
+
+  // 字串版（dual export 供 spec 與外部呼叫端；內部組裝走 sanitizeDom 搬節點）
+  function sanitizeHtml(html, document) {
+    return sanitizeDom(html, document).innerHTML;
   }
 
   // 用 Reader API 的 doc 物件建合成 <article>：標題 h1 + byline（作者 · 來源 ·
@@ -66,7 +123,10 @@
 
     const body = document.createElement('div');
     body.setAttribute('data-jread-reader-body', '1');
-    body.innerHTML = sanitizeHtml(doc && doc.html_content, document);
+    // v1.7.44（X1）：直接搬移 sanitizeDom 清理後的節點，不再 serialize 成字串
+    // 二次 innerHTML parse（mXSS 載體，見 sanitizeDom 註解）
+    const cleaned = sanitizeDom(doc && doc.html_content, document);
+    while (cleaned.firstChild) body.appendChild(cleaned.firstChild);
     // v1.0.25：所有圖片明確 eager（退掉任何懶載傾向）——配合 preloadImages 解翻頁
     // 模式 WebKit 對遠處欄位圖片延遲載入的問題。
     const imgs = body.querySelectorAll('img');
@@ -117,7 +177,7 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  const api = { sanitizeHtml, buildArticleContainer, formatDate, preloadImages, parseMeta };
+  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta };
 
   // ---- 頁面 bootstrap ----
   function init() {

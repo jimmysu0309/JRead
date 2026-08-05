@@ -3321,10 +3321,19 @@ html.${HTML_CLASS}.jread-orion body {
   // 讓連結色規則回退 inherit（v0.8.129 語意）。掃描範圍：articleEl 子樹 +
   // promoted-outside 標題 clone（v0.8.131 放 articleEl 外，cleaner 在 styler
   // apply 之前建立，此時已存在）。
-  function markHeadingLinks(articleEl, marked) {
-    const scopes = [articleEl, ...document.querySelectorAll('[data-jread-promoted-outside="1"]')];
+  // v1.7.44 E11：scopeEl（選填）——dynamic path 只掃新增子樹。原本
+  // remarkDynamicMarkers 對任何新 <a> 都全 article + promoted-outside 重掃；
+  // apply() 靜態 path 不傳 scopeEl、行為不變。scopeEl 自身是 <a> 時一併檢查
+  // （querySelectorAll 不含自身）。
+  function markHeadingLinks(articleEl, marked, scopeEl) {
+    const scopes = scopeEl
+      ? [scopeEl]
+      : [articleEl, ...document.querySelectorAll('[data-jread-promoted-outside="1"]')];
     for (const scope of scopes) {
-      for (const a of scope.querySelectorAll('a')) {
+      const anchors = (scope.matches && scope.matches('a'))
+        ? [scope, ...scope.querySelectorAll('a')]
+        : scope.querySelectorAll('a');
+      for (const a of anchors) {
         if (a.getAttribute(HEADING_LINK_ATTR) === '1') continue;
         if (a.querySelector('h1,h2,h3,h4,h5,h6')) {
           a.setAttribute(HEADING_LINK_ATTR, '1');
@@ -3969,8 +3978,42 @@ html.${HTML_CLASS}.jread-orion body {
           const cardBg = parseCssColor(theme.articleBg) || WHITE;
           const neutralizedSel = [...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS].join(',');
           const skipNeutralized = (cur) => !!(cur.matches && cur.matches(neutralizedSel));
+          // v1.7.44 E1 效能：兩段式讀寫分離。原本逐元素「讀 computed → 命中即寫
+          // inline color」交錯，每次寫入都讓後續 getComputedStyle 重新 style recalc
+          // （至多 3,000 元素 × 祖先鏈）。改 phase A 全讀收集 fixes、phase B 統一寫。
+          // 語意差異（可接受）：原交錯版中祖先先被修色時、繼承色的子孫重量會過
+          // contrast gate 而跳過；分離版子孫以舊繼承色判定、可能同被收進 fixes——
+          // 但候選色同一組、挑中同色，視覺結果相同，restore 各自還原 inline 不受序影響。
+          //
+          // effective bg 沿 DOM 樹 memoize：effBg(el) = 自身 bg 圖層疊在
+          // effBg(parent) 上（opaque 圖層蓋掉底下一切 = blendOver 自然語意），與
+          // compositeBgOver(el, null, cardBg, _win, skipNeutralized) 等價；同一
+          // 祖先鏈只算一次，兄弟元素共用祖先段快取。
+          const bgMemo = new Map();
+          const effBgOf = (el) => {
+            const chain = [];
+            let cur = el;
+            let cached = null;
+            while (cur && cur.nodeType === 1) {
+              if (bgMemo.has(cur)) { cached = bgMemo.get(cur); break; }
+              chain.push(cur);
+              if (cur === _win.document.body) break;
+              cur = cur.parentElement;
+            }
+            let base = cached ? cached : { ...cardBg };
+            for (let i = chain.length - 1; i >= 0; i--) {
+              const node = chain[i];
+              if (!skipNeutralized(node)) {
+                const c = parseCssColor(_win.getComputedStyle(node).backgroundColor);
+                if (c && c.a > 0) base = blendOver(c, base);
+              }
+              bgMemo.set(node, base);
+            }
+            return base;
+          };
           let scanned = 0;
           let fixed = 0;
+          const contrastFixes = [];
           for (const el of articleEl.querySelectorAll('*')) {
             if (scanned >= 3000 || fixed >= 300) break;
             const tag = el.tagName.toUpperCase();
@@ -3986,7 +4029,7 @@ html.${HTML_CLASS}.jread-orion body {
             if (cs.display === 'none' || cs.visibility === 'hidden') continue;
             const fg = parseCssColor(cs.color);
             if (!fg || fg.a < 0.5) continue;
-            const bg = compositeBgOver(el, null, cardBg, _win, skipNeutralized);
+            const bg = effBgOf(el);
             if (contrastRatio(fg, bg) >= CONTRAST_MIN_RATIO) continue;
             const isLink = !!(el.closest && el.closest('a'));
             // 深色候選：#1a1a1a（深字）/ #1a73e8（light theme link 色，亮底上 5.2:1）
@@ -3999,14 +4042,17 @@ html.${HTML_CLASS}.jread-orion body {
               if (r > bestRatio) { bestRatio = r; best = cstr; }
             }
             if (!best || bestRatio < CONTRAST_MIN_RATIO) continue;
-            contrastBgSnap.push({
-              el,
-              prop: 'color',
-              prev: el.style.getPropertyValue('color'),
-              prevP: el.style.getPropertyPriority('color')
-            });
-            el.style.setProperty('color', best, 'important');
+            contrastFixes.push({ el, best });
             fixed++;
+          }
+          for (const f of contrastFixes) {
+            contrastBgSnap.push({
+              el: f.el,
+              prop: 'color',
+              prev: f.el.style.getPropertyValue('color'),
+              prevP: f.el.style.getPropertyPriority('color')
+            });
+            f.el.style.setProperty('color', f.best, 'important');
           }
         }
       }
@@ -5230,6 +5276,12 @@ html.${HTML_CLASS}.jread-orion body {
           for (const m of articleEl.querySelectorAll('img')) {
             if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
             if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
+            // v1.7.44 E10 效能：v1.0.9 stackLopsidedImgCol 原本獨立再掃一輪
+            // querySelectorAll('img') + 重複 hidden closest 檢查——合併進本迴圈
+            // 單次遍歷。呼叫點在 A-parent skip 之前（stack 規則不豁免 <a> 內
+            // avatar，與原獨立迴圈一致）；兩規則的 collapse 動作同構（display:
+            // block + textColFlex snapshot）且 textColSeen 去重，先後互換結果等價。
+            stackLopsidedImgCol(m);
             if (m.parentElement && m.parentElement.tagName === 'A' &&
                 !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
             const mr = m.getBoundingClientRect();
@@ -5267,7 +5319,14 @@ html.${HTML_CLASS}.jread-orion body {
           // 實證：正常 flex-row / 窄 table 全被誤判「溢出」），量 card 寬在 multicol
           // 下不可靠（同 contentWidthSnap v0.7.246 註解的既有原則）。翻頁模式
           // 溢出破版由 column layout 自然裁切，不做 rect 幾何修法。
-          if (!opts.pagedMode) {
+          // v1.7.44 E5 效能：cheap gate——scrollWidth 量的是含被 overflow 裁掉
+          // 部分的水平內容寬，articleEl 無水平溢出（scrollWidth ≈ clientWidth）
+          // 時子樹內不可能有「右緣衝出 card」的破版，整段 O(全子樹) rect 掃描
+          // 直接跳過（絕大多數正常頁面走這條零成本路）。容差 +2 對齊下方
+          // cardRight + 2 的判定。已知盲點：溢出在「中介 overflow:hidden 祖先」
+          // 就地被裁掉時不反映在 articleEl.scrollWidth——該情境本段原本也只能
+          // 塌中介層以下的容器、覆蓋本就有限，屬可接受的保守邊界。
+          if (!opts.pagedMode && articleEl.scrollWidth > articleEl.clientWidth + 2) {
             const cardRight = articleEl.getBoundingClientRect().right;
             const overflowAncestors = new Set();
             for (const el of articleEl.querySelectorAll('*')) {
@@ -5303,15 +5362,9 @@ html.${HTML_CLASS}.jread-orion body {
             }
           }
 
-          // v1.0.9：窄圖欄擠寬文欄的作者 / meta 卡塌成單欄（見 stackLopsidedImgCol
-          // 註解）。對每張非 inline-emoji 圖沿祖先鏈找 lopsided flex-row / grid。
-          // 圖小（avatar capIcon 39px）被上方 decolumnFrom 的 >= 100px 門檻漏掉，
-          // 故獨立掃。
-          for (const m of articleEl.querySelectorAll('img')) {
-            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
-            if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
-            stackLopsidedImgCol(m);
-          }
+          // v1.0.9 stackLopsidedImgCol 的獨立 img 掃描已於 v1.7.44（E10）合併
+          // 進上方 anchor 2 迴圈（單次遍歷；圖小被 >= 100px 門檻漏掉的 avatar
+          // 場景由合併後迴圈的 stackLopsidedImgCol 呼叫點涵蓋）
         }
       }
 
@@ -5784,7 +5837,12 @@ html.${HTML_CLASS}.jread-orion body {
       if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked);
       const hasHeading = (node.matches && node.matches('h1,h2,h3,h4,h5,h6,a')) ||
         (node.querySelector && node.querySelector('h1,h2,h3,h4,h5,h6'));
-      if (hasHeading) markHeadingLinks(s.articleEl, s.headingLinkMarked);
+      if (hasHeading) {
+        // v1.7.44 E11：只掃新增子樹（scope 參數）——新 heading 的包裹 <a>
+        // 可能是既有節點（node 之外），closest 往上補到該 <a> 為 scope
+        const wrapA = (node.closest && node.closest('a')) || null;
+        markHeadingLinks(s.articleEl, s.headingLinkMarked, wrapA || node);
+      }
     }
   };
 

@@ -46,6 +46,11 @@ function setup() {
 
   // card（article）右緣 720
   stubRect($('art'), { left: 0, top: 0, width: 720, height: 4000 });
+  // v1.7.44 E5：overflow pass 前置 cheap gate 讀 articleEl.scrollWidth /
+  // clientWidth（jsdom 無 layout 恆 0、gate 恆 false）——stub 成「有水平溢出」
+  // 模擬真實 Chrome（wide 子項把 scrollWidth 撐到 1088 > clientWidth 720）
+  Object.defineProperty($('art'), 'scrollWidth', { value: 1088, configurable: true });
+  Object.defineProperty($('art'), 'clientWidth', { value: 720, configurable: true });
 
   // 正例：grid 容器 fits（right 720），但 wide 子項 left 64 width 1024 → right 1088 溢出
   stubRect($('gridfit'), { left: 0, top: 100, width: 720, height: 600 });
