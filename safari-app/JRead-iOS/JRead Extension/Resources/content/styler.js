@@ -2128,6 +2128,13 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
     // figcaption / caption 保留比 body 小的階層）。`time ~ span` 是結構訊號
     // （span 為 time 的後續兄弟），非站點/class 特判。複合 selector in :not()
     // 同 :not(pre *) 走 Selectors 4（Chrome 88+ 相容）。
+    // v1.7.41（S2）：加 :not(figcaption *)——caption / photo credit 包 <span> 時
+    // 命中內文字級注入，span 文字被拉成 body 字級（17px+）、figcaption 本體仍是
+    // 站點小字（11px），同一條圖說字級分裂。figcaption 刻意不在 BODY_TEXT_CORE
+    //（v0.7.120 決策：圖說保留比 body 小的階層），其後代 span 必須跟著豁免——
+    // 與 :not(h1 *)（heading 內 span 跟 heading 走）同一原則。specificity 影響：
+    // :not() 取引數中最高者，`figcaption *` 為 (0,0,1)、與既有 :not(h1 *) 同級
+    // 純累加，無既有規則依賴 SPAN_TEXT_SEL 的精確 specificity 值。
     const SPAN_TEXT_SEL = `[${ARTICLE_ATTR}="1"] span` +
       `:not([class*="icon"])` +
       `:not([class*="material-"])` +
@@ -2137,6 +2144,7 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
       `:not([class*="badge"])` +
       `:not(pre *)` +
       `:not(code *)` +
+      `:not(figcaption *)` +
       `:not(time ~ span)` +
       `:not(h1 *)` +
       `:not(h2 *)` +

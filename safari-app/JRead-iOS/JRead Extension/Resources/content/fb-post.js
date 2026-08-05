@@ -98,13 +98,23 @@
   }
 
   // 找主貼文容器：message wrapper + author profile_name 的最近共同祖先。
-  function findPostContainer() {
+  // v1.7.41（F2）：主體改 findPostContext（回傳 { container, mainMsg, author }
+  // 三元組）——enter() 沿用 findAuthorForMessage 已選好的「距 message 最近」作者
+  // 節點，不再對 container 重新 querySelector 取 DOM 第一個 profile_name（分享
+  // 貼文的 container 內含被分享貼文作者、DOM order 第一個常是錯的那位）。
+  // findPostContainer 保留舊回傳契約（element | null）給既有 spec 與呼叫端。
+  function findPostContext() {
     const mainMsg = findMainMessage();
     if (!mainMsg) return null;
     const author = findAuthorForMessage(mainMsg);
     if (!author) return null;
     const container = commonAncestor(mainMsg, author);
-    return container;
+    if (!container) return null;
+    return { container: container, mainMsg: mainMsg, author: author };
+  }
+  function findPostContainer() {
+    const ctx = findPostContext();
+    return ctx ? ctx.container : null;
   }
 
   // FB 的 emotion-hash class（x14z9mp / xat24cr / x1lziwak 等）依賴整站 flex/grid
@@ -310,6 +320,13 @@
       if (mainMsgInClone && child.contains(mainMsgInClone)) continue;
       const text = (child.textContent || '').trim();
       if (!text) {
+        // v1.7.41（F1）：純媒體 wrapper（零文字）不可清——第一階段沿 mainMsg
+        // 祖先鏈刻意保留的附帶圖 wrapper / 自建 data-jread-fb-media 容器，位在
+        // clone 直系子層級時會被這條「空文字即移除」無差別清掉（附圖結構性
+        // 消失）。v1.7.27「hide 升層前必驗目標」同族教訓。
+        if (child.querySelector('img, picture, video') ||
+            child.hasAttribute('data-jread-fb-media') ||
+            child.querySelector('[data-jread-fb-media]')) continue;
         child.remove();
         continue;
       }
@@ -470,11 +487,14 @@
     const existing = document.querySelector('[' + READER_ATTR + ']');
     if (existing) return existing;
 
-    const container = findPostContainer();
-    if (!container) return enterPhotoMode();
-
-    const mainMsg = container.querySelector('[data-ad-comet-preview="message"]');
-    const author = container.querySelector('[data-ad-rendering-role="profile_name"]');
+    const ctx = findPostContext();
+    if (!ctx) return enterPhotoMode();
+    const container = ctx.container;
+    // v1.7.41（F2）：mainMsg / author 直接沿用 findPostContext 選好的節點——
+    // 舊版對 container 重新 querySelector 取 DOM 第一個 profile_name，分享貼文
+    // 會顯示被分享貼文的作者。
+    const mainMsg = ctx.mainMsg;
+    const author = ctx.author;
     if (!mainMsg) return null;
 
     // 抽 author info 從原 DOM,合成 header 之後注入到 clone 開頭（取代被 prune
@@ -577,6 +597,7 @@
     findMainMessage,
     findAuthorForMessage,
     findPostContainer,
+    findPostContext,
     extractAuthorInfo,
     extractAuthorVanityFromUrl,
     createSyntheticHeader,

@@ -1358,6 +1358,24 @@
   // -title attribute，讓 styler 套大字體標題樣式。通則：站若把標題寫在非
   // h1-h4 tag（newtalk `<p class="name">` / 其他站可能用 `<div class="title">`
   // / `<span class="post-title">` 等），styler 不會自動視覺突顯，需此 promote。
+  // v1.7.41（D5）：promote 標題時 hide 原元素——先 snapshot 原 inline display
+  //（站方 JS 可能設過 style="display:flex" 之類），存進 data attribute 讓
+  // main.js 退出還原時寫回原值；原本無 inline display 的 restore 走
+  // removeProperty。舊版一律 setProperty 後 removeProperty 會把站方 inline 值
+  // 洗掉、退出後原頁被永久改變——cleaner hide() 一直有 snapshot，這條 path
+  // 是「退出完全還原」不變式的缺口。兩個 hide 呼叫點共用（單一資料源）。
+  function hidePromotedTitleSource(el) {
+    el.setAttribute('data-jread-promoted-title-source', '1');
+    if (!el.style || typeof el.style.setProperty !== 'function') return;
+    const prev = el.style.getPropertyValue('display');
+    if (prev) {
+      el.setAttribute('data-jread-prev-display', prev);
+      const pri = el.style.getPropertyPriority('display');
+      if (pri) el.setAttribute('data-jread-prev-display-priority', pri);
+    }
+    el.style.setProperty('display', 'none', 'important');
+  }
+
   function markPromotedTitleIfMissing(articleEl) {
     if (!articleEl || !articleEl.querySelectorAll) return;
 
@@ -1491,11 +1509,8 @@
         injected.style.setProperty('z-index', '10', 'important');
       }
       articleEl.insertBefore(injected, articleEl.firstChild);
-      // hide 原元素，避免標題重複出現
-      bestCand.setAttribute('data-jread-promoted-title-source', '1');
-      if (bestCand.style && typeof bestCand.style.setProperty === 'function') {
-        bestCand.style.setProperty('display', 'none', 'important');
-      }
+      // hide 原元素，避免標題重複出現（v1.7.41：snapshot 原 inline display，見 helper）
+      hidePromotedTitleSource(bestCand);
       // backward-compat：保留 data-jread-promoted-title attribute 在原元素，
       // 既有 spec 仍找得到（fixture 標題比對等）。
       bestCand.setAttribute('data-jread-promoted-title', '1');
@@ -1515,10 +1530,7 @@
         const t = normalizeTitle(el.textContent || '');
         if (t.length > baseTitle.length * 1.5) continue;
         if (!matchesBaseTitle(t)) continue;
-        el.setAttribute('data-jread-promoted-title-source', '1');
-        if (el.style && typeof el.style.setProperty === 'function') {
-          el.style.setProperty('display', 'none', 'important');
-        }
+        hidePromotedTitleSource(el);
       }
     }
   }

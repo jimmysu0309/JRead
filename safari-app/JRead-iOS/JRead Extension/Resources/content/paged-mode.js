@@ -1028,8 +1028,19 @@
     remeasureTimers = [1000, 3000].map(ms => setTimeout(remeasureAndReconcile, ms));
   }
 
-  function uninstall() {
-    if (!installed && !indicatorEl) return;
+  // v1.7.41（P3）：opts——
+  //   suspend：編輯模式暫停路徑（main.js suspendReaderInteractions）。不消費
+  //     savedScrollY、不捲動——y 是「進場前的原站卷動位置」，對仍在閱讀模式的
+  //     版面沒有意義；舊版照消費會讓 suspend→restore 一輪後真退出的 fallback
+  //     捲回靜默失效（install 不重抓、captureScrollY 只在 !installed 時寫入）。
+  //   deferScrollRestore：真退出路徑（main.js exitReaderModeImpl）。消費 y 但
+  //     不排 rAF，改回傳數字給 main.js 在 styler.restore 之後同步捲回——背景
+  //     分頁 rAF 被 throttle / 凍結（v0.8.84 教訓），晚到的 scrollTo 會打在
+  //     還原後的新狀態上。exitAnchorHandoff 時回 0（anchor 路徑接管捲動）。
+  //   無 opts：settings 切換 / reinstall 路徑，維持原 rAF 行為。
+  function uninstall(opts) {
+    const o = opts || {};
+    if (!installed && !indicatorEl) return 0;
     window.removeEventListener('keydown', onKeydown, true);
     window.removeEventListener('wheel', onWheel, { passive: false });
     window.removeEventListener('touchstart', onTouchStart, { capture: true, passive: true });
@@ -1081,12 +1092,19 @@
     // 之後才移除 overflow hidden——延後一個 frame 等文件恢復可卷動。
     // v1.6.8：exit anchor handoff 時跳過——退出捲回（applyExitScrollAnchor）
     // 接管捲動目標，這個 rAF 晚一 frame 跑、不跳過會把 anchor 位置蓋掉。
-    const y = savedScrollY;
-    if (y > 0 && !exitAnchorHandoff) requestAnimationFrame(() => window.scrollTo(0, y));
-    exitAnchorHandoff = false;
-    // v0.8.17：消費後歸零——避免殘留值在下一輪 install 失敗 / captureScrollY
-    // 沒重抓時被誤用，把使用者捲到與當前頁面無關的位置。
-    savedScrollY = 0;
+    let deferredY = 0;
+    if (!o.suspend) {
+      const y = savedScrollY;
+      if (o.deferScrollRestore) {
+        if (y > 0 && !exitAnchorHandoff) deferredY = y;
+      } else if (y > 0 && !exitAnchorHandoff) {
+        requestAnimationFrame(() => window.scrollTo(0, y));
+      }
+      exitAnchorHandoff = false;
+      // v0.8.17：消費後歸零——避免殘留值在下一輪 install 失敗 / captureScrollY
+      // 沒重抓時被誤用，把使用者捲到與當前頁面無關的位置。
+      savedScrollY = 0;
+    }
     art = null;
     installed = false;
     touchState = null;
@@ -1096,6 +1114,7 @@
     strideExact = 0;
     // lastRatio 刻意保留：settings reapply 的 uninstall→install 要回原位；
     // exitReaderMode 後 main.js 會呼叫 resetPosition() 歸零
+    return deferredY;
   }
 
   function resetPosition() { lastRatio = 0; }
