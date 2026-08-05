@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<title>深海探測任務全紀錄測試 - 測試站</title>
+<meta property="og:title" content="深海探測任務全紀錄測試 - 測試站">
+</head>
+<body>
+<div id="wrap">
+  <!-- hero H1 在 article 兄弟層（wya 型結構）——標題文字刻意與 og:title 首段
+       不同字（模擬翻譯擴充換字後 og-match 失效），迫使 promote 只剩
+       path 1（DOM-first H1 + selfTitled guard）一條通道 -->
+  <div id="hero-wrap" data-test="hero-wrap">
+    <h1 id="hero" data-test="hero">深海七千米的四十天航海日誌</h1>
+  </div>
+  <article id="art" class="post" data-test="article">
+    <div class="post-content">
+      <!-- 批次 2 review D2（v1.7.40）：article 開頭是約 55 字中文段落（raw < 80、
+           CJK 權重 > 80），其後才出現 section H1。修法前 raw 門檻認不出這段是
+           substantial 內文段落 → walker 先撞到 section H1 → 誤判 self-titled →
+           path 1 被擋、hero 永遠進不了主文 scope。修法後權重門檻在段落即
+           return false → LCA promote 照常把 hero 括進來 -->
+      <p data-test="lead-p">科考船離港那天清晨的濃霧至今仍讓人印象深刻，甲板上的儀器箱堆得比人還高，所有人都知道這趟任務不會輕鬆。</p>
+      <h1 class="section-h1">第一章：起航與適應</h1>
+      <p>頭三天的航行以設備校準為主，聲納陣列與絞車系統輪流測試，值班表排得密不透風，新進研究員在搖晃的實驗室裡逐漸找到自己的節奏，暈船藥的消耗速度遠超出後勤原本的估算，廚房只好把餐點改成清淡的粥品配醬菜。</p>
+      <h1 class="section-h1">第二章：第一次下潛</h1>
+      <p>潛器入水的瞬間所有頻道都安靜下來，只剩絞車鋼纜規律的摩擦聲，主駕駛回報深度的聲音透過水聲通訊斷斷續續傳回母船，七千米的水壓讓每一個艙外機械臂動作都必須以慢動作完成，樣本罐取回時全船爆出歡呼。</p>
+    </div>
+  </article>
+</div>
+</body>
+</html>

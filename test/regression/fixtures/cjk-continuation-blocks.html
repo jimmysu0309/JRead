@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<title>遠洋航線百年變遷測試長文</title>
+</head>
+<body>
+<div id="page">
+  <!-- 主文第一塊：article tag，字數過 MIN_TEXT_LEN -->
+  <article id="art" data-test="main-block">
+    <h1>遠洋航線百年變遷測試長文</h1>
+    <p>十九世紀末蒸汽船逐步取代帆船之後，遠洋航線的版圖開始出現劇烈變化，港口城市的興衰與航運公司的合縱連橫交織成一部橫跨百年的產業史，本文將從燃料補給站的選址邏輯談起，一路梳理到貨櫃革命前夕的航線網絡樣貌。</p>
+    <p>早期煤炭補給站的距離限制決定了航線必經的節點，直布羅陀、亞丁、可倫坡與新加坡因此崛起成為帝國航運的咽喉，這些節點城市的倉儲與金融服務又反過來吸引更多船隊停靠，形成滾雪球式的聚集效應與路徑依賴。</p>
+  </article>
+  <!-- 廣告插播（不像接續區塊，無段落） -->
+  <div class="ad-slot" data-test="ad"><a href="/ad">贊助內容連結</a></div>
+  <!-- 批次 2 review D2（v1.7.40）：接續兄弟區塊——兩段各約 55 字中文，
+       每段 CJK 權重 >= 80（過段落門檻）、總 raw < 200（修法前被 MIN_TEXT_LEN
+       raw gate 擋掉、段落權重白做）、總權重 >= 200（修法後被吸收） -->
+  <div class="story-continued" data-test="continuation">
+    <p data-test="cont-p1">柴油引擎普及後補給距離倍增，部分老牌煤站迅速沒落，航商重新規劃停靠序列，運價同盟的談判桌上因此多了全新的籌碼與矛盾。</p>
+    <p data-test="cont-p2">兩次大戰之間的航線重組更牽動殖民地貿易格局，班輪公會用聯合抵制手段鞏固既得航權，新興航商只能從邊緣支線慢慢蠶食市場。</p>
+  </div>
+  <!-- 反例：related class（NEGATIVE_RE 命中）——即使段落字數過門檻也不可吸收
+       （udn related-news probe 實證：權重 gate 放寬後靠 class 檢查擋住） -->
+  <div class="related-news" data-test="related">
+    <p>編輯精選的三篇延伸閱讀文章帶你回顧貨櫃化革命如何在短短二十年內徹底改寫全球港口的排名與腹地經濟結構樣貌。</p>
+    <p>另外我們也整理了航運同盟制度從全盛到瓦解的時間軸圖表，搭配本文一起閱讀可以更完整理解百年航線變遷的制度背景。</p>
+  </div>
+</div>
+</body>
+</html>

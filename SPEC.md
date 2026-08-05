@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.39**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.40**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -246,14 +246,14 @@ Forcing function：`test/regression/ios-build.spec.js`（15 條）驗 scaffold �
 5. 兜底：`<main>` 本身作為主文（順序最後，避免多欄 layout 的 `<main>` 吞 sidebar）
 6. 降級：若分數低於閾值，**不啟動閱讀模式**（no-op），不硬套
 
-**連結目錄 reject gate（`isLinkDirectory`，v1.7.8）**：heuristic 候選迴圈與 main-tag 兜底共用的 reject 條件——候選內**無任何 >= 80 chars 段落載體**（p / li / blockquote / dd）**且 linkDensity >= 0.5** → 判為導覽選單 / 連結目錄、直接排除。動機（udn 已下架文章 404「找不到網頁」頁實證）：頁面無文章內容時，唯一過 `MIN_TEXT_LEN` 的候選是站台產品選單（linkDensity 0.727、無段落），heuristic 的 linkDensity 懲罰只是乘法折扣、無競爭者時照樣勝出 → 閱讀模式渲染整個站台選單，違反上面第 6 條降級政策。雙條件缺一不 reject：Paul Graham 型 font+br 純文字老頁（無段落但 ld≈0）、link roundup 文摘（ld 高但有 >= 80 chars 導言段）都不受影響。forcing：`detector-link-directory-noop.spec.js`（404 選單 no-op + roundup 正控制）。
+**連結目錄 reject gate（`isLinkDirectory`，v1.7.8；段落門檻 v1.7.40 起 CJK 權重）**：heuristic 候選迴圈與 main-tag 兜底共用的 reject 條件——候選內**無任何加權字數 >= 80 的段落載體**（p / li / blockquote / dd，`NS.cjkWeightedLen` 權重 2——中文 40 字導言即過）**且 linkDensity >= 0.5** → 判為導覽選單 / 連結目錄、直接排除。動機（udn 已下架文章 404「找不到網頁」頁實證）：頁面無文章內容時，唯一過 `MIN_TEXT_LEN` 的候選是站台產品選單（linkDensity 0.727、無段落），heuristic 的 linkDensity 懲罰只是乘法折扣、無競爭者時照樣勝出 → 閱讀模式渲染整個站台選單，違反上面第 6 條降級政策。雙條件缺一不 reject：Paul Graham 型 font+br 純文字老頁（無段落但 ld≈0）、link roundup 文摘（ld 高但有導言段——原 raw 80 門檻認不出中文 50 字導言、配高連結密度整頁誤 no-op，v1.7.40 改權重後解除）都不受影響；404 選單連結文字短、權重後仍遠低於門檻，護欄不變（probe 實證）。forcing：`detector-link-directory-noop.spec.js`（404 選單 no-op + roundup 正控制）+ `detector-cjk-weighted-gates.spec.js`（中文導言）。
 
 ### 接續兄弟區塊吸收（multi-block article，v1.7.13）
 
 CMS 可能把一篇文章切成**多個同層兄弟容器**、中間插廣告區塊（city.gvm.com.tw 實證：body 直下「主文塊 12 段 > ad > 主文塊 10 段 > ad > 主文塊 5 段」，唯一共同祖先是 body）——任一偵測策略都只選單一容器，後續區塊整段掉出閱讀模式（「文章被截斷」）。對齊 Readability.js 原作 sibling-merge 精神，`detect()` 出口（promote / narrow / ensureH1 之後、shadow-dom-fallback 除外）做**唯讀識別** `findContinuationSiblings`：從 articleEl 所在層級掃 following siblings（該層沒有才沿祖先鏈往上，上限 `CONT_MAX_HOPS = 2`），符合全部條件者判為接續區塊掛 `result.continuationEls`：
 
 - 容器型 tag（DIV / SECTION / ARTICLE）、class/id 不命中 `NEGATIVE_RE`、無 `textarea`（留言區特徵）
-- `scoredTextLen >= 200`、`linkDensity <= 0.3`（排除延伸閱讀 / 推薦連結列表）
+- 總字數加權 >= 200（`NS.cjkWeightedLen`，v1.7.40 起——原 raw `scoredTextLen >= 200` 與下一條段落權重門檻並存，兩段各 45 字中文的接續塊總 raw 不到 200 整塊被擋、段落權重白做）、`linkDensity <= 0.3`（分母維持 raw，排除延伸閱讀 / 推薦連結列表）
 - **>= 2 段實質段落**（p / blockquote / dd，CJK 權重 2 的加權字數 >= 80——40 字中文段即過，對齊 `titleTextWeight` 的「raw length 門檻按拉丁校準會誤殺中文」教訓）
 - 掃描遇**含 h1 的兄弟即終止**——瀑布流站 preload 的下一篇自帶 h1 主標，其後內容屬於別篇（對齊 narrowToFirstArticleBlock 邊界語意）；吸收上限 `CONT_MAX_BLOCKS = 10`
 
@@ -267,7 +267,7 @@ CMS 可能把「推薦卡片 / header 卡」全做成 `<article>`（Netflix Tudu
 
 ### Title promote（所有非兜底策略）
 
-Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
+Stratechery / Medium / Substack / anthropic.com 等站點常把 post-title 跟 post-content 放兄弟層：WordPress 是 `<h2 post-title>` 跟 `<div entry-content>` 同級（heuristic 選中 content）、anthropic 則是 `<h1>` 放在 `<section hero>` 與 `<article>` 同級（article-tag 選中 article）。detect() 出口統一做 promote：沿主文容器祖先鏈往上，若兄弟中有 h1/h2 文字與 `meta[property="og:title"]` 或 `document.title`（取分隔前首段）雙向包含匹配，把主文容器升級到該共同 parent，使 title 納入主文 scope。**標題相似比對單一資料源 `NS.titleSimilar`（v1.7.40 起）**：原 detector 內 `titleMatches`（8 字 gate）與 `matchesBaseTitle`（5 字 gate）雙實作已 drift，合一為「exact、或雙向包含 + 60% 長度比、containment gate 為 CJK 加權字數 >= 8」——中文標題長度中位數 4-7 字，raw 8 字 gate 讓短中文標題只剩 exact-match 一條路（zh.wikipedia「珍珠奶茶」H1 innerText 帶「編輯」鈕文字即 miss，probe 實證），權重 2 後 4 字中文即過、拉丁行為不變；標題正規化同步合一為 `NS.normalizeTitle`（`stripBrackets` 參數對應 markPromotedTitleIfMissing 的 `[...]` site-prefix 剝除變體）。forcing：`title-similar-single-source.spec.js`（source 掃描 + 單元 + 短標題整合）。作用於 article-tag / schema-org / heuristic；**main-tag 是兜底本身已是最外層，不做 promote**（避免無止盡向上擴散）。
 
 **唯一 H1 結構升級（`ensureArticleContainsTitleH1` path 0，v0.8.58）**：上述 promote 全靠文字比對 og:title，translate-first（Shinkansen 等把 H1 換成中文、`og:title`/`<title>` 維持原文）會讓比對全失效。detect() 結尾無條件兜底加一條純結構訊號：**全頁恰好 1 個 H1 且不在 articleEl 內 → 該 H1 必是文章 hero（section 副標慣例用 H2+，整頁唯一 H1 不可能是某節副標）**，升到 `findLCA(articleEl, h1)`、`dist=Infinity`、不靠文字。場景：myartbroker「5 幅畫作」這類無 `<article>`/`<main>` 的多節長文，每節是深層巢狀獨立容器，heuristic bubble-up（只給 parent/grandparent 2 層）只選中第一節 → 翻譯後卡單一 section（reader 只剩第一幅畫）。安全保證：`findTitleViaLca` 的 body/html guard 確保唯一 H1 與 articleEl 須共享非 body 容器才升、不吞整頁；ChinaTalk（多 H1）/ wya（12 H1）`allH1.length !== 1` 不觸發。
 
