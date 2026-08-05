@@ -265,9 +265,16 @@ describe('position-memory — persistNow 同步寫入路徑（iOS 背景凍結�
   it('restore 會 seed memMap、endSession / setDays 停用會清回 null', () => {
     assert.ok(/function restore[\s\S]*?memMap = map/.test(PM_SRC),
       'restore 必須 seed memMap（之後寫入走同步路徑）');
+    // v1.7.43 T11：endSession / setDays(0) 收尾收斂到共用 teardown()——memMap
+    // 清理住在 teardown、endSession 必須走 teardown({flush:true})
+    const td = PM_SRC.match(/function teardown\([\s\S]*?\n  \}/);
+    assert.ok(td && /memMap = null/.test(td[0]),
+      'teardown 必須清 memMap（避免跨 session 用到舊快照）');
     const end = PM_SRC.match(/function endSession\(\)[\s\S]*?\n  \}/);
-    assert.ok(end && /memMap = null/.test(end[0]),
-      'endSession 必須清 memMap（避免跨 session 用到舊快照）');
+    assert.ok(end && /teardown\(\{ flush: true \}\)/.test(end[0]),
+      'endSession 必須走 teardown({flush:true})（flush 最後位置）');
+    assert.ok(/teardown\(\{ flush: false \}\)/.test(PM_SRC),
+      'setDays 停用路徑必須走 teardown({flush:false})（不寫入、只停止追蹤）');
   });
 });
 

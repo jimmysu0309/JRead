@@ -47,6 +47,15 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     editMode: null,         // v0.8.108：編輯模式手動移除雜訊（edit-mode.js 掛載）
     onReaderExit: null,     // v1.0.22：reader.html 退出 hook（reader-app.js 掛載；state.readerHostPage 為 true 時 exitReaderMode 呼叫它導回 feed）
 
+    // v1.7.43：行內文字 tag 集——「div 是不是段落載體」判定的單一資料源，
+    // styler markTextDivs 與 space-scroll 段落文字量計算共用（v1.7.36 同族
+    // drift 咬過一次：markParagraphDivs vs markTextDivs）。兩端語意：子元素
+    // 全落在此集合（加 text node）的 div 視為段落。BR 無文字，對「收文字」
+    // 端天然無害、對「判段落」端必要（段落 div 常含 <br>）；FONT/Q/CITE/
+    // BDI/BDO 是老式頁面與語意標記的行內載體，兩端都該認。改動此集合會同時
+    // 影響段落間距套用（styler）與 Space 焦點單位（space-scroll）。
+    INLINE_TEXT_TAGS: new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR', 'FONT', 'Q', 'CITE', 'BDI', 'BDO']),
+
     // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼
     // chrome.runtime.sendMessage 沒 guard）。提到 namespace 後**所有** content
@@ -317,16 +326,22 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 條件與舊 extractHeroImage path-1 一致：natural >= 200×200（或無 natural 時
     // rect >= 200×120）、不在 [data-jread-hidden] 子孫內、srcset 最大或 src 是可用
     // http(s) URL（非 data:/blob:）。回傳 { img, url } 或 null。
+    // v1.7.43 T11：可用圖片 URL 判定（單一資料源——findLeadingHeroImage 與
+    // main.js extractHeroImage 的 OG meta fallback 共用；原兩份逐字重複）。
+    // 轉 absolute、只接受 http(s)、拒 data:/blob:（Readwise 端不能 fetch）。
+    // 回傳 absolute URL 或 null。
+    usableImageUrl(raw, base) {
+      if (!raw || typeof raw !== 'string') return null;
+      const s = raw.trim();
+      if (!s || /^data:/i.test(s) || /^blob:/i.test(s)) return null;
+      try { const abs = new URL(s, base).href; return /^https?:\/\//i.test(abs) ? abs : null; }
+      catch (_) { return null; }
+    },
+
     findLeadingHeroImage(rootEl, base) {
       if (!rootEl || !rootEl.querySelectorAll) return null;
       const NS = window.__JRead;
-      const isUsable = (raw) => {
-        if (!raw || typeof raw !== 'string') return null;
-        const s = raw.trim();
-        if (!s || /^data:/i.test(s) || /^blob:/i.test(s)) return null;
-        try { const abs = new URL(s, base).href; return /^https?:\/\//i.test(abs) ? abs : null; }
-        catch (_) { return null; }
-      };
+      const isUsable = (raw) => NS.usableImageUrl(raw, base);
       const pickCandidate = (img) => {
         const srcset = img.getAttribute('srcset');
         if (srcset && NS && NS.parseSrcset) {

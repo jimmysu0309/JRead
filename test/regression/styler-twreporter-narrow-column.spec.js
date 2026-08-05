@@ -67,13 +67,17 @@ describe('styler — twreporter sidebar-style 雙欄 layout 縮窄修法（v0.7.
 
   it('CSS 必須含 figcaption width: auto + max-width: 100% rule', () => {
     const css = getInjectedCss();
-    // 找 figcaption rule
+    // v1.7.43 T11：width: auto 由 v1.6.20 position hack 規則（figcaption 與後代
+    // 全蓋）統一注入；本 rule 專責 max-width。此處驗兩條合起來仍覆蓋
+    // 「width: auto + max-width: 100%」的完整語意（缺一即 twreporter 180px
+    // sidebar caption 破版回歸）。
+    const combo = css.match(/figcaption,\s*\n?\[data-jread-active="1"\]\s+figcaption \*\s*\{([^}]*)\}/);
+    assert.ok(combo, '必須找到 figcaption + figcaption * 共用 rule（v1.6.20 position hack）');
+    assert.ok(/\bwidth\s*:\s*auto\s*!important/.test(combo[1]),
+      'figcaption 共用 rule 必須含 width: auto !important（破原站 width: 180px sidebar caption）');
     const m = css.match(/\[data-jread-active="1"\]\s+figcaption\s*\{([^}]*)\}/);
     assert.ok(m, '必須找到 [data-jread-active="1"] figcaption rule');
-    const body = m[1];
-    assert.ok(/\bwidth\s*:\s*auto\s*!important/.test(body),
-      'figcaption rule 必須含 width: auto !important（破原站 width: 180px sidebar caption）');
-    assert.ok(/max-width\s*:\s*100%\s*!important/.test(body),
+    assert.ok(/max-width\s*:\s*100%\s*!important/.test(m[1]),
       'figcaption rule 必須含 max-width: 100% !important');
   });
 });

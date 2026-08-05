@@ -83,17 +83,20 @@ describe('space-scroll v0.8.11 — 焦點段落收裸文字 block（forum.gamer.
   // Space 焦點條跳過這些段落。真實 DOM probe 實證：mirrormedia DraftStyle 段落
   // directLen=0 / inlineLen 80-110，修法後 collectBlocks 多收 6 段中間段落。
   it('collectBlocks 必須把 inline 子元素（span 等）內的文字一起算（span-wrapped 段落）', () => {
-    assert.ok(/const\s+INLINE_TEXT_TAGS\s*=\s*new Set\(/.test(MODULE_SRC),
-      'space-scroll.js 必須定義 INLINE_TEXT_TAGS 集（WYSIWYG inline 文字載體）');
+    // v1.7.43 T2：tag 集收斂到 NS.INLINE_TEXT_TAGS 單一資料源（詳見
+    // inline-text-tags-single-source.spec.js）——此處驗引用與使用
+    assert.ok(/const\s+INLINE_TEXT_TAGS\s*=\s*NS\.INLINE_TEXT_TAGS/.test(MODULE_SRC),
+      'space-scroll.js 的 INLINE_TEXT_TAGS 必須引用 NS.INLINE_TEXT_TAGS');
     assert.ok(/INLINE_TEXT_TAGS\.has\(/.test(MODULE_SRC),
       'INLINE_TEXT_TAGS 必須被使用');
     const body = extractFnBody(MODULE_SRC, 'collectBlocks');
     // directLen 累計必須同時涵蓋 text node 與 inline 子元素文字
     assert.ok(/INLINE_TEXT_TAGS\.has\(\s*n\.tagName\s*\)/.test(body),
       'collectBlocks 的 directLen 累計必須把 INLINE_TEXT_TAGS 子元素的文字算進去');
-    // SPAN 必須在集內（DraftStyle / Lexical 段落最常見的 inline 包裹）
-    const setM = MODULE_SRC.match(/const\s+INLINE_TEXT_TAGS\s*=\s*new Set\(\[([^\]]*)\]/);
+    // SPAN 必須在正典集內（DraftStyle / Lexical 段落最常見的 inline 包裹）
+    const NS_SRC = fs.readFileSync(path.join(ROOT, 'jread', 'content', 'namespace.js'), 'utf8');
+    const setM = NS_SRC.match(/INLINE_TEXT_TAGS:\s*new Set\(\[([^\]]*)\]/);
     assert.ok(setM && /'SPAN'/.test(setM[1]),
-      'INLINE_TEXT_TAGS 必須含 SPAN');
+      'NS.INLINE_TEXT_TAGS 正典集必須含 SPAN');
   });
 });

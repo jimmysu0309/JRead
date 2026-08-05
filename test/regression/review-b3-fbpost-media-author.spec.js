@@ -52,7 +52,7 @@ describe('fb-post v1.7.41 — 直系子層級的純媒體 wrapper 不可被空�
     img.src = 'https://scontent.xx.fbcdn.net/photo.jpg';
     mediaWrap.appendChild(img);
     clone.appendChild(mediaWrap);
-    NS.fbPost.pruneReaderClone(clone, null);
+    NS.fbPost.pruneReaderClone(clone);
     assert.ok(clone.contains(mediaWrap),
       '純媒體 wrapper 被第二階段空文字清除——附帶圖結構性消失');
     assert.ok(clone.querySelector('img'), '附帶圖必須保留');
@@ -73,7 +73,7 @@ describe('fb-post v1.7.41 — 直系子層級的純媒體 wrapper 不可被空�
     img.src = 'https://scontent.xx.fbcdn.net/preview.jpg';
     fbMedia.appendChild(img);
     clone.appendChild(fbMedia);
-    NS.fbPost.pruneReaderClone(clone, null);
+    NS.fbPost.pruneReaderClone(clone);
     assert.ok(clone.contains(fbMedia),
       'data-jread-fb-media 容器被空文字清除——第一階段自建的保留容器被第二階段打掉');
   });
@@ -92,7 +92,7 @@ describe('fb-post v1.7.41 — 直系子層級的純媒體 wrapper 不可被空�
     shell.appendChild(document.createElement('div'));
     clone.appendChild(shell);
     clone.appendChild(msgWrap);
-    NS.fbPost.pruneReaderClone(clone, null);
+    NS.fbPost.pruneReaderClone(clone);
     assert.ok(!clone.contains(shell), '無媒體的空殼 wrapper 必須照清');
   });
 });

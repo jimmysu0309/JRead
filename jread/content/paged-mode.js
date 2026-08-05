@@ -268,6 +268,7 @@
   //       （reserved-dimension 站省成本）。涵蓋整個閱讀期間，不只前 3 秒。
   let onDescendantLoadBound = null;   // 卡片 capture load 監聽（uninstall 移除）
   let eagerForced = [];               // 進場強制 eager 的圖 [{ img, prev }]，uninstall 還原
+  let eagerForcedSeen = new WeakSet(); // v1.7.43：同圖去重——lazy loader 反覆把 loading 改回 lazy 時，observer 每次再強制 eager 不重複累積 entry（無上限成長）
   let mediaObserver = null;           // v1.6.16：盯 art 子樹、晚到/被改回 lazy 的圖即時強制 eager
   let remeasureDebounce = 0;          // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
@@ -438,7 +439,12 @@
     try {
       if (!img || !img.getAttribute) return;
       if ((img.getAttribute('loading') || '').toLowerCase() === 'lazy') {
-        eagerForced.push({ img, prev: img.getAttribute('loading') });
+        // v1.7.43：只記第一次的原值（之後再看到的 lazy 是站方 loader 改回去的，
+        // 還原目標仍是最初原值）；WeakSet 防重複 push
+        if (!eagerForcedSeen.has(img)) {
+          eagerForcedSeen.add(img);
+          eagerForced.push({ img, prev: img.getAttribute('loading') });
+        }
         img.setAttribute('loading', 'eager'); // 用 attribute 非 .loading 屬性——瀏覽器讀 attribute、且反射到 jsdom
       }
     } catch (e) { /* 退化環境 */ }
@@ -477,6 +483,7 @@
       try { if (img && img.setAttribute) img.setAttribute('loading', prev); } catch (e) { /* */ }
     }
     eagerForced = [];
+    eagerForcedSeen = new WeakSet();
   }
 
   function pageCount() {
@@ -990,7 +997,7 @@
       relocatedTitle = null;
     }
 
-    // v0.7.237：頁碼指示器依 showIndicator 增/移除（settings.showPageNumber）
+    // 頁碼指示器（v1.5.4 起恆顯示——原 showPageNumber 開關已移除，見檔頭註解）
     reconcileIndicator();
 
     // keydown 必須 capture（先於原站 listener）；touch passive（不阻塞原生

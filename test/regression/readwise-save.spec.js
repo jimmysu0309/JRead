@@ -471,14 +471,19 @@ describe('readwise: saveResultToast 帶 detail（v1.5.7 行為承接）', () => 
     assert.strictEqual(t.message, '送出失敗（HTTP 500）');
   });
 
-  // forcing function：popup status 與 SW toast 兩條送出回饋都必須帶上 detail
-  it('popup.js generic 分支必須引用 result.detail（狀態列顯示具體原因）', () => {
+  // forcing function：popup status 與 SW toast 兩條送出回饋都必須帶上 detail。
+  // v1.7.43 T1：popup 結果文案改吃 saveResultToast 單一資料源——detail 引用
+  // 驗在 saveResultToast 本體 + popup 必須呼叫它（不再自寫分支）。
+  it('saveResultToast generic 分支引用 result.detail、popup.js 走 saveResultToast', () => {
+    const t = saveResultToast({ ok: false, status: 500, detail: 'invalid url' });
+    assert.strictEqual(t.message, '送出失敗（HTTP 500）：invalid url',
+      'saveResultToast 必須帶上 result.detail（顯示具體原因）');
     const fs = require('fs');
     const js = fs.readFileSync(
       path.join(__dirname, '..', '..', 'jread', 'popup', 'popup.js'), 'utf8'
     );
-    assert.match(js, /result\s*&&\s*result\.detail/,
-      'popup.js 送出失敗分支必須引用 result.detail（不可回退到只顯示 HTTP 碼）');
+    assert.match(js, /saveResultToast\(result/,
+      'popup.js 結果分支必須走 saveResultToast（單一資料源）');
   });
 });
 

@@ -7,7 +7,7 @@
 
 ## 目前 Extension 版本
 
-最新：**v1.7.42**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
+最新：**v1.7.43**。詳細修法見 [`CHANGELOG.md`](CHANGELOG.md) 頂部條目；`package.json` / `jread/manifest.json` 為真實版本號來源（`test/version-check.spec.js` forcing function 強制四邊同步：manifest / package.json / SPEC / CHANGELOG）。
 
 ### Baseline（當前所有修法的不可退讓底線）
 
@@ -715,7 +715,7 @@ popup 加「送到 Readwise Reader」按鈕，把 JRead 處理過的乾淨主文
 - `listDocuments({service,creds,query})` → readwise `listReaderDocuments`；instapaper `listInstapaper`（映射成共同 shape）
 - `getArticle({service,creds,id,meta})` → readwise `list?id&withHtmlContent`；instapaper `getInstapaperText`（get_text 只回 HTML、metadata 用 feed 帶入的 `meta` 補）
 - `archiveDocument({service,creds,id})` → readwise PATCH `location:archive`；instapaper `bookmarks/archive`
-- `saveResultToast(result,{serviceLabel,existsOn200})`：結果 → toast 文字（服務感知；Readwise 200=已存在、Instapaper 一律「已送到」）。既有 `readwiseResultToast` 保留（Readwise 專屬）
+- `saveResultToast(result,{serviceLabel,existsOn200,credsPlace})`：結果 → toast 文字（服務感知；Readwise 200=已存在、Instapaper 一律「已送到」）。既有 `readwiseResultToast` 保留（Readwise 專屬）。**v1.7.43 起 popup 狀態列與 SW 快速鍵 toast 的結果文案都走此函式**（popup 端 kind 轉換 success/error → ok/err；`credsPlace` 控制 NO_CREDENTIALS 指引位置——popup 傳「進階設定」、toast 預設「設定頁」；generic 分支無 HTTP 碼時帶 error code）。forcing：storage-service-dispatch.spec.js 驗 popup / SW 不得手寫結果文案
 
 ### Instapaper Full API（`lib/instapaper.js`）
 

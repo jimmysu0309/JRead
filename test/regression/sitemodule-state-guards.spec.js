@@ -41,9 +41,16 @@ describe('youtube-borderless — SPA 離開 watch 必須還原 theater（v0.8.36
 });
 
 describe('fb-post — hide body 直系子必須豁免 JRead 自家 host（v0.8.36）', () => {
-  it('enter() 與 enterPhotoMode() 的兩個 hide 迴圈都必須以 __jread 前綴豁免', () => {
-    const count = (FB_SRC.match(/child\.id && child\.id\.indexOf\('__jread'\) === 0/g) || []).length;
-    assert.strictEqual(count, 2,
-      `enter() 與 enterPhotoMode() 兩個 hide 迴圈都必須有 __jread id 前綴豁免（實際 ${count}/2）——漏一個 toast host 就會被 inline !important 蓋掉`);
+  // v1.7.43 T7：兩個 hide 迴圈收斂到共用 hideBodySiblingsExcept——豁免只需一份，
+  // 但 enter() 與 enterPhotoMode() 都必須走共用函式（雙實作時代漏補其中一份
+  // 正是 v0.8.36 的事故根因）
+  it('hideBodySiblingsExcept 帶 __jread 豁免、enter() 與 enterPhotoMode() 都走它', () => {
+    const fn = FB_SRC.match(/function hideBodySiblingsExcept\([\s\S]*?\n  \}/);
+    assert.ok(fn, 'fb-post.js 必須有 hideBodySiblingsExcept 共用函式');
+    assert.ok(/child\.id && child\.id\.indexOf\('__jread'\) === 0/.test(fn[0]),
+      'hideBodySiblingsExcept 必須以 __jread id 前綴豁免 JRead 自家 host');
+    const calls = (FB_SRC.match(/hideBodySiblingsExcept\(reader\);/g) || []).length;
+    assert.strictEqual(calls, 2,
+      `enter() 與 enterPhotoMode() 都必須呼叫 hideBodySiblingsExcept（實際 ${calls}/2）`);
   });
 });

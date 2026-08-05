@@ -838,19 +838,8 @@
   function extractHeroImage(articleEl) {
     if (!articleEl) return '';
     const base = location.href;
-    const isUsable = (raw) => {
-      if (!raw || typeof raw !== 'string') return null;
-      const s = raw.trim();
-      if (!s) return null;
-      if (/^data:/i.test(s) || /^blob:/i.test(s)) return null;
-      try {
-        const abs = new URL(s, base).href;
-        if (!/^https?:\/\//i.test(abs)) return null;
-        return abs;
-      } catch (_) {
-        return null;
-      }
-    };
+    // v1.7.43：URL 判定收斂到 NS.usableImageUrl（與 findLeadingHeroImage 同一份）
+    const isUsable = (raw) => (NS && NS.usableImageUrl) ? NS.usableImageUrl(raw, base) : null;
     // 1. reader card 內第一張符合條件的 img
     // v0.8.124：選擇邏輯抽到 NS.findLeadingHeroImage——與 markHeroImageForExport
     // 共用同一張 hero（杜絕「送的 cover」與「body 去重的圖」drift，硬規則 5）。

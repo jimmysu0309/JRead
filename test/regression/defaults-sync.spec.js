@@ -333,4 +333,31 @@ describe('DEFAULT_SETTINGS 四檔同步（v0.7.143 forcing function）', () => {
         `relevantKeys 必須含 paragraphSpacing；否則 popup 切換段落間距後 content script 不會 reapply。實際 keys: ${JSON.stringify(keys)}`);
     });
   });
+
+  // v1.7.43 T8：floating-icon / touch-gestures 原本各自 inline 硬寫預設值
+  // （0.7 / pagedMode:false / threeFingerTap:false）、不受本 spec 校對。改讀
+  // __JReadSettingsDefaults 後，這裡守：(1) 兩檔引用單一資料源 (2) 殘留的
+  // fallback 字面值（settings-defaults 缺席時的防禦值）與正典一致。
+  describe('floating-icon / touch-gestures 預設值單一資料源（v1.7.43 T8）', () => {
+    const FLOATING_SRC = fs.readFileSync(path.join(ROOT, 'content', 'floating-icon.js'), 'utf8');
+    const TG_SRC = fs.readFileSync(path.join(ROOT, 'content', 'touch-gestures.js'), 'utf8');
+    it('floating-icon.js DEFAULT_OPACITY 取自 __JReadSettingsDefaults、fallback 與正典一致', () => {
+      const m = FLOATING_SRC.match(/DEFAULT_OPACITY = SETTINGS_DEF\.floatingIconOpacity \?\? ([\d.]+)/);
+      assert.ok(m, 'DEFAULT_OPACITY 必須讀 SETTINGS_DEF.floatingIconOpacity');
+      assert.strictEqual(parseFloat(m[1]), SHARED.floatingIconOpacity,
+        `fallback ${m[1]} 必須與正典 floatingIconOpacity ${SHARED.floatingIconOpacity} 一致`);
+    });
+    it('floating-icon.js togglePaged 的 pagedMode 預設取自 SETTINGS_DEF', () => {
+      assert.match(FLOATING_SRC, /pagedMode: SETTINGS_DEF\.pagedMode \?\? false/,
+        'togglePaged 的 storage.get 預設必須讀 SETTINGS_DEF.pagedMode');
+      assert.strictEqual(SHARED.pagedMode, false, '正典 pagedMode 預設應為 false（fallback 一致性）');
+    });
+    it('touch-gestures.js threeFingerTap 預設取自 __JReadSettingsDefaults', () => {
+      assert.match(TG_SRC, /__JReadSettingsDefaults && window\.__JReadSettingsDefaults\.threeFingerTap\) \?\? false/,
+        'threeFingerTap 預設必須讀 __JReadSettingsDefaults');
+      assert.ok(!/storage\.sync\.get\(\{ threeFingerTap: false \}/.test(TG_SRC),
+        'storage.get 不得再 inline 硬寫 threeFingerTap: false');
+      assert.strictEqual(SHARED.threeFingerTap, false, '正典 threeFingerTap 預設應為 false（fallback 一致性）');
+    });
+  });
 });

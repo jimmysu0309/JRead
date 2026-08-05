@@ -154,4 +154,27 @@ describe('dispatch: saveResultToast（服務感知）', () => {
     assert.match(PC.saveResultToast({ ok: false, error: 'AUTH' }, { serviceLabel: 'Instapaper' }).message, /Instapaper 憑證無效/);
     assert.match(PC.saveResultToast({ ok: false, error: 'NETWORK' }, {}).message, /網路錯誤/);
   });
+  // v1.7.43 T1：popup 軌與快速鍵 toast 軌收斂到同一份 saveResultToast
+  it('credsPlace 參數：預設「設定頁」、popup 軌可指「進階設定」', () => {
+    assert.match(PC.saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, {}).message, /請到設定頁填入/);
+    assert.match(
+      PC.saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, { credsPlace: '「進階設定」' }).message,
+      /請到「進階設定」填入/);
+  });
+  it('generic 分支：無 HTTP status 時帶 error code、有 status 時帶 HTTP 碼', () => {
+    assert.strictEqual(PC.saveResultToast({ ok: false, error: 'INVALID_PAYLOAD' }, {}).message, '送出失敗（INVALID_PAYLOAD）');
+    assert.strictEqual(PC.saveResultToast({ ok: false, status: 500, detail: 'boom' }, {}).message, '送出失敗（HTTP 500）：boom');
+  });
+  // forcing：popup.js 不得再手寫送出結果文案（v1.7.43 前雙實作已 drift 過——
+  // 「進階設定」vs「設定頁」、'ok'/'err' vs 'success'/'error' 兩套 kind）
+  it('popup.js 送出結果文案不得繞過 saveResultToast 手寫', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '../../jread/popup/popup.js'), 'utf8');
+    assert.ok(src.includes('saveResultToast('), 'popup.js 應呼叫 saveResultToast');
+    assert.ok(!src.includes('尚未設定 ${label} 憑證'), 'NO_CREDENTIALS 文案不得手寫');
+    assert.ok(!src.includes('已存在於 ${label}'), '成功文案不得手寫');
+    const sw = fs.readFileSync(path.join(__dirname, '../../jread/background/service-worker.js'), 'utf8');
+    assert.ok(!sw.includes('尚未設定 ${label} 憑證'), 'SW 的 NO_CREDENTIALS 文案不得手寫');
+  });
 });

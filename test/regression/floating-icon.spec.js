@@ -656,6 +656,20 @@ describe('懸浮按鈕（v0.8.154）', () => {
       assert.strictEqual(resolve(undefined), true);
       assert.strictEqual(resolve(null), true);
     });
+
+    // v1.7.43 T9：floating-icon.js 的 RESOLVE fallback（settings-defaults 缺席
+    // 時的防禦 lambda）語意必須與正典一致——舊 fallback `v === true` 未設過回
+    // false，與「未設過一律預設開」相反
+    it('RESOLVE fallback lambda 與正典同語意（未設過回 true）', () => {
+      const FLOATING_SRC = fs.readFileSync(path.join(JREAD, 'content', 'floating-icon.js'), 'utf8');
+      const m = FLOATING_SRC.match(/__JReadResolveFloatingIconEnabled \|\|\s*\(\((v)\) => ([^)]+)\)/);
+      assert.ok(m, 'floating-icon.js 必須有 RESOLVE fallback lambda');
+      const fallback = new Function('v', `return ${m[2]};`);
+      assert.strictEqual(fallback(true), true);
+      assert.strictEqual(fallback(false), false);
+      assert.strictEqual(fallback(undefined), true, 'fallback 未設過必須回 true（與正典一致）');
+      assert.strictEqual(fallback(null), true);
+    });
   });
 
   describe('options UI wiring', () => {
