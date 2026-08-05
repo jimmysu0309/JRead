@@ -47,9 +47,22 @@
   // 圖示 / 短分隔，不算「相異的實質行」（v0.8.111）。
   const MIN_SIBLING_TEXT = 8;
 
+  // v1.7.44 E13 效能：textLen 是 layout-bound（innerText 強制 style/layout
+  // resolve）。collectBlocks 對每個 content leaf 走 chooseBlock climb，同一批
+  // parent / sibling 會被跨 leaf 重複量測——collect 期間開 per-element cache
+  // （單一 run 內 DOM 不變、快取安全；run 結束即棄）。點擊路徑的單發
+  // chooseBlock 不開 cache、語意不變。不改用 textContent：innerText 排除
+  // hidden 子樹是 tight-climb / dominant guard 門檻的既定語意。
+  let textLenCache = null;
   function textLen(el) {
+    if (textLenCache) {
+      const hit = textLenCache.get(el);
+      if (hit !== undefined) return hit;
+    }
     const raw = el.innerText != null ? el.innerText : el.textContent;
-    return (raw || '').replace(/\s+/g, ' ').trim().length;
+    const len = (raw || '').replace(/\s+/g, ' ').trim().length;
+    if (textLenCache) textLenCache.set(el, len);
+    return len;
   }
 
   function isInline(el) {
@@ -106,18 +119,23 @@
     if (!articleEl) return [];
     let all;
     try { all = articleEl.querySelectorAll('*'); } catch (_) { return []; }
-    for (const el of all) {
-      if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-      const isMedia = MEDIA_TAGS.has(el.tagName);
-      let hasDirectText = false;
-      if (!isMedia) {
-        for (const n of el.childNodes) {
-          if (n.nodeType === 3 && n.textContent && n.textContent.trim()) { hasDirectText = true; break; }
+    textLenCache = new Map(); // v1.7.44 E13：collect 期間快取 textLen（見上方註解）
+    try {
+      for (const el of all) {
+        if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+        const isMedia = MEDIA_TAGS.has(el.tagName);
+        let hasDirectText = false;
+        if (!isMedia) {
+          for (const n of el.childNodes) {
+            if (n.nodeType === 3 && n.textContent && n.textContent.trim()) { hasDirectText = true; break; }
+          }
         }
+        if (!hasDirectText && !isMedia) continue;
+        const block = chooseBlock(el);
+        if (block) set.add(block);
       }
-      if (!hasDirectText && !isMedia) continue;
-      const block = chooseBlock(el);
-      if (block) set.add(block);
+    } finally {
+      textLenCache = null;
     }
     let arr = Array.from(set);
     // 去巢狀（保留更精確的內層）：理論上各 leaf resolve 到同一 block、不會巢狀，

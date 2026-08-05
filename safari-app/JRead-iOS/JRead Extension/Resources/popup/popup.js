@@ -67,6 +67,30 @@ if (IS_PANEL) {
   setTimeout(postPanelSize, 0);
 }
 
+// v1.7.44（X2）：panel 模式 clickjacking 防線——popup.html 對 <all_urls>
+// web-accessible，任意網站可自行 iframe 嵌入 ?panel=1 蓋在誘餌 UI 上騙點擊。
+// 載入時向 SW 驗證「本 tab 剛由 floating-icon 合法開啟浮層」（PANEL_OPENED
+// 登記憑 sender.tab、頁面 JS 無法偽造；單次有效）。驗證通過前 capture 層
+// 攔下 click / change，所有控制項互動 no-op。非 panel（原生工具列 popup /
+// 新分頁開啟）不嵌在網頁內、無此攻擊面，不送握手。
+let panelVerified = !IS_PANEL;
+if (IS_PANEL) {
+  const blockUnverified = (e) => {
+    if (!panelVerified) { e.stopPropagation(); e.preventDefault(); }
+  };
+  document.addEventListener('click', blockUnverified, true);
+  document.addEventListener('change', blockUnverified, true);
+  const verifyPanel = () => {
+    try {
+      return browser.runtime.sendMessage({ type: 'PANEL_HANDSHAKE' })
+        .then((r) => { if (r && r.ok) panelVerified = true; })
+        .catch(() => {});
+    } catch (_e) { return Promise.resolve(); }
+  };
+  // SW 冷啟動可能吃掉第一發（登記與握手間 SW 被回收）→ 300ms 後重試一次
+  verifyPanel().then(() => { if (!panelVerified) setTimeout(verifyPanel, 300); });
+}
+
 // v0.8.163：iPad 工具列 popover 高度受限，全展開內容（zoom 1.35 下 ~845px）底部被
 // 截斷（Jimmy iPad 截圖）。CSS 的 pointer:coarse 媒體查詢分不出 iPad（popover）與
 // iPhone（底部 sheet，空間較足）——兩者 popup viewport 寬度相近。改用 screen 短邊

@@ -243,11 +243,20 @@
   // DOM——無失效訊號時直接回用上次結果。
   //
   // 失效訊號（三路）：
-  //   1. MutationObserver（root subtree、childList + attributes + characterData）
+  //   1. MutationObserver（root subtree、childList + attributes 帶 filter）
   //      ——cleaner 動態 hide（data-jread-hidden / inline style）、SPA 內容更新、
   //      lazy 注入都命中。cache 命中時先 takeRecords() 同步排空 pending 紀錄，
   //      「同一 tick 內先改 DOM 再查 blocks」也不會拿到 stale 清單（observer
   //      callback 是 microtask，純非同步失效有一拍延遲）。
+  //      v1.7.44 E4：attributes 收斂 attributeFilter——block 收集結果只依賴
+  //      「結構 + computed display + 幾何」，影響 display 的屬性只有 style /
+  //      class / hidden / data-jread-hidden / loading；lazy loader 的 src /
+  //      srcset 風暴（無 filter 時每張圖 hydrate 都失效、快取退化回每輪
+  //      660-840ms 全掃）不改 display，其幾何影響（圖載入撐高）由訊號 2 的
+  //      ResizeObserver 接。characterData 同理拿掉：純文字替換（翻譯 / live
+  //      ticker）不改變哪些元素被收為 block，高度變化走訊號 2、結構替換走
+  //      childList；blockSignature 由 position-memory 於 capture 當下即時讀，
+  //      不吃這份快取。
   //   2. ResizeObserver（root）——lazy 圖載入 / 字級調整等幾何變化改變
   //      「rect.height < 4 不收」與 MEDIA_MIN_HEIGHT 過濾結果（不改 DOM 也要重掃）。
   //   3. window resize。
@@ -266,7 +275,8 @@
     try {
       blocksCacheMo = new MutationObserver(invalidateBlocksCache);
       blocksCacheMo.observe(root, {
-        childList: true, subtree: true, characterData: true, attributes: true
+        childList: true, subtree: true, attributes: true,
+        attributeFilter: ['style', 'class', 'hidden', 'data-jread-hidden', 'loading']
       });
     } catch (_) { blocksCacheMo = null; }
     if (typeof ResizeObserver !== 'undefined') {

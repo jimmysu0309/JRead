@@ -359,6 +359,11 @@
     if (panelHost) return;   // 已開著不重複開
     let popupUrl = '';
     try { popupUrl = browser.runtime.getURL('popup/popup.html') + '?panel=1'; } catch (_e) { return; }
+    // v1.7.44（X2）：先向 SW 登記本 tab 合法開啟浮層——popup(?panel=1) 載入時
+    // 憑 sender.tab 向 SW 驗證（單次有效 + 30s TTL）。任意網站自行 iframe 嵌
+    // popup.html?panel=1 沒有這筆登記 → 握手失敗 → popup 互動 no-op（clickjacking
+    // 防線；登記走擴充訊息通道，頁面 JS 無法偽造）
+    try { browser.runtime.sendMessage({ type: NS.MSG.PANEL_OPENED }).catch(() => {}); } catch (_e) {}
     let pHost, pShadow;
     try {
       pHost = document.createElement('div');

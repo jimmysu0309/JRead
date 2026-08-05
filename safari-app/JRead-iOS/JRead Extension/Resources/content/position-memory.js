@@ -44,6 +44,7 @@
   const MAX_DAYS = 7;         // 效期上限（Jimmy 2026-06-11 指定）
   const MAX_ENTRIES = 100;    // map 超量淘汰上限（舊的先丟）
   const SAVE_DEBOUNCE_MS = 1000;
+  const MIN_WRITE_INTERVAL_MS = 5000; // v1.7.44 E3：可見路徑整包寫入節流窗口（見 writeThrottleDelay）
   const REASSERT_MS = 1200;   // lazy-load 內容推移版面後的二次對位延遲
   const MIN_RATIO = 0.02;     // 捲動進度低於此視為「還在開頭」→ 不記
   const SIG_LEN = 120;        // 段落文字簽名長度
@@ -194,6 +195,19 @@
     return next;
   }
 
+  // v1.7.44（E3）：可見路徑寫入節流決策。捲動中每次 debounce 都整包序列化
+  // readingPositions（滿載 ~100 entry 約 20-30KB）寫 storage＝每秒一次白付的
+  // 序列化 + IPC。節流成窗口內至多一次；窗口內的呼叫回傳剩餘毫秒數，呼叫端排
+  // trailing 寫入把停止捲動後的最後位置補上。force（flush 路徑：pagehide /
+  // visibilitychange hidden / endSession）一律立即寫——iOS 背景凍結防護與退出
+  // 落盤語意不變，節流只作用在「頁面可見、持續捲動」的中間態。純函式供 spec 直測。
+  // 回傳 0 = 立即寫；> 0 = 應延後的毫秒數。
+  function writeThrottleDelay(now, lastTs, force) {
+    if (force) return 0;
+    const elapsed = now - (lastTs || 0);
+    return elapsed >= MIN_WRITE_INTERVAL_MS ? 0 : MIN_WRITE_INTERVAL_MS - elapsed;
+  }
+
   // ---- DOM 模組 ----
 
   let sessionKey = null;   // 進入閱讀模式時的 urlKey（SPA 換頁後 location 已變，flush 必須用進場時的 key）
@@ -205,6 +219,7 @@
   let articleEl = null;
   let listening = false;
   let saveTimer = null;
+  let lastWriteTs = 0;     // 上次整包寫 storage 的時刻（writeThrottleDelay 節流基準）
   let reassertTimer = null;
   let interacted = false;  // 回復後使用者是否互動過（互動過就不做二次對位）
 
@@ -304,12 +319,22 @@
     return { mode: 'scroll', ratio, blockIndex, blockText };
   }
 
-  function persistNow() {
+  function persistNow(force) {
     if (!sessionKey || !(days > 0)) return;
     if (!contextValid()) return;  // 擴充 context 失效（reload / 更新後舊分頁孤兒）→ 安靜略過
+    const now = Date.now();
+    // v1.7.44 E3：可見路徑節流（見 writeThrottleDelay 註解）。窗口內不寫盤、
+    // 排 trailing 寫入補最後位置；flush 路徑 force=true 一律立即寫
+    const delay = writeThrottleDelay(now, lastWriteTs, !!force);
+    if (delay > 0) {
+      if (!saveTimer) {
+        saveTimer = setTimeout(() => { saveTimer = null; persistNow(); }, delay);
+      }
+      return;
+    }
+    lastWriteTs = now;
     const key = sessionKey;
     const pos = capture();
-    const now = Date.now();
     if (memMap) {
       // 同步寫入路徑（iOS 背景凍結防護）：用進場 seed 的記憶體 map 同步算出
       // payload + 同步發出 set，不先 async 讀回。iOS Safari 頁面背景化會立刻凍結
@@ -344,7 +369,7 @@
   function onScroll() { scheduleSave(); }
   function flushNow() {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-    persistNow();
+    persistNow(true); // flush 語意：略過節流、立即落盤（iOS 背景凍結防護不變）
   }
   function onVisibilityChange() {
     if (document.visibilityState === 'hidden') { flushNow(); return; }
@@ -536,11 +561,13 @@
     shouldPersist,
     computeNextMap,
     mergeExternalMap,
+    writeThrottleDelay,
     beginSession,
     endSession,
     setDays,
     isTracking: () => !!sessionKey,
-    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION
+    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION,
+    MIN_WRITE_INTERVAL_MS
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
