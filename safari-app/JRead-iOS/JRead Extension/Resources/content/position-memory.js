@@ -413,6 +413,13 @@
 
   function restore(key, el) {
     localGet((map) => {
+      // v1.7.39：storage 往返期間可能已 endSession（快速 ESC / SPA 導航——exit
+      // 是同步的，async 讀回來時 session 已結束）。過期回呼不得：① memMap 被
+      // 復活成殘留快照；② 對已還原的原站頁面執行捲動；③ 經 spaceScroll
+      // .getBlocks → ensureBlocksCacheInvalidators 在 uninstall 之後重掛
+      // MutationObserver / ResizeObserver / resize listener（洩漏到下次進
+      // reader 才拆）。同函式下方 reassert timer 本就有同款 guard，主路徑補齊。
+      if (sessionKey !== key) return;
       if (!map) { recordRestoreDiag({ stage: 'read-null' }); return; }
       memMap = map; // seed 記憶體 map：之後寫入走同步路徑（不再 async 讀回）
       const entry = map[key];

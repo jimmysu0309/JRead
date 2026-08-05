@@ -528,9 +528,19 @@
   }
 
   function exitReaderModeImpl() {
+    // v1.7.39：退出路徑逐段容錯。enter pipeline 已在 v0.8.36 整段 try/catch
+    //（中途 throw 留半套 artifacts），exit 是同型風險的鏡像缺口：styler /
+    // cleaner restore 任一 throw 時 state.active 卡 true、ESC listener 已拆、
+    // 再 toggle 又走 exit 再炸——wedge 到使用者只能 reload 自救。改成單段失敗
+    // console.warn + 跳過、其餘還原照跑、結尾 state 清理無條件執行。
+    const safeStep = (fn) => {
+      try { fn(); } catch (err) {
+        try { console.warn('[JRead] exit 還原步驟失敗，跳過：', err); } catch (_) { /* noop */ }
+      }
+    };
     // v0.8.149：退出閱讀模式——恢復翻譯擴充的 content guard（任一退出路徑都送、
     // idempotent；Shinkansen 端未暫停時設 false 無副作用）。
-    signalReaderModeToTranslator(false);
+    safeStep(() => signalReaderModeToTranslator(false));
     // v0.8.108：先拆編輯模式（silent：reader teardown 自己會還原 interaction
     // layer + cleaner.restore 還原手動隱藏的元素，不需 editMode 的 onExit 再
     // 裝回 keyguard 等）。必須在 cleaner.restore 之前——只移除編輯 UI / listener，
@@ -541,26 +551,29 @@
     // v0.8.40：先 flush 閱讀位置記憶——必須在 pagedMode.uninstall（頁碼歸零）
     // 與 styler.restore（捲動位置還原成原站排版）之前，位置此刻才有效。
     // 未開始 session（cinema / 停用 / enter 失敗 rollback）時 no-op。
-    if (NS.positionMemory) NS.positionMemory.endSession();
+    safeStep(() => { if (NS.positionMemory) NS.positionMemory.endSession(); });
     // v1.0.21：退出捲動同步——還原前先抓閱讀段落（detail + 為何在 uninstall 前見函式）
-    const exitScrollAnchorEl = captureExitScrollAnchor();
+    let exitScrollAnchorEl = null;
+    safeStep(() => { exitScrollAnchorEl = captureExitScrollAnchor(); });
     // v0.7.101：移除 ESC keydown listener（避免 reader mode 關閉後 ESC 仍被攔）
     window.removeEventListener('keydown', onEscKey, true);
     // v0.7.131：一律拆掉 keyguard（即使先前 settings 是 false 也保險呼叫）
     uninstallKeyguard();
     // v0.7.216：一律拆掉 Space 段落焦點卷動（listener + 指示條 + 進行中動畫）
-    if (NS.spaceScroll) NS.spaceScroll.uninstall();
+    safeStep(() => { if (NS.spaceScroll) NS.spaceScroll.uninstall(); });
     // v0.7.227：一律拆掉翻頁模式（listener + 頁碼指示 + 還原文件卷動位置）。
     // 必須在 styler.restore 之前呼叫——uninstall 內的 scrollTo 還原排在
     // rAF，等本輪同步的 restore 移除 overflow hidden 後文件才可卷動。
     // resetPosition：退出 reader mode = 閱讀 session 結束，下次進入從第一頁起。
-    if (NS.pagedMode) {
-      NS.pagedMode.uninstall();
-      NS.pagedMode.resetPosition();
-    }
+    safeStep(() => {
+      if (NS.pagedMode) {
+        NS.pagedMode.uninstall();
+        NS.pagedMode.resetPosition();
+      }
+    });
     // v0.7.133：cinema mode 走獨立 restore 路徑（沒有 cleaner/styler 副作用要還原）
     if (NS.state.cinemaActive) {
-      if (NS.cinema) NS.cinema.exit();
+      safeStep(() => { if (NS.cinema) NS.cinema.exit(); });
       NS.state.cinemaActive = false;
       NS.state.active = false;
       NS.state.articleEl = null;
@@ -568,20 +581,24 @@
       safeSendMessage({ type: NS.MSG.SET_ACTIVE_ICON, payload: { active: false } });
       return;
     }
-    if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
-    if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls);
+    safeStep(() => { if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles); });
+    safeStep(() => { if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls); });
     // v1.7.13：把 multi-block 吸收的接續兄弟區塊移回原位。必須在 styler /
     // cleaner restore 之後——restore 作用於「區塊仍在 articleEl 內」的狀態，
     // 先移回會讓 in-article 還原漏掉這些節點。
-    if (NS.detector && typeof NS.detector.restoreAbsorbedSiblings === 'function') {
-      NS.detector.restoreAbsorbedSiblings(NS.state.absorbedSiblings);
-    }
+    safeStep(() => {
+      if (NS.detector && typeof NS.detector.restoreAbsorbedSiblings === 'function') {
+        NS.detector.restoreAbsorbedSiblings(NS.state.absorbedSiblings);
+      }
+    });
     NS.state.absorbedSiblings = [];
     // v0.7.86：移除 detector shadow-DOM fallback 建立的 light DOM 替身。
     // 替身是 deepClone 出來的、原 shadow content 不動，移除替身後原站視覺
     // 完全還原。多個替身（理論上不該發生，但保險）一起清。
-    const replicas = document.querySelectorAll('[data-jread-shadow-replica="1"]');
-    replicas.forEach(r => r.remove());
+    safeStep(() => {
+      const replicas = document.querySelectorAll('[data-jread-shadow-replica="1"]');
+      replicas.forEach(r => r.remove());
+    });
     // v0.7.88：移除 detector inject 的 H1（data-jread-injected-title）
     // + restore 原 promoted-title-source 元素的 display（detector hide 它
     // 避免標題重複）+ 清原元素的 attribute。
@@ -598,15 +615,19 @@
     // v0.7.135：清掉 X / Twitter 合成 reader 容器（NS.xThread.enter() 注入的
     // [data-jread-x-reader]）。styler / cleaner 已 restore 過了，容器自身只是
     // 包裝體、直接 remove 不影響原 X DOM。
-    if (NS.xThread && typeof NS.xThread.exit === 'function') {
-      NS.xThread.exit();
-    }
+    safeStep(() => {
+      if (NS.xThread && typeof NS.xThread.exit === 'function') {
+        NS.xThread.exit();
+      }
+    });
     // v0.7.157：清掉 Facebook permalink 合成 reader 容器
-    if (NS.fbPost && typeof NS.fbPost.exit === 'function') {
-      NS.fbPost.exit();
-    }
+    safeStep(() => {
+      if (NS.fbPost && typeof NS.fbPost.exit === 'function') {
+        NS.fbPost.exit();
+      }
+    });
     // v1.0.21：原站版面已完全還原——捲回退出前讀到的段落。
-    applyExitScrollAnchor(exitScrollAnchorEl);
+    safeStep(() => applyExitScrollAnchor(exitScrollAnchorEl));
     NS.state.active = false;
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
@@ -1324,7 +1345,14 @@
 
     if (msg.type === NS.MSG.TOGGLE_READER_MODE) {
       (async () => {
-        sendResponse(await toggleReader());
+        // v1.7.39：最後保險 catch——toggle 中途 throw 時 sendResponse 永不被
+        // 呼叫，popup 端 callback 懸空（按鈕卡「處理中」）。回報當下真實 state。
+        try {
+          sendResponse(await toggleReader());
+        } catch (err) {
+          try { console.warn('[JRead] toggle 失敗：', err); } catch (_) { /* noop */ }
+          sendResponse({ active: !!NS.state.active, error: 'TOGGLE_FAILED' });
+        }
       })();
       return true;
     }

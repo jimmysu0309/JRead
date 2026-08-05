@@ -460,18 +460,26 @@
 
   // 社群分享 cluster 門檻：同 parent 下 3+ 個社群連結
   const SHARE_CLUSTER_MIN = 3;
-  const SHARE_LINK_SEL = [
-    'a[href*="twitter.com"]',
-    'a[href*="x.com"]',
-    'a[href*="facebook.com"]',
-    'a[href*="linkedin.com"]',
-    'a[href*="line.me"]',
-    'a[href*="weibo.com"]',
-    'a[href*="reddit.com"]',
-    'a[href*="pinterest.com"]',
-    'a[href*="t.me"]',
-    'a[href*="wa.me"]'
-  ].join(', ');
+  // v1.7.39：share 服務網域單一資料源。CSS attr selector 只能做子字串比對——
+  // `href*="x.com"` 會誤中 netflix.com / dropbox.com / xbox.com 一整族域名
+  //（"netflix.com".includes("x.com") === true，真 Chromium probe 實證正文段落
+  // 含 3 個 Netflix 連結整段被 hide）。selector 只當便宜 pre-filter（superset），
+  // 實際判定走 isShareServiceLink 的 hostname 邊界比對。
+  const SHARE_HOSTS = ['twitter.com', 'x.com', 'facebook.com', 'linkedin.com',
+    'line.me', 'weibo.com', 'reddit.com', 'pinterest.com', 't.me', 'wa.me'];
+  const SHARE_LINK_SEL = SHARE_HOSTS.map((d) => `a[href*="${d}"]`).join(', ');
+
+  // hostname 邊界比對：host 恰為服務網域、或以 `.<網域>` 結尾（涵蓋 www. /
+  // social-plugins.line.me / service.weibo.com 等子網域）。netflix.com 這類
+  // 「字尾撞名」域名不會通過（"netflix.com".endsWith(".x.com") === false）。
+  function isShareServiceLink(a) {
+    let host = '';
+    try {
+      host = new URL(a.getAttribute('href') || '', location.href).hostname.toLowerCase();
+    } catch (_) { return false; }
+    if (!host) return false;
+    return SHARE_HOSTS.some((d) => host === d || host.endsWith('.' + d));
+  }
 
   // ---- 工具 -------------------------------------------------------------
   function markerOf(el) {
@@ -990,30 +998,32 @@
   // 改成逐 sibling 走、遇第一個含主文長段者即停：文末整段 widget（無後續主文）
   // 仍藏到底（與舊行為等價），行內 widget 則只藏到正文段前、保住後續主文。
   function hideHeadingNoiseTail(h, articleEl, hidden) {
+    // v1.7.39：sibling 主文判定升級——自身是長 <p>（The Verge 直接子段落，
+    // v0.8.133）、自身是 direct text 長 <div>（div 段落站：upmedia / cn.nytimes /
+    // archive 改寫頁型，v0.7.190 同款訊號）、或內含長段（hasLongMainParagraph
+    // 已含 p + div direct text 雙軌）。舊版只認 <p> 是 v0.8.133 修法的殘留盲點：
+    // div 段落站的 noise heading 為 articleEl 直接子時（tailApplies 直接成立、
+    // 不經 before-check），heading 之後所有 div 段落被當 widget 一路藏到文末
+    //（真 Chromium probe 實證後半篇整段消失）。before-check 與 after-check 共用
+    // 同一判定，保持對稱。
+    const siblingHasMainContent = (el) => {
+      if (el.tagName === 'P' && norm(el.textContent).length >= 100) return true;
+      if (el.tagName === 'DIV') {
+        const direct = Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
+        if (norm(direct).length >= 100) return true;
+      }
+      return hasLongMainParagraph(el);
+    };
     const tailParent = h.parentElement;
     let tailApplies = tailParent === articleEl;
     if (!tailApplies && tailParent && articleEl.contains(tailParent)) {
       for (let pv = h.previousElementSibling; pv; pv = pv.previousElementSibling) {
-        let hasLongBefore = pv.tagName === 'P' && norm(pv.textContent).length >= 100;
-        if (!hasLongBefore) {
-          for (const para of pv.querySelectorAll('p')) {
-            if (norm(para.textContent).length >= 100) { hasLongBefore = true; break; }
-          }
-        }
-        if (hasLongBefore) { tailApplies = true; break; }
+        if (siblingHasMainContent(pv)) { tailApplies = true; break; }
       }
     }
     if (tailApplies) {
-      // sibling 含主文長段判定：自身是長 <p>（The Verge 直接子段落）或內含長 <p>
-      // （含內容塊 div 包裝）。與上方 before-check 對稱——舊 after-check 漏「自身
-      // 是直接 <p>」是本次截斷 bug 根因。
-      const hasMainContent = (el) => {
-        if (el.tagName === 'P' && norm(el.textContent).length >= 100) return true;
-        for (const para of el.querySelectorAll('p')) {
-          if (norm(para.textContent).length >= 100) return true;
-        }
-        return false;
-      };
+      const hasMainContent = siblingHasMainContent;
       hide(h, hidden);
       let s = h.nextElementSibling;
       while (s && !hasMainContent(s)) {
@@ -1540,6 +1550,9 @@
     const anchors = document.querySelectorAll(SHARE_LINK_SEL);
     const parentCount = new Map();
     for (const a of anchors) {
+      // v1.7.39：hostname 邊界判定——pre-filter selector 是子字串 superset，
+      // netflix.com 等撞名域名在這裡剔除
+      if (!isShareServiceLink(a)) continue;
       const p = a.parentElement;
       if (!p) continue;
       parentCount.set(p, (parentCount.get(p) || 0) + 1);
@@ -1548,6 +1561,17 @@
       if (count < SHARE_CLUSTER_MIN) continue;
       if (isInPreserved(p)) continue;
       if (p.contains(articleEl)) continue; // 不砍到主文祖先
+      // v1.7.39：主文 guard——本規則原是全檔唯一無主文兜底的 hide 通道。
+      // 兩個誤殺場景：① wrapper 場景：parent 內含主文長段（區塊同時包著文章
+      // 段落與 3+ 服務連結）；② inline prose 場景：parent 自身是正文段落、
+      // 行文中提及 3+ 個服務連結（科技文常見）——非連結文字量大。真 share
+      // cluster 的非連結文字只有零星短 label（分享鈕文字都在 <a> 內），
+      // 兩道 guard 都不會誤豁免。
+      if (wrapperContainsMainContentP(p)) continue;
+      const selfText = norm(p.textContent);
+      let linkText = 0;
+      for (const la of p.querySelectorAll('a')) linkText += norm(la.textContent).length;
+      if (selfText.length - linkText >= 80) continue;
       hide(p, hidden);
     }
   }
