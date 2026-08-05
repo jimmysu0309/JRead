@@ -45,6 +45,14 @@
     if (textLen <= 0) return 0;
     let linkLen = 0;
     el.querySelectorAll('a').forEach(a => {
+      // v1.7.39：隱藏子樹的 <a> 不計入分子。分母 textLen 來自 innerText（真
+      // 瀏覽器排除 display:none 子樹），但依 spec「非 render 元素的 innerText
+      // 直接回傳 textContent」——候選容器內藏一個 display:none 的下拉導覽選單
+      //（mobile nav 常態）時，選單連結文字全進分子、不在分母，density 被灌爆
+      //（可 > 1）誤觸 isLinkDirectory 0.5 reject / CONT_MAX_LD 0.3 / heuristic
+      // 乘法懲罰（真 Chromium probe 實證 a.innerText 在隱藏子樹非 0）。
+      // isAncestorChainHidden 在 withAncestorCache 內成本可控、裸跑亦正確。
+      if (isAncestorChainHidden(a)) return;
       linkLen += (a.innerText || a.textContent || '').length;
     });
     return linkLen / textLen;

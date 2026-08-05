@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!--
+  byline 頭像 runtime inline 隱藏最小重現（v1.7.39）。
+  bug：v1.7.25「byline 頭像一律不顯示」的 CSS 規則 `[BYLINE] img/picture
+  { display:none }` specificity 只有 (0,2,1)，真 Chrome 下被 MEDIA_CAP_SEL
+  (0,3,3) 的 display:block（裸 <img>）與 inline-img 規則（同 specificity、
+  source order 在後；小圖）打穿——實際只有 <picture> 包與 <a> 包的頭像藏得掉。
+  jsdom 的 cascade 不完整、恰好解到 none（既有 spec 因此偽綠），forcing 改驗
+  inline style 通道（jsdom / 真 Chrome 行為一致）。
+  結構仿 autocar byline（標題與第一段內文之間、含日期訊號的 meta 區），
+  頭像三變體：裸 img / picture 包 / anchor 包。
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article>
+    <h1>Why steering wheels should always be round, not square</h1>
+    <div class="content-author-region" data-test="byline-root">
+      <img data-test="avatar-bare" src="mug1.jpg" alt="">
+      <picture data-test="avatar-picture"><img data-test="avatar-picture-img" src="mug2.jpg" alt=""></picture>
+      <div class="author-cell"><a href="/author"><img data-test="avatar-anchor" src="mug3.jpg" alt=""></a></div>
+      <div data-test="author">by <a href="/author">Matt Prior</a></div>
+      <div class="pdate"><time data-test="date">13 June 2026</time></div>
+    </div>
+    <p data-test="body">I have an affliction that, when I begin to think about how difficult it is to find a pleasing steering wheel in a new car, it plays on repeat in my head endlessly.</p>
+    <p>I've learned to live with it as something as inevitable as getting into a new car and being faced with an unnaturally awkward primary control surface.</p>
+    <figure><img data-test="content-img" src="hero.jpg" alt="content"></figure>
+  </article>
+</body>
+</html>

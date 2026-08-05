@@ -1742,7 +1742,11 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 /* v1.7.25（Jimmy 2026-07-30）：byline 頭像一律不顯示——原 2em 圓形縮圖規則
    改為整個藏掉（img + picture wrapper 都藏，避免空 picture 殘留寬度）。
    與 cleaner hideBylineAvatarImgs（吃 byline 標記外的頭像列）是同一份事實
-   的雙軌實作，改頭像顯示政策時兩處同改。 */
+   的雙軌實作，改頭像顯示政策時兩處同改。
+   v1.7.39：此規則 specificity (0,2,1) 會被 MEDIA_CAP_SEL (0,3,3) 的
+   display:block 與 inline-img 規則（source order 在後）打穿——權威實作改在
+   apply() 的 hideAvatarMedia（runtime inline !important），本規則降級為
+   「apply 之後動態插入頭像」的兜底。 */
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] img,
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] picture {
   display: none !important;
@@ -4281,6 +4285,20 @@ html.${HTML_CLASS}.jread-orion body {
               }
             };
             unifyFont(root);
+            // v1.7.39：byline 頭像隱藏改走 runtime inline !important。v1.7.25 的
+            // CSS 規則 `[BYLINE] img/picture { display:none }` specificity 只有
+            // (0,2,1)：裸 <img>（> inline 門檻）被 MEDIA_CAP_SEL (0,3,3) 的
+            // display:block 打穿、小裸圖被 inline-img 規則（同 specificity、
+            // source order 在後）打穿——真 Chromium probe 實證只有 <picture> 包
+            // 與 <a> 包的頭像藏得掉。inline !important 必贏所有 stylesheet 規則、
+            // 終結 specificity 軍備；snapshot/restore 走既有 bylineDispSnap。
+            // CSS 規則保留當兜底（涵蓋 apply 之後動態插入的頭像）。
+            const hideAvatarMedia = (rootEl) => {
+              for (const el of rootEl.querySelectorAll('img, picture')) {
+                setStyleImp(el, 'display', 'none');
+              }
+            };
+            hideAvatarMedia(root);
             // v1.6.18：byline root 落在 date-only（seed 因 LCA 含標題退回 dateEl、
             // 或 author 與 date 無共同乾淨祖先）時，作者列常是 date root 的「相鄰前一個
             // sibling」而未被納入 → 維持站點 header 的 text-align:center，與已左對齊的
@@ -4312,6 +4330,7 @@ html.${HTML_CLASS}.jread-orion body {
                   setStyleImp(prevSib, 'flex-direction', 'row');
                   walk(prevSib);
                   unifyFont(prevSib);
+                  hideAvatarMedia(prevSib); // v1.7.39：第二 root 同步隱藏頭像
                 }
               }
             }

@@ -114,7 +114,9 @@ describe('keyguard v0.7.131 — reader mode 攔截原站快速鍵', () => {
     it('exitReaderMode 必須無條件呼叫 uninstallKeyguard', () => {
       const idx = MAIN_SRC.search(/function\s+exitReaderMode/);
       assert.ok(idx >= 0);
-      const slice = MAIN_SRC.slice(idx, idx + 4000);
+      // v1.7.39：視窗 4000 → 6000——exit 路徑加入 safeStep 逐段容錯（含註解）
+      // 後函式變長，uninstallKeyguard 呼叫位置後移（呼叫本身仍無條件執行）
+      const slice = MAIN_SRC.slice(idx, idx + 6000);
       assert.match(slice, /uninstallKeyguard\s*\(/,
         'exitReaderMode 必須 uninstallKeyguard——forcing：reader mode 關閉後 keyguard 仍掛在 window 上會繼續攔截、影響使用者');
     });

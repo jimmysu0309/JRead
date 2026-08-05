@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<!--
+  share cluster hostname 邊界 + 主文 guard 最小重現（v1.7.39）。
+  bug：SHARE_LINK_SEL 的 `a[href*="x.com"]` 是子字串比對，netflix.com /
+  dropbox.com 等「字尾撞名」域名全部命中；hideSocialShareClusters 又是全檔
+  唯一無主文兜底的 hide 規則——正文段落行文中含 3+ 個服務連結（科技文常見）
+  時整段被 hide（真 Chromium probe 實證）。
+  fixture 四組：
+    - share-cluster：真社群分享列（x.com intent + facebook sharer + line
+      subdomain），修法後必須仍被 hide（正例不退化）
+    - prose-with-service-links：正文段落含 3 個 netflix.com 連結（撞名域名
+      + inline prose 場景），不可 hide
+    - storage-service-nav：3 個 dropbox.com 連結的短列（撞名域名、無主文
+      文字），hostname 邊界修法後不再計為 share 連結 → 不 hide
+    - wrapper-with-content：wrapper 直接子含 3 個真 share 連結、但同 wrapper
+      內含主文長段 → 主文 guard 豁免，不可整塊 hide
+-->
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <article id="story">
+    <h1>串流平台生態觀察</h1>
+    <p data-test="intro">這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。</p>
+    <p data-test="prose-with-service-links">各平台的內容策略差異明顯，值得從近年的自製內容投資規模觀察其長期方向與市場定位，以下比較三個代表作品的授權模式與地區可及性差異，並附上官方頁面：<a href="https://www.netflix.com/title/80100172">作品一</a>、<a href="https://www.netflix.com/title/70143836">作品二</a>、<a href="https://www.netflix.com/title/80057281">作品三</a>。</p>
+    <div data-test="storage-service-nav">
+      <a href="https://www.dropbox.com/s/abc">檔案一</a>
+      <a href="https://www.dropbox.com/s/def">檔案二</a>
+      <a href="https://www.dropbox.com/s/ghi">檔案三</a>
+    </div>
+    <div data-test="wrapper-with-content">
+      <p data-test="wrapper-para">這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。</p>
+      <a href="https://x.com/intent/post?url=u">X</a>
+      <a href="https://www.facebook.com/sharer/sharer.php?u=u">Facebook</a>
+      <a href="https://social-plugins.line.me/lineit/share?url=u">LINE</a>
+    </div>
+    <p data-test="tail">這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。這是一段夠長的主文段落內容，用來確保通過一百字的主文判定門檻。</p>
+    <div data-test="share-cluster">
+      <a href="https://x.com/intent/post?url=u">分享到 X</a>
+      <a href="https://www.facebook.com/sharer/sharer.php?u=u">分享到 Facebook</a>
+      <a href="https://social-plugins.line.me/lineit/share?url=u">分享到 LINE</a>
+    </div>
+  </article>
+</body>
+</html>
