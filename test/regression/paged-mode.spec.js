@@ -821,6 +821,88 @@ describe('翻頁模式（v0.7.227）', () => {
     });
   });
 
+  // ---- B2. 高 scroll container monolithic 裁切（v1.7.46）-------------------
+  // Bug（Jimmy 回報 Gmail 分頁模式內容缺少；cage 實證）：瀏覽器把 scroll
+  // container（computed overflow-x/y 為 auto / scroll / hidden 任一）視為
+  // monolithic——多欄斷片時整塊不可切。Gmail 信件內文 .ii.gt（overflow-y:auto）
+  // 6663px 高，整塊被推到第 2 欄、被卡片 overflow:hidden 裁掉 → 第一頁只剩
+  // 標題。修法：install / remeasure / resize 掃 articleEl 後代，「高度超過
+  // 一頁的 scroll container」強制 inline overflow:visible !important；
+  // uninstall 還原原 inline 值。
+  // 訊號層次：本 describe 驗「掃描判定＋inline 寫入／還原」wiring（幾何用
+  // stub 驅動——jsdom 無 layout）；真實 column fragmentation 恢復由 cage 驗。
+  describe('高 scroll container 強制 overflow:visible（v1.7.46）', () => {
+    function loadModuleEnv() {
+      const env = loadFixtureWithScripts({
+        fixturePath: FIXTURE_PATH, scripts: [], pretendToBeVisual: true
+      });
+      env.window.eval(PAGED_SRC);
+      return env;
+    }
+    // art content-box 頁高 stub = 900；高元素 5000、矮元素 400
+    function setupGeometry(env, art) {
+      Object.defineProperty(art, 'clientHeight', { value: 900, configurable: true });
+      const mk = (h, styleText) => {
+        const el = env.document.createElement('div');
+        if (styleText) el.setAttribute('style', styleText);
+        el.getBoundingClientRect = () => ({ top: 0, left: 0, right: 600, bottom: h, width: 600, height: h });
+        art.appendChild(el);
+        return el;
+      };
+      return mk;
+    }
+
+    it('高於一頁的 scroll container → inline overflow:visible !important；矮的與 overflow:visible 的不動', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      const mk = setupGeometry(env, art);
+      const tallAuto = mk(5000, 'overflow-y: auto');
+      const tallHidden = mk(5000, 'overflow: hidden');
+      const tallVisible = mk(5000, '');
+      const shortAuto = mk(400, 'overflow-x: auto');
+      api.sync({ pagedMode: true }, art);
+      assert.strictEqual(tallAuto.style.getPropertyValue('overflow'), 'visible',
+        '高 overflow-y:auto 容器須強制 overflow:visible（monolithic 會整塊裁掉內容）');
+      assert.strictEqual(tallAuto.style.getPropertyPriority('overflow'), 'important',
+        '須 !important（要蓋過站方 stylesheet 的 overflow 規則）');
+      assert.strictEqual(tallHidden.style.getPropertyValue('overflow'), 'visible',
+        'overflow:hidden 同為 scroll container、同樣 monolithic，須一併解開');
+      assert.strictEqual(tallVisible.style.getPropertyValue('overflow'), '',
+        '本來就 visible 的高元素可正常斷片，不得寫入 inline');
+      assert.strictEqual(shortAuto.style.getPropertyValue('overflow'), '',
+        '放得進一頁的 scroll container（如寬 <pre>）無內容損失，保留內捲行為');
+      api.uninstall();
+    });
+
+    it('uninstall 還原原 inline overflow（有原值回原值、無原值清空）', () => {
+      const env = loadModuleEnv();
+      const api = env.window.__JRead.pagedMode;
+      const art = env.document.querySelector('article');
+      const mk = setupGeometry(env, art);
+      const hadInline = mk(5000, 'overflow-y: scroll');
+      const noInline = mk(5000, ''); // overflow 來自站方 stylesheet 的情境（jsdom 以 stub 模擬 computed）
+      // jsdom computed style 只反映 inline——noInline 用 getComputedStyle stub 補 auto
+      const origGCS = env.window.getComputedStyle;
+      env.window.getComputedStyle = (el, pseudo) => {
+        const cs = origGCS.call(env.window, el, pseudo);
+        if (el === noInline) return Object.assign(Object.create(cs), { overflowY: 'auto', overflowX: 'visible' });
+        return cs;
+      };
+      api.sync({ pagedMode: true }, art);
+      assert.strictEqual(hadInline.style.getPropertyValue('overflow'), 'visible', '進場強制 visible');
+      assert.strictEqual(noInline.style.getPropertyValue('overflow'), 'visible', 'stylesheet 情境也強制 visible');
+      api.uninstall();
+      assert.strictEqual(hadInline.style.getPropertyValue('overflow-y'), 'scroll',
+        'uninstall 須還原原 inline overflow-y（捲動模式下站方內捲 UI 仍合理）');
+      assert.strictEqual(hadInline.style.getPropertyValue('overflow'), '',
+        'uninstall 後不得殘留強制的 overflow shorthand');
+      assert.strictEqual(noInline.getAttribute('style') || '', '',
+        '原本無 inline overflow 的元素，uninstall 後 inline 須清空');
+      env.window.getComputedStyle = origGCS;
+    });
+  });
+
   // ---- C. 模組 install / uninstall DOM 副作用 ----------------------------
   describe('模組 sync / install / uninstall（jsdom）', () => {
     function loadModuleEnv() {

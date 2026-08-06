@@ -270,6 +270,8 @@
   let eagerForced = [];               // 進場強制 eager 的圖 [{ img, prev }]，uninstall 還原
   let eagerForcedSeen = new WeakSet(); // v1.7.43：同圖去重——lazy loader 反覆把 loading 改回 lazy 時，observer 每次再強制 eager 不重複累積 entry（無上限成長）
   let mediaObserver = null;           // v1.6.16：盯 art 子樹、晚到/被改回 lazy 的圖即時強制 eager
+  let unclipForced = [];              // v1.7.46：翻頁期間強制 overflow:visible 的高 scroll container，uninstall 還原
+  let unclipForcedSeen = new WeakSet(); // 同元素去重——remeasure 重掃時不重複累積 entry
   let remeasureDebounce = 0;          // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
@@ -399,6 +401,9 @@
   // （內容縮水）clamp 回最後一頁，不然停在幽靈位置。內容驅動重測與固定計時器共用。
   function remeasureAndReconcile() {
     if (!installed || !art) return;
+    // v1.7.46：晚載入內容可能讓 scroll container 事後長高過一頁（lazy 圖撐高），
+    // 重測前補掃一輪
+    unclipTallScrollContainers();
     remeasurePages();
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
     const t = pageCount();
@@ -484,6 +489,71 @@
     }
     eagerForced = [];
     eagerForcedSeen = new WeakSet();
+  }
+
+  // v1.7.46：翻頁模式內容整塊消失（Gmail 信件）修法。瀏覽器把 scroll container
+  // （computed overflow-x/y 為 auto / scroll / hidden 任一——三值都建立可捲容器）
+  // 視為 monolithic：多欄斷片時整塊不可切（隔離實驗實證；visible / clip 可斷片）。
+  // 主文包在這種容器裡（Gmail 內文 .ii.gt 是 overflow-y:auto、.a3s 是
+  // overflow-x:auto）且內容比一頁高時，整塊被推到下一欄、超出部分被卡片的
+  // overflow:hidden 裁掉——第一頁只剩標題、內文全滅（cage 實證：6663px 內文
+  // 整塊落在第 2 欄）。修法：掃 articleEl 後代，「高度超過一頁的 scroll
+  // container」強制 overflow:visible（inline !important 蓋過站方 stylesheet）
+  // 恢復可斷片；記錄原 inline 值、uninstall 還原（捲動模式下站方內捲 UI 仍合理）。
+  // 結構性通則、不綁站點：只看「scroll container ＋ 高度 > 頁高」兩個特徵。
+  // 高度放得進一頁的 scroll container（如 overflow-x:auto 的寬 <pre>）刻意不動
+  // ——整塊進一頁無內容損失，保留內捲行為。頁高用 art content-box 高（= 欄高）。
+  function unclipTallScrollContainers() {
+    if (!art) return;
+    let pageH = 0;
+    try {
+      const cs = getComputedStyle(art);
+      pageH = art.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    } catch (e) { return; }
+    if (!(pageH > 0)) return; // jsdom 無 layout → no-op（spec 以 stub 驅動）
+    const isClipping = (v) => v === 'auto' || v === 'scroll' || v === 'hidden';
+    let els;
+    try { els = art.querySelectorAll('*'); } catch (e) { return; }
+    for (const el of els) {
+      let h = 0;
+      try { h = el.getBoundingClientRect().height; } catch (e) { continue; }
+      // monolithic 且高過一頁才會裁掉內容；可斷片元素的 fragment 聯集高 ≈ 頁高不誤中
+      if (!(h > pageH + 4)) continue;
+      let ox, oy;
+      try {
+        const cs = getComputedStyle(el);
+        ox = cs.overflowX || ''; oy = cs.overflowY || '';
+        // jsdom 不展開 overflow shorthand 成 longhand（回空字串）→ 退回讀 shorthand
+        if (!ox && !oy) {
+          const t = String(cs.overflow || '').trim().split(/\s+/);
+          ox = t[0] || ''; oy = t[1] || t[0] || '';
+        }
+      } catch (e) { continue; }
+      if (!isClipping(ox) && !isClipping(oy)) continue;
+      // 只記第一次的原值（站方 loader 之後改回去時，還原目標仍是最初 inline 狀態）
+      if (!unclipForcedSeen.has(el)) {
+        unclipForcedSeen.add(el);
+        unclipForced.push({
+          el,
+          prev: el.style.getPropertyValue('overflow'), prevPri: el.style.getPropertyPriority('overflow'),
+          prevX: el.style.getPropertyValue('overflow-x'), prevXPri: el.style.getPropertyPriority('overflow-x'),
+          prevY: el.style.getPropertyValue('overflow-y'), prevYPri: el.style.getPropertyPriority('overflow-y')
+        });
+      }
+      try { el.style.setProperty('overflow', 'visible', 'important'); } catch (e) { /* */ }
+    }
+  }
+  function restoreUnclipped() {
+    for (const r of unclipForced) {
+      try {
+        r.el.style.removeProperty('overflow');
+        if (r.prev) r.el.style.setProperty('overflow', r.prev, r.prevPri);
+        if (r.prevX) r.el.style.setProperty('overflow-x', r.prevX, r.prevXPri);
+        if (r.prevY) r.el.style.setProperty('overflow-y', r.prevY, r.prevYPri);
+      } catch (e) { /* */ }
+    }
+    unclipForced = [];
+    unclipForcedSeen = new WeakSet();
   }
 
   function pageCount() {
@@ -961,6 +1031,8 @@
     resizeRaf = requestAnimationFrame(() => {
       resizeRaf = 0;
       if (!art) return;
+      // v1.7.46：resize 後頁高改變，重新判定哪些 scroll container 高過一頁
+      unclipTallScrollContainers();
       remeasurePages();
       try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ } // v1.6.15：保持變動偵測 gate 準確
       const total = pageCount();
@@ -1018,6 +1090,8 @@
     forceEagerImages();
     // v1.6.16：持續盯後續進 DOM / 被改回 lazy 的圖（涵蓋「載入中就切翻頁模式」的 race）
     observeMediaForEager();
+    // v1.7.46：先解開高 scroll container 的 monolithic 裁切，remeasure 才量得到真頁數
+    unclipTallScrollContainers();
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
     remeasurePages();
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
@@ -1069,6 +1143,9 @@
     // observer 當成「圖變 lazy」又強制回 eager，還原失敗。
     if (mediaObserver) { mediaObserver.disconnect(); mediaObserver = null; }
     restoreEagerImages();
+    // v1.7.46：還原被強制 overflow:visible 的高 scroll container（退回捲動模式後
+    // 站方內捲 UI 仍是合理設計）
+    restoreUnclipped();
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
     unlockVScroll();
