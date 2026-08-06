@@ -5,6 +5,9 @@
 //     styler.js 注入的 stylesheet 內、跟 #__jread-progress 共用 theme.progressBar
 //     色——單一資料源，主題切換時 styler 重建 stylesheet 自動跟色）
 //   - Space：焦點跳到下一個段落；Shift+Space：跳回上一個
+//   - 單行 block 合併（Jimmy 2026-08-06）：內容只有一行的 block（短標題 /
+//     單行段落）不獨立停留，指示條與下一個焦點單位合併成群組、一次跳過整組
+//     （isOneLineBlock / groupRange，詳見該區塊註解）
 //   - 顯示門檻（Jimmy 2026-06-05 訂正語意）：settings.spaceScrollRatio（預設
 //     50）= 焦點段落允許的最低位置（viewport 比例）。新焦點段落 top 還在
 //     門檻內就**只移指示條、不卷動**；低於門檻 → 以 rAF 動畫（450ms
@@ -92,6 +95,59 @@
   // v1.7.43：收斂到 NS.INLINE_TEXT_TAGS 單一資料源（與 styler markTextDivs
   // 共用；集合含 BR——BR 無文字，對本模組「收文字」用途天然無害）。
   const INLINE_TEXT_TAGS = NS.INLINE_TEXT_TAGS;
+
+  // ---- 單行 block 合併（Jimmy 2026-08-06）----------------------------------
+  // 內容只有一行的 block（短標題、單行段落）不獨立當焦點停留點——指示條與
+  // 下一個焦點單位合併成一個群組、Space 一次跳過整組。實作在「呈現/推進層」
+  // （groupRange + positionBar + advance），collectBlocks 結果不動——
+  // position-memory 共用的段落索引與簽名（el.textContent）維持原粒度不 drift。
+  //
+  // 群組規則：連續的單行 block 一律向下依附到第一個非單行 block（terminal）。
+  // 文末孤懸的單行 block（下面沒有東西可依附）自成一組、照舊停留。
+  // 媒體/結構類（img / video / figure / table / pre）不參與單行判定——
+  // 「一行」語意是文字行，且低矮圖片不該被吸進上方標題的群組。
+  //
+  // 單行判定：rect.height <= line-height × ONE_LINE_MAX_RATIO。一行 block 高度
+  // ≈ line-height、兩行 ≈ 2×——1.6 取中間值容納 padding / border 誤差。
+  // computed line-height 為 'normal'（Chromium 未設定時原樣回傳）時以
+  // fontSize × 1.2 估算（normal 實際 ≈ 1.2）——估小偏保守：寧可不合併
+  // （退回舊行為）也不把兩行段落誤判成單行吸進群組。
+  const ONE_LINE_MAX_RATIO = 1.6;
+  const ONE_LINE_SKIP_SEL = 'img, video, figure, table, pre';
+
+  function isOneLineBlock(b) {
+    if (!b) return false;
+    let styleHost = null;
+    if (b.__jreadBrUnit) {
+      // br 虛擬段落：樣式宿主 = 段落起始 text node 的父元素（Range 無 computed style）
+      styleHost = b.startNode && b.startNode.parentElement;
+    } else if (b.nodeType === 1) {
+      if (b.matches && b.matches(ONE_LINE_SKIP_SEL)) return false;
+      styleHost = b;
+    }
+    if (!styleHost) return false;
+    const r = b.getBoundingClientRect();
+    if (r.height < 4) return false;
+    const cs = (styleHost.ownerDocument.defaultView || window).getComputedStyle(styleHost);
+    let lh = parseFloat(cs.lineHeight);
+    if (!Number.isFinite(lh) || lh <= 0) {
+      const fs = parseFloat(cs.fontSize);
+      lh = (Number.isFinite(fs) && fs > 0 ? fs : 16) * 1.2;
+    }
+    return r.height <= lh * ONE_LINE_MAX_RATIO;
+  }
+
+  // 群組邊界：idx 所屬群組的 [start, end]（含端點；end = terminal）。
+  // 從 idx 往下找第一個非單行 block 當 terminal（到清單尾就以最後一個為
+  // terminal，即使它是單行——孤懸單行自成一組）；再從 terminal 往上收攏
+  // 連續的單行 block。單行 block 恆向下依附 → 任一成員算出的群組一致。
+  function groupRange(blocks, idx) {
+    let end = idx;
+    while (end < blocks.length - 1 && isOneLineBlock(blocks[end])) end++;
+    let start = end;
+    while (start > 0 && isOneLineBlock(blocks[start - 1])) start--;
+    return { start, end };
+  }
 
   // 多圖容器（圖庫）判定：含 >= 2 張內容圖、且圖說以外幾乎沒有正文。
   // Jimmy 2026-06-05 訂正：照片以每張為單位——圖庫容器讓位給個別圖片；
@@ -404,13 +460,28 @@
     return articleEl ? articleEl.getBoundingClientRect().left : 0;
   }
 
-  // position: absolute（文件座標）——卷動時指示條黏著段落移動，不需每 frame 更新
+  // position: absolute（文件座標）——卷動時指示條黏著段落移動，不需每 frame 更新。
+  // 單行 block 合併：block 落在群組內時指示條涵蓋整組（群組首 block top →
+  // terminal bottom）；不在 blocks 清單（極端 fallback）退回單 block 範圍。
   function positionBar(block) {
     if (!barEl || !block) return;
-    const r = block.getBoundingClientRect();
-    barEl.style.top = (window.scrollY + r.top) + 'px';
+    let top, height;
+    const blocks = collectBlocks();
+    const idx = blocks.indexOf(block);
+    if (idx !== -1) {
+      const g = groupRange(blocks, idx);
+      const rs = blocks[g.start].getBoundingClientRect();
+      const re = blocks[g.end].getBoundingClientRect();
+      top = rs.top;
+      height = Math.max(re.bottom - rs.top, rs.height);
+    } else {
+      const r = block.getBoundingClientRect();
+      top = r.top;
+      height = r.height;
+    }
+    barEl.style.top = (window.scrollY + top) + 'px';
     barEl.style.left = Math.max(0, window.scrollX + barAnchorLeft() - 14) + 'px';
-    barEl.style.height = r.height + 'px';
+    barEl.style.height = height + 'px';
   }
 
   // 單頁判定（Jimmy 2026-06-09）：整篇文章在 viewport 內裝得下、不需捲動時
@@ -576,26 +647,46 @@
     }
   }
 
+  // 推進以「群組」為單位（單行 block 合併）：往下 = 目前群組 terminal 的下一個
+  // block 所屬群組；往上 = 目前群組 start 的前一個 block 所屬群組（該 block 必為
+  // 非單行——單行的話 start 會繼續往上收，故它就是前一組的 terminal）。焦點
+  // focusedBlock 設在群組 terminal（真實清單成員，position-memory 的
+  // indexOf / currentAnchor 天然可用）；捲動門檻 / 落點以群組首 block 計算
+  // ——保證合併進來的單行標題跟著段落一起進 viewport。
   function advance(dir) {
     const blocks = collectBlocks();
     if (!blocks.length) return;
-    let next = null;
+    let group = null;
+    const groupAtFirstVisible = () => {
+      const first = firstVisibleBlock(blocks);
+      return first ? groupRange(blocks, blocks.indexOf(first)) : null;
+    };
     if (!focusedBlock || !focusedBlock.isConnected) {
-      next = firstVisibleBlock(blocks);
+      group = groupAtFirstVisible();
     } else {
-      const r = focusedBlock.getBoundingClientRect();
-      const offscreen = r.bottom <= 0 || r.top >= window.innerHeight;
       const idx = blocks.indexOf(focusedBlock);
-      if (offscreen || idx === -1) {
-        // 手動卷遠 / 焦點塊被 SPA 移除：重新錨定，不從舊焦點推進
-        next = firstVisibleBlock(blocks);
+      if (idx === -1) {
+        // 焦點塊被 SPA 移除 / 已不在清單：重新錨定，不從舊焦點推進
+        group = groupAtFirstVisible();
       } else {
-        next = blocks[Math.max(0, Math.min(blocks.length - 1, idx + dir))];
+        const cur = groupRange(blocks, idx);
+        // offscreen 判定用群組聯集 rect——群組部分可見（單行標題還在畫面內、
+        // terminal 在下方）不算捲遠，照常推進
+        const gTop = blocks[cur.start].getBoundingClientRect().top;
+        const gBottom = blocks[cur.end].getBoundingClientRect().bottom;
+        if (gBottom <= 0 || gTop >= window.innerHeight) {
+          // 手動卷遠：重新錨定
+          group = groupAtFirstVisible();
+        } else {
+          const nextIdx = Math.max(0, Math.min(blocks.length - 1,
+            dir > 0 ? cur.end + 1 : cur.start - 1));
+          group = groupRange(blocks, nextIdx);
+        }
       }
     }
-    if (!next) return;
-    setFocus(next);
-    maybeScroll(next, dir);
+    if (!group) return;
+    setFocus(blocks[group.end]);
+    maybeScroll(blocks[group.start], dir);
   }
 
   // 共用 guard：回 true = 這個 Space 事件歸我們管（要攔）。
