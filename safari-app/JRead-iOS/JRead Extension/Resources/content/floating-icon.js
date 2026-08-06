@@ -268,7 +268,7 @@
     try {
       const u = new URL(location.href);
       if (!/^(www\.|m\.)?youtube\.com$/.test(u.hostname)) return false;
-      return u.pathname === '/watch';
+      return /^\/watch$|^\/live\/[^/]+$/.test(u.pathname);
     } catch (_e) { return false; }
   }
 

@@ -14,7 +14,8 @@
 //    viewport 都不溢出
 //
 // SPA navigation：YouTube 切影片不 reload，需 listen yt-navigate-finish；切到非
-// /watch 路徑（首頁 / 頻道 / search）必須 exit（main.js 觸發、本檔負責拆 style）。
+// 影片路徑（首頁 / 頻道 / search）必須 exit（main.js 觸發、本檔負責拆 style）。
+// 影片路徑含 /watch 與直播的 /live/<id>（v1.7.50，判定見 isYouTubeWatch）。
 (function () {
   'use strict';
 
@@ -30,13 +31,21 @@
   // pathname 判定時三處必須同步（例如未來要加 music.youtube.com 排除）；
   // youtube-watch-detect-mirror.spec.js 逐字校對三份、drift 即 fail。不抽
   // 共用的原因：模組間無載入順序依賴關係，為 10 行 util 建立跨模組依賴不划算。
+  // 註：service-worker.js 無邊模式 resize 的 INVALID_ORIGIN 閘是第四份同義判定
+  //（sender.tab.url 字串比對、非 URL 物件），放寬路徑時一併改。
+  //
+  // v1.7.50：路徑除 /watch 外再收 /live/<id>——YouTube 直播（含直播結束後的存檔）
+  // 的正規網址是 /live/<id> 且不轉址，但 probe 實測 DOM 與 /watch 完全同構
+  //（ytd-watch-flexy / #movie_player / #secondary / ytd-comments 全部命中、
+  // player 尺寸位置一致），cinema CSS 原封不動即適用。/shorts/ 仍排除（9:16
+  // 直式播放器，套 16:9 clamp 會破版）。
   function isYouTubeWatch(url) {
     const target = url || (typeof location !== 'undefined' ? location.href : '');
     try {
       const u = new URL(target);
       // 接受 www.youtube.com / m.youtube.com / youtube.com；排除 youtube-nocookie
       if (!/^(www\.|m\.)?youtube\.com$/.test(u.hostname)) return false;
-      return u.pathname === '/watch';
+      return /^\/watch$|^\/live\/[^/]+$/.test(u.pathname);
     } catch (_) {
       return false;
     }
