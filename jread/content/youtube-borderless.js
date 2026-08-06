@@ -57,7 +57,7 @@
     try {
       const u = new URL(target);
       if (!/^(www\.|m\.)?youtube\.com$/.test(u.hostname)) return false;
-      return u.pathname === '/watch';
+      return /^\/watch$|^\/live\/[^/]+$/.test(u.pathname);
     } catch (_) {
       return false;
     }

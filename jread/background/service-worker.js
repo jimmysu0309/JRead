@@ -377,8 +377,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 仍可看），不需要 escalate 給使用者。
       //
       // v0.7.143 安全 hardening：
-      // (a) sender.tab.url 必須是 youtube.com/watch（防其他站點 content
-      //     script 或 debug bridge 任意 resize 視窗）
+      // (a) sender.tab.url 必須是 youtube.com 的影片頁 /watch 或 /live/<id>
+      //     （防其他站點 content script 或 debug bridge 任意 resize 視窗）。
+      //     這是 isYouTubeWatch 三方鏡像之外的第四份同義判定（此處比對 URL
+      //     字串、非 URL 物件），content 端放寬路徑時必須一起改，否則無邊模式
+      //     在 /live/ 頁 CSS 套得上但視窗高度調整被回 INVALID_ORIGIN。
       // (b) height 必須在合理範圍 [200, 4096]（content 端 calcTargetWindowHeight
       //     已 clamp，這裡是第二道防線）
       const wid = sender && sender.tab && sender.tab.windowId;
@@ -388,7 +391,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, reason: 'INVALID_ARGS' });
         return; // sync
       }
-      if (!senderUrl || !/^https:\/\/(www\.|m\.)?youtube\.com\/watch/.test(senderUrl)) {
+      if (!senderUrl || !/^https:\/\/(www\.|m\.)?youtube\.com\/(watch|live\/)/.test(senderUrl)) {
         sendResponse({ ok: false, reason: 'INVALID_ORIGIN' });
         return; // sync
       }
