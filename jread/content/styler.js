@@ -885,6 +885,11 @@ html [${ARTICLE_ATTR}="1"] {
   border-radius: 8px 8px 0 0 !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
   float: none !important;
+  /* static 不可改成 relative（v1.7.51 試過並撤回）：兩塊接合後，下方主文卡的
+     box-shadow 上緣會往外散射 ~4px 落在標題塊背景上，留下一道 5 階灰的淡影
+     （probe 實測 237 → 232）。改 relative 雖讓標題塊背景蓋掉那道淡影，卻換成
+     標題塊自己的下投陰影蓋在主文卡背景上，接縫反而更深（225 vs 237、12 階）。
+     兩塊各自獨立的 box-shadow 無法做出方向性裁切，static 是較輕的一邊。 */
   position: static !important;
   transform: none !important;
   color: ${theme.text || theme.proseText || '#1a1a1a'} !important;
@@ -901,10 +906,17 @@ html [${ARTICLE_ATTR}="1"] {
   text-decoration: none !important;
 }
 /* 標題在前時，下方主文卡片去掉上圓角 + 上 margin，兩塊接成同一張卡片。
-   (0,2,0) > 卡片規則 html [data-jread-active] (0,1,1)，且 source order 在後。 */
+   (0,2,0) > 卡片規則 html [data-jread-active] (0,1,1)，且 source order 在後。
+   v1.7.51：margin-top 補上——原本只清圓角、漏了 margin，卡片規則的垂直
+   margin（clamp 8-40px）上緣仍在（標題 clone 自己 margin-bottom 已是 0，
+   相鄰 margin collapse 後取 max = 主文卡的上 margin），
+   桌面寬度下標題塊與主文卡之間空出 40px 灰底 → 視覺上多出一塊獨立色塊
+   （Jimmy 2026-08-06 Stratechery translate-first 截圖；窄 viewport 只有 8px
+   所以行動裝置端一直沒露餡）。 */
 [data-jread-promoted-outside="1"] + [${ARTICLE_ATTR}="1"] {
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
+  margin-top: 0 !important;
 }
 /* 消除頂端留白：第一個 direct child 清 margin-top / padding-top。
    JS 端另外會對「第一個 h1-h4/p」設 margin-top: 0 inline（覆蓋深層 CMS 寫死的值） */
