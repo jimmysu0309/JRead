@@ -327,6 +327,7 @@
        進度條，套目前選中的皮膚。四種皮膚的差別（描邊、軌道、加高）用文字描述不
        清楚，且「在什麼背景上看得見」正是這個設定的全部意義——預覽是功能性的，
        不是裝飾。
+       v1.7.53 新增 gradient 皮膚（預設）後為五格選項，預覽機制不變。
        ⚠ 雙實作標記：以下 .pp-bar 各皮膚的 box-shadow / height / gradient 與
        content/styler.js buildCss 的 progressSkin 是**同一份事實的兩份實作**
        （一份是靜態 options CSS、一份是注入頁面的動態字串，無法共用同一份宣告）。
@@ -362,6 +363,14 @@
     /* 深底格用 dark 主題的 progressBar 色、其餘用 light 主題色（對照 styler THEMES） */
     .field .progress-preview .pp-dark .pp-bar,
     .field .progress-preview .pp-photo .pp-bar { background: #7fb5e6; }
+
+    /* gradient 皮膚不隨主題換色（兩端亮暗跨中點本身就是背景無關機制），所以
+       三格共用同一條宣告、不需要 pp-dark / pp-photo 的覆寫。 */
+    .field .progress-preview[data-style="gradient"] .pp-bar,
+    .field .progress-preview[data-style="gradient"] .pp-dark .pp-bar,
+    .field .progress-preview[data-style="gradient"] .pp-photo .pp-bar {
+      background: linear-gradient(100deg, #6FD6FF 25%, #6D28D9 75%);
+    }
 
     .field .progress-preview[data-style="outline"] .pp-bar,
     .field .progress-preview[data-style="track"] .pp-bar {
@@ -787,14 +796,15 @@
 
   <div class="field">
     <label>閱讀進度條樣式</label>
-    <span class="desc">閱讀模式頂端那條進度指示。它疊在捲動的內容上，底下可能是任何顏色的圖片或區塊，所以純色細線在同色系背景上會看不見。<strong>描邊</strong>加一圈深淺雙色輪廓，深底靠白邊、淺底靠黑邊；<strong>描邊＋軌道</strong>連未讀段也有底色；<strong>加高</strong>加厚到 5px 並加投影。翻頁模式沒有頂端進度條，看的是底部頁碼</span>
+    <span class="desc">閱讀模式頂端那條進度指示。它疊在捲動的內容上，底下可能是任何顏色的圖片或區塊，所以純色細線在同色系背景上會看不見。<strong>漸層</strong>（預設）條子自身同時含亮青與深靛，任何底色最多吃掉一端；<strong>細線</strong>是 v1.7.52 以前的純色樣式；<strong>描邊</strong>加一圈深淺雙色輪廓，深底靠白邊、淺底靠黑邊；<strong>描邊＋軌道</strong>連未讀段也有底色；<strong>加高</strong>加厚到 5px 並加投影。翻頁模式沒有頂端進度條，看的是底部頁碼</span>
     <div class="size-options" id="progressBarStyle" role="radiogroup" aria-label="閱讀進度條樣式">
+      <label><input type="radio" name="progressBarStyle" value="gradient"><span>漸層</span></label>
       <label><input type="radio" name="progressBarStyle" value="hairline"><span>細線</span></label>
       <label><input type="radio" name="progressBarStyle" value="outline"><span>描邊</span></label>
       <label><input type="radio" name="progressBarStyle" value="track"><span>描邊＋軌道</span></label>
       <label><input type="radio" name="progressBarStyle" value="thick"><span>加高</span></label>
     </div>
-    <div class="progress-preview" id="progressBarPreview" data-style="hairline" aria-hidden="true">
+    <div class="progress-preview" id="progressBarPreview" data-style="gradient" aria-hidden="true">
       <div class="pp-cell pp-dark"><span class="pp-bar"></span></div>
       <div class="pp-cell pp-light"><span class="pp-bar"></span></div>
       <div class="pp-cell pp-photo"><span class="pp-bar"></span></div>

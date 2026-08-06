@@ -158,7 +158,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 模式退出仍還原進場前的文件位置，見 paged-mode.js savedScrollY）。
     syncScrollOnExit: true,
     // v1.7.37：頂端閱讀進度條的樣式。
-    //   'hairline'（預設 = 沿用歷代行為）3px 純色實心條，無描邊無軌道
+    //   'gradient'（v1.7.53 起的預設）3px 亮青 → 深靛的漸層條
+    //   'hairline' 3px 純色實心條，無描邊無軌道（v1.7.52 以前的預設 = 歷代行為）
     //   'outline'  3px + 雙通道描邊（下緣半透明黑 + 再下一層半透明白）
     //   'track'    outline 再加一條常駐軌道（未讀段也有底色）
     //   'thick'    5px + 右端圓角 + drop-shadow
@@ -166,10 +167,13 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 底下的背景**不是主題色**，是當下捲到畫面頂端的任何內容（hero 大圖、深色引言
     // 區、程式碼黑塊）。所以「把 theme.progressBar 調成更好的顏色」救不了——任何
     // 單一顏色都會在某段背景上被吃掉（Jimmy 2026-08-04 回報：深色背景旁難辨識）。
-    // outline / track 是背景無關的機制：深底靠白邊、淺底靠黑邊，兩側總有一邊有對比。
-    // 預設維持 hairline（Jimmy 裁定）——升級後既有使用者所見不變，要更清楚自己去切。
+    // 三種背景無關機制，各有代價：outline / track 靠「深底靠白邊、淺底靠黑邊」的
+    // 雙通道描邊；gradient 靠「條子自己同時含亮端與暗端」——任何底色都吃不掉整條，
+    // 且不需要在細條旁再加兩圈輪廓（見 styler PROGRESS_GRADIENT 註解的量測）。
+    // v1.7.53 預設改 gradient（Jimmy 2026-08-06 裁定，參考 Readwise Reader）——
+    // 這會改變既有使用者升級後的外觀，要回舊樣式選 'hairline'。
     // 只作用於捲動模式：翻頁模式沒有頂端進度條，進度載體是底部頁碼（見 v1.5.4）。
-    progressBarStyle: 'hairline',
+    progressBarStyle: 'gradient',
     // v0.7.218：自訂快速鍵。null = 未自訂。
     customShortcuts: {
       'toggle-reader-mode': null,
@@ -180,8 +184,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
 
   // v1.7.37：progressBarStyle 合法值白名單（單一資料源）。styler.js opts 驗證與
   // options.js 讀 DOM 的回退共用同一份——兩端各自手寫清單是已知的 drift 型態。
-  // 順序即 options UI 的排列順序（細線 → 描邊 → 描邊＋軌道 → 加高）。
-  const PROGRESS_BAR_STYLES = ['hairline', 'outline', 'track', 'thick'];
+  // 順序即 options UI 的排列順序（漸層 → 細線 → 描邊 → 描邊＋軌道 → 加高）。
+  const PROGRESS_BAR_STYLES = ['gradient', 'hairline', 'outline', 'track', 'thick'];
 
   // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進
   // storage，改 FONT_STACKS 常數不會自動更新既有使用者的存值——SW onInstalled

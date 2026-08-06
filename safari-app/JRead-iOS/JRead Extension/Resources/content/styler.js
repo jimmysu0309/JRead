@@ -337,7 +337,8 @@
     // v1.7.33：預設 32（0 仍是合法 Auto sentinel）。
     titleFontSize: 32,
     // v1.7.37：頂端進度條皮膚。'hairline' = 歷代行為（3px 純色實心條）。
-    progressBarStyle: 'hairline'
+    // v1.7.53：預設改 'gradient'（見 settings-defaults.js 註解）。
+    progressBarStyle: 'gradient'
   };
 
   // v1.7.37：合法皮膚白名單。正本在 content/settings-defaults.js（manifest
@@ -345,7 +346,7 @@
   // 這裡的 literal 只是 shared 缺席時的保險，兩份一致由 defaults-sync spec 守。
   const PROGRESS_BAR_STYLES =
     (typeof globalThis !== 'undefined' && globalThis.__JReadProgressBarStyles) ||
-    ['hairline', 'outline', 'track', 'thick'];
+    ['gradient', 'hairline', 'outline', 'track', 'thick'];
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
   //   link：dark / sepia 下因 `* { color: X }` 吞掉原站 link 顏色，導致內文連結
@@ -2828,8 +2829,43 @@ html.${HTML_CLASS}.jread-orion body {
     // 靠黑邊」，兩側總有一邊有對比，與背景無關 → 不是站點特判。
     const PROGRESS_HALO =
       'box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.55), 0 1.5px 0 0 rgba(255, 255, 255, 0.65);';
+    // v1.7.53 'gradient' 皮膚（v1.7.53 起的預設）。第三種背景無關機制：不靠外加
+    // 輪廓，靠**條子自身同時含亮端與暗端**——任何底色最多吃掉其中一端，另一端仍
+    // 有對比，所以「單一顏色會在某段背景上被吃掉」這個根因從色彩本身被解掉。
+    //
+    // 兩端相對亮度刻意跨過中點（#6FD6FF L=0.51 / #6D28D9 L=0.098）。以 JRead
+    // 實際會出現在條子底下的背景實算「兩端較高者」的對比比：light 卡 #ffffff
+    // 7.10、light 頁 #ececec 6.01、dark 卡 #4a494d 5.42、dark 頁 #0b0b0b 11.94、
+    // sepia 頁 #cdb891 3.67、任意圖片中灰 #808080 2.40（最差）。中灰是任何雙色
+    // 配對的理論最差點（兩端同時離它最近），2.40 仍優於 Readwise Reader 同款
+    // 配方的 2.11（#43CBFF → #9708CC，Jimmy 2026-08-06 指名的參考實作）。
+    //
+    // 深端為何不取更深的靛（如 #3B2A8C，中灰能到 2.80）：漸層的**前緣**（= 進度
+    // 位置，最需要被讀到的那一點）就是深端，更深的靛在 dark 頁 #0b0b0b 上只有
+    // 1.78、進度末端會看不見，整條變成「不知道讀到哪」。#6D28D9 在 dark 頁有
+    // 2.77，用中灰 0.4 的對比換前緣可讀性。誠實記錄限制：任何雙色配對都無法讓
+    // 前緣在所有底色上都過 3:1（這正是 v1.7.37 記錄的「單一顏色必失守」的推論），
+    // 本皮膚保證的是「整條永遠看得見」，不是「前緣永遠看得見」。
+    //
+    // 色相走青 → 藍紫，留在 JRead 品牌藍（#4A90D9）的家族內。
+    //
+    // 不加 PROGRESS_HALO：描邊是另一條皮膚的機制，兩者疊起來會讓 3px 細條旁多出
+    // 兩圈輪廓、反而糊掉漸層本身的辨識度；要描邊的使用者選 'outline'。
+    //
+    // 為什麼不寫 background-size：**刻意**保持 auto，讓漸層畫在元素自己的 box 上，
+    // 而 box 寬度就是進度值 → 漸層隨進度被拉開（左端恆亮青、前緣恆深靛，但每像素
+    // 的色相變化率由陡變緩）。這不是副作用，是這款皮膚的動態訊號：使用者不必看
+    // 條長就能從色彩分布感覺到讀了多少。鎖死 background-size 會讓它退化成純色平移。
+    // 停在 25% / 75% 使前四分之一為純亮端、後四分之一為純深端，短條也保有兩端。
+    const PROGRESS_GRADIENT =
+      'background: linear-gradient(100deg, #6FD6FF 25%, #6D28D9 75%);';
     let progressSkin = '';
-    if (opts.progressBarStyle === 'outline') {
+    if (opts.progressBarStyle === 'gradient') {
+      progressSkin = `
+#${PROGRESS_ID} {
+  ${PROGRESS_GRADIENT}
+}`;
+    } else if (opts.progressBarStyle === 'outline') {
       progressSkin = `
 #${PROGRESS_ID} {
   ${PROGRESS_HALO}
