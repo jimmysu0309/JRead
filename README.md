@@ -6,7 +6,7 @@
 
 適用於新聞網站、部落格平台、Wikipedia、技術文件等以文章為主的頁面。偵測不到主文時會直接不動作，不會硬套版型破壞原頁面。
 
-**目前版本**：見 [CHANGELOG.md](CHANGELOG.md) 頂部條目。
+**目前版本與更新紀錄**：見 [GitHub Releases](https://github.com/jimmysu0309/JRead/releases)。
 
 ---
 
@@ -47,11 +47,11 @@ JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**�
 - **自訂快速鍵**：可為「切換閱讀模式／送出到稍後閱讀服務／YouTube 無邊模式」錄製組合鍵；Safari（含 iPad 外接鍵盤）沒有瀏覽器層的改鍵入口，這裡是唯一通道，Chrome 也通用
 - **回復預設**：一鍵把所有設定還原成預設值（需二次確認），但會保留 Readwise／Gemini 的 API key 與 Instapaper 連結
 
-詳細規格見 [SPEC.md](SPEC.md)。
-
 ---
 
 ## 開發
 
-- 完整規格：見 [SPEC.md](SPEC.md)
-- 變更紀錄：見 [CHANGELOG.md](CHANGELOG.md)
+- **原始碼**：`jread/` 即完整的 extension 本體，無 build step、無壓縮混淆，直接載入未封裝資料夾即可跑
+- **Firefox 版重建**：見 [BUILD.md](BUILD.md)（單一 `jq` 指令改寫 manifest，其餘檔案逐位元組相同）
+- **更新紀錄**：見 [GitHub Releases](https://github.com/jimmysu0309/JRead/releases)
+- **完整內部規格與變更紀錄不在本 repo**：那兩份文件同時記錄了大量開發過程與判斷脈絡，作者選擇不公開

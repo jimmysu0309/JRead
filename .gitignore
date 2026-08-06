@@ -60,3 +60,22 @@ AGENTS.md
 # 注意 fixture 內含自真實站點擷取的第三方 HTML，本就不宜公開散布。
 # 重新掛載：git clone git@github.com:jimmysu0309/JRead-test.git test
 test/
+
+# 內部文件完整版（Jimmy 2026-08-06 裁定不公開）
+# SPEC.md / CHANGELOG.md / docs/CHANGELOG-archive.md 逐版記錄了每個 bug 的根因、
+# 試錯幾輪、哪些方向撤回、誰哪天回報什麼——是「開發過程」的最大載體。
+# 公開端的產品說明改由 README.md / README.en.md + docs/index.html 承擔（本來就
+# 寫得完整），不另做瘦身版：同一份事實兩份實作必然 drift（工作流原則 5）。
+#
+# 檔案仍在原位（forcing function 與日常工作都讀根目錄），版控走「疊加的第二個
+# 倉庫」：.private-git 是它的 .git、work-tree 指向本根目錄，只追蹤這三份，
+# 推到私有 repo github.com/jimmysu0309/JRead-docs。操作一律加 --git-dir：
+#   git --git-dir=.private-git status --short
+#   git --git-dir=.private-git add -u && git --git-dir=.private-git commit -m "…"
+#   git --git-dir=.private-git push
+# 重新掛載：git clone --separate-git-dir=.private-git \
+#           git@github.com:jimmysu0309/JRead-docs.git <暫存目錄> 後把檔案搬回根目錄
+SPEC.md
+CHANGELOG.md
+docs/CHANGELOG-archive.md
+.private-git/

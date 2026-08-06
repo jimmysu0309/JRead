@@ -6,7 +6,7 @@ A clean reading-mode extension for Chrome, Firefox, and Safari. One click hides 
 
 It works on article-centric pages: news sites, blogging platforms, Wikipedia, technical docs, and the like. When no main article can be detected, JRead does nothing rather than force a layout that would break the original page.
 
-**Current version**: see the top entry in [CHANGELOG.md](CHANGELOG.md).
+**Current version and release notes**: see [GitHub Releases](https://github.com/jimmysu0309/JRead/releases).
 
 ---
 
@@ -47,11 +47,11 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 - **Custom shortcuts**: record key combinations for toggle reading mode / send to read-later service / YouTube borderless mode; Safari (including an iPad external keyboard) has no browser-level rebinding entry, so this is the only path there, and it works on Chrome too
 - **Reset to defaults**: restore all settings to their defaults in one click (with a confirmation step), while keeping the Readwise / Gemini API keys and the Instapaper connection
 
-See [SPEC.md](SPEC.md) for the full specification.
-
 ---
 
 ## Development
 
-- Full specification: [SPEC.md](SPEC.md)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
+- **Source**: `jread/` is the complete extension — no build step, no minification or obfuscation. Load it as an unpacked folder and it runs as-is
+- **Rebuilding the Firefox version**: see [BUILD.md](BUILD.md) (one `jq` command patches the manifest; every other file is byte-for-byte identical)
+- **Release notes**: see [GitHub Releases](https://github.com/jimmysu0309/JRead/releases)
+- **The full internal spec and changelog are not in this repo**: both also record a great deal of the development process and reasoning, which the author has chosen to keep private
