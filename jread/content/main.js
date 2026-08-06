@@ -262,7 +262,11 @@
   // → syncPagedMode → syncSpaceScroll（依 pagedMode installed 讓位）→
   // keyguard（依 settings.blockPageShortcuts；註冊順序在 onEscKey 之後，同
   // 階段 listener 按註冊順序執行、ESC 先給 onEscKey）→ SET_ACTIVE_ICON。
-  function finalizeEnter(container, settings) {
+  // v1.7.49：opts.enterScrollAnchor——generic path 進場前捕捉的原頁位置
+  //（captureEnterScrollAnchor），交給 positionMemory 蓋過 storage 的上次位置。
+  // x-thread / fb-post / reader 頁（enterFromContainer）是合成容器、無原頁
+  // 捲動語意，不傳（undefined = 原行為）。
+  function finalizeEnter(container, settings, opts) {
     // v1.0.21：記住此 session 是否要在退出時把原網頁捲回閱讀段落（退出流程沒有
     // settings 參數，進場時 stash）。預設 true，明確設 false 才關。
     NS.state.syncScrollOnExit = !(settings && settings.syncScrollOnExit === false);
@@ -279,7 +283,8 @@
     // 非 ESC 鍵 stopImmediatePropagation）。urlKey 用 spaRouteKey（與 SPA
     // 導航偵測同一份 key 語意：錨點 hash 不分流、hash-router 分流）。
     if (NS.positionMemory) {
-      NS.positionMemory.beginSession(spaRouteKey(location.href), settings, container);
+      NS.positionMemory.beginSession(spaRouteKey(location.href), settings, container,
+        opts && opts.enterScrollAnchor ? { entryOverride: opts.enterScrollAnchor } : undefined);
     }
     if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
@@ -446,6 +451,9 @@
     if (!result.el || !result.el.isConnected) return false;
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
+    // v1.7.49：進場捲動同步——必須趁 cleaner.clean 還沒動幾何時捕捉（見函式註解）
+    let enterScrollAnchor = null;
+    try { enterScrollAnchor = captureEnterScrollAnchor(result.el); } catch (_) { /* 捕捉失敗不阻斷 enter */ }
     // v1.7.13：multi-block 文章——把 detector 識別的接續兄弟區塊移進 articleEl
     // （必須先於 cleaner.clean：區塊進了 articleEl，cleaner 視為主文內容、不再
     // 整塊 hide；區塊內的雜訊仍受 in-article 規則處理）。累加器先掛 state 再
@@ -479,7 +487,7 @@
       NS.detector.markPromotedTitleIfMissing(result.el);
     }
     const container = result.el;
-    return finalizeEnter(container, settings);
+    return finalizeEnter(container, settings, { enterScrollAnchor });
   }
 
   function exitReaderMode() {
@@ -517,6 +525,46 @@
     return a && a.el ? a.el : null;
   }
 
+  // v1.7.49：進場捲動同步（exit anchor 的鏡像）——使用者已在原頁讀到一半才開
+  // 閱讀模式時，reader 應接續原頁當下位置，而不是 position memory 的上次位置
+  //（Readwise Reader 這類「平常不開 JRead 讀」的站，兩者長期脫鉤；Jimmy
+  // 2026-08-06 回報進場位置不同步）。量測全用 viewport 幾何
+  //（getBoundingClientRect），與原頁捲動主體是 window 還是內部 overflow 容器
+  // 無關。必須在 cleaner.clean 之前呼叫——雜訊 hide 後主文 block 幾何整體
+  // 位移，viewport 內可見的 block 就不再是使用者讀到的那塊。
+  // 回傳 position-memory entry 形狀（{ mode:'scroll', blockIndex, blockText,
+  // ratio }），餵 beginSession 的 entryOverride 走既有 applyEntry 對映
+  //（scroll 模式 signature 對位、翻頁模式 ratio 近似頁）。
+  // 第一個可見 block 是 index 0（文首仍可見）回 null——沒捲離文首，讓
+  // position memory 照舊恢復上次跨 session 位置。
+  function captureEnterScrollAnchor(articleEl) {
+    if (!articleEl || !NS.spaceScroll || typeof NS.spaceScroll.getBlocks !== 'function') return null;
+    let blocks;
+    try { blocks = NS.spaceScroll.getBlocks(articleEl); } catch (_) { return null; }
+    if (!blocks || blocks.length < 2) return null;
+    let firstVisible = -1;
+    for (let i = 0; i < blocks.length; i++) {
+      const r = blocks[i].getBoundingClientRect();
+      if (r.bottom > 0 && r.width > 0 && r.height > 0) { firstVisible = i; break; }
+    }
+    if (firstVisible <= 0) return null;
+    // 從第一個可見 block 起找第一個有文字的（純圖 figure 跳過——signature
+    // 對映需要文字；讀者停在整屏圖上時取圖後第一段，偏差一屏內可接受）
+    for (let i = firstVisible; i < blocks.length; i++) {
+      const r = blocks[i].getBoundingClientRect();
+      if (r.bottom <= 0 || r.width <= 0 || r.height <= 0) continue;
+      const text = (blocks[i].textContent || '').trim();
+      if (text.length < 4) continue;
+      return {
+        mode: 'scroll',
+        blockIndex: i,
+        blockText: text,
+        ratio: i / Math.max(1, blocks.length - 1)
+      };
+    }
+    return null;
+  }
+
   // v1.6.8：anchor 的還原後 viewport top。翻頁模式的 anchor 是 text node——
   // 必以自身 Range rect 量，不可退 parentElement（巨型單一容器站的 parent 高
   // 數萬 px、rect.top = 文首，probe 實證假綠燈）；取第一個可見 line box 的 top。
@@ -534,15 +582,42 @@
     return target.getBoundingClientRect().top;
   }
 
+  // v1.7.49：退出捲回的目標 scroller——原頁的捲動主體不一定是 window。
+  // Readwise Reader 這類 SPA 把文章放在 overflow:auto 的內部容器捲、window 恆
+  // 在 0，對 document.scrollingElement scrollTo 是 no-op、退出永遠停在文首。
+  // 通則：沿 anchor 祖先鏈找第一個「overflowY 可捲且內容真的溢出」的容器；
+  // 找不到退回 document.scrollingElement（一般 window 捲動站，行為不變）。
+  function exitScrollContainerOf(target) {
+    let cur = target.nodeType === 3 ? target.parentElement : target;
+    cur = cur && cur.parentElement;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      try {
+        const cs = getComputedStyle(cur);
+        if (/(auto|scroll|overlay)/.test(cs.overflowY) &&
+            cur.scrollHeight > cur.clientHeight + 1) {
+          return cur;
+        }
+      } catch (_) { /* getComputedStyle 異常（detached 等）：跳過這層 */ }
+      cur = cur.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
   // v1.0.21：原站版面已完全還原——把原網頁捲到退出前讀到的段落（節點仍在 DOM）。
+  // v1.7.49：scroller 改由 exitScrollContainerOf 判定；內部容器時 rectTop 換算
+  // 成相對容器頂端、viewport 高改用容器 clientHeight（document.scrollingElement
+  // 的 getBoundingClientRect().top 在已捲動時是負值，不可套同一式）。
   function applyExitScrollAnchor(el) {
     if (!el || !el.isConnected) return;
-    const scroller = document.scrollingElement || document.documentElement;
+    const scroller = exitScrollContainerOf(el);
     if (!scroller) return;
     const rectTop = exitAnchorRectTop(el);
+    const isDoc = scroller === (document.scrollingElement || document.documentElement);
+    const relTop = isDoc ? rectTop : rectTop - scroller.getBoundingClientRect().top;
+    const viewH = isDoc ? window.innerHeight : scroller.clientHeight;
     const top = NS.positionMemory
-      ? NS.positionMemory.computeExitScrollTop(scroller.scrollTop, rectTop, window.innerHeight)
-      : Math.max(0, scroller.scrollTop + rectTop - window.innerHeight * 0.12);
+      ? NS.positionMemory.computeExitScrollTop(scroller.scrollTop, relTop, viewH)
+      : Math.max(0, scroller.scrollTop + relTop - viewH * 0.12);
     scroller.scrollTo(0, top);
   }
 
