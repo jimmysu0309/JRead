@@ -2812,9 +2812,10 @@
   }
 
   // ---- 主文內：視覺性空白 spacer ------------------------------------------
-  // 結構特徵：容器型元素 + 高度 > 60px + 文字 < 10 字 + 不含任何媒體/互動圖示
-  // （img/picture/video/iframe/svg/button）。通常是 Substack / 現代 CSS-in-JS
-  // layout 的 visual separator / spacer div，會造成段落與圖片間不自然留白。
+  // 結構特徵：容器型元素 + 高度 > 60px + 文字 < 10 字（CJK 權重）+ 不含任何
+  // 媒體/互動圖示（img/picture/video/iframe/svg/button）。通常是 Substack /
+  // 現代 CSS-in-JS layout 的 visual separator / spacer div，會造成段落與圖片間
+  // 不自然留白。
   // jsdom 沒 layout，此規則不在 jsdom 測試中生效；真實 Chrome 才命中。
   const SPACER_MIN_HEIGHT = 60;
   const SPACER_TEXT_MAX = 10;
@@ -2829,6 +2830,17 @@
       if (sib === el) continue;
       if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') return true;
       if (sib.querySelector && sib.querySelector('video, iframe')) return true;
+    }
+    return false;
+  }
+
+  // v1.7.52：el 自身或子孫是否有「帶文字的 heading」。empty-spacer 判定的
+  // 語意互斥 guard（見呼叫端註解）。空 heading（`<h2></h2>` 佔位）不算——
+  // 那種確實只是 layout 殼。
+  function hasHeadingWithText(el) {
+    if (/^H[1-6]$/.test(el.tagName) && norm(el.textContent)) return true;
+    for (const h of el.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+      if (norm(h.textContent)) return true;
     }
     return false;
   }
@@ -2868,8 +2880,20 @@
       }
       if (hasVisibleBlocker) continue;
 
+      // v1.7.52 guard A：含 heading 的容器不是視覺 spacer。
+      // spacer 的定義是「純視覺留白、零語意內容」——一旦內含有文字的
+      // h1-h6，它承載的就是章節/文章標題，語意上與 spacer 互斥。
+      // 實案（Jimmy 2026-08-06 回報 x.com longform）：翻譯成中文後標題
+      // wrapper（`<div><h1>AI 時代的職涯建議</h1></div>`，高 60px+、文字 10 字）
+      // 三條件全中被整塊 hide ＝ 使用者眼中「翻譯後抓不到標題」。
+      if (hasHeadingWithText(el)) continue;
+
+      // v1.7.52 guard B：文字量門檻改 CJK 權重。raw length 門檻按拉丁校準，
+      // 中文資訊密度約 2 倍——同一句英文 30 字、中文 10 字，翻譯前後同一個
+      // 元素會跨過門檻（英文 skip / 中文命中）＝ 只在翻譯後炸的一整類 bug
+      // （同 detector v1.7.40 D2 的教訓）。用 NS.cjkWeightedLen 單一資料源。
       const text = norm(el.textContent);
-      if (text.length > SPACER_TEXT_MAX) continue;
+      if (NS.cjkWeightedLen(text) > SPACER_TEXT_MAX) continue;
 
       const rect = el.getBoundingClientRect();
       if (rect.height < SPACER_MIN_HEIGHT) continue;
