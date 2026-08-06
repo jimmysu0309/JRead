@@ -654,7 +654,7 @@
       const MEDIA_DIRECT_WRAP_SEL = `[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> img:not([${INLINE_IMG_ATTR}])),
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> picture),
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):has(> video)`;
-      base = `
+      const segPageScaffold = () => `
 /* 補 cleaner hide 漏洞：cleaner 只設 inline style.display = 'none' 無
    !important，站點 JS（例如商周 .postnav.fixed 的 scroll handler 主動
    el.style.display = 'block'）會把 inline display 整個覆寫掉、priority
@@ -750,7 +750,8 @@ html.${HTML_CLASS}::-webkit-scrollbar-thumb {
 }
 html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   background-color: ${theme.scrollThumb} !important;
-}
+}`;
+      const segAncestorReset = () => `
 /* 祖先鏈激進 reset——讓主文容器脫離原站的多欄 layout / 版心限制 / sticky。
    不碰主文本身 [data-jread-active]，所以原站的 h1-h6 / p / list / link 等
    樣式仍由原 class / style 生效。 */
@@ -782,7 +783,8 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
    articleEl 外（前一個 sibling）才存活；故須排除在本隱藏規則外。 */
 [${ANCESTOR_ATTR}="1"] > *:not([${ANCESTOR_ATTR}="1"]):not([${ARTICLE_ATTR}="1"]):not(#__jread-toast-host):not([data-jread-promoted-outside="1"]) {
   display: none !important;
-}
+}`;
+      const segCardTitle = () => `
 /* 讀者卡片：版心、置中、背景、圓角、陰影。刻意不設 font-family / font-size
    / line-height / color——保留原站字體與排版。
    v0.7.121：selector 加 'html ' 前綴提升 specificity 從 (0,1,0) → (0,1,1)，
@@ -934,7 +936,8 @@ html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] > footer {
   padding: 0 !important;
   height: auto !important;
   min-height: 0 !important;
-}
+}`;
+      const segCardWidth = () => `
 /* v0.8.26：巢狀語意內容容器（article / main）水平 padding 清零——用注入式
    stylesheet 補強，不只靠 JS inline（zeroHoriz，見下方 contentWidthSnap）。
    根因：原站常對 <article> 設自身水平 padding（telefoncek.si 的
@@ -982,7 +985,8 @@ html [${ARTICLE_ATTR}="1"] main {
   max-width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
-}
+}`;
+      const segMedia = () => `
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
    height: auto 的作用是「原站 CSS 鎖死 height、不讓 max-width 觸發 aspect-
    ratio 自動縮放」時強制按比例算——但這條對 a > img 結構（link-
@@ -1351,7 +1355,8 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"] * {
   min-height: 0 !important;
-}
+}`;
+      const segCarouselPseudo = () => `
 /* ===== Carousel / slider 版面中和（v0.8.67）=====
    原站用 carousel/slider library（pure-react-carousel / slick / swiper /
    splide / flickity）做水平翻頁 widget。三層共通結構：
@@ -1499,7 +1504,8 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ANCESTOR_ATTR}="1"]::before,
 [${ANCESTOR_ATTR}="1"]::after {
   content: none !important;
-}
+}`;
+      const segWrapperIconFigcaption = () => `
 /* Body wrapper margin reset：原站慣例用 div 包 paragraph cluster / heading /
    list 並設 margin-left/right 形成 grid offset 或 narrow-column 視覺（CNBC
    ArticleBody 內 div.group margin-left:91px 把內文 p 整段推向版心右側 91px；
@@ -1616,7 +1622,8 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] figcaption * {
   color: #333333 !important;
   background-color: transparent !important;
-}` : ''}
+}` : ''}`;
+      const segHeadingAlign = () => `
 /* v0.7.100：h1-h6 上下 margin。BBC Culture 類站點原站 CSS 把 heading 的
    margin 全砍光（styled-components hash class 預設 margin: 0），reader mode 下
    段落 p 結束 → h2 標題 → 下一段 p 三者直接接壤、無視覺斷層、難辨章節。
@@ -1656,7 +1663,8 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] :is(h1, h2, h3, h4, h5, h6, p, li, blockquote, dd, dt),
 [${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"] {
   text-align: start !important;
-}
+}`;
+      const segByline = () => `
 /* v1.0.8：byline meta 區一行正規化（標記由 apply() 結構偵測，見 BYLINE_ATTR
    常數註解）。root flex 一行、wrapper display:contents 打平任意巢狀讓 leaf 升為
    root 的 flex item、item 字級統一、頭像 inline 對齊內容左緣、隱藏閱讀時間。
@@ -1757,7 +1765,8 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}][${BYLINE_ATTR}] video {
   margin: 0 !important;
   flex: 0 0 auto !important;
-}
+}`;
+      const segColorBorderMisc = () => `
 /* v0.7.102：p / ul / ol / blockquote 段落間距已搬到 userOverrides 條件注入
    （v0.7.162 起 paragraphSpacing 可調）。預設 paragraphSpacing=1.0 + Auto 兩種
    切分後不再永遠注入，Auto 模式下完全保留原站 typography。注入點見 buildCss
@@ -2067,6 +2076,22 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   vertical-align: -0.1em !important;
 }
 `;
+      // T12：BASE_SEGMENTS 順序即 stylesheet cascade 順序（同 specificity
+      // 後出者勝）。join 輸出與拆分前單一 literal 逐字相等（forcing：
+      // styler-apply-pass-order.spec.js 的 buildCss segment 區）。
+      const BASE_SEGMENTS = [
+        segPageScaffold,
+        segAncestorReset,
+        segCardTitle,
+        segCardWidth,
+        segMedia,
+        segCarouselPseudo,
+        segWrapperIconFigcaption,
+        segHeadingAlign,
+        segByline,
+        segColorBorderMisc,
+      ];
+      base = BASE_SEGMENTS.map((f) => f()).join('');
       baseSkeletonCacheSet(theme, contentWidth, opts.readerHostPage, base);
     }
 
@@ -3494,21 +3519,23 @@ html.${HTML_CLASS}.jread-orion body {
       // 非 null 時 `* { color: theme.text }` 蓋掉 token 色 + v0.7.164 已清
       // pre/code bg transparent，結構上不存在此 bug）。
       const contrastProbe = [];
-      if (!theme.text) {
-        const _win = articleEl.ownerDocument?.defaultView;
-        if (_win && _win.getComputedStyle) {
-          for (const el of articleEl.querySelectorAll(CONTRAST_GUARD_SEL)) {
-            if (contrastProbe.length >= CONTRAST_MAX_TARGETS) break;
-            // 嵌套容器（table 內 pre 等）只處理最外層，避免疊兩層 inline bg
-            if (el.parentElement && el.parentElement.closest && el.parentElement.closest(CONTRAST_GUARD_SEL)) continue;
-            const carriers = collectTextCarriers(el, _win);
-            const totalLen = carriers.reduce((s2, c) => s2 + c.len, 0);
-            if (totalLen < 10) continue; // 太短不具統計意義
-            const origBg = compositeBgOver(el, null, WHITE, _win);
-            contrastProbe.push({ el, carriers, origBg });
+      const passContrastProbePhase1 = () => {
+        if (!theme.text) {
+          const _win = articleEl.ownerDocument?.defaultView;
+          if (_win && _win.getComputedStyle) {
+            for (const el of articleEl.querySelectorAll(CONTRAST_GUARD_SEL)) {
+              if (contrastProbe.length >= CONTRAST_MAX_TARGETS) break;
+              // 嵌套容器（table 內 pre 等）只處理最外層，避免疊兩層 inline bg
+              if (el.parentElement && el.parentElement.closest && el.parentElement.closest(CONTRAST_GUARD_SEL)) continue;
+              const carriers = collectTextCarriers(el, _win);
+              const totalLen = carriers.reduce((s2, c) => s2 + c.len, 0);
+              if (totalLen < 10) continue; // 太短不具統計意義
+              const origBg = compositeBgOver(el, null, WHITE, _win);
+              contrastProbe.push({ el, carriers, origBg });
+            }
           }
         }
-      }
+      };
 
       // v0.8.130：改走 NS.injectCssText（CSP-safe）——嚴格 style-src nonce-only 站
       // （Miniflux 自架閱讀頁）在 WebKit 會擋掉注入 <style>，退回 adoptedStyleSheets。
@@ -3566,209 +3593,218 @@ html.${HTML_CLASS}.jread-orion body {
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
+      // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
+      // pass 讀取）——非 snapshot 欄位，restore 不經手
+      let mediaAncestors;
       const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
-      try {
-      // ──────────────────────────────────────────────────────────────────
 
-      NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
+      const passInjectCss = () => {
+        NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
+      };
 
-      // inline emoji / icon 標記必須在 ARTICLE_ATTR 設定**前**跑——標記用 rect
-      // fallback（viewBox-only SVG / 高解析 emoji PNG 的 naturalWidth 不可靠時
-      // 量 rendered 尺寸）必須對「原站 CSS 下的渲染尺寸」量。ARTICLE_ATTR 一旦
-      // 設定，buildCss 的 reader 規則（特別是翻頁模式 `img { width: auto !important;
-      // max-width: 100% }`）立即生效，會把 viewBox-only SVG emoji 撐成滿欄（150
-      // natural → 608px rect）→ rect > INLINE_IMG_MAX → 永遠標不到 inline →
-      // emoji 滿版（v0.8.10 翻頁模式 X Twemoji 實機回報、probe 實證 chicken-egg）。
-      // 在 ARTICLE_ATTR 前量 = reader 規則尚未 active = 量到原站 inline 尺寸，
-      // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
-      // v0.8.98：viewBox-only SVG 的 inline emoji（WordPress wp-emoji 的國旗 SVG、
-      // X Twemoji）naturalWidth 回報 Chrome 預設 150×150 不可靠——通用圖片規則的
-      // width:auto 對「無 intrinsic size 的 SVG」解析成容器寬，把 emoji 撐成滿欄
-      // （itsmicracing.xyz WordPress 站實測 17px → 603px）。inline-img CSS 規則只設
-      // display:inline、未約束 width，救不了。修法：classifyImg 走 rect fallback
-      // （natural 不可靠）標 inline 時，把量到的 rendered px 釘成 inline !important
-      // width/height——分類在 ARTICLE_ATTR 設定前跑，rect 仍是原站 emoji 尺寸（1em ≈
-      // 17px）。natural 可靠的 PNG emoji（natural ≈ rendered）走 width:auto 即正確、
-      // 不需 pin。記 prev 供 restore 對稱還原（與 capIconImg 同款）。
-      const pinInlineImg = (img, w, h) => {
-        inlineImgPins.push({
-          img,
-          prevW: img.style.getPropertyValue('width'),
-          prevWP: img.style.getPropertyPriority('width'),
-          prevH: img.style.getPropertyValue('height'),
-          prevHP: img.style.getPropertyPriority('height'),
-        });
-        img.style.setProperty('width', Math.round(w) + 'px', 'important');
-        img.style.setProperty('height', Math.round(h) + 'px', 'important');
-      };
-      // v0.8.90：把作者刻意縮小的小圖釘回原始顯示寬。量到的 renderedW 以 inline
-      // !important max-width 覆寫，杜絕 img:not(a>img) 的 width:auto 退回
-      // naturalWidth 放大。記 prev 供 restore 對稱還原（與 titleFsSnap 同款）。
-      const capIconImg = (img, renderedW) => {
-        if (img.hasAttribute(ICON_IMG_ATTR)) return;
-        iconImgs.push({
-          img,
-          prevMw: img.style.getPropertyValue('max-width'),
-          prevMwP: img.style.getPropertyPriority('max-width'),
-        });
-        img.setAttribute(ICON_IMG_ATTR, '1');
-        img.style.setProperty('max-width', Math.round(renderedW) + 'px', 'important');
-      };
-      // v1.7.43 T11：content 尺寸量測（natural 優先、不可靠時 rect fallback，
-      // 任一維 >= CONTENT_IMG_MIN）——tryMarkContentImg / tryMarkUpscaleImg
-      // 共用（原兩份逐字重複）
-      const measureIsContentSize = (img) => {
-        if ((img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
-            (img.naturalHeight || img.height) >= CONTENT_IMG_MIN) return true;
-        const r = img.getBoundingClientRect();
-        return r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
-      };
-      // 量 img 尺寸 >= CONTENT_IMG_MIN 即標 content-img；回傳是否已標（含先前
-      // 已標）。load listener 補標時重用。
-      const tryMarkContentImg = (img) => {
-        if (img.hasAttribute(CONTENT_IMG_ATTR)) return true;
-        if (img.hasAttribute(INLINE_IMG_ATTR)) return false;
-        if (measureIsContentSize(img)) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
-        return false;
-      };
-      // v0.8.112：bare 內容圖（非 a 包）放大填滿欄寬。量 content-size（natural 優先、
-      // 不可靠時 rect fallback）>= CONTENT_IMG_MIN 即標 upscale；回傳是否已標。lazy
-      // bare 圖 load 後補標重用（與 tryMarkContentImg 同款）。
-      const tryMarkUpscaleImg = (img) => {
-        if (img.hasAttribute(UPSCALE_IMG_ATTR)) return true;
-        if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return false;
-        if (measureIsContentSize(img)) { img.setAttribute(UPSCALE_IMG_ATTR, '1'); upscaleImgs.push(img); return true; }
-        return false;
-      };
-      // img 分類（inline emoji / content-img）。抽成 classifyImg 供「即時」與
-      // 「lazy 圖 load 後補分類」共用。
-      // v0.7.214：natural 尺寸對「無 intrinsic size 的 SVG」不可靠——Chrome 對
-      // 只有 viewBox 的 SVG 回報 CSS replaced element 預設 150×150（X/Twitter
-      // 的 Twemoji emoji SVG 實測命中），高解析 emoji PNG（Twemoji PNG 原檔
-      // 72×72）也會超過上限。rendered 尺寸才是「這張圖在文中是 icon / emoji」的
-      // 視覺事實：natural 判定 miss 時 fallback 量 rect，兩維皆 > 0 且 <=
-      // INLINE_IMG_MAX 即標 inline。只在 miss 時量、避免對每張內容圖都 force layout。
-      // v0.8.89：natural 兩維皆 <= 1 = lazy library 的 1×1 blank gif placeholder
-      // 簽名（kknews.cc 實測），**不可**據此判 inline——否則整片未載入的內容照片
-      // 被當 inline emoji 標記、載入後維持 inline 不被 media block 規則撐開（全圖
-      // 1×1 視覺消失）。此時跳過 natural 判定、一律改用 rect（站點通常已用
-      // padding-bottom sizer 預留 reserved 尺寸，rect 可信）。
-      const classifyImg = (img) => {
-        if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return;
-        const w = img.naturalWidth || img.width;
-        const h = img.naturalHeight || img.height;
-        // natPlaceholder 用 naturalX || X 為基準（與下方 w/h 同源）——img 有真實
-        // width 屬性（如 lazy a>img width=608）時不可誤判成 1×1 placeholder。
-        const natPlaceholder = w <= 1 && h <= 1;
-        let isInline = !natPlaceholder && w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
-        let r = null;
-        let inlineViaRect = false;
-        if (!isInline) {
-          r = img.getBoundingClientRect();
-          isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
-                     r.height > 0 && r.height <= INLINE_IMG_MAX;
-          inlineViaRect = isInline;
-        }
-        if (isInline) {
-          img.setAttribute(INLINE_IMG_ATTR, '1');
-          inlineImgs.push(img);
-          // natural 不可靠（viewBox-only SVG 等）時走 rect fallback 標到的 inline——
-          // 釘原站 rendered 尺寸，杜絕 width:auto 把無 intrinsic size 的 SVG 撐成滿欄
-          // （見 inlineImgPins 註解）。natural 可靠（natural <= INLINE_IMG_MAX）的小圖
-          // 不需釘：width:auto 已正確退回 natural 尺寸。
-          if (inlineViaRect && r) pinInlineImg(img, r.width, r.height);
-          return;
-        }
-        // v0.8.90：「作者刻意縮小的大圖」防放大。INLINE_IMG_MAX (48px) 與
-        // CONTENT_IMG_MIN (200px) 之間的小圖（48 < rect < 200）落在兩個門檻中間：
-        // 不算 inline emoji、不算內容照片。裸 img 落入 img:not(a>img) 的 width:auto →
-        // 退回 naturalWidth 撐成滿版（washingtonpost lightbulb badge 56→788px 實證）。
-        // 結構訊號：已載入（complete + natural > 1）、pre-reader rendered rect 兩維皆
-        // < CONTENT_IMG_MIN、且 natural 明顯大於 rendered（作者把大來源圖顯示縮小）→
-        // reader 不該反向放大，釘回原始顯示寬。natural ≈ rendered 的真實小圖不命中
-        // （width:auto 本來就給 natural≈rendered、無放大、不必釘）。lazy placeholder
-        // （!complete / natural<=1）此刻量不準，交給上方 load listener 載入後重判。
-        //
-        // v1.0.7：移除原本的 `!img.closest('a')` 排除——a 包的縮小大圖同樣會破版，
-        // 只是路徑不同：a-wrapped 不走 width:auto blowup（被 :not(a>img) 排除），而是
-        // 落入下方 a-wrapped 分支被 tryMarkContentImg 標成 content-img → 強制 block +
-        // 撐滿欄寬（autocar.co.uk 作者欄 <a><div.personality-image><img></div></a>
-        // 頭像 natural 3309 / rect 142 被放大成 608、溢出固定高 142px 的裁切容器、疊到
-        // bio 文字上＝圖疊文，cage probe 實證）。capIcon 幾何 gate（兩維皆 48~200 +
-        // natural > rect×1.5）夠精確：lightbox 內容圖 render >= 200 不命中本支、照走下方
-        // content-img 分支（styler-lightbox-content-image-margin.spec 不退步）。capIcon
-        // 必須在 a-wrapped content-img 分支**之前**（縮小頭像優先當 icon 釘小，不當內容圖
-        // 放大）——本判斷已在該分支上方，移除排除即生效。
-        if (img.complete && img.naturalWidth > 1 &&
-            img.getAttribute(PLAYER_ATTR) !== '1') {
-          if (!r) r = img.getBoundingClientRect();
-          if (r.width > INLINE_IMG_MAX && r.width < CONTENT_IMG_MIN &&
-              r.height > INLINE_IMG_MAX && r.height < CONTENT_IMG_MIN &&
-              img.naturalWidth > r.width * 1.5) {
-            capIconImg(img, r.width);
+      const passClassifyImages = () => {
+        // inline emoji / icon 標記必須在 ARTICLE_ATTR 設定**前**跑——標記用 rect
+        // fallback（viewBox-only SVG / 高解析 emoji PNG 的 naturalWidth 不可靠時
+        // 量 rendered 尺寸）必須對「原站 CSS 下的渲染尺寸」量。ARTICLE_ATTR 一旦
+        // 設定，buildCss 的 reader 規則（特別是翻頁模式 `img { width: auto !important;
+        // max-width: 100% }`）立即生效，會把 viewBox-only SVG emoji 撐成滿欄（150
+        // natural → 608px rect）→ rect > INLINE_IMG_MAX → 永遠標不到 inline →
+        // emoji 滿版（v0.8.10 翻頁模式 X Twemoji 實機回報、probe 實證 chicken-egg）。
+        // 在 ARTICLE_ATTR 前量 = reader 規則尚未 active = 量到原站 inline 尺寸，
+        // 標記後再設 ARTICLE_ATTR、img:not([INLINE_IMG_ATTR]) 規則才正確排除 emoji。
+        // v0.8.98：viewBox-only SVG 的 inline emoji（WordPress wp-emoji 的國旗 SVG、
+        // X Twemoji）naturalWidth 回報 Chrome 預設 150×150 不可靠——通用圖片規則的
+        // width:auto 對「無 intrinsic size 的 SVG」解析成容器寬，把 emoji 撐成滿欄
+        // （itsmicracing.xyz WordPress 站實測 17px → 603px）。inline-img CSS 規則只設
+        // display:inline、未約束 width，救不了。修法：classifyImg 走 rect fallback
+        // （natural 不可靠）標 inline 時，把量到的 rendered px 釘成 inline !important
+        // width/height——分類在 ARTICLE_ATTR 設定前跑，rect 仍是原站 emoji 尺寸（1em ≈
+        // 17px）。natural 可靠的 PNG emoji（natural ≈ rendered）走 width:auto 即正確、
+        // 不需 pin。記 prev 供 restore 對稱還原（與 capIconImg 同款）。
+        const pinInlineImg = (img, w, h) => {
+          inlineImgPins.push({
+            img,
+            prevW: img.style.getPropertyValue('width'),
+            prevWP: img.style.getPropertyPriority('width'),
+            prevH: img.style.getPropertyValue('height'),
+            prevHP: img.style.getPropertyPriority('height'),
+          });
+          img.style.setProperty('width', Math.round(w) + 'px', 'important');
+          img.style.setProperty('height', Math.round(h) + 'px', 'important');
+        };
+        // v0.8.90：把作者刻意縮小的小圖釘回原始顯示寬。量到的 renderedW 以 inline
+        // !important max-width 覆寫，杜絕 img:not(a>img) 的 width:auto 退回
+        // naturalWidth 放大。記 prev 供 restore 對稱還原（與 titleFsSnap 同款）。
+        const capIconImg = (img, renderedW) => {
+          if (img.hasAttribute(ICON_IMG_ATTR)) return;
+          iconImgs.push({
+            img,
+            prevMw: img.style.getPropertyValue('max-width'),
+            prevMwP: img.style.getPropertyPriority('max-width'),
+          });
+          img.setAttribute(ICON_IMG_ATTR, '1');
+          img.style.setProperty('max-width', Math.round(renderedW) + 'px', 'important');
+        };
+        // v1.7.43 T11：content 尺寸量測（natural 優先、不可靠時 rect fallback，
+        // 任一維 >= CONTENT_IMG_MIN）——tryMarkContentImg / tryMarkUpscaleImg
+        // 共用（原兩份逐字重複）
+        const measureIsContentSize = (img) => {
+          if ((img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
+              (img.naturalHeight || img.height) >= CONTENT_IMG_MIN) return true;
+          const r = img.getBoundingClientRect();
+          return r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
+        };
+        // 量 img 尺寸 >= CONTENT_IMG_MIN 即標 content-img；回傳是否已標（含先前
+        // 已標）。load listener 補標時重用。
+        const tryMarkContentImg = (img) => {
+          if (img.hasAttribute(CONTENT_IMG_ATTR)) return true;
+          if (img.hasAttribute(INLINE_IMG_ATTR)) return false;
+          if (measureIsContentSize(img)) { img.setAttribute(CONTENT_IMG_ATTR, '1'); contentImgs.push(img); return true; }
+          return false;
+        };
+        // v0.8.112：bare 內容圖（非 a 包）放大填滿欄寬。量 content-size（natural 優先、
+        // 不可靠時 rect fallback）>= CONTENT_IMG_MIN 即標 upscale；回傳是否已標。lazy
+        // bare 圖 load 後補標重用（與 tryMarkContentImg 同款）。
+        const tryMarkUpscaleImg = (img) => {
+          if (img.hasAttribute(UPSCALE_IMG_ATTR)) return true;
+          if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return false;
+          if (measureIsContentSize(img)) { img.setAttribute(UPSCALE_IMG_ATTR, '1'); upscaleImgs.push(img); return true; }
+          return false;
+        };
+        // img 分類（inline emoji / content-img）。抽成 classifyImg 供「即時」與
+        // 「lazy 圖 load 後補分類」共用。
+        // v0.7.214：natural 尺寸對「無 intrinsic size 的 SVG」不可靠——Chrome 對
+        // 只有 viewBox 的 SVG 回報 CSS replaced element 預設 150×150（X/Twitter
+        // 的 Twemoji emoji SVG 實測命中），高解析 emoji PNG（Twemoji PNG 原檔
+        // 72×72）也會超過上限。rendered 尺寸才是「這張圖在文中是 icon / emoji」的
+        // 視覺事實：natural 判定 miss 時 fallback 量 rect，兩維皆 > 0 且 <=
+        // INLINE_IMG_MAX 即標 inline。只在 miss 時量、避免對每張內容圖都 force layout。
+        // v0.8.89：natural 兩維皆 <= 1 = lazy library 的 1×1 blank gif placeholder
+        // 簽名（kknews.cc 實測），**不可**據此判 inline——否則整片未載入的內容照片
+        // 被當 inline emoji 標記、載入後維持 inline 不被 media block 規則撐開（全圖
+        // 1×1 視覺消失）。此時跳過 natural 判定、一律改用 rect（站點通常已用
+        // padding-bottom sizer 預留 reserved 尺寸，rect 可信）。
+        const classifyImg = (img) => {
+          if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return;
+          const w = img.naturalWidth || img.width;
+          const h = img.naturalHeight || img.height;
+          // natPlaceholder 用 naturalX || X 為基準（與下方 w/h 同源）——img 有真實
+          // width 屬性（如 lazy a>img width=608）時不可誤判成 1×1 placeholder。
+          const natPlaceholder = w <= 1 && h <= 1;
+          let isInline = !natPlaceholder && w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
+          let r = null;
+          let inlineViaRect = false;
+          if (!isInline) {
+            r = img.getBoundingClientRect();
+            isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
+                       r.height > 0 && r.height <= INLINE_IMG_MAX;
+            inlineViaRect = isInline;
+          }
+          if (isInline) {
+            img.setAttribute(INLINE_IMG_ATTR, '1');
+            inlineImgs.push(img);
+            // natural 不可靠（viewBox-only SVG 等）時走 rect fallback 標到的 inline——
+            // 釘原站 rendered 尺寸，杜絕 width:auto 把無 intrinsic size 的 SVG 撐成滿欄
+            // （見 inlineImgPins 註解）。natural 可靠（natural <= INLINE_IMG_MAX）的小圖
+            // 不需釘：width:auto 已正確退回 natural 尺寸。
+            if (inlineViaRect && r) pinInlineImg(img, r.width, r.height);
             return;
           }
-        }
-        // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
-        // block + margin 規則會漏掉它 → 維持原站 display:inline + 小 margin（巴哈
-        // forum.gamer.com.tw a.photoswipe-image > img 實測 inline + 4px margin、
-        // 圖文幾乎貼著）。量到 >= CONTENT_IMG_MIN 且祖先有 `<a>` 的 img 標記為
-        // content-img，CSS 對它強制 block + 對稱 margin。inline emoji 已在上面
-        // 排除、不會誤標。
-        //
-        // 自適應 lazy-load（v0.8.11 修正）：apply() 在 document_idle 跑，巴哈這類
-        // 整篇 lazyload 圖在 toggle 當下多數還沒載入——naturalWidth=0、無 width 屬性、
-        // rect 是 placeholder 小尺寸 → big 判定失敗、漏標 → 圖載入後 naturalWidth 變
-        // 大但標記不會重跑，下方 32/34 張圖維持 inline + 4px margin 貼著文字（Jimmy
-        // 2026-06-09 截圖實證）。修法：未即時標到的 a-wrapped img 掛 once load
-        // listener，圖載入時 tryMarkContentImg 重量、夠大就補標（CSS 即時生效加
-        // margin）。below-fold lazy 圖在使用者捲到時才 load → 屆時才標，自適應載入時序。
-        if (img.closest('a')) {
-          if (!tryMarkContentImg(img) && !img.complete) {
-            const onLoad = () => tryMarkContentImg(img);
-            img.addEventListener('load', onLoad);
-            contentImgLoadCleanup.push({ img, onLoad });
+          // v0.8.90：「作者刻意縮小的大圖」防放大。INLINE_IMG_MAX (48px) 與
+          // CONTENT_IMG_MIN (200px) 之間的小圖（48 < rect < 200）落在兩個門檻中間：
+          // 不算 inline emoji、不算內容照片。裸 img 落入 img:not(a>img) 的 width:auto →
+          // 退回 naturalWidth 撐成滿版（washingtonpost lightbulb badge 56→788px 實證）。
+          // 結構訊號：已載入（complete + natural > 1）、pre-reader rendered rect 兩維皆
+          // < CONTENT_IMG_MIN、且 natural 明顯大於 rendered（作者把大來源圖顯示縮小）→
+          // reader 不該反向放大，釘回原始顯示寬。natural ≈ rendered 的真實小圖不命中
+          // （width:auto 本來就給 natural≈rendered、無放大、不必釘）。lazy placeholder
+          // （!complete / natural<=1）此刻量不準，交給上方 load listener 載入後重判。
+          //
+          // v1.0.7：移除原本的 `!img.closest('a')` 排除——a 包的縮小大圖同樣會破版，
+          // 只是路徑不同：a-wrapped 不走 width:auto blowup（被 :not(a>img) 排除），而是
+          // 落入下方 a-wrapped 分支被 tryMarkContentImg 標成 content-img → 強制 block +
+          // 撐滿欄寬（autocar.co.uk 作者欄 <a><div.personality-image><img></div></a>
+          // 頭像 natural 3309 / rect 142 被放大成 608、溢出固定高 142px 的裁切容器、疊到
+          // bio 文字上＝圖疊文，cage probe 實證）。capIcon 幾何 gate（兩維皆 48~200 +
+          // natural > rect×1.5）夠精確：lightbox 內容圖 render >= 200 不命中本支、照走下方
+          // content-img 分支（styler-lightbox-content-image-margin.spec 不退步）。capIcon
+          // 必須在 a-wrapped content-img 分支**之前**（縮小頭像優先當 icon 釘小，不當內容圖
+          // 放大）——本判斷已在該分支上方，移除排除即生效。
+          if (img.complete && img.naturalWidth > 1 &&
+              img.getAttribute(PLAYER_ATTR) !== '1') {
+            if (!r) r = img.getBoundingClientRect();
+            if (r.width > INLINE_IMG_MAX && r.width < CONTENT_IMG_MIN &&
+                r.height > INLINE_IMG_MAX && r.height < CONTENT_IMG_MIN &&
+                img.naturalWidth > r.width * 1.5) {
+              capIconImg(img, r.width);
+              return;
+            }
           }
-          return;
-        }
-        // v0.8.112：bare 內容圖（非 a 包、非 player）來源解析度小於版心時放大填滿
-        // 欄寬。走到這裡的 bare img 已排除 inline emoji（上面 return）、capIcon（作者
-        // 刻意縮小的大圖，上面 return）——剩下的就是「站點以原尺寸或小幅放大顯示的
-        // 配圖」。content-size（>= CONTENT_IMG_MIN 一維）標 upscale、CSS width:100%
-        // 撐滿欄寬；< CONTENT_IMG_MIN 的小圖（logo / 短橫幅）不標、維持 width:auto
-        // 原尺寸（不反向放大成滿版）。lazy bare 圖同 a 包路徑掛 load listener 補標。
-        if (img.getAttribute(PLAYER_ATTR) !== '1') {
-          if (!tryMarkUpscaleImg(img) && !img.complete) {
-            const onLoad = () => tryMarkUpscaleImg(img);
-            img.addEventListener('load', onLoad);
-            contentImgLoadCleanup.push({ img, onLoad });
+          // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
+          // block + margin 規則會漏掉它 → 維持原站 display:inline + 小 margin（巴哈
+          // forum.gamer.com.tw a.photoswipe-image > img 實測 inline + 4px margin、
+          // 圖文幾乎貼著）。量到 >= CONTENT_IMG_MIN 且祖先有 `<a>` 的 img 標記為
+          // content-img，CSS 對它強制 block + 對稱 margin。inline emoji 已在上面
+          // 排除、不會誤標。
+          //
+          // 自適應 lazy-load（v0.8.11 修正）：apply() 在 document_idle 跑，巴哈這類
+          // 整篇 lazyload 圖在 toggle 當下多數還沒載入——naturalWidth=0、無 width 屬性、
+          // rect 是 placeholder 小尺寸 → big 判定失敗、漏標 → 圖載入後 naturalWidth 變
+          // 大但標記不會重跑，下方 32/34 張圖維持 inline + 4px margin 貼著文字（Jimmy
+          // 2026-06-09 截圖實證）。修法：未即時標到的 a-wrapped img 掛 once load
+          // listener，圖載入時 tryMarkContentImg 重量、夠大就補標（CSS 即時生效加
+          // margin）。below-fold lazy 圖在使用者捲到時才 load → 屆時才標，自適應載入時序。
+          if (img.closest('a')) {
+            if (!tryMarkContentImg(img) && !img.complete) {
+              const onLoad = () => tryMarkContentImg(img);
+              img.addEventListener('load', onLoad);
+              contentImgLoadCleanup.push({ img, onLoad });
+            }
+            return;
           }
+          // v0.8.112：bare 內容圖（非 a 包、非 player）來源解析度小於版心時放大填滿
+          // 欄寬。走到這裡的 bare img 已排除 inline emoji（上面 return）、capIcon（作者
+          // 刻意縮小的大圖，上面 return）——剩下的就是「站點以原尺寸或小幅放大顯示的
+          // 配圖」。content-size（>= CONTENT_IMG_MIN 一維）標 upscale、CSS width:100%
+          // 撐滿欄寬；< CONTENT_IMG_MIN 的小圖（logo / 短橫幅）不標、維持 width:auto
+          // 原尺寸（不反向放大成滿版）。lazy bare 圖同 a 包路徑掛 load listener 補標。
+          if (img.getAttribute(PLAYER_ATTR) !== '1') {
+            if (!tryMarkUpscaleImg(img) && !img.complete) {
+              const onLoad = () => tryMarkUpscaleImg(img);
+              img.addEventListener('load', onLoad);
+              contentImgLoadCleanup.push({ img, onLoad });
+            }
+          }
+        };
+        for (const img of articleEl.querySelectorAll('img')) {
+          // v0.8.89：natural 1×1 placeholder 且連 rect 都還沒 reliable（0×0 未渲染）
+          // → 此刻完全無從分類，掛 once load listener 等圖真正載入後再 classifyImg
+          // （hydrateLazyImages 換上真 src 後會觸發 load）。站點有預留 reserved 尺寸
+          // 的 lazy 圖 rect 非 0、直接 classifyImg 走 rect fallback 即可。
+          const natPlaceholder = (img.naturalWidth || img.width) <= 1 && (img.naturalHeight || img.height) <= 1;
+          if (natPlaceholder) {
+            const r = img.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) {
+              const onLoad = () => classifyImg(img);
+              img.addEventListener('load', onLoad, { once: true });
+              contentImgLoadCleanup.push({ img, onLoad });
+              continue;
+            }
+          }
+          classifyImg(img);
         }
       };
-      for (const img of articleEl.querySelectorAll('img')) {
-        // v0.8.89：natural 1×1 placeholder 且連 rect 都還沒 reliable（0×0 未渲染）
-        // → 此刻完全無從分類，掛 once load listener 等圖真正載入後再 classifyImg
-        // （hydrateLazyImages 換上真 src 後會觸發 load）。站點有預留 reserved 尺寸
-        // 的 lazy 圖 rect 非 0、直接 classifyImg 走 rect fallback 即可。
-        const natPlaceholder = (img.naturalWidth || img.width) <= 1 && (img.naturalHeight || img.height) <= 1;
-        if (natPlaceholder) {
-          const r = img.getBoundingClientRect();
-          if (r.width === 0 && r.height === 0) {
-            const onLoad = () => classifyImg(img);
-            img.addEventListener('load', onLoad, { once: true });
-            contentImgLoadCleanup.push({ img, onLoad });
-            continue;
-          }
-        }
-        classifyImg(img);
-      }
 
-      // v0.8.49：「div 當段落」標記必須在 ARTICLE_ATTR 設定**前**跑——主流字級
-      // 判定要量「原站 CSS 下的字級」；ARTICLE_ATTR 一旦設定，BODY_TEXT_SEL 的
-      // font-size 規則對 article 根生效，繼承鏈被改、量到的是注入後的值。
-      textDivMarked = markTextDivs(articleEl);
+      const passMarkTextDivs = () => {
+        // v0.8.49：「div 當段落」標記必須在 ARTICLE_ATTR 設定**前**跑——主流字級
+        // 判定要量「原站 CSS 下的字級」；ARTICLE_ATTR 一旦設定，BODY_TEXT_SEL 的
+        // font-size 規則對 article 根生效，繼承鏈被改、量到的是注入後的值。
+        textDivMarked = markTextDivs(articleEl);
+      };
 
-      articleEl.setAttribute(ARTICLE_ATTR, '1');
+      const passSetArticleAttr = () => {
+        articleEl.setAttribute(ARTICLE_ATTR, '1');
+      };
 
       // v1.6.24：markCjkParagraphs / markDecorativeInlines 移到 byline / kicker
       // 標記之後（見 bylineMarks 區塊尾）——兩函式的
@@ -3776,1521 +3812,1521 @@ html.${HTML_CLASS}.jread-orion body {
       // 舊順序（此處）跑在 byline 標記前，guard 永遠 miss、中文 byline
       //（「文／某某」CJK 佔比達標）會被 justify。
 
-      // v0.7.182：mark video player container descendants——背景/色彩
-      // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
-      // JW Player 的 poster（.jw-preview background-image: url(thumb)）、
-      // 控制列（.jw-controls bg-color）、play 按鈕 overlay 等仰賴
-      // background-image/color 呈現 UI。通則：<video> 的最近 N 層祖先
-      // 及所有後代標記為 player 結構、不被 background strip 清除。
-      // <iframe> 不標記：YouTube/Vimeo embed 的 poster 在 iframe 內部
-      // document，reader card CSS 影響不到。
-      // v0.7.183 修正：只標到 player root（position:relative + overflow:hidden
-      // 的最近祖先），不標外層 layout wrapper。JW Player 結構：
-      //   video → jw-media(abs) → jw-wrapper(abs) → jwplayer(rel+ovH) → layout wrappers
-      // 外層 wrapper 必須被 card max-width/position 約束，否則 player 溢出遮字。
-      // v0.7.182 走 4 層太高，把 wp-block-group layout wrapper 也排除了。
-      for (const vid of articleEl.querySelectorAll('video')) {
-        let container = null;
-        const _win = articleEl.ownerDocument?.defaultView;
-        let cur = vid.parentElement;
-        while (cur && cur !== articleEl && _win) {
-          const cs = _win.getComputedStyle(cur);
-          if (cs.position === 'relative' && cs.overflow === 'hidden') {
-            container = cur;
-            break;
+      const passMarkPlayers = () => {
+        // v0.7.182：mark video player container descendants——背景/色彩
+        // strip CSS 加 :not([data-jread-player]) 排除 player 子結構。
+        // JW Player 的 poster（.jw-preview background-image: url(thumb)）、
+        // 控制列（.jw-controls bg-color）、play 按鈕 overlay 等仰賴
+        // background-image/color 呈現 UI。通則：<video> 的最近 N 層祖先
+        // 及所有後代標記為 player 結構、不被 background strip 清除。
+        // <iframe> 不標記：YouTube/Vimeo embed 的 poster 在 iframe 內部
+        // document，reader card CSS 影響不到。
+        // v0.7.183 修正：只標到 player root（position:relative + overflow:hidden
+        // 的最近祖先），不標外層 layout wrapper。JW Player 結構：
+        //   video → jw-media(abs) → jw-wrapper(abs) → jwplayer(rel+ovH) → layout wrappers
+        // 外層 wrapper 必須被 card max-width/position 約束，否則 player 溢出遮字。
+        // v0.7.182 走 4 層太高，把 wp-block-group layout wrapper 也排除了。
+        for (const vid of articleEl.querySelectorAll('video')) {
+          let container = null;
+          const _win = articleEl.ownerDocument?.defaultView;
+          let cur = vid.parentElement;
+          while (cur && cur !== articleEl && _win) {
+            const cs = _win.getComputedStyle(cur);
+            if (cs.position === 'relative' && cs.overflow === 'hidden') {
+              container = cur;
+              break;
+            }
+            cur = cur.parentElement;
           }
-          cur = cur.parentElement;
-        }
-        // v0.8.105：是否找到「真 player root」（relative + overflow:hidden 的
-        // 自包覆容器，JW Player 等成熟播放器的 chrome wrapper 結構）。沒找到時
-        // 走下面 fallback；fallback 只標 <video> 本身、不標站點包裝容器（理由見下）。
-        const foundGenuineRoot = !!container;
-        if (!container) container = vid.parentElement || vid;
-        // v0.7.225：container 含主文長段落（>= 100 chars 的 p / li）= 它不是
-        // player 結構、是 layout wrapper——縮回 video 自身。tymscar 實測：
-        // video 的 parentElement 是包大半主文的 anon div，fallback 直接標它
-        // 導致 246/267 元素被 PLAYER_ATTR 豁免色彩保護（link 留站點 dark
-        // scheme 綠色、白卡上 1.37:1）。「含主文長段落才保護」guard 與
-        // cleaner 硬教訓四同款通則。對 relative+hidden 命中的 container 也
-        // 套用——合法 player root（JW Player 等）內不會有長文字段落。
-        if (container !== vid) {
-          let hasLongText = false;
-          for (const p of container.querySelectorAll('p, li')) {
-            if ((p.textContent || '').trim().length >= 100) { hasLongText = true; break; }
+          // v0.8.105：是否找到「真 player root」（relative + overflow:hidden 的
+          // 自包覆容器，JW Player 等成熟播放器的 chrome wrapper 結構）。沒找到時
+          // 走下面 fallback；fallback 只標 <video> 本身、不標站點包裝容器（理由見下）。
+          const foundGenuineRoot = !!container;
+          if (!container) container = vid.parentElement || vid;
+          // v0.7.225：container 含主文長段落（>= 100 chars 的 p / li）= 它不是
+          // player 結構、是 layout wrapper——縮回 video 自身。tymscar 實測：
+          // video 的 parentElement 是包大半主文的 anon div，fallback 直接標它
+          // 導致 246/267 元素被 PLAYER_ATTR 豁免色彩保護（link 留站點 dark
+          // scheme 綠色、白卡上 1.37:1）。「含主文長段落才保護」guard 與
+          // cleaner 硬教訓四同款通則。對 relative+hidden 命中的 container 也
+          // 套用——合法 player root（JW Player 等）內不會有長文字段落。
+          if (container !== vid) {
+            let hasLongText = false;
+            for (const p of container.querySelectorAll('p, li')) {
+              if ((p.textContent || '').trim().length >= 100) { hasLongText = true; break; }
+            }
+            if (hasLongText) container = vid;
           }
-          if (hasLongText) container = vid;
+          // v0.8.105：沒有真 player root（relative+overflow:hidden）時，只標 <video>
+          // 本身、不把站點的 fallback 包裝容器整支標 PLAYER_ATTR。
+          // 根因：wikiHow Tie-a-Tie 步驟用「inline 自動播放示範影片」結構——
+          // DIV.video-container.content-fill（position:absolute，內含 poster img +
+          // video，無 relative+overflow:hidden 自包覆 root）。整支標 player 會把這個
+          // absolute 容器凍結在所有 position/height reset 之外 → 容器不貢獻 flow 高度
+          // → 祖先（.mwimg.whvid）塌成 16px → 309px 的 absolute 圖壓住後續 step 文字
+          //（Jimmy 2026-06-18 寬版心截圖）。只標 video 後，container 與 poster img
+          // 改走一般媒體正規化（:has(>media) height:auto + 含媒體容器 position:static）
+          // 回到流內撐高、不再壓字；video 播放層自身仍受 player 保護不被 strip。
+          // 真 player root（JW 等）找得到時不受影響——subtree chrome 保護照舊。
+          if (!foundGenuineRoot) container = vid;
+          container.setAttribute(PLAYER_ATTR, '1');
+          playerMarked.push(container);
+          for (const el of container.querySelectorAll('*')) {
+            el.setAttribute(PLAYER_ATTR, '1');
+            playerMarked.push(el);
+          }
         }
-        // v0.8.105：沒有真 player root（relative+overflow:hidden）時，只標 <video>
-        // 本身、不把站點的 fallback 包裝容器整支標 PLAYER_ATTR。
-        // 根因：wikiHow Tie-a-Tie 步驟用「inline 自動播放示範影片」結構——
-        // DIV.video-container.content-fill（position:absolute，內含 poster img +
-        // video，無 relative+overflow:hidden 自包覆 root）。整支標 player 會把這個
-        // absolute 容器凍結在所有 position/height reset 之外 → 容器不貢獻 flow 高度
-        // → 祖先（.mwimg.whvid）塌成 16px → 309px 的 absolute 圖壓住後續 step 文字
-        //（Jimmy 2026-06-18 寬版心截圖）。只標 video 後，container 與 poster img
-        // 改走一般媒體正規化（:has(>media) height:auto + 含媒體容器 position:static）
-        // 回到流內撐高、不再壓字；video 播放層自身仍受 player 保護不被 strip。
-        // 真 player root（JW 等）找得到時不受影響——subtree chrome 保護照舊。
-        if (!foundGenuineRoot) container = vid;
-        container.setAttribute(PLAYER_ATTR, '1');
-        playerMarked.push(container);
-        for (const el of container.querySelectorAll('*')) {
-          el.setAttribute(PLAYER_ATTR, '1');
-          playerMarked.push(el);
-        }
-      }
+      };
 
-      // v1.6.30（#13）：EMBED_WRAP / HEADING_LINK 標記。必須在下方 FILL_IFRAME
-      // 量測**之前**跑——EMBED_WRAP_ATTR 讓 static-flow 規則豁免 embed 子樹，
-      // FILL_IFRAME 的 getComputedStyle 才量得到 absolute（與原 :not(:has(iframe))
-      // 的同刻語意一致；量測會 flush style、attr 已就位）。
-      markEmbedWrapIframes(articleEl, embedWrapMarked);
-      markHeadingLinks(articleEl, headingLinkMarked);
-      // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
-      markAbsAnchors(articleEl, absAnchorMarked);
-      activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked, absAnchorMarked };
+      const passMarkEmbedHeadingAbsAnchors = () => {
+        // v1.6.30（#13）：EMBED_WRAP / HEADING_LINK 標記。必須在下方 FILL_IFRAME
+        // 量測**之前**跑——EMBED_WRAP_ATTR 讓 static-flow 規則豁免 embed 子樹，
+        // FILL_IFRAME 的 getComputedStyle 才量得到 absolute（與原 :not(:has(iframe))
+        // 的同刻語意一致；量測會 flush style、attr 已就位）。
+        markEmbedWrapIframes(articleEl, embedWrapMarked);
+        markHeadingLinks(articleEl, headingLinkMarked);
+        // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
+        markAbsAnchors(articleEl, absAnchorMarked);
+        activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked, absAnchorMarked };
+      };
 
-      // v0.8.86：responsive embed 的 abs-pos iframe 標 [FILL_IFRAME_ATTR]，讓
-      // CSS pin 回填滿 wrapper（見上方 FILL_IFRAME_ATTR rule 註解）。必須在
-      // ARTICLE_ATTR 設定**後**量——reader CSS 對 [class*="placeholder"] 後代
-      // 強制 position:static，那類 iframe 量到 static 不被標（已在 flow 內
-      // 正常置中），只命中「reader CSS 未改其定位、仍 absolute」的真 embed。
-      {
-        const _win = articleEl.ownerDocument?.defaultView;
-        if (_win && _win.getComputedStyle) {
-          for (const ifr of articleEl.querySelectorAll('iframe')) {
-            if (ifr.hasAttribute(PLAYER_ATTR)) continue;
-            if (_win.getComputedStyle(ifr).position === 'absolute') {
-              ifr.setAttribute(FILL_IFRAME_ATTR, '1');
-              fillIframes.push(ifr);
+      const passMarkFillIframes = () => {
+        // v0.8.86：responsive embed 的 abs-pos iframe 標 [FILL_IFRAME_ATTR]，讓
+        // CSS pin 回填滿 wrapper（見上方 FILL_IFRAME_ATTR rule 註解）。必須在
+        // ARTICLE_ATTR 設定**後**量——reader CSS 對 [class*="placeholder"] 後代
+        // 強制 position:static，那類 iframe 量到 static 不被標（已在 flow 內
+        // 正常置中），只命中「reader CSS 未改其定位、仍 absolute」的真 embed。
+        {
+          const _win = articleEl.ownerDocument?.defaultView;
+          if (_win && _win.getComputedStyle) {
+            for (const ifr of articleEl.querySelectorAll('iframe')) {
+              if (ifr.hasAttribute(PLAYER_ATTR)) continue;
+              if (_win.getComputedStyle(ifr).position === 'absolute') {
+                ifr.setAttribute(FILL_IFRAME_ATTR, '1');
+                fillIframes.push(ifr);
+              }
             }
           }
         }
-      }
+      };
 
-      ancestors = markAncestors(articleEl);
+      const passMarkAncestors = () => {
+        ancestors = markAncestors(articleEl);
+      };
 
-      htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
-      document.documentElement.classList.add(HTML_CLASS);
+      const passHtmlClassThemeMeta = () => {
+        htmlHadClass = document.documentElement.classList.contains(HTML_CLASS);
+        document.documentElement.classList.add(HTML_CLASS);
 
-      // v0.8.24：覆蓋 theme-color meta = reader card 色（狀態列 / 底部工具列染色）
-      themeColorSnap = applyThemeColor(theme.articleBg);
+        // v0.8.24：覆蓋 theme-color meta = reader card 色（狀態列 / 底部工具列染色）
+        themeColorSnap = applyThemeColor(theme.articleBg);
 
-      // v0.8.139：正規化 viewport meta（行動裝置「縮小一半」修法，見函式註解）
-      viewportSnap = applyViewportFix();
+        // v0.8.139：正規化 viewport meta（行動裝置「縮小一半」修法，見函式註解）
+        viewportSnap = applyViewportFix();
+      };
 
-      // v0.7.225 contrast guard phase 2：CSS 全生效後（ARTICLE_ATTR + HTML_CLASS
-      // 都已就位）以 card bg 為基底重算每個容器的新 effective bg。半透明 pre bg
-      // 疊白卡 = 近白；wrapper 載 bg 的站則已被 background strip 清掉——兩種
-      // 機制都會讓 newBg 落到 card bg。判定「大部分文字對新 bg 不可讀、但對
-      // 原始 bg 可讀」才動手：把原始 bg inline !important 還給容器（原站
-      // syntax 色是配這個 bg 設計的，還原 bg = 還原設計時的對比）。
-      // snapshot entry 通用化：{ el, prop, prev, prevP }——bg 還原與
-      // per-carrier 色覆寫共用一個還原清單。
-      if (contrastProbe.length) {
-        const _win = articleEl.ownerDocument?.defaultView;
-        const cardBg = parseCssColor(theme.articleBg) || WHITE;
-        for (const probe of contrastProbe) {
-          const newBg = compositeBgOver(probe.el, articleEl, cardBg, _win);
-          // 重量注入後的實際文字色（繼承類元素已走新 cascade，見
-          // collectTextCarriers 註解——用 phase 1 舊色會誤觸發）
-          for (const c of probe.carriers) {
-            c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
-          }
-          // --- 修法一：整容器 bg 還原（大部分文字不可讀時）---
-          // 修復後的最終狀態 = 注入後文字色 + 還原的原始 bg。這個組合必須
-          // 真的可讀才動手——同時涵蓋「原站本來就低對比（不是 jread 造成、
-          // 還原 bg 也救不回）」的保守分支：那種 case 此檢查必 fail。
-          let finalBg = newBg;
-          if (lowContrastFraction(probe.carriers, newBg, 'newColor') >= CONTRAST_LOW_FRACTION &&
-              lowContrastFraction(probe.carriers, probe.origBg, 'newColor') < CONTRAST_LOW_FRACTION) {
-            contrastBgSnap.push({
-              el: probe.el,
-              prop: 'background-color',
-              prev: probe.el.style.getPropertyValue('background-color'),
-              prevP: probe.el.style.getPropertyPriority('background-color')
-            });
-            const o = probe.origBg;
-            probe.el.style.setProperty(
-              'background-color',
-              `rgb(${Math.round(o.r)}, ${Math.round(o.g)}, ${Math.round(o.b)})`,
-              'important'
-            );
-            finalBg = probe.origBg;
-          }
-          // --- 修法二：per-carrier 色覆寫（少數載體仍不可讀時）---
-          // tymscar table 實測：th 有自己的 color（淺色、為深底設計）被
-          // :not(th) 排除保留，td 無 color 繼承 card 深字——混色容器 bg 還原
-          // 會弄壞多數 td、只能對 th 這類少數載體個別覆寫文字色。覆寫值不
-          // 猜原設計、直接依最終 bg 亮度選高對比色（淺底深字 / 深底淺字）。
-          // 「原設計可讀」前提仍要守：原本就低對比的載體不是 jread 造成，
-          // 不動（同修法一的保守邊界）。
-          for (const c of probe.carriers) {
-            if (!c.newColor) continue;
-            if (contrastRatio(c.newColor, finalBg) >= CONTRAST_MIN_RATIO) continue;
-            if (contrastRatio(c.origColor, probe.origBg) < CONTRAST_MIN_RATIO) continue;
-            contrastBgSnap.push({
-              el: c.el,
-              prop: 'color',
-              prev: c.el.style.getPropertyValue('color'),
-              prevP: c.el.style.getPropertyPriority('color')
-            });
-            c.el.style.setProperty(
-              'color',
-              relLuminance(finalBg) > 0.5 ? '#1a1a1a' : '#f0f0f0',
-              'important'
-            );
-          }
-        }
-      }
-
-      // v1.0.6 light theme：bg 保留但文字色被強制的語意元素（blockquote /
-      // summary）深底深字守門。
-      // Root cause（通則，非站點特例）：BG_PRESERVE_NOT 保留 figure/figcaption/
-      // summary/blockquote 的原站背景，但 COLOR_PRESERVE_NOT 只排除 figcaption——
-      // blockquote / summary 的文字在 light theme 被 color: inherit 強制成 reader
-      // 卡片深色。站點若把這類元素配深色不透明背景（autocar.co.uk 把圖說做成
-      // <blockquote class="image-field-caption"> bg rgb(48,48,48)），深字落深底＝
-      // 整條黑條不可讀（cage 量 1.59:1）。與 figcaption v0.8.169「文字已決定走
-      // 卡片色 → 背景跟著透明」同款修法形狀。
-      //
-      // 為什麼用 contrast gate 而非比照 figcaption 無條件清背景：blockquote 引言框
-      // 可能有「淺底 + 深字」的合理設計（行 1917 註解：引言框靠 padding + 背景
-      // 撐視覺）——無條件清會弄丟正常引言框的底色。以實際對比 gate：只有「強制
-      // 文字色對保留 effective bg < 3:1（占比 >= 40%）」才把背景正規化為透明
-      // （讓白卡透出、深字變可讀），高對比的淺底引言框一律不動（保守邊界，同
-      // pre/table contrast guard 與 v0.7.225 light guard）。figure 直接文字罕見、
-      // figcaption 已另條 light 規則處理，故只掃 blockquote / summary。
-      //
-      // 訊號層次：本層驗「blockquote/summary 直接文字載體 vs 保留 bg 的 WCAG
-      // 對比」一層；dark / sepia 不走（theme.text 非 null → 由下方 phase 3 兜底
-      // 接管全 card 文字色）。restore 走 contrastBgSnap 既有通道。
-      if (!theme.text) {
-        const _win = articleEl.ownerDocument?.defaultView;
-        if (_win && _win.getComputedStyle) {
+      const passContrastGuardPhase2 = () => {
+        // v0.7.225 contrast guard phase 2：CSS 全生效後（ARTICLE_ATTR + HTML_CLASS
+        // 都已就位）以 card bg 為基底重算每個容器的新 effective bg。半透明 pre bg
+        // 疊白卡 = 近白；wrapper 載 bg 的站則已被 background strip 清掉——兩種
+        // 機制都會讓 newBg 落到 card bg。判定「大部分文字對新 bg 不可讀、但對
+        // 原始 bg 可讀」才動手：把原始 bg inline !important 還給容器（原站
+        // syntax 色是配這個 bg 設計的，還原 bg = 還原設計時的對比）。
+        // snapshot entry 通用化：{ el, prop, prev, prevP }——bg 還原與
+        // per-carrier 色覆寫共用一個還原清單。
+        if (contrastProbe.length) {
+          const _win = articleEl.ownerDocument?.defaultView;
           const cardBg = parseCssColor(theme.articleBg) || WHITE;
-          let bqScanned = 0;
-          for (const el of articleEl.querySelectorAll('blockquote, summary')) {
-            if (bqScanned >= CONTRAST_MAX_TARGETS) break;
-            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-            const cs = _win.getComputedStyle(el);
-            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-            // 無自身背景（透明）→ effective bg 由白卡決定、不可能深底深字，跳過
-            const ownBg = parseCssColor(cs.backgroundColor);
-            if (!ownBg || ownBg.a < 0.05) continue;
-            bqScanned++;
-            // 注入後實際文字色（color: inherit 已走新 cascade，見
-            // collectTextCarriers 註解——用注入前舊色會誤判）
-            const carriers = collectTextCarriers(el, _win);
-            if (!carriers.length) continue;
-            for (const c of carriers) c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
-            const effBg = compositeBgOver(el, articleEl, cardBg, _win);
-            if (lowContrastFraction(carriers, effBg, 'newColor') >= CONTRAST_LOW_FRACTION) {
+          for (const probe of contrastProbe) {
+            const newBg = compositeBgOver(probe.el, articleEl, cardBg, _win);
+            // 重量注入後的實際文字色（繼承類元素已走新 cascade，見
+            // collectTextCarriers 註解——用 phase 1 舊色會誤觸發）
+            for (const c of probe.carriers) {
+              c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
+            }
+            // --- 修法一：整容器 bg 還原（大部分文字不可讀時）---
+            // 修復後的最終狀態 = 注入後文字色 + 還原的原始 bg。這個組合必須
+            // 真的可讀才動手——同時涵蓋「原站本來就低對比（不是 jread 造成、
+            // 還原 bg 也救不回）」的保守分支：那種 case 此檢查必 fail。
+            let finalBg = newBg;
+            if (lowContrastFraction(probe.carriers, newBg, 'newColor') >= CONTRAST_LOW_FRACTION &&
+                lowContrastFraction(probe.carriers, probe.origBg, 'newColor') < CONTRAST_LOW_FRACTION) {
               contrastBgSnap.push({
-                el,
+                el: probe.el,
                 prop: 'background-color',
-                prev: el.style.getPropertyValue('background-color'),
-                prevP: el.style.getPropertyPriority('background-color')
+                prev: probe.el.style.getPropertyValue('background-color'),
+                prevP: probe.el.style.getPropertyPriority('background-color')
               });
-              el.style.setProperty('background-color', 'transparent', 'important');
+              const o = probe.origBg;
+              probe.el.style.setProperty(
+                'background-color',
+                `rgb(${Math.round(o.r)}, ${Math.round(o.g)}, ${Math.round(o.b)})`,
+                'important'
+              );
+              finalBg = probe.origBg;
             }
-          }
-        }
-      }
-
-      // v0.8.45 dark / sepia contrast 兜底層（phase 3）：CSS 通則層管不到的
-      // 低對比文字逐元素修色。CSS cascade 有結構性輸局——站點高 specificity
-      // !important rule（twz `.recurrent-author-widgets .recurrent-author-widget
-      // .author-bio` = (0,3,0) !important，贏 jread color-inherit 的 (0,2,12)，
-      // probe 實證）、@layer important 反轉、CSS-in-JS 動態注入——stylesheet
-      // 軍備競賽永遠有更高的站點。inline style + !important 是 author origin
-      // 最高優先級，cascade 戰爭一律終結。
-      // 保守邊界：只修「對 effective bg 對比 < 3:1」的元素——本來就不可讀，
-      // 改色是淨改善；可讀的原站色（表格漲跌紅綠、syntax token、mark 高亮上
-      // 的深字）一律不動。候選色挑對比較高者（亮底深字 / 暗底用 theme 淺字），
-      // 連結用 link 色變體維持與正文的雙通道辨識。修後仍 < 3:1 則不動（與
-      // v0.7.225 light guard 同款保守分支——不是 jread 能救的不亂動）。
-      // restore 走 contrastBgSnap 既有通道；theme 切換走 main.js restore→apply
-      // 重跑，inline 不殘留、不污染重算。
-      // 訊號層次：本層驗「直接文字載體 vs effective bg 的 WCAG 對比」；不驗
-      // 圖片 / iframe 內部（jread 摸不到）、不驗 lazy-load 晚到的內容（apply
-      // 當下不存在的元素掃不到——對 theme 切換場景夠用，極端 lazy 站漏網）。
-      //
-      // SPA cascade 時序坑（sspai instrument 實證）：apply() 同步流程內
-      // getComputedStyle 量到的 bg 可能還是站點值——SPA hydration 期站點動態
-      // <style> 與 jread styleEl 的 cascade 勝負會在 apply 之後翻轉（sspai TH
-      // 在 phase 3 當下 bg=#f7f7f9、1.5s 後才變 transparent），照當下值修色
-      // 會做出「亮底深字」之後變「暗底深字」ratio 1。所以 effective bg 不照
-      // 當下 computed 算，而是按「jread 規則的目標狀態」算：會被上方背景中和
-      // 規則打 transparent 的層（tag 清單同款生成）一律跳過其 bg。代價：站點
-      // rule 永久賽贏中和規則的極端站會被當成已中和而漏修（保守邊界——漏修
-      // 不誤傷）。
-      if (theme.text) {
-        const _win = articleEl.ownerDocument?.defaultView;
-        if (_win && _win.getComputedStyle) {
-          const cardBg = parseCssColor(theme.articleBg) || WHITE;
-          const neutralizedSel = [...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS].join(',');
-          const skipNeutralized = (cur) => !!(cur.matches && cur.matches(neutralizedSel));
-          // v1.7.44 E1 效能：兩段式讀寫分離。原本逐元素「讀 computed → 命中即寫
-          // inline color」交錯，每次寫入都讓後續 getComputedStyle 重新 style recalc
-          // （至多 3,000 元素 × 祖先鏈）。改 phase A 全讀收集 fixes、phase B 統一寫。
-          // 語意差異（可接受）：原交錯版中祖先先被修色時、繼承色的子孫重量會過
-          // contrast gate 而跳過；分離版子孫以舊繼承色判定、可能同被收進 fixes——
-          // 但候選色同一組、挑中同色，視覺結果相同，restore 各自還原 inline 不受序影響。
-          //
-          // effective bg 沿 DOM 樹 memoize：effBg(el) = 自身 bg 圖層疊在
-          // effBg(parent) 上（opaque 圖層蓋掉底下一切 = blendOver 自然語意），與
-          // compositeBgOver(el, null, cardBg, _win, skipNeutralized) 等價；同一
-          // 祖先鏈只算一次，兄弟元素共用祖先段快取。
-          const bgMemo = new Map();
-          const effBgOf = (el) => {
-            const chain = [];
-            let cur = el;
-            let cached = null;
-            while (cur && cur.nodeType === 1) {
-              if (bgMemo.has(cur)) { cached = bgMemo.get(cur); break; }
-              chain.push(cur);
-              if (cur === _win.document.body) break;
-              cur = cur.parentElement;
-            }
-            let base = cached ? cached : { ...cardBg };
-            for (let i = chain.length - 1; i >= 0; i--) {
-              const node = chain[i];
-              if (!skipNeutralized(node)) {
-                const c = parseCssColor(_win.getComputedStyle(node).backgroundColor);
-                if (c && c.a > 0) base = blendOver(c, base);
-              }
-              bgMemo.set(node, base);
-            }
-            return base;
-          };
-          let scanned = 0;
-          let fixed = 0;
-          const contrastFixes = [];
-          for (const el of articleEl.querySelectorAll('*')) {
-            if (scanned >= 3000 || fixed >= 300) break;
-            const tag = el.tagName.toUpperCase();
-            if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
-            let len = 0;
-            for (const n of el.childNodes) {
-              if (n.nodeType === 3) len += n.textContent.trim().length;
-            }
-            if (len < 4) continue;
-            scanned++;
-            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-            const cs = _win.getComputedStyle(el);
-            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-            const fg = parseCssColor(cs.color);
-            if (!fg || fg.a < 0.5) continue;
-            const bg = effBgOf(el);
-            if (contrastRatio(fg, bg) >= CONTRAST_MIN_RATIO) continue;
-            const isLink = !!(el.closest && el.closest('a'));
-            // 深色候選：#1a1a1a（深字）/ #1a73e8（light theme link 色，亮底上 5.2:1）
-            const candidates = isLink ? [theme.link, '#1a73e8'] : [theme.text, '#1a1a1a'];
-            let best = null;
-            let bestRatio = -1;
-            for (const cstr of candidates) {
-              const c = parseCssColor(cstr);
-              const r = c ? contrastRatio(c, bg) : 0;
-              if (r > bestRatio) { bestRatio = r; best = cstr; }
-            }
-            if (!best || bestRatio < CONTRAST_MIN_RATIO) continue;
-            contrastFixes.push({ el, best });
-            fixed++;
-          }
-          for (const f of contrastFixes) {
-            contrastBgSnap.push({
-              el: f.el,
-              prop: 'color',
-              prev: f.el.style.getPropertyValue('color'),
-              prevP: f.el.style.getPropertyPriority('color')
-            });
-            f.el.style.setProperty('color', f.best, 'important');
-          }
-        }
-      }
-
-      // v1.5.17 code block 背景辨識度（phase 4，所有主題）：原站常把 `<pre>`
-      // 程式碼框做成「透明底 + 細淺色邊框」（Medium 實測 bg rgba(0,0,0,0)、
-      // border 1px #e5e5e5）。reader card 在 sepia(#eee2cb) / gray(#ededed) 主題
-      // 下，淺邊框 ≈ 卡片色幾乎不可見、透明底又透出卡片色 → code block 與主文
-      // 完全融在一起、看不出邊界（Jimmy 2026-06-29 medium 截圖回報）。
-      //
-      // Root cause（通則）：BG_PRESERVE_NOT 保留 pre 背景（語法高亮塊的實心底 +
-      // token 色是配套設計、不能清）。但「自身背景透明」的純文字 code 塊沒有任何
-      // 區隔載體，靠原站淺邊框在深/暖卡上失效。
-      //
-      // 修法：只對「自身 background-color alpha < 0.1（透明 / 近透明）」的 pre
-      // 補主題協調底色 theme.codeBlockBg（半透明、疊在卡片上產生 recessed panel）。
-      // gate 在 alpha：語法高亮塊（實心 #282c34 之類，alpha=1）一律跳過、原樣保留，
-      // 零誤傷其 token 對比。所有主題都跑（sepia/gray 是回報情境、light/dark 同樣
-      // 受益）。snapshot 走 contrastBgSnap 既有還原通道（theme 切換 restore→apply
-      // 重算，inline 不殘留）。
-      if (theme.codeBlockBg) {
-        const _win = articleEl.ownerDocument?.defaultView;
-        if (_win && _win.getComputedStyle) {
-          let preScanned = 0;
-          for (const pre of articleEl.querySelectorAll('pre')) {
-            if (preScanned >= CONTRAST_MAX_TARGETS) break;
-            if (pre.closest && pre.closest('[data-jread-hidden="1"]')) continue;
-            // 嵌套（pre 內 pre，罕見）只處理最外層，避免疊兩層底色
-            if (pre.parentElement && pre.parentElement.closest &&
-                pre.parentElement.closest('pre')) continue;
-            preScanned++;
-            const ownBg = parseCssColor(_win.getComputedStyle(pre).backgroundColor);
-            // 自身有實心 / 明顯底色（語法高亮塊）→ 保留原設計，不補
-            if (ownBg && ownBg.a >= 0.1) continue;
-            contrastBgSnap.push({
-              el: pre,
-              prop: 'background-color',
-              prev: pre.style.getPropertyValue('background-color'),
-              prevP: pre.style.getPropertyPriority('background-color')
-            });
-            pre.style.setProperty('background-color', theme.codeBlockBg, 'important');
-          }
-        }
-      }
-
-      // v0.7.90：install scroll listener（auto-hide scrollbar）。passive 確保
-      // 不卡 scroll 效能；window 層級捕捉文件捲動事件。重複 apply 時 remove
-      // 後 add 防止 listener 累積（瀏覽器 dedupe 但保險，restore 也對稱乾淨）。
-      window.removeEventListener('scroll', onScrollFlash, { passive: true });
-      window.addEventListener('scroll', onScrollFlash, { passive: true });
-
-      // 閱讀進度條——v1.5.2：分頁模式不注入（底部頁碼指示器已表閱讀進度，頂端進度條
-      // 為重複功能；Jimmy 2026-06-27）。styler 是進度條生命週期的單一資料源：依
-      // opts.pagedMode 決定注入與否，paged-mode.js 不再碰它。切到分頁模式（scroll→
-      // paged reapply）時把既有的移除，騰出頂端區域給文章排版（paged 卡片上緣 gutter
-      // 同步收斂，見上方 PAGED_TOP_GUTTER）。
-      window.removeEventListener('scroll', onScrollProgress, { passive: true });
-      if (opts.pagedMode) {
-        const existing = document.getElementById(PROGRESS_ID);
-        if (existing) existing.remove();
-        progressEl = null;
-      } else {
-        progressEl = document.getElementById(PROGRESS_ID);
-        if (!progressEl) {
-          progressEl = document.createElement('div');
-          progressEl.id = PROGRESS_ID;
-          (document.head?.parentElement || document.documentElement).appendChild(progressEl);
-        }
-        window.addEventListener('scroll', onScrollProgress, { passive: true });
-        onScrollProgress();
-      }
-
-      // v0.7.91：install SPACE keydown listener（capture phase 比原站 bubble
-      // listener 早攔，比原站 keydown 攔截先收到 SPACE）。重複 apply 時保險先 remove。
-      window.removeEventListener('keydown', onSpaceScroll, true);
-      window.addEventListener('keydown', onSpaceScroll, true);
-
-      // 消除頂端留白：第一個**可見** h1-h4/p（深層後代也算）margin-top: 0
-      // inline。必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS
-      // 的 `:first-child` 只能摸到 article 的 direct child，摸不到「包在
-      // wrapper 裡的 H1」。
-      // v0.7.180：跳過 display:none / data-jread-hidden 內的隱藏元素。
-      // MSNBC/ms.now opinion-header 內 .opinion-column(display:none) 包
-      // P "Opinion" 類別標籤——querySelector DOM order 比 H1 早命中，導致
-      // firstInk 指向隱藏 P、後續 ancestor padding strip 和 titleFontSize
-      // inline override 都因此 miss。
-      // v1.7.43：可見性判定收斂到 isVisiblyShown（與 firstVisibleH1 同一份標準）
-      for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
-        if (!isVisiblyShown(el, articleEl)) continue;
-        firstInk = el;
-        break;
-      }
-      if (firstInk) {
-        firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
-        firstInkPriorMtPriority = firstInk.style.getPropertyPriority('margin-top');
-        firstInk.style.setProperty('margin-top', '0', 'important');
-      }
-
-      // v1.0.8：byline meta 區一行正規化（見頂部 BYLINE_ATTR 常數註解）。
-      // 偵測（結構訊號、非站點 class 特判）：date 訊號（<time> 或 date-regex 短文）
-      // 與 author 訊號（行首 by / rel=author）的共同祖先，往上爬到「不含第一段內文
-      // （>= 120 chars 的 p）、且 visible 文字 <= 200」的最高祖先 = byline root。
-      // 只標 visible 元素（避免把站點隱藏的作者 hover card / 分享列重新顯示）。
-      // 多站驗證（autocar / npr / techcrunch / bbc / theverge）選到乾淨 byline 區。
-      {
-        const win = articleEl.ownerDocument?.defaultView;
-        if (win && win.getComputedStyle && !articleEl.querySelector(`[${BYLINE_ATTR}]`)) {
-          const bnorm = (s) => (s || '').replace(/\s+/g, ' ').trim();
-          const bvisible = (el) => {
-            if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
-            const cs = win.getComputedStyle(el);
-            return cs.display !== 'none' && cs.visibility !== 'hidden';
-          };
-          const bdirect = (el) => bnorm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
-          // v1.7.4：相對日期切段比對（見 BYLINE_SEG_SPLIT_RE 常數註解）
-          const brelDate = (s) => !!s && s.split(BYLINE_SEG_SPLIT_RE).some((seg) => BYLINE_REL_DATE_RE.test(seg.trim()));
-          // v1.7.43：純分隔符 item 判定（null-safe）——markRt 相鄰分隔符標記與
-          // 孤兒分隔符掃描共用（原兩份 micro-dup）
-          const bisSep = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
-            !el.querySelector('img, svg, picture, video');
-          let firstBodyP = null;
-          for (const p of articleEl.querySelectorAll('p')) {
-            if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
-          }
-          const beforeBody = (el) => !firstBodyP ||
-            !!(el.compareDocumentPosition(firstBodyP) & Node.DOCUMENT_POSITION_FOLLOWING);
-          // date 訊號：<time> 優先、否則 date-regex 短文
-          let dateEl = null;
-          for (const t of articleEl.querySelectorAll('time')) {
-            if (bvisible(t) && beforeBody(t) && bnorm(t.textContent)) { dateEl = t; break; }
-          }
-          if (!dateEl) {
-            for (const el of articleEl.querySelectorAll('span, div, p, li, a')) {
-              if (!beforeBody(el) || !bvisible(el)) continue;
-              const dt = bdirect(el);
-              // v1.7.4：絕對日期（子字串比對）或相對日期（切段全字串比對，見
-              // BYLINE_REL_DATE_RE / BYLINE_SEG_SPLIT_RE 常數註解）皆可當日期錨。
-              if (dt && dt.length < 40 && (BYLINE_DATE_RE.test(dt) || brelDate(dt))) { dateEl = el; break; }
-            }
-          }
-          if (dateEl) {
-            // author 訊號（選填、用於擴大 root 的 LCA）
-            let authorEl = null;
-            for (const el of articleEl.querySelectorAll('a[rel~="author"], span, div, p, a')) {
-              if (!beforeBody(el) || !bvisible(el)) continue;
-              const t = bnorm(el.textContent);
-              if (BYLINE_AUTHOR_PREFIX_RE.test(t) && t.length < 60) { authorEl = el; break; }
-            }
-            let seed = dateEl;
-            if (authorEl && authorEl !== dateEl) {
-              const anc = new Set();
-              for (let x = dateEl; x && x !== articleEl.parentElement; x = x.parentElement) anc.add(x);
-              for (let y = authorEl; y && y !== articleEl.parentElement; y = y.parentElement) {
-                if (anc.has(y)) { seed = y; break; }
-              }
-            }
-            // 內容尺寸大圖判定（byline meta 區塊結構上絕不含內容大圖；頭像 <=96px、
-            // hero >=150px）。與下方 v1.6.18 prevSib guard 共用同一份判定。
-            const bimgRect = (im) => {
-              try { const r = im.getBoundingClientRect(); return { w: r.width, h: r.height }; }
-              catch (_) { return { w: 0, h: 0 }; }
-            };
-            const bhasBigImg = (el) => Array.from(el.querySelectorAll('img, picture'))
-              .some((im) => { const r = bimgRect(im); return r.w >= 150 || r.h >= 150; });
-            // v1.6.10：LCA seed 有效性 guard——byline meta 區塊結構上絕不含文章標題/
-            // 副標 heading。「作者在 hero 上方、日期在 hero 下方」的版面（The Atlantic
-            // ArticleHero header：kicker → h1 標題 → dek → 作者 → hero figure → 日期）
-            // 使 author+date 的 LCA engulf 整個 header（含 h1 + hero）。下方 climb 的
-            // heading guard 只擋「往上爬進含 heading 的 parent」、擋不住 seed 自身已含
-            // heading。若 seed 已含 heading，退回只用 dateEl 當 seed——climb 從日期
-            // 往上會在 header（含 h1）邊界前停住，root 落在純日期 wrapper、不罩住 h1 與
-            // hero figure。否則 byline root 罩住 hero img → 被 [BYLINE] img 頭像 50%
-            // 圓角規則 render 成橢圓框（Jimmy 2026-07-02 回報 Atlantic hero 變圓框）。
-            // v1.7.9：heading 之外加「內容大圖」訊號——Readwise Reader 把文件標題渲染
-            // 在 article 容器外，同款「作者在 hero 上、日期在 hero 下」版面（header：
-            // dek → 作者 → hero figure → 日期）內沒有 h1，heading guard 不觸發、LCA
-            // 又 engulf 整個 header → hero 變橢圓（Jimmy 2026-07-16 回報）。seed 含
-            // >=150px 大圖同樣代表過度捕捉，退回 dateEl。
-            // v1.7.35：heading guard 擴充「promoted-title-source」——標題非
-            // h1/h2/h3 的站（latepost 標題是 div）由 detector title-promote
-            // 注入 h1 clone 到 articleEl 開頭、原標題元素標
-            // data-jread-promoted-title-source + display:none。原標題所在的
-            // 祖先（.article-header 級）等價於「含標題的祖先」，byline root
-            // 絕不可包含（否則 climb 把整個 header 吞進 byline flex）。
-            const BYLINE_STOP_SEL = 'h1, h2, h3, [data-jread-promoted-title-source]';
-            if (seed !== dateEl && (seed.querySelector(BYLINE_STOP_SEL) || bhasBigImg(seed))) seed = dateEl;
-            // 爬到「不含 body、不含標題/副標 heading、visible 文字 <= 200」的最高祖先。
-            // v1.0.12：heading guard——byline（作者/日期 meta）結構上絕不會包住文章
-            // 標題或副標（h1/h2/h3）。原本只用「文字 <= 200」當天花板，但翻譯後中文
-            // 比英文緊湊（chinatalk Substack post-header 英文 113 字 → 中文 59 字），
-            // 整個 post-header（含 h1 標題 + h3 副標 + byline）落在 200 內 → climb 把
-            // post-header 當 byline root，h1/h3 被打平成 flex-wrap item，窄的中文副標
-            // 與作者名同列（英文因 heading 夠寬各佔一列而僥倖沒露餡）。加 heading guard
-            // 後 climb 在 heading 邊界前停住，root 落在真正的 author+date wrapper。
-            // v1.7.9：climb 同步加大圖 guard——無 heading 的 header（見上）文字常
-            // <= 200，seed 退回 dateEl 後 climb 仍會一路爬回含 hero 的 header，等於
-            // seed guard 白退。爬進含內容大圖的 parent 一律停住。
-            let root = seed;
-            while (root.parentElement && root.parentElement !== articleEl &&
-                   beforeBody(root.parentElement) &&
-                   (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
-                   !root.parentElement.querySelector(BYLINE_STOP_SEL) &&
-                   !bhasBigImg(root.parentElement) &&
-                   bnorm(root.parentElement.textContent).length <= 200) {
-              root = root.parentElement;
-            }
-            const setMark = (el, attr) => { el.setAttribute(attr, '1'); bylineMarks.push({ el, attr }); };
-            // 設 inline display（覆蓋 cleaner collapseGridWithHiddenCell 的 inline
-            // display:block !important——byline 容器常是 flex/grid + hidden 社群分享
-            // child 被 collapse；stylesheet 的 byline flex 贏不過 inline !important）。
-            // snapshot prev 供 styler.restore 還原；styler.restore 在 cleaner.restore
-            // 之前（main.js 458→459），collapsed 元素還原成 cleaner 值、cleaner 再
-            // 還原成原始。
-            const setStyleImp = (el, prop, val) => {
-              bylineDispSnap.push({ el, prop, prev: el.style.getPropertyValue(prop), prevP: el.style.getPropertyPriority(prop) });
-              el.style.setProperty(prop, val, 'important');
-            };
-            setMark(root, BYLINE_ATTR);
-            setStyleImp(root, 'display', 'flex');
-            // cleaner collapseGridWithHiddenCell 攤平 flex-row 時設了 inline
-            // flex-direction:column（display:block 下無作用、但 byline 翻回 flex 後
-            // 會生效成直排）——一併用 inline row 覆蓋
-            setStyleImp(root, 'flex-direction', 'row');
-            // 遞迴標 item（可見 leaf / 有直接文字 / 媒體）與 wrap（純 wrapper）
-            // v1.7.4：item 同時含日期訊號與閱讀時間時不可整顆標 rt——Medium 近期
-            // 文章的日期是 item 的 direct text、閱讀時間是同 item 的子元素
-            //（<div><span>15 min read</span><span>·</span>5 days ago</div>），整顆
-            // 藏會連日期一起消失（實測 byline 整條變空）。改往下找「命中閱讀時間、
-            // 不含日期訊號」的最深子元素只藏它，並連帶藏其相鄰純分隔符（否則殘留
-            //「·5 days ago」）。日期與閱讀時間同在 direct text 無法分離時保守不藏
-            //（日期優先於「去閱讀時間」）。
-            const hasDateSignal = (el) =>
-              BYLINE_DATE_RE.test(bnorm(el.textContent)) || brelDate(bdirect(el));
-            const markRt = (el) => {
-              if (!hasDateSignal(el)) {
-                setMark(el, BYLINE_RT_ATTR);
-                if (bisSep(el.previousElementSibling)) setMark(el.previousElementSibling, BYLINE_SEP_ATTR);
-                if (bisSep(el.nextElementSibling)) setMark(el.nextElementSibling, BYLINE_SEP_ATTR);
-                return;
-              }
-              for (const c of el.children) {
-                if (BYLINE_RT_RE.test(bnorm(c.textContent))) { markRt(c); return; }
-              }
-            };
-            const walk = (el) => {
-              for (const child of el.children) {
-                if (!bvisible(child)) continue;
-                const tag = child.tagName.toUpperCase();
-                const isMedia = tag === 'IMG' || tag === 'PICTURE' || tag === 'TIME' || tag === 'SVG';
-                const hasText = bdirect(child).length > 0;
-                if (hasText || isMedia || child.children.length === 0) {
-                  setMark(child, BYLINE_ITEM_ATTR);
-                  // v1.7.12：多作者 inline 文字流（>= 2 條連結 + 直接分隔文字、
-                  // 無媒體＝無頭像對齊需求）→ 標 inline attr 回歸自然文字換行，
-                  // 免被 inline-flex nowrap 擠壓（見 BYLINE_INLINE_ATTR 常數註解）
-                  if (hasText && child.querySelectorAll('a').length >= 2 &&
-                      !child.querySelector('img, picture, svg, video')) {
-                    setMark(child, BYLINE_INLINE_ATTR);
-                  }
-                  if (BYLINE_RT_RE.test(bnorm(child.textContent))) markRt(child);
-                } else {
-                  setMark(child, BYLINE_WRAP_ATTR);
-                  setStyleImp(child, 'display', 'contents');
-                  walk(child);
-                }
-              }
-            };
-            walk(root);
-            // v1.7.35：byline 子樹字體統一補 inline !important。v1.0.20 的 CSS
-            // 規則 `[BYLINE] * { font: inherit !important }` specificity 只有
-            // (0,2,0)，被同為 !important 的 BODY_TEXT_SEL span 規則（:not 鏈疊到
-            // (0,7,10)）打穿——byline 內的 span（latepost「文」「編輯」前綴）拿
-            // 到使用者字級 17px、旁邊的作者連結繼承 root 的 12.4px，同一行字級
-            // 不一致（Jimmy 2026-08-03 截圖）。inline style 必贏所有 stylesheet
-            // 規則；只寫 font-family / font-size 兩條 longhand（本 bug 的兩個
-            // 不一致維度），不動 font-weight——item 字重 400 正規化仍由既有
-            // CSS 規則負責。子樹元素數量小（十餘個）、snapshot/restore 走既有
-            // bylineDispSnap 機制。CSS `font: inherit` 規則保留當兜底。
-            const unifyFont = (rootEl) => {
-              for (const el of rootEl.querySelectorAll('*')) {
-                setStyleImp(el, 'font-family', 'inherit');
-                setStyleImp(el, 'font-size', 'inherit');
-              }
-            };
-            unifyFont(root);
-            // v1.7.39：byline 頭像隱藏改走 runtime inline !important。v1.7.25 的
-            // CSS 規則 `[BYLINE] img/picture { display:none }` specificity 只有
-            // (0,2,1)：裸 <img>（> inline 門檻）被 MEDIA_CAP_SEL (0,3,3) 的
-            // display:block 打穿、小裸圖被 inline-img 規則（同 specificity、
-            // source order 在後）打穿——真 Chromium probe 實證只有 <picture> 包
-            // 與 <a> 包的頭像藏得掉。inline !important 必贏所有 stylesheet 規則、
-            // 終結 specificity 軍備；snapshot/restore 走既有 bylineDispSnap。
-            // CSS 規則保留當兜底（涵蓋 apply 之後動態插入的頭像）。
-            const hideAvatarMedia = (rootEl) => {
-              for (const el of rootEl.querySelectorAll('img, picture')) {
-                setStyleImp(el, 'display', 'none');
-              }
-            };
-            hideAvatarMedia(root);
-            // v1.6.18：byline root 落在 date-only（seed 因 LCA 含標題退回 dateEl、
-            // 或 author 與 date 無共同乾淨祖先）時，作者列常是 date root 的「相鄰前一個
-            // sibling」而未被納入 → 維持站點 header 的 text-align:center，與已左對齊的
-            // 日期列不一致（Fox News `<header class="article-header">` text-align:center，
-            // `.author-byline`（頭像+作者）置中、日期 flex 列靠左，Jimmy 2026-07-08 回報
-            // 「byline 排版亂七八糟」）。把該相鄰作者列也標成 byline root（同 flex + 左
-            // 對齊 + item 正規化），兩列一致左排。
-            // guard（四道、皆結構訊號）：只認 date root 的「相鄰前一個 visible sibling」
-            // ——Atlantic 型（作者在 hero 上方、與日期非相鄰、中間隔 <figure>）不相鄰 →
-            // 不命中（見 v1.6.10 guard + atlantic-hero-byline-overcapture fixture）；且
-            // 該 sibling 須①不含 heading（h1/h2/h3）②不含內容大圖（>=150px，排除 hero）
-            // ③visible 文字 <= 200 ④含作者訊號（rel=author / 行首 By / 小頭像 img）。
-            {
-              let prevSib = root.previousElementSibling;
-              while (prevSib && !bvisible(prevSib)) prevSib = prevSib.previousElementSibling;
-              if (prevSib && !prevSib.hasAttribute(BYLINE_ATTR) && beforeBody(prevSib) &&
-                  !prevSib.querySelector(BYLINE_STOP_SEL) &&
-                  bnorm(prevSib.textContent).length <= 200) {
-                // v1.7.9：大圖/頭像尺寸判定改用上方 bimgRect / bhasBigImg 共用 helper
-                const hasBigImg = bhasBigImg(prevSib);
-                const hasAuthorSignal =
-                  !!prevSib.querySelector('a[rel~="author"]') ||
-                  BYLINE_AUTHOR_PREFIX_RE.test(bnorm(prevSib.textContent)) ||
-                  Array.from(prevSib.querySelectorAll('img'))
-                    .some((im) => { const r = bimgRect(im); return r.w > 0 && r.w <= 96 && r.h <= 96; });
-                if (hasAuthorSignal && !hasBigImg) {
-                  setMark(prevSib, BYLINE_ATTR);
-                  setStyleImp(prevSib, 'display', 'flex');
-                  setStyleImp(prevSib, 'flex-direction', 'row');
-                  walk(prevSib);
-                  unifyFont(prevSib);
-                  hideAvatarMedia(prevSib); // v1.7.39：第二 root 同步隱藏頭像
-                }
-              }
-            }
-            // v1.5.28：日期 item = 含 dateEl 的最近 byline item（NPR 即 <time> 自身）。
-            // 下面時刻隱藏（結構訊號）與作者排序（order）都以它為錨。
-            let dateItem = dateEl;
-            while (dateItem && dateItem !== root && !dateItem.hasAttribute(BYLINE_ITEM_ATTR)) {
-              dateItem = dateItem.parentElement;
-            }
-            const dateItemValid = dateItem && dateItem !== root && dateItem.hasAttribute(BYLINE_ITEM_ATTR);
-
-            // v1.5.28：隱藏 byline 內的發稿時刻（"1:59 PM ET"），只留日期。
-            // 結構訊號（翻譯無關，Jimmy 2026-07-02 Shinkansen 譯後「東岸時間下午
-            // 1:59」殘留實測）：日期 item（<time>）內若有子元素文字符合 BYLINE_DATE_RE
-            //（此 regex 含中文「2026 年 6 月 1 日」），把**不符日期**的兄弟子元素
-            //（時刻/時區）隱藏。BYLINE_DATE_RE 判別日期 vs 時刻、不靠英文時刻字面，
-            // 故 Shinkansen 就地譯文（結構不變、僅換文字）照樣命中。
-            if (dateItemValid) {
-              const kids = Array.from(dateItem.querySelectorAll('*')).filter(bvisible);
-              const hasDateKid = kids.some((c) => BYLINE_DATE_RE.test(bnorm(bdirect(c))));
-              if (hasDateKid) {
-                for (const c of kids) {
-                  const dt = bnorm(bdirect(c));
-                  if (dt && !BYLINE_DATE_RE.test(dt)) setMark(c, BYLINE_TIME_ATTR);
-                }
-              }
-            }
-            // 補充（英文、時刻為獨立 byline item 而非日期 item 子元素的情況）：整段
-            // 直接文字＝純時刻（HH:MM AM/PM TZ）的葉元素也隱藏。譯後 DOM 不命中此
-            // regex，靠上面結構訊號接住。安全閘：隱藏後 root 仍須有日期訊號才動手。
-            const rootHasDateWithout = (el) =>
-              BYLINE_DATE_RE.test(bnorm(root.textContent).replace(bnorm(el.textContent), ''));
-            for (const el of root.querySelectorAll('*')) {
-              if (!bvisible(el)) continue;
-              const dt = bdirect(el);
-              if (dt && BYLINE_TIME_RE.test(dt) && rootHasDateWithout(el)) {
-                setMark(el, BYLINE_TIME_ATTR);
-              }
-            }
-            // v1.5.28：清掉「Heard on <節目>」廣播節目出處 chip（閱讀模式非必要
-            // metadata）。兩訊號並用：① 英文句式開頭（Heard/Aired/Broadcast on）；
-            // ② item 內連結 href 命中 /programs|shows|podcasts|episodes/（翻譯無關
-            // ——href 不被 Shinkansen 翻譯，譯後 DOM 靠這條接住「聽過《早晨版》」）。
-            for (const el of root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`)) {
-              const hitText = BYLINE_PROGRAM_RE.test(bnorm(el.textContent));
-              // 連結含自身（item 本身即 <a> 時 querySelectorAll('a') 不含它）
-              const links = [el, ...el.querySelectorAll('a[href]')]
-                .filter((a) => a.tagName === 'A' && a.getAttribute('href'));
-              const hitUrl = !hitText && links.some((a) => BYLINE_PROGRAM_URL_RE.test(a.getAttribute('href')));
-              if (hitText || hitUrl) setMark(el, BYLINE_PROGRAM_ATTR);
-            }
-            // v1.5.28：作者排在日期前——把日期 item order:1 推到最後，其餘 item 維持
-            // 預設 order:0 排前。不必逐站辨識作者（NPR 作者無 rel=author / By 前綴，
-            // 辨識 fragile），只認可靠的日期錨（<time>，翻譯無關）。
-            if (dateItemValid) setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
-            // v1.7.5：撤銷 byline 子樹的段落載體標記——markTextDivs 依排序約束
-            //（v0.8.49：主流字級要量原站 CSS，須在 ARTICLE_ATTR 前跑）先於 byline
-            // 標記執行，無法用 closest guard 排除。翻譯合併後的 byline 列（div 直含
-            // 文字、無 block 子元素、字級不小於主流）會先被標 text-div，吃到段落
-            // 間距 margin-bottom（userOverrides 排在 byline item margin:0 之後、
-            // 同 specificity 後注入者贏）→ byline 下方多一行段距。byline 是 meta
-            // 列非段落，整棵撤標；restore 端 textDivMarked 的 removeAttribute 對
-            // 已撤元素是冪等 no-op，不需同步剔除。
-            for (const broot of articleEl.querySelectorAll(`[${BYLINE_ATTR}]`)) {
-              if (broot.hasAttribute(TEXT_DIV_ATTR)) broot.removeAttribute(TEXT_DIV_ATTR);
-              for (const d of broot.querySelectorAll(`[${TEXT_DIV_ATTR}]`)) d.removeAttribute(TEXT_DIV_ATTR);
-            }
-            // v1.7.4：孤兒分隔符隱藏（見 BYLINE_SEP_ATTR 常數註解）。必須在所有
-            // 隱藏標記（walk 的 RT、上方 TIME、PROGRAM）之後跑：純分隔符 item 的
-            // 相鄰非分隔符 item（DOM 序、跳過其他分隔符）任一側缺席或已被隱藏 →
-            // 分隔符失去被隔開的對象，一併隱藏。兩側都可見才保留。
-            {
-              const items = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
-              const isHiddenItem = (el) => el.hasAttribute(BYLINE_RT_ATTR) ||
-                el.hasAttribute(BYLINE_TIME_ATTR) || el.hasAttribute(BYLINE_PROGRAM_ATTR);
-              items.forEach((el, i) => {
-                if (!bisSep(el)) return;
-                let prev = null;
-                for (let j = i - 1; j >= 0; j--) { if (!bisSep(items[j])) { prev = items[j]; break; } }
-                let next = null;
-                for (let j = i + 1; j < items.length; j++) { if (!bisSep(items[j])) { next = items[j]; break; } }
-                if (!prev || isHiddenItem(prev) || !next || isHiddenItem(next)) {
-                  setMark(el, BYLINE_SEP_ATTR);
-                }
+            // --- 修法二：per-carrier 色覆寫（少數載體仍不可讀時）---
+            // tymscar table 實測：th 有自己的 color（淺色、為深底設計）被
+            // :not(th) 排除保留，td 無 color 繼承 card 深字——混色容器 bg 還原
+            // 會弄壞多數 td、只能對 th 這類少數載體個別覆寫文字色。覆寫值不
+            // 猜原設計、直接依最終 bg 亮度選高對比色（淺底深字 / 深底淺字）。
+            // 「原設計可讀」前提仍要守：原本就低對比的載體不是 jread 造成，
+            // 不動（同修法一的保守邊界）。
+            for (const c of probe.carriers) {
+              if (!c.newColor) continue;
+              if (contrastRatio(c.newColor, finalBg) >= CONTRAST_MIN_RATIO) continue;
+              if (contrastRatio(c.origColor, probe.origBg) < CONTRAST_MIN_RATIO) continue;
+              contrastBgSnap.push({
+                el: c.el,
+                prop: 'color',
+                prev: c.el.style.getPropertyValue('color'),
+                prevP: c.el.style.getPropertyPriority('color')
               });
-            }
-          }
-          // v1.5.28：移除標題前的分類 kicker / eyebrow（NPR「BUSINESS」連到
-          // /sections/business/）。結構訊號（非站點特判）：標題 H1「之前」、連到
-          // 分類頁（SECTION_URL_RE）的短連結。往上爬到「文字仍等於 kicker 文字」的
-          // 最高 wrapper 一併隱藏（避免只藏連結、留空的 slug 容器殘留高度），比照
-          // byline root 的 climb。href 不被翻譯 → 譯後 DOM 照樣命中（Shinkansen
-          // 把「Business」譯成「商業」，wrapper 文字同步變、climb 仍成立）。獨立於
-          // byline 偵測（無日期的頁面也要清 kicker）。restore 走 bylineMarks 移除標記。
-          // v1.7.43：改取第一個「可見」h1（原本裸 querySelector——站點隱藏的
-          // 響應式重複 h1 在 DOM order 較早時，kicker 錨點會錨錯位置）
-          const titleH1 = firstVisibleH1(articleEl);
-          if (titleH1) {
-            const beforeTitle = (el) =>
-              !!(el.compareDocumentPosition(titleH1) & Node.DOCUMENT_POSITION_FOLLOWING);
-            for (const a of articleEl.querySelectorAll('a[href]')) {
-              if (!bvisible(a) || !beforeTitle(a)) continue;
-              if (!SECTION_URL_RE.test(a.getAttribute('href') || '')) continue;
-              const t = bnorm(a.textContent);
-              if (!t || t.length > 30) continue;
-              let k = a;
-              while (k.parentElement && k.parentElement !== articleEl &&
-                     beforeTitle(k.parentElement) &&
-                     bnorm(k.parentElement.textContent) === t) {
-                k = k.parentElement;
-              }
-              if (!k.hasAttribute(KICKER_ATTR)) {
-                k.setAttribute(KICKER_ATTR, '1');
-                bylineMarks.push({ el: k, attr: KICKER_ATTR });
-              }
+              c.el.style.setProperty(
+                'color',
+                relLuminance(finalBg) > 0.5 ? '#1a1a1a' : '#f0f0f0',
+                'important'
+              );
             }
           }
         }
-      }
+      };
 
-      // v1.6.12：CJK 為主段落標記（須在 TEXT_DIV_ATTR 標記後，才含 div 當段落站）。
-      // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
-      // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
-      // v1.6.24：移到 byline / kicker 標記之後——排除 guard（closest BYLINE_ATTR /
-      // KICKER_ATTR）需要標記已存在，否則中文 byline（「文／某某」）被 justify。
-      cjkJustifyMarked = markCjkParagraphs(articleEl);
-
-      // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
-      // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
-      decorResetMarked = markDecorativeInlines(articleEl);
-
-      // v1.7.8：inline-flow p 標記（v0.7.201 水平 padding reset 豁免）。依賴
-      // computed display（站方 CSS 給的 inline / inline-block），與注入 CSS
-      // 無時序依賴——注入規則不改 p 的 display。
-      inlineFlowPMarked = markInlineFlowParagraphs(articleEl);
-
-      // v0.7.179：strip excessive padding on ancestors between firstInk and
-      // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
-      // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
-      // 純空白。沿 firstInk 往上走到 articleEl，每層 paddingTop > 48px
-      // （reader card 自身 padding 大小）的元素清掉 padding。
-      if (firstInk) {
-        let cur = firstInk.parentElement;
-        const win = articleEl.ownerDocument?.defaultView;
-        while (cur && cur !== articleEl && win) {
-          const cs = win.getComputedStyle(cur);
-          const pt = parseFloat(cs.paddingTop) || 0;
-          const pb = parseFloat(cs.paddingBottom) || 0;
-          if (pt > 48 || pb > 48) {
-            ancestorPaddingSnap.push({
-              el: cur,
-              pt: cur.style.getPropertyValue('padding-top'),
-              ptP: cur.style.getPropertyPriority('padding-top'),
-              pb: cur.style.getPropertyValue('padding-bottom'),
-              pbP: cur.style.getPropertyPriority('padding-bottom'),
-            });
-            if (pt > 48) cur.style.setProperty('padding-top', '0', 'important');
-            if (pb > 48) cur.style.setProperty('padding-bottom', '0', 'important');
-          }
-          cur = cur.parentElement;
-        }
-      }
-
-      // v0.7.183：strip 大幅負 margin-top（CMS layout hack 的遺毒）。
-      // 原站用 margin-top:-80px 類負值把 video block 向上拉進 opinion-
-      // header 的 100px padding 區域做視覺重疊。我們 strip padding 後、
-      // 負 margin 殘留 → video 溢出遮住 subtitle。通則：reader card
-      // 內負 margin-top > 20px 的元素 = layout hack，不適用單欄 card。
-      {
-        const _w = articleEl.ownerDocument?.defaultView;
-        if (_w) {
-          for (const el of articleEl.querySelectorAll('div, section')) {
-            const mt = parseFloat(_w.getComputedStyle(el).marginTop) || 0;
-            if (mt < -20) {
-              negMarginSnap.push({
-                el,
-                mt: el.style.getPropertyValue('margin-top'),
-                mtP: el.style.getPropertyPriority('margin-top'),
-              });
-              el.style.setProperty('margin-top', '0', 'important');
-            }
-          }
-        }
-      }
-
-      // v1.6.21：strip figure 的「不對稱水平 padding」定位 hack。
-      // 症狀（Jimmy cn.nytimes.com 回報）：小直幅照片整塊偏右、左側一大塊空白。
-      // 根因 = 站點對 <figure> 設 `padding-left`（= 欄寬 − 照片寬）把小於欄寬的
-      // 照片在文字欄內靠右對齊（NYT-cn `figure.article-inline-photo` 實證：
-      // padding-left:285px pr:0 → figure 內容區只剩 323px 靠在右緣、img wrapper
-      // width:auto 填滿的是那 323px）。reader mode 已把 figure 強制成滿版單欄
-      // 媒體容器、其 img wrapper 走 width:auto + margin:auto 置中，但沒清 figure
-      // 自身的水平 padding → 內容區被 padding 推偏、置中/填滿都在偏掉的內容區裡算。
-      // 結構通則（非站點特判）：single-column reader 內，figure 是「配圖區塊」、
-      // 其媒體應對齊閱讀軸；figure 上「兩側不對稱」的水平 padding 只可能是原站用
-      // 來把窄媒體推離軸線的定位 hack，清為 0。對稱水平 padding（合法的框內縮 /
-      // 帶背景 inset）差值小、不命中，保留。
-      {
-        const _w = articleEl.ownerDocument?.defaultView;
-        if (_w) {
-          for (const fig of articleEl.querySelectorAll('figure')) {
-            const cs = _w.getComputedStyle(fig);
-            const pl = parseFloat(cs.paddingLeft) || 0;
-            const pr = parseFloat(cs.paddingRight) || 0;
-            if (Math.abs(pl - pr) > 24) {
-              figurePaddingSnap.push({
-                el: fig,
-                pl: fig.style.getPropertyValue('padding-left'),
-                plP: fig.style.getPropertyPriority('padding-left'),
-                pr: fig.style.getPropertyValue('padding-right'),
-                prP: fig.style.getPropertyPriority('padding-right'),
-              });
-              fig.style.setProperty('padding-left', '0', 'important');
-              fig.style.setProperty('padding-right', '0', 'important');
-            }
-          }
-        }
-      }
-
-      // v0.7.246：版心自我檢查（enforce content width）。
-      // 症狀（Jimmy roomie.tw/posts/73403 iPhone 回報）：圖片撐滿 reader card
-      // 版心，但內文段落（v0.7.246）+ 標題 / 分類列（v0.7.247）左右各窄一截。
-      // 根因 = 主文容器與內容之間夾了一層通用 block wrapper 帶水平 padding：
-      //   內文：`div.content { padding: 0 20px }`
-      //   標題列：`div.mobile-info { padding: 0 24px }`（內含可見標題 + 分類 + 日期；
-      //           語意 h1 是 sr-only display:none，可見標題是非 heading 元素）
-      // card 已提供唯一應有的閱讀內距、此 wrapper 的額外水平內距把內容壓窄到
-      // < 設定版心寬。styler 既有 width:auto / max-width:100% 只擋「超寬」、
-      // 擋不掉「被內距夾窄」。
-      //
-      // 通則（非站點特判）：reader card 是單欄 layout，card padding 是唯一應有
-      // 的閱讀內距；card 內任何通用 block wrapper（div / section / article /
-      // aside / header / footer / nav）+ 文字 block（p / h1-6）都不該再貢獻水平
-      // padding/margin。直接遍歷 card 內這些元素清零水平內距——不依賴「找到某個
-      // 段落」（roomie 可見標題不是 heading、隱藏 h1 又空，沿段落鏈走不到標題
-      // wrapper，故 v0.7.247 改為全面遍歷）。
-      //   - 語意縮排容器（blockquote / 清單 / 表格 / 圖說 / 程式碼 / details）
-      //     自身與其後代不動——縮排是刻意的。
-      //   - cleaner 清掉的隱藏雜訊（data-jread-hidden）不動。
-      //   - 水平 margin：既有規則已對這些元素設 width:auto / max-width:100%，
-      //     滿版元素的 auto margin 會算成 0，故 computed 水平 margin 非 0 必是
-      //     「顯式非置中 margin」（narrowing / offset），清掉安全。
-      // v0.8.123：水平 margin 改用「絕對值 > 0.5」判定——既清正 margin（narrowing
-      //   / offset），也清**負 margin**（full-bleed overhang）。theverge.com 實測：
-      //   in-body 圖片包在 `div.duet--article--block-placement` 帶 margin-left:-100px，
-      //   原站用負 margin 讓圖片向版心左外延伸成 full-bleed；reader 單欄 card 下圖片
-      //   被推到內文左側 100px、未與文字欄對齊（Jimmy 2026-06-19 回報「圖片沒置中」）。
-      //   既有 `ml > 0.5` 只清正 margin、漏掉負 margin，且 early-return guard 把
-      //   `ml<=0.5` 當「無事可做」整支跳過。改 abs 判定後負 margin 一併歸零、圖片
-      //   wrapper 退回 column 起點對齊文字。媒體置中（img/picture/video/figure margin:
-      //   auto）另由上方規則處理、不在 TARGET_SEL 內，互不干擾。
-      // 圖片若是 wrapper 外的 full-bleed 子元素本就滿版，清零後內容與圖片同寬
-      // = 符合設定寬度。翻頁模式（multicol）與捲動模式同根因同修法——走「水平
-      // 內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），通用。
-      {
-        const win = articleEl.ownerDocument?.defaultView;
-        if (win) {
-          // 語意縮排容器：縮排刻意（引言 / 清單 / 表格 / 圖說 / 程式碼），
-          // 自身與後代都不清
-          const INDENT_TAGS = new Set(['BLOCKQUOTE', 'UL', 'OL', 'DL', 'MENU', 'LI', 'DD', 'DT',
-            'FIGURE', 'FIGCAPTION', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH',
-            'PRE', 'DETAILS', 'SUMMARY']);
-          // 清水平內距對象：通用 block wrapper + 內文文字 block
-          const TARGET_SEL = 'div, section, article, main, aside, header, footer, nav, p, h1, h2, h3, h4, h5, h6';
-          // v1.6.29 批次化：讀（getComputedStyle）與寫（inline setProperty）分
-          // 兩個 pass——舊版逐元素「讀完就寫」，下一個元素的 computed 讀取被前
-          // 一個元素的寫入弄髒、每個元素各觸發一次強制 style recalc，大頁面
-          // O(n) 次 recalc 是 enter 延遲主要來源之一。先全讀（layout 乾淨、
-          // 只 flush 一次）再全寫，判定值全取自「寫入前」的原站 layout。
-          const zeroHorizPending = [];
-          for (const el of articleEl.querySelectorAll(TARGET_SEL)) {
-            // 自身是語意縮排容器 → 不清（保留引言 / 清單 / 表格縮排）
-            if (INDENT_TAGS.has(el.tagName)) continue;
-            // v1.7.8：inline-flow p 豁免（與 v0.7.201 CSS 規則的 :not 豁免同一份
-            // 事實、雙 path 必須同步）——inline / inline-block p 的水平 padding /
-            // margin 是相鄰元素分隔用途、不是版心內縮（NYT byline 黏字實證：
-            // CSS 規則豁免後 computed padding 恢復 12px，本 pass 若不同步豁免
-            // 會在下一步把它寫成 inline 0 !important、黏字復發）。標記見
-            // markInlineFlowParagraphs（本 pass 之前已跑）。
-            if (el.getAttribute && el.getAttribute(INLINE_FLOW_P_ATTR) === '1') continue;
-            // cleaner 清掉的隱藏雜訊不動
-            if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-            // 在語意縮排脈絡內 → 縮排刻意，跳過
-            let a = el.parentElement, insideIndent = false;
-            while (a && a !== articleEl) {
-              if (INDENT_TAGS.has(a.tagName)) { insideIndent = true; break; }
-              a = a.parentElement;
-            }
-            if (insideIndent) continue;
-            const cs = win.getComputedStyle(el);
-            const pl = parseFloat(cs.paddingLeft) || 0;
-            const pr = parseFloat(cs.paddingRight) || 0;
-            const ml = parseFloat(cs.marginLeft) || 0;
-            const mr = parseFloat(cs.marginRight) || 0;
-            if (pl <= 0.5 && pr <= 0.5 && Math.abs(ml) <= 0.5 && Math.abs(mr) <= 0.5) continue;
-            zeroHorizPending.push({ el, pl, pr, ml, mr });
-          }
-          for (const { el, pl, pr, ml, mr } of zeroHorizPending) {
-            contentWidthSnap.push({
-              el,
-              pl: el.style.getPropertyValue('padding-left'), plP: el.style.getPropertyPriority('padding-left'),
-              pr: el.style.getPropertyValue('padding-right'), prP: el.style.getPropertyPriority('padding-right'),
-              ml: el.style.getPropertyValue('margin-left'), mlP: el.style.getPropertyPriority('margin-left'),
-              mr: el.style.getPropertyValue('margin-right'), mrP: el.style.getPropertyPriority('margin-right'),
-            });
-            if (pl > 0.5) el.style.setProperty('padding-left', '0', 'important');
-            if (pr > 0.5) el.style.setProperty('padding-right', '0', 'important');
-            if (Math.abs(ml) > 0.5) el.style.setProperty('margin-left', '0', 'important');
-            if (Math.abs(mr) > 0.5) el.style.setProperty('margin-right', '0', 'important');
-          }
-
-          // v1.7.16：full-bleed「translateX(-50%) 置中對」殘留 reset。
-          // 症狀（Netflix Tudum，Jimmy 2026-07-24 截圖）：主文 inline 圖左移
-          // 半個圖寬（wrapper computed transform: matrix(1,0,0,1,-304,0)）、
-          // 掛出 card 左緣被裁。根因：站方 full-bleed 置中 idiom 是成對的
-          // 「+50% 定位（grid 佈局 / left:50% / margin-left:50%）↔ stylesheet
-          // transform: translateX(-50%)」；reader 的 grid 塌平（cleaner
-          // collapseInnerGridFlex）/ 寬度正規化把 + 半邊拆掉、-50% translate
-          // 殘留 → 元素平移出框。margin 變體已由上方 zeroHoriz abs 判定清
-          // （v0.8.123 theverge 負 margin full-bleed），transform 變體這裡補。
-          // 結構訊號（不綁站點 / class，硬規則 3）：
-          //   - computed transform 是純水平位移（matrix 其餘分量 identity）、
-          //     |tx| > 8px（有意義的位移）
-          //   - 目前 rect 水平掛出 parent 內容框（左緣或右緣超出 > 8px）
-          //   - 位移歸零後恰好回到框內（±4px）→ 判定為被拆散的置中對
-          // carousel 滑軌不誤傷：軌寬 > parent、歸零後仍出框右緣 → fits 不
-          // 成立。合法裝飾性小位移（|tx| <= 8 或未出框）不碰。跑在 zeroHoriz
-          // 寫入之後——量的是 reader 最終 layout 的出框狀態。
-          {
-            const parseTx = (t) => {
-              if (!t || t === 'none') return null;
-              let m = /^matrix\(1,\s*0,\s*0,\s*1,\s*(-?[\d.]+),\s*0\)$/.exec(t);
-              if (m) return parseFloat(m[1]);
-              // jsdom computed 不解析成 matrix，退回 specified 語法
-              m = /^translateX\((-?[\d.]+)px\)$/i.exec(t);
-              if (m) return parseFloat(m[1]);
-              m = /^translate\((-?[\d.]+)px(?:\s*,\s*0(?:px)?)?\)$/i.exec(t);
-              if (m) return parseFloat(m[1]);
-              return null;
-            };
-            const translatePending = [];
-            for (const el of articleEl.querySelectorAll('div, section, figure, picture, img')) {
+      const passBlockquoteSummaryContrast = () => {
+        // v1.0.6 light theme：bg 保留但文字色被強制的語意元素（blockquote /
+        // summary）深底深字守門。
+        // Root cause（通則，非站點特例）：BG_PRESERVE_NOT 保留 figure/figcaption/
+        // summary/blockquote 的原站背景，但 COLOR_PRESERVE_NOT 只排除 figcaption——
+        // blockquote / summary 的文字在 light theme 被 color: inherit 強制成 reader
+        // 卡片深色。站點若把這類元素配深色不透明背景（autocar.co.uk 把圖說做成
+        // <blockquote class="image-field-caption"> bg rgb(48,48,48)），深字落深底＝
+        // 整條黑條不可讀（cage 量 1.59:1）。與 figcaption v0.8.169「文字已決定走
+        // 卡片色 → 背景跟著透明」同款修法形狀。
+        //
+        // 為什麼用 contrast gate 而非比照 figcaption 無條件清背景：blockquote 引言框
+        // 可能有「淺底 + 深字」的合理設計（行 1917 註解：引言框靠 padding + 背景
+        // 撐視覺）——無條件清會弄丟正常引言框的底色。以實際對比 gate：只有「強制
+        // 文字色對保留 effective bg < 3:1（占比 >= 40%）」才把背景正規化為透明
+        // （讓白卡透出、深字變可讀），高對比的淺底引言框一律不動（保守邊界，同
+        // pre/table contrast guard 與 v0.7.225 light guard）。figure 直接文字罕見、
+        // figcaption 已另條 light 規則處理，故只掃 blockquote / summary。
+        //
+        // 訊號層次：本層驗「blockquote/summary 直接文字載體 vs 保留 bg 的 WCAG
+        // 對比」一層；dark / sepia 不走（theme.text 非 null → 由下方 phase 3 兜底
+        // 接管全 card 文字色）。restore 走 contrastBgSnap 既有通道。
+        if (!theme.text) {
+          const _win = articleEl.ownerDocument?.defaultView;
+          if (_win && _win.getComputedStyle) {
+            const cardBg = parseCssColor(theme.articleBg) || WHITE;
+            let bqScanned = 0;
+            for (const el of articleEl.querySelectorAll('blockquote, summary')) {
+              if (bqScanned >= CONTRAST_MAX_TARGETS) break;
               if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
-              const cs = win.getComputedStyle(el);
-              const tx = parseTx(cs.transform);
-              if (tx === null || Math.abs(tx) <= 8) continue;
-              const parent = el.parentElement;
-              if (!parent) continue;
-              let r, pr2;
-              try { r = el.getBoundingClientRect(); pr2 = parent.getBoundingClientRect(); } catch (_) { continue; }
-              if (!r || !pr2 || r.width < 1 || pr2.width < 1) continue;
-              const overflows = r.left < pr2.left - 8 || r.right > pr2.right + 8;
-              if (!overflows) continue;
-              const fits = (r.left - tx) >= pr2.left - 4 && (r.right - tx) <= pr2.right + 4;
-              if (!fits) continue;
-              translatePending.push(el);
+              const cs = _win.getComputedStyle(el);
+              if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+              // 無自身背景（透明）→ effective bg 由白卡決定、不可能深底深字，跳過
+              const ownBg = parseCssColor(cs.backgroundColor);
+              if (!ownBg || ownBg.a < 0.05) continue;
+              bqScanned++;
+              // 注入後實際文字色（color: inherit 已走新 cascade，見
+              // collectTextCarriers 註解——用注入前舊色會誤判）
+              const carriers = collectTextCarriers(el, _win);
+              if (!carriers.length) continue;
+              for (const c of carriers) c.newColor = parseCssColor(_win.getComputedStyle(c.el).color);
+              const effBg = compositeBgOver(el, articleEl, cardBg, _win);
+              if (lowContrastFraction(carriers, effBg, 'newColor') >= CONTRAST_LOW_FRACTION) {
+                contrastBgSnap.push({
+                  el,
+                  prop: 'background-color',
+                  prev: el.style.getPropertyValue('background-color'),
+                  prevP: el.style.getPropertyPriority('background-color')
+                });
+                el.style.setProperty('background-color', 'transparent', 'important');
+              }
             }
-            for (const el of translatePending) {
-              translateResetSnap.push({
-                el,
-                tf: el.style.getPropertyValue('transform'),
-                tfP: el.style.getPropertyPriority('transform')
-              });
-              el.style.setProperty('transform', 'none', 'important');
-            }
           }
         }
-      }
+      };
 
-      // v0.8.123：圖說字級下限（caption font-size floor）。
-      // v0.7.120 刻意把 figcaption 排除在 BODY_TEXT_SEL 外、保留原站 caption
-      // typography（caption 普遍比 body 小一階是合理的階層差異化）。但部分站把
-      // caption 設得過小（theverge.com 實測 figcaption 11px 配 ~18px 內文 →
-      // 太小難讀，Jimmy 2026-06-19 回報「圖說閱讀困難」）。修法不回到「caption =
-      // body」（會抹平階層、撞 v0.7.120 已知問題），改設**下限**：只把小於 floor
-      // 的 caption 撐到 floor，已 >= floor 的 caption 維持原站字級不動（不縮大字、
-      // 不抹平正常 caption 階層）。floor = max(14px, round(body * 0.78))——隨使用者
-      // 字級縮放（body 大時 caption floor 同步變大）、且 14px 絕對下限保底；0.78
-      // 係數讓 caption 仍明顯小於 body、保留階層。opts.fontSize 為 0（Auto sentinel、
-      // 保留原站 body 字級）時用 18 當 body 估計值。inline !important 蓋站點 caption
-      // class rule。snapshot 對稱還原（與 titleFsSnap 同款）。
-      {
-        const _w = articleEl.ownerDocument?.defaultView;
-        if (_w) {
-          const bodyFs = opts.fontSize || 18;
-          const capFloor = Math.max(14, Math.round(bodyFs * 0.78));
-          // v1.6.29 批次化：先全讀 computed font-size 再全寫（同 zeroHoriz，
-          // 避免逐元素讀寫交錯的 O(n) 強制 recalc）
-          const capPending = [];
-          for (const fc of articleEl.querySelectorAll('figcaption')) {
-            if (fc.closest('[data-jread-hidden="1"]')) continue;
-            const curFs = parseFloat(_w.getComputedStyle(fc).fontSize) || 0;
-            if (curFs > 0 && curFs < capFloor - 0.5) capPending.push(fc);
-          }
-          for (const fc of capPending) {
-            captionFsSnap.push({
-              el: fc,
-              fs: fc.style.getPropertyValue('font-size'),
-              fsP: fc.style.getPropertyPriority('font-size'),
-            });
-            fc.style.setProperty('font-size', capFloor + 'px', 'important');
-          }
-        }
-      }
-
-      // v1.7.19：圖說「credit 靠尾端」對齊 reset。
-      // 症狀（archive.ph WSJ 存檔頁，Jimmy 2026-07-27 截圖）：hero figcaption
-      // 帶站方 text-align:right（WSJ credit 靠右下慣例、archive.today 再 inline
-      // 化成 element style），reader 窄版心下 caption + credit 連排折成兩行 →
-      // 非末行填滿整寬、末行孤懸右緣，讀起來像斷版。原站語境「寬 hero 右下角
-      // 一小行 credit」在 reader 單欄不存在，靠尾端對齊失去意義。
-      // 通則（硬規則 3，語意標籤 + computed 值判定，非站點 / class 特判）：
-      // reader scope 內 figcaption 的 computed text-align 是「文向尾端」——
-      // ltr 的 right / rtl 的 left / 兩者的 end——→ inline text-align:start
-      // !important 打回自然流向（inline !important 蓋 archive.today inline 化
-      // 的站方值）。center 是排版意圖、自然流向（ltr left / rtl right / start）
-      // 本來就對，皆不碰。與 v1.5.15 / v1.6.20 figcaption 正規化家族同哲學：
-      // 圖說回到 normal flow 的自然排版。
-      {
-        const _w2 = articleEl.ownerDocument?.defaultView;
-        if (_w2) {
-          const alignPending = [];
-          for (const fc of articleEl.querySelectorAll('figcaption')) {
-            if (fc.closest('[data-jread-hidden="1"]')) continue;
-            const cs2 = _w2.getComputedStyle(fc);
-            const ta = cs2.textAlign;
-            const rtl = cs2.direction === 'rtl';
-            const tailAligned = ta === 'end' || (rtl
-              ? (ta === 'left' || ta === '-webkit-left')
-              : (ta === 'right' || ta === '-webkit-right'));
-            if (tailAligned) alignPending.push(fc);
-          }
-          for (const fc of alignPending) {
-            captionAlignSnap.push({
-              el: fc,
-              ta: fc.style.getPropertyValue('text-align'),
-              taP: fc.style.getPropertyPriority('text-align'),
-            });
-            fc.style.setProperty('text-align', 'start', 'important');
-          }
-        }
-      }
-
-      // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
-      // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
-      // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
-      // Runtime walk：比較每個 block 元素的 rendered width 與 card width，
-      // 超寬的強制 max-width:100% + box-sizing:border-box。max-width:100%
-      // 相對 parent 逐層 cascade，最外層被 card 擋住、內層隨之縮。
-      // v0.7.180：title font-size inline override。CMS 高 specificity rule
-      // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
-      // `.opinion-header > .wp-block-group .title-and-dek-column
-      //  h1.wp-block-post-title[class*=...] { font-size: 2rem !important }`
-      // specificity (0,5+,1) 打敗 jread stylesheet (0,1,1)），CSS stylesheet
-      // 打不贏。inline !important 是最高優先級。
-      // 獨立搜尋第一個可見 h1（不依賴 firstInk 是否 H tag）：firstInk 可能是
-      // P（副標題/byline 在 DOM order 比 H1 早出現時），title override 不該
-      // 因此 miss。
-      if (overrides.titleFontSize) {
-        const titleH1 = firstInk && /^H1$/.test(firstInk.tagName)
-          ? firstInk
-          : firstVisibleH1(articleEl);
-        if (titleH1) {
-          titleFsSnap = {
-            el: titleH1,
-            fs: titleH1.style.getPropertyValue('font-size'),
-            fsP: titleH1.style.getPropertyPriority('font-size'),
-          };
-          titleH1.style.setProperty('font-size', opts.titleFontSize + 'px', 'important');
-        }
-      }
-
-      // v0.8.3：hero 標題字級下限（Jimmy 2026-06-09 規則）。Auto 模式
-      // （titleFontSize=0、不強制覆寫）下，原站把標題做得太小（roomie.tw
-      // mobile span.title 23px、近內文 18px，視覺上不像標題）時，把 hero
-      // 拉到至少 1.5× 內文字級。只在低於下限時 bump（max 語意），原站 hero
-      // 夠大就不動。hero = detector inject 的 H1（[data-jread-injected-title]）
-      // 優先，否則第一個可見 h1。override 模式由上方 titleFsSnap 精準覆寫、
-      // 不走這條（exact size 已贏）。
-      if (!overrides.titleFontSize) {
-        const floorPx = Math.round((opts.fontSize || DEFAULTS.fontSize) * 1.5);
-        const heroEl = articleEl.querySelector('[data-jread-injected-title="1"]')
-          || (firstInk && /^H1$/.test(firstInk.tagName)
-            ? firstInk
-            : firstVisibleH1(articleEl));
-        if (heroEl && floorPx > 0) {
-          const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
-          const cur = win ? (parseFloat(win.getComputedStyle(heroEl).fontSize) || 0) : 0;
-          if (cur < floorPx) {
-            heroFloorSnap = {
-              el: heroEl,
-              fs: heroEl.style.getPropertyValue('font-size'),
-              fsP: heroEl.style.getPropertyPriority('font-size'),
+      const passDarkSepiaContrastPhase3 = () => {
+        // v0.8.45 dark / sepia contrast 兜底層（phase 3）：CSS 通則層管不到的
+        // 低對比文字逐元素修色。CSS cascade 有結構性輸局——站點高 specificity
+        // !important rule（twz `.recurrent-author-widgets .recurrent-author-widget
+        // .author-bio` = (0,3,0) !important，贏 jread color-inherit 的 (0,2,12)，
+        // probe 實證）、@layer important 反轉、CSS-in-JS 動態注入——stylesheet
+        // 軍備競賽永遠有更高的站點。inline style + !important 是 author origin
+        // 最高優先級，cascade 戰爭一律終結。
+        // 保守邊界：只修「對 effective bg 對比 < 3:1」的元素——本來就不可讀，
+        // 改色是淨改善；可讀的原站色（表格漲跌紅綠、syntax token、mark 高亮上
+        // 的深字）一律不動。候選色挑對比較高者（亮底深字 / 暗底用 theme 淺字），
+        // 連結用 link 色變體維持與正文的雙通道辨識。修後仍 < 3:1 則不動（與
+        // v0.7.225 light guard 同款保守分支——不是 jread 能救的不亂動）。
+        // restore 走 contrastBgSnap 既有通道；theme 切換走 main.js restore→apply
+        // 重跑，inline 不殘留、不污染重算。
+        // 訊號層次：本層驗「直接文字載體 vs effective bg 的 WCAG 對比」；不驗
+        // 圖片 / iframe 內部（jread 摸不到）、不驗 lazy-load 晚到的內容（apply
+        // 當下不存在的元素掃不到——對 theme 切換場景夠用，極端 lazy 站漏網）。
+        //
+        // SPA cascade 時序坑（sspai instrument 實證）：apply() 同步流程內
+        // getComputedStyle 量到的 bg 可能還是站點值——SPA hydration 期站點動態
+        // <style> 與 jread styleEl 的 cascade 勝負會在 apply 之後翻轉（sspai TH
+        // 在 phase 3 當下 bg=#f7f7f9、1.5s 後才變 transparent），照當下值修色
+        // 會做出「亮底深字」之後變「暗底深字」ratio 1。所以 effective bg 不照
+        // 當下 computed 算，而是按「jread 規則的目標狀態」算：會被上方背景中和
+        // 規則打 transparent 的層（tag 清單同款生成）一律跳過其 bg。代價：站點
+        // rule 永久賽贏中和規則的極端站會被當成已中和而漏修（保守邊界——漏修
+        // 不誤傷）。
+        if (theme.text) {
+          const _win = articleEl.ownerDocument?.defaultView;
+          if (_win && _win.getComputedStyle) {
+            const cardBg = parseCssColor(theme.articleBg) || WHITE;
+            const neutralizedSel = [...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS].join(',');
+            const skipNeutralized = (cur) => !!(cur.matches && cur.matches(neutralizedSel));
+            // v1.7.44 E1 效能：兩段式讀寫分離。原本逐元素「讀 computed → 命中即寫
+            // inline color」交錯，每次寫入都讓後續 getComputedStyle 重新 style recalc
+            // （至多 3,000 元素 × 祖先鏈）。改 phase A 全讀收集 fixes、phase B 統一寫。
+            // 語意差異（可接受）：原交錯版中祖先先被修色時、繼承色的子孫重量會過
+            // contrast gate 而跳過；分離版子孫以舊繼承色判定、可能同被收進 fixes——
+            // 但候選色同一組、挑中同色，視覺結果相同，restore 各自還原 inline 不受序影響。
+            //
+            // effective bg 沿 DOM 樹 memoize：effBg(el) = 自身 bg 圖層疊在
+            // effBg(parent) 上（opaque 圖層蓋掉底下一切 = blendOver 自然語意），與
+            // compositeBgOver(el, null, cardBg, _win, skipNeutralized) 等價；同一
+            // 祖先鏈只算一次，兄弟元素共用祖先段快取。
+            const bgMemo = new Map();
+            const effBgOf = (el) => {
+              const chain = [];
+              let cur = el;
+              let cached = null;
+              while (cur && cur.nodeType === 1) {
+                if (bgMemo.has(cur)) { cached = bgMemo.get(cur); break; }
+                chain.push(cur);
+                if (cur === _win.document.body) break;
+                cur = cur.parentElement;
+              }
+              let base = cached ? cached : { ...cardBg };
+              for (let i = chain.length - 1; i >= 0; i--) {
+                const node = chain[i];
+                if (!skipNeutralized(node)) {
+                  const c = parseCssColor(_win.getComputedStyle(node).backgroundColor);
+                  if (c && c.a > 0) base = blendOver(c, base);
+                }
+                bgMemo.set(node, base);
+              }
+              return base;
             };
-            heroEl.style.setProperty('font-size', floorPx + 'px', 'important');
+            let scanned = 0;
+            let fixed = 0;
+            const contrastFixes = [];
+            for (const el of articleEl.querySelectorAll('*')) {
+              if (scanned >= 3000 || fixed >= 300) break;
+              const tag = el.tagName.toUpperCase();
+              if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
+              let len = 0;
+              for (const n of el.childNodes) {
+                if (n.nodeType === 3) len += n.textContent.trim().length;
+              }
+              if (len < 4) continue;
+              scanned++;
+              if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+              const cs = _win.getComputedStyle(el);
+              if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+              const fg = parseCssColor(cs.color);
+              if (!fg || fg.a < 0.5) continue;
+              const bg = effBgOf(el);
+              if (contrastRatio(fg, bg) >= CONTRAST_MIN_RATIO) continue;
+              const isLink = !!(el.closest && el.closest('a'));
+              // 深色候選：#1a1a1a（深字）/ #1a73e8（light theme link 色，亮底上 5.2:1）
+              const candidates = isLink ? [theme.link, '#1a73e8'] : [theme.text, '#1a1a1a'];
+              let best = null;
+              let bestRatio = -1;
+              for (const cstr of candidates) {
+                const c = parseCssColor(cstr);
+                const r = c ? contrastRatio(c, bg) : 0;
+                if (r > bestRatio) { bestRatio = r; best = cstr; }
+              }
+              if (!best || bestRatio < CONTRAST_MIN_RATIO) continue;
+              contrastFixes.push({ el, best });
+              fixed++;
+            }
+            for (const f of contrastFixes) {
+              contrastBgSnap.push({
+                el: f.el,
+                prop: 'color',
+                prev: f.el.style.getPropertyValue('color'),
+                prevP: f.el.style.getPropertyPriority('color')
+              });
+              f.el.style.setProperty('color', f.best, 'important');
+            }
           }
         }
-      }
+      };
 
-      // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
-      // flex/grid 容器強制改成 block display + height auto，讓並列圖在 reader mode
-      // 下垂直堆疊、不再被父容器固定 height 切掉內容 + 不再 overflow 蓋下方文字。
-      // 案例（synapseching.substack.com /p/17 Jimmy 2026-05-13 回報）：
-      //   IMG → PICTURE → DIV.imageRow（display:flex, height:230px）→ ...
-      //   imageRow flex 子 align-items:stretch 把 picture 拉到 230，但 styler
-      //   `img { height:auto !important }` 讓 IMG 跑 natural ratio = 295，
-      //   IMG 超出 picture 65px → 視覺覆蓋下方段落文字。
-      //   單純 height:auto 又會讓 flex container 內並列圖各取 max-width:100% 加總
-      //   溢出 article 右側（第二張 img.left=952 > article.right=944）。
-      //   結論：reader card 單欄閱讀情境下 flex/grid 並列 layout 無保留必要，
-      //   直接 display:block 讓兩張圖垂直堆疊最穩。
-      // 通則 selector：祖先到 articleEl 為止，掃所有 display:flex / display:grid 且
-      // 直接子含 picture / img / figure 的元素，runtime 設 inline !important
-      // 蓋過原站 stylesheet。CSS :has() jsdom 不支持，改 runtime 解決。
-      // v0.7.144：原 code 對主文每個後代跑 getComputedStyle 找 flex/grid + 含
-      // picture/img/figure 直接子的 wrapper。大頁面 + 多次設定變更時負荷重。
-      // 改為先 querySelectorAll('picture, img, figure') 收媒體節點 → 各自往上
-      // walk parent 鏈到 articleEl 為止收集祖先 Set → 對 Set 內元素才跑
-      // getComputedStyle。從 O(全 DOM) → O(媒體節點 × 平均深度)；純文字主文
-      // 直接 short-circuit 0 次 getComputedStyle。
-      const mediaAncestors = new Set();
-      const mediaNodes = articleEl.querySelectorAll('picture, img, figure');
-      for (const media of mediaNodes) {
-        let cur = media.parentElement;
-        while (cur && cur !== articleEl) {
-          mediaAncestors.add(cur);
-          cur = cur.parentElement;
-        }
-      }
-      // v1.6.29 批次化：先全讀（computed display + 直接子媒體判定）再全寫——
-      // 舊版逐元素讀寫交錯，每個 gallery 容器各觸發一次強制 recalc
-      const galleryPending = [];
-      for (const el of mediaAncestors) {
-        // v0.8.45：排除 player 結構（與 v0.7.182 background strip 同原則）。
-        // ms.now 實測：JW Player 的 jw-wrapper（含 poster img、computed flex）
-        // 被本規則打成 display:block + height:auto → 容器塌成 16px → JW JS
-        // 對 video 寫負 margin 置中於塌掉的容器 → video absolute 突出 342px
-        // 蓋住 dek 文字 + 流空間錯位出 245px 假空白（gap audit y=206 實證）。
-        // player 內部 layout 由 player JS 自己管理，jread 不該動。
-        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
-        // v1.0.8：byline 區自管 flex 一行 layout（見 BYLINE_ATTR），不被 gallery
-        // flatten 成 block——否則 inline display:block !important 蓋掉 byline flex
-        if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
-        const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
-        if (!cs) continue;
-        if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
-        let hasMediaChild = false;
-        for (const c of el.children) {
-          if (c.tagName === 'PICTURE' || c.tagName === 'IMG' || c.tagName === 'FIGURE') {
-            hasMediaChild = true;
-            break;
+      const passCodeBlockBgPhase4 = () => {
+        // v1.5.17 code block 背景辨識度（phase 4，所有主題）：原站常把 `<pre>`
+        // 程式碼框做成「透明底 + 細淺色邊框」（Medium 實測 bg rgba(0,0,0,0)、
+        // border 1px #e5e5e5）。reader card 在 sepia(#eee2cb) / gray(#ededed) 主題
+        // 下，淺邊框 ≈ 卡片色幾乎不可見、透明底又透出卡片色 → code block 與主文
+        // 完全融在一起、看不出邊界（Jimmy 2026-06-29 medium 截圖回報）。
+        //
+        // Root cause（通則）：BG_PRESERVE_NOT 保留 pre 背景（語法高亮塊的實心底 +
+        // token 色是配套設計、不能清）。但「自身背景透明」的純文字 code 塊沒有任何
+        // 區隔載體，靠原站淺邊框在深/暖卡上失效。
+        //
+        // 修法：只對「自身 background-color alpha < 0.1（透明 / 近透明）」的 pre
+        // 補主題協調底色 theme.codeBlockBg（半透明、疊在卡片上產生 recessed panel）。
+        // gate 在 alpha：語法高亮塊（實心 #282c34 之類，alpha=1）一律跳過、原樣保留，
+        // 零誤傷其 token 對比。所有主題都跑（sepia/gray 是回報情境、light/dark 同樣
+        // 受益）。snapshot 走 contrastBgSnap 既有還原通道（theme 切換 restore→apply
+        // 重算，inline 不殘留）。
+        if (theme.codeBlockBg) {
+          const _win = articleEl.ownerDocument?.defaultView;
+          if (_win && _win.getComputedStyle) {
+            let preScanned = 0;
+            for (const pre of articleEl.querySelectorAll('pre')) {
+              if (preScanned >= CONTRAST_MAX_TARGETS) break;
+              if (pre.closest && pre.closest('[data-jread-hidden="1"]')) continue;
+              // 嵌套（pre 內 pre，罕見）只處理最外層，避免疊兩層底色
+              if (pre.parentElement && pre.parentElement.closest &&
+                  pre.parentElement.closest('pre')) continue;
+              preScanned++;
+              const ownBg = parseCssColor(_win.getComputedStyle(pre).backgroundColor);
+              // 自身有實心 / 明顯底色（語法高亮塊）→ 保留原設計，不補
+              if (ownBg && ownBg.a >= 0.1) continue;
+              contrastBgSnap.push({
+                el: pre,
+                prop: 'background-color',
+                prev: pre.style.getPropertyValue('background-color'),
+                prevP: pre.style.getPropertyPriority('background-color')
+              });
+              pre.style.setProperty('background-color', theme.codeBlockBg, 'important');
+            }
           }
         }
-        if (!hasMediaChild) continue;
-        galleryPending.push(el);
-      }
-      for (const el of galleryPending) {
-        // snapshot 原 inline value/priority for restore
-        const prior = {
-          el,
-          display: el.style.getPropertyValue('display'),
-          displayPriority: el.style.getPropertyPriority('display'),
-          height: el.style.getPropertyValue('height'),
-          heightPriority: el.style.getPropertyPriority('height'),
-          minHeight: el.style.getPropertyValue('min-height'),
-          minHeightPriority: el.style.getPropertyPriority('min-height')
-        };
-        galleryFlex.push(prior);
-        el.style.setProperty('display', 'block', 'important');
-        el.style.setProperty('height', 'auto', 'important');
-        el.style.setProperty('min-height', '0', 'important');
+      };
 
-        // v0.7.94：gallery flex 改 block 後原 flex gap 失效，直接子（figure /
-        // picture / img / a / div）會緊貼。逐個媒體子設 margin-bottom: 12px
-        // !important 補空白。snapshot 紀錄原 inline margin-bottom 以便 restore。
-        // Jimmy 2026-05-13 回報 v0.7.93 修完三張並列照片改垂直後緊貼無間距。
-        const mediaTags = new Set(['FIGURE', 'PICTURE', 'IMG', 'A', 'DIV']);
-        for (const child of el.children) {
-          if (!mediaTags.has(child.tagName)) continue;
-          // v1.7.29：inline emoji / icon 跳過 gap 補償——inline 圖的 margin-bottom
-          // 不產生流間距，只把圖沿 baseline 往上抬（錯位）。與上方 gallery 偵測
-          // guard 同一判定基礎（皆以 INLINE_IMG_ATTR 為準）但獨立兜底：真 gallery
-          // （另有大圖子）仍會攤平，此處確保混在其中的 icon 不被塞 margin
-          if (child.tagName === 'IMG' &&
-              (child.hasAttribute(INLINE_IMG_ATTR) || child.hasAttribute(ICON_IMG_ATTR))) continue;
-          // 排除「不含媒體」的 div（gallery wrapper 內偶爾混 spacer / caption），
-          // 只對「自身含 img/picture/figure 子孫」的 element 加 margin。
-          const hasMediaDescendant = child.tagName === 'IMG' || child.tagName === 'PICTURE' || child.tagName === 'FIGURE' ||
-            !!(child.querySelector && child.querySelector('img, picture, figure'));
-          if (!hasMediaDescendant) continue;
-          const priorChild = {
-            el: child,
-            marginBottom: child.style.getPropertyValue('margin-bottom'),
-            marginBottomPriority: child.style.getPropertyPriority('margin-bottom')
-          };
-          galleryFlex.push(priorChild);
-          child.style.setProperty('margin-bottom', '12px', 'important');
+      const passInstallListeners = () => {
+        // v0.7.90：install scroll listener（auto-hide scrollbar）。passive 確保
+        // 不卡 scroll 效能；window 層級捕捉文件捲動事件。重複 apply 時 remove
+        // 後 add 防止 listener 累積（瀏覽器 dedupe 但保險，restore 也對稱乾淨）。
+        window.removeEventListener('scroll', onScrollFlash, { passive: true });
+        window.addEventListener('scroll', onScrollFlash, { passive: true });
+
+        // 閱讀進度條——v1.5.2：分頁模式不注入（底部頁碼指示器已表閱讀進度，頂端進度條
+        // 為重複功能；Jimmy 2026-06-27）。styler 是進度條生命週期的單一資料源：依
+        // opts.pagedMode 決定注入與否，paged-mode.js 不再碰它。切到分頁模式（scroll→
+        // paged reapply）時把既有的移除，騰出頂端區域給文章排版（paged 卡片上緣 gutter
+        // 同步收斂，見上方 PAGED_TOP_GUTTER）。
+        window.removeEventListener('scroll', onScrollProgress, { passive: true });
+        if (opts.pagedMode) {
+          const existing = document.getElementById(PROGRESS_ID);
+          if (existing) existing.remove();
+          progressEl = null;
+        } else {
+          progressEl = document.getElementById(PROGRESS_ID);
+          if (!progressEl) {
+            progressEl = document.createElement('div');
+            progressEl.id = PROGRESS_ID;
+            (document.head?.parentElement || document.documentElement).appendChild(progressEl);
+          }
+          window.addEventListener('scroll', onScrollProgress, { passive: true });
+          onScrollProgress();
         }
-      }
 
-      // v0.8.137：媒體 wrapper 用 aspect-ratio 預留固定比例 placeholder（lazy-load
-      // 占位），但實際載入的圖片比例 ≠ 預留比例時，wrapper 高度按 aspect-ratio 撐
-      // 出超過圖片內容的空間 → 圖片下方一大塊假空白（Jimmy 2026-06-20 The Verge
-      // lede / gallery wrapper 用雜湊 atomic class 設 aspect-ratio:1/1、實際 landscape
-      // 圖渲染 405px、box 撐 608px → 203px 假空白；截圖回報）。
-      // 上方 CSS [class*="ratio" i] reset 只認 class 名含 "ratio" 的容器（New Yorker
-      // AspectRatioContainer 類），SPA 站把 aspect-ratio 塞進 hash class（_1m5y14k5）
-      // 漏網。改用 computed aspect-ratio !== 'auto' 這個結構訊號（非 class / hostname
-      // 特判，符合硬規則 3）：mediaAncestors 內任何帶實際 aspect-ratio 的 wrapper
-      // 一律歸 auto，讓 box 高度退回圖片 static flow 的自然高度。
-      // 安全性：
-      //   - mediaAncestors 由 picture/img/figure 上溯收集，純 iframe 影片 embed
-      //     （aspect-ratio:16/9 + iframe absolute 撐高、無 img）不在集合內、不誤殺。
-      //   - player 結構額外排除（與 galleryFlex 同原則）。
-      //   - 自驗 collapse guard：歸 auto 後若 box 塌到比內圖渲染高度還矮（內容本身
-      //     absolute、aspect-ratio 是唯一高度來源，例 New Yorker overlay 類但 class
-      //     不含 "ratio" 漏掉 static-flow 配套）→ 還原 aspect-ratio 避免裁切。內圖
-      //     尚未載入（高度 0）時仍 reset：未載圖沒有要保護的高度，box 跟著塌、載入
-      //     後 height:auto 自然撐起。
-      // v1.6.29 批次化：write-then-measure guard 改成「全讀（aspect-ratio +
-      // 內圖高）→ 全 reset → 一次 flush 量全部 afterH → 還原失敗者」——舊版逐
-      // 元素 reset + getBoundingClientRect，每個 ratio box 各觸發一次強制
-      // reflow。批次量測下 afterH 反映「全部 ratio box 都已 reset」的 layout；
-      // 舊版是逐一累進量測——巢狀 ratio wrapper 極端場景下 guard 判定時點不同，
-      // 但兩者最終狀態一致（通過者本來就全會被 reset），wired/theverge harness
-      // 驗證行為不變。
-      const ratioPending = [];
-      for (const el of mediaAncestors) {
-        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
-        const win = el.ownerDocument?.defaultView;
-        const cs = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
-        if (!cs || !cs.aspectRatio || cs.aspectRatio === 'auto') continue;
-        const innerMedia = el.querySelector('img, picture, video');
-        const imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
-        ratioPending.push({
-          el, imgH,
-          priorAR: el.style.getPropertyValue('aspect-ratio'),
-          priorARP: el.style.getPropertyPriority('aspect-ratio')
-        });
-      }
-      // 寫入前先 push 進 snapshot 陣列（rollback 安全：批次中途拋錯時 v1.6.27
-      // 的部分快照自我還原才涵蓋已寫入的元素）；guard 失敗者事後還原並自陣列移除
-      const ratioPushStart = ratioBoxes.length;
-      for (const r of ratioPending) {
-        ratioBoxes.push({ el: r.el, aspectRatio: r.priorAR, aspectRatioPriority: r.priorARP });
-        r.el.style.setProperty('aspect-ratio', 'auto', 'important');
-      }
-      // getBoundingClientRect 同步 flush layout（整批只 flush 一次），afterH
-      // 反映 reset 後高度
-      for (const r of ratioPending) r.afterH = r.el.getBoundingClientRect().height;
-      {
-        const keptRatio = [];
-        ratioPending.forEach((r, i) => {
-          if (r.imgH > 0 && r.afterH < r.imgH * 0.8) {
-            if (r.priorAR) r.el.style.setProperty('aspect-ratio', r.priorAR, r.priorARP || '');
-            else r.el.style.removeProperty('aspect-ratio');
-            return;
-          }
-          keptRatio.push(ratioBoxes[ratioPushStart + i]);
-        });
-        ratioBoxes.length = ratioPushStart;
-        for (const k of keptRatio) ratioBoxes.push(k);
-      }
+        // v0.7.91：install SPACE keydown listener（capture phase 比原站 bubble
+        // listener 早攔，比原站 keydown 攔截先收到 SPACE）。重複 apply 時保險先 remove。
+        window.removeEventListener('keydown', onSpaceScroll, true);
+        window.addEventListener('keydown', onSpaceScroll, true);
+      };
 
-      // v1.6.22：媒體祖先帶「明確固定 px height」但內容比它矮 → 容器底部一大塊
-      // 死空間（Jimmy 2026-07-08 wired.com 回報 hero 圖下方一大段空白）。根因：
-      //   IMG → PICTURE → SPAN(.responsive-asset) → DIV.SplitScreenContentHeaderLedeBlock
-      //   (height:895px) → LeadWrapper(895) → GridItem(895) — WIRED 桌面版
-      //   split-screen header 的「圖欄」在原站是雙欄 grid，圖欄固定高 895px 與
-      //   文字欄等高。reader 把 grid 線性化成單欄後圖只渲染 356px、但三層 wrapper
-      //   的固定 height:895 還在 → 圖下方 539px 純死空間頂開後續內文。
-      // galleryFlex 只認 flex/grid（此鏈是 display:block）、ratioBoxes 只認
-      //   aspect-ratio（此鏈無 aspect-ratio）→ 都漏網；這類「block + 明確 px
-      //   height」是第三條 path。
-      // 通則（硬規則 3，非站點/class 特判）：mediaAncestors 內、display 非 inline
-      //   的容器，暫設 height:auto 後量自然高——若自然高比原渲染高矮 > 40px（固定
-      //   height 撐出的死空間）→ 保持 auto 塌掉。computed height 永遠回 px（無法
-      //   從樣式判斷是否明確設高），故一律「reset 後量差」判定：本來就 auto 的
-      //   容器 reset 無變化（差 0）自動略過，只有真被 height 頂高的才命中。
-      //   mediaAncestors 由 picture/img/figure 上溯，純文字段落不在集合、零影響。
-      // 安全：
-      //   - galleryFlex 已設 inline height:auto 的容器（flex/grid 並列圖）略過，
-      //     避免重複判定 / restore 雙重還原。
-      //   - 只覆寫 height（不動 min-height）：死空間若來自 min-height 由既有
-      //     min-height:0 規則群處理，此條專注 height 這條已證實的 path。
-      //   - collapse guard（與 ratioBoxes 同精神）：reset 後若比內圖渲染高度還矮
-      //     （內容 absolute、固定 height 是唯一高度來源）→ 還原避免裁切。
-      //   - 內圖含 caption 的 figure：height 本來就 auto（內容驅動），reset 無變化
-      //     → 差 0 略過，caption 空間不受影響。
-      // v1.6.29 批次化：同 ratioBoxes——「全讀 beforeH → 全 reset height:auto →
-      // 一次 flush 量全部 afterH（+ 內圖高，維持舊版『reset 後量 imgH』時點）→
-      // 還原失敗者」。WIRED 三層巢狀 895px wrapper 場景逐層/整批判定結果相同
-      // （通過者最終全 auto），harness 驗證行為不變。
-      const fixedHPending = [];
-      for (const el of mediaAncestors) {
-        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
-        if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
-        const win = el.ownerDocument?.defaultView;
-        const cs = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
-        if (!cs) continue;
-        if (cs.display === 'inline' || cs.display === 'none') continue;
-        // galleryFlex 已塌成 block + height:auto 的容器不重複處理
-        if (el.style.getPropertyValue('height') === 'auto') continue;
-        const beforeH = el.getBoundingClientRect().height;
-        if (!(beforeH > 0)) continue;
-        fixedHPending.push({
-          el, beforeH,
-          priorH: el.style.getPropertyValue('height'),
-          priorHP: el.style.getPropertyPriority('height')
-        });
-      }
-      // 寫入前先 push 進 snapshot 陣列（rollback 安全，同 ratioBoxes）；guard
-      // 失敗者事後還原並自陣列移除
-      const fixedHPushStart = fixedHeightBoxes.length;
-      for (const f of fixedHPending) {
-        fixedHeightBoxes.push({ el: f.el, height: f.priorH, heightPriority: f.priorHP });
-        f.el.style.setProperty('height', 'auto', 'important');
-      }
-      for (const f of fixedHPending) {
-        f.afterH = f.el.getBoundingClientRect().height;
-        // collapse guard 的內圖高：與舊版同時點（reset 之後）量測
-        const innerMedia = f.el.querySelector('img, picture, video');
-        f.imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
-      }
-      {
-        const keptFixedH = [];
-        fixedHPending.forEach((f, i) => {
-          // 死空間門檻：固定高比自然高多出 > 40px 才算，避免 rounding 級抖動誤動
-          // collapse guard：塌到比內圖渲染高度還矮 → 還原（內容本身脫離 flow）
-          if (f.beforeH - f.afterH <= 40 || (f.imgH > 0 && f.afterH < f.imgH * 0.8)) {
-            if (f.priorH) f.el.style.setProperty('height', f.priorH, f.priorHP || '');
-            else f.el.style.removeProperty('height');
-            return;
-          }
-          keptFixedH.push(fixedHeightBoxes[fixedHPushStart + i]);
-        });
-        fixedHeightBoxes.length = fixedHPushStart;
-        for (const k of keptFixedH) fixedHeightBoxes.push(k);
-      }
+      const passFirstInkTopMargin = () => {
+        // 消除頂端留白：第一個**可見** h1-h4/p（深層後代也算）margin-top: 0
+        // inline。必須用 JS：站點 CSS 常給深層 heading 寫死 margin-top，純 CSS
+        // 的 `:first-child` 只能摸到 article 的 direct child，摸不到「包在
+        // wrapper 裡的 H1」。
+        // v0.7.180：跳過 display:none / data-jread-hidden 內的隱藏元素。
+        // MSNBC/ms.now opinion-header 內 .opinion-column(display:none) 包
+        // P "Opinion" 類別標籤——querySelector DOM order 比 H1 早命中，導致
+        // firstInk 指向隱藏 P、後續 ancestor padding strip 和 titleFontSize
+        // inline override 都因此 miss。
+        // v1.7.43：可見性判定收斂到 isVisiblyShown（與 firstVisibleH1 同一份標準）
+        for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, p')) {
+          if (!isVisiblyShown(el, articleEl)) continue;
+          firstInk = el;
+          break;
+        }
+        if (firstInk) {
+          firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
+          firstInkPriorMtPriority = firstInk.style.getPropertyPriority('margin-top');
+          firstInk.style.setProperty('margin-top', '0', 'important');
+        }
+      };
 
-      // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。
-      // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
-      // 正確」+「圖片偏左變小」）：原站把主文段落 / 內容圖片排進 flex-row /
-      // 多欄 grid 容器做雜誌式雙欄 layout（christies `div.sc-kLokBR` 是
-      // display:flex 把內文擠成 292px 半欄、把直幅素描鎖在 66.67% 欄 = 397px、
-      // 另半欄留給側欄圖說，本文沒側欄時右半整片留白）。reader card 是單欄
-      // layout，這類橫向分欄讓內容只佔卡片版心一部分、大量浪費可讀寬度。
-      // 上方 galleryFlex 只處理「含 picture/img/figure 直接子」的 flex/grid
-      // （並列圖），「段落分欄」與「媒體深埋在欄 wrapper div 內」是另兩條
-      // path——這裡一起補上。
-      //
-      // 通則（非站點特判，符合硬規則 3）：以「主文長段落 / 內容圖片實際被渲染
-      // 得比它的 flex/grid 祖先的內容寬窄一截（< 70%）」為結構訊號——往上找出
-      // 真正在分欄的那層容器，塌成 display:block 讓內容退回正常 block flow 撐滿
-      // 版心（塌欄後欄 wrapper 的 flex-basis 失效、退回 block 自然填滿父寬）。
-      // 防誤殺：
-      //   - 只認 flex-direction:row(-reverse) 或 grid 多欄（>= 2 column track）；
-      //     flex-column 本來就垂直堆疊、不命中。
-      //   - anchor 必須是 >= 80 字的長 <p> 或 >= 100px 的 content img——button
-      //     row / tag 列 / 麵包屑 / metadata / emoji / icon-link 沒有長段落或
-      //     大圖、不命中。
-      //   - anchor 寬必須 < 容器內容寬 70%——單一全寬 flex/grid 子（沒真的分欄）
-      //     比例接近 1、不動。
-      // 每塌一層後重量 anchor 寬：內層 splitter 塌掉後 anchor 已撐滿，外層若非
-      // splitter 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
-      const textColSeen = new Set();
-      // v0.8.69：lazy content img 載入後才補跑 de-column 的 load listener，
-      // restore 時清除尚未觸發者（避免退出後仍在 detach 節點上塌欄 / 洩漏）。
-      // galleryFlex 已塌成 block 的容器不再重複塌（避免 restore 雙重還原）。
-      for (const g of galleryFlex) { if (g.el) textColSeen.add(g.el); }
-      {
-        const win = articleEl.ownerDocument?.defaultView;
-        if (win) {
-          // v1.7.43：橫向多欄容器判定——decolumnFrom / stackLopsidedImgCol /
-          // overflow-right 塌欄三處共用（原三份逐字重複）。只認
-          // flex-direction:row(-reverse) 或 >= 2 column track 的 grid：
-          // flex-column 本來就垂直堆疊、單欄 grid 沒分欄，不該被塌。
-          const isMultiColumnContainer = (cs) => {
-            const disp = cs.display;
-            if ((disp === 'flex' || disp === 'inline-flex') && /^row/.test(cs.flexDirection)) return true;
-            const cols = cs.gridTemplateColumns;
-            return (disp === 'grid' || disp === 'inline-grid') &&
-              !!cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
-          };
-          // 對單一 anchor 沿祖先鏈塌分欄容器（長段落 / content img 共用同一邏輯）。
-          // ratio = anchor 渲染寬 / 容器內容寬 的「塌欄門檻」：anchor 比這比例
-          // 還窄才視為「真的被分欄擠窄」。長段落用 0.7（pull-quote / 縮排引言等
-          // 合法窄段落比例落在 0.7~1，不該誤塌）；content 圖片用 0.9——v0.8.70：
-          // 圖片在單欄閱讀模式只有「撐滿」或「被分欄擠窄」兩種狀態、沒有中間
-          // 地帶，hero 是 440px 小圖卡在 flex 欄 = 72%（> 0.7 漏掉、Jimmy 截圖
-          // 仍偏左），把圖片門檻放寬到 0.9 讓「沒撐滿（< 90%）的 flex/grid 欄內
-          // 圖」都塌欄 → 退回 block 流、margin auto 置中（且 picture srcset 重評
-          // 常順帶載入更寬來源撐滿）。真正撐滿（>= 90%）的單一全寬圖比例近 1、不動。
-          const decolumnFrom = (anchor, ratio) => {
-            let cur = anchor.parentElement;
-            while (cur && cur !== articleEl) {
-              if (!textColSeen.has(cur) &&
-                  !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
-                  !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
-                const cs = win.getComputedStyle(cur);
-                if (isMultiColumnContainer(cs)) {
-                  const r = cur.getBoundingClientRect();
-                  const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-                  const aw = anchor.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
-                  if (contentW > 0 && aw > 0 && aw < contentW * ratio) {
-                    textColSeen.add(cur);
-                    textColFlex.push({
-                      el: cur,
-                      display: cur.style.getPropertyValue('display'),
-                      displayPriority: cur.style.getPropertyPriority('display'),
-                    });
-                    cur.style.setProperty('display', 'block', 'important');
+      const passBylineKicker = () => {
+        // v1.0.8：byline meta 區一行正規化（見頂部 BYLINE_ATTR 常數註解）。
+        // 偵測（結構訊號、非站點 class 特判）：date 訊號（<time> 或 date-regex 短文）
+        // 與 author 訊號（行首 by / rel=author）的共同祖先，往上爬到「不含第一段內文
+        // （>= 120 chars 的 p）、且 visible 文字 <= 200」的最高祖先 = byline root。
+        // 只標 visible 元素（避免把站點隱藏的作者 hover card / 分享列重新顯示）。
+        // 多站驗證（autocar / npr / techcrunch / bbc / theverge）選到乾淨 byline 區。
+        {
+          const win = articleEl.ownerDocument?.defaultView;
+          if (win && win.getComputedStyle && !articleEl.querySelector(`[${BYLINE_ATTR}]`)) {
+            const bnorm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+            const bvisible = (el) => {
+              if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
+              const cs = win.getComputedStyle(el);
+              return cs.display !== 'none' && cs.visibility !== 'hidden';
+            };
+            const bdirect = (el) => bnorm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+            // v1.7.4：相對日期切段比對（見 BYLINE_SEG_SPLIT_RE 常數註解）
+            const brelDate = (s) => !!s && s.split(BYLINE_SEG_SPLIT_RE).some((seg) => BYLINE_REL_DATE_RE.test(seg.trim()));
+            // v1.7.43：純分隔符 item 判定（null-safe）——markRt 相鄰分隔符標記與
+            // 孤兒分隔符掃描共用（原兩份 micro-dup）
+            const bisSep = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
+              !el.querySelector('img, svg, picture, video');
+            let firstBodyP = null;
+            for (const p of articleEl.querySelectorAll('p')) {
+              if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
+            }
+            const beforeBody = (el) => !firstBodyP ||
+              !!(el.compareDocumentPosition(firstBodyP) & Node.DOCUMENT_POSITION_FOLLOWING);
+            // date 訊號：<time> 優先、否則 date-regex 短文
+            let dateEl = null;
+            for (const t of articleEl.querySelectorAll('time')) {
+              if (bvisible(t) && beforeBody(t) && bnorm(t.textContent)) { dateEl = t; break; }
+            }
+            if (!dateEl) {
+              for (const el of articleEl.querySelectorAll('span, div, p, li, a')) {
+                if (!beforeBody(el) || !bvisible(el)) continue;
+                const dt = bdirect(el);
+                // v1.7.4：絕對日期（子字串比對）或相對日期（切段全字串比對，見
+                // BYLINE_REL_DATE_RE / BYLINE_SEG_SPLIT_RE 常數註解）皆可當日期錨。
+                if (dt && dt.length < 40 && (BYLINE_DATE_RE.test(dt) || brelDate(dt))) { dateEl = el; break; }
+              }
+            }
+            if (dateEl) {
+              // author 訊號（選填、用於擴大 root 的 LCA）
+              let authorEl = null;
+              for (const el of articleEl.querySelectorAll('a[rel~="author"], span, div, p, a')) {
+                if (!beforeBody(el) || !bvisible(el)) continue;
+                const t = bnorm(el.textContent);
+                if (BYLINE_AUTHOR_PREFIX_RE.test(t) && t.length < 60) { authorEl = el; break; }
+              }
+              let seed = dateEl;
+              if (authorEl && authorEl !== dateEl) {
+                const anc = new Set();
+                for (let x = dateEl; x && x !== articleEl.parentElement; x = x.parentElement) anc.add(x);
+                for (let y = authorEl; y && y !== articleEl.parentElement; y = y.parentElement) {
+                  if (anc.has(y)) { seed = y; break; }
+                }
+              }
+              // 內容尺寸大圖判定（byline meta 區塊結構上絕不含內容大圖；頭像 <=96px、
+              // hero >=150px）。與下方 v1.6.18 prevSib guard 共用同一份判定。
+              const bimgRect = (im) => {
+                try { const r = im.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+                catch (_) { return { w: 0, h: 0 }; }
+              };
+              const bhasBigImg = (el) => Array.from(el.querySelectorAll('img, picture'))
+                .some((im) => { const r = bimgRect(im); return r.w >= 150 || r.h >= 150; });
+              // v1.6.10：LCA seed 有效性 guard——byline meta 區塊結構上絕不含文章標題/
+              // 副標 heading。「作者在 hero 上方、日期在 hero 下方」的版面（The Atlantic
+              // ArticleHero header：kicker → h1 標題 → dek → 作者 → hero figure → 日期）
+              // 使 author+date 的 LCA engulf 整個 header（含 h1 + hero）。下方 climb 的
+              // heading guard 只擋「往上爬進含 heading 的 parent」、擋不住 seed 自身已含
+              // heading。若 seed 已含 heading，退回只用 dateEl 當 seed——climb 從日期
+              // 往上會在 header（含 h1）邊界前停住，root 落在純日期 wrapper、不罩住 h1 與
+              // hero figure。否則 byline root 罩住 hero img → 被 [BYLINE] img 頭像 50%
+              // 圓角規則 render 成橢圓框（Jimmy 2026-07-02 回報 Atlantic hero 變圓框）。
+              // v1.7.9：heading 之外加「內容大圖」訊號——Readwise Reader 把文件標題渲染
+              // 在 article 容器外，同款「作者在 hero 上、日期在 hero 下」版面（header：
+              // dek → 作者 → hero figure → 日期）內沒有 h1，heading guard 不觸發、LCA
+              // 又 engulf 整個 header → hero 變橢圓（Jimmy 2026-07-16 回報）。seed 含
+              // >=150px 大圖同樣代表過度捕捉，退回 dateEl。
+              // v1.7.35：heading guard 擴充「promoted-title-source」——標題非
+              // h1/h2/h3 的站（latepost 標題是 div）由 detector title-promote
+              // 注入 h1 clone 到 articleEl 開頭、原標題元素標
+              // data-jread-promoted-title-source + display:none。原標題所在的
+              // 祖先（.article-header 級）等價於「含標題的祖先」，byline root
+              // 絕不可包含（否則 climb 把整個 header 吞進 byline flex）。
+              const BYLINE_STOP_SEL = 'h1, h2, h3, [data-jread-promoted-title-source]';
+              if (seed !== dateEl && (seed.querySelector(BYLINE_STOP_SEL) || bhasBigImg(seed))) seed = dateEl;
+              // 爬到「不含 body、不含標題/副標 heading、visible 文字 <= 200」的最高祖先。
+              // v1.0.12：heading guard——byline（作者/日期 meta）結構上絕不會包住文章
+              // 標題或副標（h1/h2/h3）。原本只用「文字 <= 200」當天花板，但翻譯後中文
+              // 比英文緊湊（chinatalk Substack post-header 英文 113 字 → 中文 59 字），
+              // 整個 post-header（含 h1 標題 + h3 副標 + byline）落在 200 內 → climb 把
+              // post-header 當 byline root，h1/h3 被打平成 flex-wrap item，窄的中文副標
+              // 與作者名同列（英文因 heading 夠寬各佔一列而僥倖沒露餡）。加 heading guard
+              // 後 climb 在 heading 邊界前停住，root 落在真正的 author+date wrapper。
+              // v1.7.9：climb 同步加大圖 guard——無 heading 的 header（見上）文字常
+              // <= 200，seed 退回 dateEl 後 climb 仍會一路爬回含 hero 的 header，等於
+              // seed guard 白退。爬進含內容大圖的 parent 一律停住。
+              let root = seed;
+              while (root.parentElement && root.parentElement !== articleEl &&
+                     beforeBody(root.parentElement) &&
+                     (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
+                     !root.parentElement.querySelector(BYLINE_STOP_SEL) &&
+                     !bhasBigImg(root.parentElement) &&
+                     bnorm(root.parentElement.textContent).length <= 200) {
+                root = root.parentElement;
+              }
+              const setMark = (el, attr) => { el.setAttribute(attr, '1'); bylineMarks.push({ el, attr }); };
+              // 設 inline display（覆蓋 cleaner collapseGridWithHiddenCell 的 inline
+              // display:block !important——byline 容器常是 flex/grid + hidden 社群分享
+              // child 被 collapse；stylesheet 的 byline flex 贏不過 inline !important）。
+              // snapshot prev 供 styler.restore 還原；styler.restore 在 cleaner.restore
+              // 之前（main.js 458→459），collapsed 元素還原成 cleaner 值、cleaner 再
+              // 還原成原始。
+              const setStyleImp = (el, prop, val) => {
+                bylineDispSnap.push({ el, prop, prev: el.style.getPropertyValue(prop), prevP: el.style.getPropertyPriority(prop) });
+                el.style.setProperty(prop, val, 'important');
+              };
+              setMark(root, BYLINE_ATTR);
+              setStyleImp(root, 'display', 'flex');
+              // cleaner collapseGridWithHiddenCell 攤平 flex-row 時設了 inline
+              // flex-direction:column（display:block 下無作用、但 byline 翻回 flex 後
+              // 會生效成直排）——一併用 inline row 覆蓋
+              setStyleImp(root, 'flex-direction', 'row');
+              // 遞迴標 item（可見 leaf / 有直接文字 / 媒體）與 wrap（純 wrapper）
+              // v1.7.4：item 同時含日期訊號與閱讀時間時不可整顆標 rt——Medium 近期
+              // 文章的日期是 item 的 direct text、閱讀時間是同 item 的子元素
+              //（<div><span>15 min read</span><span>·</span>5 days ago</div>），整顆
+              // 藏會連日期一起消失（實測 byline 整條變空）。改往下找「命中閱讀時間、
+              // 不含日期訊號」的最深子元素只藏它，並連帶藏其相鄰純分隔符（否則殘留
+              //「·5 days ago」）。日期與閱讀時間同在 direct text 無法分離時保守不藏
+              //（日期優先於「去閱讀時間」）。
+              const hasDateSignal = (el) =>
+                BYLINE_DATE_RE.test(bnorm(el.textContent)) || brelDate(bdirect(el));
+              const markRt = (el) => {
+                if (!hasDateSignal(el)) {
+                  setMark(el, BYLINE_RT_ATTR);
+                  if (bisSep(el.previousElementSibling)) setMark(el.previousElementSibling, BYLINE_SEP_ATTR);
+                  if (bisSep(el.nextElementSibling)) setMark(el.nextElementSibling, BYLINE_SEP_ATTR);
+                  return;
+                }
+                for (const c of el.children) {
+                  if (BYLINE_RT_RE.test(bnorm(c.textContent))) { markRt(c); return; }
+                }
+              };
+              const walk = (el) => {
+                for (const child of el.children) {
+                  if (!bvisible(child)) continue;
+                  const tag = child.tagName.toUpperCase();
+                  const isMedia = tag === 'IMG' || tag === 'PICTURE' || tag === 'TIME' || tag === 'SVG';
+                  const hasText = bdirect(child).length > 0;
+                  if (hasText || isMedia || child.children.length === 0) {
+                    setMark(child, BYLINE_ITEM_ATTR);
+                    // v1.7.12：多作者 inline 文字流（>= 2 條連結 + 直接分隔文字、
+                    // 無媒體＝無頭像對齊需求）→ 標 inline attr 回歸自然文字換行，
+                    // 免被 inline-flex nowrap 擠壓（見 BYLINE_INLINE_ATTR 常數註解）
+                    if (hasText && child.querySelectorAll('a').length >= 2 &&
+                        !child.querySelector('img, picture, svg, video')) {
+                      setMark(child, BYLINE_INLINE_ATTR);
+                    }
+                    if (BYLINE_RT_RE.test(bnorm(child.textContent))) markRt(child);
+                  } else {
+                    setMark(child, BYLINE_WRAP_ATTR);
+                    setStyleImp(child, 'display', 'contents');
+                    walk(child);
+                  }
+                }
+              };
+              walk(root);
+              // v1.7.35：byline 子樹字體統一補 inline !important。v1.0.20 的 CSS
+              // 規則 `[BYLINE] * { font: inherit !important }` specificity 只有
+              // (0,2,0)，被同為 !important 的 BODY_TEXT_SEL span 規則（:not 鏈疊到
+              // (0,7,10)）打穿——byline 內的 span（latepost「文」「編輯」前綴）拿
+              // 到使用者字級 17px、旁邊的作者連結繼承 root 的 12.4px，同一行字級
+              // 不一致（Jimmy 2026-08-03 截圖）。inline style 必贏所有 stylesheet
+              // 規則；只寫 font-family / font-size 兩條 longhand（本 bug 的兩個
+              // 不一致維度），不動 font-weight——item 字重 400 正規化仍由既有
+              // CSS 規則負責。子樹元素數量小（十餘個）、snapshot/restore 走既有
+              // bylineDispSnap 機制。CSS `font: inherit` 規則保留當兜底。
+              const unifyFont = (rootEl) => {
+                for (const el of rootEl.querySelectorAll('*')) {
+                  setStyleImp(el, 'font-family', 'inherit');
+                  setStyleImp(el, 'font-size', 'inherit');
+                }
+              };
+              unifyFont(root);
+              // v1.7.39：byline 頭像隱藏改走 runtime inline !important。v1.7.25 的
+              // CSS 規則 `[BYLINE] img/picture { display:none }` specificity 只有
+              // (0,2,1)：裸 <img>（> inline 門檻）被 MEDIA_CAP_SEL (0,3,3) 的
+              // display:block 打穿、小裸圖被 inline-img 規則（同 specificity、
+              // source order 在後）打穿——真 Chromium probe 實證只有 <picture> 包
+              // 與 <a> 包的頭像藏得掉。inline !important 必贏所有 stylesheet 規則、
+              // 終結 specificity 軍備；snapshot/restore 走既有 bylineDispSnap。
+              // CSS 規則保留當兜底（涵蓋 apply 之後動態插入的頭像）。
+              const hideAvatarMedia = (rootEl) => {
+                for (const el of rootEl.querySelectorAll('img, picture')) {
+                  setStyleImp(el, 'display', 'none');
+                }
+              };
+              hideAvatarMedia(root);
+              // v1.6.18：byline root 落在 date-only（seed 因 LCA 含標題退回 dateEl、
+              // 或 author 與 date 無共同乾淨祖先）時，作者列常是 date root 的「相鄰前一個
+              // sibling」而未被納入 → 維持站點 header 的 text-align:center，與已左對齊的
+              // 日期列不一致（Fox News `<header class="article-header">` text-align:center，
+              // `.author-byline`（頭像+作者）置中、日期 flex 列靠左，Jimmy 2026-07-08 回報
+              // 「byline 排版亂七八糟」）。把該相鄰作者列也標成 byline root（同 flex + 左
+              // 對齊 + item 正規化），兩列一致左排。
+              // guard（四道、皆結構訊號）：只認 date root 的「相鄰前一個 visible sibling」
+              // ——Atlantic 型（作者在 hero 上方、與日期非相鄰、中間隔 <figure>）不相鄰 →
+              // 不命中（見 v1.6.10 guard + atlantic-hero-byline-overcapture fixture）；且
+              // 該 sibling 須①不含 heading（h1/h2/h3）②不含內容大圖（>=150px，排除 hero）
+              // ③visible 文字 <= 200 ④含作者訊號（rel=author / 行首 By / 小頭像 img）。
+              {
+                let prevSib = root.previousElementSibling;
+                while (prevSib && !bvisible(prevSib)) prevSib = prevSib.previousElementSibling;
+                if (prevSib && !prevSib.hasAttribute(BYLINE_ATTR) && beforeBody(prevSib) &&
+                    !prevSib.querySelector(BYLINE_STOP_SEL) &&
+                    bnorm(prevSib.textContent).length <= 200) {
+                  // v1.7.9：大圖/頭像尺寸判定改用上方 bimgRect / bhasBigImg 共用 helper
+                  const hasBigImg = bhasBigImg(prevSib);
+                  const hasAuthorSignal =
+                    !!prevSib.querySelector('a[rel~="author"]') ||
+                    BYLINE_AUTHOR_PREFIX_RE.test(bnorm(prevSib.textContent)) ||
+                    Array.from(prevSib.querySelectorAll('img'))
+                      .some((im) => { const r = bimgRect(im); return r.w > 0 && r.w <= 96 && r.h <= 96; });
+                  if (hasAuthorSignal && !hasBigImg) {
+                    setMark(prevSib, BYLINE_ATTR);
+                    setStyleImp(prevSib, 'display', 'flex');
+                    setStyleImp(prevSib, 'flex-direction', 'row');
+                    walk(prevSib);
+                    unifyFont(prevSib);
+                    hideAvatarMedia(prevSib); // v1.7.39：第二 root 同步隱藏頭像
                   }
                 }
               }
-              cur = cur.parentElement;
-            }
-          };
+              // v1.5.28：日期 item = 含 dateEl 的最近 byline item（NPR 即 <time> 自身）。
+              // 下面時刻隱藏（結構訊號）與作者排序（order）都以它為錨。
+              let dateItem = dateEl;
+              while (dateItem && dateItem !== root && !dateItem.hasAttribute(BYLINE_ITEM_ATTR)) {
+                dateItem = dateItem.parentElement;
+              }
+              const dateItemValid = dateItem && dateItem !== root && dateItem.hasAttribute(BYLINE_ITEM_ATTR);
 
-          // v1.0.9：作者 bio / meta 卡的「窄圖欄擠寬文欄」塌成單欄（stack）。
-          // 根因（Jimmy 2026-06-25 autocar.co.uk 作者欄「文字疊在一起」回報）：
-          // 站點把作者卡排成 flex-row 兩欄——窄欄（頭像 + Title/Follow 標籤）+
-          // 寬欄（bio 長文）。reader card 單欄下窄欄被擠到 min-content（autocar
-          // .author-left 渲染 39px = card 6%），頭像（capIcon 釘 max-width 142）
-          // 被壓到 39px、標籤逐字斷行，與寬欄 bio 文字擠在一起（real Chrome 疊字、
-          // headless 並排但同樣破版）。decolumnFrom 的 ratio 閘以「主文 anchor 被
-          // 擠窄」為訊號，這裡被擠的是窄圖欄、寬 bio 欄佔 82% > 70% 漏網。
-          // 通則（結構，非站點特判，符合硬規則 3）：flex-row / 多欄 grid 容器，其中
-          // 一個「含圖的內容欄」被渲染得極窄（< 25% 容器內容寬）、另有一欄佔 >= 50%
-          // （lopsided sidebar + main 分欄）→ 單欄閱讀無保留價值，塌成 display:block
-          // 讓兩欄垂直堆疊（窄圖欄回全寬、頭像回原顯示寬、標籤不再逐字斷行；寬欄
-          // 落到下方）。防誤殺：narrow 欄必須含 img（純窄文字欄 = 分類標籤，交給
-          // cleaner sidebar 規則 hide，不在此塌欄）；排除 byline root / player。
-          // 沿 img 祖先鏈走（path child 即含 img 的欄），bounded by img 數 × 深度。
-          const stackLopsidedImgCol = (img) => {
-            let child = img, cur = img.parentElement;
-            while (cur && cur !== articleEl) {
-              if (!textColSeen.has(cur) &&
-                  !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
-                  !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
-                const cs = win.getComputedStyle(cur);
-                if (isMultiColumnContainer(cs)) {
-                  const r = cur.getBoundingClientRect();
-                  const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-                  const childW = child.getBoundingClientRect().width;
-                  if (contentW > 0 && childW > 0 && childW < contentW * 0.25) {
-                    // 另需一個 >= 50% 寬的 sibling 欄（確認是 lopsided 分欄、非單欄）
-                    let wideSibling = false;
-                    for (const c of cur.children) {
-                      if (c === child) continue;
-                      const cr = c.getBoundingClientRect();
-                      if (cr.height >= 1 && cr.width >= contentW * 0.5) { wideSibling = true; break; }
-                    }
-                    if (wideSibling) {
+              // v1.5.28：隱藏 byline 內的發稿時刻（"1:59 PM ET"），只留日期。
+              // 結構訊號（翻譯無關，Jimmy 2026-07-02 Shinkansen 譯後「東岸時間下午
+              // 1:59」殘留實測）：日期 item（<time>）內若有子元素文字符合 BYLINE_DATE_RE
+              //（此 regex 含中文「2026 年 6 月 1 日」），把**不符日期**的兄弟子元素
+              //（時刻/時區）隱藏。BYLINE_DATE_RE 判別日期 vs 時刻、不靠英文時刻字面，
+              // 故 Shinkansen 就地譯文（結構不變、僅換文字）照樣命中。
+              if (dateItemValid) {
+                const kids = Array.from(dateItem.querySelectorAll('*')).filter(bvisible);
+                const hasDateKid = kids.some((c) => BYLINE_DATE_RE.test(bnorm(bdirect(c))));
+                if (hasDateKid) {
+                  for (const c of kids) {
+                    const dt = bnorm(bdirect(c));
+                    if (dt && !BYLINE_DATE_RE.test(dt)) setMark(c, BYLINE_TIME_ATTR);
+                  }
+                }
+              }
+              // 補充（英文、時刻為獨立 byline item 而非日期 item 子元素的情況）：整段
+              // 直接文字＝純時刻（HH:MM AM/PM TZ）的葉元素也隱藏。譯後 DOM 不命中此
+              // regex，靠上面結構訊號接住。安全閘：隱藏後 root 仍須有日期訊號才動手。
+              const rootHasDateWithout = (el) =>
+                BYLINE_DATE_RE.test(bnorm(root.textContent).replace(bnorm(el.textContent), ''));
+              for (const el of root.querySelectorAll('*')) {
+                if (!bvisible(el)) continue;
+                const dt = bdirect(el);
+                if (dt && BYLINE_TIME_RE.test(dt) && rootHasDateWithout(el)) {
+                  setMark(el, BYLINE_TIME_ATTR);
+                }
+              }
+              // v1.5.28：清掉「Heard on <節目>」廣播節目出處 chip（閱讀模式非必要
+              // metadata）。兩訊號並用：① 英文句式開頭（Heard/Aired/Broadcast on）；
+              // ② item 內連結 href 命中 /programs|shows|podcasts|episodes/（翻譯無關
+              // ——href 不被 Shinkansen 翻譯，譯後 DOM 靠這條接住「聽過《早晨版》」）。
+              for (const el of root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`)) {
+                const hitText = BYLINE_PROGRAM_RE.test(bnorm(el.textContent));
+                // 連結含自身（item 本身即 <a> 時 querySelectorAll('a') 不含它）
+                const links = [el, ...el.querySelectorAll('a[href]')]
+                  .filter((a) => a.tagName === 'A' && a.getAttribute('href'));
+                const hitUrl = !hitText && links.some((a) => BYLINE_PROGRAM_URL_RE.test(a.getAttribute('href')));
+                if (hitText || hitUrl) setMark(el, BYLINE_PROGRAM_ATTR);
+              }
+              // v1.5.28：作者排在日期前——把日期 item order:1 推到最後，其餘 item 維持
+              // 預設 order:0 排前。不必逐站辨識作者（NPR 作者無 rel=author / By 前綴，
+              // 辨識 fragile），只認可靠的日期錨（<time>，翻譯無關）。
+              if (dateItemValid) setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
+              // v1.7.5：撤銷 byline 子樹的段落載體標記——markTextDivs 依排序約束
+              //（v0.8.49：主流字級要量原站 CSS，須在 ARTICLE_ATTR 前跑）先於 byline
+              // 標記執行，無法用 closest guard 排除。翻譯合併後的 byline 列（div 直含
+              // 文字、無 block 子元素、字級不小於主流）會先被標 text-div，吃到段落
+              // 間距 margin-bottom（userOverrides 排在 byline item margin:0 之後、
+              // 同 specificity 後注入者贏）→ byline 下方多一行段距。byline 是 meta
+              // 列非段落，整棵撤標；restore 端 textDivMarked 的 removeAttribute 對
+              // 已撤元素是冪等 no-op，不需同步剔除。
+              for (const broot of articleEl.querySelectorAll(`[${BYLINE_ATTR}]`)) {
+                if (broot.hasAttribute(TEXT_DIV_ATTR)) broot.removeAttribute(TEXT_DIV_ATTR);
+                for (const d of broot.querySelectorAll(`[${TEXT_DIV_ATTR}]`)) d.removeAttribute(TEXT_DIV_ATTR);
+              }
+              // v1.7.4：孤兒分隔符隱藏（見 BYLINE_SEP_ATTR 常數註解）。必須在所有
+              // 隱藏標記（walk 的 RT、上方 TIME、PROGRAM）之後跑：純分隔符 item 的
+              // 相鄰非分隔符 item（DOM 序、跳過其他分隔符）任一側缺席或已被隱藏 →
+              // 分隔符失去被隔開的對象，一併隱藏。兩側都可見才保留。
+              {
+                const items = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
+                const isHiddenItem = (el) => el.hasAttribute(BYLINE_RT_ATTR) ||
+                  el.hasAttribute(BYLINE_TIME_ATTR) || el.hasAttribute(BYLINE_PROGRAM_ATTR);
+                items.forEach((el, i) => {
+                  if (!bisSep(el)) return;
+                  let prev = null;
+                  for (let j = i - 1; j >= 0; j--) { if (!bisSep(items[j])) { prev = items[j]; break; } }
+                  let next = null;
+                  for (let j = i + 1; j < items.length; j++) { if (!bisSep(items[j])) { next = items[j]; break; } }
+                  if (!prev || isHiddenItem(prev) || !next || isHiddenItem(next)) {
+                    setMark(el, BYLINE_SEP_ATTR);
+                  }
+                });
+              }
+            }
+            // v1.5.28：移除標題前的分類 kicker / eyebrow（NPR「BUSINESS」連到
+            // /sections/business/）。結構訊號（非站點特判）：標題 H1「之前」、連到
+            // 分類頁（SECTION_URL_RE）的短連結。往上爬到「文字仍等於 kicker 文字」的
+            // 最高 wrapper 一併隱藏（避免只藏連結、留空的 slug 容器殘留高度），比照
+            // byline root 的 climb。href 不被翻譯 → 譯後 DOM 照樣命中（Shinkansen
+            // 把「Business」譯成「商業」，wrapper 文字同步變、climb 仍成立）。獨立於
+            // byline 偵測（無日期的頁面也要清 kicker）。restore 走 bylineMarks 移除標記。
+            // v1.7.43：改取第一個「可見」h1（原本裸 querySelector——站點隱藏的
+            // 響應式重複 h1 在 DOM order 較早時，kicker 錨點會錨錯位置）
+            const titleH1 = firstVisibleH1(articleEl);
+            if (titleH1) {
+              const beforeTitle = (el) =>
+                !!(el.compareDocumentPosition(titleH1) & Node.DOCUMENT_POSITION_FOLLOWING);
+              for (const a of articleEl.querySelectorAll('a[href]')) {
+                if (!bvisible(a) || !beforeTitle(a)) continue;
+                if (!SECTION_URL_RE.test(a.getAttribute('href') || '')) continue;
+                const t = bnorm(a.textContent);
+                if (!t || t.length > 30) continue;
+                let k = a;
+                while (k.parentElement && k.parentElement !== articleEl &&
+                       beforeTitle(k.parentElement) &&
+                       bnorm(k.parentElement.textContent) === t) {
+                  k = k.parentElement;
+                }
+                if (!k.hasAttribute(KICKER_ATTR)) {
+                  k.setAttribute(KICKER_ATTR, '1');
+                  bylineMarks.push({ el: k, attr: KICKER_ATTR });
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const passCjkDecorInlineFlowMarks = () => {
+        // v1.6.12：CJK 為主段落標記（須在 TEXT_DIV_ATTR 標記後，才含 div 當段落站）。
+        // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
+        // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
+        // v1.6.24：移到 byline / kicker 標記之後——排除 guard（closest BYLINE_ATTR /
+        // KICKER_ATTR）需要標記已存在，否則中文 byline（「文／某某」）被 justify。
+        cjkJustifyMarked = markCjkParagraphs(articleEl);
+
+        // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
+        // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
+        decorResetMarked = markDecorativeInlines(articleEl);
+
+        // v1.7.8：inline-flow p 標記（v0.7.201 水平 padding reset 豁免）。依賴
+        // computed display（站方 CSS 給的 inline / inline-block），與注入 CSS
+        // 無時序依賴——注入規則不改 p 的 display。
+        inlineFlowPMarked = markInlineFlowParagraphs(articleEl);
+      };
+
+      const passAncestorPaddingStrip = () => {
+        // v0.7.179：strip excessive padding on ancestors between firstInk and
+        // articleEl。CMS hero banner（CNN opinion-header 等）常用 padding:
+        // 100px 配合彩色背景做全寬視覺。reader mode strip 背景後 padding 變成
+        // 純空白。沿 firstInk 往上走到 articleEl，每層 paddingTop > 48px
+        // （reader card 自身 padding 大小）的元素清掉 padding。
+        if (firstInk) {
+          let cur = firstInk.parentElement;
+          const win = articleEl.ownerDocument?.defaultView;
+          while (cur && cur !== articleEl && win) {
+            const cs = win.getComputedStyle(cur);
+            const pt = parseFloat(cs.paddingTop) || 0;
+            const pb = parseFloat(cs.paddingBottom) || 0;
+            if (pt > 48 || pb > 48) {
+              ancestorPaddingSnap.push({
+                el: cur,
+                pt: cur.style.getPropertyValue('padding-top'),
+                ptP: cur.style.getPropertyPriority('padding-top'),
+                pb: cur.style.getPropertyValue('padding-bottom'),
+                pbP: cur.style.getPropertyPriority('padding-bottom'),
+              });
+              if (pt > 48) cur.style.setProperty('padding-top', '0', 'important');
+              if (pb > 48) cur.style.setProperty('padding-bottom', '0', 'important');
+            }
+            cur = cur.parentElement;
+          }
+        }
+      };
+
+      const passNegMarginStrip = () => {
+        // v0.7.183：strip 大幅負 margin-top（CMS layout hack 的遺毒）。
+        // 原站用 margin-top:-80px 類負值把 video block 向上拉進 opinion-
+        // header 的 100px padding 區域做視覺重疊。我們 strip padding 後、
+        // 負 margin 殘留 → video 溢出遮住 subtitle。通則：reader card
+        // 內負 margin-top > 20px 的元素 = layout hack，不適用單欄 card。
+        {
+          const _w = articleEl.ownerDocument?.defaultView;
+          if (_w) {
+            for (const el of articleEl.querySelectorAll('div, section')) {
+              const mt = parseFloat(_w.getComputedStyle(el).marginTop) || 0;
+              if (mt < -20) {
+                negMarginSnap.push({
+                  el,
+                  mt: el.style.getPropertyValue('margin-top'),
+                  mtP: el.style.getPropertyPriority('margin-top'),
+                });
+                el.style.setProperty('margin-top', '0', 'important');
+              }
+            }
+          }
+        }
+      };
+
+      const passFigurePaddingStrip = () => {
+        // v1.6.21：strip figure 的「不對稱水平 padding」定位 hack。
+        // 症狀（Jimmy cn.nytimes.com 回報）：小直幅照片整塊偏右、左側一大塊空白。
+        // 根因 = 站點對 <figure> 設 `padding-left`（= 欄寬 − 照片寬）把小於欄寬的
+        // 照片在文字欄內靠右對齊（NYT-cn `figure.article-inline-photo` 實證：
+        // padding-left:285px pr:0 → figure 內容區只剩 323px 靠在右緣、img wrapper
+        // width:auto 填滿的是那 323px）。reader mode 已把 figure 強制成滿版單欄
+        // 媒體容器、其 img wrapper 走 width:auto + margin:auto 置中，但沒清 figure
+        // 自身的水平 padding → 內容區被 padding 推偏、置中/填滿都在偏掉的內容區裡算。
+        // 結構通則（非站點特判）：single-column reader 內，figure 是「配圖區塊」、
+        // 其媒體應對齊閱讀軸；figure 上「兩側不對稱」的水平 padding 只可能是原站用
+        // 來把窄媒體推離軸線的定位 hack，清為 0。對稱水平 padding（合法的框內縮 /
+        // 帶背景 inset）差值小、不命中，保留。
+        {
+          const _w = articleEl.ownerDocument?.defaultView;
+          if (_w) {
+            for (const fig of articleEl.querySelectorAll('figure')) {
+              const cs = _w.getComputedStyle(fig);
+              const pl = parseFloat(cs.paddingLeft) || 0;
+              const pr = parseFloat(cs.paddingRight) || 0;
+              if (Math.abs(pl - pr) > 24) {
+                figurePaddingSnap.push({
+                  el: fig,
+                  pl: fig.style.getPropertyValue('padding-left'),
+                  plP: fig.style.getPropertyPriority('padding-left'),
+                  pr: fig.style.getPropertyValue('padding-right'),
+                  prP: fig.style.getPropertyPriority('padding-right'),
+                });
+                fig.style.setProperty('padding-left', '0', 'important');
+                fig.style.setProperty('padding-right', '0', 'important');
+              }
+            }
+          }
+        }
+      };
+
+      const passZeroHorizInsets = () => {
+        // v0.7.246：版心自我檢查（enforce content width）。
+        // 症狀（Jimmy roomie.tw/posts/73403 iPhone 回報）：圖片撐滿 reader card
+        // 版心，但內文段落（v0.7.246）+ 標題 / 分類列（v0.7.247）左右各窄一截。
+        // 根因 = 主文容器與內容之間夾了一層通用 block wrapper 帶水平 padding：
+        //   內文：`div.content { padding: 0 20px }`
+        //   標題列：`div.mobile-info { padding: 0 24px }`（內含可見標題 + 分類 + 日期；
+        //           語意 h1 是 sr-only display:none，可見標題是非 heading 元素）
+        // card 已提供唯一應有的閱讀內距、此 wrapper 的額外水平內距把內容壓窄到
+        // < 設定版心寬。styler 既有 width:auto / max-width:100% 只擋「超寬」、
+        // 擋不掉「被內距夾窄」。
+        //
+        // 通則（非站點特判）：reader card 是單欄 layout，card padding 是唯一應有
+        // 的閱讀內距；card 內任何通用 block wrapper（div / section / article /
+        // aside / header / footer / nav）+ 文字 block（p / h1-6）都不該再貢獻水平
+        // padding/margin。直接遍歷 card 內這些元素清零水平內距——不依賴「找到某個
+        // 段落」（roomie 可見標題不是 heading、隱藏 h1 又空，沿段落鏈走不到標題
+        // wrapper，故 v0.7.247 改為全面遍歷）。
+        //   - 語意縮排容器（blockquote / 清單 / 表格 / 圖說 / 程式碼 / details）
+        //     自身與其後代不動——縮排是刻意的。
+        //   - cleaner 清掉的隱藏雜訊（data-jread-hidden）不動。
+        //   - 水平 margin：既有規則已對這些元素設 width:auto / max-width:100%，
+        //     滿版元素的 auto margin 會算成 0，故 computed 水平 margin 非 0 必是
+        //     「顯式非置中 margin」（narrowing / offset），清掉安全。
+        // v0.8.123：水平 margin 改用「絕對值 > 0.5」判定——既清正 margin（narrowing
+        //   / offset），也清**負 margin**（full-bleed overhang）。theverge.com 實測：
+        //   in-body 圖片包在 `div.duet--article--block-placement` 帶 margin-left:-100px，
+        //   原站用負 margin 讓圖片向版心左外延伸成 full-bleed；reader 單欄 card 下圖片
+        //   被推到內文左側 100px、未與文字欄對齊（Jimmy 2026-06-19 回報「圖片沒置中」）。
+        //   既有 `ml > 0.5` 只清正 margin、漏掉負 margin，且 early-return guard 把
+        //   `ml<=0.5` 當「無事可做」整支跳過。改 abs 判定後負 margin 一併歸零、圖片
+        //   wrapper 退回 column 起點對齊文字。媒體置中（img/picture/video/figure margin:
+        //   auto）另由上方規則處理、不在 TARGET_SEL 內，互不干擾。
+        // 圖片若是 wrapper 外的 full-bleed 子元素本就滿版，清零後內容與圖片同寬
+        // = 符合設定寬度。翻頁模式（multicol）與捲動模式同根因同修法——走「水平
+        // 內距和 = 0」不量 card 寬（multicol clientWidth 含全部欄量不準），通用。
+        {
+          const win = articleEl.ownerDocument?.defaultView;
+          if (win) {
+            // 語意縮排容器：縮排刻意（引言 / 清單 / 表格 / 圖說 / 程式碼），
+            // 自身與後代都不清
+            const INDENT_TAGS = new Set(['BLOCKQUOTE', 'UL', 'OL', 'DL', 'MENU', 'LI', 'DD', 'DT',
+              'FIGURE', 'FIGCAPTION', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH',
+              'PRE', 'DETAILS', 'SUMMARY']);
+            // 清水平內距對象：通用 block wrapper + 內文文字 block
+            const TARGET_SEL = 'div, section, article, main, aside, header, footer, nav, p, h1, h2, h3, h4, h5, h6';
+            // v1.6.29 批次化：讀（getComputedStyle）與寫（inline setProperty）分
+            // 兩個 pass——舊版逐元素「讀完就寫」，下一個元素的 computed 讀取被前
+            // 一個元素的寫入弄髒、每個元素各觸發一次強制 style recalc，大頁面
+            // O(n) 次 recalc 是 enter 延遲主要來源之一。先全讀（layout 乾淨、
+            // 只 flush 一次）再全寫，判定值全取自「寫入前」的原站 layout。
+            const zeroHorizPending = [];
+            for (const el of articleEl.querySelectorAll(TARGET_SEL)) {
+              // 自身是語意縮排容器 → 不清（保留引言 / 清單 / 表格縮排）
+              if (INDENT_TAGS.has(el.tagName)) continue;
+              // v1.7.8：inline-flow p 豁免（與 v0.7.201 CSS 規則的 :not 豁免同一份
+              // 事實、雙 path 必須同步）——inline / inline-block p 的水平 padding /
+              // margin 是相鄰元素分隔用途、不是版心內縮（NYT byline 黏字實證：
+              // CSS 規則豁免後 computed padding 恢復 12px，本 pass 若不同步豁免
+              // 會在下一步把它寫成 inline 0 !important、黏字復發）。標記見
+              // markInlineFlowParagraphs（本 pass 之前已跑）。
+              if (el.getAttribute && el.getAttribute(INLINE_FLOW_P_ATTR) === '1') continue;
+              // cleaner 清掉的隱藏雜訊不動
+              if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+              // 在語意縮排脈絡內 → 縮排刻意，跳過
+              let a = el.parentElement, insideIndent = false;
+              while (a && a !== articleEl) {
+                if (INDENT_TAGS.has(a.tagName)) { insideIndent = true; break; }
+                a = a.parentElement;
+              }
+              if (insideIndent) continue;
+              const cs = win.getComputedStyle(el);
+              const pl = parseFloat(cs.paddingLeft) || 0;
+              const pr = parseFloat(cs.paddingRight) || 0;
+              const ml = parseFloat(cs.marginLeft) || 0;
+              const mr = parseFloat(cs.marginRight) || 0;
+              if (pl <= 0.5 && pr <= 0.5 && Math.abs(ml) <= 0.5 && Math.abs(mr) <= 0.5) continue;
+              zeroHorizPending.push({ el, pl, pr, ml, mr });
+            }
+            for (const { el, pl, pr, ml, mr } of zeroHorizPending) {
+              contentWidthSnap.push({
+                el,
+                pl: el.style.getPropertyValue('padding-left'), plP: el.style.getPropertyPriority('padding-left'),
+                pr: el.style.getPropertyValue('padding-right'), prP: el.style.getPropertyPriority('padding-right'),
+                ml: el.style.getPropertyValue('margin-left'), mlP: el.style.getPropertyPriority('margin-left'),
+                mr: el.style.getPropertyValue('margin-right'), mrP: el.style.getPropertyPriority('margin-right'),
+              });
+              if (pl > 0.5) el.style.setProperty('padding-left', '0', 'important');
+              if (pr > 0.5) el.style.setProperty('padding-right', '0', 'important');
+              if (Math.abs(ml) > 0.5) el.style.setProperty('margin-left', '0', 'important');
+              if (Math.abs(mr) > 0.5) el.style.setProperty('margin-right', '0', 'important');
+            }
+
+            // v1.7.16：full-bleed「translateX(-50%) 置中對」殘留 reset。
+            // 症狀（Netflix Tudum，Jimmy 2026-07-24 截圖）：主文 inline 圖左移
+            // 半個圖寬（wrapper computed transform: matrix(1,0,0,1,-304,0)）、
+            // 掛出 card 左緣被裁。根因：站方 full-bleed 置中 idiom 是成對的
+            // 「+50% 定位（grid 佈局 / left:50% / margin-left:50%）↔ stylesheet
+            // transform: translateX(-50%)」；reader 的 grid 塌平（cleaner
+            // collapseInnerGridFlex）/ 寬度正規化把 + 半邊拆掉、-50% translate
+            // 殘留 → 元素平移出框。margin 變體已由上方 zeroHoriz abs 判定清
+            // （v0.8.123 theverge 負 margin full-bleed），transform 變體這裡補。
+            // 結構訊號（不綁站點 / class，硬規則 3）：
+            //   - computed transform 是純水平位移（matrix 其餘分量 identity）、
+            //     |tx| > 8px（有意義的位移）
+            //   - 目前 rect 水平掛出 parent 內容框（左緣或右緣超出 > 8px）
+            //   - 位移歸零後恰好回到框內（±4px）→ 判定為被拆散的置中對
+            // carousel 滑軌不誤傷：軌寬 > parent、歸零後仍出框右緣 → fits 不
+            // 成立。合法裝飾性小位移（|tx| <= 8 或未出框）不碰。跑在 zeroHoriz
+            // 寫入之後——量的是 reader 最終 layout 的出框狀態。
+            {
+              const parseTx = (t) => {
+                if (!t || t === 'none') return null;
+                let m = /^matrix\(1,\s*0,\s*0,\s*1,\s*(-?[\d.]+),\s*0\)$/.exec(t);
+                if (m) return parseFloat(m[1]);
+                // jsdom computed 不解析成 matrix，退回 specified 語法
+                m = /^translateX\((-?[\d.]+)px\)$/i.exec(t);
+                if (m) return parseFloat(m[1]);
+                m = /^translate\((-?[\d.]+)px(?:\s*,\s*0(?:px)?)?\)$/i.exec(t);
+                if (m) return parseFloat(m[1]);
+                return null;
+              };
+              const translatePending = [];
+              for (const el of articleEl.querySelectorAll('div, section, figure, picture, img')) {
+                if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+                const cs = win.getComputedStyle(el);
+                const tx = parseTx(cs.transform);
+                if (tx === null || Math.abs(tx) <= 8) continue;
+                const parent = el.parentElement;
+                if (!parent) continue;
+                let r, pr2;
+                try { r = el.getBoundingClientRect(); pr2 = parent.getBoundingClientRect(); } catch (_) { continue; }
+                if (!r || !pr2 || r.width < 1 || pr2.width < 1) continue;
+                const overflows = r.left < pr2.left - 8 || r.right > pr2.right + 8;
+                if (!overflows) continue;
+                const fits = (r.left - tx) >= pr2.left - 4 && (r.right - tx) <= pr2.right + 4;
+                if (!fits) continue;
+                translatePending.push(el);
+              }
+              for (const el of translatePending) {
+                translateResetSnap.push({
+                  el,
+                  tf: el.style.getPropertyValue('transform'),
+                  tfP: el.style.getPropertyPriority('transform')
+                });
+                el.style.setProperty('transform', 'none', 'important');
+              }
+            }
+          }
+        }
+      };
+
+      const passCaptionFontFloor = () => {
+        // v0.8.123：圖說字級下限（caption font-size floor）。
+        // v0.7.120 刻意把 figcaption 排除在 BODY_TEXT_SEL 外、保留原站 caption
+        // typography（caption 普遍比 body 小一階是合理的階層差異化）。但部分站把
+        // caption 設得過小（theverge.com 實測 figcaption 11px 配 ~18px 內文 →
+        // 太小難讀，Jimmy 2026-06-19 回報「圖說閱讀困難」）。修法不回到「caption =
+        // body」（會抹平階層、撞 v0.7.120 已知問題），改設**下限**：只把小於 floor
+        // 的 caption 撐到 floor，已 >= floor 的 caption 維持原站字級不動（不縮大字、
+        // 不抹平正常 caption 階層）。floor = max(14px, round(body * 0.78))——隨使用者
+        // 字級縮放（body 大時 caption floor 同步變大）、且 14px 絕對下限保底；0.78
+        // 係數讓 caption 仍明顯小於 body、保留階層。opts.fontSize 為 0（Auto sentinel、
+        // 保留原站 body 字級）時用 18 當 body 估計值。inline !important 蓋站點 caption
+        // class rule。snapshot 對稱還原（與 titleFsSnap 同款）。
+        {
+          const _w = articleEl.ownerDocument?.defaultView;
+          if (_w) {
+            const bodyFs = opts.fontSize || 18;
+            const capFloor = Math.max(14, Math.round(bodyFs * 0.78));
+            // v1.6.29 批次化：先全讀 computed font-size 再全寫（同 zeroHoriz，
+            // 避免逐元素讀寫交錯的 O(n) 強制 recalc）
+            const capPending = [];
+            for (const fc of articleEl.querySelectorAll('figcaption')) {
+              if (fc.closest('[data-jread-hidden="1"]')) continue;
+              const curFs = parseFloat(_w.getComputedStyle(fc).fontSize) || 0;
+              if (curFs > 0 && curFs < capFloor - 0.5) capPending.push(fc);
+            }
+            for (const fc of capPending) {
+              captionFsSnap.push({
+                el: fc,
+                fs: fc.style.getPropertyValue('font-size'),
+                fsP: fc.style.getPropertyPriority('font-size'),
+              });
+              fc.style.setProperty('font-size', capFloor + 'px', 'important');
+            }
+          }
+        }
+      };
+
+      const passCaptionAlignReset = () => {
+        // v1.7.19：圖說「credit 靠尾端」對齊 reset。
+        // 症狀（archive.ph WSJ 存檔頁，Jimmy 2026-07-27 截圖）：hero figcaption
+        // 帶站方 text-align:right（WSJ credit 靠右下慣例、archive.today 再 inline
+        // 化成 element style），reader 窄版心下 caption + credit 連排折成兩行 →
+        // 非末行填滿整寬、末行孤懸右緣，讀起來像斷版。原站語境「寬 hero 右下角
+        // 一小行 credit」在 reader 單欄不存在，靠尾端對齊失去意義。
+        // 通則（硬規則 3，語意標籤 + computed 值判定，非站點 / class 特判）：
+        // reader scope 內 figcaption 的 computed text-align 是「文向尾端」——
+        // ltr 的 right / rtl 的 left / 兩者的 end——→ inline text-align:start
+        // !important 打回自然流向（inline !important 蓋 archive.today inline 化
+        // 的站方值）。center 是排版意圖、自然流向（ltr left / rtl right / start）
+        // 本來就對，皆不碰。與 v1.5.15 / v1.6.20 figcaption 正規化家族同哲學：
+        // 圖說回到 normal flow 的自然排版。
+        {
+          const _w2 = articleEl.ownerDocument?.defaultView;
+          if (_w2) {
+            const alignPending = [];
+            for (const fc of articleEl.querySelectorAll('figcaption')) {
+              if (fc.closest('[data-jread-hidden="1"]')) continue;
+              const cs2 = _w2.getComputedStyle(fc);
+              const ta = cs2.textAlign;
+              const rtl = cs2.direction === 'rtl';
+              const tailAligned = ta === 'end' || (rtl
+                ? (ta === 'left' || ta === '-webkit-left')
+                : (ta === 'right' || ta === '-webkit-right'));
+              if (tailAligned) alignPending.push(fc);
+            }
+            for (const fc of alignPending) {
+              captionAlignSnap.push({
+                el: fc,
+                ta: fc.style.getPropertyValue('text-align'),
+                taP: fc.style.getPropertyPriority('text-align'),
+              });
+              fc.style.setProperty('text-align', 'start', 'important');
+            }
+          }
+        }
+      };
+
+      const passTitleFontOverride = () => {
+        // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
+        // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
+        // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
+        // Runtime walk：比較每個 block 元素的 rendered width 與 card width，
+        // 超寬的強制 max-width:100% + box-sizing:border-box。max-width:100%
+        // 相對 parent 逐層 cascade，最外層被 card 擋住、內層隨之縮。
+        // v0.7.180：title font-size inline override。CMS 高 specificity rule
+        // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
+        // `.opinion-header > .wp-block-group .title-and-dek-column
+        //  h1.wp-block-post-title[class*=...] { font-size: 2rem !important }`
+        // specificity (0,5+,1) 打敗 jread stylesheet (0,1,1)），CSS stylesheet
+        // 打不贏。inline !important 是最高優先級。
+        // 獨立搜尋第一個可見 h1（不依賴 firstInk 是否 H tag）：firstInk 可能是
+        // P（副標題/byline 在 DOM order 比 H1 早出現時），title override 不該
+        // 因此 miss。
+        if (overrides.titleFontSize) {
+          const titleH1 = firstInk && /^H1$/.test(firstInk.tagName)
+            ? firstInk
+            : firstVisibleH1(articleEl);
+          if (titleH1) {
+            titleFsSnap = {
+              el: titleH1,
+              fs: titleH1.style.getPropertyValue('font-size'),
+              fsP: titleH1.style.getPropertyPriority('font-size'),
+            };
+            titleH1.style.setProperty('font-size', opts.titleFontSize + 'px', 'important');
+          }
+        }
+      };
+
+      const passHeroTitleFloor = () => {
+        // v0.8.3：hero 標題字級下限（Jimmy 2026-06-09 規則）。Auto 模式
+        // （titleFontSize=0、不強制覆寫）下，原站把標題做得太小（roomie.tw
+        // mobile span.title 23px、近內文 18px，視覺上不像標題）時，把 hero
+        // 拉到至少 1.5× 內文字級。只在低於下限時 bump（max 語意），原站 hero
+        // 夠大就不動。hero = detector inject 的 H1（[data-jread-injected-title]）
+        // 優先，否則第一個可見 h1。override 模式由上方 titleFsSnap 精準覆寫、
+        // 不走這條（exact size 已贏）。
+        if (!overrides.titleFontSize) {
+          const floorPx = Math.round((opts.fontSize || DEFAULTS.fontSize) * 1.5);
+          const heroEl = articleEl.querySelector('[data-jread-injected-title="1"]')
+            || (firstInk && /^H1$/.test(firstInk.tagName)
+              ? firstInk
+              : firstVisibleH1(articleEl));
+          if (heroEl && floorPx > 0) {
+            const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+            const cur = win ? (parseFloat(win.getComputedStyle(heroEl).fontSize) || 0) : 0;
+            if (cur < floorPx) {
+              heroFloorSnap = {
+                el: heroEl,
+                fs: heroEl.style.getPropertyValue('font-size'),
+                fsP: heroEl.style.getPropertyPriority('font-size'),
+              };
+              heroEl.style.setProperty('font-size', floorPx + 'px', 'important');
+            }
+          }
+        }
+      };
+
+      const passGalleryFlex = () => {
+        // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
+        // flex/grid 容器強制改成 block display + height auto，讓並列圖在 reader mode
+        // 下垂直堆疊、不再被父容器固定 height 切掉內容 + 不再 overflow 蓋下方文字。
+        // 案例（synapseching.substack.com /p/17 Jimmy 2026-05-13 回報）：
+        //   IMG → PICTURE → DIV.imageRow（display:flex, height:230px）→ ...
+        //   imageRow flex 子 align-items:stretch 把 picture 拉到 230，但 styler
+        //   `img { height:auto !important }` 讓 IMG 跑 natural ratio = 295，
+        //   IMG 超出 picture 65px → 視覺覆蓋下方段落文字。
+        //   單純 height:auto 又會讓 flex container 內並列圖各取 max-width:100% 加總
+        //   溢出 article 右側（第二張 img.left=952 > article.right=944）。
+        //   結論：reader card 單欄閱讀情境下 flex/grid 並列 layout 無保留必要，
+        //   直接 display:block 讓兩張圖垂直堆疊最穩。
+        // 通則 selector：祖先到 articleEl 為止，掃所有 display:flex / display:grid 且
+        // 直接子含 picture / img / figure 的元素，runtime 設 inline !important
+        // 蓋過原站 stylesheet。CSS :has() jsdom 不支持，改 runtime 解決。
+        // v0.7.144：原 code 對主文每個後代跑 getComputedStyle 找 flex/grid + 含
+        // picture/img/figure 直接子的 wrapper。大頁面 + 多次設定變更時負荷重。
+        // 改為先 querySelectorAll('picture, img, figure') 收媒體節點 → 各自往上
+        // walk parent 鏈到 articleEl 為止收集祖先 Set → 對 Set 內元素才跑
+        // getComputedStyle。從 O(全 DOM) → O(媒體節點 × 平均深度)；純文字主文
+        // 直接 short-circuit 0 次 getComputedStyle。
+        mediaAncestors = new Set();
+        const mediaNodes = articleEl.querySelectorAll('picture, img, figure');
+        for (const media of mediaNodes) {
+          let cur = media.parentElement;
+          while (cur && cur !== articleEl) {
+            mediaAncestors.add(cur);
+            cur = cur.parentElement;
+          }
+        }
+        // v1.6.29 批次化：先全讀（computed display + 直接子媒體判定）再全寫——
+        // 舊版逐元素讀寫交錯，每個 gallery 容器各觸發一次強制 recalc
+        const galleryPending = [];
+        for (const el of mediaAncestors) {
+          // v0.8.45：排除 player 結構（與 v0.7.182 background strip 同原則）。
+          // ms.now 實測：JW Player 的 jw-wrapper（含 poster img、computed flex）
+          // 被本規則打成 display:block + height:auto → 容器塌成 16px → JW JS
+          // 對 video 寫負 margin 置中於塌掉的容器 → video absolute 突出 342px
+          // 蓋住 dek 文字 + 流空間錯位出 245px 假空白（gap audit y=206 實證）。
+          // player 內部 layout 由 player JS 自己管理，jread 不該動。
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          // v1.0.8：byline 區自管 flex 一行 layout（見 BYLINE_ATTR），不被 gallery
+          // flatten 成 block——否則 inline display:block !important 蓋掉 byline flex
+          if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
+          const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+          if (!cs) continue;
+          if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
+          let hasMediaChild = false;
+          for (const c of el.children) {
+            if (c.tagName === 'PICTURE' || c.tagName === 'IMG' || c.tagName === 'FIGURE') {
+              hasMediaChild = true;
+              break;
+            }
+          }
+          if (!hasMediaChild) continue;
+          galleryPending.push(el);
+        }
+        for (const el of galleryPending) {
+          // snapshot 原 inline value/priority for restore
+          const prior = {
+            el,
+            display: el.style.getPropertyValue('display'),
+            displayPriority: el.style.getPropertyPriority('display'),
+            height: el.style.getPropertyValue('height'),
+            heightPriority: el.style.getPropertyPriority('height'),
+            minHeight: el.style.getPropertyValue('min-height'),
+            minHeightPriority: el.style.getPropertyPriority('min-height')
+          };
+          galleryFlex.push(prior);
+          el.style.setProperty('display', 'block', 'important');
+          el.style.setProperty('height', 'auto', 'important');
+          el.style.setProperty('min-height', '0', 'important');
+
+          // v0.7.94：gallery flex 改 block 後原 flex gap 失效，直接子（figure /
+          // picture / img / a / div）會緊貼。逐個媒體子設 margin-bottom: 12px
+          // !important 補空白。snapshot 紀錄原 inline margin-bottom 以便 restore。
+          // Jimmy 2026-05-13 回報 v0.7.93 修完三張並列照片改垂直後緊貼無間距。
+          const mediaTags = new Set(['FIGURE', 'PICTURE', 'IMG', 'A', 'DIV']);
+          for (const child of el.children) {
+            if (!mediaTags.has(child.tagName)) continue;
+            // v1.7.29：inline emoji / icon 跳過 gap 補償——inline 圖的 margin-bottom
+            // 不產生流間距，只把圖沿 baseline 往上抬（錯位）。與上方 gallery 偵測
+            // guard 同一判定基礎（皆以 INLINE_IMG_ATTR 為準）但獨立兜底：真 gallery
+            // （另有大圖子）仍會攤平，此處確保混在其中的 icon 不被塞 margin
+            if (child.tagName === 'IMG' &&
+                (child.hasAttribute(INLINE_IMG_ATTR) || child.hasAttribute(ICON_IMG_ATTR))) continue;
+            // 排除「不含媒體」的 div（gallery wrapper 內偶爾混 spacer / caption），
+            // 只對「自身含 img/picture/figure 子孫」的 element 加 margin。
+            const hasMediaDescendant = child.tagName === 'IMG' || child.tagName === 'PICTURE' || child.tagName === 'FIGURE' ||
+              !!(child.querySelector && child.querySelector('img, picture, figure'));
+            if (!hasMediaDescendant) continue;
+            const priorChild = {
+              el: child,
+              marginBottom: child.style.getPropertyValue('margin-bottom'),
+              marginBottomPriority: child.style.getPropertyPriority('margin-bottom')
+            };
+            galleryFlex.push(priorChild);
+            child.style.setProperty('margin-bottom', '12px', 'important');
+          }
+        }
+      };
+
+      const passRatioBoxReset = () => {
+        // v0.8.137：媒體 wrapper 用 aspect-ratio 預留固定比例 placeholder（lazy-load
+        // 占位），但實際載入的圖片比例 ≠ 預留比例時，wrapper 高度按 aspect-ratio 撐
+        // 出超過圖片內容的空間 → 圖片下方一大塊假空白（Jimmy 2026-06-20 The Verge
+        // lede / gallery wrapper 用雜湊 atomic class 設 aspect-ratio:1/1、實際 landscape
+        // 圖渲染 405px、box 撐 608px → 203px 假空白；截圖回報）。
+        // 上方 CSS [class*="ratio" i] reset 只認 class 名含 "ratio" 的容器（New Yorker
+        // AspectRatioContainer 類），SPA 站把 aspect-ratio 塞進 hash class（_1m5y14k5）
+        // 漏網。改用 computed aspect-ratio !== 'auto' 這個結構訊號（非 class / hostname
+        // 特判，符合硬規則 3）：mediaAncestors 內任何帶實際 aspect-ratio 的 wrapper
+        // 一律歸 auto，讓 box 高度退回圖片 static flow 的自然高度。
+        // 安全性：
+        //   - mediaAncestors 由 picture/img/figure 上溯收集，純 iframe 影片 embed
+        //     （aspect-ratio:16/9 + iframe absolute 撐高、無 img）不在集合內、不誤殺。
+        //   - player 結構額外排除（與 galleryFlex 同原則）。
+        //   - 自驗 collapse guard：歸 auto 後若 box 塌到比內圖渲染高度還矮（內容本身
+        //     absolute、aspect-ratio 是唯一高度來源，例 New Yorker overlay 類但 class
+        //     不含 "ratio" 漏掉 static-flow 配套）→ 還原 aspect-ratio 避免裁切。內圖
+        //     尚未載入（高度 0）時仍 reset：未載圖沒有要保護的高度，box 跟著塌、載入
+        //     後 height:auto 自然撐起。
+        // v1.6.29 批次化：write-then-measure guard 改成「全讀（aspect-ratio +
+        // 內圖高）→ 全 reset → 一次 flush 量全部 afterH → 還原失敗者」——舊版逐
+        // 元素 reset + getBoundingClientRect，每個 ratio box 各觸發一次強制
+        // reflow。批次量測下 afterH 反映「全部 ratio box 都已 reset」的 layout；
+        // 舊版是逐一累進量測——巢狀 ratio wrapper 極端場景下 guard 判定時點不同，
+        // 但兩者最終狀態一致（通過者本來就全會被 reset），wired/theverge harness
+        // 驗證行為不變。
+        const ratioPending = [];
+        for (const el of mediaAncestors) {
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          const win = el.ownerDocument?.defaultView;
+          const cs = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
+          if (!cs || !cs.aspectRatio || cs.aspectRatio === 'auto') continue;
+          const innerMedia = el.querySelector('img, picture, video');
+          const imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+          ratioPending.push({
+            el, imgH,
+            priorAR: el.style.getPropertyValue('aspect-ratio'),
+            priorARP: el.style.getPropertyPriority('aspect-ratio')
+          });
+        }
+        // 寫入前先 push 進 snapshot 陣列（rollback 安全：批次中途拋錯時 v1.6.27
+        // 的部分快照自我還原才涵蓋已寫入的元素）；guard 失敗者事後還原並自陣列移除
+        const ratioPushStart = ratioBoxes.length;
+        for (const r of ratioPending) {
+          ratioBoxes.push({ el: r.el, aspectRatio: r.priorAR, aspectRatioPriority: r.priorARP });
+          r.el.style.setProperty('aspect-ratio', 'auto', 'important');
+        }
+        // getBoundingClientRect 同步 flush layout（整批只 flush 一次），afterH
+        // 反映 reset 後高度
+        for (const r of ratioPending) r.afterH = r.el.getBoundingClientRect().height;
+        {
+          const keptRatio = [];
+          ratioPending.forEach((r, i) => {
+            if (r.imgH > 0 && r.afterH < r.imgH * 0.8) {
+              if (r.priorAR) r.el.style.setProperty('aspect-ratio', r.priorAR, r.priorARP || '');
+              else r.el.style.removeProperty('aspect-ratio');
+              return;
+            }
+            keptRatio.push(ratioBoxes[ratioPushStart + i]);
+          });
+          ratioBoxes.length = ratioPushStart;
+          for (const k of keptRatio) ratioBoxes.push(k);
+        }
+      };
+
+      const passFixedHeightReset = () => {
+        // v1.6.22：媒體祖先帶「明確固定 px height」但內容比它矮 → 容器底部一大塊
+        // 死空間（Jimmy 2026-07-08 wired.com 回報 hero 圖下方一大段空白）。根因：
+        //   IMG → PICTURE → SPAN(.responsive-asset) → DIV.SplitScreenContentHeaderLedeBlock
+        //   (height:895px) → LeadWrapper(895) → GridItem(895) — WIRED 桌面版
+        //   split-screen header 的「圖欄」在原站是雙欄 grid，圖欄固定高 895px 與
+        //   文字欄等高。reader 把 grid 線性化成單欄後圖只渲染 356px、但三層 wrapper
+        //   的固定 height:895 還在 → 圖下方 539px 純死空間頂開後續內文。
+        // galleryFlex 只認 flex/grid（此鏈是 display:block）、ratioBoxes 只認
+        //   aspect-ratio（此鏈無 aspect-ratio）→ 都漏網；這類「block + 明確 px
+        //   height」是第三條 path。
+        // 通則（硬規則 3，非站點/class 特判）：mediaAncestors 內、display 非 inline
+        //   的容器，暫設 height:auto 後量自然高——若自然高比原渲染高矮 > 40px（固定
+        //   height 撐出的死空間）→ 保持 auto 塌掉。computed height 永遠回 px（無法
+        //   從樣式判斷是否明確設高），故一律「reset 後量差」判定：本來就 auto 的
+        //   容器 reset 無變化（差 0）自動略過，只有真被 height 頂高的才命中。
+        //   mediaAncestors 由 picture/img/figure 上溯，純文字段落不在集合、零影響。
+        // 安全：
+        //   - galleryFlex 已設 inline height:auto 的容器（flex/grid 並列圖）略過，
+        //     避免重複判定 / restore 雙重還原。
+        //   - 只覆寫 height（不動 min-height）：死空間若來自 min-height 由既有
+        //     min-height:0 規則群處理，此條專注 height 這條已證實的 path。
+        //   - collapse guard（與 ratioBoxes 同精神）：reset 後若比內圖渲染高度還矮
+        //     （內容 absolute、固定 height 是唯一高度來源）→ 還原避免裁切。
+        //   - 內圖含 caption 的 figure：height 本來就 auto（內容驅動），reset 無變化
+        //     → 差 0 略過，caption 空間不受影響。
+        // v1.6.29 批次化：同 ratioBoxes——「全讀 beforeH → 全 reset height:auto →
+        // 一次 flush 量全部 afterH（+ 內圖高，維持舊版『reset 後量 imgH』時點）→
+        // 還原失敗者」。WIRED 三層巢狀 895px wrapper 場景逐層/整批判定結果相同
+        // （通過者最終全 auto），harness 驗證行為不變。
+        const fixedHPending = [];
+        for (const el of mediaAncestors) {
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
+          const win = el.ownerDocument?.defaultView;
+          const cs = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
+          if (!cs) continue;
+          if (cs.display === 'inline' || cs.display === 'none') continue;
+          // galleryFlex 已塌成 block + height:auto 的容器不重複處理
+          if (el.style.getPropertyValue('height') === 'auto') continue;
+          const beforeH = el.getBoundingClientRect().height;
+          if (!(beforeH > 0)) continue;
+          fixedHPending.push({
+            el, beforeH,
+            priorH: el.style.getPropertyValue('height'),
+            priorHP: el.style.getPropertyPriority('height')
+          });
+        }
+        // 寫入前先 push 進 snapshot 陣列（rollback 安全，同 ratioBoxes）；guard
+        // 失敗者事後還原並自陣列移除
+        const fixedHPushStart = fixedHeightBoxes.length;
+        for (const f of fixedHPending) {
+          fixedHeightBoxes.push({ el: f.el, height: f.priorH, heightPriority: f.priorHP });
+          f.el.style.setProperty('height', 'auto', 'important');
+        }
+        for (const f of fixedHPending) {
+          f.afterH = f.el.getBoundingClientRect().height;
+          // collapse guard 的內圖高：與舊版同時點（reset 之後）量測
+          const innerMedia = f.el.querySelector('img, picture, video');
+          f.imgH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+        }
+        {
+          const keptFixedH = [];
+          fixedHPending.forEach((f, i) => {
+            // 死空間門檻：固定高比自然高多出 > 40px 才算，避免 rounding 級抖動誤動
+            // collapse guard：塌到比內圖渲染高度還矮 → 還原（內容本身脫離 flow）
+            if (f.beforeH - f.afterH <= 40 || (f.imgH > 0 && f.afterH < f.imgH * 0.8)) {
+              if (f.priorH) f.el.style.setProperty('height', f.priorH, f.priorHP || '');
+              else f.el.style.removeProperty('height');
+              return;
+            }
+            keptFixedH.push(fixedHeightBoxes[fixedHPushStart + i]);
+          });
+          fixedHeightBoxes.length = fixedHPushStart;
+          for (const k of keptFixedH) fixedHeightBoxes.push(k);
+        }
+      };
+
+      const passDecolumn = () => {
+        // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。
+        // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
+        // 正確」+「圖片偏左變小」）：原站把主文段落 / 內容圖片排進 flex-row /
+        // 多欄 grid 容器做雜誌式雙欄 layout（christies `div.sc-kLokBR` 是
+        // display:flex 把內文擠成 292px 半欄、把直幅素描鎖在 66.67% 欄 = 397px、
+        // 另半欄留給側欄圖說，本文沒側欄時右半整片留白）。reader card 是單欄
+        // layout，這類橫向分欄讓內容只佔卡片版心一部分、大量浪費可讀寬度。
+        // 上方 galleryFlex 只處理「含 picture/img/figure 直接子」的 flex/grid
+        // （並列圖），「段落分欄」與「媒體深埋在欄 wrapper div 內」是另兩條
+        // path——這裡一起補上。
+        //
+        // 通則（非站點特判，符合硬規則 3）：以「主文長段落 / 內容圖片實際被渲染
+        // 得比它的 flex/grid 祖先的內容寬窄一截（< 70%）」為結構訊號——往上找出
+        // 真正在分欄的那層容器，塌成 display:block 讓內容退回正常 block flow 撐滿
+        // 版心（塌欄後欄 wrapper 的 flex-basis 失效、退回 block 自然填滿父寬）。
+        // 防誤殺：
+        //   - 只認 flex-direction:row(-reverse) 或 grid 多欄（>= 2 column track）；
+        //     flex-column 本來就垂直堆疊、不命中。
+        //   - anchor 必須是 >= 80 字的長 <p> 或 >= 100px 的 content img——button
+        //     row / tag 列 / 麵包屑 / metadata / emoji / icon-link 沒有長段落或
+        //     大圖、不命中。
+        //   - anchor 寬必須 < 容器內容寬 70%——單一全寬 flex/grid 子（沒真的分欄）
+        //     比例接近 1、不動。
+        // 每塌一層後重量 anchor 寬：內層 splitter 塌掉後 anchor 已撐滿，外層若非
+        // splitter 比例回到 ~1 不會被誤塌（避免 stale 寬度連鎖誤判）。
+        const textColSeen = new Set();
+        // v0.8.69：lazy content img 載入後才補跑 de-column 的 load listener，
+        // restore 時清除尚未觸發者（避免退出後仍在 detach 節點上塌欄 / 洩漏）。
+        // galleryFlex 已塌成 block 的容器不再重複塌（避免 restore 雙重還原）。
+        for (const g of galleryFlex) { if (g.el) textColSeen.add(g.el); }
+        {
+          const win = articleEl.ownerDocument?.defaultView;
+          if (win) {
+            // v1.7.43：橫向多欄容器判定——decolumnFrom / stackLopsidedImgCol /
+            // overflow-right 塌欄三處共用（原三份逐字重複）。只認
+            // flex-direction:row(-reverse) 或 >= 2 column track 的 grid：
+            // flex-column 本來就垂直堆疊、單欄 grid 沒分欄，不該被塌。
+            const isMultiColumnContainer = (cs) => {
+              const disp = cs.display;
+              if ((disp === 'flex' || disp === 'inline-flex') && /^row/.test(cs.flexDirection)) return true;
+              const cols = cs.gridTemplateColumns;
+              return (disp === 'grid' || disp === 'inline-grid') &&
+                !!cols && cols !== 'none' && cols.trim().split(/\s+/).length >= 2;
+            };
+            // 對單一 anchor 沿祖先鏈塌分欄容器（長段落 / content img 共用同一邏輯）。
+            // ratio = anchor 渲染寬 / 容器內容寬 的「塌欄門檻」：anchor 比這比例
+            // 還窄才視為「真的被分欄擠窄」。長段落用 0.7（pull-quote / 縮排引言等
+            // 合法窄段落比例落在 0.7~1，不該誤塌）；content 圖片用 0.9——v0.8.70：
+            // 圖片在單欄閱讀模式只有「撐滿」或「被分欄擠窄」兩種狀態、沒有中間
+            // 地帶，hero 是 440px 小圖卡在 flex 欄 = 72%（> 0.7 漏掉、Jimmy 截圖
+            // 仍偏左），把圖片門檻放寬到 0.9 讓「沒撐滿（< 90%）的 flex/grid 欄內
+            // 圖」都塌欄 → 退回 block 流、margin auto 置中（且 picture srcset 重評
+            // 常順帶載入更寬來源撐滿）。真正撐滿（>= 90%）的單一全寬圖比例近 1、不動。
+            const decolumnFrom = (anchor, ratio) => {
+              let cur = anchor.parentElement;
+              while (cur && cur !== articleEl) {
+                if (!textColSeen.has(cur) &&
+                    !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
+                    !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
+                  const cs = win.getComputedStyle(cur);
+                  if (isMultiColumnContainer(cs)) {
+                    const r = cur.getBoundingClientRect();
+                    const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+                    const aw = anchor.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
+                    if (contentW > 0 && aw > 0 && aw < contentW * ratio) {
                       textColSeen.add(cur);
                       textColFlex.push({
                         el: cur,
@@ -5301,205 +5337,301 @@ html.${HTML_CLASS}.jread-orion body {
                     }
                   }
                 }
-              }
-              child = cur;
-              cur = cur.parentElement;
-            }
-          };
-
-          // anchor 1：長段落（toggle 當下已在 DOM、文字不 lazy）。
-          for (const p of articleEl.querySelectorAll('p')) {
-            if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
-            if ((p.textContent || '').trim().length >= 80) decolumnFrom(p, 0.7);
-          }
-          // anchor 2：content 圖片（v0.8.68）——christies stories 把直幅素描 /
-          // hero 放進 flex-row 的 66.67% 欄（DIV flex: 0 0 calc(66.6667% - 8px)），
-          // 欄內只有 <a><picture><img>、沒有長 <p>，longParas 路徑漏掉、圖被鎖在
-          // 2/3 欄寬 = 397px（card 內容寬 608），偏左又縮小。galleryFlex 只認
-          // 「flex/grid 直接子是 picture/img/figure」的並列圖，這裡的媒體深埋在欄
-          // wrapper div 內、不命中。inline emoji（INLINE_IMG_ATTR）與純 icon-link
-          // （a > img 未標 content-img）排除，與 styler media 規則同準則。
-          //
-          // v0.8.69：lazy 圖延後處理——hero 在 above-fold 卻 lazy-load，toggle
-          // 當下 naturalWidth=0 / rect 0x0、不滿 >= 100px anchor 門檻被漏掉，
-          // 一次性 de-column 跑完就不再回頭，圖載入後仍卡 66.67% 欄偏左（Jimmy
-          // 2026-06-14 cage 實機實證：hero rect 397/608、sc-kLokBR 仍 flex、
-          // 長 <p> 路徑救不到它的圖說欄）。修法：toggle 當下已載入的圖立即跑；
-          // 未載入的掛一次性 load listener，載入後重量、夠大且撐窄欄才塌。
-          for (const m of articleEl.querySelectorAll('img')) {
-            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
-            if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
-            // v1.7.44 E10 效能：v1.0.9 stackLopsidedImgCol 原本獨立再掃一輪
-            // querySelectorAll('img') + 重複 hidden closest 檢查——合併進本迴圈
-            // 單次遍歷。呼叫點在 A-parent skip 之前（stack 規則不豁免 <a> 內
-            // avatar，與原獨立迴圈一致）；兩規則的 collapse 動作同構（display:
-            // block + textColFlex snapshot）且 textColSeen 去重，先後互換結果等價。
-            stackLopsidedImgCol(m);
-            if (m.parentElement && m.parentElement.tagName === 'A' &&
-                !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
-            const mr = m.getBoundingClientRect();
-            if (mr.width >= 100 && mr.height >= 100) {
-              decolumnFrom(m, 0.9);
-            } else if (!m.complete || (m.naturalWidth || 0) === 0) {
-              const onLoad = () => {
-                if (m.hasAttribute(INLINE_IMG_ATTR)) return;
-                const rr = m.getBoundingClientRect();
-                if (rr.width >= 100 && rr.height >= 100) decolumnFrom(m, 0.9);
-              };
-              m.addEventListener('load', onLoad, { once: true });
-              decolumnLoadCleanup.push({ img: m, onLoad });
-            }
-          }
-
-          // v0.8.136：互補 case——「固定 px grid/flex track 不隨 card 縮窄」造成
-          // 內文被撐寬往右溢出。上方 decolumnFrom 的 ratio 閘只認「anchor 被擠得
-          // 比容器窄」（< 70%/90%），認不出「anchor 反而比 card 還寬、右移溢出」。
-          // NYT Wirecutter 實測（snoo-smart-sleeper）：article > div（display:grid，
-          // 寬度已正確縮到 card content box 608px）的 grid 子項用站點寫死的 1024px
-          // content track → 內含 h1/p/figure 全部 1024 寬、左緣右移 64px、右緣
-          // 衝出 card content box 被 overflow-x:hidden 切掉 → 視覺上「圖文偏右 +
-          // 右側被切」。decolumnFrom 對長 <p> 走到此 grid 時 anchor 寬 1024 >
-          // 容器 608、不滿足 narrower 閘 → 漏網。
-          // 通則（結構，非站點特判，符合硬規則 3）：任何 grid/flex 容器，其直接子
-          // 渲染右緣溢出 card 右緣 → 固定 track / 並列 layout 在單欄閱讀無保留價值，
-          // 塌成 display:block 讓子項退回 block flow（width 退回父寬、靠左對齊）。
-          // overflow 幾何閘只動真破版的容器、放過正常 grid/flex。
-          // 效能：先用 rect 收「溢出右緣」節點 → 往上收祖先 Set → 只對 Set 跑
-          // getComputedStyle（同 galleryFlex mediaAncestors 思路，避免 O(全 DOM)
-          // getComputedStyle）。
-          // v1.6.24：gate 在非翻頁模式——翻頁的 multicol card（position:fixed +
-          // column-width）第 2 欄起所有元素 rect.right 天然超過 card 右緣（probe
-          // 實證：正常 flex-row / 窄 table 全被誤判「溢出」），量 card 寬在 multicol
-          // 下不可靠（同 contentWidthSnap v0.7.246 註解的既有原則）。翻頁模式
-          // 溢出破版由 column layout 自然裁切，不做 rect 幾何修法。
-          // v1.7.44 E5 效能：cheap gate——scrollWidth 量的是含被 overflow 裁掉
-          // 部分的水平內容寬，articleEl 無水平溢出（scrollWidth ≈ clientWidth）
-          // 時子樹內不可能有「右緣衝出 card」的破版，整段 O(全子樹) rect 掃描
-          // 直接跳過（絕大多數正常頁面走這條零成本路）。容差 +2 對齊下方
-          // cardRight + 2 的判定。已知盲點：溢出在「中介 overflow:hidden 祖先」
-          // 就地被裁掉時不反映在 articleEl.scrollWidth——該情境本段原本也只能
-          // 塌中介層以下的容器、覆蓋本就有限，屬可接受的保守邊界。
-          if (!opts.pagedMode && articleEl.scrollWidth > articleEl.clientWidth + 2) {
-            const cardRight = articleEl.getBoundingClientRect().right;
-            const overflowAncestors = new Set();
-            for (const el of articleEl.querySelectorAll('*')) {
-              const rr = el.getBoundingClientRect();
-              if (rr.width < 1 || rr.height < 1) continue;
-              if (rr.right <= cardRight + 2) continue;
-              let cur = el.parentElement;
-              while (cur && cur !== articleEl.parentElement) {
-                overflowAncestors.add(cur);
                 cur = cur.parentElement;
               }
-            }
-            for (const el of overflowAncestors) {
-              if (textColSeen.has(el)) continue;
-              if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
-              const cs = win.getComputedStyle(el);
-              // 同 decolumnFrom 的容器判定（isMultiColumnContainer 共用）——
-              // flex-column / 單欄 grid 不該因「某後代溢出」被誤塌。
-              if (!isMultiColumnContainer(cs)) continue;
-              let overflows = false;
-              for (const c of el.children) {
-                const cr = c.getBoundingClientRect();
-                if (cr.width >= 1 && cr.right > cardRight + 2) { overflows = true; break; }
+            };
+
+            // v1.0.9：作者 bio / meta 卡的「窄圖欄擠寬文欄」塌成單欄（stack）。
+            // 根因（Jimmy 2026-06-25 autocar.co.uk 作者欄「文字疊在一起」回報）：
+            // 站點把作者卡排成 flex-row 兩欄——窄欄（頭像 + Title/Follow 標籤）+
+            // 寬欄（bio 長文）。reader card 單欄下窄欄被擠到 min-content（autocar
+            // .author-left 渲染 39px = card 6%），頭像（capIcon 釘 max-width 142）
+            // 被壓到 39px、標籤逐字斷行，與寬欄 bio 文字擠在一起（real Chrome 疊字、
+            // headless 並排但同樣破版）。decolumnFrom 的 ratio 閘以「主文 anchor 被
+            // 擠窄」為訊號，這裡被擠的是窄圖欄、寬 bio 欄佔 82% > 70% 漏網。
+            // 通則（結構，非站點特判，符合硬規則 3）：flex-row / 多欄 grid 容器，其中
+            // 一個「含圖的內容欄」被渲染得極窄（< 25% 容器內容寬）、另有一欄佔 >= 50%
+            // （lopsided sidebar + main 分欄）→ 單欄閱讀無保留價值，塌成 display:block
+            // 讓兩欄垂直堆疊（窄圖欄回全寬、頭像回原顯示寬、標籤不再逐字斷行；寬欄
+            // 落到下方）。防誤殺：narrow 欄必須含 img（純窄文字欄 = 分類標籤，交給
+            // cleaner sidebar 規則 hide，不在此塌欄）；排除 byline root / player。
+            // 沿 img 祖先鏈走（path child 即含 img 的欄），bounded by img 數 × 深度。
+            const stackLopsidedImgCol = (img) => {
+              let child = img, cur = img.parentElement;
+              while (cur && cur !== articleEl) {
+                if (!textColSeen.has(cur) &&
+                    !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
+                    !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
+                  const cs = win.getComputedStyle(cur);
+                  if (isMultiColumnContainer(cs)) {
+                    const r = cur.getBoundingClientRect();
+                    const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+                    const childW = child.getBoundingClientRect().width;
+                    if (contentW > 0 && childW > 0 && childW < contentW * 0.25) {
+                      // 另需一個 >= 50% 寬的 sibling 欄（確認是 lopsided 分欄、非單欄）
+                      let wideSibling = false;
+                      for (const c of cur.children) {
+                        if (c === child) continue;
+                        const cr = c.getBoundingClientRect();
+                        if (cr.height >= 1 && cr.width >= contentW * 0.5) { wideSibling = true; break; }
+                      }
+                      if (wideSibling) {
+                        textColSeen.add(cur);
+                        textColFlex.push({
+                          el: cur,
+                          display: cur.style.getPropertyValue('display'),
+                          displayPriority: cur.style.getPropertyPriority('display'),
+                        });
+                        cur.style.setProperty('display', 'block', 'important');
+                      }
+                    }
+                  }
+                }
+                child = cur;
+                cur = cur.parentElement;
               }
-              if (!overflows) continue;
-              textColSeen.add(el);
-              textColFlex.push({
-                el,
-                display: el.style.getPropertyValue('display'),
-                displayPriority: el.style.getPropertyPriority('display'),
-              });
-              el.style.setProperty('display', 'block', 'important');
+            };
+
+            // anchor 1：長段落（toggle 當下已在 DOM、文字不 lazy）。
+            for (const p of articleEl.querySelectorAll('p')) {
+              if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
+              if ((p.textContent || '').trim().length >= 80) decolumnFrom(p, 0.7);
             }
+            // anchor 2：content 圖片（v0.8.68）——christies stories 把直幅素描 /
+            // hero 放進 flex-row 的 66.67% 欄（DIV flex: 0 0 calc(66.6667% - 8px)），
+            // 欄內只有 <a><picture><img>、沒有長 <p>，longParas 路徑漏掉、圖被鎖在
+            // 2/3 欄寬 = 397px（card 內容寬 608），偏左又縮小。galleryFlex 只認
+            // 「flex/grid 直接子是 picture/img/figure」的並列圖，這裡的媒體深埋在欄
+            // wrapper div 內、不命中。inline emoji（INLINE_IMG_ATTR）與純 icon-link
+            // （a > img 未標 content-img）排除，與 styler media 規則同準則。
+            //
+            // v0.8.69：lazy 圖延後處理——hero 在 above-fold 卻 lazy-load，toggle
+            // 當下 naturalWidth=0 / rect 0x0、不滿 >= 100px anchor 門檻被漏掉，
+            // 一次性 de-column 跑完就不再回頭，圖載入後仍卡 66.67% 欄偏左（Jimmy
+            // 2026-06-14 cage 實機實證：hero rect 397/608、sc-kLokBR 仍 flex、
+            // 長 <p> 路徑救不到它的圖說欄）。修法：toggle 當下已載入的圖立即跑；
+            // 未載入的掛一次性 load listener，載入後重量、夠大且撐窄欄才塌。
+            for (const m of articleEl.querySelectorAll('img')) {
+              if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
+              if (m.hasAttribute(INLINE_IMG_ATTR)) continue;
+              // v1.7.44 E10 效能：v1.0.9 stackLopsidedImgCol 原本獨立再掃一輪
+              // querySelectorAll('img') + 重複 hidden closest 檢查——合併進本迴圈
+              // 單次遍歷。呼叫點在 A-parent skip 之前（stack 規則不豁免 <a> 內
+              // avatar，與原獨立迴圈一致）；兩規則的 collapse 動作同構（display:
+              // block + textColFlex snapshot）且 textColSeen 去重，先後互換結果等價。
+              stackLopsidedImgCol(m);
+              if (m.parentElement && m.parentElement.tagName === 'A' &&
+                  !m.hasAttribute(CONTENT_IMG_ATTR)) continue;
+              const mr = m.getBoundingClientRect();
+              if (mr.width >= 100 && mr.height >= 100) {
+                decolumnFrom(m, 0.9);
+              } else if (!m.complete || (m.naturalWidth || 0) === 0) {
+                const onLoad = () => {
+                  if (m.hasAttribute(INLINE_IMG_ATTR)) return;
+                  const rr = m.getBoundingClientRect();
+                  if (rr.width >= 100 && rr.height >= 100) decolumnFrom(m, 0.9);
+                };
+                m.addEventListener('load', onLoad, { once: true });
+                decolumnLoadCleanup.push({ img: m, onLoad });
+              }
+            }
+
+            // v0.8.136：互補 case——「固定 px grid/flex track 不隨 card 縮窄」造成
+            // 內文被撐寬往右溢出。上方 decolumnFrom 的 ratio 閘只認「anchor 被擠得
+            // 比容器窄」（< 70%/90%），認不出「anchor 反而比 card 還寬、右移溢出」。
+            // NYT Wirecutter 實測（snoo-smart-sleeper）：article > div（display:grid，
+            // 寬度已正確縮到 card content box 608px）的 grid 子項用站點寫死的 1024px
+            // content track → 內含 h1/p/figure 全部 1024 寬、左緣右移 64px、右緣
+            // 衝出 card content box 被 overflow-x:hidden 切掉 → 視覺上「圖文偏右 +
+            // 右側被切」。decolumnFrom 對長 <p> 走到此 grid 時 anchor 寬 1024 >
+            // 容器 608、不滿足 narrower 閘 → 漏網。
+            // 通則（結構，非站點特判，符合硬規則 3）：任何 grid/flex 容器，其直接子
+            // 渲染右緣溢出 card 右緣 → 固定 track / 並列 layout 在單欄閱讀無保留價值，
+            // 塌成 display:block 讓子項退回 block flow（width 退回父寬、靠左對齊）。
+            // overflow 幾何閘只動真破版的容器、放過正常 grid/flex。
+            // 效能：先用 rect 收「溢出右緣」節點 → 往上收祖先 Set → 只對 Set 跑
+            // getComputedStyle（同 galleryFlex mediaAncestors 思路，避免 O(全 DOM)
+            // getComputedStyle）。
+            // v1.6.24：gate 在非翻頁模式——翻頁的 multicol card（position:fixed +
+            // column-width）第 2 欄起所有元素 rect.right 天然超過 card 右緣（probe
+            // 實證：正常 flex-row / 窄 table 全被誤判「溢出」），量 card 寬在 multicol
+            // 下不可靠（同 contentWidthSnap v0.7.246 註解的既有原則）。翻頁模式
+            // 溢出破版由 column layout 自然裁切，不做 rect 幾何修法。
+            // v1.7.44 E5 效能：cheap gate——scrollWidth 量的是含被 overflow 裁掉
+            // 部分的水平內容寬，articleEl 無水平溢出（scrollWidth ≈ clientWidth）
+            // 時子樹內不可能有「右緣衝出 card」的破版，整段 O(全子樹) rect 掃描
+            // 直接跳過（絕大多數正常頁面走這條零成本路）。容差 +2 對齊下方
+            // cardRight + 2 的判定。已知盲點：溢出在「中介 overflow:hidden 祖先」
+            // 就地被裁掉時不反映在 articleEl.scrollWidth——該情境本段原本也只能
+            // 塌中介層以下的容器、覆蓋本就有限，屬可接受的保守邊界。
+            if (!opts.pagedMode && articleEl.scrollWidth > articleEl.clientWidth + 2) {
+              const cardRight = articleEl.getBoundingClientRect().right;
+              const overflowAncestors = new Set();
+              for (const el of articleEl.querySelectorAll('*')) {
+                const rr = el.getBoundingClientRect();
+                if (rr.width < 1 || rr.height < 1) continue;
+                if (rr.right <= cardRight + 2) continue;
+                let cur = el.parentElement;
+                while (cur && cur !== articleEl.parentElement) {
+                  overflowAncestors.add(cur);
+                  cur = cur.parentElement;
+                }
+              }
+              for (const el of overflowAncestors) {
+                if (textColSeen.has(el)) continue;
+                if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+                const cs = win.getComputedStyle(el);
+                // 同 decolumnFrom 的容器判定（isMultiColumnContainer 共用）——
+                // flex-column / 單欄 grid 不該因「某後代溢出」被誤塌。
+                if (!isMultiColumnContainer(cs)) continue;
+                let overflows = false;
+                for (const c of el.children) {
+                  const cr = c.getBoundingClientRect();
+                  if (cr.width >= 1 && cr.right > cardRight + 2) { overflows = true; break; }
+                }
+                if (!overflows) continue;
+                textColSeen.add(el);
+                textColFlex.push({
+                  el,
+                  display: el.style.getPropertyValue('display'),
+                  displayPriority: el.style.getPropertyPriority('display'),
+                });
+                el.style.setProperty('display', 'block', 'important');
+              }
+            }
+
+            // v1.0.9 stackLopsidedImgCol 的獨立 img 掃描已於 v1.7.44（E10）合併
+            // 進上方 anchor 2 迴圈（單次遍歷；圖小被 >= 100px 門檻漏掉的 avatar
+            // 場景由合併後迴圈的 stackLopsidedImgCol 呼叫點涵蓋）
           }
-
-          // v1.0.9 stackLopsidedImgCol 的獨立 img 掃描已於 v1.7.44（E10）合併
-          // 進上方 anchor 2 迴圈（單次遍歷；圖小被 >= 100px 門檻漏掉的 avatar
-          // 場景由合併後迴圈的 stackLopsidedImgCol 呼叫點涵蓋）
         }
-      }
+      };
 
-      // v0.7.179：WordPress constrained layout inline override。
-      // CSS stylesheet `html [data-jread-active] p { max-width: none !important }`
-      // 在某些 WP theme 下 computed 仍未生效（疑似 WP 動態注入的 inline style
-      // 或 container query 機制覆蓋）。inline !important 是 CSS 最高優先級，
-      // 任何 stylesheet rule 都無法打敗。
-      const CONTENT_BLOCK_SEL = 'p, h1, h2, h3, h4, h5, h6, ul, ol, dl';
-      for (const el of articleEl.querySelectorAll(CONTENT_BLOCK_SEL)) {
-        const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
-        if (!cs) continue;
-        const mw = cs.maxWidth;
-        if (mw && mw !== 'none' && mw !== '100%' && !mw.startsWith('100')) {
-          wpConstrained.push({
-            el,
-            maxWidth: el.style.getPropertyValue('max-width'),
-            maxWidthPriority: el.style.getPropertyPriority('max-width'),
-          });
-          el.style.setProperty('max-width', 'none', 'important');
-        }
-      }
-
-      // v0.8.101：寬語意內容（table / pre）超出 card → 卡內水平捲，不被切掉。
-      // 根因（arxiv HTML 全文）：LaTeXML 把展示公式輸出成 <table class="ltx_equation">，
-      // 內含不可斷行的數學運算式，intrinsic min-width 撐破卡片版心；styler 既有
-      // 全後代 max-width:100%（line 1314）限縮 box 寬卻擋不住內容 min-width，
-      // table 仍溢出右緣被 card 的 overflow-x:hidden 切掉——公式右側 + 式號被截、
-      // 使用者看不到也捲不到（probe 實測溢出 54-144px）。
-      // 通則（非站點特判，符合硬規則 3）：table / pre 是「內容無法 wrap」的語意
-      // 載體，渲染寬撐破 card 時改 display:block + overflow-x:auto + max-width:100%
-      // 讓它在卡內水平捲（標準 responsive-table pattern）——使用者捲得到 = 視覺
-      // 無破版（probe 套後 fitsCard + innerScroll 110-200px）。防誤殺：
-      //   - 只處理「實際溢出右緣」的——能正常 wrap 的窄表格 / 文字不命中。
-      //   - 排除 player 結構（與 galleryFlex 同原則）。
-      //   - 排除已被既有 overflow-x:auto/scroll 祖先（在卡內）吸收的——原站
-      //     已給 code block 內捲（rust-book / k8s 的 <pre> overflow-x:auto）就不
-      //     重複處理，避免雙重 scroll container。
-      // v1.6.24：同上——翻頁 multicol 下 cardRight 幾何不可靠（第 2 欄起的正常
-      // table/pre 全被誤判溢出、套上 display:block + overflow-x:auto 造成與第 1
-      // 頁排版不一致），gate 在非翻頁模式。
-      if (!opts.pagedMode) {
-        const win = articleEl.ownerDocument?.defaultView;
-        if (win) {
-          const cardRight = articleEl.getBoundingClientRect().right;
-          for (const el of articleEl.querySelectorAll('table, pre')) {
-            if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
-            const r = el.getBoundingClientRect();
-            if (r.width < 1 || r.height < 1) continue;
-            if (r.right <= cardRight + 2) continue; // 沒溢出右緣 → 不動
-            // 已被「在卡內、可捲到」的祖先吸收 → 不重複處理
-            let absorbed = false, cur = el.parentElement;
-            while (cur && cur !== articleEl.parentElement) {
-              const ox = win.getComputedStyle(cur).overflowX;
-              if ((ox === 'auto' || ox === 'scroll') &&
-                  cur.getBoundingClientRect().right <= cardRight + 2) { absorbed = true; break; }
-              cur = cur.parentElement;
-            }
-            if (absorbed) continue;
-            wideScroll.push({
+      const passWpConstrainedMaxWidth = () => {
+        // v0.7.179：WordPress constrained layout inline override。
+        // CSS stylesheet `html [data-jread-active] p { max-width: none !important }`
+        // 在某些 WP theme 下 computed 仍未生效（疑似 WP 動態注入的 inline style
+        // 或 container query 機制覆蓋）。inline !important 是 CSS 最高優先級，
+        // 任何 stylesheet rule 都無法打敗。
+        const CONTENT_BLOCK_SEL = 'p, h1, h2, h3, h4, h5, h6, ul, ol, dl';
+        for (const el of articleEl.querySelectorAll(CONTENT_BLOCK_SEL)) {
+          const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+          if (!cs) continue;
+          const mw = cs.maxWidth;
+          if (mw && mw !== 'none' && mw !== '100%' && !mw.startsWith('100')) {
+            wpConstrained.push({
               el,
-              display: el.style.getPropertyValue('display'),
-              displayPriority: el.style.getPropertyPriority('display'),
-              overflowX: el.style.getPropertyValue('overflow-x'),
-              overflowXPriority: el.style.getPropertyPriority('overflow-x'),
               maxWidth: el.style.getPropertyValue('max-width'),
               maxWidthPriority: el.style.getPropertyPriority('max-width'),
             });
-            el.style.setProperty('display', 'block', 'important');
-            el.style.setProperty('max-width', '100%', 'important');
-            el.style.setProperty('overflow-x', 'auto', 'important');
+            el.style.setProperty('max-width', 'none', 'important');
           }
         }
-      }
+      };
 
-      // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
-      // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
-      // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
-      const panguEnabled = s.pangu !== false;
-      panguSnap = panguEnabled ? panguInstall(articleEl) : null;
+      const passWideContentScroll = () => {
+        // v0.8.101：寬語意內容（table / pre）超出 card → 卡內水平捲，不被切掉。
+        // 根因（arxiv HTML 全文）：LaTeXML 把展示公式輸出成 <table class="ltx_equation">，
+        // 內含不可斷行的數學運算式，intrinsic min-width 撐破卡片版心；styler 既有
+        // 全後代 max-width:100%（line 1314）限縮 box 寬卻擋不住內容 min-width，
+        // table 仍溢出右緣被 card 的 overflow-x:hidden 切掉——公式右側 + 式號被截、
+        // 使用者看不到也捲不到（probe 實測溢出 54-144px）。
+        // 通則（非站點特判，符合硬規則 3）：table / pre 是「內容無法 wrap」的語意
+        // 載體，渲染寬撐破 card 時改 display:block + overflow-x:auto + max-width:100%
+        // 讓它在卡內水平捲（標準 responsive-table pattern）——使用者捲得到 = 視覺
+        // 無破版（probe 套後 fitsCard + innerScroll 110-200px）。防誤殺：
+        //   - 只處理「實際溢出右緣」的——能正常 wrap 的窄表格 / 文字不命中。
+        //   - 排除 player 結構（與 galleryFlex 同原則）。
+        //   - 排除已被既有 overflow-x:auto/scroll 祖先（在卡內）吸收的——原站
+        //     已給 code block 內捲（rust-book / k8s 的 <pre> overflow-x:auto）就不
+        //     重複處理，避免雙重 scroll container。
+        // v1.6.24：同上——翻頁 multicol 下 cardRight 幾何不可靠（第 2 欄起的正常
+        // table/pre 全被誤判溢出、套上 display:block + overflow-x:auto 造成與第 1
+        // 頁排版不一致），gate 在非翻頁模式。
+        if (!opts.pagedMode) {
+          const win = articleEl.ownerDocument?.defaultView;
+          if (win) {
+            const cardRight = articleEl.getBoundingClientRect().right;
+            for (const el of articleEl.querySelectorAll('table, pre')) {
+              if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+              const r = el.getBoundingClientRect();
+              if (r.width < 1 || r.height < 1) continue;
+              if (r.right <= cardRight + 2) continue; // 沒溢出右緣 → 不動
+              // 已被「在卡內、可捲到」的祖先吸收 → 不重複處理
+              let absorbed = false, cur = el.parentElement;
+              while (cur && cur !== articleEl.parentElement) {
+                const ox = win.getComputedStyle(cur).overflowX;
+                if ((ox === 'auto' || ox === 'scroll') &&
+                    cur.getBoundingClientRect().right <= cardRight + 2) { absorbed = true; break; }
+                cur = cur.parentElement;
+              }
+              if (absorbed) continue;
+              wideScroll.push({
+                el,
+                display: el.style.getPropertyValue('display'),
+                displayPriority: el.style.getPropertyPriority('display'),
+                overflowX: el.style.getPropertyValue('overflow-x'),
+                overflowXPriority: el.style.getPropertyPriority('overflow-x'),
+                maxWidth: el.style.getPropertyValue('max-width'),
+                maxWidthPriority: el.style.getPropertyPriority('max-width'),
+              });
+              el.style.setProperty('display', 'block', 'important');
+              el.style.setProperty('max-width', '100%', 'important');
+              el.style.setProperty('overflow-x', 'auto', 'important');
+            }
+          }
+        }
+      };
 
-      return snapshotNow();
+      const passPangu = () => {
+        // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
+        // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
+        // 動態注入內容（SPA / lazy-load 留言、推薦、晚到段落等）。
+        const panguEnabled = s.pangu !== false;
+        panguSnap = panguEnabled ? panguInstall(articleEl) : null;
+      };
+
+      // ─── T12：pass 執行順序（單一資料源）──────────────────────────
+      // 順序即依賴：各 pass 開頭註解記載「必須在 X 之前/之後」的理由；
+      // 關鍵配對由 test/regression/styler-apply-pass-order.spec.js forcing。
+      const APPLY_PASSES = [
+        passContrastProbePhase1,
+        passInjectCss,
+        passClassifyImages,
+        passMarkTextDivs,
+        passSetArticleAttr,
+        passMarkPlayers,
+        passMarkEmbedHeadingAbsAnchors,
+        passMarkFillIframes,
+        passMarkAncestors,
+        passHtmlClassThemeMeta,
+        passContrastGuardPhase2,
+        passBlockquoteSummaryContrast,
+        passDarkSepiaContrastPhase3,
+        passCodeBlockBgPhase4,
+        passInstallListeners,
+        passFirstInkTopMargin,
+        passBylineKicker,
+        passCjkDecorInlineFlowMarks,
+        passAncestorPaddingStrip,
+        passNegMarginStrip,
+        passFigurePaddingStrip,
+        passZeroHorizInsets,
+        passCaptionFontFloor,
+        passCaptionAlignReset,
+        passTitleFontOverride,
+        passHeroTitleFloor,
+        passGalleryFlex,
+        passRatioBoxReset,
+        passFixedHeightReset,
+        passDecolumn,
+        passWpConstrainedMaxWidth,
+        passWideContentScroll,
+        passPangu,
+      ];
+      try {
+        for (const p of APPLY_PASSES) p();
+        return snapshotNow();
       } catch (err) {
         // v1.6.27:apply 中途 throw → 半套 DOM 副作用（已注入 stylesheet /
         // 已標 attr / 已寫 inline style）以部分快照自我還原後再拋，上層
