@@ -469,7 +469,25 @@
     }
   }
 
-  function restore(key, el) {
+  function restore(key, el, entryOverride) {
+    // v1.7.49：進場捲動同步 override（main.js captureEnterScrollAnchor）——
+    // 使用者在原頁已捲離文首才開閱讀模式，以原頁當下位置為準、不套 storage
+    // 的上次位置（兩者衝突時「剛才讀到哪」才是使用者要的）。memMap seed 照舊
+    //（之後的寫入路徑需要）；override 是本次進場的即時幾何、不受 isFresh 效期
+    // 檢查。同步 apply（不等 storage 往返）——版面此刻已就緒，早一拍到位。
+    if (entryOverride) {
+      localGet((map) => {
+        if (sessionKey !== key) return;
+        if (map) memMap = map;
+      });
+      applyEntry(entryOverride, el);
+      if (reassertTimer) clearTimeout(reassertTimer);
+      reassertTimer = setTimeout(() => {
+        reassertTimer = null;
+        if (!interacted && sessionKey === key) applyEntry(entryOverride, el);
+      }, REASSERT_MS);
+      return;
+    }
     localGet((map) => {
       // v1.7.39：storage 往返期間可能已 endSession（快速 ESC / SPA 導航——exit
       // 是同步的，async 讀回來時 session 已結束）。過期回呼不得：① memMap 被
@@ -504,15 +522,22 @@
   // 進入閱讀模式：回復位置 + 開始追蹤。main.js finalizeEnter 在
   // syncPagedMode / syncSpaceScroll 之後（模組已 install、頁數已算好）、
   // installKeyguard 之前（listener 順序 invariant）呼叫。
-  function beginSession(key, settings, el) {
+  // v1.7.49：opts.entryOverride——進場捲動同步的 entry（見 restore 註解）
+  function beginSession(key, settings, el, opts) {
     endSession(); // 保險：理論上 enter 前必 exit
     days = clampDays(settings && settings.positionMemoryDays);
-    if (!(days > 0) || !key) return;
+    const override = opts && opts.entryOverride;
+    if (!(days > 0) || !key) {
+      // 位置記憶停用（days=0）時進場同步仍要套——那不是跨 session 記憶，
+      // 是「接續使用者剛才在原頁讀到的位置」的當下對位，不受記憶開關管
+      if (override && el) applyEntry(override, el);
+      return;
+    }
     sessionKey = key;
     articleEl = el || null;
     interacted = false;
     installListeners();
-    restore(key, articleEl);
+    restore(key, articleEl, override);
   }
 
   // v1.7.43 T11：session 收尾共用（endSession 與 setDays(0) 停用路徑原本各寫
