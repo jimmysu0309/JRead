@@ -33,8 +33,9 @@ describe('styler — base 骨架 memoize（C6）', () => {
   });
 
   it('anti-stale：base template literal 區段不得引用 theme/contentWidth 以外的使用者變數', () => {
-    // 抓 base 區段：`base = \`` 到對應的 baseSkeletonCacheSet 之前的 closing backtick
-    const startMarker = 'base = `';
+    // 抓 base 區段：T12 起 base 拆成具名 segment（segPageScaffold 為首段）到
+    // baseSkeletonCacheSet 之前——範圍涵蓋全部 segment literal + BASE_SEGMENTS join
+    const startMarker = 'const segPageScaffold = () => `';
     const start = STYLER_SRC.indexOf(startMarker);
     assert.ok(start >= 0, '找不到 base template literal 起點');
     const setIdx = STYLER_SRC.indexOf('baseSkeletonCacheSet(theme, contentWidth, opts.readerHostPage, base);', start);

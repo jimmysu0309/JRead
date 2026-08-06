@@ -47,7 +47,8 @@ describe('styler gallery flex/grid 媒體祖先查找優化（v0.7.144 #13）', 
     // gallery 區段（galleryFlex 變數附近）不可有 articleEl.querySelectorAll('*') for-loop
     // v1.6.27：galleryFlex 宣告提升到 apply 開頭（rollback 修法），區段改錨
     // mediaAncestors 掃描起點到第一個 galleryFlex.push
-    const match = STYLER_SRC.match(/const\s+mediaAncestors\s*=\s*new Set\(\)[\s\S]*?galleryFlex\.push/);
+    // T12：mediaAncestors 宣告提升為跨 pass 共享（let），建立點是賦值不是 const
+    const match = STYLER_SRC.match(/mediaAncestors\s*=\s*new Set\(\)[\s\S]*?galleryFlex\.push/);
     assert.ok(match, '必須找到 galleryFlex 區段');
     // 在 galleryFlex push 之前不可有 articleEl.querySelectorAll('*') 形式
     assert.ok(!/articleEl\.querySelectorAll\(['"]\*['"]\)/.test(match[0]),
