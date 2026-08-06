@@ -21,7 +21,7 @@ Chrome Extension 開發有三個 LLM 痛點：
 | 自動化 framework | Playwright | 官方支援 extension loading、API 穩定 |
 | 瀏覽器 | **Playwright 內建的 Chromium** | 沒擋 `--load-extension`；Google Chrome 擋 |
 | 連線模式 | `launchPersistentContext` | MV3 extension 必須 persistent context |
-| headless | `false` | extension 僅 headed 可用 |
+| headless | Playwright 的 `headless: false` | extension 僅 headed 可用。**背景化另走 Chromium arg**：預設加 `--headless=new` + `--window-position=-2400,-2400` 把視窗推到螢幕外（零干擾）；bot challenge 站用 `--headed` 關掉 `--headless=new`（見 Tier 1 / flag 說明） |
 | 驗證管道 | SW 端 `chrome.tabs.sendMessage` → content script | 正確處理 world 隔離 |
 
 ---
@@ -483,4 +483,6 @@ fixture 是 forcing function，不是假設探索工具——fixture 會漏掉�
 - [ ] CLAUDE.md（或 AGENTS.md 等）加了「可以自己跑 debug-harness」的指示
 - [ ] 用一個真實測試頁跑過 `npm run debug -- --fresh` 確認 DOM state 正確印出
 
-符合全部 → 下次 Claude 跟你改 extension 時，它可以**自己驗證視覺**，你只需要在最終 commit 前手動 Chrome reload 確認一次。
+符合全部 → 下次 Claude 跟你改 extension 時，它可以**自己驗證視覺**，不必請你貼 console 或截圖。
+
+> **JRead 現況補充**：連「commit 前手動 Chrome reload 確認一次」這步也已不需要——Claude 用 chrome-in-chrome 自己操作 `chrome://extensions/` reload、走 `__jread_debug` event bridge 觸發閱讀模式，整個 debug 循環自己 close。仍需人工驗的只剩三類：keyboard shortcut 對映與衝突、popup 點擊互動、使用體感（字體渲染 / 對比 / 動畫）。新專案剛套用這套流程時，前幾輪還是建議人工複驗一次建立信心。

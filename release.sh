@@ -15,8 +15,10 @@
 #
 # Safari 軌：macOS 不再產獨立 Developer ID .pkg。Safari 走 iOS 單一 binary
 # （TestFlight / App Store），在 Apple Silicon Mac 以 iPad app 執行同時涵蓋
-# macOS / iOS / iPadOS。要發 Safari 人工跑 ./safari-app/ios-build.sh（與本
-# release 流程解耦，見該 script 註解）。
+# macOS / iOS / iPadOS。本腳本技術上不處理 iOS，但流程上不是選配——
+# Jimmy 2026-06-11 規則：每個 release 都跟發 TestFlight，本腳本成功後一律
+# 接跑 ./safari-app/ios-build.sh（步驟與坑見 /release skill 第 5 節 +
+# /ios-release skill）。
 
 set -euo pipefail
 

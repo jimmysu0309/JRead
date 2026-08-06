@@ -50,3 +50,13 @@ CLAUDE-TEMPLATE-*.md
 AGENTS.md
 .agents/
 .codex/
+
+# 回歸測試套件（Jimmy 2026-08-06 裁定移出公開 repo）
+# 動機：393 支 spec + 309 個 fixture 記錄了大量開發過程與判斷脈絡，不公開。
+# 現住私有 repo github.com/jimmysu0309/JRead-test，clone 回本路徑掛載——
+# 路徑不變是刻意的：spec 內 path.join(__dirname, '..', ...) 讀 SPEC.md /
+# jread/ / safari-app/ 等相對路徑因此完全不用改，npm test 與 release.sh 照跑。
+# 不用 submodule：那會在公開 repo 留下 .gitmodules 指向私有 URL。
+# 注意 fixture 內含自真實站點擷取的第三方 HTML，本就不宜公開散布。
+# 重新掛載：git clone git@github.com:jimmysu0309/JRead-test.git test
+test/
