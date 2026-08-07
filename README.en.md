@@ -55,3 +55,4 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 - **Rebuilding the Firefox version**: see [BUILD.md](BUILD.md) (one `jq` command patches the manifest; every other file is byte-for-byte identical)
 - **Release notes**: see [GitHub Releases](https://github.com/jimmysu0309/JRead/releases)
 - **The full internal spec and changelog are not in this repo**: both also record a great deal of the development process and reasoning, which the author has chosen to keep private
+- **Maintainer setup on a fresh machine**: the test suite and internal docs live in two private repos — see [docs/DEV-SETUP.md](docs/DEV-SETUP.md) for how to attach them

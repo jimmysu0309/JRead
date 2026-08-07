@@ -68,13 +68,15 @@ test/
 # 寫得完整），不另做瘦身版：同一份事實兩份實作必然 drift（工作流原則 5）。
 #
 # 檔案仍在原位（forcing function 與日常工作都讀根目錄），版控走「疊加的第二個
-# 倉庫」：.private-git 是它的 .git、work-tree 指向本根目錄，只追蹤這三份，
-# 推到私有 repo github.com/jimmysu0309/JRead-docs。操作一律加 --git-dir：
+# 倉庫」：.private-git 是它的 .git、work-tree 指向本根目錄，推到私有 repo
+# github.com/jimmysu0309/JRead-docs。2026-08-07 起追蹤範圍擴到 8 檔——除了下面
+# 三份逐版文件，還有協作規則本體 CLAUDE.md / AGENTS.md / .claude/（那幾份也在
+# 本檔的忽略清單內，兩邊都不收就等於只活在本機）。操作一律加 --git-dir：
 #   git --git-dir=.private-git status --short
 #   git --git-dir=.private-git add -u && git --git-dir=.private-git commit -m "…"
 #   git --git-dir=.private-git push
-# 重新掛載：git clone --separate-git-dir=.private-git \
-#           git@github.com:jimmysu0309/JRead-docs.git <暫存目錄> 後把檔案搬回根目錄
+# 新環境怎麼把兩個私有 repo 接回來：見 docs/DEV-SETUP.md（單一資料源，刻意留在
+# 公開端——接法本身若只寫在私有文件裡，新環境永遠讀不到）
 SPEC.md
 CHANGELOG.md
 docs/CHANGELOG-archive.md

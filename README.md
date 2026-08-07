@@ -55,3 +55,4 @@ JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**�
 - **Firefox 版重建**：見 [BUILD.md](BUILD.md)（單一 `jq` 指令改寫 manifest，其餘檔案逐位元組相同）
 - **更新紀錄**：見 [GitHub Releases](https://github.com/jimmysu0309/JRead/releases)
 - **完整內部規格與變更紀錄不在本 repo**：那兩份文件同時記錄了大量開發過程與判斷脈絡，作者選擇不公開
+- **維護者在新環境接開發環境**：測試套件與內部文件住在兩個私有 repo，接法見 [docs/DEV-SETUP.md](docs/DEV-SETUP.md)
