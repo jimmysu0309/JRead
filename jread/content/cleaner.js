@@ -1886,10 +1886,22 @@
     for (const h of articleEl.querySelectorAll('h1')) {
       if (normTitle(h.textContent || '')) return; // 已有標題
     }
+    // v1.7.55b：候選 h1 兩條訊號，第二條專為 translate-first 場景。
+    // Shinkansen / Google 翻譯改寫 `<h1>` 文字後，`document.title` 與 og:title
+    // **不會**跟著翻（Guardian 實測：h1 已是「深入叢林：…」、canonical 仍是英文）
+    // → 純文字比對必然 miss，標題與 hero 又整組不見（Jimmy 2026-08-07「Shinkansen
+    // 翻完後還是不正常」）。修法用**翻譯無關的結構訊號**：page-wide 唯一 `<h1>`
+    // ——「整頁只有一個 h1」是多數新聞站慣例，翻譯只改文字不改這個事實
+    // （同 wrapperH1IsMainTitle 的 (b) 分支、v0.7.141 的原始前提）。
+    // 站名 logo h1（newtalk 類）雖也可能是唯一 h1，但本規則另有四道 guard
+    // （須含 hero 媒體 / 排在主文前 / 不含 main-article / 文字量 < 主文一半）
+    // 且只在「articleEl 內完全沒有標題」時才跑，誤搬風險受控。
+    const allH1s = document.querySelectorAll('h1');
     const matches = [];
-    for (const h of document.querySelectorAll('h1')) {
+    for (const h of allH1s) {
       if (articleEl.contains(h)) continue;
-      if (titleMatchesCanonical(h.textContent || '')) matches.push(h);
+      if (titleMatchesCanonical(h.textContent || '') ||
+          (allH1s.length === 1 && normTitle(h.textContent || ''))) matches.push(h);
     }
     if (matches.length !== 1) return;
     let block = matches[0];
