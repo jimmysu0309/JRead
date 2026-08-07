@@ -1258,8 +1258,56 @@ pageFns.collectDroppedByline = function () {
 // review-tier（低 stakes、strict 字串存在性）：少數站 reader 刻意不重複標題、或
 // og/doc title 與頁面標題用字不同 → 由 Claude 看截圖確認。為壓 FP，og 與 doc 兩個
 // 候選任一命中即算 found。
+// toggle（與翻譯）**之前**標記標題載體：用 og:title / document.title 去尾綴後的
+// 字串找出承載它的 heading，掛 `data-jread-audit-title`。
+// 動機（2026-08-07 非中文站雙輪驗收）：auditTitlePresence 是純字串比對，翻譯輪
+// 的 DOM 文字已變中文、meta 仍是英文 → 每個翻譯輪都固定誤報 title-missing。
+// 元素身份（標記）不隨翻譯改變，是翻譯無關的判定基礎；標記在 toggle 前打，
+// JRead 若把標題 clone 進 card，clone 也會帶著這個 attr（cloneNode(true)）。
+pageFns.tagOriginalTitle = function () {
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const squash = s => norm(s).replace(/\s+/g, '');
+  const stripSuffix = s => {
+    let r = norm(s), prev;
+    do { prev = r; r = r.replace(/\s*[|\-–—·»]\s*[^|\-–—·»]{1,40}$/, ''); }
+    while (r !== prev && r.length >= 4);
+    return r;
+  };
+  const og = document.querySelector('meta[property="og:title"]');
+  const cands = [stripSuffix(og && og.content ? og.content : ''), stripSuffix(document.title || '')]
+    .filter(c => c && c.length >= 4).map(squash);
+  if (!cands.length) return { tagged: 0 };
+  let n = 0;
+  for (const h of document.querySelectorAll('h1, h2, h3, [role="heading"]')) {
+    const t = squash(h.textContent || '');
+    if (!t || t.length < 4) continue;
+    if (!cands.some(c => t.includes(c) || c.includes(t))) continue;
+    h.setAttribute('data-jread-audit-title', '1');
+    n++;
+    if (n >= 3) break; // 同一標題常有響應式重複版本，標前幾個就夠
+  }
+  return { tagged: n };
+};
+
 pageFns.auditTitlePresence = function () {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  // 優先走「標記元素還在不在」——翻譯無關（見 tagOriginalTitle 註解）。
+  // 任一標記元素可見即通過：原標題留在 card 內、或 JRead 把它 clone /
+  // 搬進 card、或翻譯頁的外置 clone（data-jread-promoted-outside）都算。
+  const tagged = Array.prototype.slice.call(
+    document.querySelectorAll('[data-jread-audit-title="1"]'));
+  if (tagged.length) {
+    const artEl = document.querySelector('[data-jread-active="1"]');
+    const visible = tagged.some(el => {
+      if (el.closest('[data-jread-hidden="1"]')) return false;
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) return false;
+      if (!artEl) return true;
+      return artEl.contains(el) || !!el.closest('[data-jread-promoted-outside="1"]');
+    });
+    return { checked: true, missing: !visible, found: visible, via: 'tag',
+      taggedCount: tagged.length };
+  }
   // 站名 / 麵包屑尾綴剝除：反覆砍掉每一段 ` <sep> 短字串`（<=40 chars）尾綴。
   // 兩個修正（2026-07-02 page rounds title-missing 幾乎每站誤報）：
   //   1. 原本只砍「一段」，但很多站 document.title 是多段麵包屑
@@ -1325,6 +1373,8 @@ const tagOriginalLongProse = (page) => page.evaluate(pageFns.tagOriginalLongPros
 const runDroppedProseAudit = (page) => page.evaluate(pageFns.collectDroppedProse);
 // 標題進 reader card audit（toggle 後單段呼叫）。
 const runTitlePresenceAudit = (page) => page.evaluate(pageFns.auditTitlePresence);
+// 標題載體標記（toggle / 翻譯前跑）——見 pageFns.tagOriginalTitle 註解
+const tagOriginalTitle = (page) => page.evaluate(pageFns.tagOriginalTitle);
 // Byline（作者 + 日期）audit：tag 在 toggle 前、collect 在 toggle 後（兩段呼叫）。
 const tagOriginalByline = (page) => page.evaluate(pageFns.tagOriginalByline);
 const runDroppedBylineAudit = (page) => page.evaluate(pageFns.collectDroppedByline);
@@ -1457,7 +1507,91 @@ async function setThemeAndVerify(page, theme, timeoutMs = 4000) {
   return { applied: after !== before, before, after };
 }
 
+// ---------------------------------------------------------------------------
+// 頁面語言判定 + Shinkansen 翻譯觸發（兩支 harness 共用單一資料源，2026-08-07）
+//
+// 動機（Jimmy 2026-08-07 規則）：**非中文網頁的驗收必須連 Shinkansen 翻譯後
+// 一起測**——translate-first 是整整一個 bug family 的溫床（v1.6.12 iOS CJK
+// justify / v1.7.38 CJK linkDensity / v1.7.52 CJK 標題 spacer / v1.7.56 canonical
+// 文字比對），共同機制是「翻譯改寫 DOM 文字，但 meta / class / 門檻是按原文
+// 校準的」。只驗英文原頁＝系統性漏掉這一整類。
+// ---------------------------------------------------------------------------
+
+// 判定「這頁是中文頁」——中文頁不需要跑翻譯輪。純函式（可單測、forcing 見
+// page-rounds-translate-round.spec.js）。
+//
+// **內容才是權威，`<html lang>` 只當正向訊號**——站方的 lang 常常是樣板殘留：
+// cw.com.tw（天下雜誌，全中文）實測宣告 `lang="en-US"`，若讓 lang 說了算就會
+// 把中文站當非中文、每次多跑一輪沒意義的翻譯。判定順序：
+//   1. lang 是 zh* → 中文（正向訊號可信）
+//   2. lang 是 ja / ko → 非中文（日文站滿是漢字，字元比例法會誤判成中文，
+//      這兩個語言碼要先攔）
+//   3. 其餘（含錯誤 / 缺失的 lang）看字元組成：假名 / 諺文 → 非中文；
+//      漢字比例 >= 0.2 → 中文；都不是 → 非中文
+// 誤判成本不對稱：把中文站當非中文只是多跑一輪（浪費時間），把非中文站當中文
+// 會漏掉整個翻譯驗收（違反規則）→ 拿不準時一律回 false。
+function pageLooksChinese({ lang, sample } = {}) {
+  const l = String(lang || '').trim().toLowerCase();
+  if (/^zh\b|^zh-/.test(l)) return true;
+  if (/^(ja|ko)\b|^(ja|ko)-/.test(l)) return false;
+  const s = String(sample || '');
+  if (!s) return false;
+  if (/[぀-ヿ가-힯]/.test(s)) return false; // 假名 / 諺文 → 日文 / 韓文
+  const han = (s.match(/[㐀-䶿一-鿿]/g) || []).length;
+  return han / s.length >= 0.2;
+}
+
+// 從真實頁面取 lang + 內文樣本，回 { lang, isChinese }
+async function runLangDetect(page) {
+  const info = await page.evaluate(() => ({
+    lang: document.documentElement.getAttribute('lang') || '',
+    sample: (document.body ? document.body.innerText || '' : '')
+      .replace(/\s+/g, '').slice(0, 2000)
+  }));
+  return { lang: info.lang, isChinese: pageLooksChinese(info) };
+}
+
+// 觸發 Shinkansen 翻譯（跨 extension custom event，Google MT 免 API key）並等穩定。
+// 回傳翻譯元素數；0 = 沒翻到（呼叫端須當成訊號回報，不可靜默當成「翻過了」）。
+async function triggerShinkansenTranslate(page, opts = {}) {
+  const log = opts.log || console.log;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await sleep(300);
+  const res = await page.evaluate(() => new Promise((resolve) => {
+    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);
+    window.addEventListener('shinkansen-debug-response', (e) => {
+      clearTimeout(to);
+      resolve({ ok: true, detail: e.detail });
+    }, { once: true });
+    window.dispatchEvent(new CustomEvent('__jread_debug', {
+      detail: { type: 'translate', engine: 'google' }
+    }));
+  }));
+  log('translate trigger: ' + JSON.stringify(res));
+  log('waiting for translation to settle...');
+  // poll 翻譯元素數，連續兩次（間隔 1.5s）非零且不再增加即視為穩定；上限 20s
+  const start = Date.now();
+  let n = 0, prev = -1, stable = 0;
+  while (Date.now() - start < 20000) {
+    await sleep(1500);
+    n = await page.evaluate(() => document.querySelectorAll('[data-shinkansen-translated]').length);
+    if (n > 0 && n === prev) {
+      stable++;
+      if (stable >= 2) break;
+    } else {
+      stable = 0;
+    }
+    prev = n;
+  }
+  log(`Shinkansen 翻譯元素數: ${n}（${((Date.now() - start) / 1000).toFixed(1)}s）`);
+  return n;
+}
+
 module.exports = {
+  pageLooksChinese,
+  runLangDetect,
+  triggerShinkansenTranslate,
   NOISE_AUDIT_KEYWORDS,
   NOISE_KEYWORDS_STRICT,
   NOISE_KEYWORDS_CONTEXTUAL,
@@ -1485,6 +1619,7 @@ module.exports = {
   tagOriginalLongProse,
   runDroppedProseAudit,
   runTitlePresenceAudit,
+  tagOriginalTitle,
   tagOriginalByline,
   runDroppedBylineAudit,
   waitForReaderImagesLoaded,

@@ -103,42 +103,9 @@ const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkanse
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Shinkansen 翻譯觸發（跨 extension custom event，Google MT 免 API key）。
-// --shinkansen（toggle 後）與 --translate-first（toggle 前）共用。
-async function triggerShinkansenTranslate(page) {
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await sleep(300);
-  const res = await page.evaluate(() => new Promise((resolve) => {
-    const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);
-    window.addEventListener('shinkansen-debug-response', (e) => {
-      clearTimeout(to);
-      resolve({ ok: true, detail: e.detail });
-    }, { once: true });
-    window.dispatchEvent(new CustomEvent('__jread_debug', {
-      detail: { type: 'translate', engine: 'google' }
-    }));
-  }));
-  console.log('translate trigger:', JSON.stringify(res));
-  console.log('waiting for translation to settle...');
-  // poll 翻譯元素數，連續兩次（間隔 1.5s）非零且不再增加即視為穩定——
-  // 舊版固定 sleep 15s，多數頁 5-8s 就翻完，白等一半以上；上限 20s 兜底
-  // （比舊版多 5s headroom，慢站不會比以前更早被砍）。
-  const start = Date.now();
-  let n = 0, prev = -1, stable = 0;
-  while (Date.now() - start < 20000) {
-    await sleep(1500);
-    n = await page.evaluate(() => document.querySelectorAll('[data-shinkansen-translated]').length);
-    if (n > 0 && n === prev) {
-      stable++;
-      if (stable >= 2) break;
-    } else {
-      stable = 0;
-    }
-    prev = n;
-  }
-  console.log(`Shinkansen 翻譯元素數: ${n}（${((Date.now() - start) / 1000).toFixed(1)}s）`);
-  return n;
-}
+// Shinkansen 翻譯觸發：實作住 audit-lib.js（與 page-rounds-harness 共用單一
+// 資料源，2026-08-07 抽出——原本兩支各一份必然 drift）。
+const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(page);
 
 (async () => {
   if (FRESH) fs.rmSync(PROFILE_DIR, { recursive: true, force: true });

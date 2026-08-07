@@ -12,6 +12,13 @@
 //   node tools/page-rounds-harness.js --keep    # 跑完不關瀏覽器
 //   node tools/page-rounds-harness.js --profile miniflux --login --url https://site/  # Tier 2 一次性登入
 //   node tools/page-rounds-harness.js --profile miniflux --url https://site/entry/...  # 帶登入態跑驗收
+//   node tools/page-rounds-harness.js --url <非中文站>                # 自動跑兩輪（原文 + 翻譯後）
+//   node tools/page-rounds-harness.js --url <站> --no-auto-translate  # 只跑原文輪
+//   node tools/page-rounds-harness.js --url <站> --translate-first    # 只跑翻譯輪
+//
+// 非中文站自動雙輪（Jimmy 2026-08-07 規則）：偵測 `<html lang>` / 內文字元組成，
+// 非中文 → 原文輪跑完自動再跑一輪「先 Shinkansen 翻譯 → 再進閱讀模式」，輸出
+// 目錄後綴 `_translated`，最後印一行合併 VERDICT（取兩輪較差者，batch 抓 tail -1）。
 //
 // --profile <name>（Tier 2，需登入態的站）：用 ~/.jread-debug/profiles/<name>
 // 持久 profile 取代預設 /tmp 暫存 profile，登入態跨 run 留存（與 debug-harness
@@ -65,6 +72,20 @@ const PROFILE_NAME = (profileArgIdx >= 0 && process.argv[profileArgIdx + 1]) || 
 // --login：搭配 --profile，headed 開站手動登入一次後關視窗，跳過驗收。
 const LOGIN = process.argv.includes('--login');
 
+// ---- 非中文站自動雙輪（Jimmy 2026-08-07 規則）----------------------------
+// 「非中文網頁測試時必須測 Shinkansen 翻譯，page rounds 也一樣」。做成**工具
+// 強制**而非紀律：偵測到頁面語言非中文時，第一輪（原文）跑完後自動再跑第二輪
+// （先翻譯 → 再進閱讀模式，對應 Jimmy 實機順序），兩輪各自出 5 組截圖與 verdict。
+// 第二輪用 child process 重跑本腳本 + `--translate-first`（不是把 400 行主流程
+// 抽成 round function）：diff 小、且兩輪各自拿到全新 profile / 瀏覽器，第一輪的
+// 基準不會被 Shinkansen 的 content script 汙染。
+//   --translate-first     本輪自己就是翻譯輪（載入 Shinkansen、toggle 前先翻譯）
+//   --no-auto-translate   關掉自動第二輪（只想快看原文輪時用）
+const TRANSLATE_FIRST = process.argv.includes('--translate-first');
+const NO_AUTO_TRANSLATE = process.argv.includes('--no-auto-translate');
+const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
+const SHINKANSEN_AVAILABLE = fs.existsSync(path.join(SHINKANSEN_EXT, 'manifest.json'));
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // bot challenge / 封鎖頁標記（lowercase 比對 title + innerText 前 3000 chars）。
@@ -101,7 +122,8 @@ function outDirName(url) {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, '');
     const hash = crypto.createHash('md5').update(u.pathname).digest('hex').slice(0, 6);
-    return `${host}_${hash}`;
+    // 翻譯輪獨立目錄——兩輪截圖不可互相覆蓋（Claude 要能逐輪對照看）
+    return `${host}_${hash}${TRANSLATE_FIRST ? '_translated' : ''}`;
   } catch { return 'unknown'; }
 }
 
@@ -139,14 +161,23 @@ async function setZoom(page, z) {
 
   // ---- 1. 啟動 Chromium + extension ----
   // --login 必須 headed + 視窗上螢幕讓 Jimmy 登入；其餘推到螢幕外背景跑。
+  // 翻譯輪才載 Shinkansen——原文輪保持乾淨基準（不讓它的 content script 進場）
+  const extList = (TRANSLATE_FIRST ? [EXT_PATH, SHINKANSEN_EXT] : [EXT_PATH]).join(',');
+  if (TRANSLATE_FIRST) {
+    if (!SHINKANSEN_AVAILABLE) {
+      console.error('ERROR: --translate-first 需要 Shinkansen extension，找不到:', SHINKANSEN_EXT);
+      process.exit(1);
+    }
+    console.log('shinkansen: enabled（翻譯輪）');
+  }
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',
     headless: false,
     viewport: { width: 1280, height: 900 },
     deviceScaleFactor: 2,
     args: [
-      `--disable-extensions-except=${EXT_PATH}`,
-      `--load-extension=${EXT_PATH}`,
+      `--disable-extensions-except=${extList}`,
+      `--load-extension=${extList}`,
       '--no-first-run',
       '--no-default-browser-check',
       LOGIN ? '--window-position=40,40' : '--window-position=-2400,-2400',
@@ -193,6 +224,10 @@ async function setZoom(page, z) {
     return;
   }
 
+  // ---- 2.5. 頁面語言偵測（決定要不要跑第二輪翻譯驗收）----
+  const langInfo = await audits.runLangDetect(page);
+  console.log(`language: lang="${langInfo.lang}" → ${langInfo.isChinese ? '中文（不需翻譯輪）' : '非中文（必跑翻譯輪）'}`);
+
   // ---- 3. 原頁截圖 ----
   console.log('Phase: original');
   await setZoom(page, 0.5);
@@ -214,6 +249,10 @@ async function setZoom(page, z) {
   // Byline audit：toggle 前用 JSON-LD/meta 作者+日期當 ground truth，標記 masthead
   //（首個長段落之前）緊貼作者名/日期的 carrier。補 byline 短文字被誤殺的洞
   //（v1.5 Medium 作者+日期消失，標題/長散文 audit 都不覆蓋）。
+  // 標題 audit 的標記：必須在 toggle **與翻譯**之前打，之後靠元素身份判定
+  //（純字串比對在翻譯輪必然誤報 title-missing，見 audit-lib 註解）
+  const taggedTitle = await audits.tagOriginalTitle(page);
+  console.log(`  title carriers tagged: ${taggedTitle.tagged}`);
   const taggedByline = await audits.tagOriginalByline(page);
   console.log(`  byline carriers tagged: ${taggedByline.tagged}${taggedByline.author ? ' (author: ' + taggedByline.author + ')' : ''}`);
   // B3 基準：原頁 visible p 文字總量（retention ratio 用，見 audit-lib 頭註解）
@@ -222,6 +261,7 @@ async function setZoom(page, z) {
   await setZoom(page, 0.5);
 
   const audit = { url: TARGET_URL, hostname, dirName, readerModeActive: false,
+    language: langInfo, round: TRANSLATE_FIRST ? 'translated' : 'original', translatedEls: null,
     originalTextStats, blockSignal: null,
     contentStats: null, residual: { initial: null, delayed: null },
     links: null, retention: null,
@@ -257,6 +297,8 @@ async function setZoom(page, z) {
     audit.reviewReasons.push(`bot-block: ${audit.blockSignal.hits.join(',')}`);
     finalize('blocked');
     if (!KEEP) await ctx.close();
+    // 這裡 return 也一併跳過翻譯輪——bot challenge 頁沒有主文可驗，翻它沒意義
+    // （blocked 本身就是「改用 cage 重測」的指示，兩輪都要在 cage 那邊補）
     return;
   }
 
@@ -271,6 +313,16 @@ async function setZoom(page, z) {
   // v0.8.40：清掉閱讀位置記憶——profile 跨 run 重用，上一輪同 URL 的記錄會讓
   // enter 直接跳回上次位置（分頁截圖預期從第 1 頁起、audit 預期從頁首掃起）
   await sw.evaluate(() => chrome.storage.local.remove('readingPositions'));
+
+  // 翻譯輪：toggle **之前**先翻譯（對應 Jimmy 實機順序），之後所有 audit 與
+  // 截圖都跑在翻譯後 DOM 上。翻不到（0 元素）不當成翻過了——標成 fail 訊號，
+  // 否則會拿「其實沒翻」的一輪冒充翻譯驗收（偽陰性）。
+  if (TRANSLATE_FIRST) {
+    console.log('\n===== SHINKANSEN TRANSLATE-FIRST（toggle 前翻譯） =====');
+    await setZoom(page, 1);
+    audit.translatedEls = await audits.triggerShinkansenTranslate(page);
+    await setZoom(page, 0.5);
+  }
 
   // 2026-06-11：enter 前必須還原 zoom 1.0——cleaner / styler 的所有 rect 判定
   // （icon-link 門檻、content-img 200px、header zone 32px、sidebar 高度等）
@@ -672,8 +724,12 @@ async function setZoom(page, z) {
   if (audit.bodyWidth?.narrow) fail.push('body-width-narrow');
   // F1 還原失敗（舊版只記錄不判定——誤放）
   if (audit.restored && (audit.restored.jreadActive || audit.restored.jreadStyle)) fail.push('restore-failed');
+  // 翻譯輪卻沒翻到東西 = 這一輪根本沒驗到翻譯後 DOM，必須當高精度信號報出來
+  // （靜默放行等於拿原文輪冒充翻譯驗收）
+  if (TRANSLATE_FIRST && !audit.translatedEls) fail.push('translate-round-not-translated');
 
-  finalize(fail.length > 0 ? 'failed' : (review.length > 0 ? 'review' : 'pass'));
+  const myVerdict = fail.length > 0 ? 'failed' : (review.length > 0 ? 'review' : 'pass');
+  finalize(myVerdict);
   console.log('audit.json written.');
 
   if (!KEEP) {
@@ -682,5 +738,34 @@ async function setZoom(page, z) {
     if (!PROFILE_NAME) fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
   } else {
     console.log('--keep, leaving browser open');
+  }
+
+  // ---- 13. 非中文站自動跑第二輪（翻譯後）----
+  // 見檔頭 --translate-first 註解。batch script 抓 `tail -1` 的 VERDICT 行，
+  // 所以父行程在子行程之後再印一行合併 verdict（取兩輪較差者）。
+  if (!TRANSLATE_FIRST && !NO_AUTO_TRANSLATE && !langInfo.isChinese) {
+    if (!SHINKANSEN_AVAILABLE) {
+      // 不可靜默略過——沒跑的輪次必須說出來（否則 pass 會被讀成「翻譯後也 OK」）
+      console.log(`\n⚠️  非中文站但找不到 Shinkansen extension（${SHINKANSEN_EXT}），翻譯輪 SKIPPED`);
+      console.log(`VERDICT: ${myVerdict} (original only; translated-round=skipped-no-shinkansen)`);
+    } else {
+      console.log('\n===== 非中文站 → 自動跑第二輪（翻譯後）=====');
+      const args = [__filename, '--url', TARGET_URL, '--translate-first'];
+      if (PROFILE_NAME) args.push('--profile', PROFILE_NAME);
+      if (KEEP) args.push('--keep');
+      const r = require('child_process').spawnSync(process.execPath, args, { stdio: 'inherit' });
+      const childDir = `${dirName}_translated`;
+      let childVerdict = 'error';
+      for (const sub of ['failed', 'review', 'pass', 'blocked']) {
+        if (fs.existsSync(path.join(PR_ROOT, sub, childDir))) { childVerdict = sub; break; }
+      }
+      if (r.status !== 0 && childVerdict === 'error') childVerdict = 'error';
+      const RANK = { pass: 0, review: 1, blocked: 2, failed: 3, error: 4 };
+      const combined = RANK[childVerdict] > RANK[myVerdict] ? childVerdict : myVerdict;
+      console.log(`\n===== 兩輪合計 =====`);
+      console.log(`  原文輪:   ${myVerdict}  → ${path.join(PR_ROOT, myVerdict, dirName)}`);
+      console.log(`  翻譯輪:   ${childVerdict}  → ${path.join(PR_ROOT, childVerdict === 'error' ? '?' : childVerdict, childDir)}`);
+      console.log(`VERDICT: ${combined} (original=${myVerdict}, translated=${childVerdict})`);
+    }
   }
 })().catch(e => { console.error('ERR:', e.message, e.stack); process.exit(1); });
