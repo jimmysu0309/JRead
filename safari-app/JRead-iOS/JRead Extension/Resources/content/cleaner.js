@@ -1792,6 +1792,127 @@
     return false;
   }
 
+  // v1.7.55：canonical title 的「可接受變體」比對。
+  //
+  // `getCanonicalTitleText()`（單一資料源）優先取 og:title 原字串、只對
+  // document.title 套 `stripSiteSuffix`。但不少 CMS 的 og:title 自己就帶尾綴：
+  // Guardian 實測 `og:title = "Into the woods: … for 27 years | Michael Finkel"`
+  // （尾綴是**作者名**），`<h1>` 只有標題本體 → 需要 strict equality 的路徑
+  // （title promote）全部 bail、標題進不了 reader card。
+  //
+  // 修法刻意**不動** `getCanonicalTitleText()` 的回傳值：對 og:title 無條件
+  // strip 會反過來砍掉「標題本身就含 ` | ` / ` - `」的站（例：「A 專欄 | 第三話」），
+  // 那些站現在 strict eq 是通的，改了就變成新的漏接。改成比對端接受一組變體
+  // ——og 原字串 / og 去尾綴 / document.title 去尾綴——命中任一即視為主文標題。
+  // 失敗方向只會「多認一個變體」，不會讓既有命中變不命中。
+  // 變體全部由 getCanonicalTitleText() 的回傳值 + document.title 衍生——**不可**
+  // 在此重新 querySelector og:title（v1.6.29 單一資料源不變式，forcing 見
+  // perf-batch-refactor.spec.js）。
+  function canonicalTitleVariants() {
+    const out = [];
+    const push = (s) => {
+      const v = normTitle(s || '');
+      if (v && titleTextWeight(v) >= 5 && out.indexOf(v) < 0) out.push(v);
+    };
+    const base = getCanonicalTitleText();
+    push(base);
+    if (NS && NS.stripSiteSuffix) {
+      push(NS.stripSiteSuffix(base));
+      push(NS.stripSiteSuffix(document.title || ''));
+    }
+    return out;
+  }
+  function titleMatchesCanonical(text) {
+    const t = normTitle(text || '');
+    if (!t || titleTextWeight(t) < 5) return false;
+    return canonicalTitleVariants().indexOf(t) >= 0;
+  }
+
+  // v1.7.55：整個「文章 header 區塊」在 articleEl 外時，把它**搬進** articleEl
+  // 開頭（不是 clone 標題而已）。
+  //
+  // 場景（Jimmy 2026-08-07 回報 Guardian long read
+  // `theguardian.com/news/2017/mar/15/stranger-in-the-woods-…`）：DCR 版型把
+  // `<header>`（hero `<figure>` + `<h1>`）放在 `<body>` 底下、與 `<main> >
+  // <article>`**平行**，主文只有內文段落。detector 選 `<article>` 完全正確，
+  // 但 hero 與標題在它外面 → 被「articleEl 外一律隱藏」清掉，reader card 頂端
+  // 只剩一行沒有圖的圖說。既有 `promoteUniqueTitleH1Into` 就算命中也只 clone
+  // 標題，hero 依然回不來。
+  //
+  // 為何是「搬原件」而不是「clone」：搬進來的區塊會**照常吃完整套 cleaner 規則**
+  // （lightbox「View image in fullscreen」按鈕、`<nav>`、分享列都由既有規則各自
+  // 清掉），不必為 clone 另寫一套消毒；也不會產生同一張 hero 圖的兩份 DOM。
+  // 還原走 hidden 陣列的 `__relocated` path（restore 時插回原 parent / nextSibling）。
+  //
+  // 選取（結構性通則，硬規則 3）：
+  //   1. articleEl 內已有帶文字的 h1 → 版型正常，不動
+  //   2. articleEl 外剛好一個「文字命中 canonical title 變體」的 h1（站名 logo h1
+  //      / widget h1 不會命中）
+  //   3. 從該 h1 往上爬到「仍不含 articleEl」的最外層（不到 body / html）——
+  //      這一層就是與主文平行的 header 區塊
+  //   4. 該區塊必須排在 articleEl **之前**（DOM order；防止把文末推薦區搬上來）、
+  //      不含 `<main>` / `<article>`（不吞其他主文容器）、文字量 < articleEl 的
+  //      一半（header 不是內容）
+  //   5. **必須含 hero 媒體**（`<figure>` / `<picture>` / `<video>`，或非連結 /
+  //      非列表縮圖的內容級 `<img>`）。這條是本規則存在的唯一理由——只有標題
+  //      （或標題 + 工具列 + byline）的外置 header 交給既有 title-clone path
+  //      更好：Miniflux `entry-header` 就是 h1 + entry-actions 工具列 + entry-meta，
+  //      v0.8.135 刻意只 clone 純標題、不帶那些 chrome 進 reader card。
+  // 刻意**不**重用 containsStandaloneContentImg：那條的「naturalWidth <= 8 →
+  // 未載入、保守保護」分支是為「別誤殺」設計的，false positive 無害；本規則
+  // 相反——false positive = 把不含 hero 的 header 整支搬進 reader card（Miniflux
+  // entry-header 的 16×16 feed icon 在 jsdom naturalWidth 恆 0，就會命中那條
+  // 分支）。這裡只認「明確達內容圖尺寸」，量不到就不搬、退回既有 title-clone。
+  function blockHasHeroMedia(block) {
+    if (!block || !block.querySelector) return false;
+    if (block.querySelector('figure, picture, video')) return true;
+    for (const img of block.querySelectorAll('img')) {
+      if (img.closest && img.closest('a, li')) continue; // 連結縮圖 / 列表縮圖
+      const attrW = parseInt(img.getAttribute('width') || '', 10) || 0;
+      const attrH = parseInt(img.getAttribute('height') || '', 10) || 0;
+      if (attrW && attrH && (attrW < 200 || attrH < 150)) continue; // 站方自報小圖示
+      const w = img.naturalWidth || attrW;
+      const h = img.naturalHeight || attrH;
+      if (w >= 200 && h >= 150) return true;
+      let r;
+      try { r = img.getBoundingClientRect(); } catch (_) { r = null; }
+      if (r && r.width >= 150 && r.height >= 100) return true;
+    }
+    return false;
+  }
+
+  function relocateOutsideArticleHeaderBlock(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll || !articleEl.parentNode) return;
+    for (const h of articleEl.querySelectorAll('h1')) {
+      if (normTitle(h.textContent || '')) return; // 已有標題
+    }
+    const matches = [];
+    for (const h of document.querySelectorAll('h1')) {
+      if (articleEl.contains(h)) continue;
+      if (titleMatchesCanonical(h.textContent || '')) matches.push(h);
+    }
+    if (matches.length !== 1) return;
+    let block = matches[0];
+    while (block.parentElement && block.parentElement !== document.body &&
+           block.parentElement !== document.documentElement &&
+           !block.parentElement.contains(articleEl)) {
+      block = block.parentElement;
+    }
+    if (block === document.body || block.contains(articleEl)) return;
+    // DOM order：header 區塊必在主文之前
+    if (!(articleEl.compareDocumentPosition(block) & 2 /* PRECEDING */)) return;
+    if (block.querySelector('main, article')) return;
+    const artLen = norm(articleEl.textContent).length;
+    const blockLen = norm(block.textContent).length;
+    if (artLen && blockLen > artLen * 0.5) return;
+    if (!blockHasHeroMedia(block)) return;
+    const parent = block.parentNode;
+    const next = block.nextSibling;
+    articleEl.insertBefore(block, articleEl.firstChild);
+    block.setAttribute('data-jread-relocated-header', '1');
+    if (Array.isArray(hidden)) hidden.push({ el: block, __relocated: { parent, next } });
+  }
+
   function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
     // canonical title 推導走單一資料源（v1.6.29 合一）
@@ -1810,7 +1931,10 @@
     if (allH1s.length === 1 && outsideH1s.length === 1) {
       h1 = outsideH1s[0];
     } else if (allH1s.length > 1 && baseTitle && titleTextWeight(baseTitle) >= 5) {
-      const matches = outsideH1s.filter(h => normTitle(h.textContent || '') === baseTitle);
+      // v1.7.55：strict eq 換成 canonical 變體比對（og:title 帶作者 / 版塊尾綴
+      // 的站，見 titleMatchesCanonical 註解）。語意仍是「strict equality，只是
+      // canonical 有多個可接受寫法」——不放寬成 partial / includes。
+      const matches = outsideH1s.filter(h => titleMatchesCanonical(h.textContent || ''));
       if (matches.length === 1) h1 = matches[0];
     }
     if (!h1) return;
@@ -1824,7 +1948,7 @@
     // strict equality（避免 newtalk.tw 類 site logo h1 含 `[Newtalk新聞]` site
     // prefix 但 partial includes baseTitle 而誤觸發 promote——markPromotedTitleIfMissing
     // 處理那條 case，本機制只負責「h1 自身就是主文標題完整字串」場景）。
-    if (h1Text !== baseTitle) {
+    if (!titleMatchesCanonical(h1Text)) {
       // v0.7.147 fallback：翻譯擴展（Shinkansen / Google Translate 等）翻 body
       // 內 h1 text 但 `<title>` tag 沒翻，導致 strict equality fail（簡體 docT
       // vs 繁體 h1）。看 h1 自己 / parent class / id 是否含明確「主文標題」
@@ -2990,6 +3114,21 @@
     // 風險：主文連結（超連結 / wiki / 引用 / 人名）class 命名極少用 noise
     // keyword，實際會命中的 `<a>` 幾乎都是雜訊。
     for (const el of articleEl.querySelectorAll('button, a')) {
+      // v1.7.55：`<figure>` 內的「圖片點擊覆蓋層」不受 preserve 保護。
+      // 結構訊號（非站點特判）：`<figure>` 內、position absolute / fixed、
+      // 且**自身不含任何媒體**的 `<a>` / `<button>` ＝ 疊在圖上的點擊觸發器
+      // （lightbox / 看大圖 / 放大鏡），不是圖本身也不是圖說——PRESERVE_SEL
+      // （summary/figure/figcaption/blockquote）保護的是內容，不是這種 UI。
+      // Guardian 實測：`<a class="open-lightbox">`（文字 "View image in
+      // fullscreen"、原站幾何 1040px 寬）疊在 hero 上，內部 `<button>` 已被
+      // all-buttons 規則清掉，但 `<a>` 本身無雜訊 class、非 icon-only → 三條
+      // 既有 path 全 miss，留下比 reader card 還寬的透明點擊層 → 整頁水平溢出。
+      // 包住圖片本身的 lightbox `<a>`（anchorIsContentImageLink 的正當豁免）
+      // 因為「含媒體」條件不命中，不受影響。
+      if (anchorIsFigureClickOverlay(el)) {
+        if (!(el.dataset && el.dataset.jreadHidden === '1')) hide(el, hidden);
+        continue;
+      }
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (!shouldHideByKeyword(el)) continue;
@@ -3006,6 +3145,16 @@
       if (el.tagName === 'A' && anchorIsContentImageLink(el) && !shouldHideByStrongKeyword(el)) continue;
       hide(el, hidden);
     }
+  }
+
+  // v1.7.55：見上方呼叫端註解（figure 內的點擊觸發器覆蓋層）。
+  function anchorIsFigureClickOverlay(el) {
+    if (!el || !el.closest || !el.closest('figure')) return false;
+    if (el.querySelector && el.querySelector('img, picture, video, svg image')) return false;
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (_) { return false; }
+    if (!cs) return false;
+    return cs.position === 'absolute' || cs.position === 'fixed';
   }
 
   // ---- 主文內：heading text heuristic ----------------------------------
@@ -8132,6 +8281,12 @@
       if (opts && opts.promotedFrom && opts.promotedFrom !== articleEl) {
         safeRun(narrowPromotedSiblings, articleEl, opts.promotedFrom, hidden, opts.promotedTitleHead);
       }
+      // v1.7.55：外置 header 區塊搬進 articleEl。**必須排在所有 hide 規則之前**
+      // ——搬進來之後才吃得到整套 in-article 規則（lightbox 按鈕 / nav / 分享列
+      // 各自被清），且不會先被 hideOutsideArticleSemantic 當外部 <header> 藏掉。
+      // 排在 narrowPromotedSiblings 之後：narrow 只認 detector promote 前的
+      // sibling chrome，搬進來的區塊不該進它的判定範圍。
+      safeRun(relocateOutsideArticleHeaderBlock, articleEl, hidden);
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
       safeRun(hideDialogs, articleEl, hidden);
       safeRun(hideOutsideArticleSemantic, articleEl, hidden);
@@ -8359,6 +8514,19 @@
           }
           if (item.__promotedImg) {
             if (item.el.parentNode) item.el.parentNode.removeChild(item.el);
+            continue;
+          }
+          // v1.7.55：relocateOutsideArticleHeaderBlock 搬進 articleEl 的原件——
+          // 插回原本的 parent / nextSibling（非 hide 還原路徑）。原 parent 已被
+          // 站方 JS 換掉（SPA 重繪）時放棄搬回，維持現狀不丟例外。
+          if (item.__relocated) {
+            const { parent, next } = item.__relocated;
+            if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-header');
+            try {
+              if (parent && parent.isConnected) {
+                parent.insertBefore(item.el, (next && next.parentNode === parent) ? next : null);
+              }
+            } catch (_) { /* detached：維持現狀 */ }
             continue;
           }
           const { el, prevDisplay, prevDisplayPriority } = item;
