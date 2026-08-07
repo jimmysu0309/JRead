@@ -6019,7 +6019,47 @@
     }
   }
 
+  // v1.7.54：文章 header 區塊 guard（凌駕 strong keyword）。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：wrapper 同時含 (a) 主標題 h1（沿用
+  // wrapperH1IsMainTitle：canonical title 相符 或 文件第一個 h1）與 (b) 作者 /
+  // 日期 meta（`<time>` 元素，或 class/id 帶 byline / dateline token 的後代）
+  // ＝ CMS 的「文章 header」區塊（標題＋摘要＋主圖＋署名＋日期）。這種組合在
+  // 任何站都只會出現在主文開頭，不會是 widget / 推薦列 / 廣告槽。
+  //
+  // 為何要凌駕 strong keyword：CSS-in-JS（emotion / styled-components）會把
+  // **整條 style composition chain 的 fn 名稱**串進同一個 class，class 裡出現
+  // 某個 token 不代表該元素自身帶那個語意。NYT Magazine 實測（Jimmy 2026-08-07
+  // 回報「標題 / byline / hero image 都不見了」）：
+  //   `css-1jaw3m-Header-marginTop-magazine-print-none-…-printHide-print-
+  //    bylineTimestampToneFn`
+  // 這支是文章 header 本體，class 中段的 `printHide` 只是它組合的其中一個
+  // print-media helper（同一條 chain 共 22 段），卻命中 v1.7.26 的 strong token
+  // `print[-_]?hide` → 跳過 H1 guard 與主文 guard、整塊 hide，標題 / 摘要 /
+  // hero figure / byline / 日期一次全消失。真雜訊那兩支（`css-kkjaox-printHide`
+  // 的空 wrapper、`css-81vji0-printHide` 的 Read 683 comments 鈕）token 是
+  // composition 的末段、不含 h1，照常清除、不受本 guard 影響。
+  //
+  // 對稱風險：真雜訊 wrapper 剛好同時含主標 h1 + time（例如重複標題的付費牆
+  // 卡片）會被誤豁免——但「誤殺標題成本高、漏清 widget 成本低」取捨明確
+  // （同 v0.8.119 hero image guard），且 dialog / overlay 類另有規則兜底。
+  // Substack `div.main-menu`（含站名 h1#wordlogo，v0.7.199 刻意讓 strong 跳過
+  // H1 guard 的來源案例）無 time、無 byline class → 不享本豁免，行為不變。
+  const BYLINE_META_ATTR_SEL =
+    '[class*="byline" i], [class*="dateline" i], [id*="byline" i], [id*="dateline" i]';
+  function wrapperIsArticleHeaderBlock(el) {
+    if (!el || !el.querySelector) return false;
+    if (!el.querySelector('h1')) return false;
+    if (!wrapperH1IsMainTitle(el)) return false;
+    if (el.querySelector('time')) return true;
+    for (const cand of el.querySelectorAll(BYLINE_META_ATTR_SEL)) {
+      if (keywordWrapperIsByline(cand)) return true; // token 邊界二次確認
+    }
+    return false;
+  }
+
   function keywordWrapperIsProtected(el, articleEl) {
+    if (wrapperIsArticleHeaderBlock(el)) return true;
     if (shouldHideByStrongKeyword(el)) return false;
     if (keywordWrapperIsByline(el)) return true;
     // v0.8.119 autosport 修法：只被「非 strong keyword」命中、但內含 standalone
