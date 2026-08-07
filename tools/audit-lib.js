@@ -37,7 +37,12 @@ const path = require('path');
 const NOISE_KEYWORDS_STRICT = [
   // 中文 CTA 專屬措辭
   '延伸閱讀', '相關文章', '相關新聞', '相關報導', '推薦閱讀', '推薦文章', '推薦新聞',
-  '查看原始', '看更多', '看原文', '原始文章', '其他人',
+  '查看原始', '看更多', '看原文', '原始文章',
+  // v1.7.57（2026-08-08 page rounds）：原本是裸詞 `其他人`，本意是「其他人也看了」，
+  // 但翻譯後的正文裡「其他人」是極普通的詞——quantamagazine「但其他人也同意這一點」、
+  // restofworld「和數千名其他人士齊聚」兩站翻譯輪都被誤判成 fail。cleaner.js 那邊
+  // 用的是收斂過的 `其他人.{0,3}看`，audit 這條是 drift 出來的裸詞，收斂回 CTA 措辭。
+  '其他人也看', '其他人還看', '其他人也在看',
   'LINE 官方', 'LINE官方', '官方帳號', '粉絲專頁',
   'AI 摘要', 'AI摘要', '網友貼文', '建立貼文', '繼續看下去',
   'Google新聞', 'Google 新聞',
@@ -1264,9 +1269,22 @@ pageFns.collectDroppedByline = function () {
 // 的 DOM 文字已變中文、meta 仍是英文 → 每個翻譯輪都固定誤報 title-missing。
 // 元素身份（標記）不隨翻譯改變，是翻譯無關的判定基礎；標記在 toggle 前打，
 // JRead 若把標題 clone 進 card，clone 也會帶著這個 attr（cloneNode(true)）。
+// v1.7.57（2026-08-08 page rounds）：比對前多做兩步正規化，否則真標題標不到、
+// 反而標到站台 chrome 裡的重複標題：
+//   1. 全形 ASCII 標點折半形——newtalk 實測 og:title 是半形 `!`、渲染 h1 是全形
+//      `！`，squash 空白後兩邊仍互不 includes → 真標題 miss；同頁 <header> 內的
+//      站台導覽 h1 文字與 og:title 逐字相同反而命中，被標成唯一載體，reader mode
+//      藏 header 後就固定誤報 title-missing（12/106 站命中同款）。
+//   2. 剝開頭的 `[站名]` / 【站名】 前綴（og:title 常帶、渲染標題不帶）。
+// 兩步都只是放寬「同一標題的不同寫法」比對，不會讓不相干 heading 命中（length>=4
+// 門檻 + 雙向 includes 仍在）。
 pageFns.tagOriginalTitle = function () {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-  const squash = s => norm(s).replace(/\s+/g, '');
+  // 全形 ASCII 標點（U+FF01-U+FF5E）→ 半形，並統一常見全形括號 / 引號的對應
+  const foldWidth = s => (s || '').replace(/[！-～]/g,
+    c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  const stripSitePrefix = s => norm(s).replace(/^\s*[\[【(（][^\]】)）]{1,20}[\]】)）]\s*/, '');
+  const squash = s => foldWidth(norm(s)).replace(/\s+/g, '');
   const stripSuffix = s => {
     let r = norm(s), prev;
     do { prev = r; r = r.replace(/\s*[|\-–—·»]\s*[^|\-–—·»]{1,40}$/, ''); }
@@ -1275,6 +1293,7 @@ pageFns.tagOriginalTitle = function () {
   };
   const og = document.querySelector('meta[property="og:title"]');
   const cands = [stripSuffix(og && og.content ? og.content : ''), stripSuffix(document.title || '')]
+    .flatMap(c => [c, stripSitePrefix(c)])
     .filter(c => c && c.length >= 4).map(squash);
   if (!cands.length) return { tagged: 0 };
   let n = 0;
@@ -1296,6 +1315,11 @@ pageFns.auditTitlePresence = function () {
   // 搬進 card、或翻譯頁的外置 clone（data-jread-promoted-outside）都算。
   const tagged = Array.prototype.slice.call(
     document.querySelectorAll('[data-jread-audit-title="1"]'));
+  // v1.7.57：tag 路徑改成**只做正向判定**。標記可能標錯載體（站台 chrome 裡與
+  // og:title 逐字相同的重複標題），此時「標記元素不可見」不等於「標題沒進 card」
+  // ——newtalk / bbc / cnbc 等 12 站實證。標記可見 → 直接 found；標記全不可見 →
+  // **不下結論**，往下退回字串比對路徑再判一次（該路徑看的是 card 內可見文字，
+  // 與標記元素身份無關）。
   if (tagged.length) {
     const artEl = document.querySelector('[data-jread-active="1"]');
     const visible = tagged.some(el => {
@@ -1305,8 +1329,10 @@ pageFns.auditTitlePresence = function () {
       if (!artEl) return true;
       return artEl.contains(el) || !!el.closest('[data-jread-promoted-outside="1"]');
     });
-    return { checked: true, missing: !visible, found: visible, via: 'tag',
-      taggedCount: tagged.length };
+    if (visible) {
+      return { checked: true, missing: false, found: true, via: 'tag',
+        taggedCount: tagged.length };
+    }
   }
   // 站名 / 麵包屑尾綴剝除：反覆砍掉每一段 ` <sep> 短字串`（<=40 chars）尾綴。
   // 兩個修正（2026-07-02 page rounds title-missing 幾乎每站誤報）：
@@ -1322,10 +1348,15 @@ pageFns.auditTitlePresence = function () {
     while (r !== prev && r.length >= 4);
     return r;
   };
+  // v1.7.57：剝開頭的 `[站名]` / 【站名】 前綴（og:title 常帶、渲染標題不帶），
+  // 與 tagOriginalTitle 同款。原字串也留著當候選（帶前綴的站仍能命中）。
+  const stripSitePrefix = s => norm(s).replace(/^\s*[\[【(（][^\]】)）]{1,20}[\]】)）]\s*/, '');
   const og = document.querySelector('meta[property="og:title"]');
   const ogTitle = stripSuffix(og && og.content ? og.content : '');
   const docTitle = stripSuffix(document.title || '');
-  const candidates = [ogTitle, docTitle].filter(c => c && c.length >= 4);
+  const candidates = [ogTitle, docTitle]
+    .flatMap(c => [c, stripSitePrefix(c)])
+    .filter(c => c && c.length >= 4);
   if (!candidates.length) return { checked: false };
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { checked: false };
@@ -1338,7 +1369,11 @@ pageFns.auditTitlePresence = function () {
   // document.title 沒補空格（「收紅340點」）→ 一般 includes() 因空白差異永遠 miss。
   // 標題是長字串、去空白後跨字串碰撞風險可忽略；且只影響低精度 review 信號、
   // 目標是抓「標題整個沒進 card」。
-  const squash = s => s.replace(/\s+/g, '');
+  // v1.7.57：一併折全形 ASCII 標點（og:title 半形 `!` vs 渲染 h1 全形 `！`，
+  // newtalk 實證），理由同 tagOriginalTitle。
+  const foldWidth = s => (s || '').replace(/[！-～]/g,
+    c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  const squash = s => foldWidth(s).replace(/\s+/g, '');
   const vis = squash(visText);
   const found = candidates.some(c => vis.includes(squash(c)));
   return { checked: true, missing: !found, found,

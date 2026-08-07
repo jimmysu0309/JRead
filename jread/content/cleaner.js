@@ -275,7 +275,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -5912,6 +5912,26 @@
         parentProps.push('aspect-ratio');
         parentDecls['aspect-ratio'] = 'auto';
       }
+      // v1.7.57（2026-08-08 page rounds，slate.com 主圖整張消失）：解 hack 之後
+      // 必須一併解除容器的 **size / paint containment**。
+      // 本函式兩個 Pattern 的共同前提是「清掉 hack 後，容器改由 in-flow 的 media
+      // 撐高」。`contain` 帶 size 時這個前提直接不成立——size containment 的定義
+      // 就是「盒子尺寸計算時忽略內容」，height:auto 只會解析成 0；再帶 paint
+      // 時溢出的 media 會被整個裁掉，連「圖疊到文字上」都看不到，視覺上就是主圖
+      // 憑空消失。slate.com 實測：`.lazyload-container` inline `aspect-ratio:
+      // 1560/1040` + stylesheet `contain: strict`（= size layout paint style）
+      // + `overflow: hidden`，reset aspect-ratio 後容器 0 高、608×405 的 hero
+      // img 被 paint containment 裁光。
+      // 結構通則（非站點特判）：任何「靠 aspect-ratio / padding hack 撐高的 media
+      // placeholder 容器」，在我們拆掉它的撐高機制後就不該再保留 size containment
+      // ——那是站方為「高度由自己宣告」情境做的最佳化，前提已被我們改掉。
+      // 只在確定要 reset 的容器上動（isHack / hasAspectRatio 已成立），可逆走既有
+      // snapshot 機制。computed `contain` 為 'none' 時不動（多數站的情形）。
+      const containVal = pCs.contain;
+      if (containVal && containVal !== 'none' && /\b(size|strict|content)\b/.test(containVal)) {
+        parentProps.push('contain');
+        parentDecls['contain'] = 'none';
+      }
       resets.push({
         kind: 'placeholder-parent',
         el: parent,
@@ -7149,6 +7169,104 @@
     }
   }
 
+  // ---- 主文內：整張 figure 就是一個他篇連結卡（v1.7.57 theguardian 實測）----
+  // 場景：2026-08-08 page rounds，Guardian long read 文中夾著一張 608×366 的
+  // 推薦卡（縮圖 460×276 + 他篇標題 + 「Read more」），整張完整顯示在 reader card
+  // 內（residual-strict 兩輪都命中「Read more」，但殘留的其實是整張卡）。
+  //
+  // 為什麼既有規則全部漏掉（probe 實證）：
+  //   - `hideInsideArticleByHeadingText`：文字命中 `^read\s+(more|next|also)`，
+  //     但 `isInPreserved` 因為外層是 `<figure>` 直接 continue（媒體保護）
+  //   - `hideInsideArticleInsetLinkCards`：只掃 div/aside、且同樣被 isInPreserved
+  //     擋掉；幾何閘也要求 floated / narrow，這張卡是滿版心寬
+  //
+  // 結構通則（非站點特判）：`<figure>` 的語意是「文中獨立的媒體 / 圖表 + 圖說」。
+  // 一個 figure 若**全部內容都被單一 `<a>` 包住、連到另一個頁面、而且沒有
+  // figcaption**，它就不是媒體 figure，是一張連結卡。
+  // 誤殺邊界（四道閘缺一不可）：
+  //   - 有 figcaption → 是真圖說，放行（最常見的合法 figure）
+  //   - 連結數 ≠ 1，或 `<a>` 沒有包住 figure 的全部文字 → 不是「整張都是連結」
+  //   - figure 文字 < 20 chars → 只是「圖包在連結裡」（lightbox / 攝影師署名連結），
+  //     沒有他篇標題，放行
+  //   - href 指向圖檔 / 錨點 / 本頁 → lightbox 或本文標題卡，放行
+  const FULL_LINK_CARD_MIN_TEXT = 20;
+  const IMAGE_HREF_RE = /\.(jpe?g|png|gif|webp|avif|svg|bmp|tiff?)(\?|#|$)/i;
+
+  function hideInsideArticleFullLinkCardFigures(articleEl, hidden) {
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (fig.contains && fig.contains(articleEl)) continue;
+      if (fig.dataset && fig.dataset.jreadHidden === '1') continue;
+      if (fig.querySelector('figcaption')) continue;
+      const links = fig.querySelectorAll('a[href]');
+      if (links.length !== 1) continue;
+      const a = links[0];
+      const figText = norm(fig.textContent);
+      if (figText.length < FULL_LINK_CARD_MIN_TEXT) continue;
+      if (norm(a.textContent) !== figText) continue;   // `<a>` 必須包住 figure 全部文字
+      const href = a.getAttribute('href') || '';
+      if (!href || href.charAt(0) === '#') continue;
+      if (IMAGE_HREF_RE.test(href)) continue;          // lightbox / 原圖連結
+      let target;
+      try { target = new URL(href, location.href); } catch (_) { continue; }
+      if (target.pathname === location.pathname) continue; // 本文自連結（標題卡）
+      hide(fig, hidden);
+    }
+  }
+
+  // ---- 主文內：行內他篇推薦段（v1.7.57 newtalk 實測）----------------------
+  // 場景：新聞站在正文段落之間插一行「短前綴：〈他篇標題連結〉」的推薦列。
+  //   <p class="recommend">全站首選：<a href="/news/view/…">慈濟聲明未解釋被詐十億…</a></p>
+  //   <p class="recommend">現正最夯：<a href="/news/view/…">坐等拿回犯罪所得？他批…</a></p>
+  //
+  // 為什麼不用關鍵字清單解決：newtalk 同一篇文章裡就出現兩種不同前綴（「全站首選」
+  // 「現正最夯」），且會隨編輯輪換——2026-08-08 page rounds 第一輪把「全站首選」
+  // 加進 NOISE_HEADING_TEXT_RE 後重驗，同篇立刻換成「現正最夯」殘留。關鍵字是
+  // 打地鼠，結構才是不變的那一面（CLAUDE.md 硬規則 3）。
+  //
+  // 結構簽名：一個段落的**全部內容**就是「很短的引導詞 + 冒號 + 單一站內連結」，
+  // 連結文字有標題長度，連結後面沒有任何文字。正常行內引用長這樣的機率極低——
+  // 正文引用連結後面一定還有話要說（「…<a>報導</a>指出…」）。
+  //
+  // 誤殺邊界（各自對應一道閘）：
+  //   - 前綴 > 10 chars 或不以冒號結尾 → 是正常句子的一部分，放行
+  //   - 連結後還有文字 → 是行內引用，放行
+  //   - 連結文字 < 15 chars → 圖片來源 / 署名連結（「圖／Getty」），放行
+  //   - 跨網域連結 → 資料出處 / 原文出處引用，是內容不是站內推薦，放行
+  //   - 連到本頁 pathname → permalink，放行
+  const INLINE_RELATED_PREFIX_MAX = 10;
+  const INLINE_RELATED_LINK_MIN_TEXT = 15;
+  const INLINE_RELATED_PREFIX_RE = /[：:]$/;
+
+  function hideInsideArticleInlineRelatedLinkParagraphs(articleEl, hidden) {
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(p)) continue;
+      // 元素子節點必須恰好一個，且是連結
+      const kids = p.children;
+      if (kids.length !== 1) continue;
+      const a = kids[0];
+      if (a.tagName !== 'A' || !a.getAttribute('href')) continue;
+      // 連結必須是最後一個有內容的 node（後面不能再有文字）
+      let tail = '';
+      for (let n = a.nextSibling; n; n = n.nextSibling) tail += n.textContent || '';
+      if (norm(tail)) continue;
+      // 前綴 = 連結之前的直接文字，需短且以冒號收尾
+      let prefix = '';
+      for (let n = p.firstChild; n && n !== a; n = n.nextSibling) prefix += n.textContent || '';
+      prefix = norm(prefix);
+      if (!prefix || prefix.length > INLINE_RELATED_PREFIX_MAX) continue;
+      if (!INLINE_RELATED_PREFIX_RE.test(prefix)) continue;
+      // 連結文字要有標題長度（排除「圖／Getty」類署名）
+      if (norm(a.textContent).length < INLINE_RELATED_LINK_MIN_TEXT) continue;
+      // 站內、且不是本頁
+      let target;
+      try { target = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
+      if (target.origin !== location.origin) continue;
+      if (target.pathname === location.pathname) continue;
+      hide(p, hidden);
+    }
+  }
+
   // ---- 主文內：float 推廣 aside（v0.8.48 quanta 實測）---------------------
   // 雜誌類站點在主文旁 float 插 ASIDE 推廣模組（quanta「The Quanta Podcast」
   // 含 H4 標題 + 宣傳文 + ALL EPISODES 連結 + audio 播放器；「Related:」相關
@@ -8341,6 +8459,8 @@
       // v0.8.48 三條新規則：須在 collapse / styler reflow 前跑（float / 寬度
       // / iframe 高度量測要反映原站 layout）
       safeRun(hideInsideArticleInsetLinkCards, articleEl, hidden);
+      safeRun(hideInsideArticleFullLinkCardFigures, articleEl, hidden);
+      safeRun(hideInsideArticleInlineRelatedLinkParagraphs, articleEl, hidden);
       safeRun(hideInsideArticleFloatedPromoAsides, articleEl, hidden);
       safeRun(hideInsideArticleFigureWidgetIframes, articleEl, hidden);
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);

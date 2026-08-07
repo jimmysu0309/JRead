@@ -3788,6 +3788,33 @@ html.${HTML_CLASS}.jread-orion body {
               return;
             }
           }
+          // v1.7.57（2026-08-08 page rounds，propublica 作者頭像撐成 608×608
+          // 圓形蓋住 bio）：**低解析度來源圖不得被 reader 放大**。
+          // 上面的 capIcon 閘要求 `naturalWidth > rect × 1.5`（＝「站方把大來源圖
+          // 顯示縮小」），對 natural ≈ rendered 的小圖（頭像 / badge / logo）完全
+          // 不命中，這類圖等於沒有任何寬度保護：一旦其所在的 flex 列被 decolumn
+          // 成 block，容器從 shrink-to-fit 變成撐滿版心，站方自己的
+          // `img { width: 100% }`（WordPress `.wp-block-post-featured-image img`
+          // 是預設）就把 70×70 的頭像放大到 608×608、溢出固定高的 figure 疊在
+          // 後續文字上。
+          // 結構通則：把 70px 的來源圖撐到 608px 在任何站都只會糊掉，是無條件錯的。
+          // 上限取 `max(naturalWidth, 進 reader 前的 rendered 寬)`——**只擋 reader
+          // 造成的放大，不縮小站方自己就顯示得比原始解析度大的圖**（那是站方意圖，
+          // 維持原樣）。
+          // 排除項：inline emoji（上面已 return）、player、lazy placeholder
+          // （!complete / natural <= 1，此刻量不準，交給 load listener 重判）、
+          // SVG（解析度無關，naturalWidth 對 viewBox-only SVG 是 Chrome 預設 150、
+          // 拿來當上限會誤縮）。
+          const isSvgImg = (im) => /\.svg(\?|#|$)/i.test(im.currentSrc || im.src || '') ||
+            /^data:image\/svg/i.test(im.currentSrc || im.src || '');
+          if (img.complete && img.naturalWidth > 1 &&
+              img.getAttribute(PLAYER_ATTR) !== '1' &&
+              img.naturalWidth < CONTENT_IMG_MIN && img.naturalHeight < CONTENT_IMG_MIN &&
+              !isSvgImg(img)) {
+            if (!r) r = img.getBoundingClientRect();
+            const cap = Math.max(img.naturalWidth, Math.round(r.width) || 0);
+            if (cap > 0) { capIconImg(img, cap); return; }
+          }
           // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
           // block + margin 規則會漏掉它 → 維持原站 display:inline + 小 margin（巴哈
           // forum.gamer.com.tw a.photoswipe-image > img 實測 inline + 4px margin、
