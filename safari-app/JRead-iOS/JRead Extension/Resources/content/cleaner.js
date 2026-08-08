@@ -338,10 +338,22 @@
   //   加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)
   //   (LINE|官方帳號).{0,10}(加入|訂閱)
   //   訂閱(我們|本報|電子報)
+  // v1.7.60（wikihow page rounds 實證）：下載 / 列印 CTA family。wikihow
+  //   「Download Article」是 `<a class="pdf_link" href="#">` 內含 PDF icon
+  //   `<img>` + `<span>Download Article</span>`，同頁出現 4 處（標題下 + 每個
+  //   方法小標下）。既有名單只有 `download\s+(the\s+)?app`（app promo），
+  //   下載本文 / 存成 PDF / 列印本頁這類「把當前文章轉成檔案」的動作按鈕
+  //   全數漏網。這類 CTA 是**動作**不是內容，跨站慣例措辭固定：
+  //     download (this|the) (article|pdf|image|summary|guide|worksheet|…)
+  //     save as pdf / print this (article|page|story|recipe)
+  //     下載(PDF|文章|圖片) / 另存(為)PDF / 列印本文
+  //   刻意不收裸 `download` / `print`：技術文件站的合法內容連結（python-docs
+  //   的 `print`、各 docs 站的「Download」下載頁）會被誤殺——必須帶受詞才算
+  //   CTA。同理 audit 端 `download` 只放 contextual 層（見 tools/audit-lib.js）。
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app)|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+)?app|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
