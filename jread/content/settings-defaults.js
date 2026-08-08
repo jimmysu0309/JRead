@@ -126,6 +126,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     titleFontSize: 32,
     // v0.7.215：Space 平滑卷動比例（% of viewport）；0 = 停用。
     spaceScrollRatio: 50,
+    // v1.7.62（Jimmy 2026-08-08）：閱讀模式下滑鼠停著不動 2 秒就隱藏游標，
+    // 移動 / 點擊立刻回來。預設 true。捲動刻意不算「動了」（閱讀中最常做的
+    // 動作，算進去等於功能失效）。只在有真實指標裝置時生效——觸控裝置沒有
+    // 游標可藏，content/idle-cursor.js 的 hasFinePointer 直接不掛 listener。
+    idleCursorHide: true,
     // v0.8.157：3 指輕點切換閱讀模式。預設 false = 停用（Jimmy 2026-06-22 改預設關
     // ——三指輕點易誤觸、且懸浮 icon 已是觸控主入口）；true = 啟用辨識器。觸控裝置
     // 才有意義（桌面滑鼠 maxTouchPoints < 3 自然不裝）。

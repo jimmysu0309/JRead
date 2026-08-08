@@ -33,6 +33,7 @@
     'content/edit-mode.js',
     'content/styler.js',
     'content/space-scroll.js',
+    'content/idle-cursor.js',
     'content/paged-mode.js',
     'content/position-memory.js',
     'content/main.js'

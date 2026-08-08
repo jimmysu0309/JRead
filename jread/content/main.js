@@ -196,6 +196,23 @@
     }
   }
 
+  // v1.7.62：閒置隱藏游標（idle-cursor.js）settings 同步 wrapper。模組本身只
+  // 認 settings.idleCursorHide，「什麼時候該裝」的三個閱讀模式狀態條件收在這裡
+  //（模組不讀 NS.state，維持可獨立 jsdom 測試）：
+  //   - 沒在閱讀模式 → 拆（原站瀏覽時藏游標會嚇到人）
+  //   - 影院模式 → 不裝（YouTube 播放器自己會在閒置時藏 controls 與游標）
+  //   - 編輯模式進行中 → 拆（要靠 hover 指出雜訊段落，游標不見就沒法用）
+  // onChanged 動態切換與退出編輯模式的還原都走同一支，單一資料源。
+  function syncIdleCursorFromSettings(settings) {
+    if (!NS.idleCursor) return;
+    if (!NS.state.active || NS.state.cinemaActive ||
+        (NS.editMode && NS.editMode.isActive())) {
+      NS.idleCursor.uninstall();
+      return;
+    }
+    NS.idleCursor.sync(settings);
+  }
+
   // v0.7.227：翻頁模式（paged-mode.js）settings 同步 wrapper。與
   // syncSpaceScrollFromSettings 同款 keyguard 順序 invariant：模組的
   // keydown listener（←/→/Space 翻頁）必須先於 keyguardHandler 收到事件
@@ -277,6 +294,7 @@
     window.addEventListener('keydown', onEscKey, true);
     syncPagedModeFromSettings(settings);
     syncSpaceScrollFromSettings(settings);
+    syncIdleCursorFromSettings(settings);
     // v0.8.40：閱讀位置記憶——回復上次位置 + 開始追蹤。必須在 syncPagedMode
     // 之後（翻頁模組已 install、頁數已算好才能 goToPage）、installKeyguard
     // 之前（模組的 keydown listener 要先於 keyguard 收到翻頁鍵——keyguard 對
@@ -655,6 +673,10 @@
     uninstallKeyguard();
     // v0.7.216：一律拆掉 Space 段落焦點卷動（listener + 指示條 + 進行中動畫）
     safeStep(() => { if (NS.spaceScroll) NS.spaceScroll.uninstall(); });
+    // v1.7.62：一律拆掉閒置隱藏游標（listener + timer + 注入 CSS + attribute）——
+    // 漏拆的話原站瀏覽時游標會憑空消失，是使用者救不回來的狀態。cinema 分支在
+    // 下方提早 return，故必須排在它之前。
+    safeStep(() => { if (NS.idleCursor) NS.idleCursor.uninstall(); });
     // v0.7.227：一律拆掉翻頁模式（listener + 頁碼指示）。必須在 styler.restore
     // 之前呼叫。resetPosition：退出 reader mode = 閱讀 session 結束，下次進入
     // 從第一頁起。
@@ -1295,6 +1317,9 @@
     // v1.7.41（P3a）：suspend 語意——不消費 savedScrollY / 不捲動，保留給
     // 之後真退出的 fallback 捲回（詳見 paged-mode.js uninstall 註解）。
     if (NS.pagedMode) NS.pagedMode.uninstall({ suspend: true });
+    // v1.7.62：編輯模式靠 hover 指出要刪的段落，游標藏起來就沒法用——暫停。
+    // restore 時由 syncIdleCursorFromSettings 依當前 settings 裝回。
+    if (NS.idleCursor) NS.idleCursor.uninstall();
   }
 
   async function restoreReaderInteractions() {
@@ -1311,6 +1336,7 @@
     window.addEventListener('keydown', onEscKey, true);
     syncPagedModeFromSettings(settings);
     syncSpaceScrollFromSettings(settings);
+    syncIdleCursorFromSettings(settings);
     if (!settings || settings.blockPageShortcuts !== false) installKeyguard();
     else uninstallKeyguard();
   }
@@ -1593,6 +1619,12 @@
       // 這裡 sync 會以 null articleEl 誤裝模組。
       if ('spaceScrollRatio' in changes && !NS.state.cinemaActive) {
         syncSpaceScrollFromSettings({ spaceScrollRatio: changes.spaceScrollRatio.newValue });
+      }
+      // v1.7.62：閒置隱藏游標即時切換——關掉時要立刻讓已藏起來的游標現形
+      //（syncIdleCursorFromSettings → uninstall 內含 showCursor），否則使用者
+      // 得退出閱讀模式才救得回游標。cinema / 編輯模式的排除在 wrapper 內。
+      if ('idleCursorHide' in changes) {
+        syncIdleCursorFromSettings({ idleCursorHide: changes.idleCursorHide.newValue });
       }
       // v1.5.4：頁碼指示開關已移除（頁碼一律顯示，是翻頁模式唯一進度載體），原本
       // 的即時切換 listener 連同設定一併刪除。

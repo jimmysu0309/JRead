@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle'];
+const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -179,6 +179,10 @@ function readFieldFromDom(id) {
       return n;
     }
     case 'threeFingerTap': case 'floatingIcon':
+    // v1.7.62：idleCursorHide 排在 blockPageShortcuts 之前而非接在鏈尾——
+    // keyguard.spec.js 用「case 'blockPageShortcuts' 之後 120 字元內要出現
+    // .checked」的鄰近性 regex 當 forcing function，接在尾端會把它推出視窗。
+    case 'idleCursorHide':
     case 'blockPageShortcuts': case 'pangu': case 'linkFollowReader': case 'editModeEnabled': case 'readwiseSummary':
       return el.checked;
     case 'floatingIconSize': {
@@ -259,7 +263,7 @@ function applyFieldToDom(id, value) {
   if (!el) return;
   // 使用者正在編輯的欄位不回寫（避免打字途中被外部變更清掉）
   if (el === document.activeElement) return;
-  if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'linkFollowReader' || id === 'editModeEnabled') {
+  if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'linkFollowReader' || id === 'editModeEnabled' || id === 'idleCursorHide') {
     el.checked = value !== false;
   } else if (id === 'threeFingerTap') {
     // v0.8.157：預設 false——只有明確為 true 才勾選
