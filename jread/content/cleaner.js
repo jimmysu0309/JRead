@@ -8216,10 +8216,15 @@
     hide(card, hidden);
   }
 
+  // v1.7.64：trigger 自身已被別條規則 hide **不是**跳過的理由——本規則要處理的
+  // 是「trigger 外面那張卡片」（招攬標題 + 殼），與 trigger 自己被誰 hide 無關。
+  // raptitude.com 實證：ConvertKit 訂閱表單的 <form> 先被 all-interactive 規則
+  // hide，本規則的 alreadyHidden 早退就整條不跑，留下孤兒招攬標題「If you liked
+  // this post, get Raptitude sent to you.」+ 空殼卡在文末。重複執行由
+  // hideNoiseCardFromTrigger 內既有的 card 已 hidden guard 擋掉，不會多做工。
   function hideInsideArticleSubscribeForms(articleEl, hidden) {
     for (const form of articleEl.querySelectorAll('form')) {
       if (isInPreserved(form)) continue;
-      if (form.dataset && form.dataset.jreadHidden === '1') continue;
       hideNoiseCardFromTrigger(form, articleEl, hidden);
     }
     // v1.7.13（gvm 城市學實證）：訂閱表單不一定包 <form>——站方用裸 div 包
@@ -8232,7 +8237,7 @@
     for (const input of articleEl.querySelectorAll('input')) {
       if (input.closest('form')) continue; // 有 form 包裝的已由上方規則處理
       if (isInPreserved(input)) continue;
-      if (input.dataset && input.dataset.jreadHidden === '1') continue;
+      // 同上：input 自身已被別條規則 hide 不影響「外層卡片要不要收」
       const type = (input.getAttribute('type') || 'text').toLowerCase();
       const marker = (input.name || '') + ' ' + (input.id || '') + ' ' +
         (input.getAttribute('placeholder') || '');
