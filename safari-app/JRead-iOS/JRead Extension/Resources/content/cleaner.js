@@ -2960,12 +2960,38 @@
   // sibling。JWPlayer 類 player 的空 div / 大 padding wrapper 是媒體佔位，
   // 動它會打壞 player 或錯位出假空白；empty-spacer hide / empty-wrapper
   // collapse / padding cap 三處共用此 guard（原三份逐字重複）。
+  // v1.7.58：sibling media 必須與 el **垂直重疊**才算「本元素是那個 player 的
+  // layout 輔助」。原判定只問「parent 的任一 sibling 子樹裡有沒有 video/iframe」，
+  // parent 是 <article> 這種巨大容器時等於無條件放行——BBC 實測
+  // /news/articles/clyepyy82kxo：文中 6 個 `<div data-component="advertisement-block">`
+  // 與影片 embed 同為 article 直接子，子層全被 cleaner 藏掉後外層自帶
+  // `min-height: 293px` 仍撐著，三處 collapse / cap guard 全被這條免疫掉 →
+  // 文中一大塊 293px 純白（2026-08-08 probe 釘出）。
+  // aspect spacer 的定義就是「替同一個位置的 player 預留空間」，兩者必然
+  // 佔同一段垂直帶；落在文章別處的 embed 與本元素無關。
+  // 保守例外：el 或 media 量不到盒子（0 高，player 尚未 init / lazy 未載入）
+  // → 位置關係無從判斷，維持舊行為保護，不冒打壞未初始化 player 的風險。
   function siblingHasMediaEmbed(el) {
     if (!el.parentElement) return false;
+    let selfRect = null;
+    try { selfRect = el.getBoundingClientRect(); } catch (_) { selfRect = null; }
+    const unknownGeometry = !selfRect || selfRect.height <= 0;
+    // 位置關係一律用「直接 sibling 自己的盒子」量，不用深層 media 的盒子：
+    // player wrapper（JW `.jw-wrapper`）即使內部 video 尚未 init，wrapper 本身
+    // 仍蓋在 aspect spacer 上；反之 BBC 那顆 lazy 未載入的 Flourish 圖表 iframe
+    // 自身 0×0、但它所在的 sibling 區塊在文章別處、與廣告佔位毫無關係。
+    const overlapsSelf = (sib) => {
+      if (unknownGeometry || !sib.getBoundingClientRect) return true;
+      let r;
+      try { r = sib.getBoundingClientRect(); } catch (_) { return true; }
+      if (!r || r.height <= 0) return true;  // 量不到盒子：位置無從判斷，保守保護
+      return Math.min(r.bottom, selfRect.bottom) - Math.max(r.top, selfRect.top) > 0;
+    };
     for (const sib of el.parentElement.children) {
       if (sib === el) continue;
-      if (sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME') return true;
-      if (sib.querySelector && sib.querySelector('video, iframe')) return true;
+      const isMedia = sib.tagName === 'VIDEO' || sib.tagName === 'IFRAME';
+      if (!isMedia && !(sib.querySelector && sib.querySelector('video, iframe'))) continue;
+      if (overlapsSelf(sib)) return true;
     }
     return false;
   }
