@@ -369,6 +369,33 @@ pageFns.auditGap = function () {
   // embed 容器（engadget DIV 卡片、ms.now JW Player 的 div/video absolute
   // 結構）的空間會被量成假 gap。gap 候選確立前掃「visible 且實際覆蓋區間
   // >= 50% 的任意元素」——有就代表空間被內容填著、不是真空白。
+  // ink 檢查（2026-08-08 BBC 實案）：「有元素佔著這段空間」≠「這段空間有內容」。
+  // BBC /news/articles/clyepyy82kxo 文中 `<div data-component="advertisement-block">`
+  // 子層全被 cleaner 藏掉、外層自帶 `min-height: 293px` 仍撐著 → 高度 / 寬度 /
+  // 重疊三條件全中、389px 純白被判成「有內容」，gap audit 兩輪都印 `gaps: []`。
+  // 覆蓋判定改成要求該元素**自己看得到東西**：可見文字、有尺寸的媒體、或背景圖。
+  // 空殼佔位不算填著空間。第二條（帶 direct text 的 leaf 聯集）本來就要求真文字、不受影響。
+  function hasInk(el) {
+    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (t) return true;
+    const tagUp = el.tagName.toUpperCase();
+    // 元素自身就是媒體（video / iframe / canvas / svg）——本體即 ink
+    if (tagUp === 'VIDEO' || tagUp === 'IFRAME' || tagUp === 'CANVAS' || tagUp === 'SVG') return true;
+    for (const m of el.querySelectorAll('img, video, iframe, canvas, svg, picture, object, embed')) {
+      const mr = m.getBoundingClientRect();
+      if (mr.width >= 8 && mr.height >= 8 && isVisible(m)) return true;
+    }
+    // 背景圖（bg-hero / 裝飾分隔）也算 ink：自身 + 子孫（掃描上限 300 個節點，
+    // 避免大容器逐節點 getComputedStyle 拖慢 audit）
+    let n = 0;
+    for (const d of [el, ...el.querySelectorAll('*')]) {
+      if (++n > 300) break;
+      let dcs = null;
+      try { dcs = window.getComputedStyle(d); } catch (_) { continue; }
+      if (dcs && dcs.backgroundImage && dcs.backgroundImage !== 'none') return true;
+    }
+    return false;
+  }
   function intervalCovered(top, bottom) {
     const span = bottom - top;
     if (span <= 0) return true;
@@ -381,6 +408,7 @@ pageFns.auditGap = function () {
       // 不是「填著這段空間的內容」
       if (r.height > span * 3) continue;
       if (!isVisible(el)) continue;
+      if (!hasInk(el)) continue;
       return true;
     }
     // 裸 div 逐行文字聯集覆蓋（2026-06-11 第五輪調校）：巴哈論壇把每行文字
