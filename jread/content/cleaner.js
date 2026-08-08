@@ -5695,6 +5695,165 @@
     }
   }
 
+  // ---- v1.7.61：被清空的 inline wrapper 殘留水平 margin / padding ----------
+  // 症狀（CNBC 實證）：內文「As important as Nvidiahas become…」——inline 連結
+  // 與後接文字之間的空格不見、字黏在一起。同段還有「Inteland」「Qualcommdownward」。
+  //
+  // 根因（probe 量到的盒模型，非推測）：
+  //   <p>As important as <span 容器><a>Nvidia</a><span 按鈕殼 mr:-6px>…按鈕…
+  //      </span></span> has become…</p>
+  //   ┌ container SPAN  x=467.6 right=515.0 w=47.4
+  //   ├ a         A     x=467.6 right=521.0 w=53.4   ← 比容器還寬 6px
+  //   └ btnWrap   SPAN  x=521.0 right=521.0 w=0      margin-right: -6px
+  //   後接文字首字 rect 從 515 起排 → 比連結尾端（521）還左 6px，
+  //   把中間那個 4.5px 的空格整個吃掉、還多疊 1.5px。
+  //
+  // 原站用 `margin-right: -6px` 把 ⊞ 按鈕往回拉貼緊連結文字。JRead 依「所有
+  // interactive button 無條件清」把裡面的 <button> 設 display:none，但**按鈕的
+  // inline wrapper 本身還在**——變成 0 寬的 inline box，卻仍帶著那個負 margin，
+  // 於是把後續 inline 內容整個往左拉。
+  //
+  // 通則：clean 之後，一個 inline 級元素若「已被我們清空」（子孫有 jreadHidden
+  // 標記、自身無可見文字/媒體、寬度塌到 0）卻仍帶非零水平 margin / padding，
+  // 它對版面的唯一作用就是位移後續 inline 內容 → hide 掉。display:none 會連同
+  // margin 一起移除盒子，空格自然回來。
+  //
+  // 與 v1.0.18（byline-item inline-flex 吃掉 whitespace）同屬「inline 容器吃字距」
+  // 家族，但機制不同：那次是容器自己改 display 吃掉內部 whitespace，這次是
+  // 被清空的殼殘留負 margin 位移**外部**文字。
+  //
+  // 這條驗的是「水平位移」一層：只看 margin/padding-left/right。不驗垂直方向
+  // （空的 block wrapper 撐高度由 collapseEmptyWrappersAfterClean 負責）、也不
+  // 驗 position/transform 造成的位移（那類逃得出本檢查）。
+  const INLINE_SPACER_DISPLAYS = new Set([
+    'inline', 'inline-block', 'inline-flex', 'inline-grid', 'inline-table'
+  ]);
+  const INLINE_SPACER_MAX_WIDTH = 0.5;   // 已塌到 0 寬（次像素容差）
+  const INLINE_SPACER_MIN_OFFSET = 0.5;  // 水平 margin/padding 絕對值總和門檻
+  const INLINE_SPACER_OFFSET_PROPS = [
+    'margin-left', 'margin-right', 'padding-left', 'padding-right'
+  ];
+
+  function collapseEmptiedInlineSpacers(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return;
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.ownerSVGElement) continue;
+      if (el.shadowRoot) continue; // 內容在 shadow DOM、不是被我們清空的殼
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { continue; }
+      if (!cs || !INLINE_SPACER_DISPLAYS.has(cs.display)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width > INLINE_SPACER_MAX_WIDTH) continue; // 仍佔水平空間 → 不是空殼
+      if (visibleRenderedText(el).trim().length > 0) continue;
+      if (hasUnhiddenContentMedia(el)) continue;
+      // 「是我們清空的」訊號：子孫至少一個帶 jreadHidden。缺這條會把原站自己
+      // 就存在的 0 寬 inline 標記元素（分析用 <span>、a11y hook）也一起 hide，
+      // 那些本來就不影響版面，動它們只是徒增 churn 與還原成本。
+      if (!el.querySelector('[data-jread-hidden="1"]')) continue;
+      let offset = 0;
+      for (const prop of INLINE_SPACER_OFFSET_PROPS) {
+        offset += Math.abs(parseFloat(cs.getPropertyValue(prop)) || 0);
+      }
+      if (offset < INLINE_SPACER_MIN_OFFSET) continue; // 沒有水平位移 → 無害、不動
+      hide(el, hidden);
+    }
+  }
+
+  // ---- v1.7.61：內容被清光、只剩一行短 label 的孤兒殼 ----------------------
+  // 症狀（CNBC 實證）：主文開頭殘留孤零零一行「In this article」，底下的股票
+  // 代號 ticker widget 已被清掉。
+  //
+  // 根因（probe 阻斷報價 API 重現該輪狀態後量到的子樹）：
+  //   DIV.RelatedQuotes-relatedQuotes            ← 殼，仍可見
+  //     DIV.quotesContainer
+  //       DIV.titleAndTime → P "In this article" ← label 分支，殘留
+  //       UL.list          → hid=true            ← 內容分支，已被清空
+  //     DIV.cfaButtonContainer → BUTTON hid=true  ← CTA 分支，已被清空
+  // label 自己不是雜訊關鍵字、也不空，既有的 empty-wrapper collapse（要求
+  // renderText 為空）與 keyword 軌都接不住 → 孤兒殘留。
+  //
+  // 通則：一個容器若「至少一支直接子分支被我們清空」+「剩下的可見文字只有一段
+  // 短 label」+「沒有未隱藏的內容媒體」，那段 label 已失去它在標注的東西 →
+  // 整個容器 hide。關鍵是「被我們清空的」這個訊號：容器原本有內容、是 JRead
+  // 拿掉的，不是原本就只有這行字（那種是正常的短段落，不可動）。
+  //
+  // 刻意收窄的範圍（這條驗 X、不驗 Y）：
+  //   - label 是 h1–h6 時不套用。章節標題的正文段落常是容器的**兄弟**而非子孫，
+  //     容器內只剩一支廣告分支被清空時會誤判成孤兒 → 砍掉真的章節標題。
+  //   - 含 <time> 或可見連結時不套用。作者/日期 meta 列的結構與孤兒殼幾乎相同
+  //     （短文字 + 被清空的分享按鈕分支），誤殺會重演 v1.0.16 byline 消失。
+  //     byline 標記（styler 的 data-jread-byline）在 cleaner 階段還沒設，
+  //     只能用 <time> / 連結這類 cleaner 階段就看得到的結構訊號代替。
+  //   - 句末有句號的不套用——那是句子不是 label。
+  //   - 只驗「殼與 label 都在同一容器內」。label 與被清空內容分屬不同容器
+  //     （更上層才是共同祖先，且該祖先還有其他正文）時逃得出本檢查。
+  const ORPHAN_LABEL_MAX_CHARS = 40;
+  const ORPHAN_LABEL_SENTENCE_END_RE = /[.!?。！？]$/;
+  const ORPHAN_LABEL_HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+
+  function collapseOrphanLabelShells(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (el === articleEl) continue;
+      if (isInPreserved(el)) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.ownerSVGElement) continue;
+      if (el.shadowRoot) continue;
+      // 需要「label 分支」與「被清空分支」兩支才成立
+      if (el.children.length < 2) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height <= 0 || rect.width <= 0) continue;
+      const text = visibleRenderedText(el).trim().replace(/\s+/g, ' ');
+      if (!text) continue; // 全空 → 交給 collapseEmptyWrappersAfterClean
+      if (text.length > ORPHAN_LABEL_MAX_CHARS) continue;
+      if (ORPHAN_LABEL_SENTENCE_END_RE.test(text)) continue;
+      if (hasUnhiddenContentMedia(el)) continue;
+      if (orphanLabelHasProtectedMeta(el)) continue;
+      // 兩支分支各自存在？label 分支 = 有可見文字的直接子；清空分支 = 無可見
+      // 文字、且自身或子孫帶 jreadHidden 標記的直接子。
+      let labelBranch = false, emptiedBranch = false;
+      for (const kid of el.children) {
+        if (visibleRenderedText(kid).trim().length > 0) {
+          if (ORPHAN_LABEL_HEADING_TAGS.has(kid.tagName.toUpperCase())) { labelBranch = false; break; }
+          if (kid.querySelector && kid.querySelector('h1, h2, h3, h4, h5, h6')) { labelBranch = false; break; }
+          labelBranch = true;
+          continue;
+        }
+        if ((kid.dataset && kid.dataset.jreadHidden === '1') ||
+            (kid.querySelector && kid.querySelector('[data-jread-hidden="1"]'))) {
+          emptiedBranch = true;
+        }
+      }
+      if (!labelBranch || !emptiedBranch) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // 孤兒 label 判定的保護訊號：容器內有 <time>（日期 meta）或任何可見連結
+  // （作者連結 / 分類 chip / 真的還連得出去的內容）→ 不是純標籤，不可 collapse。
+  //
+  // 「可見」必須用 rendered rect 判，不可只看 visibleRenderedText——後者從該
+  // 節點往下走、看不到**祖先**已被 hide（CNBC 實案：ticker 的 <a>NVDA</a> 在
+  // 已 hide 的 <ul> 內，文字軌照樣回 "NVDA"、整條規則被自己的 guard 擋死）。
+  function orphanLabelIsRendered(node) {
+    const r = node.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    return visibleRenderedText(node).trim().length > 0;
+  }
+  function orphanLabelHasProtectedMeta(el) {
+    for (const t of el.querySelectorAll('time')) {
+      if (orphanLabelIsRendered(t)) return true;
+    }
+    for (const a of el.querySelectorAll('a[href]')) {
+      if (orphanLabelIsRendered(a)) return true;
+    }
+    return false;
+  }
+
   const WRAPPER_SPACING_CAP = 16;
   const WRAPPER_SPACING_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'NAV', 'HEADER', 'FOOTER']);
   const WRAPPER_SPACING_PROPS = ['margin-top', 'margin-bottom', 'padding-top', 'padding-bottom'];
@@ -8651,6 +8810,13 @@
       // 上方註解。
       safeRun(collapseEmptyWrappersAfterClean, articleEl, hidden);
       safeRun(collapseEmptyBlockSpacers, articleEl, hidden);
+      // v1.7.61：被清空的 inline wrapper 殘留負 margin 會把後續文字往回拉、
+      // 吃掉連結與後文之間的空格（CNBC「Nvidiahas」）。必須排在所有 hide 規則
+      // 之後——判定條件是「子孫已帶 jreadHidden」。
+      safeRun(collapseEmptiedInlineSpacers, articleEl, hidden);
+      // v1.7.61：內容被清光、只剩一行短 label 的孤兒殼（CNBC「In this article」）。
+      // 同樣依賴前面所有 hide 都跑完，才看得出哪支分支是被我們清空的。
+      safeRun(collapseOrphanLabelShells, articleEl, hidden);
       // v1.5.24：游離 nbsp / 全形空白等「不可 collapse 空白」文字節點清除——放在
       // empty-spacer / collapse 規則之後（空 <p> 等已 hide，phantom 文字節點是
       // 其後遺留的最後一類垂直空白殘渣）。詳見函式上方註解。

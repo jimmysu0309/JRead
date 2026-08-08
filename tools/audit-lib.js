@@ -92,7 +92,15 @@ const NOISE_KEYWORDS_CONTEXTUAL = [
   // 裸 'download' 已覆蓋 download article / pdf / image / the guide 全變體，
   // 不需逐一列舉。'print' 刻意不裸用——python-docs / rust-book 的 `print`
   // 是函式名，短 code span 會每頁誤報；改用多字的 'print this'。
-  'download', 'print this', 'save as pdf', '下載', '列印'
+  'download', 'print this', 'save as pdf', '下載', '列印',
+  // v1.7.61（cnbc page rounds 訊號層補洞）：ticker / 跳轉目錄 widget 的標題列。
+  // CNBC 主文開頭殘留孤零零一行「In this article」（底下股票代號 widget 已被
+  // 清掉）——**residual audit 完全沒報**，名單裡沒有這個詞，又是 Jimmy 看截圖
+  // 才發現的（同 v1.7.60 wikihow 那輪的教訓）。
+  // 放 contextual 不放 strict：「In this article, we explain…」是極常見的正文
+  // 開場句。contextual 的拉丁短句 gate（<= 5 個字）正好區辨——孤兒 label
+  // 「In this article」（3 字）命中；正文開場句（>= 6 字）不命中。
+  'in this article'
 ];
 const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL };
 // 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
