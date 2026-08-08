@@ -77,7 +77,22 @@ const NOISE_KEYWORDS_CONTEXTUAL = [
   // trending 自 strict 降級（2026-06-11 dev.to 實證：文章主題就是 trends 時
   // 內文 "What's trending now:" 命中 x4 假陽性——主題詞不可當 strict）
   'share', 'follow', 'comments', 'related', 'log in', 'sign in', 'popular', 'recommended',
-  'trending'
+  'trending',
+  // v1.7.60（wikihow page rounds 訊號層補洞）：下載 / 列印 CTA。wikihow
+  // 「Download Article」在 reader card 內殘留兩處（標題下 + 方法小標下），
+  // **residual audit 完全沒報**——名單裡從來沒有 download 家族，是 Jimmy 看
+  // 截圖才發現的（CLAUDE.md 工作流原則 3：該補的不是只修 bug，是補 missing
+  // 的那一層 check）。
+  // 為什麼放 contextual 不放 strict（與 trending 降級同一個理由）：download /
+  // print 對 how-to 站是**主題詞**——wikihow 自己就有「How to Download PDFs on
+  // Android」這種標題，strict 無 gate 會把合法 h1/h2 判成 fail。contextual 的
+  // 短標籤 gate（拉丁詞 <= 5 個字、CJK <= 12 字或占比 >= 50%）正好做這個區辨：
+  // 「Download Article」(2 字) 命中 → review 信號要 Claude 看截圖；
+  // 「How to Download PDFs on Android」(6 字) 不命中。
+  // 裸 'download' 已覆蓋 download article / pdf / image / the guide 全變體，
+  // 不需逐一列舉。'print' 刻意不裸用——python-docs / rust-book 的 `print`
+  // 是函式名，短 code span 會每頁誤報；改用多字的 'print this'。
+  'download', 'print this', 'save as pdf', '下載', '列印'
 ];
 const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL };
 // 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
