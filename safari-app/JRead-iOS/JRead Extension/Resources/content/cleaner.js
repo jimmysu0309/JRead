@@ -1143,6 +1143,10 @@
       if (item.kind === 'container' && item.el.dataset) {
         delete item.el.dataset.jreadCollapsed;
       }
+      // v1.7.63：攤開收合內容的標記（樣式本身已由上面 restoreStyles 還原）
+      if (item.__expandedAttr && item.el.removeAttribute) {
+        item.el.removeAttribute(EXPANDED_ATTR);
+      }
     }
   }
 
@@ -1154,6 +1158,11 @@
   // 條 path）。CSS 端住 styler buildCss（attr 字串兩檔一致，forcing 見
   // insertion-invalidation.spec.js）；restore() 統一移除。
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
+
+  // v1.7.63：被 expandCollapsedSections 攤開的「站方折起來的收合內容」標記。
+  // 用途有二：(1) hideExpanderDecorativeLabel 靠它認出哪一支是剛攤開的內容、
+  // 不要把內容自己當裝飾標籤清掉；(2) restore() 統一移除。
+  const EXPANDED_ATTR = 'data-jread-expanded';
 
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
@@ -5763,6 +5772,249 @@
     }
   }
 
+  // ---- v1.7.63：攤開站方折起來的收合內容 -----------------------------------
+  // 症狀（th.wikipedia 愛因斯坦條目）：infobox 的「國籍 / 獎勵 / 工作機構」三列
+  // 是可展開清單，站方預設折起來。JRead 依「所有 interactive button 無條件清」
+  // 把展開鈕清掉之後，那三列的內容永遠讀不到——v1.7.61 之前留下一行按不動的
+  // 「看更多」，v1.7.61 的 collapseOrphanLabelShells 把整塊收掉之後變成空值。
+  // 兩種結果都一樣：使用者讀不到瑞士 / 美國 / 諾貝爾獎那些實際內容。
+  //
+  // 正解是**主動攤開**，而不是把殼藏得更乾淨。
+  //
+  // ── 錨點為什麼不能是「已被我們清掉的展開鈕」（probe 實測推翻）──────────
+  // 直覺做法是「找被 JRead 清掉的 toggle，再去攤開它旁邊的東西」。實測不可行：
+  // 收合內容的 <ul> 在 clean 末段也被別條規則 hide 了，晚跑的規則看到的是
+  // jreadHidden、被自己的 guard 擋死（probe round 5：三個 infobox 全部 0 命中）。
+  // 改用**順序無關**的錨點：toggle 是 INTERACTIVE_BTN_SEL（JRead 一律會清的那
+  // 一組，與 hideInsideArticleAllButtons 同一份選擇器）**且**站方自己標了
+  // `aria-expanded="false"`。這個條件在 clean 前就成立，本規則因此排在所有
+  // hide 規則之前——攤開後的內容接著吃完整套 in-article 規則（該清的還是會被
+  // 清），而不是繞過它們。
+  //
+  // ── 收合機制不是 display:none（probe 實測）────────────────────────────
+  // MediaWiki 折起來的 <ul> computed 值是：
+  //   display=block visibility=visible opacity=1
+  //   content-visibility=hidden position=absolute height=0 width=0 overflow=hidden
+  // 逐項拆解後，缺一不可的是 content-visibility / height / width 三項（單獨套
+  // 任何一項都還是 0×0）。gov.uk 的「Show all updates」則是傳統 display:none。
+  // 兩種都要接，所以 buildExpandDecls 涵蓋這幾種機制的聯集。
+  //
+  // ── 最大的風險：不可無差別 unhide ───────────────────────────────────
+  // 站方藏起來的東西大宗是響應式重複版本、a11y 隱藏字、no-JS fallback（歷史坑：
+  // v0.8.126 Readwise 匯出把隱藏的重複版本一起送出）。th.wikipedia 全頁有 80 個
+  // 「display:none 且有文字」的元素，絕大多數是站台 chrome。因此三道錨定：
+  //   1. 一定要有「這裡本來有一顆被我們清掉的展開鈕」——toggle 錨點（見上）
+  //   2. target 的 parent 必須是有 render 的。收合訊號必須就落在這顆元素上
+  //      （站方把它折起來），而不是整支祖先被藏掉（那是別條規則的事）。
+  //      probe 實證：這條擋掉了 th.wikipedia 側邊工具箱的 LI 誤中。
+  //   3. 導覽地標（<nav> / role="navigation"）內一律不攤——文末 navbox 那種
+  //      純連結導覽表攤開等於在 reader 裡塞 700px 連結湯。
+  //
+  // ── 為什麼 nav 地標、不用 link density ─────────────────────────────
+  // 量過才知道 ld 分不開：infobox 獎項列 ld=0.76 比 navbox 的 0.53–0.59 還高。
+  // charsPerLink 分得開（infobox 33–43 vs navbox 12–16），但那是**字元數門檻**，
+  // 翻成中文後字數掉到 1/3、infobox 會掉進 navbox 區間（既有教訓：raw length
+  // 門檻多按拉丁校準、遇短中文誤殺）。`role="navigation"` 是 W3C 語意、與語言
+  // 無關、也不是站點 class 特判，三站實測乾淨分開。
+  //
+  // 這條驗 X、不驗 Y：
+  //   - 只攤「站方宣告 aria-expanded=false 的互動控制項」旁邊的收合內容。
+  //     沒有這個宣告的自訂展開 UI（純 class 切換、無 ARIA）不在範圍內。
+  //   - 只找 toggle 往上 3 層內的兄弟，或 aria-controls 明確指到的元素。
+  //     label 與內容分屬更遠的兩支時逃得出本檢查。
+  //   - 驗「攤開後量得到尺寸」，不驗攤開後的內容排版好不好看——那由 styler
+  //     與後續 in-article 規則接手。
+  const EXPAND_MIN_TEXT = 20;          // target 至少要有這麼多字才值得攤
+  const EXPAND_CLIMB_LEVELS = 3;       // toggle 往上找兄弟的層數上限
+  const NAV_LANDMARK_SEL = 'nav, [role="navigation"]';
+  // 攤開的做法是**只中和掉正在把盒子壓扁的那幾個宣告**，不是整組蓋過去。
+  // 每個屬性都先看 computed 值確認它真的在收合，才寫 override：
+  //   - display:none        → revert（退回 UA 預設值，Chromium 實測 <div> 得
+  //                           block、<tr> 得 table-row、<li> 得 list-item。寫死
+  //                           block 會把表格結構壓爛）。已知取捨：站方原本是
+  //                           `display:flex` 、收合時改 `display:none` 的面板，
+  //                           revert 會還原成 block 而不是 flex——內容讀得到，
+  //                           但橫向排版會變直向。要精準還原得知道「非收合狀態
+  //                           的 display」，而那個值在收合當下量不到。
+  //   - content-visibility  → visible（MediaWiki 用的就是這個）
+  //   - height/max-height 0 → auto / none
+  //   - width/max-width 0   → auto / none
+  //   - overflow hidden|clip→ visible
+  //   - visibility hidden   → visible
+  //   - position abs|fixed  → static（收合面板脫離文件流時要拉回來，否則攤開
+  //                           後會蓋在下方內容上）
+  // 這樣做的好處：站方在非收合狀態下本來就有的排版宣告（自訂寬度、flex 版面）
+  // 不會被我們順手洗掉，還原面積也降到最小。
+  const EXPAND_DECL_PROPS = [
+    'display', 'content-visibility', 'height', 'max-height',
+    'width', 'max-width', 'overflow', 'visibility', 'position'
+  ];
+  const ZERO_LENGTH_RE = /^0(\.0+)?(px|%|em|rem|vh|vw)?$/;
+
+  function buildExpandDecls(cs) {
+    const decls = {};
+    if (cs.display === 'none') decls['display'] = 'revert';
+    if (cs.contentVisibility === 'hidden') decls['content-visibility'] = 'visible';
+    if (ZERO_LENGTH_RE.test(cs.height)) decls['height'] = 'auto';
+    if (ZERO_LENGTH_RE.test(cs.maxHeight)) decls['max-height'] = 'none';
+    if (ZERO_LENGTH_RE.test(cs.width)) decls['width'] = 'auto';
+    if (ZERO_LENGTH_RE.test(cs.maxWidth)) decls['max-width'] = 'none';
+    if (cs.overflow === 'hidden' || cs.overflow === 'clip') decls['overflow'] = 'visible';
+    if (cs.visibility === 'hidden') decls['visibility'] = 'visible';
+    if (cs.position === 'absolute' || cs.position === 'fixed') decls['position'] = 'static';
+    return decls;
+  }
+  const EXPAND_SKIP_TAGS = /^(STYLE|SCRIPT|LINK|META|TEMPLATE|HEAD|TITLE)$/;
+
+  // 排除 <style> / <script> 內文的文字量。MediaWiki 把 TemplateStyles 的 CSS
+  // 塞在 `<span class="mw-empty-elt"><style>…</style></span>` 內，用
+  // textContent 直接量會把幾百字 CSS 當成「有內容」（probe 實測：某個空殼因此
+  // 量到 466 字）。visibleRenderedText 也不能用——它跳過 display:none 子樹，
+  // 對「還折著的內容」一律回空字串。
+  function collapsedContentText(el) {
+    if (!el || !el.textContent) return '';
+    let out = '';
+    const walk = (node) => {
+      for (const c of node.childNodes) {
+        if (c.nodeType === 3) { out += c.textContent; continue; }
+        if (c.nodeType !== 1) continue;
+        if (EXPAND_SKIP_TAGS.test(c.tagName)) continue;
+        walk(c);
+      }
+    };
+    walk(el);
+    return norm(out);
+  }
+
+  function expandRendersBox(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 1 && r.height > 1;
+  }
+
+  // 站方折起來的內容？三種收合機制擇一 + 內容量 + 「邊界就在這顆元素上」
+  function isSiteCollapsedContent(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (EXPAND_SKIP_TAGS.test(el.tagName)) return false;
+    if (el.dataset && el.dataset.jreadHidden === '1') return false;
+    if (isInPreserved(el)) return false;
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (_) { return false; }
+    if (!cs) return false;
+    const collapsed = cs.contentVisibility === 'hidden' ||
+      cs.display === 'none' ||
+      !expandRendersBox(el);
+    if (!collapsed) return false;
+    if (collapsedContentText(el).length < EXPAND_MIN_TEXT) return false;
+    // 錨定 2：parent 必須有 render——收合的邊界就在這顆元素上，而不是整支
+    // 祖先被藏掉（後者是站台 chrome / 別條規則的範圍，攤了也沒用還誤傷）
+    return expandRendersBox(el.parentElement);
+  }
+
+  function expandCollapsedSections(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return;
+    const expanded = [];
+    const seen = new Set();
+    const takeTarget = (el) => {
+      if (!el || seen.has(el)) return false;
+      if (!articleEl.contains(el)) return false;
+      if (!isSiteCollapsedContent(el)) return false;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (_) { return false; }
+      if (!cs) return false;
+      const decls = buildExpandDecls(cs);
+      if (!Object.keys(decls).length) return false; // 沒有可中和的收合宣告
+      seen.add(el);
+      const prev = snapshotStyles(el, EXPAND_DECL_PROPS);
+      applyImportant(el, decls);
+      el.setAttribute(EXPANDED_ATTR, '1');
+      expanded.push({ el, prev, __expandedAttr: true });
+      return true;
+    };
+
+    for (const toggle of articleEl.querySelectorAll(INTERACTIVE_BTN_SEL)) {
+      // 錨點：站方自己宣告「我控制的東西現在是收合的」
+      if (toggle.getAttribute('aria-expanded') !== 'false') continue;
+      // 錨定 3：導覽地標內不攤（文末 navbox 連結湯）
+      if (toggle.closest && toggle.closest(NAV_LANDMARK_SEL)) continue;
+      // 這顆 toggle 其實不會被清（媒體 button / byline chip 兩道豁免）→ 使用者
+      // 仍然按得動，不需要我們代勞。與 hideInsideArticleAllButtons 對稱。
+      if (buttonWrapsContentMedia(toggle)) continue;
+      if (isBylineNameChip(toggle)) continue;
+
+      let hit = false;
+      // 路徑 A：aria-controls 明確指名（gov.uk「Show all updates」走這條）
+      const controls = toggle.getAttribute('aria-controls');
+      if (controls) {
+        for (const id of controls.split(/\s+/)) {
+          if (!id) continue;
+          let target = null;
+          try { target = document.getElementById(id); } catch (_) { /* noop */ }
+          if (takeTarget(target)) hit = true;
+        }
+      }
+      // 路徑 B：沒有 aria-controls（MediaWiki 就沒有）→ 往上 3 層找收合的兄弟
+      if (!hit) {
+        let node = toggle, depth = 0;
+        while (node && node.parentElement && depth < EXPAND_CLIMB_LEVELS && !hit) {
+          for (const sib of node.parentElement.children) {
+            if (sib === node) continue;
+            if (takeTarget(sib)) hit = true;
+          }
+          node = node.parentElement;
+          depth++;
+        }
+      }
+      if (hit) hideExpanderDecorativeLabel(toggle, hidden);
+    }
+
+    // 原生 <details>：語意最明確的收合宣告，不需要 toggle 錨點（<summary> 不在
+    // INTERACTIVE_BTN_SEL 內、本來就不會被清，攤開只是把使用者要按的那一下先按
+    // 掉）。同樣套 nav 地標 guard——MDN 側邊欄整排 <details> 目錄不該攤。
+    for (const det of articleEl.querySelectorAll('details')) {
+      if (det.open) continue;
+      if (det.dataset && det.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(det)) continue;
+      if (det.closest && det.closest(NAV_LANDMARK_SEL)) continue;
+      if (collapsedContentText(det).length < EXPAND_MIN_TEXT) continue;
+      det.open = true;
+      det.setAttribute(EXPANDED_ATTR, '1');
+      // `open` 是屬性不是樣式 → 走 hidden 陣列的專用還原分支（與 __titleClone /
+      // __relocated 同一個機制），不進 __styleResets
+      hidden.push({ el: det, __reopened: true });
+    }
+
+    addStyleResets(hidden, expanded);
+  }
+
+  // 攤開之後，原本用來招喚展開鈕的那行標籤（「看更多」/「ดูเพิ่ม」/「See more」）
+  // 就成了純裝飾字——它標注的東西現在整份攤在下面。清掉。
+  //
+  // 為什麼不留：留著會變成內容正上方一行沒有意義的短字，而且它的語意本來就是
+  // 「按這裡看更多」——按鈕已經被清了，這句話指向不存在的動作。
+  //
+  // guard（避免把真的段落標題當裝飾字砍掉）：只清「短、無連結、無 <time>、
+  // 無媒體、且不含 heading」的分支。無障礙規範要求 accordion 的標題文字放在
+  // toggle 控制項**自己**身上，所以「不是 toggle、又短又無語意元素」的旁支
+  // 幾乎只剩展開提示字這一種。含 heading 的分支（真的段落標題）一律放行。
+  function hideExpanderDecorativeLabel(toggle, hidden) {
+    const unit = toggle.parentElement;
+    if (!unit) return;
+    for (const branch of unit.children) {
+      if (branch === toggle) continue;
+      if (branch.dataset && branch.dataset.jreadHidden === '1') continue;
+      if (branch.getAttribute && branch.getAttribute(EXPANDED_ATTR) === '1') continue;
+      if (branch.querySelector && branch.querySelector('[' + EXPANDED_ATTR + '="1"]')) continue;
+      const text = collapsedContentText(branch);
+      if (!text || text.length > ORPHAN_LABEL_MAX_CHARS) continue;
+      if (ORPHAN_LABEL_SENTENCE_END_RE.test(text)) continue;
+      if (ORPHAN_LABEL_HEADING_TAGS.has(branch.tagName)) continue;
+      if (branch.querySelector && branch.querySelector('h1, h2, h3, h4, h5, h6, a[href], time, img, picture, video, iframe, svg')) continue;
+      hide(branch, hidden);
+    }
+  }
+
   // ---- v1.7.61：內容被清光、只剩一行短 label 的孤兒殼 ----------------------
   // 症狀（CNBC 實證）：主文開頭殘留孤零零一行「In this article」，底下的股票
   // 代號 ticker widget 已被清掉。
@@ -8683,6 +8935,13 @@
       // 幾何下 rect 是否完全在 clip box 外」，內部位移後訊號即失真。前面三條
       // outside-article 規則只造成整體平移（box 與內容同步移動），不影響
       safeRun(hideInsideArticleClipCroppedContent, articleEl, hidden);
+      // v1.7.63：攤開站方折起來的收合內容（th.wikipedia infobox 可展開清單、
+      // gov.uk「Show all updates」）。**必須排在所有 hide 規則之前**——攤開後
+      // 的內容要吃完整套 in-article 規則（該清的照清），而不是繞過它們；也因為
+      // 收合內容的容器在 clean 末段會被別條規則 hide，晚跑就什麼都看不到了
+      // （probe round 5 實測）。排在 clip 規則之後：那條要求「原站幾何未被位移」，
+      // 攤開會改變後續元素的垂直位置。
+      safeRun(expandCollapsedSections, articleEl, hidden);
       safeRun(hideSocialShareClusters, articleEl, hidden);
       // 5 條 CONTAINER_SEL 規則共用同一次掃描結果（v0.6.26 效能重構）——
       // 原本各 rule 獨立 querySelectorAll 5 次 article descendant，合併成 1 次。
@@ -8924,6 +9183,15 @@
                 parent.insertBefore(item.el, (next && next.parentNode === parent) ? next : null);
               }
             } catch (_) { /* detached：維持現狀 */ }
+            continue;
+          }
+          // v1.7.63：expandCollapsedSections 攤開的原生 <details>——還原成
+          // 站方原本的收合狀態（`open` 是屬性不是樣式，非 hide 還原路徑）
+          if (item.__reopened) {
+            if (item.el.removeAttribute) {
+              item.el.removeAttribute('open');
+              item.el.removeAttribute(EXPANDED_ATTR);
+            }
             continue;
           }
           const { el, prevDisplay, prevDisplayPriority } = item;
