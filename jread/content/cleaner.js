@@ -5617,6 +5617,14 @@
       // 內容 SVG（不在 figure 內的圖表 / 插畫）會被當空殼 wrapper 藏掉
       //（probe 實證：svg.tagName === 'svg'、Set.has('svg') === false）。
       if (EMPTY_COLLAPSE_SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
+      // v1.7.59：SVG 內部節點（use / g / path…）不是 CSS box——藏它們只會讓
+      // 圖形消失、外層 <svg> 的 layout box 原封不動，達不到 collapse 的目的。
+      // 反向風險更大：圖表 / 插畫裡「無文字、無 img 子孫」的 <g>（純幾何群組）
+      // 恰好滿足本規則的空殼條件 → 一整組圖形被擦掉。<svg> 自身已在
+      // EMPTY_COLLAPSE_SKIP_TAGS 內跳過，這裡補的是它的後代。
+      // （restofworld 實案：翻譯複製出的裸 <svg> 內 <use> 被本規則 hide，
+      //  空白照舊、只是變成看不見的 300×150 空洞。）
+      if (el.ownerSVGElement) continue;
       // v0.8.79 MDN 修法：host 了 shadow root 的 web component（mdn-code-example
       // 把 <pre> 程式碼塊放 shadow DOM）其渲染內容在 shadow root 內，light DOM
       // 的 innerText / querySelector('img') 全看不到 → 被誤判成 empty wrapper
@@ -6553,6 +6561,56 @@
       try { r = el.getBoundingClientRect(); } catch (_) { continue; }
       if (!r || r.width <= 0 || r.height <= 0) continue;
       if (r.width > HEADER_ZONE_ICON_MAX || r.height > HEADER_ZONE_ICON_MAX) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：失去尺寸來源的 sprite <svg>（v1.7.59 restofworld）---------
+  // 結構通則：`<svg>` 若自身沒有任何內在尺寸來源——無 width / height 屬性、
+  // 無 viewBox——它的視覺尺寸 100% 靠外部 CSS selector 給（`.icon-wrap svg
+  // { width: 18px }` 這類）。一旦那條 selector 不再命中（DOM 被翻譯器 /
+  // 編輯器 / CMS 改寫，元素被搬離原本的 class 祖先），瀏覽器退回 CSS
+  // replaced element 的預設尺寸 300×150，在文字流中間撐出五、六行空白。
+  //
+  // 實案（restofworld 翻譯輪，probe 實證）：文末 `.endmark__background > svg`
+  //（原站 CSS 給 18×18 的段落結束符）在翻譯重組時被額外複製一份到 `<p>` 的
+  // 直接子層，脫離 `.endmark__background` 後退回 300×150 → 最後一句被空白
+  // 從中撕成兩截。此空白在「翻譯後、尚未進閱讀模式」就已存在＝改寫產物，
+  // 但閱讀模式必須自己扛得住（各家翻譯器改寫 DOM 是常態）。
+  //
+  // 判定條件（全部成立才 hide，交集極窄）：
+  //   1. 無 viewBox / width / height 屬性＝沒有內在尺寸，尺寸只能來自 CSS
+  //   2. 繪圖內容只有 `<use>` sprite 參照，自身無 path / rect / text / image
+  //      等實體繪圖節點＝裝飾性 icon 的慣用結構，不是圖表 / 插畫
+  //   3. 渲染高度正好等於 UA 預設的 150px＝沒有任何 CSS 給過尺寸的鐵證
+  //      （站方若刻意 sized，高度不會恰好落在預設值上）
+  // 三條全中 = 一個「沒人給尺寸的裝飾 sprite icon」，在閱讀模式下沒有保留
+  // 價值、且它的預設尺寸必然破版 → hide（不縮小：裝飾雜訊一律清除）。
+  const SVG_UA_DEFAULT_HEIGHT = 150;   // CSS replaced element 預設高（寬 300）
+  // 「svg 自身的實體繪圖節點」——有任一個就代表它是內容圖，不是 sprite 參照。
+  // <g> / <defs> / <symbol> 不列入：純結構容器，內部仍可能只有 <use>。
+  const SVG_OWN_PAINT_SEL =
+    'path, rect, circle, ellipse, line, polyline, polygon, text, image, foreignObject';
+
+  function svgIsUnsizedSprite(el) {
+    if (el.hasAttribute('viewBox') || el.hasAttribute('width') ||
+        el.hasAttribute('height')) return false;
+    if (!el.querySelector || !el.querySelector('use')) return false;
+    if (el.querySelector(SVG_OWN_PAINT_SEL)) return false;
+    let r;
+    try { r = el.getBoundingClientRect(); } catch (_) { return false; }
+    if (!r) return false;
+    return Math.abs(r.height - SVG_UA_DEFAULT_HEIGHT) < 1;
+  }
+
+  function hideUnsizedSpriteSvgs(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    for (const el of _getArticleAllElements(articleEl)) {
+      // SVG namespace 的 tagName 保留小寫，用 localName 比對（v1.6.24 硬教訓）
+      if (el.localName !== 'svg') continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(el)) continue;
+      if (!svgIsUnsizedSprite(el)) continue;
       hide(el, hidden);
     }
   }
@@ -8519,6 +8577,9 @@
       // header zone 裝飾 icon：須在 collapse 類規則（會 mutate layout）之前跑，
       // icon rect 量測才反映原站尺寸
       safeRun(hideHeaderZoneDecorativeIcons, articleEl, hidden);
+      // 失去 CSS 尺寸來源的 sprite <svg>（退回 300×150 撐爆段落）：同樣須在
+      // collapse 類規則之前，rect 量測才反映原站 layout
+      safeRun(hideUnsizedSpriteSvgs, articleEl, hidden);
       safeRun(hideInsideArticleActionRows, articleEl, hidden, containers);
       safeRun(hideInsideArticleReactionBars, articleEl, hidden);
       safeRun(hideInsideArticleWidgetCustomElements, articleEl, hidden);
