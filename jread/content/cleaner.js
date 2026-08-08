@@ -2431,17 +2431,30 @@
   // 空殼 / sidebar」heuristic（narrowPromotedSiblings / hideInsideArticleEmptySpacers
   // / hideInsideArticleSidebarColumns）共同誤殺。此 helper 供三者共用 guard（單一
   // 資料源，CLAUDE.md 硬規則 5），只放行、不新增 hide，誤判風險僅止於「少清」。
+  // v1.7.69：三個掃描一律「self + 後代」。querySelectorAll 只回後代，故元素
+  // **自己就是**那塊內容時（sibling 直接是 <table class="infobox"> / 直接是
+  // <pre> / 直接是 <mdn-compat-table-lazy>）整條 guard 落空。
+  // en.wikipedia《Regret》實案：infobox 是 <section> 的 direct child（textLen
+  // 380 / ld 0.57）→ sidebar 條件 A（sib < main×10% 且 ld > 0.5）命中，整張
+  // 資訊表消失。呼叫端傳進來的一定是「候選 sibling / 候選容器」本身，self 未
+  // 納入純屬掃描寫法的盲點，不是刻意的語意。
+  function _selfAndDescendants(el, sel) {
+    const out = (el.matches && el.matches(sel)) ? [el] : [];
+    if (el.querySelectorAll) out.push(...el.querySelectorAll(sel));
+    return out;
+  }
+
   function hasCodeOrDataTableContent(el) {
     if (!el || !el.querySelectorAll) return false;
     // light DOM 程式碼塊（排除被 <a> 包的——理論上極罕見、保險）
-    for (const pre of el.querySelectorAll('pre')) {
+    for (const pre of _selfAndDescendants(el, 'pre')) {
       if (!pre.closest || !pre.closest('a')) return true;
     }
     // 程式碼 / 表格 web component：用 tag 名（元件宣告自己的用途）判定——race-free，
     // 不依賴 shadow root 何時 hydrate（peek shadow 內容會與 hydration 競態，Syntax
     // 段曾因此 run-to-run 飄忽）。MDN：<mdn-code-example> / <mdn-compat-table-lazy>。
     // tagName 全大寫。
-    for (const ce of el.querySelectorAll('*')) {
+    for (const ce of _selfAndDescendants(el, '*')) {
       const t = ce.tagName;
       if (t.indexOf('-') === -1) continue;
       if (t.indexOf('CODE') !== -1 || t.indexOf('TABLE') !== -1) return true;
@@ -2451,8 +2464,9 @@
     // role="navigation" / <nav> 內的 table 不算（zh.wikipedia 珍珠奶茶 底部 navbox
     // 實案：13 列連結導覽表 + 淡紫底，誤保留後底色連結 contrast 2.93 < 3）。用 ARIA
     // role / HTML5 語意判定（portable，非 .navbox class 特判）；MDN 的 Specifications
-    // 純 <table> 不在 nav 內、照常保留。
-    for (const tbl of el.querySelectorAll('table')) {
+    // 純 <table> 不在 nav 內、照常保留。closest 含 self，故 table 自己帶
+    // role="navigation" 時同樣被排除。
+    for (const tbl of _selfAndDescendants(el, 'table')) {
       if (tbl.closest && tbl.closest('a, li, [role="navigation"], nav')) continue;
       if (tbl.querySelectorAll('tr').length >= 2) return true;
     }
