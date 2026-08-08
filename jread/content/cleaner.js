@@ -3915,9 +3915,24 @@
         // v1.7.38 散文 guard（條件 A / C 共用，見 sidebarSiblingIsProse 註解）：
         // sibling 內含「非連結長句」= 內文段落，不是 link widget cluster
         const sibIsProse = sidebarSiblingIsProse(s.el);
+        // v1.7.65 段落標籤 guard（條件 A 專用）：sibling 是 <p> → 放行。
+        // HTML spec 的 <p> 內容模型是 phrasing content、不得包 block-level
+        // 元素，故 <p> 結構上不可能是「欄」或 widget cluster 容器（那些必然
+        // 含 div / ul / figure 等 block 結構）。條件 A 的形狀（極短 + 高 ld）
+        // 對 <p> 只會命中「內文裡的短連結句」——引言出處行 `<p>透過
+        // <a>某人</a>：</p>`、裸署名、"更多見 <a>某文</a>" 這類。
+        // Jimmy 2026-08-08 實案（Readwise Reader shared 頁的 mjtsai 文章，
+        // 「出處行 + blockquote」交替結構）：7 條出處行 p 全中條件 A
+        // （textLen 9–27、ld 0.80–0.92）整篇出處全消失，讀者只剩無主引言。
+        // sibIsProse guard 接不住——出處行的非連結文字只有「透過」「：」
+        // 幾個字，遠低於 50 chars 散文門檻。
+        // 真的連結列（tag 列 / 分享列）即使包在 <p> 內也不歸本 rule 管：
+        // 那是 link-only block 形狀，由 isLinkOnlyBlock / direct-child link
+        // block / footer meta 各自接（條件 C 對長連結列 <p> 也仍然生效）。
+        const sibIsParagraphTag = s.el.tagName === 'P';
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
-        if (!sibIsProse &&
+        if (!sibIsProse && !sibIsParagraphTag &&
             s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
           // v0.7.109：byline 白名單——短篇（textLen < 200）+ 文字命中
