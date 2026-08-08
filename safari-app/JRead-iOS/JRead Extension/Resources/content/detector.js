@@ -1017,6 +1017,41 @@
     return null;
   }
 
+  // v1.7.64：articleEl 外的 H1 候選，依「LCA 與 articleEl 的 parent hop 距離」
+  // 由近到遠排序（距離相同時維持 DOM 順序）。
+  //
+  // 結構通則（與文字 / 語言無關）：文章 hero 標題與主文同屬一個 post 容器
+  // ——兩者的 LCA 就在文章自己的殼上，距離近；站名 masthead logo H1 在 page
+  // 層 header 內，與主文的 LCA 是整頁 wrapper，距離遠。頁面 DOM 順序則是
+  // 「masthead 先於主文」的站佔多數，所以「DOM-order 第一個 H1」在有站名 H1
+  // 的站上系統性地指向錯的那顆——原文頁靠 promoteForTitle 的 og-match 文字
+  // 比對先接住沒暴露，翻譯擴充把文章標題換成中文後文字比對失效才炸出來
+  // （raptitude.com 實證：站名 H1 dist=4 → LCA=DIV#page 把 header + 側欄 +
+  // footer 全括進主文；文章 H1 dist=1 → LCA=post 容器正解）。
+  //
+  // 一併排除「被 <a> 包住的 heading」——卡片連結式標題（推薦 / 相關 / 側欄
+  // 文章卡）慣例整顆包在 <a> 裡，與 findSelfTitleHead / promoteForTitle
+  // sibling-walk 的既有判準對稱。
+  // LCA 一律走 findTitleViaLca helper（單一資料源不變式，forcing spec
+  // detector-lca-helper.spec.js）——順帶沿用它的 body/html guard：LCA 落在
+  // body 的候選本來就會被 tryLcaPromote 拒絕，這裡先濾掉不影響結果。
+  function h1sByLcaDistance(articleEl) {
+    const out = [];
+    for (const h of document.querySelectorAll('h1')) {
+      if (articleEl.contains(h)) continue;
+      if (isHeadingInsideAnchor(h)) continue;
+      const r = findTitleViaLca(articleEl, h, Infinity);
+      if (!r) continue;
+      let dist = 0;
+      let cur = articleEl;
+      while (cur && cur !== r.el) { cur = cur.parentElement; dist++; }
+      out.push({ h, dist });
+    }
+    // Array.prototype.sort 穩定（ES2019 起規範保證）→ 同距離維持 DOM 順序
+    out.sort((a, b) => a.dist - b.dist);
+    return out.map(o => o.h);
+  }
+
   function ensureArticleContainsTitleH1(articleEl, promotedTitleHead) {
     if (!articleEl) return null;
     // promote 已升 + 命中的是真 heading（H1-H4）→ 視為堅實 promote、不需再升。
@@ -1092,16 +1127,24 @@
     // 路徑 1：頁面 DOM-order 第一個 H1 不在 articleEl 內 → 升 LCA。
     // self-titled guard：article 開頭已是自己的標題區時，頁面 DOM-first H1 是
     // 站名 masthead logo（非 post hero），升上去會把留言/推薦括進主文。
+    //
+    // v1.7.64：觸發條件維持「DOM-order 第一個 H1 不在 articleEl 內」（歷史校準
+    // 的入口不動），但**升級對象改挑 LCA 距離最近的 H1**——見 h1sByLcaDistance
+    // 註解。站名 masthead H1 幾乎必是 DOM-first，照 DOM 順序升等於把整頁
+    // wrapper 當主文。
     const firstH1 = document.querySelector('h1');
     if (firstH1 && !articleEl.contains(firstH1) && !articleIsSelfTitled(articleEl)) {
-      const r = tryLcaPromote(firstH1);
-      if (r) return r;
+      for (const h of h1sByLcaDistance(articleEl)) {
+        const r = tryLcaPromote(h);
+        if (r) return r;
+      }
     }
 
     // 路徑 2（原邏輯）：articleEl 完全不含 H1 → 遍歷所有 H1 找 valid LCA。
     // 商周 case（articleEl=SECTION.row 不含 H1，H1.Single-title 在兄弟層）兜底。
+    // v1.7.64：同樣改成「距離近的先試」（與 path 1 共用同一份排序事實）。
     if (!articleEl.querySelector('h1')) {
-      for (const h of document.querySelectorAll('h1')) {
+      for (const h of h1sByLcaDistance(articleEl)) {
         const r = tryLcaPromote(h);
         if (r) return r;
       }
