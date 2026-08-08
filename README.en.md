@@ -24,6 +24,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 ### Noise handling
 
 - **Noise hiding**: automatically removes ads, sticky headers, popups, and related-article lists
+- **Collapsed content is expanded**: content the site folded away — expandable infobox lists, accordion panels, native `<details>` — is opened automatically. Reading mode strips the page's buttons, so without this those sections would be unreachable. Navigation link tables at the end of an article are left collapsed
 - **Edit mode**: manually remove leftover noise the cleaner missed, so the article is cleaner when **printing** or **sending to a read-later service**. In reading mode, select a section to remove and one click hides it; mistakes can be undone with Cmd/Ctrl+Z. Removals last only for the session (they return on exit or reload), and removed sections appear in neither the printout nor what is sent to a read-later service
 
 ### Reading experience
