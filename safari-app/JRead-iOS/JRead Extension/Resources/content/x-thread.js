@@ -317,6 +317,20 @@
   // overflow:clip 是 leaf 不影響分欄。clone 退出時整個合成容器 remove、無 restore
   // 顧慮（exit() 直接 c.remove()）。結構性訊號（computed display / overflow），
   // 非站點 class 特判——此檔本就是 X 專屬模組。
+  //
+  // v1.7.67：**inline 層級容器（inline-flex / inline-grid）不中和**。
+  // 症狀（Jimmy 2026-08-08，v1.7.66 修掉 byline 誤命中後露出來的）：貼文文末
+  // 「上次編輯時間：時間 · 觀看數」那列被拆成好幾行——列裡的時間 chip 是
+  // `<a display:inline-flex>`，被中和成 block 後獨佔一行，同列後面的分隔符與
+  // 觀看數再被擠下去。
+  // 依據：本函式整段理由都是 CSS columns 的 fragmentation 規則，而那是
+  // 「內容高於單欄的**區塊**不可被欄邊界分裂」的問題。inline 層級的盒本來就
+  // shrink-to-fit、只佔一行文字的一小段，永遠不會是分頁的阻礙——中和它沒有
+  // 換到任何東西，只是把一行字拆開。block 層級的 flex / grid（推文本體 wrapper、
+  // 圖片格）照舊中和：媒體格不攤平的話 styler 的 max-width:100% 吃不到，
+  // 圖會停在 X 的縮圖尺寸（cage 實測 120px、卡片寬 720）。
+  // overflow 中和不分層級——monolithic box 規則對 inline-block 類同樣適用，
+  // 且 overflow:visible 不影響行內排版。
   function normalizeCloneForPaging(container) {
     if (!container || !container.querySelectorAll) return 0;
     const win = container.ownerDocument && container.ownerDocument.defaultView;
@@ -326,7 +340,7 @@
       if (el.tagName === 'IMG' || el.tagName === 'FIGURE') continue;
       const cs = win.getComputedStyle(el);
       const d = cs.display;
-      if (d === 'flex' || d === 'inline-flex' || d === 'grid' || d === 'inline-grid') {
+      if (d === 'flex' || d === 'grid') {
         el.style.setProperty('display', 'block', 'important');
         n++;
       }
