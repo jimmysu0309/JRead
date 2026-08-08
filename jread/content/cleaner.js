@@ -5009,8 +5009,26 @@
       // 用 !important 確保贏過原站的 grid rule（Tailwind 的 `md:grid-cols-*`
       // 等 class 本身 specificity 不是 !important，但多欄定義 rule 可能
       // 有 utility 特殊 priority；保險起見用 important）
+      // v1.7.67：**inline 層級的容器 collapse 成 `inline`、不是 block**。
+      // `inline-grid` / `inline-flex` 的容器本來就活在一行文字裡（meta 列的
+      // 時間 chip、標籤 chip 這類 shrink-to-fit 小盒），把它改成 block +
+      // width:100% 等於在句子中間插一個整寬區塊——它自己佔一行、後面的
+      // 同列內容再被擠到下一行。cage 實測 X 貼文文末 meta 列：`<a>` 原為
+      // inline-flex（內含被清掉的「開啟編輯記錄」cell → 命中 collapse），
+      // collapse 成 block 後整列 51px 兩行；改成 inline 後三個子元素回到
+      // 同一行（y 全等、列高 26px）。
+      // 上面那串 width / max-width / margin / padding reset 的理由都是
+      // 「被強制 block 的分欄容器要撐滿父寬且不溢出」（Bootstrap col-*、
+      // cna inner-padding 65px 等），對 shrink-to-fit 的 inline 盒不成立，
+      // 一併不寫。grid-template reset 照舊（清掉失效的欄定義無副作用）。
+      const isInlineLevel = cs.display === 'inline-grid' || cs.display === 'inline-flex';
       const containerDecls = isArticleSelf ? {
         'display': 'block',
+        'grid-template-columns': 'none',
+        'grid-template-rows': 'none',
+        'grid-template-areas': 'none'
+      } : isInlineLevel ? {
+        'display': 'inline',
         'grid-template-columns': 'none',
         'grid-template-rows': 'none',
         'grid-template-areas': 'none'
