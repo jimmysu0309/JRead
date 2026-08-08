@@ -4360,9 +4360,30 @@ html.${HTML_CLASS}.jread-orion body {
             // 孤兒分隔符掃描共用（原兩份 micro-dup）
             const bisSep = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
               !el.querySelector('img, svg, picture, video');
+            // v1.7.66：內文錨點加第二層——`<p>` 全 miss 時改用「div 當段落」標記
+            // （`[TEXT_DIV_ATTR]`，由 passMarkTextDivs 標記、排在本 pass 之前）。
+            // 根因：WYSIWYG / SPA 型頁面（Draft.js、Lexical、X / FB 貼文）整篇主文
+            // 是 div，`querySelectorAll('p')` 回空 → firstBodyP = null →
+            // beforeBody() 恆真 →「日期錨點必須在內文之前」這道 guard 整條靜默
+            // 失效，往下抓到文末 metadata 的 <time>（X 貼文「上次編輯時間 / 觀看數」
+            // 列被當 byline：日期 item 吃到 v1.5.28 的 order:1 被推到行尾、label
+            // 後面剩孤兒「·」、整行染成連結色。Jimmy 2026-08-08 page rounds cage 輪）。
+            //
+            // 為什麼是「fallback」而不是把兩種 tag 併成一個 selector：text-div 標記
+            // 的門檻只有「leaf div + 字級 >= 主流」，站點的長文字 widget 也會中
+            // （probe 實測 theverge 文章內一顆 "ColumnClose…" 導覽 widget 被標成
+            // text-div，且排在真正的 byline 之前）。併成一條 selector 會讓這類站
+            // 的錨點提前到 widget、byline 反而偵測不到。`<p>` 是精度較高的段落訊號，
+            // 有 `<p>` 就以它為準，第二層只補「一個 <p> 都沒有」的那類頁面——
+            // 兩層判定基礎不同，不共用盲點。
             let firstBodyP = null;
             for (const p of articleEl.querySelectorAll('p')) {
               if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
+            }
+            if (!firstBodyP) {
+              for (const d of articleEl.querySelectorAll(`[${TEXT_DIV_ATTR}="1"]`)) {
+                if (bnorm(d.textContent).length >= 120) { firstBodyP = d; break; }
+              }
             }
             const beforeBody = (el) => !firstBodyP ||
               !!(el.compareDocumentPosition(firstBodyP) & Node.DOCUMENT_POSITION_FOLLOWING);
