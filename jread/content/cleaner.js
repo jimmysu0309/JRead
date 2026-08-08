@@ -1302,6 +1302,10 @@
   // = 50），確保主文段落（通常 >= 50 chars）能 guard 住、純連結 cluster
   // 命中。
   //
+  // v1.7.68：不渲染的文字載體。這幾個 tag 的 text node 有內容但讀者看不到，
+  // 任何「有沒有正文級文字」的判定都必須排除（見 subtreeHasLongNonAnchorText）。
+  const NON_RENDERED_TEXT_TAGS = new Set(['script', 'style', 'template', 'noscript', 'title']);
+
   // v1.7.18：長段落 guard 補第二訊號 subtreeHasLongNonAnchorText——「主文段落
   // 一定是 <p>」是三條規則（本函式、DirectChildLinkBlocks、Footer）共用的
   // 盲點：DraftJS 系站（mirrormedia）與 archive.today 改寫頁（class 全數
@@ -1325,17 +1329,32 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
       acceptNode(el) {
         if (el.localName === 'a') return NodeFilter.FILTER_REJECT;
+        // v1.7.68：不渲染的文字載體（script / style / template / noscript）不算
+        // 「正文級文字」。這條 guard 的語意是「這棵子樹有讀者看得到的散文，
+        // 所以不是純連結 widget」——script 裡的 JSON 設定與 jQuery 片段完全
+        // 不渲染，拿它當散文證據等於讓任何帶 inline script 的 widget 免疫。
+        // Jimmy 2026-08-08 實案（stackoverflow，cage 補測 BLOCKED 站）：整條
+        // `div#sidebar`（Linked 15 條 + Hot Network Questions 25 條，textLen
+        // 5445 / ld 0.59）本該被 sidebar-column 條件 A（textLen < main × 10%
+        // 且 ld > 0.5，實測 5445 < 13618、0.59 > 0.5）清掉，卻因子樹內兩個
+        // `<script>`（JSON 115 chars + jQuery 428 chars）被算成散文而整塊放行。
+        // 本 helper 是 isLinkOnlyBlock / footer / direct-child link block /
+        // sidebar 散文 guard 四條規則共用，修一處四條同時受惠。
+        if (NON_RENDERED_TEXT_TAGS.has(el.localName)) return NodeFilter.FILTER_REJECT;
         if (el.dataset && el.dataset.jreadHidden === '1') return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     });
     let el = root;
     while (el) {
-      let t = '';
-      for (const n of el.childNodes) {
-        if (n.nodeType === 3) t += n.textContent;
+      // root 自身不經過 walker 的 filter，這裡補判一次（v1.7.68）
+      if (!NON_RENDERED_TEXT_TAGS.has(el.localName)) {
+        let t = '';
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) t += n.textContent;
+        }
+        if (norm(t).length >= minLen) return true;
       }
-      if (norm(t).length >= minLen) return true;
       el = walker.nextNode();
     }
     return false;
@@ -6747,7 +6766,19 @@
     // hideInsideArticleAbsoluteOverlays 既有的 standalone-media 保護一致。
     // strong keyword（billboard / sponsored / related 等明確廣告語意）在上方
     // 已 return false，不享本豁免——圖片式廣告 banner 照清。
-    if (containsStandaloneContentImg(el)) return true;
+    // v1.7.68：standalone content image 的保護加「wrapper 不在主文之後」條件。
+    // 這條保護（v0.8.119 autosport）的語意是「hero / 內文大圖是內容本身」——
+    // hero 依定義排在主文之前，`mainContentPrecedesWrapper` 對它必為 false、
+    // 保護照舊。但主文已經開始之後才出現的 keyword wrapper 結構上不可能是主文
+    // 容器，它裡面的大圖是促銷 / 導流插圖，不該靠這條免疫。
+    // Jimmy 2026-08-08 實案（cw.com.tw，cage 補測 BLOCKED 站）：文末付費牆
+    // `DIV.paywall.paywall--mask`（可見文字 15 chars：「訂閱天下解鎖完整內容」）
+    // 內含一張 630×422 的訂閱方案宣傳圖（alt「線上+紙本閱讀」、不在 <a> 內）
+    // → containsStandaloneContentImg 命中 → `paywall` keyword 被豁免、整塊促銷
+    // 留在卡片末端。同一份 `mainContentPrecedesWrapper` 訊號已是 v1.7.19 對
+    // CONTENT_BEARING_NOISE_RE 的判準，這裡只是把它前移到本條保護。
+    if (containsStandaloneContentImg(el) &&
+        !(articleEl && mainContentPrecedesWrapper(articleEl, el))) return true;
     if (el.querySelector && el.querySelector('h1') && wrapperH1IsMainTitle(el)) return true;
     if (articleEl && CONTENT_BEARING_NOISE_RE.test(markerOf(el))) {
       // v1.7.19 archive.ph WSJ 存檔頁翻譯後留言區實測：727 則留言的文字量佔
@@ -7803,6 +7834,52 @@
       try { target = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
       if (target.origin !== location.origin) continue;
       if (target.pathname === location.pathname) continue;
+      hide(p, hidden);
+    }
+  }
+
+  // ---- 主文內：整段只有一條「粗體連結」的 CTA / 導流列（v1.7.68）----------
+  // Bug（Jimmy 2026-08-08 要求 cage 補測 BLOCKED 站時發現，foxnews）：文中夾著
+  // 5 條純連結段落——3 條他篇推薦（BILL MAHER'S… / FETTERMAN UNLEASHES… /
+  // MAMDANI-BACKED…）+ 2 條 CTA（CLICK HERE FOR MORE COVERAGE OF MEDIA AND
+  // CULTURE / CLICK HERE TO DOWNLOAD THE FOX NEWS APP），全部殘留在閱讀模式。
+  //
+  // 結構訊號（cage 實測命中 5/5、同頁其他段落 0 誤中，且翻譯後訊號不變）：
+  //   整段的元素子節點恰好一個 `<a href>`，且段落文字 == 連結文字（段內沒有
+  //   任何其他文字），而該連結的內容整個包在 `<strong>` / `<b>` 內。
+  // 「一行字整條是連結而且整條粗體」是 CTA / 導流列的排版慣例；真正的內文
+  // 連結一定嵌在句子裡（前後有非連結文字），而作者刻意獨立成段的參考連結
+  // （hashnode 文末「額外閱讀：<a>https://…</a>」實測）**不會**整條粗體 →
+  // 不命中，內容不受損。
+  //
+  // 為什麼不要求同源：foxnews 那 5 條有 4 條站內、App 下載那條走
+  // foxnews.onelink.me（第三方 deep link）——CTA 連到站外是常態，加同源條件
+  // 反而漏掉最該清的那種。長度上下界擋掉「粗體單字連結」與整段長引文：
+  // 譯文會縮短（「點此下載福克斯新聞APP」12 chars），下界取 8。
+  //
+  // 與 hideInsideArticleInlineRelatedLinkParagraphs 互補：那條抓「前綴：<連結>」
+  // （有冒號前綴、站內），本條抓「整段就是一條粗體連結」（無前綴、不限同源）。
+  const BOLD_LINK_CTA_MIN_TEXT = 8;
+  const BOLD_LINK_CTA_MAX_TEXT = 200;
+
+  function hideInsideArticleBoldOnlyLinkLines(articleEl, hidden) {
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(p)) continue;
+      // 引文 / 圖說 / 清單項內的連結不歸本條管（那些是內容結構）
+      if (p.closest('blockquote, figure, li')) continue;
+      if (p.children.length !== 1) continue;
+      const a = p.children[0];
+      if (a.tagName !== 'A' || !a.getAttribute('href')) continue;
+      const linkText = norm(a.textContent);
+      if (norm(p.textContent) !== linkText) continue;
+      if (linkText.length < BOLD_LINK_CTA_MIN_TEXT ||
+          linkText.length > BOLD_LINK_CTA_MAX_TEXT) continue;
+      // 連結內容整個包在 strong / b 內
+      if (a.children.length !== 1) continue;
+      const bold = a.children[0];
+      if (!/^(STRONG|B)$/.test(bold.tagName)) continue;
+      if (norm(bold.textContent) !== linkText) continue;
       hide(p, hidden);
     }
   }
@@ -9013,6 +9090,7 @@
       safeRun(hideInsideArticleInsetLinkCards, articleEl, hidden);
       safeRun(hideInsideArticleFullLinkCardFigures, articleEl, hidden);
       safeRun(hideInsideArticleInlineRelatedLinkParagraphs, articleEl, hidden);
+      safeRun(hideInsideArticleBoldOnlyLinkLines, articleEl, hidden);
       safeRun(hideInsideArticleFloatedPromoAsides, articleEl, hidden);
       safeRun(hideInsideArticleFigureWidgetIframes, articleEl, hidden);
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
