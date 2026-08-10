@@ -161,6 +161,8 @@
   // span absolute left:0 錨在 overflow:hidden 裁切窗左上、長日期 in-flow span 被
   // 站方 translateY(-110%) 移出窗——left 被清後短日期飛到窗外，日期整個消失）。
   const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
+  // v1.7.70：pre-wrap 硬換行切出的段落載體標記（見 splitPreWrapParagraphs）。
+  const PREWRAP_PARA_ATTR = 'data-jread-prewrap-para';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -3028,6 +3030,325 @@ html.${HTML_CLASS}.jread-orion body {
     return null;
   }
 
+  // ---- pre-wrap 硬換行 → 真段落（v1.7.70）--------------------------------
+  // 根因（Jimmy 2026-08-10 回報 x.com/patrickc/status/2083931939673878592）：
+  // 社群貼文（X / Threads / Mastodon / 論壇）的整篇文字是**一個 white-space:
+  // pre-wrap 的 block 容器 + 底下幾個 inline span/a**，分段只靠文字節點裡的
+  // `\n` 字元。DOM 裡連一個段落元素都沒有 → `<p>` / [TEXT_DIV_ATTR] 段距規則
+  // 全部吃不到，reader 內整篇擠成一大塊（probe 實測該貼文：容器 5570 字、9 個
+  // 段落、0 個段落元素）。純 CSS 無解——硬換行的行距由 line-height 決定，沒有
+  // 任何屬性能只對「換行處」加間距，必須把 `\n` 切成真的段落載體。
+  //
+  // 修法（結構性通則，非站點特判）：對「computed white-space 是 pre 系 + block
+  // 層級 + 後代文字含 `\n`」的容器，把內容依 `\n` 切成 N 個 <div>，標
+  // PREWRAP_PARA_ATTR。切出的 div 直接含 inline 內容 → 排在 markTextDivs 之前
+  // 就會被它標成 TEXT_DIV_ATTR，段距 / 字級 / 行距 / CJK justify 全部沿用既有
+  // 段落規則（不另開一套 CSS —— 「哪些東西是段落」維持單一資料源）。
+  //
+  // 切法用 Range.extractContents 由後往前分裂，不是重排文字：mention `<a>`、
+  // emoji `<img>`、粗體 span 等 inline 結構跟著各自的段落走（probe 實測 9 段、
+  // 4 個 mention 連結各自落在正確段落、無殘留 `\n`）。
+  //
+  // `<br>` 也算硬換行——**翻譯後的同一份貼文長這樣**。probe 實測（合成 X 貼文
+  // + Shinkansen/Google MT）：翻譯引擎把整塊 pre-wrap 文字送去翻，回填時把每個
+  // `\n` 換成 `<br>`（翻譯後容器 0 個含 `\n` 的 text node、5 個 `<br>`）。只認
+  // `\n` 的話「原文有段距、翻譯後又黏成一塊」——Jimmy 回報的第二張截圖正是這個
+  // 狀態。兩者是同一份事實（這塊貼文的硬換行）的兩種載體，同一個入口處理才不會
+  // 只修一半。
+  //
+  // ⚠ 這條驗的是「視覺上有沒有段距」，不驗語意分段正不正確——來源只有硬換行，
+  // 站方若用單換行表達「同一段內的軟換行」（歌詞 / 地址 / 詩），切出來就是多個
+  // 段落。下面四道 guard 是針對這個誤判面的收斂，不是萬無一失：
+  //   1. pre（無自動折行）不納入——那是程式碼 / ASCII art 的載體，pre-wrap /
+  //      pre-line / break-spaces 才是「會折行的散文」
+  //   2. pre/code/textarea/kbd/samp 祖先鏈與等寬字型一律跳過（程式碼區塊）
+  //   3. 容器總文字 >= PREWRAP_MIN_TOTAL 且平均段長 >= PREWRAP_MIN_AVG——
+  //      歌詞 / 地址 / 標籤列這類「每行都很短」的結構不切（散文段落遠超此值）
+  //   4. `<br>` **只在 pre-wrap 容器內**算切點。一般文章的 `<br>` 用途太雜
+  //      （地址、簽名檔、表格內換行、圖說折行），無條件轉段落會到處誤傷；限定在
+  //      「本來就以 pre-wrap 排版的文字塊」等於沿用同一個判定入口，範圍不擴散
+  const PREWRAP_WS = new Set(['pre-wrap', 'pre-line', 'break-spaces']);
+  const PREWRAP_CODE_TAGS = new Set(['PRE', 'CODE', 'TEXTAREA', 'KBD', 'SAMP', 'SCRIPT', 'STYLE']);
+  const PREWRAP_BLOCK_DISPLAY = new Set(['block', 'flow-root', 'list-item']);
+  const PREWRAP_MIN_TOTAL = 120;
+  const PREWRAP_MIN_AVG = 40;
+  // inline 層級的 pre-wrap 文字塊要達到的「主要文字載體」佔比（見 isPreWrapHost）
+  const PREWRAP_INLINE_HOST_RATIO = 0.8;
+
+  // block 層級是主要判定，但**不能只認 block**：X 貼文的 tweetText 在原頁量到
+  // `display: block`，clone 進 x-thread 合成容器後掉回 `inline`（X 給它 block 的
+  // 那條規則依賴原本的祖先結構，脫離後不再命中；cage 登入態實測 block → inline，
+  // 修法第一版就是在這裡整批漏掉、Jimmy 回報「原文還是黏在一起」）。
+  // inline 層級改用「是不是所在 block 容器的主要文字載體」判定：整塊貼文文字的
+  // 佔比接近 1，句子中間的 inline span（WYSIWYG 的 `<span white-space:pre-wrap>`）
+  // 佔比低、不會被切進句中。
+  function isPreWrapHost(el, cs, win) {
+    if (PREWRAP_BLOCK_DISPLAY.has(cs.display)) return true;
+    if (cs.display === 'none' || cs.display === 'contents') return false;
+    const myLen = (el.textContent || '').trim().length;
+    if (!myLen) return false;
+    let host = el.parentElement;
+    while (host && !PREWRAP_BLOCK_DISPLAY.has(win.getComputedStyle(host).display)) {
+      host = host.parentElement;
+    }
+    if (!host) return false;
+    const hostLen = (host.textContent || '').trim().length;
+    return !!hostLen && myLen / hostLen >= PREWRAP_INLINE_HOST_RATIO;
+  }
+
+  // 收集容器內所有硬換行載體（text node 內的 `\n` 字元 + `<br>` 元素）+ 攤平後
+  // 的全文。gStart/gEnd 是全文座標，用來判斷切點前後有沒有實際文字、以及算段長
+  // guard；`<br>` 在全文裡佔一個 `\n` 佔位字元，兩種載體的座標語意才一致。
+  function collectPreWrapBreaks(el) {
+    const doc = el.ownerDocument;
+    if (!doc || !doc.createTreeWalker) return { full: '', items: [] };
+    const walker = doc.createTreeWalker(el, 1 | 4 /* SHOW_ELEMENT | SHOW_TEXT */);
+    const items = [];
+    let full = '';
+    let n;
+    while ((n = walker.nextNode())) {
+      if (n.nodeType === 3 /* TEXT_NODE */) {
+        const s = n.textContent || '';
+        const base = full.length;
+        // 同一 text node 內的連續 `\n` 合成一個 item——切段時用一次 splitText
+        // 就能把整串換行搬出去（拆成多個 item 的話第一次 splitText 就會讓後面
+        // 那些 item 的 offset 失效）
+        for (let i = 0; i < s.length; i++) {
+          if (s[i] !== '\n') continue;
+          let j = i;
+          while (j + 1 < s.length && s[j + 1] === '\n') j++;
+          items.push({ kind: 'nl', node: n, start: i, end: j + 1, gStart: base + i, gEnd: base + j + 1 });
+          i = j;
+        }
+        full += s;
+      } else if (n.tagName === 'BR') {
+        const g = full.length;
+        full += '\n';
+        items.push({ kind: 'br', node: n, gStart: g, gEnd: full.length });
+      }
+    }
+    return { full, items };
+  }
+
+  // 把載體合併成「切點群組」：相鄰兩個載體之間沒有實際文字就是同一個群組
+  // （`\n\n` / `<br><br>` / `\n<br>` 混排都只切一刀，不會多切出空段落），再濾掉
+  // 首尾群組（切點前 / 後沒有任何文字——切了只會產生空段落）。落選的載體原地
+  // 保留，pre-wrap 照樣 render 出原本的空行，視覺與原頁一致。
+  function usablePreWrapBreaks(full, items) {
+    const groups = [];
+    for (const it of items) {
+      const last = groups[groups.length - 1];
+      if (last && !full.slice(last.gEnd, it.gStart).trim()) {
+        last.items.push(it);
+        last.gEnd = it.gEnd;
+      } else {
+        groups.push({ items: [it], gStart: it.gStart, gEnd: it.gEnd });
+      }
+    }
+    const used = [];
+    let prevEnd = 0;
+    for (const g of groups) {
+      if (!full.slice(prevEnd, g.gStart).trim()) continue;
+      if (!full.slice(g.gEnd).trim()) continue;
+      used.push(g);
+      prevEnd = g.gEnd;
+    }
+    return used;
+  }
+
+  function inPreWrapCodeContext(el, root, win) {
+    let cur = el;
+    while (cur && cur !== root.parentElement) {
+      if (PREWRAP_CODE_TAGS.has(cur.tagName)) return true;
+      const ff = (win.getComputedStyle(cur).fontFamily || '');
+      if (/mono/i.test(ff)) return true;
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
+  // 對單一容器執行切段。回傳 record（`{ container, paras, styleSnap }`）或 null
+  // （guard 未過）。`prevStyleSnap` 由重切路徑傳入——容器的 inline style 是第一輪
+  // 就改好的，重切時再記一次會把「我們自己寫的值」當成原值、還原不回去。
+  function splitOnePreWrapContainer(container, win, doc, prevStyleSnap) {
+    const { full, items } = collectPreWrapBreaks(container);
+    const used = usablePreWrapBreaks(full, items);
+    if (!used.length) return null;
+    if (full.trim().length < PREWRAP_MIN_TOTAL) return null;
+    // 段長 guard：用全文座標切出的片段算平均（歌詞 / 地址 / 標籤列不切）
+    const segs = [];
+    let prevEnd = 0;
+    for (const g of used) { segs.push(full.slice(prevEnd, g.gStart).trim()); prevEnd = g.gEnd; }
+    segs.push(full.slice(prevEnd).trim());
+    const avg = segs.reduce((n, s) => n + s.length, 0) / segs.length;
+    if (avg < PREWRAP_MIN_AVG) return null;
+
+    {
+      // 容器 display 中和成 block（inline style，記進 record 對稱還原）：inline
+      // 層級的容器（X clone 後的 tweetText）塞進 block 段落載體會產生 anonymous
+      // block box，行為隨瀏覽器實作漂移；中和成 block 才可預測。white-space
+      // **不動**——翻譯引擎讀容器的 computed white-space 決定要不要保留換行語意
+      // （Shinkansen `shouldPreserveTextNewlines`），改成 normal 會讓譯文的換行
+      // 整個被 collapse 掉（真實 X 實測：譯文回來 0 個 `\n`、0 個 `<br>`）。
+      const styleSnap = prevStyleSnap || {
+        display: {
+          prev: container.style.getPropertyValue('display'),
+          prevP: container.style.getPropertyPriority('display'),
+        },
+      };
+      container.style.setProperty('display', 'block', 'important');
+
+      // 先把容器內容整包移進第一個段落載體，再由後往前分裂出其餘段落——切出來
+      // 的段落是容器的**子元素**而非兄弟，父層 layout（flex / grid / gap）完全
+      // 不受影響。
+      //
+      // 載體用 `<p>` 而**不是** `<div>`，這點是翻譯路徑的關鍵：Shinkansen 的
+      // `BLOCK_TAGS_SET`（P / H1-6 / LI / BLOCKQUOTE / …）**不含 DIV**，div 段落
+      // 會被 `isInlineRunNode` 當成 inline run 併成**一個**翻譯單元 → 整包內容被
+      // 譯文換掉、段落載體一起被沖走（真實 X 實測 `shinkansenNodes: 1`、段落歸零）。
+      // 換成 `<p>` 之後每段各自是一個翻譯單元，翻譯只換段落**內容**、段落結構
+      // 原封不動。`<p>` 同時也讓段落直接落進 BODY_TEXT_CORE（不必再借
+      // TEXT_DIV_ATTR），Readwise 匯出端拿到的也是真段落。
+      //
+      // 段落載體帶 `white-space: normal`（容器維持 pre 系不動）：切點的 `\n`
+      // **留在該段尾端**不刪除——翻譯引擎讀 DOM 文字，換行沒了就整篇當一段送翻，
+      // 譯文回來連 `<br>` 都沒有（真實 X 登入態實測翻譯後容器 0 個 `\n` / 0 個
+      // `<br>`，比修法前更糟，且動態重切也沒有載體可用）。段尾的 `\n` 在
+      // `white-space: normal` 下被 collapse、不 render 成空行，而 `textContent`
+      // 照樣含它：翻譯若以容器為單元，讀的是容器的 pre-wrap → 換行語意保留；
+      // 若以 `<p>` 為單元，段落結構本來就不會被沖掉、不需要換行。兩條路都成立。
+      const first = doc.createElement('p');
+      first.setAttribute(PREWRAP_PARA_ATTR, '1');
+      first.style.setProperty('white-space', 'normal');
+      while (container.firstChild) first.appendChild(container.firstChild);
+      container.appendChild(first);
+
+      const paras = [first];
+      const seams = [];
+      for (let k = used.length - 1; k >= 0; k--) {
+        const group = used[k];
+        const tail = group.items[group.items.length - 1];
+        const range = doc.createRange();
+        // 切點之後才是下一段：`\n` 從該字元之後起算、`<br>` 從元素之後起算
+        if (tail.kind === 'nl') range.setStart(tail.node, tail.end);
+        else range.setStartAfter(tail.node);
+        range.setEnd(first, first.childNodes.length);
+        const frag = range.extractContents();
+        const p = doc.createElement('p');
+        p.setAttribute(PREWRAP_PARA_ATTR, '1');
+        p.style.setProperty('white-space', 'normal');
+        p.appendChild(frag);
+        container.insertBefore(p, first.nextSibling);
+        paras.splice(1, 0, p);
+
+        // `\n` 留在原地（前一段尾端，被段落的 white-space:normal collapse 掉）。
+        // `<br>` 不吃 white-space、留著就是實打實的一個空行，只能移除——它只出現
+        // 在「譯文回填後重切」這條路上，此時內容已是譯文、不需要再留換行語意給
+        // 下一輪翻譯。seam 存元素參照本身，還原時放回原件而不是新建。
+        // ⚠ 同一切點同時混有 `\n` 與 `<br>`（極罕見）時，還原後兩者的**相對順序**
+        // 可能對調（`\n` 留在原位、`<br>` 一律插在下一段之前）；文字內容不受影響。
+        const brs = group.items.filter((it) => it.kind === 'br').map((it) => it.node);
+        seams.unshift(brs);
+        for (let m = brs.length - 1; m >= 0; m--) {
+          if (brs[m].parentNode) brs[m].parentNode.removeChild(brs[m]);
+        }
+      }
+      return { container, paras, seams, styleSnap };
+    }
+  }
+
+  function splitPreWrapParagraphs(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    const doc = articleEl.ownerDocument;
+    if (!win || !win.getComputedStyle || !doc || !doc.createRange) return [];
+
+    // 候選：block 層級（或 inline 但是所在 block 的主要文字載體）+ pre 系
+    // white-space + 內含硬換行。articleEl 自己也算（整篇主文就是一個 pre-wrap
+    // 容器的站台）。
+    const candidates = [];
+    for (const el of [articleEl, ...articleEl.querySelectorAll('*')]) {
+      const cs = win.getComputedStyle(el);
+      if (!PREWRAP_WS.has(cs.whiteSpace)) continue;
+      if (!isPreWrapHost(el, cs, win)) continue;
+      if (el.isContentEditable) continue;
+      if (inPreWrapCodeContext(el, articleEl, win)) continue;
+      // 硬換行載體：文字裡的 `\n`（原文）或 `<br>`（翻譯回填後）
+      if ((el.textContent || '').indexOf('\n') === -1 && !el.querySelector('br')) continue;
+      candidates.push(el);
+    }
+    // 巢狀時只取最外層（內層的換行由外層那一輪一起切）
+    const outer = candidates.filter((el) => !candidates.some((o) => o !== el && o.contains(el)));
+
+    const records = [];
+    for (const container of outer) {
+      const rec = splitOnePreWrapContainer(container, win, doc, null);
+      if (rec) records.push(rec);
+    }
+    return records;
+  }
+
+  // 兜底：容器內容被整包換掉後重新切段（v1.7.70）。段落載體用 `<p>` 之後，
+  // Shinkansen 是逐段翻譯、段落結構不會被沖掉（見 splitOnePreWrapContainer 的
+  // `<p>` 註解），但「站方 SPA 自己重繪那塊文字」「其他翻譯工具整包替換」等情境
+  // 一樣會讓載體消失。翻譯 / 重繪完成沒有事件可聽，借既有的 dynamic-append 通道
+  //（cleaner observer → `remarkDynamicMarkers`）：受影響的容器若「段落載體已不在」
+  // 就重跑一次切段。
+  //
+  // idempotent：重切後容器內又有段落載體，下一次 mutation 進來直接短路，不會迴圈
+  //（切段自身插入節點也會觸發 observer，靠的就是這道 guard）。
+  function resplitPreWrapParagraphs(node, records) {
+    if (!Array.isArray(records) || !records.length || !node) return;
+    for (const rec of records) {
+      const c = rec && rec.container;
+      if (!c || !c.isConnected) continue;
+      if (c !== node && !c.contains(node)) continue;
+      if (rec.paras.some((p) => p && p.parentNode === c)) continue;
+      const win = c.ownerDocument?.defaultView;
+      const doc = c.ownerDocument;
+      if (!win || !doc || !doc.createRange) continue;
+      const fresh = splitOnePreWrapContainer(c, win, doc, rec.styleSnap);
+      // paras 與 seams 必須成對換新——restore 用 seams[i-1] 補回段落之間的換行
+      // 載體，只換一半會把舊接縫套到新段落上
+      if (fresh) { rec.paras = fresh.paras; rec.seams = fresh.seams; }
+    }
+  }
+
+  // 還原：段落載體原地 unwrap、接縫補回被刪掉的換行載體（`<br>` 放回原件），
+  // 再把容器的 inline style 還回原值、normalize() 合併相鄰 text node。全程保留
+  // 原始節點參照（不用 clone 替換），站點掛在那些節點上的 listener / React 綁定
+  // 不受影響。
+  function restorePreWrapParagraphs(records) {
+    if (!Array.isArray(records)) return;
+    for (const rec of records) {
+      if (!rec || !rec.container || !Array.isArray(rec.paras)) continue;
+      const container = rec.container;
+      const doc = container.ownerDocument;
+      const seams = Array.isArray(rec.seams) ? rec.seams : [];
+      for (let i = 0; i < rec.paras.length; i++) {
+        const p = rec.paras[i];
+        if (!p || !p.parentNode) continue;
+        const parent = p.parentNode;
+        // `\n` 從未被刪、留在前一段尾端，unwrap 後自然回到原位；只有 `<br>` 需要
+        // 插回（原件，不是新建）
+        if (i > 0) {
+          for (const br of (seams[i - 1] || [])) {
+            if (br) parent.insertBefore(br, p);
+          }
+        }
+        while (p.firstChild) parent.insertBefore(p.firstChild, p);
+        parent.removeChild(p);
+      }
+      if (rec.styleSnap) {
+        for (const prop of Object.keys(rec.styleSnap)) {
+          const s = rec.styleSnap[prop];
+          if (s && s.prev) container.style.setProperty(prop, s.prev, s.prevP || '');
+          else container.style.removeProperty(prop);
+        }
+      }
+      if (container.normalize) container.normalize();
+    }
+  }
+
   function markTextDivs(articleEl) {
     const win = articleEl.ownerDocument?.defaultView;
     if (!win || !win.getComputedStyle) return [];
@@ -3633,6 +3954,8 @@ html.${HTML_CLASS}.jread-orion body {
       const headingLinkMarked = [];
       const absAnchorMarked = [];
       let textDivMarked = [];
+      // v1.7.70：pre-wrap 切段記錄（還原用；見 splitPreWrapParagraphs）
+      let prewrapParaSnap = [];
       let cjkJustifyMarked = [];
       let decorResetMarked = [];
       let inlineFlowPMarked = [];
@@ -3644,7 +3967,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -3870,6 +4193,16 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passSplitPreWrapParas = () => {
+        // v1.7.70：pre-wrap 硬換行切成真段落（見 splitPreWrapParagraphs）。
+        // 必須在 passMarkTextDivs **之前**——切出的段落載體要被 markTextDivs
+        // 標成 TEXT_DIV_ATTR 才吃得到段距 / 字級 / 行距（段落規則單一資料源）。
+        // 同時必須在 passInjectCss 之前：本 pass 靠 computed white-space 判定
+        // 候選，reader stylesheet 一旦注入就量不到原站值（carousel 那組規則會
+        // 把 white-space 覆寫成 normal）。
+        prewrapParaSnap = splitPreWrapParagraphs(articleEl);
+      };
+
       const passMarkTextDivs = () => {
         // v0.8.49：「div 當段落」標記必須在 ARTICLE_ATTR 設定**前**跑——主流字級
         // 判定要量「原站 CSS 下的字級」；ARTICLE_ATTR 一旦設定，BODY_TEXT_SEL 的
@@ -3962,7 +4295,7 @@ html.${HTML_CLASS}.jread-orion body {
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
-        activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked, absAnchorMarked };
+        activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap };
       };
 
       const passMarkFillIframes = () => {
@@ -5692,6 +6025,7 @@ html.${HTML_CLASS}.jread-orion body {
       // 關鍵配對由 test/regression/styler-apply-pass-order.spec.js forcing。
       const APPLY_PASSES = [
         passContrastProbePhase1,
+        passSplitPreWrapParas,
         passInjectCss,
         passClassifyImages,
         passMarkTextDivs,
@@ -5844,6 +6178,10 @@ html.${HTML_CLASS}.jread-orion body {
           if (el && el.removeAttribute) el.removeAttribute(TEXT_DIV_ATTR);
         }
       }
+      // v1.7.70：pre-wrap 切出的段落載體合併回原容器（換行字元一併補回）。
+      // 排在 textDivMarked 移除之後——那些載體多半也被標了 TEXT_DIV_ATTR，
+      // 先讓標記還原跑完再把節點搬回去、移除空殼。
+      restorePreWrapParagraphs(snapshot.prewrapParaSnap);
       // v1.6.12：移除 CJK 段落兩端對齊標記
       if (Array.isArray(snapshot.cjkJustifyMarked)) {
         for (const el of snapshot.cjkJustifyMarked) {
@@ -6135,6 +6473,9 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(s.absAnchorMarked)) {
         markAbsAnchors(s.articleEl, s.absAnchorMarked, node);
       }
+      // v1.7.70：翻譯回填把 pre-wrap 容器內容整包換掉時重新切段（見
+      // resplitPreWrapParagraphs——翻譯完成沒有事件可聽，借這條通道）
+      resplitPreWrapParagraphs(node, s.prewrapParaSnap);
     }
   };
 
