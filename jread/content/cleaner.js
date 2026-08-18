@@ -4493,6 +4493,40 @@
     }
   }
 
+  // v1.7.72：被拉回 flow 的 title overlay 若自帶 aspect-ratio 佔位盒 → 一併攤平。
+  // 根因（latimes.com talking-heads 實證，Jimmy 2026-08-18 截圖）：站方把標題塊
+  // 當 hero 圖的覆蓋層，用 `aspect-ratio: 3/2`（Tailwind `aspect-[3/2]` utility）
+  // 讓它跟下方 hero 圖同一個比例盒。absolute 時它脫離 flow、比例盒不佔垂直空間；
+  // 一旦上面那段把它拉回 static，比例盒就成了 normal flow 的高度來源——608px 寬
+  // × 3/2 ＝ 405px 高，裡面只有 96px 的標題文字 → 標題下方一大片空白。
+  // 通則（不綁站點 / class）：「被我們從 absolute 拉回 flow 的覆蓋層」的
+  // aspect-ratio 是為了對位被它蓋住的媒體、不是自身內容需求，回到 flow 就只剩
+  // 純空白佔位——與 flattenViewportHeightReserveChain 攤平 100vh 佔位同源，差別
+  // 只在佔位載體是 aspect-ratio 而不是 height。
+  // 收斂（避免誤殺「比例盒真的是自己內容的框」的覆蓋層）：
+  //   - 有媒體後代（img / picture / video / canvas / svg / iframe）→ 比例盒可能
+  //     就是那張圖 / 那個嵌入的框，不動（媒體另有 styler MEDIA_CAP / picture
+  //     reset 那套接手）
+  //   - 有 background-image → 比例盒是背景圖的顯示面積，清了背景圖等於不見
+  // styler 既有的 aspect-ratio reset 為何接不到：那條靠 class 訊號（picture /
+  // [class*="ratio"] / placeholder / object-fit），`aspect-[3/2]` 不含 "ratio"；
+  // 而把它擴成 [class*="aspect"] 會一併掃到 Tailwind `aspect-w-16` 這類影片嵌入
+  // wrapper（清掉比例盒 → 內層 absolute iframe 塌回 150px 預設高），代價更大。
+  //
+  // 這條驗 X、不驗 Y：只驗「站方宣告的固定比例佔位有沒有被解除」，不驗解除後
+  // 剩下的高度好不好看（那是 styler 與 harness GAP audit 的層次）。
+  const OVERLAY_MEDIA_SEL = 'img, picture, video, canvas, svg, iframe';
+  function overlayIsEmptyAspectReserve(el, cs) {
+    if (!cs) return false;
+    const ar = String(cs.aspectRatio || '').trim();
+    // 'auto' / 'auto 16 / 9'（replaced element 內建比例）都不是站方宣告的佔位盒
+    if (!ar || /^auto\b/.test(ar)) return false;
+    if (el.querySelector && el.querySelector(OVERLAY_MEDIA_SEL)) return false;
+    const bg = cs.backgroundImage;
+    if (bg && bg !== 'none') return false;
+    return true;
+  }
+
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
@@ -4553,14 +4587,21 @@
       if (el.querySelector && el.querySelector('h1')) {
         const cur = cs.position;
         if (cur === 'absolute' || cur === 'fixed') {
-          titleOverlayResets.push({
-            el,
-            prev: snapshotStyles(el, ['position', 'top', 'left', 'right', 'bottom'])
-          });
-          applyImportant(el, {
+          const overlayProps = ['position', 'top', 'left', 'right', 'bottom'];
+          const overlayDecls = {
             'position': 'static',
             'top': 'auto', 'left': 'auto', 'right': 'auto', 'bottom': 'auto'
+          };
+          // v1.7.72：連同站方的 aspect-ratio 佔位盒一起攤平（見 helper 註解）
+          if (overlayIsEmptyAspectReserve(el, cs)) {
+            overlayProps.push('aspect-ratio');
+            overlayDecls['aspect-ratio'] = 'auto';
+          }
+          titleOverlayResets.push({
+            el,
+            prev: snapshotStyles(el, overlayProps)
           });
+          applyImportant(el, overlayDecls);
           // v1.7.7：title overlay 還原 flow 後，祖先鏈 viewport-scale 高度
           // 佔位一併 flatten——NYT mike-d-new-album 變體把重複 h1 裝進媒體層
           // 內，走本分支而非 hero-media 分支，100vh 佔位（實測三層）沒人清
