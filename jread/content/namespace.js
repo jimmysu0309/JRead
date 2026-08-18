@@ -644,18 +644,58 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
         }
         if (!videoId) continue;
         const title = (f.getAttribute('title') || '').trim();
-        const watch = 'https://www.youtube.com/watch?v=' + videoId;
-        const a = doc.createElement('a');
-        a.setAttribute('href', watch);
-        const img = doc.createElement('img');
-        img.setAttribute('src', 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg');
-        img.setAttribute('alt', title || 'YouTube 影片');
-        a.appendChild(img);
-        if (title) {
-          a.appendChild(doc.createElement('br'));
-          a.appendChild(doc.createTextNode('▶ ' + title));
-        }
-        f.replaceWith(a);
+        f.replaceWith(this.buildYouTubeThumbLink(doc, videoId, title));
+      }
+    },
+
+    // v1.7.75：影片 embed 的「縮圖 + 標題連結」節點——iframe 軌（上方）與
+    // facade 軌（下方 linkifyVideoFacadeThumbs）共用的單一資料源。
+    buildYouTubeThumbLink(doc, videoId, title) {
+      const a = doc.createElement('a');
+      a.setAttribute('href', 'https://www.youtube.com/watch?v=' + videoId);
+      const img = doc.createElement('img');
+      img.setAttribute('src', 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg');
+      img.setAttribute('alt', title || 'YouTube 影片');
+      a.appendChild(img);
+      if (title) {
+        a.appendChild(doc.createElement('br'));
+        a.appendChild(doc.createTextNode('▶ ' + title));
+      }
+      return a;
+    },
+
+    // v1.7.75：影片 facade（縮圖佔位、點了才由站方 JS 掛 iframe）→ 可點縮圖連結。
+    // 動機（latimes.com talking-heads 實證，Jimmy 2026-08-18 回報「文章中嵌入的
+    // youtube 也變一張圖打不開了」）：越來越多站為了效能不直接放 iframe，而是放
+    // 一張 YouTube 縮圖 + click handler（`div.youtube-video-player-facade`
+    // data-video-id / data-video-title）。使用者沒點過就沒有 iframe，上面那條
+    // iframe 軌完全沒有著力點，匯出後 Readwise 端就是「一張點不開的圖」。
+    // 結構訊號（不綁站點 / class）：**縮圖 URL 本身**——`i.ytimg.com` /
+    // `img.youtube.com` 的 `/vi/<id>/…` 或 `/vi_webp/<id>/…` 是 YouTube 公開縮圖
+    // 端點，路徑第二段就是 video id，任何站的 facade 都長這樣。由它組回 watch URL
+    // 就能還原「可點」這件事。
+    // 收斂：已經在 `<a href>` 內的縮圖不動（站方自己有連結，或是上面 iframe 軌
+    // 剛產出的節點——避免雙重包裝）。標題取站方 facade 宣告的 data-video-title
+    // （跨站 facade 慣例屬性，與 Substack data-testid 同級的平台訊號），沒有就退
+    // 回 img alt，都沒有就只留縮圖連結。
+    // 替換目標取 `<picture>`（縮圖常包在 picture 裡，`<a>` 不能當 picture 的子層）
+    // 或 img 自己。翻譯與否都做——facade 不是 iframe，Readwise 的 clean pipeline
+    // 也生不出播放器，兩種模式下都只會是一張點不開的圖。
+    linkifyVideoFacadeThumbs(rootEl) {
+      if (!rootEl || !rootEl.querySelectorAll) return;
+      const doc = rootEl.ownerDocument;
+      const THUMB_RE = /^https?:\/\/(?:i\d*\.ytimg\.com|img\.youtube\.com)\/vi(?:_webp)?\/([A-Za-z0-9_-]{6,})\//i;
+      for (const img of Array.from(rootEl.querySelectorAll('img[src]'))) {
+        const m = THUMB_RE.exec((img.getAttribute('src') || '').trim());
+        if (!m) continue;
+        if (img.closest && img.closest('a[href]')) continue;
+        const videoId = m[1];
+        const holder = img.closest && img.closest('[data-video-title]');
+        const title = ((holder && holder.getAttribute('data-video-title'))
+          || img.getAttribute('alt') || '').trim();
+        const target = (img.closest && img.closest('picture')) || img;
+        if (!target.parentNode) continue;
+        target.replaceWith(this.buildYouTubeThumbLink(doc, videoId, title));
       }
     },
 
