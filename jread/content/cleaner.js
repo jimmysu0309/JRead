@@ -590,6 +590,18 @@
     return norm(s).replace(/[\s:：;；!！…⋯.。?？▼▾›»>-]+$/, '');
   }
 
+  // v1.7.76：URL / 網域形態的文字不是 section heading。
+  // 主文裡引用網址（`varickagents.com/newsletter`、`https://example.com/subscribe`）
+  // 是內容不是導覽標題，卻很容易撞到 heading 雜訊 pattern 的字尾錨定
+  // （`\bnewsletters?$` / `^subscribe\b` 等）。結構性訊號：無空白、含網域點分
+  // 段或 protocol 前綴 = URL。真 section heading 幾乎不會長這樣（少數縮寫如
+  // 「U.S」被擋下的代價僅是少清一個雜訊標題，方向安全）。
+  const URL_LIKE_TEXT_RE = /^(?:https?:\/\/|\/\/|www\.)\S+$|^[\w-]+(?:\.[\w-]+)+(?:\/\S*)?$/i;
+
+  function isUrlLikeText(text) {
+    return !!text && !/\s/.test(text) && URL_LIKE_TEXT_RE.test(text);
+  }
+
   // v0.7.251：標題比對專用正規化——在 norm（collapse 空白）之上再折疊
   // typographic 引號/撇號/刪節號到 ASCII。canonical title（og:title /
   // document.title）對「可見 heading direct text」的 strict `===` 比對，
@@ -674,8 +686,78 @@
   // 內無長 p、guard 不豁免、keyword rule 順利 hide widget；newtalk
   // `<div class="title">` 主標題場景仍由 hideInsideArticleByHeadingText 走
   // 寬鬆的 wrapperContainsArticleAnchor（含 title-anchor）保護不受影響。
+  // v1.7.76：WYSIWYG 段落載體判定（Draft.js / Lexical / X longform / FB 貼文）。
+  //
+  // 既有主文 guard 只認兩種段落載體：`<p>` 與「直接含 text node 的 <div>」。
+  // WYSIWYG 編輯器產出的段落兩者都不是——文字包在 `<div><span data-text>文字
+  // </span></div>` 這類 inline 巢狀裡，段落 div 自己零 direct text，內含連結時
+  // 甚至再包一層 `display:inline` 的 <div>。載體集合漏掉一整類站時 guard 不會
+  // 報錯、只會**全放行**（X longform 實證：整篇 11.5K 字內文被 heading rule
+  // walk-up 當雜訊 wrapper 整塊 hide）。
+  //
+  // 結構性訊號（非站點特判）：「element 子節點全為行內層級」＋「文字量 >= 100」
+  // ＝一個段落。行內層級判定雙軌——tag 在 NS.INLINE_TEXT_TAGS 內直接算（cheap
+  // path，不必量 computed style），否則看 computed display 是否為 inline 家族
+  // （X 把段落內連結包成 `<div style="display:inline">`，tag 白名單看不出來）。
+  //
+  // ⚠ 三實作注意：styler.js markTextDivs（TEXT_DIV_ATTR）與 fb-post.js
+  // markParagraphDivs 是同一份事實的另兩個實作（tag 白名單軌）。改任一處的
+  // 判定前先看另外兩處——v1.7.36 已被這組 drift 咬過一次。此處刻意多一條
+  // computed display 軌：cleaner 跑在 live DOM（clone 已插入、站點 CSS 生效），
+  // 量得到 computed；另兩處的用途（段距 / 匯出）對漏標的代價遠低於此處
+  // （此處漏標＝整篇主文被誤殺），不強行合併以免擴大它們的行為範圍。
+  const INLINE_DISPLAY_RE = /^(inline|inline-block|inline-flex|inline-grid|contents|ruby)/;
+
+  // 非連結文字量：跳過 <a> / <button> 子樹累加 text node。散文段落的文字主體
+  // 在連結外（段落內連結只占一小段），link-feed 容器則相反（文字全在 <a> 裡）
+  // ——用它當段落判定的門檻，link feed 才不會因「children 全是 inline <a>」被
+  // 誤判成段落而享主文保護（space.com article-social-feed 控制組實證）。
+  function nonAnchorTextLen(el) {
+    let len = 0;
+    for (const node of el.childNodes) {
+      if (node.nodeType === 3) {
+        len += norm(node.textContent).length;
+      } else if (node.nodeType === 1 && node.tagName !== 'A' && node.tagName !== 'BUTTON') {
+        len += nonAnchorTextLen(node);
+      }
+    }
+    return len;
+  }
+
+  function isProseParagraphDiv(el, minLen) {
+    if (!el || el.tagName !== 'DIV') return false;
+    if (nonAnchorTextLen(el) < (minLen === undefined ? 100 : minLen)) return false;
+    // figure/pre/code 內的 div 是圖說 / 程式碼結構，不是散文段落
+    if (el.closest && el.closest('figure, pre, code')) return false;
+    const inlineTags = (NS && NS.INLINE_TEXT_TAGS) || null;
+    const win = el.ownerDocument && el.ownerDocument.defaultView;
+    for (const ch of el.children) {
+      if (inlineTags && inlineTags.has(ch.tagName)) continue;
+      if (!win || !win.getComputedStyle) return false;
+      if (INLINE_DISPLAY_RE.test(win.getComputedStyle(ch).display)) continue;
+      return false;
+    }
+    return true;
+  }
+
+  // 從 el 往上找最近的「散文段落」載體（tag 語意段落 or WYSIWYG 段落 div）。
+  // 停在 stopAt（不含）或 document 頂。
+  function nearestProseBlock(el, stopAt) {
+    let cur = el.parentElement;
+    while (cur && cur !== stopAt) {
+      if (/^(?:LI|P|DD|DT|TD|TH|BLOCKQUOTE|FIGCAPTION)$/.test(cur.tagName)) return cur;
+      if (isProseParagraphDiv(cur)) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
   function wrapperContainsMainContentP(wrapper) {
     if (!wrapper || !wrapper.querySelectorAll) return false;
+    // v1.7.76：wrapper 自身就是一段主文（WYSIWYG 段落 div）→ 絕不可 hide。
+    // 既有三道 guard 全是「掃後代」，walk-up 走到段落 div 自己那層時無人擋，
+    // lastSafeWrapper 會停在段落上、整段被 hide。
+    if (isProseParagraphDiv(wrapper)) return true;
     let acc = 0;
     for (const para of wrapper.querySelectorAll('p')) {
       const pt = norm(para.textContent);
@@ -696,6 +778,8 @@
       if (dt.length >= 100) return true;
       acc += dt.length;
       if (acc >= 300) return true;
+      // v1.7.76：WYSIWYG 段落 div（零 direct text、文字在 inline 巢狀內）
+      if (isProseParagraphDiv(div)) return true;
     }
     return false;
   }
@@ -736,6 +820,9 @@
   // 都很短；改只認單一長段落 / 標題 anchor 當邊界，widget 自己的短文字不再誤觸。
   function hasLongMainParagraph(wrapper) {
     if (!wrapper || !wrapper.querySelectorAll) return false;
+    // v1.7.76：wrapper 自身即長段落（WYSIWYG 段落 div）也算，與
+    // wrapperContainsMainContentP 對稱
+    if (isProseParagraphDiv(wrapper)) return true;
     for (const para of wrapper.querySelectorAll('p')) {
       if (norm(para.textContent).length >= 100) return true;
     }
@@ -743,6 +830,7 @@
       const direct = Array.from(div.childNodes)
         .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
       if (norm(direct).length >= 100) return true;
+      if (isProseParagraphDiv(div)) return true;
     }
     return false;
   }
@@ -984,7 +1072,12 @@
   // 靜態 hideInsideArticleByHeadingText 與動態 checkDynamicNoise 單一資料源。
   function isInlineEmphasisInProse(h) {
     if (!/^(?:STRONG|EM|B|SPAN)$/.test(h.tagName)) return false;
-    const block = h.closest('li, p, dd, dt, td, th, blockquote, figcaption');
+    // v1.7.76：段落載體不只 tag 語意段落——WYSIWYG 站（X longform / Draft.js
+    // / Lexical）的段落是 div，closest 全 miss → 段落內的行內連結 / 強調文字
+    // 被當 section heading（X 實證：內文連結文字 `varickagents.com/newsletter`
+    // 命中 newsletter pattern，walk-up 把整篇內文 hide）
+    const block = h.closest('li, p, dd, dt, td, th, blockquote, figcaption') ||
+      nearestProseBlock(h);
     if (!block || block === h) return false;
     const blockLen = norm(block.textContent).length;
     const elLen = norm(h.textContent).length;
@@ -3443,6 +3536,8 @@
       const hitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
       const hitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
       if (!hitBase && !hitExt) continue;
+      // v1.7.76：URL 形態文字不是 heading（見 isUrlLikeText；動態側同步）
+      if (isUrlLikeText(text)) continue;
       if (isInPreserved(h)) continue;
       // v0.7.140：button 內 element 不該觸發 heading rule——button text 是 CTA
       // word（Subscribe / Follow / Read more 等）撞 heading keyword 是結構性
@@ -8843,6 +8938,8 @@
       const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
       const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
       if (!dynHitBase && !dynHitExt) continue;
+      // v1.7.76：URL 形態文字不是 heading（與靜態 path 單一資料源）
+      if (isUrlLikeText(text)) continue;
       if (isInPreserved(h)) continue;
       // v0.7.140：同 hideInsideArticleByHeadingText——button 內 element 不該
       // 觸發 heading rule（CTA word 撞 heading keyword 是結構性 false positive）。
