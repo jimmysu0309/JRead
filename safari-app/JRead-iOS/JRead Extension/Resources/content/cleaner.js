@@ -368,7 +368,19 @@
   // CTA 本身；strict 軌走 hideStrictCtaPromoBlock 整塊清（只清連結會留下
   // 圖卡殘殼）。主文敘述不會用「discover now/more」當完整連結文字，
   // walk-up 又有主文長段落保護，誤殺面窄
-  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读|加入)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$/i;
+  // v1.7.73：搜尋引擎 / 平台「偏好來源」CTA 併入 strict 家族（latimes.com
+  // 實證：`<ps-google-preferred-sources>` 內「See more from the L.A. Times in
+  // Google Search.」＋ `Set us as preferred` 連結 ＋ 一顆關閉 button；button 被
+  // 既有 rule 清掉後，說明句與 CTA 連結整條殘留在內文中段）。是 Google
+  // Preferred Sources 這類平台功能推出後各家新聞站共通的 service strip，文案
+  // 由站方寫，故用 alternation 吃「set / add / make ＋ 對象 ＋ preferred
+  // (source)」的祈使句型與中文「設為偏好 / 優先 / 首選來源」。
+  // 為何進 strict 而非一般 NOISE_LINK_TEXT_RE：只 hide 連結會留下說明句 + 站方
+  // logo svg 的空殼，要走 hideStrictCtaPromoBlock 從 CTA walk-up 整塊清（實測
+  // walk-up 停在該 strip 容器，再上一層 `<article>` 含 55 個長段落、被主文
+  // 保護擋住）。主文敘述不會整條連結只寫「把我們設為偏好來源」，^$ 全文比對
+  // 誤殺面窄。
+  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读|加入)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$|^(set|add|make)\s+(us|this\s+site|[\w'’.&\- ]{2,30}?)\s+(as\s+)?(your\s+|an?\s+)?(preferred|favou?rite)(\s+source)?$|^(將|把)?.{0,20}?(設|设)(為|为)(偏好|優先|优先|首選|首选)(來源|来源|新聞來源|新闻来源)?$/i;
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
   // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
