@@ -2042,6 +2042,56 @@
     placePromotedTitleClone(articleEl, clone, hidden);
   }
 
+  // v1.7.71：「articleEl 內已有站方自己的主標題 heading」判定。
+  // promoteArticleTitleClassHeadingInto（原內嵌兩段迴圈）與
+  // promoteOutsideTitleCarrierInto 共用——後者是同一組 guard 的第三個消費者，
+  // 抽成單一資料源避免三份 drift（工作流原則 5）。
+  function articleHasOwnHeadingTitle(articleEl) {
+    if (!articleEl) return false;
+    // articleEl 內已有 visible h1（主標題語意） → 已有標題。
+    // 故意只 check h1 不 check h2-h4：h2/h3 在主文常用作 section heading，
+    // 並非主標題；若 articleEl 內無 h1 但有 h2 section heading，仍需 promote
+    // 主標題進來（Stratechery 翻譯後 entry-content 內有 h2 section heading
+    // 但無 h1，主標題 wp-block-post-title 在外、需 promote）。
+    const innerH1s = articleEl.querySelectorAll('h1');
+    for (const h of innerH1s) {
+      if (h.dataset && h.dataset.jreadHidden === '1') continue;
+      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      // v1.0.1：無文字的 h1（logo 圖 heading、純裝飾 heading）不算「已有標題」，
+      // 不可擋 promote。Stratechery 翻譯後 detector 評分變動、把付費牆
+      // passport-marketing-page 選成 articleEl，其內 STRATECHERY PLUS logo 被站點
+      // 包成 <h1>（textContent 空、只含 <img>）→ 舊 guard 誤判「articleEl 內已有
+      // h1 標題」早退 → 真標題（articleEl 外的 wp-block-post-title）沒 promote 進
+      // reader card → 標題消失。要求 inner h1 有實質文字才視為已存在的主標題。
+      // 通則：空 heading 不是標題（純結構/文字特徵，不綁站點，符合硬規則 3）。
+      if (titleTextWeight(norm(h.textContent || '')) < 1) continue;
+      return true;
+    }
+    // v0.8.97：articleEl 內已有 visible 的「strict 標題 class」h2/h3（主標題語意）
+    // → 主標題已在 reader card 內，不需 promote。只認帶 strict 標題 class 者
+    // （wp-block-post-title / entry-title / article-title 等複合 token），section
+    // heading（wp-block-heading）不命中——故 Stratechery 類「articleEl 內只有
+    // section h2、主標題 h2 在外」場景仍照常 promote（inner 無 title-class h2）。
+    //
+    // 對應 bug（itsmicracing WordPress block theme，Jimmy 2026-06-17 截圖）：
+    // 主標題是 articleEl 內的 h2.wp-block-post-title（純文字置中），但頁面另有
+    // 一張 compact post-header 卡片（分類 chip + 自連結 post-title + 作者）在
+    // articleEl 外。舊版只 check inner h1（此站無 h1）→ 去 page-wide 找第一個
+    // title-class heading＝那張卡的自連結 post-title → wrapper 文字 ≈ 標題 →
+    // 連整張卡 clone 進 reader card 頂部，成「標題上方雜訊」。inner h2 主標題
+    // 已存在時根本不該 promote，這層 guard 補上 h2/h3 標題的偵測。
+    for (const h of articleEl.querySelectorAll('h2, h3')) {
+      if (h.dataset && h.dataset.jreadHidden === '1') continue;
+      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+      if (!looksLikeArticleTitleStrict(h)) continue;
+      let cs;
+      try { cs = window.getComputedStyle(h); } catch (_) { cs = null; }
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) continue;
+      return true;
+    }
+    return false;
+  }
+
   // v0.7.149：擴充 v0.7.141 修法處理「主標題不是 h1 而是 h1/h2/h3 + article-title
   // class signal」場景。Stratechery 自動翻譯後 detector 評分變動、選了內層
   // `entry-content` 為 articleEl，主標題 `<h2.wp-block-post-title>` 在外層
@@ -2064,47 +2114,7 @@
   // rect / visible 判定（cleaner 跑完後候選可能已被祖先 hide、rect 0×0）。
   function promoteArticleTitleClassHeadingInto(articleEl, hidden) {
     if (!articleEl) return;
-    // articleEl 內已有 visible h1（主標題語意） → skip（不重複 promote）。
-    // 故意只 check h1 不 check h2-h4：h2/h3 在主文常用作 section heading，
-    // 並非主標題；若 articleEl 內無 h1 但有 h2 section heading，仍需 promote
-    // 主標題進來（Stratechery 翻譯後 entry-content 內有 h2 section heading
-    // 但無 h1，主標題 wp-block-post-title 在外、需 promote）。
-    const innerH1s = articleEl.querySelectorAll('h1');
-    for (const h of innerH1s) {
-      if (h.dataset && h.dataset.jreadHidden === '1') continue;
-      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
-      // v1.0.1：無文字的 h1（logo 圖 heading、純裝飾 heading）不算「已有標題」，
-      // 不可擋 promote。Stratechery 翻譯後 detector 評分變動、把付費牆
-      // passport-marketing-page 選成 articleEl，其內 STRATECHERY PLUS logo 被站點
-      // 包成 <h1>（textContent 空、只含 <img>）→ 舊 guard 誤判「articleEl 內已有
-      // h1 標題」早退 → 真標題（articleEl 外的 wp-block-post-title）沒 promote 進
-      // reader card → 標題消失。要求 inner h1 有實質文字才視為已存在的主標題。
-      // 通則：空 heading 不是標題（純結構/文字特徵，不綁站點，符合硬規則 3）。
-      if (titleTextWeight(norm(h.textContent || '')) < 1) continue;
-      return;
-    }
-    // v0.8.97：articleEl 內已有 visible 的「strict 標題 class」h2/h3（主標題語意）
-    // → 主標題已在 reader card 內，不需 promote。只認帶 strict 標題 class 者
-    // （wp-block-post-title / entry-title / article-title 等複合 token），section
-    // heading（wp-block-heading）不命中——故 Stratechery 類「articleEl 內只有
-    // section h2、主標題 h2 在外」場景仍照常 promote（inner 無 title-class h2）。
-    //
-    // 對應 bug（itsmicracing WordPress block theme，Jimmy 2026-06-17 截圖）：
-    // 主標題是 articleEl 內的 h2.wp-block-post-title（純文字置中），但頁面另有
-    // 一張 compact post-header 卡片（分類 chip + 自連結 post-title + 作者）在
-    // articleEl 外。舊版只 check inner h1（此站無 h1）→ 去 page-wide 找第一個
-    // title-class heading＝那張卡的自連結 post-title → wrapper 文字 ≈ 標題 →
-    // 連整張卡 clone 進 reader card 頂部，成「標題上方雜訊」。inner h2 主標題
-    // 已存在時根本不該 promote，這層 guard 補上 h2/h3 標題的偵測。
-    for (const h of articleEl.querySelectorAll('h2, h3')) {
-      if (h.dataset && h.dataset.jreadHidden === '1') continue;
-      if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
-      if (!looksLikeArticleTitleStrict(h)) continue;
-      let cs;
-      try { cs = window.getComputedStyle(h); } catch (_) { cs = null; }
-      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) continue;
-      return;
-    }
+    if (articleHasOwnHeadingTitle(articleEl)) return;
     // 已 promote 過（v0.7.141 promoteUniqueTitleH1Into / markPromotedTitleIfMissing
     // inject / 翻譯頁外置 clone）→ skip。翻譯頁 clone 放 articleEl 外、須用
     // articleHasPromotedTitle 涵蓋兩種放置位置，否則重複標題（v1.6.7 eet-china
@@ -2144,6 +2154,110 @@
       placePromotedTitleClone(articleEl, clone, hidden);
       return; // 只 promote DOM order 第一個
     }
+  }
+
+  // v1.7.71：articleEl 外的「非 heading 標題載體」promote（連同同列的日期）。
+  //
+  // 場景（Jimmy 2026-08-18 回報 `blog.creaders.net/u/37201/202608/561281.html`
+  // 萬維博客）：老 table 版型把標題寫成 `<a class="diary_title">`、發佈時間寫成
+  // 同一 `<tr>` 內的 `<td class="diary_release_date">`，兩者住在主文
+  // `<td class="diary_content">` **之外**的另一張 table。detector 選
+  // td.diary_content 完全正確，但標題與日期在它外面 → 被「articleEl 外一律
+  // 隱藏」清掉，reader card 從第一段內文開始（Jimmy：缺 byline 及標題）。
+  //
+  // 既有四條 title path 全 miss（各自的入口條件都要求 heading tag）：
+  //   - markPromotedTitleIfMissing（detector）只掃 articleEl **內** 的 p/div/span
+  //   - promoteUniqueTitleH1Into / relocateOutsideArticleHeaderBlock 要 `<h1>`
+  //     （本頁 page-wide h1 數 = 0）
+  //   - promoteArticleTitleClassHeadingInto 只掃 h1/h2/h3
+  // 通則：標題載體不一定是 heading tag——老 CMS / 論壇 / blog 樣板常用
+  // `<a>` / `<div>` / `<span>` + title class 呈現主標，本條補這一類版型。
+  //
+  // 入口訊號（結構優先，硬規則 3）：
+  //   1. class / id 帶 title token（TITLE_CLASS_HIT_RE，bare `title` 也算——
+  //      本條另有「必須是 document.title 的一部分」語意 gate 把關）
+  //   2. leaf-ish（後代 element <= 2）、文字量落在標題區間、DOM order 在主文前
+  //   3. 這樣的候選在 articleEl 外**唯一**（文章列表頁每篇一個 title → 多個
+  //      候選 → 直接 no-op，不亂猜）
+  //
+  // 語意 gate 與翻譯頁：原文頁要求候選文字是 `document.title` 的子字串——
+  // 這條擋掉「頁首分類名 / 麵包屑」被當標題。翻譯頁（Shinkansen 等）改寫可見
+  // 文字後 document.title 不跟著翻，任何文字比對必然 miss（v1.7.56 教訓），
+  // 故翻譯頁改吃純結構訊號（候選唯一即可）。兩條路徑的判定基礎不同、不共用
+  // 盲點；任一條失敗都只是 no-op 降級，不會注入錯誤標題。
+  const OUTSIDE_TITLE_CARRIER_TEXT_MAX = 120; // 同 detector TITLE_TEXT_MAX 語意
+  function promoteOutsideTitleCarrierInto(articleEl, hidden) {
+    if (!articleEl || !articleEl.parentNode) return;
+    if (articleHasOwnHeadingTitle(articleEl)) return;
+    if (articleHasPromotedTitle(articleEl)) return;
+    const docT = normTitle(document.title || '');
+    const cands = [];
+    for (const el of document.querySelectorAll('[class], [id]')) {
+      if (articleEl.contains(el)) continue;
+      if (/^H[1-6]$/.test(el.tagName)) continue; // heading 由既有兩條 path 負責
+      const sig = classStrOf(el) + ' ' + (el.id || '');
+      if (TITLE_CLASS_NEGATIVE_RE.test(sig) || !TITLE_CLASS_HIT_RE.test(sig)) continue;
+      if (el.querySelectorAll('*').length > 2) continue; // leaf-ish：標題載體不是 wrapper
+      const t = normTitle(el.textContent || '');
+      if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX || titleTextWeight(t) < 5) continue;
+      // DOM order 必須在主文之前（文末「相關文章」卡片不會被誤選為標題）
+      if (!(articleEl.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
+      cands.push({ el, text: t, inDocTitle: !!docT && docT.indexOf(t) >= 0 });
+    }
+    const strict = cands.filter(c => c.inDocTitle);
+    let pick = null;
+    if (strict.length === 1) pick = strict[0];
+    else if (strict.length === 0 && cands.length === 1 && translationGuardActive()) pick = cands[0];
+    if (!pick) return;
+
+    // 合成 header 而非 clone 原載體：老 table 版型的標題住在 `<td>` / `<a>` 裡，
+    // clone 進 articleEl 會帶進 table-cell display、站方 spacer 與背景 gif；
+    // 有意義的只有文字。h1 掛 data-jread-injected-title（與 detector 注入的標題
+    // 同一 attribute，styler hero 判定與 main.js 退出清理都已涵蓋）。
+    const wrap = document.createElement('div');
+    wrap.setAttribute('data-jread-title-clone', '1');
+    const h1 = document.createElement('h1');
+    h1.setAttribute('data-jread-injected-title', '1');
+    h1.textContent = pick.text;
+    wrap.appendChild(h1);
+    const dateText = findTitleRowDateText(pick.el, articleEl, pick.text);
+    if (dateText) {
+      // 日期只放純文字 div——styler 的 byline 偵測（date-regex 短文 + climb）會
+      // 自然把它標成 byline root 並套 meta 行樣式，不需在 cleaner 另寫一套呈現
+      // （單一資料源：byline 視覺只有 styler 一份實作）。
+      const meta = document.createElement('div');
+      meta.setAttribute('data-jread-title-meta', '1');
+      meta.textContent = dateText;
+      wrap.appendChild(meta);
+    }
+    // 插入位置（in-article / 翻譯頁外置）由 placePromotedTitleClone 決定；
+    // 還原走 hidden 陣列的 __titleClone path（removeChild）。
+    placePromotedTitleClone(articleEl, wrap, hidden);
+  }
+
+  // 標題載體所在「meta 列」內的日期文字。通則：把標題寫成非 heading 的版型
+  // 通常把發佈時間排在同一列容器（table row / header bar），該容器的文字量
+  // ≈ 標題長度（只多出日期這類短 meta）。爬到「最外層仍不含 articleEl」的祖先
+  // 當列容器，文字量超過標題 + 80 字就不是 meta 列（是整個頁首 / sidebar），
+  // 放棄取日期——寧可只有標題，不把雜訊當 byline。
+  function findTitleRowDateText(carrier, articleEl, titleText) {
+    let block = carrier;
+    while (block.parentElement && block.parentElement !== document.body &&
+           block.parentElement !== document.documentElement &&
+           !block.parentElement.contains(articleEl)) {
+      block = block.parentElement;
+    }
+    if (block === carrier) return ''; // 標題載體自己就是最外層，沒有同列 meta
+    if (norm(block.textContent || '').length > titleText.length + 80) return '';
+    for (const el of block.querySelectorAll('*')) {
+      if (el === carrier || el.contains(carrier)) continue;
+      if (el.querySelectorAll('*').length > 1) continue; // leaf-ish
+      const t = norm(el.textContent || '');
+      if (!t || t.length > 60) continue;
+      if (!ARTICLE_META_RE.test(t)) continue;
+      return t;
+    }
+    return '';
   }
 
   // ---- 標題前導雜訊：主文標題之前的兄弟分支一律視為雜訊 -------------------
@@ -9221,6 +9335,10 @@
       // 為 articleEl、主標題 h2.wp-block-post-title 在外層 sibling 被
       // hideAncestorSiblings hide → reader card 無標題。
       safeRun(promoteArticleTitleClassHeadingInto, articleEl, hidden);
+      // v1.7.71：最後一層 title fallback——標題載體不是 heading tag（老 table
+      // 版型的 `<a class="diary_title">` 等）。排在三條 heading path 之後，
+      // 它們命中時 articleHasPromotedTitle 會讓本條早退。
+      safeRun(promoteOutsideTitleCarrierInto, articleEl, hidden);
       // 超寬圖片 promote：Swiper / carousel 內的 hero img 拉到 article flow
       safeRun(promoteOverwideImages, articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
