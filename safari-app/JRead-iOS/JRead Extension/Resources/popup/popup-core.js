@@ -214,6 +214,259 @@
     return body;
   }
 
+  // ---- 翻譯頁匯出：內文圖 inline 成 data: URI（v1.7.74）-------------------
+  // 根因（latimes.com 實證，Jimmy 2026-08-18 回報「翻譯後送 Readwise 圖都沒顯示」）：
+  // 部分圖片 CDN 的防盜連是「看 Sec-Fetch-Dest: image ＋ cross-site ＋ referer 不是
+  // 來源站 → 302 導去 1×1 placeholder」（ca-times.brightspotcdn.com 實測矩陣：
+  // referer=latimes → 200；referer=readwise.io / 無 referer → 302 placeholder-1x1.png）。
+  // Readwise Reader 端 render 我們原樣存的 HTML 時就是 cross-site 的 <img> 載入，
+  // 每張圖都吃 1×1，畫面上等於整篇沒圖。前端手段救不了——referrerpolicy 只能「減少」
+  // referer，改不出來源站的 referer（四種 policy cage 實測全 1×1）。
+  //
+  // Readwise 自家的解法是 should_clean_html=true 時把 <img> 改寫成簽章代理
+  // imgproxy.readwise.io（帶 referer=<來源站>），但翻譯頁不能開那個旗標——它會連帶
+  // 觸發 Readwise 的 readability pipeline 把 Shinkansen 譯文清掉（v0.8.138 教訓）。
+  //
+  // 修法：翻譯頁（raw HTML 模式）送出前，由擴充自己把內文圖抓下來內嵌成 data: URI。
+  // 關鍵訊號：**fetch() 的 Sec-Fetch-Dest 是 empty、不是 image**，同一組防盜連規則
+  // 因此放行（實測 200 / 完整 bytes）；擴充端 fetch 又有 host_permissions 不受 CORS
+  // 限制，content script 做不到（MV3 content script fetch 仍受頁面 CORS 規範）。
+  // 通則性：不綁站點——所有翻譯頁一律走同一條路，防盜連站被救到，沒防盜連的站也只是
+  // 換成內嵌（Readwise 端不再需要外連圖）。
+  //
+  // 這條驗 X、不驗 Y：驗「送出的 HTML 內文圖是否自帶 bytes」；不驗 Readwise 端的
+  // render 結果（遠端行為，需真機 spot-check）、也不驗非翻譯頁（那條走 imgproxy）。
+  //
+  // 預算與上限（避免 payload 爆掉；latimes 該篇實測 8 張 768w webp 共 148K、
+  // base64 後約 202K，payload 從 72K 變約 275K）：
+  const RAW_IMG_TARGET_WIDTH = 1024;          // srcset 候選挑「>= 這個寬」的最小張
+  const RAW_IMG_MAX_BYTES = 500 * 1024;       // 單張上限，超過就維持外連
+  const RAW_IMG_TOTAL_BUDGET = 1500 * 1024;   // 全篇原始 bytes 預算（base64 後約 ×1.37）
+  const RAW_IMG_MIN_BYTES = 1024;             // 小於此視為 placeholder（防盜連 1×1）→ 不內嵌
+  const RAW_IMG_TIMEOUT_MS = 10000;
+  const RAW_IMG_CONCURRENCY = 4;
+
+  // srcset 解析：不可用 split(',')——CDN URL 本身常含逗號（cloudinary
+  // `w_1456,c_limit` / substack fetch URL）。改走「以空白切 token、descriptor
+  // （123w / 2x）跟在 URL 後面」的掃描，URL 內的逗號因此不影響切分。
+  function parseSrcsetCandidates(srcset) {
+    const out = [];
+    const parts = String(srcset || '').trim().split(/\s+/).filter(Boolean);
+    for (let i = 0; i < parts.length; i++) {
+      const tok = parts[i];
+      if (/^\d+(\.\d+)?[wx],?$/.test(tok)) continue; // 落單 descriptor（已配對過）
+      const url = tok.replace(/,+$/, '');
+      let width = 0;
+      const next = parts[i + 1];
+      if (next && /^\d+[wx],?$/.test(next)) {
+        if (/w,?$/.test(next)) width = parseInt(next, 10) || 0;
+        i++;
+      }
+      if (url) out.push({ url, width });
+    }
+    return out;
+  }
+
+  // 挑一張要內嵌的。兩條偏好疊在一起：
+  //   1. 格式：同一張圖若站方同時提供 webp / avif（<picture> 的 <source type=…>）
+  //      就優先拿——同尺寸下 bytes 常只有 jpeg 的 1/3，直接反映成 payload 大小
+  //      （latimes 該篇實測：2000w jpeg 9 張共 532K vs 768w webp 8 張共 148K）
+  //   2. 尺寸：寬度 >= 目標寬的最小張（畫質夠又不浪費），全部比目標小就取最大張
+  // extraSources = 外層 <picture> 的 [{ type, srcset }]，沒有就只看 <img> 自己。
+  function pickInlineImageUrls(tag, extraSources) {
+    const pools = [];
+    const addPool = (srcset, type) => {
+      if (!srcset) return;
+      const cands = parseSrcsetCandidates(srcset).filter((c) => /^https?:\/\//i.test(c.url));
+      if (cands.length) pools.push({ type: (type || '').toLowerCase(), cands });
+    };
+    for (const src of (extraSources || [])) addPool(src && src.srcset, src && src.type);
+    const srcsetM = tag.match(/\ssrcset\s*=\s*"([^"]*)"/i) || tag.match(/\ssrcset\s*=\s*'([^']*)'/i);
+    if (srcsetM) addPool(srcsetM[1], '');
+    const rank = (t) => (t.indexOf('avif') >= 0 ? 0 : t.indexOf('webp') >= 0 ? 1 : 2);
+    pools.sort((a, b) => rank(a.type) - rank(b.type));
+    const urls = [];
+    const push = (u) => { if (u && urls.indexOf(u) < 0) urls.push(u); };
+    for (const pool of pools) {
+      const sized = pool.cands.filter((c) => c.width > 0).sort((a, b) => a.width - b.width);
+      if (sized.length) {
+        const big = sized.find((c) => c.width >= RAW_IMG_TARGET_WIDTH);
+        push((big || sized[sized.length - 1]).url);
+      } else if (pool.cands.length) {
+        push(pool.cands[0].url);
+      }
+    }
+    const srcM = tag.match(/\ssrc\s*=\s*"([^"]*)"/i) || tag.match(/\ssrc\s*=\s*'([^']*)'/i);
+    const src = srcM ? srcM[1].trim() : '';
+    if (/^https?:\/\//i.test(src)) push(src);
+    return urls;
+  }
+
+  // 單一候選（第一順位）。回退鏈由 pickInlineImageUrls 給，呼叫端逐個試——
+  // 站方宣告的 webp / avif source 不保證存在（YouTube 縮圖 vi_webp/maxresdefault
+  // 對沒有 maxres 的影片回 404 實證），第一順位失敗要能退回下一個而不是整張放棄。
+  function pickInlineImageUrl(tag, extraSources) {
+    return pickInlineImageUrls(tag, extraSources)[0] || '';
+  }
+
+  // 一段 <picture> 內的 <source>：抽出 { type, srcset } 供候選挑選用。
+  function collectPictureSources(block) {
+    const out = [];
+    const re = /<source\b[^>]*>/gi;
+    let m;
+    while ((m = re.exec(block)) !== null) {
+      const tag = m[0];
+      const ss = tag.match(/\ssrcset\s*=\s*"([^"]*)"/i) || tag.match(/\ssrcset\s*=\s*'([^']*)'/i);
+      if (!ss) continue;
+      const ty = tag.match(/\stype\s*=\s*"([^"]*)"/i) || tag.match(/\stype\s*=\s*'([^']*)'/i);
+      out.push({ type: ty ? ty[1] : '', srcset: ss[1] });
+    }
+    return out;
+  }
+
+  // <picture> 內的 <source> 必須拿掉：source 的優先序高於 <img src>，留著等於
+  // 內嵌白做（瀏覽器仍去載外連 webp）。只清 <picture> 內的，<video>/<audio>
+  // 的 <source> 不動。
+  function stripPictureSources(html) {
+    return String(html).replace(/<picture\b[^>]*>[\s\S]*?<\/picture>/gi,
+      (block) => block.replace(/<source\b[^>]*>/gi, ''));
+  }
+
+  // 內嵌成功後改寫 <img>：src 換成 data:，srcset / sizes / loading 一併移除
+  // （srcset 留著會蓋掉 src）。width / height 保留——它們定義長寬比，與實際
+  // 內嵌解析度不同不影響 Readwise 端排版。
+  function rewriteImgTagWithDataUri(tag, dataUri) {
+    let t = tag
+      .replace(/\ssrcset\s*=\s*"[^"]*"/gi, '')
+      .replace(/\ssrcset\s*=\s*'[^']*'/gi, '')
+      .replace(/\ssizes\s*=\s*"[^"]*"/gi, '')
+      .replace(/\ssizes\s*=\s*'[^']*'/gi, '')
+      .replace(/\sloading\s*=\s*"[^"]*"/gi, '')
+      .replace(/\sloading\s*=\s*'[^']*'/gi, '');
+    const put = () => ` src="${dataUri}"`;
+    if (/\ssrc\s*=\s*"[^"]*"/i.test(t)) return t.replace(/\ssrc\s*=\s*"[^"]*"/i, put);
+    if (/\ssrc\s*=\s*'[^']*'/i.test(t)) return t.replace(/\ssrc\s*=\s*'[^']*'/i, put);
+    return t.replace(/^<img/i, () => `<img src="${dataUri}"`);
+  }
+
+  function bytesToBase64(bytes) {
+    let bin = '';
+    const CHUNK = 0x8000; // 一次 32K，避免 apply 參數過多爆 stack
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+  }
+
+  // 抓一張圖回 { dataUri, bytes }；任何失敗（網路 / 非 2xx / 非圖片 / 過大 /
+  // 疑似 placeholder）回 null，呼叫端維持原外連（不比現況差）。
+  async function fetchImageAsDataUri(url, f) {
+    let controller = null;
+    let timer = null;
+    if (typeof AbortController !== 'undefined') {
+      controller = new AbortController();
+      timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, RAW_IMG_TIMEOUT_MS);
+    }
+    let res;
+    try {
+      res = await f(url, controller ? { credentials: 'omit', signal: controller.signal }
+                                    : { credentials: 'omit' });
+    } catch (_) {
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (!res || !res.ok) return null;
+    let type = '';
+    try {
+      type = ((res.headers && res.headers.get && res.headers.get('content-type')) || '').split(';')[0].trim();
+    } catch (_) { type = ''; }
+    if (!/^image\//i.test(type)) return null;
+    let buf;
+    try { buf = await res.arrayBuffer(); } catch (_) { return null; }
+    if (!buf || !buf.byteLength) return null;
+    if (buf.byteLength > RAW_IMG_MAX_BYTES) return null;
+    // 防盜連站被擋時回的是 1×1 placeholder（數十 bytes）——內嵌它等於把破圖
+    // 固化進 payload，寧可留外連讓 Readwise / 使用者端還有機會載到
+    if (buf.byteLength < RAW_IMG_MIN_BYTES) return null;
+    return { dataUri: `data:${type};base64,${bytesToBase64(new Uint8Array(buf))}`, bytes: buf.byteLength };
+  }
+
+  // 主流程：回 { html, inlined, bytes, skipped }。html 一定可用（失敗就是原字串）。
+  async function inlineRawHtmlImages(html, { fetchImpl } = {}) {
+    const src = (typeof html === 'string') ? html : '';
+    const empty = { html: src, inlined: 0, bytes: 0, skipped: 0 };
+    if (!src) return empty;
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f || typeof btoa !== 'function') return empty;
+    // 候選挑選要看得到 <picture> 的 <source>（webp / avif 通常只掛在那裡），
+    // 所以先在原字串上把「每個 <img> 屬於哪個 picture」對起來，再統一 strip。
+    const sourcesByImgUrl = new Map();
+    const picRe = /<picture\b[^>]*>[\s\S]*?<\/picture>/gi;
+    let pm;
+    while ((pm = picRe.exec(src)) !== null) {
+      const block = pm[0];
+      const imgM = block.match(/<img\b[^>]*>/i);
+      if (!imgM) continue;
+      sourcesByImgUrl.set(imgM[0], collectPictureSources(block));
+    }
+    const stripped = stripPictureSources(src);
+    const tags = [];
+    const re = /<img\b[^>]*>/gi;
+    let m;
+    while ((m = re.exec(stripped)) !== null) {
+      const urls = pickInlineImageUrls(m[0], sourcesByImgUrl.get(m[0]));
+      if (urls.length) {
+        tags.push({ tag: m[0], key: urls.join('|'), urls, start: m.index, end: m.index + m[0].length });
+      }
+    }
+    if (!tags.length) return { html: stripped, inlined: 0, bytes: 0, skipped: 0 };
+    // 同一張圖可能重複出現，抓一次共用
+    const cache = new Map();
+    let used = 0;
+    let cursor = 0;
+    const queue = tags.slice();
+    async function worker() {
+      while (queue.length) {
+        const item = queue.shift();
+        if (cache.has(item.key)) continue;
+        if (used >= RAW_IMG_TOTAL_BUDGET) { cache.set(item.key, null); continue; }
+        cache.set(item.key, 'pending');
+        let done = null;
+        // 候選鏈逐個試（webp / avif 優先，失敗退回原格式）
+        for (const url of item.urls) {
+          const got = await fetchImageAsDataUri(url, f);
+          if (!got) continue;
+          if (used + got.bytes > RAW_IMG_TOTAL_BUDGET) break;
+          used += got.bytes;
+          done = got.dataUri;
+          break;
+        }
+        cache.set(item.key, done);
+      }
+    }
+    const workers = [];
+    for (let i = 0; i < RAW_IMG_CONCURRENCY; i++) workers.push(worker());
+    await Promise.all(workers);
+    let out = '';
+    let inlined = 0;
+    let skipped = 0;
+    for (const item of tags) {
+      const dataUri = cache.get(item.key);
+      out += stripped.slice(cursor, item.start);
+      if (dataUri && dataUri !== 'pending') {
+        out += rewriteImgTagWithDataUri(item.tag, dataUri);
+        inlined++;
+      } else {
+        out += item.tag;
+        skipped++;
+      }
+      cursor = item.end;
+    }
+    out += stripped.slice(cursor);
+    return { html: out, inlined, bytes: used, skipped };
+  }
+
   // ---- Gemini Flash Lite 摘要（v0.8.72）---------------------------------
   // 送 Readwise 前用 Gemini 產生繁中三句摘要，取代 Readwise server 端的英文自動
   // 摘要。Prompt 移植自 Readwise Reader 網站內建 summarize prompt（Jimmy 提供），
@@ -571,13 +824,40 @@
       return IP.saveToInstapaper({ token: c.token, tokenSecret: c.tokenSecret, payload: body, fetchImpl });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    // v1.7.74：翻譯頁（should_clean_html=false 的 raw HTML 模式）送出前把內文圖
+    // 內嵌成 data: URI——Readwise 端不會替 raw HTML 改寫 imgproxy，防盜連 CDN 的
+    // 圖在 reader 端會被導成 1×1（見 inlineRawHtmlImages 註解）。非翻譯頁不做：
+    // 那條走 Readwise 自家 imgproxy，內嵌只會白白撐大 payload。
+    let sendPayload = payload || {};
+    let inlineInfo = null;
+    if (sendPayload.isTranslated && sendPayload.html) {
+      try {
+        const r = await inlineRawHtmlImages(sendPayload.html, { fetchImpl });
+        if (r && r.inlined > 0) {
+          inlineInfo = r;
+          sendPayload = Object.assign({}, sendPayload, { html: r.html });
+        }
+      } catch (_) { /* 內嵌是加分項，失敗就照原樣送 */ }
+    }
     let body;
     try {
-      body = buildReadwisePayload(payload || {});
+      body = buildReadwisePayload(sendPayload);
     } catch (e) {
       return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
     }
-    return saveToReadwise({ token: c.token, payload: body, fetchImpl });
+    const res = await saveToReadwise({ token: c.token, payload: body, fetchImpl });
+    // payload 過大（413）時退回未內嵌的原版重送一次：圖會破，但至少譯文存得進去。
+    // Readwise 對 html 大小的上限未公開，這條是「預算估錯」的唯一防線。
+    if (!res.ok && res.status === 413 && inlineInfo) {
+      let plain;
+      try {
+        plain = buildReadwisePayload(payload || {});
+      } catch (_) {
+        return res;
+      }
+      return saveToReadwise({ token: c.token, payload: plain, fetchImpl });
+    }
+    return res;
   }
 
   // 列 feed 文件。query 為 feedTab 描述的 query 物件——readwise:{location|tag}、
@@ -692,6 +972,13 @@
     CONTENT_SCRIPT_FILES,
     buildReadwisePayload,
     detectHanLanguage,
+    // v1.7.74：翻譯頁匯出的內文圖內嵌（防盜連 CDN 修法）
+    inlineRawHtmlImages,
+    parseSrcsetCandidates,
+    pickInlineImageUrl,
+    pickInlineImageUrls,
+    collectPictureSources,
+    stripPictureSources,
     saveToReadwise,
     readwiseErrorDetail,
     validateReadwiseToken,
