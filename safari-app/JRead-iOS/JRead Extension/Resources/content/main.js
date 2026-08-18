@@ -893,6 +893,11 @@
     // 非翻譯頁不轉——Readwise 自家 clean pipeline 會把 YouTube iframe 轉成內嵌
     // 播放器。邏輯單一資料源在 NS.replaceVideoEmbedsForRawHtml。
     if (isTranslated && NS && NS.replaceVideoEmbedsForRawHtml) NS.replaceVideoEmbedsForRawHtml(clone);
+    // 3.46 影片 facade（縮圖 + click handler、沒點過就沒有 iframe）→ 可點縮圖連結
+    // （v1.7.75）。翻譯與否都做：facade 不是 iframe，Readwise 的 clean pipeline
+    // 也生不出播放器，不轉就是一張點不開的圖（latimes 實證）。邏輯單一資料源在
+    // NS.linkifyVideoFacadeThumbs。
+    if (NS && NS.linkifyVideoFacadeThumbs) NS.linkifyVideoFacadeThumbs(clone);
     // 3.5 媒體資源 URL 轉絕對（v0.8.76）。outerHTML 序列化的是 src / srcset 的
     // 「屬性原值」（相對路徑），Readwise 伺服器端無原站 base 可解析 → 破圖
     // （0xkato.xyz Ghost 站 `/assets/transformer-*.png` 實證，Jimmy 2026-06-15）。
