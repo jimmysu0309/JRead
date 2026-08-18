@@ -461,7 +461,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
-				CURRENT_PROJECT_VERSION = 1.7.75;
+				CURRENT_PROJECT_VERSION = 1.7.76;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "JRead Extension/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "JRead Extension";
@@ -472,7 +472,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.75;
+				MARKETING_VERSION = 1.7.76;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -496,7 +496,7 @@
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS Extension App Store";
-				CURRENT_PROJECT_VERSION = 1.7.75;
+				CURRENT_PROJECT_VERSION = 1.7.76;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "JRead Extension/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "JRead Extension";
@@ -507,7 +507,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.75;
+				MARKETING_VERSION = 1.7.76;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -531,7 +531,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
-				CURRENT_PROJECT_VERSION = 1.7.75;
+				CURRENT_PROJECT_VERSION = 1.7.76;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = JRead/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = JRead;
@@ -545,7 +545,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.75;
+				MARKETING_VERSION = 1.7.76;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -573,7 +573,7 @@
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS App Store";
-				CURRENT_PROJECT_VERSION = 1.7.75;
+				CURRENT_PROJECT_VERSION = 1.7.76;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = JRead/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = JRead;
@@ -587,7 +587,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.75;
+				MARKETING_VERSION = 1.7.76;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
