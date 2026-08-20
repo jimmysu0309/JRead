@@ -3937,6 +3937,7 @@ html.${HTML_CLASS}.jread-orion body {
       const galleryFlex = [];
       const ratioBoxes = [];
       const fixedHeightBoxes = [];
+      const minHeightBoxes = [];
       const textColFlex = [];
       const decolumnLoadCleanup = [];
       const wpConstrained = [];
@@ -3967,7 +3968,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5690,6 +5691,83 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passMinHeightReset = () => {
+        // v1.7.78：純文字容器被 min-height 撐出死空間 → 標題 / byline 上下大片空白
+        // 根因（Jimmy 2026-08-20 techcrunch.com 回報 hero 圖、標題、byline、內文
+        // 之間各一大段空白，probe 實證）：
+        //   .article-hero__content { display:flex; flex-direction:column;
+        //     justify-content:space-around; min-height:620px }（站方 @media
+        //     (min-width:48em) 為「左圖右文等高雙欄」hero 設計而設，620px = 圖欄高）。
+        //   reader 把雙欄線性化成單欄後圖搬到上方，文字欄內容只剩標題 96px +
+        //   byline 27px（分類 chip 與 extension 區已被 cleaner 隱藏），但
+        //   min-height:620 還在 → space-around 把多出的 465px 均分成三段空白，
+        //   正好落在 caption↓標題、標題↓byline、byline↓內文 之間。
+        // 為什麼既有 pass 全漏：galleryFlex / ratioBoxes / fixedHeightBoxes 三條
+        //   都只掃 mediaAncestors（此容器不含媒體後代——圖在 sibling section），
+        //   且 fixedHeightBoxes 明示只動 height、不動 min-height；CSS 側的
+        //   min-height:0 規則群則全部 keyed on 媒體 tag 或 hidden marker，純文字
+        //   容器沒有對應規則。這是第四條 path。
+        // 通則（硬規則 3，非站點 / class 特判）：主文內任何 computed min-height
+        //   非 0 / auto 的容器，暫設 min-height:0 後量自然高——比原渲染高矮 > 40px
+        //   者保持 0（min-height 撐出的死空間），否則還原。本來就沒被 min-height
+        //   頂住的容器 reset 後差 0，自動略過（TechCrunch 全頁只有 1 個容器命中）。
+        // 安全：
+        //   - display:none / inline 略過（前者無 layout、後者 min-height 無效）。
+        //   - player 結構（PLAYER_ATTR）內部 layout 自管，不動。
+        //   - collapse guard（與 ratioBoxes / fixedHeightBoxes 同精神）：塌到比內含
+        //     媒體渲染高還矮 → 還原，避免內容 absolute、min-height 是唯一高度來源
+        //     時被裁掉；有文字卻塌到近 0 同樣還原。
+        // 成本：本 pass 是唯一需要掃全主文的 computed 讀取（min-height 沒有可用的
+        //   selector 前篩）。讀寫仍照 v1.6.29 批次三段式（全讀 → 全寫 → 一次 flush
+        //   量全部），期間不交錯，只觸發一次強制 recalc。
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win || !win.getComputedStyle) return;
+        const minHPending = [];
+        for (const el of articleEl.querySelectorAll('*')) {
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          const cs = win.getComputedStyle(el);
+          if (!cs) continue;
+          if (cs.display === 'none' || cs.display === 'inline') continue;
+          const mh = cs.minHeight;
+          if (!mh || mh === 'auto' || mh === 'none' || parseFloat(mh) === 0) continue;
+          const beforeH = el.getBoundingClientRect().height;
+          if (!(beforeH > 0)) continue;
+          minHPending.push({
+            el, beforeH,
+            priorMH: el.style.getPropertyValue('min-height'),
+            priorMHP: el.style.getPropertyPriority('min-height')
+          });
+        }
+        // 寫入前先 push 進 snapshot 陣列（rollback 安全，同 ratioBoxes /
+        // fixedHeightBoxes）；guard 失敗者事後還原並自陣列移除
+        const minHPushStart = minHeightBoxes.length;
+        for (const m of minHPending) {
+          minHeightBoxes.push({ el: m.el, minHeight: m.priorMH, minHeightPriority: m.priorMHP });
+          m.el.style.setProperty('min-height', '0', 'important');
+        }
+        for (const m of minHPending) {
+          m.afterH = m.el.getBoundingClientRect().height;
+          const innerMedia = m.el.querySelector('img, picture, video, iframe');
+          m.mediaH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+        }
+        {
+          const keptMinH = [];
+          minHPending.forEach((m, i) => {
+            const hasText = ((m.el.textContent || '').trim().length > 0);
+            const collapsedTooFar = (m.mediaH > 0 && m.afterH < m.mediaH * 0.8) ||
+              (hasText && m.afterH < 8);
+            if (m.beforeH - m.afterH <= 40 || collapsedTooFar) {
+              if (m.priorMH) m.el.style.setProperty('min-height', m.priorMH, m.priorMHP || '');
+              else m.el.style.removeProperty('min-height');
+              return;
+            }
+            keptMinH.push(minHeightBoxes[minHPushStart + i]);
+          });
+          minHeightBoxes.length = minHPushStart;
+          for (const k of keptMinH) minHeightBoxes.push(k);
+        }
+      };
+
       const passDecolumn = () => {
         // v0.8.66：多欄塌成單欄（de-column flex/grid columns）。
         // 根因（Jimmy 2026-06-14 christies.com/en/stories/... 回報「內文寬度不
@@ -6055,6 +6133,7 @@ html.${HTML_CLASS}.jread-orion body {
         passRatioBoxReset,
         passFixedHeightReset,
         passDecolumn,
+        passMinHeightReset,
         passWpConstrainedMaxWidth,
         passWideContentScroll,
         passPangu,
@@ -6407,6 +6486,15 @@ html.${HTML_CLASS}.jread-orion body {
           if (!f || !f.el) continue;
           if (f.height) f.el.style.setProperty('height', f.height, f.heightPriority || '');
           else f.el.style.removeProperty('height');
+        }
+      }
+
+      // v1.7.78：還原 min-height 死空間 collapse 的 min-height inline override。
+      if (Array.isArray(snapshot.minHeightBoxes)) {
+        for (const m of snapshot.minHeightBoxes) {
+          if (!m || !m.el) continue;
+          if (m.minHeight) m.el.style.setProperty('min-height', m.minHeight, m.minHeightPriority || '');
+          else m.el.style.removeProperty('min-height');
         }
       }
 
