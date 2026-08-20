@@ -81,3 +81,9 @@ SPEC.md
 CHANGELOG.md
 docs/CHANGELOG-archive.md
 .private-git/
+
+# release 產物本機收納（Jimmy 2026-08-20 規則）：每次 release 後把 GitHub Release
+# 的三個 zip（Chrome / Firefox sideload / AMO source）下載進 dist/、刪掉舊版本。
+# 不進版控——那三個 zip 是 Actions 的建置產物、GitHub Releases 上已有權威一份，
+# 收進公開 repo 只會每版灌 15M 二進位進歷史（且刪不掉）。流程見 /release skill 第 6 節。
+dist/
