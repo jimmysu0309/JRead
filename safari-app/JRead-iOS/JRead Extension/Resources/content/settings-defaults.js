@@ -3,7 +3,8 @@
 // ─── 跨瀏覽器 API shim（v0.8.164）───────────────────────────────────────────
 // 本檔是 popup.html / options.html 的第一個 <script>，也是 SW（Chrome
 // importScripts 在 service-worker.js 頂端 / Safari·Firefox event page 的
-// background.scripts 第二筆，皆早於 service-worker.js）的早期載入檔——三個
+// background.scripts 第三筆（v1.8.0 起 lib/logger.js 排第一），皆早於
+// service-worker.js）的早期載入檔——三個
 // context 共用此處設好的全域 `browser`。Chrome：退回 chrome（MV3 回 Promise，
 // 行為零變化）；Safari / Firefox：原生 browser.*（Promise，iOS 訊息可靠度修法）。
 // content script 軌另有一份同款 shim 在 content/namespace.js 頂端（content_scripts
@@ -145,6 +146,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 部分使用者覺得太小）；'large' = 視覺 32px / footprint 48px。content 端
     // floating-icon.js applySize 的 fallback 與此預設一致（未設過 / 損壞 → medium）。
     floatingIconSize: 'medium',
+    // v1.8.0：除錯記錄開關。關閉（預設）時仍記錄 save / system 分類與所有
+    // warn·error（低頻、真機 bug 回查的主要證據），但不印 console、也不記錄
+    // detect / clean / style / paged 這類高頻分類。開啟後全分類都記並印 console，
+    // 供偏好設定頁「除錯記錄」逐筆檢視（見 lib/logger.js 檔頭的記錄策略）
+    debugLog: false,
     // v0.7.227：翻頁模式（電子書式水平翻頁）。預設 false = 垂直卷動。
     pagedMode: false,
     // v1.5.4：原 showPageNumber 開關已移除——翻頁模式底部頁碼指示（「3 / 43」）

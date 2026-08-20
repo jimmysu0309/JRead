@@ -12,6 +12,8 @@
   // （歷史教訓：v0.4.0 新增 toast.js 後此清單漏補、inject fallback 後
   // NS.toast=null 使 toast 提示靜默失效；v0.7.19 補上並加 spec 防呆。）
   const CONTENT_SCRIPT_FILES = [
+    // v1.8.0：除錯記錄（lib/logger.js）必須第一個載入——後面每支模組都可能寫 log
+    'lib/logger.js',
     'content/namespace.js',
     'content/home-launcher.js',
     'content/orion-detect.js',
@@ -108,6 +110,61 @@
   // 註：v0.7.167 曾記「API 沒 language 欄位」——已證實為誤（Shinkansen 專案
   // 2026-07-31 實測：欄位存在且有效）。繁中內容必須帶 language，見
   // detectHanLanguage 註解。
+  // ---- 除錯記錄捷徑（v1.8.0）----------------------------------------------
+  // 本檔在 SW / content script / 擴充頁三種 context 都會載入，lib/logger.js 在
+  // 三邊都先載（manifest content_scripts 第一筆 / importScripts / event page
+  // scripts 第一筆）。jsdom spec 走 require 時沒有 logger → 退化成 no-op。
+  function jlog(message, data, level) {
+    const L = (typeof globalThis !== 'undefined') && globalThis.__JReadLogger;
+    if (!L) return;
+    try { L.log(level || 'info', 'save', message, data); } catch (_) { /* log 不可影響主流程 */ }
+  }
+
+  // ---- fetch 逾時（v1.8.0）-----------------------------------------------
+  // 根因（Jimmy 2026-08-20 wheresyoured.at 譯文回報「翻譯後送出去沒反應」）：送出
+  // 流程的每一支 fetch 都沒有時限。對端只要不回應（連線掛著不 RST、被其他擴充的
+  // 網路攔截器吃掉、系統網路層卡住），await 就是一個**永遠 pending 的 promise**——
+  // 呼叫端沒有 reject 可接、沒有結果可顯示，「送出中…」toast 15 秒後自己淡掉，
+  // 使用者看到的就是「按了沒反應、連失敗提示都沒有」。
+  //   通則性：與站點 / 服務無關，任何一支對外 fetch 都適用同一條「必須有時限」規則。
+  //   這條驗 X、不驗 Y：驗「逾時一定有出口（回 TIMEOUT → 有 toast）」；**不驗**
+  // 對端為什麼慢、也不保證重送會成功。
+  // 90s 是量出來的、不是猜的：Readwise 處理翻譯頁的 raw HTML（should_clean_html
+  // =false，內文圖已內嵌成 data: URI）實測要 39–45s（wheresyoured.at 譯文 727K、
+  // 同一份 payload 連送兩次分別 45s+ 與 38.9s）。原本訂 45s 剛好卡在對端的正常
+  // 耗時邊緣——會不穩定地把「只是慢」誤判成逾時、退回未內嵌版把圖丟掉。
+  const SAVE_FETCH_TIMEOUT_MS = 90000;      // 送出（Readwise / Instapaper）
+  const SUMMARY_FETCH_TIMEOUT_MS = 30000;   // Gemini 摘要（加分項，逾時照送）
+  const AUTH_FETCH_TIMEOUT_MS = 15000;      // token 驗證（options 頁按鈕，要快回）
+
+  // 包一層 AbortController 逾時。逾時丟出帶 jreadTimeout 標記的 Error，呼叫端
+  // 據此與一般網路錯誤分流（TIMEOUT 有專屬 toast 文案 + 降級重送策略）。
+  // AbortController 不存在（極舊環境 / 測試替身）或 ms 非正數時退化成裸 fetch。
+  async function fetchWithTimeout(f, url, opts, ms) {
+    if (typeof AbortController === 'undefined' || !(ms > 0)) return f(url, opts);
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; try { controller.abort(); } catch (_) {} }, ms);
+    try {
+      return await f(url, Object.assign({}, opts || {}, { signal: controller.signal }));
+    } catch (err) {
+      if (timedOut) {
+        const e = new Error('TIMEOUT');
+        e.jreadTimeout = true;
+        throw e;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // 給「fetch 由第三方 lib 內部呼叫」的路徑用（instapaper.js 只收 fetchImpl、
+  // 不認識逾時參數）——把時限包進 fetchImpl 本身，lib 端無需改動。
+  function withFetchTimeout(f, ms) {
+    return (url, opts) => fetchWithTimeout(f, url, opts, ms);
+  }
+
   const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
   // v0.8.64：token 驗證端點。官方 GET /api/v2/auth/ 帶 Authorization: Token <token>，
   // 有效回 204 No Content、無效回 401——比 POST /save/ 輕量（不建任何文件、不需 payload），
@@ -523,7 +580,7 @@
   // 呼叫 Gemini 產生摘要。回 { ok:true, summary } 或 { ok:false, error }。
   // 任何失敗（無 key / 無內文 / 網路 / 非 2xx / 空回應）都回 ok:false，呼叫端據此
   // 決定 fallback（不帶 summary 照送，讓 Readwise 自行處理）。
-  async function generateGeminiSummary({ apiKey, title, author, domain, text, fetchImpl } = {}) {
+  async function generateGeminiSummary({ apiKey, title, author, domain, text, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
@@ -535,12 +592,14 @@
     const prompt = buildSummaryPrompt({ title, author, domain, text });
     let res;
     try {
-      res = await f(buildGeminiSummaryUrl(), {
+      res = await fetchWithTimeout(f, buildGeminiSummaryUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
+      }, typeof timeoutMs === 'number' ? timeoutMs : SUMMARY_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
+      // v1.8.0：摘要是加分項，逾時回 TIMEOUT 讓呼叫端照原樣送出（不阻斷送出）
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
     let data = null;
@@ -582,7 +641,7 @@
     return '';
   }
 
-  async function saveToReadwise({ token, payload, fetchImpl } = {}) {
+  async function saveToReadwise({ token, payload, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -590,15 +649,18 @@
     }
     let res;
     try {
-      res = await f(READWISE_API_URL, {
+      res = await fetchWithTimeout(f, READWISE_API_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Token ${token.trim()}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
-      });
+      }, typeof timeoutMs === 'number' ? timeoutMs : SAVE_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
+      // v1.8.0：逾時與一般網路錯誤分流——逾時代表「送出去了但沒回音」，
+      // 使用者需要的訊息是「再試一次」而不是「檢查網路」
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
     // v1.5.7：先讀原始 text 再嘗試 JSON.parse——Readwise 4xx 的 body 未必是 JSON
@@ -628,7 +690,7 @@
   // 回傳值與 saveToReadwise 對齊（ok / error / status），讓 options / popup 共用同一套
   // 分支判斷。NO_TOKEN（空）/ AUTH（401·403 → token 無效或過期）/ NETWORK（連不上）/
   // HTTP（其他非 2xx）/ NO_FETCH（環境無 fetch）。
-  async function validateReadwiseToken({ token, fetchImpl } = {}) {
+  async function validateReadwiseToken({ token, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -636,11 +698,12 @@
     }
     let res;
     try {
-      res = await f(READWISE_AUTH_URL, {
+      res = await fetchWithTimeout(f, READWISE_AUTH_URL, {
         method: 'GET',
         headers: { 'Authorization': `Token ${token.trim()}` }
-      });
+      }, typeof timeoutMs === 'number' ? timeoutMs : AUTH_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
     // 有效：204 No Content（也容忍其他 2xx，保險）
@@ -810,7 +873,7 @@
   // 送出一篇。payload = extractReaderPayload 的 {url,html,title,summary,...}。
   // 回正規化 result（ok / status / error:NO_CREDENTIALS|CONFIG|AUTH|NETWORK|HTTP|
   // INVALID_PAYLOAD / detail?）。
-  async function sendDocument({ service, creds, payload, fetchImpl, instapaper } = {}) {
+  async function sendDocument({ service, creds, payload, fetchImpl, instapaper, timeoutMs, onProgress } = {}) {
     const c = creds || {};
     if (service === 'instapaper') {
       const IP = resolveInstapaper(instapaper);
@@ -827,7 +890,14 @@
       } catch (e) {
         return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
       }
-      return IP.saveToInstapaper({ token: c.token, tokenSecret: c.tokenSecret, payload: body, fetchImpl });
+      // v1.8.0：instapaper.js 只收 fetchImpl、不認識逾時參數——把時限包進
+      // fetchImpl 本身（lib 端零改動），逾時的 abort 會被它歸類成網路錯誤，
+      // 至少不再是永遠 pending 的 promise
+      const ipFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+      return IP.saveToInstapaper({
+        token: c.token, tokenSecret: c.tokenSecret, payload: body,
+        fetchImpl: ipFetch ? withFetchTimeout(ipFetch, SAVE_FETCH_TIMEOUT_MS) : ipFetch
+      });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
     // v1.7.74：翻譯頁（should_clean_html=false 的 raw HTML 模式）送出前把內文圖
@@ -837,13 +907,21 @@
     let sendPayload = payload || {};
     let inlineInfo = null;
     if (sendPayload.isTranslated && sendPayload.html) {
+      const t0 = Date.now();
       try {
         const r = await inlineRawHtmlImages(sendPayload.html, { fetchImpl });
+        jlog('翻譯頁內文圖內嵌', {
+          inlined: r && r.inlined, skipped: r && r.skipped, bytes: r && r.bytes,
+          htmlLen: r && r.html ? r.html.length : (sendPayload.html || '').length,
+          ms: Date.now() - t0
+        });
         if (r && r.inlined > 0) {
           inlineInfo = r;
           sendPayload = Object.assign({}, sendPayload, { html: r.html });
         }
-      } catch (_) { /* 內嵌是加分項，失敗就照原樣送 */ }
+      } catch (err) {
+        jlog('內文圖內嵌失敗（照原樣送）', { reason: String(err && err.message || err).slice(0, 60) }, 'warn');
+      }
     }
     let body;
     try {
@@ -851,17 +929,34 @@
     } catch (e) {
       return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
     }
-    const res = await saveToReadwise({ token: c.token, payload: body, fetchImpl });
-    // payload 過大（413）時退回未內嵌的原版重送一次：圖會破，但至少譯文存得進去。
-    // Readwise 對 html 大小的上限未公開，這條是「預算估錯」的唯一防線。
-    if (!res.ok && res.status === 413 && inlineInfo) {
+    const sendT0 = Date.now();
+    const bodyBytes = JSON.stringify(body).length;
+    // 大 payload 換一句進度文案：Readwise 端處理 700K raw HTML 實測要 40s 上下
+    // （偶發，同一份 payload 也量過 1.3s——對端不穩定），同一句「送出中…」掛著
+    // 不動 40 秒與當掉無法分辨。門檻取 300K：翻譯頁內嵌後普遍在這之上，一般頁
+    // （should_clean_html=true、不內嵌）普遍在這之下
+    const LARGE_PAYLOAD_BYTES = 300 * 1024;
+    if (bodyBytes > LARGE_PAYLOAD_BYTES && typeof onProgress === 'function') onProgress('sendingLarge');
+    jlog('POST Readwise', { bytes: bodyBytes, shouldCleanHtml: body.should_clean_html, hasSummary: !!body.summary });
+    const res = await saveToReadwise({ token: c.token, payload: body, fetchImpl, timeoutMs });
+    jlog('POST Readwise 回應', { ok: !!res.ok, status: res.status, error: res.error, ms: Date.now() - sendT0 },
+      res.ok ? 'info' : 'error');
+    // 退回未內嵌的原版重送一次：圖會破，但至少譯文存得進去。兩種觸發條件：
+    //   - 413：payload 過大（Readwise 對 html 大小的上限未公開，這條是「預算估錯」
+    //     的唯一防線）
+    //   - TIMEOUT（v1.8.0）：內嵌後的 payload 比原版大一個量級（實測翻譯頁 48K →
+    //     727K），送出沒回音時「先把小的那份送成功」比整篇丟失有價值
+    if (!res.ok && (res.status === 413 || res.error === 'TIMEOUT') && inlineInfo) {
       let plain;
       try {
         plain = buildReadwisePayload(payload || {});
       } catch (_) {
         return res;
       }
-      return saveToReadwise({ token: c.token, payload: plain, fetchImpl });
+      jlog('降級重送（退回未內嵌版）', { trigger: res.status === 413 ? 413 : 'TIMEOUT', bytes: JSON.stringify(plain).length }, 'warn');
+      const retry = await saveToReadwise({ token: c.token, payload: plain, fetchImpl, timeoutMs });
+      jlog('降級重送結果', { ok: !!retry.ok, status: retry.status, error: retry.error }, retry.ok ? 'info' : 'error');
+      return retry;
     }
     return res;
   }
@@ -933,9 +1028,20 @@
   // 而不是往下疊。SAVE_PROGRESS_TOAST_MS：進度 toast 的顯示上限——結果一到就被
   // 同 id 取代，這個上限只是「流程中途死掉（SW 被回收 / 例外）不留孤兒 toast」
   // 的保險。
-  const SAVE_PROGRESS = { sending: '送出中…', summarizing: '產生摘要中…' };
+  // v1.8.0 sendingLarge：翻譯頁把內文圖內嵌成 data: URI 後 payload 可達 700K+，
+  // Readwise 端要跑 40s 上下（見 SAVE_FETCH_TIMEOUT_MS 註解）。同一句「送出中…」
+  // 掛著不動 40 秒，使用者只會覺得當掉了——大 payload 換一句說明等待是正常的
+  const SAVE_PROGRESS = {
+    sending: '送出中…',
+    sendingLarge: '送出中…（內容較大，需要久一點）',
+    summarizing: '產生摘要中…'
+  };
   const SAVE_PROGRESS_TOAST_ID = 'jread-save';
-  const SAVE_PROGRESS_TOAST_MS = 15000;
+  // 進度 toast 的顯示上限必須覆蓋整個等待期（> SAVE_FETCH_TIMEOUT_MS）——原本
+  // 15s 到點就淡掉，對端還在跑的那 40 秒使用者眼前一片安靜，與「失敗了沒提示」
+  // 完全同一個體感（Jimmy 2026-08-20 回報的另一半）。結果 toast 一到就取代它，
+  // 所以設長不會留下殘影
+  const SAVE_PROGRESS_TOAST_MS = 95000;
 
   // 送出結果 → toast 文字 + kind（服務感知；快速鍵 toast 軌與 popup 狀態列軌的
   // 訊息文字單一資料源——popup 端用 kind 轉換層對映 success/error → ok/err）。
@@ -961,6 +1067,11 @@
     if (result && result.error === 'AUTH') {
       return { message: `${label} 憑證無效或已過期`, kind: 'error' };
     }
+    if (result && result.error === 'TIMEOUT') {
+      // v1.8.0：與 NETWORK 分開——逾時是「送出去了但對方沒回音」，使用者該做的是
+      // 再試一次，不是去檢查網路
+      return { message: `${label} 沒有回應，請再試一次`, kind: 'error' };
+    }
     if (result && result.error === 'NETWORK') {
       return { message: '網路錯誤，請稍後再試', kind: 'error' };
     }
@@ -979,7 +1090,7 @@
   // onProgress 收 'sending' | 'summarizing'（對映 SAVE_PROGRESS 的 key，文字仍由
   // SAVE_PROGRESS 單一資料源提供）。摘要階段結束會再回報一次 'sending'，與 popup
   // 狀態列同序。credsPlace 透傳給 saveResultToast（NO_CREDENTIALS 指引位置）。
-  async function saveDocumentFlow({ settings, payload, onProgress, fetchImpl, instapaper, credsPlace } = {}) {
+  async function saveDocumentFlow({ settings, payload, onProgress, fetchImpl, instapaper, credsPlace, timeoutMs } = {}) {
     const progress = typeof onProgress === 'function' ? onProgress : () => {};
     const s = settings || {};
     const { service, creds, ok } = resolveServiceCredentials(s);
@@ -994,17 +1105,23 @@
     // description）。失敗不阻斷送出，照原樣送。
     if (s.readwiseSummary && s.geminiApiKey && p.text) {
       progress('summarizing');
+      const sumT0 = Date.now();
       try {
         const sum = await generateGeminiSummary({
-          apiKey: s.geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text, fetchImpl
+          apiKey: s.geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text, fetchImpl,
+          timeoutMs: typeof timeoutMs === 'number' ? timeoutMs : undefined
         });
+        jlog('Gemini 摘要', { ok: !!(sum && sum.ok), error: sum && sum.error, ms: Date.now() - sumT0 },
+          (sum && sum.ok) ? 'info' : 'warn');
         if (sum && sum.ok) p.summary = sum.summary;
       } catch (_) { /* 摘要失敗不阻斷送出 */ }
       progress('sending');
     }
     let result;
     try {
-      result = await sendDocument({ service, creds, payload: p, fetchImpl, instapaper });
+      // onProgress 透傳：payload 大小要等 sendDocument 內的圖片內嵌跑完才算得準
+      //（翻譯頁 48K → 727K 全在那一步發生），大小相關的進度回報因此住在那裡
+      result = await sendDocument({ service, creds, payload: p, fetchImpl, instapaper, timeoutMs, onProgress: progress });
     } catch (_) {
       // fetch 本身炸掉（離線 / DNS）→ 與 sendDocument 內部的網路錯誤同一則訊息
       result = { ok: false, error: 'NETWORK' };
@@ -1021,6 +1138,12 @@
     detectHanLanguage,
     // v1.7.74：翻譯頁匯出的內文圖內嵌（防盜連 CDN 修法）
     inlineRawHtmlImages,
+    // v1.8.0：對外 fetch 一律有時限（送出流程靜默卡死的根治）
+    fetchWithTimeout,
+    withFetchTimeout,
+    SAVE_FETCH_TIMEOUT_MS,
+    SUMMARY_FETCH_TIMEOUT_MS,
+    AUTH_FETCH_TIMEOUT_MS,
     parseSrcsetCandidates,
     pickInlineImageUrl,
     pickInlineImageUrls,

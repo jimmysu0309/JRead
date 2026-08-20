@@ -83,8 +83,8 @@ if [ "$SRC_REST" != "$DST_REST" ]; then
 fi
 
 # verify 2：background 必須是預期 event page 形式（依賴檔在前、SW 最後）
-BG_OK=$(jq -r --arg sw "$SW_FILE" --arg pc "$POPUP_CORE" --arg sd "$SETTINGS_DEFAULTS" \
-  '(.background.scripts == [$pc, $sd, $sw]) and (.background.persistent == false) and (.background | has("service_worker") | not)' \
+BG_OK=$(jq -r --arg sw "$SW_FILE" --arg lg "$LOGGER" --arg pc "$POPUP_CORE" --arg sd "$SETTINGS_DEFAULTS" \
+  '(.background.scripts == [$lg, $pc, $sd, $sw]) and (.background.persistent == false) and (.background | has("service_worker") | not)' \
   "$DST_MANIFEST")
 if [ "$BG_OK" != "true" ]; then
   echo "ERROR: Safari manifest background 不是預期 event page 形式：" >&2
