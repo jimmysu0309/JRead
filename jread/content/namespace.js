@@ -188,6 +188,33 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
         const text = (raw || '').replace(/\s+/g, ' ').trim();
         return (text && text.length <= 300) ? text : null;
       };
+      // 0) 外置的 JRead 標題 clone（v1.7.77）
+      // 翻譯頁（Shinkansen 等 content guard active）時 cleaner 的
+      // placePromotedTitleClone 把主標 clone 放在 articleEl「外」（前一個 sibling、
+      // 標 data-jread-promoted-outside + data-jread-title-clone），避開 guard
+      // reconcile。card 內掃不到它 → 主標這份事實漏接 → 呼叫端 fallback
+      // document.title（單語翻譯擴充不改 document.title）＝送 Readwise 的標題是
+      // 原文，但使用者在 reader card 看到的是譯文（Jimmy 2026-08-20 回報，
+      // Stratechery translate-first 實證：卡片「蘋果與歐盟…達成和解」、
+      // Readwise 收到 "Apple Settles With E.U., ..."）。
+      // 結構性判定（放置位置 + JRead 自建節點的雙 attribute，不綁站點）：認的是
+      // 「JRead 自己 promote 出來的主標載體」，與 cleaner.articleHasPromotedTitle /
+      // styler / paged-mode 對同一節點的識別方式一致。clone 可能是 heading 本身
+      // （h1-h6）或包住 heading 的 wrapper——先取其內第一個可見 heading，沒有再
+      // 取節點自身可見文字。
+      const outside = card.previousElementSibling;
+      if (outside && outside.getAttribute &&
+          outside.getAttribute('data-jread-promoted-outside') === '1' &&
+          outside.getAttribute('data-jread-title-clone') === '1') {
+        if (outside.querySelectorAll) {
+          for (const h of outside.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+            const t = visibleText(h);
+            if (t) return t;
+          }
+        }
+        const t = visibleText(outside);
+        if (t) return t;
+      }
       // 1) 第一個可見 h1
       for (const h of card.querySelectorAll('h1')) {
         const t = visibleText(h);
