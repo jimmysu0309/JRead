@@ -1422,6 +1422,81 @@
   }
   NS.dispatchLocalCommand = dispatchLocalCommand;
 
+  // v1.7.79：懸浮按鈕長按選單「送到 <儲存服務>」的 content 端直送流程（Safari /
+  // iOS / iPadOS 用）。v0.8.165 首次實作、v0.8.166 因「iOS 上 toast 不顯示、無回饋」
+  // 整段撤掉；此次依 Jimmy 2026-08-20 需求復活。
+  //
+  // 為什麼要在 content 端 fetch：原本長按選單送出走 CUSTOM_COMMAND → SW
+  // sendToReadwiseFromCommand 由 **service worker** 端 fetch，iOS Safari 的背景頁被
+  // 系統積極掛起、背景 fetch silently 失敗（與快速鍵送出同一先天限制；popup 軌早在
+  // v0.8.65 就因此改成 extension 頁直送繞過 SW）。content script 在前景分頁不會被
+  // 掛起，且 Safari / Firefox 的 content script 帶 host_permissions `<all_urls>` 的
+  // 跨來源 fetch 權限、不受 CORS 擋。Chrome 自 M85 起 content fetch 改走頁面來源
+  // CORS 會被擋，故 Chrome / Firefox 仍轉 SW（分流在 floating-icon.js sendToService）。
+  //
+  // 當年「toast 不顯示」的根因很可能已被 v1.6.24 根治：那時 toast host 掛在 body，
+  // 而本流程會先 enterReaderMode()——cleaner 的動態 observer 會把 body 直系子當雜訊
+  // 藏掉，toast 剛好在該範圍內。v1.6.24 起 toast host 改掛 documentElement（與
+  // floating-icon 同款），結構上不再被掃到。仍需 TestFlight 實機覆核。
+  //
+  // 單一資料源：憑證 → 摘要 → 送出 → 結果訊息走 popup-core.saveDocumentFlow，
+  // 與 SW 快速鍵軌同一個函式；本函式只負責「確保有主文可抽」與 toast 呈現。
+  async function sendCurrentPageToService() {
+    const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
+    const toastId = P ? P.SAVE_PROGRESS_TOAST_ID : 'jread-save';
+    const progressMs = P ? P.SAVE_PROGRESS_TOAST_MS : 15000;
+    // 進行中訊息共用同一個 toast id（後一則取代前一則，不疊成一排殘影）
+    const showProgress = (message) => showToast(message, 'info', { id: toastId, duration: progressMs });
+    const showResult = (message, kind) => showToast(message, kind, { id: toastId });
+    if (!P) { showResult('送出失敗：模組未載入', 'error'); return; }
+
+    // 1. 確認閱讀模式啟動；未啟動先進入（enterReaderMode 是 async，回傳即代表
+    //    cleaner / styler 跑完，不需 SW 軌那種輪詢 GET_READER_STATE）
+    if (!NS.state.active && !NS.state.cinemaActive) {
+      const ok = await enterReaderMode();
+      if (!ok) return;   // enterReaderMode 失敗時已自行彈「無法偵測主文」toast
+    }
+
+    // 2. 抽 reader card payload（content 端直接呼叫，不經訊息往返）
+    const extracted = extractReaderPayload();
+    if (!extracted || !extracted.ok) {
+      showResult(extracted && extracted.reason === 'NOT_APPLICABLE_IN_CINEMA'
+        ? '影院模式無法送出' : '閱讀模式未啟動', 'error');
+      return;
+    }
+
+    // 3. 讀設定（服務 / 憑證 / 摘要）
+    let settings;
+    try {
+      settings = await browser.storage.sync.get({
+        storageService: (window.__JReadSettingsDefaults && window.__JReadSettingsDefaults.storageService) || 'readwise',
+        readwiseToken: '', instapaperToken: '', instapaperTokenSecret: '',
+        readwiseSummary: false, geminiApiKey: ''
+      });
+    } catch (_e) {
+      showResult('無法讀取設定，請稍後再試', 'error');
+      return;
+    }
+
+    // 3.5 Instapaper 轉 SW 軌：Instapaper 的 OAuth 簽章需要 app 層 consumer key
+    // （lib/instapaper-keys.js），該檔刻意只載進擴充自有頁 / SW，不注入一般網頁
+    // （見檔頭註解）。content 端沒有金鑰可簽，故 Instapaper 使用者仍走 SW——
+    // iOS 上 SW 掛起則會沒反應，是已知取捨（Readwise 才是直送軌涵蓋的路徑）。
+    if (settings && settings.storageService === 'instapaper') {
+      safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: 'send-to-readwise' } });
+      return;
+    }
+
+    // 4. 摘要 + 送出 + 結果訊息（與 SW 軌共用 saveDocumentFlow）
+    const { toast } = await P.saveDocumentFlow({
+      settings,
+      payload: extracted.payload || {},
+      onProgress: (stage) => showProgress(P.SAVE_PROGRESS[stage] || P.SAVE_PROGRESS.sending)
+    });
+    showResult(toast.message, toast.kind);
+  }
+  NS.sendCurrentPageToService = sendCurrentPageToService;
+
   // v1.5.13：給 floating-icon 長按選單（YouTube watch 專用）用的明確語意 toggle。
   // 不走 dispatchLocalCommand 的快速鍵跨模式重導——選單列的標籤是「啟動/關閉影院模式」
   // 與「啟動/關閉無邊模式」，動作必須與標籤一致，不能被重導成「退出另一個 active 模式」。

@@ -36,6 +36,12 @@
     'content/idle-cursor.js',
     'content/paged-mode.js',
     'content/position-memory.js',
+    // v1.7.79：popup-core 自己也進 content_scripts——懸浮按鈕長按選單的「送到 …」
+    // 在 Safari 走 content 端直送（main.js sendCurrentPageToService），需要本檔的
+    // saveDocumentFlow / SAVE_PROGRESS / serviceLabel。載在 main.js 之前。
+    // 註：lib/instapaper*.js **不**注入一般網頁（consumer key 只進擴充自有頁 / SW），
+    // 故 content 直送軌只涵蓋 Readwise，Instapaper 由 main.js 轉回 SW 軌。
+    'popup/popup-core.js',
     'content/main.js'
   ];
 
@@ -965,6 +971,47 @@
     return { message: `送出失敗${detail}${reason}`, kind: 'error' };
   }
 
+  // v1.7.79：送出一篇的完整流程（憑證解析 → 選用 Gemini 摘要 → 送出 → 結果訊息）
+  // 的單一資料源。呼叫端只給「已讀好的 settings」+ payload + onProgress 回呼，拿回
+  // { result, toast, service, label }；差別只在 fetch 執行環境與進度呈現方式：
+  //   - SW 軌（快速鍵送出）：onProgress → SHOW_TOAST 訊息回 content
+  //   - content 直送軌（懸浮按鈕長按選單，Safari / iOS）：onProgress → NS.toast
+  // onProgress 收 'sending' | 'summarizing'（對映 SAVE_PROGRESS 的 key，文字仍由
+  // SAVE_PROGRESS 單一資料源提供）。摘要階段結束會再回報一次 'sending'，與 popup
+  // 狀態列同序。credsPlace 透傳給 saveResultToast（NO_CREDENTIALS 指引位置）。
+  async function saveDocumentFlow({ settings, payload, onProgress, fetchImpl, instapaper, credsPlace } = {}) {
+    const progress = typeof onProgress === 'function' ? onProgress : () => {};
+    const s = settings || {};
+    const { service, creds, ok } = resolveServiceCredentials(s);
+    const label = serviceLabel(service);
+    const toastOpts = { serviceLabel: label, existsOn200: service === 'readwise', credsPlace };
+    if (!ok) {
+      const result = { ok: false, error: 'NO_CREDENTIALS' };
+      return { result, toast: saveResultToast(result, toastOpts), service, label };
+    }
+    const p = payload || {};
+    // 選用：Gemini 三句摘要（兩服務共用——Readwise 對映 summary、Instapaper 對映
+    // description）。失敗不阻斷送出，照原樣送。
+    if (s.readwiseSummary && s.geminiApiKey && p.text) {
+      progress('summarizing');
+      try {
+        const sum = await generateGeminiSummary({
+          apiKey: s.geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text, fetchImpl
+        });
+        if (sum && sum.ok) p.summary = sum.summary;
+      } catch (_) { /* 摘要失敗不阻斷送出 */ }
+      progress('sending');
+    }
+    let result;
+    try {
+      result = await sendDocument({ service, creds, payload: p, fetchImpl, instapaper });
+    } catch (_) {
+      // fetch 本身炸掉（離線 / DNS）→ 與 sendDocument 內部的網路錯誤同一則訊息
+      result = { ok: false, error: 'NETWORK' };
+    }
+    return { result, toast: saveResultToast(result, toastOpts), service, label };
+  }
+
   const api = {
     sendWithInjectionFallback,
     toggleWithInjectionFallback,
@@ -992,6 +1039,7 @@
     getArticle,
     archiveDocument,
     saveResultToast,
+    saveDocumentFlow,
     SAVE_PROGRESS,
     SAVE_PROGRESS_TOAST_ID,
     SAVE_PROGRESS_TOAST_MS,

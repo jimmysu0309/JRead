@@ -11,10 +11,16 @@
 // - 短按（放開前長按計時器未觸發、未拖移）= 切換閱讀模式，走
 //   NS.dispatchLocalCommand('toggle-reader-mode')（與 3 指輕點 / 快速鍵同一條
 //   content 端本地 dispatch，含 YouTube 模式重導、不 round-trip SW）。
-// - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：切換分頁模式、進入 Reader、
-//   功能選單（叫出工具列圖示選單 popup；Readwise 送出走 popup 內按鈕，v0.8.166 移除
-//   選單直送項，因 content 直送在 iOS toast 不顯示、無回饋）。點任一列執行後收選單；
-//   點選單外 / 捲動 = 收選單。
+// - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：送到儲存服務（Readwise Reader /
+//   Instapaper，標籤依 storageService 動態）、切換分頁模式、進入 Reader、功能選單
+//   （叫出工具列圖示選單 popup）。點任一列執行後收選單；點選單外 / 捲動 = 收選單。
+//   「送到 …」在 v0.8.165 加入、v0.8.166 因 iOS toast 不顯示撤掉，v1.7.79 依 Jimmy
+//   2026-08-20 需求回歸（當年的 toast 消失多半是 toast host 掛 body 被 cleaner 藏掉，
+//   v1.6.24 改掛 documentElement 後已無此結構；送出流程見 main.js
+//   sendCurrentPageToService）。
+// - 長按選單彈出後手勢即定案（v1.7.79）：後續 pointermove 一律忽略，不再改判成拖移。
+//   舊行為是手指自然抖動超過門檻就收選單（「一抖就消失」）；觸控的拖移門檻也另外
+//   放寬到 DRAG_THRESHOLD_TOUCH_PX。
 // - v1.5.13：在 YouTube watch 頁（/watch）長按選單改顯示 YouTube 專屬兩列——
 //   「啟動/關閉影院模式」「啟動/關閉無邊模式」（標籤依目前是否 active 動態切換），
 //   最下方仍保留「功能選單」。一般閱讀頁的「切換分頁模式 / 進入 Reader」對 YouTube
@@ -46,7 +52,11 @@
   if (NS.floating) return;               // 重複注入保險
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
-  const DRAG_THRESHOLD_PX = 8;           // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）
+  // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）。滑鼠與觸控分開設門檻
+  // （v1.7.79）：手指接觸面大、壓在螢幕上沒有支撐，靜止「長按」期間的自然抖動遠
+  // 大於滑鼠——8px 對觸控太窄，長按還沒滿 500ms 就常被判成拖移。
+  const DRAG_THRESHOLD_PX = 8;           // 滑鼠 / 觸控筆
+  const DRAG_THRESHOLD_TOUCH_PX = 16;    // 觸控（手指）
   // 尺寸對照（v0.8.156；v0.8.166 加 medium）：透明 padding 維持每側 8px（icon + 16 = footprint）。
   // 視覺尺寸走 CSS 變數即時切換；hitSize（footprint）同步進 JS 給貼邊 / 拖移夾擠用。
   const SIZE_MAP = {
@@ -247,10 +257,56 @@
     NS.safeSendMessage({ type: NS.MSG.OPEN_READER });
   }
 
-  const MENU_ITEMS = [
-    { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
-    { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
-  ];
+  // ─── 送到儲存服務（v1.7.79，Jimmy 2026-08-20 需求回歸）────────────────────
+  // 兩條 path，依 runtime 分流（與 v0.8.165 同款）：
+  //   - Safari（iOS / iPadOS / macOS）：content script 直送（NS.sendCurrentPageToService，
+  //     main.js）。iOS Safari 的 SW 背景 fetch 不可靠，content script 在前景分頁不會
+  //     被掛起、且帶 host_permissions 的跨來源 fetch 權限，可靠送達；進度與結果
+  //     toast 由該函式自行接手。
+  //   - Chrome / Firefox：content fetch 受頁面來源 CORS 擋，轉 SW
+  //     sendToReadwiseFromCommand（與快速鍵送出同一條，Chrome SW 可靠），SW 端顯示
+  //     進度 / 結果 toast。
+  // 兩軌都在點下當刻先彈一則「送出中…」（同 SAVE_PROGRESS_TOAST_ID，後續訊息取代
+  // 同一則、不疊成一排）——SW 軌在 iOS 掛起時連結果都回不來，至少讓使用者知道有按到。
+  function sendToService() {
+    const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
+    if (NS.toast) {
+      NS.toast.show(P ? P.SAVE_PROGRESS.sending : '送出中…', {
+        kind: 'info',
+        id: P ? P.SAVE_PROGRESS_TOAST_ID : 'jread-save',
+        duration: P ? P.SAVE_PROGRESS_TOAST_MS : 15000
+      });
+    }
+    if (isSafariRuntime() && typeof NS.sendCurrentPageToService === 'function') {
+      try { NS.sendCurrentPageToService(); } catch (_e) {}
+      return;
+    }
+    NS.safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: 'send-to-readwise' } });
+  }
+
+  // 當前儲存服務的顯示名（'Readwise Reader' / 'Instapaper'）——選單標籤用。
+  // storage.sync.storageService 於初始化讀入、onChanged 即時更新（比照 popup 的
+  // 送出按鈕標籤，服務名不寫死）。popup-core 未載入時退回 Readwise 字面（該情境
+  // 送出本來就會走 SW 軌）。
+  let serviceLabelText = 'Readwise Reader';
+  function applyStorageService(v) {
+    const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
+    serviceLabelText = P && typeof P.serviceLabel === 'function'
+      ? P.serviceLabel(v === 'instapaper' ? 'instapaper' : 'readwise')
+      : (v === 'instapaper' ? 'Instapaper' : 'Readwise Reader');
+  }
+
+  // 一般頁選單列（每次長按重建 → 服務名跟著設定即時反映）。
+  // 「送到 …」不做憑證 gate（popup 的送出按鈕沒憑證時整顆隱藏，那是常駐面板的
+  // 減噪考量）——長按選單是暫現的，缺憑證時直接送出並由 toast 說「尚未設定 …
+  // 憑證，請到設定頁填入」比「選項神秘消失」好懂。
+  function generalMenuItems() {
+    return [
+      { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
+      { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
+      { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
+    ];
+  }
 
   // ─── YouTube watch 專屬選單（v1.5.13）────────────────────────────────────
   // 在 YouTube /watch 頁，一般選單的「分頁模式 / 進入 Reader」無意義（YouTube
@@ -498,7 +554,7 @@
     menuEl.textContent = '';
     // YouTube watch 頁顯示 YouTube 兩功能（影院 / 無邊）；其餘頁顯示一般動作。
     // 每次長按重建 → YouTube 標籤每次都反映當下 active 狀態。
-    const items = isYouTubeWatchPage() ? youtubeMenuItems() : MENU_ITEMS;
+    const items = isYouTubeWatchPage() ? youtubeMenuItems() : generalMenuItems();
     for (const it of items) {
       const item = document.createElement('button');
       item.className = 'menu-item';
@@ -590,7 +646,7 @@
   }
 
   // ─── pointer 狀態機（短按 / 拖移吸附 / 長按）─────────────────────────────
-  let press = null;  // { id, startX, startY, timer, moved, longFired }
+  let press = null;  // { id, startX, startY, timer, moved, longFired, dragThreshold }
 
   function clearPressTimer() {
     if (press && press.timer) { clearTimeout(press.timer); press.timer = null; }
@@ -601,7 +657,11 @@
     e.preventDefault();
     closeMenu();
     try { btn.setPointerCapture(e.pointerId); } catch (_e) {}
-    press = { id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false };
+    press = {
+      id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false,
+      // 觸控（手指）用較寬的拖移門檻；滑鼠 / 觸控筆維持 8px
+      dragThreshold: e.pointerType === 'touch' ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX
+    };
     press.timer = setTimeout(() => {
       if (!press || press.moved) return;
       press.longFired = true;
@@ -612,9 +672,15 @@
 
   btn.addEventListener('pointermove', (e) => {
     if (!press || e.pointerId !== press.id) return;
+    // v1.7.79：長按已觸發（選單開著）→ 手勢**定案為長按**，之後的位移一律忽略，
+    // 不再改判成拖移。原本沒有這條 guard：手指還壓在按鈕上時的自然抖動只要超過
+    // 門檻就 press.moved = true → closeMenu()，症狀就是 Jimmy 2026-08-20 回報的
+    // 「長按選單一抖就消失」。想拖按鈕的人本來就會在長按滿 500ms 之前就開始移動
+    // （那條路徑不受影響）；選單已經彈出來之後才移動，語意上絕不是要拖按鈕。
+    if (press.longFired) return;
     const dx = e.clientX - press.startX;
     const dy = e.clientY - press.startY;
-    if (!press.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+    if (!press.moved && Math.hypot(dx, dy) > press.dragThreshold) {
       press.moved = true;
       clearPressTimer();
       closeMenu();
@@ -677,14 +743,16 @@
   // 與舊 lastError 分支同語意）。
   const applyDefaults = () => {
     applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
+    applyStorageService(undefined);
   };
   try {
-    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize']).then((s) => {
+    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService']).then((s) => {
       if (!s) { applyDefaults(); return; }
       applySize(s.floatingIconSize);
       applyOpacity(s.floatingIconOpacity);
       applyPos(s.floatingIconPos);
       applyEnabled(RESOLVE(s.floatingIcon));
+      applyStorageService(s.storageService);
     }).catch(applyDefaults);
   } catch (_e) {
     applyDefaults();
@@ -696,14 +764,15 @@
     if (changes.floatingIconOpacity) applyOpacity(changes.floatingIconOpacity.newValue);
     if (changes.floatingIconPos) applyPos(changes.floatingIconPos.newValue);
     if (changes.floatingIconSize) applySize(changes.floatingIconSize.newValue);
+    if (changes.storageService) applyStorageService(changes.storageService.newValue);
   });
 
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
-    host, btn, menuEl, MENU_ITEMS,
+    host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
-    handleShortPress, togglePaged, openReader,
+    handleShortPress, togglePaged, openReader, sendToService, applyStorageService,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
     isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,

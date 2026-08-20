@@ -664,38 +664,19 @@ async function sendToReadwiseFromCommand(tabId) {
     showToast('無法讀取設定，請稍後再試', 'error');
     return;
   }
-  const { resolveServiceCredentials, sendDocument, generateGeminiSummary, saveResultToast, serviceLabel } = self.__JReadPopup;
-  const { service, creds, ok } = resolveServiceCredentials(settings);
-  const label = serviceLabel(service);
-  if (!ok) {
-    // v1.7.43：與結果 toast 同走 saveResultToast 單一資料源（credsPlace 用預設「設定頁」）
-    const t = saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, { serviceLabel: label });
-    showToast(t.message, t.kind);
-    return;
-  }
-  // v0.8.72：快速鍵軌同樣支援 Gemini 摘要（兩服務共用）。失敗 fallback 照送。
-  const p = extracted.payload || {};
-  if (settings.readwiseSummary && settings.geminiApiKey && p.text) {
-    showProgress(SAVE_PROGRESS.summarizing);
-    try {
-      const sum = await generateGeminiSummary({
-        apiKey: settings.geminiApiKey, title: p.title, author: p.author, domain: p.domain, text: p.text
-      });
-      if (sum && sum.ok) p.summary = sum.summary;
-    } catch (_) { /* 摘要失敗不阻斷 */ }
-    // 摘要階段結束、回到「送出中…」（與 popup 狀態列同序）
-    showProgress(SAVE_PROGRESS.sending);
-  }
-  let result;
-  try {
-    result = await sendDocument({ service, creds, payload: p });
-  } catch {
-    showToast('網路錯誤，請稍後再試', 'error');
-    return;
-  }
+  // v1.7.79：憑證解析 → 選用 Gemini 摘要（v0.8.72，兩服務共用、失敗照送）→ 送出
+  // → 結果訊息這一整段，改走 popup-core.saveDocumentFlow 單一資料源。懸浮按鈕長按
+  // 選單的 content 直送軌（Safari / iOS）跑的是同一個函式，只是 fetch 在 content
+  // 端、進度回呼改推 NS.toast——兩軌的送出行為與訊息文字不會 drift。
+  const { saveDocumentFlow } = self.__JReadPopup;
+  const { toast } = await saveDocumentFlow({
+    settings,
+    payload: extracted.payload || {},
+    // 摘要階段 / 回到送出中：與 popup 狀態列同序（credsPlace 用預設「設定頁」）
+    onProgress: (stage) => showProgress(SAVE_PROGRESS[stage] || SAVE_PROGRESS.sending)
+  });
 
-  // 4. 結果 toast（v1.6.0：saveResultToast 服務感知——訊息文字單一資料源，
-  // 與 popup 軌共用；Readwise 200=已存在、Instapaper 一律「已送到」）。
-  const { message, kind } = saveResultToast(result, { serviceLabel: label, existsOn200: service === 'readwise' });
-  showToast(message, kind);
+  // 4. 結果 toast（saveResultToast 服務感知——訊息文字與 popup 軌共用單一資料源；
+  // Readwise 200=已存在、Instapaper 一律「已送到」）。
+  showToast(toast.message, toast.kind);
 }
