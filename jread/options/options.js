@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle'];
+const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -183,6 +183,7 @@ function readFieldFromDom(id) {
     // keyguard.spec.js 用「case 'blockPageShortcuts' 之後 120 字元內要出現
     // .checked」的鄰近性 regex 當 forcing function，接在尾端會把它推出視窗。
     case 'idleCursorHide':
+    case 'debugLog':
     case 'blockPageShortcuts': case 'pangu': case 'linkFollowReader': case 'editModeEnabled': case 'readwiseSummary':
       return el.checked;
     case 'floatingIconSize': {
@@ -265,6 +266,9 @@ function applyFieldToDom(id, value) {
   if (el === document.activeElement) return;
   if (id === 'blockPageShortcuts' || id === 'pangu' || id === 'linkFollowReader' || id === 'editModeEnabled' || id === 'idleCursorHide') {
     el.checked = value !== false;
+  } else if (id === 'debugLog') {
+    // v1.8.0：預設 false——只有明確為 true 才勾選（同 threeFingerTap）
+    el.checked = value === true;
   } else if (id === 'threeFingerTap') {
     // v0.8.157：預設 false——只有明確為 true 才勾選
     el.checked = value === true;
@@ -739,7 +743,10 @@ if (clearCacheBtn) {
       return;
     }
     exitClearCacheConfirm();
-    browser.storage.local.clear().then(() => {
+    // v1.8.0：改成只移除 readingPositions——原本 clear() 會連 v1.8.0 的除錯記錄
+    // 一起清掉（與按鈕說明「不影響任何偏好設定、只清閱讀位置」名實不符，也等於
+    // 使用者想回報 bug 前先把證據刪了）。除錯記錄有自己的清除鈕
+    browser.storage.local.remove('readingPositions').then(() => {
       if (clearCacheStatusEl) {
         clearCacheStatusEl.textContent = '已清除本機快取';
         setTimeout(() => { clearCacheStatusEl.textContent = ''; }, 2000);
@@ -755,5 +762,131 @@ if (clearCacheBtn) {
 }
 
 refreshStorageInfo();
+
+// ---- 除錯記錄檢視（v1.8.0）-------------------------------------------
+// 資料來源是 lib/logger.js 的持久化 ring（storage.local[jreadDebugLog]）——SW 軌與
+// content 軌兩端寫進同一份，這裡照時間合流顯示。純唯讀 + 篩選 + 複製 + 清除，
+// 不做即時 polling（storage.onChanged 已足夠，且避免設定頁長開時空轉）。
+const LOGGER = window.__JReadLogger || null;
+const DEBUG_LOG_KEY = (LOGGER && LOGGER.PERSIST_KEY) || 'jreadDebugLog';
+const debugLogListEl = document.getElementById('debug-log-list');
+const debugLogStatusEl = document.getElementById('debug-log-status');
+const debugLogCatEl = document.getElementById('debugLogCategory');
+const debugLogLevelEl = document.getElementById('debugLogLevel');
+let debugLogEntries = [];
+
+const CATEGORY_LABEL = {
+  save: '送出', detect: '偵測', clean: '清除', style: '排版', paged: '翻頁', system: '系統'
+};
+
+function debugLogStatus(text, ms) {
+  if (!debugLogStatusEl) return;
+  debugLogStatusEl.textContent = text;
+  if (ms) setTimeout(() => { debugLogStatusEl.textContent = ''; }, ms);
+}
+
+function filteredDebugLogs() {
+  const cat = debugLogCatEl ? debugLogCatEl.value : '';
+  const lvl = debugLogLevelEl ? debugLogLevelEl.value : '';
+  return debugLogEntries.filter((e) => (!cat || e.category === cat) && (!lvl || e.level === lvl));
+}
+
+function renderDebugLogs() {
+  if (!debugLogListEl) return;
+  const rows = filteredDebugLogs();
+  debugLogListEl.textContent = '';
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'debug-log-empty';
+    empty.textContent = debugLogEntries.length
+      ? '目前篩選條件沒有記錄'
+      : '尚無記錄。送出一篇文章後，流程記錄會出現在這裡';
+    debugLogListEl.appendChild(empty);
+    debugLogStatus('');
+    return;
+  }
+  // 逐筆建 DOM（不用 innerHTML——log 內含使用者頁面的標題 / URL 等外部字串）
+  for (const e of rows) {
+    const row = document.createElement('div');
+    row.className = 'debug-log-row lvl-' + (e.level || 'info');
+    const time = document.createElement('span');
+    time.className = 'col-muted';
+    time.textContent = String(e.t || '').slice(11, 19) || '--:--:--';
+    const ctx = document.createElement('span');
+    ctx.className = 'col-muted';
+    ctx.textContent = e.ctx || '';
+    const cat = document.createElement('span');
+    cat.className = 'col-muted';
+    cat.textContent = CATEGORY_LABEL[e.category] || e.category || '';
+    const msg = document.createElement('span');
+    msg.className = 'col-msg';
+    msg.textContent = e.message || '';
+    if (e.data !== undefined) {
+      const data = document.createElement('span');
+      data.className = 'log-data';
+      try { data.textContent = JSON.stringify(e.data); } catch (_) { data.textContent = String(e.data); }
+      msg.appendChild(data);
+    }
+    row.append(time, ctx, cat, msg);
+    debugLogListEl.appendChild(row);
+  }
+  const total = debugLogEntries.length;
+  debugLogStatus(rows.length === total ? `${total} 筆` : `${rows.length} / ${total} 筆`);
+}
+
+function loadDebugLogs() {
+  let local;
+  try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
+  if (!local || !debugLogListEl) return;
+  // 直接串 .then（不用 Promise.resolve 包）——與 refreshStorageInfo 同款：
+  // 包一層會把同步 thenable 轉成 microtask，jsdom spec 的同步斷言就看不到渲染結果
+  local.get(DEBUG_LOG_KEY).then((got) => {
+    const logs = (got && Array.isArray(got[DEBUG_LOG_KEY])) ? got[DEBUG_LOG_KEY] : [];
+    // 兩端各自的 seq 不可跨 context 比較，一律照時間排（同毫秒維持原順序）
+    debugLogEntries = logs.slice().sort((a, b) => String(a.t || '').localeCompare(String(b.t || '')));
+    renderDebugLogs();
+  }).catch(() => { debugLogStatus('無法讀取除錯記錄', 3000); });
+}
+
+if (debugLogListEl) {
+  if (debugLogCatEl) debugLogCatEl.addEventListener('change', renderDebugLogs);
+  if (debugLogLevelEl) debugLogLevelEl.addEventListener('change', renderDebugLogs);
+  const refreshBtn = document.getElementById('debugLogRefresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', loadDebugLogs);
+  const copyBtn = document.getElementById('debugLogCopy');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const json = JSON.stringify(filteredDebugLogs(), null, 2);
+      const done = () => debugLogStatus('已複製到剪貼簿', 2000);
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(json).then(done).catch(() => debugLogStatus('複製失敗', 3000));
+        } else {
+          debugLogStatus('此瀏覽器不支援複製', 3000);
+        }
+      } catch (_) { debugLogStatus('複製失敗', 3000); }
+    });
+  }
+  const clearBtn = document.getElementById('debugLogClear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      let local;
+      try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
+      if (!local) return;
+      local.remove(DEBUG_LOG_KEY).then(() => {
+        debugLogEntries = [];
+        renderDebugLogs();
+        debugLogStatus('已清除除錯記錄', 2000);
+      }).catch(() => debugLogStatus('清除失敗，請稍後再試', 3000));
+    });
+  }
+  // 記錄是別的 context（SW / content script）寫進來的——onChanged 是唯一的即時訊號
+  if (browser.storage && browser.storage.onChanged) {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes && DEBUG_LOG_KEY in changes) loadDebugLogs();
+    });
+  }
+  loadDebugLogs();
+}
 
 load();

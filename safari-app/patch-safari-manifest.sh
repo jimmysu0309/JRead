@@ -16,13 +16,15 @@
 #   唯一一處受控差異（本 script 是該差異的唯一產生者與驗證者）。
 #
 # 用法：patch-safari-manifest.sh <Extension Resources 目錄>
-#   1) patch（冪等）：background = { scripts: [popup/popup-core.js,
-#      background/service-worker.js], persistent: false }；其餘欄位保留
+#   1) patch（冪等）：background = { scripts: [lib/logger.js, popup/popup-core.js,
+#      content/settings-defaults.js, background/service-worker.js], persistent: false }；
+#      其餘欄位保留
 #   2) verify：除 background 外必須與 jread/manifest.json 完全一致
 #      （jq -S 正規化比對）——build script 的 drift check 以 -x manifest.json
 #      排除本檔案後，由這條驗證補上 manifest 的受控差異檢查
 #
-# scripts 為什麼是三個檔（v0.7.229 修正、v0.7.235 加 settings-defaults，與
+# scripts 為什麼是四個檔（v0.7.229 修正、v0.7.235 加 settings-defaults、
+# v1.8.0 加 lib/logger.js——service-worker 送出流程會寫除錯記錄，與
 # tools/firefox-build.sh 同列同序）：
 #   service-worker.js 依賴 popup-core.js 的 __JReadPopup（sendWithInjectionFallback
 #   等）與 content/settings-defaults.js 的 __JReadSettingsDefaults（DEFAULT_SETTINGS
@@ -54,9 +56,10 @@ fi
 
 # scripts 清單與 tools/firefox-build.sh 的 jq 改寫同列同序（雙處硬寫，
 # ios-build.spec.js 有 forcing function 比對兩邊一致防 drift）
+LOGGER="lib/logger.js"
 POPUP_CORE="popup/popup-core.js"
 SETTINGS_DEFAULTS="content/settings-defaults.js"
-for DEP in "$POPUP_CORE" "$SETTINGS_DEFAULTS"; do
+for DEP in "$LOGGER" "$POPUP_CORE" "$SETTINGS_DEFAULTS"; do
   if [ ! -f "$RES_DIR/$DEP" ]; then
     echo "ERROR: $RES_DIR/$DEP 不存在（scripts 預載依賴）" >&2
     exit 1
@@ -65,8 +68,8 @@ done
 
 # patch（冪等：已是 event page 形式就重打一次確保清單最新，jq 冪等安全）
 TMP="$DST_MANIFEST.tmp"
-jq --arg sw "$SW_FILE" --arg pc "$POPUP_CORE" --arg sd "$SETTINGS_DEFAULTS" \
-  '.background = { scripts: [$pc, $sd, $sw], persistent: false }' \
+jq --arg sw "$SW_FILE" --arg lg "$LOGGER" --arg pc "$POPUP_CORE" --arg sd "$SETTINGS_DEFAULTS" \
+  '.background = { scripts: [$lg, $pc, $sd, $sw], persistent: false }' \
   "$DST_MANIFEST" > "$TMP"
 mv "$TMP" "$DST_MANIFEST"
 

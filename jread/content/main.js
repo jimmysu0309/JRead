@@ -1441,6 +1441,24 @@
   //
   // 單一資料源：憑證 → 摘要 → 送出 → 結果訊息走 popup-core.saveDocumentFlow，
   // 與 SW 快速鍵軌同一個函式；本函式只負責「確保有主文可抽」與 toast 呈現。
+  // ---- 除錯記錄（v1.8.0）--------------------------------------------------
+  // lib/logger.js 是 content_scripts 第一筆，此處只負責把開關同步進去（設定在
+  // storage.sync.debugLog）。記錄策略見 lib/logger.js 檔頭；content 端目前只埋
+  // 送出流程（save 分類），detect / clean / style 的埋點另行分批加入。
+  // 開關的即時同步掛在**既有的** storage.onChanged listener 內（下方 reader 設定
+  // 那條），不另外註冊一個——多註冊一個 listener 會讓「main.js 的 onChanged
+  // listener」不再唯一，既有 forcing spec（keyguard / space-scroll / reapply）
+  // 靠「第一個 addListener 區塊」定位，會全部抓錯對象
+  const JLog = (typeof window !== 'undefined' && window.__JReadLogger) || null;
+  if (JLog) {
+    JLog.configure({ context: 'content' });
+    getSettings().then((s) => { if (s) JLog.setEnabled(!!s.debugLog); }).catch(() => {});
+  }
+  function logSave(message, data, level) {
+    if (!JLog) return;
+    try { JLog.log(level || 'info', 'save', message, data); } catch (_) { /* log 不可影響主流程 */ }
+  }
+
   async function sendCurrentPageToService() {
     const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
     const toastId = P ? P.SAVE_PROGRESS_TOAST_ID : 'jread-save';
@@ -1448,7 +1466,14 @@
     // 進行中訊息共用同一個 toast id（後一則取代前一則，不疊成一排殘影）
     const showProgress = (message) => showToast(message, 'info', { id: toastId, duration: progressMs });
     const showResult = (message, kind) => showToast(message, kind, { id: toastId });
-    if (!P) { showResult('送出失敗：模組未載入', 'error'); return; }
+    const startedAt = Date.now();
+    const since = () => Date.now() - startedAt;
+    logSave('觸發送出（content 直送軌）', { url: location.href.slice(0, 200) });
+    if (!P) {
+      logSave('popup-core 模組未載入', {}, 'error');
+      showResult('送出失敗：模組未載入', 'error');
+      return;
+    }
 
     // 1. 確認閱讀模式啟動；未啟動先進入（enterReaderMode 是 async，回傳即代表
     //    cleaner / styler 跑完，不需 SW 軌那種輪詢 GET_READER_STATE）
@@ -1459,7 +1484,16 @@
 
     // 2. 抽 reader card payload（content 端直接呼叫，不經訊息往返）
     const extracted = extractReaderPayload();
+    if (extracted && extracted.ok) {
+      const p = extracted.payload || {};
+      logSave('抽取完成', {
+        htmlLen: (p.html || '').length, textLen: (p.text || '').length,
+        imgTags: ((p.html || '').match(/<img\b/gi) || []).length,
+        isTranslated: !!p.isTranslated, elapsedMs: since()
+      });
+    }
     if (!extracted || !extracted.ok) {
+      logSave('抽取失敗', { reason: extracted && extracted.reason, elapsedMs: since() }, 'error');
       showResult(extracted && extracted.reason === 'NOT_APPLICABLE_IN_CINEMA'
         ? '影院模式無法送出' : '閱讀模式未啟動', 'error');
       return;
@@ -1488,11 +1522,31 @@
     }
 
     // 4. 摘要 + 送出 + 結果訊息（與 SW 軌共用 saveDocumentFlow）
-    const { toast } = await P.saveDocumentFlow({
-      settings,
-      payload: extracted.payload || {},
-      onProgress: (stage) => showProgress(P.SAVE_PROGRESS[stage] || P.SAVE_PROGRESS.sending)
-    });
+    // v1.8.0：包 try/catch——saveDocumentFlow 內部已對網路層做分類回傳，但模組
+    // 缺席 / payload 建構這類例外仍會往上冒，沒接住就等於「送出中…」自己淡掉、
+    // 失敗零提示（與 SW 軌 wrapper 同一條理由）
+    let toast;
+    let result;
+    logSave('開始送出', { service: settings.storageService, elapsedMs: since() });
+    try {
+      ({ toast, result } = await P.saveDocumentFlow({
+        settings,
+        payload: extracted.payload || {},
+        onProgress: (stage) => {
+          logSave(`進度：${stage}`, { elapsedMs: since() });
+          showProgress(P.SAVE_PROGRESS[stage] || P.SAVE_PROGRESS.sending);
+        }
+      }));
+    } catch (err) {
+      const reason = String((err && err.message) || err || '').slice(0, 60);
+      logSave('送出流程拋出例外', { reason, elapsedMs: since() }, 'error');
+      showResult(`送出失敗（${reason || '內部錯誤'}）`, 'error');
+      return;
+    }
+    logSave('送出結果', {
+      ok: !!(result && result.ok), status: result && result.status, error: result && result.error,
+      toast: toast && toast.message, elapsedMs: since()
+    }, (result && result.ok) ? 'info' : 'error');
     showResult(toast.message, toast.kind);
   }
   NS.sendCurrentPageToService = sendCurrentPageToService;
@@ -1677,6 +1731,9 @@
     // scheduleReapply 已搬到模組層（v0.8.148，與 onMessage REAPPLY_SETTINGS 共用）。
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
+      // v1.8.0：除錯記錄開關即時生效（設定頁打開開關後不必重載擴充）。放在
+      // active guard 之前——不論當前是否閱讀模式都要同步
+      if ('debugLog' in changes && JLog) JLog.setEnabled(!!changes.debugLog.newValue);
       // v1.6.14：linkFollowReader 快取即時更新（click handler 同步讀）。放在 active guard
       // 之前——設定改變時不論當前是否閱讀模式都要更新快取，下次點連結才對。
       if ('linkFollowReader' in changes) {

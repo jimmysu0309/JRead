@@ -17,8 +17,35 @@ if (typeof importScripts === 'function') {
   // 須在 popup-core 之前（dispatcher resolveInstapaper 讀 self.__JReadInstapaper）。
   try { importScripts('/lib/instapaper-keys.js'); } catch (_) { /* 無金鑰檔 */ }
   importScripts('/lib/instapaper.js');
+  importScripts('/lib/logger.js');
   importScripts('/popup/popup-core.js');
   importScripts('/content/settings-defaults.js');
+}
+
+// ---- 除錯記錄（v1.8.0）--------------------------------------------------
+// lib/logger.js 的開關來自 settings.debugLog（storage.sync）。SW 隨時可能被終止
+// 重啟，每次啟動都重讀一次；設定變更由 storage.onChanged 即時同步（使用者在偏好
+// 設定頁打開開關後，不必重載擴充就生效）。
+// 記錄策略（哪些分類受開關影響）見 lib/logger.js 檔頭。
+const JLog = (typeof self !== 'undefined' && self.__JReadLogger) || null;
+if (JLog) {
+  JLog.configure({ context: 'sw' });
+  browser.storage.sync.get({ debugLog: false })
+    .then((s) => JLog.setEnabled(!!s.debugLog))
+    .catch(() => { /* 讀不到設定 → 維持預設關閉 */ });
+  if (browser.storage && browser.storage.onChanged) {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'sync' && changes && 'debugLog' in changes) {
+        JLog.setEnabled(!!changes.debugLog.newValue);
+      }
+    });
+  }
+}
+// 送出流程專用的記錄捷徑（category 固定 save）。logger 缺席時退化成 no-op，
+// 呼叫端不需要每次判斷存在與否。
+function logSave(message, data, level) {
+  if (!JLog) return;
+  try { JLog.log(level || 'info', 'save', message, data); } catch (_) { /* log 不可影響主流程 */ }
 }
 
 // v0.7.235：DEFAULT_SETTINGS 搬到 content/settings-defaults.js 單一資料源
@@ -573,7 +600,51 @@ if (browser.commands && browser.commands.onCommand) {
 //   送出中… → （有開摘要才有）產生摘要中… → 結果
 // 三則共用同一個 toast id，後一則取代前一則（不疊成一排殘影）；文字取自
 // popup-core SAVE_PROGRESS，與 popup 軌同一份事實。
+// v1.8.0：訊息往返的時限。content script 若因任何理由不回應（分頁被凍結、
+// listener 拋錯把 channel 留在半開狀態），sendMessage 的 promise 會永遠 pending
+// ——整條送出流程就停在那裡、一則結果 toast 都不會出現。Promise.race 給它一個
+// 一定會到達的終點。
+const MSG_TIMEOUT_MS = { state: 5000, extract: 15000 };
+function raceTimeout(promise, ms, stage) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const e = new Error('MSG_TIMEOUT');
+      e.jreadStage = stage;
+      reject(e);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+}
+
+// v1.8.0 外層 wrapper：整條流程的最後一道防線。原本任何例外（模組沒載到、
+// API 缺席、payload 建構炸掉）都會往上冒到 onCommand 的 try/catch 被靜默吞掉，
+// 使用者只看得到「送出中…」自己淡掉——失敗連提示都沒有（Jimmy 2026-08-20 回報
+// 的正是這個形貌）。這裡把例外接住並轉成錯誤 toast：訊息帶原因前 60 字，
+// 真機回報時一眼看得出卡在哪一層。
 async function sendToReadwiseFromCommand(tabId) {
+  const startedAt = Date.now();
+  logSave('觸發送出（SW 軌）', { tabId });
+  try {
+    await runSendToServiceFlow(tabId, startedAt);
+  } catch (err) {
+    const reason = String((err && err.message) || err || '').slice(0, 60);
+    logSave('送出流程拋出例外', {
+      reason, stage: err && err.jreadStage, elapsedMs: Date.now() - startedAt
+    }, 'error');
+    const { SAVE_PROGRESS_TOAST_ID } = self.__JReadPopup || {};
+    const message = (err && err.jreadStage)
+      ? `送出失敗（${err.jreadStage}逾時）`
+      : `送出失敗（${reason || '內部錯誤'}）`;
+    browser.tabs.sendMessage(tabId, {
+      type: 'SHOW_TOAST',
+      payload: { message, kind: 'error', id: SAVE_PROGRESS_TOAST_ID || 'jread-save' }
+    }).catch(() => { /* content script 不在（chrome:// 等）→ 無處可顯示 */ });
+  }
+}
+
+async function runSendToServiceFlow(tabId, startedAt) {
+  const since = () => Date.now() - (startedAt || Date.now());
   const sendMessage = (id, m) => browser.tabs.sendMessage(id, m);
   const { SAVE_PROGRESS, SAVE_PROGRESS_TOAST_ID, SAVE_PROGRESS_TOAST_MS } = self.__JReadPopup;
   // 結果 / 錯誤 toast：帶同一個 id 取代進行中那則，並用預設顯示時間
@@ -603,11 +674,13 @@ async function sendToReadwiseFromCommand(tabId) {
   // 1. 確認 reader mode 啟動；未啟動則先 toggle
   let state;
   try {
-    state = await sendMessage(tabId, { type: 'GET_READER_STATE' });
+    state = await raceTimeout(sendMessage(tabId, { type: 'GET_READER_STATE' }), MSG_TIMEOUT_MS.state, '狀態查詢');
   } catch {
     // content script 未注入（chrome:// / Web Store 等）→ 嘗試 inject + toggle
     state = null;
   }
+
+  logSave('閱讀模式狀態', { active: !!(state && state.active), elapsedMs: since() });
 
   if (!state || !state.active) {
     const { toggleWithInjectionFallback } = self.__JReadPopup;
@@ -616,7 +689,19 @@ async function sendToReadwiseFromCommand(tabId) {
       executeScript: (opts) => browser.scripting.executeScript(opts)
     });
     if (!toggleResult || !toggleResult.ok) {
-      // 連注入 + toggle 都失敗，無法顯示 toast（content script 沒跑起來）
+      // v1.8.0：原本這裡靜默 return，理由是「content script 沒跑起來、無處顯示
+      // toast」——但步驟 0 的「送出中…」若已經顯示出來，就證明 content script 活著，
+      // 靜默 return 等於讓那則進度 toast 自己淡掉、失敗零提示。改成照樣發 toast：
+      // 真的沒 content script 時 sendMessage 自己 reject（被 .catch 吞掉），
+      // 不比原本差；活著時使用者就拿到明確原因。
+      const { toggleFailureMessage } = self.__JReadPopup;
+      let injectable = false;
+      try {
+        const tab = await browser.tabs.get(tabId);
+        injectable = !!(tab && tab.url && /^https?:/i.test(tab.url));
+      } catch (_) { /* 拿不到分頁資訊 → 當作不可注入 */ }
+      logSave('toggle 失敗，無法進入閱讀模式', { injectable, elapsedMs: since() }, 'error');
+      showToast(toggleFailureMessage({ injectable, touch: false }), 'error');
       return;
     }
     // 等 detector / cleaner / styler 跑完（content main.js enterReaderMode 是
@@ -628,7 +713,7 @@ async function sendToReadwiseFromCommand(tabId) {
     for (let waited = 0; waited < 4000; waited += 200) {
       await new Promise(r => setTimeout(r, 200));
       try {
-        const s = await sendMessage(tabId, { type: 'GET_READER_STATE' });
+        const s = await raceTimeout(sendMessage(tabId, { type: 'GET_READER_STATE' }), MSG_TIMEOUT_MS.state, '狀態查詢');
         if (s && s.active) break;
       } catch { /* content script 尚未就緒——繼續輪詢 */ }
     }
@@ -640,14 +725,31 @@ async function sendToReadwiseFromCommand(tabId) {
   // 2. 抽 reader card payload
   let extracted;
   try {
-    extracted = await sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
-  } catch {
-    showToast('無法取得頁面內容', 'error');
+    extracted = await raceTimeout(sendMessage(tabId, { type: 'EXTRACT_READER_HTML' }), MSG_TIMEOUT_MS.extract, '內容抽取');
+  } catch (err) {
+    logSave('抽取訊息往返失敗', {
+      timeout: !!(err && err.jreadStage), reason: String((err && err.message) || err).slice(0, 60),
+      elapsedMs: since()
+    }, 'error');
+    showToast(err && err.jreadStage ? '無法取得頁面內容（逾時）' : '無法取得頁面內容', 'error');
     return;
   }
   if (!extracted || !extracted.ok) {
+    logSave('抽取失敗', { reason: extracted && extracted.reason, elapsedMs: since() }, 'error');
     showToast('閱讀模式未啟動', 'error');
     return;
+  }
+  {
+    const p = extracted.payload || {};
+    logSave('抽取完成', {
+      htmlLen: (p.html || '').length,
+      textLen: (p.text || '').length,
+      imgTags: ((p.html || '').match(/<img\b/gi) || []).length,
+      isTranslated: !!p.isTranslated,
+      title: (p.title || '').slice(0, 60),
+      hasAuthor: !!p.author,
+      elapsedMs: since()
+    });
   }
 
   // 3. 送出（v1.6.0：走 popup-core.sendDocument dispatcher，依儲存服務二擇一分派
@@ -661,6 +763,7 @@ async function sendToReadwiseFromCommand(tabId) {
       readwiseSummary: false, geminiApiKey: ''
     });
   } catch {
+    logSave('讀取設定失敗', { elapsedMs: since() }, 'error');
     showToast('無法讀取設定，請稍後再試', 'error');
     return;
   }
@@ -669,12 +772,24 @@ async function sendToReadwiseFromCommand(tabId) {
   // 選單的 content 直送軌（Safari / iOS）跑的是同一個函式，只是 fetch 在 content
   // 端、進度回呼改推 NS.toast——兩軌的送出行為與訊息文字不會 drift。
   const { saveDocumentFlow } = self.__JReadPopup;
-  const { toast } = await saveDocumentFlow({
+  logSave('開始送出', {
+    service: settings.storageService,
+    summary: !!(settings.readwiseSummary && settings.geminiApiKey),
+    elapsedMs: since()
+  });
+  const { toast, result } = await saveDocumentFlow({
     settings,
     payload: extracted.payload || {},
     // 摘要階段 / 回到送出中：與 popup 狀態列同序（credsPlace 用預設「設定頁」）
-    onProgress: (stage) => showProgress(SAVE_PROGRESS[stage] || SAVE_PROGRESS.sending)
+    onProgress: (stage) => {
+      logSave(`進度：${stage}`, { elapsedMs: since() });
+      showProgress(SAVE_PROGRESS[stage] || SAVE_PROGRESS.sending);
+    }
   });
+  logSave('送出結果', {
+    ok: !!(result && result.ok), status: result && result.status, error: result && result.error,
+    detail: result && result.detail, toast: toast && toast.message, elapsedMs: since()
+  }, (result && result.ok) ? 'info' : 'error');
 
   // 4. 結果 toast（saveResultToast 服務感知——訊息文字與 popup 軌共用單一資料源；
   // Readwise 200=已存在、Instapaper 一律「已送到」）。

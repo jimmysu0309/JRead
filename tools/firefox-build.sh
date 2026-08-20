@@ -38,7 +38,7 @@
 # 驗證重建一致性（reviewer 用）：
 #   1. ./firefox-build.sh
 #   2. unzip -p jread-firefox-<v>.zip manifest.json | jq .
-#   3. 檢查 background 應是 {"scripts": ["popup/popup-core.js", "content/settings-defaults.js", "background/service-worker.js"]}
+#   3. 檢查 background 應是 {"scripts": ["lib/logger.js", "popup/popup-core.js", "content/settings-defaults.js", "background/service-worker.js"]}
 #   4. 檢查 browser_specific_settings.gecko.strict_min_version 應是 "128.0"
 
 set -euo pipefail
@@ -69,13 +69,13 @@ mkdir -p firefox-build
 cp -r jread/* firefox-build/
 
 # 2. 用 jq 程式化改寫 manifest：
-#    - background：刪掉 service_worker，改用 scripts（三個檔，依賴檔在前、SW 最後）
+#    - background：刪掉 service_worker，改用 scripts（四個檔，依賴檔在前、SW 最後）
 #    - browser_specific_settings.gecko：加上 strict_min_version: "128.0"
 #    - browser_specific_settings.gecko：加上 data_collection_permissions: { required: ["none"] }
 #      （Mozilla 2025 起的隱私 consent UI 規則，JRead 不收集任何使用者資料，僅本地
 #       呼叫使用者自填的 Readwise Reader API。）
 #    這是唯一的 build transformation。沒有 minify、bundle、transpile。
-jq '.background = {"scripts": ["popup/popup-core.js", "content/settings-defaults.js", "background/service-worker.js"]} |
+jq '.background = {"scripts": ["lib/logger.js", "popup/popup-core.js", "content/settings-defaults.js", "background/service-worker.js"]} |
     .browser_specific_settings.gecko.strict_min_version = "128.0" |
     .browser_specific_settings.gecko.data_collection_permissions = {"required": ["none"]}' \
     jread/manifest.json > firefox-build/manifest.json
