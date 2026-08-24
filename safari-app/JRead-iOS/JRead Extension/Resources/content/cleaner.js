@@ -353,7 +353,17 @@
   // 命中後 hide 的目標：a → 若 parent 是 p/div 且只含這個 a（或 a 的文字占
   // parent text 80%+）則 hide parent，否則 hide a 本身。避免把含有少量 a
   // 的 legit p 誤殺。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  // v1.8.1（Guardian long read 實證）：平台「偏好來源 / 追蹤本站」CTA family。
+  //   Google 2025 起把 Preferred Sources 按鈕發給所有新聞站，措辭是固定句式
+  //   「<動詞> <本站名> on <平台>」——Guardian 是 `Prefer the Guardian on
+  //   Google`、Engadget 是 `Add Engadget on Google`，DOM 上都是純
+  //   `<a href="google.com/preferences/source?q=…">` 內含短文字 + 平台 logo
+  //   svg（沒有 button tag、沒有 role=button）。既有名單只收「follow us on
+  //   <平台>」——主詞換成站名（us → the Guardian）就整條漏網。
+  //   句式收斂條件：^動詞 + 1-40 chars 站名 + on + 平台$ 全字串錨定，動詞限
+  //   prefer/add/follow。內文行文的連結（「reported that」「Silicon Valley」）
+  //   與 `Google Scholar page` 這類合法連結都不會命中（結尾必須是平台名）。
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -1346,6 +1356,48 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：純 <line> 裝飾分隔 svg（v1.8.1 Guardian 修法）-------------
+  // 結構特徵（非站點特判）：整個 `<svg>` 的子節點**全是 `<line>`**、不含任何
+  // 文字，且量到「很寬又極矮」（寬 >= 200px、高 <= 24px）——這是 `<hr>` 的
+  // svg 實作版：站方要畫「多條平行細線」這種 hr 畫不出的分隔樣式時就改用
+  // inline svg。Guardian 文章 meta 區實測：
+  //   <svg width="100%" height="13" stroke="var(--article-border)" aria-hidden>
+  //     <line y1="0.5" y2="0.5"/> ×4   ← 視覺上就是四條橫紋
+  // reader mode 卡片排版下它跟 hr 一樣是多餘 artifact（Jimmy 2026-08-24 回報
+  // 「奇怪的條紋」）。既有 hideInsideArticleHorizontalRules 只認 `<hr>` tag。
+  //
+  // 為何這組條件安全（避免誤殺主文 svg 圖表 / icon）：
+  //   - icon（logo / 箭頭 / 播放鍵）用 `<path>` 畫，不會是純 `<line>`；
+  //     即使有純 line 的十字/加號 icon，寬 >= 200px 也擋掉
+  //   - 圖表（折線圖 / 座標軸）必含 `<text>` 座標標籤或 path 資料線，且高度
+  //     遠大於 24px——兩條都不通過
+  //   - 按鈕 / 連結內的 svg 直接跳過（icon 語意，另有規則管）
+  const DECORATIVE_LINE_SVG_MAX_HEIGHT = 24;
+  const DECORATIVE_LINE_SVG_MIN_WIDTH = 200;
+
+  function hideInsideArticleDecorativeLineSvgs(articleEl, hidden) {
+    for (const svg of articleEl.querySelectorAll('svg')) {
+      if (isInPreserved(svg)) continue;
+      if (svg.dataset && svg.dataset.jreadHidden === '1') continue;
+      // 按鈕 / 連結內的 icon svg 不歸本規則（hideInsideArticleIconOnlyLinks
+      // 等既有規則處理），避免把 CTA 內的裝飾線當分隔線單獨清掉留空殼
+      if (svg.closest && svg.closest('a, button, [role="button"]')) continue;
+      const kids = svg.children || [];
+      if (!kids.length) continue;
+      let allLines = true;
+      for (const k of kids) {
+        if (String(k.tagName || '').toLowerCase() !== 'line') { allLines = false; break; }
+      }
+      if (!allLines) continue;
+      if (norm(svg.textContent || '').length) continue; // 含文字＝圖表不是分隔線
+      const r = svg.getBoundingClientRect && svg.getBoundingClientRect();
+      if (!r || !r.height) continue;
+      if (r.height > DECORATIVE_LINE_SVG_MAX_HEIGHT) continue;
+      if (r.width < DECORATIVE_LINE_SVG_MIN_WIDTH) continue;
+      hide(svg, hidden);
     }
   }
 
@@ -9409,6 +9461,7 @@
       safeRun(hideInsideArticleWidgetCustomElements, articleEl, hidden);
       safeRun(hideInsideArticleButtonClusters, articleEl, hidden, containers);
       safeRun(hideInsideArticleHorizontalRules, articleEl, hidden);
+      safeRun(hideInsideArticleDecorativeLineSvgs, articleEl, hidden);
       safeRun(hideInsideArticleNav, articleEl, hidden);
       safeRun(hideInsideArticleFooter, articleEl, hidden);
       safeRun(hideInsideArticleDirectChildLinkBlocks, articleEl, hidden);
