@@ -3477,6 +3477,12 @@
     // 風險：主文連結（超連結 / wiki / 引用 / 人名）class 命名極少用 noise
     // keyword，實際會命中的 `<a>` 幾乎都是雜訊。
     for (const el of articleEl.querySelectorAll('button, a')) {
+      // v1.8.2：lazy 影片嵌入佔位框的播放鍵豁免（見 isEmbedPlaceholderPlayButton）。
+      // 放在迴圈最前面——這類按鈕同時撞上下面兩條 path：figure 內 absolute 且
+      // 不含媒體（點擊覆蓋層規則）、class "play" 之類的 keyword 命中。清掉的話
+      // 影片就變成點不動的死圖（pansci 實證）。Guardian lightbox 覆蓋層那種
+      // 一般 figure 不是 padding-hack 佔位框，不受本豁免影響。
+      if (isEmbedPlaceholderPlayButton(el)) continue;
       // v1.7.55：`<figure>` 內的「圖片點擊覆蓋層」不受 preserve 保護。
       // 結構訊號（非站點特判）：`<figure>` 內、position absolute / fixed、
       // 且**自身不含任何媒體**的 `<a>` / `<button>` ＝ 疊在圖上的點擊觸發器
@@ -7249,6 +7255,38 @@
     return false;
   }
 
+  // v1.8.2：lazy 影片嵌入佔位框內的播放鍵豁免（Jimmy 2026-09-01 裁定）。
+  // pansci.asia 這類站用 WP Rocket 的 lazy YouTube——點播才 mount iframe，
+  // 未點播時框內是「縮圖 img + 填滿式 play 按鈕」。無條件清 button 會讓影片
+  // 變成點不動的死圖；而同一支 YouTube 影片若站方沒 lazy 化（iframe 直接在
+  // DOM 裡），播放鍵在 iframe 內部、reader 根本管不到、照樣能播——豁免前
+  // 兩種嵌入的行為不一致，豁免後一致。
+  // 豁免條件（結構訊號，最窄收斂，與「所有 button 一律清」硬教訓的張力比照
+  // buttonWrapsContentMedia / isBylineNameChip 的處理）：
+  //   - button 自身 computed position: absolute（責任是填滿佔位框的 overlay，
+  //     不是排在文流裡的 CTA）
+  //   - 往上 4 層內有 aspect padding-hack 佔位框（NS.isAspectPlaceholderFrame，
+  //     與 styler 的 lazy embed 偵測同一把尺），且框內有媒體
+  // 分享 / 訂閱 / 追蹤 / 展開類按鈕不在 padding-hack 佔位框內，照清不誤。
+  function isEmbedPlaceholderPlayButton(btn) {
+    if (!NS || typeof NS.isAspectPlaceholderFrame !== 'function') return false;
+    const win = btn.ownerDocument && btn.ownerDocument.defaultView;
+    if (!win || !win.getComputedStyle) return false;
+    let cs;
+    // 只吞 SyntaxError（jsdom nwsapi 對站點 selector 的既知行為）
+    try { cs = win.getComputedStyle(btn); } catch (e) {
+      if (e && e.name === 'SyntaxError') return false;
+      throw e;
+    }
+    if (!cs || cs.position !== 'absolute') return false;
+    let cur = btn.parentElement;
+    for (let hops = 0; cur && hops < 4; hops++) {
+      if (NS.isAspectPlaceholderFrame(cur)) return true;
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
   function hideInsideArticleAllButtons(articleEl, hidden) {
     for (const btn of articleEl.querySelectorAll(INTERACTIVE_BTN_SEL)) {
       if (btn === articleEl) continue;
@@ -7259,6 +7297,8 @@
       if (buttonWrapsContentMedia(btn)) continue;
       // byline 作者名 chip 豁免（v0.8.48 theverge，見 isBylineNameChip）
       if (isBylineNameChip(btn)) continue;
+      // lazy 影片佔位框的播放鍵豁免（v1.8.2 pansci，見 isEmbedPlaceholderPlayButton）
+      if (isEmbedPlaceholderPlayButton(btn)) continue;
       hide(btn, hidden);
     }
   }
@@ -8903,7 +8943,8 @@
     if (node.matches && node.matches(INTERACTIVE_BTN_SEL)) {
       if (node.dataset && node.dataset.jreadHidden === '1') return;
       // v0.8.48：byline 作者名 chip 豁免與靜態 path 同步（isBylineNameChip）
-      if (!buttonWrapsContentMedia(node) && !isBylineNameChip(node)) {
+      if (!buttonWrapsContentMedia(node) && !isBylineNameChip(node) &&
+          !isEmbedPlaceholderPlayButton(node)) {
         hide(node, hiddenList);
         return;
       }
@@ -8947,7 +8988,8 @@
         // （硬教訓九：reader mode 純閱讀下所有 interactive button 一律清）。
         // v0.8.36（B2）：例外 = 媒體 button（與靜態 rule 同源豁免）。
         // v0.8.48：例外 + byline 作者名 chip（isBylineNameChip，同源）。
-        if (!buttonWrapsContentMedia(el) && !isBylineNameChip(el)) hide(el, hiddenList);
+        if (!buttonWrapsContentMedia(el) && !isBylineNameChip(el) &&
+            !isEmbedPlaceholderPlayButton(el)) hide(el, hiddenList);
       }
     }
     // heading text 命中：跟 hideInsideArticleByHeadingText 同邏輯

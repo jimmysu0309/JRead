@@ -134,6 +134,36 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return w;
     },
 
+    // v1.8.2：「aspect padding-hack 佔位框」判定的單一資料源——styler 的
+    // findLazyEmbedFrame（lazy 影片嵌入偵測）與 cleaner 的播放鍵豁免共用。
+    // 兩端在處理同一份事實（這個 box 是 responsive embed 的比例佔位框），
+    // 分開實作必然 drift。
+    // 結構訊號（硬規則 3，非站點 / class 特判）——原站 responsive embed 慣例：
+    //   容器 { height: 0; padding-bottom: 56.25%; overflow: hidden }
+    //   + 內容 { position: absolute; inset: 0 } 填滿 padding box
+    // 判定：垂直 padding 撐出 > 40px、content box 高度 ≈ 0、overflow 裁切、
+    // 且框內確實有媒體（純空框不算——沒有要保護的內容）。
+    isAspectPlaceholderFrame(el) {
+      if (!el || el.nodeType !== 1) return false;
+      const win = el.ownerDocument && el.ownerDocument.defaultView;
+      if (!win || !win.getComputedStyle) return false;
+      if (!el.querySelector || !el.querySelector('img, picture, video')) return false;
+      let cs;
+      // 只吞 SyntaxError（jsdom nwsapi 對站點 selector 的既知行為）
+      try { cs = win.getComputedStyle(el); } catch (e) {
+        if (e && e.name === 'SyntaxError') return false;
+        throw e;
+      }
+      if (!cs) return false;
+      const ov = cs.overflowY;
+      if (ov !== 'hidden' && ov !== 'clip') return false;
+      const pt = parseFloat(cs.paddingTop) || 0;
+      const pb = parseFloat(cs.paddingBottom) || 0;
+      if (pt + pb <= 40) return false;
+      // clientHeight 含 padding、不含 border；content box ≈ 0 即 padding hack
+      return (el.clientHeight - pt - pb) <= 4;
+    },
+
     // v1.7.40：標題正規化單一資料源（批次 2 review D3——原 detector 內兩份
     // 同名實作：主 detect path 版只折標點、markPromotedTitleIfMissing 版多剝
     // `[...]` site prefix（v0.7.251），合一後用 stripBrackets 參數區分）。
