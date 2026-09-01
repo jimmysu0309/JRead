@@ -138,6 +138,23 @@
   //    與原 :has 對 data-jread-hidden attr 的反應同刻生效）、cleaner restore()
   //    清除；本檔只負責 CSS 端。
   const EMBED_WRAP_ATTR = 'data-jread-embed-wrap';
+  // v1.8.2：lazy 影片嵌入（iframe 尚未 mount）的 aspect 佔位框內、被 reader
+  // 媒體 static 規則打回 flow 的縮圖 → 標此 attr 讓它恢復「absolute 填滿佔位
+  // 框」。與 EMBED_WRAP_ATTR 成對：EMBED_WRAP 豁免祖先端 static-flow 配套
+  // （wrapper / play 按鈕回到原站定位），EMBED_FILL 補媒體本體那條全域
+  // `img/video { position: static }`（見 markEmbedWrapIframes 註解）。
+  const EMBED_FILL_ATTR = 'data-jread-embed-fill';
+  // v1.8.2：lazy 影片佔位框到 aspect 容器之間的中繼 wrapper 標記。縮圖恢復
+  // absolute 後這些 wrapper 失去唯一的內容寬度來源，shrink-to-fit（原站慣例
+  // display:inline-block）會塌成 0 寬 → 佔位框的 padding-bottom 百分比（相對
+  // 寬度算）跟著歸零 → 整個影片框消失。強制 block + width:auto 讓寬度回到
+  // 「填滿父容器」，佔位框才有比例高度可撐。
+  const EMBED_FLOW_ATTR = 'data-jread-embed-flow';
+  // v1.8.2：::before / ::after 用垂直 padding 撐 aspect 佔位的容器標記
+  // （padding-bottom hack 的 pseudo 版）→ CSS 中和該 pseudo 的佔位高度。
+  // 既有中和規則只認 class 含 placeholder / ratio 的容器，無語意 class 的
+  // embed wrapper 漏網（見 passAspectPseudoReset 註解）。
+  const ASPECT_PSEUDO_ATTR = 'data-jread-aspect-pseudo';
   const HEADING_LINK_ATTR = 'data-jread-heading-link';
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
   // v0.8.49：「div 當段落」標記。部分 CMS（upmedia 等）把主文段落輸出成無
@@ -1081,6 +1098,60 @@ html [${ARTICLE_ATTR}="1"] main {
   left: auto !important;
   right: auto !important;
   bottom: auto !important;
+}
+/* v1.8.2：lazy 影片嵌入佔位框內的縮圖 → 恢復「absolute 填滿佔位框」。
+   上一條把媒體本體一律打回 static，對「容器 height:0 + padding-bottom hack
+   撐 16:9 + 內容 absolute 填滿 padding box」這種 responsive embed 結構是致命
+   的——static 的縮圖落進高度 0 的 content box，被容器 overflow:hidden 整張裁
+   掉（pansci.asia WP Rocket lazy YouTube 實證：DIV.rll-youtube-player
+   height:0 + padding-bottom:56.23% + overflow:hidden，內含 480×360 縮圖 img
+   與填滿式 play 按鈕；reader 下影片框只剩空白 + 圖說，Jimmy 2026-09-01 回報）。
+   已 mount iframe 的同款結構走 FILL_IFRAME_ATTR（v0.8.86）pin 回 inset:0，
+   這條是它在「iframe 還沒 mount、佔位框內是縮圖」階段的對偶。
+   標記端（結構訊號、非站點 / class 特判）見 markEmbedWrapIframes 的
+   findLazyEmbedFrame；doubled attr 提 specificity 蓋過上一條 static。
+   height:100% + object-fit:cover（而非原站的 height:auto 溢出後被 overflow
+   裁掉）：縮圖比例常與佔位框不同（YouTube hqdefault 是 4:3、框是 16:9），
+   讓 rect 精確等於框才不會被 TEXT-IMAGE OVERLAP audit 當成「圖疊文」誤報；
+   視覺與原站的裁切結果一致。
+   attribute 寫三次 = specificity (0,4,0)：要蓋過的除了媒體 static 規則，還有
+   內容圖放大規則 img[UPSCALE][UPSCALE] (0,3,1) 的 width:100% + height:auto
+   ——縮圖被 classifyImages 當成內容配圖標了 upscale，height:auto 會讓它回到
+   原始比例、又溢出佔位框（實測 608×456 vs 框 608×342）。 */
+[${ARTICLE_ATTR}="1"] [${EMBED_FILL_ATTR}="1"][${EMBED_FILL_ATTR}="1"][${EMBED_FILL_ATTR}="1"] {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  margin: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  object-fit: cover !important;
+}
+/* v1.8.2：上一條把縮圖抽離 flow 後，佔位框與 aspect 容器之間的中繼 wrapper
+   （WP 慣例 .wp-block-embed__wrapper { display: inline-block }）失去內容寬度
+   → shrink-to-fit 塌成 0 寬 → 佔位框 padding-bottom 百分比（相對寬度）歸零
+   → 影片框整個消失。強制 block + width:auto 讓寬度改由父容器決定。 */
+[${ARTICLE_ATTR}="1"] [${EMBED_FLOW_ATTR}="1"] {
+  display: block !important;
+  width: auto !important;
+}
+/* v1.8.2：::before / ::after 的 aspect 佔位中和（padding-bottom hack 的
+   pseudo 版）。既有中和只認 class 含 placeholder / ratio 的容器（line ~1470），
+   無語意 class 的 embed wrapper 漏網——pansci.asia
+   DIV.rve-embed-responsive-16by9::before { padding-top: 56.25% } 撐出 270px
+   佔位，其下的影片框被整段往下推、佔位本身變成純死空間（原站靠 absolute 子
+   填滿該框，reader 把子打回 static 後佔位就空了）。標記端見
+   passAspectPseudoReset（含 collapse guard 與 iframe 子樹排除）。 */
+[${ARTICLE_ATTR}="1"] [${ASPECT_PSEUDO_ATTR}="1"]::before,
+[${ARTICLE_ATTR}="1"] [${ASPECT_PSEUDO_ATTR}="1"]::after {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
 }
 /* v0.7.87：媒體 element 強制 display: block，避免 inline default 配 large
    naturalHeight + 父層 line-height baseline 對齊讓 IMG top 跑到負 y、視覺
@@ -3712,12 +3783,83 @@ html.${HTML_CLASS}.jread-orion body {
   // 供 restore 移除。
   const EMBED_WRAP_CANDIDATE_SEL =
     '[class*="placeholder" i], [class*="ratio" i], [class*="object-fit" i]';
-  function markEmbedWrapIframes(articleEl, marked) {
+  // v1.8.2：lazy 影片嵌入的 aspect 佔位框偵測（iframe 尚未 mount）。
+  // 結構訊號（硬規則 3，非站點 / class 特判）——「padding hack 佔位框」四件套：
+  //   1. 垂直 padding（top + bottom）撐出 > 40px 的高度
+  //   2. content box 高度 ≈ 0（高度全部來自 padding，即 height:0 + padding%）
+  //   3. overflow hidden / clip（原站靠這個把 absolute 子裁進佔位框）
+  //   4. 子樹內有媒體（縮圖），且無 iframe（有 iframe 走既有 embed 路徑）
+  // 命中 = 原站「容器撐 aspect 框 + 內容 absolute 填滿」的 responsive embed，
+  // 只是播放器尚未 mount。reader 的 static-flow 配套會把內容打回 flow → 落進
+  // 高度 0 的 content box → 被 overflow 整個裁掉（影片框只剩空白）。
+  // v1.8.2：::before / ::after aspect 佔位的 padding 門檻（見 passAspectPseudoReset）
+  const ASPECT_PSEUDO_MIN_PAD = 40;
+  // 子樹掃描上限：候選容器是 class 含 placeholder / ratio / object-fit 的
+  // wrapper，正常 embed 子樹極小（個位數元素）。超過此數幾乎必是把整個版面
+  // 包進來的 layout 容器，掃它只是白花 getComputedStyle。
+  const LAZY_FRAME_MAX_SUBTREE = 80;
+  function findLazyEmbedFrame(root) {
+    const win = root.ownerDocument && root.ownerDocument.defaultView;
+    if (!win || !win.getComputedStyle) return null;
+    if (!NS || typeof NS.isAspectPlaceholderFrame !== 'function') return null;
+    const els = root.querySelectorAll('*');
+    if (els.length > LAZY_FRAME_MAX_SUBTREE) return null;
+    for (const el of els) {
+      if (el.getAttribute(PLAYER_ATTR) === '1') continue;
+      // 佔位框判定的單一資料源在 NS（cleaner 的播放鍵豁免共用同一把尺）
+      if (NS.isAspectPlaceholderFrame(el)) return el;
+    }
+    return null;
+  }
+  function markEmbedWrapIframes(articleEl, marked, fillMarked) {
     for (const el of articleEl.querySelectorAll(EMBED_WRAP_CANDIDATE_SEL)) {
       if (el.getAttribute(EMBED_WRAP_ATTR) === '1') continue;
       if (el.querySelector('iframe')) {
         el.setAttribute(EMBED_WRAP_ATTR, '1');
         marked.push(el);
+        continue;
+      }
+      // v1.8.2：iframe 尚未 mount 的 lazy 影片嵌入也豁免 static-flow 配套
+      // ——佔位框 / play 按鈕維持原站定位，框內縮圖另標 EMBED_FILL_ATTR 蓋掉
+      // 全域「媒體本體 position:static」（見該 CSS 規則註解）。
+      const frame = findLazyEmbedFrame(el);
+      if (!frame) continue;
+      const applied = [];
+      // collapse guard 的基準：標記生效前的佔位框尺寸（見下方 guard）
+      const frameBefore = frame.getBoundingClientRect();
+      el.setAttribute(EMBED_WRAP_ATTR, '1');
+      marked.push(el);
+      applied.push([el, EMBED_WRAP_ATTR]);
+      if (!fillMarked) continue;
+      // 佔位框到 aspect 容器之間的中繼 wrapper：block + width:auto（見
+      // EMBED_FLOW_ATTR 規則註解——縮圖抽離 flow 後這段鏈會 shrink 成 0 寬）
+      for (let anc = frame.parentElement; anc && anc !== el; anc = anc.parentElement) {
+        if (anc.getAttribute(EMBED_FLOW_ATTR) === '1') continue;
+        anc.setAttribute(EMBED_FLOW_ATTR, '1');
+        fillMarked.push(anc);
+        applied.push([anc, EMBED_FLOW_ATTR]);
+      }
+      for (const media of frame.querySelectorAll('img, video')) {
+        if (media.getAttribute(EMBED_FILL_ATTR) === '1') continue;
+        media.setAttribute(EMBED_FILL_ATTR, '1');
+        fillMarked.push(media);
+        applied.push([media, EMBED_FILL_ATTR]);
+      }
+      // collapse guard（與 ratioBoxes / fixedHeightBoxes 同精神）：標記後佔位框
+      // 若「本來有尺寸、現在塌成 0」（寬度來源不只中繼 wrapper 一條、或站點結構
+      // 不同於預期）→ 整組撤回，寧可維持原本的破版也不要整塊影片框消失。
+      // getBoundingClientRect 同步 flush 新 layout，量到的是標記生效後的結果。
+      // 比對 before/after 而非只看 after：無 layout 的環境（jsdom）兩者皆 0，
+      // 不會誤判成塌陷。
+      const frameAfter = frame.getBoundingClientRect();
+      if ((frameBefore.width > 1 && frameAfter.width <= 1) ||
+          (frameBefore.height > 1 && frameAfter.height <= 1)) {
+        for (const [node, attr] of applied) {
+          node.removeAttribute(attr);
+          const arr = attr === EMBED_WRAP_ATTR ? marked : fillMarked;
+          const idx = arr.lastIndexOf(node);
+          if (idx >= 0) arr.splice(idx, 1);
+        }
       }
     }
   }
@@ -3952,6 +4094,9 @@ html.${HTML_CLASS}.jread-orion body {
       const playerMarked = [];
       const fillIframes = [];
       const embedWrapMarked = [];
+      // v1.8.2：lazy 影片佔位框內的縮圖標記 / ::before aspect 佔位容器標記
+      const embedFillMarked = [];
+      const aspectPseudoMarked = [];
       const headingLinkMarked = [];
       const absAnchorMarked = [];
       let textDivMarked = [];
@@ -3968,7 +4113,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -4292,11 +4437,11 @@ html.${HTML_CLASS}.jread-orion body {
         // 量測**之前**跑——EMBED_WRAP_ATTR 讓 static-flow 規則豁免 embed 子樹，
         // FILL_IFRAME 的 getComputedStyle 才量得到 absolute（與原 :not(:has(iframe))
         // 的同刻語意一致；量測會 flush style、attr 已就位）。
-        markEmbedWrapIframes(articleEl, embedWrapMarked);
+        markEmbedWrapIframes(articleEl, embedWrapMarked, embedFillMarked);
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
-        activeMarkState = { articleEl, embedWrapMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap };
+        activeMarkState = { articleEl, embedWrapMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap };
       };
 
       const passMarkFillIframes = () => {
@@ -5691,6 +5836,86 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passAspectPseudoReset = () => {
+        // v1.8.2：媒體祖先容器用 ::before / ::after 的垂直 padding 撐 aspect 佔位
+        // （padding-bottom hack 的 pseudo 版）→ 內容被 reader 打回 flow 後，佔位
+        // 本身變成純死空間，把媒體整段往下推（pansci.asia
+        // DIV.rve-embed-responsive-16by9::before { padding-top: 56.25% } 撐 270px，
+        // 影片框被推到空白下方，Jimmy 2026-09-01 回報「YouTube 影片不見了」的
+        // 空白半邊；另一半是佔位框裁掉縮圖，見 EMBED_FILL_ATTR）。
+        // 為何既有機制都漏：
+        //   - CSS 端 ::before 中和（line ~1470）只認 class 含 placeholder / ratio
+        //     的容器，這類 embed wrapper 的 class 無語意（rve-embed-responsive）。
+        //   - ratioBoxes 認 computed aspect-ratio（此容器是 auto）、fixedHeightBoxes
+        //     認「height 設 auto 後變矮」（padding 佔位 reset 後反而變高）、
+        //     minHeightBoxes 認 min-height——三條死空間 pass 全不命中，這是第四條 path。
+        // 通則（硬規則 3，非站點 / class 特判）：mediaAncestors 內、pseudo 有實際
+        // content 且垂直 padding > 40px 的容器一律中和該佔位。
+        // 安全：
+        //   - 子樹含 iframe 者排除：那是已 mount 的 responsive embed，佔位框正是
+        //     absolute iframe 的高度來源（FILL_IFRAME_ATTR 機制），中和會讓它塌掉。
+        //   - player 結構不動（與 galleryFlex / ratioBoxes 同原則）。
+        //   - collapse guard（同 ratioBoxes）：中和後容器塌到比內含媒體渲染高度還
+        //     矮 → 撤回標記，避免 pseudo 是唯一高度來源時裁掉內容。
+        // 成本：候選限 mediaAncestors（純文字主文 0 次 getComputedStyle），讀寫
+        // 照批次三段式。
+        const winPseudo = articleEl.ownerDocument?.defaultView;
+        if (!winPseudo || !winPseudo.getComputedStyle) return;
+        // 無 layout 引擎的環境（jsdom：documentElement 也量不到高度）直接
+        // short-circuit——本 pass 修的是真實 layout 才存在的死空間，無 layout
+        // 時無事可做；順帶避開 jsdom 未實作「帶 pseudo 參數的 getComputedStyle」
+        // 而噴進 virtual console 的 not-implemented（回 undefined、catch 不到）。
+        const rootEl = articleEl.ownerDocument && articleEl.ownerDocument.documentElement;
+        if (!rootEl || !(rootEl.getBoundingClientRect().height > 0)) return;
+        const pseudoPending = [];
+        for (const el of mediaAncestors) {
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          if (el.getAttribute && el.getAttribute(ASPECT_PSEUDO_ATTR) === '1') continue;
+          if (el.querySelector && el.querySelector('iframe')) continue;
+          let hit = false;
+          for (const pseudo of ['::before', '::after']) {
+            let ps;
+            // 只吞 SyntaxError（jsdom nwsapi 既知行為，同 markAbsAnchors）
+            try { ps = winPseudo.getComputedStyle(el, pseudo); } catch (e) {
+              if (e && e.name === 'SyntaxError') break;
+              throw e;
+            }
+            if (!ps) continue;
+            const content = ps.content;
+            if (!content || content === 'none' || content === 'normal') continue;
+            const pad = (parseFloat(ps.paddingTop) || 0) + (parseFloat(ps.paddingBottom) || 0);
+            if (pad > ASPECT_PSEUDO_MIN_PAD) { hit = true; break; }
+          }
+          if (!hit) continue;
+          pseudoPending.push({ el, beforeH: el.getBoundingClientRect().height });
+        }
+        // 寫入前先 push 進 snapshot 陣列（rollback 安全，同 ratioBoxes）；
+        // guard 失敗者事後撤回並自陣列移除
+        const pseudoPushStart = aspectPseudoMarked.length;
+        for (const p of pseudoPending) {
+          aspectPseudoMarked.push(p.el);
+          p.el.setAttribute(ASPECT_PSEUDO_ATTR, '1');
+        }
+        // getBoundingClientRect 同步 flush layout（整批只 flush 一次）
+        for (const p of pseudoPending) {
+          p.afterH = p.el.getBoundingClientRect().height;
+          const innerMedia = p.el.querySelector('img, picture, video');
+          p.mediaH = innerMedia ? innerMedia.getBoundingClientRect().height : 0;
+        }
+        {
+          const keptPseudo = [];
+          pseudoPending.forEach((p, i) => {
+            if (p.mediaH > 0 && p.afterH < p.mediaH * 0.8) {
+              p.el.removeAttribute(ASPECT_PSEUDO_ATTR);
+              return;
+            }
+            keptPseudo.push(aspectPseudoMarked[pseudoPushStart + i]);
+          });
+          aspectPseudoMarked.length = pseudoPushStart;
+          for (const k of keptPseudo) aspectPseudoMarked.push(k);
+        }
+      };
+
       const passMinHeightReset = () => {
         // v1.7.78：純文字容器被 min-height 撐出死空間 → 標題 / byline 上下大片空白
         // 根因（Jimmy 2026-08-20 techcrunch.com 回報 hero 圖、標題、byline、內文
@@ -6133,6 +6358,7 @@ html.${HTML_CLASS}.jread-orion body {
         passRatioBoxReset,
         passFixedHeightReset,
         passDecolumn,
+        passAspectPseudoReset,
         passMinHeightReset,
         passWpConstrainedMaxWidth,
         passWideContentScroll,
@@ -6243,6 +6469,19 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.headingLinkMarked)) {
         for (const el of snapshot.headingLinkMarked) {
           if (el && el.removeAttribute) el.removeAttribute(HEADING_LINK_ATTR);
+        }
+      }
+      // v1.8.2：移除 lazy embed 縮圖填滿 / ::before aspect 佔位標記
+      if (Array.isArray(snapshot.embedFillMarked)) {
+        for (const el of snapshot.embedFillMarked) {
+          if (!el || !el.removeAttribute) continue;
+          el.removeAttribute(EMBED_FILL_ATTR);
+          el.removeAttribute(EMBED_FLOW_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.aspectPseudoMarked)) {
+        for (const el of snapshot.aspectPseudoMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(ASPECT_PSEUDO_ATTR);
         }
       }
       // v1.7.45：移除 absolute 錨定豁免標記
@@ -6547,7 +6786,7 @@ html.${HTML_CLASS}.jread-orion body {
       if (!node || node.nodeType !== 1 || !s.articleEl.contains(node)) return;
       const hasIframe = (node.matches && node.matches('iframe')) ||
         (node.querySelector && node.querySelector('iframe'));
-      if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked);
+      if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked, s.embedFillMarked);
       const hasHeading = (node.matches && node.matches('h1,h2,h3,h4,h5,h6,a')) ||
         (node.querySelector && node.querySelector('h1,h2,h3,h4,h5,h6'));
       if (hasHeading) {
