@@ -7645,12 +7645,20 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       const text = norm(el.textContent);
       const len = text.length;
-      if (len) {
-        // font 整個包在 <a> 裡（udn 廣告位實測 `<a><font>📢 秋季美容展…</font></a>`）
-        // ＝整段文字都可點，連結密度就是 1。只數內部 <a> 會把這種形狀算成
-        // ld 0（font 內確實沒有 <a>）→ 當成內容載體保留（v1.8.6 第一版實測
-        // 殘留）。ld 的語意是「這塊有多少比例是可點文字」，祖先連結一樣可點。
-        const inLink = !!(el.closest && el.closest('a'));
+      // font 整個包在 <a> 裡（udn 廣告位實測 `<a><font>📢 秋季美容展…</font></a>`）
+      // ＝整段文字都可點，連結密度就是 1。只數內部 <a> 會把這種形狀算成 ld 0
+      // （font 內確實沒有 <a>）→ 當成內容載體保留（v1.8.6 第一版實測殘留）。
+      // ld 的語意是「這塊有多少比例是可點」，祖先連結一樣可點。
+      const inLink = !!(el.closest && el.closest('a'));
+      if (!len) {
+        // v1.8.7b：**無文字但承載內容媒體**的 font 是圖片載體，不是 PR 插播
+        // ——老式版型常寫成 `<font>　<img src="..."></font>`（文字只有一個
+        // 全形空白，norm 後長度 0）。舊版 `if (len)` 讓這種 font 完全跳過
+        // 連結密度判定、直接落到 hide，圖跟著整塊消失（mdc.idv.tw
+        // E-antiair-SM2.htm 的 SM-MK41.jpg 實證）。廣告橫幅要能點，所以
+        // 「不在 <a> 內」是這裡的分界線，與下面的連結密度同一條語意。
+        if (!inLink && el.querySelector && el.querySelector('img, picture, video')) continue;
+      } else {
         let linkLen = inLink ? len : 0;
         if (!inLink) {
           for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
