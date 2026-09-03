@@ -254,49 +254,58 @@
       while (base && base !== document.body && base !== document.documentElement && hop <= CONT_MAX_HOPS) {
         const parent = base.parentElement;
         // 獨生子層：無兄弟可掃，直接往上且不計 hop（理由見上方註解）
-
         if (parent && parent.children.length === 1) {
           base = parent;
           continue;
         }
-        const after = [];
-        for (let sib = base.nextElementSibling; sib; sib = sib.nextElementSibling) {
-          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
-          if (looksLikeContinuationBlock(sib)) {
-            after.push(sib);
-            if (after.length >= CONT_MAX_BLOCKS) break;
+        const picked = new Set();
+        // 兩個方向各自獨立評估：一邊的成員湊得出主文，不代表另一邊也是。
+        for (const dir of ['prev', 'next']) {
+          const sibs = [];
+          for (let sib = dir === 'prev' ? base.previousElementSibling : base.nextElementSibling;
+               sib;
+               sib = dir === 'prev' ? sib.previousElementSibling : sib.nextElementSibling) {
+            if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
+            sibs.push(sib);
+          }
+          // (a) 容器型接續區塊：逐個各自過 gate
+          const blocks = [];
+          for (const sib of sibs) {
+            if (looksLikeContinuationBlock(sib)) {
+              blocks.push(sib);
+              if (blocks.length >= CONT_MAX_BLOCKS) break;
+            }
+          }
+          // (b) 裸內容流成員：整群一起過同一組 gate（v1.8.7）
+          const blockSet = new Set(blocks);
+          const flow = [];
+          for (const sib of sibs) {
+            if (blockSet.has(sib)) continue;
+            if (looksLikeBareFlowMember(sib)) {
+              flow.push(sib);
+              if (flow.length >= CONT_MAX_FLOW_MEMBERS) break;
+            }
+          }
+          for (const el of blocks) picked.add(el);
+          // v1.8.7b：(a) 命中不可讓 (b) 短路。同一層裡「容器型接續區塊」與
+          // 「散落的裸內容元素」可以並存——mdc.idv.tw/E-antiair-SM2.htm 實證：
+          // 前半 26 個裸 <p>（含 8 張圖）之間夾了一個自身就過 gate 的 <center>
+          // （含 4 圖 + 737 權重字），舊的「(a) 有命中就 return」讓群組路徑
+          // 整個不跑、那 26 個 <p> 全被丟掉（Jimmy 回報「前半截的圖都無法
+          // 顯示」，同站第三頁）。兩條路徑收集的是同一層的不同形狀，合併才
+          // 是完整的主文；各自仍要過自己那組 gate，不互相放寬。
+          if (bareFlowGroupQualifies(flow)) {
+            for (const el of flow) picked.add(el);
           }
         }
-        // preceding 方向由近而遠掃，unshift 回文件序（absorb 依文件序 prepend）
-        const before = [];
-        for (let sib = base.previousElementSibling; sib; sib = sib.previousElementSibling) {
-          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
-          if (looksLikeContinuationBlock(sib)) {
-            before.unshift(sib);
-            if (before.length >= CONT_MAX_BLOCKS) break;
+        if (picked.size > 0) {
+          // 依文件序輸出（absorb 依此順序 prepend / append，維持原始閱讀順序）
+          const out = [];
+          for (const child of parent.children) {
+            if (picked.has(child)) out.push(child);
           }
+          return out;
         }
-        if (before.length > 0 || after.length > 0) {
-          return before.concat(after).slice(0, CONT_MAX_BLOCKS);
-        }
-        // 逐個評估整層落空 → 裸內容流群組路徑（v1.8.7，理由見上方註解）。
-        // 兩個方向各自獨立評估：一邊的成員湊得出主文不代表另一邊也是。
-        const flowBefore = [];
-        for (let sib = base.previousElementSibling; sib; sib = sib.previousElementSibling) {
-          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
-          if (looksLikeBareFlowMember(sib)) flowBefore.unshift(sib);
-          if (flowBefore.length >= CONT_MAX_FLOW_MEMBERS) break;
-        }
-        const flowAfter = [];
-        for (let sib = base.nextElementSibling; sib; sib = sib.nextElementSibling) {
-          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
-          if (looksLikeBareFlowMember(sib)) flowAfter.push(sib);
-          if (flowAfter.length >= CONT_MAX_FLOW_MEMBERS) break;
-        }
-        const flow = [];
-        if (bareFlowGroupQualifies(flowBefore)) flow.push(...flowBefore);
-        if (bareFlowGroupQualifies(flowAfter)) flow.push(...flowAfter);
-        if (flow.length > 0) return flow;
         base = parent;
         hop++;
       }
