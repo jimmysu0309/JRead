@@ -2365,6 +2365,8 @@
     let pick = null;
     if (strict.length === 1) pick = strict[0];
     else if (strict.length === 0 && cands.length === 1 && translationGuardActive()) pick = cands[0];
+    // 第二層（v1.8.6）：上面整層落空時才跑。理由見 findExactDocTitleCarrier。
+    if (!pick) pick = findExactDocTitleCarrier(articleEl);
     if (!pick) return;
 
     // 合成 header 而非 clone 原載體：老 table 版型的標題住在 `<td>` / `<a>` 裡，
@@ -2390,6 +2392,51 @@
     // 插入位置（in-article / 翻譯頁外置）由 placePromotedTitleClone 決定；
     // 還原走 hidden 陣列的 __titleClone path（removeChild）。
     placePromotedTitleClone(articleEl, wrap, hidden);
+  }
+
+  // v1.8.6：第一層（class/id title token）整層落空時的第二層候選來源。
+  //
+  // 場景（Jimmy 2026-09-03 回報 `mdc.idv.tw/mdc/navy/usanavy/E-Aegis-land_base.htm`）：
+  // FrontPage / 純手寫 HTML 的老頁面**整頁沒有任何 class 或 id**，標題就是
+  // `<font><p align="center"><b>岸基神盾系統</b></p></font>`，五條既有 title
+  // path 全 miss（前四條要 heading tag，第五條要 class/id 帶 title token）。
+  //
+  // 判定基礎換人、不是把第一層放寬（新層 guard 不共用前層盲點）：第一層用
+  // class token 當入口、文字只要求是 document.title 的**子字串**；本層沒有
+  // class 可用，改要求文字與 document.title（或去站名尾綴版）**完全相等**
+  // ——這是比子字串嚴得多的語意訊號，單獨成立即足夠。其餘結構 gate（articleEl
+  // 外、非 heading、leaf-ish、DOM order 在主文之前、唯一）與第一層相同。
+  //
+  // 巢套候選收斂：老式版型的 `<font>` / `<p>` / `<b>` 三層文字都等於標題，
+  // 三個都會命中「完全相等」。取最內層（不含其他候選者）後才要求唯一——
+  // 否則「多個候選 → 放棄」的保險會被自己的祖先鏈觸發、永遠不命中。
+  //
+  // 本層驗到與沒驗到的訊號層次（工作流原則 3）：只涵蓋**原文頁**。翻譯擴充
+  // 改寫可見文字後 document.title 不跟著翻（v1.7.56 教訓），完全相等必然
+  // miss → 翻譯頁本層 no-op 降級（無標題，與修法前相同、非回歸）。第一層的
+  // 翻譯路徑靠 class token 收斂候選才敢吃純結構訊號；無 class 頁面上「唯一
+  // leaf-ish 短文字」會把導覽列與圖說一併算進來，寧可不猜也不注入錯標題。
+  function findExactDocTitleCarrier(articleEl) {
+    const docT = normTitle(document.title || '');
+    const docTStripped = NS && NS.stripSiteSuffix
+      ? normTitle(NS.stripSiteSuffix(document.title || '')) : '';
+    if (!docT || titleTextWeight(docT) < 5) return null;
+    const hits = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      if (articleEl.contains(el)) continue;
+      if (/^H[1-6]$/.test(el.tagName)) continue; // heading 由既有 path 負責
+      if (el.children.length > 2) continue;      // 便宜粗篩，避免對大 wrapper 讀 textContent
+      if (el.querySelectorAll('*').length > 2) continue; // leaf-ish（同第一層語意）
+      if (!(articleEl.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
+      const t = normTitle(el.textContent || '');
+      if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX) continue;
+      if (t !== docT && !(docTStripped && t === docTStripped)) continue;
+      hits.push(el);
+    }
+    const innermost = hits.filter(el => !hits.some(o => o !== el && el.contains(o)));
+    if (innermost.length !== 1) return null;
+    const el = innermost[0];
+    return { el, text: normTitle(el.textContent || ''), inDocTitle: true };
   }
 
   // 標題載體所在「meta 列」內的日期文字。通則：把標題寫成非 heading 的版型
@@ -7565,20 +7612,52 @@
   // essay font 被 hide → reader card 只剩標題）。改用結構訊號區分：
   //   - noise font（udn PR）：text 短 or 連結密度高（基本上是 <font><a>連結
   //     </a></font>）→ 仍 hide
-  //   - content font（PG 主文）：text 長（>= FONT_CONTENT_MIN_LEN）且連結密度
-  //     低（< FONT_CONTENT_MAX_LD）→ 保留
+  //   - content font（PG 主文）：連結密度低於該長度級距的門檻 → 保留
   // 純結構特徵（文字量 + 連結密度），非站點特判（硬規則 3）。
-  const FONT_CONTENT_MIN_LEN = 200;
-  const FONT_CONTENT_MAX_LD = 0.5;
+  //
+  // v1.8.6 修正——判準改成「一律看連結密度，長短只決定門檻鬆緊」。舊版是
+  // 「文字 < 200 字一律 hide、根本不看連結密度」，在老式中文頁面上結構性
+  // 誤殺（Jimmy 2026-09-03 回報 mdc.idv.tw 岸基神盾頁）：FrontPage 版型把
+  // **每一段正文與每一則圖說各自包一個 `<font>`**，單段 15–90 字，全部低於
+  // 200 → 圖說與多個段落整段消失（`<p>` 空殼留在版面上、高度 0）。這是
+  // 「長度門檻按拉丁校準」的老問題再現（v0.8.141 標題門檻同族），但光把
+  // 門檻換成 CJK 權重救不了——45 字中文權重 90 仍遠低於 200。
+  //
+  // 這條規則要擋的 udn PR 插播，其真正特徵是**可點**（`<font><a>🎮想成為
+  // 超強飼主…</a></font>`，連結密度 ≈ 1），不是「短」。所以長度不再當
+  // 通過條件，只用來選連結密度門檻：
+  //   - 長文（CJK 權重 >= FONT_LONG_MIN_WEIGHT）：零星引用連結是正常的，
+  //     沿用寬門檻 FONT_LONG_MAX_LD
+  //   - 短文：文字裡有相當比例是連結就是 CTA / 導覽列（PG essay 頁首的
+  //     「Want to start a startup? Get funded by <a>Y Combinator</a>.」
+  //     ld 0.23），用嚴門檻 FONT_SHORT_MAX_LD；圖說與短段落 ld 幾乎恆 0，
+  //     零星註解連結（mdc 實測正文 ld 0.02）也在門檻內
+  //
+  // 純文字、零連結的短 font 一律保留：廣告要能點，不可點的短文字幾乎只會是
+  // 圖說 / 強調句，誤殺成本（整段內文消失）遠大於漏網成本（殘留一行文字，
+  // 且 keyword 類規則另有一層）。
+  const FONT_LONG_MIN_WEIGHT = 200; // CJK 權重（原 raw 200 的同位門檻）
+  const FONT_LONG_MAX_LD = 0.5;
+  const FONT_SHORT_MAX_LD = 0.1;
   function hideInsideArticleFontTags(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll('font')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      const len = norm(el.textContent).length;
-      if (len >= FONT_CONTENT_MIN_LEN) {
-        let linkLen = 0;
-        for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
-        if (linkLen / len < FONT_CONTENT_MAX_LD) continue; // 長文 + 低連結密度 = 主文載體，保留
+      const text = norm(el.textContent);
+      const len = text.length;
+      if (len) {
+        // font 整個包在 <a> 裡（udn 廣告位實測 `<a><font>📢 秋季美容展…</font></a>`）
+        // ＝整段文字都可點，連結密度就是 1。只數內部 <a> 會把這種形狀算成
+        // ld 0（font 內確實沒有 <a>）→ 當成內容載體保留（v1.8.6 第一版實測
+        // 殘留）。ld 的語意是「這塊有多少比例是可點文字」，祖先連結一樣可點。
+        const inLink = !!(el.closest && el.closest('a'));
+        let linkLen = inLink ? len : 0;
+        if (!inLink) {
+          for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
+        }
+        const maxLd = NS.cjkWeightedLen(text) >= FONT_LONG_MIN_WEIGHT
+          ? FONT_LONG_MAX_LD : FONT_SHORT_MAX_LD;
+        if (linkLen / len < maxLd) continue; // 低連結密度 = 內容載體，保留
       }
       hide(el, hidden);
     }

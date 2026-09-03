@@ -102,6 +102,14 @@
   const CONT_MAX_LD = 0.3;         // 連結密度上限（真主文實測 ~0.24；相關文章列表 > 0.5）
   const CONT_MAX_HOPS = 2;         // 從 articleEl 沿祖先鏈找「有接續兄弟的層級」的上限
   const CONT_MAX_BLOCKS = 10;      // 吸收數量保險上限
+  // v1.8.6：接續區塊的容器 tag 白名單。FONT / CENTER 是老式排版（FrontPage /
+  // 純手寫 HTML）包裝內容段落的通用載體——同一份主文常被拆成「body 直屬
+  // <font> 包住前半（hero 圖 + 前幾段）」+「<table><td> 包住後半」，heuristic
+  // 選 TD 完全正確，前半整塊留在外面被當雜訊清掉。納入 FONT / CENTER 的理由
+  // 與 v0.8.82 把 TD 納入 heuristic 候選白名單同源：都是通用 HTML 元素、非
+  // 站點特判（硬規則 3），且本函式其餘 gate（>= 2 段實質段落 + 低連結密度 +
+  // 總權重門檻 + 負向 class）才是真正的把關者，tag 只是粗篩。
+  const CONT_BLOCK_TAGS = new Set(['DIV', 'SECTION', 'ARTICLE', 'FONT', 'CENTER']);
 
   // v1.7.40：實作上提到 NS.cjkWeightedLen（批次 2 review D2——單一資料源，
   // namespace.js findCardTitleHeading 原本的無權重雙實作一併收斂）。
@@ -127,8 +135,7 @@
   }
 
   function looksLikeContinuationBlock(el) {
-    const tag = el.tagName;
-    if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'ARTICLE') return false;
+    if (!CONT_BLOCK_TAGS.has(el.tagName)) return false;
     // 負向 class / id（comment / related / sponsor / widget…）直接排除
     const marker = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
     if (NEGATIVE_RE.test(marker)) return false;
@@ -158,44 +165,90 @@
     return false;
   }
 
-  // 唯讀識別：不動 DOM。從 articleEl 所在層級開始掃 following siblings，
-  // 該層沒有合格接續區塊才往上一層（articleEl 可能是巢狀 content div、
-  // 接續區塊在其 wrapper 的兄弟層），上限 CONT_MAX_HOPS。
-  // 掃描遇到「含 h1 的兄弟」即終止——瀑布流站把下一篇文章 preload 成後續
-  // 兄弟（本頁 script 有 waterfall helper 的站實見），下一篇自帶 h1 主標，
-  // 其後內容屬於別篇文章，不可吸收（對齊 narrowToFirstArticleBlock 的邊界
-  // 語意）。
+  // 唯讀識別：不動 DOM。從 articleEl 所在層級開始**雙向**掃 siblings（前後
+  // 都掃），該層沒有合格接續區塊才往上一層（articleEl 可能是巢狀 content
+  // div、接續區塊在其 wrapper 的兄弟層），上限 CONT_MAX_HOPS。
+  //
+  // 雙向的理由（v1.8.6）：同一篇主文被站方拆成多個 body-level 區塊時，
+  // heuristic 只會選中「文字量最大的那塊」，被漏掉的另一半可能在它**前面**
+  // ——mdc.idv.tw 老式 FrontPage 頁實證：hero 圖 + 圖說 + 前 515 字（8 張圖）
+  // 在 body 直屬 <font>，主文後半在 <table><td>，detector 選 TD、前半整塊被
+  // 當雜訊清掉。單向（只 following）掃描對這種版型結構性失明。雙向也正是
+  // Readability.js grabArticle 的 sibling loop 語意（遍歷 topCandidate
+  // parent 的所有 children，不分前後）。
+  //
+  // 掃描遇到「含 h1 的兄弟」即終止：following 方向擋的是瀑布流站 preload 的
+  // 下一篇文章（自帶 h1 主標，其後內容屬別篇，不可吸收，對齊
+  // narrowToFirstArticleBlock 的邊界語意）；preceding 方向同一條邊界語意
+  // ——本文標題 h1 之上是 site chrome（masthead / nav），h1 就是天花板。
+  //
+  // hop 預算只計「該層真的有兄弟」的層級（v1.8.6）：獨生子 wrapper 層沒有
+  // 任何兄弟可掃，往上爬並不擴大語意範圍（wrapper 與其子節點語意等同），
+  // 消耗預算只會讓老式深巢套版型（td → tr → tbody → table → center → div
+  // 五層獨生鏈，實測 mdc.idv.tw）在真正有兄弟的那層之前就用完預算。
   function findContinuationSiblings(articleEl) {
     return withAncestorCache(() => {
       let base = articleEl;
-      for (let hop = 0; hop <= CONT_MAX_HOPS; hop++) {
-        if (!base || base === document.body || base === document.documentElement) break;
-        const found = [];
+      let hop = 0;
+      while (base && base !== document.body && base !== document.documentElement && hop <= CONT_MAX_HOPS) {
+        const parent = base.parentElement;
+        // 獨生子層：無兄弟可掃，直接往上且不計 hop（理由見上方註解）
+
+        if (parent && parent.children.length === 1) {
+          base = parent;
+          continue;
+        }
+        const after = [];
         for (let sib = base.nextElementSibling; sib; sib = sib.nextElementSibling) {
           if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
           if (looksLikeContinuationBlock(sib)) {
-            found.push(sib);
-            if (found.length >= CONT_MAX_BLOCKS) break;
+            after.push(sib);
+            if (after.length >= CONT_MAX_BLOCKS) break;
           }
         }
-        if (found.length > 0) return found;
-        base = base.parentElement;
+        // preceding 方向由近而遠掃，unshift 回文件序（absorb 依文件序 prepend）
+        const before = [];
+        for (let sib = base.previousElementSibling; sib; sib = sib.previousElementSibling) {
+          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
+          if (looksLikeContinuationBlock(sib)) {
+            before.unshift(sib);
+            if (before.length >= CONT_MAX_BLOCKS) break;
+          }
+        }
+        if (before.length > 0 || after.length > 0) {
+          return before.concat(after).slice(0, CONT_MAX_BLOCKS);
+        }
+        base = parent;
+        hop++;
       }
       return [];
     });
   }
 
-  // 進場時由 main.js 呼叫：把接續區塊實際移進 articleEl 尾端（文件序不變
-  // ——它們本來就在 articleEl 之後）。out 累加器逐筆先記錄再移動：中途
-  // throw 時已移動的每一筆都有紀錄，exit 流程照樣逐筆移回（對齊 v1.6.27
-  // hiddenEls 累加器教訓）。
+  // 進場時由 main.js 呼叫：把接續區塊實際移進 articleEl（文件序不變——原本
+  // 排在 articleEl 之後的接到尾端、之前的插到開頭，v1.8.6 雙向掃描後兩種
+  // 都可能出現）。els 依文件序傳入，preceding 群逐一 insertBefore 同一個
+  // 錨點（articleEl 原本的 firstChild）即自然保持彼此順序。out 累加器逐筆
+  // 先記錄再移動：中途 throw 時已移動的每一筆都有紀錄，exit 流程照樣逐筆
+  // 移回（對齊 v1.6.27 hiddenEls 累加器教訓）。
   function absorbContinuationSiblings(articleEl, els, out) {
     if (!articleEl || !Array.isArray(els) || !Array.isArray(out)) return;
+    const headAnchor = articleEl.firstChild;
     for (const el of els) {
       if (!el || el === articleEl || articleEl.contains(el) || !el.parentElement) continue;
+      // el.contains(articleEl) 防護：理論上不該發生（候選是兄弟不是祖先），
+      // 但站方腳本可能在 detect 與 absorb 之間搬過 DOM，移進去會斷開 articleEl
+      if (el.contains && el.contains(articleEl)) continue;
+      const precedes = !!(articleEl.compareDocumentPosition(el) & 2 /* PRECEDING */);
       out.push({ el, parent: el.parentElement, next: el.nextSibling });
       el.setAttribute('data-jread-absorbed-sibling', '1');
-      articleEl.appendChild(el);
+      if (precedes && headAnchor && headAnchor.parentNode === articleEl) {
+        articleEl.insertBefore(el, headAnchor);
+      } else if (precedes) {
+        articleEl.insertBefore(el, articleEl.firstChild);
+      } else {
+        articleEl.appendChild(el);
+      }
     }
   }
 
