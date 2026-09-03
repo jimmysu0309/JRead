@@ -21,6 +21,15 @@
   const HTML_CLASS = '__jread-active';
   const ARTICLE_ATTR = 'data-jread-active';
   const ANCESTOR_ATTR = 'data-jread-ancestor';
+  // v1.8.3：articleEl 的第一個 / 最後一個「可見」direct child 標記。頂 / 底端
+  // 留白消除規則原本用 CSS `> *:first-child` / `> *:last-child`——但 CSS 的
+  // structural pseudo-class **不會跳過被 cleaner 隱藏的元素**，主文首尾只要卡
+  // 一個 display:none 的雜訊殼（NYT `#in-story-masthead`），規則就落在那個
+  // 0 高度的殼上、真正的內容元素沒吃到（Jimmy 2026-09-03 回報 nytimes opinion
+  // 標題上方多餘空白＝站方 `article` padding-top:40px 疊在卡片自身 48px 上）。
+  // 由 JS 標記「第一個 / 最後一個可見 direct child」補上這個盲點。
+  const EDGE_FIRST_ATTR = 'data-jread-first-child';
+  const EDGE_LAST_ATTR = 'data-jread-last-child';
   const INLINE_IMG_ATTR = 'data-jread-inline-img';
   const INLINE_IMG_MAX = 48;
   // v0.8.90：作者刻意縮小的小圖（icon / 版面 badge / 作者頭像）標記。裸 img
@@ -938,16 +947,20 @@ html [${ARTICLE_ATTR}="1"] {
   border-top-right-radius: 0 !important;
   margin-top: 0 !important;
 }
-/* 消除頂端留白：第一個 direct child 清 margin-top / padding-top。
-   JS 端另外會對「第一個 h1-h4/p」設 margin-top: 0 inline（覆蓋深層 CMS 寫死的值） */
-[${ARTICLE_ATTR}="1"] > *:first-child {
+/* 消除頂端留白：第一個**可見** direct child 清 padding-top。
+   JS 端另外會對「第一個 h1-h4/p」設 margin-top: 0 inline（覆蓋深層 CMS 寫死的值）
+   v1.8.3：選擇器由 '> *:first-child' 換成 EDGE_FIRST_ATTR 標記（同 specificity
+   (0,2,0)）——CSS pseudo-class 不跳過 cleaner 隱藏的雜訊殼，見標記常數註解。 */
+[${ARTICLE_ATTR}="1"] > [${EDGE_FIRST_ATTR}="1"] {
   padding-top: 0 !important;
 }
-/* 消除底端留白：最後一個 direct child 清 margin-bottom / padding-bottom。
+/* 消除底端留白：最後一個**可見** direct child 清 margin-bottom / padding-bottom。
    原站常用最後一個 wrapper div 設大量 pb（例如 90px page-footer spacing），
    reader card 本身已有 48px bottom padding，不需 wrapper 額外貢獻。
-   html 前綴提升 specificity 到 (0,1,2)，贏過原站 .class-name { pb: Xpx }。 */
-html [${ARTICLE_ATTR}="1"] > *:last-child {
+   html 前綴提升 specificity 到 (0,2,1)，贏過原站 .class-name { pb: Xpx }。
+   v1.8.3：同上換成 EDGE_LAST_ATTR 標記（原 '> *:last-child' 同盲點——文末卡一個
+   被清掉的分享列 / 推薦區殼，規則就落在那個 0 高度的殼上）。 */
+html [${ARTICLE_ATTR}="1"] > [${EDGE_LAST_ATTR}="1"] {
   margin-bottom: 0 !important;
   padding-bottom: 0 !important;
 }
@@ -4110,10 +4123,12 @@ html.${HTML_CLASS}.jread-orion body {
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
+      // v1.8.3：首 / 末「可見」direct child 標記（見 EDGE_FIRST_ATTR 註解）
+      const edgeMarks = [];
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -4813,6 +4828,34 @@ html.${HTML_CLASS}.jread-orion body {
           firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
           firstInkPriorMtPriority = firstInk.style.getPropertyPriority('margin-top');
           firstInk.style.setProperty('margin-top', '0', 'important');
+        }
+      };
+
+      const passVisibleEdgeChildMarks = () => {
+        // v1.8.3：標記 articleEl 的第一個 / 最後一個「可見」direct child，供頂 /
+        // 底端留白消除的 CSS 規則掛靠（原 `> *:first-child` / `> *:last-child` 的
+        // 盲點見 EDGE_FIRST_ATTR 常數註解）。可見性判定沿用 isVisiblyShown——與
+        // firstInk / firstVisibleH1 同一份標準（data-jread-hidden 子樹 + display:none
+        // 祖先鏈）。首尾同一個元素時兩個標記都上（單一 child 的主文）。
+        // 時序：跑在 cleaner.clean 之後（styler.apply 的呼叫點），所以隱藏標記已就位；
+        // 之後動態 observer 若再隱藏 direct child 不會重標——direct child 層級的
+        // 晚期隱藏罕見，且漏標只是回到「站方 padding 留著」的舊行為，不會破版。
+        const kids = Array.from(articleEl.children);
+        let first = null;
+        let last = null;
+        for (const k of kids) {
+          if (isVisiblyShown(k, articleEl)) { first = k; break; }
+        }
+        for (let i = kids.length - 1; i >= 0; i -= 1) {
+          if (isVisiblyShown(kids[i], articleEl)) { last = kids[i]; break; }
+        }
+        if (first) {
+          first.setAttribute(EDGE_FIRST_ATTR, '1');
+          edgeMarks.push({ el: first, attr: EDGE_FIRST_ATTR });
+        }
+        if (last) {
+          last.setAttribute(EDGE_LAST_ATTR, '1');
+          edgeMarks.push({ el: last, attr: EDGE_LAST_ATTR });
         }
       };
 
@@ -6344,6 +6387,7 @@ html.${HTML_CLASS}.jread-orion body {
         passCodeBlockBgPhase4,
         passInstallListeners,
         passFirstInkTopMargin,
+        passVisibleEdgeChildMarks,
         passBylineKicker,
         passCjkDecorInlineFlowMarks,
         passAncestorPaddingStrip,
@@ -6531,6 +6575,12 @@ html.${HTML_CLASS}.jread-orion body {
       }
       if (Array.isArray(snapshot.bylineMarks)) {
         for (const m of snapshot.bylineMarks) {
+          if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
+        }
+      }
+      // v1.8.3：移除首 / 末可見 direct child 標記
+      if (Array.isArray(snapshot.edgeMarks)) {
+        for (const m of snapshot.edgeMarks) {
           if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
         }
       }
