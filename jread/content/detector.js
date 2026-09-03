@@ -165,6 +165,67 @@
     return false;
   }
 
+  // v1.8.7：裸內容流版型的「群組」路徑。逐個評估（looksLikeContinuationBlock）
+  // 整層落空時才跑，判定基礎與前者不同、不共用盲點。
+  //
+  // 場景（Jimmy 2026-09-03 回報 mdc.idv.tw/mdc/navy/usanavy/E-antiair-SM1.htm
+  // 「前半段的圖片都無法顯示」）：同站另一頁把主文前半寫成 **body 直屬的一長
+  // 串裸 `<p>`**——圖各一個 `<p>`、圖說各一個 `<p>`，沒有任何容器包住。v1.8.6
+  // 的雙向掃描仍是「逐個候選各自過 gate」，單一 `<p>` 永遠湊不出「>= 2 段實質
+  // 段落 + 總權重 200」，6 張圖與圖說整批留在 articleEl 外被當雜訊清掉。
+  //
+  // 通則：這種版型的「一段主文」不是某個容器，而是**同層的一串裸內容元素**。
+  // 收成一群、對整群套與逐個評估**同一組** gate（總權重 / 實質段落數 / 連結
+  // 密度），語意一致，只是把「容器」換成「兄弟群」。
+  //
+  // 暴露面限縮在「沒有 wrapper 的老式裸內容流」：成員 tag 只收裸段落載體，
+  // **不收 DIV / SECTION / ARTICLE / MAIN 等容器**——容器型兄弟本來就由逐個
+  // 評估負責（收進來只是把同一件事做兩次），而現代站的 body-level 兄弟一定是
+  // 容器（header / nav / main / footer），本路徑對它們結構性不命中。
+  const CONT_FLOW_TAGS = new Set(['P', 'FONT', 'CENTER', 'BLOCKQUOTE', 'PRE']);
+  const CONT_MAX_FLOW_MEMBERS = 80; // 群組成員數保險上限（老頁前半實測 14）
+
+  function contMemberLinkLen(el) {
+    let n = 0;
+    for (const a of el.querySelectorAll('a')) {
+      n += ((a.innerText || a.textContent) || '').replace(/\s+/g, ' ').trim().length;
+    }
+    return n;
+  }
+
+  // 群組成員：裸段落載體、非雜訊、有內容（文字或圖）、自身不是導覽 / CTA
+  function looksLikeBareFlowMember(el) {
+    if (!CONT_FLOW_TAGS.has(el.tagName)) return false;
+    const marker = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
+    if (NEGATIVE_RE.test(marker)) return false;
+    if (el.querySelector && el.querySelector('textarea')) return false;
+    const text = scoredText(el);
+    // 空殼 <p>（老頁排版用的間隔）不收——收了也沒內容，只是讓群組變雜
+    if (!text.length && !(el.querySelector && el.querySelector('img, picture, video'))) return false;
+    // 自身高連結密度 = 頁內導覽列（「（1）（2）（3）」這類），不是內文
+    if (text.length && linkDensity(el, text.length) > CONT_MAX_LD) return false;
+    return true;
+  }
+
+  // 對一群裸內容成員套 looksLikeContinuationBlock 的同一組 gate：整群的總權重、
+  // 整群的連結密度、群內「本身就是實質段落」的成員數（每個成員即一段）。
+  function bareFlowGroupQualifies(els) {
+    if (!els.length) return false;
+    let combined = '';
+    let linkLen = 0;
+    let paras = 0;
+    for (const el of els) {
+      const t = scoredText(el);
+      combined += t + ' ';
+      linkLen += contMemberLinkLen(el);
+      if (cjkWeightedLen(t) >= CONT_MIN_PARA_WEIGHT) paras += 1;
+    }
+    const rawLen = combined.replace(/\s+/g, ' ').trim().length;
+    if (cjkWeightedLen(combined) < MIN_TEXT_LEN) return false;
+    if (rawLen && linkLen / rawLen > CONT_MAX_LD) return false;
+    return paras >= CONT_MIN_PARAS;
+  }
+
   // 唯讀識別：不動 DOM。從 articleEl 所在層級開始**雙向**掃 siblings（前後
   // 都掃），該層沒有合格接續區塊才往上一層（articleEl 可能是巢狀 content
   // div、接續區塊在其 wrapper 的兄弟層），上限 CONT_MAX_HOPS。
@@ -218,6 +279,24 @@
         if (before.length > 0 || after.length > 0) {
           return before.concat(after).slice(0, CONT_MAX_BLOCKS);
         }
+        // 逐個評估整層落空 → 裸內容流群組路徑（v1.8.7，理由見上方註解）。
+        // 兩個方向各自獨立評估：一邊的成員湊得出主文不代表另一邊也是。
+        const flowBefore = [];
+        for (let sib = base.previousElementSibling; sib; sib = sib.previousElementSibling) {
+          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
+          if (looksLikeBareFlowMember(sib)) flowBefore.unshift(sib);
+          if (flowBefore.length >= CONT_MAX_FLOW_MEMBERS) break;
+        }
+        const flowAfter = [];
+        for (let sib = base.nextElementSibling; sib; sib = sib.nextElementSibling) {
+          if (sib.tagName === 'H1' || (sib.querySelector && sib.querySelector('h1'))) break;
+          if (looksLikeBareFlowMember(sib)) flowAfter.push(sib);
+          if (flowAfter.length >= CONT_MAX_FLOW_MEMBERS) break;
+        }
+        const flow = [];
+        if (bareFlowGroupQualifies(flowBefore)) flow.push(...flowBefore);
+        if (bareFlowGroupQualifies(flowAfter)) flow.push(...flowAfter);
+        if (flow.length > 0) return flow;
         base = parent;
         hop++;
       }
