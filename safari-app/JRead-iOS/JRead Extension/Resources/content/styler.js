@@ -164,6 +164,13 @@
   // 既有中和規則只認 class 含 placeholder / ratio 的容器，無語意 class 的
   // embed wrapper 漏網（見 passAspectPseudoReset 註解）。
   const ASPECT_PSEUDO_ATTR = 'data-jread-aspect-pseudo';
+  // v1.8.4：標題自帶的「不可見 ::before / ::after 純間距佔位」標記 → CSS 歸零。
+  // 站方常用 heading 的 pseudo 當版面間距 / 曾經的裝飾線（nytimes h1::before
+  // { content:""; display:block; height:1px; margin:12px 0 28px } 完全透明、
+  // 無 border、無背景），reader 卡片重排後那 41px 就是標題上方的純空白。
+  // 只中和「量得出來確實看不見」的（見 passHeadingPseudoSpacerReset）。
+  const HEADING_SPACER_BEFORE_ATTR = 'data-jread-heading-spacer-before';
+  const HEADING_SPACER_AFTER_ATTR = 'data-jread-heading-spacer-after';
   const HEADING_LINK_ATTR = 'data-jread-heading-link';
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
   // v0.8.49：「div 當段落」標記。部分 CMS（upmedia 等）把主文段落輸出成無
@@ -1165,6 +1172,20 @@ html [${ARTICLE_ATTR}="1"] main {
   height: 0 !important;
   min-height: 0 !important;
   aspect-ratio: auto !important;
+}
+/* v1.8.4：標題自帶的不可見 pseudo 間距佔位歸零（標記端見
+   passHeadingPseudoSpacerReset——只標「量得出來完全看不見」的 pseudo）。
+   刻意不用 display:none：空的 block pseudo 是父層 margin collapse 的邊界，
+   拿掉會讓標題的 margin 穿透到父容器、間距在別處變樣；歸零佔位保留該邊界。
+   html 前綴把 specificity 提到 (0,1,2)，贏過站方 .class::before。 */
+html [${HEADING_SPACER_BEFORE_ATTR}="1"]::before,
+html [${HEADING_SPACER_AFTER_ATTR}="1"]::after {
+  height: 0 !important;
+  min-height: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 /* v0.7.87：媒體 element 強制 display: block，避免 inline default 配 large
    naturalHeight + 父層 line-height baseline 對齊讓 IMG top 跑到負 y、視覺
@@ -3807,6 +3828,11 @@ html.${HTML_CLASS}.jread-orion body {
   // 高度 0 的 content box → 被 overflow 整個裁掉（影片框只剩空白）。
   // v1.8.2：::before / ::after aspect 佔位的 padding 門檻（見 passAspectPseudoReset）
   const ASPECT_PSEUDO_MIN_PAD = 40;
+  // v1.8.4：標題 pseudo 純間距佔位的淨垂直高度門檻（height + 上下 margin）。
+  // 12px 以下是站方的細部間距微調（reader 內看不出來、動了反而風險大於收益）；
+  // nytimes 那條淨佔位 41px。負 margin 相消的 anchor-offset hack（height:80px;
+  // margin-top:-80px）淨值 0，自動落在門檻外、不會被動到。
+  const HEADING_SPACER_MIN_NET = 12;
   // 子樹掃描上限：候選容器是 class 含 placeholder / ratio / object-fit 的
   // wrapper，正常 embed 子樹極小（個位數元素）。超過此數幾乎必是把整個版面
   // 包進來的 layout 容器，掃它只是白花 getComputedStyle。
@@ -4125,10 +4151,12 @@ html.${HTML_CLASS}.jread-orion body {
       const bylineDispSnap = [];
       // v1.8.3：首 / 末「可見」direct child 標記（見 EDGE_FIRST_ATTR 註解）
       const edgeMarks = [];
+      // v1.8.4：標題不可見 pseudo 間距佔位標記（見 passHeadingPseudoSpacerReset）
+      const headingSpacerMarks = [];
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -4828,6 +4856,62 @@ html.${HTML_CLASS}.jread-orion body {
           firstInkPriorMt = firstInk.style.getPropertyValue('margin-top');
           firstInkPriorMtPriority = firstInk.style.getPropertyPriority('margin-top');
           firstInk.style.setProperty('margin-top', '0', 'important');
+        }
+      };
+
+      const passHeadingPseudoSpacerReset = () => {
+        // v1.8.4：標題（h1-h6）自帶的「不可見 ::before / ::after 純間距佔位」歸零
+        // （Jimmy 2026-09-03 第二輪回報 nytimes：v1.8.3 清掉站方 article padding 後，
+        // 標題文字上方仍空——h1 box 71px 高、文字行只有 39px，多出來的是
+        // `h1::before { content:""; display:block; height:1px; margin:12px 0 28px }`，
+        // 完全透明、無 border、無背景，純粹是站方版面間距 / 曾經的裝飾線殘骸；
+        // reader 卡片重排後它就是標題上方 41px 的死空間）。
+        // 為何既有機制不管用：這不是元素、不在 querySelectorAll 裡，cleaner 掃不到；
+        // passAspectPseudoReset 只掃 mediaAncestors 且認垂直 padding（這條是 margin）。
+        // 通則（硬規則 3，非站點 / class 特判）：pseudo 有 content 但「量得出來完全
+        // 看不見」（透明背景 + 無背景圖 + 四邊 border 0 + 無 box-shadow + content 是
+        // 空字串），卻佔掉可觀的垂直空間 → 那是版面間距 hack，不是設計語彙，reader
+        // 內一律歸零。可見的 pseudo（h2 前的彩色短線那種）不動——那是站點 typography
+        // 的一部分，保留比清掉好。
+        // 淨佔位用 height + marginTop + marginBottom：負 margin 相消的 anchor-offset
+        // hack 自動落在門檻外（見 HEADING_SPACER_MIN_NET）。
+        const winPseudo = articleEl.ownerDocument?.defaultView;
+        if (!winPseudo || !winPseudo.getComputedStyle) return;
+        // 無 layout 引擎的環境（jsdom）直接 short-circuit——同 passAspectPseudoReset：
+        // 本 pass 修的是真實 layout 才存在的死空間，且 jsdom 未實作帶 pseudo 參數的
+        // getComputedStyle。
+        const rootEl = articleEl.ownerDocument && articleEl.ownerDocument.documentElement;
+        if (!rootEl || !(rootEl.getBoundingClientRect().height > 0)) return;
+        const isTransparentBg = (c) => !c || c === 'transparent'
+          || /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)$/.test(c);
+        for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+          for (const [pseudo, attr] of [
+            ['::before', HEADING_SPACER_BEFORE_ATTR],
+            ['::after', HEADING_SPACER_AFTER_ATTR],
+          ]) {
+            let ps;
+            // 只吞 SyntaxError（jsdom nwsapi 既知行為，同 passAspectPseudoReset）
+            try { ps = winPseudo.getComputedStyle(el, pseudo); } catch (e) {
+              if (e && e.name === 'SyntaxError') break;
+              throw e;
+            }
+            if (!ps) continue;
+            // content 必須是空字串——'none' / 'normal' 代表 pseudo 不存在，
+            // 有文字或 url() 的則是真的看得見的內容
+            const content = ps.content;
+            if (content !== '""' && content !== "''") continue;
+            if (!isTransparentBg(ps.backgroundColor)) continue;
+            if (ps.backgroundImage && ps.backgroundImage !== 'none') continue;
+            if (ps.boxShadow && ps.boxShadow !== 'none') continue;
+            if (['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']
+              .some((k) => (parseFloat(ps[k]) || 0) > 0)) continue;
+            const net = (parseFloat(ps.height) || 0)
+              + (parseFloat(ps.marginTop) || 0)
+              + (parseFloat(ps.marginBottom) || 0);
+            if (net <= HEADING_SPACER_MIN_NET) continue;
+            el.setAttribute(attr, '1');
+            headingSpacerMarks.push({ el, attr });
+          }
         }
       };
 
@@ -6388,6 +6472,7 @@ html.${HTML_CLASS}.jread-orion body {
         passInstallListeners,
         passFirstInkTopMargin,
         passVisibleEdgeChildMarks,
+        passHeadingPseudoSpacerReset,
         passBylineKicker,
         passCjkDecorInlineFlowMarks,
         passAncestorPaddingStrip,
@@ -6581,6 +6666,12 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.8.3：移除首 / 末可見 direct child 標記
       if (Array.isArray(snapshot.edgeMarks)) {
         for (const m of snapshot.edgeMarks) {
+          if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
+        }
+      }
+      // v1.8.4：移除標題 pseudo 間距佔位標記
+      if (Array.isArray(snapshot.headingSpacerMarks)) {
+        for (const m of snapshot.headingSpacerMarks) {
           if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
         }
       }
