@@ -1251,6 +1251,20 @@ ${MEDIA_CAP_SEL} {
   width: 100% !important;
   height: auto !important;
 }
+/* v1.8.5：icon 圖（作者頭像 / badge / logo）釘寬的第二通道。capIconImg 原本只靠
+   inline 的 max-width:Xpx !important，實測**不保證贏**——換日線 crossing.cw.com.tw
+   作者頭像上，jread 自己那兩條 max-width:100% !important（img:not(a > img) 與
+   html [ARTICLE] :not([PLAYER])）就壓過了 inline important（cage 實證：把兩條
+   deleteRule 掉，頭像立刻從 300px 收回站方顯示的 150px）。
+   修法：釘寬值同時寫進 inline custom property --jread-icon-max，由本規則消費。
+   attribute 寫三次 = specificity (0,4,1)，高過上述兩條（(0,1,3) / (0,2,1)），
+   同一張 sheet 內純 specificity 決勝、不受 inline vs stylesheet 的 important
+   排序影響。沒有 custom property 時 fallback 100%（等同原本行為，無副作用）。
+   width:auto 對稱補上：釘的是「不得比站方顯示更寬」，寬度仍由內容/容器決定。 */
+[${ARTICLE_ATTR}="1"] img[${ICON_IMG_ATTR}][${ICON_IMG_ATTR}][${ICON_IMG_ATTR}] {
+  max-width: var(--jread-icon-max, 100%) !important;
+  width: auto !important;
+}
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
    或 padding-bottom hack 撐高度（cna.com.tw <picture style="--aspect-ratio:
@@ -4195,22 +4209,50 @@ html.${HTML_CLASS}.jread-orion body {
         // v0.8.90：把作者刻意縮小的小圖釘回原始顯示寬。量到的 renderedW 以 inline
         // !important max-width 覆寫，杜絕 img:not(a>img) 的 width:auto 退回
         // naturalWidth 放大。記 prev 供 restore 對稱還原（與 titleFsSnap 同款）。
+        // v1.8.5：inline !important 不是 cascade 的保證勝局——換日線實測，jread 自己
+        // 的 `img:not(a > img) { max-width:100% !important }` 與 `html [ARTICLE]
+        // :not([PLAYER]) { max-width:100% !important }` 就贏過 img 的 inline
+        // `max-width:150px !important`（把這兩條 deleteRule 掉，頭像立刻收回 150px，
+        // cage 實證）。因此釘寬同時走第二條通道：把值放進 inline custom property
+        // `--jread-icon-max`，由下方 tripled-attr CSS 規則（specificity 0,4,1，
+        // 高過上述兩條）消費。inline max-width 保留當第一通道（多數站有效、既有
+        // spec 依賴），兩條同值、無視覺差。
         const capIconImg = (img, renderedW) => {
           if (img.hasAttribute(ICON_IMG_ATTR)) return;
           iconImgs.push({
             img,
             prevMw: img.style.getPropertyValue('max-width'),
             prevMwP: img.style.getPropertyPriority('max-width'),
+            prevVar: img.style.getPropertyValue('--jread-icon-max'),
+            prevW: img.style.getPropertyValue('width'),
+            prevWP: img.style.getPropertyPriority('width'),
           });
           img.setAttribute(ICON_IMG_ATTR, '1');
           img.style.setProperty('max-width', Math.round(renderedW) + 'px', 'important');
+          img.style.setProperty('--jread-icon-max', Math.round(renderedW) + 'px');
+          // v1.8.5 第三通道：直接釘 width。換日線實測連 tripled-attr CSS 規則
+          // （specificity 0,4,1、!important、確認 matches）都輸給 jread 自己那兩條
+          // max-width:100%，但同一元素的 inline width !important 照樣生效（cage
+          // 逐條實驗）——max-width 這個屬性在該頁被某個 cascade 位階鎖住，width 沒有。
+          // min(Xpx, 100%) 而非 Xpx：容器比原顯示寬更窄時（手機版心）仍收斂，不溢出。
+          img.style.setProperty('width', `min(${Math.round(renderedW)}px, 100%)`, 'important');
         };
         // v1.7.43 T11：content 尺寸量測（natural 優先、不可靠時 rect fallback，
         // 任一維 >= CONTENT_IMG_MIN）——tryMarkContentImg / tryMarkUpscaleImg
         // 共用（原兩份逐字重複）
+        // v1.8.5：`!complete` 時 naturalWidth/Height 是**上一張 src 的殘值**，不是
+        // 這張圖的尺寸——cleaner.hydrateLazyImages 把 data-src 換進 src 後、新圖
+        // 載入前，naturalWidth 仍停在 lazy placeholder 的大小。換日線作者頭像實測：
+        // placeholder 630×2（1px 佔位條）→ 630 >= CONTENT_IMG_MIN 直接判 content
+        // size → 站方顯示 150×150 的頭像即時被標 upscale（width:100% 撐成 608×608
+        // 圓形滿版蓋住 bio），連 load listener 補分類的機會都沒有。
+        // 未載入時只信 `img.width`（HTML 屬性 / rendered 寬）與 rect——都是站方
+        // CSS 決定的顯示尺寸，才是「這是不是一張內容配圖」的可靠訊號。
         const measureIsContentSize = (img) => {
-          if ((img.naturalWidth || img.width) >= CONTENT_IMG_MIN ||
-              (img.naturalHeight || img.height) >= CONTENT_IMG_MIN) return true;
+          const natW = img.complete ? img.naturalWidth : 0;
+          const natH = img.complete ? img.naturalHeight : 0;
+          if ((natW || img.width) >= CONTENT_IMG_MIN ||
+              (natH || img.height) >= CONTENT_IMG_MIN) return true;
           const r = img.getBoundingClientRect();
           return r.width >= CONTENT_IMG_MIN || r.height >= CONTENT_IMG_MIN;
         };
@@ -4244,7 +4286,15 @@ html.${HTML_CLASS}.jread-orion body {
         // 被當 inline emoji 標記、載入後維持 inline 不被 media block 規則撐開（全圖
         // 1×1 視覺消失）。此時跳過 natural 判定、一律改用 rect（站點通常已用
         // padding-bottom sizer 預留 reserved 尺寸，rect 可信）。
-        const classifyImg = (img) => {
+        // v1.8.5：`preRect` = 這張 img 在「reader CSS 尚未套用」時的 rendered rect
+        // 快照，只由 lazy 圖的 load listener 補分類路徑傳入（見下方兩處 onLoad）。
+        // 動機：下面兩條防放大 gate（capIcon / v1.7.57 低解析上限）判的是「站方
+        // 自己把這張圖顯示成多大」，必須量原站 CSS 下的尺寸；補分類發生在圖載入
+        // 之後，那時 ARTICLE_ATTR 早已設定、reader stylesheet 生效，即時 rect 量
+        // 到的是「已被 reader 撐開後」的值（換日線作者頭像實測 608×608），gate 的
+        // rect 門檻永遠不可能命中 → 等於整條防放大保護對 lazy 圖失效。
+        // 即時路徑不傳 preRect（此時 rect 本來就是原站值），行為完全不變。
+        const classifyImg = (img, preRect) => {
           if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return;
           const w = img.naturalWidth || img.width;
           const h = img.naturalHeight || img.height;
@@ -4292,11 +4342,12 @@ html.${HTML_CLASS}.jread-orion body {
           // 放大）——本判斷已在該分支上方，移除排除即生效。
           if (img.complete && img.naturalWidth > 1 &&
               img.getAttribute(PLAYER_ATTR) !== '1') {
-            if (!r) r = img.getBoundingClientRect();
-            if (r.width > INLINE_IMG_MAX && r.width < CONTENT_IMG_MIN &&
-                r.height > INLINE_IMG_MAX && r.height < CONTENT_IMG_MIN &&
-                img.naturalWidth > r.width * 1.5) {
-              capIconImg(img, r.width);
+            // v1.8.5：站方顯示尺寸一律取 preRect（有的話）——見 classifyImg 簽名註解
+            const gr = preRect || r || (r = img.getBoundingClientRect());
+            if (gr.width > INLINE_IMG_MAX && gr.width < CONTENT_IMG_MIN &&
+                gr.height > INLINE_IMG_MAX && gr.height < CONTENT_IMG_MIN &&
+                img.naturalWidth > gr.width * 1.5) {
+              capIconImg(img, gr.width);
               return;
             }
           }
@@ -4323,8 +4374,9 @@ html.${HTML_CLASS}.jread-orion body {
               img.getAttribute(PLAYER_ATTR) !== '1' &&
               img.naturalWidth < CONTENT_IMG_MIN && img.naturalHeight < CONTENT_IMG_MIN &&
               !isSvgImg(img)) {
-            if (!r) r = img.getBoundingClientRect();
-            const cap = Math.max(img.naturalWidth, Math.round(r.width) || 0);
+            // v1.8.5：同上，「進 reader 前的 rendered 寬」對 lazy 補分類路徑＝preRect
+            const gr = preRect || r || (r = img.getBoundingClientRect());
+            const cap = Math.max(img.naturalWidth, Math.round(gr.width) || 0);
             if (cap > 0) { capIconImg(img, cap); return; }
           }
           // 大內容圖被 `<a>`（lightbox / photoswipe）包住時，img:not(a > img) 的
@@ -4343,7 +4395,11 @@ html.${HTML_CLASS}.jread-orion body {
           // margin）。below-fold lazy 圖在使用者捲到時才 load → 屆時才標，自適應載入時序。
           if (img.closest('a')) {
             if (!tryMarkContentImg(img) && !img.complete) {
-              const onLoad = () => tryMarkContentImg(img);
+              // v1.8.5：補標改走完整 classifyImg（帶 pre-reader rect 快照），不再
+              // 只跑 tryMarkContentImg——後者繞過上方兩條防放大 gate，lazy 頭像
+              // 載入後直接被當內容圖撐滿版心（見 classifyImg 簽名註解）。
+              const snap = preRect || img.getBoundingClientRect();
+              const onLoad = () => classifyImg(img, snap);
               img.addEventListener('load', onLoad);
               contentImgLoadCleanup.push({ img, onLoad });
             }
@@ -4357,7 +4413,13 @@ html.${HTML_CLASS}.jread-orion body {
           // 原尺寸（不反向放大成滿版）。lazy bare 圖同 a 包路徑掛 load listener 補標。
           if (img.getAttribute(PLAYER_ATTR) !== '1') {
             if (!tryMarkUpscaleImg(img) && !img.complete) {
-              const onLoad = () => tryMarkUpscaleImg(img);
+              // v1.8.5：同 a 包路徑——補標走完整 classifyImg + pre-reader 快照。
+              // 換日線作者頭像實證（Jimmy 2026-09-03）：站方顯示 150×150、來源
+              // 300×300 的 lazy 頭像，cleaner hydrate 後在 apply 當下 !complete →
+              // 舊路徑載入後只跑 tryMarkUpscaleImg（natural 300 >= 200 即標
+              // upscale）→ width:100% 撐成 608×608 圓形滿版。
+              const snap = preRect || img.getBoundingClientRect();
+              const onLoad = () => classifyImg(img, snap);
               img.addEventListener('load', onLoad);
               contentImgLoadCleanup.push({ img, onLoad });
             }
@@ -6567,6 +6629,11 @@ html.${HTML_CLASS}.jread-orion body {
           if (!s || !s.img) continue;
           if (s.prevMw) s.img.style.setProperty('max-width', s.prevMw, s.prevMwP || '');
           else s.img.style.removeProperty('max-width');
+          // v1.8.5：第二 / 第三通道（custom property + 釘寬）同步還原
+          if (s.prevVar) s.img.style.setProperty('--jread-icon-max', s.prevVar);
+          else s.img.style.removeProperty('--jread-icon-max');
+          if (s.prevW) s.img.style.setProperty('width', s.prevW, s.prevWP || '');
+          else s.img.style.removeProperty('width');
           if (s.img.removeAttribute) s.img.removeAttribute(ICON_IMG_ATTR);
         }
       }
