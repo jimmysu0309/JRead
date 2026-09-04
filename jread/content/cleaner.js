@@ -3802,6 +3802,23 @@
   const HASHTAG_MIN_COUNT = 3;
   const HASHTAG_RATIO = 0.8;
   const HASHTAG_NARRATIVE_TEXT_MAX = 5;
+  // v1.8.11：hashtagClusterHideTarget 的 hasMainBlock guard 改用 CJK 權重長度
+  // （NS.cjkWeightedLen，中日韓字算 2、其餘算 1）量這個門檻——中文一個字的
+  // 資訊量約等於兩個拉丁字元，同一句「這是實質內容、不是 tag chip」的話，
+  // 中文版的 raw 長度永遠只有拉丁版的一半，門檻按拉丁校準時對中文站失效。
+  // theinitium.com 實證（Jimmy 2026-09-04）：post-hero 標題區 = 3 個
+  // `/tag/*` chip + `<h1>` 標題（45 字）+ 摘要 `<p>`（35 字）同一個
+  // `div[data-post-hero-content]`。兩個 block 都低於 raw 50 → hasMainBlock
+  // 為 false → 整個標題區被當純 tag bar 隱藏、閱讀模式完全沒有標題。
+  // 權重後 h1=74 / p=64，guard 正常生效。同族先例：v0.8.141 短中文標題長度
+  // 門檻、v1.7.40 detector title gate。
+  //
+  // 為何 hideInsideArticleDirectChildLinkBlocks 的兩個呼叫點（hasLongP /
+  // subtreeHasLongNonAnchorText）**刻意維持 raw 長度**：那裡守的是「推薦
+  // card grid 不要整塊 hide」，改權重會把門檻對中文站有效地砍半 → 中文站
+  // 常見的 20~25 字卡片摘要就足以讓整片推薦區豁免、雜訊反而漏網。
+  // tag bar 這側沒有對稱風險——tag chip 本身包在 <a> 內（掃描時 skip），
+  // 非 anchor 的 <li>/label 不可能長到 25 個中文字。
   const HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN = 50;
   const TAG_BAR_ANCHOR_MAX_LEN = 24;  // 分類/標籤連結屬短文字；超過視為敘述性連結
   // v0.8.77：taxonomy href 訊號——tag chip 的 `#` 常是 CSS `::before` 裝飾、不在
@@ -3879,7 +3896,7 @@
     let hasMainBlock = false;
     for (const block of el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote')) {
       if (block.closest && block.closest('a')) continue;
-      if (norm(block.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
+      if (NS.cjkWeightedLen(norm(block.textContent)) >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) {
         hasMainBlock = true;
         break;
       }
