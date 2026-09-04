@@ -6488,6 +6488,19 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (el.ownerSVGElement) continue;
       if (el.shadowRoot) continue;
+      // v1.8.9：heading 子樹一律不套用。本規則原本宣告「label 是 h1–h6 時不
+      // 套用」，但實作只擋到「子分支是 heading」那條 path，漏了「容器自己就是
+      // heading（或在 heading 內）」——章節標題本來就是一段短文字，一旦標題內
+      // 有任何被我們清空的分支就百分之百命中本規則。
+      // chinatalk.media（Substack 通用結構）實證：
+      //   <h1 class="header-anchor-post">
+      //     <span>章節標題文字<button 錨點連結鈕></button></span>  ← label 分支
+      //     <div class="header-anchor-parent">…</div>              ← 錨點殼，被清空
+      //   </h1>
+      // 六個章節標題被清掉三個；翻譯成中文後標題字數全部掉到 40 字以下 → 只剩
+      // 句末有問號的那個活著（Jimmy 2026-09-03 回報）。heading 內的孤兒 label
+      // 收掉本來也沒有價值——標題自己就是 label。
+      if (el.closest && el.closest('h1, h2, h3, h4, h5, h6')) continue;
       // 需要「label 分支」與「被清空分支」兩支才成立
       if (el.children.length < 2) continue;
       const rect = el.getBoundingClientRect();
