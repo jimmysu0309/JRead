@@ -598,6 +598,25 @@
     // v0.8.38：策略期間共用祖先鏈 cache（理由見 withAncestorCache 註解）
     return withAncestorCache(_detectBySchemaOrgImpl);
   }
+  // v1.8.10：schema 標記落在文件根（`<html>` / `<body>`）時不可當主文容器。
+  // 場景（forum.ettoday.net /news/1781154 實測）：站點把
+  // `<html itemscope itemtype="http://schema.org/NewsArticle">` 掛在根元素
+  // 宣告「這份文件是一篇新聞」，Layer A 取最長候選 → `<html>` 必然最長、
+  // 永遠勝出 → articleEl = documentElement。後果不是偵測失敗（cleaner 仍
+  // 隱藏 chrome、看起來像進了閱讀模式），而是**版心整個失效**：styler 的
+  // `html [data-jread-active="1"]` 卡片規則套在 `<html>` 上，max-width /
+  // margin auto / padding / 圓角 / 陰影對 root element 都無視覺意義，內文
+  // 直接鋪滿 viewport（Jimmy 回報「無法控制版面寬度」）。
+  //
+  // 通則：itemtype 掛在 root 是「文件層級」宣告（Schema.org 允許、SEO 常見
+  // 作法），語意上不指向任何「內容容器」；只有非 root 元素上的 itemtype 才
+  // 是容器型標記。排除後自然往下走 Layer B（itemprop="articleBody"）或
+  // heuristic，兩者都會選到真正的內層主文容器。與既有 promote / LCA guard
+  // 的「不可升到 body / html」是同一條結構性紅線（第 1096、1322 行）。
+  function isDocumentRootEl(el) {
+    return el === document.documentElement || el === document.body;
+  }
+
   function _detectBySchemaOrgImpl() {
     // Layer A：容器型 itemtype（最精確）
     const typeSelectors = [
@@ -606,7 +625,8 @@
       '[itemtype*="Article" i]'
     ];
     for (const sel of typeSelectors) {
-      const candidates = Array.from(document.querySelectorAll(sel));
+      const candidates = Array.from(document.querySelectorAll(sel))
+        .filter(el => !isDocumentRootEl(el));
       // 頁面可能多個（例如相關文章 list 也標 Article），取最長
       const best = candidates
         .map(el => ({ el, len: scoredTextLen(el) }))
@@ -619,7 +639,8 @@
 
     // Layer B：itemprop="articleBody" fallback（多家站點未掛 itemtype、
     // 但內層 content element 掛了 itemprop）
-    const bodyCandidates = Array.from(document.querySelectorAll('[itemprop="articleBody"]'));
+    const bodyCandidates = Array.from(document.querySelectorAll('[itemprop="articleBody"]'))
+      .filter(el => !isDocumentRootEl(el));
     const bestBody = bodyCandidates
       .map(el => ({ el, len: scoredTextLen(el) }))
       .filter(x => x.len >= MIN_TEXT_LEN)
@@ -1529,6 +1550,7 @@
       if (result) {
         result.el = narrowToFirstArticleBlock(result.el);
       }
+
       // 最終保護：無條件再做一次「articleEl 必須含 H1」的結構性升級。
       // 動機：商業周刊 blog 路由實測（Jimmy 2026-04-27）reload v0.7.41 後 console
       // 證實 og.text === h1.text、LCA(article, h1)=MAIN.Single、distance=1、layer 2
