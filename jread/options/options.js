@@ -663,6 +663,10 @@ if (resetBtn) {
     delete payload.instapaperToken;       // 保留 Instapaper 連結
     delete payload.instapaperTokenSecret; // 保留 Instapaper 連結
     delete payload.instapaperUsername;    // 保留 Instapaper 連結
+    // v1.9.0：設定檔是使用者資產（比照憑證），回復預設不清；套用中的設定檔
+    // 名稱也保留（回復後欄位與快照不同，popup 下次 save 會自行判定失效）。
+    delete payload.profiles;
+    delete payload.activeProfile;
     payload.floatingIcon = null;  // 回復三態（未設過 → 預設開）
     payload.floatingIconPos = null; // 清掉拖移位置
     // v0.8.164：browser.storage.sync.set 原生 Promise——reject（失敗）走錯誤訊息。

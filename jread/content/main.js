@@ -1775,7 +1775,8 @@
       if (!NS.state.articleEl || !NS.styler) return;
       // v0.7.227：pagedMode 走 reapply 路徑——CSS 注入/移除需要 styler 重建
       // stylesheet，模組 install/uninstall 在 scheduleReapply 尾端同步
-      const relevantKeys = ['theme', 'fontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
+      // v1.9.0：補 titleFontSize（設定檔切換只走 onChanged、不再靠 REAPPLY_SETTINGS 補）
+      const relevantKeys = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();

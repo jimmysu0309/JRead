@@ -431,6 +431,15 @@
     }
     .font-family-select:hover { border-color: var(--jr-neutral-500); }
     .font-family-select:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
+    /* v1.9.0：設定檔命名框——沿用 select 的 110px / 26px 盒子（同列同寬不跳版），
+       去掉下拉箭頭。[hidden] 靠 UA display:none（本 class 沒設 display，不需 !important）。 */
+    .profile-name-input {
+      background-image: none;
+      padding-right: 8px;
+      cursor: text;
+      font-family: var(--jr-font-ui);
+    }
+    .profile-name-input::placeholder { color: var(--jr-neutral-500); }
 
     /* ==========================================================
        Popup checkbox（v0.7.155 「此網域自動啟動」用）—— 與 options 同視覺
@@ -508,6 +517,16 @@
       line-height: 1;
     }
     .auto-btn:hover { background: var(--jr-neutral-100); color: var(--jr-neutral-900); }
+    /* v1.9.0：設定檔列的儲存 / 刪除鈕會 disable（未選設定檔不可刪、滿 5 組不可存），
+       與 stepper 的 disabled 同視覺 */
+    .auto-btn:disabled {
+      color: var(--jr-neutral-300);
+      background: var(--jr-neutral-50);
+      cursor: not-allowed;
+    }
+    .auto-btn:disabled:hover { background: var(--jr-neutral-50); color: var(--jr-neutral-300); }
+    /* 刪除鈕兩段確認的第二態（「確定？」）：紅字提示破壞性 */
+    .auto-btn.confirming { color: #b91c1c; border-color: #b91c1c; }
     .auto-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
     .auto-btn.active {
       background: var(--jr-primary-600);
@@ -590,6 +609,27 @@
   <div id="readwise-status" hidden></div>
 
   <section class="settings">
+    <!-- v1.9.0：設定檔——把下方整組版面設定（主題…翻頁模式，白名單見
+         settings-defaults PROFILE_KEYS）存成具名快照、一鍵切換。select 的
+         「— 自訂 —」是 sentinel：沒套用任何設定檔，或套用後又手動改過任一欄位。
+         命名走同列 inline 文字框（取代 select 顯示）——iOS sheet 與 ?panel=1
+         iframe 浮層都不能用 prompt()。 -->
+    <div class="setting-row" id="profile-row">
+      <label>設定檔</label>
+      <div class="font-controls">
+        <button class="auto-btn" id="profile-save-btn"
+          title="把目前這組版面設定存成設定檔">儲存</button>
+        <button class="auto-btn" id="profile-delete-btn"
+          title="刪除目前選取的設定檔" disabled>刪除</button>
+        <select id="profile-select" class="font-family-select" aria-label="設定檔">
+          <option value="__custom">— 自訂 —</option>
+        </select>
+        <input type="text" id="profile-name-input" class="font-family-select profile-name-input"
+          maxlength="24" placeholder="設定檔名稱" aria-label="設定檔名稱"
+          autocomplete="off" spellcheck="false" hidden>
+      </div>
+    </div>
+
     <div class="setting-row">
       <label>主題</label>
       <div class="theme-group" role="group" aria-label="主題">

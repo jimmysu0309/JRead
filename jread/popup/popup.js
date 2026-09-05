@@ -33,6 +33,11 @@ const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
 const autoDomainHostEl = document.getElementById('auto-domain-host');
 const pagedModeCb = document.getElementById('paged-mode-cb');
+// v1.9.0：設定檔列
+const profileSelect = document.getElementById('profile-select');
+const profileSaveBtn = document.getElementById('profile-save-btn');
+const profileDeleteBtn = document.getElementById('profile-delete-btn');
+const profileNameInput = document.getElementById('profile-name-input');
 
 // ---- 頁內浮層模式（v0.8.162，?panel=1）-------------------------------------
 // 懸浮按鈕長按選單的「功能選單」在非 Safari 把本 popup 以 iframe 嵌進網頁當頁內
@@ -278,6 +283,8 @@ function render(settings) {
   }
   // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
   if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
+  // v1.9.0：設定檔 select / 按鈕狀態（命名中不重建，免得蓋掉輸入框）
+  if (!profileNaming) renderProfiles(settings);
 }
 
 let current = { ...DEFAULT_SETTINGS };
@@ -332,6 +339,17 @@ function notifyContentReapply() {
 
 function save(patch) {
   Object.assign(current, patch);
+  // v1.9.0：每次改動後重新判定「目前在哪個設定檔上」——手動改到與快照不同就失效
+  //（select 回「— 自訂 —」）、改回來（字級 +1 再 −1）或剛好改成某組快照則重新
+  // 對上。判定純看欄位值，select 永遠說實話。套用設定檔 / 手動選「自訂」的 patch
+  // 自帶 activeProfile，不走這條。變動併進同一次 storage.set，不多一次寫。
+  if (PROFILES && !('activeProfile' in patch)) {
+    const next = resolveActiveProfile(current);
+    if (next !== (current.activeProfile ?? null)) {
+      patch = { ...patch, activeProfile: next };
+      current.activeProfile = next;
+    }
+  }
   Object.assign(pendingPatch, patch);
   render(current);
   if (saveTimer) clearTimeout(saveTimer);
@@ -360,6 +378,9 @@ browser.storage.sync.get(DEFAULT_SETTINGS).then((values) => {
   // v0.8.36：merge pendingPatch——popup 開啟瞬間使用者已點擊的變更（Promise
   // resolve 前累積在 pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI
   current = { ...DEFAULT_SETTINGS, ...values, ...pendingPatch };
+  // v1.9.0：storage 裡的 activeProfile 可能過期（options 回復預設 / 外部改動），
+  // 載入時依欄位值重判、只改顯示不寫回（下次 save 才會落地）
+  if (PROFILES) current.activeProfile = resolveActiveProfile(current);
   settingsReady = true;
   render(current);
 }).catch(() => {
@@ -520,6 +541,170 @@ for (const btn of fontWeightBtns) {
   btn.addEventListener('click', () => {
     save({ fontWeight: Number(btn.dataset.weight) });
   });
+}
+
+// ---- 設定檔（v1.9.0）---------------------------------------------------
+// 把 PROFILE_KEYS 那組版面設定存成具名快照（storage.sync.profiles，上限
+// PROFILES.MAX 組）、select 一鍵切換。套用 = 一次 save({...fields, activeProfile})
+// → 單次 storage.set → content 端 onChanged 只 reapply 一次（同 relevantKeys 路徑，
+// 零新協定）。純函式（snapshot / upsert / remove / sanitize）住 settings-defaults，
+// 與懸浮按鈕長按選單共用。
+const PROFILES = window.__JReadProfiles;
+const PROFILE_CUSTOM = '__custom';
+let profileNaming = false;         // inline 命名框開著（select 暫時隱藏）
+let profileDeleteConfirmTimer = null;
+
+// 設定檔快照與目前設定是否一致——只比對快照裡有的欄位（舊快照缺新欄位時不算不同）
+function profileFieldsMatch(fields, settings) {
+  if (!PROFILES || !fields) return false;
+  for (const k of PROFILES.KEYS) {
+    if (k in fields && fields[k] !== settings[k]) return false;
+  }
+  return true;
+}
+
+// 目前設定對得上哪個設定檔：優先 activeProfile 指的那組（仍相符就沿用），否則
+// 依清單順序取第一組相符者，都不符回 null（= 自訂）。
+function resolveActiveProfile(settings) {
+  const list = PROFILES.sanitize(settings.profiles);
+  const cur = PROFILES.find(list, settings.activeProfile);
+  if (cur && profileFieldsMatch(cur.fields, settings)) return cur.name;
+  const hit = list.find((p) => profileFieldsMatch(p.fields, settings));
+  return hit ? hit.name : null;
+}
+
+function renderProfiles(settings) {
+  if (!PROFILES || !profileSelect) return;
+  const list = PROFILES.sanitize(settings.profiles);
+  // 重建 option（index 0 的 sentinel 保留）
+  while (profileSelect.options.length > 1) profileSelect.remove(1);
+  for (const p of list) {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.name;
+    profileSelect.appendChild(opt);
+  }
+  const active = PROFILES.find(list, settings.activeProfile);
+  profileSelect.value = active ? active.name : PROFILE_CUSTOM;
+  if (profileSelect.value === '') profileSelect.value = PROFILE_CUSTOM;
+  if (profileDeleteBtn) {
+    profileDeleteBtn.disabled = !active;
+    profileDeleteBtn.textContent = '刪除';
+  }
+  if (profileSaveBtn) {
+    const full = !active && list.length >= PROFILES.MAX;
+    profileSaveBtn.disabled = full;
+    profileSaveBtn.textContent = '儲存';
+    profileSaveBtn.title = full
+      ? '最多 ' + PROFILES.MAX + ' 組，請先刪除一組'
+      : active
+        ? '用目前這組版面設定覆寫「' + active.name + '」'
+        : '把目前這組版面設定存成設定檔';
+  }
+}
+
+function exitProfileDeleteConfirm() {
+  if (profileDeleteConfirmTimer) { clearTimeout(profileDeleteConfirmTimer); profileDeleteConfirmTimer = null; }
+  if (profileDeleteBtn && profileDeleteBtn.classList.contains('confirming')) {
+    profileDeleteBtn.classList.remove('confirming');
+    profileDeleteBtn.textContent = '刪除';
+  }
+}
+
+function applyProfile(name) {
+  const p = PROFILES.find(current.profiles, name);
+  if (!p) { save({ activeProfile: null }); return; }
+  save({ ...p.fields, activeProfile: p.name });
+}
+
+function beginProfileNaming() {
+  profileNaming = true;
+  exitProfileDeleteConfirm();
+  profileSelect.hidden = true;
+  profileNameInput.hidden = false;
+  profileNameInput.value = '';
+  profileSaveBtn.textContent = '確定';
+  profileSaveBtn.title = '以這個名稱儲存';
+  profileDeleteBtn.disabled = false;
+  profileDeleteBtn.textContent = '取消';
+  profileNameInput.focus();
+}
+
+function endProfileNaming() {
+  profileNaming = false;
+  profileNameInput.hidden = true;
+  profileSelect.hidden = false;
+  renderProfiles(current);
+}
+
+function commitProfileNaming() {
+  const name = PROFILES.normalizeName(profileNameInput.value);
+  if (!name) { profileNameInput.focus(); return; }
+  const next = PROFILES.upsert(current.profiles, name, current);
+  endProfileNaming();
+  if (!next) return;   // 超過上限（儲存鈕本就 disabled，兜底）
+  save({ profiles: next, activeProfile: name });
+}
+
+if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNameInput) {
+  profileSelect.addEventListener('change', () => {
+    exitProfileDeleteConfirm();
+    if (!settingsReady) { renderProfiles(current); return; } // v1.7.42 R3 guard（套用以 current.profiles 為準）
+    const v = profileSelect.value;
+    if (v === PROFILE_CUSTOM) { save({ activeProfile: null }); return; }
+    applyProfile(v);
+  });
+
+  profileSaveBtn.addEventListener('click', () => {
+    if (!settingsReady) return;
+    if (profileNaming) { commitProfileNaming(); return; }
+    exitProfileDeleteConfirm();
+    const active = PROFILES.find(current.profiles, current.activeProfile);
+    if (active) {
+      // 選著設定檔時儲存 = 用目前設定覆寫它（名稱與順序不變）
+      const next = PROFILES.upsert(current.profiles, active.name, current);
+      if (next) save({ profiles: next, activeProfile: active.name });
+      return;
+    }
+    beginProfileNaming();
+  });
+
+  // 刪除走兩段確認（第一下變「確定？」、3s 內再按才刪），比照 options「回復預設」
+  profileDeleteBtn.addEventListener('click', () => {
+    if (profileNaming) { endProfileNaming(); return; }
+    if (!settingsReady) return;
+    const active = PROFILES.find(current.profiles, current.activeProfile);
+    if (!active) return;
+    if (!profileDeleteBtn.classList.contains('confirming')) {
+      profileDeleteBtn.classList.add('confirming');
+      profileDeleteBtn.textContent = '確定？';
+      profileDeleteConfirmTimer = setTimeout(exitProfileDeleteConfirm, 3000);
+      return;
+    }
+    exitProfileDeleteConfirm();
+    save({ profiles: PROFILES.remove(current.profiles, active.name), activeProfile: null });
+  });
+
+  profileNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitProfileNaming(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endProfileNaming(); }
+  });
+
+  // 跨 context 同步：懸浮按鈕長按選單切換設定檔（浮層開著時）/ 另一個 popup 實例
+  // 改了清單 → 本 popup 的 select 立刻反映。自己的寫入還在 pendingPatch 時以本地為準。
+  if (browser.storage && browser.storage.onChanged) {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync') return;
+      if (!('profiles' in changes) && !('activeProfile' in changes)) return;
+      if ('profiles' in changes && !('profiles' in pendingPatch)) {
+        current.profiles = PROFILES.sanitize(changes.profiles.newValue);
+      }
+      if ('activeProfile' in changes && !('activeProfile' in pendingPatch)) {
+        current.activeProfile = changes.activeProfile.newValue ?? null;
+      }
+      if (!profileNaming) renderProfiles(current);
+    });
+  }
 }
 
 // ---- 切換閱讀模式 ------------------------------------------------------
