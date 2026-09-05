@@ -305,7 +305,47 @@
       { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
       { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
       { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
-    ];
+    ].concat(profileMenuItems());
+  }
+
+  // ─── 設定檔切換（v1.9.0）──────────────────────────────────────────────────
+  // popup 存的設定檔（storage.sync.profiles）每組一列「設定檔：<名稱>」，套用中的
+  // 那組 icon 換成 ✓。清單與 activeProfile 於初始化讀入、onChanged 即時更新（選單
+  // 每次長按重建，標籤永遠反映當下）。沒有設定檔時不多任何列。套用 = 讀最新清單
+  //（不信快取，popup 可能剛改過）→ 一次 storage.set（fields + activeProfile）→
+  // content 端 onChanged reapply（與 popup 套用同一份事實）。純 content 本地動作、
+  // 不依賴 SW。YouTube watch 專屬選單不列（無主文可套版面）。
+  const PROFILES = (typeof window !== 'undefined' && window.__JReadProfiles) || null;
+  let profilesCache = [];
+  let activeProfileCache = null;
+  function applyProfiles(v) {
+    profilesCache = PROFILES ? PROFILES.sanitize(v) : [];
+  }
+  function applyActiveProfile(v) {
+    activeProfileCache = typeof v === 'string' ? v : null;
+  }
+  function profileMenuItems() {
+    return profilesCache.map((p) => ({
+      id: 'profile:' + p.name,
+      icon: p.name === activeProfileCache ? '✓' : '▤',
+      label: '設定檔：' + p.name,
+      action: () => applyProfile(p.name)
+    }));
+  }
+  function applyProfile(name) {
+    if (!PROFILES) return;
+    try {
+      browser.storage.sync.get({ profiles: [] }).then((s) => {
+        const p = PROFILES.find(s && s.profiles, name);
+        if (!p) {
+          if (NS.toast) NS.toast.show('找不到設定檔：' + name, { kind: 'error' });
+          return;
+        }
+        return browser.storage.sync.set(Object.assign({}, p.fields, { activeProfile: p.name })).then(() => {
+          if (NS.toast) NS.toast.show('設定檔：' + p.name, { kind: 'info' });
+        });
+      }).catch(() => {});
+    } catch (_e) {}
   }
 
   // ─── YouTube watch 專屬選單（v1.5.13）────────────────────────────────────
@@ -744,15 +784,18 @@
   const applyDefaults = () => {
     applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
     applyStorageService(undefined);
+    applyProfiles(undefined); applyActiveProfile(undefined);
   };
   try {
-    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService']).then((s) => {
+    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService', 'profiles', 'activeProfile']).then((s) => {
       if (!s) { applyDefaults(); return; }
       applySize(s.floatingIconSize);
       applyOpacity(s.floatingIconOpacity);
       applyPos(s.floatingIconPos);
       applyEnabled(RESOLVE(s.floatingIcon));
       applyStorageService(s.storageService);
+      applyProfiles(s.profiles);
+      applyActiveProfile(s.activeProfile);
     }).catch(applyDefaults);
   } catch (_e) {
     applyDefaults();
@@ -765,6 +808,8 @@
     if (changes.floatingIconPos) applyPos(changes.floatingIconPos.newValue);
     if (changes.floatingIconSize) applySize(changes.floatingIconSize.newValue);
     if (changes.storageService) applyStorageService(changes.storageService.newValue);
+    if (changes.profiles) applyProfiles(changes.profiles.newValue);
+    if (changes.activeProfile) applyActiveProfile(changes.activeProfile.newValue);
   });
 
   // regression spec（isolated world）用：暴露內部 handler 與狀態
@@ -773,6 +818,7 @@
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
     handleShortPress, togglePaged, openReader, sendToService, applyStorageService,
+    profileMenuItems, applyProfile, applyProfiles, applyActiveProfile,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
     isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,

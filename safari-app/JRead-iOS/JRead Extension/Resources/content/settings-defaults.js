@@ -185,6 +185,15 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 這會改變既有使用者升級後的外觀，要回舊樣式選 'hairline'。
     // 只作用於捲動模式：翻頁模式沒有頂端進度條，進度載體是底部頁碼（見 v1.5.4）。
     progressBarStyle: 'gradient',
+    // v1.9.0：設定檔（profile）——把 popup 那組外觀設定（PROFILE_KEYS）存成具名
+    // 快照，一鍵切換。profiles 為陣列（建立順序即 popup select / 長按選單的排列
+    // 順序）：[{ name, fields }]，fields 只含 PROFILE_KEYS 白名單欄位、上限
+    // MAX_PROFILES 組。activeProfile = 目前套用中的設定檔名稱，null = 「自訂」
+    //（沒有套用任何設定檔，或套用後又手動改過任一欄位——popup save() 遇到
+    // PROFILE_KEYS 內欄位變動就寫回 null）。兩個 key 都住 storage.sync；options
+    // 「回復預設」刻意不清（使用者資產，比照憑證）。
+    profiles: [],
+    activeProfile: null,
     // v0.7.218：自訂快速鍵。null = 未自訂。
     customShortcuts: {
       'toggle-reader-mode': null,
@@ -288,6 +297,91 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     return out;
   }
 
+  // ─── 設定檔（profile，v1.9.0）────────────────────────────────────────────
+  // 白名單 = popup 面板上會影響閱讀版面的欄位（含翻頁模式）。刻意排除
+  // autoEnableDomains（網域專屬、不是外觀）與 options 頁所有欄位。popup（存 /
+  // 套用）與 content floating-icon（長按選單切換）共用同一份，兩端不得各自手寫。
+  const PROFILE_KEYS = [
+    'theme', 'fontSize', 'titleFontSize', 'lineHeight', 'paragraphSpacing',
+    'contentWidth', 'fontWeight', 'fontFamily', 'latinSerif', 'latinSans', 'pagedMode'
+  ];
+  const MAX_PROFILES = 5;
+  const MAX_PROFILE_NAME_LEN = 24;
+
+  // 名稱正規化：去頭尾空白、壓成單一空白、截長。回 '' 代表不合法。
+  function normalizeProfileName(name) {
+    if (typeof name !== 'string') return '';
+    return name.replace(/\s+/g, ' ').trim().slice(0, MAX_PROFILE_NAME_LEN);
+  }
+
+  // 從一份 settings 抽出 PROFILE_KEYS 快照（只帶存在的欄位，未定義者略過）。
+  function snapshotProfileFields(settings) {
+    const out = {};
+    if (!settings || typeof settings !== 'object') return out;
+    for (const k of PROFILE_KEYS) {
+      if (settings[k] !== undefined) out[k] = settings[k];
+    }
+    return out;
+  }
+
+  // storage 讀回的 profiles 消毒：非陣列 / 元素損壞 / 名稱重複（首見者留）/
+  // 超過上限一律修剪，回傳新陣列（不動原物件）。fields 只留白名單欄位。
+  function sanitizeProfiles(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const p of raw) {
+      if (!p || typeof p !== 'object') continue;
+      const name = normalizeProfileName(p.name);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push({ name, fields: snapshotProfileFields(p.fields) });
+      if (out.length >= MAX_PROFILES) break;
+    }
+    return out;
+  }
+
+  function findProfile(list, name) {
+    const n = normalizeProfileName(name);
+    if (!n) return null;
+    for (const p of sanitizeProfiles(list)) if (p.name === n) return p;
+    return null;
+  }
+
+  // 新增或覆寫（同名即覆寫、位置不變；新名稱附加在尾端）。超過上限回 null
+  //（呼叫端據此 disable 儲存鈕），其餘回新陣列。
+  function upsertProfile(list, name, fields) {
+    const n = normalizeProfileName(name);
+    if (!n) return null;
+    const cur = sanitizeProfiles(list);
+    const snap = snapshotProfileFields(fields);
+    const idx = cur.findIndex((p) => p.name === n);
+    if (idx !== -1) {
+      cur[idx] = { name: n, fields: snap };
+      return cur;
+    }
+    if (cur.length >= MAX_PROFILES) return null;
+    cur.push({ name: n, fields: snap });
+    return cur;
+  }
+
+  function removeProfile(list, name) {
+    const n = normalizeProfileName(name);
+    return sanitizeProfiles(list).filter((p) => p.name !== n);
+  }
+
+  const PROFILES = {
+    KEYS: PROFILE_KEYS,
+    MAX: MAX_PROFILES,
+    MAX_NAME_LEN: MAX_PROFILE_NAME_LEN,
+    normalizeName: normalizeProfileName,
+    snapshot: snapshotProfileFields,
+    sanitize: sanitizeProfiles,
+    find: findProfile,
+    upsert: upsertProfile,
+    remove: removeProfile
+  };
+
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
   // globalThis；jsdom regression spec 走 module.exports。
   global.__JReadSettingsDefaults = DEFAULT_SETTINGS;
@@ -299,6 +393,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
   global.__JReadLatinFonts = LATIN_FONTS;
   global.__JReadComposeFontStack = composeFontStack;
+  global.__JReadProfiles = PROFILES;
   // module.exports 維持 === DEFAULT_SETTINGS（既有呼叫端契約，不可附掛其他 key
   // 否則污染 Object.keys / 被當設定欄位寫進 storage）。jsdom spec 需要 font
   // stacks 時 require 本檔後讀 globalThis.__JReadFontStacks。
