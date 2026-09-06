@@ -3056,7 +3056,13 @@
   // v1.7.11 culpium translate-first 四測：Restack 第四種譯法「次重推」（Jimmy 實機
   // 「16 個讚 · 1 次重推」；同頁 probe 本輪跑出「16 贊∙1 重新堆疊」——再證譯法逐次
   // 不穩定）→ 反應名詞補 重推（簡繁同形）。
-  const REACTION_COUNT_RE = /^(\s*\d[\d,.]*\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉貼|转贴|轉推|转推|重推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
+  // v1.9.1 slowboring translate-first 實測（Jimmy 2026-09-06 截圖「285 個讚 · 七次轉貼」）：
+  // Google MT 把小數字翻成**中文數字**「七」——反應名詞「轉貼」早在清單內，漏網的是
+  // 計數本身：舊 pattern 每個 token 只認阿拉伯數字 `\d` 開頭。同頁 probe 本輪跑出
+  // 「285 贊∙7 重新堆疊」（再證譯法逐次不穩定）。修法：計數允許中文數字 run
+  // （零〇一二三四五六七八九十百千萬兩），其餘結構（量詞前綴 + 已知反應名詞收尾 +
+  // 整段純計數）全部不動——「十分感謝」「一年」因不以反應名詞收尾照樣 miss。
+  const REACTION_COUNT_RE = /^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬两兩]+)\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉貼|转贴|轉推|转推|重推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
