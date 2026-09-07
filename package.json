@@ -1,6 +1,6 @@
 {
   "name": "jread",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "private": true,
   "description": "JRead — Chrome Extension 純閱讀模式。開發端 package.json，僅用於測試。",
   "scripts": {

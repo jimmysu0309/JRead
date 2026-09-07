@@ -1937,8 +1937,32 @@
     recordLinkIntent(decision.url);
   }
 
+  // v1.9.2：閱讀模式下內容圖連結（站方 lightbox 觸發器）點擊吞掉。決策在 link-follow.js
+  // shouldSwallowImageLinkClick（含根因與範圍說明）；此處只收集 DOM 事實 + 攔事件。
+  // window capture：早於站方 React / 委派 root handler，stopImmediatePropagation 才擋得住
+  // lightbox portal 的掛載；preventDefault 擋原生導航到圖檔。
+  function onReaderImageLinkClick(e) {
+    if (!NS.state.active || !NS.state.articleEl) return;
+    const LF = window.__JReadLinkFollow;
+    if (!LF || !LF.shouldSwallowImageLinkClick) return;
+    const t = e.target;
+    const a = t && t.closest ? t.closest('a[href]') : null;
+    if (!a) return;
+    const swallow = LF.shouldSwallowImageLinkClick({
+      button: e.button,
+      metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey,
+      href: a.href,
+      inArticle: NS.state.articleEl.contains(a),
+      wrapsMedia: !!a.querySelector('img, picture')
+    });
+    if (!swallow) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+
   (function installReaderLinkFollow() {
     if (window.top !== window.self) return; // 導航延續只對主框架有意義
+    window.addEventListener('click', onReaderImageLinkClick, true);
     // bubble phase（capture:false）：站點 SPA router 的 preventDefault 已在此前發生，
     // 才讀得到 e.defaultPrevented=true（capture phase 早於站點 handler、永遠讀到 false）。
     document.addEventListener('click', onReaderLinkClick, false);
