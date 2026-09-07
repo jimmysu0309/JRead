@@ -65,13 +65,46 @@
     return null;
   }
 
-  // 找主貼文 message wrapper：最長的 [data-ad-comet-preview="message"]。
-  // 為何挑最長：sidebar 推薦的 message 通常被 FB 截斷到 20 字以內並附「查看更多」
+  // 主貼文文字 wrapper 的兩個 FB 內部 marker：
+  //   - `data-ad-comet-preview="message"`：v0.7.157 起的原始訊號
+  //   - `data-ad-rendering-role="story_message"`：包在 message 外一層的父 marker
+  // v1.9.3（Jimmy 2026-09-07 回報社團 modal 貼文進不了閱讀模式）：cage probe
+  // 真實 /groups/<gid>/?multi_permalinks= 頁面，modal 內的主貼文（帶 h4 標題的
+  // 長文形態）只有 story_message、**沒有** message marker；頁上僅有的兩個
+  // message 反而屬於 modal 背後 feed 裡另一則不相關的短貼文——舊版只認 message
+  // 就把那則 109 字的貼文當主文 render 出來。
+  const MAIN_MSG_SELECTOR = '[data-ad-comet-preview="message"], [data-ad-rendering-role="story_message"]';
+  const MAIN_MSG_MARK = 'data-jread-fb-main';
+
+  // 候選是否被 modal 遮住：FB 開 dialog 時把底下的 feed 整棵標 aria-hidden=true
+  // （結構性訊號：a11y 樹已宣告「這段不是使用者當下在看的內容」）。
+  function behindOverlay(el) {
+    return !!(el.closest && el.closest('[aria-hidden="true"]'));
+  }
+  // 候選是否有 render box：FB 會為同一則貼文保留 display:none 的隱藏副本
+  // （probe 實測 4 個 story_message 裡 2 個 rect 全 0），沒 box 的不是使用者看的那份。
+  function isRendered(el) {
+    return !!(el.getClientRects && el.getClientRects().length > 0);
+  }
+
+  // 找主貼文 message wrapper。
+  // 候選 = message ∪ story_message；story_message 內若含 message，以 message
+  // 代表（去重，並維持舊 permalink 頁面既有的選擇結果）。
+  // 兩道**軟過濾**（濾完為空就退回上一層候選，jsdom 的 rect 恆 0 因此不受影響）：
+  //   1. 去掉 aria-hidden 祖先底下的（modal 背後的 feed）
+  //   2. 去掉沒 render box 的（隱藏副本）
+  // 最後挑最長：sidebar 推薦的 message 通常被 FB 截斷到 20 字以內並附「查看更多」
   // 連結；真正主貼文展開後是完整文字（通常 >= 100 字，常見數百到數千字）。
   function findMainMessage() {
-    const msgs = Array.from(document.querySelectorAll('[data-ad-comet-preview="message"]'));
-    if (msgs.length === 0) return null;
-    return msgs.sort((a, b) => (b.innerText || b.textContent || '').length - (a.innerText || a.textContent || '').length)[0];
+    let cands = Array.from(document.querySelectorAll(MAIN_MSG_SELECTOR));
+    cands = cands.filter(el => !(el.getAttribute('data-ad-rendering-role') === 'story_message' &&
+      el.querySelector('[data-ad-comet-preview="message"]')));
+    if (cands.length === 0) return null;
+    const notCovered = cands.filter(el => !behindOverlay(el));
+    if (notCovered.length) cands = notCovered;
+    const rendered = cands.filter(isRendered);
+    if (rendered.length) cands = rendered;
+    return cands.sort((a, b) => (b.innerText || b.textContent || '').length - (a.innerText || a.textContent || '').length)[0];
   }
 
   // 從 message wrapper 找對應的作者 profile_name。策略：找所有 profile_name，
@@ -245,7 +278,12 @@
     //   reactions+留言 wrapper linkRatio = 0.12
     //   一般附帶圖 wrapper linkRatio 預期遠小於 0.7（圖不會整個包在 <a> 內）
     // 閾值 0.7 為判別線。
-    const mainMsgClone = clone.querySelector('[data-ad-comet-preview="message"]');
+    // v1.9.3：優先用 enter() 打在原節點上的 MAIN_MSG_MARK 找 clone 內的主文
+    // （story_message 形態沒有 message marker 可查）；舊呼叫端（spec / 未經
+    // enter 的 clone）退回 message selector。用完即拆，不讓標記流進 reader DOM。
+    const marked = clone.querySelector('[' + MAIN_MSG_MARK + ']');
+    if (marked) marked.removeAttribute(MAIN_MSG_MARK);
+    const mainMsgClone = marked || clone.querySelector('[data-ad-comet-preview="message"]');
     if (mainMsgClone) {
       let node = mainMsgClone.parentElement;
       while (node && node !== clone) {
@@ -317,7 +355,9 @@
     // 的直系子（避免誤殺主文）。
     const META_RE = /(所有心情|則留言|次分享|喜歡|留言|分享|Reactions:|Comments?|Shares?|Like|Comment|Share)/i;
     const remaining = Array.from(clone.children);
-    let mainMsgInClone = clone.querySelector('[data-ad-comet-preview="message"]');
+    // v1.9.3：與上方 sibling-chain 段共用同一個主文節點（story_message 形態
+    // 沒有 message marker，重新 querySelector 會拿到 null → 主文 wrapper 失去保護）
+    const mainMsgInClone = mainMsgClone;
     for (const child of remaining) {
       if (mainMsgInClone && child.contains(mainMsgInClone)) continue;
       const text = (child.textContent || '').trim();
@@ -348,10 +388,57 @@
   // 圖（例如 Jimmy 2026-05-21 回報 Nathan Chiu 貼文的 avatar 變成內文提到的
   // Sundar Pichai 演講照）。FB DOM 結構頻繁改版，穩定 selector 難維護。
   // reader mode 是純閱讀、作者名已足夠識別，移除 avatar 視覺更乾淨。
-  function extractAuthorInfo(author) {
-    const info = { displayName: null };
+  //
+  // v1.9.3 社團貼文：FB 把 `profile_name` marker 打在**社團名**上（連結指向社團
+  // 根路徑 `/groups/<gid>/`），真正的發文者是 header 內另一個指向
+  // `/groups/<gid>/user/<uid>/` 的連結（無任何 marker）。cage probe 實測
+  // /groups/<gid>/?multi_permalinks= modal：profile_name = 「Meshtastic Taiwan
+  // Community 臺灣鏈網」、發文者「徐晴明」只在 user 連結上。判定走 URL 路徑
+  // 結構（社團根 vs 社團成員頁），不綁任何 class。發文者連結必須：在 container
+  // 內、**DOM 序在主文之前**（留言區的成員連結全在主文之後）、不在留言
+  // [role="article"] 內、有短文字。找得到就 displayName = 發文者、社團名退為
+  // groupName 副標；找不到維持舊行為（顯示 profile_name 文字）。
+  function pathnameOf(href) {
+    try {
+      return new URL(href, (typeof location !== 'undefined' && location.href) || 'https://www.facebook.com/').pathname;
+    } catch (_) {
+      return '';
+    }
+  }
+  const GROUP_ROOT_RE = /^\/groups\/[^/]+\/?$/;
+  const GROUP_MEMBER_RE = /^\/groups\/[^/]+\/user\/[^/]+\/?$/;
+
+  function findGroupPoster(container, mainMsg) {
+    if (!container || !mainMsg) return null;
+    const links = container.querySelectorAll('a[href]');
+    for (const a of links) {
+      if (!GROUP_MEMBER_RE.test(pathnameOf(a.getAttribute('href') || ''))) continue;
+      if (a.closest('[role="article"]')) continue;
+      // 主文必須在此連結之後（compareDocumentPosition：mainMsg 相對 a 的位置含 FOLLOWING）
+      if (!(a.compareDocumentPosition(mainMsg) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+      const text = (a.innerText || a.textContent || '').trim();
+      if (!text || text.length > 60) continue;
+      return text;
+    }
+    return null;
+  }
+
+  function extractAuthorInfo(author, container, mainMsg) {
+    const info = { displayName: null, groupName: null };
     if (!author) return info;
-    info.displayName = (author.innerText || author.textContent || '').trim() || null;
+    const name = (author.innerText || author.textContent || '').trim() || null;
+    info.displayName = name;
+    // profile_name marker 可能打在 <a> 外層（marker > a > span）或內層（a > marker），
+    // 兩個方向都查
+    const link = (author.closest ? author.closest('a[href]') : null) ||
+      (author.querySelector ? author.querySelector('a[href]') : null);
+    if (link && GROUP_ROOT_RE.test(pathnameOf(link.getAttribute('href') || ''))) {
+      const poster = findGroupPoster(container, mainMsg);
+      if (poster) {
+        info.displayName = poster;
+        info.groupName = name;
+      }
+    }
     return info;
   }
 
@@ -364,6 +451,14 @@
       strong.textContent = info.displayName;
       strong.style.cssText = 'font-size:1.05em;';
       h.appendChild(strong);
+    }
+    // v1.9.3：社團名當副標（發文者 · 社團）
+    if (info.groupName) {
+      const group = document.createElement('span');
+      group.setAttribute('data-jread-fb-group', '1');
+      group.textContent = (info.displayName ? ' · ' : '') + info.groupName;
+      group.style.cssText = 'opacity:0.7;';
+      h.appendChild(group);
     }
     return h;
   }
@@ -492,7 +587,7 @@
     // 抽 author info 從原 DOM,合成 header 之後注入到 clone 開頭（取代被 prune
     // 掉的原 author header——原 header 含 timestamp / privacy icon / menu button
     // 等 UI chrome,清掉後我們補一個乾淨的）。
-    const info = extractAuthorInfo(author);
+    const info = extractAuthorInfo(author, container, mainMsg);
 
     // 建合成 reader card
     const reader = document.createElement('article');
@@ -501,7 +596,12 @@
     if (lang) reader.setAttribute('lang', lang);
 
     // clone 整個 container 進 reader（cloneNode true 保留所有圖片 src 與文字）
+    // v1.9.3：clone 前先在原主文節點打 MAIN_MSG_MARK，讓 pruneReaderClone 在
+    // clone 內找得到「同一個」主文（story_message 形態沒 message marker）；
+    // clone 完立刻從原 DOM 拆掉，不留痕。
+    mainMsg.setAttribute(MAIN_MSG_MARK, '1');
     const clone = container.cloneNode(true);
+    mainMsg.removeAttribute(MAIN_MSG_MARK);
     pruneReaderClone(clone);
     // strip FB layout class/style 讓內容回瀏覽器預設 block layout（修 emotion-
     // hash class 在合成容器內因失去祖先 context 而 layout 算錯 0×0 的問題）
