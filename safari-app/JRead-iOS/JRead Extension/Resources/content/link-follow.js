@@ -100,8 +100,43 @@
     return { matched: true, nextList: next };
   }
 
+  // ---- 內容圖連結（lightbox 觸發器）點擊吞掉（v1.9.2）------------------------
+  // 需求（Jimmy 2026-09-07，culpium.com / Substack）：閱讀模式下點內文圖片 → 滑鼠滾輪捲頁
+  // 失效；退出閱讀模式後才看到那張圖被放大成全螢幕。
+  //
+  // 根因（real DOM probe）：站方 lightbox 是 click 時往 <body> 追加的 portal（overlay div +
+  // 兩個 focus-guard span），落在 articleEl 外 → cleaner 動態 observer 照規則把它藏掉；但站方
+  // 同時裝上的 scroll lock（document 層 wheel preventDefault）與 focus trap 沒有人解——使用者
+  // 看不到 lightbox、關不掉、也捲不動。退出閱讀模式 restore 後 lightbox 才露出來。
+  //
+  // 結構性通則：閱讀模式下「主文內、包住圖片、href 指向圖檔」的 <a> 點擊不交給站方——
+  //   - 站方 JS lightbox 的產物一律掛在主文外、閱讀模式下永遠看不見，只剩副作用
+  //   - 沒有 JS 時原生導航到圖檔 URL 也不是閱讀動作（離開文章、原分頁被整張圖取代）
+  // 兩條路徑都沒有正向價值，故直接吞掉（preventDefault + stopImmediatePropagation，在
+  // window capture 階段、早於站方 root 委派 handler）。只吞**純左鍵**：cmd / ctrl / shift /
+  // 中鍵是使用者明確要在新分頁看原圖的意圖，放行。
+  //
+  // 範圍刻意收窄：href 指向非圖檔的圖片連結（縮圖連到另一篇文章）是正常導航，不吞；
+  // <button> 包圖（Medium click-to-zoom）未 probe 驗證、不納入。
+  // 圖檔副檔名判定與 cleaner IMG_URL_RE 同款（cleaner 的住 IIFE 內未匯出）。
+  var IMG_HREF_RE = /\.(?:jpe?g|png|gif|webp|avif|bmp|svg|jfif)(?:[?#].*)?$/i;
+
+  function shouldSwallowImageLinkClick(info) {
+    if (!info) return false;
+    if (info.button !== 0) return false;
+    if (info.metaKey || info.ctrlKey || info.shiftKey || info.altKey) return false;
+    if (!info.inArticle) return false;
+    if (!info.wrapsMedia) return false;
+    var href = String(info.href || '');
+    if (!/^https?:/i.test(href)) return false;
+    var path;
+    try { path = new URL(href).pathname; } catch (e) { return false; }
+    return IMG_HREF_RE.test(path);
+  }
+
   var api = {
     STORAGE_KEY: 'readerLinkIntent',
+    shouldSwallowImageLinkClick: shouldSwallowImageLinkClick,
     MAX_AGE_MS: MAX_AGE_MS,
     MAX_ENTRIES: MAX_ENTRIES,
     normalizeIntentUrl: normalizeIntentUrl,
