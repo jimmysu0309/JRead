@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!--
+  Safari build 專用的 background event page 入口（v1.9.4）。
+  Chrome 版 manifest 仍宣告 background.service_worker、不引用本檔；Safari build 由
+  safari-app/patch-safari-manifest.sh 把 manifest background 改成
+  { page: "background/background.html", persistent: false }。
+
+  為什麼是 page 而不是 scripts（v0.7.228–v1.9.3 用的形式）：iOS 26 的 Safari
+  對 background.scripts + persistent:false 的 event page 完全不載入——擴充的
+  BackgroundContentEventListeners 註冊表永遠是空的，background 從不啟動，
+  content → background 的 runtime.sendMessage 全部 resolve undefined
+  （iPad 模擬器 iOS 26.5 A/B 實證：scripts 形式死、service_worker 與 page 形式
+  都活）。page 形式保留 non-persistent event page 語意（實機 SW 回收後喚不醒
+  的對策，Apple Forums 758346），故選 page。
+
+  <script> 順序 = 依賴檔在前、service-worker.js 最後，與 tools/firefox-build.sh
+  的 background.scripts 清單同列同序（ios-build.spec.js 有 forcing function）：
+  service-worker.js 讀 popup-core 的 __JReadPopup、settings-defaults 的
+  __JReadSettingsDefaults / __JReadFontStacks；logger 要最早載入。
+  event page 是網頁 context 沒有 importScripts（SW 內的 typeof guard 會跳過）。
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="../lib/logger.js"></script>
+  <script src="../popup/popup-core.js"></script>
+  <script src="../content/settings-defaults.js"></script>
+  <script src="service-worker.js"></script>
+</head>
+<body></body>
+</html>

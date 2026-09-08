@@ -13,12 +13,7 @@
     "<all_urls>"
   ],
   "background": {
-    "scripts": [
-      "lib/logger.js",
-      "popup/popup-core.js",
-      "content/settings-defaults.js",
-      "background/service-worker.js"
-    ],
+    "page": "background/background.html",
     "persistent": false
   },
   "browser_specific_settings": {
