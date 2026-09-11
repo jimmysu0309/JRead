@@ -191,6 +191,26 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return false;
     },
 
+    // v1.9.5：「明確主文標題 class」判定單一資料源（原住 cleaner
+    // looksLikeArticleTitleStrict；detector ensureArticleContainsTitleH1 成為第二個
+    // 消費者，抽上來避免兩份 regex drift）。只接受複合 token（article-title /
+    // post-title / entry-title …），不接受 bare `title`——Substack 站名 logo h1 帶
+    // hash class `title-oOnUGd`，bare token 會誤中（2026-09-11 probe 實測）。
+    // 檢查 heading 自身 class / id 與 parent class；class 走 classList（SVG
+    // className 是 SVGAnimatedString）。
+    TITLE_CLASS_STRICT_RE: /(?:^|[-_\s])(?:article|post|entry|page|news|story|content)[-_]?(?:title|headline|heading)(?:[-_\s]|$)/i,
+    TITLE_CLASS_NEGATIVE_RE: /(?:sub|super|micro|tiny|aside|side)title/i,
+    looksLikeArticleTitleStrict(h) {
+      if (!h) return false;
+      const NSref = window.__JRead;
+      const check = (s) => !!s && !NSref.TITLE_CLASS_NEGATIVE_RE.test(s) &&
+        NSref.TITLE_CLASS_STRICT_RE.test(s);
+      const classStr = (el) => Array.from((el && el.classList) || []).join(' ');
+      if (check(classStr(h))) return true;
+      if (check(h.id || '')) return true;
+      return check(classStr(h.parentElement));
+    },
+
     // v0.8.74：送 Readwise 的「主標」單一資料源——從 reader card 找使用者實際
     // 看到的主標 heading 文字（main.js extractReaderTitle 呼叫）。
     //

@@ -1142,18 +1142,59 @@
   // 區分 wya（wheresyoured.at）案例：wya article 開頭是內文 <p>（hero 在
   // articleEl 兄弟層 .post-hero、article 不自帶標題），第一個 heading 是 section
   // header、在內文之後 → self-titled=false → path 1 照常升 LCA 取 hero。
-  function articleIsSelfTitled(articleEl) {
-    if (!articleEl || !articleEl.ownerDocument) return false;
+  // v1.9.5：走訪本體改為回傳「開頭 heading」元素（findOpeningHeading），
+  // articleIsSelfTitled 保留布林語意——findOutsideExplicitTitleH1 需要知道開頭
+  // heading 是誰，同一份走訪事實不另寫一份。
+  function findOpeningHeading(articleEl) {
+    if (!articleEl || !articleEl.ownerDocument) return null;
     const walker = articleEl.ownerDocument.createTreeWalker(articleEl, NodeFilter.SHOW_ELEMENT);
     let n;
     while ((n = walker.nextNode())) {
       const tag = n.tagName;
-      if (/^H[1-4]$/.test(tag)) return true;                      // heading 先出現 → 自帶標題
+      if (/^H[1-4]$/.test(tag)) return n;                         // heading 先出現 → 自帶標題
       // v1.7.40：substantial 段落門檻改 CJK 權重（批次 2 review D2——raw 80
       // 讓中文 41-79 字段落全篇不計，誤判 self-titled 跳過 LCA promote）
-      if (tag === 'P' && cjkWeightedLen(getText(n)) > 80) return false; // 內文先出現 → 不自帶標題
+      if (tag === 'P' && cjkWeightedLen(getText(n)) > 80) return null; // 內文先出現 → 不自帶標題
     }
-    return false;
+    return null;
+  }
+  function articleIsSelfTitled(articleEl) {
+    return !!findOpeningHeading(articleEl);
+  }
+
+  // v1.9.5：articleEl「看似自帶標題」、但開頭 heading 其實是章節標題時，找
+  // articleEl 外唯一的明確主文標題 H1。
+  //
+  // 場景（Jimmy 2026-09-11 回報 chargerlab.com 拆解文，translate-first 實證）：
+  // 內文容器用 H1 當章節標題、第一個子節點就是「Introduction」章節 H1；真標題
+  // h1.post-title 與 byline 在內文容器的兄弟層。原文頁靠 promoteForTitle 的
+  // og-match 爬到 post 容器；翻譯後文字比對失效，path 1 被 articleIsSelfTitled
+  // 擋下（開頭 heading 先於內文段落）→ articleEl 停在內文容器，標題 + byline
+  // 在外面被清掉。
+  //
+  // 與 ChinaTalk（articleIsSelfTitled 的原始動機）的區分用 class 訊號、不靠文字
+  // （翻譯後照樣成立）：
+  //   - 開頭 heading 自己不帶明確標題 class（ChinaTalk 開頭是 h1.post-title →
+  //     維持 self-titled、不升）
+  //   - articleEl 外**恰有一個**帶明確標題 class（strict 複合 token）的 H1，
+  //     排在主文之前、不被 <a> 包住（ChinaTalk 站名 logo 只有 hash class
+  //     `title-oOnUGd`，strict 不命中）
+  // 升級仍走 findTitleViaLca + hop 預算，body/html guard 照舊。
+  function findOutsideExplicitTitleH1(articleEl) {
+    const opening = findOpeningHeading(articleEl);
+    if (!opening || NS.looksLikeArticleTitleStrict(opening)) return null;
+    let pick = null;
+    for (const h of document.querySelectorAll('h1')) {
+      if (articleEl.contains(h)) continue;
+      if (isHeadingInsideAnchor(h)) continue;
+      if (!(articleEl.compareDocumentPosition(h) & 2 /* PRECEDING */)) continue;
+      if (!NS.looksLikeArticleTitleStrict(h)) continue;
+      const text = normalizeTitle(h.textContent || '');
+      if (!text || text.length > TITLE_TEXT_MAX) continue;
+      if (pick) return null; // 多個候選 → 不猜
+      pick = h;
+    }
+    return pick;
   }
 
   // articleEl 內「自帶的 og-match 標題 heading」查找（共用 helper）。
@@ -1295,10 +1336,21 @@
     // 註解。站名 masthead H1 幾乎必是 DOM-first，照 DOM 順序升等於把整頁
     // wrapper 當主文。
     const firstH1 = document.querySelector('h1');
-    if (firstH1 && !articleEl.contains(firstH1) && !articleIsSelfTitled(articleEl)) {
-      for (const h of h1sByLcaDistance(articleEl)) {
-        const r = tryLcaPromote(h);
-        if (r) return r;
+    if (firstH1 && !articleEl.contains(firstH1)) {
+      if (!articleIsSelfTitled(articleEl)) {
+        for (const h of h1sByLcaDistance(articleEl)) {
+          const r = tryLcaPromote(h);
+          if (r) return r;
+        }
+      } else {
+        // v1.9.5：self-titled 的例外——開頭 heading 其實是章節標題（見
+        // findOutsideExplicitTitleH1）。只升到該明確標題 H1 的 LCA，不走距離
+        // 排序的全體候選。
+        const titleH1 = findOutsideExplicitTitleH1(articleEl);
+        if (titleH1) {
+          const r = tryLcaPromote(titleH1);
+          if (r) return r;
+        }
       }
     }
 
