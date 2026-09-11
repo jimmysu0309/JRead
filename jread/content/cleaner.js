@@ -7544,6 +7544,149 @@
     }
   }
 
+  // ---- 主文內：intrinsic sizer 佔位圖 + sizes="auto" 尺寸封鎖（v1.9.6）-------
+  // 實案（cuphistory.net AMP 版，Jimmy 2026-09-11 回報「圖片尺寸很奇怪」）：
+  // 每張圖上方一大塊空白、圖本身縮成一小張。probe 實證是兩個獨立根因疊在一起：
+  //
+  // (A) intrinsic sizer 佔位圖。AMP `layout="intrinsic"` 與 Next.js 舊版
+  //     next/image 用同一套結構——flow 內放一張 `<img aria-hidden="true"
+  //     src="data:image/svg+xml,<svg width=800 height=370/>">`（空白 SVG，只帶
+  //     寬高）當尺寸來源，真圖 position:absolute 疊在上面填滿。styler 的
+  //     `img { position: static }` 把真圖拉回 flow 後，佔位圖就成了真圖上方一整塊
+  //     與圖同尺寸的空白（hero 那張還被 `img { background: #fff }` 塗成白底框）。
+  //     判定三條全中才 hide：
+  //       1. aria-hidden="true" 或 role=presentation/none＝站方宣告「非內容」
+  //       2. src 是**沒有任何繪圖節點**的 SVG data URI＝本身不會畫出任何像素
+  //       3. 無 srcset / lazy src 屬性＝不會被 lazy library 換成真圖
+  //          （hydrateLazyImages 會把帶 data-src 的 data:svg 佔位換成真圖，那種不可藏）
+  //     不走 isInPreserved guard：它在 figure（preserved）內是常態，而「本來就
+  //     畫不出像素」的元素沒有誤殺面（同 pinDynamicEmbedFallbackImgs 的論證）。
+  //     **藏的時機要跟真圖配對**：真圖還沒 mount 不藏（AMP 靠佔位圖的尺寸判斷
+  //     何時 build 真圖，藏了就永遠不 build）、真圖載入中等 load 事件才藏、已有
+  //     像素才立刻藏。初版無條件藏，cuphistory 第 3、4 張 lazy 圖整張消失。
+  //
+  // (B) `sizes="auto, …"` 的 UA 尺寸封鎖。HTML 規範的 UA stylesheet：
+  //     `img:is([sizes="auto" i], [sizes^="auto," i]) { contain: size !important;
+  //     contain-intrinsic-size: 300px 150px }`——size containment 讓圖的固有尺寸
+  //     與比例全部失效、改用 300×150。站方原本靠 absolute 填滿佔位盒不受影響；
+  //     拉回 flow + styler `height: auto` 後就只剩 300×150（地圖 608×150 被
+  //     object-fit:contain 縮成 324×150）。`contain` 是 UA !important，author
+  //     inline `!important` 蓋不過（probe 實測 contain 仍為 size），只能改屬性：
+  //     去掉開頭的 `auto` token，留下站方自己的 fallback sizes（＝不支援
+  //     sizes=auto 的瀏覽器會用的值）。
+  //     收斂：只動「沒有 width + height 屬性對」的 img。有屬性對的（WordPress
+  //     6.7+ lazy 圖）presentational hint 會給出 `aspect-ratio: auto w/h`，封鎖
+  //     下比例仍在、不會塌成 150px；不碰它們就不會觸發 srcset 重新選圖的額外下載。
+  //     副作用上限：每張命中的 img 可能多一次 srcset 候選圖請求（原本就是壞圖）。
+  //
+  // 這條驗 X、不驗 Y：只驗「佔位圖藏掉 + auto token 拿掉」這層 DOM 狀態；
+  // 圖最後的顯示尺寸是否正確屬 layout 層，由 debug-harness 截圖驗。
+  const BLANK_SVG_DATA_URI_RE = /^\s*data:image\/svg\+xml(;[^,]*)?,([\s\S]*)$/i;
+  const AUTO_SIZES_RE = /^\s*auto\s*(?:,|$)/i;
+
+  function svgDataUriIsBlank(src) {
+    const m = BLANK_SVG_DATA_URI_RE.exec(src || '');
+    if (!m) return false;
+    let svg;
+    try {
+      svg = /;base64/i.test(m[1] || '') ? atob(m[2].trim()) : decodeURIComponent(m[2]);
+    } catch (_) { return false; }
+    // 去掉 XML 宣告後，整份只剩一個自閉合或空的 <svg …> 根節點＝無繪圖內容
+    const body = svg.replace(/^\s*<\?xml[^>]*\?>/i, '').trim();
+    return /^<svg\b[^>]*?(?:\/>|>\s*<\/svg>)$/i.test(body);
+  }
+
+  function imgIsIntrinsicSizerSpacer(img) {
+    const role = img.getAttribute('role') || '';
+    if (img.getAttribute('aria-hidden') !== 'true' && !/^(?:presentation|none)$/i.test(role)) return false;
+    if (!svgDataUriIsBlank(img.getAttribute('src'))) return false;
+    if (img.hasAttribute('srcset') || img.hasAttribute('data-srcset')) return false;
+    if (LAZY_SRC_ATTRS.some(a => img.hasAttribute(a))) return false;
+    return true;
+  }
+
+  // root 可為 articleEl（靜態）或動態 append 的 node（含 node 自身）
+  function imgsIn(root) {
+    const list = (root.matches && root.matches('img')) ? [root] : [];
+    if (root.querySelectorAll) list.push(...root.querySelectorAll('img'));
+    return list;
+  }
+
+  // 配對真圖：佔位圖往上 ≤ 2 層祖先內第一張非佔位圖的 img。AMP 是
+  // sizer wrapper → amp-img（第 1 層）；next/image 是內層 span → 外層 span（第 1 層）
+  const SIZER_PARTNER_DEPTH = 2;
+  function findSizerPartnerImg(spacer) {
+    let c = spacer.parentElement;
+    for (let d = 0; c && d < SIZER_PARTNER_DEPTH; d++, c = c.parentElement) {
+      for (const img of c.querySelectorAll('img')) {
+        if (img !== spacer && !imgIsIntrinsicSizerSpacer(img)) return img;
+      }
+    }
+    return null;
+  }
+
+  function hideIntrinsicSizerSpacerImgs(root, hidden) {
+    if (!root || root.nodeType !== 1) return;
+    for (const img of imgsIn(root)) {
+      if (img.dataset && img.dataset.jreadHidden === '1') continue;
+      if (!imgIsIntrinsicSizerSpacer(img)) continue;
+      const partner = findSizerPartnerImg(img);
+      // 真圖尚未 mount：佔位圖是站方 lazy runtime 判斷「何時 build 真圖」的尺寸
+      // 來源，藏掉後容器塌成 0×0、真圖永遠不會被 build（v1.9.6 初版實測第 3、4 張圖整張消失）
+      if (!partner) continue;
+      if (partner.complete && partner.naturalWidth > 0) { hide(img, hidden); continue; }
+      // 真圖載入中：等它有像素再藏，期間佔位圖照原站保留空間
+      const onLoad = () => {
+        if (img.isConnected && imgIsIntrinsicSizerSpacer(img)) hide(img, hidden);
+      };
+      partner.addEventListener('load', onLoad, { once: true });
+      hidden.__sizerWaits = (hidden.__sizerWaits || []).concat([{ el: partner, onLoad }]);
+    }
+  }
+
+  // 動態 path：站方晚 append 的通常是真圖本身（佔位圖是它的兄弟），所以從
+  // append 點往上 ≤ 2 層取掃描範圍（不越過 articleEl），不含 img 的 append 直接略過
+  function hideIntrinsicSizerSpacersAround(articleEl, node, hidden) {
+    if (!(node.matches && node.matches('img')) && !(node.querySelector && node.querySelector('img'))) return;
+    let scope = node;
+    for (let d = 0; d < SIZER_PARTNER_DEPTH && scope.parentElement && scope.parentElement !== articleEl; d++) {
+      scope = scope.parentElement;
+    }
+    hideIntrinsicSizerSpacerImgs(scope, hidden);
+  }
+
+  function cancelSizerPartnerWaits(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__sizerWaits;
+    if (!Array.isArray(arr)) return;
+    for (const { el, onLoad } of arr) {
+      if (el && el.removeEventListener) el.removeEventListener('load', onLoad);
+    }
+  }
+
+  function releaseAutoSizesContainment(root, hidden) {
+    if (!root || root.nodeType !== 1) return;
+    const records = [];
+    for (const img of imgsIn(root)) {
+      const prev = img.getAttribute('sizes');
+      if (prev == null || !AUTO_SIZES_RE.test(prev)) continue;
+      if (img.hasAttribute('width') && img.hasAttribute('height')) continue;
+      const rest = prev.replace(/^\s*auto\s*,?\s*/i, '');
+      records.push({ el: img, prev });
+      if (rest) img.setAttribute('sizes', rest);
+      else img.removeAttribute('sizes');
+    }
+    // 累加（動態批次補跑不可覆蓋前批，同 __lazyImages 契約）
+    hidden.__autoSizes = (hidden.__autoSizes || []).concat(records);
+  }
+
+  function restoreAutoSizes(hiddenEls) {
+    const arr = hiddenEls && hiddenEls.__autoSizes;
+    if (!Array.isArray(arr)) return;
+    for (const { el, prev } of arr) {
+      if (el && el.setAttribute) el.setAttribute('sizes', prev);
+    }
+  }
+
   // ---- 主文內：background-image hero 雙胞胎還原（v1.7.17 biosmonthly）------
   // 場景（biosmonthly.com 桌面版實測）：站方 hero 用容器 background-image 呈現
   //（inline style 配 background-attachment: fixed 視差、height: calc(100vh -
@@ -9289,6 +9432,10 @@
           // 統一回復）。
           if (articleEl.contains(node)) {
             pinDynamicEmbedFallbackImgs(articleEl, node, hiddenList);
+            // v1.9.6：AMP 捲到附近才 build 真圖（帶 sizes="auto"），晚 mount 補跑。
+            // 放 isInPreserved 之前——載體是 figure（preserved）
+            hideIntrinsicSizerSpacersAround(articleEl, node, hiddenList);
+            releaseAutoSizesContainment(node, hiddenList);
             // v1.6.30（#13）：晚 mount 的 responsive embed iframe / heading
             // link 補標記（styler :has 放大器改 marker attr 後的動態端；
             // gate 與掃描都在 styler 內，此處只轉呼）。放 isInPreserved 之前
@@ -9612,6 +9759,10 @@
       // 失去 CSS 尺寸來源的 sprite <svg>（退回 300×150 撐爆段落）：同樣須在
       // collapse 類規則之前，rect 量測才反映原站 layout
       safeRun(hideUnsizedSpriteSvgs, articleEl, hidden);
+      // v1.9.6：intrinsic sizer 佔位圖 + sizes="auto" 尺寸封鎖（AMP / next/image）。
+      // 須在 empty-spacer / collapse 類之前——佔位圖藏掉後它的 wrapper 才會被認成空殼
+      safeRun(hideIntrinsicSizerSpacerImgs, articleEl, hidden);
+      safeRun(releaseAutoSizesContainment, articleEl, hidden);
       safeRun(hideInsideArticleActionRows, articleEl, hidden, containers);
       safeRun(hideInsideArticleReactionBars, articleEl, hidden);
       safeRun(hideInsideArticleWidgetCustomElements, articleEl, hidden);
@@ -9751,6 +9902,8 @@
         }
       }
       restoreLazyImages(hiddenEls);
+      restoreAutoSizes(hiddenEls);
+      cancelSizerPartnerWaits(hiddenEls);
       // v1.6.30：移除隱藏媒體 parent 容器標記（hide() 對 IMG / PICTURE 所標）
       if (hiddenEls && Array.isArray(hiddenEls.__hiddenMediaWrapEls)) {
         for (const p of hiddenEls.__hiddenMediaWrapEls) {
