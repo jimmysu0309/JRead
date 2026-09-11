@@ -1847,8 +1847,9 @@
   // 等），不接受單獨 class="title"。用於 promoteArticleTitleClassHeadingInto——
   // 該函式沒有 og:title matching guard，bare "title" 太泛會抓到推薦卡片標題 /
   // 閒置提醒 dialog / breadcrumb 等非主文 heading（newtalk.tw 實測）。
-  const TITLE_CLASS_STRICT_RE = /(?:^|[-_\s])(?:article|post|entry|page|news|story|content)[-_]?(?:title|headline|heading)(?:[-_\s]|$)/i;
-  const TITLE_CLASS_NEGATIVE_RE = /(?:sub|super|micro|tiny|aside|side)title/i;
+  // v1.9.5：strict / negative regex 與 looksLikeArticleTitleStrict 本體上提至
+  // namespace.js（detector 共用，單一資料源）。
+  const TITLE_CLASS_NEGATIVE_RE = NS.TITLE_CLASS_NEGATIVE_RE;
   function looksLikeArticleTitleH1(h1) {
     if (!h1) return false;
     function check(s) {
@@ -1864,17 +1865,7 @@
   }
 
   function looksLikeArticleTitleStrict(h) {
-    if (!h) return false;
-    function check(s) {
-      if (!s) return false;
-      if (TITLE_CLASS_NEGATIVE_RE.test(s)) return false;
-      return TITLE_CLASS_STRICT_RE.test(s);
-    }
-    if (check(classStrOf(h))) return true;
-    if (check(h.id || '')) return true;
-    const p = h.parentElement;
-    if (p && check(classStrOf(p))) return true;
-    return false;
+    return NS.looksLikeArticleTitleStrict(h);
   }
 
   // v0.8.36（B3）：title clone 的就地雜訊清理。兩條 promote path 把 clone 子樹
