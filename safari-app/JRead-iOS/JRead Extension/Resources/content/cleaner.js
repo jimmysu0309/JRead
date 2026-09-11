@@ -6680,7 +6680,57 @@
       const isGridFlex = /^(flex|inline-flex|grid|inline-grid)$/.test(d);
       applyImportant(el, isGridFlex ? MEDIA_CONTAINER_DECLS_GRID_FLEX : MEDIA_CONTAINER_DECLS_INLINE);
     }
+    // v1.9.7：figure 內包住媒體的 inline-block / inline-flex / inline-grid 殼 → block。
+    // 場景（cuphistory AMP，Jimmy 2026-09-11「圖片要置中」）：`figure > amp-img
+    // {display:inline-block}` 殼寬 shrink-to-fit 到圖寬（351px），styler 對 figure 內
+    // 含圖 wrapper 的 `margin: auto` 置中規則對 inline-level 元素無效 → 圖整張靠左。
+    // 轉 block 後殼撐滿版心，內層圖交給 styler 既有的置中 / upscale 規則。
+    // 收斂（避免拆掉站方刻意的並排）：
+    //   - figure 內可見內容媒體恰 1 個——多張並排的 inline-block 殼是圖組版面，不拆成直排。
+    //     真圖還沒 mount、只剩 intrinsic sizer 佔位圖時，以佔位圖代表那張圖（AMP 捲到
+    //     附近才 build 真圖，殼要先轉好，否則晚到的圖仍靠左）
+    //   - 殼本身無渲染文字——帶文字的 inline-block（圖示 + 說明的 badge）是另一種東西。
+    //     不渲染的文字載體不算（AMP 殼內 <noscript> 的 fallback markup 在 scripting
+    //     開啟時是原始 HTML 字串，raw textContent 300+ 字）
+    const seen = new Set();
+    for (const fig of articleEl.querySelectorAll('figure')) {
+      if (fig.dataset && fig.dataset.jreadHidden === '1') continue;
+      const visible = [...fig.querySelectorAll('img, picture, video')].filter(m =>
+        !(m.dataset && m.dataset.jreadHidden === '1') &&
+        !m.closest('noscript, template') &&
+        !(m.tagName === 'IMG' && m.parentElement && m.parentElement.tagName === 'PICTURE'));
+      const sizers = visible.filter(m => m.tagName === 'IMG' && imgIsIntrinsicSizerSpacer(m));
+      const real = visible.filter(m => !sizers.includes(m));
+      const media = real.length ? real : sizers;
+      if (media.length !== 1) continue;
+      for (let el = media[0].parentElement; el && el !== fig; el = el.parentElement) {
+        if (seen.has(el)) break;
+        seen.add(el);
+        if (el.dataset && el.dataset.jreadHidden === '1') break;
+        if (el.tagName === 'FIGURE' || el.tagName === 'PICTURE') continue;
+        let cs;
+        try { cs = window.getComputedStyle(el); } catch (_) { break; }
+        const d = cs && cs.display;
+        if (!/^inline-(block|flex|grid)$/.test(d || '')) continue;
+        if (hasRenderedText(el)) continue;
+        resets.push({ el, prev: snapshotStyles(el, MEDIA_CONTAINER_PROPS) });
+        applyImportant(el, d === 'inline-block' ? MEDIA_CONTAINER_DECLS_INLINE : MEDIA_CONTAINER_DECLS_GRID_FLEX);
+      }
+    }
     addStyleResets(hidden, resets);
+  }
+
+  // 子樹內是否有讀者看得到的文字（不計 NON_RENDERED_TEXT_TAGS 內的文字）
+  function hasRenderedText(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        if (n.nodeType === 1) {
+          return NON_RENDERED_TEXT_TAGS.has(n.localName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+        }
+        return norm(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+    });
+    return !!walker.nextNode();
   }
 
   // ---- 後代 container 殘留 box-shadow 清除（v0.7.30 cnyes.com 修法）-----
