@@ -4144,6 +4144,8 @@ html.${HTML_CLASS}.jread-orion body {
       const iconImgs = [];
       const upscaleImgs = [];
       const contentImgLoadCleanup = [];
+      // v1.9.7：晚 mount img 的補分類入口（passClassifyImages 指派、remarkDynamicMarkers 呼叫）
+      let classifyLateImg = null;
       const playerMarked = [];
       const fillIframes = [];
       const embedWrapMarked = [];
@@ -4442,6 +4444,27 @@ html.${HTML_CLASS}.jread-orion body {
           }
           classifyImg(img);
         }
+        // v1.9.7：晚 mount 的 img 補分類（cleaner dynamic observer → remarkDynamicMarkers）。
+        // AMP `layout="intrinsic"` 捲到附近才 build 真圖——apply 當下 img 還不存在，
+        // 上面的迴圈與 load listener 都接不到，圖永遠不標 upscale、停在站方原寬
+        // （cuphistory 同頁：先 build 的肖像撐滿版心、晚 build 的城堡 / 蘇維埃宮停在
+        // 440 / 436px）。preRect 在停用 JRead 注入 CSS 下量＝原站 cascade 的顯示尺寸，
+        // capIcon / 低解析上限兩條防放大 gate 對晚到的圖一樣有效（見 classifyImg 簽名註解）。
+        classifyLateImg = (img) => {
+          if (!img || img.tagName !== 'IMG' || !articleEl.contains(img)) return;
+          if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) ||
+              img.hasAttribute(ICON_IMG_ATTR) || img.hasAttribute(UPSCALE_IMG_ATTR)) return;
+          const run = () => {
+            const snap = NS.withInjectedCssDisabled
+              ? NS.withInjectedCssDisabled(() => img.getBoundingClientRect())
+              : img.getBoundingClientRect();
+            classifyImg(img, snap);
+          };
+          if (img.complete && img.naturalWidth > 1) { run(); return; }
+          const onLoad = () => run();
+          img.addEventListener('load', onLoad, { once: true });
+          contentImgLoadCleanup.push({ img, onLoad });
+        };
       };
 
       const passSplitPreWrapParas = () => {
@@ -4546,7 +4569,9 @@ html.${HTML_CLASS}.jread-orion body {
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
-        activeMarkState = { articleEl, embedWrapMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap };
+        activeMarkState = { articleEl, embedWrapMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap,
+          // 呼叫當下才讀 classifyLateImg（與 passClassifyImages 的執行先後無關）
+          classifyLateImg: (img) => { if (classifyLateImg) classifyLateImg(img); } };
       };
 
       const passMarkFillIframes = () => {
@@ -7011,6 +7036,12 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.7.70：翻譯回填把 pre-wrap 容器內容整包換掉時重新切段（見
       // resplitPreWrapParagraphs——翻譯完成沒有事件可聽，借這條通道）
       resplitPreWrapParagraphs(node, s.prewrapParaSnap);
+      // v1.9.7：晚 mount 的 img 補 inline / icon / upscale 分類（見 passClassifyImages 的 classifyLateImg）
+      if (typeof s.classifyLateImg === 'function') {
+        const imgs = (node.matches && node.matches('img')) ? [node]
+          : (node.querySelectorAll ? node.querySelectorAll('img') : []);
+        for (const img of imgs) s.classifyLateImg(img);
+      }
     }
   };
 
