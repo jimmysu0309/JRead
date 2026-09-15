@@ -2010,10 +2010,21 @@
     }
     return out;
   }
+  // v1.9.8：比對忽略「空白差異」——渲染出的 heading 與 meta 標題常只差空白：
+  // 中文媒體慣例在標題語意斷點放全形空白 U+3000（商周「聯發科不缺錢　反而更要
+  // 籌資」），但 og:title / <title> 由 CMS 後台輸出時不帶；英文站 headline 內
+  // `<br>` 換行 / 多餘縮排也是同類。normTitle 只把連續空白 collapse 成單一空格、
+  // 「有空白 vs 無空白」仍不等。兩邊各自去掉全部空白後相等即視為同一標題——
+  // 兩個**不同**標題只差空白的情況實務上不存在，方向安全；仍是 strict equality
+  // 語意（不是 includes / partial）。
+  const titleKey = (s) => s.replace(/\s+/g, '');
   function titleMatchesCanonical(text) {
     const t = normTitle(text || '');
     if (!t || titleTextWeight(t) < 5) return false;
-    return canonicalTitleVariants().indexOf(t) >= 0;
+    const variants = canonicalTitleVariants();
+    if (variants.indexOf(t) >= 0) return true;
+    const key = titleKey(t);
+    return variants.some(v => titleKey(v) === key);
   }
 
   // v1.7.55：整個「文章 header 區塊」在 articleEl 外時，把它**搬進** articleEl
@@ -2136,6 +2147,36 @@
       // canonical 有多個可接受寫法」——不放寬成 partial / includes。
       const matches = outsideH1s.filter(h => titleMatchesCanonical(h.textContent || ''));
       if (matches.length === 1) h1 = matches[0];
+    } else if (allH1s.length === 0 && baseTitle && titleTextWeight(baseTitle) >= 5) {
+      // v1.9.8：整頁**零 h1** 時，h2 / h3 走同一條「文字 strict 等於 canonical」
+      // 的路。場景（Jimmy 2026-09-15 回報商周 campaign 頁
+      // `campaign.businessweekly.com.tw/bw/No-2026-812`）：頁面產生器把每一塊
+      // 內容各自放進平行的 `div#section-N`，標題是自己一個 section 裡的
+      // `h2.section-title`、主文是下一個 section；detector 選主文 section 正確，
+      // 標題 section 被 hideAncestorSiblings 清掉。既有 path 全 miss：本函式只看
+      // h1（此頁 0 個）、promoteArticleTitleClassHeadingInto 要 strict title class
+      // （`section-title` 是泛用節標 token、刻意不收）、兩條非 heading path 又
+      // 排除 h1-h6。
+      // 判定基礎與多 h1 分支相同——文字與 canonical strict equality 且候選唯一；
+      // 不看 class、不看位置。「零 h1」是入口條件：頁面有 h1 時 h2/h3 是節標，
+      // 拿 h2 當主標會跟 h1 打架；沒有 h1 時「文字等於 og:title 的 h2/h3」就是
+      // 主標（section heading 不會恰好等於整篇標題）。翻譯頁（文字被改寫）本分支
+      // 自然 miss、退回既有 class path，與修法前相同。
+      // 兩道「標題已在卡內」guard（wordpress-pretitle-selflink-card.spec.js 實證：
+      // WordPress block theme 零 h1、主標 h2.wp-block-post-title 在 articleEl 內，
+      // 外面另有一張自連結卡片的 h2 文字同樣等於 canonical——不擋就把整張卡片
+      // clone 進來當第二個標題）：
+      //   (1) articleEl 內任一 h2/h3 文字等於 canonical → 主標已在卡內（與本分支
+      //       同一判定基礎，page-wide 一致看待）
+      //   (2) articleHasOwnHeadingTitle（strict title class 的可見 h2/h3，另一個
+      //       判定基礎；與 promoteArticleTitleClassHeadingInto 等共用單一資料源）
+      const allH23 = [...document.querySelectorAll('h2, h3')];
+      const canonicalH23 = allH23.filter(h => titleMatchesCanonical(h.textContent || ''));
+      const insideHit = canonicalH23.some(h => articleEl.contains(h));
+      if (!insideHit && !articleHasOwnHeadingTitle(articleEl)) {
+        const matches = canonicalH23.filter(h => !articleEl.contains(h));
+        if (matches.length === 1) h1 = matches[0];
+      }
     }
     if (!h1) return;
     // v0.7.141 guard：h1 text 必須 matches og:title / document.title 才視為主文
