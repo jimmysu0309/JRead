@@ -1871,6 +1871,7 @@
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'enter' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'exit' } }));
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-theme', theme: 'dark' } }));  // 'light' | 'dark' | 'sepia' | 'gray'
+  //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-paged', paged: true } }));  // v1.9.10：翻頁模式開/關（走 storage.onChanged reapply）
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
   // reload 走 sendMessage('JREAD_RELOAD') → SW handler 呼叫 chrome.runtime.reload()。
   // 不可從 content script 直接呼 chrome.runtime.reload —— 該 API 只 SW / popup /
@@ -1898,6 +1899,14 @@
       const theme = e && e.detail && e.detail.theme;
       if (theme && ['light', 'dark', 'sepia', 'gray'].includes(theme)) {
         safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SET_THEME, payload: { theme } });
+      }
+    } else if (type === 'set-paged') {
+      // v1.9.10：cage 驗翻頁模式切換用——{ type: 'set-paged', paged: true|false }。
+      // 與 set-theme 同款經 SW 中繼 + development install gate；SW 寫
+      // storage.sync.pagedMode 後由本檔 onChanged listener 走 reapply 路徑。
+      const paged = e && e.detail && e.detail.paged;
+      if (typeof paged === 'boolean') {
+        safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SET_PAGED, payload: { paged } });
       }
     } else if (type === 'translate') {
       // 觸發 Shinkansen 翻譯（跨 extension debug bridge）。

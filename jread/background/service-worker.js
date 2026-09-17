@@ -377,6 +377,24 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return;
     }
+    case 'JREAD_DEBUG_SET_PAGED': {
+      // v1.9.10：debug bridge set-paged——cage（Jimmy 的真實 Chrome）驗「捲動 → 翻頁
+      // 模式切換」用：popup 點不到、⌥P 是 chrome.commands 瀏覽器層快速鍵、CDP 合成
+      // 鍵盤事件到不了。與 JREAD_DEBUG_SET_THEME 完全同款：SW 中繼 + development
+      // install gate（store / 正式安裝 silently reject）+ SW 端再驗 payload 型別。
+      // 寫 storage.sync.pagedMode 後由 content 的 onChanged → scheduleReapply →
+      // syncPagedModeFromSettings 接手（與 popup checkbox / ⌥P 同一條路徑）。
+      if (!(browser.management && browser.management.getSelf)) {
+        console.warn('[JRead] JREAD_DEBUG_SET_PAGED rejected: management API unavailable');
+        return;
+      }
+      const paged = msg.payload && msg.payload.paged;
+      if (typeof paged !== 'boolean') return;
+      runIfDevelopmentInstall('JREAD_DEBUG_SET_PAGED', () => {
+        browser.storage.sync.set({ pagedMode: paged }).catch(() => {});
+      });
+      return;
+    }
     case 'JREAD_DEBUG_SEND_READWISE': {
       // v1.7.3：debug bridge 觸發送儲存服務（content bridge type='send-readwise'
       // 中繼）。走與快速鍵完全同一條 sendToReadwiseFromCommand 軌（含未啟動先

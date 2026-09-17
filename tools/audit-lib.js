@@ -1674,7 +1674,42 @@ async function triggerShinkansenTranslate(page, opts = {}) {
   return n;
 }
 
+// Shinkansen 載入路徑解析（2026-09-17）。Shinkansen 2026-09-11 起把 debug bridge 的
+// 所有 action（含 harness 用的 TRANSLATE_ENGINE）gate 在「dev tail 四段版本」build
+// 才啟用，商店版（三段）一律回 `disabled in release build (dev tail only)`。
+// Shinkansen working tree 在非動工期間就是三段版本 → JRead 的 --translate-first
+// 與 page rounds 翻譯輪整個變成「觸發失敗但 harness 照跑」的偽驗收（翻譯元素數
+// 0，audit 全跑在英文 DOM 上）。這裡在 harness 端自救：manifest 是三段版本時把
+// 整個 extension 目錄複製到快取目錄、version 補 `.1` dev tail 後回傳副本路徑；
+// 已是四段版本就直接回傳原路徑。副本每次呼叫都重建（22M 複製 < 1s），保證
+// 跟 Shinkansen working tree 同步，不會用到舊 code。**不動 Shinkansen repo 本身**。
+// 呼叫端（debug-harness / page-rounds-harness）共用這一份，避免兩支 drift。
+function resolveShinkansenExtPath(srcDir, opts = {}) {
+  const fs = require('fs');
+  const os = require('os');
+  const log = opts.log || console.log;
+  const manifestPath = path.join(srcDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return srcDir;
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch (_) { return srcDir; }
+  const version = String(manifest.version || '');
+  if (version.split('.').length >= 4) return srcDir; // 已是 dev tail
+  const cacheDir = opts.cacheDir || path.join(os.homedir(), '.jread-debug', 'shinkansen-devtail');
+  fs.rmSync(cacheDir, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
+  fs.cpSync(srcDir, cacheDir, {
+    recursive: true,
+    filter: (src) => !/(^|\/)(node_modules|\.git|test|tests)(\/|$)/.test(src)
+  });
+  const devVersion = version + '.1';
+  manifest.version = devVersion;
+  fs.writeFileSync(path.join(cacheDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  log(`shinkansen: 商店版 ${version} 的 debug bridge 不啟用，改載 dev tail 副本 ${devVersion}（${cacheDir}）`);
+  return cacheDir;
+}
+
 module.exports = {
+  resolveShinkansenExtPath,
   pageLooksChinese,
   runLangDetect,
   triggerShinkansenTranslate,

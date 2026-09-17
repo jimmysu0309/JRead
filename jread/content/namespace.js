@@ -1031,6 +1031,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       // debug bridge（development install 限定，SW 端 runIfDevelopmentInstall gate）
       JREAD_RELOAD: 'JREAD_RELOAD',                 // content → SW：reload extension
       JREAD_DEBUG_SET_THEME: 'JREAD_DEBUG_SET_THEME', // content → SW：代寫 theme（cage Page Rounds 用）
+      JREAD_DEBUG_SET_PAGED: 'JREAD_DEBUG_SET_PAGED', // content → SW：代寫 pagedMode（cage 驗翻頁模式切換用，v1.9.10）
       JREAD_DEBUG_SEND_READWISE: 'JREAD_DEBUG_SEND_READWISE' // content → SW：debug bridge 觸發送儲存服務（Claude 自主驗匯出用）
     }
   };

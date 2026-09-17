@@ -118,7 +118,9 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
       console.error('Shinkansen extension 不在預期位置:', SHINKANSEN_EXT);
       process.exit(1);
     }
-    extPaths.push(SHINKANSEN_EXT);
+    // 三段商店版的 debug bridge 不接 translate 觸發 → 改載自動產生的 dev tail 副本
+    //（audit-lib.resolveShinkansenExtPath，與 page-rounds-harness 共用）。
+    extPaths.push(audits.resolveShinkansenExtPath(SHINKANSEN_EXT));
     console.log('shinkansen: enabled');
   }
   const extList = extPaths.join(',');

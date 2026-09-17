@@ -162,14 +162,16 @@ async function setZoom(page, z) {
   // ---- 1. 啟動 Chromium + extension ----
   // --login 必須 headed + 視窗上螢幕讓 Jimmy 登入；其餘推到螢幕外背景跑。
   // 翻譯輪才載 Shinkansen——原文輪保持乾淨基準（不讓它的 content script 進場）
-  const extList = (TRANSLATE_FIRST ? [EXT_PATH, SHINKANSEN_EXT] : [EXT_PATH]).join(',');
-  if (TRANSLATE_FIRST) {
-    if (!SHINKANSEN_AVAILABLE) {
-      console.error('ERROR: --translate-first 需要 Shinkansen extension，找不到:', SHINKANSEN_EXT);
-      process.exit(1);
-    }
-    console.log('shinkansen: enabled（翻譯輪）');
+  if (TRANSLATE_FIRST && !SHINKANSEN_AVAILABLE) {
+    console.error('ERROR: --translate-first 需要 Shinkansen extension，找不到:', SHINKANSEN_EXT);
+    process.exit(1);
   }
+  // 三段商店版的 debug bridge 不接 translate 觸發 → 改載自動產生的 dev tail 副本
+  //（audit-lib.resolveShinkansenExtPath，與 debug-harness 共用）。
+  const extList = (TRANSLATE_FIRST
+    ? [EXT_PATH, audits.resolveShinkansenExtPath(SHINKANSEN_EXT)]
+    : [EXT_PATH]).join(',');
+  if (TRANSLATE_FIRST) console.log('shinkansen: enabled（翻譯輪）');
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',
     headless: false,
