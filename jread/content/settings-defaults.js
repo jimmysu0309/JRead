@@ -198,7 +198,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     customShortcuts: {
       'toggle-reader-mode': null,
       'send-to-readwise': null,
-      'toggle-youtube-borderless': null
+      'toggle-youtube-borderless': null,
+      'toggle-paged-mode': null
     }
   };
 

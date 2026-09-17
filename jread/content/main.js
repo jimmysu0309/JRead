@@ -1418,9 +1418,60 @@
       if (NS.state.cinemaActive) return toggleReader();
       return toggleBorderless();
     }
+    if (command === 'toggle-paged-mode') return togglePagedMode();
     return { ok: false };
   }
   NS.dispatchLocalCommand = dispatchLocalCommand;
+
+  // v1.9.9：翻頁模式快速鍵（manifest 預設 ⌥P / options 自訂鍵）。
+  //
+  // 事實單一資料源是 storage.sync.pagedMode（與 popup「翻頁模式」checkbox 同一個
+  // 欄位）——這裡只翻設定值，實際 styler 重建 + paged-mode 模組 install / uninstall
+  // 走既有 storage.onChanged → scheduleReapply → syncPagedModeFromSettings 路徑，
+  // 不另長一條 toggle 路徑（工作流原則 5：同一份事實不雙實作）。
+  //
+  // 三種狀態：
+  //   - 閱讀模式啟動中：翻 pagedMode，toast 告知結果
+  //   - 閱讀模式未啟動：「以翻頁模式進入閱讀模式」——先把 pagedMode 寫成 true
+  //     再 enterReaderMode（進場即翻頁、不閃一下捲動版）；進場失敗（偵測不到主文）
+  //     把設定寫回原值，不留副作用
+  //   - 影院模式：沒有翻頁概念，toast 告知後 no-op
+  //
+  // v1.9.0 設定檔：pagedMode 屬 PROFILE_KEYS，改成與套用中設定檔快照不符時
+  // activeProfile 歸 null（與 popup save() 的 resolveActiveProfile 失效語意一致；
+  // 「改回來剛好對上某組」的重新對上交給 popup 開啟時的 resolve 自癒）。
+  async function togglePagedMode() {
+    if (NS.state.cinemaActive) {
+      showToast('影院模式不支援翻頁模式', 'error');
+      return { ok: false };
+    }
+    const settings = await getSettings();
+    const current = !!(settings && settings.pagedMode === true);
+    if (!NS.state.active) {
+      if (!current) await writePagedMode(true, settings);
+      const ok = await enterReaderMode();
+      if (!ok && !current) await writePagedMode(false, settings);
+      return { ok, active: ok, pagedMode: ok };
+    }
+    const next = !current;
+    await writePagedMode(next, settings);
+    showToast(next ? '翻頁模式已開啟' : '翻頁模式已關閉', 'info');
+    return { ok: true, pagedMode: next };
+  }
+
+  async function writePagedMode(next, settings) {
+    const patch = { pagedMode: next };
+    const PROFILES = window.__JReadProfiles;
+    if (PROFILES && settings && typeof settings.activeProfile === 'string') {
+      const p = PROFILES.find(settings.profiles, settings.activeProfile);
+      if (p && p.fields && 'pagedMode' in p.fields && p.fields.pagedMode !== next) {
+        patch.activeProfile = null;
+      }
+    }
+    try {
+      await browser.storage.sync.set(patch);
+    } catch (_) { /* context invalidated 等：設定沒寫成，onChanged 也不會來，靜默 */ }
+  }
 
   // v1.7.79：懸浮按鈕長按選單「送到 <儲存服務>」的 content 端直送流程（Safari /
   // iOS / iPadOS 用）。v0.8.165 首次實作、v0.8.166 因「iOS 上 toast 不顯示、無回饋」
@@ -1636,7 +1687,7 @@
     // ——訊息來源雖限 extension 內部，仍防 payload 偽造 / 打錯字眼靜默 no-op。
     if (msg.type === NS.MSG.DISPATCH_COMMAND) {
       const command = msg.payload && msg.payload.command;
-      const allowed = ['toggle-reader-mode', 'toggle-youtube-borderless'];
+      const allowed = ['toggle-reader-mode', 'toggle-youtube-borderless', 'toggle-paged-mode'];
       if (!allowed.includes(command)) {
         sendResponse({ ok: false });
         return; // sync

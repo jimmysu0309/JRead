@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "1.9.8",
+  "version": "1.9.9",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文",
   "permissions": [
     "storage",
@@ -108,6 +108,13 @@
         "mac": "Alt+Y"
       },
       "description": "切換 YouTube 無邊模式"
+    },
+    "toggle-paged-mode": {
+      "suggested_key": {
+        "default": "Alt+P",
+        "mac": "Alt+P"
+      },
+      "description": "切換翻頁模式（閱讀模式未啟動時以翻頁模式進入）"
     }
   },
   "web_accessible_resources": [

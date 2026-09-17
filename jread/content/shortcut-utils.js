@@ -17,8 +17,9 @@
 (function (global) {
   'use strict';
 
-  // 三個可自訂指令（與 manifest.json commands key 同字彙，單一詞彙表）
-  var COMMANDS = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless'];
+  // 可自訂指令（與 manifest.json commands key 同字彙，單一詞彙表）。
+  // v1.9.9：新增 toggle-paged-mode（翻頁模式快速鍵，預設 ⌥P）。
+  var COMMANDS = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless', 'toggle-paged-mode'];
 
   // manifest.json commands 的 suggested_key 鏡像（瀏覽器層預設鍵）。
   // regression spec 有 forcing function 守這份鏡像與 manifest 逐欄一致——
@@ -31,7 +32,8 @@
   var MANIFEST_DEFAULTS = {
     'toggle-reader-mode':        { code: 'KeyR', alt: true, shift: false, ctrl: false, meta: false },
     'send-to-readwise':          { code: 'KeyR', alt: true, shift: true,  ctrl: false, meta: false },
-    'toggle-youtube-borderless': { code: 'KeyY', alt: true, shift: false, ctrl: false, meta: false }
+    'toggle-youtube-borderless': { code: 'KeyY', alt: true, shift: false, ctrl: false, meta: false },
+    'toggle-paged-mode':         { code: 'KeyP', alt: true, shift: false, ctrl: false, meta: false }
   };
 
   // 純 modifier 鍵的 e.code——按下這些時組合還沒完成，eventToShortcut 回 null
@@ -157,7 +159,7 @@
     };
   }
 
-  // 整張表消毒：保證三個 command key 都在、value 是合法 shortcut 或 null
+  // 整張表消毒：保證 COMMANDS 每個 key 都在、value 是合法 shortcut 或 null
   function sanitizeTable(raw) {
     var table = {};
     for (var i = 0; i < COMMANDS.length; i++) {

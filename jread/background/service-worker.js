@@ -258,7 +258,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // tabId 取 sender.tab（按鍵發生的 tab，比 active-tab query 更準——
       // 背景 tab 透過巨集鍵盤等送鍵時不會誤殺前景 tab）。
       const command = msg.payload && msg.payload.command;
-      const allowed = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless'];
+      const allowed = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless', 'toggle-paged-mode'];
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId !== 'number' || !allowed.includes(command)) return;
       // fire-and-forget：內部錯誤路徑多回錯誤物件而非 throw，但極端故障
@@ -548,7 +548,9 @@ async function dispatchCommand(command, tabId) {
   // 存活；SW 這裡只剩 manifest 預設鍵（browser 層事件）的委派 + content script
   // 未注入頁面的 injection fallback。重導決策單一資料源在 main.js，這裡不可
   // 重新長出狀態查詢 / 重導分支（youtube-borderless.spec 有 forcing function 釘著）。
-  if (command === 'toggle-reader-mode' || command === 'toggle-youtube-borderless') {
+  // v1.9.9：toggle-paged-mode 同屬 content 端本地 dispatch 的 toggle 類指令
+  //（翻 storage.sync.pagedMode，實際 install 走既有 onChanged 重套路徑）。
+  if (command === 'toggle-reader-mode' || command === 'toggle-youtube-borderless' || command === 'toggle-paged-mode') {
     const { sendWithInjectionFallback } = self.__JReadPopup;
     await sendWithInjectionFallback(tabId, {
       type: 'DISPATCH_COMMAND',
