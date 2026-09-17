@@ -34,7 +34,7 @@ document.getElementById('version').textContent = browser.runtime.getManifest().v
 // content/shortcut-utils.js（window.__JReadShortcuts），與 content script
 // 的 keydown 比對單一資料源。
 const SC = window.__JReadShortcuts;
-let shortcutTable = SC.sanitizeTable(null); // 三 key 全 null
+let shortcutTable = SC.sanitizeTable(null); // 全部 command key 皆 null（key 清單見 SC.COMMANDS）
 let recordingCmd = null;                    // 錄製中的 command（null = 沒在錄）
 
 // runtime 偵測（依 extension URL 前綴，非 OS / build flag）：
