@@ -9506,6 +9506,15 @@
     for (const img of toPin) hide(img, hiddenList);
   }
 
+  // v1.9.10：JRead 自建標題節點判定（動態 observer 豁免用；標記與
+  // articleHasPromotedTitle / NS.findCardTitleHeading 對同一組節點的識別一致）。
+  function isJreadOwnedTitleNode(node) {
+    if (!node || !node.getAttribute) return false;
+    return node.getAttribute('data-jread-title-clone') === '1' ||
+           node.getAttribute('data-jread-promoted-outside') === '1' ||
+           node.getAttribute('data-jread-injected-title') === '1';
+  }
+
   function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
     if (!articleEl || !articleEl.parentElement) return;
@@ -9541,6 +9550,15 @@
             if (hideHollowMediaEmbedFrom(articleEl, node, hiddenList)) continue;
           }
           if (isInPreserved(node)) continue;
+          // v1.9.10：JRead 自建的標題節點不是頁面晚注入的雜訊——翻頁模式 install /
+          // uninstall 會把翻譯頁的外置標題 clone（placePromotedTitleClone 放 articleEl
+          // 前一個 sibling）搬進 / 搬出 articleEl，搬出那一刻本 observer 看到「祖先鏈
+          // 上多了一個 node」就走下方外部 append 分支 hide 掉 → 翻頁 → 捲動 → 翻頁
+          // 來回後標題永久 display:none（Jimmy 2026-09-17 Stratechery 翻譯後翻頁模式
+          // 標題消失；cage 真實 Chrome 實證 attrs 多出 data-jread-hidden）。判定用
+          // JRead 自己的標記（title-clone / promoted-outside / injected-title），
+          // 結構訊號、不綁站點；一般站方 lazy-inject 節點不會帶這些 attr。
+          if (isJreadOwnedTitleNode(node)) continue;
 
           // 祖先鏈上 append 的 node（articleEl scope 外）：hide 整塊（v0.7.31
           // cnyes 修法）。

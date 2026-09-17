@@ -2764,14 +2764,27 @@ html [${ARTICLE_ATTR}="1"] {
    （line ~1027）只覆蓋 max-height/object-fit/display、未設 width，故此規則的
    width:auto 仍會命中 emoji——必須在選擇器層排除。 */
 html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
-html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] svg,
-html [${ARTICLE_ATTR}="1"] iframe {
+html [${ARTICLE_ATTR}="1"] video {
   max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
   max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
   width: auto !important;
   max-width: 100% !important;
   object-fit: contain !important;
+}
+/* v1.9.10：iframe 不可套上面那條的 width: auto——iframe 是「沒有 intrinsic 尺寸」
+   的替換元素，width: auto 不會像 img 那樣退回原始寬度、而是掉回 HTML spec 預設
+   300px，高度卻仍吃站方 height 屬性 → 影片變成 300px 寬的直式窄框、poster 只露
+   左半（Jimmy 2026-09-17 Stratechery VideoPress 翻頁模式截圖；harness 量到
+   iframe 300×342 在 608 寬 wrapper 內）。捲動模式的 iframe 基準規則（上方
+   「iframe 特例」）也是同一理由只 cap max-width、不動 width / height。
+   翻頁模式對 iframe 只留單頁 cap（max-height）與寬度 cap；object-fit 對 iframe
+   無效、不寫。abs-pos 的 responsive embed（FILL_IFRAME_ATTR 雙 attr (0,3,1)）
+   specificity 高於本規則 (0,1,2)，維持 width/height:100% 填滿 wrapper 不受影響。 */
+html [${ARTICLE_ATTR}="1"] iframe {
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-width: 100% !important;
 }
 /* v0.8.35：以「與 base 90vh cap 逐字相同的 selector（MEDIA_CAP_SEL）、同
    specificity、後注入勝」覆寫單頁 cap。上一條 html 前綴規則 (0,2,2) 在
