@@ -79,7 +79,7 @@
   // 16:07」實案——新聞站當年文章常省年份，原 regex 中文變體強制 \d{4}年 開頭
   // 全 miss → byline pass 不啟動、collapse 的破壞沒人接管）。誤命中風險受
   // byline zone 約束（掃描限標題與第一段內文之間、direct text < 40 chars）。
-  const BYLINE_DATE_RE = /(\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2},?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日/i;
+  const BYLINE_DATE_RE = /(\b\d{1,2}(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{4}\b)|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z.]*\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})|(\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b)|(\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日/i;
   // v1.7.4：相對日期訊號（"5 days ago" / "3 小時前"）——Medium 等站近期文章的
   // byline 只顯示相對日期（無 <time>、無絕對日期字串），BYLINE_DATE_RE 不命中 →
   // byline root 偵測整套 miss → 站點 byline 自帶的垂直 margin 留下（Medium 閱讀
@@ -88,6 +88,16 @@
   // BYLINE_DATE_RE 的子字串比對嚴——「N days ago」也會出現在內文敘述句裡，
   // 全字串比對 + beforeBody guard 雙保險避免誤標內文。
   const BYLINE_REL_DATE_RE = /^(updated|published|posted)?\s*(about\s+)?(\d+|an?)\s*(second|sec|minute|min|hour|hr|day|week|month|year)s?\s+ago$|^(更新於?|發佈於?|發布於?)?\s*\d+\s*(秒|分鐘|小時|天|日|週|周|個月|年)前$/i;
+  // v1.9.11：無年份英文日期（"Sep 20th" / "20 Sep" / "September 3"）——Readwise
+  // Reader 對當年文件的 metadata row 只顯示「Sep 20th」（無 <time>、無年份、帶序數
+  // 後綴），BYLINE_DATE_RE 強制 \d{4} 全 miss → byline root 偵測整套沒跑 → 閱讀
+  // 時間沒藏、作者與閱讀時間黏字（Jimmy 2026-09-21 回報）。與 v1.7.35 中文無年份
+  // 變體同一類缺口，但英文版**必須全字串錨定 + 月份名完整列舉**：子字串 + 寬鬆
+  // 月份前綴（[a-z.]*）會讓 "Mark 2" / "May 5 people" 這類短文誤命中（帶年份的
+  // 變體靠 \d{4} 收斂、無年份沒有這層保險）。比對走 brelDate 同一條切段路徑。
+  const BYLINE_MONTH_SRC = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+  const BYLINE_YEARLESS_DATE_RE = new RegExp(
+    '^(?:' + BYLINE_MONTH_SRC + '\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}(?:st|nd|rd|th)?\\s+' + BYLINE_MONTH_SRC + '\\.?)$', 'i');
   // v1.7.4：相對日期比對前先按分隔符切段、任一段全字串命中即算——翻譯（Shinkansen
   // →Google MT）常把整列 byline 合併成單一 text node（「閱讀 15 分鐘·5 天前」，
   // 子元素結構消失），全字串錨定被閱讀時間前綴打敗。切段後「5 天前」獨立成段照樣
@@ -100,7 +110,11 @@
   const BYLINE_AUTHOR_PREFIX_RE = /^(?:(?:by|words by|written by)\b|作者|文[／/])/i;
   // v1.7.4：中文閱讀時間補 Google 翻譯語序「閱讀 N 分鐘」（原僅「N 分鐘閱讀」）
   // 與簡體形——翻譯後 DOM 的閱讀時間字面不受控，兩種語序 + 繁簡都收
-  const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|(閱讀|阅读)\s*(時間|时间)|(閱讀|阅读)\s*\d+\s*(分鐘|分钟)|\d+\s*(分鐘|分钟)(閱讀|阅读)/i;
+  // v1.9.11：補「裸 N min(s) / N 分鐘」（無 read 後綴；Readwise Reader metadata row
+  // 的「2 mins」）。**全字串錨定**（呼叫端一律餵 bnorm 過的整段 textContent）——
+  // 子字串比對會誤中「10 minutes ago」「5 min walk」這類片語；byline 區內整顆 item
+  // 只有「N mins」＝閱讀時間（或影音長度，同屬非必要 meta）。
+  const BYLINE_RT_RE = /\b\d+\s*min(ute)?s?\s+read\b|^\d+\s*min(ute)?s?\.?$|^\d+\s*(分鐘|分钟)$|(閱讀|阅读)\s*(時間|时间)|(閱讀|阅读)\s*\d+\s*(分鐘|分钟)|\d+\s*(分鐘|分钟)(閱讀|阅读)/i;
   // v1.7.4：byline 內純分隔符 item（「·」「|」「—」…）。分隔符的語意是隔開兩個
   // 可見 item；相鄰 item 被隱藏（閱讀時間 / 發稿時刻 / 節目 chip）後分隔符變孤兒
   //（Medium「15 min read·5 days ago」藏掉閱讀時間 → 殘留「· 5 days ago」），
@@ -5061,7 +5075,11 @@ html.${HTML_CLASS}.jread-orion body {
             };
             const bdirect = (el) => bnorm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
             // v1.7.4：相對日期切段比對（見 BYLINE_SEG_SPLIT_RE 常數註解）
-            const brelDate = (s) => !!s && s.split(BYLINE_SEG_SPLIT_RE).some((seg) => BYLINE_REL_DATE_RE.test(seg.trim()));
+            // v1.9.11：同一條切段路徑加收無年份英文日期（見 BYLINE_YEARLESS_DATE_RE 常數註解）
+            const brelDate = (s) => !!s && s.split(BYLINE_SEG_SPLIT_RE).some((seg) => {
+              const t = seg.trim();
+              return BYLINE_REL_DATE_RE.test(t) || BYLINE_YEARLESS_DATE_RE.test(t);
+            });
             // v1.7.43：純分隔符 item 判定（null-safe）——markRt 相鄰分隔符標記與
             // 孤兒分隔符掃描共用（原兩份 micro-dup）
             const bisSep = (el) => !!el && BYLINE_SEP_RE.test(bnorm(el.textContent)) &&
@@ -5383,6 +5401,19 @@ html.${HTML_CLASS}.jread-orion body {
                     setMark(el, BYLINE_SEP_ATTR);
                   }
                 });
+                // v1.9.11：零尺寸空殼 item（無文字、無媒體、無子元素、rect 寬或高
+                // 為 0）一併隱藏。站點用空 div 當 CSS 分隔點、或留空的佔位 span
+                //（Readwise Reader metadata row 的 separator / 無 tag 時的 tags 容器），
+                // 本身看不見，但身為 root 的 flex item 每顆各吃一個 column-gap——作者
+                // 與日期之間實測 30px（應為 10px）。bisSep 靠文字判定、接不到這類
+                // 空殼。有實際寬高的 CSS 繪製分隔點不動（那是看得見的分隔符）。
+                for (const el of items) {
+                  if (el.hasAttribute(BYLINE_SEP_ATTR) || el.children.length || bnorm(el.textContent)) continue;
+                  if (/^(IMG|PICTURE|TIME|SVG|VIDEO)$/i.test(el.tagName)) continue;
+                  let r = null;
+                  try { r = el.getBoundingClientRect(); } catch (_) { r = null; }
+                  if (r && (r.width === 0 || r.height === 0)) setMark(el, BYLINE_SEP_ATTR);
+                }
               }
             }
             // v1.5.28：移除標題前的分類 kicker / eyebrow（NPR「BUSINESS」連到
