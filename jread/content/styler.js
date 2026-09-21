@@ -196,6 +196,19 @@
   const TEXT_DIV_ATTR = 'data-jread-text-div';
   // v1.6.12：CJK 為主的內文段落標記——套 text-align: justify（見 markCjkParagraphs）。
   const CJK_JUSTIFY_ATTR = 'data-jread-cjk-justify';
+  // v1.9.12：引言（<blockquote>）視覺補強標記（Jimmy 2026-09-21，Readwise Reader
+  // 文件頁「引言跟內文幾乎長一樣」）。JRead 對引言的既有立場是「保留站方設計」
+  //（BORDER / BG preserve 清單含 blockquote），但站方若只給斜體 + 小縮排（Reader：
+  // italic + padding-left 17px、無邊線無底色），字級 / 字重 / 顏色又被 reader 統一成
+  // 內文值後，引言就只剩 17px 縮排可辨識。兩個標記各管一件事、互相獨立：
+  //   BQ_PLAIN_ATTR   = 「量得出來沒有任何可見裝飾」的引言 → CSS 補主題色左邊線 +
+  //                     1em 左內距。站方已有引言框設計（邊線 / 底色 / 陰影 / 引號
+  //                     pseudo）的一律不標、完全不動。
+  //   BQ_UPRIGHT_ATTR = CJK 為主、且 computed 為 italic / oblique 的引言 → 取消斜體。
+  //                     中文字型沒有真斜體，瀏覽器是機械傾斜（faux oblique），辨識度
+  //                     低又傷可讀性；英文引言保留斜體（真 italic 字型、排版慣例）。
+  const BQ_PLAIN_ATTR = 'data-jread-bq-plain';
+  const BQ_UPRIGHT_ATTR = 'data-jread-bq-upright';
   // v1.6.23：內文裝飾性大寫 / 加寬字距標記——重設回一般（見 markDecorativeInlines）。
   const DECOR_RESET_ATTR = 'data-jread-decor-reset';
   // v1.7.8：inline-flow <p> 標記——豁免 v0.7.201 水平 padding reset（見
@@ -2118,6 +2131,23 @@ html [${ARTICLE_ATTR}="1"] dl {
 [${ARTICLE_ATTR}="1"] *${BORDER_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]):not([${ABS_ANCHOR_ATTR}="1"]) {
   left: auto !important;
   right: auto !important;
+}
+/* v1.9.12 無裝飾引言補左邊線（見 BQ_PLAIN_ATTR 常數註解）。attr 重複兩次是刻意
+   提高 specificity 到 (0,3,1)：站點常見 blockquote.xxx / .post blockquote
+   (0,1,1)~(0,2,1) 的 padding / border reset 不可贏。border 三個 longhand 分開寫、
+   只動 left——其餘三邊維持站方值（本來就量過是不可見的）。 */
+[${ARTICLE_ATTR}="1"] blockquote[${BQ_PLAIN_ATTR}="1"][${BQ_PLAIN_ATTR}="1"] {
+  border-left-width: 3px !important;
+  border-left-style: solid !important;
+  border-left-color: ${theme.link} !important;
+  padding-left: 1em !important;
+}
+/* v1.9.12 CJK 為主引言取消 faux 斜體（見 BQ_UPRIGHT_ATTR 常數註解）。子孫一併
+   normal——站方斜體常掛在 blockquote p 而非 blockquote 自身；語意強調元素
+   （em / i / cite / dfn / var）豁免，保留作者的強調標記。 */
+[${ARTICLE_ATTR}="1"] blockquote[${BQ_UPRIGHT_ATTR}="1"][${BQ_UPRIGHT_ATTR}="1"],
+[${ARTICLE_ATTR}="1"] blockquote[${BQ_UPRIGHT_ATTR}="1"][${BQ_UPRIGHT_ATTR}="1"] *:not(em):not(i):not(cite):not(dfn):not(var) {
+  font-style: normal !important;
 }
 /* v0.7.190 inline code 底色統一：原站 inline <code>（不含 <pre> 內的）
    底色差異極大——MDN 用深灰近黑 rgb(45,48,52)、多數站用淺灰。reader
@@ -4196,10 +4226,11 @@ html.${HTML_CLASS}.jread-orion body {
       const edgeMarks = [];
       // v1.8.4：標題不可見 pseudo 間距佔位標記（見 passHeadingPseudoSpacerReset）
       const headingSpacerMarks = [];
+      const quoteMarks = [];
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5450,6 +5481,100 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passBlockquoteMarks = () => {
+        // v1.9.12：引言視覺補強（見 BQ_PLAIN_ATTR / BQ_UPRIGHT_ATTR 常數註解）。
+        // 排在 contrast 各 phase 之後：dark / sepia 會強制清 blockquote 背景
+        //（v0.7.154），「只靠淺底區分」的站方引言框在暗色主題下量到的就是透明 →
+        // 判為無裝飾 → 補邊線，正好補回被清掉的區隔；light 下底色還在 → 不動。
+        //
+        // 「有裝飾」判定（任一成立即不標 plain）——量 computed、非 class 特判：
+        //   自身 / 可見直接子元素 / 包裝父層（父層只包這一顆、或父層是 figure /
+        //   aside 這類引言包裝慣例）任一有：可見邊線（width > 0 + style 非 none +
+        //   顏色非透明）、背景色 alpha >= 0.05 或背景圖、box-shadow、或有內容 /
+        //   有底色的 ::before / ::after（引號圖示、色條）。
+        //   量的是「reader CSS 注入後」的 computed：子層若是 div / p 這類不在
+        //   BORDER / BG preserve 清單的 tag，其邊線與底色早被 reader 通則清掉、
+        //   量到就是無裝飾（畫面上確實也看不到）→ 照補邊線，這是預期行為。
+        // 已知取捨：站方拿 <blockquote> 當純縮排（內容不是引言）也會補邊線——
+        // probe 四站（stratechery / wikipedia / paulgraham / Reader）未見此用法，
+        // 且語意上 blockquote 就是引言，補邊線不算錯。
+        //
+        // 訊號層次：本 pass 驗「blockquote 的 computed 裝飾」一層。不驗站方用
+        // <p> / <div> + class 做的引言（沒有 tag 語意、無結構訊號可抓）、不驗
+        // apply 之後才 lazy 注入的 blockquote。
+        const bwin = articleEl.ownerDocument?.defaultView;
+        if (!bwin || !bwin.getComputedStyle) return;
+        const alphaOf = (c) => {
+          if (!c || c === 'transparent') return 0;
+          const m = /^rgba?\(([^)]+)\)$/.exec(c);
+          if (!m) return 1; // 具名色 / hex（jsdom）＝不透明
+          const parts = m[1].split(',');
+          return parts.length >= 4 ? (parseFloat(parts[3]) || 0) : 1;
+        };
+        const hasVisibleBorder = (cs) => ['Top', 'Right', 'Bottom', 'Left'].some((side) =>
+          (parseFloat(cs[`border${side}Width`]) || 0) > 0 &&
+          cs[`border${side}Style`] && cs[`border${side}Style`] !== 'none' &&
+          alphaOf(cs[`border${side}Color`]) >= 0.05);
+        const hasOwnBg = (cs) => alphaOf(cs.backgroundColor) >= 0.05 ||
+          (!!cs.backgroundImage && cs.backgroundImage !== 'none');
+        // 無 layout 引擎的環境（jsdom）不量 pseudo——jsdom 未實作帶 pseudo 參數的
+        // getComputedStyle（同 passHeadingPseudoSpacerReset 的 short-circuit 判定）
+        const bRootEl = articleEl.ownerDocument && articleEl.ownerDocument.documentElement;
+        const hasLayout = !!bRootEl && bRootEl.getBoundingClientRect().height > 0;
+        const hasPseudoDecor = (el) => {
+          if (!hasLayout) return false;
+          for (const pseudo of ['::before', '::after']) {
+            let ps;
+            // 只吞 SyntaxError（jsdom nwsapi 既知行為，同 passHeadingPseudoSpacerReset）
+            try { ps = bwin.getComputedStyle(el, pseudo); } catch (e) {
+              if (e && e.name === 'SyntaxError') return false;
+              throw e;
+            }
+            if (!ps || !ps.content || ps.content === 'none' || ps.content === 'normal') continue;
+            if (ps.content !== '""' && ps.content !== "''") return true; // 引號字元 / url() 圖示
+            if (hasOwnBg(ps) || hasVisibleBorder(ps)) return true;       // 空 content 的色條
+          }
+          return false;
+        };
+        const isDecorated = (el) => {
+          const cs = bwin.getComputedStyle(el);
+          return hasVisibleBorder(cs) || hasOwnBg(cs) ||
+            (!!cs.boxShadow && cs.boxShadow !== 'none') || hasPseudoDecor(el);
+        };
+        const isShown = (el) => {
+          if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
+          const cs = bwin.getComputedStyle(el);
+          return cs.display !== 'none' && cs.visibility !== 'hidden';
+        };
+        const mark = (el, attr) => { el.setAttribute(attr, '1'); quoteMarks.push({ el, attr }); };
+        for (const bq of articleEl.querySelectorAll('blockquote')) {
+          if (!isShown(bq)) continue;
+          const txt = bq.textContent || '';
+          if (!txt.trim()) continue; // 純媒體 / 空殼（embed placeholder）不是文字引言
+          // --- 斜體：CJK 為主才取消（判定同 markCjkParagraphs 的佔比訊號）---
+          const han = (txt.match(CJK_HAN_RE) || []).length;
+          const latin = (txt.match(LATIN_LETTER_RE) || []).length;
+          if (han >= 4 && han / (han + latin) >= 0.3) {
+            const carrier = bq.querySelector('p, div, span') || bq;
+            const italicRe = /italic|oblique/;
+            if (italicRe.test(bwin.getComputedStyle(bq).fontStyle || '') ||
+                italicRe.test(bwin.getComputedStyle(carrier).fontStyle || '')) {
+              mark(bq, BQ_UPRIGHT_ATTR);
+            }
+          }
+          // --- 左邊線：自身 / 子 / 包裝父層皆無裝飾才補 ---
+          if (isDecorated(bq)) continue;
+          if (Array.from(bq.children).some((c) => isShown(c) && isDecorated(c))) continue;
+          const par = bq.parentElement;
+          if (par && par !== articleEl && articleEl.contains(par)) {
+            const shownSibs = Array.from(par.children).filter(isShown);
+            const isWrapper = shownSibs.length === 1 || /^(FIGURE|ASIDE)$/i.test(par.tagName);
+            if (isWrapper && isDecorated(par)) continue;
+          }
+          mark(bq, BQ_PLAIN_ATTR);
+        }
+      };
+
       const passCjkDecorInlineFlowMarks = () => {
         // v1.6.12：CJK 為主段落標記（須在 TEXT_DIV_ATTR 標記後，才含 div 當段落站）。
         // 翻譯優先（iOS Safari 實機順序）時 text 已是中文、此處即命中；純文字判定、
@@ -6605,6 +6730,7 @@ html.${HTML_CLASS}.jread-orion body {
         passVisibleEdgeChildMarks,
         passHeadingPseudoSpacerReset,
         passBylineKicker,
+        passBlockquoteMarks,
         passCjkDecorInlineFlowMarks,
         passAncestorPaddingStrip,
         passNegMarginStrip,
@@ -6808,6 +6934,12 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.8.4：移除標題 pseudo 間距佔位標記
       if (Array.isArray(snapshot.headingSpacerMarks)) {
         for (const m of snapshot.headingSpacerMarks) {
+          if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
+        }
+      }
+      // v1.9.12：引言補強標記（BQ_PLAIN / BQ_UPRIGHT）
+      if (Array.isArray(snapshot.quoteMarks)) {
+        for (const m of snapshot.quoteMarks) {
           if (m && m.el && m.el.removeAttribute) m.el.removeAttribute(m.attr);
         }
       }

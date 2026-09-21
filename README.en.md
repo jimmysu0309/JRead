@@ -18,7 +18,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 
 - **Article detection**: tries `<article>`, then Schema.org markup, then a content-density heuristic to locate the real article block
 - **One-click toggle**: enter and exit reading mode from the toolbar menu, the floating button, a keyboard shortcut, or a three-finger tap
-- **Clean typography**: adjustable font, size, weight (light / regular / bold), line height, and content width; a width self-check makes sure body text, headings, and category rows all fill the configured width instead of being pinched by the original site's wrappers
+- **Clean typography**: adjustable font, size, weight (light / regular / bold), line height, and content width; a width self-check makes sure body text, headings, and category rows all fill the configured width instead of being pinched by the original site's wrappers; blockquotes keep the site's own design, get a theme-colored left rule when the site gives them none, and CJK quotes are never set in faux italics
 - **Latin font override**: when the font is set to serif or sans-serif, you can pick a separate Latin font for letters and numbers while Chinese keeps its serif / sans rendering; each mode remembers its own choice. Alongside system fonts, four variable fonts ship built in (Source Serif, Piazzolla, Public Sans, Source Sans), available across platforms including iOS
 
 ### Noise handling
