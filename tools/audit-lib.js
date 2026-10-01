@@ -1567,6 +1567,62 @@ async function takePagedScreenshots(page, opts) {
   return paths;
 }
 
+// ---- 翻頁模式逐頁截圖（--paged 專用，2026-10-01）----
+// 翻頁模式的 reader card 是 fixed 滿版 multicol 容器、內容往「水平」長，文件
+// 本身只有一個視窗大——takePagedScreenshots 的垂直捲動拍出來每張都一樣，
+// fullPage:true 更會卡死：body 套 zoom 0.5 後 scrollWidth/Height 變成視窗的
+// 2 倍，Playwright 判定「超出視窗」改走 Chromium captureBeyondViewport，長文
+// （zh 維基台北101、68 頁）renderer 滿載不返回（對照實驗：不縮放的 fullPage
+// 0.1s 完成、縮放後手動 setViewportSize 2560×1800 也正常，只有「縮放＋
+// fullPage」卡）。改成：Home 回第一頁 → 每頁截一張 → 按 → 翻下一頁。
+// **一律 zoom 1.0**（Jimmy 2026-10-01 裁定，「截圖一律 zoom 0.5」的翻頁模式
+// 例外）：zoom 0.5 會讓每頁變 2 倍高、分頁結果與實機不同（商周頁實際 5 頁、
+// zoom 0.5 截圖裡變 3 頁），「圖跨頁被切」這類 bug 驗不準。
+// 驗的訊號層次：每頁在真實分頁下的視覺。不驗：swipe 手勢、WebKit 軌。
+// maxPages 截斷時明確 log（no silent caps）。
+async function takePageFlipScreenshots(page, opts) {
+  const { dir, prefix, maxPages = 40 } = opts;
+  const readState = () => page.evaluate(() => {
+    const art = document.querySelector('[data-jread-active="1"]');
+    const ind = (document.getElementById('__jread-page-indicator') || {}).textContent || '';
+    const m = ind.match(/(\d+)\s*\/\s*(\d+)/);
+    return { scrollLeft: art ? art.scrollLeft : 0, total: m ? parseInt(m[2], 10) : 0 };
+  });
+  // 等翻頁動畫停：scrollLeft 連續兩次讀值相同（上限 2s）
+  const settle = async () => {
+    let prev = -1;
+    for (let i = 0; i < 20; i++) {
+      await sleep(100);
+      const { scrollLeft } = await readState();
+      if (scrollLeft === prev) return;
+      prev = scrollLeft;
+    }
+  };
+  await page.keyboard.press('Home');
+  await settle();
+  const { total } = await readState();
+  const fullCount = Math.max(1, total);
+  const count = Math.min(fullCount, maxPages);
+  const paths = [];
+  for (let i = 0; i < count; i++) {
+    const p = path.join(dir, `${prefix}-page-${String(i + 1).padStart(2, '0')}.png`);
+    await page.screenshot({ path: p });
+    paths.push(p);
+    if (i < count - 1) {
+      await page.keyboard.press('ArrowRight');
+      await settle();
+    }
+  }
+  if (fullCount > count) {
+    console.log(`  ⚠️ ${prefix}: 截圖頁數達上限 ${maxPages}，尾端 ${fullCount - count} 頁未拍（共 ${fullCount} 頁）`);
+  }
+  if (!total) console.log(`  ⚠️ ${prefix}: 讀不到頁碼指示器，只拍了目前這一頁`);
+  await page.keyboard.press('Home');
+  await settle();
+  console.log(`  ${prefix}: ${count}/${fullCount} pages（翻頁模式逐頁、zoom 1.0）`);
+  return paths;
+}
+
 // ---- set-theme（dispatch + 驗證實際套上）----
 // v0.8.36 起 set-theme 走 SW 中繼 + development install gate——dispatch 不保證
 // 生效（gate 拒絕 / SW 掛掉 / storage race 都 silent）。本 helper dispatch 後
@@ -1745,5 +1801,6 @@ module.exports = {
   runDroppedBylineAudit,
   waitForReaderImagesLoaded,
   takePagedScreenshots,
+  takePageFlipScreenshots,
   setThemeAndVerify
 };
