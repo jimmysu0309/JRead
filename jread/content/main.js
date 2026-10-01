@@ -45,13 +45,25 @@
     return new Promise(resolve => {
       // v0.8.144：在讀取邊界把英文（拉丁）fallback 字型選擇前接到 fontFamily
       // base stack——styler 下游維持「只認 fontFamily 整串字面值」的契約不變。
-      const finish = (values) => {
-        const compose = window.__JReadComposeFontStack;
-        if (values && typeof compose === 'function') {
-          const composed = compose(values);
+      const compose = (values) => {
+        const composeStack = window.__JReadComposeFontStack;
+        if (values && typeof composeStack === 'function') {
+          const composed = composeStack(values);
           if (composed) values.fontFamily = composed;
         }
         resolve(values);
+      };
+      // v1.9.14：設定檔改每台裝置各自套用——sync 讀回的是「自訂」那組 flat 欄位，
+      // 這裡疊上本機套用中的設定檔快照與草稿（storage.local profileState），下游
+      // 拿到的就是有效版面。alreadyEffective = 值來自 SW 的 GET_SETTINGS（SW 端
+      // 已疊過；effective 重疊第二次會丟草稿，見 settings-defaults 註解）。
+      const finish = (values, alreadyEffective) => {
+        const P = window.__JReadProfiles;
+        if (!values || alreadyEffective || !P || typeof P.readLocalState !== 'function') {
+          compose(values);
+          return;
+        }
+        P.readLocalState().then((local) => compose(P.effective(values, local)));
       };
       // v1.6.24：fallback 加 timeout 兜底——iOS SW 死亡後 sendMessage 可能石沉大海
       //（callback 永不回），getSettings 懸空會讓 enterReaderMode 的 enterInFlight
@@ -62,7 +74,7 @@
         const t = setTimeout(() => finish(undefined), FALLBACK_TIMEOUT_MS);
         safeSendMessage({ type: NS.MSG.GET_SETTINGS }, (values) => {
           clearTimeout(t);
-          finish(values);
+          finish(values, true);
         });
       };
       // v0.8.164：browser.storage.sync.get 原生 Promise（無 callback / lastError）；
@@ -1437,9 +1449,9 @@
   //     把設定寫回原值，不留副作用
   //   - 影院模式：沒有翻頁概念，toast 告知後 no-op
   //
-  // v1.9.0 設定檔：pagedMode 屬 PROFILE_KEYS，改成與套用中設定檔快照不符時
-  // activeProfile 歸 null（與 popup save() 的 resolveActiveProfile 失效語意一致；
-  // 「改回來剛好對上某組」的重新對上交給 popup 開啟時的 resolve 自癒）。
+  // 設定檔：pagedMode 屬 PROFILE_KEYS。v1.9.14 起寫入一律經 PROFILES.writeLayout
+  // 分流——本機套用中設定檔時進 storage.local 草稿（popup 顯示「已修改」、設定檔
+  // 本身與其他裝置不受影響），自訂時照舊寫 storage.sync。
   async function togglePagedMode() {
     if (NS.state.cinemaActive) {
       showToast('影院模式不支援翻頁模式', 'error');
@@ -1448,28 +1460,23 @@
     const settings = await getSettings();
     const current = !!(settings && settings.pagedMode === true);
     if (!NS.state.active) {
-      if (!current) await writePagedMode(true, settings);
+      if (!current) await writePagedMode(true);
       const ok = await enterReaderMode();
-      if (!ok && !current) await writePagedMode(false, settings);
+      if (!ok && !current) await writePagedMode(false);
       return { ok, active: ok, pagedMode: ok };
     }
     const next = !current;
-    await writePagedMode(next, settings);
+    await writePagedMode(next);
     showToast(next ? '翻頁模式已開啟' : '翻頁模式已關閉', 'info');
     return { ok: true, pagedMode: next };
   }
 
-  async function writePagedMode(next, settings) {
+  async function writePagedMode(next) {
     const patch = { pagedMode: next };
-    const PROFILES = window.__JReadProfiles;
-    if (PROFILES && settings && typeof settings.activeProfile === 'string') {
-      const p = PROFILES.find(settings.profiles, settings.activeProfile);
-      if (p && p.fields && 'pagedMode' in p.fields && p.fields.pagedMode !== next) {
-        patch.activeProfile = null;
-      }
-    }
     try {
-      await browser.storage.sync.set(patch);
+      const P = window.__JReadProfiles;
+      if (P && typeof P.writeLayout === 'function') await P.writeLayout(patch);
+      else await browser.storage.sync.set(patch);
     } catch (_) { /* context invalidated 等：設定沒寫成，onChanged 也不會來，靜默 */ }
   }
 
@@ -1781,6 +1788,13 @@
   if (browser.storage && browser.storage.onChanged) {
     // scheduleReapply 已搬到模組層（v0.8.148，與 onMessage REAPPLY_SETTINGS 共用）。
     browser.storage.onChanged.addListener((changes, area) => {
+      // v1.9.14：本機設定檔狀態（storage.local profileState）變了＝這台裝置換了
+      // 設定檔或調了草稿 → 重套（guard 與 pageshow 兜底同一支）
+      if (area === 'local') {
+        const P = window.__JReadProfiles;
+        if (P && P.STATE_KEY in changes) reapplyFromStorageOnResume();
+        return;
+      }
       if (area !== 'sync') return;
       // v1.8.0：除錯記錄開關即時生效（設定頁打開開關後不必重載擴充）。放在
       // active guard 之前——不論當前是否閱讀模式都要同步
@@ -1827,7 +1841,9 @@
       // v0.7.227：pagedMode 走 reapply 路徑——CSS 注入/移除需要 styler 重建
       // stylesheet，模組 install/uninstall 在 scheduleReapply 尾端同步
       // v1.9.0：補 titleFontSize（設定檔切換只走 onChanged、不再靠 REAPPLY_SETTINGS 補）
-      const relevantKeys = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode'];
+      // v1.9.14：補 profiles——套用中的設定檔被「更新」（本機 popup 或另一台裝置）
+      // 時快照內容變了，有效版面跟著變；沒套用設定檔時多重套一次是冪等的
+      const relevantKeys = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode', 'profiles'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();
