@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "1.9.15",
+  "version": "1.9.16",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文",
   "permissions": [
     "storage",
@@ -54,6 +54,7 @@
         "content/settings-defaults.js",
         "content/domain-match.js",
         "content/link-follow.js",
+        "content/site-overrides.js",
         "content/shortcut-utils.js",
         "content/custom-shortcuts.js",
         "content/touch-gestures.js",

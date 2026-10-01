@@ -9436,7 +9436,8 @@
   const SEL_TOOLBAR_NON_UI_SEL =
     'p, h1, h2, h3, h4, h5, h6, article, iframe, video, form, input, textarea, select';
   // 狀態欄位：hosts＝已放行的宿主；revealed＝被暫時解除 hide 的元素（hide 記錄
-  // 仍留在 hiddenList，還原照舊）；onSelChange＝selectionchange listener
+  // 仍留在 hiddenList，還原照舊）；pinned＝翻頁模式下由 JRead 接管位置的宿主；
+  // onSelChange / onScroll＝selectionchange 與 scroll（capture）listener
   let selToolbarState = null;
 
   function activeSelectionRect(articleEl) {
@@ -9469,13 +9470,81 @@
     return norm(host.textContent).length <= SEL_TOOLBAR_MAX_TEXT;
   }
 
-  function rectIsNearSelection(r, selRect) {
+  function rectIsHorizontallyNearSelection(r, selRect) {
+    return r.right >= selRect.left - SEL_TOOLBAR_MAX_H_GAP &&
+           r.left <= selRect.right + SEL_TOOLBAR_MAX_H_GAP;
+  }
+
+  // containingBlockShifted：JRead 自己改了宿主的定位基準（翻頁模式把 articleEl
+  // 變成 position:fixed 的橫向捲動多欄容器）。站方照「原本的 containing block」
+  // 算出來的水平位置會整個偏掉（Reader 實測第 1 頁偏右約 190px、第 N 頁還要再減
+  // N 個 stride），水平距離不再是可用的辨識訊號——只驗尺寸 + 垂直距離，放行後由
+  // pinToolbarOverSelection 接管位置、釘回選取上方。
+  function rectIsNearSelection(r, selRect, containingBlockShifted) {
     if (!r || r.width <= 0 || r.height <= 0) return false;
     if (r.width > SEL_TOOLBAR_MAX_W || r.height > SEL_TOOLBAR_MAX_H) return false;
     const vGap = Math.max(selRect.top - r.bottom, r.top - selRect.bottom);
     if (vGap > SEL_TOOLBAR_MAX_V_GAP) return false;
-    return r.right >= selRect.left - SEL_TOOLBAR_MAX_H_GAP &&
-           r.left <= selRect.right + SEL_TOOLBAR_MAX_H_GAP;
+    if (containingBlockShifted) return true;
+    return rectIsHorizontallyNearSelection(r, selRect);
+  }
+
+  function readerShiftedContainingBlock() {
+    return !!(NS.pagedMode && typeof NS.pagedMode.isInstalled === 'function' && NS.pagedMode.isInstalled());
+  }
+
+  // 翻頁模式下由 JRead 接管工具列的位置：釘在選取範圍正上方（置中、夾在
+  // viewport 內；上方放不下就放下方）。
+  // 為何不是「修正站方算出來的位置」：Reader 的定位會讀工具列當下的 rect 再重算
+  // inline transform（probe 實測：疊一個 translate:-352px 上去，站方下一輪就把
+  // transform 從 422 改成 70，修正量被原樣抵銷、工具列掉到畫面最左邊）——跟它
+  // 疊加只會互相拉扯。改成 stylesheet !important 規則（住 styler buildCss，
+  // attr 字串兩檔一致）把宿主改成 position:fixed + transform:none，座標走 CSS
+  // 自訂屬性；站方繼續改它的 inline transform / inset 都不再有效果。
+  // 座標寫完再量一次：祖先若有 transform / contain 讓 fixed 的基準不是 viewport，
+  // 量到的誤差補一次回去。選取捲出畫面（翻頁）時把工具列移到畫面外。
+  const SEL_TOOLBAR_PIN_ATTR = 'data-jread-seltb-pin';
+  const SEL_TOOLBAR_PIN_LEFT = '--jread-seltb-left';
+  const SEL_TOOLBAR_PIN_TOP = '--jread-seltb-top';
+  const SEL_TOOLBAR_EDGE_MARGIN = 8;
+  const SEL_TOOLBAR_PIN_GAP = 10;
+  function pinToolbarOverSelection(host, selRect, state) {
+    const win = host.ownerDocument.defaultView;
+    const vw = win.innerWidth || 0;
+    const vh = win.innerHeight || 0;
+    if (state.pinned.indexOf(host) < 0) state.pinned.push(host);
+    host.setAttribute(SEL_TOOLBAR_PIN_ATTR, '1');
+    const size = host.getBoundingClientRect();
+    const offscreen = selRect.bottom < 0 || selRect.top > vh || selRect.right < 0 || selRect.left > vw;
+    let left = -10000;
+    let top = -10000;
+    if (!offscreen) {
+      const center = selRect.left + selRect.width / 2;
+      const maxLeft = Math.max(SEL_TOOLBAR_EDGE_MARGIN, vw - size.width - SEL_TOOLBAR_EDGE_MARGIN);
+      left = Math.min(Math.max(center - size.width / 2, SEL_TOOLBAR_EDGE_MARGIN), maxLeft);
+      top = selRect.top - size.height - SEL_TOOLBAR_PIN_GAP;
+      if (top < SEL_TOOLBAR_EDGE_MARGIN) top = selRect.bottom + SEL_TOOLBAR_PIN_GAP;
+    }
+    host.style.setProperty(SEL_TOOLBAR_PIN_LEFT, Math.round(left) + 'px');
+    host.style.setProperty(SEL_TOOLBAR_PIN_TOP, Math.round(top) + 'px');
+    if (offscreen) return;
+    const got = host.getBoundingClientRect();
+    const errX = got.left - Math.round(left);
+    const errY = got.top - Math.round(top);
+    if (Math.abs(errX) > 1 || Math.abs(errY) > 1) {
+      host.style.setProperty(SEL_TOOLBAR_PIN_LEFT, Math.round(left - errX) + 'px');
+      host.style.setProperty(SEL_TOOLBAR_PIN_TOP, Math.round(top - errY) + 'px');
+    }
+  }
+
+  function unpinToolbars(state) {
+    for (const el of state.pinned) {
+      if (!el || !el.style) continue;
+      el.removeAttribute(SEL_TOOLBAR_PIN_ATTR);
+      el.style.removeProperty(SEL_TOOLBAR_PIN_LEFT);
+      el.style.removeProperty(SEL_TOOLBAR_PIN_TOP);
+    }
+    state.pinned.length = 0;
   }
 
   // 解除一個被 JRead hide 的元素：拿掉標記（否則 inline-restyle observer 會把
@@ -9502,6 +9571,7 @@
   function rehideSelectionToolbars(hiddenList) {
     const s = selToolbarState;
     if (!s) return;
+    unpinToolbars(s);
     for (const el of s.revealed) rehideForSelection(el);
     for (const host of s.hosts) {
       if (!host) continue;
@@ -9517,6 +9587,8 @@
     const s = selToolbarState;
     if (!s) return;
     if (s.doc && s.onSelChange) s.doc.removeEventListener('selectionchange', s.onSelChange);
+    if (s.doc && s.onScroll) s.doc.removeEventListener('scroll', s.onScroll, true);
+    unpinToolbars(s);
     for (const host of s.hosts) {
       if (host && host.removeAttribute) host.removeAttribute(SEL_TOOLBAR_ATTR);
     }
@@ -9539,6 +9611,9 @@
     const known = node.closest ? node.closest(`[${SEL_TOOLBAR_ATTR}="1"]`) : null;
     if (known) {
       if (NS.styler && NS.styler.markSiteWidgetSubtree) NS.styler.markSiteWidgetSubtree(node);
+      if (selToolbarState && readerShiftedContainingBlock()) {
+        try { pinToolbarOverSelection(known, selInfo.rect, selToolbarState); } catch (_) {}
+      }
       return true;
     }
     const host = findFloatingHost(node, articleEl);
@@ -9555,8 +9630,9 @@
     }
     for (const el of host.querySelectorAll('[data-jread-hidden="1"]')) toReveal.push(el);
     for (const el of toReveal) unhideForSelection(el, hiddenList);
+    const shifted = readerShiftedContainingBlock();
     let near = false;
-    try { near = rectIsNearSelection(host.getBoundingClientRect(), selInfo.rect); } catch (_) { near = false; }
+    try { near = rectIsNearSelection(host.getBoundingClientRect(), selInfo.rect, shifted); } catch (_) { near = false; }
     if (!near) {
       for (const el of toReveal) rehideForSelection(el);
       return false;
@@ -9564,11 +9640,23 @@
 
     if (!selToolbarState) {
       const doc = articleEl.ownerDocument;
-      const state = { doc, hosts: [], revealed: [], onSelChange: null };
+      const state = { doc, hosts: [], revealed: [], pinned: [], onSelChange: null, onScroll: null };
+      // 釘住的工具列跟著選取走：選取被拉長 / 翻頁捲動後重新定位
+      const repin = () => {
+        if (!state.pinned.length) return;
+        const info = activeSelectionRect(articleEl);
+        if (!info) return;
+        for (const el of state.pinned.slice()) {
+          try { pinToolbarOverSelection(el, info.rect, state); } catch (_) {}
+        }
+      };
       state.onSelChange = () => {
         if (!activeSelectionRect(articleEl)) rehideSelectionToolbars(hiddenList);
+        else repin();
       };
+      state.onScroll = repin;
       doc.addEventListener('selectionchange', state.onSelChange);
+      doc.addEventListener('scroll', state.onScroll, true);
       selToolbarState = state;
     }
     host.setAttribute(SEL_TOOLBAR_ATTR, '1');
@@ -9576,6 +9664,9 @@
     for (const el of toReveal) selToolbarState.revealed.push(el);
     // 工具列的底色 / 框線 / 圖示色是站方自管——交給 styler 整支豁免
     if (NS.styler && NS.styler.markSiteWidgetSubtree) NS.styler.markSiteWidgetSubtree(host);
+    if (shifted) {
+      try { pinToolbarOverSelection(host, selInfo.rect, selToolbarState); } catch (_) {}
+    }
     return true;
   }
 
