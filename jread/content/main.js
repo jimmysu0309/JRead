@@ -822,6 +822,9 @@
     // 1. 移除被 cleaner 標記隱藏的節點
     const hidden = clone.querySelectorAll('[data-jread-hidden="1"]');
     hidden.forEach(n => n.remove());
+    // 1.1 選取文字當下放行的站方浮動工具列（v1.9.15，cleaner allowSelectionToolbar）
+    //     是 UI 不是內容，不送出
+    clone.querySelectorAll('[data-jread-sel-toolbar="1"]').forEach(n => n.remove());
     // 2. 移除 jread 注入的 style 元素（避免汙染 Readwise 端）
     const injected = clone.querySelectorAll('style#__jread-style, style[data-jread]');
     injected.forEach(n => n.remove());

@@ -40,6 +40,13 @@
   // rendered 即標記並用 inline !important max-width 釘回原始顯示寬。
   const ICON_IMG_ATTR = 'data-jread-icon-img';
   const PLAYER_ATTR = 'data-jread-player';
+  // v1.9.15：站方自管視覺的 UI / 標註（底色與文字色成對由站方決定，主題文字色
+  // 不接管）。值 'hl' = 行內高亮自訂元素（<rw-highlight> 等，見
+  // markInlineHighlights）、'widget' = 使用者選取文字叫出的浮動工具列子樹
+  //（cleaner allowSelectionToolbar 放行後轉呼 markSiteWidgetSubtree）。
+  // 這些元素同時標 PLAYER_ATTR——bg / border / color strip 全走既有的
+  // `:not([PLAYER_ATTR])` 豁免，不另外改那批 selector 的 specificity。
+  const SITE_UI_ATTR = 'data-jread-site-ui';
   // v1.0.8：byline meta 區一行正規化標記（Jimmy 2026-06-25 autocar 作者欄要求）。
   // 站點 byline（kicker / 作者 / 日期 / 閱讀時間 / 小頭像）reader mode 下各自
   // block 散成多行、字級不一、頭像縮排。偵測「標題與第一段內文之間、含日期訊號」
@@ -2534,6 +2541,13 @@ ${BODY_TEXT_SEL} {
 [${ARTICLE_ATTR}="1"] [data-jread-fb-para="1"] {
   margin-top: ${opts.paragraphSpacing}em !important;
   margin-bottom: ${opts.paragraphSpacing}em !important;
+}
+/* v1.9.15：站方浮動工具列（SITE_UI_ATTR="widget"）內的清單 / 段落不吃段距。
+   工具列常用 <ul><li><button> 排一列按鈕，上面的段距規則會在 ul 底下多長一截
+   （Reader 選取工具列實測：原生 36px 高、吃到 1em 後變 53px，藥丸底部多出一塊
+   空白）。specificity (0,2,1) 蓋過段距規則的 (0,1,1)。 */
+[${ARTICLE_ATTR}="1"] :is(p, ul, ol, blockquote)[${SITE_UI_ATTR}="widget"] {
+  margin-bottom: 0 !important;
 }`;
     }
     if (overrides.theme && theme.text) {
@@ -2553,8 +2567,15 @@ html.${HTML_CLASS} body {
   color: ${theme.text} !important;
 }
 [${ARTICLE_ATTR}="1"],
-[${ARTICLE_ATTR}="1"] * {
+[${ARTICLE_ATTR}="1"] *:where(:not([${SITE_UI_ATTR}])) {
   color: ${theme.text} !important;
+}
+/* v1.9.15：行內高亮（SITE_UI_ATTR="hl"）的底色與文字色成對保留站方值——上面
+   的主題文字色規則用 :where(:not()) 排除它（specificity 不變，仍是 (0,1,0)），
+   其後代（高亮內的 strong / em）繼承高亮自己的文字色，不吃主題色（dark 主題
+   淺字疊在站方黃底上不可讀）。 */
+[${ARTICLE_ATTR}="1"] [${SITE_UI_ATTR}="hl"] * {
+  color: inherit !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
       // card bg 深、跨 origin iframe（datawrapper / flourish / tableau / plotly
@@ -4038,6 +4059,81 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(el);
     }
   }
+  // v1.9.15：行內高亮自訂元素保留站方底色（Jimmy 2026-10-01：Readwise Reader
+  // 文件頁進閱讀模式後，畫過的重點看不出來）。
+  // 根因：BG_PRESERVE_NOT 只認 <mark> / <kbd> 這類 HTML 語意 tag；網頁標註工具
+  // 不用 <mark>，而是自訂元素包住文字（Reader / Readwise 擴充功能 <rw-highlight>、
+  // Hypothesis <hypothesis-highlight>），底色還常畫在 background-image（漸層）
+  // 上——bg strip 把 color 與 image 一起清掉，重點完全隱形。
+  // 結構訊號（不看 tag 名的字面、不綁站點）：
+  //   - hyphen 自訂元素（HTML 沒有這個 tag，一定是站方 / 擴充功能自己造的）
+  //   - 站方 cascade 下是 display:inline（包在文字流裡，不是區塊元件）
+  //   - 自帶底色：background-color alpha >= 0.05 或 background-image 非 none
+  //   - 有文字內容
+  // 四項同時成立＝「行內文字上了底色」＝高亮。區塊型元件（<app-root> 之類的
+  // 框架外殼）不是 inline、照舊清底色。
+  // 量測要看站方原意：JRead 注入的 strip 規則生效後量到的永遠是透明，所以用
+  // NS.withInjectedCssDisabled 暫停注入樣式再量（同一個 JS task，不 paint）；
+  // 只在候選存在時才付這筆 recalc。讀寫分離：先整輪量、再整輪標。
+  // scopeEl（選填）：dynamic path 只掃新增子樹（含自身）。
+  // 訊號層次：驗「標了之後 bg / color strip 規則不再命中」；不驗高亮在各主題下
+  // 的對比（站方配色成對保留，不由 JRead 重算）、不驗 <span style="background">
+  // 這類非自訂元素的高亮（blast radius 大，另案）。
+  function markInlineHighlights(articleEl, marked, scopeEl) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const scope = scopeEl || articleEl;
+    const cands = [];
+    const consider = (el) => {
+      if (!el.localName || el.localName.indexOf('-') < 0) return;
+      if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') return;
+      if (!(el.textContent || '').trim()) return;
+      if (el.closest('pre, code, [data-jread-hidden="1"]')) return;
+      cands.push(el);
+    };
+    if (scope !== articleEl) consider(scope);
+    for (const el of scope.querySelectorAll('*')) consider(el);
+    if (!cands.length) return;
+    const measure = () => {
+      const hits = [];
+      for (const el of cands) {
+        let cs = null;
+        try {
+          cs = _win.getComputedStyle(el);
+        } catch (e) {
+          if (e && e.name === 'SyntaxError') continue;
+          throw e;
+        }
+        // jsdom 對 inline 元素的 computed display 回空字串（真瀏覽器恆有值）
+        if (!cs || (cs.display !== 'inline' && cs.display !== '')) continue;
+        const bgc = parseCssColor(cs.backgroundColor);
+        const hasBg = (bgc && bgc.a >= 0.05) ||
+          (cs.backgroundImage && cs.backgroundImage !== 'none');
+        if (hasBg) hits.push(el);
+      }
+      return hits;
+    };
+    const hits = (NS && NS.withInjectedCssDisabled) ? NS.withInjectedCssDisabled(measure) : measure();
+    for (const el of hits) {
+      el.setAttribute(SITE_UI_ATTR, 'hl');
+      el.setAttribute(PLAYER_ATTR, '1');
+      marked.push(el);
+    }
+  }
+  // v1.9.15：站方浮動工具列子樹整支豁免（cleaner allowSelectionToolbar 放行
+  // 選取工具列後轉呼）。工具列的底色 / 框線 / 圖示色全是站方自管，bg / border /
+  // color strip 一清就變成「圖示直接浮在內文上」（Reader probe 截圖實證）。
+  // root 自身 + 全部後代都標（strip 規則是逐元素 :not()，只標 root 沒用）。
+  // 已帶 PLAYER_ATTR 的元素（真播放器）不碰——restore 才不會誤拔它的標記。
+  function markSiteWidgetEls(root, marked) {
+    const els = [root, ...root.querySelectorAll('*')];
+    for (const el of els) {
+      if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') continue;
+      el.setAttribute(SITE_UI_ATTR, 'widget');
+      el.setAttribute(PLAYER_ATTR, '1');
+      marked.push(el);
+    }
+  }
   // 動態補標狀態：apply() 標記完成後填入、restore() 清空。cleaner 的
   // dynamic-append observer 對 articleEl 內新增節點轉呼 remarkDynamicMarkers
   // （晚 mount 的 responsive embed iframe / heading link / absolute 錨定元素）。
@@ -4204,6 +4300,8 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.9.7：晚 mount img 的補分類入口（passClassifyImages 指派、remarkDynamicMarkers 呼叫）
       let classifyLateImg = null;
       const playerMarked = [];
+      // v1.9.15：行內高亮 / 站方浮動工具列標記（SITE_UI_ATTR + PLAYER_ATTR）
+      const siteUiMarked = [];
       const fillIframes = [];
       const embedWrapMarked = [];
       // v1.8.2：lazy 影片佔位框內的縮圖標記 / ::before aspect 佔位容器標記
@@ -4230,7 +4328,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -4627,7 +4725,10 @@ html.${HTML_CLASS}.jread-orion body {
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
-        activeMarkState = { articleEl, embedWrapMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap,
+        // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
+        // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
+        markInlineHighlights(articleEl, siteUiMarked);
+        activeMarkState = { articleEl, embedWrapMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked,
           // 呼叫當下才讀 classifyLateImg（與 passClassifyImages 的執行先後無關）
           classifyLateImg: (img) => { if (classifyLateImg) classifyLateImg(img); } };
       };
@@ -4871,6 +4972,10 @@ html.${HTML_CLASS}.jread-orion body {
               if (len < 4) continue;
               scanned++;
               if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+              // v1.9.15：站方自管配色的行內高亮 / 工具列不修色——底色常畫在
+              // background-image（effBgOf 只疊 background-color、看不到），照
+              // 卡片底色算會把「黃底上的深字」誤判成低對比、改成淺字
+              if (el.closest && el.closest(`[${SITE_UI_ATTR}]`)) continue;
               const cs = _win.getComputedStyle(el);
               if (cs.display === 'none' || cs.visibility === 'hidden') continue;
               const fg = parseCssColor(cs.color);
@@ -6844,6 +6949,14 @@ html.${HTML_CLASS}.jread-orion body {
           if (el && el.removeAttribute) el.removeAttribute(PLAYER_ATTR);
         }
       }
+      // v1.9.15：行內高亮 / 站方浮動工具列標記（apply 與動態補標共用同一陣列）
+      if (Array.isArray(snapshot.siteUiMarked)) {
+        for (const el of snapshot.siteUiMarked) {
+          if (!el || !el.removeAttribute) continue;
+          el.removeAttribute(SITE_UI_ATTR);
+          el.removeAttribute(PLAYER_ATTR);
+        }
+      }
       // v0.8.86：移除 responsive embed iframe fill 標記
       if (Array.isArray(snapshot.fillIframes)) {
         for (const ifr of snapshot.fillIframes) {
@@ -7218,6 +7331,21 @@ html.${HTML_CLASS}.jread-orion body {
           : (node.querySelectorAll ? node.querySelectorAll('img') : []);
         for (const img of imgs) s.classifyLateImg(img);
       }
+      // v1.9.15：閱讀模式中新畫的重點（站方把選取文字包進高亮自訂元素）補標
+      if (Array.isArray(s.siteUiMarked)) markInlineHighlights(s.articleEl, s.siteUiMarked, node);
+    },
+
+    /**
+     * v1.9.15：把站方浮動工具列子樹標成「站方自管視覺」（bg / border / color
+     * strip 與主題文字色都不接管）。cleaner 的 allowSelectionToolbar 放行選取
+     * 工具列時轉呼；閱讀模式未啟動（無 activeMarkState）時 no-op。
+     * @param {Element} root 工具列宿主，或宿主內 re-render 的新增節點
+     */
+    markSiteWidgetSubtree(root) {
+      const s = activeMarkState;
+      if (!s || !s.articleEl || !Array.isArray(s.siteUiMarked)) return;
+      if (!root || root.nodeType !== 1 || !s.articleEl.contains(root)) return;
+      markSiteWidgetEls(root, s.siteUiMarked);
     }
   };
 

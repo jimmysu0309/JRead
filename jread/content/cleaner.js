@@ -9408,6 +9408,177 @@
     }
   }
 
+  // ---- 選取文字觸發的浮動工具列：選取期間放行（v1.9.15）------------------
+  // 場景：Readwise Reader 文件頁、Medium、Hypothesis 類標註工具——使用者在主文
+  // 選取文字後，站方在選取範圍旁浮出一列按鈕（畫重點 / 加註記 / 標籤）。這是
+  // 使用者自己的手勢叫出來的 UI，不是雜訊；但它會被兩條規則藏掉：
+  //   - 靜態：浮動容器平時是空殼、常駐在主文容器內，clean() 當下就被當成
+  //     非內容 sibling hide（Reader 實測兇手是 narrowPromotedSiblings）
+  //   - 動態：選取後才塞進去的按鈕列走 checkDynamicNoise「所有 interactive
+  //     button 一律清」
+  // 這是「所有按鈕無條件清」的唯一例外，判定全靠結構訊號、不看 class / 站點：
+  //   1. 新增節點當下，使用者在 articleEl 內有非 collapsed 的選取
+  //   2. 節點自身或祖先（articleEl 以下）有 out-of-flow 的浮動宿主
+  //     （computed position absolute / fixed）；宿主不可包住選取本身
+  //   3. 宿主內容是「一列按鈕」：至少一顆 interactive button、文字極短、
+  //      不含段落 / 標題 / 媒體 / 表單
+  //   4. 幾何：宿主尺寸小、貼著選取範圍（暫時解除 JRead 的 hide 才量得到）
+  // 選取一消失（selectionchange → collapsed）就把放行的東西 hide 回去——點擊
+  // 既有重點叫出的「刪除 / 加註記」面板沒有選取，不在放行範圍。
+  // 訊號層次：本段驗「選取當下出現、貼著選取的按鈕列」；不驗按鈕做什麼
+  // （站方拿同樣結構放分享鈕也會放行——只在使用者選取時短暫出現，可接受）。
+  const SEL_TOOLBAR_ATTR = 'data-jread-sel-toolbar';
+  const SEL_TOOLBAR_MAX_TEXT = 200;
+  const SEL_TOOLBAR_MAX_W = 640;
+  const SEL_TOOLBAR_MAX_H = 200;
+  const SEL_TOOLBAR_MAX_V_GAP = 120;
+  const SEL_TOOLBAR_MAX_H_GAP = 160;
+  const SEL_TOOLBAR_NON_UI_SEL =
+    'p, h1, h2, h3, h4, h5, h6, article, iframe, video, form, input, textarea, select';
+  // 狀態欄位：hosts＝已放行的宿主；revealed＝被暫時解除 hide 的元素（hide 記錄
+  // 仍留在 hiddenList，還原照舊）；onSelChange＝selectionchange listener
+  let selToolbarState = null;
+
+  function activeSelectionRect(articleEl) {
+    const doc = articleEl.ownerDocument;
+    const sel = doc && doc.getSelection ? doc.getSelection() : null;
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+    if (!sel.anchorNode || !articleEl.contains(sel.anchorNode)) return null;
+    if (!String(sel).trim()) return null;
+    const range = sel.getRangeAt(0);
+    if (typeof range.getBoundingClientRect !== 'function') return null;
+    const r = range.getBoundingClientRect();
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { rect: r, anchorNode: sel.anchorNode };
+  }
+
+  function findFloatingHost(node, articleEl) {
+    const win = articleEl.ownerDocument.defaultView;
+    for (let cur = node; cur && cur !== articleEl && cur.nodeType === 1; cur = cur.parentElement) {
+      let pos = '';
+      try { pos = win.getComputedStyle(cur).position; } catch (_) { return null; }
+      if (pos === 'absolute' || pos === 'fixed') return cur;
+    }
+    return null;
+  }
+
+  function hostLooksLikeButtonRow(host) {
+    if (!host.querySelector(INTERACTIVE_BTN_SEL) &&
+        !(host.matches && host.matches(INTERACTIVE_BTN_SEL))) return false;
+    if (host.querySelector(SEL_TOOLBAR_NON_UI_SEL)) return false;
+    return norm(host.textContent).length <= SEL_TOOLBAR_MAX_TEXT;
+  }
+
+  function rectIsNearSelection(r, selRect) {
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    if (r.width > SEL_TOOLBAR_MAX_W || r.height > SEL_TOOLBAR_MAX_H) return false;
+    const vGap = Math.max(selRect.top - r.bottom, r.top - selRect.bottom);
+    if (vGap > SEL_TOOLBAR_MAX_V_GAP) return false;
+    return r.right >= selRect.left - SEL_TOOLBAR_MAX_H_GAP &&
+           r.left <= selRect.right + SEL_TOOLBAR_MAX_H_GAP;
+  }
+
+  // 解除一個被 JRead hide 的元素：拿掉標記（否則 inline-restyle observer 會把
+  // display:none 補回去）、inline display 還原成 hide 前的值。hiddenList 的記錄
+  // 不動——退出閱讀模式照原路還原，重新 hide 也不必再 push。
+  function unhideForSelection(el, hiddenList) {
+    let rec = null;
+    for (let i = hiddenList.length - 1; i >= 0; i--) {
+      if (hiddenList[i] && hiddenList[i].el === el) { rec = hiddenList[i]; break; }
+    }
+    delete el.dataset.jreadHidden;
+    el.style.removeProperty('display');
+    if (rec && rec.prevDisplay) {
+      el.style.setProperty('display', rec.prevDisplay, rec.prevDisplayPriority || '');
+    }
+  }
+
+  function rehideForSelection(el) {
+    if (!el || !el.isConnected) return;
+    el.dataset.jreadHidden = '1';
+    el.style.setProperty('display', 'none', 'important');
+  }
+
+  function rehideSelectionToolbars(hiddenList) {
+    const s = selToolbarState;
+    if (!s) return;
+    for (const el of s.revealed) rehideForSelection(el);
+    for (const host of s.hosts) {
+      if (!host) continue;
+      if (host.removeAttribute) host.removeAttribute(SEL_TOOLBAR_ATTR);
+      // 宿主是選取後才新增的（先前沒被 hide 過）→ 走一般 hide
+      if (host.isConnected && !(host.dataset && host.dataset.jreadHidden === '1')) hide(host, hiddenList);
+    }
+    s.revealed.length = 0;
+    s.hosts.length = 0;
+  }
+
+  function stopSelectionToolbarWatch() {
+    const s = selToolbarState;
+    if (!s) return;
+    if (s.doc && s.onSelChange) s.doc.removeEventListener('selectionchange', s.onSelChange);
+    for (const host of s.hosts) {
+      if (host && host.removeAttribute) host.removeAttribute(SEL_TOOLBAR_ATTR);
+    }
+    selToolbarState = null;
+  }
+
+  // 回傳 true = 這個新增節點屬於已放行的選取工具列，呼叫端不可再送進
+  // checkDynamicNoise（否則裡面的按鈕會被逐顆 hide）。
+  function allowSelectionToolbar(articleEl, node, hiddenList) {
+    const selInfo = activeSelectionRect(articleEl);
+    if (!selInfo) {
+      // 選取已消失、節點卻塞進先前放行的宿主（站方把工具列換成別的面板）→ 收回
+      if (selToolbarState && selToolbarState.hosts.length &&
+          node.closest && node.closest(`[${SEL_TOOLBAR_ATTR}="1"]`)) {
+        rehideSelectionToolbars(hiddenList);
+      }
+      return false;
+    }
+    // 已放行宿主內的後續 re-render：直接放行
+    const known = node.closest ? node.closest(`[${SEL_TOOLBAR_ATTR}="1"]`) : null;
+    if (known) {
+      if (NS.styler && NS.styler.markSiteWidgetSubtree) NS.styler.markSiteWidgetSubtree(node);
+      return true;
+    }
+    const host = findFloatingHost(node, articleEl);
+    if (!host) return false;
+    if (host.contains(selInfo.anchorNode)) return false;
+    if (!hostLooksLikeButtonRow(host)) return false;
+
+    // 幾何要在「沒被 JRead hide」的狀態下才量得到：宿主到 articleEl 之間、以及
+    // 宿主內部被 hide 的元素先解除，量完不合格就原樣 hide 回去（同一個 JS task，
+    // 不會 paint）。
+    const toReveal = [];
+    for (let cur = host; cur && cur !== articleEl; cur = cur.parentElement) {
+      if (cur.dataset && cur.dataset.jreadHidden === '1') toReveal.push(cur);
+    }
+    for (const el of host.querySelectorAll('[data-jread-hidden="1"]')) toReveal.push(el);
+    for (const el of toReveal) unhideForSelection(el, hiddenList);
+    let near = false;
+    try { near = rectIsNearSelection(host.getBoundingClientRect(), selInfo.rect); } catch (_) { near = false; }
+    if (!near) {
+      for (const el of toReveal) rehideForSelection(el);
+      return false;
+    }
+
+    if (!selToolbarState) {
+      const doc = articleEl.ownerDocument;
+      const state = { doc, hosts: [], revealed: [], onSelChange: null };
+      state.onSelChange = () => {
+        if (!activeSelectionRect(articleEl)) rehideSelectionToolbars(hiddenList);
+      };
+      doc.addEventListener('selectionchange', state.onSelChange);
+      selToolbarState = state;
+    }
+    host.setAttribute(SEL_TOOLBAR_ATTR, '1');
+    selToolbarState.hosts.push(host);
+    for (const el of toReveal) selToolbarState.revealed.push(el);
+    // 工具列的底色 / 框線 / 圖示色是站方自管——交給 styler 整支豁免
+    if (NS.styler && NS.styler.markSiteWidgetSubtree) NS.styler.markSiteWidgetSubtree(host);
+    return true;
+  }
+
   // ---- late-mount embed 的原站隱藏 fallback img 釘死（v1.6.25 動態兜底）----
   // 靜態 hideInsideArticleOriginallyHiddenImgs（v0.8.48）只在 clean() 跑一次；
   // lazy embed（datawrapper 類）在 clean 之後才 mount 時，其 stylesheet
@@ -9517,6 +9688,8 @@
 
   function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
+    // 前一輪（reapply）放行的選取工具列狀態綁著舊的 articleEl / hiddenList，一併收掉
+    stopSelectionToolbarWatch();
     if (!articleEl || !articleEl.parentElement) return;
 
     const mo = new MutationObserver(mutations => {
@@ -9595,6 +9768,9 @@
           // 保留。場景：LINE Today「其他人也看了」section 在 clean() 之後
           // 才 lazy-load inject 進 swipe-back 內、被 isRelated 放行漏網——
           // 現改成 heading / keyword 特徵判定 hide。
+          // v1.9.15：使用者選取文字叫出的浮動工具列放行（見 allowSelectionToolbar）
+          // ——必須排在 checkDynamicNoise 之前，否則按鈕先被逐顆 hide。
+          if (allowSelectionToolbar(articleEl, node, hiddenList)) continue;
           checkDynamicNoise(articleEl, node, hiddenList);
         }
       }
@@ -9619,6 +9795,7 @@
       activeObserver.disconnect();
       activeObserver = null;
     }
+    stopSelectionToolbarWatch();
   }
 
   // ---- inline style 覆寫攔截（v0.7.23 newtalk.tw 修法）---------------------

@@ -41,6 +41,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 
 - **Readwise Reader or Instapaper (pick one)**: after choosing a service in advanced settings, send JRead's cleaned article in one click, bypassing the destination's own parser. Instapaper uses the official Full API (xAuth — enter email/password once to exchange for a token, the password is discarded), Readwise uses an access token
 - **Enter Reader**: list the chosen service's latest articles in a new tab and open them in JRead's own reading layout, reusing the same theme / font / size / paging controls and remembering your position; each item can be archived in one click. Top tabs switch per service: Readwise shows Inbox / Later / JRead (items you've tagged JRead in Readwise), Instapaper shows Unread / Starred / Archive
+- **Highlight on the Readwise Reader web app**: when reader mode is on directly on a Readwise Reader document page, selecting text still brings up Reader's own toolbar, so one click creates a highlight; existing highlights keep their original background (the same applies to other sites using similar annotation tools)
 - **Summary on send**: optionally use Google Gemini Flash Lite to generate an article summary at send time (replacing Readwise's built-in English summary, or filling Instapaper's item description); requires your own Gemini API key, shared by both services
 
 ### Controls
