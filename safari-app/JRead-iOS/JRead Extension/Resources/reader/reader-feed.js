@@ -202,7 +202,10 @@
     // v1.6.0：讀設定（含儲存服務二擇一 + 兩服務憑證），resolveServiceCredentials
     // 決定走 readwise 或 instapaper。套主題底色（對齊閱讀模式 theme）。
     const DEF = global.__JReadSettingsDefaults || {};
-    browser.storage.sync.get({
+    // v1.9.14：theme 讀有效值（這台裝置套用中的設定檔會蓋過 sync flat）
+    const PROFILES = global.__JReadProfiles;
+    const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
+    readSettings({
       theme: 'light',
       storageService: DEF.storageService || 'readwise',
       readwiseToken: '',

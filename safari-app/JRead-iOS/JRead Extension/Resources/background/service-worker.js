@@ -180,6 +180,15 @@ function runIfDevelopmentInstall(label, fn) {
   });
 }
 
+// v1.9.14：版面欄位（PROFILE_KEYS）寫入——經 settings-defaults 的 writeLayout
+// 分流（這台裝置套用中設定檔 → storage.local 草稿；自訂 → storage.sync）。
+// 套用中設定檔時 sync flat 欄位被快照蓋住，直寫 sync 等於沒反應。
+function writeLayoutSetting(patch) {
+  const P = globalThis.__JReadProfiles;
+  const p = P ? P.writeLayout(patch) : browser.storage.sync.set(patch);
+  p.catch(() => {});
+}
+
 // v1.7.44（X2）：功能浮層 clickjacking 防線。popup.html 對 <all_urls>
 // web-accessible，任意網站可 iframe 嵌入 ?panel=1 蓋在誘餌 UI 上騙點擊。
 // floating-icon 開 iframe 浮層前以 PANEL_OPENED 登記（sender.tab 由瀏覽器填、
@@ -246,7 +255,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(null);
         return; // sync
       }
-      browser.storage.sync.get(DEFAULT_SETTINGS)
+      // v1.9.14：回的是「有效設定」——疊上這台裝置套用中的設定檔快照與草稿
+      //（storage.local profileState），與 content 直讀軌同一支 effective。
+      const P = globalThis.__JReadProfiles;
+      const read = P ? P.readEffective(DEFAULT_SETTINGS) : browser.storage.sync.get(DEFAULT_SETTINGS);
+      read
         .then((s) => sendResponse(strip(s)))
         .catch(() => sendResponse(null));
       return true; // async
@@ -373,7 +386,8 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const theme = msg.payload && msg.payload.theme;
       if (!['light', 'dark', 'sepia', 'gray'].includes(theme)) return;
       runIfDevelopmentInstall('JREAD_DEBUG_SET_THEME', () => {
-        browser.storage.sync.set({ theme }).catch(() => {});
+        // v1.9.14：版面欄位寫入經 writeLayout 分流（套用中設定檔 → local 草稿）
+        writeLayoutSetting({ theme });
       });
       return;
     }
@@ -391,7 +405,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const paged = msg.payload && msg.payload.paged;
       if (typeof paged !== 'boolean') return;
       runIfDevelopmentInstall('JREAD_DEBUG_SET_PAGED', () => {
-        browser.storage.sync.set({ pagedMode: paged }).catch(() => {});
+        writeLayoutSetting({ pagedMode: paged });
       });
       return;
     }

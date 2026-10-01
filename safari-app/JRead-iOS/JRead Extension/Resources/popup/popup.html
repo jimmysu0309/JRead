@@ -611,14 +611,16 @@
   <section class="settings">
     <!-- v1.9.0：設定檔——把下方整組版面設定（主題…翻頁模式，白名單見
          settings-defaults PROFILE_KEYS）存成具名快照、一鍵切換。select 的
-         「— 自訂 —」是 sentinel：沒套用任何設定檔，或套用後又手動改過任一欄位。
+         「— 自訂 —」是 sentinel：這台裝置沒套用任何設定檔。v1.9.14：套用後
+         調整欄位不再掉回自訂——select 停在該組並多一列「<名>（已修改）」、
+         儲存鈕變「更新」（popup.js renderProfiles 動態產生）。
          命名走同列 inline 文字框（取代 select 顯示）——iOS sheet 與 ?panel=1
          iframe 浮層都不能用 prompt()。 -->
     <div class="setting-row" id="profile-row">
       <label>設定檔</label>
       <div class="font-controls">
         <button class="auto-btn" id="profile-save-btn"
-          title="把目前這組版面設定存成設定檔">儲存</button>
+          title="把目前這組版面設定存成新的設定檔">儲存</button>
         <button class="auto-btn" id="profile-delete-btn"
           title="刪除目前選取的設定檔" disabled>刪除</button>
         <select id="profile-select" class="font-family-select" aria-label="設定檔">

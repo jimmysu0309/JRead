@@ -297,6 +297,12 @@ let current = { ...DEFAULT_SETTINGS };
 // 寫入不被舊值蓋回 UI」，救不了相對操作以錯誤基準計算，兩者互補。
 let settingsReady = false;
 
+// v1.9.14：設定檔的本機狀態（資料模型見 settings-defaults 設定檔區塊）。current
+// 是「有效版面」= flatLayout ⊕ 套用中設定檔快照 ⊕ 草稿，render 只看 current。
+let flatLayout = {};    // storage.sync 的 flat 版面欄位＝「自訂」那一組
+let localState = null;  // storage.local profileState：null = 自訂；{ name, draft } = 套用中
+let pendingLocal;       // 待寫入 storage.local 的 profileState（undefined = 沒有待寫）
+
 // v0.7.143：debounce storage.sync.set 防 browser.storage.sync quota 踩線。
 // 連點 stepper（fontSize 12-32 跨 20 step、contentWidth 480-1200 跨 18 step）
 // 每 click 觸發一次 set，加上 storage.onChanged broadcast 到所有 tab 的 content
@@ -309,16 +315,27 @@ let settingsReady = false;
 let saveTimer = null;
 let pendingPatch = {};
 function commitSave() {
-  if (!Object.keys(pendingPatch).length) return;
+  const hasSync = Object.keys(pendingPatch).length > 0;
+  const hasLocal = pendingLocal !== undefined;
+  if (!hasSync && !hasLocal) return;
   const patch = pendingPatch;
+  const local = pendingLocal;
   pendingPatch = {};
+  pendingLocal = undefined;
   saveTimer = null;
   try {
     // v0.8.35：MV3 promise 模式下 set() 失敗（QuotaExceeded / 寫入頻率超限）是
     // promise rejection，同步 try/catch 接不到——必須 .catch 吞掉，否則 unhandled
     // rejection。current 已有最新值，下次 popup 開啟仍會走 storage.get。
-    const p = browser.storage.sync.set(patch);
-    if (p && typeof p.catch === 'function') p.catch(() => {});
+    if (hasSync) {
+      const p = browser.storage.sync.set(patch);
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
+    // v1.9.14：本機套用狀態（哪一組 + 草稿）寫 storage.local，不進 sync
+    if (hasLocal && browser.storage.local) {
+      const p = browser.storage.local.set({ [PROFILES.STATE_KEY]: local });
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
   } catch (_) { /* callback 模式（無 promise 回傳）的同步 throw 兜底 */ }
   notifyContentReapply();
 }
@@ -339,22 +356,28 @@ function notifyContentReapply() {
 
 function save(patch) {
   Object.assign(current, patch);
-  // v1.9.0：每次改動後重新判定「目前在哪個設定檔上」——手動改到與快照不同就失效
-  //（select 回「— 自訂 —」）、改回來（字級 +1 再 −1）或剛好改成某組快照則重新
-  // 對上。判定純看欄位值，select 永遠說實話。套用設定檔 / 手動選「自訂」的 patch
-  // 自帶 activeProfile，不走這條。變動併進同一次 storage.set，不多一次寫。
-  if (PROFILES && !('activeProfile' in patch)) {
-    const next = resolveActiveProfile(current);
-    if (next !== (current.activeProfile ?? null)) {
-      patch = { ...patch, activeProfile: next };
-      current.activeProfile = next;
-    }
+  // v1.9.14：寫入落點依「這台裝置有沒有套用設定檔」分流——套用中 → 版面欄位只進
+  // storage.local 草稿（設定檔本身不動、select 停在該組顯示「已修改」，按「更新」
+  // 才存回）；自訂 → 照舊寫 storage.sync flat。settingsReady 前不知道狀態，先照
+  // 舊路徑累積在 pendingPatch，載入完成時整批重新分流（見下方載入段）。
+  const st = settingsReady && PROFILES ? profileState() : null;
+  if (st && st.profile) {
+    const r = PROFILES.routePatch(patch, { profiles: current.profiles }, localState);
+    localState = r.local[PROFILES.STATE_KEY];
+    pendingLocal = localState;
+    if (r.sync) Object.assign(pendingPatch, r.sync);
+  } else {
+    if (PROFILES) Object.assign(flatLayout, PROFILES.snapshot(patch));
+    Object.assign(pendingPatch, patch);
   }
-  Object.assign(pendingPatch, patch);
+  scheduleCommit();
+  // content script 透過 storage.onChanged 即時重新套用（若閱讀模式開啟）
+}
+
+function scheduleCommit() {
   render(current);
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(commitSave, 200);
-  // content script 透過 storage.onChanged 即時重新套用（若閱讀模式開啟）
 }
 
 // popup 即將關閉時強制 flush pending patch（不然連點後立刻關 popup 會丟失最後幾次變更）。
@@ -374,15 +397,30 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushPendingSave();
 });
 
-browser.storage.sync.get(DEFAULT_SETTINGS).then((values) => {
-  // v0.8.36：merge pendingPatch——popup 開啟瞬間使用者已點擊的變更（Promise
-  // resolve 前累積在 pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI
-  current = { ...DEFAULT_SETTINGS, ...values, ...pendingPatch };
-  // v1.9.0：storage 裡的 activeProfile 可能過期（options 回復預設 / 外部改動），
-  // 載入時依欄位值重判、只改顯示不寫回（下次 save 才會落地）
-  if (PROFILES) current.activeProfile = resolveActiveProfile(current);
+Promise.all([
+  browser.storage.sync.get(DEFAULT_SETTINGS),
+  window.__JReadProfiles ? window.__JReadProfiles.readLocalState() : Promise.resolve(undefined)
+]).then(([values, rawLocal]) => {
+  // v0.8.36：popup 開啟瞬間使用者已點擊的變更（Promise resolve 前累積在
+  // pendingPatch、尚未 commit）不可被 storage 舊值蓋回 UI。v1.9.14：改成載入後
+  // 重跑一次 save()——那批變更是在不知道套用狀態下累積的，要重新分流落點。
+  const early = pendingPatch;
+  pendingPatch = {};
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  const synced = { ...DEFAULT_SETTINGS, ...values };
+  if (PROFILES) {
+    // rawLocal === undefined（本機從未選過）時 resolveState 退回舊欄位
+    // sync.activeProfile，升級當下 select 與版面都不變
+    const st = PROFILES.resolveState(synced, rawLocal);
+    flatLayout = PROFILES.snapshot(synced);
+    localState = st.profile ? { name: st.name, draft: st.draft } : null;
+    current = PROFILES.effective(synced, rawLocal);
+  } else {
+    current = synced;
+  }
   settingsReady = true;
-  render(current);
+  if (Object.keys(early).length) save(early);
+  else render(current);
 }).catch(() => {
   // get 失敗（storage 失效等罕見場景）也要解鎖——此時 current = 預設值，
   // 相對操作以預設為基準是唯一可行 fallback，不可讓 stepper 永久卡死
@@ -543,63 +581,79 @@ for (const btn of fontWeightBtns) {
   });
 }
 
-// ---- 設定檔（v1.9.0）---------------------------------------------------
+// ---- 設定檔（v1.9.0；v1.9.14 改每台裝置各自套用）------------------------
 // 把 PROFILE_KEYS 那組版面設定存成具名快照（storage.sync.profiles，上限
-// PROFILES.MAX 組）、select 一鍵切換。套用 = 一次 save({...fields, activeProfile})
-// → 單次 storage.set → content 端 onChanged 只 reapply 一次（同 relevantKeys 路徑，
-// 零新協定）。純函式（snapshot / upsert / remove / sanitize）住 settings-defaults，
-// 與懸浮按鈕長按選單共用。
+// PROFILES.MAX 組）、select 一鍵切換。「這台裝置套用哪一組」與套用後的調整住
+// storage.local（localState = { name, draft }）——套用 / 切回自訂只寫 local，
+// 另一台裝置不受影響；清單與快照內容仍走 sync 共用。content 端由 onChanged
+//（local profileState / sync profiles）→ scheduleReapply 重套，零新訊息協定。
+// 純函式（snapshot / upsert / remove / sanitize / resolveState / effective /
+// routePatch）住 settings-defaults，與懸浮按鈕長按選單共用。
 const PROFILES = window.__JReadProfiles;
 const PROFILE_CUSTOM = '__custom';
+const PROFILE_MODIFIED = '__modified';
 let profileNaming = false;         // inline 命名框開著（select 暫時隱藏）
 let profileDeleteConfirmTimer = null;
 
-// 設定檔快照與目前設定是否一致——只比對快照裡有的欄位（舊快照缺新欄位時不算不同）
-function profileFieldsMatch(fields, settings) {
-  if (!PROFILES || !fields) return false;
-  for (const k of PROFILES.KEYS) {
-    if (k in fields && fields[k] !== settings[k]) return false;
-  }
-  return true;
+// 這台裝置目前套用哪一組：{ name, profile, draft, modified }（自訂時 profile = null）
+function profileState() {
+  return PROFILES.resolveState({ profiles: current.profiles }, localState);
 }
 
-// 目前設定對得上哪個設定檔：優先 activeProfile 指的那組（仍相符就沿用），否則
-// 依清單順序取第一組相符者，都不符回 null（= 自訂）。
-function resolveActiveProfile(settings) {
-  const list = PROFILES.sanitize(settings.profiles);
-  const cur = PROFILES.find(list, settings.activeProfile);
-  if (cur && profileFieldsMatch(cur.fields, settings)) return cur.name;
-  const hit = list.find((p) => profileFieldsMatch(p.fields, settings));
-  return hit ? hit.name : null;
+// 版面欄位依目前狀態重算：flat ⊕ 套用中設定檔快照 ⊕ 草稿
+function recomputeLayout() {
+  Object.assign(current, PROFILES.effective({ ...flatLayout, profiles: current.profiles }, localState));
+}
+
+// 設定檔清單（sync）與本機套用狀態（local）的變更排進同一次 commit。
+// profiles 傳 null = 清單不變。
+function commitProfileChange(profiles, state) {
+  if (profiles) {
+    current.profiles = profiles;
+    pendingPatch.profiles = profiles;
+  }
+  localState = state;
+  pendingLocal = state;
+  recomputeLayout();
+  scheduleCommit();
 }
 
 function renderProfiles(settings) {
   if (!PROFILES || !profileSelect) return;
   const list = PROFILES.sanitize(settings.profiles);
+  const st = PROFILES.resolveState({ profiles: list }, localState);
   // 重建 option（index 0 的 sentinel 保留）
   while (profileSelect.options.length > 1) profileSelect.remove(1);
   for (const p of list) {
+    if (st.modified && p.name === st.name) {
+      // 套用中且有未存回的調整：多一列「<名>（已修改）」當目前值；緊接著的原名
+      // 那列仍在——選它 = 放棄調整、回到已儲存的那組
+      const mod = document.createElement('option');
+      mod.value = PROFILE_MODIFIED;
+      mod.textContent = p.name + '（已修改）';
+      profileSelect.appendChild(mod);
+    }
     const opt = document.createElement('option');
     opt.value = p.name;
     opt.textContent = p.name;
     profileSelect.appendChild(opt);
   }
-  const active = PROFILES.find(list, settings.activeProfile);
-  profileSelect.value = active ? active.name : PROFILE_CUSTOM;
+  profileSelect.value = st.modified ? PROFILE_MODIFIED : (st.name || PROFILE_CUSTOM);
   if (profileSelect.value === '') profileSelect.value = PROFILE_CUSTOM;
   if (profileDeleteBtn) {
-    profileDeleteBtn.disabled = !active;
+    profileDeleteBtn.disabled = !st.profile;
     profileDeleteBtn.textContent = '刪除';
   }
   if (profileSaveBtn) {
-    const full = !active && list.length >= PROFILES.MAX;
+    // 有未存回的調整 → 「更新」（一鍵存回原設定檔）；其餘 → 「儲存」（命名存新的一組）
+    const full = !st.modified && list.length >= PROFILES.MAX;
     profileSaveBtn.disabled = full;
-    profileSaveBtn.textContent = '儲存';
+    profileSaveBtn.textContent = st.modified ? '更新' : '儲存';
     profileSaveBtn.title = full
       ? '最多 ' + PROFILES.MAX + ' 組，請先刪除一組'
-      : active
-        ? '用目前這組版面設定覆寫「' + active.name + '」'
-        : '把目前這組版面設定存成設定檔';
+      : st.modified
+        ? '用目前的調整更新「' + st.name + '」'
+        : '把目前這組版面設定存成新的設定檔';
   }
 }
 
@@ -611,10 +665,10 @@ function exitProfileDeleteConfirm() {
   }
 }
 
+// 套用 = 只寫本機狀態（草稿清空）；不把快照攤平寫進 sync
 function applyProfile(name) {
   const p = PROFILES.find(current.profiles, name);
-  if (!p) { save({ activeProfile: null }); return; }
-  save({ ...p.fields, activeProfile: p.name });
+  commitProfileChange(null, p ? { name: p.name, draft: {} } : null);
 }
 
 function beginProfileNaming() {
@@ -643,7 +697,7 @@ function commitProfileNaming() {
   const next = PROFILES.upsert(current.profiles, name, current);
   endProfileNaming();
   if (!next) return;   // 超過上限（儲存鈕本就 disabled，兜底）
-  save({ profiles: next, activeProfile: name });
+  commitProfileChange(next, { name, draft: {} });
 }
 
 if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNameInput) {
@@ -651,7 +705,8 @@ if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNa
     exitProfileDeleteConfirm();
     if (!settingsReady) { renderProfiles(current); return; } // v1.7.42 R3 guard（套用以 current.profiles 為準）
     const v = profileSelect.value;
-    if (v === PROFILE_CUSTOM) { save({ activeProfile: null }); return; }
+    if (v === PROFILE_MODIFIED) return;
+    if (v === PROFILE_CUSTOM) { commitProfileChange(null, null); return; }
     applyProfile(v);
   });
 
@@ -659,11 +714,11 @@ if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNa
     if (!settingsReady) return;
     if (profileNaming) { commitProfileNaming(); return; }
     exitProfileDeleteConfirm();
-    const active = PROFILES.find(current.profiles, current.activeProfile);
-    if (active) {
-      // 選著設定檔時儲存 = 用目前設定覆寫它（名稱與順序不變）
-      const next = PROFILES.upsert(current.profiles, active.name, current);
-      if (next) save({ profiles: next, activeProfile: active.name });
+    const st = profileState();
+    if (st.modified) {
+      // 「更新」：把目前的調整存回套用中的設定檔（名稱與順序不變）、草稿清空
+      const next = PROFILES.upsert(current.profiles, st.name, current);
+      if (next) commitProfileChange(next, { name: st.name, draft: {} });
       return;
     }
     beginProfileNaming();
@@ -673,8 +728,8 @@ if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNa
   profileDeleteBtn.addEventListener('click', () => {
     if (profileNaming) { endProfileNaming(); return; }
     if (!settingsReady) return;
-    const active = PROFILES.find(current.profiles, current.activeProfile);
-    if (!active) return;
+    const st = profileState();
+    if (!st.profile) return;
     if (!profileDeleteBtn.classList.contains('confirming')) {
       profileDeleteBtn.classList.add('confirming');
       profileDeleteBtn.textContent = '確定？';
@@ -682,7 +737,7 @@ if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNa
       return;
     }
     exitProfileDeleteConfirm();
-    save({ profiles: PROFILES.remove(current.profiles, active.name), activeProfile: null });
+    commitProfileChange(PROFILES.remove(current.profiles, st.name), null);
   });
 
   profileNameInput.addEventListener('keydown', (e) => {
@@ -690,19 +745,24 @@ if (PROFILES && profileSelect && profileSaveBtn && profileDeleteBtn && profileNa
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endProfileNaming(); }
   });
 
-  // 跨 context 同步：懸浮按鈕長按選單切換設定檔（浮層開著時）/ 另一個 popup 實例
-  // 改了清單 → 本 popup 的 select 立刻反映。自己的寫入還在 pendingPatch 時以本地為準。
+  // 跨 context 同步：懸浮按鈕長按選單切換設定檔（浮層開著時，寫 local）/ 另一個
+  // popup 實例或另一台裝置改了清單（sync）→ 本 popup 立刻反映。自己的寫入還在
+  // pending 時以本地為準。
   if (browser.storage && browser.storage.onChanged) {
     browser.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'sync') return;
-      if (!('profiles' in changes) && !('activeProfile' in changes)) return;
-      if ('profiles' in changes && !('profiles' in pendingPatch)) {
+      let touched = false;
+      if (area === 'sync' && 'profiles' in changes && !('profiles' in pendingPatch)) {
         current.profiles = PROFILES.sanitize(changes.profiles.newValue);
+        touched = true;
       }
-      if ('activeProfile' in changes && !('activeProfile' in pendingPatch)) {
-        current.activeProfile = changes.activeProfile.newValue ?? null;
+      if (area === 'local' && PROFILES.STATE_KEY in changes && pendingLocal === undefined) {
+        const raw = changes[PROFILES.STATE_KEY].newValue;
+        localState = raw && typeof raw === 'object' ? raw : null;
+        touched = true;
       }
-      if (!profileNaming) renderProfiles(current);
+      if (!touched || !settingsReady) return;
+      recomputeLayout();
+      render(current);
     });
   }
 }

@@ -240,9 +240,15 @@
     // v0.8.164：browser.storage.sync get/set 原生 Promise（reject 即 no-op）。
     try {
       togglePagedQueue = togglePagedQueue.then(() => {
-        return browser.storage.sync.get({ pagedMode: SETTINGS_DEF.pagedMode ?? false }).then((s) => {
+        // v1.9.14：讀有效值（套用中設定檔的快照 / 草稿會蓋過 sync flat）、寫入經
+        // PROFILES.writeLayout 分流（套用中 → local 草稿；自訂 → sync）
+        const def = { pagedMode: SETTINGS_DEF.pagedMode ?? false };
+        const read = PROFILES ? PROFILES.readEffective(def) : browser.storage.sync.get(def);
+        return read.then((s) => {
           const next = !(s && s.pagedMode);
-          return browser.storage.sync.set({ pagedMode: next }).then(() => {
+          const patch = { pagedMode: next };
+          const write = PROFILES ? PROFILES.writeLayout(patch) : browser.storage.sync.set(patch);
+          return write.then(() => {
             if (NS.toast) NS.toast.show('分頁模式：' + (next ? '開' : '關'), { kind: 'info' });
           });
         });
@@ -308,26 +314,39 @@
     ].concat(profileMenuItems());
   }
 
-  // ─── 設定檔切換（v1.9.0）──────────────────────────────────────────────────
-  // popup 存的設定檔（storage.sync.profiles）每組一列「設定檔：<名稱>」，套用中的
-  // 那組 icon 換成 ✓。清單與 activeProfile 於初始化讀入、onChanged 即時更新（選單
-  // 每次長按重建，標籤永遠反映當下）。沒有設定檔時不多任何列。套用 = 讀最新清單
-  //（不信快取，popup 可能剛改過）→ 一次 storage.set（fields + activeProfile）→
-  // content 端 onChanged reapply（與 popup 套用同一份事實）。純 content 本地動作、
-  // 不依賴 SW。YouTube watch 專屬選單不列（無主文可套版面）。
+  // ─── 設定檔切換（v1.9.0；v1.9.14 改每台裝置各自套用）────────────────────
+  // popup 存的設定檔（storage.sync.profiles）每組一列「設定檔：<名稱>」，這台裝置
+  // 套用中的那組 icon 換成 ✓。清單（sync）、本機套用狀態（storage.local
+  // profileState）與舊欄位 sync.activeProfile（本機從未選過時的初值）於初始化
+  // 讀入、onChanged 即時更新（選單每次長按重建，標籤永遠反映當下）。沒有設定檔時
+  // 不多任何列。套用 = 讀最新清單（不信快取，popup 可能剛改過）→ 只寫 local
+  // profileState（草稿清空；不碰 sync，其他裝置不受影響）→ content 端 onChanged
+  // reapply（與 popup 套用同一份事實）。純 content 本地動作、不依賴 SW。YouTube
+  // watch 專屬選單不列（無主文可套版面）。
   const PROFILES = (typeof window !== 'undefined' && window.__JReadProfiles) || null;
   let profilesCache = [];
-  let activeProfileCache = null;
+  let legacyActiveCache = null;   // sync.activeProfile（v1.9.13 以前的欄位）
+  let profileStateCache;          // storage.local profileState 原始值（undefined = 從未選過）
   function applyProfiles(v) {
     profilesCache = PROFILES ? PROFILES.sanitize(v) : [];
   }
   function applyActiveProfile(v) {
-    activeProfileCache = typeof v === 'string' ? v : null;
+    legacyActiveCache = typeof v === 'string' ? v : null;
+  }
+  function applyProfileState(v) {
+    profileStateCache = v;
+  }
+  function activeProfileName() {
+    if (!PROFILES) return null;
+    return PROFILES.resolveState(
+      { profiles: profilesCache, activeProfile: legacyActiveCache }, profileStateCache
+    ).name;
   }
   function profileMenuItems() {
+    const active = activeProfileName();
     return profilesCache.map((p) => ({
       id: 'profile:' + p.name,
-      icon: p.name === activeProfileCache ? '✓' : '▤',
+      icon: p.name === active ? '✓' : '▤',
       label: '設定檔：' + p.name,
       action: () => applyProfile(p.name)
     }));
@@ -341,7 +360,9 @@
           if (NS.toast) NS.toast.show('找不到設定檔：' + name, { kind: 'error' });
           return;
         }
-        return browser.storage.sync.set(Object.assign({}, p.fields, { activeProfile: p.name })).then(() => {
+        const state = {};
+        state[PROFILES.STATE_KEY] = { name: p.name, draft: {} };
+        return browser.storage.local.set(state).then(() => {
           if (NS.toast) NS.toast.show('設定檔：' + p.name, { kind: 'info' });
         });
       }).catch(() => {});
@@ -786,6 +807,8 @@
     applyStorageService(undefined);
     applyProfiles(undefined); applyActiveProfile(undefined);
   };
+  // v1.9.14：本機套用狀態另讀 storage.local（readLocalState 永不 reject）
+  if (PROFILES) PROFILES.readLocalState().then(applyProfileState);
   try {
     browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService', 'profiles', 'activeProfile']).then((s) => {
       if (!s) { applyDefaults(); return; }
@@ -802,6 +825,10 @@
   }
 
   browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local') {
+      if (PROFILES && changes[PROFILES.STATE_KEY]) applyProfileState(changes[PROFILES.STATE_KEY].newValue);
+      return;
+    }
     if (area !== 'sync') return;
     if (changes.floatingIcon) applyEnabled(RESOLVE(changes.floatingIcon.newValue));
     if (changes.floatingIconOpacity) applyOpacity(changes.floatingIconOpacity.newValue);
@@ -818,7 +845,7 @@
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
     handleShortPress, togglePaged, openReader, sendToService, applyStorageService,
-    profileMenuItems, applyProfile, applyProfiles, applyActiveProfile,
+    profileMenuItems, applyProfile, applyProfiles, applyActiveProfile, applyProfileState,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
     isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,

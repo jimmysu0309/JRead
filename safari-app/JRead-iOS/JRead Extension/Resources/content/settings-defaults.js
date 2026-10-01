@@ -188,10 +188,12 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // v1.9.0：設定檔（profile）——把 popup 那組外觀設定（PROFILE_KEYS）存成具名
     // 快照，一鍵切換。profiles 為陣列（建立順序即 popup select / 長按選單的排列
     // 順序）：[{ name, fields }]，fields 只含 PROFILE_KEYS 白名單欄位、上限
-    // MAX_PROFILES 組。activeProfile = 目前套用中的設定檔名稱，null = 「自訂」
-    //（沒有套用任何設定檔，或套用後又手動改過任一欄位——popup save() 遇到
-    // PROFILE_KEYS 內欄位變動就寫回 null）。兩個 key 都住 storage.sync；options
-    // 「回復預設」刻意不清（使用者資產，比照憑證）。
+    // MAX_PROFILES 組，住 storage.sync（清單與內容跨裝置共用）；options「回復
+    // 預設」刻意不清（使用者資產，比照憑證）。
+    // v1.9.14：「這台裝置套用哪一組」改住 storage.local（PROFILE_STATE_KEY，見
+    // 下方設定檔區塊）——每台裝置各選各的。這裡的 activeProfile 是 v1.9.0–v1.9.13
+    // 的舊欄位，新版**只讀不寫**：本機從未選過設定檔時拿它當初值（升級當下畫面
+    // 不變），之後一律以 storage.local 為準。
     profiles: [],
     activeProfile: null,
     // v0.7.218：自訂快速鍵。null = 未自訂。
@@ -302,6 +304,19 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   // 白名單 = popup 面板上會影響閱讀版面的欄位（含翻頁模式）。刻意排除
   // autoEnableDomains（網域專屬、不是外觀）與 options 頁所有欄位。popup（存 /
   // 套用）與 content floating-icon（長按選單切換）共用同一份，兩端不得各自手寫。
+  //
+  // v1.9.14 資料模型（Jimmy 2026-10-01：兩台電腦要能各用各的設定檔、調整後要能
+  // 更新原設定檔）：
+  //   storage.sync  flat 版面欄位 = 「自訂」那一組（沒套用設定檔時用，跨裝置共用）
+  //   storage.sync  profiles      = 設定檔清單與內容（跨裝置共用）
+  //   storage.local profileState  = { name, draft }——**這台裝置**套用哪一組，
+  //                                 以及套用後尚未存回設定檔的調整（草稿）
+  // 有效版面 = flat ⊕ 設定檔快照 ⊕ 草稿（effectiveSettings，所有讀取端共用）。
+  // 套用設定檔只寫 local（不再把快照攤平寫進 sync——那正是 v1.9.0「一台選了、
+  // 另一台跟著跳」的根因）；套用中調整欄位只寫 local 草稿（設定檔本身不動、
+  // 仍停在該設定檔上顯示「已修改」，按「更新」才 upsert 回 profiles）。
+  // 版面欄位的寫入端一律經 routeLayoutPatch / writeLayout 決定落點，不得直接
+  // storage.sync.set——套用中設定檔時 flat 欄位被快照蓋住，直寫等於沒反應。
   const PROFILE_KEYS = [
     'theme', 'fontSize', 'titleFontSize', 'lineHeight', 'paragraphSpacing',
     'contentWidth', 'fontWeight', 'fontFamily', 'latinSerif', 'latinSans', 'pagedMode'
@@ -371,16 +386,110 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     return sanitizeProfiles(list).filter((p) => p.name !== n);
   }
 
+  const PROFILE_STATE_KEY = 'profileState';
+
+  // 解析「這台裝置套用哪一組」。localRaw = storage.local 的 profileState 原始值：
+  //   undefined → 本機從未選過，退回舊欄位 sync.activeProfile（升級相容）
+  //   null      → 明確選了「自訂」
+  //   { name, draft } → 套用中的設定檔 + 未存回的調整
+  // 指到的設定檔不存在（別台刪了）→ 視同自訂。草稿裡與快照同值的欄位剪掉，
+  // 所以 modified 純看值：改回原值就不算修改。
+  function resolveProfileState(syncValues, localRaw) {
+    const list = sanitizeProfiles(syncValues && syncValues.profiles);
+    let name = '';
+    let draft = {};
+    if (localRaw === undefined) {
+      name = normalizeProfileName(syncValues && syncValues.activeProfile);
+    } else if (localRaw && typeof localRaw === 'object') {
+      name = normalizeProfileName(localRaw.name);
+      draft = snapshotProfileFields(localRaw.draft);
+    }
+    const profile = name ? (list.find((p) => p.name === name) || null) : null;
+    if (!profile) return { name: null, profile: null, draft: {}, modified: false };
+    const pruned = {};
+    for (const k of Object.keys(draft)) {
+      if (draft[k] !== profile.fields[k]) pruned[k] = draft[k];
+    }
+    return { name: profile.name, profile, draft: pruned, modified: Object.keys(pruned).length > 0 };
+  }
+
+  // sync 讀回的設定 + 本機狀態 → 有效設定（新物件）。activeProfile 改寫成解析後
+  // 的名稱（null = 自訂）。對同一份輸入重複呼叫不是冪等的（輸出的 activeProfile
+  // 會被第二次當成舊欄位、草稿就掉了）——每條讀取路徑只套一次。
+  function effectiveSettings(syncValues, localRaw) {
+    const st = resolveProfileState(syncValues, localRaw);
+    const out = Object.assign({}, syncValues);
+    if (st.profile) Object.assign(out, st.profile.fields, st.draft);
+    out.activeProfile = st.name;
+    return out;
+  }
+
+  // 一份 patch 該寫去哪：套用中設定檔 → 版面欄位進 local 草稿（與快照同值的
+  // 欄位從草稿移除）、其餘欄位照寫 sync；自訂 → 整份寫 sync flat。
+  function routeLayoutPatch(patch, syncValues, localRaw) {
+    const st = resolveProfileState(syncValues, localRaw);
+    if (!st.profile) return { sync: Object.assign({}, patch), local: null };
+    const syncPart = {};
+    const draft = Object.assign({}, st.draft);
+    for (const k of Object.keys(patch || {})) {
+      if (PROFILE_KEYS.indexOf(k) === -1) { syncPart[k] = patch[k]; continue; }
+      if (patch[k] === st.profile.fields[k]) delete draft[k];
+      else draft[k] = patch[k];
+    }
+    const local = {};
+    local[PROFILE_STATE_KEY] = { name: st.name, draft };
+    return { sync: Object.keys(syncPart).length ? syncPart : null, local };
+  }
+
+  // ── storage I/O（content / popup / SW / reader 頁共用；永不 reject 讀取）──
+  function readLocalProfileState() {
+    try {
+      const area = global.browser && global.browser.storage && global.browser.storage.local;
+      if (!area) return Promise.resolve(undefined);
+      return Promise.resolve(area.get(PROFILE_STATE_KEY))
+        .then((v) => (v ? v[PROFILE_STATE_KEY] : undefined), () => undefined);
+    } catch (_) {
+      return Promise.resolve(undefined);
+    }
+  }
+
+  // 讀有效設定：defaults 是呼叫端要的欄位與預設值（比照 storage.sync.get(obj)）。
+  function readEffectiveSettings(defaults) {
+    const want = Object.assign({ profiles: [], activeProfile: null }, defaults);
+    return global.browser.storage.sync.get(want)
+      .then((s) => readLocalProfileState().then((l) => effectiveSettings(s, l)));
+  }
+
+  // 寫版面欄位（翻頁模式快速鍵 / 長按選單 / debug bridge 這類 popup 以外的寫入端）。
+  function writeLayout(patch) {
+    const st = global.browser.storage;
+    return st.sync.get({ profiles: [], activeProfile: null })
+      .then((s) => readLocalProfileState().then((l) => {
+        const r = routeLayoutPatch(patch, s, l);
+        const ops = [];
+        if (r.sync) ops.push(st.sync.set(r.sync));
+        if (r.local) ops.push(st.local.set(r.local));
+        return Promise.all(ops);
+      }));
+  }
+
   const PROFILES = {
     KEYS: PROFILE_KEYS,
     MAX: MAX_PROFILES,
     MAX_NAME_LEN: MAX_PROFILE_NAME_LEN,
+    STATE_KEY: PROFILE_STATE_KEY,
     normalizeName: normalizeProfileName,
     snapshot: snapshotProfileFields,
     sanitize: sanitizeProfiles,
     find: findProfile,
     upsert: upsertProfile,
-    remove: removeProfile
+    remove: removeProfile,
+    resolveState: resolveProfileState,
+    effective: effectiveSettings,
+    routePatch: routeLayoutPatch,
+    readLocalState: readLocalProfileState,
+    readEffective: readEffectiveSettings,
+    writeLayout
   };
 
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
