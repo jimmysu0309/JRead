@@ -194,6 +194,12 @@
   const HEADING_SPACER_AFTER_ATTR = 'data-jread-heading-spacer-after';
   const HEADING_LINK_ATTR = 'data-jread-heading-link';
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
+  // v1.9.16：翻頁模式下由 cleaner 接管位置的選取工具列（pinToolbarOverSelection）。
+  // attr 與兩個自訂屬性名稱要跟 cleaner.js 逐字一致（forcing：
+  // selection-toolbar-inline-highlight.spec.js）。
+  const SEL_TOOLBAR_PIN_ATTR = 'data-jread-seltb-pin';
+  const SEL_TOOLBAR_PIN_LEFT = '--jread-seltb-left';
+  const SEL_TOOLBAR_PIN_TOP = '--jread-seltb-top';
   // v0.8.49：「div 當段落」標記。部分 CMS（upmedia 等）把主文段落輸出成無
   // class 的裸 <div>（不是 <p>），BODY_TEXT_SEL 列舉的段落 tag 都不命中 →
   // 使用者 fontSize / fontFamily / lineHeight / fontWeight 設定對主文整段失效、
@@ -1523,6 +1529,22 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"] * {
   min-height: 0 !important;
+}
+/* v1.9.16：翻頁模式下的選取工具列由 JRead 釘位。翻頁卡片是 position:fixed 的
+   橫向捲動多欄容器，站方照原本 containing block 算的 inline transform 會把工具列
+   放到選取範圍旁邊幾百 px（第 N 頁還要再偏 N 個 stride），而且站方會讀工具列
+   當下的 rect 重算、疊修正量會被抵銷。這裡用 stylesheet !important 蓋掉站方的
+   inline position / inset / transform，座標由 cleaner 寫進自訂屬性
+   （pinToolbarOverSelection）。只在 cleaner 標了 pin attr 的宿主生效。 */
+html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
+  position: fixed !important;
+  top: var(${SEL_TOOLBAR_PIN_TOP}, -10000px) !important;
+  left: var(${SEL_TOOLBAR_PIN_LEFT}, -10000px) !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  translate: none !important;
+  margin: 0 !important;
 }`;
       const segCarouselPseudo = () => `
 /* ===== Carousel / slider 版面中和（v0.8.67）=====

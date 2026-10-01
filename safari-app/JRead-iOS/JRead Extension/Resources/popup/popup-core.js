@@ -21,6 +21,7 @@
     'content/settings-defaults.js',
     'content/domain-match.js',
     'content/link-follow.js',
+    'content/site-overrides.js',
     'content/shortcut-utils.js',
     'content/custom-shortcuts.js',
     'content/touch-gestures.js',

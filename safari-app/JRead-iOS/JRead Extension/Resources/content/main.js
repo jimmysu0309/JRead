@@ -162,9 +162,32 @@
     }
     // ESC 放行給 onEscKey 處理
     if (e.key === 'Escape' || e.code === 'Escape') return;
+    // v1.9.16：site-overrides 指定放行給原站的按鍵（Readwise Reader 選取文字後
+    // 按 H 畫重點）。哪個站放哪個鍵是站點特判，規則表與決策函式住
+    // content/site-overrides.js，這裡只收集事實。
+    if (siteOverridePassesKey(e)) return;
     // 攔截：阻止 page JS listener 收到（chrome 原生 shortcut 不受影響、由
     // browser 自己處理；瀏覽器原生 default action 也保留）
     e.stopImmediatePropagation();
+  }
+
+  function hasSelectionInArticle() {
+    const articleEl = NS.state && NS.state.articleEl;
+    if (!articleEl) return false;
+    const sel = document.getSelection ? document.getSelection() : null;
+    if (!sel || sel.isCollapsed || !sel.anchorNode) return false;
+    return articleEl.contains(sel.anchorNode) && !!String(sel).trim();
+  }
+
+  function siteOverridePassesKey(e) {
+    const so = window.__JReadSiteOverrides;
+    if (!so || typeof so.shouldPassKeyToPage !== 'function') return false;
+    return so.shouldPassKeyToPage({
+      hostname: location.hostname,
+      key: e.key,
+      altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey,
+      hasSelectionInArticle: hasSelectionInArticle()
+    });
   }
 
   let keyguardInstalled = false;
