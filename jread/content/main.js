@@ -253,10 +253,13 @@
   // keydown listener（←/→/Space 翻頁）必須先於 keyguardHandler 收到事件
   // （keyguard 對非 ESC 鍵 stopImmediatePropagation）——onChanged 動態開啟
   // 時新 listener 排在 keyguard 後面，重掛 keyguard 推回隊尾。
-  function syncPagedModeFromSettings(settings) {
+  // 2026-10-07 review D-1：uninstallOpts 轉給 pagedMode.sync → uninstall（設定切換
+  // 路徑用 { deferScrollRestore: true } 關掉模組內的 rAF 捲回，捲動由 scheduleReapply
+  // 以目前頁錨點接管——詳見該處註解）。
+  function syncPagedModeFromSettings(settings, uninstallOpts) {
     if (!NS.pagedMode) return;
     const wasInstalled = NS.pagedMode.isInstalled();
-    NS.pagedMode.sync(settings, NS.state.articleEl);
+    NS.pagedMode.sync(settings, NS.state.articleEl, uninstallOpts);
     if (!wasInstalled && NS.pagedMode.isInstalled() && keyguardInstalled) {
       uninstallKeyguard();
       installKeyguard();
@@ -686,6 +689,20 @@
       ? NS.positionMemory.computeExitScrollTop(scroller.scrollTop, relTop, viewH)
       : Math.max(0, scroller.scrollTop + relTop - viewH * 0.12);
     scroller.scrollTo(0, top);
+  }
+
+  // 2026-10-07 review D-1：翻頁 → 捲動設定切換後，把 reader 捲動版面捲到剛才讀到
+  // 的那一頁（anchor 是 pagedMode.captureExitAnchor 回的 text node / 替換元素，
+  // 與真退出共用 applyExitScrollAnchor；量不到錨點時以頁碼比例近似）。必須在
+  // syncSpaceScrollFromSettings 之前呼叫——焦點條要錨在捲完的位置。
+  function applyPagedSwitchScroll(anchor, ratio) {
+    try {
+      if (anchor && anchor.isConnected) { applyExitScrollAnchor(anchor); return; }
+      const sc = document.scrollingElement || document.documentElement;
+      if (!sc) return;
+      const maxTop = Math.max(0, sc.scrollHeight - window.innerHeight);
+      if (maxTop > 0 && ratio > 0) window.scrollTo(0, Math.round(maxTop * Math.min(1, ratio)));
+    } catch (_) { /* 捲動失敗不阻斷 reapply */ }
   }
 
   function exitReaderModeImpl() {
@@ -1369,11 +1386,15 @@
     window.removeEventListener('keydown', onEscKey, true);
     uninstallKeyguard();
     if (NS.spaceScroll) NS.spaceScroll.uninstall();
-    // 翻頁模式鎖垂直捲動、Space / 方向鍵接管為翻頁，與編輯模式 hover 衝突——
-    // 暫時 uninstall，restore 時依 settings 重新 sync（重算頁數）。
-    // v1.7.41（P3a）：suspend 語意——不消費 savedScrollY / 不捲動，保留給
-    // 之後真退出的 fallback 捲回（詳見 paged-mode.js uninstall 註解）。
-    if (NS.pagedMode) NS.pagedMode.uninstall({ suspend: true });
+    // 翻頁模式**不**拆（2026-10-07 review D-2）：v0.8.108 以來這裡
+    // `pagedMode.uninstall({ suspend: true })` 只拆 JS 模組、styler 的翻頁 CSS
+    //（fixed 滿版 multicol + overflow hidden）照舊——編輯期間 scrollLeft 被歸 0、
+    // 鍵盤 / 滾輪 / swipe 全拆，使用者只看得到第 1 頁、第 2 頁起的雜訊碰不到
+    //（編輯模式的用途正是清文中 / 文末殘留）；position-memory 的 capture 走捲動
+    // 分支量到 ratio 0 → 把已存頁碼刪掉（probe 實證 storage entry 消失）。翻頁的
+    // 輸入（←/→/Space/wheel/swipe）跟編輯模式的 click 不衝突，維持安裝即可翻頁
+    // 找雜訊；點掉 block 後 edit-mode 呼叫 pagedMode.refresh() 重測頁數。
+    // 頁碼指示器 / scrub 的 mousedown 由 edit-mode 的 NS.isInjectedUiPath 放行。
     // v1.7.62：編輯模式靠 hover 指出要刪的段落，游標藏起來就沒法用——暫停。
     // restore 時由 syncIdleCursorFromSettings 依當前 settings 裝回。
     if (NS.idleCursor) NS.idleCursor.uninstall();
@@ -1681,7 +1702,10 @@
       // 且可能 throw；明確 guard 避免誤觸發。reader mode 中途切到 cinema 不該踩。
       if (!NS.state.active || NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
-      NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
+      // 2026-10-07 review D-1：settings 先讀——翻頁 → 捲動的切換要在 styler.restore
+      //（multicol 還在、頁碼 / 欄位幾何有效）**之前**知道「要關翻頁」，才抓得到
+      // 目前頁的內容錨點。舊順序是 restore → getSettings，等知道要關翻頁時版面
+      // 已經是捲動版面、讀到第幾頁的事實已丟。
       const settings = await getSettings();
       // v0.8.36：await 期間使用者可能已按 ESC 退出 / 切 cinema / SPA 導航
       // 拆卡（exit 是同步的、不被 enterInFlight 擋）——此時 articleEl 已是
@@ -1689,6 +1713,26 @@
       // originalStyles。await 之後必須重跑同一組 guard。
       if (!NS.state.active || NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
+      // 2026-10-07 review D-1：翻頁 → 捲動的設定切換（popup 關翻頁 / ⌥P / 設定檔）。
+      // 舊版 uninstall 無 opts 路徑用 savedScrollY（進場前**原網頁**的 scrollY，或
+      // 中途開翻頁那一刻的 reader scrollY）rAF 捲回——跟使用者翻到第 N 頁完全無關
+      //（probe 實證：原頁捲 1200 → 翻頁模式翻到末頁 → 關翻頁後落在第 3 段）。
+      // 改比照真退出：restore 前以 captureExitScrollAnchor 取目前頁第一個內容
+      // 節點，uninstall 走 deferScrollRestore（不排 rAF、回傳值不用——那是原頁
+      // 位置），捲動版面套好後用該節點 rect 捲到 REST 落點（applyExitScrollAnchor
+      // 同一份算法）；錨點量不到時退 lastRatio 近似。
+      let pagedSwitchAnchor = null;
+      let pagedSwitchRatio = 0;
+      const pagedWasOn = !!(NS.pagedMode && NS.pagedMode.isInstalled());
+      const pagedTurningOff = pagedWasOn && !(settings && settings.pagedMode === true);
+      if (pagedTurningOff) {
+        try {
+          const p = NS.pagedMode.getPosition();
+          pagedSwitchRatio = (p && p.total > 1) ? p.idx / (p.total - 1) : 0;
+          pagedSwitchAnchor = captureExitScrollAnchor();
+        } catch (_) { pagedSwitchAnchor = null; }
+      }
+      NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
       // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
       // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
       if (NS.pagedMode) NS.pagedMode.captureScrollY();
@@ -1696,7 +1740,10 @@
       // v0.7.227：reapply 後重同步翻頁模組（pagedMode 切換 / 字級版心調整
       // 都會改頁面切割，模組內部重算頁數並回到原閱讀比例）；spaceScroll
       // 跟著重同步（依 pagedMode installed 狀態讓位或恢復）
-      syncPagedModeFromSettings(settings);
+      syncPagedModeFromSettings(settings, pagedTurningOff ? { deferScrollRestore: true } : undefined);
+      if (pagedTurningOff && NS.pagedMode && !NS.pagedMode.isInstalled()) {
+        applyPagedSwitchScroll(pagedSwitchAnchor, pagedSwitchRatio);
+      }
       syncSpaceScrollFromSettings(settings);
     }, 200);
   }

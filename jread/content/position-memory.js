@@ -346,11 +346,17 @@
       writeWithSelfHeal(rawSet, key, r.entry, r.next);
       return;
     }
-    // memMap 尚未 seed（剛進場、restore 的讀取還沒回）→ 退回 async 讀改寫，順手 seed
+    // memMap 尚未 seed（剛進場、restore 的讀取還沒回）→ 退回 async 讀改寫，順手 seed。
+    // 2026-10-07 review D-13：回呼晚到時 session 可能已結束（ESC 退出 → endSession
+    // 清 memMap）甚至已換成新 session——寫入照做（舊 session 的最後位置仍有效），
+    // 但 **只有 session 仍是同一個** 才 seed memMap；否則會把已清掉的 memMap 復活成
+    // 舊快照，新 session 在自己的 restore 回來前就以舊快照同步整包覆寫 storage
+    //（jsdom 重現：新 session 第一筆寫入帶著上一輪的 key）。v1.7.39 P1 只補了
+    // restore 主路徑的 session guard，這條 fallback 是同型缺口。
     localGet((map) => {
       if (!map) return;
       const r = computeNextMap(map, key, pos, now, days, MAX_ENTRIES);
-      memMap = r.next;
+      if (sessionKey === key) memMap = r.next;
       writeWithSelfHeal(rawSet, key, r.entry, r.next);
     });
   }
@@ -525,6 +531,9 @@
   // v1.7.49：opts.entryOverride——進場捲動同步的 entry（見 restore 註解）
   function beginSession(key, settings, el, opts) {
     endSession(); // 保險：理論上 enter 前必 exit
+    // 2026-10-07 review D-13：無 session 時 endSession 直接 return 不清 memMap——
+    // 無條件清掉，新 session 一律由自己的 restore 重新 seed（不吃上一輪殘留快照）
+    memMap = null;
     days = clampDays(settings && settings.positionMemoryDays);
     const override = opts && opts.entryOverride;
     if (!(days > 0) || !key) {

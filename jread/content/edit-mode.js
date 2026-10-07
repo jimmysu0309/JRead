@@ -260,11 +260,27 @@
   }
 
   // ---- 互動 -----------------------------------------------------------------
-  // host 在 composedPath 內 = 事件落在 toolbar 上（host 是 shadow 邊界、外部
-  // 看到的 retarget 目標就是 host）；此時不對頁面元素做隱藏。
+  // 事件落在任何 JRead 注入 UI 上（toolbar host、懸浮按鈕長按選單、toast、翻頁
+  // 頁碼指示器 / scrub 條）→ 放行、不對頁面元素做隱藏，也不 stopPropagation。
+  // 2026-10-07 review D-3：原本只認編輯模式自己的 host——document capture 的
+  // stopPropagation 擋在懸浮按鈕長按選單的 button listener 之前，編輯中「送到
+  // Readwise / 切換分頁」全部沒反應、選單不收。判定收斂到 NS.isInjectedUiPath
+  //（id 以 `__jread-` 開頭的宿主，結構訊號、paged-mode 的觸控 guard 共用）。
   function pathHitsHost(e) {
+    if (NS.isInjectedUiPath) return NS.isInjectedUiPath(e);
     const path = e.composedPath ? e.composedPath() : [];
     return host && path.indexOf(host) !== -1;
+  }
+
+  // 2026-10-07 review D-2：翻頁模式在編輯期間維持安裝（main.js 不再 uninstall），
+  // 點掉 / 復原一個 block 會改變內容末端 → 請翻頁模組重測頁數、頁碼對齊。
+  function refreshPagedLayout() {
+    try {
+      if (NS.pagedMode && NS.pagedMode.isInstalled && NS.pagedMode.isInstalled() &&
+          typeof NS.pagedMode.refresh === 'function') {
+        NS.pagedMode.refresh();
+      }
+    } catch (_) { /* 重測失敗不阻斷編輯 */ }
   }
 
   function onMouseDown(e) {
@@ -305,6 +321,7 @@
     if (!rec) return;
     editStack.push(rec);
     updateToolbar();
+    refreshPagedLayout();
   }
 
   function undo() {
@@ -314,7 +331,10 @@
     // 反向 hide：還原 inline display + priority，刪 data-jread-hidden。刪掉
     // jreadHidden 後 cleaner 的 restyle observer guard 會自動忽略此元素、不再
     // 補回 display:none（不需 unregister observer）。
-    if (el.style) {
+    // 2026-10-07 review B-07：先走 NS.inlineRelease（分層登記簿，與 cleaner.hide
+    // 同一 owner）——styler 若已在這個元素寫過 display（byline flex / 表格 block），
+    // 復原回到的是 styler 的值而不是站方值；登記簿缺席才退回 rec 快照
+    if (el.style && !(NS.inlineRelease && NS.inlineRelease(el, 'display', 'cleaner-hide'))) {
       el.style.removeProperty('display');
       if (rec.prevDisplay) el.style.setProperty('display', rec.prevDisplay, rec.prevDisplayPriority || '');
     }
@@ -324,6 +344,7 @@
     const i = NS.state.hiddenEls.indexOf(rec);
     if (i >= 0) NS.state.hiddenEls.splice(i, 1);
     updateToolbar();
+    refreshPagedLayout();
   }
 
   // ---- 對外介面 -------------------------------------------------------------

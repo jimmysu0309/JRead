@@ -1287,6 +1287,13 @@
       el.style.getPropertyPriority('display')) || '';
     hidden.push({ el, prevDisplay, prevDisplayPriority });
     if (el.dataset) el.dataset.jreadHidden = '1';
+    // 2026-10-07 review B-07 / A-30：display 寫入同時登記進 NS 分層登記簿（owner
+    // 'cleaner-hide'）——styler 已對同一元素寫過 display（byline flex / 表格 block）
+    // 時，雙方各自「快照 → 寫回」會互踩：退出時 styler 先還成站方值、本模組再把
+    // styler 的值當「站方原值」寫回（編輯模式點掉 byline → 退出後 flex !important
+    // 殘留，Chromium probe 實證）。restore() 以 inlineRelease 還原，任何順序都回
+    // 到真正原值。prevDisplay 快照續留：登記簿缺席（最小 NS 的 jsdom 環境）時的
+    // fallback，與編輯模式 undo 的舊路徑。
     // v1.6.30：被隱藏的是 img / picture → parent 標 HIDDENMEDIA_WRAP_ATTR
     // （v0.8.59 min-height 解除的 JS 端訊號）。同 parent 多張隱藏媒體只標一次；
     // 編輯模式 undo 單張還原後標記留存＝該容器維持 min-height:0——與媒體容器
@@ -1303,7 +1310,8 @@
     // 的 `aside.article-content__social` 原站規則 specificity 高於 jread
     // 的 `[data-jread-hidden="1"] { display: none !important }`，戰勝後
     // 按鈕重新顯示。改用 inline !important 後就完全贏過任何 stylesheet。
-    el.style.setProperty('display', 'none', 'important');
+    if (NS.inlineSet) NS.inlineSet(el, 'display', 'none', 'important', 'cleaner-hide');
+    else el.style.setProperty('display', 'none', 'important');
     // v0.8.20 C9：動態階段 hide 的雜訊即時補掛 inline-restyle observer。初始
     // clean() 階段 styleRestoreObserver 尚 null（watchHiddenInlineRestyle 在
     // clean 末段才建立），此呼叫 early-return、由末段 batch 一次掛；動態階段
@@ -10434,9 +10442,14 @@
           // 還原原始 inline display + priority（`!important` 也要還原，
           // 否則原站的 `display: flex !important` 若原本寫在 inline，
           // reader mode 退出後會變成無 priority）。
-          el.style.removeProperty('display');
-          if (prevDisplay) {
-            el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
+          // 2026-10-07 review B-07：先走 NS.inlineRelease（分層登記簿）——與 styler
+          // 對同一元素的 display 寫入互相獨立、還原順序不再有關係；沒登記（最小 NS
+          // 環境 / 手工構造的記錄）才退回 prevDisplay 快照。
+          if (!(NS.inlineRelease && NS.inlineRelease(el, 'display', 'cleaner-hide'))) {
+            el.style.removeProperty('display');
+            if (prevDisplay) {
+              el.style.setProperty('display', prevDisplay, prevDisplayPriority || '');
+            }
           }
           if (el.dataset) delete el.dataset.jreadHidden;
         }
