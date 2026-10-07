@@ -417,6 +417,29 @@
     return css;
   }
 
+  // 2026-10-07 review B-15：fontFamily 是唯一原樣內插進 stylesheet 的使用者字串
+  //（數值欄位 v0.7.143 起都有 clamp）。storage.sync 若被外部寫入 / 損壞成
+  // `x; } html { display:none } /*` 之類，會整頁壞版（CSS 無法執行 script、
+  // injectCssText 走 textContent，無外洩面；但「設定同步進來就壞版」仍是洞）。
+  // 第二道防線用 **font-family 值的文法**而不是字面清單：合法值只會是
+  // 「逗號分隔、每項為引號字串或 ident 序列」（system-ui / -apple-system /
+  // "PingFang TC" / Palatino, "Palatino Linotype" …），`; { } ( ) / \` 這些能
+  // 改寫 CSS 結構的字元在合法 font-family 裡沒有位置。不用 FONT_STACKS 清單
+  // 比對的理由：styler 在 reader 擴充頁 / 測試環境不一定載得到 settings-defaults
+  // 的全域，而文法閘不依賴載入順序、也不會因 LATIN_FONTS 增刪而 drift（語意上
+  // 「值是否在選單內」是 popup 的事，這裡只擋結構注入）。不合法一律退 DEFAULTS。
+  const FONT_FAMILY_MAX_LEN = 512;
+  const FONT_FAMILY_ITEM_RE = /^(?:"[^"\\\n]*"|'[^'\\\n]*'|[\w\u00a0-\uffff-]+(?:[ \t]+[\w\u00a0-\uffff-]+)*)$/;
+  function sanitizeFontFamily(v) {
+    if (typeof v !== 'string') return null;
+    const str = v.trim();
+    if (!str || str.length > FONT_FAMILY_MAX_LEN) return null;
+    for (const raw of str.split(',')) {
+      if (!FONT_FAMILY_ITEM_RE.test(raw.trim())) return null;
+    }
+    return str;
+  }
+
   // 預設值。v1.7.33（Jimmy 2026-08-03）起預設值改為 Jimmy 慣用組合，「預設＝
   // 不注入」語意與預設值脫鉤——不注入改由明確 sentinel 判定：fontSize /
   // titleFontSize 0、lineHeight 0、paragraphSpacing -1、fontFamily 'system-ui'
@@ -1356,7 +1379,7 @@ ${MEDIA_CAP_SEL} {
    不影響 figure/div/section 的 aspect-ratio（這些可能合法用於 embed
    container），只 picture 一個 tag。 */
 [${ARTICLE_ATTR}="1"] picture,
-[${ARTICLE_ATTR}="1"] [class*="object-fit"],
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i],
 [${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i] {
   aspect-ratio: auto !important;
@@ -1582,6 +1605,12 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
   transform: none !important;
   translate: none !important;
   margin: 0 !important;
+  /* 2026-10-07 review B-19：層級不交給站方——翻頁卡片是 fixed 自成 stacking
+     context，detector 注入的 H1 帶 z-index:10，站方工具列若是 z-index:auto 且被
+     推到選取下方（fallback 分支）會被 H1 蓋住一角。2147483646 高於任何主文元素、
+     低於頁碼 / scrubber / 進度條的 2147483647（那些掛 <html>、在根層，本就不同
+     context；數值只為可讀的相對序）。 */
+  z-index: 2147483646 !important;
 }`;
       const segCarouselPseudo = () => `
 /* ===== Carousel / slider 版面中和（v0.8.67）=====
@@ -1668,8 +1697,8 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] picture::after,
 [${ARTICLE_ATTR}="1"] figure::before,
 [${ARTICLE_ATTR}="1"] figure::after,
-[${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
-[${ARTICLE_ATTR}="1"] [class*="object-fit"]::after,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i]::before,
+[${ARTICLE_ATTR}="1"] [class*="object-fit" i]::after,
 [${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"]::before,
 [${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"]::after,
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i]::before,
@@ -2061,27 +2090,13 @@ html [${ARTICLE_ATTR}="1"] p:not([${INLINE_FLOW_P_ATTR}="1"]) {
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
-/* v0.7.179：WordPress Gutenberg constrained layout override。WP block theme
-   用 .wp-container-core-post-content-is-layout-HASH > :where(:not(.alignfull))
-   對 p/h/ul/ol 等 content block 設 max-width: 560-650px。:where() specificity
-   是 0 但 generated class 的 specificity (0,1,0) 搭配 cascade order 靠後仍
-   贏過舊 JRead universal * 規則。
-   對策：直接 target 常見 content block tag，specificity (0,1,2)+(0,1,2) 夠高。
-   通則性：p / h1-h6 / ul / ol / dl / blockquote 是 HTML 標準 content block
-   tag，不綁 WordPress class。非 WP 站不受影響（原 max-width 通常由頁面 CSS
-   設、被此 rule override 也無害——reader card 內文 100% 撐滿是正確行為）。 */
-html [${ARTICLE_ATTR}="1"] p,
-html [${ARTICLE_ATTR}="1"] h1,
-html [${ARTICLE_ATTR}="1"] h2,
-html [${ARTICLE_ATTR}="1"] h3,
-html [${ARTICLE_ATTR}="1"] h4,
-html [${ARTICLE_ATTR}="1"] h5,
-html [${ARTICLE_ATTR}="1"] h6,
-html [${ARTICLE_ATTR}="1"] ul,
-html [${ARTICLE_ATTR}="1"] ol,
-html [${ARTICLE_ATTR}="1"] dl {
-  max-width: none !important;
-}
+/* 2026-10-07 review B-14：這裡原有 v0.7.179 的 WordPress constrained layout
+   對策「html [ARTICLE] p, h1-h6, ul, ol, dl { max-width: none !important }」
+   (0,1,2)——但同版給 universal 規則加了 html 前綴成「html [ARTICLE] *:not([PLAYER])
+   { max-width: 100% !important }」(0,2,1)，同為 !important 時 specificity 高者勝、
+   不看 source order，這條自此永遠被蓋過（computed 恆為 100%；Chromium 合成 WP
+   constrained 頁 probe 實證刪前刪後 p 的 max-width 都是 100%）。WP constrained 的
+   實際解法就是那條 universal 規則（見其註解），死規則移除。 */
 /* articleEl 內 block 裝飾 background 清除：原站常用彩色 wrapper
    block（accent bar、inset box、newsletter box、feature card）作為
    視覺裝飾。reader mode 下 card 本身已有統一底色，內部不該再有彩色
@@ -2105,13 +2120,18 @@ html [${ARTICLE_ATTR}="1"] dl {
    exclude：a（保留連結色）、code/pre（保留 syntax highlight）、mark/kbd
    （語意 inline 元素）、table 系（保留 cell 色彩）、figcaption（背景保留
    所以文字色也保留——見下方 v0.7.195 註釋）。
-   dark/sepia theme 另有 * { color: theme.text } 覆寫全部色，本規則被
-   cascade 蓋過無副作用。
+   dark/sepia theme 另有「[ARTICLE] *:where(:not([SITE_UI])) { color: theme.text }」
+   (0,1,0)——specificity 低於本規則 (0,2,n)，cascade 上是**本規則勝出**、不是
+   被蓋過；結果仍等價：inherit 鏈往上解到 articleEl 自身（主題規則對根元素
+   設 theme.text），exclude 鏈上的元素則直接吃主題規則。2026-10-07 review B-14
+   更正——B-02 同型「以為 * 規則會蓋過」的誤判曾讓 iframe 白底規則成死規則，
+   設計新規則時別以「主題規則會蓋過這裡」為前提。
    v0.7.195：加 :not(figcaption)。background strip 規則已排除 figcaption
    （保留原站背景），但 color inherit 沒排除——導致 figcaption 原站深色
    背景 + reader card 深色繼承文字 = 對比度極低不可讀。TWZ (thewarzone.com)
    圖說白字 + 深灰底實測觸發。figcaption 背景與文字色必須成對保留，不能
-   只保留一邊。dark/sepia theme 的 * { color } 覆寫仍會蓋過本規則。 */
+   只保留一邊。dark/sepia theme 下 figcaption 走主題規則拿 theme.text（本規則
+   exclude 它、不參與）。 */
 [${ARTICLE_ATTR}="1"] *${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
   color: inherit !important;
 }
@@ -2237,7 +2257,10 @@ html [${ARTICLE_ATTR}="1"] dl {
    v0.7.179：加 html 前綴把 specificity 從 (0,1,0) 升到 (0,1,1)——WordPress
    block theme 常用 .entry-content > p 寫死 max-width 560px !important
    （specificity 0,1,1 + !important），舊 (0,1,0) + !important 被打敗導致
-   reader card 內文過窄。html 前綴不影響 match 語意（html 永遠 match）。 */
+   reader card 內文過窄。html 前綴不影響 match 語意（html 永遠 match）。
+   2026-10-07 review B-14：這條 (0,2,1) 就是 WP constrained layout 的實際解法——
+   同版另寫的「html [ARTICLE] p…dl { max-width: none }」(0,1,2) 永遠輸給它、
+   已移除；別再為 content block tag 另開 max-width 規則。 */
 html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   max-width: 100% !important;
   /* v0.7.157：font-smoothing 繼承——站點若在子層級重設 -webkit-font-smoothing
@@ -2284,11 +2307,15 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
    結構特徵非站點 class，placeholder reset 後變 static 的 iframe 不被標）、
    這條 pin 回 inset:0 + width/height:100% 填滿 wrapper，wrapper 自身仍走
    figure 置中規則對齊版心。
-   selector 重複 [FILL_IFRAME_ATTR] 兩次是刻意提高 specificity：下方
-   border-clear 通則（* 配 15 個 :not(tag) 保留鏈）specificity 累加到
-   (0,2,15)，會對 iframe 套 left/right:auto 把它退回 static position（=破版
-   位置）、壓過單一 attribute 的 (0,2,1)。雙 attr → (0,3,1)，第二欄 3>2 確保
-   本規則的 left:0/right:0 勝出。 */
+   selector 重複 [FILL_IFRAME_ATTR] 兩次是 v0.8.86 當時為了壓過 inset 清除通則
+   （* 配 :not(tag) 保留鏈，當年 (0,2,15)）而提到 (0,3,1)。
+   2026-10-07 review B-14 更正：v1.7.45 該通則加了 :not([ABS_ANCHOR]) 後已是
+   (0,3,15) > (0,3,1)，雙 attr 本身早就贏不了它——現在不衝突的真正機制是
+   markAbsAnchors 與 passMarkFillIframes 同樣以「ARTICLE_ATTR 後 computed
+   position:absolute」為訊號，被標 FILL 的 iframe 必同時被標 ABS_ANCHOR、被通則
+   的 :not() 排除。兩個標記來源是同一份事實；若改 markAbsAnchors 的量測條件
+   讓兩者脫鉤，inset 通則會重新打中 FILL iframe（forcing：
+   review-1007-b6-b-styler-drift.spec）。雙 attr 保留（仍需壓過其他單 attr 規則）。 */
 [${ARTICLE_ATTR}="1"] iframe[${FILL_IFRAME_ATTR}][${FILL_IFRAME_ATTR}] {
   position: absolute !important;
   top: 0 !important;
@@ -3247,7 +3274,7 @@ html.${HTML_CLASS}.jread-orion body {
   }
 
   // ---- 「div 當段落」標記（v0.8.49）---------------------------------------
-  // 結構訊號與 fb-post.js markParagraphDivs 同款：leaf paragraph div = 直接
+  // 結構訊號與 NS.markParagraphDivs（原 fb-post.js，review C-23 上提 namespace）同款：leaf paragraph div = 直接
   // child text node 有實質文字 + 沒有 block 子元素（只有 text node / inline
   // element）。upmedia 等 CMS 主文段落實測命中、巢狀 layout wrapper 不命中。
   //
@@ -4024,7 +4051,57 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(el);
     }
   }
-  function markEmbedWrapIframes(articleEl, marked, fillMarked) {
+  // 2026-10-07 review B-16：lazy 佔位框內「非媒體、自帶 background-image（元素本身
+  // 或 ::before / ::after）」的子元素＝站方畫在縮圖上的播放鍵 / 疊層（WP Rocket
+  // `.play` 的 background:url(play.png)、或 ::before 畫三角）。v1.8.2 保住了縮圖與
+  // 定位，但全後代 bg strip（`*:not([PLAYER]) { background-image:none }` 與 pseudo
+  // 同款）照樣把圖示清掉——縮圖上沒有任何「這是影片」的提示（pansci live probe：
+  // button.play 617×347 bg url(…play.png) → 進場後 none）。修法走 v1.9.15 同一機制：
+  // 標 SITE_UI_ATTR="embed-ui" + PLAYER_ATTR，吃既有的 :not([PLAYER]) 豁免。
+  // 判定要看站方原意：ARTICLE_ATTR 已就位、strip 規則生效後量到的 bg 永遠是 none，
+  // 故用 NS.withInjectedCssDisabled 暫停注入樣式再量（同一 JS task、不 paint；
+  // 只在真的有 lazy 佔位框時才付這筆 recalc）。範圍只限 findLazyEmbedFrame 命中的
+  // 佔位框子樹（≤ LAZY_FRAME_MAX_SUBTREE 元素），框外任何裝飾 bg 照舊清。
+  const EMBED_UI_SKIP_TAG_RE = /^(?:IMG|PICTURE|SOURCE|VIDEO|AUDIO|SVG|IFRAME|CANVAS)$/i;
+  function markLazyEmbedUi(frames, uiMarked) {
+    if (!frames.length || !Array.isArray(uiMarked)) return;
+    const doc = frames[0].ownerDocument;
+    const _win = doc && doc.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const cands = [];
+    for (const frame of frames) {
+      for (const el of NS.selfAndDescendants(frame, '*')) {
+        if (EMBED_UI_SKIP_TAG_RE.test(el.tagName)) continue;
+        if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') continue;
+        cands.push(el);
+      }
+    }
+    if (!cands.length) return;
+    const bgOf = (el, pseudo) => {
+      try {
+        const cs = _win.getComputedStyle(el, pseudo || null);
+        return cs ? (cs.backgroundImage || 'none') : 'none';
+      } catch (e) {
+        if (e && e.name === 'SyntaxError') return 'none';
+        throw e;
+      }
+    };
+    const measure = () => {
+      const hits = [];
+      for (const el of cands) {
+        if (bgOf(el) !== 'none' || bgOf(el, '::before') !== 'none' || bgOf(el, '::after') !== 'none') hits.push(el);
+      }
+      return hits;
+    };
+    const hits = (NS && NS.withInjectedCssDisabled) ? NS.withInjectedCssDisabled(measure) : measure();
+    for (const el of hits) {
+      el.setAttribute(SITE_UI_ATTR, 'embed-ui');
+      el.setAttribute(PLAYER_ATTR, '1');
+      uiMarked.push(el);
+    }
+  }
+  function markEmbedWrapIframes(articleEl, marked, fillMarked, uiMarked) {
+    const lazyFrames = [];
     for (const el of articleEl.querySelectorAll(EMBED_WRAP_CANDIDATE_SEL)) {
       if (el.getAttribute(EMBED_WRAP_ATTR) === '1') continue;
       if (el.querySelector('iframe')) {
@@ -4073,8 +4150,12 @@ html.${HTML_CLASS}.jread-orion body {
           const idx = arr.lastIndexOf(node);
           if (idx >= 0) arr.splice(idx, 1);
         }
+        continue;
       }
+      lazyFrames.push(frame);
     }
+    // 2026-10-07 review B-16：佔位框內的播放鍵 / 疊層保留站方 bg（見 markLazyEmbedUi）
+    markLazyEmbedUi(lazyFrames, uiMarked);
   }
   // 包住 heading 的 <a>（<a><h1>…</h1></a> permalink 形）→ 標 HEADING_LINK_ATTR
   // 讓連結色規則回退 inherit（v0.8.129 語意）。掃描範圍：articleEl 子樹 +
@@ -4252,7 +4333,8 @@ html.${HTML_CLASS}.jread-orion body {
         contentWidth: Number.isFinite(rawCw) && rawCw > 0
           ? Math.min(2000, Math.max(300, rawCw))
           : DEFAULTS.contentWidth,
-        fontFamily: s.fontFamily || DEFAULTS.fontFamily,
+        // 2026-10-07 review B-15：文法閘（見 sanitizeFontFamily），不合法退預設
+        fontFamily: sanitizeFontFamily(s.fontFamily) || DEFAULTS.fontFamily,
         // v0.7.254：字重三段 300（細）/ 400（中，預設）/ 600（粗 Semibold）。只接受
         // 這三個合法值，其餘（舊資料 / 損壞 / 外部寫入）一律回退 400。粗用 600 而非
         // 700：700 視覺太重（Jimmy 回報）；600 Semibold 比中明顯重、又不過粗，且
@@ -4831,7 +4913,7 @@ html.${HTML_CLASS}.jread-orion body {
         // 量測**之前**跑——EMBED_WRAP_ATTR 讓 static-flow 規則豁免 embed 子樹，
         // FILL_IFRAME 的 getComputedStyle 才量得到 absolute（與原 :not(:has(iframe))
         // 的同刻語意一致；量測會 flush style、attr 已就位）。
-        markEmbedWrapIframes(articleEl, embedWrapMarked, embedFillMarked);
+        markEmbedWrapIframes(articleEl, embedWrapMarked, embedFillMarked, siteUiMarked);
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
@@ -6140,12 +6222,6 @@ html.${HTML_CLASS}.jread-orion body {
       };
 
       const passTitleFontOverride = () => {
-        // v0.7.203：constrain overwide descendants。Swiper / carousel 類 JS
-        // library 在 reader mode 前就算好 slide 寬度（基於 viewport / 原站
-        // layout），card 縮窄後 slide 仍是原寬 → 圖片溢出 card 右邊界。
-        // Runtime walk：比較每個 block 元素的 rendered width 與 card width，
-        // 超寬的強制 max-width:100% + box-sizing:border-box。max-width:100%
-        // 相對 parent 逐層 cascade，最外層被 card 擋住、內層隨之縮。
         // v0.7.180：title font-size inline override。CMS 高 specificity rule
         // 常用 5+ class selector + !important 鎖死 h1 font-size（MSNBC/ms.now
         // `.opinion-header > .wp-block-group .title-and-dek-column
@@ -7462,7 +7538,7 @@ html.${HTML_CLASS}.jread-orion body {
       }
       const hasIframe = (node.matches && node.matches('iframe')) ||
         (node.querySelector && node.querySelector('iframe'));
-      if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked, s.embedFillMarked);
+      if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked, s.embedFillMarked, s.siteUiMarked);
       const hasHeading = (node.matches && node.matches('h1,h2,h3,h4,h5,h6,a')) ||
         (node.querySelector && node.querySelector('h1,h2,h3,h4,h5,h6'));
       if (hasHeading) {

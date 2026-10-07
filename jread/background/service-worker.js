@@ -432,6 +432,30 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return;
     }
+    case 'JREAD_DEBUG_ACTION': {
+      // 2026-10-07 review C-18(a)：debug bridge 的 toggle / enter / exit / translate
+      // 原本由 content 直接執行，任意網頁 JS 可 dispatch `__jread_debug` 把 JRead
+      // 在該站反覆關掉（DoS 級）或消耗使用者的 Shinkansen 額度。改與 SET_THEME /
+      // SET_PAGED / SEND_READWISE 同款：SW 過 development install gate 後以
+      // JREAD_DEBUG_ACTION_RELAY 中繼回 sender tab 才執行（runtime.onMessage 只收
+      // 擴充內部訊息，頁面偽造不了）。action 白名單 + engine 字元集在 SW 端再驗
+      // 一次（第二道防線，不信 content payload）。sender.tab 必須存在。
+      if (!(browser.management && browser.management.getSelf)) {
+        console.warn('[JRead] JREAD_DEBUG_ACTION rejected: management API unavailable');
+        return;
+      }
+      const actTabId = sender && sender.tab && sender.tab.id;
+      if (typeof actTabId !== 'number') return;
+      const action = msg.payload && msg.payload.action;
+      if (!['toggle', 'enter', 'exit', 'translate'].includes(action)) return;
+      const engineRaw = msg.payload && msg.payload.engine;
+      const relay = { action };
+      if (typeof engineRaw === 'string' && /^[a-z0-9-]{1,32}$/i.test(engineRaw)) relay.engine = engineRaw;
+      runIfDevelopmentInstall('JREAD_DEBUG_ACTION', () => {
+        swallowTabGone(browser.tabs.sendMessage(actTabId, { type: 'JREAD_DEBUG_ACTION_RELAY', payload: relay }));
+      });
+      return;
+    }
     case 'RESIZE_OWN_WINDOW': {
       // v0.7.134：YouTube 無邊模式 — content side 算完目標視窗高度後請 SW
       // 呼 browser.windows.update。失敗（PWA 限制 / windowId 不在 / 權限缺）

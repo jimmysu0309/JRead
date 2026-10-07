@@ -102,20 +102,24 @@ This:
 All other files (`background/*.js`, `content/*.js`, `popup/*`,
 `options/*`, `lib/*`, icons, CSS) are copied unchanged.
 
-### Instapaper (v1.6.0) — background scripts note
+### Instapaper (v1.6.0 / v1.9.22) — background scripts note
 
 The Instapaper client (`lib/instapaper.js`) and its gitignored consumer keys
 (`lib/instapaper-keys.js`) are loaded into the popup / options / reader pages via
-`<script>` tags, and into the Chrome service worker via `importScripts` (keys
-wrapped in try/catch so a missing keys file is a no-op). They are **not** added
-to the Firefox / Safari event-page `background.scripts` array. Consequently the
-keyboard-shortcut send path (`send-to-readwise` command, handled in the SW) can
-dispatch to Instapaper only on Chrome; on Firefox / Safari event pages it reports
-`CONFIG` ("此版本未內建 Instapaper 金鑰"). The popup "送到 Instapaper" button and
-the in-JReader read-in feed work on all platforms (they run in extension pages
-that load the client directly). This is a deliberate trade-off: adding the
-gitignored keys file to `background.scripts` would break the whole event page in
-store builds where the file is absent.
+`<script>` tags, into the Chrome service worker via `importScripts` (keys
+wrapped in try/catch so a missing keys file is a no-op), and — since v1.9.22 —
+into the Firefox `background.scripts` array and the Safari event page
+(`background/background.html`) as well, in the same order as the SW
+(`logger`, `instapaper-keys`, `instapaper`, `popup-core`, `settings-defaults`,
+`service-worker`). A missing keys file in a store build is harmless on every
+platform: a `<script src>` (or a Firefox background script) that 404s is simply
+skipped, the rest of the event page loads, and `getInstapaperConsumerKeys()`
+returns `null` → Instapaper reports `CONFIG` ("此版本未內建 Instapaper 金鑰") while
+Readwise keeps working. Before v1.9.22 the event pages did not load the client at
+all, so the keyboard-shortcut / long-press send path dispatched to Instapaper
+only on Chrome (Firefox / Safari always reported `CONFIG` even though the keys
+were present). `test/regression/ios-build.spec.js` forces the three lists
+(SW `importScripts`, `background.html`, `firefox-build.sh`) to stay in sync.
 
 ---
 

@@ -18,11 +18,22 @@
   service-worker.js 讀 popup-core 的 __JReadPopup、settings-defaults 的
   __JReadSettingsDefaults / __JReadFontStacks；logger 要最早載入。
   event page 是網頁 context 沒有 importScripts（SW 內的 typeof guard 會跳過）。
+
+  Instapaper client（v1.9.22，review E-1）：lib/instapaper-keys.js（gitignored，
+  store build / fresh clone 可能缺檔——<script src> 缺檔只是一個 404、不像 importScripts
+  會 throw，與 popup.html / options.html 同一種掛法）+ lib/instapaper.js，順序在
+  popup-core 之前（dispatcher resolveInstapaper 讀 globalThis.__JReadInstapaper）。
+  v1.6.0–v1.9.21 這兩檔只在 Chrome SW 的 importScripts 分支載入，Safari / Firefox
+  event page 沒載 → 長按選單 / 快速鍵送 Instapaper 轉 SW 後一律回 CONFIG
+  「此版本未內建金鑰」（金鑰明明在、popup 送得出去），且 main.js 註解把失敗歸因
+  「SW 掛起」是錯的——background 醒著也沒 client 可簽。
 -->
 <html>
 <head>
   <meta charset="utf-8">
   <script src="../lib/logger.js"></script>
+  <script src="../lib/instapaper-keys.js"></script>
+  <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="../content/settings-defaults.js"></script>
   <script src="service-worker.js"></script>

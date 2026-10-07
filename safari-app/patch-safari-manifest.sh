@@ -64,9 +64,14 @@ fi
 # 雙處硬寫，ios-build.spec.js 有 forcing function 比對兩邊一致防 drift）
 BG_PAGE="background/background.html"
 LOGGER="lib/logger.js"
+INSTAPAPER_KEYS="lib/instapaper-keys.js"
+INSTAPAPER="lib/instapaper.js"
 POPUP_CORE="popup/popup-core.js"
 SETTINGS_DEFAULTS="content/settings-defaults.js"
-for DEP in "$BG_PAGE" "$LOGGER" "$POPUP_CORE" "$SETTINGS_DEFAULTS" "$SW_FILE"; do
+# INSTAPAPER_KEYS 刻意不在存在檢查內：該檔 gitignored（store build / fresh clone 會缺），
+# <script src> 缺檔只是一個 404、event page 其餘照載（與 Chrome importScripts 的
+# try/catch 等價），不可因它擋 build
+for DEP in "$BG_PAGE" "$LOGGER" "$INSTAPAPER" "$POPUP_CORE" "$SETTINGS_DEFAULTS" "$SW_FILE"; do
   if [ ! -f "$RES_DIR/$DEP" ]; then
     echo "ERROR: $RES_DIR/$DEP 不存在（event page 入口 / 預載依賴）" >&2
     exit 1
@@ -74,8 +79,10 @@ for DEP in "$BG_PAGE" "$LOGGER" "$POPUP_CORE" "$SETTINGS_DEFAULTS" "$SW_FILE"; d
 done
 
 # verify 0：background.html 的 <script src> 清單（相對 background/ 目錄解析）必須
-# 等於 [logger, popup-core, settings-defaults, SW] 且依此順序
+# 等於 [logger, instapaper-keys, instapaper, popup-core, settings-defaults, SW] 且依此順序
 EXPECTED_SCRIPTS="$LOGGER
+$INSTAPAPER_KEYS
+$INSTAPAPER
 $POPUP_CORE
 $SETTINGS_DEFAULTS
 $SW_FILE"
@@ -83,7 +90,7 @@ ACTUAL_SCRIPTS=$(grep -o '<script src="[^"]*"' "$RES_DIR/$BG_PAGE" \
   | sed -E 's/<script src="//; s/"$//' \
   | sed -E 's#^\.\./##; s#^([^/]+\.js)$#background/\1#')
 if [ "$ACTUAL_SCRIPTS" != "$EXPECTED_SCRIPTS" ]; then
-  echo "ERROR: $BG_PAGE 的 <script> 清單不是預期四檔順序：" >&2
+  echo "ERROR: $BG_PAGE 的 <script> 清單不是預期六檔順序：" >&2
   echo "expected:" >&2; echo "$EXPECTED_SCRIPTS" >&2
   echo "actual:" >&2; echo "$ACTUAL_SCRIPTS" >&2
   exit 1

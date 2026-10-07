@@ -425,10 +425,11 @@
   //   - 非 Safari（Chrome / Firefox）：頁內 iframe 浮層載 popup.html?panel=1，維持
   //     單一資料源（popup 邏輯不複製一份）。iframe 在當前分頁內、popup 的
   //     chrome.tabs.query({active:true}) 仍取得底層內容頁，分頁耦合不斷。
-  // runtime 偵測依 getURL scheme（與 options.js / namespace 同款），非 OS flag。
+  // runtime 偵測依 getURL scheme，非 OS flag。2026-10-07 review C-18(b)：實作上提
+  // NS.isSafariRuntime（namespace.js 單一資料源，keepalive / main.js 同用），本檔
+  // 保留同名 wrapper 給既有呼叫端與 NS.floating 匯出。
   function isSafariRuntime() {
-    try { return (browser.runtime.getURL('') || '').startsWith('safari-web-extension://'); }
-    catch (_e) { return false; }
+    return !!(NS.isSafariRuntime && NS.isSafariRuntime());
   }
 
   function openFeaturePanel() {

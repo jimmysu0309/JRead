@@ -19,8 +19,10 @@
 //    hideInsideArticleByKeyword 砍 share/social 等子元素，自然乾淨
 // 3. 不動原 React 樹，X 的 SPA reconciler 不會反噬；退出時把合成容器 remove 即可
 //
-// SPA navigation：X 切貼文不 reload，跟 cinema-mode 一樣需要 listener（這版先
-// punt——使用者切到別則狀態時手動 toggle off / on 即可，文件註明）。
+// SPA navigation：X 切貼文不 reload。由 main.js `installSpaNavigationWatch`
+// 統一處理（v0.8.21：popstate / title observer / 800ms 輪詢 → 路由變了先退出、
+// wasActive 時 silent 重進）；合成容器不吃 isConnected 豁免（2026-10-07 C-2），
+// 本檔不另掛 listener。
 (function () {
   'use strict';
 
@@ -31,6 +33,8 @@
   const AUTHOR_ATTR = 'data-jread-x-author';
   // v1.7.37：longform 標題提升出來的 <h1> 標記（spec forcing / 除錯辨識用）
   const TITLE_ATTR = 'data-jread-x-title';
+  // 2026-10-07 review F-6：clone ↔ 原 article 的配對索引（injectAuthorHeaders 用）
+  const INDEX_ATTR = 'data-jread-x-index';
 
   // 模組內保留主推文 thread member 的「原 article」參照——enter() 之後 cleaner
   // 會跑過合成容器（會 hide 原 article header 的 wrapper，連帶 avatar / display
@@ -266,37 +270,143 @@
     // 內容（header / tweetText / media / buttons / timestamp），media 跟 tweetText
     // 是同級兄弟。找到 media 所在的 branch（跟 tweetText 同層級的 div），把
     // figure 搬到該 branch 之前、移除空殼。
+    //
+    // 2026-10-07 review F-5：**每張 figure 各自找自己的 mediaRoot**，不用 figs[0]
+    // 代表全部。舊版以第一張圖的 branch 當所有 figure 的目的地——主推文帶圖 +
+    // 引用推文（nested article / role=link 卡片）也帶圖時，引用卡裡的圖被搬到主
+    // 推文媒體區、引用卡只剩文字（圖文脫鉤、順序顛倒）。往上 walk 遇到的第一個
+    // 「有 tweetText 兄弟」的層級就是這張圖所屬推文的媒體 branch：引用卡內的圖在
+    // 卡內就會命中（卡內有引用推文自己的 tweetText），自然留在卡裡。找不到
+    // tweetText 兄弟的 figure 原地不動。搬空後的殼（無文字、無媒體）才移除。
     const figs = clone.querySelectorAll('figure[data-jread-x-media]');
-    if (figs.length) {
-      let mediaRoot = null;
-      let cur = figs[0];
-      while (cur && cur !== clone) {
-        const parent = cur.parentElement;
-        if (!parent) break;
-        const siblings = parent.children;
-        let hasTweetTextSibling = false;
-        for (let i = 0; i < siblings.length; i++) {
-          const sib = siblings[i];
-          if (sib === cur) continue;
-          if (sib.getAttribute('data-testid') === 'tweetText' ||
-              sib.querySelector('[data-testid="tweetText"]')) {
-            hasTweetTextSibling = true;
-            break;
-          }
-        }
-        if (hasTweetTextSibling) { mediaRoot = cur; break; }
-        cur = cur.parentElement;
-      }
-      if (mediaRoot && mediaRoot.parentElement &&
-          !mediaRoot.hasAttribute('data-jread-x-media')) {
-        const parent = mediaRoot.parentElement;
-        for (const fig of figs) {
-          parent.insertBefore(fig, mediaRoot);
-        }
-        mediaRoot.remove();
-      }
+    const emptiedRoots = new Set();
+    for (const fig of figs) {
+      const mediaRoot = findMediaRootFor(fig, clone);
+      if (!mediaRoot || mediaRoot === fig || !mediaRoot.parentElement ||
+          mediaRoot.hasAttribute('data-jread-x-media')) continue;
+      mediaRoot.parentElement.insertBefore(fig, mediaRoot);
+      emptiedRoots.add(mediaRoot);
+    }
+    for (const root of emptiedRoots) {
+      if (!root.isConnected && !clone.contains(root)) continue;
+      const hasText = !!(root.textContent || '').trim();
+      const hasMedia = !!root.querySelector('img, video, figure');
+      if (!hasText && !hasMedia) root.remove();
     }
     return unwrapped;
+  }
+
+  // 從 fig 往上 walk 到 clone 邊界，回傳第一個「父層有 tweetText 兄弟」的祖先
+  //（含 fig 自身）；沒有則 null。
+  function findMediaRootFor(fig, clone) {
+    let cur = fig;
+    while (cur && cur !== clone) {
+      const parent = cur.parentElement;
+      if (!parent) return null;
+      const siblings = parent.children;
+      for (let i = 0; i < siblings.length; i++) {
+        const sib = siblings[i];
+        if (sib === cur) continue;
+        if (sib.getAttribute('data-testid') === 'tweetText' ||
+            sib.querySelector('[data-testid="tweetText"]')) {
+          return cur;
+        }
+      }
+      cur = parent;
+    }
+    return null;
+  }
+
+  // 2026-10-07 review F-5：投票卡（`[data-testid="cardPoll"]`）轉純文字清單。
+  // X 投票的每個選項是 `[role="radio"]`（未投）或帶 `[role="progressbar"]`
+  // （已投 / 已結束，aria-valuenow = 百分比）的列，clone 後 React 互動全失、
+  // cleaner 又把所有 interactive button 一律清掉 → 題幹與選項整組消失、沒有任何
+  // 替代呈現。改成 `<ul data-jread-x-poll>`：每個選項一個 `<li>`（文字 + 百分比），
+  // 卡片其餘文字（票數 / 剩餘時間）保留成尾段 `<p>`。role / aria 是結構訊號，
+  // 不綁 class。
+  function convertPolls(clone) {
+    if (!clone || !clone.querySelectorAll) return 0;
+    const doc = clone.ownerDocument || document;
+    let n = 0;
+    for (const poll of clone.querySelectorAll('[data-testid="cardPoll"]')) {
+      const ul = doc.createElement('ul');
+      ul.setAttribute('data-jread-x-poll', '1');
+      const rows = [];
+      const radios = poll.querySelectorAll('[role="radio"]');
+      if (radios.length) {
+        for (const r of radios) rows.push({ el: r, pct: null });
+      } else {
+        for (const pb of poll.querySelectorAll('[role="progressbar"]')) {
+          // progressbar 本身通常是空殼 bar，選項文字在同列兄弟——往上找第一個
+          // 含非空文字的祖先當列
+          let row = pb;
+          while (row && row !== poll && !(row.textContent || '').trim()) row = row.parentElement;
+          if (!row || row === poll) row = pb.parentElement || pb;
+          const v = pb.getAttribute('aria-valuenow');
+          rows.push({ el: row, pct: (v != null && v !== '') ? Math.round(Number(v)) : null });
+        }
+      }
+      if (!rows.length) continue;
+      const used = new Set();
+      for (const { el, pct } of rows) {
+        const li = doc.createElement('li');
+        let text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (pct != null && !/\d+(\.\d+)?%/.test(text)) text += `（${pct}%）`;
+        li.textContent = text;
+        ul.appendChild(li);
+        used.add(el);
+      }
+      // 選項以外的文字（票數 / 剩餘時間 / 最終結果）保留成尾段
+      const rest = [];
+      for (const node of Array.from(poll.querySelectorAll('span'))) {
+        if ([...used].some(u => u.contains(node) || node.contains(u))) continue;
+        const t = (node.textContent || '').trim();
+        if (t && node.querySelectorAll('span').length === 0) rest.push(t);
+      }
+      const frag = doc.createDocumentFragment();
+      frag.appendChild(ul);
+      if (rest.length) {
+        const p = doc.createElement('p');
+        p.setAttribute('data-jread-x-poll-meta', '1');
+        p.textContent = rest.join(' · ');
+        frag.appendChild(p);
+      }
+      poll.replaceWith(frag);
+      n++;
+    }
+    return n;
+  }
+
+  // 2026-10-07 review F-5：影片 clone 失去 React 控制、cleaner 砍掉播放鈕後只剩
+  // 黑框——把 `<video poster>` 轉成 `<figure data-jread-x-media><img></figure>`
+  // 靜態海報（與圖片同一條 figure 排版路徑、也吃同一套 hoist）。替換對象是最近的
+  // 播放器 wrapper（`videoPlayer` / `videoComponent` testid，不含 tweetText），
+  // 沒有就換 video 自身。無 poster 的 video 不動（換掉也沒東西可顯示）。
+  function convertVideos(clone) {
+    if (!clone || !clone.querySelectorAll) return 0;
+    const doc = clone.ownerDocument || document;
+    let n = 0;
+    for (const video of Array.from(clone.querySelectorAll('video'))) {
+      if (!clone.contains(video)) continue;
+      const poster = video.getAttribute('poster');
+      if (!poster) continue;
+      let target = video;
+      const wrap = video.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"]');
+      if (wrap && clone.contains(wrap) && wrap !== clone &&
+          !wrap.querySelector('[data-testid="tweetText"]')) target = wrap;
+      const img = doc.createElement('img');
+      img.src = poster;
+      img.alt = video.getAttribute('aria-label') || '';
+      img.setAttribute('data-jread-x-video-poster', '1');
+      img.style.setProperty('opacity', '1', 'important');
+      const fig = doc.createElement('figure');
+      fig.setAttribute('data-jread-x-media', '1');
+      fig.setAttribute('data-jread-x-video', '1');
+      fig.appendChild(img);
+      target.replaceWith(fig);
+      n++;
+    }
+    return n;
   }
 
   // v1.0.0：X 推文 clone 為翻頁模式正規化 layout。
@@ -411,7 +521,7 @@
     const lang = document.documentElement.getAttribute('lang');
     if (lang) container.setAttribute('lang', lang);
 
-    for (const art of threadArticles) {
+    threadArticles.forEach((art, idx) => {
       // cloneNode(true)：深 clone 含 tweetText / 圖片 src / User-Name / 時間戳。
       // React event 不會 clone 過來，但純閱讀模式不需要互動（reply / retweet
       // / like 按鈕被 cleaner 的 hideInsideArticleAllButtons 砍掉）。
@@ -419,13 +529,20 @@
       // wrapper hide rule 連帶 hide（rect=0）——此檔的 injectAuthorHeaders()
       // 在 cleaner 跑完後重建合成 header 補回 author 顯示。
       const clone = art.cloneNode(true);
+      // 2026-10-07 review F-6：clone 與原 article 的配對用這個 attr，不用位置索引
+      //（injectAuthorHeaders 在 cleaner 之後跑，任何 enter 階段移除 clone 的修法
+      // 都會讓位置索引錯位）
+      clone.setAttribute(INDEX_ATTR, String(idx));
+      // F-5：影片海報先轉 figure，再與圖片一起走 unwrap / hoist；投票轉文字清單
+      convertVideos(clone);
       unwrapTweetMedia(clone);
+      convertPolls(clone);
       // v1.7.37：longform 標題轉 <h1>（見 promoteArticleTitle 註解）。必須在
       // normalizeCloneForPaging 之前——後者用 getComputedStyle 中和 display，
       // 換過 tag 才不會把舊 div 的 computed 值套到已消失的節點上
       promoteArticleTitle(clone);
       container.appendChild(clone);
-    }
+    });
 
     document.body.insertBefore(container, document.body.firstChild);
     // 插入後（live DOM、X stylesheet 已對 clone 的 class 生效）才能 getComputedStyle
@@ -441,14 +558,25 @@
   function injectAuthorHeaders() {
     const container = document.querySelector('[' + READER_ATTR + ']');
     if (!container) return 0;
-    const articleClones = container.querySelectorAll(':scope > article');
+    // 2026-10-07 review F-6：以 enter() 打在 clone 上的 INDEX_ATTR 配對原 article
+    //（不靠 :scope > article 的位置索引）；clone 本身已被 cleaner 整塊藏掉
+    //（data-jread-hidden / computed display:none）就不插 header——否則畫面上是
+    // 「作者頭顯示、底下空白」的孤兒。
+    const articleClones = container.querySelectorAll(':scope > article[' + INDEX_ATTR + ']');
+    const win = container.ownerDocument && container.ownerDocument.defaultView;
     let injected = 0;
-    for (let i = 0; i < articleClones.length && i < _lastThreadArticles.length; i++) {
-      const source = _lastThreadArticles[i];
+    for (const clone of articleClones) {
+      const idx = Number(clone.getAttribute(INDEX_ATTR));
+      const source = Number.isInteger(idx) ? _lastThreadArticles[idx] : null;
+      if (!source) continue;
+      if (clone.getAttribute('data-jread-hidden') === '1') continue;
+      try {
+        if (win && win.getComputedStyle && win.getComputedStyle(clone).display === 'none') continue;
+      } catch (_) { /* 量不到就當可見 */ }
       const info = extractAuthorInfo(source);
       if (!info || (!info.displayName && !info.handle && !info.avatarSrc)) continue;
       const header = createAuthorHeader(info);
-      container.insertBefore(header, articleClones[i]);
+      container.insertBefore(header, clone);
       injected++;
     }
     return injected;
@@ -473,6 +601,8 @@
     extractAuthorInfo,
     createAuthorHeader,
     unwrapTweetMedia,
+    convertPolls,
+    convertVideos,
     normalizeCloneForPaging,
     promoteArticleTitle,
     enter,
@@ -481,6 +611,7 @@
     isActive,
     READER_ATTR,
     AUTHOR_ATTR,
-    TITLE_ATTR
+    TITLE_ATTR,
+    INDEX_ATTR
   };
 })();
