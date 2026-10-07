@@ -2905,7 +2905,8 @@
   // 納入純屬掃描寫法的盲點，不是刻意的語意。
   function _selfAndDescendants(el, sel) {
     const out = (el.matches && el.matches(sel)) ? [el] : [];
-    if (el.querySelectorAll) out.push(...el.querySelectorAll(sel));
+    // 2026-10-07 review C-10：不 spread（巨子樹 RangeError，見 NS.selfAndDescendants）
+    if (el.querySelectorAll) for (const d of el.querySelectorAll(sel)) out.push(d);
     return out;
   }
 
@@ -3541,10 +3542,6 @@
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      // v0.8.79 MDN：含程式碼塊 / 資料表 web component 的區塊（內容在 shadow DOM，
-      // light textContent 空）不是 empty spacer——MDN Syntax 段（h2 + <mdn-code-example>）
-      // 實案。見 hasCodeOrDataTableContent 註解。
-      if (hasCodeOrDataTableContent(el)) continue;
       // iframe / video / audio 本身是媒體，不是 spacer。cross-origin iframe
       // 的 textContent 空、querySelector 讀不到內部 DOM，rect 又有高度——三條
       // spacer 條件全命中，會被誤殺（2026-04-21 Dwarkesh YouTube embed 實測）。
@@ -3587,6 +3584,15 @@
 
       const rect = el.getBoundingClientRect();
       if (rect.height < SPACER_MIN_HEIGHT) continue;
+
+      // v0.8.79 MDN：含程式碼塊 / 資料表 web component 的區塊（內容在 shadow DOM，
+      // light textContent 空）不是 empty spacer——MDN Syntax 段（h2 + <mdn-code-example>）
+      // 實案。見 hasCodeOrDataTableContent 註解。
+      // 2026-10-07 review A-16：移到文字量 / rect 兩道便宜閘門之後——它走整棵子樹
+      // `querySelectorAll('*')`，原本對每個 CONTAINER_SEL 容器都先跑（wiki 17K 節點頁
+      // CDP profile 18ms），多數容器在上面兩道就被擋掉。各閘門都是純判定、順序不
+      // 影響結果（forcing：review-1007-b5-perf.spec.js）。
+      if (hasCodeOrDataTableContent(el)) continue;
 
       // v0.7.181：sibling media guard——JW Player `.jw-aspect`（padding-top:
       // 56.25% 撐 16:9 容器）無 text、不含 media 子（video 在 sibling
@@ -5420,7 +5426,7 @@
       if (_canonical === null) _canonical = getCanonicalTitleText() || '';
       return _canonical;
     };
-    for (const el of [articleEl, ...articleEl.querySelectorAll('div, section')]) {
+    for (const el of NS.selfAndDescendants(articleEl, 'div, section')) { // 2026-10-07 review C-10：不 spread
       if (el !== articleEl) {
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
         if (isInPreserved(el)) continue;
@@ -6224,6 +6230,32 @@
     return out;
   }
 
+  // 2026-10-07 review A-16：visibleRenderedText 的布林版——「有沒有任何可見的非空白
+  // 文字」，碰到第一個就 return、不把整棵子樹走完。語意 ≡
+  // `visibleRenderedText(el).trim().length > 0`（trim 的空白集合 = 正規式 `\s`，
+  // 兩者都是 WhiteSpace + LineTerminator）。四條 collapse 規則（空殼 wrapper /
+  // 清空 inline 殼 / 孤兒 label 的分支判定 / 可見連結）只需要布林，卻各自把子樹
+  // 走完＋逐節點 getComputedStyle：wiki 17K 節點頁 CDP profile 110ms（clean 的
+  // 13%）。需要全文的呼叫端（collapseOrphanLabelShells 的 label 文字、
+  // blockIsBylineOrTitleMeta、preTitleBranchIsProtected）維持 visibleRenderedText。
+  // 等價性 forcing：review-1007-b5-perf.spec.js 對全部 fixture 的每個元素做 old/new
+  // 對照。
+  function hasVisibleRenderedText(el) {
+    if (!el || el.textContent == null || norm(el.textContent).length === 0) return false;
+    function walk(node) {
+      if (!node) return false;
+      if (node.nodeType === 3) return /\S/.test(node.textContent);
+      if (node.nodeType !== 1) return false;
+      if (node.dataset && node.dataset.jreadHidden === '1') return false;
+      const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
+        window.getComputedStyle(node) : null;
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+      for (const c of node.childNodes) { if (walk(c)) return true; }
+      return false;
+    }
+    return walk(el);
+  }
+
   // v0.7.212：判定 img 是否為「真實內容圖」——empty-wrapper / spacer collapse
   // 規則用此取代「只看 rendered rect > 5×5」的判定。問題：cleaner 於
   // document_idle 跑時 lazy-load 內容圖尚未載入、rect 0×0（巴哈姆特 forum
@@ -6366,8 +6398,7 @@
       const rect = el.getBoundingClientRect();
       if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
-      const renderText = visibleRenderedText(el).trim();
-      if (renderText.length > 0) continue;
+      if (hasVisibleRenderedText(el)) continue; // 2026-10-07 review A-16：布林早退版
       // 子孫含未被 hide 的真實內容媒體（含 lazy 內容圖，見 imgIsContentMedia）
       // → 保留（合法 figure-like wrapper）
       if (hasUnhiddenContentMedia(el)) continue;
@@ -6408,8 +6439,7 @@
       const rect = el.getBoundingClientRect();
       if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
-      const text = visibleRenderedText(el).trim();
-      if (text.length > 0) continue;
+      if (hasVisibleRenderedText(el)) continue; // 2026-10-07 review A-16：布林早退版
       // 含未被 hide 的真實內容媒體（含 lazy 內容圖）→ 保留
       if (hasUnhiddenContentMedia(el)) continue;
       if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
@@ -6471,7 +6501,7 @@
       if (!cs || !INLINE_SPACER_DISPLAYS.has(cs.display)) continue;
       const rect = el.getBoundingClientRect();
       if (rect.width > INLINE_SPACER_MAX_WIDTH) continue; // 仍佔水平空間 → 不是空殼
-      if (visibleRenderedText(el).trim().length > 0) continue;
+      if (hasVisibleRenderedText(el)) continue; // 2026-10-07 review A-16
       if (hasUnhiddenContentMedia(el)) continue;
       // 「是我們清空的」訊號：子孫至少一個帶 jreadHidden。缺這條會把原站自己
       // 就存在的 0 寬 inline 標記元素（分析用 <span>、a11y hook）也一起 hide，
@@ -6767,7 +6797,7 @@
   function orphanShellHasHiddenInteractiveCluster(el) {
     let n = 0;
     for (const kid of el.children) {
-      if (visibleRenderedText(kid).trim().length > 0) continue;
+      if (hasVisibleRenderedText(kid)) continue; // 2026-10-07 review A-16
       for (const it of kid.querySelectorAll('button, [role="button"], a[href]')) {
         if (it.closest('[data-jread-hidden="1"]')) n += 1;
         if (n >= 2) return true;
@@ -6854,7 +6884,7 @@
       // 文字、且自身或子孫帶 jreadHidden 標記的直接子。
       let labelBranch = false, emptiedBranch = false;
       for (const kid of el.children) {
-        if (visibleRenderedText(kid).trim().length > 0) {
+        if (hasVisibleRenderedText(kid)) { // 2026-10-07 review A-16
           if (ORPHAN_LABEL_HEADING_TAGS.has(kid.tagName.toUpperCase())) { labelBranch = false; break; }
           if (kid.querySelector && kid.querySelector('h1, h2, h3, h4, h5, h6')) { labelBranch = false; break; }
           labelBranch = true;
@@ -6879,7 +6909,7 @@
   function orphanLabelIsRendered(node) {
     const r = node.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
-    return visibleRenderedText(node).trim().length > 0;
+    return hasVisibleRenderedText(node); // 2026-10-07 review A-16
   }
   function orphanLabelHasProtectedMeta(el) {
     for (const a of el.querySelectorAll('a[href]')) {
