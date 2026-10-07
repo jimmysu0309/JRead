@@ -1490,7 +1490,10 @@
         // textContent，長度超過 TITLE_TEXT_MAX 被 skip，錯過內部真 title node。
         const heads = [];
         if (sib.matches && sib.matches(TITLE_TAG_SEL)) heads.push(sib);
-        if (sib.querySelectorAll) heads.push(...sib.querySelectorAll(TITLE_TAG_SEL));
+        // 2026-10-07 review C-10：不 spread——兄弟子樹（sidebar / footer / app shell）
+        // 超過約 12 萬個候選時 `push(...NodeList)` 丟 RangeError → detect() 整支 throw
+        // 成「此頁無法偵測主文」（node 實測 12 萬即炸）。逐一 push 語意不變。
+        if (sib.querySelectorAll) for (const h of sib.querySelectorAll(TITLE_TAG_SEL)) heads.push(h);
         for (const h of heads) {
           // 跳過卡片連結式標題（推薦 / 相關 / 側欄文章卡 <a> 包住的標題）——
           // 否則側欄重複標題會讓 promote 停在「含主文 + 側欄」的共同祖先、

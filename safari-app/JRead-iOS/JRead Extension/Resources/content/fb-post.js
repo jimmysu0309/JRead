@@ -159,7 +159,7 @@
   function stripFacebookLayout(root) {
     if (!root || !root.querySelectorAll) return;
     // walk root + all descendants
-    const all = [root, ...root.querySelectorAll('*')];
+    const all = NS.selfAndDescendants(root, '*'); // 2026-10-07 review C-10：不 spread
     for (const el of all) {
       if (el.removeAttribute) {
         el.removeAttribute('class');

@@ -686,7 +686,7 @@
   // guard 誤還原深 bg、td 實際已是深字 → 深底深字 1:1（CONTRAST AUDIT 抓到）。
   function collectTextCarriers(target, win) {
     const carriers = [];
-    const els = [target, ...target.querySelectorAll('*')];
+    const els = NS.selfAndDescendants(target, '*'); // 2026-10-07 review C-10：不 spread
     for (const el of els) {
       if (carriers.length >= CONTRAST_MAX_CARRIERS) break;
       const tag = el.tagName.toUpperCase();
@@ -3522,7 +3522,7 @@ html.${HTML_CLASS}.jread-orion body {
     // white-space + 內含硬換行。articleEl 自己也算（整篇主文就是一個 pre-wrap
     // 容器的站台）。
     const candidates = [];
-    for (const el of [articleEl, ...articleEl.querySelectorAll('*')]) {
+    for (const el of NS.selfAndDescendants(articleEl, '*')) { // 2026-10-07 review C-10：不 spread
       const cs = win.getComputedStyle(el);
       if (!PREWRAP_WS.has(cs.whiteSpace)) continue;
       if (!isPreWrapHost(el, cs, win)) continue;
@@ -4119,7 +4119,7 @@ html.${HTML_CLASS}.jread-orion body {
     for (const scope of scopes) {
       const els = scope === articleEl
         ? scope.querySelectorAll('*')
-        : [scope, ...scope.querySelectorAll('*')];
+        : NS.selfAndDescendants(scope, '*'); // 2026-10-07 review C-10：不 spread
       for (const el of els) {
         if (el.getAttribute(ABS_ANCHOR_ATTR) === '1') continue;
         // 只吞 SyntaxError：jsdom（nwsapi）對站點 <style> 內 parse 不了的 selector
@@ -4208,7 +4208,7 @@ html.${HTML_CLASS}.jread-orion body {
   // root 自身 + 全部後代都標（strip 規則是逐元素 :not()，只標 root 沒用）。
   // 已帶 PLAYER_ATTR 的元素（真播放器）不碰——restore 才不會誤拔它的標記。
   function markSiteWidgetEls(root, marked) {
-    const els = [root, ...root.querySelectorAll('*')];
+    const els = NS.selfAndDescendants(root, '*'); // 2026-10-07 review C-10：不 spread
     for (const el of els) {
       if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') continue;
       el.setAttribute(SITE_UI_ATTR, 'widget');
@@ -6552,7 +6552,11 @@ html.${HTML_CLASS}.jread-orion body {
         //   - collapse guard（與 ratioBoxes / fixedHeightBoxes 同精神）：塌到比內含
         //     媒體渲染高還矮 → 還原，避免內容 absolute、min-height 是唯一高度來源
         //     時被裁掉；有文字卻塌到近 0 同樣還原。
-        // 成本：本 pass 是唯一需要掃全主文的 computed 讀取（min-height 沒有可用的
+        // 成本：全主文 computed 掃描的三條之一（另兩條：markAbsAnchors 讀 position、
+        //   splitPreWrapParagraphs 讀 white-space）。2026-10-07 review B-11 以 CDP
+        //   profile 量 wiki 17K 節點頁：167 / 64 / 11ms（含各自觸發的一次強制
+        //   recalc）；三條落在不同 pipeline 階段（ARTICLE_ATTR 後 / decolumn 後 /
+        //   pre-wrap 切段前）、量的東西互不相干，不合併。（min-height 沒有可用的
         //   selector 前篩）。讀寫仍照 v1.6.29 批次三段式（全讀 → 全寫 → 一次 flush
         //   量全部），期間不交錯，只觸發一次強制 recalc。
         const win = articleEl.ownerDocument?.defaultView;

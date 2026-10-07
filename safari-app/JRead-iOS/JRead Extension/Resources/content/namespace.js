@@ -1037,6 +1037,20 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return window.__JRead.isTextInputTarget(el);
     },
 
+    // 2026-10-07 review C-10：root + 全部符合 sel 的後代，回陣列、**不用 spread**。
+    // `[root, ...root.querySelectorAll('*')]` / `push(...nodeList)` 把整個 NodeList 當
+    // 引數展開，V8 在約 12 萬個引數就丟 RangeError（Maximum call stack size
+    // exceeded）——巨頁（超長留言串 / 單頁文件站）主文子樹超過這個數，detect /
+    // apply 整支炸掉。全 content script 的「self + 子孫」陣列一律走這裡
+    // （forcing：review-1007-b5-perf.spec.js）。root 一律含在最前（不看是否 match sel）。
+    selfAndDescendants(root, sel) {
+      const out = [root];
+      if (root && root.querySelectorAll) {
+        for (const el of root.querySelectorAll(sel || '*')) out.push(el);
+      }
+      return out;
+    },
+
     // v0.8.130：CSP-safe 樣式注入（單一資料源，CLAUDE.md 硬規則 5）。styler /
     // edit-mode / cinema / youtube-borderless 原本各自 `document.createElement('style')`
     // → 4 份相同實作、同一個潛在 bug 各踩各的。
