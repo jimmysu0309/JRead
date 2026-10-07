@@ -4547,10 +4547,23 @@ html.${HTML_CLASS}.jread-orion body {
           // natPlaceholder 用 naturalX || X 為基準（與下方 w/h 同源）——img 有真實
           // width 屬性（如 lazy a>img width=608）時不可誤判成 1×1 placeholder。
           const natPlaceholder = w <= 1 && h <= 1;
-          let isInline = !natPlaceholder && w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
+          // 2026-10-07 review B-06：圖「還在載入」（!complete）且不是 load 後的補分類
+          // （無 preRect）時，natural 與 rect 都是**上一張 src**（LQIP / blur-up 20px
+          // 佔位圖）的殘值——cleaner.hydrateLazyImages 剛把 data-src 換進 src、新圖
+          // 尚未到。v1.8.5 已讓 measureIsContentSize 對 !complete 不信 natural，但
+          // inline 判定沒套同一準則：殘值 20×20 → 立即標 INLINE_IMG 並 return，之後
+          // hasAttribute 早退、load 也不重判 → 1200px 內容圖永久 display:inline、無
+          // 置中 / 90vh cap / 翻頁單頁 cap（真 Chromium 合成 blur-up 頁實證：hydrate
+          // 後 complete=false、natural 0×0、rect 20×20 → inline=1，載入後仍 inline）。
+          // 此刻不做 inline 判定，交給下方 a 包 / bare 分支既有的 load listener 帶
+          // apply 當下快照重跑 classifyImg（preRect 非空＝圖已載入、natural 可信）。
+          // 已載入的真 emoji（complete、natural 20）不受影響，照舊即時標 inline。
+          const unloaded = !img.complete && !preRect;
+          let isInline = !unloaded && !natPlaceholder &&
+                         w > 0 && w <= INLINE_IMG_MAX && h > 0 && h <= INLINE_IMG_MAX;
           let r = null;
           let inlineViaRect = false;
-          if (!isInline) {
+          if (!isInline && !unloaded) {
             r = img.getBoundingClientRect();
             isInline = r.width > 0 && r.width <= INLINE_IMG_MAX &&
                        r.height > 0 && r.height <= INLINE_IMG_MAX;
@@ -4671,29 +4684,14 @@ html.${HTML_CLASS}.jread-orion body {
             }
           }
         };
-        for (const img of articleEl.querySelectorAll('img')) {
-          // v0.8.89：natural 1×1 placeholder 且連 rect 都還沒 reliable（0×0 未渲染）
-          // → 此刻完全無從分類，掛 once load listener 等圖真正載入後再 classifyImg
-          // （hydrateLazyImages 換上真 src 後會觸發 load）。站點有預留 reserved 尺寸
-          // 的 lazy 圖 rect 非 0、直接 classifyImg 走 rect fallback 即可。
-          const natPlaceholder = (img.naturalWidth || img.width) <= 1 && (img.naturalHeight || img.height) <= 1;
-          if (natPlaceholder) {
-            const r = img.getBoundingClientRect();
-            if (r.width === 0 && r.height === 0) {
-              const onLoad = () => classifyImg(img);
-              img.addEventListener('load', onLoad, { once: true });
-              contentImgLoadCleanup.push({ img, onLoad });
-              continue;
-            }
-          }
-          classifyImg(img);
-        }
         // v1.9.7：晚 mount 的 img 補分類（cleaner dynamic observer → remarkDynamicMarkers）。
         // AMP `layout="intrinsic"` 捲到附近才 build 真圖——apply 當下 img 還不存在，
         // 上面的迴圈與 load listener 都接不到，圖永遠不標 upscale、停在站方原寬
         // （cuphistory 同頁：先 build 的肖像撐滿版心、晚 build 的城堡 / 蘇維埃宮停在
         // 440 / 436px）。preRect 在停用 JRead 注入 CSS 下量＝原站 cascade 的顯示尺寸，
         // capIcon / 低解析上限兩條防放大 gate 對晚到的圖一樣有效（見 classifyImg 簽名註解）。
+        // 2026-10-07 review B-05：定義搬到下方靜態迴圈**之前**——迴圈的 0×0 placeholder
+        // 路徑也走這條（見該處註解），const 賦值必須先於使用。
         classifyLateImg = (img) => {
           if (!img || img.tagName !== 'IMG' || !articleEl.contains(img)) return;
           if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) ||
@@ -4709,6 +4707,29 @@ html.${HTML_CLASS}.jread-orion body {
           img.addEventListener('load', onLoad, { once: true });
           contentImgLoadCleanup.push({ img, onLoad });
         };
+        for (const img of articleEl.querySelectorAll('img')) {
+          // v0.8.89：natural 1×1 placeholder 且連 rect 都還沒 reliable（0×0 未渲染）
+          // → 此刻完全無從分類，等圖真正載入後再分類（hydrateLazyImages 換上真 src
+          // 後會觸發 load）。站點有預留 reserved 尺寸的 lazy 圖 rect 非 0、直接
+          // classifyImg 走 rect fallback 即可。
+          // 2026-10-07 review B-05：改走 classifyLateImg——舊路徑 load 後呼叫
+          // `classifyImg(img)` 不帶 preRect，v1.8.5 的兩道防放大 gate 量到的是 reader
+          // 撐開後的 rect（真 Chromium 合成頁實證：無尺寸屬性、站方 CSS max-width:150
+          // 的 lazy 頭像 apply 當下 rect 0×0，載入後 rect 608、natural 300 → capIcon
+          // miss、低解析 gate miss → 標 upscale 撐成 608×608）。apply 當下的快照對這
+          // 條路徑是 0×0、毫無參考價值，唯一可信的「站方顯示尺寸」是 load 時停用注入
+          // CSS 再量（classifyLateImg 既有形狀）。三條 lazy 入口的「無快照」情境至此
+          // 收斂成同一條。
+          const natPlaceholder = (img.naturalWidth || img.width) <= 1 && (img.naturalHeight || img.height) <= 1;
+          if (natPlaceholder) {
+            const r = img.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) {
+              classifyLateImg(img);
+              continue;
+            }
+          }
+          classifyImg(img);
+        }
       };
 
       const passSplitPreWrapParas = () => {
@@ -5830,6 +5851,14 @@ html.${HTML_CLASS}.jread-orion body {
           const _w = articleEl.ownerDocument?.defaultView;
           if (_w) {
             for (const el of articleEl.querySelectorAll('div, section')) {
+              // 2026-10-07 review B-09：absolute / fixed 錨定元素（markAbsAnchors 已在
+              // 本 pass 之前標完）的負 margin 是「top:50% + margin-top:-N」置中慣用寫法
+              // 的錨點偏移，不是 layout hack——歸零會讓 play 鈕 / overlay 從中心往右下
+              // 偏 N px（真 Chromium 合成 WP Rocket 3.x `.play` 頁實證：dy −36）。與
+              // v1.7.45 CSS 端 inset 豁免是同一份事實（absolute 元素的 inset / margin
+              // 是錨點），JS pass 這一側補齊。只豁免「reader CSS 下仍 absolute」者：被
+              // 媒體規則打回 static 的子樹量到 static 不標、照舊清。
+              if (el.getAttribute(ABS_ANCHOR_ATTR) === '1') continue;
               const mt = parseFloat(_w.getComputedStyle(el).marginTop) || 0;
               if (mt < -20) {
                 negMarginSnap.push({
@@ -5942,6 +5971,10 @@ html.${HTML_CLASS}.jread-orion body {
               // 會在下一步把它寫成 inline 0 !important、黏字復發）。標記見
               // markInlineFlowParagraphs（本 pass 之前已跑）。
               if (el.getAttribute && el.getAttribute(INLINE_FLOW_P_ATTR) === '1') continue;
+              // 2026-10-07 review B-09：absolute / fixed 錨定元素的水平 margin 是
+              // 「left:50% + margin-left:-N」置中的錨點偏移，不是版心內縮——與上方
+              // passNegMarginStrip 同一條豁免（註解見該處）。
+              if (el.getAttribute && el.getAttribute(ABS_ANCHOR_ATTR) === '1') continue;
               // cleaner 清掉的隱藏雜訊不動
               if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
               // 在語意縮排脈絡內 → 縮排刻意，跳過

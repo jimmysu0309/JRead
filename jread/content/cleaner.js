@@ -577,7 +577,10 @@
     const clsMarker = Array.from(el.classList || []).join(' ').toLowerCase();
     if (clsMarker && (NOISE_KEYWORD_RE.test(clsMarker) ||
         AD_BOUNDARY_RE.test(clsMarker) || AD_SUFFIX_RE.test(clsMarker))) return false;
-    const h = el.querySelector && el.querySelector('h1, h2, h3, h4, h5, h6');
+    // 2026-10-07 review A-08：heading 自己掛 slug id（<h2 id="ad-hoc-workflows">）
+    // 也算——querySelector 不含自身，原本永遠 miss
+    const h = (/^H[1-6]$/.test(el.tagName) ? el : null) ||
+      (el.querySelector && el.querySelector('h1, h2, h3, h4, h5, h6'));
     if (!h) return false;
     const alnum = (s) => norm(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const idAlnum = alnum(id);
@@ -645,6 +648,19 @@
       w += CJK_TITLE_CHAR_RE.test(ch) ? 3 : 1;
     }
     return w;
+  }
+  // 2026-10-07 review A-28：「canonical 標題短到不能拿來 strict-equality 比對」的
+  // **單一把尺**。promote 三條 path 早在 v0.8.141/142 改成 titleTextWeight（CJK
+  // 權重 3、門檻 5 → 2 字中文即可比對），但三條**保護用**的子樹掃描
+  // （subtreeHasCanonicalTitleText：sidebar 條件 A / D、direct-child link block、
+  // findContentFreeCard walk-up 邊界）與 wrapperH1IsMainTitle 仍是 raw `< 5`
+  // ——og:title 是「珍珠奶茶」「微光」這類 2–4 字中文標題時整條保護 no-op，
+  // 含標題的 sibling（短文 + 高 link density 的標題 wrapper）直接落入條件 A
+  // 被砍（合成頁 Chromium probe 實證：og:title 4 字 → header 被 hide、6 字 →
+  // 保護生效）。失敗方向是「少保護」＝砍標題，與 raw 長度門檻按拉丁校準的
+  // 老問題同族。raw 與權重對拉丁文字等值，非 CJK 頁行為不變。
+  function canonicalTitleIsComparable(canonical) {
+    return !!canonical && titleTextWeight(canonical) >= 5;
   }
 
   // 「主文標題級」class anchor token list。命中於 wrapper 子樹則該 wrapper
@@ -1278,6 +1294,17 @@
   // 用途有二：(1) hideExpanderDecorativeLabel 靠它認出哪一支是剛攤開的內容、
   // 不要把內容自己當裝飾標籤清掉；(2) restore() 統一移除。
   const EXPANDED_ATTR = 'data-jread-expanded';
+
+  // 2026-10-07 review A-07：空殼類規則 hide 的元素另標「為什麼被藏」。空殼的定義是
+  // 「沒有內容」，內容之後出現（JS 把圖表 / 地圖畫進 IntersectionObserver 延遲初始化
+  // 的空 div）就該撤銷——動態 observer 用此標記認出可撤銷的殼（reviveEmptyShellFor），
+  // 其他規則（關鍵字 / 按鈕 / 廣告）hide 的元素不帶此標記、永遠不撤。restore() 統一移除。
+  const HIDDEN_WHY_ATTR = 'data-jread-hidden-why';
+  function markHiddenWhy(el, why) {
+    if (el && el.dataset && el.dataset.jreadHidden === '1' && el.setAttribute) {
+      el.setAttribute(HIDDEN_WHY_ATTR, why);
+    }
+  }
 
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
@@ -3255,9 +3282,12 @@
   // v1.5：容器是否含「作者個人頁連結」（/@user、authors/、profiles/… 等路徑）——
   // byline 作者列的可靠結構訊號。AUTHOR_PAGE_PATH_RE 雖宣告在後段（module 常數），
   // 本函式僅在 clean() runtime 呼叫，屆時已初始化。
-  function clusterContainsAuthorProfileLink(el) {
+  // skipHidden（2026-10-07 review A-05 / A-06）：只算未被我們 hide 的連結——「提示句 +
+  // 已清掉的追蹤 chip 列」裡的作者追蹤 chip 是 hidden 的，不構成「這塊是 byline」證據
+  function clusterContainsAuthorProfileLink(el, skipHidden) {
     if (!el || !el.querySelectorAll) return false;
     for (const a of el.querySelectorAll('a[href]')) {
+      if (skipHidden && a.closest && a.closest('[data-jread-hidden="1"]')) continue;
       let pn = '';
       try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
       if (pn && AUTHOR_PAGE_PATH_RE.test(pn)) return true;
@@ -3486,6 +3516,7 @@
       if (siblingHasMediaEmbed(el)) continue;
 
       hide(el, hidden);
+      markHiddenWhy(el, 'empty'); // 2026-10-07 review A-07：晚渲染內容進來時可撤銷
     }
   }
 
@@ -5303,6 +5334,12 @@
 
   function hideEmptiedFlexColumns(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
+    // 2026-10-07 review A-05：canonical 標題只推導一次（guard 對每個候選欄比對）
+    let _canonical = null;
+    const canonicalTitle = () => {
+      if (_canonical === null) _canonical = getCanonicalTitleText() || '';
+      return _canonical;
+    };
     for (const el of [articleEl, ...articleEl.querySelectorAll('div, section')]) {
       if (el !== articleEl) {
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -5333,6 +5370,12 @@
         }
         if (hasVisibleEmbed) continue;
         if (visibleTextLenOf(s.el) >= EMPTIED_COLUMN_MAX_VISIBLE_TEXT) continue;
+        // 2026-10-07 review A-05：byline / 標題 rail 不是殘殼——「作者 + 日期 + 已被
+        // 清掉的分享鈕 / popover」左欄剛好滿足「含 jreadHidden 後代 + 可見文字 < 100」
+        // （theverge 文首 rail probe 實證：by 作者 + <time> + 留言數，19 個後代被清、
+        // 整欄連作者日期一起砍）。guard 與同檔其他 sibling 規則同源，見
+        // blockIsBylineOrTitleMeta。
+        if (blockIsBylineOrTitleMeta(s.el, canonicalTitle())) continue;
         hide(s.el, hidden);
       }
     }
@@ -6261,6 +6304,7 @@
         window.getComputedStyle(el) : null;
       if (cs && cs.backgroundImage && cs.backgroundImage !== 'none') continue;
       hide(el, hidden);
+      markHiddenWhy(el, 'empty'); // 2026-10-07 review A-07
     }
   }
 
@@ -6290,6 +6334,7 @@
       if (hasUnhiddenContentMedia(el)) continue;
       if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
       hide(el, hidden);
+      markHiddenWhy(el, 'empty'); // 2026-10-07 review A-07
     }
   }
 
@@ -6596,7 +6641,9 @@
       if (branch.getAttribute && branch.getAttribute(EXPANDED_ATTR) === '1') continue;
       if (branch.querySelector && branch.querySelector('[' + EXPANDED_ATTR + '="1"]')) continue;
       const text = collapsedContentText(branch);
-      if (!text || text.length > ORPHAN_LABEL_MAX_CHARS) continue;
+      // 2026-10-07 review A-06：門檻改 CJK 權重（raw 40 按拉丁校準，中文 accordion
+      // 摘要 20–40 字整句落網；v1.8.9 翻譯後章節標題全落網是同一把尺）
+      if (!text || NS.cjkWeightedLen(text) > ORPHAN_LABEL_MAX_CHARS) continue;
       if (ORPHAN_LABEL_SENTENCE_END_RE.test(text)) continue;
       if (ORPHAN_LABEL_HEADING_TAGS.has(branch.tagName)) continue;
       if (branch.querySelector && branch.querySelector('h1, h2, h3, h4, h5, h6, a[href], time, img, picture, video, iframe, svg')) continue;
@@ -6632,18 +6679,53 @@
   //   - 句末有句號的不套用——那是句子不是 label。
   //   - 只驗「殼與 label 都在同一容器內」。label 與被清空內容分屬不同容器
   //     （更上層才是共同祖先，且該祖先還有其他正文）時逃得出本檢查。
-  const ORPHAN_LABEL_MAX_CHARS = 40;
+  const ORPHAN_LABEL_MAX_CHARS = 40; // CJK 權重單位（NS.cjkWeightedLen），2026-10-07 review A-06 起
   const ORPHAN_LABEL_SENTENCE_END_RE = /[.!?。！？]$/;
+  // 提示句形態的招攬語（見 collapseOrphanLabelShells promptMode）
+  const ORPHAN_PROMPT_CTA_RE = /\b(follow|subscribe|sign\s+up|email\s+updates|newsletter|add\s+to\s+(your\s+)?(feed|watchlist|list)|see\s+more\s+like\s+this|get\s+(the\s+)?latest)\b|追蹤|訂閱|加入.{0,8}(清單|追蹤|收藏)|接收.{0,6}(通知|更新)/i;
+  // 被清空分支是否為「>= 2 個互動元件全在我們 hide 的子樹內」的 cluster
+  function orphanShellHasHiddenInteractiveCluster(el) {
+    let n = 0;
+    for (const kid of el.children) {
+      if (visibleRenderedText(kid).trim().length > 0) continue;
+      for (const it of kid.querySelectorAll('button, [role="button"], a[href]')) {
+        if (it.closest('[data-jread-hidden="1"]')) n += 1;
+        if (n >= 2) return true;
+      }
+    }
+    return false;
+  }
   const ORPHAN_LABEL_HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
 
   function collapseOrphanLabelShells(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const el of _getArticleAllElements(articleEl)) {
-      if (el === articleEl) continue;
-      if (isInPreserved(el)) continue;
-      if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (el.ownerSVGElement) continue;
-      if (el.shadowRoot) continue;
+      if (orphanLabelShellShouldHide(el, articleEl)) hide(el, hidden);
+    }
+  }
+
+  // 2026-10-07 review A-05 / A-06：動態側——晚注入的「提示句 + chip 列」widget
+  // （theverge 文末「Follow topics and authors…」+ 追蹤 chip，React 在 clean 之後才
+  // mount）：chip 被 checkDynamicNoise 的 button 規則逐顆清掉後，提示句孤零零留下。
+  // 從注入點往上最多 3 層、每層套同一份判定（單一資料源）；命中即停。
+  const ORPHAN_DYN_CLIMB_LEVELS = 3;
+  function collapseOrphanLabelShellFrom(articleEl, node, hidden) {
+    let cur = node, depth = 0;
+    while (cur && cur !== articleEl && articleEl.contains(cur) && depth < ORPHAN_DYN_CLIMB_LEVELS) {
+      if (orphanLabelShellShouldHide(cur, articleEl)) { hide(cur, hidden); return true; }
+      cur = cur.parentElement;
+      depth += 1;
+    }
+    return false;
+  }
+
+  function orphanLabelShellShouldHide(el, articleEl) {
+    {
+      if (el === articleEl) return false;
+      if (isInPreserved(el)) return false;
+      if (el.dataset && el.dataset.jreadHidden === '1') return false;
+      if (el.ownerSVGElement) return false;
+      if (el.shadowRoot) return false;
       // v1.8.9：heading 子樹一律不套用。本規則原本宣告「label 是 h1–h6 時不
       // 套用」，但實作只擋到「子分支是 heading」那條 path，漏了「容器自己就是
       // heading（或在 heading 內）」——章節標題本來就是一段短文字，一旦標題內
@@ -6656,17 +6738,38 @@
       // 六個章節標題被清掉三個；翻譯成中文後標題字數全部掉到 40 字以下 → 只剩
       // 句末有問號的那個活著（Jimmy 2026-09-03 回報）。heading 內的孤兒 label
       // 收掉本來也沒有價值——標題自己就是 label。
-      if (el.closest && el.closest('h1, h2, h3, h4, h5, h6')) continue;
+      if (el.closest && el.closest('h1, h2, h3, h4, h5, h6')) return false;
       // 需要「label 分支」與「被清空分支」兩支才成立
-      if (el.children.length < 2) continue;
+      if (el.children.length < 2) return false;
       const rect = el.getBoundingClientRect();
-      if (rect.height <= 0 || rect.width <= 0) continue;
+      if (rect.height <= 0 || rect.width <= 0) return false;
       const text = visibleRenderedText(el).trim().replace(/\s+/g, ' ');
-      if (!text) continue; // 全空 → 交給 collapseEmptyWrappersAfterClean
-      if (text.length > ORPHAN_LABEL_MAX_CHARS) continue;
-      if (ORPHAN_LABEL_SENTENCE_END_RE.test(text)) continue;
-      if (hasUnhiddenContentMedia(el)) continue;
-      if (orphanLabelHasProtectedMeta(el)) continue;
+      if (!text) return false; // 全空 → 交給 collapseEmptyWrappersAfterClean
+      // 2026-10-07 review A-06：raw 40 → CJK 權重 40（與 hideExpanderDecorativeLabel 同一把尺）
+      // 第二種形態（A-05 修法暴露，theverge 文末實證）：「提示句 + 被我們清掉的
+      // 互動 chip 列」——<div><span>Follow topics and authors from this story to see more…
+      // and to receive email updates.</span><ul>追蹤 chip ×N</ul></div>。提示句超過
+      // 40 權重、又以句號收尾，兩道 label 閘都過不了；但它是 chip 列的說明文字，
+      // chip 全清之後只剩一句招攬。判定要三件事同時成立才放寬：提示句 <= 200 字、
+      // 文字帶追蹤 / 訂閱 / 加入類招攬語（ORPHAN_PROMPT_CTA_RE）、被清空分支是
+      // >= 2 個互動元件（button / role=button / a[href]）全在 hidden 內的 cluster。
+      // 「正文末段 + 被清掉的分享鈕列」同結構但正文不帶招攬語、也多半有 <p>，不命中。
+      const promptMode = NS.cjkWeightedLen(text) > ORPHAN_LABEL_MAX_CHARS ||
+        ORPHAN_LABEL_SENTENCE_END_RE.test(text);
+      if (promptMode) {
+        if (text.length > BYLINE_MAX_TEXT_LEN) return false;
+        if (!ORPHAN_PROMPT_CTA_RE.test(text)) return false;
+        // 只認仍可見的 <p>——chip 的作者 popover（已被我們 hide）裡也有 <p>（theverge
+        // 「Posts from this author will be…」），不構成「這塊是正文」證據
+        let visibleP = false;
+        for (const pEl of el.querySelectorAll('p')) {
+          if (!(pEl.closest && pEl.closest('[data-jread-hidden="1"]'))) { visibleP = true; break; }
+        }
+        if (visibleP) return false;
+        if (!orphanShellHasHiddenInteractiveCluster(el)) return false;
+      }
+      if (hasUnhiddenContentMedia(el)) return false;
+      if (orphanLabelHasProtectedMeta(el)) return false;
       // 兩支分支各自存在？label 分支 = 有可見文字的直接子；清空分支 = 無可見
       // 文字、且自身或子孫帶 jreadHidden 標記的直接子。
       let labelBranch = false, emptiedBranch = false;
@@ -6682,8 +6785,8 @@
           emptiedBranch = true;
         }
       }
-      if (!labelBranch || !emptiedBranch) continue;
-      hide(el, hidden);
+      if (!labelBranch || !emptiedBranch) return false;
+      return true;
     }
   }
 
@@ -6699,12 +6802,40 @@
     return visibleRenderedText(node).trim().length > 0;
   }
   function orphanLabelHasProtectedMeta(el) {
-    for (const t of el.querySelectorAll('time')) {
-      if (orphanLabelIsRendered(t)) return true;
-    }
     for (const a of el.querySelectorAll('a[href]')) {
       if (orphanLabelIsRendered(a)) return true;
     }
+    // 2026-10-07 review A-06：<time> 之外補純文字 byline 訊號（見 blockIsBylineOrTitleMeta）
+    return blockIsBylineOrTitleMeta(el);
+  }
+
+  // 2026-10-07 review A-05 / A-06：「這塊是 byline / 標題 meta、不是殘殼」的共用判定
+  // ——hideEmptiedFlexColumns（flex 殘殼欄）與 collapseOrphanLabelShells（孤兒 label
+  // 殼）兩條「內容被我們清空後只剩短文字」的規則，結構上跟「作者 + 日期 + 已清分享
+  // 鈕」的 byline 列幾乎相同，此前各自只認 <time> / 可見連結，純文字 byline（台灣站
+  // 慣例：日期是純文字 <span>、作者名不是連結——v0.8.48 實證）與帶 <time> 的 rail
+  // 都會被整塊收掉（theverge 文首「by 作者 + <time> + 留言數」rail probe 實證由
+  // hideEmptiedFlexColumns 砍掉、作者與日期一起消失）。
+  // 訊號與 sidebar 條件 A / D、narrowPromotedSiblings 同源（單一資料源）：
+  //   - 可見渲染的 <time>
+  //   - 可見文字 <= BYLINE_MAX_TEXT_LEN 且命中 BYLINE_TEXT_RE / RELATIVE_TIME_RE
+  //   - 可見文字 <= BYLINE_MAX_TEXT_LEN 且含作者個人頁連結（clusterContainsAuthorProfileLink）
+  //   - 子樹含 canonical 標題文字（subtreeHasCanonicalTitleText；canonical 可由呼叫端傳入）
+  // 用 visibleRenderedText 而非 textContent：rail 內常有已被我們 hide 的 popover /
+  // 分享鈕文字（theverge 作者 popover 300+ 字），raw textContent 會把 byline 推過
+  // 長度門檻、guard 形同虛設。
+  function blockIsBylineOrTitleMeta(el, canonical) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const t of el.querySelectorAll('time')) {
+      if (orphanLabelIsRendered(t)) return true;
+    }
+    const text = norm(visibleRenderedText(el));
+    if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN) {
+      if (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE)) return true;
+      if (clusterContainsAuthorProfileLink(el, true)) return true; // 只認仍可見的作者連結
+    }
+    const canon = (canonical === undefined) ? getCanonicalTitleText() : canonical;
+    if (canon && subtreeHasCanonicalTitleText(el, canon)) return true;
     return false;
   }
 
@@ -7415,7 +7546,9 @@
     // 新版 fallback 到 document.title 再比對——og:title 存在但全空白是病態頁面，
     // 統一語意優於保留該病態分支。
     const canonical = getCanonicalTitleText();
-    if (!canonical || canonical.length < 5) return true; // 無 canonical：保守保護
+    // 無 canonical / 短到不能比對：保守保護（門檻走 canonicalTitleIsComparable，
+    // 與子樹掃描同一把尺——review A-28）
+    if (!canonicalTitleIsComparable(canonical)) return true;
     const h1Text = normTitle(h1.textContent || '');
     if (!h1Text) return false;
     return h1Text === canonical || h1Text.startsWith(canonical) || canonical.startsWith(h1Text);
@@ -8110,7 +8243,7 @@
   // 或 iframe 的 name 屬性（`google_ads_iframe_*`）無法命中；加精確
   // selector 作為保險絲。實測命中不多（reader mode 架構已代理大部分），
   // 但成本是 8 個 CSS selector 的 `querySelectorAll`，效能可忽略。
-  const THIRD_PARTY_AD_SEL = [
+  const THIRD_PARTY_AD_BRAND_SEL = [
     // Google Ad Manager / GPT（業界最大 ad server，標準命名）
     '[id^="div-gpt-ad"]',
     '[id^="google_ads_"]',
@@ -8130,9 +8263,6 @@
     // Outbrain（Taboola 同類競品）
     '[class*="OUTBRAIN"]',
     '[data-widget-id*="outbrain"]',
-    // 通用 ad container class/id prefix（跨站命名慣例，非站點特判）
-    '[id^="ad-"]', '[id^="ads-"]', '[id^="ad_"]', '[id^="ads_"]',
-    '[class^="ad-"]', '[class^="ads-"]',
     // React component data attribute（跨站標準，BBC / Vox / React 新聞站慣例）
     // class 是 styled-components hash（`sc-XXXXXX`）無 keyword 可命中，但
     // React 廣告 component 統一用 data-testid / data-component 標記：
@@ -8145,6 +8275,17 @@
     '[data-component="ad-slot"]',
     '[data-component="ad-unit"]',
   ].join(', ');
+  // 通用 ad container class/id prefix（跨站命名慣例，非站點特判）。
+  // 2026-10-07 review A-08：拆出來獨立判——品牌 selector（gpt / taboola / outbrain…）
+  // 零誤殺不 guard；通用前綴會命中 CMS 自動以標題文字 slug 當 id 的章節（Chorus /
+  // WordPress / Ghost：「Ad-supported tier」→ id="ad-supported-tier"，合成頁真
+  // Chromium probe 實證 section + h2 + `.ad-free-note` 含長段落整塊被藏），命中時
+  // 套 keyword 軌同款豁免（keywordHitIsOnlyHeadingSlugId + wrapperContainsMainContentP）。
+  const THIRD_PARTY_AD_GENERIC_PREFIX_SEL = [
+    '[id^="ad-"]', '[id^="ads-"]', '[id^="ad_"]', '[id^="ads_"]',
+    '[class^="ad-"]', '[class^="ads-"]',
+  ].join(', ');
+  const THIRD_PARTY_AD_SEL = THIRD_PARTY_AD_BRAND_SEL + ', ' + THIRD_PARTY_AD_GENERIC_PREFIX_SEL;
 
   function hideInsideArticleByThirdPartyAds(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll(THIRD_PARTY_AD_SEL)) {
@@ -8152,6 +8293,12 @@
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (el.contains(articleEl)) continue;
+      // 2026-10-07 review A-08：只靠通用前綴命中（非品牌 selector）→ 標題 slug id /
+      // 含主文段落的 wrapper 放行
+      if (el.matches && !el.matches(THIRD_PARTY_AD_BRAND_SEL)) {
+        if (keywordHitIsOnlyHeadingSlugId(el)) continue;
+        if (wrapperContainsMainContentP(el)) continue;
+      }
       hide(el, hidden);
     }
   }
@@ -8603,6 +8750,14 @@
       let target;
       try { target = new URL(href, location.href); } catch (_) { continue; }
       if (target.pathname === location.pathname) continue; // 本文自連結（標題卡）
+      // 2026-10-07 review A-14：第五道閘——連結必須**同源**。推薦卡連的是站內
+      // 他篇（Guardian rich link 實案 href="/world/…"）；部落格 / 攝影站慣例
+      // `<figure><a href="https://flickr.com/…"><img><span>Photo: John Doe /
+      // Flickr, CC BY 2.0</span></a></figure>`（圖說放 span 不放 figcaption、整組
+      // 連到來源 / 授權頁）前四道閘全過，整張內容圖被當連結卡藏掉（合成頁
+      // Chromium probe 實證）。站外連結是出處 / 授權，是內容的一部分——與
+      // hideInsideArticleInlineRelatedLinkParagraphs 的同源判準一致。
+      if (target.origin !== location.origin) continue;
       hide(fig, hidden);
     }
   }
@@ -9025,6 +9180,15 @@
       if (!NOISE_INLINE_AD_TEXT_RE.test(text)) continue;
       if (el === articleEl) continue;
       if (el.contains && el.contains(articleEl)) continue;
+      // 2026-10-07 review A-12：direct-text 設計擋的是「textContent 誤中」，沒擋
+      // 反向——label 文字節點直接掛在**內文 wrapper** 上（`<div class="body">廣告
+      // <div id="slot"></div><p>第一段…</p>…</div>`，CMS 塞廣告位時常見）→ direct
+      // text 只有「廣告」、regex 命中、整個內文 wrapper 被 hide（合成頁 Chromium
+      // probe 實證：三段正文連坐消失）。插播 label 是 leaf（子元素頂多空 slot /
+      // icon），含主文段落載體的 wrapper 不是 label——走 wrapperContainsMainContentP
+      // 單一資料源（p / div direct text / WYSIWYG 段落 div 三種載體）。leaf label
+      // 的 nonAnchorTextLen 遠低於 100，不會被這道 guard 誤放行。
+      if (wrapperContainsMainContentP(el)) continue;
       hide(el, hidden);
     }
   }
@@ -9077,11 +9241,43 @@
   const NOISE_CARD_CONTENT_P_MIN = 80; // 視為主文 paragraph 的 textContent 長度
 
   // 卡片是否含主文長 <p>（未 hidden、textContent >= MIN）→ 含則不可 hide（會吃主文）
+  //
+  // 2026-10-07 review A-13：原本只認 `<p>`。v1.7.76 已把「段落載體不只 <p>」的
+  // 教訓做進 wrapperContainsMainContentP（div direct text + WYSIWYG inline-only
+  // 段落 div），但本 walk-up 仍用私有的 p-only 判定——X longform / Draft.js /
+  // archive.today / cn.nytimes 這類無 `<p>` 站，文內一個 email 輸入框（訂閱框）
+  // 就讓 findContentFreeCard 一路爬到 articleEl 的直接子、整個內文容器被 hide
+  // （合成頁 Chromium probe 實證：四段 `<div class="para"><span>…</span></div>`
+  // 正文 + 一個 `<input type="email">` → `.content` 整塊 hidden）。
+  // 修法：保留既有 80 字 `<p>` 門檻（單段即算），再補 div 段落載體（direct
+  // text >= 100 或 WYSIWYG 段落 div，判定與 wrapperContainsMainContentP 同源）
+  // ——但 div 載體要 **>= 2 段或累計 >= 300** 才算含主文：訂閱卡的 pitch 本身
+  // 常就是一段 100+ 字的 direct-text div（chinatalk Substack 實案「Deep coverage
+  // of technology, China, US policy, and war. We feature…」150 字），單段 div
+  // 不足以證明「這是內文容器」，直接套 wrapperContainsMainContentP 會讓整張
+  // 訂閱卡殘留（cleaner-v0.8.102-tail-cta-adslot.spec 抓到）。內文容器的
+  // div 段落必然成串，兩段門檻對 X longform / Draft.js 類站零影響。
+  // walk-up 邊界另加 hasArticleTitleAnchor（class token 標題錨），與 heading
+  // walk-up（findSafeWrapperForHeading）同一組邊界。
   function cardHasContentParagraph(el) {
     if (!el.querySelectorAll) return false;
     for (const p of el.querySelectorAll('p')) {
       if (p.dataset && p.dataset.jreadHidden === '1') continue;
       if (norm(p.textContent).length >= NOISE_CARD_CONTENT_P_MIN) return true;
+    }
+    if (isProseParagraphDiv(el)) return true; // wrapper 自身就是一段 WYSIWYG 段落
+    let carriers = 0, acc = 0;
+    for (const div of el.querySelectorAll('div')) {
+      if (div.dataset && div.dataset.jreadHidden === '1') continue;
+      const direct = norm(Array.from(div.childNodes)
+        .filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+      let len = 0;
+      if (direct.length >= 100) len = direct.length;
+      else if (isProseParagraphDiv(div)) len = nonAnchorTextLen(div);
+      if (!len) continue;
+      carriers += 1;
+      acc += len;
+      if (carriers >= 2 || acc >= 300) return true;
     }
     return false;
   }
@@ -9106,7 +9302,8 @@
   // strict eq 誤命中面太大。
   const CANONICAL_TITLE_SCAN_SEL = 'a, h1, h2, h3, h4, div, span, p';
   function subtreeHasCanonicalTitleText(el, canonical, sel) {
-    if (!canonical || canonical.length < 5) return false;
+    // 短 canonical 門檻走 canonicalTitleIsComparable（CJK 權重，review A-28）
+    if (!canonicalTitleIsComparable(canonical)) return false;
     if (!el || !el.querySelectorAll) return false;
     for (const n of el.querySelectorAll(sel || CANONICAL_TITLE_SCAN_SEL)) {
       const dt = normTitle(Array.from(n.childNodes)
@@ -9133,8 +9330,9 @@
     while (cur.parentElement && cur.parentElement !== articleEl &&
            articleEl.contains(cur.parentElement)) {
       const pp = cur.parentElement;
-      if (cardHasContentParagraph(pp)) break;      // 含主文長 <p> → 不擴
+      if (cardHasContentParagraph(pp)) break;      // 含主文段落載體 → 不擴
       if (elContainsArticleTitle(pp, canonical)) break; // 含文章標題 → 不擴（避免吃 header）
+      if (hasArticleTitleAnchor(pp)) break;        // class token 標題錨（review A-13 第二道邊界）
       candidate = pp;
       cur = pp;
     }
@@ -9884,6 +10082,80 @@
            node.getAttribute('data-jread-injected-title') === '1';
   }
 
+  // 2026-10-07 review A-07：空殼撤銷。ECharts / Highcharts / Plotly / Leaflet 等「JS 把
+  // 圖表畫進 <div style="height:400px">」的內嵌（非 iframe）圖表，採 IntersectionObserver
+  // 捲到才渲染時，clean 當下是「有高度、無文字、無媒體、無 shadowRoot」的空 div →
+  // 空殼規則命中 → 之後 library 畫進 display:none 的盒（0×0），圖表永遠出不來
+  // （合成頁真 Chromium probe 實證：#chart / #map 由 hideInsideArticleEmptySpacers 藏掉，
+  // 4 秒後 canvas / 圖磚進來仍 display:none）。
+  // 撤銷條件（三道缺一不可）：
+  //   - 新節點最近的 jread-hidden 祖先**就是**帶 HIDDEN_WHY_ATTR="empty" 的殼——新節點
+  //     落在殼內另一個被關鍵字 / 廣告規則藏掉的子樹（techbang 空 DFP 槽晚注入）時不撤
+  //   - 新節點帶內容：canvas / svg / img / picture / video / 已知媒體 iframe，或非空文字
+  //   - 新節點不是第三方廣告（THIRD_PARTY_AD_SEL）/ 非白名單 iframe——動態側沒有靜態
+  //     那套廣告 selector（A-09），撤銷不可變成廣告復活的後門
+  // 撤銷 = 刪 jreadHidden 標記 + 還原 inline display（走 NS.inlineRelease，owner
+  // 'cleaner-hide'）+ 從 hiddenList 移除記錄；殼之後若再被判定為雜訊可被正常 hide。
+  const REVIVE_CONTENT_SEL = 'canvas, svg, img, picture, video';
+  function dynamicNodeIsAdLike(node) {
+    if (!node || !node.matches) return false;
+    try {
+      if (node.matches(THIRD_PARTY_AD_SEL) || node.querySelector(THIRD_PARTY_AD_SEL)) return true;
+    } catch (_) { /* selector 不支援的環境 */ }
+    const iframes = node.tagName === 'IFRAME' ? [node] : Array.from(node.querySelectorAll('iframe'));
+    for (const f of iframes) {
+      if (!(f.matches && f.matches(KNOWN_MEDIA_IFRAME_SEL))) return true;
+    }
+    return false;
+  }
+  // 剛塞進 display:none 殼的 img 量不到 rect、也還沒載入（natural 0），不能用
+  // imgIsContentMedia 的 rect / natural 軌；改反向判「像不像追蹤像素」：width/height
+  // 屬性 <= 1、已載入且 natural <= 32×32、或 src 是 placeholder / spacer 簽名。
+  function dynamicImgLooksLikeTrackingPixel(m) {
+    const aw = parseInt(m.getAttribute('width'), 10);
+    const ah = parseInt(m.getAttribute('height'), 10);
+    if ((aw >= 0 && aw <= 1) || (ah >= 0 && ah <= 1)) return true;
+    if (m.complete && m.naturalWidth > 0 && m.naturalWidth <= 32 && m.naturalHeight <= 32) return true;
+    if (aw > 32 || ah > 32) return false; // 站方宣告的顯示尺寸就是內容尺寸（data: URI 圖表輸出也算）
+    const src = m.getAttribute('src') || '';
+    if (src && (LAZY_PLACEHOLDER_RE.test(src) || SPACER_SRC_RE.test(src))) {
+      for (const at of LAZY_SRC_ATTRS) { if (m.getAttribute(at)) return false; }
+      return true;
+    }
+    return false;
+  }
+  function dynamicNodeHasContent(node) {
+    if (!node || !node.matches) return false;
+    // img 排除追蹤像素簽名（見 dynamicImgLooksLikeTrackingPixel）——晚塞進殼的 1×1
+    // 像素不可讓空白殼復活（techbang 類 DFP 槽外層 wrapper）
+    const medias = node.matches(REVIVE_CONTENT_SEL) ? [node, ...node.querySelectorAll(REVIVE_CONTENT_SEL)]
+      : Array.from(node.querySelectorAll(REVIVE_CONTENT_SEL));
+    for (const m of medias) {
+      if (m.tagName === 'IMG') { if (!dynamicImgLooksLikeTrackingPixel(m)) return true; continue; }
+      return true; // canvas / svg / picture / video
+    }
+    if (node.tagName === 'IFRAME' || node.querySelector('iframe')) return true; // 廣告類已在上一道擋掉
+    return norm(node.textContent || '').length > 0;
+  }
+  function reviveEmptyShellFor(articleEl, node, hiddenList) {
+    if (!node || !node.closest) return false;
+    const shell = node.closest('[' + HIDDEN_WHY_ATTR + '="empty"]');
+    if (!shell || shell === articleEl || !articleEl.contains(shell)) return false;
+    if (node.closest('[data-jread-hidden="1"]') !== shell) return false;
+    if (dynamicNodeIsAdLike(node)) return false;
+    if (!dynamicNodeHasContent(node)) return false;
+    const idx = Array.isArray(hiddenList) ? hiddenList.findIndex(h => h && h.el === shell) : -1;
+    const rec = idx >= 0 ? hiddenList[idx] : null;
+    if (!(NS.inlineRelease && NS.inlineRelease(shell, 'display', 'cleaner-hide'))) {
+      shell.style.removeProperty('display');
+      if (rec && rec.prevDisplay) shell.style.setProperty('display', rec.prevDisplay, rec.prevDisplayPriority || '');
+    }
+    if (shell.dataset) delete shell.dataset.jreadHidden;
+    shell.removeAttribute(HIDDEN_WHY_ATTR);
+    if (idx >= 0) hiddenList.splice(idx, 1);
+    return true;
+  }
+
   function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
     // 前一輪（reapply）放行的選取工具列狀態綁著舊的 articleEl / hiddenList，一併收掉
@@ -9902,6 +10174,9 @@
           // 短路影響（embed 容器整塊被當雜訊 hide 時先釘 img 也無害，restore
           // 統一回復）。
           if (articleEl.contains(node)) {
+            // 2026-10-07 review A-07：晚渲染內容進了被空殼規則藏掉的盒 → 撤銷該殼的
+            // hide。放最前面：殼撤銷後下方各步照常對新節點做雜訊判定。
+            reviveEmptyShellFor(articleEl, node, hiddenList);
             pinDynamicEmbedFallbackImgs(articleEl, node, hiddenList);
             // v1.9.6：AMP 捲到附近才 build 真圖（帶 sizes="auto"），晚 mount 補跑。
             // 放 isInPreserved 之前——載體是 figure（preserved）
@@ -9970,6 +10245,8 @@
           // ——必須排在 checkDynamicNoise 之前，否則按鈕先被逐顆 hide。
           if (allowSelectionToolbar(articleEl, node, hiddenList)) continue;
           checkDynamicNoise(articleEl, node, hiddenList);
+          // 2026-10-07 review A-05 / A-06：chip 清完後的孤兒提示句（見 collapseOrphanLabelShellFrom）
+          collapseOrphanLabelShellFrom(articleEl, node, hiddenList);
         }
       }
     });
@@ -10452,6 +10729,7 @@
             }
           }
           if (el.dataset) delete el.dataset.jreadHidden;
+          if (el.removeAttribute) el.removeAttribute(HIDDEN_WHY_ATTR); // 2026-10-07 review A-07
         }
       }
       // v0.8.18 C3：原本 10 個 restoreXxx 各還原一個 sidecar，統一成單一

@@ -434,27 +434,36 @@
     // 結構性訊號：使用者觸發閱讀模式的當下，要讀的是「與視口相交」的那篇
     // ——preload 篇在視口外的下方。有相交者只在相交者中挑；全部不相交
     // （極端捲動位置）或 rect 不可用（jsdom / 隱藏候選）→ 退回全集合，
-    // 行為與舊版一致。列表頁多篇同時相交，looksLikeListPage 判定不受影響。
+    // 行為與舊版一致。
+    //
+    // v1.9.19（2026-10-07 review C-4）：「是不是列表頁」與「挑哪一篇」分開判。
+    // v0.8.45 把兩件事綁在同一個 pool 上——窄視口 / 大卡片的列表頁同時只有
+    // 1–2 張 <article> 相交，`sorted.length < 3` 永遠判不成列表頁，就挑最長那張
+    // 卡進閱讀模式（css-tricks.com 首頁 390px probe 實證：47 張 article、9 張
+    // 相交、pool 判定 false、選到 323 字的卡；全集合判定 true。smashingmagazine
+    // 首頁同款：17 / 2 / false → 209 字卡）。列表頁的結構訊號是「整頁有多篇長度
+    // 相近的 article」，與視口位置無關；視口相交只該決定「使用者正在看哪一篇」。
+    // 已知邊界（＝v0.8.45 之前的原始語意）：無限捲動站 preload 了 ≥ 3 篇長度
+    // 相近的完整文章時會被判成列表頁、降級到 schema-org / heuristic。
+    const scoredAll = articles.map(el => ({ el, len: scoredTextLen(el) }));
+    const sortedAll = scoredAll.slice().sort((a, b) => b.len - a.len);
+    // 列表頁偵測：有第 3 篇且其長度 > 門檻、且最長篇沒比第 3 篇長 1.5 倍以上
+    // → 三篇長度相近，視為列表頁，降級
+    const looksLikeListPage = sortedAll.length >= 3 &&
+      sortedAll[2].len >= MIN_TEXT_LEN &&
+      sortedAll[0].len < sortedAll[2].len * 1.5;
+    if (looksLikeListPage) return null;
+
     const vh = window.innerHeight || 0;
-    const intersecting = vh > 0 ? articles.filter((el) => {
+    const intersecting = vh > 0 ? scoredAll.filter(({ el }) => {
       const r = el.getBoundingClientRect();
       return r.height > 0 && r.bottom > 0 && r.top < vh;
     }) : [];
-    const pool = intersecting.length > 0 ? intersecting : articles;
-    const sorted = pool
-      .map(el => ({ el, len: scoredTextLen(el) }))
-      .sort((a, b) => b.len - a.len);
+    const pool = intersecting.length > 0 ? intersecting : scoredAll;
+    const sorted = pool.slice().sort((a, b) => b.len - a.len);
 
     const top = sorted[0];
     if (top.len < MIN_TEXT_LEN) return null;
-
-    // 列表頁偵測：有第 3 篇且其長度 > 門檻、且 top 沒比第 3 篇長 1.5 倍以上
-    // → 三篇長度相近，視為列表頁，降級
-    const looksLikeListPage = sorted.length >= 3 &&
-      sorted[2].len >= MIN_TEXT_LEN &&
-      top.len < sorted[2].len * 1.5;
-
-    if (looksLikeListPage) return null;
 
     // v1.7.15：殼卡讓位（見 articleIsBodylessCard 註解）——Tudum 場景走的是
     // 本多 article 路徑（41 張 content-card，top = header 卡 236 字）
@@ -722,7 +731,43 @@
   // markup 兩者都有）會被這條 guard 擋到，不掛的話代表該站把 modal 當常駐
   // 區塊用、不該把它當 UI chrome 排除。
   const HEURISTIC_SKIP_SEL =
-    '[role="dialog"], [role="alertdialog"], [role="tooltip"], [aria-modal="true"], [aria-hidden="true"]';
+    '[role="dialog"], [role="alertdialog"], [role="tooltip"], [aria-modal="true"]';
+  // v1.9.19（2026-10-07 review C-9）：aria-hidden="true" 從上面的 selector 拆出
+  // 來單獨判。modal focus-trap 的 a11y 慣例（react-modal setAppElement、
+  // headless UI Dialog 的 inert siblings）是把 aria-hidden="true" 蓋在
+  // `#__next` / `#app` / `main` **整個頁面主幹**上——使用者此時按閱讀模式正是
+  // 想躲 modal，但無 <article> / schema 的站落到 heuristic 時每個 signal 的
+  // closest 都命中主幹 → candidates 空 → 「此頁無法偵測主文」（合成頁 probe 實證：
+  // 11 個 signal 全被排除、其中 9 個只因 aria-hidden，四策略全 null；article-tag
+  // 路徑的 scoredTextLen 只看 display，不受影響——兩層行為不一致）。
+  // 通則：aria-hidden 祖先若**承載了頁面可見文字的多數**（scoredTextLen ≥ body
+  // 的 ARIA_TRUNK_RATIO），它就是被 focus-trap 暫時遮蔽的主幹、不是 UI chrome，
+  // 不據此排除 signal；小範圍的 aria-hidden（icon 容器 / 收合面板 / 裝飾 widget）
+  // 照舊排除。role=dialog / aria-modal 維持原樣（modal 本體仍排除）。
+  // 判定結果以元素為 key 快取在 heuristic run 期間（每個 signal 都會問同一個
+  // 主幹，scoredTextLen 對整個主幹跑 innerText 不便宜）。
+  const ARIA_TRUNK_RATIO = 0.7;
+  let _ariaTrunkCache = null;   // Map<Element, boolean>；withAncestorCache 期間有效
+  let _ariaBodyLen = -1;        // body scoredTextLen；同上
+  function ariaHiddenAncestorIsPageTrunk(hiddenEl) {
+    const cache = _ariaTrunkCache;
+    if (cache && cache.has(hiddenEl)) return cache.get(hiddenEl);
+    if (_ariaBodyLen < 0 || !cache) {
+      _ariaBodyLen = document.body ? getText(document.body).length : 0;
+    }
+    // aria-hidden 元素自身若還被 display:none 的祖先包住，scoredTextLen 計 0 →
+    // 不是主幹（真的隱藏），維持排除
+    const own = scoredTextLen(hiddenEl);
+    const isTrunk = _ariaBodyLen > 0 && own >= _ariaBodyLen * ARIA_TRUNK_RATIO;
+    if (cache) cache.set(hiddenEl, isTrunk);
+    return isTrunk;
+  }
+  function isExcludedByAriaHidden(el) {
+    if (!el.closest) return false;
+    const hiddenEl = el.closest('[aria-hidden="true"]');
+    if (!hiddenEl) return false;
+    return !ariaHiddenAncestorIsPageTrunk(hiddenEl);
+  }
 
   // v0.7.144：祖先鏈狀態 cache。每次 detectByHeuristic 跑時對 500+ signals
   // 逐一沿祖先鏈跑 closest + getComputedStyle，500 signals × 平均 10 層祖先 =
@@ -783,6 +828,8 @@
     // ARIA UI-chrome（dialog / alertdialog / tooltip / aria-modal / aria-hidden）
     // 是 signal 計分專用的排除；祖先鏈 hidden 走共用 predicate。
     if (el.closest && el.closest(HEURISTIC_SKIP_SEL)) return true;
+    // aria-hidden 另判（頁面主幹被 focus-trap 遮蔽時不排除，見 isExcludedByAriaHidden）
+    if (isExcludedByAriaHidden(el)) return true;
     return isAncestorChainHidden(el);
   }
 
@@ -813,10 +860,15 @@
   function withAncestorCache(fn) {
     if (_excludedAncestorCache) return fn();
     _excludedAncestorCache = new WeakMap();
+    // v1.9.19：aria-hidden 主幹判定快取與祖先鏈 cache 同生命週期
+    _ariaTrunkCache = new Map();
+    _ariaBodyLen = -1;
     try {
       return fn();
     } finally {
       _excludedAncestorCache = null;
+      _ariaTrunkCache = null;
+      _ariaBodyLen = -1;
     }
   }
 
