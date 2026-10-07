@@ -830,6 +830,90 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       });
     },
 
+    // 2026-10-07 review D-3 / D-5：「這個事件 / 目標落在 JRead 注入的 UI 上」的單一
+    // 資料源。所有注入 UI 宿主（懸浮按鈕 host、toast host、編輯工具列 host、頁碼
+    // 指示器、scrub 進度條、焦點條、功能浮層 host）id 一律以 `__jread-` 開頭，
+    // 這是結構訊號、不綁個別模組；shadow host 在 composedPath / retarget 後的
+    // target 都還是帶 id 的宿主本身，所以兩種判定都看得到。
+    //   - isInjectedUiPath(e)：給 document / window 層 capture listener 用
+    //     （edit-mode 的 click / mousedown 攔截）——path 內任一節點是注入 UI 即放行
+    //   - isInjectedUiTarget(el)：只有 target 可看時用（paged-mode touchstart）
+    // 注入進 articleEl 的標題節點（title-clone / injected-title）沒有 id、不在範圍。
+    isInjectedUiPath(e) {
+      const path = (e && typeof e.composedPath === 'function') ? e.composedPath() : [];
+      for (const n of path) {
+        if (n && n.nodeType === 1 && typeof n.id === 'string' && n.id.indexOf('__jread-') === 0) return true;
+      }
+      return (e && e.target) ? this.isInjectedUiTarget(e.target) : false;
+    },
+    isInjectedUiTarget(el) {
+      if (!el || el.nodeType !== 1) return false;
+      try {
+        return !!(el.closest && el.closest('[id^="__jread-"]'));
+      } catch (_) { return false; }
+    },
+
+    // 2026-10-07 review B-07 / A-30：inline style 的「分層擁有者」登記簿——同一個
+    // 元素同一個屬性被多個模組（cleaner hide / 編輯模式 hide / styler 各 pass）各自
+    // 「快照 → 寫 → 還原」時，正確性原本全靠「寫入順序與還原順序互為鏡像」。靜態
+    // 進場成立，但動態 hide（observer / 編輯模式點掉 styler 已改寫 display 的
+    // byline、表格）與 reapply 都會打破鏡像：styler 先還成站方值、cleaner 再把
+    // styler 寫的 `block !important` 當「站方原值」寫回，退出後永久殘留（probe
+    // 2026-10-07 實證：編輯模式點掉 byline → 退出後 `display:flex !important`）。
+    //
+    // 模型：每個 (el, prop) 一個 layer stack，每個 owner 一層、記「它蓋掉之前的
+    // 值」。release(owner)：是最上層 → 把它記的 prev 寫回並彈出；不是最上層 →
+    // 把自己的 prev 轉交給上一層、自己抽掉（上層最後還原時就會回到更底的值）。
+    // 任意還原順序結果都是原站值；中途（reapply）抽掉底層不會動到目前可見狀態。
+    // 同一 owner 重複寫同一屬性只更新值、不疊層（restyle 補寫 / 重切）。
+    // 兩個 API 的 owner 字串由呼叫端自訂（'cleaner-hide' / 'styler:byline' …）。
+    _inlineLayers: (typeof WeakMap !== 'undefined') ? new WeakMap() : null,
+    inlineSet(el, prop, value, priority, owner) {
+      if (!el || !el.style || typeof el.style.setProperty !== 'function') return;
+      const layers = this._inlineLayers;
+      if (layers) {
+        let byProp = layers.get(el);
+        if (!byProp) { byProp = new Map(); layers.set(el, byProp); }
+        let stack = byProp.get(prop);
+        if (!stack) { stack = []; byProp.set(prop, stack); }
+        if (!stack.some((l) => l.owner === owner)) {
+          stack.push({
+            owner,
+            prev: el.style.getPropertyValue(prop),
+            prevP: (el.style.getPropertyPriority && el.style.getPropertyPriority(prop)) || ''
+          });
+        }
+      }
+      el.style.setProperty(prop, value, priority || '');
+    },
+    // 回傳 true = 有該 owner 的層並已處理；false = 沒登記（呼叫端可走舊的快照路徑）
+    inlineRelease(el, prop, owner) {
+      const layers = this._inlineLayers;
+      if (!layers || !el) return false;
+      const byProp = layers.get(el);
+      const stack = byProp && byProp.get(prop);
+      if (!stack) return false;
+      const i = stack.findIndex((l) => l.owner === owner);
+      if (i < 0) return false;
+      const layer = stack[i];
+      if (i === stack.length - 1) {
+        if (el.style) {
+          if (layer.prev) el.style.setProperty(prop, layer.prev, layer.prevP || '');
+          else el.style.removeProperty(prop);
+        }
+        stack.pop();
+      } else {
+        stack[i + 1].prev = layer.prev;
+        stack[i + 1].prevP = layer.prevP;
+        stack.splice(i, 1);
+      }
+      if (!stack.length) {
+        byProp.delete(prop);
+        if (!byProp.size) layers.delete(el);
+      }
+      return true;
+    },
+
     // v0.8.17：編輯/互動類 element focus 判定（paged-mode 翻頁鍵 + space-scroll
     // 共用，單一資料源）。原本兩處各寫一份且 paged 版漏了 BUTTON——按鈕 focus 時
     // 方向鍵 / Space 被翻頁攔截、吃掉按鈕的鍵盤啟用（同一份事實雙實作的 drift，

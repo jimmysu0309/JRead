@@ -771,6 +771,10 @@
   // 滾輪 / 觸控板：水平或垂直 delta 都映射成翻頁（文件不可垂直卷動，垂直
   // 滾輪閒置不用反而違反直覺）。翻頁後鎖定一段時間吃掉慣性尾巴。
   function onWheel(e) {
+    // 2026-10-07 review D-4：ctrl + wheel 在所有桌面瀏覽器都是「縮放」語意
+    //（macOS 觸控板捏合縮放也派發成 ctrlKey=true 的 wheel），不是捲動——不攔、
+    // 不累積，讓瀏覽器照常縮放頁面（CDP probe 實證：ctrl+wheel 原本會翻一頁）。
+    if (e.ctrlKey) return;
     // 文件鎖卷動下無原生用途；防 macOS 觸控板水平 swipe 觸發歷史導航。
     // 已知取捨：主文內的巢狀可捲元素（overflow-x:auto 的寬 <pre>/表格）滾輪
     // 也被吃掉轉成翻頁——翻頁模式下滾輪語意統一為翻頁，內捲內容用拖曳捲。
@@ -941,8 +945,20 @@
     }
   }
 
+  // 2026-10-07 review D-5：起點落在 JRead 注入 UI（懸浮按鈕、toast、編輯工具列、
+  // scrub 進度條）上的觸控不是翻頁手勢——listener 掛 window capture，shadow host
+  // 會 retarget 成帶 `__jread-` id 的宿主，拖懸浮按鈕橫越螢幕放手那一刻原本會翻
+  // 一頁（CDP touch probe 實證）；armed 模式下點工具列也不該被當 scrub / disarm。
+  // 頁碼指示器自己例外（它就是 scrub 的入口）。判定單一資料源 NS.isInjectedUiTarget。
+  function isForeignUiTarget(target) {
+    if (isIndicatorTarget(target)) return false;
+    const ns = global.__JRead;
+    return !!(ns && typeof ns.isInjectedUiTarget === 'function' && ns.isInjectedUiTarget(target));
+  }
+
   function onTouchStart(e) {
     if (e.touches.length !== 1) { touchState = null; endScrub(); return; } // 多指讓位（3 指 toggle 等）
+    if (isForeignUiTarget(e.target)) { touchState = null; return; }
     const t = e.touches[0];
     const onIndicator = isIndicatorTarget(e.target);
     // v0.8.166：armed 模式——進度條常駐，整個畫面都是 scrub 面：任何單指起手都進 scrub
@@ -1243,6 +1259,13 @@
 
   function resetPosition() { lastRatio = 0; }
 
+  // 2026-10-07 review D-2：編輯模式期間翻頁模組維持安裝，點掉 / 復原 block 後由
+  // edit-mode 呼叫——內容末端變了要重測頁數、頁碼對齊（idx 超界時退到末頁）。
+  function refresh() {
+    if (!installed || !art) return;
+    remeasureAndReconcile();
+  }
+
   // v1.6.8：退出捲回 anchor——文件順序第一個「fragment 頁碼覆蓋含目前頁」的
   // 內容節點（text node 或 img 等替換元素）。main.js captureExitScrollAnchor
   // 在 uninstall 之前呼叫（此刻 idx / 版面仍有效），退出還原後由
@@ -1326,10 +1349,12 @@
 
   // settings → 模組狀態同步（與 space-scroll.sync 同形）：pagedMode = true
   // 且有 articleEl 才 install。
-  function sync(settings, articleEl) {
+  // 2026-10-07 review D-1：uninstallOpts 轉給 uninstall（main.js 設定切換路徑傳
+  // { deferScrollRestore: true }，捲動由 main.js 以目前頁錨點接管）
+  function sync(settings, articleEl, uninstallOpts) {
     const on = !!(settings && settings.pagedMode === true);
     if (on && articleEl) install(articleEl);
-    else uninstall();
+    else uninstall(uninstallOpts);
   }
 
   const api = {
@@ -1348,6 +1373,7 @@
     install,
     uninstall,
     resetPosition,
+    refresh,
     captureScrollY,
     getPosition,
     goToPage,

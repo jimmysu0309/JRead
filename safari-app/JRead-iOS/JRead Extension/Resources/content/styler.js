@@ -15,6 +15,21 @@
   'use strict';
 
   const NS = window.__JRead;
+
+  // 2026-10-07 review B-07 / A-30：styler 對元素寫 inline display（prewrap 容器 /
+  // byline flex / gallery、de-column、wide-scroll 的 block）一律走 NS.inlineSet 分層
+  // 登記簿、還原走 NS.inlineRelease——cleaner.hide / 編輯模式對同一元素再寫
+  // display 時，兩邊各自快照寫回會互踩（詳見 namespace.js inlineSet 註解與
+  // review-b7-inline-display-owner.spec.js）。登記簿缺席（最小 NS 的 jsdom 環境）
+  // 退回各 pass 自己的快照路徑，行為與舊版一致。
+  function setInlineOwned(el, prop, value, priority, owner) {
+    if (NS && typeof NS.inlineSet === 'function') NS.inlineSet(el, prop, value, priority, owner);
+    else el.style.setProperty(prop, value, priority || '');
+  }
+  // 回 true = 登記簿已把該層還原 / 轉交；false = 沒登記，呼叫端走舊快照寫回
+  function releaseInlineOwned(el, prop, owner) {
+    return !!(NS && typeof NS.inlineRelease === 'function' && NS.inlineRelease(el, prop, owner));
+  }
   if (!NS) return;
 
   const STYLE_ID = '__jread-style';
@@ -127,6 +142,10 @@
   //（Medium「15 min read·5 days ago」藏掉閱讀時間 → 殘留「· 5 days ago」），
   // 標此 attr 用 CSS 隱藏。
   const BYLINE_SEP_ATTR = 'data-jread-byline-sep';
+  // 2026-10-07 review B-08：styler 以 CSS display:none 隱藏的標記集合（isVisiblyShown
+  // 共用）——新增「標記即隱藏」的 attr 時要一併加進來，否則 firstInk / edge / 標題
+  // 錨點會錨在看不見的元素上。
+  const STYLER_HIDDEN_MARK_SEL = `[${KICKER_ATTR}], [${BYLINE_RT_ATTR}], [${BYLINE_TIME_ATTR}], [${BYLINE_PROGRAM_ATTR}], [${BYLINE_SEP_ATTR}]`;
   const BYLINE_SEP_RE = /^[·•‧∙|/／\\\-–—,、.。;；:：]+$/;
   // v1.7.12：多作者 inline 文字流 item（>= 2 條 <a> + 直接分隔文字、無媒體）。
   // 「A、B、C 以及 D」本質是一句話，byline-item 的 inline-flex（nowrap flex row）
@@ -2644,8 +2663,8 @@ html.${HTML_CLASS} body {
       // icon PNG 透明 + light 設計者透白底反而與站點 light visual 一致；
       // 透明 GIF / 小裝飾少見、白底無明顯害處。
       userOverrides += `
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] iframe,
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] img {
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] iframe,
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]):not([${ICON_IMG_ATTR}]) {
   background-color: #fff !important;
 }`;
       // v0.7.154：blockquote 強制清背景。dark / sepia theme 下站點原本為 light
@@ -3252,6 +3271,11 @@ html.${HTML_CLASS}.jread-orion body {
   // 無 display:none 祖先（站點原生隱藏的 heading / 分類標籤都不該當錨點）。
   function isVisiblyShown(el, articleEl) {
     if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
+    // 2026-10-07 review B-08：styler 自己以 CSS `display:none !important` 藏掉的標記
+    //（kicker / 閱讀時間 / 時刻 / 節目 chip / 孤兒分隔符）也算不可見——這些標記由
+    // passBylineKicker 設在 firstInk / edge 判定之前，純看 computed display 在
+    // jsdom（無 cascade）會漏判，attr 判定兩個環境一致。
+    if (el.closest && el.closest(STYLER_HIDDEN_MARK_SEL)) return false;
     const win = articleEl.ownerDocument?.defaultView;
     if (win && win.getComputedStyle) {
       for (let a = el; a && a !== articleEl; a = a.parentElement) {
@@ -3433,7 +3457,7 @@ html.${HTML_CLASS}.jread-orion body {
           prevP: container.style.getPropertyPriority('display'),
         },
       };
-      container.style.setProperty('display', 'block', 'important');
+      setInlineOwned(container, 'display', 'block', 'important', 'styler:prewrap');
 
       // 先把容器內容整包移進第一個段落載體，再由後往前分裂出其餘段落——切出來
       // 的段落是容器的**子元素**而非兄弟，父層 layout（flex / grid / gap）完全
@@ -3577,6 +3601,7 @@ html.${HTML_CLASS}.jread-orion body {
       }
       if (rec.styleSnap) {
         for (const prop of Object.keys(rec.styleSnap)) {
+          if (releaseInlineOwned(container, prop, 'styler:prewrap')) continue;
           const s = rec.styleSnap[prop];
           if (s && s.prev) container.style.setProperty(prop, s.prev, s.prevP || '');
           else container.style.removeProperty(prop);
@@ -5404,7 +5429,7 @@ html.${HTML_CLASS}.jread-orion body {
               // 還原成原始。
               const setStyleImp = (el, prop, val) => {
                 bylineDispSnap.push({ el, prop, prev: el.style.getPropertyValue(prop), prevP: el.style.getPropertyPriority(prop) });
-                el.style.setProperty(prop, val, 'important');
+                setInlineOwned(el, prop, val, 'important', 'styler:byline');
               };
               setMark(root, BYLINE_ATTR);
               setStyleImp(root, 'display', 'flex');
@@ -6215,7 +6240,7 @@ html.${HTML_CLASS}.jread-orion body {
             minHeightPriority: el.style.getPropertyPriority('min-height')
           };
           galleryFlex.push(prior);
-          el.style.setProperty('display', 'block', 'important');
+          setInlineOwned(el, 'display', 'block', 'important', 'styler:gallery');
           el.style.setProperty('height', 'auto', 'important');
           el.style.setProperty('min-height', '0', 'important');
 
@@ -6621,7 +6646,7 @@ html.${HTML_CLASS}.jread-orion body {
                         display: cur.style.getPropertyValue('display'),
                         displayPriority: cur.style.getPropertyPriority('display'),
                       });
-                      cur.style.setProperty('display', 'block', 'important');
+                      setInlineOwned(cur, 'display', 'block', 'important', 'styler:decolumn');
                     }
                   }
                 }
@@ -6670,7 +6695,7 @@ html.${HTML_CLASS}.jread-orion body {
                           display: cur.style.getPropertyValue('display'),
                           displayPriority: cur.style.getPropertyPriority('display'),
                         });
-                        cur.style.setProperty('display', 'block', 'important');
+                        setInlineOwned(cur, 'display', 'block', 'important', 'styler:decolumn');
                       }
                     }
                   }
@@ -6784,7 +6809,7 @@ html.${HTML_CLASS}.jread-orion body {
                   display: el.style.getPropertyValue('display'),
                   displayPriority: el.style.getPropertyPriority('display'),
                 });
-                el.style.setProperty('display', 'block', 'important');
+                setInlineOwned(el, 'display', 'block', 'important', 'styler:decolumn');
               }
             }
 
@@ -6863,7 +6888,7 @@ html.${HTML_CLASS}.jread-orion body {
                 maxWidth: el.style.getPropertyValue('max-width'),
                 maxWidthPriority: el.style.getPropertyPriority('max-width'),
               });
-              el.style.setProperty('display', 'block', 'important');
+              setInlineOwned(el, 'display', 'block', 'important', 'styler:widescroll');
               el.style.setProperty('max-width', '100%', 'important');
               el.style.setProperty('overflow-x', 'auto', 'important');
             }
@@ -6882,6 +6907,13 @@ html.${HTML_CLASS}.jread-orion body {
       // ─── T12：pass 執行順序（單一資料源）──────────────────────────
       // 順序即依賴：各 pass 開頭註解記載「必須在 X 之前/之後」的理由；
       // 關鍵配對由 test/regression/styler-apply-pass-order.spec.js forcing。
+      // 2026-10-07 review B-08：passFirstInkTopMargin / passVisibleEdgeChildMarks 必須
+      // 在 passBylineKicker 之後——kicker（標題前的分類短連結）與 byline 內的閱讀時間
+      // / 時刻 / 節目 chip 都是 CSS 隱藏的標記，先跑會把 margin-top:0 寫在 kicker
+      // 上、EDGE_FIRST 標在 kicker wrapper 上，真正的第一個可見元素 h1 留著站方
+      // margin-top（NPR probe 實證：標題頂距 32px vs 對照組 0px）。順序配對由
+      // styler-apply-pass-order.spec.js 的 ORDER_PAIRS 守門；陣列內不可放註解
+      //（spec 以逗號切成員）。
       const APPLY_PASSES = [
         passContrastProbePhase1,
         passSplitPreWrapParas,
@@ -6900,10 +6932,10 @@ html.${HTML_CLASS}.jread-orion body {
         passDarkSepiaContrastPhase3,
         passCodeBlockBgPhase4,
         passInstallListeners,
-        passFirstInkTopMargin,
-        passVisibleEdgeChildMarks,
         passHeadingPseudoSpacerReset,
         passBylineKicker,
+        passFirstInkTopMargin,
+        passVisibleEdgeChildMarks,
         passBlockquoteMarks,
         passCjkDecorInlineFlowMarks,
         passAncestorPaddingStrip,
@@ -6946,6 +6978,17 @@ html.${HTML_CLASS}.jread-orion body {
      */
     restore(_articleEl, snapshot) {
       if (!snapshot) return;
+      // Pangu spacing 還原：停 MutationObserver、把改過的 text node 還回原值。
+      // 2026-10-07 review B-03：必須排在**所有 DOM 搬動之前**（原本在 restorePreWrap
+      // 之後）——restorePreWrapParagraphs 把段落載體 unwrap 後 `normalize()` 會把相鄰
+      // text node 合併：第一個節點的 nodeValue 變成串接字串（≠ panguize(original)、
+      // 比對失敗不還原）、其餘節點 detached；加上 pangu observer 還活著、搬動中的
+      // 節點被再 panguize 一次。結果 X / Threads 這類 pre-wrap 貼文退出閱讀模式後
+      // 盤古空白與全形標點永久留在原頁（Chromium probe 實證）。panguRestore 只看
+      // snapshot.changes、不依賴任何 reader attr，放最前面零副作用。
+      if (snapshot.panguSnap) {
+        panguRestore(snapshot.panguSnap);
+      }
       // v0.8.130：清 marker <style> + 可能的 adopted sheet（CSP fallback 對稱還原）
       NS.removeCssText(STYLE_ID);
 
@@ -7104,6 +7147,7 @@ html.${HTML_CLASS}.jread-orion body {
         for (const s of snapshot.bylineDispSnap) {
           if (!s || !s.el) continue;
           const prop = s.prop || 'display';
+          if (releaseInlineOwned(s.el, prop, 'styler:byline')) continue;
           if (s.prev) s.el.style.setProperty(prop, s.prev, s.prevP || '');
           else s.el.style.removeProperty(prop);
         }
@@ -7160,13 +7204,6 @@ html.${HTML_CLASS}.jread-orion body {
         } else {
           snapshot.firstInk.style.removeProperty('margin-top');
         }
-      }
-
-      // Pangu spacing 還原：停 MutationObserver、把改過的 text node 還回原值
-      // 必須在移除 ARTICLE_ATTR 之後（restore 順序對 DOM 副作用沒有依賴，但
-      // panguRestore 內部只看 snapshot.changes，不依賴 reader mode attr）
-      if (snapshot.panguSnap) {
-        panguRestore(snapshot.panguSnap);
       }
 
       // v0.7.179：還原 ancestor padding strip
@@ -7286,6 +7323,7 @@ html.${HTML_CLASS}.jread-orion body {
           // gallery container 自身: 還原 display / height / min-height
           if (g.hasOwnProperty('display')) {
             for (const prop of ['display', 'height', 'min-height']) {
+              if (prop === 'display' && releaseInlineOwned(g.el, 'display', 'styler:gallery')) continue;
               const key = prop === 'min-height' ? 'minHeight' : prop;
               const value = g[key];
               const priority = g[key + 'Priority'];
@@ -7340,6 +7378,7 @@ html.${HTML_CLASS}.jread-orion body {
         for (const w of snapshot.wideScroll) {
           if (!w || !w.el) continue;
           for (const prop of ['display', 'overflow-x', 'max-width']) {
+            if (prop === 'display' && releaseInlineOwned(w.el, 'display', 'styler:widescroll')) continue;
             const key = prop === 'overflow-x' ? 'overflowX' : (prop === 'max-width' ? 'maxWidth' : prop);
             const value = w[key];
             if (value) w.el.style.setProperty(prop, value, w[key + 'Priority'] || '');
@@ -7360,6 +7399,7 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.textColFlex)) {
         for (const t of snapshot.textColFlex) {
           if (!t || !t.el) continue;
+          if (releaseInlineOwned(t.el, 'display', 'styler:decolumn')) continue;
           if (t.display) {
             t.el.style.setProperty('display', t.display, t.displayPriority || '');
           } else {
