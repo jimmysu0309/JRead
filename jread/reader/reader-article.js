@@ -177,7 +177,7 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta };
+  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -268,9 +268,32 @@
     NS.state.readerHostPage = true;
     NS.onReaderExit = backToFeed;
 
+    // 2026-10-07 review C-22 / F-3：進場失敗（回 false 或 reject）要有出口——
+    // 狀態列已拆、容器已掛，若靜默失敗使用者只看到裸文章、ESC 也退不回（main.js
+    // 的 exitReaderMode 以 active 為 guard）。把狀態列放回去顯示失敗文案 + 回
+    // feed 連結，不依賴 active flag。
     if (typeof NS.enterFromContainer === 'function') {
-      NS.enterFromContainer(container);
+      const onEnterFailed = (err) => showEnterFailed(doc, statusEl, container, err);
+      Promise.resolve()
+        .then(() => NS.enterFromContainer(container))
+        .then((ok) => { if (ok === false) onEnterFailed(null); }, onEnterFailed);
     }
+  }
+
+  // 進場失敗出口：移除半套容器、把狀態列放回 body 開頭，顯示文案 + 回 feed 連結
+  function showEnterFailed(doc, statusEl, container, err) {
+    try { if (container && container.parentNode) container.parentNode.removeChild(container); } catch (_) {}
+    const el = statusEl || doc.createElement('div');
+    el.id = 'jr-status';
+    el.textContent = '';
+    const msg = doc.createElement('span');
+    msg.textContent = '套用閱讀版型失敗' + (err && err.message ? '：' + String(err.message).slice(0, 80) : '') + '，';
+    const back = doc.createElement('a');
+    back.href = 'reader.html';
+    back.textContent = '回文章清單';
+    el.appendChild(msg);
+    el.appendChild(back);
+    if (!el.parentNode) doc.body.insertBefore(el, doc.body.firstChild);
   }
 
   function loadErrorMessage(result) {

@@ -1238,11 +1238,48 @@
   // LCA 一律走 findTitleViaLca helper（單一資料源不變式，forcing spec
   // detector-lca-helper.spec.js）——順帶沿用它的 body/html guard：LCA 落在
   // body 的候選本來就會被 tryLcaPromote 拒絕，這裡先濾掉不影響結果。
+  // 2026-10-07 review C-1：「站名 logo H1」純結構判定——ensureArticleContainsTitleH1
+  // 路徑 0 / 1 / 2 共用「LCA ≠ body 就安全」同一個假設，但 logo H1 與主文的 LCA
+  // 常是 #page / .wp-site-blocks 這類非 body 的整頁 wrapper（Substack / WordPress
+  // 慣例把站名放 <h1>），og 比對一失效（翻譯後 / SEO og:title ≠ headline）就把
+  // sidebar / footer / 留言整頁括進主文。三個訊號任一命中即視為 logo（noahpinion
+  // 站名 H1 命中 (a)；udn / ltn / cna / 報導者 / CNN / MDN / 經理人 七站文章 H1
+  // 三者皆不中，2026-10-07 probe）：
+  //   (a) H1 唯一子元素是 <a href>、且 href 解析到站點根（pathname === '/'）
+  //   (b) H1 文字正規化後等於 og:site_name
+  //   (c) H1 位於 ARIA banner 地標內：[role="banner"]，或不在 main / article /
+  //       section / aside / [role="main"] 內的 <header>（HTML-AAM 對 header 的
+  //       banner 對映條件；article 內的 <header class="entry-header"> 不算）
+  function isSiteLogoH1(h) {
+    if (!h) return false;
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    // (a) 整顆 H1 = 連到站根的 <a>
+    if (h.children.length === 1 && h.firstElementChild.tagName === 'A') {
+      const href = h.firstElementChild.getAttribute('href');
+      if (href) {
+        try {
+          const u = new URL(href, location.href);
+          if (u.origin === location.origin && u.pathname === '/' && !u.search) return true;
+        } catch (_) { /* 非法 href：不算 */ }
+      }
+    }
+    // (b) 文字 == og:site_name
+    const site = document.querySelector('meta[property="og:site_name"]');
+    const siteName = site && norm(site.getAttribute('content'));
+    if (siteName && norm(h.textContent) === siteName) return true;
+    // (c) banner 地標
+    if (h.closest && h.closest('[role="banner"]')) return true;
+    const hdr = h.closest && h.closest('header');
+    if (hdr && !hdr.closest('main, article, section, aside, [role="main"]')) return true;
+    return false;
+  }
+
   function h1sByLcaDistance(articleEl) {
     const out = [];
     for (const h of document.querySelectorAll('h1')) {
       if (articleEl.contains(h)) continue;
       if (isHeadingInsideAnchor(h)) continue;
+      if (isSiteLogoH1(h)) continue;
       const r = findTitleViaLca(articleEl, h, Infinity);
       if (!r) continue;
       let dist = 0;
@@ -1322,7 +1359,9 @@
     // 共享非 body 容器才升，masthead logo H1 在 <header>、主文在 <main> 時 LCA=body
     // 被拒。ChinaTalk（多 H1）/ wya（12 H1）allH1.length !== 1 不觸發此路徑。
     const allH1 = document.querySelectorAll('h1');
-    if (allH1.length === 1 && !articleEl.contains(allH1[0])) {
+    // 2026-10-07 review C-1：唯一 H1 若是站名 logo（見 isSiteLogoH1）不升——
+    // 「唯一 H1 = 文章主標」的前提對「站名 H1 + 文章標題 H2」版型不成立。
+    if (allH1.length === 1 && !articleEl.contains(allH1[0]) && !isSiteLogoH1(allH1[0])) {
       const r = findTitleViaLca(articleEl, allH1[0], Infinity);
       if (r) return r;
     }
@@ -1739,16 +1778,23 @@
     // raw 超過 baseTitle×4+40 的元素 normalize 後仍不可能落在 ≤ ×1.5 門檻內
     // （標題載體不會有 60%+ 是可刪空白標點），直接跳過
     const RAW_LEN_CAP = baseTitle.length * 4 + 40;
+    // 2026-10-07 review C-5(b)：候選下限改 CJK 權重（與入口 gate 同單位、同門檻
+    // 5）。舊 raw 10 讓 3–9 字中文標題（zh.wikipedia「珍珠奶茶」「日月潭」把標題
+    // heading 降成 div 後 probe 實證：舊 gate 候選為空、整支函式靜默 no-op；權重
+    // gate 命中標題載體）。raw 10 原本兼任「baseTitle.includes(t) 分支的短片段
+    // guard」（避免 2–3 字片段當標題）——改以 60% 長度比接手，與 NS.titleSimilar
+    // 同一判準。
+    const CAND_MIN_WEIGHT = 5;
     for (const el of articleEl.querySelectorAll('p, div, span, h5, h6')) {
       const rawT = el.textContent || '';
-      if (rawT.length < 10 || rawT.length > RAW_LEN_CAP) continue;
+      if (rawT.length > RAW_LEN_CAP || NS.cjkWeightedLen(rawT) < CAND_MIN_WEIGHT) continue;
       const t = normalizeTitle(rawT);
-      if (t.length < 10 || t.length > baseTitle.length * 1.5) continue;
+      if (NS.cjkWeightedLen(t) < CAND_MIN_WEIGHT || t.length > baseTitle.length * 1.5) continue;
       // 包含 baseTitle 60%+ 字元
       let overlap = 0;
       if (t === baseTitle) overlap = 1.0;
       else if (t.includes(baseTitle)) overlap = 0.9;
-      else if (baseTitle.includes(t)) overlap = 0.85;
+      else if (baseTitle.includes(t) && t.length >= baseTitle.length * 0.6) overlap = 0.85;
       if (overlap < 0.85) continue;
       // 視覺呈現 guard 放在 overlap 之後（命中才查祖先鏈，省 getComputedStyle）
       if (!isCandidateVisiblyPresented(el)) continue;
