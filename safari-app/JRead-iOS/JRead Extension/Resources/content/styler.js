@@ -168,6 +168,24 @@
   //    與原 :has 對 data-jread-hidden attr 的反應同刻生效）、cleaner restore()
   //    清除；本檔只負責 CSS 端。
   const EMBED_WRAP_ATTR = 'data-jread-embed-wrap';
+  // 2026-10-07 review B-01：「class 帶 ratio token 的 aspect 容器」標記。原本四條
+  // CSS（aspect-ratio / padding reset、後代 static-flow、::before/::after 中和、
+  // > svg spinner 隱藏）與 EMBED_WRAP_CANDIDATE_SEL 共用 `[class*="ratio" i]`
+  // **子字串**比對——illustration / decoration / duration / generation /
+  // integration / configuration 全命中：`<figure class="illustration"><svg>`
+  // 的內容 SVG 被整張藏掉、後代打回 static、站方 ::before 全滅（ltn / New
+  // Yorker / CNBC / cna / GitHub 五頁注入 probe 實證：svg display none）。
+  // CSS 沒有 token 邊界比對（`~=` 只認整個 class），改由 apply() 的
+  // markRatioClassBoxes 用 RATIO_CLASS_TOKEN_RE 標 attr、CSS 改 attr-keyed，
+  // 語意（aspect-ratio / ratio-16x9 / AspectRatioContainer / wp-has-aspect-ratio
+  // 都命中）不變；晚 mount 的由 remarkDynamicMarkers 補標。placeholder /
+  // object-fit 兩個字面不撞英文常用字、維持 CSS 子字串比對。
+  const RATIO_CLASS_ATTR = 'data-jread-ratio-class';
+  // token 邊界：ratio 前面是字首 / 非字母 / camelCase 大寫 R 前的小寫字母，後面
+  // 不接小寫字母（接 -、_、數字、大寫或字尾）。illustration（前 t 後 n）、
+  // duration（後 n）不中；aspect-ratio、ratio-16x9、ratio_box、AspectRatioContainer
+  // 命中。
+  const RATIO_CLASS_TOKEN_RE = /(?:^|[^A-Za-z]|[a-z](?=R))[Rr]atio(?![a-z])/;
   // v1.8.2：lazy 影片嵌入（iframe 尚未 mount）的 aspect 佔位框內、被 reader
   // 媒體 static 規則打回 flow 的縮圖 → 標此 attr 讓它恢復「absolute 填滿佔位
   // 框」。與 EMBED_WRAP_ATTR 成對：EMBED_WRAP 豁免祖先端 static-flow 配套
@@ -1320,7 +1338,7 @@ ${MEDIA_CAP_SEL} {
    container），只 picture 一個 tag。 */
 [${ARTICLE_ATTR}="1"] picture,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"],
-[${ARTICLE_ATTR}="1"] [class*="ratio" i],
+[${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i] {
   aspect-ratio: auto !important;
   padding-bottom: 0 !important;
@@ -1365,7 +1383,7 @@ ${MEDIA_CAP_SEL} {
    FILL_IFRAME 機制接手 pin 回 inset:0 填滿 aspect box。圖片塌陷容器無 iframe、
    不受此排除影響；圖片本身另有 :has(>img) static 配套（line ~1062）兜底。 */
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) *,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) *,
+[${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) *,
 [${ARTICLE_ATTR}="1"] [class*="object-fit" i]:not([${PLAYER_ATTR}="1"]):not([${EMBED_WRAP_ATTR}="1"]) * {
   position: static !important;
   top: auto !important;
@@ -1633,8 +1651,8 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] figure::after,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::before,
 [${ARTICLE_ATTR}="1"] [class*="object-fit"]::after,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]::before,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i]::after,
+[${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"]::before,
+[${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"]::after,
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i]::before,
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i]::after {
   content: none !important;
@@ -1659,7 +1677,7 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
    上方撐出空白。direct child <svg> 是「lazy 佔位 spinner」的結構訊號（內容用
    svg 圖表掛在 figure/content div、不會是 lazy wrapper 的 direct child）。 */
 [${ARTICLE_ATTR}="1"] [class*="placeholder" i] > svg,
-[${ARTICLE_ATTR}="1"] [class*="ratio" i] > svg,
+[${ARTICLE_ATTR}="1"] [${RATIO_CLASS_ATTR}="1"] > svg,
 [${ARTICLE_ATTR}="1"] [class*="object-fit" i] > svg {
   display: none !important;
 }
@@ -3930,7 +3948,7 @@ html.${HTML_CLASS}.jread-orion body {
   // 已標過的跳過（idempotent，動態 remark 重跑安全）；新標的 push 進 marked
   // 供 restore 移除。
   const EMBED_WRAP_CANDIDATE_SEL =
-    '[class*="placeholder" i], [class*="ratio" i], [class*="object-fit" i]';
+    '[class*="placeholder" i], [' + RATIO_CLASS_ATTR + '="1"], [class*="object-fit" i]';
   // v1.8.2：lazy 影片嵌入的 aspect 佔位框偵測（iframe 尚未 mount）。
   // 結構訊號（硬規則 3，非站點 / class 特判）——「padding hack 佔位框」四件套：
   //   1. 垂直 padding（top + bottom）撐出 > 40px 的高度
@@ -3963,6 +3981,27 @@ html.${HTML_CLASS}.jread-orion body {
       if (NS.isAspectPlaceholderFrame(el)) return el;
     }
     return null;
+  }
+  // 2026-10-07 review B-01：class 帶 ratio token 的容器標 RATIO_CLASS_ATTR（見
+  // 常數註解）。純 classList 比對、不量 layout；scopeEl（選填）給動態補標只掃
+  // 新增子樹（含自身）。必須在 passSetArticleAttr **之前**跑：attr-keyed CSS
+  // 與 ARTICLE_ATTR 同刻生效，與原 class 子字串選擇器的時序一致（後續
+  // passMarkPlayers / passMarkFillIframes 的 computed 量測依賴這些規則已套）。
+  function markRatioClassBoxes(articleEl, marked, scopeEl) {
+    const root = scopeEl || articleEl;
+    const els = (root.matches && root.matches('[class*="ratio" i]'))
+      ? [root, ...root.querySelectorAll('[class*="ratio" i]')]
+      : root.querySelectorAll('[class*="ratio" i]');
+    for (const el of els) {
+      if (el.getAttribute(RATIO_CLASS_ATTR) === '1') continue;
+      const list = el.classList;
+      if (!list || !list.length) continue;
+      let hit = false;
+      for (const c of list) { if (RATIO_CLASS_TOKEN_RE.test(c)) { hit = true; break; } }
+      if (!hit) continue;
+      el.setAttribute(RATIO_CLASS_ATTR, '1');
+      marked.push(el);
+    }
   }
   function markEmbedWrapIframes(articleEl, marked, fillMarked) {
     for (const el of articleEl.querySelectorAll(EMBED_WRAP_CANDIDATE_SEL)) {
@@ -4326,6 +4365,8 @@ html.${HTML_CLASS}.jread-orion body {
       const siteUiMarked = [];
       const fillIframes = [];
       const embedWrapMarked = [];
+      // 2026-10-07 review B-01：class ratio token 容器標記
+      const ratioClassMarked = [];
       // v1.8.2：lazy 影片佔位框內的縮圖標記 / ::before aspect 佔位容器標記
       const embedFillMarked = [];
       const aspectPseudoMarked = [];
@@ -4350,7 +4391,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -4738,6 +4779,11 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passMarkRatioClassBoxes = () => {
+        // 2026-10-07 review B-01：必須在 passSetArticleAttr 之前（見函式註解）
+        markRatioClassBoxes(articleEl, ratioClassMarked);
+      };
+
       const passMarkEmbedHeadingAbsAnchors = () => {
         // v1.6.30（#13）：EMBED_WRAP / HEADING_LINK 標記。必須在下方 FILL_IFRAME
         // 量測**之前**跑——EMBED_WRAP_ATTR 讓 static-flow 規則豁免 embed 子樹，
@@ -4750,7 +4796,7 @@ html.${HTML_CLASS}.jread-orion body {
         // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
         // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
         markInlineHighlights(articleEl, siteUiMarked);
-        activeMarkState = { articleEl, embedWrapMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked,
+        activeMarkState = { articleEl, embedWrapMarked, ratioClassMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked,
           // 呼叫當下才讀 classifyLateImg（與 passClassifyImages 的執行先後無關）
           classifyLateImg: (img) => { if (classifyLateImg) classifyLateImg(img); } };
       };
@@ -6208,7 +6254,7 @@ html.${HTML_CLASS}.jread-orion body {
         // 出超過圖片內容的空間 → 圖片下方一大塊假空白（Jimmy 2026-06-20 The Verge
         // lede / gallery wrapper 用雜湊 atomic class 設 aspect-ratio:1/1、實際 landscape
         // 圖渲染 405px、box 撐 608px → 203px 假空白；截圖回報）。
-        // 上方 CSS [class*="ratio" i] reset 只認 class 名含 "ratio" 的容器（New Yorker
+        // 上方 CSS [RATIO_CLASS_ATTR] reset 只認 class 帶 "ratio" token 的容器（New Yorker
         // AspectRatioContainer 類），SPA 站把 aspect-ratio 塞進 hash class（_1m5y14k5）
         // 漏網。改用 computed aspect-ratio !== 'auto' 這個結構訊號（非 class / hostname
         // 特判，符合硬規則 3）：mediaAncestors 內任何帶實際 aspect-ratio 的 wrapper
@@ -6842,6 +6888,7 @@ html.${HTML_CLASS}.jread-orion body {
         passInjectCss,
         passClassifyImages,
         passMarkTextDivs,
+        passMarkRatioClassBoxes,
         passSetArticleAttr,
         passMarkPlayers,
         passMarkEmbedHeadingAbsAnchors,
@@ -6990,6 +7037,12 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.embedWrapMarked)) {
         for (const el of snapshot.embedWrapMarked) {
           if (el && el.removeAttribute) el.removeAttribute(EMBED_WRAP_ATTR);
+        }
+      }
+      // 2026-10-07 review B-01：移除 class ratio token 標記
+      if (Array.isArray(snapshot.ratioClassMarked)) {
+        for (const el of snapshot.ratioClassMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(RATIO_CLASS_ATTR);
         }
       }
       if (Array.isArray(snapshot.headingLinkMarked)) {
@@ -7328,6 +7381,12 @@ html.${HTML_CLASS}.jread-orion body {
       const s = activeMarkState;
       if (!s || !s.articleEl || !s.articleEl.isConnected) return;
       if (!node || node.nodeType !== 1 || !s.articleEl.contains(node)) return;
+      // 2026-10-07 review B-01：先補 ratio token 標記（EMBED_WRAP 候選集合依賴它）
+      if (Array.isArray(s.ratioClassMarked) &&
+          ((node.matches && node.matches('[class*="ratio" i]')) ||
+           (node.querySelector && node.querySelector('[class*="ratio" i]')))) {
+        markRatioClassBoxes(s.articleEl, s.ratioClassMarked, node);
+      }
       const hasIframe = (node.matches && node.matches('iframe')) ||
         (node.querySelector && node.querySelector('iframe'));
       if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked, s.embedFillMarked);

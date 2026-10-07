@@ -3799,8 +3799,16 @@
         else if (parent.contains(articleEl)) { /* 不 hide 主文祖先 */ }
         else {
           const parentText = norm(parent.textContent);
+          // 2026-10-07 review A-02：regex 分支對 parent **全文**做 unanchored
+          // 比對、無長度上限——noise link 直接掛在內文 wrapper 下（udn money
+          // `story-flex-bt-wrapper` 2.3K 字 + 「看更多」實測有此結構）時，只要
+          // 全文任一處提到「下載 APP」「加入會員」，整個 wrapper 就被當 CTA 段落
+          // 清掉。補主文 guard：parent 含主文段落（單段 ≥ 100 / 累計 ≥ 300 /
+          // 自身即散文 div）就不升級，只清 link 本身。ratio 分支（link 占 80%）
+          // 分母大時本就不會命中，不動。
           if (parentText.length > 0 &&
-              (text.length / parentText.length >= 0.8 || CTA_PROMO_P_RE.test(parentText))) {
+              (text.length / parentText.length >= 0.8 ||
+               (CTA_PROMO_P_RE.test(parentText) && !wrapperContainsMainContentP(parent)))) {
             target = parent;
           }
         }
@@ -4076,6 +4084,16 @@
   // 這類「極短、零 link、兄弟只有標題」的 label 欄全部漏網。
   const CATEGORY_LABEL_MAX_LEN = 30;
   const CATEGORY_HEADING_SIBLING_MIN_TEXT = 50;
+
+  const PARAGRAPH_CARRIER_TAG_RE = /^(?:P|LI|BLOCKQUOTE|DD|DT|FIGCAPTION)$/;
+  // 兩元素的 rect 是否垂直重疊（同一列並排）。任一高度為 0（jsdom / 未
+  // render）視為「無幾何資訊」回 true，呼叫端的幾何 guard 不擋。
+  function rectsVerticallyOverlap(a, b) {
+    let ra, rb;
+    try { ra = a.getBoundingClientRect(); rb = b.getBoundingClientRect(); } catch (_) { return true; }
+    if (!ra || !rb || !ra.height || !rb.height) return true;
+    return ra.top < rb.bottom - 0.5 && rb.top < ra.bottom - 0.5;
+  }
 
   // 條件 E 的 image guard：rail 內若含 >= 120×120 的 <img>/<picture> 視為
   // 真圖片欄（雜誌側圖排版）不 hide；書籤 / 分享 icon 那種小 icon 放行。
@@ -4463,7 +4481,9 @@
       for (const c of children) {
         if (c === headingSib) continue;
         const cText = norm(c.textContent);
-        if (cText.length > CATEGORY_LABEL_MAX_LEN) continue;
+        // 2026-10-07 review A-01：門檻改 CJK 權重（30 raw 中文字是一句完整回答，
+        // 不是 label）。
+        if (NS.cjkWeightedLen(cText) > CATEGORY_LABEL_MAX_LEN) continue;
         if (cText.length === 0) continue;
         if (isInPreserved(c)) continue;
         if (c.dataset && c.dataset.jreadHidden === '1') continue;
@@ -4477,6 +4497,15 @@
         if (c.querySelector && c.querySelector('time')) continue;
         if (c.querySelector && c.querySelector('img, picture, video')) continue;
         if (BYLINE_TEXT_RE.test(cText)) continue;
+        // 2026-10-07 review A-01：條件 D 描述的是「與標題**並排**的微型欄」，
+        // 入口原本只看 children 數與文字量、沒有任何並排訊號——「heading +
+        // 一行短段落」上下堆疊的結構（問答體、章節標題 + 一句話）會整句被清。
+        // 段落載體（p / li / blockquote / dd / figcaption）加幾何 guard：與
+        // heading sibling 的 rect 必須垂直重疊（同一列並排，CNN "News" 型）才
+        // 算欄；上下堆疊放行。只對段落載體收斂——div / span 型的堆疊 eyebrow
+        // 仍照舊清（BBC index 卡片 metadata 實測全是堆疊 div，不動既有行為）。
+        // jsdom 無幾何（兩者高度皆 0）時不擋，既有 fixture 行為不變。
+        if (PARAGRAPH_CARRIER_TAG_RE.test(c.tagName) && !rectsVerticallyOverlap(c, headingSib)) continue;
         hide(c, hidden);
       }
     }
@@ -4605,8 +4634,72 @@
       let box;
       try { box = clipEl.getBoundingClientRect(); } catch (_) { continue; }
       if (!box || box.height < 1 || box.width < 1) continue;
+      // 2026-10-07 review A-04：規則目標是「設計性裁掉的 figcaption」（NYT），
+      // 但同樣的入口（overflow hidden + 溢出 + 子元素完全出框）也命中行動版
+      //「展開全文」截斷閘門（正文 wrapper max-height + 按鈕）。舊 guard 只認
+      //「單一 <p> > 500 raw 字」——中文段落 80–200 字一段也沒有，閘門下的段落
+      // 全被 display:none，按鈕又被無條件清掉 → 內容徹底讀不到（ltn / udn /
+      // cna 真實頁加閘門 probe 實證：5 段中 4 段被藏、剩 1 段 render）。
+      // 結構判準：出框內容累計散文量 ≥ CLIP_PROSE_GATE_MIN（CJK 權重）＝被裁
+      // 的是正文不是 caption → 整容器不走 hide，改中和 max-height / overflow
+      // 把閘門攤開（走 expandCollapsedSections 同款 snapshot / restore）。
+      // hideCroppedBelowBox 的 per-child 500 raw 門檻維持不動（NYT 負控制 C）：
+      // 任何單段過 500 raw 的中文段落權重必 ≥ 300、早被本閘門接走。
+      const prose = croppedProseWeight(clipEl, box);
+      if (prose >= CLIP_PROSE_GATE_MIN) {
+        expandProseClipGate(clipEl, hidden);
+        continue;
+      }
       hideCroppedBelowBox(clipEl, box, hidden);
     }
+  }
+
+  // 出框（完全落在 box 下緣之外）的散文量：<p> 與 WYSIWYG 段落 div 的文字，
+  // CJK 權重計。只量「出框」的部分——框內的段落是原頁就看得到的，不算被裁。
+  const CLIP_PROSE_GATE_MIN = 300;
+  function croppedProseWeight(clipEl, box) {
+    let acc = 0;
+    const walk = (node) => {
+      if (!node.children) return;
+      for (const child of node.children) {
+        if (child.dataset && child.dataset.jreadHidden === '1') continue;
+        let r = null;
+        try { r = child.getBoundingClientRect(); } catch (_) { r = null; }
+        const fullyBelow = r && r.height > 0 && r.width > 0 && r.top >= box.bottom - 0.5;
+        if (fullyBelow) {
+          if (child.tagName === 'P' || isProseParagraphDiv(child)) {
+            acc += NS.cjkWeightedLen(norm(child.textContent));
+            if (acc >= CLIP_PROSE_GATE_MIN) return;
+            continue;
+          }
+          for (const p of child.querySelectorAll ? child.querySelectorAll('p') : []) {
+            acc += NS.cjkWeightedLen(norm(p.textContent));
+            if (acc >= CLIP_PROSE_GATE_MIN) return;
+          }
+          continue;
+        }
+        walk(child);
+        if (acc >= CLIP_PROSE_GATE_MIN) return;
+      }
+    };
+    walk(clipEl);
+    return acc;
+  }
+
+  // 散文截斷閘門：中和 max-height / height / overflow（只動真的在裁切的宣告），
+  // 快照進 __styleResets 由 restoreAllStyleResets 還原。
+  function expandProseClipGate(clipEl, hidden) {
+    let cs;
+    try { cs = window.getComputedStyle(clipEl); } catch (_) { return; }
+    if (!cs) return;
+    const decls = {};
+    if (cs.maxHeight && cs.maxHeight !== 'none') decls['max-height'] = 'none';
+    if (cs.height && cs.height !== 'auto' && clipEl.scrollHeight > clipEl.clientHeight + 1) decls['height'] = 'auto';
+    decls['overflow'] = 'visible';
+    const prev = snapshotStyles(clipEl, ['max-height', 'height', 'overflow']);
+    applyImportant(clipEl, decls);
+    clipEl.setAttribute(EXPANDED_ATTR, '1');
+    addStyleResets(hidden, [{ el: clipEl, prev, __expandedAttr: true }]);
   }
 
   // 遞迴：完全落在 box 下緣外且無媒體 / h1 / 長段落 → hide；部分在框內或
@@ -7480,6 +7573,12 @@
     for (const a of articleEl.querySelectorAll('a[href^="javascript:"]')) {
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      // 2026-10-07 review A-03：老 CMS lightbox 寫法 `<a href="javascript:;"
+      // onclick="openLightbox()"><img src="hero.jpg"></a>` 包著主圖——v0.8.36
+      // B2 把內容圖豁免收斂成 anchorIsContentImageLink 時套了 keyword /
+      // icon-only / 動態三條 path，本條漏套（ltn 真實頁把主圖 <a> 改成
+      // javascript: 後 probe 實證：主圖連坐 display:none）。
+      if (anchorIsContentImageLink(a)) continue;
       hide(a, hidden);
     }
   }

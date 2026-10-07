@@ -415,13 +415,27 @@
   // 不另造排版）。container 已是 Readwise 清乾淨的主文，跳過通用 cleaner
   // （hiddenEls=[]，比照 enterFbPostMode——通用 cleaner 為 live web DOM 雜訊調校，
   // 對乾淨文章 HTML 會過度修剪）。reader-app.js 建好 container 後直接呼叫。
+  // 2026-10-07 review C-22 / F-3：四條 enter 路徑中唯一沒包容錯的一條。
+  // finalizeEnter 內 styler.apply（Readwise 任意 HTML：表格 / 深巢狀 / 奇異
+  // attr）中途 throw 時 NS.state.active 停在 false、articleEl 已設、keyguard /
+  // ESC / positionMemory 沒裝——而 reader 頁的退出語意全靠 exitReaderMode →
+  // NS.onReaderExit，`!active` guard 讓這個 hook 永遠走不到：使用者卡在裸文章、
+  // 沒有訊息、ESC / 懸浮按鈕都無聲。比照 enterReaderModeImpl（v0.8.36）：catch
+  // 內走 exitReaderModeImpl 還原半套 state（對部分設定的 state 安全）、回 false
+  // 讓呼叫端（reader-article.js）顯示失敗文案與回 feed 連結。
   async function enterFromContainer(container) {
     if (!container) return false;
     const settings = await getSettings();
     NS.state.articleEl = container;
     NS.state.confidence = 1;
     NS.state.hiddenEls = [];
-    return finalizeEnter(container, settings);
+    try {
+      return finalizeEnter(container, settings);
+    } catch (err) {
+      console.warn('[JRead] reader 頁套用版型失敗，還原半套狀態：', err);
+      try { exitReaderModeImpl(); } catch (_) { /* 還原失敗：console 已有訊號 */ }
+      return false;
+    }
   }
 
   // v0.7.143：in-flight guard 防快速雙擊快速鍵造成的 race。
@@ -2182,7 +2196,13 @@
     // articleEl 仍連在文件上。還連著就保持 reader mode、只更新 _spaLastUrl。
     // cinema 模式 articleEl 為 null，自然走原 exit 路徑（YouTube SPA 導航
     // 行為不變）。
-    if (NS.state.active && NS.state.articleEl && NS.state.articleEl.isConnected) return;
+    // 2026-10-07 review C-2：合成容器（x-thread / fb-post clone、shadow 替身）是
+    // JRead 自己掛在 body 的，站方路由切換不會拆它——isConnected 永遠 true、上面
+    // 的豁免會把真導航也當無限捲動（x.com 上一頁後 reader 卡在舊推文串，cage
+    // 實證）。這類容器一律視為「舊路由的 DOM」走 exit + silent 重進；原站 DOM
+    // 容器維持 isConnected 判定（無限捲動站行為不變）。
+    if (NS.state.active && NS.state.articleEl && NS.state.articleEl.isConnected &&
+        !NS.isSyntheticReaderContainer(NS.state.articleEl)) return;
     // 路由變化：reader card 綁的是舊路由 DOM，先同步退出
     const wasActive = NS.state.active && !NS.state.cinemaActive;
     if (NS.state.active) {

@@ -174,6 +174,23 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return window.__JRead.foldTitlePunct(stripped);
     },
 
+    // 2026-10-07 review C-2：JRead 自己掛在 body 的合成 reader 容器（x-thread /
+    // fb-post 的 clone 容器、shadow DOM 替身）。SPA 路由變化時 main.js 用
+    // `articleEl.isConnected` 判「是不是真導航」（v0.8.45 無限捲動豁免），對這
+    // 三種容器永遠 true——站方路由切換不會拆 JRead 自己掛的節點，x.com 上一頁
+    // / 點另一則 status 後 reader 永遠顯示舊推文串（cage 2026-10-07 實證）。
+    // 三個 attr 字串與 x-thread.js READER_ATTR / fb-post.js READER_ATTR /
+    // detector.js SHADOW_REPLICA_ATTR 必須一致（forcing：review-b1-spa-synthetic-
+    // container.spec.js）。
+    SYNTHETIC_READER_ATTRS: ['data-jread-x-reader', 'data-jread-fb-reader', 'data-jread-shadow-replica'],
+    isSyntheticReaderContainer(el) {
+      if (!el || el.nodeType !== 1 || !el.hasAttribute) return false;
+      for (const a of window.__JRead.SYNTHETIC_READER_ATTRS) {
+        if (el.hasAttribute(a)) return true;
+      }
+      return false;
+    },
+
     // v1.7.40：標題相似比對單一資料源（批次 2 review D3/D4——原 detector 內
     // titleMatches（8 字 gate）與 matchesBaseTitle（5 字 gate）兩實作已 drift，
     // 合一為對稱雙向包含 + 60% 長度比）。
