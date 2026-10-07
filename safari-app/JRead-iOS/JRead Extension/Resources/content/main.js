@@ -107,7 +107,8 @@
   // editable 判定刻意不用 NS.isEditableTarget（含 BUTTON）——button focus 時 ESC
   // 仍應退出閱讀模式（button 沒有「取消輸入」語意）；keyguardHandler 同理。
   // NS.isEditableTarget 的 BUTTON 豁免是給 paged-mode 翻頁鍵用的（space 觸發
-  // button click 的原生行為要保留）。
+  // button click 的原生行為要保留）。2026-10-07 review C-14：不含 BUTTON 的底層
+  // 判定收斂成 NS.isTextInputTarget 單一資料源，本檔兩處不再各抄一份。
   function onEscKey(e) {
     if (e.key !== 'Escape' && e.code !== 'Escape') return;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -116,14 +117,7 @@
     // 不讓位會 stopPropagation + 同時退出閱讀模式（一顆 ESC 撞兩層 UI）。
     if (NS.floating && typeof NS.floating.isPanelOpen === 'function' &&
         NS.floating.isPanelOpen()) return;
-    const ae = document.activeElement;
-    if (ae) {
-      const tag = ae.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (ae.isContentEditable) return;
-      const ce = ae.getAttribute && ae.getAttribute('contenteditable');
-      if (ce === 'true' || ce === '') return;
-    }
+    if (NS.isTextInputTarget(document.activeElement)) return;
     e.preventDefault();
     e.stopPropagation();
     exitReaderMode();
@@ -151,15 +145,9 @@
     // IME 中文輸入第一階段（composition 進行中）不擋。e.isComposing 是標準；
     // 老瀏覽器用 keyCode 229 sentinel 兜底。
     if (e.isComposing || e.keyCode === 229) return;
-    // 真正能輸入的 element focus 時不擋（搜尋框、留言、編輯器等）
-    const t = e.target;
-    if (t) {
-      const tag = t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (t.isContentEditable) return;
-      const ce = t.getAttribute && t.getAttribute('contenteditable');
-      if (ce === 'true' || ce === '') return;
-    }
+    // 真正能輸入的 element focus 時不擋（搜尋框、留言、編輯器等）——
+    // NS.isTextInputTarget 單一資料源（不含 BUTTON，理由見 onEscKey 註解）
+    if (NS.isTextInputTarget(e.target)) return;
     // ESC 放行給 onEscKey 處理
     if (e.key === 'Escape' || e.code === 'Escape') return;
     // v1.9.16：site-overrides 指定放行給原站的按鍵（Readwise Reader 選取文字後

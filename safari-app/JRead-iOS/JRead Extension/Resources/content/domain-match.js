@@ -25,12 +25,21 @@
     return s;
   }
 
+  // v1.9.20（review C-13）：比對用的 ASCII 形式。使用者在清單填中文網域（例子.tw）
+  // 時，`location.hostname` 給的是 punycode（xn--fsqu00a.tw），純字串比對永不命中。
+  // 只在比對端轉換、不動 normalizeDomain 的輸出——清單存的 / options 顯示的仍是
+  // 使用者打的字。URL parser 失敗（非法字元 / 空）退回原字串，行為與轉換前相同。
+  function toAsciiHost(s) {
+    if (!s || !/[^\x00-\x7f]/.test(s)) return s;
+    try { return new URL('http://' + s).hostname.toLowerCase(); } catch (_) { return s; }
+  }
+
   function matchHostname(hostname, patterns) {
     if (!hostname || !Array.isArray(patterns) || patterns.length === 0) return false;
-    const h = String(hostname).toLowerCase().replace(/^\.+|\.+$/g, '');
+    const h = toAsciiHost(String(hostname).toLowerCase().replace(/^\.+|\.+$/g, ''));
     if (!h) return false;
     for (const raw of patterns) {
-      const p = normalizeDomain(raw);
+      const p = toAsciiHost(normalizeDomain(raw));
       if (!p) continue;
       if (h === p) return true;
       // suffix 比對只在 pattern 含至少一個點時啟用：防止使用者誤填 public
@@ -71,10 +80,10 @@
   // 確實不會再 auto-enter。
   function removeMatching(hostname, patterns) {
     if (!hostname || !Array.isArray(patterns)) return [];
-    const h = String(hostname).toLowerCase().replace(/^\.+|\.+$/g, '');
+    const h = toAsciiHost(String(hostname).toLowerCase().replace(/^\.+|\.+$/g, ''));
     if (!h) return patterns.slice();
     return patterns.filter((raw) => {
-      const p = normalizeDomain(raw);
+      const p = toAsciiHost(normalizeDomain(raw));
       if (!p) return false; // 順手清空字串
       if (h === p) return false;
       // 與 matchHostname 同規則：suffix 比對只在 pattern 含點時啟用（v0.8.15）
@@ -83,7 +92,7 @@
     });
   }
 
-  const api = { normalizeDomain, matchHostname, parseList, serializeList, removeMatching };
+  const api = { normalizeDomain, toAsciiHost, matchHostname, parseList, serializeList, removeMatching };
   if (typeof window !== 'undefined') window.__JReadDomainMatch = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

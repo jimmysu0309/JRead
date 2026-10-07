@@ -270,8 +270,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 模式重導），單一資料源。command 白名單擋掉 page 端偽造的任意字串；
       // tabId 取 sender.tab（按鍵發生的 tab，比 active-tab query 更準——
       // 背景 tab 透過巨集鍵盤等送鍵時不會誤殺前景 tab）。
+      // v1.9.20（review E-9）：白名單改讀 DEFAULT_SETTINGS.customShortcuts 的 key
+      // （settings-defaults 單一資料源、已 importScripts 進來）——原本手抄第四份
+      // 字彙，新增指令漏補＝content 命中、SW 靜默丟棄、零錯誤。
       const command = msg.payload && msg.payload.command;
-      const allowed = ['toggle-reader-mode', 'send-to-readwise', 'toggle-youtube-borderless', 'toggle-paged-mode'];
+      const allowed = Object.keys((DEFAULT_SETTINGS && DEFAULT_SETTINGS.customShortcuts) || {});
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId !== 'number' || !allowed.includes(command)) return;
       // fire-and-forget：內部錯誤路徑多回錯誤物件而非 throw，但極端故障

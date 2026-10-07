@@ -56,6 +56,34 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 影響段落間距套用（styler）與 Space 焦點單位（space-scroll）。
     INLINE_TEXT_TAGS: new Set(['SPAN', 'A', 'STRONG', 'EM', 'I', 'B', 'U', 'BR', 'MARK', 'SMALL', 'SUP', 'SUB', 'CODE', 'TIME', 'ABBR', 'S', 'DEL', 'INS', 'WBR', 'FONT', 'Q', 'CITE', 'BDI', 'BDO']),
 
+    // 2026-10-07 review B-20 / F-2：「這個 div 的子樹只含行內元素」＝葉段落 div 的
+    // 結構 predicate 單一資料源。消費端兩個：styler markTextDivs（live reader 段距 /
+    // 行高）與 fb-post markParagraphDivs（Readwise 匯出 clone 轉 <p>，通用匯出也走
+    // 它）。v1.7.43 T2 收斂 tag 集時漏了 fb-post（自帶 19 個 tag 的字面、少 FONT /
+    // Q / CITE / BDI / BDO），兩端對含 <q> / <cite> 的段落判定相反——live 有段距、
+    // 匯出端擠成一團（v1.7.36 症狀換一個 tag 重現）。tag 集固定走 INLINE_TEXT_TAGS，
+    // 各端自己的 gate（styler：figure / contenteditable / computed 可見性 / 主流
+    // 字級；fb-post：pre / code / inline display / 文字量）留在呼叫端疊上去。
+    //
+    // deep：false 只看直系 children（styler 用法，v0.8.49 起），true 另深掃整棵
+    // 子樹（fb-post 用法，v1.7.36 起：`<a><div>` 在 HTML5 合法、只看直系會漏）。
+    // 兩端深度刻意不統一——deep 會把「段落內含 inline <img>（emoji / 圖示）」
+    // 的 div 排除（IMG 不在 tag 集），live reader 端這類段落失去段距 / 行高是
+    // 可見退化；匯出端維持既有嚴格度（轉 <p> 的 HTML 合法性優先）。
+    isLeafParagraphDiv(div, opts) {
+      if (!div || !div.childNodes) return false;
+      const tags = window.__JRead.INLINE_TEXT_TAGS;
+      for (const node of div.childNodes) {
+        if (node.nodeType === 1 /* ELEMENT_NODE */ && !tags.has(node.tagName)) return false;
+      }
+      if (opts && opts.deep && div.querySelectorAll) {
+        for (const el of div.querySelectorAll('*')) {
+          if (!tags.has(el.tagName)) return false;
+        }
+      }
+      return true;
+    },
+
     // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼
     // chrome.runtime.sendMessage 沒 guard）。提到 namespace 後**所有** content
@@ -199,13 +227,77 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 站方附加字即 miss）——zh.wikipedia「珍珠奶茶」H1 innerText「珍珠奶茶編輯」
     // probe 實證 raw miss、權重（4×2=8）命中。拉丁字權重 1，gate 行為不變。
     // 60% 長度比維持 raw：比值是同單位相除，權重化分子分母同乘無意義。
+    // 2026-10-07 review C-6 / A-29：exact 與 containment 都改對 titleKey（去全部
+    // 空白）比——v1.9.8 的「空白差異不算差異」只落在 cleaner titleMatchesCanonical，
+    // 本函式（detector promoteForTitle / findSelfTitleHead / markPromotedTitleIfMissing
+    // 的消費端）仍 raw 比對：商周 campaign 頁 og「聯發科不缺錢反而更要籌資」vs
+    // h2「聯發科不缺錢　反而更要籌資」（U+3000）live Chromium probe 實證
+    // titleSimilar=false、promote 整段 miss，只靠 cleaner 零 h1 分支兜底。
+    // 60% 長度比與 CJK 權重 gate 維持 raw 字串（同單位相除、空白權重 1），非
+    // 空白差異的案例判定逐字不變（forcing：review-1007-b4-title-predicate-
+    // single-source.spec.js old/new 對照表）。
     titleSimilar(a, b) {
       if (!a || !b) return false;
       if (a === b) return true;
       const NSref = window.__JRead;
-      if (NSref.cjkWeightedLen(a) >= 8 && a.includes(b) && b.length >= a.length * 0.6) return true;
-      if (NSref.cjkWeightedLen(b) >= 8 && b.includes(a) && a.length >= b.length * 0.6) return true;
+      const ka = NSref.titleKey(a);
+      const kb = NSref.titleKey(b);
+      if (!ka || !kb) return false;
+      if (ka === kb) return true;
+      if (NSref.cjkWeightedLen(a) >= 8 && ka.includes(kb) && b.length >= a.length * 0.6) return true;
+      if (NSref.cjkWeightedLen(b) >= 8 && kb.includes(ka) && a.length >= b.length * 0.6) return true;
       return false;
+    },
+
+    // 2026-10-07 review C-6 / A-29：標題比對的「空白無關 key」單一資料源（原
+    // cleaner 內 v1.9.8 的本地 titleKey 上提）。中文媒體慣例在標題語意斷點放
+    // 全形空白 U+3000、英文站 headline 內 <br> / 縮排——CMS 輸出的 og:title /
+    // <title> 都不帶；兩個**不同**標題只差空白的情況實務上不存在，去掉全部空白
+    // 後相等即同一標題。`\s` 含 U+3000 / NBSP / 換行。
+    titleKey(s) {
+      return (s || '').replace(/\s+/g, '');
+    },
+
+    // 2026-10-07 review C-6 / A-29：canonical 標題來源單一資料源。原本 detector
+    // getCanonicalTitle / markPromotedTitleIfMissing 與 cleaner getCanonicalTitleText
+    // / canonicalTitleVariants 各自 querySelector og:title、各自決定 normalize 與
+    // 剝尾綴的順序（四處；v1.6.29 只合了 cleaner 內三份、v1.7.40 只合了 detector
+    // 內兩份）。本函式回四個正規化後的基礎字串，消費端只做「選哪個 / 要不要
+    // containment」的政策決定：
+    //   og      ：og:title 原字串（normalize 後；標題本身含 ` | ` 的站要靠它）
+    //   ogHead  ：og 剝站名 / 作者尾綴（Guardian og 帶作者名、wiki 帶站名）
+    //   doc     ：document.title 原字串
+    //   docHead ：document.title 剝尾綴
+    // opts 透傳 normalizeTitle（markPromotedTitleIfMissing 用 stripBrackets）。
+    // forcing：og:title 的 querySelector 全 content script 只能出現在這裡
+    // （review-1007-b4-title-predicate-single-source.spec.js）。
+    canonicalTitleSources(opts) {
+      const NSref = window.__JRead;
+      const doc = window.document;
+      const ogMeta = doc.querySelector('meta[property="og:title"]');
+      const n = (s) => NSref.normalizeTitle(s || '', opts);
+      const og = n(ogMeta && ogMeta.content);
+      const docT = n(doc.title);
+      return {
+        og,
+        ogHead: n(NSref.stripSiteSuffix(og)),
+        doc: docT,
+        docHead: n(NSref.stripSiteSuffix(docT))
+      };
+    },
+
+    // canonical 標題的「可接受變體」集合（v1.7.55 cleaner 版上提）：og 原字串 /
+    // og 去尾綴 / document.title 去尾綴，去重、去空、保序（og 優先）。不在此套
+    // 長度門檻——cleaner 用 titleTextWeight（權重 3 / 門檻 5）、detector 用
+    // cjkWeightedLen（權重 2），兩套刻意不合併（見 cjkWeightedLen 註解），各自
+    // 在消費端 filter。
+    getCanonicalTitleVariants(opts) {
+      const s = window.__JRead.canonicalTitleSources(opts);
+      const out = [];
+      for (const v of [s.og, s.ogHead, s.docHead]) {
+        if (v && out.indexOf(v) < 0) out.push(v);
+      }
+      return out;
     },
 
     // v1.9.5：「明確主文標題 class」判定單一資料源（原住 cleaner
@@ -919,13 +1011,30 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 方向鍵 / Space 被翻頁攔截、吃掉按鈕的鍵盤啟用（同一份事實雙實作的 drift，
     // CLAUDE.md 工作流原則 5）。傳入要判定的 element：keydown 時 paged 用
     // document.activeElement、space 用 e.target，兩者對 keydown 等價。
-    isEditableTarget(el) {
+    //
+    // 2026-10-07 review C-14 / B-13：拆成兩層。isTextInputTarget 是「真正能打字
+    // 的元素」底層判定（INPUT / TEXTAREA / SELECT / contenteditable，**不含**
+    // BUTTON）——main.js onEscKey / keyguardHandler 用它：button focus 時 ESC 仍應
+    // 退出閱讀模式、原站快速鍵仍應攔（button 沒有「取消輸入」語意）。
+    // isEditableTarget ＝ isTextInputTarget ＋ BUTTON，給 paged-mode 翻頁鍵 /
+    // space-scroll / styler onSpaceScroll 用（Space 觸發 button click 的原生行為
+    // 要保留）。原本 main.js 兩處各自逐字抄一份 INPUT/TEXTAREA/SELECT/contenteditable
+    // ——下次補 role="textbox" / 自訂編輯器訊號時會漏一份（C7 v0.8.17 就是這樣
+    // 漏 BUTTON 的）。改訊號只動 isTextInputTarget 一處。
+    isTextInputTarget(el) {
       if (!el) return false;
       const tag = el.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return true;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      // contenteditable 在實機 Chrome 走 isContentEditable getter；jsdom 沒
+      // 實作 getter，attribute fallback 兜底（真值為 "true" 或空字串）。
       if (el.isContentEditable) return true;
       const ce = el.getAttribute && el.getAttribute('contenteditable');
       return ce === 'true' || ce === '';
+    },
+    isEditableTarget(el) {
+      if (!el) return false;
+      if (el.tagName === 'BUTTON') return true;
+      return window.__JRead.isTextInputTarget(el);
     },
 
     // v0.8.130：CSP-safe 樣式注入（單一資料源，CLAUDE.md 硬規則 5）。styler /

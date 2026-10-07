@@ -14,7 +14,8 @@
 // 可能是別的動作），所以是站點特判。
 //
 // 欄位：
-//   host             hostname 比對；規則同 domain-match（相等，或以 '.' + host 結尾）
+//   host             hostname 比對；直接走 domain-match.matchHostname（相等，或以 '.' + host 結尾；
+//                    單段 pattern 只 exact、中文網域以 punycode 比對）
 //   keys             放行的 KeyboardEvent.key（小寫比對）；只放行「無任何修飾鍵」的按法
 //   requireSelection true = 主文內有非 collapsed 選取時才放行
 //
@@ -30,11 +31,23 @@
     { host: 'read.readwise.io', keys: ['h'], requireSelection: true }
   ];
 
+  // v1.9.20（review C-13）：hostname 比對直接問 domain-match，不再自己寫一份
+  // 「相等或以 '.' + host 結尾」——那份少了 v0.8.15 的「單段 pattern 不做 suffix」
+  // 防護（規則表填 'io' 會對整個 TLD 放行）、也不認 punycode。content script 走
+  // window 全域（manifest 載入順序 domain-match 在前）、Node spec 走 require。
+  // 模組缺席 → 回 false：keyguard 照常攔，寧可少放行也不可多放行。
+  function domainMatchApi() {
+    if (typeof window !== 'undefined' && window.__JReadDomainMatch) return window.__JReadDomainMatch;
+    if (typeof require === 'function') {
+      try { return require('./domain-match.js'); } catch (_) { /* fall through */ }
+    }
+    return null;
+  }
+
   function hostMatches(hostname, ruleHost) {
-    var h = String(hostname || '').toLowerCase();
-    var r = String(ruleHost || '').toLowerCase();
-    if (!h || !r) return false;
-    return h === r || h.slice(-(r.length + 1)) === '.' + r;
+    var dm = domainMatchApi();
+    if (!dm || typeof dm.matchHostname !== 'function') return false;
+    return dm.matchHostname(hostname, [ruleHost]);
   }
 
   // facts: { hostname, key, altKey, ctrlKey, metaKey, shiftKey, hasSelectionInArticle }

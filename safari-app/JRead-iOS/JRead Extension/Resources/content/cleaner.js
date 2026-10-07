@@ -363,7 +363,12 @@
   //   句式收斂條件：^動詞 + 1-40 chars 站名 + on + 平台$ 全字串錨定，動詞限
   //   prefer/add/follow。內文行文的連結（「reported that」「Silicon Valley」）
   //   與 `Google Scholar page` 這類合法連結都不會命中（結尾必須是平台名）。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  // 2026-10-07 review 批 4 收尾：`^powered\s+by\b`——頁面產生器 / 平台的
+  // 文末署名連結（商周 campaign 頁「powered by feversocial」實證：class 是
+  // emotion hash、href 只在 utm 參數帶 poweredby，既有 `powered[-_]?by`
+  // class/id token 規則掃不到）。行首錨定：內文「…is powered by X」這類
+  // 敘述連結不會以 powered by 起頭。
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -473,7 +478,13 @@
   // 報導/編譯 出現在字串開頭、後接空白 / 冒號 / 拉丁字母（= 後面是名字）時即
   // 命中，不強制冒號。lookahead 後接 CJK 字（作者群 / 作者的話 / 作者簡介）則不
   // 命中，避免吃到一般正文。`^\s*` 錨定 + 短 textLen 雙閘，誤判風險低。
-  const BYLINE_TEXT_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|^\s*(?:作者|撰文|編輯|整理|報導|編譯)(?=[\s:：]|[A-Za-z])|\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  // 2026-10-07 review A-17：拆成「強 / 弱」兩層再合成——所有既有消費者照用合成的
+  // BYLINE_TEXT_RE（alternation 集合逐字不變、只是順序重排，.test 結果相同）；
+  // hideBylineAvatarImgs 是唯一拿它當 **hide 條件**的規則，改成強訊號直接命中、
+  // 弱訊號（句中 by / 裸日期）要再有頭像結構訊號佐證。
+  const BYLINE_TEXT_STRONG_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|^\s*(?:作者|撰文|編輯|整理|報導|編譯)(?=[\s:：]|[A-Za-z])|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  const BYLINE_TEXT_WEAK_RE = /\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b/i;
+  const BYLINE_TEXT_RE = new RegExp(BYLINE_TEXT_STRONG_RE.source + '|' + BYLINE_TEXT_WEAK_RE.source, 'i');
   const BYLINE_MAX_TEXT_LEN = 200;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
@@ -1306,6 +1317,19 @@
     }
   }
 
+  // 2026-10-07 review A-09：靜態規則接受 scope 參數——動態 observer 以 addedNode 為
+  // scope 重跑**同一個函式、同一組 guard**（DYNAMIC_SCOPED_RULES），不再在
+  // checkDynamicNoise 手抄第二份。靜態側不傳 scope（= articleEl）、行為逐字不變。
+  // scope 自身也要算進候選（querySelectorAll 不含根；晚注入的節點常本身就是
+  // <iframe> / <a> / <form> / <p>）；scope 為 articleEl 時不算自己——與原本
+  // `articleEl.querySelectorAll(sel)` 等價。
+  function scopedQueryAll(scope, articleEl, sel) {
+    const root = scope || articleEl;
+    const list = Array.from(root.querySelectorAll(sel));
+    if (root !== articleEl && root.matches && root.matches(sel)) list.unshift(root);
+    return list;
+  }
+
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
@@ -1781,8 +1805,46 @@
   // display:none（CSS 軌，吃 byline 標記子樹）與本規則（DOM 軌，吃標記外
   // 的頭像列）都在做「byline 頭像不顯示」——byline 標記在 styler.apply、
   // cleaner 跑在其前拿不到標記，兩軌並存；改頭像顯示政策時兩處同改。
+  // 2026-10-07 review A-17：BYLINE_TEXT_RE 在其他規則都是「保護」用（寬只會少清），
+  // 本規則拿它當 hide 條件、寬鬆度直接變誤殺面——合成頁真 Chromium 實證：內文產品
+  // 小圖 +「Review by…」、插圖 +「Illustration by…, 2026-09-01」、圖例 +「Data as of
+  // 2026-09-01」、縮圖 +「Photo by…」四組全被當頭像藏掉（命中的都是句中 `\bby\s`
+  // 與裸日期）。拆兩層：
+  //   - 強訊號（BYLINE_TEXT_STRONG_RE：行首 By / 作者 / 撰文：等明確標籤）或 alt
+  //     等於作者連結文字 → 直接命中（與 v1.7.25 相同）
+  //   - 弱訊號（BYLINE_TEXT_WEAK_RE：句中 by、裸日期）→ 必須再有頭像的結構訊號
+  //     佐證（avatarHasStructuralSignal）：圖是圓的（computed border-radius ≥ 50% /
+  //     ≥ 短邊一半）、圖包在作者頁連結內、同塊含作者頁連結、同塊含 <time>
+  //   內文小圖的 credit 行沒有這些結構訊號；頭像幾乎一定有其中之一（Medium /
+  //   Substack 頭像連 /@author、新聞站頭像圓形、byline 帶 <time>）。
+  //   政策不變（頭像一律不顯示），只收斂判準。
   const AVATAR_MAX_SIZE = 120;
   const AVATAR_MIN_SIZE = 9;
+  function imgIsRoundAvatar(img, w, h) {
+    let cs;
+    try { cs = window.getComputedStyle(img); } catch (_) { return false; }
+    const br = cs && cs.borderRadius ? String(cs.borderRadius).trim() : '';
+    if (!br) return false;
+    const first = br.split(/[\s/]+/)[0];
+    const v = parseFloat(first);
+    if (!(v > 0)) return false;
+    if (/%$/.test(first)) return v >= 50;
+    return v >= Math.min(w, h) / 2 - 1;
+  }
+  function imgInAuthorPageLink(img) {
+    const a = img.closest && img.closest('a[href]');
+    if (!a) return false;
+    let pn = '';
+    try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) { return false; }
+    return !!pn && AUTHOR_PAGE_PATH_RE.test(pn);
+  }
+  function avatarHasStructuralSignal(img, block, w, h) {
+    if (imgIsRoundAvatar(img, w, h)) return true;
+    if (imgInAuthorPageLink(img)) return true;
+    if (clusterContainsAuthorProfileLink(block)) return true;
+    if (block.querySelector && block.querySelector('time')) return true;
+    return false;
+  }
   function hideBylineAvatarImgs(articleEl, hidden) {
     for (const img of articleEl.querySelectorAll('img')) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
@@ -1802,7 +1864,9 @@
         if (t.length === 0) continue;
         const altMatchesAuthorLink = alt.length >= 2 && p.querySelectorAll &&
           Array.from(p.querySelectorAll('a')).some(a => norm(a.textContent) === alt);
-        if (BYLINE_TEXT_RE.test(t) || altMatchesAuthorLink) { hit = true; break; }
+        if (BYLINE_TEXT_STRONG_RE.test(t) || altMatchesAuthorLink) { hit = true; break; }
+        // 弱訊號（句中 by / 裸日期）要有頭像結構訊號佐證（review A-17）
+        if (BYLINE_TEXT_WEAK_RE.test(t) && avatarHasStructuralSignal(img, p, w, h)) { hit = true; break; }
       }
       if (hit) hide(img, hidden);
     }
@@ -2031,19 +2095,11 @@
   // 變體全部由 getCanonicalTitleText() 的回傳值 + document.title 衍生——**不可**
   // 在此重新 querySelector og:title（v1.6.29 單一資料源不變式，forcing 見
   // perf-batch-refactor.spec.js）。
+  // 2026-10-07 review C-6 / A-29：變體集合上提 NS.getCanonicalTitleVariants（detector
+  // 共用同一份來源）；cleaner 端只保留自己的長度門檻 titleTextWeight >= 5。
   function canonicalTitleVariants() {
-    const out = [];
-    const push = (s) => {
-      const v = normTitle(s || '');
-      if (v && titleTextWeight(v) >= 5 && out.indexOf(v) < 0) out.push(v);
-    };
-    const base = getCanonicalTitleText();
-    push(base);
-    if (NS && NS.stripSiteSuffix) {
-      push(NS.stripSiteSuffix(base));
-      push(NS.stripSiteSuffix(document.title || ''));
-    }
-    return out;
+    if (!(NS && NS.getCanonicalTitleVariants)) return [];
+    return NS.getCanonicalTitleVariants().filter(v => titleTextWeight(v) >= 5);
   }
   // v1.9.8：比對忽略「空白差異」——渲染出的 heading 與 meta 標題常只差空白：
   // 中文媒體慣例在標題語意斷點放全形空白 U+3000（商周「聯發科不缺錢　反而更要
@@ -2052,14 +2108,16 @@
   // 「有空白 vs 無空白」仍不等。兩邊各自去掉全部空白後相等即視為同一標題——
   // 兩個**不同**標題只差空白的情況實務上不存在，方向安全；仍是 strict equality
   // 語意（不是 includes / partial）。
-  const titleKey = (s) => s.replace(/\s+/g, '');
+  // 2026-10-07 review C-6 / A-29：去空白 key 上提 NS.titleKey（NS.titleSimilar 的
+  // exact / containment 也改對同一把 key 比），本函式與 detector 只差「strict vs
+  // containment」這一個政策。
   function titleMatchesCanonical(text) {
     const t = normTitle(text || '');
     if (!t || titleTextWeight(t) < 5) return false;
     const variants = canonicalTitleVariants();
     if (variants.indexOf(t) >= 0) return true;
-    const key = titleKey(t);
-    return variants.some(v => titleKey(v) === key);
+    const key = NS.titleKey(t);
+    return variants.some(v => NS.titleKey(v) === key);
   }
 
   // v1.7.55：整個「文章 header 區塊」在 articleEl 外時，把它**搬進** articleEl
@@ -2598,6 +2656,28 @@
     return fallback;
   }
 
+  // 2026-10-07 review 批 4 收尾：pre-title 兩條規則的 anchor 單一資料源。
+  // 原本只認 articleEl 內第一個可見 h1——整頁零 h1、標題是 h2 的頁（商周
+  // campaign 頁，v1.9.8 案例）在 detector 升到含標題 h2 的 LCA 後（批 4
+  // C-6/A-29 空白無關比對修法），卡內有標題但 anchor 拿不到 → 標題前的
+  // 站方 logo section（100×56 顯示 / natural 1095 的裸 img）整塊殘留在卡頂。
+  // 回落順序：
+  //   1. 第一個可見 h1（原行為，含注入的 data-jread-injected-title）
+  //   2. detector promote 實際命中的 titleHead（opts.promotedTitleHead，跨
+  //      tag h1-h4）——與 narrowPromotedSiblings / sidebar-columns 共用同一份
+  //      「這是主標」判定，不另立 h2 比對；必須在 articleEl 內且未被 hide
+  // 「標題前皆雜訊」的前提由 mainContentPrecedesAnchor 守，anchor 來源不影響。
+  function findPreTitleAnchor(articleEl, titleHead) {
+    const h1 = findFirstVisibleH1(articleEl);
+    if (h1) return h1;
+    if (!titleHead || !articleEl.contains(titleHead) || titleHead === articleEl) return null;
+    if (titleHead.closest && titleHead.closest('[data-jread-hidden="1"]')) return null;
+    let cs;
+    try { cs = window.getComputedStyle(titleHead); } catch (_) { return null; }
+    if (cs.display === 'none' || cs.visibility === 'hidden') return null;
+    return titleHead;
+  }
+
   // anchor h1 之前（DOM order）是否已有主文長段落。有 → 這個 h1 不是領頭標題
   // 而是文章中段的章節標題，pre-title 規則的「標題前皆雜訊」前提不成立。
   // 門檻沿用 wrapperContainsMainContentP（單一 p >= 100 / 累計 >= 300）。
@@ -2615,9 +2695,9 @@
     return false;
   }
 
-  function hideInsideArticlePreTitleNoise(articleEl, hidden) {
+  function hideInsideArticlePreTitleNoise(articleEl, hidden, titleHead) {
     if (!articleEl || !articleEl.querySelectorAll) return;
-    const anchor = findFirstVisibleH1(articleEl);
+    const anchor = findPreTitleAnchor(articleEl, titleHead);
     if (!anchor) return;
     // v0.8.168：anchor h1 前已有主文長段落 → 它是章節標題不是領頭標題，整條中止。
     // 真實場景：Miniflux/RSS reader 把 feed body 當 articleEl，文章真標題在 feed
@@ -2682,9 +2762,9 @@
     return nat > dispW * 2.5;
   }
 
-  function hidePreTitleDecorativeImages(articleEl, hidden) {
+  function hidePreTitleDecorativeImages(articleEl, hidden, titleHead) {
     if (!articleEl || !articleEl.querySelectorAll) return;
-    const anchor = findFirstVisibleH1(articleEl);
+    const anchor = findPreTitleAnchor(articleEl, titleHead);
     if (!anchor) return;
     for (const img of articleEl.querySelectorAll('img')) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
@@ -3810,10 +3890,10 @@
   // 對主文內 `<a>` 元素：text 命中 NOISE_LINK_TEXT_RE 則 hide。若 `<a>` 的
   // parent 是 `<p>` / `<div>` 且 a 文字占 parent 文字 80% 以上，hide parent
   // 整個段落；否則只 hide a 本身。
-  function hideInsideArticleByLinkText(articleEl, hidden) {
+  function hideInsideArticleByLinkText(articleEl, hidden, scope) {
     // 掃 `<a>` + `<button>`——CTA 按鈕類（訂閱 / 追蹤 / 關注）通常是 button
     // 而非 a，舊版只掃 a 漏網
-    const links = articleEl.querySelectorAll('a, button');
+    const links = scopedQueryAll(scope, articleEl, 'a, button');
     for (const a of links) {
       const text = norm(a.textContent);
       if (!text) continue;
@@ -7710,8 +7790,8 @@
   // btn_copy / btn_support）都是 a[href^="javascript:"]，class 命名特殊
   // （btn_*）NOISE_KEYWORD_RE 不命中，textContent 空（icon-only）NOISE_LINK_
   // TEXT_RE 也不命中——靠 href pseudo-protocol 統一識別。
-  function hideInsideArticleJsLinks(articleEl, hidden) {
-    for (const a of articleEl.querySelectorAll('a[href^="javascript:"]')) {
+  function hideInsideArticleJsLinks(articleEl, hidden, scope) {
+    for (const a of scopedQueryAll(scope, articleEl, 'a[href^="javascript:"]')) {
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
       // 2026-10-07 review A-03：老 CMS lightbox 寫法 `<a href="javascript:;"
@@ -7735,8 +7815,8 @@
   // NOISE_LINK_TEXT_RE 也不命中。靠「icon-only」結構特徵統一識別。
   // 安全 guard：figure / picture 內的 a > img 是「圖片可點擊版」合法用法
   // （常見於主文 hero 圖配連結），保留；其他位置的 icon-only a 一律 hide。
-  function hideInsideArticleIconOnlyLinks(articleEl, hidden) {
-    for (const a of articleEl.querySelectorAll('a')) {
+  function hideInsideArticleIconOnlyLinks(articleEl, hidden, scope) {
+    for (const a of scopedQueryAll(scope, articleEl, 'a')) {
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
       // 跳過 figure / picture 內的 a（主文圖片可點擊版，合法用法）
@@ -8287,8 +8367,8 @@
   ].join(', ');
   const THIRD_PARTY_AD_SEL = THIRD_PARTY_AD_BRAND_SEL + ', ' + THIRD_PARTY_AD_GENERIC_PREFIX_SEL;
 
-  function hideInsideArticleByThirdPartyAds(articleEl, hidden) {
-    for (const el of articleEl.querySelectorAll(THIRD_PARTY_AD_SEL)) {
+  function hideInsideArticleByThirdPartyAds(articleEl, hidden, scope) {
+    for (const el of scopedQueryAll(scope, articleEl, THIRD_PARTY_AD_SEL)) {
       if (el === articleEl) continue;
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -8368,8 +8448,8 @@
     'iframe[src*="infogram.com"]'
   ].join(', ');
 
-  function hideInsideArticleThirdPartyIframes(articleEl, hidden) {
-    for (const el of articleEl.querySelectorAll('iframe')) {
+  function hideInsideArticleThirdPartyIframes(articleEl, hidden, scope) {
+    for (const el of scopedQueryAll(scope, articleEl, 'iframe')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (el.matches && el.matches(KNOWN_MEDIA_IFRAME_SEL)) continue;
@@ -9168,8 +9248,8 @@
   // 算進來，「廣告」字樣的主文段落（如「政府廣告預算」）會被誤殺。
   // direct textNode 確保只 match「element 自己直接的文字」，span/p 本
   // 身就是 placeholder 插播 leaf（無子 element）才命中。
-  function hideInsideArticleByInlineAdText(articleEl, hidden) {
-    for (const el of articleEl.querySelectorAll('span, p, div')) {
+  function hideInsideArticleByInlineAdText(articleEl, hidden, scope) {
+    for (const el of scopedQueryAll(scope, articleEl, 'span, p, div')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       const direct = Array.from(el.childNodes)
@@ -9209,8 +9289,8 @@
   const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b)/i;
   const NOISE_CTA_PARA_MAX_LEN = 200;
 
-  function hideInsideArticleCTAParagraphs(articleEl, hidden) {
-    for (const p of articleEl.querySelectorAll('p')) {
+  function hideInsideArticleCTAParagraphs(articleEl, hidden, scope) {
+    for (const p of scopedQueryAll(scope, articleEl, 'p')) {
       if (p === articleEl) continue;
       if (p.contains && p.contains(articleEl)) continue;
       if (isInPreserved(p)) continue;
@@ -9287,13 +9367,14 @@
   // / hideInsideArticleSidebarColumns / wrapperH1IsMainTitle 各自 inline 一份同款
   // 推導，四處 drift 風險）。og:title 優先（normTitle 後非空才算）、否則
   // document.title 去站名。
+  // 2026-10-07 review C-6 / A-29：og:title / document.title 的讀取與正規化再上提一層
+  // 到 NS.canonicalTitleSources（detector 也吃同一份）；cleaner 的政策＝「og 原
+  // 字串優先（刻意不剝尾綴，見 canonicalTitleVariants 註解）、否則 document.title
+  // 剝尾綴」。
   function getCanonicalTitleText() {
-    const ogMeta = document.querySelector('meta[property="og:title"]');
-    const ogText = ogMeta && ogMeta.content ? normTitle(ogMeta.content) : '';
-    const docTitle = NS && NS.stripSiteSuffix
-      ? normTitle(NS.stripSiteSuffix(document.title || ''))
-      : normTitle(document.title || '');
-    return ogText || docTitle;
+    if (!(NS && NS.canonicalTitleSources)) return normTitle(document.title || '');
+    const s = NS.canonicalTitleSources();
+    return s.og || s.docHead;
   }
   // 子樹內是否存在「direct text（僅 text node 子節點串接、不含後代元素文字）
   // strict equals canonical title」的元素——「此區塊是文章標題區」的通用訊號
@@ -9353,8 +9434,8 @@
   // hide，本規則的 alreadyHidden 早退就整條不跑，留下孤兒招攬標題「If you liked
   // this post, get Raptitude sent to you.」+ 空殼卡在文末。重複執行由
   // hideNoiseCardFromTrigger 內既有的 card 已 hidden guard 擋掉，不會多做工。
-  function hideInsideArticleSubscribeForms(articleEl, hidden) {
-    for (const form of articleEl.querySelectorAll('form')) {
+  function hideInsideArticleSubscribeForms(articleEl, hidden, scope) {
+    for (const form of scopedQueryAll(scope, articleEl, 'form')) {
       if (isInPreserved(form)) continue;
       hideNoiseCardFromTrigger(form, articleEl, hidden);
     }
@@ -9365,7 +9446,7 @@
     // ——type=email，或 type=text 且 name / id / placeholder 帶 mail token，
     // 即為訂閱 / 註冊表單的通用訊號。命中後走同一條 findContentFreeCard 往上
     // 找不含主文長 p 的卡片整塊 hide（含主文保護與 form 規則共用、不另設）。
-    for (const input of articleEl.querySelectorAll('input')) {
+    for (const input of scopedQueryAll(scope, articleEl, 'input')) {
       if (input.closest('form')) continue; // 有 form 包裝的已由上方規則處理
       if (isInPreserved(input)) continue;
       // 同上：input 自身已被別條規則 hide 不影響「外層卡片要不要收」
@@ -9379,8 +9460,8 @@
     }
   }
 
-  function hideInsideArticleSignupCtaCards(articleEl, hidden) {
-    for (const el of articleEl.querySelectorAll('p, div, span, h1, h2, h3, h4, h5, h6')) {
+  function hideInsideArticleSignupCtaCards(articleEl, hidden, scope) {
+    for (const el of scopedQueryAll(scope, articleEl, 'p, div, span, h1, h2, h3, h4, h5, h6')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       const direct = Array.from(el.childNodes)
@@ -9448,6 +9529,35 @@
   // 雜訊特徵判定：
   //   - class/id 命中 NOISE_KEYWORD_RE（CMS 命名慣例）
   //   - 含 h2/h3/h4 文字命中 NOISE_HEADING_TEXT_RE（跨站 section 標題慣用語）
+  // 2026-10-07 review A-09：動態側以 addedNode 為 scope 重跑的靜態規則表。歷史上
+  // v0.8.22 / v0.8.36 / v1.6.24 / v1.7.41 四輪都在補「動態漏同步靜態」的 drift，
+  // 機制沒變——checkDynamicNoise 是手抄清單，每加一條靜態規則都要人工決定要不要
+  // 鏡像。這張表讓規則函式本身成為單一資料源：函式接受 scope、靜態 clean() 以
+  // articleEl 跑、動態以 addedNode 跑，guard（preserved / 已 hidden / 主文保護 /
+  // 媒體白名單 / 內容圖豁免）自然共用。順序沿 clean() 的相對順序。
+  // 納入準則：規則只看「候選元素自身 + 近祖先」、不依賴 article 整體位置（文末 /
+  // 文首類規則不納入——addedNode 的 scope 看不出它在文章的哪裡）。
+  // forcing：review-1007-b4-dynamic-scoped-rules.spec（表內每條必須接受 scope 且
+  // 候選掃描走 scopedQueryAll；clean() 仍以兩個參數呼叫 = 靜態等價）。
+  const DYNAMIC_SCOPED_RULES = [
+    hideInsideArticleByThirdPartyAds,
+    hideInsideArticleThirdPartyIframes,
+    hideInsideArticleByLinkText,
+    hideInsideArticleByInlineAdText,
+    hideInsideArticleCTAParagraphs,
+    hideInsideArticleSubscribeForms,
+    hideInsideArticleSignupCtaCards,
+    hideInsideArticleJsLinks,
+    hideInsideArticleIconOnlyLinks,
+  ];
+  function runDynamicScopedRules(articleEl, node, hiddenList) {
+    for (const rule of DYNAMIC_SCOPED_RULES) {
+      try { rule(articleEl, hiddenList, node); } catch (err) {
+        try { console.warn('[JRead] 動態 scoped rule 失敗，跳過：', rule && rule.name, err); } catch (_) { /* noop */ }
+      }
+    }
+  }
+
   function checkDynamicNoise(articleEl, node, hiddenList) {
     if (isInPreserved(node)) return;
     // v0.8.112：lazy 注入 / clean 後才現形的「次要全文 <aside>」（無限捲動下一篇
@@ -9644,6 +9754,15 @@
         if (!buttonWrapsContentMedia(el) && !isBylineNameChip(el) &&
             !isEmbedPlaceholderPlayButton(el)) hide(el, hiddenList);
       }
+    }
+    // 2026-10-07 review A-09：靜態規則以 node 為 scope 重跑（第三方廣告 selector /
+    // 非白名單 iframe / 一般 link-text / inline 廣告字 / CTA 段落 / 訂閱表單 /
+    // 註冊招攬卡 / js-link / icon-only）。放在 button / keyword 掃描之後、heading
+    // 掃描之前——heading 分支命中會 return，不能讓它短路掉這張表。node 自身被
+    // 整個藏掉就不必再掃 heading。
+    if (articleEl.contains(node)) {
+      runDynamicScopedRules(articleEl, node, hiddenList);
+      if (node.dataset && node.dataset.jreadHidden === '1') return;
     }
     // heading text 命中：跟 hideInsideArticleByHeadingText 同邏輯
     // （v0.7.31 cnyes lazy-inject 修法）：原本只掃 h2-h4 + closest section/
@@ -10545,11 +10664,11 @@
       // 「Member-only story」徽章類）。放在精細規則之後（已 hidden 者 skip、
       // 不重複處理）、collapse 類之前（emptied flex / grid 規則能看到本條
       // 標的 hidden 狀態）
-      safeRun(hideInsideArticlePreTitleNoise, articleEl, hidden);
+      safeRun(hideInsideArticlePreTitleNoise, articleEl, hidden, opts && opts.promotedTitleHead);
       // v0.8.91 標題前裝飾性縮小圖（washingtonpost Opinion lightbulb badge）：
       // 必須在 hideInsideArticlePreTitleNoise **之後**——讓 walker 先靠未隱藏的
       // badge 保護住同分支的 kicker（Opinion / Editorial Board），再單獨清掉 img
-      safeRun(hidePreTitleDecorativeImages, articleEl, hidden);
+      safeRun(hidePreTitleDecorativeImages, articleEl, hidden, opts && opts.promotedTitleHead);
       // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在
       // 所有 hide 類規則之後、collapse 之前（hide 殘殼後 collapse 才看得到
       // hidden child 觸發條件 A）
