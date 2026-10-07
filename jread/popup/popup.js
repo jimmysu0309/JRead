@@ -1054,14 +1054,19 @@ editBtn.addEventListener('click', async () => {
   window.close();
 });
 
-readwiseBtn.addEventListener('click', async () => {
-  readwiseBtn.disabled = true;
-  setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.sending, 'info');
-
+// v1.9.20（review E-2）：popup 軌的送出流程改走 popup-core.saveDocumentFlow——
+// 憑證解析 → 選用 Gemini 摘要 → 送出 → 結果訊息這一整段與 SW 快速鍵軌、content
+// 直送軌（懸浮按鈕長按選單）共用同一個函式。popup 原本是第三份手抄流程、已 drift：
+// 沒接 onProgress（v1.8.0 的 sendingLarge「內容較大」在 popup 永遠不出現）、Gemini
+// 摘要沒進除錯記錄、sendDocument 沒包 try/catch（例外冒出＝按鈕永久 disabled、狀態
+// 列停在「送出中…」）。popup 自己只留：tab / EXTRACT 前置、讀設定、狀態列的
+// kind 轉換（success/error → ok/err）。fetch 仍在 popup（extension 頁）執行、不繞
+// background（iOS Safari 背景頁掛起會 silently 失敗，見 popup-core 註解）。
+async function sendCurrentPageFromPopup() {
+  const P = window.__JReadPopup;
   const tabId = await getActiveTabId();
   if (typeof tabId !== 'number') {
     setReadwiseStatus('無法取得當前分頁', 'err');
-    readwiseBtn.disabled = false;
     return;
   }
 
@@ -1069,13 +1074,13 @@ readwiseBtn.addEventListener('click', async () => {
   try {
     extracted = await browser.tabs.sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
   } catch (e) {
+    // popup 軌不會替使用者進閱讀模式（SW 軌會），content script 沒注入 / 沒回應時
+    // 給的提示是「重新啟動閱讀模式」——這句是 popup 前置、不在 saveDocumentFlow 內
     setReadwiseStatus('無法取得頁面內容（請重新啟動閱讀模式）', 'err');
-    readwiseBtn.disabled = false;
     return;
   }
   if (!extracted || !extracted.ok) {
     setReadwiseStatus('閱讀模式未啟動', 'err');
-    readwiseBtn.disabled = false;
     return;
   }
 
@@ -1089,44 +1094,31 @@ readwiseBtn.addEventListener('click', async () => {
     readwiseSummary: false,
     geminiApiKey: ''
   }).then((v) => v || {}).catch(() => ({}));
-  const { service, creds, ok } = window.__JReadPopup.resolveServiceCredentials(cfg);
-  const label = window.__JReadPopup.serviceLabel(service);
-  // v1.7.43：文案走 saveResultToast 單一資料源（credsPlace 指向 popup 自己的
-  // 「進階設定」footer 連結；kind success/error → 狀態列的 ok/err）
-  const toastOpts = { serviceLabel: label, existsOn200: service === 'readwise', credsPlace: '「進階設定」' };
-  const statusKind = (kind) => kind === 'success' ? 'ok' : 'err';
-  if (!ok) {
-    const t = window.__JReadPopup.saveResultToast({ ok: false, error: 'NO_CREDENTIALS' }, toastOpts);
-    setReadwiseStatus(t.message, statusKind(t.kind));
+
+  // credsPlace 指向 popup 自己的「進階設定」footer 連結；進度文字由 SAVE_PROGRESS
+  // 單一資料源提供，stage 未知時退回「送出中…」（與 SW / content 軌同式）
+  const { toast } = await P.saveDocumentFlow({
+    settings: cfg,
+    payload: extracted.payload || {},
+    credsPlace: '「進階設定」',
+    onProgress: (stage) => setReadwiseStatus(P.SAVE_PROGRESS[stage] || P.SAVE_PROGRESS.sending, 'info')
+  });
+  setReadwiseStatus(toast.message, toast.kind === 'success' ? 'ok' : 'err');
+}
+
+readwiseBtn.addEventListener('click', async () => {
+  readwiseBtn.disabled = true;
+  setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.sending, 'info');
+  try {
+    await sendCurrentPageFromPopup();
+  } catch (err) {
+    // saveDocumentFlow 內部已對網路層分類回傳；這裡接的是模組缺席 / payload 建構
+    // 這類例外（與 content 直送軌 wrapper 同一條理由）——沒接住就是零提示 + 按鈕卡死
+    const reason = String((err && err.message) || err || '').slice(0, 60);
+    setReadwiseStatus(`送出失敗（${reason || '內部錯誤'}）`, 'err');
+  } finally {
     readwiseBtn.disabled = false;
-    return;
   }
-
-  // v0.8.72：若開啟「自動摘要」且已設 Gemini key，先用 Gemini Flash Lite 產生繁中
-  // 三句摘要塞進 payload.summary（兩服務共用——Readwise 對映 summary、Instapaper
-  // 對映 description）。任何失敗都 fallback 不帶 summary 照送，不阻斷儲存。
-  if (cfg.readwiseSummary && cfg.geminiApiKey && extracted.payload && extracted.payload.text) {
-    setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.summarizing, 'info');
-    try {
-      const sum = await window.__JReadPopup.generateGeminiSummary({
-        apiKey: cfg.geminiApiKey,
-        title: extracted.payload.title,
-        author: extracted.payload.author,
-        domain: extracted.payload.domain,
-        text: extracted.payload.text
-      });
-      if (sum && sum.ok) extracted.payload.summary = sum.summary;
-    } catch (_) { /* 摘要失敗不阻斷，照送 */ }
-    setReadwiseStatus(window.__JReadPopup.SAVE_PROGRESS.sending, 'info');
-  }
-
-  // v1.6.0：走 sendDocument dispatcher，在 popup（extension 頁）自己 fetch、不繞
-  // background（iOS Safari 背景頁掛起會 silently 失敗，見 popup-core 註解）。
-  const result = await window.__JReadPopup.sendDocument({ service, creds, payload: extracted.payload });
-
-  const t = window.__JReadPopup.saveResultToast(result, toastOpts);
-  setReadwiseStatus(t.message, statusKind(t.kind));
-  readwiseBtn.disabled = false;
 });
 
 refreshPopupForActiveTab();

@@ -3223,16 +3223,11 @@ html.${HTML_CLASS}.jread-orion body {
     if (NS.spaceScroll && NS.spaceScroll.isInstalled && NS.spaceScroll.isInstalled()) return;
     if (e.key !== ' ' && e.code !== 'Space') return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    const ae = document.activeElement;
-    if (ae) {
-      const tag = ae.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      // contenteditable 在實機 Chrome 走 isContentEditable getter；jsdom 沒
-      // 實作 getter，attribute fallback 兜底（真值為 "true" 或空字串）。
-      if (ae.isContentEditable) return;
-      const ce = ae.getAttribute && ae.getAttribute('contenteditable');
-      if (ce === 'true' || ce === '') return;
-    }
+    // 2026-10-07 review B-13：原本自帶一份 INPUT / TEXTAREA / SELECT / contenteditable
+    // 判定、漏 BUTTON——主文內 <button>（展開 / 播放）focus 後按 Space，本 handler
+    // capture 階段 preventDefault 吃掉按鈕的鍵盤啟用（C7 v0.8.17 修 paged-mode 時的
+    // 同一症狀）。改走 NS.isEditableTarget（含 BUTTON）單一資料源。
+    if (NS.isEditableTarget(document.activeElement)) return;
     e.preventDefault();
     e.stopPropagation();
     const dy = window.innerHeight * SPACE_SCROLL_FRACTION * (e.shiftKey ? -1 : 1);
@@ -3615,35 +3610,36 @@ html.${HTML_CLASS}.jread-orion body {
     const win = articleEl.ownerDocument?.defaultView;
     if (!win || !win.getComputedStyle) return [];
     // v1.7.43：tag 集收斂到 NS.INLINE_TEXT_TAGS 單一資料源（與 space-scroll
-    // 段落文字量計算共用；drift 史見 namespace.js 該常數註解）
-    const INLINE_TAGS = NS.INLINE_TEXT_TAGS;
+    // 段落文字量計算共用；drift 史見 namespace.js 該常數註解）。
+    // 2026-10-07 review B-20 / F-2：「子樹只含行內元素」的結構判定再上提為
+    // NS.isLeafParagraphDiv（與 fb-post markParagraphDivs 共用，tag 集 / 判定
+    // 邏輯不再各抄一份）；本端只看直系 children（deep:false，理由見 namespace.js
+    // 該函式註解），其餘 gate（figure / contenteditable / 文字量 / 可見性 / 主流
+    // 字級）仍在這裡。
     const candidates = [];
     for (const div of articleEl.querySelectorAll('div')) {
       // figure 內 div = 圖說/媒體結構；pre/code 內保留程式碼排版；
       // contenteditable 是使用者輸入區不動
       if (div.closest && div.closest('figure, pre, code')) continue;
       if (div.isContentEditable) continue;
+      // 有 block 子元素＝容器、不標記
+      if (!NS.isLeafParagraphDiv(div)) continue;
       let directLen = 0;
-      let hasBlockChild = false;
       for (const node of div.childNodes) {
         if (node.nodeType === 3 /* TEXT_NODE */) {
           directLen += node.textContent.trim().length;
         } else if (node.nodeType === 1 /* ELEMENT_NODE */) {
-          if (!INLINE_TAGS.has(node.tagName)) {
-            hasBlockChild = true;
-            break;
-          }
           // v0.8.80：inline 子元素（span / a / strong…）內的文字也計入。WYSIWYG
           // 編輯器（Draft.js / Lexical 等）把段落文字包成 <div><span>文字</span></div>，
           // div 無直接 text node 但功能上就是段落——只看 direct text 會漏標，
           // line-height 只套到 inline span、parent block div 仍保留站點行高，block
           // strut（max(block lh, span lh)）壓過設定值（Jimmy 2026-06-16 mirrormedia
           // 行距不遵從設定的根因）。標記 block div 後 BODY_TEXT_SEL 把 line-height
-          // 注到 div 自身、strut 跟著設定縮放。有 block 子元素仍判定為容器、不標記。
+          // 注到 div 自身、strut 跟著設定縮放。
           directLen += node.textContent.trim().length;
         }
       }
-      if (hasBlockChild || directLen < 4) continue;
+      if (directLen < 4) continue;
       const cs = win.getComputedStyle(div);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       const fs = Math.round(parseFloat(cs.fontSize) || 0);

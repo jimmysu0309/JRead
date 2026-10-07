@@ -1023,18 +1023,16 @@
     // 僅寫純標題、而 og 加了站名尾綴，使 titleMatches 的 60% 長度比較
     // 誤判 false（line today 實測：og 47 chars / h1 27 chars，比值 57% <
     // 60% 門檻漏網——改取 og 首段後 og 等於 h1，直接 match）。
-    const og = normalizeTitle(
-      document.querySelector('meta[property="og:title"]')?.content || ''
-    );
     // v0.8.37：站名尾綴切法收斂到 NS.stripSiteSuffix（原本全 codebase 6 份
     // 實作、分隔符集合各不相同）。首段過短（< 4）退回整串的 guard 保留。
-    if (og.length >= 4) {
-      const ogHead = NS.stripSiteSuffix(og);
-      return ogHead.length >= 4 ? ogHead : og;
+    // 2026-10-07 review C-6 / A-29：og:title / document.title 讀取與正規化上提
+    // NS.canonicalTitleSources（cleaner 共用）；detector 的政策＝「選剝尾綴變體
+    // ogHead（短於 4 退回 og 整串）、otherwise docHead」+ titleSimilar containment。
+    const s = NS.canonicalTitleSources();
+    if (s.og.length >= 4) {
+      return s.ogHead.length >= 4 ? s.ogHead : s.og;
     }
-    const t = normalizeTitle(document.title || '');
-    const head = NS.stripSiteSuffix(t);
-    return head.length >= 4 ? head : t;
+    return s.docHead.length >= 4 ? s.docHead : s.doc;
   }
 
   // 卡片連結式標題判別：heading 的祖先含 <a> = 整顆標題被包成可點連結，
@@ -1750,15 +1748,16 @@
     function normalizeTitle(s) {
       return NS.normalizeTitle(s, { stripBrackets: true });
     }
-    const og = document.querySelector('meta[property="og:title"]')?.content || '';
-    const docT = document.title || '';
     // v0.8.48：og:title 也必須過 stripSiteSuffix——Wikipedia 類站點 og:title
     // 含站名尾綴（「珍珠奶茶 - 維基百科，自由的百科全書」），未去尾綴時
     // baseTitle 整串含站名 → bestCand 掃描命中「站台標語」元素（#siteSub）
     // → 注入錯誤 H1「維基百科，自由的百科全書」、真標題降級成小字（第五輪
     // page rounds B1）。去尾綴後最壞情況是 baseTitle 變短導致不注入（no-op
     // 降級），不會再注入錯誤標題。
-    const baseTitle = normalizeTitle(NS.stripSiteSuffix(og)) || normalizeTitle(NS.stripSiteSuffix(docT));
+    // 2026-10-07 review C-6 / A-29：來源上提 NS.canonicalTitleSources（stripBrackets
+    // 透傳）；本函式政策＝「剝尾綴變體 ogHead，否則 docHead」。
+    const srcs = NS.canonicalTitleSources({ stripBrackets: true });
+    const baseTitle = srcs.ogHead || srcs.docHead;
     // v1.7.40：入口 gate 改 CJK 權重（批次 2 review D2/D4 同族——raw 5 讓
     // 4 字中文標題整支函式 bail；權重後 3 字中文（6）即過、2 字（4）仍擋）
     if (!baseTitle || NS.cjkWeightedLen(baseTitle) < 5) return;
