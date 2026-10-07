@@ -4,11 +4,12 @@
 // 的所有 UI（masthead / secondary / 留言 / 描述 / chat / 推薦）整批藏掉、強制
 // theater 模式、影片以 100vw × 100vh 撐滿視窗，並透過 SW `RESIZE_OWN_WINDOW`
 // 訊息呼叫 `chrome.windows.update` 把瀏覽器視窗本身的高度 resize 成匹配影片
-// 寬高比。功能默認沒 suggested_key，使用者自己到 chrome://extensions/shortcuts
-// 綁；popup 在 YouTube watch 頁也多一顆「切換無邊模式」按鈕。
+// 寬高比。manifest 預設快速鍵 `Alt+Y`（v0.8.31 起；可到 chrome://extensions/
+// shortcuts 改）；popup 在 YouTube watch 頁也多一顆「切換無邊模式」按鈕。
 //
-// 與 `cinema-mode.js` 的差別（兩者**完全獨立、可同時 toggle**，CSS 會搶
-// `#movie_player` rule，使用者該自己決定要哪個）：
+// 與 `cinema-mode.js` 的差別（v0.7.143 起兩者**互斥、單一 active**：main.js
+// `enterCinemaMode` 先退 borderless、`toggleBorderless` 先退 cinema——兩條 CSS
+// 都搶 `#movie_player`，同時開會打架；forcing `cinema-borderless-mutex.spec.js`）：
 //   - cinema-mode：player 釘 viewport 中央 + 16:9 雙軸 clamp、不動視窗大小
 //   - borderless：影片完全填滿視窗 + RESIZE 視窗高度匹配影片比例 + 強制 theater
 //

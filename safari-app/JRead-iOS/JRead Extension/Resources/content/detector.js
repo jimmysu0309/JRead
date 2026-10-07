@@ -100,7 +100,12 @@
   const CONT_MIN_PARA_WEIGHT = 80; // 實質段落的最低權重字數（拉丁 80 字 / CJK 40 字）
   const CONT_MIN_PARAS = 2;        // 至少兩段實質段落才視為文章接續
   const CONT_MAX_LD = 0.3;         // 連結密度上限（真主文實測 ~0.24；相關文章列表 > 0.5）
-  const CONT_MAX_HOPS = 2;         // 從 articleEl 沿祖先鏈找「有接續兄弟的層級」的上限
+  // 2026-10-07 review C-12：從 articleEl 沿祖先鏈掃「有兄弟的層級」的層數上限。
+  // 舊寫法 `CONT_MAX_HOPS = 2` + 迴圈 `hop <= CONT_MAX_HOPS` 實際掃 hop 0 / 1 / 2
+  // 共 3 層（與 v1.6.27 修掉的 LCA off-by-one 同款：常數語意寫 2、行為是 3）；
+  // 行為已被 mdc.idv.tw / gvm 等站校準，不能改，改成明文層數 + `<` 讓常數
+  // 就是層數。forcing：review-1007-b6-c-continuation-levels.spec。
+  const CONT_MAX_LEVELS = 3;       // articleEl 自身層 + 往上兩層（只計真的有兄弟的層級）
   const CONT_MAX_BLOCKS = 10;      // 吸收數量保險上限
   // v1.8.6：接續區塊的容器 tag 白名單。FONT / CENTER 是老式排版（FrontPage /
   // 純手寫 HTML）包裝內容段落的通用載體——同一份主文常被拆成「body 直屬
@@ -228,7 +233,7 @@
 
   // 唯讀識別：不動 DOM。從 articleEl 所在層級開始**雙向**掃 siblings（前後
   // 都掃），該層沒有合格接續區塊才往上一層（articleEl 可能是巢狀 content
-  // div、接續區塊在其 wrapper 的兄弟層），上限 CONT_MAX_HOPS。
+  // div、接續區塊在其 wrapper 的兄弟層），最多掃 CONT_MAX_LEVELS 個有兄弟的層級。
   //
   // 雙向的理由（v1.8.6）：同一篇主文被站方拆成多個 body-level 區塊時，
   // heuristic 只會選中「文字量最大的那塊」，被漏掉的另一半可能在它**前面**
@@ -251,7 +256,7 @@
     return withAncestorCache(() => {
       let base = articleEl;
       let hop = 0;
-      while (base && base !== document.body && base !== document.documentElement && hop <= CONT_MAX_HOPS) {
+      while (base && base !== document.body && base !== document.documentElement && hop < CONT_MAX_LEVELS) {
         const parent = base.parentElement;
         // 獨生子層：無兄弟可掃，直接往上且不計 hop（理由見上方註解）
         if (parent && parent.children.length === 1) {

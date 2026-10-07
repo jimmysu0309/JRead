@@ -38,12 +38,10 @@
   let port = null;
   let timer = null;
 
+  // 2026-10-07 review C-18(b)：平台判定上提 NS.isSafariRuntime（namespace.js 單一
+  // 資料源；floating-icon / main.js sendCurrentPageToService 同用），本檔不再自帶。
   function isSafariRuntime() {
-    try {
-      return browser.runtime.getURL('').startsWith('safari-web-extension://');
-    } catch (_) {
-      return false;
-    }
+    return !!(NS.isSafariRuntime && NS.isSafariRuntime());
   }
 
   function stop() {
@@ -64,27 +62,37 @@
     // 可能回傳 falsy / 殘缺 port——整段 listener 掛載包 try/catch，任何一步壞
     // 都不能讓 TypeError 外洩（中止同批 content script 的風險）
     if (!port) return;
+    // 2026-10-07 review C-16：回呼綁定「自己那個 port」的身分。舊版回呼寫的是模組
+    // 變數 port——visibilitychange hidden→visible 快速切換、或 ping throw 後 stop +
+    // 1s 重連時，若舊 port 的 onDisconnect 在新 port 建好後才派送（Safari 的 port
+    // 事件派送時序沒有保證），舊回呼會把 port = null、清掉新 timer、再排一次 start
+    // → 新 port 變孤兒（連線還在、沒人 ping、也沒人 disconnect），之後它的
+    // onDisconnect 又打到更新的 port，連鎖。iOS 上一條孤兒 port 剛好是「background
+    // 以為活著」的假訊號。回呼與 interval 都先比對 self === port，不是自己就 return。
+    const self = port;
     try {
       // background 回 pong → 記錄存活（production 不依賴此值，讓自動化測得到
       // 真實 content ↔ background round-trip）
-      port.onMessage.addListener(() => { api.alive = true; });
+      self.onMessage.addListener(() => { if (port === self) api.alive = true; });
       // background 被回收 / extension reload → port 斷線。仍可見就 1s 後重連
       // （重連的 connect 會重新拉起 event page；context 失效時 start 自會早退，
       // 1s 延遲避免 reload 期間緊迴圈）
-      port.onDisconnect.addListener(() => {
+      self.onDisconnect.addListener(() => {
+        if (port !== self) return; // 舊 port 晚到的 disconnect：不動新 port 的狀態
         port = null;
         if (timer) { clearInterval(timer); timer = null; }
         if (!document.hidden) setTimeout(start, 1000);
       });
-      timer = setInterval(() => {
-        if (!port) return;
+      const selfTimer = setInterval(() => {
+        if (port !== self) { clearInterval(selfTimer); return; } // 已換 port：自清
         try {
-          port.postMessage({ t: 'ping' });
+          self.postMessage({ t: 'ping' });
         } catch (_) {
           stop();
           if (!document.hidden) setTimeout(start, 1000);
         }
       }, PING_MS);
+      timer = selfTimer;
     } catch (_) {
       stop();
     }

@@ -28,7 +28,10 @@
     instapaper: [
       { id: 'unread',  label: '未讀',  query: { folderId: 'unread' },  empty: '未讀清單目前沒有文章' },
       { id: 'starred', label: '已加星', query: { folderId: 'starred' }, empty: '沒有加星的文章' },
-      { id: 'archive', label: '封存',  query: { folderId: 'archive' }, empty: '封存區目前沒有文章' }
+      // 2026-10-07 review F-11：已封存的清單不再提供「封存」鈕（對已封存文章再
+      // archive：成功 = 卡片從封存清單消失、使用者以為被刪）；`archivable: false`
+      // 由 renderFeed / createCard 讀。Readwise 三個分頁都是未封存集合，預設可封存
+      { id: 'archive', label: '封存',  query: { folderId: 'archive' }, empty: '封存區目前沒有文章', archivable: false }
     ]
   };
 
@@ -58,9 +61,11 @@
   }
 
   // 建一張 feed 卡片：左側連結（縮圖 + 標題 + meta，導到 article.html?id=&meta=），
-  // 右側封存鈕。doc 需含 id；缺 id 的不建（回 null）。
-  function createCard(doc, document) {
+  // 右側封存鈕（opts.archivable === false 時不建，F-11）。doc 需含 id；缺 id 的
+  // 不建（回 null）。
+  function createCard(doc, document, opts) {
     if (!doc || !doc.id) return null;
+    const archivable = !(opts && opts.archivable === false);
     const card = document.createElement('article');
     card.className = 'jr-card';
     card.setAttribute('data-doc-id', doc.id);
@@ -91,24 +96,26 @@
     body.appendChild(meta);
     link.appendChild(body);
 
-    const archiveBtn = document.createElement('button');
-    archiveBtn.className = 'jr-archive';
-    archiveBtn.type = 'button';
-    archiveBtn.textContent = '封存';
-    archiveBtn.setAttribute('data-doc-id', doc.id);
-
     card.appendChild(link);
-    card.appendChild(archiveBtn);
+    if (archivable) {
+      const archiveBtn = document.createElement('button');
+      archiveBtn.className = 'jr-archive';
+      archiveBtn.type = 'button';
+      archiveBtn.textContent = '封存';
+      archiveBtn.setAttribute('data-doc-id', doc.id);
+      card.appendChild(archiveBtn);
+    }
     return card;
   }
 
-  // 渲染整個清單。docs 取前 MAX_ITEMS 篇。onArchive(card, id) 由 init 注入。
-  function renderFeed(listEl, docs, onArchive) {
+  // 渲染整個清單。docs 取前 MAX_ITEMS 篇。onArchive(card, id) 由 init 注入；
+  // opts.archivable 透傳 createCard（F-11）。
+  function renderFeed(listEl, docs, onArchive, opts) {
     listEl.textContent = '';
     const slice = (docs || []).slice(0, MAX_ITEMS);
     let n = 0;
     for (const doc of slice) {
-      const card = createCard(doc, listEl.ownerDocument);
+      const card = createCard(doc, listEl.ownerDocument, opts);
       if (!card) continue;
       const btn = card.querySelector('.jr-archive');
       if (btn && typeof onArchive === 'function') {
@@ -153,11 +160,15 @@
     return result;
   }
 
-  function archiveErrorMessage(result) {
-    if (result && (result.error === 'AUTH' || result.error === 'NO_CREDENTIALS')) return '登入憑證無效或已過期';
-    if (result && result.error === 'NETWORK') return '網路錯誤，封存失敗，請稍後再試';
-    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
-    return `封存失敗${detail}`;
+  // 2026-10-07 review F-10：錯誤碼 → 文案的單一資料源在 popup-core
+  // `serviceErrorMessage(result, { action })`（本頁封存 / reader-article 載入共用，
+  // 舊版兩頁各抄一張表、載入端還靠 `.replace('封存','載入')` 借用）。popup-core
+  // 缺席（理論上不會：reader.html 先載）時退回最低限度的 generic 字串，不另帶碼表。
+  function archiveErrorMessage(result, action) {
+    const PC = global.__JReadPopup;
+    const act = action || '封存';
+    if (PC && typeof PC.serviceErrorMessage === 'function') return PC.serviceErrorMessage(result, { action: act });
+    return `${act}失敗`;
   }
 
   const api = { formatMeta, encodeMeta, createCard, renderFeed, archiveCard, archiveErrorMessage, MAX_ITEMS, FEED_TABS };
@@ -236,7 +247,7 @@
         PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
           if (gen !== loadGen) return; // 已切到別的分頁——過期回應丟棄
           if (!r || !r.ok) {
-            showMsg(archiveErrorMessage(r).replace('封存', '載入'), true);
+            showMsg(archiveErrorMessage(r, '載入'), true);
             return;
           }
           const docs = r.results || [];
@@ -252,7 +263,7 @@
             });
           };
           hideMsg();
-          renderFeed(listEl, docs, onArchive);
+          renderFeed(listEl, docs, onArchive, { archivable: cfg.archivable !== false });
         }, (err) => {
           if (gen !== loadGen) return; // 過期回應丟棄（同上）
           // list fetch reject（iOS 偶發）：surface 出來，不要卡在「載入中…」

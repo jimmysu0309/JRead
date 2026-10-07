@@ -89,7 +89,7 @@
   // 卡片 touch-action（page1 pan-y / page2+ none，原生水平 pan 一律不放行）雙重
   // 覆蓋，邊緣緩衝是多餘的 belt、反而害整頁邊緣翻不了頁。設 0 = 全頁起手都認。
   const EDGE_GUARD_PX = 0;
-  const WHEEL_THRESHOLD = 90;       // 滾輪 delta 累積門檻
+  const WHEEL_THRESHOLD = 90;       // 滾輪 delta 累積門檻（像素當量；非像素 deltaMode 先經 normalizeWheelDelta 換算）
   const WHEEL_LOCKOUT_MS = 550;     // 翻頁後滾輪鎖定（吃掉觸控板慣性尾巴）
   const TURN_ANIM_MS = 260;         // 翻頁動畫時長
   const HMOVE_BLOCK_PX = 6;         // v0.7.237：水平位移超此值即 preventDefault（擋 Safari 邊緣返回手勢）
@@ -179,11 +179,15 @@
   // 回 as-if-unfragmented 聯集（左緣落在起始欄），PENDING_REGRESSION 三個舊法
   // 失準的共同根因；Range.getClientRects() 的 line box 按 fragment 正確回報
   //（v0.7.231 頁數計算同款量法，兩引擎實證可靠）。
-  function fragmentPageCoverage(rects, colStart, stride, total) {
+  // 2026-10-07 review D-7：rtl = true 時欄從右往左長，colStart 是第一欄的「右緣」、
+  // 每個 fragment 以「colStart − r.right」當邏輯 inline 起點量頁碼（純座標映射）。
+  function fragmentPageCoverage(rects, colStart, stride, total, rtl) {
     let min = Infinity, max = -Infinity;
     for (const r of rects) {
       if (!(r.width > 0) || !(r.height > 0)) continue;
-      const p = pageOfLeft(r.left, colStart, stride, total);
+      const p = rtl
+        ? pageOfLeft(colStart - r.right, 0, stride, total)
+        : pageOfLeft(r.left, colStart, stride, total);
       if (p < min) min = p;
       if (p > max) max = p;
     }
@@ -202,9 +206,28 @@
     return moved ? 'end' : 'arm';
   }
 
+  // 2026-10-07 review D-11：滾輪 delta 換算成像素當量。Firefox 對實體滾輪常回報
+  // `deltaMode = 1`（DOM_DELTA_LINE，一格 deltaY = 3 行）而非像素，WHEEL_THRESHOLD 90
+  // 是像素門檻——不換算要連滾 30 格才翻一頁（合成 deltaMode=1 事件 probe：3 格不翻）。
+  // 行 → 像素用固定常數 WHEEL_LINE_PX = 100 / 3：Chromium 把一格滾輪派發成 100px，
+  // 即「3 行 = 100px」，照這個比例換算讓 Firefox 一格 = Chromium 一格 = 剛好一頁；
+  // 不用內文 computed line-height——那會讓滾輪靈敏度隨使用者字級 / 行高設定浮動
+  //（probe：預設 17px × 1.5 = 25.5 → 3 行 76px < 90，一格翻不動）。頁模式
+  //（DOM_DELTA_PAGE）乘以 viewport 高。像素模式原值不動（Chromium / 觸控板）。
+  // 純函式：pageHeightPx 由呼叫端傳入，jsdom spec 直接測。
+  const WHEEL_LINE_PX = 100 / 3;
+  function normalizeWheelDelta(d, deltaMode, pageHeightPx) {
+    const v = Number(d) || 0;
+    if (deltaMode === 1) return v * WHEEL_LINE_PX;
+    if (deltaMode === 2) return v * (pageHeightPx > 0 ? pageHeightPx : 800);
+    return v;
+  }
+
   // swipe 手勢分類。輸入純物件 { dx, dy, startX, viewportW }：
   //   dx/dy = touchend − touchstart 位移；startX = 起點 clientX。
   // 回傳 'next'（往左滑 = 翻下一頁）/ 'prev' / null。
+  // 2026-10-07 review D-7：opts.rtl = true 時左右對調——RTL 文章下一頁在左側、
+  // 往右滑（把內容往右拉）才是翻下一頁，與書頁翻向一致。
   function classifySwipe(g, opts) {
     const o = opts || {};
     const minDx = o.minDx || SWIPE_MIN_DX;
@@ -215,16 +238,22 @@
     if (g.startX < edgeGuard || g.startX > g.viewportW - edgeGuard) return null;
     if (Math.abs(g.dx) < minDx) return null;
     if (Math.abs(g.dx) < Math.abs(g.dy) * axisRatio) return null;
-    return g.dx < 0 ? 'next' : 'prev';
+    const next = o.rtl ? g.dx > 0 : g.dx < 0;
+    return next ? 'next' : 'prev';
   }
 
   // 鍵盤對映。輸入 event-like { key, code, shiftKey, altKey, ctrlKey, metaKey }。
   // 回傳 'next' / 'prev' / 'first' / 'last' / null。
-  function classifyKey(e) {
+  // 2026-10-07 review D-7：opts.rtl = true 時 ←/→ 對調（RTL 下一頁在左、← = next）；
+  // PageUp / PageDown / Space / Home / End 是邏輯方向鍵、不受書寫方向影響。
+  function classifyKey(e, opts) {
     if (!e || e.altKey || e.ctrlKey || e.metaKey) return null;
+    const rtl = !!(opts && opts.rtl);
     const k = e.key;
-    if (k === 'ArrowRight' || k === 'PageDown') return 'next';
-    if (k === 'ArrowLeft' || k === 'PageUp') return 'prev';
+    if (k === 'PageDown') return 'next';
+    if (k === 'PageUp') return 'prev';
+    if (k === 'ArrowRight') return rtl ? 'prev' : 'next';
+    if (k === 'ArrowLeft') return rtl ? 'next' : 'prev';
     if (k === ' ' || e.code === 'Space') return e.shiftKey ? 'prev' : 'next';
     if (k === 'Home') return 'first';
     if (k === 'End') return 'last';
@@ -238,6 +267,13 @@
   let idx = 0;
   let lastRatio = 0;        // uninstall 後保留，styler reapply 重掛時回到原比例
   let savedScrollY = 0;     // 進翻頁模式前的文件卷動位置，退出還原
+  // 2026-10-07 review D-7：卡片 computed direction 是否為 rtl（install / remeasure 時
+  // 讀）。RTL 的 multicol 溢出欄長在左側、scroll container 的 scrollLeft 合法範圍是
+  // [−max, 0]（Chromium probe：ar 合成頁 pos clamp 0 / neg −4320）——舊版全以正值
+  // 假設：量 max 得 0、goTo 寫正值被 clamp 成 0，卡在第 1 頁、頁碼照跳但畫面不動。
+  // 修法是純座標映射：對外（idx / stride / 頁數）一律邏輯座標（0 起、往「下一頁」
+  // 遞增），只在讀寫 art.scrollLeft 的邊界換號（logicalScrollLeft / setLogicalScrollLeft）。
+  let isRtl = false;
   let indicatorEl = null;
   let animFrame = null;
   let resizeRaf = 0;        // v0.8.17：onResize debounce 的 pending rAF handle
@@ -327,6 +363,20 @@
     return strideExact > 0 ? strideExact : strideApprox();
   }
 
+  // D-7：書寫方向偵測 + scrollLeft 邏輯座標邊界（見 isRtl 註解）
+  function detectRtl() {
+    if (!art) return false;
+    try { return getComputedStyle(art).direction === 'rtl'; } catch (e) { return false; }
+  }
+  function logicalScrollLeft() {
+    if (!art) return 0;
+    return isRtl ? -art.scrollLeft : art.scrollLeft;
+  }
+  function setLogicalScrollLeft(v) {
+    if (!art) return;
+    art.scrollLeft = isRtl ? -v : v;
+  }
+
   // 實測 max scrollLeft（同一 frame 同步寫讀還原，無 repaint）。jsdom 無
   // clamp 會原值讀回 sentinel → 視為量不到回 0。
   const MAX_SCROLL_PROBE = 1e7;
@@ -335,8 +385,8 @@
     const prev = art.scrollLeft;
     let max = 0;
     try {
-      art.scrollLeft = MAX_SCROLL_PROBE;
-      max = art.scrollLeft;
+      setLogicalScrollLeft(MAX_SCROLL_PROBE); // D-7：rtl 寫負值探底
+      max = logicalScrollLeft();
       art.scrollLeft = prev;
     } catch (e) { return 0; }
     return max >= MAX_SCROLL_PROBE ? 0 : max;
@@ -351,7 +401,10 @@
     let maxRight = 0;
     try {
       art.scrollLeft = 0;
-      const base = art.getBoundingClientRect().left;
+      // D-7：rtl 時內容從右緣往左長，末端是最左緣——以 right 當基準量 base − left
+      const rect0 = art.getBoundingClientRect();
+      const base = isRtl ? rect0.right : rect0.left;
+      const extentOf = (r) => (isRtl ? base - r.left : r.right - base);
       // 最後幾個非空 text node 的 line box（從文末往回找，跳過被 cleaner
       // 隱藏的 rect 全 0 節點；取 max 而非只看最後一個——文末可能是隱藏雜訊）
       const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT);
@@ -368,7 +421,7 @@
         for (const r of range.getClientRects()) {
           if (r.width > 0) {
             any = true;
-            maxRight = Math.max(maxRight, r.right - base);
+            maxRight = Math.max(maxRight, extentOf(r));
           }
         }
         if (any) hits++;
@@ -376,7 +429,7 @@
       // 替換元素是 atomic fragment、bounding rect 可靠（文末是圖片的文章靠這層）
       for (const el of art.querySelectorAll('img, video, iframe, svg')) {
         const r = el.getBoundingClientRect();
-        if (r.width > 0) maxRight = Math.max(maxRight, r.right - base);
+        if (r.width > 0) maxRight = Math.max(maxRight, extentOf(r));
       }
     } catch (e) {
       maxRight = 0; // jsdom 等無 Range rect 環境 → fallback
@@ -390,12 +443,14 @@
   // 格點跳頁都用同一個引擎真值。
   function remeasurePages() {
     if (!art) { measuredPages = 0; strideExact = 0; return; }
+    isRtl = detectRtl(); // D-7：layout 重測時同步刷新書寫方向（量測全走邏輯座標）
     strideExact = 0; // 先清，strideApprox 才會被重新讀取
     strideExact = quantizeStride(measureMaxScrollLeft(), strideApprox());
     const endX = measureContentEndX();
     if (!(endX > 0)) { measuredPages = 0; return; }
     let padL = 0;
-    try { padL = parseFloat(getComputedStyle(art).paddingLeft) || 0; } catch (e) { /* */ }
+    // D-7：扣的是 inline-start 內距（rtl = padding-right）
+    try { padL = parseFloat(getComputedStyle(art)[isRtl ? 'paddingRight' : 'paddingLeft']) || 0; } catch (e) { /* */ }
     measuredPages = computePageCountFromExtent(endX, padL, stride());
   }
 
@@ -600,23 +655,41 @@
     return measuredPages > 0 ? measuredPages : computePageCount(art.scrollWidth, stride());
   }
 
+  // 2026-10-07 review D-12：注入 UI「先撿孤兒、沒有才建」的單一資料源。extension
+  // reload 後舊 context 的 DOM 殘留在頁面上（舊 context 的 listener 隨之死亡、無法
+  // 自己移除）；v1.6.24 只為頁碼指示器補了撿孤兒，scrub 進度條 / 觸覺載體各自只看
+  // 模組變數（新 context 一律 null）→ 再建一份，舊的留在畫面上重複累積（進度條
+  // 可能還停在 visible）。三個 ensure 共用：以 id 撿既存節點、沒有才 build + append。
+  // 回 { el, adopted }——呼叫端對撿到的孤兒做收尾（清殘留 class、補子節點、重掛 listener）。
+  function adoptOrCreate(id, build, parent) {
+    let el = document.getElementById(id);
+    const adopted = !!el;
+    if (!el) {
+      el = build();
+      el.id = id;
+      (parent || document.documentElement).appendChild(el);
+    }
+    return { el, adopted };
+  }
+  // 掛 <html> 下（與 styler progressEl 同層），不能掛 body——body 帶
+  // data-jread-ancestor，styler 的 sibling 隱藏規則 `[ancestor] > *:not(...)` 會把
+  // body 下的非主文子元素全部 display:none，指示器掛 body 下 rect 量出 0×0（udn
+  // probe 實證）。html 沒被 markAncestors 標記，不受該規則影響。
+  function htmlRoot() {
+    return document.head?.parentElement || document.documentElement;
+  }
+
   // v0.7.237：建立底部頁碼指示器（install 時呼叫）。v1.5.4：一律建立——頁碼指示
   // 已是翻頁模式唯一進度載體，不再有開關。uninstall 負責移除。
   function reconcileIndicator() {
     let adopted = false;
     if (!indicatorEl) {
-      indicatorEl = document.getElementById(INDICATOR_ID);
-      adopted = !!indicatorEl; // 撿到既存 DOM（extension reload 後舊 context 殘留的孤兒）
-    }
-    if (!indicatorEl) {
-      indicatorEl = document.createElement('div');
-      indicatorEl.id = INDICATOR_ID;
-      // 必須掛在 <html> 下（與 styler progressEl 同層），不能掛 body——
-      // body 帶 data-jread-ancestor，styler 的 sibling 隱藏規則
-      // `[ancestor] > *:not(...)` 會把 body 下的非主文子元素全部 display:none，
-      // 指示器掛 body 下 rect 量出 0×0（udn probe 實證）。html 沒被
-      // markAncestors 標記，不受該規則影響。
-      (document.head?.parentElement || document.documentElement).appendChild(indicatorEl);
+      // 撿既存 DOM（extension reload 後舊 context 殘留的孤兒）或新建，兩者都算
+      // adopted = 本 context 第一次接手這個節點、要掛 listener
+      indicatorEl = adoptOrCreate(INDICATOR_ID, () => document.createElement('div'), htmlRoot()).el;
+      // D-7：頁碼「N / M」是邏輯序（目前頁 / 總頁），RTL 文件的 bidi 會把「1 / 7」
+      // 重排成「7 / 1」（ar 合成頁截圖實證）——指示器自宣告 ltr 不受文件方向影響
+      indicatorEl.setAttribute('dir', 'ltr');
       adopted = true;
     }
     if (adopted) {
@@ -726,17 +799,17 @@
     const target = idx * stride();
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     if (!animate) {
-      art.scrollLeft = target;
+      setLogicalScrollLeft(target); // D-7：rtl 寫負值
       renderIndicator();
       return;
     }
-    const from = art.scrollLeft;
+    const from = logicalScrollLeft();
     const delta = target - from;
     const t0 = performance.now();
     const step = (now) => {
       const p = Math.min(1, (now - t0) / TURN_ANIM_MS);
       const ease = 1 - Math.pow(1 - p, 3); // ease-out cubic
-      art.scrollLeft = from + delta * ease;
+      setLogicalScrollLeft(from + delta * ease);
       if (p < 1) animFrame = requestAnimationFrame(step);
       else animFrame = null;
     };
@@ -761,7 +834,7 @@
   function onKeydown(e) {
     if (e.isComposing || e.keyCode === 229) return; // IME
     if (isEditableFocus()) return;
-    const dir = classifyKey(e);
+    const dir = classifyKey(e, { rtl: isRtl }); // D-7：RTL ←/→ 對調
     if (!dir) return;
     e.preventDefault();
     e.stopPropagation();
@@ -781,7 +854,12 @@
     e.preventDefault();
     const now = performance.now();
     if (now < wheelLockUntil) return;
-    const d = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    let d = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // 2026-10-07 review D-11：行 / 頁模式換算成像素當量（Firefox 實體滾輪 deltaMode=1）
+    if (e.deltaMode) d = normalizeWheelDelta(d, e.deltaMode, window.innerHeight || 0);
+    // D-7：RTL 下水平 deltaX 的「往右捲」= 翻下一頁（內容往左長），對調號；垂直 deltaY
+    // 是邏輯方向（往下 = 下一頁）不動
+    if (isRtl && Math.abs(e.deltaX) >= Math.abs(e.deltaY)) d = -d;
     // v0.8.17：方向反轉時先歸零累積——否則往一邊累積未達門檻、改往反向滾要先
     // 抵銷掉舊累積（門檻形同兩倍），且閒置殘留可能讓一個小 delta 跨門檻翻錯向。
     if (d !== 0 && wheelAccum !== 0 && Math.sign(d) !== Math.sign(wheelAccum)) wheelAccum = 0;
@@ -806,12 +884,16 @@
   // 避開 styler ancestor-sibling 隱藏規則）；styler CSS 給樣式，本模組只增/移與更新 fill。
   function ensureScrubTrack() {
     if (scrubTrackEl && scrubTrackEl.isConnected) return;
-    scrubTrackEl = document.createElement('div');
-    scrubTrackEl.id = SCRUB_TRACK_ID;
-    scrubFillEl = document.createElement('div');
-    scrubFillEl.id = SCRUB_FILL_ID;
-    scrubTrackEl.appendChild(scrubFillEl);
-    (document.head?.parentElement || document.documentElement).appendChild(scrubTrackEl);
+    // D-12：先撿舊 context 的孤兒進度條（可能停在 visible），沒有才建
+    const got = adoptOrCreate(SCRUB_TRACK_ID, () => document.createElement('div'), htmlRoot());
+    scrubTrackEl = got.el;
+    if (got.adopted) scrubTrackEl.classList.remove('__jread-scrub-visible');
+    scrubFillEl = scrubTrackEl.querySelector('#' + SCRUB_FILL_ID);
+    if (!scrubFillEl) {
+      scrubFillEl = document.createElement('div');
+      scrubFillEl.id = SCRUB_FILL_ID;
+      scrubTrackEl.appendChild(scrubFillEl);
+    }
   }
   function updateScrubFill() {
     if (!scrubFillEl) return;
@@ -846,15 +928,19 @@
   //     某些 iOS WebView 可能定義 vibrate stub 但 no-op，舊版會卡在 vibrate 不跑 switch）
   function ensureHaptic() {
     if (hapticEl && hapticEl.isConnected) return;
-    hapticEl = document.createElement('label');
-    hapticEl.id = HAPTIC_ID;
-    hapticEl.setAttribute('aria-hidden', 'true');
-    hapticEl.style.display = 'none';
-    const inp = document.createElement('input');
-    inp.type = 'checkbox';
-    inp.setAttribute('switch', ''); // iOS 17.4+ 原生 switch，切換時系統發觸覺
-    hapticEl.appendChild(inp);
-    (document.body || document.documentElement).appendChild(hapticEl);
+    // D-12：先撿舊 context 的孤兒載體，沒有才建（掛 body——見上方 v0.8.153 說明）
+    hapticEl = adoptOrCreate(HAPTIC_ID, () => {
+      const label = document.createElement('label');
+      label.setAttribute('aria-hidden', 'true');
+      label.style.display = 'none';
+      return label;
+    }, document.body || document.documentElement).el;
+    if (!hapticEl.querySelector('input[type="checkbox"]')) {
+      const inp = document.createElement('input');
+      inp.type = 'checkbox';
+      inp.setAttribute('switch', ''); // iOS 17.4+ 原生 switch，切換時系統發觸覺
+      hapticEl.appendChild(inp);
+    }
   }
   function triggerHaptic() {
     // iOS：switch click（主路徑）。Android / 支援平台：navigator.vibrate 也補一發。
@@ -887,8 +973,10 @@
   }
   function updateScrub(clientX) {
     if (!scrubState) return;
+    // D-7：RTL 的 slider 進度從右往左，拖曳位移對調號
+    const dx = clientX - scrubState.startX;
     const target = computeScrubTarget(
-      scrubState.startIdx, clientX - scrubState.startX, scrubState.scrubWidth, pageCount());
+      scrubState.startIdx, isRtl ? -dx : dx, scrubState.scrubWidth, pageCount());
     if (target !== idx) {
       scrubState.moved = true; // v0.8.166：實際翻頁 = 必為 drag（不可能是 tap）
       goTo(target, false); // 即時跳頁、無動畫（live preview）
@@ -1039,7 +1127,7 @@
       dy: t.clientY - touchState.startY,
       startX: touchState.startX,
       viewportW: window.innerWidth
-    });
+    }, { rtl: isRtl }); // D-7
     touchState = null;
     if (dir) turn(dir);
   }
@@ -1068,7 +1156,7 @@
         dy: endY - touchState.startY,
         startX: touchState.startX,
         viewportW: window.innerWidth
-      });
+      }, { rtl: isRtl }); // D-7
       touchState = null;
       if (dir) turn(dir);
       return;
@@ -1105,6 +1193,7 @@
     if (installed) uninstall();
     if (!articleEl) return;
     art = articleEl;
+    isRtl = detectRtl(); // D-7：install 即讀（remeasurePages 會再刷新）
     vLocked = false; // v0.7.245：新進場（同篇 reapply 走上面 early return 不重置）
 
     // v1.0.2：翻譯頁標題消失（翻頁模式）修法。非翻頁模式時 cleaner 把翻譯頁的
@@ -1173,7 +1262,10 @@
   //   deferScrollRestore：真退出路徑（main.js exitReaderModeImpl）。消費 y 但
   //     不排 rAF，改回傳數字給 main.js 在 styler.restore 之後同步捲回——背景
   //     分頁 rAF 被 throttle / 凍結（v0.8.84 教訓），晚到的 scrollTo 會打在
-  //     還原後的新狀態上。exitAnchorHandoff 時回 0（anchor 路徑接管捲動）。
+  //     還原後的新狀態上。2026-10-07 review D-6：**不論 exitAnchorHandoff 一律回 y**
+  //     ——anchor 可能在退出流程中被移除（JRead 自建標題節點），用不用 fallback 由
+  //     main.js 在 anchor 套用時刻判定（兩層 fallback 不可共用同一盲點）；舊版
+  //     handoff 即回 0，anchor 失效時兩層都不捲、停在翻頁期間被 clamp 的 scrollY 0。
   //   無 opts：settings 切換 / reinstall 路徑，維持原 rAF 行為。
   function uninstall(opts) {
     const o = opts || {};
@@ -1236,7 +1328,7 @@
     if (!o.suspend) {
       const y = savedScrollY;
       if (o.deferScrollRestore) {
-        if (y > 0 && !exitAnchorHandoff) deferredY = y;
+        if (y > 0) deferredY = y; // D-6：一律交回 main.js，anchor 失效時才用
       } else if (y > 0 && !exitAnchorHandoff) {
         requestAnimationFrame(() => window.scrollTo(0, y));
       }
@@ -1247,6 +1339,7 @@
     }
     art = null;
     installed = false;
+    isRtl = false;
     touchState = null;
     wheelAccum = 0;
     idx = 0;
@@ -1280,6 +1373,14 @@
   // 跨欄段落靠 coverage 區間命中：讀第 k 頁時該段 max >= k，正確選到延續段。
   // 找不到覆蓋節點時取第一個「起始頁 > 目前頁」的節點兜底（該頁唯一內容
   // 是量不到的型態時，就近捲到下一段內容）；全量不到（jsdom）回 null。
+  //
+  // 2026-10-07 review D-6：跳過 JRead 自建的標題節點——detector 注入的 H1
+  //（data-jread-injected-title）、cleaner 升進卡片的標題 clone（data-jread-title-clone）
+  // 與翻譯頁外置標題（data-jread-promoted-outside，install 時暫搬進卡片）都會在退出
+  // 流程被 remove / 移回，anchor 一旦選到它們就 disconnected、applyExitScrollAnchor
+  // 不捲。第 1 頁退出時文件順序第一個節點幾乎必是標題文字，所以第 1 頁退出一律
+  // 中招（合成頁 probe：原頁捲 800 進翻頁、第 1 頁 ESC → scrollY 0）。
+  const JREAD_OWN_TITLE_SEL = '[data-jread-injected-title], [data-jread-title-clone], [data-jread-promoted-outside]';
   function captureExitAnchor() {
     if (!installed || !art) return null;
     const s = stride();
@@ -1292,13 +1393,19 @@
       const cs = getComputedStyle(art);
       const padL = parseFloat(cs.paddingLeft) || 0;
       const bL = parseFloat(cs.borderLeftWidth) || 0;
-      const colStart = art.getBoundingClientRect().left + bL + padL;
+      // D-7：rtl 時第一欄貼右緣，colStart 取右緣減 inline-start 內距 / 邊框
+      const artRect = art.getBoundingClientRect();
+      const padR = parseFloat(cs.paddingRight) || 0;
+      const bR = parseFloat(cs.borderRightWidth) || 0;
+      const colStart = isRtl ? artRect.right - bR - padR : artRect.left + bL + padL;
       const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
         acceptNode(n) {
           if (n.nodeType === 3) {
             return (n.nodeValue && n.nodeValue.trim())
               ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
           }
+          // D-6：JRead 自建標題節點整棵跳過（退出時會被移除，不能當錨點）
+          if (n.matches && n.matches(JREAD_OWN_TITLE_SEL)) return NodeFilter.FILTER_REJECT;
           // 替換元素 = atomic fragment，bounding rect 可靠（文首/頁首是圖片的頁靠這層）
           return /^(IMG|VIDEO|IFRAME|SVG)$/i.test(n.tagName)
             ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
@@ -1314,7 +1421,7 @@
         } else {
           rects = node.getClientRects();
         }
-        const cov = fragmentPageCoverage(rects, colStart, s, total);
+        const cov = fragmentPageCoverage(rects, colStart, s, total, isRtl);
         // 文件順序下起始頁單調遞增：第一個 max >= idx 的節點即「覆蓋目前頁」
         //（min <= idx）或「目前頁無可量內容時的下一段」（min > idx，兜底就近）
         if (cov && cov.max >= idx) { found = node; break; }
@@ -1363,6 +1470,7 @@
     quantizeStride,
     computeScrubTarget,
     resolveScrubGesture,
+    normalizeWheelDelta,
     pageOfLeft,
     fragmentPageCoverage,
     classifySwipe,
@@ -1379,7 +1487,7 @@
     goToPage,
     captureExitAnchor,
     isInstalled: () => installed,
-    SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD,
+    SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD, WHEEL_LINE_PX,
     INDICATOR_ID
   };
 

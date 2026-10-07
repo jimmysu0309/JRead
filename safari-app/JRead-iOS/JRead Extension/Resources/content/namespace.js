@@ -84,6 +84,41 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return true;
     },
 
+    // 「裸 div 段落」標記（Readwise 匯出 clone 用）：子樹只含 inline 元素且文字 >= 4
+    // 字的 div 標 data-jread-fb-para="1" + inline margin，之後由 main.js buildCleanHtml
+    // 2.5 統一轉 <p>（Readwise sanitizer 剝 inline style，要靠語意 tag 才有段距）。
+    // 回傳標記數。
+    //
+    // 2026-10-07 review C-23：原本住在 fb-post.js（v0.7.163 為 FB 貼文而寫），v1.7.21
+    // 起 archive.today / 裸 div CMS 的**通用**匯出也靠它——共用層（main.js）反向
+    // import 站點模組，與 site-overrides 的隔離方向相反，不載 fb-post.js 的 context
+    // 會靜默少轉段落。上提到這裡與 isLeafParagraphDiv / INLINE_TEXT_TAGS 同層；
+    // fb-post.js 的 NS.fbPost.markParagraphDivs 只是本函式的別名（既有 spec 相容）。
+    // 邏輯逐字不變（forcing：review-1007-b6-c-mark-paragraph-divs-ns.spec 以舊版
+    // inline 重現對 fixture 全集做 old/new 對照）：
+    // - pre / code 內的 div 不標（v1.7.21：highlighter div-per-line 轉 <p> 拆爛 code）
+    // - inline style 宣告 inline / inline-block / inline-flex / contents / none 的 div
+    //   不標（v1.7.36：不生成獨立區塊的 div 轉 <p> 會把行內片段拆成段落）
+    // - 結構判定走 isLeafParagraphDiv deep（`<a><div>` 合法巢狀只看直系會漏）
+    // - inline margin 1.2em 不帶 !important（styler paragraphSpacing 規則可覆寫）
+    markParagraphDivs(root) {
+      if (!root || !root.querySelectorAll) return 0;
+      const NON_BLOCK_DISPLAY = /^(inline|inline-block|inline-flex|contents|none)$/;
+      let count = 0;
+      for (const div of root.querySelectorAll('div')) {
+        if (div.closest && div.closest('pre, code')) continue;
+        if (div.style && NON_BLOCK_DISPLAY.test((div.style.display || '').trim())) continue;
+        const hasBlockChild = !window.__JRead.isLeafParagraphDiv(div, { deep: true });
+        const hasText = (div.textContent || '').trim().length >= 4;
+        if (hasText && !hasBlockChild) {
+          div.setAttribute('data-jread-fb-para', '1');
+          div.style.margin = '1.2em 0';
+          count++;
+        }
+      }
+      return count;
+    },
+
     // v0.7.143：context-invalidated guard 統一 helper（v0.7.140 原本只在
     // main.js 內、youtube-borderless.js 等其他 content script 仍直接呼
     // chrome.runtime.sendMessage 沒 guard）。提到 namespace 後**所有** content
@@ -1037,6 +1072,19 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return window.__JRead.isTextInputTarget(el);
     },
 
+    // 2026-10-07 review C-18(b)：「現在跑在 Safari 擴充 runtime 嗎」的單一資料源。
+    // 訊號是擴充自身的 URL scheme（safari-web-extension:// 涵蓋 macOS / iPadOS /
+    // iOS Safari），結構性平台訊號、非 UA 嗅探。原本 keepalive.js 與 floating-icon.js
+    // 各寫一份，main.js sendCurrentPageToService 則完全沒 gate（讀憑證的直送軌靠
+    // 呼叫端分流）——三處同一份事實收斂到這裡。context 失效（reload 中）回 false。
+    isSafariRuntime() {
+      try {
+        return String(browser.runtime.getURL('') || '').startsWith('safari-web-extension://');
+      } catch (_) {
+        return false;
+      }
+    },
+
     // 2026-10-07 review C-10：root + 全部符合 sel 的後代，回陣列、**不用 spread**。
     // `[root, ...root.querySelectorAll('*')]` / `push(...nodeList)` 把整個 NodeList 當
     // 引數展開，V8 在約 12 萬個引數就丟 RangeError（Maximum call stack size
@@ -1256,7 +1304,10 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       JREAD_RELOAD: 'JREAD_RELOAD',                 // content → SW：reload extension
       JREAD_DEBUG_SET_THEME: 'JREAD_DEBUG_SET_THEME', // content → SW：代寫 theme（cage Page Rounds 用）
       JREAD_DEBUG_SET_PAGED: 'JREAD_DEBUG_SET_PAGED', // content → SW：代寫 pagedMode（cage 驗翻頁模式切換用，v1.9.10）
-      JREAD_DEBUG_SEND_READWISE: 'JREAD_DEBUG_SEND_READWISE' // content → SW：debug bridge 觸發送儲存服務（Claude 自主驗匯出用）
+      JREAD_DEBUG_SEND_READWISE: 'JREAD_DEBUG_SEND_READWISE', // content → SW：debug bridge 觸發送儲存服務（Claude 自主驗匯出用）
+      // 2026-10-07 review C-18(a)：bridge 的 toggle / enter / exit / translate 也經 SW gate
+      JREAD_DEBUG_ACTION: 'JREAD_DEBUG_ACTION',           // content → SW：debug bridge 動作請求（payload: { action, engine? }）
+      JREAD_DEBUG_ACTION_RELAY: 'JREAD_DEBUG_ACTION_RELAY' // SW → content：development install gate 通過、執行該動作
     }
   };
 })();

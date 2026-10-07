@@ -11,12 +11,22 @@
 //   - content script 由 manifest 載入（掛 window.__JReadLogger）
 //   - popup / options / reader 等擴充頁以 <script> 載入
 //   - jsdom spec 以 require 載入（依賴注入 storage，不碰真實 API）
-// 每個 context 有各自的記憶體 ring（互不相通），**持久化 ring 是共用的那一份**
-// ——options 頁讀 storage.local 就能看到 SW 與 content 兩端的軌跡合流。
+// 每個 context 有各自的記憶體 ring（互不相通）；持久化 ring **每個 context 一把 key**
+// （`jreadDebugLog:<ctx>`，v1.9.22 review E-6）——options 頁讀全部 key 合併排序，看到
+// SW 與 content 兩端的軌跡合流。v1.8.0–v1.9.21 是所有 context 共用一把 key，但
+// 「get → push → set」的序列化只靠模組層 writeQueue、只在同一個 context 內成立：
+// 長按選單是「content 先記兩筆 → 轉 SW 記後續」，兩端 300ms debounce 幾乎同時各自
+// get→set 同一把 key，後寫者整批蓋掉前者，真機回報時「觸發送出」那筆會消失。
+// 分 key 後每個 context 只寫自己的，跨 context 沒有共享的 read-modify-write。
 //
 // 這條驗 X、不驗 Y：log 是**事後回查**的證據，不是即時監控。SW 被終止時最後一批
 // debounce 中的 pending 會掉（best-effort，與 Shinkansen 同一取捨）；也不保證
 // 記錄順序在跨 context 時嚴格單調（兩端各自的時鐘與 flush 時機不同，靠 t 排序）。
+//
+// 隱私（v1.9.22 review E-10）：save / error 分類不受開關控制、一律落盤，200 筆 ring 可留
+// 數週、「複製 JSON」又鼓勵整包貼出去回報——data 內任何 http(s) URL 字串在存入前剝掉
+// query / hash（magic-link token、session id、utm）只留 origin + pathname；通則、不綁
+// 呼叫端，巢狀物件 / 陣列一併掃。
 //
 // 分類（category）：
 //   save    — 送到儲存服務的完整流程（觸發 → 抽取 → 摘要 → 送出 → 結果）
@@ -34,8 +44,11 @@
   'use strict';
 
   const MAX_MEM = 500;              // 記憶體 ring 上限（每個 context 各一份）
-  const PERSIST_KEY = 'jreadDebugLog';
-  const PERSIST_MAX = 200;          // 持久化 ring 上限（跨 context 共用）
+  // 持久化 key：前綴 + ':' + context（sw / content / popup / options / reader…）。
+  // 舊版單一 key `jreadDebugLog`（無後綴）仍被 isPersistKey 認得——升級後讀取端照合併、
+  // 清除照清，不留孤兒
+  const PERSIST_KEY_PREFIX = 'jreadDebugLog';
+  const PERSIST_MAX = 200;          // 持久化 ring 上限（每個 context 各 200 筆）
   const FLUSH_MS = 300;             // 批次寫入 debounce（避免每筆都重寫整個陣列）
   const DATA_MAX_CHARS = 2000;      // 單筆結構化資料序列化上限
 
@@ -78,12 +91,39 @@
     return enabled;
   }
 
+  function persistKeyFor(ctx) { return PERSIST_KEY_PREFIX + ':' + (ctx || 'unknown'); }
+  function isPersistKey(k) {
+    return typeof k === 'string' && (k === PERSIST_KEY_PREFIX || k.indexOf(PERSIST_KEY_PREFIX + ':') === 0);
+  }
+
+  // URL 剝 query / hash（E-10）：只動「看起來是 http(s) URL 的字串」，其餘原樣。
+  // 解析失敗（畸形 URL）退回原字串——寧可多留也不把證據改成空白
+  const URL_LIKE_RE = /^https?:\/\//i;
+  function scrubUrl(str) {
+    if (!URL_LIKE_RE.test(str)) return str;
+    try {
+      const u = new URL(str);
+      return u.origin + u.pathname;
+    } catch (_) { return str; }
+  }
+  const SCRUB_MAX_DEPTH = 8;
+  function scrubUrls(value, depth) {
+    const d = depth || 0;
+    if (typeof value === 'string') return scrubUrl(value);
+    if (!value || typeof value !== 'object' || d >= SCRUB_MAX_DEPTH) return value;
+    if (Array.isArray(value)) return value.map((v) => scrubUrls(v, d + 1));
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = scrubUrls(value[k], d + 1);
+    return out;
+  }
+
   // 結構化資料序列化：超長截斷成 preview（截斷後的 JSON 字串不可再 parse，
-  // 直接給可讀前段 + 原始長度，與 Shinkansen 同一教訓）
+  // 直接給可讀前段 + 原始長度，與 Shinkansen 同一教訓）。URL 剝 query / hash 在
+  // stringify 之前做（preview 也不含 query）
   function sanitize(data) {
     if (data == null) return undefined;
     try {
-      const s = JSON.stringify(data);
+      const s = JSON.stringify(scrubUrls(JSON.parse(JSON.stringify(data))));
       if (s.length > DATA_MAX_CHARS) {
         return { _truncated: true, originalLength: s.length, preview: s.slice(0, DATA_MAX_CHARS) };
       }
@@ -107,14 +147,16 @@
     if (!store) { pending = []; return; }
     const batch = pending;
     pending = [];
-    // 序列化寫入：避免平行 read-modify-write 互相蓋掉（get → push → set 不是原子操作）
+    const key = persistKeyFor(contextName);
+    // 序列化寫入：同一個 context 內避免平行 read-modify-write 互相蓋掉（get → push →
+    // set 不是原子操作）；跨 context 靠「各寫各的 key」隔離（E-6）
     writeQueue = writeQueue.then(async () => {
       try {
-        const got = await store.get(PERSIST_KEY);
-        const logs = (got && Array.isArray(got[PERSIST_KEY])) ? got[PERSIST_KEY] : [];
+        const got = await store.get(key);
+        const logs = (got && Array.isArray(got[key])) ? got[key] : [];
         logs.push.apply(logs, batch);
         if (logs.length > PERSIST_MAX) logs.splice(0, logs.length - PERSIST_MAX);
-        await store.set({ [PERSIST_KEY]: logs });
+        await store.set({ [key]: logs });
       } catch (_) { /* 寫入失敗不影響記憶體 ring，也不可卡住 queue */ }
     });
     return writeQueue;
@@ -149,7 +191,20 @@
     return entry;
   }
 
-  /** 讀持久化 ring（先 flush 掉 debounce 中的批次，讀取端才不會少最後幾筆）。 */
+  /**
+   * storage.local 整包 → 所有 context 的持久化 ring 合併成一個陣列（含舊版單一 key），
+   * 照 t 排序（跨 context 的 seq 不可比較）。options 頁與 getPersistedLogs 共用。
+   */
+  function collectPersisted(got) {
+    const all = [];
+    if (!got || typeof got !== 'object') return all;
+    for (const k of Object.keys(got)) {
+      if (isPersistKey(k) && Array.isArray(got[k])) all.push.apply(all, got[k]);
+    }
+    return all.sort((a, b) => String((a && a.t) || '').localeCompare(String((b && b.t) || '')));
+  }
+
+  /** 讀持久化 ring——全部 context 合併（先 flush 掉 debounce 中的批次，讀取端才不會少最後幾筆）。 */
   async function getPersistedLogs() {
     if (flushTimer && typeof clearTimeout === 'function') {
       clearTimeout(flushTimer);
@@ -160,12 +215,11 @@
     const store = storageArea || detectStorage();
     if (!store) return [];
     try {
-      const got = await store.get(PERSIST_KEY);
-      return (got && Array.isArray(got[PERSIST_KEY])) ? got[PERSIST_KEY] : [];
+      return collectPersisted(await store.get(null));
     } catch (_) { return []; }
   }
 
-  /** 清空記憶體 ring + 持久化 ring（連 pending 一起丟，否則 flush 會把剛清掉的寫回）。 */
+  /** 清空記憶體 ring + 全部 context 的持久化 ring（連 pending 一起丟，否則 flush 會把剛清掉的寫回）。 */
   async function clearLogs() {
     memBuffer.length = 0;
     pending = [];
@@ -177,8 +231,11 @@
     const store = storageArea || detectStorage();
     if (!store) return;
     try {
-      if (typeof store.remove === 'function') await store.remove(PERSIST_KEY);
-      else await store.set({ [PERSIST_KEY]: [] });
+      const got = await store.get(null);
+      const keys = Object.keys(got || {}).filter(isPersistKey);
+      if (!keys.length) return;
+      if (typeof store.remove === 'function') await store.remove(keys);
+      else { const blank = {}; for (const k of keys) blank[k] = []; await store.set(blank); }
     } catch (_) { /* 清不掉就算了，log 是 best-effort */ }
   }
 
@@ -212,7 +269,13 @@
     getPersistedLogs,
     clearLogs,
     flush,
-    PERSIST_KEY,
+    /** 這個 context 自己寫入的 key（依 configure 的 context 動態算） */
+    get PERSIST_KEY() { return persistKeyFor(contextName); },
+    PERSIST_KEY_PREFIX,
+    persistKeyFor,
+    isPersistKey,
+    collectPersisted,
+    scrubUrls,
     PERSIST_MAX,
     MAX_MEM,
     HOT_CATEGORIES: HOT_CATEGORIES.slice()

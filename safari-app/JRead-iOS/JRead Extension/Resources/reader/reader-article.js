@@ -52,10 +52,25 @@
     'dir', 'start', 'reversed', 'type', 'media', 'poster', 'controls',
     'preload', 'kind', 'srclang', 'label', 'cite', 'target', 'rel', 'class', 'id'
   ]);
-  const SANITIZE_URL_ATTRS = new Set(['href', 'src', 'srcset']);
+  // 2026-10-07 review F-13：poster 也是 URL 載體（video 海報），一併過 URL 檢查
+  const SANITIZE_URL_ATTRS = new Set(['href', 'src', 'srcset', 'poster']);
   // 控制字元 + 空白（"java\tscript:" 這類繞法要擋）；用 RegExp 建構避免字面
   // 值在編輯工具鏈被實體化成控制字元
   const SANITIZE_CTRL_RE = new RegExp('[\\u0000-\\u0020]', 'g');
+  // F-13：資源載入屬性（src / srcset / poster）改 scheme **白名單**——只放行
+  // https: / http: / data:image/ 與無 scheme 的相對路徑（相對路徑解析到擴充頁
+  // origin、頂多 404）；黑名單只擋 javascript: / vbscript: 會怕新 scheme。href
+  // 維持黑名單（mailto: / tel: 等合法連結 scheme 太多，列不完）。Readwise
+  // html_content 與 Instapaper get_text 的圖片 URL 實務上都是絕對 URL
+  //（save 端 `absolutizeResourceUrls` 已轉過），白名單對正常內容零影響。
+  const SANITIZE_RESOURCE_ATTRS = new Set(['src', 'srcset', 'poster']);
+  const SANITIZE_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/;
+  function resourceUrlAllowed(v) {
+    const s = String(v || '').replace(SANITIZE_CTRL_RE, '').toLowerCase();
+    if (!s) return true;
+    if (!SANITIZE_SCHEME_RE.test(s)) return true;           // 相對 / 協定相對（//host）
+    return s.startsWith('https:') || s.startsWith('http:') || s.startsWith('data:image/');
+  }
 
   // 回傳承載已清理內容的 off-DOM 容器 div。buildArticleContainer 直接搬移其
   // 子節點——不走「serialize 成字串再二次 innerHTML parse」（兩次 parse 的
@@ -83,7 +98,14 @@
         if (name === 'id' && String(attr.value).startsWith('__')) { el.removeAttribute(attr.name); continue; }
         if (SANITIZE_URL_ATTRS.has(name)) {
           const v = String(attr.value || '').replace(SANITIZE_CTRL_RE, '').toLowerCase();
-          if (v.indexOf('javascript:') !== -1 || v.indexOf('vbscript:') !== -1) el.removeAttribute(attr.name);
+          if (v.indexOf('javascript:') !== -1 || v.indexOf('vbscript:') !== -1) { el.removeAttribute(attr.name); continue; }
+          if (SANITIZE_RESOURCE_ATTRS.has(name)) {
+            // srcset 逐個 candidate 檢查（"url 2x, url 800w"）
+            const urls = name === 'srcset'
+              ? String(attr.value || '').split(',').map(c => c.trim().split(/\s+/)[0])
+              : [attr.value];
+            if (!urls.every(resourceUrlAllowed)) el.removeAttribute(attr.name);
+          }
         }
       }
     }
@@ -97,9 +119,27 @@
 
   // 用 Reader API 的 doc 物件建合成 <article>：標題 h1 + byline（作者 · 來源 ·
   // 日期）+ 主文 body。container 結構刻意簡單（styler 對它套 typography）。
-  function buildArticleContainer(doc, document) {
+  // opts.detectLanguage(text) → BCP-47 字串或 ''（init 傳 popup-core
+  // detectHanLanguage；jsdom spec 可注入替身）。
+  function buildArticleContainer(doc, document, opts) {
+    const o = opts || {};
     const article = document.createElement('article');
     article.setAttribute('data-jread-reader-doc', (doc && doc.id) || '1');
+    // 2026-10-07 review F-9：合成容器帶文章語言，不要繼承 article.html 的
+    // `lang="zh-Hant"`——瀏覽器依 lang 選字型與漢字變體（日文「直」「骨」會以中文
+    // 字形渲染）、英文文章也被當 CJK 處理。Readwise list API 回應沒有 language
+    // 欄位（2026-10-07 實查 keys），先看 doc.language（有就用，相容未來 / 其他
+    // 服務），沒有就用 detectLanguage 判漢字比例；判不出來設空字串 lang=""
+    //（HTML 規範：空值 = 語言未知，覆蓋繼承、交給 UA 預設），總之不是 zh-Hant。
+    let lang = (doc && typeof doc.language === 'string') ? doc.language.trim() : '';
+    if (!lang && typeof o.detectLanguage === 'function') {
+      try {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = String((doc && doc.html_content) || '');
+        lang = o.detectLanguage(((doc && doc.title) || '') + ' ' + (tmp.textContent || '')) || '';
+      } catch (_) { lang = ''; }
+    }
+    article.setAttribute('lang', lang);
 
     if (doc && doc.title) {
       const h1 = document.createElement('h1');
@@ -194,10 +234,13 @@
     }
 
     const statusEl = doc.getElementById('jr-status');
+    // 2026-10-07 review F-10：錯誤文字用 --text（加重），與 reader-feed `.jr-error`
+    // 一致——錯誤是要使用者讀的訊息，不該比「載入中…」更淡；muted 在深色底只有
+    // 約 3.6:1
     const setStatus = (text, isError) => {
       if (!statusEl) return;
       statusEl.textContent = text || '';
-      if (isError) statusEl.style.color = 'var(--muted)';
+      if (isError) statusEl.style.color = 'var(--text)';
     };
 
     const params = new URLSearchParams(global.location.search);
@@ -228,10 +271,10 @@
       PC.getArticle({ service, creds, id, meta }).then((r) => {
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
-          setStatus(loadErrorMessage(r), true);
+          setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
           return;
         }
-        renderArticle(r.doc, { NS, doc });
+        renderArticle(r.doc, { NS, doc, PC });
       }, (err) => {
         // v1.7.41（R1）：getArticle reject（iOS 偶發 / renderArticle 上游同步 throw
         // 包成 rejection）要 surface，不要永遠卡「載入中」——與 reader-feed.js
@@ -250,12 +293,14 @@
   }
 
   function renderArticle(docData, ctx) {
-    const { NS, doc } = ctx;
+    const { NS, doc, PC } = ctx;
     if (docData.title) doc.title = docData.title;
     const statusEl = doc.getElementById('jr-status');
     if (statusEl) statusEl.remove();
 
-    const container = buildArticleContainer(docData, doc);
+    const container = buildArticleContainer(docData, doc, {
+      detectLanguage: PC && PC.detectHanLanguage
+    });
     doc.body.appendChild(container);
 
     // 主動預載全部圖片（翻頁模式 WebKit 遠欄圖延遲載入修法，見 preloadImages 註解）
@@ -296,12 +341,8 @@
     if (!el.parentNode) doc.body.insertBefore(el, doc.body.firstChild);
   }
 
-  function loadErrorMessage(result) {
-    if (result && (result.error === 'AUTH' || result.error === 'NO_CREDENTIALS')) return '登入憑證無效或已過期';
-    if (result && result.error === 'NETWORK') return '網路錯誤，載入失敗，請稍後再試';
-    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
-    return `載入失敗${detail}`;
-  }
+  // 2026-10-07 review F-10：錯誤碼 → 文案的表住 popup-core `serviceErrorMessage`
+  //（reader-feed 封存 / 本頁載入共用，帶 action 參數）；本檔不再自帶一份。
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

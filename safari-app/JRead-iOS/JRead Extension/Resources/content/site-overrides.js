@@ -52,6 +52,20 @@
 
   // facts: { hostname, key, altKey, ctrlKey, metaKey, shiftKey, hasSelectionInArticle }
   // 回傳 true = keyguard 不要攔，讓頁面 JS 收到這個按鍵事件。
+  //
+  // 2026-10-07 review C-15：hasSelectionInArticle 可以是 boolean，也可以是「問了才算」
+  // 的函式——呼叫端（main.js）把整段選取序列化成字串來判空（`String(sel).trim()`），
+  // wiki 17 萬字全選實測一次 3.7–5.7ms，而 keyguard 每個按鍵有 keydown / keypress /
+  // keyup 三個事件、每個事件都重建 facts，沒有規則的站也付這筆。改成 lazy：只有
+  // host + key 都命中且規則要求選取時才真的去算。
+  function readSelectionFact(facts) {
+    var v = facts.hasSelectionInArticle;
+    if (typeof v === 'function') {
+      try { return !!v(); } catch (_) { return false; }
+    }
+    return !!v;
+  }
+
   function shouldPassKeyToPage(facts) {
     if (!facts) return false;
     if (facts.altKey || facts.ctrlKey || facts.metaKey || facts.shiftKey) return false;
@@ -61,7 +75,7 @@
       var rule = KEY_PASSTHROUGH[i];
       if (!hostMatches(facts.hostname, rule.host)) continue;
       if (rule.keys.indexOf(key) < 0) continue;
-      if (rule.requireSelection && !facts.hasSelectionInArticle) continue;
+      if (rule.requireSelection && !readSelectionFact(facts)) continue;
       return true;
     }
     return false;

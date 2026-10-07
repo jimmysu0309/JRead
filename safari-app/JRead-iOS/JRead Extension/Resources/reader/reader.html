@@ -7,6 +7,11 @@
 <style>
   /* 主題色對齊 jread/content/styler.js 的 THEMES（light / dark / sepia / gray） */
   :root { --bg:#ececec; --card:#ffffff; --text:#1a1a1a; --muted:#6b6b6b; --link:#1a73e8; --line:rgba(0,0,0,0.08); }
+  /* JS 讀完 storage 才設 data-theme；在那之前依系統深色偏好先給深色變數，
+     深色使用者不再每次先閃一下淺灰（2026-10-07 review F-10） */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) { --bg:#0b0b0b; --card:#1f1f22; --text:#ecebf1; --muted:#9a99a2; --link:#7fb5e6; --line:rgba(255,255,255,0.1); }
+  }
   :root[data-theme="dark"]  { --bg:#0b0b0b; --card:#1f1f22; --text:#ecebf1; --muted:#9a99a2; --link:#7fb5e6; --line:rgba(255,255,255,0.1); }
   :root[data-theme="sepia"] { --bg:#cdb891; --card:#eee2cb; --text:#1a1a1a; --muted:#6f6149; --link:#2c5282; --line:rgba(60,50,38,0.14); }
   :root[data-theme="gray"]  { --bg:#d8d8d8; --card:#ededed; --text:#1a1a1a; --muted:#6b6b6b; --link:#2c5282; --line:rgba(0,0,0,0.1); }

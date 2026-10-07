@@ -432,6 +432,8 @@ if (readwiseTestBtn && readwiseTestResultEl) {
       setReadwiseTestResult('ok', '✓ Token 有效');
     } else if (result.error === 'AUTH') {
       setReadwiseTestResult('error', '✗ Token 無效或已過期');
+    } else if (result.error === 'TIMEOUT') {
+      setReadwiseTestResult('error', '✗ Readwise 沒有回應，請再試一次');
     } else if (result.error === 'NETWORK') {
       setReadwiseTestResult('error', '✗ 無法連線，請檢查網路');
     } else {
@@ -481,6 +483,8 @@ if (geminiTestBtn && geminiTestResultEl) {
       setGeminiTestResult('ok', '✓ API key 有效');
     } else if (result.error === 'AUTH') {
       setGeminiTestResult('error', '✗ API key 無效');
+    } else if (result.error === 'TIMEOUT') {
+      setGeminiTestResult('error', '✗ Google 沒有回應，請再試一次');
     } else if (result.error === 'NETWORK') {
       setGeminiTestResult('error', '✗ 無法連線，請檢查網路');
     } else {
@@ -545,7 +549,13 @@ if (ipConnectBtn) {
     setIpConnectResult('pending', '連結中…');
     ipConnectBtn.disabled = true;
     let r;
-    try { r = await IP.instapaperXAuth({ email, password }); }
+    // v1.9.22（review E-3）：xAuth 走 lib 內部 fetch、沒有時限——對端不回應時按鈕永久
+    // disabled + 卡「連結中…」要重整頁面才解。把 AUTH_FETCH_TIMEOUT_MS 包進 fetchImpl
+    //（同 popup-core 送出端的作法；lib 把 abort 歸類成 NETWORK、message 帶 TIMEOUT）
+    const PopupAPI = window.__JReadPopup;
+    const ipFetch = (PopupAPI && typeof PopupAPI.withFetchTimeout === 'function' && typeof fetch === 'function')
+      ? PopupAPI.withFetchTimeout(fetch, PopupAPI.AUTH_FETCH_TIMEOUT_MS) : undefined;
+    try { r = await IP.instapaperXAuth(ipFetch ? { email, password, fetchImpl: ipFetch } : { email, password }); }
     catch (_) { r = { ok: false, error: 'NETWORK' }; }
     ipConnectBtn.disabled = false;
     if (r && r.ok) {
@@ -562,6 +572,8 @@ if (ipConnectBtn) {
       setIpConnectResult('error', '✗ 帳號或密碼錯誤');
     } else if (r && r.error === 'CONFIG') {
       setIpConnectResult('error', '✗ 此版本未內建 Instapaper 金鑰');
+    } else if (r && r.error === 'NETWORK' && r.message === 'TIMEOUT') {
+      setIpConnectResult('error', '✗ Instapaper 沒有回應，請再試一次');
     } else if (r && r.error === 'NETWORK') {
       setIpConnectResult('error', '✗ 無法連線，請檢查網路');
     } else {
@@ -774,11 +786,19 @@ if (clearCacheBtn) {
 refreshStorageInfo();
 
 // ---- 除錯記錄檢視（v1.8.0）-------------------------------------------
-// 資料來源是 lib/logger.js 的持久化 ring（storage.local[jreadDebugLog]）——SW 軌與
-// content 軌兩端寫進同一份，這裡照時間合流顯示。純唯讀 + 篩選 + 複製 + 清除，
-// 不做即時 polling（storage.onChanged 已足夠，且避免設定頁長開時空轉）。
+// 資料來源是 lib/logger.js 的持久化 ring——v1.9.22（review E-6）起每個 context 一把
+// key（storage.local[jreadDebugLog:<ctx>]，舊版單一 key jreadDebugLog 也認），這裡讀
+// 整包 local、挑出全部 ring 照時間合流顯示。純唯讀 + 篩選 + 複製 + 清除，不做即時
+// polling（storage.onChanged 已足夠，且避免設定頁長開時空轉）。
 const LOGGER = window.__JReadLogger || null;
-const DEBUG_LOG_KEY = (LOGGER && LOGGER.PERSIST_KEY) || 'jreadDebugLog';
+const DEBUG_LOG_PREFIX = (LOGGER && LOGGER.PERSIST_KEY_PREFIX) || 'jreadDebugLog';
+const isDebugLogKey = (LOGGER && LOGGER.isPersistKey)
+  || ((k) => typeof k === 'string' && (k === DEBUG_LOG_PREFIX || k.indexOf(DEBUG_LOG_PREFIX + ':') === 0));
+const collectDebugLogs = (LOGGER && LOGGER.collectPersisted) || ((got) => {
+  const all = [];
+  for (const k of Object.keys(got || {})) if (isDebugLogKey(k) && Array.isArray(got[k])) all.push(...got[k]);
+  return all.sort((a, b) => String(a.t || '').localeCompare(String(b.t || '')));
+});
 const debugLogListEl = document.getElementById('debug-log-list');
 const debugLogStatusEl = document.getElementById('debug-log-status');
 const debugLogCatEl = document.getElementById('debugLogCategory');
@@ -850,10 +870,10 @@ function loadDebugLogs() {
   if (!local || !debugLogListEl) return;
   // 直接串 .then（不用 Promise.resolve 包）——與 refreshStorageInfo 同款：
   // 包一層會把同步 thenable 轉成 microtask，jsdom spec 的同步斷言就看不到渲染結果
-  local.get(DEBUG_LOG_KEY).then((got) => {
-    const logs = (got && Array.isArray(got[DEBUG_LOG_KEY])) ? got[DEBUG_LOG_KEY] : [];
-    // 兩端各自的 seq 不可跨 context 比較，一律照時間排（同毫秒維持原順序）
-    debugLogEntries = logs.slice().sort((a, b) => String(a.t || '').localeCompare(String(b.t || '')));
+  // get(null) 整包：ring 的 key 數依 context 而定（sw / content / popup…），不可硬寫；
+  // 兩端各自的 seq 不可跨 context 比較，collectDebugLogs 一律照時間排（同毫秒維持原順序）
+  local.get(null).then((got) => {
+    debugLogEntries = collectDebugLogs(got);
     renderDebugLogs();
   }).catch(() => { debugLogStatus('無法讀取除錯記錄', 3000); });
 }
@@ -883,7 +903,11 @@ if (debugLogListEl) {
       let local;
       try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
       if (!local) return;
-      local.remove(DEBUG_LOG_KEY).then(() => {
+      // 清全部 ring key（各 context + 舊版單一 key），只動除錯記錄、不碰 readingPositions
+      local.get(null).then((got) => {
+        const keys = Object.keys(got || {}).filter(isDebugLogKey);
+        return keys.length ? local.remove(keys) : undefined;
+      }).then(() => {
         debugLogEntries = [];
         renderDebugLogs();
         debugLogStatus('已清除除錯記錄', 2000);
@@ -893,7 +917,7 @@ if (debugLogListEl) {
   // 記錄是別的 context（SW / content script）寫進來的——onChanged 是唯一的即時訊號
   if (browser.storage && browser.storage.onChanged) {
     browser.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes && DEBUG_LOG_KEY in changes) loadDebugLogs();
+      if (area === 'local' && changes && Object.keys(changes).some(isDebugLogKey)) loadDebugLogs();
     });
   }
   loadDebugLogs();

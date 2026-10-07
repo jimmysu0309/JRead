@@ -737,8 +737,9 @@
   // path，不必量 computed style），否則看 computed display 是否為 inline 家族
   // （X 把段落內連結包成 `<div style="display:inline">`，tag 白名單看不出來）。
   //
-  // ⚠ 三實作注意：styler.js markTextDivs（TEXT_DIV_ATTR）與 fb-post.js
-  // markParagraphDivs 是同一份事實的另兩個實作（tag 白名單軌）。改任一處的
+  // ⚠ 三實作注意：styler.js markTextDivs（TEXT_DIV_ATTR）與 namespace.js
+  // NS.markParagraphDivs（原 fb-post.js，2026-10-07 review C-23 上提）是同一份事實
+  // 的另兩個實作（tag 白名單軌）。改任一處的
   // 判定前先看另外兩處——v1.7.36 已被這組 drift 咬過一次。此處刻意多一條
   // computed display 軌：cleaner 跑在 live DOM（clone 已插入、站點 CSS 生效），
   // 量得到 computed；另兩處的用途（段距 / 匯出）對漏標的代價遠低於此處
@@ -1330,6 +1331,33 @@
     return list;
   }
 
+  // hide() 對 IMG / PICTURE 的副作用：parent 標 HIDDENMEDIA_WRAP_ATTR（styler 的
+  // min-height:0 解除訊號）。抽成函式讓「部分解除 / 重新 hide」的 path（選取工具列
+  // 放行，review A-27）能對稱地撤 / 補標記，而不是只有 restore() 撤得掉。
+  function markHiddenMediaWrap(el, hidden) {
+    if ((el.tagName === 'IMG' || el.tagName === 'PICTURE') && el.parentElement &&
+        el.parentElement.getAttribute(HIDDENMEDIA_WRAP_ATTR) !== '1') {
+      el.parentElement.setAttribute(HIDDENMEDIA_WRAP_ATTR, '1');
+      if (hidden) {
+        if (!hidden.__hiddenMediaWrapEls) hidden.__hiddenMediaWrapEls = [];
+        hidden.__hiddenMediaWrapEls.push(el.parentElement);
+      }
+    }
+  }
+  // 逆操作：parent 底下已沒有其他仍被 hide 的 img / picture 才撤標記（同 parent 多張
+  // 隱藏媒體只標一次，撤也只能在最後一張解除時撤）。restore() 走 __hiddenMediaWrapEls
+  // 清單統一移除，不依賴這裡。
+  function unmarkHiddenMediaWrapIfClear(el) {
+    if (!(el.tagName === 'IMG' || el.tagName === 'PICTURE')) return;
+    const p = el.parentElement;
+    if (!p || p.getAttribute(HIDDENMEDIA_WRAP_ATTR) !== '1') return;
+    for (const c of p.children) {
+      if (c !== el && (c.tagName === 'IMG' || c.tagName === 'PICTURE') &&
+          c.dataset && c.dataset.jreadHidden === '1') return;
+    }
+    p.removeAttribute(HIDDENMEDIA_WRAP_ATTR);
+  }
+
   function hide(el, hidden) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
@@ -1349,12 +1377,7 @@
     // （v0.8.59 min-height 解除的 JS 端訊號）。同 parent 多張隱藏媒體只標一次；
     // 編輯模式 undo 單張還原後標記留存＝該容器維持 min-height:0——與媒體容器
     // 本就吃 :has(>img) height reset 的效果同向，無視覺差。
-    if ((el.tagName === 'IMG' || el.tagName === 'PICTURE') && el.parentElement &&
-        el.parentElement.getAttribute(HIDDENMEDIA_WRAP_ATTR) !== '1') {
-      el.parentElement.setAttribute(HIDDENMEDIA_WRAP_ATTR, '1');
-      if (!hidden.__hiddenMediaWrapEls) hidden.__hiddenMediaWrapEls = [];
-      hidden.__hiddenMediaWrapEls.push(el.parentElement);
-    }
+    markHiddenMediaWrap(el, hidden);
     // inline `!important` —— 勝過任何 stylesheet rule（包括原站自己的
     // `display: flex !important`）。原本 `el.style.display = 'none'`（inline
     // 無 priority）在 stylesheet !important 戰中會輸 — udn LINE 分享按鈕
@@ -2468,6 +2491,23 @@
   // 故翻譯頁改吃純結構訊號（候選唯一即可）。兩條路徑的判定基礎不同、不共用
   // 盲點；任一條失敗都只是 no-op 降級，不會注入錯誤標題。
   const OUTSIDE_TITLE_CARRIER_TEXT_MAX = 120; // 同 detector TITLE_TEXT_MAX 語意
+  // 2026-10-07 review A-24：「leaf-ish」判定（後代 element 數 ≤ max）改手寫早退——舊寫法
+  // `el.querySelectorAll('*').length > max` 對全頁每個候選都把整棵子樹走完才比大小，
+  // 單鏈 wrapper（body > div > div > …）的子樹被反覆走訪、O(n × 深度)；這裡只要知道
+  // 「有沒有超過 max 個」，第 max+1 個後代出現就能回答。語意與 `.length > max` 逐元素
+  // 等價（forcing：review-1007-b6-a-leafish-early-exit.spec 對全部 fixture 逐元素比對）。
+  function descendantCountExceeds(el, max) {
+    let n = 0;
+    const stack = [el];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (let c = cur.firstElementChild; c; c = c.nextElementSibling) {
+        if (++n > max) return true;
+        stack.push(c);
+      }
+    }
+    return false;
+  }
   function promoteOutsideTitleCarrierInto(articleEl, hidden) {
     if (!articleEl || !articleEl.parentNode) return;
     if (articleHasOwnHeadingTitle(articleEl)) return;
@@ -2479,7 +2519,7 @@
       if (/^H[1-6]$/.test(el.tagName)) continue; // heading 由既有兩條 path 負責
       const sig = classStrOf(el) + ' ' + (el.id || '');
       if (TITLE_CLASS_NEGATIVE_RE.test(sig) || !TITLE_CLASS_HIT_RE.test(sig)) continue;
-      if (el.querySelectorAll('*').length > 2) continue; // leaf-ish：標題載體不是 wrapper
+      if (descendantCountExceeds(el, 2)) continue; // leaf-ish：標題載體不是 wrapper
       const t = normTitle(el.textContent || '');
       if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX || titleTextWeight(t) < 5) continue;
       // DOM order 必須在主文之前（文末「相關文章」卡片不會被誤選為標題）
@@ -2551,7 +2591,7 @@
       if (articleEl.contains(el)) continue;
       if (/^H[1-6]$/.test(el.tagName)) continue; // heading 由既有 path 負責
       if (el.children.length > 2) continue;      // 便宜粗篩，避免對大 wrapper 讀 textContent
-      if (el.querySelectorAll('*').length > 2) continue; // leaf-ish（同第一層語意）
+      if (descendantCountExceeds(el, 2)) continue; // leaf-ish（同第一層語意）
       if (!(articleEl.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
       const t = normTitle(el.textContent || '');
       if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX) continue;
@@ -2580,7 +2620,7 @@
     if (norm(block.textContent || '').length > titleText.length + 80) return '';
     for (const el of block.querySelectorAll('*')) {
       if (el === carrier || el.contains(carrier)) continue;
-      if (el.querySelectorAll('*').length > 1) continue; // leaf-ish
+      if (descendantCountExceeds(el, 1)) continue; // leaf-ish
       const t = norm(el.textContent || '');
       if (!t || t.length > 60) continue;
       if (!ARTICLE_META_RE.test(t)) continue;
@@ -3612,6 +3652,20 @@
   // lazy 注入的連結包（printHide SECTION）包在無 class 外層 DIV 內 → 自身
   // miss、整塊殘留；動態端改傳 addedNode 子孫的 CONTAINER_SEL 進來，guard
   // （keywordWrapperIsProtected / slug id 豁免）自動帶上、不再雙實作。
+  // keyword 規則的候選集合＝標準容器（CONTAINER_SEL）+ custom element（hyphenated
+  // tag，v0.8.122 autosport `<msnt-survey-promo class="…promo">`）。
+  // 2026-10-07 review A-22：靜態 clean() 與動態 observer 共用這一份組合邏輯——舊版只有
+  // 靜態側併 custom element，動態側只掃 addedNode 的 CONTAINER_SEL 子孫；「晚注入的無
+  // class 外層 div 包著 custom element widget」在合成頁真 Chromium 實證殘留（custom
+  // element 自身當 addedNode、或一般 div 容器包在 wrapper 內都清得掉，唯獨這一形）。
+  // `allEls` 是 root 的全部子孫（靜態側餵 _getArticleAllElements 快取、動態側餵
+  // addedNode.querySelectorAll('*')），只取 hyphenated tag。
+  function keywordScanCandidates(containers, allEls) {
+    const customEls = [];
+    for (const el of allEls) if (el.tagName.indexOf('-') >= 0) customEls.push(el);
+    return customEls.length ? [...containers, ...customEls] : containers;
+  }
+
   function hideKeywordContainers(articleEl, hidden, candidates) {
     for (const el of candidates) {
       if (el === articleEl) continue;
@@ -4183,8 +4237,10 @@
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
   // v0.8.112：動態注入 <aside> 的「夠大」文字門檻（layout-independent，補 rectH 在
   // 一次注入完整 aside 時量到 0 的 harness flaky）。下一篇文章 ~2K 字遠超此值；
-  // pull-quote / byline / 短 widget 通常 < 400 → 不誤殺。只用於 checkDynamicNoise
-  // 動態側（靜態條件 B 在 clean-time layout 已就緒、續用 rectH 即可）。
+  // pull-quote / byline / 短 widget 通常 < 400 → 不誤殺。只在 rect 量不到（高度 0）
+  // 時才用——asideIsSecondaryArticleBlock 是靜態 hideSecondaryArticleAsides 與動態
+  // checkDynamicNoise 共用的，layout 就緒時以高度門檻為準（2026-10-07 review A-20：
+  // 舊註解寫「只用於動態側」但靜態也走同一 helper，實作已改成高度 0 才看文字）。
   const ASIDE_DYN_MIN_TEXT = 400;
   // 條件 E（flex 拉伸的近空直立 rail）：flex 主文旁的細長側欄——垂直
   // byline / 直書社群分享列 / 書籤 rail（verse.com.tw `.meta` 實案：
@@ -4341,7 +4397,12 @@
   //       注入時序 / layout 時序影響——根治本案的非決定性漏網）
   //   (b) rectH > SIDEBAR_ASIDE_MIN_HEIGHT（與靜態條件 B 同門檻、layout 就緒時）
   //   (c) textContent > ASIDE_DYN_MIN_TEXT（layout 未就緒 fallback：動態一次注入
-  //       完整 aside 時 getBoundingClientRect 回 0，文字長度不依賴 layout）
+  //       完整 aside 時 getBoundingClientRect 回 0，文字長度不依賴 layout）——
+  //       **只在 rect 量不到（高度 0）時才看文字**（2026-10-07 review A-20）。舊版
+  //       不分 layout 有沒有就緒一律套 (c)，靜態 clean-time layout 早就緒、矮於 400px
+  //       但文字 > 400 的 aside（長編輯註 / 方塊側欄 / 長 pull-quote）也被整塊藏
+  //       （合成頁真 Chromium 實證：430 字、98px 高的 aside 被靜態 hide），與本註解
+  //       及 SPEC 寫的「fallback」語意不符。layout 就緒時以 (b) 的高度為準。
   // guard：必須 <aside> tag、非 articleEl 自身 / 祖先（避免把主文 wrapper 當次要區塊
   // 砍）、非 preserved、未 hide。pull-quote / byline / infobox（無 h1、矮、短）不命中。
   // 靜態 hideSecondaryArticleAsides 與動態 checkDynamicNoise 共用此單一資料源。
@@ -4353,6 +4414,7 @@
     if (aside.querySelector && aside.querySelector('h1')) return true;
     const r = aside.getBoundingClientRect && aside.getBoundingClientRect();
     if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) return true;
+    if (r && r.height > 0) return false; // layout 就緒且矮於門檻：不是次要全文區塊
     if (norm(aside.textContent || '').length > ASIDE_DYN_MIN_TEXT) return true;
     return false;
   }
@@ -7194,16 +7256,20 @@
       if (visited.has(parent)) continue;
       if (isInPreserved(parent) && parent.matches && parent.matches('figcaption')) continue;
       // v0.8.117：**不再**以「media 仍是 position:absolute」當必要條件。
-      // main.js enterReaderMode 的順序是 styler.apply → cleaner.clean
-      // （styler 先把 `img{position:static !important}` 注入），等執行到這裡時，
-      // 站方原本 `position:absolute` 填滿 ratio 容器的 hero img 早已被 styler
-      // 解成 static。舊版在這裡量到 static 直接 continue，導致「relative 容器 +
-      // padding-bottom ratio hack + 已被 styler 解 absolute 的 img」整類漏網，
-      // 容器 padding-bottom 殘留成主圖下方一大塊空白（crossing.cw.com.tw
-      // .main-img__pic：原生 position:relative + padding-bottom 61% 寬、img
-      // 原生 absolute，styler 解 static 後 padding 殘留 ~400px 空白實證）。
-      // 改以 parent 的 padding-bottom/width 比例 + aspect-ratio 為唯一結構特徵
-      // （見下 isHack / hasAspectRatio），media 當下位置不影響判定。
+      // 站方 hack 的結構特徵在 parent（padding-bottom/width 比例、aspect-ratio），
+      // media 當下是 absolute 還是 static 都要解：reapply（改設定 / 翻頁切換）
+      // 時 styler 的 `img{position:static !important}` 已經生效、hero img 早被解成
+      // static，舊版在這裡量到 static 直接 continue → 「relative 容器 + padding-
+      // bottom ratio hack + 已解 absolute 的 img」整類漏網，容器 padding-bottom
+      // 殘留成主圖下方一大塊空白（crossing.cw.com.tw .main-img__pic：原生
+      // position:relative + padding-bottom 61% 寬、img 原生 absolute，padding 殘留
+      // ~400px 空白實證）。改以 parent 的結構特徵為唯一判定（見下 isHack /
+      // hasAspectRatio），media 當下位置不影響判定。
+      // 2026-10-07 review A-19：舊註解宣稱「main.js enterReaderMode 的順序是
+      // styler.apply → cleaner.clean」是錯的——實際是 cleaner.clean → finalizeEnter
+      // → styler.apply（main.js enterGenericReaderMode；同檔 clean() 內「原站隱藏
+      // img 釘死須在 styler 注入前完成」的註解才是對的）。本規則不依賴這個順序，
+      // 別在這裡讀 styler 注入後的 computed 值當前提。
       // 多 source（<picture><source><img>）/ placeholder 配 real img 共用 wrapper
       // 的情境：由第一個 media child 觸發 parent reset（清 padding-bottom 才是
       // 消除空白的關鍵動作），後續共用 parent 的 media 經 visited.has 跳過即可。
@@ -7899,7 +7965,13 @@
         let t = '';
         // v1.7.43：過 norm()（trim 只去首尾、段內縮排/換行仍灌爆長度）
         try { t = norm(el.textContent); } catch (_) { continue; }
-        if (t.length < HEADER_ZONE_TEXT_MIN) continue;
+        // 2026-10-07 review A-26：門檻改 CJK 權重（NS.cjkWeightedLen，中日韓字算 2）
+        // ——raw 60 是按拉丁字元校準的，中文短句式新聞 / 對話體的導言常 < 60 raw、
+        // zone 不結束、延伸進內文，內文開頭的 inline emoji / 小圖被當 meta icon 清
+        // （合成頁真 Chromium 實證：30 字中文導言內 20px emoji 被 hide）。這條門檻
+        // 守的是「這是內容段落、zone 到此為止」——加權後 zone 更早結束＝少清，方向
+        // 安全（同族教訓：v0.8.141 / v1.7.52 / v1.8.9 / v1.8.11）。
+        if ((NS.cjkWeightedLen ? NS.cjkWeightedLen(t) : t.length) < HEADER_ZONE_TEXT_MIN) continue;
         // 隱藏元素不可當 zone 終點（cleaner 已清的摘要 / 站方 display:none
         // teaser），否則 zone 提早結束、byline icon 漏掃。computed 讀取只在
         // 長度過門檻的少數候選上做，無全頁掃描成本
@@ -8895,6 +8967,21 @@
   const INLINE_RELATED_PREFIX_MAX = 10;
   const INLINE_RELATED_LINK_MIN_TEXT = 15;
   const INLINE_RELATED_PREFIX_RE = /[：:]$/;
+  // 2026-10-07 review A-18：同一個結構簽名也長在**出處行**身上——「資料來源：<a>本報
+  // 先前報導〈…〉</a>」「參考：<a>…</a>」「原文出處：<a>…</a>」（合成頁真 Chromium
+  // 實證四種出處行全被清；真站掃描 newtalk 的推薦行前綴是「全站首選 / 精選報導 /
+  // 現正最夯」）。出處行是內容（v1.7.65 已為引言出處行修過一次誤殺），同源連結只
+  // 代表「引用本站先前報導」。兩者唯一的差別在**前綴語意**：出處類引導詞（來源 /
+  // 出處 / 參考 / 原文 / 引用 / 轉載 / source / via / credit…）放行；但前綴若同時帶
+  // 推薦語意（閱讀 / 推薦 / 相關 / 更多 / read / more）仍視為推薦行——「參考閱讀：」
+  // 「延伸閱讀：」是推薦慣用語，不是出處。這是對前綴語意的判準（仍是文字
+  // heuristic），方向是少清；推薦行的前綴仍由結構簽名接住、不列關鍵字清單。
+  const INLINE_RELATED_SOURCE_PREFIX_RE =
+    /(?:來源|出處|參考|原文|原載|引用|引自|轉載|資料|註|source|via|credit|reference|courtesy|cite)/i;
+  const INLINE_RELATED_RECO_PREFIX_RE = /(?:閱讀|推薦|相關|更多|首選|精選|熱門|最夯|read|more|also|related|recommend)/i;
+  function inlineRelatedPrefixIsAttribution(prefix) {
+    return INLINE_RELATED_SOURCE_PREFIX_RE.test(prefix) && !INLINE_RELATED_RECO_PREFIX_RE.test(prefix);
+  }
 
   function hideInsideArticleInlineRelatedLinkParagraphs(articleEl, hidden) {
     for (const p of articleEl.querySelectorAll('p')) {
@@ -8915,6 +9002,8 @@
       prefix = norm(prefix);
       if (!prefix || prefix.length > INLINE_RELATED_PREFIX_MAX) continue;
       if (!INLINE_RELATED_PREFIX_RE.test(prefix)) continue;
+      // 出處行放行（review A-18）：前綴是出處語意、且不帶推薦語意
+      if (inlineRelatedPrefixIsAttribution(prefix)) continue;
       // 連結文字要有標題長度（排除「圖／Getty」類署名）
       if (norm(a.textContent).length < INLINE_RELATED_LINK_MIN_TEXT) continue;
       // 站內、且不是本頁
@@ -9726,7 +9815,9 @@
     // strong token）包在無 class 外層 DIV 內注入，上面的自身檢查 miss。與靜態
     // hideKeywordContainers 單一資料源（含 keywordWrapperIsProtected 全套 guard）。
     if (node.querySelectorAll && articleEl.contains(node)) {
-      hideKeywordContainers(articleEl, hiddenList, node.querySelectorAll(CONTAINER_SEL));
+      // review A-22：候選集合與靜態側同一份（CONTAINER_SEL + custom element 子孫）
+      hideKeywordContainers(articleEl, hiddenList,
+        keywordScanCandidates(node.querySelectorAll(CONTAINER_SEL), node.querySelectorAll('*')));
     }
     // **所有** interactive button 一律 hide（Jimmy 要求：reader mode 下
     // 任何按鈕都不需要）。delayed lazy-inject 的按鈕走這條。
@@ -10014,19 +10105,23 @@
     if (rec && rec.prevDisplay) {
       el.style.setProperty('display', rec.prevDisplay, rec.prevDisplayPriority || '');
     }
+    // review A-27：hide() 對 IMG / PICTURE 的 parent 標記也要對稱撤掉，否則 styler
+    // 的 min-height:0 持續套在工具列祖先上
+    unmarkHiddenMediaWrapIfClear(el);
   }
 
-  function rehideForSelection(el) {
+  function rehideForSelection(el, hiddenList) {
     if (!el || !el.isConnected) return;
     el.dataset.jreadHidden = '1';
     el.style.setProperty('display', 'none', 'important');
+    markHiddenMediaWrap(el, hiddenList);
   }
 
   function rehideSelectionToolbars(hiddenList) {
     const s = selToolbarState;
     if (!s) return;
     unpinToolbars(s);
-    for (const el of s.revealed) rehideForSelection(el);
+    for (const el of s.revealed) rehideForSelection(el, hiddenList);
     for (const host of s.hosts) {
       if (!host) continue;
       if (host.removeAttribute) host.removeAttribute(SEL_TOOLBAR_ATTR);
@@ -10088,7 +10183,7 @@
     let near = false;
     try { near = rectIsNearSelection(host.getBoundingClientRect(), selInfo.rect, shifted); } catch (_) { near = false; }
     if (!near) {
-      for (const el of toReveal) rehideForSelection(el);
+      for (const el of toReveal) rehideForSelection(el, hiddenList);
       return false;
     }
 
@@ -10619,8 +10714,7 @@
       // light DOM 空 + rect 有高度）會被 empty-spacer 誤殺（v0.8.79 的 shadowRoot
       // guard 只在 collapse 軌，spacer 軌靠「不在 CONTAINER_SEL」隔離）。
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
-      const customEls = _getArticleAllElements(articleEl).filter(el => el.tagName.indexOf('-') >= 0);
-      const keywordCandidates = customEls.length ? [...containers, ...customEls] : containers;
+      const keywordCandidates = keywordScanCandidates(containers, _getArticleAllElements(articleEl));
       safeRun(hideInsideArticleByKeyword, articleEl, hidden, keywordCandidates);
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);

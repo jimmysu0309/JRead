@@ -318,6 +318,12 @@ function commitSave() {
   const hasSync = Object.keys(pendingPatch).length > 0;
   const hasLocal = pendingLocal !== undefined;
   if (!hasSync && !hasLocal) return;
+  // v1.9.22（review E-5）：storage.sync.get 還沒 resolve 時不知道這台裝置有沒有套用
+  // 設定檔，pendingPatch 裡的版面欄位還沒分流——此時 commit 會繞過 routeLayoutPatch
+  // 直寫 sync flat（套用中設定檔的裝置：content 端 effective 被快照蓋住「等於沒反應」，
+  // 另一台的「自訂」組被默默改掉）。只有 get 慢於 200ms debounce（iOS 冷啟）才會走到；
+  // 留著 pendingPatch 不清，載入完成那段 `save(early)` 會整批重新分流再 commit
+  if (!settingsReady) { saveTimer = null; return; }
   const patch = pendingPatch;
   const local = pendingLocal;
   pendingPatch = {};
@@ -390,6 +396,22 @@ function flushPendingSave() {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+  // v1.9.22（E-5）：popup 在 settings 載回前就被關掉（點完立刻關、iOS 冷啟 get 慢）——
+  // commitSave 此時只會 return，pendingPatch 會跟著 popup 一起消失。改走
+  // PROFILES.writeLayout：它自己讀 sync + local 決定落點（套用中 → local 草稿、自訂 →
+  // sync flat），與載入完成後 save(early) 的分流結果一致；pendingLocal 此時必為空
+  //（settingsReady 前 save() 不走 routePatch 分支）
+  if (!settingsReady) {
+    if (PROFILES && Object.keys(pendingPatch).length) {
+      const patch = pendingPatch;
+      pendingPatch = {};
+      try {
+        const p = PROFILES.writeLayout(patch);
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (_) { /* storage 失效 → 與既有 commitSave 失敗同一取捨 */ }
+    }
+    return;
+  }
   commitSave();
 }
 window.addEventListener('pagehide', flushPendingSave);
@@ -425,6 +447,8 @@ Promise.all([
   // get 失敗（storage 失效等罕見場景）也要解鎖——此時 current = 預設值，
   // 相對操作以預設為基準是唯一可行 fallback，不可讓 stepper 永久卡死
   settingsReady = true;
+  // v1.9.22（E-5）：ready 前被 commitSave 擋下的 pendingPatch 要重新排程，否則會卡到 pagehide
+  if (Object.keys(pendingPatch).length || pendingLocal !== undefined) scheduleCommit();
 });
 
 for (const btn of themeBtns) {

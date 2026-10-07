@@ -224,7 +224,13 @@
   let interacted = false;  // 回復後使用者是否互動過（互動過就不做二次對位）
 
   // keydown 涵蓋翻頁鍵（←/→/Space）；click 涵蓋 space-scroll 點段落移指示條；
-  // touchcancel 涵蓋 iOS 圖片上滑動翻頁（paged-mode onTouchCancel 補判路徑）
+  // touchcancel 涵蓋 iOS 圖片上滑動翻頁（paged-mode onTouchCancel 補判路徑）。
+  // 桌面滑鼠拖頁碼 scrub（mousedown + window mousemove / mouseup）不在清單但仍算
+  // 互動（2026-10-07 review D-14 probe 實證，不另加 mousedown）：(a) 每跨一頁
+  // paged-mode `triggerHaptic` 的 `label.click()` 派發 click 冒泡到 window；(b) 瀏覽器
+  // 對 down / up 不同 target 的滑鼠手勢在最近共同祖先派發 click（UI Events 規範，
+  // Chromium / WebKit / Gecko 皆然）——合成頁 probe：進場 300ms 拖到末頁、1.2s reassert
+  // 後仍在末頁、沒被拉回儲存頁。
   const INTERACT_EVENTS = ['wheel', 'touchend', 'touchcancel', 'keydown', 'click'];
 
   // v1.5.28：擴充 context 是否仍有效。擴充 reload / 自動更新後，已開分頁的舊

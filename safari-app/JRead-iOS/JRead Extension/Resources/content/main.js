@@ -174,7 +174,10 @@
       hostname: location.hostname,
       key: e.key,
       altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey,
-      hasSelectionInArticle: hasSelectionInArticle()
+      // 2026-10-07 review C-15：傳函式不傳值——site-overrides 只在 host + key 都命中
+      // 且規則 requireSelection 時才呼叫（String(sel) 對 wiki 全選一次 3.7–5.7ms，
+      // 每個按鍵三個事件，沒有規則的站不該付這筆）
+      hasSelectionInArticle: hasSelectionInArticle
     });
   }
 
@@ -755,10 +758,11 @@
       return;
     }
     safeStep(() => { if (NS.styler) NS.styler.restore(NS.state.articleEl, NS.state.originalStyles); });
-    // v1.7.41（P3b）：styler.restore 已移除 overflow hidden、文件恢復可捲動——
-    // 同步還原進場前的卷動位置（fallback；退出捲動同步 anchor 存在時 uninstall
-    // 回 0，捲動由後面的 applyExitScrollAnchor 接管）。
-    safeStep(() => { if (pagedExitScrollY > 0) window.scrollTo(0, pagedExitScrollY); });
+    // v1.7.41（P3b）：styler.restore 已移除 overflow hidden、文件恢復可捲動——進場前
+    // 卷動位置（pagedExitScrollY）的同步還原原本排在這裡；2026-10-07 review D-6 搬到
+    // 最末段與 applyExitScrollAnchor 合為一步（見下），理由：anchor 可能在後面的
+    // 注入標題移除段才失效，fallback 用不用要在那一刻判定；且 cleaner.restore 之後
+    // 文件才回到原站高度，先捲會被還沒長回來的短文件 clamp。
     safeStep(() => { if (NS.cleaner) NS.cleaner.restore(NS.state.hiddenEls); });
     // v1.7.13：把 multi-block 吸收的接續兄弟區塊移回原位。必須在 styler /
     // cleaner restore 之後——restore 作用於「區塊仍在 articleEl 內」的狀態，
@@ -779,26 +783,36 @@
     // v0.7.88：移除 detector inject 的 H1（data-jread-injected-title）
     // + restore 原 promoted-title-source 元素的 display（detector hide 它
     // 避免標題重複）+ 清原元素的 attribute。
-    document.querySelectorAll('[data-jread-injected-title="1"]').forEach(el => el.remove());
-    document.querySelectorAll('[data-jread-promoted-title-source="1"]').forEach(el => {
-      el.removeAttribute('data-jread-promoted-title-source');
-      // v1.7.41（D5）：detector hide 時 snapshot 過原 inline display（站方 JS 設過
-      // `style="display:flex"` 之類）→ 寫回原值；沒 snapshot（原本無 inline display）
-      // 才 removeProperty。舊版一律 removeProperty 會把站方 inline 值洗掉、退出後
-      // 原頁被永久改變（違反「退出完全還原」不變式；cleaner hide() 一直有 snapshot）。
-      if (el.style && typeof el.style.removeProperty === 'function') {
-        const prev = el.getAttribute('data-jread-prev-display');
-        if (prev !== null && typeof el.style.setProperty === 'function') {
-          el.style.setProperty('display', prev, el.getAttribute('data-jread-prev-display-priority') || '');
-        } else {
-          el.style.removeProperty('display');
-        }
-      }
-      el.removeAttribute('data-jread-prev-display');
-      el.removeAttribute('data-jread-prev-display-priority');
+    // 2026-10-07 review C-11：這三段原本是 exit 流程裡唯一裸跑的 DOM 寫入
+    //（v1.7.39 safeStep 漏包）——站方以 CSSOM 鎖住的元素 setProperty 一 throw，
+    // 後面的 xThread / fbPost 容器移除、捲回、state 清理整段跳過 → wedge。
+    // 各自包 safeStep，與其餘還原步驟同一條容錯政策。
+    safeStep(() => {
+      document.querySelectorAll('[data-jread-injected-title="1"]').forEach(el => el.remove());
     });
-    document.querySelectorAll('[data-jread-promoted-title="1"]').forEach(el => {
-      el.removeAttribute('data-jread-promoted-title');
+    safeStep(() => {
+      document.querySelectorAll('[data-jread-promoted-title-source="1"]').forEach(el => {
+        el.removeAttribute('data-jread-promoted-title-source');
+        // v1.7.41（D5）：detector hide 時 snapshot 過原 inline display（站方 JS 設過
+        // `style="display:flex"` 之類）→ 寫回原值；沒 snapshot（原本無 inline display）
+        // 才 removeProperty。舊版一律 removeProperty 會把站方 inline 值洗掉、退出後
+        // 原頁被永久改變（違反「退出完全還原」不變式；cleaner hide() 一直有 snapshot）。
+        if (el.style && typeof el.style.removeProperty === 'function') {
+          const prev = el.getAttribute('data-jread-prev-display');
+          if (prev !== null && typeof el.style.setProperty === 'function') {
+            el.style.setProperty('display', prev, el.getAttribute('data-jread-prev-display-priority') || '');
+          } else {
+            el.style.removeProperty('display');
+          }
+        }
+        el.removeAttribute('data-jread-prev-display');
+        el.removeAttribute('data-jread-prev-display-priority');
+      });
+    });
+    safeStep(() => {
+      document.querySelectorAll('[data-jread-promoted-title="1"]').forEach(el => {
+        el.removeAttribute('data-jread-promoted-title');
+      });
     });
     // v0.7.135：清掉 X / Twitter 合成 reader 容器（NS.xThread.enter() 注入的
     // [data-jread-x-reader]）。styler / cleaner 已 restore 過了，容器自身只是
@@ -815,7 +829,14 @@
       }
     });
     // v1.0.21：原站版面已完全還原——捲回退出前讀到的段落。
-    safeStep(() => applyExitScrollAnchor(exitScrollAnchorEl));
+    // 2026-10-07 review D-6：anchor 已從 DOM 移除（JRead 自建標題節點被上面的
+    // 注入標題 / clone 還原段拿掉）時退回 pagedExitScrollY（翻頁模式進場前的原頁
+    // scrollY；捲動模式 uninstall 回 0 → 不動）。兩層 fallback 由這一步統一裁決，
+    // 不再各自判定（舊版 uninstall 見 handoff 即回 0，anchor 失效時兩層都不捲）。
+    safeStep(() => {
+      if (exitScrollAnchorEl && exitScrollAnchorEl.isConnected) applyExitScrollAnchor(exitScrollAnchorEl);
+      else if (pagedExitScrollY > 0) window.scrollTo(0, pagedExitScrollY);
+    });
     NS.state.active = false;
     NS.state.articleEl = null;
     NS.state.hiddenEls = [];
@@ -879,8 +900,12 @@
     // leaf div」才標，巢狀 wrapper / 含 block 子元素的 div 不會誤標；pre / code
     // 內不標）。標記後由下方 2.5 統一轉 <p>，Readwise 以語意辨識段落結構。
     // 只動 clone、不動 live reader 顯示。
-    if (NS && NS.fbPost && NS.fbPost.markParagraphDivs) NS.fbPost.markParagraphDivs(clone);
-    // 2.5 FB permalink 段落 div → p。fb-post.js markParagraphDivs 把 FB 主貼文的
+    // 2026-10-07 review C-23：函式從站點模組 fb-post.js 上提到 namespace.js
+    //（NS.markParagraphDivs，與 NS.isLeafParagraphDiv / INLINE_TEXT_TAGS 同層）——
+    // 通用匯出邏輯住在站點特化模組是層次顛倒（共用層反向 import 站點層），某個
+    // context 不載 fb-post.js 時這裡會靜默少轉段落。改無條件呼叫：缺席即是 bug。
+    NS.markParagraphDivs(clone);
+    // 2.5 FB permalink 段落 div → p。NS.markParagraphDivs 把 FB 主貼文的
     // 「直接含文字的 leaf div」標 data-jread-fb-para="1" + 設 inline margin。本地
     // reader card 靠 inline margin（+ styler 注入的 [data-jread-fb-para] 規則）
     // 顯示段落間距，但送 Readwise Reader 後對方 sanitizer 會砍 inline style，
@@ -1575,6 +1600,15 @@
     const showResult = (message, kind) => showToast(message, kind, { id: toastId });
     const startedAt = Date.now();
     const since = () => Date.now() - startedAt;
+    // 2026-10-07 review C-18(b)：平台 gate 放進函式自身，不靠呼叫端（floating-icon）
+    // 分流。v1.6.26 把 GET_SETTINGS 的憑證裁掉是為了「content 端從不碰憑證」，本直送
+    // 軌在 Safari 讀憑證是必要取捨（SW 掛起）——但函式掛在 NS 上，任何未來呼叫端
+    // 或 Chrome 上誤觸都會把 token 讀進 content。非 Safari 一律轉 CUSTOM_COMMAND SW
+    // 軌（與快速鍵同一條 sendToReadwiseFromCommand），不讀 storage、不碰憑證。
+    if (!(NS.isSafariRuntime && NS.isSafariRuntime())) {
+      safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: 'send-to-readwise' } });
+      return;
+    }
     logSave('觸發送出（content 直送軌）', { url: location.href.slice(0, 200) });
     if (!P) {
       logSave('popup-core 模組未載入', {}, 'error');
@@ -1620,9 +1654,14 @@
     }
 
     // 3.5 Instapaper 轉 SW 軌：Instapaper 的 OAuth 簽章需要 app 層 consumer key
-    // （lib/instapaper-keys.js），該檔刻意只載進擴充自有頁 / SW，不注入一般網頁
-    // （見檔頭註解）。content 端沒有金鑰可簽，故 Instapaper 使用者仍走 SW——
-    // iOS 上 SW 掛起則會沒反應，是已知取捨（Readwise 才是直送軌涵蓋的路徑）。
+    // （lib/instapaper-keys.js），該檔刻意只載進擴充自有頁 / background，不注入一般
+    // 網頁（見檔頭註解）。content 端沒有金鑰可簽，故 Instapaper 使用者仍走 background
+    // ——Safari / Firefox 的 event page（background.html / firefox-build scripts）自本版
+    // 起也載 lib/instapaper.js + keys（2026-10-07 review E-1；之前只有 Chrome SW 的
+    // importScripts 分支載，event page 醒著也沒 client 可簽、一律回 CONFIG），轉軌後
+    // 可送。剩下的失敗面只有「background 沒醒」（iOS 回收），是已知取捨（Readwise
+    // 才是直送軌涵蓋的路徑）。2026-10-07 review C-21：舊註解把失敗歸因「SW 掛起」
+    // 是錯的事實，已改寫。
     if (settings && settings.storageService === 'instapaper') {
       safeSendMessage({ type: NS.MSG.CUSTOM_COMMAND, payload: { command: 'send-to-readwise' } });
       return;
@@ -1757,6 +1796,19 @@
     // 底層頁面被掛起、storage.onChanged 廣播被丟掉（桌機 Chrome 無此問題），靠這條
     // 主動訊息補上即時重套。閱讀模式未啟動 / cinema 下 guard no-op（同 onChanged 路徑）。
     // scheduleReapply 200ms debounce 與 onChanged 合併，桌機不會雙重重套。
+    // 2026-10-07 review C-18(a)：debug bridge 動作經 SW development install gate 後
+    // 中繼回來才執行（payload 由 SW 端白名單驗過；這裡再驗一次不信任 payload）。
+    if (msg.type === NS.MSG.JREAD_DEBUG_ACTION_RELAY) {
+      const action = msg.payload && msg.payload.action;
+      const engine = msg.payload && msg.payload.engine;
+      if (DEBUG_BRIDGE_ACTIONS.includes(action)) {
+        try { runDebugBridgeAction(action, typeof engine === 'string' ? engine : undefined); }
+        catch (err) { try { console.warn('[JRead] debug bridge action 失敗：', err); } catch (_) { /* noop */ } }
+      }
+      sendResponse({ ok: true });
+      return; // 同步回應
+    }
+
     if (msg.type === NS.MSG.REAPPLY_SETTINGS) {
       if (NS.state.active && !NS.state.cinemaActive && NS.state.articleEl && NS.styler) {
         scheduleReapply();
@@ -1964,21 +2016,54 @@
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-theme', theme: 'dark' } }));  // 'light' | 'dark' | 'sepia' | 'gray'
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-paged', paged: true } }));  // v1.9.10：翻頁模式開/關（走 storage.onChanged reapply）
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
+  // 2026-10-07 review C-18(a)：toggle / enter / exit / translate 與 set-theme /
+  // set-paged / send-readwise / reload 一樣經 SW 中繼 + development install gate
+  //（JREAD_DEBUG_ACTION → SW → JREAD_DEBUG_ACTION_RELAY 回本 tab 才執行），store /
+  // 正式安裝一律 silently reject；unpacked（harness / cage）行為不變、多一個 SW
+  // round-trip（毫秒級）。translate 的 shinkansen-debug-response 等待方式不變。
   // reload 走 sendMessage('JREAD_RELOAD') → SW handler 呼叫 chrome.runtime.reload()。
   // 不可從 content script 直接呼 chrome.runtime.reload —— 該 API 只 SW / popup /
   // options 可用，content script context 沒此 function，直呼會 TypeError
   // (v0.7.126 修法，v0.7.124-125 曾誤設計成 content script 直呼)。bridge bootstrap
   // 限制：jread 任何 bridge 邏輯改動後仍需先 manual reload 一次讓新 code 生效，
   // 之後 dispatch 'reload' 走 SW 中繼永久零介入。
-  window.addEventListener('__jread_debug', (e) => {
-    const type = (e && e.detail && e.detail.type) || 'toggle';
-    if (type === 'toggle') {
+  // 2026-10-07 review C-18(a)：toggle / enter / exit / translate 四個動作原本由
+  // content 直接執行——任意網頁 JS 可在使用者進閱讀模式後每 100ms dispatch `exit`
+  // 讓 JRead 在該站形同失效（DoS 級、不外洩），`translate` 讓頁面消耗使用者的
+  // Shinkansen API 額度。改與 set-theme / set-paged / send-readwise 同款：content 只
+  // 送 JREAD_DEBUG_ACTION 給 SW，SW 過 development install gate 後以
+  // JREAD_DEBUG_ACTION_RELAY 中繼回本 tab 才執行（runtime.onMessage 只收擴充內部
+  // 訊息，頁面偽造不了）。unpacked（harness / cage）照常可用、store 安裝 silently
+  // reject；`isTrusted` 擋不住（cage 也是合成事件）所以不走那條。
+  const DEBUG_BRIDGE_ACTIONS = ['toggle', 'enter', 'exit', 'translate'];
+  function runDebugBridgeAction(action, engine) {
+    if (action === 'toggle') {
       if (NS.state.active) exitReaderMode();
       else enterReaderMode();
-    } else if (type === 'enter') {
+    } else if (action === 'enter') {
       if (!NS.state.active) enterReaderMode();
-    } else if (type === 'exit') {
+    } else if (action === 'exit') {
       if (NS.state.active) exitReaderMode();
+    } else if (action === 'translate') {
+      // 觸發 Shinkansen 翻譯（跨 extension debug bridge）。
+      // Shinkansen 的 content script 監聽 'shinkansen-debug-request' custom
+      // event（isolated world 間 DOM event 共享）。支援 engine 參數：
+      //   { type: 'translate' }                     → 預設引擎
+      //   { type: 'translate', engine: 'google' }   → Google MT（免 API key）
+      const act = engine ? 'TRANSLATE_ENGINE' : 'TRANSLATE';
+      const detail = engine ? { action: act, engine } : { action: act };
+      window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail }));
+    }
+  }
+  NS.runDebugBridgeAction = runDebugBridgeAction;
+
+  window.addEventListener('__jread_debug', (e) => {
+    const type = (e && e.detail && e.detail.type) || 'toggle';
+    if (DEBUG_BRIDGE_ACTIONS.includes(type)) {
+      const engine = e && e.detail && e.detail.engine;
+      const payload = { action: type };
+      if (typeof engine === 'string' && engine) payload.engine = engine;
+      safeSendMessage({ type: NS.MSG.JREAD_DEBUG_ACTION, payload });
     } else if (type === 'set-theme') {
       // Page Rounds 暗色模式驗收用。cage javascript_tool 跑在 main world，
       // 無法存取 chrome.storage.sync；透過 bridge 讓 isolated world 代寫。
@@ -1999,16 +2084,6 @@
       if (typeof paged === 'boolean') {
         safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SET_PAGED, payload: { paged } });
       }
-    } else if (type === 'translate') {
-      // 觸發 Shinkansen 翻譯（跨 extension debug bridge）。
-      // Shinkansen 的 content script 監聽 'shinkansen-debug-request' custom
-      // event（isolated world 間 DOM event 共享）。支援 engine 參數：
-      //   { type: 'translate' }                     → 預設引擎
-      //   { type: 'translate', engine: 'google' }   → Google MT（免 API key）
-      const engine = e && e.detail && e.detail.engine;
-      const action = engine ? 'TRANSLATE_ENGINE' : 'TRANSLATE';
-      const detail = engine ? { action, engine } : { action };
-      window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail }));
     } else if (type === 'send-readwise') {
       // v1.7.3：debug bridge 觸發「送到儲存服務」——與快速鍵 send-to-readwise
       // 同一條 SW 軌（sendToReadwiseFromCommand）。設計給 Claude 自主驗匯出

@@ -136,7 +136,13 @@
   // 耗時邊緣——會不穩定地把「只是慢」誤判成逾時、退回未內嵌版把圖丟掉。
   const SAVE_FETCH_TIMEOUT_MS = 90000;      // 送出（Readwise / Instapaper）
   const SUMMARY_FETCH_TIMEOUT_MS = 30000;   // Gemini 摘要（加分項，逾時照送）
-  const AUTH_FETCH_TIMEOUT_MS = 15000;      // token 驗證（options 頁按鈕，要快回）
+  const AUTH_FETCH_TIMEOUT_MS = 15000;      // token / key 驗證、Instapaper xAuth（options 頁按鈕，要快回）
+  // v1.9.22（review E-3）：讀入端（JReader feed / 單篇 / 歸檔；Readwise list·update、
+  // Instapaper list·get_text·archive）。v1.8.0「每一支對外 fetch 必須有時限」只套到
+  // save / summary / auth 三支，這六支仍是「對端不回應 = 永遠 pending」——reader 頁
+  // 無限轉圈、options「連結」鈕卡「連結中…」且永久 disabled。30s：withHtmlContent
+  // 的 list 在 Readwise 端重度 rate-limit、比一般 GET 慢，但遠不到送出那種 40s 級。
+  const READ_FETCH_TIMEOUT_MS = 30000;
 
   // 包一層 AbortController 逾時。逾時丟出帶 jreadTimeout 標記的 Error，呼叫端
   // 據此與一般網路錯誤分流（TIMEOUT 有專屬 toast 文案 + 降級重送策略）。
@@ -727,7 +733,7 @@
 
   // 列文件。location='new'=inbox 收件匣；帶 id 取單篇；withHtmlContent=true 取主文 HTML。
   // 回 { ok:true, results, nextPageCursor } 或 { ok:false, error, status }。
-  async function listReaderDocuments({ token, location, id, tag, withHtmlContent, pageCursor, fetchImpl } = {}) {
+  async function listReaderDocuments({ token, location, id, tag, withHtmlContent, pageCursor, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -743,11 +749,12 @@
     const url = qs ? `${READER_LIST_URL}?${qs}` : READER_LIST_URL;
     let res;
     try {
-      res = await f(url, {
+      res = await fetchWithTimeout(f, url, {
         method: 'GET',
         headers: { 'Authorization': `Token ${token.trim()}` }
-      });
+      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
     if (res.status === 401 || res.status === 403) {
@@ -764,7 +771,7 @@
 
   // 歸檔文件：PATCH https://readwise.io/api/v3/update/<id>/ body { location:'archive' }。
   // Reader API 沒有獨立 archive 端點，改 location 即歸檔。回 { ok, status } / 錯誤分類。
-  async function archiveReaderDocument({ token, id, fetchImpl } = {}) {
+  async function archiveReaderDocument({ token, id, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -775,15 +782,16 @@
     }
     let res;
     try {
-      res = await f(`${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
+      res = await fetchWithTimeout(f, `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Token ${token.trim()}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ location: 'archive' })
-      });
+      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
     if (res.status === 401 || res.status === 403) {
@@ -800,7 +808,7 @@
   // 對齊（ok / error / status），讓 options 共用同一套分支判斷。NO_KEY（空）/
   // AUTH（400·401·403 → key 無效）/ NETWORK（連不上）/ HTTP（其他非 2xx）/
   // NO_FETCH（環境無 fetch）。
-  async function validateGeminiKey({ apiKey, fetchImpl } = {}) {
+  async function validateGeminiKey({ apiKey, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
@@ -809,11 +817,12 @@
     let res;
     try {
       // key 走 header 不放 query（同 generateGeminiSummary，v1.6.25）
-      res = await f(GEMINI_API_BASE.replace(/\/$/, ''), {
+      res = await fetchWithTimeout(f, GEMINI_API_BASE.replace(/\/$/, ''), {
         method: 'GET',
         headers: { 'x-goog-api-key': apiKey.trim() }
-      });
+      }, typeof timeoutMs === 'number' ? timeoutMs : AUTH_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
       return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
     }
     if (res.ok) return { ok: true, status: res.status };
@@ -955,11 +964,23 @@
         return res;
       }
       jlog('降級重送（退回未內嵌版）', { trigger: res.status === 413 ? 413 : 'TIMEOUT', bytes: JSON.stringify(plain).length }, 'warn');
+      // v1.9.22（E-4）：重送是另一段最長 90s 的等待，進度 toast 要重新 arm（同 id 取代
+      // 即重新計時），否則第 95s 淡掉後重送期間畫面全靜默
+      if (typeof onProgress === 'function') onProgress(res.status === 413 ? 'retryingLarge' : 'retryingTimeout');
       const retry = await saveToReadwise({ token: c.token, payload: plain, fetchImpl, timeoutMs });
       jlog('降級重送結果', { ok: !!retry.ok, status: retry.status, error: retry.error }, retry.ok ? 'info' : 'error');
       return retry;
     }
     return res;
+  }
+
+  // 讀入端給 Instapaper lib 的 fetchImpl：把 READ_FETCH_TIMEOUT_MS 包進去（lib 端
+  // 零改動；逾時的 abort 會被 lib 歸類成 NETWORK，至少不再是永遠 pending）。
+  // fetchImpl 缺席且環境無 fetch → 回 undefined，讓 lib 走自己的 `= fetch` 預設值炸出
+  // 原本的錯誤（不改變失敗型態）
+  function readFetch(fetchImpl) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    return f ? withFetchTimeout(f, READ_FETCH_TIMEOUT_MS) : undefined;
   }
 
   // 列 feed 文件。query 為 feedTab 描述的 query 物件——readwise:{location|tag}、
@@ -971,7 +992,8 @@
       const IP = resolveInstapaper(instapaper);
       if (!IP) return { ok: false, error: 'CONFIG' };
       if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
-      return IP.listInstapaper({ token: c.token, tokenSecret: c.tokenSecret, folderId: q.folderId, limit: limit || 20, fetchImpl });
+      // v1.9.22（E-3）：instapaper.js 只收 fetchImpl——時限包進 fetchImpl 本身（同 sendDocument）
+      return IP.listInstapaper({ token: c.token, tokenSecret: c.tokenSecret, folderId: q.folderId, limit: limit || 20, fetchImpl: readFetch(fetchImpl) });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
     return listReaderDocuments({ token: c.token, location: q.location, tag: q.tag, fetchImpl });
@@ -985,7 +1007,7 @@
       const IP = resolveInstapaper(instapaper);
       if (!IP) return { ok: false, error: 'CONFIG' };
       if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
-      const r = await IP.getInstapaperText({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl });
+      const r = await IP.getInstapaperText({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl: readFetch(fetchImpl) });
       if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'HTTP', status: r && r.status };
       const m = meta || {};
       const doc = {
@@ -1016,7 +1038,7 @@
       const IP = resolveInstapaper(instapaper);
       if (!IP) return { ok: false, error: 'CONFIG' };
       if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
-      return IP.archiveInstapaper({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl });
+      return IP.archiveInstapaper({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl: readFetch(fetchImpl) });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
     return archiveReaderDocument({ token: c.token, id, fetchImpl });
@@ -1032,16 +1054,24 @@
   // v1.8.0 sendingLarge：翻譯頁把內文圖內嵌成 data: URI 後 payload 可達 700K+，
   // Readwise 端要跑 40s 上下（見 SAVE_FETCH_TIMEOUT_MS 註解）。同一句「送出中…」
   // 掛著不動 40 秒，使用者只會覺得當掉了——大 payload 換一句說明等待是正常的
+  // v1.9.22 retrying*（review E-4）：降級重送（413 / 逾時後退回未內嵌版）前重新 arm
+  // 進度 toast。原本第一次 POST 跑滿 90s 逾時後直接重送、進度 toast 第 95s 淡掉，
+  // 之後最長 85s 畫面全靜默才突然冒結果——正是「失敗沒提示」同一個體感。同 id 的
+  // toast 被取代即重新計時，所以 SAVE_PROGRESS_TOAST_MS 的不變式是「> 單一階段的
+  // 最長等待」而非「> 整條流程」——每個階段（摘要 / 送出 / 重送）開始都回報一次
   const SAVE_PROGRESS = {
     sending: '送出中…',
     sendingLarge: '送出中…（內容較大，需要久一點）',
-    summarizing: '產生摘要中…'
+    summarizing: '產生摘要中…',
+    retryingTimeout: '送出沒回音，改送精簡版…',
+    retryingLarge: '內容過大，改送精簡版…'
   };
   const SAVE_PROGRESS_TOAST_ID = 'jread-save';
-  // 進度 toast 的顯示上限必須覆蓋整個等待期（> SAVE_FETCH_TIMEOUT_MS）——原本
-  // 15s 到點就淡掉，對端還在跑的那 40 秒使用者眼前一片安靜，與「失敗了沒提示」
-  // 完全同一個體感（Jimmy 2026-08-20 回報的另一半）。結果 toast 一到就取代它，
-  // 所以設長不會留下殘影
+  // 進度 toast 的顯示上限必須覆蓋**單一階段**的最長等待（> SAVE_FETCH_TIMEOUT_MS；
+  // 每個階段開始都重新回報一次 onProgress → 同 id 取代 → 重新計時，見 SAVE_PROGRESS
+  // 的 retrying 註解）——原本 15s 到點就淡掉，對端還在跑的那 40 秒使用者眼前一片
+  // 安靜，與「失敗了沒提示」完全同一個體感（Jimmy 2026-08-20 回報的另一半）。
+  // 結果 toast 一到就取代它，所以設長不會留下殘影
   const SAVE_PROGRESS_TOAST_MS = 95000;
 
   // 送出結果 → toast 文字 + kind（服務感知；快速鍵 toast 軌與 popup 狀態列軌的
@@ -1081,6 +1111,20 @@
                  : result && result.error ? `（${result.error}）` : '';
     const reason = result && result.detail ? `：${result.detail}` : '';
     return { message: `送出失敗${detail}${reason}`, kind: 'error' };
+  }
+
+  // 2026-10-07 review F-10：讀入端（JReader feed 封存 / 文章載入）錯誤碼 → 文案的
+  // 單一資料源。action 帶動作名（'封存' / '載入'），reader-feed / reader-article
+  // 不再各抄一張表（舊版載入端靠 `.replace('封存','載入')` 借用封存端的表，加
+  // 新錯誤碼只會改到一邊）。CONFIG = Instapaper client / 金鑰缺檔（E-1）。
+  function serviceErrorMessage(result, opts) {
+    const action = (opts && opts.action) || '載入';
+    if (result && (result.error === 'AUTH' || result.error === 'NO_CREDENTIALS')) return '登入憑證無效或已過期';
+    if (result && result.error === 'CONFIG') return `此版本未內建 Instapaper 金鑰，無法${action}`;
+    if (result && result.error === 'TIMEOUT') return `伺服器沒有回應，${action}失敗，請再試一次`;
+    if (result && result.error === 'NETWORK') return `網路錯誤，${action}失敗，請稍後再試`;
+    const detail = result && result.status ? `（HTTP ${result.status}）` : '';
+    return `${action}失敗${detail}`;
   }
 
   // v1.7.79：送出一篇的完整流程（憑證解析 → 選用 Gemini 摘要 → 送出 → 結果訊息）
@@ -1145,6 +1189,7 @@
     SAVE_FETCH_TIMEOUT_MS,
     SUMMARY_FETCH_TIMEOUT_MS,
     AUTH_FETCH_TIMEOUT_MS,
+    READ_FETCH_TIMEOUT_MS,
     parseSrcsetCandidates,
     pickInlineImageUrl,
     pickInlineImageUrls,
@@ -1163,6 +1208,7 @@
     getArticle,
     archiveDocument,
     saveResultToast,
+    serviceErrorMessage,
     saveDocumentFlow,
     SAVE_PROGRESS,
     SAVE_PROGRESS_TOAST_ID,

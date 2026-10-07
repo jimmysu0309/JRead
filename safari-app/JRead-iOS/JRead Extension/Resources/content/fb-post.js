@@ -24,7 +24,7 @@
   //   /permalink.php?story_fbid=*
   //   /story.php?story_fbid=*&id=*
   //   /share/p/<id>
-  //   /groups/<gid>/posts/<pid>/                       ← 既有 /posts/ 規則涵蓋
+  //   /groups/<gid>/posts/<pid>/                       ← 既有 /posts/<id> 規則涵蓋（列表 /posts/ 不算）
   //   /groups/<gid>/permalink/<pid>/                   ← 既有 /permalink/ 規則涵蓋
   //   /groups/<gid>/?multi_permalinks=<pid>            ← v0.7.159 新增（modal preview）
   //   /photo/?fbid=<id>&set=<set_id>                   ← v0.7.204 新增（相簿照片貼文）
@@ -35,7 +35,10 @@
       const u = new URL(target);
       if (!/^(www\.|m\.|mobile\.|web\.)?facebook\.com$/.test(u.hostname)) return false;
       const path = u.pathname;
-      if (/\/posts\//.test(path)) return true;
+      // 2026-10-07 review F-12：`/posts/` 後必須接非空 id——`/<page>/posts/`（粉專 /
+      // 社團的貼文列表 tab）不是單篇，命中會讓 findMainMessage 挑列表裡最長的一則
+      // 當主文，違反「偵測失敗直接 no-op」。與 /permalink/ 規則同理
+      if (/\/posts\/[^/?#]+/.test(path)) return true;
       if (/\/permalink(\.php)?(\/|$)/.test(path)) return true;
       if (path === '/story.php' && (u.searchParams.has('story_fbid') || u.searchParams.has('fbid'))) return true;
       if (/\/share\/p\//.test(path)) return true;
@@ -169,61 +172,14 @@
   }
 
   // FB 主貼文文字用 <div> 不用 <p> 包段落，strip class 後失去原 emotion-hash
-  // class 的 line-height / margin 規則，所有段落擠在一起難讀。
-  // 修法：walk clone，找「leaf paragraph div」（整棵子樹只有 text node 或
-  // inline element 如 a/span/strong/em、且有 >=4 字文字）標 data-jread-fb-para=1，
-  // 再給合成 reader card 內 [data-jread-fb-para] inline 套 paragraph margin。
-  // 不對 reader card 內所有 div 套規則——巢狀 wrapper div 會累積 margin、且
-  // figure/img 包 div 不需要段落間距。
+  // class 的 line-height / margin 規則，所有段落擠在一起難讀 → 給 leaf paragraph
+  // div 標 data-jread-fb-para=1 + inline margin。
   //
-  // ⚠ 雙實作注意：styler.js markTextDivs（TEXT_DIV_ATTR）是同一份事實
-  //（「哪些 div 其實是段落」）的另一條 path——它跑在 live reader（字級 / 行高 /
-  // 段距），本函式跑在 Readwise 匯出 clone（轉 <p>）。styler 端 v0.8.80 就已把
-  // 「文字包在 inline 子元素裡」算進來，本端遲到 v1.7.36 才補上（drift 的代價 =
-  // x.com longform 匯出段落全黏在一起）；v1.7.43 T2 收斂 tag 集時又漏了本端
-  // （少 FONT / Q / CITE / BDI / BDO）。2026-10-07 review B-20 / F-2：結構
-  // predicate 收斂到 NS.isLeafParagraphDiv 單一資料源（tag 集走
-  // NS.INLINE_TEXT_TAGS），本端只留自己的 gate（pre / code、inline display、
-  // 文字量）與「標 attr + 設 inline margin」。
-  function markParagraphDivs(root) {
-    if (!root || !root.querySelectorAll) return 0;
-    const divs = root.querySelectorAll('div');
-    let count = 0;
-    // v1.7.36：inline style 宣告「不是 block box」的 div 不當段落——display
-    // contents / inline* 的 div 在 flow 裡不生成獨立區塊（styler 把 X 頁尾
-    // meta 列 flatten 成 display:contents 即為一例），轉 <p> 會把行內片段
-    // 拆成獨立段落。none 是隱藏節點、同樣不該變段落。
-    const NON_BLOCK_DISPLAY = /^(inline|inline-block|inline-flex|contents|none)$/;
-    for (const div of divs) {
-      // v1.7.21：pre / code 內的 div 不標——highlighter 常用 div-per-line 排
-      // code 行，轉 <p>（Readwise 匯出路徑）會給每行 code 加段距、拆爛 code
-      // block。FB 貼文無 pre，對原 FB 路徑是 no-op。
-      if (div.closest && div.closest('pre, code')) continue;
-      if (div.style && NON_BLOCK_DISPLAY.test((div.style.display || '').trim())) continue;
-      // 子樹只能是 text node 或 inline element；出現任何非 inline 元素代表這是
-      // wrapper 不是段落（轉 <p> 會違反 p 不可含 block child 的 HTML 規則）。
-      // v1.7.36：文字可以包在 inline 子孫裡，不必是 direct text node。
-      // 舊版只認 direct text node，漏掉「文字全被 inline wrapper 包起來」的
-      // 段落形態（X longform / Draft.js：div > span[data-offset-key] >
-      // span[data-text] > 文字，段落 div 自己零 direct text）——Jimmy
-      // 2026-08-04 回報 x.com longform 貼文送 Readwise 段落全黏在一起。
-      // 深掃子孫確認整棵子樹只有 inline 元素（`<a><div>` 在 HTML5 合法，
-      // 只看直系 children 會漏；deep:true），再以整棵子樹的文字量過門檻。
-      const hasBlockChild = !NS.isLeafParagraphDiv(div, { deep: true });
-      const hasText = (div.textContent || '').trim().length >= 4;
-      if (hasText && !hasBlockChild) {
-        div.setAttribute('data-jread-fb-para', '1');
-        // v0.7.163：inline fallback margin（無 !important）——styler stylesheet
-        // 端的 paragraphSpacing 規則 selector 已涵蓋 [data-jread-fb-para]，
-        // 使用者調整段落間距會生效。硬教訓十：inline !important 永遠贏
-        // stylesheet !important，先前寫死 !important 會擋掉使用者設定。
-        // 此處 1.2em 是 Auto sentinel (-1) 與 styler 規則尚未注入時的 fallback。
-        div.style.margin = '1.2em 0';
-        count++;
-      }
-    }
-    return count;
-  }
+  // 2026-10-07 review C-23：實作上提到 namespace.js（NS.markParagraphDivs）——v1.7.21
+  // 起 archive.today / 裸 div CMS 的通用 Readwise 匯出（main.js buildCleanHtml）也靠
+  // 它，通用邏輯住站點模組是層次顛倒。本檔只保留別名給既有呼叫端 / spec
+  //（NS.fbPost.markParagraphDivs），不再自帶實作；判定細節與 drift 史見 namespace.js。
+  const markParagraphDivs = (root) => NS.markParagraphDivs(root);
 
   // 在 clone 內清掉非主貼文內容：
   // - 主貼文 message 之後的 sibling chain（link-card / reactions / OG meta

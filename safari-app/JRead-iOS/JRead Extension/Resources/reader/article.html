@@ -7,16 +7,22 @@
 <style>
   /* 進入閱讀模式前的過場底色（對齊 styler THEMES，避免白閃）。reader 模式套用後
      由 styler 接管頁面樣式。 */
-  :root { --bg:#ececec; --muted:#6b6b6b; }
-  :root[data-theme="dark"]  { --bg:#0b0b0b; --muted:#9a99a2; }
-  :root[data-theme="sepia"] { --bg:#cdb891; --muted:#6f6149; }
-  :root[data-theme="gray"]  { --bg:#d8d8d8; --muted:#6b6b6b; }
+  /* token 對齊 reader.html（--text / --link 四主題，2026-10-07 review F-10） */
+  :root { --bg:#ececec; --text:#1a1a1a; --muted:#6b6b6b; --link:#1a73e8; }
+  /* JS 讀完 storage 才設 data-theme；在那之前依系統深色偏好先給深色變數，
+     深色使用者不再每次先閃一下淺灰（F-10） */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) { --bg:#0b0b0b; --text:#ecebf1; --muted:#9a99a2; --link:#7fb5e6; }
+  }
+  :root[data-theme="dark"]  { --bg:#0b0b0b; --text:#ecebf1; --muted:#9a99a2; --link:#7fb5e6; }
+  :root[data-theme="sepia"] { --bg:#cdb891; --text:#1a1a1a; --muted:#6f6149; --link:#2c5282; }
+  :root[data-theme="gray"]  { --bg:#d8d8d8; --text:#1a1a1a; --muted:#6b6b6b; --link:#2c5282; }
   html, body { margin: 0; padding: 0; background: var(--bg); }
   #jr-status {
     color: var(--muted); font: 15px/1.7 system-ui, -apple-system, "PingFang TC", sans-serif;
     text-align: center; padding: 80px 20px;
   }
-  #jr-status a { color: #1a73e8; }
+  #jr-status a { color: var(--link); text-decoration: underline; }
 </style>
 </head>
 <body>
