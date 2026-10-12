@@ -1786,11 +1786,37 @@
   // 雙胞胎）→ 本張是 placeholder、hide。無 twin 的 blur 圖（頭像裝飾等）
   // 不動——寧可少清不誤殺。同款 twin 家族前例：bg-image 雙胞胎
   // （v1.7.17 restoreBgImageTwinHeroImgs）、Readwise hero 去重（v0.8.125）。
+  //
+  // v1.9.23 兩條 guard（vocus.cc Jimmy 2026-10-12 回報：三張內文圖全被壓成
+  // 半寬窄帶、圖說疊在圖上）：
+  // (a) blur 半徑必須 > 0 才算模糊。blur-up pattern 的「載完」終態是
+  //     `filter: blur(0px)` + `transition: all`（站方從 blur(Npx) 過渡到
+  //     blur(0px)、不會把 filter 拿掉），原本 `/blur\(/` 把 0 半徑也當
+  //     placeholder → 已載完的真圖被藏掉。
+  // (b) twin 必須在 normal flow 內。站方 click-to-zoom 元件（react-medium-
+  //     image-zoom 家族）在真圖旁放一份 absolute overlay 的同圖副本；副本
+  //     不佔版面空間，藏掉 in-flow 真圖後 wrapper 塌成 0 高、圖說上浮疊到
+  //     overlay 上，overlay 又以 shrink-to-fit 縮成半寬。placeholder 去重的
+  //     前提是「twin 接替 placeholder 的版面位置」，out-of-flow twin 做不到。
+  //     wirecutter 原案 twin（<picture><img> 真圖）本就 in-flow，不受影響。
+  function blurRadiusOf(filter) {
+    const m = /blur\(\s*([\d.]+)([a-z%]*)\s*\)/i.exec(filter || '');
+    return m ? parseFloat(m[1]) : 0;
+  }
+  // img（含其到 stopAt 之間的祖先）是否整段 in-flow——任一層 computed
+  // position absolute / fixed 都代表它不佔父層版面空間。
+  function isInFlowUpTo(el, stopAt) {
+    for (let n = el; n && n !== stopAt; n = n.parentElement) {
+      const pos = window.getComputedStyle(n).position;
+      if (pos === 'absolute' || pos === 'fixed') return false;
+    }
+    return true;
+  }
   function hideBlurredPlaceholderTwins(articleEl, hidden) {
     for (const img of articleEl.querySelectorAll('img')) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
       const cs = window.getComputedStyle(img);
-      if (!/blur\(/.test(cs.filter || '')) continue;
+      if (!(blurRadiusOf(cs.filter) > 0)) continue;
       // 不走 isInPreserved：hero 圖天生在 <figure> 內，placeholder 也一定在
       // figure 內——preserve 擋掉規則就永遠不命中（harness 實證）。判準已窄
       // （blur + 同容器非 blur twin），不需要 preserve 兜底
@@ -1800,7 +1826,8 @@
         for (const o of p.querySelectorAll('img')) {
           if (o === img) continue;
           if (o.dataset && o.dataset.jreadHidden === '1') continue;
-          if (/blur\(/.test(window.getComputedStyle(o).filter || '')) continue;
+          if (blurRadiusOf(window.getComputedStyle(o).filter) > 0) continue;
+          if (!isInFlowUpTo(o, p)) continue;
           twin = o;
           break;
         }
