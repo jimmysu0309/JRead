@@ -57,15 +57,28 @@
         <li>啟用後重新整理本頁</li>
       </ol>
     </div>
+    <!-- v1.9.24（review F-7）：從別的網站連過來時 JRead 不自動轉址（home-launcher 的
+         referrer 檢查），content script 會在 <html> 留 data-jread-open-blocked。
+         這裡給誠實的說明＋手動開啟（rel="noreferrer" 的同頁連結＝使用者自己點的確認）。 -->
+    <div class="fallback" id="blocked">
+      <h1>沒有自動開啟 JReader</h1>
+      <p>你是從其他網站的連結來到這頁，為了安全 JRead 不會自動開啟閱讀清單</p>
+      <p style="margin-top:14px"><a id="blocked-open" rel="noreferrer" href="">仍要開啟 JReader</a></p>
+    </div>
   </div>
   <script>
     // 本頁自身 JS 不負責轉址——它拿不到擴充當下的 UUID。轉址由 JRead content script
     // 即時用 browser.runtime.getURL 完成。這裡只做 fallback：等一小段時間，若 content
     // script 沒把我們帶走（仍停在本頁），顯示啟用指引。
     setTimeout(function () {
-      var fb = document.getElementById('fallback');
+      var blocked = document.documentElement.getAttribute('data-jread-open-blocked');
+      var fb = document.getElementById(blocked ? 'blocked' : 'fallback');
       var loading = document.querySelector('.loading');
       if (loading) loading.style.display = 'none';
+      if (blocked) {
+        var a = document.getElementById('blocked-open');
+        if (a) a.href = location.href;
+      }
       if (fb) fb.classList.add('show');
     }, 2500);
   </script>

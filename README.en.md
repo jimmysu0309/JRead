@@ -49,7 +49,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 - **Floating button**: a small persistent icon at the edge of the page — tap to toggle reading mode, long-press for a menu, drag to reposition to either edge and up/down; opacity and size are adjustable, or it can be turned off
 - **Three-finger tap**: on touch devices, tap with three fingers to toggle reading mode (off by default, can be enabled in settings)
 - **Custom shortcuts**: record key combinations for toggle reading mode / send to read-later service / YouTube borderless mode / toggle paged mode; Safari (including an iPad external keyboard) has no browser-level rebinding entry, so this is the only path there, and it works on Chrome too
-- **Reset to defaults**: restore all settings to their defaults in one click (with a confirmation step), while keeping the Readwise / Gemini API keys and the Instapaper connection
+- **Reset to defaults**: restore all settings to their defaults in one click (with a confirmation step); this also clears saved profiles, the auto-enable domain list and custom shortcuts and cannot be undone, while keeping the Readwise / Gemini API keys and the Instapaper connection
 
 ---
 

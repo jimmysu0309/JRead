@@ -36,6 +36,28 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     if (!browser.runtime.getURL('')) return;
   } catch (_e) { return; }
 
+  // v1.9.24（review F-7，Jimmy 2026-10-12 裁定）：referrer 檢查。marker 是任何 host
+  // 都認的 URL query，別的網站放一條 `?jread-open=article&id=<任意值>` 連結就能把
+  // 使用者分頁導進擴充頁、並以對方指定的 id 觸發帶憑證的 Readwise / Instapaper
+  // 讀取。只有兩種來源才自動轉址：
+  //   (a) referrer 為空——主畫面圖示 / 捷徑 App / 網址列 / 書籤啟動都沒有 referrer
+  //   (b) referrer 是擴充自己的頁面——用執行期 getURL('') 的當下 base 比對（iOS 的
+  //       origin UUID 每次 Safari 重啟會換，不可寫死）
+  // 其他來源不動作，在 <html> 留 data-jread-open-blocked="referrer"，跳板頁
+  //（docs/open.html）讀到後改顯示「從別的網站連過來、沒有自動開啟」＋手動開啟連結。
+  // 限制（誠實標注）：這是 hardening 不是邊界——連結端可用 rel="noreferrer" 讓
+  // referrer 變空而通過；擋掉的是「一般連結 / 轉址直接帶進來」這個最低成本路徑。
+  var ref = '';
+  try { ref = (typeof document !== 'undefined' && document.referrer) || ''; } catch (_e) { ref = ''; }
+  if (ref) {
+    var ownBase = '';
+    try { ownBase = String(browser.runtime.getURL('') || ''); } catch (_e) { ownBase = ''; }
+    if (!ownBase || ref.indexOf(ownBase) !== 0) {
+      try { document.documentElement.setAttribute('data-jread-open-blocked', 'referrer'); } catch (_e) {}
+      return;
+    }
+  }
+
   var dest = null;
   if (target === 'feed') {
     dest = browser.runtime.getURL('reader/reader.html');
