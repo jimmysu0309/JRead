@@ -640,6 +640,7 @@ if (browser.storage && browser.storage.onChanged) {
 // ---- 回復預設設定（v0.8.157）-----------------------------------------
 // 把所有設定複寫回 settings-defaults.js 的預設值，但保留兩個 API key
 //（readwiseToken / geminiApiKey——使用者貼過的憑證，重 reset 不該被洗掉）。
+// 設定檔、自動啟動網域、自訂快速鍵都會清（v1.9.24 起三者同政策，說明文字點名）。
 // floatingIcon 三態回復為「未設過」（null → resolveFloatingIconEnabled 走預設開）、
 // floatingIconPos 拖移位置一併清掉。danger 雙態：第一次點進入確認狀態，
 // 4s 未再點自動還原，避免誤觸。
@@ -675,12 +676,14 @@ if (resetBtn) {
     delete payload.instapaperToken;       // 保留 Instapaper 連結
     delete payload.instapaperTokenSecret; // 保留 Instapaper 連結
     delete payload.instapaperUsername;    // 保留 Instapaper 連結
-    // v1.9.0：設定檔是使用者資產（比照憑證），回復預設不清清單。
-    // v1.9.14：這台裝置改回「自訂」（storage.local profileState = null）——回復的
-    // 是 sync 的 flat 那組，若仍套用著設定檔，快照會蓋過它、畫面等於沒回復。
-    // 舊欄位 activeProfile 新版只讀不寫，照舊不動。
-    delete payload.profiles;
-    delete payload.activeProfile;
+    // v1.9.24（review E-8，Jimmy 2026-10-12 裁定「全部都清」）：設定檔清單也一起
+    // 清——回復預設＝回到剛安裝的狀態，與自動啟動網域、自訂快速鍵同一政策
+    //（v1.9.0–v1.9.23 以「使用者資產」豁免 profiles，保留政策不一致）。payload
+    // 直接帶 DEFAULTS 的 profiles: [] 與 activeProfile: null：舊欄位平時只讀不寫，
+    // 但清單清空後它若還留著名字就是指向不存在設定檔的殘值，回復時一併歸零。
+    // 這台裝置的套用狀態（storage.local profileState）同時設 null＝明確「自訂」；
+    // 別台裝置殘留的 profileState 指到已不存在的名稱時 resolveProfileState 視同
+    // 自訂（既有行為），不需跨裝置清。
     const PROFILES = window.__JReadProfiles;
     if (PROFILES && browser.storage.local) {
       browser.storage.local.set({ [PROFILES.STATE_KEY]: null }).catch(() => {});

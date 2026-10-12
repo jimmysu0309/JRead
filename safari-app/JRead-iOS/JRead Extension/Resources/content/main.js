@@ -154,9 +154,24 @@
     // 按 H 畫重點）。哪個站放哪個鍵是站點特判，規則表與決策函式住
     // content/site-overrides.js，這裡只收集事實。
     if (siteOverridePassesKey(e)) return;
+    // v1.9.24（review D-8）：編輯模式中放行復原 / 重做組合鍵。keyguard 掛 window
+    // capture、edit-mode 的 onKeyDown 掛 document capture——前者先跑，不放行的話
+    // Cmd/Ctrl+Z 到不了 edit-mode 的 undo。這是 keyguard 與編輯模式唯一的衝突點，
+    // 所以編輯期間 keyguard 保留（原站 j / k / e 這類快速鍵照擋）、只開這個口。
+    if (NS.editMode && typeof NS.editMode.isActive === 'function' &&
+        NS.editMode.isActive() && isUndoRedoCombo(e)) return;
     // 攔截：阻止 page JS listener 收到（chrome 原生 shortcut 不受影響、由
     // browser 自己處理；瀏覽器原生 default action 也保留）
     e.stopImmediatePropagation();
+  }
+
+  // 復原 / 重做組合鍵：Cmd/Ctrl+Z、Cmd/Ctrl+Shift+Z、Ctrl+Y（Windows / Linux 重做）。
+  // 一律要求帶 Cmd 或 Ctrl 且不帶 Alt——裸 z / y 是原站快速鍵（Gmail z = 復原）、照擋。
+  function isUndoRedoCombo(e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+    if (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') return true;
+    return e.ctrlKey && !e.metaKey && !e.shiftKey &&
+      (e.key === 'y' || e.key === 'Y' || e.code === 'KeyY');
   }
 
   function hasSelectionInArticle() {
@@ -1390,14 +1405,22 @@
   }
 
   // v0.8.108：編輯模式（手動移除雜訊段落，NS.editMode）的 reader-interaction
-  // 暫停 / 還原。編輯模式的 hover / click 與閱讀模式的 keyguard / ESC / space-
-  // scroll / paged-mode 互相衝突（capture-phase 鍵盤攔截 + 翻頁鎖捲動）——進
-  // 編輯模式前全部暫停，退出時依當前 settings 重新裝回。這些 interaction layer
-  // 的生命週期本就住在 main.js，故由 main.js 主導 suspend/restore，edit-mode.js
-  // 只負責編輯互動本身、退出時 onExit 回呼通知這裡還原。
+  // 暫停 / 還原。進編輯模式前暫停與它衝突的 interaction layer，退出時依當前
+  // settings 重新裝回。這些 layer 的生命週期本就住在 main.js，故由 main.js 主導
+  // suspend/restore，edit-mode.js 只負責編輯互動本身、退出時 onExit 回呼通知這裡
+  // 還原。各 layer 與編輯模式的實際衝突點：
+  //   - onEscKey：ESC 在編輯中＝退出編輯模式（edit-mode 自己接），不可同時退出閱讀模式
+  //   - space-scroll：段落焦點卷動的 Space 與編輯中的捲動 / 點選意圖不合
+  //   - idle-cursor：編輯靠 hover 指段落，游標不能藏
+  //   - keyguard：**不拆**（v1.9.24，review D-8）。v0.8.108 以來這裡把 keyguard 整支
+  //     拆掉、註解歸因為「與編輯 click 衝突」——歸因錯：keyguard 只管鍵盤、與 click
+  //     無關；真正的衝突只有 window-capture 的 keyguard 先於 document-capture 的
+  //     edit-mode 吃掉 Cmd/Ctrl+Z。整支拆掉的代價是編輯期間原站快速鍵（Gmail
+  //     j / k / e / # 等）全部復活，而編輯模式是閱讀模式的子狀態、誤觸風險沒有變小。
+  //     現改成 keyguardHandler 在編輯中放行復原 / 重做組合鍵（isUndoRedoCombo），
+  //     keyguard 本體維持安裝；ESC 本來就放行，edit-mode 收得到。
   function suspendReaderInteractions() {
     window.removeEventListener('keydown', onEscKey, true);
-    uninstallKeyguard();
     if (NS.spaceScroll) NS.spaceScroll.uninstall();
     // 翻頁模式**不**拆（2026-10-07 review D-2）：v0.8.108 以來這裡
     // `pagedMode.uninstall({ suspend: true })` 只拆 JS 模組、styler 的翻頁 CSS
@@ -1423,6 +1446,10 @@
     // 的原站頁面 installKeyguard + 重掛 onEscKey，keyguard 持續吞掉頁面快速鍵
     //（同 scheduleReapply 的 v0.8.36 await 後重跑 guard 處理）。
     if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl) return;
+    // v1.9.24（review D-8）：編輯期間 keyguard 沒拆，先拆再由本函式尾端依 settings
+    // 裝回——維持「onEscKey / 翻頁 / space-scroll 的 listener 先於 keyguard 註冊」
+    // 的順序 invariant（同 capture 階段按註冊順序執行）。
+    uninstallKeyguard();
     window.removeEventListener('keydown', onEscKey, true);
     window.addEventListener('keydown', onEscKey, true);
     syncPagedModeFromSettings(settings);
@@ -1759,6 +1786,10 @@
           pagedSwitchAnchor = captureExitScrollAnchor();
         } catch (_) { pagedSwitchAnchor = null; }
       }
+      // 2026-10-07 review C-3：restore → apply 之間**不可有 await**。v1.9.17 以前
+      // getSettings 夾在中間，storage IPC 期間瀏覽器會 paint 出原站版型（probe：
+      // 8 次切主題有 1–3 次、每次 17–34ms 的 frame 讀不到 reader stylesheet）；
+      // D-1 把 getSettings 提到前面後量到 0。forcing：review-1007-b7-c3 spec。
       NS.styler.restore(NS.state.articleEl, NS.state.originalStyles);
       // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
       // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）

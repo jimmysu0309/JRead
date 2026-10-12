@@ -189,7 +189,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 快照，一鍵切換。profiles 為陣列（建立順序即 popup select / 長按選單的排列
     // 順序）：[{ name, fields }]，fields 只含 PROFILE_KEYS 白名單欄位、上限
     // MAX_PROFILES 組，住 storage.sync（清單與內容跨裝置共用）；options「回復
-    // 預設」刻意不清（使用者資產，比照憑證）。
+    // 預設」會一併清空（v1.9.24，review E-8 裁定；v1.9.0–v1.9.23 為豁免）。
     // v1.9.14：「這台裝置套用哪一組」改住 storage.local（PROFILE_STATE_KEY，見
     // 下方設定檔區塊）——每台裝置各選各的。這裡的 activeProfile 是 v1.9.0–v1.9.13
     // 的舊欄位，新版**只讀不寫**：本機從未選過設定檔時拿它當初值（升級當下畫面

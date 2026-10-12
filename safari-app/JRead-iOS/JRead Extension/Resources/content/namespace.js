@@ -436,6 +436,32 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return '';
     },
 
+    // 2026-10-07 review C-7：這頁是否「宣告自己就是這篇文章的正式位置」——
+    // link[rel=canonical] 或 meta[property=og:url] 解析後與目前頁面同站（忽略
+    // 協定與 www. 前綴）。只宣告站台根（pathname '/'，而目前頁不在根）不算：那是
+    // 全站共用的 head 樣板、不是對這一頁的宣告。findOriginalArticleUrl 的出版端否決用。
+    pageDeclaresOwnUrl(doc, currentUrl) {
+      let cur;
+      try { cur = new URL(currentUrl); } catch (_) { return false; }
+      const bareHost = (u) => u.hostname.replace(/^www\./i, '').toLowerCase();
+      const curHost = bareHost(cur);
+      const declared = [];
+      const can = doc.querySelector('link[rel~="canonical" i][href]');
+      if (can) declared.push(can.getAttribute('href'));
+      const og = doc.querySelector('meta[property="og:url" i][content]');
+      if (og) declared.push(og.getAttribute('content'));
+      for (const v of declared) {
+        if (!v || !v.trim()) continue;
+        let u;
+        try { u = new URL(v.trim(), currentUrl); } catch (_) { continue; }
+        if (!/^https?:$/i.test(u.protocol)) continue;
+        if (bareHost(u) !== curHost) continue;
+        if (u.pathname === '/' && cur.pathname !== '/') continue;
+        return true;
+      }
+      return false;
+    },
+
     // v1.6.19：RSS reader（Miniflux / FreshRSS 等自架閱讀器）閱讀頁的「原始文章 URL」。
     // 動機：在 RSS reader 內對某篇文章開閱讀模式、送 Readwise / Instapaper 儲存時，
     // location.href 是 RSS reader 自己的 URL（如 https://miniflux.example/unread/entry/123），
@@ -454,6 +480,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     //   2. 存在一個 <h1>，其可見文字整段就是單一 <a href>（anchor 文字涵蓋 >= 60%
     //      標題文字——「整個標題是連結」，排除標題中夾帶一小段外連的情況）
     //   3. 該 anchor 解析為 http(s) 絕對 URL 且 origin ≠ 目前頁面 origin
+    //   4. 頁面沒有宣告自己的 canonical / og:url（pageDeclaresOwnUrl；review C-7——
+    //      有宣告＝出版端的 link-blog 貼文，標題外連是被評論的對象、不是這篇的原始出處）
     // 搜尋範圍先 articleEl（含 promote 進 card 的 title clone）、再退整份 document
     //（Miniflux detector 選 article.entry-content，主標 h1 在外層 header.entry-header）。
     // **不跳過 [data-jread-hidden]**：原始 header h1 在閱讀模式會被隱藏（改顯示 clone），
@@ -470,6 +498,14 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       if (articleEl && articleEl.querySelectorAll) roots.push(articleEl);
       const doc = (articleEl && articleEl.ownerDocument) || (typeof document !== 'undefined' ? document : null);
       if (doc && doc.documentElement && doc.documentElement.querySelectorAll) roots.push(doc.documentElement);
+      // 2026-10-07 review C-7：出版端否決。link-blog 體裁（貼文標題本身就是指向被評論
+      // 外站的連結）完全符合下面的「h1 整段是跨網域外連」，舊版會把 payload.url 換成
+      // 外站文章——存進 Readwise 的變成「別人的文章」，且以 url 去重後同篇評論再也
+      // 存不進去（probe 實證：pxlnv.com linklog 單篇頁 → url 變 cnbc.com）。
+      // 區分訊號：出版者會對自己的文章頁宣告 canonical / og:url（指回自己網域的這
+      // 一頁）；RSS reader 的 entry 頁是登入後的私人殼、不對 entry 宣告這兩者
+      //（Miniflux layout.html / FreshRSS layout.phtml 原始碼均無）。
+      if (doc && this.pageDeclaresOwnUrl(doc, currentUrl)) return null;
       const seen = new Set();
       for (const root of roots) {
         for (const h of root.querySelectorAll('h1')) {
@@ -1212,6 +1248,48 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
           try { s.disabled = false; } catch (_) {}
         }
       }
+    },
+
+    // 2026-10-07 review A-31 / B-04：「這個 <video> 的 player root 是誰」的單一
+    // 資料源——cleaner（resetMediaPlaceholderPadding 要不要拆殼）與 styler
+    // （passMarkPlayers 要標到哪一層）對同一個 video 必須得到同一個答案，否則
+    // 一邊把殼拆平、另一邊保留 absolute（兩模組立場相反）。
+    // 結構訊號：video 往上（不含 articleEl）最近一個「position:relative +
+    // overflow:hidden / clip」的自包覆容器（JW / plyr / video.js 類播放器 chrome
+    // wrapper、hero 影片的固定高裁切框；clip 是 hidden 的新式寫法、語意相同）。
+    // root 內含主文長段落（>= 100 字的 p / li）＝它是 layout wrapper 不是播放器
+    // （v0.7.225 tymscar）→ 回 null。
+    // **量的是站方原始 cascade**：reader CSS 會把含媒體的直接容器打成 static
+    // （MEDIA_DIRECT_WRAP_SEL），注入後才量就永遠看不到「直接父層即 root」的結構。
+    // 回傳 Map<video, root|null>；articleEl 內沒有 video 時不付 style recalc 成本。
+    findVideoPlayerRoots(articleEl) {
+      const roots = new Map();
+      if (!articleEl || !articleEl.querySelectorAll) return roots;
+      const vids = articleEl.querySelectorAll('video');
+      if (!vids.length) return roots;
+      const win = (articleEl.ownerDocument && articleEl.ownerDocument.defaultView) || null;
+      const measure = () => {
+        for (const vid of vids) {
+          let root = null;
+          let cur = vid.parentElement;
+          while (cur && cur !== articleEl && win) {
+            const cs = win.getComputedStyle(cur);
+            if (cs.position === 'relative' && (cs.overflow === 'hidden' || cs.overflow === 'clip')) {
+              root = cur;
+              break;
+            }
+            cur = cur.parentElement;
+          }
+          if (root) {
+            for (const p of root.querySelectorAll('p, li')) {
+              if ((p.textContent || '').trim().length >= 100) { root = null; break; }
+            }
+          }
+          roots.set(vid, root);
+        }
+      };
+      this.withInjectedCssDisabled(measure);
+      return roots;
     },
 
     // CSP-safe：把 css 注入指定 ShadowRoot（floating-icon / toast 這類獨立 Shadow

@@ -1114,8 +1114,15 @@ html [${ARTICLE_ATTR}="1"] main {
 /* 所有 block 後代不超出 card content area：原站 CSS 可能對 header /
    section / div 設固定 width 或 min-width（yamatomichi Next.js header
    等），reader card 縮窄後這些元素溢出右邊界被 overflow-x:hidden 截斷。
-   通則：reader card 是單欄 layout，任何後代都不該比 parent 寬。 */
-[${ARTICLE_ATTR}="1"] div,
+   通則：reader card 是單欄 layout，任何後代都不該比 parent 寬。
+   2026-10-07 review 批 7（清單外觀察）：lazy 影片佔位框內的播放鍵 / 疊層
+   （markLazyEmbedUi 標的 SITE_UI_ATTR="embed-ui"）豁免——它是 absolute 的空
+   div、圖示畫在 background-image 上，站方給的 width 就是它唯一的尺寸來源；
+   width:auto 會讓 absolute 空盒 shrink-to-fit 成 0 寬（合成 WP Rocket 舊版
+   .play 72×72 → 0×72，播放鍵看不到）。它在佔位框（overflow:hidden）內、
+   不可能撐破卡片，不需要這條單欄寬度正規化。用 :where() 包 :not，
+   specificity 維持 (0,1,1) 不變、不影響與其他規則的層疊順序。 */
+[${ARTICLE_ATTR}="1"] div:where(:not([${SITE_UI_ATTR}="embed-ui"])),
 [${ARTICLE_ATTR}="1"] section,
 [${ARTICLE_ATTR}="1"] ul,
 [${ARTICLE_ATTR}="1"] ol,
@@ -4851,37 +4858,22 @@ html.${HTML_CLASS}.jread-orion body {
         //   video → jw-media(abs) → jw-wrapper(abs) → jwplayer(rel+ovH) → layout wrappers
         // 外層 wrapper 必須被 card max-width/position 約束，否則 player 溢出遮字。
         // v0.7.182 走 4 層太高，把 wp-block-group layout wrapper 也排除了。
+        // 2026-10-07 review B-04 / A-31：root 判定收斂到 NS.findVideoPlayerRoots
+        // （與 cleaner.resetMediaPlaceholderPadding 共用單一資料源），且量的是
+        // **站方原始 cascade**（函式內 withInjectedCssDisabled）。舊版在這裡直接
+        // getComputedStyle——本 pass 排在 passInjectCss / passSetArticleAttr 之後，
+        // `<video>` 的直接父層此刻已被 MEDIA_DIRECT_WRAP_SEL 打成 static，「直接
+        // 父層就是 player root」的結構（hero 影片固定高裁切框、新式 player 的
+        // media container）永遠偵測不到 → root 被當一般媒體容器攤平（height:auto
+        // + static），poster / 控制列等 absolute 子層全部回 flow 疊成一長條。
+        // v0.7.225 的「root 含主文長段落 → 不是 player」guard 也住在該函式。
+        const playerRoots = NS.findVideoPlayerRoots(articleEl);
         for (const vid of articleEl.querySelectorAll('video')) {
-          let container = null;
-          const _win = articleEl.ownerDocument?.defaultView;
-          let cur = vid.parentElement;
-          while (cur && cur !== articleEl && _win) {
-            const cs = _win.getComputedStyle(cur);
-            if (cs.position === 'relative' && cs.overflow === 'hidden') {
-              container = cur;
-              break;
-            }
-            cur = cur.parentElement;
-          }
           // v0.8.105：是否找到「真 player root」（relative + overflow:hidden 的
           // 自包覆容器，JW Player 等成熟播放器的 chrome wrapper 結構）。沒找到時
           // 走下面 fallback；fallback 只標 <video> 本身、不標站點包裝容器（理由見下）。
+          let container = playerRoots.get(vid) || null;
           const foundGenuineRoot = !!container;
-          if (!container) container = vid.parentElement || vid;
-          // v0.7.225：container 含主文長段落（>= 100 chars 的 p / li）= 它不是
-          // player 結構、是 layout wrapper——縮回 video 自身。tymscar 實測：
-          // video 的 parentElement 是包大半主文的 anon div，fallback 直接標它
-          // 導致 246/267 元素被 PLAYER_ATTR 豁免色彩保護（link 留站點 dark
-          // scheme 綠色、白卡上 1.37:1）。「含主文長段落才保護」guard 與
-          // cleaner 硬教訓四同款通則。對 relative+hidden 命中的 container 也
-          // 套用——合法 player root（JW Player 等）內不會有長文字段落。
-          if (container !== vid) {
-            let hasLongText = false;
-            for (const p of container.querySelectorAll('p, li')) {
-              if ((p.textContent || '').trim().length >= 100) { hasLongText = true; break; }
-            }
-            if (hasLongText) container = vid;
-          }
           // v0.8.105：沒有真 player root（relative+overflow:hidden）時，只標 <video>
           // 本身、不把站點的 fallback 包裝容器整支標 PLAYER_ATTR。
           // 根因：wikiHow Tie-a-Tie 步驟用「inline 自動播放示範影片」結構——

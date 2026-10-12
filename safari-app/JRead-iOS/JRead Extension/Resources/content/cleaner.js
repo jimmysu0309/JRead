@@ -856,18 +856,25 @@
   // 「累計短文字 >= 300」那道 guard。供 hideCommunityQaWidget walk-up 用：論壇
   // 類 widget 由大量短文字組成、累計輕易破 300 而被當主文誤保護，但其單一段落
   // 都很短；改只認單一長段落 / 標題 anchor 當邊界，widget 自己的短文字不再誤觸。
-  function hasLongMainParagraph(wrapper) {
+  //
+  // lenOf（選填，預設 raw `.length`）：量「100」這個門檻的量法。本函式被十多個
+  // 呼叫點共用、方向不一（有的守「別誤清內容」、有的是 link-feed 判定的否決
+  // 條件＝守「別讓雜訊漏網」），所以**預設維持 raw**；只有確定是「含主文就
+  // 停手」方向的呼叫點才傳 NS.cjkWeightedLen（目前：hideHeadingNoiseTail 的
+  // after-check，review 批 7）。
+  function hasLongMainParagraph(wrapper, lenOf) {
     if (!wrapper || !wrapper.querySelectorAll) return false;
+    const len = lenOf || ((t) => t.length);
     // v1.7.76：wrapper 自身即長段落（WYSIWYG 段落 div）也算，與
     // wrapperContainsMainContentP 對稱
     if (isProseParagraphDiv(wrapper)) return true;
     for (const para of wrapper.querySelectorAll('p')) {
-      if (norm(para.textContent).length >= 100) return true;
+      if (len(norm(para.textContent)) >= 100) return true;
     }
     for (const div of wrapper.querySelectorAll('div')) {
       const direct = Array.from(div.childNodes)
         .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
-      if (norm(direct).length >= 100) return true;
+      if (len(norm(direct)) >= 100) return true;
       if (isProseParagraphDiv(div)) return true;
     }
     return false;
@@ -1168,14 +1175,23 @@
     // 不經 before-check），heading 之後所有 div 段落被當 widget 一路藏到文末
     //（真 Chromium probe 實證後半篇整段消失）。before-check 與 after-check 共用
     // 同一判定，保持對稱。
-    const siblingHasMainContent = (el) => {
-      if (el.tagName === 'P' && norm(el.textContent).length >= 100) return true;
+    //
+    // 2026-10-07 review 批 7（清單外觀察，CJK 家族）：100 是按拉丁字元校準的
+    // raw 門檻，中文段落 50–99 字（資訊量等同 100–200 拉丁字元、中文新聞段落
+    // 的常見長度）一律不算主文——文中「延伸閱讀」heading 之後若全是這種長度
+    // 的段落，after-check 停不下來、後半篇被一路藏到文末（合成頁真 Chromium
+    // 實證：5 段 50 字中文段落全 hidden）。**只有 after-check（停手條件＝守
+    // 「別誤清內容」）改 CJK 權重**；before-check（決定 tail 清除要不要啟動＝
+    // 放寬會多清）刻意維持 raw，兩邊量法不同是方向不同、不是 drift。
+    const siblingHasMainContent = (el, lenOf) => {
+      const len = lenOf || ((t) => t.length);
+      if (el.tagName === 'P' && len(norm(el.textContent)) >= 100) return true;
       if (el.tagName === 'DIV') {
         const direct = Array.from(el.childNodes)
           .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
-        if (norm(direct).length >= 100) return true;
+        if (len(norm(direct)) >= 100) return true;
       }
-      return hasLongMainParagraph(el);
+      return hasLongMainParagraph(el, lenOf);
     };
     const tailParent = h.parentElement;
     let tailApplies = tailParent === articleEl;
@@ -1185,7 +1201,7 @@
       }
     }
     if (tailApplies) {
-      const hasMainContent = siblingHasMainContent;
+      const hasMainContent = (el) => siblingHasMainContent(el, NS.cjkWeightedLen);
       hide(h, hidden);
       let s = h.nextElementSibling;
       while (s && !hasMainContent(s)) {
@@ -2267,6 +2283,40 @@
     if (Array.isArray(hidden)) hidden.push({ el: block, __relocated: { parent, next } });
   }
 
+  // 站方 CSS 把 heading 自身藏起來（display:none / visibility:hidden / sr-only
+  // 1px 裁切）＝給搜尋引擎或螢幕閱讀器的載體，不是畫面上的標題區塊。只看元素
+  // 自身（不爬祖先）：promote 階段原 wrapper 多半已被 hideAncestorSiblings 藏掉，
+  // rect 一律是 0、不能用 rect 判。JRead 自己 hide 的（data-jread-hidden）不算。
+  function headingIsSiteHidden(h) {
+    if (!h || (h.dataset && h.dataset.jreadHidden === '1')) return false;
+    let cs = null;
+    try { cs = window.getComputedStyle ? window.getComputedStyle(h) : null; } catch (_) { cs = null; }
+    if (!cs) return false;
+    if (cs.display === 'none') return true;
+    if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return true;
+    if (cs.position === 'absolute' && cs.overflow === 'hidden' &&
+        parseFloat(cs.width) <= 1 && parseFloat(cs.height) <= 1) return true;
+    return false;
+  }
+
+  // 非 heading 標題載體版：el 的文字是否**全部**住在站方藏起來的節點裡
+  // （el 自身或文字節點到 el 之間任一層被 headingIsSiteHidden 判中）。
+  function carrierTextIsSiteHidden(el) {
+    if (headingIsSiteHidden(el)) return true;
+    const walker = document.createTreeWalker(el, 4 /* SHOW_TEXT */);
+    let sawText = false;
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!norm(n.textContent || '')) continue;
+      sawText = true;
+      let hiddenHere = false;
+      for (let p = n.parentElement; p && p !== el; p = p.parentElement) {
+        if (headingIsSiteHidden(p)) { hiddenHere = true; break; }
+      }
+      if (!hiddenHere) return false;
+    }
+    return sawText;
+  }
+
   function promoteUniqueTitleH1Into(articleEl, hidden) {
     if (!articleEl) return;
     // canonical title 推導走單一資料源（v1.6.29 合一）
@@ -2322,6 +2372,17 @@
       }
     }
     if (!h1) return;
+    // 2026-10-07 review 批 7（清單外觀察，newtalk 舊版模板；真站 probe 3/3）：
+    // 站方自己藏起來的 h1 不是「標題區塊」，不 clone 它的 wrapper。newtalk 舊版
+    // 全頁唯一 h1 是 header logo 連結裡的 SEO 載體
+    // `a.logo > img(logo) + h1.hidden{文章標題}`（display:none），文字與 og:title
+    // strict 相等 → 本函式把整個 a.logo clone 進卡片：h1 仍是隱形的、看得到的
+    // 只有被放大成 568×160 的站台 logo 圖，卡在標題與 byline 之間。真正可見的
+    // 標題載體（卡內 `p.name`）本來就由 detector markPromotedTitleIfMissing 接手
+    // 注入 h1，本函式在這種頁面沒有任何貢獻、只有副作用。
+    // 判定看 h1 **自身**的 computed style（display 不繼承：祖先被
+    // hideAncestorSiblings 藏掉不影響 h1 自己的值），且排除 JRead 自己藏的。
+    if (headingIsSiteHidden(h1)) return;
     // v0.7.141 guard：h1 text 必須 matches og:title / document.title 才視為主文
     // 標題，避免 newtalk.tw 類「site logo h1（page-wide unique 但語義非主文）」
     // 誤觸發 promote。markPromotedTitleIfMissing（v0.7.87/88）負責 article 內
@@ -2551,6 +2612,7 @@
       if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX || titleTextWeight(t) < 5) continue;
       // DOM order 必須在主文之前（文末「相關文章」卡片不會被誤選為標題）
       if (!(articleEl.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
+      if (carrierTextIsSiteHidden(el)) continue; // 文字全在站方藏起來的節點裡 → 不是畫面上的標題
       cands.push({ el, text: t, inDocTitle: !!docT && docT.indexOf(t) >= 0 });
     }
     const strict = cands.filter(c => c.inDocTitle);
@@ -2623,6 +2685,10 @@
       const t = normTitle(el.textContent || '');
       if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX) continue;
       if (t !== docT && !(docTStripped && t === docTStripped)) continue;
+      // review 批 7：newtalk 舊版的 `a.logo`（logo 圖 + display:none 的 SEO h1）
+      // 文字「完全等於」標題，但那段文字畫面上根本不存在——選它會擋掉卡內
+      // 真正可見的標題載體被 detector 升成 h1（結果：大標 + 一行小字重複標題）。
+      if (carrierTextIsSiteHidden(el)) continue;
       hits.push(el);
     }
     const innermost = hits.filter(el => !hits.some(o => o !== el && el.contains(o)));
@@ -7267,7 +7333,27 @@
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
     const visited = new WeakSet();
+    // 2026-10-07 review A-31：video player root 子樹整段不碰。
+    // 播放器的慣例殼正是本函式的命中條件（aspect-ratio / padding-bottom hack
+    // 容器 + 填滿的 video / poster），而 styler 對同一個 player 的立場是「root
+    // 與後代標 data-jread-player、保留原生 layout」（passMarkPlayers）。本函式
+    // 跑在 styler 之前、寫的又是 inline !important，會把殼的撐高機制拆掉、把
+    // video 打成 static——styler 隨後保住的 poster / 控制列（absolute）就落在
+    // 一個被拆平的殼上。兩邊改問同一個判定（NS.findVideoPlayerRoots，量站方
+    // 原始 cascade），是 player 就由 styler 的 player 保留路徑全權處理。
+    // 沒有 root 的裸 video（wp-block-video、wikiHow 示範影片）照舊走下面的拆殼。
+    const playerRootSet = new Set();
+    if (NS.findVideoPlayerRoots) {
+      for (const root of NS.findVideoPlayerRoots(articleEl).values()) {
+        if (root) playerRootSet.add(root);
+      }
+    }
+    const inPlayerRoot = (el) => {
+      for (const root of playerRootSet) if (root.contains(el)) return true;
+      return false;
+    };
     for (const media of articleEl.querySelectorAll('img, picture, video')) {
+      if (playerRootSet.size && inPlayerRoot(media)) continue;
       // v1.7.32：display:contents 中間層不產生 box、不是結構上的「容器」——
       // padding-bottom hack 盒可能隔著它（tomsguide 文末作者頭像：
       // .aspect-padding div > div[style=display:contents] > picture > img，
@@ -8574,14 +8660,47 @@
     'iframe[src*="chart-studio.plotly.com"]',
     'iframe[src*="highcharts.com"]',
     'iframe[src*="observablehq.com"]',
-    'iframe[src*="infogram.com"]'
+    'iframe[src*="infogram.com"]',
+    // v1.9.24（review A-25，Jimmy 2026-10-12 裁定「全部擴充」）：社群嵌文 / 地圖 /
+    // 文件 / 音訊 embed。這批一律帶 embed 專用子網域或路徑（不收裸 host）——
+    // google.com、apple.com、threads、tiktok 的一般頁面 / 追蹤 iframe 不放行。
+    // 各 host 以服務方自己的 embed script / 文件 / 端點查證（2026-10-12）。
+    'iframe[src*="tiktok.com/embed"]',            // embed.js 產生的 /embed/v2/<id>
+    'iframe[src*="tiktok.com/player/"]',          // 官方 Embed Player /player/v1/<id>
+    'iframe[src*="embed.bsky.app"]',              // Bluesky embed.js：EMBED_URL/embed/<at-uri>
+    'iframe[src*="threads.net/"][src*="/embed"]', // Threads embed.js：<permalink>/embed/
+    'iframe[src*="threads.com/"][src*="/embed"]', // 同上（2025 起新網域）
+    'iframe[src*="giphy.com/embed"]',
+    'iframe[src*="google.com/maps/embed"]',       // Maps Embed API / 分享「嵌入地圖」
+    'iframe[src*="google.com/maps/d/"]',          // My Maps（/maps/d/embed、/maps/d/u/0/embed）
+    'iframe[src*="maps.google."][src*="output=embed"]', // 舊式 maps.google.com/maps?…&output=embed
+    'iframe[src*="scribd.com/embeds"]',
+    'iframe[src*="slideshare.net/slideshow/embed_code"]',
+    'iframe[src*="embed.podcasts.apple.com"]',
+    'iframe[src*="bandcamp.com/EmbeddedPlayer"]',
+    'iframe[src*="archive.org/embed"]'
   ].join(', ');
+
+  // Mastodon 是聯邦式、沒有固定 host——認 embed 的路徑結構 `<origin>/@<帳號>/<數字
+  // id>/embed`（官方 embed.js 與舊式 iframe.mastodon-embed 產生的都是這個形狀；
+  // 新式 blockquote.mastodon-embed 內的 iframe 另有 PRESERVE_SEL 的 blockquote 保護）。
+  // 帳號段可帶遠端實例（@user@other.instance）。
+  const MASTODON_EMBED_SRC_RE = /^https?:\/\/[^\/?#]+\/@[^\/?#]+\/\d+\/embed\/?(?:[?#]|$)/i;
+
+  // 「這個 iframe 是不是已知的內容 embed」單一判定：白名單 selector ＋ Mastodon 路徑
+  // 結構。三個使用點（第三方 iframe 清除 / figure 內非白名單 iframe / 動態側）共用。
+  function isKnownMediaIframe(el) {
+    if (!el || !el.matches) return false;
+    if (el.matches(KNOWN_MEDIA_IFRAME_SEL)) return true;
+    const src = el.getAttribute('src') || '';
+    return MASTODON_EMBED_SRC_RE.test(src);
+  }
 
   function hideInsideArticleThirdPartyIframes(articleEl, hidden, scope) {
     for (const el of scopedQueryAll(scope, articleEl, 'iframe')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (el.matches && el.matches(KNOWN_MEDIA_IFRAME_SEL)) continue;
+      if (isKnownMediaIframe(el)) continue;
       hide(el, hidden);
     }
   }
@@ -9375,7 +9494,7 @@
       if (fig.querySelector('img, picture, video')) continue;
       const iframe = fig.querySelector('iframe');
       if (!iframe) continue;
-      if (iframe.matches && iframe.matches(KNOWN_MEDIA_IFRAME_SEL)) continue;
+      if (isKnownMediaIframe(iframe)) continue;
       let r;
       try { r = iframe.getBoundingClientRect(); } catch (_) { continue; }
       if (!r || r.height <= 0 || r.height >= WIDGET_IFRAME_MAX_HEIGHT) continue;
@@ -9580,7 +9699,49 @@
   // hide，本規則的 alreadyHidden 早退就整條不跑，留下孤兒招攬標題「If you liked
   // this post, get Raptitude sent to you.」+ 空殼卡在文末。重複執行由
   // hideNoiseCardFromTrigger 內既有的 card 已 hidden guard 擋掉，不會多做工。
+  //
+  // 2026-10-07 review 批 7（清單外觀察，Guardian 文內 newsletter 訂閱卡 268px 殘留；
+  // 真站 probe）：卡片是 `<figure> > … > <aside aria-label="newsletter promotion">`
+  // 內含 `<form>` + `input[type=email]` + 97 字招攬描述 `<p>`。兩道既有 guard
+  // 疊加讓它整張漏網：(1) trigger 在 `<figure>` 內 → `isInPreserved` 直接跳過
+  // （PRESERVE_SEL 把 figure 一律當內容圖）；(2) 就算不跳，walk-up 也停在含
+  // 97 字 `<p>` 的 aside 那層（NOISE_CARD_CONTENT_P_MIN = 80 的主文段落保護）。
+  // 結構通則：**含 email 輸入框的 `<aside>` / `<figure>` 短殼**（整殼文字
+  // <= SIGNUP_SHELL_MAX_TEXT、不含 h1 / 文章標題）就是訂閱卡——aside 是 HTML
+  // 語意上的非主文附屬內容，內容 figure 不會裝 email 輸入框；殼內的長 `<p>`
+  // 是招攬文案不是主文。取最外層符合的殼整塊 hide（Guardian 取到 figure，連
+  // 上下分隔線與 a11y skip 段一起收）。文字上限用 raw 長度：這是「別把大殼
+  // 當卡片」的上限，CJK 用 raw 只會更保守（少清），不需加權。
+  const SIGNUP_SHELL_MAX_TEXT = 400;
+  function isEmailInput(input) {
+    const type = (input.getAttribute('type') || 'text').toLowerCase();
+    const marker = (input.name || '') + ' ' + (input.id || '') + ' ' +
+      (input.getAttribute('placeholder') || '');
+    return type === 'email' || (type === 'text' && /mail/i.test(marker));
+  }
+  function findSignupSemanticShell(trigger, articleEl) {
+    let shell = null;
+    const canonical = getCanonicalTitleText();
+    for (let p = trigger.parentElement; p && p !== articleEl && articleEl.contains(p);
+         p = p.parentElement) {
+      if (p.tagName !== 'ASIDE' && p.tagName !== 'FIGURE') continue;
+      if (norm(p.textContent || '').length > SIGNUP_SHELL_MAX_TEXT) break;
+      if (elContainsArticleTitle(p, canonical)) break;
+      shell = p;
+    }
+    return shell;
+  }
+  function hideSignupSemanticShell(emailInput, articleEl, hidden) {
+    const shell = findSignupSemanticShell(emailInput, articleEl);
+    if (!shell) return false;
+    if (!(shell.dataset && shell.dataset.jreadHidden === '1')) hide(shell, hidden);
+    return true;
+  }
+
   function hideInsideArticleSubscribeForms(articleEl, hidden, scope) {
+    for (const input of scopedQueryAll(scope, articleEl, 'input')) {
+      if (isEmailInput(input)) hideSignupSemanticShell(input, articleEl, hidden);
+    }
     for (const form of scopedQueryAll(scope, articleEl, 'form')) {
       if (isInPreserved(form)) continue;
       hideNoiseCardFromTrigger(form, articleEl, hidden);
@@ -9596,12 +9757,7 @@
       if (input.closest('form')) continue; // 有 form 包裝的已由上方規則處理
       if (isInPreserved(input)) continue;
       // 同上：input 自身已被別條規則 hide 不影響「外層卡片要不要收」
-      const type = (input.getAttribute('type') || 'text').toLowerCase();
-      const marker = (input.name || '') + ' ' + (input.id || '') + ' ' +
-        (input.getAttribute('placeholder') || '');
-      const isEmailInput = type === 'email' ||
-        (type === 'text' && /mail/i.test(marker));
-      if (!isEmailInput) continue;
+      if (!isEmailInput(input)) continue;
       hideNoiseCardFromTrigger(input, articleEl, hidden);
     }
   }
@@ -10375,7 +10531,7 @@
     } catch (_) { /* selector 不支援的環境 */ }
     const iframes = node.tagName === 'IFRAME' ? [node] : Array.from(node.querySelectorAll('iframe'));
     for (const f of iframes) {
-      if (!(f.matches && f.matches(KNOWN_MEDIA_IFRAME_SEL))) return true;
+      if (!isKnownMediaIframe(f)) return true;
     }
     return false;
   }
@@ -10427,16 +10583,72 @@
     return true;
   }
 
+  // 2026-10-07 review A-10：祖先鏈分支（articleEl 外、掛在祖先層的晚到節點）hide 過的
+  // 節點集合。站方的瞬態節點（hover tooltip / portal / toast / 每秒重建的 live widget）
+  // 掛上 body 又拆掉，每顆都在 hiddenList 留一筆強參照、連同整棵子樹不能 GC，清單隨
+  // 閱讀時間無上限成長（Chromium probe：en.wikipedia hover 25 個連結 +18 筆、全數已
+  // detach）。對策：同一個 observer 的 removedNodes 看到這類節點離開 DOM 就把記錄
+  // 撤掉並還原它的 inline 狀態——站方之後把同一顆節點掛回來時當成新節點重新 hide、
+  // 重新登記。只認這個集合內的節點：靜態 clean / checkDynamicNoise / 編輯模式 hide
+  // 的記錄不動（那些節點被站方暫時拆下再掛回不在 observer 範圍內的位置時，沒有人會
+  // 重新 hide）。WeakSet 不持有節點。
+  let dynOutsideHidden = null;
+  function releaseDetachedOutsideHide(node, hiddenList) {
+    if (!node || node.nodeType !== 1 || node.isConnected) return false;
+    if (!dynOutsideHidden || !dynOutsideHidden.has(node)) return false;
+    dynOutsideHidden.delete(node);
+    if (!Array.isArray(hiddenList)) return false;
+    for (let i = hiddenList.length - 1; i >= 0; i--) {
+      const rec = hiddenList[i];
+      if (!rec || rec.el !== node) continue;
+      if (!(NS.inlineRelease && NS.inlineRelease(node, 'display', 'cleaner-hide'))) {
+        node.style.removeProperty('display');
+        if (rec.prevDisplay) node.style.setProperty('display', rec.prevDisplay, rec.prevDisplayPriority || '');
+      }
+      if (node.dataset) delete node.dataset.jreadHidden;
+      if (node.removeAttribute) node.removeAttribute(HIDDEN_WHY_ATTR);
+      hiddenList.splice(i, 1);
+      return true;
+    }
+    return false;
+  }
+
+  // 2026-10-07 review A-11：站方把「已被 JRead hide 的節點」cloneNode 出來再掛上頁面
+  // （popIn template clone、無限捲動的下一篇）時，clone 連同子孫都帶著 data-jread-hidden
+  // 與我們寫的 inline `display:none !important`，但沒有任何還原記錄——hide() 看到標記
+  // early-return、restore() 只走清單，退出閱讀模式後 clone 永久隱藏（Chromium probe
+  // 實證）。這裡把 clone 身上「不是它自己掙來的」標記剝掉：標記、空殼原因、以及仍是
+  // 我們那筆 `none !important` 的 inline display（站方已改寫成別的值就留著，當作 clone
+  // 當下的原值）。剝完由呼叫端走正常 hide() 登記，restore 才對稱。
+  function stripClonedHideMarks(root) {
+    const list = [root, ...root.querySelectorAll('[data-jread-hidden="1"]')];
+    for (const el of list) {
+      if (!el.dataset || el.dataset.jreadHidden !== '1') continue;
+      delete el.dataset.jreadHidden;
+      if (el.removeAttribute) el.removeAttribute(HIDDEN_WHY_ATTR);
+      if (el.style && el.style.display === 'none' &&
+          el.style.getPropertyPriority('display') === 'important') {
+        el.style.removeProperty('display');
+      }
+    }
+  }
+
   function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
+    dynOutsideHidden = new WeakSet();
     // 前一輪（reapply）放行的選取工具列狀態綁著舊的 articleEl / hiddenList，一併收掉
     stopSelectionToolbarWatch();
     if (!articleEl || !articleEl.parentElement) return;
 
     const mo = new MutationObserver(mutations => {
       for (const m of mutations) {
+        // review A-10：祖先鏈分支 hide 過的節點離開 DOM → 撤記錄（見 releaseDetachedOutsideHide）
+        for (const node of m.removedNodes) releaseDetachedOutsideHide(node, hiddenList);
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
+          // review A-10：callback 在 microtask 才跑，站方「append → 同一個 task 內 remove」
+          // 的瞬態節點到這裡已經不在 DOM——沒有東西可藏，也不該登記。
+          if (!node.isConnected) continue;
           if (STRUCTURAL_TAGS.has(node.tagName.toLowerCase())) continue;
           // late-mount embed fallback img 釘死：放 isInPreserved guard **之前**
           // ——figure 內 lazy mount 的 embed，其 fallback img 一樣會被 styler
@@ -10495,15 +10707,23 @@
           if (!articleEl.contains(node)) {
             if (node === articleEl) continue;
             if (node.contains && node.contains(articleEl)) continue;
+            // review A-11：帶標記但清單裡沒有它的記錄＝標記是隨 cloneNode 帶過來的
+            // （popIn template clone 類）。先剝掉 clone 與子孫身上的殘留標記，再走
+            // 下方正常 hide() 登記——舊做法只寫 inline none、不登記，退出後永久隱藏。
+            if (node.dataset && node.dataset.jreadHidden === '1' &&
+                !hiddenList.some(h => h && h.el === node)) {
+              stripClonedHideMarks(node);
+            }
             if (!node.dataset || node.dataset.jreadHidden !== '1') {
               hide(node, hiddenList);
+              if (dynOutsideHidden) dynOutsideHidden.add(node);
             } else {
-              // popIn template clone 類：dataset.jreadHidden 從 source
-              // 帶過來但 inline display 被 popIn 主動設成 block。直接
-              // 補 inline `display: none !important`（hide() 對已標 jreadHidden
-              // 的 node 會 early return、不覆寫 inline display）
+              // 已有記錄的同一顆節點被站方拆下又掛回（同一批 mutation 內 remove →
+              // append、或搬位置），inline display 可能被站方改寫：補回
+              // `display: none !important`（hide() 對已標 jreadHidden 的 node 會
+              // early return、不覆寫 inline display）
               node.style.setProperty('display', 'none', 'important');
-              registerHiddenForRestyle(node); // v0.8.20 C9：clone 也補掛 observer
+              registerHiddenForRestyle(node); // v0.8.20 C9
             }
             continue;
           }
@@ -10541,6 +10761,7 @@
       activeObserver.disconnect();
       activeObserver = null;
     }
+    dynOutsideHidden = null;
     stopSelectionToolbarWatch();
   }
 
