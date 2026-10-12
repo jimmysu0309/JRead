@@ -8,6 +8,9 @@
   <meta name="robots" content="noindex">
   <title>開啟 JReader</title>
   <link rel="icon" type="image/png" href="icon-512.png">
+  <!-- iOS「加入主畫面」只認 apple-touch-icon（不認 rel="icon"），沒有就用標題首字「開」當圖示。
+       需不透明滿版方形：icon-512.png 四角透明，iOS 會把透明處填黑。 -->
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <style>
     :root { --accent: #2b6cb0; --ink: #1a1a1a; --muted: #6b7280; }
     * { box-sizing: border-box; }
