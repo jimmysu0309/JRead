@@ -310,7 +310,8 @@
   let unclipForcedSeen = new WeakSet(); // 同元素去重——remeasure 重掃時不重複累積 entry
   let blockifyForced = [];            // v1.9.13：翻頁期間由 inline-* 原子盒改成 block 層級的高容器，uninstall 還原
   let blockifyForcedSeen = new WeakSet();
-  let remeasureDebounce = 0;          // debounce timer handle
+  let mediaFitForced = [];            // v1.9.25：fitMediaToPages 寫過的 inline 樣式 [{ el, prop, prev, prevPri }]，重算前 / uninstall 還原
+  let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   // v1.5.4：底部頁碼指示器一律顯示——翻頁模式拿掉頂端進度條（v1.5.2）後它是唯一
@@ -461,6 +462,7 @@
     // v1.7.46：晚載入內容可能讓 scroll container / inline-* 原子盒（v1.9.13）事後
     // 長高過一頁（lazy 圖撐高），重測前補掃一輪
     releaseTallMonolithicBoxes();
+    fitMediaToPages(); // v1.9.25：晚載入的圖撐開後重新貼合本頁剩餘空間
     remeasurePages();
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
     const t = pageCount();
@@ -648,6 +650,108 @@
     }
     blockifyForced = [];
     blockifyForcedSeen = new WeakSet();
+  }
+
+  // v1.9.25：媒體貼合本頁剩餘空間（Readwise Reader 直式 hero，Jimmy 2026-10-16
+  // Mac Safari 翻頁模式截圖）。styler 的單頁 cap（頁高 − 120px）＋ figure
+  // break-inside: avoid 只保證「一張圖放得進一整頁」，沒考慮圖起點到頁底還剩多少：
+  //   - Chromium：放不下就整個 figure 推到下一頁 → 前一頁下半整片空白
+  //   - WebKit：break-inside: avoid 推不動時先留一段空白（實測導言底 224 → figure
+  //     起點 554，中間零元素）、再把圖硬切成兩半跨頁（279px + 418px）
+  // 修法：排版後逐張量「圖在自然起點時，本頁還剩多少高度給圖」——
+  //   剩餘 ≥ 原高 FIT_MIN_RATIO → 等比縮到塞進本頁（shrink）
+  //   剩餘太少 → figure 明確 break-before: column，下一頁頂端完整顯示（break；
+  //   WebKit 不再切圖、Chromium 行為不變）
+  // 另外：bare 內容圖的 upscale 規則 width:100% 遇單頁 cap ＋ object-fit:contain，
+  // 直式圖盒子仍滿欄寬、圖只佔中間 → 左右露出 img 底色（「兩側灰底」）。高度被
+  // 收斂時一併把寬度釘成 高 × 原始長寬比 並置中，盒子＝圖。
+  // 純決策函式：jsdom spec 直接驗分支；DOM 量測住 fitMediaToPages。
+  const FIT_MIN_RATIO = 0.5;
+  const FIT_MIN_PX = 120;
+  function decideMediaFit(h0, avail) {
+    if (!(h0 > 0)) return { action: 'keep' };
+    if (h0 <= avail + 1) return { action: 'keep' };
+    if (avail >= FIT_MIN_PX && avail >= h0 * FIT_MIN_RATIO) return { action: 'shrink', maxH: Math.floor(avail) };
+    return { action: 'break' };
+  }
+  function setFitStyle(el, prop, val) {
+    mediaFitForced.push({ el, prop, prev: el.style.getPropertyValue(prop), prevPri: el.style.getPropertyPriority(prop) });
+    el.style.setProperty(prop, val, 'important');
+  }
+  function undoLastFitStyle() {
+    const r = mediaFitForced.pop();
+    if (!r) return;
+    try {
+      r.el.style.removeProperty(r.prop);
+      if (r.prev) r.el.style.setProperty(r.prop, r.prev, r.prevPri);
+    } catch (e) { /* */ }
+  }
+  function restoreMediaFit() {
+    // 反序還原：同元素同屬性寫兩次時（量測用的 1px 暫值）回到最初值
+    while (mediaFitForced.length) undoLastFitStyle();
+  }
+  const fragHeight = (el) => {
+    let h = 0;
+    for (const r of el.getClientRects()) h += r.height;
+    return h;
+  };
+  function fitMediaToPages() {
+    if (!art) return;
+    restoreMediaFit();
+    let pageTop = 0, pageBottom = 0;
+    try {
+      const cs = getComputedStyle(art);
+      const pageH = art.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      if (!(pageH > 0)) return; // jsdom 無 layout → no-op
+      pageTop = art.getBoundingClientRect().top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
+      pageBottom = pageTop + pageH;
+    } catch (e) { return; }
+    // Safari 對已捲動狀態的 column fragment rect 會偏（同 measureContentEndX）→ 量測期間歸零
+    const prevScroll = art.scrollLeft;
+    try {
+      art.scrollLeft = 0;
+      for (const img of art.querySelectorAll('img')) {
+        if (img.hasAttribute('data-jread-inline-img') || img.hasAttribute('data-jread-player')) continue;
+        const h0 = fragHeight(img);
+        if (!(h0 >= FIT_MIN_PX)) continue; // 隱藏 / icon / 未撐開的圖
+        const fig = img.closest('figure');
+        const unit = fig && art.contains(fig) ? fig : img;
+        // 自然起點：圖暫時壓到 1px，unit 必然放得進當頁 → 首個 fragment 頂＝真起點；
+        // unit 高 − 1 ＝ 圖說等非圖部分
+        setFitStyle(img, 'max-height', '1px');
+        const rects = unit.getClientRects();
+        const top0 = rects.length ? rects[0].top : 0;
+        const extra = Math.max(0, fragHeight(unit) - 1);
+        const d = decideMediaFit(h0, pageBottom - top0 - extra - 2);
+        // 1px 暫值只影響量測——decide 後依分支寫最終值（restore 時反序還原）
+        const natW = img.complete ? img.naturalWidth : 0;
+        const natH = img.complete ? img.naturalHeight : 0;
+        let finalH = h0;
+        if (d.action === 'shrink') {
+          setFitStyle(img, 'max-height', d.maxH + 'px');
+          finalH = d.maxH;
+        } else {
+          undoLastFitStyle(); // 撤掉 1px 暫值
+          if (d.action === 'break') {
+            setFitStyle(unit, 'break-before', 'column');
+            // 自然分頁會截掉頁頂 margin，強制分頁會保留（wiki figure 頁頂多 26px 實測）
+            setFitStyle(unit, 'margin-top', '0');
+          }
+        }
+        // 去 letterbox：盒子比「高 × 原始長寬比」寬 → 寬度釘成圖本身寬並置中
+        if (natW > 0 && natH > 0) {
+          const boxW = img.getBoundingClientRect().width;
+          const fitW = finalH * natW / natH;
+          if (boxW > fitW + 2) {
+            // 不取整：取整後盒子與圖差 < 1px，contain 會在右緣露一條 img 底色
+            setFitStyle(img, 'width', fitW.toFixed(2) + 'px');
+            setFitStyle(img, 'margin-left', 'auto');
+            setFitStyle(img, 'margin-right', 'auto');
+          }
+        }
+      }
+    } catch (e) { /* 量測失敗維持 styler 預設 cap */ }
+    art.scrollLeft = prevScroll;
   }
 
   function pageCount() {
@@ -1176,6 +1280,7 @@
       if (!art) return;
       // v1.7.46：resize 後頁高改變，重新判定哪些 monolithic 容器高過一頁
       releaseTallMonolithicBoxes();
+      fitMediaToPages(); // v1.9.25：頁高變了，圖與頁底的剩餘空間重算
       remeasurePages();
       try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ } // v1.6.15：保持變動偵測 gate 準確
       const total = pageCount();
@@ -1237,6 +1342,8 @@
     // v1.7.46 / v1.9.13：先解開高 monolithic 容器（scroll container、inline-* 原子盒），
     // remeasure 才量得到真頁數
     releaseTallMonolithicBoxes();
+    // v1.9.25：媒體貼合本頁剩餘空間（縮圖或明確換頁），同樣要在 remeasure 前
+    fitMediaToPages();
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
     remeasurePages();
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
@@ -1294,6 +1401,7 @@
     // v1.7.46 / v1.9.13：還原被強制 overflow:visible 的高 scroll container 與被
     // 改成 block 層級的高 inline-* 原子盒（退回捲動模式後站方原排版仍是合理設計）
     restoreMonolithicBoxes();
+    restoreMediaFit(); // v1.9.25
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
     unlockVScroll();
@@ -1467,6 +1575,7 @@
   const api = {
     computePageCount,
     computePageCountFromExtent,
+    decideMediaFit,
     quantizeStride,
     computeScrubTarget,
     resolveScrubGesture,
