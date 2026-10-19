@@ -7386,37 +7386,56 @@
       // 多 source（<picture><source><img>）/ placeholder 配 real img 共用 wrapper
       // 的情境：由第一個 media child 觸發 parent reset（清 padding-bottom 才是
       // 消除空白的關鍵動作），後續共用 parent 的 media 經 visited.has 跳過即可。
-      visited.add(parent);
+      const measureHack = (el) => {
+        const pCs = window.getComputedStyle(el);
+        // Pattern A: padding-bottom hack
+        // 先讀 inline string（jsdom 不解析 % → px，但原站多半走 stylesheet、
+        // 少數 hack 寫在 inline）。real Chrome 下 computed 已 resolve 成 px。
+        let isHack = false;
+        const inlinePb = el.style && el.style.paddingBottom;
+        if (inlinePb && /%$/.test(inlinePb) && parseFloat(inlinePb) > 20) isHack = true;
+        if (!isHack) {
+          const pbPx = parseFloat(pCs.paddingBottom) || 0;
+          const wPx = parseFloat(pCs.width) || 0;
+          if (pbPx > 0 && wPx > 0 && pbPx / wPx > 0.2) isHack = true;
+        }
 
-      const pCs = window.getComputedStyle(parent);
-      // Pattern A: padding-bottom hack
-      // 先讀 inline string（jsdom 不解析 % → px，但原站多半走 stylesheet、
-      // 少數 hack 寫在 inline）。real Chrome 下 computed 已 resolve 成 px。
-      let isHack = false;
-      const inlinePb = parent.style && parent.style.paddingBottom;
-      if (inlinePb && /%$/.test(inlinePb) && parseFloat(inlinePb) > 20) isHack = true;
-      if (!isHack) {
-        const pbPx = parseFloat(pCs.paddingBottom) || 0;
-        const wPx = parseFloat(pCs.width) || 0;
-        if (pbPx > 0 && wPx > 0 && pbPx / wPx > 0.2) isHack = true;
+        // Pattern B: aspect-ratio CSS property（v0.7.117 twz YT facade 修法）
+        // v0.6.14 原設計刻意不動 aspect-ratio 容器，理由「容器歸零後 absolute
+        // img 高度也歸零、視覺消失」。但 v0.7.X styler 後來加了
+        // `img { position: static !important }`——media 已被強制脫離 absolute
+        // 進入 normal flow。此時若 parent aspect-ratio 不動，會出現：
+        //   - parent 高 = wrap.width × aspect-ratio
+        //   - media 高 = wrap.width × naturalH / naturalW（styler height:auto）
+        // 兩者 ratio 不一致時（典型：YT hqdefault.jpg 4:3 配 WordPress
+        // `wp-embed-aspect-16-9` aspect-ratio 16:9）→ media 超出 parent。
+        // 通則修法：parent aspect-ratio 非 auto + absolute media 內含 → reset
+        // aspect-ratio: auto，讓父容器隨 media intrinsic 高度自然 size。
+        // styler position:static 仍會把 media 拉回 normal flow、container 高
+        // 由 media 決定（兩者 ratio 一致時與舊行為視覺無別；不一致時 fix size
+        // mismatch）。
+        const arVal = pCs.aspectRatio;
+        const hasAspectRatio = arVal && arVal !== 'auto' && arVal !== '';
+        return { pCs, isHack, hasAspectRatio };
+      };
+      let { pCs, isHack, hasAspectRatio } = measureHack(parent);
+      // v1.9.26：hack 盒可能隔著一層「純包裝」中間層（backpackinglight 的 perfmatters
+      // lazy YouTube：.perfmatters-lazy-video{height:0;padding-bottom:56%;overflow:hidden}
+      // > div（無 class、內容全 absolute）> img 縮圖 + .play）。直接父層是中間 div、
+      // 量不到 hack → 外框沒解，隨後 capWrapperSpacing 把 padding-bottom 壓成 16px，
+      // overflow:hidden 把整張縮圖裁光＝影片消失。通則：直接父層不是 hack 時，若它是
+      // 上一層的唯一元素子節點、且沒有任何文字（純媒體包裝），往上最多跳 2 層再量。
+      // 不以 media 當下是否 absolute 當條件（reapply 時 styler 已把 img 打成 static，
+      // 見上 v0.8.117）。
+      for (let hop = 0; hop < 2 && !isHack && !hasAspectRatio; hop++) {
+        const up = parent.parentElement;
+        if (!up || up === articleEl || up.children.length !== 1) break;
+        if ((parent.textContent || '').trim()) break;
+        if (visited.has(up)) break;
+        parent = up;
+        ({ pCs, isHack, hasAspectRatio } = measureHack(parent));
       }
-
-      // Pattern B: aspect-ratio CSS property（v0.7.117 twz YT facade 修法）
-      // v0.6.14 原設計刻意不動 aspect-ratio 容器，理由「容器歸零後 absolute
-      // img 高度也歸零、視覺消失」。但 v0.7.X styler 後來加了
-      // `img { position: static !important }`——media 已被強制脫離 absolute
-      // 進入 normal flow。此時若 parent aspect-ratio 不動，會出現：
-      //   - parent 高 = wrap.width × aspect-ratio
-      //   - media 高 = wrap.width × naturalH / naturalW（styler height:auto）
-      // 兩者 ratio 不一致時（典型：YT hqdefault.jpg 4:3 配 WordPress
-      // `wp-embed-aspect-16-9` aspect-ratio 16:9）→ media 超出 parent。
-      // 通則修法：parent aspect-ratio 非 auto + absolute media 內含 → reset
-      // aspect-ratio: auto，讓父容器隨 media intrinsic 高度自然 size。
-      // styler position:static 仍會把 media 拉回 normal flow、container 高
-      // 由 media 決定（兩者 ratio 一致時與舊行為視覺無別；不一致時 fix size
-      // mismatch）。
-      const arVal = pCs.aspectRatio;
-      const hasAspectRatio = arVal && arVal !== 'auto' && arVal !== '';
+      visited.add(parent);
 
       if (!isHack && !hasAspectRatio) continue;
 
@@ -10633,6 +10652,29 @@
     }
   }
 
+  // v1.9.26：lazy 影片 facade 點播後晚 mount 的 iframe / video → 撤銷其所在盒子的
+  // resetMediaPlaceholderPadding（還原站方 padding hack）。靜態期縮圖在 flow 裡、
+  // 拆殼讓盒子由縮圖撐高沒問題；點播後站方把縮圖換成 `position:absolute; inset:0`
+  // 的播放器，flow 內沒有東西了，拆過殼的盒子（padding 0 + height:auto）塌成 0 高、
+  // 影片看不見（backpackinglight perfmatters 實測 iframe 608×0）。還原後站方原本的
+  // 「height:0 + padding-bottom 比例 + absolute 填滿」重新生效（實測 608×342）。
+  // 只認 iframe / video 掛進「我們拆過殼的盒子」子樹——結構訊號、不綁站點。
+  function restorePlaceholderBoxForLateEmbed(articleEl, node, hiddenList) {
+    const arr = hiddenList && hiddenList.__styleResets;
+    if (!Array.isArray(arr) || !arr.length) return;
+    const isEmbed = /^(IFRAME|VIDEO)$/.test(node.tagName) ||
+      (node.querySelector && node.querySelector('iframe, video'));
+    if (!isEmbed) return;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const item = arr[i];
+      if (!item || item.kind !== 'placeholder-parent' || !item.el) continue;
+      if (item.el === node || !item.el.contains(node)) continue;
+      if (!articleEl.contains(item.el)) continue;
+      restoreStyles(item.el, item.prev);
+      arr.splice(i, 1);
+    }
+  }
+
   function startWatchingDynamicAppends(articleEl, hiddenList) {
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
     dynOutsideHidden = new WeakSet();
@@ -10660,6 +10702,8 @@
             // 2026-10-07 review A-07：晚渲染內容進了被空殼規則藏掉的盒 → 撤銷該殼的
             // hide。放最前面：殼撤銷後下方各步照常對新節點做雜訊判定。
             reviveEmptyShellFor(articleEl, node, hiddenList);
+            // v1.9.26：facade 點播後晚 mount 的播放器 → 還原拆過的 padding hack 殼
+            restorePlaceholderBoxForLateEmbed(articleEl, node, hiddenList);
             pinDynamicEmbedFallbackImgs(articleEl, node, hiddenList);
             // v1.9.6：AMP 捲到附近才 build 真圖（帶 sizes="auto"），晚 mount 補跑。
             // 放 isInPreserved 之前——載體是 figure（preserved）
