@@ -277,15 +277,43 @@
         })().catch(() => null);
       }
 
-      return { get, put, touch, evict, usage, keyOf, close: () => { try { db.close(); } catch (_) {} } };
+      // 清空兩個 object store（設定頁「清除快取」用）。不走 deleteDatabase：Article View
+      // 分頁開著時連線還在，deleteDatabase 會 blocked 到分頁關掉為止
+      function clear() {
+        return (async () => {
+          const tx = db.transaction([STORE_ARTICLES, STORE_META], 'readwrite');
+          tx.objectStore(STORE_ARTICLES).clear();
+          tx.objectStore(STORE_META).clear();
+          await txDone(tx);
+          return true;
+        })().catch(() => false);
+      }
+
+      return { get, put, touch, evict, usage, clear, keyOf, close: () => { try { db.close(); } catch (_) {} } };
     });
+  }
+
+  // 設定頁用：開庫 → 清空 → 關閉。IndexedDB 不可用 / 開庫失敗回 false
+  function clearArticleStore(opts) {
+    return openArticleStore(opts).then((store) => {
+      if (!store) return false;
+      return store.clear().then((ok) => { store.close(); return ok; });
+    }).catch(() => false);
+  }
+
+  // 設定頁用：{ count, bytes }；不可用回 null
+  function articleStoreUsage(opts) {
+    return openArticleStore(opts).then((store) => {
+      if (!store) return null;
+      return store.usage().then((u) => { store.close(); return u; });
+    }).catch(() => null);
   }
 
   const api = {
     FEED_KEY, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
     accountKey, slimDoc, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
-    isStale, planEviction, openArticleStore
+    isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage
   };
 
   if (typeof module !== 'undefined' && module.exports) {
