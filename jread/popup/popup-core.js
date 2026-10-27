@@ -760,6 +760,8 @@
     if (res.status === 401 || res.status === 403) {
       return { ok: false, status: res.status, error: 'AUTH' };
     }
+    // v1.10.0：429 獨立分類（list 限流 20/min，文章 / feed 載入撞到時給「稍候再試」文案）
+    if (res.status === 429) return rateLimitResult(res);
     if (!res.ok) {
       return { ok: false, status: res.status, error: 'HTTP' };
     }
@@ -801,6 +803,147 @@
       return { ok: false, status: res.status, error: 'HTTP' };
     }
     return { ok: true, status: res.status };
+  }
+
+  // ---- JReader 畫重點（v1.10.0）--------------------------------------
+  // 建立 / 刪除走 Reader API v3——重點是帶 parent_id 的文件：
+  //   建立：POST /api/v3/save/ { parent_id, content }。content 必須逐字對得上 parent
+  //        的文字（空白可不同），對不上回 400「Text not found」、什麼都不建。跨段落
+  //        要用換行分隔（2026-10-27 實測：直接接起來 400、"\n" / "\n\n" 都 201）。
+  //        同一段重送會再建一筆新的（實測 201 + 新 id，與官方文件說的 200 不符）
+  //        ——防重複由呼叫端負責。
+  //   刪除：DELETE /api/v3/delete/<id>/ → 204；已不存在回 404，對呼叫端等同成功。
+  // 讀取既有重點走 Readwise v2 export（exportReaderHighlights），不走 v3 list：
+  //   v3 list 的 category=highlight 沒有 parent_id 過濾、updatedAfter 看不到刪除，
+  //   要對帳刪除只能整批重抓（577 筆＝6 頁），還跟文章載入共用 20/min 額度——實測
+  //   兩輪就把文章載入擠成 429。v2 export 的 book.external_id＝Reader 文件 id、
+  //   highlight.external_id＝Reader 重點 id，includeDeleted=true 帶 is_deleted，
+  //   增量就看得到刪除（建立 / 刪除後約 6 秒反映到 export，2026-10-27 實測）。
+  // 限流：v3 save 50/min、delete 20/min；超過回 429 + Retry-After。
+  const READER_SAVE_URL = 'https://readwise.io/api/v3/save/';
+  const READER_DELETE_URL = 'https://readwise.io/api/v3/delete/'; // + <id>/
+
+  function rateLimitResult(res) {
+    let retryAfter = null;
+    try {
+      const v = res.headers && typeof res.headers.get === 'function' ? res.headers.get('retry-after') : null;
+      if (v != null && v !== '' && !isNaN(Number(v))) retryAfter = Number(v);
+    } catch (_) { /* headers 不可讀 */ }
+    return { ok: false, status: 429, error: 'RATE_LIMIT', retryAfter };
+  }
+
+  // 建立重點。回 { ok:true, id } / { ok:false, error }：NOT_FOUND（400，文字對不上
+  // 原文）/ AUTH / RATE_LIMIT / TIMEOUT / NETWORK / HTTP / NO_TOKEN / NO_ID / EMPTY
+  async function createReaderHighlight({ token, parentId, content, fetchImpl, timeoutMs } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) return { ok: false, error: 'NO_TOKEN' };
+    if (!parentId || typeof parentId !== 'string' || !parentId.trim()) return { ok: false, error: 'NO_ID' };
+    if (!content || typeof content !== 'string' || !content.trim()) return { ok: false, error: 'EMPTY' };
+    let res;
+    try {
+      res = await fetchWithTimeout(f, READER_SAVE_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ parent_id: parentId.trim(), content, saved_using: 'JRead' })
+      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
+    } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
+    if (res.status === 429) return rateLimitResult(res);
+    if (res.status === 400) return { ok: false, status: 400, error: 'NOT_FOUND' };
+    if (!res.ok) return { ok: false, status: res.status, error: 'HTTP' };
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* 非 JSON */ }
+    if (!data || !data.id) return { ok: false, status: res.status, error: 'HTTP' };
+    return { ok: true, status: res.status, id: String(data.id) };
+  }
+
+  // 刪除重點（也適用一般文件，JReader 只拿來刪重點）。404 = 已經不在（別處刪過 /
+  // 快取過期）→ 當成功，gone:true 讓呼叫端知道
+  async function deleteReaderDocument({ token, id, fetchImpl, timeoutMs } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) return { ok: false, error: 'NO_TOKEN' };
+    if (!id || typeof id !== 'string' || !id.trim()) return { ok: false, error: 'NO_ID' };
+    let res;
+    try {
+      res = await fetchWithTimeout(f, `${READER_DELETE_URL}${encodeURIComponent(id.trim())}/`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Token ${token.trim()}` }
+      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
+    } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
+    if (res.status === 429) return rateLimitResult(res);
+    if (res.status === 404) return { ok: true, status: 404, gone: true };
+    if (!res.ok) return { ok: false, status: res.status, error: 'HTTP' };
+    return { ok: true, status: res.status };
+  }
+
+  const READWISE_EXPORT_URL = 'https://readwise.io/api/v2/export/';
+
+  // 讀 Reader 文章的重點（v2 export，自動翻完所有頁）。updatedAfter 給 ISO 字串＝
+  // 增量：回「這段時間有變動的文章」底下的**全部**重點（含已刪除、is_deleted=true），
+  // 呼叫端可整篇替換；不給＝全量（不帶已刪除）。只收 Reader 來源（book 有
+  // external_id）的文章。回 { ok:true, docs: { <Reader 文件 id>: [{ id, content,
+  // offset, deleted }] } }。中途任何一頁失敗就整批回失敗（半套結果不能拿來整篇替換）。
+  async function exportReaderHighlights({ token, updatedAfter, fetchImpl, timeoutMs, maxPages } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) return { ok: false, error: 'NO_TOKEN' };
+    const limitPages = typeof maxPages === 'number' && maxPages > 0 ? maxPages : 50;
+    const docs = {};
+    let cursor = null;
+    for (let page = 0; page < limitPages; page++) {
+      const params = new URLSearchParams();
+      if (updatedAfter) {
+        params.set('updatedAfter', updatedAfter);
+        params.set('includeDeleted', 'true');
+      }
+      if (cursor) params.set('pageCursor', cursor);
+      const qs = params.toString();
+      let res;
+      try {
+        res = await fetchWithTimeout(f, qs ? `${READWISE_EXPORT_URL}?${qs}` : READWISE_EXPORT_URL, {
+          method: 'GET',
+          headers: { 'Authorization': `Token ${token.trim()}` }
+        }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
+      } catch (networkErr) {
+        if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
+        return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+      }
+      if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
+      if (res.status === 429) return rateLimitResult(res);
+      if (!res.ok) return { ok: false, status: res.status, error: 'HTTP' };
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* 非 JSON */ }
+      const books = data && Array.isArray(data.results) ? data.results : null;
+      if (!books) return { ok: false, status: res.status, error: 'HTTP' };
+      for (const b of books) {
+        if (!b || !b.external_id) continue;
+        const list = docs[b.external_id] || (docs[b.external_id] = []);
+        for (const h of Array.isArray(b.highlights) ? b.highlights : []) {
+          if (!h || !h.external_id) continue;
+          list.push({
+            id: String(h.external_id),
+            content: typeof h.text === 'string' ? h.text : '',
+            offset: h.location_type === 'offset' && typeof h.location === 'number' ? h.location : null,
+            deleted: !!(h.is_deleted || b.is_deleted)
+          });
+        }
+      }
+      if (!data.nextPageCursor) return { ok: true, docs };
+      cursor = data.nextPageCursor;
+    }
+    return { ok: false, error: 'TOO_MANY_PAGES' };
   }
 
   // v0.8.74：驗證 Gemini API key 是否有效。打 models list 端點（GET，不送內文、
@@ -1123,6 +1266,7 @@
     if (result && result.error === 'CONFIG') return `此版本未內建 Instapaper 金鑰，無法${action}`;
     if (result && result.error === 'TIMEOUT') return `伺服器沒有回應，${action}失敗，請再試一次`;
     if (result && result.error === 'NETWORK') return `網路錯誤，${action}失敗，請稍後再試`;
+    if (result && result.error === 'RATE_LIMIT') return `Readwise 請求太頻繁，${action}失敗，請稍候一分鐘再試`;
     const detail = result && result.status ? `（HTTP ${result.status}）` : '';
     return `${action}失敗${detail}`;
   }
@@ -1200,6 +1344,10 @@
     validateReadwiseToken,
     listReaderDocuments,
     archiveReaderDocument,
+    // v1.10.0：JReader 畫重點
+    createReaderHighlight,
+    deleteReaderDocument,
+    exportReaderHighlights,
     // v1.6.0：儲存服務 dispatcher（服務無關抽象層）
     resolveServiceCredentials,
     serviceLabel,

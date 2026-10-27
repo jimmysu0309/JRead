@@ -274,7 +274,7 @@
           setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
           return;
         }
-        renderArticle(r.doc, { NS, doc, PC });
+        renderArticle(r.doc, { NS, doc, PC, service, creds });
       }, (err) => {
         // v1.7.41（R1）：getArticle reject（iOS 偶發 / renderArticle 上游同步 throw
         // 包成 rejection）要 surface，不要永遠卡「載入中」——與 reader-feed.js
@@ -309,6 +309,11 @@
     // reader 頁退出語意：回 feed（不剝版型）。必須在 enterFromContainer 之前設好，
     // 之後 JRead 圖示「退出閱讀模式」/ ESC / floating-icon 短按都會走到 main.js
     // exitReaderMode 的這個 hook 導回 feed（v1.5.3 移除返回箭頭後，這是唯一退出入口）。
+    // v1.10.0：JReader 畫重點（只做 Readwise）。必須在 enterFromContainer 之前
+    // attach——它的 H 鍵 listener 要比 main.js keyguard 早註冊（兩者都是 window
+    // capture，keyguard 會 stopImmediatePropagation），見 reader-highlights.js
+    attachHighlights(docData, container, ctx);
+
     const backToFeed = function () { global.location.href = 'reader.html'; };
     NS.state.readerHostPage = true;
     NS.onReaderExit = backToFeed;
@@ -323,6 +328,20 @@
         .then(() => NS.enterFromContainer(container))
         .then((ok) => { if (ok === false) onEnterFailed(null); }, onEnterFailed);
     }
+  }
+
+  function attachHighlights(docData, container, ctx) {
+    const HL = global.__JReadReaderHighlights;
+    const { NS, doc, PC, service, creds } = ctx;
+    if (!HL || service !== 'readwise' || !creds || !creds.token) return null;
+    const bodyEl = container.querySelector('[data-jread-reader-body]');
+    const storage = global.browser && global.browser.storage && global.browser.storage.local;
+    try {
+      return HL.attach({
+        doc, win: global, bodyEl, docId: String(docData.id || ''), token: creds.token,
+        PC, NS, storage
+      });
+    } catch (_) { return null; }  // 畫重點掛不上不影響閱讀
   }
 
   // 進場失敗出口：移除半套容器、把狀態列放回 body 開頭，顯示文案 + 回 feed 連結
