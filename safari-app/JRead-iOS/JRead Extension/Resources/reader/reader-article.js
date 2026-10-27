@@ -217,7 +217,7 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed };
+  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -268,13 +268,15 @@
           : '尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
         return;
       }
-      PC.getArticle({ service, creds, id, meta }).then((r) => {
+      const ctx = { NS, doc, PC, service, creds };
+      const fetchAndRender = (store, account) => PC.getArticle({ service, creds, id, meta }).then((r) => {
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
           setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
           return;
         }
-        renderArticle(r.doc, { NS, doc, PC, service, creds });
+        renderArticle(r.doc, ctx);
+        if (store) store.put(account, r.doc);
       }, (err) => {
         // v1.7.41（R1）：getArticle reject（iOS 偶發 / renderArticle 上游同步 throw
         // 包成 rejection）要 surface，不要永遠卡「載入中」——與 reader-feed.js
@@ -282,7 +284,40 @@
         // 那段（本 Promise 沒 return 進外層 chain）。
         setStatus('載入失敗：' + String(err && err.message || err), true);
       });
+      loadFromCache(id, service, creds).then((c) => {
+        if (c.entry) {
+          try {
+            renderArticle(c.entry.doc, ctx);
+          } catch (err) {
+            setStatus('載入失敗：' + String(err && err.message || err), true);
+            return;
+          }
+          c.store.touch(c.account, id);
+          return;
+        }
+        fetchAndRender(c.store, c.account);
+      });
     }).catch(() => setStatus('讀取設定失敗，請重新整理', true));
+  }
+
+  // v1.10.1：查本機文章快取（reader-cache.js）。永不 reject，回
+  // { store, account, entry }——store 為 null（IndexedDB 不可用 / 模組缺席）或
+  // entry 為 null（沒存過 / 換了帳號 / feed 端 updated_at 較新＝過期）都走 API。
+  // deps 供 spec 注入（RC / storage）。
+  function loadFromCache(id, service, creds, deps) {
+    const d = deps || {};
+    const RC = d.RC || global.__JReadReaderCache;
+    const storage = d.storage || (global.browser && global.browser.storage && global.browser.storage.local);
+    const none = { store: null, account: '', entry: null };
+    if (!RC) return Promise.resolve(none);
+    const account = RC.accountKey(service, creds);
+    return Promise.resolve(RC.openArticleStore(d.storeOpts)).then((store) => {
+      if (!store) return none;
+      return Promise.all([store.get(account, id), RC.findFeedDoc(storage, account, id)]).then(([entry, feedDoc]) => {
+        const usable = entry && entry.doc && entry.doc.html_content && !RC.isStale(entry, feedDoc);
+        return { store, account, entry: usable ? entry : null };
+      });
+    }).catch(() => none);
   }
 
   // v1.6.0：解析 feed 卡片帶入的 meta query param（encodeURIComponent(JSON)）。

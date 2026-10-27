@@ -236,6 +236,35 @@
 
       const tabs = FEED_TABS[service] || FEED_TABS.readwise;
 
+      // v1.10.1：本機快取（reader-cache.js）。先畫上次的清單、背景抓新的再替換；
+      // 快取模組缺席時照舊只走 API。
+      const RC = global.__JReadReaderCache;
+      const local = browser.storage.local;
+      const account = RC ? RC.accountKey(service, creds) : '';
+      // 本頁封存過（含進行中）的 id：背景抓回來的清單可能還沒反映封存，重畫時濾掉
+      const archivedIds = new Set();
+
+      function showDocs(all, cfg) {
+        const docs = (all || []).filter((d) => d && !archivedIds.has(d.id));
+        if (!docs.length) {
+          showMsg(cfg.empty, false);
+          return;
+        }
+        const onArchive = (card, id) => {
+          archivedIds.add(id);
+          archiveCard(card, id, {
+            archiveFn: ({ id }) => PC.archiveDocument({ service, creds, id }),
+            toastFn: toast,
+            onEmpty: () => showMsg(cfg.empty, false)
+          }).then((r) => {
+            if (r && r.ok) { if (RC) RC.removeFromFeed(local, account, id); }
+            else archivedIds.delete(id);
+          });
+        };
+        hideMsg();
+        renderFeed(listEl, docs, onArchive, { archivable: cfg.archivable !== false });
+      }
+
       // 載入某個分頁的清單（服務無關，走 PC.listDocuments dispatcher）。
       // v1.6.24：世代 token 防 race——快速切分頁時前一發慢回應晚到，若不丟棄會
       // 蓋掉新分頁已渲染的內容（畫面內容與分頁 highlight 不一致）。
@@ -243,31 +272,49 @@
       function loadList(tab) {
         const cfg = tab || tabs[0];
         const gen = ++loadGen;
+        const listKey = service + ':' + cfg.id;
+        let freshArrived = false;
+        let cachedSig = null;  // 非 null = 畫面上是快取版本
         showMsg('載入中…', false);
+
+        const cacheRead = RC ? RC.readFeed(local, account, listKey) : Promise.resolve(null);
+        cacheRead.then((docs) => {
+          if (gen !== loadGen || freshArrived || !docs) return;
+          cachedSig = RC.feedSignature(docs);
+          showDocs(docs, cfg);
+        });
+
+        // 有快取時，背景更新失敗只跳 toast、不把清單換成錯誤訊息。API 可能比讀快取
+        // 還早失敗（離線時 fetch 當場 reject）——先等快取讀完再決定，離線才看得到清單
+        const fail = (withCache, withoutCache) => {
+          cacheRead.then((docs) => {
+            if (gen !== loadGen) return;
+            if (docs) {
+              if (cachedSig === null) { cachedSig = RC.feedSignature(docs); showDocs(docs, cfg); }
+              toast(withCache, 'error');
+            } else {
+              showMsg(withoutCache, true);
+            }
+          });
+        };
+
         PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
           if (gen !== loadGen) return; // 已切到別的分頁——過期回應丟棄
+          freshArrived = true;
           if (!r || !r.ok) {
-            showMsg(archiveErrorMessage(r, '載入'), true);
+            fail(archiveErrorMessage(r, '更新清單'), archiveErrorMessage(r, '載入'));
             return;
           }
-          const docs = r.results || [];
-          if (!docs.length) {
-            showMsg(cfg.empty, false);
-            return;
-          }
-          const onArchive = (card, id) => {
-            archiveCard(card, id, {
-              archiveFn: ({ id }) => PC.archiveDocument({ service, creds, id }),
-              toastFn: toast,
-              onEmpty: () => showMsg(cfg.empty, false)
-            });
-          };
-          hideMsg();
-          renderFeed(listEl, docs, onArchive, { archivable: cfg.archivable !== false });
+          const docs = (r.results || []).slice(0, MAX_ITEMS);
+          if (RC) RC.writeFeed(local, account, listKey, docs, MAX_ITEMS);
+          if (cachedSig !== null && RC.feedSignature(docs) === cachedSig) return; // 沒變，不重畫
+          showDocs(docs, cfg);
         }, (err) => {
           if (gen !== loadGen) return; // 過期回應丟棄（同上）
+          freshArrived = true;
           // list fetch reject（iOS 偶發）：surface 出來，不要卡在「載入中…」
-          showMsg('載入失敗：' + String(err && err.message || err), true);
+          const detail = String(err && err.message || err);
+          fail('更新清單失敗：' + detail, '載入失敗：' + detail);
         });
       }
 
