@@ -7,7 +7,7 @@
 // server、原生 app 也拿不到當下 UUID——只有 http(s) 穩定頁能當入口。
 //
 // 解法：把穩定 https 跳板頁（docs/open.html，例
-// https://jimmysu0309.github.io/JRead/open.html?jread-open=feed）加入主畫面。
+// https://reader.jread.app/open.html?jread-open=feed）加入主畫面。
 // 本 content script 跑在該頁時讀 marker，當場用 browser.runtime.getURL 解析
 // 「當前」UUID 的擴充頁並導入——getURL 是 runtime 即時解析，永遠拿到當下這組
 // UUID，所以重啟換 UUID 也對得到。唯一能做這件事的是 content script（跑在擴充

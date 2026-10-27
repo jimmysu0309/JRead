@@ -10,7 +10,7 @@
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>WFURLActionURL</key>
-				<string>https://jimmysu0309.github.io/JRead/open.html?jread-open=feed</string>
+				<string>https://reader.jread.app/open.html?jread-open=feed</string>
 			</dict>
 		</dict>
 		<dict>
