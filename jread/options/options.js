@@ -703,11 +703,14 @@ if (resetBtn) {
 }
 
 // ---- 本機快取除錯（v1.0.13）-----------------------------------------
-// storage.local 只存 readingPositions（閱讀位置記憶，見 content/position-memory.js）。
+// storage.local 的 readingPositions（閱讀位置記憶，見 content/position-memory.js）；
+// v2.0.1 起一併處理 JReader 快取（feed 清單 readerFeedCache + 文章 IndexedDB，見
+// reader/reader-cache.js）。
 // 位置記憶忽然失效時，這裡顯示用量 / 筆數方便判斷是否 storage 滿了，並提供一鍵
 // 清除。清 local 不動任何偏好——所有偏好都在 storage.sync。danger 雙態同
 // resetDefaults：第一次點進入確認、4s 未再點自動還原、第二次點才真正清除。
 const storageInfoEl = document.getElementById('storage-info');
+const READER_CACHE = window.__JReadReaderCache || null;
 const clearCacheBtn = document.getElementById('clearLocalCache');
 const clearCacheStatusEl = document.getElementById('clear-cache-status');
 let clearCacheConfirming = false;
@@ -729,6 +732,14 @@ function refreshStorageInfo() {
   try { local = browser.storage && browser.storage.local; } catch (_) { local = null; }
   if (!local || typeof local.get !== 'function') { storageInfoEl.textContent = ''; return; }
   storageInfoEl.textContent = '計算中…';
+  // 兩段資料各自回來各自重畫：storage.local 那段（同步 stub 也能立即顯示）＋
+  // JReader 文章 IndexedDB 那段（不可用 / 卡住 → null，只是不顯示）
+  let localText = null;
+  let articleText = '';
+  const render = () => {
+    if (localText == null) return;
+    storageInfoEl.textContent = localText.line + (articleText ? '　|　' + articleText : '') + localText.suffix;
+  };
   // v1.7.42：readingPositionsRestoreDiag（v1.5.10 restore 診斷儀器）已移除，
   // 不再讀取顯示（position-memory.js 端同步移除，Jimmy 2026-08-05 裁定觀察期結束）
   local.get({ readingPositions: {}, readingPositionsDiag: null }).then((v) => {
@@ -740,16 +751,22 @@ function refreshStorageInfo() {
     const line = '閱讀位置記憶：' + count + ' 筆，約 ' + formatBytes(bytes);
     // 寫入失敗診斷（position-memory recordWriteError 寫入）——有就附在後面
     const diagSuffix = (diag && diag.error) ? '　⚠ 上次寫入失敗：' + diag.error : '';
+    localText = { line, suffix: diagSuffix };
+    render();
     let probe = null;
     try { probe = local.getBytesInUse ? local.getBytesInUse(null) : null; } catch (_) { probe = null; }
     if (probe && typeof probe.then === 'function') {
       probe.then((b) => {
-        storageInfoEl.textContent = (Number.isFinite(b) ? line + '　|　本機快取總用量 ' + formatBytes(b) : line) + diagSuffix;
-      }).catch(() => { storageInfoEl.textContent = line + diagSuffix; });
-    } else {
-      storageInfoEl.textContent = line + diagSuffix;
+        if (Number.isFinite(b)) localText = { line: line + '　|　本機快取總用量 ' + formatBytes(b), suffix: diagSuffix };
+        render();
+      }).catch(() => {});
     }
   }).catch(() => { storageInfoEl.textContent = '無法讀取本機快取'; });
+  if (READER_CACHE && READER_CACHE.articleStoreUsage) {
+    READER_CACHE.articleStoreUsage().then((u) => {
+      if (u) { articleText = 'JReader 文章：' + u.count + ' 篇，約 ' + formatBytes(u.bytes); render(); }
+    }, () => {});
+  }
 }
 
 function exitClearCacheConfirm() {
@@ -771,7 +788,12 @@ if (clearCacheBtn) {
     // v1.8.0：改成只移除 readingPositions——原本 clear() 會連 v1.8.0 的除錯記錄
     // 一起清掉（與按鈕說明「不影響任何偏好設定、只清閱讀位置」名實不符，也等於
     // 使用者想回報 bug 前先把證據刪了）。除錯記錄有自己的清除鈕
-    browser.storage.local.remove('readingPositions').then(() => {
+    // v2.0.1：一併清 JReader feed 清單快取與文章 IndexedDB（Jimmy 2026-10-27）
+    const localKeys = ['readingPositions'];
+    if (READER_CACHE) localKeys.push(READER_CACHE.FEED_KEY);
+    browser.storage.local.remove(localKeys).then(() => (
+      (READER_CACHE && READER_CACHE.clearArticleStore) ? READER_CACHE.clearArticleStore() : true
+    )).then(() => {
       if (clearCacheStatusEl) {
         clearCacheStatusEl.textContent = '已清除本機快取';
         setTimeout(() => { clearCacheStatusEl.textContent = ''; }, 2000);
