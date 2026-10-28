@@ -309,6 +309,8 @@
   // 翻頁媒體單頁 cap 的 calc 必須同一值（與 H_GUTTER 同款 drift 防護；v0.8.1
   // 事故：改了連續模式 gutter、翻頁漏改，兩模式行寬 drift）。
   // v1.5.2：翻頁卡片「上緣」改用 PAGED_TOP_GUTTER（較小）——其餘三處仍是 V_GUTTER。
+  // v2.2.12：翻頁卡片「下緣」與媒體單頁 cap 改用 --__jread-paged-bottom（= max(V_GUTTER,
+  // 頁碼離底 + 頁碼高 + 間隔)，見 pagedMode 區塊 _pagedBottomGutter），V_GUTTER 為其下限。
   const V_GUTTER = 'min(48px, 6vw)';
   // v1.5.2：分頁模式「上緣」gutter——比 V_GUTTER 收斂，把拿掉頂端進度條後騰出的
   // 區域讓給文章排版（文章往上長、每頁多容幾行；Jimmy 2026-06-27）。只收上緣、
@@ -2801,8 +2803,20 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
       // base），iPad / 其他 coarse 維持 24 / 48px。純 UA 結構訊號（iPhone / iPod），非站點特判。
       const _ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
       const _isIPhone = /iPhone|iPod/.test(_ua);
-      const _indicatorCoarseBottom = _isIPhone ? '6px' : '24px';
-      const _scrubTrackCoarseBottom = _isIPhone ? '30px' : '48px';
+      // v2.2.12：iPhone 頁碼 6 → 10px（離螢幕底緣多一點呼吸），scrub-track 同步 +4 維持 24px 間距。
+      const _indicatorCoarseBottom = _isIPhone ? '10px' : '24px';
+      const _scrubTrackCoarseBottom = _isIPhone ? '34px' : '48px';
+      // v2.2.12：翻頁卡片「下緣」gutter 由頁碼位置推算（單一資料源）——舊版下緣是
+      // V_GUTTER = min(48px, 6vw)、與頁碼位置各自設定：iPhone 390 寬時 6vw ≈ 23px，
+      // 頁碼卻佔離底 6–25px，內文末行跟頁碼重疊、貼底（Jimmy 2026-10-28 iPhone 截圖）。
+      // 改成 max(V_GUTTER, 頁碼離底 + 頁碼高 + 間隔)：桌面寬視窗仍是 48px 不變，
+      // 窄視窗 / iPhone / iPad 一律讓內文停在頁碼上方 PAGED_INDICATOR_GAP 處。
+      // 頁碼高 19px = 11px 字（line-height 1）+ 上下 padding 4px（見 #__jread-page-indicator）。
+      // 以 custom property 承載：卡片 padding-bottom 與媒體單頁 cap 的 calc 共用同一值。
+      const PAGED_INDICATOR_CLEAR = '31px'; // 19px 頁碼高 + 12px 與內文間隔
+      const _pagedBottomGutter = (indicatorBottom, safe) =>
+        `max(${V_GUTTER}, calc(${indicatorBottom} + ${PAGED_INDICATOR_CLEAR}${safe ? ' + env(safe-area-inset-bottom, 0px)' : ''}))`;
+      const PAGED_BOTTOM = `var(--__jread-paged-bottom, ${V_GUTTER})`;
       userOverrides += `
 /* 翻頁模式：桌面鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
    overscroll-behavior 擋 macOS 觸控板水平 swipe 的歷史導航誤觸 +
@@ -2890,7 +2904,8 @@ html [${ARTICLE_ATTR}="1"] {
   height: auto !important;
   max-width: ${contentWidth}px !important;
   margin: 0 auto !important;
-  padding: ${PAGED_TOP_GUTTER} 0 ${V_GUTTER} ${H_GUTTER} !important;
+  --__jread-paged-bottom: ${_pagedBottomGutter('6px', false)};
+  padding: ${PAGED_TOP_GUTTER} 0 ${PAGED_BOTTOM} ${H_GUTTER} !important;
   border-right: ${H_GUTTER} solid transparent !important;
   border-radius: 0 !important;
   box-shadow: none !important;
@@ -2934,8 +2949,8 @@ html [${ARTICLE_ATTR}="1"] {
 html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
 html [${ARTICLE_ATTR}="1"] svg,
 html [${ARTICLE_ATTR}="1"] video {
-  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
-  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
   width: auto !important;
   max-width: 100% !important;
   object-fit: contain !important;
@@ -2950,8 +2965,8 @@ html [${ARTICLE_ATTR}="1"] video {
    無效、不寫。abs-pos 的 responsive embed（FILL_IFRAME_ATTR 雙 attr (0,3,1)）
    specificity 高於本規則 (0,1,2)，維持 width/height:100% 填滿 wrapper 不受影響。 */
 html [${ARTICLE_ATTR}="1"] iframe {
-  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
-  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
   max-width: 100% !important;
 }
 /* v0.8.35：以「與 base 90vh cap 逐字相同的 selector（MEDIA_CAP_SEL）、同
@@ -2959,8 +2974,8 @@ html [${ARTICLE_ATTR}="1"] iframe {
    cascade 輸給 base 媒體 cap (0,3,3)——裸 img（非 a 包）的直式長圖在翻頁
    模式有效 max-height 變 90vh、超過欄高被跨頁切割。 */
 ${MEDIA_CAP_SEL} {
-  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
-  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${V_GUTTER} - 120px) !important;
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
 }
 html [${ARTICLE_ATTR}="1"] figure,
 html [${ARTICLE_ATTR}="1"] picture,
@@ -3055,6 +3070,9 @@ html [${ARTICLE_ATTR}="1"] a {
    推進內文重疊（Jimmy 2026-06-23 iPhone 截圖），故 iPhone 退回近底 6/30px；iPad / 其他
    coarse 維持 24/48px。指示器與 scrub-track 同抬同量、維持 24px 間距（track 在上方）。 */
 @media (pointer: coarse) {
+  html [${ARTICLE_ATTR}="1"] {
+    --__jread-paged-bottom: ${_pagedBottomGutter(_indicatorCoarseBottom, true)};
+  }
   #__jread-page-indicator {
     bottom: calc(${_indicatorCoarseBottom} + env(safe-area-inset-bottom, 0px));
   }
