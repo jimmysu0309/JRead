@@ -62,7 +62,8 @@
 
   // 建一張 feed 卡片：左側連結（縮圖 + 標題 + meta，導到 article.html?id=&meta=），
   // 右側封存鈕（opts.archivable === false 時不建，F-11）。doc 需含 id；缺 id 的
-  // 不建（回 null）。
+  // 不建（回 null）。v2.2.10：opts.tabId 帶進 &tab=，文章頁退出時導回同一分頁
+  //（之前一律回 reader.html = 第一個分頁，Later / JRead 讀完會被丟回 Inbox）。
   function createCard(doc, document, opts) {
     if (!doc || !doc.id) return null;
     const archivable = !(opts && opts.archivable === false);
@@ -73,7 +74,9 @@
     const link = document.createElement('a');
     link.className = 'jr-card-link';
     const metaEnc = encodeMeta(doc);
-    link.href = 'article.html?id=' + encodeURIComponent(doc.id) + (metaEnc ? '&meta=' + metaEnc : '');
+    const tabId = opts && opts.tabId;
+    link.href = 'article.html?id=' + encodeURIComponent(doc.id) + (metaEnc ? '&meta=' + metaEnc : '')
+      + (tabId ? '&tab=' + encodeURIComponent(tabId) : '');
 
     if (doc.image_url && /^https?:\/\//i.test(doc.image_url)) {
       const img = document.createElement('img');
@@ -171,7 +174,15 @@
     return `${act}失敗`;
   }
 
-  const api = { formatMeta, encodeMeta, createCard, renderFeed, archiveCard, archiveErrorMessage, MAX_ITEMS, FEED_TABS };
+  // v2.2.10：reader.html?tab=<id> 指定初始分頁（文章頁退出帶回來的來源分頁）。
+  // 不認得的 id（例如切換過儲存服務、舊網址）退回第一個分頁。
+  function pickInitialTab(tabs, search) {
+    let id = null;
+    try { id = new URLSearchParams(search || '').get('tab'); } catch (_) {}
+    return (id && tabs.find((t) => t.id === id)) || tabs[0];
+  }
+
+  const api = { formatMeta, encodeMeta, createCard, pickInitialTab, renderFeed, archiveCard, archiveErrorMessage, MAX_ITEMS, FEED_TABS };
 
   // ---- 頁面 bootstrap（只在擴充頁環境跑）----
   function init() {
@@ -275,7 +286,7 @@
           });
         };
         hideMsg();
-        renderFeed(listEl, docs, onArchive, { archivable: cfg.archivable !== false });
+        renderFeed(listEl, docs, onArchive, { archivable: cfg.archivable !== false, tabId: cfg.id });
       }
 
       // 載入某個分頁的清單（服務無關，走 PC.listDocuments dispatcher）。
@@ -332,12 +343,13 @@
       }
 
       // v1.6.0：依 FEED_TABS[service] 動態建分頁（取代 reader.html 寫死的三顆）。
+      const initialTab = pickInitialTab(tabs, global.location && global.location.search);
       const tabsEl = doc.getElementById('jr-tabs');
       if (tabsEl) {
         tabsEl.textContent = '';
-        tabs.forEach((tab, i) => {
+        tabs.forEach((tab) => {
           const btn = doc.createElement('button');
-          btn.className = 'jr-tab' + (i === 0 ? ' is-active' : '');
+          btn.className = 'jr-tab' + (tab === initialTab ? ' is-active' : '');
           btn.type = 'button';
           btn.setAttribute('data-src', tab.id);
           btn.textContent = tab.label;
@@ -349,11 +361,13 @@
           const all = tabsEl.querySelectorAll('.jr-tab');
           for (const x of all) x.classList.toggle('is-active', x === t);
           const picked = tabs.find((tb) => tb.id === t.getAttribute('data-src'));
+          // 網址同步目前分頁：重新整理 / 上一頁回到這裡時停在同一分頁
+          try { global.history.replaceState(null, '', 'reader.html?tab=' + encodeURIComponent(picked.id)); } catch (_) {}
           loadList(picked);
         });
       }
 
-      loadList(tabs[0]);  // 預設第一個分頁
+      loadList(initialTab);  // ?tab= 指定的分頁，沒指定 = 第一個
     }).catch((err) => {
       showMsg('讀取設定失敗：' + String(err && err.message || err), true);
     });
