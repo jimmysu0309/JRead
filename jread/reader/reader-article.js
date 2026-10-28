@@ -239,7 +239,13 @@
     return cachedDoc ? cachedDoc.reading_progress : undefined;
   }
 
-  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
+  // v2.2.10：回 feed 的網址。tab = 進文章前所在的分頁（feed 卡片帶入的 &tab=），
+  // 沒有就回 reader.html（第一個分頁）。reader-feed pickInitialTab 讀同一個 ?tab=
+  function feedUrl(tab) {
+    return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
+  }
+
+  const api = { feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -269,6 +275,8 @@
     const id = params.get('id');
     if (!id) { setStatus('缺少文章 ID'); return; }
     const meta = parseMeta(params.get('meta'));
+    // v2.2.10：feed 卡片帶入的來源分頁，退出 / 封存後導回同一分頁
+    const backHref = feedUrl(params.get('tab'));
 
     // v1.6.0：讀設定（含儲存服務二擇一 + 兩服務憑證），走 PC.getArticle dispatcher。
     const DEF = global.__JReadSettingsDefaults || {};
@@ -290,7 +298,7 @@
           : '尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
         return;
       }
-      const ctx = { NS, doc, PC, service, creds };
+      const ctx = { NS, doc, PC, service, creds, backHref };
       const fetchAndRender = (store, account) => PC.getArticle({ service, creds, id, meta }).then((r) => {
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
@@ -351,6 +359,7 @@
 
   function renderArticle(docData, ctx, opts) {
     const { NS, doc, PC } = ctx;
+    const backHref = ctx.backHref || feedUrl();
     const fallbackPosition = progressFallbackEntry(opts && opts.progress);
     if (docData.title) doc.title = docData.title;
     const statusEl = doc.getElementById('jr-status');
@@ -374,7 +383,7 @@
     // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
     attachArchiveKey(docData, ctx);
 
-    const backToFeed = function () { global.location.href = 'reader.html'; };
+    const backToFeed = function () { global.location.href = backHref; };
     NS.state.readerHostPage = true;
     NS.onReaderExit = backToFeed;
 
@@ -383,7 +392,7 @@
     // 的 exitReaderMode 以 active 為 guard）。把狀態列放回去顯示失敗文案 + 回
     // feed 連結，不依賴 active flag。
     if (typeof NS.enterFromContainer === 'function') {
-      const onEnterFailed = (err) => showEnterFailed(doc, statusEl, container, err);
+      const onEnterFailed = (err) => showEnterFailed(doc, statusEl, container, err, backHref);
       Promise.resolve()
         .then(() => NS.enterFromContainer(container, fallbackPosition ? { fallbackPosition } : undefined))
         .then((ok) => { if (ok === false) onEnterFailed(null); }, onEnterFailed);
@@ -418,7 +427,8 @@
     if (!win || !PC || typeof PC.archiveDocument !== 'function' || !id) return null;
     const RC = d.RC || global.__JReadReaderCache;
     const storage = d.storage || (global.browser && global.browser.storage && global.browser.storage.local);
-    const navigate = d.navigate || (() => { global.location.href = 'reader.html'; });
+    const backHref = (ctx && ctx.backHref) || feedUrl();
+    const navigate = d.navigate || (() => { global.location.href = backHref; });
     const toast = (msg, kind, duration) => {
       if (NS && NS.toast && typeof NS.toast.show === 'function') {
         NS.toast.show(msg, { kind: kind || 'error', id: ARCHIVE_TOAST_ID, duration: duration || 3500 });
@@ -470,7 +480,7 @@
   }
 
   // 進場失敗出口：移除半套容器、把狀態列放回 body 開頭，顯示文案 + 回 feed 連結
-  function showEnterFailed(doc, statusEl, container, err) {
+  function showEnterFailed(doc, statusEl, container, err, backHref) {
     try { if (container && container.parentNode) container.parentNode.removeChild(container); } catch (_) {}
     const el = statusEl || doc.createElement('div');
     el.id = 'jr-status';
@@ -478,7 +488,7 @@
     const msg = doc.createElement('span');
     msg.textContent = '套用閱讀版型失敗' + (err && err.message ? '：' + String(err.message).slice(0, 80) : '') + '，';
     const back = doc.createElement('a');
-    back.href = 'reader.html';
+    back.href = backHref || feedUrl();
     back.textContent = '回文章清單';
     el.appendChild(msg);
     el.appendChild(back);
