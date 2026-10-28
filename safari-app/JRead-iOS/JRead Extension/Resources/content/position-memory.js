@@ -481,7 +481,20 @@
     }
   }
 
-  function restore(key, el, entryOverride) {
+  // 套 entry + lazy-load 二次對位（使用者還沒互動才對）
+  function applyWithReassert(key, entry, el) {
+    applyEntry(entry, el);
+    if (reassertTimer) clearTimeout(reassertTimer);
+    reassertTimer = setTimeout(() => {
+      reassertTimer = null;
+      if (!interacted && sessionKey === key) applyEntry(entry, el);
+    }, REASSERT_MS);
+  }
+
+  // v2.1.0：fallbackEntry——本機沒有有效記錄時改套的外部位置（JReader 文章頁
+  // 傳入 Readwise reading_progress 換算的 { mode: 'ratio', ratio }）。本機記錄
+  // 一律優先：同一台裝置上的段落錨點比外部比例準（兩邊排版不同，比例只是近似）。
+  function restore(key, el, entryOverride, fallbackEntry) {
     // v1.7.49：進場捲動同步 override（main.js captureEnterScrollAnchor）——
     // 使用者在原頁已捲離文首才開閱讀模式，以原頁當下位置為準、不套 storage
     // 的上次位置（兩者衝突時「剛才讀到哪」才是使用者要的）。memMap seed 照舊
@@ -492,12 +505,7 @@
         if (sessionKey !== key) return;
         if (map) memMap = map;
       });
-      applyEntry(entryOverride, el);
-      if (reassertTimer) clearTimeout(reassertTimer);
-      reassertTimer = setTimeout(() => {
-        reassertTimer = null;
-        if (!interacted && sessionKey === key) applyEntry(entryOverride, el);
-      }, REASSERT_MS);
+      applyWithReassert(key, entryOverride, el);
       return;
     }
     localGet((map) => {
@@ -508,7 +516,11 @@
       // MutationObserver / ResizeObserver / resize listener（洩漏到下次進
       // reader 才拆）。同函式下方 reassert timer 本就有同款 guard，主路徑補齊。
       if (sessionKey !== key) return;
-      if (!map) return;
+      if (!map) {
+        // storage 讀取失敗：本機記錄不可知，外部位置照套
+        if (fallbackEntry) applyWithReassert(key, fallbackEntry, el);
+        return;
+      }
       memMap = map; // seed 記憶體 map：之後寫入走同步路徑（不再 async 讀回）
       const entry = map[key];
       const now = Date.now();
@@ -519,15 +531,11 @@
           memMap = pruned;
           rawSet({ [STORAGE_KEY]: pruned }).catch(() => {});
         }
+        if (fallbackEntry) applyWithReassert(key, fallbackEntry, el);
         return;
       }
-      applyEntry(entry, el);
       // lazy-load 圖片 / 晚到內容會推移版面——短延遲後使用者還沒互動就再對位一次
-      if (reassertTimer) clearTimeout(reassertTimer);
-      reassertTimer = setTimeout(() => {
-        reassertTimer = null;
-        if (!interacted && sessionKey === key) applyEntry(entry, el);
-      }, REASSERT_MS);
+      applyWithReassert(key, entry, el);
     });
   }
 
@@ -535,6 +543,8 @@
   // syncPagedMode / syncSpaceScroll 之後（模組已 install、頁數已算好）、
   // installKeyguard 之前（listener 順序 invariant）呼叫。
   // v1.7.49：opts.entryOverride——進場捲動同步的 entry（見 restore 註解）
+  // v2.1.0：opts.fallbackEntry——本機無記錄時的外部位置（見 restore 註解）。
+  // 位置記憶停用（days=0）時不套：它是跨 session 記憶的一種，受同一個開關管
   function beginSession(key, settings, el, opts) {
     endSession(); // 保險：理論上 enter 前必 exit
     // 2026-10-07 review D-13：無 session 時 endSession 直接 return 不清 memMap——
@@ -552,7 +562,7 @@
     articleEl = el || null;
     interacted = false;
     installListeners();
-    restore(key, articleEl, override);
+    restore(key, articleEl, override, opts && opts.fallbackEntry);
   }
 
   // v1.7.43 T11：session 收尾共用（endSession 與 setDays(0) 停用路徑原本各寫

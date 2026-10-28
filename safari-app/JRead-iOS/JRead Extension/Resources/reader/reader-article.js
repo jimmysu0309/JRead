@@ -217,7 +217,29 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache };
+  // v2.1.0：Readwise reading_progress（0–1，讀過最遠處）→ positionMemory 的
+  // fallback entry（只有 ratio，applyEntry 走比例對映：捲動按 scrollHeight、
+  // 翻頁按總頁數）。Readwise 公開 API 只能讀不能寫進度（2026-10-27 實測 PATCH
+  // 回 200 但值不變），所以是單向：Readwise → JReader。
+  // 開頭（< MIN_RATIO）不跳；讀完（>= DONE_RATIO）也不跳——重開讀完的文章
+  // 落在文末沒有用
+  const PROGRESS_MIN_RATIO = 0.02;   // = positionMemory MIN_RATIO
+  const PROGRESS_DONE_RATIO = 0.98;
+  function progressFallbackEntry(progress) {
+    const r = Number(progress);
+    if (progress == null || !Number.isFinite(r)) return null;
+    if (r <= PROGRESS_MIN_RATIO || r >= PROGRESS_DONE_RATIO) return null;
+    return { mode: 'ratio', ratio: r };
+  }
+
+  // 文章快取命中時用哪個進度：feed 快取（每次開 feed 都背景更新）比文章快取
+  //（存進去那一刻的值）新，有就用 feed 的
+  function pickProgress(cachedDoc, feedDoc) {
+    if (feedDoc && feedDoc.reading_progress != null) return feedDoc.reading_progress;
+    return cachedDoc ? cachedDoc.reading_progress : undefined;
+  }
+
+  const api = { sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -275,7 +297,7 @@
           setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
           return;
         }
-        renderArticle(r.doc, ctx);
+        renderArticle(r.doc, ctx, { progress: r.doc.reading_progress });
         if (store) store.put(account, r.doc);
       }, (err) => {
         // v1.7.41（R1）：getArticle reject（iOS 偶發 / renderArticle 上游同步 throw
@@ -287,7 +309,7 @@
       loadFromCache(id, service, creds).then((c) => {
         if (c.entry) {
           try {
-            renderArticle(c.entry.doc, ctx);
+            renderArticle(c.entry.doc, ctx, { progress: pickProgress(c.entry.doc, c.feedDoc) });
           } catch (err) {
             setStatus('載入失敗：' + String(err && err.message || err), true);
             return;
@@ -315,7 +337,7 @@
       if (!store) return none;
       return Promise.all([store.get(account, id), RC.findFeedDoc(storage, account, id)]).then(([entry, feedDoc]) => {
         const usable = entry && entry.doc && entry.doc.html_content && !RC.isStale(entry, feedDoc);
-        return { store, account, entry: usable ? entry : null };
+        return { store, account, entry: usable ? entry : null, feedDoc: feedDoc || null };
       });
     }).catch(() => none);
   }
@@ -327,8 +349,9 @@
     try { return JSON.parse(decodeURIComponent(raw)); } catch (_) { return null; }
   }
 
-  function renderArticle(docData, ctx) {
+  function renderArticle(docData, ctx, opts) {
     const { NS, doc, PC } = ctx;
+    const fallbackPosition = progressFallbackEntry(opts && opts.progress);
     if (docData.title) doc.title = docData.title;
     const statusEl = doc.getElementById('jr-status');
     if (statusEl) statusEl.remove();
@@ -348,6 +371,8 @@
     // attach——它的 H 鍵 listener 要比 main.js keyguard 早註冊（兩者都是 window
     // capture，keyguard 會 stopImmediatePropagation），見 reader-highlights.js
     attachHighlights(docData, container, ctx);
+    // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
+    attachArchiveKey(docData, ctx);
 
     const backToFeed = function () { global.location.href = 'reader.html'; };
     NS.state.readerHostPage = true;
@@ -360,7 +385,7 @@
     if (typeof NS.enterFromContainer === 'function') {
       const onEnterFailed = (err) => showEnterFailed(doc, statusEl, container, err);
       Promise.resolve()
-        .then(() => NS.enterFromContainer(container))
+        .then(() => NS.enterFromContainer(container, fallbackPosition ? { fallbackPosition } : undefined))
         .then((ok) => { if (ok === false) onEnterFailed(null); }, onEnterFailed);
     }
   }
@@ -377,6 +402,71 @@
         PC, NS, storage
       });
     } catch (_) { return null; }  // 畫重點掛不上不影響閱讀
+  }
+
+  // v2.1.0：E 鍵封存這篇（Readwise / Instapaper 都走 PC.archiveDocument）。成功
+  // → 從 feed 快取移除（否則回 feed 會先閃出已封存的卡片）+ 回 feed；失敗 →
+  // toast、留在本頁。window capture、須在 enterFromContainer 之前註冊（main.js
+  // keyguard 同階段 stopImmediatePropagation，同 reader-highlights H 鍵）。
+  // deps 供 spec 注入：win / RC / storage / navigate。回傳 { trigger } 便於測試。
+  const ARCHIVE_TOAST_ID = 'jr-archive';
+  function attachArchiveKey(docData, ctx, deps) {
+    const d = deps || {};
+    const { NS, PC, service, creds } = ctx || {};
+    const win = d.win || global;
+    const id = docData && docData.id != null ? String(docData.id) : '';
+    if (!win || !PC || typeof PC.archiveDocument !== 'function' || !id) return null;
+    const RC = d.RC || global.__JReadReaderCache;
+    const storage = d.storage || (global.browser && global.browser.storage && global.browser.storage.local);
+    const navigate = d.navigate || (() => { global.location.href = 'reader.html'; });
+    const toast = (msg, kind, duration) => {
+      if (NS && NS.toast && typeof NS.toast.show === 'function') {
+        NS.toast.show(msg, { kind: kind || 'error', id: ARCHIVE_TOAST_ID, duration: duration || 3500 });
+      }
+    };
+    let inFlight = false;
+    let done = false;
+
+    async function trigger() {
+      if (inFlight || done) return null;
+      // Readwise doc 帶 location：已在封存區就不再送（成功 = 什麼都沒變，使用者
+      // 會以為按了沒反應或被導回 feed 找不到文章）
+      if (docData.location === 'archive') { toast('這篇已在封存區', 'info'); return null; }
+      inFlight = true;
+      toast('封存中…', 'info', 10000);
+      let r;
+      try {
+        r = await PC.archiveDocument({ service, creds, id });
+      } catch (_) {
+        r = null; // serviceErrorMessage 對 null 回通用「封存失敗」
+      }
+      inFlight = false;
+      if (!r || !r.ok) {
+        toast(typeof PC.serviceErrorMessage === 'function'
+          ? PC.serviceErrorMessage(r, { action: '封存' })
+          : '封存失敗');
+        return r;
+      }
+      done = true;
+      if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function') {
+        try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
+      }
+      navigate();
+      return r;
+    }
+
+    win.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.key !== 'e' && e.key !== 'E') return;
+      if (e.repeat) return;
+      if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      trigger();
+    }, true);
+
+    return { trigger };
   }
 
   // 進場失敗出口：移除半套容器、把狀態列放回 body 開頭，顯示文案 + 回 feed 連結

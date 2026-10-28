@@ -344,9 +344,11 @@
     // 之前（模組的 keydown listener 要先於 keyguard 收到翻頁鍵——keyguard 對
     // 非 ESC 鍵 stopImmediatePropagation）。urlKey 用 spaRouteKey（與 SPA
     // 導航偵測同一份 key 語意：錨點 hash 不分流、hash-router 分流）。
+    // v2.1.0：opts.fallbackPosition——JReader 文章頁傳入的 Readwise 閱讀進度，
+    // 本機沒記錄時才套（見 position-memory restore 註解）
     if (NS.positionMemory) {
       NS.positionMemory.beginSession(spaRouteKey(location.href), settings, container,
-        opts && opts.enterScrollAnchor ? { entryOverride: opts.enterScrollAnchor } : undefined);
+        opts ? { entryOverride: opts.enterScrollAnchor, fallbackEntry: opts.fallbackPosition } : undefined);
     }
     if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
@@ -432,14 +434,15 @@
   // 沒有訊息、ESC / 懸浮按鈕都無聲。比照 enterReaderModeImpl（v0.8.36）：catch
   // 內走 exitReaderModeImpl 還原半套 state（對部分設定的 state 安全）、回 false
   // 讓呼叫端（reader-article.js）顯示失敗文案與回 feed 連結。
-  async function enterFromContainer(container) {
+  // v2.1.0：opts.fallbackPosition 透傳給 finalizeEnter（Readwise 閱讀進度）
+  async function enterFromContainer(container, opts) {
     if (!container) return false;
     const settings = await getSettings();
     NS.state.articleEl = container;
     NS.state.confidence = 1;
     NS.state.hiddenEls = [];
     try {
-      return finalizeEnter(container, settings);
+      return finalizeEnter(container, settings, { fallbackPosition: opts && opts.fallbackPosition });
     } catch (err) {
       console.warn('[JRead] reader 頁套用版型失敗，還原半套狀態：', err);
       try { exitReaderModeImpl(); } catch (_) { /* 還原失敗：console 已有訊號 */ }

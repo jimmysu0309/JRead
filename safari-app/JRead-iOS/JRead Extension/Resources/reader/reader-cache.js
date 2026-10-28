@@ -32,7 +32,9 @@
   const IDB_TIMEOUT_MS = 1500;
 
   // feed 卡片與文章頁 byline 用得到的欄位；其餘（summary / tags / content…）不存
-  const SLIM_FIELDS = ['id', 'title', 'author', 'site_name', 'published_date', 'source_url', 'image_url', 'updated_at'];
+  const SLIM_FIELDS = ['id', 'title', 'author', 'site_name', 'published_date', 'source_url', 'image_url', 'updated_at',
+    // v2.1.0：Readwise 閱讀進度（文章頁走文章快取時，從 feed 快取拿較新的值）
+    'reading_progress'];
 
   // ---- 共用 ----------------------------------------------------------------
 
