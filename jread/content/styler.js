@@ -6381,6 +6381,20 @@ html.${HTML_CLASS}.jread-orion body {
               hasMediaChild = true;
               break;
             }
+            // v2.2.9：「連結 / span 只包一張圖」等同直接子圖片（grubstreet 翻頁模式
+            // 實證，Jimmy 2026-10-28）——flex 容器 > <a> > <img>，翻頁把圖縮到
+            // 放得進一頁（406px < 欄寬 608）後，flex 預設 flex-start 讓整組靠左；
+            // 舊判定只認直接子媒體、包一層 <a> 就 miss。包裝層須只有那一張媒體、
+            // 沒有自己的文字（有文字＝卡片連結，不是媒體包裝）；inline emoji /
+            // icon 圖不算（一排社群 icon 連結不該被攤成直排）
+            const only = c.children.length === 1 ? c.firstElementChild : null;
+            if ((c.tagName === 'A' || c.tagName === 'SPAN') && only &&
+                (only.tagName === 'PICTURE' ||
+                  (only.tagName === 'IMG' && !only.hasAttribute(INLINE_IMG_ATTR) && !only.hasAttribute(ICON_IMG_ATTR))) &&
+                !(c.textContent || '').trim()) {
+              hasMediaChild = true;
+              break;
+            }
           }
           if (!hasMediaChild) continue;
           galleryPending.push(el);
