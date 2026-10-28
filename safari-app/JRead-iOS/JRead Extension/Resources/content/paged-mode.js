@@ -674,6 +674,22 @@
     if (avail >= FIT_MIN_PX && avail >= h0 * FIT_MIN_RATIO) return { action: 'shrink', maxH: Math.floor(avail) };
     return { action: 'break' };
   }
+  // v2.2.6：縮完要實際驗證有沒有留在本頁（Jimmy 2026-10-28 Mac Safari 27 回報 NYT 首頁
+  // 空白、圖跑到第二頁）。shrink 依量測縮到剛好貼齊頁底（只留 2px），Chromium / Safari 26
+  // 放得下；Safari 27 對 break-inside: avoid 的 figure 多要約 12px 餘裕（Jimmy 實機逐 px
+  // 試：figure 底 437.89 留在本頁、438.89 被推走；頁底 450、一般文字照樣排到 448；拿掉
+  // figure 下邊距無效），整塊推到下一頁 → 本頁只剩標題。各引擎的判定不必猜：套上高度後
+  // 看 unit 是否還在量測時那一欄，被推走就每次再縮 FIT_REFINE_STEP_PX 重試；縮到 shrink
+  // 下限仍放不進 → 交給 break 分支（下一頁頂端完整顯示）。
+  // 純決策函式：stays(h) 由呼叫端量 DOM（套 max-height 後 unit 是否仍在原欄）
+  const FIT_REFINE_STEP_PX = 4;
+  function refineShrink(maxH, h0, stays) {
+    const minH = Math.max(FIT_MIN_PX, h0 * FIT_MIN_RATIO);
+    for (let h = maxH; h >= minH; h -= FIT_REFINE_STEP_PX) {
+      if (stays(h)) return { action: 'shrink', maxH: h };
+    }
+    return { action: 'break' };
+  }
   function setFitStyle(el, prop, val) {
     mediaFitForced.push({ el, prop, prev: el.style.getPropertyValue(prop), prevPri: el.style.getPropertyPriority(prop) });
     el.style.setProperty(prop, val, 'important');
@@ -698,13 +714,14 @@
   function fitMediaToPages() {
     if (!art) return;
     restoreMediaFit();
-    let pageTop = 0, pageBottom = 0;
+    let pageTop = 0, pageBottom = 0, artContentLeft = 0;
     try {
       const cs = getComputedStyle(art);
       const pageH = art.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
       if (!(pageH > 0)) return; // jsdom 無 layout → no-op
       pageTop = art.getBoundingClientRect().top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
       pageBottom = pageTop + pageH;
+      artContentLeft = art.getBoundingClientRect().left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0);
     } catch (e) { return; }
     // Safari 對已捲動狀態的 column fragment rect 會偏（同 measureContentEndX）→ 量測期間歸零
     const prevScroll = art.scrollLeft;
@@ -721,11 +738,28 @@
         setFitStyle(img, 'max-height', '1px');
         const rects = unit.getClientRects();
         const top0 = rects.length ? rects[0].top : 0;
+        const left0 = rects.length ? rects[0].left : 0; // 自然起點所在欄（v2.2.6 refineShrink 比對）
         const extra = Math.max(0, fragHeight(unit) - 1);
-        const d = decideMediaFit(h0, pageBottom - top0 - extra - 2);
+        let d = decideMediaFit(h0, pageBottom - top0 - extra - 2);
         // 1px 暫值只影響量測——decide 後依分支寫最終值（restore 時反序還原）
         const natW = img.complete ? img.naturalWidth : 0;
         const natH = img.complete ? img.naturalHeight : 0;
+        if (d.action === 'shrink') {
+          // 比「落在第幾欄」而非 left：置中、寬度跟著圖走的 figure（wiki thumb）縮圖時 left
+          // 會跟著移動，比 left 會全數誤判成被推走、一路縮到下限改走 break（Glass 條目實測）。
+          // 量不到 stride（jsdom）退回比起點 top——被推到下一欄的 unit 起點會回到頁頂
+          const st = stride();
+          const colOf = (x) => Math.floor((x - artContentLeft + 1) / st);
+          const sameSpot = (r0) => (st > 0 ? colOf(r0.left) === colOf(left0) : Math.abs(r0.top - top0) < 1);
+          // 每次試寫都疊在 1px 暫值上、試完撤掉，最後只留定案值
+          d = refineShrink(d.maxH, h0, (h) => {
+            setFitStyle(img, 'max-height', h + 'px');
+            const r = unit.getClientRects();
+            const ok = r.length > 0 && sameSpot(r[0]);
+            undoLastFitStyle();
+            return ok;
+          });
+        }
         let finalH = h0;
         if (d.action === 'shrink') {
           setFitStyle(img, 'max-height', d.maxH + 'px');
@@ -1576,6 +1610,7 @@
     computePageCount,
     computePageCountFromExtent,
     decideMediaFit,
+    refineShrink,
     quantizeStride,
     computeScrubTarget,
     resolveScrubGesture,
