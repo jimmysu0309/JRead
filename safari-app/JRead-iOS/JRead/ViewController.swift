@@ -27,6 +27,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     private let schemeHandler = ExtensionResourceSchemeHandler()
 
+    // v2.2.4：頂端安全區域色帶（狀態列底下 / 隱藏時保留的那條），跟頁面頂端一樣分三段：
+    // 兩側＝頁面底色、中段＝卡片色（shim sampleTopBand 回報）。iPad 翻頁卡片不滿版，
+    // 只填單一色會在左右兩側露出不同色（Jimmy 2026-10-28 回報 v2.2.3）
+    private let topBand = UIView()
+    private let topBandCenter = UIView()
+    private var topBandSpan: (left: CGFloat, right: CGFloat) = (0, 0)
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -49,6 +56,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         old?.removeFromSuperview()
         view.addSubview(wv)
         webView = wv
+
+        topBand.isHidden = true
+        topBand.isUserInteractionEnabled = false
+        topBand.addSubview(topBandCenter)
+        view.addSubview(topBand)
 
         // 左緣滑動返回文章列表在頁面內處理（jreader-app-shim.js installEdgeBack）：翻頁模式的
         // touchmove 會 preventDefault，WKWebView 因此把原生手勢（含 allowsBackForwardNavigationGestures、
@@ -76,12 +88,31 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     // v2.2.1：狀態列與 Home 指示條那兩條安全區域用頁面頂端的實際底色填（shim 回報），
     // 不然翻頁模式下會露出 WebView 預設的黑 / 白底
-    private func applyChromeColor(_ css: String) {
-        guard let color = Self.parseCSSColor(css) else { return }
+    private func applyChromeColor(_ body: [String: Any]) {
+        guard let color = Self.parseCSSColor((body["color"] as? String) ?? "") else { return }
         webView.underPageBackgroundColor = color
         webView.backgroundColor = color
         webView.scrollView.backgroundColor = color
         view.backgroundColor = color
+        let side = Self.parseCSSColor((body["side"] as? String) ?? "") ?? color
+        let left = CGFloat((body["left"] as? Double) ?? 0)
+        let right = CGFloat((body["right"] as? Double) ?? Double(view.bounds.width))
+        topBand.backgroundColor = side
+        topBandCenter.backgroundColor = color
+        topBandSpan = (left, right)
+        topBand.isHidden = false
+        layoutTopBand()
+    }
+
+    private func layoutTopBand() {
+        topBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
+        topBandCenter.frame = CGRect(x: topBandSpan.left, y: 0,
+                                     width: max(0, topBandSpan.right - topBandSpan.left), height: topBand.bounds.height)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutTopBand()
     }
 
     // v2.2.2：Article View 沉浸閱讀，狀態列預設藏、點一下切換（shim installImmersive 回報）；
@@ -189,7 +220,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             LocalStore.update(set: items, remove: (body["remove"] as? [String]) ?? [])
             replyHandler("{}", nil)
         case "chromeColor":
-            if message.frameInfo.isMainFrame { applyChromeColor((body["color"] as? String) ?? "") }
+            if message.frameInfo.isMainFrame { applyChromeColor(body) }
             replyHandler("{}", nil)
         case "statusBar":
             if message.frameInfo.isMainFrame { setStatusBarHidden((body["hidden"] as? Bool) ?? false) }

@@ -250,26 +250,50 @@
     const m = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(c);
     return !m || parseFloat(m[1]) > 0;
   }
-  function sampleTopColor() {
-    let el = document.elementFromPoint(Math.floor(window.innerWidth / 2), 2);
-    while (el && el.nodeType === 1) {
-      const c = getComputedStyle(el).backgroundColor;
-      if (isOpaque(c)) return c;
-      el = el.parentElement;
-    }
+  function pageColor() {
     const root = getComputedStyle(document.documentElement).backgroundColor;
     if (isOpaque(root)) return root;
     return document.body ? getComputedStyle(document.body).backgroundColor : '';
   }
-  let lastChromeColor = '';
+  // 只認縱向蓋滿畫面的容器（翻頁卡片 / 文章版心 / body）：捲到一半時頂端剛好是圖、
+  // 程式碼框或列表項目，那些不代表頁面底色
+  function opaqueAncestor(el) {
+    const h = window.innerHeight;
+    while (el && el.nodeType === 1) {
+      if (isOpaque(getComputedStyle(el).backgroundColor)) {
+        const r = el.getBoundingClientRect();
+        if (el === document.body || el === document.documentElement || (r.top <= 2 && r.bottom >= h - 2)) return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+  // v2.2.4：頂端色帶要跟畫面一樣分三段（iPad 翻頁卡片不滿版，兩側露出頁面底色；
+  // Jimmy 2026-10-28 回報 v2.2.3 頂端整條填卡片色、左右沒配合底色）。回報中段色（color）
+  // 與其左右邊界（CSS px＝WebView point）、兩側色（side＝中段元素再往上第一個不透明底色）
+  function sampleTopBand() {
+    const w = window.innerWidth;
+    const card = opaqueAncestor(document.elementFromPoint(Math.floor(w / 2), 2));
+    if (!card) { const c = pageColor(); return { color: c, side: c, left: 0, right: w }; }
+    const color = getComputedStyle(card).backgroundColor;
+    const r = card.getBoundingClientRect();
+    const left = Math.max(0, Math.round(r.left));
+    const right = Math.min(w, Math.round(r.right));
+    const outer = opaqueAncestor(card.parentElement);
+    const side = outer ? getComputedStyle(outer).backgroundColor : pageColor();
+    return { color, side: isOpaque(side) ? side : color, left, right };
+  }
+  const sampleTopColor = () => sampleTopBand().color;
+  let lastChromeKey = '';
   let chromeTimer = null;
   function reportChromeColor() {
     chromeTimer = null;
     if (window !== window.top) return;
-    const c = sampleTopColor();
-    if (!isOpaque(c) || c === lastChromeColor) return;
-    lastChromeColor = c;
-    call({ op: 'chromeColor', color: c }).catch(() => {});
+    const band = sampleTopBand();
+    const key = JSON.stringify(band);
+    if (!isOpaque(band.color) || key === lastChromeKey) return;
+    lastChromeKey = key;
+    call(Object.assign({ op: 'chromeColor' }, band)).catch(() => {});
   }
   function scheduleChromeColor(ms) {
     if (chromeTimer) clearTimeout(chromeTimer);
@@ -398,5 +422,5 @@
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
 
-  window.__jreadApp = { ready, onForeground, isApp: true, sampleTopColor, installEdgeBack, installImmersive };
+  window.__jreadApp = { ready, onForeground, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, installImmersive };
 })();
