@@ -335,5 +335,68 @@
     installEdgeBack(window, backToFeed);
   }
 
-  window.__jreadApp = { ready, onForeground, isApp: true, sampleTopColor, installEdgeBack };
+  // ---- 沉浸閱讀：狀態列與懸浮按鈕預設隱藏，點一下切換（v2.2.2）---------------
+  // Jimmy 2026-10-28 需求。Article View 進場時狀態列（原生，ViewController 的
+  // prefersStatusBarHidden）與懸浮按鈕（<html> 屬性 + !important 樣式蓋過 floating-icon 的
+  // inline opacity）一起藏；畫面任意處「點一下」切換顯示 / 隱藏。用 touch 自己判 tap 而不用
+  // click：iOS 對非可點元素不保證派發 click。拖移 / 長按 / 多指 / 起手前已有選取（畫重點中）
+  // 都不算；點到連結、表單、頁碼指示器、懸浮按鈕等自有互動的元素交給它們自己處理。
+  // 左緣返回那段觸控已被 installEdgeBack 先 stopImmediatePropagation，不會同時切換。
+  const CHROME_ATTR = 'data-jread-app-chrome';
+  const TAP_SLOP_PX = 10;
+  const TAP_MAX_MS = 350;
+  const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
+    '#__jread-floating-host, #__jread-panel-host, #__jread-hl-host, #__jread-toast-host, ' +
+    '#__jread-page-indicator, #__jread-scrub-track';
+  function installImmersive(win, report) {
+    const doc = win.document;
+    let shown = false;
+    const apply = () => {
+      doc.documentElement.setAttribute(CHROME_ATTR, shown ? 'shown' : 'hidden');
+      report(!shown);
+    };
+    const style = doc.createElement('style');
+    style.textContent = 'html[' + CHROME_ATTR + '="hidden"] #__jread-floating-host' +
+      ' { opacity: 0 !important; pointer-events: none !important; }';
+    doc.documentElement.appendChild(style);
+
+    let tap = null;
+    win.addEventListener('touchstart', (e) => {
+      tap = null;
+      if (!e.touches || e.touches.length !== 1) return;
+      const sel = win.getSelection && win.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      const t = e.touches[0];
+      tap = { x: t.clientX, y: t.clientY, at: Date.now(), target: e.target };
+    }, { capture: true, passive: true });
+    win.addEventListener('touchmove', (e) => {
+      if (!tap) return;
+      const t = e.touches && e.touches[0];
+      if (!t || Math.abs(t.clientX - tap.x) > TAP_SLOP_PX || Math.abs(t.clientY - tap.y) > TAP_SLOP_PX) tap = null;
+    }, { capture: true, passive: true });
+    win.addEventListener('touchend', (e) => {
+      const start = tap;
+      tap = null;
+      if (!start || (e.touches && e.touches.length)) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t || Math.abs(t.clientX - start.x) > TAP_SLOP_PX || Math.abs(t.clientY - start.y) > TAP_SLOP_PX) return;
+      if (Date.now() - start.at > TAP_MAX_MS) return;
+      const el = start.target && start.target.nodeType === 1 ? start.target : (start.target && start.target.parentElement);
+      if (el && el.closest(TAP_SKIP)) return;
+      shown = !shown;
+      apply();
+    }, { capture: true, passive: true });
+    win.addEventListener('touchcancel', () => { tap = null; }, { capture: true, passive: true });
+    // bfcache 回來（從外部 / 列表再前進）原生狀態列可能已被別頁改過，重報一次
+    win.addEventListener('pageshow', apply);
+    apply();
+    return { isShown: () => shown };
+  }
+  const reportStatusBar = (hidden) => { call({ op: 'statusBar', hidden }).catch(() => {}); };
+  if (window === window.top) {
+    if (/\/reader\/article\.html$/.test(location.pathname)) installImmersive(window, reportStatusBar);
+    else window.addEventListener('pageshow', () => reportStatusBar(false));
+  }
+
+  window.__jreadApp = { ready, onForeground, isApp: true, sampleTopColor, installEdgeBack, installImmersive };
 })();

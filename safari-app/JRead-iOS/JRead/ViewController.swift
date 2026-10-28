@@ -84,6 +84,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         view.backgroundColor = color
     }
 
+    // v2.2.2：Article View 沉浸閱讀，狀態列預設藏、點一下切換（shim installImmersive 回報）；
+    // 列表頁 pageshow 時回報 false 叫回來
+    private var statusBarHidden = false
+    override var prefersStatusBarHidden: Bool { statusBarHidden }
+    override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
+
+    private func setStatusBarHidden(_ hidden: Bool) {
+        guard hidden != statusBarHidden else { return }
+        statusBarHidden = hidden
+        UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
+    }
+
     // "rgb(r, g, b)" / "rgba(r, g, b, a)"（getComputedStyle 的輸出格式）
     static func parseCSSColor(_ css: String) -> UIColor? {
         let nums = css.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted)
@@ -163,6 +175,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             replyHandler("{}", nil)
         case "chromeColor":
             if message.frameInfo.isMainFrame { applyChromeColor((body["color"] as? String) ?? "") }
+            replyHandler("{}", nil)
+        case "statusBar":
+            if message.frameInfo.isMainFrame { setStatusBarHidden((body["hidden"] as? Bool) ?? false) }
             replyHandler("{}", nil)
         case "fetch":
             NativeFetch.perform(body) { result in replyHandler(result, nil) }
