@@ -4453,6 +4453,7 @@ html.${HTML_CLASS}.jread-orion body {
       const captionAlignSnap = [];
       let titleFsSnap = null;
       let heroFloorSnap = null;
+      const titleLineSnap = [];
       const galleryFlex = [];
       const ratioBoxes = [];
       const fixedHeightBoxes = [];
@@ -4501,7 +4502,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -6267,6 +6268,65 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passTitleOwnLineAndDek = () => {
+        // v2.2.7：標題獨佔一行＋緊接的摘要（dek）不可大過標題。
+        // 根因（grubstreet chocolate-conspiracy 實證，Jimmy 2026-10-28）：站方
+        // 頁首的 h1 與摘要 h2 都是 display:inline（原站 h1 55px 寬到把摘要擠到
+        // 下一行，靠字寬「碰巧」分行），摘要 49px。reader 下標題被上兩條 pass
+        // 定成 32px（設定預設）→ 摘要 49px 反而比標題大、兩者併進同一行。
+        // 通則（結構訊號，不綁站點 / class）：
+        //   1) reader 標題 computed display 為 inline* → display:block（標題的
+        //      語意就是獨立一行；inline 只在原站版寬下碰巧成立）
+        //   2) 標題之後連續的兄弟（最多 3 個，遇含媒體者停）字級大於標題最終
+        //      字級 → 壓到標題 0.75 倍；站方 px 行高按同比例縮（否則字小行距
+        //      巨大），text-align 跟標題一致（不再一個靠左一個置中）；inline
+        //      的 dek 同樣轉 block（否則對齊由父層 line box 決定）
+        // 收斂：只看標題的「同層後續兄弟」，不碰正文裡的 h2（正文 h2 比標題大
+        // 是另一回事，且通常跟標題不同層）。
+        const titleEl = articleEl.querySelector('[data-jread-injected-title="1"]')
+          || (firstInk && /^H1$/.test(firstInk.tagName) ? firstInk : firstVisibleH1(articleEl));
+        const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+        if (!titleEl || !win) return;
+        const setSnap = (el, prop, val) => {
+          titleLineSnap.push({
+            el, prop,
+            v: el.style.getPropertyValue(prop),
+            p: el.style.getPropertyPriority(prop),
+          });
+          el.style.setProperty(prop, val, 'important');
+        };
+        const tcs = win.getComputedStyle(titleEl);
+        if (/^inline/.test(tcs.display)) setSnap(titleEl, 'display', 'block');
+        const titleFs = parseFloat(tcs.fontSize) || 0;
+        if (!titleFs) return;
+        const titleAlign = tcs.textAlign;
+        // 先全讀再全寫（同 passCaptionFontFloor，避免讀寫交錯強制 recalc）
+        const pending = [];
+        let sib = titleEl.nextElementSibling;
+        for (let n = 0; sib && n < 3; n++, sib = sib.nextElementSibling) {
+          if (sib.querySelector('img, picture, video, figure, iframe')) break;
+          if (sib.closest('[data-jread-hidden="1"]')) continue;
+          const scs = win.getComputedStyle(sib);
+          const fs = parseFloat(scs.fontSize) || 0;
+          if (fs <= titleFs) continue;
+          pending.push({ el: sib, fs, lh: scs.lineHeight, ta: scs.textAlign, disp: scs.display });
+        }
+        for (const it of pending) {
+          const newFs = Math.round(titleFs * 0.75);
+          setSnap(it.el, 'font-size', newFs + 'px');
+          if (/px$/.test(it.lh)) {
+            // 站方 display 字的行高常貼近 1.0（大字才好看），縮成內文級字級後
+            // 太擠 → 下限 1.25 倍字級
+            const scaled = parseFloat(it.lh) * newFs / it.fs;
+            setSnap(it.el, 'line-height', Math.max(scaled, newFs * 1.25).toFixed(1) + 'px');
+          }
+          // inline 的 dek 對齊吃父層 line box（text-align 設在自己身上無效）→
+          // 同標題一起轉 block 才對得齊
+          if (/^inline/.test(it.disp)) setSnap(it.el, 'display', 'block');
+          if (it.ta !== titleAlign) setSnap(it.el, 'text-align', titleAlign);
+        }
+      };
+
       const passGalleryFlex = () => {
         // v0.7.93：substack 類 image gallery 修法——含直接 picture/img/figure 子的
         // flex/grid 容器強制改成 block display + height auto，讓並列圖在 reader mode
@@ -7047,6 +7107,7 @@ html.${HTML_CLASS}.jread-orion body {
         passCaptionAlignReset,
         passTitleFontOverride,
         passHeroTitleFloor,
+        passTitleOwnLineAndDek,
         passGalleryFlex,
         passRatioBoxReset,
         passFixedHeightReset,
@@ -7392,6 +7453,16 @@ html.${HTML_CLASS}.jread-orion body {
         const h = snapshot.heroFloorSnap;
         if (h.fs) h.el.style.setProperty('font-size', h.fs, h.fsP || '');
         else h.el.style.removeProperty('font-size');
+      }
+
+      // v2.2.7：還原標題獨佔一行 / dek 字級壓制（反向，同 el 多 prop 各自一筆）
+      if (Array.isArray(snapshot.titleLineSnap)) {
+        for (let i = snapshot.titleLineSnap.length - 1; i >= 0; i--) {
+          const s = snapshot.titleLineSnap[i];
+          if (!s || !s.el) continue;
+          if (s.v) s.el.style.setProperty(s.prop, s.v, s.p || '');
+          else s.el.style.removeProperty(s.prop);
+        }
       }
 
       // v0.7.225：還原 contrast guard 的 inline override（background-color
