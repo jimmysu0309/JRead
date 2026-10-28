@@ -46,10 +46,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         wv.navigationDelegate = self
         wv.uiDelegate = self
-        wv.allowsBackForwardNavigationGestures = true
         old?.removeFromSuperview()
         view.addSubview(wv)
         webView = wv
+
+        // 左緣滑動返回文章列表在頁面內處理（jreader-app-shim.js installEdgeBack）：翻頁模式的
+        // touchmove 會 preventDefault，WKWebView 因此把原生手勢（含 allowsBackForwardNavigationGestures、
+        // 自掛的 UIScreenEdgePanGestureRecognizer）全讓給頁面，原生這層收不到（v2.2.1 模擬器實證）
 
         NotificationCenter.default.addObserver(self, selector: #selector(willEnterForeground),
                                                name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -69,6 +72,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private func openReader() {
         webView.scrollView.isScrollEnabled = true
         webView.load(URLRequest(url: Self.readerURL))
+    }
+
+    // v2.2.1：狀態列與 Home 指示條那兩條安全區域用頁面頂端的實際底色填（shim 回報），
+    // 不然翻頁模式下會露出 WebView 預設的黑 / 白底
+    private func applyChromeColor(_ css: String) {
+        guard let color = Self.parseCSSColor(css) else { return }
+        webView.underPageBackgroundColor = color
+        webView.backgroundColor = color
+        webView.scrollView.backgroundColor = color
+        view.backgroundColor = color
+    }
+
+    // "rgb(r, g, b)" / "rgba(r, g, b, a)"（getComputedStyle 的輸出格式）
+    static func parseCSSColor(_ css: String) -> UIColor? {
+        let nums = css.components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted)
+            .compactMap { Double($0) }
+        guard css.hasPrefix("rgb"), nums.count >= 3 else { return nil }
+        let a = nums.count >= 4 ? nums[3] : 1
+        return UIColor(red: nums[0] / 255, green: nums[1] / 255, blue: nums[2] / 255, alpha: a)
     }
 
     @objc private func willEnterForeground() {
@@ -138,6 +160,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             let raw = (body["items"] as? String) ?? "{}"
             let items = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: String] ?? [:]
             LocalStore.update(set: items, remove: (body["remove"] as? [String]) ?? [])
+            replyHandler("{}", nil)
+        case "chromeColor":
+            if message.frameInfo.isMainFrame { applyChromeColor((body["color"] as? String) ?? "") }
             replyHandler("{}", nil)
         case "fetch":
             NativeFetch.perform(body) { result in replyHandler(result, nil) }

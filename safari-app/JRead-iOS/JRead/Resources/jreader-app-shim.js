@@ -241,5 +241,99 @@
   window.browser = api;
   window.chrome = api;
 
-  window.__jreadApp = { ready, onForeground, isApp: true };
+  // ---- 安全區域底色（v2.2.1）-----------------------------------------------
+  // 狀態列 / Home 指示條那兩條由 App 原生著色：取畫面頂端中央往上找第一個不透明底色
+  // （翻頁模式＝卡片色、捲動模式＝頁面底色），變了才回報。主題切換、進出翻頁都會改
+  // <html> / <head> / <body> 的屬性或子節點 → MutationObserver（不掃 subtree）+ debounce。
+  function isOpaque(c) {
+    if (!c || c === 'transparent') return false;
+    const m = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(c);
+    return !m || parseFloat(m[1]) > 0;
+  }
+  function sampleTopColor() {
+    let el = document.elementFromPoint(Math.floor(window.innerWidth / 2), 2);
+    while (el && el.nodeType === 1) {
+      const c = getComputedStyle(el).backgroundColor;
+      if (isOpaque(c)) return c;
+      el = el.parentElement;
+    }
+    const root = getComputedStyle(document.documentElement).backgroundColor;
+    if (isOpaque(root)) return root;
+    return document.body ? getComputedStyle(document.body).backgroundColor : '';
+  }
+  let lastChromeColor = '';
+  let chromeTimer = null;
+  function reportChromeColor() {
+    chromeTimer = null;
+    if (window !== window.top) return;
+    const c = sampleTopColor();
+    if (!isOpaque(c) || c === lastChromeColor) return;
+    lastChromeColor = c;
+    call({ op: 'chromeColor', color: c }).catch(() => {});
+  }
+  function scheduleChromeColor(ms) {
+    if (chromeTimer) clearTimeout(chromeTimer);
+    chromeTimer = setTimeout(reportChromeColor, ms == null ? 200 : ms);
+  }
+  if (window === window.top) {
+    onChanged.addListener(() => scheduleChromeColor(400));
+    window.addEventListener('resize', () => scheduleChromeColor());
+    document.addEventListener('DOMContentLoaded', () => {
+      const mo = new MutationObserver(() => scheduleChromeColor());
+      mo.observe(document.documentElement, { attributes: true, childList: true });
+      if (document.head) mo.observe(document.head, { childList: true });
+      if (document.body) mo.observe(document.body, { attributes: true, childList: true });
+      scheduleChromeColor(0);
+    });
+    window.addEventListener('load', () => scheduleChromeColor(300));
+  }
+
+  // ---- 左緣滑動回文章列表（v2.2.1）-----------------------------------------
+  // Jimmy 2026-10-28 實機回報 Article View 左緣滑動不會返回。原生手勢（WebKit 內建返回 /
+  // UIScreenEdgePanGestureRecognizer）在這裡收不到：翻頁模式 touchmove 會 preventDefault，
+  // WKWebView 就把原生手勢讓給頁面。改在頁面內判斷——本檔在 document start 先掛 window
+  // capture listener，比 paged-mode.js 早註冊、同階段先執行；從左緣 EDGE_PX 內起手的觸控整段
+  // 由這裡接走（stopImmediatePropagation，翻頁模組拿不到、不會同時往前翻一頁）。
+  const EDGE_PX = 24;
+  const EDGE_BACK_MIN_DX = 60;
+  function installEdgeBack(win, goBack) {
+    let edge = null;
+    const swallow = (e) => { e.stopImmediatePropagation(); };
+    win.addEventListener('touchstart', (e) => {
+      edge = null;
+      if (!e.touches || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (t.clientX > EDGE_PX) return;
+      edge = { x: t.clientX, y: t.clientY };
+      swallow(e);
+    }, { capture: true, passive: true });
+    win.addEventListener('touchmove', (e) => {
+      if (!edge) return;
+      swallow(e);
+      if (e.cancelable) e.preventDefault();
+    }, { capture: true, passive: false });
+    win.addEventListener('touchend', (e) => {
+      if (!edge) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      const start = edge;
+      edge = null;
+      swallow(e);
+      if (!t) return;
+      const dx = t.clientX - start.x;
+      const dy = Math.abs(t.clientY - start.y);
+      if (dx >= EDGE_BACK_MIN_DX && dx > dy) goBack();
+    }, { capture: true, passive: true });
+    win.addEventListener('touchcancel', () => { edge = null; }, { capture: true, passive: true });
+  }
+  // 回列表：從列表點進來（referrer 是 reader.html）就 history.back()，保留列表狀態；否則直接導向
+  function backToFeed() {
+    const feed = BASE + 'reader/reader.html';
+    if (history.length > 1 && document.referrer && document.referrer.indexOf(feed) === 0) history.back();
+    else location.href = feed;
+  }
+  if (window === window.top && /\/reader\/article\.html$/.test(location.pathname)) {
+    installEdgeBack(window, backToFeed);
+  }
+
+  window.__jreadApp = { ready, onForeground, isApp: true, sampleTopColor, installEdgeBack };
 })();
