@@ -2303,6 +2303,16 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   margin-left: auto !important;
   margin-right: auto !important;
 }
+/* v2.2.11 引言整塊內縮（Jimmy 2026-10-28）：邊線連同文字往右縮 1em、跟內文左緣
+   明顯錯開；文字離線的距離交給站方 padding / BQ_PLAIN 的 1em。同 specificity、
+   排在上面置中規則之後所以 margin-left 由這裡決定（blockquote 撐滿版心時 auto
+   本來就解成 0，置中對它沒有作用）。max-width 扣掉內縮量，否則站方寫死
+   width:100% 的引言會被推出版心 1em——selector 加 html 前綴與 :not(PLAYER) 到
+   (0,2,2)，才贏得過通則 cap「html [ARTICLE] *:not(PLAYER) { max-width:100% }」(0,2,1)。 */
+html [${ARTICLE_ATTR}="1"] blockquote:not([${PLAYER_ATTR}="1"]) {
+  margin-left: 1em !important;
+  max-width: calc(100% - 1em) !important;
+}
 /* v0.8.86：responsive embed 的 abs-pos iframe pin 回填滿 wrapper。
    原站慣例（thenewslens figure.video-responsive / WP wp-embed / Substack /
    Medium 等）用「wrapper position:relative + padding-bottom 16:9 hack +
@@ -5779,7 +5789,7 @@ html.${HTML_CLASS}.jread-orion body {
         //
         // 「有裝飾」判定（任一成立即不標 plain）——量 computed、非 class 特判：
         //   自身 / 可見直接子元素 / 包裝父層（父層只包這一顆、或父層是 figure /
-        //   aside 這類引言包裝慣例）任一有：可見邊線（width > 0 + style 非 none +
+        //   aside 這類引言包裝慣例）任一有：可見邊線（width > 0 + style 非 none + 對後方底色對比 >= 3:1 +
         //   顏色非透明）、背景色 alpha >= 0.05 或背景圖、box-shadow、或有內容 /
         //   有底色的 ::before / ::after（引號圖示、色條）。
         //   量的是「reader CSS 注入後」的 computed：子層若是 div / p 這類不在
@@ -5801,10 +5811,23 @@ html.${HTML_CLASS}.jread-orion body {
           const parts = m[1].split(',');
           return parts.length >= 4 ? (parseFloat(parts[3]) || 0) : 1;
         };
-        const hasVisibleBorder = (cs) => ['Top', 'Right', 'Bottom', 'Left'].some((side) =>
-          (parseFloat(cs[`border${side}Width`]) || 0) > 0 &&
-          cs[`border${side}Style`] && cs[`border${side}Style`] !== 'none' &&
-          alphaOf(cs[`border${side}Color`]) >= 0.05);
+        // v2.2.11：邊線「看得見」還要對比夠（Jimmy 2026-10-28，sharptext.net 暗色
+        // 主題）。站方為淺底設計的引言線（WordPress wp-block-quote 1px #333）在 dark
+        // 卡片 #4a494d 上只剩 1.41:1——量得到、肉眼幾乎看不到，卻因此被判「有裝飾」
+        // 而不補主題色邊線。改成邊線色疊在其後方底色（behind：元素外側的 effective
+        // bg）上的對比 < CONTRAST_MIN_RATIO（3:1，WCAG 非文字元素下限）即視為不可見。
+        // 顏色解析不了（jsdom 具名色）→ 退回只看 alpha 的舊判定。
+        const cardBg = parseCssColor(theme.articleBg) || WHITE;
+        const bgBehind = (el) => (el && el !== articleEl && articleEl.contains(el))
+          ? compositeBgOver(el, articleEl, cardBg, bwin) : cardBg;
+        const hasVisibleBorder = (cs, behind) => ['Top', 'Right', 'Bottom', 'Left'].some((side) => {
+          if (!((parseFloat(cs[`border${side}Width`]) || 0) > 0 &&
+            cs[`border${side}Style`] && cs[`border${side}Style`] !== 'none' &&
+            alphaOf(cs[`border${side}Color`]) >= 0.05)) return false;
+          const c = parseCssColor(cs[`border${side}Color`]);
+          if (!c) return true;
+          return contrastRatio(blendOver(c, behind), behind) >= CONTRAST_MIN_RATIO;
+        });
         const hasOwnBg = (cs) => alphaOf(cs.backgroundColor) >= 0.05 ||
           (!!cs.backgroundImage && cs.backgroundImage !== 'none');
         // 無 layout 引擎的環境（jsdom）不量 pseudo——jsdom 未實作帶 pseudo 參數的
@@ -5822,13 +5845,13 @@ html.${HTML_CLASS}.jread-orion body {
             }
             if (!ps || !ps.content || ps.content === 'none' || ps.content === 'normal') continue;
             if (ps.content !== '""' && ps.content !== "''") return true; // 引號字元 / url() 圖示
-            if (hasOwnBg(ps) || hasVisibleBorder(ps)) return true;       // 空 content 的色條
+            if (hasOwnBg(ps) || hasVisibleBorder(ps, bgBehind(el))) return true; // 空 content 的色條
           }
           return false;
         };
         const isDecorated = (el) => {
           const cs = bwin.getComputedStyle(el);
-          return hasVisibleBorder(cs) || hasOwnBg(cs) ||
+          return hasVisibleBorder(cs, bgBehind(el.parentElement)) || hasOwnBg(cs) ||
             (!!cs.boxShadow && cs.boxShadow !== 'none') || hasPseudoDecor(el);
         };
         const isShown = (el) => {
