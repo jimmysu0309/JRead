@@ -78,8 +78,17 @@ if (IS_PANEL) {
 // 登記憑 sender.tab、頁面 JS 無法偽造；單次有效）。驗證通過前 capture 層
 // 攔下 click / change，所有控制項互動 no-op。非 panel（原生工具列 popup /
 // 新分頁開啟）不嵌在網頁內、無此攻擊面，不送握手。
-let panelVerified = !IS_PANEL;
-if (IS_PANEL) {
+// v2.2.5：iOS App 內建 JReader（jread-app://，擴充 API 由 App 的 shim 替身）沒有 background、
+// 握手永遠失敗 → 浮層所有控制項被攔、設定改不了（Jimmy 2026-10-28 回報）。App 內也沒有
+// 這個攻擊面：WKWebView 只載 App bundle 裡的擴充頁，外部連結一律交給 Safari 開
+// （ViewController decidePolicyFor），沒有第三方網頁能嵌入本頁 → 直接視為已驗證。
+// 判定訊號與 NS.isAppRuntime 相同（getURL scheme；popup 沒載 namespace.js）
+const IS_APP = (() => {
+  try { return String(browser.runtime.getURL('') || '').startsWith('jread-app://'); }
+  catch (_e) { return false; }
+})();
+let panelVerified = !IS_PANEL || IS_APP;
+if (IS_PANEL && !IS_APP) {
   const blockUnverified = (e) => {
     if (!panelVerified) { e.stopPropagation(); e.preventDefault(); }
   };
@@ -832,6 +841,14 @@ toggleBtn.addEventListener('click', async () => {
   }
 });
 
+// v2.2.5：App 內 JReader 沒有設定頁可開（openOptionsPage 是 no-op）、也沒有快速鍵 /
+// 三指切換閱讀模式 → 整條 footer 收掉（進階設定在 Safari 擴充改，經 App Group 同步過來）
+if (IS_APP) {
+  const footer = openOptionsLink.closest('.footer');
+  // .footer 有 display:flex（author origin）會蓋過 [hidden]，直接寫 inline
+  if (footer) footer.style.display = 'none';
+}
+
 openOptionsLink.addEventListener('click', (e) => {
   e.preventDefault();
   browser.runtime.openOptionsPage();
@@ -847,6 +864,8 @@ async function refreshReaderButton() {
   // v1.5.1：在 reader 自有頁（reader/ 下的 feed／article）本就「已在 Reader」，
   // 這顆全域入口是雜訊——直接隱藏（與 refreshPopupForActiveTab 的 readerHostPage
   // 隱藏一致，URL 前綴判定不依賴 GET_READER_STATE round-trip，無 async 競態）。
+  // v2.2.5：App 內 JReader 本身就是 Reader（同 refreshPopupForActiveTab 的 IS_APP 分支）
+  if (IS_APP) { readerBtn.hidden = true; return; }
   try {
     if (await isReaderHostTab()) { readerBtn.hidden = true; return; }
   } catch (_) { /* 判定失敗則回退到 token gate */ }
@@ -967,6 +986,15 @@ async function refreshPopupForActiveTab() {
   // v1.5.4：reader feed 列表頁（reader/reader.html）——「啟動閱讀模式」沒有意義
   // （feed 是文章清單、非內容頁），整顆 toggle + 次級按鈕全隱藏，只留設定（主題 /
   // 字型…影響點進文章後的閱讀體驗）。article.html 不在此列（toggle = 退出閱讀模式）。
+  // v2.2.5：App 內 JReader 沒有分頁 / background，這排動作鈕全靠它們 → 一律隱藏，只留設定
+  if (IS_APP) {
+    toggleBtn.hidden = true;
+    readerBtn.hidden = true;
+    readwiseBtn.hidden = true;
+    editBtn.hidden = true;
+    borderlessBtn.hidden = true;
+    return;
+  }
   try {
     if (await isReaderFeedTab()) {
       toggleBtn.hidden = true;

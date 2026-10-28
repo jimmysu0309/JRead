@@ -227,6 +227,19 @@
       const { service, creds, ok } = PC.resolveServiceCredentials(s);
       if (!ok) {
         const span = doc.createElement('span');
+        // v2.2.5：iOS App 內建 JReader 的憑證來自 App Group 鏡像，鏡像要等 Safari 擴充的
+        // background 跑過一次（lib/app-sync.js pull 時把本機設定推上去）才有資料——新裝置
+        // 第一次開 App 必然走到這裡，App 也叫不醒擴充（Jimmy 2026-10-28 回報）。提示改成
+        // 實際可行的動作，並每 3 秒重讀鏡像：憑證一到 shim onForeground 就整頁重載
+        // （Split View / 台前調度切 Safari 不一定觸發 App 的回前景通知，不能只靠它）
+        if (NS && typeof NS.isAppRuntime === 'function' && NS.isAppRuntime()) {
+          span.textContent = '還沒收到 Safari 擴充的設定：請到 Safari 開任一網頁讓 JRead 同步，回到這裡就會自動載入'
+            + '（若 Safari 擴充也還沒填憑證，請先到擴充功能的進階設定填入）';
+          showMsg(span, true);
+          const app = global.__jreadApp;
+          if (app && typeof app.onForeground === 'function') setInterval(() => { app.onForeground(); }, 3000);
+          return;
+        }
         span.textContent = service === 'instapaper'
           ? '尚未連結 Instapaper 帳號，請到擴充功能的進階設定連結後再開啟 Reader'
           : '尚未設定 Readwise token，請到擴充功能的進階設定填入後再開啟 Reader';

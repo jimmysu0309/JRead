@@ -657,8 +657,9 @@
       menuEl.appendChild(item);
     }
     // 分隔線 +「功能選單」：叫出工具列圖示選單（popup）當頁內浮層（v0.8.162）。
-    // App 內 JReader 不列：popup 浮層要 SW 握手（v1.7.44 X2），App 沒有 background
-    if (isAppRuntime()) return;
+    // v2.2.5：App 內 JReader 也列——這是 App 裡唯一能改設定的入口（Jimmy 2026-10-28 回報
+    // 「JReader 中無法更改設定」）。App 不是 Safari runtime → 走 iframe 浮層；popup 端在
+    // App 內免 SW 握手（popup.js IS_APP，見該處理由）
     const divider = document.createElement('div');
     divider.className = 'menu-divider';
     menuEl.appendChild(divider);

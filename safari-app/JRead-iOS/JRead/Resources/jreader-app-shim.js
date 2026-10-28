@@ -64,9 +64,38 @@
     })
     .catch((e) => { console.error('[JReader app] storage 載入失敗', e); });
 
+  // v2.2.5：同一個 WKWebView 裡每個 frame 各有一份 shim（各自的 cache / onChanged）。設定浮層
+  // 是 article.html 裡的 popup.html iframe，它寫入的設定外層文章頁收不到 onChanged → 改了
+  // 不會即時重套。寫入後把 changes 轉給同 top 底下的其他 frame（都是 jread-app://app 同源，
+  // 可直接互呼），收方更新自己的 cache 再發 onChanged——等同擴充裡 storage.onChanged 跨頁廣播
+  function eachOtherFrame(fn) {
+    const walk = (w) => {
+      if (w !== window) {
+        try { if (w.__jreadApp && w.__jreadApp._remoteChange) fn(w.__jreadApp); } catch (_) { /* 跨源 / 已卸載 */ }
+      }
+      let n = 0;
+      try { n = w.frames.length; } catch (_) { return; }
+      for (let i = 0; i < n; i++) walk(w.frames[i]);
+    };
+    try { walk(window.top); } catch (_) { /* 拿不到 top 就只通知自己 */ }
+  }
+  function applyRemote(changes, area) {
+    const map = cache[area];
+    if (!map) return;
+    ready.then(() => {
+      for (const k of Object.keys(changes)) {
+        const c = changes[k];
+        if (c && 'newValue' in c) map.set(k, clone(c.newValue));
+        else map.delete(k);
+      }
+      onChanged._fire(clone(changes), area);
+    });
+  }
+
   function fire(changes, area) {
     if (!Object.keys(changes).length) return;
     setTimeout(() => onChanged._fire(changes, area), 0);
+    eachOtherFrame((app) => app._remoteChange(clone(changes), area));
   }
 
   function persist(area, setItems, removeKeys) {
@@ -422,5 +451,5 @@
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
 
-  window.__jreadApp = { ready, onForeground, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, installImmersive };
+  window.__jreadApp = { ready, onForeground, _remoteChange: applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, installImmersive };
 })();
