@@ -90,6 +90,21 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     override var prefersStatusBarHidden: Bool { statusBarHidden }
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
+    // v2.2.3：iPad（與無瀏海機型）的頂端安全區域就是狀態列本身，藏掉會從 32pt 縮成 0
+    // （模擬器實測 iPad Pro 11"）→ WebView 可視高度變 → resize → 翻頁重新排版。
+    // 狀態列隱藏時用 additionalSafeAreaInsets 補回縮掉的量，WebView 看到的安全區域恆定。
+    // 有瀏海的 iPhone 安全區域不受狀態列影響，補 0。依方向記（iPhone 橫向本來就沒有狀態列）。
+    private var shownTopInsets: [Bool: CGFloat] = [:]
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        let landscape = view.bounds.width > view.bounds.height
+        let system = view.safeAreaInsets.top - additionalSafeAreaInsets.top
+        if !statusBarHidden { shownTopInsets[landscape] = system }
+        let extra = statusBarHidden ? max(0, (shownTopInsets[landscape] ?? system) - system) : 0
+        if additionalSafeAreaInsets.top != extra { additionalSafeAreaInsets.top = extra }
+    }
+
     private func setStatusBarHidden(_ hidden: Bool) {
         guard hidden != statusBarHidden else { return }
         statusBarHidden = hidden
