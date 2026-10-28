@@ -1121,6 +1121,18 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       }
     },
 
+    // v2.2.0：「現在跑在 iOS 宿主 App 內建的 JReader 嗎」的單一資料源。App 以 jread-app://
+    // 載入擴充同一份 reader 頁，擴充 API 由 safari-app/JRead-iOS/JRead/Resources/
+    // jreader-app-shim.js 替身——沒有 background，靠 SW 的動作（送出、開 Reader 分頁、
+    // popup 浮層握手）在這裡都不成立。訊號同樣是 getURL 的 scheme（結構性平台訊號）。
+    isAppRuntime() {
+      try {
+        return String(browser.runtime.getURL('') || '').startsWith('jread-app://');
+      } catch (_) {
+        return false;
+      }
+    },
+
     // 2026-10-07 review C-10：root + 全部符合 sel 的後代，回陣列、**不用 spread**。
     // `[root, ...root.querySelectorAll('*')]` / `push(...nodeList)` 把整個 NodeList 當
     // 引數展開，V8 在約 12 萬個引數就丟 RangeError（Maximum call stack size

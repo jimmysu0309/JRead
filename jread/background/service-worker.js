@@ -20,6 +20,7 @@ if (typeof importScripts === 'function') {
   importScripts('/lib/logger.js');
   importScripts('/popup/popup-core.js');
   importScripts('/content/settings-defaults.js');
+  importScripts('/lib/app-sync.js');
 }
 
 // ---- 除錯記錄（v1.8.0）--------------------------------------------------
@@ -41,6 +42,14 @@ if (JLog) {
     });
   }
 }
+// ---- iOS 宿主 App 設定同步（v2.2.0）-------------------------------------
+// lib/app-sync.js：storage.sync ↔ App Group 鏡像（App 內 JReader 讀同一份設定）。
+// 只有 Safari build 有 nativeMessaging 權限 → 其他瀏覽器 install() 回 null。
+// event page 每次被喚醒都會跑到這裡＝每次醒來先拉一次 App 端的修改。
+const appSync = (typeof self !== 'undefined' && self.__JReadAppSync)
+  ? self.__JReadAppSync.install(browser)
+  : null;
+
 // 送出流程專用的記錄捷徑（category 固定 save）。logger 缺席時退化成 no-op，
 // 呼叫端不需要每次判斷存在與否。
 function logSave(message, data, level) {
@@ -230,6 +239,8 @@ async function consumePanelOpen(tabId) {
 
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
+  // v2.2.0：event page 醒著很久時，靠 content / popup 的訊息順手拉一次 App 端改過的設定（30s 節流）
+  if (appSync) appSync.pullThrottled();
 
   switch (msg.type) {
     case 'BG_WAKE_PING': {

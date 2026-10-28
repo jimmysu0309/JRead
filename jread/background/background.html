@@ -27,6 +27,10 @@
   event page 沒載 → 長按選單 / 快速鍵送 Instapaper 轉 SW 後一律回 CONFIG
   「此版本未內建金鑰」（金鑰明明在、popup 送得出去），且 main.js 註解把失敗歸因
   「SW 掛起」是錯的——background 醒著也沒 client 可簽。
+
+  App 同步（v2.2.0）：lib/app-sync.js 把 storage.sync 經 sendNativeMessage 同步到 iOS
+  宿主 App（App 內 JReader 讀同一份設定）。只有 Safari manifest 有 nativeMessaging 權限，
+  Chrome / Firefox 載入後 install() 直接回 null。
 -->
 <html>
 <head>
@@ -36,6 +40,7 @@
   <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="../content/settings-defaults.js"></script>
+  <script src="../lib/app-sync.js"></script>
   <script src="service-worker.js"></script>
 </head>
 <body></body>

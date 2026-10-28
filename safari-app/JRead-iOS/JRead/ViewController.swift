@@ -4,31 +4,257 @@
 //
 //  Created by Jimmy Su on 2026/6/5.
 //
+//  v2.2.0：App 內建 JReader。
+//  - 首次開啟顯示 Main.html（擴充啟用說明 + 「啟用 JReader」按鈕）；按下後記住，之後開 App 直接進 JReader
+//  - JReader = 擴充同一份 reader/reader.html、article.html，經 jread-app:// scheme 直接讀
+//    App bundle 裡 JRead Extension.appex 的 Resources（不另存一份，單一資料源）
+//  - 頁面呼叫的擴充 API 由 Resources/jreader-app-shim.js 替身，背後走本檔的 "jread" bridge：
+//    storage.sync ↔ AppSyncStore（App Group 鏡像，與 Safari 擴充同步）、storage.local ↔ App 自己的檔案、
+//    跨來源 fetch → URLSession
+//
 
 import UIKit
 import WebKit
 
-class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
 
     @IBOutlet var webView: WKWebView!
+
+    static let scheme = "jread-app"
+    static let readerURL = URL(string: "jread-app://app/reader/reader.html")!
+    private static let enabledKey = "jreaderEnabled"
+    private static let enableActionURL = "jread-action:enable-jreader"
+
+    private let schemeHandler = ExtensionResourceSchemeHandler()
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        self.webView.navigationDelegate = self
-        self.webView.scrollView.isScrollEnabled = false
+        // storyboard 的 WKWebView 建立時 configuration 已定型、加不了 scheme handler → 換成程式建的
+        let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(schemeHandler, forURLScheme: Self.scheme)
+        let ucc = config.userContentController
+        ucc.addScriptMessageHandler(self, contentWorld: .page, name: "jread")
+        ucc.addUserScript(WKUserScript(source: manifestScript(), injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        if let shim = Bundle.main.url(forResource: "jreader-app-shim", withExtension: "js"),
+           let src = try? String(contentsOf: shim, encoding: .utf8) {
+            ucc.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
 
-        self.webView.configuration.userContentController.add(self, name: "controller")
+        let old = webView
+        let wv = WKWebView(frame: view.bounds, configuration: config)
+        wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        wv.navigationDelegate = self
+        wv.uiDelegate = self
+        wv.allowsBackForwardNavigationGestures = true
+        old?.removeFromSuperview()
+        view.addSubview(wv)
+        webView = wv
 
-        self.webView.loadFileURL(Bundle.main.url(forResource: "Main", withExtension: "html")!, allowingReadAccessTo: Bundle.main.resourceURL!)
+        NotificationCenter.default.addObserver(self, selector: #selector(willEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification, object: nil)
+
+        if UserDefaults.standard.bool(forKey: Self.enabledKey) {
+            openReader()
+        } else {
+            openIntro()
+        }
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Override point for customization.
+    private func openIntro() {
+        webView.scrollView.isScrollEnabled = false
+        webView.loadFileURL(Bundle.main.url(forResource: "Main", withExtension: "html")!, allowingReadAccessTo: Bundle.main.resourceURL!)
     }
 
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        // Override point for customization.
+    private func openReader() {
+        webView.scrollView.isScrollEnabled = true
+        webView.load(URLRequest(url: Self.readerURL))
     }
 
+    @objc private func willEnterForeground() {
+        webView.evaluateJavaScript("window.__jreadApp && window.__jreadApp.onForeground()", completionHandler: nil)
+    }
+
+    // 頁面內 runtime.getManifest() 同步回傳，manifest 內容在注入時就先放好
+    private func manifestScript() -> String {
+        var json = "{}"
+        if let url = ExtensionResourceSchemeHandler.resourcesURL?.appendingPathComponent("manifest.json"),
+           let data = try? Data(contentsOf: url), let s = String(data: data, encoding: .utf8) {
+            json = s
+        }
+        return "if (location.protocol === 'jread-app:') { window.__JREAD_APP_MANIFEST = \(json); }"
+    }
+
+    // MARK: - 導航
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else { decisionHandler(.allow); return }
+        if url.absoluteString == Self.enableActionURL {
+            UserDefaults.standard.set(true, forKey: Self.enabledKey)
+            decisionHandler(.cancel)
+            openReader()
+            return
+        }
+        let scheme = url.scheme?.lowercased() ?? ""
+        let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+        // 文章裡的外部連結：主框架導向 http(s) / mailto 等一律交給系統（Safari）開，JReader 留在原頁
+        if isMainFrame && scheme != Self.scheme && scheme != "file" && scheme != "about" {
+            decisionHandler(.cancel)
+            UIApplication.shared.open(url)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    // target=_blank / window.open
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url {
+            if url.scheme == Self.scheme { webView.load(URLRequest(url: url)) } else { UIApplication.shared.open(url) }
+        }
+        return nil
+    }
+
+    // MARK: - bridge（jreader-app-shim.js）
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
+                               replyHandler: @escaping @MainActor (Any?, String?) -> Void) {
+        guard message.frameInfo.securityOrigin.protocol == Self.scheme,
+              let body = message.body as? [String: Any], let op = body["op"] as? String else {
+            replyHandler(nil, "bad request")
+            return
+        }
+        switch op {
+        case "syncLoad":
+            replyHandler(jsonString(["entries": AppSyncStore.load()]), nil)
+        case "syncPut":
+            let raw = (body["entries"] as? String) ?? "{}"
+            let incoming = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any] ?? [:]
+            replyHandler(jsonString(["entries": AppSyncStore.merge(incoming)]), nil)
+        case "localLoad":
+            replyHandler(jsonString(["items": LocalStore.load()]), nil)
+        case "localPut":
+            let raw = (body["items"] as? String) ?? "{}"
+            let items = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: String] ?? [:]
+            LocalStore.update(set: items, remove: (body["remove"] as? [String]) ?? [])
+            replyHandler("{}", nil)
+        case "fetch":
+            NativeFetch.perform(body) { result in replyHandler(result, nil) }
+        default:
+            replyHandler(nil, "unknown op")
+        }
+    }
+
+    private func jsonString(_ obj: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+              let s = String(data: data, encoding: .utf8) else { return "{}" }
+        return s
+    }
+}
+
+// MARK: - jread-app:// → JRead Extension.appex/ 的檔案
+
+final class ExtensionResourceSchemeHandler: NSObject, WKURLSchemeHandler {
+    static var resourcesURL: URL? {
+        Bundle.main.builtInPlugInsURL?.appendingPathComponent("JRead Extension.appex", isDirectory: true)
+    }
+
+    private static let mimeTypes: [String: String] = [
+        "html": "text/html", "js": "text/javascript", "css": "text/css", "json": "application/json",
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+        "svg": "image/svg+xml", "ico": "image/x-icon", "woff2": "font/woff2", "woff": "font/woff",
+        "ttf": "font/ttf", "txt": "text/plain"
+    ]
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url, let root = Self.resourcesURL?.standardizedFileURL else {
+            urlSchemeTask.didFailWithError(URLError(.badURL)); return
+        }
+        let rel = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+        let file = root.appendingPathComponent(rel).standardizedFileURL
+        // 擋 ../ 跳出 appex 目錄
+        guard file.path.hasPrefix(root.path + "/"), let data = try? Data(contentsOf: file) else {
+            let resp = HTTPURLResponse(url: url, statusCode: 404, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/plain"])!
+            urlSchemeTask.didReceive(resp)
+            urlSchemeTask.didReceive(Data())
+            urlSchemeTask.didFinish()
+            return
+        }
+        var mime = Self.mimeTypes[file.pathExtension.lowercased()] ?? "application/octet-stream"
+        if mime.hasPrefix("text/") || mime == "application/json" { mime += "; charset=utf-8" }
+        let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                                   headerFields: ["Content-Type": mime, "Content-Length": String(data.count)])!
+        urlSchemeTask.didReceive(resp)
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
+}
+
+// MARK: - storage.local（App 自己的，不跟擴充同步：閱讀位置、feed 快取、這台裝置套用的設定檔）
+
+nonisolated enum LocalStore {
+    private static var fileURL: URL? {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        guard let dir else { return nil }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("jread-local.json")
+    }
+
+    /// key → 值的 JSON 字串
+    static func load() -> [String: String] {
+        guard let url = fileURL, let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return [:] }
+        return obj
+    }
+
+    static func update(set: [String: String], remove: [String]) {
+        var cur = load()
+        for (k, v) in set { cur[k] = v }
+        for k in remove { cur.removeValue(forKey: k) }
+        guard let url = fileURL, let data = try? JSONSerialization.data(withJSONObject: cur) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+// MARK: - 跨來源 fetch（Instapaper API 不開 CORS，網頁端直接打會被擋）
+
+nonisolated enum NativeFetch {
+    @MainActor static func perform(_ body: [String: Any], completion: @escaping @MainActor (String) -> Void) {
+        guard let s = body["url"] as? String, let url = URL(string: s),
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else {
+            completion(encode(["error": "bad url"])); return
+        }
+        var req = URLRequest(url: url, timeoutInterval: 60)
+        req.httpMethod = (body["method"] as? String) ?? "GET"
+        for (k, v) in (body["headers"] as? [String: String]) ?? [:] { req.setValue(v, forHTTPHeaderField: k) }
+        if let b = body["body"] as? String { req.httpBody = Data(b.utf8) }
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            let out: String
+            if let error {
+                out = encode(["error": error.localizedDescription])
+            } else if let http = response as? HTTPURLResponse {
+                var headers: [String: String] = [:]
+                for (k, v) in http.allHeaderFields { headers[String(describing: k)] = String(describing: v) }
+                out = encode([
+                    "status": http.statusCode,
+                    "statusText": HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+                    "headers": headers,
+                    "url": http.url?.absoluteString ?? s,
+                    "bodyB64": (data ?? Data()).base64EncodedString()
+                ])
+            } else {
+                out = encode(["error": "no response"])
+            }
+            Task { @MainActor in completion(out) }
+        }.resume()
+    }
+
+    private static func encode(_ obj: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+              let s = String(data: data, encoding: .utf8) else { return "{\"error\":\"encode\"}" }
+        return s
+    }
 }

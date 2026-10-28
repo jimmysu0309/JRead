@@ -10,6 +10,14 @@
 </head>
 <body>
     <img src="../Icon.png" width="128" height="128" alt="JRead Icon">
-    <p>可在 Safari 設定的「擴充功能」中啟用 JRead。</p>
+    <p>可在 Safari 設定的「擴充功能」中啟用 JRead</p>
+
+    <!-- v2.2.0：App 內建 JReader。按鈕導向 jread-action:enable-jreader，由 ViewController
+         攔下來記住「已啟用」並切到 JReader；之後開 App 直接進 JReader -->
+    <section class="jreader">
+        <a class="jreader-btn" href="jread-action:enable-jreader">啟用 JReader</a>
+        <p class="jreader-desc">在 App 裡直接閱讀 Readwise 或 Instapaper 的文章。主題、字型與帳號設定會跟 Safari 中的 JRead 同步，請先在 Safari 的 JRead 設定好帳號</p>
+        <p class="jreader-desc">啟用後，每次打開 App 都會直接進入 JReader</p>
+    </section>
 </body>
 </html>

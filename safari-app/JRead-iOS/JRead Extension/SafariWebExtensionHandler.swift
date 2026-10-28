@@ -27,13 +27,23 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             message = request?.userInfo?["message"]
         }
 
-        os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@)", String(describing: message), profile?.uuidString ?? "none")
+        let reply: Any
+        if let dict = message as? [String: Any], (dict["type"] as? String) == "jread.sync" {
+            // v2.2.0：lib/app-sync.js 的 storage.sync 同步——收對端 entries 合併進 App Group
+            // 鏡像（AppSyncStore，與 App 內 JReader 共用），回合併後的全量
+            let incoming = (dict["entries"] as? [String: Any]) ?? [:]
+            let merged = AppSyncStore.merge(incoming)
+            reply = [ "entries": merged ]
+        } else {
+            os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@)", String(describing: message), profile?.uuidString ?? "none")
+            reply = [ "echo": message ]
+        }
 
         let response = NSExtensionItem()
         if #available(iOS 15.0, macOS 11.0, *) {
-            response.userInfo = [ SFExtensionMessageKey: [ "echo": message ] ]
+            response.userInfo = [ SFExtensionMessageKey: reply ]
         } else {
-            response.userInfo = [ "message": [ "echo": message ] ]
+            response.userInfo = [ "message": reply ]
         }
 
         context.completeRequest(returningItems: [ response ], completionHandler: nil)

@@ -27,6 +27,9 @@
 		9EE3FED12FD28B7200CD167D /* lib in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FED02FD28B7200CD167D /* lib */; };
 		9EE3FEBE2FD28B7200CD167D /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB72FD28B7200CD167D /* manifest.json */; };
 		9EE3FEBF2FD28B7200CD167D /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FEB82FD28B7200CD167D /* assets */; };
+		9EE3FF022FD28B7300CD167D /* AppSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */; };
+		9EE3FF032FD28B7300CD167D /* AppSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */; };
+		9EE3FF062FD28B7300CD167D /* jreader-app-shim.js in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FF052FD28B7300CD167D /* jreader-app-shim.js */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +80,10 @@
 		9EE3FED02FD28B7200CD167D /* lib */ = {isa = PBXFileReference; lastKnownFileType = folder; name = lib; path = Resources/lib; sourceTree = "<group>"; };
 		9EE3FEB72FD28B7200CD167D /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = Resources/manifest.json; sourceTree = "<group>"; };
 		9EE3FEB82FD28B7200CD167D /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = Resources/assets; sourceTree = "<group>"; };
+		9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSyncStore.swift; sourceTree = "<group>"; };
+		9EE3FF052FD28B7300CD167D /* jreader-app-shim.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "jreader-app-shim.js"; sourceTree = "<group>"; };
+		9EE3FF072FD28B7300CD167D /* JRead.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = JRead.entitlements; sourceTree = "<group>"; };
+		9EE3FF082FD28B7300CD167D /* JRead Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "JRead Extension.entitlements"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,8 +109,17 @@
 			children = (
 				9EE3FE842FD28B7100CD167D /* JRead */,
 				9EE3FEA32FD28B7100CD167D /* JRead Extension */,
+				9EE3FF042FD28B7300CD167D /* Shared */,
 				9EE3FE832FD28B7100CD167D /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		9EE3FF042FD28B7300CD167D /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		9EE3FE832FD28B7100CD167D /* Products */ = {
@@ -125,6 +141,7 @@
 				9EE3FE962FD28B7100CD167D /* Main.storyboard */,
 				9EE3FE992FD28B7100CD167D /* Assets.xcassets */,
 				9EE3FE9A2FD28B7100CD167D /* Info.plist */,
+				9EE3FF072FD28B7300CD167D /* JRead.entitlements */,
 				9EE3FE872FD28B7100CD167D /* Resources */,
 			);
 			path = JRead;
@@ -136,6 +153,7 @@
 				9EE3FE882FD28B7100CD167D /* Main.html */,
 				9EE3FE8B2FD28B7100CD167D /* Icon.png */,
 				9EE3FE8D2FD28B7100CD167D /* Style.css */,
+				9EE3FF052FD28B7300CD167D /* jreader-app-shim.js */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -146,6 +164,7 @@
 				9EE3FEB12FD28B7200CD167D /* Resources */,
 				9EE3FEA42FD28B7200CD167D /* SafariWebExtensionHandler.swift */,
 				9EE3FEA62FD28B7200CD167D /* Info.plist */,
+				9EE3FF082FD28B7300CD167D /* JRead Extension.entitlements */,
 			);
 			path = "JRead Extension";
 			sourceTree = "<group>";
@@ -259,6 +278,7 @@
 				9EE3FE8A2FD28B7100CD167D /* Main.html in Resources */,
 				9EE3FEA72FD28B7200CD167D /* Assets.xcassets in Resources */,
 				9EE3FE8E2FD28B7100CD167D /* Style.css in Resources */,
+				9EE3FF062FD28B7300CD167D /* jreader-app-shim.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -288,6 +308,7 @@
 				9EE3FE922FD28B7100CD167D /* ViewController.swift in Sources */,
 				9EE3FE862FD28B7100CD167D /* AppDelegate.swift in Sources */,
 				9EE3FE902FD28B7100CD167D /* SceneDelegate.swift in Sources */,
+				9EE3FF022FD28B7300CD167D /* AppSyncStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,6 +317,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9EE3FEA52FD28B7200CD167D /* SafariWebExtensionHandler.swift in Sources */,
+				9EE3FF032FD28B7300CD167D /* AppSyncStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -463,6 +485,7 @@
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				CURRENT_PROJECT_VERSION = 2.1.0;
 				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = "JRead Extension/JRead Extension.entitlements";
 				INFOPLIST_FILE = "JRead Extension/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "JRead Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -498,6 +521,7 @@
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS Extension App Store";
 				CURRENT_PROJECT_VERSION = 2.1.0;
 				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = "JRead Extension/JRead Extension.entitlements";
 				INFOPLIST_FILE = "JRead Extension/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "JRead Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -533,6 +557,7 @@
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				CURRENT_PROJECT_VERSION = 2.1.0;
 				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = JRead/JRead.entitlements;
 				INFOPLIST_FILE = JRead/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = JRead;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -575,6 +600,7 @@
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS App Store";
 				CURRENT_PROJECT_VERSION = 2.1.0;
 				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = JRead/JRead.entitlements;
 				INFOPLIST_FILE = JRead/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = JRead;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

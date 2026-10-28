@@ -263,6 +263,15 @@
     NS.safeSendMessage({ type: NS.MSG.OPEN_READER });
   }
 
+  function isAppRuntime() {
+    return !!(NS.isAppRuntime && NS.isAppRuntime());
+  }
+
+  function backToFeed() {
+    if (typeof NS.onReaderExit === 'function') { try { NS.onReaderExit(); } catch (_e) {} return; }
+    try { location.href = browser.runtime.getURL('reader/reader.html'); } catch (_e) {}
+  }
+
   // ─── 送到儲存服務（v1.7.79，Jimmy 2026-08-20 需求回歸）────────────────────
   // 兩條 path，依 runtime 分流（與 v0.8.165 同款）：
   //   - Safari（iOS / iPadOS / macOS）：content script 直送（NS.sendCurrentPageToService，
@@ -307,6 +316,14 @@
   // 減噪考量）——長按選單是暫現的，缺憑證時直接送出並由 toast 說「尚未設定 …
   // 憑證，請到設定頁填入」比「選項神秘消失」好懂。
   function generalMenuItems() {
+    // v2.2.0：iOS App 內建 JReader（NS.isAppRuntime）沒有 background——文章本來就來自
+    // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC / 短按同一個 NS.onReaderExit）
+    if (isAppRuntime()) {
+      return [
+        { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
+        { id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed }
+      ].concat(profileMenuItems());
+    }
     return [
       { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
       { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
@@ -639,7 +656,9 @@
       });
       menuEl.appendChild(item);
     }
-    // 分隔線 +「功能選單」：叫出工具列圖示選單（popup）當頁內浮層（v0.8.162）
+    // 分隔線 +「功能選單」：叫出工具列圖示選單（popup）當頁內浮層（v0.8.162）。
+    // App 內 JReader 不列：popup 浮層要 SW 握手（v1.7.44 X2），App 沒有 background
+    if (isAppRuntime()) return;
     const divider = document.createElement('div');
     divider.className = 'menu-divider';
     menuEl.appendChild(divider);

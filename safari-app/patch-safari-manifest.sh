@@ -68,10 +68,11 @@ INSTAPAPER_KEYS="lib/instapaper-keys.js"
 INSTAPAPER="lib/instapaper.js"
 POPUP_CORE="popup/popup-core.js"
 SETTINGS_DEFAULTS="content/settings-defaults.js"
+APP_SYNC="lib/app-sync.js"
 # INSTAPAPER_KEYS 刻意不在存在檢查內：該檔 gitignored（store build / fresh clone 會缺），
 # <script src> 缺檔只是一個 404、event page 其餘照載（與 Chrome importScripts 的
 # try/catch 等價），不可因它擋 build
-for DEP in "$BG_PAGE" "$LOGGER" "$INSTAPAPER" "$POPUP_CORE" "$SETTINGS_DEFAULTS" "$SW_FILE"; do
+for DEP in "$BG_PAGE" "$LOGGER" "$INSTAPAPER" "$POPUP_CORE" "$SETTINGS_DEFAULTS" "$APP_SYNC" "$SW_FILE"; do
   if [ ! -f "$RES_DIR/$DEP" ]; then
     echo "ERROR: $RES_DIR/$DEP 不存在（event page 入口 / 預載依賴）" >&2
     exit 1
@@ -79,35 +80,41 @@ for DEP in "$BG_PAGE" "$LOGGER" "$INSTAPAPER" "$POPUP_CORE" "$SETTINGS_DEFAULTS"
 done
 
 # verify 0：background.html 的 <script src> 清單（相對 background/ 目錄解析）必須
-# 等於 [logger, instapaper-keys, instapaper, popup-core, settings-defaults, SW] 且依此順序
+# 等於 [logger, instapaper-keys, instapaper, popup-core, settings-defaults, app-sync, SW] 且依此順序
 EXPECTED_SCRIPTS="$LOGGER
 $INSTAPAPER_KEYS
 $INSTAPAPER
 $POPUP_CORE
 $SETTINGS_DEFAULTS
+$APP_SYNC
 $SW_FILE"
 ACTUAL_SCRIPTS=$(grep -o '<script src="[^"]*"' "$RES_DIR/$BG_PAGE" \
   | sed -E 's/<script src="//; s/"$//' \
   | sed -E 's#^\.\./##; s#^([^/]+\.js)$#background/\1#')
 if [ "$ACTUAL_SCRIPTS" != "$EXPECTED_SCRIPTS" ]; then
-  echo "ERROR: $BG_PAGE 的 <script> 清單不是預期六檔順序：" >&2
+  echo "ERROR: $BG_PAGE 的 <script> 清單不是預期七檔順序：" >&2
   echo "expected:" >&2; echo "$EXPECTED_SCRIPTS" >&2
   echo "actual:" >&2; echo "$ACTUAL_SCRIPTS" >&2
   exit 1
 fi
 
 # patch（冪等：已是 event page 形式就重打一次，jq 冪等安全）
+# 第二個受控差異（v2.2.0）：permissions 補 nativeMessaging——lib/app-sync.js 用
+# runtime.sendNativeMessage 把 storage.sync 同步到 iOS 宿主 App（App 內 JReader）。
+# 不放進 jread/manifest.json：Chrome 對 nativeMessaging 會跳權限警告、更新後停用擴充
+# 等使用者重新同意；Chrome / Firefox 也用不到。
+NATIVE_PERM="nativeMessaging"
 TMP="$DST_MANIFEST.tmp"
-jq --arg pg "$BG_PAGE" \
-  '.background = { page: $pg, persistent: false }' \
+jq --arg pg "$BG_PAGE" --arg np "$NATIVE_PERM" \
+  '.background = { page: $pg, persistent: false } | .permissions = ((.permissions // []) - [$np] + [$np])' \
   "$DST_MANIFEST" > "$TMP"
 mv "$TMP" "$DST_MANIFEST"
 
-# verify 1：除 background 外與 source 完全一致
+# verify 1：除 background 與 permissions 的 nativeMessaging 外與 source 完全一致
 SRC_REST=$(jq -S 'del(.background)' "$SRC_MANIFEST")
-DST_REST=$(jq -S 'del(.background)' "$DST_MANIFEST")
+DST_REST=$(jq -S --arg np "$NATIVE_PERM" 'del(.background) | .permissions -= [$np]' "$DST_MANIFEST")
 if [ "$SRC_REST" != "$DST_REST" ]; then
-  echo "ERROR: Safari manifest 與 source 在 background 以外出現 drift：" >&2
+  echo "ERROR: Safari manifest 與 source 在 background / nativeMessaging 以外出現 drift：" >&2
   diff <(echo "$SRC_REST") <(echo "$DST_REST") >&2 || true
   exit 1
 fi
@@ -122,4 +129,12 @@ if [ "$BG_OK" != "true" ]; then
   exit 1
 fi
 
-echo "Safari manifest patched: background = event page（page: $BG_PAGE, persistent: false；scripts: [$LOGGER, $POPUP_CORE, $SETTINGS_DEFAULTS, $SW_FILE]）"
+# verify 3：Safari manifest 必須帶 nativeMessaging、source 不可帶（受控差異方向）
+NP_OK=$(jq -r --arg np "$NATIVE_PERM" '(.permissions // []) | index($np) != null' "$DST_MANIFEST")
+NP_SRC=$(jq -r --arg np "$NATIVE_PERM" '(.permissions // []) | index($np) != null' "$SRC_MANIFEST")
+if [ "$NP_OK" != "true" ] || [ "$NP_SRC" != "false" ]; then
+  echo "ERROR: nativeMessaging 權限只能出現在 Safari manifest（Safari=$NP_OK、source=$NP_SRC）" >&2
+  exit 1
+fi
+
+echo "Safari manifest patched: background = event page（page: $BG_PAGE, persistent: false）+ permissions 補 $NATIVE_PERM"

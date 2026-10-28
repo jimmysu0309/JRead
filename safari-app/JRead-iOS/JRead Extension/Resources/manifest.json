@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文",
   "permissions": [
     "storage",
     "scripting",
-    "alarms"
+    "alarms",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
