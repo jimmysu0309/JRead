@@ -5237,11 +5237,31 @@
             overlayProps.push('aspect-ratio');
             overlayDecls['aspect-ratio'] = 'auto';
           }
+          // v2.2.7：覆蓋層的 transform 一併清掉（grubstreet chocolate-conspiracy
+          // 實證，Jimmy 2026-10-28 截圖）。站方用「absolute + top/left:50% +
+          // translate(-50%,-50%)」把標題塊置中疊在 hero 圖上；上面只把 position
+          // 打回 static，translate 照樣作用在 flow 位置上 → 整塊往左上推出卡片
+          //（標題左側被切）、原位置留一大片空白。translate 置中只對 absolute 定位
+          // 有意義，回到 flow 後純屬位移殘留——與 position / inset 同一組事實。
+          if (cs.transform && cs.transform !== 'none') {
+            overlayProps.push('transform');
+            overlayDecls['transform'] = 'none';
+          }
           titleOverlayResets.push({
             el,
             prev: snapshotStyles(el, overlayProps)
           });
           applyImportant(el, overlayDecls);
+          // v2.2.7：覆蓋層內文字的 text-shadow 同步清掉——那是站方為了「白字疊在
+          // 圖上」補的對比，回到讀者卡片純色底後只剩一層模糊暈影。text-shadow 可由
+          // 後代各自宣告，只清本層不夠，逐一掃後代（標題塊元素數小）
+          for (const d of _selfAndDescendants(el, '*')) {
+            let dcs;
+            try { dcs = window.getComputedStyle(d); } catch (_) { continue; }
+            if (!dcs || !dcs.textShadow || dcs.textShadow === 'none') continue;
+            titleOverlayResets.push({ el: d, prev: snapshotStyles(d, ['text-shadow']) });
+            applyImportant(d, { 'text-shadow': 'none' });
+          }
           // v1.7.7：title overlay 還原 flow 後，祖先鏈 viewport-scale 高度
           // 佔位一併 flatten——NYT mike-d-new-album 變體把重複 h1 裝進媒體層
           // 內，走本分支而非 hero-media 分支，100vh 佔位（實測三層）沒人清
