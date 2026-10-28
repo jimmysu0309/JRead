@@ -9590,7 +9590,13 @@
   // /「like this story」等 CTA 慣用語——主文內正常引用 / 描述不會整段都
   // 是 CTA 語氣。檢查的是 `<p>` 的 full textContent（包括 em/strong 子
   // 孫文字），所以 em 包裝不影響命中。
-  const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b)/i;
+  // v2.2.9：補「…newsletter. Sign up here.」倒裝句型（grubstreet 文首「This
+  // article was featured in New York's One Great Story newsletter. Sign up
+  // here.」，Jimmy 2026-10-28）——句子以 newsletter 收尾、緊接一句短命令句
+  // sign up 且**是段落最後一句**（$ 錨定：正文「…newsletter. Sign up rates
+  // soared…」不中）。翻譯後版本「…時事通訊。在這裡註冊。」同構一併收
+  //（translate-first 時 cleaner 跑在譯文上，英文句型會失效）。
+  const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b|\bnewsletters?\b[^.!?]{0,4}[.!]\s*sign\s+up(\s+(here|now|today|below|for\s+free))?\s*[.!]?$|(電子報|時事通訊)[^。！]{0,4}[。！.]\s*\S{0,6}?(註冊|訂閱|登記)\s*[。！.!]?$)/i;
   const NOISE_CTA_PARA_MAX_LEN = 200;
 
   function hideInsideArticleCTAParagraphs(articleEl, hidden, scope) {
