@@ -185,6 +185,12 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 這會改變既有使用者升級後的外觀，要回舊樣式選 'hairline'。
     // 只作用於捲動模式：翻頁模式沒有頂端進度條，進度載體是底部頁碼（見 v1.5.4）。
     progressBarStyle: 'gradient',
+    // v2.2.13：iOS / iPadOS JRead App 的主畫面圖示（Jimmy 2026-10-28 需求）。
+    // 'default' = 藍底白 J（主圖示 AppIcon）、'white' = 白底黑 J（替代圖示 AppIcon-White）。
+    // 設定頁寫入 storage.sync → lib/app-sync.js 推進 App Group 鏡像 → App 回前景時
+    // 讀鏡像套用（ViewController.swift AppIconSync）。iOS 只允許 App 本體換圖示、
+    // 擴充做不到，所以要等下次開 App 才生效。
+    appIcon: 'default',
     // v1.9.0：設定檔（profile）——把 popup 那組外觀設定（PROFILE_KEYS）存成具名
     // 快照，一鍵切換。profiles 為陣列（建立順序即 popup select / 長按選單的排列
     // 順序）：[{ name, fields }]，fields 只含 PROFILE_KEYS 白名單欄位、上限
@@ -208,6 +214,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   // v1.7.37：progressBarStyle 合法值白名單（單一資料源）。styler.js opts 驗證與
   // options.js 讀 DOM 的回退共用同一份——兩端各自手寫清單是已知的 drift 型態。
   // 順序即 options UI 的排列順序（漸層 → 細線 → 描邊 → 描邊＋軌道 → 加高）。
+  // v2.2.13：appIcon 合法值（白名單單一資料源；Swift 端 AppIconSync 的對照表要同步）
+  const APP_ICONS = ['default', 'white'];
   const PROGRESS_BAR_STYLES = ['gradient', 'hairline', 'outline', 'track', 'thick'];
 
   // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進
@@ -500,6 +508,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadResolveFloatingIconEnabled = resolveFloatingIconEnabled;
   global.__JReadFontStacks = FONT_STACKS;
   global.__JReadProgressBarStyles = PROGRESS_BAR_STYLES;
+  global.__JReadAppIcons = APP_ICONS;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
   global.__JReadLatinFonts = LATIN_FONTS;
   global.__JReadComposeFontStack = composeFontStack;

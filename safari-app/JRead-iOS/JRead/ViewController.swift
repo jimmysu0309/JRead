@@ -27,6 +27,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     private let schemeHandler = ExtensionResourceSchemeHandler()
 
+    // v2.2.13：文章列表下拉更新（Jimmy 2026-10-28：下拉沒有 loading 提示）。WKWebView 沒有
+    // Safari 分頁那種原生下拉重整，掛 UIRefreshControl，只在 feed 頁（reader.html）掛；
+    // 放手後呼叫頁面 __JReadReaderFeed.refreshCurrent()，等新清單回來才收起 spinner
+    private let refreshControl = UIRefreshControl()
+    private static let refreshTimeout: TimeInterval = 20
+
     // v2.2.4：頂端安全區域色帶（狀態列底下 / 隱藏時保留的那條），跟頁面頂端一樣分三段：
     // 兩側＝頁面底色、中段＝卡片色（shim sampleTopBand 回報）。iPad 翻頁卡片不滿版，
     // 只填單一色會在左右兩側露出不同色（Jimmy 2026-10-28 回報 v2.2.3）
@@ -57,6 +63,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         view.addSubview(wv)
         webView = wv
 
+        refreshControl.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
+
         topBand.isHidden = true
         topBand.isUserInteractionEnabled = false
         topBand.addSubview(topBandCenter)
@@ -68,6 +76,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
         NotificationCenter.default.addObserver(self, selector: #selector(willEnterForeground),
                                                name: UIApplication.willEnterForegroundNotification, object: nil)
+        // v2.2.13：設定頁「App 圖示」→ 每次 App 進入 active（含冷啟動）對一次鏡像
+        NotificationCenter.default.addObserver(self, selector: #selector(didBecomeActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
 
         if UserDefaults.standard.bool(forKey: Self.enabledKey) {
             openReader()
@@ -151,6 +162,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         return UIColor(red: nums[0] / 255, green: nums[1] / 255, blue: nums[2] / 255, alpha: a)
     }
 
+    @objc private func didBecomeActive() {
+        AppIconSync.apply()
+    }
+
     @objc private func willEnterForeground() {
         webView.evaluateJavaScript("window.__jreadApp && window.__jreadApp.onForeground()", completionHandler: nil)
     }
@@ -163,6 +178,45 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             json = s
         }
         return "if (location.protocol === 'jread-app:') { window.__JREAD_APP_MANIFEST = \(json); }"
+    }
+
+    // MARK: - 下拉更新（v2.2.13）
+
+    private static func isFeedPage(_ url: URL?) -> Bool {
+        url?.scheme == scheme && url?.path == "/reader/reader.html"
+    }
+
+    private func syncRefreshControl() {
+        let want = Self.isFeedPage(webView.url)
+        if want && webView.scrollView.refreshControl !== refreshControl {
+            webView.scrollView.refreshControl = refreshControl
+        } else if !want && webView.scrollView.refreshControl != nil {
+            refreshControl.endRefreshing()
+            webView.scrollView.refreshControl = nil
+        }
+    }
+
+    @objc private func pullToRefresh() {
+        guard Self.isFeedPage(webView.url) else { refreshControl.endRefreshing(); return }
+        var done = false
+        let finish = { [weak self] in
+            guard !done else { return }
+            done = true
+            self?.refreshControl.endRefreshing()
+        }
+        // API 卡住也不能讓 spinner 永遠轉
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refreshTimeout) { finish() }
+        let js = "const f = window.__JReadReaderFeed && window.__JReadReaderFeed.refreshCurrent; if (f) { await f(); } return true;"
+        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { _ in finish() }
+    }
+
+    // 進 / 離 feed 頁都要切：commit 時就切（離開 feed 不讓文章頁還能下拉），finish 再保險一次
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        syncRefreshControl()
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        syncRefreshControl()
     }
 
     // MARK: - 導航
@@ -236,6 +290,36 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s
+    }
+}
+
+// MARK: - App 圖示（v2.2.13，設定頁「App 圖示」）
+
+// 設定值住 storage.sync 的 appIcon（擴充設定頁寫入 → lib/app-sync.js 推進 App Group 鏡像），
+// App 進入 active 時讀鏡像、跟目前圖示不同才換。iOS 只允許 App 本體在前景呼叫
+// setAlternateIconName（擴充做不到），換的時候系統會跳「已更改圖示」提示、無法關閉。
+// 值 → 替代圖示名稱的對照表要跟 jread/content/settings-defaults.js 的 APP_ICONS 同步；
+// 替代圖示要在 build setting ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES 登記。
+enum AppIconSync {
+    static let key = "appIcon"
+    static let alternateNames: [String: String] = ["white": "AppIcon-White"]
+
+    /// 鏡像裡的 appIcon 值 → 要套用的替代圖示名稱（nil = 主圖示）。純函式。
+    static func iconName(entries: [String: [String: Any]]) -> String? {
+        guard let e = entries[key], (e["del"] as? Bool) != true, let vj = e["vj"] as? String,
+              let value = (try? JSONSerialization.jsonObject(with: Data(vj.utf8), options: .fragmentsAllowed)) as? String
+        else { return nil }
+        return alternateNames[value]
+    }
+
+    @MainActor static func apply() {
+        let app = UIApplication.shared
+        guard app.supportsAlternateIcons, app.applicationState == .active else { return }
+        let want = iconName(entries: AppSyncStore.load())
+        guard want != app.alternateIconName else { return }
+        app.setAlternateIconName(want) { error in
+            if let error { NSLog("[JRead] setAlternateIconName(\(want ?? "nil")) failed: \(error.localizedDescription)") }
+        }
     }
 }
 

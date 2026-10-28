@@ -322,6 +322,20 @@
       accent-color: var(--jr-primary-600);
       cursor: pointer;
     }
+    /* v2.2.13 App 圖示預覽：迷你版 icon（幾何比例同 safari-app/JRead-iOS/icon-source/*.svg：
+       Georgia Bold、字級 78%、J 偏右下）。白底那顆加細框，否則在白色設定頁上看不出邊界 */
+    .app-icon-swatch {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      overflow: hidden;
+      box-sizing: border-box;
+      padding: 6px 0 0 8.6px;
+      font: 700 22px/1 Georgia, "Times New Roman", serif;
+    }
+    .app-icon-blue { background: #2b6cb0; color: #ffffff; }
+    .app-icon-white { background: #ffffff; color: #141414; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18); }
 
     /* v1.7.37 閱讀進度條樣式預覽：三格不同底色（深 / 淺 / 照片）各畫一條 62% 的
        進度條，套目前選中的皮膚。四種皮膚的差別（描邊、軌道、加高）用文字描述不
@@ -953,6 +967,24 @@
         <span class="desc">觸控裝置三指輕點頁面即切換閱讀模式</span>
       </label>
     </div>
+  </div>
+
+  <!-- v2.2.13：iOS / iPadOS App 主畫面圖示。只在觸控 Safari 顯示（options.js 依 runtime +
+       maxTouchPoints 隱藏整段）——Chrome / Firefox / Mac 沒有 JRead App 可換 -->
+  <div id="appIconSection" hidden>
+  <h2 class="section-heading">App 圖示</h2>
+  <p class="section-desc">
+    JRead App 在主畫面上的圖示。下次開啟 JRead App 時套用，iOS 會跳出「已更改圖示」提示
+  </p>
+
+  <div class="field-group">
+    <div class="field">
+      <div class="size-options app-icon-options" id="appIcon" role="radiogroup" aria-label="App 圖示">
+        <label><input type="radio" name="appIcon" value="default"><span class="app-icon-swatch app-icon-blue" aria-hidden="true">J</span><span>藍底白字（預設）</span></label>
+        <label><input type="radio" name="appIcon" value="white"><span class="app-icon-swatch app-icon-white" aria-hidden="true">J</span><span>白底黑字</span></label>
+      </div>
+    </div>
+  </div>
   </div>
 
   <h2 class="section-heading">快速鍵</h2>

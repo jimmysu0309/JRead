@@ -293,17 +293,25 @@
       // v1.6.24：世代 token 防 race——快速切分頁時前一發慢回應晚到，若不丟棄會
       // 蓋掉新分頁已渲染的內容（畫面內容與分頁 highlight 不一致）。
       let loadGen = 0;
-      function loadList(tab) {
+      let currentTab = null;
+      // v2.2.13：回傳 Promise，API 結果處理完（成功 / 失敗 / 過期丟棄）才 resolve——
+      // iOS App 下拉更新的原生 spinner 等它收起（refreshCurrent）。
+      // opts.refresh：下拉更新——畫面上已有清單，不清成「載入中…」、不先畫快取
+      // （spinner 就是 loading 提示），只等新資料替換
+      function loadList(tab, opts) {
         const cfg = tab || tabs[0];
+        const refresh = !!(opts && opts.refresh);
+        currentTab = cfg;
         const gen = ++loadGen;
         const listKey = service + ':' + cfg.id;
         let freshArrived = false;
         let cachedSig = null;  // 非 null = 畫面上是快取版本
-        showMsg('載入中…', false);
+        if (!refresh) showMsg('載入中…', false);
 
         const cacheRead = RC ? RC.readFeed(local, account, listKey) : Promise.resolve(null);
         cacheRead.then((docs) => {
           if (gen !== loadGen || freshArrived || !docs) return;
+          if (refresh) { cachedSig = RC.feedSignature(docs); return; } // 畫面已是這份，只記簽章
           cachedSig = RC.feedSignature(docs);
           showDocs(docs, cfg);
         });
@@ -322,7 +330,7 @@
           });
         };
 
-        PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
+        return PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
           if (gen !== loadGen) return; // 已切到別的分頁——過期回應丟棄
           freshArrived = true;
           if (!r || !r.ok) {
@@ -368,6 +376,8 @@
       }
 
       loadList(initialTab);  // ?tab= 指定的分頁，沒指定 = 第一個
+      // v2.2.13：下拉更新入口（iOS App ViewController 的 UIRefreshControl 呼叫）
+      api.refreshCurrent = () => loadList(currentTab, { refresh: true });
     }).catch((err) => {
       showMsg('讀取設定失敗：' + String(err && err.message || err), true);
     });

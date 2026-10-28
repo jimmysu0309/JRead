@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle'];
+const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle', 'appIcon'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -25,6 +25,9 @@ const PROGRESS_BAR_STYLES = window.__JReadProgressBarStyles || ['hairline'];
 // 各自硬寫 'small' 當 fallback，v0.8.166 預設改 medium 後全部沒跟上（content 端
 // applySize 退 medium、options 退 small 的行為 drift）。fallback 一律走 DEFAULTS。
 const FLOATING_ICON_SIZES = ['small', 'medium', 'large'];
+
+// v2.2.13：App 圖示白名單（settings-defaults.js 單一資料源）
+const APP_ICONS = window.__JReadAppIcons || ['default'];
 
 document.getElementById('version').textContent = browser.runtime.getManifest().version;
 
@@ -57,6 +60,14 @@ if ((navigator.maxTouchPoints || 0) < 3) {
   const tfField = document.getElementById('threeFingerTap');
   const field = tfField && tfField.closest('.field');
   if (field) field.hidden = true;
+}
+
+// v2.2.13：「App 圖示」只在 iPhone / iPad 的 Safari 顯示——換的是 JRead iOS App 的主畫面圖示，
+// Chrome / Firefox 沒有 App，iOS build 跑在 Mac（maxTouchPoints=0）不支援替代圖示。
+// 門檻同上方三指輕點：Safari runtime + 觸控螢幕。
+if (isSafariRuntime && (navigator.maxTouchPoints || 0) >= 1) {
+  const sec = document.getElementById('appIconSection');
+  if (sec) sec.hidden = false;
 }
 
 // hint 文字加 ⚠ 前綴（空字串不撐空間，CSS :not(:empty) 才上 amber 底框）
@@ -203,6 +214,12 @@ function readFieldFromDom(id) {
       const v = checked ? checked.value : null;
       return PROGRESS_BAR_STYLES.indexOf(v) >= 0 ? v : DEFAULTS.progressBarStyle;
     }
+    case 'appIcon': {
+      // v2.2.13：radio 群（wrapper id=appIcon）；未勾選 / 未知值退回預設
+      const checked = el.querySelector('input[name="appIcon"]:checked');
+      const v = checked ? checked.value : null;
+      return APP_ICONS.indexOf(v) >= 0 ? v : DEFAULTS.appIcon;
+    }
     case 'readwiseToken': case 'geminiApiKey':
       return el.value.trim();
     case 'storageService': {
@@ -294,6 +311,10 @@ function applyFieldToDom(id, value) {
     const radio = el.querySelector('input[name="progressBarStyle"][value="' + v + '"]');
     if (radio) radio.checked = true;
     updateProgressPreview();
+  } else if (id === 'appIcon') {
+    const v = APP_ICONS.indexOf(value) >= 0 ? value : DEFAULTS.appIcon;
+    const radio = el.querySelector('input[name="appIcon"][value="' + v + '"]');
+    if (radio) radio.checked = true;
   } else if (id === 'readwiseSummary') {
     // 預設 false——只有明確為 true 才勾選
     el.checked = value === true;
