@@ -440,6 +440,16 @@
       font-family: var(--jr-font-ui);
     }
     .profile-name-input::placeholder { color: var(--jr-neutral-500); }
+    /* 設定檔列是全面板最擠的一列（標籤 + 儲存 + 刪除 + 110px 選單）。窄浮層（App 內 JReader
+       的 iframe：min(94vw, 360px) ÷ zoom 1.35，扣內距只剩約 234px）裝不下約 253px 的內容，
+       flex 把標籤與按鈕壓扁、中文折成兩行（Jimmy 2026-10-28 截圖）。標籤與按鈕不准縮也不准
+       折行，空間不夠時只讓選單變窄（上限仍 110px，寬面板維持與 stepper 同寬、左右邊緣對齊）；
+       選單內的長名稱由瀏覽器截斷，展開清單照樣看得到全名 */
+    #profile-row { gap: 8px; }
+    #profile-row > label,
+    #profile-row .auto-btn { flex-shrink: 0; white-space: nowrap; }
+    #profile-row .font-controls { min-width: 0; }
+    #profile-row .font-family-select { flex-shrink: 1; min-width: 0; }
 
     /* ==========================================================
        Popup checkbox（v0.7.155 「此網域自動啟動」用）—— 與 options 同視覺
