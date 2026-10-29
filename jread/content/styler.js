@@ -2821,8 +2821,13 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
       // 頁碼高 19px = 11px 字（line-height 1）+ 上下 padding 4px（見 #__jread-page-indicator）。
       // 以 custom property 承載：卡片 padding-bottom 與媒體單頁 cap 的 calc 共用同一值。
       const PAGED_INDICATOR_CLEAR = '31px'; // 19px 頁碼高 + 12px 與內文間隔
+      // v2.2.16：底部安全區域 = env() 與 iOS App 內 JReader 帶進來的 --__jread-app-safe-bottom 取大者。
+      // App 頁面沒宣告 viewport-fit=cover，env() 恆為 0，但 WebView 畫到 Home 指示條底下，頁碼落進
+      // 系統手勢區（Jimmy 2026-10-29 iPhone 回報）；變數只有 App shim 會設，Safari / Chrome 解析成 0、
+      // 結果與 env() 單獨相同
+      const SAFE_BOTTOM = 'max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px))';
       const _pagedBottomGutter = (indicatorBottom, safe) =>
-        `max(${V_GUTTER}, calc(${indicatorBottom} + ${PAGED_INDICATOR_CLEAR}${safe ? ' + env(safe-area-inset-bottom, 0px)' : ''}))`;
+        `max(${V_GUTTER}, calc(${indicatorBottom} + ${PAGED_INDICATOR_CLEAR}${safe ? ` + ${SAFE_BOTTOM}` : ''}))`;
       const PAGED_BOTTOM = `var(--__jread-paged-bottom, ${V_GUTTER})`;
       userOverrides += `
 /* 翻頁模式：桌面鎖住文件垂直卷動（內容全在 fixed 容器內水平分頁）。
@@ -3081,10 +3086,10 @@ html [${ARTICLE_ATTR}="1"] a {
     --__jread-paged-bottom: ${_pagedBottomGutter(_indicatorCoarseBottom, true)};
   }
   #__jread-page-indicator {
-    bottom: calc(${_indicatorCoarseBottom} + env(safe-area-inset-bottom, 0px));
+    bottom: calc(${_indicatorCoarseBottom} + ${SAFE_BOTTOM});
   }
   #__jread-scrub-track {
-    bottom: calc(${_scrubTrackCoarseBottom} + env(safe-area-inset-bottom, 0px));
+    bottom: calc(${_scrubTrackCoarseBottom} + ${SAFE_BOTTOM});
   }
 }`;
       // v0.8.153 觸覺回饋載體（#__jread-haptic）不再需要 styler CSS——比照實證可動的

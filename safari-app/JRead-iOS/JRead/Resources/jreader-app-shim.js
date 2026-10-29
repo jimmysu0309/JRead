@@ -451,11 +451,32 @@
     apply();
     return { isShown: () => shown };
   }
+  // ---- 底部安全區域（v2.2.16）---------------------------------------------------
+  // 頁面沒宣告 viewport-fit=cover，env(safe-area-inset-bottom) 恆為 0，但 App 的 WebView 畫到
+  // Home 指示條底下，翻頁頁碼會落進系統手勢區（Jimmy 2026-10-29 iPhone 回報）。原生把底部安全區域
+  // 帶進來（document-start 初值 __JREAD_APP_SAFE_BOTTOM，之後變動呼叫 setSafeBottom），
+  // 寫成 :root 的 --__jread-app-safe-bottom，styler 與 env() 取大者
+  const SAFE_BOTTOM_VAR = '--__jread-app-safe-bottom';
+  let safeBottomStyle = null;
+  function setSafeBottom(px) {
+    const n = Math.max(0, Number(px) || 0);
+    const doc = document;
+    if (!safeBottomStyle) {
+      safeBottomStyle = doc.createElement('style');
+      safeBottomStyle.id = '__jread-app-safe-bottom';
+    }
+    safeBottomStyle.textContent = ':root { ' + SAFE_BOTTOM_VAR + ': ' + n + 'px; }';
+    if (safeBottomStyle.isConnected) return;
+    if (doc.documentElement) doc.documentElement.appendChild(safeBottomStyle);
+    else doc.addEventListener('DOMContentLoaded', () => doc.documentElement.appendChild(safeBottomStyle), { once: true });
+  }
+  if (window === window.top) setSafeBottom(window.__JREAD_APP_SAFE_BOTTOM);
+
   const reportStatusBar = (hidden) => { call({ op: 'statusBar', hidden }).catch(() => {}); };
   if (window === window.top) {
     if (/\/reader\/article\.html$/.test(location.pathname)) installImmersive(window, reportStatusBar);
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
 
-  window.__jreadApp = { ready, onForeground, _remoteChange: applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive };
+  window.__jreadApp = { ready, onForeground, _remoteChange: applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, setSafeBottom };
 })();

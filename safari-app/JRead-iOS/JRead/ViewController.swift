@@ -53,15 +53,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         config.setURLSchemeHandler(schemeHandler, forURLScheme: Self.scheme)
         let ucc = config.userContentController
         ucc.addScriptMessageHandler(self, contentWorld: .page, name: "jread")
-        ucc.addUserScript(WKUserScript(source: manifestScript(), injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        if let shim = Bundle.main.url(forResource: "jreader-app-shim", withExtension: "js"),
-           let src = try? String(contentsOf: shim, encoding: .utf8) {
-            ucc.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        }
+        installUserScripts(ucc)
 
         let old = webView
         let wv = WKWebView(frame: view.bounds, configuration: config)
-        wv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         wv.navigationDelegate = self
         wv.uiDelegate = self
         old?.removeFromSuperview()
@@ -130,7 +125,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     private func layoutTopBand() {
-        topBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
+        // 色帶高度＝WebView 上緣（狀態列隱藏時那條保留區也要填色）
+        topBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: webView.frame.minY)
         topBandCenter.frame = CGRect(x: topBandSpan.left, y: 0,
                                      width: max(0, topBandSpan.right - topBandSpan.left), height: topBand.bounds.height)
         let insets = view.safeAreaInsets
@@ -140,6 +136,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutWebView()
         layoutTopBand()
     }
 
@@ -149,19 +146,42 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     override var prefersStatusBarHidden: Bool { statusBarHidden }
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
-    // v2.2.3：iPad（與無瀏海機型）的頂端安全區域就是狀態列本身，藏掉會從 32pt 縮成 0
-    // （模擬器實測 iPad Pro 11"）→ WebView 可視高度變 → resize → 翻頁重新排版。
-    // 狀態列隱藏時用 additionalSafeAreaInsets 補回縮掉的量，WebView 看到的安全區域恆定。
-    // 有瀏海的 iPhone 安全區域不受狀態列影響，補 0。依方向記（iPhone 橫向本來就沒有狀態列）。
+    // v2.2.16：WebView 上緣固定在「狀態列顯示時」的頂端安全區域下方，WebView 自己的頂端安全區域恆為 0。
+    // iPad（與無瀏海機型）的頂端安全區域就是狀態列本身，藏掉會從 32pt 縮成 0。v2.2.3 用
+    // additionalSafeAreaInsets 事後補回，但系統先送出 32→0、補完才回 32，WebView 中間被撐高一次
+    // （iPad mini 模擬器 log 實證）；進文章時翻頁模組正在初始化，吃到撐高那次的高度排版，
+    // 頁面上緣跑進狀態列區、點出狀態列再重排（Jimmy 2026-10-29 iPad mini 回報，11 頁 ↔ 12 頁）。
+    // 改成不讓 WebView 碰到頂端安全區域，從源頭沒有瞬變。有瀏海的 iPhone 安全區域不受狀態列影響，
+    // 上緣一樣固定。依方向記（iPhone 橫向本來就沒有狀態列）。
     private var shownTopInsets: [Bool: CGFloat] = [:]
+
+    private func layoutWebView() {
+        guard let wv = webView else { return }
+        let landscape = view.bounds.width > view.bounds.height
+        let system = view.safeAreaInsets.top
+        if !statusBarHidden { shownTopInsets[landscape] = system }
+        let top = statusBarHidden ? max(system, shownTopInsets[landscape] ?? system) : system
+        let frame = CGRect(x: 0, y: top, width: view.bounds.width, height: max(0, view.bounds.height - top))
+        if wv.frame != frame { wv.frame = frame }
+        pushSafeBottom()
+    }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        let landscape = view.bounds.width > view.bounds.height
-        let system = view.safeAreaInsets.top - additionalSafeAreaInsets.top
-        if !statusBarHidden { shownTopInsets[landscape] = system }
-        let extra = statusBarHidden ? max(0, (shownTopInsets[landscape] ?? system) - system) : 0
-        if additionalSafeAreaInsets.top != extra { additionalSafeAreaInsets.top = extra }
+        view.setNeedsLayout()
+    }
+
+    // v2.2.16：頁面沒宣告 viewport-fit=cover，env(safe-area-inset-bottom) 恆為 0，但 WebView 畫到
+    // Home 指示條底下 → 翻頁頁碼落在系統手勢區，點頁碼會叫出系統手勢（Jimmy 2026-10-29 iPhone 回報）。
+    // 把底部安全區域傳給 shim，styler 以 --__jread-app-safe-bottom 補上（與 env 取大者）
+    private var pushedSafeBottom: CGFloat = -1
+
+    private func pushSafeBottom() {
+        let bottom = view.safeAreaInsets.bottom
+        guard bottom != pushedSafeBottom else { return }
+        pushedSafeBottom = bottom
+        installUserScripts(webView.configuration.userContentController)
+        webView.evaluateJavaScript("window.__jreadApp && window.__jreadApp.setSafeBottom(\(Double(bottom)))", completionHandler: nil)
     }
 
     private func setStatusBarHidden(_ hidden: Bool) {
@@ -185,6 +205,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     @objc private func willEnterForeground() {
         webView.evaluateJavaScript("window.__jreadApp && window.__jreadApp.onForeground()", completionHandler: nil)
+    }
+
+    // document-start 注入：manifest、底部安全區域初值、shim。底部安全區域變了就整組重裝，
+    // 下一次載入的頁面一開始就拿到正確值（載入後才改會再觸發一次翻頁重排）
+    private func installUserScripts(_ ucc: WKUserContentController) {
+        ucc.removeAllUserScripts()
+        ucc.addUserScript(WKUserScript(source: manifestScript(), injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        let bottom = Double(max(0, pushedSafeBottom))
+        ucc.addUserScript(WKUserScript(source: "if (location.protocol === 'jread-app:') { window.__JREAD_APP_SAFE_BOTTOM = \(bottom); }",
+                                       injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if let shim = Bundle.main.url(forResource: "jreader-app-shim", withExtension: "js"),
+           let src = try? String(contentsOf: shim, encoding: .utf8) {
+            ucc.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
     }
 
     // 頁面內 runtime.getManifest() 同步回傳，manifest 內容在注入時就先放好
