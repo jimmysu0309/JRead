@@ -39,6 +39,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private let topBand = UIView()
     private let topBandCenter = UIView()
     private var topBandSpan: (left: CGFloat, right: CGFloat) = (0, 0)
+    // v2.2.15：橫向左右安全區域（瀏海 / 動態島那側）也補色帶，填兩側色（side）。WebView 底色
+    // 是卡片色（為了 Home 指示條那條），橫向時左右兩條露出卡片色，畫面變成「灰-黑-卡片-黑-灰」
+    // （Jimmy 2026-10-29 回報）。頁面沒宣告 viewport-fit=cover，內容不畫進左右安全區域，蓋住不遮內容
+    private let leftBand = UIView()
+    private let rightBand = UIView()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -69,6 +74,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         topBand.isUserInteractionEnabled = false
         topBand.addSubview(topBandCenter)
         view.addSubview(topBand)
+        for band in [leftBand, rightBand] {
+            band.isHidden = true
+            band.isUserInteractionEnabled = false
+            view.addSubview(band)
+        }
 
         // 左緣滑動返回文章列表在頁面內處理（jreader-app-shim.js installEdgeBack）：翻頁模式的
         // touchmove 會 preventDefault，WKWebView 因此把原生手勢（含 allowsBackForwardNavigationGestures、
@@ -112,6 +122,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         topBandCenter.backgroundColor = color
         topBandSpan = (left, right)
         topBand.isHidden = false
+        leftBand.backgroundColor = side
+        rightBand.backgroundColor = side
+        leftBand.isHidden = false
+        rightBand.isHidden = false
         layoutTopBand()
     }
 
@@ -119,6 +133,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         topBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
         topBandCenter.frame = CGRect(x: topBandSpan.left, y: 0,
                                      width: max(0, topBandSpan.right - topBandSpan.left), height: topBand.bounds.height)
+        let insets = view.safeAreaInsets
+        leftBand.frame = CGRect(x: 0, y: 0, width: insets.left, height: view.bounds.height)
+        rightBand.frame = CGRect(x: view.bounds.width - insets.right, y: 0, width: insets.right, height: view.bounds.height)
     }
 
     override func viewDidLayoutSubviews() {

@@ -513,6 +513,13 @@
     gray:  { pageBg: '#d8d8d8', articleBg: '#ededed', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', codeBlockBg: 'rgba(0,0,0,0.08)', progressBar: '#2c5282' }
   };
 
+  // '#rrggbb' 兩色線性混色（w = a 的權重），回傳 '#rrggbb'
+  function mixHex(a, b, w) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ch = (sh) => Math.round(((pa >> sh) & 255) * w + ((pb >> sh) & 255) * (1 - w));
+    return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
+  }
+
   function themeOf(name) {
     // v1.7.42：非法值 fallback 對齊 DEFAULTS.theme（gray）——原本硬寫 light，
     // storage 損壞 / 外部寫入未知字串時使用者拿到的主題與「從未設定過」不一致
@@ -3113,6 +3120,34 @@ html [${ARTICLE_ATTR}="1"] a {
     //     typography spec 守「預設不注入 font-family/font-size override」不變式（尊重
     //     原站內文 typography），用 longhand 會誤觸；shorthand 達成同樣完整繼承、語意
     //     正確（byline 要的就是全套字體繼承），且不撞那些 longhand 字面 regex。
+    // v2.2.15：JReader 文章頁圖說預設樣式。一般網站閱讀模式刻意保留原站圖說 typography
+    // （v0.7.120 起 figcaption 不吃使用者字級，見上方 BODY_TEXT_SEL 註解）；但 JReader 文章
+    // 來自 Readwise html_content，沒有任何原站 CSS → 圖說直接繼承內文字體 / 字級 / 色，
+    // 跟內文混成一團（Jimmy 2026-10-29 對照 Readwise Reader App 截圖回報）。reader 自有頁
+    // 補上 Readwise 同款層級：無襯線、小一階、淡一階、置中（Jimmy 指定；文字色與卡片色 70/30 混色，
+    // dark 實測對比約 4.6:1）。figcaption * 一併蓋——圖說內 <em> / <a> 等 inline 子元素
+    // 不靠 inherit；specificity (0,1,1) 贏過主題文字色規則 (0,1,0)。
+    // 只 gate 在 opts.readerHostPage（JRead 自有頁），一般網站不受影響
+    let readerCaption = '';
+    if (opts.readerHostPage) {
+      const capText = mixHex(theme.text || theme.proseText, theme.articleBg, 0.7);
+      readerCaption = `
+[${ARTICLE_ATTR}="1"] figcaption {
+  font-family: -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
+  font-size: 0.8em !important;
+  line-height: 1.5 !important;
+  margin-top: 0.6em !important;
+  text-align: center !important;
+}
+[${ARTICLE_ATTR}="1"] figcaption,
+[${ARTICLE_ATTR}="1"] figcaption * {
+  color: ${capText} !important;
+}
+[${ARTICLE_ATTR}="1"] figcaption * {
+  font-family: inherit !important;
+  font-size: inherit !important;
+}`;
+    }
     const bylineFontNorm = `
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] * {
   font: inherit !important;
@@ -3214,7 +3249,7 @@ html.${HTML_CLASS}.jread-orion body {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
 }`;
     }
-    return base + userOverrides + bylineFontNorm + orionSafeTop + progressSkin +
+    return base + userOverrides + bylineFontNorm + readerCaption + orionSafeTop + progressSkin +
       (overrides.fontFamily ? FONT_FACE_CSS + latinFontFaceFor(opts.fontFamily) : '');
   }
 

@@ -512,6 +512,13 @@
     frame.className = 'frame';
     frame.setAttribute('title', 'JRead');
     frame.src = popupUrl;
+    // v2.2.15：先隱形、等 popup 回報第一次內容尺寸收緊後才顯示。iOS WebKit 先以預設高度
+    // （min(86vh, 640px)）畫出 iframe、縮到內容高度後，舊範圍底部殘留一塊白色沒重繪
+    // （Jimmy 2026-10-29 回報 App 功能選單下方多一塊白；模擬器重現）。回報沒來（舊版 popup
+    // / 訊息失敗）時保底顯示，不讓選單打不開
+    frame.style.visibility = 'hidden';
+    const revealFrame = () => { frame.style.visibility = ''; };
+    setTimeout(revealFrame, 1000);
     backdrop.appendChild(frame);
     // 點浮層外圍（backdrop 本體、非 iframe）→ 收
     backdrop.addEventListener('pointerdown', (e) => {
@@ -538,6 +545,7 @@
           const capW = Math.round(window.innerWidth * 0.94);
           panelFrame.style.width = Math.max(240, Math.min(ev.data.width, capW)) + 'px';
         }
+        revealFrame();
       }
     };
     window.addEventListener('message', panelMsgHandler);
