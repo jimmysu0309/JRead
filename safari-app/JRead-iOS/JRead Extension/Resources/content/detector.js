@@ -158,8 +158,13 @@
     if (linkDensity(el, textLen) > CONT_MAX_LD) return false;
     // 至少 N 段實質段落（p / blockquote / dd）——排除純連結目錄與 UI chrome；
     // aside / 雜訊子樹內的段落不計入（v1.7.30，見 contParaInExcludedSubtree）
+    // v2.2.17：段落型 div（無 block 子元素，isParagraphLikeDiv）也算段落——
+    // pudding.cool 實證：標題下導言四段是 div.prose-first，前一個兄弟塊只有 2 個
+    // 短 <p> → paras=0 沒過 gate，導言連同標題被 hideAncestorSiblings 藏掉。
+    // 與 heuristic signal 的「div 當段落」同一判準（v1.7.39 / v1.7.76 同族盲點）。
     let paras = 0;
-    for (const p of el.querySelectorAll('p, blockquote, dd')) {
+    for (const p of el.querySelectorAll('p, blockquote, dd, div')) {
+      if (p.tagName === 'DIV' && !isParagraphLikeDiv(p)) continue;
       const t = ((p.innerText || p.textContent) || '').replace(/\s+/g, ' ').trim();
       if (cjkWeightedLen(t) >= CONT_MIN_PARA_WEIGHT) {
         if (contParaInExcludedSubtree(p, el)) continue;
@@ -405,7 +410,13 @@
     return outCount >= BODYLESS_MIN_OUT;
   }
   function _detectByArticleTagImpl() {
-    const articles = Array.from(document.querySelectorAll('article'));
+    // v2.2.17：<aside> 內的 <article> 不參選。HTML 語意上 aside 是「與主內容
+    // 旁支相關」的內容，裡面的 article 是側欄卡片（活動推廣 / 推薦文章），不會是
+    // 本文。ms.now 實證：頁面 2 個 <article> 都是側欄推廣卡（487 字、含一段描述
+    // <p>，殼卡 guard 不擋），選中後 promote 一路升到整站外殼 wp-site-blocks，
+    // 站頭導覽、推薦欄、頁尾全進卡片。全被排除＝本策略讓位（heuristic 接手）。
+    const articles = Array.from(document.querySelectorAll('article'))
+      .filter(a => !(a.parentElement && a.parentElement.closest('aside')));
     if (articles.length === 0) return null;
 
     // 單一 <article>：直接採用（需過字數門檻）
@@ -914,8 +925,17 @@
       // TD 是通用 HTML 容器、非站點特判（硬規則 3）；linkDensity penalty + textLen
       // bonus + class 權重仍會讓真正的內容容器勝出，資料表 / infobox 的高連結密度
       // 小 TD 不會搶贏低連結密度的長文 TD。
+      //
+      // v2.2.17：autonomous custom element（HTML 規範：名稱必含 `-`）也是容器。
+      // 2017 版 Distill 主文段落直接掛在 <dt-article> 底下（53 個 signal <p>，
+      // 無 article / main），舊白名單把它整個排除出候選 → 只剩附錄 <dt-appendix>
+      // 內的 div.l-body 參賽並勝出，閱讀模式只剩致謝 / 參考文獻（真 Chromium
+      // probe 實證）。web component 站拿自訂元素當段落容器是通用結構；
+      // linkDensity / textLen / class 權重照常競爭，widget 型自訂元素不會因此
+      // 搶贏真主文。
       const tag = el.tagName;
-      if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'MAIN' && tag !== 'ARTICLE' && tag !== 'TD') continue;
+      if (tag !== 'DIV' && tag !== 'SECTION' && tag !== 'MAIN' && tag !== 'ARTICLE' && tag !== 'TD' &&
+          tag.indexOf('-') < 0) continue;
 
       const textLen = scoredTextLen(el);
       if (textLen < MIN_TEXT_LEN) continue;
@@ -1460,6 +1480,27 @@
     return null;
   }
 
+  // v2.2.17：上提為模組層 helper（原為 markPromotedTitleIfMissing 內部函式，判準與
+  // 註解見該處 v0.8.55 段落）——promoteForTitle 的 sibling-walk / LCA 候選也要用同一把
+  // 尺：ms.now 站頭 sticky 的標題副本是 visibility:hidden + opacity:0（不是 display:none），
+  // 只看 display 的 isAncestorChainHidden 擋不住，翻譯後 h1 變中文、英文副本就成了唯一
+  // 相符候選 → titleHead 落在站頭、narrow 保住整個站頭導覽。
+  function isCandidateVisiblyPresented(el) {
+    if (isAncestorChainHidden(el)) return false;
+    for (let p = el; p && p !== document.body; p = p.parentElement) {
+      if (p.style && (p.style.visibility === 'hidden' || p.style.visibility === 'collapse')) return false;
+      try {
+        const cs = window.getComputedStyle && window.getComputedStyle(p);
+        if (cs) {
+          if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return false;
+          const op = parseFloat(cs.opacity);
+          if (!Number.isNaN(op) && op < 0.05) return false;
+        }
+      } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
+    }
+    return true;
+  }
+
   function promoteForTitle(articleEl, maxHops) {
     const target = getCanonicalTitle();
     if (!target) return { el: articleEl, titleHead: null };
@@ -1476,6 +1517,17 @@
 
     const limit = typeof maxHops === 'number' ? maxHops : PROMOTE_MAX_HOPS;
 
+    // v2.2.17：articleEl 已自帶可見、非連結的 h1（只是文字對不上 og:title——翻譯
+    // 後 h1 變中文、站頭副本仍是英文），外部的**非 heading** 標題副本（sticky 導覽列
+    // 的「目前文章」div）不可拿來 promote。engadget 翻譯輪實證：div#top-nav-title
+    // 讓 sibling-walk 升到整頁 page-wrap，infinite scroll 追加的下一篇整篇併入卡片
+    // （v0.8.42 foreignaffairs 同情境，self-titled guard 被翻譯打穿）。
+    let ownH1 = false;
+    for (const h of articleEl.querySelectorAll('h1')) {
+      if (isHeadingInsideAnchor(h) || isAncestorChainHidden(h)) continue;
+      if (normalizeTitle(h.innerText || h.textContent || '')) { ownH1 = true; break; }
+    }
+
     let cur = articleEl;
     let hops = 0;
     while (cur && cur.parentElement && cur !== document.body && hops < limit) {
@@ -1487,6 +1539,7 @@
       // document.body reject），sibling-walk 漏了——同一條「不可吞整頁」事實
       // 兩 path 必須對稱。
       if (parent === document.body || parent === document.documentElement) break;
+      let best = null;
       for (const sib of parent.children) {
         if (sib === cur) continue;
         // heads 同時包含 sib 自己（若 match）+ 所有子孫。不能只二選一
@@ -1510,11 +1563,20 @@
           // titleHead。heading tag 維持原行為（無上限），避免某些站長標題被擋。
           if (!HEADING_TAGS.has(h.tagName) && text.length > TITLE_TEXT_MAX) continue;
           if (titleMatches(target, text)) {
-            // 升級到 articleEl 與 h 的共同 parent = 當前 parent
-            return { el: parent, titleHead: h };
+            // v2.2.17：同一層可能有多個相符候選（站頭 sticky 的標題副本 + 真標題）。
+            // 舊版取 DOM 順序第一個，站頭副本排在前面就被當 titleHead——ms.now 實證：
+            // 站頭 rollover 的 H2 副本（祖先 display:none）勝出，narrow 的 titleHead
+            // guard 轉而保住整個站頭（白色 fixed 導覽列殘留、溢出卡片）。改為：
+            // 祖先鏈隱藏者不收；其餘依 H1 > 其他 heading > 非 heading 取最高者。
+            if (!isCandidateVisiblyPresented(h)) continue;
+            if (ownH1 && !HEADING_TAGS.has(h.tagName)) continue;
+            const rank = h.tagName === 'H1' ? 0 : (HEADING_TAGS.has(h.tagName) ? 1 : 2);
+            if (!best || rank < best.rank) best = { h, rank };
           }
         }
       }
+      // 升級到 articleEl 與 h 的共同 parent = 當前 parent
+      if (best) return { el: parent, titleHead: best.h };
       cur = parent;
       hops++;
     }
@@ -1535,9 +1597,12 @@
     //
     // v0.7.143：走共用 findTitleViaLca helper（dist 無上限——og-match guard 已是
     // 強訊號，dist 過遠也仍是真標題、不需 dist 限制）。
-    for (const h of document.querySelectorAll('h1, h2')) {
+    // v2.2.17：h1 先於 h2 掃（不再依 DOM 順序混掃），祖先鏈隱藏者不收——站頭
+    // sticky 的標題副本常是 h2、在 DOM 裡排在真 h1 前面（ms.now rollover H2）
+    for (const h of [...document.querySelectorAll('h1'), ...document.querySelectorAll('h2')]) {
       if (articleEl.contains(h)) continue;
       if (isHeadingInsideAnchor(h)) continue;
+      if (!isCandidateVisiblyPresented(h)) continue;
       const text = normalizeTitle(h.innerText || h.textContent || '');
       if (text.length > TITLE_TEXT_MAX) continue;
       if (!titleMatches(target, text)) continue;
@@ -1811,21 +1876,7 @@
     // 不用 getBoundingClientRect 判可見：jsdom fixture rect 全 0 會誤殺；
     // 逐祖先檢查各自的 computed style 即可（不依賴 visibility 繼承解析，
     // jsdom 讀 inline style 也能驗）。display:none 沿用既有共用 predicate。
-    function isCandidateVisiblyPresented(el) {
-      if (isAncestorChainHidden(el)) return false;
-      for (let p = el; p && p !== document.body; p = p.parentElement) {
-        if (p.style && (p.style.visibility === 'hidden' || p.style.visibility === 'collapse')) return false;
-        try {
-          const cs = window.getComputedStyle && window.getComputedStyle(p);
-          if (cs) {
-            if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return false;
-            const op = parseFloat(cs.opacity);
-            if (!Number.isNaN(op) && op < 0.05) return false;
-          }
-        } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
-      }
-      return true;
-    }
+    // 實作：模組層 isCandidateVisiblyPresented（v2.2.17 上提，promoteForTitle 共用）。
 
     // 找 articleEl 內含等同 baseTitle 的 text element（精確或包含關係）
     // 限制 textLen 接近 baseTitle，避免命中包含主文整段的大 wrapper

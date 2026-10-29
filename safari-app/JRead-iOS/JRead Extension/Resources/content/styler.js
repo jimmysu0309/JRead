@@ -231,6 +231,8 @@
   const HEADING_SPACER_AFTER_ATTR = 'data-jread-heading-spacer-after';
   const HEADING_LINK_ATTR = 'data-jread-heading-link';
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
+  // v2.2.17：cleaner 拉回 flow 的標題覆蓋層內，pseudo 帶暗化遮罩 box-shadow 的元素
+  const OVERLAY_PSEUDO_SHADOW_ATTR = 'data-jread-overlay-pseudo-shadow';
   // v1.9.16：翻頁模式下由 cleaner 接管位置的選取工具列（pinToolbarOverSelection）。
   // attr 與兩個自訂屬性名稱要跟 cleaner.js 逐字一致（forcing：
   // selection-toolbar-inline-highlight.spec.js）。
@@ -1605,6 +1607,13 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"],
 [${ARTICLE_ATTR}="1"] [${HIDDENMEDIA_WRAP_ATTR}="1"] * {
   min-height: 0 !important;
+}
+/* v2.2.17：標題覆蓋層的 ::before / ::after 暗化遮罩（aeon h1::before 140px
+   box-shadow）回到卡片底色後只剩灰色漸層塊。pseudo 無法 inline 覆寫，由 cleaner
+   標 attr、這裡歸零。 */
+[${ARTICLE_ATTR}="1"] [${OVERLAY_PSEUDO_SHADOW_ATTR}="1"]::before,
+[${ARTICLE_ATTR}="1"] [${OVERLAY_PSEUDO_SHADOW_ATTR}="1"]::after {
+  box-shadow: none !important;
 }
 /* v1.9.16：翻頁模式下的選取工具列由 JRead 釘位。翻頁卡片是 position:fixed 的
    橫向捲動多欄容器，站方照原本 containing block 算的 inline transform 會把工具列

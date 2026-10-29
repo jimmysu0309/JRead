@@ -1129,7 +1129,23 @@
     return blockLen - elLen >= 40 && elLen / (blockLen || 1) < 0.5;
   }
 
+  // v2.2.17：清單引導句 ≠ section heading（dev.to 實證）。正文用「Trending
+  // CSS-centric tech:」這種 <p> 引出一串純文字條列，`^(trending|…)(\s+\S+){0,3}$`
+  // 命中後走 tail-cleanup，連後面五節正文一起藏掉。推薦區 heading 引出的是連結
+  // feed（Related: + 連結清單）；緊接一份「≥2 條、零連結」的 ul/ol＝正文條列的
+  // 引導句，不是雜訊 heading。只認非 semantic heading 候選（p/div/span/strong），
+  // h2–h6 是作者明示的 section 標題，維持舊判定。靜態 + 動態單一資料源（住在
+  // resolveHeadingNoiseTarget 入口）。
+  function isProseListLeadIn(h) {
+    if (/^H[1-6]$/.test(h.tagName)) return false;
+    const next = h.nextElementSibling;
+    if (!next || (next.tagName !== 'UL' && next.tagName !== 'OL')) return false;
+    if (next.querySelectorAll(':scope > li').length < 2) return false;
+    return !next.querySelector('a');
+  }
+
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
+    if (isProseListLeadIn(h)) return false;
     let target = h.closest('section, aside');
     // tooWide 的主文保護對 link-feed 容器不適用（v0.8.54）：累計短 teaser
     // p / teaser title-anchor token 都是 feed 自己的內容，不是主文訊號
@@ -1202,9 +1218,17 @@
     }
     if (tailApplies) {
       const hasMainContent = (el) => siblingHasMainContent(el, NS.cjkWeightedLen);
+      // v2.2.17：尾段清除不跨越正文的 section heading（dev.to 實證：<p> 雜訊
+      // 標籤之後的段落都短於 100 字，after-check 停不下來，一路藏過第 5–9 節
+      // 的 h2 到文末）。雜訊區塊的範圍止於下一個「位階不低於它」的 heading：
+      // 非 semantic 候選（p/div/span）位階低於任何 h1–h6 → 遇任一 heading 即停；
+      // semantic heading 遇更高位階（數字更小）即停。同位階不停——推薦區常以
+      // 同級 heading 分組（文末多組同級推薦 heading 照舊一路藏）。
+      const hRank = /^H[1-6]$/.test(h.tagName) ? +h.tagName[1] : 7;
+      const outranks = (el) => /^H[1-6]$/.test(el.tagName) && +el.tagName[1] < hRank;
       hide(h, hidden);
       let s = h.nextElementSibling;
-      while (s && !hasMainContent(s)) {
+      while (s && !hasMainContent(s) && !outranks(s)) {
         const nx = s.nextElementSibling;
         if (!isInPreserved(s) && !(s.dataset && s.dataset.jreadHidden === '1')) {
           hide(s, hidden);
@@ -1306,8 +1330,17 @@
       if (item.__expandedAttr && item.el.removeAttribute) {
         item.el.removeAttribute(EXPANDED_ATTR);
       }
+      // v2.2.17：reset 附帶的標記 attr（如 OVERLAY_PSEUDO_SHADOW_ATTR）
+      if (item.__removeAttr && item.el.removeAttribute) {
+        item.el.removeAttribute(item.__removeAttr);
+      }
     }
   }
+
+  // v2.2.17：被拉回 flow 的標題覆蓋層內，::before / ::after 帶 box-shadow 的元素
+  // 標記（styler 寫 `[attr]::before,[attr]::after { box-shadow:none }`；pseudo 無法
+  // inline 覆寫）。attr 字串兩檔一致，forcing 見 title-overlay-carrier.spec.js。
+  const OVERLAY_PSEUDO_SHADOW_ATTR = 'data-jread-overlay-pseudo-shadow';
 
   // v1.6.30（#13 insertion invalidation）：隱藏媒體的 parent 容器標記。styler
   // 的 v0.8.59 min-height 解除規則原用 `*:has(> img[data-jread-hidden="1"]) *`
@@ -1664,6 +1697,11 @@
       if (child.dataset && child.dataset.jreadHidden === '1') continue;
       if (isInPreserved(child)) continue;
       if (containsCanonicalTitle(child)) continue;
+      // v2.2.17：含主文內唯一的 h1＝標題列，語言無關的訊號。cnbc 翻譯輪實證：
+      // h1 被譯成中文後 canonical（og:title 英文）比對落空，含 h1 的
+      // PageBuilder-pageRow（6 連結、無長 <p>）整列被當連結區塊藏掉，標題與
+      // byline 一起消失。只認「主文內唯一 h1」，避免站頭 logo h1 + 導覽列被保。
+      if (child.querySelector('h1') && articleEl.querySelectorAll('h1').length === 1) continue;
       const anchors = child.querySelectorAll('a');
       if (anchors.length < 5) continue;
       let hasLongP = false;
@@ -2646,6 +2684,29 @@
     // 插入位置（in-article / 翻譯頁外置）由 placePromotedTitleClone 決定；
     // 還原走 hidden 陣列的 __titleClone path（removeChild）。
     placePromotedTitleClone(articleEl, wrap, hidden);
+    // v2.2.17：去重——articleEl 內若已有可見的非 heading 標題副本（roomie：疊圖層
+    // span.title，被 v2.2.17 標題覆蓋層判定拉回 flow 後可見），合成 h1 之後它就是
+    // 第二份標題。只藏 leaf-ish、文字即本文標題的節點（與 detector 注入端 v0.8.3
+    // 去重同款判準），疊圖層裡的日期 / 作者不受影響。
+    for (const el of articleEl.querySelectorAll('p, div, span, a, strong, h2, h3, h4, h5, h6')) {
+      if (wrap.contains(el)) continue;
+      if (descendantCountExceeds(el, 2)) continue;
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      if (isSiteHiddenWithin(el, articleEl)) continue;
+      const t = normTitle(el.textContent || '');
+      if (!t || (t !== pick.text && !titleMatchesCanonical(t))) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // v2.2.17：el 自身或到 root（含）之間任一祖先被站方 CSS 藏起來（見
+  // headingIsSiteHidden；不依賴 rect，jsdom 也成立）。
+  function isSiteHiddenWithin(el, root) {
+    for (let p = el; p; p = p.parentElement) {
+      if (headingIsSiteHidden(p)) return true;
+      if (p === root) break;
+    }
+    return false;
   }
 
   // v1.8.6：第一層（class/id title token）整層落空時的第二層候選來源。
@@ -3043,6 +3104,38 @@
     return out;
   }
 
+  // v2.2.17：元素是否含「散文條列」——參考文獻 / 正文條列這類文字主體在連結外的
+  // 清單。與推薦清單的結構差異：推薦 li 的文字主體是 <a> 標題（連結占比高）且常帶
+  // 縮圖；引用條目是長段純文字、連結（View Article / PubMed）只占小部分。條件：
+  // 直接子 li ≥ 3、li 扣掉 <a> 文字的平均長度 ≥ 60、整份清單連結文字占比 < 0.4、
+  // 清單內無 img / picture、過半條目不以連結開頭（「標題連結 + 長描述」的 udn 型
+  // 推薦卡連結占比可能 < 0.4，靠這條擋）。PLOS 實測：平均 ~220、占比 0.14。
+  // 只放行、不新增 hide。
+  function hasProseListContent(el) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const list of _selfAndDescendants(el, 'ol, ul')) {
+      if (list.querySelector('img, picture')) continue;
+      const items = Array.from(list.children).filter(c => c.tagName === 'LI');
+      if (items.length < 3) continue;
+      let total = 0, linkText = 0, linkLed = 0;
+      for (const li of items) {
+        const t = norm(li.textContent).length;
+        // 以連結開頭的條目＝「標題連結 + 描述」推薦卡（udn 型），不是引用條目
+        const first = li.querySelector('a');
+        if (first && t && norm(li.textContent).indexOf(norm(first.textContent)) === 0 &&
+            norm(first.textContent).length > 0) linkLed++;
+        let a = 0;
+        for (const link of li.querySelectorAll('a')) a += norm(link.textContent).length;
+        total += t;
+        linkText += a;
+      }
+      if (!total) continue;
+      if (linkLed * 2 >= items.length) continue;
+      if ((total - linkText) / items.length >= 60 && linkText / total < 0.4) return true;
+    }
+    return false;
+  }
+
   function hasCodeOrDataTableContent(el) {
     if (!el || !el.querySelectorAll) return false;
     // light DOM 程式碼塊（排除被 <a> 包的——理論上極罕見、保險）
@@ -3117,9 +3210,32 @@
           const medias = [];
           if (sib.matches && sib.matches('img, picture, video')) medias.push(sib);
           for (const m of sib.querySelectorAll('img, picture, video')) medias.push(m);
-          let hasStandaloneMedia = false;
+          // v2.2.17（ms.now 實證，整站外殼被 promote 成 articleEl）：
+          //   (1) 已不顯示的子樹（站方 CSS 藏的、或前面規則已 hide 的）裡的媒體不算
+          //       ——站頭選舉導覽 nav 內的 picture 量到 0×0，卻讓整個
+          //       header#site-header 享有主圖保護；導覽地標（nav）內的媒體同理不算
+          //   (2) 卡片牆 / logo 牆不算主文媒體——推薦欄 18 張卡片圖、Meet the Team
+          //       12 個節目 logo，圖都不在 <a> 內（連結在旁邊的標題上）。判準：
+          //       standalone 媒體 ≥ 3、<a> ≥ 3、沒有 figcaption（圖集 / 攝影報導）、
+          //       沒有不在 li / a 內的 ≥ 100 字段落
+          let standaloneCount = 0;
           for (const m of medias) {
-            if (!m.closest || !m.closest('a')) { hasStandaloneMedia = true; break; }
+            if (m.closest && m.closest('a')) continue;
+            if (isSiteHiddenWithin(m, sib)) continue;
+            if (m.closest && m.closest('[data-jread-hidden="1"]')) continue; // 前面規則已藏的子樹
+            // 導覽地標內的媒體（選舉導覽 / mega-menu 縮圖）不是主文媒體
+            if (m.closest && m.closest('nav, [role="navigation"]')) continue;
+            standaloneCount++;
+          }
+          let hasStandaloneMedia = standaloneCount > 0;
+          if (standaloneCount >= 3 && sib.querySelectorAll('a').length >= 3 &&
+              !sib.querySelector('figcaption')) {
+            let longP = false;
+            for (const para of sib.querySelectorAll('p')) {
+              if (para.closest('li, a')) continue;
+              if (NS.cjkWeightedLen(norm(para.textContent)) >= 100) { longP = true; break; }
+            }
+            if (!longP) hasStandaloneMedia = false;
           }
           // v0.8.63 myartbroker 修法：單張「被連結包住的大圖」也是主文媒體
           // （藝術／作品站把內容插圖整張包進 <a> 連到作品頁），不是 sidebar
@@ -3176,6 +3292,11 @@
           let mainContentFound = false;
           for (const para of sib.querySelectorAll('p')) {
             if (para.closest('li, a, aside')) continue;
+            // v2.2.17：導覽地標內、或畫面上沒顯示（站方收合的 mega-menu、前面規則
+            // 已藏）的段落不是主文證據——ms.now 站頭 mega-menu 的短節目說明 <p>
+            // 累計 ≥ 300 字，讓整個 header#site-header 被當「含主文」保留
+            if (para.closest('nav, [role="navigation"], [data-jread-hidden="1"]')) continue;
+            if (isSiteHiddenWithin(para, sib)) continue;
             const pt = norm(para.textContent);
             if (pt.length >= 100) { mainContentFound = true; break; }
             acc += pt.length;
@@ -3192,6 +3313,10 @@
         // sidebar「相關文章」widget 用 <ul><li><a> 縮圖排版、不放程式碼塊 / 資料表，
         // 結構特徵可區分（此 guard 只放行、不新增 hide，誤判風險僅止於「少清」）。
         if (hasCodeOrDataTableContent(sib)) continue;
+        // v2.2.17：散文條列分支（PLOS 期刊實證）——參考文獻 `ol > li` 的文字是 li
+        // 直接文字（平均 260 字），不在 <p> 內，上方主文長段 guard 又刻意跳過 li
+        // 內的 p → 41 條 References 整段被 narrow 砍。見 hasProseListContent。
+        if (hasProseListContent(sib)) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         hide(sib, hidden);
@@ -4043,15 +4168,38 @@
   // 對主文內 `<a>` 元素：text 命中 NOISE_LINK_TEXT_RE 則 hide。若 `<a>` 的
   // parent 是 `<p>` / `<div>` 且 a 文字占 parent 文字 80% 以上，hide parent
   // 整個段落；否則只 hide a 本身。
+  // v2.2.17：平台「追蹤 / 偏好來源」端點連結（href 結構訊號，與文案語言無關）。
+  // engadget 實證：「Add Engadget on Google:」是連結**外**的純文字 div、連結文字只剩
+  // 「Google Discover」，v1.8.1 的文字句式比對兩邊都 miss；翻譯後文案再變一輪也
+  // 一樣 miss。href 不會被翻譯改寫：profile.google.com/@站名（Google Discover
+  // 追蹤頁）、google.com/preferences/source（偏好來源設定）、
+  // news.google.com/publications/…（Google 新聞追蹤）都是平台的追蹤操作頁，
+  // 正文引用 Google 新聞報導連的是 /articles/、/stories/，不在此列。
+  function isPlatformFollowHref(a) {
+    if (!a || a.tagName !== 'A') return false;
+    let u;
+    try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { return false; }
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'profile.google.com' && /^\/@/.test(u.pathname)) return true;
+    if (host === 'google.com' && /^\/preferences\/source/.test(u.pathname)) return true;
+    if (host === 'news.google.com' && /^\/publications\//.test(u.pathname)) return true;
+    return false;
+  }
+
   function hideInsideArticleByLinkText(articleEl, hidden, scope) {
     // 掃 `<a>` + `<button>`——CTA 按鈕類（訂閱 / 追蹤 / 關注）通常是 button
     // 而非 a，舊版只掃 a 漏網
     const links = scopedQueryAll(scope, articleEl, 'a, button');
     for (const a of links) {
       const text = norm(a.textContent);
-      if (!text) continue;
+      // v2.2.17：平台追蹤端點 href 視同文字命中，但**不走 strict 整塊清**——同一列
+      // 常有合法 metadata（Guardian：dateline 與「Prefer the Guardian on Google」
+      // 同列），走下方一般路徑（連結占父層 80%+ 才藏父層、否則只藏連結）。
+      // engadget 剩下的「Add … on Google:」說明句由 collapseOrphanLabelShells 收
+      const hrefHit = isPlatformFollowHref(a);
+      if (!text && !hrefHit) continue;
       const strictHit = NOISE_LINK_TEXT_STRICT_RE.test(text);
-      if (!strictHit) {
+      if (!strictHit && !hrefHit) {
         if (text.length > NOISE_LINK_TEXT_MAX_LEN) continue;
         if (!NOISE_LINK_TEXT_RE.test(text)) continue;
       }
@@ -4549,6 +4697,30 @@
     return subtreeHasLongNonAnchorText(el, HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN);
   }
 
+  // v2.2.17：el 內的 <a> 是否全部位於「扣掉連結後仍有實質文字」的 <p> 內
+  // （每個這種 <p> 非連結文字 CJK 權重 ≥ 10；「Tags: <a>…</a>」這類標籤列只有
+  // 一個短前綴字、不過門檻）。無 <a> 回 false（不歸本 guard 管）。
+  function sidebarLinksAllInProseParagraphs(el) {
+    const links = el.querySelectorAll ? el.querySelectorAll('a') : [];
+    if (!links.length) return false;
+    const checked = new Map();
+    for (const a of links) {
+      const p = a.closest('p');
+      if (!p || !el.contains(p)) return false;
+      if (!checked.has(p)) {
+        let linkLen = 0;
+        for (const x of p.querySelectorAll('a')) linkLen += norm(x.textContent).length;
+        const full = norm(p.textContent);
+        // 非連結文字＝整段扣掉連結文字（以字元數近似；權重以非連結比例縮放）
+        const nonLinkRaw = Math.max(0, full.length - linkLen);
+        const ratio = full.length ? nonLinkRaw / full.length : 0;
+        checked.set(p, NS.cjkWeightedLen(full) * ratio >= 10);
+      }
+      if (!checked.get(p)) return false;
+    }
+    return true;
+  }
+
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
@@ -4642,9 +4814,15 @@
         // 那是 link-only block 形狀，由 isLinkOnlyBlock / direct-child link
         // block / footer meta 各自接（條件 C 對長連結列 <p> 也仍然生效）。
         const sibIsParagraphTag = s.el.tagName === 'P';
+        // v2.2.17 句中連結 guard（條件 A 專用，v1.7.65 往下一層推廣）：sibling 內
+        // 每個 <a> 都嵌在「自身有非連結文字」的 <p> 句中＝含行內連結的散文框（提示
+        // 框 / 註記），不是 link widget。jest TIP 框翻譯輪實證：連結文字是拉丁 API
+        // 名、翻譯後不變，散文被壓短 → ld 0.42 → 0.69 越過 0.5，整個 TIP 框消失；
+        // CJK 加權後仍 0.55，sibIsProse 的 50 字門檻也接不住。
+        const sibLinksInProse = sidebarLinksAllInProseParagraphs(s.el);
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
-        if (!sibIsProse && !sibIsParagraphTag &&
+        if (!sibIsProse && !sibIsParagraphTag && !sibLinksInProse &&
             s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
           // v0.7.109：byline 白名單——短篇（textLen < 200）+ 文字命中
@@ -5167,6 +5345,23 @@
     return true;
   }
 
+  // v2.2.17：「標題覆蓋層」判定——含 h1（v0.7.148），或含一個**可見**後代、其文字
+  // 即本文標題（titleMatchesCanonical）。roomie 實證：可見標題是疊圖層內的
+  // span.title，真 h1 是 sr-only、放在 display:none 的行動版區塊 → 只認 h1 的
+  // guard 落空，整個疊圖層（標題 + 日期 + 作者）被當 chrome overlay 藏掉。
+  function isTitleOverlayCarrier(el) {
+    if (!el.querySelector) return false;
+    if (el.querySelector('h1')) return true;
+    for (const d of el.querySelectorAll('h2, h3, p, span, div, a, strong')) {
+      const t = d.textContent || '';
+      if (t.length > 300) continue;
+      if (!titleMatchesCanonical(t)) continue;
+      if (isSiteHiddenWithin(d, el)) continue; // 行動版 display:none 副本不算
+      return true;
+    }
+    return false;
+  }
+
   function hideInsideArticleAbsoluteOverlays(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const parentHeightResets = [];
@@ -5180,7 +5375,11 @@
     for (const el of _getArticleAllElements(articleEl)) {
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
-      if (isInPreserved(el)) continue;
+      // v2.2.17：isInPreserved 改到「標題覆蓋層拉回 flow」分支之後才擋。preserved
+      // 的語意是「不可 hide」，而拉回 flow 是非破壞性還原——theconversation 實證：
+      // 標題 header 是 <figure> 內的 absolute 疊圖層，舊順序在入口就 skip，連拉回
+      // flow 都沒做 → 黑字（styler 改色）疊在深色主圖上看不見。
+      const preserved = isInPreserved(el);
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
       if (!cs) continue;
@@ -5224,7 +5423,7 @@
       //（flow > overlay，與本函式整體原則一致）——強制 position:static 讓
       // 標題佔回垂直空間、撐起塌掉的 hero banner 父、內文 flow 到標題下方。
       // 可逆：snapshot inline → 退出 reader mode 還原。
-      if (el.querySelector && el.querySelector('h1')) {
+      if (isTitleOverlayCarrier(el)) {
         const cur = cs.position;
         if (cur === 'absolute' || cur === 'fixed') {
           const overlayProps = ['position', 'top', 'left', 'right', 'bottom'];
@@ -5247,6 +5446,17 @@
             overlayProps.push('transform');
             overlayDecls['transform'] = 'none';
           }
+          // v2.2.17：CSS 個別變形屬性（translate / rotate / scale）是同一組事實
+          // ——Tailwind v4 寫 `translate: -50%`，computed transform 為 none、
+          // translate 為 -50%，只清 transform 照樣左移半寬被父層裁掉（aeon 實證：
+          // h1 落在卡片內容起點左側 130px）。
+          for (const prop of ['translate', 'rotate', 'scale']) {
+            const v = cs.getPropertyValue(prop);
+            if (v && v !== 'none') {
+              overlayProps.push(prop);
+              overlayDecls[prop] = 'none';
+            }
+          }
           titleOverlayResets.push({
             el,
             prev: snapshotStyles(el, overlayProps)
@@ -5255,12 +5465,36 @@
           // v2.2.7：覆蓋層內文字的 text-shadow 同步清掉——那是站方為了「白字疊在
           // 圖上」補的對比，回到讀者卡片純色底後只剩一層模糊暈影。text-shadow 可由
           // 後代各自宣告，只清本層不夠，逐一掃後代（標題塊元素數小）
+          // v2.2.17：box-shadow 同理——站方在標題（或其 ::before / ::after）上掛
+          // 大範圍暗色 box-shadow 當「白字疊照片」的暗化遮罩（aeon：h1::before
+          // absolute + `0 0 140px 140px rgba(0,0,0,.6)`），回到卡片底色後只剩一團
+          // 灰色漸層塊。元素自身 inline 清；pseudo 無法 inline，標 attr 交 styler。
           for (const d of _selfAndDescendants(el, '*')) {
             let dcs;
             try { dcs = window.getComputedStyle(d); } catch (_) { continue; }
-            if (!dcs || !dcs.textShadow || dcs.textShadow === 'none') continue;
-            titleOverlayResets.push({ el: d, prev: snapshotStyles(d, ['text-shadow']) });
-            applyImportant(d, { 'text-shadow': 'none' });
+            if (!dcs) continue;
+            const clear = {};
+            if (dcs.textShadow && dcs.textShadow !== 'none') clear['text-shadow'] = 'none';
+            if (dcs.boxShadow && dcs.boxShadow !== 'none') clear['box-shadow'] = 'none';
+            const names = Object.keys(clear);
+            if (names.length) {
+              titleOverlayResets.push({ el: d, prev: snapshotStyles(d, names) });
+              applyImportant(d, clear);
+            }
+            let pseudoShadow = false;
+            // 無 layout 引擎（jsdom）不量 pseudo——未實作帶 pseudo 參數的
+            // getComputedStyle（同 styler passHeadingPseudoSpacerReset 的 short-circuit）
+            const rootEl = document.documentElement;
+            const hasLayout = !!rootEl && rootEl.getBoundingClientRect().height > 0;
+            if (hasLayout) for (const pseudo of ['::before', '::after']) {
+              let pcs;
+              try { pcs = window.getComputedStyle(d, pseudo); } catch (_) { pcs = null; }
+              if (pcs && pcs.boxShadow && pcs.boxShadow !== 'none') { pseudoShadow = true; break; }
+            }
+            if (pseudoShadow && d.setAttribute) {
+              d.setAttribute(OVERLAY_PSEUDO_SHADOW_ATTR, '1');
+              titleOverlayResets.push({ el: d, prev: {}, __removeAttr: OVERLAY_PSEUDO_SHADOW_ATTR });
+            }
           }
           // v1.7.7：title overlay 還原 flow 後，祖先鏈 viewport-scale 高度
           // 佔位一併 flatten——NYT mike-d-new-album 變體把重複 h1 裝進媒體層
@@ -5270,6 +5504,7 @@
         }
         continue;
       }
+      if (preserved) continue;
       // v0.7.170 guard：含 picture / img / video 後代 → 視為「aspect-ratio
       // 媒體 wrapper」（lazy-load padding-bottom hack + 內層 absolute container
       // 包 picture 是跨 CMS 通用 pattern）。CNBC InlineImage 實機:
@@ -7054,6 +7289,11 @@
         if (!orphanShellHasHiddenInteractiveCluster(el)) return false;
       }
       if (hasUnhiddenContentMedia(el)) return false;
+      // v2.2.17：程式碼塊 / 資料表是內容、不是 label（jest 實證：Docusaurus 程式碼
+      // 分頁＝分頁按鈕列 + <pre> 面板；按鈕被「所有 button 無條件清」藏掉後，一行
+      // `npm install --save-dev jest` 被當孤兒 label、安裝指令整組消失）。與
+      // narrow / 空殼 / sidebar 共用同一個 guard（單一資料源）。
+      if (hasCodeOrDataTableContent(el)) return false;
       if (orphanLabelHasProtectedMeta(el)) return false;
       // 兩支分支各自存在？label 分支 = 有可見文字的直接子；清空分支 = 無可見
       // 文字、且自身或子孫帶 jreadHidden 標記的直接子。
@@ -8261,9 +8501,17 @@
     return /^<svg\b[^>]*?(?:\/>|>\s*<\/svg>)$/i.test(body);
   }
 
+  // v2.2.17：佔位載體也可能是 inline <svg> 元素（github.blog 實證：in-flow 的空
+  // `<svg aria-hidden role="presentation" width="1032" height="548">` 撐比例，真圖
+  // absolute inset:0 疊在上面；styler 把真圖拉回 flow 後 svg 變成主圖上方 323px
+  // 空白）。判準與 data URI 版同一語意：裝飾宣告 + 無任何繪圖節點 + 有尺寸屬性對。
   function imgIsIntrinsicSizerSpacer(img) {
     const role = img.getAttribute('role') || '';
     if (img.getAttribute('aria-hidden') !== 'true' && !/^(?:presentation|none)$/i.test(role)) return false;
+    if (img.tagName && img.tagName.toLowerCase() === 'svg') {
+      return img.childElementCount === 0 &&
+        img.hasAttribute('width') && img.hasAttribute('height');
+    }
     if (!svgDataUriIsBlank(img.getAttribute('src'))) return false;
     if (img.hasAttribute('srcset') || img.hasAttribute('data-srcset')) return false;
     if (LAZY_SRC_ATTRS.some(a => img.hasAttribute(a))) return false;
@@ -8292,7 +8540,9 @@
 
   function hideIntrinsicSizerSpacerImgs(root, hidden) {
     if (!root || root.nodeType !== 1) return;
-    for (const img of imgsIn(root)) {
+    const cands = imgsIn(root);
+    if (root.querySelectorAll) cands.push(...root.querySelectorAll('svg'));
+    for (const img of cands) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
       if (!imgIsIntrinsicSizerSpacer(img)) continue;
       const partner = findSizerPartnerImg(img);
@@ -8939,6 +9189,10 @@
           p.tagName === 'ARTICLE' || p.tagName === 'MAIN' || p.tagName === 'BODY') break;
       // 父層文字量比當前大很多 = 父層已含主文段落，停在當前層
       if (tlen(p) > tlen(el) * 3 + 80) break;
+      // v2.2.17：父層含 h1、當前層不含＝父層是標題區，停在當前層（ms.now 翻譯輪
+      // 實證：hero 播放器往上爬，每層文字量都沒暴增，一路爬到含 h1 + 副標的
+      // content-header；原文輪靠下方 ≥100 字 <p> 保險擋下，譯文副標 58 字放行）
+      if (p.querySelector('h1') && !el.querySelector('h1')) break;
       el = p;
     }
     return el;
@@ -8958,9 +9212,11 @@
     if (wrapper.dataset && wrapper.dataset.jreadHidden === '1') return true;
     // 雙保險：wrapper 誤含實質主文段落（>= 100 chars 的 <p>，不在播放器 root
     // 內）→ ratio 漏判時不 hide，避免吞主文
+    // v2.2.17：門檻改 CJK 權重（raw 100 按拉丁校準，譯文副標 58 字一律放行——
+    // 「中文站掉內容先查 raw 長度門檻」第四例）
     for (const p of wrapper.querySelectorAll('p')) {
       if (root.contains(p)) continue;
-      if (norm(p.textContent).length >= 100) return false;
+      if (NS.cjkWeightedLen(norm(p.textContent)) >= 100) return false;
     }
     hide(wrapper, hidden);
     return true;
@@ -9052,9 +9308,16 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       const t = norm(el.textContent);
       if (t.length < INSET_LINK_CARD_MIN_TEXT || t.length > INSET_LINK_CARD_MAX_TEXT) continue;
+      // v2.2.17：連結密度以「去掉所有空白」的字數算。norm() 在連結之間補的空白
+      // 只進分母（整塊文字）、不進分子（各連結各自 norm），中文譯文把字數壓到約
+      // 1/3 後，兩三個空白就占掉一成——lawfare 翻譯輪實證：右側 rail 全是連結、
+      // 沒有任何非連結文字，ld 卻從 0.96 掉到 0.88 < 0.9 門檻、整條 rail 併入文末。
+      // 長度門檻（上一行）維持原量法。
+      const bare = (x) => (x || '').replace(/\s+/g, '').length;
+      const tBare = bare(el.textContent);
       let linkLen = 0;
-      for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
-      if (linkLen / t.length < INSET_LINK_CARD_MIN_LD) continue;
+      for (const a of el.querySelectorAll('a')) linkLen += bare(a.textContent);
+      if (!tBare || linkLen / tBare < INSET_LINK_CARD_MIN_LD) continue;
       if (!el.querySelector('h2 a, h3 a, h4 a')) continue;
       // 自連結 permalink 標題（本文標題卡）保護——translate-proof URL 訊號
       if (containsSelfLinkTitleHeading(el)) continue;
@@ -9368,6 +9631,10 @@
     for (const p of articleEl.querySelectorAll('p')) {
       if (norm(p.textContent).length < 100) continue;
       if (p.closest('li, a, figure, blockquote')) continue;
+      // v2.2.17：沒有顯示的段落不算「主文最後一段」——netflix tudum 實證：articleEl
+      // 尾端的 OneTrust cookie SDK（站方藏起來的同意說明段）搶走 lastMainP，推薦軌
+      // 全落在它之前 → 「following」條件全 false、整條規則不觸發（v1.7.15 修法回歸）
+      if (p.closest('[data-jread-hidden="1"]') || isSiteHiddenWithin(p, articleEl)) continue;
       lastMainP = p;
     }
     if (!lastMainP) return;
