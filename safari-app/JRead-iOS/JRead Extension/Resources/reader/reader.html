@@ -18,6 +18,9 @@
 
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
+  /* 關掉 iOS WebKit 文字自動放大：轉橫向時 WebKit 會把部分文字放大，轉回直向也不縮回，
+     字級前後不一、翻頁頁數與頁界跟著錯位（Jimmy 2026-10-29 回報 App 旋轉後排版壞） */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body {
     background: var(--bg); color: var(--text);
     font-family: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;

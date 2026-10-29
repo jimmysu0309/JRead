@@ -277,6 +277,12 @@
   let indicatorEl = null;
   let animFrame = null;
   let resizeRaf = 0;        // v0.8.17：onResize debounce 的 pending rAF handle
+  // 卡片尺寸監看（Jimmy 2026-10-29 回報 iPhone App 旋轉後錯開半頁）。iOS WKWebView 轉回直向
+  // 只發一次 resize，當下 innerWidth 是過渡值（402 − 橫向左右安全區域 62×2 = 278），之後
+  // 寬度回到 402 卻不再補發 resize → stride / 頁數照 278 算、scrollLeft 停在非格點。
+  // 改盯卡片本身的 border-box：實際尺寸一變就重測，不依賴 window resize 有沒有補發
+  let cardObserver = null;
+  let cardObservedSize = '';
   let wheelAccum = 0;
   let wheelLockUntil = 0;
   let touchState = null;    // { startX, startY, multi }
@@ -1322,6 +1328,26 @@
     });
   }
 
+  // 卡片尺寸變了才走 onResize（observe 當下的首次回呼、內容變動但卡片沒變的回呼都略過——
+  // 卡片是 fixed 滿版，border-box 只隨 viewport 變）。與 window resize 撞在同一輪時由
+  // onResize 的單一 pending rAF 收斂成一次重測
+  function observeCardSize() {
+    if (cardObserver || typeof ResizeObserver !== 'function' || !art) return;
+    const sizeKey = () => {
+      const r = art.getBoundingClientRect();
+      return r.width + 'x' + r.height;
+    };
+    cardObservedSize = sizeKey();
+    cardObserver = new ResizeObserver(() => {
+      if (!art) return;
+      const key = sizeKey();
+      if (key === cardObservedSize) return;
+      cardObservedSize = key;
+      onResize();
+    });
+    cardObserver.observe(art);
+  }
+
   function install(articleEl) {
     if (installed && art === articleEl) {
       // styler reapply 後重掛：頁碼開關可能變動（reconcile）、重算頁數回原位
@@ -1367,6 +1393,7 @@
     window.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.addEventListener('resize', onResize);
     window.addEventListener('scroll', onScroll, { passive: true }); // v0.7.245：捲動停止後鎖
+    observeCardSize();
 
     installed = true;
     // v1.6.15：進場強制 lazy 圖 eager（水平溢出的後段圖才會即時載入）
@@ -1419,6 +1446,8 @@
     window.removeEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
     window.removeEventListener('resize', onResize);
     window.removeEventListener('scroll', onScroll, { passive: true });
+    if (cardObserver) { cardObserver.disconnect(); cardObserver = null; }
+    cardObservedSize = '';
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     if (resizeRaf) { cancelAnimationFrame(resizeRaf); resizeRaf = 0; }
     for (const t of remeasureTimers) clearTimeout(t);

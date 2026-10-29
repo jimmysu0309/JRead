@@ -378,11 +378,17 @@
     }, { capture: true, passive: true });
     win.addEventListener('touchcancel', () => { edge = null; }, { capture: true, passive: true });
   }
-  // 回列表：從列表點進來（referrer 是 reader.html）就 history.back()，保留列表狀態；否則直接導向
+  // 回列表：走文章頁的退出 hook（NS.onReaderExit，與 ESC / 懸浮按鈕同一個網址＝帶 ?tab=
+  // 回到來源分頁）。Jimmy 2026-10-29 回報 Later / JRead 讀完左滑都回 Inbox：舊版判斷
+  // referrer 決定 history.back()，但 jread-app:// 自訂 scheme 的 document.referrer 恆為空
+  // （模擬器實測），永遠走「直接導向 reader.html」不帶分頁。hook 還沒掛上（文章載入中）
+  // 時沿用本頁網址的 ?tab=
   function backToFeed() {
-    const feed = BASE + 'reader/reader.html';
-    if (history.length > 1 && document.referrer && document.referrer.indexOf(feed) === 0) history.back();
-    else location.href = feed;
+    const NS = window.__JRead;
+    if (NS && typeof NS.onReaderExit === 'function') { NS.onReaderExit(); return; }
+    let tab = null;
+    try { tab = new URLSearchParams(location.search).get('tab'); } catch (_) { /* */ }
+    location.href = BASE + 'reader/reader.html' + (tab ? '?tab=' + encodeURIComponent(tab) : '');
   }
   if (window === window.top && /\/reader\/article\.html$/.test(location.pathname)) {
     installEdgeBack(window, backToFeed);
@@ -451,5 +457,5 @@
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
 
-  window.__jreadApp = { ready, onForeground, _remoteChange: applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, installImmersive };
+  window.__jreadApp = { ready, onForeground, _remoteChange: applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive };
 })();

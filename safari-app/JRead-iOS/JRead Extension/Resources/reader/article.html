@@ -18,6 +18,9 @@
   :root[data-theme="sepia"] { --bg:#cdb891; --text:#1a1a1a; --muted:#6f6149; --link:#2c5282; }
   :root[data-theme="gray"]  { --bg:#d8d8d8; --text:#1a1a1a; --muted:#6b6b6b; --link:#2c5282; }
   html, body { margin: 0; padding: 0; background: var(--bg); }
+  /* 關掉 iOS WebKit 文字自動放大：轉橫向時 WebKit 會把部分文字放大，轉回直向也不縮回，
+     字級前後不一、翻頁頁數與頁界跟著錯位（Jimmy 2026-10-29 回報 App 旋轉後排版壞） */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   #jr-status {
     color: var(--muted); font: 15px/1.7 system-ui, -apple-system, "PingFang TC", sans-serif;
     text-align: center; padding: 80px 20px;
