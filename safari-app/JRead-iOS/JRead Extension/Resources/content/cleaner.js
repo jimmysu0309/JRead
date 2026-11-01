@@ -326,7 +326,12 @@
   //     heading（LINE / IG 是 inline <a>，但載體不是 a/button，link 規則掃
   //     不到）。CTA 句式與 link 層同款、主文副標不會這樣寫，max_len 40 +
   //     walk-up 主文保護仍兜底
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
+  // v2.2.19 新增（stratechery 翻譯輪實證，Jimmy 2026-11-01 裁定文末清單是雜訊）：
+  //   文章(和|與|及|以及|&)(最新)?(更新|動態) — 上面 articles and updates 的譯文變體。
+  //     「Stratechery Articles and Updates」翻成「策略文章和更新」後英文 pattern 失效，
+  //     原文輪清、翻譯輪留。不錨定開頭（站名在前、譯法不定），核心詞組「文章和更新」
+  //     本身就是站方自我推廣清單的標題句式，主文副標很少這樣寫；walk-up 主文保護兜底
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|文章\s*(?:和|與|及|以及|&)\s*(?:最新)?(?:更新|動態)|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
