@@ -275,7 +275,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦文章|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -2877,6 +2877,10 @@
     const text = norm(visibleRenderedText(sib));
     if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
         (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE))) return true;
+    // v2.2.20：翻譯把 <time> 攤平成純文字（dev.to「Posted on Jan 6」→「發表於 1 月 6 日」），
+    // 上面的 time tag 保護失效，且譯文日期沒有年份、BYLINE_TEXT_RE 不認
+    if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
+        /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日/.test(text)) return true;
     // v1.5.6 byline 作者 chip 保護：含「作者個人頁連結」的短分支＝置於標題上方的
     // 作者署名（techcrunch 把 authors-list 放在 h1 之前，裸作者名「Anthony Ha」
     // 無 by 前綴/日期 → BYLINE_TEXT_RE 漏抓被當 pre-title 雜訊砍）。與條件 A /
@@ -3760,13 +3764,18 @@
   // 本函式僅在 clean() runtime 呼叫，屆時已初始化。
   // skipHidden（2026-10-07 review A-05 / A-06）：只算未被我們 hide 的連結——「提示句 +
   // 已清掉的追蹤 chip 列」裡的作者追蹤 chip 是 hidden 的，不構成「這塊是 byline」證據
+  function isAuthorProfileAnchor(a) {
+    if (!a || a.tagName !== 'A' || !a.hasAttribute('href')) return false;
+    let pn = '';
+    try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
+    return !!pn && AUTHOR_PAGE_PATH_RE.test(pn);
+  }
+
   function clusterContainsAuthorProfileLink(el, skipHidden) {
     if (!el || !el.querySelectorAll) return false;
     for (const a of el.querySelectorAll('a[href]')) {
       if (skipHidden && a.closest && a.closest('[data-jread-hidden="1"]')) continue;
-      let pn = '';
-      try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
-      if (pn && AUTHOR_PAGE_PATH_RE.test(pn)) return true;
+      if (isAuthorProfileAnchor(a)) return true;
     }
     return false;
   }
@@ -4377,6 +4386,123 @@
     }
   }
 
+  // ---- 標題旁響應式藏起來的 byline（v2.2.20）-------------------------------
+  // aeon：手機版 `<p class="md:hidden">by X<button>+ BIO</button></p>` 是 h1 的兄弟，
+  // 桌機版作者住在 aside 作者欄（連同站方推薦被 narrow 清掉）→ 卡片沒有作者。把那行
+  // 的純文字合成一行 title-meta 放在原位（styler 的 byline 偵測會接手呈現，與
+  // promoteOutsideTitleCarrierInto 的日期同一招；還原走 __titleClone path）。
+  const SIBLING_BYLINE_RE = /^(?:by\b|作者|撰文|文[／/|｜]|由\s*\S)/i;
+  const SIBLING_BYLINE_MAX_WEIGHT = 80;
+  function surfaceResponsiveHiddenByline(articleEl, hidden) {
+    const h1 = articleEl.querySelector('h1');
+    if (!h1 || !h1.parentElement) return;
+    for (const p of h1.parentElement.children) {
+      if (p.tagName !== 'P' || p.querySelector('[data-jread-title-meta]')) continue;
+      if (window.getComputedStyle(p).display !== 'none') continue;
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      const clone = p.cloneNode(true);
+      for (const b of clone.querySelectorAll('button, [role="button"]')) b.remove();
+      const text = norm(clone.textContent);
+      if (!SIBLING_BYLINE_RE.test(text) || NS.cjkWeightedLen(text) > SIBLING_BYLINE_MAX_WEIGHT) continue;
+      const meta = document.createElement('div');
+      meta.setAttribute('data-jread-title-meta', '1');
+      meta.textContent = text;
+      p.parentNode.insertBefore(meta, p.nextSibling);
+      hidden.push({ el: meta, __titleClone: true });
+      return;
+    }
+  }
+
+  // ---- 主文內：粗體冒號標籤 + 同站純連結清單（v2.2.20）----------------------
+  // 翻譯無關的推薦清單結構訊號。文字規則（NOISE_HEADING_TEXT_RE）只認原文措辭，
+  // 翻譯後「More like this:」變「更多這樣的：」就漏網（bbc 20fcd0）；而 cnbc 的
+  // 「Don't miss:」即使原文命中也只藏到標籤本身、ul 留成孤兒清單。結構是 CMS 編輯
+  // 手插推薦的固定形狀：
+  //   <p><b>標籤：</b></p> + <ul><li><a>標題</a></li>…</ul>（cnbc）
+  //   <p><b>標籤：</b></p> + <p>• <a>標題</a></p> × N（bbc）
+  // 正文「Sources:」類清單多半連外站、連結文字短或項目多；h2–h6 標的段落是作者
+  // 明示的 section（文件站 See also），都不在此列。五道 gate：標籤全粗體且冒號結尾 /
+  // 非 semantic heading / 2–8 條連結 / 清單除連結外沒有文字 / 每條連結同站、非本頁、
+  // 文字像標題（CJK 權重 ≥ LABELED_LIST_MIN_LINK_WEIGHT）。
+  const LABELED_LIST_MIN_LINK_WEIGHT = 16;
+  const LABELED_LIST_MAX_LABEL_WEIGHT = 40;
+  const LABELED_LIST_MAX_ITEMS = 8;
+  function isBoldColonLabel(el) {
+    if (!el || (el.tagName !== 'P' && el.tagName !== 'DIV')) return false;
+    if (el.children.length !== 1) return false;
+    const text = norm(el.textContent);
+    if (!/[:：]$/.test(text) || NS.cjkWeightedLen(text) > LABELED_LIST_MAX_LABEL_WEIGHT) return false;
+    let inner = el;
+    while (inner.children.length === 1 && !/^(?:B|STRONG)$/.test(inner.tagName)) {
+      inner = inner.children[0];
+    }
+    return /^(?:B|STRONG)$/.test(inner.tagName) && norm(inner.textContent) === text;
+  }
+  // 主網域的品牌段：news.bbc.co.uk / www.bbc.com 都是 bbc（bbc 72242f 頁在 .com、推薦
+  // 連結指向 .co.uk，同媒體跨國別網域）
+  function siteBrandLabel(host) {
+    const parts = host.toLowerCase().split('.');
+    parts.pop();
+    if (parts.length > 1 && /^(?:co|com|net|org|ac|gov|edu)$/.test(parts[parts.length - 1])) parts.pop();
+    return parts[parts.length - 1] || host;
+  }
+  function isSameSiteArticleLink(a) {
+    let u;
+    try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { return false; }
+    if (!/^https?:$/.test(u.protocol)) return false;
+    if (siteBrandLabel(u.hostname) !== siteBrandLabel(location.hostname)) return false;
+    return u.pathname !== location.pathname;
+  }
+  // 回傳區塊內的連結；區塊有連結以外的文字（項目符號不算）→ null
+  function linksIfLinkOnly(block) {
+    const links = Array.from(block.querySelectorAll('a'));
+    if (!links.length) return null;
+    let rest = norm(block.textContent);
+    for (const a of links) rest = rest.replace(norm(a.textContent), '');
+    return rest.replace(/[\s•·▪‣*\-–—:：]/g, '') ? null : links;
+  }
+  function nextBlockAcrossWrappers(el, articleEl) {
+    let c = el;
+    for (let up = 0; up < 6; up++) {
+      let n = c.nextElementSibling;
+      while (n && !norm(n.textContent)) n = n.nextElementSibling; // 空廣告殼不算斷點
+      if (n) {
+        for (let down = 0; n && n.tagName !== 'P' && down < 6; down++) n = n.firstElementChild;
+        return n;
+      }
+      c = c.parentElement;
+      if (!c || c === articleEl) return null;
+    }
+    return null;
+  }
+  function hideInsideArticleLabeledLinkLists(articleEl, hidden) {
+    for (const label of articleEl.querySelectorAll('p, div')) {
+      if (!isBoldColonLabel(label) || isInPreserved(label)) continue;
+      // 清單形狀：ul/ol 一張，或連續 <p>（bbc 把 N 條連結用 <br> 排在同一個 <p>）
+      const blocks = [];
+      const first = label.nextElementSibling;
+      if (first && (first.tagName === 'UL' || first.tagName === 'OL')) blocks.push(first);
+      else {
+        // 連續 <p>；走到父層尾端時可跨 wrapper（bbc 每條連結各佔一個 LayoutBlock，
+        // 只有第一條與標籤同層）
+        let s = first;
+        while (s && s.tagName === 'P' && linksIfLinkOnly(s)) {
+          blocks.push(s);
+          s = nextBlockAcrossWrappers(s, articleEl);
+        }
+      }
+      if (!blocks.length) continue;
+      const perBlock = blocks.map(linksIfLinkOnly);
+      if (perBlock.some(l => !l)) continue;
+      const links = perBlock.flat();
+      if (links.length < 2 || links.length > LABELED_LIST_MAX_ITEMS) continue;
+      if (!links.every(a => NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT &&
+          isSameSiteArticleLink(a))) continue;
+      hide(label, hidden);
+      for (const b of blocks) hide(b, hidden);
+    }
+  }
+
   // ---- 主文內：hashtag link cluster（文末 #tag 列表）---------------------
   // 結構特徵（非站點特判）：article 內任一 P / DIV 的「子 link」中，**多數
   // 文字以 # 開頭**且**自身 direct text 幾乎全是這些 hashtag 連結**——這是
@@ -4858,6 +4984,14 @@
     return true;
   }
 
+  // v2.2.20：≥3 條連結，且全部同站、非本頁、文字像標題（門檻同 labeled list）
+  const HEADLINE_CLUSTER_MIN_LINKS = 3;
+  function isHeadlineLinkCluster(el) {
+    const links = Array.from(el.querySelectorAll('a[href]')).filter(a => norm(a.textContent));
+    return links.length >= HEADLINE_CLUSTER_MIN_LINKS && links.every(a =>
+      NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT && isSameSiteArticleLink(a));
+  }
+
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
@@ -4901,7 +5035,18 @@
       // 找主欄：文字量最大者
       let main = stats[0];
       for (const s of stats) if (s.textLen > main.textLen) main = s;
-      if (main.textLen < SIDEBAR_COLUMN_MIN_MAIN_TEXT) continue;
+      // v2.2.20：主文被切成多個短區塊（bbc 72242f 每段一個 Container）翻譯後，最長
+      // 單塊只剩 391 字，「主欄＝最長子區塊」的假設失效：最小主欄門檻與條件 C 的 3 倍
+      // 比例都過不了，文末推薦區只在翻譯輪漏網。條件 C 另開一條路：比「低連結密度兄弟
+      // 的文字總量（CJK 權重）」，但必須是同站標題連結 cluster（isHeadlineLinkCluster）
+      // ——只看總量會誤殺 MDN See also、wiki 外部連結（108 站回歸實證）。條件 A / B
+      // 依賴單一主欄語意，維持舊判定（splitMainOnly）。
+      let bodyWeight = 0;
+      for (const s of stats) {
+        if (s.ld <= SIDEBAR_COLUMN_MIN_LINK_DENSITY) bodyWeight += NS.cjkWeightedLen(norm(s.el.textContent));
+      }
+      const splitMainOnly = main.textLen < SIDEBAR_COLUMN_MIN_MAIN_TEXT;
+      if (splitMainOnly && bodyWeight < SIDEBAR_COLUMN_MIN_MAIN_TEXT) continue;
 
       for (const s of stats) {
         if (s === main) continue;
@@ -4959,7 +5104,7 @@
         const sibLinksInProse = sidebarLinksAllInProseParagraphs(s.el);
         // 條件 A：textLen < main × 10% AND linkDensity > 0.5
         // （Substack Dwarkesh 高 link-density 卡片命中路徑）
-        if (!sibIsProse && !sibIsParagraphTag && !sibLinksInProse &&
+        if (!splitMainOnly && !sibIsProse && !sibIsParagraphTag && !sibLinksInProse &&
             s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY) {
           // v0.7.109：byline 白名單——短篇（textLen < 200）+ 文字命中
@@ -4987,10 +5132,14 @@
         // 比條件 A 寬鬆但仍要求 sibling 是 link-heavy widget cluster + 有
         // 一定篇幅（avoid 單行短 nav 誤判），與條件 A 的「極小極密」場景
         // 互補不重疊。
+        const sWeight = NS.cjkWeightedLen(norm(s.el.textContent));
         if (!sibIsProse &&
-            main.textLen >= s.textLen * SIDEBAR_COLUMN_MAIN_SIBLING_RATIO &&
+            ((!splitMainOnly && main.textLen >= s.textLen * SIDEBAR_COLUMN_MAIN_SIBLING_RATIO) ||
+             (bodyWeight >= sWeight * SIDEBAR_COLUMN_MAIN_SIBLING_RATIO && isHeadlineLinkCluster(s.el))) &&
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY &&
-            s.textLen >= SIDEBAR_COLUMN_MIN_SIBLING_TEXT) {
+            // v2.2.20：門檻改 CJK 權重（bbc 72242f 翻譯輪：文末 4 條推薦連結區原文
+            // 352 字過門檻、譯文 181 字不過＝只在翻譯輪漏網，raw 長度門檻家族）
+            sWeight >= SIDEBAR_COLUMN_MIN_SIBLING_TEXT) {
           hide(s.el, hidden);
           continue;
         }
@@ -5004,7 +5153,7 @@
         // 相對比值只會把這類邊緣場景當 false negative 放過。
         // Wikipedia 類 infobox 多用 `<table class="infobox">` 非 <aside>；
         // NYT pull-quote 用 <aside> 但 rectH < 300——通則安全。
-        if (s.el.tagName === 'ASIDE') {
+        if (!splitMainOnly && s.el.tagName === 'ASIDE') {
           const r = s.el.getBoundingClientRect &&
             s.el.getBoundingClientRect();
           if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT) {
@@ -5693,6 +5842,14 @@
       {
         const headText = norm(el.textContent || '').slice(0, 60);
         if (headText && BYLINE_TEXT_RE.test(headText)) continue;
+        // v2.2.20：Shinkansen 把作者 chip 攤平成純文字後 role=button 消失（theverge
+        // fe267f 雙作者實測），剩 byline 容器內的作者 hover-card 這個結構訊號
+        const bylineBox = el.querySelector && el.querySelector('[class*="byline" i]');
+        if (bylineBox && Array.from(bylineBox.querySelectorAll('aside')).some(a => clusterContainsAuthorProfileLink(a))) continue;
+        // v2.2.20：翻譯後「作者：X」開頭文字接不住（theverge fe267f）——區塊內有
+        // 作者名 chip 就是 byline（翻譯無關，判定見 isBylineNameChip）
+        if (el.querySelectorAll &&
+            Array.from(el.querySelectorAll('[role="button"]')).some(isBylineNameChip)) continue;
       }
       hide(el, hidden);
       // 清直接父的 min-height/height 殘留（避免父預留 absolute child 空間
@@ -7398,6 +7555,12 @@
       if (el.closest && el.closest('h1, h2, h3, h4, h5, h6')) return false;
       // 需要「label 分支」與「被清空分支」兩支才成立
       if (el.children.length < 2) return false;
+      // v2.2.20：作者連結不是孤兒標籤（404media：`<a href="/author/x"><img 頭像>
+      // <span>名字</span></a>`，頭像被 byline 規則藏掉後「文字 + 空分支」形狀命中，
+      // 作者名連坐消失）
+      if (isAuthorProfileAnchor(el)) return false;
+      // 同一個 chip 的外層（hover-card 被藏掉後也是「文字 + 空分支」）
+      if (Array.from(el.querySelectorAll('[role="button"]')).some(isBylineNameChip)) return false;
       const rect = el.getBoundingClientRect();
       if (rect.height <= 0 || rect.width <= 0) return false;
       const text = visibleRenderedText(el).trim().replace(/\s+/g, ' ');
@@ -8140,6 +8303,9 @@
         if (!text || text.length > CATEGORY_LABEL_MAX_LEN) continue;
         if (el.dataset && el.dataset.jreadHidden === '1') continue;
         if (isInPreserved(el)) continue;
+        // v2.2.20：作者頁連結不是分類 chip（restofworld 翻譯輪：「由」不在 prefix
+        // 清單，prefix 比對落到作者 tooltip bio 裡的「編輯」→ 作者連結被當排在前面）
+        if (isAuthorProfileAnchor(el)) continue;
         hide(el, hidden);
       }
     }
@@ -8188,6 +8354,12 @@
     if (wrapperIsArticleHeaderBlock(el)) return true;
     if (shouldHideByStrongKeyword(el)) return false;
     if (keywordWrapperIsByline(el)) return true;
+    // v2.2.20：作者名 wrapper（sspai `el-popover__reference` 命中 popover 被當彈窗清）。
+    // 短文字 + 在作者頁連結內或含作者頁連結＝文章頭署名；主文開始之後的不算
+    //（文末作者卡有專屬規則）
+    if (norm(el.textContent).length <= BYLINE_MAX_TEXT_LEN &&
+        (isAuthorProfileAnchor(el.closest('a[href]')) || clusterContainsAuthorProfileLink(el)) &&
+        !(articleEl && mainContentPrecedesWrapper(articleEl, el))) return true;
     // v0.8.119 autosport 修法：只被「非 strong keyword」命中、但內含 standalone
     // content image（hero / 內文大圖、非連結縮圖）的 wrapper 一律保留。
     // 場景：autosport.com（Motorsport CMS）主圖容器 class 為
@@ -8344,6 +8516,13 @@
     if (NOISE_LINK_TEXT_RE.test(t)) return false;
     let cur = btn.parentElement;
     for (let hops = 0; cur && hops < 6; hops++) {
+      // v2.2.20：翻譯無關的結構訊號。「By X」譯成「作者：X」「由 X」，下方 BYLINE_TEXT_RE
+      // 就接不住（theverge 兩站翻譯輪作者消失）。chip 自帶作者 hover-card（aside 內有
+      // 作者頁連結）且位在 byline 容器內＝作者名，Link / Share 類 chip 沒有這個 aside；
+      // 文末「追蹤作者」chip 也有 aside，但不在 byline 容器內。
+      if (hops <= 2 && cur.querySelector('aside') &&
+          clusterContainsAuthorProfileLink(cur.querySelector('aside')) &&
+          cur.closest('[class*="byline" i]')) return true;
       const ct = textSansAsides(cur);
       if (ct.length > 200) return false;
       if (BYLINE_TEXT_RE.test(ct.slice(0, 60))) {
@@ -8861,6 +9040,15 @@
   const FONT_LONG_MIN_WEIGHT = 200; // CJK 權重（原 raw 200 的同位門檻）
   const FONT_LONG_MAX_LD = 0.5;
   const FONT_SHORT_MAX_LD = 0.1;
+  // v2.2.20（paulgraham page rounds）：註腳編號的兩種 font 形狀不是 CTA——
+  //   內文 `<font>[<a href="#f1n"><font>1</font></a>]</font>`（頁內錨點 + 1–3 字編號）
+  //   Notes `[<a name="f1n"><font>1</font></a>]`（無 href 的錨點目標，根本不可點）
+  // 舊判準把這兩種都算成「可點」→ ld 高 → 編號被藏，內文 [1] 消失、Notes 剩「[]」。
+  // 廣告不會指向本頁、也不會只有 1–3 字，兩條特徵都是結構訊號。
+  function isFontNonCtaAnchor(a) {
+    if (!a || !a.hasAttribute('href')) return true;
+    return /^#./.test(a.getAttribute('href') || '') && norm(a.textContent).length <= 3;
+  }
   function hideInsideArticleFontTags(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll('font')) {
       if (isInPreserved(el)) continue;
@@ -8871,7 +9059,9 @@
       // ＝整段文字都可點，連結密度就是 1。只數內部 <a> 會把這種形狀算成 ld 0
       // （font 內確實沒有 <a>）→ 當成內容載體保留（v1.8.6 第一版實測殘留）。
       // ld 的語意是「這塊有多少比例是可點」，祖先連結一樣可點。
-      const inLink = !!(el.closest && el.closest('a'));
+      const outerA = el.closest ? el.closest('a') : null;
+      if (outerA && len && isFontNonCtaAnchor(outerA)) continue;
+      const inLink = !!outerA;
       if (!len) {
         // v1.8.7b：**無文字但承載內容媒體**的 font 是圖片載體，不是 PR 插播
         // ——老式版型常寫成 `<font>　<img src="..."></font>`（文字只有一個
@@ -8883,7 +9073,9 @@
       } else {
         let linkLen = inLink ? len : 0;
         if (!inLink) {
-          for (const a of el.querySelectorAll('a')) linkLen += norm(a.textContent).length;
+          for (const a of el.querySelectorAll('a')) {
+            if (!isFontNonCtaAnchor(a)) linkLen += norm(a.textContent).length;
+          }
         }
         const maxLd = NS.cjkWeightedLen(text) >= FONT_LONG_MIN_WEIGHT
           ? FONT_LONG_MAX_LD : FONT_SHORT_MAX_LD;
@@ -9829,7 +10021,7 @@
   const BIO_CARD_MIN_TEXT = 20;
   const BIO_CARD_MAX_TEXT = 400;
   const BIO_CARD_LONG_P = 500;
-  const AUTHOR_PAGE_PATH_RE = /(^|\/)(authors?|people|staff|contributors?|profiles?|writers?|team)(\/|$)|^\/?@[\w.-]+\/?$/i;
+  const AUTHOR_PAGE_PATH_RE = /(^|\/)(authors?|people|staff|contributors?|profiles?|writers?|team|users?|u)(\/|$)|^\/?@[\w.-]+\/?$/i;
   const AVATAR_SRC_RE = /avatar|head-?shot|author[\W_]*profile|profile[\W_]*(?:pic|photo|image)/i;
   // v1.5：文章頭部 byline / meta 訊號——「發表日期」或「閱讀時間估計（N min read）」。
   // 這兩者是文章開頭 byline 列的標誌，底部「作者 bio 卡」（avatar +「Written by X」
@@ -11488,6 +11680,8 @@
       safeRun(hideInsideArticleSignupCtaCards, articleEl, hidden);
       safeRun(hideInsideArticleBannerLinks, articleEl, hidden);
       safeRun(hideInsideArticleFontTags, articleEl, hidden);
+      safeRun(hideInsideArticleLabeledLinkLists, articleEl, hidden);
+      safeRun(surfaceResponsiveHiddenByline, articleEl, hidden);
       safeRun(hideInsideArticleCommentPanels, articleEl, hidden);
       safeRun(hideInsideArticleAllButtons, articleEl, hidden);
       safeRun(hideInsideArticleJsLinks, articleEl, hidden);
