@@ -15,6 +15,8 @@
 //   node tools/page-rounds-harness.js --url <非中文站>                # 自動跑兩輪（原文 + 翻譯後）
 //   node tools/page-rounds-harness.js --url <站> --no-auto-translate  # 只跑原文輪
 //   node tools/page-rounds-harness.js --url <站> --translate-first    # 只跑翻譯輪
+//   node tools/page-rounds-harness.js --url <站> --html fetch          # 擋 headless 的站：Node 端抓 HTML 回放
+//   node tools/page-rounds-harness.js --url <站> --html <存好的.html>   # Node 端也被擋：回放 Jimmy 存的快照
 //
 // 非中文站自動雙輪（Jimmy 2026-08-07 規則）：偵測 `<html lang>` / 內文字元組成，
 // 非中文 → 原文輪跑完自動再跑一輪「先 Shinkansen 翻譯 → 再進閱讀模式」，輸出
@@ -82,6 +84,9 @@ const LOGIN = process.argv.includes('--login');
 //   --translate-first     本輪自己就是翻譯輪（載入 Shinkansen、toggle 前先翻譯）
 //   --no-auto-translate   關掉自動第二輪（只想快看原文輪時用）
 const TRANSLATE_FIRST = process.argv.includes('--translate-first');
+// --html <檔案|fetch>：擋 headless 的站改回放 HTML 快照（見 audit-lib installHtmlSnapshotReplay）
+const htmlArgIdx = process.argv.indexOf('--html');
+const HTML_SNAPSHOT = htmlArgIdx > 0 ? process.argv[htmlArgIdx + 1] : null;
 const NO_AUTO_TRANSLATE = process.argv.includes('--no-auto-translate');
 const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkansen');
 const SHINKANSEN_AVAILABLE = fs.existsSync(path.join(SHINKANSEN_EXT, 'manifest.json'));
@@ -198,6 +203,10 @@ async function setZoom(page, z) {
   page.on('pageerror', e => console.log('PAGE ERROR:', e.message.slice(0, 200)));
 
   // ---- 2. 開頁面 ----
+  if (HTML_SNAPSHOT) {
+    const n = await audits.installHtmlSnapshotReplay(page, TARGET_URL, HTML_SNAPSHOT);
+    console.log(`HTML 快照回放：${HTML_SNAPSHOT}（${n} chars）`);
+  }
   console.log('Loading:', TARGET_URL);
   try {
     await page.goto(TARGET_URL, { waitUntil: 'load', timeout: 60000 });
@@ -753,6 +762,7 @@ async function setZoom(page, z) {
     } else {
       console.log('\n===== 非中文站 → 自動跑第二輪（翻譯後）=====');
       const args = [__filename, '--url', TARGET_URL, '--translate-first'];
+      if (HTML_SNAPSHOT) args.push('--html', HTML_SNAPSHOT);
       if (PROFILE_NAME) args.push('--profile', PROFILE_NAME);
       if (KEEP) args.push('--keep');
       const r = require('child_process').spawnSync(process.execPath, args, { stdio: 'inherit' });

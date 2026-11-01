@@ -21,7 +21,7 @@ Chrome Extension 開發有三個 LLM 痛點：
 | 自動化 framework | Playwright | 官方支援 extension loading、API 穩定 |
 | 瀏覽器 | **Playwright 內建的 Chromium** | 沒擋 `--load-extension`；Google Chrome 擋 |
 | 連線模式 | `launchPersistentContext` | MV3 extension 必須 persistent context |
-| headless | Playwright 的 `headless: false` | extension 僅 headed 可用。**背景化另走 Chromium arg**：預設加 `--headless=new` + `--window-position=-2400,-2400` 把視窗推到螢幕外（零干擾）；bot challenge 站用 `--headed` 關掉 `--headless=new`（見 Tier 1 / flag 說明） |
+| headless | Playwright 的 `headless: false` | extension 僅 headed 可用。**背景化另走 Chromium arg**：預設加 `--headless=new` + `--window-position=-2400,-2400` 把視窗推到螢幕外（零干擾）；bot challenge 站改用 `--html fetch|<檔案>` 回放 HTML 快照（主文件攔截回放、子資源改桌面 UA 抓；實作在 `tools/audit-lib.js` 的 `installHtmlSnapshotReplay`），不用 `--headed` 繞 |
 | 驗證管道 | SW 端 `chrome.tabs.sendMessage` → content script | 正確處理 world 隔離 |
 
 ---

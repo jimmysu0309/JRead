@@ -19,6 +19,7 @@
 //   node tools/debug-harness.js --profile work --login --url https://site.com  # 一次性登入該站
 //   node tools/debug-harness.js --shinkansen         # toggle 後翻譯（驗 body 層殘留）
 //   node tools/debug-harness.js --translate-first    # 先翻譯→再 toggle（對應 Safari 實機順序）
+//   node tools/debug-harness.js --url <站> --html fetch|<檔案>  # 擋 headless 的站改回放 HTML 快照（audit-lib）
 // -----------------------------------------------------------------------------
 
 const path = require('path');
@@ -162,6 +163,13 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
   });
   page.on('pageerror', e => console.log('PAGE ERROR:', e.message));
 
+  {
+    const hi = process.argv.indexOf('--html');
+    if (hi > 0) {
+      const n = await audits.installHtmlSnapshotReplay(page, URL, process.argv[hi + 1]);
+      console.log(`HTML 快照回放：${process.argv[hi + 1]}（${n} chars）`);
+    }
+  }
   console.log('nav', URL);
   // timeout 60s：theverge / nytimes 類重站 30s 不夠。waitUntil load 若超時 fallback domcontentloaded 不中斷驗收。
   try {

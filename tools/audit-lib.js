@@ -1764,7 +1764,61 @@ function resolveShinkansenExtPath(srcDir, opts = {}) {
   return cacheDir;
 }
 
+// ---- HTML 快照回放（--html <檔案|fetch>，2026-11-01）---------------------------
+// 擋 headless 的站（Client Challenge / Cloudflare「Just a moment」）：主文件改由
+// Playwright 攔截、回放一份 HTML 快照；子資源（script / CSS / 圖片 / 字型 / XHR）同樣
+// 常被 headless 偵測擋（回 challenge HTML、200 但破圖 / `Unexpected token '<'`）→ 一律
+// 改用桌面 UA 經 Node 端抓（wikiHow 實測：只改圖片時站方 JS 全拿到 challenge 頁）。
+// 快照來源：
+//   - `fetch`：Node 端用桌面 UA 直接抓（wikiHow / autocar 實測可行）
+//   - 檔案路徑：Node 端也被擋時（Stack Exchange 全站連 curl 都 403），請 Jimmy 在
+//     Chrome 按 Cmd+S 存「網頁，僅限 HTML」——存的是伺服器原始碼，頁面有沒有被翻譯
+//     都沒差
+// 訊號層次：回放驗的是「這份 HTML + 站方 JS 在 Chromium 跑起來」的結果。站方 JS 若依
+// 賴 cookie / 驗證後才載入的內容（晚注入的 widget），回放頁可能比真機少——與真機
+// 對不上時仍要上 cage。
+const SNAPSHOT_DESKTOP_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+const BOT_CHALLENGE_TITLE_RE = /^(just a moment|client challenge|attention required|access denied|verifying you are human|please wait)/i;
+
+// 純函式：HTML 是不是 bot 驗證頁（看 <title>）
+function looksLikeBotChallengeHtml(html) {
+  const m = /<title[^>]*>([^<]*)<\/title>/i.exec(html || '');
+  const title = m ? m[1].trim() : '';
+  return !title || BOT_CHALLENGE_TITLE_RE.test(title);
+}
+
+async function fetchHtmlSnapshot(url) {
+  const res = await fetch(url, { headers: {
+    'user-agent': SNAPSHOT_DESKTOP_UA, 'accept': 'text/html', 'accept-language': 'en-US,en;q=0.9'
+  }, redirect: 'follow' });
+  const body = await res.text();
+  if (!res.ok || looksLikeBotChallengeHtml(body)) {
+    throw new Error(`--html fetch 被擋（HTTP ${res.status}）。請 Jimmy 在 Chrome 開該頁按 Cmd+S 存「網頁，僅限 HTML」，改用 --html <檔案路徑>`);
+  }
+  return body;
+}
+
+// source：'fetch' 或檔案路徑。回傳實際使用的 HTML 長度（log 用）
+async function installHtmlSnapshotReplay(page, url, source) {
+  const fs = require('fs');
+  const body = source === 'fetch' ? await fetchHtmlSnapshot(url) : fs.readFileSync(source, 'utf8');
+  if (looksLikeBotChallengeHtml(body)) throw new Error('--html 快照本身是 bot 驗證頁，請重存一份');
+  const target = url.split('#')[0];
+  await page.route(u => u.href.split('#')[0] === target,
+    r => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body }));
+  await page.route(() => true, async r => {
+    if (r.request().resourceType() === 'document') return r.fallback();
+    try {
+      const resp = await r.fetch({ headers: { ...r.request().headers(), 'user-agent': SNAPSHOT_DESKTOP_UA } });
+      return r.fulfill({ response: resp });
+    } catch { return r.fallback(); }
+  });
+  return body.length;
+}
+
 module.exports = {
+  looksLikeBotChallengeHtml,
+  installHtmlSnapshotReplay,
   resolveShinkansenExtPath,
   pageLooksChinese,
   runLangDetect,

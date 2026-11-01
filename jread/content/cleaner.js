@@ -957,6 +957,50 @@
     }
   }
 
+  // v2.2.18：贊助連結 widget（連結層訊號，翻譯 / 改版無關）。autocar heycar 二手車
+  // carousel 回歸：「in partnership with Autotrader」改成 client 端晚補的 logo 圖，
+  // 伺服器版標題只剩「used cars for sale」→ 上面的 heading 文字軌失效；翻譯輪另因
+  // sidebar 條件 C 的「主欄 ≥ 這欄 ×3」在譯文主欄縮水後不成立而殘留。但每個車輛
+  // 連結都帶 `utm_medium=partnership`——連結本身宣告了商業合作身分。
+  // 結構訊號（硬規則 3）：HTML 的 rel="sponsored"（付費連結的標準標記）或 UTM 標準
+  // 參數 utm_medium 為 partnership / partner / affiliate / sponsored / paid。
+  // 判定：從贊助連結沿 sponsor heading 規則同一組邊界（標題錨 / 主文長段）往上找
+  // 最外層 wrapper，且 wrapper 必須 (1) 含 ≥ SPONSORED_LINK_WIDGET_MIN 個贊助連結、
+  // (2) 連結密度 ≥ SPONSORED_LINK_WIDGET_MIN_LD（幾乎全是連結）。散文裡單一聯盟
+  // 連結（評測文「在 Amazon 購買」）不夠 3 個、或所在段落連結密度低，不命中。
+  const SPONSORED_LINK_UTM_RE = /[?&]utm_medium=(partnership|partner|affiliate|sponsored|paid)(?:[&#]|$)/i;
+  const SPONSORED_LINK_WIDGET_MIN = 3;
+  const SPONSORED_LINK_WIDGET_MIN_LD = 0.7;
+  function isSponsoredLink(a) {
+    if (/\bsponsored\b/i.test(a.getAttribute('rel') || '')) return true;
+    return SPONSORED_LINK_UTM_RE.test(a.getAttribute('href') || '');
+  }
+  function hideSponsoredLinkWidgets(articleEl, hidden, scope) {
+    for (const a of scopedQueryAll(scope, articleEl, 'a[href], a[rel]')) {
+      if (!isSponsoredLink(a)) continue;
+      if (a.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(a)) continue;
+      let cur = a, lastSafe = null;
+      while (cur.parentElement && cur.parentElement !== articleEl &&
+             articleEl.contains(cur.parentElement)) {
+        const pp = cur.parentElement;
+        if (hasArticleTitleAnchor(pp, a) || hasLongMainParagraph(pp)) break;
+        lastSafe = pp;
+        cur = pp;
+      }
+      if (!lastSafe || lastSafe.contains(articleEl)) continue;
+      let count = 0;
+      for (const x of lastSafe.querySelectorAll('a')) if (isSponsoredLink(x)) count++;
+      if (count < SPONSORED_LINK_WIDGET_MIN) continue;
+      const text = norm(lastSafe.textContent);
+      if (!text) continue;
+      let linkLen = 0;
+      for (const x of lastSafe.querySelectorAll('a')) linkLen += norm(x.textContent).length;
+      if (linkLen / text.length < SPONSORED_LINK_WIDGET_MIN_LD) continue;
+      hide(lastSafe, hidden);
+    }
+  }
+
   // Substack publication 推薦卡（文末「Recommend X to your readers」recommendation
   // footer widget）整塊清。
   // 對應 bug（Jimmy 2026-06-26 chinatalk.media 截圖「向您的讀者推薦 ChinaTalk」小
@@ -3136,6 +3180,81 @@
     return false;
   }
 
+  // v2.2.18：元素「畫面上看得到、且不在排除子樹內」的文字量（CJK 權重）。真瀏覽器
+  // 用 innerText（自動排除 display:none 子樹與 script / style）；jsdom 沒有
+  // innerText，退回逐 text node 累計，跳過 script / style / noscript / template 與
+  // computed display:none / visibility:hidden 的子樹。排除子樹（預設只有 <a>）的
+  // 文字同法扣除。供「這塊是不是主文級內容」的文字量 guard 共用（wikiHow 步驟文字
+  // 在 ol > li > div.step、沒有 <p>，各條以 <p> 為主文證據的 guard 全 miss）。
+  const PROSE_SKIP_TAGS = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/;
+  function _visibleTextOf(el) {
+    if (typeof el.innerText === 'string') {
+      // 規範：沒在渲染的元素（display:none 子樹內）innerText 直接回傳 textContent，
+      // 連 script / JSON-LD 都算進來（wikiHow 收合的影片段實測 1.3K 全是 JSON-LD）
+      if (el.getClientRects && el.getClientRects().length === 0) return '';
+      return el.innerText;
+    }
+    const win = el.ownerDocument && el.ownerDocument.defaultView;
+    let out = '';
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) { out += c.textContent + ' '; continue; }
+        if (c.nodeType !== 1 || PROSE_SKIP_TAGS.test(c.tagName)) continue;
+        if (win && win.getComputedStyle) {
+          const cs = win.getComputedStyle(c);
+          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        }
+        walk(c);
+      }
+    };
+    walk(el);
+    return out;
+  }
+  // 以連結開頭的清單項＝「標題連結 + 描述」推薦卡（與 hasProseListContent 同一判準）
+  function _isLinkLedItem(li) {
+    const first = li.querySelector('a');
+    if (!first) return false;
+    const ft = norm(first.textContent);
+    return ft.length > 0 && norm(li.textContent).indexOf(ft) === 0;
+  }
+  function nonLinkProseWeight(el, excludeSel) {
+    if (!el || el.nodeType !== 1 || PROSE_SKIP_TAGS.test(el.tagName)) return 0;
+    let total = NS.cjkWeightedLen(norm(_visibleTextOf(el)));
+    if (!total || !el.querySelectorAll) return total;
+    const sel = excludeSel || 'a';
+    const excluded = new Set();
+    for (const x of el.querySelectorAll(sel)) {
+      // 清單項只排除「推薦卡式」：以連結開頭（標題連結 + 描述），或帶連結縮圖的無序
+      // 清單項（相關新聞 = 縮圖連結 + 描述）。<ol> 有序清單的步驟（wikiHow 每步也帶
+      // 連結圖）與純文字條列（Tips）留著算
+      if (x.tagName === 'LI' && !_isLinkLedItem(x) &&
+          !((!x.parentElement || x.parentElement.tagName !== 'OL') &&
+            x.querySelector('a img, a picture'))) continue;
+      // 巢狀排除子樹只扣最外層（querySelectorAll 是文件順序，祖先先出現）
+      let nested = false;
+      for (let p = x.parentElement; p && p !== el; p = p.parentElement) {
+        if (excluded.has(p)) { nested = true; break; }
+      }
+      if (nested) continue;
+      excluded.add(x);
+      total -= NS.cjkWeightedLen(norm(_visibleTextOf(x)));
+    }
+    return Math.max(0, total);
+  }
+  // narrow 平級段落 guard 排除的子樹：連結、推薦卡式清單項（見 nonLinkProseWeight
+  // 內的 LI 判準）、導覽 / 附屬地標、前面規則已藏的區塊——這些地方的文字不是
+  // 「主文段落」的證據（推薦卡的長摘要是非連結文字，不排除會讓相關新聞清單被當
+  // 平級主文保留；與主文長段 guard「li 內的 p 不算」同一精神）
+  const NARROW_PEER_EXCLUDE_SEL = 'a, li, nav, aside, [role="navigation"], [data-jread-hidden="1"]';
+  // narrow 的文字量 guard：兄弟的非連結文字達 promote 起點的 40%（下限 200）＝
+  // 與起點同量級的平級主文段落，detector 只選中其中一段。門檻隨起點縮放——
+  // detector 選對主文時起點動輒數千，門檻跟著變大、行為不變；只有選窄時才放行。
+  // wikiHow 實測（cleaner 當下 innerText 權重）：原文輪起點 Tips ~600、步驟區上萬；
+  // 翻譯輪起點 steps_3 1054、其餘方法段 783–863、Tips 444；真 chrome（相關文章 /
+  // 參考資料 / 評分列）0–174。
+  const NARROW_PEER_MIN_PROSE = 200;
+  const NARROW_PEER_PROSE_RATIO = 0.4;
+
   function hasCodeOrDataTableContent(el) {
     if (!el || !el.querySelectorAll) return false;
     // light DOM 程式碼塊（排除被 <a> 包的——理論上極罕見、保險）
@@ -3168,6 +3287,12 @@
   function narrowPromotedSiblings(articleEl, promotedFrom, hidden, promotedTitleHead) {
     if (!articleEl || !promotedFrom) return;
     if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
+    let refProse = -1; // promote 起點的非連結文字量，第一次用到才算
+    const sibProseComparable = (sib) => {
+      if (refProse < 0) refProse = nonLinkProseWeight(promotedFrom, NARROW_PEER_EXCLUDE_SEL);
+      const w = nonLinkProseWeight(sib, NARROW_PEER_EXCLUDE_SEL);
+      return w >= NARROW_PEER_MIN_PROSE && w >= refProse * NARROW_PEER_PROSE_RATIO;
+    };
     let cur = promotedFrom;
     // 最多走 10 hops，防萬一 DOM 詭異
     for (let hops = 0; hops < 10 && cur && cur !== articleEl; hops++) {
@@ -3319,6 +3444,13 @@
         if (hasProseListContent(sib)) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
+        // v2.2.18：平級主文段落分支（wikiHow 實證）——多段式文章（方法 1–4 各自
+        // 一個容器、步驟文字在 ol > li > div.step、沒有 <p>）heuristic 只選中其中
+        // 一段（原文輪 Tips、翻譯輪 steps_3），promote 到含 h1 的外殼後 narrow 把
+        // 其餘方法段整塊藏掉——上面各條以 <p> 為主文證據的 guard 全 miss。兄弟的
+        // 可見非連結文字與起點同量級就保留（見 NARROW_PEER_* 註解）。只放行、
+        // 不新增 hide。
+        if (sibProseComparable(sib)) continue;
         hide(sib, hidden);
       }
       if (parent === articleEl) break;
@@ -9264,6 +9396,8 @@
     return el;
   }
 
+  const HERO_VIDEO_WRAPPER_MAX_PROSE = 300;
+
   function hideInsideArticleDecorativeHeroVideos(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const video of articleEl.querySelectorAll('video')) {
@@ -9279,6 +9413,11 @@
       // 雙保險：wrapper 含 heading 或 >= 3 個 <p>（疑似誤含主文 body）→ 不 hide
       if (wrapper.querySelector('h1, h2, h3')) continue;
       if (wrapper.querySelectorAll('p').length >= 3) continue;
+      // v2.2.18：段落不用 <p> 的主文（wikiHow 步驟在 li > div.step）上面那條擋不到
+      // ——每步一支無 controls 的 absolute 示範動畫，往上爬到「方法」區塊（父層才有
+      // h3）整塊 4K 字被藏。裝飾 hero 的 wrapper 只帶影片 + 短說明，非連結文字
+      // 超過 HERO_VIDEO_WRAPPER_MAX_PROSE＝誤含主文
+      if (nonLinkProseWeight(wrapper) > HERO_VIDEO_WRAPPER_MAX_PROSE) continue;
       hide(wrapper, hidden);
     }
   }
@@ -9916,20 +10055,24 @@
   // div 段落必然成串，兩段門檻對 X longform / Draft.js 類站零影響。
   // walk-up 邊界另加 hasArticleTitleAnchor（class token 標題錨），與 heading
   // walk-up（findSafeWrapperForHeading）同一組邊界。
+  // v2.2.18：三道長度門檻改 CJK 權重（wikiHow 翻譯輪實證：步驟 div 的直屬文字
+  // 英文 100+ 字、譯成中文 raw 剩 40–60 → 每層都判「不含主文」，訂閱表單 trigger
+  // 一路爬到整個方法區 mf-section-2 整塊 hide。「中文站掉內容先查 raw 長度門檻」
+  // 第五例）
   function cardHasContentParagraph(el) {
     if (!el.querySelectorAll) return false;
     for (const p of el.querySelectorAll('p')) {
       if (p.dataset && p.dataset.jreadHidden === '1') continue;
-      if (norm(p.textContent).length >= NOISE_CARD_CONTENT_P_MIN) return true;
+      if (NS.cjkWeightedLen(norm(p.textContent)) >= NOISE_CARD_CONTENT_P_MIN) return true;
     }
     if (isProseParagraphDiv(el)) return true; // wrapper 自身就是一段 WYSIWYG 段落
     let carriers = 0, acc = 0;
     for (const div of el.querySelectorAll('div')) {
       if (div.dataset && div.dataset.jreadHidden === '1') continue;
-      const direct = norm(Array.from(div.childNodes)
-        .filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+      const direct = NS.cjkWeightedLen(norm(Array.from(div.childNodes)
+        .filter(n => n.nodeType === 3).map(n => n.textContent).join('')));
       let len = 0;
-      if (direct.length >= 100) len = direct.length;
+      if (direct >= 100) len = direct;
       else if (isProseParagraphDiv(div)) len = nonAnchorTextLen(div);
       if (!len) continue;
       carriers += 1;
@@ -10163,6 +10306,7 @@
     hideInsideArticleSignupCtaCards,
     hideInsideArticleJsLinks,
     hideInsideArticleIconOnlyLinks,
+    hideSponsoredLinkWidgets,
   ];
   function runDynamicScopedRules(articleEl, node, hiddenList) {
     for (const rule of DYNAMIC_SCOPED_RULES) {
@@ -11318,6 +11462,7 @@
       safeRun(hideInsideArticleByHeadingText, articleEl, hidden);
       safeRun(hideCommunityQaWidget, articleEl, hidden);
       safeRun(hideSponsoredPartnershipWidgets, articleEl, hidden);
+      safeRun(hideSponsoredLinkWidgets, articleEl, hidden);
       safeRun(hideRecommendationWidgets, articleEl, hidden);
       safeRun(hideSubstackPlatformNoise, articleEl, hidden);
       safeRun(hideInsideArticleHeadingActionLinks, articleEl, hidden);
