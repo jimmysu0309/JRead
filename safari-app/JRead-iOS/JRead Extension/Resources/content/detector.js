@@ -1441,6 +1441,35 @@
       if (r) return r;
     }
 
+    // 路徑 0b（v2.2.18 stackoverflow 翻譯輪）：articleEl 內 ≥ 2 個 H1（拿 H1 當章節
+    // 標題的內文）＋ articleEl 外、排在它之前、畫面上可見、不被 <a> 包的 H1 恰好 1 個
+    // → 那個就是本文標題，升到 LCA。不靠文字比對（翻譯後照樣成立）。
+    // SO 實證：最高票答案用 markdown `#` 寫了 7 個 H1，全頁 9 個 H1（另一個在隱藏的
+    // RSS 對話框）→ 路徑 0 不成立；答案開頭是「目錄」H4 → 路徑 1 被 articleIsSelfTitled
+    // 擋下；原文輪靠 promoteForTitle 的 og-match 爬到 .inner-content，翻譯後比對失效 →
+    // articleEl 停在單一答案內文，hideAncestorSiblings 把標題、問題、其餘 9 個答案全藏。
+    // 開頭 heading 若是 H1 不走本路徑：ChinaTalk（開頭是自己的 post-title H1、外面是站名
+    // logo H1）與 chargerlab（開頭是「Introduction」章節 H1，交給 v1.9.5 的明確標題 class
+    // 路徑）都屬這型。SO 的開頭是「目錄」H4——比章節 H1 低階，內文顯然不是以 H1 自我標題。
+    // body/html guard 照舊。
+    const openingHead = findOpeningHeading(articleEl);
+    if (articleEl.querySelectorAll('h1').length >= 2 &&
+        !(openingHead && openingHead.tagName === 'H1')) {
+      let pick = null, multiple = false;
+      for (const h of allH1) {
+        if (articleEl.contains(h)) continue;
+        if (!(articleEl.compareDocumentPosition(h) & 2 /* PRECEDING */)) continue;
+        if (isHeadingInsideAnchor(h) || !isCandidateVisiblyPresented(h)) continue;
+        if (!normalizeTitle(h.textContent || '')) continue;
+        if (pick) { multiple = true; break; }
+        pick = h;
+      }
+      if (pick && !multiple && !isSiteLogoH1(pick)) {
+        const r = findTitleViaLca(articleEl, pick, Infinity);
+        if (r) return r;
+      }
+    }
+
     // 路徑 1：頁面 DOM-order 第一個 H1 不在 articleEl 內 → 升 LCA。
     // self-titled guard：article 開頭已是自己的標題區時，頁面 DOM-first H1 是
     // 站名 masthead logo（非 post hero），升上去會把留言/推薦括進主文。
