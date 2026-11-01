@@ -1712,20 +1712,43 @@ async function triggerShinkansenTranslate(page, opts = {}) {
   }));
   log('translate trigger: ' + JSON.stringify(res));
   log('waiting for translation to settle...');
-  // poll 翻譯元素數，連續兩次（間隔 1.5s）非零且不再增加即視為穩定；上限 20s
+  // 2026-11-01（Jimmy 核可）：主訊號改為 Shinkansen debug bridge 的 GET_STATE.translating
+  // ——舊邏輯「元素數連兩次（間隔 1.5s）不變、上限 20s」在長文會提早收手：翻譯分批送，
+  // 批次之間元素數會停住，harness 誤判翻完就進閱讀模式（note.com / el・fa・he wiki /
+  // kubernetes 截圖上浮層還顯示「翻譯中 11/1000」＝翻譯輪沒驗到）。
+  // 現在：translating === false 且已有翻譯元素才算完成，上限 opts.maxWaitMs（預設 120s）。
+  // GET_STATE 沒回應（bridge 不可用）時退回舊的元素數穩定判斷。
+  const getState = () => page.evaluate(() => new Promise((resolve) => {
+    const to = setTimeout(() => resolve(null), 2000);
+    window.addEventListener('shinkansen-debug-response', (e) => {
+      const d = e.detail || {};
+      if (!('translating' in d)) return; // 別的 action 的回應
+      clearTimeout(to);
+      resolve({ translating: !!d.translating });
+    });
+    window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail: { action: 'GET_STATE' } }));
+  })).catch(() => null);
+  const maxWait = opts.maxWaitMs || 120000;
   const start = Date.now();
-  let n = 0, prev = -1, stable = 0;
-  while (Date.now() - start < 20000) {
+  let n = 0, prev = -1, stable = 0, bridgeOk = false, idleSeen = 0;
+  while (Date.now() - start < maxWait) {
     await sleep(1500);
     n = await page.evaluate(() => document.querySelectorAll('[data-shinkansen-translated]').length);
-    if (n > 0 && n === prev) {
-      stable++;
-      if (stable >= 2) break;
-    } else {
-      stable = 0;
+    const st = await getState();
+    if (st) {
+      bridgeOk = true;
+      // 連兩次 translating=false 才收（剛觸發時旗標可能還沒立起來）
+      if (!st.translating && n > 0) { if (++idleSeen >= 2) break; } else idleSeen = 0;
+      // 一直沒開始翻（沒元素、旗標也沒立）→ 20s 放棄，交給呼叫端判「沒驗到」
+      if (!st.translating && n === 0 && Date.now() - start >= 20000) break;
+      continue;
     }
+    // fallback：舊判斷（bridge 不可用時，上限仍 20s，避免無翻譯時乾等 120s）
+    if (n > 0 && n === prev) { if (++stable >= 2) break; } else stable = 0;
     prev = n;
+    if (!bridgeOk && Date.now() - start >= 20000) break;
   }
+  if (!bridgeOk) log('（Shinkansen GET_STATE 無回應，改用元素數穩定判斷）');
   log(`Shinkansen 翻譯元素數: ${n}（${((Date.now() - start) / 1000).toFixed(1)}s）`);
   return n;
 }
