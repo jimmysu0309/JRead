@@ -584,6 +584,24 @@
     'inline-block': 'block', 'inline-flex': 'flex', 'inline-grid': 'grid', 'inline-table': 'table'
   };
   const REPLACED_TAG_RE = /^(img|video|iframe|svg|canvas|object|embed|picture)$/i;
+  // v2.2.21：第三種情境——主文容器放得進一頁但被 overflow:hidden 鎖成 monolithic
+  // （關鍵評論網 .article-body、中時 .article-body）：內容沒被裁，但本頁剩餘空間
+  // 不夠時整塊推到下一頁，前頁留大片空白。上面「矮的不動」的理由對內捲 UI 成立，
+  // 對主文容器不成立。條件三項都要過（92 站實測只命中主文容器）：
+  //   1. 只限 hidden——auto / scroll 是站方的內捲 UI（寬 <pre>、參考文獻捲動框）
+  //   2. 文字占全文至少一半——圖說、引言、作者卡這類小框占比都在 7% 以下
+  //   3. 實際沒裁到東西（scroll 尺寸 ≈ client 尺寸）——解開才不會露出站方藏掉的內容
+  // 高度下限只是省掉 getComputedStyle 掃描：矮框整塊推走留的空白本來就小。
+  const BODY_BOX_MIN_TEXT_SHARE = 0.5;
+  const BODY_BOX_MIN_PAGE_SHARE = 0.25;
+  const BODY_BOX_CLIP_TOLERANCE = 2;
+  function isUnclippedBodyBox(el, artTextLen) {
+    if (REPLACED_TAG_RE.test(el.tagName || '')) return false;
+    const textLen = String(el.innerText == null ? el.textContent : el.innerText).trim().length;
+    if (!(artTextLen > 0) || textLen / artTextLen < BODY_BOX_MIN_TEXT_SHARE) return false;
+    return el.scrollHeight - el.clientHeight <= BODY_BOX_CLIP_TOLERANCE
+      && el.scrollWidth - el.clientWidth <= BODY_BOX_CLIP_TOLERANCE;
+  }
   function releaseTallMonolithicBoxes() {
     if (!art) return;
     let pageH = 0;
@@ -595,11 +613,13 @@
     const isClipping = (v) => v === 'auto' || v === 'scroll' || v === 'hidden';
     let els;
     try { els = art.querySelectorAll('*'); } catch (e) { return; }
+    let artTextLen = -1; // 只在遇到候選時才量（innerText 會觸發 layout）
     for (const el of els) {
       let h = 0;
       try { h = el.getBoundingClientRect().height; } catch (e) { continue; }
       // monolithic 且高過一頁才會裁掉內容；可斷片元素的 fragment 聯集高 ≈ 頁高不誤中
-      if (!(h > pageH + 4)) continue;
+      const tall = h > pageH + 4;
+      if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE)) continue;
       let ox, oy, display;
       try {
         const cs = getComputedStyle(el);
@@ -611,6 +631,11 @@
           ox = t[0] || ''; oy = t[1] || t[0] || '';
         }
       } catch (e) { continue; }
+      if (!tall) {
+        if (ox !== 'hidden' || oy !== 'hidden') continue;
+        if (artTextLen < 0) artTextLen = String(art.innerText == null ? art.textContent : art.innerText).trim().length;
+        if (!isUnclippedBodyBox(el, artTextLen)) continue;
+      }
       if (isClipping(ox) || isClipping(oy)) {
         // 只記第一次的原值（站方 loader 之後改回去時，還原目標仍是最初 inline 狀態）
         if (!unclipForcedSeen.has(el)) {
@@ -624,7 +649,7 @@
         }
         try { el.style.setProperty('overflow', 'visible', 'important'); } catch (e) { /* */ }
       }
-      const blockDisplay = INLINE_ATOMIC_TO_BLOCK[display];
+      const blockDisplay = tall ? INLINE_ATOMIC_TO_BLOCK[display] : null;
       if (blockDisplay && !REPLACED_TAG_RE.test(el.tagName || '')) {
         if (!blockifyForcedSeen.has(el)) {
           blockifyForcedSeen.add(el);
