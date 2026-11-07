@@ -398,7 +398,9 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       const theme = msg.payload && msg.payload.theme;
-      if (!['light', 'dark', 'sepia', 'gray'].includes(theme)) return;
+      // v2.3.0：白名單讀 settings-defaults.js THEME_NAMES 單一資料源
+      const themeNames = self.__JReadThemeNames || ['light', 'dark', 'sepia', 'gray', 'night'];
+      if (!themeNames.includes(theme)) return;
       runIfDevelopmentInstall('JREAD_DEBUG_SET_THEME', () => {
         // v1.9.14：版面欄位寫入經 writeLayout 分流（套用中設定檔 → local 草稿）
         writeLayoutSetting({ theme });

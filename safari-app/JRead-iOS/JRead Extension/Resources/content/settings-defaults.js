@@ -91,6 +91,14 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     lineHeight: 1.5,
     // v0.7.162：段落間距（em）。1.0 對應 v0.7.102 baseline。
     paragraphSpacing: 1.0,
+    // v2.3.0：左右對齊（justify）三段（Jimmy 2026-11-07 需求）。
+    //   'off' = 內文段落一律靠左（Jimmy 裁定：關 = 全部靠左，不保留原站對齊；
+    //           iOS 中文段落「第二段起變窄」的 WebKit 行為會回來——那是 v1.6.12
+    //           改用 justify 的原因，使用者自選）
+    //   'cjk' = 只對中文為主的段落左右對齊（預設 = v1.6.12 起的既有行為）
+    //   'all' = 英文段落也左右對齊，並開自動斷字（hyphens: auto）壓字間空隙
+    // 合法值白名單見下方 TEXT_JUSTIFY_MODES；styler.js markCjkParagraphs 依此標記。
+    textJustify: 'cjk',
     autoEnableDomains: [],
     // v1.6.0：儲存服務二擇一——'readwise'（預設，維持既有行為）| 'instapaper'。
     // 決定「送出儲存」與「讀入 feed/文章」走哪個服務的憑證與 API。摘要（readwiseSummary
@@ -216,6 +224,12 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   // 順序即 options UI 的排列順序（漸層 → 細線 → 描邊 → 描邊＋軌道 → 加高）。
   // v2.2.13：appIcon 合法值（白名單單一資料源；Swift 端 AppIconSync 的對照表要同步）
   const APP_ICONS = ['default', 'white'];
+  // v2.3.0：主題合法值（白名單單一資料源）。styler.js THEMES 的 key、SW / main.js
+  // debug bridge set-theme 驗證、popup 主題鈕共用；順序即 popup 主題列排列順序。
+  // 'night' = 夜藍（深藍黑底＋淺藍灰字，Jimmy 2026-11-07 截圖取樣）。
+  const THEME_NAMES = ['light', 'dark', 'sepia', 'gray', 'night'];
+  // v2.3.0：textJustify 合法值（見 DEFAULT_SETTINGS.textJustify 註解）
+  const TEXT_JUSTIFY_MODES = ['off', 'cjk', 'all'];
   const PROGRESS_BAR_STYLES = ['gradient', 'hairline', 'outline', 'track', 'thick'];
 
   // 舊 stack 字面值（onInstalled 精準替換遷移用）。fontFamily 以整串字面值存進
@@ -327,7 +341,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   // storage.sync.set——套用中設定檔時 flat 欄位被快照蓋住，直寫等於沒反應。
   const PROFILE_KEYS = [
     'theme', 'fontSize', 'titleFontSize', 'lineHeight', 'paragraphSpacing',
-    'contentWidth', 'fontWeight', 'fontFamily', 'latinSerif', 'latinSans', 'pagedMode'
+    'contentWidth', 'fontWeight', 'fontFamily', 'latinSerif', 'latinSans', 'pagedMode',
+    'textJustify'
   ];
   const MAX_PROFILES = 5;
   const MAX_PROFILE_NAME_LEN = 24;
@@ -509,6 +524,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadFontStacks = FONT_STACKS;
   global.__JReadProgressBarStyles = PROGRESS_BAR_STYLES;
   global.__JReadAppIcons = APP_ICONS;
+  global.__JReadThemeNames = THEME_NAMES;
+  global.__JReadTextJustifyModes = TEXT_JUSTIFY_MODES;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
   global.__JReadLatinFonts = LATIN_FONTS;
   global.__JReadComposeFontStack = composeFontStack;

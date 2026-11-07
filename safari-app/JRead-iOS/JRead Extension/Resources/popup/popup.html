@@ -39,6 +39,8 @@
       --jr-read-sepia-fg:   #000000;
       --jr-read-gray-bg:    #ededed;
       --jr-read-gray-fg:    #000000;
+      --jr-read-night-bg:   #0f1821;
+      --jr-read-night-fg:   #cdd5df;
 
       /* Type stacks */
       --jr-font-ui:      system-ui, -apple-system, "Noto Sans TC", sans-serif;
@@ -289,8 +291,9 @@
          後再收斂 8→6 + min-height 28→26。v0.8.166：再新增「段落間距」列 + 第三顆按鈕
          （送 Readwise / 編輯模式同時顯示）後全展開達 629px、底部「進階設定」footer 被
          Chrome popup ~600px 上限切掉（Jimmy 2026-06-23 截圖）；列間距 6→4 + min-height
-         26→24 + 下方各 section margin / 按鈕 padding 收斂，壓回 ~575px < 上限、消捲軸。 */
-      margin-bottom: 4px;
+         26→24 + 下方各 section margin / 按鈕 padding 收斂，壓回 ~575px < 上限、消捲軸。
+         v2.3.0：新增「左右對齊」列後全展開 611px，列間距 4→2 壓回上限內。 */
+      margin-bottom: 2px;
       min-height: 24px;
     }
     .setting-row:last-child { margin-bottom: 0; }
@@ -316,11 +319,11 @@
       width: 110px;
       justify-content: space-between;
     }
-    /* 主題組 4 顆（亮/暗/米/灰）：4×32=128 > 110、space-between 會被擠到零間隔。
-       改 gap + flex 等分——4 顆等寬 (110-3×6)/4≈23px、彼此 6px 間隔，左右邊緣
-       仍對齊 110px stepper。只 scope 主題組，不影響字重組。 */
+    /* 主題組（亮/暗/米/灰/夜）：5×32=160 > 110、space-between 會被擠到零間隔。
+       改 gap + flex 等分——v2.3.0 加「夜」成 5 顆後 gap 6→4，等寬 (110-4×4)/5≈19px，
+       左右邊緣仍對齊 110px stepper。只 scope 主題組，不影響字重組。 */
     .theme-group[aria-label="主題"] {
-      gap: 6px;
+      gap: 4px;
     }
     .theme-group[aria-label="主題"] .theme-btn {
       flex: 1 1 0;
@@ -346,6 +349,7 @@
     .theme-btn[data-theme="dark"]  { background: var(--jr-read-dark-bg);  color: var(--jr-read-dark-fg);  border-color: var(--jr-read-dark-bg); }
     .theme-btn[data-theme="sepia"] { background: var(--jr-read-sepia-bg); color: var(--jr-read-sepia-fg); border-color: #e4d9bf; }
     .theme-btn[data-theme="gray"]  { background: var(--jr-read-gray-bg);  color: var(--jr-read-gray-fg);  border-color: #d8d8d8; }
+    .theme-btn[data-theme="night"] { background: var(--jr-read-night-bg); color: var(--jr-read-night-fg); border-color: var(--jr-read-night-bg); }
 
     .theme-btn:hover { transform: translateY(-0.5px); }
     .theme-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--jr-primary-50); }
@@ -649,6 +653,7 @@
         <button class="theme-btn" data-theme="dark"  title="暗色">暗</button>
         <button class="theme-btn" data-theme="sepia" title="米色">米</button>
         <button class="theme-btn" data-theme="gray"  title="灰色">灰</button>
+        <button class="theme-btn" data-theme="night" title="夜藍">夜</button>
       </div>
     </div>
 
@@ -719,6 +724,17 @@
         <button class="theme-btn" data-weight="300" title="細（font-weight 300）">細</button>
         <button class="theme-btn" data-weight="400" title="中（font-weight 400，預設）">中</button>
         <button class="theme-btn" data-weight="600" title="粗（font-weight 600 Semibold）">粗</button>
+      </div>
+    </div>
+
+    <!-- v2.3.0：左右對齊三段（textJustify：off / cjk / all），沿用字重組的
+         110px segmented 版型（3×32 + space-between） -->
+    <div class="setting-row">
+      <label>左右對齊</label>
+      <div class="theme-group" role="group" aria-label="左右對齊">
+        <button class="theme-btn" data-justify="off" title="全部靠左">關</button>
+        <button class="theme-btn" data-justify="cjk" title="只對中文段落左右對齊（預設）">中文</button>
+        <button class="theme-btn" data-justify="all" title="英文段落也左右對齊，並自動斷字">全部</button>
       </div>
     </div>
 
