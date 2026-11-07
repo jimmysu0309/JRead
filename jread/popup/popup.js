@@ -28,7 +28,10 @@ const fontFamilySelect = document.getElementById('font-family-select');
 const latinFontSelect = document.getElementById('latin-font-select');
 const latinFontRow = document.getElementById('latin-font-row');
 const fontWeightBtns = document.querySelectorAll('[data-weight]');
-const themeBtns = document.querySelectorAll('.theme-btn');
+// v2.3.0：左右對齊三段（off / cjk / all）
+const textJustifyBtns = document.querySelectorAll('[data-justify]');
+// v2.3.0：限定 [data-theme]——字重 / 左右對齊組也共用 .theme-btn 外觀，不能被當主題鈕綁 click
+const themeBtns = document.querySelectorAll('.theme-btn[data-theme]');
 const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
 const autoDomainHostEl = document.getElementById('auto-domain-host');
@@ -256,6 +259,14 @@ function render(settings) {
   // 字重 segmented（細 300 / 中 400 / 粗 600）
   for (const btn of fontWeightBtns) {
     btn.classList.toggle('active', String(settings.fontWeight) === btn.dataset.weight);
+  }
+  // 左右對齊 segmented（未知值 / 舊資料無此 key → 顯示預設「中文」，不寫回）
+  {
+    const modes = window.__JReadTextJustifyModes || ['off', 'cjk', 'all'];
+    const tj = modes.indexOf(settings.textJustify) >= 0 ? settings.textJustify : 'cjk';
+    for (const btn of textJustifyBtns) {
+      btn.classList.toggle('active', btn.dataset.justify === tj);
+    }
   }
   // 字型 select：value 對 4 個 option match 不到（例如外部直接 storage.set
   // 自訂 stack）時 fall back 顯示「系統預設」但不寫回 storage，避免默默改動
@@ -611,6 +622,13 @@ if (latinFontSelect) {
 for (const btn of fontWeightBtns) {
   btn.addEventListener('click', () => {
     save({ fontWeight: Number(btn.dataset.weight) });
+  });
+}
+
+// 左右對齊 segmented（關 off / 中文 cjk / 全部 all）
+for (const btn of textJustifyBtns) {
+  btn.addEventListener('click', () => {
+    save({ textJustify: btn.dataset.justify });
   });
 }
 

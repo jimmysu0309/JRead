@@ -477,6 +477,9 @@
     titleFontSize: 32,
     // v1.7.37：頂端進度條皮膚。'hairline' = 歷代行為（3px 純色實心條）。
     // v1.7.53：預設改 'gradient'（見 settings-defaults.js 註解）。
+    // v2.3.0：左右對齊三段 'off' | 'cjk'（預設，= v1.6.12 起既有行為）| 'all'。
+    // 語意見 settings-defaults.js DEFAULT_SETTINGS.textJustify 註解。
+    textJustify: 'cjk',
     progressBarStyle: 'gradient'
   };
 
@@ -486,6 +489,10 @@
   const PROGRESS_BAR_STYLES =
     (typeof globalThis !== 'undefined' && globalThis.__JReadProgressBarStyles) ||
     ['gradient', 'hairline', 'outline', 'track', 'thick'];
+  // v2.3.0：textJustify 合法值，同上（正本在 settings-defaults.js）
+  const TEXT_JUSTIFY_MODES =
+    (typeof globalThis !== 'undefined' && globalThis.__JReadTextJustifyModes) ||
+    ['off', 'cjk', 'all'];
 
   // 主題配色：僅 dark / sepia 會注入文字 + 卡片底色覆寫；light 不碰原站色
   //   link：dark / sepia 下因 `* { color: X }` 吞掉原站 link 顏色，導致內文連結
@@ -512,7 +519,13 @@
     // v0.8.143：灰色主題對齊 Apple Books 灰色配色——底 #ededed、內文純黑 #000000
     //   （Jimmy 截圖逐像素採樣：背景 #ededed、內文 glyph core 主色 #000000）。
     //   中性灰、無暖色；text 非 null 故比照 dark/sepia 注入文字 + 卡片色覆寫
-    gray:  { pageBg: '#d8d8d8', articleBg: '#ededed', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', codeBlockBg: 'rgba(0,0,0,0.08)', progressBar: '#2c5282' }
+    gray:  { pageBg: '#d8d8d8', articleBg: '#ededed', text: '#000000', link: '#2c5282', scrollThumb: 'rgba(0, 0, 0, 0.3)', inlineCodeBg: 'rgba(0,0,0,0.06)', codeBlockBg: 'rgba(0,0,0,0.08)', progressBar: '#2c5282' },
+    // v2.3.0：夜藍主題（Jimmy 2026-11-07 截圖需求）——深藍黑底 + 淺藍灰字。卡片底
+    //   #0f1821 = 截圖背景主色取樣；內文 #cdd5df = 截圖 glyph 最亮像素一帶（截圖
+    //   282px 寬的 JPEG、抗鋸齒壓低亮度，取亮端）；頁面底比卡片再暗一階。link
+    //   #6ea8e6 在 #0f1821 底對比 > 7:1。其餘欄位比照 dark（淺色 thumb / 白半透明
+    //   inline code 底）。text 非 null → 與 dark / sepia / gray 同走注入路徑
+    night: { pageBg: '#070b10', articleBg: '#0f1821', text: '#cdd5df', link: '#6ea8e6', scrollThumb: 'rgba(255, 255, 255, 0.28)', inlineCodeBg: 'rgba(255,255,255,0.08)', codeBlockBg: 'rgba(0,0,0,0.3)', progressBar: '#6ea8e6' }
   };
 
   // '#rrggbb' 兩色線性混色（w = a 的權重），回傳 '#rrggbb'
@@ -2588,9 +2601,21 @@ ${BODY_WEIGHT_SEL} {
     // v1.6.12：CJK 為主段落兩端對齊——修 WebKit(iOS Safari) 對 CJK 內文每行少填
     // 尾空間的內縮（見 markCjkParagraphs）。runtime 逐段標記 CJK_JUSTIFY_ATTR、
     // 純英文段落不命中。末行 text-align-last 預設 auto → 自動靠左，不需另設。
+    // v2.3.0：textJustify 三段——'off' 把段落標 "0" 強制靠左（關 = 全部靠左，不是
+    // 保留原站對齊；用 start 不用 left = RTL 政策，LTR / CJK 下即靠左）；'all' 另把非中文為主段落標 "2"，加自動斷字（hyphens: auto 依 lang
+    // 屬性斷英文長字，壓 justify 拉出的字間空隙 rivers）。中文段落不加 hyphens
+    //（對 CJK 無作用、留著只是多一條規則）。
     userOverrides += `
-[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="1"] {
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="1"],
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="2"] {
   text-align: justify !important;
+}
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="2"] {
+  -webkit-hyphens: auto !important;
+  hyphens: auto !important;
+}
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="0"] {
+  text-align: start !important;
 }`;
     // v1.6.23：內文裝飾性大寫 / 加寬字距中和——站方 lead-in 裝飾（uppercase +
     // letter-spacing）殘留會讓內文名字全大寫、字距拉開；疊上 CJK justify 後大寫
@@ -3797,22 +3822,41 @@ html.${HTML_CLASS}.jread-orion body {
   // ratio≈0 不命中、完全不受影響；只有中文為主的段落才 justify。
   const CJK_HAN_RE = /[㐀-䶿一-鿿豈-﫿]/g;
   const LATIN_LETTER_RE = /[A-Za-z]/g;
-  function markCjkParagraphs(articleEl) {
+  //
+  // v2.3.0：mode = textJustify 設定（'off' | 'cjk' | 'all'，未給 = 'cjk' 既有行為）。
+  //   'off'：所有段落標 "0"，CSS 強制靠左（Jimmy 2026-11-07 裁定：關 = 全部靠左，
+  //          不是保留原站——原站 justify / 置中的內文段落也一起拉回靠左）
+  //   'all'：中文為主段落照舊標 "1"；其餘段落（英文 / 中文太少）標 "2"——CSS 對
+  //          "2" 另加 hyphens: auto。門檻：拉丁字母 + 漢字 >= 4，避開空殼 / 單字標籤
+  //          （單行段落 justify 本來就沒有視覺效果，門檻只是少標無意義節點）
+  function markCjkParagraphs(articleEl, mode) {
+    const off = mode === 'off';
+    const all = mode === 'all';
     const carriers = articleEl.querySelectorAll(
       `p, li, blockquote, dd, dt, [${TEXT_DIV_ATTR}="1"]`);
     const marked = [];
     for (const el of carriers) {
       // byline / kicker 是 meta 列（作者 / 日期 / 分類），有自己的對齊規則，不 justify
       if (el.closest(`[${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
+      if (off) {
+        el.setAttribute(CJK_JUSTIFY_ATTR, '0');
+        marked.push(el);
+        continue;
+      }
       const txt = el.textContent || '';
       const han = (txt.match(CJK_HAN_RE) || []).length;
-      if (han < 4) continue; // 太短（標籤 / 單字）不套，避免誤傷
       const latin = (txt.match(LATIN_LETTER_RE) || []).length;
       // CJK 佔「有意義字元（漢字 + 拉丁字母）」>= 0.3 = 中文為主段落。純英文段
-      // 落 ratio≈0；中英混排（"使用 Aispire.ai 的…"）ratio 仍高、應 justify
-      if (han / (han + latin) < 0.3) continue;
-      el.setAttribute(CJK_JUSTIFY_ATTR, '1');
-      marked.push(el);
+      // 落 ratio≈0；中英混排（"使用 Aispire.ai 的…"）ratio 仍高、應 justify。
+      // han < 4 太短（標籤 / 單字）不算中文段落，避免誤傷
+      const cjk = han >= 4 && han / (han + latin) >= 0.3;
+      if (cjk) {
+        el.setAttribute(CJK_JUSTIFY_ATTR, '1');
+        marked.push(el);
+      } else if (all && han + latin >= 4) {
+        el.setAttribute(CJK_JUSTIFY_ATTR, '2');
+        marked.push(el);
+      }
     }
     return marked;
   }
@@ -4455,7 +4499,11 @@ html.${HTML_CLASS}.jread-orion body {
         // 產出壞 CSS，但白名單讓回退行為明確而非碰巧安全。
         progressBarStyle: PROGRESS_BAR_STYLES.indexOf(s.progressBarStyle) >= 0
           ? s.progressBarStyle
-          : DEFAULTS.progressBarStyle
+          : DEFAULTS.progressBarStyle,
+        // v2.3.0：左右對齊三段，白名單驗證（未知值 / 舊資料回退 'cjk' = 既有行為）
+        textJustify: TEXT_JUSTIFY_MODES.indexOf(s.textJustify) >= 0
+          ? s.textJustify
+          : DEFAULTS.textJustify
       };
       const theme = themeOf(s.theme || DEFAULTS.theme);
 
@@ -5961,7 +6009,7 @@ html.${HTML_CLASS}.jread-orion body {
         // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
         // v1.6.24：移到 byline / kicker 標記之後——排除 guard（closest BYLINE_ATTR /
         // KICKER_ATTR）需要標記已存在，否則中文 byline（「文／某某」）被 justify。
-        cjkJustifyMarked = markCjkParagraphs(articleEl);
+        cjkJustifyMarked = markCjkParagraphs(articleEl, opts.textJustify);
 
         // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
         // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。

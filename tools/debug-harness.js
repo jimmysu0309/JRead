@@ -213,6 +213,26 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
   await sw.evaluate((on) => chrome.storage.sync.set({ pagedMode: on }), PAGED);
   if (PAGED) console.log('paged: settings.pagedMode = true');
 
+  // v2.3.0：--set key=value（可重複）——toggle 前寫任意 storage.sync 設定（value 先試
+  // JSON.parse，失敗當字串），例：--set theme=night --set textJustify=all。
+  // 注意 profile 跨 run 重用：寫入值會殘留到下一輪，驗完要用 --set 寫回預設。
+  {
+    const patch = {};
+    process.argv.forEach((a, i) => {
+      if (a !== '--set' || !process.argv[i + 1]) return;
+      const kv = process.argv[i + 1];
+      const eq = kv.indexOf('=');
+      if (eq <= 0) return;
+      const raw = kv.slice(eq + 1);
+      let v; try { v = JSON.parse(raw); } catch (_) { v = raw; }
+      patch[kv.slice(0, eq)] = v;
+    });
+    if (Object.keys(patch).length) {
+      await sw.evaluate((p) => chrome.storage.sync.set(p), patch);
+      console.log('settings --set:', JSON.stringify(patch));
+    }
+  }
+
   // v0.8.40：清掉閱讀位置記憶——profile 跨 run 重用，上一輪同 URL 的記錄會讓
   // enter 直接跳回上次位置（PAGED AUDIT 預期從第 1 頁起跳、GAP/RESIDUAL scan
   // 預期從頁首掃起）。位置記憶功能本身的驗證走獨立 probe，不靠本 harness。
