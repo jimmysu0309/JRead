@@ -771,9 +771,11 @@
     return { ok: true, status: res.status, results, nextPageCursor: data && data.nextPageCursor || null };
   }
 
-  // 歸檔文件：PATCH https://readwise.io/api/v3/update/<id>/ body { location:'archive' }。
-  // Reader API 沒有獨立 archive 端點，改 location 即歸檔。回 { ok, status } / 錯誤分類。
-  async function archiveReaderDocument({ token, id, fetchImpl, timeoutMs } = {}) {
+  // 搬移文件：PATCH https://readwise.io/api/v3/update/<id>/ body { location }。
+  // Reader API 沒有獨立 archive / later 端點，改 location 即歸檔（'archive'）或移到
+  // Later（'later'，v2.4.0 feed 右滑）。回 { ok, status } / 錯誤分類。
+  const READER_MOVE_LOCATIONS = ['new', 'later', 'shortlist', 'archive'];
+  async function moveReaderDocument({ token, id, location, fetchImpl, timeoutMs } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     if (!f) return { ok: false, error: 'NO_FETCH' };
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -782,6 +784,7 @@
     if (!id || typeof id !== 'string' || !id.trim()) {
       return { ok: false, error: 'NO_ID' };
     }
+    if (!READER_MOVE_LOCATIONS.includes(location)) return { ok: false, error: 'NO_LOCATION' };
     let res;
     try {
       res = await fetchWithTimeout(f, `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
@@ -790,7 +793,7 @@
           'Authorization': `Token ${token.trim()}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ location: 'archive' })
+        body: JSON.stringify({ location })
       }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
     } catch (networkErr) {
       if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
@@ -803,6 +806,10 @@
       return { ok: false, status: res.status, error: 'HTTP' };
     }
     return { ok: true, status: res.status };
+  }
+
+  function archiveReaderDocument(args = {}) {
+    return moveReaderDocument({ ...args, location: 'archive' });
   }
 
   // ---- JReader 畫重點（v1.10.0）--------------------------------------
@@ -1187,6 +1194,20 @@
     return archiveReaderDocument({ token: c.token, id, fetchImpl });
   }
 
+  // v2.4.0：feed 右滑「稍後讀」。readwise → 移到 Later（location:'later'）；instapaper
+  // 沒有 Later，改加星（Jimmy 2026-11-07 裁定）。回 { ok, status } / 錯誤分類。
+  async function laterDocument({ service, creds, id, fetchImpl, instapaper } = {}) {
+    const c = creds || {};
+    if (service === 'instapaper') {
+      const IP = resolveInstapaper(instapaper);
+      if (!IP || typeof IP.starInstapaper !== 'function') return { ok: false, error: 'CONFIG' };
+      if (!c.token || !c.tokenSecret) return { ok: false, error: 'NO_CREDENTIALS' };
+      return IP.starInstapaper({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl: readFetch(fetchImpl) });
+    }
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    return moveReaderDocument({ token: c.token, id, location: 'later', fetchImpl });
+  }
+
   // v1.7.36：送出流程的「進行中」文字。popup 狀態列與快速鍵 toast 共用同一份
   // 事實——Jimmy 2026-08-04 回報快速鍵按下去只有最終結果、按當下沒反應；兩軌
   // 各自寫死字串會 drift（結果文字已由 saveResultToast 收斂，進度文字同理）。
@@ -1344,6 +1365,7 @@
     validateReadwiseToken,
     listReaderDocuments,
     archiveReaderDocument,
+    moveReaderDocument,
     // v1.10.0：JReader 畫重點
     createReaderHighlight,
     deleteReaderDocument,
@@ -1355,6 +1377,7 @@
     listDocuments,
     getArticle,
     archiveDocument,
+    laterDocument,
     saveResultToast,
     serviceErrorMessage,
     saveDocumentFlow,

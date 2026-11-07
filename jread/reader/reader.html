@@ -34,14 +34,22 @@
   .jr-list { display: flex; flex-direction: column; gap: 12px; }
 
   .jr-card {
-    display: flex; align-items: stretch; gap: 12px;
+    position: relative; display: flex; align-items: stretch;
     background: var(--card); border: 1px solid var(--line); border-radius: 12px;
     overflow: hidden;
+    /* v2.4.0：垂直捲動交給瀏覽器，水平位移由 reader-feed.js 接成左右滑動 */
+    touch-action: pan-y;
   }
+  .jr-card.is-busy { opacity: 0.6; }
+  .jr-card.is-menu { box-shadow: 0 0 0 2px var(--link); }
   .jr-card-link {
+    position: relative; z-index: 1;
     display: flex; gap: 14px; align-items: center; flex: 1 1 auto; min-width: 0;
     padding: 14px 16px; text-decoration: none; color: inherit;
+    background: var(--card);
+    -webkit-touch-callout: default; -webkit-user-drag: none;
   }
+  .jr-card.is-swiping .jr-card-link { -webkit-user-select: none; user-select: none; }
   .jr-thumb {
     flex: 0 0 auto; width: 64px; height: 64px; border-radius: 8px;
     object-fit: cover; background: var(--line);
@@ -55,13 +63,36 @@
     font-size: 12.5px; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .jr-archive {
-    flex: 0 0 auto; align-self: stretch; border: none; border-left: 1px solid var(--line);
-    background: transparent; color: var(--muted); cursor: pointer;
-    font: inherit; font-size: 13px; padding: 0 16px;
+
+  /* v2.4.0：滑動底層。右滑露出左側「Later / 加星」、左滑露出右側「封存」；
+     過門檻（.is-armed）才上實色，放手會執行——顏色＋字重雙通道提示 */
+  .jr-swipe-bg {
+    position: absolute; inset: 0; z-index: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; background: var(--line);
+    font-size: 14px; font-weight: 600; color: var(--muted);
+    visibility: hidden;
   }
-  .jr-archive:hover { background: var(--line); color: var(--text); }
-  .jr-archive:disabled { opacity: 0.5; cursor: default; }
+  .jr-card[data-swipe="later"] .jr-swipe-bg,
+  .jr-card[data-swipe="archive"] .jr-swipe-bg { visibility: visible; }
+  .jr-card[data-swipe="later"] .jr-swipe-archive,
+  .jr-card[data-swipe="archive"] .jr-swipe-later { visibility: hidden; }
+  .jr-card.is-armed[data-swipe="later"] .jr-swipe-bg { background: #c98a1b; color: #fff; font-weight: 700; }
+  .jr-card.is-armed[data-swipe="archive"] .jr-swipe-bg { background: #2f8f5b; color: #fff; font-weight: 700; }
+
+  /* v2.4.0：右鍵選單（桌面滑鼠） */
+  .jr-menu {
+    position: fixed; z-index: 2147483000; min-width: 132px; padding: 4px;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  }
+  .jr-menu-item {
+    display: block; width: 100%; text-align: left;
+    padding: 8px 12px; border: 0; border-radius: 6px; background: transparent;
+    color: inherit; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .jr-menu-item:hover, .jr-menu-item:focus-visible { background: var(--line); outline: none; }
 
   .jr-msg { color: var(--muted); font-size: 15px; line-height: 1.7; padding: 40px 4px; text-align: center; }
   .jr-msg a { color: var(--link); }
