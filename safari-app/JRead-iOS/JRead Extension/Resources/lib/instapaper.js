@@ -34,6 +34,7 @@
   const INSTAPAPER_LIST_URL = 'https://www.instapaper.com/api/1/bookmarks/list';
   const INSTAPAPER_GET_TEXT_URL = 'https://www.instapaper.com/api/1/bookmarks/get_text';
   const INSTAPAPER_ARCHIVE_URL = 'https://www.instapaper.com/api/1/bookmarks/archive';
+  const INSTAPAPER_STAR_URL = 'https://www.instapaper.com/api/1/bookmarks/star';
 
   // ─── consumer 金鑰讀取 ────────────────────────────────────
   // instapaper-keys.js（gitignored）載入後掛在 globalThis.__JReadKeys.INSTAPAPER。
@@ -379,8 +380,9 @@
     }
   }
 
-  // 歸檔一篇 bookmark。回 { ok:true, status } 或 { ok:false, error, status }。
-  async function archiveInstapaper({
+  // 對單篇 bookmark 送 bookmark_id 的動作（archive / star 同款：POST bookmark_id、
+  // 成功回 bookmark 陣列，呼叫端只看狀態碼）。回 { ok:true, status } 或 { ok:false, error, status }。
+  async function bookmarkAction(url, {
     token, tokenSecret, id, fetchImpl = fetch, signImpl = defaultSign,
     consumerKey, consumerSecret, nonce, timestamp,
   }) {
@@ -391,7 +393,7 @@
 
     try {
       const res = await signedPost({
-        url: INSTAPAPER_ARCHIVE_URL, token, tokenSecret,
+        url, token, tokenSecret,
         bodyParams: { bookmark_id: String(id) }, fetchImpl, signImpl, keys, nonce, timestamp,
       });
       if (res.status === 401 || res.status === 403) return { ok: false, error: 'AUTH', status: res.status };
@@ -402,6 +404,12 @@
     }
   }
 
+  // 歸檔一篇 bookmark。
+  function archiveInstapaper(args) { return bookmarkAction(INSTAPAPER_ARCHIVE_URL, args || {}); }
+
+  // v2.4.0：加星一篇 bookmark（JReader feed 右滑；Instapaper 沒有 Later，加星是最接近的「稍後讀」）。
+  function starInstapaper(args) { return bookmarkAction(INSTAPAPER_STAR_URL, args || {}); }
+
   const api = {
     // 常數
     INSTAPAPER_ACCESS_TOKEN_URL,
@@ -409,6 +417,7 @@
     INSTAPAPER_LIST_URL,
     INSTAPAPER_GET_TEXT_URL,
     INSTAPAPER_ARCHIVE_URL,
+    INSTAPAPER_STAR_URL,
     // 金鑰
     getInstapaperConsumerKeys,
     hasInstapaperConsumerKeys,
@@ -429,6 +438,7 @@
     listInstapaper,
     getInstapaperText,
     archiveInstapaper,
+    starInstapaper,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

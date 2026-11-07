@@ -115,10 +115,12 @@
     });
   }
 
-  // 封存成功後把該篇從所有分頁快取移除（否則下次開 feed 會先閃出已封存的卡片）
-  function removeFromFeed(storage, account, id) {
+  // 封存成功後把該篇從所有分頁快取移除（否則下次開 feed 會先閃出已封存的卡片）。
+  // v2.4.0：onlyListKey 指定時只動該分頁（右滑移到 Later：只離開 Inbox，JRead 分頁仍在）
+  function removeFromFeed(storage, account, id, onlyListKey) {
     return updateFeedCache(storage, account, (cache) => {
       for (const k of Object.keys(cache.lists)) {
+        if (onlyListKey && k !== onlyListKey) continue;
         const e = cache.lists[k];
         if (e && Array.isArray(e.docs)) e.docs = e.docs.filter((d) => d.id !== id);
       }
