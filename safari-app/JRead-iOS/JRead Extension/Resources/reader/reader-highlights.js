@@ -167,6 +167,34 @@
     return segs;
   }
 
+  // 選取頭尾的標點 / 空白修掉（v2.4.1，Jimmy 2026-11-08 回報「反白跟畫出來的重點差
+  // 一個字」，Chrome / Safari / iOS 都有）。根因：全形「。」「，」的字形墨跡在字框
+  // 左側、右半是空白，看起來是「句號跟下一個字之間的空隙」；從這塊空隙開始拖選，
+  // 只要落在字框左半，瀏覽器就把起點放在標點之前（Chromium / WebKit 都按字框中線
+  // 判定，2026-11-08 probe 實測 45% 處 → 含句號、55% → 不含）。Readwise 上存成
+  //「。他過去…」、主文也從句號開始標。
+  // 結構規則：重點開頭不會是收尾標點（句號、逗號、右括號、右引號），結尾不會是開頭
+  // 標點（左括號、左引號）——修掉這些。ASCII 引號 ' " 開閉同形、無法判定，不動。
+  const LEAD_TRIM_RE = /[\s。．，、；：！？)\]}）］｝」』】〕〉》〗〙〛,.;:!?]/;
+  const TRAIL_TRIM_RE = /[\s(\[{（［｛「『【〔〈《〖〘〚]/;
+
+  function trimSegmentEdges(segs) {
+    const out = (segs || []).map(seg => ({ node: seg.node, s: seg.s, e: seg.e }));
+    while (out.length) {
+      const seg = out[0];
+      while (seg.s < seg.e && LEAD_TRIM_RE.test(seg.node.data[seg.s])) seg.s++;
+      if (seg.s < seg.e) break;
+      out.shift();
+    }
+    while (out.length) {
+      const seg = out[out.length - 1];
+      while (seg.e > seg.s && TRAIL_TRIM_RE.test(seg.node.data[seg.e - 1])) seg.e--;
+      if (seg.e > seg.s) break;
+      out.pop();
+    }
+    return out;
+  }
+
   function blockOf(node, root) {
     let el = node.parentNode;
     while (el && el !== root) {
@@ -565,7 +593,13 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       const cur = currentSelection();
       const range = cur ? cur.range.cloneRange() : pendingRange;
       if (!range) return;
-      const segs = segmentsInRange(bodyEl, range);
+      // 頭尾標點修掉，並把 range 收窄到修完的範圍——await 後包 <mark> 也用這個 range
+      const segs = trimSegmentEdges(segmentsInRange(bodyEl, range));
+      if (!segs.length) { hide(); return; }
+      try {
+        range.setStart(segs[0].node, segs[0].s);
+        range.setEnd(segs[segs.length - 1].node, segs[segs.length - 1].e);
+      } catch (_) { /* 收窄失敗就用原 range */ }
       if (segmentsAllMarked(segs)) { hide(); return; }
       const content = segmentsToText(segs, bodyEl);
       if (!content) { hide(); return; }
@@ -696,7 +730,7 @@ mark[${HL_ATTR}][data-jread-hl-active] {
 
   const api = {
     HL_ATTR, CACHE_KEY, LOCAL_GRACE_MS, SINCE_SLACK_MS,
-    buildIndex, findMatch, markdownToPlain, locateHighlight, segmentsForFlatRange, segmentsInRange, segmentsToText,
+    buildIndex, findMatch, markdownToPlain, locateHighlight, segmentsForFlatRange, segmentsInRange, segmentsToText, trimSegmentEdges,
     segmentsAllMarked, wrapSegments, unwrapHighlight, applyHighlights, reconcileHighlights,
     accountKey, emptyCache, cacheUsable, cacheFromExport, mergeExport, applyLocalOps,
     cacheAdd, cacheRemove, highlightsForDoc, incrementalSince, attach
