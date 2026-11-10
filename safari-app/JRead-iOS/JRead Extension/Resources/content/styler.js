@@ -56,7 +56,7 @@
   const ICON_IMG_ATTR = 'data-jread-icon-img';
   const PLAYER_ATTR = 'data-jread-player';
   // v1.9.15：站方自管視覺的 UI / 標註（底色與文字色成對由站方決定，主題文字色
-  // 不接管）。值 'hl' = 行內高亮自訂元素（<rw-highlight> 等，見
+  // 不接管）。值 'hl' / 'hl-tint'（半透明底，v2.4.6）= 行內高亮自訂元素（<rw-highlight> 等，見
   // markInlineHighlights）、'widget' = 使用者選取文字叫出的浮動工具列子樹
   //（cleaner allowSelectionToolbar 放行後轉呼 markSiteWidgetSubtree）。
   // 這些元素同時標 PLAYER_ATTR——bg / border / color strip 全走既有的
@@ -2722,6 +2722,12 @@ html.${HTML_CLASS} body {
    淺字疊在站方黃底上不可讀）。 */
 [${ARTICLE_ATTR}="1"] [${SITE_UI_ATTR}="hl"] * {
   color: inherit !important;
+}
+/* v2.4.6：半透明高亮（SITE_UI_ATTR="hl-tint"，見 isTranslucentFill）底色透出主題
+   卡片色，文字色改跟主題（(0,2,0) 贏上面的 (0,1,0)；後代沒有 SITE_UI_ATTR、
+   本來就吃主題色）。底色照留站方值。 */
+[${ARTICLE_ATTR}="1"] [${SITE_UI_ATTR}="hl-tint"] {
+  color: ${theme.text} !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
       // card bg 深、跨 origin iframe（datawrapper / flourish / tableau / plotly
@@ -4370,6 +4376,27 @@ html.${HTML_CLASS}.jread-orion body {
   // 訊號層次：驗「標了之後 bg / color strip 規則不再命中」；不驗高亮在各主題下
   // 的對比（站方配色成對保留，不由 JRead 重算）、不驗 <span style="background">
   // 這類非自訂元素的高亮（blast radius 大，另案）。
+  // v2.4.6：半透明高亮底色（'hl-tint'）——底色透出的是 JRead 主題卡片色、不是
+  // 站方原本的白頁，站方配給白頁的深字在深色主題下疊成「深字配暗橄欖底」不可讀
+  //（Reader <rw-highlight>：底部 2px 實心黃 + 其餘 rgba(255,213,0,0.2) 漸層、
+  // 文字 #000；Jimmy 2026-11-10 夜藍主題截圖）。填色 alpha 取 bg-color 與漸層
+  // 各色標的最小值（文字底下鋪的是最淡那段，實心細線只是裝飾）；< 0.5 視為半
+  // 透明。只有 url() 圖、讀不到色標的一律當不透明（維持成對保留，不猜）。
+  // 標成 'hl-tint' 的高亮文字色改跟主題走、底色照留；不透明高亮行為不變。
+  const HL_TINT_ALPHA_MAX = 0.5;
+  function isTranslucentFill(bgc, bgImage) {
+    const alphas = [];
+    if (bgc && bgc.a >= 0.05) alphas.push(bgc.a);
+    if (bgImage && bgImage !== 'none') {
+      const stops = String(bgImage).match(/rgba?\([^)]*\)|color\(srgb[^)]*\)|#[0-9a-f]{3,6}\b|\btransparent\b/gi) || [];
+      if (!stops.length) return false;
+      for (const c of stops) {
+        const p = parseCssColor(c);
+        if (p) alphas.push(p.a);
+      }
+    }
+    return alphas.length > 0 && Math.min(...alphas) < HL_TINT_ALPHA_MAX;
+  }
   function markInlineHighlights(articleEl, marked, scopeEl) {
     const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
     if (!_win || !_win.getComputedStyle) return;
@@ -4400,13 +4427,13 @@ html.${HTML_CLASS}.jread-orion body {
         const bgc = parseCssColor(cs.backgroundColor);
         const hasBg = (bgc && bgc.a >= 0.05) ||
           (cs.backgroundImage && cs.backgroundImage !== 'none');
-        if (hasBg) hits.push(el);
+        if (hasBg) hits.push({ el, tint: isTranslucentFill(bgc, cs.backgroundImage) });
       }
       return hits;
     };
     const hits = (NS && NS.withInjectedCssDisabled) ? NS.withInjectedCssDisabled(measure) : measure();
-    for (const el of hits) {
-      el.setAttribute(SITE_UI_ATTR, 'hl');
+    for (const { el, tint } of hits) {
+      el.setAttribute(SITE_UI_ATTR, tint ? 'hl-tint' : 'hl');
       el.setAttribute(PLAYER_ATTR, '1');
       marked.push(el);
     }
