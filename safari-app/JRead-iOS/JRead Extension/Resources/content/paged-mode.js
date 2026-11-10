@@ -316,6 +316,8 @@
   let unclipForcedSeen = new WeakSet(); // 同元素去重——remeasure 重掃時不重複累積 entry
   let blockifyForced = [];            // v1.9.13：翻頁期間由 inline-* 原子盒改成 block 層級的高容器，uninstall 還原
   let blockifyForcedSeen = new WeakSet();
+  let containForced = [];             // v2.4.3：翻頁期間拿掉 layout containment 的後代，uninstall 還原
+  let containForcedSeen = new WeakSet();
   let mediaFitForced = [];            // v1.9.25：fitMediaToPages 寫過的 inline 樣式 [{ el, prop, prev, prevPri }]，重算前 / uninstall 還原
   let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
@@ -602,6 +604,32 @@
     return el.scrollHeight - el.clientHeight <= BODY_BOX_CLIP_TOLERANCE
       && el.scrollWidth - el.clientWidth <= BODY_BOX_CLIP_TOLERANCE;
   }
+  // v2.4.3：第四種情境——layout containment（Jimmy 2026-11-10 Mac Safari 翻頁模式
+  // houseandgarden gallery「第 13、14 頁之間把圖切成兩半」）。站方在 gallery slide 外層
+  // 掛 contain: layout style（li 與多層 wrapper）。WebKit 在 layout-contained 盒子
+  // 內部不照 break-before / break-inside: avoid 分頁：fitMediaToPages 寫上的
+  // break-before: column 與 figure 的 avoid 全被無視，圖照樣跨頁硬切（Playwright
+  // WebKit 實站 probe：7 張圖 3 張被切；把 contain 裡的 layout 拿掉 → 全部從頁頂起、
+  // 0 張被切；只拿掉 paint 無效、只留 style 有效＝兇手是 layout）。Chromium 照常分頁
+  // 所以只有 Safari 中。修法：翻頁期間把主文後代 computed contain 的 layout 關鍵字
+  // 拿掉（strict / content 先展開），其餘 containment（size / paint / style）保留；
+  // uninstall 還原。高度門檻只是省 getComputedStyle：放不下一張媒體的矮盒子內部
+  // 不會有要跨頁控制的東西。
+  // 純函式：回傳去掉 layout 後的 contain 值；本來就沒有 layout containment 回 null
+  function stripLayoutContain(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw || raw === 'none' || raw === 'normal') return null;
+    const tokens = [];
+    for (const t of raw.split(/\s+/)) {
+      if (t === 'strict') tokens.push('size', 'layout', 'paint', 'style');
+      else if (t === 'content') tokens.push('layout', 'paint', 'style');
+      else tokens.push(t);
+    }
+    if (!tokens.includes('layout')) return null;
+    const rest = tokens.filter((t) => t !== 'layout');
+    return rest.length ? rest.join(' ') : 'none';
+  }
+  const CONTAIN_MIN_PX = 120; // = FIT_MIN_PX：比這矮的盒子放不下一張要處理的媒體
   function releaseTallMonolithicBoxes() {
     if (!art) return;
     let pageH = 0;
@@ -619,10 +647,22 @@
       try { h = el.getBoundingClientRect().height; } catch (e) { continue; }
       // monolithic 且高過一頁才會裁掉內容；可斷片元素的 fragment 聯集高 ≈ 頁高不誤中
       const tall = h > pageH + 4;
-      if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE)) continue;
+      if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE) && !(h >= CONTAIN_MIN_PX)) continue;
       let ox, oy, display;
       try {
         const cs = getComputedStyle(el);
+        // v2.4.3：layout containment 讓 WebKit 無視內部分頁控制（見 stripLayoutContain）
+        const contain = stripLayoutContain(cs.contain || el.style.getPropertyValue('contain'));
+        if (contain !== null) {
+          if (!containForcedSeen.has(el)) {
+            containForcedSeen.add(el);
+            containForced.push({
+              el, prev: el.style.getPropertyValue('contain'), prevPri: el.style.getPropertyPriority('contain')
+            });
+          }
+          el.style.setProperty('contain', contain, 'important');
+        }
+        if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE)) continue;
         ox = cs.overflowX || ''; oy = cs.overflowY || '';
         display = cs.display || '';
         // jsdom 不展開 overflow shorthand 成 longhand（回空字串）→ 退回讀 shorthand
@@ -681,6 +721,14 @@
     }
     blockifyForced = [];
     blockifyForcedSeen = new WeakSet();
+    for (const r of containForced) {
+      try {
+        r.el.style.removeProperty('contain');
+        if (r.prev) r.el.style.setProperty('contain', r.prev, r.prevPri);
+      } catch (e) { /* */ }
+    }
+    containForced = [];
+    containForcedSeen = new WeakSet();
   }
 
   // v1.9.25：媒體貼合本頁剩餘空間（Readwise Reader 直式 hero，Jimmy 2026-10-16
@@ -1664,6 +1712,7 @@
     computePageCount,
     computePageCountFromExtent,
     decideMediaFit,
+    stripLayoutContain,
     refineShrink,
     quantizeStride,
     computeScrubTarget,
