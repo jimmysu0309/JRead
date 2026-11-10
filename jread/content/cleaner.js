@@ -8401,7 +8401,18 @@
       const articleLen = norm(articleEl.textContent).length;
       if (articleLen && norm(el.textContent).length < articleLen * 0.5) return false;
     }
+    // v2.4.4：email 訂閱表單卡不享長 p 保護（Jimmy 2026-11-10 houseandgarden 文末
+    // 「Get the latest houses and gardens in your inbox.」標題被擠成一字一行殘留）。
+    // 卡內免責聲明 <p>（隱私權 / reCAPTCHA / 退訂說明，約 190 字）觸發下方「>= 100
+    // 字段落＝主文」→ newsletter class 命中卻被豁免；form 與副標各自被清、剩標題＋
+    // 聲明塞在原本的窄欄。結構訊號（翻譯無關）：wrapper 內有 email 輸入欄的
+    // <form>，且主文在它之前已開始——主文容器不會在主文開始後才出現，所以文首就
+    // 包住整篇的 paywall 類 class wrapper（twz）不受影響
+    if (articleEl && containsEmailSignupForm(el) && mainContentPrecedesWrapper(articleEl, el)) return false;
     return wrapperContainsMainContentP(el);
+  }
+  function containsEmailSignupForm(el) {
+    return !!(el.querySelector && el.querySelector('form input[type="email" i]'));
   }
 
   // v0.8.45：H1 guard 限縮。slate.com 實測 newsletter signup 區把 CTA
