@@ -318,6 +318,8 @@
   let blockifyForcedSeen = new WeakSet();
   let containForced = [];             // v2.4.3：翻頁期間拿掉 layout containment 的後代，uninstall 還原
   let containForcedSeen = new WeakSet();
+  let flexForced = [];                // v2.4.5：翻頁期間塌成 block 的單圖 flex/grid 容器，uninstall 還原
+  let flexForcedSeen = new WeakSet();
   let mediaFitForced = [];            // v1.9.25：fitMediaToPages 寫過的 inline 樣式 [{ el, prop, prev, prevPri }]，重算前 / uninstall 還原
   let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
@@ -630,6 +632,30 @@
     return rest.length ? rest.join(' ') : 'none';
   }
   const CONTAIN_MIN_PX = 120; // = FIT_MIN_PX：比這矮的盒子放不下一張要處理的媒體
+  // v2.4.5：第五種情境——媒體在 flex / grid 容器內（Jimmy 2026-11-10 Mac Safari 27
+  // 翻頁模式 foreignaffairs「第一頁的圖就會被切到」）。hero 與標題區並排在
+  // section.topper（display:flex）裡；cleaner 的 collapseInnerFlexWrap 只在子項
+  // 已換行時才塌，寬視窗下沒換行 → flex 留著。WebKit 對 flex / grid item 內部
+  // 不照 break-before / break-inside: avoid 分頁，fitMediaToPages 的 shrink / break
+  // 都失效，圖照樣跨頁硬切（Playwright WebKit 實站 probe：section 留 flex → 圖切成
+  // 418 + 148px 兩段，與 Jimmy 截圖寬 364 一致；塌成 block → 縮進第 1 頁、0 段被切）。
+  // 修法：翻頁期間把「只含一張要貼合的大圖」的 flex / grid 容器塌成 block，讓媒體
+  // 回到可分頁的 block flow；含兩張以上大圖的（並排 gallery）不動，避免把刻意並排的
+  // 圖拆成上下堆疊。uninstall 還原。
+  // 純決策函式：bigImgCount 由呼叫端依 fitMediaToPages 同款條件數
+  const FLEX_GRID_DISPLAYS = new Set(['flex', 'inline-flex', 'grid', 'inline-grid']);
+  function isSingleMediaFlexShell(display, bigImgCount) {
+    return FLEX_GRID_DISPLAYS.has(String(display || '')) && bigImgCount === 1;
+  }
+  function countFitImgs(el) {
+    let n = 0;
+    for (const img of el.querySelectorAll('img')) {
+      if (img.hasAttribute('data-jread-inline-img') || img.hasAttribute('data-jread-player')) continue;
+      if (fragHeight(img) >= FIT_MIN_PX) n++;
+      if (n > 1) break;
+    }
+    return n;
+  }
   function releaseTallMonolithicBoxes() {
     if (!art) return;
     let pageH = 0;
@@ -661,6 +687,15 @@
             });
           }
           el.style.setProperty('contain', contain, 'important');
+        }
+        // v2.4.5：單圖 flex / grid 容器塌成 block（見 isSingleMediaFlexShell）
+        if (!flexForcedSeen.has(el) && FLEX_GRID_DISPLAYS.has(cs.display) &&
+            isSingleMediaFlexShell(cs.display, countFitImgs(el))) {
+          flexForcedSeen.add(el);
+          flexForced.push({
+            el, prev: el.style.getPropertyValue('display'), prevPri: el.style.getPropertyPriority('display')
+          });
+          el.style.setProperty('display', 'block', 'important');
         }
         if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE)) continue;
         ox = cs.overflowX || ''; oy = cs.overflowY || '';
@@ -729,6 +764,14 @@
     }
     containForced = [];
     containForcedSeen = new WeakSet();
+    for (const r of flexForced) {
+      try {
+        r.el.style.removeProperty('display');
+        if (r.prev) r.el.style.setProperty('display', r.prev, r.prevPri);
+      } catch (e) { /* */ }
+    }
+    flexForced = [];
+    flexForcedSeen = new WeakSet();
   }
 
   // v1.9.25：媒體貼合本頁剩餘空間（Readwise Reader 直式 hero，Jimmy 2026-10-16
@@ -1713,6 +1756,7 @@
     computePageCountFromExtent,
     decideMediaFit,
     stripLayoutContain,
+    isSingleMediaFlexShell,
     refineShrink,
     quantizeStride,
     computeScrubTarget,
