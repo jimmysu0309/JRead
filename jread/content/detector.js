@@ -714,7 +714,15 @@
   // ——納入 signal 計分。含 block 子元素的 div 是容器、不是段落，維持不算
   // signal（否則巢狀 wrapper 會層層自我灌分）。與 v1.7.21 Readwise 匯出端
   // 「通用裸 div 段落 → <p>」同族根因：CMS 拿 div 當段落是跨站慣用結構。
-  const SIGNAL_BLOCK_CHILD_RE = /^(DIV|P|SECTION|ARTICLE|UL|OL|LI|TABLE|BLOCKQUOTE|PRE|H[1-6]|FIGURE|ASIDE|HEADER|FOOTER|FORM|DL|HR|NAV|VIDEO|IFRAME)$/;
+  //
+  // v2.4.2：補齊 HTML 規範的其餘 block-level 容器（MAIN / ADDRESS / DETAILS /
+  // DIALOG / DD / DT / FIELDSET / FIGCAPTION / HGROUP / MENU / SEARCH）。舊清單
+  // 漏 MAIN → 「div 唯一子元素是 <main>」的 SPA 外殼（Readwise Reader
+  // `div > main` 包整個 app）被當成一個「段落」：整頁 5.5K 字一次計成 signal、
+  // seedScore 逐個數逗號（中文頓號 / 逗號密）→ 祖父 app 根 raw 181 壓過真主文
+  // （raw 79），閱讀模式把左右側欄整個包進主文，翻頁模式頁數照側欄末端少算
+  //（Chromium 只算 2 頁、Safari 第 2 頁後空白）。
+  const SIGNAL_BLOCK_CHILD_RE = /^(DIV|P|SECTION|ARTICLE|MAIN|UL|OL|LI|DL|DD|DT|TABLE|BLOCKQUOTE|PRE|H[1-6]|HGROUP|FIGURE|FIGCAPTION|ASIDE|HEADER|FOOTER|ADDRESS|FORM|FIELDSET|DETAILS|DIALOG|MENU|SEARCH|HR|NAV|VIDEO|IFRAME)$/;
   function isParagraphLikeDiv(el) {
     for (const c of el.children) {
       if (SIGNAL_BLOCK_CHILD_RE.test(c.tagName)) return false;
