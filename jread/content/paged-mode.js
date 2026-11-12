@@ -833,6 +833,27 @@
     for (const r of el.getClientRects()) h += r.height;
     return h;
   };
+  // v2.4.7：縮圖後，圖外層「固定高的純媒體殼」跟著塌回內容高（Jimmy 2026-11-12 Mac
+  // Safari 翻頁，wired.com split-screen hero：第 2 頁頂一段空白、圖說被推下去）。
+  // 根因：hero 外框 stylesheet `height: calc(100vh - 108px)`。styler
+  // passFixedHeightReset 在排版當下量「固定高比自然高多 > 40px 才塌」——當下圖是單頁
+  // cap 高、殼只多 18px 不命中；之後 shrink 把圖再縮 142px，殼高不動 → 多出的高度
+  // 溢到下一頁頂端成空白。殼高沒跟著圖縮＝高度是寫死的，shrink 本身就證明了這點，
+  // 所以這裡不用 40px 門檻：只要 height:auto 後變矮就保留。
+  // 收斂：只走「沒有任何文字」的祖先（純媒體包裝；figure 帶圖說即停）、到 art 為止、
+  // player 跳過；height:auto 後變高（站方裁切框）或不變 → 撤回。走 setFitStyle，
+  // restoreMediaFit 一併還原。量高度一律 fragHeight——多欄下 getBoundingClientRect
+  // 是跨欄聯集，量不到殼被切到下一頁的那段。
+  // 這條驗「shrink 後殼有沒有跟著縮」，不驗排版當下就存在的小量死空間（那是 styler 的層次）
+  function releaseFixedHeightMediaShells(img) {
+    for (let a = img.parentElement; a && a !== art && art.contains(a); a = a.parentElement) {
+      if ((a.textContent || '').trim()) break;
+      if (a.getAttribute && a.getAttribute('data-jread-player') === '1') break;
+      const before = fragHeight(a);
+      setFitStyle(a, 'height', 'auto');
+      if (!(fragHeight(a) < before - 1)) undoLastFitStyle();
+    }
+  }
   function fitMediaToPages() {
     if (!art) return;
     restoreMediaFit();
@@ -886,6 +907,7 @@
         if (d.action === 'shrink') {
           setFitStyle(img, 'max-height', d.maxH + 'px');
           finalH = d.maxH;
+          releaseFixedHeightMediaShells(img);
         } else {
           undoLastFitStyle(); // 撤掉 1px 暫值
           if (d.action === 'break') {
