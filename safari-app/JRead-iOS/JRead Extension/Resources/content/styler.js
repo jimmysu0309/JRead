@@ -279,6 +279,8 @@
   // 主文 ::first-letter 顏色修正（v0.8.137）只套在帶這個標記的元素上，見
   // markFirstLetterColorBlocks。
   const FIRST_LETTER_ATTR = 'data-jread-first-letter';
+  // v2.4.10：站方 ::selection 底色不透明（標在 <html>，見 markOpaqueSiteSelection）
+  const SEL_OPAQUE_ATTR = 'data-jread-sel-opaque';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -2737,6 +2739,17 @@ html.${HTML_CLASS} body {
    本來就吃主題色）。底色照留站方值。 */
 [${ARTICLE_ATTR}="1"] [${SITE_UI_ATTR}="hl-tint"] {
   color: ${theme.text} !important;
+}
+/* v2.4.10：選取文字色跟主題（站方 ::selection 多半配白頁設計深字，半透明底透出
+   深色卡片後不可讀）。底色照留站方值；站方底色不透明時（SEL_OPAQUE_ATTR，JS
+   量測）改成「連結色 30% 混卡片色」，避免淺字疊實心淺底（四個有文字色的主題
+   選取字對比 4.7–11:1、選取底對卡片 1.6:1 看得出選取範圍）。specificity (0,1,1)/(0,2,1)
+   贏站方全域 ::selection 的 (0,0,1)。見 markOpaqueSiteSelection。 */
+html.${HTML_CLASS} ::selection {
+  color: ${theme.text} !important;
+}
+html.${HTML_CLASS}[${SEL_OPAQUE_ATTR}="1"] ::selection {
+  background-color: ${mixHex(theme.link, theme.articleBg, 0.3)} !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
       // card bg 深、跨 origin iframe（datawrapper / flourish / tableau / plotly
@@ -4467,7 +4480,9 @@ html.${HTML_CLASS}.jread-orion body {
   // 前置 gate：頁面樣式表完全沒有 first-letter 規則（JRead 自己那條除外）就不必
   // 逐元素量 pseudo。讀不到 cssRules 的跨網域表＝不知道，保守當作可能有。
   // 先判 selectorText 再遞迴 cssRules（巢狀 CSS 的 style rule 也有 cssRules）。
-  function pageMayStyleFirstLetter(doc) {
+  // v2.4.10：泛化成「頁面樣式表有沒有提到某個 pseudo」——::selection 量測共用。
+  // excludeToken：JRead 自己規則的辨識字串（自家規則不算站方有寫）。
+  function pageMayStylePseudo(doc, token, excludeToken) {
     const sheets = [];
     try {
       for (const sh of doc.styleSheets || []) sheets.push(sh);
@@ -4476,7 +4491,7 @@ html.${HTML_CLASS}.jread-orion body {
     const walk = (rules) => {
       for (const r of rules) {
         const sel = r.selectorText || '';
-        if (sel.indexOf('first-letter') >= 0 && sel.indexOf(FIRST_LETTER_ATTR) < 0) return true;
+        if (sel.indexOf(token) >= 0 && sel.indexOf(excludeToken) < 0) return true;
         if (r.cssRules && r.cssRules.length && walk(r.cssRules)) return true;
       }
       return false;
@@ -4492,7 +4507,7 @@ html.${HTML_CLASS}.jread-orion body {
   function markFirstLetterColorBlocks(articleEl, marked, scopeEl) {
     const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
     if (!_win || !_win.getComputedStyle) return;
-    if (!pageMayStyleFirstLetter(articleEl.ownerDocument)) return;
+    if (!pageMayStylePseudo(articleEl.ownerDocument, 'first-letter', FIRST_LETTER_ATTR)) return;
     const scope = scopeEl || articleEl;
     const els = NS.selfAndDescendants(scope, '*');
     for (const el of els) {
@@ -4512,6 +4527,45 @@ html.${HTML_CLASS}.jread-orion body {
       el.setAttribute(FIRST_LETTER_ATTR, '1');
       marked.push(el);
     }
+  }
+  // v2.4.10：站方 ::selection 底色是否不透明（Jimmy 2026-11-12 Readwise Reader
+  // 夜藍主題截圖：選取的文字變成「黑字配暗橄欖底」看不清）。
+  // 根因：站方 `::selection { background: 15% 半透明黃; color: #000 }` 是配站方
+  // 白頁設計的；JRead 深色主題下半透明底透出深色卡片，黑字疊上去幾乎看不見。
+  // 修法分兩層（CSS 在主題文字色區塊）：
+  //   - 一律把選取文字色改成主題文字色（底色照留站方值——Readwise「放開就自動
+  //     畫重點」的黃色選取提示得以保留）
+  //   - 站方選取底色不透明（alpha >= HL_TINT_ALPHA_MAX）時，主題文字色疊在站方
+  //     實心底上同樣可能看不清（例：實心亮黃底配淺字），此時底色一起改成主題
+  //     連結色混卡片色。這一層靠本函式量測後在 <html> 標 SEL_OPAQUE_ATTR 啟用。
+  // 量的是文章內第一個有字段落的 ::selection（站方規則多半是全域 `::selection`）；
+  // JRead 自家規則不設底色（不透明那條要等標記才生效，量前先拔標記），所以量到
+  // 的就是站方值。與主題無關：任何主題都量，切到深色主題時標記已就位。
+  // 前置 gate：樣式表沒有任何站方 selection 規則就不量（UA 預設選取色不必處理）。
+  // 訊號層次：驗「站方 selection 底色不透明 → 標記」與 CSS 字串；不驗各主題下的
+  // 實際對比（真實渲染要 harness / Safari 實機）、不處理站方 ::highlight() 自訂
+  // 高亮（名稱由站方自取，無法通用覆寫；選取層畫在其上，文字色以 ::selection 為準）。
+  function markOpaqueSiteSelection(articleEl) {
+    const doc = articleEl.ownerDocument;
+    const _win = doc && doc.defaultView;
+    if (!_win || !_win.getComputedStyle) return false;
+    doc.documentElement.removeAttribute(SEL_OPAQUE_ATTR);
+    if (!pageMayStylePseudo(doc, 'selection', 'jread')) return false;
+    let probeEl = articleEl;
+    for (const p of articleEl.querySelectorAll('p')) {
+      if ((p.textContent || '').trim()) { probeEl = p; break; }
+    }
+    let sc = null;
+    try {
+      sc = _win.getComputedStyle(probeEl, '::selection');
+    } catch (e) {
+      if (e && e.name === 'SyntaxError') return false;
+      throw e;
+    }
+    const bg = sc && parseCssColor(sc.backgroundColor);
+    if (!bg || bg.a < HL_TINT_ALPHA_MAX) return false;
+    doc.documentElement.setAttribute(SEL_OPAQUE_ATTR, '1');
+    return true;
   }
   // v1.9.15：站方浮動工具列子樹整支豁免（cleaner allowSelectionToolbar 放行
   // 選取工具列後轉呼）。工具列的底色 / 框線 / 圖示色全是站方自管，bg / border /
@@ -4703,6 +4757,7 @@ html.${HTML_CLASS}.jread-orion body {
       const siteUiMarked = [];
       // v2.4.9：drop cap 首字色修正對象（FIRST_LETTER_ATTR）
       const firstLetterMarked = [];
+      let selOpaqueMarked = false;
       const fillIframes = [];
       const embedWrapMarked = [];
       // 2026-10-07 review B-01：class ratio token 容器標記
@@ -4731,7 +4786,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5186,6 +5241,11 @@ html.${HTML_CLASS}.jread-orion body {
         // v2.4.9：drop cap 首字色修正對象標記。必須在 passHtmlClassThemeMeta 之後
         //（主題文字色全生效才比得出「段落色 vs 站方首字色」，見函式註解）
         markFirstLetterColorBlocks(articleEl, firstLetterMarked);
+      };
+
+      const passMarkSelectionOpaque = () => {
+        // v2.4.10：站方 ::selection 底色不透明標記（見函式註解）
+        selOpaqueMarked = markOpaqueSiteSelection(articleEl);
       };
 
       const passContrastGuardPhase2 = () => {
@@ -7351,6 +7411,7 @@ html.${HTML_CLASS}.jread-orion body {
         passMarkAncestors,
         passHtmlClassThemeMeta,
         passMarkFirstLetterColor,
+        passMarkSelectionOpaque,
         passContrastGuardPhase2,
         passBlockquoteSummaryContrast,
         passDarkSepiaContrastPhase3,
@@ -7499,6 +7560,10 @@ html.${HTML_CLASS}.jread-orion body {
         for (const el of snapshot.firstLetterMarked) {
           if (el && el.removeAttribute) el.removeAttribute(FIRST_LETTER_ATTR);
         }
+      }
+      // v2.4.10：站方選取底色不透明標記
+      if (snapshot.selOpaqueMarked && document.documentElement) {
+        document.documentElement.removeAttribute(SEL_OPAQUE_ATTR);
       }
       // v0.8.86：移除 responsive embed iframe fill 標記
       if (Array.isArray(snapshot.fillIframes)) {
