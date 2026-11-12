@@ -275,6 +275,10 @@
   const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
   // v1.7.70：pre-wrap 硬換行切出的段落載體標記（見 splitPreWrapParagraphs）。
   const PREWRAP_PARA_ATTR = 'data-jread-prewrap-para';
+  // v2.4.9：站方對 ::first-letter 設了與段落不同的顏色（drop cap 顯式色）的元素。
+  // 主文 ::first-letter 顏色修正（v0.8.137）只套在帶這個標記的元素上，見
+  // markFirstLetterColorBlocks。
+  const FIRST_LETTER_ATTR = 'data-jread-first-letter';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -2183,8 +2187,13 @@ html [${ARTICLE_ATTR}="1"] p:not([${INLINE_FLOW_P_ATTR}="1"]) {
    ::first-letter 一律 color: inherit（跟隨已被 reader 覆寫的段落色）+
    -webkit-text-fill-color: currentColor（蓋過站點 text-fill）。exclude 鏈與上方
    color inherit 規則一致（a / code / figcaption 等不動）。dark/sepia theme 的
-   全域 color 覆寫選不到 ::first-letter（pseudo-element 不被 * 選到），本規則補上。 */
-[${ARTICLE_ATTR}="1"] *${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"])::first-letter {
+   全域 color 覆寫選不到 ::first-letter（pseudo-element 不被 * 選到），本規則補上。
+   v2.4.9：只套在 [FIRST_LETTER_ATTR]（站方首字色與段落不同、JS 量測標記）。原本
+   對主文每個元素都掛 ::first-letter，WebKit 會替每段首字建獨立 first-letter
+   renderer；Safari 27.2 在翻頁 multicol 容器內對這種首字的 hit test 整字都回
+   offset 1（caretRangeFromPoint 實測：字左半也回 1、第二字分界正常）→ 段首拖選
+   永遠選不到第一個字（Jimmy 2026-11-12 Readwise Reader 回報；刪掉本規則即恢復）。 */
+[${ARTICLE_ATTR}="1"] [${FIRST_LETTER_ATTR}="1"]${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"])::first-letter {
   color: inherit !important;
   -webkit-text-fill-color: currentColor !important;
 }
@@ -4438,6 +4447,72 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(el);
     }
   }
+  // v2.4.9：drop cap 顏色修正的對象標記。純決策：首字 pseudo 的 color 或
+  // -webkit-text-fill-color 與元素本身不同＝站方對 ::first-letter 下了顯式色，
+  // 需要 v0.8.137 的 inherit 修正；相同就不必掛 ::first-letter（掛了反而讓
+  // Safari 翻頁模式段首選不到第一個字，見 CSS 規則註解）。
+  function firstLetterColorDiverges(cs, fl) {
+    if (!cs || !fl) return false;
+    const norm = (v) => String(v || '').replace(/\s+/g, '').toLowerCase();
+    if (norm(fl.color) && norm(fl.color) !== norm(cs.color)) return true;
+    const ff = norm(fl.webkitTextFillColor);
+    // 元素自身 text-fill 讀不到（未設＝currentColor）時以 color 為準
+    const elFill = norm(cs.webkitTextFillColor) || norm(cs.color);
+    return !!ff && ff !== 'currentcolor' && ff !== elFill;
+  }
+  // 量測必須在主題文字色已生效之後（passHtmlClassThemeMeta 之後）：比的是「JRead
+  // 覆寫後的段落色」vs「站方首字色」——The Verge 暗色站原本兩者同為白字、要等段落
+  // 被覆寫成深字才分得出來。只看非 inline 且有文字的元素（::first-letter 只作用於
+  // block container）。scopeEl 給定時只掃該子樹（動態補標）。
+  // 前置 gate：頁面樣式表完全沒有 first-letter 規則（JRead 自己那條除外）就不必
+  // 逐元素量 pseudo。讀不到 cssRules 的跨網域表＝不知道，保守當作可能有。
+  // 先判 selectorText 再遞迴 cssRules（巢狀 CSS 的 style rule 也有 cssRules）。
+  function pageMayStyleFirstLetter(doc) {
+    const sheets = [];
+    try {
+      for (const sh of doc.styleSheets || []) sheets.push(sh);
+      for (const sh of doc.adoptedStyleSheets || []) sheets.push(sh);
+    } catch (_) { return true; }
+    const walk = (rules) => {
+      for (const r of rules) {
+        const sel = r.selectorText || '';
+        if (sel.indexOf('first-letter') >= 0 && sel.indexOf(FIRST_LETTER_ATTR) < 0) return true;
+        if (r.cssRules && r.cssRules.length && walk(r.cssRules)) return true;
+      }
+      return false;
+    };
+    for (const sh of sheets) {
+      let rules = null;
+      try { rules = sh.cssRules; } catch (_) { return true; }
+      if (!rules) return true;
+      if (walk(rules)) return true;
+    }
+    return false;
+  }
+  function markFirstLetterColorBlocks(articleEl, marked, scopeEl) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    if (!pageMayStyleFirstLetter(articleEl.ownerDocument)) return;
+    const scope = scopeEl || articleEl;
+    const els = NS.selfAndDescendants(scope, '*');
+    for (const el of els) {
+      if (el.hasAttribute(FIRST_LETTER_ATTR)) continue;
+      if (!(el.textContent || '').trim()) continue;
+      let cs = null;
+      let fl = null;
+      try {
+        cs = _win.getComputedStyle(el);
+        if (!cs || String(cs.display || '').indexOf('inline') === 0 || cs.display === 'none') continue;
+        fl = _win.getComputedStyle(el, '::first-letter');
+      } catch (e) {
+        if (e && e.name === 'SyntaxError') continue;
+        throw e;
+      }
+      if (!firstLetterColorDiverges(cs, fl)) continue;
+      el.setAttribute(FIRST_LETTER_ATTR, '1');
+      marked.push(el);
+    }
+  }
   // v1.9.15：站方浮動工具列子樹整支豁免（cleaner allowSelectionToolbar 放行
   // 選取工具列後轉呼）。工具列的底色 / 框線 / 圖示色全是站方自管，bg / border /
   // color strip 一清就變成「圖示直接浮在內文上」（Reader probe 截圖實證）。
@@ -4626,6 +4701,8 @@ html.${HTML_CLASS}.jread-orion body {
       const playerMarked = [];
       // v1.9.15：行內高亮 / 站方浮動工具列標記（SITE_UI_ATTR + PLAYER_ATTR）
       const siteUiMarked = [];
+      // v2.4.9：drop cap 首字色修正對象（FIRST_LETTER_ATTR）
+      const firstLetterMarked = [];
       const fillIframes = [];
       const embedWrapMarked = [];
       // 2026-10-07 review B-01：class ratio token 容器標記
@@ -4654,7 +4731,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5065,7 +5142,7 @@ html.${HTML_CLASS}.jread-orion body {
         // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
         // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
         markInlineHighlights(articleEl, siteUiMarked);
-        activeMarkState = { articleEl, embedWrapMarked, ratioClassMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked,
+        activeMarkState = { articleEl, embedWrapMarked, ratioClassMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked, firstLetterMarked,
           // 呼叫當下才讀 classifyLateImg（與 passClassifyImages 的執行先後無關）
           classifyLateImg: (img) => { if (classifyLateImg) classifyLateImg(img); } };
       };
@@ -5103,6 +5180,12 @@ html.${HTML_CLASS}.jread-orion body {
 
         // v0.8.139：正規化 viewport meta（行動裝置「縮小一半」修法，見函式註解）
         viewportSnap = applyViewportFix();
+      };
+
+      const passMarkFirstLetterColor = () => {
+        // v2.4.9：drop cap 首字色修正對象標記。必須在 passHtmlClassThemeMeta 之後
+        //（主題文字色全生效才比得出「段落色 vs 站方首字色」，見函式註解）
+        markFirstLetterColorBlocks(articleEl, firstLetterMarked);
       };
 
       const passContrastGuardPhase2 = () => {
@@ -7267,6 +7350,7 @@ html.${HTML_CLASS}.jread-orion body {
         passMarkFillIframes,
         passMarkAncestors,
         passHtmlClassThemeMeta,
+        passMarkFirstLetterColor,
         passContrastGuardPhase2,
         passBlockquoteSummaryContrast,
         passDarkSepiaContrastPhase3,
@@ -7408,6 +7492,12 @@ html.${HTML_CLASS}.jread-orion body {
           if (!el || !el.removeAttribute) continue;
           el.removeAttribute(SITE_UI_ATTR);
           el.removeAttribute(PLAYER_ATTR);
+        }
+      }
+      // v2.4.9：drop cap 首字色修正標記（apply 與動態補標共用同一陣列）
+      if (Array.isArray(snapshot.firstLetterMarked)) {
+        for (const el of snapshot.firstLetterMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(FIRST_LETTER_ATTR);
         }
       }
       // v0.8.86：移除 responsive embed iframe fill 標記
@@ -7805,6 +7895,8 @@ html.${HTML_CLASS}.jread-orion body {
       }
       // v1.9.15：閱讀模式中新畫的重點（站方把選取文字包進高亮自訂元素）補標
       if (Array.isArray(s.siteUiMarked)) markInlineHighlights(s.articleEl, s.siteUiMarked, node);
+      // v2.4.9：晚 mount 段落的站方 drop cap 首字色補標
+      if (Array.isArray(s.firstLetterMarked)) markFirstLetterColorBlocks(s.articleEl, s.firstLetterMarked, node);
     },
 
     /**
