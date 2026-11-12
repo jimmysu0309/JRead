@@ -320,6 +320,8 @@
   let containForcedSeen = new WeakSet();
   let flexForced = [];                // v2.4.5：翻頁期間塌成 block 的單圖 flex/grid 容器，uninstall 還原
   let flexForcedSeen = new WeakSet();
+  let initialLetterPadded = [];       // v2.4.8：翻頁期間補 padding-top 的 initial-letter 首字段落，uninstall 還原
+  let initialLetterPaddedSeen = new WeakSet();
   let mediaFitForced = [];            // v1.9.25：fitMediaToPages 寫過的 inline 樣式 [{ el, prop, prev, prevPri }]，重算前 / uninstall 還原
   let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
@@ -472,6 +474,7 @@
     // v1.7.46：晚載入內容可能讓 scroll container / inline-* 原子盒（v1.9.13）事後
     // 長高過一頁（lazy 圖撐高），重測前補掃一輪
     releaseTallMonolithicBoxes();
+    padInitialLetterBlocks(); // v2.4.8：晚到的首字段落
     fitMediaToPages(); // v1.9.25：晚載入的圖撐開後重新貼合本頁剩餘空間
     remeasurePages();
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
@@ -772,6 +775,68 @@
     }
     flexForced = [];
     flexForcedSeen = new WeakSet();
+  }
+
+  // v2.4.8：initial-letter 首字的上緣墨跡被畫到上一頁底（Jimmy 2026-11-12 Mac Safari
+  // 翻頁模式 foreignaffairs 翻譯後「第二頁文章標題的文字會被切到第一頁裡」——其實是
+  // 首段的放大首字「就」）。站方 `p:first-child::first-letter { -webkit-initial-letter }`
+  // 依拉丁字 cap-height 對齊首行，CJK 字的字面（em box）比 cap-height 高，墨跡凸出
+  // 段落上緣。段落剛好落在某頁頂端時，WebKit multicol 依 flow 座標把凸出的墨跡畫進
+  // 上一欄底部（Playwright WebKit 實站 probe：第 1 頁 ED JOHNSON 圖說下方出現
+  // 「就」字頂端碎片；拉丁 "I" 沒有凸出所以英文原文看不到）。
+  // 修法：翻頁期間給 initial-letter 首字所在的 block 補 padding-top，讓墨跡落在本頁的
+  // padding 內（padding 不會在分頁處被截掉，margin 會）。補的量依首字行數 × 行高
+  // 估算——probe 實測 4 行首字凸出 < 0.5em（8.5px 已足夠），係數取 0.15 留兩倍餘裕；
+  // 只多出首字段落上方一小段空白，不影響其他段落。uninstall 還原。
+  // 純決策函式：initialLetter = computed initial-letter 值（'normal' / '4' / '3 2' /
+  // '3 drop'），lineHeightPx = 該 block 行高
+  const INITIAL_LETTER_INK_RATIO = 0.15;
+  const INITIAL_LETTER_HOST_SEL = 'p, div, section, article, blockquote, li, dd';
+  function initialLetterPadPx(initialLetter, lineHeightPx) {
+    const m = /^\s*(\d+(?:\.\d+)?)/.exec(String(initialLetter || ''));
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    if (!(n > 1) || !(lineHeightPx > 0)) return 0;
+    return Math.ceil(INITIAL_LETTER_INK_RATIO * n * lineHeightPx);
+  }
+  function readInitialLetter(cs) {
+    if (!cs) return '';
+    return cs.initialLetter || cs.webkitInitialLetter ||
+      (cs.getPropertyValue && (cs.getPropertyValue('initial-letter') || cs.getPropertyValue('-webkit-initial-letter'))) || '';
+  }
+  function padInitialLetterBlocks() {
+    if (!art) return;
+    let els;
+    try { els = art.querySelectorAll(INITIAL_LETTER_HOST_SEL); } catch (e) { return; }
+    for (const el of els) {
+      if (initialLetterPaddedSeen.has(el)) continue;
+      let pad = 0, cs;
+      try {
+        const il = readInitialLetter(getComputedStyle(el, '::first-letter'));
+        if (!il || il === 'normal') continue;
+        cs = getComputedStyle(el);
+        let lh = parseFloat(cs.lineHeight);
+        if (!(lh > 0)) lh = (parseFloat(cs.fontSize) || 16) * 1.2; // line-height: normal
+        pad = initialLetterPadPx(il, lh);
+      } catch (e) { continue; }
+      if (!(pad > 0)) continue;
+      initialLetterPaddedSeen.add(el);
+      initialLetterPadded.push({
+        el, prev: el.style.getPropertyValue('padding-top'), prevPri: el.style.getPropertyPriority('padding-top')
+      });
+      const base = parseFloat(cs.paddingTop) || 0;
+      el.style.setProperty('padding-top', (base + pad) + 'px', 'important');
+    }
+  }
+  function restoreInitialLetterPads() {
+    for (const r of initialLetterPadded) {
+      try {
+        r.el.style.removeProperty('padding-top');
+        if (r.prev) r.el.style.setProperty('padding-top', r.prev, r.prevPri);
+      } catch (e) { /* */ }
+    }
+    initialLetterPadded = [];
+    initialLetterPaddedSeen = new WeakSet();
   }
 
   // v1.9.25：媒體貼合本頁剩餘空間（Readwise Reader 直式 hero，Jimmy 2026-10-16
@@ -1541,6 +1606,8 @@
     // v1.7.46 / v1.9.13：先解開高 monolithic 容器（scroll container、inline-* 原子盒），
     // remeasure 才量得到真頁數
     releaseTallMonolithicBoxes();
+    // v2.4.8：initial-letter 首字的上緣墨跡留在本頁（見 padInitialLetterBlocks）
+    padInitialLetterBlocks();
     // v1.9.25：媒體貼合本頁剩餘空間（縮圖或明確換頁），同樣要在 remeasure 前
     fitMediaToPages();
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
@@ -1603,6 +1670,7 @@
     // 改成 block 層級的高 inline-* 原子盒（退回捲動模式後站方原排版仍是合理設計）
     restoreMonolithicBoxes();
     restoreMediaFit(); // v1.9.25
+    restoreInitialLetterPads(); // v2.4.8
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
     unlockVScroll();
@@ -1779,6 +1847,7 @@
     decideMediaFit,
     stripLayoutContain,
     isSingleMediaFlexShell,
+    initialLetterPadPx,
     refineShrink,
     quantizeStride,
     computeScrubTarget,
