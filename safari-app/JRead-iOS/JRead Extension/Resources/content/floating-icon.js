@@ -79,11 +79,11 @@
   // 皆不設禁制區——它們沒有 iPad 的視窗縮放角／系統手勢角問題。純函式吃 (ua, touchPoints) 方便
   // regression 驗各平台 UA 分支；可被 NS.floating.setIPadOSForTest 覆寫驗夾邊路徑（實機 Chromium
   // / jsdom maxTouchPoints = 0、UA 非 iPad）。
+  // 2026-11-15 review C-01：判定本體搬到 settings-defaults.js __JReadPlatform.isIPadOSEnv
+  //（裝置判定單一資料源，manifest 載入順序保證先於本檔）；這裡留同名轉呼給 spec 與匯出用。
   function isIPadOSEnv(ua, touchPoints) {
-    if (!((touchPoints || 0) >= 1)) return false;
-    ua = ua || '';
-    if (/iPhone|iPod/.test(ua)) return false;
-    return /iPad/.test(ua) || /Macintosh/.test(ua);
+    const P = (typeof window !== 'undefined' && window.__JReadPlatform) || null;
+    return !!(P && P.isIPadOSEnv(ua, touchPoints));
   }
   let isIPadOS = isIPadOSEnv(
     (typeof navigator !== 'undefined' && navigator.userAgent) || '',

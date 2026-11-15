@@ -496,6 +496,63 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       }));
   }
 
+  // ─── 平台判定（2026-11-15 review C-01 / E-08 / B-10）─────────────────────
+  // 「跑在哪個 runtime」「這台是什麼裝置」的單一資料源。本檔是 SW / event page /
+  // content script / popup / options / reader 兩頁唯一都有載的檔，所以住這裡
+  //（namespace.js 只有 content 與 reader 頁有載）。全部是純函式：呼叫端自己把
+  // browser.runtime.getURL('') / navigator.userAgent / navigator.maxTouchPoints
+  // 傳進來，本檔不碰任何 API（SW 與 jsdom 都能直接用）。
+  //
+  // 各判定的語意刻意分開、不合一——收斂前六個檔的判準本來就不同，差異是各
+  // 呼叫端要回答的問題不同，不是 drift：
+  //   isIOSDeviceUA      UA 自稱 iPhone / iPad / iPod（SW badge 文字分流）。
+  //                      **不認 iPadOS 桌面版 UA**（Macintosh）：SW 沒有可靠的
+  //                      觸控訊號可以區分 iPad 與 Mac，見 service-worker.js 註解
+  //   isIPhoneUA         UA 自稱 iPhone / iPod（styler 翻頁頁碼抬升量）
+  //   isIPadOSEnv        真觸控 + iPad UA 或「Macintosh + 觸控」（懸浮按鈕角落
+  //                      禁制區；iPadOS 13+ 桌面版 UA 偽裝成 Macintosh）
+  //   hasTouchScreen     maxTouchPoints >= 1（options「App 圖示」區塊）
+  //   supportsThreeFingerTap  maxTouchPoints >= 3（三指輕點手勢相關 UI；門檻
+  //                      = touch-gestures.js 辨識器的 FINGERS）
+  const RUNTIME_SCHEMES = {
+    safari: 'safari-web-extension://',
+    app: 'jread-app://',
+    chrome: 'chrome-extension://',
+    firefox: 'moz-extension://'
+  };
+  // 擴充自身 URL（browser.runtime.getURL('')）→ 'safari' | 'app' | 'chrome' |
+  // 'firefox' | 'other'。結構性平台訊號、非 UA 嗅探。
+  function runtimeKindOf(extUrl) {
+    const u = String(extUrl || '');
+    for (const kind of Object.keys(RUNTIME_SCHEMES)) {
+      if (u.startsWith(RUNTIME_SCHEMES[kind])) return kind;
+    }
+    return 'other';
+  }
+  const TOUCH_SCREEN_MIN_POINTS = 1;
+  const THREE_FINGER_MIN_POINTS = 3;
+  function isIOSDeviceUA(ua) { return /iPhone|iPad|iPod/.test(ua || ''); }
+  function isIPhoneUA(ua) { return /iPhone|iPod/.test(ua || ''); }
+  function hasTouchScreen(maxTouchPoints) { return (maxTouchPoints || 0) >= TOUCH_SCREEN_MIN_POINTS; }
+  function supportsThreeFingerTap(maxTouchPoints) { return (maxTouchPoints || 0) >= THREE_FINGER_MIN_POINTS; }
+  function isIPadOSEnv(ua, maxTouchPoints) {
+    if (!hasTouchScreen(maxTouchPoints)) return false;
+    ua = ua || '';
+    if (isIPhoneUA(ua)) return false;
+    return /iPad/.test(ua) || /Macintosh/.test(ua);
+  }
+  const PLATFORM = {
+    RUNTIME_SCHEMES,
+    TOUCH_SCREEN_MIN_POINTS,
+    THREE_FINGER_MIN_POINTS,
+    runtimeKindOf,
+    isIOSDeviceUA,
+    isIPhoneUA,
+    isIPadOSEnv,
+    hasTouchScreen,
+    supportsThreeFingerTap
+  };
+
   const PROFILES = {
     KEYS: PROFILE_KEYS,
     MAX: MAX_PROFILES,
@@ -530,6 +587,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadLatinFonts = LATIN_FONTS;
   global.__JReadComposeFontStack = composeFontStack;
   global.__JReadProfiles = PROFILES;
+  global.__JReadPlatform = PLATFORM;
   // module.exports 維持 === DEFAULT_SETTINGS（既有呼叫端契約，不可附掛其他 key
   // 否則污染 Object.keys / 被當設定欄位寫進 storage）。jsdom spec 需要 font
   // stacks 時 require 本檔後讀 globalThis.__JReadFontStacks。

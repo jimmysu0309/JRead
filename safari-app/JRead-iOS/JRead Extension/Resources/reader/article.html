@@ -32,14 +32,32 @@
 <body>
   <div id="jr-status">載入中…</div>
 
-  <!-- 載入完整 reader 閱讀模式模組堆疊（重用真 styler / positionMemory）。
-       不載 detector（繞過自建 container）/ cleaner（內容已是 Readwise 乾淨主文）。 -->
+  <!-- 載入 reader 閱讀模式模組堆疊（重用真 styler / positionMemory）。這份清單是
+       manifest content_scripts 的子集，順序照 manifest；forcing spec
+       review-1115-b5-reader.spec.js 驗「本頁載入的模組 ＝ manifest 清單 − 下列刻意不載」，
+       manifest 新增模組時必須二選一：補進這裡，或列進下表（spec 內的排除表同步）。
+       刻意不載（2026-11-15 review D-07，Jimmy 裁定）：
+       - detector：繞過，container 由本頁的 reader-article 模組自建
+       - cleaner / edit-mode / site-overrides：內容已是儲存服務的乾淨主文，沒有雜訊可清、
+         可編輯；site-overrides 是 cleaner 的站點規則表
+       - custom-shortcuts（＋它專用的 shortcut-utils）、touch-gestures：自訂快速鍵與三指輕點
+         的動作是「切換閱讀模式」，Article View 的退出＝回 feed，語意不同，另議
+       - cinema-mode / youtube-borderless / x-thread / fb-post：站點專用的進場路徑
+       - home-launcher / orion-detect / keepalive / domain-match / link-follow：一般網頁
+         的常駐機制（主畫面跳板、Orion 偵測、SW 保活、自動進場網域、連結跟隨）
+       popup-core 在下方與 Instapaper client 一起載（順序需求不同）。 -->
+  <!-- v2.5.1（D-07）：除錯記錄，必須第一個載入（同 manifest）。context 名稱由
+       reader-article 模組設成 article（main.js 會先設成 content） -->
+  <script src="../lib/logger.js"></script>
   <script src="../content/namespace.js"></script>
   <script src="../content/settings-defaults.js"></script>
   <script src="../content/toast.js"></script>
   <script src="../content/floating-icon.js"></script>
   <script src="../content/styler.js"></script>
   <script src="../content/space-scroll.js"></script>
+  <!-- v2.5.1（D-07）：閒置隱藏游標（設定 idleCursorHide，預設開）。觸控裝置沒有
+       精確指標，模組自己不掛 listener -->
+  <script src="../content/idle-cursor.js"></script>
   <script src="../content/paged-mode.js"></script>
   <script src="../content/position-memory.js"></script>
   <script src="../content/main.js"></script>

@@ -17,8 +17,10 @@
     'content/namespace.js',
     'content/home-launcher.js',
     'content/orion-detect.js',
-    'content/keepalive.js',
+    // 2026-11-15 review C-01：settings-defaults 先於 keepalive（它載入當下就問
+    // NS.isSafariRuntime，判定本體在 settings-defaults 的 __JReadPlatform）
     'content/settings-defaults.js',
+    'content/keepalive.js',
     'content/domain-match.js',
     'content/link-follow.js',
     'content/site-overrides.js',
@@ -648,28 +650,60 @@
     return '';
   }
 
-  async function saveToReadwise({ token, payload, fetchImpl, timeoutMs } = {}) {
+  // v2.5.1（2026-11-15 review E-07）：Readwise 各支呼叫共用的請求樣板——原本八支各抄
+  // 一份「resolve fetch → 驗 token → fetchWithTimeout → TIMEOUT / NETWORK → 401·403 →
+  // 429」，E-06（move 漏 429 分類）就是抄漏的結果。各支只留差異段：
+  //   precheck()：token 驗過之後、送出之前的參數檢查（NO_ID / NO_LOCATION / EMPTY…），
+  //     回錯誤 result 或 null。順序固定 NO_FETCH → NO_TOKEN → precheck，與收斂前相同
+  //   url：字串或函式（函式在 precheck 通過後才呼叫——網址常要用到已驗過的 id）
+  //   body：函式，回要送的物件；有給就帶 Content-Type 並 JSON.stringify（同樣在 precheck
+  //     通過後才呼叫）
+  //   classify：true＝401·403 → AUTH、429 → RATE_LIMIT 在這裡分類；false＝只送請求，
+  //     狀態碼由呼叫端自己判（saveToReadwise 要先讀 body 才回 AUTH / HTTP 且 429 維持
+  //     HTTP；validateReadwiseToken 沒有 429 分類——都是收斂前的既有行為，刻意不統一）
+  // 回 { result }（已分類的錯誤，呼叫端直接 return）或 { res }（交給呼叫端判讀）。
+  // rateLimitResult 是 function declaration（定義在下方），hoist 後可用。
+  async function readwiseRequest({ token, fetchImpl, precheck, url, method, body, keepalive, timeoutMs, defaultTimeoutMs, classify } = {}) {
     const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!f) return { result: { ok: false, error: 'NO_FETCH' } };
     if (!token || typeof token !== 'string' || !token.trim()) {
-      return { ok: false, error: 'NO_TOKEN' };
+      return { result: { ok: false, error: 'NO_TOKEN' } };
+    }
+    const pre = typeof precheck === 'function' ? precheck() : null;
+    if (pre) return { result: pre };
+    const opts = { method };
+    if (keepalive) opts.keepalive = true;
+    opts.headers = { 'Authorization': `Token ${token.trim()}` };
+    if (typeof body === 'function') {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body());
     }
     let res;
     try {
-      res = await fetchWithTimeout(f, READWISE_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${token.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      }, typeof timeoutMs === 'number' ? timeoutMs : SAVE_FETCH_TIMEOUT_MS);
+      res = await fetchWithTimeout(f, typeof url === 'function' ? url() : url, opts,
+        typeof timeoutMs === 'number' ? timeoutMs : defaultTimeoutMs);
     } catch (networkErr) {
       // v1.8.0：逾時與一般網路錯誤分流——逾時代表「送出去了但沒回音」，
       // 使用者需要的訊息是「再試一次」而不是「檢查網路」
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+      if (networkErr && networkErr.jreadTimeout) return { result: { ok: false, error: 'TIMEOUT' } };
+      return { result: { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) } };
     }
+    if (classify !== false) {
+      if (res.status === 401 || res.status === 403) {
+        return { result: { ok: false, status: res.status, error: 'AUTH' } };
+      }
+      if (res.status === 429) return { result: rateLimitResult(res) };
+    }
+    return { res };
+  }
+
+  async function saveToReadwise({ token, payload, fetchImpl, timeoutMs } = {}) {
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: SAVE_FETCH_TIMEOUT_MS,
+      url: READWISE_API_URL, method: 'POST', body: () => payload, classify: false
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     // v1.5.7：先讀原始 text 再嘗試 JSON.parse——Readwise 4xx 的 body 未必是 JSON
     //（曾見純文字 / HTML 錯誤頁），原本只 res.json() 失敗就把唯一的失敗原因整個
     // 丟掉、toast 只剩不透明的「送出失敗（HTTP 400）」無從定位。真實 Response 一定
@@ -698,21 +732,12 @@
   // 分支判斷。NO_TOKEN（空）/ AUTH（401·403 → token 無效或過期）/ NETWORK（連不上）/
   // HTTP（其他非 2xx）/ NO_FETCH（環境無 fetch）。
   async function validateReadwiseToken({ token, fetchImpl, timeoutMs } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return { ok: false, error: 'NO_TOKEN' };
-    }
-    let res;
-    try {
-      res = await fetchWithTimeout(f, READWISE_AUTH_URL, {
-        method: 'GET',
-        headers: { 'Authorization': `Token ${token.trim()}` }
-      }, typeof timeoutMs === 'number' ? timeoutMs : AUTH_FETCH_TIMEOUT_MS);
-    } catch (networkErr) {
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-    }
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: AUTH_FETCH_TIMEOUT_MS,
+      url: READWISE_AUTH_URL, method: 'GET', classify: false
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     // 有效：204 No Content（也容忍其他 2xx，保險）
     if (res.status === 204 || res.ok) return { ok: true, status: res.status };
     if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
@@ -734,34 +759,23 @@
   // 列文件。location='new'=inbox 收件匣；帶 id 取單篇；withHtmlContent=true 取主文 HTML。
   // 回 { ok:true, results, nextPageCursor } 或 { ok:false, error, status }。
   async function listReaderDocuments({ token, location, id, tag, withHtmlContent, pageCursor, fetchImpl, timeoutMs } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return { ok: false, error: 'NO_TOKEN' };
-    }
-    const params = new URLSearchParams();
-    if (location) params.set('location', location);
-    if (id) params.set('id', id);
-    if (tag) params.set('tag', tag);  // v1.0.25：依 tag 過濾（JRead 分頁撈 jread tag）
-    if (withHtmlContent) params.set('withHtmlContent', 'true');
-    if (pageCursor) params.set('pageCursor', pageCursor);
-    const qs = params.toString();
-    const url = qs ? `${READER_LIST_URL}?${qs}` : READER_LIST_URL;
-    let res;
-    try {
-      res = await fetchWithTimeout(f, url, {
-        method: 'GET',
-        headers: { 'Authorization': `Token ${token.trim()}` }
-      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
-    } catch (networkErr) {
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-    }
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, error: 'AUTH' };
-    }
     // v1.10.0：429 獨立分類（list 限流 20/min，文章 / feed 載入撞到時給「稍候再試」文案）
-    if (res.status === 429) return rateLimitResult(res);
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
+      method: 'GET',
+      url: () => {
+        const params = new URLSearchParams();
+        if (location) params.set('location', location);
+        if (id) params.set('id', id);
+        if (tag) params.set('tag', tag);  // v1.0.25：依 tag 過濾（JRead 分頁撈 jread tag）
+        if (withHtmlContent) params.set('withHtmlContent', 'true');
+        if (pageCursor) params.set('pageCursor', pageCursor);
+        const qs = params.toString();
+        return qs ? `${READER_LIST_URL}?${qs}` : READER_LIST_URL;
+      }
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     if (!res.ok) {
       return { ok: false, status: res.status, error: 'HTTP' };
     }
@@ -776,35 +790,21 @@
   // Later（'later'，v2.4.0 feed 右滑）。回 { ok, status } / 錯誤分類。
   const READER_MOVE_LOCATIONS = ['new', 'later', 'shortlist', 'archive'];
   async function moveReaderDocument({ token, id, location, fetchImpl, timeoutMs } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return { ok: false, error: 'NO_TOKEN' };
-    }
-    if (!id || typeof id !== 'string' || !id.trim()) {
-      return { ok: false, error: 'NO_ID' };
-    }
-    if (!READER_MOVE_LOCATIONS.includes(location)) return { ok: false, error: 'NO_LOCATION' };
-    let res;
-    try {
-      res = await fetchWithTimeout(f, `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Token ${token.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ location })
-      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
-    } catch (networkErr) {
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-    }
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, error: 'AUTH' };
-    }
     // v2.4.11（2026-11-15 review E-06）：限流要分類——v2.4.0 的連續左滑封存 / 右滑
     // Later 是最容易連打的操作，原本 429 落到 HTTP 顯示「封存失敗（HTTP 429）」
-    if (res.status === 429) return rateLimitResult(res);
+    //（v2.5.1 起 429 分類住在 readwiseRequest，不會再抄漏）
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
+      precheck: () => {
+        if (!id || typeof id !== 'string' || !id.trim()) return { ok: false, error: 'NO_ID' };
+        if (!READER_MOVE_LOCATIONS.includes(location)) return { ok: false, error: 'NO_LOCATION' };
+        return null;
+      },
+      url: () => `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`,
+      method: 'PATCH', body: () => ({ location })
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     if (!res.ok) {
       return { ok: false, status: res.status, error: 'HTTP' };
     }
@@ -822,35 +822,21 @@
   // keepalive：這支多半在頁面退出 / 背景化當下送（位置記憶的 flush 路徑），沒有它
   // 請求會跟著頁面一起被取消。回 { ok, status } / 錯誤分類（同 moveReaderDocument）。
   async function updateReaderProgress({ token, id, progress, fetchImpl, timeoutMs } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return { ok: false, error: 'NO_TOKEN' };
-    }
-    if (!id || typeof id !== 'string' || !id.trim()) {
-      return { ok: false, error: 'NO_ID' };
-    }
-    const p = Number(progress);
-    if (progress == null || !Number.isFinite(p) || p < 0 || p > 1) return { ok: false, error: 'NO_PROGRESS' };
-    let res;
-    try {
-      res = await fetchWithTimeout(f, `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
-        method: 'PATCH',
-        keepalive: true,
-        headers: {
-          'Authorization': `Token ${token.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ reading_progress: Math.round(p * 10000) / 10000 })
-      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
-    } catch (networkErr) {
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-    }
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, error: 'AUTH' };
-    }
-    if (res.status === 429) return rateLimitResult(res);
+    let p;
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
+      precheck: () => {
+        if (!id || typeof id !== 'string' || !id.trim()) return { ok: false, error: 'NO_ID' };
+        p = Number(progress);
+        if (progress == null || !Number.isFinite(p) || p < 0 || p > 1) return { ok: false, error: 'NO_PROGRESS' };
+        return null;
+      },
+      url: () => `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`,
+      method: 'PATCH', keepalive: true,
+      body: () => ({ reading_progress: Math.round(p * 10000) / 10000 })
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     if (!res.ok) {
       return { ok: false, status: res.status, error: 'HTTP' };
     }
@@ -887,27 +873,18 @@
   // 建立重點。回 { ok:true, id } / { ok:false, error }：NOT_FOUND（400，文字對不上
   // 原文）/ AUTH / RATE_LIMIT / TIMEOUT / NETWORK / HTTP / NO_TOKEN / NO_ID / EMPTY
   async function createReaderHighlight({ token, parentId, content, fetchImpl, timeoutMs } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) return { ok: false, error: 'NO_TOKEN' };
-    if (!parentId || typeof parentId !== 'string' || !parentId.trim()) return { ok: false, error: 'NO_ID' };
-    if (!content || typeof content !== 'string' || !content.trim()) return { ok: false, error: 'EMPTY' };
-    let res;
-    try {
-      res = await fetchWithTimeout(f, READER_SAVE_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${token.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ parent_id: parentId.trim(), content, saved_using: 'JRead' })
-      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
-    } catch (networkErr) {
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-    }
-    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
-    if (res.status === 429) return rateLimitResult(res);
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
+      precheck: () => {
+        if (!parentId || typeof parentId !== 'string' || !parentId.trim()) return { ok: false, error: 'NO_ID' };
+        if (!content || typeof content !== 'string' || !content.trim()) return { ok: false, error: 'EMPTY' };
+        return null;
+      },
+      url: READER_SAVE_URL, method: 'POST',
+      body: () => ({ parent_id: parentId.trim(), content, saved_using: 'JRead' })
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     if (res.status === 400) return { ok: false, status: 400, error: 'NOT_FOUND' };
     if (!res.ok) return { ok: false, status: res.status, error: 'HTTP' };
     let data = null;
@@ -919,22 +896,14 @@
   // 刪除重點（也適用一般文件，JReader 只拿來刪重點）。404 = 已經不在（別處刪過 /
   // 快取過期）→ 當成功，gone:true 讓呼叫端知道
   async function deleteReaderDocument({ token, id, fetchImpl, timeoutMs } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) return { ok: false, error: 'NO_TOKEN' };
-    if (!id || typeof id !== 'string' || !id.trim()) return { ok: false, error: 'NO_ID' };
-    let res;
-    try {
-      res = await fetchWithTimeout(f, `${READER_DELETE_URL}${encodeURIComponent(id.trim())}/`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Token ${token.trim()}` }
-      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
-    } catch (networkErr) {
-      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-    }
-    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
-    if (res.status === 429) return rateLimitResult(res);
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
+      precheck: () => (!id || typeof id !== 'string' || !id.trim()) ? { ok: false, error: 'NO_ID' } : null,
+      url: () => `${READER_DELETE_URL}${encodeURIComponent(id.trim())}/`,
+      method: 'DELETE'
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     if (res.status === 404) return { ok: true, status: 404, gone: true };
     if (!res.ok) return { ok: false, status: res.status, error: 'HTTP' };
     return { ok: true, status: res.status };
@@ -948,32 +917,26 @@
   // external_id）的文章。回 { ok:true, docs: { <Reader 文件 id>: [{ id, content,
   // offset, deleted }] } }。中途任何一頁失敗就整批回失敗（半套結果不能拿來整篇替換）。
   async function exportReaderHighlights({ token, updatedAfter, fetchImpl, timeoutMs, maxPages } = {}) {
-    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-    if (!f) return { ok: false, error: 'NO_FETCH' };
-    if (!token || typeof token !== 'string' || !token.trim()) return { ok: false, error: 'NO_TOKEN' };
     const limitPages = typeof maxPages === 'number' && maxPages > 0 ? maxPages : 50;
     const docs = {};
     let cursor = null;
     for (let page = 0; page < limitPages; page++) {
-      const params = new URLSearchParams();
-      if (updatedAfter) {
-        params.set('updatedAfter', updatedAfter);
-        params.set('includeDeleted', 'true');
-      }
-      if (cursor) params.set('pageCursor', cursor);
-      const qs = params.toString();
-      let res;
-      try {
-        res = await fetchWithTimeout(f, qs ? `${READWISE_EXPORT_URL}?${qs}` : READWISE_EXPORT_URL, {
-          method: 'GET',
-          headers: { 'Authorization': `Token ${token.trim()}` }
-        }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
-      } catch (networkErr) {
-        if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
-        return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
-      }
-      if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
-      if (res.status === 429) return rateLimitResult(res);
+      const r = await readwiseRequest({
+        token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
+        method: 'GET',
+        url: () => {
+          const params = new URLSearchParams();
+          if (updatedAfter) {
+            params.set('updatedAfter', updatedAfter);
+            params.set('includeDeleted', 'true');
+          }
+          if (cursor) params.set('pageCursor', cursor);
+          const qs = params.toString();
+          return qs ? `${READWISE_EXPORT_URL}?${qs}` : READWISE_EXPORT_URL;
+        }
+      });
+      if (r.result) return r.result;
+      const res = r.res;
       if (!res.ok) return { ok: false, status: res.status, error: 'HTTP' };
       let data = null;
       try { data = await res.json(); } catch (_) { /* 非 JSON */ }
@@ -1427,6 +1390,8 @@
     collectPictureSources,
     stripPictureSources,
     saveToReadwise,
+    // v2.5.1（review E-07）：Readwise 請求樣板（各支共用；匯出供 spec 驗）
+    readwiseRequest,
     readwiseErrorDetail,
     validateReadwiseToken,
     listReaderDocuments,
