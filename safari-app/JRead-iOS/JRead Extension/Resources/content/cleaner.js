@@ -295,8 +295,8 @@
   // 語意命名、NOISE_KEYWORD_RE 無法命中，只能靠 heading content 匹配。
   // 字詞 family：
   //   延伸閱讀 / 相關新聞 / 相關文章 / 相關報導 / 推薦閱讀 / 推薦文章
-  //     （v2.5.2：「相關」家族補簡體與「報道」寫法——相关报道 / 相關報道 / 相关新闻…
-  //      cn.nytimes.com 文中側欄 h4「相关报道」原文與 Shinkansen 譯文「相關報道」都漏網）
+  //     （v2.5.3：簡體與「報道」寫法不寫進 regex——比對前先過 foldZhVariants 摺成本表的
+  //      台灣寫法，所有家族一次涵蓋；見下方 ZH_SIMP_TRAD_PAIRS）
   //   熱門新聞 / 熱門文章 / 最新消息 / 最新新聞
   //   更多相關 / 更多...文章 / 更多...新聞 / 查看更多 / 看更多
   //   其他人也看 / 你可能也喜歡 / 也許您(會|也會)(感興趣|喜歡)
@@ -309,8 +309,33 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相[關关](?:新[聞闻]|文章|報[導道]|报[道导]|行情|議題|议题|貼文|影片|[內内]容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|评论|回复)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
+  // v2.5.3：簡體 / 「報道」寫法摺疊（Jimmy 2026-11-15：其他家族的簡體寫法一次補齊）。
+  // NOISE_HEADING_TEXT_RE / EXT 的中文詞全是台灣寫法，簡體站（cn.nytimes.com
+  // 「相关报道」）與 Shinkansen 把簡體譯成的「相關報道」都 miss。不逐詞補變體
+  //（v2.5.2 只補了「相關」一族、其餘家族照漏），改在比對前把標題文字摺成台灣寫法：
+  //   - 逐字：本表「簡→繁」成對列出，只收兩條 regex 用得到的字，且只收「簡體專用
+  //     字形」——不收在繁體文裡另有其字的（后 / 里 / 周 / 复 / 干 / 云…），
+  //     所以繁體站的標題文字經過摺疊不會變
+  //   - 逐詞：報道→報導、回复→回覆（「复」「道」單字有歧義，只認這兩個詞）
+  // 摺疊只用於「這段短標題是不是雜訊標題用語」的比對，不改 DOM、不影響長度門檻
+  //（一字換一字）。用語層的兩岸差異（视频 / 关注 以外的詞彙差）不在此列。
+  // 與 tools/audit-lib.js 的 ZH_SIMP_TRAD_PAIRS 是同一份事實的雙實作（extension 與
+  // node 工具無法共用模組）——forcing：noise-heading-zh-fold.spec.js 逐字比對兩份。
+  const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話';
+  const ZH_SIMP_TRAD_MAP = (() => {
+    const m = new Map();
+    const cs = Array.from(ZH_SIMP_TRAD_PAIRS);
+    for (let i = 0; i + 1 < cs.length; i += 2) m.set(cs[i], cs[i + 1]);
+    return m;
+  })();
+  function foldZhVariants(s) {
+    if (!s || !/[\u4e00-\u9fff]/.test(s)) return s;
+    let out = '';
+    for (const ch of s) out += ZH_SIMP_TRAD_MAP.get(ch) || ch;
+    return out.replace(/報道/g, '報導').replace(/回复/g, '回覆');
+  }
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
   // 既有 pattern（延伸閱讀 等）維持 max_len=20 不提升——upmedia.mg 把
@@ -4323,8 +4348,9 @@
       // max_len（40）。upmedia.mg 的 H3「延伸閱讀：＋連結文字」29 chars 命中
       // 延伸閱讀 pattern，但 walk-up guard 因主文用 <div> 不用 <p> 全 miss →
       // 整篇主文被 hide。既有 pattern 仍限 20 chars 避免此類 regression。
-      const hitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
-      const hitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
+      const foldedText = foldZhVariants(text);
+      const hitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(foldedText);
+      const hitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(foldedText);
       if (!hitBase && !hitExt) continue;
       // v1.7.76：URL 形態文字不是 heading（見 isUrlLikeText；動態側同步）
       if (isUrlLikeText(text)) continue;
@@ -10985,8 +11011,9 @@
           !isInPreserved(h) && !h.closest('button')) {
         if (hideSponsorWidgetFromHeading(h, articleEl, hiddenList)) return;
       }
-      const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(text);
-      const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(text);
+      const dynFoldedText = foldZhVariants(text);
+      const dynHitBase = text.length <= NOISE_HEADING_MAX_LEN && NOISE_HEADING_TEXT_RE.test(dynFoldedText);
+      const dynHitExt = text.length <= NOISE_HEADING_MAX_LEN_EXT && NOISE_HEADING_TEXT_EXT_RE.test(dynFoldedText);
       if (!dynHitBase && !dynHitExt) continue;
       // v1.7.76：URL 形態文字不是 heading（與靜態 path 單一資料源）
       if (isUrlLikeText(text)) continue;
