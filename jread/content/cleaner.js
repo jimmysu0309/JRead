@@ -6779,7 +6779,12 @@
           twoColLede = bothCols && !!mediaCol && !!textCol;
         }
       }
-      if (maxTop - minTop <= 5 && !twoColLede) continue;
+      // 2026-11-15 review B-03：「要不要塌」問 NS.flexShellVerdict（與 styler /
+      // paged-mode 同一張判定表）；這裡蒐集的事實是 wrapped 與 twoColLede
+      if (!NS.flexShellVerdict({
+        display: cs.display, flexDirection: cs.flexDirection,
+        wrapped: maxTop - minTop > 5, twoColLede
+      }).collapse) continue;
       // 窄 cell 必須在 container 塌掉「之前」量測（塌完 child 寬度已被
       // block flow 改變，量測失真）——v1.7.30 + v1.7.34，見 narrowCellClass 註解
       const narrowCells = new Map();

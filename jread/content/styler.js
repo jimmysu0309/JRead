@@ -278,7 +278,7 @@
   // v2.4.9：站方對 ::first-letter 設了與段落不同的顏色（drop cap 顯式色）的元素。
   // 主文 ::first-letter 顏色修正（v0.8.137）只套在帶這個標記的元素上，見
   // markFirstLetterColorBlocks。
-  const FIRST_LETTER_ATTR = 'data-jread-first-letter';
+  const FIRST_LETTER_ATTR = NS.FIRST_LETTER_ATTR; // 'data-jread-first-letter'（單一資料源在 namespace.js）
   // v2.4.10：站方 ::selection 底色不透明（標在 <html>，見 markOpaqueSiteSelection）
   const SEL_OPAQUE_ATTR = 'data-jread-sel-opaque';
 
@@ -4478,36 +4478,13 @@ html.${HTML_CLASS}.jread-orion body {
   // 被覆寫成深字才分得出來。只看非 inline 且有文字的元素（::first-letter 只作用於
   // block container）。scopeEl 給定時只掃該子樹（動態補標）。
   // 前置 gate：頁面樣式表完全沒有 first-letter 規則（JRead 自己那條除外）就不必
-  // 逐元素量 pseudo。讀不到 cssRules 的跨網域表＝不知道，保守當作可能有。
-  // 先判 selectorText 再遞迴 cssRules（巢狀 CSS 的 style rule 也有 cssRules）。
-  // v2.4.10：泛化成「頁面樣式表有沒有提到某個 pseudo」——::selection 量測共用。
-  // excludeToken：JRead 自己規則的辨識字串（自家規則不算站方有寫）。
-  function pageMayStylePseudo(doc, token, excludeToken) {
-    const sheets = [];
-    try {
-      for (const sh of doc.styleSheets || []) sheets.push(sh);
-      for (const sh of doc.adoptedStyleSheets || []) sheets.push(sh);
-    } catch (_) { return true; }
-    const walk = (rules) => {
-      for (const r of rules) {
-        const sel = r.selectorText || '';
-        if (sel.indexOf(token) >= 0 && sel.indexOf(excludeToken) < 0) return true;
-        if (r.cssRules && r.cssRules.length && walk(r.cssRules)) return true;
-      }
-      return false;
-    };
-    for (const sh of sheets) {
-      let rules = null;
-      try { rules = sh.cssRules; } catch (_) { return true; }
-      if (!rules) return true;
-      if (walk(rules)) return true;
-    }
-    return false;
-  }
+  // 逐元素量 pseudo——NS.pageHasSiteFirstLetterRule（2026-11-15 review B-02 起住
+  // namespace.js、帶快取，與 paged-mode 的首字補上緣共用；::selection 量測走同一支
+  // 底層 NS.pageMayStylePseudo）。
   function markFirstLetterColorBlocks(articleEl, marked, scopeEl) {
     const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
     if (!_win || !_win.getComputedStyle) return;
-    if (!pageMayStylePseudo(articleEl.ownerDocument, 'first-letter', FIRST_LETTER_ATTR)) return;
+    if (!NS.pageHasSiteFirstLetterRule(articleEl.ownerDocument)) return;
     const scope = scopeEl || articleEl;
     const els = NS.selfAndDescendants(scope, '*');
     for (const el of els) {
@@ -4550,7 +4527,7 @@ html.${HTML_CLASS}.jread-orion body {
     const _win = doc && doc.defaultView;
     if (!_win || !_win.getComputedStyle) return false;
     doc.documentElement.removeAttribute(SEL_OPAQUE_ATTR);
-    if (!pageMayStylePseudo(doc, 'selection', 'jread')) return false;
+    if (!NS.pageMayStylePseudo(doc, 'selection', 'jread')) return false;
     let probeEl = articleEl;
     for (const p of articleEl.querySelectorAll('p')) {
       if ((p.textContent || '').trim()) { probeEl = p; break; }
@@ -4594,6 +4571,8 @@ html.${HTML_CLASS}.jread-orion body {
      * @returns {object|null} snapshot，restore 時必須原樣回傳
      */
     apply(articleEl, settings) {
+      // 2026-11-15 review B-02：pseudo 樣式表 gate 的快取以 apply 為單位
+      if (typeof NS.resetPseudoMemo === 'function') NS.resetPseudoMemo();
       if (!articleEl || articleEl.nodeType !== 1) return null;
 
       const s = settings || {};
@@ -6595,13 +6574,18 @@ html.${HTML_CLASS}.jread-orion body {
           || (firstInk && /^H1$/.test(firstInk.tagName) ? firstInk : firstVisibleH1(articleEl));
         const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
         if (!titleEl || !win) return;
+        // 2026-11-15 review B-04：display 走分層登記簿（owner 'styler:title-line'）——
+        // 編輯模式點掉標題 / dek 後退出，cleaner 那層記到的原值才不會是這裡寫的
+        // block !important。其他屬性（font-size / line-height / text-align）沒有別的
+        // 模組會寫，維持自帶快照
         const setSnap = (el, prop, val) => {
           titleLineSnap.push({
             el, prop,
             v: el.style.getPropertyValue(prop),
             p: el.style.getPropertyPriority(prop),
           });
-          el.style.setProperty(prop, val, 'important');
+          if (prop === 'display') setInlineOwned(el, prop, val, 'important', 'styler:title-line');
+          else el.style.setProperty(prop, val, 'important');
         };
         const tcs = win.getComputedStyle(titleEl);
         if (/^inline/.test(tcs.display)) setSnap(titleEl, 'display', 'block');
@@ -6682,7 +6666,9 @@ html.${HTML_CLASS}.jread-orion body {
           if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
           const cs = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
           if (!cs) continue;
-          if (cs.display !== 'flex' && cs.display !== 'grid' && cs.display !== 'inline-flex' && cs.display !== 'inline-grid') continue;
+          // 2026-11-15 review B-03：「要不要塌」問 NS.flexShellVerdict（與 cleaner /
+          // paged-mode 同一張判定表）；這裡蒐集的事實是 directMedia
+          if (!NS.FLEX_SHELL_DISPLAYS.has(cs.display)) continue;
           let hasMediaChild = false;
           for (const c of el.children) {
             if (c.tagName === 'PICTURE' || c.tagName === 'IMG' || c.tagName === 'FIGURE') {
@@ -6704,7 +6690,7 @@ html.${HTML_CLASS}.jread-orion body {
               break;
             }
           }
-          if (!hasMediaChild) continue;
+          if (!NS.flexShellVerdict({ display: cs.display, directMedia: hasMediaChild }).collapse) continue;
           galleryPending.push(el);
         }
         for (const el of galleryPending) {
@@ -7475,6 +7461,7 @@ html.${HTML_CLASS}.jread-orion body {
       if (snapshot.panguSnap) {
         panguRestore(snapshot.panguSnap);
       }
+      if (typeof NS.resetPseudoMemo === 'function') NS.resetPseudoMemo(); // B-02：快取隨 apply 生命週期清掉
       // v0.8.130：清 marker <style> + 可能的 adopted sheet（CSP fallback 對稱還原）
       NS.removeCssText(STYLE_ID);
 
@@ -7794,6 +7781,8 @@ html.${HTML_CLASS}.jread-orion body {
         for (let i = snapshot.titleLineSnap.length - 1; i >= 0; i--) {
           const s = snapshot.titleLineSnap[i];
           if (!s || !s.el) continue;
+          // B-04：display 先問登記簿，沒登記（最小 NS 環境）才走快照寫回
+          if (s.prop === 'display' && releaseInlineOwned(s.el, 'display', 'styler:title-line')) continue;
           if (s.v) s.el.style.setProperty(s.prop, s.v, s.p || '');
           else s.el.style.removeProperty(s.prop);
         }

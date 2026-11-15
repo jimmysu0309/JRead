@@ -25,6 +25,9 @@
 //   --wait <ms>                進場後等多久才量（預設 4500＝蓋過 1s / 3s 兩個重測計時器）
 //   --exit                     量完後退出閱讀模式，另記 inline style 與進場前的差異
 //   --no-shots                 不截圖（只要 JSON）
+//   --after <module.js>        量完指紋後跑自訂步驟：module.exports = async (page, { sleep, toggle }) => 結果，
+//                              結果記在 JSON 的 after 欄位（編輯模式點掉元素再退出這類流程；
+//                              content script 在 main world，頁內可直接用 window.__JRead）
 //   --snapshot <out.html>      不進閱讀模式：載入 URL 後存成可回放的快照（拿掉 script、
 //                              CSSOM 動態插入的規則寫回 <style>、補 <base>），給 --html 用
 //
@@ -65,6 +68,7 @@ const OUT_DIR = path.resolve(argOf('--out', path.join(__dirname, '..', '.playwri
 const WAIT_MS = parseInt(argOf('--wait', '4500'), 10);
 const DO_EXIT = has('--exit');
 const NO_SHOTS = has('--no-shots');
+const AFTER_MODULE = argOf('--after', null);
 const MAX_SHOT_PAGES = 40;
 const VIEWPORTS = argOf('--viewports', '1440x900,1280x720,430x850').split(',').map((s) => {
   const [w, h] = s.trim().split('x').map((n) => parseInt(n, 10));
@@ -322,7 +326,12 @@ async function runViewport(browser, vp) {
     if (n > 1) await page.keyboard.press('Home');
     await sleep(300);
   }
-  if (DO_EXIT && fp.active) {
+  if (AFTER_MODULE && fp.active) {
+    const toggle = () => page.evaluate(() => window.__pagedProbeToggle());
+    try { fp.after = await require(path.resolve(AFTER_MODULE))(page, { sleep, toggle }); } catch (e) { fp.after = { error: String(e && e.message || e) }; }
+    console.log(`[${tag}] after: ${JSON.stringify(fp.after)}`);
+  }
+  if (DO_EXIT && fp.active && !AFTER_MODULE) {
     await page.evaluate(() => window.__pagedProbeToggle());
     await sleep(900);
     fp.exit = await page.evaluate(diffInlineAfter);

@@ -1077,6 +1077,113 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return true;
     },
 
+    // 2026-11-15 review B-03：「主文內的 flex / grid 殼要不要塌成 block」純決策函式。
+    // 同一份事實原本三處各寫各的條件：
+    //   styler passGalleryFlex（v0.7.93 / v2.2.9）  直接子是媒體，或 a / span 只包一張圖
+    //   cleaner collapseInnerFlexWrap（v0.7.107 / v0.8.48）  橫向 flex 子項已換行，或
+    //                                               「媒體欄＋文字欄」對半 lede
+    //   paged-mode singleMediaFlexShell（v2.4.5）   子樹內恰一張要貼合的大圖（翻頁才塌）
+    // v2.2.9（grubstreet flex > a > img）與 v2.4.5（foreignaffairs section.topper）是同一
+    // 缺口的兩次回報，一次補在 styler、一次補在 paged-mode。判定收在這裡：三處各自蒐集
+    // 手上量得到的事實來問，下一個結構只要在這張表加一列，不必先猜該補哪個檔。
+    //
+    // facts（沒量的欄位留 undefined＝當作不成立）：
+    //   display               computed display
+    //   flexDirection         computed flex-direction（wrapped / twoColLede 兩列才需要）
+    //   directMedia           直接子是 picture / img / figure，或 a / span 只包一張內容圖
+    //   wrapped               in-flow 可見子項不在同一列（flex-wrap 已發生）
+    //   twoColLede            恰兩欄、各佔 30–70%、一欄有 ≥ 150px 寬的圖、另一欄有 ≥ 80 字
+    //   subtreeFitMediaCount  子樹內「要貼合的大圖」張數（翻頁模式才量）
+    //   paged                 翻頁模式——政策參數
+    // 回傳 { collapse, reason }。表序＝判定優先序，reason 給 log / spec 用。
+    // 捲動與翻頁唯一的政策差異在最後一列：單圖殼只有翻頁要塌（WebKit 對 flex / grid
+    // item 內部無視 break-*，圖會跨頁硬切）；捲動模式沒有分頁、並排版面照留。子樹內
+    // 兩張以上大圖（並排 gallery）兩種模式都不因這一列而塌，避免把刻意並排的圖拆成直排。
+    // 不在這張表的：cleaner collapseInnerGridFlex（寫死 px 欄寬的 grid）與
+    // collapseGridWithHiddenCell（兄弟欄被藏掉）——那兩條的事實是「欄寬配置已失效」，
+    // 與殼裡有沒有媒體無關，而且明文跳過媒體容器。
+    FLEX_SHELL_DISPLAYS: new Set(['flex', 'inline-flex', 'grid', 'inline-grid']),
+    FLEX_SHELL_RULES: [
+      { reason: 'direct-media', test: (f) => f.directMedia === true },
+      { reason: 'wrapped-row', test: (f) => f.isFlexRow && f.wrapped === true },
+      { reason: 'two-col-lede', test: (f) => f.isFlexRow && f.twoColLede === true },
+      { reason: 'paged-single-media', test: (f) => f.paged === true && f.subtreeFitMediaCount === 1 },
+    ],
+    flexShellVerdict(facts) {
+      const f = facts || {};
+      const display = String(f.display || '');
+      if (!this.FLEX_SHELL_DISPLAYS.has(display)) return { collapse: false, reason: 'not-flex-grid' };
+      const isFlex = display === 'flex' || display === 'inline-flex';
+      const dir = String(f.flexDirection || '');
+      const ctx = Object.assign({}, f, { isFlexRow: isFlex && (dir === 'row' || dir === 'row-reverse') });
+      for (const rule of this.FLEX_SHELL_RULES) {
+        if (rule.test(ctx)) return { collapse: true, reason: rule.reason };
+      }
+      return { collapse: false, reason: 'keep' };
+    },
+
+    // 2026-11-15 review B-02 / P-4：「頁面樣式表有沒有提到某個 pseudo」——站方有沒有
+    // drop cap（::first-letter）、有沒有自訂選取色（::selection）的前置 gate。原本住
+    // styler、每次呼叫都重走整份 CSSOM，而且掛在動態補標路徑上（cleaner observer 對每個
+    // 新增節點轉呼一次）：CDP 實測新增 87 個節點時這支函式合計 18–37ms（wiki Glass
+    // 1.5K 條規則 37ms、wired 4.7K 條 32ms、foreignaffairs 18ms）。翻頁模式的
+    // padInitialLetterBlocks 問的是同一份事實（這頁有沒有站方 first-letter 規則）卻沒有
+    // 這道 gate，每輪 relayout 對主文每個區塊元素各讀一次 pseudo computed style。
+    // 搬來這裡兩邊共用，結果快取：
+    //   - 快取 key＝樣式表簽名（張數＋每張的頂層規則數）。站方晚載入樣式表、CSS-in-JS
+    //     insertRule 都會改變簽名 → 自動失效重走；簽名本身只讀每張表的 cssRules.length
+    //   - styler.apply 開頭與 restore 各清一次（resetPseudoMemo），以 apply 為單位
+    // 語意與原版一致：selectorText 含 token 且不含 excludeToken（JRead 自己的規則不算
+    // 站方有寫）→ true；讀不到 cssRules 的跨網域表＝不知道，保守回 true（不快取也無妨，
+    // 這條路徑不走訪規則）。先判 selectorText 再遞迴 cssRules（巢狀 CSS 的 style rule
+    // 也有 cssRules）。
+    _pseudoMemo: null, // { doc, sig, answers: Map<token\0exclude, boolean> }
+    resetPseudoMemo() { this._pseudoMemo = null; },
+    pageMayStylePseudo(doc, token, excludeToken) {
+      const sheets = [];
+      let sig = '';
+      try {
+        for (const sh of doc.styleSheets || []) sheets.push(sh);
+        for (const sh of doc.adoptedStyleSheets || []) sheets.push(sh);
+        sig = String(sheets.length);
+        for (const sh of sheets) {
+          const rules = sh.cssRules;
+          if (!rules) return true;
+          sig += ',' + rules.length;
+        }
+      } catch (_) { return true; }
+      let memo = this._pseudoMemo;
+      if (!memo || memo.doc !== doc || memo.sig !== sig) {
+        memo = this._pseudoMemo = { doc, sig, answers: new Map() };
+      }
+      const key = token + '\u0000' + (excludeToken || '');
+      if (memo.answers.has(key)) return memo.answers.get(key);
+      const walk = (rules) => {
+        for (const r of rules) {
+          const sel = r.selectorText || '';
+          if (sel.indexOf(token) >= 0 && (!excludeToken || sel.indexOf(excludeToken) < 0)) return true;
+          if (r.cssRules && r.cssRules.length && walk(r.cssRules)) return true;
+        }
+        return false;
+      };
+      let found = false;
+      try {
+        for (const sh of sheets) {
+          if (walk(sh.cssRules)) { found = true; break; }
+        }
+      } catch (_) { return true; }
+      memo.answers.set(key, found);
+      return found;
+    },
+    // 站方有沒有 ::first-letter 規則（JRead 自己那條 [data-jread-first-letter]::first-letter
+    // 不算）。styler markFirstLetterColorBlocks（v2.4.9 首字色）與 paged-mode
+    // padInitialLetterBlocks（v2.4.8 首字墨跡）共用——兩邊各自處理站方 drop cap 的一半，
+    // 「這頁有沒有 drop cap」只問這一處。
+    FIRST_LETTER_ATTR: 'data-jread-first-letter',
+    pageHasSiteFirstLetterRule(doc) {
+      return this.pageMayStylePseudo(doc, 'first-letter', this.FIRST_LETTER_ATTR);
+    },
+
     // v0.8.17：編輯/互動類 element focus 判定（paged-mode 翻頁鍵 + space-scroll
     // 共用，單一資料源）。原本兩處各寫一份且 paged 版漏了 BUTTON——按鈕 focus 時
     // 方向鍵 / Space 被翻頁攔截、吃掉按鈕的鍵盤啟用（同一份事實雙實作的 drift，
