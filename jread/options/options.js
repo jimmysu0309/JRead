@@ -45,10 +45,12 @@ let recordingCmd = null;                    // 錄製中的 command（null = 沒
 //   （safari-web-extension:// 涵蓋 macOS / iPadOS / iOS Safari）。
 // body class 讓「說明文字依引擎切換」純 CSS 完成（不需額外 JS）；
 // isSafariRuntime 餵給 validate 的 requireCtrl——Safari 自訂鍵必含 ⌃ Control。
-const extUrl = browser.runtime.getURL('');
-let runtime = 'safari';
-if (extUrl.startsWith('chrome-extension://')) runtime = 'chrome';
-else if (extUrl.startsWith('moz-extension://')) runtime = 'firefox';
+// 2026-11-15 review E-08：scheme 比對讀 settings-defaults.js __JReadPlatform.runtimeKindOf。
+// 這裡的 'safari' 是「非 Chrome、非 Firefox」——含 iOS App 內建 JReader（jread-app://），
+// 比 NS.isSafariRuntime（只認 safari-web-extension://）寬，刻意保留
+const PLATFORM = window.__JReadPlatform;
+const runtimeKind = PLATFORM.runtimeKindOf(browser.runtime.getURL(''));
+const runtime = (runtimeKind === 'chrome' || runtimeKind === 'firefox') ? runtimeKind : 'safari';
 document.body.classList.add('runtime-' + runtime);
 const isSafariRuntime = (runtime === 'safari');
 
@@ -56,7 +58,7 @@ const isSafariRuntime = (runtime === 'safari');
 // 桌面 Chrome / macOS Safari（含 iOS build 跑在 Mac，無觸控螢幕 maxTouchPoints=0）
 // 顯示這個開關只會誤導——touch-gestures.js 在非觸控裝置根本不安裝辨識器（同門檻
 // maxTouchPoints >= 3），開了也無效。門檻與 popup footer 手勢提示一致。非觸控整列隱藏。
-if ((navigator.maxTouchPoints || 0) < 3) {
+if (!PLATFORM.supportsThreeFingerTap(navigator.maxTouchPoints)) {
   const tfField = document.getElementById('threeFingerTap');
   const field = tfField && tfField.closest('.field');
   if (field) field.hidden = true;
@@ -65,7 +67,7 @@ if ((navigator.maxTouchPoints || 0) < 3) {
 // v2.2.13：「App 圖示」只在 iPhone / iPad 的 Safari 顯示——換的是 JRead iOS App 的主畫面圖示，
 // Chrome / Firefox 沒有 App，iOS build 跑在 Mac（maxTouchPoints=0）不支援替代圖示。
 // 門檻同上方三指輕點：Safari runtime + 觸控螢幕。
-if (isSafariRuntime && (navigator.maxTouchPoints || 0) >= 1) {
+if (isSafariRuntime && PLATFORM.hasTouchScreen(navigator.maxTouchPoints)) {
   const sec = document.getElementById('appIconSection');
   if (sec) sec.hidden = false;
 }
@@ -692,11 +694,10 @@ if (resetBtn) {
     // 第二次點：執行回復
     exitResetConfirm();
     const payload = Object.assign({}, DEFAULTS);
-    delete payload.readwiseToken; // 保留使用者憑證
-    delete payload.geminiApiKey;  // 保留使用者憑證
-    delete payload.instapaperToken;       // 保留 Instapaper 連結
-    delete payload.instapaperTokenSecret; // 保留 Instapaper 連結
-    delete payload.instapaperUsername;    // 保留 Instapaper 連結
+    // 保留使用者憑證（Readwise / Gemini / Instapaper 連結）。2026-11-15 review E-08：
+    // 清單讀 settings-defaults.js CREDENTIAL_SETTINGS_KEYS 單一資料源——原本手寫五行
+    // delete，加第六個憑證欄位時會被回復預設洗掉
+    for (const k of window.__JReadCredentialSettingsKeys) delete payload[k];
     // v1.9.24（review E-8，Jimmy 2026-10-12 裁定「全部都清」）：設定檔清單也一起
     // 清——回復預設＝回到剛安裝的狀態，與自動啟動網域、自訂快速鍵同一政策
     //（v1.9.0–v1.9.23 以「使用者資產」豁免 profiles，保留政策不一致）。payload

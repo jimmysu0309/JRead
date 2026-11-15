@@ -2881,7 +2881,9 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
       // 低位即可。故 coarse 抬升的量依平台分流：iPhone 退回近底（6 / 30px，等同非 coarse
       // base），iPad / 其他 coarse 維持 24 / 48px。純 UA 結構訊號（iPhone / iPod），非站點特判。
       const _ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-      const _isIPhone = /iPhone|iPod/.test(_ua);
+      // 2026-11-15 review C-01：UA 比對讀 settings-defaults.js __JReadPlatform.isIPhoneUA
+      const _plat = (typeof globalThis !== 'undefined' && globalThis.__JReadPlatform) || null;
+      const _isIPhone = !!(_plat && _plat.isIPhoneUA(_ua));
       // v2.2.12：iPhone 頁碼 6 → 10px（離螢幕底緣多一點呼吸），scrub-track 同步 +4 維持 24px 間距。
       const _indicatorCoarseBottom = _isIPhone ? '10px' : '24px';
       const _scrubTrackCoarseBottom = _isIPhone ? '34px' : '48px';
@@ -2890,9 +2892,17 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
       // 頁碼卻佔離底 6–25px，內文末行跟頁碼重疊、貼底（Jimmy 2026-10-28 iPhone 截圖）。
       // 改成 max(V_GUTTER, 頁碼離底 + 頁碼高 + 間隔)：桌面寬視窗仍是 48px 不變，
       // 窄視窗 / iPhone / iPad 一律讓內文停在頁碼上方 PAGED_INDICATOR_GAP 處。
-      // 頁碼高 19px = 11px 字（line-height 1）+ 上下 padding 4px（見 #__jread-page-indicator）。
       // 以 custom property 承載：卡片 padding-bottom 與媒體單頁 cap 的 calc 共用同一值。
-      const PAGED_INDICATOR_CLEAR = '31px'; // 19px 頁碼高 + 12px 與內文間隔
+      // 2026-11-15 review B-10：頁碼的位置 / 尺寸原本在 #__jread-page-indicator 規則與這裡的
+      // 推算常數各寫一次、只靠註解對齊。改成下面這組常數，CSS 規則與下緣推算都由它們組出
+      //（改頁碼樣式只改這裡；等式由 review-1115-b5-plat.spec 鎖）。
+      const PAGED_IND_BOTTOM_PX = 6;   // 頁碼離視窗底（非 coarse；coarse 見 _indicatorCoarseBottom）
+      const PAGED_IND_PAD_Y_PX = 4;    // 頁碼上下 padding
+      const PAGED_IND_PAD_X_PX = 12;   // 頁碼左右 padding（放大命中區）
+      const PAGED_IND_FONT_PX = 11;    // 頁碼字級（line-height 1）
+      const PAGED_IND_GAP_PX = 12;     // 頁碼頂與內文末行的間隔
+      const PAGED_IND_HEIGHT_PX = PAGED_IND_FONT_PX + 2 * PAGED_IND_PAD_Y_PX; // 19px
+      const PAGED_INDICATOR_CLEAR = `${PAGED_IND_HEIGHT_PX + PAGED_IND_GAP_PX}px`; // 31px = 頁碼高 + 間隔
       // v2.2.16：底部安全區域 = env() 與 iOS App 內 JReader 帶進來的 --__jread-app-safe-bottom 取大者。
       // App 頁面沒宣告 viewport-fit=cover，env() 恆為 0，但 WebView 畫到 Home 指示條底下，頁碼落進
       // 系統手勢區（Jimmy 2026-10-29 iPhone 回報）；變數只有 App shim 會設，Safari / Chrome 解析成 0、
@@ -2988,7 +2998,7 @@ html [${ARTICLE_ATTR}="1"] {
   height: auto !important;
   max-width: ${contentWidth}px !important;
   margin: 0 auto !important;
-  --__jread-paged-bottom: ${_pagedBottomGutter('6px', false)};
+  --__jread-paged-bottom: ${_pagedBottomGutter(`${PAGED_IND_BOTTOM_PX}px`, false)};
   padding: ${PAGED_TOP_GUTTER} 0 ${PAGED_BOTTOM} ${H_GUTTER} !important;
   border-right: ${H_GUTTER} solid transparent !important;
   border-radius: 0 !important;
@@ -3100,11 +3110,11 @@ html [${ARTICLE_ATTR}="1"] a {
    （翻頁由 JS 程式控）；padding 放大命中區好按；cursor ew-resize 暗示可左右拖。 */
 #__jread-page-indicator {
   position: fixed;
-  bottom: 6px;
+  bottom: ${PAGED_IND_BOTTOM_PX}px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 4px 12px;
-  font: 11px/1 ui-monospace, Menlo, monospace;
+  padding: ${PAGED_IND_PAD_Y_PX}px ${PAGED_IND_PAD_X_PX}px;
+  font: ${PAGED_IND_FONT_PX}px/1 ui-monospace, Menlo, monospace;
   font-variant-numeric: tabular-nums;
   color: rgba(128, 128, 128, 0.95);
   z-index: 2147483647;
@@ -3446,11 +3456,10 @@ html.${HTML_CLASS}.jread-orion body {
     // jsdom（無 cascade）會漏判，attr 判定兩個環境一致。
     if (el.closest && el.closest(STYLER_HIDDEN_MARK_SEL)) return false;
     const win = articleEl.ownerDocument?.defaultView;
-    if (win && win.getComputedStyle) {
-      for (let a = el; a && a !== articleEl; a = a.parentElement) {
-        if (win.getComputedStyle(a).display === 'none') return false;
-      }
-    }
+    // 2026-11-15 review 批 5 A-04＋B-05：站方原生隱藏的判定在 NS.isSiteHidden（這裡只
+    // 認 computed display:none，el 自身到 articleEl 之前的每一層）
+    if (win && win.getComputedStyle &&
+        NS.isSiteHiddenInChain(el, NS.SITE_HIDDEN_SIGNALS.DISPLAY, { stop: articleEl, win })) return false;
     return true;
   }
   function firstVisibleH1(articleEl) {

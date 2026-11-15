@@ -2005,7 +2005,10 @@
       // v1.9.0：補 titleFontSize（設定檔切換只走 onChanged、不再靠 REAPPLY_SETTINGS 補）
       // v1.9.14：補 profiles——套用中的設定檔被「更新」（本機 popup 或另一台裝置）
       // 時快照內容變了，有效版面跟著變；沒套用設定檔時多重套一次是冪等的
-      const relevantKeys = ['theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans', 'fontWeight', 'lineHeight', 'paragraphSpacing', 'pangu', 'pagedMode', 'profiles', 'textJustify'];
+      // 2026-11-15 review C-02：版面欄位清單讀 settings-defaults.js PROFILE_KEYS 單一資料源
+      //（原本手抄一份、已人工補過三次）；pangu 不屬設定檔但同樣要重套
+      const PF = window.__JReadProfiles;
+      const relevantKeys = [...((PF && PF.KEYS) || []), 'pangu', 'profiles'];
       const hasRelevant = relevantKeys.some(k => k in changes);
       if (!hasRelevant) return;
       scheduleReapply();
@@ -2109,7 +2112,7 @@
       // 正式安裝一律拒絕；unpacked（Claude 自主 debug / cage）照常可用。
       const theme = e && e.detail && e.detail.theme;
       // v2.3.0：白名單讀 settings-defaults.js THEME_NAMES 單一資料源
-      const themeNames = globalThis.__JReadThemeNames || ['light', 'dark', 'sepia', 'gray', 'night'];
+      const themeNames = globalThis.__JReadThemeNames || [];
       if (theme && themeNames.includes(theme)) {
         safeSendMessage({ type: NS.MSG.JREAD_DEBUG_SET_THEME, payload: { theme } });
       }

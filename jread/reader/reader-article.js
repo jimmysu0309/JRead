@@ -333,7 +333,23 @@
   const api = { attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
 
   // ---- 頁面 bootstrap ----
+  // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
+  // context 名稱設成 article。main.js 載入時會設成 'content'（它在一般網頁是 content
+  // script）；不改回來的話 Article View 的記錄會寫進一般分頁共用的那把 key、偏好設定頁
+  // 也分不出來源。App 內建 JReader（jread-app://）自動偵測也會落到 'content'，一併涵蓋。
+  // 開關（settings.debugLog）的初始同步與 onChanged 即時同步由 main.js 既有路徑負責
+  const LOGGER_CONTEXT = 'article';
+  function configureLogger(g) {
+    const L = g && g.__JReadLogger;
+    if (!L || typeof L.configure !== 'function') return false;
+    L.configure({ context: LOGGER_CONTEXT });
+    return true;
+  }
+  api.configureLogger = configureLogger;
+  api.LOGGER_CONTEXT = LOGGER_CONTEXT;
+
   function init() {
+    configureLogger(global);
     const browser = global.browser;
     const NS = global.__JRead;
     const PC = global.__JReadPopup;

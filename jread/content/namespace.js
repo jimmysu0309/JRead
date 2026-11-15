@@ -197,6 +197,124 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return w;
     },
 
+    // 2026-11-15 review 批 5 A-04＋B-05：「站方 CSS 把這個元素藏起來了嗎」的單一資料源。
+    // 原本 cleaner 五份（headingIsSiteHidden / carrierTextIsSiteHidden /
+    // isSiteHiddenWithin / _visibleTextOf / visibleRenderedText）、detector 兩份
+    // （isAncestorChainHidden / isCandidateVisiblyPresented）、styler 一份
+    // （isVisiblyShown）各自讀 computed style，認的訊號各缺一塊。現在全部委派這裡，
+    // 每個呼叫端用下面的訊號組合明示自己認哪些藏法——**各組合刻意不同，不是 drift**：
+    //   display          computed display:none
+    //   inlineDisplay    inline style display:none（detector 專用：先看 inline 省一次
+    //                    getComputedStyle；inline none 被站方 !important 蓋掉時仍算藏）
+    //   visibility       computed visibility:hidden
+    //   collapse         computed visibility:collapse
+    //   inlineVisibility inline style visibility:hidden / collapse
+    //   opacity          computed opacity < 0.05（ms.now sticky 標題副本，v2.2.17）
+    //   srOnly           position:absolute + overflow:hidden + 寬高 ≤ 1px（螢幕閱讀器
+    //                    專用載體；newtalk 隱藏 SEO h1）
+    // 為什麼不取聯集：文字走訪（TEXT）把 opacity / srOnly 當隱藏會改變「這塊有多少可見
+    // 文字」的量法，牽動空殼 collapse 與主文 guard，而且 opacity:0 常是捲動進場動畫的
+    // 起始狀態、不是藏起來。批 5 以合成頁 probe 找受害形狀，重現得出來的才併：
+    //   - PRESENTED_EXTRA 加 srOnly（已併）：sr-only 的 og-match h1 與可見的非 heading
+    //     標題載體同層時，detector 挑中看不見的 h1 當標題、cleaner 再把可見載體當重複
+    //     藏掉 → 卡片沒有標題
+    //   - HEADING 加 opacity（沒併）：試作後 opacity:0 標題的三種形狀結果都不變，槓桿
+    //     不在這個訊號
+    // 新增藏法時先改這張表，再決定哪幾個組合要認。
+    SITE_HIDDEN_SIGNALS: {
+      // cleaner headingIsSiteHidden 家族（含 carrierTextIsSiteHidden / isSiteHiddenWithin）
+      HEADING: Object.freeze({ display: true, visibility: true, collapse: true, srOnly: true }),
+      // cleaner 可見文字走訪（visibleRenderedText / hasVisibleRenderedText / _visibleTextOf 的 jsdom 分支）
+      TEXT: Object.freeze({ display: true, visibility: true }),
+      // styler isVisiblyShown
+      DISPLAY: Object.freeze({ display: true }),
+      // detector isAncestorChainHidden
+      DISPLAY_OR_INLINE: Object.freeze({ display: true, inlineDisplay: true }),
+      // detector isCandidateVisiblyPresented 在 display 之外多認的部分
+      PRESENTED_EXTRA: Object.freeze({ visibility: true, collapse: true, inlineVisibility: true, opacity: true, srOnly: true }),
+      NONE: Object.freeze({}),
+    },
+    // 只看 el 自身。signals＝上表其中一組；win 預設全域 window（跨 document 時傳
+    // el.ownerDocument.defaultView）。getComputedStyle 不存在或丟例外＝讀不到，
+    // computed 類訊號一律當沒藏。
+    isSiteHidden(el, signals, win) {
+      if (!el) return false;
+      const s = signals || this.SITE_HIDDEN_SIGNALS.DISPLAY;
+      const st = el.style;
+      if (s.inlineDisplay && st && st.display === 'none') return true;
+      if (s.inlineVisibility && st && (st.visibility === 'hidden' || st.visibility === 'collapse')) return true;
+      if (!(s.display || s.visibility || s.collapse || s.opacity || s.srOnly)) return false;
+      let cs = null;
+      try {
+        const w = win || window;
+        cs = w.getComputedStyle ? w.getComputedStyle(el) : null;
+      } catch (_) { cs = null; }
+      if (!cs) return false;
+      if (s.display && cs.display === 'none') return true;
+      if (s.visibility && cs.visibility === 'hidden') return true;
+      if (s.collapse && cs.visibility === 'collapse') return true;
+      if (s.opacity) {
+        const op = parseFloat(cs.opacity);
+        if (!Number.isNaN(op) && op < 0.05) return true;
+      }
+      if (s.srOnly && cs.position === 'absolute' && cs.overflow === 'hidden' &&
+          parseFloat(cs.width) <= 1 && parseFloat(cs.height) <= 1) return true;
+      return false;
+    },
+    // el 自身往上到 stop 之間任一層被藏。opts：
+    //   stop          走到這個祖先為止（沒給＝走到頂）
+    //   includeStop   stop 自身要不要檢查（預設不檢查）
+    //   skipOwnHidden JRead 自己 hide 的元素（data-jread-hidden="1"）不算站方藏的
+    //   win           同 isSiteHidden
+    isSiteHiddenInChain(el, signals, opts) {
+      const o = opts || {};
+      for (let p = el; p; p = p.parentElement) {
+        if (p === o.stop && !o.includeStop) break;
+        if (!(o.skipOwnHidden && p.dataset && p.dataset.jreadHidden === '1') &&
+            this.isSiteHidden(p, signals, o.win)) return true;
+        if (p === o.stop) break;
+      }
+      return false;
+    },
+    // 逐節點走訪的「可見文字」：跳過被藏的子樹，把 text node 串起來。opts：
+    //   signals       哪些藏法算隱藏（預設 TEXT）
+    //   win           同 isSiteHidden
+    //   includeSelf   el 自身也要過隱藏檢查（否則只檢查後代）
+    //   skipJreadHidden data-jread-hidden="1" 的子樹也跳過
+    //   skipTagRe     整棵跳過的 tag（script / style 這類）
+    //   sep           每個 text node 後面補的分隔字串（預設不補）
+    //   any           true＝只問「有沒有任何非空白可見文字」，碰到第一個就回 true
+    // 真瀏覽器要「畫面上的文字」優先用 innerText；這支是 jsdom（沒有 innerText）也
+    // 成立、而且認得 JRead 自己 hide 標記的版本。
+    visibleText(el, opts) {
+      const o = opts || {};
+      const NSref = this;
+      const signals = o.signals || this.SITE_HIDDEN_SIGNALS.TEXT;
+      const sep = o.sep || '';
+      const any = !!o.any;
+      let out = '';
+      const skip = (node) =>
+        (o.skipTagRe && o.skipTagRe.test(node.tagName)) ||
+        (o.skipJreadHidden && node.dataset && node.dataset.jreadHidden === '1') ||
+        NSref.isSiteHidden(node, signals, o.win);
+      const walk = (node) => {
+        for (const c of node.childNodes) {
+          if (c.nodeType === 3) {
+            if (any) { if (/\S/.test(c.textContent)) return true; }
+            else out += c.textContent + sep;
+            continue;
+          }
+          if (c.nodeType !== 1 || skip(c)) continue;
+          if (walk(c)) return true;
+        }
+        return false;
+      };
+      if (!el) return any ? false : '';
+      if (o.includeSelf && el.nodeType === 1 && skip(el)) return any ? false : '';
+      const hit = walk(el);
+      return any ? hit : out;
+    },
+
     // v1.8.2：「aspect padding-hack 佔位框」判定的單一資料源——styler 的
     // findLazyEmbedFrame（lazy 影片嵌入偵測）與 cleaner 的播放鍵豁免共用。
     // 兩端在處理同一份事實（這個 box 是 responsive embed 的比例佔位框），
@@ -1220,11 +1338,21 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // iOS Safari），結構性平台訊號、非 UA 嗅探。原本 keepalive.js 與 floating-icon.js
     // 各寫一份，main.js sendCurrentPageToService 則完全沒 gate（讀憑證的直送軌靠
     // 呼叫端分流）——三處同一份事實收斂到這裡。context 失效（reload 中）回 false。
+    // 2026-11-15 review C-01 / E-08：scheme 字面值與比對改讀 settings-defaults.js 的
+    // __JReadPlatform.runtimeKindOf（SW / popup / options 也讀同一份）。manifest 把
+    // settings-defaults.js 排在 keepalive.js 之前（keepalive 在載入當下就呼叫本函式；
+    // home-launcher 必須緊跟本檔所以不能再往前），reader 兩頁則緊接本檔（forcing：review-1115-b5-plat.spec）。
     isSafariRuntime() {
+      return window.__JRead.runtimeKind() === 'safari';
+    },
+    // 擴充自身 URL 的 runtime 種類（'safari' | 'app' | 'chrome' | 'firefox' | 'other'）。
+    // context 失效（reload 中）或 settings-defaults 尚未載入回 'other'。
+    runtimeKind() {
       try {
-        return String(browser.runtime.getURL('') || '').startsWith('safari-web-extension://');
+        const P = (typeof globalThis !== 'undefined' && globalThis.__JReadPlatform) || null;
+        return P ? P.runtimeKindOf(browser.runtime.getURL('')) : 'other';
       } catch (_) {
-        return false;
+        return 'other';
       }
     },
 
@@ -1233,11 +1361,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // jreader-app-shim.js 替身——沒有 background，靠 SW 的動作（送出、開 Reader 分頁、
     // popup 浮層握手）在這裡都不成立。訊號同樣是 getURL 的 scheme（結構性平台訊號）。
     isAppRuntime() {
-      try {
-        return String(browser.runtime.getURL('') || '').startsWith('jread-app://');
-      } catch (_) {
-        return false;
-      }
+      return window.__JRead.runtimeKind() === 'app';
     },
 
     // 2026-10-07 review C-10：root + 全部符合 sel 的後代，回陣列、**不用 spread**。

@@ -27,7 +27,9 @@
 
   const BASE = location.protocol + '//' + location.host + '/';
   const MANIFEST = window.__JREAD_APP_MANIFEST || { version: '0.0.0' };
-  const CREDENTIAL_KEYS = ['storageService', 'readwiseToken', 'instapaperToken', 'instapaperTokenSecret'];
+  // 2026-11-15 review E-08：原名 CREDENTIAL_KEYS——語意是「變了就要重載 feed 的 key」，
+  // 與 settings-defaults.js 的 CREDENTIAL_SETTINGS_KEYS（憑證欄位）撞名但內容不同，改名避免混淆
+  const FEED_RELOAD_KEYS = ['storageService', 'readwiseToken', 'instapaperToken', 'instapaperTokenSecret'];
 
   const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -186,7 +188,7 @@
       for (const [k, v] of next) cache.sync.set(k, v);
       const keys = Object.keys(changes);
       if (!keys.length) return keys;
-      if (/\/reader\/reader\.html$/.test(location.pathname) && keys.some((k) => CREDENTIAL_KEYS.includes(k))) {
+      if (/\/reader\/reader\.html$/.test(location.pathname) && keys.some((k) => FEED_RELOAD_KEYS.includes(k))) {
         location.reload();
         return keys;
       }

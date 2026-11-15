@@ -855,17 +855,12 @@
         return cached;
       }
       visited.push(p);
-      if (p.style && p.style.display === 'none') {
+      // 2026-11-15 review 批 5 B-05：單層判定在 NS.isSiteHidden（inline display:none
+      // 或 computed display:none；讀不到 computed 當沒藏）。祖先快取留在這裡當效能層。
+      if (NS.isSiteHidden(p, NS.SITE_HIDDEN_SIGNALS.DISPLAY_OR_INLINE)) {
         if (cache) for (const v of visited) cache.set(v, true);
         return true;
       }
-      try {
-        const cs = window.getComputedStyle && window.getComputedStyle(p);
-        if (cs && cs.display === 'none') {
-          if (cache) for (const v of visited) cache.set(v, true);
-          return true;
-        }
-      } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
     }
     // 走完祖先鏈無 hidden：全標 false（傳遞性）
     if (cache) for (const v of visited) cache.set(v, false);
@@ -1549,18 +1544,12 @@
   // 相符候選 → titleHead 落在站頭、narrow 保住整個站頭導覽。
   function isCandidateVisiblyPresented(el) {
     if (isAncestorChainHidden(el)) return false;
-    for (let p = el; p && p !== document.body; p = p.parentElement) {
-      if (p.style && (p.style.visibility === 'hidden' || p.style.visibility === 'collapse')) return false;
-      try {
-        const cs = window.getComputedStyle && window.getComputedStyle(p);
-        if (cs) {
-          if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return false;
-          const op = parseFloat(cs.opacity);
-          if (!Number.isNaN(op) && op < 0.05) return false;
-        }
-      } catch (_) { /* jsdom 等環境部分節點 getComputedStyle 可能拋，忽略 */ }
-    }
-    return true;
+    // 2026-11-15 review 批 5 B-05：display 之外多認 visibility hidden / collapse（inline
+    // 與 computed）、opacity < 0.05、sr-only 1px 裁切，逐層判定在 NS.isSiteHidden。
+    // sr-only 是這一版補的（原本只有 cleaner 的 headingIsSiteHidden 家族認）：sr-only 的
+    // og-match h1 與可見的非 heading 標題載體同層時，h1 位階較高被挑成 titleHead，
+    // cleaner 再把可見載體當重複藏掉、卡片沒有標題（合成頁 probe 實證）。
+    return !NS.isSiteHiddenInChain(el, NS.SITE_HIDDEN_SIGNALS.PRESENTED_EXTRA, { stop: document.body });
   }
 
   function promoteForTitle(articleEl, maxHops) {
@@ -1586,7 +1575,11 @@
     // （v0.8.42 foreignaffairs 同情境，self-titled guard 被翻譯打穿）。
     let ownH1 = false;
     for (const h of articleEl.querySelectorAll('h1')) {
-      if (isHeadingInsideAnchor(h) || isAncestorChainHidden(h)) continue;
+      // 2026-11-15 review 批 5 B-05：改用嚴格版（原本只看 display）。站方以
+      // visibility:hidden / opacity:0 / sr-only 藏起來的 h1（SEO 載體）不是「已自帶
+      // 可見 h1」——當成有的話，外部唯一看得到的非 heading 標題載體會被否決、卡片
+      // 沒有標題（合成頁 probe 實證）
+      if (isHeadingInsideAnchor(h) || !isCandidateVisiblyPresented(h)) continue;
       if (normalizeTitle(h.innerText || h.textContent || '')) { ownH1 = true; break; }
     }
 

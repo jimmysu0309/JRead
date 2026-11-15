@@ -85,9 +85,11 @@ if (IS_PANEL) {
 // 握手永遠失敗 → 浮層所有控制項被攔、設定改不了（Jimmy 2026-10-28 回報）。App 內也沒有
 // 這個攻擊面：WKWebView 只載 App bundle 裡的擴充頁，外部連結一律交給 Safari 開
 // （ViewController decidePolicyFor），沒有第三方網頁能嵌入本頁 → 直接視為已驗證。
-// 判定訊號與 NS.isAppRuntime 相同（getURL scheme；popup 沒載 namespace.js）
+// 判定訊號與 NS.isAppRuntime 相同（getURL scheme）——2026-11-15 review E-08 起兩邊都讀
+// settings-defaults.js 的 __JReadPlatform.runtimeKindOf（popup 沒載 namespace.js）
+const PLATFORM = window.__JReadPlatform;
 const IS_APP = (() => {
-  try { return String(browser.runtime.getURL('') || '').startsWith('jread-app://'); }
+  try { return PLATFORM.runtimeKindOf(browser.runtime.getURL('')) === 'app'; }
   catch (_e) { return false; }
 })();
 let panelVerified = !IS_PANEL || IS_APP;
@@ -117,7 +119,7 @@ if (IS_PANEL && !IS_APP) {
 (function markIpad() {
   try {
     const shortEdge = Math.min(screen.width || 0, screen.height || 0);
-    if ((navigator.maxTouchPoints || 0) >= 3 && shortEdge >= 600) {
+    if (PLATFORM.supportsThreeFingerTap(navigator.maxTouchPoints) && shortEdge >= 600) {
       document.body.classList.add('device-ipad');
     }
   } catch (_e) { /* screen 缺席等罕見環境：不標記，維持 1.35 */ }
@@ -179,7 +181,7 @@ browser.storage.sync.get({ customShortcuts: DEFAULT_SETTINGS.customShortcuts }).
   // v0.7.232：觸控裝置（maxTouchPoints >= 3，門檻與 touch-gestures.js 安裝
   // 條件一致）的主 toggle 通道是 3 指輕點、不是鍵盤——footer 提示改顯示
   // 手勢，優先於自訂鍵 / browser 指派（觸控恆可用，外接鍵盤未必在）。
-  if ((navigator.maxTouchPoints || 0) >= 3) {
+  if (PLATFORM.supportsThreeFingerTap(navigator.maxTouchPoints)) {
     shortcutEl.textContent = '三指輕點：切換純閱讀';
     return;
   }
@@ -853,7 +855,7 @@ toggleBtn.addEventListener('click', async () => {
     const urlInfo = await getActiveTabUrlInfo();
     statusEl.textContent = window.__JReadPopup.toggleFailureMessage({
       injectable: !!urlInfo,
-      touch: (navigator.maxTouchPoints || 0) >= 3
+      touch: PLATFORM.supportsThreeFingerTap(navigator.maxTouchPoints)
     });
     statusEl.hidden = false;
   }

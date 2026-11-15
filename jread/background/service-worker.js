@@ -105,10 +105,14 @@ const ICONS_IDLE = {
 // 損失，故平台分流：iOS / iPadOS Safari 用空字串（無字形＝無 tofu＝等同無 badge），
 // Chrome / macOS Safari 維持 '✓'（桌面正常渲染）。UA 結構訊號（iPhone/iPad/iPod），
 // 非站點特判；event page / SW context 皆有 navigator.userAgent。
+// 2026-11-15 review C-01：UA 比對改讀 settings-defaults.js __JReadPlatform.isIOSDeviceUA
+//（裝置判定單一資料源；本檔頂端 importScripts / event page <script> 已預載）。
+// 已知缺口：iPadOS Safari 預設送桌面版 UA（Macintosh），這裡判不出來、iPad 仍送 '✓'。
+const JREAD_PLATFORM = self.__JReadPlatform;
 const IS_IOS_SAFARI = (() => {
   try {
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-    return /iPhone|iPad|iPod/.test(ua);
+    return JREAD_PLATFORM.isIOSDeviceUA(ua);
   } catch (e) { return false; }
 })();
 const BADGE_ACTIVE_COLOR = '#10b981';
@@ -399,7 +403,8 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const theme = msg.payload && msg.payload.theme;
       // v2.3.0：白名單讀 settings-defaults.js THEME_NAMES 單一資料源
-      const themeNames = self.__JReadThemeNames || ['light', 'dark', 'sepia', 'gray', 'night'];
+      // 2026-11-15 review C-07：缺席即全擋（不再手抄一份字面值當 fallback）
+      const themeNames = self.__JReadThemeNames || [];
       if (!themeNames.includes(theme)) return;
       runIfDevelopmentInstall('JREAD_DEBUG_SET_THEME', () => {
         // v1.9.14：版面欄位寫入經 writeLayout 分流（套用中設定檔 → local 草稿）
@@ -553,9 +558,10 @@ if (browser.runtime.onStartup && browser.runtime.onStartup.addListener) {
 // 跑過一次）。same-name create 冪等（重複呼叫覆蓋、無重複註冊）。
 // Chrome 不建 alarm（SW 事件喚醒可靠，省每 5 分鐘的無謂喚醒）；onAlarm
 // listener 無條件註冊（Chrome 無 alarm 永不觸發，零行為差異）。
+// 2026-11-15 review E-08 / B-10：scheme 比對改讀 __JReadPlatform.runtimeKindOf
 const IS_SAFARI_RUNTIME = (() => {
   try {
-    return browser.runtime.getURL('').startsWith('safari-web-extension://');
+    return JREAD_PLATFORM.runtimeKindOf(browser.runtime.getURL('')) === 'safari';
   } catch (_) {
     return false;
   }

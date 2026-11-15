@@ -8,6 +8,38 @@
   const NS = window.__JRead;
   if (!NS) return;
 
+  // ---- 連結目的地規則表（2026-11-15 review A-13 / A-09）-------------------
+  // 這兩張表描述的是「連結指向哪一類端點」，不是「目前在哪個站」——性質同
+  // KNOWN_MEDIA_IFRAME_SEL 白名單，不屬於硬規則 3 的站點特判（站點特判一律在
+  // site-overrides.js）。要加新平台只改表，不往函式體加 if。
+  //
+  // (1) 平台「追蹤 / 偏好來源」端點（isPlatformFollowHref 用）。host 去掉 www. 後
+  //     完全相等、且 pathname 命中 path。
+  const PLATFORM_FOLLOW_HREF_RULES = [
+    { host: 'profile.google.com', path: /^\/@/ },               // Google Discover 追蹤頁
+    { host: 'google.com', path: /^\/preferences\/source/ },     // 偏好來源設定
+    { host: 'news.google.com', path: /^\/publications\// },     // Google 新聞追蹤
+  ];
+  function matchesPlatformFollowUrl(hostname, pathname) {
+    const host = String(hostname || '').replace(/^www\./, '');
+    const path = String(pathname || '');
+    return PLATFORM_FOLLOW_HREF_RULES.some(r => r.host === host && r.path.test(path));
+  }
+  // (2) 共用主機平台：子網域各是不同作者的站（foo.substack.com 與 bar.substack.com
+  //     沒有關係），「主網域品牌段相同＝同一家媒體」在這裡不成立。urlIsSameSiteArticle
+  //     的 brand 政策遇到任一端落在這些尾碼下，就退回 hostname 完全相等。
+  const SHARED_HOST_PLATFORM_SUFFIXES = [
+    'substack.com', 'medium.com', 'wordpress.com', 'blogspot.com', 'tumblr.com',
+    'github.io', 'gitlab.io', 'netlify.app', 'vercel.app', 'pages.dev', 'web.app',
+    'ghost.io', 'beehiiv.com', 'hashnode.dev', 'neocities.org', 'notion.site',
+    'wixsite.com', 'weebly.com', 'typepad.com', 'livejournal.com',
+    'hatenablog.com', 'pixnet.net', 'fc2.com',
+  ];
+  function isSharedHostPlatformHost(hostname) {
+    const host = String(hostname || '').toLowerCase();
+    return SHARED_HOST_PLATFORM_SUFFIXES.some(sfx => host === sfx || host.endsWith('.' + sfx));
+  }
+
   // ---- Keyword 名單（主文內雜訊 heuristic） -----------------------------
   // 邊界檢查：class/id 通常是 kebab-case 或 snake_case，用非字母數字作邊界，
   // 避免 sharepoint / headset 這類誤殺。
@@ -487,9 +519,31 @@
   // BYLINE_TEXT_RE（alternation 集合逐字不變、只是順序重排，.test 結果相同）；
   // hideBylineAvatarImgs 是唯一拿它當 **hide 條件**的規則，改成強訊號直接命中、
   // 弱訊號（句中 by / 裸日期）要再有頭像結構訊號佐證。
-  const BYLINE_TEXT_STRONG_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|^\s*(?:作者|撰文|編輯|整理|報導|編譯)(?=[\s:：]|[A-Za-z])|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
+  // 2026-11-15 review A-03(b)：前綴詞與日期形狀原本三份互不包含——本常數、
+  // preTitleBranchIsProtected 內一條 inline regex（發表於 / 無年份月日）、
+  // SIBLING_BYLINE_RE（文／）。譯文形狀每踩一站就地補一處，其他吃 BYLINE_TEXT_RE 的
+  // 規則遇到同一句照樣 miss。收成這一份：
+  //   - STRONG 新增行首「文／X」「文：X」（中文媒體署名慣例，原本只有 SIBLING_BYLINE_RE 認）
+  //   - 新增 BYLINE_TEXT_PROTECT_ONLY_RE：「發表於 / 發佈於 / 發布於」與無年份的「1 月 6 日」
+  //     （譯文把 <time> 攤平後的形狀，dev.to「Posted on Jan 6」→「發表於 1月6日」）；
+  //     只併進合成的 BYLINE_TEXT_RE（保護用），不進 WEAK（見該常數上方說明）
+  //   - SIBLING_BYLINE_RE 改由 STRONG.source 推導（見該常數）
+  // 「由 X」（"by X" 的另一種譯法）**沒有**收進來：「由於…」「由 OpenAI 開發的…」這類
+  // 內文開頭太常見，而 STRONG 是 hideBylineAvatarImgs 的直接 hide 條件、WEAK 依
+  // review A-17 的約定不放行首錨定。它留在 SIBLING_BYLINE_RE 本地（那條另有結構閘）。
+  // 方向：本檔消費端除 hideBylineAvatarImgs 外都是「命中就保留」，新增形狀只會少清；
+  // 中文 22 站＋翻譯輪 6 站＋英文 11 站快照回放，新舊規則的 hide 結果相同（無受害樣本，
+  // 屬預防性收斂）
+  const BYLINE_TEXT_STRONG_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|^\s*(?:作者|撰文|編輯|整理|報導|編譯)(?=[\s:：]|[A-Za-z])|^\s*文\s*[／/|｜:：]|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
   const BYLINE_TEXT_WEAK_RE = /\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b/i;
-  const BYLINE_TEXT_RE = new RegExp(BYLINE_TEXT_STRONG_RE.source + '|' + BYLINE_TEXT_WEAK_RE.source, 'i');
+  // 2026-11-15 review A-03(b) 整合修正：「發表於」與無年份月日只進**保護用**的合成
+  // BYLINE_TEXT_RE，不進 WEAK——WEAK 是 hideBylineAvatarImgs 的 hide 條件之一。併進
+  // WEAK 的試作版在 dev.to 真站實證誤殺：header 文字「Abhijeet Bhale Posted on 1月6日 …」
+  // 命中無年份月日、同塊有 <time> 與作者頁連結（頭像結構訊號成立），文章封面圖在 clean
+  // 當下的 rect 只有 64×27（落在頭像尺寸帶內）→ 封面圖被當頭像藏掉（HEAD 3/3 有圖、
+  // 試作版 3/3 沒圖）。方向原則：新形狀只加在「命中就保留」的那一側。
+  const BYLINE_TEXT_PROTECT_ONLY_RE = /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日/;
+  const BYLINE_TEXT_RE = new RegExp(BYLINE_TEXT_STRONG_RE.source + '|' + BYLINE_TEXT_WEAK_RE.source + '|' + BYLINE_TEXT_PROTECT_ONLY_RE.source, 'i');
   const BYLINE_MAX_TEXT_LEN = 200;
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
@@ -755,21 +809,38 @@
   // 在連結外（段落內連結只占一小段），link-feed 容器則相反（文字全在 <a> 裡）
   // ——用它當段落判定的門檻，link feed 才不會因「children 全是 inline <a>」被
   // 誤判成段落而享主文保護（space.com article-social-feed 控制組實證）。
-  function nonAnchorTextLen(el) {
+  function nonAnchorTextLen(el, lenOf) {
     let len = 0;
     for (const node of el.childNodes) {
       if (node.nodeType === 3) {
-        len += norm(node.textContent).length;
+        const t = norm(node.textContent);
+        len += lenOf ? lenOf(t) : t.length;
       } else if (node.nodeType === 1 && node.tagName !== 'A' && node.tagName !== 'BUTTON') {
-        len += nonAnchorTextLen(node);
+        len += nonAnchorTextLen(node, lenOf);
       }
     }
     return len;
   }
 
-  function isProseParagraphDiv(el, minLen) {
+  // ---- 「這段文字夠長＝主文段落」的量法（2026-11-15 review A-05）-----------------
+  // 「≥ 100 字的段落＝主文」「累計 ≥ 300 字＝含主文」這份事實原本散在十多處、各自
+  // 寫 `.length >= 100`。100 是拿英文站調出來的；中文一個字的資訊量約等於兩個拉丁
+  // 字元，同一段話中文版只有一半長度，raw 量法對中文站等於門檻加倍（v1.9.24、
+  // v2.2.17、v2.2.18、v2.2.20 連續四版各修一處）。
+  //
+  // 單一入口：mainTextLen（CJK 權重，NS.cjkWeightedLen：中日韓字算 2、其餘算 1）。
+  // **不是每一處都能改**——看這個門檻「放寬後」往哪邊倒：
+  //   - 守方向（命中＝這塊含主文、別動它）：放寬只會少清 → 用 mainTextLen
+  //   - 否決方向（命中＝規則啟動 / 保護失效、會多清）：放寬會讓中文站多清 → 留
+  //     rawTextLen，該行以「A-05 raw：理由」註明
+  // 盤點表與各點的真站樣本在 CHANGELOG v2.5.1；forcing：review-1115-b5-byline.spec.js
+  // 掃原始碼，裸 `.length >= 100` 只能出現在帶「A-05 raw」註記的行。
+  function mainTextLen(t) { return NS.cjkWeightedLen(t); }
+  function rawTextLen(t) { return t.length; }
+
+  function isProseParagraphDiv(el, minLen, lenOf) {
     if (!el || el.tagName !== 'DIV') return false;
-    if (nonAnchorTextLen(el) < (minLen === undefined ? 100 : minLen)) return false;
+    if (nonAnchorTextLen(el, lenOf || mainTextLen) < (minLen === undefined ? 100 : minLen)) return false;
     // figure/pre/code 內的 div 是圖說 / 程式碼結構，不是散文段落
     if (el.closest && el.closest('figure, pre, code')) return false;
     const inlineTags = (NS && NS.INLINE_TEXT_TAGS) || null;
@@ -803,9 +874,9 @@
     if (isProseParagraphDiv(wrapper)) return true;
     let acc = 0;
     for (const para of wrapper.querySelectorAll('p')) {
-      const pt = norm(para.textContent);
-      if (pt.length >= 100) return true;
-      acc += pt.length;
+      const pl = mainTextLen(norm(para.textContent));
+      if (pl >= 100) return true;
+      acc += pl;
       if (acc >= 300) return true;
     }
     // v0.7.190：也掃 <div> 的 direct text（text node，不含子孫 element
@@ -817,9 +888,9 @@
       const direct = Array.from(div.childNodes)
         .filter(n => n.nodeType === 3)
         .map(n => n.textContent).join('');
-      const dt = norm(direct);
-      if (dt.length >= 100) return true;
-      acc += dt.length;
+      const dl = mainTextLen(norm(direct));
+      if (dl >= 100) return true;
+      acc += dl;
       if (acc >= 300) return true;
       // v1.7.76：WYSIWYG 段落 div（零 direct text、文字在 inline 巢狀內）
       if (isProseParagraphDiv(div)) return true;
@@ -862,17 +933,17 @@
   // 類 widget 由大量短文字組成、累計輕易破 300 而被當主文誤保護，但其單一段落
   // 都很短；改只認單一長段落 / 標題 anchor 當邊界，widget 自己的短文字不再誤觸。
   //
-  // lenOf（選填，預設 raw `.length`）：量「100」這個門檻的量法。本函式被十多個
-  // 呼叫點共用、方向不一（有的守「別誤清內容」、有的是 link-feed 判定的否決
-  // 條件＝守「別讓雜訊漏網」），所以**預設維持 raw**；只有確定是「含主文就
-  // 停手」方向的呼叫點才傳 NS.cjkWeightedLen（目前：hideHeadingNoiseTail 的
-  // after-check，review 批 7）。
+  // lenOf（選填）：量「100」這個門檻的量法。review A-05 起**預設 mainTextLen（CJK
+  // 權重）**——呼叫點多數是「含主文就停手」方向（walk-up 邊界、fixed 元素保護）；
+  // 否決方向的呼叫點要明確傳 rawTextLen（目前：isLinkFeedContainer 的「無長段落」
+  // gate、hideHeadingNoiseTail 的 before-check）。內層的 isProseParagraphDiv 跟著
+  // 同一個量法走。
   function hasLongMainParagraph(wrapper, lenOf) {
     if (!wrapper || !wrapper.querySelectorAll) return false;
-    const len = lenOf || ((t) => t.length);
+    const len = lenOf || mainTextLen;
     // v1.7.76：wrapper 自身即長段落（WYSIWYG 段落 div）也算，與
     // wrapperContainsMainContentP 對稱
-    if (isProseParagraphDiv(wrapper)) return true;
+    if (isProseParagraphDiv(wrapper, undefined, len)) return true;
     for (const para of wrapper.querySelectorAll('p')) {
       if (len(norm(para.textContent)) >= 100) return true;
     }
@@ -880,7 +951,7 @@
       const direct = Array.from(div.childNodes)
         .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
       if (len(norm(direct)) >= 100) return true;
-      if (isProseParagraphDiv(div)) return true;
+      if (isProseParagraphDiv(div, undefined, len)) return true;
     }
     return false;
   }
@@ -1135,7 +1206,9 @@
     // 0.031，正文特徵明顯）→ tooWide 主文保護被繞過、正文整段 hide。改用
     // hasLongMainParagraph（p >= 100 **或** div direct text >= 100，與其他
     // 主文 guard 同款「div 當段落」判準）當 gate。
-    if (hasLongMainParagraph(el)) return false;
+    // A-05 raw：否決方向——「有長段落」會否決 feed 判定；改權重後中文推薦 feed 的
+    // 50–99 字摘要會被當主文段落、整區推薦只藏得掉 heading
+    if (hasLongMainParagraph(el, rawTextLen)) return false;
     const links = el.querySelectorAll('a');
     if (links.length < 3) return false;
     const total = norm(el.textContent).length;
@@ -1281,14 +1354,14 @@
     // 「別誤清內容」）改 CJK 權重**；before-check（決定 tail 清除要不要啟動＝
     // 放寬會多清）刻意維持 raw，兩邊量法不同是方向不同、不是 drift。
     const siblingHasMainContent = (el, lenOf) => {
-      const len = lenOf || ((t) => t.length);
+      const len = lenOf || rawTextLen; // A-05 raw：before-check（否決方向，見上方註解）
       if (el.tagName === 'P' && len(norm(el.textContent)) >= 100) return true;
       if (el.tagName === 'DIV') {
         const direct = Array.from(el.childNodes)
           .filter(n => n.nodeType === 3).map(n => n.textContent).join('');
         if (len(norm(direct)) >= 100) return true;
       }
-      return hasLongMainParagraph(el, lenOf);
+      return hasLongMainParagraph(el, len);
     };
     const tailParent = h.parentElement;
     let tailApplies = tailParent === articleEl;
@@ -1298,7 +1371,7 @@
       }
     }
     if (tailApplies) {
-      const hasMainContent = (el) => siblingHasMainContent(el, NS.cjkWeightedLen);
+      const hasMainContent = (el) => siblingHasMainContent(el, mainTextLen);
       // v2.2.17：尾段清除不跨越正文的 section heading（dev.to 實證：<p> 雜訊
       // 標籤之後的段落都短於 100 字，after-check 停不下來，一路藏過第 5–9 節
       // 的 h2 到文末）。雜訊區塊的範圍止於下一個「位階不低於它」的 heading：
@@ -1645,7 +1718,7 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       let hasLongP = false;
       for (const p of el.querySelectorAll('p')) {
-        if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
+        if (mainTextLen(norm(p.textContent)) >= 100) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
       hide(el, hidden);
@@ -1751,7 +1824,7 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       let hasLongP = false;
       for (const p of el.querySelectorAll('p')) {
-        if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
+        if (mainTextLen(norm(p.textContent)) >= 100) { hasLongP = true; break; }
       }
       // v1.7.18：無 <p> 站的長文 guard（同 subtreeHasLongNonAnchorText 註解）
       if (!hasLongP && subtreeHasLongNonAnchorText(el, 100)) hasLongP = true;
@@ -2408,16 +2481,12 @@
   // 1px 裁切）＝給搜尋引擎或螢幕閱讀器的載體，不是畫面上的標題區塊。只看元素
   // 自身（不爬祖先）：promote 階段原 wrapper 多半已被 hideAncestorSiblings 藏掉，
   // rect 一律是 0、不能用 rect 判。JRead 自己 hide 的（data-jread-hidden）不算。
+  // 2026-11-15 review 批 5 A-04：判定本體在 NS.isSiteHidden（訊號組合 HEADING＝
+  // display / visibility hidden·collapse / sr-only；不認 opacity，見 namespace.js
+  // SITE_HIDDEN_SIGNALS 註解）。這裡只留「JRead 自己 hide 的不算」這條 cleaner 政策。
   function headingIsSiteHidden(h) {
     if (!h || (h.dataset && h.dataset.jreadHidden === '1')) return false;
-    let cs = null;
-    try { cs = window.getComputedStyle ? window.getComputedStyle(h) : null; } catch (_) { cs = null; }
-    if (!cs) return false;
-    if (cs.display === 'none') return true;
-    if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return true;
-    if (cs.position === 'absolute' && cs.overflow === 'hidden' &&
-        parseFloat(cs.width) <= 1 && parseFloat(cs.height) <= 1) return true;
-    return false;
+    return NS.isSiteHidden(h, NS.SITE_HIDDEN_SIGNALS.HEADING);
   }
 
   // 非 heading 標題載體版：el 的文字是否**全部**住在站方藏起來的節點裡
@@ -2785,11 +2854,8 @@
   // v2.2.17：el 自身或到 root（含）之間任一祖先被站方 CSS 藏起來（見
   // headingIsSiteHidden；不依賴 rect，jsdom 也成立）。
   function isSiteHiddenWithin(el, root) {
-    for (let p = el; p; p = p.parentElement) {
-      if (headingIsSiteHidden(p)) return true;
-      if (p === root) break;
-    }
-    return false;
+    return NS.isSiteHiddenInChain(el, NS.SITE_HIDDEN_SIGNALS.HEADING,
+      { stop: root, includeStop: true, skipOwnHidden: true });
   }
 
   // v1.8.6：第一層（class/id title token）整層落空時的第二層候選來源。
@@ -2912,9 +2978,8 @@
     if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
         (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE))) return true;
     // v2.2.20：翻譯把 <time> 攤平成純文字（dev.to「Posted on Jan 6」→「發表於 1 月 6 日」），
-    // 上面的 time tag 保護失效，且譯文日期沒有年份、BYLINE_TEXT_RE 不認
-    if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
-        /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日/.test(text)) return true;
+    // 上面的 time tag 保護失效、譯文日期沒有年份。原本這裡另寫一條 inline regex；
+    // review A-03(b) 起「發表於」與無年份月日併進 BYLINE_TEXT_WEAK_RE，由上一條接住
     // v1.5.6 byline 作者 chip 保護：含「作者個人頁連結」的短分支＝置於標題上方的
     // 作者署名（techcrunch 把 authors-list 放在 h1 之前，裸作者名「Anthony Ha」
     // 無 by 前綴/日期 → BYLINE_TEXT_RE 漏抓被當 pre-title 雜訊砍）。與條件 A /
@@ -2968,9 +3033,9 @@
       // 只看 DOM order 在 anchor 之前者
       if (!(anchor.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
       if (el.closest('[data-jread-hidden="1"]')) continue;
-      const t = norm(el.textContent);
-      if (t.length >= 100) return true;
-      acc += t.length;
+      const tl = mainTextLen(norm(el.textContent));
+      if (tl >= 100) return true;
+      acc += tl;
       if (acc >= 300) return true;
     }
     return false;
@@ -3207,10 +3272,9 @@
       let total = 0, linkText = 0, linkLed = 0;
       for (const li of items) {
         const t = norm(li.textContent).length;
-        // 以連結開頭的條目＝「標題連結 + 描述」推薦卡（udn 型），不是引用條目
-        const first = li.querySelector('a');
-        if (first && t && norm(li.textContent).indexOf(norm(first.textContent)) === 0 &&
-            norm(first.textContent).length > 0) linkLed++;
+        // 以連結開頭的條目＝「標題連結 + 描述」推薦卡（udn 型），不是引用條目。
+        // 判準住 _isLinkLedItem 一份（2026-11-15 review A-11；nonLinkProseWeight 同用）
+        if (_isLinkLedItem(li)) linkLed++;
         let a = 0;
         for (const link of li.querySelectorAll('a')) a += norm(link.textContent).length;
         total += t;
@@ -3230,30 +3294,34 @@
   // 文字同法扣除。供「這塊是不是主文級內容」的文字量 guard 共用（wikiHow 步驟文字
   // 在 ol > li > div.step、沒有 <p>，各條以 <p> 為主文證據的 guard 全 miss）。
   const PROSE_SKIP_TAGS = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/;
+  // display:contents 且祖先鏈沒有 display:none＝自己沒有 box、內容照常渲染
+  function isRenderedBoxlessContents(el) {
+    let cs = null;
+    try { cs = window.getComputedStyle ? window.getComputedStyle(el) : null; } catch (_) { cs = null; }
+    if (!cs || cs.display !== 'contents') return false;
+    return !NS.isSiteHiddenInChain(el, NS.SITE_HIDDEN_SIGNALS.DISPLAY);
+  }
   function _visibleTextOf(el) {
     if (typeof el.innerText === 'string') {
       // 規範：沒在渲染的元素（display:none 子樹內）innerText 直接回傳 textContent，
       // 連 script / JSON-LD 都算進來（wikiHow 收合的影片段實測 1.3K 全是 JSON-LD）
-      if (el.getClientRects && el.getClientRects().length === 0) return '';
+      // 2026-11-15 review 批 5 A-04：display:contents 的元素自己沒有 box（rect 恆為 0）
+      // 但子孫照常顯示，不能當「沒在渲染」——主文包在這種 wrapper 裡時文字量被算成
+      // 0，narrow 的平級主文 guard 失效、整塊被藏；排除子樹（連結）是 contents 時
+      // 連結文字沒被扣掉。祖先鏈有 display:none 才是真的沒在渲染。
+      if (el.getClientRects && el.getClientRects().length === 0 && !isRenderedBoxlessContents(el)) return '';
       return el.innerText;
     }
+    // jsdom 分支：走訪本體在 NS.visibleText（2026-11-15 review 批 5 A-04）。只檢查
+    // 後代、不檢查 el 自身；沒有 defaultView 時不做隱藏判定
     const win = el.ownerDocument && el.ownerDocument.defaultView;
-    let out = '';
-    const walk = (n) => {
-      for (const c of n.childNodes) {
-        if (c.nodeType === 3) { out += c.textContent + ' '; continue; }
-        if (c.nodeType !== 1 || PROSE_SKIP_TAGS.test(c.tagName)) continue;
-        if (win && win.getComputedStyle) {
-          const cs = win.getComputedStyle(c);
-          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-        }
-        walk(c);
-      }
-    };
-    walk(el);
-    return out;
+    return NS.visibleText(el, {
+      signals: (win && win.getComputedStyle) ? NS.SITE_HIDDEN_SIGNALS.TEXT : NS.SITE_HIDDEN_SIGNALS.NONE,
+      win, skipTagRe: PROSE_SKIP_TAGS, sep: ' ',
+    });
   }
-  // 以連結開頭的清單項＝「標題連結 + 描述」推薦卡（與 hasProseListContent 同一判準）
+  // 以連結開頭的清單項＝「標題連結 + 描述」推薦卡。hasProseListContent 與
+  // nonLinkProseWeight 共用這一份（review A-11：原本前者另抄一份 inline）
   function _isLinkLedItem(li) {
     const first = li.querySelector('a');
     if (!first) return false;
@@ -3401,7 +3469,7 @@
             let longP = false;
             for (const para of sib.querySelectorAll('p')) {
               if (para.closest('li, a')) continue;
-              if (NS.cjkWeightedLen(norm(para.textContent)) >= 100) { longP = true; break; }
+              if (mainTextLen(norm(para.textContent)) >= 100) { longP = true; break; }
             }
             if (!longP) hasStandaloneMedia = false;
           }
@@ -3465,9 +3533,9 @@
             // 累計 ≥ 300 字，讓整個 header#site-header 被當「含主文」保留
             if (para.closest('nav, [role="navigation"], [data-jread-hidden="1"]')) continue;
             if (isSiteHiddenWithin(para, sib)) continue;
-            const pt = norm(para.textContent);
-            if (pt.length >= 100) { mainContentFound = true; break; }
-            acc += pt.length;
+            const pl = mainTextLen(norm(para.textContent));
+            if (pl >= 100) { mainContentFound = true; break; }
+            acc += pl;
             if (acc >= 300) { mainContentFound = true; break; }
           }
           if (mainContentFound) continue;
@@ -4355,15 +4423,13 @@
   // 追蹤頁）、google.com/preferences/source（偏好來源設定）、
   // news.google.com/publications/…（Google 新聞追蹤）都是平台的追蹤操作頁，
   // 正文引用 Google 新聞報導連的是 /articles/、/stories/，不在此列。
+  // 2026-11-15 review A-13（Jimmy 裁定留在 cleaner）：host / path 住模組頂端的
+  // PLATFORM_FOLLOW_HREF_RULES，這裡只剩「解析 href → 問純比對函式」。
   function isPlatformFollowHref(a) {
     if (!a || a.tagName !== 'A') return false;
     let u;
     try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { return false; }
-    const host = u.hostname.replace(/^www\./, '');
-    if (host === 'profile.google.com' && /^\/@/.test(u.pathname)) return true;
-    if (host === 'google.com' && /^\/preferences\/source/.test(u.pathname)) return true;
-    if (host === 'news.google.com' && /^\/publications\//.test(u.pathname)) return true;
-    return false;
+    return matchesPlatformFollowUrl(u.hostname, u.pathname);
   }
 
   function hideInsideArticleByLinkText(articleEl, hidden, scope) {
@@ -4425,9 +4491,15 @@
   // 桌機版作者住在 aside 作者欄（連同站方推薦被 narrow 清掉）→ 卡片沒有作者。把那行
   // 的純文字合成一行 title-meta 放在原位（styler 的 byline 偵測會接手呈現，與
   // promoteOutsideTitleCarrierInto 的日期同一招；還原走 __titleClone path）。
-  const SIBLING_BYLINE_RE = /^(?:by\b|作者|撰文|文[／/|｜]|由\s*\S)/i;
+  // review A-03(b)：改由 BYLINE_TEXT_STRONG_RE 推導（原本自己一份前綴詞，沒有
+  // 「編輯 / 整理 / 報導 / 編譯」「written by」「作者：」）。前面三個是只有本規則用的
+  // 寬鬆形狀：「作者 / 撰文」後直接接中文名、「由＋任意字」——本規則有「h1 的兄弟 <p>、
+  // 被站方 display:none、權重 ≤ 80」的結構閘，放得起；它們不可搬進全檔共用的 STRONG
+  // （「作者簡介」「由於…」開頭的內文會被當 byline）。`by\b`、「文／」已由 STRONG 涵蓋
+  const SIBLING_BYLINE_RE = new RegExp('^(?:作者|撰文|由\\s*\\S)|' + BYLINE_TEXT_STRONG_RE.source, 'i');
   const SIBLING_BYLINE_MAX_WEIGHT = 80;
-  const SIBLING_BYLINE_PREFIX_RE = /^(?:by\b|作者|撰文|文|由)[\s:：／/|｜]*/i;
+  // 去掉前綴詞取作者名（cardHasRenderedBylineFor 用）；詞表跟著 STRONG 的行首前綴補齊
+  const SIBLING_BYLINE_PREFIX_RE = /^\s*(?:written\s+by|posted\s+by|by\b|authors?|作者|撰文|編輯|整理|報導|編譯|文|由)[\s:：／/|｜]*/i;
   const SIBLING_BYLINE_BODY_P_WEIGHT = 100;
   // 2026-11-15 review A-02：合成前先確認「卡片的標題區真的沒有這位作者」。響應式站
   // 常見兩份 byline 並排（`<p class="md:hidden">By X</p>` ＋ `<… class="hidden
@@ -4524,12 +4596,33 @@
     if (parts.length > 1 && /^(?:co|com|net|org|ac|gov|edu)$/.test(parts[parts.length - 1])) parts.pop();
     return parts[parts.length - 1] || host;
   }
+  // 2026-11-15 review A-09：「這條連結指向同站的另一篇」原本三種寫法散在五處
+  // （品牌段相等 / origin 相等 / hostname 相等），收成這一份；三種政策是各規則
+  // 當初實測定下的嚴格度，以參數保留、不合併：
+  //   'origin'  協定＋主機＋埠完全相同（整卡連結 figure、行內他篇推薦段——站外
+  //             連結是出處 / 授權，review A-14）
+  //   'host'    hostname 相同（文末 teaser 清單）
+  //   'brand'   主網域品牌段相同（粗體標籤清單、標題連結群——bbc.com ↔ bbc.co.uk
+  //             同媒體跨國別網域）。任一端在共用主機平台（SHARED_HOST_PLATFORM_
+  //             SUFFIXES）時退回 hostname 相等（去 www.）：合成頁真 Chromium 實證
+  //             alice.substack.com 文中「Further reading:」列三篇別人的 substack，
+  //             品牌段都是 substack → 整份參考清單被當同站推薦藏掉
+  // 三種都要求 pathname 與本頁不同（本頁自連結不是「他篇」）。
+  function urlIsSameSiteArticle(u, policy) {
+    if (!u || u.pathname === location.pathname) return false;
+    if (policy === 'origin') return u.origin === location.origin;
+    if (policy === 'host') return u.hostname === location.hostname;
+    if (!/^https?:$/.test(u.protocol)) return false;
+    if (isSharedHostPlatformHost(u.hostname) || isSharedHostPlatformHost(location.hostname)) {
+      const bare = h => h.toLowerCase().replace(/^www\./, '');
+      return bare(u.hostname) === bare(location.hostname);
+    }
+    return siteBrandLabel(u.hostname) === siteBrandLabel(location.hostname);
+  }
   function isSameSiteArticleLink(a) {
     let u;
     try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { return false; }
-    if (!/^https?:$/.test(u.protocol)) return false;
-    if (siteBrandLabel(u.hostname) !== siteBrandLabel(location.hostname)) return false;
-    return u.pathname !== location.pathname;
+    return urlIsSameSiteArticle(u, 'brand');
   }
   // 回傳區塊內的連結；區塊有連結以外的文字（項目符號不算）→ null
   function linksIfLinkOnly(block) {
@@ -4553,8 +4646,17 @@
     }
     return null;
   }
-  function hideInsideArticleLabeledLinkLists(articleEl, hidden) {
-    for (const label of articleEl.querySelectorAll('p, div')) {
+  // 2026-11-15 review A-12：接 scope 進 DYNAMIC_SCOPED_RULES（批 4 A-09 慣例）。
+  // 動態側的候選除了新節點自身 / 其內的標籤，還要回頭看新節點「前一個兄弟」——
+  // 標籤先在、清單晚插入時（合成頁真 Chromium 實證兩種時序都漏），標籤不在
+  // scope 內。標籤已被別條規則藏掉不跳過（cnbc：文字規則只藏到標籤、清單要靠這條
+  // 收；hide() 本身冪等）。
+  function hideInsideArticleLabeledLinkLists(articleEl, hidden, scope) {
+    const labels = scopedQueryAll(scope, articleEl, 'p, div');
+    if (scope && scope !== articleEl && scope.previousElementSibling) {
+      labels.push(scope.previousElementSibling);
+    }
+    for (const label of labels) {
       if (!isBoldColonLabel(label) || isInPreserved(label)) continue;
       // 清單形狀：ul/ol 一張，或連續 <p>（bbc 把 N 條連結用 <br> 排在同一個 <p>）
       const blocks = [];
@@ -5129,6 +5231,10 @@
       for (const s of stats) {
         if (s.ld <= SIDEBAR_COLUMN_MIN_LINK_DENSITY) bodyWeight += NS.cjkWeightedLen(norm(s.el.textContent));
       }
+      // A-05 raw：main.textLen 是 raw、bodyWeight 是 CJK 權重，比同一個常數——刻意的。
+      // splitMainOnly 為 false 會放行條件 A / B / E / E2（否決方向）；改權重後中文站
+      // 250–499 字的主欄會被當成「整欄主文」而多跑這四條（22 個中文站快照有 11 站、
+      // 19 個容器會翻轉）。bodyWeight 那一側是 v2.2.20 為翻譯輪另開的入口，維持權重
       const splitMainOnly = main.textLen < SIDEBAR_COLUMN_MIN_MAIN_TEXT;
       if (splitMainOnly && bodyWeight < SIDEBAR_COLUMN_MIN_MAIN_TEXT) continue;
 
@@ -5933,8 +6039,7 @@
         if (headText && BYLINE_TEXT_RE.test(headText)) continue;
         // v2.2.20：Shinkansen 把作者 chip 攤平成純文字後 role=button 消失（theverge
         // fe267f 雙作者實測），剩 byline 容器內的作者 hover-card 這個結構訊號
-        const bylineBox = el.querySelector && el.querySelector('[class*="byline" i]');
-        if (bylineBox && Array.from(bylineBox.querySelectorAll('aside')).some(a => clusterContainsAuthorProfileLink(a))) continue;
+        if (bylineBoxHasAuthorHoverCard(el, false)) continue;
         // v2.2.20：翻譯後「作者：X」開頭文字接不住（theverge fe267f）——區塊內有
         // 作者名 chip 就是 byline（翻譯無關，判定見 isBylineNameChip）
         if (el.querySelectorAll &&
@@ -7008,24 +7113,16 @@
   // hidden / data-jread-hidden 標記者，把可見 text node 串起來。jsdom getComputedStyle
   // 對 inline style 仍 valid，所以兩端（jsdom + 真實 Chrome）都得到一致結果。
   // 比 element.innerText 更可靠（innerText 在 jsdom 退化成 textContent，會帶到 hidden text）。
+  const VISIBLE_RENDERED_TEXT_OPTS = { includeSelf: true, skipJreadHidden: true };
+  const VISIBLE_RENDERED_ANY_OPTS = { includeSelf: true, skipJreadHidden: true, any: true };
   function visibleRenderedText(el) {
     // v1.7.44 E2 效能：cheap 閘門——textContent（含 hidden 子樹的全集）正規化後
     // 為空，visible 子集必為空，直接回空字串跳過逐節點 getComputedStyle 慢路。
     // 呼叫端一律 trim()/norm() 後使用，whitespace-only 情境回 '' 等價。
     if (el && el.textContent != null && norm(el.textContent).length === 0) return '';
-    let out = '';
-    function walk(node) {
-      if (!node) return;
-      if (node.nodeType === 3) { out += node.textContent; return; }
-      if (node.nodeType !== 1) return;
-      if (node.dataset && node.dataset.jreadHidden === '1') return;
-      const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
-        window.getComputedStyle(node) : null;
-      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return;
-      for (const c of node.childNodes) walk(c);
-    }
-    walk(el);
-    return out;
+    // 2026-11-15 review 批 5 A-04：走訪本體在 NS.visibleText——跳過 jreadHidden 標記、
+    // computed display:none / visibility:hidden 的子樹（訊號組合 TEXT；el 自身也檢查）
+    return NS.visibleText(el, VISIBLE_RENDERED_TEXT_OPTS);
   }
 
   // 2026-10-07 review A-16：visibleRenderedText 的布林版——「有沒有任何可見的非空白
@@ -7040,18 +7137,9 @@
   // 對照。
   function hasVisibleRenderedText(el) {
     if (!el || el.textContent == null || norm(el.textContent).length === 0) return false;
-    function walk(node) {
-      if (!node) return false;
-      if (node.nodeType === 3) return /\S/.test(node.textContent);
-      if (node.nodeType !== 1) return false;
-      if (node.dataset && node.dataset.jreadHidden === '1') return false;
-      const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
-        window.getComputedStyle(node) : null;
-      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
-      for (const c of node.childNodes) { if (walk(c)) return true; }
-      return false;
-    }
-    return walk(el);
+    // 2026-11-15 review 批 5 A-04：與 visibleRenderedText 同一支 NS.visibleText、同一組
+    // 選項，只多 any（碰到第一個非空白可見文字就回 true）
+    return NS.visibleText(el, VISIBLE_RENDERED_ANY_OPTS);
   }
 
   // v0.7.212：判定 img 是否為「真實內容圖」——empty-wrapper / spacer collapse
@@ -8342,8 +8430,11 @@
       } else {
         t = norm(el.textContent);
       }
-      if (t.length >= 100) return true;
-      acc += t.length;
+      // A-05 raw：否決方向——回 true 會讓四個呼叫端「取消保護」（作者名 wrapper、
+      // 主圖 wrapper、留言 / 促捐、訂閱表單卡）。改權重後，中文站標題下 50–99 字的
+      // 摘要就會讓其後的作者名 wrapper 失去保護
+      if (rawTextLen(t) >= 100) return true;
+      acc += rawTextLen(t);
       if (acc >= 300) return true;
     }
     return false;
@@ -8505,8 +8596,15 @@
     if (articleEl && containsEmailSignupForm(el) && mainContentPrecedesWrapper(articleEl, el)) return false;
     return wrapperContainsMainContentP(el);
   }
+  // 2026-11-15 review A-10：改問訂閱表單規則的 isEmailInput（type=email，或 type=text
+  // 且 name / id / placeholder 帶 mail），不再自帶一份只認「<form> 內 type=email」的
+  // 判定——合成頁真 Chromium 實證：同一張卡把輸入欄換成 `type="text" name="email"`
+  // 或拿掉 <form>（裸 div 包輸入欄，gvm 城市學型），v2.4.4 的修法就不生效、標題＋
+  // 免責聲明照樣殘留。
   function containsEmailSignupForm(el) {
-    return !!(el.querySelector && el.querySelector('form input[type="email" i]'));
+    if (!el.querySelectorAll) return false;
+    for (const input of el.querySelectorAll('input')) if (isEmailInput(input)) return true;
+    return false;
   }
 
   // v0.8.45：H1 guard 限縮。slate.com 實測 newsletter signup 區把 CTA
@@ -8608,6 +8706,29 @@
     return norm(t);
   }
 
+  // 「byline 容器內有作者 hover-card」（v2.2.20 的翻譯無關結構訊號；review A-03(a)
+  // 把 absolute overlay 規則與 isBylineNameChip 各寫的一份併成這裡）。hover-card＝
+  // <aside> 內含作者頁連結。兩個呼叫端與 byline 容器的相對位置不同，留成參數、
+  // 不強行合一：
+  //   scopeInsideBox = false：scopeEl 是外層區塊，看它裡面第一個 byline 容器內的 aside
+  //   scopeInsideBox = true ：scopeEl（chip 的近祖先）自己位在 byline 容器內，看
+  //                           scopeEl 裡的 aside——反過來「scope 內含 byline 容器」
+  //                           不算，否則與 byline 同層的 Link / Share chip 會跟著免清
+  // 與舊實作唯一的差別：true 那支原本只看第一個 <aside>，現在看全部（作者 chip 內
+  // 另有一個非作者 aside 排在前面時才不同；中英 39 份快照與 fixture 全集新舊輸出相同）
+  const BYLINE_BOX_SEL = '[class*="byline" i]';
+  function bylineBoxHasAuthorHoverCard(scopeEl, scopeInsideBox) {
+    if (!scopeEl || !scopeEl.querySelectorAll) return false;
+    const root = scopeInsideBox
+      ? (scopeEl.closest && scopeEl.closest(BYLINE_BOX_SEL) ? scopeEl : null)
+      : scopeEl.querySelector(BYLINE_BOX_SEL);
+    if (!root) return false;
+    for (const a of root.querySelectorAll('aside')) {
+      if (clusterContainsAuthorProfileLink(a)) return true;
+    }
+    return false;
+  }
+
   // 不排除內含小 svg/img——theverge 作者 chip 帶 hover-card caret icon 實測。
   // icon-only button 由「文字 1-40 chars」條件自然排除。最後一道「chip 文字
   // 必須出現在 byline 句頭內」是防 Link / Share / Gift 類 chip 借同一個
@@ -8625,9 +8746,7 @@
       // 就接不住（theverge 兩站翻譯輪作者消失）。chip 自帶作者 hover-card（aside 內有
       // 作者頁連結）且位在 byline 容器內＝作者名，Link / Share 類 chip 沒有這個 aside；
       // 文末「追蹤作者」chip 也有 aside，但不在 byline 容器內。
-      if (hops <= 2 && cur.querySelector('aside') &&
-          clusterContainsAuthorProfileLink(cur.querySelector('aside')) &&
-          cur.closest('[class*="byline" i]')) return true;
+      if (hops <= 2 && bylineBoxHasAuthorHoverCard(cur, true)) return true;
       const ct = textSansAsides(cur);
       if (ct.length > 200) return false;
       if (BYLINE_TEXT_RE.test(ct.slice(0, 60))) {
@@ -9650,7 +9769,7 @@
     // 「中文站掉內容先查 raw 長度門檻」第四例）
     for (const p of wrapper.querySelectorAll('p')) {
       if (root.contains(p)) continue;
-      if (NS.cjkWeightedLen(norm(p.textContent)) >= 100) return false;
+      if (mainTextLen(norm(p.textContent)) >= 100) return false;
     }
     hide(wrapper, hidden);
     return true;
@@ -9820,15 +9939,15 @@
       if (IMAGE_HREF_RE.test(href)) continue;          // lightbox / 原圖連結
       let target;
       try { target = new URL(href, location.href); } catch (_) { continue; }
-      if (target.pathname === location.pathname) continue; // 本文自連結（標題卡）
       // 2026-10-07 review A-14：第五道閘——連結必須**同源**。推薦卡連的是站內
       // 他篇（Guardian rich link 實案 href="/world/…"）；部落格 / 攝影站慣例
       // `<figure><a href="https://flickr.com/…"><img><span>Photo: John Doe /
       // Flickr, CC BY 2.0</span></a></figure>`（圖說放 span 不放 figcaption、整組
       // 連到來源 / 授權頁）前四道閘全過，整張內容圖被當連結卡藏掉（合成頁
       // Chromium probe 實證）。站外連結是出處 / 授權，是內容的一部分——與
-      // hideInsideArticleInlineRelatedLinkParagraphs 的同源判準一致。
-      if (target.origin !== location.origin) continue;
+      // hideInsideArticleInlineRelatedLinkParagraphs 的同源判準一致（兩處都問
+      // urlIsSameSiteArticle 的 'origin' 政策；本文自連結＝標題卡，同樣不算）。
+      if (!urlIsSameSiteArticle(target, 'origin')) continue;
       hide(fig, hidden);
     }
   }
@@ -9898,8 +10017,7 @@
       // 站內、且不是本頁
       let target;
       try { target = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
-      if (target.origin !== location.origin) continue;
-      if (target.pathname === location.pathname) continue;
+      if (!urlIsSameSiteArticle(target, 'origin')) continue;
       hide(p, hidden);
     }
   }
@@ -10034,7 +10152,8 @@
       if (!PRINT_EDITION_NOTE_RE.test(text)) continue;
       let hasLongP = false;
       for (const p of el.querySelectorAll('p')) {
-        if (norm(p.textContent).length >= 100) { hasLongP = true; break; }
+        // A-05 raw：入口是英文句式（appears in print on…），量的一定是拉丁文字
+        if (rawTextLen(norm(p.textContent)) >= 100) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
       hide(el, hidden);
@@ -10070,7 +10189,7 @@
   function hideTailCuratedLinkLists(articleEl, hidden) {
     let lastMainP = null;
     for (const p of articleEl.querySelectorAll('p')) {
-      if (norm(p.textContent).length < 100) continue;
+      if (mainTextLen(norm(p.textContent)) < 100) continue;
       if (p.closest('li, a, figure, blockquote')) continue;
       // v2.2.17：沒有顯示的段落不算「主文最後一段」——netflix tudum 實證：articleEl
       // 尾端的 OneTrust cookie SDK（站方藏起來的同意說明段）搶走 lastMainP，推薦軌
@@ -10103,7 +10222,7 @@
           let u;
           try { u = new URL(href, location.href); } catch (_) { continue; }
           if (/\.(?:jpe?g|png|gif|webp|avif|svg)$/i.test(u.pathname)) continue; // 圖檔直連＝gallery/lightbox
-          if (u.hostname === location.hostname && u.pathname !== location.pathname) {
+          if (urlIsSameSiteArticle(u, 'host')) {
             hasInternalLink = true;
             break;
           }
@@ -10114,7 +10233,7 @@
       if (!teaserShaped || teaserCount < 2) continue;
       let longPOutsideLi = false;
       for (const p of sec.querySelectorAll('p')) {
-        if (norm(p.textContent).length >= 100 && !p.closest('li')) { longPOutsideLi = true; break; }
+        if (mainTextLen(norm(p.textContent)) >= 100 && !p.closest('li')) { longPOutsideLi = true; break; }
       }
       if (longPOutsideLi) continue;
       if (norm(sec.textContent).length / articleTextLen >= 0.3) continue;
@@ -10375,7 +10494,7 @@
         .filter(n => n.nodeType === 3).map(n => n.textContent).join('')));
       let len = 0;
       if (direct >= 100) len = direct;
-      else if (isProseParagraphDiv(div)) len = nonAnchorTextLen(div);
+      else if (isProseParagraphDiv(div)) len = nonAnchorTextLen(div, mainTextLen);
       if (!len) continue;
       carriers += 1;
       acc += len;
@@ -10609,6 +10728,7 @@
     hideInsideArticleJsLinks,
     hideInsideArticleIconOnlyLinks,
     hideSponsoredLinkWidgets,
+    hideInsideArticleLabeledLinkLists,
   ];
   function runDynamicScopedRules(articleEl, node, hiddenList) {
     for (const rule of DYNAMIC_SCOPED_RULES) {
