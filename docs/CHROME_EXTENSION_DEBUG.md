@@ -413,7 +413,10 @@ extension 的 SW 快取在 persistent profile 內，重啟不一定重載；cont
 本 harness 是 Chromium，**WebKit engine 行為驗不到**（v0.7.230 翻頁模式
 column-count: 1 bug 即 Chrome 綠、Safari 全滅）。WebKit 軌兩條驗法：
 
-1. **Playwright WebKit**（`npx playwright install webkit`）：不能載 extension，
+1. **Playwright WebKit**（`npx playwright install webkit`）：翻頁模式直接用
+   `node tools/webkit-paged-probe.js --url <URL>`（或 `--html <快照>`；`--engine chromium`
+   同一套注入法跑 Chromium、`--ext <舊版 jread 副本>` 做前後比對、`--exit` 驗退出還原，
+   輸出版面指紋 JSON＋逐頁截圖，用法見檔頭）。做法：不能載 extension，
    改把 content script 以 `addScriptTag` 注入 page main world + chrome API
    stub（`setContent` 不觸發 `addInitScript`，stub 要放頁內 `<script>`）。
    注意 Playwright WebKit 是 **trunk build，可能已修正式版 Safari 還沒修的
