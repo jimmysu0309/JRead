@@ -2304,10 +2304,24 @@
   // 磁碟筆數沒少＝資料在、key 對不上）。對擴充自有頁改用「path+search(+hash)」當
   // 穩定身分（docId 在 search、跨 UUID 不變）；http(s) 一般網頁 origin 有意義（區
   // 分站點）必須保留。結構性通則（描述 URL scheme 結構、非站點特判）。
+  //
+  // v2.4.11（2026-11-15 review D-02）：JReader Article View 的 key 只留文件身分
+  //（`?id=`）。v1.5.11 定「path+search」時 search 只有 `?id=<docId>`；之後多了
+  // `&meta=`（v1.6.0，標題 / 作者 / 來源等 feed metadata）與 `&tab=`（v2.2.10，來源
+  // 分頁）——同一篇文章換分頁進來（v2.4.0 右滑到 Later 後從 Later 打開）或 Readwise
+  // 補抓到作者，key 就不同、上次存的位置變孤兒。App 內的 jread-app:// origin 固定但
+  // search 同樣帶這兩個參數，一併收斂成同一把 key（與擴充頁同形，不含 origin）。
+  // 升級前存下的舊 key（帶 &meta / &tab）由 position-memory 的 legacyKeyMatch 接手。
   function stripVolatileExtensionOrigin(href) {
     try {
       const u = new URL(href);
-      if (u.protocol === 'safari-web-extension:' || u.protocol === 'chrome-extension:' || u.protocol === 'moz-extension:') {
+      const own = ['safari-web-extension:', 'chrome-extension:', 'moz-extension:', 'jread-app:'];
+      if (own.includes(u.protocol)) {
+        if (/\/reader\/article\.html$/.test(u.pathname) && u.searchParams.has('id')) {
+          return u.pathname + '?id=' + encodeURIComponent(u.searchParams.get('id'));
+        }
+        // jread-app:// 的其他頁維持原 href（origin 固定、沒有揮發問題）
+        if (u.protocol === 'jread-app:') return href;
         return u.pathname + u.search + u.hash;
       }
     } catch (_) {}

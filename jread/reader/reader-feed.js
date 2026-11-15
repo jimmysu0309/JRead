@@ -476,7 +476,7 @@
     const PROFILES = global.__JReadProfiles;
     const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
     readSettings({
-      theme: 'light',
+      theme: DEF.theme || 'gray', // review D-05：同 reader-article.js，預設主題讀單一資料源
       storageService: DEF.storageService || 'readwise',
       readwiseToken: '',
       instapaperToken: '',

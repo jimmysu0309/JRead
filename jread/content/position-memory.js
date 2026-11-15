@@ -132,6 +132,28 @@
 
   // 翻頁模式回復頁碼：總頁數沒變直接用儲存頁碼；變了（重新分頁）/ 跨模式
   // （捲動 entry 回到翻頁模式）按進度比例換算。回 0-based 頁碼。
+  // v2.4.11（2026-11-15 review D-02）：JReader Article View 的 key 由「path + 整段
+  // search」收斂成「path + ?id=」（main.js stripVolatileExtensionOrigin）。升級前存下
+  // 的記錄 key 是 `<新 key>&meta=…` / `<新 key>&tab=…`（feed 連結 id 一律排第一個
+  // 參數）——新 key 查不到時取這些舊 key 裡最新的一筆有效記錄，升級當下不會全部
+  // 歸零。只認「新 key + '&'」前綴：一般網頁的 key 不會以另一把 key 加 & 開頭，
+  // 限定 reader 文章頁再保險一層。舊記錄不搬不刪，照既有效期 / 上限自然淘汰。
+  // 純函式（jsdom spec 直接測）
+  function legacyKeyMatch(map, key, now, days) {
+    if (!map || typeof key !== 'string' || key.indexOf('/reader/article.html?id=') === -1) return null;
+    const prefix = key + '&';
+    let best = null;
+    for (const k of Object.keys(map)) {
+      // 擴充頁舊 key 以 prefix 開頭；App（jread-app://app/…）舊 key 前面多一段 origin、
+      // 且沒帶 meta / tab 時整把以新 key 結尾
+      if (k === key || !(k.indexOf(prefix) !== -1 || k.endsWith(key))) continue;
+      const e = map[k];
+      if (!isFresh(e, now, days)) continue;
+      if (!best || (e.ts || 0) > (best.ts || 0)) best = e;
+    }
+    return best;
+  }
+
   function resolvePageIndex(entry, total) {
     if (!entry || !(total > 1)) return 0;
     if (entry.mode === 'paged' && entry.pages === total && Number.isInteger(entry.page)) {
@@ -522,8 +544,9 @@
         return;
       }
       memMap = map; // seed 記憶體 map：之後寫入走同步路徑（不再 async 讀回）
-      const entry = map[key];
       const now = Date.now();
+      // v2.4.11（review D-02）：新 key 沒有記錄時，找升級前帶 &meta / &tab 的舊 key
+      const entry = map[key] || legacyKeyMatch(map, key, now, days);
       if (!isFresh(entry, now, days)) {
         // 過期殘留：順手清掉（不等下次寫入）
         if (entry) {
@@ -607,6 +630,7 @@
     recordWriteError,
     findBlockIndex,
     resolvePageIndex,
+    legacyKeyMatch,
     computeExitScrollTop,
     shouldPersist,
     computeNextMap,

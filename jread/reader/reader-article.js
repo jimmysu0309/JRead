@@ -75,9 +75,27 @@
   // 回傳承載已清理內容的 off-DOM 容器 div。buildArticleContainer 直接搬移其
   // 子節點——不走「serialize 成字串再二次 innerHTML parse」（兩次 parse 的
   // 語境差是 mXSS 的典型載體）。
-  function sanitizeDom(html, document) {
-    const tmp = document.createElement('div');
+  //
+  // v2.4.11（2026-11-15 review D-01）：parse 一律在 inert 文件上做。原本在現行文件
+  // 的 off-DOM div 上設 innerHTML——off-DOM 不等於 inert：<img> 照樣開始載入、on*
+  // handler 照樣編譯，error / load 事件事後觸發。主迴圈對「留下來的元素」同步剝
+  // 屬性所以安全，但 EXCISE 整棵移除的子樹（<form><img onerror>）因
+  // `!tmp.contains(el)` 跳過、屬性原封不動，handler 仍會跑（Playwright WebKit /
+  // Chromium probe 實證兩引擎都觸發）。擴充頁有 MV3 CSP 擋 inline handler，但
+  // iOS App 以 jread-app:// 載同一頁時沒有預設 CSP。inert 文件（無 browsing
+  // context）不載資源、不跑 script、不編譯 handler；清完的節點由呼叫端
+  // appendChild 進現行文件時自動 adopt，此刻 on* 已全數剝除。
+  function inertContainer(html, document) {
+    const impl = document.implementation;
+    const inert = (impl && typeof impl.createHTMLDocument === 'function')
+      ? impl.createHTMLDocument('') : null;
+    // 退化環境（無 createHTMLDocument）才退回現行文件——所有支援的瀏覽器與 jsdom 都有
+    const tmp = (inert || document).createElement('div');
     tmp.innerHTML = String(html || '');
+    return tmp;
+  }
+  function sanitizeDom(html, document) {
+    const tmp = inertContainer(html, document);
     for (const el of Array.from(tmp.querySelectorAll('*'))) {
       if (!tmp.contains(el)) continue; // 祖先已被整棵移除
       const tag = el.localName;
@@ -131,12 +149,15 @@
     // 欄位（2026-10-07 實查 keys），先看 doc.language（有就用，相容未來 / 其他
     // 服務），沒有就用 detectLanguage 判漢字比例；判不出來設空字串 lang=""
     //（HTML 規範：空值 = 語言未知，覆蓋繼承、交給 UA 預設），總之不是 zh-Hant。
+    // v2.4.11（review D-01）：語言判定改吃「清理後」的內容——原本另外把未清理的
+    // html_content 再 parse 一次進現行文件的 off-DOM div，只讀 textContent、之後
+    // 不處理，裡面的 <img onerror> 原封留著等事件。清理提前到這裡、下方主文直接
+    // 沿用同一份（順便省一次 parse）。
+    const cleaned = sanitizeDom(doc && doc.html_content, document);
     let lang = (doc && typeof doc.language === 'string') ? doc.language.trim() : '';
     if (!lang && typeof o.detectLanguage === 'function') {
       try {
-        const tmp = document.createElement('div');
-        tmp.innerHTML = String((doc && doc.html_content) || '');
-        lang = o.detectLanguage(((doc && doc.title) || '') + ' ' + (tmp.textContent || '')) || '';
+        lang = o.detectLanguage(((doc && doc.title) || '') + ' ' + (cleaned.textContent || '')) || '';
       } catch (_) { lang = ''; }
     }
     article.setAttribute('lang', lang);
@@ -165,7 +186,6 @@
     body.setAttribute('data-jread-reader-body', '1');
     // v1.7.44（X1）：直接搬移 sanitizeDom 清理後的節點，不再 serialize 成字串
     // 二次 innerHTML parse（mXSS 載體，見 sanitizeDom 註解）
-    const cleaned = sanitizeDom(doc && doc.html_content, document);
     while (cleaned.firstChild) body.appendChild(cleaned.firstChild);
     // v1.0.25：所有圖片明確 eager（退掉任何懶載傾向）——配合 preloadImages 解翻頁
     // 模式 WebKit 對遠處欄位圖片延遲載入的問題。
@@ -284,7 +304,7 @@
     const PROFILES = global.__JReadProfiles;
     const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
     readSettings({
-      theme: 'light',
+      theme: DEF.theme || 'gray', // review D-05：預設主題讀單一資料源（原寫死 'light'，與 DEFAULTS 的 gray 不一致）
       storageService: DEF.storageService || 'readwise',
       readwiseToken: '',
       instapaperToken: '',
@@ -402,6 +422,16 @@
   function attachHighlights(docData, container, ctx) {
     const HL = global.__JReadReaderHighlights;
     const { NS, doc, PC, service, creds } = ctx;
+    // v2.4.11（review D-04）：換成非 Readwise 服務後，重點快取不會再被覆寫——留著
+    // 只是佔 storage.local 配額（與閱讀位置共用）。順手移除；換回 Readwise 時重抓一次
+    if (service && service !== 'readwise') {
+      try {
+        const st = global.browser && global.browser.storage && global.browser.storage.local;
+        const key = HL && HL.CACHE_KEY;
+        if (st && key) Promise.resolve(st.remove(key)).catch(() => {});
+      } catch (_) { /* 清不掉不影響閱讀 */ }
+      return null;
+    }
     if (!HL || service !== 'readwise' || !creds || !creds.token) return null;
     const bodyEl = container.querySelector('[data-jread-reader-body]');
     const storage = global.browser && global.browser.storage && global.browser.storage.local;

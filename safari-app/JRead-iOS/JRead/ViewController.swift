@@ -21,6 +21,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     @IBOutlet var webView: WKWebView!
 
     static let scheme = "jread-app"
+    static let appHost = "app"
     static let readerURL = URL(string: "jread-app://app/reader/reader.html")!
     private static let enabledKey = "jreaderEnabled"
     private static let enableActionURL = "jread-action:enable-jreader"
@@ -283,20 +284,57 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
         let scheme = url.scheme?.lowercased() ?? ""
         let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
-        // 文章裡的外部連結：主框架導向 http(s) / mailto 等一律交給系統（Safari）開，JReader 留在原頁
-        if isMainFrame && scheme != Self.scheme && scheme != "file" && scheme != "about" {
+        let userClicked = navigationAction.navigationType == .linkActivated
+        // v2.4.11（2026-11-15 review E-03）：導覽改白名單。文章內容是遠端 HTML，href 只擋
+        // javascript: / vbscript:——舊版對 jread-app:// 與 file: 一律放行、其餘 scheme 一律
+        // 交給系統開：文章裡一個 `jread-app://app/options/options.html` 連結就能把 App 帶到
+        // 完整設定頁（App 沒有導覽 UI，卡在裡面出不來），file: 同理，自訂 scheme 連結則會
+        // 直接喚起別的 App。
+        switch Self.navigationVerdict(scheme: scheme, host: url.host, path: url.path,
+                                      isMainFrame: isMainFrame, userClicked: userClicked) {
+        case .allow:
+            decisionHandler(.allow)
+        case .openExternally:
             decisionHandler(.cancel)
             UIApplication.shared.open(url)
-            return
+        case .block:
+            decisionHandler(.cancel)
         }
-        decisionHandler(.allow)
+    }
+
+    enum NavigationVerdict { case allow, openExternally, block }
+
+    // 純決策（不碰 WebKit 物件）：
+    //   - jread-app：host 必須是 app；主框架只能到 reader/（feed 與文章），子框架另放行
+    //     popup/（懸浮按鈕的功能選單 iframe）。options 等其他擴充頁 App 內沒有入口
+    //   - file / about：App 自己載入的說明頁與空白框架；使用者點連結過去的一律擋
+    //   - 主框架的 http(s) / mailto：交給系統開，JReader 留在原頁；其餘 scheme 擋
+    //   - 子框架的其他 scheme（文章 sanitizer 已移除 iframe，這裡只會是 App 自己的頁面）放行
+    static func navigationVerdict(scheme: String, host: String?, path: String,
+                                  isMainFrame: Bool, userClicked: Bool) -> NavigationVerdict {
+        if scheme == Self.scheme {
+            guard host == Self.appHost else { return .block }
+            if path.hasPrefix("/reader/") { return .allow }
+            if !isMainFrame && path.hasPrefix("/popup/") { return .allow }
+            return .block
+        }
+        if scheme == "file" || scheme == "about" { return userClicked ? .block : .allow }
+        if !isMainFrame { return .allow }
+        if scheme == "http" || scheme == "https" || scheme == "mailto" { return .openExternally }
+        return .block
     }
 
     // target=_blank / window.open
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // E-03：與 decidePolicy 同一份白名單（target=_blank 一律視為主框架、使用者點擊）
         if let url = navigationAction.request.url {
-            if url.scheme == Self.scheme { webView.load(URLRequest(url: url)) } else { UIApplication.shared.open(url) }
+            switch Self.navigationVerdict(scheme: url.scheme?.lowercased() ?? "", host: url.host, path: url.path,
+                                          isMainFrame: true, userClicked: true) {
+            case .allow: webView.load(URLRequest(url: url))
+            case .openExternally: UIApplication.shared.open(url)
+            case .block: break
+            }
         }
         return nil
     }
@@ -305,7 +343,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
                                replyHandler: @escaping @MainActor (Any?, String?) -> Void) {
+        // E-03：來源檢查連 host 一起比（原本只比 protocol，jread-app://<任意 host> 也成立）
         guard message.frameInfo.securityOrigin.protocol == Self.scheme,
+              message.frameInfo.securityOrigin.host == Self.appHost,
               let body = message.body as? [String: Any], let op = body["op"] as? String else {
             replyHandler(nil, "bad request")
             return
@@ -388,6 +428,8 @@ final class ExtensionResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         "ttf": "font/ttf", "txt": "text/plain"
     ]
 
+    static let htmlCSP = "script-src 'self'; object-src 'none'"
+
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url, let root = Self.resourcesURL?.standardizedFileURL else {
             urlSchemeTask.didFailWithError(URLError(.badURL)); return
@@ -404,8 +446,16 @@ final class ExtensionResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         var mime = Self.mimeTypes[file.pathExtension.lowercased()] ?? "application/octet-stream"
         if mime.hasPrefix("text/") || mime == "application/json" { mime += "; charset=utf-8" }
-        let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-                                   headerFields: ["Content-Type": mime, "Content-Length": String(data.count)])!
+        var headers = ["Content-Type": mime, "Content-Length": String(data.count)]
+        // v2.4.11（2026-11-15 review D-01）：html 回應補 CSP 兜底。擴充頁有 MV3 預設 CSP
+        //（script-src 'self'）擋 inline handler；同一份 reader/article.html 以 jread-app://
+        // 載入時自訂 scheme 沒有預設 CSP，sanitizer 一有缺口就是直接執行（頁面拿得到
+        // App Group 鏡像裡的憑證與原生 fetch 橋）。內容與擴充頁預設值對齊：只收同源
+        // script、不收 inline / eval、不收 plugin。WKUserScript 注入的 shim 不受頁面 CSP 限制
+        if mime.hasPrefix("text/html") {
+            headers["Content-Security-Policy"] = Self.htmlCSP
+        }
+        let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!
         urlSchemeTask.didReceive(resp)
         urlSchemeTask.didReceive(data)
         urlSchemeTask.didFinish()

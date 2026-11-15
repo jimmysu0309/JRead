@@ -23,6 +23,12 @@
   'use strict';
 
   const FEED_KEY = 'readerFeedCache';
+  // v2.4.11（2026-11-15 review D-04）：JReader 住在 storage.local 的快取 key 清單——
+  // options「清除快取」讀這份，不再自己列（v2.0.1 列的時候漏了 v1.10.0 的重點快取）。
+  // HIGHLIGHT_KEY 與 reader-highlights.js 的 CACHE_KEY 是同一把（options 頁不載
+  // reader-highlights.js，所以正本放這裡；等式由 options-clear-local-cache.spec 守）
+  const HIGHLIGHT_KEY = 'readerHighlightCache';
+  const LOCAL_CACHE_KEYS = [FEED_KEY, HIGHLIGHT_KEY];
   const FEED_VERSION = 1;
   const DB_NAME = 'jread-reader-cache';
   const DB_VERSION = 1;
@@ -314,7 +320,7 @@
   }
 
   const api = {
-    FEED_KEY, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
+    FEED_KEY, HIGHLIGHT_KEY, LOCAL_CACHE_KEYS, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
     accountKey, slimDoc, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
     isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage

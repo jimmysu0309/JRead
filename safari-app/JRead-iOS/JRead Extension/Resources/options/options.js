@@ -593,7 +593,7 @@ if (ipConnectBtn) {
       setIpConnectResult('error', '✗ 帳號或密碼錯誤');
     } else if (r && r.error === 'CONFIG') {
       setIpConnectResult('error', '✗ 此版本未內建 Instapaper 金鑰');
-    } else if (r && r.error === 'NETWORK' && r.message === 'TIMEOUT') {
+    } else if (PopupAPI && PopupAPI.isTimeoutResult(r)) { // review E-05：逾時判定單一資料源在 popup-core
       setIpConnectResult('error', '✗ Instapaper 沒有回應，請再試一次');
     } else if (r && r.error === 'NETWORK') {
       setIpConnectResult('error', '✗ 無法連線，請檢查網路');
@@ -810,8 +810,11 @@ if (clearCacheBtn) {
     // 一起清掉（與按鈕說明「不影響任何偏好設定、只清閱讀位置」名實不符，也等於
     // 使用者想回報 bug 前先把證據刪了）。除錯記錄有自己的清除鈕
     // v2.0.1：一併清 JReader feed 清單快取與文章 IndexedDB（Jimmy 2026-10-27）
+    // v2.4.11（2026-11-15 review D-04）：一併清 JReader 重點快取（v1.10.0 加的
+    // readerHighlightCache，帳號下所有 Reader 文件的重點全文）——v2.0.1 列清單時漏了。
+    // key 清單單一資料源在 reader-cache.js 的 LOCAL_CACHE_KEYS
     const localKeys = ['readingPositions'];
-    if (READER_CACHE) localKeys.push(READER_CACHE.FEED_KEY);
+    if (READER_CACHE) localKeys.push(...(READER_CACHE.LOCAL_CACHE_KEYS || [READER_CACHE.FEED_KEY]));
     browser.storage.local.remove(localKeys).then(() => (
       (READER_CACHE && READER_CACHE.clearArticleStore) ? READER_CACHE.clearArticleStore() : true
     )).then(() => {

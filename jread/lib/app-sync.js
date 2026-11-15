@@ -140,11 +140,23 @@
       const setKeys = Object.keys(plan.set);
       for (const k of setKeys) applying[k] = JSON.stringify(plan.set[k]);
       for (const k of plan.remove) applying[k] = REMOVED;
-      // meta 先落盤再套值：套值觸發的 onChanged 就算漏了 applying 比對，推上去的 ts 也只會
-      // 比鏡像新、值相同，不會吃掉對端資料
+      // v2.4.11（2026-11-15 review E-02）：**先套值、套成功才推進 meta**。舊版 meta 先
+      // 落盤——storage.sync.set 整批失敗（任一 key 超過配額；App 端 shim 沒有 8KB 限制）
+      // 或 event page 在兩個 await 之間被 iOS 回收時，meta 已經記成「這些 key 看過了」
+      // 但值沒進來：下一輪 planPull 跳過它們、planReconcile 把本機舊值當成「本機改過
+      // 沒送到」以 ts=now 推回鏡像，App 端的修改被無聲蓋掉。
+      // 套值失敗 → 清掉這輪的 applying 標記、整輪不推進 meta，下次 pull 原樣重試。
+      // 舊註解擔心的「套值觸發的 onChanged 漏了 applying 比對」在新順序下最壞是同值以
+      // ts=now 多推一次（鏡像值不變、下次 pull 再套一次同值），不會吃掉對端資料。
+      try {
+        if (setKeys.length) await browser.storage.sync.set(plan.set);
+        if (plan.remove.length) await browser.storage.sync.remove(plan.remove);
+      } catch (e) {
+        for (const k of setKeys) delete applying[k];
+        for (const k of plan.remove) delete applying[k];
+        throw e;
+      }
       await browser.storage.local.set({ [META_KEY]: plan.meta });
-      if (setKeys.length) await browser.storage.sync.set(plan.set);
-      if (plan.remove.length) await browser.storage.sync.remove(plan.remove);
       const all = await browser.storage.sync.get(null);
       const out = planReconcile(all, entries, plan.meta, now());
       if (Object.keys(out).length) {

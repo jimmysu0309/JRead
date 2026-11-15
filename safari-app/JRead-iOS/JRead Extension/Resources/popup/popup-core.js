@@ -802,6 +802,9 @@
     if (res.status === 401 || res.status === 403) {
       return { ok: false, status: res.status, error: 'AUTH' };
     }
+    // v2.4.11（2026-11-15 review E-06）：限流要分類——v2.4.0 的連續左滑封存 / 右滑
+    // Later 是最容易連打的操作，原本 429 落到 HTTP 顯示「封存失敗（HTTP 429）」
+    if (res.status === 429) return rateLimitResult(res);
     if (!res.ok) {
       return { ok: false, status: res.status, error: 'HTTP' };
     }
@@ -1262,7 +1265,7 @@
     if (result && result.error === 'AUTH') {
       return { message: `${label} 憑證無效或已過期`, kind: 'error' };
     }
-    if (result && result.error === 'TIMEOUT') {
+    if (isTimeoutResult(result)) {
       // v1.8.0：與 NETWORK 分開——逾時是「送出去了但對方沒回音」，使用者該做的是
       // 再試一次，不是去檢查網路
       return { message: `${label} 沒有回應，請再試一次`, kind: 'error' };
@@ -1281,11 +1284,20 @@
   // 單一資料源。action 帶動作名（'封存' / '載入'），reader-feed / reader-article
   // 不再各抄一張表（舊版載入端靠 `.replace('封存','載入')` 借用封存端的表，加
   // 新錯誤碼只會改到一邊）。CONFIG = Instapaper client / 金鑰缺檔（E-1）。
+  // v2.4.11（2026-11-15 review E-05）：「這個結果是逾時嗎」的單一資料源。Readwise
+  // 各支回 error:'TIMEOUT'；Instapaper lib 把 readFetch 的逾時 abort 歸成
+  // error:'NETWORK' + message:'TIMEOUT'（lib 端零改動的代價，見 readFetch）。舊版
+  // serviceErrorMessage 只認前者 → 同一種逾時 Instapaper 顯示「網路錯誤」，
+  // options 連結流程另外自己補認一份。
+  function isTimeoutResult(result) {
+    return !!result && (result.error === 'TIMEOUT' ||
+      (result.error === 'NETWORK' && result.message === 'TIMEOUT'));
+  }
   function serviceErrorMessage(result, opts) {
     const action = (opts && opts.action) || '載入';
     if (result && (result.error === 'AUTH' || result.error === 'NO_CREDENTIALS')) return '登入憑證無效或已過期';
     if (result && result.error === 'CONFIG') return `此版本未內建 Instapaper 金鑰，無法${action}`;
-    if (result && result.error === 'TIMEOUT') return `伺服器沒有回應，${action}失敗，請再試一次`;
+    if (isTimeoutResult(result)) return `伺服器沒有回應，${action}失敗，請再試一次`;
     if (result && result.error === 'NETWORK') return `網路錯誤，${action}失敗，請稍後再試`;
     if (result && result.error === 'RATE_LIMIT') return `Readwise 請求太頻繁，${action}失敗，請稍候一分鐘再試`;
     const detail = result && result.status ? `（HTTP ${result.status}）` : '';
@@ -1380,6 +1392,7 @@
     laterDocument,
     saveResultToast,
     serviceErrorMessage,
+    isTimeoutResult,
     saveDocumentFlow,
     SAVE_PROGRESS,
     SAVE_PROGRESS_TOAST_ID,
