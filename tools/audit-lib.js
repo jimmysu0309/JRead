@@ -102,7 +102,14 @@ const NOISE_KEYWORDS_CONTEXTUAL = [
   // 「In this article」（3 字）命中；正文開場句（>= 6 字）不命中。
   'in this article'
 ];
-const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL };
+// v2.5.3：簡體 / 「報道」寫法摺疊。名單全是台灣寫法，簡體站與 Shinkansen 把簡體譯成
+// 的「相關報道」都比不到——cn.nytimes.com 文中側欄「相关报道」殘留、residual audit 卻印
+// 「無殘留」（Jimmy 看截圖才發現；工作流原則 3：補 missing 的那一層 check）。比對前把
+// 受測文字摺成台灣寫法，名單不必逐詞加變體。與 jread/content/cleaner.js 的
+// ZH_SIMP_TRAD_PAIRS 是同一份事實的雙實作（forcing：noise-heading-zh-fold.spec.js）。
+// 驗：簡體字形與「報道 / 回复」兩個詞；不驗：用語層差異（视频、关注以外的詞彙差）。
+const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話';
+const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL, fold: ZH_SIMP_TRAD_PAIRS };
 // 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
 const NOISE_AUDIT_KEYWORDS = [...NOISE_KEYWORDS_STRICT, ...NOISE_KEYWORDS_CONTEXTUAL];
 
@@ -157,7 +164,15 @@ pageFns.auditResidualText = function (tiers) {
     }
     return true;
   }
-  function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  // v2.5.3：簡體 / 「報道」寫法先摺成台灣寫法再比（見 ZH_SIMP_TRAD_PAIRS）
+  const foldPairs = Array.isArray(tiers) ? '' : (tiers.fold || '');
+  const foldMap = {};
+  { const cs = Array.from(foldPairs); for (let i = 0; i + 1 < cs.length; i += 2) foldMap[cs[i]] = cs[i + 1]; }
+  function foldZh(s) {
+    let o = ''; for (const ch of s) o += foldMap[ch] || ch;
+    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆') : o;
+  }
+  function norm(s) { return foldZh((s || '').replace(/\s+/g, ' ').trim()); }
   function matchKw(text, lowText, kw) {
     if (/[a-z]/i.test(kw)) {
       // 拉丁詞：word-boundary 比對（允許複數 s），'share' 不命中 'shareholders'
@@ -257,7 +272,15 @@ pageFns.auditResidualLinks = function (tiers) {
     }
     return true;
   }
-  function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  // v2.5.3：簡體 / 「報道」寫法先摺成台灣寫法再比（見 ZH_SIMP_TRAD_PAIRS）
+  const foldPairs = Array.isArray(tiers) ? '' : (tiers.fold || '');
+  const foldMap = {};
+  { const cs = Array.from(foldPairs); for (let i = 0; i + 1 < cs.length; i += 2) foldMap[cs[i]] = cs[i + 1]; }
+  function foldZh(s) {
+    let o = ''; for (const ch of s) o += foldMap[ch] || ch;
+    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆') : o;
+  }
+  function norm(s) { return foldZh((s || '').replace(/\s+/g, ' ').trim()); }
   function matchKw(text, lowText, kw) {
     if (/[a-z]/i.test(kw)) {
       const esc = kw.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1850,6 +1873,7 @@ module.exports = {
   NOISE_KEYWORDS_STRICT,
   NOISE_KEYWORDS_CONTEXTUAL,
   NOISE_KEYWORD_TIERS,
+  ZH_SIMP_TRAD_PAIRS,
   CFIG_NOISE_TOKENS,
   pageFns,
   runResidualText,
