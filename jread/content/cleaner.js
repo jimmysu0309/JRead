@@ -323,7 +323,22 @@
   //（一字換一字）。用語層的兩岸差異（视频 / 关注 以外的詞彙差）不在此列。
   // 與 tools/audit-lib.js 的 ZH_SIMP_TRAD_PAIRS 是同一份事實的雙實作（extension 與
   // node 工具無法共用模組）——forcing：noise-heading-zh-fold.spec.js 逐字比對兩份。
-  const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話';
+  const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話领領击擊获獲抢搶购購买買预預约約参參将將为為优優额額赏賞赞讚连連员員脸臉书書团團们們图圖储儲鸟鳥价價转轉项項检檢举舉记記广廣业業销銷么麼这這个個则則奖獎证證处處载載资資';
+  // v2.5.4：摺疊擴到連結 CTA（NOISE_LINK_TEXT_RE / STRICT）、CTA 推廣段落
+  //（CTA_PROMO_P_RE）、文中插播（NOISE_INLINE_AD_TEXT_RE）、文中推薦行前綴
+  //（INLINE_RELATED_*_PREFIX_RE）——Jimmy 2026-11-15 同意。表補這幾條 regex 用得到
+  // 的字；那幾條 regex 原本寫死的簡體字面值（报名 / 关注 / 广告…）撤掉，regex 內
+  // 一律只寫台灣寫法。逐詞規則（單字有歧義、只認整個詞；套在逐字摺疊之後）：
+  //   報道→報導、回复→回覆（v2.5.3）
+  //   轉发→轉發、发布→發佈、发表→發表（「发」是 發 / 髮 兩字的簡體，不進逐字表）
+  //   讚助→贊助（「赞」逐字摺成「讚」——按赞 / 已赞 是多數；只有「赞助」是 贊）
+  // 還沒接摺疊的文字規則：REACTION_COUNT_RE（自帶簡體字面值）、NOISE_CTA_PARA_RE、
+  // ORPHAN_PROMPT_CTA_RE、NOISE_SIGNUP_CTA_RE（僅英文）、byline 家族。
+  const ZH_FOLD_WORD_RULES = [
+    [/報道/g, '報導'], [/回复/g, '回覆'],
+    [/轉发/g, '轉發'], [/发布/g, '發佈'], [/发表/g, '發表'],
+    [/讚助/g, '贊助']
+  ];
   const ZH_SIMP_TRAD_MAP = (() => {
     const m = new Map();
     const cs = Array.from(ZH_SIMP_TRAD_PAIRS);
@@ -334,7 +349,8 @@
     if (!s || !/[\u4e00-\u9fff]/.test(s)) return s;
     let out = '';
     for (const ch of s) out += ZH_SIMP_TRAD_MAP.get(ch) || ch;
-    return out.replace(/報道/g, '報導').replace(/回复/g, '回覆');
+    for (const [re, to] of ZH_FOLD_WORD_RULES) out = out.replace(re, to);
+    return out;
   }
   // v0.7.190 extended pattern（Page Rounds C2 FAIL 批次修正）：
   // 21-40 chars 的 heading 只對下面這些 multi-word / anchored pattern 檢查。
@@ -432,7 +448,7 @@
   // emotion hash、href 只在 utm 參數帶 poweredby，既有 `powered[-_]?by`
   // class/id token 規則掃不到）。行首錨定：內文「…is powered by X」這類
   // 敘述連結不會以 powered by 起頭。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|赞助|抖內|斗内|打賞|打赏)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤|关注)|(關注|追蹤|关注).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -459,7 +475,7 @@
   // walk-up 停在該 strip 容器，再上一層 `<article>` 含 55 個長段落、被主文
   // 保護擋住）。主文敘述不會整條連結只寫「把我們設為偏好來源」，^$ 全文比對
   // 誤殺面窄。
-  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(报名|報名|领取|領取|下载|下載|预约|預約|参与|參與|加入|获取|獲取|查看|了解|抢购|搶購|购买|購買)|马上\s*(报名|领取|下载|预约)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|点击\s*(报名|领取|下载|了解|查看|阅读|加入)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$|^(set|add|make)\s+(us|this\s+site|[\w'’.&\- ]{2,30}?)\s+(as\s+)?(your\s+|an?\s+)?(preferred|favou?rite)(\s+source)?$|^(將|把)?.{0,20}?(設|设)(為|为)(偏好|優先|优先|首選|首选)(來源|来源|新聞來源|新闻来源)?$/i;
+  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(報名|領取|下載|預約|參與|加入|獲取|查看|了解|搶購|購買)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$|^(set|add|make)\s+(us|this\s+site|[\w'’.&\- ]{2,30}?)\s+(as\s+)?(your\s+|an?\s+)?(preferred|favou?rite)(\s+source)?$|^(將|把)?.{0,20}?設為(偏好|優先|首選)(來源|新聞來源)?$/i;
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
   // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
@@ -482,7 +498,7 @@
   // hash-class 站 keyword rule 靠不上、原 regex 要求後接 continue 類字樣
   // 也不命中。完全等值比對（^…$）誤殺風險趨近零：正文段落不會整段只有
   // 「Advertisement」一詞。「AD」縮寫刻意不收（內文年代縮寫 AD 誤殺）
-  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^(為什麼|为什么)(我)?(會|会|你會)?看到(這個|這則|这个|这则|此)?(廣告|广告)|^why\s+am\s+i\s+seeing\s+this\s+ad|^[a-z0-9_]{2,8}\s*[>＞]\s*no[\s_-]*fix$|^(googletag|adsbygoogle)\b|^(advertisement|廣告|广告)$/i;
+  const NOISE_INLINE_AD_TEXT_RE = /^(廣告|AD|業配|促銷|贊助|廣編|advertisement|sponsored|promotion|advertorial)\s*[（(:：\-]\s*.{0,40}?(請繼續|繼續|接下來|以下內容|下方|continue|please|below|article\s+continues|story\s+continues|more\s+below)|^為什麼(我)?(會|你會)?看到(這個|這則|此)?廣告|^why\s+am\s+i\s+seeing\s+this\s+ad|^[a-z0-9_]{2,8}\s*[>＞]\s*no[\s_-]*fix$|^(googletag|adsbygoogle)\b|^(advertisement|廣告)$/i;
   const NOISE_INLINE_AD_MAX_LEN = 40;
 
   // CTA 推廣段落 heuristic：當 hideInsideArticleByLinkText 命中 noise link
@@ -4465,7 +4481,8 @@
     // 而非 a，舊版只掃 a 漏網
     const links = scopedQueryAll(scope, articleEl, 'a, button');
     for (const a of links) {
-      const text = norm(a.textContent);
+      // v2.5.4：簡體寫法先摺成台灣寫法再比（只用於比對；一字換一字、長度不變）
+      const text = foldZhVariants(norm(a.textContent));
       // v2.2.17：平台追蹤端點 href 視同文字命中，但**不走 strict 整塊清**——同一列
       // 常有合法 metadata（Guardian：dateline 與「Prefer the Guardian on Google」
       // 同列），走下方一般路徑（連結占父層 80%+ 才藏父層、否則只藏連結）。
@@ -4492,7 +4509,7 @@
         if (parent === articleEl) { /* 不升級 */ }
         else if (parent.contains(articleEl)) { /* 不 hide 主文祖先 */ }
         else {
-          const parentText = norm(parent.textContent);
+          const parentText = foldZhVariants(norm(parent.textContent));
           // 2026-10-07 review A-02：regex 分支對 parent **全文**做 unanchored
           // 比對、無長度上限——noise link 直接掛在內文 wrapper 下（udn money
           // `story-flex-bt-wrapper` 2.3K 字 + 「看更多」實測有此結構）時，只要
@@ -8767,7 +8784,7 @@
     if (btn.matches('button, input')) return false;
     const t = norm(btn.textContent || '');
     if (!t.length || t.length > 40) return false;
-    if (NOISE_LINK_TEXT_RE.test(t)) return false;
+    if (NOISE_LINK_TEXT_RE.test(foldZhVariants(t))) return false;
     let cur = btn.parentElement;
     for (let hops = 0; cur && hops < 6; hops++) {
       // v2.2.20：翻譯無關的結構訊號。「By X」譯成「作者：X」「由 X」，下方 BYLINE_TEXT_RE
@@ -10015,7 +10032,9 @@
   const INLINE_RELATED_SOURCE_PREFIX_RE =
     /(?:來源|出處|參考|原文|原載|引用|引自|轉載|資料|註|source|via|credit|reference|courtesy|cite)/i;
   const INLINE_RELATED_RECO_PREFIX_RE = /(?:閱讀|推薦|相關|更多|首選|精選|熱門|最夯|read|more|also|related|recommend)/i;
-  function inlineRelatedPrefixIsAttribution(prefix) {
+  function inlineRelatedPrefixIsAttribution(rawPrefix) {
+    // v2.5.4：簡體「来源：」「出处：」先摺再比——這是保護側（命中就不藏）
+    const prefix = foldZhVariants(rawPrefix);
     return INLINE_RELATED_SOURCE_PREFIX_RE.test(prefix) && !INLINE_RELATED_RECO_PREFIX_RE.test(prefix);
   }
 
@@ -10414,7 +10433,7 @@
       const direct = Array.from(el.childNodes)
         .filter(n => n.nodeType === 3)
         .map(n => n.textContent).join('');
-      const text = norm(direct);
+      const text = foldZhVariants(norm(direct));
       if (!text || text.length > NOISE_INLINE_AD_MAX_LEN) continue;
       if (!NOISE_INLINE_AD_TEXT_RE.test(text)) continue;
       if (el === articleEl) continue;
@@ -10945,7 +10964,7 @@
         // banner（class 無語意 keyword、a / button text 才是訊號）整塊清。
         // 放在 a / button 派發之前——對 a 也要走（btn-only2 類 class 不命中
         // keyword、但 text「立即報名」是強訊號）。
-        if (NOISE_LINK_TEXT_STRICT_RE.test(norm(el.textContent))) {
+        if (NOISE_LINK_TEXT_STRICT_RE.test(foldZhVariants(norm(el.textContent)))) {
           if (hideStrictCtaPromoBlock(el, articleEl, hiddenList)) continue;
         }
         // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）。

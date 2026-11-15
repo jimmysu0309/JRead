@@ -19,6 +19,9 @@
 // 只在 Safari build 啟用：sendNativeMessage 需要 nativeMessaging 權限，該權限只由
 // safari-app/patch-safari-manifest.sh 加進 Safari manifest（Chrome / Firefox 版沒有，
 // runtime.sendNativeMessage 不存在 → install() 回 null、零副作用）。
+// 「啟用」不等於「載入」：本檔三個 build 都會載入——Chrome SW 的 importScripts、
+// tools/firefox-build.sh 與 safari-app/patch-safari-manifest.sh 的 background scripts
+// 清單同列同序——Chrome / Firefox 只靠上面那個 install() 回 null 保持無作用。
 //
 // 這條驗 X、不驗 Y：plan* 純函式由 jsdom spec 驗合併決策；sendNativeMessage 在 iOS 實際
 // 送達、event page 被 storage.onChanged 喚醒推送，只能模擬器 / 真機驗。

@@ -393,7 +393,23 @@
     }).catch(() => null);
   }
 
+  // v2.5.4（2026-11-15 review 批 6，批 1 遺留）：防嵌入。reader 兩頁列在
+  // web_accessible_resources（iOS「加入主畫面」跳板要從 https 頁導過來），第三方
+  // 網頁因此可以用 iframe 把它們嵌進去騙點擊（封存 / 滑動動作）。兩頁 init 第一步
+  // 都問這支：不是頂層頁面就不載入任何內容。正常開啟（分頁、跳板轉址、iOS App 的
+  // jread-app://）都是頂層頁面，不受影響。讀 top 丟例外也當成被嵌入。
+  // 單一資料源：reader-article.js 與 reader-feed.js 都委派這支，不各自判斷。
+  const EMBEDDED_TEXT = '無法在內嵌框架中開啟';
+  function isEmbeddedFrame(win) {
+    try {
+      return !!win && win.top !== win.self;
+    } catch (_) {
+      return true;
+    }
+  }
+
   const api = {
+    isEmbeddedFrame, EMBEDDED_TEXT,
     FEED_KEY, HIGHLIGHT_KEY, LOCAL_CACHE_KEYS, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
     FEED_TABS, isTabArchivable,
     accountKey, slimDoc, byteSize, withTimeout,

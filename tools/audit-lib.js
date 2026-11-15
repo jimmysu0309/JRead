@@ -108,7 +108,7 @@ const NOISE_KEYWORDS_CONTEXTUAL = [
 // 受測文字摺成台灣寫法，名單不必逐詞加變體。與 jread/content/cleaner.js 的
 // ZH_SIMP_TRAD_PAIRS 是同一份事實的雙實作（forcing：noise-heading-zh-fold.spec.js）。
 // 驗：簡體字形與「報道 / 回复」兩個詞；不驗：用語層差異（视频、关注以外的詞彙差）。
-const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話';
+const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話领領击擊获獲抢搶购購买買预預约約参參将將为為优優额額赏賞赞讚连連员員脸臉书書团團们們图圖储儲鸟鳥价價转轉项項检檢举舉记記广廣业業销銷么麼这這个個则則奖獎证證处處载載资資';
 const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL, fold: ZH_SIMP_TRAD_PAIRS };
 // 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
 const NOISE_AUDIT_KEYWORDS = [...NOISE_KEYWORDS_STRICT, ...NOISE_KEYWORDS_CONTEXTUAL];
@@ -170,7 +170,8 @@ pageFns.auditResidualText = function (tiers) {
   { const cs = Array.from(foldPairs); for (let i = 0; i + 1 < cs.length; i += 2) foldMap[cs[i]] = cs[i + 1]; }
   function foldZh(s) {
     let o = ''; for (const ch of s) o += foldMap[ch] || ch;
-    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆') : o;
+    // 逐詞規則與 cleaner 的 ZH_FOLD_WORD_RULES 同一份（forcing：noise-text-zh-fold.spec.js）
+    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆').replace(/轉发/g, '轉發').replace(/发布/g, '發佈').replace(/发表/g, '發表').replace(/讚助/g, '贊助') : o;
   }
   function norm(s) { return foldZh((s || '').replace(/\s+/g, ' ').trim()); }
   function matchKw(text, lowText, kw) {
@@ -278,7 +279,8 @@ pageFns.auditResidualLinks = function (tiers) {
   { const cs = Array.from(foldPairs); for (let i = 0; i + 1 < cs.length; i += 2) foldMap[cs[i]] = cs[i + 1]; }
   function foldZh(s) {
     let o = ''; for (const ch of s) o += foldMap[ch] || ch;
-    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆') : o;
+    // 逐詞規則與 cleaner 的 ZH_FOLD_WORD_RULES 同一份（forcing：noise-text-zh-fold.spec.js）
+    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆').replace(/轉发/g, '轉發').replace(/发布/g, '發佈').replace(/发表/g, '發表').replace(/讚助/g, '贊助') : o;
   }
   function norm(s) { return foldZh((s || '').replace(/\s+/g, ' ').trim()); }
   function matchKw(text, lowText, kw) {
@@ -1742,13 +1744,21 @@ async function triggerShinkansenTranslate(page, opts = {}) {
   // 現在：translating === false 且已有翻譯元素才算完成，上限 opts.maxWaitMs（預設 120s）。
   // GET_STATE 沒回應（bridge 不可用）時退回舊的元素數穩定判斷。
   const getState = () => page.evaluate(() => new Promise((resolve) => {
-    const to = setTimeout(() => resolve(null), 2000);
-    window.addEventListener('shinkansen-debug-response', (e) => {
+    // 2026-11-15 review E-11：每 1.5s poll 一次，listener 用完（收到回應或 2s 逾時）
+    // 一律移除，否則最長 120s 的等待會在頁面上累積約 80 個。不用 { once: true }——
+    // 別的 action 的回應會先到，once 會在那一發就把 listener 用掉、漏接真正的回應。
+    const onResp = (e) => {
       const d = e.detail || {};
       if (!('translating' in d)) return; // 別的 action 的回應
       clearTimeout(to);
+      window.removeEventListener('shinkansen-debug-response', onResp);
       resolve({ translating: !!d.translating });
-    });
+    };
+    const to = setTimeout(() => {
+      window.removeEventListener('shinkansen-debug-response', onResp);
+      resolve(null);
+    }, 2000);
+    window.addEventListener('shinkansen-debug-response', onResp);
     window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail: { action: 'GET_STATE' } }));
   })).catch(() => null);
   const maxWait = opts.maxWaitMs || 120000;

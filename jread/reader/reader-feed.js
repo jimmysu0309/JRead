@@ -347,6 +347,12 @@
   // 樂觀執行卡片動作。deps.remove !== false（封存 / 移出本分頁）：先把卡片從 DOM
   // 移除（記住位置），失敗插回原位 + toast；deps.remove === false（動作後仍留在本
   // 分頁）：卡片彈回、成功跳 deps.successToast。回傳最終結果（{ ok } 物件），便於測試。
+  //
+  // 2026-11-15 review D-03：deps.isCurrent()（選填）——結果回來時「發動當下那個分頁
+  // 的清單還在畫面上嗎」。#jr-list 是所有分頁共用的同一個元素，切走後 parent 仍是它，
+  // 所以不能靠 parent 判斷。回 false 時只做資料面（回傳結果、失敗 toast），不把卡片
+  // 插回、不呼叫 onEmpty——否則 Inbox 的卡片會被 append 到 Later 清單、或舊分頁的
+  // 「清單已空」文案蓋掉新分頁的「載入中…」。沒給 isCurrent ＝ 一律視為還在。
   async function actionCard(card, id, deps) {
     const remove = deps.remove !== false;
     const parent = card.parentNode;
@@ -361,8 +367,10 @@
       result = { ok: false, error: 'INTERNAL', message: String(e && e.message || e) };
     }
     card.classList.remove('is-busy');
+    const current = typeof deps.isCurrent !== 'function' || deps.isCurrent() !== false;
 
     if (result && result.ok) {
+      if (!current) return result;
       if (remove) {
         if (typeof deps.onEmpty === 'function' && parent && parent.children.length === 0) deps.onEmpty();
       } else if (deps.successToast && typeof deps.toastFn === 'function') {
@@ -375,7 +383,7 @@
     // 移除）——直接 insertBefore 會丟 NotFoundError、本卡既沒還原也沒 toast。
     // 參照失效時退回 append（位置可能略移，卡片不消失比較重要）。
     resetSwipe(card);
-    if (remove && parent) {
+    if (remove && parent && current) {
       const ref = (nextSibling && nextSibling.parentNode === parent) ? nextSibling : null;
       parent.insertBefore(card, ref);
     }
@@ -427,6 +435,14 @@
         m.textContent = 'Reader 初始化失敗（缺少：' +
           [!browser && 'browser', !(browser && browser.storage) && 'storage', !PC && 'popup-core'].filter(Boolean).join(' / ') + '）';
       }
+      return;
+    }
+
+    // v2.5.4：被第三方頁面用 iframe 嵌入時不載入（判定住 reader-cache.js）
+    const RCG = global.__JReadReaderCache;
+    if (RCG && RCG.isEmbeddedFrame(global)) {
+      const m = doc.getElementById('jr-msg');
+      if (m) { m.hidden = false; m.textContent = RCG.EMBEDDED_TEXT; }
       return;
     }
 
@@ -511,6 +527,8 @@
           return;
         }
         const onAction = (card, id, kind) => {
+          // review D-03：記下發動當下的分頁世代，結果回來時不同＝已切走
+          const actionTabGen = tabGen;
           const isArchive = kind === 'archive';
           const remove = isArchive || cfg.later === 'remove';
           const scope = isArchive ? '*' : listKey;
@@ -523,7 +541,8 @@
             remove,
             successToast: isArchive ? null : laterText.done,
             toastFn: toast,
-            onEmpty: () => showMsg(cfg.empty, false)
+            onEmpty: () => showMsg(cfg.empty, false),
+            isCurrent: () => actionTabGen === tabGen
           }).then((r) => {
             if (r && r.ok) {
               if (remove && RC) RC.removeFromFeed(local, account, id, isArchive ? undefined : listKey);
@@ -542,6 +561,10 @@
       // v1.6.24：世代 token 防 race——快速切分頁時前一發慢回應晚到，若不丟棄會
       // 蓋掉新分頁已渲染的內容（畫面內容與分頁 highlight 不一致）。
       let loadGen = 0;
+      // review D-03：分頁世代——只在「換一份清單」（切分頁 / 初次載入）時前進，下拉
+      // 更新（opts.refresh）不算：那時畫面上仍是同一個分頁的清單，動作失敗的卡片要照
+      // 舊插回（用 loadGen 的話，下拉更新中失敗的卡片會消失到下次載入）
+      let tabGen = 0;
       let currentTab = null;
       // v2.2.13：回傳 Promise，API 結果處理完（成功 / 失敗 / 過期丟棄）才 resolve——
       // iOS App 下拉更新的原生 spinner 等它收起（refreshCurrent）。
@@ -552,6 +575,7 @@
         const refresh = !!(opts && opts.refresh);
         currentTab = cfg;
         const gen = ++loadGen;
+        if (!refresh) tabGen++;
         const listKey = service + ':' + cfg.id;
         let freshArrived = false;
         let cachedSig = null;  // 非 null = 畫面上是快取版本

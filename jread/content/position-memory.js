@@ -591,6 +591,29 @@
     }, REASSERT_MS);
   }
 
+  // v2.5.4：JReader Article View 的位置還原記錄點。只在 reader 宿主頁（NS.state
+  // .readerHostPage，reader-article.js 進場前設）記——一般網頁不記。**只讀**
+  // pickRestoreEntry 已經算出的結果（pick 與 local / fallback 的物件同一性），不參與
+  // 決策。used：local＝本機記錄、remote＝外部進度（Readwise）、none＝從頭開始
+  function describeRestore(local, fallback, pick, storageFailed) {
+    const num = (e) => (e && typeof e.ratio === 'number' ? Math.round(e.ratio * 1000) / 1000 : null);
+    return {
+      used: !pick ? 'none' : (pick === fallback && pick !== local ? 'remote' : 'local'),
+      localRatio: num(local),
+      localMode: local ? (local.mode || '') : '',
+      remoteRatio: num(fallback),
+      storageFailed: !!storageFailed
+    };
+  }
+  function logRestore(local, fallback, pick, storageFailed) {
+    try {
+      const NS = global.__JRead;
+      const L = global.__JReadLogger;
+      if (!L || typeof L.log !== 'function' || !(NS && NS.state && NS.state.readerHostPage)) return;
+      L.log(storageFailed ? 'warn' : 'info', 'system', 'Article View：位置還原', describeRestore(local, fallback, pick, storageFailed));
+    } catch (_) { /* 記錄不可影響還原 */ }
+  }
+
   // v2.1.0：fallbackEntry——外部位置（JReader 文章頁傳入 Readwise reading_progress
   // 換算的 { mode: 'ratio', ratio }）。v2.4.14 起與本機記錄誰優先由
   // pickRestoreEntry 決定（外部比本機遠超過 5% 才用外部）。
@@ -618,6 +641,7 @@
       if (sessionKey !== key) return;
       if (!map) {
         // storage 讀取失敗：本機記錄不可知，外部位置照套
+        logRestore(null, fallbackEntry, fallbackEntry || null, true);
         if (fallbackEntry) applyWithReassert(key, fallbackEntry, el);
         return;
       }
@@ -636,6 +660,7 @@
       const local = isFresh(entry, now, days) ? entry : null;
       const pick = pickRestoreEntry(local, fallbackEntry);
       remoteSeen = remoteSeenAfterRestore(local, fallbackEntry, pick);
+      logRestore(local, fallbackEntry, pick, false);
       // lazy-load 圖片 / 晚到內容會推移版面——短延遲後使用者還沒互動就再對位一次
       if (pick) applyWithReassert(key, pick, el);
     });
@@ -714,6 +739,7 @@
     findBlockIndex,
     resolvePageIndex,
     pickRestoreEntry,
+    describeRestore,
     remoteSeenAfterRestore,
     legacyKeyMatch,
     computeExitScrollTop,

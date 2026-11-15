@@ -332,6 +332,7 @@
     // settings 參數，進場時 stash）。預設 true，明確設 false 才關。
     NS.state.syncScrollOnExit = !(settings && settings.syncScrollOnExit === false);
     if (NS.pagedMode) NS.pagedMode.captureScrollY();
+    noteAppliedSettings(settings); // review 2026-11-15 C-04：resume 重套比對用
     NS.state.originalStyles = NS.styler ? NS.styler.apply(container, settings) : null;
     NS.state.active = true;
     window.removeEventListener('keydown', onEscKey, true);
@@ -1751,11 +1752,37 @@
   // 200ms 對人類連點足夠合併、對「單次調整」無感。
   // v0.8.148：從 storage.onChanged 閉包內搬到模組層——onMessage 的 REAPPLY_SETTINGS
   // handler（iOS onChanged 丟事件的兜底）也要呼叫同一個 scheduleReapply，單一資料源。
+  //
+  // 2026-11-15 review C-04：頁面恢復（pageshow / 切回分頁）那條路只在「重讀到的
+  // 有效設定與上次套用的不同」時才重套。改前每次切回分頁都整套 restore + apply +
+  // 翻頁重排，CDP 量到 wiki 15K 節點頁捲動 0.97s、翻頁 1.69s 的主執行緒工作（一般
+  // 新聞頁 40–74ms），而桌機絕大多數時候設定根本沒變。
+  //   - opts.resume === true 才可能跳過；onChanged / REAPPLY_SETTINGS 不帶 opts，
+  //     一律重套。同一個 200ms 視窗內只要有一發不帶 resume，整批就不跳
+  //   - iOS 兜底不變：popup 改設定已落 storage、onChanged 被丟 → resume 重讀到的
+  //     設定與上次套用的不同 → 照常重套
+  //   - 讀不到設定（null）或還沒有套用記錄時不跳
   let reapplyTimer = null;
-  function scheduleReapply() {
+  let reapplyForced = false;
+  let lastAppliedSettingsSig = null;
+  function settingsSignature(settings) {
+    if (!settings || typeof settings !== 'object') return null;
+    try {
+      return JSON.stringify(Object.keys(settings).sort().map(k => [k, settings[k]]));
+    } catch (_) { return null; }
+  }
+  // 每次 styler.apply 之前呼叫（進場 finalizeEnter 與下面的重套），apply 前取簽章
+  // 以免下游改到 settings 物件
+  function noteAppliedSettings(settings) {
+    lastAppliedSettingsSig = settingsSignature(settings);
+  }
+  function scheduleReapply(opts) {
+    if (!(opts && opts.resume === true)) reapplyForced = true;
     if (reapplyTimer) clearTimeout(reapplyTimer);
     reapplyTimer = setTimeout(async () => {
       reapplyTimer = null;
+      const forced = reapplyForced;
+      reapplyForced = false;
       // v0.7.143：cinema mode active 時 articleEl=null，styler.restore null 無意義
       // 且可能 throw；明確 guard 避免誤觸發。reader mode 中途切到 cinema 不該踩。
       if (!NS.state.active || NS.state.cinemaActive) return;
@@ -1771,6 +1798,9 @@
       // originalStyles。await 之後必須重跑同一組 guard。
       if (!NS.state.active || NS.state.cinemaActive) return;
       if (!NS.state.articleEl || !NS.styler) return;
+      // C-04：resume 路徑、設定與上次套用的相同 → 不重套
+      const sig = settingsSignature(settings);
+      if (!forced && sig !== null && sig === lastAppliedSettingsSig) return;
       // 2026-10-07 review D-1：翻頁 → 捲動的設定切換（popup 關翻頁 / ⌥P / 設定檔）。
       // 舊版 uninstall 無 opts 路徑用 savedScrollY（進場前**原網頁**的 scrollY，或
       // 中途開翻頁那一刻的 reader scrollY）rAF 捲回——跟使用者翻到第 N 頁完全無關
@@ -1798,6 +1828,7 @@
       // v0.7.227：styler 重注入前捕捉卷動位置（pagedMode 中途開啟場景：
       // 此刻 CSS 已 restore、文件可卷動且停在使用者讀到的位置）
       if (NS.pagedMode) NS.pagedMode.captureScrollY();
+      lastAppliedSettingsSig = sig;
       NS.state.originalStyles = NS.styler.apply(NS.state.articleEl, settings);
       // v0.7.227：reapply 後重同步翻頁模組（pagedMode 切換 / 字級版心調整
       // 都會改頁面切割，模組內部重算頁數並回到原閱讀比例）；spaceScroll
@@ -1954,7 +1985,7 @@
       // 設定檔或調了草稿 → 重套（guard 與 pageshow 兜底同一支）
       if (area === 'local') {
         const P = window.__JReadProfiles;
-        if (P && P.STATE_KEY in changes) reapplyFromStorageOnResume();
+        if (P && P.STATE_KEY in changes) reapplyFromStorageOnResume(true);
         return;
       }
       if (area !== 'sync') return;
@@ -2029,10 +2060,13 @@
   // （scheduleReapply 內 await getSettings 直讀 browser.storage.sync）重套——只要使用者
   // 在 popup 改過設定（已落 storage），回到頁面就一定看到最新版型。閱讀模式未啟動 /
   // cinema 由 scheduleReapply 內 guard no-op；桌機 Chrome 頁面不掛起、onChanged 照收，
-  // 此處只是冪等重套（200ms debounce 與 onChanged 合併，無重複套用）。
-  function reapplyFromStorageOnResume() {
+  // 設定沒變時不重套（2026-11-15 review C-04，判定在 scheduleReapply）。
+  // 2026-11-15 review C-04：resume 路徑帶 { resume: true }——重讀到的設定與上次套用的
+  // 相同就不重套（判定在 scheduleReapply 內）。force 給 storage.local profileState 的
+  // onChanged 用（真的有變更事件，一律重套）
+  function reapplyFromStorageOnResume(force) {
     if (!NS.state.active || NS.state.cinemaActive || !NS.state.articleEl || !NS.styler) return;
-    scheduleReapply();
+    scheduleReapply(force === true ? undefined : { resume: true });
   }
   // pageshow：bfcache 還原（e.persisted=true）與一般導航顯示都涵蓋；不分 persisted，
   // guard 在 reapplyFromStorageOnResume 內。
@@ -2054,11 +2088,6 @@
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-theme', theme: 'dark' } }));  // 'light' | 'dark' | 'sepia' | 'gray' | 'night'
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'set-paged', paged: true } }));  // v1.9.10：翻頁模式開/關（走 storage.onChanged reapply）
   //   window.dispatchEvent(new CustomEvent('__jread_debug', { detail: { type: 'reload' } }));
-  // 2026-10-07 review C-18(a)：toggle / enter / exit / translate 與 set-theme /
-  // set-paged / send-readwise / reload 一樣經 SW 中繼 + development install gate
-  //（JREAD_DEBUG_ACTION → SW → JREAD_DEBUG_ACTION_RELAY 回本 tab 才執行），store /
-  // 正式安裝一律 silently reject；unpacked（harness / cage）行為不變、多一個 SW
-  // round-trip（毫秒級）。translate 的 shinkansen-debug-response 等待方式不變。
   // reload 走 sendMessage('JREAD_RELOAD') → SW handler 呼叫 chrome.runtime.reload()。
   // 不可從 content script 直接呼 chrome.runtime.reload —— 該 API 只 SW / popup /
   // options 可用，content script context 沒此 function，直呼會 TypeError
@@ -2068,11 +2097,12 @@
   // 2026-10-07 review C-18(a)：toggle / enter / exit / translate 四個動作原本由
   // content 直接執行——任意網頁 JS 可在使用者進閱讀模式後每 100ms dispatch `exit`
   // 讓 JRead 在該站形同失效（DoS 級、不外洩），`translate` 讓頁面消耗使用者的
-  // Shinkansen API 額度。改與 set-theme / set-paged / send-readwise 同款：content 只
-  // 送 JREAD_DEBUG_ACTION 給 SW，SW 過 development install gate 後以
+  // Shinkansen API 額度。改與 set-theme / set-paged / send-readwise / reload 同款：
+  // content 只送 JREAD_DEBUG_ACTION 給 SW，SW 過 development install gate 後以
   // JREAD_DEBUG_ACTION_RELAY 中繼回本 tab 才執行（runtime.onMessage 只收擴充內部
-  // 訊息，頁面偽造不了）。unpacked（harness / cage）照常可用、store 安裝 silently
-  // reject；`isTrusted` 擋不住（cage 也是合成事件）所以不走那條。
+  // 訊息，頁面偽造不了）。unpacked（harness / cage）照常可用、多一個 SW round-trip
+  //（毫秒級），store / 正式安裝 silently reject；translate 的 shinkansen-debug-response
+  // 等待方式不變。`isTrusted` 擋不住（cage 也是合成事件）所以不走那條。
   const DEBUG_BRIDGE_ACTIONS = ['toggle', 'enter', 'exit', 'translate'];
   function runDebugBridgeAction(action, engine) {
     if (action === 'toggle') {

@@ -27,8 +27,8 @@
 #   - Repo 內 `jread/manifest.json` 永遠對應 Chrome 版（只有 service_worker）
 #   - 此 script 把 service_worker 換成 scripts、加 strict_min_version，生成 Firefox 版
 #
-# 為什麼 scripts 陣列裡有六個檔案（順序重要；v0.7.235 加 settings-defaults、v1.8.0 加
-# logger、v1.9.22 加 instapaper-keys + instapaper）：
+# 為什麼 scripts 陣列裡有七個檔案（順序重要；v0.7.235 加 settings-defaults、v1.8.0 加
+# logger、v1.9.22 加 instapaper-keys + instapaper、v2.2.0 加 app-sync）：
 #   - JRead 的 service-worker.js 依賴 popup-core.js（注入 fallback 邏輯）與
 #     content/settings-defaults.js（DEFAULT_SETTINGS 單一資料源）；popup-core 的
 #     dispatcher 讀 globalThis.__JReadInstapaper（lib/instapaper.js，金鑰在 keys 檔）
@@ -72,7 +72,7 @@ mkdir -p firefox-build
 cp -r jread/* firefox-build/
 
 # 2. 用 jq 程式化改寫 manifest：
-#    - background：刪掉 service_worker，改用 scripts（六個檔，依賴檔在前、SW 最後；
+#    - background：刪掉 service_worker，改用 scripts（七個檔，依賴檔在前、SW 最後；
 #      v1.9.22 補 lib/instapaper-keys.js + lib/instapaper.js——Firefox 的 background
 #      page 本質是生成的 HTML + <script>，keys 缺檔只是一個載入失敗的 <script>、
 #      其餘照載，與 Chrome importScripts 的 try/catch 等價）

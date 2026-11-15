@@ -14,6 +14,11 @@
 //   - 沒快取（第一次 / 換帳號）才全量（577 筆實測 2 頁 ≈ 4.6s，背景跑）
 //   - 建立 / 刪除約 6 秒後才反映到 export：本頁的新增 / 刪除記成 local op 保留
 //     LOCAL_GRACE_MS，期間的同步結果不能把它蓋回去
+//   - 多個 Article View 分頁（2026-11-15 review D-08，刻意不改）：快取是「整包讀進
+//     記憶體 → 整包寫回」，每個分頁各持一份，後寫的蓋掉先寫的＝last-writer-wins。
+//     被蓋掉的只有另一個分頁的 local op 與 since：since 倒退只會讓下次增量多抓；
+//     local op 遺失的那筆重點在 export 延遲（約 6 秒）過後由下一次開文章的增量補
+//     回。Readwise 端的資料不受影響，所以不做「寫回前重讀合併」
 //
 // 定位（anchoring）：用重點文字在主文裡找，不用 highlight_location——那是
 // html_content 原始 DOM 的路徑，sanitizeDom 拆殼 / 移除節點後路徑就對不上。比對
@@ -66,23 +71,50 @@
   // 扁平字串（只留 keep 判定為真的字元，預設去空白）+ 每個字元對回 (text node,
   // offset)；raw 是含空白的累計位置，給 offset（Readwise 純文字的字元位置）挑最近
   // 的重複出現處用
+  // first：text node → 它在 map 裡的第一個位置（remapIndexAfterWrap 用）
   function buildIndex(root, keep) {
     const k = keep || keepNonSpace;
     let flat = '';
     const map = [];
+    const first = new Map();
     let raw = 0;
     for (const node of textNodes(root)) {
       const s = node.data;
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
         if (k(ch)) {
+          if (!first.has(node)) first.set(node, map.length);
           flat += ch;
           map.push({ node, offset: i, raw: raw + i });
         }
       }
       raw += s.length;
     }
-    return { flat, map, keep: k };
+    return { flat, map, keep: k, first };
+  }
+
+  // 2026-11-15 review D-10：wrapSegments 切開 text node 之後，把索引裡指向被切節點
+  // 的項目改指到切出來的新節點，取代「每標一筆重建整篇索引」（5 萬字 × 44 筆重點
+  // 量到 Chromium 53ms、4 倍降速 217ms，幾乎全是重建）。splitText 不改文字內容與
+  // 順序，flat / raw 都不變，只有 (node, offset) 要換——結果與重建逐項相同。
+  // splits 來自 wrapSegments：{ node, s, e, target, rest }，切完後 node 留 [0, s)、
+  // target 是 [s, e)（s 為 0 時 target 就是 node）、rest 是 [e, 尾)（沒切則 null）
+  function remapIndexAfterWrap(index, splits) {
+    if (!index || !index.first || !splits) return;
+    const map = index.map;
+    const first = index.first;
+    for (const sp of splits) {
+      let i = first.get(sp.node);
+      if (i === undefined) continue;
+      first.delete(sp.node);
+      for (; i < map.length && map[i].node === sp.node; i++) {
+        const m = map[i];
+        const o = m.offset;
+        if (o >= sp.e) { m.node = sp.rest; m.offset = o - sp.e; }
+        else if (o >= sp.s) { m.node = sp.target; m.offset = o - sp.s; }
+        if (!first.has(m.node)) first.set(m.node, i);
+      }
+    }
   }
 
   // 找重點文字在主文的位置（needle 用與索引相同的 keep 規則濃縮）。回 { start, end }
@@ -127,15 +159,19 @@
 
   // 找重點在 root 內的位置：原文 → 剝 Markdown → 寬鬆（只比字母數字）。回
   // { index, start, end } 或 null
-  function locateHighlight(root, h) {
+  // ctx（選用）：{ strict, loose } 索引暫存，applyHighlights 連續定位多筆時共用
+  //（D-10）；不給就每次重建
+  function locateHighlight(root, h, ctx) {
     const content = String((h && h.content) || '');
     const hint = h && h.highlight_offset;
     const plain = markdownToPlain(content);
-    const idx = buildIndex(root);
+    const idx = (ctx && ctx.strict) || buildIndex(root);
+    if (ctx) ctx.strict = idx;
     let m = findMatch(idx, content, hint);
     if (!m && plain !== content) m = findMatch(idx, plain, hint);
     if (m) return { index: idx, start: m.start, end: m.end };
-    const loose = buildIndex(root, keepAlnum);
+    const loose = (ctx && ctx.loose) || buildIndex(root, keepAlnum);
+    if (ctx) ctx.loose = loose;
     m = findMatch(loose, plain, hint);
     return m ? { index: loose, start: m.start, end: m.end } : null;
   }
@@ -254,7 +290,8 @@
 
   // 片段包成 <mark data-jread-hl="id">。純空白片段不包（多半是區塊之間的縮排
   // 換行，包在 <ul> / <tr> 底下是不合法結構）
-  function wrapSegments(segs, id) {
+  // splits（選用）：傳陣列進來會收到每次切割的記錄，給 remapIndexAfterWrap 用
+  function wrapSegments(segs, id, splits) {
     const marks = [];
     for (const seg of segs) {
       const node = seg.node;
@@ -263,7 +300,9 @@
       if (!text.trim()) continue;
       let target = node;
       if (seg.s > 0) target = target.splitText(seg.s);
-      if (seg.e - seg.s < target.data.length) target.splitText(seg.e - seg.s);
+      let rest = null;
+      if (seg.e - seg.s < target.data.length) rest = target.splitText(seg.e - seg.s);
+      if (splits) splits.push({ node, s: seg.s, e: seg.e, target, rest });
       const mark = node.ownerDocument.createElement('mark');
       mark.setAttribute(HL_ATTR, id);
       target.parentNode.insertBefore(mark, target);
@@ -303,12 +342,18 @@
   function applyHighlights(root, highlights) {
     const done = [];
     const existing = markedIds(root);
+    // D-10：索引整輪共用一份；每標一筆 text node 被切開，改用 remapIndexAfterWrap
+    // 把索引對到新節點，不重建。前提是這個迴圈期間只有 wrapSegments 動 root（同步
+    // 迴圈、沒有 await）
+    const ctx = { strict: null, loose: null };
     for (const h of highlights || []) {
       if (!h || !h.id || existing.has(h.id)) continue;
-      // 每標一筆 text node 就被切開，索引要重建（locateHighlight 每次重建）
-      const loc = locateHighlight(root, h);
+      const loc = locateHighlight(root, h, ctx);
       if (!loc) continue;
-      const marks = wrapSegments(segmentsForFlatRange(loc.index, loc.start, loc.end), h.id);
+      const splits = [];
+      const marks = wrapSegments(segmentsForFlatRange(loc.index, loc.start, loc.end), h.id, splits);
+      remapIndexAfterWrap(ctx.strict, splits);
+      remapIndexAfterWrap(ctx.loose, splits);
       if (marks.length) { done.push(h.id); existing.add(h.id); }
     }
     return done;
@@ -473,6 +518,10 @@ mark[${HL_ATTR}][data-jread-hl-active] {
     const account = accountKey(token);
     let cache = null;
     let busy = false;
+    // review D-08：背景同步回來時 busy（建立 / 刪除在途）就先不對帳——在途操作手上
+    // 握著 live Range / 目標 id，對帳會動 mark。但 sync() 每頁只跑一次，跳過不補的話
+    // 別處新畫 / 刪掉的重點這次開啟都不會反映。記下來，在途操作收尾時補跑一次
+    let pendingReconcile = false;
     let mode = null;          // 'create' | 'delete' | null
     let activeId = null;      // delete 模式指向的重點
     let pendingRange = null;  // create 模式的選取（live Range，DOM 變動會自動調整）
@@ -588,6 +637,14 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       try { await storage.set({ [CACHE_KEY]: cache }); } catch (_) { /* 快取寫不進去不影響功能 */ }
     }
 
+    // 建立 / 刪除收尾（成功、失敗都要呼叫；成功時放在 cache 記完 local op 之後，
+    // 對帳才不會把剛畫的那筆拆掉）
+    function flushPendingReconcile() {
+      if (!pendingReconcile || busy || !cache) return;
+      pendingReconcile = false;
+      reconcileHighlights(bodyEl, highlightsForDoc(cache, docId));
+    }
+
     async function createFromSelection() {
       if (busy) return;
       const cur = currentSelection();
@@ -613,12 +670,13 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       }
       busy = false;
       btn.removeAttribute('aria-busy');
-      if (!r || !r.ok) { toast(errorMessage(r, '畫重點', PC)); return; }
+      if (!r || !r.ok) { toast(errorMessage(r, '畫重點', PC)); flushPendingReconcile(); return; }
       // range 是 live Range：await 期間背景同步若切開了 text node，它會跟著調整
       wrapSegments(segmentsInRange(bodyEl, range), r.id);
       try { const sel = doc.getSelection(); if (sel) sel.removeAllRanges(); } catch (_) {}
       hide();
       cache = cacheAdd(cache || emptyCache(account), docId, { id: r.id, content, offset: null }, now());
+      flushPendingReconcile();
       persist();
     }
 
@@ -635,10 +693,11 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       }
       busy = false;
       btn.removeAttribute('aria-busy');
-      if (!r || !r.ok) { toast(errorMessage(r, '刪除重點', PC)); return; }
+      if (!r || !r.ok) { toast(errorMessage(r, '刪除重點', PC)); flushPendingReconcile(); return; }
       hide();
       unwrapHighlight(bodyEl, id);
       cache = cacheRemove(cache || emptyCache(account), docId, id, now());
+      flushPendingReconcile();
       persist();
     }
 
@@ -720,6 +779,7 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       next = applyLocalOps(next, now());
       cache = next;
       if (!busy) reconcileHighlights(bodyEl, highlightsForDoc(cache, docId));
+      else pendingReconcile = true;
       await persist();
       return { ok: true, full };
     }
@@ -730,7 +790,7 @@ mark[${HL_ATTR}][data-jread-hl-active] {
 
   const api = {
     HL_ATTR, CACHE_KEY, LOCAL_GRACE_MS, SINCE_SLACK_MS,
-    buildIndex, findMatch, markdownToPlain, locateHighlight, segmentsForFlatRange, segmentsInRange, segmentsToText, trimSegmentEdges,
+    buildIndex, remapIndexAfterWrap, findMatch, markdownToPlain, locateHighlight, segmentsForFlatRange, segmentsInRange, segmentsToText, trimSegmentEdges,
     segmentsAllMarked, wrapSegments, unwrapHighlight, applyHighlights, reconcileHighlights,
     accountKey, emptyCache, cacheUsable, cacheFromExport, mergeExport, applyLocalOps,
     cacheAdd, cacheRemove, highlightsForDoc, incrementalSince, attach

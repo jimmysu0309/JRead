@@ -348,6 +348,66 @@
   api.configureLogger = configureLogger;
   api.LOGGER_CONTEXT = LOGGER_CONTEXT;
 
+  // v2.5.4：Article View 自己的記錄點。v2.5.1 補載 logger 後一筆都沒有——既有記錄點
+  // 全是「送到儲存服務」流程（main.js logSave / popup-core jlog / SW，save 分類），
+  // Article View 不走那條路。這裡補的是生命週期事件：進場 → 快取 / 取得內容 →
+  // 套版 → 位置還原（position-memory.js）→ 重點同步 → 模式切換 → 封存 → 退出。
+  //   - 分類用既有的 system（低頻、一律落盤——事後回查不必先開開關；偏好設定頁以
+  //     ctx＝article 分辨來源）。每開一篇約 6–8 筆，不記逐頁翻頁這類高頻事件
+  //   - 不記憑證、不記內文與標題；文章以文件 id 識別
+  //   - 這條驗 X、不驗 Y：記錄是事後回查的線索。退出 / 封存後立刻整頁導航，最後一筆
+  //     靠 flushLog 立即送出寫入、不等 300ms debounce，但寫入是非同步的，導航搶先
+  //     時仍可能掉（best-effort，不為了記錄延後導航）
+  const LOG_CATEGORY = 'system';
+  function rlog(message, data, level) {
+    const L = global.__JReadLogger;
+    if (!L || typeof L.log !== 'function') return;
+    try { L.log(level || 'info', LOG_CATEGORY, 'Article View：' + message, data); } catch (_) { /* 記錄不可影響主流程 */ }
+  }
+  function flushLog() {
+    const L = global.__JReadLogger;
+    if (!L || typeof L.flush !== 'function') return;
+    try { L.flush(); } catch (_) { /* 同上 */ }
+  }
+  // 翻頁 / 捲動模式目前狀態（讀 paged-mode 既有狀態，不另存一份）
+  function layoutMode(NS) {
+    const PM = NS && NS.pagedMode;
+    if (!PM || typeof PM.isInstalled !== 'function' || !PM.isInstalled()) return { mode: 'scroll' };
+    const pos = typeof PM.getPosition === 'function' ? PM.getPosition() : null;
+    return pos ? { mode: 'paged', page: pos.idx + 1, pages: pos.total } : { mode: 'paged' };
+  }
+  // 模式切換：設定變更（任何 storage 變動）後等重套跑完，模式與上次記的不同才記一筆。
+  // 不綁設定欄位名——版面欄位有 sync flat 與每台裝置的設定檔兩個來源，這裡只看結果。
+  // deps 供 spec 注入：setTimeout。回傳 { check }（立即比對一次）便於測試
+  const MODE_CHECK_DELAY_MS = 800;
+  function watchLayoutMode(NS, browser, deps) {
+    const timer = (deps && deps.setTimeout) || global.setTimeout;
+    let last = layoutMode(NS).mode;
+    let pending = false;
+    const check = () => {
+      pending = false;
+      const cur = layoutMode(NS);
+      if (cur.mode === last) return false;
+      rlog('模式切換', Object.assign({ from: last }, cur));
+      last = cur.mode;
+      return true;
+    };
+    try {
+      const ev = browser && browser.storage && browser.storage.onChanged;
+      if (ev && typeof ev.addListener === 'function') {
+        ev.addListener(() => {
+          if (pending) return;
+          pending = true;
+          timer(check, MODE_CHECK_DELAY_MS);
+        });
+      }
+    } catch (_) { /* context 失效：不記模式切換，不影響閱讀 */ }
+    return { check };
+  }
+  api.rlog = rlog;
+  api.layoutMode = layoutMode;
+  api.watchLayoutMode = watchLayoutMode;
+
   function init() {
     configureLogger(global);
     const browser = global.browser;
@@ -359,6 +419,16 @@
       const m = doc && doc.getElementById('jr-status');
       if (m) m.textContent = '初始化失敗（缺少：' +
         [!browser && 'browser', !PC && 'popup-core', !NS && 'namespace'].filter(Boolean).join(' / ') + '）';
+      rlog('初始化失敗', { missing: [!browser && 'browser', !PC && 'popup-core', !NS && 'namespace', !doc && 'document'].filter(Boolean) }, 'error');
+      return;
+    }
+
+    // v2.5.4：被第三方頁面用 iframe 嵌入時不載入（判定住 reader-cache.js）
+    const RCG = global.__JReadReaderCache;
+    if (RCG && RCG.isEmbeddedFrame(global)) {
+      const m = doc.getElementById('jr-status');
+      if (m) m.textContent = RCG.EMBEDDED_TEXT;
+      rlog('被嵌入框架、不載入', {}, 'warn');
       return;
     }
 
@@ -374,7 +444,7 @@
 
     const params = new URLSearchParams(global.location.search);
     const id = params.get('id');
-    if (!id) { setStatus('缺少文章 ID'); return; }
+    if (!id) { rlog('缺少文章 ID', {}, 'warn'); setStatus('缺少文章 ID'); return; }
     const meta = parseMeta(params.get('meta'));
     // v2.2.10：feed 卡片帶入的來源分頁，退出 / 封存後導回同一分頁
     const backHref = feedUrl(params.get('tab'));
@@ -393,6 +463,7 @@
     }).then((s) => {
       if (s && s.theme) doc.documentElement.setAttribute('data-theme', s.theme);
       const { service, creds, ok } = PC.resolveServiceCredentials(s);
+      rlog('進場', { id, tab: params.get('tab') || '', service, hasMeta: !!meta, linked: !!ok });
       if (!ok) {
         setStatus(service === 'instapaper'
           ? '尚未連結 Instapaper 帳號，請到擴充功能的進階設定連結'
@@ -401,7 +472,12 @@
       }
       // review D-06：tab＝來源分頁 id，E 鍵封存用它查這個分頁可不可封存
       const ctx = { NS, doc, PC, service, creds, backHref, tab: params.get('tab') };
+      const fetchT0 = Date.now();
       const fetchAndRender = (store, account) => PC.getArticle({ service, creds, id, meta }).then((r) => {
+        rlog('內容取得', {
+          id, ok: !!(r && r.ok), error: r && r.error, status: r && r.status, ms: Date.now() - fetchT0,
+          chars: (r && r.doc && typeof r.doc.html_content === 'string') ? r.doc.html_content.length : 0
+        }, (r && r.ok) ? 'info' : 'error');
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
           setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
@@ -414,15 +490,22 @@
         // 包成 rejection）要 surface，不要永遠卡「載入中」——與 reader-feed.js
         // listDocuments 的雙 handler 同一教訓。外層 .catch 只接得到 storage 讀取
         // 那段（本 Promise 沒 return 進外層 chain）。
+        rlog('內容取得或組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120), ms: Date.now() - fetchT0 }, 'error');
         setStatus('載入失敗：' + String(err && err.message || err), true);
       });
       loadFromCache(id, service, creds).then((c) => {
         ctx.ownWrites = c.ownWrites || {};
+        // progressFrom＝進度值取自哪一份（feed 快取較新就用它，見 pickProgressDoc）
+        rlog('文章快取', {
+          id, hit: !!c.entry, store: !!c.store, inFeedCache: !!c.feedDoc,
+          progressFrom: c.entry ? ((c.feedDoc && c.feedDoc.reading_progress != null) ? 'feed' : 'article') : 'api'
+        });
         if (c.entry) {
           try {
             const pd = pickProgressDoc(c.entry.doc, c.feedDoc);
             renderArticle(c.entry.doc, ctx, { progress: pd ? pd.reading_progress : undefined, progressAt: pd ? pd.updated_at : undefined });
           } catch (err) {
+            rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
             setStatus('載入失敗：' + String(err && err.message || err), true);
             return;
           }
@@ -431,7 +514,10 @@
         }
         fetchAndRender(c.store, c.account);
       });
-    }).catch(() => setStatus('讀取設定失敗，請重新整理', true));
+    }).catch((err) => {
+      rlog('讀取設定失敗', { reason: String(err && err.message || err).slice(0, 120) }, 'error');
+      setStatus('讀取設定失敗，請重新整理', true);
+    });
   }
 
   // v1.10.1：查本機文章快取（reader-cache.js）。永不 reject，回
@@ -485,7 +571,8 @@
     // v1.10.0：JReader 畫重點（只做 Readwise）。必須在 enterFromContainer 之前
     // attach——它的 H 鍵 listener 要比 main.js keyguard 早註冊（兩者都是 window
     // capture，keyguard 會 stopImmediatePropagation），見 reader-highlights.js
-    attachHighlights(docData, container, ctx);
+    const hl = attachHighlights(docData, container, ctx);
+    logHighlightSync(hl, docData, container);
     // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
     attachArchiveKey(docData, ctx);
     // v2.5.0：閱讀位置寫回 Readwise。「上次送出的值」以這次實際採用的進度為起點
@@ -493,7 +580,11 @@
     const onPosition = attachProgressSync(
       Object.assign({}, docData, { reading_progress: opts && opts.progress != null ? opts.progress : docData.reading_progress }), ctx);
 
-    const backToFeed = function () { global.location.href = backHref; };
+    const backToFeed = function () {
+      rlog('退出回清單', Object.assign({ id: String(docData.id || ''), to: backHref }, layoutMode(NS)));
+      flushLog();
+      global.location.href = backHref;
+    };
     NS.state.readerHostPage = true;
     NS.onReaderExit = backToFeed;
 
@@ -502,11 +593,38 @@
     // 的 exitReaderMode 以 active 為 guard）。把狀態列放回去顯示失敗文案 + 回
     // feed 連結，不依賴 active flag。
     if (typeof NS.enterFromContainer === 'function') {
-      const onEnterFailed = (err) => showEnterFailed(doc, statusEl, container, err, backHref);
+      const enterT0 = Date.now();
+      const onEnterFailed = (err) => {
+        rlog('套用閱讀版型失敗', { id: String(docData.id || ''), reason: err ? String(err.message || err).slice(0, 120) : 'enterFromContainer 回 false', ms: Date.now() - enterT0 }, 'error');
+        showEnterFailed(doc, statusEl, container, err, backHref);
+      };
       Promise.resolve()
         .then(() => NS.enterFromContainer(container, (fallbackPosition || onPosition) ? { fallbackPosition, onPosition } : undefined))
-        .then((ok) => { if (ok === false) onEnterFailed(null); }, onEnterFailed);
+        .then((ok) => {
+          if (ok === false) { onEnterFailed(null); return; }
+          rlog('排版套用完成', Object.assign({
+            id: String(docData.id || ''), ms: Date.now() - enterT0,
+            lang: container.getAttribute('lang') || '', category: docData.category || '',
+            imgs: container.querySelectorAll('img').length,
+            remoteProgress: fallbackPosition ? fallbackPosition.ratio : null,
+            progressWrite: !!onPosition
+          }, layoutMode(NS)));
+          watchLayoutMode(NS, global.browser);
+        }, onEnterFailed);
     }
+  }
+
+  // 重點同步結果摘要（attach 回傳的 ready 是既有 promise；只讀結果，不碰同步流程）
+  function logHighlightSync(hl, docData, container) {
+    if (!hl || !hl.ready || typeof hl.ready.then !== 'function') return;
+    const t0 = Date.now();
+    hl.ready.then((r) => {
+      const HL = global.__JReadReaderHighlights;
+      let marks = 0;
+      try { marks = HL && HL.HL_ATTR ? container.querySelectorAll('[' + HL.HL_ATTR + ']').length : 0; } catch (_) { marks = 0; }
+      rlog('重點同步', { id: String((docData && docData.id) || ''), ok: !!(r && r.ok), full: !!(r && r.full), marks, ms: Date.now() - t0 },
+        (r && r.ok) ? 'info' : 'warn');
+    }, () => {});
   }
 
   function attachHighlights(docData, container, ctx) {
@@ -568,11 +686,13 @@
       //   2. Readwise doc 帶 location（文章快取命中時 slimDoc 不留這欄，只有直接打
       //      API 那次有值）
       if (RC && typeof RC.isTabArchivable === 'function' && !RC.isTabArchivable(service, ctx && ctx.tab)) {
+        rlog('封存略過（來源分頁不可封存）', { id, tab: (ctx && ctx.tab) || '' });
         toast('這篇已在封存區', 'info'); return null;
       }
-      if (docData.location === 'archive') { toast('這篇已在封存區', 'info'); return null; }
+      if (docData.location === 'archive') { rlog('封存略過（文件已在封存區）', { id }); toast('這篇已在封存區', 'info'); return null; }
       inFlight = true;
       toast('封存中…', 'info', 10000);
+      const archiveT0 = Date.now();
       let r;
       try {
         r = await PC.archiveDocument({ service, creds, id });
@@ -580,6 +700,9 @@
         r = null; // serviceErrorMessage 對 null 回通用「封存失敗」
       }
       inFlight = false;
+      rlog('封存', { id, service, ok: !!(r && r.ok), error: r && r.error, status: r && r.status, ms: Date.now() - archiveT0 },
+        (r && r.ok) ? 'info' : 'error');
+      flushLog(); // 成功後馬上導回清單，不等 debounce
       if (!r || !r.ok) {
         toast(typeof PC.serviceErrorMessage === 'function'
           ? PC.serviceErrorMessage(r, { action: '封存' })
