@@ -28,7 +28,9 @@
   // HIGHLIGHT_KEY 與 reader-highlights.js 的 CACHE_KEY 是同一把（options 頁不載
   // reader-highlights.js，所以正本放這裡；等式由 options-clear-local-cache.spec 守）
   const HIGHLIGHT_KEY = 'readerHighlightCache';
-  const LOCAL_CACHE_KEYS = [FEED_KEY, HIGHLIGHT_KEY];
+  // v2.5.0：這台寫回閱讀進度的時刻表（見 isStale / planOwnWrite），跟著快取一起清
+  const OWN_WRITE_KEY = 'readerProgressWrites';
+  const LOCAL_CACHE_KEYS = [FEED_KEY, HIGHLIGHT_KEY, OWN_WRITE_KEY];
   const FEED_VERSION = 1;
   const DB_NAME = 'jread-reader-cache';
   const DB_VERSION = 1;
@@ -197,12 +199,45 @@
 
   // feed 那邊的 updated_at 比快取新 → 過期。任一方缺 updated_at（Instapaper、
   // feed 沒列到這篇）→ 視為沒過期
-  function isStale(entry, feedDoc) {
+  // v2.5.0：ownWriteAt＝這台最後一次把閱讀進度寫回 Readwise 的時刻（ms，這台的時鐘）。
+  // 寫進度會讓 Readwise 的 updated_at 前進——不扣掉的話，每次在 JReader 讀過一篇，
+  // 下次開它文章快取就被判過期、整篇重抓（慢、吃 list 限流，離線時直接開不了）。
+  // feed 的 updated_at 落在「這台寫出時刻 + OWN_WRITE_SLACK_MS」以內 → 視為自己那次
+  // 寫入造成的，不算過期。代價：文章內容剛好在這台寫出前後兩分鐘內被改，要等它下次
+  // 再更新才會重抓
+  const OWN_WRITE_SLACK_MS = 120000;
+  function isStale(entry, feedDoc, ownWriteAt) {
     if (!entry) return true;
     const a = entry.updated_at ? Date.parse(entry.updated_at) : NaN;
     const b = feedDoc && feedDoc.updated_at ? Date.parse(feedDoc.updated_at) : NaN;
     if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-    return b > a;
+    if (!(b > a)) return false;
+    if (typeof ownWriteAt === 'number' && Number.isFinite(ownWriteAt) && b <= ownWriteAt + OWN_WRITE_SLACK_MS) return false;
+    return true;
+  }
+
+  // v2.5.0：這台寫回進度的時刻表 { [docId]: ms }（storage.local，上限 OWN_WRITE_MAX 筆、
+  // 舊的先丟）。獨立一把 key 而不放進文章快取的 IndexedDB：寫入發生在頁面退出 /
+  // 背景化當下，storage.local.set 的 IPC 同步送得出去，IndexedDB 交易等不到
+  const OWN_WRITE_MAX = 60;
+  function readOwnWrites(storage) {
+    if (!storage || typeof storage.get !== 'function') return Promise.resolve({});
+    return Promise.resolve(storage.get(OWN_WRITE_KEY))
+      .then((v) => {
+        const m = v && v[OWN_WRITE_KEY];
+        return (m && typeof m === 'object') ? m : {};
+      })
+      .catch(() => ({}));
+  }
+  function planOwnWrite(map, id, now) {
+    const next = Object.assign({}, map || {});
+    next[String(id)] = now;
+    const keys = Object.keys(next);
+    if (keys.length > OWN_WRITE_MAX) {
+      keys.sort((x, y) => (next[x] || 0) - (next[y] || 0));
+      for (const k of keys.slice(0, keys.length - OWN_WRITE_MAX)) delete next[k];
+    }
+    return next;
   }
 
   // metas: [{ key, bytes, lastOpened }]。回傳要刪的 key（最久沒開的先刪），
@@ -363,7 +398,8 @@
     FEED_TABS, isTabArchivable,
     accountKey, slimDoc, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
-    isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage
+    isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage,
+    OWN_WRITE_KEY, OWN_WRITE_MAX, OWN_WRITE_SLACK_MS, readOwnWrites, planOwnWrite
   };
 
   if (typeof module !== 'undefined' && module.exports) {

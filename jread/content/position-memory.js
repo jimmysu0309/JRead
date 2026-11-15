@@ -168,13 +168,54 @@
   // 兩種 entry 都帶 ratio（capture 的翻頁分支 idx / (total − 1)、捲動分支
   // scrollTop / maxTop），與 reading_progress 同為 0–1。
   const FALLBACK_LEAD_MIN = 0.05;
+  // v2.5.0（Jimmy 2026-11-15）：JReader 把閱讀位置寫回 Readwise 之後，外部進度不再是
+  // 「讀過最遠處、只增不減」，而是「最後一次閱讀的位置」（往回重讀也會寫回）。判準從
+  // 「外部比較遠」改成「外部在這台上次同步之後有沒有被別處改過」：
+  //   本機 entry 帶 rw（這台最後一次看到 / 寫出的外部進度）與 rwAt（那個值的時刻）：
+  //     - 外部與 rw 相差不到 REMOTE_CHANGE_EPS → 沒人動過 → 本機（段落錨點比比例準）
+  //     - 有差、但外部的 updatedAt 不比 rwAt 新 → 是舊快取（feed 快取還沒更新到這台
+  //       自己剛寫出去的值）→ 本機。少了這條，同一台重開會被自己的舊快取拉回去
+  //     - 有差且較新（或任一邊沒有時刻可比）→ 別的裝置讀過了 → 外部
+  //   本機 entry 沒有 rw（v2.4.14 以前留下的記錄）：沿用 C-03 的規則（外部比本機遠
+  //     超過 FALLBACK_LEAD_MIN 才用外部），還原後 restore 會補上 rw，下次起走新判準
+  // rwAt 在「寫出」時是這台的時鐘、updatedAt 是 Readwise 伺服器時間：這台時鐘偏快時，
+  // 寫出後那段偏差時間內別處的更新會被當成舊快取（下次別處再更新就恢復）；偏慢時
+  // 自己寫出的值會被當成外部更新、以比例套回同一位置（無害）。
+  const REMOTE_CHANGE_EPS = 0.02;
   function pickRestoreEntry(local, fallback) {
     if (!local) return fallback || null;
     if (!fallback) return local;
     const lr = typeof local.ratio === 'number' ? local.ratio : NaN;
     const fr = typeof fallback.ratio === 'number' ? fallback.ratio : NaN;
     if (!Number.isFinite(lr) || !Number.isFinite(fr)) return local;
+    const rw = typeof local.rw === 'number' ? local.rw : NaN;
+    if (Number.isFinite(rw)) {
+      if (Math.abs(fr - rw) <= REMOTE_CHANGE_EPS) return local;
+      const fa = typeof fallback.updatedAt === 'number' ? fallback.updatedAt : NaN;
+      const la = typeof local.rwAt === 'number' ? local.rwAt : NaN;
+      if (Number.isFinite(fa) && Number.isFinite(la) && fa <= la) return local;
+      return fallback;
+    }
     return fr - lr > FALLBACK_LEAD_MIN ? fallback : local;
+  }
+
+  // 還原當下決定這個 session 的「外部進度已知值」（之後每次寫本機記錄都帶著）：
+  //   採用了外部位置、或本機是沒有 rw 的舊記錄 → 以這次看到的外部值為準
+  //   否則（外部沒變 / 是舊快取）→ 沿用本機記錄原有的 rw / rwAt
+  // 沒有外部值、本機也沒有 → null（一般網頁的閱讀模式永遠走這條，entry 不多欄位）
+  function remoteSeenAfterRestore(local, fallback, pick) {
+    const fromFallback = () => {
+      const r = fallback && typeof fallback.ratio === 'number' && Number.isFinite(fallback.ratio) ? fallback.ratio : NaN;
+      if (!Number.isFinite(r)) return null;
+      const at = typeof fallback.updatedAt === 'number' && Number.isFinite(fallback.updatedAt) ? fallback.updatedAt : undefined;
+      return at === undefined ? { rw: r } : { rw: r, rwAt: at };
+    };
+    const fromLocal = () => {
+      if (!local || typeof local.rw !== 'number' || !Number.isFinite(local.rw)) return null;
+      return typeof local.rwAt === 'number' ? { rw: local.rw, rwAt: local.rwAt } : { rw: local.rw };
+    };
+    if (fallback && pick === fallback) return fromFallback();
+    return fromLocal() || fromFallback();
   }
 
   function resolvePageIndex(entry, total) {
@@ -211,11 +252,13 @@
   // null entry（回到開頭，殘留反而誤導）。回 { next, entry }。
   // 抽成純函式：persistNow 的同步寫入路徑（iOS 背景凍結防護）靠它在 handler 內
   // 同步算好 payload，不必先 async 讀回 storage。jsdom spec 直接測。
-  function computeNextMap(map, key, pos, now, days, cap) {
+  // v2.5.0：extra＝這個 session 的外部進度已知值 { rw, rwAt }（見 pickRestoreEntry），
+  // 有才併進 entry
+  function computeNextMap(map, key, pos, now, days, cap, extra) {
     const next = pruneMap(map || {}, now, days, cap || MAX_ENTRIES);
     let entry = null;
     if (shouldPersist(pos)) {
-      entry = Object.assign({ ts: now }, pos);
+      entry = Object.assign({ ts: now }, pos, extra || null);
       next[key] = entry;
     } else {
       delete next[key];
@@ -267,6 +310,8 @@
   let lastWriteTs = 0;     // 上次整包寫 storage 的時刻（writeThrottleDelay 節流基準）
   let reassertTimer = null;
   let interacted = false;  // 回復後使用者是否互動過（互動過就不做二次對位）
+  let remoteSeen = null;   // v2.5.0：這個 session 的外部進度已知值 { rw, rwAt }（restore 決定、寫出後更新）
+  let onPosition = null;   // v2.5.0：beginSession 傳入的回呼——每次寫本機記錄前通知目前位置
 
   // keydown 涵蓋翻頁鍵（←/→/Space）；click 涵蓋 space-scroll 點段落移指示條；
   // touchcancel 涵蓋 iOS 圖片上滑動翻頁（paged-mode onTouchCancel 補判路徑）。
@@ -386,13 +431,23 @@
     lastWriteTs = now;
     const key = sessionKey;
     const pos = capture();
+    // v2.5.0：通知外部同步（JReader 文章頁把位置寫回 Readwise）。只在使用者互動過之後
+    // ——剛進場還沒動就退出時，畫面位置可能是舊快取套出來的，寫回去會把別處較新的
+    // 進度蓋掉。回呼回 true＝這個位置已送出：先樂觀記成外部已知值，跟著下面這次
+    // 本機寫入一起落盤（退出 / 背景化時頁面隨時會被凍結，等不到回應再記）。送出
+    // 失敗的後果見 pickRestoreEntry 註解（外部沒變且較舊 → 本機優先，不會跳）
+    if (interacted && onPosition && pos && Number.isFinite(pos.ratio)) {
+      let sent = false;
+      try { sent = onPosition({ ratio: pos.ratio, final: !!force }) === true; } catch (_) { /* 外部同步失敗不影響本機記錄 */ }
+      if (sent) remoteSeen = { rw: pos.ratio, rwAt: now };
+    }
     if (memMap) {
       // 同步寫入路徑（iOS 背景凍結防護）：用進場 seed 的記憶體 map 同步算出
       // payload + 同步發出 set，不先 async 讀回。iOS Safari 頁面背景化會立刻凍結
       // event loop——「先 localGet 再於回呼裡 set」的舊路徑回呼永遠等不到、set 從
       // 未發出 → 使用者強制關閉前的位置丟失（重開停在第 1 頁）。直接 set 的 IPC 在
       // visibilitychange / pagehide handler 內同步送達 background 即落地。
-      const r = computeNextMap(memMap, key, pos, now, days, MAX_ENTRIES);
+      const r = computeNextMap(memMap, key, pos, now, days, MAX_ENTRIES, remoteSeen);
       memMap = r.next;
       writeWithSelfHeal(rawSet, key, r.entry, r.next);
       return;
@@ -406,7 +461,7 @@
     // restore 主路徑的 session guard，這條 fallback 是同型缺口。
     localGet((map) => {
       if (!map) return;
-      const r = computeNextMap(map, key, pos, now, days, MAX_ENTRIES);
+      const r = computeNextMap(map, key, pos, now, days, MAX_ENTRIES, sessionKey === key ? remoteSeen : null);
       if (sessionKey === key) memMap = r.next;
       writeWithSelfHeal(rawSet, key, r.entry, r.next);
     });
@@ -578,7 +633,9 @@
           rawSet({ [STORAGE_KEY]: pruned }).catch(() => {});
         }
       }
-      const pick = pickRestoreEntry(isFresh(entry, now, days) ? entry : null, fallbackEntry);
+      const local = isFresh(entry, now, days) ? entry : null;
+      const pick = pickRestoreEntry(local, fallbackEntry);
+      remoteSeen = remoteSeenAfterRestore(local, fallbackEntry, pick);
       // lazy-load 圖片 / 晚到內容會推移版面——短延遲後使用者還沒互動就再對位一次
       if (pick) applyWithReassert(key, pick, el);
     });
@@ -606,6 +663,8 @@
     sessionKey = key;
     articleEl = el || null;
     interacted = false;
+    remoteSeen = null;
+    onPosition = opts && typeof opts.onPosition === 'function' ? opts.onPosition : null;
     installListeners();
     restore(key, articleEl, override, opts && opts.fallbackEntry);
   }
@@ -622,6 +681,8 @@
     }
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
     removeListeners();
+    remoteSeen = null;
+    onPosition = null;
     sessionKey = null;
     articleEl = null;
     memMap = null; // 下次進場 restore 重新 seed（避免跨 session 用到舊快照）
@@ -653,6 +714,7 @@
     findBlockIndex,
     resolvePageIndex,
     pickRestoreEntry,
+    remoteSeenAfterRestore,
     legacyKeyMatch,
     computeExitScrollTop,
     shouldPersist,
@@ -663,7 +725,7 @@
     endSession,
     setDays,
     isTracking: () => !!sessionKey,
-    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION, FALLBACK_LEAD_MIN,
+    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION, FALLBACK_LEAD_MIN, REMOTE_CHANGE_EPS,
     MIN_WRITE_INTERVAL_MS
   };
 
