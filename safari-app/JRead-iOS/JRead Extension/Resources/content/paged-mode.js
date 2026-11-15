@@ -312,17 +312,17 @@
   let eagerForced = [];               // 進場強制 eager 的圖 [{ img, prev }]，uninstall 還原
   let eagerForcedSeen = new WeakSet(); // v1.7.43：同圖去重——lazy loader 反覆把 loading 改回 lazy 時，observer 每次再強制 eager 不重複累積 entry（無上限成長）
   let mediaObserver = null;           // v1.6.16：盯 art 子樹、晚到/被改回 lazy 的圖即時強制 eager
-  let unclipForced = [];              // v1.7.46：翻頁期間強制 overflow:visible 的高 scroll container，uninstall 還原
-  let unclipForcedSeen = new WeakSet(); // 同元素去重——remeasure 重掃時不重複累積 entry
-  let blockifyForced = [];            // v1.9.13：翻頁期間由 inline-* 原子盒改成 block 層級的高容器，uninstall 還原
-  let blockifyForcedSeen = new WeakSet();
-  let containForced = [];             // v2.4.3：翻頁期間拿掉 layout containment 的後代，uninstall 還原
-  let containForcedSeen = new WeakSet();
-  let flexForced = [];                // v2.4.5：翻頁期間塌成 block 的單圖 flex/grid 容器，uninstall 還原
-  let flexForcedSeen = new WeakSet();
-  let initialLetterPadded = [];       // v2.4.8：翻頁期間補 padding-top 的 initial-letter 首字段落，uninstall 還原
-  let initialLetterPaddedSeen = new WeakSet();
-  let mediaFitForced = [];            // v1.9.25：fitMediaToPages 寫過的 inline 樣式 [{ el, prop, prev, prevPri }]，重算前 / uninstall 還原
+  // 2026-11-15 review P-5：翻頁期間寫進主文後代的 inline 樣式，一律經「寫入日誌」記原值、
+  // uninstall 反序還原。原本五份清單＋五個 WeakSet（overflow / blockify / contain / flex /
+  // initial-letter 各一）同形重複，而且各還各的——同一元素的 display 先後被兩條規則寫過時，
+  // 還原順序不是反序，退出後殘留 JRead 自己寫的 display:flex !important（P-1）。
+  //   structJournal：斷頁前中和結構（NEUTRALIZE_RULES）＋首字補上緣。同元素同屬性只記
+  //     第一次的原值（重測重掃、站方 loader 改回去再寫，都不會把 JRead 寫的值當成原值）
+  //   mediaFitJournal：媒體貼合。每次寫入都記一筆——fitMediaToPages 每輪重算前先全撤，
+  //     量測用的 1px 暫值靠反序撤回，生命週期與上面那份不同所以分開，API 同形
+  // 強制 eager 的圖（eagerForced）改的是 attribute 不是 style，不併進來
+  const structJournal = createStyleJournal(true);
+  const mediaFitJournal = createStyleJournal(false);
   let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
@@ -471,13 +471,9 @@
   // （內容縮水）clamp 回最後一頁，不然停在幽靈位置。內容驅動重測與固定計時器共用。
   function remeasureAndReconcile() {
     if (!installed || !art) return;
-    // v1.7.46：晚載入內容可能讓 scroll container / inline-* 原子盒（v1.9.13）事後
-    // 長高過一頁（lazy 圖撐高），重測前補掃一輪
-    releaseTallMonolithicBoxes();
-    padInitialLetterBlocks(); // v2.4.8：晚到的首字段落
-    fitMediaToPages(); // v1.9.25：晚載入的圖撐開後重新貼合本頁剩餘空間
-    remeasurePages();
-    try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
+    // 晚載入內容可能讓 scroll container / inline-* 原子盒事後長高過一頁（v1.7.46 /
+    // v1.9.13）、首字段落晚到（v2.4.8）、圖撐開後要重新貼合（v1.9.25）——整套重跑
+    relayout();
     const t = pageCount();
     if (idx > t - 1) goTo(t - 1, false);
     else renderIndicator();
@@ -563,42 +559,124 @@
     eagerForcedSeen = new WeakSet();
   }
 
-  // v1.7.46：翻頁模式內容整塊消失（Gmail 信件）修法。瀏覽器把 scroll container
-  // （computed overflow-x/y 為 auto / scroll / hidden 任一——三值都建立可捲容器）
-  // 視為 monolithic：多欄斷片時整塊不可切（隔離實驗實證；visible / clip 可斷片）。
-  // 主文包在這種容器裡（Gmail 內文 .ii.gt 是 overflow-y:auto、.a3s 是
-  // overflow-x:auto）且內容比一頁高時，整塊被推到下一欄、超出部分被卡片的
-  // overflow:hidden 裁掉——第一頁只剩標題、內文全滅（cage 實證：6663px 內文
-  // 整塊落在第 2 欄）。修法：掃 articleEl 後代，「高度超過一頁的 scroll
-  // container」強制 overflow:visible（inline !important 蓋過站方 stylesheet）
-  // 恢復可斷片；記錄原 inline 值、uninstall 還原（捲動模式下站方內捲 UI 仍合理）。
-  // 結構性通則、不綁站點：只看「scroll container ＋ 高度 > 頁高」兩個特徵。
-  // 高度放得進一頁的 scroll container（如 overflow-x:auto 的寬 <pre>）刻意不動
-  // ——整塊進一頁無內容損失，保留內捲行為。頁高用 art content-box 高（= 欄高）。
+  // ---- 斷頁前處理（2026-11-15 review P-5 收斂）----
   //
-  // v1.9.13：第二種 monolithic 載體——inline 層級原子盒（inline-block /
-  // inline-flex / inline-grid / inline-table）。Chromium 把它們當一個不可切的
-  // inline 原子（隔離實驗 19 種 display / 定位組合實測：只有這四個 inline-* 不
-  // 斷片，flex / grid / table / float / abs / contain / transform 都能切；
-  // WebKit trunk 全部可切）。主文包在這種容器裡（商周 campaign 頁內文外層
-  // .pure-u-1 是 inline-block、2610px 高）→ 內文完全不分欄，超出頁底的後半段
-  // 與跨頁底的圖被卡片 overflow:hidden 裁掉、頁數少算（實測 3 頁，應為 5 頁）。
-  // 修法同構：「inline-* 原子盒 ＋ 高度 > 頁高」改成對應的 block 層級值
-  // （內部排版模式不變、只把外部顯示型別從 inline 換成 block）。replaced 元素
-  // （img / video / iframe…）本質不可切、交給 styler 的單頁 max-height cap，
-  // 不在此處理。放得進一頁的 inline-block（按鈕、chip、小卡）不動。
+  // 多欄分頁靠瀏覽器把內容切成一欄一欄。站方的某些結構會讓引擎「不切」或「不照
+  // break-* 控制」，翻頁模式進場後要先把這些結構中和掉，量到的頁數與圖片位置才是真的。
+  // 這一段原本散成五份還原清單、兩條硬塞進同一個迴圈的規則、三處手抄的執行順序，
+  // 收斂成四件事：
+  //   createStyleJournal   寫入日誌：記原值、反序還原
+  //   NEUTRALIZE_RULES     規則表：「主文後代符合某個 computed style ＋高度條件 → 寫一條
+  //                        inline !important」。加新規則＝表裡加一列
+  //   LAYOUT_PASSES        流程表：中和結構 → 首字補上緣 → 媒體貼合 → 量頁數
+  //   relayout()           install / remeasureAndReconcile / onResize 唯一入口
+  // 順序依賴由 test/regression/paged-layout-pass-order.spec.js 守。
+  // 所有規則都不判斷 UA——兩個引擎一體適用，只是各自會踩到的不同。
+
+  // 寫入日誌。firstWriteOnly = true：同元素同屬性只記第一次的原值（之後重掃再寫、
+  // 另一條規則寫同一屬性，還原目標仍是站方最初的 inline 狀態）；false：每次寫入各記
+  // 一筆，靠反序撤回疊加的暫值。
+  //   has(el, prop)            這個元素的這個屬性記過了嗎
+  //   record(el, prop, also)   只記原值不寫；also＝還原時要一併寫回的 longhand（overflow-x / -y）
+  //   set(el, prop, val)       記原值＋寫 inline !important
+  //   undoLast() / restoreAll()  撤最後一筆／反序全撤
+  function createStyleJournal(firstWriteOnly) {
+    let entries = [];
+    let seen = new WeakMap(); // el → Set<prop>
+    function has(el, prop) {
+      const s = seen.get(el);
+      return !!s && s.has(prop);
+    }
+    function record(el, prop, also) {
+      if (firstWriteOnly) {
+        if (has(el, prop)) return false;
+        let s = seen.get(el);
+        if (!s) { s = new Set(); seen.set(el, s); }
+        s.add(prop);
+      }
+      const saved = [];
+      for (const p of [prop].concat(also || [])) {
+        saved.push([p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]);
+      }
+      entries.push({ el, prop, saved });
+      return true;
+    }
+    function set(el, prop, val) {
+      record(el, prop);
+      el.style.setProperty(prop, val, 'important');
+    }
+    function undoLast() {
+      const r = entries.pop();
+      if (!r) return;
+      try {
+        r.el.style.removeProperty(r.prop);
+        for (const [p, v, pri] of r.saved) if (v) r.el.style.setProperty(p, v, pri);
+      } catch (e) { /* */ }
+      const s = seen.get(r.el);
+      if (s) s.delete(r.prop);
+    }
+    function restoreAll() {
+      while (entries.length) undoLast();
+      seen = new WeakMap();
+    }
+    return { has, record, set, undoLast, restoreAll, size: () => entries.length };
+  }
+
+  // 頁面幾何：欄高（＝頁高，art content-box 高）、第 0 欄內容區的頂 / 底 / 左緣
+  //（viewport 座標）。量不到（jsdom 無 layout）回 null，呼叫端 no-op
+  function pageBox() {
+    if (!art) return null;
+    try {
+      const cs = getComputedStyle(art);
+      const pageH = art.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      if (!(pageH > 0)) return null;
+      const rect = art.getBoundingClientRect();
+      const top = rect.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
+      return {
+        pageH,
+        top,
+        bottom: top + pageH,
+        contentLeft: rect.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0)
+      };
+    } catch (e) { return null; }
+  }
+
+  // 多欄下一個元素被切成幾段就有幾個 rect；getBoundingClientRect 是跨欄聯集，量不到
+  // 「實際佔了多少高度」。量高度一律加總各段
+  const fragHeight = (el) => {
+    let h = 0;
+    for (const r of el.getClientRects()) h += r.height;
+    return h;
+  };
+
+  // 「要貼合的圖」的單一判定（規則 singleMediaFlexShell 與 fitMediaToPages 共用）：
+  // 排除行內小圖與 player 內的圖；碎片總高 ≥ FIT_MIN_PX（更矮的是 icon / 隱藏 / 還沒
+  // 撐開的圖）。回傳碎片總高，0＝不是候選
+  const FIT_MIN_RATIO = 0.5;
+  const FIT_MIN_PX = 120;
+  function fitImgHeight(img) {
+    if (img.hasAttribute('data-jread-inline-img') || img.hasAttribute('data-jread-player')) return 0;
+    const h = fragHeight(img);
+    return h >= FIT_MIN_PX ? h : 0;
+  }
+  function isFitCandidateImg(img) {
+    return fitImgHeight(img) > 0;
+  }
+  function countFitImgs(el) {
+    let n = 0;
+    for (const img of el.querySelectorAll('img')) {
+      if (isFitCandidateImg(img)) n++;
+      if (n > 1) break;
+    }
+    return n;
+  }
+
+  // ---- NEUTRALIZE_RULES 用到的純函式與常數 ----
+
   const INLINE_ATOMIC_TO_BLOCK = {
     'inline-block': 'block', 'inline-flex': 'flex', 'inline-grid': 'grid', 'inline-table': 'table'
   };
   const REPLACED_TAG_RE = /^(img|video|iframe|svg|canvas|object|embed|picture)$/i;
-  // v2.2.21：第三種情境——主文容器放得進一頁但被 overflow:hidden 鎖成 monolithic
-  // （關鍵評論網 .article-body、中時 .article-body）：內容沒被裁，但本頁剩餘空間
-  // 不夠時整塊推到下一頁，前頁留大片空白。上面「矮的不動」的理由對內捲 UI 成立，
-  // 對主文容器不成立。條件三項都要過（92 站實測只命中主文容器）：
-  //   1. 只限 hidden——auto / scroll 是站方的內捲 UI（寬 <pre>、參考文獻捲動框）
-  //   2. 文字占全文至少一半——圖說、引言、作者卡這類小框占比都在 7% 以下
-  //   3. 實際沒裁到東西（scroll 尺寸 ≈ client 尺寸）——解開才不會露出站方藏掉的內容
-  // 高度下限只是省掉 getComputedStyle 掃描：矮框整塊推走留的空白本來就小。
   const BODY_BOX_MIN_TEXT_SHARE = 0.5;
   const BODY_BOX_MIN_PAGE_SHARE = 0.25;
   const BODY_BOX_CLIP_TOLERANCE = 2;
@@ -609,17 +687,6 @@
     return el.scrollHeight - el.clientHeight <= BODY_BOX_CLIP_TOLERANCE
       && el.scrollWidth - el.clientWidth <= BODY_BOX_CLIP_TOLERANCE;
   }
-  // v2.4.3：第四種情境——layout containment（Jimmy 2026-11-10 Mac Safari 翻頁模式
-  // houseandgarden gallery「第 13、14 頁之間把圖切成兩半」）。站方在 gallery slide 外層
-  // 掛 contain: layout style（li 與多層 wrapper）。WebKit 在 layout-contained 盒子
-  // 內部不照 break-before / break-inside: avoid 分頁：fitMediaToPages 寫上的
-  // break-before: column 與 figure 的 avoid 全被無視，圖照樣跨頁硬切（Playwright
-  // WebKit 實站 probe：7 張圖 3 張被切；把 contain 裡的 layout 拿掉 → 全部從頁頂起、
-  // 0 張被切；只拿掉 paint 無效、只留 style 有效＝兇手是 layout）。Chromium 照常分頁
-  // 所以只有 Safari 中。修法：翻頁期間把主文後代 computed contain 的 layout 關鍵字
-  // 拿掉（strict / content 先展開），其餘 containment（size / paint / style）保留；
-  // uninstall 還原。高度門檻只是省 getComputedStyle：放不下一張媒體的矮盒子內部
-  // 不會有要跨頁控制的東西。
   // 純函式：回傳去掉 layout 後的 contain 值；本來就沒有 layout containment 回 null
   function stripLayoutContain(value) {
     const raw = String(value || '').trim().toLowerCase();
@@ -634,147 +701,210 @@
     const rest = tokens.filter((t) => t !== 'layout');
     return rest.length ? rest.join(' ') : 'none';
   }
-  const CONTAIN_MIN_PX = 120; // = FIT_MIN_PX：比這矮的盒子放不下一張要處理的媒體
-  // v2.4.5：第五種情境——媒體在 flex / grid 容器內（Jimmy 2026-11-10 Mac Safari 27
-  // 翻頁模式 foreignaffairs「第一頁的圖就會被切到」）。hero 與標題區並排在
-  // section.topper（display:flex）裡；cleaner 的 collapseInnerFlexWrap 只在子項
-  // 已換行時才塌，寬視窗下沒換行 → flex 留著。WebKit 對 flex / grid item 內部
-  // 不照 break-before / break-inside: avoid 分頁，fitMediaToPages 的 shrink / break
-  // 都失效，圖照樣跨頁硬切（Playwright WebKit 實站 probe：section 留 flex → 圖切成
-  // 418 + 148px 兩段，與 Jimmy 截圖寬 364 一致；塌成 block → 縮進第 1 頁、0 段被切）。
-  // 修法：翻頁期間把「只含一張要貼合的大圖」的 flex / grid 容器塌成 block，讓媒體
-  // 回到可分頁的 block flow；含兩張以上大圖的（並排 gallery）不動，避免把刻意並排的
-  // 圖拆成上下堆疊。uninstall 還原。
-  // 純決策函式：bigImgCount 由呼叫端依 fitMediaToPages 同款條件數
+  // 純決策函式：bigImgCount 由呼叫端用 countFitImgs 數
   const FLEX_GRID_DISPLAYS = new Set(['flex', 'inline-flex', 'grid', 'inline-grid']);
   function isSingleMediaFlexShell(display, bigImgCount) {
     return FLEX_GRID_DISPLAYS.has(String(display || '')) && bigImgCount === 1;
   }
-  function countFitImgs(el) {
-    let n = 0;
-    for (const img of el.querySelectorAll('img')) {
-      if (img.hasAttribute('data-jread-inline-img') || img.hasAttribute('data-jread-player')) continue;
-      if (fragHeight(img) >= FIT_MIN_PX) n++;
-      if (n > 1) break;
-    }
-    return n;
+  const isClippingOverflow = (v) => v === 'auto' || v === 'scroll' || v === 'hidden';
+
+  // 高度門檻。monolithic 且高過一頁才會裁掉內容；可斷片元素的 fragment 聯集高 ≈ 頁高，
+  // 留 TALL_SLACK_PX 不誤中
+  const TALL_SLACK_PX = 4;
+  const isTallerThanPage = (h, pageH) => h > pageH + TALL_SLACK_PX;
+  // 「放得下一張要處理的媒體」的盒子：≥ FIT_MIN_PX。重構前這兩條規則（layoutContain、
+  // singleMediaFlexShell）與 unclippedBodyBox 共用同一個閘門，實際門檻是三者的聯集
+  // ——頁高不到 480px（手機橫向）時「頁高 25%」比 120px 低，70–120px 的盒子也會被處理。
+  // 這輪是純重構，照舊保留聯集；要不要收緊成單純的 FIT_MIN_PX 是行為變更，另案處理
+  const canHoldFitMedia = (h, pageH) => h >= Math.min(FIT_MIN_PX, pageH * BODY_BOX_MIN_PAGE_SHARE);
+
+  // 解 overflow 的共用寫入（tallScrollContainer / unclippedBodyBox）：三個 inline 值一起記，
+  // 還原時 shorthand 與 longhand 都寫回
+  function unclipOverflow(ctx) {
+    structJournal.record(ctx.el, 'overflow', ['overflow-x', 'overflow-y']);
+    try { ctx.el.style.setProperty('overflow', 'visible', 'important'); } catch (e) { /* */ }
   }
-  function releaseTallMonolithicBoxes() {
-    if (!art) return;
-    let pageH = 0;
-    try {
-      const cs = getComputedStyle(art);
-      pageH = art.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-    } catch (e) { return; }
-    if (!(pageH > 0)) return; // jsdom 無 layout → no-op（spec 以 stub 驅動）
-    const isClipping = (v) => v === 'auto' || v === 'scroll' || v === 'hidden';
+
+  // 規則表。neutralizeStructure 對主文每個後代依表序套用：
+  //   id          規則名（順序測試與日誌用）
+  //   since       加入的版本
+  //   minHeight   (h, pageH) → 夠不夠高。只看 getBoundingClientRect 的高，不讀 computed
+  //               style——絕大多數元素在這一步就被篩掉，成本結構靠它
+  //   match       (ctx) → 命中與否。ctx.cs 是 live 的 computed style：前面的規則寫入後，
+  //               後面的規則讀到的是寫入後的值（singleMediaFlexShell 塌成 block 之後，
+  //               tallInlineAtomic 同一輪不會再命中同一個元素）
+  //   apply       (ctx) → 寫入，一律經 structJournal
+  //   once        同一個元素只套一次（之後被站方改回去也不再寫）
+  // 表內順序＝執行順序。整張表都排在 fitMediaToPages 之前（LAYOUT_PASSES）：WebKit 在
+  // layout containment / flex item 內無視 break-*，貼合寫的東西要等這裡先解開才有效。
+  const NEUTRALIZE_RULES = [
+    // v2.4.3：layout containment（Jimmy 2026-11-10 Mac Safari 翻頁模式 houseandgarden
+    // gallery「第 13、14 頁之間把圖切成兩半」）。站方在 gallery slide 外層掛
+    // contain: layout style（li 與多層 wrapper）。WebKit 在 layout-contained 盒子內部
+    // 不照 break-before / break-inside: avoid 分頁：fitMediaToPages 寫上的
+    // break-before: column 與 figure 的 avoid 全被無視，圖照樣跨頁硬切（Playwright
+    // WebKit 實站 probe：7 張圖 3 張被切；把 contain 裡的 layout 拿掉 → 全部從頁頂起、
+    // 0 張被切；只拿掉 paint 無效、只留 style 有效＝兇手是 layout）。Chromium 照常分頁
+    // 所以只有 Safari 中。修法：翻頁期間把主文後代 computed contain 的 layout 關鍵字
+    // 拿掉（strict / content 先展開），其餘 containment（size / paint / style）保留。
+    // 高度門檻只是省 getComputedStyle：放不下一張媒體的矮盒子內部不會有要跨頁控制的東西。
+    {
+      id: 'layoutContain',
+      since: 'v2.4.3',
+      minHeight: canHoldFitMedia,
+      match(ctx) {
+        ctx.contain = stripLayoutContain(ctx.cs.contain || ctx.el.style.getPropertyValue('contain'));
+        return ctx.contain !== null;
+      },
+      apply(ctx) {
+        structJournal.record(ctx.el, 'contain');
+        ctx.el.style.setProperty('contain', ctx.contain, 'important');
+      }
+    },
+    // v2.4.5：媒體在 flex / grid 容器內（Jimmy 2026-11-10 Mac Safari 27 翻頁模式
+    // foreignaffairs「第一頁的圖就會被切到」）。hero 與標題區並排在 section.topper
+    //（display:flex）裡；cleaner 的 collapseInnerFlexWrap 只在子項已換行時才塌，寬視窗下
+    // 沒換行 → flex 留著。WebKit 對 flex / grid item 內部不照 break-before /
+    // break-inside: avoid 分頁，fitMediaToPages 的 shrink / break 都失效，圖照樣跨頁硬切
+    //（Playwright WebKit 實站 probe：section 留 flex → 圖切成 418 + 148px 兩段，與 Jimmy
+    // 截圖寬 364 一致；塌成 block → 縮進第 1 頁、0 段被切）。修法：翻頁期間把「只含一張
+    // 要貼合的大圖」的 flex / grid 容器塌成 block，讓媒體回到可分頁的 block flow；含兩張
+    // 以上大圖的（並排 gallery）不動，避免把刻意並排的圖拆成上下堆疊。
+    // 必須排在 tallInlineAtomic 之前：兩條都寫 display，這條先把殼塌成 block，後者讀到
+    // 的 computed display 已不是 inline-*，同一輪不會疊第二層。
+    {
+      id: 'singleMediaFlexShell',
+      since: 'v2.4.5',
+      minHeight: canHoldFitMedia,
+      once: true,
+      match(ctx) {
+        return FLEX_GRID_DISPLAYS.has(ctx.cs.display) &&
+          isSingleMediaFlexShell(ctx.cs.display, countFitImgs(ctx.el));
+      },
+      apply(ctx) {
+        structJournal.set(ctx.el, 'display', 'block');
+      }
+    },
+    // v1.7.46：翻頁模式內容整塊消失（Gmail 信件）。瀏覽器把 scroll container（computed
+    // overflow-x/y 為 auto / scroll / hidden 任一——三值都建立可捲容器）視為 monolithic：
+    // 多欄斷片時整塊不可切（隔離實驗實證；visible / clip 可斷片）。主文包在這種容器裡
+    //（Gmail 內文 .ii.gt 是 overflow-y:auto、.a3s 是 overflow-x:auto）且內容比一頁高時，
+    // 整塊被推到下一欄、超出部分被卡片的 overflow:hidden 裁掉——第一頁只剩標題、內文全滅
+    //（cage 實證：6663px 內文整塊落在第 2 欄）。修法：「高度超過一頁的 scroll container」
+    // 強制 overflow:visible（inline !important 蓋過站方 stylesheet）恢復可斷片。
+    // 結構性通則、不綁站點：只看「scroll container ＋ 高度 > 頁高」兩個特徵。
+    // 高度放得進一頁的 scroll container（如 overflow-x:auto 的寬 <pre>）刻意不動
+    // ——整塊進一頁無內容損失，保留內捲行為。
+    {
+      id: 'tallScrollContainer',
+      since: 'v1.7.46',
+      minHeight: isTallerThanPage,
+      match(ctx) {
+        const o = ctx.overflow();
+        return isClippingOverflow(o.x) || isClippingOverflow(o.y);
+      },
+      apply: unclipOverflow
+    },
+    // v2.2.21：主文容器放得進一頁但被 overflow:hidden 鎖成 monolithic（關鍵評論網
+    // .article-body、中時 .article-body）：內容沒被裁，但本頁剩餘空間不夠時整塊推到
+    // 下一頁，前頁留大片空白。上一條「矮的不動」的理由對內捲 UI 成立，對主文容器不成立。
+    // 條件三項都要過（92 站實測只命中主文容器）：
+    //   1. 只限 hidden——auto / scroll 是站方的內捲 UI（寬 <pre>、參考文獻捲動框）
+    //   2. 文字占全文至少一半——圖說、引言、作者卡這類小框占比都在 7% 以下
+    //   3. 實際沒裁到東西（scroll 尺寸 ≈ client 尺寸）——解開才不會露出站方藏掉的內容
+    // 高度下限只是省掉 getComputedStyle 掃描：矮框整塊推走留的空白本來就小。
+    // 高過一頁的歸上一條（不必過這三項）。
+    {
+      id: 'unclippedBodyBox',
+      since: 'v2.2.21',
+      minHeight: (h, pageH) => !isTallerThanPage(h, pageH) && h >= pageH * BODY_BOX_MIN_PAGE_SHARE,
+      match(ctx) {
+        const o = ctx.overflow();
+        return o.x === 'hidden' && o.y === 'hidden' && isUnclippedBodyBox(ctx.el, ctx.artTextLen());
+      },
+      apply: unclipOverflow
+    },
+    // v1.9.13：inline 層級原子盒（inline-block / inline-flex / inline-grid /
+    // inline-table）。Chromium 把它們當一個不可切的 inline 原子（隔離實驗 19 種 display /
+    // 定位組合實測：只有這四個 inline-* 不斷片，flex / grid / table / float / abs /
+    // contain / transform 都能切；WebKit trunk 全部可切）。主文包在這種容器裡（商周
+    // campaign 頁內文外層 .pure-u-1 是 inline-block、2610px 高）→ 內文完全不分欄，超出
+    // 頁底的後半段與跨頁底的圖被卡片 overflow:hidden 裁掉、頁數少算（實測 3 頁，應為
+    // 5 頁）。修法：「inline-* 原子盒 ＋ 高度 > 頁高」改成對應的 block 層級值（內部排版
+    // 模式不變、只把外部顯示型別從 inline 換成 block）。replaced 元素（img / video /
+    // iframe…）本質不可切、交給 styler 的單頁 max-height cap，不在此處理。放得進一頁的
+    // inline-block（按鈕、chip、小卡）不動。
+    {
+      id: 'tallInlineAtomic',
+      since: 'v1.9.13',
+      minHeight: isTallerThanPage,
+      match(ctx) {
+        ctx.blockDisplay = INLINE_ATOMIC_TO_BLOCK[ctx.cs.display || ''] || null;
+        return !!ctx.blockDisplay && !REPLACED_TAG_RE.test(ctx.el.tagName || '');
+      },
+      apply(ctx) {
+        structJournal.record(ctx.el, 'display');
+        try { ctx.el.style.setProperty('display', ctx.blockDisplay, 'important'); } catch (e) { /* */ }
+      }
+    }
+  ];
+  const onceApplied = new Map(); // 規則 id → WeakSet<el>（once 規則的「套過了」登記，uninstall 清空）
+  function resetNeutralizeState() {
+    onceApplied.clear();
+  }
+
+  // 掃主文所有後代、依表序套用 NEUTRALIZE_RULES。一輪一次 querySelectorAll('*')；
+  // 每個元素先量高，沒有任何規則的 minHeight 過關就不讀 computed style
+  function neutralizeStructure() {
+    const box = pageBox();
+    if (!box) return; // jsdom 無 layout → no-op（spec 以 stub 驅動）
+    const pageH = box.pageH;
     let els;
     try { els = art.querySelectorAll('*'); } catch (e) { return; }
     let artTextLen = -1; // 只在遇到候選時才量（innerText 會觸發 layout）
+    const readArtTextLen = () => {
+      if (artTextLen < 0) artTextLen = String(art.innerText == null ? art.textContent : art.innerText).trim().length;
+      return artTextLen;
+    };
     for (const el of els) {
       let h = 0;
       try { h = el.getBoundingClientRect().height; } catch (e) { continue; }
-      // monolithic 且高過一頁才會裁掉內容；可斷片元素的 fragment 聯集高 ≈ 頁高不誤中
-      const tall = h > pageH + 4;
-      if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE) && !(h >= CONTAIN_MIN_PX)) continue;
-      let ox, oy, display;
+      let ctx = null;
       try {
-        const cs = getComputedStyle(el);
-        // v2.4.3：layout containment 讓 WebKit 無視內部分頁控制（見 stripLayoutContain）
-        const contain = stripLayoutContain(cs.contain || el.style.getPropertyValue('contain'));
-        if (contain !== null) {
-          if (!containForcedSeen.has(el)) {
-            containForcedSeen.add(el);
-            containForced.push({
-              el, prev: el.style.getPropertyValue('contain'), prevPri: el.style.getPropertyPriority('contain')
-            });
+        for (const rule of NEUTRALIZE_RULES) {
+          if (!rule.minHeight(h, pageH)) continue;
+          if (rule.once && onceApplied.has(rule.id) && onceApplied.get(rule.id).has(el)) continue;
+          if (!ctx) ctx = makeRuleCtx(el, h, pageH, readArtTextLen);
+          if (!rule.match(ctx)) continue;
+          if (rule.once) {
+            if (!onceApplied.has(rule.id)) onceApplied.set(rule.id, new WeakSet());
+            onceApplied.get(rule.id).add(el);
           }
-          el.style.setProperty('contain', contain, 'important');
-        }
-        // v2.4.5：單圖 flex / grid 容器塌成 block（見 isSingleMediaFlexShell）
-        if (!flexForcedSeen.has(el) && FLEX_GRID_DISPLAYS.has(cs.display) &&
-            isSingleMediaFlexShell(cs.display, countFitImgs(el))) {
-          flexForcedSeen.add(el);
-          flexForced.push({
-            el, prev: el.style.getPropertyValue('display'), prevPri: el.style.getPropertyPriority('display')
-          });
-          el.style.setProperty('display', 'block', 'important');
-        }
-        if (!tall && !(h >= pageH * BODY_BOX_MIN_PAGE_SHARE)) continue;
-        ox = cs.overflowX || ''; oy = cs.overflowY || '';
-        display = cs.display || '';
-        // jsdom 不展開 overflow shorthand 成 longhand（回空字串）→ 退回讀 shorthand
-        if (!ox && !oy) {
-          const t = String(cs.overflow || '').trim().split(/\s+/);
-          ox = t[0] || ''; oy = t[1] || t[0] || '';
+          rule.apply(ctx);
         }
       } catch (e) { continue; }
-      if (!tall) {
-        if (ox !== 'hidden' || oy !== 'hidden') continue;
-        if (artTextLen < 0) artTextLen = String(art.innerText == null ? art.textContent : art.innerText).trim().length;
-        if (!isUnclippedBodyBox(el, artTextLen)) continue;
-      }
-      if (isClipping(ox) || isClipping(oy)) {
-        // 只記第一次的原值（站方 loader 之後改回去時，還原目標仍是最初 inline 狀態）
-        if (!unclipForcedSeen.has(el)) {
-          unclipForcedSeen.add(el);
-          unclipForced.push({
-            el,
-            prev: el.style.getPropertyValue('overflow'), prevPri: el.style.getPropertyPriority('overflow'),
-            prevX: el.style.getPropertyValue('overflow-x'), prevXPri: el.style.getPropertyPriority('overflow-x'),
-            prevY: el.style.getPropertyValue('overflow-y'), prevYPri: el.style.getPropertyPriority('overflow-y')
-          });
-        }
-        try { el.style.setProperty('overflow', 'visible', 'important'); } catch (e) { /* */ }
-      }
-      const blockDisplay = tall ? INLINE_ATOMIC_TO_BLOCK[display] : null;
-      if (blockDisplay && !REPLACED_TAG_RE.test(el.tagName || '')) {
-        if (!blockifyForcedSeen.has(el)) {
-          blockifyForcedSeen.add(el);
-          blockifyForced.push({
-            el,
-            prev: el.style.getPropertyValue('display'), prevPri: el.style.getPropertyPriority('display')
-          });
-        }
-        try { el.style.setProperty('display', blockDisplay, 'important'); } catch (e) { /* */ }
-      }
     }
   }
-  function restoreMonolithicBoxes() {
-    for (const r of unclipForced) {
-      try {
-        r.el.style.removeProperty('overflow');
-        if (r.prev) r.el.style.setProperty('overflow', r.prev, r.prevPri);
-        if (r.prevX) r.el.style.setProperty('overflow-x', r.prevX, r.prevXPri);
-        if (r.prevY) r.el.style.setProperty('overflow-y', r.prevY, r.prevYPri);
-      } catch (e) { /* */ }
-    }
-    unclipForced = [];
-    unclipForcedSeen = new WeakSet();
-    for (const r of blockifyForced) {
-      try {
-        r.el.style.removeProperty('display');
-        if (r.prev) r.el.style.setProperty('display', r.prev, r.prevPri);
-      } catch (e) { /* */ }
-    }
-    blockifyForced = [];
-    blockifyForcedSeen = new WeakSet();
-    for (const r of containForced) {
-      try {
-        r.el.style.removeProperty('contain');
-        if (r.prev) r.el.style.setProperty('contain', r.prev, r.prevPri);
-      } catch (e) { /* */ }
-    }
-    containForced = [];
-    containForcedSeen = new WeakSet();
-    for (const r of flexForced) {
-      try {
-        r.el.style.removeProperty('display');
-        if (r.prev) r.el.style.setProperty('display', r.prev, r.prevPri);
-      } catch (e) { /* */ }
-    }
-    flexForced = [];
-    flexForcedSeen = new WeakSet();
+  // 規則的輸入。cs 是 live 的 CSSStyleDeclaration（見 NEUTRALIZE_RULES 的 match 說明）；
+  // overflow 兩軸第一次用到才讀、同元素共用
+  function makeRuleCtx(el, h, pageH, readArtTextLen) {
+    const cs = getComputedStyle(el);
+    let axes = null;
+    return {
+      el, h, pageH, cs,
+      overflow() {
+        if (axes) return axes;
+        let x = cs.overflowX || '', y = cs.overflowY || '';
+        // jsdom 不展開 overflow shorthand 成 longhand（回空字串）→ 退回讀 shorthand
+        if (!x && !y) {
+          const t = String(cs.overflow || '').trim().split(/\s+/);
+          x = t[0] || ''; y = t[1] || t[0] || '';
+        }
+        axes = { x, y };
+        return axes;
+      },
+      artTextLen: readArtTextLen
+    };
   }
 
   // v2.4.8：initial-letter 首字的上緣墨跡被畫到上一頁底（Jimmy 2026-11-12 Mac Safari
@@ -787,7 +917,10 @@
   // 修法：翻頁期間給 initial-letter 首字所在的 block 補 padding-top，讓墨跡落在本頁的
   // padding 內（padding 不會在分頁處被截掉，margin 會）。補的量依首字行數 × 行高
   // 估算——probe 實測 4 行首字凸出 < 0.5em（8.5px 已足夠），係數取 0.15 留兩倍餘裕；
-  // 只多出首字段落上方一小段空白，不影響其他段落。uninstall 還原。
+  // 只多出首字段落上方一小段空白，不影響其他段落。uninstall 還原（structJournal）。
+  // 不進 NEUTRALIZE_RULES：候選集合（區塊元素）與成本結構（讀 pseudo computed style、
+  // 不看高度）都不同；執行位置由 LAYOUT_PASSES 決定——補 padding 會改段落高，必須在
+  // fitMediaToPages 量圖起點之前。
   // 純決策函式：initialLetter = computed initial-letter 值（'normal' / '4' / '3 2' /
   // '3 drop'），lineHeightPx = 該 block 行高
   const INITIAL_LETTER_INK_RATIO = 0.15;
@@ -809,7 +942,7 @@
     let els;
     try { els = art.querySelectorAll(INITIAL_LETTER_HOST_SEL); } catch (e) { return; }
     for (const el of els) {
-      if (initialLetterPaddedSeen.has(el)) continue;
+      if (structJournal.has(el, 'padding-top')) continue; // 補過的不重複補
       let pad = 0, cs;
       try {
         const il = readInitialLetter(getComputedStyle(el, '::first-letter'));
@@ -820,23 +953,9 @@
         pad = initialLetterPadPx(il, lh);
       } catch (e) { continue; }
       if (!(pad > 0)) continue;
-      initialLetterPaddedSeen.add(el);
-      initialLetterPadded.push({
-        el, prev: el.style.getPropertyValue('padding-top'), prevPri: el.style.getPropertyPriority('padding-top')
-      });
       const base = parseFloat(cs.paddingTop) || 0;
-      el.style.setProperty('padding-top', (base + pad) + 'px', 'important');
+      structJournal.set(el, 'padding-top', (base + pad) + 'px');
     }
-  }
-  function restoreInitialLetterPads() {
-    for (const r of initialLetterPadded) {
-      try {
-        r.el.style.removeProperty('padding-top');
-        if (r.prev) r.el.style.setProperty('padding-top', r.prev, r.prevPri);
-      } catch (e) { /* */ }
-    }
-    initialLetterPadded = [];
-    initialLetterPaddedSeen = new WeakSet();
   }
 
   // v1.9.25：媒體貼合本頁剩餘空間（Readwise Reader 直式 hero，Jimmy 2026-10-16
@@ -853,8 +972,7 @@
   // 直式圖盒子仍滿欄寬、圖只佔中間 → 左右露出 img 底色（「兩側灰底」）。高度被
   // 收斂時一併把寬度釘成 高 × 原始長寬比 並置中，盒子＝圖。
   // 純決策函式：jsdom spec 直接驗分支；DOM 量測住 fitMediaToPages。
-  const FIT_MIN_RATIO = 0.5;
-  const FIT_MIN_PX = 120;
+  //（FIT_MIN_RATIO / FIT_MIN_PX 宣告在上面「要貼合的圖」那段——規則表也要用）
   function decideMediaFit(h0, avail) {
     if (!(h0 > 0)) return { action: 'keep' };
     if (h0 <= avail + 1) return { action: 'keep' };
@@ -877,27 +995,10 @@
     }
     return { action: 'break' };
   }
-  function setFitStyle(el, prop, val) {
-    mediaFitForced.push({ el, prop, prev: el.style.getPropertyValue(prop), prevPri: el.style.getPropertyPriority(prop) });
-    el.style.setProperty(prop, val, 'important');
-  }
-  function undoLastFitStyle() {
-    const r = mediaFitForced.pop();
-    if (!r) return;
-    try {
-      r.el.style.removeProperty(r.prop);
-      if (r.prev) r.el.style.setProperty(r.prop, r.prev, r.prevPri);
-    } catch (e) { /* */ }
-  }
-  function restoreMediaFit() {
-    // 反序還原：同元素同屬性寫兩次時（量測用的 1px 暫值）回到最初值
-    while (mediaFitForced.length) undoLastFitStyle();
-  }
-  const fragHeight = (el) => {
-    let h = 0;
-    for (const r of el.getClientRects()) h += r.height;
-    return h;
-  };
+  // 媒體貼合的寫入一律經 mediaFitJournal：同元素同屬性會寫好幾次（量測用的 1px 暫值、
+  // 逐 4px 試寫），撤回靠反序
+  const setFitStyle = (el, prop, val) => mediaFitJournal.set(el, prop, val);
+  const undoLastFitStyle = () => mediaFitJournal.undoLast();
   // v2.4.7：縮圖後，圖外層「固定高的純媒體殼」跟著塌回內容高（Jimmy 2026-11-12 Mac
   // Safari 翻頁，wired.com split-screen hero：第 2 頁頂一段空白、圖說被推下去）。
   // 根因：hero 外框 stylesheet `height: calc(100vh - 108px)`。styler
@@ -907,7 +1008,7 @@
   // 所以這裡不用 40px 門檻：只要 height:auto 後變矮就保留。
   // 收斂：只走「沒有任何文字」的祖先（純媒體包裝；figure 帶圖說即停）、到 art 為止、
   // player 跳過；height:auto 後變高（站方裁切框）或不變 → 撤回。走 setFitStyle，
-  // restoreMediaFit 一併還原。量高度一律 fragHeight——多欄下 getBoundingClientRect
+  // 與其他貼合寫入一併還原。量高度一律 fragHeight——多欄下 getBoundingClientRect
   // 是跨欄聯集，量不到殼被切到下一頁的那段。
   // 這條驗「shrink 後殼有沒有跟著縮」，不驗排版當下就存在的小量死空間（那是 styler 的層次）
   function releaseFixedHeightMediaShells(img) {
@@ -921,24 +1022,18 @@
   }
   function fitMediaToPages() {
     if (!art) return;
-    restoreMediaFit();
-    let pageTop = 0, pageBottom = 0, artContentLeft = 0;
-    try {
-      const cs = getComputedStyle(art);
-      const pageH = art.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-      if (!(pageH > 0)) return; // jsdom 無 layout → no-op
-      pageTop = art.getBoundingClientRect().top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
-      pageBottom = pageTop + pageH;
-      artContentLeft = art.getBoundingClientRect().left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0);
-    } catch (e) { return; }
+    mediaFitJournal.restoreAll(); // 每輪重算：上一輪寫的先全撤
+    const box = pageBox();
+    if (!box) return; // jsdom 無 layout → no-op
+    const pageBottom = box.bottom;
+    const artContentLeft = box.contentLeft;
     // Safari 對已捲動狀態的 column fragment rect 會偏（同 measureContentEndX）→ 量測期間歸零
     const prevScroll = art.scrollLeft;
     try {
       art.scrollLeft = 0;
       for (const img of art.querySelectorAll('img')) {
-        if (img.hasAttribute('data-jread-inline-img') || img.hasAttribute('data-jread-player')) continue;
-        const h0 = fragHeight(img);
-        if (!(h0 >= FIT_MIN_PX)) continue; // 隱藏 / icon / 未撐開的圖
+        const h0 = fitImgHeight(img);
+        if (!(h0 > 0)) continue; // 行內小圖 / player / 隱藏 / icon / 未撐開的圖
         const fig = img.closest('figure');
         const unit = fig && art.contains(fig) ? fig : img;
         // 自然起點：圖暫時壓到 1px，unit 必然放得進當頁 → 首個 fragment 頂＝真起點；
@@ -995,6 +1090,23 @@
       }
     } catch (e) { /* 量測失敗維持 styler 預設 cap */ }
     art.scrollLeft = prevScroll;
+  }
+
+  // 斷頁前處理的執行順序——單一資料源。install、remeasureAndReconcile（晚載入內容 /
+  // 固定計時器 / 編輯模式 refresh）、onResize 三處都只呼叫 relayout()，不得各自列一份
+  //（重構前三處手抄，onResize 那份已經漏了 padInitialLetterBlocks）。
+  //   neutralizeStructure     先解開不斷片 / 無視 break-* 的結構，後面量到的才是真的
+  //   padInitialLetterBlocks  補 padding 會改段落高，要在量圖起點之前
+  //   fitMediaToPages         依本頁剩餘空間縮圖 / 換頁
+  //   remeasurePages          頁數要量貼合後的版面
+  // 每個 pass 都必須冪等：同篇重掛（pageshow、分頁切回、設定重套）會重跑整套，
+  // structJournal 不重複記原值、fitMediaToPages 每輪先全撤再算。
+  const LAYOUT_PASSES = [neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, remeasurePages];
+  function relayout() {
+    if (!art) return;
+    for (const pass of LAYOUT_PASSES) pass();
+    // v1.6.15：保持 scheduleRemeasure 的變動偵測 gate 準確
+    try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
   }
 
   function pageCount() {
@@ -1521,11 +1633,8 @@
     resizeRaf = requestAnimationFrame(() => {
       resizeRaf = 0;
       if (!art) return;
-      // v1.7.46：resize 後頁高改變，重新判定哪些 monolithic 容器高過一頁
-      releaseTallMonolithicBoxes();
-      fitMediaToPages(); // v1.9.25：頁高變了，圖與頁底的剩餘空間重算
-      remeasurePages();
-      try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ } // v1.6.15：保持變動偵測 gate 準確
+      // 頁高變了：哪些容器高過一頁（v1.7.46）、圖與頁底的剩餘空間（v1.9.25）都要重算
+      relayout();
       const total = pageCount();
       goTo(Math.round(lastRatio * (total - 1)), false);
     });
@@ -1603,16 +1712,9 @@
     forceEagerImages();
     // v1.6.16：持續盯後續進 DOM / 被改回 lazy 的圖（涵蓋「載入中就切翻頁模式」的 race）
     observeMediaForEager();
-    // v1.7.46 / v1.9.13：先解開高 monolithic 容器（scroll container、inline-* 原子盒），
-    // remeasure 才量得到真頁數
-    releaseTallMonolithicBoxes();
-    // v2.4.8：initial-letter 首字的上緣墨跡留在本頁（見 padInitialLetterBlocks）
-    padInitialLetterBlocks();
-    // v1.9.25：媒體貼合本頁剩餘空間（縮圖或明確換頁），同樣要在 remeasure 前
-    fitMediaToPages();
+    // 斷頁前處理 → 量頁數（順序見 LAYOUT_PASSES）
+    relayout();
     // 進場回到上次比例（同一篇 reapply 場景）；首次進入 lastRatio = 0 = 第一頁
-    remeasurePages();
-    try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
     const total = pageCount();
     goTo(Math.round(lastRatio * (total - 1)), false);
 
@@ -1666,11 +1768,11 @@
     // observer 當成「圖變 lazy」又強制回 eager，還原失敗。
     if (mediaObserver) { mediaObserver.disconnect(); mediaObserver = null; }
     restoreEagerImages();
-    // v1.7.46 / v1.9.13：還原被強制 overflow:visible 的高 scroll container 與被
-    // 改成 block 層級的高 inline-* 原子盒（退回捲動模式後站方原排版仍是合理設計）
-    restoreMonolithicBoxes();
-    restoreMediaFit(); // v1.9.25
-    restoreInitialLetterPads(); // v2.4.8
+    // 還原翻頁期間寫進主文後代的 inline 樣式（退回捲動模式後站方原排版仍是合理設計）：
+    // 兩份日誌各自反序撤回。兩份寫的屬性不重疊，先後順序無關
+    structJournal.restoreAll();
+    mediaFitJournal.restoreAll();
+    resetNeutralizeState();
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
     unlockVScroll();
