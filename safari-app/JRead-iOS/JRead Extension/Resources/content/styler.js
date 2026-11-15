@@ -2750,6 +2750,16 @@ html.${HTML_CLASS} ::selection {
 }
 html.${HTML_CLASS}[${SEL_OPAQUE_ATTR}="1"] ::selection {
   background-color: ${mixHex(theme.link, theme.articleBg, 0.3)} !important;
+}
+/* 2026-11-15 review B-07：不透明行內高亮（SITE_UI_ATTR="hl"）的文字色是站方值
+   （上面 v1.9.15 成對保留），選取時也維持同一個字色——否則 dark / night 主題下
+   選到高亮內的字會變成主題淺字疊站方實心淺底（合成頁 probe 兩引擎實證）。
+   currentcolor 在 ::selection 的 color 上＝原元素的文字色。站方選取底不透明
+   （SEL_OPAQUE_ATTR）時底色已換成深色混色，沿用上面的主題字色才讀得到，故排除。
+   specificity (0,3,1) 贏上面的 (0,1,1)。 */
+html.${HTML_CLASS}:not([${SEL_OPAQUE_ATTR}="1"]) [${SITE_UI_ATTR}="hl"]::selection,
+html.${HTML_CLASS}:not([${SEL_OPAQUE_ATTR}="1"]) [${SITE_UI_ATTR}="hl"] *::selection {
+  color: currentcolor !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
       // card bg 深、跨 origin iframe（datawrapper / flourish / tableau / plotly
@@ -3857,18 +3867,43 @@ html.${HTML_CLASS}.jread-orion body {
   //   'all'：中文為主段落照舊標 "1"；其餘段落（英文 / 中文太少）標 "2"——CSS 對
   //          "2" 另加 hyphens: auto。門檻：拉丁字母 + 漢字 >= 4，避開空殼 / 單字標籤
   //          （單行段落 justify 本來就沒有視覺效果，門檻只是少標無意義節點）
-  function markCjkParagraphs(articleEl, mode) {
+  //
+  // 2026-11-15 review B-09：動態補標（scopeEl＝dynamic-append 的新增節點）。標記原本
+  // 只在 apply 當下打一次，兩種情況會漏（probe 實證）：
+  //   (a) 英文頁先進閱讀模式再翻譯：apply 時漢字 < 4 沒標（'all' 模式標成 "2"），
+  //       譯文回填後段落已是中文卻沒有 "1" → 不 justify，iOS「第二段起變窄」回來
+  //   (b) 晚 mount 的段落（站方 lazy 內容）完全沒標：'all' 模式下同一篇前面
+  //       justify、後面靠左
+  // 有 scopeEl 時只看「新增節點所在的段落載體＋新增子樹內的載體」，依當下文字
+  // 重判；已標過的載體只改值、不重複進 marked（restore 清單）。譯文回填是把
+  // inline 節點塞進既有 <p>，所以要往上找載體（closest），不能只掃子樹。
+  const CJK_CARRIER_SEL = `p, li, blockquote, dd, dt, [${TEXT_DIV_ATTR}="1"]`;
+  function markCjkParagraphs(articleEl, mode, scopeEl, markedInto) {
     const off = mode === 'off';
     const all = mode === 'all';
-    const carriers = articleEl.querySelectorAll(
-      `p, li, blockquote, dd, dt, [${TEXT_DIV_ATTR}="1"]`);
-    const marked = [];
+    let carriers;
+    if (scopeEl && scopeEl !== articleEl) {
+      carriers = [];
+      const host = scopeEl.closest ? scopeEl.closest(CJK_CARRIER_SEL) : null;
+      if (host && articleEl.contains(host)) carriers.push(host);
+      if (scopeEl.querySelectorAll) {
+        for (const el of scopeEl.querySelectorAll(CJK_CARRIER_SEL)) carriers.push(el);
+      }
+    } else {
+      carriers = articleEl.querySelectorAll(CJK_CARRIER_SEL);
+    }
+    const marked = markedInto || [];
+    const setMark = (el, v) => {
+      const had = el.hasAttribute(CJK_JUSTIFY_ATTR);
+      if (had && el.getAttribute(CJK_JUSTIFY_ATTR) === v) return;
+      el.setAttribute(CJK_JUSTIFY_ATTR, v);
+      if (!had) marked.push(el);
+    };
     for (const el of carriers) {
       // byline / kicker 是 meta 列（作者 / 日期 / 分類），有自己的對齊規則，不 justify
       if (el.closest(`[${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
       if (off) {
-        el.setAttribute(CJK_JUSTIFY_ATTR, '0');
-        marked.push(el);
+        setMark(el, '0');
         continue;
       }
       const txt = el.textContent || '';
@@ -3879,11 +3914,12 @@ html.${HTML_CLASS}.jread-orion body {
       // han < 4 太短（標籤 / 單字）不算中文段落，避免誤傷
       const cjk = han >= 4 && han / (han + latin) >= 0.3;
       if (cjk) {
-        el.setAttribute(CJK_JUSTIFY_ATTR, '1');
-        marked.push(el);
+        setMark(el, '1');
       } else if (all && han + latin >= 4) {
-        el.setAttribute(CJK_JUSTIFY_ATTR, '2');
-        marked.push(el);
+        setMark(el, '2');
+      } else if (scopeEl && el.getAttribute(CJK_JUSTIFY_ATTR) === '1') {
+        // 動態重判：先前是中文、現在不是（譯文被還原成原文）→ 撤標記
+        el.removeAttribute(CJK_JUSTIFY_ATTR);
       }
     }
     return marked;
@@ -4749,7 +4785,7 @@ html.${HTML_CLASS}.jread-orion body {
       let textDivMarked = [];
       // v1.7.70：pre-wrap 切段記錄（還原用；見 splitPreWrapParagraphs）
       let prewrapParaSnap = [];
-      let cjkJustifyMarked = [];
+      const cjkJustifyMarked = [];
       let decorResetMarked = [];
       let inlineFlowPMarked = [];
       const contrastBgSnap = [];
@@ -5177,6 +5213,7 @@ html.${HTML_CLASS}.jread-orion body {
         // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
         markInlineHighlights(articleEl, siteUiMarked);
         activeMarkState = { articleEl, embedWrapMarked, ratioClassMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked, firstLetterMarked,
+          cjkJustifyMarked, textJustify: opts.textJustify, // 2026-11-15 review B-09
           // 呼叫當下才讀 classifyLateImg（與 passClassifyImages 的執行先後無關）
           classifyLateImg: (img) => { if (classifyLateImg) classifyLateImg(img); } };
       };
@@ -6158,7 +6195,9 @@ html.${HTML_CLASS}.jread-orion body {
         // 不依賴 computed style，ARTICLE_ATTR 先後皆可。
         // v1.6.24：移到 byline / kicker 標記之後——排除 guard（closest BYLINE_ATTR /
         // KICKER_ATTR）需要標記已存在，否則中文 byline（「文／某某」）被 justify。
-        cjkJustifyMarked = markCjkParagraphs(articleEl, opts.textJustify);
+        // 2026-11-15 review B-09：就地 push（不換陣列）——activeMarkState 握同一個
+        // 參照，動態補標的元素才進得了 restore 清單
+        markCjkParagraphs(articleEl, opts.textJustify, null, cjkJustifyMarked);
 
         // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
         // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
@@ -6592,6 +6631,32 @@ html.${HTML_CLASS}.jread-orion body {
         const titleFs = parseFloat(tcs.fontSize) || 0;
         if (!titleFs) return;
         const titleAlign = tcs.textAlign;
+        // 2026-11-15 review B-08：dek 身分 guard。「字級大於標題」在 Auto 標題模式
+        // 等同「大於內文」（passHeroTitleFloor 保證標題 >= 1.5 倍內文），但覆寫模式
+        // 下標題可以比內文小（popup 範圍：內文到 32、標題低到 16）——內文 24＋
+        // 標題 20、標題後直接接 <p> 的版型，開頭三段會被當 dek 壓成 15px、第四段
+        // 回到 24px（合成頁 probe 兩引擎實證）。通則：dek 是「比內文大的展示字」，
+        // 兄弟字級必須同時大於內文主流字級才算；遇到內文字級的兄弟就停（後面
+        // 都是正文）。內文字級：有覆寫用設定值，Auto（0）量主文前 12 個 <p> 的
+        // 眾數（懶算——沒有候選就不量）。
+        let bodyFsMemo = null;
+        const bodyFontSize = () => {
+          if (bodyFsMemo !== null) return bodyFsMemo;
+          if (opts.fontSize > 0) return (bodyFsMemo = opts.fontSize);
+          const tally = new Map();
+          let seen = 0;
+          for (const p of articleEl.querySelectorAll('p')) {
+            if (seen >= 12) break;
+            if (!(p.textContent || '').trim() || p.closest('[data-jread-hidden="1"]')) continue;
+            seen++;
+            const f = parseFloat(win.getComputedStyle(p).fontSize) || 0;
+            if (f) tally.set(f, (tally.get(f) || 0) + 1);
+          }
+          let best = 0, bestN = 0;
+          for (const [f, n] of tally) if (n > bestN) { best = f; bestN = n; }
+          return (bodyFsMemo = best);
+        };
+        const isBodySizedOrSmaller = (fs) => { const b = bodyFontSize(); return b > 0 && fs <= b; };
         // 先全讀再全寫（同 passCaptionFontFloor，避免讀寫交錯強制 recalc）
         const pending = [];
         let sib = titleEl.nextElementSibling;
@@ -6601,6 +6666,8 @@ html.${HTML_CLASS}.jread-orion body {
           const scs = win.getComputedStyle(sib);
           const fs = parseFloat(scs.fontSize) || 0;
           if (fs <= titleFs) continue;
+          // 2026-11-15 review B-08：字級沒有大過內文＝這是內文不是 dek，到此為止
+          if (isBodySizedOrSmaller(fs)) break;
           pending.push({ el: sib, fs, lh: scs.lineHeight, ta: scs.textAlign, disp: scs.display });
         }
         for (const it of pending) {
@@ -7951,6 +8018,21 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(s.siteUiMarked)) markInlineHighlights(s.articleEl, s.siteUiMarked, node);
       // v2.4.9：晚 mount 段落的站方 drop cap 首字色補標
       if (Array.isArray(s.firstLetterMarked)) markFirstLetterColorBlocks(s.articleEl, s.firstLetterMarked, node);
+      // 2026-11-15 review B-09：晚 mount / 譯文回填的段落補 CJK justify 標記
+      if (Array.isArray(s.cjkJustifyMarked)) markCjkParagraphs(s.articleEl, s.textJustify, node, s.cjkJustifyMarked);
+    },
+
+    /**
+     * 2026-11-15 review B-09：段落內只換了 text node（譯文回填純文字段落——沒有
+     * 新增元素，remarkDynamicMarkers 收不到）時，重判該段的 CJK justify 標記。
+     * cleaner dynamic observer 對 articleEl 內新增的非空白 text node 轉呼。
+     * @param {Element} host 新 text node 的父元素
+     */
+    remarkDynamicText(host) {
+      const s = activeMarkState;
+      if (!s || !s.articleEl || !Array.isArray(s.cjkJustifyMarked)) return;
+      if (!host || host.nodeType !== 1 || !s.articleEl.contains(host)) return;
+      markCjkParagraphs(s.articleEl, s.textJustify, host, s.cjkJustifyMarked);
     },
 
     /**

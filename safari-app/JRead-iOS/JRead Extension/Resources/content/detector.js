@@ -723,9 +723,34 @@
   // （raw 79），閱讀模式把左右側欄整個包進主文，翻頁模式頁數照側欄末端少算
   //（Chromium 只算 2 頁、Safari 第 2 頁後空白）。
   const SIGNAL_BLOCK_CHILD_RE = /^(DIV|P|SECTION|ARTICLE|MAIN|UL|OL|LI|DL|DD|DT|TABLE|BLOCKQUOTE|PRE|H[1-6]|HGROUP|FIGURE|FIGCAPTION|ASIDE|HEADER|FOOTER|ADDRESS|FORM|FIELDSET|DETAILS|DIALOG|MENU|SEARCH|HR|NAV|VIDEO|IFRAME)$/;
+  //
+  // v2.4.14（review 2026-11-15 B-01）：黑名單的盲點形狀是「子元素不在清單上就算
+  // 段落」。兩種清單外的 tag 會包著整塊 block 內容：
+  //   - autonomous custom element（名稱必含 `-`）：web component 站的 app 外殼
+  //     `div > app-root`、`div > react-app`、`div > doc-viewer + table-of-contents`
+  //     （真站普查：GitHub repo 頁 `div#repo-content-pjax-container > react-app`
+  //     整頁 7.4K 字、material.angular.io、MDN 選單 `div > mdn-dropdown` 各 1.5K 字
+  //     都被算成一個段落 signal）
+  //   - <center>：老式排版 `div > center > table`
+  // 合成頁實證（Chromium）：`div#root > div#shell > app-root | center > 三欄`
+  // 選中 div#root（左右側欄一起進主文）；同結構外殼換成 div / main 選中主文欄。
+  // 判定不能只看 tag——自訂元素預設 display:inline，也常當行內元件用
+  // （`<relative-time>`、`<tool-tip>`、`<g-emoji>` 夾在段落 div 內，真站普查同樣
+  // 存在），一律當 block 會讓這些真段落拿不到分。結構訊號：**該子元素內含清單上
+  // 的 block 後代**才算容器；只包文字 / 行內標記的照舊算段落的一部分。
+  // PICTURE / CANVAS / TEMPLATE / OBJECT / EMBED 不納入：它們裝不了整頁文字
+  //（沒有「外殼冒充段落」的形狀），而段落 div 內夾行內圖是常見寫法。
+  const SIGNAL_BLOCK_DESC_SEL = 'div,p,section,article,main,ul,ol,li,dl,dd,dt,table,blockquote,pre,' +
+    'h1,h2,h3,h4,h5,h6,hgroup,figure,figcaption,aside,header,footer,address,form,fieldset,details,' +
+    'dialog,menu,search,hr,nav,video,iframe';
+  function isBlockWrapperChild(c) {
+    if (c.tagName !== 'CENTER' && c.tagName.indexOf('-') < 0) return false;
+    return !!c.querySelector(SIGNAL_BLOCK_DESC_SEL);
+  }
   function isParagraphLikeDiv(el) {
     for (const c of el.children) {
       if (SIGNAL_BLOCK_CHILD_RE.test(c.tagName)) return false;
+      if (isBlockWrapperChild(c)) return false;
     }
     return true;
   }

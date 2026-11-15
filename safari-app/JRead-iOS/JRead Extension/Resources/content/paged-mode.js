@@ -781,11 +781,12 @@
   // 留 TALL_SLACK_PX 不誤中
   const TALL_SLACK_PX = 4;
   const isTallerThanPage = (h, pageH) => h > pageH + TALL_SLACK_PX;
-  // 「放得下一張要處理的媒體」的盒子：≥ FIT_MIN_PX。重構前這兩條規則（layoutContain、
-  // singleMediaFlexShell）與 unclippedBodyBox 共用同一個閘門，實際門檻是三者的聯集
-  // ——頁高不到 480px（手機橫向）時「頁高 25%」比 120px 低，70–120px 的盒子也會被處理。
-  // 這輪是純重構，照舊保留聯集；要不要收緊成單純的 FIT_MIN_PX 是行為變更，另案處理
-  const canHoldFitMedia = (h, pageH) => h >= Math.min(FIT_MIN_PX, pageH * BODY_BOX_MIN_PAGE_SHARE);
+  // 「放得下一張要處理的媒體」的盒子：≥ FIT_MIN_PX（layoutContain / singleMediaFlexShell
+  // 共用）。v2.4.12 以前這兩條與 unclippedBodyBox 共用同一個閘門，實際門檻是
+  // min(120px, 頁高 × 25%)——手機橫向時 70–120px 的盒子也會被處理。v2.4.14 收緊成單純的
+  // FIT_MIN_PX（Jimmy 2026-11-15 裁定）：比它矮的盒子裝不下會被貼合的圖（fitImgHeight 同一
+  // 個門檻），處理了也沒有要控制的東西。pageH 參數留著是規則表 minHeight 的統一簽名
+  const canHoldFitMedia = (h) => h >= FIT_MIN_PX;
 
   // 解 overflow 的共用寫入（tallScrollContainer / unclippedBodyBox）：三個 inline 值一起記，
   // 還原時 shorthand 與 longhand 都寫回

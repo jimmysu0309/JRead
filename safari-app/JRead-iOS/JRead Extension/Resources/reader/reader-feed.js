@@ -13,32 +13,13 @@
 
   const MAX_ITEMS = 10;
 
-  // v1.6.0：feed 來源分頁，per-service（儲存服務二擇一單一資料源）。reader.html 不再
-  // 寫死三顆 tab，由 init() 依 FEED_TABS[service] 動態建立——切服務自動換分頁語意。
-  // readwise：Inbox/Later 走 location、JRead 走 tag=jread；instapaper：未讀/已加星/
-  // 封存走 folderId。query 由 PC.listDocuments 依 service 解讀（location|tag vs folderId）。
-  //
-  // v2.4.0 `later`：右滑 / 右鍵「稍後讀」在這個分頁的行為——'remove'＝成功後卡片離開
-  // 本分頁（Inbox 移到 Later）、'keep'＝卡片留著只跳 toast（JRead 標籤 / Instapaper
-  // 未讀加星後仍在原清單）、未設＝本分頁不提供（Later 本身 / 已加星 / 封存區）。
-  const FEED_TABS = {
-    readwise: [
-      { id: 'new',   label: 'Inbox', query: { location: 'new' },   empty: '收件匣目前沒有文章', later: 'remove' },
-      { id: 'later', label: 'Later', query: { location: 'later' }, empty: 'Later 目前沒有文章' },
-      // tag 必須小寫：Readwise 每條 tag 存 key（小寫正規化，API filter 比對此值）+
-      // name（顯示大小寫，如 'JRead'）；filter 走 key，故此處固定 'jread'——寫 'JRead'
-      // 會匹配不到而撈空（2026-07-02 real-account reader_list_tags 實證 key=jread/name=JRead）。
-      { id: 'jread', label: 'JRead', query: { tag: 'jread' },      empty: '沒有標記 jread 的文章', later: 'keep' }
-    ],
-    instapaper: [
-      { id: 'unread',  label: '未讀',  query: { folderId: 'unread' },  empty: '未讀清單目前沒有文章', later: 'keep' },
-      { id: 'starred', label: '已加星', query: { folderId: 'starred' }, empty: '沒有加星的文章' },
-      // 2026-10-07 review F-11：已封存的清單不再提供「封存」動作（對已封存文章再
-      // archive：成功 = 卡片從封存清單消失、使用者以為被刪）；`archivable: false`
-      // 由 renderFeed / createCard 讀。Readwise 三個分頁都是未封存集合，預設可封存
-      { id: 'archive', label: '封存',  query: { folderId: 'archive' }, empty: '封存區目前沒有文章', archivable: false }
-    ]
-  };
+  // 2026-11-15 review D-06：分頁表正本搬到 reader-cache.js（reader.html 與
+  // article.html 都載）——文章頁的 E 鍵封存要查來源分頁可不可封存，不能各寫一份。
+  // 本檔只引用；jsdom spec 以 require 載入時沒有頁面全域，改 require 同一份。
+  const RC_MOD = global.__JReadReaderCache ||
+    (typeof module !== 'undefined' && module.exports && typeof require === 'function'
+      ? require('./reader-cache.js') : null);
+  const FEED_TABS = (RC_MOD && RC_MOD.FEED_TABS) || { readwise: [], instapaper: [] };
 
   // v2.4.0：「稍後讀」動作的文字，per-service。Instapaper 沒有 Later，右滑改加星
   //（Jimmy 2026-11-07 裁定）。swipe＝滑動時底下露出的標籤、menu＝右鍵選單項、done＝

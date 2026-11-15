@@ -318,7 +318,8 @@
           : '尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
         return;
       }
-      const ctx = { NS, doc, PC, service, creds, backHref };
+      // review D-06：tab＝來源分頁 id，E 鍵封存用它查這個分頁可不可封存
+      const ctx = { NS, doc, PC, service, creds, backHref, tab: params.get('tab') };
       const fetchAndRender = (store, account) => PC.getArticle({ service, creds, id, meta }).then((r) => {
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
@@ -469,8 +470,17 @@
 
     async function trigger() {
       if (inFlight || done) return null;
-      // Readwise doc 帶 location：已在封存區就不再送（成功 = 什麼都沒變，使用者
-      // 會以為按了沒反應或被導回 feed 找不到文章）
+      // 已在封存區就不再送（成功 = 什麼都沒變，使用者會以為按了沒反應或被導回 feed
+      // 找不到文章）。兩層：
+      //   1. 2026-11-15 review D-06：來源分頁（網址 &tab=，feed 卡片帶入）在 FEED_TABS
+      //      標為不可封存（RC.isTabArchivable）——與 feed 卡片同一份判定。Instapaper 的 doc 沒有
+      //      location，從「封存」分頁打開只能靠這層；原本照送，成功後這篇被從所有分頁
+      //      快取移除、導回封存分頁時卡片消失（F-11 描述的「以為被刪」）
+      //   2. Readwise doc 帶 location（文章快取命中時 slimDoc 不留這欄，只有直接打
+      //      API 那次有值）
+      if (RC && typeof RC.isTabArchivable === 'function' && !RC.isTabArchivable(service, ctx && ctx.tab)) {
+        toast('這篇已在封存區', 'info'); return null;
+      }
       if (docData.location === 'archive') { toast('這篇已在封存區', 'info'); return null; }
       inFlight = true;
       toast('封存中…', 'info', 10000);

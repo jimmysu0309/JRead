@@ -296,11 +296,26 @@
     return unwrapped;
   }
 
+  // 2026-11-15 review C-06：巢狀推文（引用卡）邊界。X 的引用卡是可點的
+  // `div[role="link"]`；另認「article 內的 article」。結構訊號，不綁 class。
+  // `<a role="link">` 不算：X 的一般連結都帶這個 role。最近的包圖 <a> 已被
+  // unwrapTweetMedia 換成 figure，但 React 會產生 parser 不允許的巢狀 <a>，
+  // 外層那個不該擋住主推文媒體的 hoist（擋住＝圖留在 height:0 的殼裡看不見）。
+  function isNestedTweetBoundary(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.tagName !== 'A' && el.getAttribute('role') === 'link') return true;
+    return el.tagName === 'ARTICLE' && !!(el.parentElement && el.parentElement.closest('article'));
+  }
+
   // 從 fig 往上 walk 到 clone 邊界，回傳第一個「父層有 tweetText 兄弟」的祖先
   //（含 fig 自身）；沒有則 null。
+  // 2026-11-15 review C-06：walk 不得穿出引用卡——引用的是純圖推文時卡內沒有自己的
+  // tweetText，舊版會一路走到主推文層級命中，把圖搬到引用卡之前、留下只剩作者列的
+  // 卡殼。走到巢狀推文邊界還沒找到就回 null（原地不動，與純圖主推文同一出口）。
   function findMediaRootFor(fig, clone) {
     let cur = fig;
     while (cur && cur !== clone) {
+      if (cur !== fig && isNestedTweetBoundary(cur)) return null;
       const parent = cur.parentElement;
       if (!parent) return null;
       const siblings = parent.children;
