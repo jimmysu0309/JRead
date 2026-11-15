@@ -321,10 +321,14 @@
   //   mediaFitJournal：媒體貼合。每次寫入都記一筆——fitMediaToPages 每輪重算前先全撤，
   //     量測用的 1px 暫值靠反序撤回，生命週期與上面那份不同所以分開，API 同形
   // 強制 eager 的圖（eagerForced）改的是 attribute 不是 style，不併進來
-  const structJournal = createStyleJournal(true);
+  // 2026-11-15 review P-2：structJournal 寫 display 時改走 NS.inlineSet 分層登記簿
+  //（owner＝PAGED_DISPLAY_OWNER），見 createStyleJournal 註解
+  const PAGED_DISPLAY_OWNER = 'paged:struct';
+  const structJournal = createStyleJournal(true, PAGED_DISPLAY_OWNER);
   const mediaFitJournal = createStyleJournal(false);
   let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
+  let lastMediaSig = '';              // 上次重測時的媒體版面簽名（同上，見 mediaLayoutSignature）
   let measuredPages = 0;    // 內容末端實測頁數；0 = 量不到（fallback scrollWidth 公式）
   // v1.5.4：底部頁碼指示器一律顯示——翻頁模式拿掉頂端進度條（v1.5.2）後它是唯一
   // 進度載體，無理由讓使用者關掉。原 showPageNumber 開關 + setShowIndicator 已移除。
@@ -479,9 +483,41 @@
     else renderIndicator();
   }
 
-  // v1.6.15：後代媒體載入 → debounce 重測。scrollWidth 未變則跳過（reserved-
-  // dimension 站圖片載入不撐 layout、無需重算，省 measureContentEndX 的 treewalker
-  // 成本）。trailing debounce：一批同時載入的圖只重測一次，晚到的圖各自再觸發。
+  // 2026-11-15 review P-3：媒體版面簽名——主文內每張圖「碎片總高：碎片數」串起來。
+  // 用途只有一個：判斷「後代媒體載入後，版面有沒有變到需要整套重跑」。
+  //   - 預留尺寸的圖載入：盒子不變 → 簽名不變 → 不重跑（v1.6.15 省成本的原意）
+  //   - 沒預留尺寸的圖晚載入：自己的高從 0 變成 N → 簽名變 → 重跑
+  //   - 被它推擠而跨頁的其他圖：碎片數變 → 也看得到
+  // 只取高與碎片數、不取座標：使用者翻頁後 scrollLeft 不同，座標不可比。
+  // 成本：wiki Glass（6K 元素、45 張圖）0.07ms，整套 relayout 是 35ms（CDP 實測）。
+  function mediaLayoutSignature() {
+    if (!art) return '';
+    let sig = '';
+    try {
+      for (const img of art.querySelectorAll('img')) {
+        const rects = img.getClientRects();
+        let h = 0;
+        for (const r of rects) h += r.height;
+        sig += Math.round(h) + ':' + rects.length + ',';
+      }
+    } catch (e) { return ''; }
+    return sig;
+  }
+  // 純決策函式：媒體載入後要不要整套重跑
+  function layoutChangedSince(sw, lastSw, sig, lastSig) {
+    return sw !== lastSw || sig !== lastSig;
+  }
+
+  // v1.6.15：後代媒體載入 → debounce 重測。版面沒變則跳過（reserved-dimension 站
+  // 圖片載入不撐 layout、無需重算，省 relayout 的整套掃描成本）。trailing debounce：
+  // 一批同時載入的圖只重測一次，晚到的圖各自再觸發。
+  // 2026-11-15 review P-3：「版面沒變」原本只看 scrollWidth——multicol 容器的
+  // scrollWidth 只在欄數改變時才變，圖晚載入撐高內容但總欄數沒變（最後一欄的空位
+  // 吃掉增量）時直接跳過，fitMediaToPages 不會重跑：那張圖維持單頁 cap 高度，整個
+  // figure 被推到下一頁、前一頁留一大片空白（合成頁 probe：5 秒後才給 src 的圖，
+  // 兩個引擎都留 249px 空白；v1.9.25 要修的症狀在後段頁面重現）。進場 1s / 3s 的
+  // 固定計時器無條件重測，漏的是 3 秒後才載入的圖（站方 JS lazy loader 翻到該頁才換
+  // src）。閘門加看媒體版面簽名。
   function scheduleRemeasure() {
     if (remeasureDebounce) clearTimeout(remeasureDebounce);
     remeasureDebounce = setTimeout(function () {
@@ -489,7 +525,8 @@
       if (!installed || !art) return;
       let sw = 0;
       try { sw = art.scrollWidth; } catch (e) { /* */ }
-      if (sw === lastScrollWidth) return; // 內容末端沒變（多為 reserved 尺寸圖）→ 不重算
+      // 欄數沒變、每張圖的高與碎片數也沒變（多為 reserved 尺寸圖）→ 不重算
+      if (!layoutChangedSince(sw, lastScrollWidth, mediaLayoutSignature(), lastMediaSig)) return;
       remeasureAndReconcile();
     }, 180);
   }
@@ -580,7 +617,22 @@
   //   record(el, prop, also)   只記原值不寫；also＝還原時要一併寫回的 longhand（overflow-x / -y）
   //   set(el, prop, val)       記原值＋寫 inline !important
   //   undoLast() / restoreAll()  撤最後一筆／反序全撤
-  function createStyleJournal(firstWriteOnly) {
+  //
+  // displayOwner（2026-11-15 review P-2 / B-04）：給了就把 `display` 的寫入與還原交給
+  // NS.inlineSet / inlineRelease 分層登記簿（v1.9.18 立的規則：誰寫 inline display 誰登記）。
+  // 原本日誌自己記原值、自己寫回——翻頁期間把單圖 flex 殼塌成 block 之後，使用者在編輯
+  // 模式點掉那個殼（或動態 observer 把它藏掉），cleaner 那一層記到的「原值」是這裡寫的
+  // `block !important`；退出時翻頁先還原、cleaner 後還原，把 block !important 寫回去，
+  // 原站的 flex 版面在退出後壞掉（合成頁 probe 兩個引擎都重現）。走登記簿後任何還原
+  // 順序都回到站方原值。規則表內兩條寫 display 的規則共用同一個 owner：同元素先後被
+  // 兩條命中（P-1）時登記簿只更新值、不疊層，與 firstWriteOnly 的語意一致。
+  // 登記簿缺席（最小 NS 的 jsdom 環境）退回日誌自己的快照路徑。
+  function createStyleJournal(firstWriteOnly, displayOwner) {
+    const ledger = (prop) => {
+      if (!displayOwner || prop !== 'display') return null;
+      const ns = (typeof window !== 'undefined' && window.__JRead) || null;
+      return ns && typeof ns.inlineSet === 'function' && typeof ns.inlineRelease === 'function' ? ns : null;
+    };
     let entries = [];
     let seen = new WeakMap(); // el → Set<prop>
     function has(el, prop) {
@@ -603,14 +655,20 @@
     }
     function set(el, prop, val) {
       record(el, prop);
-      el.style.setProperty(prop, val, 'important');
+      const ns = ledger(prop);
+      if (ns) ns.inlineSet(el, prop, val, 'important', displayOwner);
+      else el.style.setProperty(prop, val, 'important');
     }
     function undoLast() {
       const r = entries.pop();
       if (!r) return;
       try {
-        r.el.style.removeProperty(r.prop);
-        for (const [p, v, pri] of r.saved) if (v) r.el.style.setProperty(p, v, pri);
+        const ns = ledger(r.prop);
+        // 登記簿有這一層 → 由它還原 / 轉交（上面還壓著 cleaner-hide 時不動目前可見狀態）
+        if (!(ns && ns.inlineRelease(r.el, r.prop, displayOwner))) {
+          r.el.style.removeProperty(r.prop);
+          for (const [p, v, pri] of r.saved) if (v) r.el.style.setProperty(p, v, pri);
+        }
       } catch (e) { /* */ }
       const s = seen.get(r.el);
       if (s) s.delete(r.prop);
@@ -701,10 +759,21 @@
     const rest = tokens.filter((t) => t !== 'layout');
     return rest.length ? rest.join(' ') : 'none';
   }
-  // 純決策函式：bigImgCount 由呼叫端用 countFitImgs 數
-  const FLEX_GRID_DISPLAYS = new Set(['flex', 'inline-flex', 'grid', 'inline-grid']);
+  // 2026-11-15 review B-03：「flex / grid 殼要不要塌」的判定表住 NS.flexShellVerdict
+  //（styler passGalleryFlex、cleaner collapseInnerFlexWrap 問同一張表）；這裡蒐集的事實
+  // 是「子樹內要貼合的大圖張數」（呼叫端用 countFitImgs 數）＋ paged 政策參數。
+  // NS 缺席（直接 require 本檔的 node 環境，沒有 layout）一律不塌。
+  const flexShellNs = () => {
+    const ns = (typeof window !== 'undefined' && window.__JRead) || null;
+    return ns && typeof ns.flexShellVerdict === 'function' ? ns : null;
+  };
+  const isFlexGridDisplay = (display) => {
+    const ns = flexShellNs();
+    return !!ns && ns.FLEX_SHELL_DISPLAYS.has(String(display || ''));
+  };
   function isSingleMediaFlexShell(display, bigImgCount) {
-    return FLEX_GRID_DISPLAYS.has(String(display || '')) && bigImgCount === 1;
+    const ns = flexShellNs();
+    return !!ns && ns.flexShellVerdict({ display, subtreeFitMediaCount: bigImgCount, paged: true }).collapse;
   }
   const isClippingOverflow = (v) => v === 'auto' || v === 'scroll' || v === 'hidden';
 
@@ -778,7 +847,8 @@
       minHeight: canHoldFitMedia,
       once: true,
       match(ctx) {
-        return FLEX_GRID_DISPLAYS.has(ctx.cs.display) &&
+        // 先看 display 再數圖：countFitImgs 要量每張圖的碎片高，非 flex / grid 的盒子不必數
+        return isFlexGridDisplay(ctx.cs.display) &&
           isSingleMediaFlexShell(ctx.cs.display, countFitImgs(ctx.el));
       },
       apply(ctx) {
@@ -843,8 +913,7 @@
         return !!ctx.blockDisplay && !REPLACED_TAG_RE.test(ctx.el.tagName || '');
       },
       apply(ctx) {
-        structJournal.record(ctx.el, 'display');
-        try { ctx.el.style.setProperty('display', ctx.blockDisplay, 'important'); } catch (e) { /* */ }
+        structJournal.set(ctx.el, 'display', ctx.blockDisplay);
       }
     }
   ];
@@ -939,6 +1008,14 @@
   }
   function padInitialLetterBlocks() {
     if (!art) return;
+    // 2026-11-15 review P-4：頁面樣式表沒有任何站方 first-letter 規則就不可能有
+    // initial-letter 首字，整段跳過（與 styler markFirstLetterColorBlocks 共用同一道
+    // gate、同一份快取）。原本每輪 relayout 對主文每個區塊元素各讀一次 pseudo computed
+    // style——CDP 實測 wiki Glass（1,005 個區塊）每輪 1.2ms、wired 0.9ms，數字不大，
+    // 但絕大多數站是白跑。gate 缺席（最小 NS 環境）照舊逐元素量。
+    const ns = (typeof window !== 'undefined' && window.__JRead) || null;
+    if (ns && typeof ns.pageHasSiteFirstLetterRule === 'function' &&
+        !ns.pageHasSiteFirstLetterRule(art.ownerDocument || document)) return;
     let els;
     try { els = art.querySelectorAll(INITIAL_LETTER_HOST_SEL); } catch (e) { return; }
     for (const el of els) {
@@ -1105,8 +1182,9 @@
   function relayout() {
     if (!art) return;
     for (const pass of LAYOUT_PASSES) pass();
-    // v1.6.15：保持 scheduleRemeasure 的變動偵測 gate 準確
+    // v1.6.15：保持 scheduleRemeasure 的變動偵測 gate 準確（P-3：連同媒體版面簽名）
     try { lastScrollWidth = art.scrollWidth; } catch (e) { /* */ }
+    lastMediaSig = mediaLayoutSignature();
   }
 
   function pageCount() {
@@ -1764,6 +1842,7 @@
     onDescendantLoadBound = null;
     if (remeasureDebounce) { clearTimeout(remeasureDebounce); remeasureDebounce = 0; }
     lastScrollWidth = 0;
+    lastMediaSig = '';
     // v1.6.16：先斷 observer 再還原——否則還原 setAttribute('loading','lazy') 會被
     // observer 當成「圖變 lazy」又強制回 eager，還原失敗。
     if (mediaObserver) { mediaObserver.disconnect(); mediaObserver = null; }
@@ -1951,6 +2030,7 @@
     isSingleMediaFlexShell,
     initialLetterPadPx,
     refineShrink,
+    layoutChangedSince,
     quantizeStride,
     computeScrubTarget,
     resolveScrubGesture,
