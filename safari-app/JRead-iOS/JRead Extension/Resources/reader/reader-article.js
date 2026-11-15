@@ -237,26 +237,91 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
 
-  // v2.1.0：Readwise reading_progress（0–1，讀過最遠處）→ positionMemory 的
-  // fallback entry（只有 ratio，applyEntry 走比例對映：捲動按 scrollHeight、
-  // 翻頁按總頁數）。Readwise 公開 API 只能讀不能寫進度（2026-10-27 實測 PATCH
-  // 回 200 但值不變），所以是單向：Readwise → JReader。
+  // v2.1.0：Readwise reading_progress（0–1）→ positionMemory 的 fallback entry
+  //（只有 ratio，applyEntry 走比例對映：捲動按 scrollHeight、翻頁按總頁數）。
+  // v2.1.0–v2.4.14 是單向（Readwise → JReader，當時 API 不收進度寫入）；v2.5.0 起
+  // 雙向，寫回見 attachProgressSync。
   // 開頭（< MIN_RATIO）不跳；讀完（>= DONE_RATIO）也不跳——重開讀完的文章
-  // 落在文末沒有用
+  // 落在文末沒有用。
+  // v2.5.0：updatedAt＝這個進度值所屬 doc 的 updated_at（ms）。位置記憶拿它分辨
+  // 「別處更新過」與「這台自己剛寫出去、快取還沒跟上的舊值」（pickRestoreEntry）
   const PROGRESS_MIN_RATIO = 0.02;   // = positionMemory MIN_RATIO
   const PROGRESS_DONE_RATIO = 0.98;
-  function progressFallbackEntry(progress) {
+  function progressFallbackEntry(progress, updatedAt) {
     const r = Number(progress);
     if (progress == null || !Number.isFinite(r)) return null;
     if (r <= PROGRESS_MIN_RATIO || r >= PROGRESS_DONE_RATIO) return null;
-    return { mode: 'ratio', ratio: r };
+    const entry = { mode: 'ratio', ratio: r };
+    const at = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt || '');
+    if (Number.isFinite(at)) entry.updatedAt = at;
+    return entry;
   }
 
   // 文章快取命中時用哪個進度：feed 快取（每次開 feed 都背景更新）比文章快取
   //（存進去那一刻的值）新，有就用 feed 的
   function pickProgress(cachedDoc, feedDoc) {
-    if (feedDoc && feedDoc.reading_progress != null) return feedDoc.reading_progress;
-    return cachedDoc ? cachedDoc.reading_progress : undefined;
+    const src = pickProgressDoc(cachedDoc, feedDoc);
+    return src ? src.reading_progress : undefined;
+  }
+  // v2.5.0：進度值取自哪一份 doc（連同它的 updated_at 一起用，兩者不可各取一份）
+  function pickProgressDoc(cachedDoc, feedDoc) {
+    if (feedDoc && feedDoc.reading_progress != null) return feedDoc;
+    return cachedDoc || null;
+  }
+
+  // v2.5.0（Jimmy 2026-11-15）：把閱讀位置寫回 Readwise，讓另一台裝置的 JReader（與
+  // Readwise 官方 App）接著讀。回傳給 positionMemory.beginSession 的 onPosition 回呼：
+  // 位置記憶每次寫本機記錄前呼叫 ({ ratio, final })，回 true＝這個位置已送出。
+  //   - 往回重讀也寫（Jimmy 裁定：各裝置跟著最後一次閱讀的位置走）
+  //   - final（退出 / 背景化的 flush）：與上次送出的差 ≥ FINAL_MIN_DELTA 就送
+  //   - 閱讀中：至少隔 PROGRESS_SYNC_INTERVAL_MS、且差 ≥ READING_MIN_DELTA 才送
+  //     （Readwise update 有限流，連續翻頁不必每頁一個請求）
+  //   - 不等回應：送出即算（位置記憶端樂觀記錄，失敗的後果見 pickRestoreEntry）
+  // 只有 Readwise（PC.supportsProgressWrite）；PDF Readwise 尚未支援。
+  // 送出時另把「這台寫出的時刻」記進 RC 的時刻表（storage.local，同步發 set）：
+  // 寫進度會讓 Readwise 的 updated_at 前進，文章快取靠它分辨「自己寫的」與「內容
+  // 真的更新了」（RC.isStale）。
+  // deps 供 spec 注入：now / RC / storage。回 null＝這篇不同步。
+  const PROGRESS_SYNC_INTERVAL_MS = 30000;
+  const PROGRESS_READING_MIN_DELTA = 0.01;
+  const PROGRESS_FINAL_MIN_DELTA = 0.003;
+  function attachProgressSync(docData, ctx, deps) {
+    const { PC, service, creds } = ctx || {};
+    const id = docData && docData.id != null ? String(docData.id) : '';
+    if (!PC || typeof PC.updateReadingProgress !== 'function' || !id) return null;
+    if (typeof PC.supportsProgressWrite !== 'function' || !PC.supportsProgressWrite(service)) return null;
+    if (docData.category === 'pdf') return null;
+    const now = (deps && deps.now) || Date.now;
+    const RC = (deps && deps.RC) || global.__JReadReaderCache;
+    const storage = (deps && deps.storage) || (global.browser && global.browser.storage && global.browser.storage.local);
+    let ownWrites = (ctx && ctx.ownWrites) || {};
+    const noteOwnWrite = (t) => {
+      if (!RC || typeof RC.planOwnWrite !== 'function' || !storage || typeof storage.set !== 'function') return;
+      ownWrites = RC.planOwnWrite(ownWrites, id, t);
+      try { Promise.resolve(storage.set({ [RC.OWN_WRITE_KEY]: ownWrites })).catch(() => {}); } catch (_) { /* context 失效 */ }
+    };
+    const initial = Number(docData.reading_progress);
+    let lastSent = Number.isFinite(initial) ? initial : NaN;
+    let lastSentAt = 0;
+    return function onPosition(pos) {
+      const ratio = pos ? Number(pos.ratio) : NaN;
+      if (!Number.isFinite(ratio)) return false;
+      const r = Math.max(0, Math.min(1, ratio));
+      const delta = Number.isFinite(lastSent) ? Math.abs(r - lastSent) : Infinity;
+      const t = now();
+      if (pos.final) {
+        if (delta < PROGRESS_FINAL_MIN_DELTA) return false;
+      } else if (delta < PROGRESS_READING_MIN_DELTA || t - lastSentAt < PROGRESS_SYNC_INTERVAL_MS) {
+        return false;
+      }
+      lastSent = r;
+      lastSentAt = t;
+      noteOwnWrite(t);
+      try {
+        Promise.resolve(PC.updateReadingProgress({ service, creds, id, progress: r })).catch(() => {});
+      } catch (_) { return false; }
+      return true;
+    };
   }
 
   // v2.2.10：回 feed 的網址。tab = 進文章前所在的分頁（feed 卡片帶入的 &tab=），
@@ -265,7 +330,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
+  const api = { attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
 
   // ---- 頁面 bootstrap ----
   function init() {
@@ -326,7 +391,7 @@
           setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
           return;
         }
-        renderArticle(r.doc, ctx, { progress: r.doc.reading_progress });
+        renderArticle(r.doc, ctx, { progress: r.doc.reading_progress, progressAt: r.doc.updated_at });
         if (store) store.put(account, r.doc);
       }, (err) => {
         // v1.7.41（R1）：getArticle reject（iOS 偶發 / renderArticle 上游同步 throw
@@ -336,9 +401,11 @@
         setStatus('載入失敗：' + String(err && err.message || err), true);
       });
       loadFromCache(id, service, creds).then((c) => {
+        ctx.ownWrites = c.ownWrites || {};
         if (c.entry) {
           try {
-            renderArticle(c.entry.doc, ctx, { progress: pickProgress(c.entry.doc, c.feedDoc) });
+            const pd = pickProgressDoc(c.entry.doc, c.feedDoc);
+            renderArticle(c.entry.doc, ctx, { progress: pd ? pd.reading_progress : undefined, progressAt: pd ? pd.updated_at : undefined });
           } catch (err) {
             setStatus('載入失敗：' + String(err && err.message || err), true);
             return;
@@ -359,14 +426,16 @@
     const d = deps || {};
     const RC = d.RC || global.__JReadReaderCache;
     const storage = d.storage || (global.browser && global.browser.storage && global.browser.storage.local);
-    const none = { store: null, account: '', entry: null };
+    const none = { store: null, account: '', entry: null, ownWrites: {} };
     if (!RC) return Promise.resolve(none);
     const account = RC.accountKey(service, creds);
     return Promise.resolve(RC.openArticleStore(d.storeOpts)).then((store) => {
       if (!store) return none;
-      return Promise.all([store.get(account, id), RC.findFeedDoc(storage, account, id)]).then(([entry, feedDoc]) => {
-        const usable = entry && entry.doc && entry.doc.html_content && !RC.isStale(entry, feedDoc);
-        return { store, account, entry: usable ? entry : null, feedDoc: feedDoc || null };
+      // v2.5.0：ownWrites＝這台寫回進度的時刻表——自己那次寫入讓 updated_at 前進不算過期
+      const ownP = typeof RC.readOwnWrites === 'function' ? RC.readOwnWrites(storage) : Promise.resolve({});
+      return Promise.all([store.get(account, id), RC.findFeedDoc(storage, account, id), ownP]).then(([entry, feedDoc, ownWrites]) => {
+        const usable = entry && entry.doc && entry.doc.html_content && !RC.isStale(entry, feedDoc, ownWrites && ownWrites[id]);
+        return { store, account, entry: usable ? entry : null, feedDoc: feedDoc || null, ownWrites: ownWrites || {} };
       });
     }).catch(() => none);
   }
@@ -381,7 +450,7 @@
   function renderArticle(docData, ctx, opts) {
     const { NS, doc, PC } = ctx;
     const backHref = ctx.backHref || feedUrl();
-    const fallbackPosition = progressFallbackEntry(opts && opts.progress);
+    const fallbackPosition = progressFallbackEntry(opts && opts.progress, opts && opts.progressAt);
     if (docData.title) doc.title = docData.title;
     const statusEl = doc.getElementById('jr-status');
     if (statusEl) statusEl.remove();
@@ -403,6 +472,10 @@
     attachHighlights(docData, container, ctx);
     // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
     attachArchiveKey(docData, ctx);
+    // v2.5.0：閱讀位置寫回 Readwise。「上次送出的值」以這次實際採用的進度為起點
+    //（快取命中時 docData 是文章快取、進度可能取自較新的 feed 快取）
+    const onPosition = attachProgressSync(
+      Object.assign({}, docData, { reading_progress: opts && opts.progress != null ? opts.progress : docData.reading_progress }), ctx);
 
     const backToFeed = function () { global.location.href = backHref; };
     NS.state.readerHostPage = true;
@@ -415,7 +488,7 @@
     if (typeof NS.enterFromContainer === 'function') {
       const onEnterFailed = (err) => showEnterFailed(doc, statusEl, container, err, backHref);
       Promise.resolve()
-        .then(() => NS.enterFromContainer(container, fallbackPosition ? { fallbackPosition } : undefined))
+        .then(() => NS.enterFromContainer(container, (fallbackPosition || onPosition) ? { fallbackPosition, onPosition } : undefined))
         .then((ok) => { if (ok === false) onEnterFailed(null); }, onEnterFailed);
     }
   }

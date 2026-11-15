@@ -815,6 +815,48 @@
     return moveReaderDocument({ ...args, location: 'archive' });
   }
 
+  // v2.5.0：寫入閱讀進度：PATCH /api/v3/update/<id>/ body { reading_progress }（0–1）。
+  // 2026-10-27 實測時這個欄位被默默忽略（回 200 值不變）；2026-11-15 官方文件的
+  // update 欄位表已列出，實測寫入後 list 讀回新值、可以往回寫（0.03 → 0.02）、
+  // updated_at 會前進、回應 body 只有 { id, url }（拿不到伺服器時間）。PDF 尚未支援。
+  // keepalive：這支多半在頁面退出 / 背景化當下送（位置記憶的 flush 路徑），沒有它
+  // 請求會跟著頁面一起被取消。回 { ok, status } / 錯誤分類（同 moveReaderDocument）。
+  async function updateReaderProgress({ token, id, progress, fetchImpl, timeoutMs } = {}) {
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return { ok: false, error: 'NO_FETCH' };
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return { ok: false, error: 'NO_TOKEN' };
+    }
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      return { ok: false, error: 'NO_ID' };
+    }
+    const p = Number(progress);
+    if (progress == null || !Number.isFinite(p) || p < 0 || p > 1) return { ok: false, error: 'NO_PROGRESS' };
+    let res;
+    try {
+      res = await fetchWithTimeout(f, `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`, {
+        method: 'PATCH',
+        keepalive: true,
+        headers: {
+          'Authorization': `Token ${token.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ reading_progress: Math.round(p * 10000) / 10000 })
+      }, typeof timeoutMs === 'number' ? timeoutMs : READ_FETCH_TIMEOUT_MS);
+    } catch (networkErr) {
+      if (networkErr && networkErr.jreadTimeout) return { ok: false, error: 'TIMEOUT' };
+      return { ok: false, error: 'NETWORK', message: String(networkErr && networkErr.message || networkErr) };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, error: 'AUTH' };
+    }
+    if (res.status === 429) return rateLimitResult(res);
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: 'HTTP' };
+    }
+    return { ok: true, status: res.status };
+  }
+
   // ---- JReader 畫重點（v1.10.0）--------------------------------------
   // 建立 / 刪除走 Reader API v3——重點是帶 parent_id 的文件：
   //   建立：POST /api/v3/save/ { parent_id, content }。content 必須逐字對得上 parent
@@ -1197,6 +1239,18 @@
     return archiveReaderDocument({ token: c.token, id, fetchImpl });
   }
 
+  // v2.5.0：把閱讀進度寫回儲存服務（0–1）。只有 Readwise 支援；Instapaper 回
+  // UNSUPPORTED（它的 API 能不能寫進度還沒查證，先不做）。
+  function supportsProgressWrite(service) {
+    return service === 'readwise';
+  }
+  async function updateReadingProgress({ service, creds, id, progress, fetchImpl } = {}) {
+    if (!supportsProgressWrite(service)) return { ok: false, error: 'UNSUPPORTED' };
+    const c = creds || {};
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    return updateReaderProgress({ token: c.token, id, progress, fetchImpl });
+  }
+
   // v2.4.0：feed 右滑「稍後讀」。readwise → 移到 Later（location:'later'）；instapaper
   // 沒有 Later，改加星（Jimmy 2026-11-07 裁定）。回 { ok, status } / 錯誤分類。
   async function laterDocument({ service, creds, id, fetchImpl, instapaper } = {}) {
@@ -1390,6 +1444,9 @@
     getArticle,
     archiveDocument,
     laterDocument,
+    updateReadingProgress,
+    supportsProgressWrite,
+    updateReaderProgress,
     saveResultToast,
     serviceErrorMessage,
     isTimeoutResult,

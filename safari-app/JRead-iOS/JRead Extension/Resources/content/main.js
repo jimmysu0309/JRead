@@ -348,7 +348,7 @@
     // 本機沒記錄時才套（見 position-memory restore 註解）
     if (NS.positionMemory) {
       NS.positionMemory.beginSession(spaRouteKey(location.href), settings, container,
-        opts ? { entryOverride: opts.enterScrollAnchor, fallbackEntry: opts.fallbackPosition } : undefined);
+        opts ? { entryOverride: opts.enterScrollAnchor, fallbackEntry: opts.fallbackPosition, onPosition: opts.onPosition } : undefined);
     }
     if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
@@ -442,7 +442,8 @@
     NS.state.confidence = 1;
     NS.state.hiddenEls = [];
     try {
-      return finalizeEnter(container, settings, { fallbackPosition: opts && opts.fallbackPosition });
+      // v2.5.0：opts.onPosition 同樣透傳（JReader 把閱讀位置寫回 Readwise）
+      return finalizeEnter(container, settings, { fallbackPosition: opts && opts.fallbackPosition, onPosition: opts && opts.onPosition });
     } catch (err) {
       console.warn('[JRead] reader 頁套用版型失敗，還原半套狀態：', err);
       try { exitReaderModeImpl(); } catch (_) { /* 還原失敗：console 已有訊號 */ }
