@@ -154,6 +154,29 @@
     return best;
   }
 
+  // v2.4.14（2026-11-15 review C-03，Jimmy 裁定）：本機記錄 vs 外部進度（Readwise
+  // reading_progress）挑哪一個當還原位置。原本「本機有效就一律本機」，結果外部進度
+  // 每台裝置每篇只會用到一次——開過就有本機記錄，之後手機 Readwise App 讀到 80%，
+  // 回這台重開仍落在本機的 20%。
+  //   - 兩邊都有：外部比本機遠超過 FALLBACK_LEAD_MIN 才用外部（reading_progress 是
+  //     「讀過最遠處」只增不減，比本機遠＝在別處往後讀了）；否則本機——同一台裝置的
+  //     段落錨點 / 頁碼比比例準（兩邊排版不同，比例只是近似），差距小不值得換
+  //   - 外部比本機近：本機（在這台往後讀了；JRead 不能把進度寫回 Readwise）
+  //   - 任一邊的 ratio 不是有效數字：無從比較，本機優先
+  // local 由呼叫端先過 isFresh（過期 / 無記錄傳 null）。採用外部位置後，捲動與退出
+  // flush 會把本機記錄寫到同一位置，下次差距 ≈ 0 走本機，不會來回跳。
+  // 兩種 entry 都帶 ratio（capture 的翻頁分支 idx / (total − 1)、捲動分支
+  // scrollTop / maxTop），與 reading_progress 同為 0–1。
+  const FALLBACK_LEAD_MIN = 0.05;
+  function pickRestoreEntry(local, fallback) {
+    if (!local) return fallback || null;
+    if (!fallback) return local;
+    const lr = typeof local.ratio === 'number' ? local.ratio : NaN;
+    const fr = typeof fallback.ratio === 'number' ? fallback.ratio : NaN;
+    if (!Number.isFinite(lr) || !Number.isFinite(fr)) return local;
+    return fr - lr > FALLBACK_LEAD_MIN ? fallback : local;
+  }
+
   function resolvePageIndex(entry, total) {
     if (!entry || !(total > 1)) return 0;
     if (entry.mode === 'paged' && entry.pages === total && Number.isInteger(entry.page)) {
@@ -513,9 +536,9 @@
     }, REASSERT_MS);
   }
 
-  // v2.1.0：fallbackEntry——本機沒有有效記錄時改套的外部位置（JReader 文章頁
-  // 傳入 Readwise reading_progress 換算的 { mode: 'ratio', ratio }）。本機記錄
-  // 一律優先：同一台裝置上的段落錨點比外部比例準（兩邊排版不同，比例只是近似）。
+  // v2.1.0：fallbackEntry——外部位置（JReader 文章頁傳入 Readwise reading_progress
+  // 換算的 { mode: 'ratio', ratio }）。v2.4.14 起與本機記錄誰優先由
+  // pickRestoreEntry 決定（外部比本機遠超過 5% 才用外部）。
   function restore(key, el, entryOverride, fallbackEntry) {
     // v1.7.49：進場捲動同步 override（main.js captureEnterScrollAnchor）——
     // 使用者在原頁已捲離文首才開閱讀模式，以原頁當下位置為準、不套 storage
@@ -554,11 +577,10 @@
           memMap = pruned;
           rawSet({ [STORAGE_KEY]: pruned }).catch(() => {});
         }
-        if (fallbackEntry) applyWithReassert(key, fallbackEntry, el);
-        return;
       }
+      const pick = pickRestoreEntry(isFresh(entry, now, days) ? entry : null, fallbackEntry);
       // lazy-load 圖片 / 晚到內容會推移版面——短延遲後使用者還沒互動就再對位一次
-      applyWithReassert(key, entry, el);
+      if (pick) applyWithReassert(key, pick, el);
     });
   }
 
@@ -566,7 +588,7 @@
   // syncPagedMode / syncSpaceScroll 之後（模組已 install、頁數已算好）、
   // installKeyguard 之前（listener 順序 invariant）呼叫。
   // v1.7.49：opts.entryOverride——進場捲動同步的 entry（見 restore 註解）
-  // v2.1.0：opts.fallbackEntry——本機無記錄時的外部位置（見 restore 註解）。
+  // v2.1.0：opts.fallbackEntry——外部位置（見 restore / pickRestoreEntry 註解）。
   // 位置記憶停用（days=0）時不套：它是跨 session 記憶的一種，受同一個開關管
   function beginSession(key, settings, el, opts) {
     endSession(); // 保險：理論上 enter 前必 exit
@@ -630,6 +652,7 @@
     recordWriteError,
     findBlockIndex,
     resolvePageIndex,
+    pickRestoreEntry,
     legacyKeyMatch,
     computeExitScrollTop,
     shouldPersist,
@@ -640,7 +663,7 @@
     endSession,
     setDays,
     isTracking: () => !!sessionKey,
-    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION,
+    STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION, FALLBACK_LEAD_MIN,
     MIN_WRITE_INTERVAL_MS
   };
 

@@ -1231,6 +1231,38 @@
   // allWidgetsAfter 維持 true → 從 Related 一路藏到文末、把後半正文整段截斷。
   // 改成逐 sibling 走、遇第一個含主文長段者即停：文末整段 widget（無後續主文）
   // 仍藏到底（與舊行為等價），行內 widget 則只藏到正文段前、保住後續主文。
+  // 2026-11-15 review 批 4（A-06）：「推薦標題式 heading」——整個 heading 幾乎就是
+  // 一條連到別頁的連結，而且後面沒有跟著它自己的內文。三個條件缺一不可：
+  //   1. heading 文字 >= 80% 在 <a href> 內
+  //   2. 連結指向別頁（同 origin＋同 pathname 的自錨點 `<h2><a href="#sec">` 是
+  //      文件站的章節 permalink 慣例，不算）
+  //   3. 下一個兄弟不存在、是另一個 heading，或它的非連結文字不到
+  //      REC_HEADING_NEXT_PROSE_MAX 權重（另一則推薦標題、縮圖、日期行）。正文裡「整個章節標題連到深入文章」
+  //      的寫法（theverge v0.8.99、產品盤點文）標題後面緊跟著說明段落，由這條擋下
+  // 這條驗 heading 自身形狀＋緊鄰兄弟，不驗更後面的內容；帶摘要的推薦卡
+  // （標題＋ 25 權重以上的摘要段）刻意不認——方向是少清。
+  const REC_HEADING_LINK_SHARE = 0.8;
+  const REC_HEADING_NEXT_PROSE_MAX = 25;
+  function isLinkOnlyRecHeading(el) {
+    if (!el || !/^H[1-6]$/.test(el.tagName)) return false;
+    const total = norm(el.textContent).length;
+    if (!total) return false;
+    const normPath = p => ((p || '').replace(/\/+$/, '') || '/');
+    let linked = 0;
+    for (const a of el.querySelectorAll('a[href]')) {
+      let u;
+      try { u = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
+      if (u.origin === location.origin && normPath(u.pathname) === normPath(location.pathname)) continue;
+      linked += norm(a.textContent).length;
+    }
+    if (linked / total < REC_HEADING_LINK_SHARE) return false;
+    const nx = el.nextElementSibling;
+    if (!nx || /^H[1-6]$/.test(nx.tagName)) return true; // 緊接另一個 heading＝沒有自己的內文
+    let nonLink = norm(nx.textContent);
+    for (const a of nx.querySelectorAll('a')) nonLink = nonLink.replace(norm(a.textContent), '');
+    return NS.cjkWeightedLen(nonLink) < REC_HEADING_NEXT_PROSE_MAX;
+  }
+
   function hideHeadingNoiseTail(h, articleEl, hidden) {
     // v1.7.39：sibling 主文判定升級——自身是長 <p>（The Verge 直接子段落，
     // v0.8.133）、自身是 direct text 長 <div>（div 段落站：upmedia / cn.nytimes /
@@ -1274,7 +1306,12 @@
       // semantic heading 遇更高位階（數字更小）即停。同位階不停——推薦區常以
       // 同級 heading 分組（文末多組同級推薦 heading 照舊一路藏）。
       const hRank = /^H[1-6]$/.test(h.tagName) ? +h.tagName[1] : 7;
-      const outranks = (el) => /^H[1-6]$/.test(el.tagName) && +el.tagName[1] < hRank;
+      // 2026-11-15 review 批 4（A-06）：位階只看 tag 會讓「非 heading 標籤＋一串
+      // heading 連結」的推薦區只藏到標籤（第一個 <h3><a>推薦標題</a></h3> 就停，
+      // 合成頁真 Chromium 實證：標籤藏掉、三則推薦標題全數殘留）。推薦標題式
+      // heading（見 isLinkOnlyRecHeading）不算正文 section heading、不擋尾段清除。
+      const outranks = (el) => /^H[1-6]$/.test(el.tagName) && +el.tagName[1] < hRank &&
+        !isLinkOnlyRecHeading(el);
       hide(h, hidden);
       let s = h.nextElementSibling;
       while (s && !hasMainContent(s) && !outranks(s)) {
@@ -1985,11 +2022,8 @@
     return v >= Math.min(w, h) / 2 - 1;
   }
   function imgInAuthorPageLink(img) {
-    const a = img.closest && img.closest('a[href]');
-    if (!a) return false;
-    let pn = '';
-    try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) { return false; }
-    return !!pn && AUTHOR_PAGE_PATH_RE.test(pn);
+    // 作者連結 pathname 解析的單一資料源＝isAuthorProfileAnchor（批 4 A-07 併三份）
+    return isAuthorProfileAnchor(img.closest && img.closest('a[href]'));
   }
   function avatarHasStructuralSignal(img, block, w, h) {
     if (imgIsRoundAvatar(img, w, h)) return true;
@@ -4393,6 +4427,49 @@
   // promoteOutsideTitleCarrierInto 的日期同一招；還原走 __titleClone path）。
   const SIBLING_BYLINE_RE = /^(?:by\b|作者|撰文|文[／/|｜]|由\s*\S)/i;
   const SIBLING_BYLINE_MAX_WEIGHT = 80;
+  const SIBLING_BYLINE_PREFIX_RE = /^(?:by\b|作者|撰文|文|由)[\s:：／/|｜]*/i;
+  const SIBLING_BYLINE_BODY_P_WEIGHT = 100;
+  // 2026-11-15 review A-02：合成前先確認「卡片的標題區真的沒有這位作者」。響應式站
+  // 常見兩份 byline 並排（`<p class="md:hidden">By X</p>` ＋ `<… class="hidden
+  // md:block">By X · 日期</…>`），桌機寬度下第二份可見且留在卡片——照樣合成就是兩行
+  // 作者（合成頁 probe：HEAD 卡片出現「By Jane Doe」「By Jane Doe · November 3, 2026」
+  // 各一行）。判定：藏起來那行去掉前綴詞後的作者名，出現在「第一個主文段落之前」某個
+  // 仍有渲染的元素文字裡（不分大小寫）就不合成。
+  //   - 上界取第一個主文段落（可見 <p>、CJK 權重 ≥ 100）：文末作者簡介、內文提到作者
+  //     名都不算「已有作者列」
+  //   - heading 不算（標題本身含作者名的專欄）；包住藏起來那行或包住主文段落的祖先
+  //     不算（它們的 textContent 含藏起來那行 / 整篇內文）
+  function cardHasRenderedBylineFor(articleEl, hiddenP, bylineText) {
+    const name = norm(bylineText.replace(SIBLING_BYLINE_PREFIX_RE, '')).toLowerCase();
+    if (NS.cjkWeightedLen(name) < 4) return false;
+    const rendered = (el) => {
+      for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+        if (n.dataset && n.dataset.jreadHidden === '1') return false;
+        const cs = window.getComputedStyle(n);
+        if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+        if (n === articleEl) break;
+      }
+      return true;
+    };
+    let firstBody = null;
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p === hiddenP || NS.cjkWeightedLen(norm(p.textContent)) < SIBLING_BYLINE_BODY_P_WEIGHT) continue;
+      if (rendered(p)) { firstBody = p; break; }
+    }
+    // 用 TreeWalker 依文件順序走、碰到第一個主文段落就停——不走 clean() 的全元素快取
+    //（這條跑在搬移類規則之後，快取可能是舊的），也不必為了開頭幾個元素建整份清單
+    const walker = document.createTreeWalker(articleEl, NodeFilter.SHOW_ELEMENT);
+    for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+      if (el === firstBody) break;
+      if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(el.tagName)) continue;
+      if (/^H[1-6]$/.test(el.tagName) || el.closest('h1, h2, h3, h4, h5, h6')) continue;
+      if (el === hiddenP || hiddenP.contains(el) || el.contains(hiddenP)) continue;
+      if (firstBody && el.contains(firstBody)) continue;
+      if (!norm(el.textContent).toLowerCase().includes(name)) continue;
+      if (rendered(el)) return true;
+    }
+    return false;
+  }
   function surfaceResponsiveHiddenByline(articleEl, hidden) {
     const h1 = articleEl.querySelector('h1');
     if (!h1 || !h1.parentElement) return;
@@ -4404,6 +4481,7 @@
       for (const b of clone.querySelectorAll('button, [role="button"]')) b.remove();
       const text = norm(clone.textContent);
       if (!SIBLING_BYLINE_RE.test(text) || NS.cjkWeightedLen(text) > SIBLING_BYLINE_MAX_WEIGHT) continue;
+      if (cardHasRenderedBylineFor(articleEl, p, text)) return;
       const meta = document.createElement('div');
       meta.setAttribute('data-jread-title-meta', '1');
       meta.textContent = text;
@@ -5039,8 +5117,14 @@
       // 單塊只剩 391 字，「主欄＝最長子區塊」的假設失效：最小主欄門檻與條件 C 的 3 倍
       // 比例都過不了，文末推薦區只在翻譯輪漏網。條件 C 另開一條路：比「低連結密度兄弟
       // 的文字總量（CJK 權重）」，但必須是同站標題連結 cluster（isHeadlineLinkCluster）
-      // ——只看總量會誤殺 MDN See also、wiki 外部連結（108 站回歸實證）。條件 A / B
-      // 依賴單一主欄語意，維持舊判定（splitMainOnly）。
+      // ——只看總量會誤殺 MDN See also、wiki 外部連結（108 站回歸實證）。
+      // split-main（splitMainOnly）時各條件的 gate：
+      //   A（極短＋高連結密度）  不跑——比的是 main.textLen × 10%
+      //   C（連結 cluster）      只走「兄弟總量＋同站標題連結 cluster」那一支
+      //   B（高 <aside>）        不跑
+      //   E / E2（flex 直立 rail）不跑——比的是 main 的寬 / 高（review 2026-11-15 A-01）
+      //   D（分類標籤微型欄）    獨立 pass，不受影響
+      // 四條都依賴「main＝整欄主文」，split-main 時 main 只是一個短區塊。
       let bodyWeight = 0;
       for (const s of stats) {
         if (s.ld <= SIDEBAR_COLUMN_MIN_LINK_DENSITY) bodyWeight += NS.cjkWeightedLen(norm(s.el.textContent));
@@ -5165,7 +5249,12 @@
         // 書籤 rail）。父 flex + sibling 文字極小 + 高 > 400 + 寬 < main 寬
         // × 0.5 + 高 > 寬 × 2，且不含實質圖片——純結構幾何，clean-time 即
         // 成立（不靠 styler reflow 後的窄寬度）。
-        if (s.el.getBoundingClientRect && main.el.getBoundingClientRect &&
+        // 2026-11-15 review A-01：split-main 容器不跑條件 E / E2。兩條都拿 main 的寬高
+        // 當「整欄主文」的基準（E：寬 < main 寬 × 0.5；E2：高 ≥ main 高 × 0.8），
+        // split-main 時 main 只是其中一個短段落區塊，E2 的等高條件形同恆真——flex
+        // column 內一塊 520px 高的 inline svg / canvas 圖表（文字 < 100、無 img）整塊被
+        // 藏（合成頁 probe：HEAD 中、v2.2.19 這類容器不進迴圈）。
+        if (!splitMainOnly && s.el.getBoundingClientRect && main.el.getBoundingClientRect &&
             /flex/.test(getComputedStyle(el).display) &&
             s.textLen < main.textLen * SIDEBAR_COLUMN_TEXT_RATIO) {
           const r = s.el.getBoundingClientRect();
@@ -10037,7 +10126,13 @@
   const BIO_CARD_MIN_TEXT = 20;
   const BIO_CARD_MAX_TEXT = 400;
   const BIO_CARD_LONG_P = 500;
-  const AUTHOR_PAGE_PATH_RE = /(^|\/)(authors?|people|staff|contributors?|profiles?|writers?|team|users?|u)(\/|$)|^\/?@[\w.-]+\/?$/i;
+  // 2026-11-15 review 批 4（A-07）：`u` 只認「路徑以 /u/<名字> 開頭」且名字不是 1–2 位
+  // 純數字（sspai /u/abc123、/u/abc123/updates、creaders /u/37201/、reddit /u/name）。
+  // 原本 `(^|/)u(/|$)` 命中任何含 /u/ 段的路徑——Google 系多帳號路徑 `/u/0/…`、
+  // `/drive/u/0/home`（u 後面是帳號序號 0–N）都被當作者頁，行文中帶小圖示的這種連結
+  // 會讓整段被 bio 卡規則藏掉（合成頁真 Chromium 實證）。子路徑要留：sspai 作者名連結
+  // 是 /u/<id>/updates，試作版只認整條 /u/<名字> 時真站作者名消失。
+  const AUTHOR_PAGE_PATH_RE = /(^|\/)(authors?|people|staff|contributors?|profiles?|writers?|team|users?)(\/|$)|^\/u\/(?!\d{1,2}(\/|$))[^/]+(\/|$)|^\/?@[\w.-]+\/?$/i;
   const AVATAR_SRC_RE = /avatar|head-?shot|author[\W_]*profile|profile[\W_]*(?:pic|photo|image)/i;
   // v1.5：文章頭部 byline / meta 訊號——「發表日期」或「閱讀時間估計（N min read）」。
   // 這兩者是文章開頭 byline 列的標誌，底部「作者 bio 卡」（avatar +「Written by X」
@@ -10063,13 +10158,7 @@
       const ratio = r.width / r.height;
       if (ratio < 0.5 || ratio > 2) continue;
       // 身分訊號
-      let isAvatar = false;
-      const a = img.closest && img.closest('a[href]');
-      if (a) {
-        let pathname = '';
-        try { pathname = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
-        if (pathname && AUTHOR_PAGE_PATH_RE.test(pathname)) isAvatar = true;
-      }
+      let isAvatar = isAuthorProfileAnchor(img.closest && img.closest('a[href]'));
       if (!isAvatar && AVATAR_SRC_RE.test(img.currentSrc || img.src || '')) isAvatar = true;
       if (!isAvatar) continue;
       // 向上走找 bio 卡容器（取符合條件的最高層祖先）
@@ -11312,6 +11401,12 @@
   function restorePlaceholderBoxForLateEmbed(articleEl, node, hiddenList) {
     const arr = hiddenList && hiddenList.__styleResets;
     if (!Array.isArray(arr) || !arr.length) return;
+    // 2026-11-15 review 批 4（A-08）：新節點是廣告類（含任何非白名單 iframe，與上一步
+    // reviveEmptyShellFor 同一道 dynamicNodeIsAdLike）就不還原。原本任何 iframe 都還原：
+    // 晚注入的非白名單 iframe 隨後被動態規則藏掉，盒內只剩 static 的縮圖＋還原回來的
+    // padding-bottom，主圖下方多出一整張圖高的空白（合成頁真 Chromium 實證 366 → 708px），
+    // 記錄已 splice 不會再拆。
+    if (dynamicNodeIsAdLike(node)) return;
     const isEmbed = /^(IFRAME|VIDEO)$/.test(node.tagName) ||
       (node.querySelector && node.querySelector('iframe, video'));
     if (!isEmbed) return;
@@ -11337,6 +11432,16 @@
         // review A-10：祖先鏈分支 hide 過的節點離開 DOM → 撤記錄（見 releaseDetachedOutsideHide）
         for (const node of m.removedNodes) releaseDetachedOutsideHide(node, hiddenList);
         for (const node of m.addedNodes) {
+          // 2026-11-15 review B-09：譯文回填純文字段落時只換 text node（沒有新元素），
+          // 轉給 styler 重判該段的 CJK justify 標記；其餘動態規則都只看元素
+          if (node.nodeType === 3) {
+            const host = node.parentElement;
+            if (host && articleEl.contains(host) && (node.nodeValue || '').trim() &&
+                NS.styler && NS.styler.remarkDynamicText) {
+              NS.styler.remarkDynamicText(host);
+            }
+            continue;
+          }
           if (node.nodeType !== 1) continue;
           // review A-10：callback 在 microtask 才跑，站方「append → 同一個 task 內 remove」
           // 的瞬態節點到這裡已經不在 DOM——沒有東西可藏，也不該登記。
