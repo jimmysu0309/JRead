@@ -91,6 +91,7 @@
   const BYLINE_PROGRAM_URL_RE = /\/(programs?|shows?|podcasts?|episodes?)\//i;
   // v1.5.28：日期 item 標記——CSS order:1 把日期推到 byline 最後，作者（及頭像等
   //   其餘 item）維持預設 order:0 排在前，達成「作者排在日期前」（Jimmy 2026-07-02）。
+  //   v2.5.6：同一個 byline 的每個日期 item 與夾在兩個日期之間的分隔符都標（見標記處註解）。
   const BYLINE_DATE_ITEM_ATTR = 'data-jread-byline-date-item';
   // v1.5.28：分類 kicker / eyebrow 標記——標題「之前」、連到分類頁的短連結
   //   （NPR「BUSINESS」→ /sections/business/）。閱讀模式移除（Safari / Firefox
@@ -6067,7 +6068,47 @@ html.${HTML_CLASS}.jread-orion body {
               // v1.5.28：作者排在日期前——把日期 item order:1 推到最後，其餘 item 維持
               // 預設 order:0 排前。不必逐站辨識作者（NPR 作者無 rel=author / By 前綴，
               // 辨識 fragile），只認可靠的日期錨（<time>，翻譯無關）。
-              if (dateItemValid) setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
+              if (dateItemValid) {
+                setMark(dateItem, BYLINE_DATE_ITEM_ATTR);
+                // v2.5.6：byline 有兩個以上日期 item（dev.to「Posted on … • Edited on …」、
+                // cna「發稿時間（更新時間）」、vocus「更新 · 發佈」）時，上面只把錨點那一個
+                // 推到行尾，其餘日期留在 order:0 → 視覺順序與站方相反（v1.5.28 起就有）。
+                // 改成同一個 root 內「每個日期 item」都標，同為 order:1 時照 DOM 順序排，
+                // 日期群維持站方相對順序、整群仍在作者之後。被兩個日期 item 夾住的分隔符
+                // 一起標（否則分隔符留在前段、兩個日期黏在一起）。
+                // 日期 item 判定（結構訊號，翻譯無關的 <time> 優先）：含有文字的 <time>，
+                // 或整段文字 < 40 字且命中日期（與上方 dateEl 的文字錨同一組條件）。
+                // 內含連結的 item 不認（「作者連結＋日期」合在一格時標了會把作者一起推到行尾；
+                // 整個 item 就是日期連結、或 <time> 外面包一層連結的不受影響）；
+                // 分隔符含 CSS 畫的空殼點（無文字、無子元素；圖片在 byline 內一律被藏、不用另外排除）。
+                // 只有一個日期 item 的 byline 不會多標任何東西，行為與 v2.5.5 相同。
+                // 這條只管順序、不管隱藏：日期群後面接非日期 item（dev.to「Originally
+                // published at」）時，那一格與它前面的分隔符留在前段。
+                const ditems = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
+                const isShellSep = (el) => !el.children.length && !bnorm(el.textContent);
+                const isSepLike = (el) => bisSep(el) || isShellSep(el);
+                const isDateFlags = ditems.map((el) => {
+                  if (el === dateItem) return true;
+                  if (isSepLike(el)) return false;
+                  if (el.querySelector('a[href]')) return false;
+                  const times = el.tagName === 'TIME' ? [el] : Array.from(el.querySelectorAll('time'));
+                  if (times.some((t) => bnorm(t.textContent))) return true;
+                  const txt = bnorm(el.textContent);
+                  return txt.length < 40 && (BYLINE_DATE_RE.test(txt) || brelDate(txt));
+                });
+                ditems.forEach((el, i) => {
+                  if (el === dateItem) return;
+                  let mark = isDateFlags[i];
+                  if (!mark && isSepLike(el)) {
+                    let p = -1;
+                    for (let j = i - 1; j >= 0; j--) { if (!isSepLike(ditems[j])) { p = j; break; } }
+                    let n = -1;
+                    for (let j = i + 1; j < ditems.length; j++) { if (!isSepLike(ditems[j])) { n = j; break; } }
+                    mark = p >= 0 && n >= 0 && isDateFlags[p] && isDateFlags[n];
+                  }
+                  if (mark) setMark(el, BYLINE_DATE_ITEM_ATTR);
+                });
+              }
               // v1.7.5：撤銷 byline 子樹的段落載體標記——markTextDivs 依排序約束
               //（v0.8.49：主流字級要量原站 CSS，須在 ARTICLE_ATTR 前跑）先於 byline
               // 標記執行，無法用 closest guard 排除。翻譯合併後的 byline 列（div 直含

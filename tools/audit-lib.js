@@ -400,13 +400,72 @@ pageFns.auditGap = function () {
     }
     return true;
   }
-  const blocks = [];
-  for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, dl, blockquote, pre, table')) {
-    if (!isVisible(el)) continue;
-    const r = el.getBoundingClientRect();
+  // 被放大的佔位圖（2026-11-16，bbc culture 實案）：「有一張 img 佔著這段空間」≠
+  // 「這段空間有圖」。v2.5.4 在 bbc.com/culture 把站方 160×90 的灰色佔位圖拉回版面流、
+  // 放大成 608×342 的灰塊，與下方還沒載入的真圖疊成一大片空白；舊 audit 把這張 img
+  // 當內容 block，initial / delayed 兩輪都印 `gaps: []`。
+  // 判定（純結構，不看 src 字樣）：已載入、渲染高 >= 80px、渲染寬 >= 自然寬 3 倍、
+  // 不是 SVG（向量圖放大仍是內容）。rect 會隨 body zoom 縮放，倍率先除回 zoom
+  //（page-rounds 在 zoom 0.5 跑）。
+  // 這條驗：被放大成版面寬的低解析佔位圖（LQIP / grey placeholder / 1×1 spacer）
+  //   不算內容、它佔的空間要報成 gap。
+  // 這條不驗：(1) 「可見但還沒載入的 img」——它仍算內容 block。lazy 圖的預留空間在
+  //   跳遠捲動後一定是空的（v2.5.5 的 bbc 同樣有），那是載入時序、不是版面缺陷；把它
+  //   當空白會讓所有 native lazy 站在 delayed 輪誤報。未載入的數量另列在回傳的
+  //   `unloadedImgs` 供參考、不進 gaps。(2) 佔位圖本身解析度夠（>= 渲染寬 1/3）的
+  //   情況。(3) 圖的像素內容（跨來源讀不到）——純色的大圖、破圖圖示都不在這層。
+  //   (4) page-rounds 流程——它在 audit 前已捲過整頁拍照、佔位圖多半已被站方換掉；
+  //   同一頁（v2.5.4 擴充＋bbc culture）debug-harness 三輪都亮、page-rounds 印無 gap。
+  // 已知會一起亮的：真的縮圖被 styler 放大 3 倍以上（thewoksoflife 食譜卡 200×200 →
+  //   608×608，2026-11-16 抽 26 頁唯一新增）——不是空白、但確實是糊掉的大圖，看截圖判斷。
+  const bodyZoom = parseFloat(window.getComputedStyle(document.body).zoom) || 1;
+  function isStretchedPlaceholderImg(img) {
+    if (!img || img.tagName !== 'IMG') return false;
+    if (!img.complete || !(img.naturalWidth > 0)) return false;
+    const src = img.currentSrc || img.src || '';
+    if (/\.svg(?:[?#]|$)/i.test(src) || /^data:image\/svg/i.test(src)) return false;
+    const r = img.getBoundingClientRect();
+    if (r.height < 80) return false;
+    return (r.width / bodyZoom) >= img.naturalWidth * 3;
+  }
+  const stretched = [];
+  let unloadedImgs = 0;
+  for (const img of art.querySelectorAll('img')) {
+    if (!isVisible(img)) continue;
+    const r = img.getBoundingClientRect();
     if (r.width < 10 || r.height < 10) continue;
+    if (!img.complete || !(img.naturalWidth > 0)) { unloadedImgs++; continue; }
+    if (isStretchedPlaceholderImg(img)) {
+      stretched.push({ top: r.top, bottom: r.bottom,
+        note: `${img.naturalWidth}×${img.naturalHeight} → ${Math.round(r.width / bodyZoom)}×${Math.round(r.height / bodyZoom)}` });
+    }
+  }
+  const hasStretchedInside = (el) => {
+    for (const img of el.querySelectorAll('img')) {
+      if (isStretchedPlaceholderImg(img) && isVisible(img)) return true;
+    }
+    return false;
+  };
+  const blocks = [];
+  const pushBlock = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 10 || r.height < 10) return;
     blocks.push({ top: r.top, bottom: r.bottom, tag: el.tagName,
       text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) });
+  };
+  for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, dl, blockquote, pre, table')) {
+    if (!isVisible(el)) continue;
+    if (el.tagName === 'IMG') {
+      if (isStretchedPlaceholderImg(el)) continue;
+    } else if (stretched.length && hasStretchedInside(el)) {
+      // 容器裡有被放大的佔位圖：容器整塊不當 block（否則它的 rect 會把佔位圖那段
+      // 一起蓋掉）。FIGURE 改由圖說代表；其餘 tag 的文字子塊本來就各自在清單內。
+      if (el.tagName === 'FIGURE') {
+        for (const fc of el.querySelectorAll('figcaption')) { if (isVisible(fc)) pushBlock(fc); }
+      }
+      continue;
+    }
+    pushBlock(el);
   }
   blocks.sort((a, b) => a.top - b.top);
   // gap 用 running max bottom 算，不是相鄰兩塊相減——較早出現的大容器
@@ -431,6 +490,7 @@ pageFns.auditGap = function () {
     if (tagUp === 'VIDEO' || tagUp === 'IFRAME' || tagUp === 'CANVAS' || tagUp === 'SVG') return true;
     for (const m of el.querySelectorAll('img, video, iframe, canvas, svg, picture, object, embed')) {
       const mr = m.getBoundingClientRect();
+      if (isStretchedPlaceholderImg(m)) continue; // 被放大的佔位圖不是 ink
       if (mr.width >= 8 && mr.height >= 8 && isVisible(m)) return true;
     }
     // 背景圖（bg-hero / 裝飾分隔）也算 ink：自身 + 子孫（掃描上限 300 個節點，
@@ -492,17 +552,25 @@ pageFns.auditGap = function () {
   let maxIdx = 0;
   for (let i = 1; i < blocks.length; i++) {
     const gap = blocks[i].top - maxBottom;
-    if (gap >= 80 && !intervalCovered(maxBottom, blocks[i].top)) {
-      gaps.push({
+    // 區間內有被放大的佔位圖（重疊 >= 80px）就直接報，不問覆蓋檢查——包著「佔位圖＋
+    // 真圖＋圖說」的外層 wrapper 有文字 ink，會讓覆蓋檢查誤判成有內容
+    const ph = gap >= 80
+      ? stretched.find(s => Math.min(s.bottom, blocks[i].top) - Math.max(s.top, maxBottom) >= 80)
+      : null;
+    if (gap >= 80 && (ph || !intervalCovered(maxBottom, blocks[i].top))) {
+      const g = {
         gap: Math.round(gap),
         prev: `${blocks[maxIdx].tag} "${blocks[maxIdx].text}"`,
         next: `${blocks[i].tag} "${blocks[i].text}"`,
         y: Math.round(maxBottom)
-      });
+      };
+      // kind 寫進 next 字串：兩支 harness 都只印 prev → next，不改 harness 也看得到原因
+      if (ph) { g.kind = 'stretched-placeholder-img'; g.next += `〔放大 3 倍以上的小圖（佔位圖或低解析縮圖）${ph.note}〕`; }
+      gaps.push(g);
     }
     if (blocks[i].bottom > maxBottom) { maxBottom = blocks[i].bottom; maxIdx = i; }
   }
-  return { gaps, blockCount: blocks.length };
+  return { gaps, blockCount: blocks.length, unloadedImgs, stretchedPlaceholderImgs: stretched.length };
 };
 
 // ---- Contrast audit（WCAG 對比）----
