@@ -479,12 +479,32 @@
   //（= 0.3077，頁數量化）→ 只按 ESC → PATCH 0.3077，使用者一頁都沒翻。讀過再按 ESC
   // 不受影響（翻頁鍵 / 滾輪 / 點擊早已設過 interacted）。本機記錄不受影響（退出 flush
   // 一律寫，不看 interacted）。
-  // 這條驗 ESC 鍵、不驗其他退出入口：點浮動圖示退出仍會經 click 算成互動
   function isExitKey(e) {
     return !!(e && e.type === 'keydown' && e.key === 'Escape');
   }
+  // v2.5.6：落在浮動圖示上的事件不算閱讀互動。浮動圖示是 JRead 自己的控制項（短按
+  // 退出、長按選單、拖移換位置），操作它不代表讀了文章——與 ESC 同一個缺口：短按在
+  // pointerup 觸發退出（Article View 是導回清單），同一次點按緊接著的 touchend / click
+  // 仍會到這裡把 interacted 設成 true，之後 pagehide 的 flush 就把「還原後原封不動的
+  // 位置」寫回 Readwise。實測（Chromium 載擴充、滑鼠與觸控；Playwright WebKit 觸控）：
+  // Readwise 0.3 → 還原到 5 / 14 → 只點圖示 → PATCH 0.3077。iOS 的退出入口就是這顆。
+  // 判定讀 floating-icon.js 暴露的 host（單一資料源，不另記 id）：host 是 shadow host，
+  // window 層收到的 target 已被重新指向它，選單列與按鈕都算在內。拖移圖示後再按 ESC、
+  // 長按選單的「回文章列表」一併不算。讀過再點圖示不受影響（翻頁 / 捲動早已設過）。
+  // 只管「按在圖示上」的事件：滾輪停在圖示上方照樣捲動文章、按鍵不是對著圖示按，
+  // 兩者照舊算互動（滾輪不算的話，還原後的二次對位會把正在捲的頁面拉回去）。
+  // 這條驗浮動圖示、不驗其他 JRead 浮層（功能選單面板等）
+  function isOwnControlEvent(e) {
+    const NS = global.__JRead;
+    const host = NS && NS.floating && NS.floating.host;
+    if (!host || !e || e.type === 'wheel' || e.type === 'keydown') return false;
+    if (e.target === host) return true;
+    try {
+      return typeof e.composedPath === 'function' && e.composedPath().indexOf(host) !== -1;
+    } catch (_) { return false; }
+  }
   function onUserInteract(e) {
-    if (isExitKey(e)) return;
+    if (isExitKey(e) || isOwnControlEvent(e)) return;
     interacted = true;
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
     scheduleSave();
