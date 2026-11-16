@@ -313,6 +313,7 @@
   // noteMovement 註解）：
   let userInput = false;   // 乙：這個 session 有過使用者輸入事件 → 不再做二次對位
   let moved = false;       // 甲：使用者真的把閱讀位置移離基準 → 允許 onPosition 寫回外部進度（成立後鎖住）
+  let touchDragging = false; // v2.5.10：手指已經開始拖（touchmove）→ 同樣不再做二次對位；不參與甲（見 onTouchDrag）
   let baseline = null;     // 甲的比較基準（readSpot 形狀）：進場 / 還原套用完當下的位置
   let remoteSeen = null;   // v2.5.0：這個 session 的外部進度已知值 { rw, rwAt }（restore 決定、寫出後更新）
   let onPosition = null;   // v2.5.0：beginSession 傳入的回呼——每次寫本機記錄前通知目前位置
@@ -509,8 +510,9 @@
   // 不判移動方向。同一次手勢內拖頁碼出去又拖回原頁、或捲動模式來回不超過容差，
   // 不算移動。捲動模式下「沒有任何輸入事件、文件高度也沒變」的 scrollTop 飄移，會在
   // 下一個輸入事件被當成移動（Article View 合成文章實測 6 秒飄移 0px）。
-  // 觸控拖動途中（touchend 之前）不算輸入，二次對位仍可能在拖動超過 1.2 秒時發生
-  //（v2.5.9 之前就有的缺口，INTERACT_EVENTS 沒有 touchstart）
+  // 觸控拖動途中（touchend 之前）對甲不算輸入——拖頁碼出去又拖回原頁不算移動，靠的
+  // 就是放手那一拍才比。乙那一側 v2.5.10 起由 onTouchDrag 另外補（手指一開始拖就取消
+  // 二次對位），兩邊不共用旗標
   //
   // 實測位移（Chromium 1280×800，捲動模式）：滑鼠滾輪一格 100px、方向鍵 40px、
   // PageDown 760px、觸控板最小 1px；到底後的滾輪 / 方向鍵、無作用鍵、點段落皆 0px
@@ -567,6 +569,19 @@
     setTimeout(noteMovement, 0);
     scheduleSave();
   }
+  // v2.5.10：手指拖著捲超過 REASSERT_MS 才放手時，途中會被二次對位拉回（touchend /
+  // touchcancel 才進 onUserInteract；Playwright WebKit / Chromium 觸控實測捲動模式
+  // 還原後 0.1 秒起拖、1.2 秒那一拍 scrollTop 3659 → 3419）。手指一開始拖（第一個
+  // touchmove）就取消二次對位。**只做乙這一件事**：不設 userInput、不呼叫 noteMovement
+  // / scheduleSave——甲（moved）與存檔時機維持「放手那一拍才看」，與 v2.5.9 完全相同。
+  // 不聽 touchstart：按住不動（長按選單、選字起手）不是拖動，維持原行為。
+  // 翻頁模式按住頁碼拖本來就不受影響（每跨一頁 triggerHaptic 的 click 已進 onUserInteract）。
+  // 這條驗 X、不驗 Y：只看「有過 touchmove」；不分方向、不分落點（在浮動圖示上拖也算）
+  function onTouchDrag() {
+    if (touchDragging) return;
+    touchDragging = true;
+    if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
+  }
   function onScroll() { noteMovement(); scheduleSave(); }
   function flushNow() {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
@@ -605,6 +620,7 @@
     for (const t of INTERACT_EVENTS) {
       window.addEventListener(t, onUserInteract, { capture: true, passive: true });
     }
+    window.addEventListener('touchmove', onTouchDrag, { capture: true, passive: true });
     window.addEventListener('pagehide', flushNow);
     document.addEventListener('visibilitychange', onVisibilityChange);
     try {
@@ -621,6 +637,7 @@
     for (const t of INTERACT_EVENTS) {
       window.removeEventListener(t, onUserInteract, { capture: true, passive: true });
     }
+    window.removeEventListener('touchmove', onTouchDrag, { capture: true, passive: true });
     window.removeEventListener('pagehide', flushNow);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     try {
@@ -670,7 +687,7 @@
     }
   }
 
-  // 套 entry + lazy-load 二次對位（使用者還沒互動才對）
+  // 套 entry + lazy-load 二次對位（使用者還沒互動、手指也沒在拖才對）
   // v2.5.9：套用完重設「真的移動過」的比較基準（程式搬的位置不算使用者移動）。二次對位
   // 不必再重設：版面沒變時它落在同一個位置；版面變了（總頁數 / 文件高度不同）
   // compareSpot 自己會判成 rebase
@@ -680,7 +697,7 @@
     if (reassertTimer) clearTimeout(reassertTimer);
     reassertTimer = setTimeout(() => {
       reassertTimer = null;
-      if (!userInput && sessionKey === key) applyEntry(entry, el);
+      if (!userInput && !touchDragging && sessionKey === key) applyEntry(entry, el);
     }, REASSERT_MS);
   }
 
@@ -782,6 +799,7 @@
     articleEl = el || null;
     userInput = false;
     moved = false;
+    touchDragging = false;
     resetBaseline(); // 沒有可還原的位置時，基準＝進場位置；有的話 applyWithReassert 會再重設
     remoteSeen = null;
     onPosition = opts && typeof opts.onPosition === 'function' ? opts.onPosition : null;
