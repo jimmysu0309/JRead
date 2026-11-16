@@ -54,6 +54,11 @@
   // 巨圖佔滿標題上方）。apply() 量 pre-reader rendered rect、natural 明顯大於
   // rendered 即標記並用 inline !important max-width 釘回原始顯示寬。
   const ICON_IMG_ATTR = 'data-jread-icon-img';
+  // v2.5.5：被同層真圖蓋住的站方佔位圖（見 classifyImg 的 isCoveredPlaceholder）。
+  // 站方把低解析佔位圖 position:absolute 疊在 in-flow 真圖的位置上；通用的
+  // 「img position:static」規則會把它拉回 flow、與真圖上下直排，真圖還沒載入
+  // （站方尚未移除佔位圖）時每張圖多出一塊佔位圖高的空白。標記後 display:none。
+  const COVERED_PH_ATTR = 'data-jread-covered-ph';
   const PLAYER_ATTR = 'data-jread-player';
   // v1.9.15：站方自管視覺的 UI / 標註（底色與文字色成對由站方決定，主題文字色
   // 不接管）。值 'hl' / 'hl-tint'（半透明底，v2.4.6）= 行內高亮自訂元素（<rw-highlight> 等，見
@@ -1401,6 +1406,10 @@ ${MEDIA_CAP_SEL} {
 [${ARTICLE_ATTR}="1"] img[${ICON_IMG_ATTR}][${ICON_IMG_ATTR}][${ICON_IMG_ATTR}] {
   max-width: var(--jread-icon-max, 100%) !important;
   width: auto !important;
+}
+/* v2.5.5：被同層 in-flow 真圖蓋住的 absolute 佔位圖——不佔版面（見 COVERED_PH_ATTR） */
+[${ARTICLE_ATTR}="1"] img[${COVERED_PH_ATTR}][${COVERED_PH_ATTR}][${COVERED_PH_ATTR}] {
+  display: none !important;
 }
 /* picture 容器 aspect-ratio + padding-bottom 重置：v0.7.52 把 img 強制
    position: static 拉回 normal flow 後，picture 容器若用 aspect-ratio
@@ -4934,6 +4943,36 @@ html.${HTML_CLASS}.jread-orion body {
         // 到的是「已被 reader 撐開後」的值（換日線作者頭像實測 608×608），gate 的
         // rect 門檻永遠不可能命中 → 等於整條防放大保護對 lazy 圖失效。
         // 即時路徑不傳 preRect（此時 rect 本來就是原站值），行為完全不變。
+        // v2.5.5：「被同層真圖蓋住的佔位圖」判定（呼叫端已確認 img 是已載入的低解析
+        // 圖：natural 兩維 < CONTENT_IMG_MIN、非 SVG）。三個條件全成立才算：
+        //   1. img 在站方 cascade 下是 position:absolute（不佔版面的疊層）
+        //   2. 同一個父元素下另有一張 in-flow（非 absolute / fixed）的 img，其 rect
+        //      完整涵蓋本圖（±2px）——版面位置由那張圖負責
+        //   3. 那張圖是「真圖」：尚未載入，或來源解析度比本圖大；且不是 data: /
+        //      SVG（那是 sizer——AMP 類「in-flow 透明 sizer＋absolute 真圖」的方向
+        //      相反，真圖是 absolute 的那張，不可藏）
+        // 不命中的鄰近形狀（刻意）：absolute 的那張是高解析圖（blur(0) 載完的 zoom
+        // overlay、輪播疊層）→ 呼叫端低解析門檻就擋掉；真圖還沒有預留尺寸（rect 0）
+        // → 條件 2 不成立，佔位圖照舊留著撐版面；只有佔位圖、真圖晚 append → 沒有
+        // 同層第二張圖。
+        const isCoveredPlaceholder = (img, gr) => {
+          const par = img.parentElement;
+          if (!par || !gr || !(gr.width > 0 && gr.height > 0)) return false;
+          const view = img.ownerDocument.defaultView;
+          if (view.getComputedStyle(img).position !== 'absolute') return false;
+          for (const o of par.children) {
+            if (o === img || o.tagName !== 'IMG') continue;
+            const src = o.currentSrc || o.src || '';
+            if (!src || /^data:/i.test(src) || /\.svg(\?|#|$)/i.test(src)) continue;
+            if (o.complete && !(o.naturalWidth > img.naturalWidth)) continue;
+            const op = view.getComputedStyle(o).position;
+            if (op === 'absolute' || op === 'fixed') continue;
+            const or = o.getBoundingClientRect();
+            if (gr.top >= or.top - 2 && gr.bottom <= or.bottom + 2 &&
+                gr.left >= or.left - 2 && gr.right <= or.right + 2) return true;
+          }
+          return false;
+        };
         const classifyImg = (img, preRect) => {
           if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return;
           const w = img.naturalWidth || img.width;
@@ -5029,6 +5068,23 @@ html.${HTML_CLASS}.jread-orion body {
               !isSvgImg(img)) {
             // v1.8.5：同上，「進 reader 前的 rendered 寬」對 lazy 補分類路徑＝preRect
             const gr = preRect || r || (r = img.getBoundingClientRect());
+            // v2.5.5（bbc culture 中段空白）：低解析圖在站方是 position:absolute、
+            // 疊在同一父層某張 in-flow 真圖的範圍內＝被真圖蓋住的佔位圖，不是內容。
+            // 只在即時路徑判（!preRect：ARTICLE_ATTR 尚未設定，computed position 仍是
+            // 站方值；補分類路徑的 position 已被 reader 改成 static、量不到）。
+            if (!preRect && isCoveredPlaceholder(img, gr)) {
+              iconImgs.push({
+                img,
+                prevMw: img.style.getPropertyValue('max-width'),
+                prevMwP: img.style.getPropertyPriority('max-width'),
+                prevVar: img.style.getPropertyValue('--jread-icon-max'),
+                prevW: img.style.getPropertyValue('width'),
+                prevWP: img.style.getPropertyPriority('width'),
+              });
+              img.setAttribute(ICON_IMG_ATTR, '1');
+              img.setAttribute(COVERED_PH_ATTR, '1');
+              return;
+            }
             const cap = Math.max(img.naturalWidth, Math.round(gr.width) || 0);
             if (cap > 0) { capIconImg(img, cap); return; }
           }
@@ -7595,7 +7651,7 @@ html.${HTML_CLASS}.jread-orion body {
           else s.img.style.removeProperty('--jread-icon-max');
           if (s.prevW) s.img.style.setProperty('width', s.prevW, s.prevWP || '');
           else s.img.style.removeProperty('width');
-          if (s.img.removeAttribute) s.img.removeAttribute(ICON_IMG_ATTR);
+          if (s.img.removeAttribute) { s.img.removeAttribute(ICON_IMG_ATTR); s.img.removeAttribute(COVERED_PH_ATTR); }
         }
       }
       // 移除尚未觸發的 lazy-load content-img 標記 listener（避免退出後圖載入仍

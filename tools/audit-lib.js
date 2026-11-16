@@ -108,7 +108,7 @@ const NOISE_KEYWORDS_CONTEXTUAL = [
 // 受測文字摺成台灣寫法，名單不必逐詞加變體。與 jread/content/cleaner.js 的
 // ZH_SIMP_TRAD_PAIRS 是同一份事實的雙實作（forcing：noise-heading-zh-fold.spec.js）。
 // 驗：簡體字形與「報道 / 回复」兩個詞；不驗：用語層差異（视频、关注以外的詞彙差）。
-const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話领領击擊获獲抢搶购購买買预預约約参參将將为為优優额額赏賞赞讚连連员員脸臉书書团團们們图圖储儲鸟鳥价價转轉项項检檢举舉记記广廣业業销銷么麼这這个個则則奖獎证證处處载載资資';
+const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話领領击擊获獲抢搶购購买買预預约約参參将將为為优優额額赏賞赞讚连連员員脸臉书書团團们們图圖储儲鸟鳥价價转轉项項检檢举舉记記广廣业業销銷么麼这這个個则則奖獎证證处處载載资資时時叠疊两兩万萬译譯讯訊单單';
 const NOISE_KEYWORD_TIERS = { strict: NOISE_KEYWORDS_STRICT, contextual: NOISE_KEYWORDS_CONTEXTUAL, fold: ZH_SIMP_TRAD_PAIRS };
 // 合併名單（向後相容：舊 call site / 文件以這個名字引用全名單）
 const NOISE_AUDIT_KEYWORDS = [...NOISE_KEYWORDS_STRICT, ...NOISE_KEYWORDS_CONTEXTUAL];
@@ -171,7 +171,7 @@ pageFns.auditResidualText = function (tiers) {
   function foldZh(s) {
     let o = ''; for (const ch of s) o += foldMap[ch] || ch;
     // 逐詞規則與 cleaner 的 ZH_FOLD_WORD_RULES 同一份（forcing：noise-text-zh-fold.spec.js）
-    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆').replace(/轉发/g, '轉發').replace(/发布/g, '發佈').replace(/发表/g, '發表').replace(/讚助/g, '贊助') : o;
+    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆').replace(/轉发/g, '轉發').replace(/发布/g, '發佈').replace(/发表/g, '發表').replace(/讚助/g, '贊助').replace(/發表于/g, '發表於').replace(/發佈于/g, '發佈於').replace(/周前/g, '週前').replace(/分钟/g, '分鐘') : o;
   }
   function norm(s) { return foldZh((s || '').replace(/\s+/g, ' ').trim()); }
   function matchKw(text, lowText, kw) {
@@ -280,7 +280,7 @@ pageFns.auditResidualLinks = function (tiers) {
   function foldZh(s) {
     let o = ''; for (const ch of s) o += foldMap[ch] || ch;
     // 逐詞規則與 cleaner 的 ZH_FOLD_WORD_RULES 同一份（forcing：noise-text-zh-fold.spec.js）
-    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆').replace(/轉发/g, '轉發').replace(/发布/g, '發佈').replace(/发表/g, '發表').replace(/讚助/g, '贊助') : o;
+    return foldPairs ? o.replace(/報道/g, '報導').replace(/回复/g, '回覆').replace(/轉发/g, '轉發').replace(/发布/g, '發佈').replace(/发表/g, '發表').replace(/讚助/g, '贊助').replace(/發表于/g, '發表於').replace(/發佈于/g, '發佈於').replace(/周前/g, '週前').replace(/分钟/g, '分鐘') : o;
   }
   function norm(s) { return foldZh((s || '').replace(/\s+/g, ' ').trim()); }
   function matchKw(text, lowText, kw) {

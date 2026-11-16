@@ -515,7 +515,11 @@
       const removedIds = new Map();
       const laterText = LATER_TEXT[service] || LATER_TEXT.readwise;
 
+      // v2.5.5：畫面上這份清單的來源（未過濾的整份 docs＋分頁設定＋當下的分頁世代）。
+      // 動作失敗晚到時用它原地重畫（見 onAction 的 .then）
+      let shown = null;
       function showDocs(all, cfg) {
+        shown = { all, cfg, gen: tabGen };
         const listKey = service + ':' + cfg.id;
         const docs = (all || []).filter((d) => {
           if (!d) return false;
@@ -548,6 +552,16 @@
               if (remove && RC) RC.removeFromFeed(local, account, id, isArchive ? undefined : listKey);
             } else if (remove && removedIds.get(id) === scope) {
               removedIds.delete(id);
+              // v2.5.5：失敗回來時世代已變（actionCard 因此沒把卡片插回），但使用者已
+              // 切回發動當下那個分頁（A→B→A）、而且那份清單已經畫出來了——當時這張卡
+              // 還在 removedIds 內被濾掉，之後背景抓回來的清單簽章沒變也不會重畫，卡片
+              // 要等下一次載入才回來。這裡用畫面上那份 docs 原地重畫一次。
+              //   - 人在別的分頁（shown.cfg 不是發動的分頁）→ 不動（D-03 要擋的情況）
+              //   - 切回來但清單還沒畫（shown.gen 落後）→ 不必動，稍後那次繪製自然含這張
+              //   - 世代沒變（沒切過分頁）→ actionCard 已插回原位，不重畫
+              if (actionTabGen !== tabGen && shown && shown.gen === tabGen && shown.cfg.id === cfg.id) {
+                showDocs(shown.all, shown.cfg);
+              }
             }
           });
         };
