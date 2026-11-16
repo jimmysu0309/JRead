@@ -1230,7 +1230,24 @@
   function hideStrictCtaPromoBlock(ctaEl, articleEl, hidden) {
     if (!ctaEl || isInPreserved(ctaEl)) return false;
     const block = findSafeWrapperForHeading(ctaEl, articleEl);
-    const target = block || ctaEl;
+    // v2.5.7：整塊清不可帶走 dateline。bbc culture 實證（Jimmy 2026-11-16，先翻譯
+    // 再進閱讀模式）：byline 區塊同一層放「日期 <time>＋作者＋分享 / 儲存 / Google
+    // 偏好來源按鈕」，按鈕譯成「在 Google 上設為偏好」命中 strict 的「設為偏好」
+    // 句型，walk-up 一路停在 byline 區塊外層（內無長段落、無標題 anchor）→ 日期與
+    // 作者整行跟著消失。原文「Add as preferred on Google」只命中一般軌、不整塊清，
+    // 所以只有翻譯後、且譯文剛好是這個句型時才發生（與瀏覽器無關）。
+    // 通則：walk-up 範圍收斂到「不含 <time> 的最外層」——promo banner 不會把文章
+    // dateline 包在裡面；含 <time> 就代表已經爬進 byline / metadata 列。保護側：
+    // 寧可少清（留下按鈕列外殼，按鈕本身另有 rule 清），不可吃掉 metadata。
+    // 靜態 clean 與動態 observer 都經本函式，單點修。
+    let target = block || ctaEl;
+    if (block && block.querySelector && block.querySelector('time')) {
+      target = ctaEl;
+      for (let p = ctaEl.parentElement; p && p !== block; p = p.parentElement) {
+        if (p.querySelector('time')) break;
+        target = p;
+      }
+    }
     if (target === articleEl) return false;
     if (target.contains && target.contains(articleEl)) return false;
     if (target.dataset && target.dataset.jreadHidden === '1') return true;
