@@ -4142,6 +4142,46 @@
     return false;
   }
 
+  // v2.5.8：el 的 padding box 是不是「留下來的 absolute embed」的比例盒。
+  // siblingHasMediaEmbed 的對偶：那條認「aspect spacer 與 player 是兄弟」（JW
+  // `.jw-aspect`），這條認「embed 就在殼裡面」——responsive 影片嵌入最常見的寫法
+  // 「relative 外殼 + padding-top / padding-bottom 撐比例 + iframe / video
+  // position:absolute 填滿」。殼的大 padding 是 embed 的高度來源、不是裝飾留白，
+  // 壓成 16px 影片就只剩一條細橫條（styler 的 FILL_IFRAME 把 iframe pin 在殼的
+  // padding box 上，殼多高影片就多高）。
+  // dev.to YouTube 實證：同版 hideInsideArticleAbsoluteOverlays 不再藏 iframe 之後，
+  // 430 寬外殼 padding-top 228px 被 capWrapperSpacing 壓成 16px → 影片 392×16；
+  // 1280 寬 clean 當下主欄被擠窄、外殼寬 0、padding 算出 0 才剛好沒被壓。
+  // 判定（結構訊號，不看 class / 站點 / 尺寸門檻）：
+  //   - el 自己是定位元素（position 非 static）
+  //   - 子樹內有 iframe / video 自身 computed position:absolute、沒被 JRead 藏掉
+  //     （非白名單 iframe 已由 hideInsideArticleThirdPartyIframes 藏掉，廣告殼不會
+  //     因此被放行）
+  //   - el 到該 embed 之間沒有別的定位元素（el 就是它的 containing block）
+  // 這條驗 X、不驗 Y：只回答「padding 是不是 embed 的比例盒」；不判斷 embed 本身
+  // 該不該留（那是 iframe 白名單與 overlay 規則的事）。
+  function paddingBoxHoldsAbsoluteEmbed(el) {
+    if (!el || !el.querySelectorAll) return false;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return false;
+    const posOf = (n) => {
+      try { return (window.getComputedStyle(n) || {}).position || 'static'; } catch (_) { return 'static'; }
+    };
+    let selfPositioned = null;   // 有候選才量
+    for (const m of el.querySelectorAll('iframe, video')) {
+      if (posOf(m) !== 'absolute') continue;
+      let ok = true;
+      for (let cur = m; cur && cur !== el; cur = cur.parentElement) {
+        if (cur.dataset && cur.dataset.jreadHidden === '1') { ok = false; break; }
+        if (cur !== m && posOf(cur) !== 'static') { ok = false; break; }
+      }
+      if (!ok) continue;
+      if (selfPositioned === null) selfPositioned = posOf(el) !== 'static';
+      if (!selfPositioned) return false;
+      return true;
+    }
+    return false;
+  }
+
   // v1.7.52：el 自身或子孫是否有「帶文字的 heading」。empty-spacer 判定的
   // 語意互斥 guard（見呼叫端註解）。空 heading（`<h2></h2>` 佔位）不算——
   // 那種確實只是 layout 殼。
@@ -4151,6 +4191,43 @@
       if (norm(h.textContent)) return true;
     }
     return false;
+  }
+
+  // v2.5.8：el 的高度是不是「只因為被同一列拉伸」才有的。
+  // spacer 的定義是「自己佔住一塊留白」（自帶 height / min-height / padding）。flex 橫列
+  // 或 grid 的格子預設 align-self: stretch，高度跟著同列最高的那格走——短文字的標籤格
+  // （表格第一欄「Import」「Tools」、步驟編號欄）自己只有一行字高，卻因為隔壁說明欄
+  // 折了好幾行而量到 100px 以上，三條 spacer 條件全中被藏掉。
+  // gitbook docs quickstart 實證（Jimmy 2026-11-16 裁定修）：clean 當下主欄被擠窄、說明
+  // 欄折行讓列高過 60，第一欄五格標籤全被藏；不擠窄時列高更高的「Content」格也一樣。
+  // 判定不看尺寸門檻、不看 class：暫時把 el 的 align-self 改成 flex-start（不拉伸）重量
+  // 一次，高度掉到 SPACER_MIN_HEIGHT 以下＝原本的高度不是它自己的。自帶 min-height /
+  // height 的廣告槽不受拉伸與否影響、重量後仍高，照舊當 spacer 清。
+  // 只認 parent 是 flex 橫列或 grid（直排 flex 的 cross axis 是寬度、與高度無關）。
+  // 這條驗 X、不驗 Y：只回答「高度來源是不是列拉伸」；不判斷格子內容有沒有價值
+  // （呼叫端另要求有文字，空格子維持原判定）。
+  function heightIsRowStretchOnly(el) {
+    const parent = el.parentElement;
+    if (!parent || !el.style || typeof window === 'undefined' || !window.getComputedStyle) return false;
+    let pcs;
+    try { pcs = window.getComputedStyle(parent); } catch (_) { return false; }
+    if (!pcs) return false;
+    const pd = pcs.display || '';
+    const isFlexRow = (pd === 'flex' || pd === 'inline-flex') &&
+      String(pcs.flexDirection || 'row').indexOf('row') === 0;
+    const isGrid = pd === 'grid' || pd === 'inline-grid';
+    if (!isFlexRow && !isGrid) return false;
+    const prev = snapshotStyles(el, ['align-self']);
+    let h;
+    try {
+      el.style.setProperty('align-self', 'flex-start', 'important');
+      h = el.getBoundingClientRect().height;
+    } catch (_) {
+      h = NaN;
+    } finally {
+      restoreStyles(el, prev);
+    }
+    return h >= 0 && h < SPACER_MIN_HEIGHT;
   }
 
   function hideInsideArticleEmptySpacers(articleEl, hidden, containers) {
@@ -4201,6 +4278,9 @@
 
       const rect = el.getBoundingClientRect();
       if (rect.height < SPACER_MIN_HEIGHT) continue;
+
+      // v2.5.8：帶短文字的列內格子，高度是被同列撐出來的 → 不是 spacer。
+      if (text && heightIsRowStretchOnly(el)) continue;
 
       // v0.8.79 MDN：含程式碼塊 / 資料表 web component 的區塊（內容在 shadow DOM，
       // light textContent 空）不是 empty spacer——MDN Syntax 段（h2 + <mdn-code-example>）
@@ -5993,6 +6073,15 @@
       // container，被誤 hide 後 reader card 主圖整段消失只剩圖說文字。
       const TAG = el.tagName;
       if (TAG === 'IMG' || TAG === 'PICTURE' || TAG === 'VIDEO' || TAG === 'SOURCE') continue;
+      // v2.5.8：已知內容 embed 的 iframe 同理排除。responsive 影片嵌入的通用寫法是
+      // 「relative 外殼 + padding-top 撐比例 + iframe position:absolute 填滿」，iframe
+      // 自己就是那個 absolute 元素——不在 figure 內時（isInPreserved 保護不到）會被本
+      // 規則當 overlay 藏掉，外殼留一塊 16:9 空白。dev.to YouTube 實證（Jimmy
+      // 2026-11-16 裁定修）：iframe 被藏、外殼 608×342 空白。不另查白名單：非白名單
+      // 的 iframe 已由先跑的 hideInsideArticleThirdPartyIframes 藏掉（本迴圈開頭就
+      // skip），figure 內的由下方 preserved 擋——走到這裡的 iframe 只剩已知內容
+      // embed。留下來後由 styler 的 fill-iframe 機制 pin 回填滿外殼。
+      if (TAG === 'IFRAME') continue;
       // v0.7.148 guard：含 `<h1>` → 視為「hero header title overlay」設計，
       // 不 hide（hide 後 h1 雖自身 visible 但 ancestor display:none 會連帶
       // 0×0 不可見、標題完全消失）。TBIJ thebureauinvestigates.com 實機
@@ -7990,13 +8079,18 @@
       // 含 video / iframe sibling 的 wrapper 是 player layout 輔助元素，
       // 其大 padding 是媒體佔位、不是裝飾留白，不 cap。
       if (siblingHasMediaEmbed(el)) continue;
-      const prev = snapshotStyles(el, WRAPPER_SPACING_PROPS);
+      // v2.5.8：embed 就在殼裡面（absolute 填滿 padding box）時，padding 是比例盒、
+      // 不 cap；margin 仍是殼外的留白、照舊 cap。
+      const ratioBox = paddingBoxHoldsAbsoluteEmbed(el);
       const decls = {};
       for (const prop of WRAPPER_SPACING_PROPS) {
+        if (ratioBox && prop.indexOf('padding-') === 0) continue;
         if ((parseFloat(cs.getPropertyValue(prop)) || 0) > WRAPPER_SPACING_CAP) {
           decls[prop] = WRAPPER_SPACING_CAP + 'px';
         }
       }
+      if (!Object.keys(decls).length) continue;
+      const prev = snapshotStyles(el, WRAPPER_SPACING_PROPS);
       applyImportant(el, decls);
       capped.push({ el, prev });
     }

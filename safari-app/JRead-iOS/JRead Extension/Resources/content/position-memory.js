@@ -503,8 +503,32 @@
       return typeof e.composedPath === 'function' && e.composedPath().indexOf(host) !== -1;
     } catch (_) { return false; }
   }
+  // v2.5.8：Article View 的 E 鍵（封存這篇）不算閱讀互動——與 ESC、浮動圖示同一個
+  // 缺口：封存成功後導回清單，pagehide 的 flush 把「還原後原封不動的位置」寫回
+  // Readwise。實測（Chromium 載擴充、本機假伺服器＋proxy）：Readwise 0.3 → 還原到
+  // 5 / 14 → 只按 E → PATCH { location: archive } 之後多一筆 { reading_progress: 0.3077 }。
+  // 判定收斂到「這次按鍵是封存鍵」：
+  //   - 只在有外部進度同步的 session（onPosition 有值＝Article View；E 鍵封存只掛在
+  //     那裡，一般網頁閱讀模式的 E 照舊算互動）
+  //   - 按鍵條件與 reader-article.js attachArchiveKey 的 keydown 判定是**同一份事實的
+  //     雙實作**（無修飾鍵的 e / E、非組字、焦點不在可打字元素）。那邊改條件這邊要跟；
+  //     forcing：v258-archive-key-no-progress-write.spec.js 用真的 attachArchiveKey 對拍
+  //   - 唯一刻意不同：長按產生的 repeat 那邊不重複觸發、這邊照樣不算互動（否則按久
+  //     一點，第一下觸發封存、後續 repeat 又把閘門打開）
+  // 封存失敗 / 已在封存區而留在本頁時，這次按鍵同樣不算（按 E 不代表讀了文章）。
+  // 讀過再按 E 不受影響（翻頁 / 捲動早已設過 interacted）；本機記錄照寫。
+  // 這條不管 ⌥P 切換模式、功能選單面板內點擊（仍算互動）
+  function isArchiveKey(e) {
+    if (!onPosition || !e || e.type !== 'keydown') return false;
+    if (e.key !== 'e' && e.key !== 'E') return false;
+    if (e.isComposing || e.keyCode === 229) return false;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false;
+    const NS = global.__JRead;
+    if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return false;
+    return true;
+  }
   function onUserInteract(e) {
-    if (isExitKey(e) || isOwnControlEvent(e)) return;
+    if (isExitKey(e) || isOwnControlEvent(e) || isArchiveKey(e)) return;
     interacted = true;
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
     scheduleSave();

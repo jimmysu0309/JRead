@@ -92,6 +92,7 @@
   // v1.5.28：日期 item 標記——CSS order:1 把日期推到 byline 最後，作者（及頭像等
   //   其餘 item）維持預設 order:0 排在前，達成「作者排在日期前」（Jimmy 2026-07-02）。
   //   v2.5.6：同一個 byline 的每個日期 item 與夾在兩個日期之間的分隔符都標（見標記處註解）。
+  //   v2.5.8：日期所在那一層容器的其餘 item 也標（作者在容器外時；見標記處註解）。
   const BYLINE_DATE_ITEM_ATTR = 'data-jread-byline-date-item';
   // v1.5.28：分類 kicker / eyebrow 標記——標題「之前」、連到分類頁的短連結
   //   （NPR「BUSINESS」→ /sections/business/）。閱讀模式移除（Safari / Firefox
@@ -6082,8 +6083,7 @@ html.${HTML_CLASS}.jread-orion body {
                 // 整個 item 就是日期連結、或 <time> 外面包一層連結的不受影響）；
                 // 分隔符含 CSS 畫的空殼點（無文字、無子元素；圖片在 byline 內一律被藏、不用另外排除）。
                 // 只有一個日期 item 的 byline 不會多標任何東西，行為與 v2.5.5 相同。
-                // 這條只管順序、不管隱藏：日期群後面接非日期 item（dev.to「Originally
-                // published at」）時，那一格與它前面的分隔符留在前段。
+                // 這條只管順序、不管隱藏。日期群後面接的非日期 item 由下面 v2.5.8 那段處理。
                 const ditems = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
                 const isShellSep = (el) => !el.children.length && !bnorm(el.textContent);
                 const isSepLike = (el) => bisSep(el) || isShellSep(el);
@@ -6108,6 +6108,38 @@ html.${HTML_CLASS}.jread-orion body {
                   }
                   if (mark) setMark(el, BYLINE_DATE_ITEM_ATTR);
                 });
+                // v2.5.8：站方把日期與附屬項目收在同一層容器、作者在容器外面時，整層跟著
+                // 日期走（dev.to `<a>作者</a><p>Posted • Edited • Originally published at…</p>`：
+                // 上面只標日期群，「• Originally published at」留在 order:0 → 排到日期前面，
+                // 站方順序是 Posted · Edited · Originally。同型：vocus 日期列尾的閱讀時間、
+                // distill `.date` 內月日與年份兩格）。全部同為 order:1 時照 DOM 順序排＝
+                // 該層維持站方順序、整層在作者之後。
+                // 條件（都是結構訊號，不認文字內容）：
+                //   ① 所有日期 item 的父層是同一個容器（日期直接掛在 root 底下＝作者與日期
+                //      同層時，容器就是 root、③ 不可能成立，維持上面的行為）
+                //   ② 容器內第一個非分隔符 item 是日期（日期前面還有別的項目時，那個項目
+                //      可能就是作者——v1.5.28 的「作者排在日期前」要靠它留在 order:0）
+                //   ③ 容器之前（DOM 序）有帶文字的 item（容器外沒有東西留在前段時，整層
+                //      都標等於沒排序，不必動）
+                //   ④ 容器內的非日期 item 沒有作者訊號（rel=author / 行首 By 前綴）——
+                //      「標籤在外、日期與作者同層」時不可把作者推到日期後面
+                {
+                  const group = dateItem.parentElement;
+                  if (group &&
+                      ditems.every((el, i) => !isDateFlags[i] || el.parentElement === group)) {
+                    const inGroup = ditems.filter((el) => group.contains(el));
+                    const lead = inGroup.find((el) => !isSepLike(el));
+                    const headBefore = ditems.some((el) => !group.contains(el) &&
+                      bnorm(el.textContent) && !bisSep(el) &&
+                      (el.compareDocumentPosition(group) & 4 /* DOCUMENT_POSITION_FOLLOWING */));
+                    const authorInside = inGroup.some((el) => !isDateFlags[ditems.indexOf(el)] &&
+                      ((el.matches && el.matches('a[rel~="author"]')) || el.querySelector('a[rel~="author"]') ||
+                       BYLINE_AUTHOR_PREFIX_RE.test(bnorm(el.textContent))));
+                    if (lead && isDateFlags[ditems.indexOf(lead)] && headBefore && !authorInside) {
+                      for (const el of inGroup) setMark(el, BYLINE_DATE_ITEM_ATTR);
+                    }
+                  }
+                }
               }
               // v1.7.5：撤銷 byline 子樹的段落載體標記——markTextDivs 依排序約束
               //（v0.8.49：主流字級要量原站 CSS，須在 ARTICLE_ATTR 前跑）先於 byline
