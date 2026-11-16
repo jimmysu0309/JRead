@@ -1131,7 +1131,49 @@
     const first = blocksWithH1[0];
     const firstText = (first.innerText || first.textContent || '').trim();
     if (firstText.length < MIN_TEXT_LEN) return articleEl;
+    if (firstH1BlockIsTitleOnly(first, blocksWithH1)) return articleEl;
     return first;
+  }
+
+  // v2.5.8：第一個含 h1 的區塊只是「標題區」時不限縮。
+  //
+  // 場景（dev.to 實證）：<article> 的直系子是 <header>（封面、作者、日期、標題
+  // h1、標籤）＋ 內文 <div>，作者在內文用 h1 當章節標題 → 兩個直系子各含 h1，
+  // 被當成「多篇 article 兄弟」限縮到 header，閱讀模式只剩標題沒有內文。上面
+  // 的 raw 長度閘門原意就是擋這種形狀，但標題長、標籤多、或多一段「Originally
+  // published at…」時 header 可見文字超過 MIN_TEXT_LEN 就漏掉（同站 header
+  // 197 字的沒事、207 字的中）。
+  //
+  // 判定（兩條都成立才放行，純結構、不看文字內容 → 翻譯後照樣成立）：
+  //   1. 第一塊扣掉 heading / 連結 / 按鈕後的散文量（CJK 權重）不到
+  //      MIN_TEXT_LEN——一篇文章的主體不會只有標題、作者連結與標籤
+  //   2. 後面含 h1 的區塊沒有一塊與它同形（同 tag 且同 class）。多篇兄弟是
+  //      同一個模板重複出現；同形時維持原行為（第一篇是極短快訊時仍要限縮）
+  const TITLE_BLOCK_NON_PROSE_SEL = 'h1, h2, h3, h4, h5, h6, a, button';
+  // 空白先收斂成單一空格：innerText 取不到（元素未渲染）退回 textContent 時，
+  // 原始碼縮排與換行會把標題區灌到幾百字。
+  function collapsedWeight(el) {
+    return cjkWeightedLen(getText(el).replace(/\s+/g, ' '));
+  }
+  function blockProseWeight(el) {
+    let excluded = 0;
+    const counted = [];
+    el.querySelectorAll(TITLE_BLOCK_NON_PROSE_SEL).forEach((n) => {
+      if (counted.some((c) => c.contains(n))) return;   // 巢狀只算最外層
+      counted.push(n);
+      excluded += collapsedWeight(n);
+    });
+    return collapsedWeight(el) - excluded;
+  }
+  function sameBlockShape(a, b) {
+    return a.tagName === b.tagName &&
+      String(a.getAttribute('class') || '').trim() === String(b.getAttribute('class') || '').trim();
+  }
+  function firstH1BlockIsTitleOnly(first, blocksWithH1) {
+    for (let i = 1; i < blocksWithH1.length; i++) {
+      if (sameBlockShape(first, blocksWithH1[i])) return false;
+    }
+    return blockProseWeight(first) < MIN_TEXT_LEN;
   }
 
   // promoteForTitle hop 上限：合理場景中 post-title 是 articleEl 的兄弟
