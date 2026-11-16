@@ -461,7 +461,7 @@
         <div class="privacy-point" data-i18n="privacy.point1"><strong>全本機處理</strong>：主文偵測、雜訊清除、排版全部在你的瀏覽器跑，頁面內容不上傳任何伺服器</div>
         <div class="privacy-point" data-i18n="privacy.point2"><strong>設定留在本機</strong>：偏好只存在你的瀏覽器，跨裝置同步走瀏覽器內建機制，不經第三方</div>
         <div class="privacy-point" data-i18n="privacy.point3"><strong>開放原始碼</strong>：程式碼完全公開，任何人都能檢視，確認沒有後門</div>
-        <div class="privacy-point" data-i18n="privacy.point4"><strong>選用整合才連網</strong>：只有你主動送到 Readwise / Instapaper 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key</div>
+        <div class="privacy-point" data-i18n="privacy.point4"><strong>選用整合才連網</strong>：只有連結了 Readwise / Instapaper（送出文章、在 JReader 讀文章、畫重點、同步閱讀進度）或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key</div>
       </div>
     </div>
   </div>
@@ -580,6 +580,26 @@
           <h3 data-i18n="feature.shortcuts.title">自訂快速鍵</h3>
           <p data-i18n="feature.shortcuts.body">可為切換閱讀模式 / 送到稍後閱讀服務 / YouTube 無邊模式 / 切換翻頁模式錄製自訂組合鍵，Chrome 與 Safari 皆通用</p>
         </div>
+        <div class="feature">
+          <h3 data-i18n="feature.youtube.title">YouTube 觀影模式</h3>
+          <p data-i18n="feature.youtube.body">影院模式把影片放大置中、隱藏留言與推薦；無邊模式讓影片撐滿整個視窗，按 ESC 退出</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.xthread.title">X 串文閱讀</h3>
+          <p data-i18n="feature.xthread.body">在 X（Twitter）貼文頁啟動閱讀模式，同一位作者的連續貼文合成一篇文章，其他人的回覆不列入</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.autodomain.title">自動啟動網域</h3>
+          <p data-i18n="feature.autodomain.body">常讀的網站加入清單，頁面載入就自動進入閱讀模式</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.linkfollow.title">點連結延續閱讀模式</h3>
+          <p data-i18n="feature.linkfollow.body">閱讀模式下點文內連結，目標頁自動進入閱讀模式，可在設定關閉</p>
+        </div>
+        <div class="feature">
+          <h3 data-i18n="feature.spacing.title">中英文自動補空白</h3>
+          <p data-i18n="feature.spacing.body">中文與英文、數字相鄰處自動補空白，半形標點轉全形，程式碼與連結不受影響</p>
+        </div>
       </div>
     </div>
   </section>
@@ -607,7 +627,7 @@
           <div class="step-num">3</div>
           <div class="step-body">
             <h3 data-i18n="install.step3.title">啟動閱讀模式</h3>
-            <p data-i18n="install.step3.body">點工具列的 JRead 圖示，或用懸浮按鈕、自訂快速鍵，雜訊立刻消失</p>
+            <p data-i18n="install.step3.body">點工具列的 JRead 圖示，或用懸浮按鈕、快速鍵（預設 ⌥R），雜訊立刻消失</p>
           </div>
         </div>
       </div>
@@ -664,7 +684,7 @@
           'privacy.point1': '<strong>全本機處理</strong>：主文偵測、雜訊清除、排版全部在你的瀏覽器跑，頁面內容不上傳任何伺服器',
           'privacy.point2': '<strong>設定留在本機</strong>：偏好只存在你的瀏覽器，跨裝置同步走瀏覽器內建機制，不經第三方',
           'privacy.point3': '<strong>開放原始碼</strong>：程式碼完全公開，任何人都能檢視，確認沒有後門',
-          'privacy.point4': '<strong>選用整合才連網</strong>：只有你主動送到 Readwise / Instapaper 或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key',
+          'privacy.point4': '<strong>選用整合才連網</strong>：只有連結了 Readwise / Instapaper（送出文章、在 JReader 讀文章、畫重點、同步閱讀進度）或開啟 Gemini 摘要時才連外，且用你自己的帳號與 API key',
 
           'compare.before': '啟動前',
           'compare.after': 'JRead 啟動後',
@@ -703,6 +723,16 @@
           'feature.reader.body': '在新分頁列出所選服務的最新文章，點進去用 JRead 的閱讀版型呈現，主題 / 字型 / 字級 / 翻頁全部沿用，也記住閱讀位置',
           'feature.shortcuts.title': '自訂快速鍵',
           'feature.shortcuts.body': '可為切換閱讀模式 / 送到稍後閱讀服務 / YouTube 無邊模式 / 切換翻頁模式錄製自訂組合鍵，Chrome 與 Safari 皆通用',
+          'feature.youtube.title': 'YouTube 觀影模式',
+          'feature.youtube.body': '影院模式把影片放大置中、隱藏留言與推薦；無邊模式讓影片撐滿整個視窗，按 ESC 退出',
+          'feature.xthread.title': 'X 串文閱讀',
+          'feature.xthread.body': '在 X（Twitter）貼文頁啟動閱讀模式，同一位作者的連續貼文合成一篇文章，其他人的回覆不列入',
+          'feature.autodomain.title': '自動啟動網域',
+          'feature.autodomain.body': '常讀的網站加入清單，頁面載入就自動進入閱讀模式',
+          'feature.linkfollow.title': '點連結延續閱讀模式',
+          'feature.linkfollow.body': '閱讀模式下點文內連結，目標頁自動進入閱讀模式，可在設定關閉',
+          'feature.spacing.title': '中英文自動補空白',
+          'feature.spacing.body': '中文與英文、數字相鄰處自動補空白，半形標點轉全形，程式碼與連結不受影響',
 
           'install.heading': '三步驟，開始乾淨閱讀',
           'install.step1.title': '下載並載入',
@@ -710,7 +740,7 @@
           'install.step2.title': '打開任一文章',
           'install.step2.body': '新聞、部落格、論文、Medium、Substack，任何以文字為主的頁面都可以',
           'install.step3.title': '啟動閱讀模式',
-          'install.step3.body': '點工具列的 JRead 圖示，或用懸浮按鈕、自訂快速鍵，雜訊立刻消失',
+          'install.step3.body': '點工具列的 JRead 圖示，或用懸浮按鈕、快速鍵（預設 ⌥R），雜訊立刻消失',
 
           'report.heading': '回報問題',
           'report.body': '遇到 bug 或有功能建議？歡迎到 <a href="https://github.com/jimmysu0309/JRead/issues" style="color:#2b6cb0;">GitHub Issues</a> 回報',
@@ -748,7 +778,7 @@
           'privacy.point1': '<strong>Fully local</strong>: detection, cleanup and typography all run in your browser — page content is never uploaded to any server.',
           'privacy.point2': "<strong>Settings stay local</strong>: preferences live in your own browser; cross-device sync uses the browser's built-in mechanism, no third party.",
           'privacy.point3': "<strong>Open source</strong>: the code is fully public — anyone can inspect it and verify there's no backdoor.",
-          'privacy.point4': '<strong>Network only when you opt in</strong>: it only reaches out when you send to Readwise / Instapaper or enable Gemini summaries — using your own account and API key.',
+          'privacy.point4': '<strong>Network only when you opt in</strong>: it only reaches out once you connect Readwise / Instapaper (sending articles, reading them in JReader, highlights, reading-progress sync) or enable Gemini summaries — using your own account and API key.',
 
           'compare.before': 'Before',
           'compare.after': 'After JRead',
@@ -787,6 +817,16 @@
           'feature.reader.body': 'List your chosen service\'s latest articles in a new tab and open them in JRead\'s reading layout — same theme / font / size / paging, and it remembers your position.',
           'feature.shortcuts.title': 'Custom shortcuts',
           'feature.shortcuts.body': 'Record your own key combos for toggle reading mode / send to a read-later service / YouTube borderless / toggle paged mode — works in Chrome and Safari.',
+          'feature.youtube.title': 'YouTube viewing modes',
+          'feature.youtube.body': 'Cinema mode centres the video and hides comments and recommendations; borderless mode fills the whole window. Press ESC to exit.',
+          'feature.xthread.title': 'X thread reading',
+          'feature.xthread.body': 'Start reading mode on an X (Twitter) post and the author\'s consecutive posts become one article, with other people\'s replies left out.',
+          'feature.autodomain.title': 'Auto-enable domains',
+          'feature.autodomain.body': 'Add the sites you read often and reading mode turns on as soon as the page loads.',
+          'feature.linkfollow.title': 'Reading mode follows links',
+          'feature.linkfollow.body': 'Click a link inside an article and the destination opens in reading mode too. Can be turned off in settings.',
+          'feature.spacing.title': 'CJK–Latin spacing',
+          'feature.spacing.body': 'Adds a space where Chinese meets Latin letters or digits and converts half-width punctuation to full-width; code and links are left alone.',
 
           'install.heading': 'Three steps to clean reading',
           'install.step1.title': 'Download and load',
@@ -794,7 +834,7 @@
           'install.step2.title': 'Open any article',
           'install.step2.body': 'News, blogs, papers, Medium, Substack — any text-first page works.',
           'install.step3.title': 'Start reading mode',
-          'install.step3.body': 'Click the JRead icon in the toolbar, or use the floating button or a custom shortcut — the noise disappears.',
+          'install.step3.body': 'Click the JRead icon in the toolbar, or use the floating button or the shortcut (⌥R by default) — the noise disappears.',
 
           'report.heading': 'Report an issue',
           'report.body': 'Found a bug or have a feature request? Open an issue on <a href="https://github.com/jimmysu0309/JRead/issues" style="color:#2b6cb0;">GitHub Issues</a>.',

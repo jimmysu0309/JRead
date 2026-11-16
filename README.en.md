@@ -18,13 +18,17 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 
 - **Article detection**: tries `<article>`, then Schema.org markup, then a content-density heuristic to locate the real article block
 - **One-click toggle**: enter and exit reading mode from the toolbar menu, the floating button, a keyboard shortcut, or a three-finger tap
+- **Auto-enable domains**: add the sites you read often and reading mode turns on as soon as a page loads; tick the per-domain toggle in the toolbar menu, or manage the list (one domain per line) in settings
 - **Clean typography**: adjustable font, size, weight (light / regular / bold), line height, and content width; a width self-check makes sure body text, headings, and category rows all fill the configured width instead of being pinched by the original site's wrappers; blockquotes are indented as a block and keep the site's own design, get a theme-colored left rule when the site gives them none or its rule is too faint on the current theme, and CJK quotes are never set in faux italics
 - **Latin font override**: when the font is set to serif or sans-serif, you can pick a separate Latin font for letters and numbers while Chinese keeps its serif / sans rendering; each mode remembers its own choice. Alongside system fonts, four variable fonts ship built in (Source Serif, Piazzolla, Public Sans, Source Sans), available across platforms including iOS
+- **CJK–Latin spacing**: adds a space where Chinese meets Latin letters or digits and converts half-width punctuation next to Chinese to full-width; code and links are left alone (on by default, can be turned off in settings)
 
 ### Noise handling
 
 - **Noise hiding**: automatically removes ads, sticky headers, popups, and related-article lists
 - **Collapsed content is expanded**: content the site folded away — expandable infobox lists, accordion panels, native `<details>` — is opened automatically. Reading mode strips the page's buttons, so without this those sections would be unreachable. Navigation link tables at the end of an article are left collapsed
+- **YouTube cinema / borderless modes**: on a YouTube video page, cinema mode enlarges and centres the video on a black backdrop and hides comments and recommendations (it shares ⌥R with the reading-mode toggle); borderless mode fills the whole window and resizes its height to the video's aspect ratio (⌥Y by default). Press ESC to exit
+- **X (Twitter) threads**: start reading mode on a post page and the author's consecutive posts are assembled into one article, with other people's replies left out
 - **Edit mode**: manually remove leftover noise the cleaner missed, so the article is cleaner when **printing** or **sending to a read-later service**. In reading mode, select a section to remove and one click hides it; mistakes can be undone with Cmd/Ctrl+Z. Removals last only for the session (they return on exit or reload), and removed sections appear in neither the printout nor what is sent to a read-later service
 
 ### Reading experience
@@ -37,6 +41,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 - **Paragraph focus scrolling (scroll mode only)**: an indicator on the left marks the current paragraph; press Space to jump to the next one, and paragraphs below a threshold smoothly scroll back toward the top (threshold adjustable); not applicable in paged mode
 - **Hide the cursor while idle**: in reading mode the mouse cursor disappears after 2 seconds without movement and returns the instant you move or click; scrolling does not count as movement, so the cursor stays hidden while you read with the wheel or Space (can be turned off in settings; touch devices are unaffected)
 - **Position memory**: leave an article partway through (exit reading mode, close the tab, restart the browser) and JRead remembers where you were — the paragraph in scroll mode, the page in paged mode — restoring it on re-entry within the retention window (adjustable; default 3 days, max 7, 0 to disable)
+- **Reading mode follows links**: click a link inside an article and the destination (same tab or new tab) opens in reading mode too; typing a URL yourself is unaffected (on by default, can be turned off in settings)
 
 ### Read-later integration
 
@@ -53,7 +58,7 @@ JRead is built around three things: **find the article**, **remove the noise**, 
 
 - **Floating button**: a small persistent icon at the edge of the page — tap to toggle reading mode, long-press for a menu, drag to reposition to either edge and up/down; opacity and size are adjustable, or it can be turned off
 - **Three-finger tap**: on touch devices, tap with three fingers to toggle reading mode (off by default, can be enabled in settings)
-- **Custom shortcuts**: record key combinations for toggle reading mode / send to read-later service / YouTube borderless mode / toggle paged mode; Safari (including an iPad external keyboard) has no browser-level rebinding entry, so this is the only path there, and it works on Chrome too
+- **Custom shortcuts**: built-in defaults are ⌥R (toggle reading mode), ⌥⇧R (send to read-later service), ⌥Y (YouTube borderless) and ⌥P (paged mode); you can also record your own key combinations for toggle reading mode / send to read-later service / YouTube borderless mode / toggle paged mode; Safari (including an iPad external keyboard) has no browser-level rebinding entry, so this is the only path there, and it works on Chrome too
 - **Reset to defaults**: restore all settings to their defaults in one click (with a confirmation step); this also clears saved profiles, the auto-enable domain list and custom shortcuts and cannot be undone, while keeping the Readwise / Gemini API keys and the Instapaper connection
 
 ---
