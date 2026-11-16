@@ -197,6 +197,35 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return w;
     },
 
+    // v2.5.11：ARIA 排的 div 表格判定（v2.5.9 起住 styler，這版上提成單一資料源——
+    // cleaner 的空殼規則也要認「這是表格的一格」）。判定條件與理由見 styler.js 開頭
+    // 「ARIA 排的 div 表格」註解：自己是 role=row 且不是原生 <tr>、直系子至少兩個
+    // 格子類 role、祖先有 role=table / grid / treegrid / rowgroup。
+    ARIA_CELL_ROLES: ['cell', 'columnheader', 'rowheader', 'gridcell'],
+    ARIA_TABLE_ROLES: ['table', 'grid', 'treegrid', 'rowgroup'],
+    isAriaTableRow(el) {
+      if (!el || el.nodeType !== 1 || el.tagName === 'TR') return false;
+      if (!el.getAttribute || el.getAttribute('role') !== 'row') return false;
+      const NSref = window.__JRead;
+      let cells = 0;
+      for (const c of el.children) {
+        if (NSref.ARIA_CELL_ROLES.indexOf(c.getAttribute('role')) !== -1) cells++;
+      }
+      if (cells < 2) return false;
+      const sel = NSref.ARIA_TABLE_ROLES.map((r) => `[role="${r}"]`).join(', ');
+      const owner = el.parentElement && el.parentElement.closest ? el.parentElement.closest(sel) : null;
+      return !!owner;
+    },
+    // el 自己是 ARIA 表格列的一格（格子類 role、parent 是 isAriaTableRow 的列）。
+    // 表格的格子是欄位的佔位：內容是空的也要留著，拿掉的話同列其餘格子會重新
+    // 平分、與表頭錯位（cleaner 的空殼規則用）。只認格子本身、不含格子內的包裝
+    isAriaTableCell(el) {
+      if (!el || el.nodeType !== 1 || !el.getAttribute) return false;
+      const NSref = window.__JRead;
+      if (NSref.ARIA_CELL_ROLES.indexOf(el.getAttribute('role')) === -1) return false;
+      return NSref.isAriaTableRow(el.parentElement);
+    },
+
     // 2026-11-15 review 批 5 A-04＋B-05：「站方 CSS 把這個元素藏起來了嗎」的單一資料源。
     // 原本 cleaner 五份（headingIsSiteHidden / carrierTextIsSiteHidden /
     // isSiteHiddenWithin / _visibleTextOf / visibleRenderedText）、detector 兩份
