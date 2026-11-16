@@ -309,7 +309,11 @@
   let saveTimer = null;
   let lastWriteTs = 0;     // 上次整包寫 storage 的時刻（writeThrottleDelay 節流基準）
   let reassertTimer = null;
-  let interacted = false;  // 回復後使用者是否互動過（互動過就不做二次對位）
+  // v2.5.9：原本的 interacted 一個旗標身兼兩職，拆成兩個（判定見 onUserInteract /
+  // noteMovement 註解）：
+  let userInput = false;   // 乙：這個 session 有過使用者輸入事件 → 不再做二次對位
+  let moved = false;       // 甲：使用者真的把閱讀位置移離基準 → 允許 onPosition 寫回外部進度（成立後鎖住）
+  let baseline = null;     // 甲的比較基準（readSpot 形狀）：進場 / 還原套用完當下的位置
   let remoteSeen = null;   // v2.5.0：這個 session 的外部進度已知值 { rw, rwAt }（restore 決定、寫出後更新）
   let onPosition = null;   // v2.5.0：beginSession 傳入的回呼——每次寫本機記錄前通知目前位置
 
@@ -431,12 +435,14 @@
     lastWriteTs = now;
     const key = sessionKey;
     const pos = capture();
-    // v2.5.0：通知外部同步（JReader 文章頁把位置寫回 Readwise）。只在使用者互動過之後
-    // ——剛進場還沒動就退出時，畫面位置可能是舊快取套出來的，寫回去會把別處較新的
-    // 進度蓋掉。回呼回 true＝這個位置已送出：先樂觀記成外部已知值，跟著下面這次
-    // 本機寫入一起落盤（退出 / 背景化時頁面隨時會被凍結，等不到回應再記）。送出
-    // 失敗的後果見 pickRestoreEntry 註解（外部沒變且較舊 → 本機優先，不會跳）
-    if (interacted && onPosition && pos && Number.isFinite(pos.ratio)) {
+    // v2.5.0：通知外部同步（JReader 文章頁把位置寫回 Readwise）。只在使用者真的移動過
+    // 閱讀位置之後（v2.5.9：moved，見 noteMovement）——剛進場還沒動就退出時，畫面位置
+    // 可能是舊快取套出來的，寫回去會把別處較新的進度蓋掉。回呼回 true＝這個位置已
+    // 送出：先樂觀記成外部已知值，跟著下面這次本機寫入一起落盤（退出 / 背景化時頁面
+    // 隨時會被凍結，等不到回應再記）。送出失敗的後果見 pickRestoreEntry 註解（外部
+    // 沒變且較舊 → 本機優先，不會跳）。本機記錄不看 moved，下面照寫
+    noteMovement();
+    if (moved && onPosition && pos && Number.isFinite(pos.ratio)) {
       let sent = false;
       try { sent = onPosition({ ratio: pos.ratio, final: !!force }) === true; } catch (_) { /* 外部同步失敗不影響本機記錄 */ }
       if (sent) remoteSeen = { rw: pos.ratio, rwAt: now };
@@ -473,67 +479,95 @@
     saveTimer = setTimeout(() => { saveTimer = null; persistNow(); }, SAVE_DEBOUNCE_MS);
   }
 
-  // v2.5.5：Escape 不算閱讀互動。它是「退出」鍵——keydown 先到這裡（capture）把
-  // interacted 設成 true，緊接著的退出 flush 就把「還原後原封不動的位置」寫回 Readwise
-  //（persistNow 的 interacted 閘門形同虛設）。實測：Readwise 0.3 → 翻頁還原落在 5 / 14
-  //（= 0.3077，頁數量化）→ 只按 ESC → PATCH 0.3077，使用者一頁都沒翻。讀過再按 ESC
-  // 不受影響（翻頁鍵 / 滾輪 / 點擊早已設過 interacted）。本機記錄不受影響（退出 flush
-  // 一律寫，不看 interacted）。
-  function isExitKey(e) {
-    return !!(e && e.type === 'keydown' && e.key === 'Escape');
-  }
-  // v2.5.6：落在浮動圖示上的事件不算閱讀互動。浮動圖示是 JRead 自己的控制項（短按
-  // 退出、長按選單、拖移換位置），操作它不代表讀了文章——與 ESC 同一個缺口：短按在
-  // pointerup 觸發退出（Article View 是導回清單），同一次點按緊接著的 touchend / click
-  // 仍會到這裡把 interacted 設成 true，之後 pagehide 的 flush 就把「還原後原封不動的
-  // 位置」寫回 Readwise。實測（Chromium 載擴充、滑鼠與觸控；Playwright WebKit 觸控）：
-  // Readwise 0.3 → 還原到 5 / 14 → 只點圖示 → PATCH 0.3077。iOS 的退出入口就是這顆。
-  // 判定讀 floating-icon.js 暴露的 host（單一資料源，不另記 id）：host 是 shadow host，
-  // window 層收到的 target 已被重新指向它，選單列與按鈕都算在內。拖移圖示後再按 ESC、
-  // 長按選單的「回文章列表」一併不算。讀過再點圖示不受影響（翻頁 / 捲動早已設過）。
-  // 只管「按在圖示上」的事件：滾輪停在圖示上方照樣捲動文章、按鍵不是對著圖示按，
-  // 兩者照舊算互動（滾輪不算的話，還原後的二次對位會把正在捲的頁面拉回去）。
-  // 這條驗浮動圖示、不驗其他 JRead 浮層（功能選單面板等）
-  function isOwnControlEvent(e) {
+  // v2.5.9：閱讀互動拆成兩個判定（Jimmy 2026-11-16 裁定）。原本一個 interacted 旗標
+  // 身兼兩職、任何輸入事件都打開，於是「按了 x」「切了翻頁模式」「點了一下」之後退出，
+  // 都會把還原後原封不動的位置寫回 Readwise；v2.5.5 / v2.5.6 / v2.5.8 逐個補例外
+  //（ESC、浮動圖示、Article View 的 E 鍵），洞補不完。兩件事要的鬆緊相反：
+  //
+  //   乙（userInput，取消還原後的二次對位）要寬——任何 INTERACT_EVENTS 都算，不留例外。
+  //     使用者手一動就取消，寧可少補對一次，不可把正在操作的頁面拉回去。
+  //   甲（moved，允許 onPosition 寫回外部進度）要嚴——「有過使用者輸入」而且「位置相對
+  //     基準真的變了」才成立，成立後鎖住到 session 結束（翻過去又翻回原頁照樣算讀過）。
+  //
+  // 基準（baseline）＝進場當下的位置；還原套用完重設。比較（compareSpot）：
+  //   - 翻頁模式比頁碼；捲動模式比 scrollTop，差距超過 MOVE_TOLERANCE_PX 才算
+  //   - 模式換了（翻頁 ↔ 捲動）、總頁數變了、捲動模式文件高度變了＝版面重排（⌥P、
+  //     功能選單面板改字級、lazy 圖晚載入、縮放），位置數值的意義已經不同 → 重設基準、
+  //     不算移動
+  // 檢查時機（noteMovement）：每個輸入事件當下（capture 階段、其他 handler 還沒跑——
+  // 觸控拖動在 touchend 之前已經捲完，這一拍就看得到）、事件後下一個 tick（翻頁 handler
+  // 在同一次派發內同步改頁碼，實測滾輪 / 滑動 / 按鍵皆然）、之後每個 scroll 事件
+  //（捲動模式的平滑捲動與慣性）、每次存檔 / flush 前。沒有使用者輸入之前不比也不重設
+  // ——程式造成的位移只會來自還原 / 二次對位（見 applyWithReassert）。
+  //
+  // 舊的三個例外（isExitKey / isOwnControlEvent / isArchiveKey）全部由這套涵蓋、已刪除：
+  // ESC、點或拖浮動圖示、E 封存都不移動閱讀位置，自然不寫回；它們現在會取消二次對位
+  //（ESC 與短按圖示緊接著就退出；E 封存失敗留在本頁、拖移圖示之後少補對一次，回到
+  // v2.5.7 以前的行為）。
+  //
+  // 這條驗 X、不驗 Y：只判「這個 session 內使用者有沒有把位置移走」；不判讀了多久、
+  // 不判移動方向。同一次手勢內拖頁碼出去又拖回原頁、或捲動模式來回不超過容差，
+  // 不算移動。捲動模式下「沒有任何輸入事件、文件高度也沒變」的 scrollTop 飄移，會在
+  // 下一個輸入事件被當成移動（Article View 合成文章實測 6 秒飄移 0px）。
+  // 觸控拖動途中（touchend 之前）不算輸入，二次對位仍可能在拖動超過 1.2 秒時發生
+  //（v2.5.9 之前就有的缺口，INTERACT_EVENTS 沒有 touchstart）
+  //
+  // 實測位移（Chromium 1280×800，捲動模式）：滑鼠滾輪一格 100px、方向鍵 40px、
+  // PageDown 760px、觸控板最小 1px；到底後的滾輪 / 方向鍵、無作用鍵、點段落皆 0px
+  const MOVE_TOLERANCE_PX = 24;
+  function readSpot() {
     const NS = global.__JRead;
-    const host = NS && NS.floating && NS.floating.host;
-    if (!host || !e || e.type === 'wheel' || e.type === 'keydown') return false;
-    if (e.target === host) return true;
-    try {
-      return typeof e.composedPath === 'function' && e.composedPath().indexOf(host) !== -1;
-    } catch (_) { return false; }
+    if (NS && NS.pagedMode && NS.pagedMode.isInstalled()) {
+      const p = NS.pagedMode.getPosition();
+      return p ? { mode: 'paged', page: p.idx, pages: p.total } : null;
+    }
+    const scroller = document.scrollingElement || document.documentElement;
+    if (!scroller) return null;
+    return { mode: 'scroll', top: scroller.scrollTop, height: scroller.scrollHeight };
   }
-  // v2.5.8：Article View 的 E 鍵（封存這篇）不算閱讀互動——與 ESC、浮動圖示同一個
-  // 缺口：封存成功後導回清單，pagehide 的 flush 把「還原後原封不動的位置」寫回
-  // Readwise。實測（Chromium 載擴充、本機假伺服器＋proxy）：Readwise 0.3 → 還原到
-  // 5 / 14 → 只按 E → PATCH { location: archive } 之後多一筆 { reading_progress: 0.3077 }。
-  // 判定收斂到「這次按鍵是封存鍵」：
-  //   - 只在有外部進度同步的 session（onPosition 有值＝Article View；E 鍵封存只掛在
-  //     那裡，一般網頁閱讀模式的 E 照舊算互動）
-  //   - 按鍵條件與 reader-article.js attachArchiveKey 的 keydown 判定是**同一份事實的
-  //     雙實作**（無修飾鍵的 e / E、非組字、焦點不在可打字元素）。那邊改條件這邊要跟；
-  //     forcing：v258-archive-key-no-progress-write.spec.js 用真的 attachArchiveKey 對拍
-  //   - 唯一刻意不同：長按產生的 repeat 那邊不重複觸發、這邊照樣不算互動（否則按久
-  //     一點，第一下觸發封存、後續 repeat 又把閘門打開）
-  // 封存失敗 / 已在封存區而留在本頁時，這次按鍵同樣不算（按 E 不代表讀了文章）。
-  // 讀過再按 E 不受影響（翻頁 / 捲動早已設過 interacted）；本機記錄照寫。
-  // 這條不管 ⌥P 切換模式、功能選單面板內點擊（仍算互動）
-  function isArchiveKey(e) {
-    if (!onPosition || !e || e.type !== 'keydown') return false;
+  // 純函式：'moved'（位置真的變了）/ 'same' / 'rebase'（版面或模式變了，基準作廢）
+  function compareSpot(base, cur, tolerancePx) {
+    if (!cur) return 'same';              // 讀不到位置：不下結論
+    if (!base || base.mode !== cur.mode) return 'rebase';
+    if (cur.mode === 'paged') {
+      if (base.pages !== cur.pages) return 'rebase';
+      return base.page !== cur.page ? 'moved' : 'same';
+    }
+    if (base.height !== cur.height) return 'rebase';
+    return Math.abs(cur.top - base.top) > tolerancePx ? 'moved' : 'same';
+  }
+  function resetBaseline() { baseline = readSpot(); }
+  function noteMovement() {
+    if (moved || !userInput || !sessionKey) return;
+    const cur = readSpot();
+    const verdict = compareSpot(baseline, cur, MOVE_TOLERANCE_PX);
+    if (verdict === 'rebase') baseline = cur;
+    else if (verdict === 'moved') moved = true;
+  }
+
+  // 封存鍵（Article View 的 E）按鍵形狀的單一來源：無修飾鍵的 e / E、非組字、焦點不在
+  // 可打字元素。reader-article.js attachArchiveKey 的 keydown 用這個函式（v2.5.9 收成
+  // 單一來源；v2.5.8 是兩邊各寫一份、靠 spec 對拍）。住這個檔的理由：本檔在一般網頁與
+  // Article View 都會載入、且排在 reader-article.js 之前；反過來一般網頁拿不到。
+  // **不看 repeat**——長按不重複觸發由 attachArchiveKey 呼叫端自己擋。
+  // v2.5.9 起位置記憶自己不再用它（E 鍵不寫回進度改由 moved 判定涵蓋），只負責提供。
+  // forcing：v259-archive-key-single-source.spec.js
+  function isArchiveKeyShape(e, NS) {
+    if (!e || e.type !== 'keydown') return false;
     if (e.key !== 'e' && e.key !== 'E') return false;
     if (e.isComposing || e.keyCode === 229) return false;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false;
-    const NS = global.__JRead;
     if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return false;
     return true;
   }
-  function onUserInteract(e) {
-    if (isExitKey(e) || isOwnControlEvent(e) || isArchiveKey(e)) return;
-    interacted = true;
+  function onUserInteract() {
+    userInput = true;
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
+    noteMovement();
+    setTimeout(noteMovement, 0);
     scheduleSave();
   }
-  function onScroll() { scheduleSave(); }
+  function onScroll() { noteMovement(); scheduleSave(); }
   function flushNow() {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     persistNow(true); // flush 語意：略過節流、立即落盤（iOS 背景凍結防護不變）
@@ -637,12 +671,16 @@
   }
 
   // 套 entry + lazy-load 二次對位（使用者還沒互動才對）
+  // v2.5.9：套用完重設「真的移動過」的比較基準（程式搬的位置不算使用者移動）。二次對位
+  // 不必再重設：版面沒變時它落在同一個位置；版面變了（總頁數 / 文件高度不同）
+  // compareSpot 自己會判成 rebase
   function applyWithReassert(key, entry, el) {
     applyEntry(entry, el);
+    resetBaseline();
     if (reassertTimer) clearTimeout(reassertTimer);
     reassertTimer = setTimeout(() => {
       reassertTimer = null;
-      if (!interacted && sessionKey === key) applyEntry(entry, el);
+      if (!userInput && sessionKey === key) applyEntry(entry, el);
     }, REASSERT_MS);
   }
 
@@ -742,7 +780,9 @@
     }
     sessionKey = key;
     articleEl = el || null;
-    interacted = false;
+    userInput = false;
+    moved = false;
+    resetBaseline(); // 沒有可還原的位置時，基準＝進場位置；有的話 applyWithReassert 會再重設
     remoteSeen = null;
     onPosition = opts && typeof opts.onPosition === 'function' ? opts.onPosition : null;
     installListeners();
@@ -763,6 +803,7 @@
     removeListeners();
     remoteSeen = null;
     onPosition = null;
+    baseline = null;
     sessionKey = null;
     articleEl = null;
     memMap = null; // 下次進場 restore 重新 seed（避免跨 session 用到舊快照）
@@ -795,6 +836,8 @@
     resolvePageIndex,
     pickRestoreEntry,
     describeRestore,
+    isArchiveKeyShape,
+    compareSpot,
     remoteSeenAfterRestore,
     legacyKeyMatch,
     computeExitScrollTop,
@@ -807,7 +850,7 @@
     setDays,
     isTracking: () => !!sessionKey,
     STORAGE_KEY, DIAG_KEY, DEFAULT_DAYS, MAX_DAYS, MAX_ENTRIES, MIN_RATIO, REST_FRACTION, FALLBACK_LEAD_MIN, REMOTE_CHANGE_EPS,
-    MIN_WRITE_INTERVAL_MS
+    MIN_WRITE_INTERVAL_MS, MOVE_TOLERANCE_PX
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -330,7 +330,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey };
+  const api = { attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -750,6 +750,17 @@
   // keyguard 同階段 stopImmediatePropagation，同 reader-highlights H 鍵）。
   // deps 供 spec 注入：win / RC / storage / navigate。回傳 { trigger } 便於測試。
   const ARCHIVE_TOAST_ID = 'jr-archive';
+  // 封存鍵形狀判定的單一來源在 position-memory.js（article.html 先載入、掛在
+  // NS.positionMemory）。ctx.NS 是 spec 注入的替身時退回頁面上的 __JRead；Node 環境
+  //（jsdom spec 直接 require 本檔）退回 require 同一個檔——都是同一個函式本體
+  function archiveKeyShape(NS) {
+    const pm = (NS && NS.positionMemory) || (global.__JRead && global.__JRead.positionMemory);
+    if (pm && typeof pm.isArchiveKeyShape === 'function') return pm.isArchiveKeyShape;
+    if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
+      try { return require('../content/position-memory.js').isArchiveKeyShape || null; } catch (_) { return null; }
+    }
+    return null;
+  }
   function attachArchiveKey(docData, ctx, deps) {
     const d = deps || {};
     const { NS, PC, service, creds } = ctx || {};
@@ -812,11 +823,12 @@
     }
 
     win.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.keyCode === 229) return;
-      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.key !== 'e' && e.key !== 'E') return;
+      // v2.5.9：按鍵形狀判定與位置記憶「E 不算閱讀互動」共用同一個函式
+      //（position-memory.js isArchiveKeyShape）。拿不到就不觸發（不另留一份判定）
+      const isShape = archiveKeyShape(NS);
+      if (!isShape || !isShape(e, NS)) return;
+      // 長按 repeat 不重複觸發——刻意只擋在這邊（位置記憶那邊 repeat 照樣不算互動）
       if (e.repeat) return;
-      if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
       trigger();
