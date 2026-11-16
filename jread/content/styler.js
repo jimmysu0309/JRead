@@ -45,21 +45,12 @@
   //     擁有；沒有表格祖先的 role=row 多半是誤用在互動清單上，不當表格）
   // 這條驗「是不是 ARIA 表格的一列」、不驗列內容是不是適合並排；等分欄寬的 CSS 規則
   // 在 segCardWidth（選擇器同一組 role，CSS 數不了格子數——單格列吃到 flex 也只是撐滿）
-  const ARIA_CELL_ROLES = ['cell', 'columnheader', 'rowheader', 'gridcell'];
-  const ARIA_TABLE_ROLES = ['table', 'grid', 'treegrid', 'rowgroup'];
+  // v2.5.11：判定本體上提到 namespace.js（cleaner 的空殼規則共用同一份）
+  const ARIA_CELL_ROLES = NS.ARIA_CELL_ROLES;
+  const ARIA_TABLE_ROLES = NS.ARIA_TABLE_ROLES;
   const ARIA_TABLE_SEL = ARIA_TABLE_ROLES.map((r) => `[role="${r}"]`).join(', ');
   const ARIA_CELL_SEL = ARIA_CELL_ROLES.map((r) => `[role="${r}"]`).join(', ');
-  function isAriaTableRow(el) {
-    if (!el || el.nodeType !== 1 || el.tagName === 'TR') return false;
-    if (!el.getAttribute || el.getAttribute('role') !== 'row') return false;
-    let cells = 0;
-    for (const c of el.children) {
-      if (ARIA_CELL_ROLES.indexOf(c.getAttribute('role')) !== -1) cells++;
-    }
-    if (cells < 2) return false;
-    const owner = el.parentElement && el.parentElement.closest ? el.parentElement.closest(ARIA_TABLE_SEL) : null;
-    return !!owner;
-  }
+  const isAriaTableRow = NS.isAriaTableRow;
   // el 自己是 ARIA 表格列、或位在某一列裡面（格子與格子內的段落 / 包裝）
   // v2.5.10：ARIA 表格格子「內容撐出格子」時的收窄值（passAriaNarrowCellInsets）。
   // 6px＝GitBook 站方格子內距 12px 的一半：相鄰兩欄文字之間仍有 12px 間距。
@@ -69,6 +60,11 @@
   const ARIA_TABLE_ROOT_SEL = ARIA_TABLE_ROLES.filter((r) => r !== 'rowgroup').map((r) => `[role="${r}"]`).join(', ');
   // 不可換行是內容本身語意的載體（程式碼 / 鍵盤輸入 / 表單），不改它的 white-space
   const ARIA_CELL_KEEP_NOWRAP_SEL = 'pre, code, kbd, samp, textarea, input, select, svg, math';
+  // v2.5.11：收窄過的表「只在空白處換行」要回 normal 的兩個屬性
+  const ARIA_CELL_WORD_WRAP_PROPS = ['overflow-wrap', 'word-break'];
+  // 「只在空白處換行」寫完後重量的時間點（ms）：400 蓋過站方常見的 transition
+  //（100–300ms），1500 蓋過內嵌字型載入後的重排；另外掛 document.fonts.ready
+  const ARIA_CELL_SETTLE_MS = [400, 1500];
   function inAriaTableRow(el, stopAt) {
     for (let n = el; n && n !== stopAt && n.nodeType === 1; n = n.parentElement) {
       if (n.getAttribute && n.getAttribute('role') === 'row' && isAriaTableRow(n)) return true;
@@ -3920,7 +3916,16 @@ html.${HTML_CLASS}.jread-orion body {
           directLen += node.textContent.trim().length;
         }
       }
-      if (directLen < 4) continue;
+      // v2.5.11：ARIA 表格列（isAriaTableRow）裡的格子不套 4 字門檻——有字就算。
+      // GitBook 實證（docs.gitbook.com blocks/table 四欄表）：表頭四格是同一種
+      // `div[role=columnheader]`、站方都是 14px / 500；「Company / Status / Contact」
+      // 過得了門檻被標成 text-div、吃到內文字級，「MRR」只有 3 個字被擋在外面、
+      // 留在站方的 14px——同一列四格字級不一（v0.8.49 門檻上線起既有）。
+      // 4 字門檻擋的是散在版面裡的零碎短 div（分隔點、計數、圖示字）；表格格子的
+      // 短字（縮寫、數字、金額）本來就是內容，同一列的格子必須同進同出。
+      // 這條驗「格子有沒有被當成內文」、不驗格子之間站方本來就不同的字級
+      //（下面主流字級那一關照舊）
+      if (directLen < (inAriaTableRow(div, articleEl) ? 1 : 4)) continue;
       const cs = win.getComputedStyle(div);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       const fs = Math.round(parseFloat(cs.fontSize) || 0);
@@ -7687,6 +7692,17 @@ html.${HTML_CLASS}.jread-orion body {
         //   2. 收完還伸進右側內距的「不可換行」元素（white-space: nowrap / pre），
         //      放行成可換行（nowrap → normal、pre → pre-wrap，後者保留空白與
         //      換行字元；只在空白處換、不從單字中間斷）；程式碼 / 鍵盤輸入 / 表單類（ARIA_CELL_KEEP_NOWRAP_SEL）不動
+        //   3. v2.5.11：收窄過的表，一般文字格也只在空白處換行（overflow-wrap /
+        //      word-break 回 normal）——放不下的單字稍微伸進內距、不從單字中間斷。
+        //      Jimmy 實機（iPhone Safari、襯線字）表頭「Company」被斷成「Compan / y」：
+        //      第 2 步只管不可換行元素，表頭格只有一個文字節點，站方 <main> 的
+        //      overflow-wrap:anywhere 一路繼承下來照斷（Source Serif 17px「Company」
+        //      77.2px、390 寬內容區 77.5px 只差 0.3px；375 寬 / 字重 600 / 字級 18
+        //      兩個引擎都重現）。以「格」為單位試寫、寫完再量：單字長到伸出格子
+        //      外緣（scrollWidth > clientWidth——email「rena@ace.ai」97px 對 89.5px
+        //      的格子）的那一格整格退回站方的斷法，寧可從中間斷也不壓到隔壁格
+        //      量不能只在 apply 當下量一次（當下是 fallback 字型＋站方 transition 途中，
+        //      見 settleLater 的註解），字型載完與兩個固定時間點各重量一次
         // 順序不可反：先放行換行、內距不收的話，390 寬內容區 65px 比「progress」的
         // 膠囊（74px）還窄，站方 overflow-wrap:anywhere 會把單字從中間斷開。
         // 沒有任何一格撐出去的表（quickstart 兩欄表四種寬度實測全部 0）整段不進、
@@ -7696,6 +7712,14 @@ html.${HTML_CLASS}.jread-orion body {
         const win = articleEl.ownerDocument?.defaultView;
         if (!win) return;
         const overflows = (c) => (c.scrollWidth || 0) > (c.clientWidth || 0) + 1;
+        // 會從單字中間斷的 computed 值（overflow-wrap: anywhere / break-word、
+        // word-break: break-all / break-word）
+        const breaksInsideWord = (cs) => {
+          const ow = cs.overflowWrap || cs.getPropertyValue('overflow-wrap');
+          const wb = cs.wordBreak || cs.getPropertyValue('word-break');
+          return ow === 'anywhere' || ow === 'break-word' || wb === 'break-all' || wb === 'break-word';
+        };
+        const wordWrapCells = [];
         const tables = new Map();
         for (const row of articleEl.querySelectorAll('[role="row"]')) {
           if (!isAriaTableRow(row)) continue;
@@ -7756,7 +7780,64 @@ html.${HTML_CLASS}.jread-orion body {
               d.style.setProperty(prop, v, 'important');
             }
           }
+          // 第 3 步（v2.5.11）：一般文字格只在空白處換行。先找出要寫的元素——格子自己
+          //（站方多半是從祖先繼承下來的，寫格子就蓋掉整格）＋另有自己宣告的後代
+          for (const c of cells) {
+            if (c.closest(ARIA_CELL_KEEP_NOWRAP_SEL)) continue;
+            const recs = [];
+            const els = [c];
+            for (const d of c.querySelectorAll('*')) els.push(d);
+            for (const el of els) {
+              if (el !== c && el.closest(ARIA_CELL_KEEP_NOWRAP_SEL)) continue;
+              // 已經寫過的祖先會讓繼承來的後代算出 normal，自然跳過
+              if (!breaksInsideWord(win.getComputedStyle(el))) continue;
+              for (const prop of ARIA_CELL_WORD_WRAP_PROPS) {
+                const rec = { el, prop, value: el.style.getPropertyValue(prop), priority: el.style.getPropertyPriority(prop) };
+                recs.push(rec);
+                ariaCellSnap.push(rec);
+                el.style.setProperty(prop, 'normal', 'important');
+              }
+            }
+            if (recs.length) wordWrapCells.push({ c, recs, kept: true });
+          }
         }
+        if (!wordWrapCells.length) return;
+        // 寫 → 量 → 伸出格子外緣的那一格整格退回站方的斷法。可重入：退回過的格子
+        // 下一輪會再試寫一次（字寬變了可能就放得下）
+        const settleWordWrap = () => {
+          for (const w of wordWrapCells) {
+            if (w.kept) continue;
+            for (const a of w.recs) a.el.style.setProperty(a.prop, 'normal', 'important');
+            w.kept = true;
+          }
+          const out = wordWrapCells.filter((w) => (w.c.scrollWidth || 0) > (w.c.clientWidth || 0));
+          for (const w of out) {
+            for (let i = w.recs.length - 1; i >= 0; i--) {
+              const a = w.recs[i];
+              if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+              else a.el.style.removeProperty(a.prop);
+            }
+            w.kept = false;
+          }
+        };
+        settleWordWrap();
+        // apply 當下量到的不是最終字寬（真站實測兩個來源）：(a) JRead 選到的內嵌字型
+        // 這一刻才剛注入 @font-face、還在載入，畫面是 fallback 字型（Georgia 比
+        // Source Serif 窄約 7%）；(b) 站方連結帶 transition: all 100ms，字級還停在
+        // 站方的 14px、沒走到 JRead 的 17px。兩者都讓 email 在 apply 當下「放得下」、
+        // 落定後伸出格子 14–20px 壓到隔壁。所以字型載完、以及固定兩個時間點各重量
+        // 一次；退出閱讀模式後（ARTICLE_ATTR 已拿掉）不再動
+        // ariaCellSnap.restored：這一輪 apply 已被 restore（退出，或改設定時的 restore →
+        // 重新 apply）。重新 apply 後 ARTICLE_ATTR 又是 1，只看屬性擋不住上一輪留下的
+        // 計時器——它手上的格子清單與原值是上一輪的，再寫會與新一輪的還原紀錄打架
+        const settleLater = () => {
+          if (ariaCellSnap.restored) return;
+          if (articleEl.getAttribute(ARTICLE_ATTR) !== '1') return;
+          settleWordWrap();
+        };
+        const fontSet = articleEl.ownerDocument.fonts;
+        if (fontSet && fontSet.ready && typeof fontSet.ready.then === 'function') fontSet.ready.then(settleLater, () => {});
+        for (const ms of ARIA_CELL_SETTLE_MS) win.setTimeout(settleLater, ms);
       };
 
       const passPangu = () => {
@@ -8271,6 +8352,8 @@ html.${HTML_CLASS}.jread-orion body {
           if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
           else a.el.style.removeProperty(a.prop);
         }
+        // v2.5.11：標記這一輪已還原，passAriaNarrowCellInsets 晚到的重量看到就不再動
+        snapshot.ariaCellSnap.restored = true;
       }
 
       // v0.8.101：還原寬語意內容（table / pre）的 display / overflow-x / max-width

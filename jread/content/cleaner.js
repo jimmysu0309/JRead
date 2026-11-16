@@ -4240,6 +4240,9 @@
       // 的 textContent 空、querySelector 讀不到內部 DOM，rect 又有高度——三條
       // spacer 條件全命中，會被誤殺（2026-04-21 Dwarkesh YouTube embed 實測）。
       if (el.tagName === 'IFRAME' || el.tagName === 'VIDEO' || el.tagName === 'AUDIO') continue;
+      // v2.5.11：ARIA 表格列裡的格子不是留白——空的也是欄位的佔位（見
+      // collapseEmptyWrappersAfterClean 同一條 guard 的註解）
+      if (NS.isAriaTableCell(el)) continue;
 
       // blocker 檢查：若 wrapper 內含 visible 的媒體 / 互動元素就不算 empty
       // spacer。v0.7.26 techbang 修法：blocker 本身或祖先已被 jread-hidden
@@ -7556,6 +7559,14 @@
       // 的 innerText / querySelector('img') 全看不到 → 被誤判成 empty wrapper
       // collapse 掉。結構通則：元素有 shadowRoot = 內容在 shadow 內、非空殼，保留。
       if (el.shadowRoot) continue;
+      // v2.5.11：ARIA 排的 div 表格（NS.isAriaTableRow）列內的格子，內容是空的也不藏。
+      // GitBook 實證（docs.gitbook.com blocks/table 四欄表第 4 列）：站方那一格本來
+      // 就沒填，被當空殼拿掉後同列剩三格重新平分、與表頭錯位；進場前格高 ≥ 60px 時
+      // 更早被 hideInsideArticleEmptySpacers 藏、collapseGridWithHiddenCell 再把整列
+      // 塌成上下堆疊（WebKit 390 / 430 實測）。原生 <td> / <th> 本來就不在兩條規則的
+      // 掃描範圍（EMPTY_COLLAPSE_SKIP_TAGS / CONTAINER_SEL），這條讓 div 排的表格一致。
+      // 只放格子本身：格子內的空包裝、不在表格列內的空殼照舊
+      if (NS.isAriaTableCell(el)) continue;
       const rect = el.getBoundingClientRect();
       if (rect.height < EMPTY_COLLAPSE_MIN_HEIGHT) continue;
       if (rect.width < EMPTY_COLLAPSE_MIN_WIDTH) continue;
