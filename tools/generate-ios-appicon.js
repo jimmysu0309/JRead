@@ -2,7 +2,7 @@
 // 生成 iOS / iPadOS / macOS（iOS-on-Mac）home screen 用的 AppIcon（1024×1024）。
 //
 // v2.2.13：來源改成向量原稿 safari-app/JRead-iOS/icon-source/app-icon-<name>.svg
-// （Claude Design 畫布「JRead App Icon」匯出，原稿存於 claude design/JRead App Icon/）。
+// （Claude Design 畫布「JRead App Icon」匯出，原稿存於 docs/claude design/JRead App Icon/）。
 // 舊版拿 docs/icon-512.png（512 點陣）放大兩倍當 1024 → 字邊糊。
 // 向量幾何是從 icon-512.png 逐像素反推的（Jimmy 2026-10-28）：J = Georgia Bold，
 // 字級 798.4 / 1024、原點 (315.4, 819.2)，與原稿 IoU 0.996。滿版方形不透明——
