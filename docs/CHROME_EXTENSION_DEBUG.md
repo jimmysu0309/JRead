@@ -72,7 +72,7 @@ node tools/debug-harness.js --profile work --url https://paywalled-site.com/some
 
 **狀態（2026-06-18）：drive-and-read 已實測通過。** 在新 session 載入 `cua-computer-use` MCP 工具後，對 Jimmy 活的主 Chrome（pid + window_id，全程 `is_on_screen:false`／前景在別的 Space）跑完整四步：(1) `check_permissions` 三項皆 true 且歸屬 `com.trycua.driver` daemon；(2) `get_window_state` 背景讀到該分頁 AX tree（標題／連結／訂閱頁尾等殘留文字結構讀得到，element_count 1381）；(3) `hotkey ["option","r"]` 不帶 window_id（auth-message 路徑、不搶前景）背景觸發 JRead 閱讀模式；(4) 再讀 AX（element_count 902，少 479 個元素）+ `vision` 截背景視窗確認 reader card 已渲染、雜訊退出主視覺。全程 Chrome 未被帶到前景。<br>（前置歷史：已安裝 + 授權 + MCP 註冊並 Connected；背景枚舉/AX 讀取 CLI 已 smoke 過。）
 
-已裝版本：cua-driver 0.5.7（Rust backend，maintainer 現行預設；macOS 背景 AX 表現若不佳可改 `--backend=swift` 重裝）。
+已裝版本以 `cua-driver --version` 為準（2026-11-16 為 0.51.0；Rust backend，maintainer 現行預設；macOS 背景 AX 表現若不佳可改 `--backend=swift` 重裝）。
 
 #### 安裝（已完成，重裝/他機照這步）
 
@@ -261,7 +261,7 @@ Claude 在 Claude Code 裡面使用這個 harness 的典型流程：
 2. npm test（regression pass）
 3. node tools/debug-harness.js --fresh
    → 讀 stdout 的 SW/PAGE log、DOM state、gap 數據
-4. Read /tmp/ext-debug.png（或專案 .playwright-mcp/screenshot.png）
+4. Read /tmp/ext-debug.png（JRead 是 `.playwright-mcp/jread-viewport.png` / `jread-reader-fullpage.png` / 翻頁模式的 `jread-page-NN.png`）
    → 肉眼確認視覺
 5. 若有問題，改 code，重複 3–4
 6. OK 後請使用者手動 Chrome reload 驗證 → commit/bump/release
@@ -396,6 +396,8 @@ fixture 的正確定位是**forcing function（鎖住行為不回歸）**，不�
   # 驗收翻頁模式（先寫 settings.pagedMode=true 再 toggle，印 PAGED AUDIT：
   # column CSS 算出值 / 頁數 / 鍵盤翻頁 stride）
   node tools/debug-harness.js --fresh --paged
+  # 其餘 flag（--url / --translate-first / --set k=v / --scheme / --width / --html / --profile）
+  # 與選用時機見 /harness-verify skill；非中文站要補跑 --translate-first
 
 然後 Read `.playwright-mcp/jread-viewport.png`、分析 stdout log。
 不需要請使用者貼 console 或截圖——這是自助的工具。
@@ -488,4 +490,4 @@ fixture 是 forcing function，不是假設探索工具——fixture 會漏掉�
 
 符合全部 → 下次 Claude 跟你改 extension 時，它可以**自己驗證視覺**，不必請你貼 console 或截圖。
 
-> **JRead 現況補充**：連「commit 前手動 Chrome reload 確認一次」這步也已不需要——Claude 用 chrome-in-chrome 自己操作 `chrome://extensions/` reload、走 `__jread_debug` event bridge 觸發閱讀模式，整個 debug 循環自己 close。仍需人工驗的只剩三類：keyboard shortcut 對映與衝突、popup 點擊互動、使用體感（字體渲染 / 對比 / 動畫）。新專案剛套用這套流程時，前幾輪還是建議人工複驗一次建立信心。
+> **JRead 現況補充**：連「commit 前手動 Chrome reload 確認一次」這步也已不需要——Claude 用 cage（claude-in-chrome）走 `__jread_debug` event bridge 的 `reload` 重載擴充、再觸發閱讀模式（不開 `chrome://extensions/`，見 `/cage-debug` skill），整個 debug 循環自己 close。仍需人工驗的只剩三類：keyboard shortcut 對映與衝突、popup 點擊互動、使用體感（字體渲染 / 對比 / 動畫）。新專案剛套用這套流程時，前幾輪還是建議人工複驗一次建立信心。

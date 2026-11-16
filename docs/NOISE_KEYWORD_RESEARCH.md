@@ -40,11 +40,12 @@
 | adsense / adslot / adbox / advert / adhesion | NOISE_KEYWORD_RE | EasyList |
 | metered / interstitial / takeover | NOISE_KEYWORD_RE | Unclutter + EasyList |
 | sociable / printfriendly / blogger-labels / instapaper_ignore | NOISE_KEYWORD_RE | Postlight |
-| onesignal / intercom / smartfeed | NOISE_KEYWORD_RE | Unclutter |
+| onesignal / intercom | NOISE_KEYWORD_RE | Unclutter |
+| smartfeed | NOISE_KEYWORD_RE / STRONG | Unclutter |
 | mpu | NOISE_KEYWORD_RE | EasyList（IAB 廣告標準尺寸別名） |
 | replies / remark / shoutbox / respond / composer / combx | NOISE_KEYWORD_RE | Mozilla + Postlight |
 | supplemental / cover-wrap / entry-unrelated / crumb | NOISE_KEYWORD_RE | Mozilla + Postlight |
-| recirc / next-article / latest-posts / mostread / most-read | NOISE_KEYWORD_RE | Unclutter |
+| recirc / next-article / latest-posts / mostread / most-read | NOISE_KEYWORD_RE / STRONG | Unclutter |
 | nag / backdrop / topbar / announcement / popover / drawer | NOISE_KEYWORD_RE | EasyList + Unclutter |
 | loader / contact / shopping / plea | NOISE_KEYWORD_RE | Postlight + Unclutter |
 | article-sidebar / sidebar-(wrapper\|column\|content\|widget\|primary\|secondary) | NOISE_KEYWORD_RE / STRONG | 自蒐 + Mozilla negative |
@@ -60,7 +61,7 @@
 | `media` | 主文常用 `.article-media` / `.media-block` |
 | `meta` | 主文常用 `.post-meta` / `.entry-meta` 顯示日期署名 |
 | `info` | 主文常用 `.post-info` / `.article-info` |
-| `tags` | 主文 tag 列表常用 `.post-tags` / `.tags-list` |
+| `tags`（單字） | 主文 tag 列表常用 `.post-tags`；複合的 `tags?[-_]?list` 已於 v0.8.44 採用 |
 | `widget`（單字） | 太通用 |
 | `scroll`（單字） | 主文 `.scroll-section` / `.scrollytelling` |
 | `disclaimer` | 醫療 / 法律主文有正當用法 |
@@ -89,4 +90,4 @@
 2. **先比對 Mozilla Readability + Postlight + Unclutter**：3 個源 ≥ 2 個收的 token 通常安全
 3. **word boundary 評估**：JRead 用 `[^a-z0-9]` 為 boundary，token 後 `-` `_` `.` ` ` 都算 boundary。新 token 加前先想：有沒有英文常見詞 / 主文 class 慣用名命中？
 4. **fixture forcing function**：每個新 token 配一個 wrapper 在 `generic-noise-keyword-coverage.html`，spec 鎖
-5. **更新本檔**：「已採用」與「刻意不採用」兩表都要寫
+5. **更新本檔**：有新的「刻意不採用」結論一定要寫進來；v0.7.85 之後新採用的 token，出處寫在 `NOISE_TOKEN_DEFS` 的程式註解，「已採用」表不保證齊全、以程式碼為準

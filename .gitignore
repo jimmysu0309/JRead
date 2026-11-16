@@ -69,8 +69,8 @@ test/
 #
 # 檔案仍在原位（forcing function 與日常工作都讀根目錄），版控走「疊加的第二個
 # 倉庫」：.private-git 是它的 .git、work-tree 指向本根目錄，推到私有 repo
-# github.com/jimmysu0309/JRead-docs。2026-08-07 起追蹤範圍擴到 8 檔——除了下面
-# 三份逐版文件，還有協作規則本體 CLAUDE.md / AGENTS.md / .claude/（那幾份也在
+# github.com/jimmysu0309/JRead-docs。2026-08-07 起追蹤範圍擴大——除了下面
+# 三份逐版文件，還有協作規則本體 CLAUDE.md / AGENTS.md / .claude/ / .agents/skills/ 與 docs/excluded/ 的部分文件（完整清單見 docs/DEV-SETUP.md；那幾份也在
 # 本檔的忽略清單內，兩邊都不收就等於只活在本機）。操作一律加 --git-dir：
 #   git --git-dir=.private-git status --short
 #   git --git-dir=.private-git add -u && git --git-dir=.private-git commit -m "…"

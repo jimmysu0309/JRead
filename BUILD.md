@@ -75,7 +75,7 @@ cannot serve both.
 The build performs exactly one transformation, applied via `jq`:
 
 ```bash
-jq '.background = {"scripts": ["popup/popup-core.js", "background/service-worker.js"]} |
+jq '.background = {"scripts": ["lib/logger.js", "lib/instapaper-keys.js", "lib/instapaper.js", "popup/popup-core.js", "content/settings-defaults.js", "lib/app-sync.js", "background/service-worker.js"]} |
     .browser_specific_settings.gecko.strict_min_version = "128.0" |
     .browser_specific_settings.gecko.data_collection_permissions = {"required": ["none"]}' \
     jread/manifest.json > firefox-build/manifest.json
@@ -85,12 +85,13 @@ This:
 
 1. Replaces `background.service_worker` with `background.scripts`
    (Firefox's required form for MV3 event-page-style background pages).
-   The script ordering is significant: `popup/popup-core.js` must load
-   before `background/service-worker.js` because the latter depends on
-   the helper functions defined in the former. On Chrome the same dependency
-   is expressed via `importScripts('/popup/popup-core.js')` inside the
+   The script ordering is significant: the six dependency files (logger,
+   Instapaper keys + client, `popup/popup-core.js`, settings defaults,
+   app-sync) must load before `background/service-worker.js`, which comes
+   last because it depends on the helpers they define. On Chrome the same
+   set of files is loaded via `importScripts(...)` at the top of the
    service worker (guarded with `typeof importScripts === 'function'` so
-   the call is a no-op in Firefox's event-page context).
+   the calls are a no-op in Firefox's event-page context).
 2. Adds `browser_specific_settings.gecko.strict_min_version: "128.0"`
    (the lower bound Mozilla recommends for stable MV3 behaviour).
 3. Adds `browser_specific_settings.gecko.data_collection_permissions: {"required": ["none"]}`
@@ -109,9 +110,10 @@ The Instapaper client (`lib/instapaper.js`) and its gitignored consumer keys
 `<script>` tags, into the Chrome service worker via `importScripts` (keys
 wrapped in try/catch so a missing keys file is a no-op), and — since v1.9.22 —
 into the Firefox `background.scripts` array and the Safari event page
-(`background/background.html`) as well, in the same order as the SW
+(`background/background.html`) as well — the same set of files as the SW's
+`importScripts`, and the two event-page lists share one order
 (`logger`, `instapaper-keys`, `instapaper`, `popup-core`, `settings-defaults`,
-`service-worker`). A missing keys file in a store build is harmless on every
+`app-sync`, `service-worker`). A missing keys file in a store build is harmless on every
 platform: a `<script src>` (or a Firefox background script) that 404s is simply
 skipped, the rest of the event page loads, and `getInstapaperConsumerKeys()`
 returns `null` → Instapaper reports `CONFIG` ("此版本未內建 Instapaper 金鑰") while
@@ -138,7 +140,12 @@ Expected output:
   "version": "X.Y.Z",
   "background": {
     "scripts": [
+      "lib/logger.js",
+      "lib/instapaper-keys.js",
+      "lib/instapaper.js",
       "popup/popup-core.js",
+      "content/settings-defaults.js",
+      "lib/app-sync.js",
       "background/service-worker.js"
     ]
   },

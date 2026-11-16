@@ -26,7 +26,9 @@ git clone git@github.com:jimmysu0309/JRead-test.git test
 ## 2. 內部文件 → 疊加在根目錄的第二個倉庫
 
 `SPEC.md`、`CHANGELOG.md`、`docs/CHANGELOG-archive.md`、`CLAUDE.md`、`AGENTS.md`、
-`.claude/skills/`、`.claude/settings.local.json` 這 8 份**檔案位置就在根目錄**，
+`.claude/skills/`、`.claude/hooks/`、`.claude/settings.json`、`.claude/settings.local.json`、
+`.agents/skills/`（symlink），以及 `docs/excluded/` 下的 page rounds 文件與 review 報告，
+這些**檔案位置就在原處**，
 但版控走另一個倉庫（`.private-git` 是它的 `.git`、work-tree 指向同一個根目錄）：
 
 ```bash
@@ -34,7 +36,7 @@ git clone git@github.com:jimmysu0309/JRead-test.git test
 git clone --no-checkout https://github.com/jimmysu0309/JRead-docs.git tmpclone
 mv tmpclone/.git .private-git && rmdir tmpclone
 git --git-dir=.private-git config core.worktree "$(pwd)"
-git --git-dir=.private-git checkout main   # 把 8 檔還原到 work-tree
+git --git-dir=.private-git checkout main   # 把追蹤的檔案還原到 work-tree
 ```
 
 （刻意**不用** `clone --bare`：bare clone 的 fetch refspec 是
