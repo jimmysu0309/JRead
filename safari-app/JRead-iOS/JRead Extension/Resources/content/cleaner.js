@@ -323,7 +323,7 @@
   //（一字換一字）。用語層的兩岸差異（视频 / 关注 以外的詞彙差）不在此列。
   // 與 tools/audit-lib.js 的 ZH_SIMP_TRAD_PAIRS 是同一份事實的雙實作（extension 與
   // node 工具無法共用模組）——forcing：noise-heading-zh-fold.spec.js 逐字比對兩份。
-  const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話领領击擊获獲抢搶购購买買预預约約参參将將为為优優额額赏賞赞讚连連员員脸臉书書团團们們图圖储儲鸟鳥价價转轉项項检檢举舉记記广廣业業销銷么麼这這个個则則奖獎证證处處载載资資';
+  const ZH_SIMP_TRAD_PAIRS = '阅閱读讀场場关關闻聞报報导導议議题題贴貼内內来來荐薦选選严嚴编編辑輯长長会會欢歡兴興许許气氣点點网網总總结結标標签籤级級体體设設继繼续續请請号號讨討论論区區应應评評热熱门門与與动動态態踪蹤订訂电電账帳帐帳丝絲专專页頁现現马馬话話领領击擊获獲抢搶购購买買预預约約参參将將为為优優额額赏賞赞讚连連员員脸臉书書团團们們图圖储儲鸟鳥价價转轉项項检檢举舉记記广廣业業销銷么麼这這个個则則奖獎证證处處载載资資时時叠疊两兩万萬译譯讯訊单單';
   // v2.5.4：摺疊擴到連結 CTA（NOISE_LINK_TEXT_RE / STRICT）、CTA 推廣段落
   //（CTA_PROMO_P_RE）、文中插播（NOISE_INLINE_AD_TEXT_RE）、文中推薦行前綴
   //（INLINE_RELATED_*_PREFIX_RE）——Jimmy 2026-11-15 同意。表補這幾條 regex 用得到
@@ -332,12 +332,30 @@
   //   報道→報導、回复→回覆（v2.5.3）
   //   轉发→轉發、发布→發佈、发表→發表（「发」是 發 / 髮 兩字的簡體，不進逐字表）
   //   讚助→贊助（「赞」逐字摺成「讚」——按赞 / 已赞 是多數；只有「赞助」是 贊）
-  // 還沒接摺疊的文字規則：REACTION_COUNT_RE（自帶簡體字面值）、NOISE_CTA_PARA_RE、
-  // ORPHAN_PROMPT_CTA_RE、NOISE_SIGNUP_CTA_RE（僅英文）、byline 家族。
+  // v2.5.5：摺疊接到 REACTION_COUNT_RE（原本自帶的簡體字面值撤掉）、NOISE_CTA_PARA_RE、
+  // ORPHAN_PROMPT_CTA_RE、RELATIVE_TIME_RE、byline 家族。表補這幾條用得到的字
+  //（时 叠 两 万 译 讯 单），逐詞規則補：
+  //   發表于→發表於、發佈于→發佈於（「于」在繁體文是姓氏，不進逐字表；套在
+  //     发表→發表 / 发布→發佈 之後，所以簡體「发表于」兩步摺到「發表於」）
+  //   周前→週前、分钟→分鐘（「周」在繁體文另有其字、「钟」是 鐘 / 鍾 兩字的簡體，
+  //     都不進逐字表；只認相對時間用得到的這兩個詞）
+  // 逐詞規則一律等長替換——各消費點的長度門檻與 slice 位置不受摺疊影響。
+  // 分側（方向原則：新形狀只加在「命中就保留」側）：
+  //   hide 側（摺疊後命中才藏；只認既有詞的簡體寫法、沒有新增詞）：REACTION_COUNT_RE、
+  //     NOISE_CTA_PARA_RE、ORPHAN_PROMPT_CTA_RE、hideInsideArticleCommentPanels 的
+  //     RELATIVE_TIME_RE 計數
+  //   保護側（摺疊後命中就保留）：bylineTextProtects（合成的 BYLINE_TEXT_RE 十處）、
+  //     blockIsBylineOrTitleMeta / pre-title 保護的 RELATIVE_TIME_RE、SIBLING_BYLINE_RE
+  //   刻意不接（hide 側、真站 43 頁沒有受害樣本）：hideBylineAvatarImgs 的
+  //     BYLINE_TEXT_STRONG_RE / WEAK_RE、hideBylineCategoryChips 的 BYLINE_AUTHOR_PREFIX_RE
+  //     ——簡體「编辑：」「报道」不會讓頭像 / 分類 chip 多藏（批 5 教訓：WEAK 多認一種
+  //     形狀就藏掉 dev.to 封面圖）
+  // 仍未接：NOISE_SIGNUP_CTA_RE（僅英文）。用語層差異（注册 / 关注 / 视频…）不進表。
   const ZH_FOLD_WORD_RULES = [
     [/報道/g, '報導'], [/回复/g, '回覆'],
     [/轉发/g, '轉發'], [/发布/g, '發佈'], [/发表/g, '發表'],
-    [/讚助/g, '贊助']
+    [/讚助/g, '贊助'],
+    [/發表于/g, '發表於'], [/發佈于/g, '發佈於'], [/周前/g, '週前'], [/分钟/g, '分鐘']
   ];
   const ZH_SIMP_TRAD_MAP = (() => {
     const m = new Map();
@@ -345,8 +363,13 @@
     for (let i = 0; i + 1 < cs.length; i += 2) m.set(cs[i], cs[i + 1]);
     return m;
   })();
+  // v2.5.5：快速路徑。摺疊接到 hideInsideArticleCommentPanels 後會對每個容器的整段
+  // textContent 呼叫；文字不含任何表內簡體字、也不含任何逐詞規則的字樣時輸出必等於
+  // 輸入（逐詞規則的來源字樣要嘛原文就有、要嘛由表內的字摺出來），直接回傳原字串
+  const ZH_FOLD_NEEDED_RE = new RegExp('[' + Array.from(ZH_SIMP_TRAD_MAP.keys()).join('') + ']|' +
+    ZH_FOLD_WORD_RULES.map(r => r[0].source).join('|'));
   function foldZhVariants(s) {
-    if (!s || !/[\u4e00-\u9fff]/.test(s)) return s;
+    if (!s || !ZH_FOLD_NEEDED_RE.test(s)) return s;
     let out = '';
     for (const ch of s) out += ZH_SIMP_TRAD_MAP.get(ch) || ch;
     for (const [re, to] of ZH_FOLD_WORD_RULES) out = out.replace(re, to);
@@ -588,6 +611,10 @@
   const BYLINE_TEXT_PROTECT_ONLY_RE = /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日/;
   const BYLINE_TEXT_RE = new RegExp(BYLINE_TEXT_STRONG_RE.source + '|' + BYLINE_TEXT_WEAK_RE.source + '|' + BYLINE_TEXT_PROTECT_ONLY_RE.source, 'i');
   const BYLINE_MAX_TEXT_LEN = 200;
+  // v2.5.5：保護側專用入口——簡體「编辑：」「报道：」「发布日期」「发表于」摺成台灣
+  // 寫法再比（caixin 文末「版面编辑：X 图片编辑：Y」實證：摺疊前被當雜訊藏掉）。
+  // hide 側（hideBylineAvatarImgs）不可改用本函式，仍直接比 STRONG / WEAK 原文
+  function bylineTextProtects(t) { return BYLINE_TEXT_RE.test(foldZhVariants(t)); }
 
   // 主文內 keyword heuristic 只作用於「容器型」元素。
   // 理由：真實世界的廣告/paywall/subscribe 區塊都是容器包裝，
@@ -2148,7 +2175,27 @@
     if (block.querySelector && block.querySelector('time')) return true;
     return false;
   }
+  // v2.5.5：「被擠窄的主文裡的大圖」不是頭像。dev.to 實測：主文是三欄 grid 的中間
+  // 欄，hideOutsideArticleSemantic 先藏了左側欄，主欄 auto-placement 落進第一條 64px
+  // 軌，clean 當下整篇只有 64px 寬——1000×420 的封面圖 rect 變 64×27 落進頭像尺寸帶，
+  // 同塊又有 <time> 與帶年份日期（WEAK），被當頭像藏掉（v1.7.25 起就有；styler 之後
+  // 才把版面攤回來，但圖已經藏了）。判準兩條都要成立：
+  //   - 圖自己宣告的尺寸（width / height 屬性與 natural 逐維取大——lazy 佔位時 natural
+  //     是 10×4 這類殘值、屬性才是真尺寸）兩維都超過頭像帶上限
+  //   - 渲染寬幾乎佔滿主文寬（≥ 80%）：頭像不會佔滿整篇主文，只有主文當下被擠窄才會
+  // 只看第一條不行：真頭像常用大原圖靠 CSS 縮小（真站 46 頁實測：freecodecamp
+  // 1196×1197 顯示 60、jianshu 601、techcrunch 497×400、bnext 600…全是頭像）。
+  // 只會少藏；主文寬量不到（jsdom）時不啟用。
+  const AVATAR_FILL_ARTICLE_RATIO = 0.8;
+  function imgIsSqueezedLargeImage(img, w, articleW) {
+    if (!(articleW > 0) || w < articleW * AVATAR_FILL_ARTICLE_RATIO) return false;
+    const dw = Math.max(parseInt(img.getAttribute('width') || '', 10) || 0, img.naturalWidth || 0);
+    const dh = Math.max(parseInt(img.getAttribute('height') || '', 10) || 0, img.naturalHeight || 0);
+    return dw > AVATAR_MAX_SIZE && dh > AVATAR_MAX_SIZE;
+  }
   function hideBylineAvatarImgs(articleEl, hidden) {
+    let articleW = 0;
+    try { articleW = articleEl.getBoundingClientRect().width || 0; } catch (_) { /* jsdom 等環境 */ }
     for (const img of articleEl.querySelectorAll('img')) {
       if (img.dataset && img.dataset.jreadHidden === '1') continue;
       if (img.closest && img.closest('figure')) continue;
@@ -2158,6 +2205,7 @@
       const h = r.height || img.naturalHeight || img.height || 0;
       if (!(w >= AVATAR_MIN_SIZE && w <= AVATAR_MAX_SIZE &&
             h >= AVATAR_MIN_SIZE && h <= AVATAR_MAX_SIZE)) continue;
+      if (imgIsSqueezedLargeImage(img, w, articleW)) continue;
       const alt = norm(img.getAttribute('alt') || '');
       let hit = false;
       let hops = 0;
@@ -3019,7 +3067,7 @@
     if (hasUnhiddenContentMedia(sib)) return true;
     const text = norm(visibleRenderedText(sib));
     if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN &&
-        (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE))) return true;
+        (bylineTextProtects(text) || foldZhVariants(text).match(RELATIVE_TIME_RE))) return true;
     // v2.2.20：翻譯把 <time> 攤平成純文字（dev.to「Posted on Jan 6」→「發表於 1 月 6 日」），
     // 上面的 time tag 保護失效、譯文日期沒有年份。原本這裡另寫一條 inline regex；
     // review A-03(b) 起「發表於」與無年份月日併進 BYLINE_TEXT_WEAK_RE，由上一條接住
@@ -3547,7 +3595,7 @@
         {
           const sibText2 = norm(sib.textContent || '');
           if (sibText2.length > 0 && sibText2.length <= BYLINE_MAX_TEXT_LEN &&
-              BYLINE_TEXT_RE.test(sibText2) &&
+              bylineTextProtects(sibText2) &&
               !(sib.querySelector && sib.querySelector('li'))) continue;
         }
         // 主文長段落分支（v0.7.154 wealth.com.tw 修法）：sibling 含「不在
@@ -3754,13 +3802,16 @@
   // 「285 贊∙7 重新堆疊」（再證譯法逐次不穩定）。修法：計數允許中文數字 run
   // （零〇一二三四五六七八九十百千萬兩），其餘結構（量詞前綴 + 已知反應名詞收尾 +
   // 整段純計數）全部不動——「十分感謝」「一年」因不以反應名詞收尾照樣 miss。
-  const REACTION_COUNT_RE = /^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬两兩]+)\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|赞|喜歡|喜欢|反應|反应|重新堆疊|重新堆叠|轉發|转发|轉貼|转贴|轉推|转推|重推|留言|回覆|回复|評論|评论|分享|收藏|按讚|推薦|推荐)\s*[·•∙、,|/]*)+$/i;
+  // v2.5.5：簡體字面值（赞 / 喜欢 / 反应 / 重新堆叠 / 转发 / 转贴 / 转推 / 回复 / 评论 /
+  // 推荐、數字「两」）撤掉，比對前過 foldZhVariants——每個被撤的寫法摺疊後都落在留下的
+  // 台灣寫法上（forcing：zh-fold-reaction-cta-time-byline.spec.js 逐詞斷言），沒有新增詞。
+  const REACTION_COUNT_RE =/^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬兩]+)\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|喜歡|反應|重新堆疊|轉發|轉貼|轉推|重推|留言|回覆|評論|分享|收藏|按讚|推薦)\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
     if (!/^(DIV|SECTION|ASIDE|FOOTER|UL|OL)$/.test(el.tagName)) return false;
     const text = (el.textContent || '').trim();
-    if (!REACTION_COUNT_RE.test(text)) return false;
+    if (!REACTION_COUNT_RE.test(foldZhVariants(text))) return false;
     // 不誤殺含段落 / heading 的容器
     if (Array.from(el.children).some(c => c.tagName === 'P' || /^H[1-6]$/.test(c.tagName))) return false;
     // 互動列特徵：含計數連結 / 按鈕 / 頭像 img（否則放行——純文字「3 Likes」不動）
@@ -4557,7 +4608,8 @@
   //   - heading 不算（標題本身含作者名的專欄）；包住藏起來那行或包住主文段落的祖先
   //     不算（它們的 textContent 含藏起來那行 / 整篇內文）
   function cardHasRenderedBylineFor(articleEl, hiddenP, bylineText) {
-    const name = norm(bylineText.replace(SIBLING_BYLINE_PREFIX_RE, '')).toLowerCase();
+    const prefixM = foldZhVariants(bylineText).match(SIBLING_BYLINE_PREFIX_RE);
+    const name = norm(prefixM ? bylineText.slice(prefixM[0].length) : bylineText).toLowerCase();
     if (NS.cjkWeightedLen(name) < 4) return false;
     const rendered = (el) => {
       for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
@@ -4597,7 +4649,7 @@
       const clone = p.cloneNode(true);
       for (const b of clone.querySelectorAll('button, [role="button"]')) b.remove();
       const text = norm(clone.textContent);
-      if (!SIBLING_BYLINE_RE.test(text) || NS.cjkWeightedLen(text) > SIBLING_BYLINE_MAX_WEIGHT) continue;
+      if (!SIBLING_BYLINE_RE.test(foldZhVariants(text)) || NS.cjkWeightedLen(text) > SIBLING_BYLINE_MAX_WEIGHT) continue;
       if (cardHasRenderedBylineFor(articleEl, p, text)) return;
       const meta = document.createElement('div');
       meta.setAttribute('data-jread-title-meta', '1');
@@ -5348,7 +5400,7 @@
           // ld > 0.5、總文 ~80 chars 落入「sibling 太小且 link 密」誤判；
           // byline 結構特徵跨站通用，誤殺風險可控。
           const sText = norm(s.el.textContent || '');
-          if (s.textLen < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(sText)) continue;
+          if (s.textLen < BYLINE_MAX_TEXT_LEN && bylineTextProtects(sText)) continue;
           // v1.5.6 byline 作者 chip 保護：短小元素若含「作者個人頁連結」
           // （/author/、/authors/、/@user 等）= 裸作者署名（無「By」前綴、無日期
           // 文字，BYLINE_TEXT_RE 漏抓）。techcrunch `wp-block-techcrunch-post-
@@ -5480,7 +5532,7 @@
             (c.querySelector && c.querySelector('h1, h2, h3, h4'))) continue;
         if (c.querySelector && c.querySelector('time')) continue;
         if (c.querySelector && c.querySelector('img, picture, video')) continue;
-        if (BYLINE_TEXT_RE.test(cText)) continue;
+        if (bylineTextProtects(cText)) continue;
         // 2026-10-07 review A-01：條件 D 描述的是「與標題**並排**的微型欄」，
         // 入口原本只看 children 數與文字量、沒有任何並排訊號——「heading +
         // 一行短段落」上下堆疊的結構（問答體、章節標題 + 一句話）會整句被清。
@@ -6081,7 +6133,7 @@
       // hideInsideArticleAbsoluteCreditOverlays 標 hidden、不會走到這。
       {
         const headText = norm(el.textContent || '').slice(0, 60);
-        if (headText && BYLINE_TEXT_RE.test(headText)) continue;
+        if (headText && bylineTextProtects(headText)) continue;
         // v2.2.20：Shinkansen 把作者 chip 攤平成純文字後 role=button 消失（theverge
         // fe267f 雙作者實測），剩 byline 容器內的作者 hover-card 這個結構訊號
         if (bylineBoxHasAuthorHoverCard(el, false)) continue;
@@ -7805,7 +7857,7 @@
         ORPHAN_LABEL_SENTENCE_END_RE.test(text);
       if (promptMode) {
         if (text.length > BYLINE_MAX_TEXT_LEN) return false;
-        if (!ORPHAN_PROMPT_CTA_RE.test(text)) return false;
+        if (!ORPHAN_PROMPT_CTA_RE.test(foldZhVariants(text))) return false;
         // 只認仍可見的 <p>——chip 的作者 popover（已被我們 hide）裡也有 <p>（theverge
         // 「Posts from this author will be…」），不構成「這塊是正文」證據
         let visibleP = false;
@@ -7883,7 +7935,7 @@
     }
     const text = norm(visibleRenderedText(el));
     if (text.length > 0 && text.length <= BYLINE_MAX_TEXT_LEN) {
-      if (BYLINE_TEXT_RE.test(text) || text.match(RELATIVE_TIME_RE)) return true;
+      if (bylineTextProtects(text) || foldZhVariants(text).match(RELATIVE_TIME_RE)) return true;
       if (clusterContainsAuthorProfileLink(el, true)) return true; // 只認仍可見的作者連結
     }
     const canon = (canonical === undefined) ? getCanonicalTitleText() : canonical;
@@ -8794,7 +8846,7 @@
       if (hops <= 2 && bylineBoxHasAuthorHoverCard(cur, true)) return true;
       const ct = textSansAsides(cur);
       if (ct.length > 200) return false;
-      if (BYLINE_TEXT_RE.test(ct.slice(0, 60))) {
+      if (bylineTextProtects(ct.slice(0, 60))) {
         // 作者名出現在「by …」與日期段之間；Link/Share/Gift 類 widget chip
         // 排在日期之後。只在日期段開始前的片段找 chip 文字（無日期則取前
         // 160 chars——該 hop 通常只有「by 名單」本身）。
@@ -9377,7 +9429,7 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (el.contains(articleEl)) continue;
       const text = el.textContent || '';
-      const matches = text.match(RELATIVE_TIME_RE);
+      const matches = foldZhVariants(text).match(RELATIVE_TIME_RE);
       if (!matches || matches.length < COMMENT_PANEL_MIN_TIMESTAMPS) continue;
       // 保護主文 layer 0（v0.7.201）：候選元素的文字量佔整個 article > 50%
       // 就不可能是留言面板——留言面板是 article 的子區塊，不會佔多數內容。
@@ -9934,7 +9986,7 @@
       //（短標題如「Gemini 3.5」因 < 15 chars 才倖免——「只有前面幾個出來」病徵）。
       if (isLoneSectionHeadingColumn(el)) continue;
       // byline 保護（與 sidebar-column 條件 A 同款）：短文 + byline pattern
-      if (t.length < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(t)) continue;
+      if (t.length < BYLINE_MAX_TEXT_LEN && bylineTextProtects(t)) continue;
       let cs, r;
       try { cs = window.getComputedStyle(el); r = el.getBoundingClientRect(); } catch (_) { continue; }
       const floated = cs && (cs.float === 'left' || cs.float === 'right');
@@ -10144,7 +10196,7 @@
       if (!hasLink && !hasMedia) continue;
       // 自連結標題 / byline 保護（與 inset 卡同款）
       if (containsSelfLinkTitleHeading(el)) continue;
-      if (t.length < BYLINE_MAX_TEXT_LEN && BYLINE_TEXT_RE.test(t)) continue;
+      if (t.length < BYLINE_MAX_TEXT_LEN && bylineTextProtects(t)) continue;
       hide(el, hidden);
     }
   }
@@ -10370,7 +10422,7 @@
       const t = norm(candidate.textContent);
       if (t.length < BIO_CARD_MIN_TEXT) continue;
       // byline 保護：署名列（by X / 日期開頭）不是 bio 卡
-      if (BYLINE_TEXT_RE.test(t.slice(0, 60))) continue;
+      if (bylineTextProtects(t.slice(0, 60))) continue;
       // v1.5 文章頭部 byline 保護：候選整段含發表日期 / 閱讀時間估計 = 文章開頭
       // byline/meta（非底部 bio 卡）→ 保留。解 Medium「副標佔滿前 60 字、byline
       // 日期被擠到後面」漏網（slice(0,60) 看不到）。
@@ -10481,7 +10533,7 @@
       if (p.dataset && p.dataset.jreadHidden === '1') continue;
       const text = norm(p.textContent);
       if (!text || text.length > NOISE_CTA_PARA_MAX_LEN) continue;
-      if (!NOISE_CTA_PARA_RE.test(text)) continue;
+      if (!NOISE_CTA_PARA_RE.test(foldZhVariants(text))) continue;
       hide(p, hidden);
     }
   }

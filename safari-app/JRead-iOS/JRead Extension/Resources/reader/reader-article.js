@@ -404,9 +404,88 @@
     } catch (_) { /* context 失效：不記模式切換，不影響閱讀 */ }
     return { check };
   }
+  // v2.5.5：「排版套用完成」那筆的頁數要等版面落定才讀。enterFromContainer 一 resolve
+  // 就讀的話，圖片還沒載完、翻頁模式的貼合（縮圖）與重新分頁也還沒跑——v2.5.4 實測
+  //（Chromium、5 種視窗 × 15 種內容 × 快取命中與否 150 次）：純文字 0 次不符；有圖的
+  // 文章幾乎每次都與落定後不同，預留尺寸的直式圖多 1–3 頁（之後被縮進頁內）、沒預留
+  // 尺寸的圖少 1–4 頁。同一批量測「模式切換」「退出回清單」兩筆 150 / 150 相符（它們
+  // 讀的是當下已落定的值），所以只動這一筆的讀值時機：
+  //   - 捲動模式沒有頁數 → 照舊立刻記
+  //   - 翻頁模式：兩個條件都成立才讀——(1) 主文內的圖全部載完（load / error）後再靜置
+  //     LAYOUT_SETTLE_QUIET_MS（paged-mode 的媒體載入重測 debounce 是 180ms）；
+  //     (2) 距開始等待已滿 LAYOUT_SETTLE_MIN_MS：paged-mode 進場後 1 秒 / 3 秒各有一次
+  //     無條件重測（remeasureTimers），預留尺寸的圖載入不觸發媒體重測、要到那兩次才
+  //     重新貼合（實測：1440×900 橫式預留尺寸圖，圖 50ms 內載完，頁數到 1 秒那次才從
+  //     6 變 9）。最多等 LAYOUT_SETTLE_CAP_MS
+  //   - 還沒落定就退出 / 封存 / 關分頁 → 當場補記（flushPendingLayoutLog），不掉這一筆
+  //   - 記錄多一欄 settled：false＝等不到落定（逾時或提前離開），頁數僅供參考
+  // ms（套版耗時）仍是 enterFromContainer resolve 當下的值，不含等待。
+  // 這條驗 X、不驗 Y：只看 <img> 的載入；3 秒後才由 web font 換字造成的重新分頁、
+  // video / iframe 晚載入不在判定內（頁數仍可能與之後不同）。
+  // deps 供 spec 注入：setTimeout / clearTimeout / now。回傳 { flush }（提前結束，settled=false）
+  const LAYOUT_SETTLE_QUIET_MS = 400;
+  const LAYOUT_SETTLE_MIN_MS = 3400;  // > paged-mode 最後一次固定重測（3000ms，forcing spec 比對）
+  const LAYOUT_SETTLE_CAP_MS = 8000;
+  function whenLayoutSettled(container, cb, deps) {
+    const setT = (deps && deps.setTimeout) || global.setTimeout;
+    const clearT = (deps && deps.clearTimeout) || global.clearTimeout;
+    const now = (deps && deps.now) || Date.now;
+    const t0 = now();
+    const pending = new Set();
+    try {
+      const imgs = container.querySelectorAll('img');
+      for (let i = 0; i < imgs.length; i++) if (!imgs[i].complete) pending.add(imgs[i]);
+    } catch (_) { /* 量不到就當沒有待載入的圖 */ }
+    let done = false;
+    let quiet = null;
+    let cap = null;
+    const finish = (settled) => {
+      if (done) return;
+      done = true;
+      if (quiet) clearT(quiet);
+      if (cap) clearT(cap);
+      try {
+        container.removeEventListener('load', onMedia, true);
+        container.removeEventListener('error', onMedia, true);
+      } catch (_) { /* */ }
+      cb(settled);
+    };
+    const arm = () => {
+      if (quiet) { clearT(quiet); quiet = null; }
+      if (pending.size === 0) {
+        const wait = Math.max(LAYOUT_SETTLE_QUIET_MS, LAYOUT_SETTLE_MIN_MS - (now() - t0));
+        quiet = setT(() => { quiet = null; finish(true); }, wait);
+      }
+    };
+    // load / error 不 bubble，capture 階段在祖先仍收得到（同 paged-mode onDescendantLoad）
+    function onMedia(e) {
+      const t = e && e.target;
+      if (!t || t.tagName !== 'IMG') return;
+      pending.delete(t);
+      arm(); // 已經在靜置中又有圖載入（晚插入的圖）→ 重新計時
+    }
+    try {
+      container.addEventListener('load', onMedia, true);
+      container.addEventListener('error', onMedia, true);
+    } catch (_) { /* */ }
+    cap = setT(() => { cap = null; finish(false); }, LAYOUT_SETTLE_CAP_MS);
+    arm();
+    return { flush: () => finish(false) };
+  }
+  // 還在等落定的那一筆（同一頁只會有一篇文章）
+  let pendingLayoutLog = null;
+  function flushPendingLayoutLog() {
+    const p = pendingLayoutLog;
+    pendingLayoutLog = null;
+    if (p) { try { p.flush(); } catch (_) { /* 記錄不可影響主流程 */ } }
+  }
   api.rlog = rlog;
   api.layoutMode = layoutMode;
   api.watchLayoutMode = watchLayoutMode;
+  api.whenLayoutSettled = whenLayoutSettled;
+  api.LAYOUT_SETTLE_QUIET_MS = LAYOUT_SETTLE_QUIET_MS;
+  api.LAYOUT_SETTLE_MIN_MS = LAYOUT_SETTLE_MIN_MS;
+  api.LAYOUT_SETTLE_CAP_MS = LAYOUT_SETTLE_CAP_MS;
 
   function init() {
     configureLogger(global);
@@ -581,6 +660,7 @@
       Object.assign({}, docData, { reading_progress: opts && opts.progress != null ? opts.progress : docData.reading_progress }), ctx);
 
     const backToFeed = function () {
+      flushPendingLayoutLog(); // 還在等版面落定就退出：先補記「排版套用完成」
       rlog('退出回清單', Object.assign({ id: String(docData.id || ''), to: backHref }, layoutMode(NS)));
       flushLog();
       global.location.href = backHref;
@@ -602,13 +682,26 @@
         .then(() => NS.enterFromContainer(container, (fallbackPosition || onPosition) ? { fallbackPosition, onPosition } : undefined))
         .then((ok) => {
           if (ok === false) { onEnterFailed(null); return; }
-          rlog('排版套用完成', Object.assign({
+          const applied = {
             id: String(docData.id || ''), ms: Date.now() - enterT0,
             lang: container.getAttribute('lang') || '', category: docData.category || '',
             imgs: container.querySelectorAll('img').length,
             remoteProgress: fallbackPosition ? fallbackPosition.ratio : null,
             progressWrite: !!onPosition
-          }, layoutMode(NS)));
+          };
+          // v2.5.5：翻頁模式的頁數等版面落定才讀（見 whenLayoutSettled）
+          const logApplied = (settled) => rlog('排版套用完成', Object.assign(applied, layoutMode(NS), { settled }));
+          if (layoutMode(NS).mode === 'paged') {
+            flushPendingLayoutLog();
+            const w = whenLayoutSettled(container, (settled) => {
+              if (pendingLayoutLog === w) pendingLayoutLog = null;
+              logApplied(settled);
+            }, opts && opts.deps);
+            pendingLayoutLog = w;
+            try { global.addEventListener('pagehide', () => { if (pendingLayoutLog) { flushPendingLayoutLog(); flushLog(); } }, { once: true }); } catch (_) { /* 非瀏覽器環境 */ }
+          } else {
+            logApplied(true);
+          }
           watchLayoutMode(NS, global.browser);
         }, onEnterFailed);
     }
@@ -700,6 +793,7 @@
         r = null; // serviceErrorMessage 對 null 回通用「封存失敗」
       }
       inFlight = false;
+      flushPendingLayoutLog(); // 封存成功會直接導回清單，同 backToFeed
       rlog('封存', { id, service, ok: !!(r && r.ok), error: r && r.error, status: r && r.status, ms: Date.now() - archiveT0 },
         (r && r.ok) ? 'info' : 'error');
       flushLog(); // 成功後馬上導回清單，不等 debounce

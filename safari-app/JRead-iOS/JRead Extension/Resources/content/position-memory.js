@@ -473,7 +473,18 @@
     saveTimer = setTimeout(() => { saveTimer = null; persistNow(); }, SAVE_DEBOUNCE_MS);
   }
 
-  function onUserInteract() {
+  // v2.5.5：Escape 不算閱讀互動。它是「退出」鍵——keydown 先到這裡（capture）把
+  // interacted 設成 true，緊接著的退出 flush 就把「還原後原封不動的位置」寫回 Readwise
+  //（persistNow 的 interacted 閘門形同虛設）。實測：Readwise 0.3 → 翻頁還原落在 5 / 14
+  //（= 0.3077，頁數量化）→ 只按 ESC → PATCH 0.3077，使用者一頁都沒翻。讀過再按 ESC
+  // 不受影響（翻頁鍵 / 滾輪 / 點擊早已設過 interacted）。本機記錄不受影響（退出 flush
+  // 一律寫，不看 interacted）。
+  // 這條驗 ESC 鍵、不驗其他退出入口：點浮動圖示退出仍會經 click 算成互動
+  function isExitKey(e) {
+    return !!(e && e.type === 'keydown' && e.key === 'Escape');
+  }
+  function onUserInteract(e) {
+    if (isExitKey(e)) return;
     interacted = true;
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
     scheduleSave();
