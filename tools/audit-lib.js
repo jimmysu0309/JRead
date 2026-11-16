@@ -148,9 +148,13 @@ const pageFns = {};
 //     才算命中（拉丁詞改用「<= 5 個字的短句」判定）
 // 命中元素若位於長文段落內（p/li/blockquote 等 ancestor 文字 >= 80 chars），
 // 一律降為 contextual——內文裡合法提到「subscribe / 廣告」不該是 fail 信號。
-pageFns.auditResidualText = function (tiers) {
+pageFns.auditResidualText = function (tiers, sentenceLinkPred) {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { error: 'no article' };
+  // 句中放行連結（v2.5.10）：判定函式由 node 端從 cleaner.js 原始碼取出後傳入
+  //（見 buildCleanerSentenceLinkSource），這裡不自帶任何條件。沒傳＝不豁免
+  const sentenceLinkChecked = typeof sentenceLinkPred === 'function';
+  let sentenceLinkExempt = 0;
   const strict = Array.isArray(tiers) ? tiers : (tiers.strict || []);
   const contextual = Array.isArray(tiers) ? [] : (tiers.contextual || []);
   function isVisible(el) {
@@ -220,12 +224,18 @@ pageFns.auditResidualText = function (tiers) {
       .map(n => n.textContent).join('');
     const text = norm(direct);
     if (!text || text.length > 60 || text.length < 2) continue;
-    const { hits, severity } = classify(el, text);
+    let { hits, severity } = classify(el, text);
+    let sentenceLink = false;
+    if (severity && sentenceLinkChecked) {
+      const a = el.closest('a');
+      if (a && sentenceLinkPred(a, norm(a.textContent))) { sentenceLink = true; severity = null; sentenceLinkExempt++; }
+    }
     items.push({
       tag: el.tagName,
       text: text.slice(0, 60),
       hitKeywords: hits,
       severity,
+      sentenceLink,
       elCls: (el.className || '').toString().slice(0, 80),
       parents: hits.length > 0 ? (() => {
         const out = [];
@@ -245,6 +255,8 @@ pageFns.auditResidualText = function (tiers) {
     total: items.length,
     warnings,
     strictCount: warnings.filter(w => w.severity === 'strict').length,
+    sentenceLinkChecked,
+    sentenceLinkExempt,
     items: items.slice(0, 60)
   };
 };
@@ -257,9 +269,12 @@ pageFns.auditResidualText = function (tiers) {
 // 入參 tiers 同 auditResidualText。長文段落內的 inline 連結（新聞內文常嵌
 // 推文 / 社群連結）不做 class / href / contextual 判定——只有 strict keyword
 // 才警告（2026-06-11：避免把合法內文連結記成殘留按鈕）。
-pageFns.auditResidualLinks = function (tiers) {
+pageFns.auditResidualLinks = function (tiers, sentenceLinkPred) {
   const art = document.querySelector('[data-jread-active="1"]');
   if (!art) return { error: 'no article' };
+  // 句中放行連結（v2.5.10）：同 auditResidualText，判定函式由 node 端傳入
+  const sentenceLinkChecked = typeof sentenceLinkPred === 'function';
+  let sentenceLinkExempt = 0;
   const strict = Array.isArray(tiers) ? tiers : (tiers.strict || []);
   const contextual = Array.isArray(tiers) ? [] : (tiers.contextual || []);
   function isVisible(el) {
@@ -318,18 +333,28 @@ pageFns.auditResidualLinks = function (tiers) {
     })() || (isHandle && !!btn.closest('[class*="author" i], [class*="byline" i]'));
     const clsOrHrefHit = !inProse && !inByline &&
       (/share|social|subscribe|follow/i.test(cls) || /line\.me|twitter|facebook|x\.com/.test(href));
+    let suspicious = strictHits.length > 0 || ctxHits.length > 0 || clsOrHrefHit;
+    let sentenceLink = false;
+    // 只豁免關鍵字命中（class / href 命中是另一種訊號，不歸這條管）
+    if (suspicious && !clsOrHrefHit && sentenceLinkChecked && btn.tagName === 'A' &&
+        sentenceLinkPred(btn, norm(btn.textContent))) {
+      sentenceLink = true; suspicious = false; sentenceLinkExempt++;
+    }
     items.push({
       tag: btn.tagName,
       text: text || '(no text)',
       cls, href: href.slice(0, 40),
       hitKeywords: [...strictHits, ...ctxHits],
-      suspicious: strictHits.length > 0 || ctxHits.length > 0 || clsOrHrefHit
+      sentenceLink,
+      suspicious
     });
     if (items.length >= 200) break;
   }
   return {
     total: items.length,
     warnings: items.filter(i => i.suspicious),
+    sentenceLinkChecked,
+    sentenceLinkExempt,
     items: items.slice(0, 60)
   };
 };
@@ -1528,8 +1553,85 @@ pageFns.auditTitlePresence = function () {
 // node-side runner（對外 API——call site 用這層，不直接碰 pageFns）
 // =============================================================================
 
-const runResidualText = (page, keywords) => page.evaluate(pageFns.auditResidualText, keywords);
-const runResidualLinks = (page, keywords) => page.evaluate(pageFns.auditResidualLinks, keywords);
+// ---- 句中放行連結：與 cleaner 共用同一份判定（v2.5.10）----
+// cleaner v2.5.9 起放行「句子裡的動作詞連結」（isInSentenceActionLink：supabase
+// 「To get your Project URL, log in.」），residual audit 的關鍵字卻照樣把它報成殘留。
+// audit 跑在 main world、拿不到 isolated world 的 window.__JRead，所以由 node 端
+// **直接讀 jread/content/cleaner.js 與 namespace.js 的原始碼**，把判定函式與它的
+// 依賴原文取出、組成一個回傳判定函式的運算式，跟著 audit 一起送進頁面。
+// audit-lib 本身不含任何放行條件——cleaner 改條件 audit 自動跟著變；cleaner 把
+// 函式改名 / 搬走 → 取不到 → 每次 audit 印警告且不豁免（結果的 sentenceLinkChecked
+// = false），不會靜默假裝有驗。forcing：harness-audit-lib.spec.js。
+// 取出的片段（都是原文，不改寫）：
+//   cleaner.js   NOISE_LINK_TEXT_RE 那一行、norm()、
+//                「function sliceRegexGroup」到「isInSentenceActionLink 結尾」整段
+//   namespace.js cjkWeightedLen()
+// 這條驗的是「這個可見連結符不符合 cleaner 的句中放行形狀」；**不驗** cleaner 呼叫端
+//（hideInsideArticleByLinkText）另外兩個前提 `!strictHit && !hrefHit`——那兩種連結
+// cleaner 會直接藏掉、正常情況不會以可見狀態走到 audit——也不驗 cleaner 當下實際
+// 有沒有走到這條。
+// 傳給判定的文字是 audit 自己的 norm（含簡體摺疊），與 cleaner 的
+// foldZhVariants(norm()) 是既有的雙實作（forcing：noise-text-zh-fold.spec.js）。
+const CLEANER_SRC_PATH = path.join(__dirname, '..', 'jread', 'content', 'cleaner.js');
+const NAMESPACE_SRC_PATH = path.join(__dirname, '..', 'jread', 'content', 'namespace.js');
+const SENTENCE_LINK_FN = 'isInSentenceActionLink';
+
+function sliceSource(src, startMarker, endMarker, label) {
+  const i = src.indexOf(startMarker);
+  if (i < 0) throw new Error(`找不到 ${label} 的起點`);
+  if (src.indexOf(startMarker, i + 1) >= 0) throw new Error(`${label} 的起點不唯一`);
+  const j = src.indexOf(endMarker, i);
+  if (j < 0) throw new Error(`找不到 ${label} 的結尾`);
+  return src.slice(i, j + endMarker.length);
+}
+
+// 回傳「求值後得到判定函式 (a, text) => boolean」的運算式原始碼；取不到就 throw。
+// opts.cleanerSrc / opts.namespaceSrc 供 spec 餵改過的原始碼（驗改名 / 消失會失敗）。
+function buildCleanerSentenceLinkSource(opts = {}) {
+  const fs = require('fs');
+  const cleaner = opts.cleanerSrc != null ? opts.cleanerSrc : fs.readFileSync(CLEANER_SRC_PATH, 'utf8');
+  const ns = opts.namespaceSrc != null ? opts.namespaceSrc : fs.readFileSync(NAMESPACE_SRC_PATH, 'utf8');
+  const linkRe = sliceSource(cleaner, '\n  const NOISE_LINK_TEXT_RE = /', '/i;\n', 'NOISE_LINK_TEXT_RE');
+  const normFn = sliceSource(cleaner, '\n  function norm(s) {', '\n  }\n', 'norm()');
+  // 從 sliceRegexGroup 到 isInSentenceActionLink 的結尾（中間是 INLINE_ACTION_WORD_RE
+  // 與幾個常數，cleaner 內相鄰）。中間若被插進依賴別處的東西，下面 node 端求值會炸
+  const fnHead = `\n  function ${SENTENCE_LINK_FN}(`;
+  const block = sliceSource(cleaner, '\n  function sliceRegexGroup(', fnHead, SENTENCE_LINK_FN);
+  const fnStart = cleaner.indexOf(fnHead) + fnHead.length;
+  const fnEnd = cleaner.indexOf('\n  }\n', fnStart);
+  if (fnEnd < 0) throw new Error(`找不到 ${SENTENCE_LINK_FN} 的結尾`);
+  const fnRest = cleaner.slice(fnStart, fnEnd + '\n  }\n'.length);
+  const cjk = sliceSource(ns, '\n    cjkWeightedLen(str) {', '\n    },', 'NS.cjkWeightedLen').replace(/,$/, '');
+  const expr = `(function () {
+  const NS = {${cjk}
+  };
+${linkRe}${normFn}${block}${fnRest}
+  if (INLINE_ACTION_WORD_RE.source === '(?!)') throw new Error('INLINE_ACTION_WORD_RE 取不到動作詞表');
+  return ${SENTENCE_LINK_FN};
+})()`;
+  // node 端先求值一次：語法錯、缺依賴（ReferenceError）、動作詞表取不到都在這裡炸
+  const fn = new Function(`return ${expr};`)();
+  if (typeof fn !== 'function') throw new Error('組出來的不是函式');
+  return expr;
+}
+
+// 每次呼叫重讀原始碼（兩支檔合計讀取數毫秒）。
+// 取不到：印警告、回 null → audit 不豁免、結果 sentenceLinkChecked = false。
+function cleanerSentenceLinkSourceOrWarn() {
+  try { return buildCleanerSentenceLinkSource(); } catch (e) {
+    console.warn(`⚠️  RESIDUAL AUDIT：取不到 cleaner 的 ${SENTENCE_LINK_FN}（${e.message}）——句中放行的連結這輪會被報成殘留，audit-lib 的取法要跟著 cleaner 更新`);
+    return null;
+  }
+}
+
+// 用字串運算式送進頁面（CDP Runtime.evaluate，不受站方 CSP 的 unsafe-eval 限制；
+// 在頁面內 new Function 會被 CSP 擋）。pageFns 仍然自包含——判定函式是第二個引數。
+function evalResidual(page, fn, keywords) {
+  const pred = cleanerSentenceLinkSourceOrWarn();
+  return page.evaluate(`(${fn.toString()})(${JSON.stringify(keywords)}, ${pred || 'null'})`);
+}
+const runResidualText = (page, keywords) => evalResidual(page, pageFns.auditResidualText, keywords);
+const runResidualLinks = (page, keywords) => evalResidual(page, pageFns.auditResidualLinks, keywords);
 const runOutsideArticle = (page) => page.evaluate(pageFns.auditOutsideArticle);
 const runGapAudit = (page) => page.evaluate(pageFns.auditGap);
 const runContrastAudit = (page) => page.evaluate(pageFns.auditContrast);
@@ -1956,6 +2058,7 @@ module.exports = {
   pageFns,
   runResidualText,
   runResidualLinks,
+  buildCleanerSentenceLinkSource,
   runOutsideArticle,
   runGapAudit,
   runContrastAudit,

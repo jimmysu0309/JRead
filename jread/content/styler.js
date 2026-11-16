@@ -61,6 +61,14 @@
     return !!owner;
   }
   // el 自己是 ARIA 表格列、或位在某一列裡面（格子與格子內的段落 / 包裝）
+  // v2.5.10：ARIA 表格格子「內容撐出格子」時的收窄值（passAriaNarrowCellInsets）。
+  // 6px＝GitBook 站方格子內距 12px 的一半：相鄰兩欄文字之間仍有 12px 間距。
+  // ARIA_TABLE_ROOT_SEL＝整張表的根（不含 rowgroup——rowgroup 只是表內分段，
+  // 收窄要整張表一起，表頭與資料列的文字左緣才對得齊）
+  const ARIA_CELL_NARROW_PAD_PX = 6;
+  const ARIA_TABLE_ROOT_SEL = ARIA_TABLE_ROLES.filter((r) => r !== 'rowgroup').map((r) => `[role="${r}"]`).join(', ');
+  // 不可換行是內容本身語意的載體（程式碼 / 鍵盤輸入 / 表單），不改它的 white-space
+  const ARIA_CELL_KEEP_NOWRAP_SEL = 'pre, code, kbd, samp, textarea, input, select, svg, math';
   function inAriaTableRow(el, stopAt) {
     for (let n = el; n && n !== stopAt && n.nodeType === 1; n = n.parentElement) {
       if (n.getAttribute && n.getAttribute('role') === 'row' && isAriaTableRow(n)) return true;
@@ -4857,6 +4865,7 @@ html.${HTML_CLASS}.jread-orion body {
       const decolumnLoadCleanup = [];
       const wpConstrained = [];
       const wideScroll = [];
+      const ariaCellSnap = [];
       let panguSnap = null;
       const inlineImgs = [];
       const inlineImgPins = [];
@@ -4900,7 +4909,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -7664,6 +7673,92 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passAriaNarrowCellInsets = () => {
+        // v2.5.10：ARIA 排的 div 表格（isAriaTableRow）在窄卡片下，格子內容撐出格子。
+        // 根因（docs.gitbook.com blocks/table 四欄表，390 / 430 寬實測）：v2.5.9 起
+        // 格子保留站方左右各 12px 內距（不保留表頭會黏字），四欄等分後每格 89.5 /
+        // 98px、內容區只剩 65 / 74px；狀態標籤「In progress」是站方 white-space:pre
+        // 的膠囊（字寬 80＋自己的內距 16＝96px）、不能換行，超出格子 19 / 10px
+        //（WebKit 16 / 7px），390 寬直接壓到隔壁 email 上。
+        // 通則（不看站點 / class）：以「整張表」為單位，只要有一格內容撐出格子
+        //（scrollWidth > clientWidth）就——
+        //   1. 整張表每一格的左右內距收到 ARIA_CELL_NARROW_PAD_PX（原本更小的不動）。
+        //      整張表一起收，表頭與資料列的文字左緣才對得齊
+        //   2. 收完還伸進右側內距的「不可換行」元素（white-space: nowrap / pre），
+        //      放行成可換行（nowrap → normal、pre → pre-wrap，後者保留空白與
+        //      換行字元；只在空白處換、不從單字中間斷）；程式碼 / 鍵盤輸入 / 表單類（ARIA_CELL_KEEP_NOWRAP_SEL）不動
+        // 順序不可反：先放行換行、內距不收的話，390 寬內容區 65px 比「progress」的
+        // 膠囊（74px）還窄，站方 overflow-wrap:anywhere 會把單字從中間斷開。
+        // 沒有任何一格撐出去的表（quickstart 兩欄表四種寬度實測全部 0）整段不進、
+        // 一個 inline 都不寫。量的是格子自己的 scrollWidth / clientWidth、不看卡片
+        // 右緣，翻頁 multicol 下同樣成立（passWideContentScroll 的幾何問題不適用）。
+        // 這條驗「內容撐出格子」、不驗「撐進內距但沒出格子」（文字仍離隔壁 ≥ 12px）
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win) return;
+        const overflows = (c) => (c.scrollWidth || 0) > (c.clientWidth || 0) + 1;
+        const tables = new Map();
+        for (const row of articleEl.querySelectorAll('[role="row"]')) {
+          if (!isAriaTableRow(row)) continue;
+          if (row.closest && row.closest('[data-jread-hidden="1"]')) continue;
+          const owner = row.closest(ARIA_TABLE_ROOT_SEL) || row.parentElement.closest(ARIA_TABLE_SEL);
+          if (!owner) continue;
+          let cells = tables.get(owner);
+          if (!cells) { cells = []; tables.set(owner, cells); }
+          for (const c of row.children) {
+            if (ARIA_CELL_ROLES.indexOf(c.getAttribute('role')) === -1) continue;
+            if (c.getAttribute('data-jread-hidden') === '1') continue;
+            cells.push(c);
+          }
+        }
+        const snapProp = (el, prop) => {
+          ariaCellSnap.push({ el, prop, value: el.style.getPropertyValue(prop), priority: el.style.getPropertyPriority(prop) });
+        };
+        for (const cells of tables.values()) {
+          if (!cells.some(overflows)) continue;
+          // 先讀後寫（一張表一次 reflow）
+          const narrow = [];
+          for (const c of cells) {
+            const cs = win.getComputedStyle(c);
+            for (const prop of ['padding-left', 'padding-right']) {
+              if ((parseFloat(cs.getPropertyValue(prop)) || 0) > ARIA_CELL_NARROW_PAD_PX + 0.5) narrow.push([c, prop]);
+            }
+          }
+          for (const [c, prop] of narrow) {
+            snapProp(c, prop);
+            c.style.setProperty(prop, ARIA_CELL_NARROW_PAD_PX + 'px', 'important');
+          }
+          // 第 2 步的判定比第 1 步嚴：看的是「伸進右側內距」（元素右緣超過格子內容區
+          // 右緣），不是「撐出格子」——WebKit 430 寬實測收完內距後膠囊只超出格子
+          // 1.1px（scrollWidth 差 1、過不了第 1 步的門檻），但與隔壁文字只剩 4.9px
+          const unwrap = [];
+          for (const c of cells) {
+            const cr = c.getBoundingClientRect();
+            if (!(cr.width > 0)) continue;
+            const contentRight = cr.right - (parseFloat(win.getComputedStyle(c).paddingRight) || 0);
+            for (const d of c.querySelectorAll('*')) {
+              if (d.closest(ARIA_CELL_KEEP_NOWRAP_SEL)) continue;
+              const ws = win.getComputedStyle(d).whiteSpace;
+              if (ws !== 'nowrap' && ws !== 'pre') continue;
+              // 元素右緣＋它自己被文字撐出去的量：GitBook 的膠囊是 flex 子項，盒子被
+              // 壓成內容區寬（65px）、文字從盒子裡溢出，只看盒子右緣量不到
+              const inkRight = d.getBoundingClientRect().right + Math.max(0, (d.scrollWidth || 0) - (d.clientWidth || 0));
+              if (!(inkRight > contentRight + 0.5)) continue;
+              unwrap.push([d, ws === 'pre' ? 'pre-wrap' : 'normal']);
+            }
+          }
+          // 放行換行的同時把「單字中間可斷」關掉（overflow-wrap / word-break 回 normal）：
+          // 只在空白處換行。不關的話 Chromium 390 寬實測「progress」被斷成
+          //「progres / s」（膠囊文字區 61.5px 比單字窄 1px 左右，站方 overflow-wrap:
+          // anywhere 就從字中間斷）；關掉後單字完整、頂多伸進內距幾 px
+          for (const [d, value] of unwrap) {
+            for (const [prop, v] of [['white-space', value], ['overflow-wrap', 'normal'], ['word-break', 'normal']]) {
+              snapProp(d, prop);
+              d.style.setProperty(prop, v, 'important');
+            }
+          }
+        }
+      };
+
       const passPangu = () => {
         // Pangu spacing：CJK ↔ 英數字之間自動補空白。設定預設 true，使用者可
         // 到 options 取消。一次性掃完整 articleEl + 起 MutationObserver 接後續
@@ -7724,6 +7819,7 @@ html.${HTML_CLASS}.jread-orion body {
         passAspectPseudoReset,
         passMinHeightReset,
         passWpConstrainedMaxWidth,
+        passAriaNarrowCellInsets,
         passWideContentScroll,
         passPangu,
       ];
@@ -8163,6 +8259,17 @@ html.${HTML_CLASS}.jread-orion body {
           if (!m || !m.el) continue;
           if (m.minHeight) m.el.style.setProperty('min-height', m.minHeight, m.minHeightPriority || '');
           else m.el.style.removeProperty('min-height');
+        }
+      }
+
+      // v2.5.10：還原 ARIA 表格格子收窄的左右內距與放行換行的 white-space。
+      // 反序寫回（同一元素同一屬性只會記一筆，反序是防未來多筆時的順序錯位）
+      if (Array.isArray(snapshot.ariaCellSnap)) {
+        for (let i = snapshot.ariaCellSnap.length - 1; i >= 0; i--) {
+          const a = snapshot.ariaCellSnap[i];
+          if (!a || !a.el) continue;
+          if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+          else a.el.style.removeProperty(a.prop);
         }
       }
 
