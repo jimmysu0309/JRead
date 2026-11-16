@@ -32,6 +32,42 @@
   }
   if (!NS) return;
 
+  // v2.5.9：ARIA 排的 div 表格（`role="row"` 底下一排 `role="cell"` / `columnheader`，
+  // 不是真的 <table>）。GitBook 實證（gitbook.com/docs quickstart、docs.gitbook.com
+  // blocks/table）：styler 有三處只認 TABLE / TR / TD / TH 標籤——passZeroHorizInsets
+  // 把格子左右內距清成 0（表頭兩格黏成「Starting pointBest for」）、passDecolumn 把
+  // 含長段落的那一列塌成上下堆疊、通用 `div { width:auto; min-width:0 }` 拿掉表頭格的
+  // 欄寬（資料格靠站方 flex:1 1 0 等分、表頭縮成字寬，欄對不上）。
+  // ARIA role 是語意結構訊號（不是站點 / class 身份）。判定：
+  //   - 自己是 role=row、不是原生 <tr>
+  //   - 直系子至少兩個格子類 role（防「role=row 掛在單一包裝上」）
+  //   - 祖先有 role=table / grid / treegrid / rowgroup（ARIA 規範要求 row 必須被這些
+  //     擁有；沒有表格祖先的 role=row 多半是誤用在互動清單上，不當表格）
+  // 這條驗「是不是 ARIA 表格的一列」、不驗列內容是不是適合並排；等分欄寬的 CSS 規則
+  // 在 segCardWidth（選擇器同一組 role，CSS 數不了格子數——單格列吃到 flex 也只是撐滿）
+  const ARIA_CELL_ROLES = ['cell', 'columnheader', 'rowheader', 'gridcell'];
+  const ARIA_TABLE_ROLES = ['table', 'grid', 'treegrid', 'rowgroup'];
+  const ARIA_TABLE_SEL = ARIA_TABLE_ROLES.map((r) => `[role="${r}"]`).join(', ');
+  const ARIA_CELL_SEL = ARIA_CELL_ROLES.map((r) => `[role="${r}"]`).join(', ');
+  function isAriaTableRow(el) {
+    if (!el || el.nodeType !== 1 || el.tagName === 'TR') return false;
+    if (!el.getAttribute || el.getAttribute('role') !== 'row') return false;
+    let cells = 0;
+    for (const c of el.children) {
+      if (ARIA_CELL_ROLES.indexOf(c.getAttribute('role')) !== -1) cells++;
+    }
+    if (cells < 2) return false;
+    const owner = el.parentElement && el.parentElement.closest ? el.parentElement.closest(ARIA_TABLE_SEL) : null;
+    return !!owner;
+  }
+  // el 自己是 ARIA 表格列、或位在某一列裡面（格子與格子內的段落 / 包裝）
+  function inAriaTableRow(el, stopAt) {
+    for (let n = el; n && n !== stopAt && n.nodeType === 1; n = n.parentElement) {
+      if (n.getAttribute && n.getAttribute('role') === 'row' && isAriaTableRow(n)) return true;
+    }
+    return false;
+  }
+
   const STYLE_ID = '__jread-style';
   const HTML_CLASS = '__jread-active';
   const ARTICLE_ATTR = 'data-jread-active';
@@ -154,6 +190,41 @@
   // 錨點會錨在看不見的元素上。
   const STYLER_HIDDEN_MARK_SEL = `[${KICKER_ATTR}], [${BYLINE_RT_ATTR}], [${BYLINE_TIME_ATTR}], [${BYLINE_PROGRAM_ATTR}], [${BYLINE_SEP_ATTR}]`;
   const BYLINE_SEP_RE = /^[·•‧∙|/／\\\-–—,、.。;；:：]+$/;
+  // v2.5.9：「標記即隱藏」的元素身上若已有別人寫的 inline `display:… !important`
+  // （cleaner 塌 flex / grid 時給窄 cell 的 `inline-block` 與 icon 釘寬、CHILD_DECLS
+  // 之外任何 inline !important），樣式表的 `display:none !important` 贏不過它——
+  // 標記在、元素照樣顯示（vocus「閱讀 N 分鐘」實測：inline-block !important、
+  // rect 87×26）。標記當下把 display 接管成 none：走 NS.inlineSet 登記簿（owner
+  // 'styler:hidden-mark'，蓋在 cleaner 那筆之上、restore 時先還回 cleaner 的值、
+  // cleaner 再還回站方原值）。只在「inline display 有 !important」時動手
+  // ——其餘情況樣式表規則本來就贏，不多寫 inline。
+  // 修在隱藏端的理由：cleaner 塌欄跑在 styler 標記之前、當下不知道誰會被藏；
+  // 標記點是所有隱藏標記的單一入口（靜態進場與 reapply 都經過）。
+  // 這條驗 inline display、不驗站方以其他屬性（visibility / opacity）強制顯示。
+  const HIDDEN_MARK_OWNER = 'styler:hidden-mark';
+  function takeOverInlineDisplayForHiddenMark(el, snap) {
+    const st = el && el.style;
+    if (!st || typeof st.getPropertyValue !== 'function') return false;
+    const v = st.getPropertyValue('display');
+    if (!v || st.getPropertyPriority('display') !== 'important') return false;
+    if (Array.isArray(snap)) snap.push({ el, prop: 'display', prev: v, prevP: 'important', owner: HIDDEN_MARK_OWNER });
+    setInlineOwned(el, 'display', 'none', 'important', HIDDEN_MARK_OWNER);
+    return true;
+  }
+  // kicker 不經 setMark（標記點自己呼叫 takeOverInlineDisplayForHiddenMark），不列在這裡
+  const HIDDEN_MARK_ATTRS = [BYLINE_RT_ATTR, BYLINE_TIME_ATTR, BYLINE_PROGRAM_ATTR, BYLINE_SEP_ATTR];
+  // v2.5.9：CSS 畫的分隔點（無文字、無子元素、非媒體、寬高都在 1–8px）。孤兒分隔符
+  // 掃描原本只認文字分隔符（bisSep），站方用空 span 畫的小圓點接不到——相鄰 item
+  // 被藏後留下懸空的點（vocus「發佈 · 閱讀 N 分鐘」藏掉閱讀時間後行尾剩一個點）。
+  // 上限 8px：分隔點實測 3×3；icon（::before 字型圖示 15×26）與頭像遠大於此，不認
+  const DOT_SHELL_MAX = 8;
+  function isDotShellSep(el) {
+    if (!el || el.children.length || (el.textContent || '').trim()) return false;
+    if (/^(IMG|PICTURE|TIME|SVG|VIDEO)$/i.test(el.tagName)) return false;
+    let r = null;
+    try { r = el.getBoundingClientRect(); } catch (_) { return false; }
+    return !!r && r.width > 0 && r.height > 0 && r.width <= DOT_SHELL_MAX && r.height <= DOT_SHELL_MAX;
+  }
   // v1.7.12：多作者 inline 文字流 item（>= 2 條 <a> + 直接分隔文字、無媒體）。
   // 「A、B、C 以及 D」本質是一句話，byline-item 的 inline-flex（nowrap flex row）
   // 在名字夠寬時（translate-first 常保留英文人名不翻）會把每條連結擠到
@@ -1181,6 +1252,14 @@ html [${ARTICLE_ATTR}="1"] main {
   max-width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
+}
+/* v2.5.9：ARIA 排的 div 表格（role=row 底下的格子，不是原生 td / th）一律等分欄寬。
+   上面那條把站方給格子的 width / min-width 清掉後，靠 width 定欄寬的表頭格縮成
+   字寬、靠 flex 的資料格等分——表頭與資料欄對不上（GitBook 實證）。表頭格與資料格
+   都給同一個 flex，欄一定對齊；窄卡片下也不會像站方固定欄寬那樣橫向溢出。列不是
+   flex 容器時 flex 屬性不作用、無副作用。role 判定與 isAriaTableRow 同一組常數 */
+[${ARTICLE_ATTR}="1"] :is(${ARIA_TABLE_SEL}) [role="row"]:not(tr) > :is(${ARIA_CELL_SEL}):not(td):not(th) {
+  flex: 1 1 0 !important;
 }`;
       const segMedia = () => `
 /* 圖片 / 影片：不超出卡片寬度；不改 margin（交給原站或 figure）。
@@ -5890,7 +5969,11 @@ html.${HTML_CLASS}.jread-orion body {
                      bnorm(root.parentElement.textContent).length <= 200) {
                 root = root.parentElement;
               }
-              const setMark = (el, attr) => { el.setAttribute(attr, '1'); bylineMarks.push({ el, attr }); };
+              const setMark = (el, attr) => {
+                el.setAttribute(attr, '1'); bylineMarks.push({ el, attr });
+                // v2.5.9：隱藏標記要贏過別人寫的 inline display !important（見 helper 註解）
+                if (HIDDEN_MARK_ATTRS.indexOf(attr) !== -1) takeOverInlineDisplayForHiddenMark(el, bylineDispSnap);
+              };
               // 設 inline display（覆蓋 cleaner collapseGridWithHiddenCell 的 inline
               // display:block !important——byline 容器常是 flex/grid + hidden 社群分享
               // child 被 collapse；stylesheet 的 byline flex 贏不過 inline !important）。
@@ -6161,12 +6244,14 @@ html.${HTML_CLASS}.jread-orion body {
                 const items = Array.from(root.querySelectorAll(`[${BYLINE_ITEM_ATTR}]`));
                 const isHiddenItem = (el) => el.hasAttribute(BYLINE_RT_ATTR) ||
                   el.hasAttribute(BYLINE_TIME_ATTR) || el.hasAttribute(BYLINE_PROGRAM_ATTR);
+                // v2.5.9：CSS 畫的分隔點也算分隔符（見 isDotShellSep）；每個 item 只量一次
+                const sepFlags = items.map((el) => bisSep(el) || isDotShellSep(el));
                 items.forEach((el, i) => {
-                  if (!bisSep(el)) return;
+                  if (!sepFlags[i]) return;
                   let prev = null;
-                  for (let j = i - 1; j >= 0; j--) { if (!bisSep(items[j])) { prev = items[j]; break; } }
+                  for (let j = i - 1; j >= 0; j--) { if (!sepFlags[j]) { prev = items[j]; break; } }
                   let next = null;
-                  for (let j = i + 1; j < items.length; j++) { if (!bisSep(items[j])) { next = items[j]; break; } }
+                  for (let j = i + 1; j < items.length; j++) { if (!sepFlags[j]) { next = items[j]; break; } }
                   if (!prev || isHiddenItem(prev) || !next || isHiddenItem(next)) {
                     setMark(el, BYLINE_SEP_ATTR);
                   }
@@ -6213,6 +6298,7 @@ html.${HTML_CLASS}.jread-orion body {
                 if (!k.hasAttribute(KICKER_ATTR)) {
                   k.setAttribute(KICKER_ATTR, '1');
                   bylineMarks.push({ el: k, attr: KICKER_ATTR });
+                  takeOverInlineDisplayForHiddenMark(k, bylineDispSnap); // v2.5.9：同 setMark
                 }
               }
             }
@@ -6519,6 +6605,9 @@ html.${HTML_CLASS}.jread-orion body {
                 a = a.parentElement;
               }
               if (insideIndent) continue;
+              // v2.5.9：ARIA 排的 div 表格（role=row 的列、格子與格子內容）比照
+              // TABLE / TR / TD——格子的水平內距是欄間距，清掉兩格文字就黏在一起
+              if (inAriaTableRow(el, articleEl)) continue;
               const cs = win.getComputedStyle(el);
               const pl = parseFloat(cs.paddingLeft) || 0;
               const pr = parseFloat(cs.paddingRight) || 0;
@@ -7302,10 +7391,15 @@ html.${HTML_CLASS}.jread-orion body {
             // 仍偏左），把圖片門檻放寬到 0.9 讓「沒撐滿（< 90%）的 flex/grid 欄內
             // 圖」都塌欄 → 退回 block 流、margin auto 置中（且 picture srcset 重評
             // 常順帶載入更寬來源撐滿）。真正撐滿（>= 90%）的單一全寬圖比例近 1、不動。
+            // v2.5.9：ARIA 表格的列（isAriaTableRow）不塌——那是表格的欄、不是雜誌式
+            // 分欄；塌掉後「標籤格 / 說明格」變上下堆疊、和其他列對不上。下方
+            // stackLopsidedImgCol 不必另外豁免：格子已被等分欄寬（segCardWidth 的
+            // CSS 規則），不會出現「含圖欄 < 25%、另一欄 ≥ 50%」的形狀
             const decolumnFrom = (anchor, ratio) => {
               let cur = anchor.parentElement;
               while (cur && cur !== articleEl) {
                 if (!textColSeen.has(cur) &&
+                    !isAriaTableRow(cur) &&
                     !(cur.getAttribute && cur.getAttribute(PLAYER_ATTR) === '1') &&
                     !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
                   const cs = win.getComputedStyle(cur);
@@ -7835,7 +7929,7 @@ html.${HTML_CLASS}.jread-orion body {
         for (const s of snapshot.bylineDispSnap) {
           if (!s || !s.el) continue;
           const prop = s.prop || 'display';
-          if (releaseInlineOwned(s.el, prop, 'styler:byline')) continue;
+          if (releaseInlineOwned(s.el, prop, s.owner || 'styler:byline')) continue;
           if (s.prev) s.el.style.setProperty(prop, s.prev, s.prevP || '');
           else s.el.style.removeProperty(prop);
         }

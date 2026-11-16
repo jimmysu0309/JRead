@@ -4624,6 +4624,76 @@
     return matchesPlatformFollowUrl(u.hostname, u.pathname);
   }
 
+  // v2.5.9：句子裡的動作詞連結不清。「整個連結文字剛好等於動作詞」那兩組
+  //（INLINE_ACTION_WORD_RE：log in / create an account / report / share…）本意是清
+  // 動作按鈕，但規則只看連結自己的文字——連結是句子的一部分時，清掉就把句子挖洞：
+  //   gitbook 「<a>Create an account</a> to get started with your first…」→「 to get started…」
+  //   supabase「To get your Project URL, <a>log in</a>.」→「To get your Project URL, .」
+  //   chinatalk 398 字訪談段落句中的「<a>report</a>」整個字不見
+  // 放行條件（全部成立才放；只管非 strict、非 href 命中的連結。<button> 即使通過這裡
+  // 也會被「所有互動按鈕一律清」那條規則清掉，不另外擋）：
+  //   1. 連結文字整個等於動作詞（INLINE_ACTION_WORD_RE，詞表取自 NOISE_LINK_TEXT_RE）
+  //   2. 連結內沒有圖片（img / picture）。行內 svg 小圖示不擋——gitbook 的句中外連
+  //      連結尾端就帶一個 aria-hidden 的外連箭頭；是不是句子的一部分由 3–5 判定
+  //   3. 所在段落是 <p> / <li>（中間只隔行內包裝：span / em / strong / b / i / u / mark / font）
+  //   4. 段落扣掉所有連結 / 按鈕文字後，剩餘文字 CJK 權重 ≥ INLINE_ACTION_LINK_MIN_REST
+  //      （20：supabase 那兩句剩 26 / 30；「Subscribers only <a>Learn more</a>」剩 18 不放）
+  //   5. 連結接在句子裡：
+  //      - 連結前面有字、且不是以句末標點收尾（句子正寫到一半）→ 連結文字不可是大寫
+  //        開頭的拉丁字（句中突然大寫的「Subscribe」「Learn more」是按鈕標籤的寫法）
+  //      - 連結在句首（前面沒字或前一句已收尾）→ 連結後面要直接接字（「Create an
+  //        account to get started…」）；「Want more? <a>Subscribe</a>」這種獨立成句的不放
+  // 放行＝只是不藏這個連結；整段是推廣文案時走的「整段清」（80% 佔比 / CTA_PROMO_P_RE /
+  // strict）都在這條之前或之外，不受影響。這條驗「連結是不是句子的一部分」、不驗句子
+  // 本身是不是推廣文案（推廣句裡的句中連結也會留下——原本也只是把句子挖洞、沒清掉句子）
+  // 動作詞表的單一來源是 NOISE_LINK_TEXT_RE：從它的 source 取出「^(訂閱|…)$」與
+  // 「^(view\s+…|applaud)(\s*\(\d+\))?$」兩組，不另抄一份（那條 regex 必須維持單行
+  // literal——三支既有 spec 直接讀它的原始碼）。取不到（有人改了那兩組的開頭）就退成
+  // 永不命中＝不放行、行為回到 v2.5.8；forcing：v259-inline-action-link-in-sentence.spec.js
+  // 的受害樣本會紅
+  function sliceRegexGroup(src, startMarker) {
+    const i = src.indexOf(startMarker);
+    if (i < 0) return null;
+    let depth = 0;
+    for (let k = i + 1; k < src.length; k++) {
+      const ch = src[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === '(') depth++;
+      else if (ch === ')') { depth--; if (depth === 0) return src.slice(i, k + 1); }
+    }
+    return null;
+  }
+  const INLINE_ACTION_WORD_RE = (() => {
+    const zh = sliceRegexGroup(NOISE_LINK_TEXT_RE.source, '^(訂閱|');
+    const en = sliceRegexGroup(NOISE_LINK_TEXT_RE.source, '^(view\\s+');
+    if (!zh || !en) return /(?!)/;
+    return new RegExp('(?:' + zh + '$)|(?:' + en + '(?:\\s*\\(\\d+\\))?$)', 'i');
+  })();
+  const INLINE_ACTION_LINK_MIN_REST = 20;
+  const INLINE_WRAPPER_TAGS = new Set(['SPAN', 'EM', 'STRONG', 'B', 'I', 'U', 'MARK', 'FONT']);
+  const SENTENCE_END_RE = /[.?!。？！:：…|｜·•\-–—>»]$/;
+  function isInSentenceActionLink(a, text) {
+    if (!INLINE_ACTION_WORD_RE.test(text)) return false;
+    if (a.querySelector('img, picture')) return false;
+    let para = a.parentElement;
+    while (para && INLINE_WRAPPER_TAGS.has(para.tagName)) para = para.parentElement;
+    if (!para || (para.tagName !== 'P' && para.tagName !== 'LI')) return false;
+    let before = '', after = '', rest = '', seen = false;
+    const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (a.contains(n)) { seen = true; continue; }
+      if (seen) after += n.nodeValue; else before += n.nodeValue;
+      const host = n.parentElement;
+      if (!(host && host.closest && host.closest('a, button'))) rest += n.nodeValue;
+    }
+    if (NS.cjkWeightedLen(norm(rest)) < INLINE_ACTION_LINK_MIN_REST) return false;
+    const prev = before.replace(/\s+$/, '');
+    const next = after.replace(/^\s+/, '');
+    const midSentence = prev.length > 0 && !SENTENCE_END_RE.test(prev);
+    if (midSentence) return !/^[A-Z]/.test(norm(a.textContent));
+    return /^[\p{L}\p{N}]/u.test(next);
+  }
+
   function hideInsideArticleByLinkText(articleEl, hidden, scope) {
     // 掃 `<a>` + `<button>`——CTA 按鈕類（訂閱 / 追蹤 / 關注）通常是 button
     // 而非 a，舊版只掃 a 漏網
@@ -4644,6 +4714,8 @@
       }
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      // v2.5.9：句子裡的動作詞連結（「To get your Project URL, log in.」）不清
+      if (!strictHit && !hrefHit && isInSentenceActionLink(a, text)) continue;
       // strict CTA（立即報名 等活動 / 課程推廣鈕）：往上整塊清 promo banner
       // （標題 + 描述 + 報名鈕拆成多 sibling 的場景），避免只清按鈕留殘文。
       if (strictHit && hideStrictCtaPromoBlock(a, articleEl, hidden)) continue;
