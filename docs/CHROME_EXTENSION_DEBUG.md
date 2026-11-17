@@ -396,7 +396,7 @@ fixture 的正確定位是**forcing function（鎖住行為不回歸）**，不�
   # 驗收翻頁模式（先寫 settings.pagedMode=true 再 toggle，印 PAGED AUDIT：
   # column CSS 算出值 / 頁數 / 鍵盤翻頁 stride）
   node tools/debug-harness.js --fresh --paged
-  # 其餘 flag（--url / --translate-first / --set k=v / --scheme / --width / --html / --profile）
+  # 其餘 flag（--url / --translate-first / --set k=v / --scheme / --width / --height / --html / --profile）
   # 與選用時機見 /harness-verify skill；非中文站要補跑 --translate-first
 
 然後 Read `.playwright-mcp/jread-viewport.png`、分析 stdout log。

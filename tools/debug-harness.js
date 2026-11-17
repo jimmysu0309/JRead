@@ -66,6 +66,9 @@ const KEEP = process.argv.includes('--keep');
 // viewport 下 styler 的 padding / margin clamp 才會觸發，桌面寬量不到手機行為。
 const widthArgIdx = process.argv.indexOf('--width');
 const VIEWPORT_WIDTH = (widthArgIdx >= 0 && parseInt(process.argv[widthArgIdx + 1], 10)) || 1280;
+// --height <px>：覆寫視窗高（預設 900）。翻頁驗收要換視窗高才看得出跨頁問題（v2.5.14）
+const heightArgIdx = process.argv.indexOf('--height');
+const VIEWPORT_HEIGHT = (heightArgIdx >= 0 && parseInt(process.argv[heightArgIdx + 1], 10)) || 900;
 // --scheme dark：模擬 prefers-color-scheme: dark（macOS 深色模式使用者看到的
 // 站點樣式）。v0.7.225 tymscar code block 對比 bug 只在 dark scheme 重現——
 // 站點為深底設計的 syntax 色 + reader 白卡。預設 light。
@@ -129,7 +132,7 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: 'chromium',          // 必須：用 bundled Chromium，才能載 unpacked extension
     headless: false,              // 必須：extension 僅 headed 模式可用
-    viewport: { width: VIEWPORT_WIDTH, height: 900 },
+    viewport: { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
     colorScheme: COLOR_SCHEME,    // --scheme dark 模擬深色模式使用者
 
     args: [

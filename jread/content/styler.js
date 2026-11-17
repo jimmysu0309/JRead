@@ -384,6 +384,8 @@
   // span absolute left:0 錨在 overflow:hidden 裁切窗左上、長日期 in-flow span 被
   // 站方 translateY(-110%) 移出窗——left 被清後短日期飛到窗外，日期整個消失）。
   const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
+  // v2.5.14：直向 flex 容器的直接子 <pre>（見 markFlexColumnPres）
+  const PRE_FLEX_STRETCH_ATTR = 'data-jread-pre-flex-stretch';
   // v1.7.70：pre-wrap 硬換行切出的段落載體標記（見 splitPreWrapParagraphs）。
   const PREWRAP_PARA_ATTR = 'data-jread-prewrap-para';
   // v2.4.9：站方對 ::first-letter 設了與段落不同的顏色（drop cap 顯式色）的元素。
@@ -2468,6 +2470,15 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   margin-left: auto !important;
   margin-right: auto !important;
 }
+/* v2.5.14：直向 flex 容器的直接子 <pre> 不置中（標記見 markFlexColumnPres）。block
+   版面裡寬度 auto 的 <pre>，左右 auto margin 解成 0、照樣撐滿；但 flex item 的 auto
+   margin 會吃掉全部剩餘空間並關掉 stretch → 整個程式碼框縮成內容寬、置中成一顆窄
+   膠囊（docs.gitbook.com 的程式碼區塊外殼是 flex-col）。attr 重複兩次只為排在上面
+   那條之後也穩贏。 */
+[${ARTICLE_ATTR}="1"] pre[${PRE_FLEX_STRETCH_ATTR}="1"][${PRE_FLEX_STRETCH_ATTR}="1"] {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
 /* v2.2.11 引言整塊內縮（Jimmy 2026-10-28）：邊線連同文字往右縮 1em、跟內文左緣
    明顯錯開；文字離線的距離交給站方 padding / BQ_PLAIN 的 1em。同 specificity、
    排在上面置中規則之後所以 margin-left 由這裡決定（blockquote 撐滿版心時 auto
@@ -2972,6 +2983,27 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
   background-color: transparent !important;
   background-image: none !important;
 }`;
+      // v2.5.14：深色卡片（dark / night）上，站方為淺底設計的程式碼外框換成主題色。
+      // 上面那條把 code / pre 的站方底色中和成透明之後，外框還留著站方的淺色——
+      // docs.gitbook.com 行內 code 是 `ring-1`（box-shadow inset 1px rgb(217,217,217)），
+      // 落在 #4a494d 卡片上變成一圈亮框（Jimmy 2026-11-17）；<pre> 的 1px 淺灰 border 同理。
+      // 行內 code：拿掉 box-shadow 外框、border 顏色歸透明。**不補底色**——v2.5.13 以前
+      // 深色主題的行內 code 在各站都是透明底（base 那條 `code:not(pre code)` 的
+      // inlineCodeBg 輸給上面的中和規則），這裡補底色會改到所有站的畫面（MDN 標題裡的
+      // code 變成一塊色塊），屬另案待裁定。<pre>：只把 border 顏色換成低對比的亮色，
+      // 寬度 / 樣式 / box-shadow 不動。判定用卡片底色亮度、不寫主題名；淺色卡片
+      //（gray / sepia）上淺色外框本來就不刺眼，不動。
+      const _cardBgForCode = parseCssColor(theme.articleBg);
+      if (_cardBgForCode && relLuminance(_cardBgForCode) < 0.5) {
+        userOverrides += `
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] code:not(pre code) {
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] pre {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}`;
+      }
       // v0.7.197：連結色已移至 base CSS（所有 theme 統一注入）。
       // 此處不再重複注入。
     }
@@ -3690,10 +3722,21 @@ html.${HTML_CLASS}.jread-orion body {
   // 收集容器內所有硬換行載體（text node 內的 `\n` 字元 + `<br>` 元素）+ 攤平後
   // 的全文。gStart/gEnd 是全文座標，用來判斷切點前後有沒有實際文字、以及算段長
   // guard；`<br>` 在全文裡佔一個 `\n` 佔位字元，兩種載體的座標語意才一致。
-  function collectPreWrapBreaks(el) {
+  //
+  // v2.5.14：容器**裡面**的程式碼子樹整棵跳過（FILTER_REJECT）——它的 `\n` 是程式碼
+  // 的行、不是散文的段落，也不計入全文（段長 guard 只看散文）。`inPreWrapCodeContext`
+  // 只擋「容器自己在程式碼裡」，擋不到「散文容器包著程式碼區塊」：docs.gitbook.com
+  // 整篇文件容器是 `whitespace-pre-wrap`，唯一的硬換行全在 Markdown 範例的
+  // `<pre><code>` 裡 → 一個程式碼區塊被沿每個換行切開、外殼逐段複製成五顆窄膠囊。
+  // `includeCode`（只給下面「程式碼以外沒有硬換行」那條判定用）：照 v2.5.13 以前的
+  // 算法把程式碼裡的換行也收進來。
+  function collectPreWrapBreaks(el, includeCode) {
     const doc = el.ownerDocument;
     if (!doc || !doc.createTreeWalker) return { full: '', items: [] };
-    const walker = doc.createTreeWalker(el, 1 | 4 /* SHOW_ELEMENT | SHOW_TEXT */);
+    const walker = doc.createTreeWalker(el, 1 | 4 /* SHOW_ELEMENT | SHOW_TEXT */, {
+      acceptNode: (n) => (!includeCode && n.nodeType === 1 && n !== el && PREWRAP_CODE_TAGS.has(n.tagName)
+        ? 2 /* FILTER_REJECT */ : 1 /* FILTER_ACCEPT */),
+    });
     const items = [];
     let full = '';
     let n;
@@ -3758,21 +3801,44 @@ html.${HTML_CLASS}.jread-orion body {
     return false;
   }
 
+  // 總長與平均段長 guard：用全文座標切出的片段算平均（歌詞 / 地址 / 標籤列不切）
+  function passesPreWrapLengthGuards(full, used) {
+    if (full.trim().length < PREWRAP_MIN_TOTAL) return false;
+    const segs = [];
+    let prevEnd = 0;
+    for (const g of used) { segs.push(full.slice(prevEnd, g.gStart).trim()); prevEnd = g.gEnd; }
+    segs.push(full.slice(prevEnd).trim());
+    const avg = segs.reduce((n, s) => n + s.length, 0) / segs.length;
+    return avg >= PREWRAP_MIN_AVG;
+  }
+
   // 對單一容器執行切段。回傳 record（`{ container, paras, styleSnap }`）或 null
   // （guard 未過）。`prevStyleSnap` 由重切路徑傳入——容器的 inline style 是第一輪
   // 就改好的，重切時再記一次會把「我們自己寫的值」當成原值、還原不回去。
   function splitOnePreWrapContainer(container, win, doc, prevStyleSnap) {
     const { full, items } = collectPreWrapBreaks(container);
     const used = usablePreWrapBreaks(full, items);
-    if (!used.length) return null;
-    if (full.trim().length < PREWRAP_MIN_TOTAL) return null;
-    // 段長 guard：用全文座標切出的片段算平均（歌詞 / 地址 / 標籤列不切）
-    const segs = [];
-    let prevEnd = 0;
-    for (const g of used) { segs.push(full.slice(prevEnd, g.gStart).trim()); prevEnd = g.gEnd; }
-    segs.push(full.slice(prevEnd).trim());
-    const avg = segs.reduce((n, s) => n + s.length, 0) / segs.length;
-    if (avg < PREWRAP_MIN_AVG) return null;
+    if (!used.length) {
+      // v2.5.14：散文沒有可切的硬換行、換行全在程式碼子樹裡（docs.gitbook.com 的文件
+      // 容器）。v1.7.70–v2.5.13 這種容器會被沿程式碼的換行切開，同時被下面那行中和成
+      // `display:block`——容器原本是直向 flex，子項的上下 margin 不合併（站方的區塊間距
+      // ＋我們的段落下距相加，段距 20 → 36px）；中和成 block 後才合併成一份。切段是
+      // 錯的、拿掉了；但那幾版驗過的段距是 block 狀態的，所以「照舊算法會被切」的容器
+      // 仍中和成 block、不包段落載體（`blockOnly`）。直向 flex 容器的段距疊加是另一個
+      // 更大的題目（別站同樣有），不在這裡處理。
+      const legacy = collectPreWrapBreaks(container, true);
+      const legacyUsed = usablePreWrapBreaks(legacy.full, legacy.items);
+      if (!legacyUsed.length || !passesPreWrapLengthGuards(legacy.full, legacyUsed)) return null;
+      const styleSnap = prevStyleSnap || {
+        display: {
+          prev: container.style.getPropertyValue('display'),
+          prevP: container.style.getPropertyPriority('display'),
+        },
+      };
+      setInlineOwned(container, 'display', 'block', 'important', 'styler:prewrap');
+      return { container, paras: [], seams: [], styleSnap, blockOnly: true };
+    }
+    if (!passesPreWrapLengthGuards(full, used)) return null;
 
     {
       // 容器 display 中和成 block（inline style，記進 record 對稱還原）：inline
@@ -3893,6 +3959,7 @@ html.${HTML_CLASS}.jread-orion body {
       const c = rec && rec.container;
       if (!c || !c.isConnected) continue;
       if (c !== node && !c.contains(node)) continue;
+      if (rec.blockOnly) continue; // v2.5.14：只中和 display、沒有段落載體可重切
       if (rec.paras.some((p) => p && p.parentNode === c)) continue;
       const win = c.ownerDocument?.defaultView;
       const doc = c.ownerDocument;
@@ -4590,6 +4657,32 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(el);
     }
   }
+  // v2.5.14：直向 flex 容器的直接子 <pre> 標 PRE_FLEX_STRETCH_ATTR，豁免媒體置中規則
+  // 的左右 auto margin（規則與動機見 buildCss 該規則註解）。在 ARTICLE_ATTR 設定後量
+  // parent 的 computed display / flex-direction（翻頁模式把外殼塌成 block 的話量到
+  // block、不標，auto margin 本來就解成 0）。只做進場當下這一次，晚到的 <pre> 不補標。
+  function markFlexColumnPres(articleEl, marked) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const found = [];
+    for (const pre of articleEl.querySelectorAll('pre')) {
+      const parent = pre.parentElement;
+      if (!parent) continue;
+      let cs;
+      try {
+        cs = _win.getComputedStyle(parent);
+      } catch (e) {
+        if (e && e.name === 'SyntaxError') continue; // jsdom nwsapi 既知行為，同 markAbsAnchors
+        throw e;
+      }
+      if ((cs.display === 'flex' || cs.display === 'inline-flex') &&
+          /^column/.test(cs.flexDirection || '')) found.push(pre);
+    }
+    for (const pre of found) {
+      pre.setAttribute(PRE_FLEX_STRETCH_ATTR, '1');
+      marked.push(pre);
+    }
+  }
   // v1.9.15：行內高亮自訂元素保留站方底色（Jimmy 2026-10-01：Readwise Reader
   // 文件頁進閱讀模式後，畫過的重點看不出來）。
   // 根因：BG_PRESERVE_NOT 只認 <mark> / <kbd> 這類 HTML 語意 tag；網頁標註工具
@@ -4961,6 +5054,7 @@ html.${HTML_CLASS}.jread-orion body {
       const aspectPseudoMarked = [];
       const headingLinkMarked = [];
       const absAnchorMarked = [];
+      const preFlexStretchMarked = [];
       let textDivMarked = [];
       // v1.7.70：pre-wrap 切段記錄（還原用；見 splitPreWrapParagraphs）
       let prewrapParaSnap = [];
@@ -4980,7 +5074,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5435,6 +5529,8 @@ html.${HTML_CLASS}.jread-orion body {
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
+        // v2.5.14：直向 flex 容器的直接子 <pre> 不置中（同樣要在 ARTICLE_ATTR 之後量）
+        markFlexColumnPres(articleEl, preFlexStretchMarked);
         // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
         // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
         markInlineHighlights(articleEl, siteUiMarked);
@@ -8343,6 +8439,11 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.absAnchorMarked)) {
         for (const el of snapshot.absAnchorMarked) {
           if (el && el.removeAttribute) el.removeAttribute(ABS_ANCHOR_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.preFlexStretchMarked)) {
+        for (const el of snapshot.preFlexStretchMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(PRE_FLEX_STRETCH_ATTR);
         }
       }
       // v0.8.49：移除「div 當段落」標記
