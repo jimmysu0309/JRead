@@ -65,6 +65,11 @@
   // 「只在空白處換行」寫完後重量的時間點（ms）：400 蓋過站方常見的 transition
   //（100–300ms），1500 蓋過內嵌字型載入後的重排；另外掛 document.fonts.ready
   const ARIA_CELL_SETTLE_MS = [400, 1500];
+  // v2.5.13：表頭單字放不下時整列表頭縮字級的下限（相對目前字級）。0.8＝內文 20px 時
+  // 表頭最小 16px；再小就不縮、照舊退回站方斷法
+  const ARIA_HEADER_FIT_MIN_RATIO = 0.8;
+  // v2.5.13：翻頁模式表頭列「跟著下一列」的上限——下一列高超過視窗高這個比例就不綁
+  const ARIA_HEADER_KEEP_MAX_VH = 0.6;
   // v2.5.12：翻頁模式「ARIA 表格列不跨頁」要塌成 block 的 flex 外殼標記
   //（passMarkAriaFlowShells 標、翻頁區塊的 CSS 讀；捲動模式不標也沒有對應規則）
   const ARIA_FLOW_SHELL_ATTR = 'data-jread-aria-flow-shell';
@@ -4931,6 +4936,7 @@ html.${HTML_CLASS}.jread-orion body {
       const wideScroll = [];
       const ariaCellSnap = [];
       const ariaFlowShellMarked = [];
+      const ariaHeaderKeepSnap = [];
       let panguSnap = null;
       const inlineImgs = [];
       const inlineImgPins = [];
@@ -4974,7 +4980,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -7738,6 +7744,84 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passAriaHeaderKeepWithNext = () => {
+        // v2.5.13：翻頁模式 ARIA 表格的表頭列不單獨留在頁底。v2.5.12 讓列不可切之後，
+        // 表頭列與第一列資料之間沒有「不分開」的約束——GitBook quickstart 390×760
+        // 第 2、4 頁底只剩一列表頭、資料整批在下一頁（兩引擎 14 組裡 7 組）。
+        // 不用 break-after: avoid：WebKit 的多欄不照做（實測 Chromium 7 組全好、
+        // WebKit 一組都沒變）。改用兩引擎都有效的佔位法：表頭那一塊（表頭列；它是
+        // rowgroup 的獨生子時取 rowgroup）加 padding-bottom: H、margin-bottom: 原值 − H、
+        // break-inside: avoid，H＝下一列的高。這一塊變成「表頭＋H」不可切 → 頁底放不下
+        // 「表頭＋下一列」時整塊推到下一頁；padding 與負 margin 相消，下一列的位置不變。
+        //   - 只在翻頁模式跑；捲動模式一個 inline 都不寫
+        //   - H 超過視窗高的 ARIA_HEADER_KEEP_MAX_VH 就不做：下一列本身就佔大半頁，
+        //     硬綁只會讓表頭前留一大片空白
+        //   - 表頭那一塊自己有背景 / 邊框時不做（padding 會把背景往下畫到下一列底下）
+        if (!opts.pagedMode) return;
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win) return;
+        const vh = win.innerHeight || 0;
+        if (!(vh > 0)) return;
+        const snap = (el, prop) => ariaHeaderKeepSnap.push({ el, prop, value: el.style.getPropertyValue(prop), priority: el.style.getPropertyPriority(prop) });
+        // 可重跑：每次先把上一輪寫的 inline 寫回原值再從頭量（進場當下字型還沒落定、
+        // 翻頁版面也還沒裝好，量到的下一列高會偏矮——Chromium 390×844 第一張表進場
+        // 量到的 H 不夠、表頭仍單獨留在頁底；落定後重量一次就對）
+        const measureAndWrite = () => {
+        for (let i = ariaHeaderKeepSnap.length - 1; i >= 0; i--) {
+          const a = ariaHeaderKeepSnap[i];
+          if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+          else a.el.style.removeProperty(a.prop);
+        }
+        ariaHeaderKeepSnap.length = 0;
+        const done = new Set();
+        let seen = 0;
+        for (const row of articleEl.querySelectorAll('[role="row"]')) {
+          if (!isAriaTableRow(row)) continue;
+          if (!row.querySelector(':scope > [role="columnheader"]')) continue;
+          seen++;
+          if (row.closest && row.closest('[data-jread-hidden="1"]')) continue;
+          let box = row;
+          const par = row.parentElement;
+          if (par && par !== articleEl && par.getAttribute('role') === 'rowgroup' && par.children.length === 1) box = par;
+          if (done.has(box)) continue;
+          done.add(box);
+          // 下一列：這一塊之後、同一張表裡文件順序的第一個 ARIA 列
+          const root = row.closest(ARIA_TABLE_ROOT_SEL) || box.parentElement;
+          if (!root) continue;
+          let next = null;
+          for (const r of root.querySelectorAll('[role="row"]')) {
+            if (r === row || !isAriaTableRow(r)) continue;
+            if (row.compareDocumentPosition(r) & 4 /* FOLLOWING */) { next = r; break; }
+          }
+          if (!next || next.querySelector(':scope > [role="columnheader"]')) continue;
+          const H = next.getBoundingClientRect().height;
+          if (!(H > 0) || H > vh * ARIA_HEADER_KEEP_MAX_VH) continue;
+          const cs = win.getComputedStyle(box);
+          const bg = cs.backgroundColor || '';
+          const bgClear = bg === 'transparent' || /rgba\([^)]*,\s*0\)$/.test(bg);
+          if (!bgClear || (cs.backgroundImage && cs.backgroundImage !== 'none')) continue;
+          if ((parseFloat(cs.borderBottomWidth) || 0) > 0) continue;
+          const pb = parseFloat(cs.paddingBottom) || 0;
+          const mb = parseFloat(cs.marginBottom) || 0;
+          snap(box, 'padding-bottom'); snap(box, 'margin-bottom'); snap(box, 'break-inside');
+          // 保留量＝下一列高＋兩者之間原有的間距＋2px 進位餘裕（只留 H 時，這一塊剛好
+          // 放得下、下一列卻差那段間距放不下——Chromium 390×844 實測差 4px）
+          const R = H + Math.max(0, mb) + 2;
+          box.style.setProperty('padding-bottom', (pb + R) + 'px', 'important');
+          box.style.setProperty('margin-bottom', (mb - R) + 'px', 'important');
+          box.style.setProperty('break-inside', 'avoid', 'important');
+        }
+        return seen;
+        };
+        if (!measureAndWrite()) return; // 沒有 ARIA 表頭列：不掛計時器
+        const settleLater = () => {
+          if (ariaHeaderKeepSnap.restored) return; // 這一輪 apply 已被 restore
+          measureAndWrite();
+        };
+        try { win.document.fonts && win.document.fonts.ready && win.document.fonts.ready.then(settleLater, () => {}); } catch (_) { /* 沒有 fonts API */ }
+        for (const ms of ARIA_CELL_SETTLE_MS) win.setTimeout(settleLater, ms);
+      };
+
       const passMarkAriaFlowShells = () => {
         // v2.5.12：翻頁模式「ARIA 表格列不跨頁」的外殼標記（CSS 與根因見翻頁區塊
         // ARIA_FLOW_SHELL_ATTR 那條規則的註解）。只在翻頁模式跑：捲動模式沒有分頁、
@@ -7947,7 +8031,51 @@ html.${HTML_CLASS}.jread-orion body {
                 el.style.setProperty(prop, 'normal', 'important');
               }
             }
-            if (recs.length) wordWrapCells.push({ c, recs });
+            if (recs.length) wordWrapCells.push({ c, recs, cells });
+          }
+        }
+        // v2.5.13：表頭格的單字比整格還寬時，整列表頭一起縮字級到放得下，再決定要不要
+        // 退回。Jimmy 實機（iPhone Air 420 寬、字級 20、襯線）：「Company」91px、格子扣掉
+        // 左內距只剩 90px → 伸出格子 → 下面那段把它退回站方斷法 →「Compan / y」；v2.5.12
+        // 表頭留站方字重 500 後，402 寬＋字級 19 也從放得下變成放不下。表頭是整欄的標籤，
+        // 從中間斷比小一點難看得多；站方表頭本來就比內文小（GitBook 14 對 16）。
+        //   - 只看 role=columnheader 的格子；資料格（email 這類長字串）照舊退回
+        //   - 以「表」為單位取最緊的那一格算比例，同一張表所有表頭格寫同一個字級
+        //     （四個表頭同大）；半 px 為一階、往下取
+        //   - 比例低於 ARIA_HEADER_FIT_MIN_RATIO 就整個不縮（字太小不如斷行），照舊退回
+        // 量法：溢出時 scrollWidth＝左內距＋最寬那個字，可用寬＝clientWidth − 左內距
+        // （字可以伸進右內距、不可出格子外緣，與上面第 3 步同一條線）
+        {
+          const headerFit = new Map();
+          for (const w of wordWrapCells) {
+            if (w.c.getAttribute('role') !== 'columnheader') continue;
+            const sw = w.c.scrollWidth || 0;
+            const cw = w.c.clientWidth || 0;
+            if (!(sw > cw)) continue;
+            const padL = parseFloat(win.getComputedStyle(w.c).paddingLeft) || 0;
+            const need = sw - padL;
+            const avail = cw - padL;
+            if (!(need > 0) || !(avail > 0)) continue;
+            const ratio = avail / need;
+            const prev = headerFit.get(w.cells);
+            if (prev === undefined || ratio < prev) headerFit.set(w.cells, ratio);
+          }
+          for (const [cells, ratio] of headerFit) {
+            const headers = cells.filter((c) => c.getAttribute('role') === 'columnheader');
+            if (!headers.length) continue;
+            const cur = parseFloat(win.getComputedStyle(headers[0]).fontSize) || 0;
+            if (!(cur > 0)) continue;
+            // 0.985：留一點餘裕給次像素進位（剛好等寬時 scrollWidth 仍可能多 1）
+            const next = Math.floor(cur * ratio * 0.985 * 2) / 2;
+            if (!(next < cur) || next < cur * ARIA_HEADER_FIT_MIN_RATIO) continue;
+            for (const h of headers) {
+              const els = [h];
+              for (const d of h.querySelectorAll('*')) { if (!d.closest(ARIA_CELL_KEEP_NOWRAP_SEL)) els.push(d); }
+              for (const el of els) {
+                snapProp(el, 'font-size');
+                el.style.setProperty('font-size', next + 'px', 'important');
+              }
+            }
           }
         }
         // 寫 → 量 → 伸出格子外緣的那一格整格退回站方的斷法（退回的紀錄留在
@@ -8045,6 +8173,7 @@ html.${HTML_CLASS}.jread-orion body {
         passMinHeightReset,
         passWpConstrainedMaxWidth,
         passMarkAriaFlowShells,
+        passAriaHeaderKeepWithNext,
         passAriaNarrowCellInsets,
         passWideContentScroll,
         passPangu,
@@ -8493,6 +8622,17 @@ html.${HTML_CLASS}.jread-orion body {
         for (const el of snapshot.ariaFlowShellMarked) {
           if (el && el.removeAttribute) el.removeAttribute(ARIA_FLOW_SHELL_ATTR);
         }
+      }
+
+      // v2.5.13：還原翻頁模式表頭列「跟著下一列」寫的 inline
+      if (Array.isArray(snapshot.ariaHeaderKeepSnap)) {
+        for (let i = snapshot.ariaHeaderKeepSnap.length - 1; i >= 0; i--) {
+          const a = snapshot.ariaHeaderKeepSnap[i];
+          if (!a || !a.el || !a.el.style) continue;
+          if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+          else a.el.style.removeProperty(a.prop);
+        }
+        snapshot.ariaHeaderKeepSnap.restored = true;
       }
 
       // v2.5.10：還原 ARIA 表格格子收窄的左右內距與放行換行的 white-space。

@@ -146,8 +146,16 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
   });
 
   // 等 SW 起來
-  let sw = ctx.serviceWorkers()[0];
-  if (!sw) sw = await ctx.waitForEvent('serviceworker', { timeout: 10000 }).catch(() => null);
+  // v2.5.13：只認 JRead 自己的 SW。同時載入 Shinkansen（--shinkansen / --translate-first）
+  // 時 ctx.serviceWorkers()[0] 可能拿到它的 background.js——對它送 TOGGLE_READER_MODE
+  // 回 undefined、閱讀模式沒進（2026-11-17 對跑實測：72 次翻譯輪中 13 次，全部是選錯
+  // SW；之前誤以為是並行造成）。JRead 的 SW 還沒起來就輪詢等它
+  const isJreadSw = (w) => /\/background\/service-worker\.js$/.test(w.url());
+  let sw = ctx.serviceWorkers().find(isJreadSw);
+  for (let i = 0; !sw && i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    sw = ctx.serviceWorkers().find(isJreadSw);
+  }
   if (!sw) { console.error('service worker 未啟動'); process.exit(1); }
   console.log('sw:', sw.url());
   sw.on('console', m => console.log('SW', m.type(), m.text().slice(0, 300)));
