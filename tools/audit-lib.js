@@ -688,6 +688,23 @@ pageFns.auditContrast = function () {
     const a = fg.a;
     return { r: fg.r * a + bg.r * (1 - a), g: fg.g * a + bg.g * (1 - a), b: fg.b * a + bg.b * (1 - a), a: 1 };
   }
+  // shadow DOM（2026-11-17，MDN <mdn-code-example> 實案）：元件裡的文字在 shadow root 內，
+  // querySelectorAll 走不進去——系統深色＋淺色主題時程式碼區塊深底深字（對比 1.58）、
+  // Copy 按鈕白字落在淺卡片上，audit 兩輪都印綠燈。掃描清單補上 open shadow root 內的
+  // 元素（巢狀的一併走），往上找背景 / 判可見時在 shadow root 頂端接回 host。
+  // 這條不驗：closed shadow root（讀不到）、iframe 內的文件、canvas 畫出來的字。
+  function up(el) {
+    if (el.parentElement) return el.parentElement;
+    const root = el.getRootNode && el.getRootNode();
+    return (root && root.host) ? root.host : null;
+  }
+  function collect(root, out, inShadow) {
+    for (const el of root.querySelectorAll('*')) {
+      out.push([el, inShadow]);
+      if (el.shadowRoot) collect(el.shadowRoot, out, true);
+    }
+    return out;
+  }
   function effBg(el) {
     const layers = [];
     let opaque = false;
@@ -696,7 +713,7 @@ pageFns.auditContrast = function () {
       const c = parseColor(getComputedStyle(cur).backgroundColor);
       if (c && c.a > 0) { layers.push(c); if (c.a >= 0.999) { opaque = true; break; } }
       if (cur === document.body) break;
-      cur = cur.parentElement;
+      cur = up(cur);
     }
     let base = opaque ? { r: 0, g: 0, b: 0, a: 1 } : { r: 255, g: 255, b: 255, a: 1 };
     for (let i = layers.length - 1; i >= 0; i--) base = blend(layers[i], base);
@@ -709,13 +726,14 @@ pageFns.auditContrast = function () {
       const cs = getComputedStyle(cur);
       if (cs.display === 'none' || cs.visibility === 'hidden') return false;
       if (cur === document.body) break;
-      cur = cur.parentElement;
+      cur = up(cur);
     }
     return true;
   }
   const warnings = [];
   let scanned = 0;
-  for (const el of art.querySelectorAll('*')) {
+  let shadowScanned = 0;
+  for (const [el, inShadow] of collect(art, [], false)) {
     if (warnings.length >= 20 || scanned >= 1500) break;
     const tag = el.tagName.toUpperCase();
     if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
@@ -724,6 +742,7 @@ pageFns.auditContrast = function () {
     direct = direct.replace(/\s+/g, ' ').trim();
     if (direct.length < 4) continue;
     scanned++;
+    if (inShadow) shadowScanned++;
     if (!isVisible(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.width < 5 || r.height < 5) continue;
@@ -733,7 +752,7 @@ pageFns.auditContrast = function () {
     const ratio = contrast(fg, bg);
     if (ratio < 3) {
       warnings.push({
-        tag: el.tagName,
+        tag: inShadow ? `${el.tagName}（shadow DOM 內）` : el.tagName,
         cls: (el.className || '').toString().slice(0, 40),
         text: direct.slice(0, 40),
         color: getComputedStyle(el).color,
@@ -742,7 +761,7 @@ pageFns.auditContrast = function () {
       });
     }
   }
-  return { scanned, warnings };
+  return { scanned, shadowScanned, warnings };
 };
 
 // ---- Content width audit（內文段落寬 == 版心寬，px 級）----

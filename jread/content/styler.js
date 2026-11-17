@@ -386,6 +386,8 @@
   const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
   // v2.5.14：直向 flex 容器的直接子 <pre>（見 markFlexColumnPres）
   const PRE_FLEX_STRETCH_ATTR = 'data-jread-pre-flex-stretch';
+  // v2.5.16：主文內帶 shadow root 的自訂元素（見 markShadowHosts）
+  const SHADOW_HOST_ATTR = 'data-jread-shadow-host';
   // v1.7.70：pre-wrap 硬換行切出的段落載體標記（見 splitPreWrapParagraphs）。
   const PREWRAP_PARA_ATTR = 'data-jread-prewrap-para';
   // v2.4.9：站方對 ::first-letter 設了與段落不同的顏色（drop cap 顯式色）的元素。
@@ -2478,6 +2480,18 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
 [${ARTICLE_ATTR}="1"] pre[${PRE_FLEX_STRETCH_ATTR}="1"][${PRE_FLEX_STRETCH_ATTR}="1"] {
   margin-left: 0 !important;
   margin-right: 0 !important;
+}
+/* v2.5.16：shadow DOM 元件的配色跟著卡片走（標記見 markShadowHosts）。我們的樣式表
+   進不了 shadow root：元件裡的底色留著站方依「系統深淺色」挑的那一組，但文字色是
+   繼承來的、會吃到卡片的主題文字色——系統深色＋淺色主題時變成深底深字（MDN 的
+   <mdn-code-example>：程式碼區塊 rgb(45,48,52) 底、字被改成 #000，對比 1.58；Copy /
+   Run 按鈕白字落在淺色卡片上。Jimmy 2026-11-17 回報），系統淺色＋深色主題則反過來。
+   color-scheme 會繼承進 shadow root：把 host 的 color-scheme 定成卡片的深淺，元件裡
+   用 light-dark() / 系統色寫的底色、字色、語法色整組換成與卡片同一側（實測 1.58 →
+   18.09、反向 1.28 → 8.95）。只影響跟著 color-scheme 走的元件；用 media query 或
+   JS 自己判斷深淺的元件不受影響（也修不到）。 */
+[${ARTICLE_ATTR}="1"] [${SHADOW_HOST_ATTR}="1"] {
+  color-scheme: ${(() => { const c = parseCssColor(theme.articleBg); return (c && relLuminance(c) < 0.5) ? 'dark' : 'light'; })()} !important;
 }
 /* v2.2.11 引言整塊內縮（Jimmy 2026-10-28）：邊線連同文字往右縮 1em、跟內文左緣
    明顯錯開；文字離線的距離交給站方 padding / BQ_PLAIN 的 1em。同 specificity、
@@ -4694,6 +4708,25 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(pre);
     }
   }
+  // v2.5.16：主文內帶 shadow root 的自訂元素標 SHADOW_HOST_ATTR（規則與動機見 buildCss
+  // 該規則註解）。只看 tag 名含連字號的元素（自訂元素的命名規定），再問 shadowRoot——
+  // 整篇掃一次、每個元素只付一次字串比對。closed shadow root 讀不到、不標。只做進場
+  // 當下這一次，進場後才升級 / 才插入的元件不補標。
+  function markShadowHosts(articleEl, marked) {
+    const all = articleEl.getElementsByTagName('*');
+    const found = [];
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      if (el.localName.indexOf('-') === -1) continue;
+      let sr = null;
+      try { sr = el.shadowRoot; } catch (_) { sr = null; }
+      if (sr) found.push(el);
+    }
+    for (const el of found) {
+      el.setAttribute(SHADOW_HOST_ATTR, '1');
+      marked.push(el);
+    }
+  }
   // v1.9.15：行內高亮自訂元素保留站方底色（Jimmy 2026-10-01：Readwise Reader
   // 文件頁進閱讀模式後，畫過的重點看不出來）。
   // 根因：BG_PRESERVE_NOT 只認 <mark> / <kbd> 這類 HTML 語意 tag；網頁標註工具
@@ -5066,6 +5099,7 @@ html.${HTML_CLASS}.jread-orion body {
       const headingLinkMarked = [];
       const absAnchorMarked = [];
       const preFlexStretchMarked = [];
+      const shadowHostMarked = [];
       let textDivMarked = [];
       // v1.7.70：pre-wrap 切段記錄（還原用；見 splitPreWrapParagraphs）
       let prewrapParaSnap = [];
@@ -5085,7 +5119,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5542,6 +5576,8 @@ html.${HTML_CLASS}.jread-orion body {
         markAbsAnchors(articleEl, absAnchorMarked);
         // v2.5.14：直向 flex 容器的直接子 <pre> 不置中（同樣要在 ARTICLE_ATTR 之後量）
         markFlexColumnPres(articleEl, preFlexStretchMarked);
+        // v2.5.16：shadow DOM 元件的 color-scheme 跟著卡片（見 markShadowHosts）
+        markShadowHosts(articleEl, shadowHostMarked);
         // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
         // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
         markInlineHighlights(articleEl, siteUiMarked);
@@ -8455,6 +8491,11 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.preFlexStretchMarked)) {
         for (const el of snapshot.preFlexStretchMarked) {
           if (el && el.removeAttribute) el.removeAttribute(PRE_FLEX_STRETCH_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.shadowHostMarked)) {
+        for (const el of snapshot.shadowHostMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(SHADOW_HOST_ATTR);
         }
       }
       // v0.8.49：移除「div 當段落」標記
