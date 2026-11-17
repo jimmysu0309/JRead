@@ -1776,6 +1776,45 @@
   function noteAppliedSettings(settings) {
     lastAppliedSettingsSig = settingsSignature(settings);
   }
+  // v2.5.12：捲動 → 翻頁的設定切換（popup 開翻頁 / ⌥P / 設定檔），D-1 的鏡像。
+  // v0.7.227 翻頁模式第一版起，這個方向只做 captureScrollY（那是給「之後關翻頁 / 退出」
+  // 用的捲回位置），翻頁模組 install 一律回 lastRatio——第一次開翻頁是 0＝第 1 頁，
+  // 開過又關再開則是「上次離開翻頁時的頁」，都跟使用者此刻捲到哪裡無關（probe：合成
+  // 長文捲到 50% 開翻頁 → 1 / 59；翻到第 5 頁 → 關翻頁 → 捲到 85% → 再開 → 5 / 59）。
+  //
+  // 做法：styler.restore **之前**（閱讀版面還在、文件可捲）取捲動進度比例，翻頁模組
+  // install 完再 goToPage 到對應頁。比例定義與 position-memory capture() 的捲動模式
+  // 相同（scrollTop ÷ 可捲距離），頁碼對映走同一個 resolvePageIndex——「捲動比例 ↔
+  // 頁碼」這份事實不另寫一份；切模式前後算出來的閱讀進度比例也因此相同。
+  // 比例近似、不是內容錨點：兩種版面的內容分布不完全成比例（圖片、斷頁留白），實測
+  // 落點與切換前畫面上的內容差 0–1 頁（切換後才載入的 lazy 圖把頁數撐大時會再偏，
+  // 翻頁模組重測只保頁碼）。頁首（0）一定是第 1 頁、頁尾（1）一定是末頁。
+  // 第 1 頁也要 goToPage（不能比照 applyEntry 的 n > 0 才跳）——install 可能已經先跳到
+  // 舊 lastRatio 的頁。
+  // 兩個函式都住在 scheduleReapply 區塊內、自己吞例外：量不到就維持改前行為。
+  function capturePagedSwitchOnRatio() {
+    try {
+      const sc = document.scrollingElement || document.documentElement;
+      if (!sc) return null;
+      const maxTop = Math.max(0, sc.scrollHeight - window.innerHeight);
+      if (!(maxTop > 0)) return 0;
+      const r = sc.scrollTop / maxTop;
+      return Number.isFinite(r) ? r : null; // 超出 0–1（橡皮筋回彈）由頁碼對映那邊夾
+    } catch (_) { return null; }
+  }
+  function applyPagedSwitchPage(ratio) {
+    try {
+      const pm = NS.pagedMode;
+      if (ratio === null || !pm || !pm.isInstalled() || typeof pm.goToPage !== 'function') return;
+      const p = pm.getPosition();
+      if (!p || !(p.total >= 1)) return;
+      const entry = { mode: 'scroll', ratio };
+      const n = (NS.positionMemory && typeof NS.positionMemory.resolvePageIndex === 'function')
+        ? NS.positionMemory.resolvePageIndex(entry, p.total)
+        : Math.max(0, Math.min(p.total - 1, Math.round(ratio * (p.total - 1))));
+      pm.goToPage(n);
+    } catch (_) { /* 對映失敗不阻斷 reapply（停在 install 自己回的頁） */ }
+  }
   function scheduleReapply(opts) {
     if (!(opts && opts.resume === true)) reapplyForced = true;
     if (reapplyTimer) clearTimeout(reapplyTimer);
@@ -1820,6 +1859,11 @@
           pagedSwitchAnchor = captureExitScrollAnchor();
         } catch (_) { pagedSwitchAnchor = null; }
       }
+      // v2.5.12：反方向（捲動 → 翻頁）——同樣要在 restore 之前取位置（見
+      // capturePagedSwitchOnRatio 註解）。只在「這次重套把翻頁打開」時取；翻頁本來就
+      // 開著的重套（改字級等）與進場直接是翻頁模式都不經過這裡
+      const pagedTurningOn = !pagedWasOn && !!(NS.pagedMode && settings && settings.pagedMode === true);
+      const pagedSwitchOnRatio = pagedTurningOn ? capturePagedSwitchOnRatio() : null;
       // 2026-10-07 review C-3：restore → apply 之間**不可有 await**。v1.9.17 以前
       // getSettings 夾在中間，storage IPC 期間瀏覽器會 paint 出原站版型（probe：
       // 8 次切主題有 1–3 次、每次 17–34ms 的 frame 讀不到 reader stylesheet）；
@@ -1837,6 +1881,8 @@
       if (pagedTurningOff && NS.pagedMode && !NS.pagedMode.isInstalled()) {
         applyPagedSwitchScroll(pagedSwitchAnchor, pagedSwitchRatio);
       }
+      // v2.5.12：翻頁模組剛裝好、頁數已量——跳到切換前捲動位置對應的頁
+      if (pagedTurningOn) applyPagedSwitchPage(pagedSwitchOnRatio);
       syncSpaceScrollFromSettings(settings);
     }, 200);
   }
