@@ -37,6 +37,7 @@
 //   blocks       主文內區塊 / 媒體元素：路徑、所在欄、頂端 y、碎片數、碎片總高
 //   imgs         每張圖：欄號、碎片數（> 1＝被跨頁切開）、碎片總高
 //   exit         （--exit）退出後 inline style 與進場前不同的元素
+//   fonts        量測當下 document.fonts 已載入的字型（內嵌字型由 jread/assets/fonts/ 供應）
 //
 // 這條驗 X、不驗 Y：
 //   驗——翻頁模式在 WebKit / Chromium 引擎下的版面結果（哪些元素被寫了什麼 inline
@@ -136,7 +137,11 @@ function installStub(cfg) {
   const api = {
     runtime: {
       id: 'paged-probe',
-      getURL: (p) => cfg.extBase + String(p || '').replace(/^\//, ''),
+      // 內嵌字型：stub 的擴充網址載不到檔案，導到下面 page.route 接的假主機（否則量到的是
+      // fallback 的 Georgia、比 Source Serif 窄約 7%——v2.5.10 的 rect 表因此漏掉實機斷字）
+      getURL: (p) => (/assets\/fonts\//.test(String(p))
+        ? 'https://jread-fonts.local/' + String(p).split('/').pop()
+        : cfg.extBase + String(p || '').replace(/^\//, '')),
       getManifest: () => cfg.manifest,
       sendMessage: () => Promise.resolve(undefined),
       sendNativeMessage: () => Promise.resolve(undefined),
@@ -291,6 +296,11 @@ async function runViewport(browser, vp) {
     manifest,
     extBase: ENGINE === 'webkit' ? 'safari-web-extension://paged-probe/' : 'chrome-extension://paged-probe/'
   });
+  await page.route((u) => u.hostname === 'jread-fonts.local', (route) => {
+    const f = path.join(EXT_DIR, 'assets', 'fonts', path.basename(new URL(route.request().url()).pathname));
+    if (!fs.existsSync(f)) return route.fulfill({ status: 404, body: '' });
+    return route.fulfill({ status: 200, contentType: 'font/woff2', headers: { 'access-control-allow-origin': '*' }, body: fs.readFileSync(f) });
+  });
   if (HTML_FILE) {
     const html = fs.readFileSync(path.resolve(HTML_FILE), 'utf8');
     // 只攔主文件；快照內的相對資源照 <base> / PAGE_URL 走網路
@@ -314,6 +324,9 @@ async function runViewport(browser, vp) {
   const toggled = await page.evaluate(() => window.__pagedProbeToggle());
   await sleep(WAIT_MS);
   const fp = await page.evaluate(collectFingerprint);
+  // 實際載入的字型（字寬 / 斷行類量測的前提；空陣列＝內嵌字型沒載到、數字不可信）
+  fp.fonts = await page.evaluate(() => Array.from(document.fonts).filter((f) => f.status === 'loaded')
+    .map((f) => `${f.family.replace(/["']/g, '')} ${f.weight} ${f.style}`).filter((v, i, a) => a.indexOf(v) === i).sort());
   fp.meta = { url: PAGE_URL, html: HTML_FILE, engine: ENGINE, viewport: vp, ext: EXT_DIR, version: manifest.version, toggled, settings: SETTINGS };
 
   if (!NO_SHOTS && fp.active) {
@@ -342,6 +355,7 @@ async function runViewport(browser, vp) {
   console.log(`[${tag}] active=${fp.active} pages=${fp.pages} inline=${Object.keys(fp.inline).length} blocks=${fp.blocks.length} imgs=${fp.imgs.length}（被切 ${cut}）` +
     (fp.exit ? ` exit: active=${fp.exit.active} 殘留差異=${fp.exit.diffs.length}` : '') +
     (errors.length ? ` pageErrors=${errors.length}` : ''));
+  console.log(`[${tag}] fonts=${fp.fonts.length ? fp.fonts.join(' | ') : '（沒有載入任何字型——字寬數字不可信）'}`);
   await ctx.close();
   return fp;
 }

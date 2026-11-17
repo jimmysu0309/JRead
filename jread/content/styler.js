@@ -65,6 +65,30 @@
   // 「只在空白處換行」寫完後重量的時間點（ms）：400 蓋過站方常見的 transition
   //（100–300ms），1500 蓋過內嵌字型載入後的重排；另外掛 document.fonts.ready
   const ARIA_CELL_SETTLE_MS = [400, 1500];
+  // v2.5.12：翻頁模式「ARIA 表格列不跨頁」要塌成 block 的 flex 外殼標記
+  //（passMarkAriaFlowShells 標、翻頁區塊的 CSS 讀；捲動模式不標也沒有對應規則）
+  const ARIA_FLOW_SHELL_ATTR = 'data-jread-aria-flow-shell';
+  // 「這個 flex 外殼塌成 block 版面不變」的純判定（輸入是 computed style 的值）：
+  //   - display 是 flex / inline-flex（grid 不碰：欄軌可能就是表格的欄）
+  //   - 主軸直向、不換行（子項本來就一個疊一個、各佔整寬）；或只有一個 in-flow 子
+  //   - align-items 是 normal / stretch（子項撐滿整寬＝block 子的預設寬）
+  //   - 列間距 0（block 沒有 gap；只有一個子時 gap 不作用）
+  // 任何一項不成立就不塌——寧可那張表在 Safari 照舊被切，不改站方版面
+  function ariaFlowShellCollapsible(f) {
+    if (!f) return false;
+    const display = String(f.display || '');
+    if (display !== 'flex' && display !== 'inline-flex') return false;
+    const single = f.inFlowChildren <= 1;
+    const column = String(f.flexDirection || '') === 'column';
+    if (!single && !column) return false;
+    const align = String(f.alignItems || 'normal');
+    if (align !== 'normal' && align !== 'stretch') return false;
+    if (single) return true;
+    const wrap = String(f.flexWrap || 'nowrap');
+    if (wrap !== 'nowrap') return false;
+    const gap = parseFloat(f.rowGap);
+    return !(gap > 0);
+  }
   function inAriaTableRow(el, stopAt) {
     for (let n = el; n && n !== stopAt && n.nodeType === 1; n = n.parentElement) {
       if (n.getAttribute && n.getAttribute('role') === 'row' && isAriaTableRow(n)) return true;
@@ -2636,7 +2660,20 @@ html [${ARTICLE_ATTR}="1"] blockquote:not([${PLAYER_ATTR}="1"]) {
     // `<strong><span style="...">粗體</span></strong>`，span 自己命中規則 →
     // 文字渲染 400、內文粗體全部消失（預設設定就觸發，不需使用者改字重）。
     // p 級注入不受影響——strong 有 UA 自身 font-weight（bolder），不靠 inherit。
-    const BODY_WEIGHT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL +
+    // v2.5.12：ARIA 表格的表頭格（role=columnheader、被 markTextDivs 標成內文的 div）
+    // 不注入字重、留站方的——使用者字重 < 600 時。docs.gitbook.com 四欄表表頭站方是
+    // 500、資料列 400，注入後整列被抹成 400、表頭不比資料列粗（v0.8.49 把 text-div
+    // 收進字重注入起既有）。使用者選 600（粗）時照舊注入：站方表頭多半是 500–600，
+    // 不注入反而會比內文細。只排除表頭格自己；格內另有 span / p 的照既有規則
+    //（role=columnheader 的 div 本身就是 ARIA 表頭的語意，不另外驗它在不在表格列裡）
+    const ARIA_HEADER_WEIGHT_KEEP = Number(opts.fontWeight) < 600
+      ? ':not([role="columnheader"])'
+      : '';
+    const TEXT_DIV_SEL_TAIL = `[${TEXT_DIV_ATTR}="1"],`;
+    const BODY_WEIGHT_CORE = BODY_TEXT_CORE.endsWith(TEXT_DIV_SEL_TAIL)
+      ? BODY_TEXT_CORE.slice(0, -1) + ARIA_HEADER_WEIGHT_KEEP + ','
+      : BODY_TEXT_CORE;
+    const BODY_WEIGHT_SEL = BODY_WEIGHT_CORE + SPAN_TEXT_SEL +
       ':not(strong *):not(b *)';
     let userOverrides = '';
     // v0.7.162：lineHeight Auto sentinel = 0。Auto 時跳過所有 line-height 注入
@@ -3171,6 +3208,22 @@ html [${ARTICLE_ATTR}="1"] img,
 html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] iframe {
   break-inside: avoid;
+}
+/* v2.5.12：ARIA 排的 div 表格（role=row，不是原生 tr）一列不跨頁（GitBook quickstart
+   11 列表：390×700 兩個引擎都把一列從中間切成兩半）。列自己加 break-inside: avoid
+   ——Chromium 這樣就夠；WebKit 不照 flex item 的 break-*（v2.4.5 同一個毛病），
+   列到表格根之間的 flex 外殼（GitBook：role=table > div > role=rowgroup 三層都是
+   直向 flex）要一併塌成 block，列才回到可分頁的 block flow。外殼由
+   passMarkAriaFlowShells 逐層判定後標記（只標「塌了版面不變」的 flex；表格是容器
+   第一個子時連上一層外殼一起，理由見該 pass），列本身仍是橫向 flex、欄寬規則
+   （segCardWidth 的 flex: 1 1 0）不受影響。
+   比一頁還高的列照 spec 仍會切。原生 <table> 不在這條（WebKit 對 tr / td 的 avoid
+   無效、沒有純 CSS 解）。只在翻頁模式注入，捲動模式零影響 */
+html [${ARTICLE_ATTR}="1"] :is(${ARIA_TABLE_SEL}) [role="row"]:not(tr) {
+  break-inside: avoid;
+}
+html [${ARTICLE_ATTR}="1"] [${ARIA_FLOW_SHELL_ATTR}="1"] {
+  display: block !important;
 }
 /* v0.8.7：翻頁模式下 media / 連結禁用原生 drag + 補 touch-action——真機實證
    （Jimmy 2026-06-09 culpium/Substack）圖片 draggable=true，iPhone 上水平拖曳
@@ -4014,6 +4067,12 @@ html.${HTML_CLASS}.jread-orion body {
     for (const el of carriers) {
       // byline / kicker 是 meta 列（作者 / 日期 / 分類），有自己的對齊規則，不 justify
       if (el.closest(`[${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
+      // v2.5.12：ARIA 表格列（isAriaTableRow）裡的格子不做兩端對齊，'off' 也不標——
+      // 格子的對齊留給站方。格子只有幾十 px 寬，CJK 表頭一折行（docs.gitbook.com
+      // 四欄表譯後 390 寬「公司簡介」→「公司簡 / 介」），justify 會把第一行三個字
+      // 攤滿整格、字距被拉開成「公 司 簡」。段落的 justify 是為了補 WebKit 每行
+      // 行尾的內縮，格子裡沒有那個問題
+      if (inAriaTableRow(el, articleEl)) continue;
       if (off) {
         setMark(el, '0');
         continue;
@@ -4871,6 +4930,7 @@ html.${HTML_CLASS}.jread-orion body {
       const wpConstrained = [];
       const wideScroll = [];
       const ariaCellSnap = [];
+      const ariaFlowShellMarked = [];
       let panguSnap = null;
       const inlineImgs = [];
       const inlineImgPins = [];
@@ -4914,7 +4974,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -7678,6 +7738,77 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      const passMarkAriaFlowShells = () => {
+        // v2.5.12：翻頁模式「ARIA 表格列不跨頁」的外殼標記（CSS 與根因見翻頁區塊
+        // ARIA_FLOW_SHELL_ATTR 那條規則的註解）。只在翻頁模式跑：捲動模式沒有分頁、
+        // 一個標記都不寫。對每一列（isAriaTableRow）往上走兩段：
+        //   1. 列的 parent 到表格根（role=table / grid / treegrid；沒有根就到最外層
+        //      rowgroup）、含根——逐層問 ariaFlowShellCollapsible，過的才標
+        //   2. 根以上：只在「這一層是 parent 的第一個 in-flow 子」時繼續往上。WebKit
+        //      把「不跨頁」做成往下推的位移；元素貼在容器頂端時位移會交給容器、一層
+        //      一層往上傳，傳到 flex 容器就被丟掉。真站 probe（quickstart 第二張表，
+        //      WebKit 390×700）：表格根塌成 block 後資料列全部不切，但表頭列（整張表
+        //      的第一列）剛好落在頁底時照切——表格是上一層直向 flex 外殼的第一個子；
+        //      把那層也塌掉，頁底前 0–700px 每 4px 掃一輪都不再切。前面有 in-flow
+        //      兄弟的那一層＝位移有 block 容器接手，到此為止、不再往上標
+        // 主文容器本身不標。
+        // 排在 passDecolumn 之後（它會改列的 display）、passAriaNarrowCellInsets 之前
+        //（那條量格寬，要看到塌完的版面；外殼塌成 block 不改格寬，順序只是保險）。
+        // 這條驗「外殼是不是塌了版面不變的 flex」、不驗塌完之後列有沒有真的不跨頁
+        //（歸 webkit-paged-probe 兩引擎量每列碎片數）
+        if (!opts.pagedMode) return;
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win) return;
+        const inFlowKids = (n) => {
+          const kids = [];
+          for (const ch of n.children) {
+            if (ch.getAttribute('data-jread-hidden') === '1') continue;
+            const ccs = win.getComputedStyle(ch);
+            if (ccs.display === 'none' || ccs.position === 'absolute' || ccs.position === 'fixed') continue;
+            kids.push(ch);
+          }
+          return kids;
+        };
+        const seen = new Set();
+        const consider = (n) => {
+          if (seen.has(n)) return;
+          seen.add(n);
+          const cs = win.getComputedStyle(n);
+          if (ariaFlowShellCollapsible({
+            display: cs.display,
+            flexDirection: cs.flexDirection,
+            flexWrap: cs.flexWrap,
+            alignItems: cs.alignItems,
+            rowGap: cs.rowGap,
+            inFlowChildren: inFlowKids(n).length
+          })) {
+            n.setAttribute(ARIA_FLOW_SHELL_ATTR, '1');
+            ariaFlowShellMarked.push(n);
+          }
+        };
+        const aboveDone = new Set();
+        for (const row of articleEl.querySelectorAll('[role="row"]')) {
+          if (!isAriaTableRow(row)) continue;
+          if (row.closest && row.closest('[data-jread-hidden="1"]')) continue;
+          let root = row.closest(ARIA_TABLE_ROOT_SEL);
+          if (!root) {
+            for (let g = row.parentElement.closest(ARIA_TABLE_SEL); g; g = g.parentElement && g.parentElement.closest(ARIA_TABLE_SEL)) root = g;
+          }
+          if (!root || root === articleEl || !articleEl.contains(root)) continue;
+          for (let n = row.parentElement; n && n !== articleEl && n.nodeType === 1; n = n.parentElement) {
+            consider(n);
+            if (n === root) break;
+          }
+          if (aboveDone.has(root)) continue;
+          aboveDone.add(root);
+          for (let n = root; n.parentElement && n.parentElement !== articleEl && articleEl.contains(n.parentElement); n = n.parentElement) {
+            const parent = n.parentElement;
+            if (inFlowKids(parent)[0] !== n) break;
+            consider(parent);
+          }
+        }
+      };
+
       const passAriaNarrowCellInsets = () => {
         // v2.5.10：ARIA 排的 div 表格（isAriaTableRow）在窄卡片下，格子內容撐出格子。
         // 根因（docs.gitbook.com blocks/table 四欄表，390 / 430 寬實測）：v2.5.9 起
@@ -7719,6 +7850,24 @@ html.${HTML_CLASS}.jread-orion body {
           const wb = cs.wordBreak || cs.getPropertyValue('word-break');
           return ow === 'anywhere' || ow === 'break-word' || wb === 'break-all' || wb === 'break-word';
         };
+        // v2.5.12：整段包成 measureAndWrite()、可重跑——每次先把這個 pass 上一輪寫的
+        // inline 全部寫回原值，再從頭量、從頭寫（三步都是）。v2.5.11 只有第 3 步會
+        // 重量，第 1、2 步仍只在 apply 當下量一次：當下畫面是 fallback 字型（比內嵌
+        // 字型窄約 7%）＋站方 transition 途中，docs.gitbook.com 四欄表 460–480 寬
+        // 實測膠囊「In progress」落定後超出格子 2–7px，但進場當下沒超出 → 整張表
+        // 沒被收窄、膠囊一路伸進隔壁格。先寫回再量＝沒有遲滯（收窄後不再溢出，
+        // 不寫回的話下一輪會誤判成「不用收」）；寫回與重寫在同一個 task 內、中間不繪製
+        const restoreOwnWrites = () => {
+          for (let i = ariaCellSnap.length - 1; i >= 0; i--) {
+            const a = ariaCellSnap[i];
+            if (!a || !a.el) continue;
+            if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+            else a.el.style.removeProperty(a.prop);
+          }
+          ariaCellSnap.length = 0;
+        };
+        const measureAndWrite = () => {
+        restoreOwnWrites();
         const wordWrapCells = [];
         const tables = new Map();
         for (const row of articleEl.querySelectorAll('[role="row"]')) {
@@ -7798,42 +7947,37 @@ html.${HTML_CLASS}.jread-orion body {
                 el.style.setProperty(prop, 'normal', 'important');
               }
             }
-            if (recs.length) wordWrapCells.push({ c, recs, kept: true });
+            if (recs.length) wordWrapCells.push({ c, recs });
           }
         }
-        if (!wordWrapCells.length) return;
-        // 寫 → 量 → 伸出格子外緣的那一格整格退回站方的斷法。可重入：退回過的格子
-        // 下一輪會再試寫一次（字寬變了可能就放得下）
-        const settleWordWrap = () => {
-          for (const w of wordWrapCells) {
-            if (w.kept) continue;
-            for (const a of w.recs) a.el.style.setProperty(a.prop, 'normal', 'important');
-            w.kept = true;
+        // 寫 → 量 → 伸出格子外緣的那一格整格退回站方的斷法（退回的紀錄留在
+        // ariaCellSnap 裡無妨——值已經是原值，還原時再寫一次原值）。下一輪重跑會
+        // 從頭再試寫一次（字寬變了可能就放得下）
+        const out = wordWrapCells.filter((w) => (w.c.scrollWidth || 0) > (w.c.clientWidth || 0));
+        for (const w of out) {
+          for (let i = w.recs.length - 1; i >= 0; i--) {
+            const a = w.recs[i];
+            if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+            else a.el.style.removeProperty(a.prop);
           }
-          const out = wordWrapCells.filter((w) => (w.c.scrollWidth || 0) > (w.c.clientWidth || 0));
-          for (const w of out) {
-            for (let i = w.recs.length - 1; i >= 0; i--) {
-              const a = w.recs[i];
-              if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
-              else a.el.style.removeProperty(a.prop);
-            }
-            w.kept = false;
-          }
+        }
+        return tables.size;
         };
-        settleWordWrap();
+        // 主文裡沒有任何 ARIA 表格列：不掛計時器、之後也不重量
+        if (!measureAndWrite()) return;
         // apply 當下量到的不是最終字寬（真站實測兩個來源）：(a) JRead 選到的內嵌字型
         // 這一刻才剛注入 @font-face、還在載入，畫面是 fallback 字型（Georgia 比
         // Source Serif 窄約 7%）；(b) 站方連結帶 transition: all 100ms，字級還停在
         // 站方的 14px、沒走到 JRead 的 17px。兩者都讓 email 在 apply 當下「放得下」、
-        // 落定後伸出格子 14–20px 壓到隔壁。所以字型載完、以及固定兩個時間點各重量
-        // 一次；退出閱讀模式後（ARTICLE_ATTR 已拿掉）不再動
+        // 落定後伸出格子 14–20px 壓到隔壁。所以字型載完、以及固定兩個時間點各整段
+        // 重跑一次（v2.5.12 起含第 1、2 步）；退出閱讀模式後（ARTICLE_ATTR 已拿掉）不再動
         // ariaCellSnap.restored：這一輪 apply 已被 restore（退出，或改設定時的 restore →
         // 重新 apply）。重新 apply 後 ARTICLE_ATTR 又是 1，只看屬性擋不住上一輪留下的
         // 計時器——它手上的格子清單與原值是上一輪的，再寫會與新一輪的還原紀錄打架
         const settleLater = () => {
           if (ariaCellSnap.restored) return;
           if (articleEl.getAttribute(ARTICLE_ATTR) !== '1') return;
-          settleWordWrap();
+          measureAndWrite();
         };
         const fontSet = articleEl.ownerDocument.fonts;
         if (fontSet && fontSet.ready && typeof fontSet.ready.then === 'function') fontSet.ready.then(settleLater, () => {});
@@ -7900,6 +8044,7 @@ html.${HTML_CLASS}.jread-orion body {
         passAspectPseudoReset,
         passMinHeightReset,
         passWpConstrainedMaxWidth,
+        passMarkAriaFlowShells,
         passAriaNarrowCellInsets,
         passWideContentScroll,
         passPangu,
@@ -8340,6 +8485,13 @@ html.${HTML_CLASS}.jread-orion body {
           if (!m || !m.el) continue;
           if (m.minHeight) m.el.style.setProperty('min-height', m.minHeight, m.minHeightPriority || '');
           else m.el.style.removeProperty('min-height');
+        }
+      }
+
+      // v2.5.12：移除翻頁模式 ARIA 表格 flex 外殼標記
+      if (Array.isArray(snapshot.ariaFlowShellMarked)) {
+        for (const el of snapshot.ariaFlowShellMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(ARIA_FLOW_SHELL_ATTR);
         }
       }
 
