@@ -384,7 +384,7 @@ async function setZoom(page, z) {
   // ---- 6. 亮色截圖 ----
   console.log('Phase: light');
   await setZoom(page, 0.5); // enter 在 zoom 1.0 跑（rect 判定不可失真），截圖回 0.5
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(200);
   await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'light' });
 
@@ -601,7 +601,7 @@ async function setZoom(page, z) {
   await sleep(2500);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await sleep(2500);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(1000);
 
   // ---- 9. 延遲截圖（C7）----
@@ -638,7 +638,7 @@ async function setZoom(page, z) {
   } else {
     console.log(`  ✅ dark theme applied（bg ${audit.theme.dark.before} → ${audit.theme.dark.after}）`);
   }
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(300);
   // 第五輪調校：每頁截圖前重驗 theme 還在（cnbc 實證 SPA 捲動 re-render 把
   // dark 弄掉、page-02 起拍成亮色而 audit 全綠——E 層實際只驗到第一屏）。
@@ -688,7 +688,7 @@ async function setZoom(page, z) {
   console.log('toggle exit:', JSON.stringify(toggleOff));
   await sleep(800);
 
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(300);
   await audits.takePagedScreenshots(page, { dir: outDir, prefix: 'restored' });
 

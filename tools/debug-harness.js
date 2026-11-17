@@ -388,7 +388,9 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
       }
       if (!target) target = art.querySelector('img');
       if (!target) return;
-      window.scrollTo(0, window.scrollY + target.getBoundingClientRect().top - 100);
+      // v2.5.17：一律 behavior: 'instant'——站方 html { scroll-behavior: smooth }（GitHub、MDN）
+      // 會讓 scrollTo 跑動畫，還沒到位就截圖 → 畫面上方一段頁面底色空帶
+      window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - 100, left: 0, behavior: 'instant' });
     }, findTarget);
     await sleep(400);
 
@@ -592,7 +594,7 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     await sleep(3000);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await sleep(10000);
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
     await sleep(2000);
     const residualDelayed = await audits.runResidualText(page, NOISE_KEYWORD_TIERS);
     printAudit('delayed +scroll +15s', residualDelayed);
@@ -664,7 +666,7 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     // 用 document.body.style.zoom 保留清晰度（不是縮 DPR），只壓縮 layout。
     await page.evaluate(() => { document.body.style.zoom = '0.5'; });
     await sleep(300); // 等 reflow
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
     await sleep(300);
     await page.screenshot({ path: SCREENSHOT_OUT });
     console.log('saved viewport (zoom 0.5):', SCREENSHOT_OUT);

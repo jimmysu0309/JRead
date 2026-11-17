@@ -1787,8 +1787,8 @@ async function waitForReaderImagesLoaded(page, timeoutMs = 3000) {
     const art = document.querySelector('[data-jread-active="1"]');
     if (!art) return;
     art.scrollIntoView({ block: 'start' });
-    window.scrollTo(0, document.body.scrollHeight);
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: document.body.scrollHeight, left: 0, behavior: 'instant' });
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   });
   try {
     await page.waitForFunction(() => {
@@ -1824,7 +1824,10 @@ async function takePagedScreenshots(page, opts) {
   const count = Math.min(fullCount, maxPages);
   const paths = [];
   for (let i = 0; i < count; i++) {
-    await page.evaluate(y => window.scrollTo(0, y), i * step);
+    // v2.5.17：behavior: 'instant'。站方 html { scroll-behavior: smooth }（GitHub、MDN）會讓
+    // scrollTo 跑動畫，400ms 後 scrollY 還差目標 7–59px——同版重跑截圖有 4px 位移、等待更短
+    // 的 probe 會拍到上方一段頁面底色空帶（v2.5.15 記的現象，2026-11-17 查明是截圖時機）
+    await page.evaluate(y => window.scrollTo({ top: y, left: 0, behavior: 'instant' }), i * step);
     await sleep(400);
     if (ensure) {
       try { await ensure(i); } catch (_) { /* ensure 失敗不擋截圖 */ }
@@ -1836,7 +1839,7 @@ async function takePagedScreenshots(page, opts) {
   if (fullCount > count) {
     console.log(`  ⚠️ ${prefix}: 截圖頁數達上限 ${maxPages}，尾端 ${fullCount - count} 頁未拍（docHeight=${info.docHeight}）`);
   }
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(200);
   console.log(`  ${prefix}: ${count}/${fullCount} pages`);
   return paths;
@@ -1973,7 +1976,7 @@ async function runLangDetect(page) {
 async function triggerShinkansenTranslate(page, opts = {}) {
   const log = opts.log || console.log;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(300);
   const res = await page.evaluate(() => new Promise((resolve) => {
     const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);

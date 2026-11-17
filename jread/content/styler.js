@@ -372,6 +372,9 @@
   //                     低又傷可讀性；英文引言保留斜體（真 italic 字型、排版慣例）。
   const BQ_PLAIN_ATTR = 'data-jread-bq-plain';
   const BQ_UPRIGHT_ATTR = 'data-jread-bq-upright';
+  // v2.5.17：行內 code 不上底色的載體（標題與連結）。base 的歸透明規則與 v2.5.15
+  // 非 light 主題的補底色規則共用這一份，避免兩處清單 drift。
+  const INLINE_CODE_NO_BG_CARRIERS = 'h1, h2, h3, h4, h5, h6, a';
   // v1.6.23：內文裝飾性大寫 / 加寬字距標記——重設回一般（見 markDecorativeInlines）。
   const DECOR_RESET_ATTR = 'data-jread-decor-reset';
   // v1.7.8：inline-flow <p> 標記——豁免 v0.7.201 水平 padding reset（見
@@ -2420,6 +2423,15 @@ html [${ARTICLE_ATTR}="1"] p:not([${INLINE_FLOW_P_ATTR}="1"]) {
   background: ${theme.inlineCodeBg} !important;
   color: inherit !important;
 }
+/* v2.5.17：標題（h1–h6）與連結裡的行內 code 不上底色，五個主題一致（Jimmy
+   2026-11-17 裁定）。gray / sepia / dark / night 本來就是透明（背景中和規則＋
+   v2.5.15 補底色那條排除了標題與連結）；light 沒有中和規則、上面那條會把這兩類
+   也塗上 inlineCodeBg——這裡補一條把它們歸透明。寫在 base、不分主題：其他四個
+   主題下是 no-op。排除清單與 v2.5.15 那條共用 INLINE_CODE_NO_BG_CARRIERS。
+   只寫 background-color，內距 / 圓角不碰；<pre> 內的 code 不動。 */
+[${ARTICLE_ATTR}="1"] :is(${INLINE_CODE_NO_BG_CARRIERS}) code:not(pre code) {
+  background-color: transparent !important;
+}
 /* 子元素寬度 cap：原站常用 width: 1152px / 1080px 等寫死寬度給 article
    detail layout wrapper（cna.com.tw 的 .centralContent 寫死 width: 1152px、
    原本給 article main + sidebar 的固定寬 layout）。reader mode 下 article
@@ -3026,7 +3038,7 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] pre {
       // <pre> 內的 code 不動。只寫 background-color，站方的內距 / 圓角不碰。
       // light 不走這個分支（theme.text 為 null），沿用 base 規則、一個值都不變。
       userOverrides += `
-html.${HTML_CLASS} [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] code:not(pre code):not(:is(h1, h2, h3, h4, h5, h6, a) code) {
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] code:not(pre code):not(:is(${INLINE_CODE_NO_BG_CARRIERS}) code) {
   background-color: ${theme.inlineCodeBg} !important;
 }`;
       // v0.7.197：連結色已移至 base CSS（所有 theme 統一注入）。
