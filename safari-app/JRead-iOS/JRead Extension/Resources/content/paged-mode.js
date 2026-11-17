@@ -1918,6 +1918,108 @@
     remeasureAndReconcile();
   }
 
+  // v2.5.14：「內容節點 → 落在第幾頁」的量測零件，captureExitAnchor（退出錨點）與
+  // pageCoverageOf（進場錨點）共用——同一份量法不寫兩份。三個都假設呼叫端已把
+  // art.scrollLeft 歸 0（欄位幾何以第一頁為原點）。
+  function firstColumnStartX() {
+    const cs = getComputedStyle(art);
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const bL = parseFloat(cs.borderLeftWidth) || 0;
+    // D-7：rtl 時第一欄貼右緣，colStart 取右緣減 inline-start 內距 / 邊框
+    const artRect = art.getBoundingClientRect();
+    const padR = parseFloat(cs.paddingRight) || 0;
+    const bR = parseFloat(cs.borderRightWidth) || 0;
+    return isRtl ? artRect.right - bR - padR : artRect.left + bL + padL;
+  }
+  const ANCHOR_REPLACED_TAG_RE = /^(IMG|VIDEO|IFRAME|SVG)$/i;
+  function contentNodeWalker(root) {
+    return document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode(n) {
+        if (n.nodeType === 3) {
+          return (n.nodeValue && n.nodeValue.trim())
+            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+        // D-6：JRead 自建標題節點整棵跳過（退出時會被移除，不能當錨點）
+        if (n.matches && n.matches(JREAD_OWN_TITLE_SEL)) return NodeFilter.FILTER_REJECT;
+        // 替換元素 = atomic fragment，bounding rect 可靠（文首/頁首是圖片的頁靠這層）
+        return ANCHOR_REPLACED_TAG_RE.test(n.tagName)
+          ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+    });
+  }
+  function contentNodeRects(node) {
+    if (node.nodeType === 3) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getClientRects();
+    }
+    return node.getClientRects();
+  }
+
+  // v2.5.14：一批元素各自落在哪幾頁（{ min, max }，0-based；量不到的回 null）。
+  // main.js 進場時把「原頁畫面上看得到的段落」換成頁碼用（resolveEnterPagedOverride）。
+  // 量法與 captureExitAnchor 相同（逐文字節點 / 替換元素的 fragment rect、scrollLeft=0）。
+  // 沒裝好 / 量測失敗回 null（呼叫端維持原行為）。
+  function pageCoverageOf(els) {
+    if (!installed || !art || !Array.isArray(els)) return null;
+    const s = stride();
+    const total = pageCount();
+    if (!(s > 0)) return null;
+    const prev = art.scrollLeft;
+    let out = null;
+    try {
+      art.scrollLeft = 0;
+      const colStart = firstColumnStartX();
+      out = els.map((el) => {
+        if (!el || el.nodeType !== 1 || !art.contains(el)) return null;
+        let min = Infinity, max = -Infinity;
+        const take = (node) => {
+          const cov = fragmentPageCoverage(contentNodeRects(node), colStart, s, total, isRtl);
+          if (!cov) return;
+          if (cov.min < min) min = cov.min;
+          if (cov.max > max) max = cov.max;
+        };
+        if (ANCHOR_REPLACED_TAG_RE.test(el.tagName)) take(el);
+        const walker = contentNodeWalker(el);
+        let node;
+        while ((node = walker.nextNode())) take(node);
+        return min === Infinity ? null : { min, max };
+      });
+    } catch (e) { out = null; }
+    art.scrollLeft = prev;
+    return out;
+  }
+
+  // v2.5.14：進場時「原頁當下位置」該落在第幾頁（純函式；0-based，量不到回 null）。
+  //   anchorCov   原頁畫面上第一個有字的段落，在翻頁版面佔的頁（{ min, max }）
+  //   anchorFrac  進場當下那個段落已經捲過頂端的比例（0–1）
+  //   visibleCovs 原頁畫面上看得到的每個段落各自佔的頁
+  //   local       本機位置記錄（翻頁模式、同一總頁數才有意義）
+  // 規則：
+  //   1. 本機記錄的頁落在「畫面上看得到的段落」涵蓋的頁範圍內 → 用本機記錄的頁。
+  //      原頁位置與本機記錄指向同一處時，本機記錄較準（段落常跨頁，光看段落分不出
+  //      是哪一頁；翻頁第 N 頁退出再進場就是這個情境——退出時把原頁捲到第 N 頁的
+  //      內容，再進場必須回第 N 頁）
+  //   2. 否則 → 錨點段落的起始頁＋依捲過比例往後推（跨頁段落內線性近似）
+  function pickEnterPage(anchorCov, anchorFrac, visibleCovs, local, total) {
+    if (!(total >= 1)) return null;
+    const covs = (Array.isArray(visibleCovs) ? visibleCovs : []).filter(Boolean);
+    const a = anchorCov || covs[0] || null;
+    if (!a) return null;
+    const clamp = (n) => Math.max(0, Math.min(total - 1, n));
+    let lo = a.min, hi = a.max;
+    for (const c of covs) {
+      if (c.min < lo) lo = c.min;
+      if (c.max > hi) hi = c.max;
+    }
+    if (local && local.mode === 'paged' && local.pages === total &&
+        Number.isInteger(local.page) && local.page >= lo && local.page <= hi) {
+      return clamp(local.page);
+    }
+    const f = anchorCov && Number.isFinite(anchorFrac) ? Math.max(0, Math.min(1, anchorFrac)) : 0;
+    return clamp(a.min + Math.round(f * (a.max - a.min)));
+  }
+
   // v1.6.8：退出捲回 anchor——文件順序第一個「fragment 頁碼覆蓋含目前頁」的
   // 內容節點（text node 或 img 等替換元素）。main.js captureExitScrollAnchor
   // 在 uninstall 之前呼叫（此刻 idx / 版面仍有效），退出還原後由
@@ -1949,38 +2051,11 @@
     let found = null;
     try {
       art.scrollLeft = 0;
-      const cs = getComputedStyle(art);
-      const padL = parseFloat(cs.paddingLeft) || 0;
-      const bL = parseFloat(cs.borderLeftWidth) || 0;
-      // D-7：rtl 時第一欄貼右緣，colStart 取右緣減 inline-start 內距 / 邊框
-      const artRect = art.getBoundingClientRect();
-      const padR = parseFloat(cs.paddingRight) || 0;
-      const bR = parseFloat(cs.borderRightWidth) || 0;
-      const colStart = isRtl ? artRect.right - bR - padR : artRect.left + bL + padL;
-      const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
-        acceptNode(n) {
-          if (n.nodeType === 3) {
-            return (n.nodeValue && n.nodeValue.trim())
-              ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-          }
-          // D-6：JRead 自建標題節點整棵跳過（退出時會被移除，不能當錨點）
-          if (n.matches && n.matches(JREAD_OWN_TITLE_SEL)) return NodeFilter.FILTER_REJECT;
-          // 替換元素 = atomic fragment，bounding rect 可靠（文首/頁首是圖片的頁靠這層）
-          return /^(IMG|VIDEO|IFRAME|SVG)$/i.test(n.tagName)
-            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-        }
-      });
+      const colStart = firstColumnStartX();
+      const walker = contentNodeWalker(art);
       let node;
       while ((node = walker.nextNode())) {
-        let rects;
-        if (node.nodeType === 3) {
-          const range = document.createRange();
-          range.selectNodeContents(node);
-          rects = range.getClientRects();
-        } else {
-          rects = node.getClientRects();
-        }
-        const cov = fragmentPageCoverage(rects, colStart, s, total, isRtl);
+        const cov = fragmentPageCoverage(contentNodeRects(node), colStart, s, total, isRtl);
         // 文件順序下起始頁單調遞增：第一個 max >= idx 的節點即「覆蓋目前頁」
         //（min <= idx）或「目前頁無可量內容時的下一段」（min > idx，兜底就近）
         if (cov && cov.max >= idx) { found = node; break; }
@@ -2051,6 +2126,8 @@
     getPosition,
     goToPage,
     captureExitAnchor,
+    pageCoverageOf,
+    pickEnterPage,
     isInstalled: () => installed,
     SWIPE_MIN_DX, SWIPE_AXIS_RATIO, EDGE_GUARD_PX, WHEEL_THRESHOLD, WHEEL_LINE_PX,
     INDICATOR_ID

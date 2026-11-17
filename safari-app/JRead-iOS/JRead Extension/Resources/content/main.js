@@ -314,6 +314,67 @@
     } catch (_) { /* dispatch 失敗不阻斷 reader 流程 */ }
   }
 
+  // v2.5.14：翻頁模式的進場捲動同步——把 captureEnterScrollAnchor 的錨點換成真正的頁碼。
+  //
+  // 對應 bug：翻頁第 N 頁退出再進場不回第 N 頁（en.wikipedia Glass 390 寬第 4 頁 →
+  // 第 11 頁、simonwillison 第 4 頁 → 第 7 頁）。根因：退出時 applyExitScrollAnchor 把
+  // 原頁捲到第 N 頁的內容 → 再進場 captureEnterScrollAnchor 看到原頁已捲離文首、回
+  // override → position-memory 以 override 為準、本機記錄（mode:'paged', page:N-1）不看；
+  // 而 override 的 ratio 是「段落序號 ÷ 段落數」（還是清理前的段落數），翻頁模式拿它
+  // 乘總頁數——段落長短不一（wiki 開頭一串短段落、表格、圖說）時差好幾頁。再退出
+  // 時錯的頁又被寫回本機記錄。
+  //
+  // 修法（只在翻頁模組已裝好時；捲動模式的 override 原樣不動）：
+  //   - 錨點段落實際落在哪一頁用量的（pagedMode.pageCoverageOf，與退出錨點同一套量法）
+  //   - 本機記錄的頁若落在「原頁畫面上看得到的段落」涵蓋的頁範圍內，用本機記錄的頁
+  //    （判定在 pagedMode.pickEnterPage）
+  // 回傳的 entry 是 mode:'paged'＋pages＝目前總頁數，position-memory applyEntry 直接
+  // 跳那一頁；1.2 秒後的二次對位若總頁數變了（lazy 圖），照既有規則退回 ratio 近似。
+  // 量不到（錨點被 cleaner 藏掉且畫面上其他段落也量不到、API 不在）→ 原樣回傳舊 override。
+  function resolveEnterPagedOverride(anchor, refs, localEntry) {
+    if (!anchor) return anchor;
+    try {
+      const pm = NS.pagedMode;
+      if (!pm || !pm.isInstalled() || typeof pm.pageCoverageOf !== 'function' ||
+          typeof pm.pickEnterPage !== 'function' || !refs || !refs.anchorEl) return anchor;
+      const p = pm.getPosition();
+      if (!p || !(p.total >= 1)) return anchor;
+      const vis = Array.isArray(refs.visibleEls) ? refs.visibleEls : [];
+      const covs = pm.pageCoverageOf([refs.anchorEl].concat(vis));
+      if (!covs) return anchor;
+      const page = pm.pickEnterPage(covs[0], refs.anchorFrac, covs.slice(1), localEntry, p.total);
+      if (page === null || page === undefined) return anchor;
+      return { mode: 'paged', page, pages: p.total, ratio: p.total > 1 ? page / (p.total - 1) : 0 };
+    } catch (_) { return anchor; }
+  }
+
+  // v2.5.14：讀這一頁的本機位置記錄（只取翻頁模式的記錄），給 resolveEnterPagedOverride
+  // 比對用。查法與 position-memory restore 相同（同一個 key、舊 key 相容、效期），零件
+  // 全部取自 positionMemory 的匯出——**這是同一份事實的第二個讀取點**：restore 的查法
+  // 改了這裡要跟著改。位置記憶停用（days=0）時不讀。storage 沒回應（iOS 偶發）時
+  // 最多等 LOCAL_POS_READ_TIMEOUT_MS，逾時當作沒有記錄——不可讓進場卡在這裡。
+  const LOCAL_POS_READ_TIMEOUT_MS = 300;
+  async function readLocalPagedPosition(settings) {
+    try {
+      const PM = NS.positionMemory;
+      if (!PM || typeof PM.isFresh !== 'function' || !(browser.storage && browser.storage.local)) return null;
+      const days = PM.clampDays(settings && settings.positionMemoryDays);
+      if (!(days > 0)) return null;
+      const key = spaRouteKey(location.href);
+      let timer = null;
+      const v = await Promise.race([
+        browser.storage.local.get({ [PM.STORAGE_KEY]: {} }),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(null), LOCAL_POS_READ_TIMEOUT_MS); })
+      ]);
+      if (timer) clearTimeout(timer);
+      const map = (v && v[PM.STORAGE_KEY]) || null;
+      if (!map) return null;
+      const now = Date.now();
+      const entry = map[key] || PM.legacyKeyMatch(map, key, now, days);
+      return (PM.isFresh(entry, now, days) && entry.mode === 'paged') ? entry : null;
+    } catch (_) { return null; }
+  }
+
   // v0.8.37：三條 enter 路徑（generic / x-thread / fb-post）的共用收尾。
   // 歷史上三段 ~80% 重複且實際 drift 過（silent flag 只有 generic path 尊重、
   // v0.8.36 才補齊——同一份事實三實作的典型代價）。差異點只剩「容器怎麼來、
@@ -348,8 +409,10 @@
     // v2.1.0：opts.fallbackPosition——JReader 文章頁傳入的 Readwise 閱讀進度，
     // 本機沒記錄時才套（見 position-memory restore 註解）
     if (NS.positionMemory) {
+      // v2.5.14：翻頁模式時把進場錨點換成真正的頁碼（見 resolveEnterPagedOverride）
+      const entryOverride = opts ? resolveEnterPagedOverride(opts.enterScrollAnchor, opts.enterScrollRefs, opts.localPagedEntry) : undefined;
       NS.positionMemory.beginSession(spaRouteKey(location.href), settings, container,
-        opts ? { entryOverride: opts.enterScrollAnchor, fallbackEntry: opts.fallbackPosition, onPosition: opts.onPosition } : undefined);
+        opts ? { entryOverride, fallbackEntry: opts.fallbackPosition, onPosition: opts.onPosition } : undefined);
     }
     if (!settings || settings.blockPageShortcuts !== false) {
       installKeyguard();
@@ -530,11 +593,18 @@
     // 畫面沒有卡片，800ms 輪詢也不會修正（URL 已被記成「處理過」）。與
     // scheduleReapply 的 isConnected guard 同款慣例。
     if (!result.el || !result.el.isConnected) return false;
+    // v2.5.14：翻頁模式進場要拿本機位置記錄與原頁位置比對（resolveEnterPagedOverride）。
+    // 放在捕捉錨點之前讀——「捕捉 → cleaner.clean」之間不可再插 await。讀完同樣要
+    // 重驗 isConnected（與上面 getSettings 的空窗同一個理由）
+    const localPagedEntry = (settings && settings.pagedMode === true)
+      ? await readLocalPagedPosition(settings) : null;
+    if (!result.el.isConnected) return false;
     NS.state.articleEl = result.el;
     NS.state.confidence = result.confidence;
     // v1.7.49：進場捲動同步——必須趁 cleaner.clean 還沒動幾何時捕捉（見函式註解）
     let enterScrollAnchor = null;
-    try { enterScrollAnchor = captureEnterScrollAnchor(result.el); } catch (_) { /* 捕捉失敗不阻斷 enter */ }
+    const enterScrollRefs = {};
+    try { enterScrollAnchor = captureEnterScrollAnchor(result.el, enterScrollRefs); } catch (_) { /* 捕捉失敗不阻斷 enter */ }
     // v1.7.13：multi-block 文章——把 detector 識別的接續兄弟區塊移進 articleEl
     // （必須先於 cleaner.clean：區塊進了 articleEl，cleaner 視為主文內容、不再
     // 整塊 hide；區塊內的雜訊仍受 in-article 規則處理）。累加器先掛 state 再
@@ -568,7 +638,7 @@
       NS.detector.markPromotedTitleIfMissing(result.el);
     }
     const container = result.el;
-    return finalizeEnter(container, settings, { enterScrollAnchor });
+    return finalizeEnter(container, settings, { enterScrollAnchor, enterScrollRefs, localPagedEntry });
   }
 
   function exitReaderMode() {
@@ -618,7 +688,12 @@
   //（scroll 模式 signature 對位、翻頁模式 ratio 近似頁）。
   // 第一個可見 block 是 index 0（文首仍可見）回 null——沒捲離文首，讓
   // position memory 照舊恢復上次跨 session 位置。
-  function captureEnterScrollAnchor(articleEl) {
+  // v2.5.14：refs（選填）——同一次掃描順手帶出元素本身，給翻頁模式把錨點換成真正的
+  // 頁碼（resolveEnterPagedOverride）：anchorEl 錨點段落、anchorFrac 它已捲過頂端的
+  // 比例、visibleEls 畫面上看得到的段落（上限 ENTER_VISIBLE_CAP 個）。回傳的 entry
+  // 不變。
+  const ENTER_VISIBLE_CAP = 80;
+  function captureEnterScrollAnchor(articleEl, refs) {
     if (!articleEl || !NS.spaceScroll || typeof NS.spaceScroll.getBlocks !== 'function') return null;
     let blocks;
     try { blocks = NS.spaceScroll.getBlocks(articleEl); } catch (_) { return null; }
@@ -636,6 +711,19 @@
       if (r.bottom <= 0 || r.width <= 0 || r.height <= 0) continue;
       const text = (blocks[i].textContent || '').trim();
       if (text.length < 4) continue;
+      if (refs) {
+        refs.anchorEl = blocks[i];
+        refs.anchorFrac = r.top < 0 ? Math.min(1, -r.top / r.height) : 0;
+        const vh = window.innerHeight || 0;
+        const vis = [];
+        for (let k = firstVisible; k < blocks.length && vis.length < ENTER_VISIBLE_CAP; k++) {
+          const rr = blocks[k].getBoundingClientRect();
+          if (rr.width <= 0 || rr.height <= 0 || rr.bottom <= 0) continue;
+          if (rr.top >= vh) break;
+          vis.push(blocks[k]);
+        }
+        refs.visibleEls = vis;
+      }
       return {
         mode: 'scroll',
         blockIndex: i,
