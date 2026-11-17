@@ -2990,7 +2990,7 @@ ${[...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS]
       // 行內 code：拿掉 box-shadow 外框、border 顏色歸透明。**不補底色**——v2.5.13 以前
       // 深色主題的行內 code 在各站都是透明底（base 那條 `code:not(pre code)` 的
       // inlineCodeBg 輸給上面的中和規則），這裡補底色會改到所有站的畫面（MDN 標題裡的
-      // code 變成一塊色塊），屬另案待裁定。<pre>：只把 border 顏色換成低對比的亮色，
+      // code 變成一塊色塊），底色由下面 v2.5.15 那條另外補（排除標題與連結）。<pre>：只把 border 顏色換成低對比的亮色，
       // 寬度 / 樣式 / box-shadow 不動。判定用卡片底色亮度、不寫主題名；淺色卡片
       //（gray / sepia）上淺色外框本來就不刺眼，不動。
       const _cardBgForCode = parseCssColor(theme.articleBg);
@@ -3004,6 +3004,17 @@ html.${HTML_CLASS} [${ARTICLE_ATTR}="1"] pre {
   border-color: rgba(255, 255, 255, 0.14) !important;
 }`;
       }
+      // v2.5.15：行內 code 補回主題的淡色底（Jimmy 2026-11-17 裁定）。base 那條
+      // `[ARTICLE] code:not(pre code)`（0,1,3）輸給上面背景中和規則
+      // `html.CLASS [ARTICLE] code`（0,2,2），gray / sepia / dark / night 的 inlineCodeBg
+      // 從未生效。這條寫在中和規則之後、ARTICLE_ATTR 重複兩次把 specificity 拉過去。
+      // 排除：標題（h1–h6）與連結裡的 code——標題裡的色塊太重、連結已有連結色當訊號。
+      // <pre> 內的 code 不動。只寫 background-color，站方的內距 / 圓角不碰。
+      // light 不走這個分支（theme.text 為 null），沿用 base 規則、一個值都不變。
+      userOverrides += `
+html.${HTML_CLASS} [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}="1"] code:not(pre code):not(:is(h1, h2, h3, h4, h5, h6, a) code) {
+  background-color: ${theme.inlineCodeBg} !important;
+}`;
       // v0.7.197：連結色已移至 base CSS（所有 theme 統一注入）。
       // 此處不再重複注入。
     }
