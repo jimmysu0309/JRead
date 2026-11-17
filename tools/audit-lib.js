@@ -595,7 +595,68 @@ pageFns.auditGap = function () {
     }
     if (blocks[i].bottom > maxBottom) { maxBottom = blocks[i].bottom; maxIdx = i; }
   }
-  return { gaps, blockCount: blocks.length, unloadedImgs, stretchedPlaceholderImgs: stretched.length };
+  // 檢查涵蓋率（2026-11-17，docs.gitbook.com 四欄表頁實案）：上面的迴圈拿每個 block 的
+  // top 去比「目前為止最低的 bottom」。一個 block 若把後面的 block 包在自己的範圍裡
+  //（v2.5.13 以前 pre-wrap 切段把整份文件包進一個大 <p>；老式排版整篇放在一張 <table>；
+  // 整篇是一條 <ol>），裡面每個 block 算出來的 gap 都是負的——裡面的間距一段都沒檢查，
+  // 結果照樣印「無 gap」。v2.5.13 → v2.5.14 對跑時多出一條 103px 就是這樣來的：兩版
+  // 實量都是 103px，舊版只是沒走訪到。
+  // 這條驗：「包住 >= 3 個其他 block 的 block」的垂直範圍聯集占整篇（第一個 block 頂到
+  //   最後一個 block 底）的比例；>= 50% 時回傳 coverageWarning，兩支 harness 照印。
+  // 這條不驗：(1) 被包住的那段裡面到底有沒有空白——只說「沒檢查」，要看截圖。
+  //   (2) 包住 1–2 個 block 的容器（figure 包 img＋圖說、blockquote 包兩段）——範圍小、
+  //   每頁都有，算進去每頁都會亮。(3) 不在 block 清單裡的容器（div / section）造成的遮蔽
+  //   ——它們本來就不進 running max。
+  // 已知會一起亮的：整頁主體是一張大表或一條長清單的頁（wiki 列表條目、listicle）。
+  //   那確實沒檢查到，訊息裡印出容器的 tag 與比例，自己判斷要不要看截圖。
+  const COVERAGE_MIN_NESTED = 3;
+  const COVERAGE_WARN_RATIO = 0.5;
+  const swallowers = [];
+  let spanTop = 0, spanBottom = 0;
+  if (blocks.length) {
+    spanTop = blocks[0].top;
+    spanBottom = blocks[0].bottom;
+    for (const b of blocks) { if (b.bottom > spanBottom) spanBottom = b.bottom; }
+    for (let i = 0; i < blocks.length; i++) {
+      const a = blocks[i];
+      let nested = 0;
+      for (let j = i + 1; j < blocks.length; j++) {
+        if (blocks[j].top >= a.bottom) break; // 已按 top 排序
+        if (blocks[j].bottom <= a.bottom + 1) nested++;
+      }
+      if (nested >= COVERAGE_MIN_NESTED) swallowers.push({ top: a.top, bottom: a.bottom, tag: a.tag, text: a.text, nested });
+    }
+  }
+  const span = spanBottom - spanTop;
+  let uncheckedPx = 0;
+  {
+    let curT = null, curB = null;
+    for (const s of swallowers) { // 沿用 blocks 的 top 排序
+      if (curB === null) { curT = s.top; curB = s.bottom; }
+      else if (s.top > curB) { uncheckedPx += curB - curT; curT = s.top; curB = s.bottom; }
+      else if (s.bottom > curB) { curB = s.bottom; }
+    }
+    if (curB !== null) uncheckedPx += curB - curT;
+  }
+  const uncheckedRatio = span > 0 ? Math.min(1, uncheckedPx / span) : 0;
+  const topSwallowers = swallowers.slice().sort((a, b) => (b.bottom - b.top) - (a.bottom - a.top)).slice(0, 3)
+    .map(s => ({ tag: s.tag, text: s.text, nested: s.nested,
+      pct: span > 0 ? Math.round(Math.min(1, (s.bottom - s.top) / span) * 100) : 0 }));
+  let coverageWarning = null;
+  // 翻頁模式（文章容器是多欄）：被切到多欄的元素，getBoundingClientRect 是各欄片段的
+  // 聯集——高度是整欄高、任何跨頁的段落都「包住」同一批欄裡的其他 block。這時 gap
+  // 的數字本來就不可信（既有限制），不要套上面那句「某個容器包住 N 個區塊」誤導人
+  let multicol = false;
+  try { const acs = window.getComputedStyle(art); multicol = (acs.columnWidth && acs.columnWidth !== 'auto') || (acs.columnCount && acs.columnCount !== 'auto'); } catch (_) {}
+  if (multicol) {
+    coverageWarning = '翻頁模式（多欄版面）下間距檢查不適用：跨頁元素的 rect 是各欄片段的聯集，gap 結果不可信，要看逐頁截圖';
+  } else if (uncheckedRatio >= COVERAGE_WARN_RATIO) {
+    const s = topSwallowers[0];
+    coverageWarning = `間距檢查有 ${Math.round(uncheckedRatio * 100)}% 的範圍沒檢查到：` +
+      `${s.tag} "${s.text}" 包住 ${s.nested} 個內容區塊（占整篇 ${s.pct}%），裡面的間距不在這輪結果內，要看截圖`;
+  }
+  return { gaps, blockCount: blocks.length, unloadedImgs, stretchedPlaceholderImgs: stretched.length,
+    uncheckedRatio: Math.round(uncheckedRatio * 100) / 100, swallowers: topSwallowers, coverageWarning, multicol: !!multicol };
 };
 
 // ---- Contrast audit（WCAG 對比）----

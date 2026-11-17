@@ -434,9 +434,10 @@ async function setZoom(page, z) {
     for (const g of audit.gaps.initial.gaps.slice(0, 3)) {
       console.log(`    ${g.gap}px: ${g.prev} → ${g.next}`);
     }
-  } else {
+  } else if (!audit.gaps.initial.coverageWarning) {
     console.log('  ✅ gaps: 無 >= 80px');
   }
+  if (audit.gaps.initial.coverageWarning) console.log(`  ⚠️  ${audit.gaps.initial.coverageWarning}`);
   console.log('  content stats:', JSON.stringify(audit.contentStats));
 
   // 亮色 contrast audit（v0.8.39 新增——「東西在、看不見」類 bug residual /
@@ -718,6 +719,12 @@ async function setZoom(page, z) {
   // 在 delayed 會消失；>= 200px 視為異常空白（80-199px 只 warn）
   const largeGapsDelayed = (audit.gaps?.delayed?.gaps || []).filter(g => g.gap >= 200);
   if (largeGapsDelayed.length > 0) fail.push(`gap>=200(delayed)x${largeGapsDelayed.length}`);
+  // 間距檢查涵蓋率不足（audit-lib auditGap 的 coverageWarning）：review-tier——不是
+  // 「有空白」，是「這頁大半沒檢查到」，不可讓它以 pass 放行；由 Claude 看截圖
+  if (audit.gaps?.delayed?.coverageWarning) {
+    console.log(`  ⚠️  ${audit.gaps.delayed.coverageWarning}`);
+    review.push(`gap-unchecked ${Math.round(audit.gaps.delayed.uncheckedRatio * 100)}%`);
+  }
   if (audit.contrast?.light?.warnings?.length > 0) fail.push(`contrast(light)x${audit.contrast.light.warnings.length}`);
   if (audit.contrast?.dark?.warnings?.length > 0) fail.push(`contrast(dark)x${audit.contrast.dark.warnings.length}`);
   if (!audit.theme?.dark?.applied) fail.push('dark-theme-not-applied');
