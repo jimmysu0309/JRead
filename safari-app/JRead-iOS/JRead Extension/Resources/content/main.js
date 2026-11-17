@@ -688,22 +688,46 @@
   //（scroll 模式 signature 對位、翻頁模式 ratio 近似頁）。
   // 第一個可見 block 是 index 0（文首仍可見）回 null——沒捲離文首，讓
   // position memory 照舊恢復上次跨 session 位置。
+  // v2.5.17：文首若是一串釘在畫面上的區塊（fixed / sticky），判定時跳過，見函式內註解。
   // v2.5.14：refs（選填）——同一次掃描順手帶出元素本身，給翻頁模式把錨點換成真正的
   // 頁碼（resolveEnterPagedOverride）：anchorEl 錨點段落、anchorFrac 它已捲過頂端的
   // 比例、visibleEls 畫面上看得到的段落（上限 ENTER_VISIBLE_CAP 個）。回傳的 entry
   // 不變。
   const ENTER_VISIBLE_CAP = 80;
+  // v2.5.17：這個區塊（自己或 articleEl 以內的祖先）是不是釘在畫面上——
+  // position: fixed / sticky。釘住的區塊 rect 永遠在視窗內，不代表讀到哪。
+  // 結構判定、不看 class。量不到（測試替身、detached）一律當作沒釘住。
+  function isPinnedBlock(el, articleEl) {
+    try {
+      if (typeof window.getComputedStyle !== 'function') return false;
+      for (let cur = el; cur && cur.nodeType === 1 && cur !== articleEl; cur = cur.parentElement) {
+        const pos = window.getComputedStyle(cur).position;
+        if (pos === 'fixed' || pos === 'sticky') return true;
+      }
+    } catch (_) { /* 量不到當作沒釘住 */ }
+    return false;
+  }
   function captureEnterScrollAnchor(articleEl, refs) {
     if (!articleEl || !NS.spaceScroll || typeof NS.spaceScroll.getBlocks !== 'function') return null;
     let blocks;
     try { blocks = NS.spaceScroll.getBlocks(articleEl); } catch (_) { return null; }
     if (!blocks || blocks.length < 2) return null;
+    // v2.5.17：排在所有內容之前、釘在畫面上的區塊不算數（isPinnedBlock）。
+    // en.wikipedia 窄版（390 / 420 寬）捲離文首後，Vector 的目錄下拉選單變成
+    // position: fixed、它的 <h2>Contents</h2> 是第 0 個 block、rect 永遠在視窗內 →
+    //「第一個看得到的是第 0 個」→ 被當成沒捲動、回 null，進翻頁永遠停在第 1 頁。
+    // 只跳過「前面還沒出現過一般區塊」的那一串（leading）：後面才出現的釘住區塊
+    //（1280 寬 wiki 的 sticky 側欄）照舊——那條路目前靠 visibleEls 備援落在對的頁，
+    // 這輪不動。沒有釘住區塊的頁，判定與舊版逐值相同（null ⇔ 第一個看得到的是第 0 個）。
     let firstVisible = -1;
+    let sawFlowBlock = false; // 第一個看得到的區塊之前，有沒有一般（沒釘住）的區塊
     for (let i = 0; i < blocks.length; i++) {
+      if (!sawFlowBlock && isPinnedBlock(blocks[i], articleEl)) continue;
       const r = blocks[i].getBoundingClientRect();
       if (r.bottom > 0 && r.width > 0 && r.height > 0) { firstVisible = i; break; }
+      sawFlowBlock = true;
     }
-    if (firstVisible <= 0) return null;
+    if (firstVisible < 0 || !sawFlowBlock) return null;
     // 從第一個可見 block 起找第一個有文字的（純圖 figure 跳過——signature
     // 對映需要文字；讀者停在整屏圖上時取圖後第一段，偏差一屏內可接受）
     for (let i = firstVisible; i < blocks.length; i++) {
