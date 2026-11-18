@@ -2919,6 +2919,8 @@
     else if (strict.length === 0 && cands.length === 1 && translationGuardActive()) pick = cands[0];
     // 第二層（v1.8.6）：上面整層落空時才跑。理由見 findExactDocTitleCarrier。
     if (!pick) pick = findExactDocTitleCarrier(articleEl);
+    // 第三層（v2.5.21）：翻譯頁專用，第二層的文字比對在譯文上必然落空。
+    if (!pick && translationGuardActive()) pick = findTranslatedBoldTitleCarrier(articleEl);
     if (!pick) return;
 
     // 合成 header 而非 clone 原載體：老 table 版型的標題住在 `<td>` / `<a>` 裡，
@@ -3013,6 +3015,55 @@
     if (innermost.length !== 1) return null;
     const el = innermost[0];
     return { el, text: normTitle(el.textContent || ''), inDocTitle: true };
+  }
+
+  // v2.5.21：翻譯頁的「沒有 class 的粗體標題載體」。
+  //
+  // 場景（語料庫 danluu.com，2026-11-18 逐頁看截圖發現）：整頁沒有任何 heading，
+  // 標題是 `<header><strong>標題</strong> | <a>Patreon</a><hr></header>`，主文在
+  // 後面的 `<main>`。原文頁靠第二層（文字完全等於 document.title）認出來；翻譯後
+  // 可見文字變成譯文、document.title 不跟著翻，文字比對落空 → 卡片沒有標題。
+  //
+  // 譯文無法跟任何 meta 對照，只能吃結構訊號，所以條件收得很緊、而且只在翻譯頁
+  // 且前兩層都落空時才跑：
+  //   1. 粗體載體（<strong> / <b>，或 computed font-weight >= 600）、leaf-ish、
+  //      文字量在標題區間、DOM order 在主文前
+  //   2. 不是連結或控制項，也不在導覽 / 表單裡（站名 logo 與選單項多半是連結）
+  //   3. 文字沒被站方藏起來
+  //   4. 這樣的候選全頁**唯一**——兩個以上就不猜
+  // 語料庫 168 份普查：原文頁上本規則與第二層選到同一個元素（danluu）；其餘頁面
+  // 候選數是 0 或 >= 2（pudding 16、stratechery 2），全部 no-op。
+  // 選錯的代價是把頁首一段粗體字當成標題，所以寧可漏、不放寬唯一性。
+  const TRANSLATED_BOLD_CARRIER_EXCLUDE_SEL =
+    'a, button, nav, form, label, select, [role="navigation"], [role="button"], [role="menu"]';
+  function findTranslatedBoldTitleCarrier(articleEl) {
+    const hits = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      if (articleEl.contains(el) || el.contains(articleEl)) continue;
+      if (/^H[1-6]$/.test(el.tagName)) continue; // heading 由既有 path 負責
+      if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|TITLE|OPTION)$/.test(el.tagName)) continue;
+      if (el.children.length > 2) continue;
+      if (descendantCountExceeds(el, 2)) continue;
+      if (!(articleEl.compareDocumentPosition(el) & 2 /* PRECEDING */)) continue;
+      if (el.closest('[data-jread-title-clone]')) continue;
+      const t = normTitle(el.textContent || '');
+      if (!t || t.length > OUTSIDE_TITLE_CARRIER_TEXT_MAX || titleTextWeight(t) < 5) continue;
+      if (el.closest(TRANSLATED_BOLD_CARRIER_EXCLUDE_SEL)) continue;
+      if (el.querySelector('a, button')) continue;
+      let bold = el.tagName === 'STRONG' || el.tagName === 'B';
+      if (!bold) {
+        let cs = null;
+        try { cs = getComputedStyle(el); } catch (_) { cs = null; }
+        bold = !!cs && parseInt(cs.fontWeight, 10) >= 600;
+      }
+      if (!bold) continue;
+      if (carrierTextIsSiteHidden(el)) continue;
+      hits.push(el);
+    }
+    const innermost = hits.filter(el => !hits.some(o => o !== el && el.contains(o)));
+    if (innermost.length !== 1) return null;
+    const el = innermost[0];
+    return { el, text: normTitle(el.textContent || ''), inDocTitle: false };
   }
 
   // 標題載體所在「meta 列」內的日期文字。通則：把標題寫成非 heading 的版型

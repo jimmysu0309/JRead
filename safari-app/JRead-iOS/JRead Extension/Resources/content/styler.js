@@ -363,6 +363,9 @@
   const TEXT_DIV_ATTR = 'data-jread-text-div';
   // v1.6.12：CJK 為主的內文段落標記——套 text-align: justify（見 markCjkParagraphs）。
   const CJK_JUSTIFY_ATTR = 'data-jread-cjk-justify';
+  // v2.5.21：右到左頁面的內文已經大多不是右到左文字（譯成中文後）→ 版面改回左到右
+  //（見 evalDirOverride）。掛在 <html>，同時涵蓋 articleEl 與翻譯頁外置的標題 clone。
+  const DIR_LTR_ATTR = 'data-jread-dir-ltr';
   // v1.9.12：引言（<blockquote>）視覺補強標記（Jimmy 2026-09-21，Readwise Reader
   // 文件頁「引言跟內文幾乎長一樣」）。JRead 對引言的既有立場是「保留站方設計」
   //（BORDER / BG preserve 清單含 blockquote），但站方若只給斜體 + 小縮排（Reader：
@@ -2827,6 +2830,23 @@ ${BODY_WEIGHT_SEL} {
 [${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="0"] {
   text-align: start !important;
 }`;
+    // v2.5.21：右到左頁面譯成中文後版面改回左到右（evalDirOverride 判定、在 <html>
+    // 掛 DIR_LTR_ATTR）。direction 蓋到每個後代：站方在內層容器另寫 dir="rtl" /
+    // direction: rtl（維基的 .mw-content-rtl）不會被根節點的值帶過去。<bdo> 是刻意
+    // 指定方向的行內覆寫，不動。文字區塊另給 unicode-bidi: plaintext——每一段依自己
+    // 第一個強方向字元決定方向，還沒翻到的原文段落照樣右到左、靠右，不會被整頁
+    // 拉成左到右後標點跑錯邊。
+    userOverrides += `
+html[${DIR_LTR_ATTR}="1"] [${ARTICLE_ATTR}="1"],
+html[${DIR_LTR_ATTR}="1"] [${ARTICLE_ATTR}="1"] *:not(bdo),
+html[${DIR_LTR_ATTR}="1"] [data-jread-promoted-outside="1"],
+html[${DIR_LTR_ATTR}="1"] [data-jread-promoted-outside="1"] *:not(bdo) {
+  direction: ltr !important;
+}
+html[${DIR_LTR_ATTR}="1"] [${ARTICLE_ATTR}="1"] :is(p, li, dd, dt, blockquote, figcaption, h1, h2, h3, h4, h5, h6, td, th, caption),
+html[${DIR_LTR_ATTR}="1"] [data-jread-promoted-outside="1"] :is(h1, h2, h3, h4, h5, h6, p) {
+  unicode-bidi: plaintext !important;
+}`;
     // v1.6.23：內文裝飾性大寫 / 加寬字距中和——站方 lead-in 裝飾（uppercase +
     // letter-spacing）殘留會讓內文名字全大寫、字距拉開；疊上 CJK justify 後大寫
     // 長名字不可斷行，justify 把剩餘空間攤給整行字距 → 空隙忽大忽小（wired.com
@@ -4192,6 +4212,58 @@ html.${HTML_CLASS}.jread-orion body {
   // 重判；已標過的載體只改值、不重複進 marked（restore 清單）。譯文回填是把
   // inline 節點塞進既有 <p>，所以要往上找載體（closest），不能只掃子樹。
   const CJK_CARRIER_SEL = `p, li, blockquote, dd, dt, [${TEXT_DIV_ATTR}="1"]`;
+
+  // v2.5.21：右到左頁面譯成中文後，版面仍是右到左——句號跑到行首、年份甩到行尾，
+  // 每一段都這樣（語料庫 he / ar / fa.wikipedia、aljazeera.net 翻譯後截圖，
+  // 2026-11-18）。站方在 <html dir="rtl"> 與內層容器標了方向，翻譯只換文字不改方向。
+  //
+  // 判定吃內容本身、不看是哪個翻譯工具：頁面基準方向是右到左，但內文的字母裡
+  // 右到左文字（希伯來、阿拉伯、波斯…）不到三成 → 改回左到右。<pre> / <code> 的
+  // 字不算（阿拉伯文的程式教學會有大量拉丁字母，那仍是右到左文章）。
+  // 語料庫量到的占比：四頁原文 67% – 100%，翻譯後 1% – 21%，三成落在中間。
+  // 字太少（不到 40 個字母）不判，維持站方方向。
+  const RTL_SCRIPT_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/g;
+  const NON_RTL_LETTER_RE = /[A-Za-z\u00C0-\u024F\u0370-\u052F\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/g;
+  const DIR_LTR_MAX_RTL_SHARE = 0.3;
+  const DIR_LTR_MIN_LETTERS = 40;
+  function countMatches(txt, re) { const m = txt.match(re); return m ? m.length : 0; }
+  function articleRtlShare(articleEl) {
+    const txt = articleEl.textContent || '';
+    let rtl = countMatches(txt, RTL_SCRIPT_RE);
+    let other = countMatches(txt, NON_RTL_LETTER_RE);
+    for (const el of articleEl.querySelectorAll('pre, code')) {
+      if (el.parentElement && el.parentElement.closest('pre, code')) continue; // 巢狀只扣一次
+      const t = el.textContent || '';
+      rtl -= countMatches(t, RTL_SCRIPT_RE);
+      other -= countMatches(t, NON_RTL_LETTER_RE);
+    }
+    const total = rtl + other;
+    return { total, share: total > 0 ? rtl / total : 1 };
+  }
+  // rtlBase＝站方原本的方向是不是右到左（apply 當下、覆寫之前量的）。
+  function evalDirOverride(articleEl, rtlBase) {
+    const root = document.documentElement;
+    let on = false;
+    if (rtlBase && articleEl) {
+      const r = articleRtlShare(articleEl);
+      on = r.total >= DIR_LTR_MIN_LETTERS && r.share < DIR_LTR_MAX_RTL_SHARE;
+    }
+    if (on) root.setAttribute(DIR_LTR_ATTR, '1');
+    else root.removeAttribute(DIR_LTR_ATTR);
+    return on;
+  }
+  let dirOverrideTimer = null;
+  // 先進閱讀模式再翻譯：譯文是一段一段回填的，等回填告一段落再重判一次。
+  function scheduleDirOverride(s) {
+    if (!s || !s.rtlBase) return; // 站方不是右到左的頁面完全不排程
+    if (dirOverrideTimer) clearTimeout(dirOverrideTimer);
+    dirOverrideTimer = setTimeout(() => {
+      dirOverrideTimer = null;
+      if (activeMarkState === s && s.articleEl && s.articleEl.isConnected) {
+        evalDirOverride(s.articleEl, true);
+      }
+    }, 400);
+  }
   function markCjkParagraphs(articleEl, mode, scopeEl, markedInto) {
     const off = mode === 'off';
     const all = mode === 'all';
@@ -5202,6 +5274,7 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.7.70：pre-wrap 切段記錄（還原用；見 splitPreWrapParagraphs）
       let prewrapParaSnap = [];
       const cjkJustifyMarked = [];
+      let rtlBase = false;
       let decorResetMarked = [];
       let inlineFlowPMarked = [];
       const contrastBgSnap = [];
@@ -5683,6 +5756,8 @@ html.${HTML_CLASS}.jread-orion body {
         markInlineHighlights(articleEl, siteUiMarked);
         activeMarkState = { articleEl, embedWrapMarked, ratioClassMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked, firstLetterMarked,
           cjkJustifyMarked, textJustify: opts.textJustify, // 2026-11-15 review B-09
+          // v2.5.21：getter——這個物件建立時 rtlBase 可能還沒量（量在後面的 pass）
+          get rtlBase() { return rtlBase; },
           // 呼叫當下才讀 classifyLateImg（與 passClassifyImages 的執行先後無關）
           classifyLateImg: (img) => { if (classifyLateImg) classifyLateImg(img); } };
       };
@@ -6840,6 +6915,12 @@ html.${HTML_CLASS}.jread-orion body {
         // 2026-11-15 review B-09：就地 push（不換陣列）——activeMarkState 握同一個
         // 參照，動態補標的元素才進得了 restore 清單
         markCjkParagraphs(articleEl, opts.textJustify, null, cjkJustifyMarked);
+        // v2.5.21：右到左頁面譯成中文後改回左到右。基準方向在覆寫之前量
+        try {
+          document.documentElement.removeAttribute(DIR_LTR_ATTR);
+          rtlBase = getComputedStyle(articleEl).direction === 'rtl';
+        } catch (_) { rtlBase = false; }
+        evalDirOverride(articleEl, rtlBase);
 
         // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
         // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
@@ -7906,6 +7987,19 @@ html.${HTML_CLASS}.jread-orion body {
               }
             };
 
+            // anchor 0（v2.5.21）：主標題。標題被橫向多欄擠到不滿容器七成 → 塌欄。
+            // 語料庫 theverge.com 翻譯後（2026-11-18 逐頁看截圖）：頁首是
+            // flex row-reverse（左欄作者、右欄標題＋副標），原文頁靠 anchor 1 塌掉
+            // ——副標是 88 字的 <p>；譯成中文後副標剩 32 字，過不了下面的 80 字門檻
+            // （按拉丁字校準的 raw 長度，CJK 譯文落網的老問題），整列沒塌，標題被擠在
+            // 右側 268px 窄欄。標題該佔滿版心，跟旁邊的文字多長無關，所以拿標題
+            // 自己當 anchor、不看字數。只取卡內第一個看得到的 h1。
+            for (const h of articleEl.querySelectorAll('h1')) {
+              if (h.closest && h.closest('[data-jread-hidden="1"]')) continue;
+              if (!(h.getBoundingClientRect().width > 0)) continue; // 看不到的 h1（站方藏的 SEO 標題）跳過
+              decolumnFrom(h, 0.7);
+              break;
+            }
             // anchor 1：長段落（toggle 當下已在 DOM、文字不 lazy）。
             for (const p of articleEl.querySelectorAll('p')) {
               if (p.closest && p.closest('[data-jread-hidden="1"]')) continue;
@@ -8809,6 +8903,9 @@ html.${HTML_CLASS}.jread-orion body {
       // 排在 textDivMarked 移除之後——那些載體多半也被標了 TEXT_DIV_ATTR，
       // 先讓標記還原跑完再把節點搬回去、移除空殼。
       restorePreWrapParagraphs(snapshot.prewrapParaSnap);
+      // v2.5.21：移除左到右覆寫
+      if (dirOverrideTimer) { clearTimeout(dirOverrideTimer); dirOverrideTimer = null; }
+      document.documentElement.removeAttribute(DIR_LTR_ATTR);
       // v1.6.12：移除 CJK 段落兩端對齊標記
       if (Array.isArray(snapshot.cjkJustifyMarked)) {
         for (const el of snapshot.cjkJustifyMarked) {
@@ -9204,6 +9301,7 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(s.firstLetterMarked)) markFirstLetterColorBlocks(s.articleEl, s.firstLetterMarked, node);
       // 2026-11-15 review B-09：晚 mount / 譯文回填的段落補 CJK justify 標記
       if (Array.isArray(s.cjkJustifyMarked)) markCjkParagraphs(s.articleEl, s.textJustify, node, s.cjkJustifyMarked);
+      scheduleDirOverride(s); // v2.5.21
     },
 
     /**
@@ -9217,6 +9315,7 @@ html.${HTML_CLASS}.jread-orion body {
       if (!s || !s.articleEl || !Array.isArray(s.cjkJustifyMarked)) return;
       if (!host || host.nodeType !== 1 || !s.articleEl.contains(host)) return;
       markCjkParagraphs(s.articleEl, s.textJustify, host, s.cjkJustifyMarked);
+      scheduleDirOverride(s); // v2.5.21
     },
 
     /**
