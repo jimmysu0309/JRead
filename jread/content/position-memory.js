@@ -564,6 +564,7 @@
   }
   function onUserInteract() {
     userInput = true;
+    settle = null; // v2.5.18：使用者動過了，版面再重排也不搬位置
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
     noteMovement();
     setTimeout(noteMovement, 0);
@@ -580,6 +581,7 @@
   function onTouchDrag() {
     if (touchDragging) return;
     touchDragging = true;
+    settle = null; // v2.5.18：同二次對位
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
   }
   function onScroll() { noteMovement(); scheduleSave(); }
@@ -657,6 +659,14 @@
     if (NS.pagedMode && NS.pagedMode.isInstalled()) {
       const p = NS.pagedMode.getPosition();
       if (!p) return;
+      // v2.5.18：進場錨點帶 locate（main.js resolveEnterPagedOverride）時，頁碼用
+      // 「重新量錨點段落現在落在第幾頁」、不用比例換算。量得到就以它為準（含第 1 頁——
+      // 版面變動後錨點可能退回第 1 頁）；量不到（null）才走下面的既有換算
+      const located = locateEntryPage(entry, p.total);
+      if (located !== null) {
+        if (located !== p.idx) NS.pagedMode.goToPage(located);
+        return;
+      }
       const n = resolvePageIndex(entry, p.total);
       if (n > 0) NS.pagedMode.goToPage(n);
       return;
@@ -687,6 +697,36 @@
     }
   }
 
+  // v2.5.18：entry.locate() 回「錨點段落現在落在第幾頁」（0-based 整數；量不到回 null）。
+  // 只有進場捲動同步的 override 會帶（main.js resolveEnterPagedOverride）；本機記錄、
+  // 外部進度這些存下來的 entry 沒有 locate、一律回 null（行為不變）。純函式。
+  function locateEntryPage(entry, total) {
+    if (!entry || typeof entry.locate !== 'function' || !(total >= 1)) return null;
+    let n = null;
+    try { n = entry.locate(); } catch (_) { return null; }
+    if (!Number.isInteger(n)) return null;
+    return Math.max(0, Math.min(total - 1, n));
+  }
+
+  // v2.5.18：翻頁版面重排完成的通知（paged-mode remeasureAndReconcile 尾端呼叫——
+  // 進場 1 秒 / 3 秒的固定重測、晚載入媒體的重測、編輯模式 refresh）。
+  //
+  // 對應 bug：捲到中段再進翻頁，落點差幾頁（en.wikipedia Taiwan 390 寬捲 40% 落第 119
+  // 頁、畫面上那段在第 104 頁）。probe 時間軸：進場當下量到的頁碼對的是「當下的版面」，
+  // 之後 0.3–1.5 秒錨點前面的內容還在變（總頁數 304 → 261），1.2 秒的二次對位拿
+  // 「頁碼 ÷ 總頁數」比例換算（139 / 304 × 261 = 119），錨點其實已經移到第 104 頁。
+  //
+  // 修法兩處、同一個判定：① 二次對位改成重新量錨點（applyEntry 的 locate 分支）；
+  // ② 之後版面每重排一次就再量一次——不自己輪詢，掛翻頁模組既有的重測時機。
+  // 閘門與二次對位同一組：使用者一有輸入（onUserInteract）或手指開始拖（onTouchDrag）
+  // 就把 settle 清掉、之後不再搬；session 換了也不搬。只處理帶 locate 的 entry。
+  let settle = null; // { key, entry, el }
+  function onPagedRelayout() {
+    const s = settle;
+    if (!s || userInput || touchDragging || sessionKey !== s.key) return;
+    applyEntry(s.entry, s.el);
+  }
+
   // 套 entry + lazy-load 二次對位（使用者還沒互動、手指也沒在拖才對）
   // v2.5.9：套用完重設「真的移動過」的比較基準（程式搬的位置不算使用者移動）。二次對位
   // 不必再重設：版面沒變時它落在同一個位置；版面變了（總頁數 / 文件高度不同）
@@ -694,6 +734,7 @@
   function applyWithReassert(key, entry, el) {
     applyEntry(entry, el);
     resetBaseline();
+    settle = (entry && typeof entry.locate === 'function') ? { key, entry, el } : null; // v2.5.18
     if (reassertTimer) clearTimeout(reassertTimer);
     reassertTimer = setTimeout(() => {
       reassertTimer = null;
@@ -818,6 +859,7 @@
       clearTimeout(saveTimer); saveTimer = null;
     }
     if (reassertTimer) { clearTimeout(reassertTimer); reassertTimer = null; }
+    settle = null; // v2.5.18
     removeListeners();
     remoteSeen = null;
     onPosition = null;
@@ -852,6 +894,8 @@
     recordWriteError,
     findBlockIndex,
     resolvePageIndex,
+    locateEntryPage,
+    onPagedRelayout,
     pickRestoreEntry,
     describeRestore,
     isArchiveKeyShape,

@@ -374,6 +374,109 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return (el.clientHeight - pt - pb) <= 4;
     },
 
+    // v2.5.18：「背景圖影片佔位殼（facade）」的播放鍵判定——cleaner 的播放鍵豁免與
+    // styler 的站方配色保留（markBgFacadeUi）共用的單一資料源。
+    // 場景（simonwillison.net llms-in-2024 實測，<lite-youtube> 這類輕量嵌入）：
+    //   <殼 style="background-image:url(縮圖)">        ← 縮圖畫在殼自己的背景
+    //     <button>（只有螢幕閱讀器看得到的標籤）</button>  ← absolute、蓋在殼正中
+    //   </殼>
+    // 點了才換成 iframe 播放器。v1.8.2 的 isAspectPlaceholderFrame 認的是「padding
+    // hack 框＋<img> 縮圖」，這種殼沒有 img、比例靠 ::after 撐，兩邊都不認——縮圖被
+    // 裝飾背景 strip 清掉、播放鍵被「按鈕一律清」藏掉，剩一個空框、影片也點不了。
+    // Jimmy 2026-11-17 裁定為「按鈕一律清」開例外。判定全部是結構訊號（硬規則 3，
+    // 不看 tag 名、class、站名、縮圖網址），六道 gate 全過才算：
+    //   1. 按鈕自己 position:absolute（蓋在殼上，不是排在文流裡的 CTA）
+    //   2. 往上 3 層內有一層「自己帶 url() 背景圖」的殼
+    //   3. 殼是影片比例的大框：寬 >= 200px、寬高比 1.2–2.4（4:3 到 21:9）
+    //   4. 殼裡只有這一顆互動按鈕，沒有連結、沒有任何實體媒體 / iframe
+    //      （有 iframe＝已經點開、走既有 embed 路徑；輪播的前後鍵是兩顆）
+    //   5. 殼裡沒有看得到的文字：按鈕以外不得有字，按鈕裡的字必須是視覺隱藏
+    //      （absolute＋overflow 裁切的 sr-only 標籤）——背景圖＋標題＋「立即訂閱」
+    //      的 hero / 廣告卡在這裡擋下
+    //   6. 按鈕中心落在殼的正中（兩軸各 ±15%）——角落的關閉 / 放大鍵不算
+    // 背景圖要量站方原值：styler 的裝飾背景 strip 生效後量到的一律是 none，量不到時
+    // 用 withInjectedCssDisabled 再量一次（只在前面便宜的 gate 都過了才付這筆）。
+    FACADE_BTN_SEL: 'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]',
+    FACADE_MIN_W: 200,
+    FACADE_RATIO_MIN: 1.2,
+    FACADE_RATIO_MAX: 2.4,
+    FACADE_CENTER_TOL: 0.15,
+    findBgFacadeFrame(btn) {
+      const NSx = window.__JRead;
+      if (!btn || btn.nodeType !== 1 || !btn.matches || !btn.matches(NSx.FACADE_BTN_SEL)) return null;
+      const win = btn.ownerDocument && btn.ownerDocument.defaultView;
+      if (!win || !win.getComputedStyle) return null;
+      const csOf = (el) => {
+        // 只吞 SyntaxError（jsdom nwsapi 對站點 selector 的既知行為）
+        try { return win.getComputedStyle(el); } catch (e) {
+          if (e && e.name === 'SyntaxError') return null;
+          throw e;
+        }
+      };
+      const bcs = csOf(btn);
+      if (!bcs || bcs.position !== 'absolute') return null;                      // gate 1
+      // gate 5（按鈕半邊）：按鈕裡的字必須是視覺隱藏的標籤
+      for (const c of btn.childNodes) {
+        if (c.nodeType === 3 && /\S/.test(c.textContent)) return null;
+      }
+      for (const el of btn.querySelectorAll('*')) {
+        let own = false;
+        for (const c of el.childNodes) {
+          if (c.nodeType === 3 && /\S/.test(c.textContent)) { own = true; break; }
+        }
+        if (!own) continue;
+        const cs = csOf(el);
+        const ov = cs && cs.overflow;
+        if (!cs || cs.position !== 'absolute' || (ov !== 'hidden' && ov !== 'clip')) return null;
+      }
+      const hasUrlBg = (el) => {
+        const read = () => { const cs = csOf(el); return (cs && cs.backgroundImage) || 'none'; };
+        let bg = read();
+        if (!/url\(/i.test(bg) && typeof NSx.withInjectedCssDisabled === 'function') {
+          bg = NSx.withInjectedCssDisabled(read);
+        }
+        return /url\(/i.test(bg);
+      };
+      const br = btn.getBoundingClientRect();
+      let cur = btn.parentElement;
+      for (let hops = 0; cur && hops < 3; hops++, cur = cur.parentElement) {
+        // gate 4
+        if (cur.querySelectorAll(NSx.FACADE_BTN_SEL).length !== 1) return null;   // 再往上只會更多
+        // <noscript> 裡的備援 iframe 不算（開著 script 的頁面它只是文字；jsdom 會把它
+        // 解析成元素，兩邊要得到同一個答案）
+        let solid = false;
+        for (const m of cur.querySelectorAll('a[href], img, picture, video, audio, iframe, canvas, object, embed')) {
+          if (!(m.closest && m.closest('noscript'))) { solid = true; break; }
+        }
+        if (solid) return null;
+        // gate 5（殼半邊）：按鈕以外不得有字（noscript / script / style 不算）
+        let stray = false;
+        const walk = (node) => {
+          for (const c of node.childNodes) {
+            if (stray) return;
+            if (c.nodeType === 3) { if (/\S/.test(c.textContent)) stray = true; continue; }
+            if (c.nodeType !== 1 || c === btn) continue;
+            if (/^(?:NOSCRIPT|SCRIPT|STYLE|TEMPLATE)$/i.test(c.tagName)) continue;
+            walk(c);
+          }
+        };
+        walk(cur);
+        if (stray) return null;
+        // gate 3
+        const r = cur.getBoundingClientRect();
+        if (!(r.width >= NSx.FACADE_MIN_W) || !(r.height > 0)) continue;
+        const ratio = r.width / r.height;
+        if (ratio < NSx.FACADE_RATIO_MIN || ratio > NSx.FACADE_RATIO_MAX) continue;
+        // gate 6
+        const dx = Math.abs((br.left + br.width / 2) - (r.left + r.width / 2));
+        const dy = Math.abs((br.top + br.height / 2) - (r.top + r.height / 2));
+        if (dx > r.width * NSx.FACADE_CENTER_TOL || dy > r.height * NSx.FACADE_CENTER_TOL) continue;
+        // gate 2（最貴，放最後）
+        if (hasUrlBg(cur)) return cur;
+      }
+      return null;
+    },
+
     // v1.7.40：標題正規化單一資料源（批次 2 review D3——原 detector 內兩份
     // 同名實作：主 detect path 版只折標點、markPromotedTitleIfMissing 版多剝
     // `[...]` site prefix（v0.7.251），合一後用 stripBrackets 參數區分）。

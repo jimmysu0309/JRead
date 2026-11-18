@@ -481,6 +481,13 @@
     const t = pageCount();
     if (idx > t - 1) goTo(t - 1, false);
     else renderIndicator();
+    // v2.5.18：版面重排完成 → 通知位置記憶。進場捲動同步的錨點要在這時重新量落在
+    // 第幾頁（position-memory onPagedRelayout；使用者動過就不搬，閘門在那邊）。
+    // 只通知、不帶資料；對方不在或丟例外都不影響重測
+    try {
+      const pmem = global.__JRead && global.__JRead.positionMemory;
+      if (pmem && typeof pmem.onPagedRelayout === 'function') pmem.onPagedRelayout();
+    } catch (e) { /* 通知失敗不影響重測 */ }
   }
 
   // 2026-11-15 review P-3：媒體版面簽名——主文內每張圖「碎片總高：碎片數」串起來。

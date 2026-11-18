@@ -770,6 +770,7 @@
   const CONTRAST_LOW_FRACTION = 0.4;  // 低對比文字字數占比 >= 40% 才觸發
   const CONTRAST_MAX_TARGETS = 20;    // 每頁最多處理 20 個容器（效能上限）
   const CONTRAST_MAX_CARRIERS = 80;   // 每容器最多取 80 個文字載體
+  const TABLE_BG_MAX_SCAN = 3000;     // v2.5.18：light 表格系深色底守門每頁最多量 3000 個元素
   const WHITE = { r: 255, g: 255, b: 255, a: 1 };
 
   // 解析 getComputedStyle 回傳的色字串。涵蓋 Chrome 兩種 serialization
@@ -855,11 +856,11 @@
   // 深字（color: inherit 規則的 :not(td) 排除只是「不強制」，自然繼承照走
   // 新 cascade）。用 phase 1 舊色判定會誤觸發——tymscar table 實測修壞：
   // guard 誤還原深 bg、td 實際已是深字 → 深底深字 1:1（CONTRAST AUDIT 抓到）。
-  function collectTextCarriers(target, win) {
+  function collectTextCarriers(target, win, max) {
     const carriers = [];
     const els = NS.selfAndDescendants(target, '*'); // 2026-10-07 review C-10：不 spread
     for (const el of els) {
-      if (carriers.length >= CONTRAST_MAX_CARRIERS) break;
+      if (carriers.length >= (max || CONTRAST_MAX_CARRIERS)) break;
       const tag = el.tagName.toUpperCase();
       if (tag === 'STYLE' || tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TITLE' || tag === 'DESC') continue;
       if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
@@ -887,6 +888,27 @@
       if (contrastRatio(col, bg) < CONTRAST_MIN_RATIO) low += c.len;
     }
     return total > 0 ? low / total : 0;
+  }
+
+  // v2.5.18：light 主題表格系深色底守門的單層判定（純函式，passTableSiteBgContrast 用）。
+  // carriers：直接落在這層底色上的文字載體 { len, isLink, color }；bg＝這層現在的
+  // effective bg；behind＝這層清成透明後露出來的底色。
+  //   'clear'       有非連結文字在這層底色上看不清楚（< CONTRAST_MIN_RATIO），且清掉後
+  //                 沒有原本看得清楚的字變成看不清楚
+  //   'keep'        文字都看得清楚（站方自己配的深底淺字），或清掉會弄壞看得清楚的字
+  // 不設字數占比門檻：第二個條件已保證清掉不會讓任何字變差，只要有字救得回來就清。
+  //   'no-own-text' 這層沒有非連結文字（空列 / 只有連結）——由同表其他層的結果決定
+  function tableSiteBgVerdict(carriers, bg, behind) {
+    let low = 0, total = 0, lost = 0;
+    for (const c of carriers) {
+      if (c.isLink || !c.color) continue;
+      total += c.len;
+      if (contrastRatio(c.color, bg) < CONTRAST_MIN_RATIO) low += c.len;
+      else if (contrastRatio(c.color, behind) < CONTRAST_MIN_RATIO) lost += c.len;
+    }
+    if (!total) return 'no-own-text';
+    if (low > 0 && lost === 0) return 'clear';
+    return 'keep';
   }
 
   // v0.8.18 C6：base 骨架 memoize cache（theme 物件 → Map(key → base 字串)）。
@@ -4572,6 +4594,46 @@ html.${HTML_CLASS}.jread-orion body {
       uiMarked.push(el);
     }
   }
+  // v2.5.18：背景圖影片佔位殼（NS.findBgFacadeFrame，<lite-youtube> 這類）的殼與
+  // 播放鍵保留站方配色——縮圖是殼的 background-image、播放圖示是按鈕的
+  // background-image、標題漸層畫在殼的 ::before，全後代 bg strip 與 pseudo strip
+  // 會把三樣一起清掉。走 markLazyEmbedUi 同一機制：標 SITE_UI_ATTR="embed-ui" +
+  // PLAYER_ATTR，吃既有的 :not([PLAYER]) 豁免。候選只有「cleaner 沒藏掉的按鈕」
+  //（按鈕一律清之後所剩無幾），判定與 cleaner 的播放鍵豁免同一把尺。
+  // 幾何與背景都要量站方原值：ARTICLE_ATTR 就位後殼的背景被 strip 成 none、播放鍵的
+  // 寬高被單欄正規化壓成一條線（真站實測 383×215 → 383×2），兩道 gate 都會落空——
+  // 整段判定包進 NS.withInjectedCssDisabled（同一個 JS task、不 paint；只有還有
+  // 沒被藏掉的按鈕時才付這筆 recalc）。
+  // scopeEl（選填）：dynamic path 只掃新增子樹（含自身）。
+  function markBgFacadeUi(articleEl, uiMarked, scopeEl) {
+    if (!Array.isArray(uiMarked)) return;
+    if (!NS || typeof NS.findBgFacadeFrame !== 'function') return;
+    const root = scopeEl || articleEl;
+    const btns = [];
+    for (const btn of NS.selfAndDescendants(root, NS.FACADE_BTN_SEL)) {
+      if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
+      if (btn.getAttribute(PLAYER_ATTR) === '1') continue;
+      btns.push(btn);
+    }
+    if (!btns.length) return;
+    const measure = () => {
+      const pairs = [];
+      for (const btn of btns) {
+        const frame = NS.findBgFacadeFrame(btn);
+        if (frame) pairs.push([frame, btn]);
+      }
+      return pairs;
+    };
+    const pairs = NS.withInjectedCssDisabled ? NS.withInjectedCssDisabled(measure) : measure();
+    for (const pair of pairs) {
+      for (const el of pair) {
+        if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') continue;
+        el.setAttribute(SITE_UI_ATTR, 'embed-ui');
+        el.setAttribute(PLAYER_ATTR, '1');
+        uiMarked.push(el);
+      }
+    }
+  }
   function markEmbedWrapIframes(articleEl, marked, fillMarked, uiMarked) {
     const lazyFrames = [];
     for (const el of articleEl.querySelectorAll(EMBED_WRAP_CANDIDATE_SEL)) {
@@ -5583,6 +5645,8 @@ html.${HTML_CLASS}.jread-orion body {
         // FILL_IFRAME 的 getComputedStyle 才量得到 absolute（與原 :not(:has(iframe))
         // 的同刻語意一致；量測會 flush style、attr 已就位）。
         markEmbedWrapIframes(articleEl, embedWrapMarked, embedFillMarked, siteUiMarked);
+        // v2.5.18：背景圖影片佔位殼的縮圖 / 播放鍵保留站方配色（見 markBgFacadeUi）
+        markBgFacadeUi(articleEl, siteUiMarked);
         markHeadingLinks(articleEl, headingLinkMarked);
         // v1.7.45：absolute/fixed 錨定豁免標記（在 ARTICLE_ATTR 設定後量，見函式註解）
         markAbsAnchors(articleEl, absAnchorMarked);
@@ -5763,6 +5827,101 @@ html.${HTML_CLASS}.jread-orion body {
                 });
                 el.style.setProperty('background-color', 'transparent', 'important');
               }
+            }
+          }
+        }
+      };
+
+      const passTableSiteBgContrast = () => {
+        // v2.5.18 light theme：表格系（TABLE_TAGS）站方深色底上的深字守門。
+        // Jimmy 2026-11-17：GitHub README 表格在「系統深色＋light 主題」是黑字配近黑底
+        //（tj/commander.js，1.1:1）。根因（probe 真站）：站方深色模式把列底色畫在
+        // <tr>（rgb(13,17,23) / 斑馬列 rgb(21,27,35)）；TABLE_TAGS 在 BG_PRESERVE_NOT
+        // 內 → 底色保留，td / th 沒有自己的 color、自然繼承卡片的深字。gray / sepia /
+        // dark / night 有背景中和規則（v0.8.45）所以沒事；light 沒有。既有的 v0.7.225
+        // 守門（phase 1 / 2）拿整張 <table> 的 effective bg 當基準、看不到 <tr> 這層。
+        //
+        // 為什麼不比照其他主題無條件清：light 刻意保留站方的淺色底（維基表頭 / 提示框、
+        // sspai 表格、斑馬紋）。這裡用量測 gate，兩道都要過才清：
+        //   1. 這個元素自己有底色，而且卡片文字色落在它的 effective bg 上 < 3:1
+        //     （＝深色底；淺色底在這一步就全數放行，不可能被清）
+        //   2. 直接落在這層底色上的非連結文字有看不清楚的（< 3:1），而且清掉之後
+        //      沒有任何原本看得清楚的字變成看不清楚（站方自己配「深底淺字」的表頭：
+        //      th / td 的 color 在 COLOR_PRESERVE_NOT 內會留著 → 第 2 道不過、不動）
+        // 同一張表有元素被清時，沒有自己文字的深色底（空列、只有連結的列）一併清，
+        // 避免整張表一列深一列白。連結不計入占比：主題連結色落在深底上常常還有 3:1，
+        // 會讓「只有連結的列」留著深底。
+        // 與 phase 2 的分工：phase 2 還原過底色的容器（站方淺字、為深底設計）在第 2 道
+        // 必定不過——它還原的前提就是「新文字色落在原始底色上多數看得清楚」。
+        // 訊號層次：apply 當下的 computed 值；之後才換底色的站（SPA 晚到樣式、進場後
+        // 切換系統深淺色）掃不到。restore 走 contrastBgSnap 既有通道。
+        if (theme.text) return;
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (!_win || !_win.getComputedStyle) return;
+        const cardBg = parseCssColor(theme.articleBg) || WHITE;
+        const cardText = parseCssColor(_win.getComputedStyle(articleEl).color);
+        if (!cardText) return;
+        const tableSel = TABLE_TAGS.join(',');
+        let scanned = 0;
+        for (const table of articleEl.querySelectorAll('table')) {
+          if (scanned >= TABLE_BG_MAX_SCAN) break;
+          if (table.parentElement && table.parentElement.closest && table.parentElement.closest('table')) continue;
+          if (table.closest && table.closest('[data-jread-hidden="1"]')) continue;
+          // 第 1 道：找出這張表裡帶深色底的表格系元素（文件順序＝外層先）
+          const dark = [];
+          for (const el of NS.selfAndDescendants(table, tableSel)) {
+            if (scanned >= TABLE_BG_MAX_SCAN) break;
+            scanned++;
+            const own = parseCssColor(_win.getComputedStyle(el).backgroundColor);
+            if (!own || own.a < 0.05) continue;
+            const eff = compositeBgOver(el, articleEl, cardBg, _win);
+            if (contrastRatio(cardText, eff) >= CONTRAST_MIN_RATIO) continue;
+            dark.push(el);
+          }
+          if (!dark.length) continue;
+          const darkSet = new Set(dark);
+          // 文字載體歸戶：往上第一個帶深色底的表格系元素
+          const owned = new Map();
+          for (const el of dark) owned.set(el, []);
+          for (const c of collectTextCarriers(table, _win, TABLE_BG_MAX_SCAN)) {
+            let cur = c.el;
+            while (cur && cur !== table.parentElement && !darkSet.has(cur)) cur = cur.parentElement;
+            if (!cur || !darkSet.has(cur)) continue;
+            c.isLink = !!(c.el.closest && c.el.closest('a'));
+            owned.get(cur).push(c);
+          }
+          const cleared = [];
+          const clear = (el) => {
+            contrastBgSnap.push({
+              el,
+              prop: 'background-color',
+              prev: el.style.getPropertyValue('background-color'),
+              prevP: el.style.getPropertyPriority('background-color')
+            });
+            el.style.setProperty('background-color', 'transparent', 'important');
+            cleared.push(el);
+          };
+          // 清掉之後這層露出來的底色（自己這層不算）
+          const behindOf = (el) => (el.parentElement && el !== articleEl
+            ? compositeBgOver(el.parentElement, articleEl, cardBg, _win) : cardBg);
+          const verdict = (el) => tableSiteBgVerdict(
+            owned.get(el).map((c) => ({ len: c.len, isLink: c.isLink, color: c.origColor })),
+            compositeBgOver(el, articleEl, cardBg, _win),
+            behindOf(el)
+          );
+          // 第 2 道：有自己文字的層先判
+          const pending = [];
+          for (const el of dark) {
+            const v = verdict(el);
+            if (v === 'clear') clear(el);
+            else if (v === 'no-own-text') pending.push(el);
+          }
+          // 同一張表有層被清 → 沒有自己文字的深色底跟著清（連結清掉後仍要看得清楚）
+          if (cleared.length) {
+            for (const el of pending) {
+              const behind = behindOf(el);
+              const linksOk = owned.get(el).every((c) => contrastRatio(c.origColor, behind) >= CONTRAST_MIN_RATIO);
+              if (linksOk) clear(el);
             }
           }
         }
@@ -7630,6 +7789,23 @@ html.${HTML_CLASS}.jread-orion body {
             // 分欄；塌掉後「標籤格 / 說明格」變上下堆疊、和其他列對不上。下方
             // stackLopsidedImgCol 不必另外豁免：格子已被等分欄寬（segCardWidth 的
             // CSS 規則），不會出現「含圖欄 < 25%、另一欄 ≥ 50%」的形狀
+            // v2.5.18：翻頁模式的寬度要按「單一欄片段」量。multicol 卡片裡跨頁的元素，
+            // getBoundingClientRect() 回的是各欄片段的聯集（兩頁 = 兩欄寬＋欄距），
+            // 拿它當「容器內容寬」會把沒分欄的橫向 flex 誤判成分欄：GitBook 清單項
+            // （li 是橫向 flex：圓點 div＋文字 div）跨頁時聯集 804px、裡面的段落 371px
+            // 不到 70% → li 被寫成 display:block、圓點單獨佔一行（Jimmy 2026-11-17
+            // 裁定修）。改取 getClientRects() 裡最寬的那一片——跨頁的容器與 anchor 都
+            // 回到單欄內的真實寬，真的分欄（christies 這類）跨頁時比例照樣成立、照塌。
+            // 捲動模式沒有欄片段，直接回 bounding 寬（與舊行為逐值相同）
+            const colWidthOf = (el) => {
+              const bw = el.getBoundingClientRect().width;
+              if (!opts.pagedMode || typeof el.getClientRects !== 'function') return bw;
+              const rs = el.getClientRects();
+              if (!rs || rs.length < 2) return bw;
+              let m = 0;
+              for (const fr of rs) { if (fr.width > m) m = fr.width; }
+              return m > 0 ? m : bw;
+            };
             const decolumnFrom = (anchor, ratio) => {
               let cur = anchor.parentElement;
               while (cur && cur !== articleEl) {
@@ -7639,9 +7815,8 @@ html.${HTML_CLASS}.jread-orion body {
                     !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
                   const cs = win.getComputedStyle(cur);
                   if (isMultiColumnContainer(cs)) {
-                    const r = cur.getBoundingClientRect();
-                    const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-                    const aw = anchor.getBoundingClientRect().width; // 每層重量（前一層塌掉後會變寬）
+                    const contentW = colWidthOf(cur) - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+                    const aw = colWidthOf(anchor); // 每層重量（前一層塌掉後會變寬）
                     if (contentW > 0 && aw > 0 && aw < contentW * ratio) {
                       textColSeen.add(cur);
                       textColFlex.push({
@@ -7680,16 +7855,15 @@ html.${HTML_CLASS}.jread-orion body {
                     !(cur.closest && cur.closest(`[${BYLINE_ATTR}="1"]`))) {
                   const cs = win.getComputedStyle(cur);
                   if (isMultiColumnContainer(cs)) {
-                    const r = cur.getBoundingClientRect();
-                    const contentW = r.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-                    const childW = child.getBoundingClientRect().width;
+                    const contentW = colWidthOf(cur) - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+                    const childW = colWidthOf(child);
                     if (contentW > 0 && childW > 0 && childW < contentW * 0.25) {
                       // 另需一個 >= 50% 寬的 sibling 欄（確認是 lopsided 分欄、非單欄）
                       let wideSibling = false;
                       for (const c of cur.children) {
                         if (c === child) continue;
                         const cr = c.getBoundingClientRect();
-                        if (cr.height >= 1 && cr.width >= contentW * 0.5) { wideSibling = true; break; }
+                        if (cr.height >= 1 && colWidthOf(c) >= contentW * 0.5) { wideSibling = true; break; }
                       }
                       if (wideSibling) {
                         textColSeen.add(cur);
@@ -7845,6 +8019,36 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      // v2.5.18：被我們縮窄的寬表（passWideContentScroll 把 min-width 歸 0 的那種）裡，
+      // 站方寫死高度的文字容器放開高度。真站：en.wikipedia Taiwan「Largest cities」
+      // 表頭 div inline `height: 2.6em; line-height: 1.3em`（剛好兩行）——表縮窄後
+      // 標題換成兩行、第三行的「source」連結溢出固定高，疊到下一列的欄名上
+      //（畫面「sourDivision」）。站方的高度是按「表有 50em 寬」算的，我們把寬度
+      // 拿掉了，高度就得跟著放。
+      // 結構判定（不綁 class）：內容溢出自己的高度（scrollHeight > clientHeight）、
+      // overflow-y 是 visible（站方自己裁切 / 內捲的不碰）、有文字。放開後仍溢出＝
+      // 溢出不是高度造成的（例如定位子元素）→ 退回原值、不接管。
+      // 表格結構 tag 與 replaced / pre 不看：高度語意不同，也不是這個症狀的載體。
+      const WIDE_FIXED_HEIGHT_SKIP = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'CAPTION', 'COL', 'COLGROUP', 'IMG', 'PICTURE', 'VIDEO', 'IFRAME', 'SVG', 'CANVAS', 'OBJECT', 'EMBED', 'PRE']);
+      const releaseFixedHeightText = (root, win, entry) => {
+        for (const box of root.querySelectorAll('*')) {
+          if (WIDE_FIXED_HEIGHT_SKIP.has(String(box.tagName).toUpperCase())) continue;
+          if (!(box.clientHeight > 0) || box.scrollHeight <= box.clientHeight + 1) continue;
+          if (!(box.textContent || '').trim()) continue;
+          const oy = win.getComputedStyle(box).overflowY;
+          if (oy && oy !== 'visible') continue;
+          const height = box.style.getPropertyValue('height');
+          const heightPriority = box.style.getPropertyPriority('height');
+          box.style.setProperty('height', 'auto', 'important');
+          if (box.scrollHeight > box.clientHeight + 1) {
+            if (height) box.style.setProperty('height', height, heightPriority);
+            else box.style.removeProperty('height');
+            continue;
+          }
+          (entry.heightReleased || (entry.heightReleased = [])).push({ el: box, height, heightPriority });
+        }
+      };
+
       const passWideContentScroll = () => {
         // v0.8.101：寬語意內容（table / pre）超出 card → 卡內水平捲，不被切掉。
         // 根因（arxiv HTML 全文）：LaTeXML 把展示公式輸出成 <table class="ltx_equation">，
@@ -7890,10 +8094,25 @@ html.${HTML_CLASS}.jread-orion body {
                 overflowXPriority: el.style.getPropertyPriority('overflow-x'),
                 maxWidth: el.style.getPropertyValue('max-width'),
                 maxWidthPriority: el.style.getPropertyPriority('max-width'),
+                minWidth: el.style.getPropertyValue('min-width'),
+                minWidthPriority: el.style.getPropertyPriority('min-width'),
               });
               setInlineOwned(el, 'display', 'block', 'important', 'styler:widescroll');
               el.style.setProperty('max-width', '100%', 'important');
               el.style.setProperty('overflow-x', 'auto', 'important');
+              // v2.5.18：寫成捲動容器之後仍超出卡片右緣＝被 min-width 撐住（CSS 規定
+              // min-width 優先於 max-width；en.wikipedia Taiwan「Largest cities」表站方
+              // inline `min-width: 50em`，表自己 850–1000px 寬、內容沒有溢出它自己所以
+              // 不出現捲軸，超出卡片的右半邊被卡片 overflow:hidden 切掉、捲不到）。把
+              // min-width 歸 0 讓 max-width: 100% 生效。只在「寫完仍超出」時才動——
+              // 沒被 min-width 撐住的表一個值都不多寫（19 頁 × 3 條件普查：其他 2,170 個
+              // table / pre 逐值不變）。
+              // 不做「版面落定後重掃」：ja 東海道新幹線頁尾導覽框是落定後才超出 11px，
+              // 重掃會讓它與 arxiv 公式表變成要橫捲（v2.5.17 普查，Jimmy 裁定不動）。
+              if (el.getBoundingClientRect().right > cardRight + 2) {
+                el.style.setProperty('min-width', '0', 'important');
+                releaseFixedHeightText(el, win, wideScroll[wideScroll.length - 1]);
+              }
             }
           }
         }
@@ -8302,6 +8521,7 @@ html.${HTML_CLASS}.jread-orion body {
         passMarkSelectionOpaque,
         passContrastGuardPhase2,
         passBlockquoteSummaryContrast,
+        passTableSiteBgContrast,
         passDarkSepiaContrastPhase3,
         passCodeBlockBgPhase4,
         passInstallListeners,
@@ -8814,16 +9034,25 @@ html.${HTML_CLASS}.jread-orion body {
       }
 
       // v0.8.101：還原寬語意內容（table / pre）的 display / overflow-x / max-width
+      // （v2.5.18 起多帶 min-width）
       // inline override（apply 時設的水平捲）。
       if (Array.isArray(snapshot.wideScroll)) {
         for (const w of snapshot.wideScroll) {
           if (!w || !w.el) continue;
-          for (const prop of ['display', 'overflow-x', 'max-width']) {
+          for (const prop of ['display', 'overflow-x', 'max-width', 'min-width']) {
             if (prop === 'display' && releaseInlineOwned(w.el, 'display', 'styler:widescroll')) continue;
-            const key = prop === 'overflow-x' ? 'overflowX' : (prop === 'max-width' ? 'maxWidth' : prop);
+            const key = prop === 'overflow-x' ? 'overflowX' : (prop === 'max-width' ? 'maxWidth' : (prop === 'min-width' ? 'minWidth' : prop));
             const value = w[key];
             if (value) w.el.style.setProperty(prop, value, w[key + 'Priority'] || '');
             else w.el.style.removeProperty(prop);
+          }
+          // v2.5.18：放開過的寫死高度容器還原 height（值與 priority）
+          if (Array.isArray(w.heightReleased)) {
+            for (const h of w.heightReleased) {
+              if (!h || !h.el) continue;
+              if (h.height) h.el.style.setProperty('height', h.height, h.heightPriority || '');
+              else h.el.style.removeProperty('height');
+            }
           }
         }
       }
@@ -8871,6 +9100,12 @@ html.${HTML_CLASS}.jread-orion body {
       const hasIframe = (node.matches && node.matches('iframe')) ||
         (node.querySelector && node.querySelector('iframe'));
       if (hasIframe) markEmbedWrapIframes(s.articleEl, s.embedWrapMarked, s.embedFillMarked, s.siteUiMarked);
+      // v2.5.18：晚升級的背景圖影片佔位殼補標（自訂元素升級後才插入播放鍵）
+      if (Array.isArray(s.siteUiMarked) &&
+          ((node.matches && node.matches(NS.FACADE_BTN_SEL)) ||
+           (node.querySelector && node.querySelector(NS.FACADE_BTN_SEL)))) {
+        markBgFacadeUi(s.articleEl, s.siteUiMarked, node);
+      }
       const hasHeading = (node.matches && node.matches('h1,h2,h3,h4,h5,h6,a')) ||
         (node.querySelector && node.querySelector('h1,h2,h3,h4,h5,h6'));
       if (hasHeading) {

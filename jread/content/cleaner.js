@@ -6157,6 +6157,16 @@
       // skip），figure 內的由下方 preserved 擋——走到這裡的 iframe 只剩已知內容
       // embed。留下來後由 styler 的 fill-iframe 機制 pin 回填滿外殼。
       if (TAG === 'IFRAME') continue;
+      // v2.5.18：影片佔位殼的播放鍵與它裡面的東西排除（見 isEmbedPlaceholderPlayButton）。
+      // 播放鍵本身就是「absolute、不含媒體」的覆蓋層，hideInsideArticleAllButtons 放行
+      // 之後會在這裡被當 overlay 藏掉；它裡面的視覺隱藏標籤（absolute 的 sr-only span）
+      // 被藏時，下方「清直接父的 height 殘留」又會把播放鍵壓成 2px 高、點不到
+      //（simonwillison <lite-youtube> probe 兩輪實證）。先用 closest 擋，不在按鈕內的
+      // absolute 元素不付判定成本。
+      {
+        const hostBtn = el.closest && el.closest(INTERACTIVE_BTN_SEL);
+        if (hostBtn && isEmbedPlaceholderPlayButton(hostBtn)) continue;
+      }
       // v0.7.148 guard：含 `<h1>` → 視為「hero header title overlay」設計，
       // 不 hide（hide 後 h1 雖自身 visible 但 ancestor display:none 會連帶
       // 0×0 不可見、標題完全消失）。TBIJ thebureauinvestigates.com 實機
@@ -9066,7 +9076,12 @@
   //   - 往上 4 層內有 aspect padding-hack 佔位框（NS.isAspectPlaceholderFrame，
   //     與 styler 的 lazy embed 偵測同一把尺），且框內有媒體
   // 分享 / 訂閱 / 追蹤 / 展開類按鈕不在 padding-hack 佔位框內，照清不誤。
+  // v2.5.18：背景圖影片佔位殼（<lite-youtube> 這類，縮圖畫在殼的 background-image、
+  // 沒有 <img>、不是 padding hack 框）的播放鍵同樣豁免（Jimmy 2026-11-17 裁定）。
+  // 六道結構 gate 的單一資料源在 NS.findBgFacadeFrame；併進這支函式讓靜態 / keyword /
+  // 動態四個呼叫點一起跟到，不各寫一份。
   function isEmbedPlaceholderPlayButton(btn) {
+    if (NS && typeof NS.findBgFacadeFrame === 'function' && NS.findBgFacadeFrame(btn)) return true;
     if (!NS || typeof NS.isAspectPlaceholderFrame !== 'function') return false;
     const win = btn.ownerDocument && btn.ownerDocument.defaultView;
     if (!win || !win.getComputedStyle) return false;
