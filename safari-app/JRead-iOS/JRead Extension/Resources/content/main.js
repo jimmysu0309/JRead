@@ -329,22 +329,40 @@
   //   - 本機記錄的頁若落在「原頁畫面上看得到的段落」涵蓋的頁範圍內，用本機記錄的頁
   //    （判定在 pagedMode.pickEnterPage）
   // 回傳的 entry 是 mode:'paged'＋pages＝目前總頁數，position-memory applyEntry 直接
-  // 跳那一頁；1.2 秒後的二次對位若總頁數變了（lazy 圖），照既有規則退回 ratio 近似。
-  // 量不到（錨點被 cleaner 藏掉且畫面上其他段落也量不到、API 不在）→ 原樣回傳舊 override。
+  // 跳那一頁。
+  // 量不到（錨點被 cleaner 藏掉且畫面上其他段落也量不到、API 不在）→ 回傳舊 override 的內容。
+  //
+  // v2.5.18：entry 多帶 locate()——「現在再量一次，錨點落在第幾頁」（同一套量法、同一個
+  // pickEnterPage；量不到回 null）。進場當下量到的頁碼只對當下的版面：之後 0.3–1.5 秒
+  // 錨點前面的內容還在變（wiki Taiwan 390 寬總頁數 304 → 261），舊做法在 1.2 秒二次
+  // 對位時拿「頁碼 ÷ 總頁數」換算，落點差 5–15 頁。position-memory 在二次對位與之後每次
+  // 翻頁版面重排時呼叫 locate()（使用者動過就不再呼叫，閘門在那邊）。locate 是函式、
+  // 掛在只活在這次進場的 override 物件上——位置記憶存檔用的是 capture() 另外組的物件，
+  // 不會把它寫進 storage。當下量不到也照樣帶（回舊 override 的複本＋locate）：晚一點
+  // 量得到時就改用量的。
   function resolveEnterPagedOverride(anchor, refs, localEntry) {
     if (!anchor) return anchor;
     try {
       const pm = NS.pagedMode;
       if (!pm || !pm.isInstalled() || typeof pm.pageCoverageOf !== 'function' ||
           typeof pm.pickEnterPage !== 'function' || !refs || !refs.anchorEl) return anchor;
-      const p = pm.getPosition();
-      if (!p || !(p.total >= 1)) return anchor;
       const vis = Array.isArray(refs.visibleEls) ? refs.visibleEls : [];
-      const covs = pm.pageCoverageOf([refs.anchorEl].concat(vis));
-      if (!covs) return anchor;
-      const page = pm.pickEnterPage(covs[0], refs.anchorFrac, covs.slice(1), localEntry, p.total);
-      if (page === null || page === undefined) return anchor;
-      return { mode: 'paged', page, pages: p.total, ratio: p.total > 1 ? page / (p.total - 1) : 0 };
+      const els = [refs.anchorEl].concat(vis);
+      const measure = () => {
+        if (!pm.isInstalled()) return null;
+        const p = pm.getPosition();
+        if (!p || !(p.total >= 1)) return null;
+        const covs = pm.pageCoverageOf(els);
+        if (!covs) return null;
+        const page = pm.pickEnterPage(covs[0], refs.anchorFrac, covs.slice(1), localEntry, p.total);
+        return (page === null || page === undefined) ? null : { page, total: p.total };
+      };
+      const locate = () => {
+        try { const m = measure(); return m ? m.page : null; } catch (_) { return null; }
+      };
+      const m = measure();
+      if (!m) return Object.assign({}, anchor, { locate });
+      return { mode: 'paged', page: m.page, pages: m.total, ratio: m.total > 1 ? m.page / (m.total - 1) : 0, locate };
     } catch (_) { return anchor; }
   }
 
