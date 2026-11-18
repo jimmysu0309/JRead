@@ -1052,6 +1052,76 @@
     return { el: best, confidence, strategy: 'heuristic', ambiguous };
   }
 
+  // ---- v2.5.22：討論串頁判定（no-op）-----------------------------------------
+  // Jimmy 2026-11-18 裁定：討論串頁（lobste.rs、news.ycombinator 這類「一則連結 + 一長串
+  // 留言」的頁面）不支援，只要做到「不啟動閱讀模式、不顯示空白卡片或單則留言」。
+  //
+  // 改之前的兩種壞法（語料庫實證）：
+  //   - news.ycombinator：全頁沒有文章，heuristic 挑中字最多的那一則留言
+  //     （td > div.comment > div.commtext）→ 卡片只有單則留言、沒有標題
+  //   - lobste.rs：主文容器是 <main>，裡面是一行貼文資訊 + 留言串；留言串被 cleaner
+  //     當留言區清掉 → 剩一張約 70px 高的空卡
+  //
+  // 判定（兩條擇一成立，皆結構訊號、不看站名）：
+  //   A. 主文容器自己或祖先是「留言項目」：帶留言語意 token 的區塊容器，且同一個
+  //      class 字串在頁面上重複 >= THREAD_REPEAT_MIN 次（＝一串留言裡的一則）
+  //   B. 主文容器裡扣掉留言串之後，剩下的文字不到 MIN_TEXT_LEN，而留言串本身的文字
+  //      >= MIN_TEXT_LEN（＝這頁的內容就是留言）。留言串＝帶 token 的最外層區塊容器，
+  //      且它裡面還有 >= THREAD_REPEAT_MIN 個帶 token 的區塊（一則一則的留言）
+  //
+  // 刻意收窄（這條驗 X、不驗 Y）：
+  //   - token 只認 comment(s) / replies / discussion 當 class / id 的獨立詞；狀態修飾
+  //     寫法（has-comments、comments-open、comment-count…）不算——那是「這篇文章開放
+  //     留言」的旗標，常掛在文章容器自己身上
+  //   - 「重複 >= 3」排除只出現一次的容器（文章外層剛好叫 discussion 的單一 wrapper）
+  //   - 一般文章底下的留言區不受影響：扣掉留言後文章本體遠超過 MIN_TEXT_LEN
+  //     （語料庫普查：dev.to 扣掉留言剩 17K、thewoksoflife 剩 11K；168 頁只有上述兩站命中）
+  //   - 不認 token 的討論串（class 全是 hash 的 SPA 論壇、自訂元素）驗不到，維持原行為
+  const THREAD_TOKEN_RE = /(^|[\s_-])(comments?|replies|discussion)([\s_-]|$)/i;
+  const THREAD_STATE_RE = /(^|\s)(?:(?:has|no|with|without|show|hide|allow|allows)[_-]comments?|comments?[_-](?:open|closed|on|off|enabled|disabled|allowed|count|counter|link|toggle|btn|button|icon))(?=\s|$)/gi;
+  const THREAD_BLOCK_TAGS = new Set(['DIV', 'SECTION', 'ARTICLE', 'ASIDE', 'MAIN', 'OL', 'UL', 'LI', 'TABLE', 'TBODY', 'TR', 'TD']);
+  const THREAD_REPEAT_MIN = 3;
+  function threadMarker(el) {
+    const cls = typeof el.className === 'string' ? el.className : '';
+    return (cls + ' ' + (el.id || '')).replace(THREAD_STATE_RE, ' ');
+  }
+  function isThreadBlock(el) {
+    return !!el && el.nodeType === 1 && THREAD_BLOCK_TAGS.has(el.tagName) && THREAD_TOKEN_RE.test(threadMarker(el));
+  }
+  function isDiscussionThreadRoot(articleEl) {
+    if (!articleEl || !articleEl.ownerDocument) return false;
+    const doc = articleEl.ownerDocument;
+    // A. 主文容器落在一則留言裡
+    for (let p = articleEl; p && p !== doc.body && p !== doc.documentElement; p = p.parentElement) {
+      if (!isThreadBlock(p)) continue;
+      const cls = typeof p.className === 'string' ? p.className.trim() : '';
+      if (!cls) continue;
+      let same = 0;
+      for (const o of doc.getElementsByTagName(p.tagName)) {
+        if (typeof o.className === 'string' && o.className.trim() === cls) same += 1;
+        if (same >= THREAD_REPEAT_MIN) return true;
+      }
+    }
+    // B. 扣掉留言串後沒有文章
+    let threadLen = 0;
+    const walk = (el) => {
+      for (const kid of el.children) {
+        if (isThreadBlock(kid)) {
+          let items = 0;
+          for (const d of kid.querySelectorAll('*')) {
+            if (isThreadBlock(d)) items += 1;
+            if (items >= THREAD_REPEAT_MIN) break;
+          }
+          if (items >= THREAD_REPEAT_MIN) { threadLen += scoredTextLen(kid); continue; }
+        }
+        walk(kid);
+      }
+    };
+    walk(articleEl);
+    if (threadLen < MIN_TEXT_LEN) return false;
+    return scoredTextLen(articleEl) - threadLen < MIN_TEXT_LEN;
+  }
+
   // ---- 主文容器 promote：保留文章標題 -----------------------------------
   // 場景：WordPress（Stratechery）/ Medium / Substack 等 CMS 把 post-title
   // 放在 content 的兄弟層（post-title + post-content 同級），heuristic
@@ -1875,6 +1945,12 @@
           result.el = finalPromoted.el;
           result.promotedTitleHead = finalPromoted.titleHead;
         }
+      }
+      // v2.5.22：討論串頁不是文章 → no-op（見 isDiscussionThreadRoot）。放在所有
+      // promote / narrow 之後：判定對象是最終的主文容器。
+      if (result && result.el && result.strategy !== 'shadow-dom-fallback' &&
+          isDiscussionThreadRoot(result.el)) {
+        return null;
       }
       // v1.7.13：multi-block 文章的接續兄弟區塊識別（唯讀；main.js 進場時才
       // 真正移動 DOM、退出時移回）。shadow replica 是合成複本、兄弟掃描無
