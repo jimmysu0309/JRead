@@ -298,6 +298,10 @@
   //    與原 :has 對 data-jread-hidden attr 的反應同刻生效）、cleaner restore()
   //    清除；本檔只負責 CSS 端。
   const EMBED_WRAP_ATTR = 'data-jread-embed-wrap';
+  // v2.5.19：背景圖影片佔位殼的「殼」（NS.findBgFacadeFrame 回傳的那一層；播放鍵不標）。
+  // 翻頁模式拿它當一張圖看待——不跨頁、單頁 cap（見 paged CSS）。由 markBgFacadeUi 標、
+  // restore 與 SITE_UI_ATTR 同一個迴圈移除。
+  const FACADE_FRAME_ATTR = 'data-jread-facade-frame';
   // 2026-10-07 review B-01：「class 帶 ratio token 的 aspect 容器」標記。原本四條
   // CSS（aspect-ratio / padding reset、後代 static-flow、::before/::after 中和、
   // > svg spinner 隱藏）與 EMBED_WRAP_CANDIDATE_SEL 共用 `[class*="ratio" i]`
@@ -3305,6 +3309,20 @@ html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] iframe {
   break-inside: avoid;
 }
+/* v2.5.19：背景圖影片佔位殼（<lite-youtube> 這類，markBgFacadeUi 標的殼）當一張圖
+   看待——不跨頁、高度 cap 在單頁內。殼沒有 <img> / <iframe>（縮圖是 background-image、
+   高度來自 ::after 的 padding 或 aspect-ratio），上面那條選不到它，WebKit 把它當一般
+   block 從中間切開（Jimmy 2026-11-18 iPhone 實機：縮圖上半在頁底、下半到下一頁；
+   Playwright WebKit 420 寬字級 20 襯線在高 725 / 875 / 950 重現。Chromium 12 個高度
+   都不切——殼帶 paint containment，Chromium 視為不可分割）。點播後殼內換成填滿的
+   iframe，殼還是同一個元素、同一條規則照管。比一頁還高的殼（手機橫向）照媒體的
+   單頁 cap 壓高，背景縮圖由站方的 cover 裁上下、與點播後 iframe 的 cap 同值。
+   只在翻頁模式注入 */
+html [${ARTICLE_ATTR}="1"] [${FACADE_FRAME_ATTR}="1"] {
+  break-inside: avoid;
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+}
 /* v2.5.12：ARIA 排的 div 表格（role=row，不是原生 tr）一列不跨頁（GitBook quickstart
    11 列表：390×700 兩個引擎都把一列從中間切成兩半）。列自己加 break-inside: avoid
    ——Chromium 這樣就夠；WebKit 不照 flex item 的 break-*（v2.4.5 同一個毛病），
@@ -4626,6 +4644,12 @@ html.${HTML_CLASS}.jread-orion body {
     };
     const pairs = NS.withInjectedCssDisabled ? NS.withInjectedCssDisabled(measure) : measure();
     for (const pair of pairs) {
+      // v2.5.19：殼另標 FACADE_FRAME_ATTR（翻頁模式不跨頁用）。已被別條標成 site-ui
+      // 的殼也要標——下面的 continue 只是不重複登記還原
+      if (!pair[0].hasAttribute(FACADE_FRAME_ATTR)) {
+        pair[0].setAttribute(FACADE_FRAME_ATTR, '1');
+        if (pair[0].hasAttribute(SITE_UI_ATTR) || pair[0].getAttribute(PLAYER_ATTR) === '1') uiMarked.push(pair[0]);
+      }
       for (const el of pair) {
         if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') continue;
         el.setAttribute(SITE_UI_ATTR, 'embed-ui');
@@ -8115,6 +8139,50 @@ html.${HTML_CLASS}.jread-orion body {
               }
             }
           }
+        } else {
+          // v2.5.19：翻頁模式只做「被站方 min-width 撐住」這一種（Jimmy 2026-11-18 實機：
+          // en.wikipedia Taiwan「Largest cities」表捲動模式 OK、翻頁模式仍被切）。
+          // 上面那套不能搬過來：multicol 下第 2 欄起 rect.right 天然超過卡片右緣
+          //（v1.6.24），而且翻頁模式橫拖一律是翻頁、寫成捲動容器也捲不到。
+          // 判定不看卡片右緣，改看「自己比容器的內容寬還寬」——全後代已有
+          // max-width: 100%，table / pre 會比容器寬只剩兩種原因：站方 min-width、
+          // 或內容本身放不下。只處理前者（computed min-width 比容器內容寬還大）：
+          // min-width 歸 0，再放開表內寫死高度的文字容器（同捲動模式第二步）。
+          // 寬度按單一欄片段量（跨頁元素的 bounding 寬是各欄片段的聯集）。
+          // 內容本身放不下的表不動（縮不進去；翻頁模式下看不到的部分照舊）。
+          // 沒被 min-width 撐住的表一個 inline 都不寫。還原只動 min-width（minWidthOnly）。
+          const win = articleEl.ownerDocument?.defaultView;
+          if (win) {
+            const fragW = (node) => {
+              let m = 0;
+              const rs = typeof node.getClientRects === 'function' ? node.getClientRects() : null;
+              if (rs) { for (const fr of rs) { if (fr.width > m) m = fr.width; } }
+              return m > 0 ? m : node.getBoundingClientRect().width;
+            };
+            for (const el of articleEl.querySelectorAll('table, pre')) {
+              if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+              const parent = el.parentElement;
+              if (!parent) continue;
+              const w = fragW(el);
+              if (w < 1) continue;
+              const pcs = win.getComputedStyle(parent);
+              const avail = fragW(parent)
+                - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0)
+                - (parseFloat(pcs.borderLeftWidth) || 0) - (parseFloat(pcs.borderRightWidth) || 0);
+              if (!(avail > 0) || w <= avail + 2) continue;        // 沒比容器寬 → 不動
+              const minW = parseFloat(win.getComputedStyle(el).minWidth);
+              if (!(minW > avail + 2)) continue;                   // 不是 min-width 撐的 → 不動
+              const entry = {
+                el,
+                minWidthOnly: true,
+                minWidth: el.style.getPropertyValue('min-width'),
+                minWidthPriority: el.style.getPropertyPriority('min-width'),
+              };
+              wideScroll.push(entry);
+              el.style.setProperty('min-width', '0', 'important');
+              releaseFixedHeightText(el, win, entry);
+            }
+          }
         }
       };
 
@@ -8665,6 +8733,7 @@ html.${HTML_CLASS}.jread-orion body {
           if (!el || !el.removeAttribute) continue;
           el.removeAttribute(SITE_UI_ATTR);
           el.removeAttribute(PLAYER_ATTR);
+          el.removeAttribute(FACADE_FRAME_ATTR); // v2.5.19：佔位殼的翻頁不跨頁標記
         }
       }
       // v2.4.9：drop cap 首字色修正標記（apply 與動態補標共用同一陣列）
@@ -9039,7 +9108,8 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.wideScroll)) {
         for (const w of snapshot.wideScroll) {
           if (!w || !w.el) continue;
-          for (const prop of ['display', 'overflow-x', 'max-width', 'min-width']) {
+          // v2.5.19：翻頁模式那一筆只寫過 min-width（minWidthOnly），其他三個不碰
+          for (const prop of (w.minWidthOnly ? ['min-width'] : ['display', 'overflow-x', 'max-width', 'min-width'])) {
             if (prop === 'display' && releaseInlineOwned(w.el, 'display', 'styler:widescroll')) continue;
             const key = prop === 'overflow-x' ? 'overflowX' : (prop === 'max-width' ? 'maxWidth' : (prop === 'min-width' ? 'minWidth' : prop));
             const value = w[key];
