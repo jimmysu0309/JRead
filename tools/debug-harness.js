@@ -678,8 +678,16 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     await page.screenshot({ path: SCREENSHOT_OUT });
     console.log('saved viewport (zoom 0.5):', SCREENSHOT_OUT);
     // Full-page 截圖：拍完整 reader card（含 scroll 下方殘留）
-    await page.screenshot({ path: FULLPAGE_OUT, fullPage: true });
-    console.log('saved fullpage (zoom 0.5):', FULLPAGE_OUT);
+    // 很長的頁面（plos、quanta 翻譯後）Chromium 會回「Unable to capture screenshot」；
+    // 整頁圖拍不到不該讓整輪中止——後面的分頁截圖才是主要的視覺依據。刪掉舊檔避免
+    // 誤讀上一輪的圖
+    try {
+      await page.screenshot({ path: FULLPAGE_OUT, fullPage: true });
+      console.log('saved fullpage (zoom 0.5):', FULLPAGE_OUT);
+    } catch (e) {
+      try { require('fs').unlinkSync(FULLPAGE_OUT); } catch (_) {}
+      console.log('⚠️  整頁截圖失敗（頁面太長），改看分頁截圖 jread-page-NN.png：' + String(e && e.message).split('\n')[0]);
+    }
 
     // ---- 分頁滾動截圖（v0.7.31 Jimmy 硬規則）-----------------------------
     // Playwright `fullPage: true` 對某些 SPA 站（cnyes 實測：Next.js
