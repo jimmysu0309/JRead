@@ -133,6 +133,59 @@ cua 是 pre-release、API 變動快（README 自承 expect rough edges）；且�
 
 ---
 
+## 凍結語料庫與指紋比對（改一條規則，哪些站變了）
+
+2026-11-18 加入，工具是 `tools/corpus.js`。要解的問題：cleaner / styler / detector 的規則互相影響，regression spec 的 fixture 是手寫最小重現、只驗「這個 bug 沒回來」，看不到「別的站變了」；page rounds 跑線上頁面，慢、每次內容不同、事後才跑，回歸都留到下一輪才發現。
+
+做法是把真實頁面凍結成離線快照，改完 code 全部重放一遍，逐頁跟基準比對。
+
+```bash
+node tools/corpus.js check                 # 日常：改完 code 跑這個（有差異 exit 1）
+node tools/corpus.js check --only wiki     # 只跑 id 含 wiki 的頁面
+node tools/corpus.js shot --only bbc       # 看某頁現在長怎樣（截圖在 ~/.jread-debug/corpus/shots/）
+node tools/corpus.js accept                # 差異都確認是預期的 → 收為新基準
+node tools/corpus.js capture --url <URL>   # 把一頁收進語料庫（修過的 bug 頁面都該收）
+node tools/corpus.js capture --url <URL> --translate   # 收翻譯後的快照（id 尾端 _translated）
+node tools/corpus.js list
+```
+
+**差異分四級**，報告依嚴重度排序：
+
+| 級別 | 意思 | 怎麼處理 |
+|---|---|---|
+| 壞掉 | 閱讀模式進不去，或重放出錯 | 一定要查 |
+| 內容變了 | 看得到的文字區塊或圖多了 / 少了、主文容器換了、作者日期列變了 | 逐頁看：是這次要修的頁面就是預期，其他頁是回歸 |
+| 只有版面變 | 同樣的內容，位置、尺寸、間距、翻頁頁數不同 | 改 styler 時預期會有；`shot` 看截圖確認沒變差 |
+| 新頁面 | 基準裡沒有 | 看過結果後 accept |
+
+**快照為什麼每次重放結果相同**：站方 script 全部停用（元素留在原位，JSON-LD 不動）；重放時不連網，主文件與 CSS 由快照供應，圖片依擷取時記下的原始尺寸回同尺寸佔位圖，其餘請求中止。走的是真的 extension 載入路徑（與 `debug-harness` 同款）。已實測：同版連跑兩次零差異、離線重放與連線真站的指紋一致。
+
+**偶發的處理**（工具內建，不用人工判斷）：量測前等畫面穩定（連兩次量到相同才算）；重放出錯或翻頁模式沒生效時換全新瀏覽器重試一次，結尾列出重試過的頁面；`check` 對有差異的頁面自動再跑一次確認輪，重跑後與基準相同的列為「偶發」、不計入差異。實測 432 份指紋的偶發率約 1 到 2 份。**同一頁每次都出現在重試或偶發清單＝那一頁有時序問題，要查**，不是可以忽略的雜訊。
+
+**檔案位置**：快照 `test/corpus/pages/<id>.json.gz`、基準 `test/corpus/baseline/<id>.<模式>.json`，都在私有的 test repo（含第三方站點 HTML，不公開）。站點清單來源與 page rounds 同一份（`docs/excluded/page-rounds-sites.md`），清單以外的頁面寫在 `test/corpus/urls.txt`。這次的結果在 `~/.jread-debug/corpus/current/`、報告在 `~/.jread-debug/corpus/report.txt`（刻意放在專案外：專案目錄在 iCloud Drive 內，整批重寫會冒出「檔名 2」的同步衝突副本）。
+
+**比對兩個版本**（重構等價比對、bisect）：
+
+```bash
+git archive v2.5.18 jread | tar -x -C /tmp/old
+node tools/corpus.js run --ext /tmp/old/jread --out /tmp/fp-old
+node tools/corpus.js run --out /tmp/fp-new
+node tools/corpus.js compare /tmp/fp-old /tmp/fp-new
+```
+
+**模式**：預設只跑捲動模式 1280×900。`--variants scroll,paged,narrow` 加跑翻頁模式與 430 寬；每種模式各有自己的基準。
+
+**這條驗什麼、不驗什麼**：
+
+- 驗：同一份凍結 DOM 上，偵測（選哪個主文容器）、清除（哪些文字與媒體還看得到）、排版（每個區塊的位置與尺寸）有沒有變
+- 不驗站方 script 的動態行為（lazy 載入、晚插入的 widget、SPA 導航、動態 observer 的時序）——這層仍歸 `debug-harness` 真站與 page rounds
+- 不驗快照之後站方改版——語料庫是當時的頁面
+- 不驗基準本身對不對——指紋只回答「變了沒」
+- 不驗 WebKit / Safari、iOS、字型實際字寬
+- 翻譯後的 DOM 只有用 `--translate` 擷取的頁面才驗得到
+
+forcing function：`test/regression/tools-corpus.spec.js`（比對邏輯的分級判定；每份快照都要有基準）。
+
 ## 工具卡住的防線（看門狗、每站逾時、心跳檔）
 
 2026-11-18 加入。背景：harness 只有個別步驟的 timeout，`page.evaluate` 沒有逾時、截圖卡死時行程永遠不結束，背景任務收不到完成通知、主線一直等（實際卡過一整天）。
