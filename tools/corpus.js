@@ -531,6 +531,8 @@ async function waitJreadSw(ctx) {
   let sw = ctx.serviceWorkers().find(isJreadSw);
   for (let i = 0; !sw && i < 60; i++) { await sleep(250); sw = ctx.serviceWorkers().find(isJreadSw); }
   if (!sw) throw new Error('JRead service worker 未啟動');
+  // 等安裝初始化寫完預設設定，否則接下來寫的 pagedMode 會被蓋掉（見 audit-lib 註解）
+  await require(path.join(__dirname, 'audit-lib.js')).waitSettingsInitialized(sw);
   return sw;
 }
 
@@ -782,7 +784,8 @@ async function cmdRun(args, outDir, shotRoot, onlyFiles) {
         if (i >= tasks.length) break;
         const { id, v } = tasks[i];
         let fp;
-        // 出錯、或該模式的前提沒成立（翻頁模式卻沒有頁數——實測 144 次裡偶發 1 次）時，
+        // 出錯、或該模式的前提沒成立（翻頁模式卻沒有頁數——根因是設定被安裝初始化蓋掉，
+        // 已由 waitSettingsInitialized 解決，這裡留作保險）時，
         // 換一個全新的瀏覽器重試一次。重試不靜默：次數記在指紋的 retried、結尾統一列出
         for (let attempt = 0; attempt < 2; attempt++) {
           try {

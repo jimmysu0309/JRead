@@ -226,6 +226,8 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
   // --paged：toggle 前寫入 pagedMode 設定（enter 路徑的 getSettings 會讀到）。
   // 非 --paged 也明確寫 false——profile 跨 run 重用，上一輪 --paged 殘留的
   // true 會讓後續普通驗收意外跑進翻頁模式。
+  // 先等安裝初始化寫完預設設定，否則這裡寫的值可能被蓋掉（見 audit-lib 註解）
+  await audits.waitSettingsInitialized(sw);
   await sw.evaluate((on) => chrome.storage.sync.set({ pagedMode: on }), PAGED);
   if (PAGED) console.log('paged: settings.pagedMode = true');
 

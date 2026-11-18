@@ -1907,6 +1907,22 @@ async function takePageFlipScreenshots(page, opts) {
 // poll reader card 的 computed background-color，變色才算 applied；逾時回報
 // applied:false 讓 caller 決定 fail——防「dark 截圖 silently 拍成亮色」的
 // 偽陰性（v0.8.39 harness review 抓到的盲點）。
+// 等 extension 的安裝初始化寫完預設設定（2026-11-18）。全新 profile 下 SW 的 onInstalled
+// 會「讀出現有設定 → 缺的 key 補預設值 → 一次寫回」；工具若在那一讀一寫之間寫入設定
+//（例如 pagedMode: true），會被補回來的預設值蓋掉。corpus.js 實測：多個瀏覽器同時啟動時
+// 約 12 次 1 次，症狀是「翻頁模式沒生效」而且只發生在每個瀏覽器的第一頁。
+// 判定：預設 key 已經存在＝那一次寫回已完成（補預設是單一 set）。舊 profile 本來就有
+// key，立刻返回。逾時不丟錯（回 false），由呼叫端決定要不要當成問題。
+async function waitSettingsInitialized(sw, timeoutMs = 5000) {
+  const t0 = Date.now();
+  for (;;) {
+    const ready = await sw.evaluate(async () => 'pagedMode' in (await chrome.storage.sync.get('pagedMode'))).catch(() => false);
+    if (ready) return true;
+    if (Date.now() - t0 > timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 async function setThemeAndVerify(page, theme, timeoutMs = 4000) {
   const readCardBg = () => page.evaluate(() => {
     const art = document.querySelector('[data-jread-active="1"]');
@@ -2167,5 +2183,6 @@ module.exports = {
   waitForReaderImagesLoaded,
   takePagedScreenshots,
   takePageFlipScreenshots,
+  waitSettingsInitialized,
   setThemeAndVerify
 };
