@@ -616,7 +616,7 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     printContrastAudit('delayed +scroll +15s', contrastDelayed);
 
     // ---- Shinkansen 翻譯後 audit（--shinkansen 啟用時） --------------------
-    // 觸發 Shinkansen 翻譯（Google MT，免 API key），等翻譯完成後再跑一次
+    // 觸發 Shinkansen 翻譯（預設 Gemini Flash Lite，見 audit-lib），等翻譯完成後再跑一次
     // residual audit，抓「翻譯 extension 在 body 層注入/重建元素導致站名殘留」
     // 類 bug。v0.7.199 修法後 body 在 ancestor 鏈內，body 的非 ancestor 直接
     // 子元素被 CSS 隱藏——Shinkansen 翻譯不應讓任何非主文內容重新浮現。

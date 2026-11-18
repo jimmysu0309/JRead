@@ -1987,24 +1987,62 @@ async function runLangDetect(page) {
   return { lang: info.lang, isChinese: pageLooksChinese(info) };
 }
 
-// 觸發 Shinkansen 翻譯（跨 extension custom event，Google MT 免 API key）並等穩定。
+// 把測試用 Gemini 金鑰寫進 Shinkansen 的 storage.local（每個 context 只做一次）。
+const _geminiSeeded = new WeakSet();
+async function seedShinkansenGeminiKey(ctx) {
+  if (_geminiSeeded.has(ctx)) return { ok: true };
+  let key = '';
+  try { key = require('fs').readFileSync(path.join(require('os').homedir(), '.shinkansen-test-key'), 'utf8').trim(); } catch (_) { key = ''; }
+  if (!key) return { ok: false, error: '讀不到 ~/.shinkansen-test-key' };
+  const findSw = async () => {
+    for (const w of ctx.serviceWorkers()) {
+      const name = await w.evaluate(() => chrome.runtime.getManifest().name).catch(() => '');
+      if (/shinkansen/i.test(name)) return w;
+    }
+    return null;
+  };
+  let sk = null;
+  for (let i = 0; !sk && i < 40; i++) { sk = await findSw(); if (!sk) await new Promise((r) => setTimeout(r, 250)); }
+  if (!sk) return { ok: false, error: '找不到 Shinkansen 的 Service Worker' };
+  await sk.evaluate((k) => chrome.storage.local.set({ apiKey: k }), key);
+  _geminiSeeded.add(ctx);
+  return { ok: true };
+}
+
+// 觸發 Shinkansen 翻譯（跨 extension custom event；預設 Gemini Flash Lite，見函式內說明）並等穩定。
 // 回傳翻譯元素數；0 = 沒翻到（呼叫端須當成訊號回報，不可靜默當成「翻過了」）。
 async function triggerShinkansenTranslate(page, opts = {}) {
   const log = opts.log || console.log;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // 翻譯引擎：預設 Shinkansen 的 Gemini（模型是 Shinkansen 的預設 Flash Lite——Jimmy
+  // 2026-11-18 裁定，驗收用的譯文要跟實際在用的一致）。Google MT 的譯文會有佔位符外漏、
+  // 簡體混入、整段沒翻（同日語料庫逐頁審查實證：四頁改 Gemini 後佔位符 54 → 0、
+  // 簡體字 545 → 1），那些假象會被當成 JRead 的問題。
+  // Gemini 要金鑰：從 ~/.shinkansen-test-key 讀進 Shinkansen 的 storage.local（與
+  // Shinkansen 自己的 probe 同一個來源；金鑰不印出、不進 repo）。會花 API 費用（單頁
+  // 遠低於 1 美分）。opts.engine 或環境變數 JREAD_TRANSLATE_ENGINE=google 改回 Google MT。
+  // 金鑰讀不到時退回 Google MT 並明講——呼叫端的回報要帶上這一行。
+  let engine = opts.engine || process.env.JREAD_TRANSLATE_ENGINE || 'gemini';
+  if (engine === 'gemini') {
+    const seeded = await seedShinkansenGeminiKey(page.context());
+    if (!seeded.ok) {
+      log('⚠️ Gemini 金鑰寫入失敗（' + seeded.error + '）→ 退回 Google MT；譯文會有佔位符外漏與簡體混入，不代表實際使用的樣子');
+      engine = 'google';
+    }
+  }
   await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(300);
-  const res = await page.evaluate(() => new Promise((resolve) => {
+  const res = await page.evaluate((engine) => new Promise((resolve) => {
     const to = setTimeout(() => resolve({ ok: false, error: 'timeout' }), 30000);
     window.addEventListener('shinkansen-debug-response', (e) => {
       clearTimeout(to);
       resolve({ ok: true, detail: e.detail });
     }, { once: true });
     window.dispatchEvent(new CustomEvent('__jread_debug', {
-      detail: { type: 'translate', engine: 'google' }
+      detail: { type: 'translate', engine }
     }));
-  }));
-  log('translate trigger: ' + JSON.stringify(res));
+  }), engine);
+  log('translate trigger (' + engine + '): ' + JSON.stringify(res));
   log('waiting for translation to settle...');
   // 2026-11-01（Jimmy 核可）：主訊號改為 Shinkansen debug bridge 的 GET_STATE.translating
   // ——舊邏輯「元素數連兩次（間隔 1.5s）不變、上限 20s」在長文會提早收手：翻譯分批送，
@@ -2030,7 +2068,7 @@ async function triggerShinkansenTranslate(page, opts = {}) {
     window.addEventListener('shinkansen-debug-response', onResp);
     window.dispatchEvent(new CustomEvent('shinkansen-debug-request', { detail: { action: 'GET_STATE' } }));
   })).catch(() => null);
-  const maxWait = opts.maxWaitMs || 120000;
+  const maxWait = opts.maxWaitMs || (engine === 'gemini' ? 300000 : 120000);
   const start = Date.now();
   let n = 0, prev = -1, stable = 0, bridgeOk = false, idleSeen = 0;
   while (Date.now() - start < maxWait) {
