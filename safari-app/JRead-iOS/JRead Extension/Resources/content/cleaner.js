@@ -4866,7 +4866,12 @@
     const h1 = articleEl.querySelector('h1');
     if (!h1 || !h1.parentElement) return;
     for (const p of h1.parentElement.children) {
-      if (p.tagName !== 'P' || p.querySelector('[data-jread-title-meta]')) continue;
+      // v2.5.22：載體補 <div>（quantamagazine：`<div class="post__title__author-date">By X
+      // <日期></div>` 在桌機寬度被站方 media query 藏掉、作者改住側欄，側欄連同訂閱
+      // 表單被清 → 卡片沒有作者，Jimmy 2026-11-18 語料庫審查）。div 比 p 寬鬆，另加
+      // 「裡面沒有標題 / 媒體」一道閘（文字形狀與權重上限照舊）。
+      if ((p.tagName !== 'P' && p.tagName !== 'DIV') || p.querySelector('[data-jread-title-meta]')) continue;
+      if (p.tagName === 'DIV' && p.querySelector('h1, h2, h3, h4, img, picture, video, iframe, figure')) continue;
       if (window.getComputedStyle(p).display !== 'none') continue;
       if (p.dataset && p.dataset.jreadHidden === '1') continue;
       const clone = p.cloneNode(true);
@@ -7001,6 +7006,26 @@
         'width': 'auto', 'max-width': '100%', 'grid-column': 'auto', 'float': 'none',
         'margin-left': '0', 'margin-right': '0'
       };
+      // v2.5.22：同一列的文字碎片一致處理。窄 cell 分級用 120px 一刀切，一列「短文字
+      // 碎片」裡字比較多的那幾個會落到一般 cell、被撐成整行（plos 作者清單：float 的
+      // li，名字 <= 120px 的橫排、「Rosemary R. Jeffery,」172px 的各佔一行）。過半數
+      // cell 是 inline 級時，其餘「與它們同高（單行）、寬不到容器一半、有文字」的 cell
+      // 是同一列的碎片，一起歸 inline 級。
+      const peerInline = new Set();
+      {
+        const narrow = visibleChildren.filter((c) => { const k = narrowCellClass(c); return k && k.kind === 'inline'; });
+        if (narrow.length >= 3 && narrow.length * 2 >= visibleChildren.length && narrow.length < visibleChildren.length) {
+          let lineH = 0;
+          for (const c of narrow) lineH = Math.max(lineH, c.getBoundingClientRect().height);
+          const cw = el.getBoundingClientRect().width;
+          for (const c of visibleChildren) {
+            if (narrow.includes(c) || COLLAPSE_REPLACED_TAG_RE.test(c.tagName)) continue;
+            const r = c.getBoundingClientRect();
+            if (r.width > 0 && r.width < cw / 2 && r.height > 0 && r.height <= lineH * 1.2 &&
+                norm(c.textContent).length > 0) peerInline.add(c);
+          }
+        }
+      }
       for (const c of visibleChildren) {
         if (!c.style) continue;
         // replaced element（img / svg / video…）跳過 child reset——這組 reset
@@ -7013,7 +7038,7 @@
         // 窄 cell（icon 釘寬 / byline 碎片 inline）：不套 CHILD_DECLS（v1.7.30
         // + v1.7.34，見 narrowCellClass 定義處註解；此處在 phase1、container
         // 尚未塌，量測值是原始 layout）
-        const cellClass = narrowCellClass(c);
+        const cellClass = peerInline.has(c) ? { kind: 'inline' } : narrowCellClass(c);
         if (cellClass) {
           if (cellClass.kind === 'icon') {
             collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, ICON_CELL_PIN_PROPS) });
@@ -8062,6 +8087,20 @@
     return false;
   }
 
+  // 清單成員判定（見 orphanLabelShellShouldHide 的 v2.5.22 註解）：el 是 <li>，且同一個
+  // 父層有 >= ORPHAN_LIST_MIN_ITEMS 個帶可見文字的 <li>
+  const ORPHAN_LIST_MIN_ITEMS = 3;
+  function orphanShellIsListMember(el) {
+    if (!el || el.tagName !== 'LI' || !el.parentElement) return false;
+    let n = 0;
+    for (const sib of el.parentElement.children) {
+      if (sib.tagName !== 'LI') continue;
+      if (hasVisibleRenderedText(sib)) n += 1;
+      if (n >= ORPHAN_LIST_MIN_ITEMS) return true;
+    }
+    return false;
+  }
+
   function orphanLabelShellShouldHide(el, articleEl) {
     {
       if (el === articleEl) return false;
@@ -8090,6 +8129,14 @@
       if (isAuthorProfileAnchor(el)) return false;
       // 同一個 chip 的外層（hover-card 被藏掉後也是「文字 + 空分支」）
       if (Array.from(el.querySelectorAll('[role="button"]')).some(isBylineNameChip)) return false;
+      // v2.5.22：清單項目不是孤兒標籤。孤兒標籤的前提是「一段 label 標注一塊被我們清掉
+      // 的內容」；同一個清單裡 >= 3 個各自帶文字的項目是一份清單，每項旁邊被清掉的是
+      // 它自己的附屬小工具（說明浮層、勾選框），項目文字仍是內容。
+      // plos 實證（Jimmy 2026-11-18 語料庫審查「作者不見」）：`<ul id="author-list">` 每個
+      // <li> 是「作者名 + 所屬機構浮層」，浮層被 absolute overlay 規則清掉後 12 位作者
+      // 逐一命中本規則、整份作者清單消失；thewoksoflife 食譜材料清單（每項一個被清掉的
+      // 勾選框）同形、材料整組不見（語料庫普查 168 頁只有這兩站命中）。
+      if (orphanShellIsListMember(el)) return false;
       const rect = el.getBoundingClientRect();
       if (rect.height <= 0 || rect.width <= 0) return false;
       const text = visibleRenderedText(el).trim().replace(/\s+/g, ' ');
@@ -10770,6 +10817,212 @@
     }
   }
 
+  // ---- 主文內：文末作者簡介框（v2.5.22）------------------------------------
+  // Jimmy 2026-11-18 長期規則：「文末的作者簡介框（作者介紹、頭像、聯絡方式、社群
+  // 帳號）一律清掉，任何網站都一樣。標題下的作者名與日期不在此列，要保留。」
+  //
+  // hideInsideArticleAuthorBioCards（上面那條）以「小頭像 + 作者頁連結」為入口、文字
+  // 上限 400，語料庫審查漏掉九站：沒有頭像的（foxnews / lawfare / newrepublic / npr
+  // 純文字簡介）、頭像大於 80px 的（arstechnica 96px）、簡介超過 400 字的（wikihow）、
+  // 有「About the author / Written by」標籤的（404media / github.blog）。
+  //
+  // 這條改用「位置 + 身分」兩件事同時成立：
+  //   位置＝文末：前面至少 BIO_TAIL_MIN_BEFORE 段主文、後面的主文段落不超過上限
+  //     （標題下的作者列前面沒有主文段落，結構上過不了這道閘——規則的另一半保證）
+  //   身分＝三種訊號擇一（皆在區塊開頭或區塊自身，內文段落不會被包進來）：
+  //     Q1 區塊文字以簡介標籤開頭（About the author / Written by / 關於作者…）
+  //     Q2 區塊自己的 class / id 帶作者語意 token，且區塊內有作者名或作者頁連結
+  //        （token 是 contributor 這種也用在文件章節的弱詞時，只認作者名、不認連結
+  //        ——requests 文件的「The Contributor Guide」章節有 contributor token 與
+  //        /authors/ 連結）
+  //     Q3 區塊文字以作者名開頭、後面不是冒號（「X is a senior fellow at…」第三人稱
+  //        簡介；「X：…」是訪談逐字稿的發言人標籤、不算）。這條訊號最弱，位置收到最緊
+  //        （後面最多 1 段主文）
+  //     Q4 區塊自己的 class / id 是「作者＋簡介」的複合 token（author-bio / author-info /
+  //        post-author / about-author…），不必再靠作者名（cn.nytimes 的作者名只是純文字、
+  //        沒有任何來源可比對）
+  //   命中後往上收一層「標籤＋簡介」外殼：父層除了這塊之外只剩一行短標籤（github.blog
+  //   的「Written by」，譯後「作者：」）就整個父層一起清
+  //   作者名來源：JSON-LD author.name、meta[name=author]、第一段主文之前的作者頁連結
+  //
+  // 不清的（guard）：含 <time> 或日期 / 閱讀時間文字（＝文章 meta 列，或帶日期的文章
+  // 卡片）、含 h1、含內容大圖、在清單 / 表格 / 引言 / 圖說內（維基參考文獻的
+  // cite_note-Bio）、文字太短（只有名字沒有介紹的不算簡介框）。
+  // 這條驗 X、不驗 Y：只驗「看得出身分的文末區塊」；class 全是 hash、又沒有標籤、
+  // 也不以作者名開頭的簡介（propublica 第一人稱「I am a…」）驗不到。
+  const BIO_HEAD_RE = /^(?:about\s+the\s+(?:authors?|writers?)|written\s+by|co-?authored\s+by|author\s+bio|關於(?:本文)?作者|作者簡介|作者介紹|共同(?:作者|撰寫)|本文作者)\s*[:：]?/i;
+  const BIO_TOKEN_RE = /(^|[\s_-])(?:authors?|bio|byline)(?=[\s_-]|$)/i;
+  const BIO_WEAK_TOKEN_RE = /(^|[\s_-])contributors?(?=[\s_-]|$)/i;
+  const BIO_COMPOUND_TOKEN_RE = /(^|[\s_-])(?:authors?[\s_-]+(?:[a-z]+[\s_-]+)?(?:bio|info|box|card|about|profile|desc(?:ription)?)|(?:post|article|about|about[\s_-]+the)[\s_-]+authors?|bio[\s_-]+(?:box|card|wrapper))(?=[\s_-]|$)/i;
+  const BIO_BLOCK_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'FOOTER', 'ADDRESS', 'ARTICLE', 'P']);
+  const BIO_LABEL_SHELL_MAX_WEIGHT = 24;
+  const BIO_MAX_AVATARS = 3;
+  const BIO_SHELL_MAX_CLIMB = 4;
+  const BIO_SHELL_AVATAR_MAX = 160;
+  const BIO_SHELL_MAX_AVATARS = 2;
+  const BIO_TAIL_MIN_TOP_RATIO = 0.6;
+  const BIO_TAIL_MIN_WEIGHT = 30;
+  const BIO_TAIL_MAX_WEIGHT = 1600;
+  const BIO_TAIL_MIN_BEFORE = 3;
+  const BIO_TAIL_MAX_AFTER = 3;
+  const BIO_TAIL_MAX_AFTER_NAME_ONLY = 1;
+  const BIO_TAIL_BODY_P_WEIGHT = 100;
+  const BIO_AVATAR_MAX = 320;
+
+  // 作者名清單（小寫）。站名、網址、單一個拉丁單字不收——拿來當「區塊以它開頭」的比對
+  // 鍵，太短或太泛會誤中內文
+  function collectAuthorNames(articleEl, firstBodyP) {
+    const names = new Set();
+    const add = (raw) => {
+      const n = norm(String(raw || '')).toLowerCase();
+      if (!n || n.length > 40 || /^https?:|[@/]/.test(n)) return;
+      const w = NS.cjkWeightedLen(n);
+      if (w < 6) return;
+      if (!/[^\x00-\x7f]/.test(n) && !/\s/.test(n)) return; // 單一拉丁單字
+      names.add(n);
+    };
+    const dig = (o, depth) => {
+      if (!o || typeof o !== 'object' || depth > 6) return;
+      if (Array.isArray(o)) { for (const x of o) dig(x, depth + 1); return; }
+      if (o.author) {
+        for (const a of (Array.isArray(o.author) ? o.author : [o.author])) {
+          add(typeof a === 'string' ? a : (a && a.name));
+        }
+      }
+      if (o['@graph']) dig(o['@graph'], depth + 1);
+    };
+    const doc = articleEl.ownerDocument;
+    for (const sc of doc.querySelectorAll('script[type="application/ld+json"]')) {
+      const t = sc.textContent || '';
+      if (!t || t.length > 200000) continue;
+      try { dig(JSON.parse(t), 0); } catch (_) { /* 壞掉的 JSON-LD 不理 */ }
+    }
+    for (const m of doc.querySelectorAll('meta[name="author"]')) add(m.getAttribute('content'));
+    for (const a of articleEl.querySelectorAll('a[href]')) {
+      if (firstBodyP && !(a.compareDocumentPosition(firstBodyP) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+      if (isAuthorProfileAnchor(a)) add(a.textContent);
+    }
+    const site = doc.querySelector('meta[property="og:site_name"]');
+    if (site) names.delete(norm(site.getAttribute('content') || '').toLowerCase());
+    return names;
+  }
+
+  function hideTailAuthorBioBlocks(articleEl, hidden) {
+    // 主文段落（仍看得到的）——位置判定的尺
+    const bodyPs = [];
+    // <p> 之外也認「div 當段落」（cn.nytimes 的主文是 div.article-paragraph，沒有 <p>）
+    for (const p of articleEl.querySelectorAll('p, div')) {
+      if (p.tagName === 'DIV') {
+        if (!isProseParagraphDiv(p, BIO_TAIL_BODY_P_WEIGHT)) continue;
+      } else if (mainTextLen(norm(p.textContent)) < BIO_TAIL_BODY_P_WEIGHT) continue;
+      if (p.closest('li, figure, blockquote, table')) continue;
+      if (p.closest('[data-jread-hidden="1"]') || isSiteHiddenWithin(p, articleEl)) continue;
+      bodyPs.push(p);
+    }
+    if (bodyPs.length < BIO_TAIL_MIN_BEFORE) return;
+    const names = collectAuthorNames(articleEl, bodyPs[0]);
+    const startsWithName = (lower) => {
+      for (const n of names) {
+        if (!lower.startsWith(n)) continue;
+        const rest = lower.slice(n.length).replace(/^\s+/, '');
+        if (rest && !/^[:：]/.test(rest)) return true;
+      }
+      return false;
+    };
+    const includesName = (lower) => { for (const n of names) if (lower.includes(n)) return true; return false; };
+    const picked = [];
+    for (const el of _getArticleAllElements(articleEl)) {
+      if (!BIO_BLOCK_TAGS.has(el.tagName)) continue;
+      if (el === articleEl || (el.contains && el.contains(articleEl))) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (picked.some((p) => p.contains(el))) continue;
+      const marker = ((typeof el.className === 'string' ? el.className : '') + ' ' + (el.id || ''));
+      const tok = BIO_TOKEN_RE.test(marker);
+      const weakTok = BIO_WEAK_TOKEN_RE.test(marker);
+      const compoundTok = BIO_COMPOUND_TOKEN_RE.test(marker);
+      // 便宜的先篩：沒有 token 的區塊要靠文字開頭，先看 textContent 長度再量可見文字
+      const rawLen = (el.textContent || '').length;
+      if (rawLen < 20 || rawLen > 6000) continue;
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      if (el.closest('table, figure, blockquote, pre, h1, h2, h3, h4, h5, h6')) continue;
+      // 清單項目內的不收（參考文獻、相關文章清單）；只有一項的清單是版型外殼、不算
+      // （propublica 的簡介住在 `ul > li` 單項清單裡）
+      const li = el.closest('li');
+      if (li && li.parentElement && Array.from(li.parentElement.children).filter((c) => c.tagName === 'LI').length > 1) continue;
+      if (isInPreserved(el)) continue;
+      const text = norm(visibleRenderedText(el));
+      const weight = NS.cjkWeightedLen(text);
+      if (weight < BIO_TAIL_MIN_WEIGHT || weight > BIO_TAIL_MAX_WEIGHT) continue;
+      const lower = foldZhVariants(text).toLowerCase();
+      const q1 = BIO_HEAD_RE.test(lower);
+      // 作者名用 raw textContent 比對、作者頁連結不論是否已被藏：區塊裡的名字標題 /
+      // 頭像連結常已被別條規則先清掉（propublica 的 h3 名字、頭像），它們仍是身分證據
+      const hasName = (tok || weakTok) && includesName(norm(el.textContent).toLowerCase());
+      const q2 = hasName || (tok && clusterContainsAuthorProfileLink(el, false));
+      const q4 = compoundTok;
+      const q3 = !q1 && !q2 && !q4 && startsWithName(lower);
+      if (!q1 && !q2 && !q3 && !q4) continue;
+      // 位置：文末
+      let before = 0, after = 0;
+      for (const p of bodyPs) {
+        if (el.contains(p)) continue;
+        if (el.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING) after += 1;
+        else before += 1;
+      }
+      if (after > (q3 ? BIO_TAIL_MAX_AFTER_NAME_ONLY : BIO_TAIL_MAX_AFTER)) continue;
+      if (before < BIO_TAIL_MIN_BEFORE) {
+        // 主文不是 <p> 段落的頁面（wikiHow 的步驟是 li / div）段落數不足，改看版面位置：
+        // 至少一段主文在前、且區塊頂端落在主文容器高度的後 40%
+        if (before < 1) continue;
+        const ar = articleEl.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        if (!(ar.height > 0) || (er.top - ar.top) / ar.height < BIO_TAIL_MIN_TOP_RATIO) continue;
+      }
+      // meta 列 / 帶日期的文章卡片不是簡介框
+      if (el.querySelector('h1')) continue;
+      let hasTime = false;
+      for (const t of el.querySelectorAll('time')) {
+        if (!t.closest('[data-jread-hidden="1"]') && hasVisibleRenderedText(t)) { hasTime = true; break; }
+      }
+      if (hasTime || ARTICLE_META_RE.test(text)) continue;
+      // 內容大圖（頭像以外）
+      // 張數也設上限：簡介框裡的圖是頭像（多位作者各一張），一排縮圖是圖組
+      let bigMedia = false, mediaCount = 0;
+      for (const m of el.querySelectorAll('img, video, iframe')) {
+        if (m.closest('[data-jread-hidden="1"]')) continue;
+        mediaCount += 1;
+        let r; try { r = m.getBoundingClientRect(); } catch (_) { continue; }
+        if (r && (r.width > BIO_AVATAR_MAX || r.height > BIO_AVATAR_MAX)) { bigMedia = true; break; }
+      }
+      if (bigMedia || mediaCount > BIO_MAX_AVATARS) continue;
+      // 外殼：父層扣掉這塊只剩一行短標籤（「Written by」）或只剩頭像（thewoksoflife：
+      // 簡介文字與頭像分住兩欄，只清文字欄會留一顆孤零零的頭像）→ 連父層一起，逐層
+      // 往上最多 BIO_SHELL_MAX_CLIMB 層。父層不可含主文段落、h1、大於頭像尺寸的媒體
+      let target = el;
+      for (let hop = 0; hop < BIO_SHELL_MAX_CLIMB; hop++) {
+        const par = target.parentElement;
+        if (!par || par === articleEl || par.contains(articleEl) || isInPreserved(par)) break;
+        if (bodyPs.some((p) => par.contains(p) && !target.contains(p))) break;
+        if (par.querySelector('h1')) break;
+        const extra = NS.cjkWeightedLen(norm(visibleRenderedText(par))) - weight;
+        if (extra > BIO_LABEL_SHELL_MAX_WEIGHT) break;
+        // 外殼裡多出來的媒體只能是頭像：最多 BIO_SHELL_MAX_AVATARS 張、每張不大於
+        // BIO_SHELL_AVATAR_MAX（一排小縮圖是圖組，不是頭像）
+        let parBig = false, extraMedia = 0;
+        for (const m of par.querySelectorAll('img, video, iframe')) {
+          if (target.contains(m) || m.closest('[data-jread-hidden="1"]')) continue;
+          extraMedia += 1;
+          let r; try { r = m.getBoundingClientRect(); } catch (_) { continue; }
+          if (r && (r.width > BIO_SHELL_AVATAR_MAX || r.height > BIO_SHELL_AVATAR_MAX)) { parBig = true; break; }
+        }
+        if (parBig || extraMedia > BIO_SHELL_MAX_AVATARS) break;
+        target = par;
+      }
+      picked.push(target);
+    }
+    for (const el of picked) hide(el, hidden);
+  }
+
   // ---- 主文內：figure 包未知 widget iframe（v0.8.48 propublica 實測）------
   // PRESERVE_SEL 對 figure 的保護讓 hideInsideArticleThirdPartyIframes 掃不進
   // figure 內部——站方把「Listen to this article」音訊播放器 iframe 包在
@@ -10853,19 +11106,55 @@
   // sign up 且**是段落最後一句**（$ 錨定：正文「…newsletter. Sign up rates
   // soared…」不中）。翻譯後版本「…時事通訊。在這裡註冊。」同構一併收
   //（translate-first 時 cleaner 跑在譯文上，英文句型會失效）。
-  const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b|\bnewsletters?\b[^.!?]{0,4}[.!]\s*sign\s+up(\s+(here|now|today|below|for\s+free))?\s*[.!]?$|(電子報|時事通訊)[^。！]{0,4}[。！.]\s*\S{0,6}?(註冊|訂閱|登記)\s*[。！.!]?$)/i;
+  const NOISE_CTA_PARA_RE = /(sign\s+up\s+for\b.{0,60}\bnewsletter\b|follow\s+us\s+on\s+(facebook|twitter|x\.com|x\b|instagram|tiktok|youtube|linkedin|threads)|subscribe\s+to\b.{0,40}\b(newsletter|channel|podcast|feed|on\s+youtube)|like\s+this\s+story\b.{0,30}\bsubscribe\b|\bnewsletters?\b[^.!?]{0,4}[.!]\s*sign\s+up(\s+(here|now|today|below|for\s+free))?\s*[.!]?$|(電子報|時事通訊)[^。！]{0,4}[。！.]\s*\S{0,6}?(註冊|訂閱|登記)\s*[。！.!]?$|sign\s+up\s+to\s+(receive|get)\b|follow\s+us\s+on\s+(pinterest|bluesky|mastodon|telegram|whatsapp)|subscribe\s+to\b.{0,40}\b(email\s+list|mailing\s+list|patreon)|subscribe\s+now\s+to\s+support\b|^want\s+more\s+stories\s+like\s+this(\s+one)?\?|^listen\s+now\s+on\b|\byour\s+donation\b|\bwill\s+you\s+support\s+us\b|^(?:歡迎|立即|請)?訂閱(?!制|戶|者|數|費|量|率|用戶|服務|方案|模式|經濟).{0,120}(電子報|時事通訊)|訂閱(?:我們的)?電子報[，,].{0,40}(收到|獲取|接收|掌握)|歡迎訂閱.{0,40}(電子報|時事通訊|頻道)|訂閱我們的.{0,20}(頻道|電子報|時事通訊)|喜歡這[篇則](?:報導|文章|故事).{0,12}訂閱|追蹤我們的\s*(facebook|instagram|x\b|twitter|youtube|threads|bluesky|pinterest|tiktok|linkedin)|^想(?:看|閱讀)更多這類(?:報導|文章|故事)|^立即在.{0,30}收聽\s*[。.]?$|[您你]的捐款|願意支持我們嗎)/i;
   const NOISE_CTA_PARA_MAX_LEN = 200;
+  // v2.5.22（Jimmy 2026-11-18 語料庫審查「訂閱／捐款 CTA」）：
+  //   - 句型補齊（NOISE_CTA_PARA_RE 後段）：sign up to receive（propublica）、subscribe
+  //     to our email list / Patreon、subscribe now to support（grubstreet）、listen now
+  //     on（chinatalk）、your donation / will you support us（aeon）；譯文句型「訂閱…
+  //     電子報」「喜歡這篇報導嗎？訂閱…」「追蹤我們的 Facebook」「立即在…收聽」
+  //     ——bbc / cnbc 原文早就會清、翻譯後整段留著（語料庫翻譯後快照實證）
+  //   - 長度：200 字以內照舊；200 < 字數 <= NOISE_CTA_PARA_LONG_MAX 的長 CTA（slate
+  //     242、bellingcat 335）要多一道「段落內有連結」才清——CTA 一定帶著它要你去的
+  //     連結，內文提到訂閱的長段落多半沒有
+  //   - CTA 群組：同一個父層 >= 2 段命中、且父層只有少量短文字 → 整個父層是 CTA 卡
+  //     （aeon 捐款卡三段，第一段是機構自介、不帶招攬語，單清兩段會留它孤零零一行）
+  const NOISE_CTA_PARA_LONG_MAX = 400;
+  const NOISE_CTA_GROUP_MAX_WEIGHT = 700;
 
   function hideInsideArticleCTAParagraphs(articleEl, hidden, scope) {
+    const hitParents = new Map();
     for (const p of scopedQueryAll(scope, articleEl, 'p')) {
       if (p === articleEl) continue;
       if (p.contains && p.contains(articleEl)) continue;
       if (isInPreserved(p)) continue;
       if (p.dataset && p.dataset.jreadHidden === '1') continue;
       const text = norm(p.textContent);
-      if (!text || text.length > NOISE_CTA_PARA_MAX_LEN) continue;
+      if (!text || text.length > NOISE_CTA_PARA_LONG_MAX) continue;
+      if (text.length > NOISE_CTA_PARA_MAX_LEN && !p.querySelector('a[href]')) continue;
       if (!NOISE_CTA_PARA_RE.test(foldZhVariants(text))) continue;
       hide(p, hidden);
+      // 父層與祖父層都記：aeon 的捐款卡把桌機 / 手機兩份文案各包一層 div，命中的兩段
+      // 與那段機構自介分屬不同的父層、同一個祖父層
+      for (let up = p.parentElement, i = 0; up && i < 2; up = up.parentElement, i++) {
+        hitParents.set(up, (hitParents.get(up) || 0) + 1);
+      }
+    }
+    for (const [parent, n] of hitParents) {
+      if (n < 2 || parent === articleEl) continue;
+      if (parent.contains && parent.contains(articleEl)) continue;
+      if (isInPreserved(parent)) continue;
+      if (parent.dataset && parent.dataset.jreadHidden === '1') continue;
+      if (parent.querySelector('h1, figure, picture, video, iframe, table, pre')) continue;
+      if (NS.cjkWeightedLen(norm(parent.textContent)) > NOISE_CTA_GROUP_MAX_WEIGHT) continue;
+      // 剩下還看得到的段落最多一段（機構自介那種），再多就是內文容器
+      let rest = 0;
+      for (const kid of parent.querySelectorAll('p')) {
+        if (kid.closest('[data-jread-hidden="1"]') || isSiteHiddenWithin(kid, parent)) continue;
+        if (norm(kid.textContent)) rest += 1;
+      }
+      if (rest > 1) continue;
+      hide(parent, hidden);
     }
   }
 
@@ -12340,6 +12629,7 @@
       safeRun(hideInsideArticleHashtagClusters, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
+      safeRun(hideTailAuthorBioBlocks, articleEl, hidden);
       // v1.7.25：byline 頭像規則排在 author-bio 卡之後——bio 卡判準含頭像訊號，
       // 頭像先被本規則藏走會讓 bio 卡整卡失去命中（medium-byline-header spec
       // 負控制實證）；順序反過來則 bio 卡先整卡砍、本規則對已 hidden 者 skip

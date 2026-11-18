@@ -2513,6 +2513,15 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   margin-left: auto !important;
   margin-right: auto !important;
 }
+/* v2.5.22：「標籤＋值」兩格列的標籤格不逐字斷行。表格自動排版把欄寬壓到各格的最小
+   內容寬，中日韓文字每個字之間都能斷 → 標籤欄被值欄擠成一個字寬、「母語姓名」直排
+   成四行（el / he 維基資訊框譯成中文後；語料庫比對發現）。keep-all 讓中日韓文字只在
+   空白與標點處換行，標籤維持一行；拉丁文字本來就不會從單字中間斷，不受影響。只收
+   兩格列的第一格是 <th> 的形狀（資訊框、規格表）——多欄表的表頭不在此列，免得把
+   寬表撐得更寬。 */
+[${ARTICLE_ATTR}="1"] tr > th:first-child:nth-last-child(2) {
+  word-break: keep-all !important;
+}
 /* v2.5.14：直向 flex 容器的直接子 <pre> 不置中（標記見 markFlexColumnPres）。block
    版面裡寬度 auto 的 <pre>，左右 auto margin 解成 0、照樣撐滿；但 flex item 的 auto
    margin 會吃掉全部剩餘空間並關掉 stretch → 整個程式碼框縮成內容寬、置中成一顆窄
@@ -6382,14 +6391,25 @@ html.${HTML_CLASS}.jread-orion body {
             }
             const beforeBody = (el) => !firstBodyP ||
               !!(el.compareDocumentPosition(firstBodyP) & Node.DOCUMENT_POSITION_FOLLOWING);
+            // v2.5.22：資料表格裡的日期不是發稿日期。維基資訊框的「出生 1879 年 3 月 14 日」
+            // 列、頁首維護告示的「(2023 年 3 月 18 日)」都在第一段主文之前、文字又短，會被
+            // 當成日期錨，整列（或整張告示表）變成作者列：格子被打平成一行、非日期的字被
+            // 當時刻藏掉（語料庫普查 168 頁，作者列落在表格內的 7 頁全是這類誤判）。
+            // 結構訊號：日期在 <table> 裡、而那張表不含第一段主文（＝不是包住整篇文章的
+            // 版面表格，老式表格排版的站不受影響）→ 跳過、往後找下一個
+            const inDataTable = (el) => {
+              const t = el.closest('table');
+              return !!t && articleEl.contains(t) && !!firstBodyP && !t.contains(firstBodyP);
+            };
             // date 訊號：<time> 優先、否則 date-regex 短文
             let dateEl = null;
             for (const t of articleEl.querySelectorAll('time')) {
-              if (bvisible(t) && beforeBody(t) && bnorm(t.textContent)) { dateEl = t; break; }
+              if (bvisible(t) && beforeBody(t) && bnorm(t.textContent) && !inDataTable(t)) { dateEl = t; break; }
             }
             if (!dateEl) {
               for (const el of articleEl.querySelectorAll('span, div, p, li, a')) {
                 if (!beforeBody(el) || !bvisible(el)) continue;
+                if (inDataTable(el)) continue;
                 const dt = bdirect(el);
                 // v1.7.4：絕對日期（子字串比對）或相對日期（切段全字串比對，見
                 // BYLINE_REL_DATE_RE / BYLINE_SEG_SPLIT_RE 常數註解）皆可當日期錨。
@@ -6608,13 +6628,26 @@ html.${HTML_CLASS}.jread-orion body {
               //（此 regex 含中文「2026 年 6 月 1 日」），把**不符日期**的兄弟子元素
               //（時刻/時區）隱藏。BYLINE_DATE_RE 判別日期 vs 時刻、不靠英文時刻字面，
               // 故 Shinkansen 就地譯文（結構不變、僅換文字）照樣命中。
+              //
+              // v2.5.22：連結不是時刻。日期 item 有時是「作者連結 + 分隔符 + <time>」同一個
+              // 容器（arstechnica：`<div><a href="/author/…">名字</a> – <span><time>…</time>
+              // …</span></div>`，Jimmy 2026-11-18 語料庫審查「只剩破折號＋日期」），作者連結
+              // 的直接文字不是日期 → 被當時刻藏掉。維基資訊框的出生地連結同理（th / hi / he
+              // 語料庫實證）。時刻與時區是純文字、不會是連結——元素自己是連結、在日期 item
+              // 內的連結裡、或自己包著連結，一律不藏（結構訊號，譯文不影響）。
+              const isLinkish = (c) => {
+                if (c.tagName === 'A' && c.hasAttribute('href')) return true;
+                const up = c.closest && c.closest('a[href]');
+                if (up && dateItem.contains(up)) return true;
+                return !!(c.querySelector && c.querySelector('a[href]'));
+              };
               if (dateItemValid) {
                 const kids = Array.from(dateItem.querySelectorAll('*')).filter(bvisible);
                 const hasDateKid = kids.some((c) => BYLINE_DATE_RE.test(bnorm(bdirect(c))));
                 if (hasDateKid) {
                   for (const c of kids) {
                     const dt = bnorm(bdirect(c));
-                    if (dt && !BYLINE_DATE_RE.test(dt)) setMark(c, BYLINE_TIME_ATTR);
+                    if (dt && !BYLINE_DATE_RE.test(dt) && !isLinkish(c)) setMark(c, BYLINE_TIME_ATTR);
                   }
                 }
               }
