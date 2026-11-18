@@ -32,6 +32,9 @@ IMG_URLS.forEach((u, i) => {
 });
 const DOC = { id: 'test', title: '翻頁圖片載入 probe', author: 'probe', site_name: 'probe', html_content: body };
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+require(path.join(__dirname, 'watchdog.js')).install({ name: 'paged-img-probe', limitSec: 300 });
+
 (async () => {
   try { fs.rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch (_) {}
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {

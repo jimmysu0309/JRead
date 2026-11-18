@@ -32,6 +32,9 @@ const ICONS = [
   { src: 'app-icon-white.svg', set: 'AppIcon-White.appiconset' }
 ];
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+require(path.join(__dirname, 'watchdog.js')).install({ name: 'generate-ios-appicon', limitSec: 180 });
+
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: N, height: N }, deviceScaleFactor: 1 });

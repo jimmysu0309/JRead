@@ -54,6 +54,9 @@ function iconHtml(N) {
   </body></html>`;
 }
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+require(path.join(__dirname, 'watchdog.js')).install({ name: 'generate-icons', limitSec: 180 });
+
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();

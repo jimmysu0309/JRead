@@ -133,6 +133,20 @@ cua 是 pre-release、API 變動快（README 自承 expect rough edges）；且�
 
 ---
 
+## 工具卡住的防線（看門狗、每站逾時、心跳檔）
+
+2026-11-18 加入。背景：harness 只有個別步驟的 timeout，`page.evaluate` 沒有逾時、截圖卡死時行程永遠不結束，背景任務收不到完成通知、主線一直等（實際卡過一整天）。
+
+三道防線，單一資料源在 `tools/watchdog.js`：
+
+- **整體期限**：`tools/` 下每支會開瀏覽器的腳本開頭都 `require('./watchdog.js').install({ name, limitSec })`。超過期限印 `WATCHDOG: <名稱> 超過 N 秒未結束` 加最後一行輸出（＝卡在哪一步之後），以 **exit 124** 結束，瀏覽器一併關掉。預設值：`debug-harness` 300 秒（正常約 35 秒）、`page-rounds-harness` 單輪 600 秒（正常雙輪合計約 2 分鐘）。`--keep` / `--login` 互動模式不設期限。`JREAD_WATCHDOG_SEC=<秒>` 可覆寫，`0` 關閉
+- **批次每站逾時**：`batch-page-rounds.sh` 每站用 `timeout -k 15 $SITE_TIMEOUT_SEC` 包一層（預設 1350 秒＝兩輪上限加餘裕），逾時記為 `TIMEOUT` 繼續下一站，收尾統計獨立一欄。**TIMEOUT＝沒驗到**，回報時要說出來。進度寫在 `docs/excluded/page-rounds/_batch-progress.log`（每站開跑與結束各一行）
+- **心跳檔**：執行中的工具每 5 秒（有新輸出時即時）把進度寫到 `~/.jread-debug/heartbeat/<pid>.json`，結束時移除。巡查用 `node tools/watchdog.js`：列出所有執行中的工具，`STALE`＝超過 120 秒沒輸出、`DEAD`＝行程已不在；有異常時 exit 1
+
+**自寫 probe 一律比照**：開頭加一行 `install`，長時間的 shell 命令用 `timeout` 包起來。forcing function：`test/regression/tools-watchdog.spec.js`（`tools/` 下新增會開瀏覽器的腳本沒裝看門狗就 fail）。
+
+不涵蓋的層次：同步阻塞中的行程（`spawnSync` 進行時 timer 不跑，呼叫端要自己給 `timeout` 選項並先 `stop()`）、agent 本身繞圈（行程沒卡但沒進展，要靠主線巡查心跳檔的最後輸出時間）。
+
 ## 必要條件
 
 1. **Node.js** ≥ 18（Playwright 需要）

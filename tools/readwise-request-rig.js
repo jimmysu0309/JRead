@@ -84,6 +84,9 @@ function startServer() {
   return new Promise((r) => srv.listen(PORT, '127.0.0.1', () => r(srv)));
 }
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+require(path.join(__dirname, 'watchdog.js')).install({ name: 'readwise-request-rig', limitSec: 600 });
+
 (async () => {
   const srv = await startServer();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), `jread-rig-${LABEL}-`));

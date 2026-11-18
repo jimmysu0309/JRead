@@ -107,6 +107,11 @@ const SHINKANSEN_EXT = path.resolve(PROJECT_ROOT, '..', 'Shinkansen', 'shinkanse
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+// 互動模式（--keep / --login）要等人操作，不設期限。
+const watchdog = require(path.join(__dirname, 'watchdog.js')).install({ name: 'debug-harness', target: URL, limitSec: 300 });
+if (KEEP || LOGIN) watchdog.stop();
+
 // Shinkansen 翻譯觸發：實作住 audit-lib.js（與 page-rounds-harness 共用單一
 // 資料源，2026-08-07 抽出——原本兩支各一份必然 drift）。
 const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(page);

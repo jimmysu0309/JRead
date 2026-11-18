@@ -93,6 +93,14 @@ const SHINKANSEN_AVAILABLE = fs.existsSync(path.join(SHINKANSEN_EXT, 'manifest.j
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+// 期限是「單輪」：翻譯輪是另一個行程、有自己的期限。互動模式（--keep / --login）不設期限。
+const ROUND_LIMIT_SEC = 600;
+const watchdog = require(path.join(__dirname, 'watchdog.js')).install({
+  name: TRANSLATE_FIRST ? 'page-rounds（翻譯輪）' : 'page-rounds', target: TARGET_URL, limitSec: ROUND_LIMIT_SEC
+});
+if (KEEP || LOGIN) watchdog.stop();
+
 // bot challenge / 封鎖頁標記（lowercase 比對 title + innerText 前 3000 chars）。
 // 用高特異性片語——bare 'cloudflare' 不行，談 Cloudflare 的文章會誤中。
 const BLOCK_PAGE_MARKERS = [
@@ -780,7 +788,15 @@ async function setZoom(page, z) {
       if (HTML_SNAPSHOT) args.push('--html', HTML_SNAPSHOT);
       if (PROFILE_NAME) args.push('--profile', PROFILE_NAME);
       if (KEEP) args.push('--keep');
-      const r = require('child_process').spawnSync(process.execPath, args, { stdio: 'inherit' });
+      // spawnSync 進行中本行程的 timer 不會跑：原文輪已結束，先停掉自己的期限
+      //（否則子行程一回來就被過期的 timer 中止、印不出合併 verdict），改用
+      // spawnSync 自己的 timeout 當子行程的第二道保險（子行程另有自己的看門狗）
+      watchdog.stop();
+      const r = require('child_process').spawnSync(process.execPath, args, {
+        stdio: 'inherit',
+        timeout: (!KEEP && watchdog.limitSec > 0) ? (watchdog.limitSec + 60) * 1000 : undefined,
+        killSignal: 'SIGKILL'
+      });
       const childDir = `${dirName}_translated`;
       let childVerdict = 'error';
       for (const sub of ['failed', 'review', 'pass', 'blocked']) {

@@ -360,6 +360,9 @@ async function runViewport(browser, vp) {
   return fp;
 }
 
+// 整體期限 + 心跳檔（tools/watchdog.js）：卡住時自動中止（exit 124），不再無限等待。
+require(path.join(__dirname, 'watchdog.js')).install({ name: 'webkit-paged-probe', limitSec: 600 });
+
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const browser = await pw[ENGINE].launch({ headless: true });
