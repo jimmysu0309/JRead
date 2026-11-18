@@ -173,6 +173,14 @@ node tools/corpus.js run --out /tmp/fp-new
 node tools/corpus.js compare /tmp/fp-old /tmp/fp-new
 ```
 
+**新規則動 code 之前先普查**（`--after`）：想加一條 cleaner 規則時，先把判準寫成頁內量測、在整個語料庫跑一遍，看它會命中哪些頁面的什麼元素，再決定門檻。模組格式是 `module.exports = async (page) => 可序列化的結果`，結果記在每份指紋的 `after` 欄位：
+
+```bash
+node tools/corpus.js run --out /tmp/census --after ./my-census.js
+```
+
+實例：v2.5.20 的「重複圖片索引區塊」規則，普查 144 頁只有 plos 的縮圖輪播全數命中，希伯來文維基的國旗列是部分重複、不命中。
+
 **模式**：預設只跑捲動模式 1280×900。`--variants scroll,paged,narrow` 加跑翻頁模式與 430 寬；每種模式各有自己的基準。
 
 **這條驗什麼、不驗什麼**：

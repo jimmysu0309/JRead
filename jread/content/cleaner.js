@@ -10468,6 +10468,77 @@
     }
   }
 
+  // v2.5.20：重複圖片索引區塊（縮圖輪播 / 圖表總覽列）。Trigger：plos 論文頁摘要下方的
+  // 「Figures」輪播（Jimmy 2026-11-18）——原站是一條橫向滑動的縮圖列，進閱讀模式後
+  // 輪播版面失效，十幾張縮圖一張張直排、佔 2K 高，而每一張在內文都另有本尊。
+  //
+  // 結構判準（與站點、class 無關）：
+  //   1. 「只有圖片」的區塊：畫面上看得到的文字 <= DUP_IMG_INDEX_MAX_TEXT（容許一個
+  //      「Figures」這類短標題）——取圖片往上最外層仍滿足的祖先
+  //   2. 區塊內「內容級」圖片（寬 >= DUP_IMG_INDEX_MIN_W；小圖示不算）至少 3 個不同網址
+  //   3. 區塊內每一張內容級圖片，在主文內、且不在任何這類區塊裡，都有同網址的圖
+  // 三條全過＝純粹的重複索引，藏掉不損失任何內容。
+  // 不命中的對照：圖輯（圖不重複）、國旗 / 評分星星列（小圖示，或不同網址不到 3 個）、
+  // 兩條互為重複的縮圖列（本尊不可在另一條縮圖列裡——否則兩條都藏、圖就全沒了）、
+  // 帶圖說的圖組（文字超過門檻就不是「只有圖片」）。
+  const DUP_IMG_INDEX_MAX_TEXT = 30;
+  const DUP_IMG_INDEX_MIN_W = 80;
+  function dupIndexImgUrl(img) {
+    const raw = img.currentSrc || img.getAttribute('src') || '';
+    if (!raw || /^data:/i.test(raw)) return '';
+    try { return new URL(raw, img.baseURI || (img.ownerDocument && img.ownerDocument.baseURI)).href; } catch (_) { return raw; }
+  }
+  // 圖的寬度：已載入看原始尺寸，沒載入（lazy）看版面寬，再不行看 width 屬性
+  function dupIndexImgWidth(img) {
+    let rectW = 0;
+    try { rectW = img.getBoundingClientRect().width || 0; } catch (_) { rectW = 0; }
+    return Math.max(img.naturalWidth || 0, rectW, parseInt(img.getAttribute('width'), 10) || 0);
+  }
+  function hideDuplicateImageIndexBlocks(articleEl, hidden) {
+    const all = Array.from(articleEl.querySelectorAll('img'));
+    if (all.length < 6) return; // 區塊內 3 張 + 本尊 3 張，少於此不可能命中
+    // 每張圖所屬的「只有圖片」區塊（最外層）；不屬於任何區塊的是 null
+    const blockOf = new Map();
+    const blocks = new Set();
+    const textCache = new Map();
+    const textLen = (el) => {
+      let v = textCache.get(el);
+      if (v === undefined) { v = _visibleTextOf(el).replace(/\s+/g, '').length; textCache.set(el, v); }
+      return v;
+    };
+    for (const img of all) {
+      let best = null;
+      for (let n = img.parentElement; n && n !== articleEl; n = n.parentElement) {
+        if (textLen(n) > DUP_IMG_INDEX_MAX_TEXT) break;
+        if (n.querySelectorAll('img').length >= 3) best = n;
+      }
+      blockOf.set(img, best);
+      if (best) blocks.add(best);
+    }
+    if (!blocks.size) return;
+    // 本尊候選：不在任何「只有圖片」區塊裡的圖，依網址建索引
+    const originals = new Set();
+    for (const img of all) {
+      if (blockOf.get(img)) continue;
+      const u = dupIndexImgUrl(img);
+      if (u) originals.add(u);
+    }
+    if (!originals.size) return;
+    for (const block of blocks) {
+      if (block.dataset && block.dataset.jreadHidden === '1') continue;
+      const urls = new Set();
+      let allHaveOriginal = true;
+      for (const img of block.querySelectorAll('img')) {
+        if (dupIndexImgWidth(img) < DUP_IMG_INDEX_MIN_W) continue; // 小圖示不算、也不擋
+        const u = dupIndexImgUrl(img);
+        if (!u || !originals.has(u)) { allHaveOriginal = false; break; }
+        urls.add(u);
+      }
+      if (!allHaveOriginal || urls.size < 3) continue;
+      hide(block, hidden);
+    }
+  }
+
   // ---- 主文內：文末 curated 故事集連結卡（v0.8.54 nytimes 實證）------------
   // 文末「本則故事的相關報導導覽卡」（nytimes styln-guide：H2 是故事集名
   // 「Stephen Colbert's Late Night Exit」）：heading 是故事專名、無雜訊字樣
@@ -12224,6 +12295,7 @@
       safeRun(hideBylineAvatarImgs, articleEl, hidden);
       safeRun(hideInsideArticlePrintEditionNote, articleEl, hidden);
       safeRun(hideTailCuratedLinkLists, articleEl, hidden);
+      safeRun(hideDuplicateImageIndexBlocks, articleEl, hidden);
       safeRun(hideInsideArticleByInlineAdText, articleEl, hidden);
       safeRun(hideInsideArticleCTAParagraphs, articleEl, hidden);
       safeRun(hideInsideArticleSubscribeForms, articleEl, hidden);

@@ -27,6 +27,7 @@
 //   node tools/corpus.js accept [--only <片段>]
 //   node tools/corpus.js run --ext /tmp/old/jread --out /tmp/fp-old
 //   node tools/corpus.js compare /tmp/fp-old /tmp/fp-new
+//   node tools/corpus.js run --out /tmp/census --after ./my-probe.js   # 普查：每頁重放後跑自訂量測
 // 共用選項：--jobs N（並行瀏覽器數，預設 4）、--wait ms（進場後等多久才量，預設 4500＝
 // 蓋過 1s / 3s 兩個重測計時器）、--variants scroll,paged,narrow（預設 scroll）
 //
@@ -699,6 +700,12 @@ async function replayOne(ctx, sw, state, id, variant, waitMs, shotDir) {
     }
     fp.net = net;
     fp.pageErrors = errors.length;
+    // --after <module.js>：量完指紋後跑自訂的頁內量測，結果記在指紋的 after 欄位。
+    // 用途是普查——新規則動 code 之前，先看它在整個語料庫會命中哪些頁面的什麼元素。
+    // module.exports = async (page) => 任何可序列化的結果
+    if (state.afterModule) {
+      try { fp.after = await require(state.afterModule)(page); } catch (e) { fp.after = { error: String(e && e.message || e) }; }
+    }
     if (shotDir) {
       // 看差異用的截圖：先量完指紋再縮放（zoom 會把 rect 砍半）。捲動模式 zoom 0.5 分頁拍、
       // 翻頁模式 zoom 1.0 逐頁翻（專案截圖規則，實作在 audit-lib）
@@ -772,7 +779,7 @@ async function cmdRun(args, outDir, shotRoot, onlyFiles) {
     let session = null;
     const open = async () => {
       const l = await launch({ exts: [ext] });
-      const state = { current: null };
+      const state = { current: null, afterModule: args.after ? path.resolve(args.after) : null };
       await installReplayRoutes(l.ctx, state);
       const sw = await waitJreadSw(l.ctx);
       for (const p of l.ctx.pages()) await p.close().catch(() => {});
@@ -825,8 +832,8 @@ function parseArgs(argv) {
   const get = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : dflt; };
   return {
     cmd: argv[0],
-    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|only|jobs|wait|ext|out|variants)$/.test(arr[i - 1]))),
-    url: get('--url', null), only: get('--only', null), ext: get('--ext', null), out: get('--out', null),
+    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|only|jobs|wait|ext|out|variants|after)$/.test(arr[i - 1]))),
+    url: get('--url', null), after: get('--after', null), only: get('--only', null), ext: get('--ext', null), out: get('--out', null),
     jobs: Math.max(1, parseInt(get('--jobs', '4'), 10) || 4),
     wait: parseInt(get('--wait', '4500'), 10) || 4500,
     variants: get('--variants', 'scroll').split(',').map((s) => s.trim()).filter(Boolean),
