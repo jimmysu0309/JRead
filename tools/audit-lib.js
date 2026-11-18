@@ -2024,12 +2024,17 @@ async function triggerShinkansenTranslate(page, opts = {}) {
   // 金鑰讀不到時退回 Google MT 並明講——呼叫端的回報要帶上這一行。
   let engine = opts.engine || process.env.JREAD_TRANSLATE_ENGINE || 'gemini';
   if (engine === 'gemini') {
-    const seeded = await seedShinkansenGeminiKey(page.context());
+    // page.context 不存在＝測試用的假 page（沒有真的 Shinkansen 可寫金鑰），當成寫入失敗處理
+    const seeded = typeof page.context === 'function'
+      ? await seedShinkansenGeminiKey(page.context())
+      : { ok: false, error: '這個 page 沒有 browser context' };
     if (!seeded.ok) {
       log('⚠️ Gemini 金鑰寫入失敗（' + seeded.error + '）→ 退回 Google MT；譯文會有佔位符外漏與簡體混入，不代表實際使用的樣子');
       engine = 'google';
     }
   }
+  // 呼叫端要知道實際用了哪個引擎（含退回 Google MT 的情況）時傳 opts.report，這裡填 engine
+  if (opts.report && typeof opts.report === 'object') opts.report.engine = engine;
   await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(300);
   const res = await page.evaluate((engine) => new Promise((resolve) => {

@@ -576,10 +576,15 @@ async function captureOne(ctx, url, opts) {
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     await sleep(2000);
     let translatedEls = null;
+    // 翻譯後快照記下實際用的引擎（'gemini' / 'google'…）：Google MT 的譯文有佔位符外漏與
+    // 簡體混入，會被誤當成 JRead 的問題；快照是哪個引擎翻的要查得到。原文快照為 null。
+    let translateEngine = null;
     if (opts.translate) {
       const lang = await audits.runLangDetect(page);
       if (lang.isChinese) { const e = new Error('中文頁，不需要翻譯後快照'); e.skip = true; throw e; }
-      translatedEls = await audits.triggerShinkansenTranslate(page, { log: (m) => console.log('    ' + m) });
+      const trReport = {};
+      translatedEls = await audits.triggerShinkansenTranslate(page, { log: (m) => console.log('    ' + m), report: trReport });
+      translateEngine = trReport.engine || null;
       if (!translatedEls) throw new Error('翻譯沒有生效（翻譯元素數 0）');
       await page.evaluate(() => window.scrollTo(0, 0));
       await sleep(500);
@@ -590,7 +595,7 @@ async function captureOne(ctx, url, opts) {
     if (audits.looksLikeBotChallengeHtml(snap.html)) throw new Error('被 bot 驗證頁擋下');
     if (snap.stats.textLen < 400) throw new Error(`頁面文字只有 ${snap.stats.textLen} 字（空頁或被擋）`);
     return {
-      v: 1, url, finalUrl, capturedAt: new Date().toISOString(), translated: !!opts.translate, translatedEls,
+      v: 1, url, finalUrl, capturedAt: new Date().toISOString(), translated: !!opts.translate, translatedEls, translateEngine,
       viewport: { width: 1280, height: 900 }, stats: snap.stats, html: snap.html, css, images: snap.images
     };
   } finally {
@@ -932,7 +937,7 @@ async function main() {
         const size = fs.statSync(archivePath(id)).size;
         total += size;
         const a = readArchive(id);
-        console.log(`${id}  ${Math.round(size / 1024)}K  ${a.capturedAt.slice(0, 10)}${a.translated ? '  翻譯後' : ''}  ${a.url}`);
+        console.log(`${id}  ${Math.round(size / 1024)}K  ${a.capturedAt.slice(0, 10)}${a.translated ? `  翻譯後（${a.translateEngine || '引擎未記'}）` : ''}  ${a.url}`);
       }
       console.log(`共 ${ids.length} 頁，${(total / 1048576).toFixed(1)}M`);
       return 0;
