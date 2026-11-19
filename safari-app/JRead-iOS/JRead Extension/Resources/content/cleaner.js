@@ -6594,6 +6594,45 @@
   // - 保留 container 原 inline display / grid-template 讓 restore 還原
   // （collapse 標記實際走 dataset.jreadCollapsed camelCase 慣用法，見 4750+；
   //  v1.7.43 移除從未使用的 COLLAPSE_ATTR dead const）
+  // v2.5.24：分欄容器塌成單欄時，直接子層的左右 margin 一律歸 0（v0.7.110，對象是
+  // 「margin-left: 25%」這類分欄位移）。但清單的圓點 / 編號畫在 li 的外側，位置是清單
+  // 自己的縮排留出來的；站方用 margin 留（維基：ul { margin: 0.3em 0 0 1.6em;
+  // padding: 0 }）時，歸 0 之後圓點就凸到內文左緣外面（ko / th / el / he 維基 1280 寬，
+  // 語料庫量到圓點所在的 li 左緣＝內文左緣）。
+  // 判定（只看結構與算出值）：ul / ol；有 li 是 list-item、圓點在外側且不是 none；
+  // 左右 margin 都不超過 LIST_INDENT_MAX_EM 個字（縮排的量級；分欄位移是容器寬的
+  // 幾成，遠大於此）且起始側 > 0；起始側 padding 不到 1 個字（padding 夠放圓點的
+  // 清單歸 0 也不會凸出去，照舊）。符合時兩側 margin 都不寫：站方用邏輯屬性
+  //（margin-inline-start）留縮排時，右到左頁面譯成中文後版面改回左到右（v2.5.21），
+  // 縮排會跟著換邊——只留當下的起始側，換邊後另一側已被寫成 0（he 維基翻譯後實測）。
+  // v2.5.24：塌欄時不歸零左右 margin 的元素（理由見 collapse 的 child 迴圈）。
+  // 取 styler 置中規則（img / picture / video / figure / iframe / table / blockquote / pre）
+  // 裡的 figure 與 table：img / picture / video / iframe 是 replaced element，
+  // COLLAPSE_REPLACED_TAG_RE 本來就整個跳過、不會被寫；blockquote / pre 沒有回報
+  // 案例，先不動
+  const COLLAPSE_KEEP_MARGIN_RE = /^(?:FIGURE|TABLE)$/i;
+  const LIST_INDENT_MAX_EM = 3;
+  function isMarginIndentedMarkerList(el) {
+    if (!el || !/^(?:UL|OL)$/i.test(el.tagName)) return false;
+    const cs = window.getComputedStyle(el);
+    const fs = parseFloat(cs.fontSize) || 16;
+    const rtl = cs.direction === 'rtl';
+    const ml = parseFloat(cs.marginLeft) || 0;
+    const mr = parseFloat(cs.marginRight) || 0;
+    const start = rtl ? mr : ml;
+    const pad = parseFloat(rtl ? cs.paddingRight : cs.paddingLeft) || 0;
+    if (!(start > 0) || Math.max(ml, mr) > fs * LIST_INDENT_MAX_EM || ml < 0 || mr < 0 || pad >= fs) return false;
+    for (const li of el.children) {
+      if (!/^LI$/i.test(li.tagName)) continue;
+      const lcs = window.getComputedStyle(li);
+      if (lcs.display !== 'list-item') continue;
+      if (lcs.listStyleType === 'none' && (!lcs.listStyleImage || lcs.listStyleImage === 'none')) continue;
+      if (lcs.listStylePosition === 'inside') continue;
+      return true;
+    }
+    return false;
+  }
+
   // collapse child reset 跳過的 replaced element（/i：SVG tagName 保留原小寫 case）
   const COLLAPSE_REPLACED_TAG_RE = /^(?:IMG|SVG|VIDEO|AUDIO|PICTURE|CANVAS|IFRAME|EMBED|OBJECT)$/i;
   // v1.7.30 today.line.me 實測：byline 列 grid（發布者 icon 連結 42px 定寬 +
@@ -7089,7 +7128,22 @@
           continue;
         }
         collapsed.push({ el: c, kind: 'child', prev: snapshotStyles(c, CHILD_PROPS) });
-        writes.push({ el: c, decls: CHILD_DECLS });
+        // v2.5.24：清單靠 margin 留圓點位置時，左右 margin 不歸 0（見
+        // isMarginIndentedMarkerList 的註解）
+        // v2.5.24：figure 與 table 同理不寫——styler 對 figure / table（與其他媒體）有
+        // margin-left / right: auto !important 的置中規則，這裡的 inline 0 !important
+        // 會蓋掉它：維基的縮圖 figure（display: table、寬度＝圖寬）凡是落在被塌欄的
+        // 容器正下方的都貼左，同一頁其他縮圖卻置中（Jimmy 2026-11-19 回報；en 維基
+        // 8 張裡 3 張、zh 維基 4 張全部）。站方自己的位移 margin 不用靠這裡清——
+        // styler 那條 !important 本來就會蓋掉
+        if (isMarginIndentedMarkerList(c) || COLLAPSE_KEEP_MARGIN_RE.test(c.tagName)) {
+          const decls = Object.assign({}, CHILD_DECLS);
+          delete decls['margin-left'];
+          delete decls['margin-right'];
+          writes.push({ el: c, decls });
+        } else {
+          writes.push({ el: c, decls: CHILD_DECLS });
+        }
       }
     }
     // ---- phase2：純寫（所有量測已在 phase1 完成於原始 layout）----
@@ -8836,6 +8890,66 @@
     // 若本函式跑第二次（動態批次補跑），賦值會覆蓋前一批 hydration 記錄、
     // restore 時漏還原前批圖片的原始 src
     hidden.__lazyImages = (hidden.__lazyImages || []).concat(hydrations);
+  }
+
+  // ---- 主文內：捲動淡入外殼沒被站方解除 → 圖載了但整塊透明（v2.5.24）-----
+  // 場景：站方把圖（或圖＋圖說）包在「進畫面才淡入」的外殼裡——預設 opacity: 0，
+  // 站方 script（IntersectionObserver / lazy loader 的 callback）在元素進畫面時才
+  // 拿掉隱藏 class。grubstreet（nymag）`div.image-wrapper.hidden`、myartbroker
+  // `AnimateIntoView_fadeIn`（外殼裡還有圖說）。
+  // 真站實測（2026-11-19，Chromium 與 WebKit）：捲動模式一路捲下去站方會自己解除；
+  // 翻頁模式翻完全部頁，grubstreet 六張 608×608 的圖仍全是 opacity 0（img complete、
+  // naturalWidth 570）、myartbroker 四張有兩張——翻頁是主文容器內橫向位移，站方等的
+  // 視窗捲動 / 進畫面事件不會照它預期的發生。src 已由上面 hydrateLazyImages 補上，
+  // 外殼的 opacity 沒人解 → 圖的位置整塊空白。
+  // 與 hydrateLazyImages 同一個道理：閱讀模式不該依賴站方的進場動畫 script。
+  //
+  // 通則（結構訊號，不看 class 名）：主文內含 <img> 的元素（或 img 自己）
+  //   - computed opacity 趨近 0、visibility 正常、不是 display:none
+  //   - 在正常 flow 裡（position static / relative）——absolute / fixed 的透明圖
+  //     是疊在別的東西上的替換圖（滑鼠移入才換的那張），放出來會蓋住原圖
+  //   - 佔著版面（寬高都 >= 50px）——這塊現在就是一個看得到的空洞，放出來只會
+  //     把洞填上，不會多擠出版面
+  //   - 不是「只裝圖的容器裡、旁邊還有另一張圖」（那是兩張圖互換的另一張，
+  //     newtalk 的追蹤鈕 hover 圖）
+  // → inline `opacity: 1 !important`＋`transition: none`。只在進場時跑一次；可逆
+  //（__styleResets）。
+  // 訊號層次：驗「透明外殼判定 → 寫入 → restore」；不驗站方之後自己解除時的
+  // 動畫（transition 已關，直接顯示）、不處理進場後才插入的外殼。
+  function revealFadedMediaShells(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!win || !win.getComputedStyle) return;
+    const resets = [];
+    const seen = new Set();
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.closest && img.closest('[data-jread-hidden="1"]')) continue;
+      for (let el = img; el && el !== articleEl; el = el.parentElement) {
+        if (seen.has(el)) break;
+        seen.add(el);
+        let cs;
+        try { cs = win.getComputedStyle(el); } catch (_) { break; }
+        if (!cs || cs.display === 'none' || cs.visibility === 'hidden') break;
+        const op = parseFloat(cs.opacity);
+        if (!(op <= 0.01)) continue;
+        if (cs.position === 'absolute' || cs.position === 'fixed') break;
+        const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+        if (!r || r.width < 50 || r.height < 50) break;
+        // 互換圖的容器只裝圖、沒有字；父層有字（文章本體、段落區）時旁邊的圖是別的內容
+        const par = el.parentElement;
+        let hasAltSibling = false;
+        if (par && !(par.textContent || '').trim()) {
+          for (const sib of par.children) {
+            if (sib !== el && (sib.tagName === 'IMG' || sib.tagName === 'PICTURE')) { hasAltSibling = true; break; }
+          }
+        }
+        if (hasAltSibling) break;
+        resets.push({ el, prev: snapshotStyles(el, ['opacity', 'transition']) });
+        applyImportant(el, { 'opacity': '1', 'transition': 'none' });
+        break;
+      }
+    }
+    addStyleResets(hidden, resets);
   }
 
   function restoreLazyImages(hiddenEls) {
@@ -12853,6 +12967,8 @@
       // 放在 reset / collapse 之後，以防前置規則把 img 的 parent hide 掉
       // （被 hide 的 img 不用補、浪費 network 還有 decode 成本）
       safeRun(hydrateLazyImages, articleEl, hidden);
+      // v2.5.24：捲動淡入外殼（opacity: 0 等站方 script 解除）裡的圖直接顯示
+      safeRun(revealFadedMediaShells, articleEl, hidden);
       // reader mode 進行中持續攔截主文祖先鏈的 dynamic append
       safeRun(startWatchingDynamicAppends, articleEl, hidden);
       // v0.7.23 newtalk.tw 修法：watch hidden el 的 inline style 被原站 JS

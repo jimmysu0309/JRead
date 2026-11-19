@@ -396,6 +396,14 @@
   const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
   // v2.5.14：直向 flex 容器的直接子 <pre>（見 markFlexColumnPres）
   const PRE_FLEX_STRETCH_ATTR = 'data-jread-pre-flex-stretch';
+  // v2.5.24：站方 float 的文字方塊（側欄補充、拉出的引文）在閱讀模式清掉 float 後
+  // 留下站方釘的固定寬，變成半欄寬的一段——標記後寬度改回撐滿版心（見
+  // markDefloatedTextBoxes）
+  const DEFLOAT_TEXT_ATTR = 'data-jread-defloat-text';
+  const DEFLOAT_TEXT_MIN_CHARS = 80;
+  const DEFLOAT_TEXT_MAX_WIDTH_RATIO = 0.7;
+  const DEFLOAT_TEXT_SEL = 'aside, div, section, blockquote';
+  const DEFLOAT_TEXT_BLOCKER_SEL = 'img, picture, video, audio, iframe, canvas, object, embed, table, pre, figure';
   // v2.5.23：橫向 flex 容器裡唯一的子層、裡面裝著程式碼區塊 → 撐滿（見 markFlexRowCodeShells）
   const CODE_FLEX_FILL_ATTR = 'data-jread-code-flex-fill';
   // v2.5.23：圖說與它上方那張圖的間距收緊（規則與標記見 buildCss / markCaptionMedia）
@@ -409,6 +417,13 @@
   // 主文 ::first-letter 顏色修正（v0.8.137）只套在帶這個標記的元素上，見
   // markFirstLetterColorBlocks。
   const FIRST_LETTER_ATTR = NS.FIRST_LETTER_ATTR; // 'data-jread-first-letter'（單一資料源在 namespace.js）
+  // v2.5.24：站方放大首字（float 的 ::first-letter）在閱讀模式下墨跡壓到下一行時的
+  // 重排標記。值 'c2'..'c5'（CJK 首字，佔 N 行）/ 'l2'..'l5'（拉丁首字）/ 'off'
+  //（CJK 首字連同標點一起被放大 → 取消放大）。見 dropCapPlan。
+  const DROP_CAP_ATTR = 'data-jread-drop-cap';
+  // v2.5.24：站方對 ::first-line 下了與段落不同的字距 / 字體 / 顏色的元素。見
+  // firstLineDiverges。
+  const FIRST_LINE_ATTR = 'data-jread-first-line';
   // v2.4.10：站方 ::selection 底色不透明（標在 <html>，見 markOpaqueSiteSelection）
   const SEL_OPAQUE_ATTR = 'data-jread-sel-opaque';
 
@@ -788,6 +803,10 @@
   // 全部沒補底色、與內文融在一起（kubernetes 96 個、qiita 40 個、jestjs / vuejs 各
   // 30 多個，後半全數透明；真站與快照相同）
   const CODE_BG_MAX_SCAN = 2000;
+  // v2.5.24：補了底色的 <pre> 內距不足這個值就補（見 passCodeBlockBgPhase4）
+  const CODE_PAD_MIN = 4;
+  const CODE_PAD_X = '16px';
+  const CODE_PAD_Y = '12px';
   // v2.5.23：程式碼區塊內「只有空白的 token」底線清除，每頁最多看幾個 token
   const CODE_WS_MAX_SCAN = 20000;
   const TABLE_BG_MAX_SCAN = 3000;     // v2.5.18：light 表格系深色底守門每頁最多量 3000 個元素
@@ -2544,6 +2563,15 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   margin-left: 0 !important;
   margin-right: 0 !important;
 }
+/* v2.5.24：站方 float 的文字方塊撐滿版心（標記見 markDefloatedTextBoxes）。float 已被
+   上面的 * { float: none } 清掉，但站方配 float 釘的寬度（quantamagazine
+   .post__aside--right { width: 335px; max-width: 335px }）還在 → 方塊靠左、只有
+   半欄寬，右邊空一大塊。單欄卡片裡沒有東西可以繞排，寬度改回 auto。 */
+[${ARTICLE_ATTR}="1"] [${DEFLOAT_TEXT_ATTR}="1"] {
+  width: auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
 /* v2.5.23：程式碼區塊的外殼撐滿版心（標記見 markFlexRowCodeShells）。react.dev 的
    範例外殼 div.sandpack 是橫向 flex、裡面只有一個子層；站方靠自己的寬度規則撐滿，
    閱讀模式把寬度歸成 auto 後，flex item 縮成內容寬——同一頁的程式碼框 282 / 421 /
@@ -2894,6 +2922,17 @@ ${BODY_WEIGHT_SEL} {
 }
 [${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="0"] {
   text-align: start !important;
+}
+/* v2.5.24：中文為主段落（標 "1"）的 word-break 還原成 normal。韓文站慣用
+   word-break: keep-all（韓文靠空白斷行；toss.tech 掛在 html / body 與文字 span 上），
+   頁面譯成中文後規則還在——keep-all 讓中文只能在空白與標點斷行，一行常常只排到
+   一半就折，justify 再把這半行的字攤滿整行，字距被拉得很開（語料庫 toss.tech 翻譯後
+   截圖，2026-11-18）。中文本來就是字字可斷，normal 才是對的；韓文原文段落漢字不到
+   門檻、不會標 "1"，站方的 keep-all 照舊。後代一併設（站方把 keep-all 掛在段落內的
+   span 上）；程式碼不動。 */
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="1"],
+[${ARTICLE_ATTR}="1"] [${CJK_JUSTIFY_ATTR}="1"] *:not(pre):not(code):not(pre *):not(code *) {
+  word-break: normal !important;
 }`;
     // v2.5.21：右到左頁面譯成中文後版面改回左到右（evalDirOverride 判定、在 <html>
     // 掛 DIR_LTR_ATTR）。direction 蓋到每個後代：站方在內層容器另寫 dir="rtl" /
@@ -3561,26 +3600,50 @@ html [${ARTICLE_ATTR}="1"] a {
     // dark 實測對比約 4.6:1）。figcaption * 一併蓋——圖說內 <em> / <a> 等 inline 子元素
     // 不靠 inherit；specificity (0,1,1) 贏過主題文字色規則 (0,1,0)。
     // 只 gate 在 opts.readerHostPage（JRead 自有頁），一般網站不受影響
-    let readerCaption = '';
-    if (opts.readerHostPage) {
-      const capText = mixHex(theme.text || theme.proseText, theme.articleBg, 0.7);
-      readerCaption = `
-[${ARTICLE_ATTR}="1"] figcaption {
+    //
+    // v2.5.24：一般網站的圖說也一律套這份樣式（Jimmy 2026-11-19 裁定「所有站圖說一律
+    // 置中縮小」，取代 v0.7.120 的「保留原站圖說 typography」）。起因是 Readwise Reader
+    // 分享頁與登入版：站方圖說 16px、靠左，內文被使用者字級改成 17px 後圖說讀起來
+    // 跟內文一樣大。試過兩種判定都不成立——跟使用者字級比，字級 20 時不命中、桌機與
+    // 手機看到的不一樣；跟站方內文比，Readwise 站方其實有層級（20 / 16）完全不命中——
+    // 所以不判定，全部統一。字級由 passCaptionFontFloor 寫 inline px（0.8em 是相對
+    // 父層，父層字級各站不同、不可靠），這裡的 0.8em 只是該 pass 沒跑到時的後備。
+    // 一般網站版與 JReader 自有頁版的差別只在後代選擇器：
+    //   - 連結不蓋色（維基圖說滿是連結；蓋成灰色就看不出可以點）
+    //   - 程式碼、公式、SVG 不蓋字體與字級（arxiv / distill 圖說裡有公式）
+    // 選擇器 html [A="1"][A] figcaption 是 (0,2,2)：贏過 light 圖說色與主題文字色
+    // 規則，但低於 v2.5.23「圖說貼近圖片」的 (0,3,2)（margin-top 仍由那條決定）
+    const capText = mixHex(theme.text || theme.proseText, theme.articleBg, 0.7);
+    const captionDefaultCss = (scope, colorStar, fontStar) => `
+${scope} figcaption {
   font-family: -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
   font-size: 0.8em !important;
   line-height: 1.5 !important;
   margin-top: 0.6em !important;
   text-align: center !important;
 }
-[${ARTICLE_ATTR}="1"] figcaption,
-[${ARTICLE_ATTR}="1"] figcaption * {
+${scope} figcaption,
+${scope} figcaption ${colorStar} {
   color: ${capText} !important;
 }
-[${ARTICLE_ATTR}="1"] figcaption * {
+${scope} figcaption ${fontStar} {
   font-family: inherit !important;
   font-size: inherit !important;
 }`;
+    // 公式渲染單元取 NS.MATH_RENDER_SEL（單一資料源；KaTeX 的 .katex 內全是帶專用字體的
+    // span，被蓋成 inherit 後減號等符號字寬變了、語料庫 distill 量到 <mo> 消失）
+    const mathNot = String(NS.MATH_RENDER_SEL || 'math, mjx-container, .katex').split(',')
+      .map((x) => x.trim()).filter(Boolean).map((x) => `:not(${x}):not(${x} *)`).join('');
+    const CAP_KEEP_FONT = ':not(code):not(pre):not(kbd):not(samp):not(code *):not(pre *):not(svg):not(svg *)' + mathNot;
+    // 一般網站版不併進主 CSS、另放一張樣式表（CAPTION_STYLE_ID，passInjectCss 注入）：
+    // 多支 typography spec 守「預設設定下主 CSS 不注入 font-family / line-height /
+    // 後代 font-size: inherit」不變式（尊重原站內文 typography），用字串比對主 CSS；
+    // 圖說樣式是另一件事，不該讓那些比對分不清。opts.captionOnly＝只要這張
+    if (opts.captionOnly) {
+      return opts.readerHostPage ? ''
+        : captionDefaultCss(`html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}]`, '*:not(a):not(a *)', '*' + CAP_KEEP_FONT);
     }
+    const readerCaption = opts.readerHostPage ? captionDefaultCss(`[${ARTICLE_ATTR}="1"]`, '*', '*') : '';
     const bylineFontNorm = `
 [${ARTICLE_ATTR}="1"] [${BYLINE_ATTR}] * {
   font: inherit !important;
@@ -4639,6 +4702,80 @@ html.${HTML_CLASS}.jread-orion body {
     }
   }
 
+  // v2.5.24：首字重排 / 首行歸回的 CSS。獨立一張 stylesheet、只在量到站方有
+  // ::first-letter / ::first-line 規則的頁面才注入（markDropCapBlocks）——主 CSS
+  // 不帶任何 pseudo 的 font-* 宣告，沒有站方首字規則的頁面完全不受影響
+  const PSEUDO_SHAPE_STYLE_ID = '__jread-pseudo-shape-style';
+  // v2.5.24：一般網站的圖說樣式（見 buildCss 的 captionOnly）
+  const CAPTION_STYLE_ID = '__jread-caption-style';
+  function buildPseudoShapeCss() {
+    return `
+/* v2.5.24：站方放大首字重排（DROP_CAP_ATTR，JS 量測標記，見 dropCapPlan）。
+   站方首字的字級 / 行高 / 上下 margin 是 px、按站方自己的段落行高校準的；閱讀模式
+   把段落改成設定的字級與行高後，首字的 float 框與旁邊的行數對不上，墨跡壓到下一行
+   （grubstreet 譯文：97px 的「最」塞在 58px 行高的框裡，蓋住第 4 行行首；
+   telefoncek 原文：121px 的 N 塞在 70px 的框）。CJK 字佔滿整個字框（拉丁大寫只佔
+   約 0.7em），站方按拉丁大寫調的框一定裝不下。
+   修法：首字框改成剛好 N 行高（lh 單位以段落自己的行高解析，使用者改字級 / 行距
+   自動跟著變）；上下 margin / padding 歸零（站方的負 margin 就是讓下一行鑽進來的
+   來源），左右留站方值。只套在量到「墨跡會壓到下一行」的首字，排得好的不動。 */
+${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::first-letter,
+[${ARTICLE_ATTR}="1"][${DROP_CAP_ATTR}="c${n}"]::first-letter {
+  font-size: calc(${n}lh - 2px) !important;
+  line-height: 1 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="l${n}"]::first-letter,
+[${ARTICLE_ATTR}="1"][${DROP_CAP_ATTR}="l${n}"]::first-letter {
+  font-size: calc((${n}lh - 2px) / 0.8) !important;
+  line-height: 0.8 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}`).join('\n')}
+/* 'off'：CJK 首字前後帶標點（譯文以「《」「「」開頭）時，::first-letter 依規格連
+   標點一起選進去，兩個全形字一起放大。拆不開（pseudo 沒辦法只選一個字），整個取消。 */
+[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="off"]::first-letter,
+[${ARTICLE_ATTR}="1"][${DROP_CAP_ATTR}="off"]::first-letter {
+  float: none !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  font-family: inherit !important;
+  font-weight: inherit !important;
+  font-style: inherit !important;
+  letter-spacing: inherit !important;
+  text-transform: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  initial-letter: normal !important;
+  -webkit-initial-letter: normal !important;
+}
+/* v2.5.24：站方 ::first-line 樣式歸回段落本身（FIRST_LINE_ATTR，見 firstLineDiverges）。
+   ::first-line 是獨立 pseudo，閱讀模式對段落的字體 / 字級 / 文字色覆寫都選不到它：
+   telefoncek 首行留著站方的無襯線體、2px 字距與灰字，譯成中文後每個字被拉開，
+   深色主題下灰字貼近底色。與上面首字色同一類（pseudo 不吃主題）。 */
+[${ARTICLE_ATTR}="1"] [${FIRST_LINE_ATTR}="1"]::first-line,
+[${ARTICLE_ATTR}="1"][${FIRST_LINE_ATTR}="1"]::first-line {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  font-style: inherit !important;
+  font-variant: inherit !important;
+  letter-spacing: inherit !important;
+  word-spacing: inherit !important;
+  text-transform: inherit !important;
+  color: inherit !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+`;
+  }
+
   // ===== v1.6.30（#13）:has 放大器的 JS 標記端（見檔頭 v1.6.30 不變式註解）=====
   // aspect 容器（placeholder / ratio / object-fit class）內含 iframe = responsive
   // 影片嵌入 → 標 EMBED_WRAP_ATTR 豁免 static-flow 配套（v0.8.155 語意）。
@@ -4914,6 +5051,54 @@ html.${HTML_CLASS}.jread-orion body {
     }
     for (const el of found) {
       el.setAttribute(ABS_ANCHOR_ATTR, '1');
+      marked.push(el);
+    }
+  }
+  // v2.5.24：站方 float 的文字方塊標 DEFLOAT_TEXT_ATTR（CSS 把寬度改回 auto）。
+  // 場景：雜誌類站點把補充說明 / 拉出的引文做成 float 在內文旁的方塊、釘固定寬
+  //（quantamagazine `aside.post__aside--right`：float right、width 335px）。閱讀模式
+  // 清掉 float 後寬度還在 → 一段只有半欄寬（語料庫 quantamagazine 截圖，2026-11-18）。
+  // 判定（全部成立才標）：
+  //   1. 在閱讀模式下看得到，寬度不到父層的 DEFLOAT_TEXT_MAX_WIDTH_RATIO
+  //   2. 是文字方塊：文字 >= DEFLOAT_TEXT_MIN_CHARS，裡面沒有媒體 / 表格 / 程式碼
+  //     （float 的縮圖框、資訊框的窄寬是跟著圖或表格走的，不動）
+  //   3. 站方 cascade 下（停用注入 CSS 再量）computed float 是 left / right
+  //      ——窄是 float 版面留下來的，不是別的原因（格狀卡片的欄寬等）
+  // 巢狀命中只標最外層。先用幾何篩（條件 1、2，layout 是乾淨的、只讀 rect），剩下的
+  // 少數候選才付一次 withInjectedCssDisabled。
+  // 這條驗 X、不驗 Y：只做進場當下這一次，晚插入的方塊不補標；站方不是用 float
+  //（absolute、grid 欄）排的窄方塊不在此列。
+  function markDefloatedTextBoxes(articleEl, marked) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle || !NS.withInjectedCssDisabled) return;
+    const cands = [];
+    for (const el of articleEl.querySelectorAll(DEFLOAT_TEXT_SEL)) {
+      const par = el.parentElement;
+      if (!par) continue;
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) continue;
+      const pr = par.getBoundingClientRect();
+      if (!(pr.width > 0) || r.width >= pr.width * DEFLOAT_TEXT_MAX_WIDTH_RATIO) continue;
+      if (el.closest(`[data-jread-hidden="1"], table, figure, [${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
+      if (el.querySelector(DEFLOAT_TEXT_BLOCKER_SEL)) continue;
+      if ((el.textContent || '').trim().length < DEFLOAT_TEXT_MIN_CHARS) continue;
+      cands.push(el);
+    }
+    if (!cands.length) return;
+    const readFloated = () => cands.filter((el) => {
+      let f = '';
+      try {
+        f = _win.getComputedStyle(el).float;
+      } catch (e) {
+        if (e && e.name === 'SyntaxError') return false; // jsdom nwsapi 既知行為，同 markAbsAnchors
+        throw e;
+      }
+      return f === 'left' || f === 'right';
+    });
+    const hits = NS.withInjectedCssDisabled(readFloated) || [];
+    for (const el of hits) {
+      if (hits.some((o) => o !== el && o.contains(el))) continue;
+      el.setAttribute(DEFLOAT_TEXT_ATTR, '1');
       marked.push(el);
     }
   }
@@ -5212,6 +5397,111 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(el);
     }
   }
+  // v2.5.24：放大首字重排的純決策。text＝元素文字；elFsPx / elLhPx＝元素（閱讀模式
+  // 覆寫後）的字級與行高；fl＝::first-letter 的 computed style（站方值，量的時候
+  // DROP_CAP_ATTR 要先拿掉）。回 null（不是 float 放大首字，或排得好不必動）/
+  // 'off' / 'c<N>' / 'l<N>'。
+  // 判準是「墨跡底會不會壓到首字旁最後一行的下一行」：
+  //   首字框（margin box）高 → 旁邊縮排的行數 lines = ceil(框高 / 行高)
+  //   墨跡高：CJK 佔滿字框（1em）、拉丁大寫約 0.72em，在行框內垂直置中
+  //   墨跡底 > 第 lines+1 行的文字頂（行頂 + 半行距）2px 以上 → 會重疊，要重排
+  // 字型實際 metrics 讀不到，0.72 / 1.0 是估值；2px 容差擋掉剛好貼齊的（grubstreet
+  // 原文 O 估值剛好差 1.9px、實際沒壓到）。
+  // 訊號層次：驗「站方首字幾何 → 標記值」；不驗各字型實際墨跡（harness 截圖）、
+  // 不處理 initial-letter 首字（瀏覽器自己對齊行數，翻頁的上緣墨跡歸 paged-mode）、
+  // 不處理站方用 <span> 包起來的首字（不是 pseudo，內文規則照管）。
+  const DROP_CAP_LEAD_RE = /^\s*([\p{P}\p{S}]*)([^\p{P}\p{S}\s])(\p{P}*)/u;
+  const DROP_CAP_CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
+  function dropCapPlan(text, elFsPx, elLhPx, fl) {
+    if (!fl || !(elFsPx > 0) || !(elLhPx > 0)) return null;
+    if (!fl.float || fl.float === 'none') return null;
+    const fs = parseFloat(fl.fontSize) || 0;
+    if (fs < elFsPx * 1.5) return null;
+    const m = DROP_CAP_LEAD_RE.exec(String(text || ''));
+    if (!m) return null;
+    const cjk = DROP_CAP_CJK_RE.test(m[2]);
+    if (cjk && (m[1] || m[3])) return 'off';
+    const px = (v) => parseFloat(v) || 0;
+    let lh = parseFloat(fl.lineHeight);
+    if (!isFinite(lh)) lh = fs * 1.2; // 'normal'
+    const top = px(fl.marginTop) + px(fl.borderTopWidth) + px(fl.paddingTop);
+    const box = top + lh + px(fl.paddingBottom) + px(fl.borderBottomWidth) + px(fl.marginBottom);
+    const lines = Math.max(1, Math.ceil((box - 0.5) / elLhPx));
+    const ink = (cjk ? 1 : 0.72) * fs;
+    const inkBottom = top + lh / 2 + ink / 2;
+    const nextTextTop = lines * elLhPx + (elLhPx - elFsPx) / 2;
+    if (inkBottom - nextTextTop <= 2) return null;
+    return (cjk ? 'c' : 'l') + Math.max(2, Math.min(5, lines));
+  }
+  // v2.5.24：::first-line 的字距 / 字體 / 字級 / 字重 / 大小寫 / 顏色與元素本身不同
+  // ＝站方對首行下了樣式。fl＝::first-line 的 computed style。
+  function firstLineDiverges(cs, fl) {
+    if (!cs || !fl) return false;
+    const norm = (v) => String(v || '').replace(/\s+/g, '').toLowerCase();
+    for (const k of ['letterSpacing', 'fontFamily', 'fontSize', 'fontWeight', 'textTransform', 'fontVariantCaps', 'color']) {
+      if (norm(fl[k]) && norm(cs[k]) && norm(fl[k]) !== norm(cs[k])) return true;
+    }
+    return false;
+  }
+  // 標記入口。scopeEl 給定時掃該子樹＋它到 articleEl 的祖先鏈（首字 / 首行規則
+  // 常掛在段落的容器上——telefoncek 是 div.entry-content::first-letter；譯文回填
+  // 只換了段落裡的 text node，要回頭重判掛規則的那一層）。重判時先拿掉自己的標記
+  // 再量（標記生效後量到的是重排後的值，會誤判成「排得好」而把標記拿掉）。
+  // 祖先鏈只重判「量過確定有站方 float 放大首字」的那幾層（dropCapCarriers，全掃時
+  // 記下）：譯文回填一頁可能觸發上千次，不能每次都對整條祖先鏈量 pseudo。
+  let dropCapCarriers = new WeakSet();
+  function markDropCapBlocks(articleEl, marked, scopeEl) {
+    const doc = articleEl.ownerDocument;
+    const _win = doc && doc.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const hasLetter = NS.pageMayStylePseudo(doc, 'first-letter', 'data-jread-');
+    const hasLine = NS.pageMayStylePseudo(doc, 'first-line', 'data-jread-');
+    if (!hasLetter && !hasLine) return;
+    if (!doc.getElementById(PSEUDO_SHAPE_STYLE_ID)) NS.injectCssText(PSEUDO_SHAPE_STYLE_ID, buildPseudoShapeCss());
+    let els;
+    if (scopeEl && scopeEl !== articleEl) {
+      els = [];
+      for (let e = scopeEl.parentElement; e && e.nodeType === 1; e = e.parentElement) {
+        if (dropCapCarriers.has(e)) els.push(e);
+        if (e === articleEl) break;
+      }
+      for (const e of NS.selfAndDescendants(scopeEl, '*')) els.push(e);
+    } else {
+      dropCapCarriers = new WeakSet();
+      els = NS.selfAndDescendants(articleEl, '*');
+    }
+    const setMark = (el, attr, v) => {
+      const had = el.hasAttribute(attr);
+      if (v == null) { if (had) el.removeAttribute(attr); return; }
+      if (had && el.getAttribute(attr) === v) return;
+      el.setAttribute(attr, v);
+      if (marked.indexOf(el) < 0) marked.push(el);
+    };
+    for (const el of els) {
+      if (!(el.textContent || '').trim()) continue;
+      let cs = null;
+      try {
+        cs = _win.getComputedStyle(el);
+        if (!cs || String(cs.display || '').indexOf('inline') === 0 || cs.display === 'none') continue;
+        if (hasLetter) {
+          const prev = el.getAttribute(DROP_CAP_ATTR);
+          if (prev != null) el.removeAttribute(DROP_CAP_ATTR);
+          const fl = _win.getComputedStyle(el, '::first-letter');
+          if (fl && fl.float && fl.float !== 'none') dropCapCarriers.add(el);
+          const plan = dropCapPlan(el.textContent, parseFloat(cs.fontSize), parseFloat(cs.lineHeight), fl);
+          if (prev != null && plan === prev) el.setAttribute(DROP_CAP_ATTR, prev);
+          else setMark(el, DROP_CAP_ATTR, plan);
+        }
+        if (hasLine && !el.hasAttribute(FIRST_LINE_ATTR)) {
+          const l1 = _win.getComputedStyle(el, '::first-line');
+          if (firstLineDiverges(cs, l1)) setMark(el, FIRST_LINE_ATTR, '1');
+        }
+      } catch (e) {
+        if (e && e.name === 'SyntaxError') continue;
+        throw e;
+      }
+    }
+  }
   // v2.4.10：站方 ::selection 底色是否不透明（Jimmy 2026-11-12 Readwise Reader
   // 夜藍主題截圖：選取的文字變成「黑字配暗橄欖底」看不清）。
   // 根因：站方 `::selection { background: 15% 半透明黃; color: #000 }` 是配站方
@@ -5429,6 +5719,7 @@ html.${HTML_CLASS}.jread-orion body {
       const decolumnLoadCleanup = [];
       const wpConstrained = [];
       const wideScroll = [];
+      const cellFloorSnap = [];
       const ariaCellSnap = [];
       const ariaFlowShellMarked = [];
       const ariaHeaderKeepSnap = [];
@@ -5457,6 +5748,7 @@ html.${HTML_CLASS}.jread-orion body {
       const headingLinkMarked = [];
       const absAnchorMarked = [];
       const preFlexStretchMarked = [];
+      const defloatTextMarked = [];
       const capMediaMarked = [];
       const shadowHostMarked = [];
       let textDivMarked = [];
@@ -5479,10 +5771,15 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
+        // v2.5.24：一般網站的圖說樣式（獨立樣式表，理由見 buildCss 的 captionOnly）
+        {
+          const capCss = buildCss(theme, Object.assign({}, opts, { captionOnly: true }), overrides);
+          if (capCss) NS.injectCssText(CAPTION_STYLE_ID, capCss); else NS.removeCssText(CAPTION_STYLE_ID);
+        }
       };
 
       const passClassifyImages = () => {
@@ -5633,6 +5930,30 @@ html.${HTML_CLASS}.jread-orion body {
           }
           return false;
         };
+        // v2.5.24（arstechnica 小圖與圖說被壓成 76–148px）：apply 當下對「還沒載入」的
+        // lazy 圖拍的快照，不一定是站方的顯示尺寸。站方把 figure 做成 shrink-to-fit
+        // （display:table ＋ figcaption table-caption）、圖用 width:100% 時，未載入的圖
+        // 沒有 intrinsic 寬度 → figure 塌成圖說的 min-content（最長單字，CJK 譯文約兩個
+        // 字寬）→ 快照量到 76–148px。圖載入後 capIcon 拿這個快照判成「站方刻意縮小的
+        // 大圖」把寬度釘死，圖與圖說就永遠停在塌掉的寬度。
+        // 載入後在站方 cascade 下（停用注入 CSS）重量一次；只在三個條件全成立時才改用
+        // 重量的結果：
+        //   1. 重量的寬度明顯大於快照（> 1.5 倍）——快照是塌掉的
+        //   2. 不超過來源解析度（naturalWidth）——不是被撐大
+        //   3. 不超過 HTML width 屬性——站方自己宣告的顯示尺寸；沒有這個屬性就不改
+        // 條件 2、3 擋的是「頭像所在的 flex 列已被 decolumn 成 block、站方 width:100%
+        // 把頭像撐到版心寬」（換日線 / propublica，v1.8.5 / v1.7.57）：那種情況重量到的
+        // 寬度會超過屬性或來源解析度，照舊信快照。
+        const settleLazySnap = (img, snap) => {
+          if (!snap || !img.complete || !(img.naturalWidth > 1)) return snap;
+          const attrW = parseInt(img.getAttribute('width'), 10);
+          if (!(attrW > 0) || !NS.withInjectedCssDisabled) return snap;
+          let late = null;
+          try { late = NS.withInjectedCssDisabled(() => img.getBoundingClientRect()); } catch (_) { return snap; }
+          if (late && late.width > snap.width * 1.5 &&
+              late.width <= img.naturalWidth + 1 && late.width <= attrW + 1) return late;
+          return snap;
+        };
         const classifyImg = (img, preRect) => {
           if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(CONTENT_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return;
           const w = img.naturalWidth || img.width;
@@ -5768,7 +6089,7 @@ html.${HTML_CLASS}.jread-orion body {
               // 只跑 tryMarkContentImg——後者繞過上方兩條防放大 gate，lazy 頭像
               // 載入後直接被當內容圖撐滿版心（見 classifyImg 簽名註解）。
               const snap = preRect || img.getBoundingClientRect();
-              const onLoad = () => classifyImg(img, snap);
+              const onLoad = () => classifyImg(img, settleLazySnap(img, snap));
               img.addEventListener('load', onLoad);
               contentImgLoadCleanup.push({ img, onLoad });
             }
@@ -5788,7 +6109,7 @@ html.${HTML_CLASS}.jread-orion body {
               // 舊路徑載入後只跑 tryMarkUpscaleImg（natural 300 >= 200 即標
               // upscale）→ width:100% 撐成 608×608 圓形滿版。
               const snap = preRect || img.getBoundingClientRect();
-              const onLoad = () => classifyImg(img, snap);
+              const onLoad = () => classifyImg(img, settleLazySnap(img, snap));
               img.addEventListener('load', onLoad);
               contentImgLoadCleanup.push({ img, onLoad });
             }
@@ -5938,6 +6259,8 @@ html.${HTML_CLASS}.jread-orion body {
         markAbsAnchors(articleEl, absAnchorMarked);
         // v2.5.14：直向 flex 容器的直接子 <pre> 不置中（同樣要在 ARTICLE_ATTR 之後量）
         markFlexColumnPres(articleEl, preFlexStretchMarked);
+        // v2.5.24：站方 float 的文字方塊撐滿版心（同樣要在 ARTICLE_ATTR 之後量）
+        markDefloatedTextBoxes(articleEl, defloatTextMarked);
         // v2.5.23：圖說上方的媒體與圖說標記（見 markCaptionMedia；要在 PLAYER / INLINE_IMG
         // 標記之後——兩者都在更早的 pass）
         markCaptionMedia(articleEl, capMediaMarked);
@@ -5994,6 +6317,9 @@ html.${HTML_CLASS}.jread-orion body {
         // v2.4.9：drop cap 首字色修正對象標記。必須在 passHtmlClassThemeMeta 之後
         //（主題文字色全生效才比得出「段落色 vs 站方首字色」，見函式註解）
         markFirstLetterColorBlocks(articleEl, firstLetterMarked);
+        // v2.5.24：放大首字重排＋首行樣式歸回標記（共用同一個還原陣列）。同樣要在
+        // 使用者字級 / 行距的 CSS 生效之後量
+        markDropCapBlocks(articleEl, firstLetterMarked);
       };
 
       const passMarkSelectionOpaque = () => {
@@ -6358,6 +6684,7 @@ html.${HTML_CLASS}.jread-orion body {
           const _win = articleEl.ownerDocument?.defaultView;
           if (_win && _win.getComputedStyle) {
             let preScanned = 0;
+            const codePadPending = [];
             for (const pre of articleEl.querySelectorAll('pre')) {
               if (preScanned >= CODE_BG_MAX_SCAN) break;
               if (pre.closest && pre.closest('[data-jread-hidden="1"]')) continue;
@@ -6375,6 +6702,45 @@ html.${HTML_CLASS}.jread-orion body {
                 prevP: pre.style.getPropertyPriority('background-color')
               });
               pre.style.setProperty('background-color', theme.codeBlockBg, 'important');
+              // v2.5.24：補了底色的 <pre> 若沒有內距，字會貼著灰底邊緣。站方常把
+              // 底色與內距都放在外層 wrapper（qiita `.code-frame { padding: 8px 16px;
+              // background }` 實證）：wrapper 的底色被 bg strip 清掉、水平內距被版心
+              // 對齊 pass 歸零，底色改畫在 <pre> 上之後就沒有任何內距。
+              // 只在「這個底色是本 pass 補的」時才補內距（站方自己畫底的 <pre> 不動）；
+              // 內距量 <pre> 自身＋唯一 block 子元素 <code>（有些站把內距放在 code 上）。
+              // 水平、垂直各自判定，不足 CODE_PAD_MIN 才補。
+              const pcs = _win.getComputedStyle(pre);
+              const only = pre.children.length === 1 && pre.firstElementChild.tagName === 'CODE'
+                ? _win.getComputedStyle(pre.firstElementChild) : null;
+              const padOf = (side) => (parseFloat(pcs['padding' + side]) || 0) + (only ? (parseFloat(only['padding' + side]) || 0) : 0);
+              const sides = [];
+              for (const [side, prop, val] of [['Left', 'padding-left', CODE_PAD_X], ['Right', 'padding-right', CODE_PAD_X],
+                ['Top', 'padding-top', CODE_PAD_Y], ['Bottom', 'padding-bottom', CODE_PAD_Y]]) {
+                if (padOf(side) < CODE_PAD_MIN) sides.push({ side, prop, val });
+              }
+              if (sides.length) codePadPending.push({ pre, code: only ? pre.firstElementChild : null, sides });
+            }
+            // 先全讀再全寫（判定值全取自寫入前的 layout，不逐個 <pre> 觸發 recalc）
+            const setInline = (el, prop, val) => {
+              contrastBgSnap.push({
+                el, prop,
+                prev: el.style.getPropertyValue(prop),
+                prevP: el.style.getPropertyPriority(prop)
+              });
+              el.style.setProperty(prop, val, 'important');
+            };
+            for (const { pre, sides } of codePadPending) {
+              for (const { prop, val } of sides) setInline(pre, prop, val);
+            }
+            // 站方若寫 pre code { padding: inherit }（qiita 實證），剛補在 <pre> 上的內距
+            // 會被 <code> 再繼承一次、變成兩倍。寫完後重讀一次：<code> 在補過的那一側
+            // 多出內距，就把 <code> 那一側歸零。
+            for (const { code, sides } of codePadPending) {
+              if (!code) continue;
+              const ccs = _win.getComputedStyle(code);
+              for (const { side, prop } of sides) {
+                if ((parseFloat(ccs['padding' + side]) || 0) >= CODE_PAD_MIN) setInline(code, prop, '0');
+              }
             }
           }
         }
@@ -7469,15 +7835,37 @@ html.${HTML_CLASS}.jread-orion body {
         {
           const _w = articleEl.ownerDocument?.defaultView;
           if (_w) {
-            const bodyFs = opts.fontSize || 18;
+            // v2.5.24：所有圖說統一字級（Jimmy 2026-11-19 裁定「所有站圖說一律置中縮小」）。
+            // 原本只有下限（小於 floor 才撐），現在一律寫成 max(下限, 內文 × 0.8)：
+            // 太小的撐上來、跟內文一樣大或更大的縮下去。置中 / 字體 / 顏色在 buildCss 的
+            // captionDefaultCss。內文字級：使用者有設就用設定值；Auto（0，保留原站字級）
+            // 時取主文裡最常見的長段落字級，量不到用 18。
+            // 這條驗 X、不驗 Y：只認 <figcaption>；用 div / p / span 當圖說的站不處理
+            let bodyFs = opts.fontSize || 0;
+            if (!bodyFs) {
+              const tally = new Map();
+              let seen = 0;
+              for (const p of articleEl.querySelectorAll('p')) {
+                if ((p.textContent || '').trim().length < 120) continue;
+                if (p.closest('figcaption, blockquote, li, table, [data-jread-hidden="1"]')) continue;
+                const f = Math.round(parseFloat(_w.getComputedStyle(p).fontSize) || 0);
+                if (f > 0) tally.set(f, (tally.get(f) || 0) + 1);
+                if (++seen >= 30) break;
+              }
+              let best = 0;
+              for (const [f, n] of tally) if (n > best) { best = n; bodyFs = f; }
+              if (!bodyFs) bodyFs = 18;
+            }
             const capFloor = Math.max(14, Math.round(bodyFs * 0.78));
+            const capFs = Math.max(capFloor, Math.round(bodyFs * 0.8));
             // v1.6.29 批次化：先全讀 computed font-size 再全寫（同 zeroHoriz，
             // 避免逐元素讀寫交錯的 O(n) 強制 recalc）
             const capPending = [];
             for (const fc of articleEl.querySelectorAll('figcaption')) {
               if (fc.closest('[data-jread-hidden="1"]')) continue;
-              const curFs = parseFloat(_w.getComputedStyle(fc).fontSize) || 0;
-              if (curFs > 0 && curFs < capFloor - 0.5) capPending.push(fc);
+              // 一律寫（不比對現值）：樣式表的 0.8em 後備是相對父層，算出值剛好等於目標
+              // 不代表父層字級之後不變
+              capPending.push(fc);
             }
             for (const fc of capPending) {
               captionFsSnap.push({
@@ -7485,7 +7873,7 @@ html.${HTML_CLASS}.jread-orion body {
                 fs: fc.style.getPropertyValue('font-size'),
                 fsP: fc.style.getPropertyPriority('font-size'),
               });
-              fc.style.setProperty('font-size', capFloor + 'px', 'important');
+              fc.style.setProperty('font-size', capFs + 'px', 'important');
             }
           }
         }
@@ -7525,7 +7913,9 @@ html.${HTML_CLASS}.jread-orion body {
                 ta: fc.style.getPropertyValue('text-align'),
                 taP: fc.style.getPropertyPriority('text-align'),
               });
-              fc.style.setProperty('text-align', 'start', 'important');
+              // v2.5.24：圖說一律置中（buildCss captionDefaultCss）。這裡仍要寫 inline——
+              // 站方 inline !important 的靠尾端對齊，樣式表的 center 蓋不過
+              fc.style.setProperty('text-align', 'center', 'important');
             }
           }
         }
@@ -7674,6 +8064,40 @@ html.${HTML_CLASS}.jread-orion body {
           // 同標題一起轉 block 才對得齊
           if (/^inline/.test(it.disp)) setSnap(it.el, 'display', 'block');
           if (it.ta !== titleAlign) setSnap(it.el, 'text-align', titleAlign);
+        }
+      };
+
+      const passHeadingLineHeightFloor = () => {
+        // v2.5.24：內文小標行高下限。站方的展示字小標常把行高鎖在字級的 1.0 倍
+        //（netflix tudum 的 h3：36px 字、36px 行高，配站方的窄體展示字型才好看）。
+        // 閱讀模式換成設定的字體後字面變高，兩行以上的小標上下行貼在一起；譯成
+        // 中文後更明顯（CJK 字佔滿整個字框，1.0 倍行高＝行與行之間沒有空隙）。
+        // 通則：h2–h6 的 computed 行高 < 字級 1.15 倍 → 行高改成 1.25（unitless，
+        // 跟著字級走）。h1 由標題字級覆寫那條帶 1.3，不在這裡。
+        // 使用者選「行距 Auto」（保留原站行距）時整條跳過，與內文、標題同一個取捨。
+        // 還原共用 titleLineSnap（同形 {el, prop, v, p}）。
+        // 訊號層次：驗「行高比 → 寫入」；不驗換字體後實際墨跡有沒有相碰（截圖）。
+        if (opts.lineHeight === 0) return;
+        const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+        if (!win) return;
+        const pending = [];
+        for (const h of articleEl.querySelectorAll('h2, h3, h4, h5, h6')) {
+          if (h.closest('[data-jread-hidden="1"]')) continue;
+          if (!(h.textContent || '').trim()) continue;
+          const cs = win.getComputedStyle(h);
+          const fs = parseFloat(cs.fontSize) || 0;
+          const lh = parseFloat(cs.lineHeight);
+          if (!fs || !isFinite(lh)) continue; // 'normal' 由字型自己決定，不會貼行
+          if (lh >= fs * 1.15) continue;
+          pending.push(h);
+        }
+        for (const h of pending) {
+          titleLineSnap.push({
+            el: h, prop: 'line-height',
+            v: h.style.getPropertyValue('line-height'),
+            p: h.style.getPropertyPriority('line-height'),
+          });
+          h.style.setProperty('line-height', '1.25', 'important');
         }
       };
 
@@ -8435,6 +8859,114 @@ html.${HTML_CLASS}.jread-orion body {
         }
       };
 
+      // v2.5.24：表格欄位被擠到一字一行時，給那一格最小寬度。
+      // 根因（ko.wikipedia 咖啡「花式咖啡」九欄表、hi / fa.wikipedia 譯成中文後的五欄表，
+      // 語料庫 1280 與 430 寬）：表格自動排版在放不下時把每欄往「最小內容寬」壓；中日韓
+      // 文字每個字之間都能斷，最小內容寬＝一個字，所以表格永遠「放得下」、不會溢出，
+      // passWideContentScroll 也就不會接手——結果是欄寬 20–38px、「牛奶／蒸氣牛奶」
+      // 直排成七行。拉丁文字的單字不能從中間斷，欄寬有單字長度墊著，不會這樣。
+      // 通則（不看站點 / class / 語言）：格子裡最長的一段「不含空白的字串」如果比格子的
+      // 內容寬還寬，代表它正被從中間斷開。斷到一行放不下
+      // min(那段字串, CELL_FLOOR_TRIGGER_EM 個字) 才算被擠（一行還放得下三個字的欄
+      // 不動——pmc 譯文表的標籤欄 3.5 個字寬，動了只是從別欄搶 8px、別欄多折一行）；
+      // 被擠的格子 min-width 設成 min(那段字串的寬, CELL_FLOOR_EM 個字)。表格會先從有
+      // 餘裕的欄挪寬度，挪不夠才比卡片寬——那時交給排在後面的 passWideContentScroll
+      // 寫成卡內橫向捲動。
+      //   - 字串寬用 OffscreenCanvas 以格子的字型量（只量前 CELL_FLOOR_PROBE_CHARS 個字，
+      //     夠判斷有沒有到上限）；沒有 OffscreenCanvas（jsdom、Safari 16.4 以前）時按
+      //    「寬字 1em、其餘 0.55em」估
+      //   - 字串本來就放得下的格子（一般換行、拉丁單字）一個 inline 都不寫
+      //   - 只在捲動模式跑：翻頁模式橫拖是翻頁，表格比欄寬就看不到也捲不到
+      //    （Jimmy 2026-11-18 裁定：翻頁模式會擠成一字一行的表整張不處理）
+      //   - 含公式的格子不看（NS.MATH_RENDER_SEL）：公式的 textContent 是 MathML 各節點
+      //     與 LaTeX 原始碼黏成的一長串，量它的字寬沒有意義（arxiv 公式表的式子被
+      //     推偏 22px）
+      //   - 含巢狀表格的格子、看不到的格子、播放器不看；單張表超過
+      //     CELL_FLOOR_MAX_CELLS 格不看（量測成本）
+      // 這條驗「字串被從中間斷開的格子有了下限」、不驗撐寬之後表格比卡片寬時的橫捲
+      //（歸 passWideContentScroll）
+      const CELL_FLOOR_TRIGGER_EM = 3;
+      const CELL_FLOOR_EM = 4;
+      const CELL_FLOOR_PROBE_CHARS = 8;
+      const CELL_FLOOR_MAX_CELLS = 1500;
+      const CELL_FLOOR_MAX_ROUNDS = 4;
+      const CELL_FLOOR_WIDE_CHAR_RE = /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
+      const passSqueezedCellFloor = () => {
+        if (opts.pagedMode) return;
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win) return;
+        let ctx = null, ctxTried = false;
+        const tokenWidth = (tok, cs, fs) => {
+          const head = Array.from(tok).slice(0, CELL_FLOOR_PROBE_CHARS).join('');
+          if (!ctxTried) {
+            ctxTried = true;
+            // OffscreenCanvas：不建 DOM 節點；jsdom 與 Safari 16.4 以前沒有 → 走估算
+            try { ctx = typeof win.OffscreenCanvas === 'function' ? new win.OffscreenCanvas(1, 1).getContext('2d') : null; } catch (_) { ctx = null; }
+          }
+          if (ctx && typeof ctx.measureText === 'function') {
+            try {
+              ctx.font = `${cs.fontStyle || 'normal'} ${cs.fontWeight || '400'} ${fs}px ${cs.fontFamily || 'sans-serif'}`;
+              const w = ctx.measureText(head).width;
+              if (w > 0) return w;
+            } catch (_) { /* 落到估算 */ }
+          }
+          let w = 0;
+          for (const ch of head) w += CELL_FLOOR_WIDE_CHAR_RE.test(ch) ? fs : fs * 0.55;
+          return w;
+        };
+        for (const table of articleEl.querySelectorAll('table')) {
+          if (table.getAttribute && table.getAttribute(PLAYER_ATTR) === '1') continue;
+          if (table.closest && table.closest('[data-jread-hidden="1"]')) continue;
+          const cells = table.querySelectorAll('td, th');
+          if (!cells.length || cells.length > CELL_FLOOR_MAX_CELLS) continue;
+          // 先量完再寫：寫一格的 min-width 會讓整張表重排，邊量邊寫每格都觸發一次排版。
+          // 寫完再量一輪：撐寬的欄會從別的欄挪寬度，原本夠寬的欄可能變成被擠的
+          //（ko 維基九欄表：第 3–9 欄撐寬後第 1 欄從 124px 被壓到 16px）。下限只增
+          // 不減，最多 CELL_FLOOR_MAX_ROUNDS 輪、沒有新寫入就停。
+          const floored = new Set();
+          for (let round = 0; round < CELL_FLOOR_MAX_ROUNDS; round++) {
+          const writes = [];
+          for (const cell of cells) {
+            if (floored.has(cell)) continue;
+            if (cell.closest('table') !== table) continue;
+            if (cell.querySelector('table')) continue;
+            if (NS.MATH_RENDER_SEL && cell.querySelector(NS.MATH_RENDER_SEL)) continue;
+            const text = (cell.textContent || '').trim();
+            if (!text) continue;
+            const r = cell.getBoundingClientRect();
+            if (!(r.width > 0) || !(r.height > 0)) continue;
+            const cs = win.getComputedStyle(cell);
+            const fs = parseFloat(cs.fontSize) || 16;
+            const insets = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
+              + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+            const inner = r.width - insets;
+            const cap = fs * CELL_FLOOR_EM;
+            const trigger = fs * CELL_FLOOR_TRIGGER_EM;
+            if (inner + 1 >= trigger) continue;                 // 一行放得下三個字 → 不看
+            let need = 0;
+            for (const tok of text.split(/\s+/)) {
+              if (!tok) continue;
+              const w = Math.min(tokenWidth(tok, cs, fs), cap);
+              if (w > need) need = w;
+              if (need >= cap) break;
+            }
+            if (!(Math.min(need, trigger) > inner + 1)) continue; // 最長字串放得下 → 不是被擠
+            writes.push({ cell, px: Math.ceil(need + (cs.boxSizing === 'border-box' ? insets : 0)) });
+          }
+          for (const w of writes) {
+            cellFloorSnap.push({
+              el: w.cell,
+              minWidth: w.cell.style.getPropertyValue('min-width'),
+              minWidthPriority: w.cell.style.getPropertyPriority('min-width'),
+            });
+            w.cell.style.setProperty('min-width', w.px + 'px', 'important');
+            floored.add(w.cell);
+          }
+          if (!writes.length) break;
+          }
+        }
+      };
+
       const passWideContentScroll = () => {
         // v0.8.101：寬語意內容（table / pre）超出 card → 卡內水平捲，不被切掉。
         // 根因（arxiv HTML 全文）：LaTeXML 把展示公式輸出成 <table class="ltx_equation">，
@@ -8971,6 +9503,7 @@ html.${HTML_CLASS}.jread-orion body {
         passTitleFontOverride,
         passHeroTitleFloor,
         passTitleOwnLineAndDek,
+        passHeadingLineHeightFloor,
         passGalleryFlex,
         passRatioBoxReset,
         passFixedHeightReset,
@@ -8981,6 +9514,7 @@ html.${HTML_CLASS}.jread-orion body {
         passMarkAriaFlowShells,
         passAriaHeaderKeepWithNext,
         passAriaNarrowCellInsets,
+        passSqueezedCellFloor,
         passWideContentScroll,
         passPangu,
       ];
@@ -9020,6 +9554,8 @@ html.${HTML_CLASS}.jread-orion body {
       if (typeof NS.resetPseudoMemo === 'function') NS.resetPseudoMemo(); // B-02：快取隨 apply 生命週期清掉
       // v0.8.130：清 marker <style> + 可能的 adopted sheet（CSP fallback 對稱還原）
       NS.removeCssText(STYLE_ID);
+      NS.removeCssText(PSEUDO_SHAPE_STYLE_ID); // v2.5.24
+      NS.removeCssText(CAPTION_STYLE_ID); // v2.5.24
 
       // v0.7.90：移除 scroll listener、清 timer 與 scrolling attr，避免閱讀
       // 模式關閉後仍在 html 留下 [data-jread-scrolling] / 殘留 timer 觸發 attr 設定。
@@ -9102,7 +9638,11 @@ html.${HTML_CLASS}.jread-orion body {
       // v2.4.9：drop cap 首字色修正標記（apply 與動態補標共用同一陣列）
       if (Array.isArray(snapshot.firstLetterMarked)) {
         for (const el of snapshot.firstLetterMarked) {
-          if (el && el.removeAttribute) el.removeAttribute(FIRST_LETTER_ATTR);
+          if (el && el.removeAttribute) {
+            el.removeAttribute(FIRST_LETTER_ATTR);
+            el.removeAttribute(DROP_CAP_ATTR);  // v2.5.24
+            el.removeAttribute(FIRST_LINE_ATTR); // v2.5.24
+          }
         }
       }
       // v2.4.10：站方選取底色不透明標記
@@ -9155,6 +9695,11 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.preFlexStretchMarked)) {
         for (const el of snapshot.preFlexStretchMarked) {
           if (el && el.removeAttribute) el.removeAttribute(PRE_FLEX_STRETCH_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.defloatTextMarked)) {
+        for (const el of snapshot.defloatTextMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(DEFLOAT_TEXT_ATTR);
         }
       }
       if (Array.isArray(snapshot.capMediaMarked)) {
@@ -9476,6 +10021,15 @@ html.${HTML_CLASS}.jread-orion body {
         snapshot.ariaCellSnap.restored = true;
       }
 
+      // v2.5.24：還原被擠格子的 min-width 下限（passSqueezedCellFloor）
+      if (Array.isArray(snapshot.cellFloorSnap)) {
+        for (const c of snapshot.cellFloorSnap) {
+          if (!c || !c.el) continue;
+          if (c.minWidth) c.el.style.setProperty('min-width', c.minWidth, c.minWidthPriority || '');
+          else c.el.style.removeProperty('min-width');
+        }
+      }
+
       // v0.8.101：還原寬語意內容（table / pre）的 display / overflow-x / max-width
       // （v2.5.18 起多帶 min-width）
       // inline override（apply 時設的水平捲）。
@@ -9575,7 +10129,10 @@ html.${HTML_CLASS}.jread-orion body {
       // v1.9.15：閱讀模式中新畫的重點（站方把選取文字包進高亮自訂元素）補標
       if (Array.isArray(s.siteUiMarked)) markInlineHighlights(s.articleEl, s.siteUiMarked, node);
       // v2.4.9：晚 mount 段落的站方 drop cap 首字色補標
-      if (Array.isArray(s.firstLetterMarked)) markFirstLetterColorBlocks(s.articleEl, s.firstLetterMarked, node);
+      if (Array.isArray(s.firstLetterMarked)) {
+        markFirstLetterColorBlocks(s.articleEl, s.firstLetterMarked, node);
+        markDropCapBlocks(s.articleEl, s.firstLetterMarked, node); // v2.5.24
+      }
       // 2026-11-15 review B-09：晚 mount / 譯文回填的段落補 CJK justify 標記
       if (Array.isArray(s.cjkJustifyMarked)) markCjkParagraphs(s.articleEl, s.textJustify, node, s.cjkJustifyMarked);
       scheduleDirOverride(s); // v2.5.21
@@ -9592,6 +10149,8 @@ html.${HTML_CLASS}.jread-orion body {
       if (!s || !s.articleEl || !Array.isArray(s.cjkJustifyMarked)) return;
       if (!host || host.nodeType !== 1 || !s.articleEl.contains(host)) return;
       markCjkParagraphs(s.articleEl, s.textJustify, host, s.cjkJustifyMarked);
+      // v2.5.24：譯文回填把段首從拉丁字母換成 CJK（或反過來）→ 重判放大首字
+      if (Array.isArray(s.firstLetterMarked)) markDropCapBlocks(s.articleEl, s.firstLetterMarked, host);
       scheduleDirOverride(s); // v2.5.21
     },
 
