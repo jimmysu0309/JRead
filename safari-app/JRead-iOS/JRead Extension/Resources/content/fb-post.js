@@ -185,7 +185,7 @@
   // - 主貼文 message 之後的 sibling chain（link-card / reactions / OG meta
   //   重複描述 等所有「主文結束後」內容；v0.7.158）
   // - [role="article"] 留言（FB 把每則留言標為 role="article"）
-  // - 所有 button / [role="button"]（CLAUDE.md 硬教訓九：reader mode 純閱讀
+  // - 所有 button / [role="button"] / 用連結做成的按鈕（NS.INTERACTIVE_BTN_SEL；CLAUDE.md 硬教訓九：reader mode 純閱讀
   //   定位下所有 interactive button 一律清，無保留例外）
   // - rect.height === 0 的 placeholder（hidden keyboard nav focus zone）
   // - 含留言區 wrapper 的直系子（textLen 通常較短但含多個 role="article"）
@@ -238,7 +238,9 @@
           next = next.nextElementSibling;
           const hasMedia = toRemove.querySelector('img, picture, video');
           const hasComment = toRemove.querySelector('[role="article"]');
-          const hasButton = toRemove.querySelector('button, [role="button"]');
+          // v2.5.29：按鈕判定改讀 NS.INTERACTIVE_BTN_SEL（與 cleaner 主要路徑同一份；
+          // 含用連結做成的按鈕 a[type="button"]）
+          const hasButton = toRemove.querySelector(NS.INTERACTIVE_BTN_SEL);
           if (hasComment || hasButton) { toRemove.remove(); continue; }
           if (!hasMedia) { toRemove.remove(); continue; }
 
@@ -275,7 +277,9 @@
     comments.forEach(c => c.remove());
 
     // button 全清（讚 / 留言 / 分享 / 訂閱 / 追蹤 / 更多選項 等）
-    const buttons = clone.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]');
+    // v2.5.29：selector 改讀 NS.INTERACTIVE_BTN_SEL（單一資料源在 namespace.js）。之前這裡
+    // 手寫一份，v2.5.28 主要路徑補「用連結做成的按鈕 <a type="button">」時沒跟到
+    const buttons = clone.querySelectorAll(NS.INTERACTIVE_BTN_SEL);
     buttons.forEach(b => b.remove());
 
     // height=0 placeholder：clone 後 rect 為 0,0,0,0,要用「原 DOM 對應節點」量

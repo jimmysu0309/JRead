@@ -626,7 +626,13 @@
   // 命中無年份月日、同塊有 <time> 與作者頁連結（頭像結構訊號成立），文章封面圖在 clean
   // 當下的 rect 只有 64×27（落在頭像尺寸帶內）→ 封面圖被當頭像藏掉（HEAD 3/3 有圖、
   // 試作版 3/3 沒圖）。方向原則：新形狀只加在「命中就保留」的那一側。
-  const BYLINE_TEXT_PROTECT_ONLY_RE = /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日/;
+  // v2.5.29：年份在前的英文日期「2017 Feb 28」（期刊引用列的寫法，PubMed / NLM 引用格式）
+  // 也只進保護用的這一份。pmc 原文頁標題上方的引用列「World J Radiol. 2017 Feb 28;9(2):
+  // 27–33. doi: …」整行不見：WEAK 的英文日期只認「Feb 28, 2017」「28 Feb 2017」兩種順序，
+  // 這一行沒有任何日期形狀 → 側欄判定條件 A（短＋連結密度高）與標題前雜訊兩條規則的
+  // 作者列保護都沒接住；翻譯後變成「2017 年 2 月 28 日」命中年月日才留著（同一頁原文
+  // 與翻譯後不一致）。月份後面必須緊跟 1–2 位數的日，「2017 March Madness」這類不算
+  const BYLINE_TEXT_PROTECT_ONLY_RE = /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?!\d)/;
   const BYLINE_TEXT_RE = new RegExp(BYLINE_TEXT_STRONG_RE.source + '|' + BYLINE_TEXT_WEAK_RE.source + '|' + BYLINE_TEXT_PROTECT_ONLY_RE.source, 'i');
   const BYLINE_MAX_TEXT_LEN = 200;
   // v2.5.5：保護側專用入口——簡體「编辑：」「报道：」「发布日期」「发表于」摺成台灣
@@ -1507,8 +1513,96 @@
     }
     return cur;
   }
+  // v2.5.29：文件自己的「See also」參考清單不是推薦區（Jimmy 2026-11-19 裁定留著）。
+  // MDN 文末「See also」、維基「See also」一節、Python 文件的 See also 提示框，原文頁
+  // 都被雜訊標題字樣 `^see\s+also` 整塊清掉；翻譯後標題變成「參見」不再命中、清單
+  // 留著——同一頁原文與翻譯後不一致（語料庫三頁全是這樣）。
+  // 分辨「文件的參考清單」與「新聞站的推薦區」不看站名、不看連結文字，看三件事：
+  //   1. 標題文字就是「See also」（「Related」「Further reading」「延伸閱讀」這些字樣
+  //      不在此列，照舊清）
+  //   2. 標題底下到下一個標題之前，只有純清單（ul / ol / dl）：沒有縮圖、日期、
+  //      影片、卡片標題——推薦卡片的那些零件一樣都沒有；位置不在 aside / footer / nav
+  //   3. 它是文件大綱的一節：同一層級的標題在文中另有至少兩個（h2–h6 才適用）；
+  //      或清單是「帶說明的參考條目」（連結以外的說明文字佔一半以上——推薦清單
+  //      只有標題連結）。非標題標籤（<p>See also</p>）只認後者，而且必須是所在
+  //      區塊的第一個元素
+  // 靜態 + 動態單一資料源（住在 resolveHeadingNoiseTarget 入口）。
+  const REFERENCE_SEE_ALSO_RE = /^see\s+also$/i;
+  const REFERENCE_LIST_ICON_MAX = 50;
+  function isReferenceSeeAlsoList(h, articleEl) {
+    const isSem = /^H[2-6]$/.test(h.tagName);
+    const own = isSem ? h.textContent
+      : Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('');
+    if (!REFERENCE_SEE_ALSO_RE.test(normHeading(own))) return false;
+    const chrome = h.closest('aside, footer, nav');
+    if (chrome && articleEl.contains(chrome) && chrome !== articleEl) return false;
+    // 標題外殼：只包這個標題（外加編輯連結這類短尾巴）的那幾層
+    let holder = h;
+    const hLen = norm(h.textContent).length;
+    while (holder.parentElement && holder.parentElement !== articleEl &&
+           articleEl.contains(holder.parentElement) &&
+           !holder.parentElement.querySelector('ul, ol, dl, p, table, figure, img, picture') &&
+           norm(holder.parentElement.textContent).length - hLen <= 40) {
+      holder = holder.parentElement;
+    }
+    if (!isSem && holder.previousElementSibling) return false;
+    const blocks = [];
+    for (let sib = holder.nextElementSibling; sib; sib = sib.nextElementSibling) {
+      if (/^(?:STYLE|LINK|META|SCRIPT)$/.test(sib.tagName)) continue;
+      if (/^H[1-6]$/.test(sib.tagName) || isSectionHeadingBlock(sib)) break;
+      if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
+      if (isContentlessShell(sib)) continue;
+      blocks.push(sib);
+    }
+    if (!blocks.length) return false;
+    let textLen = 0, linkLen = 0, links = 0;
+    for (const b of blocks) {
+      const lists = /^(?:UL|OL|DL)$/.test(b.tagName) ? [b]
+        : Array.from(b.querySelectorAll('ul, ol, dl')).filter(l => !l.parentElement.closest('ul, ol, dl') || !b.contains(l.parentElement.closest('ul, ol, dl')));
+      if (!lists.length) return false;
+      if (b.querySelector('time, picture, video, iframe, h1, h2, h3, h4, h5, h6')) return false;
+      for (const img of b.querySelectorAll('img')) {
+        const w = parseInt(img.getAttribute('width') || '', 10);
+        if (!(w > 0 && w <= REFERENCE_LIST_ICON_MAX)) return false; // 縮圖＝卡片；小圖示（入口圖示）不算
+      }
+      const bLen = norm(b.textContent).length;
+      let inLists = 0;
+      for (const l of lists) inLists += norm(l.textContent).length;
+      if (bLen - inLists > 20) return false; // 清單以外還有別的文字＝不是純清單
+      textLen += bLen;
+      for (const a of b.querySelectorAll('a')) { linkLen += norm(a.textContent).length; links++; }
+    }
+    if (!links || !textLen) return false;
+    if (linkLen / textLen <= 0.5) return true;
+    if (!isSem) return false;
+    let peers = 0;
+    for (const x of articleEl.querySelectorAll(h.tagName)) {
+      if (x === h || x.closest('[data-jread-hidden="1"]') || !norm(x.textContent)) continue;
+      if (++peers >= 2) return true;
+    }
+    return false;
+  }
+  // 整個區塊就是一節「See also」參考清單（標題＋清單，沒有別的內容）。側欄判定用：
+  // 這種區塊短、幾乎全是連結，形狀與側欄的連結小工具相同（MDN 真站：標題規則放行後，
+  // 條件 C 接手把整節藏掉；翻譯後譯文權重掉到門檻下才留著）
+  function isReferenceSeeAlsoBlock(el, articleEl) {
+    if (!el.querySelectorAll) return false;
+    const hs = el.querySelectorAll('h2, h3, h4, h5, h6');
+    if (hs.length !== 1) return false;
+    const h = hs[0];
+    if (!firstVisibleTextIsWithin(el, h)) return false;
+    if (!isReferenceSeeAlsoList(h, articleEl)) return false;
+    let inLists = 0;
+    for (const l of el.querySelectorAll('ul, ol, dl')) {
+      const outer = l.parentElement.closest('ul, ol, dl');
+      if (outer && el.contains(outer)) continue;
+      inLists += norm(l.textContent).length;
+    }
+    return norm(el.textContent).length - norm(h.textContent).length - inLists <= 40;
+  }
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
     if (isProseListLeadIn(h)) return false;
+    if (isReferenceSeeAlsoList(h, articleEl)) return false;
     // v2.5.23：程式碼裡的字不是 section heading。語法上色把每個 token 包成 <span>，
     // 關鍵字 `new` / `more` / `related` 單獨一個 span 時命中雜訊標題字樣，walk-up 把
     // 整個程式碼區塊當成那個「標題」底下的區塊藏掉（vuejs.org 實證：`new Map()` 的
@@ -4317,9 +4411,25 @@
   // 已清掉的追蹤 chip 列」裡的作者追蹤 chip 是 hidden 的，不構成「這塊是 byline」證據
   function isAuthorProfileAnchor(a) {
     if (!a || a.tagName !== 'A' || !a.hasAttribute('href')) return false;
-    let pn = '';
-    try { pn = new URL(a.getAttribute('href'), window.location.href).pathname; } catch (_) {}
-    return !!pn && AUTHOR_PAGE_PATH_RE.test(pn);
+    let u = null;
+    try { u = new URL(a.getAttribute('href'), window.location.href); } catch (_) {}
+    const pn = u ? u.pathname : '';
+    if (!pn) return false;
+    if (AUTHOR_PAGE_PATH_RE.test(pn)) return true;
+    return isHandleProfileAnchor(a, u);
+  }
+  // v2.5.29：帳號連結——同站、路徑只有一段 `/<帳號>`，而且連結文字裡寫著 `@<同一個帳號>`
+  // （qiita `<a href="/Qiita">@Qiita(Qiita キータ)</a>`；dev.to、GitHub 系也是根路徑帳號頁）。
+  // 路徑本身沒有 author / users 這類字可認，但「文字的 @帳號＝連結的去向」是站內帳號頁
+  // 的結構訊號，翻譯不會改帳號。只認同站：連到 x.com / threads 的 @帳號是社群帳號連結，
+  // 那是 hideSocialHandleLinks 要清的，不可在這裡變成作者頁
+  const HANDLE_PROFILE_PATH_RE = /^\/([\w.-]{2,40})\/?$/;
+  function isHandleProfileAnchor(a, u) {
+    if (!u || u.origin !== window.location.origin) return false;
+    const m = HANDLE_PROFILE_PATH_RE.exec(u.pathname);
+    if (!m) return false;
+    const text = norm(a.textContent || '').toLowerCase();
+    return text.indexOf('@' + m[1].toLowerCase()) !== -1;
   }
 
   function clusterContainsAuthorProfileLink(el, skipHidden) {
@@ -4329,6 +4439,12 @@
       if (isAuthorProfileAnchor(a)) return true;
     }
     return false;
+  }
+
+  function isIconSizedImg(img) {
+    let r;
+    try { r = img.getBoundingClientRect(); } catch (_) { return false; }
+    return !!r && r.width > 0 && r.height > 0 && r.width <= ICON_MEDIA_MAX && r.height <= ICON_MEDIA_MAX;
   }
 
   function hideInsideArticleButtonClusters(articleEl, hidden, containers) {
@@ -4375,6 +4491,12 @@
         let discounted = false;
         while (p && p !== el) {
           if (!isMedia && isInteractiveLeaf(p)) { discounted = true; break; }
+          // v2.5.29：連結 / 按鈕裡的**小圖示**（渲染兩邊都 <= ICON_MEDIA_MAX）不算內容媒體。
+          // v0.8.71 的豁免要保的是「連結圖」（hero、圖說裡的大圖），圖示量級的圖是按鈕
+          // 的一部分。cnbc 報價小工具實證（Jimmy 2026-11-19）：盤後時段報價連結裡多一顆
+          // 「After Hours」圖示，整個小工具因此不算按鈕叢集、留在文中；盤中沒有圖示就被清，
+          // 同一頁兩種結果。rect 0×0（未載入 / 未 layout）量不到尺寸，不走這條、照舊當內容
+          if (isMedia && n.tagName === 'IMG' && isInteractiveLeaf(p) && isIconSizedImg(n)) { discounted = true; break; }
           if (p.dataset && p.dataset.jreadHidden === '1') {
             discounted = true; break;
           }
@@ -6176,6 +6298,9 @@
         // v2.5.28：節首的交叉引用頂註（「主條目：XXX」）短、整行幾乎都是連結，形狀與
         // 側欄連結小區塊相同——Jimmy 2026-11-19 裁定留著（見 isSectionHeadCrossRefNote）
         if (isSectionHeadCrossRefNote(s.el)) continue;
+        // v2.5.29：文件自己的「See also」一節（標題＋純連結清單）不是側欄小工具
+        // （判定見 isReferenceSeeAlsoList / isReferenceSeeAlsoBlock）
+        if (isReferenceSeeAlsoBlock(s.el, articleEl)) continue;
         // v1.7.38 散文 guard（條件 A / C 共用，見 sidebarSiblingIsProse 註解）：
         // sibling 內含「非連結長句」= 內文段落，不是 link widget cluster
         const sibIsProse = sidebarSiblingIsProse(s.el);
@@ -8773,6 +8898,15 @@
   }
   const ORPHAN_LABEL_HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
 
+  // el 是連結，且它裡面被我們藏掉的元素都不帶字（圖片、圖示、空殼）
+  function linkLostOnlyImages(el) {
+    if (!el || el.tagName !== 'A' || !el.hasAttribute('href')) return false;
+    const gone = el.querySelectorAll('[data-jread-hidden="1"]');
+    if (!gone.length) return false;
+    for (const h of gone) { if (norm(h.textContent || '')) return false; }
+    return true;
+  }
+
   function collapseOrphanLabelShells(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const el of _getArticleAllElements(articleEl)) {
@@ -8835,6 +8969,11 @@
       // <span>名字</span></a>`，頭像被 byline 規則藏掉後「文字 + 空分支」形狀命中，
       // 作者名連坐消失）
       if (isAuthorProfileAnchor(el)) return false;
+      // v2.5.29：連結裡被我們藏掉的只有圖（頭像、圖示）→ 剩下的字就是這條連結完整的
+      // 文字，不是「標注的東西被清掉」的標籤。qiita 作者列的所屬組織連結
+      // `<a href="/organizations/x"><img 圖示><span>組織名</span></a>`：圖示被藏掉後組織名
+      // 連坐消失，作者列只剩「@帳號 in」半句
+      if (linkLostOnlyImages(el)) return false;
       // 同一個 chip 的外層（hover-card 被藏掉後也是「文字 + 空分支」）
       if (Array.from(el.querySelectorAll('[role="button"]')).some(isBylineNameChip)) return false;
       // v2.5.22：清單項目不是孤兒標籤。孤兒標籤的前提是「一段 label 標注一塊被我們清掉
@@ -9533,8 +9672,9 @@
   // 另一種寫法（toss.tech 徵才鈕：元件庫把按鈕樣式套在 <a> 上、type 屬性照搬）。
   // <a> 的 type 屬性在規範裡是「連結目標的 MIME type 提示」，值寫成 "button" 只可能是
   // 按鈕元件——一般內文連結不會有這個屬性
-  const INTERACTIVE_BTN_SEL =
-    'button, [role="button"], a[type="button"], input[type="button"], input[type="submit"], input[type="reset"]';
+  // v2.5.29：字串本體搬到 namespace.js 的 NS.INTERACTIVE_BTN_SEL（cleaner / styler 的影片
+  // 佔位殼判定 / fb-post.js 三邊共用同一份），這裡只留別名給本檔既有呼叫端
+  const INTERACTIVE_BTN_SEL = NS.INTERACTIVE_BTN_SEL;
 
   // keyword 命中的 wrapper 在 hide 前的主文保護：
   //   - 含 h1 的 wrapper 一律保留（v0.7.78 ebc article_header——CMS header
@@ -11291,15 +11431,27 @@
   // 函式庫 root class、不命中（inc 文中討論的 Domino's YouTube embed 正常保留）。
   const VIDEO_PLAYER_WIDGET_ROOT_SEL = '.jwplayer';
 
+  // widget 自己在播放器之外帶的文字（「Featured Video」標籤＋影片標題）的寬限，CJK 權重。
+  // inc.com 的 widget 外殼在 root 之外約 100 字；主文容器動輒數千
+  const VIDEO_WIDGET_OUTSIDE_SLACK = 300;
   function pickVideoWidgetWrapper(root, articleEl) {
     let el = root;
     const tlen = (e) => norm(e.textContent).length;
+    const rootLen = mainTextLen(norm(root.textContent));
+    const outsideLen = (e) => Math.max(0, mainTextLen(norm(e.textContent)) - rootLen);
     while (el.parentElement) {
       const p = el.parentElement;
       if (p === articleEl || (p.hasAttribute && p.hasAttribute('data-jread-active')) ||
           p.tagName === 'ARTICLE' || p.tagName === 'MAIN' || p.tagName === 'BODY') break;
       // 父層文字量比當前大很多 = 父層已含主文段落，停在當前層
       if (tlen(p) > tlen(el) * 3 + 80) break;
+      // v2.5.29：上面那條拿「含播放器自己的文字」當基準——播放器 root 裡的介面文字
+      //（標題、說明、快速鍵提示、字幕選單）可以有上千字，基準被它灌大後，一整篇主文
+      // 都不算「暴增」。space.com 翻譯後實證：root 1818 字、主文容器 4219 字
+      //（中文譯文比原文短一截）≤ 1818×3+80 → 一路爬到主文容器，再被下方「含主文段落」
+      // 保險擋下 → 播放器整顆留在文中。補一條只看 root 以外的文字（CJK 權重）：父層在
+      // root 之外多出來的文字超過當前層的 3 倍＋VIDEO_WIDGET_OUTSIDE_SLACK＝碰到主文，停
+      if (outsideLen(p) > outsideLen(el) * 3 + VIDEO_WIDGET_OUTSIDE_SLACK) break;
       // v2.2.17：父層含 h1、當前層不含＝父層是標題區，停在當前層（ms.now 翻譯輪
       // 實證：hero 播放器往上爬，每層文字量都沒暴增，一路爬到含 h1 + 副標的
       // content-header；原文輪靠下方 ≥100 字 <p> 保險擋下，譯文副標 58 字放行）
@@ -12026,6 +12178,7 @@
       if (!isAvatar) continue;
       // 向上走找 bio 卡容器（取符合條件的最高層祖先）
       let candidate = null;
+      let titleBlockH1 = null;
       let cur = img.parentElement;
       while (cur && cur !== articleEl) {
         if (cur.contains && cur.contains(articleEl)) break;
@@ -12036,7 +12189,7 @@
         // header → 連 cover 一起被當 bio 卡砍（既有 big-img guard 因 cover
         // rect clean-time 時序未必 > 門檻而失靈）。h1 訊號不受 rect 時序影響、
         // 是 bio 卡 vs 文章 header 的可靠結構區分。
-        if (cur.querySelector && cur.querySelector('h1')) break;
+        if (cur.querySelector && cur.querySelector('h1')) { titleBlockH1 = cur.querySelector('h1'); break; }
         // 內容媒體界線：figure / picture / video / iframe 是主文媒體慣例載體，
         // bio 卡不會包它們；含其一即停（不往上吞 lede / 主文 wrapper）
         if (cur.querySelector && cur.querySelector('figure, picture, video, iframe')) break;
@@ -12064,6 +12217,12 @@
       if (!candidate) continue;
       if (candidate.dataset && candidate.dataset.jreadHidden === '1') continue;
       if (isInPreserved(candidate)) continue;
+      // v2.5.29：與文章標題同一個區塊、而且排在標題**前面**的頭像列＝作者列，不是簡介卡
+      // （Jimmy 2026-11-18 規則：標題旁的作者名一律留）。簡介卡在文末，不會出現在標題
+      // 上方。qiita 實證：`<div><div 頭像＋@帳號 in 組織></div><h1>…</h1>…</div>`，原文
+      // 「@Qiita(Qiita キータ)inQiita株式会社」沒有日期、沒有 by 字樣，下面幾道作者列保護
+      // 都沒接住，整列被清；翻譯後「in」變「發表於」命中保護而留下——同一頁兩種結果
+      if (titleBlockH1 && (candidate.compareDocumentPosition(titleBlockH1) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
       const t = norm(candidate.textContent);
       if (t.length < BIO_CARD_MIN_TEXT) continue;
       // byline 保護：署名列（by X / 日期開頭）不是 bio 卡
@@ -12439,6 +12598,98 @@
         if (TAIL_NAME_CARD_TAGS.has(cur.tagName)) best = cur;
       }
       if (best) picked.push(best);
+    }
+    for (const el of picked) hide(el, hidden);
+  }
+
+  // ---- 主文內：文末的編輯署名行與免責聲明（v2.5.29，Jimmy 2026-11-19 回報 womany）----
+  // womany 實證：最後一段主文之後有 `section.article-meta`，裡面兩塊——
+  //   <p itemprop="editor">核稿編輯　<a href="/authors/…">Womany Audrey Ko</a></p>
+  //   <aside><p>吾思傳媒股份有限公司（統一編號…）…本文代表創作者觀點…</p></aside>
+  // 兩塊都是站方中繼資訊、不是文章內容。原本沒有任何規則會碰：aside 不是一律清的標籤、
+  // 兩塊的 class token（editor-info / disclaimer）不在雜訊字典（disclaimer 刻意不收，見檔頭）。
+  // 兩條通則（不認站名、不認 class）：
+  //   A. 編輯署名卡＝短區塊（權重 ≤ TAIL_CREDIT_MAX_WEIGHT），而且是下面兩種之一：
+  //      (1) 帶 schema.org microdata `itemprop="editor"`（翻譯後文字會變、屬性不變）
+  //      (2) 看得到的文字以「編輯類職稱＋分隔」開頭，且區塊裡有看得到的人員頁連結
+  //          （isAuthorProfileAnchor：/authors/、/staff/…）
+  //      也就是「職稱＋連到人員頁的名字」這種站方人員卡，與 v2.5.28 的「作者＋名字」小卡
+  //      同一類。只認編輯類職稱（核稿／責任／執行編輯、校對、Edited by…）：編輯署名永遠
+  //      不是文章唯一的作者署名；「文／」「記者」「攝影」「翻譯」可能就是作者本人，不在此列。
+  //      **純文字的編輯署名行不清**（中央社「（編輯：陳彥鈞）1150413」、財新「版面编辑：…」、
+  //      「責任編輯：X」）：那是稿件內文流的一部分，既有立場是保留（v2.5.5 真站對照、
+  //      v2522-tail-author-bio.spec 的反例）。要不要一起清屬於會改到別站畫面的取捨，
+  //      留給 Jimmy 決定
+  //   B. 免責聲明＝看得到的文字是立場聲明固定句型（「本文代表作者觀點」「不代表本站立場」
+  //      「The views expressed … do not necessarily reflect …」）的短區塊（權重 ≤
+  //      TAIL_DISCLAIMER_MAX_WEIGHT）
+  // 位置一律是文末：前面至少 BIO_TAIL_MIN_BEFORE 段主文、後面沒有任何主文段落（聲明本身
+  // 夠長會被算成主文段落，算位置時先把命中 B 的段落排除）。不在清單／表格／圖說／引言／
+  // 標題裡；不含 h1、<time>、媒體。內文句子裡的「責任編輯：X」（與內文同一個段落）、
+  // 標題下的作者列（在第一段主文之前）、文中的聲明都碰不到。
+  // 清的是「文字相同的最外層外殼」（womany 的 div.editor-info、aside.disclaimer）；兩塊都清掉
+  // 後剩下的空 section 交給後面的空殼收合。
+  const TAIL_CREDIT_MAX_WEIGHT = 80;
+  const TAIL_DISCLAIMER_MAX_WEIGHT = 400;
+  const TAIL_EDITOR_CREDIT_RE = /^[（(\[【]?\s*(?:(?:核稿|責任|執行|文字|值班|網路|數位|特約|助理|資深|副總|總|主)?編輯|責編|主編|編審|核稿|審稿|校對|校稿|審校|edited\s+by|editing\s+by|(?:copy[\s-]?|sub[\s-]?|managing\s+|senior\s+)?editor|proofread(?:ing)?\s+by|copy[\s-]?edit(?:ed|ing)\s+by)\s*(?:[:：／/|｜•·\-–—]|\s)\s*\S/i;
+  // 「編輯推薦／編輯精選／Editor picks」是推薦區標題，不是署名
+  const TAIL_EDITOR_CREDIT_NOT_RE = /推薦|精選|嚴選|手記|後記|的話|picks?\b|choice|note|recommend/i;
+  const TAIL_DISCLAIMER_RE = /本文(?:內容)?(?:僅|只|均|皆)?(?:代表|為|係|屬)(?:作者|創作者|投稿者|撰文者|專欄作家|來稿者)(?:個人|本人)?(?:之|的)?(?:觀點|立場|意見|言論|看法)|不代表(?:本[站報刊社網台]|本(?:平台|公司|媒體|網站|專欄))(?:之|的)?(?:立場|觀點|意見)|(?:views?|opinions?)\s+(?:and\s+(?:views?|opinions?)\s+)?expressed\s[^.]{0,80}?(?:are\s+(?:solely\s+|strictly\s+)?(?:those\s+of|the\s+authors?['’]?s?\s+own)|do(?:es)?\s+not\s+(?:necessarily\s+)?(?:reflect|represent))/i;
+  // 「不代表 X 立場」的 X 只認「本站／本報／本網／本平台…」這種自稱：放寬成任意短詞會命中
+  // 別種告示（npr 譯後「…皆非 NPR 員工，亦不代表 NPR 立場」是防詐告示、原文句型不同，
+  // 只有譯文命中會造成原文與翻譯後不一致——語料庫普查抓到）
+  const TAIL_NOTE_TAGS = new Set(['P', 'DIV', 'ASIDE', 'SECTION', 'FOOTER', 'SMALL', 'ADDRESS']);
+
+  function hideTailEditorialNotes(articleEl, hidden) {
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    const isDisclaimerText = (t) => !!t && NS.cjkWeightedLen(t) <= TAIL_DISCLAIMER_MAX_WEIGHT && TAIL_DISCLAIMER_RE.test(t);
+    // 位置的尺：主文段落，扣掉本身就是聲明的段落
+    const bodyPs = collectVisibleBodyParagraphs(articleEl)
+      .filter((p) => !isDisclaimerText(norm(p.textContent)));
+    if (bodyPs.length < BIO_TAIL_MIN_BEFORE) return;
+    const lastP = bodyPs[bodyPs.length - 1];
+    const SEL = 'p, div, aside, section, footer, small, address';
+    const BAD_INSIDE = 'h1, time, img, picture, video, iframe';
+    // 這個區塊自己看得到的文字是哪一種（'' ＝都不是）
+    const kindOf = (el) => {
+      const raw = norm(el.textContent);
+      if (!raw || NS.cjkWeightedLen(raw) > TAIL_DISCLAIMER_MAX_WEIGHT * 2) return '';
+      const text = norm(visibleRenderedText(el));
+      if (!text) return '';
+      if (NS.cjkWeightedLen(text) <= TAIL_CREDIT_MAX_WEIGHT) {
+        if ((el.getAttribute('itemprop') || '').toLowerCase().split(/\s+/).indexOf('editor') !== -1) return 'credit';
+        if (TAIL_EDITOR_CREDIT_RE.test(text) && !TAIL_EDITOR_CREDIT_NOT_RE.test(text)) {
+          for (const a of el.querySelectorAll('a[href]')) {
+            if (isAuthorProfileAnchor(a) && !a.closest('[data-jread-hidden="1"]') && hasVisibleRenderedText(a)) return 'credit';
+          }
+        }
+      }
+      return isDisclaimerText(text) ? 'disclaimer' : '';
+    };
+    const picked = [];
+    for (const el of articleEl.querySelectorAll(SEL)) {
+      if (!(lastP.compareDocumentPosition(el) & FOLLOWING) || lastP.contains(el)) continue;
+      if (el.closest('[data-jread-hidden="1"]') || isInPreserved(el)) continue;
+      if (el.closest('li, table, figure, figcaption, blockquote, pre, h1, h2, h3, h4, h5, h6')) continue;
+      if (picked.some((p) => p.contains(el))) continue;
+      if (!kindOf(el)) continue;
+      if (el.querySelector(BAD_INSIDE)) continue;
+      // 只收最內層命中的區塊：外層容器把署名行、聲明與別的東西包在一起時（womany 的
+      // section.article-meta），外層的文字也會命中句型，但要清的只有裡面那一塊
+      let innerHit = false;
+      for (const c of el.querySelectorAll(SEL)) { if (kindOf(c)) { innerHit = true; break; } }
+      if (innerHit) continue;
+      const text = norm(visibleRenderedText(el));
+      // 往上收「文字完全相同」的外殼
+      let best = el;
+      for (let hop = 0, cur = el.parentElement; cur && hop < BIO_SHELL_MAX_CLIMB; hop++, cur = cur.parentElement) {
+        if (cur === articleEl || cur.contains(articleEl) || cur.contains(lastP) || isInPreserved(cur)) break;
+        if (!TAIL_NOTE_TAGS.has(cur.tagName)) break;
+        if (norm(visibleRenderedText(cur)) !== text) break;
+        if (cur.querySelector(BAD_INSIDE)) break;
+        best = cur;
+      }
+      picked.push(best);
     }
     for (const el of picked) hide(el, hidden);
   }
@@ -12998,7 +13249,54 @@
     }
   }
 
+  // v2.5.29：註冊／登入入口連結對（qiita 翻譯後實證，Jimmy 2026-11-19 回報「翻譯後才露出
+  // 文末註冊框」）。上面的 NOISE_SIGNUP_CTA_RE 只認英文招攬句，翻譯後整張卡的文字都變了、
+  // 連結文字「Sign up」也變成「註冊」，文字規則全部失效。翻譯不會改的是連結的去向：
+  // 一列**只由連結組成**的按鈕列，裡面同時有「註冊路徑」與「登入路徑」的同站連結
+  // （路徑最後一段就是 signup / register / join 與 login / signin，前面最多一段前綴）。
+  // 內文提到登入頁的句子，連結在段落裡、旁邊有字，不是只由連結組成的列；文件站
+  // 「/docs/auth/login」這種教學頁路徑不只一段前綴，也不算。命中後走同一條
+  // findContentFreeCard（含主文長段落、程式碼、文章標題就不擴）。
+  const AUTH_SIGNUP_PATH_RE = /^(?:\/[\w-]{1,20})?\/(?:sign[-_]?up|register|registration|join)\/?$/i;
+  const AUTH_LOGIN_PATH_RE = /^(?:\/[\w-]{1,20})?\/(?:log[-_]?in|sign[-_]?in)\/?$/i;
+  const AUTH_LINK_ROW_MAX_LINKS = 4;
+  function authEntryLinkKind(a) {
+    if (!a || a.tagName !== 'A' || !a.hasAttribute('href')) return '';
+    let u;
+    try { u = new URL(a.getAttribute('href'), location.href); } catch (_) { return ''; }
+    if (u.origin !== location.origin) return '';
+    if (AUTH_SIGNUP_PATH_RE.test(u.pathname)) return 'signup';
+    if (AUTH_LOGIN_PATH_RE.test(u.pathname)) return 'login';
+    return '';
+  }
+  // row 是否為「只由連結組成、同時含註冊與登入入口」的按鈕列
+  function isAuthEntryLinkRow(row) {
+    if (!row || !row.children || row.children.length < 2) return false;
+    if (/^(P|LI|UL|OL|NAV|TD|TH|H[1-6])$/.test(row.tagName)) return false;
+    const links = row.querySelectorAll('a[href]');
+    if (links.length < 2 || links.length > AUTH_LINK_ROW_MAX_LINKS) return false;
+    let signup = false, login = false, linkText = 0;
+    for (const a of links) {
+      const kind = authEntryLinkKind(a);
+      if (kind === 'signup') signup = true;
+      else if (kind === 'login') login = true;
+      linkText += (a.textContent || "").replace(/\s+/g, "").length;
+    }
+    if (!signup || !login) return false;
+    // 列裡除了連結沒有別的字（連結之間的空白不算）
+    return (row.textContent || "").replace(/\s+/g, "").length - linkText <= 0;
+  }
   function hideInsideArticleSignupCtaCards(articleEl, hidden, scope) {
+    const seenRows = new Set();
+    for (const a of scopedQueryAll(scope, articleEl, 'a[href]')) {
+      if (authEntryLinkKind(a) !== 'signup') continue;
+      const row = a.parentElement;
+      if (!row || row === articleEl || seenRows.has(row) || !articleEl.contains(row)) continue;
+      seenRows.add(row);
+      if (isInPreserved(row)) continue;
+      if (!isAuthEntryLinkRow(row)) continue;
+      hideNoiseCardFromTrigger(row, articleEl, hidden);
+    }
     for (const el of scopedQueryAll(scope, articleEl, 'p, div, span, h1, h2, h3, h4, h5, h6')) {
       if (isInPreserved(el)) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -14007,12 +14305,27 @@
     if (node.tagName === 'IFRAME' || node.querySelector('iframe')) return true; // 廣告類已在上一道擋掉
     return norm(node.textContent || '').length > 0;
   }
+  // 新節點本身是播放器 root、在某個 root 裡面、或自己帶著 root（都限殼的範圍內）
+  function nodeIsInsideVideoPlayerWidget(node, shell) {
+    try {
+      const root = node.closest(VIDEO_PLAYER_WIDGET_ROOT_SEL);
+      if (root && shell.contains(root)) return true;
+      return !!(node.querySelector && node.querySelector(VIDEO_PLAYER_WIDGET_ROOT_SEL));
+    } catch (_) { return false; }
+  }
   function reviveEmptyShellFor(articleEl, node, hiddenList) {
     if (!node || !node.closest) return false;
     const shell = node.closest('[' + HIDDEN_WHY_ATTR + '="empty"]');
     if (!shell || shell === articleEl || !articleEl.contains(shell)) return false;
     if (node.closest('[data-jread-hidden="1"]') !== shell) return false;
     if (dynamicNodeIsAdLike(node)) return false;
+    // v2.5.29：新節點屬於殼內的 JS 影片播放器函式庫 widget（VIDEO_PLAYER_WIDGET_ROOT_SEL）
+    // → 不撤。space.com 實證：站方先放空的播放器外殼（clean 當下被空殼規則藏掉），捲到
+    // 附近才實例化播放器——root 掛上時 hideVideoPlayerWidgetFrom 看到外殼已藏、視為已處理；
+    // 接著播放器把 video / svg / 標題文字塞進 root，這裡把殼撤銷，而「root 新增」的時機
+    // 已過、沒有人再藏它 → 第三段後留下約 380px 的播放器空框。這類 widget 本來就一律清
+    //（v0.8.140），晚到的內容不是「晚渲染的內文」
+    if (nodeIsInsideVideoPlayerWidget(node, shell)) return false;
     if (!dynamicNodeHasContent(node)) return false;
     const idx = Array.isArray(hiddenList) ? hiddenList.findIndex(h => h && h.el === shell) : -1;
     const rec = idx >= 0 ? hiddenList[idx] : null;
@@ -14554,6 +14867,8 @@
       // 聲明還看得到，排太前面時作者卡不算在文末）
       // 文末只有「作者＋名字」的小卡：與標題下作者列同一個作者頁連結時才清
       safeRun(hideTailAuthorNameCards, articleEl, hidden);
+      // 文末的編輯署名行與免責聲明（v2.5.29）：同樣以「最後一段主文之後」為位置
+      safeRun(hideTailEditorialNotes, articleEl, hidden);
       // 文末「按鈕清光後剩下的短卡片」：依賴所有按鈕規則都跑完
       safeRun(hideTailEmptiedButtonCards, articleEl, hidden);
       // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在

@@ -446,7 +446,16 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     //   6. 按鈕中心落在殼的正中（兩軸各 ±15%）——角落的關閉 / 放大鍵不算
     // 背景圖要量站方原值：styler 的裝飾背景 strip 生效後量到的一律是 none，量不到時
     // 用 withInjectedCssDisabled 再量一次（只在前面便宜的 gate 都過了才付這筆）。
-    FACADE_BTN_SEL: 'button, [role="button"], a[type="button"], input[type="button"], input[type="submit"], input[type="reset"]',
+    // v2.5.29：interactive button selector 的單一資料源搬到這裡。之前 cleaner 的
+    // INTERACTIVE_BTN_SEL、這裡的 FACADE_BTN_SEL、fb-post.js 的兩處手寫 selector 是同一份
+    // 事實的三份實作——v2.5.28 補 a[type="button"] 時 fb-post 那份就漏了（drift 實例）。
+    // 現在三邊都讀這一個常數：cleaner `const INTERACTIVE_BTN_SEL = NS.INTERACTIVE_BTN_SEL`、
+    // FACADE_BTN_SEL 是別名、fb-post pruneReaderClone 直接用。
+    // <a role="button"> 被 [role="button"] 涵蓋；<a type="button"> 是同一種東西的另一種寫法
+    //（元件庫把按鈕樣式套在 <a> 上、type 屬性照搬；<a> 的 type 在規範裡是連結目標的
+    // MIME type 提示，值寫成 "button" 只可能是按鈕元件）。
+    INTERACTIVE_BTN_SEL: 'button, [role="button"], a[type="button"], input[type="button"], input[type="submit"], input[type="reset"]',
+    get FACADE_BTN_SEL() { return this.INTERACTIVE_BTN_SEL; },
     FACADE_MIN_W: 200,
     FACADE_RATIO_MIN: 1.2,
     FACADE_RATIO_MAX: 2.4,
