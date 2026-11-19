@@ -466,7 +466,13 @@ function pageFingerprint() {
     if (node.nodeType !== 1) return;
     const el = node;
     if (SKIP[el.tagName] || isOwnUi(el)) return;
-    if (typeof el.checkVisibility === 'function' && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return;
+    // display:contents 的元素自己沒有框，checkVisibility() 一律回 false，但子孫照樣畫得出來
+    // （toss.tech 內文包在 span(display:contents) 裡，整篇內文曾因此不在指紋內、變動抓不到）。
+    // 這種元素不做可見性判定、直接往下走，由子孫各自判定。
+    const elCs = getComputedStyle(el);
+    const isContents = elCs.display === 'contents';
+    if (isContents && elCs.visibility !== 'visible') return; // 直屬文字會繼承 visibility
+    if (!isContents && typeof el.checkVisibility === 'function' && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return;
     if (MEDIA[el.tagName] || el.tagName === 'svg') {
       const r = el.getBoundingClientRect();
       if (r.width >= 40 && r.height >= 40) {
