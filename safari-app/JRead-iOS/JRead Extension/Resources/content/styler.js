@@ -408,6 +408,19 @@
   const CODE_FLEX_FILL_ATTR = 'data-jread-code-flex-fill';
   // v2.5.23：圖說與它上方那張圖的間距收緊（規則與標記見 buildCss / markCaptionMedia）
   const CAP_MEDIA_ATTR = 'data-jread-cap-media';   // 圖說上方的媒體，與它到共同容器之間的包裝
+  const TABLE_FIT_ATTR = 'data-jread-table-fit';  // v2.5.25：被縮字級塞進卡片的表（值＝縮放比例）
+  // 還原一張被縮字級的表（fitTableFont 的一筆紀錄）：反序寫回 inline、拿掉標記
+  const restoreTableFitEntry = (f) => {
+    if (!f || !f.table) return;
+    const snaps = f.snaps || [];
+    for (let k = snaps.length - 1; k >= 0; k--) {
+      const a = snaps[k];
+      if (!a || !a.el) continue;
+      if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+      else a.el.style.removeProperty(a.prop);
+    }
+    f.table.removeAttribute(TABLE_FIT_ATTR);
+  };
   const CAP_BELOW_ATTR = 'data-jread-cap-below';   // 排在媒體下方的 figcaption（"1" / "pad"）
   // v2.5.16：主文內帶 shadow root 的自訂元素（見 markShadowHosts）
   const SHADOW_HOST_ATTR = 'data-jread-shadow-host';
@@ -3613,6 +3626,11 @@ html [${ARTICLE_ATTR}="1"] a {
     //   - 程式碼、公式、SVG 不蓋字體與字級（arxiv / distill 圖說裡有公式）
     // 選擇器 html [A="1"][A] figcaption 是 (0,2,2)：贏過 light 圖說色與主題文字色
     // 規則，但低於 v2.5.23「圖說貼近圖片」的 (0,3,2)（margin-top 仍由那條決定）
+    // v2.5.25：圖說的後代也寫置中。圖說文字包在 <p> / <li> 裡時（aeon、Readwise 部分文章），
+    //「主文段落一律靠左」規則（[A] :is(p, li, …)，(0,1,1)）與中文段落兩端對齊（(0,2,0)）
+    // 直接命中那個 <p>，figcaption 自己的 center 繼承不下去——圖說看起來靠左
+    //（WebKit 補驗時截圖發現，Chromium 相同）。選擇器多疊一個 [A] 讓兩種 scope 都高過
+    // (0,2,0)；只寫 text-align，不影響上面各條的優先序
     const capText = mixHex(theme.text || theme.proseText, theme.articleBg, 0.7);
     const captionDefaultCss = (scope, colorStar, fontStar) => `
 ${scope} figcaption {
@@ -3629,6 +3647,9 @@ ${scope} figcaption ${colorStar} {
 ${scope} figcaption ${fontStar} {
   font-family: inherit !important;
   font-size: inherit !important;
+}
+${scope}[${ARTICLE_ATTR}] figcaption * {
+  text-align: center !important;
 }`;
     // 公式渲染單元取 NS.MATH_RENDER_SEL（單一資料源；KaTeX 的 .katex 內全是帶專用字體的
     // span，被蓋成 inherit 後減號等符號字寬變了、語料庫 distill 量到 <mo> 消失）
@@ -5720,6 +5741,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const wpConstrained = [];
       const wideScroll = [];
       const cellFloorSnap = [];
+      const tableFitSnap = [];
       const ariaCellSnap = [];
       const ariaFlowShellMarked = [];
       const ariaHeaderKeepSnap = [];
@@ -5771,7 +5793,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -8891,40 +8913,41 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const CELL_FLOOR_MAX_CELLS = 1500;
       const CELL_FLOOR_MAX_ROUNDS = 4;
       const CELL_FLOOR_WIDE_CHAR_RE = /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
-      const passSqueezedCellFloor = () => {
-        if (opts.pagedMode) return;
-        const win = articleEl.ownerDocument?.defaultView;
-        if (!win) return;
-        let ctx = null, ctxTried = false;
-        const tokenWidth = (tok, cs, fs) => {
-          const head = Array.from(tok).slice(0, CELL_FLOOR_PROBE_CHARS).join('');
-          if (!ctxTried) {
-            ctxTried = true;
-            // OffscreenCanvas：不建 DOM 節點；jsdom 與 Safari 16.4 以前沒有 → 走估算
-            try { ctx = typeof win.OffscreenCanvas === 'function' ? new win.OffscreenCanvas(1, 1).getContext('2d') : null; } catch (_) { ctx = null; }
-          }
-          if (ctx && typeof ctx.measureText === 'function') {
-            try {
-              ctx.font = `${cs.fontStyle || 'normal'} ${cs.fontWeight || '400'} ${fs}px ${cs.fontFamily || 'sans-serif'}`;
-              const w = ctx.measureText(head).width;
-              if (w > 0) return w;
-            } catch (_) { /* 落到估算 */ }
-          }
-          let w = 0;
-          for (const ch of head) w += CELL_FLOOR_WIDE_CHAR_RE.test(ch) ? fs : fs * 0.55;
-          return w;
-        };
-        for (const table of articleEl.querySelectorAll('table')) {
-          if (table.getAttribute && table.getAttribute(PLAYER_ATTR) === '1') continue;
-          if (table.closest && table.closest('[data-jread-hidden="1"]')) continue;
-          const cells = table.querySelectorAll('td, th');
-          if (!cells.length || cells.length > CELL_FLOOR_MAX_CELLS) continue;
-          // 先量完再寫：寫一格的 min-width 會讓整張表重排，邊量邊寫每格都觸發一次排版。
-          // 寫完再量一輪：撐寬的欄會從別的欄挪寬度，原本夠寬的欄可能變成被擠的
-          //（ko 維基九欄表：第 3–9 欄撐寬後第 1 欄從 124px 被壓到 16px）。下限只增
-          // 不減，最多 CELL_FLOOR_MAX_ROUNDS 輪、沒有新寫入就停。
-          const floored = new Set();
-          for (let round = 0; round < CELL_FLOOR_MAX_ROUNDS; round++) {
+      // 量字寬的 canvas 與「給一張表的格子下限」抽成共用（v2.5.25：passWideTableFontFit
+      // 縮字級後要對同一張表重算下限）
+      let cellFloorCtx = null, cellFloorCtxTried = false;
+      const cellFloorTokenWidth = (win, tok, cs, fs) => {
+        const head = Array.from(tok).slice(0, CELL_FLOOR_PROBE_CHARS).join('');
+        if (!cellFloorCtxTried) {
+          cellFloorCtxTried = true;
+          // OffscreenCanvas：不建 DOM 節點；jsdom 與 Safari 16.4 以前沒有 → 走估算
+          try { cellFloorCtx = typeof win.OffscreenCanvas === 'function' ? new win.OffscreenCanvas(1, 1).getContext('2d') : null; } catch (_) { cellFloorCtx = null; }
+        }
+        if (cellFloorCtx && typeof cellFloorCtx.measureText === 'function') {
+          try {
+            cellFloorCtx.font = `${cs.fontStyle || 'normal'} ${cs.fontWeight || '400'} ${fs}px ${cs.fontFamily || 'sans-serif'}`;
+            const w = cellFloorCtx.measureText(head).width;
+            if (w > 0) return w;
+          } catch (_) { /* 落到估算 */ }
+        }
+        let w = 0;
+        for (const ch of head) w += CELL_FLOOR_WIDE_CHAR_RE.test(ch) ? fs : fs * 0.55;
+        return w;
+      };
+      const cellFloorEligible = (table) => {
+        if (table.getAttribute && table.getAttribute(PLAYER_ATTR) === '1') return null;
+        if (table.closest && table.closest('[data-jread-hidden="1"]')) return null;
+        const cells = table.querySelectorAll('td, th');
+        if (!cells.length || cells.length > CELL_FLOOR_MAX_CELLS) return null;
+        return cells;
+      };
+      const floorCellsOf = (table, cells, win) => {
+        // 先量完再寫：寫一格的 min-width 會讓整張表重排，邊量邊寫每格都觸發一次排版。
+        // 寫完再量一輪：撐寬的欄會從別的欄挪寬度，原本夠寬的欄可能變成被擠的
+        //（ko 維基九欄表：第 3–9 欄撐寬後第 1 欄從 124px 被壓到 16px）。下限只增
+        // 不減，最多 CELL_FLOOR_MAX_ROUNDS 輪、沒有新寫入就停。
+        const floored = new Set();
+        for (let round = 0; round < CELL_FLOOR_MAX_ROUNDS; round++) {
           const writes = [];
           for (const cell of cells) {
             if (floored.has(cell)) continue;
@@ -8946,7 +8969,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             let need = 0;
             for (const tok of text.split(/\s+/)) {
               if (!tok) continue;
-              const w = Math.min(tokenWidth(tok, cs, fs), cap);
+              const w = Math.min(cellFloorTokenWidth(win, tok, cs, fs), cap);
               if (w > need) need = w;
               if (need >= cap) break;
             }
@@ -8956,6 +8979,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           for (const w of writes) {
             cellFloorSnap.push({
               el: w.cell,
+              table,
               minWidth: w.cell.style.getPropertyValue('min-width'),
               minWidthPriority: w.cell.style.getPropertyPriority('min-width'),
             });
@@ -8963,7 +8987,248 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             floored.add(w.cell);
           }
           if (!writes.length) break;
+        }
+      };
+      // 撤掉一張表的格子下限（縮字級後下限的 px 要按新字級重算）
+      const unfloorCellsOf = (table) => {
+        for (let i = cellFloorSnap.length - 1; i >= 0; i--) {
+          const c = cellFloorSnap[i];
+          if (!c || c.table !== table) continue;
+          if (c.minWidth) c.el.style.setProperty('min-width', c.minWidth, c.minWidthPriority || '');
+          else c.el.style.removeProperty('min-width');
+          cellFloorSnap.splice(i, 1);
+        }
+      };
+      const passSqueezedCellFloor = () => {
+        if (opts.pagedMode) return;
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win) return;
+        const tables = [];
+        for (const table of articleEl.querySelectorAll('table')) {
+          const cells = cellFloorEligible(table);
+          if (!cells) continue;
+          floorCellsOf(table, cells, win);
+          fitTableFont(table, win);
+          tables.push(table);
+        }
+        if (!tables.length) return; // 主文沒有表格：不掛計時器
+        // v2.5.25：落定後重量縮字級。進場當下畫面是替代字型（比內嵌字型窄約 7%），
+        // 字型載完表格會變寬——語料庫 pmc 430 寬：進場量到 522px、縮到 75% 剛好塞進
+        // 392px，載完字型又超出 34px，變成字小了還要橫捲；hi 維基譯文五欄表進場
+        // 390px 塞得下、載完 397px。時間點與 ARIA 表格同一組（ARIA_CELL_SETTLE_MS＋
+        // document.fonts.ready）。
+        //   - 縮過的表：整張還原（字級、內距、格子下限）後從頭量、從頭縮——沒有遲滯；
+        //     還原與重寫在同一個 task 內，中間不繪製。這次塞不下了就照原字級顯示，
+        //     並補上卡內橫捲（進場時它塞得下，passWideContentScroll 沒處理過它）
+        //   - 沒縮過的表：只再試一次縮字級（仍塞得下就什麼都不做；塞不下則維持原狀）。
+        //     格子下限不重算、橫捲不重掃——落定後才超出的表不新增橫捲是既有裁定
+        //    （ja 維基頁尾導覽框、arxiv 公式表，v2.5.17）
+        const settleLater = () => {
+          if (tableFitSnap.restored) return; // 這一輪 apply 已被 restore
+          for (const table of tables) {
+            if (!table.isConnected) continue;
+            const idx = tableFitSnap.findIndex((f) => f && f.table === table);
+            if (idx < 0) { fitTableFont(table, win); continue; }
+            const entry = tableFitSnap[idx];
+            tableFitSnap.splice(idx, 1);
+            unfloorCellsOf(table);
+            restoreTableFitEntry(entry);
+            floorCellsOf(table, table.querySelectorAll('td, th'), win);
+            fitTableFont(table, win);
+            if (!table.hasAttribute(TABLE_FIT_ATTR)) wideScrollOne(table, win, articleEl.getBoundingClientRect().right);
           }
+        };
+        try { win.document.fonts && win.document.fonts.ready && win.document.fonts.ready.then(settleLater, () => {}); } catch (_) { /* 沒有 fonts API */ }
+        for (const ms of ARIA_CELL_SETTLE_MS) win.setTimeout(settleLater, ms);
+      };
+
+      // v2.5.25：比卡片寬的表格縮字級塞進卡片（Jimmy 2026-11-18 裁定、11-19 確認）。
+      // 起因：v2.5.24 的格子下限讓 ko.wikipedia 咖啡九欄表不再一字一行，但表變成約
+      // 800px 寬（卡片 608px），右邊三欄要橫捲才看得到。整張表的字縮到約 76% 就塞得進去。
+      // 順序（同一張表內）：格子下限（上面）→ 仍比可用寬度寬 → 縮字級、按新字級重算
+      // 下限、再量 → 塞得進去就定案；縮到 TABLE_FIT_MIN_SCALE 仍塞不下 → 字級還原成
+      // 原本的、下限重算，交給後面的 passWideContentScroll 寫成卡內橫向捲動（字又小
+      // 又要橫捲是兩頭落空，所以塞不下就不縮）。
+      // 通則（不看站點 / class / 語言）：
+      //   - 可用寬度＝卡片的內容右緣（扣掉內距）；表在站方自己的橫捲容器裡時取那個容器的內容右緣
+      //    （站方給了橫捲也一樣先試著縮進去）
+      //   - 「表寬 ÷ 可用寬度」先估一次：連 75% 都不到就確定塞不下，一個 inline 都不寫
+      //    （內距與邊框不跟著字級縮，實際需要的比例只會更小）
+      //   - 字級寫在表內每個「自己帶文字」的元素與每個格子上（inline px !important）：
+      //     內文字級規則直接命中 td / th / p / li / span，寫在 table 上繼承不下去。
+      //     格子的左右內距同比例縮（上下不動）
+      //   - 表格自己是橫捲容器時量 scrollWidth 對 clientWidth（見 selfScroll）
+      //   - 含公式的表不縮（公式字型另有尺寸，arxiv 公式表維持橫捲）；巢狀表格的外層
+      //     與內層都不縮（外層多半是排版用的表）；表內文字佔主文一半以上的不縮
+      //    （整篇文章包在 table 裡的老式排版頁，縮了等於整篇字變小）
+      //   - 只在捲動模式跑（翻頁模式的寬表 2026-11-18 裁定不處理）
+      // 這條驗「比可用寬度寬、縮到 75% 以內塞得進去的表被縮到塞得進去」，不驗縮完之後
+      // 字夠不夠大（下限 75% 是裁定值）、也不驗圖片造成的溢出（圖不跟字級縮）
+      const TABLE_FIT_MIN_SCALE = 0.75;
+      const TABLE_FIT_MAX_ROUNDS = 5;
+      const TABLE_FIT_MIN_STEP = 0.04;
+      const TABLE_FIT_MAIN_TEXT_RATIO = 0.5;
+      let tableFitArticleLen = -1;
+      const fitTableFont = (table, win) => {
+        if (table.querySelector('table') || (table.parentElement && table.parentElement.closest('table'))) return;
+        if (NS.MATH_RENDER_SEL && table.querySelector(NS.MATH_RENDER_SEL)) return;
+        // 可用寬度的右緣
+        // 卡片的內容右緣（扣掉右內距）：塞進卡片＝與內文右緣對齊，不是伸進內距
+        const acs = win.getComputedStyle(articleEl);
+        let limit = articleEl.getBoundingClientRect().right
+          - (parseFloat(acs.borderRightWidth) || 0) - (parseFloat(acs.paddingRight) || 0);
+        for (let cur = table.parentElement; cur && cur !== articleEl.parentElement; cur = cur.parentElement) {
+          const ccs = win.getComputedStyle(cur);
+          if (ccs.overflowX === 'auto' || ccs.overflowX === 'scroll') {
+            const cr = cur.getBoundingClientRect();
+            const inner = cr.right - (parseFloat(ccs.borderRightWidth) || 0) - (parseFloat(ccs.paddingRight) || 0);
+            if (inner < limit) limit = inner;
+            break;
+          }
+        }
+        // 表格自己就是橫捲容器（維基窄螢幕樣式把 table 設成 display: block＋overflow-x: auto）
+        // 時，外框永遠不比卡片寬——改量它的內容寬（scrollWidth）對可視寬（clientWidth）
+        const tcs = win.getComputedStyle(table);
+        const selfScroll = (tcs.overflowX === 'auto' || tcs.overflowX === 'scroll') && table.clientWidth > 0;
+        // 回傳 [表需要的寬, 可用的寬]
+        const measure = () => {
+          if (selfScroll) return [table.scrollWidth, table.clientWidth];
+          const r = table.getBoundingClientRect();
+          return [r.width, limit - r.left];
+        };
+        const fits = (m) => !(m[0] > m[1] + 2);
+        const m0 = measure();
+        if (fits(m0)) return;
+        if (!(m0[1] > 0) || !(m0[0] > 0)) return;
+        if (m0[1] / m0[0] < TABLE_FIT_MIN_SCALE) return;         // 連 75% 都不到 → 確定塞不下
+        if (tableFitArticleLen < 0) tableFitArticleLen = (articleEl.textContent || '').length;
+        if ((table.textContent || '').length > tableFitArticleLen * TABLE_FIT_MAIN_TEXT_RATIO) return;
+        // 要寫的元素：每個格子（字級＋左右內距）＋表內自己帶文字的元素（字級）。先全讀再全寫
+        const targets = [];
+        const seen = new Set();
+        const add = (el, isCell) => {
+          if (seen.has(el)) return;
+          seen.add(el);
+          const cs = win.getComputedStyle(el);
+          const fs = parseFloat(cs.fontSize);
+          if (!(fs > 0)) return;
+          const t = { el, fs };
+          if (isCell) { t.pl = parseFloat(cs.paddingLeft) || 0; t.pr = parseFloat(cs.paddingRight) || 0; }
+          targets.push(t);
+        };
+        for (const el of table.querySelectorAll('td, th')) add(el, true);
+        for (const el of table.querySelectorAll('caption')) add(el, false);
+        for (const el of table.querySelectorAll('*')) {
+          if (seen.has(el)) continue;
+          if (el.closest('svg')) continue;
+          let own = false;
+          for (let n = el.firstChild; n; n = n.nextSibling) {
+            if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) { own = true; break; }
+          }
+          if (own) add(el, false);
+        }
+        if (!targets.length) return;
+        const FIT_PROPS = ['font-size', 'padding-left', 'padding-right'];
+        const snaps = [];
+        for (const t of targets) {
+          for (const prop of (t.pl !== undefined ? FIT_PROPS : ['font-size'])) {
+            snaps.push({ el: t.el, prop, value: t.el.style.getPropertyValue(prop), priority: t.el.style.getPropertyPriority(prop) });
+          }
+        }
+        const restoreSnaps = () => {
+          for (let i = snaps.length - 1; i >= 0; i--) {
+            const a = snaps[i];
+            if (a.value) a.el.style.setProperty(a.prop, a.value, a.priority || '');
+            else a.el.style.removeProperty(a.prop);
+          }
+        };
+        const px = (n) => (Math.round(n * 100) / 100) + 'px';
+        const writeScale = (scale) => {
+          for (const t of targets) {
+            t.el.style.setProperty('font-size', px(t.fs * scale), 'important');
+            // 格子的左右內距跟著縮：九欄表光內距就佔一百多 px，只縮字的話 75% 還塞不進去
+            if (t.pl !== undefined) {
+              if (t.pl > 0) t.el.style.setProperty('padding-left', px(t.pl * scale), 'important');
+              if (t.pr > 0) t.el.style.setProperty('padding-right', px(t.pr * scale), 'important');
+            }
+          }
+        };
+        const cells = table.querySelectorAll('td, th');
+        let scale = 1, fitted = false;
+        for (let round = 0; round < TABLE_FIT_MAX_ROUNDS; round++) {
+          const m = measure();
+          if (!(m[1] > 0) || !(m[0] > 0)) break;
+          let next = scale * (m[1] / m[0]) - 0.01;
+          // 第二輪起每輪至少再降 TABLE_FIT_MIN_STEP、最後一輪直接試下限：格子下限會隨
+          // 字級重算，照比例估的值常常只差幾 px 沒塞進去（hi 維基譯文五欄表 397 / 392：
+          // 0.98 → 0.96 → 0.94… 四輪用完還沒收斂）
+          if (round > 0) next = Math.min(next, scale - TABLE_FIT_MIN_STEP);
+          if (round === TABLE_FIT_MAX_ROUNDS - 1) next = TABLE_FIT_MIN_SCALE;
+          if (next < TABLE_FIT_MIN_SCALE) {
+            if (scale <= TABLE_FIT_MIN_SCALE) break;             // 已經在下限、仍塞不下
+            next = TABLE_FIT_MIN_SCALE;
+          }
+          scale = Math.round(next * 100) / 100;
+          unfloorCellsOf(table);
+          writeScale(scale);
+          floorCellsOf(table, cells, win);
+          if (fits(measure())) { fitted = true; break; }
+        }
+        if (!fitted) {
+          // 塞不下：字級與內距還原、下限按原字級重算，留給 passWideContentScroll
+          unfloorCellsOf(table);
+          restoreSnaps();
+          floorCellsOf(table, cells, win);
+          return;
+        }
+        table.setAttribute(TABLE_FIT_ATTR, String(scale));
+        tableFitSnap.push({ table, snaps });
+      };
+
+      // 單一元素的「超出卡片右緣 → 卡內橫捲」（passWideContentScroll 捲動模式的迴圈本體；
+      // v2.5.25 抽出：縮字級落定後塞不下的表要補做這一步）
+      const wideScrollOne = (el, win, cardRight) => {
+        // 翻頁 multicol 下 cardRight 幾何不可靠（v1.6.24）：這個函式只給捲動模式用
+        if (opts.pagedMode) return;
+        if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') return;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        if (r.right <= cardRight + 2) return; // 沒溢出右緣 → 不動
+        // 已被「在卡內、可捲到」的祖先吸收 → 不重複處理
+        let absorbed = false, cur = el.parentElement;
+        while (cur && cur !== articleEl.parentElement) {
+          const ox = win.getComputedStyle(cur).overflowX;
+          if ((ox === 'auto' || ox === 'scroll') &&
+              cur.getBoundingClientRect().right <= cardRight + 2) { absorbed = true; break; }
+          cur = cur.parentElement;
+        }
+        if (absorbed) return;
+        wideScroll.push({
+          el,
+          display: el.style.getPropertyValue('display'),
+          displayPriority: el.style.getPropertyPriority('display'),
+          overflowX: el.style.getPropertyValue('overflow-x'),
+          overflowXPriority: el.style.getPropertyPriority('overflow-x'),
+          maxWidth: el.style.getPropertyValue('max-width'),
+          maxWidthPriority: el.style.getPropertyPriority('max-width'),
+          minWidth: el.style.getPropertyValue('min-width'),
+          minWidthPriority: el.style.getPropertyPriority('min-width'),
+        });
+        setInlineOwned(el, 'display', 'block', 'important', 'styler:widescroll');
+        el.style.setProperty('max-width', '100%', 'important');
+        el.style.setProperty('overflow-x', 'auto', 'important');
+        // v2.5.18：寫成捲動容器之後仍超出卡片右緣＝被 min-width 撐住（CSS 規定
+        // min-width 優先於 max-width；en.wikipedia Taiwan「Largest cities」表站方
+        // inline `min-width: 50em`，表自己 850–1000px 寬、內容沒有溢出它自己所以
+        // 不出現捲軸，超出卡片的右半邊被卡片 overflow:hidden 切掉、捲不到）。把
+        // min-width 歸 0 讓 max-width: 100% 生效。只在「寫完仍超出」時才動——
+        // 沒被 min-width 撐住的表一個值都不多寫（19 頁 × 3 條件普查：其他 2,170 個
+        // table / pre 逐值不變）。
+        // 不做「版面落定後重掃」：ja 東海道新幹線頁尾導覽框是落定後才超出 11px，
+        // 重掃會讓它與 arxiv 公式表變成要橫捲（v2.5.17 普查，Jimmy 裁定不動）。
+        if (el.getBoundingClientRect().right > cardRight + 2) {
+          el.style.setProperty('min-width', '0', 'important');
+          releaseFixedHeightText(el, win, wideScroll[wideScroll.length - 1]);
         }
       };
 
@@ -8990,48 +9255,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           const win = articleEl.ownerDocument?.defaultView;
           if (win) {
             const cardRight = articleEl.getBoundingClientRect().right;
-            for (const el of articleEl.querySelectorAll('table, pre')) {
-              if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
-              const r = el.getBoundingClientRect();
-              if (r.width < 1 || r.height < 1) continue;
-              if (r.right <= cardRight + 2) continue; // 沒溢出右緣 → 不動
-              // 已被「在卡內、可捲到」的祖先吸收 → 不重複處理
-              let absorbed = false, cur = el.parentElement;
-              while (cur && cur !== articleEl.parentElement) {
-                const ox = win.getComputedStyle(cur).overflowX;
-                if ((ox === 'auto' || ox === 'scroll') &&
-                    cur.getBoundingClientRect().right <= cardRight + 2) { absorbed = true; break; }
-                cur = cur.parentElement;
-              }
-              if (absorbed) continue;
-              wideScroll.push({
-                el,
-                display: el.style.getPropertyValue('display'),
-                displayPriority: el.style.getPropertyPriority('display'),
-                overflowX: el.style.getPropertyValue('overflow-x'),
-                overflowXPriority: el.style.getPropertyPriority('overflow-x'),
-                maxWidth: el.style.getPropertyValue('max-width'),
-                maxWidthPriority: el.style.getPropertyPriority('max-width'),
-                minWidth: el.style.getPropertyValue('min-width'),
-                minWidthPriority: el.style.getPropertyPriority('min-width'),
-              });
-              setInlineOwned(el, 'display', 'block', 'important', 'styler:widescroll');
-              el.style.setProperty('max-width', '100%', 'important');
-              el.style.setProperty('overflow-x', 'auto', 'important');
-              // v2.5.18：寫成捲動容器之後仍超出卡片右緣＝被 min-width 撐住（CSS 規定
-              // min-width 優先於 max-width；en.wikipedia Taiwan「Largest cities」表站方
-              // inline `min-width: 50em`，表自己 850–1000px 寬、內容沒有溢出它自己所以
-              // 不出現捲軸，超出卡片的右半邊被卡片 overflow:hidden 切掉、捲不到）。把
-              // min-width 歸 0 讓 max-width: 100% 生效。只在「寫完仍超出」時才動——
-              // 沒被 min-width 撐住的表一個值都不多寫（19 頁 × 3 條件普查：其他 2,170 個
-              // table / pre 逐值不變）。
-              // 不做「版面落定後重掃」：ja 東海道新幹線頁尾導覽框是落定後才超出 11px，
-              // 重掃會讓它與 arxiv 公式表變成要橫捲（v2.5.17 普查，Jimmy 裁定不動）。
-              if (el.getBoundingClientRect().right > cardRight + 2) {
-                el.style.setProperty('min-width', '0', 'important');
-                releaseFixedHeightText(el, win, wideScroll[wideScroll.length - 1]);
-              }
-            }
+            for (const el of articleEl.querySelectorAll('table, pre')) wideScrollOne(el, win, cardRight);
           }
         } else {
           // v2.5.19：翻頁模式只做「被站方 min-width 撐住」這一種（Jimmy 2026-11-18 實機：
@@ -9865,6 +10089,14 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           if (s.tf) s.el.style.setProperty('transform', s.tf, s.tfP || '');
           else s.el.style.removeProperty('transform');
         }
+      }
+
+      // v2.5.25：還原縮字級塞進卡片的表（fitTableFont）。排在圖說字級之前——
+      // 表內若有 figcaption，這裡記的原值是圖說那條寫的 inline，要先寫回去
+      if (Array.isArray(snapshot.tableFitSnap)) {
+        for (let i = snapshot.tableFitSnap.length - 1; i >= 0; i--) restoreTableFitEntry(snapshot.tableFitSnap[i]);
+        // 標記這一輪已還原：晚到的落定後重量看到就不再動
+        snapshot.tableFitSnap.restored = true;
       }
 
       // v0.8.123：還原 figcaption 字級下限 inline override
