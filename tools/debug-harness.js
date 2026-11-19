@@ -479,8 +479,11 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
       if (g.error) { console.log(g.error); console.log('==========================\n'); return; }
       // 涵蓋率警告（文字的單一資料源在 audit-lib auditGap）：有它的時候「無 gap」不可印成綠燈
       if (g.coverageWarning) console.log(`⚠️  ${g.coverageWarning}`);
+      // 畫面確認（audit-lib verifyCoveredGapsByPixels）沒驗到的區間照實印——不可當成驗過
+      if (g.pixelUnchecked && g.pixelUnchecked.length) console.log(`⚠️  ${g.pixelUnchecked.length} 段「有元素佔著」的區間沒拍到畫面確認：${g.pixelUnchecked.join('；')}`);
       if (!g.gaps || g.gaps.length === 0) {
         if (g.coverageWarning) console.log(`   檢查到的範圍內無 >= 80px gap（${g.blockCount} 個 content block）——不可當成整頁沒問題`);
+        else if (g.pixelUnchecked && g.pixelUnchecked.length) console.log(`   其餘範圍無 >= 80px gap（${g.blockCount} 個 content block）——上面沒拍到的區間不可當成驗過`);
         else console.log(`✅ 無 >= 80px gap（reader card 內 ${g.blockCount} 個 content block、consecutive gap 皆正常）`);
       } else {
         console.log(`⚠️  ${g.gaps.length} 段 >= 80px gap（疑似未清的 empty wrapper / 廣告 placeholder / 塌陷 figure、看 fullpage 截圖對應位置）：`);

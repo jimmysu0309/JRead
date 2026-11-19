@@ -338,6 +338,8 @@ Claude 在 Claude Code 裡面使用這個 harness 的典型流程：
 2. npm test（regression pass）
 3. node tools/debug-harness.js --fresh
    → 讀 stdout 的 SW/PAGE log、DOM state、gap 數據
+     （JRead 的 GAP AUDIT 有兩層：元素間距，以及「有元素佔著但畫面是單色」的畫面確認——
+      audit-lib 的 verifyCoveredGapsByPixels；沒拍到確認的區間會列出來、不印綠燈）
 4. Read /tmp/ext-debug.png（JRead 是 `.playwright-mcp/jread-viewport.png` / `jread-reader-fullpage.png` / 翻頁模式的 `jread-page-NN.png`）
    → 肉眼確認視覺
 5. 若有問題，改 code，重複 3–4

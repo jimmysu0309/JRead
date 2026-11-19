@@ -60,6 +60,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         let wv = WKWebView(frame: view.bounds, configuration: config)
         wv.navigationDelegate = self
         wv.uiDelegate = self
+        // v2.5.29：捲動檢視不自動把安全區域加進內距。預設行為下，文章頁（翻頁模式）一開始排在
+        // 整個 WebView 高度上，手指上下滑一次之後系統才把底部安全區域（Home 指示條 34pt）補進
+        // 捲動內距，頁面可視高度跟著縮 34pt → 翻頁重排、頁底少一行、頁數變多（Jimmy 2026-11-20
+        // iPhone 回報；模擬器 iPhone 17 重現）。底部那一段本來就由 --__jread-app-safe-bottom
+        // 補（pushSafeBottom），頂端由 WebView frame 避開，系統再補一次是重複。
+        // 橫向左右安全區域不受影響（模擬器橫向前後對照卡片左右緣相同）
+        wv.scrollView.contentInsetAdjustmentBehavior = .never
         old?.removeFromSuperview()
         view.addSubview(wv)
         webView = wv

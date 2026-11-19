@@ -475,7 +475,7 @@ pageFns.auditGap = function () {
   const pushBlock = (el) => {
     const r = el.getBoundingClientRect();
     if (r.width < 10 || r.height < 10) return;
-    blocks.push({ top: r.top, bottom: r.bottom, tag: el.tagName,
+    blocks.push({ el, top: r.top, bottom: r.bottom, tag: el.tagName,
       text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) });
   };
   for (const el of art.querySelectorAll('p, h1, h2, h3, h4, h5, h6, figure, img, ul, ol, dl, blockquote, pre, table')) {
@@ -573,6 +573,10 @@ pageFns.auditGap = function () {
     return false;
   }
   const gaps = [];
+  // 「覆蓋檢查說有內容」的大區間（2026-11-20，space.com 實案）：留給 Node 端的
+  // verifyCoveredGapsByPixels 拍那一段的畫面確認——元素參照放 window 上、回傳值只帶描述
+  const coveredEls = [];
+  const coveredCandidates = [];
   let maxBottom = blocks.length ? blocks[0].bottom : 0;
   let maxIdx = 0;
   for (let i = 1; i < blocks.length; i++) {
@@ -592,6 +596,10 @@ pageFns.auditGap = function () {
       // kind 寫進 next 字串：兩支 harness 都只印 prev → next，不改 harness 也看得到原因
       if (ph) { g.kind = 'stretched-placeholder-img'; g.next += `〔放大 3 倍以上的小圖（佔位圖或低解析縮圖）${ph.note}〕`; }
       gaps.push(g);
+    } else if (gap >= 80) {
+      coveredEls.push({ prev: blocks[maxIdx].el, next: blocks[i].el });
+      coveredCandidates.push({ gap: Math.round(gap), y: Math.round(maxBottom),
+        prev: `${blocks[maxIdx].tag} "${blocks[maxIdx].text}"`, next: `${blocks[i].tag} "${blocks[i].text}"` });
     }
     if (blocks[i].bottom > maxBottom) { maxBottom = blocks[i].bottom; maxIdx = i; }
   }
@@ -655,7 +663,8 @@ pageFns.auditGap = function () {
     coverageWarning = `間距檢查有 ${Math.round(uncheckedRatio * 100)}% 的範圍沒檢查到：` +
       `${s.tag} "${s.text}" 包住 ${s.nested} 個內容區塊（占整篇 ${s.pct}%），裡面的間距不在這輪結果內，要看截圖`;
   }
-  return { gaps, blockCount: blocks.length, unloadedImgs, stretchedPlaceholderImgs: stretched.length,
+  try { window.__jreadGapCovered = coveredEls; } catch (_) {}
+  return { gaps, coveredCandidates, blockCount: blocks.length, unloadedImgs, stretchedPlaceholderImgs: stretched.length,
     uncheckedRatio: Math.round(uncheckedRatio * 100) / 100, swallowers: topSwallowers, coverageWarning, multicol: !!multicol };
 };
 
@@ -1713,7 +1722,123 @@ function evalResidual(page, fn, keywords) {
 const runResidualText = (page, keywords) => evalResidual(page, pageFns.auditResidualText, keywords);
 const runResidualLinks = (page, keywords) => evalResidual(page, pageFns.auditResidualLinks, keywords);
 const runOutsideArticle = (page) => page.evaluate(pageFns.auditOutsideArticle);
-const runGapAudit = (page) => page.evaluate(pageFns.auditGap);
+// ---- Gap audit 第二層：覆蓋檢查說「有內容」的區間，拍畫面確認真的畫了東西 ----
+// 2026-11-20（v2.5.29）space.com 實案：第三段後 375px 空白，initial / delayed 兩輪都印
+// 「無 gap」。那段空間被站方的影片播放器佔著——DOM 上有標題文字（innerText 非空、
+// color / opacity / visibility 全正常）、有一支 readyState 4 的 <video>，hasInk 每一條
+// 都成立；實際畫面是一整片卡片底色。「元素有文字／有媒體」是 DOM 層的訊號，播放器這類
+// 多層 absolute 疊放的結構，畫不畫得出來只有畫面知道。
+// 做法：auditGap 把「>= 80px 且被覆蓋檢查放行」的區間列成 coveredCandidates；這裡逐段
+// 捲到畫面內、拍那一段（寬度取下一個 block 的左右緣），解 PNG 算主色占比——
+// >= BLANK_PIXEL_RATIO 就是一片單色，補進 gaps（kind: 'blank-pixels'）。
+// 這條驗：覆蓋檢查放行的區間，畫面上是不是一片單色
+// 這條不驗：(1) < 80px 的區間、原本就報成 gap 的區間（已經報了）。(2) 翻頁模式（多欄
+//   下 rect 不可信，整段跳過）。(3) 區間比視窗高時只拍視窗內的那一段。(4) 「畫了東西
+//   但不是內容」（廣告圖、載入中的轉圈）——有墨水就放行。(5) 一片單色但確實是內容的
+//   情況（純色圖、全黑的影片第一格）會被報出來，看截圖判斷。(6) 每輪最多驗
+//   GAP_PIXEL_MAX_CANDIDATES 段，超過的列在 pixelUnchecked。
+// 副作用：驗的時候會捲動頁面（驗完捲回原位）。沒有候選時完全不動頁面。
+// 關掉：環境變數 JREAD_GAP_NO_PIXELS=1（懷疑捲動影響別的量測時對照用）。
+const BLANK_PIXEL_RATIO = 0.995;
+const GAP_PIXEL_MAX_CANDIDATES = 12;
+
+// 最小 PNG 解碼（8-bit、RGB / RGBA / 灰階、非交錯——Playwright 截圖的格式）→ 主色占比。
+// 顏色先量化到每色版 32 階再計數：抗鋸齒與 JPEG 類雜訊不會把單色背景打散。
+function pngDominantColorRatio(buf) {
+  const zlib = require('zlib');
+  if (!buf || buf.length < 33 || buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a PNG');
+  let off = 8, w = 0, h = 0, depth = 0, ctype = 0, interlace = 0;
+  const idat = [];
+  while (off + 8 <= buf.length) {
+    const len = buf.readUInt32BE(off), type = buf.toString('latin1', off + 4, off + 8);
+    const data = buf.subarray(off + 8, off + 8 + len);
+    if (type === 'IHDR') { w = data.readUInt32BE(0); h = data.readUInt32BE(4); depth = data[8]; ctype = data[9]; interlace = data[12]; }
+    else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    off += 12 + len;
+  }
+  const bppMap = { 0: 1, 2: 3, 4: 2, 6: 4 };
+  const bpp = bppMap[ctype];
+  if (depth !== 8 || !bpp || interlace !== 0 || !w || !h) throw new Error(`unsupported PNG (depth ${depth}, type ${ctype}, interlace ${interlace})`);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = w * bpp;
+  const cur = Buffer.alloc(stride);
+  let prev = Buffer.alloc(stride);
+  const counts = new Map();
+  let p = 0;
+  for (let y = 0; y < h; y++) {
+    const f = raw[p++];
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? cur[x - bpp] : 0, b = prev[x], c = x >= bpp ? prev[x - bpp] : 0;
+      let v = raw[p++];
+      if (f === 1) v += a;
+      else if (f === 2) v += b;
+      else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) { const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c); v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); }
+      cur[x] = v & 255;
+    }
+    for (let x = 0; x < stride; x += bpp) {
+      const r = cur[x], g = bpp >= 3 ? cur[x + 1] : r, bl = bpp >= 3 ? cur[x + 2] : r;
+      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (bl >> 3);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    cur.copy(prev);
+  }
+  let max = 0;
+  for (const n of counts.values()) if (n > max) max = n;
+  return max / (w * h);
+}
+
+// 頁內兩步：先把第 i 個候選捲到畫面中央（instant——站方設 scroll-behavior: smooth 時
+// 同一個 tick 量到的還是捲動前的位置），等版面穩定後再量要拍的那一段（viewport 座標）。
+// measure 回 null＝量不到
+pageFns.scrollToCoveredGap = function (i) {
+  const c = (window.__jreadGapCovered || [])[i];
+  if (!c || !c.prev || !c.next || !c.prev.isConnected || !c.next.isConnected) return false;
+  const mid = (c.prev.getBoundingClientRect().bottom + c.next.getBoundingClientRect().top) / 2;
+  try { window.scrollBy({ top: mid - window.innerHeight / 2, left: 0, behavior: 'instant' }); } catch (_) { return false; }
+  return true;
+};
+pageFns.measureCoveredGap = function (i) {
+  const c = (window.__jreadGapCovered || [])[i];
+  if (!c || !c.prev || !c.next) return null;
+  const pr = c.prev.getBoundingClientRect(), nr = c.next.getBoundingClientRect();
+  const inset = 6; // 避開上下兩個 block 自己的邊（底線、陰影）
+  const top = Math.max(0, pr.bottom + inset), bottom = Math.min(window.innerHeight, nr.top - inset);
+  const left = Math.max(0, nr.left), right = Math.min(window.innerWidth, nr.right);
+  if (bottom - top < 40 || right - left < 50) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
+async function verifyCoveredGapsByPixels(page, g) {
+  if (!g || g.error || g.multicol || !Array.isArray(g.coveredCandidates) || !g.coveredCandidates.length) return g;
+  if (process.env.JREAD_GAP_NO_PIXELS) return g;
+  const start = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  g.pixelChecked = 0;
+  g.pixelUnchecked = [];
+  for (let i = 0; i < g.coveredCandidates.length; i++) {
+    const c = g.coveredCandidates[i];
+    if (i >= GAP_PIXEL_MAX_CANDIDATES) { g.pixelUnchecked.push(`${c.gap}px @ y=${c.y}（超過每輪上限）`); continue; }
+    try {
+      const scrolled = await page.evaluate(pageFns.scrollToCoveredGap, i);
+      await page.waitForTimeout(300);
+      const clip = scrolled ? await page.evaluate(pageFns.measureCoveredGap, i) : null;
+      if (!clip) { g.pixelUnchecked.push(`${c.gap}px @ y=${c.y}（捲不到畫面內）`); continue; }
+      const ratio = pngDominantColorRatio(await page.screenshot({ clip, type: 'png' }));
+      g.pixelChecked++;
+      if (ratio >= BLANK_PIXEL_RATIO) {
+        g.gaps.push({ gap: c.gap, y: c.y, prev: c.prev, kind: 'blank-pixels',
+          next: c.next + `〔這段有元素佔著、畫面上是一片單色（主色占 ${(ratio * 100).toFixed(1)}%）〕` });
+      }
+    } catch (e) {
+      g.pixelUnchecked.push(`${c.gap}px @ y=${c.y}（${String(e && e.message || e).slice(0, 60)}）`);
+    }
+  }
+  try { await page.evaluate((p) => window.scrollTo({ left: p.x, top: p.y, behavior: 'instant' }), start); } catch (_) {}
+  g.gaps.sort((a, b) => a.y - b.y);
+  return g;
+}
+const runGapAudit = async (page) => verifyCoveredGapsByPixels(page, await page.evaluate(pageFns.auditGap));
 const runContrastAudit = (page) => page.evaluate(pageFns.auditContrast);
 const runContentWidthAudit = (page) => page.evaluate(pageFns.auditContentWidth);
 const runBodyWidthAudit = (page) => page.evaluate(pageFns.auditBodyWidthRatio);
@@ -2203,6 +2328,8 @@ module.exports = {
   buildCleanerSentenceLinkSource,
   runOutsideArticle,
   runGapAudit,
+  verifyCoveredGapsByPixels,
+  pngDominantColorRatio,
   runContrastAudit,
   runContentWidthAudit,
   runBodyWidthAudit,

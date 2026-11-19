@@ -729,6 +729,13 @@ async function setZoom(page, z) {
   if (largeGapsDelayed.length > 0) fail.push(`gap>=200(delayed)x${largeGapsDelayed.length}`);
   // 間距檢查涵蓋率不足（audit-lib auditGap 的 coverageWarning）：review-tier——不是
   // 「有空白」，是「這頁大半沒檢查到」，不可讓它以 pass 放行；由 Claude 看截圖
+  // 畫面確認層（audit-lib verifyCoveredGapsByPixels）沒拍到的區間：review-tier——「有元素
+  // 佔著」但沒確認畫面上有東西，不可讓它以 pass 放行
+  const pixelUnchecked = audit.gaps?.delayed?.pixelUnchecked || [];
+  if (pixelUnchecked.length > 0) {
+    console.log(`  ⚠️  ${pixelUnchecked.length} 段「有元素佔著」的區間沒拍到畫面確認：${pixelUnchecked.join('；')}`);
+    review.push(`gap-pixel-unchecked x${pixelUnchecked.length}`);
+  }
   if (audit.gaps?.delayed?.coverageWarning) {
     console.log(`  ⚠️  ${audit.gaps.delayed.coverageWarning}`);
     review.push(`gap-unchecked ${Math.round(audit.gaps.delayed.uncheckedRatio * 100)}%`);
