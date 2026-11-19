@@ -117,6 +117,9 @@
     // 不讓位會 stopPropagation + 同時退出閱讀模式（一顆 ESC 撞兩層 UI）。
     if (NS.floating && typeof NS.floating.isPanelOpen === 'function' &&
         NS.floating.isPanelOpen()) return;
+    // v2.5.27：圖片預覽開著時 Esc 只關預覽（image-viewer 自己的 keydown 處理），
+    // 不退出閱讀模式——同一顆 Esc 不撞兩層
+    if (NS.imageViewer && NS.imageViewer.isOpen()) return;
     if (NS.isTextInputTarget(document.activeElement)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -145,6 +148,11 @@
     // IME 中文輸入第一階段（composition 進行中）不擋。e.isComposing 是標準；
     // 老瀏覽器用 keyCode 229 sentinel 兜底。
     if (e.isComposing || e.keyCode === 229) return;
+    // v2.5.27：圖片預覽開著時讓位給 image-viewer 自己的按鍵處理——它註冊得比本
+    // listener 晚，這裡先 stopImmediatePropagation 的話它收不到按鍵、擋不了 Space /
+    // 方向鍵的原生捲動（真 Chromium probe 實證：預覽開著按 Space 底下捲 860px）。
+    // 頁面 JS 照樣收不到：image-viewer 那邊對所有非 Cmd / Ctrl 按鍵同樣 stop。
+    if (NS.imageViewer && NS.imageViewer.isOpen()) return;
     // 真正能輸入的 element focus 時不擋（搜尋框、留言、編輯器等）——
     // NS.isTextInputTarget 單一資料源（不含 BUTTON，理由見 onEscKey 註解）
     if (NS.isTextInputTarget(e.target)) return;
@@ -265,6 +273,8 @@
   function syncPagedModeFromSettings(settings, uninstallOpts) {
     if (!NS.pagedMode) return;
     const wasInstalled = NS.pagedMode.isInstalled();
+    // v2.5.27：捲動 / 翻頁切換會整個重排，預覽層對應的位置不再成立，先關
+    closeImageViewer();
     NS.pagedMode.sync(settings, NS.state.articleEl, uninstallOpts);
     if (!wasInstalled && NS.pagedMode.isInstalled() && keyguardInstalled) {
       uninstallKeyguard();
@@ -659,8 +669,15 @@
     return finalizeEnter(container, settings, { enterScrollAnchor, enterScrollRefs, localPagedEntry });
   }
 
+  // v2.5.27：關圖片預覽（立即、不做淡出）。宿主掛在 <html>、不屬於 styler / cleaner
+  // 的還原範圍，退出閱讀模式或切換捲動 / 翻頁時不關就會留在畫面上。
+  function closeImageViewer() {
+    try { if (NS.imageViewer) NS.imageViewer.close(true); } catch (_) { /* noop */ }
+  }
+
   function exitReaderMode() {
     if (!NS.state.active) return;
+    closeImageViewer(); // v2.5.27：含 reader.html「回 feed」在內的任何退出路徑
     // v1.0.22：reader.html（擴充自有頁）的退出語意是「回 feed」，不是把版型從
     // 合成 article 剝掉留下裸文章。reader-app.js 進文章時設 NS.state.readerHostPage
     // = true + NS.onReaderExit（導回 reader.html feed）。對一般內容頁惰性
@@ -2415,6 +2432,14 @@
   // lightbox portal 的掛載；preventDefault 擋原生導航到圖檔。
   function onReaderImageLinkClick(e) {
     if (!NS.state.active || !NS.state.articleEl) return;
+    // v2.5.27：圖片預覽。決策與 DOM 事實收集在 image-viewer.js（decideClick /
+    // handleClick）；開了預覽就不交給站方、也不導航（連到圖檔的圖片連結由「吞掉」
+    // 改成「開預覽」）。沒開（小圖、連到文章的圖片連結、帶修飾鍵…）往下走原本的判定。
+    if (NS.imageViewer && NS.imageViewer.handleClick(e, NS.state.articleEl)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     const LF = window.__JReadLinkFollow;
     if (!LF || !LF.shouldSwallowImageLinkClick) return;
     const t = e.target;

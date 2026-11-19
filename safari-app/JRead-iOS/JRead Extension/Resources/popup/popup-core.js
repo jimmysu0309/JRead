@@ -40,6 +40,7 @@
     'content/space-scroll.js',
     'content/idle-cursor.js',
     'content/paged-mode.js',
+    'content/image-viewer.js',
     'content/position-memory.js',
     // v1.7.79：popup-core 自己也進 content_scripts——懸浮按鈕長按選單的「送到 …」
     // 在 Safari 走 content 端直送（main.js sendCurrentPageToService），需要本檔的

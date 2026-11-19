@@ -693,6 +693,8 @@
   // false = 放行（IME / 輸入框 / 修飾鍵 / 非 Space / 停用）。
   function shouldHandle(e) {
     if (ratio <= 0) return false;
+    // v2.5.27：圖片預覽開著時讓位（預覽層自己吃掉按鍵，底下不捲）
+    if (NS.imageViewer && NS.imageViewer.isOpen()) return false;
     if (e.isComposing || e.keyCode === 229) return false;
     if (e.key !== ' ' && e.code !== 'Space') return false;
     if (e.altKey || e.ctrlKey || e.metaKey) return false;

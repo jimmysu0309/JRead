@@ -70,6 +70,8 @@
         // browser 層快速鍵「頁面收不到」的行為對齊）。
         e.preventDefault();
         e.stopImmediatePropagation();
+        // v2.5.27：圖片預覽開著時自訂快速鍵不作用在底下的文章（按鍵照樣吃掉）
+        if (NS.imageViewer && NS.imageViewer.isOpen()) return;
         // v0.7.228：toggle 類指令直接本地 dispatch（main.js dispatchLocalCommand，
         // 含 cross-mode 重導）——iOS Safari SW 被系統回收後不再喚醒（Apple Forums
         // thread 758346），round-trip SW 的觸發會隨時間失效。send-to-readwise

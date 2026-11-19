@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "2.5.26",
+  "version": "2.5.27",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文",
   "permissions": [
     "storage",
@@ -72,6 +72,7 @@
         "content/space-scroll.js",
         "content/idle-cursor.js",
         "content/paged-mode.js",
+        "content/image-viewer.js",
         "content/position-memory.js",
         "popup/popup-core.js",
         "content/main.js"

@@ -1584,8 +1584,13 @@ ${MEDIA_CAP_SEL} {
    [UPSCALE] 寫兩次拉到 (0,3,1) 穩贏（與 byline doubled-attr 同手法）；width 同提一致。
    結構通則（非站點特判）：任何站對 bare 內容圖釘死 height + aspect-ratio → 寬度塌掉，
    height:auto 讓寬度由版心 width:100% 主導、高度依長寬比自然跟隨（90vh + contain 收斂）。 */
+/* v2.5.27（Jimmy 2026-11-19 裁定，取代 v0.8.112 的「一律撐滿欄寬」）：內文圖顯示寬
+   不超過它原本的尺寸。上限由 apply 的 setUpscaleCap 寫進 inline 自訂屬性
+   --jread-upscale-max（＝max(來源解析度, 進 reader 前站方顯示寬)）；沒有上限
+   （SVG、量不到）時 fallback 100%，行為同舊版。width 仍寫明確值而不是 auto：
+   v1.5.5 的「站方釘死 height 反推壓垮寬度」要靠明確寬度＋height:auto 才救得回來。 */
 [${ARTICLE_ATTR}="1"] img[${UPSCALE_IMG_ATTR}][${UPSCALE_IMG_ATTR}] {
-  width: 100% !important;
+  width: min(100%, var(--jread-upscale-max, 100%)) !important;
   height: auto !important;
 }
 /* v1.8.5：icon 圖（作者頭像 / badge / logo）釘寬的第二通道。capIconImg 原本只靠
@@ -3835,6 +3840,8 @@ html.${HTML_CLASS}.jread-orion body {
     // 停用（spaceScrollRatio = 0）時本 handler 自動回歸 v0.7.91 整頁捲動，
     // 維持「reader mode 下 SPACE 一定可捲」的原始動機。
     if (NS.spaceScroll && NS.spaceScroll.isInstalled && NS.spaceScroll.isInstalled()) return;
+    // v2.5.27：圖片預覽開著時讓位
+    if (NS.imageViewer && NS.imageViewer.isOpen()) return;
     if (e.key !== ' ' && e.code !== 'Space') return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     // 2026-10-07 review B-13：原本自帶一份 INPUT / TEXTAREA / SELECT / contenteditable
@@ -5895,12 +5902,40 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         // v0.8.112：bare 內容圖（非 a 包）放大填滿欄寬。量 content-size（natural 優先、
         // 不可靠時 rect fallback）>= CONTENT_IMG_MIN 即標 upscale；回傳是否已標。lazy
         // bare 圖 load 後補標重用（與 tryMarkContentImg 同款）。
-        const tryMarkUpscaleImg = (img) => {
+        // v2.5.27：siteRect＝這張圖在站方 cascade 下的顯示 rect（即時路徑是當下 rect、
+        // 補分類路徑是 preRect 快照），給 setUpscaleCap 算「不超過原尺寸」的上限。
+        const tryMarkUpscaleImg = (img, siteRect) => {
           if (img.hasAttribute(UPSCALE_IMG_ATTR)) return true;
           if (img.hasAttribute(INLINE_IMG_ATTR) || img.hasAttribute(ICON_IMG_ATTR)) return false;
-          if (measureIsContentSize(img)) { img.setAttribute(UPSCALE_IMG_ATTR, '1'); upscaleImgs.push(img); return true; }
+          if (measureIsContentSize(img)) {
+            img.setAttribute(UPSCALE_IMG_ATTR, '1');
+            upscaleImgs.push(img);
+            setUpscaleCap(img, siteRect);
+            return true;
+          }
           return false;
         };
+        // v2.5.27：內文圖顯示寬不超過原尺寸（Jimmy 2026-11-19；rss 文章 256px 斑馬圖
+        // 被撐成 688px 實證）。上限＝max(naturalWidth, 進 reader 前站方顯示寬)——只擋
+        // reader 造成的放大，站方自己就顯示得比來源大的圖維持原樣（與 v1.7.57 低解析
+        // 上限同一條準則）。值寫進 inline 自訂屬性，由 UPSCALE CSS 規則的 min() 消費；
+        // 不寫 inline width / max-width（v1.8.5：max-width 在部分頁面輸給自家規則）。
+        // 還沒載入的圖（已靠 width 屬性 / 預留 rect 標記）natural 還不可信，載入後再寫。
+        // SVG 不設上限（解析度無關，naturalWidth 是瀏覽器預設值）。
+        function setUpscaleCap(img, siteRect) {
+          const src = img.currentSrc || img.src || '';
+          if (/\.svg(\?|#|$)/i.test(src) || /^data:image\/svg/i.test(src)) return;
+          const siteW = siteRect ? Math.round(siteRect.width) || 0 : 0;
+          const write = () => {
+            if (!img.hasAttribute(UPSCALE_IMG_ATTR) || !(img.naturalWidth > 1)) return;
+            const cap = Math.max(img.naturalWidth, siteW);
+            img.style.setProperty('--jread-upscale-max', cap + 'px');
+          };
+          if (img.complete) { write(); return; }
+          const onLoad = () => write();
+          img.addEventListener('load', onLoad);
+          contentImgLoadCleanup.push({ img, onLoad });
+        }
         // img 分類（inline emoji / content-img）。抽成 classifyImg 供「即時」與
         // 「lazy 圖 load 後補分類」共用。
         // v0.7.214：natural 尺寸對「無 intrinsic size 的 SVG」不可靠——Chrome 對
@@ -6124,7 +6159,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           // 撐滿欄寬；< CONTENT_IMG_MIN 的小圖（logo / 短橫幅）不標、維持 width:auto
           // 原尺寸（不反向放大成滿版）。lazy bare 圖同 a 包路徑掛 load listener 補標。
           if (img.getAttribute(PLAYER_ATTR) !== '1') {
-            if (!tryMarkUpscaleImg(img) && !img.complete) {
+            if (!tryMarkUpscaleImg(img, preRect || r || (r = img.getBoundingClientRect())) && !img.complete) {
               // v1.8.5：同 a 包路徑——補標走完整 classifyImg + pre-reader 快照。
               // 換日線作者頭像實證（Jimmy 2026-09-03）：站方顯示 150×150、來源
               // 300×300 的 lazy 頭像，cleaner hydrate 後在 apply 當下 !complete →
@@ -9822,6 +9857,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (Array.isArray(snapshot.upscaleImgs)) {
         for (const img of snapshot.upscaleImgs) {
           if (img && img.removeAttribute) img.removeAttribute(UPSCALE_IMG_ATTR);
+          // v2.5.27：連同「不超過原尺寸」的上限一起拿掉
+          if (img && img.style) img.style.removeProperty('--jread-upscale-max');
         }
       }
       // v0.8.90：還原 icon 圖的 inline max-width 釘寬 + 移除標記

@@ -1479,6 +1479,7 @@
 
   function onKeydown(e) {
     if (e.isComposing || e.keyCode === 229) return; // IME
+    if (imageViewerOpen()) return; // v2.5.27：圖片預覽開著時不翻頁
     if (isEditableFocus()) return;
     const dir = classifyKey(e, { rtl: isRtl }); // D-7：RTL ←/→ 對調
     if (!dir) return;
@@ -1489,7 +1490,16 @@
 
   // 滾輪 / 觸控板：水平或垂直 delta 都映射成翻頁（文件不可垂直卷動，垂直
   // 滾輪閒置不用反而違反直覺）。翻頁後鎖定一段時間吃掉慣性尾巴。
+  // v2.5.27：圖片預覽層開著——鍵盤 / 滾輪 / 觸控都不作用在底下的文章。觸控靠
+  // isForeignUiTarget（宿主 id 是 `__jread-` 開頭）、滾輪在宿主上就被攔下，這裡是
+  // 鍵盤的讓位（key 事件不經過宿主）與滾輪的保險。
+  function imageViewerOpen() {
+    const ns = global.__JRead;
+    return !!(ns && ns.imageViewer && ns.imageViewer.isOpen());
+  }
+
   function onWheel(e) {
+    if (imageViewerOpen()) return;
     // 2026-10-07 review D-4：ctrl + wheel 在所有桌面瀏覽器都是「縮放」語意
     //（macOS 觸控板捏合縮放也派發成 ctrlKey=true 的 wheel），不是捲動——不攔、
     // 不累積，讓瀏覽器照常縮放頁面（CDP probe 實證：ctrl+wheel 原本會翻一頁）。
