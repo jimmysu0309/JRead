@@ -1355,6 +1355,11 @@
 
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
     if (isProseListLeadIn(h)) return false;
+    // v2.5.23：程式碼裡的字不是 section heading。語法上色把每個 token 包成 <span>，
+    // 關鍵字 `new` / `more` / `related` 單獨一個 span 時命中雜訊標題字樣，walk-up 把
+    // 整個程式碼區塊當成那個「標題」底下的區塊藏掉（vuejs.org 實證：`new Map()` 的
+    // `<span>new</span>` 讓一整塊範例消失）。靜態 + 動態單一資料源（兩邊都走這個入口）
+    if (h.closest && h.closest('pre, code')) return false;
     let target = h.closest('section, aside');
     // tooWide 的主文保護對 link-feed 容器不適用（v0.8.54）：累計短 teaser
     // p / teaser title-anchor token 都是 feed 自己的內容，不是主文訊號
@@ -1653,9 +1658,20 @@
     p.removeAttribute(HIDDENMEDIA_WRAP_ATTR);
   }
 
-  function hide(el, hidden) {
+  function hide(el, hidden, byUser) {
     if (!el || el.nodeType !== 1) return;
     if (el.dataset && el.dataset.jreadHidden === '1') return; // 已處理過
+    // v2.5.23：公式渲染單元（KaTeX / MathJax / MathML）與它的內部節點，任何清除規則
+    // 都不藏。公式的 DOM 長得像覆蓋層、裁切框、空殼（見 NS.MATH_RENDER_SEL 註解），
+    // 被藏的是連鎖反應：先是「絕對定位覆蓋層」規則藏掉無障礙用的 MathML 副本，外殼
+    // 因此多了一支「被我們清空的分支」，再被孤兒殼 / 空殼規則整個收掉（distill 行內
+    // 公式、qiita 全部公式，真站實測）。守在 hide() 這個唯一入口，現有與之後新增的
+    // 規則（含動態 observer）一次擋住；整塊容器（留言區、推薦卡）連同裡面的公式一起
+    // 清不受影響——那時被藏的是外層容器，不是公式單元本身。
+    // 編輯模式是使用者親手點的（byUser），不擋
+    if (!byUser && NS.isInMathRender && NS.isInMathRender(el)) return;
+    // v2.5.23：程式碼區塊裡帶字的行 / token 不藏（判定與實例見 NS.isCodeText）
+    if (!byUser && NS.isCodeText && NS.isCodeText(el)) return;
     const prevDisplay = el.style.display;
     const prevDisplayPriority = (el.style.getPropertyPriority &&
       el.style.getPropertyPriority('display')) || '';
@@ -1955,6 +1971,11 @@
         if (norm(p.textContent).length >= HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN) { hasLongP = true; break; }
       }
       if (hasLongP) continue;
+      // v2.5.23：含程式碼區塊的不是推薦卡。文件站的程式碼區塊每一行前面有一個行號
+      // 錨點 <a>（mkdocs-material `a#__codelineno-0-1`），五行以上就湊滿 5 個連結、
+      // 又沒有長 <p>，整塊被當連結區塊藏掉（squidfunk 實證：頁面 12 個程式碼區塊
+      // 藏掉 7 個，真站與快照相同）。推薦卡不會裝 <pre>
+      if (containsCodeBlock(child)) continue;
       // v1.7.18：無 <p> 站（DraftJS / archive.today 改寫頁）的正文 guard，
       // 詳見 subtreeHasLongNonAnchorText 註解
       if (subtreeHasLongNonAnchorText(child, HASHTAG_NON_ANCHOR_BLOCK_MIN_LEN)) continue;
@@ -3525,6 +3546,20 @@
   const NARROW_PEER_MIN_PROSE = 200;
   const NARROW_PEER_PROSE_RATIO = 0.4;
 
+  // v2.5.23：子樹裡有沒有「有內容的程式碼區塊」——<pre> 而且文字夠長（排除空的
+  // 佔位 pre）、不在 <a> 裡、不在已被藏掉的子樹裡。給「這塊是不是雜訊卡」類規則當
+  // 主文訊號用（與長 <p> 同級）。比 hasCodeOrDataTableContent 窄：不認表格與
+  // web component，只回答程式碼
+  const CODE_BLOCK_MIN_TEXT = 20;
+  function containsCodeBlock(el) {
+    if (!el || !el.querySelectorAll) return false;
+    for (const pre of _selfAndDescendants(el, 'pre')) {
+      if (pre.closest && (pre.closest('a') || pre.closest('[data-jread-hidden="1"]'))) continue;
+      if (norm(pre.textContent).length >= CODE_BLOCK_MIN_TEXT) return true;
+    }
+    return false;
+  }
+
   function hasCodeOrDataTableContent(el) {
     if (!el || !el.querySelectorAll) return false;
     // light DOM 程式碼塊（排除被 <a> 包的——理論上極罕見、保險）
@@ -4335,6 +4370,10 @@
 
       // v2.5.8：帶短文字的列內格子，高度是被同列撐出來的 → 不是 spacer。
       if (text && heightIsRowStretchOnly(el)) continue;
+
+      // v2.5.23：裝著看得到的公式的容器不是留白（區塊公式的外層 div：無文字、無圖、
+      // 高度 60px 以上，三條件全中）
+      if (NS.hasVisibleMathRender && NS.hasVisibleMathRender(el)) continue;
 
       // v0.8.79 MDN：含程式碼塊 / 資料表 web component 的區塊（內容在 shadow DOM，
       // light textContent 空）不是 empty spacer——MDN Syntax 段（h2 + <mdn-code-example>）
@@ -7565,6 +7604,10 @@
       const mr = m.getBoundingClientRect();
       if (mr.height > 5 && mr.width > 5) return true;
     }
+    // v2.5.23：看得到的公式（KaTeX / MathJax / MathML）也是內容。MathJax 的字是 CSS
+    // content 畫的、textContent 空，只裝一條公式的 <p> / <div> 既沒有可見文字也沒有
+    // 圖，會被空殼規則收掉（qiita 實證：`<p><mjx-container>` 整段消失）
+    if (NS.hasVisibleMathRender && NS.hasVisibleMathRender(el)) return true;
     return false;
   }
 
@@ -7911,6 +7954,60 @@
     // 錨定 2：parent 必須有 render——收合的邊界就在這顆元素上，而不是整支
     // 祖先被藏掉（後者是站台 chrome / 別條規則的範圍，攤了也沒用還誤傷）
     return expandRendersBox(el.parentElement);
+  }
+
+  // v2.5.23：程式碼區塊外面的「固定高＋可上下捲動」框攤開。
+  // react.dev 的 Sandpack 範例：div.sp-code-editor { overflow: auto; height: 406px } 裡的
+  // 程式碼 2248px 高，外層 div.sp-stack 另有 max-height: 406px。閱讀模式下只看得到前
+  // 406px（要在框內捲才看得到其餘）；WebKit 翻頁模式更糟——超過一頁高的捲動容器內容
+  // 整塊畫不出來，留下 406px 空白（webkit-paged-probe 實測，Chromium 同頁正常）。
+  // 閱讀模式的前提是「內容攤平、一路往下讀」，框中框的捲動不成立。
+  // 判定（結構，不看 class）：帶字的 <pre> 自己或往上 CODE_SCROLL_CLIMB 層內，
+  // overflow-y 是 auto / scroll、且內容高出可視高 CODE_SCROLL_MIN_CLIP 以上的元素。
+  // 只放掉 height / max-height（overflow 不動：橫向捲動要留給長行）。放掉後仍被裁
+  // ＝外層還有 max-height 壓著（flex 直欄）→ 往上最多 CODE_SCROLL_OUTER 層把
+  // max-height 一併放掉，並讓該框不被 flex 壓縮。
+  // 這條驗 X、不驗 Y：只處理 clean 當下已在 DOM 的區塊；overflow: hidden 的裁切
+  //（設計性截斷＋「展開」鈕）不在此列，那是 hideInsideArticleClipCroppedContent 的範圍
+  const CODE_SCROLL_CLIMB = 4;
+  const CODE_SCROLL_OUTER = 3;
+  const CODE_SCROLL_MIN_CLIP = 24;
+  function expandCodeScrollBoxes(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const clipped = (el) => el.scrollHeight > el.clientHeight + CODE_SCROLL_MIN_CLIP && el.clientHeight > 0;
+    // flex 一併快照：外層還壓著時會補寫 flex（見下），還原要帶得回去
+    const release = (el, decls) => {
+      const prev = snapshotStyles(el, Object.keys(decls).concat('flex'));
+      applyImportant(el, decls);
+      el.setAttribute(EXPANDED_ATTR, '1');
+      addStyleResets(hidden, [{ el, prev, __expandedAttr: true }]);
+    };
+    for (const pre of articleEl.querySelectorAll('pre')) {
+      if (pre.closest('[data-jread-hidden="1"]')) continue;
+      if ((pre.textContent || '').trim().length < CODE_BLOCK_MIN_TEXT) continue;
+      let box = null;
+      let cur = pre;
+      for (let i = 0; i <= CODE_SCROLL_CLIMB && cur && cur !== articleEl; i++, cur = cur.parentElement) {
+        if (cur.getAttribute(EXPANDED_ATTR) === '1') break;
+        if (!clipped(cur)) continue;
+        let cs;
+        try { cs = window.getComputedStyle(cur); } catch (_) { continue; }
+        const oy = (cs && (cs.overflowY || String(cs.overflow || '').trim().split(/\s+/).pop())) || '';
+        if (!/^(auto|scroll)$/.test(oy)) continue;
+        box = cur;
+        break;
+      }
+      if (!box) continue;
+      release(box, { 'height': 'auto', 'max-height': 'none' });
+      let outer = box.parentElement;
+      for (let i = 0; i < CODE_SCROLL_OUTER && clipped(box) && outer && outer !== articleEl; i++, outer = outer.parentElement) {
+        let ocs;
+        try { ocs = window.getComputedStyle(outer); } catch (_) { continue; }
+        if (!ocs || !ocs.maxHeight || ocs.maxHeight === 'none') continue;
+        release(outer, { 'height': 'auto', 'max-height': 'none' });
+        applyImportant(box, { 'flex': '0 0 auto' });
+      }
+    }
   }
 
   function expandCollapsedSections(articleEl, hidden) {
@@ -11272,6 +11369,10 @@
            articleEl.contains(cur.parentElement)) {
       const pp = cur.parentElement;
       if (cardHasContentParagraph(pp)) break;      // 含主文段落載體 → 不擴
+      // v2.5.23：含程式碼區塊 → 不擴。互動範例（react.dev 的 Sandpack）裡有一個
+      // 「在 CodeSandbox 開啟」的 <form>，被當訂閱表單的 trigger；外層卡片沒有 <p>，
+      // walk-up 一路擴到整個範例，程式碼跟著消失。程式碼與長段落一樣是主文
+      if (containsCodeBlock(pp)) break;
       if (elContainsArticleTitle(pp, canonical)) break; // 含文章標題 → 不擴（避免吃 header）
       if (hasArticleTitleAnchor(pp)) break;        // class token 標題錨（review A-13 第二道邊界）
       candidate = pp;
@@ -12582,6 +12683,7 @@
       // （probe round 5 實測）。排在 clip 規則之後：那條要求「原站幾何未被位移」，
       // 攤開會改變後續元素的垂直位置。
       safeRun(expandCollapsedSections, articleEl, hidden);
+      safeRun(expandCodeScrollBoxes, articleEl, hidden);
       safeRun(hideSocialShareClusters, articleEl, hidden);
       // 5 條 CONTAINER_SEL 規則共用同一次掃描結果（v0.6.26 效能重構）——
       // 原本各 rule 獨立 querySelectorAll 5 次 article descendant，合併成 1 次。
@@ -12778,7 +12880,7 @@
       if (!el || el.nodeType !== 1 || !Array.isArray(hiddenArray)) return null;
       if (el.dataset && el.dataset.jreadHidden === '1') return null; // 已隱藏
       const before = hiddenArray.length;
-      hide(el, hiddenArray);
+      hide(el, hiddenArray, true); // 使用者親手點的，不套公式守門
       return hiddenArray.length > before ? hiddenArray[hiddenArray.length - 1] : null;
     },
 

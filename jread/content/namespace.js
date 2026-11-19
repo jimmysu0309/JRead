@@ -226,6 +226,56 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       return NSref.isAriaTableRow(el.parentElement);
     },
 
+    // v2.5.23：數學公式渲染單元的單一資料源（cleaner 的 hide 守門與空殼判定共用）。
+    // 公式在 DOM 裡的樣子跟「空殼 / 覆蓋層 / 被裁切的隱藏內容」幾乎一模一樣：
+    //   - KaTeX：`span.katex` 內一份 position:absolute + clip 的 MathML 無障礙副本
+    //     （.katex-mathml）＋一份用絕對定位、負 margin 拼出來的可見版（.katex-html）
+    //   - MathJax 3 / 4：`<mjx-container>` 內的字是 CSS `::before{content}` 畫的
+    //     （textContent 空）＋一份 `<mjx-assistive-mml>` 絕對定位副本
+    //   - 原生 MathML：`<math>`
+    // 所以「絕對定位覆蓋層」「裁切框外內容」「無可見文字的空殼」「分支被清空的孤兒殼」
+    // 這些規則會一層一層把公式拆掉（distill 行內公式 114 個、qiita 6 個全數被藏，
+    // 句子留下空洞；真站與語料庫快照同樣重現）。
+    // 選擇器認的是「排版引擎的輸出格式」——MathML 標籤、MathJax 的自訂元素、KaTeX /
+    // MathJax 2 文件化的輸出根 class——不是哪個站的身份（硬規則 3）：任何站用這些
+    // 引擎都長這樣。
+    // 這條驗 X、不驗 Y：只回答「el 是不是公式渲染單元（或在它裡面）」；公式有沒有
+    // 正確渲染（站方 script 沒跑、字型沒載到、翻譯端把 MathML 改寫成純文字）不歸這裡。
+    MATH_RENDER_SEL: 'math, mjx-container, .katex, .MathJax, .MathJax_Display, .MathJax_SVG, .MathJax_CHTML, .mjx-chtml',
+    // el 自己是公式渲染單元、或在某個公式渲染單元裡面
+    isInMathRender(el) {
+      if (!el || el.nodeType !== 1 || !el.closest) return false;
+      try { return !!el.closest(window.__JRead.MATH_RENDER_SEL); } catch (_) { return false; }
+    },
+    // v2.5.23：el 是不是「程式碼區塊裡的程式碼文字」——在 <pre> 的 <code> 裡、自己帶字、
+    // 不是互動元件。語法上色把每一行、每個 token 包成 <span>，行首再放一個絕對定位的
+    // 行號錨點；錨點被清掉後，那一行長得像「短文字＋已藏的子元素」而被當成孤兒殼
+    // 整行藏掉（squidfunk：12 個程式碼區塊 70 行全空，只剩灰底）。cleaner 的 hide()
+    // 入口用這個守門：自動規則不藏程式碼文字，複製鈕 / 行號（沒字或是互動元件）照清
+    isCodeText(el) {
+      if (!el || el.nodeType !== 1 || !el.closest) return false;
+      const code = el.closest('code');
+      if (!code || code === el || !code.closest('pre')) return false;
+      if (el.closest('button, [role="button"], nav, a')) return false;
+      if (el.querySelector && el.querySelector('button, [role="button"]')) return false;
+      return /\S/.test(el.textContent || '');
+    },
+    // el 的子樹裡有沒有「看得到的」公式渲染單元（不在 JRead 已藏的子樹內、有尺寸）。
+    // 空殼判定用：只裝一條公式的 <p> / <div> 沒有可見文字也沒有圖，但不是空殼。
+    // 只給螢幕閱讀器的 1px MathML 副本也算（有尺寸）——寧可少清
+    hasVisibleMathRender(el) {
+      if (!el || !el.querySelectorAll) return false;
+      let list;
+      try { list = el.querySelectorAll(window.__JRead.MATH_RENDER_SEL); } catch (_) { return false; }
+      for (const m of list) {
+        if (m.closest && m.closest('[data-jread-hidden="1"]')) continue;
+        if (!m.getBoundingClientRect) return true;
+        const r = m.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return true;
+      }
+      return false;
+    },
+
     // 2026-11-15 review 批 5 A-04＋B-05：「站方 CSS 把這個元素藏起來了嗎」的單一資料源。
     // 原本 cleaner 五份（headingIsSiteHidden / carrierTextIsSiteHidden /
     // isSiteHiddenWithin / _visibleTextOf / visibleRenderedText）、detector 兩份

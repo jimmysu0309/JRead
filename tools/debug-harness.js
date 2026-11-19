@@ -653,6 +653,19 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     }
   }
 
+  // --after <module.js>：所有 audit 跑完、截圖縮放之前，跑自訂的頁內量測（與
+  // corpus.js 的 --after 同一個模組格式：module.exports = async (page) => 結果），
+  // 結果以 JSON 印在 stdout。用途：同一支普查模組先跑語料庫、再拿到真站對照，
+  // 分辨「離線假象」與真問題，不必另寫一支會開瀏覽器的 probe
+  {
+    const ai = process.argv.indexOf('--after');
+    if (ai >= 0 && process.argv[ai + 1]) {
+      console.log('\n===== AFTER MODULE =====');
+      try { console.log(JSON.stringify(await require(path.resolve(process.argv[ai + 1]))(page), null, 1)); }
+      catch (e) { console.log('after module 失敗：' + String(e && e.message || e)); }
+    }
+  }
+
   if (PAGED && state.articleFound) {
     // ---- 翻頁模式：逐頁截圖、zoom 1.0、不拍 fullPage ----------------------
     // 翻頁模式文件只有一個視窗大（內容往水平長），fullPage 沒有意義，而且

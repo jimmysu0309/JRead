@@ -181,6 +181,8 @@ node tools/corpus.js run --out /tmp/census --after ./my-census.js
 
 實例：v2.5.20 的「重複圖片索引區塊」規則，普查 144 頁只有 plos 的縮圖輪播全數命中，希伯來文維基的國旗列是部分重複、不命中。
 
+同一份量測模組也能丟給真站：`node tools/debug-harness.js --url <站> --after ./my-census.js`（v2.5.23 起），結果印在 stdout 的 `===== AFTER MODULE =====` 之後。用途是分清「快照才有」與「真站也有」——語料庫量到的異常先拿同一支模組在真站量一次，兩邊一致才是 JRead 的問題（v2.5.23：維基的公式在快照裡是空的、真站捲進畫面就排版，是離線假象；squidfunk 的程式碼區塊兩邊都被藏，是 JRead）。
+
 **模式**：預設只跑捲動模式 1280×900。`--variants scroll,paged,narrow` 加跑翻頁模式與 430 寬；每種模式各有自己的基準。
 
 **這條驗什麼、不驗什麼**：
