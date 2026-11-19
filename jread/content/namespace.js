@@ -446,7 +446,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     //   6. 按鈕中心落在殼的正中（兩軸各 ±15%）——角落的關閉 / 放大鍵不算
     // 背景圖要量站方原值：styler 的裝飾背景 strip 生效後量到的一律是 none，量不到時
     // 用 withInjectedCssDisabled 再量一次（只在前面便宜的 gate 都過了才付這筆）。
-    FACADE_BTN_SEL: 'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]',
+    FACADE_BTN_SEL: 'button, [role="button"], a[type="button"], input[type="button"], input[type="submit"], input[type="reset"]',
     FACADE_MIN_W: 200,
     FACADE_RATIO_MIN: 1.2,
     FACADE_RATIO_MAX: 2.4,
