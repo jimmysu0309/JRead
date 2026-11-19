@@ -261,6 +261,15 @@
     // 站方既已宣告 print-hide，主文 wrapper 絕不會帶此標記，跳 guard 零誤殺。
     // 注意不可用裸 `print` token：NYT 主文段落 wrapper class 即 `css-8nuh3b-print`。
     { t: 'print[-_]?hide', strong: true }, { t: 'hidden?[-_]?print', strong: true },
+    // v2.5.26 MediaWiki 平台（維基百科各語言版、Fandom 與上千個自架 wiki 共用）的
+    // 兩種非內文模板，站方自己的列印樣式也把它們藏掉（@media print { .navbox,
+    // .sistersitebox { display: none } }，en / zh / th 快照實證）：
+    //   navbox —— 文末導覽模板（同系列條目的連結表）。el / hi / ko / th / zh 維基
+    //     實測殘留；en 那頁沒殘留只是剛好整節被「External links」標題規則帶走
+    //   sistersitebox / sisterproject —— 姊妹計畫框（「維基共享資源有相關媒體」）
+    // 標 strong：navbox 內常是「·」分隔的超長連結段落（hi 維基單段 700 字），會
+    // 觸發主文長段 guard 被豁免；主文容器不會用這些名字。
+    { t: 'navbox', strong: true }, { t: 'sistersitebox', strong: true }, { t: 'sister-?project', strong: true },
     { t: 'powered[-_]?by' }, { t: 'popup' }, { t: 'popover' }, { t: 'overlay' },
     { t: 'modal-(?:content|dialog|box|wrapper)' }, { t: 'backdrop' }, { t: 'drawer' },
     { t: 'floating-(?:bar|cta|widget)' }, { t: 'sticky-(?:bar|cta|banner|subscribe)' },
@@ -309,7 +318,7 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論)(\s*\([^)]*\))?$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣)|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論|댓글|コメント)\s*(?:\d+|[（(][^)）]*[)）])?$|^\d+\s*[則條個]?\s*(回應|回覆|留言|評論)$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v2.5.3：簡體 / 「報道」寫法摺疊（Jimmy 2026-11-15：其他家族的簡體寫法一次補齊）。
   // NOISE_HEADING_TEXT_RE / EXT 的中文詞全是台灣寫法，簡體站（cn.nytimes.com
@@ -429,7 +438,7 @@
   //     「Stratechery Articles and Updates」翻成「策略文章和更新」後英文 pattern 失效，
   //     原文輪清、翻譯輪留。不錨定開頭（站名在前、譯法不定），核心詞組「文章和更新」
   //     本身就是站方自我推廣清單的標題句式，主文副標很少這樣寫；walk-up 主文保護兜底
-  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|\barticles?\s+and\s+updates?\b|文章\s*(?:和|與|及|以及|&)\s*(?:最新)?(?:更新|動態)|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
+  const NOISE_HEADING_TEXT_EXT_RE = /(\bnewsletters?$|^subscribe\b|^don.?t\s+miss\b|^help\s+improve\b|^(?:協助|幫助|幫忙)(?:我們)?(?:改善|改進)\s*[A-Za-z0-9 .]{1,20}$|\barticles?\s+and\s+updates?\b|文章\s*(?:和|與|及|以及|&)\s*(?:最新)?(?:更新|動態)|^explore\s+more\b|^explore\s+the\b.*\bissue$|(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*(?:號|刊)$|^sign\s+up\s+for\b|^sign\s+up\s+now$|^subscribe\s+to\b|^follow\s+topics\b|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^(追蹤|關注).{0,12}(主題|話題|作者)|延伸閱讀|相關新聞|相關文章|相關報導|相關議題|新聞來源|推薦閱讀|推薦文章|(現在|立即|馬上)\s*就?\s*(追蹤|訂閱|關注)|訂閱.{0,20}(電子報|電子刊|電子週報|電子月刊|看更多)|(追蹤|關注).{0,18}看更多|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|(LINE|官方帳號).{0,10}(加入|訂閱)|^interested\s+in\s+(buying|selling|purchasing|acquiring)\b)/i;
   const NOISE_HEADING_MAX_LEN_EXT = 40;
 
   // 主文內「CTA / 外連 / 訂閱推廣」連結 text heuristic：LINE Today / 新聞聚合
@@ -471,7 +480,7 @@
   // emotion hash、href 只在 utm 參數帶 poweredby，既有 `powered[-_]?by`
   // class/id token 規則掃不到）。行首錨定：內文「…is powered by X」這類
   // 敘述連結不會以 powered by 起頭。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^在新(分頁|視窗|標籤頁?)中?(開啟|打開)$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|open\s+in\s+(a\s+)?new\s+(tab|window)|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud)(\s*\(\d+\))?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   const NOISE_LINK_TEXT_MAX_LEN = 60;
 
   // Strict CTA token list：強廣告 CTA 詞，主文新聞極少自然出現（主文不會自己
@@ -1036,16 +1045,41 @@
   // heading walk-up 因此只 hide 得掉標題框、留下問答主體，實證 resolveTarget 停在
   // .headline_container）。單一長段落 guard 仍把真正的主文容器（步驟長描述）擋在
   // 邊界外、不誤殺。
+  //
+  // v2.5.26（wikiHow Tie-a-Tie 語料庫＋真站）：上面那條「單一長段落」邊界被問答自己的
+  // 內容打穿——某一則社群回答超過 100 字，walk-up 在 `.qa.section` 那層就停，結果只藏
+  // 得掉標題框、問答主體照樣留著（與當初 generic walk-up 同一個症狀）。問答的回答可以
+  // 很長，長度不是邊界訊號。邊界改看「這個標題管到哪裡」（communityQaBoundary）：
+  //   - 祖先裡出現另一個同級或更高級的 heading → 那一層已經跨到別的章節，停
+  //   - 祖先裡、**排在這個標題之前**有主文長段落 → 那一層含前文，停
+  //     （標題之後的長段落是問答自己的回答，不算）
+  // 另外標題字樣補中文譯法（翻譯後「社群問答」不命中英文字樣，整區連標題都留著）。
+  const COMMUNITY_QA_HEADING_RE = /community\s+q\s*&\s*a|社[群區]\s*(?:問答|Q\s*&\s*A)/i;
+  function communityQaBoundary(pp, h) {
+    const rank = +h.tagName[1];
+    for (const hd of pp.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+      if (hd === h) continue;
+      if (+hd.tagName[1] <= rank && norm(hd.textContent)) return true;
+    }
+    for (const para of pp.querySelectorAll('p, div')) {
+      if (para.contains(h)) continue;
+      if (!(para.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING)) continue; // 只看標題之前
+      const txt = para.tagName === 'P' ? para.textContent
+        : Array.from(para.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('');
+      if (mainTextLen(norm(txt)) >= 100) return true;
+    }
+    return false;
+  }
   function hideCommunityQaWidget(articleEl, hidden) {
     for (const h of articleEl.querySelectorAll('h2, h3, h4')) {
       const t = norm(h.textContent);
-      if (t.length > 24 || !/community\s+q\s*&\s*a/i.test(t)) continue;
+      if (t.length > 24 || !COMMUNITY_QA_HEADING_RE.test(foldZhVariants(t))) continue;
       if (isInPreserved(h)) continue;
       let cur = h, lastSafe = null;
       while (cur.parentElement && cur.parentElement !== articleEl &&
              articleEl.contains(cur.parentElement)) {
         const pp = cur.parentElement;
-        if (hasArticleTitleAnchor(pp, h) || hasLongMainParagraph(pp)) break;
+        if (hasArticleTitleAnchor(pp, h) || communityQaBoundary(pp, h)) break;
         lastSafe = pp;
         cur = pp;
       }
@@ -1314,6 +1348,77 @@
     return mediaCount >= 3 && links.length >= 5;
   }
 
+  // v2.5.26：推薦卡片牆（github.blog 文末「Related posts」真站＋語料庫實證）。區塊是
+  // `<section><h2>Related posts</h2><div><article 卡片>×3</div></section>`，每張卡片
+  // ＝分類連結＋標題連結（h3 > a）＋一段 130–180 字的摘要 <p>。摘要 >= 100 字讓
+  // isLinkFeedContainer 的「無主文長段落」gate 不成立、tooWide 把整區當主文保護，
+  // 結果只藏得掉 heading，三張卡片（標題＋摘要＋縮圖位）留在文末。
+  // 結構訊號（與站點、class、語言無關）——在「已命中推薦類雜訊 heading」的前提下，
+  // 區塊內除了那個雜訊 heading 以外：
+  //   1. 至少 TEASER_CARD_MIN 個 heading，而且**每一個**都是「整個標題就是一條連到
+  //      同站別頁的連結」（文字 >= REC_HEADING_LINK_SHARE 在 <a href> 內）。有任何
+  //      一個不是連結的小標 → 那是有章節的內文，不算
+  //   2. 每個 heading 的「卡片」（往上走到不含其他 heading 的最外層祖先）至多一段
+  //      >= 100 字的段落、整張卡片文字不超過 TEASER_CARD_MAX_TEXT
+  //   3. 區塊裡所有 >= 100 字的段落都住在某張卡片裡（卡片以外沒有內文段落）
+  // 「產品盤點文」（每節標題連到商品頁＋說明段）不在此列：連結要是同站別頁
+  // （盤點文多半連到站外商店），而且前提是區塊由推薦類雜訊 heading 領頭。
+  const TEASER_CARD_MIN = 2;
+  const TEASER_CARD_MAX_TEXT = 600;
+  function headingOtherPageLinkShare(el, sameSiteOnly) {
+    const total = norm(el.textContent).length;
+    if (!total) return 0;
+    const normPath = p => ((p || '').replace(/\/+$/, '') || '/');
+    let linked = 0;
+    for (const a of el.querySelectorAll('a[href]')) {
+      let u;
+      try { u = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
+      if (u.origin === location.origin && normPath(u.pathname) === normPath(location.pathname)) continue;
+      if (sameSiteOnly && u.hostname !== location.hostname) continue;
+      linked += norm(a.textContent).length;
+    }
+    return linked / total;
+  }
+  function isTeaserCardFeed(el, noiseHeading) {
+    if (!el || !el.querySelectorAll) return false;
+    const heads = [];
+    for (const hd of el.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+      if (hd === noiseHeading || hd.contains(noiseHeading)) continue;
+      if (!norm(hd.textContent)) continue;
+      if (headingOtherPageLinkShare(hd, true) < REC_HEADING_LINK_SHARE) return false;
+      heads.push(hd);
+    }
+    if (heads.length < TEASER_CARD_MIN) return false;
+    const cards = [];
+    for (const hd of heads) {
+      let card = hd;
+      while (card.parentElement && card.parentElement !== el &&
+             card.parentElement.querySelectorAll('h1, h2, h3, h4, h5, h6').length === 1) {
+        card = card.parentElement;
+      }
+      if (norm(card.textContent).length > TEASER_CARD_MAX_TEXT) return false;
+      cards.push(card);
+    }
+    const longPerCard = new Map();
+    for (const para of el.querySelectorAll('p, div')) {
+      let len;
+      // 量法走 mainTextLen（CJK 權重）：這裡的方向是「卡片外有長段落就不算卡片牆」，
+      // 權重讓中文段落更容易算長段落＝更保守（少清）
+      if (para.tagName === 'P') len = mainTextLen(norm(para.textContent));
+      else {
+        len = mainTextLen(norm(Array.from(para.childNodes)
+          .filter(n => n.nodeType === 3).map(n => n.textContent).join('')));
+      }
+      if (len < 100) continue;
+      const card = cards.find(c => c.contains(para));
+      if (!card) return false;
+      const n = (longPerCard.get(card) || 0) + 1;
+      if (n > 1) return false;
+      longPerCard.set(card, n);
+    }
+    return true;
+  }
+
   // 行內強調 ≠ section heading（v0.8.169 stratechery 修法）：strong/em/b/span
   // 候選若只是某散文塊（li/p/td/dd/blockquote/figcaption）裡的一小段 inline
   // 強調（自身文字遠短於所在塊），就是內文的一部分、不是標題。誤判成 heading
@@ -1353,6 +1458,46 @@
     return !next.querySelector('a');
   }
 
+  // 留言標籤（「留言」「留言 2」「留言（全數更新）」「2 則留言」「Comments (12)」）：既是留言區
+  // 的標題，也是作者列裡的留言數 chip
+  const COMMENT_COUNT_LABEL_RE = /^(?:\d+\s*[則條個]?\s*(?:回應|回覆|留言|評論)|(?:回應|回覆|留言|評論|댓글|コメント|comments?)\s*(?:\d+|[（(][^)）]*[)）])?)$/i;
+  // el 之前是否已有主文段落（>= 100 權重、未被藏的 <p>）——分辨「標題下的作者列」與
+  // 「文末的卡片」
+  function mainParagraphPrecedes(el, articleEl) {
+    for (const para of articleEl.querySelectorAll('p')) {
+      if (el.contains(para)) continue;
+      if (!(el.compareDocumentPosition(para) & 2 /* DOCUMENT_POSITION_PRECEDING */)) return false;
+      if (para.closest('[data-jread-hidden="1"]')) continue;
+      if (mainTextLen(norm(para.textContent)) >= 100) return true;
+    }
+    return false;
+  }
+  function firstVisibleTextIsWithin(wrapper, h) {
+    const doc = wrapper.ownerDocument;
+    const walker = doc.createTreeWalker(wrapper, 4 /* NodeFilter.SHOW_TEXT */);
+    let n;
+    while ((n = walker.nextNode())) {
+      if (!norm(n.nodeValue)) continue;
+      const pe = n.parentElement;
+      if (!pe || /^(?:SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(pe.tagName)) continue;
+      if (pe.closest('[data-jread-hidden="1"]') || isSiteHiddenWithin(pe, wrapper)) continue;
+      return h.contains(n);
+    }
+    return false;
+  }
+  function widenCommentSectionTarget(h, target, articleEl) {
+    const articleLen = norm(articleEl.textContent || '').length || 1;
+    let cur = target;
+    for (let hop = 0; hop < 4; hop++) {
+      const pp = cur.parentElement;
+      if (!pp || pp === articleEl || !articleEl.contains(pp) || pp.contains(articleEl)) break;
+      if (isInPreserved(pp) || hasArticleTitleAnchor(pp, h)) break;
+      if (norm(pp.textContent || '').length > articleLen * 0.5) break;
+      if (!firstVisibleTextIsWithin(pp, h)) break;
+      cur = pp;
+    }
+    return cur;
+  }
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
     if (isProseListLeadIn(h)) return false;
     // v2.5.23：程式碼裡的字不是 section heading。語法上色把每個 token 包成 <span>，
@@ -1365,7 +1510,7 @@
     // p / teaser title-anchor token 都是 feed 自己的內容，不是主文訊號
     const targetTooWide = target && target !== articleEl &&
       !target.contains(articleEl) && wrapperContainsArticleAnchor(target, h) &&
-      !isLinkFeedContainer(target);
+      !isLinkFeedContainer(target) && !isTeaserCardFeed(target, h);
     if (!target || target === articleEl || target.contains(articleEl) || targetTooWide) {
       const lastSafeWrapper = findSafeWrapperForHeading(h, articleEl);
       if (!lastSafeWrapper) {
@@ -1374,10 +1519,34 @@
       target = lastSafeWrapper;
     }
     if (!target) return false;
+    // v2.5.26：留言區標題往上多收幾層。一般 walk-up 遇到「含 >= 100 權重的段落」就停
+    // （那是主文的訊號），但留言本身就是長文字：toss.tech 韓文原文頁一則 96 字的留言
+    // （權重 192）讓 walk-up 停在只有標題列的那一層，兩則留言留在版面上；譯文剛好
+    // 短於門檻才整塊清掉。留言區的結構訊號與長度無關：標題是這個外殼裡第一段看得到
+    // 的文字（前面沒有內文）、外殼不含文章標題、文字量不到整篇的一半
+    if (COMMENT_COUNT_LABEL_RE.test(foldZhVariants(norm(h.textContent || '')))) {
+      target = widenCommentSectionTarget(h, target, articleEl);
+    }
     if (target === articleEl) return false;
     if (!articleEl.contains(target)) return false;
     if (target.contains(articleEl)) return false;
     if (target.dataset && target.dataset.jreadHidden === '1') return false;
+    // v2.5.26：留言標籤除了是留言區標題，也是作者列裡的留言數 chip（theverge 文首
+    // 「作者＋日期＋留言數」那一列的 chip 譯成「留言（全數更新）」：標題字樣補上全形
+    // 括號與裸數字後，語料庫 theverge 翻譯後快照整列作者被當成留言區收掉）。要收的區塊若是
+    // 作者列／標題 meta，只藏 chip 自己。作者列的判定除了 blockIsBylineOrTitleMeta，
+    // 再加「區塊內有 <time> 或作者頁連結（不論是否已被藏）」——theverge 那一列的可見
+    // 文字含作者浮動卡、超過 blockIsBylineOrTitleMeta 的 200 字上限，單靠它接不住
+    // 位置限在第一段主文之前：文末推薦卡也是「作者＋日期＋留言數」的形狀（nautil.us
+    // 文末那張卡原本就是靠留言標籤整張清掉的），不可被這道保護放行
+    if (target !== h && !/^H[1-6]$/.test(h.tagName) &&
+        COMMENT_COUNT_LABEL_RE.test(foldZhVariants(norm(h.textContent || ''))) &&
+        !mainParagraphPrecedes(target, articleEl) &&
+        (blockIsBylineOrTitleMeta(target) || !!target.querySelector('time') ||
+         clusterContainsAuthorProfileLink(target, false))) {
+      hide(h, hidden);
+      return true;
+    }
     hide(target, hidden);
     return true;
   }
@@ -1410,17 +1579,8 @@
   const REC_HEADING_NEXT_PROSE_MAX = 25;
   function isLinkOnlyRecHeading(el) {
     if (!el || !/^H[1-6]$/.test(el.tagName)) return false;
-    const total = norm(el.textContent).length;
-    if (!total) return false;
-    const normPath = p => ((p || '').replace(/\/+$/, '') || '/');
-    let linked = 0;
-    for (const a of el.querySelectorAll('a[href]')) {
-      let u;
-      try { u = new URL(a.getAttribute('href'), location.href); } catch (_) { continue; }
-      if (u.origin === location.origin && normPath(u.pathname) === normPath(location.pathname)) continue;
-      linked += norm(a.textContent).length;
-    }
-    if (linked / total < REC_HEADING_LINK_SHARE) return false;
+    if (!norm(el.textContent).length) return false;
+    if (headingOtherPageLinkShare(el, false) < REC_HEADING_LINK_SHARE) return false;
     const nx = el.nextElementSibling;
     if (!nx || /^H[1-6]$/.test(nx.tagName)) return true; // 緊接另一個 heading＝沒有自己的內文
     let nonLink = norm(nx.textContent);
@@ -1500,6 +1660,16 @@
 
   function isInPreserved(el) {
     return !!(el.closest && el.closest(PRESERVE_SEL));
+  }
+
+  // v2.5.26：figure 內獨占一列的工具連結（判定見 hideInsideArticleByLinkText 的呼叫點）
+  function isFigureToolRowLink(a, text) {
+    const pres = a.closest && a.closest(PRESERVE_SEL);
+    if (!pres || pres.tagName !== 'FIGURE') return false;
+    if (a.querySelector && a.querySelector('img, picture, video, svg')) return false;
+    const parent = a.parentElement;
+    if (!parent || parent === pres) return false;
+    return norm(parent.textContent) === norm(a.textContent);
   }
 
   function isRelated(articleEl, el) {
@@ -3451,12 +3621,16 @@
       if (items.length < 3) continue;
       let total = 0, linkText = 0, linkLed = 0;
       for (const li of items) {
-        const t = norm(li.textContent).length;
+        // v2.5.26：字數改 CJK 權重（raw 長度門檻家族）。cnbc「Key Points」三條重點
+        // 原文平均 124 字過門檻，譯成中文後平均 38 字不過——整塊重點只在翻譯輪被
+        // narrow 當成頁面外殼清掉。權重下譯文約 70，與原文同側；拉丁文字權重＝raw，
+        // 原文頁結果不變（語料庫普查：17 頁 26 份清單由不過變過，沒有反向的）
+        const t = NS.cjkWeightedLen(norm(li.textContent));
         // 以連結開頭的條目＝「標題連結 + 描述」推薦卡（udn 型），不是引用條目。
         // 判準住 _isLinkLedItem 一份（2026-11-15 review A-11；nonLinkProseWeight 同用）
         if (_isLinkLedItem(li)) linkLed++;
         let a = 0;
-        for (const link of li.querySelectorAll('a')) a += norm(link.textContent).length;
+        for (const link of li.querySelectorAll('a')) a += NS.cjkWeightedLen(norm(link.textContent));
         total += t;
         linkText += a;
       }
@@ -3589,6 +3763,57 @@
     return false;
   }
 
+  // v2.5.26：推薦卡片牆判定——narrowPromotedSiblings「含主文長段落」分支用。
+  // nautil.us 文末推薦牆（五張卡：連結式標題＋一行 40–110 字摘要 <p>，摘要不在
+  // li / a 內）原文被當成主文保留：其中一條摘要 110 字單段就過「≥ 100 字」那關、
+  // 其餘累計也過 300 字；翻譯後摘要變短才被清掉——同一塊在原文漏網、譯文正常。
+  // 結構判準（不看 class、不看字樣）：
+  //   - 區塊內的連結式標題（heading 包 <a> 或被 <a> 包，非本文自連結）≥ 3 個；
+  //     其餘 heading 只容許最前面一個短標籤（牆的標題）
+  //   - 每個算得上主文證據的 <p>（不在 li / a / aside 內）都是卡片摘要：往上找到
+  //     第一個含 heading 的祖先，那個 heading 是連結式標題、該祖先裡的 <p> ≤ 2 個
+  //   - 沒有任何一段摘要長到像內文（權重 < TEASER_WALL_MAX_DEK）
+  // 主文小節（heading 不是連結、或底下三段以上、或有長段落）任一條不符就不是牆。
+  const TEASER_WALL_MIN_CARDS = 3;
+  const TEASER_WALL_MAX_DEK = 200;
+  const TEASER_WALL_MAX_LABEL = 40;
+  function isTeaserCardDek(para, sib) {
+    for (let n = para.parentElement, up = 0; n && up < 5; n = n.parentElement, up++) {
+      const h = n.querySelector && n.querySelector('h2, h3, h4, h5, h6');
+      if (h) {
+        const linked = !!(h.querySelector('a[href]') || (h.closest && h.closest('a[href]')));
+        if (!linked) return false;
+        if (headingHasSelfLinkPermalink(h)) return false;
+        return n.querySelectorAll('p').length <= 2;
+      }
+      if (n === sib) break;
+    }
+    return false;
+  }
+  function isTeaserCardWall(sib) {
+    let cards = 0;
+    let first = true;
+    for (const h of sib.querySelectorAll('h2, h3, h4, h5, h6')) {
+      const isFirst = first;
+      first = false;
+      if (!(h.querySelector('a[href]') || (h.closest && h.closest('a[href]')))) {
+        // 牆最前面的一個短標籤標題（「Related Stories」這類，不看字樣只看位置與長度）
+        if (isFirst && mainTextLen(norm(h.textContent)) <= TEASER_WALL_MAX_LABEL) continue;
+        return false;
+      }
+      if (headingHasSelfLinkPermalink(h)) return false;
+      cards++;
+    }
+    if (cards < TEASER_WALL_MIN_CARDS) return false;
+    for (const para of sib.querySelectorAll('p')) {
+      if (para.closest('li, a, aside')) continue;
+      if (!norm(para.textContent)) continue;
+      if (mainTextLen(norm(para.textContent)) >= TEASER_WALL_MAX_DEK) return false;
+      if (!isTeaserCardDek(para, sib)) return false;
+    }
+    return true;
+  }
+
   function narrowPromotedSiblings(articleEl, promotedFrom, hidden, promotedTitleHead) {
     if (!articleEl || !promotedFrom) return;
     if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
@@ -3661,7 +3886,11 @@
           if (standaloneCount >= 3 && sib.querySelectorAll('a').length >= 3 &&
               !sib.querySelector('figcaption')) {
             let longP = false;
+            // v2.5.26：推薦卡片牆的摘要不算長段落（見 isTeaserCardWall；nautil.us 文末
+            // 五張卡的圖都不在 <a> 內，其中一條 110 字摘要讓整面牆享有主圖保護）
+            const teaserWall = isTeaserCardWall(sib);
             for (const para of sib.querySelectorAll('p')) {
+              if (teaserWall) break;
               if (para.closest('li, a')) continue;
               if (mainTextLen(norm(para.textContent)) >= 100) { longP = true; break; }
             }
@@ -3717,7 +3946,8 @@
         // 通則特徵：主文 p 不會被 `<li>` / `<a>` / `<aside>` 包；sidebar 列表
         // 項的描述 p 必然在 `<li>` 內（HTML 語意）或 `<a>` 內（卡片連結）。
         // 本 guard 內聯自己 walker、跳過這類包裹的 p。
-        if (sib.querySelectorAll) {
+        // v2.5.26：整塊是推薦卡片牆時，卡片摘要不算主文證據（見 isTeaserCardWall）
+        if (sib.querySelectorAll && !isTeaserCardWall(sib)) {
           let acc = 0;
           let mainContentFound = false;
           for (const para of sib.querySelectorAll('p')) {
@@ -3908,7 +4138,11 @@
   // v2.5.5：簡體字面值（赞 / 喜欢 / 反应 / 重新堆叠 / 转发 / 转贴 / 转推 / 回复 / 评论 /
   // 推荐、數字「两」）撤掉，比對前過 foldZhVariants——每個被撤的寫法摺疊後都落在留下的
   // 台灣寫法上（forcing：zh-fold-reaction-cta-time-byline.spec.js 逐詞斷言），沒有新增詞。
-  const REACTION_COUNT_RE =/^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬兩]+)\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|喜歡|反應|重新堆疊|轉發|轉貼|轉推|重推|留言|回覆|評論|分享|收藏|按讚|推薦)\s*[·•∙、,|/]*)+$/i;
+  // v2.5.26 chinatalk translate-first 實測（Gemini Flash Lite）：「55 個喜歡∙2 次轉貼（Restack）」
+  // ——譯者在反應名詞後面補了括號原文註記。計數與反應名詞都在清單內，漏網的是尾巴
+  // 那個括號：每個 token 的反應名詞之後允許一個短括號註記（全半形、16 字內、不可巢狀），
+  // 其餘結構（數字起手 + 已知反應名詞收尾 + 整段純計數）不動。
+  const REACTION_COUNT_RE =/^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬兩]+)\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|喜歡|反應|重新堆疊|轉發|轉貼|轉推|重推|留言|回覆|評論|分享|收藏|按讚|推薦)(?:\s*[（(][^（）()]{1,16}[）)])?\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -4473,6 +4707,86 @@
     }
   }
 
+  // v2.5.26：「站方自我聲明非內容」的 class（noprint 家族 + MediaWiki 的 navbox /
+  // 姊妹計畫框）掛在 CONTAINER_SEL 以外的 tag 上時也要清。CONTAINER_SEL 刻意不含
+  // table / p / span（一般 keyword 掃它們會誤殺內文表格與段落），所以這裡只認這一小組
+  // 語意確定的 token，不是把整張 keyword 表開放給 table。實測殘留：
+  //   he 維基 table.navbox（還被「攤開收合內容」規則攤成 1226px）、table.sistersitebox
+  //   el 維基 table.noprint（「維基語錄有相關內容」）
+  //   ar 維基資訊框底 p.navbar.noprint（「編輯 - 編輯原始碼 - 編輯維基數據」）
+  //   el 維基 span.navbar.noprint（模板的「檢 • 論 • 編」）
+  // 判定：
+  //   - table / p：命中即清（仍過 keywordWrapperIsProtected——含 h1、作者列的不清）
+  //   - 行內元素（span / small / sup…）：只清「不在行文裡的純連結小群」——扣掉連結
+  //     後只剩括號與分隔符，而且不在 p / li / dd / blockquote / figcaption 這些行文
+  //     載體內。句子裡的 noprint 行內標記（en「[citation needed]」、zh 跨語言連結
+  //     提示、he 外部連結後的語言標示）不動：拿掉會改到句子
+  const DECLARED_CHROME_RE = buildKeywordRe(
+    ['noprint', 'print[-_]?hide', 'hidden?[-_]?print', 'navbox', 'sistersitebox', 'sister-?project']);
+  const DECLARED_CHROME_PREFILTER_SEL =
+    '[class*="print" i], [class*="navbox" i], [class*="sister" i]';
+  const PROSE_CARRIER_SEL = 'p, li, dd, blockquote, figcaption';
+  function isLinkOnlyCluster(el) {
+    if (!el.querySelector('a')) return false;
+    if (el.querySelector('img, picture, svg, video, iframe')) return false;
+    let rest = '';
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) rest += c.nodeValue;
+        else if (c.nodeType === 1 && c.tagName !== 'A') walk(c);
+      }
+    };
+    walk(el);
+    return !/[^\s\[\]()（）【】〔〕|｜·•・\-–—\/]/.test(rest);
+  }
+  function hideDeclaredChromeNonContainers(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll(DECLARED_CHROME_PREFILTER_SEL)) {
+      if (el === articleEl) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.matches(CONTAINER_SEL) || el.tagName.indexOf('-') >= 0) continue; // 既有路徑管
+      if (!DECLARED_CHROME_RE.test(classStrOf(el).toLowerCase())) continue;
+      const tag = el.tagName;
+      if (tag === 'TABLE' || tag === 'P') {
+        if (isInPreserved(el)) continue;
+        if (keywordWrapperIsProtected(el, articleEl)) continue;
+        hide(el, hidden);
+      } else if (tag === 'SPAN' || tag === 'SMALL' || tag === 'SUP' || tag === 'SUB' ||
+                 tag === 'B' || tag === 'I' || tag === 'EM' || tag === 'STRONG') {
+        if (el.closest(PROSE_CARRIER_SEL)) continue;
+        if (norm(el.textContent).length > 60) continue;
+        if (!isLinkOnlyCluster(el)) continue;
+        hide(el, hidden);
+        stripEmptiedBracketPair(el, hidden);
+      }
+    }
+  }
+  // 行內連結小群被清掉後，緊貼在它兩側、把它包起來的那一對括號也拿掉——el 維基資訊框
+  // 底列「δεδομένα (<span class="navbar noprint">π • σ • ε</span>)」清掉小群會剩
+  // 「δεδομένα ( )」。括號是裸文字節點、沒辦法用 display 藏，所以改文字內容，原文
+  // 記進 hidden.__phantomText（與 stripPhantomWhitespaceTextNodes 同一個還原契約，
+  // restore() 寫回）。只動「前一個兄弟文字節點結尾的開括號」與「後一個兄弟文字節點
+  // 開頭的成對閉括號」這兩個字元：
+  //   - 兩側必須都是文字節點、括號必須成對，中間只隔這個被清掉的元素
+  //   - 其他位置的括號、沒成對的括號、隔著別的元素的括號一律不動
+  //   - 同一個文字節點已經被改過就不再改（還原是照登記順序寫回，改兩次會還錯）
+  const BRACKET_PAIRS = { '(': ')', '[': ']', '（': '）', '【': '】', '〔': '〕' };
+  function stripEmptiedBracketPair(el, hidden) {
+    const prev = el.previousSibling, next = el.nextSibling;
+    if (!prev || !next || prev.nodeType !== 3 || next.nodeType !== 3) return;
+    const pv = prev.nodeValue, nv = next.nodeValue;
+    const pm = /([(\[（【〔])\s*$/.exec(pv);
+    if (!pm) return;
+    const close = BRACKET_PAIRS[pm[1]];
+    const nm = /^\s*([)\]）】〕])/.exec(nv);
+    if (!nm || nm[1] !== close) return;
+    const done = hidden.__phantomText || [];
+    if (done.some((x) => x && (x.node === prev || x.node === next))) return;
+    const snaps = [{ node: prev, orig: pv }, { node: next, orig: nv }];
+    prev.nodeValue = pv.slice(0, pm.index).replace(/\s+$/, '');
+    next.nodeValue = nv.slice(nm[0].length);
+    hidden.__phantomText = done.concat(snaps);
+  }
+
   function hideInsideArticleByKeyword(articleEl, hidden, containers) {
     // 限定容器型元素；避免誤殺內文標題/段落/圖片
     hideKeywordContainers(articleEl, hidden, containers || articleEl.querySelectorAll(CONTAINER_SEL));
@@ -4677,13 +4991,31 @@
       if (!bracketed && t.length / (titleBodyLen + t.length) >= 0.3) return;
       hide(span, hidden);
     }
+    // v2.5.26：長文案 / 多連結的括號動作連結群。上面那條的 12 字上限是按「[編輯]」
+    // 「[edit]」校準的，同一個結構換個語言或多一個連結就超過：
+    //   el 維基「[Επεξεργασία | επεξεργασία κώδικα]」33 字（開了視覺化編輯器的 wiki 都是
+    //     兩個連結：編輯｜編輯原始碼；ar 維基同款，翻譯後變成「[編輯 | 編輯原始碼]」也超過）
+    //   hi 維基「[संपादित करें]」14 字
+    // 不靠字數、看結構：整串被括號包住、扣掉連結後只剩括號與分隔符（純連結小群），
+    // 標題本體存在。上限 80 字只擋離譜的情況。
+    function isBracketedLinkCluster(span) {
+      if (!span.querySelector('a')) return false;
+      if (span.querySelector('img, picture, svg')) return false;
+      const t = norm(span.textContent);
+      if (!t || t.length > 80) return false;
+      if (!/^[\[(（【〔].*[\])）】〕]$/.test(t.replace(/\s+/g, ''))) return false;
+      return isLinkOnlyCluster(span);
+    }
     for (const h of articleEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
       if (h.dataset && h.dataset.jreadHidden === '1') continue;
       const headText = norm(h.textContent);
       if (!headText) continue;
       // (a) heading 內部（headText 含 span 文字 → 本體 = 差值）
       for (const span of h.querySelectorAll('span')) {
-        maybeHideActionSpan(span, headText.length - norm(span.textContent).length, hidden);
+        const bodyLen = headText.length - norm(span.textContent).length;
+        maybeHideActionSpan(span, bodyLen, hidden);
+        if (bodyLen >= 2 && !(span.dataset && span.dataset.jreadHidden === '1') &&
+            isBracketedLinkCluster(span)) hide(span, hidden);
       }
       // (b) wrapper 內 sibling（wrapper 純粹包標題才掃；headText 即本體）
       const wrap = h.parentElement;
@@ -4693,6 +5025,22 @@
           if (sib === h || sib.tagName !== 'SPAN') continue;
           maybeHideActionSpan(sib, headText.length, hidden);
         }
+      }
+      if (wrap && wrap !== articleEl && headText.length >= 2) {
+        // v2.5.26：wrapper「純粹包標題」的另一種認法——不看字數，wrapper 裡除了標題
+        // 就只有括號連結群（沒有任何其他元素或裸文字）。上面那條擋在 12 字上限的
+        //（hi「[संपादित करें]」14 字、譯文「[編輯 | 編輯原始碼]」13 字）與 wrapper 超過
+        // +15 的（el 33 字）都走這裡
+        let pure = true;
+        const clusters = [];
+        for (const n of wrap.childNodes) {
+          if (n === h) continue;
+          if (n.nodeType === 3) { if (n.nodeValue.trim()) { pure = false; break; } continue; }
+          if (n.nodeType !== 1) continue;
+          if (n.tagName === 'SPAN' && isBracketedLinkCluster(n)) { clusters.push(n); continue; }
+          pure = false; break;
+        }
+        if (pure) for (const c of clusters) hide(c, hidden);
       }
     }
   }
@@ -4805,7 +5153,10 @@
         if (text.length > NOISE_LINK_TEXT_MAX_LEN) continue;
         if (!NOISE_LINK_TEXT_RE.test(text)) continue;
       }
-      if (isInPreserved(a)) continue;
+      // v2.5.26：figure 裡獨占一列的工具連結照清（pmc 每張圖下的「Open in a new tab」）。
+      // figure 整體仍是 preserved——只放行「最近的 preserved 祖先是 figure（不是
+      // figcaption / blockquote / summary）、連結不含媒體、父層除了這個連結沒有別的字」
+      if (isInPreserved(a) && !isFigureToolRowLink(a, text)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
       // v2.5.9：句子裡的動作詞連結（「To get your Project URL, log in.」）不清
       if (!strictHit && !hrefHit && isInSentenceActionLink(a, text)) continue;
@@ -5123,6 +5474,36 @@
   // + 3 個剛好都 taxonomy 的連結」誤殺（純 tag label 通常 <= 8 CJK 字；敘述句更長 or
   // 走 <p> 被 hasMainBlock guard 擋）。
   const TAG_LABEL_MAX_LEN = 16;
+  // v2.5.26：一兩顆 chip 的標籤列、清單型標籤列（github.blog 文末「Tags:」＋兩顆
+  // `/tag/…`、qiita 標題下 `ul > li > a[href="/tags/…"]` 兩顆——都低於 HASHTAG_MIN_COUNT
+  // 的三顆門檻；github.blog 原文頁是被側欄規則順手帶走的，翻譯後那條不再命中才露出來）。
+  // 顆數少、誤傷風險高，所以走嚴格版，四個條件缺一不可：
+  //   1. 至少 TAXONOMY_PAIR_MIN 顆，而且**每一個**連結的 href 都指向 taxonomy 頁
+  //      （/tag/ /tags/ /category/ /topics/ …；href 不隨翻譯改）——不認文字起手的 `#`
+  //   2. 每顆 chip 都是短文字（<= TAG_BAR_ANCHOR_MAX_LEN）
+  //   3. 連結以外的文字（整個子樹，含「Tags:」這種包在 h2 / span 裡的標籤）只剩一個短
+  //      標籤＋分隔符
+  //   4. 不夾在主文段落中間（isSandwichedByBodyParagraphs）——標籤列住在標題區或文末；
+  //      文件站內文裡「連到 /topics/… 的兩三條清單」（Django 文件的網址就帶 /topics/）
+  //      前後都有內文段落，不收
+  // 清單容器（ul / ol）不論顆數一律走這個嚴格版。只有一顆的不收：單一分類連結可能是
+  // 標題上方的欄目名或內文裡獨立一行的連結，結構訊號不足。
+  const TAXONOMY_PAIR_MIN = 2;
+  function isSandwichedByBodyParagraphs(el, articleEl) {
+    let before = false, after = false;
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (el.contains(p)) continue;
+      if (mainTextLen(norm(p.textContent)) < 100) continue;
+      if (p.closest('li, figure, blockquote, table')) continue;
+      if (p.closest('[data-jread-hidden="1"]')) continue;
+      // 巢狀卡片（文末推薦卡的摘要段）、側欄、頁尾、導覽裡的段落不是主文段落
+      const shell = p.closest('article, aside, footer, nav');
+      if (shell && shell !== articleEl && !shell.contains(el) && articleEl.contains(shell)) continue;
+      if (el.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING) { after = true; if (before) return true; }
+      else { before = true; if (after) return true; }
+    }
+    return false;
+  }
   // 單一 element 是否為 taxonomy / tag-chip 列（靜態 sweep 與動態 observer 單一資料源）。
   // 命中回傳該 el（呼叫端 hide），否則 null。
   function hashtagClusterHideTarget(el, articleEl) {
@@ -5131,20 +5512,37 @@
     if (isInPreserved(el)) return null;
     if (el.contains && el.contains(articleEl)) return null;
     const anchors = el.querySelectorAll('a');
-    if (anchors.length < HASHTAG_MIN_COUNT) return null;
+    // v2.5.26：一兩顆 chip 的標籤列（見 TAXONOMY_PAIR_MIN 註解）另走較嚴的條件
+    const fewChips = anchors.length < HASHTAG_MIN_COUNT;
+    if (fewChips && anchors.length < TAXONOMY_PAIR_MIN) return null;
     // tag chip 認定：anchor 文字起手 `#`（文字型 hashtag）或 href 指向 taxonomy
     // 頁（裝飾型 #、純分類連結）。兩者皆「navigation chrome、非主文」。
     let hashtagHits = 0;
     let nonHashAllShort = true;
+    let taxonomyHrefHits = 0, allAnchorsShort = true, anchorTextLen = 0;
     for (const a of anchors) {
       const at = norm(a.textContent);
       const href = a.getAttribute('href') || '';
-      if (at.startsWith('#') || TAXONOMY_HREF_RE.test(href)) hashtagHits++;
+      const isTaxHref = TAXONOMY_HREF_RE.test(href);
+      if (isTaxHref) taxonomyHrefHits++;
+      if (at.length > TAG_BAR_ANCHOR_MAX_LEN || !at.length) allAnchorsShort = false;
+      anchorTextLen += at.length;
+      if (at.startsWith('#') || isTaxHref) hashtagHits++;
       else if (at.length > TAG_BAR_ANCHOR_MAX_LEN) nonHashAllShort = false;
     }
-    const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
-    const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
-    if (!ratioPass && !tagBarPass) return null;
+    // 清單容器（ul / ol）與一兩顆 chip 的列走嚴格版：每個連結都是 taxonomy href 的
+    // 短 chip、連結以外的文字只剩一個短標籤、而且不夾在主文段落中間
+    const strictPath = fewChips || el.tagName === 'UL' || el.tagName === 'OL';
+    if (strictPath) {
+      if (taxonomyHrefHits !== anchors.length || !allAnchorsShort) return null;
+      const rest = norm(el.textContent).length - anchorTextLen;
+      if (rest > TAG_LABEL_MAX_LEN + anchors.length * 2) return null; // 每顆 chip 容許一兩個分隔符
+      if (isSandwichedByBodyParagraphs(el, articleEl)) return null;
+    } else {
+      const ratioPass = hashtagHits / anchors.length >= HASHTAG_RATIO;
+      const tagBarPass = hashtagHits >= HASHTAG_MIN_COUNT && nonHashAllShort;
+      if (!ratioPass && !tagBarPass) return null;
+    }
     // 媒體 guard：純 tag bar 不含媒體。`querySelectorAll('a')` 是遞迴的，
     // 若 el 是外層 wrapper（含 .single-meta tag 列 + 主圖 figure），會在此
     // 被命中而把 hero 圖一起 hide（roomie.tw .mobile-info 實測：6 hashtag
@@ -5184,7 +5582,9 @@
     return el;
   }
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
-    const candidates = articleEl.querySelectorAll('p, div');
+    // v2.5.26：候選補 ul / ol（qiita 標題下的標籤是 `ul > li > a[href="/tags/…"]`，
+    // 外層 div 還裝著標題與作者，只有 ul 自己是純標籤列）
+    const candidates = articleEl.querySelectorAll('p, div, ul, ol');
     for (const el of candidates) {
       if (hashtagClusterHideTarget(el, articleEl)) hide(el, hidden);
     }
@@ -5352,6 +5752,7 @@
   // 至多一個 CTA，非塞滿連結文字的 widget）」。據此放行單張內容圖、多縮圖列表
   // 仍照砍。圖說放寬到 200 chars（myartbroker 實測 114）給長出處 headroom。
   const FIGURE_BLOCK_MAX_TEXT = 200;
+  const FIGURE_CARD_MIN_LINK_WEIGHT = 40;
   function isStandaloneFigureBlock(el) {
     if (!el || !el.querySelectorAll) return false;
     // v0.8.71：`<picture><img></picture>` 是同一個媒體單元——響應式圖
@@ -5366,6 +5767,27 @@
     const m = medias[0];
     if (m.closest && m.closest('li')) return false;   // 在 <li> = sidebar 縮圖列表
     if (norm(el.textContent).length > FIGURE_BLOCK_MAX_TEXT) return false; // link-heavy widget
+    // v2.5.26：圖與一段標題／簡介文字連到同一頁＝連結卡，不是單張內容圖。netflix
+    // 文末影片資訊卡（海報連結＋同網址的「片名＋片長＋簡介」連結）原文 202 字剛好
+    // 超過上一行門檻被清掉，翻譯後 105 字落在門檻內、享有本 guard 而留下（只在翻譯
+    // 輪漏網）。單張內容圖旁邊的連結是圖說出處、下載連結、CTA——不會是「與圖同
+    // 網址、裡面分成幾個區塊的標題＋簡介」連結（PLOS 表格圖的 PNG / TIFF 下載連結
+    // 各指向不同檔案；CTA 是單行行內文字）
+    const mediaLink = m.closest && m.closest('a[href]');
+    if (mediaLink && el.contains(mediaLink)) {
+      const hrefOf = (a) => { try { return new URL(a.getAttribute('href'), location.href).href; } catch (_) { return ''; } };
+      const target = hrefOf(mediaLink);
+      if (target) {
+        for (const a of el.querySelectorAll('a[href]')) {
+          if (a === mediaLink || a.contains(m)) continue;
+          if (hrefOf(a) !== target) continue;
+          // 短 CTA（myartbroker「Buy or Sell 作品名」50 字，與圖同網址）是單行行內文字；
+          // 卡片的文字連結裡面有區塊結構（片名一行、片長一行、簡介一段）
+          if (!a.querySelector('p, div, h2, h3, h4, h5, h6')) continue;
+          if (NS.cjkWeightedLen(norm(a.textContent)) >= FIGURE_CARD_MIN_LINK_WEIGHT) return false;
+        }
+      }
+    }
     return true;
   }
 
@@ -5431,10 +5853,27 @@
       for (const h of el.querySelectorAll('h1, h2, h3, h4, h5, h6')) heads.push(h);
     }
     if (heads.length !== 1) return false;
-    const hText = norm(heads[0].textContent || '');
-    const elText = norm(el.textContent || '');
+    // v2.5.26：兩邊都扣掉已經被清掉的子孫文字。標題外殼裡的編輯連結群先被清掉之後，
+    // 外殼看得到的內容就只剩標題，但 textContent 仍把連結文字算進去——短標題配長連結
+    // 文案時佔比掉到九成以下，外殼被當成高連結密度的側欄整個藏掉、小標消失
+    //（hi 維基「जीवनी」5 字配「[संपादित करें]」14 字、ar「المراجع」，語料庫實測；
+    // 翻譯後連結變短所以只有原文頁中）
+    const hText = norm(textExcludingHidden(heads[0]));
+    const elText = norm(textExcludingHidden(el));
     if (!hText || !elText) return false;
     return hText.length >= elText.length * 0.9;
+  }
+  function textExcludingHidden(el) {
+    if (!el.querySelector || !el.querySelector('[data-jread-hidden="1"]')) return el.textContent || '';
+    let out = '';
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) out += c.nodeValue;
+        else if (c.nodeType === 1 && !(c.dataset && c.dataset.jreadHidden === '1')) walk(c);
+      }
+    };
+    walk(el);
+    return out;
   }
 
   // v0.8.112：判定 <aside> 是否為「次要全文區塊」（無限捲動下一篇文章 / 嵌入的
@@ -5667,7 +6106,14 @@
           // ld > 0.5、總文 ~80 chars 落入「sibling 太小且 link 密」誤判；
           // byline 結構特徵跨站通用，誤殺風險可控。
           const sText = norm(s.el.textContent || '');
-          if (s.textLen < BYLINE_MAX_TEXT_LEN && bylineTextProtects(sText)) continue;
+          // v2.5.26：兩道 byline 保護都不套在「同站標題連結 cluster」上（≥3 條同站、
+          // 文字像標題的連結）。toss.tech 文末「作者的其他文章」三張卡（標題＋日期）
+          // 翻譯後實證：韓文日期「2025년 04월 08일」不中 BYLINE_TEXT_RE、照條件 A 清掉；
+          // 譯成「2025 年 4 月 8 日」後命中日期 pattern，整塊被當 byline 放行，而且
+          // continue 連條件 C 一起跳過——只在翻譯輪漏網。作者列不會有三條以上的
+          // 同站文章標題連結，這個結構訊號與語言無關
+          const sIsHeadlineCluster = isHeadlineLinkCluster(s.el);
+          if (!sIsHeadlineCluster && s.textLen < BYLINE_MAX_TEXT_LEN && bylineTextProtects(sText)) continue;
           // v1.5.6 byline 作者 chip 保護：短小元素若含「作者個人頁連結」
           // （/author/、/authors/、/@user 等）= 裸作者署名（無「By」前綴、無日期
           // 文字，BYLINE_TEXT_RE 漏抓）。techcrunch `wp-block-techcrunch-post-
@@ -5676,7 +6122,7 @@
           // author-page 連結是跨站通用的 byline 結構訊號（與 button cluster 的
           // clusterContainsAuthorProfileLink 保護同源）；短小門檻避免誤放
           // 「more from author」類較大 widget。
-          if (s.textLen < BYLINE_MAX_TEXT_LEN && clusterContainsAuthorProfileLink(s.el)) continue;
+          if (!sIsHeadlineCluster && s.textLen < BYLINE_MAX_TEXT_LEN && clusterContainsAuthorProfileLink(s.el)) continue;
           hide(s.el, hidden);
           continue;
         }
@@ -5693,7 +6139,13 @@
             s.ld > SIDEBAR_COLUMN_MIN_LINK_DENSITY &&
             // v2.2.20：門檻改 CJK 權重（bbc 72242f 翻譯輪：文末 4 條推薦連結區原文
             // 352 字過門檻、譯文 181 字不過＝只在翻譯輪漏網，raw 長度門檻家族）
-            sWeight >= SIDEBAR_COLUMN_MIN_SIBLING_TEXT) {
+            // v2.5.26：<aside> 的同站標題連結 cluster 不設最小文字量。space.com 文中
+            // 「What to read next」＋三張標題卡：原文靠 heading 字樣命中，翻譯後字樣
+            // 失效、譯文又把整塊壓到權重 200 以下（三條標題共 116 字），只在翻譯輪漏網。
+            // 門檻原意是擋「單行短導覽」；語意標籤 <aside>（次要內容）＋ ≥3 條同站
+            // 文章標題連結（isHeadlineLinkCluster）本身就是推薦區的結構訊號
+            (sWeight >= SIDEBAR_COLUMN_MIN_SIBLING_TEXT ||
+             (s.el.tagName === 'ASIDE' && isHeadlineLinkCluster(s.el)))) {
           hide(s.el, hidden);
           continue;
         }
@@ -9275,8 +9727,25 @@
 
   // button 的主文媒體豁免（v0.7.11 Medium click-to-zoom）：button 內含
   // img/picture/video = 主文載體、非純 CTA，hide 掉連圖片都看不見
+  // v2.5.26：圖示尺寸的 <img> 不算主文媒體。toss.tech 文末分享鈕
+  // `<button><img 32×32>공유하기</button>`、note.com 打賞卡的頭像鈕 `<button><img
+  // 32×32></button>` 都因為「內含 img」被豁免、留在版面上（分享鈕在原文頁可見；
+  // 譯成「分享」後才被連結文字規則清掉＝只有翻譯後才乾淨）。判定只認「量得到、
+  // 而且兩維都小於圖示上限」的圖：還沒排版（rect 0，jsdom 與 lazy 未載入）、
+  // <picture>、<video> 一律照舊當內容，不冒險藏掉點擊放大的主文圖
+  const BUTTON_ICON_IMG_MAX = 64;
   function buttonWrapsContentMedia(btn) {
-    return !!(btn.querySelector && btn.querySelector('img, picture, video'));
+    if (!btn.querySelector) return false;
+    if (btn.querySelector('picture, video')) return true;
+    const imgs = btn.querySelectorAll('img');
+    if (!imgs.length) return false;
+    for (const img of imgs) {
+      let r = null;
+      try { r = img.getBoundingClientRect(); } catch (_) { /* 量不到當內容 */ }
+      if (!r || !(r.width > 0) || !(r.height > 0)) return true;
+      if (r.width >= BUTTON_ICON_IMG_MAX || r.height >= BUTTON_ICON_IMG_MAX) return true;
+    }
+    return false;
   }
 
   // ---- 主文內：所有 interactive button 一律 hide --------------------------
@@ -9423,6 +9892,209 @@
       if (isEmbedPlaceholderPlayButton(btn)) continue;
       hide(btn, hidden);
     }
+    hideShadowButtons(articleEl, hidden, 0);
+    hideTabStrips(articleEl, hidden);
+  }
+
+  // v2.5.26：開放 shadow root 裡的按鈕（MDN 實證：程式碼範例的 Copy、相容性表的
+  // Settings、回饋區的 Yes / No 都是 <mdn-button> 的 shadow 內真 <button>）。
+  // querySelectorAll 不穿透 shadow root，「按鈕一律清」對 web component 站整組失效
+  // ——這不是新規則，是同一條規則補上漏掉的 path。
+  // 兩道保守 guard（都是「少清」方向）：
+  //   - shadow root 內有媒體（img / picture / video / iframe / canvas）→ 整個 root 不動：
+  //     <lite-youtube> 這類影片佔位元件的播放鍵住在 shadow 裡，isEmbedPlaceholderPlayButton
+  //     往上找殼的 walk 跨不出 shadow root，判不了就不清
+  //   - 按鈕在表格格子（td / th）裡 → 不清：MDN 相容性表每一格的版本號是一顆「點開
+  //     看備註」的 <button>，清掉整張表只剩空格。light DOM 的同類情況維持既有行為，
+  //     這裡只是不把清除範圍擴到會讓表格內容消失的地方
+  // 只在靜態 clean 跑：MutationObserver 看不到 shadow root 內的變動，晚渲染的元件
+  // 由 clean 之後的重測輪（1s / 3s）再掃到
+  const SHADOW_BTN_MAX_DEPTH = 4;
+  function hideShadowButtons(root, hidden, depth) {
+    if (!root || !root.querySelectorAll || depth > SHADOW_BTN_MAX_DEPTH) return;
+    for (const host of root.querySelectorAll('*')) {
+      const sr = host.shadowRoot;
+      if (!sr || !sr.querySelectorAll) continue;
+      if (host.dataset && host.dataset.jreadHidden === '1') continue;
+      if (!sr.querySelector('img, picture, video, iframe, canvas')) {
+        for (const btn of sr.querySelectorAll(INTERACTIVE_BTN_SEL)) {
+          if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
+          if (btn.closest && btn.closest('td, th')) continue;
+          hide(btn, hidden);
+        }
+      }
+      hideShadowButtons(sr, hidden, depth + 1);
+    }
+  }
+
+  // v2.5.26：分頁標籤列（role="tablist" 底下的 role="tab"）與按鈕同類，一律清。
+  // 多數站的分頁標籤本來就是 <button role="tab">，早已被上面清掉；Docusaurus 這類
+  // 用 <li role="tab"> 的漏網（jestjs：npm / Yarn / pnpm / Bun 標籤列在一頁出現 7 次，
+  // 閱讀模式下只看得到選中的那一頁內容，標籤只是按不出意義的控制項）。
+  // 結構 gate：
+  //   - tab 必須在 role="tablist" 內、且該 tablist 至少兩個 tab
+  //   - tablist 內不可有 role="tabpanel"（舊式手風琴把面板排在 tablist 裡、
+  //     role="tab" 掛在問題標題上——那是內容，不清）
+  //   - tab 不含標題、媒體，文字 ≤ 40 字（控制項標籤，不是內容）
+  function hideTabStrips(articleEl, hidden) {
+    for (const list of articleEl.querySelectorAll('[role="tablist"]')) {
+      if (list === articleEl || (list.contains && list.contains(articleEl))) continue;
+      if (list.querySelector('[role="tabpanel"]')) continue;
+      const tabs = Array.from(list.querySelectorAll('[role="tab"]'));
+      if (tabs.length < 2) continue;
+      for (const tab of tabs) {
+        if (tab.dataset && tab.dataset.jreadHidden === '1') continue;
+        if (tab.querySelector('h1, h2, h3, h4, h5, h6, img, picture, video, iframe')) continue;
+        if (norm(tab.textContent).length > 40) continue;
+        hide(tab, hidden);
+      }
+    }
+  }
+
+  // ---- 主文內：連到「本頁的原始格式版本」的連結（v2.5.26）------------------
+  // 文件 / 部落格平台在作者列放「Markdown」「View as Markdown」連結，href 是本頁
+  // 路徑加 .md / .markdown / .txt（nirbanroy.hashnode.dev：/<slug>.md，混在作者列
+  // 「日期 · 閱讀時間 · Markdown」）。結構通則：同源、路徑去掉副檔名後等於本頁
+  // 路徑——那是同一篇文章的另一種格式，不是內文引用；短文字（≤ 30 字）、不含媒體。
+  // 連結獨占父層時連父層一起藏（不留空殼）。
+  const SELF_ALT_FORMAT_EXT_RE = /\.(md|markdown|txt)$/i;
+  function hideSelfAltFormatLinks(articleEl, hidden) {
+    const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    const loc = win && win.location;
+    if (!loc || !loc.origin || loc.origin === 'null') return;
+    const strip = (p) => (p || '').replace(SELF_ALT_FORMAT_EXT_RE, '').replace(/\.html?$/i, '')
+      .replace(/\/index$/i, '').replace(/\/+$/, '');
+    const self = strip(loc.pathname);
+    if (!self) return; // 首頁不比（/index.md、/llms.txt 這類不是「本頁的另一種格式」）
+    for (const a of articleEl.querySelectorAll('a[href]')) {
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      let u;
+      try { u = new win.URL(a.getAttribute('href'), loc.href); } catch (_) { continue; }
+      if (u.origin !== loc.origin || !SELF_ALT_FORMAT_EXT_RE.test(u.pathname)) continue;
+      if (strip(u.pathname) !== self) continue;
+      const text = norm(a.textContent);
+      if (text.length > 30) continue;
+      if (a.querySelector('img, picture, video')) continue;
+      if (a.closest('pre, code, blockquote, figcaption')) continue;
+      const parent = a.parentElement;
+      const solo = parent && parent !== articleEl && !parent.contains(articleEl) &&
+        /^(SPAN|DIV|P|LI)$/.test(parent.tagName) && norm(parent.textContent) === text;
+      hide(solo ? parent : a, hidden);
+    }
+  }
+
+  // ---- 主文內：「Download:」開頭、其餘全是連結的短區塊（v2.5.26）-------------
+  // 期刊站每張圖下的下載列（PLOS：「Download: PPT / PNG larger image / TIFF original
+  // image」，一篇 9 次）。結構通則：區塊文字以「Download:／下載：」起頭、扣掉連結文字
+  // 後只剩這個標籤（沒有任何說明句）、至少一個連結、不含媒體、整塊 ≤ 160 字。
+  // 內文裡「Download: 請到官網…」這種句子有非連結文字，不命中。
+  const DOWNLOAD_ROW_LABEL_RE = /^(downloads?|下載)\s*[:：]/i;
+  const DOWNLOAD_ROW_MAX_LEN = 160;
+  function hideDownloadLinkRows(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('div, p, section, li, span')) {
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.contains(articleEl)) continue;
+      const text = foldZhVariants(norm(el.textContent));
+      if (text.length > DOWNLOAD_ROW_MAX_LEN || !DOWNLOAD_ROW_LABEL_RE.test(text)) continue;
+      if (el.closest('pre, code, blockquote, figcaption, [data-jread-hidden="1"]')) continue;
+      const links = el.querySelectorAll('a[href]');
+      if (!links.length) continue;
+      if (el.querySelector('img, picture, video, iframe')) continue;
+      let linkLen = 0;
+      for (const a of links) linkLen += norm(a.textContent).replace(/\s+/g, '').length;
+      // 扣掉連結後只能剩標籤本身（含分隔符號的少量餘裕）
+      const rest = text.replace(/\s+/g, '').length - linkLen;
+      const label = (DOWNLOAD_ROW_LABEL_RE.exec(text) || [''])[0].replace(/\s+/g, '').length;
+      if (rest > label + 2 * links.length) continue;
+      hide(el, hidden);
+    }
+  }
+
+  // ---- 主文內：清單每一項尾端重複出現的工具連結列（v2.5.26）------------------
+  // 期刊站參考文獻每一條後面掛同一組查找連結（PLOS：「View Article／PubMed/NCBI／
+  // Google Scholar」，41 條各一列）。結構通則，四個條件全成立才清：
+  //   - 巢狀清單（ul / ol）是外層 <li> 的直接子元素，外層 <li> 自己有內文
+  //     （扣掉巢狀清單後 mainTextLen ≥ 60——目錄的「章節連結＋子目錄」外層只有
+  //     一個短標題，requests.readthedocs 實測 5–23 字，不命中）
+  //   - 巢狀清單的每一項都是純連結、≤ 30 字
+  //   - 同一份外層清單裡，至少 3 項帶這種巢狀清單
+  //   - 巢狀清單裡每一個連結文字，都在同一份外層清單的 ≥ 3 個巢狀清單重複出現
+  //     ——「每條後面掛同一組工具」的定義；內容型的連結清單（每項底下列不同的
+  //     延伸連結）文字各不相同，不命中
+  const ITEM_TOOL_LINK_MAX_LEN = 30;
+  const ITEM_TOOL_OUTER_MIN_TEXT = 60;
+  const ITEM_TOOL_MIN_REPEAT = 3;
+  function hideRepeatedItemToolLinkLists(articleEl, hidden) {
+    const byOuter = new Map(); // 外層清單 → [{ inner, texts }]
+    for (const inner of articleEl.querySelectorAll('li > ul, li > ol')) {
+      if (inner.dataset && inner.dataset.jreadHidden === '1') continue;
+      const outerLi = inner.parentElement;
+      const outerList = outerLi && outerLi.parentElement;
+      if (!outerList || !/^(UL|OL)$/.test(outerList.tagName)) continue;
+      if (inner.closest('pre, code')) continue;
+      const items = Array.from(inner.children).filter((c) => c.tagName === 'LI');
+      if (!items.length || inner.querySelector('img, picture, video')) continue;
+      const texts = [];
+      let pure = true;
+      for (const li of items) {
+        const t = norm(li.textContent);
+        const links = li.querySelectorAll('a[href]');
+        let lt = '';
+        for (const a of links) lt += norm(a.textContent);
+        if (!t || !links.length || t.length > ITEM_TOOL_LINK_MAX_LEN ||
+            t.replace(/\s+/g, '') !== lt.replace(/\s+/g, '')) { pure = false; break; }
+        texts.push(foldZhVariants(t).toLowerCase());
+      }
+      if (!pure) continue;
+      const own = mainTextLen(norm(outerLi.textContent)) - mainTextLen(norm(inner.textContent));
+      if (own < ITEM_TOOL_OUTER_MIN_TEXT) continue;
+      if (!byOuter.has(outerList)) byOuter.set(outerList, []);
+      byOuter.get(outerList).push({ inner, texts });
+    }
+    for (const group of byOuter.values()) {
+      if (group.length < ITEM_TOOL_MIN_REPEAT) continue;
+      const freq = new Map();
+      for (const g of group) for (const t of new Set(g.texts)) freq.set(t, (freq.get(t) || 0) + 1);
+      for (const g of group) {
+        if (g.texts.every((t) => freq.get(t) >= ITEM_TOOL_MIN_REPEAT)) hide(g.inner, hidden);
+      }
+    }
+  }
+
+  // ---- 主文內：含「連到本頁自己」的純連結清單＝頁面分頁列（v2.5.26）------------
+  // 期刊 / 文件站在標題下放「Article／Authors／Metrics／Comments」這種分頁列，
+  // 是 <ul><li><a> 連到同一篇文章的其他檢視頁（PLOS ul.article-tabs；不是 role=tab，
+  // 也不是 <nav>）。原文頁碰巧被 narrowPromotedSiblings 當兄弟清掉，翻譯後 detector
+  // 直接選到外層容器、沒有 narrow，就漏網——需要一條不依賴 narrow 的規則。
+  // 結構通則：清單 ≥ 3 項、每項都是單一純連結且 ≤ 24 字、不含媒體，且其中一項的
+  // 連結就是本頁（同源、路徑與查詢字串相同、沒有 #錨點）。內容型的連結清單
+  // （See also、資訊框裡的人名）不會把「本頁自己」列進去；頁內目錄是 #錨點，不命中。
+  const SELF_TAB_ITEM_MAX_LEN = 24;
+  function hideSelfLinkTabLists(articleEl, hidden) {
+    const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    const loc = win && win.location;
+    if (!loc || !loc.origin || loc.origin === 'null') return;
+    const selfKey = loc.pathname.replace(/\/+$/, '') + loc.search;
+    for (const list of articleEl.querySelectorAll('ul, ol')) {
+      if (list.dataset && list.dataset.jreadHidden === '1') continue;
+      if (list.contains(articleEl) || list.closest('[data-jread-hidden="1"]')) continue;
+      const items = Array.from(list.children).filter((c) => c.tagName === 'LI');
+      if (items.length < 3 || items.length !== list.children.length) continue;
+      if (list.querySelector('img, picture, video, ul, ol')) continue;
+      let ok = true;
+      let hasSelf = false;
+      for (const li of items) {
+        const links = li.querySelectorAll('a[href]');
+        const t = norm(li.textContent);
+        if (links.length !== 1 || !t || t.length > SELF_TAB_ITEM_MAX_LEN ||
+            norm(links[0].textContent) !== t) { ok = false; break; }
+        let u;
+        try { u = new win.URL(links[0].getAttribute('href'), loc.href); } catch (_) { continue; }
+        if (u.origin === loc.origin && !u.hash &&
+            u.pathname.replace(/\/+$/, '') + u.search === selfKey) hasSelf = true;
+      }
+      if (ok && hasSelf) hide(list, hidden);
+    }
   }
 
   // ---- 主文內：a[href^="javascript:"] heuristic --------------------------
@@ -9433,7 +10105,29 @@
   // btn_copy / btn_support）都是 a[href^="javascript:"]，class 命名特殊
   // （btn_*）NOISE_KEYWORD_RE 不命中，textContent 空（icon-only）NOISE_LINK_
   // TEXT_RE 也不命中——靠 href pseudo-protocol 統一識別。
+  //
+  // v2.5.26：href 只有「#」（或空字串）也是同一類——哪裡都不去的連結只能靠 JS 動作。
+  // 這一型比 javascript: 寬（老站的頁內回頂、頁籤切換也這樣寫），所以再加兩道：文字是
+  // 「顯示更多／載入更多／展開」這類展開字樣、而且不包媒體。wikiHow 訣竅區的
+  // `<a href="#">Show More Tips</a>` 實證（點了是向站方再要一批讀者投稿，閱讀模式下
+  // 沒有作用）。站方收合的內文由 expandCollapsedSections 攤開，不靠這顆連結
+  const HASH_ONLY_EXPAND_TEXT_RE = /^(?:(?:show|see|view|load|read)\s+(?:more|all|less)\b.{0,24}|(?:顯示|查看|檢視|載入|閱讀|看)(?:更多|全部|較少).{0,12}|展開(?:全文|更多)?)$/i;
+  function isHashOnlyExpandTrigger(a) {
+    if (!a || a.tagName !== 'A') return false;
+    const href = a.getAttribute('href');
+    if (href !== '#' && href !== '') return false;
+    if (a.querySelector('img, picture, video, svg, canvas')) return false;
+    const t = foldZhVariants(norm(a.textContent));
+    return !!t && HASH_ONLY_EXPAND_TEXT_RE.test(t);
+  }
+
   function hideInsideArticleJsLinks(articleEl, hidden, scope) {
+    for (const a of scopedQueryAll(scope, articleEl, 'a[href="#"], a[href=""]')) {
+      if (isInPreserved(a)) continue;
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      if (!isHashOnlyExpandTrigger(a)) continue;
+      hide(a, hidden);
+    }
     for (const a of scopedQueryAll(scope, articleEl, 'a[href^="javascript:"]')) {
       if (isInPreserved(a)) continue;
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
@@ -10458,6 +11152,119 @@
     }
   }
 
+  // ---- 主文內：影片被清掉後留下的「標題連結＋摘要」（v2.5.26，foxnews 實證）----
+  // 文首的精選影片區塊：播放器 iframe 被第三方 iframe 規則清掉（或根本沒載入）、
+  // 外殼再被空白佔位規則收掉之後，底下「連到影片頁的標題＋一段摘要」還留著——
+  // 讀起來是一行粗體標題加一段與首段重複的文字（真站 probe：div.featured-video >
+  // [.video-container 已藏, .info > .caption > h4 > a + p]）。影片有顯示時這兩行是
+  // 影片的說明、照舊保留；影片沒了才是孤兒。結構判準（不看 class）：
+  //   - 起點：被我們藏掉的 iframe / video
+  //   - 往上最多 5 層，找到第一個還有可見文字的祖先 B
+  //   - B 裡沒有任何看得到的媒體（img / picture / video / iframe / svg 大圖）
+  //   - B 的可見內容只有：一個連結式標題（h2–h6 包 <a>）＋至多一段 <p>，
+  //     可見文字幾乎全在這兩者內（其餘 ≤ 4 字），總權重 ≤ ORPHAN_TEASER_MAX_WEIGHT
+  // 內文段落旁邊剛好有個被清掉的廣告 iframe 不會命中：B 會是內文容器，裡面不只
+  // 一段 <p>、也沒有連結式標題。
+  const ORPHAN_TEASER_MAX_WEIGHT = 500;
+  function hideOrphanMediaTeaserCaptions(articleEl, hidden) {
+    const isHiddenEl = (n) => !!(n.closest && n.closest('[data-jread-hidden="1"]'));
+    for (const media of articleEl.querySelectorAll('iframe, video')) {
+      if (!isHiddenEl(media)) continue;
+      let B = null;
+      for (let n = media.parentElement, up = 0; n && n !== articleEl && up < 5; n = n.parentElement, up++) {
+        if (isHiddenEl(n)) continue;
+        if (norm(_visibleTextOf(n))) { B = n; break; }
+      }
+      if (!B || B === articleEl || B.contains(articleEl)) continue;
+      if (B.dataset && B.dataset.jreadHidden === '1') continue;
+      if (isInPreserved(B)) continue;
+      let hasMedia = false;
+      for (const m of B.querySelectorAll('img, picture, video, iframe, canvas, object, embed')) {
+        if (!isHiddenEl(m)) { hasMedia = true; break; }
+      }
+      if (hasMedia) continue;
+      const heads = Array.from(B.querySelectorAll('h2, h3, h4, h5, h6')).filter(h => !isHiddenEl(h) && norm(h.textContent));
+      if (heads.length !== 1) continue;
+      const h = heads[0];
+      if (!h.querySelector('a[href]')) continue;
+      if (headingHasSelfLinkPermalink(h)) continue;
+      const paras = Array.from(B.querySelectorAll('p')).filter(x => !isHiddenEl(x) && norm(x.textContent));
+      if (paras.length > 1) continue;
+      const all = norm(_visibleTextOf(B));
+      if (NS.cjkWeightedLen(all) > ORPHAN_TEASER_MAX_WEIGHT) continue;
+      let rest = all.replace(norm(h.textContent), '');
+      if (paras[0]) rest = rest.replace(norm(paras[0].textContent), '');
+      if (rest.replace(/\s/g, '').length > 4) continue;
+      hide(B, hidden);
+    }
+  }
+
+  // ---- 主文內：作者列的社群帳號連結（v2.5.26，cnbc 實證）------------------
+  // 作者名底下另掛「@handle」連到 X / LinkedIn 的連結（cnbc 的 Author-authorTwitter：
+  // 「@KatieTarasov」「@https://www.linkedin.com/in/…」）。作者名與日期要留，社群
+  // 帳號不是（Jimmy 2026-11-18：聯絡方式、社群帳號屬於作者簡介那一類）。
+  // 結構判準（不看 class）：
+  //   - <a> 的文字整段是「@帳號」形狀，href 指向社群平台的個人頁
+  //   - 所在的父元素扣掉所有連結後沒有其他文字（標點不算）——內文句子裡提到
+  //     「@某人」的連結（父元素是有散文的段落）不動
+  // 只藏那一條連結，同一列的作者名連結不受影響。
+  const SOCIAL_PROFILE_HOST_RE = /(^|\.)(twitter\.com|x\.com|linkedin\.com|instagram\.com|facebook\.com|threads\.(net|com)|bsky\.app|tiktok\.com|youtube\.com|mastodon\.[a-z]+)$/i;
+  function hideSocialHandleLinks(articleEl, hidden) {
+    for (const a of articleEl.querySelectorAll('a[href]')) {
+      if (a.dataset && a.dataset.jreadHidden === '1') continue;
+      const t = norm(a.textContent);
+      if (!/^@\S{2,80}$/.test(t)) continue;
+      let u;
+      try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { continue; }
+      if (!SOCIAL_PROFILE_HOST_RE.test(u.hostname)) continue;
+      const parent = a.parentElement;
+      if (!parent) continue;
+      let rest = norm(parent.textContent);
+      for (const l of parent.querySelectorAll('a')) rest = rest.replace(norm(l.textContent), '');
+      if (rest.replace(/[\s|｜·•,，、/／()（）:：\-–—]/g, '')) continue;
+      if (isInPreserved(a)) continue;
+      hide(a, hidden);
+    }
+  }
+
+  // ---- 主文內：「粗體標籤：＋單一同站文章連結」的推薦段落（v2.5.26）----------
+  // 內文段落間插的「Read more: <a>另一篇文章</a>」「WATCH: <a>影片</a>」
+  // （nautil.us、cnbc 實證）。既有 heading 字樣規則要靠字樣命中，而且段落稍長就被
+  // 「行內強調」guard 放行（cnbc 60 字的 WATCH 行原文也漏）；翻譯後字樣又失效
+  // （「閱讀更多：」「觀看：」）。改看結構、不看字樣：
+  //   - <p> 的內容只有：開頭一個粗體標籤（strong / b，文字以冒號結尾、權重 ≤ 24）
+  //     ＋一條連結，其餘只剩引號與標點
+  //   - 那條連結是同站的文章連結（isSameSiteArticleLink）、文字像標題
+  //     （權重 ≥ LABELED_LIST_MIN_LINK_WEIGHT）
+  // 「Source: <a>外站</a>」「Download: <a>檔案</a>」不是同站文章連結，不命中；
+  // 粗體開頭、後面接散文的段落（「Update: 本文已更正…」）有連結以外的文字，不命中。
+  const PROMO_LABEL_MAX_WEIGHT = 24;
+  function hideLabeledPromoLinkParagraphs(articleEl, hidden) {
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      const links = p.querySelectorAll('a[href]');
+      if (links.length !== 1) continue;
+      const a = links[0];
+      const first = p.firstElementChild;
+      if (!first || (first.tagName !== 'STRONG' && first.tagName !== 'B')) continue;
+      if (first.contains(a)) continue;
+      // 標籤前不可有文字
+      let lead = '';
+      for (let n = p.firstChild; n && n !== first; n = n.nextSibling) lead += n.textContent || '';
+      if (norm(lead)) continue;
+      const label = norm(first.textContent).replace(/[“”"'‘’「」『』《》\s]+$/, '');
+      if (!/[:：]$/.test(label)) continue;
+      if (NS.cjkWeightedLen(label) > PROMO_LABEL_MAX_WEIGHT) continue;
+      const linkText = norm(a.textContent);
+      if (NS.cjkWeightedLen(linkText) < LABELED_LIST_MIN_LINK_WEIGHT) continue;
+      if (!isSameSiteArticleLink(a)) continue;
+      let rest = norm(p.textContent).replace(norm(first.textContent), '').replace(linkText, '');
+      if (rest.replace(/[\s“”"'‘’「」『』《》.。:：]/g, '')) continue;
+      if (isInPreserved(p)) continue;
+      hide(p, hidden);
+    }
+  }
+
   // ---- 主文內：inset 相關文章嵌入卡（v0.8.48 npr 實測）-------------------
   // 新聞站在主文段落間插「相關文章嵌入卡」：縮圖 + kicker 連結 + 標題連結，
   // 常以 float / 窄欄 inset 排版（npr `.bucketwrap.internallink.insettwocolumn`，
@@ -11061,7 +11868,7 @@
   // cite_note-Bio）、文字太短（只有名字沒有介紹的不算簡介框）。
   // 這條驗 X、不驗 Y：只驗「看得出身分的文末區塊」；class 全是 hash、又沒有標籤、
   // 也不以作者名開頭的簡介（propublica 第一人稱「I am a…」）驗不到。
-  const BIO_HEAD_RE = /^(?:about\s+the\s+(?:authors?|writers?)|written\s+by|co-?authored\s+by|author\s+bio|關於(?:本文)?作者|作者簡介|作者介紹|共同(?:作者|撰寫)|本文作者)\s*[:：]?/i;
+  const BIO_HEAD_RE = /^(?:about\s+the\s+(?:authors?|writers?)|written\s+by|co-?authored\s+by|this\s+(?:article|post|story|guide)\s+(?:was|is)\s+(?:co-?)?(?:authored|written)\s+by|本文由.{1,40}共同(?:撰寫|編寫|創作|撰文)|author\s+bio|關於(?:本文)?作者|作者簡介|作者介紹|共同(?:作者|撰寫)|本文作者)\s*[:：]?/i;
   const BIO_TOKEN_RE = /(^|[\s_-])(?:authors?|bio|byline)(?=[\s_-]|$)/i;
   const BIO_WEAK_TOKEN_RE = /(^|[\s_-])contributors?(?=[\s_-]|$)/i;
   const BIO_COMPOUND_TOKEN_RE = /(^|[\s_-])(?:authors?[\s_-]+(?:[a-z]+[\s_-]+)?(?:bio|info|box|card|about|profile|desc(?:ription)?)|(?:post|article|about|about[\s_-]+the)[\s_-]+authors?|bio[\s_-]+(?:box|card|wrapper))(?=[\s_-]|$)/i;
@@ -11075,6 +11882,12 @@
   const BIO_TAIL_MIN_WEIGHT = 30;
   const BIO_TAIL_MAX_WEIGHT = 1600;
   const BIO_TAIL_MIN_BEFORE = 3;
+  // 段落數不足時的替代尺：主文可見文字量（CJK 權重）至少這麼多才算「有主文在前」
+  const BIO_TAIL_MIN_ARTICLE_WEIGHT = 1200;
+  // 簡介框所在的「標題領頭文末區塊」：扣掉簡介後剩下的非連結文字上限（統計、分類、
+  // 感謝列這類站方中繼資訊的量級）與往上找的層數
+  const BIO_META_SECTION_MAX_EXTRA = 320;
+  const BIO_META_SECTION_MAX_CLIMB = 6;
   const BIO_TAIL_MAX_AFTER = 3;
   const BIO_TAIL_MAX_AFTER_NAME_ONLY = 1;
   const BIO_TAIL_BODY_P_WEIGHT = 100;
@@ -11130,8 +11943,17 @@
       if (p.closest('[data-jread-hidden="1"]') || isSiteHiddenWithin(p, articleEl)) continue;
       bodyPs.push(p);
     }
-    if (bodyPs.length < BIO_TAIL_MIN_BEFORE) return;
-    const names = collectAuthorNames(articleEl, bodyPs[0]);
+    // v2.5.26：段落數不足不再直接收工——主文住在 li / div 的頁面（wikiHow 的步驟、
+    // 譯文把 <p> 壓短之後）一段合格的 <p> 都湊不滿，整條規則沒機會跑。改成：段落數
+    // 不足時看主文文字量（CJK 權重），夠三段的量才往下，位置改由下面的版面比例把關
+    let articleWeightMemo = -1;
+    const articleWeight = () => {
+      if (articleWeightMemo < 0) articleWeightMemo = NS.cjkWeightedLen(norm(visibleRenderedText(articleEl)));
+      return articleWeightMemo;
+    };
+    if (bodyPs.length < BIO_TAIL_MIN_BEFORE &&
+        articleWeight() < BIO_TAIL_MIN_ARTICLE_WEIGHT) return;
+    const names = collectAuthorNames(articleEl, bodyPs[0] || null);
     const startsWithName = (lower) => {
       for (const n of names) {
         if (!lower.startsWith(n)) continue;
@@ -11184,7 +12006,7 @@
       if (before < BIO_TAIL_MIN_BEFORE) {
         // 主文不是 <p> 段落的頁面（wikiHow 的步驟是 li / div）段落數不足，改看版面位置：
         // 至少一段主文在前、且區塊頂端落在主文容器高度的後 40%
-        if (before < 1) continue;
+        if (before < 1 && articleWeight() < BIO_TAIL_MIN_ARTICLE_WEIGHT) continue;
         const ar = articleEl.getBoundingClientRect();
         const er = el.getBoundingClientRect();
         if (!(ar.height > 0) || (er.top - ar.top) / ar.height < BIO_TAIL_MIN_TOP_RATIO) continue;
@@ -11232,6 +12054,57 @@
       picked.push(target);
     }
     for (const el of picked) hide(el, hidden);
+    // v2.5.26：簡介框清掉後，同一個「標題領頭的文末區塊」只剩站方中繼資訊（共同作者數、
+    // 更新日期、分類、其他語言連結、感謝列）——wikiHow「About This Article」實證。
+    // 結構條件（不認 class）：往上找到的外殼
+    //   - 自己帶一個排在簡介框之前的 h2–h6（區塊是那個標題領頭的）
+    //   - 不含主文段落、不含 h1、沒有大於頭像尺寸的可見媒體
+    //   - 扣掉已藏的簡介框後，剩下的可見非連結文字不超過 BIO_META_SECTION_MAX_EXTRA
+    // 取符合條件的最外層整塊清
+    const sections = [];
+    for (const el of picked) {
+      if (sections.some((s) => s.contains(el))) continue;
+      let best = null;
+      let cur = el.parentElement;
+      for (let hop = 0; cur && hop < BIO_META_SECTION_MAX_CLIMB; hop++, cur = cur.parentElement) {
+        if (cur === articleEl || cur.contains(articleEl) || isInPreserved(cur)) break;
+        if (cur.querySelector('h1')) break;
+        if (bodyPs.some((p) => cur.contains(p) && !p.closest('[data-jread-hidden="1"]'))) break;
+        if (bioMetaSectionExtraWeight(cur) > BIO_META_SECTION_MAX_EXTRA) break;
+        let big = false;
+        for (const m of cur.querySelectorAll('img, video, iframe')) {
+          if (m.closest('[data-jread-hidden="1"]')) continue;
+          let r; try { r = m.getBoundingClientRect(); } catch (_) { continue; }
+          if (r && (r.width > BIO_AVATAR_MAX || r.height > BIO_AVATAR_MAX)) { big = true; break; }
+        }
+        if (big) break;
+        let led = false;
+        for (const h of cur.querySelectorAll('h2, h3, h4, h5, h6')) {
+          if (!(h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+          if (norm(h.textContent)) { led = true; break; }
+        }
+        if (led) best = cur;
+      }
+      if (best) sections.push(best);
+    }
+    for (const s of sections) hide(s, hidden);
+  }
+
+  // 區塊內仍看得到的非連結文字量（CJK 權重）：已藏的子樹與 <a> 內的字不算
+  function bioMetaSectionExtraWeight(root) {
+    let total = 0;
+    const doc = root.ownerDocument;
+    const walker = doc.createTreeWalker(root, 4 /* SHOW_TEXT */);
+    let n;
+    while ((n = walker.nextNode())) {
+      const par = n.parentElement;
+      if (!par || par.closest('a, script, style, noscript, template')) continue;
+      if (par.closest('[data-jread-hidden="1"]')) continue;
+      if (isSiteHiddenWithin(par, root)) continue;
+      total += NS.cjkWeightedLen(norm(n.nodeValue));
+      if (total > BIO_META_SECTION_MAX_EXTRA * 4) break;
+    }
+    return total;
   }
 
   // ---- 主文內：figure 包未知 widget iframe（v0.8.48 propublica 實測）------
@@ -11529,6 +12402,17 @@
       (input.getAttribute('placeholder') || '');
     return type === 'email' || (type === 'text' && /mail/i.test(marker));
   }
+  // v2.5.26：單行文字輸入框（type 省略 / text / search / url / tel）。checkbox、radio、
+  // range（互動圖表的滑桿）、hidden、file、按鈕型都不算；textarea 也不算（線上程式碼
+  // 編輯器用 textarea 當輸入代理，外層是內容）。唯讀 / 停用的、程式碼或可編輯區塊裡的不算。
+  function isFreeTextEntryInput(input) {
+    if (!input || input.tagName !== 'INPUT') return false;
+    const type = (input.getAttribute('type') || 'text').toLowerCase();
+    if (!/^(?:text|search|url|tel)$/.test(type)) return false;
+    if (input.readOnly || input.disabled) return false;
+    if (input.closest && input.closest('pre, code, [contenteditable="true"]')) return false;
+    return true;
+  }
   function findSignupSemanticShell(trigger, articleEl) {
     let shell = null;
     const canonical = getCanonicalTitleText();
@@ -11567,7 +12451,12 @@
       if (input.closest('form')) continue; // 有 form 包裝的已由上方規則處理
       if (isInPreserved(input)) continue;
       // 同上：input 自身已被別條規則 hide 不影響「外層卡片要不要收」
-      if (!isEmailInput(input)) continue;
+      // v2.5.26：不只 email——任何單行文字輸入框都算（isFreeTextEntryInput）。wikiHow
+      // 「Submit a Tip」（input[placeholder="Your tip here"]＋說明＋送出鈕）與問答的搜尋框
+      // 都是裸 div 包文字輸入框的投稿 / 查詢入口；閱讀模式下輸入框沒有用途，按鈕被清掉後
+      // 只剩標題與說明文字。走同一條 findContentFreeCard（含主文段落、程式碼區塊、文章
+      // 標題就不擴），所以清到的是「輸入框那張小卡」，不會帶走同區塊的內文
+      if (!isEmailInput(input) && !isFreeTextEntryInput(input)) continue;
       hideNoiseCardFromTrigger(input, articleEl, hidden);
     }
   }
@@ -11780,11 +12669,11 @@
     // 常在捲到文末才 lazy render，clean() 已跑完、靜態 sweep 漏接（Jimmy 2026-07-02
     // NYT 實測）。node 自身 / 其內任一 p/div cluster 都查。命中即停。
     if (articleEl.contains(node)) {
-      if (node.matches && node.matches('p, div') && hashtagClusterHideTarget(node, articleEl)) {
+      if (node.matches && node.matches('p, div, ul, ol') && hashtagClusterHideTarget(node, articleEl)) {
         hide(node, hiddenList); return;
       }
       if (node.querySelectorAll) {
-        for (const el of node.querySelectorAll('p, div')) {
+        for (const el of node.querySelectorAll('p, div, ul, ol')) {
           if (el.dataset && el.dataset.jreadHidden === '1') continue;
           if (el.closest('[data-jread-hidden="1"]')) continue;
           if (hashtagClusterHideTarget(el, articleEl)) hide(el, hiddenList);
@@ -12819,6 +13708,9 @@
       const containers = articleEl.querySelectorAll(CONTAINER_SEL);
       const keywordCandidates = keywordScanCandidates(containers, _getArticleAllElements(articleEl));
       safeRun(hideInsideArticleByKeyword, articleEl, hidden, keywordCandidates);
+      // v2.5.26：自我聲明非內容的 class（noprint 家族、navbox、姊妹計畫框）掛在
+      // table / p / 行內連結小群上——CONTAINER_SEL 以外的 tag
+      safeRun(hideDeclaredChromeNonContainers, articleEl, hidden);
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
@@ -12846,6 +13738,8 @@
       safeRun(hideInsideArticleAbsoluteCreditOverlays, articleEl, hidden);
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
       safeRun(hideTailAuthorBioBlocks, articleEl, hidden);
+      safeRun(hideSocialHandleLinks, articleEl, hidden);
+      safeRun(hideLabeledPromoLinkParagraphs, articleEl, hidden);
       // v1.7.25：byline 頭像規則排在 author-bio 卡之後——bio 卡判準含頭像訊號，
       // 頭像先被本規則藏走會讓 bio 卡整卡失去命中（medium-byline-header spec
       // 負控制實證）；順序反過來則 bio 卡先整卡砍、本規則對已 hidden 者 skip
@@ -12864,6 +13758,10 @@
       safeRun(hideInsideArticleCommentPanels, articleEl, hidden);
       safeRun(hideInsideArticleAllButtons, articleEl, hidden);
       safeRun(hideInsideArticleJsLinks, articleEl, hidden);
+      safeRun(hideSelfAltFormatLinks, articleEl, hidden);
+      safeRun(hideDownloadLinkRows, articleEl, hidden);
+      safeRun(hideRepeatedItemToolLinkLists, articleEl, hidden);
+      safeRun(hideSelfLinkTabLists, articleEl, hidden);
       safeRun(hideInsideArticleIconOnlyLinks, articleEl, hidden);
       // header zone 裝飾 icon：須在 collapse 類規則（會 mutate layout）之前跑，
       // icon rect 量測才反映原站尺寸
@@ -12886,6 +13784,7 @@
       safeRun(hideInsideArticleDirectChildLinkBlocks, articleEl, hidden);
       safeRun(hideInsideArticleEmptySpacers, articleEl, hidden, containers);
       safeRun(hideInsideArticleSidebarColumns, articleEl, hidden, containers, opts && opts.promotedTitleHead);
+      safeRun(hideOrphanMediaTeaserCaptions, articleEl, hidden);
       safeRun(hideSecondaryArticleAsides, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteOverlays, articleEl, hidden);
       safeRun(resetNegativeZIndex, articleEl, hidden);
