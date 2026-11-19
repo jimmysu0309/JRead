@@ -766,6 +766,20 @@
     const rest = tokens.filter((t) => t !== 'layout');
     return rest.length ? rest.join(' ') : 'none';
   }
+  // v2.5.23：同一種展開法，拿掉 paint（見 NEUTRALIZE_RULES 的 tallPaintContain）
+  function stripPaintContain(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw || raw === 'none' || raw === 'normal') return null;
+    const tokens = [];
+    for (const t of raw.split(/\s+/)) {
+      if (t === 'strict') tokens.push('size', 'layout', 'paint', 'style');
+      else if (t === 'content') tokens.push('layout', 'paint', 'style');
+      else tokens.push(t);
+    }
+    if (!tokens.includes('paint')) return null;
+    const rest = tokens.filter((t) => t !== 'paint');
+    return rest.length ? rest.join(' ') : 'none';
+  }
   // 2026-11-15 review B-03：「flex / grid 殼要不要塌」的判定表住 NS.flexShellVerdict
   //（styler passGalleryFlex、cleaner collapseInnerFlexWrap 問同一張表）；這裡蒐集的事實
   // 是「子樹內要貼合的大圖張數」（呼叫端用 countFitImgs 數）＋ paged 政策參數。
@@ -800,6 +814,25 @@
   function unclipOverflow(ctx) {
     structJournal.record(ctx.el, 'overflow', ['overflow-x', 'overflow-y']);
     try { ctx.el.style.setProperty('overflow', 'visible', 'important'); } catch (e) { /* */ }
+  }
+  // v2.5.23：高過一頁的捲動框解開後，裡面的程式碼長行改成自動換行。
+  // 解開（overflow: visible）的代價是橫向也不裁了：<pre> 的長行直接畫出框外、伸進
+  // 右邊留白；落在最後一頁時還會撐大可捲寬度，翻頁步距跟著偏（react.dev 攤開後的
+  // Sandpack：scrollWidth 多 44px，每翻一頁偏 2px，第 7 頁程式碼框已左移 13px——
+  // probe 實測；pre 改 pre-wrap 後 scrollWidth 回到頁寬的整數倍）。
+  // overflow 兩軸綁在一起（一軸 visible 另一軸不是 → visible 被算成 auto），沒辦法
+  // 只解直向，所以改讓內容不要超寬。只在解開前真的有橫向溢出時才動；表格這類不是
+  // <pre> 的寬內容不在此列。
+  function unclipTallScroller(ctx) {
+    let wide = false;
+    try { wide = ctx.el.scrollWidth > ctx.el.clientWidth + 1; } catch (e) { /* */ }
+    unclipOverflow(ctx);
+    if (!wide) return;
+    const pres = /^pre$/i.test(ctx.el.tagName || '') ? [ctx.el] : Array.from(ctx.el.querySelectorAll('pre'));
+    for (const pre of pres) {
+      structJournal.set(pre, 'white-space', 'pre-wrap');
+      structJournal.set(pre, 'overflow-wrap', 'anywhere');
+    }
   }
 
   // 規則表。neutralizeStructure 對主文每個後代依表序套用：
@@ -838,6 +871,29 @@
         ctx.el.style.setProperty('contain', ctx.contain, 'important');
       }
     },
+    // v2.5.23：高過一頁的盒子帶 paint containment → WebKit 只畫得出第一片，其餘各頁
+    // 整塊空白（react.dev Sandpack 外殼 contain: content；上一條拿掉 layout 後剩
+    // style paint。Playwright WebKit 實站：2265px 的程式碼框切成 4 片、第 2–4 片全白；
+    // 把 contain 設成 none 後各頁正常——截圖對照。Chromium 兩種都正常）。
+    // paint containment 的定義就是「不畫出自己的盒子外面」，跨頁的片段落在盒子的
+    // 主片段之外。上一條 v2.4.3 的「只拿掉 paint 無效」講的是另一個症狀（break-* 被
+    // 無視），兩條互不取代。只動高過一頁的：放得進一頁的盒子不跨頁，paint 留著無妨。
+    // 排在 layoutContain 之後：接上一條算出的值（ctx.contain）。
+    {
+      id: 'tallPaintContain',
+      since: 'v2.5.23',
+      minHeight: isTallerThanPage,
+      match(ctx) {
+        // 上一條剛寫過就直接接它的結果（ctx 同元素共用）；不靠 computed style 即時更新
+        const cur = typeof ctx.contain === 'string' ? ctx.contain : (ctx.cs.contain || ctx.el.style.getPropertyValue('contain'));
+        ctx.containNoPaint = stripPaintContain(cur);
+        return ctx.containNoPaint !== null;
+      },
+      apply(ctx) {
+        structJournal.record(ctx.el, 'contain');
+        ctx.el.style.setProperty('contain', ctx.containNoPaint, 'important');
+      }
+    },
     // v2.4.5：媒體在 flex / grid 容器內（Jimmy 2026-11-10 Mac Safari 27 翻頁模式
     // foreignaffairs「第一頁的圖就會被切到」）。hero 與標題區並排在 section.topper
     //（display:flex）裡；cleaner 的 collapseInnerFlexWrap 只在子項已換行時才塌，寬視窗下
@@ -863,6 +919,35 @@
         structJournal.set(ctx.el, 'display', 'block');
       }
     },
+    // v2.5.23：高過一頁的直向 flex 容器、裡面只有一個看得到的子元素 → 塌成 block。
+    // Chromium 把 flex 容器切成各頁片段時，容器高度照「沒分頁」的排版算；子元素被
+    // 分頁後每個頁底會浪費不滿一行的空間、實際要的高度比較多，多出來的部分落在容器
+    // 外面被下一段內容蓋住（react.dev 攤開後的 Sandpack 編輯器：pre 片段加總 2362、
+    // 外層 flex 直欄 2304，程式碼最後一行半被切掉；改 block 後兩者都是 2362——probe
+    // 實測。WebKit 沒有這個落差）。只有一個子元素的直向 flex 與 block 排版等價
+    //（沒有 gap、order、分配空間可言），所以只收這種。
+    // 排在 tallInlineAtomic 之前，理由同上一條（都寫 display）。
+    {
+      id: 'tallSingleChildFlexColumn',
+      since: 'v2.5.23',
+      minHeight: isTallerThanPage,
+      once: true,
+      match(ctx) {
+        const d = ctx.cs.display || '';
+        if (d !== 'flex' && d !== 'inline-flex') return false;
+        if (!/^column/.test(ctx.cs.flexDirection || '')) return false;
+        let shown = 0;
+        for (const ch of ctx.el.children) {
+          let n = 0;
+          try { n = ch.getClientRects().length; } catch (e) { /* */ }
+          if (n > 0 && ++shown > 1) return false;
+        }
+        return shown === 1;
+      },
+      apply(ctx) {
+        structJournal.set(ctx.el, 'display', 'block');
+      }
+    },
     // v1.7.46：翻頁模式內容整塊消失（Gmail 信件）。瀏覽器把 scroll container（computed
     // overflow-x/y 為 auto / scroll / hidden 任一——三值都建立可捲容器）視為 monolithic：
     // 多欄斷片時整塊不可切（隔離實驗實證；visible / clip 可斷片）。主文包在這種容器裡
@@ -881,7 +966,7 @@
         const o = ctx.overflow();
         return isClippingOverflow(o.x) || isClippingOverflow(o.y);
       },
-      apply: unclipOverflow
+      apply: unclipTallScroller
     },
     // v2.2.21：主文容器放得進一頁但被 overflow:hidden 鎖成 monolithic（關鍵評論網
     // .article-body、中時 .article-body）：內容沒被裁，但本頁剩餘空間不夠時整塊推到
@@ -932,6 +1017,16 @@
 
   // 掃主文所有後代、依表序套用 NEUTRALIZE_RULES。一輪一次 querySelectorAll('*')；
   // 每個元素先量高，沒有任何規則的 minHeight 過關就不讀 computed style
+  // 各頁片段高度加總（見 neutralizeStructure 的 v2.5.23 註解）。只有一片＝沒被切，回原值
+  const FRAGMENT_UNION_SLACK = 2;
+  function fragmentSumHeight(el, fallback) {
+    let rects;
+    try { rects = el.getClientRects(); } catch (e) { return fallback; }
+    if (!rects || rects.length < 2) return fallback;
+    let sum = 0;
+    for (const r of rects) sum += r.height;
+    return Math.max(sum, fallback);
+  }
   function neutralizeStructure() {
     const box = pageBox();
     if (!box) return; // jsdom 無 layout → no-op（spec 以 stub 驅動）
@@ -946,6 +1041,12 @@
     for (const el of els) {
       let h = 0;
       try { h = el.getBoundingClientRect().height; } catch (e) { continue; }
+      // v2.5.23：已被切成各頁片段的元素，外框是各片段的聯集、高度頂多一頁——「高過
+      // 一頁」的規則全部量不到。WebKit 會把高過一頁的 scroll container 照樣切開（但
+      // 內容畫不出來：react.dev Sandpack 的 overflow:auto 編輯器框，2265px 切成 4 片、
+      // 每片 <= 836，整塊空白；Chromium 當 monolithic 不切、外框就是真高度）。
+      // 外框高度貼近一頁時改用各片段高度加總。門檻擋掉絕大多數元素，不增加掃描成本
+      if (h >= pageH - FRAGMENT_UNION_SLACK) h = fragmentSumHeight(el, h);
       let ctx = null;
       try {
         for (const rule of NEUTRALIZE_RULES) {
@@ -2110,6 +2211,7 @@
     computePageCountFromExtent,
     decideMediaFit,
     stripLayoutContain,
+    stripPaintContain,
     isSingleMediaFlexShell,
     initialLetterPadPx,
     refineShrink,

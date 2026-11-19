@@ -396,6 +396,11 @@
   const ABS_ANCHOR_ATTR = 'data-jread-abs-anchor';
   // v2.5.14：直向 flex 容器的直接子 <pre>（見 markFlexColumnPres）
   const PRE_FLEX_STRETCH_ATTR = 'data-jread-pre-flex-stretch';
+  // v2.5.23：橫向 flex 容器裡唯一的子層、裡面裝著程式碼區塊 → 撐滿（見 markFlexRowCodeShells）
+  const CODE_FLEX_FILL_ATTR = 'data-jread-code-flex-fill';
+  // v2.5.23：圖說與它上方那張圖的間距收緊（規則與標記見 buildCss / markCaptionMedia）
+  const CAP_MEDIA_ATTR = 'data-jread-cap-media';   // 圖說上方的媒體，與它到共同容器之間的包裝
+  const CAP_BELOW_ATTR = 'data-jread-cap-below';   // 排在媒體下方的 figcaption（"1" / "pad"）
   // v2.5.16：主文內帶 shadow root 的自訂元素（見 markShadowHosts）
   const SHADOW_HOST_ATTR = 'data-jread-shadow-host';
   // v1.7.70：pre-wrap 硬換行切出的段落載體標記（見 splitPreWrapParagraphs）。
@@ -777,6 +782,14 @@
   const CONTRAST_LOW_FRACTION = 0.4;  // 低對比文字字數占比 >= 40% 才觸發
   const CONTRAST_MAX_TARGETS = 20;    // 每頁最多處理 20 個容器（效能上限）
   const CONTRAST_MAX_CARRIERS = 80;   // 每容器最多取 80 個文字載體
+  // v2.5.23：code block 底色（phase 4）自己的上限。原本共用 CONTRAST_MAX_TARGETS（20，
+  // 是 phase 1 / 2「逐容器收集文字載體」那種重量測的上限），phase 4 每個 <pre> 只讀
+  // 一次 computed background——技術文件一頁 40–100 個程式碼區塊很常見，第 21 個起
+  // 全部沒補底色、與內文融在一起（kubernetes 96 個、qiita 40 個、jestjs / vuejs 各
+  // 30 多個，後半全數透明；真站與快照相同）
+  const CODE_BG_MAX_SCAN = 2000;
+  // v2.5.23：程式碼區塊內「只有空白的 token」底線清除，每頁最多看幾個 token
+  const CODE_WS_MAX_SCAN = 20000;
   const TABLE_BG_MAX_SCAN = 3000;     // v2.5.18：light 表格系深色底守門每頁最多量 3000 個元素
   const WHITE = { r: 255, g: 255, b: 255, a: 1 };
 
@@ -2530,6 +2543,49 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
 [${ARTICLE_ATTR}="1"] pre[${PRE_FLEX_STRETCH_ATTR}="1"][${PRE_FLEX_STRETCH_ATTR}="1"] {
   margin-left: 0 !important;
   margin-right: 0 !important;
+}
+/* v2.5.23：程式碼區塊的外殼撐滿版心（標記見 markFlexRowCodeShells）。react.dev 的
+   範例外殼 div.sandpack 是橫向 flex、裡面只有一個子層；站方靠自己的寬度規則撐滿，
+   閱讀模式把寬度歸成 auto 後，flex item 縮成內容寬——同一頁的程式碼框 282 / 421 /
+   479 / 552 / 608px 各不相同（語料庫 probe 實測）。唯一的子層沒有別人要分空間，
+   讓它長滿。 */
+html [${ARTICLE_ATTR}="1"] [${CODE_FLEX_FILL_ATTR}="1"] {
+  flex-grow: 1 !important;
+  min-width: 0 !important;
+}
+/* v2.5.23：圖說貼近它說明的那張圖（Jimmy 2026-11-19 回報「圖片註解和圖片的距離太開」）。
+   距離的來源是兩邊各加一份：上面 MEDIA_CAP_SEL / content-img 給每張圖 24px 下邊距、
+   figure / picture 規則給 picture 1.5em 下邊距（那是「圖與下一段內文」的間距），圖說
+   自己又帶站方的 margin-top / padding-top。語料庫普查 39 頁有圖說的頁面，圖底到圖說
+   第一行字的距離中位數 26px、最大 87px（pmc：24 + 17 + 30）；圖說下方到內文反而只有
+   figure 的 1.5em——圖說看起來不屬於任何一邊。
+   做法：圖說上方那張圖（與它外面的包裝）下邊距歸零，圖說統一留 8px；圖與下一段的
+   間距仍由 figure 的 1.5em 負責。只動 markCaptionMedia 標到的元素——沒有圖說的圖、
+   圖說排在圖上方的 figure、一個 figure 多張圖時非最後一張的圖都不受影響。
+   圖說自帶底色或框線時（值 "pad"）padding 是框內留白不歸零，並改成貼著圖不留縫。
+   attr 重複三次（specificity 0,4,1）：要贏過 MEDIA_CAP_SEL 的 margin-bottom: 24px
+   !important——那條帶三個 :not()，算下來是 (0,3,3)；重複兩次只有 (0,3,1) 會輸
+   （bbc / pmc / twz 實測圖的 24px 還在）。 */
+html [${ARTICLE_ATTR}="1"] [${CAP_MEDIA_ATTR}="1"][${CAP_MEDIA_ATTR}="1"][${CAP_MEDIA_ATTR}="1"] {
+  margin-bottom: 0 !important;
+}
+html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}][${CAP_BELOW_ATTR}] {
+  margin-top: 8px !important;
+}
+html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}="1"][${CAP_BELOW_ATTR}="1"] {
+  padding-top: 0 !important;
+}
+/* 圖說自己是一個框（底色或任一邊框線）→ 貼著圖、不留縫：維基縮圖的圖說左右下三邊
+   有框線、與圖的外框接成一體，留 8px 會讓框線斷開（zh.wikipedia 翻頁截圖實證） */
+html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}^="pad"][${CAP_BELOW_ATTR}^="pad"] {
+  margin-top: 0 !important;
+}
+/* 框貼著圖、但框自己沒有上內距（維基：padding 0 6px 6px）→ 字會直接碰到圖，補 6px */
+html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}="padfix"][${CAP_BELOW_ATTR}="padfix"] {
+  padding-top: 6px !important;
+}
+html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}][${CAP_BELOW_ATTR}] > :first-child {
+  margin-top: 0 !important;
 }
 /* v2.5.16：shadow DOM 元件的配色跟著卡片走（標記見 markShadowHosts）。我們的樣式表
    進不了 shadow root：元件裡的底色留著站方依「系統深淺色」挑的那一組，但文字色是
@@ -4887,6 +4943,129 @@ html.${HTML_CLASS}.jread-orion body {
       marked.push(pre);
     }
   }
+  // v2.5.23：程式碼區塊往上 CODE_FLEX_CLIMB 層內，遇到「父層是橫向 flex、自己是父層
+  // 唯一看得到的子元素」的那一層就標 CODE_FLEX_FILL_ATTR（規則與動機見 buildCss）。
+  // 父層有兩個以上看得到的子元素（程式碼＋預覽並排）不標——那是站方的分欄。
+  // 只做進場當下這一次
+  const CODE_FLEX_CLIMB = 5;
+  function markFlexRowCodeShells(articleEl, marked) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const gcs = (el) => {
+      try { return _win.getComputedStyle(el); } catch (e) {
+        if (e && e.name === 'SyntaxError') return null; // jsdom nwsapi 既知行為
+        throw e;
+      }
+    };
+    for (const pre of articleEl.querySelectorAll('pre')) {
+      if (pre.closest('[data-jread-hidden="1"]')) continue;
+      let cur = pre;
+      for (let i = 0; i < CODE_FLEX_CLIMB && cur && cur !== articleEl; i++, cur = cur.parentElement) {
+        const parent = cur.parentElement;
+        if (!parent || !articleEl.contains(parent)) break;
+        if (cur.hasAttribute(CODE_FLEX_FILL_ATTR)) break;
+        const pcs = gcs(parent);
+        if (!pcs) continue;
+        if (pcs.display !== 'flex' && pcs.display !== 'inline-flex') continue;
+        if (!/^row/.test(pcs.flexDirection || 'row')) continue;
+        let visible = 0;
+        for (const sib of parent.children) {
+          if (sib.getAttribute('data-jread-hidden') === '1') continue;
+          const scs = gcs(sib);
+          if (scs && scs.display === 'none') continue;
+          visible += 1;
+          if (visible > 1) break;
+        }
+        if (visible !== 1) continue;
+        cur.setAttribute(CODE_FLEX_FILL_ATTR, '1');
+        marked.push(cur);
+      }
+    }
+  }
+  // v2.5.23：圖說上方的媒體標 CAP_MEDIA_ATTR、圖說標 CAP_BELOW_ATTR（規則與動機見
+  // buildCss 該規則註解）。
+  // 「上方的媒體」用文件順序判定、不量尺寸：同一個 figure 內、不在圖說裡、文件順序
+  // 排在圖說之前的最後一個媒體元素。lazy 圖還沒載入（高度 0）時照樣標得到，圖載入後
+  // 間距就是對的。媒體到「它與圖說的共同容器」之間的包裝（<picture>、<a>、站方的
+  // 比例殼）一併標：下邊距常常是掛在包裝上（picture 的 1.5em、pmc 的 p.img-box 17px）。
+  // 不標的情況：
+  //   - 圖說排在所有媒體之前（圖說在上的版型）→ 沒有「上方的媒體」
+  //   - 行內小圖示（INLINE_IMG_ATTR）、播放器（PLAYER_ATTR）、已被 cleaner 藏掉的
+  //   - 媒體與圖說之間還隔著別的文字區塊（圖 → 一段說明 → 圖說）：共同容器的直系
+  //     分支裡，媒體那一支與圖說那一支之間有帶文字的兄弟
+  // 這條驗 X、不驗 Y：只認語意上的 <figcaption>；用 div / p / span 當圖說的站不處理。
+  // 只做進場當下這一次，晚插入的 figure 不補標
+  const CAP_MEDIA_SEL = 'img, picture, video, svg, canvas, iframe';
+  function markCaptionMedia(articleEl, marked) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    const DOC_POS_FOLLOWING = 4; // Node.DOCUMENT_POSITION_FOLLOWING
+    for (const cap of articleEl.querySelectorAll('figcaption')) {
+      if (cap.closest('[data-jread-hidden="1"]')) continue;
+      const fig = cap.closest('figure');
+      if (!fig || !articleEl.contains(fig)) continue;
+      let media = null;      // 文件順序最後一個
+      let rendered = null;   // 文件順序最後一個「現在量得到尺寸」的
+      for (const m of fig.querySelectorAll(CAP_MEDIA_SEL)) {
+        if (cap.contains(m)) continue;
+        if (!(m.compareDocumentPosition(cap) & DOC_POS_FOLLOWING)) continue; // 媒體在圖說之後
+        if (m.hasAttribute(INLINE_IMG_ATTR) || m.hasAttribute(PLAYER_ATTR)) continue;
+        if (m.closest('[data-jread-hidden="1"]')) continue;
+        if (m.ownerSVGElement) continue; // svg 內部節點
+        media = m;
+        const r = m.getBoundingClientRect ? m.getBoundingClientRect() : null;
+        if (r && r.height > 0 && r.width > 0) rendered = m;
+      }
+      if (!media) continue;
+      // 共同容器：同時包住媒體與圖說的最近祖先
+      let common = media.parentElement;
+      while (common && !common.contains(cap)) common = common.parentElement;
+      if (!common) continue;
+      // 媒體那一支、圖說那一支（共同容器的直系子）
+      let mediaBranch = media;
+      while (mediaBranch.parentElement !== common) mediaBranch = mediaBranch.parentElement;
+      let capBranch = cap;
+      while (capBranch.parentElement !== common) capBranch = capBranch.parentElement;
+      // 兩支之間隔著帶文字的兄弟 → 圖說不是緊接在圖下面
+      let between = false;
+      for (let sib = mediaBranch.nextElementSibling; sib && sib !== capBranch; sib = sib.nextElementSibling) {
+        if (sib.getAttribute('data-jread-hidden') === '1') continue;
+        if ((sib.textContent || '').trim().length > 0) { between = true; break; }
+      }
+      if (between) continue;
+      // 兩個都標：站方常在同一格放「佔位圖 + lazy 真圖」（bbc：img[aria-label=image
+      // unavailable] 後面跟真圖）。進場當下真圖可能還沒載入（高度 0）、畫面上是佔位圖；
+      // 載入後換成真圖。只標文件順序最後一個的話，佔位圖那 24px 會留在圖說上面
+      for (const start of (rendered && rendered !== media ? [media, rendered] : [media])) {
+        if (!common.contains(start)) continue;
+        for (let cur = start; cur && cur !== common; cur = cur.parentElement) {
+          if (cur.getAttribute(CAP_MEDIA_ATTR) === '1') continue;
+          cur.setAttribute(CAP_MEDIA_ATTR, '1');
+          marked.push(cur);
+        }
+      }
+      // 圖說自帶看得見的底色或框線（上／左／右任一邊）→ 它是一個貼著圖的框：padding 是
+      // 框內留白不動，與圖之間不留縫（見 buildCss）。只有下框線的不算——那是分隔線
+      let boxed = false;
+      let thinPad = false;
+      if (_win && _win.getComputedStyle) {
+        try {
+          const cs = _win.getComputedStyle(cap);
+          const bg = parseCssColor(cs.backgroundColor);
+          const side = (w, st) => (parseFloat(w) || 0) > 0 && st !== 'none' && st !== 'hidden';
+          boxed = !!((bg && bg.a >= 0.1) ||
+            side(cs.borderTopWidth, cs.borderTopStyle) || side(cs.borderLeftWidth, cs.borderLeftStyle) ||
+            side(cs.borderRightWidth, cs.borderRightStyle));
+          thinPad = (parseFloat(cs.paddingTop) || 0) < 4;
+        } catch (e) {
+          if (!(e && e.name === 'SyntaxError')) throw e; // jsdom nwsapi 既知行為
+        }
+      }
+      // 圖說那一支不是圖說本身（圖說外面還包一層）時，上邊距也可能掛在那層——
+      // 只標圖說；外層的 margin 不動（外層可能還裝著別的東西）
+      cap.setAttribute(CAP_BELOW_ATTR, boxed ? (thinPad ? 'padfix' : 'pad') : '1');
+      marked.push(cap);
+    }
+  }
   // v2.5.16：主文內帶 shadow root 的自訂元素標 SHADOW_HOST_ATTR（規則與動機見 buildCss
   // 該規則註解）。只看 tag 名含連字號的元素（自訂元素的命名規定），再問 shadowRoot——
   // 整篇掃一次、每個元素只付一次字串比對。closed shadow root 讀不到、不標。只做進場
@@ -5278,6 +5457,7 @@ html.${HTML_CLASS}.jread-orion body {
       const headingLinkMarked = [];
       const absAnchorMarked = [];
       const preFlexStretchMarked = [];
+      const capMediaMarked = [];
       const shadowHostMarked = [];
       let textDivMarked = [];
       // v1.7.70：pre-wrap 切段記錄（還原用；見 splitPreWrapParagraphs）
@@ -5299,7 +5479,7 @@ html.${HTML_CLASS}.jread-orion body {
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -5758,6 +5938,10 @@ html.${HTML_CLASS}.jread-orion body {
         markAbsAnchors(articleEl, absAnchorMarked);
         // v2.5.14：直向 flex 容器的直接子 <pre> 不置中（同樣要在 ARTICLE_ATTR 之後量）
         markFlexColumnPres(articleEl, preFlexStretchMarked);
+        // v2.5.23：圖說上方的媒體與圖說標記（見 markCaptionMedia；要在 PLAYER / INLINE_IMG
+        // 標記之後——兩者都在更早的 pass）
+        markCaptionMedia(articleEl, capMediaMarked);
+        markFlexRowCodeShells(articleEl, capMediaMarked);
         // v2.5.16：shadow DOM 元件的 color-scheme 跟著卡片（見 markShadowHosts）
         markShadowHosts(articleEl, shadowHostMarked);
         // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
@@ -6175,7 +6359,7 @@ html.${HTML_CLASS}.jread-orion body {
           if (_win && _win.getComputedStyle) {
             let preScanned = 0;
             for (const pre of articleEl.querySelectorAll('pre')) {
-              if (preScanned >= CONTRAST_MAX_TARGETS) break;
+              if (preScanned >= CODE_BG_MAX_SCAN) break;
               if (pre.closest && pre.closest('[data-jread-hidden="1"]')) continue;
               // 嵌套（pre 內 pre，罕見）只處理最外層，避免疊兩層底色
               if (pre.parentElement && pre.parentElement.closest &&
@@ -6192,6 +6376,54 @@ html.${HTML_CLASS}.jread-orion body {
               });
               pre.style.setProperty('background-color', theme.codeBlockBg, 'important');
             }
+          }
+        }
+      };
+
+      const passCodeWhitespaceDecoration = () => {
+        // v2.5.23：程式碼區塊裡「只有空白的 token」帶的底線 / 刪除線拿掉。
+        // 語法上色器（Chroma / Pygments 的 TextWhitespace token `.w`）把縮排空白包成
+        // <span>，有些佈景給它 `text-decoration: underline` ＋「與區塊底色相同的字色」
+        // ——在站上看不見。閱讀模式把程式碼字色統一成主題文字色、底色也換了，那條
+        // 底線就現形：縮排變成一排底線（kubernetes.io YAML 範例實證，probe 量到
+        // `.chroma .w { color: #f8f8f8; text-decoration: underline }`，字色被
+        // color-inherit 規則改成黑）。
+        // 判定不看 class：<pre> 內沒有子元素、文字全是空白的元素，computed
+        // text-decoration-line 不是 none 就清。空白上的裝飾線沒有資訊量——真的要
+        // 標示的（diff 的刪除線、連結底線）一定畫在有字的元素上，那些不動。
+        // 同一個 class 組合的結果相同（規則是 class 給的）→ 以 className 快取，
+        // 帶 inline style 的不快取。restore 走 contrastBgSnap 既有通道。
+        // 這條驗 X、不驗 Y：只處理 apply 當下已在 DOM 的 token；之後才上色的
+        //（lazy highlight）掃不到。祖先給的裝飾線（整個 <pre> 畫底線）不在此列
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (!_win || !_win.getComputedStyle) return;
+        const verdictByClass = new Map();
+        let scanned = 0;
+        for (const pre of articleEl.querySelectorAll('pre')) {
+          if (scanned >= CODE_WS_MAX_SCAN) break;
+          if (pre.closest && pre.closest('[data-jread-hidden="1"]')) continue;
+          for (const tok of pre.querySelectorAll('span, i, b, em, font')) {
+            if (scanned >= CODE_WS_MAX_SCAN) break;
+            if (tok.firstElementChild) continue;
+            const t = tok.textContent;
+            if (!t || /\S/.test(t)) continue;
+            scanned++;
+            const key = tok.hasAttribute('style') ? null : (tok.getAttribute('class') || '');
+            let decorated = key !== null ? verdictByClass.get(key) : undefined;
+            if (decorated === undefined) {
+              const cs = _win.getComputedStyle(tok);
+              const line = cs.textDecorationLine || cs.textDecoration || '';
+              decorated = !!line && line.indexOf('none') === -1;
+              if (key !== null) verdictByClass.set(key, decorated);
+            }
+            if (!decorated) continue;
+            contrastBgSnap.push({
+              el: tok,
+              prop: 'text-decoration',
+              prev: tok.style.getPropertyValue('text-decoration'),
+              prevP: tok.style.getPropertyPriority('text-decoration')
+            });
+            tok.style.setProperty('text-decoration', 'none', 'important');
           }
         }
       };
@@ -7553,6 +7785,9 @@ html.${HTML_CLASS}.jread-orion body {
             const hasMediaDescendant = child.tagName === 'IMG' || child.tagName === 'PICTURE' || child.tagName === 'FIGURE' ||
               !!(child.querySelector && child.querySelector('img, picture, figure'));
             if (!hasMediaDescendant) continue;
+            // v2.5.23：緊接圖說的那張圖不補 12px——它與圖說的距離由 CAP_MEDIA 規則管
+            //（inline !important 會蓋過樣式表，chinatalk 實測圖說上方多 12px）
+            if (child.hasAttribute(CAP_MEDIA_ATTR)) continue;
             const priorChild = {
               el: child,
               marginBottom: child.style.getPropertyValue('margin-bottom'),
@@ -8719,6 +8954,7 @@ html.${HTML_CLASS}.jread-orion body {
         passTableSiteBgContrast,
         passDarkSepiaContrastPhase3,
         passCodeBlockBgPhase4,
+        passCodeWhitespaceDecoration,
         passInstallListeners,
         passHeadingPseudoSpacerReset,
         passBylineKicker,
@@ -8919,6 +9155,14 @@ html.${HTML_CLASS}.jread-orion body {
       if (Array.isArray(snapshot.preFlexStretchMarked)) {
         for (const el of snapshot.preFlexStretchMarked) {
           if (el && el.removeAttribute) el.removeAttribute(PRE_FLEX_STRETCH_ATTR);
+        }
+      }
+      if (Array.isArray(snapshot.capMediaMarked)) {
+        for (const el of snapshot.capMediaMarked) {
+          if (!el || !el.removeAttribute) continue;
+          el.removeAttribute(CAP_MEDIA_ATTR);
+          el.removeAttribute(CAP_BELOW_ATTR);
+          el.removeAttribute(CODE_FLEX_FILL_ATTR);
         }
       }
       if (Array.isArray(snapshot.shadowHostMarked)) {
