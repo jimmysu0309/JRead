@@ -719,7 +719,8 @@ async function replayOne(ctx, sw, state, id, variant, waitMs, shotDir) {
       fs.mkdirSync(shotDir, { recursive: true });
       if (variant.settings.pagedMode) await audits.takePageFlipScreenshots(page, { dir: shotDir, prefix: 'page' });
       else {
-        await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+        // 2026-11-19：縮放後補發 resize——html 固定高的站（note.com）尺寸監看不會觸發，段落焦點條停在縮放前的座標、截圖裡看起來離卡片很遠
+        await page.evaluate(() => { document.body.style.zoom = '0.5'; window.dispatchEvent(new Event('resize')); });
         await sleep(300);
         await audits.takePagedScreenshots(page, { dir: shotDir, prefix: 'page', maxPages: 12 });
       }

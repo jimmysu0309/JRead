@@ -145,7 +145,7 @@ function outDirName(url) {
 // block 跑（舊版 hero / narrowText / figcaption / bodyWidth 各自切一輪，
 // 來回 5 次白吃 reflow）。
 async function setZoom(page, z) {
-  await page.evaluate((v) => { document.body.style.zoom = v; }, String(z));
+  await page.evaluate((v) => { document.body.style.zoom = v; window.dispatchEvent(new Event('resize')); }, String(z)); // 2026-11-19：補發 resize，同 corpus.js
   await sleep(200);
 }
 

@@ -195,6 +195,13 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
   }
   await sleep(2500); // 等 content script 於 document_idle 注入
+  // --pre-wait <ms>（v2.5.24）：觸發閱讀模式前再多等一段。SPA（登入版 Readwise Reader）
+  // load 事件後文章才由站方 script 畫出來，2.5 秒內觸發會抓不到主文、整頁空白
+  {
+    const pi = process.argv.indexOf('--pre-wait');
+    const ms = pi >= 0 ? parseInt(process.argv[pi + 1], 10) : 0;
+    if (ms > 0) { console.log(`pre-wait ${ms}ms`); await sleep(ms); }
+  }
 
   // ===== --login 短路（Tier 2 一次性登入）=====
   // 純粹開站台讓 Jimmy 在螢幕上手動登入，跳過 toggle + 所有 audit + 截圖。
@@ -684,7 +691,8 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     // 截圖前縮放整頁到 50%（Jimmy 硬規則 2026-04-24）：同一張 fullpage 能看
     // 更多內容、Claude Read 截圖做整頁排版巡視時一次吃進更多 vertical 空間。
     // 用 document.body.style.zoom 保留清晰度（不是縮 DPR），只壓縮 layout。
-    await page.evaluate(() => { document.body.style.zoom = '0.5'; });
+    // 2026-11-19：縮放後補發 resize——html 固定高的站（note.com）尺寸監看不會觸發，段落焦點條停在縮放前的座標、截圖裡看起來離卡片很遠
+    await page.evaluate(() => { document.body.style.zoom = '0.5'; window.dispatchEvent(new Event('resize')); });
     await sleep(300); // 等 reflow
     await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
     await sleep(300);
