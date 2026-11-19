@@ -13,6 +13,7 @@
 // 用法：
 //   node tools/webkit-paged-probe.js --url <URL> [選項]
 //   node tools/webkit-paged-probe.js --html <快照檔> [--url <當 base 的 URL>] [選項]
+//   node tools/webkit-paged-probe.js --corpus <語料庫頁面 id> [選項]   # 離線重放語料庫快照（含翻譯後的 _translated）
 //
 // 選項：
 //   --engine webkit|chromium   預設 webkit
@@ -22,6 +23,8 @@
 //   --out <dir>                輸出目錄（預設 .playwright-mcp/paged-probe）
 //   --label <name>             輸出檔名前綴（預設由 URL / 檔名推）
 //   --set k=v                  覆寫設定（可重複；值走 JSON.parse，失敗當字串）
+//                              捲動模式：--set pagedMode=false（截圖只有第一屏，其餘位置用 --after 自己截）
+//   --scheme light|dark        模擬系統深淺色（預設 light；只影響站方樣式，JRead 主題用 --set theme=dark）
 //   --wait <ms>                進場後等多久才量（預設 4500＝蓋過 1s / 3s 兩個重測計時器）
 //   --exit                     量完後退出閱讀模式，另記 inline style 與進場前的差異
 //   --no-shots                 不截圖（只要 JSON）
@@ -63,10 +66,17 @@ const has = (name) => argv.includes(name);
 const ENGINE = argOf('--engine', 'webkit');
 const EXT_DIR = path.resolve(argOf('--ext', path.join(__dirname, '..', 'jread')));
 const HTML_FILE = argOf('--html', null);
-const URL_ARG = argOf('--url', null);
+// --corpus <id>：語料庫快照（test/corpus/pages/<id>.json.gz）離線重放——主文件、CSS 由快照供應，
+// 圖片回同尺寸佔位圖，其餘請求中止（與 corpus.js 的 installReplayRoutes 同一套規則）。
+// 用途：翻譯後的頁面在 WebKit 沒有 Shinkansen 可用，語料庫的 _translated 快照是現成的譯文 DOM
+const CORPUS_ID = argOf('--corpus', null);
+const CORPUS_ARC = CORPUS_ID ? JSON.parse(require('zlib').gunzipSync(fs.readFileSync(path.join(__dirname, '..', 'test', 'corpus', 'pages', CORPUS_ID + '.json.gz'))).toString('utf8')) : null;
+const URL_ARG = argOf('--url', CORPUS_ARC ? CORPUS_ARC.url : null);
 const SNAPSHOT_OUT = argOf('--snapshot', null);
 const OUT_DIR = path.resolve(argOf('--out', path.join(__dirname, '..', '.playwright-mcp', 'paged-probe')));
 const WAIT_MS = parseInt(argOf('--wait', '4500'), 10);
+// --scheme dark：模擬 prefers-color-scheme: dark（站方深色樣式）；JRead 深色主題另加 --set theme=dark
+const SCHEME = argOf('--scheme', 'light');
 const DO_EXIT = has('--exit');
 const NO_SHOTS = has('--no-shots');
 const AFTER_MODULE = argOf('--after', null);
@@ -80,7 +90,7 @@ if (!PAGE_URL || (ENGINE !== 'webkit' && ENGINE !== 'chromium')) {
   console.error('用法：node tools/webkit-paged-probe.js (--url <URL> | --html <檔案>) [--engine webkit|chromium] …（見檔頭）');
   process.exit(2);
 }
-const LABEL = argOf('--label', (HTML_FILE ? path.basename(HTML_FILE).replace(/\.[^.]+$/, '') : new URL(PAGE_URL).hostname)
+const LABEL = argOf('--label', CORPUS_ID ? CORPUS_ID : (HTML_FILE ? path.basename(HTML_FILE).replace(/\.[^.]+$/, '') : new URL(PAGE_URL).hostname)
   .replace(/[^a-zA-Z0-9_.-]+/g, '_'));
 
 const SETTINGS = { pagedMode: true };
@@ -287,7 +297,7 @@ function diffInlineAfter() {
 
 async function runViewport(browser, vp) {
   const tag = `${LABEL}-${ENGINE}-${vp.width}x${vp.height}`;
-  const ctx = await browser.newContext({ viewport: vp, bypassCSP: true, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: vp, bypassCSP: true, deviceScaleFactor: 1, colorScheme: SCHEME });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e && e.message || e).slice(0, 300)));
@@ -301,6 +311,26 @@ async function runViewport(browser, vp) {
     if (!fs.existsSync(f)) return route.fulfill({ status: 404, body: '' });
     return route.fulfill({ status: 200, contentType: 'font/woff2', headers: { 'access-control-allow-origin': '*' }, body: fs.readFileSync(f) });
   });
+  if (CORPUS_ARC) {
+    // 兩邊都過 new URL 正規化：快照記的網址可能是沒編碼的非 ASCII（hi / th / he 維基），
+    // 瀏覽器送出的是編碼後的，逐字比對會對不上、主文件被中止
+    const norm = (u) => { try { return new URL(u).href.split('#')[0]; } catch (_) { return String(u).split('#')[0]; } };
+    const target = norm(PAGE_URL);
+    await page.route(/^https?:\/\//, (route) => {
+      const req = route.request();
+      const url = req.url();
+      if (new URL(url).hostname === 'jread-fonts.local') return route.fallback();
+      if (req.resourceType() === 'document') {
+        return norm(url) === target
+          ? route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: CORPUS_ARC.html })
+          : route.abort();
+      }
+      if (CORPUS_ARC.css && CORPUS_ARC.css[url] !== undefined) return route.fulfill({ status: 200, contentType: 'text/css; charset=utf-8', body: CORPUS_ARC.css[url] });
+      const size = CORPUS_ARC.images && CORPUS_ARC.images[url];
+      if (size) return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="${size[0]}" height="${size[1]}"><rect width="100%" height="100%" fill="#b8b8b8"/></svg>` });
+      return route.abort();
+    });
+  }
   if (HTML_FILE) {
     const html = fs.readFileSync(path.resolve(HTML_FILE), 'utf8');
     // 只攔主文件；快照內的相對資源照 <base> / PAGE_URL 走網路
