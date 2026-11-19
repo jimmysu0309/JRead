@@ -270,6 +270,15 @@
     // 標 strong：navbox 內常是「·」分隔的超長連結段落（hi 維基單段 700 字），會
     // 觸發主文長段 guard 被豁免；主文容器不會用這些名字。
     { t: 'navbox', strong: true }, { t: 'sistersitebox', strong: true }, { t: 'sister-?project', strong: true },
+    // v2.5.28 MediaWiki 的訊息框模板（Jimmy 2026-11-19 裁定：維護告示與保護告示清掉）：
+    //   ambox —— 條目訊息框（「本條目存在以下問題」「本節尚待補充」、頁面保護告示）。
+    //     zh 頁首、th 頁首與小節、he 文末實測殘留
+    //   asbox —— 小作品（stub）告示（「這篇條目尚在草稿階段，您可以協助補充」）
+    // 兩者都是寫給編輯者看的，站方自己的列印樣式也藏掉（@media print { .ambox,
+    // .asbox … { display: none } }，th / zh 快照實證）。標 strong：多重問題框裡是整段
+    // 說明文字（zh 213px 高），會觸發主文長段 guard 被豁免；主文容器不會用這些名字。
+    // 姊妹計畫小框的 `mbox-small` 不是這個 token（要整字 ambox / asbox 才算）
+    { t: 'ambox', strong: true }, { t: 'asbox', strong: true },
     { t: 'powered[-_]?by' }, { t: 'popup' }, { t: 'popover' }, { t: 'overlay' },
     { t: 'modal-(?:content|dialog|box|wrapper)' }, { t: 'backdrop' }, { t: 'drawer' },
     { t: 'floating-(?:bar|cta|widget)' }, { t: 'sticky-(?:bar|cta|banner|subscribe)' },
@@ -1505,6 +1514,10 @@
     // 整個程式碼區塊當成那個「標題」底下的區塊藏掉（vuejs.org 實證：`new Map()` 的
     // `<span>new</span>` 讓一整塊範例消失）。靜態 + 動態單一資料源（兩邊都走這個入口）
     if (h.closest && h.closest('pre, code')) return false;
+    // v2.5.28：節首的交叉引用頂註不是雜訊標題（「See also: X」「參見：X」命中推薦區
+    // 標題字樣，en 維基 9 個節首頂註連同後面的短段落被當成推薦區尾段藏掉）
+    const xrefNote = h.closest && h.closest('[role="note"], ' + XREF_NOTE_PREFILTER_SEL);
+    if (xrefNote && isSectionHeadCrossRefNote(xrefNote)) return false;
     let target = h.closest('section, aside');
     // tooWide 的主文保護對 link-feed 容器不適用（v0.8.54）：累計短 teaser
     // p / teaser title-anchor token 都是 feed 自己的內容，不是主文訊號
@@ -1842,6 +1855,8 @@
     if (!byUser && NS.isInMathRender && NS.isInMathRender(el)) return;
     // v2.5.23：程式碼區塊裡帶字的行 / token 不藏（判定與實例見 NS.isCodeText）
     if (!byUser && NS.isCodeText && NS.isCodeText(el)) return;
+    // v2.5.28：已去殼的內文按鈕不藏（標記由 keepButtonAsText 寫，見 isContentTextButton）
+    if (!byUser && el.hasAttribute && el.hasAttribute(BTN_TEXT_ATTR)) return;
     const prevDisplay = el.style.display;
     const prevDisplayPriority = (el.style.getPropertyPriority &&
       el.style.getPropertyPriority('display')) || '';
@@ -2539,7 +2554,7 @@
   function sanitizeTitleClone(clone) {
     if (!clone.querySelectorAll) return;
     for (const el of clone.querySelectorAll('a, ' + INTERACTIVE_BTN_SEL)) {
-      if (el.tagName === 'A') {
+      if (el.tagName === 'A' && !el.matches(INTERACTIVE_BTN_SEL)) {
         // a：keyword 命中、或 icon-only（含 icon 載體且無文字）才清
         const iconOnly = !!el.querySelector('img, svg') &&
           (el.textContent || '').replace(/\s+/g, '').trim().length === 0;
@@ -4083,6 +4098,9 @@
       // sidebar-column（行 3122）保護同源、跨 rule 一致。真動作 bar（clap / comment /
       // bookmark / share）不含作者頁連結，零誤放。
       if (clusterContainsAuthorProfileLink(el)) continue;
+      // v2.5.28：裡面有留文字的內文按鈕（keepButtonAsText 標記）→ 不是動作圖示列。
+      // 期刊名按鈕帶下拉箭頭 svg 時，只包它的外殼正好是「短文字＋兩個圖示」的形狀
+      if (el.querySelector('[data-jread-btn-text]')) continue;
 
       hide(el, hidden);
     }
@@ -4722,9 +4740,10 @@
   //     載體內。句子裡的 noprint 行內標記（en「[citation needed]」、zh 跨語言連結
   //     提示、he 外部連結後的語言標示）不動：拿掉會改到句子
   const DECLARED_CHROME_RE = buildKeywordRe(
-    ['noprint', 'print[-_]?hide', 'hidden?[-_]?print', 'navbox', 'sistersitebox', 'sister-?project']);
+    ['noprint', 'print[-_]?hide', 'hidden?[-_]?print', 'navbox', 'sistersitebox', 'sister-?project',
+      'ambox', 'asbox']);
   const DECLARED_CHROME_PREFILTER_SEL =
-    '[class*="print" i], [class*="navbox" i], [class*="sister" i]';
+    '[class*="print" i], [class*="navbox" i], [class*="sister" i], [class*="ambox" i], [class*="asbox" i]';
   const PROSE_CARRIER_SEL = 'p, li, dd, blockquote, figcaption';
   function isLinkOnlyCluster(el) {
     if (!el.querySelector('a')) return false;
@@ -4785,6 +4804,89 @@
     prev.nodeValue = pv.slice(0, pm.index).replace(/\s+$/, '');
     next.nodeValue = nv.slice(nm[0].length);
     hidden.__phantomText = done.concat(snaps);
+  }
+
+  // ---- 條目頂註（hatnote）：頁首的消歧義提示清掉、節首的「主條目」留著（v2.5.28）----
+  // Jimmy 2026-11-19 裁定。MediaWiki 的頂註模板是一行斜體小字＋連結，同一個外殼
+  // （div.hatnote，多數帶 role="note"；he 維基用 dablink、舊模板用 rellink）有兩種用途：
+  //   - 頁首：「本條目介紹的是 X，關於 Y 請見…」「"LLM" 重新導向至此」——給「找錯頁的
+  //     人」的導覽，閱讀時是雜訊 → 清
+  //   - 節首：「主條目：XXX」「參見：XXX」——指向這一節的完整條目，是內容的一部分 → 留
+  // 兩種的 class 與 role 完全相同、文字隨語言與翻譯而變，分得開的只有位置：
+  //   頁首＝它之前沒有任何小節標題（h2–h6）、也沒有主文段落
+  //   節首＝往前跳過空殼與其他頂註後，緊鄰的是小節標題
+  // 另外 selfref（「維基百科的醫學內容僅供參考…詳見醫學聲明」這類指向維基自身的聲明）
+  // 與維護告示同類，不看位置一律清。
+  const XREF_NOTE_CLASS_RE = /(?:^|[^a-z0-9])(?:hatnote|dablink|rellink)(?:[^a-z0-9]|$)/i;
+  const XREF_NOTE_PREFILTER_SEL = '[class*="hatnote" i], [class*="dablink" i], [class*="rellink" i]';
+  const XREF_NOTE_SELFREF_RE = /(?:^|[^a-z0-9])selfref(?:[^a-z0-9]|$)/i;
+  const XREF_NOTE_MAX_TEXT = 300;
+  function isXrefNoteShell(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (!(XREF_NOTE_CLASS_RE.test(classStrOf(el)) ||
+          (el.getAttribute && el.getAttribute('role') === 'note'))) return false;
+    if (!el.querySelector('a[href]')) return false;
+    if (el.querySelector('h1, h2, h3, h4, h5, h6, table, ul, ol, figure, pre, blockquote')) return false;
+    return norm(el.textContent).length <= XREF_NOTE_MAX_TEXT;
+  }
+  // 元素是不是「就是一個小節標題」：h2–h6 本身，或只包一個標題的外殼（MediaWiki 的
+  // div.mw-heading：標題＋編輯連結）
+  function isSectionHeadingBlock(el) {
+    if (/^H[2-6]$/.test(el.tagName)) return true;
+    const hs = el.querySelectorAll('h2, h3, h4, h5, h6');
+    if (hs.length !== 1) return false;
+    if (el.querySelector('p, ul, ol, table, figure, img, picture')) return false;
+    // 標題以外只剩編輯連結這類短尾巴（不用比例：翻譯後標題變短、「[ 編輯 ]」不變，
+    // 「資料集預處理 [ 編輯 ]」標題只佔 46%）
+    return norm(el.textContent).length - norm(hs[0].textContent).length <= 40;
+  }
+  // 沒有可見內容的空殼：扣掉 <style> / <script> 後沒有文字、也沒有媒體（MediaWiki 把
+  // 模板樣式放在頂註前面的 span.mw-empty-elt > style 裡，textContent 是整段 CSS）
+  function isContentlessShell(el) {
+    if (el.querySelector('img, picture, video, iframe, svg, table, canvas')) return false;
+    let t = '';
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) t += c.nodeValue;
+        else if (c.nodeType === 1 && !/^(?:STYLE|SCRIPT|NOSCRIPT|TEMPLATE)$/.test(c.tagName)) walk(c);
+      }
+    };
+    walk(el);
+    return !norm(t);
+  }
+  // 節首的交叉引用頂註：往前跳過樣式節點、沒有文字的空殼（span.mw-empty-elt）、
+  // 其他頂註（一節可以連放「主條目」「參見」兩行），緊鄰的是小節標題。
+  // 所有會把「短、連結密度高的小區塊」當雜訊的規則（側欄判定、雜訊標題字樣「See also」
+  // 「參見」）都先問這支——修改前 en / ar / fa / th / zh 維基的節首頂註有 41 個被這兩條
+  // 規則清掉，而且「See also:」還會把後面的短段落一起當成推薦區尾段藏掉
+  function isSectionHeadCrossRefNote(el) {
+    if (!isXrefNoteShell(el)) return false;
+    for (let pv = el.previousElementSibling; pv; pv = pv.previousElementSibling) {
+      if (/^(?:STYLE|LINK|META|SCRIPT)$/.test(pv.tagName)) continue;
+      if (isSectionHeadingBlock(pv)) return true;
+      if (isXrefNoteShell(pv)) continue;
+      if (pv.dataset && pv.dataset.jreadHidden === '1') continue; // 已清掉的維護告示等
+      if (isContentlessShell(pv)) continue;
+      return false;
+    }
+    return false;
+  }
+  function hideLeadXrefNotes(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll(XREF_NOTE_PREFILTER_SEL)) {
+      if (el === articleEl || (el.contains && el.contains(articleEl))) continue;
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      const cls = classStrOf(el);
+      if (!XREF_NOTE_CLASS_RE.test(cls)) continue;
+      if (!isXrefNoteShell(el)) continue;
+      if (isInPreserved(el)) continue;
+      if (XREF_NOTE_SELFREF_RE.test(cls)) { hide(el, hidden); continue; }
+      // 緊接在小節標題後＝節首，留；之前已有主文段落＝不在頁首，不動。
+      // 不用「之前有沒有任何 h2–h6」判頁首：主文容器常把站方目錄一起包進來（fa 維基
+      // 目錄的 h2 排在條目內容之前），那個標題不代表條目已經開始
+      if (isSectionHeadCrossRefNote(el)) continue;
+      if (mainParagraphPrecedes(el, articleEl)) continue;
+      hide(el, hidden);
+    }
   }
 
   function hideInsideArticleByKeyword(articleEl, hidden, containers) {
@@ -6071,6 +6173,9 @@
         // v0.8.99 theverge section 標題 guard：sibling 就是一個 heading（連結式
         // section 標題）→ 非 sidebar widget，放行（見 isLoneSectionHeadingColumn）
         if (isLoneSectionHeadingColumn(s.el)) continue;
+        // v2.5.28：節首的交叉引用頂註（「主條目：XXX」）短、整行幾乎都是連結，形狀與
+        // 側欄連結小區塊相同——Jimmy 2026-11-19 裁定留著（見 isSectionHeadCrossRefNote）
+        if (isSectionHeadCrossRefNote(s.el)) continue;
         // v1.7.38 散文 guard（條件 A / C 共用，見 sidebarSiblingIsProse 註解）：
         // sibling 內含「非連結長句」= 內文段落，不是 link widget cluster
         const sibIsProse = sidebarSiblingIsProse(s.el);
@@ -9423,8 +9528,13 @@
   // 資料源，靜態與動態兩 path 一律經過同一組 guard。
 
   // interactive button 的 selector 單一資料源（原本四處手寫變體，drift 即 B2 根因之一）
+  // v2.5.28：補 a[type="button"]（Jimmy 2026-11-19 裁定：用連結做成的按鈕比照按鈕清）。
+  // <a role="button"> 本來就被 [role="button"] 涵蓋；<a type="button"> 是同一種東西的
+  // 另一種寫法（toss.tech 徵才鈕：元件庫把按鈕樣式套在 <a> 上、type 屬性照搬）。
+  // <a> 的 type 屬性在規範裡是「連結目標的 MIME type 提示」，值寫成 "button" 只可能是
+  // 按鈕元件——一般內文連結不會有這個屬性
   const INTERACTIVE_BTN_SEL =
-    'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]';
+    'button, [role="button"], a[type="button"], input[type="button"], input[type="submit"], input[type="reset"]';
 
   // keyword 命中的 wrapper 在 hide 前的主文保護：
   //   - 含 h1 的 wrapper 一律保留（v0.7.78 ebc article_header——CMS header
@@ -9814,7 +9924,7 @@
   // byline 祖先語境矇混的 forcing 條件（作者名必在「by …」句中、widget
   // chip 文字不在）。
   function isBylineNameChip(btn) {
-    if (!btn.matches || !btn.matches('[role="button"]')) return false;
+    if (!btn.matches || !btn.matches('[role="button"], a[type="button"]')) return false;
     if (btn.matches('button, input')) return false;
     const t = norm(btn.textContent || '');
     if (!t.length || t.length > 40) return false;
@@ -9878,6 +9988,143 @@
     return false;
   }
 
+  // ---- 「按鈕其實是內文」：留文字、去掉按鈕外殼（v2.5.28）-------------------
+  // Jimmy 2026-11-19 核可，「所有 interactive button 一律清」的第三個例外（前兩個：
+  // 選取工具列、影片佔位殼播放鍵）。有些站把一段內文做成按鈕（點了跳出補充資訊），
+  // 整顆清掉後內文缺一塊：
+  //   - pmc 引用列：`<div><button>World J Radiol</button></div>. 2017 Feb 28;9(2):27–33.`
+  //     期刊名是真 <button>，清掉後剩「. 2017 Feb 28;…」殘句
+  //   - MDN 相容性表：每一格的版本號是 shadow root 內的 <button>（點開看備註），
+  //     清掉整張表只剩空格
+  // 做法不是「放行按鈕」：文字留下，按鈕的外觀（底色 / 框線 / 內距 / 游標 / 字型）
+  // 改成一般行內文字、點擊攔掉——留下來的是內文，不是控制項。
+  //
+  // 判定（isContentTextButton，全部成立；語料庫 169 頁普查只命中上面兩站）：
+  //   共同條件：
+  //     - <button> 或非連結的 [role="button"]（<input> 的字在 value 不在 DOM；用連結
+  //       做成的按鈕不在此列，照清）
+  //     - 有字、至少含一個文字或數字字元（「×」「+」「▾」這類符號鈕不算）、≤ 60 字
+  //     - 不含媒體 / 表單控制項 / 巢狀按鈕
+  //     - 文字不是 CTA 字樣（NOISE_LINK_TEXT_RE / STRICT：分享、訂閱、追蹤、下載…）
+  //   再加下面兩種位置之一：
+  //     (a) 表格格子的唯一內容：按鈕在 <td> / <th> 內，而且格子的文字就等於按鈕的文字
+  //         ——清掉這一格就空了。格子裡另有文字的按鈕（標題旁的排序鈕、展開鈕）照清；
+  //         表單 / role="grid"（日期選擇器這類互動格）裡的不算
+  //     (b) 句子的一部分：按鈕（或只包它一個的外殼，最多 3 層）後面緊接的文字節點
+  //         以句中 / 句末標點開頭（. , ; : 、 。 ） ] 等）——清掉它，後面的文字就變成
+  //         標點開頭的殘句。只是「旁邊有字」不算（"Have an account? [Sign In]"、
+  //         "…applicable to this article? [Yes]" 普查都是雜訊）
+  // 翻譯無關：兩種位置都是 DOM 結構；(b) 的標點集合含全形，譯文把 "." 換成「。」照樣命中
+  const BTN_TEXT_ATTR = 'data-jread-btn-text';
+  const BTN_TEXT_MAX_LEN = 60;
+  const BTN_TEXT_HAS_WORD_RE = /[\p{L}\p{N}]/u;
+  const BTN_TEXT_TAIL_PUNCT_RE = /^[.,;:、。，；：)）\]」』]/;
+  const BTN_TEXT_WRAP_MAX_HOPS = 3;
+  function isMeaningfulChildNode(n) {
+    if (n.nodeType === 3) return /\S/.test(n.nodeValue || '');
+    return n.nodeType === 1;
+  }
+  function isContentTextButton(btn) {
+    if (!btn || !btn.matches || !btn.matches('button, [role="button"]')) return false;
+    if (btn.tagName === 'A' || btn.tagName === 'INPUT') return false;
+    const t = norm(btn.textContent || '');
+    if (!t.length || t.length > BTN_TEXT_MAX_LEN) return false;
+    if (!BTN_TEXT_HAS_WORD_RE.test(t)) return false;
+    if (btn.querySelector('img, picture, video, iframe, canvas, input, select, textarea, button, [role="button"]')) return false;
+    const folded = foldZhVariants(t);
+    if (NOISE_LINK_TEXT_RE.test(folded) || NOISE_LINK_TEXT_STRICT_RE.test(folded)) return false;
+    // (a) 表格格子的唯一內容
+    const cell = btn.closest('td, th');
+    if (cell) {
+      if (cell.closest('form, [role="grid"], [role="application"]')) return false;
+      return norm(cell.textContent || '') === t;
+    }
+    // (b) 句子的一部分：後面緊接標點開頭的文字
+    let cur = btn;
+    for (let hops = 0; hops <= BTN_TEXT_WRAP_MAX_HOPS; hops++) {
+      let next = cur.nextSibling;
+      while (next && next.nodeType === 8) next = next.nextSibling; // 跳過註解節點
+      if (next) {
+        return next.nodeType === 3 && BTN_TEXT_TAIL_PUNCT_RE.test(next.nodeValue || '');
+      }
+      const par = cur.parentElement;
+      if (!par) return false;
+      let meaningful = 0;
+      for (const n of par.childNodes) if (isMeaningfulChildNode(n)) meaningful++;
+      if (meaningful !== 1) return false;
+      cur = par;
+    }
+    return false;
+  }
+
+  // 去殼：只動「按鈕外觀」這幾個屬性，不動 display / 寬高 / 內部排版（MDN 的格子按鈕
+  // 內部是站方排好的版本號＋圖示，改 display 會把格子排壞）。全部走 addStyleResets，
+  // 退出閱讀模式逐項還原並移除標記
+  const BTN_TEXT_SHELL_STYLE = {
+    'appearance': 'none', '-webkit-appearance': 'none',
+    'background-color': 'transparent', 'background-image': 'none',
+    'border-style': 'none', 'border-radius': '0', 'box-shadow': 'none', 'outline-style': 'none',
+    'padding-top': '0', 'padding-right': '0', 'padding-bottom': '0', 'padding-left': '0',
+    'margin-top': '0', 'margin-right': '0', 'margin-bottom': '0', 'margin-left': '0',
+    'font-family': 'inherit', 'font-size': 'inherit', 'font-weight': 'inherit',
+    'font-style': 'inherit', 'line-height': 'inherit', 'letter-spacing': 'inherit',
+    'color': 'inherit', 'text-align': 'inherit', 'text-decoration-line': 'none',
+    'cursor': 'auto', 'user-select': 'text', '-webkit-user-select': 'text',
+    'min-width': '0', 'min-height': '0'
+  };
+  // 判定＋套用的單一入口（靜態預掃、shadow、動態 observer 都走這支）。回傳 true＝
+  // 這顆是內文按鈕、已去殼，呼叫端不要 hide。已標記的直接回 true（冪等）
+  function keepButtonAsText(btn, hidden) {
+    if (!btn || !btn.hasAttribute) return false;
+    if (btn.hasAttribute(BTN_TEXT_ATTR)) return true;
+    if (btn.dataset && btn.dataset.jreadHidden === '1') return false;
+    if (!isContentTextButton(btn)) return false;
+    const prev = snapshotStyles(btn, Object.keys(BTN_TEXT_SHELL_STYLE));
+    applyImportant(btn, BTN_TEXT_SHELL_STYLE);
+    btn.setAttribute(BTN_TEXT_ATTR, '1');
+    addStyleResets(hidden, [{ el: btn, prev, __removeAttr: BTN_TEXT_ATTR }]);
+    // 下拉箭頭這類裝飾圖示跟著外殼一起拿掉（svg 不含文字，textContent 判定不受影響）
+    for (const svg of btn.querySelectorAll('svg')) hide(svg, hidden);
+    installBtnTextClickBlock(btn, hidden);
+    return true;
+  }
+  // 點擊攔截：留下來的是文字，不該再跳出站方的選單 / 備註列（閱讀模式下那些浮層
+  // 本來就被清掉，點了只會讓版面跳動）。一個 window capture listener 管全部標記過的
+  // 按鈕（composedPath 看得到 shadow root 內的按鈕）；restore() 移除
+  function installBtnTextClickBlock(btn, hidden) {
+    if (!hidden || hidden.__btnTextClickBlock) return;
+    const win = btn.ownerDocument && btn.ownerDocument.defaultView;
+    if (!win || !win.addEventListener) return;
+    const handler = (ev) => {
+      const path = (ev.composedPath && ev.composedPath()) || [ev.target];
+      for (const n of path) {
+        if (n && n.nodeType === 1 && n.hasAttribute && n.hasAttribute(BTN_TEXT_ATTR)) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          return;
+        }
+      }
+    };
+    win.addEventListener('click', handler, true);
+    hidden.__btnTextClickBlock = { win, handler };
+  }
+  function removeBtnTextClickBlock(hidden) {
+    const rec = hidden && hidden.__btnTextClickBlock;
+    if (!rec) return;
+    try { rec.win.removeEventListener('click', rec.handler, true); } catch (_) { /* window 已不在 */ }
+    hidden.__btnTextClickBlock = null;
+  }
+  // 靜態預掃：排在所有 hide 規則之前。按鈕會被好幾條規則各自碰到（keyword、覆蓋層、
+  // 空殼、按鈕一律清），逐條加豁免必漏——先標記，再由 hide() 入口統一擋（比照公式
+  // 單元的守法）。外層容器整塊被清（留言區、推薦卡）不受影響：那時被藏的是容器
+  function markContentTextButtons(root, hidden, depth) {
+    if (!root || !root.querySelectorAll || depth > SHADOW_BTN_MAX_DEPTH) return;
+    for (const btn of root.querySelectorAll('button, [role="button"]')) keepButtonAsText(btn, hidden);
+    for (const host of root.querySelectorAll('*')) {
+      if (host.shadowRoot) markContentTextButtons(host.shadowRoot, hidden, depth + 1);
+    }
+  }
+
   function hideInsideArticleAllButtons(articleEl, hidden) {
     for (const btn of articleEl.querySelectorAll(INTERACTIVE_BTN_SEL)) {
       if (btn === articleEl) continue;
@@ -9890,6 +10137,8 @@
       if (isBylineNameChip(btn)) continue;
       // lazy 影片佔位框的播放鍵豁免（v1.8.2 pansci，見 isEmbedPlaceholderPlayButton）
       if (isEmbedPlaceholderPlayButton(btn)) continue;
+      // v2.5.28：內文按鈕留文字、去殼（見 isContentTextButton）
+      if (keepButtonAsText(btn, hidden)) continue;
       hide(btn, hidden);
     }
     hideShadowButtons(articleEl, hidden, 0);
@@ -9904,9 +10153,9 @@
   //   - shadow root 內有媒體（img / picture / video / iframe / canvas）→ 整個 root 不動：
   //     <lite-youtube> 這類影片佔位元件的播放鍵住在 shadow 裡，isEmbedPlaceholderPlayButton
   //     往上找殼的 walk 跨不出 shadow root，判不了就不清
-  //   - 按鈕在表格格子（td / th）裡 → 不清：MDN 相容性表每一格的版本號是一顆「點開
-  //     看備註」的 <button>，清掉整張表只剩空格。light DOM 的同類情況維持既有行為，
-  //     這裡只是不把清除範圍擴到會讓表格內容消失的地方
+  //   - 內文按鈕（isContentTextButton）→ 留文字、去殼：MDN 相容性表每一格的版本號是
+  //     一顆「點開看備註」的 <button>，清掉整張表只剩空格。v2.5.26 是「格子裡的按鈕
+  //     整顆不動」，v2.5.28 改成與 light DOM 同一支判定（格子裡另有文字的按鈕照清）
   // 只在靜態 clean 跑：MutationObserver 看不到 shadow root 內的變動，晚渲染的元件
   // 由 clean 之後的重測輪（1s / 3s）再掃到
   const SHADOW_BTN_MAX_DEPTH = 4;
@@ -9919,7 +10168,7 @@
       if (!sr.querySelector('img, picture, video, iframe, canvas')) {
         for (const btn of sr.querySelectorAll(INTERACTIVE_BTN_SEL)) {
           if (btn.dataset && btn.dataset.jreadHidden === '1') continue;
-          if (btn.closest && btn.closest('td, th')) continue;
+          if (keepButtonAsText(btn, hidden)) continue;
           hide(btn, hidden);
         }
       }
@@ -11931,8 +12180,9 @@
     return names;
   }
 
-  function hideTailAuthorBioBlocks(articleEl, hidden) {
-    // 主文段落（仍看得到的）——位置判定的尺
+  // 主文段落（仍看得到的）——「文末」位置判定的尺。文末三條規則共用同一份定義
+  // （hideTailAuthorBioBlocks / hideTailAuthorNameCards / hideTailEmptiedButtonCards）
+  function collectVisibleBodyParagraphs(articleEl) {
     const bodyPs = [];
     // <p> 之外也認「div 當段落」（cn.nytimes 的主文是 div.article-paragraph，沒有 <p>）
     for (const p of articleEl.querySelectorAll('p, div')) {
@@ -11943,6 +12193,11 @@
       if (p.closest('[data-jread-hidden="1"]') || isSiteHiddenWithin(p, articleEl)) continue;
       bodyPs.push(p);
     }
+    return bodyPs;
+  }
+
+  function hideTailAuthorBioBlocks(articleEl, hidden) {
+    const bodyPs = collectVisibleBodyParagraphs(articleEl);
     // v2.5.26：段落數不足不再直接收工——主文住在 li / div 的頁面（wikiHow 的步驟、
     // 譯文把 <p> 壓短之後）一段合格的 <p> 都湊不滿，整條規則沒機會跑。改成：段落數
     // 不足時看主文文字量（CJK 權重），夠三段的量才往下，位置改由下面的版面比例把關
@@ -12105,6 +12360,288 @@
       if (total > BIO_META_SECTION_MAX_EXTRA * 4) break;
     }
     return total;
+  }
+
+  // ---- 主文內：文末只有「作者＋名字」的小卡（Jimmy 2026-11-19 裁定）-------------
+  // womany 實證：文末 `section.article-author` 只有頭像＋「作者」標籤＋作者名，沒有
+  // 簡介文字（可見文字權重 15）。hideTailAuthorBioBlocks 的文字量下限（30）刻意不清
+  // 這種——只有名字、沒有介紹的區塊可能是全篇唯一的作者署名。
+  // 裁定：卡片裡的作者頁連結與標題下作者列的作者頁連結是**同一個連結**時才清（署名
+  // 在標題下已經有了，文末這張是重複）；沒有標題下作者列、或連結不同 → 不清。
+  // 結構條件（不認 class、不讀文字內容，翻譯前後一致）：
+  //   - 標題下作者列＝第一段主文之前、仍看得到的作者頁連結（AUTHOR_PAGE_PATH_RE）。
+  //     cleaner 跑的時候 styler 還沒標 data-jread-byline，位置用主文段落當尺
+  //   - 文末＝最後一段主文之後、仍看得到的作者頁連結；同源、路徑相同（query / hash
+  //     不看——womany 兩處只差 ?ref=）
+  //   - 卡片＝從該連結往上、可見文字權重仍 < BIO_TAIL_MIN_WEIGHT 的最外層容器（div /
+  //     section / aside 這類；連結自己、行內外殼、單獨一個 <p> 的落款不清）；不含
+  //     主文段落、標題下那個連結、h1、<time>、大於頭像尺寸的媒體；不在清單 / 表格 /
+  //     圖說 / 引言裡
+  // 有實際簡介內容（權重 ≥ 30）的作者框不歸這條，照 hideTailAuthorBioBlocks 的規則。
+  // 標題下的作者列不可能被清：它在第一段主文之前，而卡片必須整個在最後一段主文之後、
+  // 且不含標題下那個連結。
+  const TAIL_NAME_CARD_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'FOOTER', 'ADDRESS', 'ARTICLE']);
+  function authorProfileLinkKey(a) {
+    if (!isAuthorProfileAnchor(a)) return '';
+    try {
+      const u = new URL(a.getAttribute('href'), window.location.href);
+      return (u.origin + u.pathname.replace(/\/+$/, '')).toLowerCase();
+    } catch (_) { return ''; }
+  }
+
+  function hideTailAuthorNameCards(articleEl, hidden) {
+    const bodyPs = collectVisibleBodyParagraphs(articleEl);
+    if (bodyPs.length < BIO_TAIL_MIN_BEFORE) return;
+    const firstP = bodyPs[0];
+    const lastP = bodyPs[bodyPs.length - 1];
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    const headAnchors = new Map();
+    const tailAnchors = [];
+    for (const a of articleEl.querySelectorAll('a[href]')) {
+      const beforeFirst = !!(a.compareDocumentPosition(firstP) & FOLLOWING);
+      const afterLast = !beforeFirst && !!(lastP.compareDocumentPosition(a) & FOLLOWING) && !lastP.contains(a);
+      if (!beforeFirst && !afterLast) continue;
+      const key = authorProfileLinkKey(a);
+      if (!key) continue;
+      if (a.closest('[data-jread-hidden="1"]')) continue;
+      if (beforeFirst) {
+        // 標題下的作者連結要真的看得到字（只包頭像的連結也算同一位作者，但當不了「署名已在」的證據）
+        if (hasVisibleRenderedText(a) && !headAnchors.has(key)) headAnchors.set(key, a);
+      } else tailAnchors.push({ a, key });
+    }
+    if (!headAnchors.size) return;
+    const picked = [];
+    for (const { a, key } of tailAnchors) {
+      const headA = headAnchors.get(key);
+      if (!headA) continue;
+      if (picked.some((p) => p.contains(a))) continue;
+      const li = a.closest('li');
+      if (li && li.parentElement && Array.from(li.parentElement.children).filter((c) => c.tagName === 'LI').length > 1) continue;
+      if (a.closest('table, figure, blockquote, pre, h1, h2, h3, h4, h5, h6')) continue;
+      let best = null;
+      let cur = a;
+      for (let hop = 0; cur && hop <= BIO_SHELL_MAX_CLIMB + 2; hop++, cur = cur.parentElement) {
+        if (cur === articleEl || cur.contains(articleEl) || isInPreserved(cur)) break;
+        if (cur.contains(headA) || bodyPs.some((p) => cur.contains(p))) break;
+        if (cur.querySelector('h1, time')) break;
+        if (NS.cjkWeightedLen(norm(visibleRenderedText(cur))) >= BIO_TAIL_MIN_WEIGHT) break;
+        let big = false, mediaCount = 0;
+        for (const m of cur.querySelectorAll('img, video, iframe')) {
+          if (m.closest('[data-jread-hidden="1"]')) continue;
+          mediaCount += 1;
+          let r; try { r = m.getBoundingClientRect(); } catch (_) { continue; }
+          if (r && (r.width > BIO_SHELL_AVATAR_MAX || r.height > BIO_SHELL_AVATAR_MAX)) { big = true; break; }
+        }
+        if (big || mediaCount > BIO_SHELL_MAX_AVATARS) break;
+        // 只收容器層級的卡片：連結自己、行內外殼、單獨一個 <p> 都不清——連結住在一段
+        // 較長文字裡時（「X 也在本專欄寫過…」）清掉連結會留下缺字的句子；一行 <p>
+        // （「由 X」「— X」）是內文的落款，不是卡片
+        if (TAIL_NAME_CARD_TAGS.has(cur.tagName)) best = cur;
+      }
+      if (best) picked.push(best);
+    }
+    for (const el of picked) hide(el, hidden);
+  }
+
+  // ---- 主文內：文末「按鈕清光後剩下的短卡片」（Jimmy 2026-11-19 裁定）-----------
+  // 「按鈕一律清」之後，文末的互動卡片只剩一句提示，看不出是什麼、也按不了：
+  //   note.com 打賞卡（小標「いいなと思ったら応援しよう！」＋作者一句話，按鈕＝頭像鈕、
+  //   打賞鈕）、kubernetes 回饋區（「Feedback / Was this page helpful?」，按鈕＝Yes / No）、
+  //   少數派打賞卡（「充电鼓励 你的鼓励是创作者最好的动力」）、toss.tech 徵才卡
+  //   （「想與…一起工作嗎？」，按鈕是 <a type="button">）。裁定：整張清。
+  // 結構條件（不認 class、不讀文字內容，翻譯前後一致）：
+  //   位置＝文末：前面至少 BIO_TAIL_MIN_BEFORE 段主文、後面沒有任何主文段落。主文都是
+  //     短段落、合格段落不滿三段的頁面（note.com 譯後）改看文字量：整篇 ≥
+  //     BIO_TAIL_MIN_ARTICLE_WEIGHT，且卡片之後看得到的字不到一段的量
+  //   來歷＝卡片裡有被我們清掉的互動按鈕（TAIL_BTN_CARD_BTN_SEL），而且沒有任何還留著
+  //     的按鈕（媒體鈕、作者名 chip、影片播放鍵這些豁免對象在的區塊不是「按鈕清光」）
+  //   卡片＝從按鈕往上、仍符合下列條件的最外層區塊：
+  //     - 不含主文段落；按鈕不是住在段落 / 清單項 / 表格格子 / 標題 / 連結裡
+  //       （句中的按鈕是內文的一部分——cnbc 股票代號鈕在句子裡，不是卡片）
+  //     - 不含內容結構（TAIL_BTN_CARD_CONTENT_SEL：程式碼、表格、圖、引言、清單、
+  //       影音、公式、<time>）——文末最後一個程式碼區塊帶 Copy 鈕（vuejs 翻譯後實測
+  //       剛好排在所有主文段落之後）不是卡片
+  //     - 按鈕以外仍看得到的文字權重 ≤ TAIL_BTN_CARD_MAX_WEIGHT（CJK 加權；note.com
+  //       原文 116、譯後 82，kubernetes 31 / 22，少數派 35，toss 25）
+  //     - 沒有大於圖示尺寸的可見媒體
+  //     - 文字不帶日期 / 相對時間、不以作者列字樣開頭（「Last updated 23 Dec 2025」
+  //       這類更新時間一律保留——myartbroker 文末 footer 實測；「作者 · 23 小時前」
+  //       是文末中繼列）
+  //   形狀＝看得出是一張卡片（小標領頭／只剩一行標籤的量／提示字貼著按鈕，見
+  //     findTailEmptiedButtonCard）——文章最後一句短話＋分享鈕列不算
+  //   剩下的文字不是以連結為主（連結字佔一半以上＝引用列 / DOI 列 / 標籤列，那是另一類）
+  //   剩下的文字是空的不歸這條（純空殼由 collapse 類規則收）
+  // 這條驗 X、不驗 Y：只處理 light DOM 的按鈕；shadow root 內的按鈕（MDN 回饋區）不在此列。
+  // a[type="button"] 已併進 INTERACTIVE_BTN_SEL（同版），這裡不再另接
+  const TAIL_BTN_CARD_BTN_SEL = INTERACTIVE_BTN_SEL;
+  const TAIL_BTN_CARD_MAX_WEIGHT = 160;
+  const TAIL_BTN_CARD_LABEL_MAX = 40;
+  const TAIL_BTN_CARD_MAX_CLIMB = 8;
+  const TAIL_BTN_CARD_AFTER_MAX_NODES = 400;
+  const TAIL_BTN_CARD_ICON_MAX = 80;
+  const TAIL_BTN_CARD_CONTENT_SEL = 'h1, pre, code, table, figure, blockquote, ul, ol, dl, time, math, video, audio, iframe, canvas';
+  const TAIL_BTN_CARD_BLOCK_TAGS = new Set(['DIV', 'SECTION', 'ASIDE', 'FOOTER', 'ARTICLE', 'FORM']);
+  const TAIL_BTN_CARD_PROSE_HOST_RE = /^(?:P|LI|TD|TH|DD|DT|H[1-6]|A|SUMMARY|LABEL|FIGCAPTION|CAPTION)$/;
+  const TAIL_BTN_CARD_RELATIVE_TIME_RE = new RegExp(RELATIVE_TIME_RE.source, 'i');
+
+  // 這顆按鈕「已被清掉」：自己或祖先帶我們的隱藏標記。<a type="button"> 與按鈕同類
+  // （本輪併入「按鈕一律清」），不論清除規則是否已先跑到都算
+  function tailBtnIsCleared(btn) {
+    if (btn.closest && btn.closest('[data-jread-hidden="1"]')) return true;
+    return !!(btn.matches && btn.matches('a[type="button"]'));
+  }
+
+  // 卡片內「按鈕以外、仍看得到」的文字：total / link 是 CJK 權重，text 供日期判定
+  function tailBtnCardRemainder(root) {
+    const out = { total: 0, link: 0, para: 0, headLed: false, text: '' };
+    const doc = root.ownerDocument;
+    const walker = doc.createTreeWalker(root, 4 /* SHOW_TEXT */);
+    let n;
+    while ((n = walker.nextNode())) {
+      const par = n.parentElement;
+      if (!par) continue;
+      const t = norm(n.nodeValue);
+      if (!t) continue;
+      if (par.closest('script, style, noscript, template')) continue;
+      if (par.closest('[data-jread-hidden="1"]')) continue;
+      if (par.closest(TAIL_BTN_CARD_BTN_SEL)) continue;
+      if (isSiteHiddenWithin(par, root)) continue;
+      const w = NS.cjkWeightedLen(t);
+      // 第一段看得到的字住在小標裡＝小標領頭的卡片
+      if (out.total === 0) { const h = par.closest('h2, h3, h4, h5, h6'); out.headLed = !!(h && root.contains(h)); }
+      out.total += w;
+      if (par.closest('a[href]')) out.link += w;
+      { const p = par.closest('p'); if (p && root.contains(p)) out.para += w; }
+      out.text += ' ' + t;
+      if (out.total > TAIL_BTN_CARD_MAX_WEIGHT) break;
+    }
+    return out;
+  }
+
+  function tailBtnCardTextIsMeta(text) {
+    const t = norm(text);
+    if (ARTICLE_META_RE.test(t)) return true;
+    if (TAIL_BTN_CARD_RELATIVE_TIME_RE.test(foldZhVariants(t))) return true;
+    return bylineTextProtects(t.slice(0, 60));
+  }
+
+  // el 之後（文件順序、主文容器內）仍看得到的文字權重，超過 cap 就停
+  function visibleWeightAfter(articleEl, el, cap) {
+    const doc = articleEl.ownerDocument;
+    const walker = doc.createTreeWalker(articleEl, 4 /* SHOW_TEXT */);
+    let total = 0, seen = 0, n;
+    while ((n = walker.nextNode())) {
+      if (!(el.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) || el.contains(n)) continue;
+      const par = n.parentElement;
+      const t = norm(n.nodeValue);
+      if (!par || !t) continue;
+      if (par.closest('script, style, noscript, template, [data-jread-hidden="1"]')) continue;
+      if (++seen > TAIL_BTN_CARD_AFTER_MAX_NODES) return cap + 1;
+      if (isSiteHiddenWithin(par, articleEl)) continue;
+      total += NS.cjkWeightedLen(t);
+      if (total > cap) break;
+    }
+    return total;
+  }
+
+  function findTailEmptiedButtonCard(articleEl, btn, bodyPs, articleWeight) {
+    if (!tailBtnIsCleared(btn)) return null;
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    // 便宜的先篩：按鈕後面還有主文段落＝不在文末
+    if (bodyPs.length && (btn.compareDocumentPosition(bodyPs[bodyPs.length - 1]) & FOLLOWING)) return null;
+    const cands = [];
+    let baseBlock = null;
+    let cur = btn.parentElement;
+    for (let hop = 0; cur && hop < TAIL_BTN_CARD_MAX_CLIMB; hop++, cur = cur.parentElement) {
+      if (cur === articleEl || cur.contains(articleEl)) break;
+      if (!baseBlock && TAIL_BTN_CARD_BLOCK_TAGS.has(cur.tagName)) baseBlock = cur;
+      // 這一層已被別條規則整個清掉（按鈕列被當純按鈕群收走）：它以下的候選都已經
+      // 看不到，往上繼續找包著它的卡片
+      if (cur.dataset && cur.dataset.jreadHidden === '1') { cands.length = 0; continue; }
+      if (isInPreserved(cur)) return null;
+      if (TAIL_BTN_CARD_PROSE_HOST_RE.test(cur.tagName)) return null;
+      if (bodyPs.some((p) => cur.contains(p))) break;
+      let hasContent = false;
+      for (const c of cur.querySelectorAll(TAIL_BTN_CARD_CONTENT_SEL)) {
+        if (!c.closest('[data-jread-hidden="1"]') && !c.closest(TAIL_BTN_CARD_BTN_SEL)) { hasContent = true; break; }
+      }
+      if (hasContent) break;
+      if (!TAIL_BTN_CARD_BLOCK_TAGS.has(cur.tagName)) continue;
+      let keptBtn = false;
+      for (const b of cur.querySelectorAll(TAIL_BTN_CARD_BTN_SEL)) {
+        if (!tailBtnIsCleared(b)) { keptBtn = true; break; }
+      }
+      if (keptBtn) break;
+      let bigMedia = false;
+      for (const m of cur.querySelectorAll('img, picture, svg')) {
+        if (m.closest('[data-jread-hidden="1"]') || m.closest(TAIL_BTN_CARD_BTN_SEL)) continue;
+        let r; try { r = m.getBoundingClientRect(); } catch (_) { continue; }
+        if (r && (r.width > TAIL_BTN_CARD_ICON_MAX || r.height > TAIL_BTN_CARD_ICON_MAX)) { bigMedia = true; break; }
+      }
+      if (bigMedia) break;
+      const rem = tailBtnCardRemainder(cur);
+      if (rem.total > TAIL_BTN_CARD_MAX_WEIGHT) break;
+      // 日期 / 相對時間 / 作者列開頭（「作者 · 23小时前」這種文末中繼列）不是卡片；
+      // 簡體寫法走摺疊（與其他相對時間、byline 保護點同一套）
+      if (tailBtnCardTextIsMeta(rem.text)) break;
+      cands.push({ el: cur, rem });
+    }
+    // 形狀：由外往內找第一個「看得出是一張卡片」的候選。文章最後一句短短的話
+    // ＋被清掉的分享鈕列不是卡片（review-1007-b3 的對照組），三種形狀擇一：
+    //   - 小標領頭（第一段看得到的字住在 h2–h6：kubernetes / note.com / 少數派）
+    //   - 剩下的字是一行標籤的量（≤ TAIL_BTN_CARD_LABEL_MAX：「Was this helpful?」、toss）
+    //   - 字不在 <p> 裡，且全部與按鈕住在同一個最近的區塊（提示字貼著按鈕的小元件）
+    // 「最近的區塊」＝按鈕往上第一個區塊層級祖先（不論它是否已被清掉）
+    const baseTotal = baseBlock ? tailBtnCardRemainder(baseBlock).total : -1;
+    let best = null;
+    for (let i = cands.length - 1; i >= 0; i--) {
+      const { rem } = cands[i];
+      if (rem.total <= 0) continue;
+      if (rem.link * 2 >= rem.total) continue;
+      if (rem.headLed || rem.total <= TAIL_BTN_CARD_LABEL_MAX ||
+          (rem.para === 0 && rem.total === baseTotal)) { best = cands[i]; break; }
+    }
+    if (!best) return null;
+    // 位置：整張卡片之後沒有主文段落（卡片不含主文段落，上面已擋）
+    let before = 0;
+    for (const p of bodyPs) {
+      if (best.el.compareDocumentPosition(p) & FOLLOWING) return null;
+      before += 1;
+    }
+    if (before < BIO_TAIL_MIN_BEFORE) {
+      // 主文都是短段落的頁面（note.com 譯後：每段不到「主文段落」的量，合格的不滿三段）
+      // 改看文字量：整篇夠三段的量，而且卡片之後剩下的字不到一段
+      if (articleWeight() < BIO_TAIL_MIN_ARTICLE_WEIGHT) return null;
+      if (visibleWeightAfter(articleEl, best.el, BIO_TAIL_BODY_P_WEIGHT) > BIO_TAIL_BODY_P_WEIGHT) return null;
+    }
+    return best.el;
+  }
+
+  // scope＝articleEl（靜態 clean）或動態新插入的節點（晚到的回饋區 / 打賞卡）
+  function hideTailEmptiedButtonCards(articleEl, hidden, scope) {
+    const root = scope || articleEl;
+    if (!root || root.nodeType !== 1) return;
+    const btns = Array.from(root.querySelectorAll(TAIL_BTN_CARD_BTN_SEL));
+    if (root !== articleEl && root.matches && root.matches(TAIL_BTN_CARD_BTN_SEL)) btns.unshift(root);
+    if (!btns.length) return;
+    let bodyPs = null;
+    let articleWeightMemo = -1;
+    const articleWeight = () => {
+      if (articleWeightMemo < 0) articleWeightMemo = NS.cjkWeightedLen(norm(visibleRenderedText(articleEl)));
+      return articleWeightMemo;
+    };
+    const picked = new Set();
+    for (const btn of btns) {
+      if (!articleEl.contains(btn)) continue;
+      let covered = false;
+      for (const p of picked) { if (p.contains(btn)) { covered = true; break; } }
+      if (covered) continue;
+      if (!tailBtnIsCleared(btn)) continue;
+      if (!bodyPs) bodyPs = collectVisibleBodyParagraphs(articleEl);
+      const card = findTailEmptiedButtonCard(articleEl, btn, bodyPs, articleWeight);
+      if (card) picked.add(card);
+    }
+    for (const el of picked) hide(el, hidden);
   }
 
   // ---- 主文內：figure 包未知 widget iframe（v0.8.48 propublica 實測）------
@@ -12712,7 +13249,7 @@
       if (node.dataset && node.dataset.jreadHidden === '1') return;
       // v0.8.48：byline 作者名 chip 豁免與靜態 path 同步（isBylineNameChip）
       if (!buttonWrapsContentMedia(node) && !isBylineNameChip(node) &&
-          !isEmbedPlaceholderPlayButton(node)) {
+          !isEmbedPlaceholderPlayButton(node) && !keepButtonAsText(node, hiddenList)) {
         hide(node, hiddenList);
         return;
       }
@@ -12735,7 +13272,10 @@
         // figure/figcaption 內 lazy 注入、class 帶 keyword 的 <a> 靜態保留、
         // 動態不該砍。button 系列不套（硬教訓九：interactive button 無條件清，
         // 靜態 hideInsideArticleAllButtons 同樣不看 preserved）。
-        if (el.tagName === 'A' && isInPreserved(el)) continue;
+        // v2.5.28：用連結做成的按鈕（a[role="button"] / a[type="button"]）走按鈕分支，
+        // 與靜態 hideInsideArticleAllButtons 同一份判定（原本動態側一律當一般連結）
+        const isPlainAnchor = el.tagName === 'A' && !el.matches(INTERACTIVE_BTN_SEL);
+        if (isPlainAnchor && isInPreserved(el)) continue;
         // strict CTA（立即報名 等）：delayed lazy-inject 的活動 / 課程推廣
         // banner（class 無語意 keyword、a / button text 才是訊號）整塊清。
         // 放在 a / button 派發之前——對 a 也要走（btn-only2 類 class 不命中
@@ -12746,7 +13286,7 @@
         // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）。
         // v0.8.36（B2）：補 lightbox / lazy 內容圖豁免（與靜態 keyword <a>
         // path / icon-only rule 共用 anchorIsContentImageLink）。
-        if (el.tagName === 'A') {
+        if (isPlainAnchor) {
           // v0.8.112：strong keyword 命中時不套內容圖豁免（與靜態 keyword path 同源——
           // 圖片式廣告 banner related-block 等）。
           if (shouldHideByKeyword(el) && (!anchorIsContentImageLink(el) || shouldHideByStrongKeyword(el))) hide(el, hiddenList);
@@ -12757,7 +13297,7 @@
         // v0.8.36（B2）：例外 = 媒體 button（與靜態 rule 同源豁免）。
         // v0.8.48：例外 + byline 作者名 chip（isBylineNameChip，同源）。
         if (!buttonWrapsContentMedia(el) && !isBylineNameChip(el) &&
-            !isEmbedPlaceholderPlayButton(el)) hide(el, hiddenList);
+            !isEmbedPlaceholderPlayButton(el) && !keepButtonAsText(el, hiddenList)) hide(el, hiddenList);
       }
     }
     // 2026-10-07 review A-09：靜態規則以 node 為 scope 重跑（第三方廣告 selector /
@@ -12853,8 +13393,17 @@
   //   3. 宿主內容是「一列按鈕」：至少一顆 interactive button、文字極短、
   //      不含段落 / 標題 / 媒體 / 表單
   //   4. 幾何：宿主尺寸小、貼著選取範圍（暫時解除 JRead 的 hide 才量得到）
-  // 選取一消失（selectionchange → collapsed）就把放行的東西 hide 回去——點擊
-  // 既有重點叫出的「刪除 / 加註記」面板沒有選取，不在放行範圍。
+  // 選取一消失（selectionchange → collapsed）就把放行的東西 hide 回去。
+  //
+  // v2.5.28（Jimmy 2026-11-19：Reader 點既有重點，取消重點的面板沒出現）：第 1 道
+  // gate 多一種入口——使用者剛點了主文內的行內高亮元素（styler markInlineHighlights
+  // 標的 SITE_UI_ATTR="hl" / "hl-tint"，結構判定住那裡，這裡不看標籤名）。站方在
+  // 點擊後新增一個浮動宿主（Reader 實測：另一顆 div.popover，內含刪除 / 註記 /
+  // 標籤 / 更多四顆鈕），沒有選取、舊 gate 進不來，宿主與四顆鈕被 checkDynamicNoise
+  // 逐一清掉。第 2–4 道 gate 照舊，錨點從選取範圍換成高亮元素的 rect。
+  // 入口有效期：點擊後 HL_CLICK_WINDOW_MS 內出現的節點才算；已放行後持續有效，
+  // 直到 (a) 使用者點了宿主以外、也不是高亮的地方，(b) 被點的高亮元素離開 DOM
+  //（重點被刪），(c) 退出 / reapply。沒點高亮就自己冒出來的浮動按鈕列照清。
   // 訊號層次：本段驗「選取當下出現、貼著選取的按鈕列」；不驗按鈕做什麼
   // （站方拿同樣結構放分享鈕也會放行——只在使用者選取時短暫出現，可接受）。
   const SEL_TOOLBAR_ATTR = 'data-jread-sel-toolbar';
@@ -12869,6 +13418,146 @@
   // 仍留在 hiddenList，還原照舊）；pinned＝翻頁模式下由 JRead 接管位置的宿主；
   // onSelChange / onScroll＝selectionchange 與 scroll（capture）listener
   let selToolbarState = null;
+  // 點既有高亮的錨點：{ el, at, sticky }。sticky＝已經靠它放行過工具列（之後不看時間窗）
+  const HL_ANCHOR_SEL = '[data-jread-site-ui="hl"], [data-jread-site-ui="hl-tint"]';
+  const HL_CLICK_WINDOW_MS = 1500;
+  const HL_VERIFY_DELAYS_MS = [60, 200, 500];
+  const HL_SCAN_DELAYS_MS = [50, 300];
+  let hlClickAnchor = null;
+  let hlClickWatch = null;
+
+  function hlAnchorTargetOf(target, articleEl) {
+    const el = target && target.nodeType === 1 ? target : (target && target.parentElement);
+    if (!el || !el.closest) return null;
+    const hl = el.closest(HL_ANCHOR_SEL);
+    return hl && articleEl.contains(hl) ? hl : null;
+  }
+
+  function startHlClickWatch(articleEl, hiddenList) {
+    stopHlClickWatch();
+    const doc = articleEl.ownerDocument;
+    const onDown = (e) => {
+      const t = e.target;
+      const tEl = t && t.nodeType === 1 ? t : (t && t.parentElement);
+      // 點在已放行的工具列上（按刪除 / 註記）：不動錨點；稍後檢查重點是否被刪
+      if (tEl && tEl.closest && tEl.closest(`[${SEL_TOOLBAR_ATTR}="1"]`)) {
+        if (e.type === 'click') {
+          const win = doc.defaultView;
+          win.setTimeout(() => {
+            if (hlClickAnchor && hlClickAnchor.sticky && !hlClickAnchor.el.isConnected) {
+              hlClickAnchor = null;
+              if (!activeSelectionRect(articleEl)) rehideSelectionToolbars(hiddenList);
+            }
+          }, 400);
+        }
+        return;
+      }
+      const hl = hlAnchorTargetOf(t, articleEl);
+      if (hl) {
+        // 換點另一個高亮：先把舊的收回，新面板走一般入口重新判定
+        if (hlClickAnchor && hlClickAnchor.sticky && hlClickAnchor.el !== hl &&
+            !activeSelectionRect(articleEl)) {
+          rehideSelectionToolbars(hiddenList);
+        }
+        const keepSticky = !!(hlClickAnchor && hlClickAnchor.el === hl && hlClickAnchor.sticky);
+        hlClickAnchor = { el: hl, at: Date.now(), sticky: keepSticky };
+        return;
+      }
+      // 點了別處：錨點失效，靠它放行的工具列收回
+      if (hlClickAnchor) {
+        const wasSticky = hlClickAnchor.sticky;
+        hlClickAnchor = null;
+        if (wasSticky && !activeSelectionRect(articleEl)) rehideSelectionToolbars(hiddenList);
+      }
+    };
+    // 放開（站方多半在 mouseup / click 才反應）後排主動掃描，見 scanHiddenToolbarHosts。
+    // 站方若攔掉 click，mouseup / pointerup 仍會到；多排幾次無妨（已放行就直接返回）
+    const onUp = (e) => {
+      if (!hlAnchorTargetOf(e.target, articleEl)) return;
+      const win = doc.defaultView;
+      for (const ms of HL_SCAN_DELAYS_MS) {
+        win.setTimeout(() => { try { scanHiddenToolbarHosts(articleEl, hiddenList); } catch (_) {} }, ms);
+      }
+    };
+    doc.addEventListener('pointerdown', onDown, true);
+    doc.addEventListener('mousedown', onDown, true);
+    doc.addEventListener('click', onDown, true);
+    doc.addEventListener('pointerup', onUp, true);
+    doc.addEventListener('mouseup', onUp, true);
+    hlClickWatch = { doc, onDown, onUp };
+  }
+
+  function stopHlClickWatch() {
+    const w = hlClickWatch;
+    hlClickAnchor = null;
+    hlClickWatch = null;
+    if (!w) return;
+    w.doc.removeEventListener('pointerdown', w.onDown, true);
+    w.doc.removeEventListener('mousedown', w.onDown, true);
+    w.doc.removeEventListener('click', w.onDown, true);
+    w.doc.removeEventListener('pointerup', w.onUp, true);
+    w.doc.removeEventListener('mouseup', w.onUp, true);
+  }
+
+  // 被點的高亮元素目前是否仍是有效錨點；有效時回傳 { rect, anchorNode, nearRects }。
+  // nearRects＝主文內所有高亮元素的 rect：一筆重點跨段落時站方拆成多個元素、面板
+  // 可能貼著第一段而不是被點的那一段，幾何 gate 改問「貼著任一個高亮元素」
+  function activeHighlightAnchor(articleEl) {
+    const a = hlClickAnchor;
+    if (!a || !a.el || !a.el.isConnected || !articleEl.contains(a.el)) return null;
+    if (!a.el.matches || !a.el.matches(HL_ANCHOR_SEL)) return null;
+    if (!a.sticky && Date.now() - a.at > HL_CLICK_WINDOW_MS) return null;
+    let r = null;
+    try { r = a.el.getBoundingClientRect(); } catch (_) { return null; }
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    const nearRects = [];
+    for (const el of articleEl.querySelectorAll(HL_ANCHOR_SEL)) {
+      if (el === a.el) continue;
+      try {
+        const rr = el.getBoundingClientRect();
+        if (rr && (rr.width > 0 || rr.height > 0)) nearRects.push(rr);
+      } catch (_) {}
+    }
+    return { rect: r, anchorNode: a.el, nearRects, fromHighlight: true };
+  }
+
+  // 暫時放行期間的隱形：inline visibility（站方只改 transform / inset，不碰這個屬性）
+  const SEL_TOOLBAR_PENDING_ATTR = 'data-jread-seltb-pending';
+  function setPendingInvisible(host, on) {
+    if (!host || !host.style) return;
+    if (on) {
+      host.setAttribute(SEL_TOOLBAR_PENDING_ATTR, '1');
+      host.style.setProperty('visibility', 'hidden', 'important');
+    } else if (host.getAttribute(SEL_TOOLBAR_PENDING_ATTR) === '1') {
+      host.removeAttribute(SEL_TOOLBAR_PENDING_ATTR);
+      host.style.removeProperty('visibility');
+    }
+  }
+
+  // 點高亮後主動找「早就在 DOM 裡、被 JRead 藏著」的工具列宿主：站方重用既有宿主時
+  //（Reader 實測：剛畫完重點、面板還留在 DOM，之後再點同一個重點）不會有新增節點，
+  // MutationObserver 那條入口不會被叫到。候選只取 hide 記錄裡「自己是按鈕或含按鈕」
+  // 的元素往上找到的浮動宿主，逐一走 allowSelectionToolbar 同一組 gate
+  function scanHiddenToolbarHosts(articleEl, hiddenList) {
+    if (!activeHighlightAnchor(articleEl)) return;
+    if (selToolbarState && selToolbarState.hosts.length) return;
+    const seen = new Set();
+    for (const rec of hiddenList.slice()) {
+      const el = rec && rec.el;
+      if (!el || el.nodeType !== 1 || !el.isConnected || !articleEl.contains(el)) continue;
+      if (!el.dataset || el.dataset.jreadHidden !== '1') continue;
+      if (!(el.matches && el.matches(INTERACTIVE_BTN_SEL)) && !el.querySelector(INTERACTIVE_BTN_SEL)) continue;
+      const host = findFloatingHost(el, articleEl);
+      if (!host || seen.has(host)) continue;
+      seen.add(host);
+      if (allowSelectionToolbar(articleEl, host, hiddenList)) return;
+    }
+  }
+
+  // 工具列的錨點：有選取用選取範圍，否則看使用者是否剛點了高亮元素
+  function activeToolbarAnchor(articleEl) {
+    return activeSelectionRect(articleEl) || activeHighlightAnchor(articleEl);
+  }
 
   function activeSelectionRect(articleEl) {
     const doc = articleEl.ownerDocument;
@@ -13009,6 +13698,7 @@
     for (const el of s.revealed) rehideForSelection(el, hiddenList);
     for (const host of s.hosts) {
       if (!host) continue;
+      setPendingInvisible(host, false);
       if (host.removeAttribute) host.removeAttribute(SEL_TOOLBAR_ATTR);
       // 宿主是選取後才新增的（先前沒被 hide 過）→ 走一般 hide
       if (host.isConnected && !(host.dataset && host.dataset.jreadHidden === '1')) hide(host, hiddenList);
@@ -13024,15 +13714,21 @@
     if (s.doc && s.onScroll) s.doc.removeEventListener('scroll', s.onScroll, true);
     unpinToolbars(s);
     for (const host of s.hosts) {
+      setPendingInvisible(host, false);
       if (host && host.removeAttribute) host.removeAttribute(SEL_TOOLBAR_ATTR);
     }
     selToolbarState = null;
   }
 
+  function stopAllToolbarWatches() {
+    stopSelectionToolbarWatch();
+    stopHlClickWatch();
+  }
+
   // 回傳 true = 這個新增節點屬於已放行的選取工具列，呼叫端不可再送進
   // checkDynamicNoise（否則裡面的按鈕會被逐顆 hide）。
   function allowSelectionToolbar(articleEl, node, hiddenList) {
-    const selInfo = activeSelectionRect(articleEl);
+    const selInfo = activeToolbarAnchor(articleEl);
     if (!selInfo) {
       // 選取已消失、節點卻塞進先前放行的宿主（站方把工具列換成別的面板）→ 收回
       if (selToolbarState && selToolbarState.hosts.length &&
@@ -13065,9 +13761,27 @@
     for (const el of host.querySelectorAll('[data-jread-hidden="1"]')) toReveal.push(el);
     for (const el of toReveal) unhideForSelection(el, hiddenList);
     const shifted = readerShiftedContainingBlock();
-    let near = false;
-    try { near = rectIsNearSelection(host.getBoundingClientRect(), selInfo.rect, shifted); } catch (_) { near = false; }
-    if (!near) {
+    const hostIsNear = (info) => {
+      try {
+        const hostRect = host.getBoundingClientRect();
+        // 翻頁模式＋點高亮：站方重用既有宿主時不會重算位置（它以為面板一直都在；Reader
+        // 實測 transform 停在進閱讀模式前的值，補發 scroll 叫它重算反而讓它把面板關掉），
+        // 而翻頁模式的位置本來就由 JRead 接管——只驗尺寸，不驗站方算的位置
+        if (shifted && info.fromHighlight) {
+          return hostRect.width > 0 && hostRect.height > 0 &&
+            hostRect.width <= SEL_TOOLBAR_MAX_W && hostRect.height <= SEL_TOOLBAR_MAX_H;
+        }
+        if (rectIsNearSelection(hostRect, info.rect, shifted)) return true;
+        return !!(info.nearRects && info.nearRects.some((r) => rectIsNearSelection(hostRect, r, shifted)));
+      } catch (_) { return false; }
+    };
+    const near = hostIsNear(selInfo);
+    // v2.5.28：點高亮叫出的面板，站方是「先插入宿主與按鈕、之後才算位置」（Reader 實測：
+    // 按鈕插入當下宿主還在 left:0 / top:0，定位要等宿主有版面才算得出來）。當下量不到
+    // 貼著高亮 → 先暫時放行讓站方定位，HL_VERIFY_DELAYS_MS 內複驗；到最後一次仍不貼著
+    // 高亮就收回。選取那條路徑維持當下判定、不暫放（宿主是常駐的、位置已先算好）
+    const provisional = !near && !!selInfo.fromHighlight;
+    if (!near && !provisional) {
       for (const el of toReveal) rehideForSelection(el, hiddenList);
       return false;
     }
@@ -13078,14 +13792,14 @@
       // 釘住的工具列跟著選取走：選取被拉長 / 翻頁捲動後重新定位
       const repin = () => {
         if (!state.pinned.length) return;
-        const info = activeSelectionRect(articleEl);
+        const info = activeToolbarAnchor(articleEl);
         if (!info) return;
         for (const el of state.pinned.slice()) {
           try { pinToolbarOverSelection(el, info.rect, state); } catch (_) {}
         }
       };
       state.onSelChange = () => {
-        if (!activeSelectionRect(articleEl)) rehideSelectionToolbars(hiddenList);
+        if (!activeToolbarAnchor(articleEl)) rehideSelectionToolbars(hiddenList);
         else repin();
       };
       state.onScroll = repin;
@@ -13094,12 +13808,39 @@
       selToolbarState = state;
     }
     host.setAttribute(SEL_TOOLBAR_ATTR, '1');
+    if (selInfo.fromHighlight && hlClickAnchor) hlClickAnchor.sticky = true;
     selToolbarState.hosts.push(host);
     for (const el of toReveal) selToolbarState.revealed.push(el);
     // 工具列的底色 / 框線 / 圖示色是站方自管——交給 styler 整支豁免
     if (NS.styler && NS.styler.markSiteWidgetSubtree) NS.styler.markSiteWidgetSubtree(host);
-    if (shifted) {
+    if (shifted && near) {
       try { pinToolbarOverSelection(host, selInfo.rect, selToolbarState); } catch (_) {}
+    }
+    if (provisional) {
+      const win = articleEl.ownerDocument.defaultView;
+      const stateAtAllow = selToolbarState;
+      // 複驗通過前不讓它被看到：有版面（站方量得到尺寸、算得出位置）但不繪製
+      setPendingInvisible(host, true);
+      const verify = (i) => {
+        if (selToolbarState !== stateAtAllow || stateAtAllow.hosts.indexOf(host) < 0) {
+          setPendingInvisible(host, false);
+          return;
+        }
+        const info = activeToolbarAnchor(articleEl);
+        if (info && host.isConnected && hostIsNear(info)) {
+          setPendingInvisible(host, false);
+          if (shifted) { try { pinToolbarOverSelection(host, info.rect, stateAtAllow); } catch (_) {} }
+          return;
+        }
+        if (i + 1 < HL_VERIFY_DELAYS_MS.length) {
+          win.setTimeout(() => verify(i + 1), HL_VERIFY_DELAYS_MS[i + 1] - HL_VERIFY_DELAYS_MS[i]);
+          return;
+        }
+        setPendingInvisible(host, false);
+        if (hlClickAnchor) hlClickAnchor.sticky = false;
+        rehideSelectionToolbars(hiddenList);
+      };
+      win.setTimeout(() => verify(0), HL_VERIFY_DELAYS_MS[0]);
     }
     return true;
   }
@@ -13368,8 +14109,9 @@
     if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
     dynOutsideHidden = new WeakSet();
     // 前一輪（reapply）放行的選取工具列狀態綁著舊的 articleEl / hiddenList，一併收掉
-    stopSelectionToolbarWatch();
+    stopAllToolbarWatches();
     if (!articleEl || !articleEl.parentElement) return;
+    startHlClickWatch(articleEl, hiddenList);
 
     const mo = new MutationObserver(mutations => {
       for (const m of mutations) {
@@ -13481,6 +14223,8 @@
           checkDynamicNoise(articleEl, node, hiddenList);
           // 2026-10-07 review A-05 / A-06：chip 清完後的孤兒提示句（見 collapseOrphanLabelShellFrom）
           collapseOrphanLabelShellFrom(articleEl, node, hiddenList);
+          // 晚插入的文末卡片（回饋區 / 打賞卡）：按鈕剛被上面清掉，剩下的短卡片一併清
+          hideTailEmptiedButtonCards(articleEl, hiddenList, node);
         }
       }
     });
@@ -13505,7 +14249,7 @@
       activeObserver = null;
     }
     dynOutsideHidden = null;
-    stopSelectionToolbarWatch();
+    stopAllToolbarWatches();
   }
 
   // ---- inline style 覆寫攔截（v0.7.23 newtalk.tw 修法）---------------------
@@ -13668,6 +14412,8 @@
       // 排在 narrowPromotedSiblings 之後：narrow 只認 detector promote 前的
       // sibling chrome，搬進來的區塊不該進它的判定範圍。
       safeRun(relocateOutsideArticleHeaderBlock, articleEl, hidden);
+      // v2.5.28：內文按鈕先標記、去殼（必須排在所有 hide 規則之前，見 markContentTextButtons）
+      safeRun(markContentTextButtons, articleEl, hidden, 0);
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
       safeRun(hideDialogs, articleEl, hidden);
       safeRun(hideOutsideArticleSemantic, articleEl, hidden);
@@ -13711,6 +14457,8 @@
       // v2.5.26：自我聲明非內容的 class（noprint 家族、navbox、姊妹計畫框）掛在
       // table / p / 行內連結小群上——CONTAINER_SEL 以外的 tag
       safeRun(hideDeclaredChromeNonContainers, articleEl, hidden);
+      // v2.5.28：條目頁首的消歧義頂註（節首的「主條目」不動，見 hideLeadXrefNotes）
+      safeRun(hideLeadXrefNotes, articleEl, hidden);
       safeRun(hideInsideArticleByThirdPartyAds, articleEl, hidden);
       safeRun(hideInsideArticleThirdPartyIframes, articleEl, hidden);
       safeRun(hideInsideArticleVideoInterludes, articleEl, hidden);
@@ -13800,6 +14548,14 @@
       // 必須在 hideInsideArticlePreTitleNoise **之後**——讓 walker 先靠未隱藏的
       // badge 保護住同分支的 kicker（Opinion / Editorial Board），再單獨清掉 img
       safeRun(hidePreTitleDecorativeImages, articleEl, hidden, opts && opts.promotedTitleHead);
+      // 文末兩條「位置＝最後一段主文之後」的規則排在所有 hide 類規則之後：主文容器選得
+      // 大的頁面，站方頁尾聲明、側欄的長段落要先被前面的規則（footer / sidebar / 祖先
+      // 兄弟）清掉，「最後一段主文」才是真的最後一段（womany 實測：clean 當下頁尾版權
+      // 聲明還看得到，排太前面時作者卡不算在文末）
+      // 文末只有「作者＋名字」的小卡：與標題下作者列同一個作者頁連結時才清
+      safeRun(hideTailAuthorNameCards, articleEl, hidden);
+      // 文末「按鈕清光後剩下的短卡片」：依賴所有按鈕規則都跑完
+      safeRun(hideTailEmptiedButtonCards, articleEl, hidden);
       // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在
       // 所有 hide 類規則之後、collapse 之前（hide 殘殼後 collapse 才看得到
       // hidden child 觸發條件 A）
@@ -13999,6 +14755,7 @@
       // 真正的原始 inline 值。反向交錯（先 hide 後 collapse）不存在——所有
       // collapse producer 都跳過 jreadHidden === '1' 的元素。
       restoreAllStyleResets(hiddenEls);
+      removeBtnTextClickBlock(hiddenEls);
     }
   };
 

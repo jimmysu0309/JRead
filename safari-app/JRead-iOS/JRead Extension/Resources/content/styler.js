@@ -348,6 +348,9 @@
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
   // v2.2.17：cleaner 拉回 flow 的標題覆蓋層內，pseudo 帶暗化遮罩 box-shadow 的元素
   const OVERLAY_PSEUDO_SHADOW_ATTR = 'data-jread-overlay-pseudo-shadow';
+  // v2.5.28：cleaner 留文字、去殼的內文按鈕（keepButtonAsText）。attr 字串與 cleaner.js
+  // 逐字一致（forcing：button-text-unwrap.spec.js）
+  const BTN_TEXT_ATTR = 'data-jread-btn-text';
   // v1.9.16：翻頁模式下由 cleaner 接管位置的選取工具列（pinToolbarOverSelection）。
   // attr 與兩個自訂屬性名稱要跟 cleaner.js 逐字一致（forcing：
   // selection-toolbar-inline-highlight.spec.js）。
@@ -523,12 +526,41 @@
   // 預設無襯線使用者零成本。chrome.runtime.getURL guard：extension context 失效時退回
   // 空字串（不注入）。三個 @font-face 同 family 名、各自 font-weight 單值，瀏覽器依
   // BODY_TEXT_SEL 注入的 font-weight 精準命中對應字面。
+  // v2.5.28：字重「粗」實際渲染的粗細（Jimmy 2026-11-19：「粗太粗，調到中和粗的中間」）。
+  // 設定值不變——fontWeight 存的是「哪一段」（300 細 / 400 中 / 600 粗），不是 CSS 值；
+  // 沿用 600 當「粗」的代號，既有使用者、設定檔、跨裝置同步都不用遷移，舊版裝置讀到
+  // 也還是合法值。渲染時才換成 500（Medium）：
+  //   - 蘋方（macOS / iOS）有真的 Medium 字面；Safari 的系統字是連續粗細。Chrome 上
+  //     蘋方只有 300 / 400 / 500 / 600 四個字面，400 與 600 之間唯一的一階就是 500
+  //     （550 會被合成成假粗體、比 600 還重，實測，不可用）
+  //   - 內嵌襯線補了 Medium 500 字面；內嵌拉丁字型是可變字型
+  //   - Windows 例外、維持 600：微軟正黑體沒有 500 字面，500 會落回 400、「粗」就
+  //     跟「中」一樣（v0.7.254 當初選 600 的理由）
+  const BOLD_RENDER_WEIGHT = 500;
+  function isWindowsPlatform() {
+    try {
+      const nav = typeof navigator !== 'undefined' ? navigator : null;
+      if (!nav) return false;
+      const p = (nav.userAgentData && nav.userAgentData.platform) || nav.platform || '';
+      return /^win/i.test(p);
+    } catch (e) { return false; }
+  }
+  function renderWeightFor(settingWeight) {
+    const w = Number(settingWeight);
+    if (w === 600) return isWindowsPlatform() ? 600 : BOLD_RENDER_WEIGHT;
+    return w;
+  }
+
   let FONT_FACE_CSS = '';
   try {
     if (browser && browser.runtime && browser.runtime.id && browser.runtime.getURL) {
       const faces = [
         { weight: 300, file: 'noto-serif-tc-light.woff2' },
         { weight: 400, file: 'noto-serif-tc-regular.woff2' },
+        // v2.5.28：Medium 500——字重「粗」實際渲染的粗細（見 BOLD_RENDER_WEIGHT）。
+        // 同一份 6606 字、同一個可變字型來源 pin 出。SemiBold 600 留著：內文的
+        // <strong> / <b>（bolder → 700）與 Windows 的「粗」仍落在它身上
+        { weight: 500, file: 'noto-serif-tc-medium.woff2' },
         { weight: 600, file: 'noto-serif-tc-semibold.woff2' },
       ];
       FONT_FACE_CSS = faces.map((f) => `@font-face {
@@ -1843,6 +1875,14 @@ ${MEDIA_DIRECT_WRAP_SEL} {
 [${ARTICLE_ATTR}="1"] [${OVERLAY_PSEUDO_SHADOW_ATTR}="1"]::after {
   box-shadow: none !important;
 }
+/* v2.5.28：內文按鈕去殼後，站方掛在按鈕上的展開箭頭 / 圖示 pseudo（pmc 期刊名
+   button[aria-expanded=false]::before { content: "▸ " }）一併拿掉。pseudo 無法 inline
+   覆寫，由 cleaner 標 attr、這裡歸零。shadow root 內的按鈕吃不到這條（樣式不穿透），
+   那邊維持站方的 pseudo。 */
+[${ARTICLE_ATTR}="1"] [${BTN_TEXT_ATTR}="1"]::before,
+[${ARTICLE_ATTR}="1"] [${BTN_TEXT_ATTR}="1"]::after {
+  content: none !important;
+}
 /* v1.9.16：翻頁模式下的選取工具列由 JRead 釘位。翻頁卡片是 position:fixed 的
    橫向捲動多欄容器，站方照原本 containing block 算的 inline transform 會把工具列
    放到選取範圍旁邊幾百 px（第 N 頁還要再偏 N 個 stride），而且站方會讀工具列
@@ -2917,9 +2957,10 @@ ${BODY_TEXT_SEL} {
       // font-weight 不受 p 級注入影響；strong / b **內的 span** 由 BODY_WEIGHT_SEL
       // 的 :not(strong *):not(b *) 排除（v0.8.36——span 直接命中規則不是 inherit，
       // 不排除會把 WYSIWYG 站的內文粗體抹平）。
+      // v2.5.28：設定值 600（粗）實際渲染 500，見 renderWeightFor
       userOverrides += `
 ${BODY_WEIGHT_SEL} {
-  font-weight: ${opts.fontWeight} !important;
+  font-weight: ${renderWeightFor(opts.fontWeight)} !important;
 }`;
     }
     // v1.6.12：CJK 為主段落兩端對齊——修 WebKit(iOS Safari) 對 CJK 內文每行少填
@@ -4614,10 +4655,22 @@ html.${HTML_CLASS}.jread-orion body {
   // 的逗號會被誤轉全形，但此情境在新聞 / 部落格 prose 內罕見，且 list 通常以
   // HTML 結構（<ul>/<ol>）或全形頓號 `、` 呈現，誤殺面小。
 
+  // v2.5.28：編號後面的句點不轉全形（Jimmy 2026-11-19 回報：商周「1.日本調查顯示…」
+  // 「2.三菱電機…」進閱讀模式變成「1。日本…」「2。三菱…」）。「1.」「2.」是編號的
+  // 一部分、不是中文句號。判定只看字串形狀：句點前是 1–3 位數字（可為「1.2.」這類
+  // 多層編號），而這串數字的前面是字串開頭、空白或標點——也就是數字自己起頭。
+  // 數字前面緊貼漢字或英數字（「得分98.第二名」「成立於2003.後來」）＝句子以數字收尾，
+  // 照舊轉全形。只管「句點後接 CJK」這條；「CJK 後接句點」那條的前一字不是數字、不受影響
+  const LIST_NUMBER_HEAD_RE = /(?:^|[^A-Za-z0-9\u3400-\u4dbf\u4e00-\u9fff])(?:\d{1,3}\.)*\d{1,3}$/;
+  function isListNumberDot(str, dotIdx) {
+    return LIST_NUMBER_HEAD_RE.test(str.slice(Math.max(0, dotIdx - 24), dotIdx));
+  }
+
   function fullwidthPunct(s) {
     return s
       .replace(PUNCT_RE_CJK_BEFORE, (m, cjk, p) => cjk + PUNCT_MAP[p])
-      .replace(PUNCT_RE_CJK_AFTER, (m, p) => PUNCT_MAP[p])
+      .replace(PUNCT_RE_CJK_AFTER, (m, p, offset, str) =>
+        (p === '.' && isListNumberDot(str, offset)) ? m : PUNCT_MAP[p])
       .replace(PAREN_OPEN_RE, '$1（')
       .replace(PAREN_CLOSE_RE, '$1）');
   }
