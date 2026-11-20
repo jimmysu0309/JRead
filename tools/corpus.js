@@ -72,7 +72,10 @@ const EXTRA_URLS = path.join(CORPUS_DIR, 'urls.txt'); // 站點清單以外的�
 const VARIANTS = {
   scroll: { viewport: { width: 1280, height: 900 }, settings: { pagedMode: false } },
   paged: { viewport: { width: 1280, height: 900 }, settings: { pagedMode: true } },
-  narrow: { viewport: { width: 430, height: 850 }, settings: { pagedMode: false } }
+  narrow: { viewport: { width: 430, height: 850 }, settings: { pagedMode: false } },
+  // 2026-11-20：中等寬度（站方 < 1140 斷點的版面，如 Guardian 圖說排在標題後）。只供普查 /
+  // 重放時用 --variants mid 指定，不在 check 的預設模式內、沒有基準
+  mid: { viewport: { width: 1000, height: 900 }, settings: { pagedMode: false } }
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -688,7 +691,8 @@ async function replayOne(ctx, sw, state, id, variant, waitMs, shotDir) {
   page.on('pageerror', (e) => errors.push(String(e && e.message || e).slice(0, 160)));
   try {
     await page.setViewportSize(variant.viewport);
-    await sw.evaluate((s) => Promise.all([chrome.storage.sync.set(s), chrome.storage.local.remove('readingPositions')]), variant.settings);
+    // --set key=value：普查 / 重放時另外寫入的設定（例：使用者字級 fontSize=20），蓋過模式預設
+    await sw.evaluate((s) => Promise.all([chrome.storage.sync.set(s), chrome.storage.local.remove('readingPositions')]), { ...variant.settings, ...(state.extraSettings || {}) });
     await page.goto(arc.finalUrl, { waitUntil: 'load', timeout: 30000 });
     await sleep(700);
     const tabId = await sw.evaluate(async (u) => {
@@ -801,7 +805,7 @@ async function cmdRun(args, outDir, shotRoot, onlyFiles) {
     let session = null;
     const open = async () => {
       const l = await launch({ exts: [ext] });
-      const state = { current: null, afterModule: args.after ? path.resolve(args.after) : null };
+      const state = { current: null, afterModule: args.after ? path.resolve(args.after) : null, extraSettings: args.set };
       await installReplayRoutes(l.ctx, state);
       const sw = await waitJreadSw(l.ctx);
       for (const p of l.ctx.pages()) await p.close().catch(() => {});
@@ -854,12 +858,13 @@ function parseArgs(argv) {
   const get = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : dflt; };
   return {
     cmd: argv[0],
-    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|html|only|jobs|wait|ext|out|variants|after)$/.test(arr[i - 1]))),
+    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|html|only|jobs|wait|ext|out|variants|after|set)$/.test(arr[i - 1]))),
     url: get('--url', null), html: get('--html', null), after: get('--after', null), only: get('--only', null), ext: get('--ext', null), out: get('--out', null),
     jobs: Math.max(1, parseInt(get('--jobs', '4'), 10) || 4),
     wait: parseInt(get('--wait', '4500'), 10) || 4500,
     variants: get('--variants', 'scroll').split(',').map((s) => s.trim()).filter(Boolean),
-    force: argv.includes('--force'), translate: argv.includes('--translate')
+    force: argv.includes('--force'), translate: argv.includes('--translate'),
+    set: argv.reduce((acc, a, i) => { if (a === '--set' && argv[i + 1]) { const [k, ...v] = argv[i + 1].split('='); let val = v.join('='); try { val = JSON.parse(val); } catch (_) { /* 字串 */ } acc[k] = val; } return acc; }, {})
   };
 }
 

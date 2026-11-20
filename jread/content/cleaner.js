@@ -5708,7 +5708,8 @@
     if (!el || (el.tagName !== 'P' && el.tagName !== 'DIV')) return false;
     if (el.children.length !== 1) return false;
     const text = norm(el.textContent);
-    if (!/[:：]$/.test(text) || NS.cjkWeightedLen(text) > LABELED_LIST_MAX_LABEL_WEIGHT) return false;
+    // v2.5.34：標籤收尾也認「》」「»」（台灣媒體慣用「熱門推薦》」「延伸閱讀》」，forum.ettoday 實證）
+    if (!/[:：》»]$/.test(text) || NS.cjkWeightedLen(text) > LABELED_LIST_MAX_LABEL_WEIGHT) return false;
     let inner = el;
     while (inner.children.length === 1 && !/^(?:B|STRONG)$/.test(inner.tagName)) {
       inner = inner.children[0];
@@ -5759,11 +5760,20 @@
     for (const a of links) rest = rest.replace(norm(a.textContent), '');
     return rest.replace(/[\s•·▪‣*\-–—:：]/g, '') ? null : links;
   }
+  // 清單中間「不算斷點」的區塊：空廣告殼；已被別條規則清掉的段落；站方立場聲明
+  //（v2.5.34：forum.ettoday 的推薦清單中間夾一段「●以上言論不代表本網立場…點此投稿」，
+  // 它後面還有一條推薦連結；聲明句型與文末聲明規則共用 TAIL_DISCLAIMER_RE）
+  function isTransparentListGap(n) {
+    const t = norm(n.textContent);
+    if (!t) return true;
+    if (n.dataset && n.dataset.jreadHidden === '1') return true;
+    return NS.cjkWeightedLen(t) <= TAIL_DISCLAIMER_MAX_WEIGHT && TAIL_DISCLAIMER_RE.test(t);
+  }
   function nextBlockAcrossWrappers(el, articleEl) {
     let c = el;
     for (let up = 0; up < 6; up++) {
       let n = c.nextElementSibling;
-      while (n && !norm(n.textContent)) n = n.nextElementSibling; // 空廣告殼不算斷點
+      while (n && isTransparentListGap(n)) n = n.nextElementSibling;
       if (n) {
         for (let down = 0; n && n.tagName !== 'P' && down < 6; down++) n = n.firstElementChild;
         return n;
@@ -5803,8 +5813,12 @@
       if (perBlock.some(l => !l)) continue;
       const links = perBlock.flat();
       if (links.length < 2 || links.length > LABELED_LIST_MAX_ITEMS) continue;
-      if (!links.every(a => NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT &&
-          isSameSiteArticleLink(a))) continue;
+      if (!links.every(a => NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT)) continue;
+      // v2.5.34：原本要求「每條都是同站文章」；站方推薦清單常在尾端混一條粉絲團 /
+      // 購物推廣（forum.ettoday：3 篇同站文章＋FB 粉專＋購物站）整串放過。改成同站文章
+      // 至少 2 條、且佔三分之二以上——「Sources:」類出處清單以外站為主，仍不命中
+      const same = links.filter(isSameSiteArticleLink).length;
+      if (same < 2 || same * 3 < links.length * 2) continue;
       hide(label, hidden);
       for (const b of blocks) hide(b, hidden);
     }
@@ -6368,12 +6382,28 @@
   // guard：必須 <aside> tag、非 articleEl 自身 / 祖先（避免把主文 wrapper 當次要區塊
   // 砍）、非 preserved、未 hide。pull-quote / byline / infobox（無 h1、矮、短）不命中。
   // 靜態 hideSecondaryArticleAsides 與動態 checkDynamicNoise 共用此單一資料源。
+  // v2.5.34：完全沒有連結的 <aside> 不是「次要全文區塊」。這條規則要抓的下一篇文章、
+  // 嵌入的完整文章、相關內容 widget 一定有連結（標題連結、作者連結、卡片連結）；
+  // 一個連結都沒有、也沒有嵌入框與表單控制項的 aside，是作者寫在文中的編輯側欄框
+  //（標題＋幾段說明）或放在側欄的照片＋圖說——都是主文。
+  // quantamagazine 實證（語料庫普查）：「New Coauthors」說明框（869 字、0 連結）與 6 個
+  // 「照片＋圖說」aside 在原文、翻譯後、三種模式都被 (b) 的高度門檻整塊藏掉；同一輪普查
+  // 被這條規則藏的其他 aside（404media 推薦 19 連結、space.com 6、twreporter 38、
+  // grubstreet 訂閱說明 1）都有連結，不受影響。
+  // 空殼（沒有文字也沒有圖）不放行：廣告佔位維持舊判定
+  function asideIsLinklessContentBox(aside) {
+    if (!aside.querySelector) return false;
+    if (aside.querySelector('a[href], iframe, embed, object, form, input, select, textarea, button')) return false;
+    if (!norm(aside.textContent || '') && !aside.querySelector('img, picture, video, svg')) return false;
+    return true;
+  }
   function asideIsSecondaryArticleBlock(aside, articleEl) {
     if (!aside || aside.tagName !== 'ASIDE') return false;
     if (aside === articleEl || (aside.contains && aside.contains(articleEl))) return false;
     if (isInPreserved(aside)) return false;
     if (aside.dataset && aside.dataset.jreadHidden === '1') return false;
     if (aside.querySelector && aside.querySelector('h1')) return true;
+    if (asideIsLinklessContentBox(aside)) return false;
     const r = aside.getBoundingClientRect && aside.getBoundingClientRect();
     // v2.5.32：比的是內容佔用高度，不是被 grid / flex 拉高的盒子（見 asideOccupiedHeight）
     if (r && r.height > SIDEBAR_ASIDE_MIN_HEIGHT && asideOccupiedHeight(aside, r) > SIDEBAR_ASIDE_MIN_HEIGHT) return true;
