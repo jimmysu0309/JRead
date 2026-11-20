@@ -259,14 +259,18 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   // 為什麼要自帶：Palatino 等是系統字、iOS 仍可點名，但這幾支非系統字必須內嵌
   // woff2 才能在 iOS Safari 網頁路徑生效（同 Noto Serif TC 內嵌理由）。
   // v0.8.158（Jimmy 2026-06-22）：移除 charter / literata 兩支字型選項。
+  // v2.5.31（Jimmy 2026-11-20）：Palatino → Iowan Old Style、Arial → Seravek。兩支都是
+  // macOS / iOS 內建系統字（不用內嵌）；Windows 沒有 → 自然落到 base stack 的 Georgia /
+  // 系統無襯線。舊 key 由 LATIN_FONT_RENAMED 對到新 key（不做 storage 遷移：讀取端一律
+  // 經 resolveLatinFontKey，使用者下次改選才寫入新 key）
   const LATIN_FONTS = {
     auto: '',
     georgia: 'Georgia',
-    palatino: 'Palatino, "Palatino Linotype", "Book Antiqua"',
+    iowan: '"Iowan Old Style"',
     sourceserif: '"Source Serif"',
     piazzolla: '"Piazzolla"',
     helvetica: '"Helvetica Neue"',
-    arial: 'Arial',
+    seravek: 'Seravek',
     verdana: 'Verdana',
     publicsans: '"Public Sans"',
     sourcesans: '"Source Sans"',
@@ -278,12 +282,17 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   // 依 latinSerif / latinSans 在前面接上選定的拉丁字型。fontFamily 仍存 base stack
   // 字面值（system-ui / 襯線 / 無襯線 / 等寬整串）——既有儲存契約不變，無需遷移。
   // 只有襯線 / 無襯線兩個 base stack 開放自訂英文字型（Jimmy：跟著襯線 / 無襯線各自選）。
+  const LATIN_FONT_RENAMED = { palatino: 'iowan', arial: 'seravek' };
+  function resolveLatinFontKey(k) {
+    return (k && LATIN_FONT_RENAMED[k]) || k;
+  }
+
   function composeFontStack(s) {
     if (!s || !s.fontFamily) return s ? s.fontFamily : undefined;
     const base = s.fontFamily;
     let choice = null;
-    if (base === FONT_STACKS.serif) choice = s.latinSerif;
-    else if (base === FONT_STACKS.sans) choice = s.latinSans;
+    if (base === FONT_STACKS.serif) choice = resolveLatinFontKey(s.latinSerif);
+    else if (base === FONT_STACKS.sans) choice = resolveLatinFontKey(s.latinSans);
     if (choice && choice !== 'auto' && LATIN_FONTS[choice]) {
       return LATIN_FONTS[choice] + ', ' + base;
     }
@@ -586,6 +595,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadLegacyFontStacks = LEGACY_FONT_STACKS;
   global.__JReadLatinFonts = LATIN_FONTS;
   global.__JReadComposeFontStack = composeFontStack;
+  global.__JReadResolveLatinFontKey = resolveLatinFontKey;
   global.__JReadProfiles = PROFILES;
   global.__JReadPlatform = PLATFORM;
   // module.exports 維持 === DEFAULT_SETTINGS（既有呼叫端契約，不可附掛其他 key

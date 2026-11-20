@@ -1423,7 +1423,11 @@ pageFns.tagOriginalByline = function () {
       d + ' ' + MON[mo] + ' ' + y,
       d + ' ' + FULL[mo] + ' ' + y,
       y + '-' + m[2] + '-' + m[3],
-      y + '年' + mo + '月' + d + '日'
+      y + '年' + mo + '月' + d + '日',
+      // v2.5.31：補零寫法（上報「2026年04月22日」）
+      y + '年' + m[2] + '月' + m[3] + '日',
+      y + '/' + m[2] + '/' + m[3],
+      y + '.' + m[2] + '.' + m[3]
     ];
   }
   // --- 1. ground truth：作者名 + 發表日期字面（來源在 <head>，toggle 後仍在）---
@@ -1458,6 +1462,16 @@ pageFns.tagOriginalByline = function () {
   for (const el of document.querySelectorAll('p, li, blockquote')) {
     if (norm(el.textContent).length >= 200) { bodyStartEl = el; break; }
   }
+  // v2.5.31：找不到 <p> 段落時，退一步認「直屬文字 >= 200 字（CJK 加權）的 <div>」（上報的內文段落
+  // 是裸 <div dir="ltr">，沒有 <p>）。只在第一輪沒找到時才用，原本找得到的頁面邊界不變
+  if (!bodyStartEl) {
+    for (const el of document.querySelectorAll('div')) {
+      const own = norm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+      // 中文段落字數短（上報首段約 150 字）：CJK 字算 2（與 cleaner 的 cjkWeightedLen 同一把尺）
+      const weighted = own.length + (own.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+      if (weighted >= 200) { bodyStartEl = el; break; }
+    }
+  }
   if (!bodyStartEl) return { tagged: 0, reason: 'no-body-anchor' };
   const isBeforeBody = el => el !== bodyStartEl && !el.contains(bodyStartEl) &&
     !!(el.compareDocumentPosition(bodyStartEl) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -1484,9 +1498,57 @@ pageFns.tagOriginalByline = function () {
     return count;
   }
   let tagged = 0;
-  if (author) tagged += tagCarriers([author], 'author');
-  if (forms.length) tagged += tagCarriers(forms, 'date');
-  return { tagged, author: author || null, dateExpected: forms.length > 0 };
+  // v2.5.31：多位作者的 meta 寫成一串（上報「上報快訊／徐瑋璐」），頁面卻是兩個連結 →
+  // 整串比對不到。整串找不到時改用拆開的每個名字
+  let authorTagged = author ? tagCarriers([author], 'author') : 0;
+  if (author && !authorTagged) {
+    const parts = author.split(/\s*(?:[／/,，、&]|\band\b)\s*/i).filter(x => x.length >= 2);
+    if (parts.length > 1) authorTagged = tagCarriers(parts, 'author');
+  }
+  const dateTagged = forms.length ? tagCarriers(forms, 'date') : 0;
+  tagged += authorTagged + dateTagged;
+  // --- 4. v2.5.31 meta 基準標不到 carrier 時的結構 fallback（上報實證：meta 作者
+  //   「上報快訊／徐瑋璐」頁面是兩個連結、日期 meta 沒補零頁面有補零 → 兩個維度都沒標，
+  //   作者＋日期整塊被清也報不出來）。範圍收窄到「第一個 h1 之後、首個長段落之前」——站頭的今日日期、
+  //   導覽列的作者專欄連結都在 h1 之前，不會被當成 byline。
+  //   作者：連結 href 路徑帶 /author/ 或 rel=author、或 itemprop=author 的元素
+  //   日期：最深一層、文字 <= 40 字、整段就是一個日期字樣的元素
+  //   這條驗「標題下的作者／日期還在不在」、不驗「作者名對不對」
+  const h1 = document.querySelector('h1');
+  const afterTitle = el => !!h1 && el !== h1 && !h1.contains(el) && !el.contains(h1) &&
+    !!(h1.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+  let fallback = '';
+  if (!authorTagged && h1) {
+    let n = 0;
+    for (const el of document.querySelectorAll('a[href], [rel~="author"], [itemprop="author"]')) {
+      if (!afterTitle(el) || !isBeforeBody(el)) continue;
+      const href = el.getAttribute('href') || '';
+      const isAuthor = /(^|\/)authors?\//i.test(href) || /(^|\s)author(\s|$)/i.test(el.getAttribute('rel') || '') ||
+        el.getAttribute('itemprop') === 'author';
+      if (!isAuthor || !norm(el.textContent)) continue;
+      el.setAttribute('data-pr-byline', 'author');
+      n++;
+    }
+    if (n) { tagged += n; fallback += 'author'; }
+  }
+  if (!dateTagged && h1) {
+    const DATE_ONLY_RE = /^(?:\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[-./]\d{1,2}[-./]\d{1,2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})(?:[\sT,]+\d{1,2}:\d{2}(?::\d{2})?)?\s*$/i;
+    let n = 0;
+    for (const el of document.querySelectorAll(SEL)) {
+      if (!afterTitle(el) || !isBeforeBody(el)) continue;
+      const t = norm(el.textContent);
+      if (!t || t.length > 40 || !DATE_ONLY_RE.test(t)) continue;
+      let deeper = false;
+      for (const c of el.querySelectorAll(SEL)) {
+        if (DATE_ONLY_RE.test(norm(c.textContent))) { deeper = true; break; }
+      }
+      if (deeper) continue;
+      el.setAttribute('data-pr-byline', 'date');
+      n++;
+    }
+    if (n) { tagged += n; fallback += (fallback ? '+' : '') + 'date'; }
+  }
+  return { tagged, author: author || null, dateExpected: forms.length > 0, fallback: fallback || null };
 };
 
 // toggle 後呼叫：tagged byline carrier 哪些被 hide。某維度 carrier 全 hide → 該維度掉失。
