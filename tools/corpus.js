@@ -21,6 +21,9 @@
 //   node tools/corpus.js capture                  # 擷取站點清單裡還沒有快照的頁面
 //   node tools/corpus.js capture --url <URL>      # 加一頁（修過的 bug 頁面收進來）
 //   node tools/corpus.js capture --only bbc --force   # 重擷取（基準要跟著 accept）
+//   node tools/corpus.js capture --url <URL> --html test/blocked-html/so.html
+//                                                 # 擋 headless 的站：主文件改用存好的 HTML 快照
+//                                                 #（子資源照樣從真站抓；可加 --translate）
 //   node tools/corpus.js check                    # 日常：改完 code 跑這個
 //   node tools/corpus.js check --only wiki        # 只跑 id 含 wiki 的頁面
 //   node tools/corpus.js shot --only bbc           # 截圖在 ~/.jread-debug/corpus/shots/
@@ -577,6 +580,10 @@ async function captureOne(ctx, url, opts) {
     })());
   });
   try {
+    // --html <檔案>（2026-11-20）：擋 headless 的站（Cloudflare 403）主文件改用 Jimmy 存的
+    //「網頁，僅限 HTML」快照，與 debug-harness / page-rounds-harness 的 --html 同一支函式。
+    // 快照沒有站方 script 的登入態結果，與真站對不上時以真站為準（cage 驗）
+    if (opts.html) await audits.installHtmlSnapshotReplay(page, url, opts.html);
     try { await page.goto(url, { waitUntil: 'load', timeout: 60000 }); }
     catch (_) { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); }
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
@@ -602,6 +609,7 @@ async function captureOne(ctx, url, opts) {
     if (snap.stats.textLen < 400) throw new Error(`頁面文字只有 ${snap.stats.textLen} 字（空頁或被擋）`);
     return {
       v: 1, url, finalUrl, capturedAt: new Date().toISOString(), translated: !!opts.translate, translatedEls, translateEngine,
+      htmlSource: opts.html ? path.relative(PROJECT_ROOT, path.resolve(opts.html)) : null,
       viewport: { width: 1280, height: 900 }, stats: snap.stats, html: snap.html, css, images: snap.images
     };
   } finally {
@@ -613,6 +621,8 @@ async function cmdCapture(args) {
   const audits = require(path.join(__dirname, 'audit-lib.js'));
   fs.mkdirSync(PAGES_DIR, { recursive: true });
   let urls;
+  if (args.html && !args.url) { console.error('--html 要搭配 --url（快照對應的真站網址）'); return 2; }
+  if (args.html && !fs.existsSync(args.html)) { console.error('找不到 HTML 快照：', args.html); return 2; }
   if (args.url) urls = [args.url];
   else {
     urls = parseSitesMd(fs.readFileSync(SITES_MD, 'utf8'));
@@ -643,7 +653,7 @@ async function cmdCapture(args) {
         if (i >= todo.length) break;
         const t = todo[i];
         try {
-          const arc = await withTimeout(captureOne(ctx, t.url, { translate: args.translate }), args.translate ? 240000 : 120000, '擷取');
+          const arc = await withTimeout(captureOne(ctx, t.url, { translate: args.translate, html: args.html }), args.translate ? 240000 : 120000, '擷取');
           fs.writeFileSync(archivePath(t.id), zlib.gzipSync(Buffer.from(JSON.stringify(arc))));
           ok++;
           const kb = Math.round(fs.statSync(archivePath(t.id)).size / 1024);
@@ -844,8 +854,8 @@ function parseArgs(argv) {
   const get = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : dflt; };
   return {
     cmd: argv[0],
-    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|only|jobs|wait|ext|out|variants|after)$/.test(arr[i - 1]))),
-    url: get('--url', null), after: get('--after', null), only: get('--only', null), ext: get('--ext', null), out: get('--out', null),
+    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|html|only|jobs|wait|ext|out|variants|after)$/.test(arr[i - 1]))),
+    url: get('--url', null), html: get('--html', null), after: get('--after', null), only: get('--only', null), ext: get('--ext', null), out: get('--out', null),
     jobs: Math.max(1, parseInt(get('--jobs', '4'), 10) || 4),
     wait: parseInt(get('--wait', '4500'), 10) || 4500,
     variants: get('--variants', 'scroll').split(',').map((s) => s.trim()).filter(Boolean),
@@ -944,7 +954,7 @@ async function main() {
         const size = fs.statSync(archivePath(id)).size;
         total += size;
         const a = readArchive(id);
-        console.log(`${id}  ${Math.round(size / 1024)}K  ${a.capturedAt.slice(0, 10)}${a.translated ? `  翻譯後（${a.translateEngine || '引擎未記'}）` : ''}  ${a.url}`);
+        console.log(`${id}  ${Math.round(size / 1024)}K  ${a.capturedAt.slice(0, 10)}${a.translated ? `  翻譯後（${a.translateEngine || '引擎未記'}）` : ''}${a.htmlSource ? `  HTML 快照（${a.htmlSource}）` : ''}  ${a.url}`);
       }
       console.log(`共 ${ids.length} 頁，${(total / 1048576).toFixed(1)}M`);
       return 0;
@@ -955,7 +965,7 @@ async function main() {
   }
 }
 
-module.exports = { pageId, parseSitesMd, lcsPairs, diffFingerprint, compareDirs, formatReport, pageFingerprint, pageSerialize, VARIANTS };
+module.exports = { pageId, parseArgs, parseSitesMd, lcsPairs, diffFingerprint, compareDirs, formatReport, pageFingerprint, pageSerialize, VARIANTS };
 
 if (require.main === module) {
   main().then((rc) => process.exit(rc || 0)).catch((e) => { console.error('ERR:', e && e.stack || e); process.exit(1); });

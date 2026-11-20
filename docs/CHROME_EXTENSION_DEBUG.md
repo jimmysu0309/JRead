@@ -146,6 +146,7 @@ node tools/corpus.js shot --only bbc       # 看某頁現在長怎樣（截圖�
 node tools/corpus.js accept                # 差異都確認是預期的 → 收為新基準
 node tools/corpus.js capture --url <URL>   # 把一頁收進語料庫（修過的 bug 頁面都該收）
 node tools/corpus.js capture --url <URL> --translate   # 收翻譯後的快照（id 尾端 _translated）；用的翻譯引擎記在快照的 translateEngine，`list` 會顯示
+node tools/corpus.js capture --url <URL> --html test/blocked-html/<檔名> [--translate]   # 擋 headless 的站：主文件用存好的 HTML 快照（子資源照樣從真站抓）；來源記在快照的 htmlSource
 node tools/corpus.js list
 ```
 

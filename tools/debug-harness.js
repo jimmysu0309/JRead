@@ -202,6 +202,20 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
     const ms = pi >= 0 ? parseInt(process.argv[pi + 1], 10) : 0;
     if (ms > 0) { console.log(`pre-wait ${ms}ms`); await sleep(ms); }
   }
+  // --pre-scroll（2026-11-20）：觸發閱讀模式前先把原頁逐屏捲到底再捲回頂端。捲到才
+  // 載入的文末區塊（LINE TODAY 網友留言、AI 摘要）在 page-rounds 的原頁截圖階段已載入，
+  // debug-harness 預設不捲、重現不出來；加這個旗標與 page rounds 的時序對齊
+  if (process.argv.includes('--pre-scroll')) {
+    for (let i = 0; i < 40; i++) {
+      const done = await page.evaluate(() => { window.scrollBy(0, innerHeight); return innerHeight + scrollY >= document.documentElement.scrollHeight - 2; });
+      await sleep(400);
+      if (done) break;
+    }
+    await sleep(1500);
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+    await sleep(800);
+    console.log('pre-scroll 完成');
+  }
 
   // ===== --login 短路（Tier 2 一次性登入）=====
   // 純粹開站台讓 Jimmy 在螢幕上手動登入，跳過 toggle + 所有 audit + 截圖。
