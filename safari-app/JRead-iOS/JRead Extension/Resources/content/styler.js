@@ -369,6 +369,9 @@
   // 「直接含文字的 div」，apply() 在 ARTICLE_ATTR 設定前（reader 規則尚未
   // 生效、量得到原站字級）runtime 標記，BODY_TEXT_CORE 把 marker 納入。
   const TEXT_DIV_ATTR = 'data-jread-text-div';
+  // v2.5.34：比主流字級小、保留站方字級的段落 div（圖說級），而且 div 裡有 span 以外的
+  // 文字（直屬文字或連結）——裡面的 span 不單獨套使用者字級（見 markTextDivs 註解）
+  const SMALL_TEXT_DIV_ATTR = 'data-jread-small-text-div';
   // v1.6.12：CJK 為主的內文段落標記——套 text-align: justify（見 markCjkParagraphs）。
   const CJK_JUSTIFY_ATTR = 'data-jread-cjk-justify';
   // v2.5.21：右到左頁面的內文已經大多不是右到左文字（譯成中文後）→ 版面改回左到右
@@ -394,6 +397,9 @@
   const DECOR_RESET_ATTR = 'data-jread-decor-reset';
   // v2.5.30：站方用行內元素包起來的段首放大首字（見 markLeadLetterSpans）
   const LEAD_LETTER_ATTR = 'data-jread-lead-letter';
+  // v2.5.34：站方用背景圖畫在連結一側的小圖示（外部連結箭頭等）＋同側 padding 留位。
+  // 閱讀模式清掉背景圖後留位還在。值 "l" / "r"＝要歸零的那一側（見 markIconPadLinks）
+  const ICON_PAD_ATTR = 'data-jread-icon-pad';
   // v1.7.8：inline-flow <p> 標記——豁免 v0.7.201 水平 padding reset（見
   // markInlineFlowParagraphs）。
   const INLINE_FLOW_P_ATTR = 'data-jread-inline-flow-p';
@@ -2951,6 +2957,9 @@ html [${ARTICLE_ATTR}="1"] blockquote:not([${PLAYER_ATTR}="1"]) {
       `:not(code *)` +
       `:not(figcaption *)` +
       `:not(time ~ span)` +
+      // :where 包起來＝權重 0：只加排除、不改這條規則跟其他規則的勝負（直接寫
+      // :not([attr] *) 會多 (0,1,0)，語料庫 404media 作者名、thewoksoflife「Updated:」字級跟著變）
+      `:not(:where([${SMALL_TEXT_DIV_ATTR}] *))` +
       `:not(h1 *)` +
       `:not(h2 *)` +
       `:not(h3 *)` +
@@ -3137,6 +3146,14 @@ html[${DIR_LTR_ATTR}="1"] [data-jread-promoted-outside="1"] :is(h1, h2, h3, h4, 
     // v2.5.30：段首單一字母的行內元素（站方首字放大的載體）左右間隔歸零——字級與
     // float 已被內文規則歸回一般，剩下的 margin / padding 會在字母後留一個空格寬
     //（「T hey were born」）。runtime 逐元素標記（見 markLeadLetterSpans）。
+    // v2.5.34：連結旁背景圖示被清掉後，留給圖示的那一側 padding 歸零（markIconPadLinks）
+    userOverrides += `
+[${ARTICLE_ATTR}="1"] [${ICON_PAD_ATTR}="l"] {
+  padding-left: 0 !important;
+}
+[${ARTICLE_ATTR}="1"] [${ICON_PAD_ATTR}="r"] {
+  padding-right: 0 !important;
+}`;
     userOverrides += `
 [${ARTICLE_ATTR}="1"] [${LEAD_LETTER_ATTR}="1"] {
   margin-left: 0 !important;
@@ -4491,7 +4508,25 @@ html.${HTML_CLASS}.jread-orion body {
     }
     const marked = [];
     for (const c of candidates) {
-      if (c.fs < dominantFs) continue; // 比主流小 = caption 類，保留站點階層
+      if (c.fs < dominantFs) {
+        // 比主流小 = caption 類，保留站點階層。
+        // v2.5.34：這種 div 的直屬文字留在站方小字，但裡面的 <span> 會被 SPAN_TEXT_SEL
+        // 單獨套上使用者字級——同一行字級不一。Stack Overflow 實證（Jimmy 2026-11-20 實機，
+        // 字級約 20）：貼文簽名「asked」12px、後面的日期 span 20px；「edited」連結 12px、
+        // 日期 20px。div 有 span 以外的文字（直屬文字節點、或非 span 的行內元素帶字）時
+        // 標 SMALL_TEXT_DIV_ATTR，SPAN_TEXT_SEL 排除它的後代，整行維持站方字級。
+        // div 的字全在 span 裡時沒有「一行兩種字級」，不標（維持舊行為）
+        let mixed = false;
+        for (const node of c.div.childNodes) {
+          if (node.nodeType === 3 && node.textContent.trim()) { mixed = true; break; }
+          if (node.nodeType === 1 && node.tagName !== 'SPAN' && (node.textContent || '').trim()) { mixed = true; break; }
+        }
+        if (mixed) {
+          c.div.setAttribute(SMALL_TEXT_DIV_ATTR, '1');
+          marked.push(c.div);
+        }
+        continue;
+      }
       c.div.setAttribute(TEXT_DIV_ATTR, '1');
       marked.push(c.div);
     }
@@ -4716,6 +4751,87 @@ html.${HTML_CLASS}.jread-orion body {
           marked.push(el);
         }
       }
+    }
+    return marked;
+  }
+
+  // ---- 脫離型圖說搬回照片下方（v2.5.34）------------------------------------
+  // 根因（theguardian < 1140 寬，2026-11-20 量測）：站方首圖的 <figure> 裡沒有圖說，
+  // 圖說另放在標題之後的 `div[data-gu-name=caption] > span > figcaption`（寬版時排到
+  // 側欄、窄版時排在標題下）。閱讀模式照 DOM 順序排：照片 → 標題 → 圖說，圖說離照片
+  // 一整個標題遠。
+  // 訊號（結構、不看 class）：可見、有字的 <figcaption>，不在「有可見媒體的 figure」裡；
+  // 文件順序往前最近一個寬 > 100px 的可見媒體在某個 <figure> 裡；兩者之間隔著可見的
+  // h1–h6，但沒有可見的內文段落（p / li / blockquote 有字）。→ 把圖說搬進那個 figure
+  // 的尾端。媒體不在 figure 裡就不搬。退出時搬回原位。
+  // Jimmy 2026-11-20 指定收窄版：只處理「figure 裡沒有媒體的脫離型圖說」；普查範圍見
+  // CHANGELOG v2.5.34。不驗：圖說與照片之間的實際距離（harness 截圖）
+  const DETACHED_CAP_MEDIA_SEL = 'img, picture, video, iframe, canvas, svg, object, embed';
+  function findDetachedCaptions(articleEl) {
+    const out = [];
+    const caps = articleEl.querySelectorAll ? Array.from(articleEl.querySelectorAll('figcaption')) : [];
+    if (!caps.length) return out;
+    const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 1 && r.height > 1; };
+    for (const fc of caps) {
+      if (!(fc.textContent || '').trim() || !vis(fc)) continue;
+      if (fc.closest('[data-jread-hidden="1"]')) continue;
+      const ownFig = fc.closest('figure');
+      if (ownFig && articleEl.contains(ownFig) &&
+          Array.from(ownFig.querySelectorAll(DETACHED_CAP_MEDIA_SEL)).some(vis)) continue;
+      // 往前（文件順序）找最近的可見媒體；沿途記有沒有標題、內文段落
+      const walker = articleEl.ownerDocument.createTreeWalker(articleEl, 1 /* SHOW_ELEMENT */);
+      walker.currentNode = fc;
+      let media = null, sawHeading = false, sawProse = false, budget = 600;
+      for (let n = walker.previousNode(); n && n !== articleEl && --budget > 0; n = walker.previousNode()) {
+        if (n.contains(fc)) continue;
+        if (n.matches(DETACHED_CAP_MEDIA_SEL)) {
+          if (vis(n) && n.getBoundingClientRect().width > 100) { media = n; break; }
+          continue;
+        }
+        if (/^H[1-6]$/.test(n.tagName) && vis(n) && (n.textContent || '').trim()) sawHeading = true;
+        else if (/^(?:P|LI|BLOCKQUOTE)$/.test(n.tagName) && vis(n) && (n.textContent || '').trim()) { sawProse = true; break; }
+      }
+      if (!media || !sawHeading || sawProse) continue;
+      const fig = media.closest('figure');
+      if (!fig || !articleEl.contains(fig) || fig.contains(fc)) continue;
+      out.push({ fc, fig });
+    }
+    return out;
+  }
+
+  // ---- 連結旁背景圖示的留位（v2.5.34）--------------------------------------
+  // 根因（語料庫普查，en 維基參考文獻）：站方 `a.external { background-image: 外部連結
+  // 箭頭; background-position: center right; no-repeat; padding-right: 1em }`。閱讀模式
+  // 的背景清除規則（[A] * { background-image: none }）把箭頭拿掉，padding 還在——
+  // 連結文字與後面的句點之間多一段空白。
+  // 訊號（結構、不看 class）：行內連結、站方 computed 的背景是不重複的 url 圖、水平
+  // 位置貼左（0%）或貼右（100%），而且同一側有 padding（≤ 32px，圖示大小）。要在
+  // ARTICLE_ATTR 設定前量（之後背景已被清掉）；只標記、歸零由 CSS 做。
+  // 語料庫普查（v2.5.33 基準）：各語版維基外部連結（en 380、fa 441、el 46、zh 74…，
+  // 右到左語系是貼左＋padding-left）、wikihow 兩個連結；沒有別的形狀。
+  // 不驗：背景圖不是圖示而是整塊底圖的連結（no-repeat 且貼邊、又帶同側 padding 的
+  // 底圖連結沒看過；這種連結的背景本來就會被清，留位歸零只會讓它更緊）
+  const ICON_PAD_MAX_PX = 32;
+  function markIconPadLinks(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const marked = [];
+    for (const a of articleEl.querySelectorAll('a[href]')) {
+      let cs = null;
+      try { cs = win.getComputedStyle(a); } catch (_) { cs = null; }
+      if (!cs || !/url\(/.test(cs.backgroundImage || '')) continue;
+      if (!String(cs.display || '').startsWith('inline')) continue;
+      if (!/^no-repeat/.test(cs.backgroundRepeat || '')) continue;
+      const x = String(cs.backgroundPositionX || '').split(',')[0].trim();
+      const pl = parseFloat(cs.paddingLeft) || 0;
+      const pr = parseFloat(cs.paddingRight) || 0;
+      let side = '';
+      // computed 值形如「100%」「0%」或「calc(100% - 1.44px)」（維基的鎖頭圖示往內縮一點）
+      if (/^(?:100%|right|calc\(100%)/.test(x) && pr > 0 && pr <= ICON_PAD_MAX_PX) side = 'r';
+      else if (/^(?:0%|0px|left|calc\(0%)/.test(x) && pl > 0 && pl <= ICON_PAD_MAX_PX) side = 'l';
+      if (!side) continue;
+      a.setAttribute(ICON_PAD_ATTR, side);
+      marked.push(a);
     }
     return marked;
   }
@@ -5956,6 +6072,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       let titleFsSnap = null;
       let heroFloorSnap = null;
       const titleLineSnap = [];
+      const capReattachSnap = [];
       const galleryFlex = [];
       const ratioBoxes = [];
       const fixedHeightBoxes = [];
@@ -6005,6 +6122,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       let rtlBase = false;
       let decorResetMarked = [];
       let leadLetterMarked = [];
+      let iconPadMarked = [];
       let inlineFlowPMarked = [];
       const contrastBgSnap = [];
       let themeColorSnap = null;
@@ -6019,7 +6137,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, capReattachSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, iconPadMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -6454,6 +6572,11 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         // 判定要量「原站 CSS 下的字級」；ARTICLE_ATTR 一旦設定，BODY_TEXT_SEL 的
         // font-size 規則對 article 根生效，繼承鏈被改、量到的是注入後的值。
         textDivMarked = markTextDivs(articleEl);
+      };
+
+      const passMarkIconPadLinks = () => {
+        // v2.5.34：量站方的背景圖示與 padding，必須在 ARTICLE_ATTR 設定前（之後背景被清掉）
+        iconPadMarked = markIconPadLinks(articleEl);
       };
 
       const passSetArticleAttr = () => {
@@ -7694,6 +7817,10 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
               for (const broot of articleEl.querySelectorAll(`[${BYLINE_ATTR}]`)) {
                 if (broot.hasAttribute(TEXT_DIV_ATTR)) broot.removeAttribute(TEXT_DIV_ATTR);
                 for (const d of broot.querySelectorAll(`[${TEXT_DIV_ATTR}]`)) d.removeAttribute(TEXT_DIV_ATTR);
+                // v2.5.34：小字段落 div 標記同樣撤掉——作者列的字體由 byline 自己統一，
+                // 標了反而改到作者列 span 的行高（語料庫 404media 作者名、thewoksoflife「Updated:」）
+                if (broot.hasAttribute(SMALL_TEXT_DIV_ATTR)) broot.removeAttribute(SMALL_TEXT_DIV_ATTR);
+                for (const d of broot.querySelectorAll(`[${SMALL_TEXT_DIV_ATTR}]`)) d.removeAttribute(SMALL_TEXT_DIV_ATTR);
               }
               // v1.7.4：孤兒分隔符隱藏（見 BYLINE_SEP_ATTR 常數註解）。必須在所有
               // 隱藏標記（walk 的 RT、上方 TIME、PROGRAM）之後跑：純分隔符 item 的
@@ -8309,6 +8436,15 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
               heroEl.style.setProperty('font-size', floorPx + 'px', 'important');
             }
           }
+        }
+      };
+
+      const passReattachDetachedCaptions = () => {
+        // v2.5.34：脫離型圖說搬回照片下方（見 findDetachedCaptions）。排在 markCaptionMedia
+        //（passMarkEmbedHeadingAbsAnchors）之前：搬過去的圖說也要吃到「圖說貼近圖片」規則
+        for (const { fc, fig } of findDetachedCaptions(articleEl)) {
+          capReattachSnap.push({ fc, parent: fc.parentNode, next: fc.nextSibling });
+          fig.appendChild(fc);
         }
       };
 
@@ -10133,9 +10269,11 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         passInjectCss,
         passClassifyImages,
         passMarkTextDivs,
+        passMarkIconPadLinks,
         passMarkRatioClassBoxes,
         passSetArticleAttr,
         passMarkPlayers,
+        passReattachDetachedCaptions,
         passMarkEmbedHeadingAbsAnchors,
         passMarkFillIframes,
         passMarkAncestors,
@@ -10384,6 +10522,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (Array.isArray(snapshot.textDivMarked)) {
         for (const el of snapshot.textDivMarked) {
           if (el && el.removeAttribute) el.removeAttribute(TEXT_DIV_ATTR);
+          if (el && el.removeAttribute) el.removeAttribute(SMALL_TEXT_DIV_ATTR);
         }
       }
       // v1.7.70：pre-wrap 切出的段落載體合併回原容器（換行字元一併補回）。
@@ -10403,6 +10542,12 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (Array.isArray(snapshot.inlineFlowPMarked)) {
         for (const el of snapshot.inlineFlowPMarked) {
           if (el && el.removeAttribute) el.removeAttribute(INLINE_FLOW_P_ATTR);
+        }
+      }
+      // v2.5.34：移除連結圖示留位標記
+      if (Array.isArray(snapshot.iconPadMarked)) {
+        for (const el of snapshot.iconPadMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(ICON_PAD_ATTR);
         }
       }
       // v2.5.30：移除段首首字行內載體標記
@@ -10576,6 +10721,18 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         const h = snapshot.heroFloorSnap;
         if (h.fs) h.el.style.setProperty('font-size', h.fs, h.fsP || '');
         else h.el.style.removeProperty('font-size');
+      }
+
+      // v2.5.34：脫離型圖說搬回原位（反向）
+      if (Array.isArray(snapshot.capReattachSnap)) {
+        for (let i = snapshot.capReattachSnap.length - 1; i >= 0; i--) {
+          const r = snapshot.capReattachSnap[i];
+          if (!r || !r.fc || !r.parent || !r.parent.isConnected) continue;
+          try {
+            if (r.next && r.next.parentNode === r.parent) r.parent.insertBefore(r.fc, r.next);
+            else r.parent.appendChild(r.fc);
+          } catch (_) { /* noop */ }
+        }
       }
 
       // v2.2.7：還原標題獨佔一行 / dek 字級壓制（反向，同 el 多 prop 各自一筆）
