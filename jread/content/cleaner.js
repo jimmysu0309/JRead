@@ -13427,6 +13427,81 @@
     return best.el;
   }
 
+
+  // ---- 影片播放器殘骸：片名、片長、播放鍵清掉後只剩縮圖（v2.5.35）----------------
+  // Jimmy 2026-11-20 裁定整塊清。cnbc 實證：站內影片播放器（div[role=region] >
+  // div[role=button] 佔位殼）＝縮圖＋疊在縮圖上的播放鍵＋片長「2:46」＋片名＋節目名。
+  // 播放鍵被空殼規則清、片長片名那層（absolute 疊圖）被覆蓋層規則清，縮圖單獨留在
+  // 內文裡，看起來像一張沒有圖說的圖。
+  // 判定（結構＋翻譯無關的文字形狀，全部成立）：
+  //   - 我們藏掉的元素裡，有一個葉節點的字整個就是片長（1:23 / 12:34 / 1:02:03）
+  //   - 往上找到第一個含可見內容級圖片的祖先（縮圖所在的殼）
+  //   - 殼裡沒有任何看得到的字、沒有看得到的 video / iframe / 表單（還能播的不動，
+  //     v2.5.18 的佔位殼播放鍵是留著的，殼裡有可見按鈕 → 不算殘骸）
+  //   - 往外收：外層只裝著這個殼（沒有別的可見字或媒體）就整層一起藏，停在 articleEl 前
+  //   - 殼之前要有可見的主文段落（collectVisibleBodyParagraphs）：開頭主影片的縮圖在閱讀
+  //     模式裡就是題圖，不算殘骸（語料庫普查：aljazeera 標題下的主影片 <button> 縮圖＋
+  //     片長徽章，只有它在主文之前；留著，Jimmy 待決定）
+  const VTHUMB_DURATION_RE = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+  const VTHUMB_MEDIA_SEL = 'img, picture, video, iframe, canvas, svg, object, embed';
+  const VTHUMB_LIVE_SEL = 'video, iframe, object, embed, input, select, textarea, button, [role="button"]';
+  function vthumbIsShown(el) {
+    if (!el || (el.dataset && el.dataset.jreadHidden === '1')) return false;
+    if (el.closest && el.closest('[data-jread-hidden="1"]')) return false;
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (_) { return false; }
+    if (!cs || cs.display === 'none' || cs.visibility === 'hidden') return false;
+    return true;
+  }
+  function vthumbOtherVisibleMedia(outer, inner) {
+    for (const m of outer.querySelectorAll(VTHUMB_MEDIA_SEL)) {
+      if (inner.contains(m)) continue;
+      if (vthumbIsShown(m)) return true;
+    }
+    return false;
+  }
+  function findVideoThumbResidueShell(articleEl, durLeaf) {
+    let shell = durLeaf.parentElement;
+    while (shell && shell !== articleEl && !(containsContentScaleImg(shell) &&
+      Array.from(shell.querySelectorAll('img')).some(vthumbIsShown))) shell = shell.parentElement;
+    if (!shell || shell === articleEl || !articleEl.contains(shell)) return null;
+    if (!vthumbIsShown(shell)) return null;
+    if (hasVisibleRenderedText(shell)) return null;
+    for (const live of shell.querySelectorAll(VTHUMB_LIVE_SEL)) {
+      // 殼本身或包住縮圖的 role=button 外殼不算「還能操作」——要看殼裡另外看得到的控制項
+      if (live.querySelector && live.querySelector('img')) continue;
+      if (vthumbIsShown(live)) return null;
+    }
+    let cur = shell;
+    for (let p = cur.parentElement; p && p !== articleEl; p = p.parentElement) {
+      if (hasVisibleRenderedText(p)) break;
+      if (vthumbOtherVisibleMedia(p, cur)) break;
+      cur = p;
+    }
+    return cur;
+  }
+  function hideVideoThumbResidue(articleEl, hidden) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const picked = new Set();
+    let bodyPs = null;
+    for (const h of articleEl.querySelectorAll('[data-jread-hidden="1"]')) {
+      const leaves = _selfAndDescendants(h, '*').filter(n => n.childElementCount === 0);
+      if (!leaves.some(n => VTHUMB_DURATION_RE.test(norm(n.textContent || '')))) continue;
+      const shell = findVideoThumbResidueShell(articleEl, h);
+      if (!shell) continue;
+      if (!bodyPs) bodyPs = collectVisibleBodyParagraphs(articleEl);
+      if (!bodyPs.some(p => shell.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_PRECEDING)) continue;
+      picked.add(shell);
+    }
+    for (const el of picked) {
+      let covered = false;
+      for (const o of picked) if (o !== el && o.contains(el)) covered = true;
+      if (covered) continue;
+      hide(el, hidden);
+      markHiddenWhy(el, 'video-thumb-residue');
+    }
+  }
+
   // scope＝articleEl（靜態 clean）或動態新插入的節點（晚到的回饋區 / 打賞卡）
   function hideTailEmptiedButtonCards(articleEl, hidden, scope) {
     const root = scope || articleEl;
@@ -15457,6 +15532,9 @@
       safeRun(hideTailEditorialNotes, articleEl, hidden);
       // 文末「按鈕清光後剩下的短卡片」：依賴所有按鈕規則都跑完
       safeRun(hideTailEmptiedButtonCards, articleEl, hidden);
+      // v2.5.35：影片播放器殘骸（片名、片長、播放鍵都清掉後只剩縮圖）。依賴覆蓋層 / 空殼 / 按鈕
+      // 規則都跑完，才看得出殼裡還剩什麼
+      safeRun(hideVideoThumbResidue, articleEl, hidden);
       // flex-row 殘殼欄：依賴「內部已被前置規則清空」的最終狀態，必須在
       // 所有 hide 類規則之後、collapse 之前（hide 殘殼後 collapse 才看得到
       // hidden child 觸發條件 A）
