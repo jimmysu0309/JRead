@@ -145,6 +145,9 @@
   // flex item）、BYLINE_ITEM_ATTR=可見 leaf（flex item）、BYLINE_RT_ATTR=閱讀時間
   // （CSS 隱藏）。
   const BYLINE_ATTR = 'data-jread-byline';
+  // v2.5.32：byline climb 的圖說 guard 門檻（figcaption 文字 >= 這個長度＝照片說明，
+  // 不是頭像下的作者名；見 apply() 內 bhasImageCaption）
+  const BYLINE_CAPTION_MIN_LEN = 25;
   const BYLINE_WRAP_ATTR = 'data-jread-byline-wrap';
   const BYLINE_ITEM_ATTR = 'data-jread-byline-item';
   const BYLINE_RT_ATTR = 'data-jread-byline-rt';
@@ -992,6 +995,71 @@
     return total > 0 ? low / total : 0;
   }
 
+  // v2.5.32：shadow 元件內文字的低對比占比（純函式）。samples：[{ fg, bg, len }]，
+  // fg / bg 皆為 parseCssColor 結果（bg 已合成為不透明）。回傳低於 CONTRAST_MIN_RATIO
+  // 的字數占比；總字數為 0 回 0
+  function shadowTextLowFraction(samples) {
+    let low = 0, total = 0;
+    for (const s of samples || []) {
+      if (!s || !s.fg || !s.bg || !(s.len > 0)) continue;
+      total += s.len;
+      if (contrastRatio(blendOver(s.fg, s.bg), s.bg) < CONTRAST_MIN_RATIO) low += s.len;
+    }
+    return total > 0 ? low / total : 0;
+  }
+  const SHADOW_FIT_MAX_TEXT_NODES = 600;
+  // v2.5.32：量 shadow host 內（含巢狀 shadow root）每段可見文字的字色與實際底色。
+  // 底色往上找：元素的 parentElement，到 shadow root 頂端改走它的 host，遇不透明圖層
+  // 停；走到 stopEl（articleEl）都沒有不透明層時以 cardBg 為底
+  function measureShadowHostText(host, stopEl, cardBg, win) {
+    const samples = [];
+    const up = (el) => el.parentElement || (el.getRootNode && el.getRootNode() !== win.document && el.getRootNode().host) || null;
+    const bgOf = (el) => {
+      const layers = [];
+      let cur = el;
+      let opaque = false;
+      while (cur && cur !== stopEl && cur.nodeType === 1) {
+        const c = parseCssColor(win.getComputedStyle(cur).backgroundColor);
+        if (c && c.a > 0) { layers.push(c); if (c.a >= 0.999) { opaque = true; break; } }
+        cur = up(cur);
+      }
+      let base = opaque ? { r: 0, g: 0, b: 0, a: 1 } : { ...cardBg };
+      for (let i = layers.length - 1; i >= 0; i--) base = blendOver(layers[i], base);
+      return base;
+    };
+    let count = 0;
+    const scan = (root) => {
+      const tw = win.document.createTreeWalker(root, 4 /* SHOW_TEXT */);
+      let n;
+      while ((n = tw.nextNode()) && count < SHADOW_FIT_MAX_TEXT_NODES) {
+        const len = (n.nodeValue || '').trim().length;
+        if (!len) continue;
+        const el = n.parentElement;
+        if (!el) continue;
+        const tag = el.localName;
+        if (tag === 'style' || tag === 'script' || tag === 'template') continue;
+        let cs;
+        try { cs = win.getComputedStyle(el); } catch (_) { continue; }
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        const fg = parseCssColor(cs.color);
+        if (!fg || fg.a < 0.5) continue;
+        count++;
+        samples.push({ fg, bg: bgOf(el), len });
+      }
+      const all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+      for (const el of all) {
+        if (count >= SHADOW_FIT_MAX_TEXT_NODES) break;
+        let sr = null;
+        try { sr = el.shadowRoot; } catch (_) { sr = null; }
+        if (sr) scan(sr);
+      }
+    };
+    let sr = null;
+    try { sr = host.shadowRoot; } catch (_) { sr = null; }
+    if (sr) scan(sr);
+    return samples;
+  }
+
   // v2.5.18：light 主題表格系深色底守門的單層判定（純函式，passTableSiteBgContrast 用）。
   // carriers：直接落在這層底色上的文字載體 { len, isLink, color }；bg＝這層現在的
   // effective bg；behind＝這層清成透明後露出來的底色。
@@ -1179,6 +1247,16 @@ html.${HTML_CLASS}[data-jread-scrolling="1"]::-webkit-scrollbar-thumb {
   display: block !important;
   box-shadow: none !important;
   border: 0 !important;
+}
+/* v2.5.32：body 的 position 要贏過站方「彈窗開著時鎖捲動」的 body 規則。同意視窗
+   （Sourcepoint 類 CMP）開著時站方注入 \`.sp-message-open body { position: fixed
+   !important }\`（0,1,1），比上一條祖先 reset（0,1,0）高；JRead 把同意視窗當彈窗藏
+   掉了，鎖卻留著：body 釘在視窗上、window 捲不動，Space 捲動、End、閱讀進度都失效，
+   只剩滑輪捲到內層（theguardian 全新瀏覽器真站實測，scrollHeight＝視窗高）。按過
+   同意的瀏覽器沒有這個 class、不受影響。提高到 (0,3,2) 只為了 position 這一項，意圖
+   與上一條相同（祖先一律 static）。 */
+html.${HTML_CLASS} body[${ANCESTOR_ATTR}="1"][${ANCESTOR_ATTR}="1"] {
+  position: static !important;
 }
 /* ancestor 的直接子元素若不在 ancestor 鏈上、也不是主文容器，一律隱藏。
    v0.7.199：body 也納入 ancestor 鏈，body 直接子樹若非 ancestor / article
@@ -2708,6 +2786,18 @@ html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}][${CAP_BELOW_ATTR}] > :f
    JS 自己判斷深淺的元件不受影響（也修不到）。 */
 [${ARTICLE_ATTR}="1"] [${SHADOW_HOST_ATTR}="1"] {
   color-scheme: ${(() => { const c = parseCssColor(theme.articleBg); return (c && relLuminance(c) < 0.5) ? 'dark' : 'light'; })()} !important;
+}
+/* v2.5.32：元件內的字色不跟 color-scheme、而是站方 JS 依系統深淺挑的（MDN「Try it」的
+   CodeMirror 語法色：系統淺色時是 #00f / #708 這組），套上一條之後反而落在相反那一側的
+   底色上（編輯區底色透明＝卡片色）。passShadowHostSchemeFit 量到元件內多數文字看不清時
+   改標 "flip"：整個元件翻到另一側，給該側的底色與文字色（淺側白底深字、深側深灰底
+   淺字；寫死色值而不用 Canvas / CanvasText，量測與 jsdom 都讀得到），讓元件自成一塊
+   與它的字色同一側的面板。selector 疊屬性墊高權重：要贏過卡片內通用的底色清除與
+   文字色繼承規則（實測只寫一層時底色被清成透明、翻了等於沒翻） */
+html [${ARTICLE_ATTR}="1"] [${SHADOW_HOST_ATTR}="flip"][${SHADOW_HOST_ATTR}="flip"][${SHADOW_HOST_ATTR}="flip"][${SHADOW_HOST_ATTR}="flip"] {
+${(() => { const c = parseCssColor(theme.articleBg); return (c && relLuminance(c) < 0.5)
+    ? '  color-scheme: light !important;\n  background-color: #ffffff !important;\n  color: #1a1a1a !important;'
+    : '  color-scheme: dark !important;\n  background-color: #1e1f22 !important;\n  color: #e6e6e6 !important;'; })()}
 }
 /* v2.2.11 引言整塊內縮（Jimmy 2026-10-28）：邊線連同文字往右縮 1em、跟內文左緣
    明顯錯開；文字離線的距離交給站方 padding / BQ_PLAIN 的 1em。同 specificity、
@@ -6636,6 +6726,32 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         }
       };
 
+      const passShadowHostSchemeFit = () => {
+        // v2.5.32：shadow 元件 color-scheme 跟卡片之後，量元件內文字對實際底色的對比
+        // （MDN「Try it」系統淺色＋深色主題：CodeMirror 語法色由站方 JS 依系統挑淺色
+        // 那組、編輯區透明落在深色卡片上，藍字 #00f 對比 1.04）。低對比字數 >=
+        // CONTRAST_LOW_FRACTION 時改標 "flip"（CSS 見 SHADOW_HOST_ATTR "flip" 規則），
+        // 翻完重量一次，沒有變好就改回——量測本身就是驗收，不靠猜元件怎麼挑配色。
+        // 訊號層次：apply 當下的 computed 值。主題切換走 restore → apply 會重量；進場後
+        // 才升級／才畫出來的元件、之後才換配色的元件量不到（同 markShadowHosts）。
+        // restore：屬性由 shadowHostMarked 通道統一移除
+        const _win = articleEl.ownerDocument?.defaultView;
+        if (!_win || !_win.getComputedStyle) return;
+        const cardBg = parseCssColor(theme.articleBg) || WHITE;
+        for (const host of shadowHostMarked) {
+          if (!host || !host.isConnected || host.getAttribute(SHADOW_HOST_ATTR) !== '1') continue;
+          try {
+            const before = shadowTextLowFraction(measureShadowHostText(host, articleEl, cardBg, _win));
+            if (before < CONTRAST_LOW_FRACTION) continue;
+            host.setAttribute(SHADOW_HOST_ATTR, 'flip');
+            const after = shadowTextLowFraction(measureShadowHostText(host, articleEl, cardBg, _win));
+            if (after >= before) host.setAttribute(SHADOW_HOST_ATTR, '1');
+          } catch (_) {
+            try { host.setAttribute(SHADOW_HOST_ATTR, '1'); } catch (__) { /* */ }
+          }
+        }
+      };
+
       const passTableSiteBgContrast = () => {
         // v2.5.18 light theme：表格系（TABLE_TAGS）站方深色底上的深字守門。
         // Jimmy 2026-11-17：GitHub README 表格在「系統深色＋light 主題」是黑字配近黑底
@@ -7280,12 +7396,22 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
               // v1.7.9：climb 同步加大圖 guard——無 heading 的 header（見上）文字常
               // <= 200，seed 退回 dateEl 後 climb 仍會一路爬回含 hero 的 header，等於
               // seed guard 白退。爬進含內容大圖的 parent 一律停住。
+              // v2.5.32：climb 加圖說 guard——作者列不會包住圖片的說明文字。theguardian
+              // 1280 寬把作者、日期、首圖圖說放在同一個左側窄欄（<aside>）：原文欄內 257 字
+              // 超過 200 天花板、climb 停在作者＋日期那層；譯成中文後不到 200，climb 一路
+              // 爬到整個窄欄，圖說被打平成作者列的 flex item、與作者名擠在同一行，窄欄裡
+              // display:contents 的空殼又撐出約 430px 空白（翻譯輪真站實測）。
+              // 「圖說」用文字長度分辨：頭像 <figure> 的 figcaption 只放作者名（短），
+              // 長於 BYLINE_CAPTION_MIN_LEN 的是照片說明
+              const bhasImageCaption = (el) => Array.from(el.querySelectorAll('figcaption'))
+                .some((fc) => bnorm(fc.textContent).length >= BYLINE_CAPTION_MIN_LEN);
               let root = seed;
               while (root.parentElement && root.parentElement !== articleEl &&
                      beforeBody(root.parentElement) &&
                      (!firstBodyP || !root.parentElement.contains(firstBodyP)) &&
                      !root.parentElement.querySelector(BYLINE_STOP_SEL) &&
                      !bhasBigImg(root.parentElement) &&
+                     !bhasImageCaption(root.parentElement) &&
                      bnorm(root.parentElement.textContent).length <= 200) {
                 root = root.parentElement;
               }
@@ -9491,7 +9617,20 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') return;
         const r = el.getBoundingClientRect();
         if (r.width < 1 || r.height < 1) return;
-        if (r.right <= cardRight + 2) return; // 沒溢出右緣 → 不動
+        // v2.5.32：<pre> 的盒子被全後代 max-width: 100% 壓在卡內，溢出的是盒子裡的長行
+        //（overflow 預設 visible → 長行畫出灰框、再被卡片右緣切掉、捲不到）。只量盒子的
+        // 話這一步對 pre 永遠不觸發。站方給了 pre overflow: auto / hidden 的不算（已能捲
+        // 或站方刻意裁）。Stack Overflow HTML 快照回放實證（站方樣式表沒載到，等同沒給
+        // pre overflow 規則的站）：長行超出卡片右緣 36–632px
+        let spills = false;
+        if (el.tagName === 'PRE') {
+          try {
+            const ox = win.getComputedStyle(el).overflowX;
+            // 空字串：jsdom 對沒宣告的 overflow 不給初始值（瀏覽器回 'visible'）
+            spills = (ox === 'visible' || ox === '') && el.scrollWidth > el.clientWidth + 2;
+          } catch (_) { spills = false; }
+        }
+        if (r.right <= cardRight + 2 && !spills) return; // 沒溢出右緣 → 不動
         // 已被「在卡內、可捲到」的祖先吸收 → 不重複處理
         let absorbed = false, cur = el.parentElement;
         while (cur && cur !== articleEl.parentElement) {
@@ -10005,6 +10144,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         passMarkSelectionOpaque,
         passContrastGuardPhase2,
         passBlockquoteSummaryContrast,
+        passShadowHostSchemeFit,
         passTableSiteBgContrast,
         passDarkSepiaContrastPhase3,
         passCodeBlockBgPhase4,
