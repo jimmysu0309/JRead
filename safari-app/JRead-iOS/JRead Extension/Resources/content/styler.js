@@ -387,6 +387,8 @@
   const INLINE_CODE_NO_BG_CARRIERS = 'h1, h2, h3, h4, h5, h6, a';
   // v1.6.23：內文裝飾性大寫 / 加寬字距標記——重設回一般（見 markDecorativeInlines）。
   const DECOR_RESET_ATTR = 'data-jread-decor-reset';
+  // v2.5.30：站方用行內元素包起來的段首放大首字（見 markLeadLetterSpans）
+  const LEAD_LETTER_ATTR = 'data-jread-lead-letter';
   // v1.7.8：inline-flow <p> 標記——豁免 v0.7.201 水平 padding reset（見
   // markInlineFlowParagraphs）。
   const INLINE_FLOW_P_ATTR = 'data-jread-inline-flow-p';
@@ -413,6 +415,20 @@
   const CAP_MEDIA_ATTR = 'data-jread-cap-media';   // 圖說上方的媒體，與它到共同容器之間的包裝
   const TABLE_FIT_ATTR = 'data-jread-table-fit';  // v2.5.25：被縮字級塞進卡片的表（值＝縮放比例）
   // 還原一張被縮字級的表（fitTableFont 的一筆紀錄）：反序寫回 inline、拿掉標記
+  // v2.5.30：還原 passAbsFillShellFlow 寫在容器與外殼上的四個 inline 值
+  //（pass 內量測不過時、與 restore() 共用）。
+  const restoreAbsFillShell = (r) => {
+    if (!r || !r.el || !r.shell) return;
+    const put = (node, prop, v, pr) => {
+      if (v) node.style.setProperty(prop, v, pr || '');
+      else node.style.removeProperty(prop);
+    };
+    put(r.el, 'height', r.height, r.heightPriority);
+    put(r.el, 'aspect-ratio', r.aspectRatio, r.aspectRatioPriority);
+    put(r.shell, 'position', r.shellPosition, r.shellPositionPriority);
+    put(r.shell, 'height', r.shellHeight, r.shellHeightPriority);
+  };
+
   const restoreTableFitEntry = (f) => {
     if (!f || !f.table) return;
     const snaps = f.snaps || [];
@@ -3020,6 +3036,16 @@ html[${DIR_LTR_ATTR}="1"] [data-jread-promoted-outside="1"] :is(h1, h2, h3, h4, 
   letter-spacing: normal !important;
   font-variant-caps: normal !important;
 }`;
+    // v2.5.30：段首單一字母的行內元素（站方首字放大的載體）左右間隔歸零——字級與
+    // float 已被內文規則歸回一般，剩下的 margin / padding 會在字母後留一個空格寬
+    //（「T hey were born」）。runtime 逐元素標記（見 markLeadLetterSpans）。
+    userOverrides += `
+[${ARTICLE_ATTR}="1"] [${LEAD_LETTER_ATTR}="1"] {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}`;
     if (overrides.lineHeight && !overrides.fontSize) {
       // fontSize 已改過時 line-height 已連帶注入；這裡只處理「只改 lineHeight
       // 沒改 fontSize」的獨立分支，避免 CSS 重複 rule。
@@ -4596,6 +4622,46 @@ html.${HTML_CLASS}.jread-orion body {
     return marked;
   }
 
+  // ---- 段首首字的行內載體：左右間隔歸零（v2.5.30）--------------------------
+  // 根因（theguardian.com 2026-11-20 probe）：站方把段首字母包成 <span>，原站是
+  // float:left、112px 的放大首字，帶 margin-right:4px 與旁邊的字隔開。閱讀模式把
+  // 字級與 float 歸回一般（內文規則），margin 還在 → 「T hey were born」多一個空格寬。
+  // aeon 的 `ld-dropcap`（margin-right:6px）是同一個形狀（「F irst」）。
+  // 訊號（結構、不看 class）：<p> 的第一個節點（略過空白文字）是行內元素、文字剛好
+  // 一個字母（\p{L}）、沒有子元素、後面緊接不以空白開頭的文字，而且它 computed 的
+  // 左右 margin / padding 有非零值。語料庫 170 份普查：命中 6 個、全是 aeon 的首字
+  //（原文與翻譯後各 3）；公式變數（<small>C</small>: cost…）在 <li>、行內 <code> 不是
+  // 字母，都不中。只標記、歸零由 CSS 做（見 LEAD_LETTER_ATTR 規則）。
+  // 不驗：::first-letter 的首字（那條走 dropCapPlan）、真實字型的字距（harness 截圖）。
+  function markLeadLetterSpans(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const marked = [];
+    for (const p of articleEl.querySelectorAll('p')) {
+      let first = null;
+      for (const n of p.childNodes) {
+        if (n.nodeType === 3 && !n.nodeValue.trim()) continue;
+        first = n;
+        break;
+      }
+      if (!first || first.nodeType !== 1 || first.children.length) continue;
+      if (!/^(SPAN|B|STRONG|EM|I|FONT)$/.test(first.tagName)) continue;
+      if (first.hasAttribute(LEAD_LETTER_ATTR)) continue;
+      if (!/^\p{L}$/u.test((first.textContent || '').trim())) continue;
+      const next = first.nextSibling;
+      if (!next || next.nodeType !== 3 || !next.nodeValue || /^\s/.test(next.nodeValue)) continue;
+      let cs = null;
+      try { cs = win.getComputedStyle(first); } catch (_) { cs = null; }
+      if (!cs) continue;
+      const nonZero = [cs.marginLeft, cs.marginRight, cs.paddingLeft, cs.paddingRight]
+        .some((v) => Math.abs(parseFloat(v) || 0) > 0);
+      if (!nonZero) continue;
+      first.setAttribute(LEAD_LETTER_ATTR, '1');
+      marked.push(first);
+    }
+    return marked;
+  }
+
   // ---- Pangu spacing（中英文間自動補空白）---------------------------------
   // 規則：
   //   CJK ↔ ASCII 英數字（LEAD）→ 補空白
@@ -5795,6 +5861,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const galleryFlex = [];
       const ratioBoxes = [];
       const fixedHeightBoxes = [];
+      const absFillShells = [];
       const minHeightBoxes = [];
       const textColFlex = [];
       const decolumnLoadCleanup = [];
@@ -5839,6 +5906,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const cjkJustifyMarked = [];
       let rtlBase = false;
       let decorResetMarked = [];
+      let leadLetterMarked = [];
       let inlineFlowPMarked = [];
       const contrastBgSnap = [];
       let themeColorSnap = null;
@@ -5853,7 +5921,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -7666,6 +7734,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         // v1.6.23：內文裝飾性大寫 / 加寬字距標記。依賴 computed style；byline item
         // 的 text-transform 已由 closest guard 排除（v1.6.24 順序修正後 guard 生效）。
         decorResetMarked = markDecorativeInlines(articleEl);
+        // v2.5.30：段首首字行內載體標記（量站方 computed 的 margin / padding）
+        leadLetterMarked = markLeadLetterSpans(articleEl);
 
         // v1.7.8：inline-flow p 標記（v0.7.201 水平 padding reset 豁免）。依賴
         // computed display（站方 CSS 給的 inline / inline-block），與注入 CSS
@@ -8331,6 +8401,115 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             child.style.setProperty('margin-bottom', '12px', 'important');
           }
         }
+      };
+
+      const passAbsFillShellFlow = () => {
+        // v2.5.30：媒體容器的高度與內容無關（固定高、視窗高、長寬比），內容放在一層
+        // 「絕對定位、四邊貼齊容器」的外殼裡 → 圖被 reader 還原成自然高度後，容器
+        // 仍是站方那個高度（Jimmy 2026-11-20 theguardian.com 回報首圖與標題間一大塊
+        // 空白）。真站量到的三種形態是同一個結構：
+        //   寬螢幕 ≥ 980：容器 height: calc(100vh - 126px) → 視窗 900 高時圖下 271px
+        //                 空白、1200 高時 571px（空白隨視窗高度變）
+        //   窄螢幕：容器 aspect-ratio 4/5 → 430 寬時圖下 156px 空白
+        //   矮視窗（520 高）：容器 394px 比圖矮，外殼 overflow:hidden 把圖裁掉約 100px
+        // 為什麼既有 pass 全漏：ratioBoxes / fixedHeightBoxes 把容器歸 auto 後，唯一的
+        //   子元素是 absolute、容器塌成 0 → collapse guard 還原（「內容本身脫離 flow」
+        //   那一支）。它們保護的正是這個結構，所以要在它們之前把外殼拉回版面。
+        // 通則（硬規則 3，結構訊號、非站點 / class 特判）：
+        //   - 容器在 mediaAncestors、不是 player、不含 iframe / video（影片嵌入的
+        //     「比例框＋absolute 填滿」由 embed 那一組規則管）
+        //   - 容器只有一個 rendered 的元素子（外殼）、沒有直接文字
+        //   - 外殼 computed position: absolute、rect 與容器相同（±2px）——填滿
+        //   - 外殼不是媒體本身（img / picture / video 的 absolute 由 CSS 規則拉回）
+        //   - 外殼內的 img / picture 到外殼之間沒有 absolute / fixed（圖已在版面內）
+        // 寫入：外殼 position:static + height:auto；容器 height:auto + aspect-ratio:auto。
+        // 量測後才決定留不留（與 ratioBoxes / fixedHeightBoxes 同精神）：
+        //   - 新高度撐得住圖（≥ 圖高 × 0.8；圖未載入＝高度 0 時不設下限）
+        //   - 而且站方高度與內容真的對不上：原本多出 > 40px（死空間），或原本比內容
+        //     矮 > 8px（裁切 / 蓋到後面的內容）。兩者皆非＝站方版面本來就合身，還原不動
+        // 必須在 passRatioBoxReset / passFixedHeightReset 之前：留下來的容器 inline
+        //   height 已是 auto、aspect-ratio 已是 auto，兩條 pass 各自的入口會略過它。
+        // 無 layout 的環境（jsdom，rect 全 0）在「容器高度 > 0」那一關自動略過。
+        if (!mediaAncestors) return;
+        const pending = [];
+        for (const el of mediaAncestors) {
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          if (el.closest && el.closest(`[${BYLINE_ATTR}="1"]`)) continue;
+          if (el.style.getPropertyValue('height') === 'auto') continue;
+          const win = el.ownerDocument?.defaultView;
+          if (!win || !win.getComputedStyle) continue;
+          // jsdom（nwsapi）遇到注入樣式裡的 :has() 會在 getComputedStyle 拋 SyntaxError
+          //（既知行為，同 passAspectPseudoReset）；量不到就當成不是候選
+          const gcs = (node) => { try { return win.getComputedStyle(node); } catch (_) { return null; } };
+          let shell = null;
+          let rendered = 0;
+          for (const c of el.children) {
+            const ccs = gcs(c);
+            if (!ccs || ccs.display === 'none') continue;
+            rendered++;
+            shell = c;
+            if (rendered > 1) break;
+          }
+          if (rendered !== 1) continue;
+          if (/^(IMG|PICTURE|VIDEO|IFRAME)$/.test(shell.tagName)) continue;
+          const scs = gcs(shell);
+          if (!scs || scs.position !== 'absolute') continue;
+          const cs = gcs(el);
+          if (!cs) continue;
+          if (cs.display === 'inline' || cs.display === 'none') continue;
+          let directText = false;
+          for (const n of el.childNodes) {
+            if (n.nodeType === 3 && n.nodeValue.trim()) { directText = true; break; }
+          }
+          if (directText) continue;
+          if (el.querySelector(`iframe, video, [${PLAYER_ATTR}="1"]`)) continue;
+          const media = shell.querySelector('img, picture');
+          if (!media) continue;
+          let inFlow = true;
+          for (let cur = media; cur && cur !== shell; cur = cur.parentElement) {
+            const pcs = gcs(cur);
+            if (!pcs || pcs.position === 'absolute' || pcs.position === 'fixed') { inFlow = false; break; }
+          }
+          if (!inFlow) continue;
+          const er = el.getBoundingClientRect();
+          if (!(er.height > 0)) continue;
+          const sr = shell.getBoundingClientRect();
+          if (Math.abs(sr.height - er.height) > 2 || Math.abs(sr.width - er.width) > 2 ||
+              Math.abs(sr.top - er.top) > 2 || Math.abs(sr.left - er.left) > 2) continue;
+          pending.push({
+            el, shell, media, beforeH: er.height,
+            rec: {
+              el, shell,
+              height: el.style.getPropertyValue('height'), heightPriority: el.style.getPropertyPriority('height'),
+              aspectRatio: el.style.getPropertyValue('aspect-ratio'), aspectRatioPriority: el.style.getPropertyPriority('aspect-ratio'),
+              shellPosition: shell.style.getPropertyValue('position'), shellPositionPriority: shell.style.getPropertyPriority('position'),
+              shellHeight: shell.style.getPropertyValue('height'), shellHeightPriority: shell.style.getPropertyPriority('height')
+            }
+          });
+        }
+        if (!pending.length) return;
+        // 寫入前先 push 進 snapshot 陣列（rollback 安全，同 ratioBoxes）
+        const pushStart = absFillShells.length;
+        for (const f of pending) {
+          absFillShells.push(f.rec);
+          f.shell.style.setProperty('position', 'static', 'important');
+          f.shell.style.setProperty('height', 'auto', 'important');
+          f.el.style.setProperty('height', 'auto', 'important');
+          f.el.style.setProperty('aspect-ratio', 'auto', 'important');
+        }
+        for (const f of pending) {
+          f.afterH = f.el.getBoundingClientRect().height;
+          f.imgH = f.media.getBoundingClientRect().height;
+        }
+        const kept = [];
+        for (const f of pending) {
+          const holdsMedia = !(f.imgH > 0) || f.afterH >= f.imgH * 0.8;
+          const mismatched = (f.beforeH - f.afterH > 40) || (f.afterH - f.beforeH > 8);
+          if (holdsMedia && mismatched) { kept.push(f.rec); continue; }
+          restoreAbsFillShell(f.rec);
+        }
+        absFillShells.length = pushStart;
+        for (const k of kept) absFillShells.push(k);
       };
 
       const passRatioBoxReset = () => {
@@ -9817,6 +9996,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         passTitleOwnLineAndDek,
         passHeadingLineHeightFloor,
         passGalleryFlex,
+        passAbsFillShellFlow,
         passRatioBoxReset,
         passFixedHeightReset,
         passDecolumn,
@@ -10052,6 +10232,12 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (Array.isArray(snapshot.inlineFlowPMarked)) {
         for (const el of snapshot.inlineFlowPMarked) {
           if (el && el.removeAttribute) el.removeAttribute(INLINE_FLOW_P_ATTR);
+        }
+      }
+      // v2.5.30：移除段首首字行內載體標記
+      if (Array.isArray(snapshot.leadLetterMarked)) {
+        for (const el of snapshot.leadLetterMarked) {
+          if (el && el.removeAttribute) el.removeAttribute(LEAD_LETTER_ATTR);
         }
       }
       // v1.6.23：移除內文裝飾性大寫 / 加寬字距標記
@@ -10292,6 +10478,11 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           if (r.aspectRatio) r.el.style.setProperty('aspect-ratio', r.aspectRatio, r.aspectRatioPriority || '');
           else r.el.style.removeProperty('aspect-ratio');
         }
+      }
+
+      // v2.5.30：還原「absolute 填滿外殼拉回版面」的四個 inline override。
+      if (Array.isArray(snapshot.absFillShells)) {
+        for (const r of snapshot.absFillShells) restoreAbsFillShell(r);
       }
 
       // v1.6.22：還原固定 px height 死空間 collapse 的 height inline override。
