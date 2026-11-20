@@ -10675,6 +10675,147 @@
       }
       hideShadowButtons(sr, hidden, depth + 1);
     }
+    if (depth === 0) hideEmptyBoxesBesideClearedButtons(root, hidden, 0);
+  }
+
+  // v2.5.33：按鈕清光後，同一層「只等按鈕觸發才會有內容」的空框一起清。
+  // MDN「Try it」實證：Run / Reset 照「按鈕一律清」清掉後，旁邊的輸出框
+  // （<mdn-play-console>，有框線與底色、裡面連 shadow 內都沒有字）永遠不會有內容，
+  // 閱讀模式下只剩一塊空灰框（Jimmy 2026-11-20 裁定：按鈕照清、空框清掉）。
+  // 結構 gate（全部成立才清）：
+  //   - 按鈕列：一個元素的子元素全是「已被藏的按鈕」或「shadow 內按鈕全被藏的元件」，至少一顆
+  //   - 空框：按鈕列的兄弟；連同所有 shadow root 都沒有文字、媒體、表單控制項；
+  //     高 ≥ 24px；有框線或不透明底色（看得出是一個框）
+  // 空掉的按鈕列本身也收掉（不留佔位寬度）。只在主文範圍內、靜態 clean 時跑
+  const EMPTY_BOX_CONTENT_SEL = 'img, picture, video, iframe, canvas, svg, input, textarea, select, object, embed';
+  function deepRenderedText(el, depth) {
+    let t = norm(el.textContent || '');
+    if (t || depth > SHADOW_BTN_MAX_DEPTH) return t;
+    const walk = (n) => {
+      if (n.shadowRoot) t += norm(deepRenderedTextOfRoot(n.shadowRoot, depth + 1));
+      for (const c of n.children || []) { if (t) return; walk(c); }
+    };
+    walk(el);
+    return t;
+  }
+  function deepRenderedTextOfRoot(sr, depth) {
+    let t = '';
+    for (const c of sr.children || []) {
+      if (/^(STYLE|SCRIPT|TEMPLATE|LINK)$/.test(c.tagName)) continue;
+      t += deepRenderedText(c, depth);
+      if (t) break;
+    }
+    return t;
+  }
+  function deepHasContentEl(el, depth) {
+    if (el.matches && el.matches(EMPTY_BOX_CONTENT_SEL)) return true;
+    if (el.querySelector && el.querySelector(EMPTY_BOX_CONTENT_SEL)) return true;
+    if (depth > SHADOW_BTN_MAX_DEPTH) return true; // 量不完就當有內容（少清方向）
+    const all = [el].concat(Array.from(el.querySelectorAll ? el.querySelectorAll('*') : []));
+    for (const n of all) {
+      if (n.shadowRoot && deepHasContentEl(n.shadowRoot, depth + 1)) return true;
+    }
+    return false;
+  }
+  function isClearedButtonOnly(el) {
+    if (el.dataset && el.dataset.jreadHidden === '1') return el.matches && el.matches(INTERACTIVE_BTN_SEL);
+    const sr = el.shadowRoot;
+    if (!sr || !sr.querySelectorAll) return false;
+    const btns = Array.from(sr.querySelectorAll(INTERACTIVE_BTN_SEL));
+    return btns.length > 0 && btns.every((b) => b.dataset && b.dataset.jreadHidden === '1');
+  }
+  function isClearedButtonRow(el) {
+    const kids = Array.from(el.children || []);
+    return kids.length > 0 && kids.every(isClearedButtonOnly);
+  }
+  function isEmptyFramedBox(el) {
+    if (!el || (el.dataset && el.dataset.jreadHidden === '1')) return false;
+    if (deepRenderedText(el, 0)) return false;
+    if (deepHasContentEl(el, 0)) return false;
+    let cs, r;
+    try { cs = window.getComputedStyle(el); r = el.getBoundingClientRect(); } catch (_) { return false; }
+    if (!cs || cs.display === 'none' || !r || r.height < 24) return false;
+    const border = ['Top', 'Right', 'Bottom', 'Left'].some((s) => (parseFloat(cs['border' + s + 'Width']) || 0) > 0 && cs['border' + s + 'Style'] !== 'none');
+    const bg = cs.backgroundColor && !/rgba\([^)]*,\s*0\)|transparent/.test(cs.backgroundColor);
+    return border || bg;
+  }
+  // 清掉後外層是 grid、列高寫死（MDN：「buttons console」那一列 128px）→ 兩格都藏了列還在，
+  // 程式碼下方留一段空白。剩下的內容底部離外層底部 > 40px 時，外層高度與列高改回自動
+  //（grid-template-rows: none → 依 template-areas 產生的列都是 auto，空列塌成 0）
+  const EMPTIED_GRID_PROPS = ['height', 'grid-template-rows'];
+  function collapseEmptiedGridTail(parent, hidden) {
+    let cs;
+    try { cs = window.getComputedStyle(parent); } catch (_) { return; }
+    if (!cs || !/grid/.test(cs.display)) return;
+    const pr = parent.getBoundingClientRect();
+    let bottom = -Infinity;
+    for (const c of parent.children) {
+      if (c.dataset && c.dataset.jreadHidden === '1') continue;
+      const r = c.getBoundingClientRect();
+      if (r.height > 0 && r.bottom > bottom) bottom = r.bottom;
+    }
+    if (bottom === -Infinity || pr.bottom - bottom <= 40) return;
+    addStyleResets(hidden, [{ el: parent, prev: snapshotStyles(parent, EMPTIED_GRID_PROPS) }]);
+    applyImportant(parent, { 'height': 'auto', 'grid-template-rows': 'none' });
+    // 往外跨 shadow 邊界：外層元件自己的高度也是寫死的（MDN <interactive-example> 444px），
+    // 裡面縮了外殼不跟著縮。不能靠 clean 當下量（樣式還沒套完，裡面那層暫時比外殼高，
+    // 排版完成後才縮回）；改用結構判斷：往上最多 3 層（display: contents 的層跳過），
+    // 外層裡除了這一塊沒有別的看得到的子元素（含它的 shadow root）→ 高度改 auto
+    const isChrome = (c) => /^(STYLE|SCRIPT|LINK|TEMPLATE|SLOT)$/.test(c.tagName) ||
+      (c.dataset && c.dataset.jreadHidden === '1');
+    const parentOf = (n) => n.parentElement || (n.getRootNode && n.getRootNode().host) || null;
+    let inner = parent;
+    for (let i = 0; i < 3; i++) {
+      let outer = parentOf(inner);
+      while (outer) {
+        let ocs; try { ocs = window.getComputedStyle(outer); } catch (_) { break; }
+        if (!ocs || ocs.display !== 'contents') break;
+        outer = parentOf(outer);
+      }
+      if (!outer || outer === document.body || outer === document.documentElement) break;
+      const roots = [outer].concat(outer.shadowRoot ? [outer.shadowRoot] : []);
+      let other = false;
+      for (const root of roots) {
+        for (const c of root.children || []) {
+          if (c === inner || c.contains(inner) || isChrome(c)) continue;
+          // 跨 shadow：inner 在 c 的 shadow 樹裡（c 是 display: contents 的元件）
+          let n = inner, inC = false;
+          for (let k = 0; n && k < 12; k++) { if (n === c) { inC = true; break; } n = parentOf(n); }
+          if (inC) continue;
+          let r; try { r = c.getBoundingClientRect(); } catch (_) { continue; }
+          if (r && (r.width > 0 || r.height > 0)) { other = true; break; }
+        }
+        if (other) break;
+      }
+      if (other) break;
+      addStyleResets(hidden, [{ el: outer, prev: snapshotStyles(outer, ['height']) }]);
+      applyImportant(outer, { 'height': 'auto' });
+      inner = outer;
+    }
+  }
+  function hideEmptyBoxesBesideClearedButtons(root, hidden, depth) {
+    if (!root || !root.querySelectorAll || depth > SHADOW_BTN_MAX_DEPTH) return;
+    for (const host of root.querySelectorAll('*')) {
+      const sr = host.shadowRoot;
+      if (!sr || !sr.querySelectorAll) continue;
+      if (host.dataset && host.dataset.jreadHidden === '1') continue;
+      for (const row of sr.querySelectorAll('*')) {
+        if (row.dataset && row.dataset.jreadHidden === '1') continue;
+        if (!isClearedButtonRow(row)) continue;
+        const parent = row.parentElement;
+        if (!parent) continue;
+        let cleared = false;
+        for (const sib of parent.children) {
+          if (sib === row) continue;
+          if (isEmptyFramedBox(sib)) { hide(sib, hidden); cleared = true; }
+        }
+        if (cleared) {
+          hide(row, hidden);
+          collapseEmptiedGridTail(parent, hidden);
+        }
+      }
+      hideEmptyBoxesBesideClearedButtons(sr, hidden, depth + 1);
+    }
   }
 
   // v2.5.26：分頁標籤列（role="tablist" 底下的 role="tab"）與按鈕同類，一律清。
