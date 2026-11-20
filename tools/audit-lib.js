@@ -1740,7 +1740,9 @@ const runOutsideArticle = (page) => page.evaluate(pageFns.auditOutsideArticle);
 // 副作用：驗的時候會捲動頁面（驗完捲回原位）。沒有候選時完全不動頁面。
 // 關掉：環境變數 JREAD_GAP_NO_PIXELS=1（懷疑捲動影響別的量測時對照用）。
 const BLANK_PIXEL_RATIO = 0.995;
-const GAP_PIXEL_MAX_CANDIDATES = 12;
+// 2026-11-20：12 → 40。page rounds 實跑 178 輪，候選最多的是圖文交錯的長文（forum.gamer 15 段、
+// vocus 14 段），12 的上限讓這兩站只因「超過每輪上限」進 review；每段成本約 0.4 秒。
+const GAP_PIXEL_MAX_CANDIDATES = 40;
 
 // 最小 PNG 解碼（8-bit、RGB / RGBA / 灰階、非交錯——Playwright 截圖的格式）→ 主色占比。
 // 顏色先量化到每色版 32 階再計數：抗鋸齒與 JPEG 類雜訊不會把單色背景打散。
@@ -1795,9 +1797,38 @@ function pngDominantColorRatio(buf) {
 pageFns.scrollToCoveredGap = function (i) {
   const c = (window.__jreadGapCovered || [])[i];
   if (!c || !c.prev || !c.next || !c.prev.isConnected || !c.next.isConnected) return false;
-  const mid = (c.prev.getBoundingClientRect().bottom + c.next.getBoundingClientRect().top) / 2;
-  try { window.scrollBy({ top: mid - window.innerHeight / 2, left: 0, behavior: 'instant' }); } catch (_) { return false; }
+  // 2026-11-20：捲動的不一定是 window——文件本身只有一個視窗高、內容在內層捲動容器裡時
+  //（theguardian 800 寬實測：scrollY 恆 0、documentElement.scrollHeight＝視窗高），
+  // window.scrollBy 沒有作用，區間落在視窗外就被記成「捲不到畫面內」。改成往上找實際會捲的
+  // 祖先（overflow-y 可捲且內容比框高），找不到才捲 window；捲過的容器記下原位置，驗完還原
+  let scroller = null;
+  for (let p = c.next.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+    if (p === document.body) continue;
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay') && p.scrollHeight > p.clientHeight + 1) { scroller = p; break; }
+  }
+  const pr = c.prev.getBoundingClientRect(), nr = c.next.getBoundingClientRect();
+  const mid = (pr.bottom + nr.top) / 2;
+  try {
+    if (scroller) {
+      const sr = scroller.getBoundingClientRect();
+      const visTop = Math.max(0, sr.top), visBottom = Math.min(window.innerHeight, sr.bottom);
+      if (!window.__jreadGapScrollers) window.__jreadGapScrollers = new Map();
+      if (!window.__jreadGapScrollers.has(scroller)) window.__jreadGapScrollers.set(scroller, scroller.scrollTop);
+      scroller.scrollBy({ top: mid - (visTop + visBottom) / 2, left: 0, behavior: 'instant' });
+    } else {
+      window.scrollBy({ top: mid - window.innerHeight / 2, left: 0, behavior: 'instant' });
+    }
+  } catch (_) { return false; }
   return true;
+};
+pageFns.restoreCoveredGapScrollers = function () {
+  const m = window.__jreadGapScrollers;
+  if (!m) return 0;
+  let n = 0;
+  for (const [el, top] of m) { try { el.scrollTo({ top, left: el.scrollLeft, behavior: 'instant' }); n++; } catch (_) {} }
+  window.__jreadGapScrollers = null;
+  return n;
 };
 pageFns.measureCoveredGap = function (i) {
   const c = (window.__jreadGapCovered || [])[i];
@@ -1805,9 +1836,29 @@ pageFns.measureCoveredGap = function (i) {
   const pr = c.prev.getBoundingClientRect(), nr = c.next.getBoundingClientRect();
   const inset = 6; // 避開上下兩個 block 自己的邊（底線、陰影）
   const top = Math.max(0, pr.bottom + inset), bottom = Math.min(window.innerHeight, nr.top - inset);
-  const left = Math.max(0, nr.left), right = Math.min(window.innerWidth, nr.right);
+  // 2026-11-20：寬度取上下兩塊的聯集，不只看下一塊——下一塊是還沒載入的圖（寬 0）或窄元素時
+  // 原本整段記成沒拍到（vocus initial 輪 12 段全中）；區間的內容欄寬以較寬的那一塊為準
+  const left = Math.max(0, Math.min(pr.left, nr.left)), right = Math.min(window.innerWidth, Math.max(pr.right, nr.right));
   if (bottom - top < 40 || right - left < 50) return null;
   return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
+// 拍不到時說明原因（2026-11-20）。「捲不到畫面內」一句話分不出兩種完全不同的情況：
+//   (1) 頁面根本捲不動（文件高＝視窗高，內容卻排到視窗外——常見是站方的捲動鎖：
+//       body position: fixed／overflow: hidden）。這不是工具拍不到，是使用者也捲不到，
+//       要當成真問題去查
+//   (2) 捲得動、但區間在畫面內的部分太小（上下兩個區塊的 rect 與量 gap 時不同）
+pageFns.explainUncheckedGap = function (i) {
+  const c = (window.__jreadGapCovered || [])[i];
+  if (!c || !c.prev || !c.next) return '元素參照不見了';
+  const pr = c.prev.getBoundingClientRect(), nr = c.next.getBoundingClientRect();
+  const ih = window.innerHeight, docH = document.documentElement.scrollHeight;
+  const bcs = getComputedStyle(document.body);
+  if (docH <= ih + 1 && (nr.top > ih || pr.bottom < 0 || Math.min(ih, nr.top) - Math.max(0, pr.bottom) < 52)) {
+    return `頁面捲不動：文件高 ${docH}＝視窗高、區間在視窗外（body position: ${bcs.position}、overflow-y: ${bcs.overflowY}）——使用者也捲不到，先查捲動鎖`;
+  }
+  if (Math.min(window.innerWidth, Math.max(pr.right, nr.right)) - Math.max(0, Math.min(pr.left, nr.left)) < 50) return '上下兩個區塊在畫面內的寬度都不到 50px';
+  return `捲動後區間在畫面內的部分不到 40px（上一塊底 ${Math.round(pr.bottom)}、下一塊頂 ${Math.round(nr.top)}、視窗高 ${ih}）`;
 };
 
 async function verifyCoveredGapsByPixels(page, g) {
@@ -1823,8 +1874,22 @@ async function verifyCoveredGapsByPixels(page, g) {
       const scrolled = await page.evaluate(pageFns.scrollToCoveredGap, i);
       await page.waitForTimeout(300);
       const clip = scrolled ? await page.evaluate(pageFns.measureCoveredGap, i) : null;
-      if (!clip) { g.pixelUnchecked.push(`${c.gap}px @ y=${c.y}（捲不到畫面內）`); continue; }
-      const ratio = pngDominantColorRatio(await page.screenshot({ clip, type: 'png' }));
+      if (!clip) {
+        let why = '捲不到畫面內';
+        try { const w = await page.evaluate(pageFns.explainUncheckedGap, i); if (typeof w === 'string' && w) why = w; } catch (_) {}
+        g.pixelUnchecked.push(`${c.gap}px @ y=${c.y}（${why}）`);
+        continue;
+      }
+      const shot = await page.screenshot({ clip, type: 'png' });
+      // JREAD_GAP_PIXEL_DUMP=<目錄>：把每段實際拿去算的那張圖存下來（判讀「單色」報告時對照用）
+      if (process.env.JREAD_GAP_PIXEL_DUMP) {
+        try {
+          const fs = require('fs');
+          fs.mkdirSync(process.env.JREAD_GAP_PIXEL_DUMP, { recursive: true });
+          fs.writeFileSync(path.join(process.env.JREAD_GAP_PIXEL_DUMP, `gap-${Date.now()}-${i}-y${c.y}-${c.gap}px.png`), shot);
+        } catch (_) { /* 只是除錯輸出 */ }
+      }
+      const ratio = pngDominantColorRatio(shot);
       g.pixelChecked++;
       if (ratio >= BLANK_PIXEL_RATIO) {
         g.gaps.push({ gap: c.gap, y: c.y, prev: c.prev, kind: 'blank-pixels',
@@ -1834,6 +1899,7 @@ async function verifyCoveredGapsByPixels(page, g) {
       g.pixelUnchecked.push(`${c.gap}px @ y=${c.y}（${String(e && e.message || e).slice(0, 60)}）`);
     }
   }
+  try { await page.evaluate(pageFns.restoreCoveredGapScrollers); } catch (_) {}
   try { await page.evaluate((p) => window.scrollTo({ left: p.x, top: p.y, behavior: 'instant' }), start); } catch (_) {}
   g.gaps.sort((a, b) => a.y - b.y);
   return g;
@@ -2243,7 +2309,10 @@ function resolveShinkansenExtPath(srcDir, opts = {}) {
   try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch (_) { return srcDir; }
   const version = String(manifest.version || '');
   if (version.split('.').length >= 4) return srcDir; // 已是 dev tail
-  const cacheDir = opts.cacheDir || path.join(os.homedir(), '.jread-debug', 'shinkansen-devtail');
+  // 2026-11-20：副本每次重建（先刪再複製），兩條翻譯輪同時跑會互刪對方正在載入的
+  // 副本。並行時各自設環境變數 JREAD_SHINKANSEN_CACHE 指到不同目錄。
+  const cacheDir = opts.cacheDir || process.env.JREAD_SHINKANSEN_CACHE
+    || path.join(os.homedir(), '.jread-debug', 'shinkansen-devtail');
   fs.rmSync(cacheDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(cacheDir), { recursive: true });
   fs.cpSync(srcDir, cacheDir, {

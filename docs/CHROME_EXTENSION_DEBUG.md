@@ -196,6 +196,18 @@ node tools/corpus.js run --out /tmp/census --after ./my-census.js
 
 forcing function：`test/regression/tools-corpus.spec.js`（比對邏輯的分級判定；每份快照都要有基準）。
 
+## 並行跑 harness 時要分開的東西（2026-11-20）
+
+多條 harness／批次同時跑時，三樣東西會互撞，各自分開：
+
+- **瀏覽器 profile**：`debug-harness.js` 預設共用 `/tmp/jread-pw-profile`，並行時每條帶不同的 `--profile <name>`
+- **翻譯擴充副本**：翻譯輪每次啟動會把 Shinkansen 副本先刪再複製到 `~/.jread-debug/shinkansen-devtail`，兩條翻譯輪同時跑會互刪對方正在載入的副本。每條設環境變數 `JREAD_SHINKANSEN_CACHE=<各自的目錄>`
+- **截圖與輸出目錄**：`.playwright-mcp/` 與 `docs/excluded/page-rounds/` 是固定路徑，並行時用工作副本（整份 repo 複製到專案外、`node_modules` 用 symlink）各跑各的
+
+`tools/batch-page-rounds.sh` 可用 `PR_SHARD="i/n"`（i 從 0 起）只跑清單中第 i 份，兩三條並行；進度檔名會帶 `-shard<i>`。`corpus.js check` 的輸出固定寫 `~/.jread-debug/corpus/current`，要並行只能改 `HOME` 隔離。
+
+間距檢查的畫面確認層拍不到某段時會印出原因（頁面捲不動／區間太小／上下兩塊都太窄）；要看它實際拿去算的截圖，設 `JREAD_GAP_PIXEL_DUMP=<目錄>`。
+
 ## 工具卡住的防線（看門狗、每站逾時、心跳檔）
 
 2026-11-18 加入。背景：harness 只有個別步驟的 timeout，`page.evaluate` 沒有逾時、截圖卡死時行程永遠不結束，背景任務收不到完成通知、主線一直等（實際卡過一整天）。

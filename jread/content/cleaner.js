@@ -5907,6 +5907,9 @@
   // ratio 上漏網；Engadget 過往靠此條 B 命中也不依賴 ratio，因為 aside
   // 本來就被廣告 placeholder 稀釋 textLen 接近 0。
   const SIDEBAR_ASIDE_MIN_HEIGHT = 400;
+  // v2.5.30：清單（<ol> / <ul>）的直接子 <li> 達這個數量時，清單不當「欄位容器」
+  // （見 hideInsideArticleSidebarColumns 入口的 isParallelItemList）
+  const SIDEBAR_LIST_MIN_ITEMS = 5;
   // v0.8.112：動態注入 <aside> 的「夠大」文字門檻（layout-independent，補 rectH 在
   // 一次注入完整 aside 時量到 0 的 harness flaky）。下一篇文章 ~2K 字遠超此值；
   // pull-quote / byline / 短 widget 通常 < 400 → 不誤殺。只在 rect 量不到（高度 0）
@@ -6199,6 +6202,13 @@
       NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT && isSameSiteArticleLink(a));
   }
 
+  // v2.5.30：見 hideInsideArticleSidebarColumns 入口註解
+  function isParallelItemList(el, children) {
+    if (!el || (el.tagName !== 'OL' && el.tagName !== 'UL')) return false;
+    if (children.length < SIDEBAR_LIST_MIN_ITEMS) return false;
+    for (const c of children) if (c.tagName !== 'LI') return false;
+    return true;
+  }
   function hideInsideArticleSidebarColumns(articleEl, hidden, containers, promotedTitleHead) {
     containers = containers || articleEl.querySelectorAll(CONTAINER_SEL);
     // v0.7.95：articleEl 自身也納入候選 container（esmchina /news/14116
@@ -6227,6 +6237,14 @@
       const children = Array.from(el.children)
         .filter(c => !(c.dataset && c.dataset.jreadHidden === '1'));
       if (children.length < 2) continue;
+      // v2.5.30：清單不是欄位容器。CONTAINER_SEL 含 ul / ol，維基的參考文獻
+      // `ol.references` 被當成「主欄＋側欄」來比——最長那條文獻（≥ 500 字）當主欄，
+      // 其餘每條 <li> 逐一過條件 A / C：短的、幾乎整條是連結的文獻（「Peng, Wang &
+      // Deng 2023, p. 8.」、一條裸網址）被當側欄藏掉，畫面上編號跳號。語料庫 6 個
+      // 維基語言版共 85 條（he 80 條藏 39 條），v2.5.0 起就有。
+      // 通則：<ol> / <ul> 的直接子全是 <li>、而且 ≥ 5 條＝並列的清單條目，不是版面的
+      // 欄。把兩三欄版面寫成 ul > li 的站（條數少）不受影響。
+      if (isParallelItemList(el, children)) continue;
 
       const stats = children.map(c => {
         const text = norm(c.textContent);
@@ -9905,7 +9923,16 @@
     // 聲明塞在原本的窄欄。結構訊號（翻譯無關）：wrapper 內有 email 輸入欄的
     // <form>，且主文在它之前已開始——主文容器不會在主文開始後才出現，所以文首就
     // 包住整篇的 paywall 類 class wrapper（twz）不受影響
-    if (articleEl && containsEmailSignupForm(el) && mainContentPrecedesWrapper(articleEl, el)) return false;
+    // v2.5.30：但 wrapper 自己裝著文章大半的字（≥ 一半）時，它就是主文容器，裡面那個
+    // 表單只是站方插在文中的訂閱卡——照舊享長 p 保護（twz.com page rounds 實證：
+    // 主文 wrapper `entry-content … paywall` 的第一個子元素是站方插入的 newsletter
+    // aside（含 email 輸入欄），wrapper 之前有一段 140 字的副標 → 上面兩個條件都成立、
+    // 23,956 字主文整塊被藏，卡內只剩標題、作者、首圖。翻譯輪反而正常，因為副標譯成
+    // 中文後不到 100 字、「主文已開始」不成立——同一頁兩輪結果相反）。
+    // 佔比是翻譯無關的訊號（分子分母同時被翻譯）；訂閱卡的字只佔文章零頭
+    //（houseandgarden 那張卡約 250 字），不會因此復活
+    if (articleEl && containsEmailSignupForm(el) && mainContentPrecedesWrapper(articleEl, el) &&
+        !wrapperHoldsMostOfArticle(el, articleEl)) return false;
     return wrapperContainsMainContentP(el);
   }
   // 2026-11-15 review A-10：改問訂閱表單規則的 isEmailInput（type=email，或 type=text
@@ -9913,6 +9940,11 @@
   // 判定——合成頁真 Chromium 實證：同一張卡把輸入欄換成 `type="text" name="email"`
   // 或拿掉 <form>（裸 div 包輸入欄，gvm 城市學型），v2.4.4 的修法就不生效、標題＋
   // 免責聲明照樣殘留。
+  // v2.5.30：wrapper 的文字量達文章一半＝主文容器本身（見 keywordWrapperIsProtected）
+  function wrapperHoldsMostOfArticle(el, articleEl) {
+    const articleLen = norm(articleEl.textContent).length;
+    return articleLen > 0 && norm(el.textContent).length >= articleLen * 0.5;
+  }
   function containsEmailSignupForm(el) {
     if (!el.querySelectorAll) return false;
     for (const input of el.querySelectorAll('input')) if (isEmailInput(input)) return true;

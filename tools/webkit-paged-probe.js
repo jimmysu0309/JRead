@@ -322,7 +322,14 @@ async function runViewport(browser, vp) {
       if (new URL(url).hostname === 'jread-fonts.local') return route.fallback();
       if (req.resourceType() === 'document') {
         return norm(url) === target
-          ? route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: CORPUS_ARC.html })
+          ? route.fulfill({
+            status: 200, contentType: 'text/html; charset=utf-8',
+            // 2026-11-20：快照沒有 <meta charset> 時 WebKit 不採用回應標頭的 charset、整頁亂碼
+            //（cnbc 翻譯後快照實證，亂碼讓可見段落數與 Chromium 不同、被誤判成引擎差異）
+            body: /<meta[^>]*charset/i.test(CORPUS_ARC.html.slice(0, 5000))
+              ? CORPUS_ARC.html
+              : CORPUS_ARC.html.replace(/<head[^>]*>/i, (m) => m + '<meta charset="utf-8">')
+          })
           : route.abort();
       }
       if (CORPUS_ARC.css && CORPUS_ARC.css[url] !== undefined) return route.fulfill({ status: 200, contentType: 'text/css; charset=utf-8', body: CORPUS_ARC.css[url] });
