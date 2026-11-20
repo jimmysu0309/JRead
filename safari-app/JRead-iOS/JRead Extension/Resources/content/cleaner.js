@@ -8838,7 +8838,81 @@
       hidden.push({ el: det, __reopened: true });
     }
 
+    expandTruncatedProseTails(articleEl, expanded, seen);
+
     addStyleResets(hidden, expanded);
+  }
+
+  // v2.5.31：主文段落「從第 N 段起全部藏起來」＋後面一顆展開鈕（「繼續閱讀」）。
+  // 關鍵評論網實證：站方 CSS `.article-less .article-body > p:nth-of-type(6) ~ * { display:none }`
+  // 把第 6 段之後的每個兄弟各自藏掉，展開鈕沒有 aria-expanded / aria-controls，上面
+  // 兩條路徑的錨點都抓不到；按鈕又一律會被清 → 後半段永遠讀不到。
+  // 結構判準（不看 class、不看按鈕文字）：
+  //   1. 同一個父層裡，前面至少 TAIL_MIN_VISIBLE_P 個看得見的 <p>（主文確實在這裡開始）
+  //   2. 從第一個被藏的兄弟起，**一路到最後一個兄弟全部** display:none（尾端整段截斷，
+  //      不是中間零星藏一個響應式副本）
+  //   3. 被藏的尾段裡至少一個 <p> 有 EXPAND_MIN_TEXT 字以上（藏的是散文）
+  //   4. 父層往上 EXPAND_CLIMB_LEVELS 層內、文件順序在父層之後，有一顆互動按鈕（展開鈕）
+  // 攤開時只攤有字或有媒體的兄弟——空的廣告佔位殼維持藏著；攤開的內容照樣吃後面整套
+  // hide 規則（延伸閱讀、會員招攬照清）。
+  // 這條驗 X、不驗 Y：只處理 clean 當下已在 DOM、靠樣式表藏起來的尾段；站方要按了才
+  // fetch 的後半段（DOM 裡根本沒有）不在範圍內
+  const TAIL_MIN_VISIBLE_P = 2;
+  const TAIL_MEDIA_SEL = 'img, picture, video, iframe, figure, table, pre';
+  function expandTruncatedProseTails(articleEl, expanded, seen) {
+    const isNone = (el) => {
+      try { return window.getComputedStyle(el).display === 'none'; } catch (_) { return false; }
+    };
+    const parents = new Set();
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p.dataset && p.dataset.jreadHidden === '1') continue;
+      if (!p.parentElement || parents.has(p.parentElement)) continue;
+      if (!isNone(p)) continue;
+      parents.add(p.parentElement);
+    }
+    for (const parent of parents) {
+      if (!articleEl.contains(parent)) continue;
+      if (!expandRendersBox(parent)) continue;
+      if (isInPreserved(parent)) continue;
+      if (parent.closest && parent.closest(NAV_LANDMARK_SEL)) continue;
+      const kids = Array.from(parent.children).filter((c) => !EXPAND_SKIP_TAGS.test(c.tagName));
+      const first = kids.findIndex((c) => isNone(c));
+      if (first < 0) continue;
+      const head = kids.slice(0, first);
+      const tail = kids.slice(first);
+      const visibleP = head.filter((c) => c.tagName === 'P' && collapsedContentText(c).length >= EXPAND_MIN_TEXT);
+      if (visibleP.length < TAIL_MIN_VISIBLE_P) continue;
+      if (!tail.every(isNone)) continue;
+      const tailProse = tail.some((c) => c.tagName === 'P' &&
+        !(c.dataset && c.dataset.jreadHidden === '1') &&
+        collapsedContentText(c).length >= EXPAND_MIN_TEXT);
+      if (!tailProse) continue;
+      // 錨定：父層之後有一顆展開鈕
+      let hasBtn = false;
+      let anc = parent.parentElement;
+      // 只在主文範圍內找（爬出 articleEl 會撿到頁面其他區塊的按鈕）
+      for (let i = 0; i < EXPAND_CLIMB_LEVELS && anc && articleEl.contains(anc) && !hasBtn; i++, anc = anc.parentElement) {
+        for (const b of anc.querySelectorAll(INTERACTIVE_BTN_SEL)) {
+          if (parent.contains(b)) continue;
+          if (parent.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) { hasBtn = true; break; }
+        }
+      }
+      if (!hasBtn) continue;
+      for (const c of tail) {
+        if (seen.has(c)) continue;
+        if (c.dataset && c.dataset.jreadHidden === '1') continue;
+        if (!collapsedContentText(c) && !(c.querySelector && c.querySelector(TAIL_MEDIA_SEL))) continue;
+        let cs;
+        try { cs = window.getComputedStyle(c); } catch (_) { continue; }
+        const decls = buildExpandDecls(cs);
+        if (!Object.keys(decls).length) continue;
+        seen.add(c);
+        const prev = snapshotStyles(c, EXPAND_DECL_PROPS);
+        applyImportant(c, decls);
+        c.setAttribute(EXPANDED_ATTR, '1');
+        expanded.push({ el: c, prev, __expandedAttr: true });
+      }
+    }
   }
 
   // 攤開之後，原本用來招喚展開鈕的那行標籤（「看更多」/「ดูเพิ่ม」/「See more」）
@@ -13182,10 +13256,37 @@
       if (containsCodeBlock(pp)) break;
       if (elContainsArticleTitle(pp, canonical)) break; // 含文章標題 → 不擴（避免吃 header）
       if (hasArticleTitleAnchor(pp)) break;        // class token 標題錨（review A-13 第二道邊界）
+      // v2.5.31：往上擴會把作者＋日期列一起收進來 → 不擴。上報實證：標題下的
+      // `.publish` 同時包著作者／日期（`.publish-text`）與站方「AI 新聞關鍵字詞查詢」
+      // 輸入框（v2.5.26 isFreeTextEntryInput 的 trigger），卡片一路擴到 `.publish`，
+      // 作者與日期跟著不見。只在「這一層新收進來的分支」帶作者列時才停（cur 自己就
+      // 是作者列的情況不在此列，維持原判斷）
+      if (cardWalkSwallowsByline(cur, pp)) break;
       candidate = pp;
       cur = pp;
     }
     return candidate;
+  }
+
+  // pp 的其他子分支（cur 以外）有沒有作者／日期列。只認結構訊號：看得到的 <time>、
+  // 作者頁連結、短文字裡的日期字樣。**不認「By …」開頭這類文字前綴**——訂閱卡的
+  // 免責聲明「By subscribing, you agree to …」會命中（chinatalk 語料庫實證：卡片擴到
+  // 一半就停，招攬標題與說明文字留下）
+  const CARD_BYLINE_DATE_RE = new RegExp(BYLINE_TEXT_WEAK_RE.source.replace(/^\\bby\\s\|/, ''), 'i');
+  function cardWalkSwallowsByline(cur, pp) {
+    for (const sib of pp.children) {
+      if (sib === cur) continue;
+      if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
+      if (EXPAND_SKIP_TAGS.test(sib.tagName)) continue;
+      for (const t of sib.querySelectorAll('time')) {
+        if (orphanLabelIsRendered(t)) return true;
+      }
+      const text = norm(visibleRenderedText(sib));
+      if (!text || text.length > BYLINE_MAX_TEXT_LEN) continue;
+      if (CARD_BYLINE_DATE_RE.test(foldZhVariants(text))) return true;
+      if (clusterContainsAuthorProfileLink(sib, true)) return true;
+    }
+    return false;
   }
 
   function hideNoiseCardFromTrigger(trigger, articleEl, hidden) {

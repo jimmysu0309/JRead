@@ -344,6 +344,8 @@
   // 只中和「量得出來確實看不見」的（見 passHeadingPseudoSpacerReset）。
   const HEADING_SPACER_BEFORE_ATTR = 'data-jread-heading-spacer-before';
   const HEADING_SPACER_AFTER_ATTR = 'data-jread-heading-spacer-after';
+  // v2.5.31：標題自己的上下 padding 是純間距（看不見的盒子）→ 歸零（見 passHeadingPseudoSpacerReset）
+  const HEADING_PAD_ATTR = 'data-jread-heading-pad';
   const HEADING_LINK_ATTR = 'data-jread-heading-link';
   const HIDDENMEDIA_WRAP_ATTR = 'data-jread-hiddenmedia-wrap';
   // v2.2.17：cleaner 拉回 flow 的標題覆蓋層內，pseudo 帶暗化遮罩 box-shadow 的元素
@@ -1563,6 +1565,12 @@ html [${ARTICLE_ATTR}="1"] main {
    刻意不用 display:none：空的 block pseudo 是父層 margin collapse 的邊界，
    拿掉會讓標題的 margin 穿透到父容器、間距在別處變樣；歸零佔位保留該邊界。
    html 前綴把 specificity 提到 (0,1,2)，贏過站方 .class::before。 */
+/* v2.5.31：標題自己看不見的上下 padding 歸零（標記端見 passHeadingPseudoSpacerReset）。
+   attr 重複兩次＋html 前綴（0,2,1）贏過站方 .class 與 [ARTICLE] h1 這類規則 */
+html [${HEADING_PAD_ATTR}="1"][${HEADING_PAD_ATTR}="1"] {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
 html [${HEADING_SPACER_BEFORE_ATTR}="1"]::before,
 html [${HEADING_SPACER_AFTER_ATTR}="1"]::after {
   height: 0 !important;
@@ -7047,6 +7055,29 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         // hack 自動落在門檻外（見 HEADING_SPACER_MIN_NET）。
         const winPseudo = articleEl.ownerDocument?.defaultView;
         if (!winPseudo || !winPseudo.getComputedStyle) return;
+        const isTransparentBgEl = (c) => !c || c === 'transparent'
+          || /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)$/.test(c);
+        // v2.5.31：標題元素自己的上下 padding 也是同一種東西（Jimmy 2026-11-20 回報 theguardian
+        // 「標題和照片說明中間多出一段空間」：h1 帶站方 padding-bottom: 24px，閱讀模式上面那條
+        // h1–h6 margin 規則已統一管標題上下間距，padding 再疊一份）。判準與 pseudo 相同：
+        // 透明底、無背景圖、無陰影、四邊無框線 → padding 撐的只是看不見的空間，上下歸零；
+        // 有框線（標題底線）或底色（色塊標題）的 padding 是框內留白，不動。左右 padding 不動。
+        // 門檻沿用 HEADING_SPACER_MIN_NET（上下合計 12px 以下是細部微調）
+        for (const el of articleEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+          if (el.closest('[data-jread-hidden="1"]')) continue;
+          let cs;
+          try { cs = winPseudo.getComputedStyle(el); } catch (_) { continue; }
+          if (!cs) continue;
+          const padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+          if (padV <= HEADING_SPACER_MIN_NET) continue;
+          if (!isTransparentBgEl(cs.backgroundColor)) continue;
+          if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
+          if (cs.boxShadow && cs.boxShadow !== 'none') continue;
+          if (['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']
+            .some((k) => (parseFloat(cs[k]) || 0) > 0)) continue;
+          el.setAttribute(HEADING_PAD_ATTR, '1');
+          headingSpacerMarks.push({ el, attr: HEADING_PAD_ATTR });
+        }
         // 無 layout 引擎的環境（jsdom）直接 short-circuit——同 passAspectPseudoReset：
         // 本 pass 修的是真實 layout 才存在的死空間，且 jsdom 未實作帶 pseudo 參數的
         // getComputedStyle。

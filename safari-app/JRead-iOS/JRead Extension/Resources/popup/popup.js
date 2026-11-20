@@ -287,10 +287,10 @@ function render(settings) {
     latinFontRow.hidden = false;
     if (ff === FONT_STACKS.serif) {
       latinFontSelect.disabled = false;
-      latinFontSelect.value = settings.latinSerif || 'auto';
+      latinFontSelect.value = resolveLatinKey(settings.latinSerif) || 'auto';
     } else if (ff === FONT_STACKS.sans) {
       latinFontSelect.disabled = false;
-      latinFontSelect.value = settings.latinSans || 'auto';
+      latinFontSelect.value = resolveLatinKey(settings.latinSans) || 'auto';
     } else {
       // 不可自訂：顯示跟隨中文字型的狀態（系統預設 / 等寬）
       latinFontSelect.disabled = true;
@@ -601,6 +601,13 @@ if (fontFamilySelect) {
 // 滾輪清單 iOS 仍以系統字渲染、無法逐項預覽（平台限制，桌機 Chrome 下拉清單才逐項）。
 // 具名字型（含內嵌 woff2 family）取 LATIN_FONTS 值；auto / __follow / 未知 → 清掉
 // inline、回到 popup 預設 UI 字型（顯示中文「自動 / 系統預設 / 等寬」用預設字即可）。
+// v2.5.31：舊 key（palatino / arial）對到改名後的 key（iowan / seravek），單一資料源在
+// settings-defaults.js 的 resolveLatinFontKey
+function resolveLatinKey(k) {
+  const fn = (typeof window !== 'undefined' && window.__JReadResolveLatinFontKey) || null;
+  return fn ? fn(k) : k;
+}
+
 function applyLatinPreview() {
   if (!latinFontSelect) return;
   const v = latinFontSelect.value;
