@@ -1206,6 +1206,24 @@
       if (!(fragHeight(a) < before - 1)) undoLastFitStyle();
     }
   }
+  // v2.5.36：div 圖說（styler findDivCaption 標 data-jread-cap-div）沒有 figure 包著，
+  // 貼合單位只剩圖本身——縮圖只算圖的高度，圖塞進本頁底、圖說被擠到下一頁頂（語料庫
+  // upmedia 翻頁第 2 → 3 頁實測）。單位改成「圖與圖說的共同容器」：styler markCapPair
+  // 把媒體到共同容器之間（不含共同容器）每層標 data-jread-cap-media，最上層標記元素的
+  // 父層＝共同容器；它還要真的裝著 div 圖說（figcaption 那條由 closest('figure') 處理）。
+  // 這條驗「單位涵蓋圖說」，不驗站方把圖說排在圖上方或並排的版面（findDivCaption 不認）
+  const CAP_MEDIA_SEL_ATTR = 'data-jread-cap-media';
+  const CAP_DIV_SEL = '[data-jread-cap-div]';
+  // 純 DOM 函式（不量 layout）：root＝主文容器，jsdom spec 直接驗
+  function divCaptionUnit(img, root) {
+    if (!img || !root || !img.getAttribute || img.getAttribute(CAP_MEDIA_SEL_ATTR) !== '1') return null;
+    let top = img;
+    while (top.parentElement && top.parentElement !== root &&
+           top.parentElement.getAttribute(CAP_MEDIA_SEL_ATTR) === '1') top = top.parentElement;
+    const common = top.parentElement;
+    if (!common || common === root || !root.contains(common)) return null;
+    return common.querySelector(CAP_DIV_SEL) ? common : null;
+  }
   function fitMediaToPages() {
     if (!art) return;
     mediaFitJournal.restoreAll(); // 每輪重算：上一輪寫的先全撤
@@ -1221,7 +1239,11 @@
         const h0 = fitImgHeight(img);
         if (!(h0 > 0)) continue; // 行內小圖 / player / 隱藏 / icon / 未撐開的圖
         const fig = img.closest('figure');
-        const unit = fig && art.contains(fig) ? fig : img;
+        const divUnit = fig && art.contains(fig) ? null : divCaptionUnit(img, art);
+        const unit = fig && art.contains(fig) ? fig : (divUnit || img);
+        // figure 的 break-inside: avoid 由 styler 給；div 圖說的共同容器沒有，這裡補上，
+        // 圖與圖說才會一起被推到下一頁（refineShrink 靠「unit 有沒有被推走」判定）
+        if (divUnit) setFitStyle(divUnit, 'break-inside', 'avoid');
         // 自然起點：圖暫時壓到 1px，unit 必然放得進當頁 → 首個 fragment 頂＝真起點；
         // unit 高 − 1 ＝ 圖說等非圖部分
         setFitStyle(img, 'max-height', '1px');
@@ -2225,6 +2247,7 @@
     isSingleMediaFlexShell,
     initialLetterPadPx,
     refineShrink,
+    divCaptionUnit,
     layoutChangedSince,
     quantizeStride,
     computeScrubTarget,

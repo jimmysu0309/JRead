@@ -452,6 +452,10 @@
     f.table.removeAttribute(TABLE_FIT_ATTR);
   };
   const CAP_BELOW_ATTR = 'data-jread-cap-below';   // 排在媒體下方的 figcaption（"1" / "pad"）
+  // v2.5.36：不是 <figcaption> 的圖說（div 小字緊接在大圖下方，見 findDivCaption）。
+  // 同時帶 CAP_BELOW_ATTR（間距規則）與本標記（置中 / 字級 / 顏色規則）
+  const CAP_DIV_ATTR = 'data-jread-cap-div';
+  const CAP_MEDIA_PAD_ATTR = 'data-jread-cap-media-pad'; // div 圖說上方包裝殼的下內距歸零
   // v2.5.16：主文內帶 shadow root 的自訂元素（見 markShadowHosts）
   const SHADOW_HOST_ATTR = 'data-jread-shadow-host';
   // v1.7.70：pre-wrap 硬換行切出的段落載體標記（見 splitPreWrapParagraphs）。
@@ -2781,6 +2785,23 @@ html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}="padfix"][${CAP_BELOW_AT
 html [${ARTICLE_ATTR}="1"] figcaption[${CAP_BELOW_ATTR}][${CAP_BELOW_ATTR}] > :first-child {
   margin-top: 0 !important;
 }
+/* v2.5.36：div 圖說（CAP_DIV_ATTR，見 findDivCaption）同一組間距。另寫一份、不併進上面的
+   figcaption 選擇器——figcaption 規則字串與權重維持原樣 */
+html [${ARTICLE_ATTR}="1"] [${CAP_DIV_ATTR}][${CAP_BELOW_ATTR}][${CAP_BELOW_ATTR}] {
+  margin-top: 8px !important;
+}
+html [${ARTICLE_ATTR}="1"] [${CAP_DIV_ATTR}][${CAP_BELOW_ATTR}="1"][${CAP_BELOW_ATTR}="1"] {
+  padding-top: 0 !important;
+}
+html [${ARTICLE_ATTR}="1"] [${CAP_DIV_ATTR}][${CAP_BELOW_ATTR}^="pad"][${CAP_BELOW_ATTR}^="pad"] {
+  margin-top: 0 !important;
+}
+html [${ARTICLE_ATTR}="1"] [${CAP_DIV_ATTR}][${CAP_BELOW_ATTR}="padfix"][${CAP_BELOW_ATTR}="padfix"] {
+  padding-top: 6px !important;
+}
+html [${ARTICLE_ATTR}="1"] [${CAP_DIV_ATTR}][${CAP_BELOW_ATTR}][${CAP_BELOW_ATTR}] > :first-child {
+  margin-top: 0 !important;
+}
 /* v2.5.16：shadow DOM 元件的配色跟著卡片走（標記見 markShadowHosts）。我們的樣式表
    進不了 shadow root：元件裡的底色留著站方依「系統深淺色」挑的那一組，但文字色是
    繼承來的、會吃到卡片的主題文字色——系統深色＋淺色主題時變成深底深字（MDN 的
@@ -3819,25 +3840,33 @@ html [${ARTICLE_ATTR}="1"] a {
     //（WebKit 補驗時截圖發現，Chromium 相同）。選擇器多疊一個 [A] 讓兩種 scope 都高過
     // (0,2,0)；只寫 text-align，不影響上面各條的優先序
     const capText = mixHex(theme.text || theme.proseText, theme.articleBg, 0.7);
-    const captionDefaultCss = (scope, colorStar, fontStar) => `
-${scope} figcaption {
+    // v2.5.36：div 圖說（CAP_DIV_ATTR，見 findDivCaption）一般網站版也套同一份——
+    // 另產一份把 figcaption 換成屬性選擇器的規則，不用 :is() 併進來（:is 取最高權重，
+    // 會改掉 figcaption 規則原本的 (0,2,2)）
+    const captionDefaultCss = (scope, colorStar, fontStar, divCap) =>
+      captionBlock(scope, colorStar, fontStar, 'figcaption') +
+      (divCap ? captionBlock(scope, colorStar, fontStar, `[${CAP_DIV_ATTR}]`) : '');
+    const captionBlock = (scope, colorStar, fontStar, C) => {
+      return `
+${scope} ${C} {
   font-family: -apple-system, "Noto Sans TC", "PingFang TC", system-ui, sans-serif !important;
   font-size: 0.8em !important;
   line-height: 1.5 !important;
   margin-top: 0.6em !important;
   text-align: center !important;
 }
-${scope} figcaption,
-${scope} figcaption ${colorStar} {
+${scope} ${C},
+${scope} ${C} ${colorStar} {
   color: ${capText} !important;
 }
-${scope} figcaption ${fontStar} {
+${scope} ${C} ${fontStar} {
   font-family: inherit !important;
   font-size: inherit !important;
 }
-${scope}[${ARTICLE_ATTR}] figcaption * {
+${scope}[${ARTICLE_ATTR}] ${C} * {
   text-align: center !important;
 }`;
+    };
     // 公式渲染單元取 NS.MATH_RENDER_SEL（單一資料源；KaTeX 的 .katex 內全是帶專用字體的
     // span，被蓋成 inherit 後減號等符號字寬變了、語料庫 distill 量到 <mo> 消失）
     const mathNot = String(NS.MATH_RENDER_SEL || 'math, mjx-container, .katex').split(',')
@@ -3849,7 +3878,7 @@ ${scope}[${ARTICLE_ATTR}] figcaption * {
     // 圖說樣式是另一件事，不該讓那些比對分不清。opts.captionOnly＝只要這張
     if (opts.captionOnly) {
       return opts.readerHostPage ? ''
-        : captionDefaultCss(`html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}]`, '*:not(a):not(a *)', '*' + CAP_KEEP_FONT);
+        : captionDefaultCss(`html [${ARTICLE_ATTR}="1"][${ARTICLE_ATTR}]`, '*:not(a):not(a *)', '*' + CAP_KEEP_FONT, true);
     }
     const readerCaption = opts.readerHostPage ? captionDefaultCss(`[${ARTICLE_ATTR}="1"]`, '*', '*') : '';
     const bylineFontNorm = `
@@ -5539,12 +5568,112 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   //   - 行內小圖示（INLINE_IMG_ATTR）、播放器（PLAYER_ATTR）、已被 cleaner 藏掉的
   //   - 媒體與圖說之間還隔著別的文字區塊（圖 → 一段說明 → 圖說）：共同容器的直系
   //     分支裡，媒體那一支與圖說那一支之間有帶文字的兄弟
-  // 這條驗 X、不驗 Y：只認語意上的 <figcaption>；用 div / p / span 當圖說的站不處理。
-  // 只做進場當下這一次，晚插入的 figure 不補標
+  // 這條驗 X、不驗 Y：這段只認語意上的 <figcaption>；div 圖說由開頭的 findDivCaption 段
+  // 處理（v2.5.36），p / span 當圖說的站不處理。只做進場當下這一次，晚插入的 figure 不補標
   const CAP_MEDIA_SEL = 'img, picture, video, svg, canvas, iframe';
+  // v2.5.36：用 div 當圖說的站（Jimmy 2026-11-21 回報 cnbc：圖說離圖很遠、沒置中）。
+  // cnbc 結構：wrapper > [圖片殼（只有圖）, div > [div 圖說 12px, div 來源 12px]]，
+  // 內文 17–18px；v2.5.23 / v2.5.24 的圖說規則只認 <figcaption>，整條沒套到。
+  // 判定（全是結構訊號，不看 class）：
+  //   1) 大圖：量得到寬度 >= DIV_CAP_MIN_MEDIA_W（擋頭像 / 圖示——作者列的頭像後面也
+  //      常跟著小字名字）；圖不在已有 <figcaption> 的 figure 裡（那條走原路）
+  //   2) 從圖往上爬（最多 DIV_CAP_MAX_CLIMB 層）：圖那一支沒有字；它後面第一個有字的
+  //      兄弟就是候選，候選前面的兄弟沒有字、候選後面的兄弟也沒有字（容器裡只有
+  //      「圖 + 一段說明」）；遇到有字但不合格的兄弟就停，不再往上
+  //   3) 候選：不含其他媒體、標題、段落級長文（<= DIV_CAP_MAX_LEN 字）、不在作者列；
+  //      每一個帶字的元素字級都小於容器字級 × DIV_CAP_FS_RATIO（站方把它排成小字＝
+  //      說明文字，不是內文段落）
+  // 這條驗 X、不驗 Y：只認「圖在上、小字在下、容器裡沒別的東西」；圖說在圖上方、
+  // 與圖說同字級的 div、圖說與圖隔著其他區塊的都不處理。lazy 圖量不到寬度時不處理
+  const DIV_CAP_MIN_MEDIA_W = 200;
+  const DIV_CAP_MAX_CLIMB = 8;
+  const DIV_CAP_MAX_LEN = 400;
+  const DIV_CAP_FS_RATIO = 0.9;
+  // <picture> 不列：從裡面的 <img> 往上爬會經過它（img 自己的下邊距也要歸零——cnbc
+  // 的 img 帶 24px margin-bottom，穿出 picture 落在外層殼的 padding 裡）
+  const DIV_CAP_MEDIA_SEL = 'img, video, canvas, iframe';
+  // 舊快照（登記簿缺席的 jsdom 最小 NS 環境用）
+  const capPadPrev = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function findDivCaption(media, articleEl, win) {
+    const txt = (e) => (e.textContent || '').trim();
+    const hidden = (e) => e.getAttribute && e.getAttribute('data-jread-hidden') === '1';
+    let branch = media;
+    for (let k = 0; k < DIV_CAP_MAX_CLIMB; k++) {
+      const parent = branch.parentElement;
+      if (!parent || parent === articleEl || !articleEl.contains(parent)) return null;
+      if (txt(branch)) return null; // 圖那一支帶字（圖在段落裡）
+      // 圖那一支前面的兄弟不能有字
+      for (let s = branch.previousElementSibling; s; s = s.previousElementSibling) {
+        if (!hidden(s) && txt(s)) return null;
+      }
+      let cand = null;
+      for (let s = branch.nextElementSibling; s; s = s.nextElementSibling) {
+        if (hidden(s) || !txt(s)) continue;
+        if (cand) return null; // 第二個帶字的兄弟 → 不是「圖 + 一段說明」
+        cand = s;
+      }
+      if (cand) {
+        if (txt(cand).length > DIV_CAP_MAX_LEN) return null;
+        if (cand.matches('figcaption, p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol') ||
+            cand.querySelector('h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, figcaption, ' + DIV_CAP_MEDIA_SEL)) return null;
+        if (cand.closest('[' + BYLINE_ATTR + ']') || cand.querySelector('[' + BYLINE_ATTR + ']')) return null;
+        if (!win || !win.getComputedStyle) return null;
+        const limit = (parseFloat(win.getComputedStyle(parent).fontSize) || 0) * DIV_CAP_FS_RATIO;
+        if (!limit) return null;
+        // 每個直接帶字的元素都要是小字
+        let any = false;
+        for (const el of [cand, ...Array.from(cand.querySelectorAll('*'))]) {
+          let own = false;
+          for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { own = true; break; } }
+          if (!own) continue;
+          any = true;
+          if ((parseFloat(win.getComputedStyle(el).fontSize) || 0) >= limit) return null;
+        }
+        return any ? { cap: cand, common: parent } : null;
+      }
+      branch = parent;
+    }
+    return null;
+  }
   function markCaptionMedia(articleEl, marked) {
     const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
     const DOC_POS_FOLLOWING = 4; // Node.DOCUMENT_POSITION_FOLLOWING
+    // v2.5.36：div 圖說（見 findDivCaption）。標記與 figcaption 共用下面的尾段（markCapPair）
+    for (const m of articleEl.querySelectorAll(DIV_CAP_MEDIA_SEL)) {
+      if (m.hasAttribute(INLINE_IMG_ATTR) || m.hasAttribute(PLAYER_ATTR)) continue;
+      if (m.closest('[data-jread-hidden="1"], figcaption, [' + CAP_DIV_ATTR + ']')) continue;
+      const fig = m.closest('figure');
+      if (fig && fig.querySelector('figcaption')) continue;
+      const r = m.getBoundingClientRect ? m.getBoundingClientRect() : null;
+      if (!r || r.width < DIV_CAP_MIN_MEDIA_W || r.height <= 0) continue;
+      const hit = findDivCaption(m, articleEl, _win);
+      if (!hit || hit.cap.hasAttribute(CAP_DIV_ATTR)) continue;
+      hit.cap.setAttribute(CAP_DIV_ATTR, '1');
+      markCapPair(m, null, hit.cap, hit.common);
+      // 圖與圖說之間的包裝殼若帶下內距，那也是「圖與圖說之間的距離」→ 歸零。cnbc：
+      // 站方圖片殼 inline `padding-bottom: 55.5%`（比例撐高），圖改回 in-flow 後 cleaner
+      // capWrapperSpacing 把它壓成 16px !important（inline）——樣式表蓋不過，這裡也寫
+      // inline（分層登記簿 owner 'styler:cap-media-pad'；styler.restore 先於
+      // cleaner.restore，退出時先還成 16px、再由 cleaner 還成站方原值）。
+      // 排除：殼自己有底色或下框線（內距是框內留白）、內容高度 0（padding-bottom 還在
+      // 撐比例的殼，歸零會讓圖塌掉）。只做 div 圖說這條；figcaption 那條維持 v2.5.23
+      // 行為（要擴過去得另外普查）
+      if (_win && _win.getComputedStyle) {
+        for (let cur = m.parentElement; cur && cur !== hit.common; cur = cur.parentElement) {
+          const cs = _win.getComputedStyle(cur);
+          const pb = parseFloat(cs.paddingBottom) || 0;
+          if (pb <= 0) continue;
+          const bg = parseCssColor(cs.backgroundColor);
+          if ((bg && bg.a >= 0.1) || ((parseFloat(cs.borderBottomWidth) || 0) > 0 && cs.borderBottomStyle !== 'none')) continue;
+          const contentH = (parseFloat(cs.height) || 0) - (cs.boxSizing === 'border-box' ? (parseFloat(cs.paddingTop) || 0) + pb : 0);
+          if (contentH <= 1) continue;
+          cur.setAttribute(CAP_MEDIA_PAD_ATTR, '1');
+          capPadPrev.set(cur, { v: cur.style.getPropertyValue('padding-bottom'), p: cur.style.getPropertyPriority('padding-bottom') });
+          setInlineOwned(cur, 'padding-bottom', '0px', 'important', 'styler:cap-media-pad');
+          marked.push(cur);
+        }
+      }
+    }
     for (const cap of articleEl.querySelectorAll('figcaption')) {
       if (cap.closest('[data-jread-hidden="1"]')) continue;
       const fig = cap.closest('figure');
@@ -5578,6 +5707,9 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         if ((sib.textContent || '').trim().length > 0) { between = true; break; }
       }
       if (between) continue;
+      markCapPair(media, rendered, cap, common);
+    }
+    function markCapPair(media, rendered, cap, common) {
       // 兩個都標：站方常在同一格放「佔位圖 + lazy 真圖」（bbc：img[aria-label=image
       // unavailable] 後面跟真圖）。進場當下真圖可能還沒載入（高度 0）、畫面上是佔位圖；
       // 載入後換成真圖。只標文件順序最後一個的話，佔位圖那 24px 會留在圖說上面
@@ -8304,7 +8436,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             // 太小的撐上來、跟內文一樣大或更大的縮下去。置中 / 字體 / 顏色在 buildCss 的
             // captionDefaultCss。內文字級：使用者有設就用設定值；Auto（0，保留原站字級）
             // 時取主文裡最常見的長段落字級，量不到用 18。
-            // 這條驗 X、不驗 Y：只認 <figcaption>；用 div / p / span 當圖說的站不處理
+            // 這條驗 X、不驗 Y：認 <figcaption> 與 div 圖說（CAP_DIV_ATTR，v2.5.36）；p / span 當圖說的站不處理
             let bodyFs = opts.fontSize || 0;
             if (!bodyFs) {
               const tally = new Map();
@@ -8325,7 +8457,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             // v1.6.29 批次化：先全讀 computed font-size 再全寫（同 zeroHoriz，
             // 避免逐元素讀寫交錯的 O(n) 強制 recalc）
             const capPending = [];
-            for (const fc of articleEl.querySelectorAll('figcaption')) {
+            // v2.5.36：div 圖說（CAP_DIV_ATTR）比照
+            for (const fc of articleEl.querySelectorAll(`figcaption, [${CAP_DIV_ATTR}]`)) {
               if (fc.closest('[data-jread-hidden="1"]')) continue;
               // 一律寫（不比對現值）：樣式表的 0.8em 後備是相對父層，算出值剛好等於目標
               // 不代表父層字級之後不變
@@ -10510,6 +10643,15 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           if (!el || !el.removeAttribute) continue;
           el.removeAttribute(CAP_MEDIA_ATTR);
           el.removeAttribute(CAP_BELOW_ATTR);
+          el.removeAttribute(CAP_DIV_ATTR);
+          if (el.hasAttribute && el.hasAttribute(CAP_MEDIA_PAD_ATTR)) {
+            el.removeAttribute(CAP_MEDIA_PAD_ATTR);
+            if (!releaseInlineOwned(el, 'padding-bottom', 'styler:cap-media-pad')) {
+              const pv = capPadPrev && capPadPrev.get(el);
+              if (pv && pv.v) el.style.setProperty('padding-bottom', pv.v, pv.p || '');
+              else el.style.removeProperty('padding-bottom');
+            }
+          }
           el.removeAttribute(CODE_FLEX_FILL_ATTR);
         }
       }
