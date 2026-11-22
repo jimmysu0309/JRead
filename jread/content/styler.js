@@ -4527,6 +4527,23 @@ html.${HTML_CLASS}.jread-orion body {
     for (const c of candidates) {
       weightByFs.set(c.fs, (weightByFs.get(c.fs) || 0) + c.len);
     }
+    // v2.5.39：<p> 段落也算進主流字級。原本只看「當段落用的 div」，內文全是 <p>、
+    // div 只剩圖說與攝影者署名的頁面，主流字級會落在圖說的小字上，圖說反被當成內文、
+    // 套上使用者字級，div 圖說規則（findDivCaption，要求比容器字小）也跟著失效。
+    // cnbc 真站實證（Jimmy 2026-11-22 iPhone 回報圖說沒貼圖）：內文 <p> 18px、div 候選
+    // 是圖說 12px 約 580 字 vs 作者列 16px 約 50 字 → 主流 12、圖說被標 text-div。
+    // 只參與「主流是幾 px」的計算，<p> 本身不標記（它們本來就吃 BODY_TEXT_SEL）。
+    // figure / pre / code 內與已藏的 <p> 不算，與上面 div 候選同一組排除
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p.closest && p.closest('figure, pre, code, [data-jread-hidden="1"]')) continue;
+      const len = (p.textContent || '').trim().length;
+      if (len < 4) continue;
+      const pcs = win.getComputedStyle(p);
+      if (pcs.display === 'none' || pcs.visibility === 'hidden') continue;
+      const pfs = Math.round(parseFloat(pcs.fontSize) || 0);
+      if (!pfs) continue;
+      weightByFs.set(pfs, (weightByFs.get(pfs) || 0) + len);
+    }
     let dominantFs = 0;
     let maxWeight = -1;
     for (const [fs, w] of weightByFs) {
