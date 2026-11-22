@@ -2191,6 +2191,178 @@
   const DECORATIVE_LINE_SVG_MAX_HEIGHT = 24;
   const DECORATIVE_LINE_SVG_MIN_WIDTH = 200;
 
+  // v2.5.40：動作圖示（小 svg，無障礙名稱本身就是 CTA 字樣）。Trigger：theverge 作者列
+  // 每個作者名前面一個紫色「+」（語料庫 KNOWN-ISSUES，原文與翻譯後都有）——那是
+  // `<svg aria-label="Follow">`，包在作者名 chip（role=button，點開作者卡）裡；chip 因為
+  // 承載作者名被 isBylineNameChip 豁免，裡面的追蹤圖示跟著留下。翻譯後 Shinkansen 把
+  // chip 攤平、role=button 消失，圖示照樣在，所以不能掛在按鈕豁免那條路上。
+  // 判準（與站點、class 無關）：svg 自身沒有可見文字、畫面尺寸兩邊都 <= 24px（圖示級），
+  // 且無障礙名稱（aria-label 或 <title>）整串命中 NOISE_LINK_TEXT_RE（Follow / Share /
+  // 訂閱 / 追蹤……）→ 只藏這顆 svg。名稱是內容描述（「Chart」「Map」）或沒有名稱的圖示不動。
+  // 不怕翻譯：aria-label 與 svg <title> 不是畫面文字，翻譯擴充不改
+  // v2.5.40：資訊框表頭重複標題。Trigger：he / ar / th 維基標題下方又出現一到兩行標題
+  //（語料庫 KNOWN-ISSUES）。那是資訊框的表頭——he 是 `<caption>名字<br>原文名</caption>`、
+  // ar 是 `div.entete`、th 是 `th.infobox-above`。原站有底色條，看得出是資訊框的抬頭；
+  // 閱讀模式拿掉底色後就是標題底下一行跟標題一字不差的字。
+  // 判準（與站點、class 無關）：主文第一段長內文之前、不含媒體 / 標題 / 表格 / 連結的
+  // 短區塊，「第一行」（到第一個 <br> 或區塊子元素為止）與目前看得到的標題文字相同 →
+  // 往上取文字量不超過「第一行 + TITLE_ECHO_MAX_EXTRA」的最外層，藏掉；落在只有它一格的
+  // <tr> 裡就藏整列。第二行（he 的原文名）跟著藏：只是名字的另一種寫法，內文首句都有。
+  // 標題必須是真的 heading / JRead 標題節點——只有 meta 標題、頁面沒有可見標題時不動
+  //（那時這個區塊可能就是唯一的標題載體，detector 之後還要拿它補標題）
+  const TITLE_ECHO_MAX_EXTRA = 40;
+  const TITLE_ECHO_BLOCK_TAGS = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'TR', 'TD', 'TH', 'TABLE', 'TBODY', 'CAPTION', 'SECTION', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'DL', 'DT', 'DD']);
+  function titleEchoFirstLine(el) {
+    let out = '';
+    let done = false;
+    const walk = (node) => {
+      for (const c of node.childNodes) {
+        if (done) return;
+        if (c.nodeType === 3) { out += c.nodeValue; continue; }
+        if (c.nodeType !== 1) continue;
+        if (c.tagName === 'BR') { if (norm(out)) { done = true; return; } continue; }
+        if (TITLE_ECHO_BLOCK_TAGS.has(c.tagName) && norm(out)) { done = true; return; }
+        walk(c);
+        if (TITLE_ECHO_BLOCK_TAGS.has(c.tagName) && norm(out)) { done = true; return; }
+      }
+    };
+    walk(el);
+    return norm(out);
+  }
+  // 標題要「真的看得到」：不在 JRead 藏掉的子樹、祖先鏈沒有 display:none（roomie 的 sr-only
+  // h1 放在 display:none 的行動版區塊，看得到的標題是疊圖層裡的 span——拿 sr-only h1 當標題
+  // 會把真正的標題當重複藏掉）；有版面時再要求畫面尺寸 > 2px（clip 成 1px 的 sr-only）
+  function titleEchoTitleVisible(el) {
+    if (el.closest('[data-jread-hidden="1"]')) return false;
+    const win = el.ownerDocument && el.ownerDocument.defaultView;
+    if (win && win.getComputedStyle) {
+      for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+        let cs;
+        try { cs = win.getComputedStyle(n); } catch (_) { cs = null; }
+        if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+      }
+    }
+    if (ctaIconHasLayout(el)) {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 2 || r.height <= 2) return false;
+    }
+    return true;
+  }
+  function titleEchoTitleKeys(articleEl) {
+    const keys = new Set();
+    const add = (el) => {
+      if (!el || !titleEchoTitleVisible(el)) return;
+      const t = normTitle(el.textContent || '');
+      // 門檻 4（不是 promote 用的 5）：這裡是整串相等比對、而且只看標題底下第一段內文之前，
+      // 短標題誤中的面很小；ar 維基「قهوة」4 個字母，用 5 會整條不觸發
+      if (t && titleTextWeight(t) >= 4) keys.add(NS.titleKey(t));
+    };
+    for (const h of articleEl.querySelectorAll('h1, [data-jread-title-clone="1"], [data-jread-injected-title="1"]')) add(h);
+    const parent = articleEl.parentNode;
+    if (parent && parent.children) {
+      for (const el of parent.children) {
+        if (el !== articleEl && el.getAttribute && el.getAttribute('data-jread-promoted-outside') === '1') {
+          add(el.matches('h1, h2') ? el : el.querySelector('h1, h2'));
+        }
+      }
+    }
+    return keys;
+  }
+  function hideInsideArticleTitleEchoHeaders(articleEl, hidden) {
+    if (!NS || typeof NS.titleKey !== 'function') return;
+    const keys = titleEchoTitleKeys(articleEl);
+    if (!keys.size) return;
+    // 第一段長內文：之後的區塊不算「標題下方」
+    let firstBody = null;
+    for (const p of articleEl.querySelectorAll('p')) {
+      if (p.closest('[data-jread-hidden="1"], table, figure, aside')) continue;
+      if (norm(p.textContent || '').length >= 80) { firstBody = p; break; }
+    }
+    const before = (el) => !firstBody || !!(el.compareDocumentPosition(firstBody) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const BAD_SEL = 'img, picture, video, iframe, svg, figure, table, h1, h2, h3, h4, h5, h6, a, [data-jread-title-clone], [data-jread-injected-title]';
+    const done = new Set();
+    for (const el of articleEl.querySelectorAll('caption, th, td, div, p, span')) {
+      if (!before(el)) break;
+      if (el.closest('[data-jread-hidden="1"], h1, h2, h3, h4, h5, h6, a, [data-jread-title-clone], [data-jread-injected-title], [data-jread-promoted-outside]')) continue;
+      if (el.querySelector(BAD_SEL)) continue;
+      const first = titleEchoFirstLine(el);
+      if (!first || !keys.has(NS.titleKey(normTitle(first)))) continue;
+      const cap = first.length + TITLE_ECHO_MAX_EXTRA;
+      if (norm(el.textContent || '').length > cap) continue;
+      let target = el;
+      for (let up = el.parentElement; up && up !== articleEl; up = up.parentElement) {
+        if (up.matches('table, tbody, thead')) break;
+        if (up.querySelector(BAD_SEL)) break;
+        if (norm(up.textContent || '').length > cap) break;
+        target = up;
+      }
+      const tr = target.parentElement;
+      if (target.matches('th, td') && tr && tr.tagName === 'TR' && tr.children.length === 1) target = tr;
+      if (done.has(target)) continue;
+      done.add(target);
+      hide(target, hidden);
+    }
+  }
+
+  // v2.5.40：瀏覽數（view count）。Trigger：天下雜誌 cw.com.tw 標題下與內文前各一個
+  // 「瀏覽數：559」（語料庫 KNOWN-ISSUES，2026-11-20 cage 補驗看到；包在 <time> 裡，作者列
+  // 偵測還把它當日期錨）。與閱讀時間同類：站方統計、不是文章內容。
+  // 判準：整個元素的文字就是「瀏覽 / 閱讀 / 觀看 / 點閱（數 / 次數 / 人次）：數字」或
+  // 「數字 次瀏覽 / views / reads」（全字串比對，句子裡提到瀏覽數不會中）；不在表格、清單、
+  // 引言裡；元素裡沒有其他元素帶別的文字（只藏葉節點級的計數標籤）
+  const VIEW_COUNT_RE = /^(?:(?:瀏覽|閱讀|觀看|點閱|浏览|阅读|观看|点阅)(?:數|数|次數|次数|人次|量)?\s*[:：]?\s*[\d,.]+\s*(?:萬|万|k)?\s*(?:次|人)?|[\d,.]+\s*(?:萬|万|k)?\s*(?:次瀏覽|次觀看|次閱讀|次点阅|次浏览|次阅读|次观看|人次|人瀏覽|人閱讀|views?|reads?))$/i;
+  function hideInsideArticleViewCounts(articleEl, hidden) {
+    for (const el of articleEl.querySelectorAll('time, span, div, p, small, li')) {
+      if (el.dataset && el.dataset.jreadHidden === '1') continue;
+      if (el.closest('[data-jread-hidden="1"], table, blockquote, figcaption')) continue;
+      // 清單項本身可以是計數標籤（「<li>瀏覽 120</li>」），清單項裡的子元素交給清單項判
+      if (el.tagName !== 'LI' && el.parentElement && el.parentElement.closest('li')) continue;
+      const t = norm(el.textContent || '');
+      if (!t || t.length > 30 || !VIEW_COUNT_RE.test(t)) continue;
+      // 子元素整串就是同一段計數（span 包數字）沒關係；有子元素自己也整串命中就交給它
+      let childHit = false;
+      for (const c of el.children) { if (VIEW_COUNT_RE.test(norm(c.textContent || ''))) { childHit = true; break; } }
+      if (childHit) continue;
+      hide(el, hidden);
+    }
+  }
+
+  const CTA_ICON_MAX_SIZE = 24;
+  function ctaIconHasLayout(articleEl) {
+    const root = articleEl.ownerDocument && articleEl.ownerDocument.documentElement;
+    return !!(root && root.getBoundingClientRect().height > 0);
+  }
+  function hideInsideArticleCtaIcons(articleEl, hidden) {
+    for (const svg of articleEl.querySelectorAll('svg')) {
+      if (svg.dataset && svg.dataset.jreadHidden === '1') continue;
+      if (svg.closest && svg.closest('[data-jread-hidden="1"]')) continue;
+      let label = svg.getAttribute('aria-label') || '';
+      if (!label) {
+        const t = Array.from(svg.children).find((c) => String(c.tagName).toLowerCase() === 'title');
+        label = t ? (t.textContent || '') : '';
+      }
+      label = norm(label);
+      if (!label || label.length > NOISE_LINK_TEXT_MAX_LEN) continue;
+      if (!NOISE_LINK_TEXT_RE.test(foldZhVariants(label))) continue;
+      // <title> 以外有文字＝圖表或文字圖，不是圖示
+      let textLen = 0;
+      for (const n of svg.querySelectorAll('text, tspan, foreignObject')) textLen += norm(n.textContent || '').length;
+      if (textLen) continue;
+      // 尺寸：有版面量畫面尺寸（0＝沒畫出來，不管）；沒有版面的環境（jsdom）讀 width / height 屬性
+      let w, h;
+      if (ctaIconHasLayout(articleEl)) {
+        const r = svg.getBoundingClientRect();
+        w = r.width; h = r.height;
+      } else {
+        w = parseFloat(svg.getAttribute('width')) || 0;
+        h = parseFloat(svg.getAttribute('height')) || 0;
+      }
+      if (!w || !h) continue;
+      if (w > CTA_ICON_MAX_SIZE || h > CTA_ICON_MAX_SIZE) continue;
+      hide(svg, hidden);
+    }
+  }
+
   function hideInsideArticleDecorativeLineSvgs(articleEl, hidden) {
     for (const svg of articleEl.querySelectorAll('svg')) {
       if (isInPreserved(svg)) continue;
@@ -2786,6 +2958,36 @@
         hide(sib, hidden);
       }
       cur = parent;
+    }
+  }
+
+  // v2.5.40：主文祖先層的裸文字節點。Trigger：telefoncek.si 翻譯後卡片外左下角漏出
+  // 「分類：關鍵字：」（語料庫 KNOWN-ISSUES）——那兩個標籤是主文 <article> 的父層 div 底下
+  // 的裸文字節點，後面的分類連結是 <i><a>、跟著 hideAncestorSiblings 一起被藏；文字節點
+  // 沒有 display 可設，祖先鏈上的裸文字就一直看得到（排在卡片外、沒有樣式）。
+  // 做法：主文的每一層祖先（到 body 為止），直屬的非空白文字節點清空，原文記進
+  // hidden.__phantomText（stripPhantomWhitespaceTextNodes 同一個還原契約，restore 寫回）。
+  // 保守閘：一層裡直屬裸文字合計超過 ANCESTOR_STRAY_TEXT_MAX 字就整層不動——那可能是
+  // 直接寫在容器裡的內文（老式手寫頁面），detector 選的主文只是其中一塊
+  const ANCESTOR_STRAY_TEXT_MAX = 200;
+  function blankAncestorStrayText(articleEl, hidden) {
+    const doc = articleEl.ownerDocument;
+    for (let anc = articleEl.parentElement; anc && anc !== doc.documentElement; anc = anc.parentElement) {
+      const nodes = [];
+      let total = 0;
+      for (const n of anc.childNodes) {
+        if (n.nodeType !== 3) continue;
+        const t = norm(n.nodeValue || '');
+        if (!t) continue;
+        nodes.push(n);
+        total += t.length;
+      }
+      if (nodes.length && total <= ANCESTOR_STRAY_TEXT_MAX) {
+        const snaps = nodes.map((node) => ({ node, orig: node.nodeValue }));
+        for (const node of nodes) node.nodeValue = '';
+        hidden.__phantomText = (hidden.__phantomText || []).concat(snaps);
+      }
+      if (anc === doc.body) break;
     }
   }
 
@@ -9357,6 +9559,12 @@
       if (linkLostOnlyImages(el)) return false;
       // 同一個 chip 的外層（hover-card 被藏掉後也是「文字 + 空分支」）
       if (Array.from(el.querySelectorAll('[role="button"]')).some(isBylineNameChip)) return false;
+      // v2.5.40：chip 的內層也一樣——作者名旁的追蹤圖示被 hideInsideArticleCtaIcons 藏掉後，
+      // 包著「圖示殼＋名字」的那層 span 變成「文字＋空分支」，作者名連坐消失（theverge 語料庫）
+      {
+        const chip = el.closest && el.closest('[role="button"], a[type="button"]');
+        if (chip && chip !== el && isBylineNameChip(chip)) return false;
+      }
       // v2.5.22：清單項目不是孤兒標籤。孤兒標籤的前提是「一段 label 標注一塊被我們清掉
       // 的內容」；同一個清單裡 >= 3 個各自帶文字的項目是一份清單，每項旁邊被清掉的是
       // 它自己的附屬小工具（說明浮層、勾選框），項目文字仍是內容。
@@ -15505,6 +15713,8 @@
       safeRun(hideInsideArticleButtonClusters, articleEl, hidden, containers);
       safeRun(hideInsideArticleHorizontalRules, articleEl, hidden);
       safeRun(hideInsideArticleDecorativeLineSvgs, articleEl, hidden);
+      safeRun(hideInsideArticleCtaIcons, articleEl, hidden);
+      safeRun(hideInsideArticleViewCounts, articleEl, hidden);
       safeRun(hideInsideArticleNav, articleEl, hidden);
       safeRun(hideInsideArticleFooter, articleEl, hidden);
       safeRun(hideInsideArticleDirectChildLinkBlocks, articleEl, hidden);
@@ -15517,6 +15727,8 @@
       safeRun(resetNegativeHorizontalMargins, articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
       safeRun(hideAncestorSiblings, articleEl, hidden);
+      // v2.5.40：祖先層的裸文字（藏兄弟元素藏不到它，見 blankAncestorStrayText）
+      safeRun(blankAncestorStrayText, articleEl, hidden);
       // v0.8.51 標題前導雜訊：主文標題前的兄弟分支一律 hide（Medium 付費牆
       // 「Member-only story」徽章類）。放在精細規則之後（已 hidden 者 skip、
       // 不重複處理）、collapse 類之前（emptied flex / grid 規則能看到本條
@@ -15599,6 +15811,8 @@
       // 版型的 `<a class="diary_title">` 等）。排在三條 heading path 之後，
       // 它們命中時 articleHasPromotedTitle 會讓本條早退。
       safeRun(promoteOutsideTitleCarrierInto, articleEl, hidden);
+      // v2.5.40：資訊框表頭重複標題（見 hideInsideArticleTitleEchoHeaders）。三條標題 promote 都跑完才知道標題是誰
+      safeRun(hideInsideArticleTitleEchoHeaders, articleEl, hidden);
       // 超寬圖片 promote：Swiper / carousel 內的 hero img 拉到 article flow
       safeRun(promoteOverwideImages, articleEl, hidden);
       // Lazy-load 圖片 src 補正：data-src / data-original / srcset → src
