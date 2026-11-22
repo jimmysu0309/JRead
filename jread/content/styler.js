@@ -9532,6 +9532,49 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                 });
                 setInlineOwned(el, 'display', 'block', 'important', 'styler:decolumn');
               }
+            } else if (opts.pagedMode) {
+              // v2.5.38：上一段在翻頁模式的對偶。上一段用「子項右緣衝出卡片右緣」判溢出，
+              // 翻頁的 multicol 卡片量不準（第 2 欄起天然超出）所以整段關掉——但橫排溢出
+              // 在翻頁模式一樣會發生、一樣被欄裁掉。cnbc「Key Points」實證：站方 flex 列
+              // ＝左 85px 標題＋右清單，清單 flex-shrink:0 搭配 min/max-width:calc(75% - 30px)
+              // 自己算寬；segCardWidth 的通則把 max-width 改 100%、min-width 改 0，清單撐滿
+              // 608px、旁邊再擠 85px 標題 → 右側溢出 85px，第二條「…reinvent the P」後半被
+              // 欄邊裁掉（捲動模式靠上一段塌欄，沒事）。
+              // 翻頁版的溢出判定改成「子項右緣衝出它自己的 flex/grid 容器內容右緣」：子項
+              // 與容器在同一欄片段內比，不受欄位移影響（容器跨頁時取子項起點所在的那一片）。
+              // 候選先用 scrollWidth > clientWidth 篩（不必對全 DOM getComputedStyle）。
+              // 溢出的子項要有文字：症狀是「字被切」；沒有字的溢出（discourse 燈箱資訊列
+              // opacity:0 疊層裡的 svg 圖示）不是這個症狀、也看不到，不碰。
+              // 語料庫 180 頁翻頁模式普查（2026-11-22）：只命中 cnbc 原文與翻譯後兩頁。
+              for (const el of articleEl.querySelectorAll('*')) {
+                if (textColSeen.has(el)) continue;
+                if (!(el.clientWidth > 0) || el.scrollWidth <= el.clientWidth + 2) continue;
+                if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+                if (el.closest && el.closest('[data-jread-hidden="1"]')) continue;
+                if (isAriaTableRow(el)) continue;
+                const cs = win.getComputedStyle(el);
+                if (!isMultiColumnContainer(cs)) continue;
+                const frs = el.getClientRects();
+                if (!frs || !frs.length) continue;
+                const padR = (parseFloat(cs.paddingRight) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+                let overflows = false;
+                for (const c of el.children) {
+                  if (!(c.textContent || '').trim()) continue;
+                  const cr = c.getClientRects()[0];
+                  if (!cr || cr.width < 1 || cr.height < 1) continue;
+                  let fr = frs[0];
+                  for (const f of frs) { if (cr.left >= f.left - 1 && cr.left < f.right) { fr = f; break; } }
+                  if (cr.right > fr.right - padR + 2) { overflows = true; break; }
+                }
+                if (!overflows) continue;
+                textColSeen.add(el);
+                textColFlex.push({
+                  el,
+                  display: el.style.getPropertyValue('display'),
+                  displayPriority: el.style.getPropertyPriority('display'),
+                });
+                setInlineOwned(el, 'display', 'block', 'important', 'styler:decolumn');
+              }
             }
 
             // v1.0.9 stackLopsidedImgCol 的獨立 img 掃描已於 v1.7.44（E10）合併
