@@ -270,6 +270,9 @@
   // 時刻訊號：整段直接文字＝「HH:MM(:SS)? (AM/PM)? TZ?」（例 "1:59 PM ET"、
   //   "13:59"、"9:30 a.m. EST"）。冒號是關鍵——日期字串無冒號，故不誤殺日期。
   const BYLINE_TIME_RE = /^\d{1,2}:\d{2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)?\s*[a-z]{0,5}$/i;
+  // v2.5.40：日期之後緊接的時刻（同一段文字）。可帶前導分隔符、上午 / 下午這類中文時段、
+  //   am / pm、時區縮寫；整段比對，剩餘文字有其他東西（「更新」「· 5 分鐘閱讀」）就不切
+  const BYLINE_TRAILING_TIME_RE = /^[,，·•|\-–—]?\s*(上午|下午|中午|晚上|凌晨|早上)?\s*\d{1,2}:\d{2}(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)?\s*([a-z]{1,5}([+-]\d{1,2}(:?\d{2})?)?)?$/i;
   // v0.8.86：responsive embed（relative wrapper + position:absolute iframe 填滿
   // 16:9 padding-bottom hack）的 iframe 標記。apply() 量到 computed
   // position:absolute 的 article iframe 標此 attr，CSS 把它 pin 回 inset:0
@@ -1370,7 +1373,10 @@ html [${ARTICLE_ATTR}="1"] {
    function 先比中。 */
 [${ANCESTOR_ATTR}="1"] > [data-jread-promoted-outside="1"] {
   box-sizing: border-box !important;
-  display: block !important;
+  /* v2.5.40：flow-root（不是 block）——搬出來的整塊頁首最後一個子元素常帶站方
+     margin-bottom（telefoncek 翻譯後 h1 15px），block 會讓它穿出標題塊、在標題塊與
+     主文卡之間撐出一條灰底縫；flow-root 把它留在標題塊的底色裡 */
+  display: flow-root !important;
   max-width: ${contentWidth}px !important;
   width: auto !important;
   margin: clamp(8px, calc(6.4vw - 19.2px), 40px) auto 0 !important;
@@ -1400,6 +1406,12 @@ html [${ARTICLE_ATTR}="1"] {
 [data-jread-promoted-outside="1"] a[${HEADING_LINK_ATTR}="1"] {
   color: inherit !important;
   text-decoration: none !important;
+}
+/* v2.5.40：標題塊內的後代文字色跟主文卡同一條（v0.7.179 後代 color inherit）。標題塊在
+   articleEl 外、吃不到那條，站方給標題的淡灰色（telefoncek .post-title rgb(160,154,146)，
+   對比 2.6:1）就原樣留著；排除清單與主文卡同一份（連結、程式碼、表格、語意行內元素、圖說） */
+[data-jread-promoted-outside="1"] *${COLOR_PRESERVE_NOT}:not([${PLAYER_ATTR}="1"]) {
+  color: inherit !important;
 }
 /* 標題在前時，下方主文卡片去掉上圓角 + 上 margin，兩塊接成同一張卡片。
    (0,2,0) > 卡片規則 html [data-jread-active] (0,1,1)，且 source order 在後。
@@ -6192,6 +6204,53 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // bg 被 reader 樣式覆蓋，原始背景量不到。只在 light theme 跑（theme.text
       // 非 null 時 `* { color: theme.text }` 蓋掉 token 色 + v0.7.164 已清
       // pre/code bg transparent，結構上不存在此 bug）。
+      // v2.5.40：「當標題用的段落」（pseudo heading）。Trigger：pudding.cool 標題與小標都是
+      // 內文大小的小字（語料庫 KNOWN-ISSUES）——站方標題是 `<p class="opener-title">`
+      //（198px）、小標是 `<p class="prose-head">`（31px 粗體），沒有任何 h 標籤；閱讀模式
+      // 把所有 <p> 統一成使用者字級，標題和小標被壓成內文。
+      // 判準（與站點、class 無關），量的是「注入 JRead 樣式之前」的站方字級：
+      //   - p / div、短（<= PSEUDO_HEADING_MAX_LEN 字）、裡面沒有其他區塊、媒體、標題
+      //   - 字級 >= 內文主流字級 × PSEUDO_HEADING_MIN_RATIO，且粗體（>= 600）
+      //     ——摘要（dek）與引言（pull quote）也比內文大，但都不是粗體（普查：arstechnica /
+      //     theverge / lawfare / kubernetes 的摘要 300–400、aeon 的引言 400）
+      //   - 不在清單、表格、引言、圖說、連結、按鈕裡；不以句號結尾
+      // 只量、做標記；注入樣式後由 passPseudoHeadingSize 判斷是不是真的被壓小了才改
+      const pseudoHeadings = [];
+      let pseudoBodyFs = 0;
+      const PSEUDO_HEADING_MAX_LEN = 80;
+      const PSEUDO_HEADING_MIN_RATIO = 1.5;
+      const passMarkPseudoHeadings = () => {
+        const win = articleEl.ownerDocument?.defaultView;
+        if (!win || !win.getComputedStyle) return;
+        const cands = [];
+        const tally = new Map();
+        for (const el of articleEl.querySelectorAll('p, div')) {
+          if (!isVisiblyShown(el, articleEl)) continue;
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!t) continue;
+          if (el.tagName === 'P' && t.length >= 80) {
+            const f = parseFloat(win.getComputedStyle(el).fontSize) || 0;
+            if (f) tally.set(f, (tally.get(f) || 0) + t.length);
+            continue;
+          }
+          if (t.length > PSEUDO_HEADING_MAX_LEN) continue;
+          cands.push({ el, t });
+        }
+        let best = 0, bestN = 0;
+        for (const [f, n] of tally) if (n > bestN) { best = f; bestN = n; }
+        if (!best) return;
+        pseudoBodyFs = best;
+        for (const { el, t } of cands) {
+          if (/[.。]$/.test(t)) continue;
+          if (el.closest('li, td, th, blockquote, figcaption, caption, figure, a, button, [role="button"], h1, h2, h3, h4, h5, h6')) continue;
+          if (el.querySelector('p, div, ul, ol, table, blockquote, figure, img, picture, video, iframe, svg, h1, h2, h3, h4, h5, h6')) continue;
+          const cs = win.getComputedStyle(el);
+          const fs = parseFloat(cs.fontSize) || 0;
+          if (fs < best * PSEUDO_HEADING_MIN_RATIO) continue;
+          if ((parseInt(cs.fontWeight, 10) || 400) < 600) continue;
+          pseudoHeadings.push({ el, fs });
+        }
+      };
       const contrastProbe = [];
       const passContrastProbePhase1 = () => {
         if (!theme.text) {
@@ -6297,6 +6356,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       let viewportSnap = null;
       const bylineMarks = [];
       const bylineDispSnap = [];
+      // v2.5.40：日期與時刻同一段文字時切出來的時刻 span（restore 拆回原文字節點）
+      const bylineTimeSplits = [];
       // v1.8.3：首 / 末「可見」direct child 標記（見 EDGE_FIRST_ATTR 註解）
       const edgeMarks = [];
       // v1.8.4：標題不可見 pseudo 間距佔位標記（見 passHeadingPseudoSpacerReset）
@@ -6305,7 +6366,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, capReattachSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, iconPadMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, capReattachSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, iconPadMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, bylineTimeSplits, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -7594,13 +7655,17 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             // 的錨點提前到 widget、byline 反而偵測不到。`<p>` 是精度較高的段落訊號，
             // 有 `<p>` 就以它為準，第二層只補「一個 <p> 都沒有」的那類頁面——
             // 兩層判定基礎不同，不共用盲點。
+            // v2.5.40：看不到的段落不算第一段內文。arstechnica 真站 <article> 第一個子元素
+            // 是同意視窗（「Currently, only residents from GDPR countries…」），cleaner 已藏，
+            // 但它的段落仍被當第一段內文 → 作者列排在它「之後」、整個作者列偵測落空：時刻沒藏、
+            // 留言數連結被清後的「｜」變孤兒（語料庫快照沒有同意視窗，所以只有真站重現）
             let firstBodyP = null;
             for (const p of articleEl.querySelectorAll('p')) {
-              if (bnorm(p.textContent).length >= 120) { firstBodyP = p; break; }
+              if (bnorm(p.textContent).length >= 120 && isVisiblyShown(p, articleEl)) { firstBodyP = p; break; }
             }
             if (!firstBodyP) {
               for (const d of articleEl.querySelectorAll(`[${TEXT_DIV_ATTR}="1"]`)) {
-                if (bnorm(d.textContent).length >= 120) { firstBodyP = d; break; }
+                if (bnorm(d.textContent).length >= 120 && isVisiblyShown(d, articleEl)) { firstBodyP = d; break; }
               }
             }
             const beforeBody = (el) => !firstBodyP ||
@@ -7872,6 +7937,32 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                   for (const c of kids) {
                     const dt = bnorm(bdirect(c));
                     if (dt && !BYLINE_DATE_RE.test(dt) && !isLinkish(c)) setMark(c, BYLINE_TIME_ATTR);
+                  }
+                }
+              }
+              // v2.5.40：日期與時刻在同一個文字節點（arstechnica 的 <time> 是「2025年4月14日
+              // 下午7:00」，站方 script 格式化成一整串；語料庫 KNOWN-ISSUES「日期後面的時刻沒藏」）。
+              // 上面兩條都以元素為單位，一個文字節點分不開。日期錨元素裡、日期之後緊接的剩餘文字
+              // 整段是時刻（BYLINE_TRAILING_TIME_RE：可帶上午 / 下午、am / pm、時區）→ 切成
+              // 一個 span 標時刻、交給同一條隱藏規則；restore 併回原文字節點。翻譯後格式相同
+              //（Shinkansen 不改 <time> 的數字格式；譯成「下午 7:00」也在 regex 內）
+              {
+                const tn = Array.from(dateEl.childNodes).filter((n) => n.nodeType === 3 && bnorm(n.nodeValue));
+                if (tn.length === 1 && !dateEl.children.length) {
+                  const textNode = tn[0];
+                  const orig = textNode.nodeValue;
+                  const m = BYLINE_DATE_RE.exec(orig);
+                  if (m) {
+                    const end = m.index + m[0].length;
+                    const rest = orig.slice(end);
+                    if (BYLINE_TRAILING_TIME_RE.test(rest.trim())) {
+                      const span = articleEl.ownerDocument.createElement('span');
+                      span.textContent = rest;
+                      textNode.nodeValue = orig.slice(0, end);
+                      textNode.parentNode.insertBefore(span, textNode.nextSibling);
+                      bylineTimeSplits.push({ textNode, span, orig });
+                      setMark(span, BYLINE_TIME_ATTR);
+                    }
                   }
                 }
               }
@@ -8605,6 +8696,87 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
               heroEl.style.setProperty('font-size', floorPx + 'px', 'important');
             }
           }
+        }
+      };
+
+      const passPseudoHeadingSize = () => {
+        // v2.5.40：見 passMarkPseudoHeadings。注入樣式後字級掉到原本的八成以下＝被 JRead
+        // 的內文字級規則壓小了，才改；站方字級沒被動到（div 不在內文選擇器裡）就不碰。
+        // 尺寸跟著使用者設定走、不沿用站方的展示字級（pudding 標題 198px）：
+        //   - 標題：頁面沒有任何可見標題（h1 / JRead 標題節點），第一個 pseudo heading 排在
+        //     第一段長內文之前、站方字級 >= 內文 2 倍 → 標題字級（設定值；Auto 時內文 1.5 倍，
+        //     與 passHeroTitleFloor 同一把尺）
+        //   - 其餘：內文 1.3 倍、粗體
+        if (!pseudoHeadings.length) return;
+        const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+        if (!win) return;
+        const bodyFs = opts.fontSize > 0 ? opts.fontSize : pseudoBodyFs;
+        if (!bodyFs) return;
+        const hasTitle = !!(articleEl.querySelector('[data-jread-injected-title="1"], [data-jread-title-clone="1"]')
+          || firstVisibleH1(articleEl)
+          || articleEl.ownerDocument.querySelector('[data-jread-promoted-outside="1"]'));
+        let firstLongP = null;
+        for (const p of articleEl.querySelectorAll('p')) {
+          if (!isVisiblyShown(p, articleEl)) continue;
+          if ((p.textContent || '').trim().length >= 80) { firstLongP = p; break; }
+        }
+        const pending = [];
+        pseudoHeadings.forEach(({ el, fs }, i) => {
+          if (!el.isConnected || !isVisiblyShown(el, articleEl)) return;
+          const cur = parseFloat(win.getComputedStyle(el).fontSize) || 0;
+          if (cur >= fs * 0.8) return;
+          const isTitle = i === 0 && !hasTitle && fs >= pseudoBodyFs * 2 &&
+            (!firstLongP || !!(el.compareDocumentPosition(firstLongP) & Node.DOCUMENT_POSITION_FOLLOWING));
+          const size = isTitle
+            ? (opts.titleFontSize > 0 ? opts.titleFontSize : Math.round(bodyFs * 1.5))
+            : Math.round(bodyFs * 1.3);
+          pending.push({ el, size });
+        });
+        for (const { el, size } of pending) {
+          for (const [prop, val] of [['font-size', size + 'px'], ['font-weight', '700'], ['line-height', '1.3']]) {
+            if (prop === 'line-height' && opts.lineHeight === 0) continue;
+            titleLineSnap.push({ el, prop, v: el.style.getPropertyValue(prop), p: el.style.getPropertyPriority(prop) });
+            el.style.setProperty(prop, val, 'important');
+          }
+        }
+      };
+
+      const passSubheadingBelowTitle = () => {
+        // v2.5.40：內文小標不可大過（或等於）標題。Trigger：netflix tudum 的 h3 36px 比
+        // h1 32px 大（語料庫 KNOWN-ISSUES）——標題被標題字級設定定成 32px，內文小標留站方
+        // 字級。普查（語料庫 180 頁）：小標大過標題 5 站（netflix 36、grubstreet 40、twz 36、
+        // engadget / theverge 34），與標題一樣大 7 站（bbc、MDN、github.blog、jestjs、
+        // kubernetes、myartbroker、sspai 的 h2 都是 32）——一樣大也看不出階層，一起處理。
+        // 通則：主文內可見的 h2–h6，字級 >= 標題最終字級 → 壓到標題 0.75 倍（與摘要同一個
+        // 比例，見 passTitleOwnLineAndDek）。標題 = JRead 標題節點或第一個可見 h1；頁面沒有
+        // 標題時不動。比標題小的小標維持站方字級。
+        // 排在 passTitleOwnLineAndDek 之後：標題緊接的摘要（dek，常是 h2）由那條處理（壓字級＋
+        // 轉 block＋行高按比例縮），這裡先壓了字級那條就認不出摘要
+        const win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+        if (!win) return;
+        const titleEl = articleEl.querySelector('[data-jread-injected-title="1"], [data-jread-title-clone="1"]')
+          || firstVisibleH1(articleEl)
+          || articleEl.ownerDocument.querySelector('[data-jread-promoted-outside="1"] h1, h1[data-jread-promoted-outside="1"]');
+        if (!titleEl) return;
+        // 標題字級：有設定值就用設定值（標題最終就是這個大小；量 computed 會量到還沒套上
+        // 覆寫的節點——danluu 注入的標題量到 17px，小標被壓成 13px，語料庫 check 抓到）。
+        // Auto 時量 computed，且必須大過內文，否則不動
+        const measured = parseFloat(win.getComputedStyle(titleEl).fontSize) || 0;
+        const titleFs = opts.titleFontSize > 0 ? opts.titleFontSize : measured;
+        if (!titleFs) return;
+        const bodyFs = opts.fontSize > 0 ? opts.fontSize : 0;
+        if (bodyFs && titleFs <= bodyFs) return;
+        const cap = Math.round(titleFs * 0.75);
+        const pending = [];
+        for (const h of articleEl.querySelectorAll('h2, h3, h4, h5, h6')) {
+          if (h === titleEl || h.contains(titleEl) || titleEl.contains(h)) continue;
+          if (!isVisiblyShown(h, articleEl) || !(h.textContent || '').trim()) continue;
+          const fs = parseFloat(win.getComputedStyle(h).fontSize) || 0;
+          if (fs >= titleFs) pending.push(h);
+        }
+        for (const h of pending) {
+          titleLineSnap.push({ el: h, prop: 'font-size', v: h.style.getPropertyValue('font-size'), p: h.style.getPropertyPriority('font-size') });
+          h.style.setProperty('font-size', cap + 'px', 'important');
         }
       };
 
@@ -10477,6 +10649,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       //（spec 以逗號切成員）。
       const APPLY_PASSES = [
         passContrastProbePhase1,
+        passMarkPseudoHeadings,
         passSplitPreWrapParas,
         passInjectCss,
         passClassifyImages,
@@ -10514,7 +10687,9 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         passCaptionAlignReset,
         passTitleFontOverride,
         passHeroTitleFloor,
+        passPseudoHeadingSize,
         passTitleOwnLineAndDek,
+        passSubheadingBelowTitle,
         passHeadingLineHeightFloor,
         passGalleryFlex,
         passAbsFillShellFlow,
@@ -10793,6 +10968,17 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           if (releaseInlineOwned(s.el, prop, s.owner || 'styler:byline')) continue;
           if (s.prev) s.el.style.setProperty(prop, s.prev, s.prevP || '');
           else s.el.style.removeProperty(prop);
+        }
+      }
+      // v2.5.40：拆回日期＋時刻切出來的 span（文字原樣併回原本的文字節點）
+      if (Array.isArray(snapshot.bylineTimeSplits)) {
+        for (let i = snapshot.bylineTimeSplits.length - 1; i >= 0; i--) {
+          const { textNode, span, orig } = snapshot.bylineTimeSplits[i] || {};
+          if (!textNode || !span) continue;
+          try {
+            textNode.nodeValue = orig;
+            if (span.parentNode) span.parentNode.removeChild(span);
+          } catch (_) { /* 節點已被站方移除 */ }
         }
       }
       if (Array.isArray(snapshot.bylineMarks)) {
