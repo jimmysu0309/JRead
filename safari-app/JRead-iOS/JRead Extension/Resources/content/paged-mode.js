@@ -1222,7 +1222,13 @@
            top.parentElement.getAttribute(CAP_MEDIA_SEL_ATTR) === '1') top = top.parentElement;
     const common = top.parentElement;
     if (!common || common === root || !root.contains(common)) return null;
-    return common.querySelector(CAP_DIV_SEL) ? common : null;
+    const cap = common.querySelector(CAP_DIV_SEL);
+    if (!cap) return null;
+    // v2.5.37：styler 的 alt 路徑會在「圖與圖說直接排在內文裡」時命中，共同容器＝內文
+    // 容器本身（upmedia 首圖）。把整段內文當成一個 break-inside: avoid 單位會讓整篇
+    // 推到下一頁 → 共同容器除了圖說還有別的字，就不當單位（退回只貼合圖本身）
+    const sq = (s) => (s || '').replace(/\s+/g, '');
+    return sq(common.textContent) === sq(cap.textContent) ? common : null;
   }
   function fitMediaToPages() {
     if (!art) return;

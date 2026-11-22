@@ -5594,29 +5594,48 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   const DIV_CAP_MEDIA_SEL = 'img, video, canvas, iframe';
   // 舊快照（登記簿缺席的 jsdom 最小 NS 環境用）
   const capPadPrev = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  // v2.5.37：圖與圖說直接排在主文裡（前後都是內文段落）的站——圖後面緊接的第一個帶字
+  // 兄弟，文字跟圖的 alt 一字不差（忽略空白）＝站方拿同一句當替代文字與圖說。upmedia
+  // 首圖：div.news-box-text > [img(alt＝圖說), div.mbt-text 圖說, 內文 div…]，圖說字級
+  // 與內文同為 17px，靠字級分不出來；Jimmy 2026-11-22 Safari 截圖回報（Chromium 同）。
+  // alt 太短（< DIV_CAP_ALT_MIN 字）不認：「photo」「image」這類通用替代文字可能剛好
+  // 等於下一行的短標籤
+  const DIV_CAP_ALT_MIN = 6;
+  const squash = (s) => (s || '').replace(/\s+/g, '');
   function findDivCaption(media, articleEl, win) {
     const txt = (e) => (e.textContent || '').trim();
     const hidden = (e) => e.getAttribute && e.getAttribute('data-jread-hidden') === '1';
+    const candOk = (cand) => {
+      if (txt(cand).length > DIV_CAP_MAX_LEN) return false;
+      if (cand.matches('figcaption, p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol') ||
+          cand.querySelector('h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, figcaption, ' + DIV_CAP_MEDIA_SEL)) return false;
+      if (cand.closest('[' + BYLINE_ATTR + ']') || cand.querySelector('[' + BYLINE_ATTR + ']')) return false;
+      return true;
+    };
+    const alt = squash(media.getAttribute && media.getAttribute('alt'));
     let branch = media;
     for (let k = 0; k < DIV_CAP_MAX_CLIMB; k++) {
       const parent = branch.parentElement;
       if (!parent || parent === articleEl || !articleEl.contains(parent)) return null;
       if (txt(branch)) return null; // 圖那一支帶字（圖在段落裡）
+      let cand = null;
+      let multi = false;
+      for (let s = branch.nextElementSibling; s; s = s.nextElementSibling) {
+        if (hidden(s) || !txt(s)) continue;
+        if (cand) { multi = true; break; }
+        cand = s;
+      }
+      // v2.5.37 alt 路徑：緊接的第一段字等於 alt → 不管前後還有沒有內文
+      if (cand && alt.length >= DIV_CAP_ALT_MIN && squash(cand.textContent) === alt) {
+        return candOk(cand) ? { cap: cand, common: parent } : null;
+      }
       // 圖那一支前面的兄弟不能有字
       for (let s = branch.previousElementSibling; s; s = s.previousElementSibling) {
         if (!hidden(s) && txt(s)) return null;
       }
-      let cand = null;
-      for (let s = branch.nextElementSibling; s; s = s.nextElementSibling) {
-        if (hidden(s) || !txt(s)) continue;
-        if (cand) return null; // 第二個帶字的兄弟 → 不是「圖 + 一段說明」
-        cand = s;
-      }
+      if (multi) return null; // 第二個帶字的兄弟 → 不是「圖 + 一段說明」
       if (cand) {
-        if (txt(cand).length > DIV_CAP_MAX_LEN) return null;
-        if (cand.matches('figcaption, p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol') ||
-            cand.querySelector('h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, figcaption, ' + DIV_CAP_MEDIA_SEL)) return null;
-        if (cand.closest('[' + BYLINE_ATTR + ']') || cand.querySelector('[' + BYLINE_ATTR + ']')) return null;
+        if (!candOk(cand)) return null;
         if (!win || !win.getComputedStyle) return null;
         const limit = (parseFloat(win.getComputedStyle(parent).fontSize) || 0) * DIV_CAP_FS_RATIO;
         if (!limit) return null;
