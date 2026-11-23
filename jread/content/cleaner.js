@@ -3394,6 +3394,49 @@
   //   5. 文字量小於主文
   // 語料庫普查（180 頁捲動模式）：主文後第一個兄弟有散文條列的 18 份，維基頁尾（沒有小標、
   // 有圖示）與 cnbc footer（語意標籤）被 2–4 擋下，只剩 distill 原文與翻譯後
+  // v2.5.52：主文前面（主文外）的發布時間 `<time>` 搬進主文標題後面。forum.ettoday 的
+  // `time.date[itemprop=datePublished]` 跟麵包屑清單一起包在 `div.part_breadcrumb_1`，那是
+  // 主文 `div.subject_news` 的前一個兄弟，被 hideAncestorSiblings 整塊藏掉 → 標題下沒有日期。
+  // 只搬 `<time>` 本身（麵包屑照藏），之後交給作者列處理。條件：
+  //   - 主文裡沒有任何 `<time>`（有自己的日期就不動）
+  //   - 候選是帶 datetime 屬性或 itemprop="datePublished" 的 `<time>`，在主文之前（DOM 序）、
+  //     不在連結、清單、nav / footer / aside 裡；往上到「與主文祖先鏈平行」的那一層，那層
+  //     緊鄰主文祖先鏈（中間只隔樣式、空殼）
+  //   - 全頁符合的只有一個
+  // 還原走 __relocated（插回原位）
+  function relocateOutsideArticleDateline(articleEl, hidden) {
+    if (!articleEl || !articleEl.parentElement || articleEl.querySelector('time')) return;
+    const doc = articleEl.ownerDocument;
+    const cands = [];
+    for (const t of doc.querySelectorAll('time[datetime], time[itemprop="datePublished"]')) {
+      if (articleEl.contains(t)) continue;
+      if (!(articleEl.compareDocumentPosition(t) & 2 /* PRECEDING */)) continue;
+      if (t.closest('a, li, nav, footer, aside, [role="navigation"]')) continue;
+      if (!norm(t.textContent)) continue;
+      // 往上找與主文祖先鏈平行的那一層：parent 含主文的那個祖先
+      let top = t;
+      while (top.parentElement && !top.parentElement.contains(articleEl)) top = top.parentElement;
+      if (!top.parentElement || top === doc.body) continue;
+      // top 之後的兄弟（跳過樣式、空殼）要就是主文所在的那條祖先鏈
+      let next = top.nextElementSibling;
+      while (next && (/^(?:SCRIPT|STYLE|LINK|META|TEMPLATE|NOSCRIPT)$/.test(next.tagName) || !norm(next.textContent))) {
+        next = next.nextElementSibling;
+      }
+      if (!next || !next.contains(articleEl)) continue;
+      cands.push(t);
+    }
+    if (cands.length !== 1) return;
+    const t = cands[0];
+    const h1 = Array.from(articleEl.querySelectorAll('h1')).find(h => norm(h.textContent));
+    const anchor = h1 ? (h1.parentElement && h1.parentElement !== articleEl && norm(h1.parentElement.textContent) === norm(h1.textContent) ? h1.parentElement : h1) : null;
+    const parent = t.parentNode;
+    const next = t.nextSibling;
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(t, anchor.nextSibling);
+    else articleEl.insertBefore(t, articleEl.firstChild);
+    t.setAttribute('data-jread-relocated-dateline', '1');
+    if (Array.isArray(hidden)) hidden.push({ el: t, __relocated: { parent, next } });
+  }
+
   const TRAILING_CHROME_SEL = 'footer, aside, nav, header, form, [role="contentinfo"], [role="complementary"], [role="navigation"]';
   function relocateOutsideArticleTrailingSection(articleEl, hidden) {
     if (!articleEl || !articleEl.parentElement) return;
@@ -3474,7 +3517,11 @@
       // 的站，見 titleMatchesCanonical 註解）。語意仍是「strict equality，只是
       // canonical 有多個可接受寫法」——不放寬成 partial / includes。
       const matches = outsideH1s.filter(h => titleMatchesCanonical(h.textContent || ''));
-      if (matches.length === 1) h1 = matches[0];
+      // v2.5.52：主文裡已經有文字等於 canonical 的 h1＝標題已在卡內，不再從外面 clone 一份
+      //（kubernetes 文件頁：頁首 hero `#headlineWrapper h1` 與主文 `.td-content h1` 都是
+      //「Deployments」，卡片頂端出現兩次。與零 h1 分支的 insideHit 同一個判定基礎）
+      const insideHit = [...allH1s].some(h => articleEl.contains(h) && titleMatchesCanonical(h.textContent || ''));
+      if (matches.length === 1 && !insideHit) h1 = matches[0];
     } else if (allH1s.length === 0 && baseTitle && titleTextWeight(baseTitle) >= 5) {
       // v1.9.8：整頁**零 h1** 時，h2 / h3 走同一條「文字 strict 等於 canonical」
       // 的路。場景（Jimmy 2026-09-15 回報商周 campaign 頁
@@ -15890,6 +15937,8 @@
       safeRun(relocateOutsideArticleHeaderBlock, articleEl, hidden);
       // v2.5.50：文末整塊正文（distill 附錄）搬進 articleEl 末尾，排序理由同上
       safeRun(relocateOutsideArticleTrailingSection, articleEl, hidden);
+      // v2.5.52：主文前面（主文外）的發布時間搬進標題後（ettoday 麵包屑裡的 time.date）
+      safeRun(relocateOutsideArticleDateline, articleEl, hidden);
       // v2.5.28：內文按鈕先標記、去殼（必須排在所有 hide 規則之前，見 markContentTextButtons）
       safeRun(markContentTextButtons, articleEl, hidden, 0);
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
@@ -16198,6 +16247,7 @@
             const { parent, next } = item.__relocated;
             if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-header');
             if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-trailing');
+            if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-dateline');
             try {
               if (parent && parent.isConnected) {
                 parent.insertBefore(item.el, (next && next.parentNode === parent) ? next : null);
