@@ -829,9 +829,44 @@
     unclipOverflow(ctx);
     if (!wide) return;
     const pres = /^pre$/i.test(ctx.el.tagName || '') ? [ctx.el] : Array.from(ctx.el.querySelectorAll('pre'));
+    for (const pre of pres) wrapPreLines(pre);
+  }
+  // v2.5.42：<pre> 改成可折行時，底下自己宣告不折行的後代一起改。kubernetes 的
+  // <pre><code> 裡 code 自己寫了 white-space: pre，pre 上的 pre-wrap 繼承不下去——長行
+  // 照樣不折（內容寬 1,448px、框寬 574px，真站 probe），溢出右緣畫進下一頁、蓋在內文上
+  const NOWRAP_WS = { pre: 'pre-wrap', nowrap: 'normal' };
+  function wrapPreLines(pre) {
+    structJournal.set(pre, 'white-space', 'pre-wrap');
+    structJournal.set(pre, 'overflow-wrap', 'anywhere');
+    let kids;
+    try { kids = pre.querySelectorAll('*'); } catch (e) { return; }
+    for (const d of kids) {
+      let ws = '';
+      try { ws = getComputedStyle(d).whiteSpace; } catch (e) { continue; }
+      if (!NOWRAP_WS[ws]) continue;
+      structJournal.set(d, 'white-space', NOWRAP_WS[ws]);
+      structJournal.set(d, 'overflow-wrap', 'anywhere');
+    }
+  }
+  // v2.5.42：站方沒給 <pre> overflow（預設 visible）時，長行直接畫出框外、伸進下一欄，
+  // 蓋在下一頁的內文上（stackoverflow 回放實證：站方 pre { overflow: auto } 沒載到的
+  // 狀態；任何沒給 pre 設 overflow 的站都一樣）。overflow-x 是 visible 而且內容比框寬
+  // 的 <pre> 改成可折行。overflow: auto / scroll 的 <pre>（站方給了橫捲；放得進一頁時
+  // 整塊不切、高過一頁時由 tallScrollContainer 解開）不歸這裡。只掃 <pre>，不進
+  // NEUTRALIZE_RULES 的逐元素掃描（那張表靠高度門檻篩掉絕大多數元素，pre 沒有高度門檻）
+  function wrapSpillingPres() {
+    let pres;
+    try { pres = art.querySelectorAll('pre'); } catch (e) { return; }
     for (const pre of pres) {
-      structJournal.set(pre, 'white-space', 'pre-wrap');
-      structJournal.set(pre, 'overflow-wrap', 'anywhere');
+      try {
+        const cs = getComputedStyle(pre);
+        let ox = cs.overflowX || '';
+        // jsdom 不展開 overflow shorthand（見 makeRuleCtx）
+        if (!ox) ox = String(cs.overflow || '').trim().split(/\s+/)[0] || '';
+        if (ox && ox !== 'visible') continue;
+        if (!(pre.scrollWidth > pre.clientWidth + 1)) continue;
+        wrapPreLines(pre);
+      } catch (e) { /* 單一元素失敗不擋其他 */ }
     }
   }
 
@@ -1062,6 +1097,7 @@
         }
       } catch (e) { continue; }
     }
+    wrapSpillingPres();
   }
   // 規則的輸入。cs 是 live 的 CSSStyleDeclaration（見 NEUTRALIZE_RULES 的 match 說明）；
   // overflow 兩軸第一次用到才讀、同元素共用
