@@ -474,8 +474,9 @@
   // v2.5.24：站方對 ::first-line 下了與段落不同的字距 / 字體 / 顏色的元素。見
   // firstLineDiverges。
   const FIRST_LINE_ATTR = 'data-jread-first-line';
-  // v2.4.10：站方 ::selection 底色不透明（標在 <html>，見 markOpaqueSiteSelection）
-  const SEL_OPAQUE_ATTR = 'data-jread-sel-opaque';
+  // v2.4.10：JRead 接手 ::selection 底色（站方底色不透明；v2.5.46 起含站方沒有選取
+  // 底色）。標在 <html>，見 markSiteSelectionBg
+  const SEL_BG_ATTR = 'data-jread-sel-bg';
 
   // v0.8.35：媒體 display/cap 規則的 selector 群——base（90vh cap）與翻頁模式
   // （單頁 cap 覆寫）共用同一份。翻頁模式覆寫靠「同 selector、同 specificity、
@@ -2336,6 +2337,18 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] :is(h1, h2, h3, h4, h5, h6, p, li, blockquote, dd, dt),
 [${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"] {
   text-align: start !important;
+}
+/* v2.5.46：標題斷行不沿用站方的 text-wrap: balance。balance 把標題平衡成等長
+   幾行，中文長標題在卡片寬度一半左右就折行（Readwise Reader 的
+   .document-content h1/h2/h3 { text-wrap: balance }，Jimmy 2026-11-23 回報副標題
+   「在一半就折行」）。改用 pretty：第一行排滿、只避免末行剩孤字。先寫 auto 當退路
+   ——不支援 pretty 的引擎（Safari 26 以前）丟掉第二條，仍會蓋掉站方的 balance。
+   只管 text-wrap-style，不動 text-wrap-mode（站方 nowrap 另有用途，不在本規則）。 */
+[${ARTICLE_ATTR}="1"] :is(h1, h2, h3, h4, h5, h6),
+[data-jread-promoted-outside="1"] :is(h1, h2, h3, h4, h5, h6),
+:is(h1, h2, h3, h4, h5, h6)[data-jread-promoted-outside="1"] {
+  text-wrap-style: auto !important;
+  text-wrap-style: pretty !important;
 }`;
       const segByline = () => `
 /* v1.0.8：byline meta 區一行正規化（標記由 apply() 結構偵測，見 BYLINE_ATTR
@@ -3297,24 +3310,26 @@ html.${HTML_CLASS} body {
   color: ${theme.text} !important;
 }
 /* v2.4.10：選取文字色跟主題（站方 ::selection 多半配白頁設計深字，半透明底透出
-   深色卡片後不可讀）。底色照留站方值；站方底色不透明時（SEL_OPAQUE_ATTR，JS
+   深色卡片後不可讀）。底色照留站方值；站方底色不透明時（SEL_BG_ATTR，JS
    量測）改成「連結色 30% 混卡片色」，避免淺字疊實心淺底（四個有文字色的主題
    選取字對比 4.7–11:1、選取底對卡片 1.6:1 看得出選取範圍）。specificity (0,1,1)/(0,2,1)
-   贏站方全域 ::selection 的 (0,0,1)。見 markOpaqueSiteSelection。 */
+   贏站方全域 ::selection 的 (0,0,1)。見 markSiteSelectionBg。
+   v2.5.46：站方沒有選取底色時同樣標 SEL_BG_ATTR 補底色——只設字色的 ::selection
+   規則會讓瀏覽器不畫預設選取底色，第一條規則單獨生效＝選取完全看不見。 */
 html.${HTML_CLASS} ::selection {
   color: ${theme.text} !important;
 }
-html.${HTML_CLASS}[${SEL_OPAQUE_ATTR}="1"] ::selection {
+html.${HTML_CLASS}[${SEL_BG_ATTR}="1"] ::selection {
   background-color: ${mixHex(theme.link, theme.articleBg, 0.3)} !important;
 }
 /* 2026-11-15 review B-07：不透明行內高亮（SITE_UI_ATTR="hl"）的文字色是站方值
    （上面 v1.9.15 成對保留），選取時也維持同一個字色——否則 dark / night 主題下
    選到高亮內的字會變成主題淺字疊站方實心淺底（合成頁 probe 兩引擎實證）。
-   currentcolor 在 ::selection 的 color 上＝原元素的文字色。站方選取底不透明
-   （SEL_OPAQUE_ATTR）時底色已換成深色混色，沿用上面的主題字色才讀得到，故排除。
+   currentcolor 在 ::selection 的 color 上＝原元素的文字色。JRead 補了選取底色
+   （SEL_BG_ATTR）時底色已換成主題混色，沿用上面的主題字色才讀得到，故排除。
    specificity (0,3,1) 贏上面的 (0,1,1)。 */
-html.${HTML_CLASS}:not([${SEL_OPAQUE_ATTR}="1"]) [${SITE_UI_ATTR}="hl"]::selection,
-html.${HTML_CLASS}:not([${SEL_OPAQUE_ATTR}="1"]) [${SITE_UI_ATTR}="hl"] *::selection {
+html.${HTML_CLASS}:not([${SEL_BG_ATTR}="1"]) [${SITE_UI_ATTR}="hl"]::selection,
+html.${HTML_CLASS}:not([${SEL_BG_ATTR}="1"]) [${SITE_UI_ATTR}="hl"] *::selection {
   color: currentcolor !important;
 }`;
       // v0.7.151：iframe (chart embed) 強制白底。dark / sepia theme 下 reader
@@ -6078,20 +6093,28 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   //     畫重點」的黃色選取提示得以保留）
   //   - 站方選取底色不透明（alpha >= HL_TINT_ALPHA_MAX）時，主題文字色疊在站方
   //     實心底上同樣可能看不清（例：實心亮黃底配淺字），此時底色一起改成主題
-  //     連結色混卡片色。這一層靠本函式量測後在 <html> 標 SEL_OPAQUE_ATTR 啟用。
+  //     連結色混卡片色。這一層靠本函式量測後在 <html> 標 SEL_BG_ATTR 啟用。
+  //   - v2.5.46：站方沒有選取底色（沒有任何站方 selection 規則，或規則只設字色）
+  //     也要標。只寫字色的 ::selection 規則一命中，Chromium 與 WebKit 都不再畫
+  //     預設選取底色（computed 底色＝透明、截圖完全沒反白，兩引擎最小頁實測）——
+  //     JRead 上面那條無條件字色規則本身就會觸發，於是站方沒自訂選取底色的站
+  //    （上報，Jimmy 2026-11-23）在有文字色的主題下選取完全看不見。
   // 量的是文章內第一個有字段落的 ::selection（站方規則多半是全域 `::selection`）；
-  // JRead 自家規則不設底色（不透明那條要等標記才生效，量前先拔標記），所以量到
+  // JRead 自家規則不設底色（補底色那條要等標記才生效，量前先拔標記），所以量到
   // 的就是站方值。與主題無關：任何主題都量，切到深色主題時標記已就位。
-  // 前置 gate：樣式表沒有任何站方 selection 規則就不量（UA 預設選取色不必處理）。
-  // 訊號層次：驗「站方 selection 底色不透明 → 標記」與 CSS 字串；不驗各主題下的
-  // 實際對比（真實渲染要 harness / Safari 實機）、不處理站方 ::highlight() 自訂
-  // 高亮（名稱由站方自取，無法通用覆寫；選取層畫在其上，文字色以 ::selection 為準）。
-  function markOpaqueSiteSelection(articleEl) {
+  // 樣式表沒有任何站方 selection 規則就不量、直接標（沒有站方底色可留）。
+  // 訊號層次：驗「站方選取底色透明 / 不透明 / 沒有規則 → 標記」與 CSS 字串；不驗
+  // 各主題下的實際對比（真實渲染要 harness / Safari 實機）、不處理站方 ::highlight()
+  // 自訂高亮（名稱由站方自取，無法通用覆寫；選取層畫在其上，文字色以 ::selection 為準）。
+  function markSiteSelectionBg(articleEl) {
     const doc = articleEl.ownerDocument;
     const _win = doc && doc.defaultView;
     if (!_win || !_win.getComputedStyle) return false;
-    doc.documentElement.removeAttribute(SEL_OPAQUE_ATTR);
-    if (!NS.pageMayStylePseudo(doc, 'selection', 'jread')) return false;
+    doc.documentElement.removeAttribute(SEL_BG_ATTR);
+    if (!NS.pageMayStylePseudo(doc, 'selection', 'jread')) {
+      doc.documentElement.setAttribute(SEL_BG_ATTR, '1');
+      return true;
+    }
     let probeEl = articleEl;
     for (const p of articleEl.querySelectorAll('p')) {
       if ((p.textContent || '').trim()) { probeEl = p; break; }
@@ -6103,9 +6126,11 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (e && e.name === 'SyntaxError') return false;
       throw e;
     }
-    const bg = sc && parseCssColor(sc.backgroundColor);
-    if (!bg || bg.a < HL_TINT_ALPHA_MAX) return false;
-    doc.documentElement.setAttribute(SEL_OPAQUE_ATTR, '1');
+    const raw = sc && String(sc.backgroundColor || '').trim().toLowerCase();
+    const bg = raw === 'transparent' ? { a: 0 } : parseCssColor(raw);
+    // 透明（站方規則只設字色）或不透明才補底色；半透明照留站方提示色；解析不了不動
+    if (!bg || (bg.a > 0 && bg.a < HL_TINT_ALPHA_MAX)) return false;
+    doc.documentElement.setAttribute(SEL_BG_ATTR, '1');
     return true;
   }
   // v1.9.15：站方浮動工具列子樹整支豁免（cleaner allowSelectionToolbar 放行
@@ -6354,7 +6379,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const siteUiMarked = [];
       // v2.4.9：drop cap 首字色修正對象（FIRST_LETTER_ATTR）
       const firstLetterMarked = [];
-      let selOpaqueMarked = false;
+      let selBgMarked = false;
       const fillIframes = [];
       const embedWrapMarked = [];
       // 2026-10-07 review B-01：class ratio token 容器標記
@@ -6392,7 +6417,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // T12：跨 pass 共享狀態（passGalleryFlex 建立；ratio / fixed-height
       // pass 讀取）——非 snapshot 欄位，restore 不經手
       let mediaAncestors;
-      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, capReattachSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, iconPadMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, bylineTimeSplits, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selOpaqueMarked });
+      const snapshotNow = () => ({ articleEl, ancestors, htmlHadClass, firstInk, firstInkPriorMt, firstInkPriorMtPriority, ancestorPaddingSnap, negMarginSnap, figurePaddingSnap, contentWidthSnap, translateResetSnap, captionFsSnap, captionAlignSnap, titleFsSnap, heroFloorSnap, titleLineSnap, capReattachSnap, galleryFlex, ratioBoxes, fixedHeightBoxes, absFillShells, minHeightBoxes, textColFlex, decolumnLoadCleanup, wpConstrained, wideScroll, cellFloorSnap, tableFitSnap, ariaCellSnap, ariaFlowShellMarked, ariaHeaderKeepSnap, panguSnap, inlineImgs, inlineImgPins, contentImgs, iconImgs, upscaleImgs, contentImgLoadCleanup, playerMarked, siteUiMarked, fillIframes, embedWrapMarked, ratioClassMarked, embedFillMarked, aspectPseudoMarked, headingLinkMarked, absAnchorMarked, preFlexStretchMarked, defloatTextMarked, capMediaMarked, shadowHostMarked, textDivMarked, prewrapParaSnap, cjkJustifyMarked, decorResetMarked, leadLetterMarked, iconPadMarked, inlineFlowPMarked, contrastBgSnap, themeColorSnap, viewportSnap, bylineMarks, bylineDispSnap, bylineTimeSplits, edgeMarks, headingSpacerMarks, quoteMarks, firstLetterMarked, selBgMarked });
 
       const passInjectCss = () => {
         NS.injectCssText(STYLE_ID, buildCss(theme, opts, overrides));
@@ -6976,9 +7001,9 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         markDropCapBlocks(articleEl, firstLetterMarked);
       };
 
-      const passMarkSelectionOpaque = () => {
+      const passMarkSelectionBg = () => {
         // v2.4.10：站方 ::selection 底色不透明標記（見函式註解）
-        selOpaqueMarked = markOpaqueSiteSelection(articleEl);
+        selBgMarked = markSiteSelectionBg(articleEl);
       };
 
       const passContrastGuardPhase2 = () => {
@@ -10707,7 +10732,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         passMarkAncestors,
         passHtmlClassThemeMeta,
         passMarkFirstLetterColor,
-        passMarkSelectionOpaque,
+        passMarkSelectionBg,
         passContrastGuardPhase2,
         passBlockquoteSummaryContrast,
         passShadowHostSchemeFit,
@@ -10879,8 +10904,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         }
       }
       // v2.4.10：站方選取底色不透明標記
-      if (snapshot.selOpaqueMarked && document.documentElement) {
-        document.documentElement.removeAttribute(SEL_OPAQUE_ATTR);
+      if (snapshot.selBgMarked && document.documentElement) {
+        document.documentElement.removeAttribute(SEL_BG_ATTR);
       }
       // v0.8.86：移除 responsive embed iframe fill 標記
       if (Array.isArray(snapshot.fillIframes)) {
