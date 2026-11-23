@@ -7873,11 +7873,28 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
               // 不一致維度），不動 font-weight——item 字重 400 正規化仍由既有
               // CSS 規則負責。子樹元素數量小（十餘個）、snapshot/restore 走既有
               // bylineDispSnap 機制。CSS `font: inherit` 規則保留當兜底。
+              // v2.5.44：作者列祖先 font-size: 0（chinatimes .article-header / .meta-info：
+              // 消 inline-block 間空白的寫法，外層歸 0、子項目各自指定字級）。子項目統一
+              // inherit 後全部繼承成 0px，整行（時間、來源、作者）消失。root 量到 < 1px 時，
+              // 跳過被站方歸 0 的那一段繼承鏈：往上找第一個字級不是 0 的祖先，把 root 釘成
+              // 那個值，子項目照舊 inherit。不取子項目自己的字級——統一時閱讀模式 CSS 已
+              // 套上，span 量到的是使用者內文字級（v1.7.35 註解），作者列會跟內文一樣大。
+              // root 本來就有字級的（絕大多數站）一個值都不多寫
+              const zeroFontFallbackPx = (rootEl) => {
+                if (!(parseFloat(win.getComputedStyle(rootEl).fontSize) < 1)) return 0;
+                for (let a = rootEl.parentElement; a; a = a.parentElement) {
+                  const px = parseFloat(win.getComputedStyle(a).fontSize);
+                  if (px >= 1) return px;
+                }
+                return 0;
+              };
               const unifyFont = (rootEl) => {
+                const fallbackPx = zeroFontFallbackPx(rootEl);
                 for (const el of rootEl.querySelectorAll('*')) {
                   setStyleImp(el, 'font-family', 'inherit');
                   setStyleImp(el, 'font-size', 'inherit');
                 }
+                if (fallbackPx >= 1) setStyleImp(rootEl, 'font-size', fallbackPx + 'px');
               };
               unifyFont(root);
               // v1.7.39：byline 頭像隱藏改走 runtime inline !important。v1.7.25 的
