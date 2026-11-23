@@ -3372,6 +3372,48 @@
     if (Array.isArray(hidden)) hidden.push({ el: block, __relocated: { parent, next } });
   }
 
+  // v2.5.50：文末的整塊正文在 articleEl 外時，搬進 articleEl 末尾（v1.7.55 外置 header 的
+  // 文末版本，同一個 __relocated 還原路徑）。
+  // 場景（2026-11-23 未巡範圍審查）：distill 的 `<dt-appendix>`（致謝、腳註、參考文獻、更正、
+  // 引用）是 body 底下主文容器 `<dt-article>` 的兄弟，被「articleEl 外一律隱藏」整塊清掉，
+  // 內文的腳註 1–11、引用 [1]–[18] 都對不到。共同祖先是 body，detector 不能升級。
+  // 放行只看結構，主文證據沿用 hasProseListContent（v2.2.17 參考文獻散文條列）：
+  //   1. 主文往上第一層有內容的下一個兄弟（跳過樣式、空殼）；排在主文之後
+  //   2. 不是頁面外殼：不是 footer / aside / nav / header / form、也不在它們裡面、沒有
+  //      contentinfo / complementary / navigation 角色；不含 main / article
+  //   3. 沒有留言與推薦卡的零件：time、表單、輸入框、圖、影片、iframe
+  //   4. 有小標（h2–h6）＋散文條列（hasProseListContent）
+  //   5. 文字量小於主文
+  // 語料庫普查（180 頁捲動模式）：主文後第一個兄弟有散文條列的 18 份，維基頁尾（沒有小標、
+  // 有圖示）與 cnbc footer（語意標籤）被 2–4 擋下，只剩 distill 原文與翻譯後
+  const TRAILING_CHROME_SEL = 'footer, aside, nav, header, form, [role="contentinfo"], [role="complementary"], [role="navigation"]';
+  function relocateOutsideArticleTrailingSection(articleEl, hidden) {
+    if (!articleEl || !articleEl.parentElement) return;
+    const doc = articleEl.ownerDocument;
+    let block = null;
+    for (let cur = articleEl; cur && cur !== doc.body && cur.parentElement; cur = cur.parentElement) {
+      let sib = cur.nextElementSibling;
+      while (sib && (/^(?:SCRIPT|STYLE|LINK|META|TEMPLATE|NOSCRIPT)$/.test(sib.tagName) || !norm(sib.textContent))) {
+        sib = sib.nextElementSibling;
+      }
+      if (sib) { block = sib; break; }
+    }
+    if (!block || block.contains(articleEl)) return;
+    if (block.matches(TRAILING_CHROME_SEL) || block.closest(TRAILING_CHROME_SEL)) return;
+    if (block.querySelector('main, article, ' + TRAILING_CHROME_SEL)) return;
+    if (block.querySelector('time, form, input, textarea, select, img, picture, video, iframe')) return;
+    if (!block.querySelector('h2, h3, h4, h5, h6')) return;
+    if (NS.isSiteHiddenInChain && NS.SITE_HIDDEN_SIGNALS &&
+        NS.isSiteHiddenInChain(block, NS.SITE_HIDDEN_SIGNALS.DISPLAY)) return;
+    if (norm(block.textContent).length >= norm(articleEl.textContent).length) return;
+    if (!hasProseListContent(block)) return;
+    const parent = block.parentNode;
+    const next = block.nextSibling;
+    articleEl.appendChild(block);
+    block.setAttribute('data-jread-relocated-trailing', '1');
+    if (Array.isArray(hidden)) hidden.push({ el: block, __relocated: { parent, next } });
+  }
+
   // 站方 CSS 把 heading 自身藏起來（display:none / visibility:hidden / sr-only
   // 1px 裁切）＝給搜尋引擎或螢幕閱讀器的載體，不是畫面上的標題區塊。只看元素
   // 自身（不爬祖先）：promote 階段原 wrapper 多半已被 hideAncestorSiblings 藏掉，
@@ -4237,6 +4279,40 @@
     return false;
   }
 
+  // v2.5.50：元素含「文中引用指到的註腳清單」——清單條目自己有 id，主文裡（清單以外）
+  // 有頁內連結 `<a href="#那個id">` 指過來（[1] [2] 這類註腳）。wikiHow 原文「References」
+  // 整節是 narrow 的一個兄弟：標題＋9 條幾乎只有網址的條目，連結佔比高、hasProseListContent
+  // 不認，被當頁面外殼藏掉，內文註腳 [1]–[11] 指向不存在的清單（翻譯後條目夾了譯文才留著）。
+  // 推薦區、側欄連結清單不會被內文用頁內連結引用——這是翻譯無關、不看字樣的結構訊號。
+  // 條件：直接子 li ≥ 3、至少一半的 li 被主文內清單以外的頁內連結指到。只放行、不新增 hide
+  // （語料庫普查：narrow 藏掉的元素裡只有 wikiHow 這一節命中）
+  const CITED_NOTE_MIN_ITEMS = 3;
+  function hasCitedNoteList(el, articleEl) {
+    if (!el || !el.querySelectorAll || !articleEl) return false;
+    const lists = [];
+    if (el.matches && el.matches('ol, ul')) lists.push(el);
+    for (const l of el.querySelectorAll('ol, ul')) lists.push(l);
+    for (const list of lists) {
+      const items = Array.from(list.children).filter(c => c.tagName === 'LI');
+      if (items.length < CITED_NOTE_MIN_ITEMS) continue;
+      let cited = 0;
+      for (const li of items) {
+        if (!li.id) continue;
+        let refs;
+        try { refs = articleEl.querySelectorAll('a[href="#' + cssEscapeId(li.id) + '"]'); } catch (_) { continue; }
+        for (const a of refs) {
+          if (!list.contains(a)) { cited++; break; }
+        }
+      }
+      if (cited >= CITED_NOTE_MIN_ITEMS && cited * 2 >= items.length) return true;
+    }
+    return false;
+  }
+  function cssEscapeId(id) {
+    if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(id);
+    return String(id).replace(/["\\]/g, '\\$&');
+  }
+
   // v2.2.18：元素「畫面上看得到、且不在排除子樹內」的文字量（CJK 權重）。真瀏覽器
   // 用 innerText（自動排除 display:none 子樹與 script / style）；jsdom 沒有
   // innerText，退回逐 text node 累計，跳過 script / style / noscript / template 與
@@ -4617,6 +4693,8 @@
         // 直接文字（平均 260 字），不在 <p> 內，上方主文長段 guard 又刻意跳過 li
         // 內的 p → 41 條 References 整段被 narrow 砍。見 hasProseListContent。
         if (hasProseListContent(sib)) continue;
+        // v2.5.50：文中引用指到的註腳清單（wikiHow「References」，見 hasCitedNoteList）
+        if (hasCitedNoteList(sib, articleEl)) continue;
         if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
         if (isInPreserved(sib)) continue;
         // v2.2.18：平級主文段落分支（wikiHow 實證）——多段式文章（方法 1–4 各自
@@ -15739,6 +15817,8 @@
       // 排在 narrowPromotedSiblings 之後：narrow 只認 detector promote 前的
       // sibling chrome，搬進來的區塊不該進它的判定範圍。
       safeRun(relocateOutsideArticleHeaderBlock, articleEl, hidden);
+      // v2.5.50：文末整塊正文（distill 附錄）搬進 articleEl 末尾，排序理由同上
+      safeRun(relocateOutsideArticleTrailingSection, articleEl, hidden);
       // v2.5.28：內文按鈕先標記、去殼（必須排在所有 hide 規則之前，見 markContentTextButtons）
       safeRun(markContentTextButtons, articleEl, hidden, 0);
       // dialog 放最前：語意最明確，先標掉避免後續規則把它的內部誤判
@@ -16045,6 +16125,7 @@
           if (item.__relocated) {
             const { parent, next } = item.__relocated;
             if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-header');
+            if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-trailing');
             try {
               if (parent && parent.isConnected) {
                 parent.insertBefore(item.el, (next && next.parentNode === parent) ? next : null);
