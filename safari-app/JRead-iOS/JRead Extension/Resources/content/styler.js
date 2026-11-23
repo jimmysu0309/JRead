@@ -221,6 +221,16 @@
   //（Medium「15 min read·5 days ago」藏掉閱讀時間 → 殘留「· 5 days ago」），
   // 標此 attr 用 CSS 隱藏。
   const BYLINE_SEP_ATTR = 'data-jread-byline-sep';
+  // v2.5.52：作者列裡站方用 ::before / ::after 畫的分隔符（「/」「·」「|」…）與空字串裝飾殼。
+  // 作者列統一把 wrapper 改成 display: contents、日期項目 order: 1 推到最後，pseudo 自己沒有
+  // order（0）→ 留在原位、跟著被移走的項目脫節（ctee「/ / 工商時報 袁顥庭 _ 2026.04.24」：
+  // li:not(:last-child)::after 的「/」排到最前；「_」是作者連結 a::after 的圖示字型字元，離線
+  // 快照沒載到字型才畫成底線，不在此列）。
+  // 標記值為 "before" / "after" / "before after"，CSS 對應那一側 content: none。
+  // 只認內容是純分隔符字（BYLINE_SEP_RE）的 pseudo，而且依最終順序位置已經不對（判定見標記處）。
+  // 空字串裝飾殼、空白、「By 」這類字、計數器、url()、圖示字型不動——語料庫第一版連這些一起
+  // 拿掉，二十幾站作者列的圖示與位置正確的分隔符跟著消失
+  const BYLINE_PSEUDO_SEP_ATTR = 'data-jread-byline-pseudo-sep';
   // 2026-10-07 review B-08：styler 以 CSS display:none 隱藏的標記集合（isVisiblyShown
   // 共用）——新增「標記即隱藏」的 attr 時要一併加進來，否則 firstInk / edge / 標題
   // 錨點會錨在看不見的元素上。
@@ -2410,6 +2420,11 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
 }
 [${ARTICLE_ATTR}="1"] [${BYLINE_RT_ATTR}] {
   display: none !important;
+}
+/* v2.5.52：作者列裡站方 pseudo 畫的分隔符／空字串裝飾殼（見 BYLINE_PSEUDO_SEP_ATTR） */
+[${ARTICLE_ATTR}="1"] [${BYLINE_PSEUDO_SEP_ATTR}~="before"]::before,
+[${ARTICLE_ATTR}="1"] [${BYLINE_PSEUDO_SEP_ATTR}~="after"]::after {
+  content: none !important;
 }
 /* v1.7.4：孤兒分隔符（相鄰 item 被隱藏後失去隔開對象的「·」「|」等）隱藏。 */
 [${ARTICLE_ATTR}="1"] [${BYLINE_SEP_ATTR}] {
@@ -8258,6 +8273,53 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                   let r = null;
                   try { r = el.getBoundingClientRect(); } catch (_) { r = null; }
                   if (r && (r.width === 0 || r.height === 0)) setMark(el, BYLINE_SEP_ATTR);
+                }
+                // v2.5.52：站方 pseudo 畫的分隔符跟著被藏 / 被推走的項目脫節（見 BYLINE_PSEUDO_SEP_ATTR）。
+                // 依「最終順序」判斷：看得到的非日期項目照 DOM 序、日期項目全推到最後（order: 1）。
+                // 宿主的 ::after 只在「最終順序裡緊接宿主最後一個項目的」＝「DOM 裡緊接宿主的那個
+                // 看得到的項目」時位置才對；::before 對稱。宿主裡的項目全被藏 → 兩側都脫節。
+                // 「作者 · 日期」這種本來就對的分隔符不動
+                {
+                  const hiddenSel = `[${BYLINE_TIME_ATTR}], [${BYLINE_RT_ATTR}], [${BYLINE_PROGRAM_ATTR}]`;
+                  const shown = items.filter((el) => !el.matches(hiddenSel) && !el.hasAttribute(BYLINE_SEP_ATTR) && !sepFlags[items.indexOf(el)]);
+                  const finalOrder = shown.filter((el) => !el.hasAttribute(BYLINE_DATE_ITEM_ATTR))
+                    .concat(shown.filter((el) => el.hasAttribute(BYLINE_DATE_ITEM_ATTR)));
+                  const FOLLOW = Node.DOCUMENT_POSITION_FOLLOWING;
+                  const misplacedSides = (host) => {
+                    const inHost = shown.filter((it) => it === host || host.contains(it));
+                    if (!inHost.length) return ['before', 'after'];
+                    const outside = shown.filter((it) => !inHost.includes(it));
+                    const domNext = outside.find((it) => host.compareDocumentPosition(it) & FOLLOW) || null;
+                    const domPrev = outside.filter((it) => !(host.compareDocumentPosition(it) & FOLLOW)).pop() || null;
+                    const idx = inHost.map((it) => finalOrder.indexOf(it));
+                    const finalNext = finalOrder[Math.max(...idx) + 1] || null;
+                    const finalPrev = finalOrder[Math.min(...idx) - 1] || null;
+                    const out = [];
+                    if (!domPrev || finalPrev !== domPrev) out.push('before');
+                    if (!domNext || finalNext !== domNext) out.push('after');
+                    return out;
+                  };
+                  for (const el of NS.selfAndDescendants(root, '*')) {
+                    if (el === root || el.hasAttribute(BYLINE_PSEUDO_SEP_ATTR)) continue;
+                    // 項目內部的 pseudo（cnbc `<time>日期<span class=…Divider></span>時刻</time>` 的分隔 span）
+                    // 不是項目之間的分隔符
+                    if (items.some((it) => it !== el && it.contains(el))) continue;
+                    const sides = [];
+                    let bad = null;
+                    for (const side of ['before', 'after']) {
+                      let c = '';
+                      try { c = getComputedStyle(el, '::' + side).content || ''; } catch (_) { continue; }
+                      const m = /^(["'])(.*)\1$/.exec(c);
+                      if (!m) continue; // none / normal / counter() / url()
+                      const txt = m[2].trim();
+                      if (!txt || !BYLINE_SEP_RE.test(txt)) continue; // 只認分隔符字；空殼、空白、字不動
+                      if (!bad) bad = misplacedSides(el);
+                      if (bad.includes(side)) sides.push(side);
+                    }
+                    if (!sides.length) continue;
+                    el.setAttribute(BYLINE_PSEUDO_SEP_ATTR, sides.join(' '));
+                    bylineMarks.push({ el, attr: BYLINE_PSEUDO_SEP_ATTR });
+                  }
                 }
               }
             }
