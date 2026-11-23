@@ -2100,22 +2100,57 @@ async function waitForReaderImagesLoaded(page, timeoutMs = 3000) {
 // bug——cnbc 實證 dark-page-02 起卡片回亮色（SPA 捲動觸發 re-render 把主題
 // 弄掉），audit theme 欄位只在切換當下驗一次、之後各頁 silent 失真。caller
 // 傳 ensure 在每頁前重驗 / 重套狀態（page-rounds dark phase 用）。
+// opts.tailPages（2026-11-23）：達上限時另拍最後 N 屏——長文文末原本完全沒拍到，
+// 語料庫審查看不到文末（chinatalk、wiki、kubernetes…）。檔名用實際屏號（page-37），
+// 中間跳過的屏數照樣 log。maxPages: Infinity＝整頁拍完
+function shotIndices(fullCount, maxPages, tailPages) {
+  const head = Math.min(fullCount, maxPages);
+  const idx = [];
+  for (let i = 0; i < head; i++) idx.push(i);
+  const tail = Math.max(0, tailPages || 0);
+  for (let i = Math.max(head, fullCount - tail); i < fullCount; i++) idx.push(i);
+  return idx;
+}
+
 async function takePagedScreenshots(page, opts) {
-  const { dir, prefix, maxPages = 40, ensure } = opts;
-  const info = await page.evaluate(() => ({
+  const { dir, prefix, maxPages = 40, ensure, tailPages = 0 } = opts;
+  // 2026-11-23：等頁長穩定再算屏數（連兩次讀到相同值，最多 2 秒）——呼叫端剛套完
+  // zoom 0.5 時版面還在變，wikihow 430 寬量到的頁長少一屏、文末沒拍到
+  const readInfo = () => page.evaluate(() => ({
     docHeight: document.documentElement.scrollHeight,
     viewportHeight: window.innerHeight
   }));
+  let info = await readInfo();
+  for (let k = 0; k < 7; k++) {
+    await sleep(300);
+    const again = await readInfo();
+    if (again.docHeight === info.docHeight) break;
+    info = again;
+  }
   const step = Math.floor(info.viewportHeight * 0.9);
   const fullCount = Math.max(1, Math.ceil(info.docHeight / step));
-  const count = Math.min(fullCount, maxPages);
+  const indices = shotIndices(fullCount, maxPages, tailPages);
+  const count = indices.length;
   const paths = [];
-  for (let i = 0; i < count; i++) {
+  for (const i of indices) {
     // v2.5.17：behavior: 'instant'。站方 html { scroll-behavior: smooth }（GitHub、MDN）會讓
     // scrollTo 跑動畫，400ms 後 scrollY 還差目標 7–59px——同版重跑截圖有 4px 位移、等待更短
     // 的 probe 會拍到上方一段頁面底色空帶（v2.5.15 記的現象，2026-11-17 查明是截圖時機）
-    await page.evaluate(y => window.scrollTo({ top: y, left: 0, behavior: 'instant' }), i * step);
-    await sleep(400);
+    // 2026-11-23：捲完核對位置，沒到就重捲（最多 3 次）。zoom 0.5 的長頁（he 維基）實測
+    // scrollTo(9720) 會被拉回固定的 8734、之後每一屏都停在那裡——尾段截圖拍到的是中段，
+    // 舊版沒核對、靜默拍錯。從頂端直接跳過去則正常，所以失敗時先回頂端再跳
+    const target = i * step;
+    let landed = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) { await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' })); await sleep(150); }
+      await page.evaluate(y => window.scrollTo({ top: y, left: 0, behavior: 'instant' }), target);
+      await sleep(400);
+      landed = await page.evaluate((y) => ({ y: window.scrollY, max: document.documentElement.scrollHeight - window.innerHeight }), target);
+      if (Math.abs(landed.y - Math.min(target, landed.max)) <= 2) break;
+    }
+    if (landed && Math.abs(landed.y - Math.min(target, landed.max)) > 2) {
+      console.log(`  ⚠️ ${prefix}: 第 ${i + 1} 屏捲不到 ${target}（停在 ${Math.round(landed.y)}），這張截圖位置不對`);
+    }
     if (ensure) {
       try { await ensure(i); } catch (_) { /* ensure 失敗不擋截圖 */ }
     }
@@ -2123,8 +2158,22 @@ async function takePagedScreenshots(page, opts) {
     await page.screenshot({ path: p });
     paths.push(p);
   }
+  // 2026-11-23：拍完再核對一次——頁長在拍攝途中長高（lazy 版面、zoom 後延遲排版）時，
+  // 最後一屏沒到底（wikihow 430 寬：算 7 屏、實際捲軸停在 85%）。還沒到底就往下補拍，最多 4 屏
+  let lastIdx = indices.length ? indices[indices.length - 1] : 0;
+  for (let extra = 0; extra < 4; extra++) {
+    const st = await page.evaluate(() => ({ y: window.scrollY, max: document.documentElement.scrollHeight - window.innerHeight }));
+    if (st.y >= st.max - 2) break;
+    lastIdx++;
+    await page.evaluate(y => window.scrollTo({ top: y, left: 0, behavior: 'instant' }), Math.min(lastIdx * step, st.max));
+    await sleep(400);
+    const p2 = path.join(dir, `${prefix}-page-${String(lastIdx + 1).padStart(2, '0')}.png`);
+    await page.screenshot({ path: p2 });
+    paths.push(p2);
+    console.log(`  ${prefix}: 頁長拍攝途中變長，補拍第 ${lastIdx + 1} 屏`);
+  }
   if (fullCount > count) {
-    console.log(`  ⚠️ ${prefix}: 截圖頁數達上限 ${maxPages}，尾端 ${fullCount - count} 頁未拍（docHeight=${info.docHeight}）`);
+    console.log(`  ⚠️ ${prefix}: 截圖頁數達上限 ${maxPages}${tailPages ? `（另拍最後 ${count - Math.min(fullCount, maxPages)} 屏）` : ''}，中間／尾端 ${fullCount - count} 屏未拍（docHeight=${info.docHeight}）`);
   }
   await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
   await sleep(200);
@@ -2146,7 +2195,10 @@ async function takePagedScreenshots(page, opts) {
 // 驗的訊號層次：每頁在真實分頁下的視覺。不驗：swipe 手勢、WebKit 軌。
 // maxPages 截斷時明確 log（no silent caps）。
 async function takePageFlipScreenshots(page, opts) {
-  const { dir, prefix, maxPages = 40 } = opts;
+  const { dir, prefix, maxPages = 40, tailPages = 0 } = opts;
+  // 2026-11-23：翻頁用 PageDown / PageUp，不用 ← →——右到左頁面（ar / he / fa 維基、
+  // aljazeera）的 → 是「上一頁」，舊版一直停在第 1 頁、後面每張都拍同一畫面
+  //（paged-mode.js keyToAction：PageDown / PageUp 不分方向）
   const readState = () => page.evaluate(() => {
     const art = document.querySelector('[data-jread-active="1"]');
     const ind = (document.getElementById('__jread-page-indicator') || {}).textContent || '';
@@ -2167,19 +2219,30 @@ async function takePageFlipScreenshots(page, opts) {
   await settle();
   const { total } = await readState();
   const fullCount = Math.max(1, total);
-  const count = Math.min(fullCount, maxPages);
+  const indices = shotIndices(fullCount, maxPages, tailPages);
+  const count = indices.length;
   const paths = [];
-  for (let i = 0; i < count; i++) {
+  let cur = 0;
+  for (let k = 0; k < indices.length; k++) {
+    const i = indices[k];
+    if (i !== cur) {
+      // 跳到尾段：End 到最後一頁再往回翻（逐頁按右鍵翻幾千頁太慢）
+      if (i > cur + 1) {
+        await page.keyboard.press('End');
+        await settle();
+        for (let b = fullCount - 1; b > i; b--) { await page.keyboard.press('PageUp'); await settle(); }
+      } else {
+        await page.keyboard.press('PageDown');
+        await settle();
+      }
+      cur = i;
+    }
     const p = path.join(dir, `${prefix}-page-${String(i + 1).padStart(2, '0')}.png`);
     await page.screenshot({ path: p });
     paths.push(p);
-    if (i < count - 1) {
-      await page.keyboard.press('ArrowRight');
-      await settle();
-    }
   }
   if (fullCount > count) {
-    console.log(`  ⚠️ ${prefix}: 截圖頁數達上限 ${maxPages}，尾端 ${fullCount - count} 頁未拍（共 ${fullCount} 頁）`);
+    console.log(`  ⚠️ ${prefix}: 截圖頁數達上限 ${maxPages}${tailPages ? '（另拍最後幾頁）' : ''}，中間／尾端 ${fullCount - count} 頁未拍（共 ${fullCount} 頁）`);
   }
   if (!total) console.log(`  ⚠️ ${prefix}: 讀不到頁碼指示器，只拍了目前這一頁`);
   await page.keyboard.press('Home');
@@ -2544,6 +2607,7 @@ module.exports = {
   waitForReaderImagesLoaded,
   takePagedScreenshots,
   takePageFlipScreenshots,
+  shotIndices,
   waitSettingsInitialized,
   setThemeAndVerify
 };

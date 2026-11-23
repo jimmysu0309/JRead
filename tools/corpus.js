@@ -27,6 +27,7 @@
 //   node tools/corpus.js check                    # 日常：改完 code 跑這個
 //   node tools/corpus.js check --only wiki        # 只跑 id 含 wiki 的頁面
 //   node tools/corpus.js shot --only bbc           # 截圖在 ~/.jread-debug/corpus/shots/
+//        （捲動／430 寬拍前 12 屏、翻頁拍前 40 頁，另拍最後 4 屏／頁；--shots N|all、--tail N 調整）
 //   node tools/corpus.js accept [--only <片段>]
 //   node tools/corpus.js run --ext /tmp/old/jread --out /tmp/fp-old
 //   node tools/corpus.js compare /tmp/fp-old /tmp/fp-new
@@ -553,7 +554,8 @@ const archivePath = (id) => path.join(PAGES_DIR, `${id}.json.gz`);
 const readArchive = (id) => JSON.parse(zlib.gunzipSync(fs.readFileSync(archivePath(id))).toString('utf8'));
 const listArchiveIds = (only) => (fs.existsSync(PAGES_DIR) ? fs.readdirSync(PAGES_DIR) : [])
   .filter((n) => n.endsWith('.json.gz')).map((n) => n.replace(/\.json\.gz$/, ''))
-  .filter((id) => !only || id.includes(only)).sort();
+  // 2026-11-23：「=<id>」精確比對（原文頁 id 是翻譯後頁 id 的前綴，片段比對會兩頁都中）
+  .filter((id) => !only || (only.startsWith('=') ? id === only.slice(1) : id.includes(only))).sort();
 
 function withTimeout(p, ms, label) {
   let to;
@@ -737,12 +739,16 @@ async function replayOne(ctx, sw, state, id, variant, waitMs, shotDir) {
       const audits = require(path.join(__dirname, 'audit-lib.js'));
       fs.rmSync(shotDir, { recursive: true, force: true });
       fs.mkdirSync(shotDir, { recursive: true });
-      if (variant.settings.pagedMode) await audits.takePageFlipScreenshots(page, { dir: shotDir, prefix: 'page' });
+      // 2026-11-23：--shots N|all（前段拍幾屏／頁）＋ --tail N（另拍最後幾屏／頁，預設 4）——
+      // 長文的文末原本完全沒拍到（KNOWN-ISSUES 2026-11-18 審查範圍註記）
+      const sh = state.shotOpts || {};
+      const tail = sh.tail === undefined ? 4 : sh.tail;
+      if (variant.settings.pagedMode) await audits.takePageFlipScreenshots(page, { dir: shotDir, prefix: 'page', maxPages: sh.shots || 40, tailPages: tail });
       else {
         // 2026-11-19：縮放後補發 resize——html 固定高的站（note.com）尺寸監看不會觸發，段落焦點條停在縮放前的座標、截圖裡看起來離卡片很遠
         await page.evaluate(() => { document.body.style.zoom = '0.5'; window.dispatchEvent(new Event('resize')); });
         await sleep(300);
-        await audits.takePagedScreenshots(page, { dir: shotDir, prefix: 'page', maxPages: 12 });
+        await audits.takePagedScreenshots(page, { dir: shotDir, prefix: 'page', maxPages: sh.shots || 12, tailPages: tail });
       }
     }
     return fp;
@@ -805,7 +811,7 @@ async function cmdRun(args, outDir, shotRoot, onlyFiles) {
     let session = null;
     const open = async () => {
       const l = await launch({ exts: [ext] });
-      const state = { current: null, afterModule: args.after ? path.resolve(args.after) : null, extraSettings: args.set };
+      const state = { current: null, afterModule: args.after ? path.resolve(args.after) : null, extraSettings: args.set, shotOpts: { shots: args.shots, tail: args.tail } };
       await installReplayRoutes(l.ctx, state);
       const sw = await waitJreadSw(l.ctx);
       for (const p of l.ctx.pages()) await p.close().catch(() => {});
@@ -858,11 +864,13 @@ function parseArgs(argv) {
   const get = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : dflt; };
   return {
     cmd: argv[0],
-    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|html|only|jobs|wait|ext|out|variants|after|set)$/.test(arr[i - 1]))),
+    positional: argv.slice(1).filter((a, i, arr) => !a.startsWith('--') && !(i > 0 && /^--(url|html|only|jobs|wait|ext|out|variants|after|set|shots|tail)$/.test(arr[i - 1]))),
     url: get('--url', null), html: get('--html', null), after: get('--after', null), only: get('--only', null), ext: get('--ext', null), out: get('--out', null),
     jobs: Math.max(1, parseInt(get('--jobs', '4'), 10) || 4),
     wait: parseInt(get('--wait', '4500'), 10) || 4500,
     variants: get('--variants', 'scroll').split(',').map((s) => s.trim()).filter(Boolean),
+    shots: get('--shots', null) === 'all' ? Infinity : (parseInt(get('--shots', ''), 10) || null),
+    tail: get('--tail', null) === null ? undefined : Math.max(0, parseInt(get('--tail', '0'), 10) || 0),
     force: argv.includes('--force'), translate: argv.includes('--translate'),
     set: argv.reduce((acc, a, i) => { if (a === '--set' && argv[i + 1]) { const [k, ...v] = argv[i + 1].split('='); let val = v.join('='); try { val = JSON.parse(val); } catch (_) { /* 字串 */ } acc[k] = val; } return acc; }, {})
   };
@@ -922,7 +930,7 @@ async function main() {
     case 'shot': {
       // 看某幾頁現在長怎樣（triage 差異時用）：重放 + 截圖，不動基準也不動 current
       if (!args.only) { console.error('shot 需要 --only <id 片段>（一次只看幾頁）'); return 2; }
-      watchdog.install({ name: 'corpus shot', limitSec: 900 });
+      watchdog.install({ name: 'corpus shot', limitSec: 3600 }); // 2026-11-23：未巡範圍審查一批要拍數十頁 × 三模式
       const shotRoot = path.join(RUN_ROOT, 'shots');
       const rc = await cmdRun(args, path.join(shotRoot, '_fp'), shotRoot);
       console.log(`截圖在 ${shotRoot}/<id>.<模式>/`);
