@@ -3726,6 +3726,15 @@ html [${ARTICLE_ATTR}="1"] video,
 html [${ARTICLE_ATTR}="1"] iframe {
   break-inside: avoid;
 }
+/* v2.5.49：翻頁模式主文內關掉站方 transition。paged-mode.js 的斷頁前處理是「寫一個值、
+   同步量版面、再決定」（fitMediaToPages 先把圖壓成 max-height 1px 量自然起點），站方的
+   transition 會讓同步量到的還是動畫起點值。404media 首圖 img 帶 transition: all .4s：
+   max-height 從 716px 往 1px 動畫，量到的仍是 390px 高 → 判成本頁放不下、整張推到第 2 頁，
+   第 1 頁導言後留 620px 空白（語料庫回放與真站 probe 同值）。height 從 auto 改不會動畫，
+   所以只有 max-height 這類可內插的值中招。只在翻頁模式注入；捲動模式沒有這種量測 */
+html [${ARTICLE_ATTR}="1"] * {
+  transition: none !important;
+}
 /* v2.5.19：背景圖影片佔位殼（<lite-youtube> 這類，markBgFacadeUi 標的殼）當一張圖
    看待——不跨頁、高度 cap 在單頁內。殼沒有 <img> / <iframe>（縮圖是 background-image、
    高度來自 ::after 的 padding 或 aspect-ratio），上面那條選不到它，WebKit 把它當一般
