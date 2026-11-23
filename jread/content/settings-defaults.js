@@ -81,8 +81,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // v0.8.158（Jimmy 2026-06-22）：預設改用內嵌可變字型 Source Serif / Source Sans
     //（取代原本 'auto'）——選襯線 / 無襯線時英文 / 數字直接走自帶 woff2、iOS 也生效。
     // v1.7.33：latinSans 預設改 sourceserif（Jimmy 慣用：中文無襯線 + 英文襯線混排）。
+    // v2.5.45（Jimmy 2026-11-23）：latinSans 預設改 seravek（系統無襯線，Apple 平台才有；
+    // 其他平台 CSS 逐字 fallback 到無襯線 stack 本身）。latinSerif 維持 sourceserif。
+    // 只影響新安裝：SW onInstalled 會把缺的 key 寫進 storage.sync，既有安裝已存著舊值
     latinSerif: 'sourceserif',
-    latinSans: 'sourceserif',
+    latinSans: 'seravek',
     // v0.7.254：字重三段。300 = 細 / 400 = 中（預設）/ 600 = 粗（Semibold）。用真正的
     // font-weight 全平台生效，取代 v0.7.157 boldText（-webkit-font-smoothing 只在
     // macOS 有差異）。三段一律注入（含 400，避免原站內文非 400 時中退回原站與細撞色）。
@@ -95,10 +98,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     //   'off' = 內文段落一律靠左（Jimmy 裁定：關 = 全部靠左，不保留原站對齊；
     //           iOS 中文段落「第二段起變窄」的 WebKit 行為會回來——那是 v1.6.12
     //           改用 justify 的原因，使用者自選）
-    //   'cjk' = 只對中文為主的段落左右對齊（預設 = v1.6.12 起的既有行為）
+    //   'cjk' = 只對中文為主的段落左右對齊（v1.6.12 起的既有行為；v2.5.44 以前的預設）
     //   'all' = 英文段落也左右對齊，並開自動斷字（hyphens: auto）壓字間空隙
     // 合法值白名單見下方 TEXT_JUSTIFY_MODES；styler.js markCjkParagraphs 依此標記。
-    textJustify: 'cjk',
+    // v2.5.45（Jimmy 2026-11-23）：預設改 'off'。只影響新安裝（同上 latinSans 註解）
+    textJustify: 'off',
     autoEnableDomains: [],
     // v1.6.0：儲存服務二擇一——'readwise'（預設，維持既有行為）| 'instapaper'。
     // 決定「送出儲存」與「讀入 feed/文章」走哪個服務的憑證與 API。摘要（readwiseSummary
@@ -270,7 +274,9 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     sourceserif: '"Source Serif"',
     piazzolla: '"Piazzolla"',
     helvetica: '"Helvetica Neue"',
-    seravek: 'Seravek',
+    // v2.5.45：Seravek 只有 Apple 平台內建、JRead 沒內附；Windows / Linux 備援內附的
+    // Source Sans（同為人文主義無襯線）。Apple 裝置本機命中 Seravek，不會下載 woff2
+    seravek: 'Seravek, "Source Sans"',
     verdana: 'Verdana',
     publicsans: '"Public Sans"',
     sourcesans: '"Source Sans"',
