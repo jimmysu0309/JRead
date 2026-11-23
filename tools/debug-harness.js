@@ -20,6 +20,7 @@
 //   node tools/debug-harness.js --shinkansen         # toggle 後翻譯（驗 body 層殘留）
 //   node tools/debug-harness.js --translate-first    # 先翻譯→再 toggle（對應 Safari 實機順序）
 //   node tools/debug-harness.js --url <站> --html fetch|<檔案>  # 擋 headless 的站改回放 HTML 快照（audit-lib）
+//   JREAD_HARNESS_EVAL='<頁內運算式>' node tools/debug-harness.js --url <站>  # 進閱讀模式後執行並印結果
 // -----------------------------------------------------------------------------
 
 const path = require('path');
@@ -476,6 +477,18 @@ const triggerShinkansenTranslate = (page) => audits.triggerShinkansenTranslate(p
       console.log('==========================\n');
     }
     printAudit('initial, 1.2s post-toggle', residual);
+
+    // 2026-11-23：自訂頁內量測（JREAD_HARNESS_EVAL＝一段運算式字串，在頁面 main world
+    // 執行、結果 JSON 印出）。outline 只列前 40 項，驗「文末某個小標／清單有沒有留著」
+    // 這類問題時用（看 shared DOM 的 data-jread-* 與 getClientRects，isolated world 看不到）
+    if (process.env.JREAD_HARNESS_EVAL) {
+      try {
+        const r = await page.evaluate(process.env.JREAD_HARNESS_EVAL);
+        console.log('HARNESS_EVAL:', JSON.stringify(r, null, 1));
+      } catch (e) {
+        console.log('HARNESS_EVAL 失敗：', String(e && e.message || e).split('\n')[0]);
+      }
+    }
 
     // ---- Gap audit：reader card 內相鄰 visible block 間 gap > 80px 警告 ----
     // Jimmy 2026-04-25 要求加的第二層 residual：以前 residual 只抓
