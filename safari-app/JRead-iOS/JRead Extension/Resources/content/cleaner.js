@@ -1582,13 +1582,22 @@
   //      只有標題連結）。非標題標籤（<p>See also</p>）只認後者，而且必須是所在
   //      區塊的第一個元素
   // 靜態 + 動態單一資料源（住在 resolveHeadingNoiseTarget 入口）。
-  const REFERENCE_SEE_ALSO_RE = /^see\s+also$/i;
+  // v2.5.43：條件 1 拆成兩支（2026-11-23 未巡範圍審查：fa 維基翻譯後「延伸閱讀」書目、
+  // chinatalk 翻譯後「若有興趣，可參考以下延伸閱讀：」、zh 維基「參見」「外部連結」）：
+  //   - 帶說明的參考條目（連結以外的說明文字佔一半以上：書目、附註解的延伸閱讀）不看
+  //     標題字樣——推薦清單只有標題連結，說明文字佔比是翻譯無關的結構訊號。非標題標籤
+  //     除了「區塊第一個元素」之外，也認以冒號結尾的引導句（「…可參考以下延伸閱讀：」）
+  //   - 只有連結的清單維持只認字樣：v2.5.29 的反例「Related articles＋純連結清單」與
+  //     維基「參見」結構完全相同，分不開；字樣補上維基的同義節名（中文「參見」「另見」、
+  //     「External links／外部連結」）
+  const REFERENCE_SEE_ALSO_RE = /^(?:see\s+also|external\s+links|參見|参见|另見|另见|外部連結|外部链接)$/i;
   const REFERENCE_LIST_ICON_MAX = 50;
   function isReferenceSeeAlsoList(h, articleEl) {
     const isSem = /^H[2-6]$/.test(h.tagName);
     const own = isSem ? h.textContent
       : Array.from(h.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('');
-    if (!REFERENCE_SEE_ALSO_RE.test(normHeading(own))) return false;
+    const seeAlso = REFERENCE_SEE_ALSO_RE.test(normHeading(own));
+    const leadIn = !isSem && /[:：]$/.test(norm(h.textContent));
     const chrome = h.closest('aside, footer, nav');
     if (chrome && articleEl.contains(chrome) && chrome !== articleEl) return false;
     // 標題外殼：只包這個標題（外加編輯連結這類短尾巴）的那幾層
@@ -1600,7 +1609,7 @@
            norm(holder.parentElement.textContent).length - hLen <= 40) {
       holder = holder.parentElement;
     }
-    if (!isSem && holder.previousElementSibling) return false;
+    if (!isSem && holder.previousElementSibling && !leadIn) return false;
     const blocks = [];
     for (let sib = holder.nextElementSibling; sib; sib = sib.nextElementSibling) {
       if (/^(?:STYLE|LINK|META|SCRIPT)$/.test(sib.tagName)) continue;
@@ -1628,14 +1637,35 @@
       for (const a of b.querySelectorAll('a')) { linkLen += norm(a.textContent).length; links++; }
     }
     if (!links || !textLen) return false;
-    if (linkLen / textLen <= 0.5) return true;
-    if (!isSem) return false;
+    // v2.5.43：帶說明的清單裡，過半條目以「連到同站文章的連結」開頭＝站內文章推薦（標題
+    // 連結＋一句摘要），不是參考清單（Jimmy 2026-11-01 裁定 stratechery 文末「Stratechery
+    // Articles and Updates」是作者自我推廣、維持清掉；語料庫第一輪抓到它被這支放行）。
+    // 書目以作者名開頭、書單連到站外書店，不命中。字樣本身就是 See also 的不套這條
+    //（Python 文件的 See also 提示框：dt 是同站文件連結、dd 是說明）
+    if (linkLen / textLen <= 0.5) return seeAlso || !isSameSiteTeaserList(blocks);
+    if (!isSem || !seeAlso) return false;
     let peers = 0;
     for (const x of articleEl.querySelectorAll(h.tagName)) {
       if (x === h || x.closest('[data-jread-hidden="1"]') || !norm(x.textContent)) continue;
       if (++peers >= 2) return true;
     }
     return false;
+  }
+  // 條目第一段字落在連到同站文章的連結裡（「<a>文章標題</a> — 摘要」）的條目過半
+  function isSameSiteTeaserList(blocks) {
+    let items = 0, lead = 0;
+    for (const b of blocks) {
+      for (const li of b.querySelectorAll('li, dt')) {
+        if (li.parentElement && li.parentElement.closest('li') && b.contains(li.parentElement.closest('li'))) continue;
+        items++;
+        const walker = li.ownerDocument.createTreeWalker(li, 4 /* SHOW_TEXT */);
+        let n;
+        while ((n = walker.nextNode()) && !norm(n.nodeValue)) { /* 跳過空白 */ }
+        const a = n && n.parentElement && n.parentElement.closest('a[href]');
+        if (a && li.contains(a) && isSameSiteArticleLink(a)) lead++;
+      }
+    }
+    return items > 0 && lead * 2 > items;
   }
   // 整個區塊就是一節「See also」參考清單（標題＋清單，沒有別的內容）。側欄判定用：
   // 這種區塊短、幾乎全是連結，形狀與側欄的連結小工具相同（MDN 真站：標題規則放行後，
@@ -1672,9 +1702,72 @@
     return seen > 0;
   }
 
+  // v2.5.43：參考清單一節在維基是「標題外殼」與「清單」兩個平行兄弟（zh 維基「參見」
+  // 「外部連結」：div.mw-heading 後面直接跟 <ul>），側欄判定逐兄弟看，看到的是一份孤立的
+  // 連結清單。清單前面（跳過樣式、空殼、已藏的）就是一個參考清單標題的話，它是那一節的本體
+  function isReferenceListBody(el, articleEl) {
+    if (!el || !el.tagName) return false;
+    const isList = /^(?:UL|OL|DL)$/.test(el.tagName) ||
+      (!!el.querySelector('ul, ol, dl') && !el.querySelector('h1, h2, h3, h4, h5, h6'));
+    if (!isList) return false;
+    let prev = el.previousElementSibling;
+    while (prev && (/^(?:STYLE|LINK|META|SCRIPT)$/.test(prev.tagName) ||
+           (prev.dataset && prev.dataset.jreadHidden === '1') || isContentlessShell(prev))) {
+      prev = prev.previousElementSibling;
+    }
+    if (!prev || !isSectionHeadingBlock(prev)) return false;
+    const h = /^H[2-6]$/.test(prev.tagName) ? prev : prev.querySelector('h2, h3, h4, h5, h6');
+    return !!h && isReferenceSeeAlsoList(h, articleEl);
+  }
+
+  // v2.5.43：標題後面緊接著一段長內文＝文件大綱的一節，不是推薦區標題（2026-11-23 未巡
+  // 範圍審查：engadget 翻譯後小標「更多偵測 AI 生成或修改內容的方法」命中「AI 生成」、
+  // plos 原文「Discussion」命中留言區字樣，標題被藏、底下的段落留著，讀起來像上一節的
+  // 延續）。推薦區 / 留言區標題後面接的是卡片、連結清單、留言者列，不是一段散文。
+  // 條件全部要過：
+  //   1. h2–h6（作者明示的大綱標題），不在 aside / footer / nav
+  //   2. 標題後第一個有內容的兄弟（跳過樣式、空殼、錨點、已藏的）不是標題、不是清單，
+  //      權重 >= 100、連結文字佔 <= 30%，裡面沒有 time / 表單 / 按鈕 / 連結包住的縮圖
+  //      （留言與推薦卡的零件）
+  //   3. 同級標題在文中另有 >= 2 個（大綱的一節；孤立的「Comments」標題不算）
+  const OUTLINE_PROSE_MIN = 100;
+  const OUTLINE_PROSE_LINK_SHARE = 0.3;
+  function isOutlineSectionLeadingProse(h, articleEl) {
+    if (!/^H[2-6]$/.test(h.tagName)) return false;
+    const chrome = h.closest('aside, footer, nav');
+    if (chrome && articleEl.contains(chrome) && chrome !== articleEl) return false;
+    let holder = h;
+    const hLen = norm(h.textContent).length;
+    while (holder.parentElement && holder.parentElement !== articleEl &&
+           articleEl.contains(holder.parentElement) &&
+           !holder.parentElement.querySelector('ul, ol, dl, p, table, figure, img, picture') &&
+           norm(holder.parentElement.textContent).length - hLen <= 40) {
+      holder = holder.parentElement;
+    }
+    let next = holder.nextElementSibling;
+    while (next && (/^(?:STYLE|LINK|META|SCRIPT)$/.test(next.tagName) ||
+           (next.dataset && next.dataset.jreadHidden === '1') || isContentlessShell(next))) {
+      next = next.nextElementSibling;
+    }
+    if (!next || /^(?:H[1-6]|UL|OL|DL|LI)$/.test(next.tagName) || isSectionHeadingBlock(next)) return false;
+    if (next.querySelector('time, form, textarea, input, button, a img, a picture, a video')) return false;
+    const text = norm(next.textContent);
+    if (mainTextLen(text) < OUTLINE_PROSE_MIN) return false;
+    let linkLen = 0;
+    for (const a of next.querySelectorAll('a')) linkLen += norm(a.textContent).length;
+    if (linkLen / (text.length || 1) > OUTLINE_PROSE_LINK_SHARE) return false;
+    let peers = 0;
+    for (const x of articleEl.querySelectorAll(h.tagName)) {
+      if (x === h || x.closest('[data-jread-hidden="1"]') || !norm(x.textContent)) continue;
+      if (++peers >= 2) return true;
+    }
+    return false;
+  }
+
   function resolveHeadingNoiseTarget(h, articleEl, hidden) {
     if (isProseListLeadIn(h)) return false;
     if (isReferenceSeeAlsoList(h, articleEl)) return false;
+    if (isOutlineSectionLeadingProse(h, articleEl)) return false;
     // v2.5.23：程式碼裡的字不是 section heading。語法上色把每個 token 包成 <span>，
     // 關鍵字 `new` / `more` / `related` 單獨一個 span 時命中雜訊標題字樣，walk-up 把
     // 整個程式碼區塊當成那個「標題」底下的區塊藏掉（vuejs.org 實證：`new Map()` 的
@@ -4317,6 +4410,49 @@
     return true;
   }
 
+  // v2.5.43：標題跟著自己的內容走。narrow 逐兄弟判斷，標題與它底下的內容在 DOM 上常是
+  // 平行兄弟（wikiHow「Tips」：標題外殼 div.headline_container 與條目 div.section_text 並
+  // 排；plos「Supporting information」：h2、figshare 外框、S1–S7 七個補充資料區塊並排）。
+  // 各條保留 guard 都在找「主文證據」，單獨一個標題永遠沒有證據 → 被藏，內容留著，讀起來
+  // 像上一節的延續；同一節的短條目（S1–S4）也因為字少被藏、長的（S5–S7）留著。
+  // 規則：以標題開頭、到下一個標題之前的一段兄弟，只要裡面有一塊被判成主文（沒進待藏
+  // 清單、有內容），這段的標題留著；段內其他待藏的兄弟，與段內留著的主文同 tag 同 class
+  // （非空）的也留著（同一份清單的條目）。只放行、不新增 hide。回傳要放行的集合
+  function rescueHeadingLedRuns(parent, toHide) {
+    const rescued = new Set();
+    if (!toHide.length) return rescued;
+    const pending = new Set(toHide);
+    const kids = Array.from(parent.children);
+    const sig = (el) => {
+      const c = typeof el.className === 'string' ? el.className.trim() : '';
+      return c ? el.tagName + '.' + c : '';
+    };
+    for (let i = 0; i < kids.length; i++) {
+      const head = kids[i];
+      if (head.tagName === 'H1' || !isSectionHeadingBlock(head)) continue;
+      const run = [];
+      const keptSigs = new Set();
+      for (let j = i + 1; j < kids.length; j++) {
+        const s = kids[j];
+        if (s.tagName === 'H1' || isSectionHeadingBlock(s)) break;
+        run.push(s);
+        if (pending.has(s)) continue;
+        if (/^(?:STYLE|LINK|META|SCRIPT|NOSCRIPT|TEMPLATE)$/.test(s.tagName)) continue;
+        if (s.dataset && s.dataset.jreadHidden === '1') continue;
+        if (isContentlessShell(s)) continue;
+        keptSigs.add(sig(s) || '\u0000'); // 有內容的主文（沒 class 的也算數，只是不拿來比對）
+      }
+      if (!keptSigs.size) continue;
+      if (pending.has(head)) rescued.add(head);
+      for (const s of run) {
+        if (!pending.has(s)) continue;
+        const k = sig(s);
+        if (k && keptSigs.has(k)) rescued.add(s);
+      }
+    }
+    return rescued;
+  }
+
   function narrowPromotedSiblings(articleEl, promotedFrom, hidden, promotedTitleHead) {
     if (!articleEl || !promotedFrom) return;
     if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
@@ -4331,6 +4467,7 @@
     for (let hops = 0; hops < 10 && cur && cur !== articleEl; hops++) {
       const parent = cur.parentElement;
       if (!parent) break;
+      const toHide = [];
       for (const sib of parent.children) {
         if (sib === cur) continue;
         if (sib.contains && sib.contains(promotedFrom)) continue;  // content 分支
@@ -4489,8 +4626,10 @@
         // 可見非連結文字與起點同量級就保留（見 NARROW_PEER_* 註解）。只放行、
         // 不新增 hide。
         if (sibProseComparable(sib)) continue;
-        hide(sib, hidden);
+        toHide.push(sib);
       }
+      const rescued = rescueHeadingLedRuns(parent, toHide);
+      for (const sib of toHide) if (!rescued.has(sib)) hide(sib, hidden);
       if (parent === articleEl) break;
       cur = parent;
     }
@@ -6808,6 +6947,8 @@
         // v2.5.29：文件自己的「See also」一節（標題＋純連結清單）不是側欄小工具
         // （判定見 isReferenceSeeAlsoList / isReferenceSeeAlsoBlock）
         if (isReferenceSeeAlsoBlock(s.el, articleEl)) continue;
+        // v2.5.43：標題與清單是平行兄弟時，清單本體也要認（見 isReferenceListBody）
+        if (isReferenceListBody(s.el, articleEl)) continue;
         // v1.7.38 散文 guard（條件 A / C 共用，見 sidebarSiblingIsProse 註解）：
         // sibling 內含「非連結長句」= 內文段落，不是 link widget cluster
         const sibIsProse = sidebarSiblingIsProse(s.el);
