@@ -138,10 +138,18 @@
   // 量化 = maxScrollLeft / round(maxScrollLeft / 近似值)：格數 k 是整數，
   // 近似值相對誤差 < 0.5/k 內都收斂到引擎真值，誤差不再隨頁數累積。
   // 近似值不足 maxSL 半格（單頁 / 量不到）時退回近似值。
+  // v2.5.49：量化結果與近似值差超過 QUANT_MAX_DRIFT_PX 就不採用、退回近似值。
+  // 上面的恆等式假設可捲寬度剛好停在最後一欄右緣；最後一欄裡有元素往右溢出
+  //（meta.discourse 文末 flex 列 sw 782 > 框寬 573）時 max scrollLeft 被多撐 265px，
+  // 14 格量化出 738.9、實際欄距 720——每翻一頁往左偏 19px，第 9 頁起右緣露出下一欄
+  //（語料庫回放＋真站 probe 實測）。量化要修的是次像素格點誤差（iOS 0.333px／頁），
+  // 差到 1px 以上就不是格點誤差、是溢出污染
+  const QUANT_MAX_DRIFT_PX = 1;
   function quantizeStride(maxScrollLeft, approx) {
     if (!(approx > 0) || !(maxScrollLeft > approx / 2)) return approx;
     const k = Math.max(1, Math.round(maxScrollLeft / approx));
-    return maxScrollLeft / k;
+    const q = maxScrollLeft / k;
+    return Math.abs(q - approx) > QUANT_MAX_DRIFT_PX ? approx : q;
   }
 
   // v0.8.150：頁碼指示器當 scrubber——按住頁碼水平拖曳即時跳頁（快速捲動）。
@@ -409,7 +417,7 @@
     return max >= MAX_SCROLL_PROBE ? 0 : max;
   }
 
-  // 內容末端在卷動座標（padding-box 原點）的最大右緣。Safari 對已捲動狀態
+  // 內容末端在卷動座標（padding-box 原點）的位置（v2.5.49 起量最後幾個片段的起點，見下）。Safari 對已捲動狀態
   // 的 overflow column fragment rect 回報會偏移——強制 scrollLeft = 0 量測、
   // 量完還原（同一 frame 同步讀寫，無 repaint）。回 0 = 量不到。
   function measureContentEndX() {
@@ -421,7 +429,11 @@
       // D-7：rtl 時內容從右緣往左長，末端是最左緣——以 right 當基準量 base − left
       const rect0 = art.getBoundingClientRect();
       const base = isRtl ? rect0.right : rect0.left;
-      const extentOf = (r) => (isRtl ? base - r.left : r.right - base);
+      // v2.5.49：量每個片段「起點」所在位置（＋1px 落進該欄），不量終點。片段一定從它
+      // 所在的那一欄起頭，終點卻可能畫出欄外：meta.discourse 文末燈箱 meta 列的無尺寸
+      // SVG 圖示預設 300px 寬，從最後一欄右半部畫進欄間距與下一欄，用終點算會多出一頁
+      // 幽靈頁（翻過去只看到上一頁被裁一半）。computePageCountFromExtent 的欄位公式不變
+      const extentOf = (r) => (isRtl ? base - r.right : r.left - base) + 1;
       // 最後幾個非空 text node 的 line box（從文末往回找，跳過被 cleaner
       // 隱藏的 rect 全 0 節點；取 max 而非只看最後一個——文末可能是隱藏雜訊）
       const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT);
@@ -802,6 +814,8 @@
   // 留 TALL_SLACK_PX 不誤中
   const TALL_SLACK_PX = 4;
   const isTallerThanPage = (h, pageH) => h > pageH + TALL_SLACK_PX;
+  // clippedScrollBox：被裁掉的高度超過這個值才算「內容藏在框裡」（不到一行的捨入誤差不動）
+  const CLIPPED_SCROLL_MIN_PX = 20;
   // 「放得下一張要處理的媒體」的盒子：≥ FIT_MIN_PX（layoutContain / singleMediaFlexShell
   // 共用）。v2.4.12 以前這兩條與 unclippedBodyBox 共用同一個閘門，實際門檻是
   // min(120px, 頁高 × 25%)——手機橫向時 70–120px 的盒子也會被處理。v2.4.14 收緊成單純的
@@ -1002,6 +1016,30 @@
         return isClippingOverflow(o.x) || isClippingOverflow(o.y);
       },
       apply: unclipTallScroller
+    },
+    // v2.5.49：放得進一頁、但內容被直向裁掉的內捲框（ar 維基參考文獻外層 div.reflist-wrap：
+    // max-height 300px、overflow auto，33 條只露出前 4 條半）。上一條「矮的不動、保留內捲」
+    // 的前提是使用者捲得動，但翻頁模式滾輪一律轉成翻頁（onWheel），框裡其餘內容等於不見。
+    // 只收 auto / scroll（站方給使用者捲的）；hidden 是站方刻意收合，不在此列。有橫向溢出的
+    // 不動：overflow 兩軸綁在一起，解開會讓寬內容畫出框外（寬 <pre>、寬表格的內捲照舊）。
+    // 攤開＝overflow visible＋max-height none＋height auto，之後比一頁高就照常分頁
+    {
+      id: 'clippedScrollBox',
+      since: 'v2.5.49',
+      minHeight: (h, pageH) => !isTallerThanPage(h, pageH) && h >= FIT_MIN_PX,
+      match(ctx) {
+        if (/^(textarea|select)$/i.test(ctx.el.tagName || '')) return false;
+        const o = ctx.overflow();
+        if (o.y !== 'auto' && o.y !== 'scroll') return false;
+        const el = ctx.el;
+        return el.scrollHeight - el.clientHeight > CLIPPED_SCROLL_MIN_PX &&
+          el.scrollWidth <= el.clientWidth + 1;
+      },
+      apply(ctx) {
+        unclipOverflow(ctx);
+        structJournal.set(ctx.el, 'max-height', 'none');
+        structJournal.set(ctx.el, 'height', 'auto');
+      }
     },
     // v2.2.21：主文容器放得進一頁但被 overflow:hidden 鎖成 monolithic（關鍵評論網
     // .article-body、中時 .article-body）：內容沒被裁，但本頁剩餘空間不夠時整塊推到
@@ -1338,9 +1376,74 @@
           }
         }
       }
+      fitShadowMediaHosts(box);
     } catch (e) { /* 量測失敗維持 styler 預設 cap */ }
     art.scrollLeft = prevScroll;
   }
+
+  // v2.5.49：媒體畫在 shadow root 裡的元素（quantamagazine 的 <lottie-player>：shadow 裡一張
+  // 560×1283 的 SVG）。styler 的單頁高度上限是 `[主文] svg` 這類選擇器，選不到 shadow 內的
+  // 元素；上面的貼合也只看 <img>——比一頁高的資訊圖整張跨頁，下半截被頁底裁掉、頁碼壓在圖上。
+  // 這種宿主自己沒有文字、內容就是一張圖，當成一張圖處理：先等比縮到一頁放得下（扣掉
+  // figure 裡的圖說），本頁剩餘空間不夠就整塊換到下一頁頂。寬高一起寫（shadow 內的 SVG
+  // 是 width/height 100%＋preserveAspectRatio，跟著宿主縮）。
+  // 這條驗「宿主整張留在一頁內」，不驗 shadow 內部的版面（站方元件自己的事）
+  function isShadowMediaHost(el) {
+    const root = el.shadowRoot;
+    if (!root || (el.textContent || '').trim()) return false;
+    let r;
+    try { r = el.getBoundingClientRect(); } catch (e) { return false; }
+    const area = r.width * r.height;
+    if (!(area > 0)) return false;
+    for (const m of root.querySelectorAll('svg, canvas, video, img')) {
+      const mr = m.getBoundingClientRect();
+      if (mr.width * mr.height >= area * SHADOW_MEDIA_MIN_COVER) return true;
+    }
+    return false;
+  }
+  const SHADOW_MEDIA_MIN_COVER = 0.8;
+  function fitShadowMediaHosts(box) {
+    // getElementsByTagName 而非 querySelectorAll('*')：後者是 relayout 次數的觀測點
+    //（review-1115-b3 spec 以「neutralizeStructure 每輪掃一次」計數）
+    for (const host of art.getElementsByTagName('*')) {
+      if (!host.shadowRoot || !isShadowMediaHost(host)) continue;
+      const h0 = fragHeight(host);
+      if (!(h0 >= FIT_MIN_PX)) continue;
+      const fig = host.closest('figure');
+      const unit = fig && art.contains(fig) ? fig : host;
+      const extra = Math.max(0, fragHeight(unit) - h0);
+      const cap = Math.floor(box.pageH - extra - 2);
+      const ratio = host.getBoundingClientRect().width / h0;
+      if (!(ratio > 0)) continue;
+      const sizeTo = (h) => {
+        setFitStyle(host, 'display', 'block');
+        setFitStyle(host, 'height', h + 'px');
+        setFitStyle(host, 'width', (h * ratio).toFixed(2) + 'px');
+        setFitStyle(host, 'max-width', '100%');
+        setFitStyle(host, 'margin-left', 'auto');
+        setFitStyle(host, 'margin-right', 'auto');
+      };
+      let curH = h0;
+      if (h0 > cap && cap >= FIT_MIN_PX) { sizeTo(cap); curH = cap; }
+      let rects = unit.getClientRects();
+      // 被切開而且不是從頁頂起頭＝本頁剩餘空間不夠 → 整塊從下一頁頂開始
+      if (rects.length > 1 && rects[0].top > box.top + 2) {
+        setFitStyle(unit, 'break-before', 'column');
+        setFitStyle(unit, 'margin-top', '0');
+        rects = unit.getClientRects();
+      }
+      // 從頁頂起頭還被切開＝圖說與 figure 內的邊距比估的多（quanta 圖說被擠到下一頁頂）
+      // → 依溢到下一頁的那段高度再縮
+      for (let k = 0; k < SHADOW_FIT_RETRIES && rects.length > 1; k++) {
+        const next = Math.floor(curH - rects[rects.length - 1].height - FIT_REFINE_STEP_PX);
+        if (next < FIT_MIN_PX) break;
+        sizeTo(next);
+        curH = next;
+        rects = unit.getClientRects();
+      }
+    }
+  }
+  const SHADOW_FIT_RETRIES = 3;
 
   // 斷頁前處理的執行順序——單一資料源。install、remeasureAndReconcile（晚載入內容 /
   // 固定計時器 / 編輯模式 refresh）、onResize 三處都只呼叫 relayout()，不得各自列一份
