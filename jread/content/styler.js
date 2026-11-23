@@ -3530,6 +3530,32 @@ html.${HTML_CLASS}, html.${HTML_CLASS} body {
 [${ANCESTOR_ATTR}="1"] {
   overflow: visible !important;
 }
+/* v2.5.41：翻頁卡片只有 64px 高——祖先變成 fixed 卡片的包含塊。position:fixed 的
+   包含塊本該是 viewport，但祖先只要帶下列任一屬性就會「接走」fixed 後代：transform
+   （含個別 translate / rotate / scale）、perspective、filter（連 blur(0px) 也算）、
+   backdrop-filter、will-change 指到上述屬性、contain 含 layout / paint、
+   container-type（隱含 layout containment）、content-visibility: auto（隱含 paint
+   containment）、transform-style: preserve-3d。reader mode 下祖先高度塌成 0，卡片
+   top/bottom: 0 錨在 0 高的盒子上 → 只撐出上下 padding（64px），一頁一行。實證：
+   arxiv div.ltx_page_main 的 contain: layout（1,608 頁 → 53 頁）、mag.clab
+   div.container 的 filter: blur(0px)（113 頁 → 6 頁）。上方基礎祖先 reset 已清
+   transform，這裡把同家族一次清完；只在翻頁模式（捲動模式卡片不是 fixed，清掉
+   container-type 反而會讓主文內的 container query 失效）。結構性規則，不綁站點。 */
+[${ANCESTOR_ATTR}="1"] {
+  transform: none !important;
+  translate: none !important;
+  rotate: none !important;
+  scale: none !important;
+  perspective: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  will-change: auto !important;
+  contain: none !important;
+  container-type: normal !important;
+  content-visibility: visible !important;
+  transform-style: flat !important;
+}
 /* v0.7.238 iOS 工具列自動收合 hack：觸控裝置放行垂直卷動 + 略撐高 body。
    翻頁卡片是 position:fixed（視覺釘住、不隨 document 捲動），但底下 document
    可垂直捲——使用者垂直滑一下 → document 捲動 → iOS Safari 偵測到「真實手勢
