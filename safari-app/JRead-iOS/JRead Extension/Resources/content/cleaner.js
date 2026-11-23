@@ -327,7 +327,11 @@
   //   - 命中的是 h2 / h3 / h4（h5/h6 罕用為推薦 section heading）
   // 命中後 hide「heading 所在、articleEl 之下的 direct child 容器」——通常
   // 是 section wrapper，整塊清掉。
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣|想看)|(?:^|的)其他(?:內容|文章|作品)$|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論|댓글|コメント)\s*(?:\d+|[（(][^)）]*[)）])?$|^\d+\s*[則條個]?\s*(回應|回覆|留言|評論)$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$)/i;
+  // v2.5.51：站方簡介框標題。NOISE_HEADING_TEXT_RE 結尾的 about 一組是同一份字樣（命中才進得了
+  // 標題規則），這支另給 resolveHeadingNoiseTarget 決定「擴到整個簡介框」——兩處要一起改
+  //（forcing：v2551-cleaner-residue.spec.js 逐一驗兩支都命中）
+  const SITE_ABOUT_HEADING_RE = /^(?:about\s+(?:this\s+(?:site|website|blog)|us)|關於(?:本站|本網站|我們))$/i;
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣|想看)|(?:^|的)其他(?:內容|文章|作品)$|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論|댓글|コメント)\s*(?:\d+|[（(][^)）]*[)）])?$|^\d+\s*[則條個]?\s*(回應|回覆|留言|評論)$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$|^about\s+(this\s+(site|website|blog)|us)$|^關於(本站|本網站|我們)$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v2.5.3：簡體 / 「報道」寫法摺疊（Jimmy 2026-11-15：其他家族的簡體寫法一次補齊）。
   // NOISE_HEADING_TEXT_RE / EXT 的中文詞全是台灣寫法，簡體站（cn.nytimes.com
@@ -489,7 +493,7 @@
   // emotion hash、href 只在 utm 參數帶 poweredby，既有 `powered[-_]?by`
   // class/id token 規則掃不到）。行首錨定：內文「…is powered by X」這類
   // 敘述連結不會以 powered by 起頭。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^在新(分頁|視窗|標籤頁?)中?(開啟|打開)$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|open\s+in\s+(a\s+)?new\s+(tab|window)|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud|watch\s+live)(\s*\(\d+\))?$|^(觀看|收看|看)?\s*(現場)?直播中?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^在新(分頁|視窗|標籤頁?)中?(開啟|打開)$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|open\s+in\s+(a\s+)?new\s+(tab|window)|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud|watch\s+live)(\s*\(\d+\))?$|^(觀看|收看|看)?\s*(現場)?直播中?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^訂閱\s*[A-Za-z][\w .&'\u2019-]{0,30}$|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   // v2.5.39：「watch live」與翻譯後的「直播中／觀看直播／收看現場直播」這類（整條連結只有這幾個字；
   // Gemini 實際譯成「直播中」）——
   // 站方直播頻道入口。cnbc 窄版把它排進標題下的作者列（Jimmy 2026-11-22 iPhone 回報）；
@@ -520,7 +524,7 @@
   // walk-up 停在該 strip 容器，再上一層 `<article>` 含 55 個長段落、被主文
   // 保護擋住）。主文敘述不會整條連結只寫「把我們設為偏好來源」，^$ 全文比對
   // 誤殺面窄。
-  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(報名|領取|下載|預約|參與|加入|獲取|查看|了解|搶購|購買)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$|^(set|add|make)\s+(us|this\s+site|[\w'’.&\- ]{2,30}?)\s+(as\s+)?(your\s+|an?\s+)?(preferred|favou?rite)(\s+source)?$|^(將|把)?.{0,20}?設為(偏好|優先|首選)(來源|新聞來源)?$/i;
+  const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(報名|領取|下載|預約|參與|加入|獲取|查看|了解|搶購|購買)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$|^(set|add|make)\s+(us|this\s+site|[\w'’.&\- ]{2,30}?)\s+(as\s+)?(your\s+|an?\s+)?(preferred|favou?rite)(\s+source)?$|^(將|把)?.{0,20}?設為(偏好|優先|首選)(來源|新聞來源)?$|^(將|把).{1,20}?(加入|新增為?).{0,10}?(偏好|優先|首選)(來源|新聞來源)$/i;
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
   // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
@@ -1798,7 +1802,11 @@
     // （權重 192）讓 walk-up 停在只有標題列的那一層，兩則留言留在版面上；譯文剛好
     // 短於門檻才整塊清掉。留言區的結構訊號與長度無關：標題是這個外殼裡第一段看得到
     // 的文字（前面沒有內文）、外殼不含文章標題、文字量不到整篇的一半
-    if (COMMENT_COUNT_LABEL_RE.test(foldZhVariants(norm(h.textContent || '')))) {
+    // v2.5.51：站方簡介框（「About this site」＋一段站方說明＋夥伴 logo）同理：說明段本身
+    // 夠長（healthsystemtracker 英文 136 字）會讓 walk-up 停在只有標題列那一層，簡介段與
+    // logo 留著；譯文權重低於門檻才整塊清（原文與翻譯後不一致）
+    if (COMMENT_COUNT_LABEL_RE.test(foldZhVariants(norm(h.textContent || ''))) ||
+        SITE_ABOUT_HEADING_RE.test(normHeading(h.textContent || ''))) {
       target = widenCommentSectionTarget(h, target, articleEl);
     }
     if (target === articleEl) return false;
@@ -4596,6 +4604,9 @@
             if (m.closest && m.closest('[data-jread-hidden="1"]')) continue; // 前面規則已藏的子樹
             // 導覽地標內的媒體（選舉導覽 / mega-menu 縮圖）不是主文媒體
             if (m.closest && m.closest('nav, [role="navigation"]')) continue;
+            // v2.5.51：圖示尺寸的圖（頭像、站標）不是主文媒體——wikiHow 窄版「Reader Success
+            // Stories」評論區每則一張 36px 頭像，整區因此享有主圖保護（寬版站方本來就藏這塊）
+            if (isIconImgByDeclaredOrRenderedSize(m)) continue;
             standaloneCount++;
           }
           let hasStandaloneMedia = standaloneCount > 0;
@@ -4645,6 +4656,16 @@
           if (sibText2.length > 0 && sibText2.length <= BYLINE_MAX_TEXT_LEN &&
               bylineTextProtects(sibText2) &&
               !(sib.querySelector && sib.querySelector('li'))) continue;
+        }
+        // v2.5.51：作者列分支——短小（<= BYLINE_MAX_TEXT_LEN）且含作者頁連結（/author/…、
+        // 站內 @帳號頁，isAuthorProfileAnchor）。techcrunch 標題下「Anthony Ha」是
+        // `ul > li > a[href="/author/anthony-ha/"]`，沒有日期字樣、上面兩條 byline 分支都
+        // miss，之前只靠旁邊的作者頭像享有主圖保護；頭像改算圖示（isIconImgByDeclaredOrRenderedSize）
+        // 後被清——作者列要憑自己的結構留下，不靠頭像
+        {
+          const sibText3 = norm(sib.textContent || '');
+          if (sibText3.length > 0 && sibText3.length <= BYLINE_MAX_TEXT_LEN &&
+              clusterContainsAuthorProfileLink(sib, true)) continue;
         }
         // 主文長段落分支（v0.7.154 wealth.com.tw 修法）：sibling 含「不在
         // list-item / 連結內」的 >= 100 chars 單一 p 或累計 >= 300 chars → 視為
@@ -5475,8 +5496,13 @@
   const DECLARED_CHROME_RE = buildKeywordRe(
     ['noprint', 'print[-_]?hide', 'hidden?[-_]?print', 'navbox', 'sistersitebox', 'sister-?project',
       'ambox', 'asbox']);
+  // v2.5.51：MediaWiki 的系列側欄模板 `table.sidebar`（「…系列條目」，fa 維基資訊框下
+  // 實測殘留；en 那頁剛好被標題字樣規則帶走）。站方列印樣式同樣宣告藏掉
+  //（@media print { .mw-parser-output .sidebar { display: none } }，fa / en 快照實證）。
+  // `sidebar` 這個字太常見，只認 <table>：表格不會拿 sidebar 命名來排內文
+  const DECLARED_CHROME_TABLE_RE = buildKeywordRe(['sidebar']);
   const DECLARED_CHROME_PREFILTER_SEL =
-    '[class*="print" i], [class*="navbox" i], [class*="sister" i], [class*="ambox" i], [class*="asbox" i]';
+    '[class*="print" i], [class*="navbox" i], [class*="sister" i], [class*="ambox" i], [class*="asbox" i], table[class*="sidebar" i]';
   const PROSE_CARRIER_SEL = 'p, li, dd, blockquote, figcaption';
   function isLinkOnlyCluster(el) {
     if (!el.querySelector('a')) return false;
@@ -5496,7 +5522,9 @@
       if (el === articleEl) continue;
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       if (el.matches(CONTAINER_SEL) || el.tagName.indexOf('-') >= 0) continue; // 既有路徑管
-      if (!DECLARED_CHROME_RE.test(classStrOf(el).toLowerCase())) continue;
+      const cls = classStrOf(el).toLowerCase();
+      if (!DECLARED_CHROME_RE.test(cls) &&
+          !(el.tagName === 'TABLE' && DECLARED_CHROME_TABLE_RE.test(cls))) continue;
       const tag = el.tagName;
       if (tag === 'TABLE' || tag === 'P') {
         if (isInPreserved(el)) continue;
@@ -10806,6 +10834,19 @@
   // 而且兩維都小於圖示上限」的圖：還沒排版（rect 0，jsdom 與 lazy 未載入）、
   // <picture>、<video> 一律照舊當內容，不冒險藏掉點擊放大的主文圖
   const BUTTON_ICON_IMG_MAX = 64;
+  // v2.5.51：單張 <img> 是圖示尺寸——站方寫明的 width／height 都 < BUTTON_ICON_IMG_MAX，
+  // 或量得到、兩維都 < 上限（lazy 未載入的頭像量不到，靠寫明的尺寸）。<picture> 看裡面的
+  // <img>；<video> 與量不到又沒寫尺寸的圖一律不算（不冒險把內容圖當圖示）。narrow 的主文媒體保護用
+  function isIconImgByDeclaredOrRenderedSize(m) {
+    if (m && m.tagName === 'PICTURE') m = m.querySelector('img'); // <picture> 看它裝的那張圖
+    if (!m || m.tagName !== 'IMG') return false;
+    const aw = parseInt(m.getAttribute('width') || '', 10);
+    const ah = parseInt(m.getAttribute('height') || '', 10);
+    if (aw > 0 && ah > 0) return aw < BUTTON_ICON_IMG_MAX && ah < BUTTON_ICON_IMG_MAX;
+    let r = null;
+    try { r = m.getBoundingClientRect(); } catch (_) { return false; }
+    return !!r && r.width > 0 && r.height > 0 && r.width < BUTTON_ICON_IMG_MAX && r.height < BUTTON_ICON_IMG_MAX;
+  }
   function buttonWrapsContentMedia(btn) {
     if (!btn.querySelector) return false;
     if (btn.querySelector('picture, video')) return true;
@@ -12615,6 +12656,36 @@
       if (rest.replace(/[\s|｜·•,，、/／()（）:：\-–—]/g, '')) continue;
       if (isInPreserved(a)) continue;
       hide(a, hidden);
+    }
+  }
+
+  // ---- 主文內：只有一條頁內跳轉連結的區塊（v2.5.51）---------------------------
+  // lawfare 窄版首圖下「Meet The Authors」：側欄裡一個 div 只包一條 `<a href="#postContributors">`，
+  // 跳到同頁的作者區。寬版整條側欄被 inset 卡片規則（幾何：窄於主文一半）清掉；窄版站方把
+  // 側欄疊進主欄、幾何訊號消失，這一行就留下來。「跳到某處」的連結（Jump to recipe、
+  // Back to top、Skip to comments）是頁面導航，不是內文——不看字樣，看結構：
+  //   - div / p 的全部文字就是一條連結的文字，連結 href 是 `#id`、該 id 在本頁存在
+  //   - 文字 1–40 字；不在 li（目錄清單）、標題、表格、figure 裡
+  // 內文的註腳 [1] 在段落句子裡（區塊還有別的字），不命中
+  const JUMP_LINK_MAX_TEXT = 40;
+  function hideLoneInPageJumpLinks(articleEl, hidden) {
+    const doc = articleEl.ownerDocument;
+    for (const a of articleEl.querySelectorAll('a[href^="#"]')) {
+      if (a.closest('[data-jread-hidden="1"]')) continue;
+      const href = a.getAttribute('href') || '';
+      if (href.length < 2) continue;
+      let id = href.slice(1);
+      try { id = decodeURIComponent(id); } catch (_) { /* 保留原字串 */ }
+      if (!doc.getElementById(id)) continue;
+      const t = norm(a.textContent);
+      if (!t || t.length > JUMP_LINK_MAX_TEXT) continue;
+      if (a.closest('li, h1, h2, h3, h4, h5, h6, table, figure, nav')) continue;
+      const block = a.parentElement && a.parentElement.closest('div, p');
+      if (!block || block === articleEl || !articleEl.contains(block) || block.contains(articleEl)) continue;
+      if (norm(block.textContent) !== t) continue;
+      if (block.querySelector('img, picture, video, iframe')) continue;
+      if (isInPreserved(block)) continue;
+      hide(block, hidden);
     }
   }
 
@@ -15894,6 +15965,7 @@
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
       safeRun(hideTailAuthorBioBlocks, articleEl, hidden);
       safeRun(hideSocialHandleLinks, articleEl, hidden);
+      safeRun(hideLoneInPageJumpLinks, articleEl, hidden);
       safeRun(hideLabeledPromoLinkParagraphs, articleEl, hidden);
       // v1.7.25：byline 頭像規則排在 author-bio 卡之後——bio 卡判準含頭像訊號，
       // 頭像先被本規則藏走會讓 bio 卡整卡失去命中（medium-byline-header spec
