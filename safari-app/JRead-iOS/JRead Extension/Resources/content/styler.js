@@ -765,6 +765,11 @@
     const ch = (sh) => Math.round(((pa >> sh) & 255) * w + ((pb >> sh) & 255) * (1 - w));
     return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
   }
+  // v2.5.47：#rrggbb → rgba(r, g, b, a)（選取底色要半透明，見 SEL_BG_ATTR 規則註解）
+  function rgbaHex(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+  }
 
   function themeOf(name) {
     // v1.7.42：非法值 fallback 對齊 DEFAULTS.theme（gray）——原本硬寫 light，
@@ -3311,22 +3316,30 @@ html.${HTML_CLASS} body {
 }
 /* v2.4.10：選取文字色跟主題（站方 ::selection 多半配白頁設計深字，半透明底透出
    深色卡片後不可讀）。底色照留站方值；站方底色不透明時（SEL_BG_ATTR，JS
-   量測）改成「連結色 30% 混卡片色」，避免淺字疊實心淺底（四個有文字色的主題
-   選取字對比 4.7–11:1、選取底對卡片 1.6:1 看得出選取範圍）。specificity (0,1,1)/(0,2,1)
+   量測）改成 JRead 的選取底色（v2.5.47 起連結色 40% 半透明，見下一條），避免淺字疊
+   實心淺底。specificity (0,1,1)/(0,2,1)
    贏站方全域 ::selection 的 (0,0,1)。見 markSiteSelectionBg。
    v2.5.46：站方沒有選取底色時同樣標 SEL_BG_ATTR 補底色——只設字色的 ::selection
    規則會讓瀏覽器不畫預設選取底色，第一條規則單獨生效＝選取完全看不見。 */
 html.${HTML_CLASS} ::selection {
   color: ${theme.text} !important;
 }
+/* v2.5.47：補上的選取底色改成半透明（連結色 40%）。v2.4.10–v2.5.46 用的是不透明
+   「連結色 30% 混卡片色」，但 WebKit（Safari）會改寫不透明的 ::selection 底色
+   （Color::blendWithWhite：換成「疊在白底上等於原色」的 60–80% 半透明色，太深換不過去
+   就把 RGB 夾到 0）——深色卡片上算出來比卡片還暗：night 主題 rgb(43,67,92) 變成約
+   rgba(0,20,51,.8)，疊在卡片上幾乎等於卡片色＝Safari 看起來沒反白（Jimmy 2026-11-23
+   Safari 27.2 實機；同一張測試頁不透明列偏暗、半透明列正常）。半透明色 WebKit 不改寫，
+   兩個引擎畫出來一致；Readwise 的半透明選取底在 Safari 一直正常也是這個原因。
+   選取字對比（主題字色疊在合成後的底色上）：dark 4.0、night 5.5、gray 9.4、sepia 8.7:1。 */
 html.${HTML_CLASS}[${SEL_BG_ATTR}="1"] ::selection {
-  background-color: ${mixHex(theme.link, theme.articleBg, 0.3)} !important;
+  background-color: ${rgbaHex(theme.link, 0.4)} !important;
 }
 /* 2026-11-15 review B-07：不透明行內高亮（SITE_UI_ATTR="hl"）的文字色是站方值
    （上面 v1.9.15 成對保留），選取時也維持同一個字色——否則 dark / night 主題下
    選到高亮內的字會變成主題淺字疊站方實心淺底（合成頁 probe 兩引擎實證）。
    currentcolor 在 ::selection 的 color 上＝原元素的文字色。JRead 補了選取底色
-   （SEL_BG_ATTR）時底色已換成主題混色，沿用上面的主題字色才讀得到，故排除。
+   （SEL_BG_ATTR）時底色已換成主題連結色，沿用上面的主題字色才讀得到，故排除。
    specificity (0,3,1) 贏上面的 (0,1,1)。 */
 html.${HTML_CLASS}:not([${SEL_BG_ATTR}="1"]) [${SITE_UI_ATTR}="hl"]::selection,
 html.${HTML_CLASS}:not([${SEL_BG_ATTR}="1"]) [${SITE_UI_ATTR}="hl"] *::selection {
