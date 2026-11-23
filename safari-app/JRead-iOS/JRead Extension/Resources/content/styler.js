@@ -3049,6 +3049,12 @@ html [${ARTICLE_ATTR}="1"] blockquote:not([${PLAYER_ATTR}="1"]) {
       `[${ARTICLE_ATTR}="1"] caption,` +
       `[${ARTICLE_ATTR}="1"] [${TEXT_DIV_ATTR}="1"],`;
     const BODY_TEXT_SEL = BODY_TEXT_CORE + SPAN_TEXT_SEL;
+    // v2.5.48：記下來給 findDivCaption 用——被這條套上內文字級的元素，量到的字級是我們的、
+    // 不是站方的，不能拿來判斷「站方把它排成小字」
+    bodyTextSelInjected = BODY_TEXT_SEL;
+    // 後備：完整版 SPAN_TEXT_SEL 的 :not() 鏈有些選擇器引擎解析不了（jsdom 的 nwsapi 會丟錯；
+    // Chromium / WebKit 正常）——丟錯時改用不帶排除條件的寬鬆版
+    bodyTextSelLoose = BODY_TEXT_CORE + `[${ARTICLE_ATTR}="1"] span`;
     // v0.8.36：font-weight 專用 selector——span 再排除 strong / b 後代。
     // 字級 / 字型注入對 strong 內 span 是正確的（粗體文字也要跟著使用者字級
     // 字型），但 font-weight 注入打在 strong 內的 span 會把粗體抹平成使用者
@@ -3912,6 +3918,13 @@ html [${ARTICLE_ATTR}="1"] a {
     const captionDefaultCss = (scope, colorStar, fontStar, divCap) =>
       captionBlock(scope, colorStar, fontStar, 'figcaption') +
       (divCap ? captionBlock(scope, colorStar, fontStar, `[${CAP_DIV_ATTR}]`) : '');
+    // v2.5.48：div 圖說版多一條 justify-content: center——圖說裡的 flex 列，text-align 管不到
+    // 裡面的項目擺哪。shoppingdesign 實證：div.inf > div.inf-head（flex、space-between，
+    // 只有一個可見項目）> 圖片來源，整行被推到左邊。justify-content 只對 flex / grid
+    // 容器有作用，其他元素寫了也沒影響。另外圖說本身左右 margin: auto——gq.com.tw（與 Vanity
+    // Fair 同一套 Condé Nast 版型）的 div.CaptionWrapper 站方設成跟字一樣寬（computed 84.75px），
+    // 字在框裡置中、框本身貼左；寬度已撐滿的圖說 auto 算出來是 0，不受影響。
+    // figcaption 版不加（規則字串維持原樣，要擴過去另普查）
     const captionBlock = (scope, colorStar, fontStar, C) => {
       return `
 ${scope} ${C} {
@@ -3931,7 +3944,15 @@ ${scope} ${C} ${fontStar} {
 }
 ${scope}[${ARTICLE_ATTR}] ${C} * {
   text-align: center !important;
-}`;
+}` + (C === 'figcaption' ? '' : `
+${scope}[${ARTICLE_ATTR}] ${C},
+${scope}[${ARTICLE_ATTR}] ${C} * {
+  justify-content: center !important;
+}
+${scope}[${ARTICLE_ATTR}] ${C} {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}`);
     };
     // 公式渲染單元取 NS.MATH_RENDER_SEL（單一資料源；KaTeX 的 .katex 內全是帶專用字體的
     // span，被蓋成 inherit 後減號等符號字寬變了、語料庫 distill 量到 <mo> 消失）
@@ -5672,6 +5693,14 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   const DIV_CAP_MAX_CLIMB = 8;
   const DIV_CAP_MAX_LEN = 400;
   const DIV_CAP_FS_RATIO = 0.9;
+  // v2.5.48：主題樣式表裡「套使用者內文字級」那條選擇器（BODY_TEXT_SEL，建樣式表時寫入）。
+  // findDivCaption 量字級時，命中它的元素改看最近一個沒命中的祖先（最遠到候選本身）——
+  // 那才是站方給的字級。Vanity Fair 實證（Jimmy 2026-11-23 回報圖說沒貼圖、沒縮小）：
+  // 圖說 div.CaptionWrapper 站方 13px，字全包在 <span> 裡，span 被 SPAN_TEXT_SEL 拉成
+  // 內文 17px → 判成「跟內文一樣大」、不認圖說。候選本身命中（例如候選就是 span）時
+  // 照舊用它自己的字級＝不認，保守
+  let bodyTextSelInjected = '';
+  let bodyTextSelLoose = '';
   // <picture> 不列：從裡面的 <img> 往上爬會經過它（img 自己的下邊距也要歸零——cnbc
   // 的 img 帶 24px margin-bottom，穿出 picture 落在外層殼的 padding 裡）
   const DIV_CAP_MEDIA_SEL = 'img, video, canvas, iframe';
@@ -5729,7 +5758,15 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { own = true; break; } }
           if (!own) continue;
           any = true;
-          if ((parseFloat(win.getComputedStyle(el).fontSize) || 0) >= limit) return null;
+          let judge = el;
+          if (bodyTextSelInjected) {
+            const injected = (e) => {
+              try { return e.matches(bodyTextSelInjected); } catch (_) {}
+              try { return e.matches(bodyTextSelLoose); } catch (_) { return false; }
+            };
+            while (judge !== cand && injected(judge)) judge = judge.parentElement;
+          }
+          if ((parseFloat(win.getComputedStyle(judge).fontSize) || 0) >= limit) return null;
         }
         return any ? { cap: cand, common: parent } : null;
       }
@@ -5737,21 +5774,32 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
     }
     return null;
   }
-  function markCaptionMedia(articleEl, marked) {
+  function markCaptionMedia(articleEl, marked, loadCleanup, onLateCap) {
     const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
     const DOC_POS_FOLLOWING = 4; // Node.DOCUMENT_POSITION_FOLLOWING
     // v2.5.36：div 圖說（見 findDivCaption）。標記與 figcaption 共用下面的尾段（markCapPair）
-    for (const m of articleEl.querySelectorAll(DIV_CAP_MEDIA_SEL)) {
-      if (m.hasAttribute(INLINE_IMG_ATTR) || m.hasAttribute(PLAYER_ATTR)) continue;
-      if (m.closest('[data-jread-hidden="1"], figcaption, [' + CAP_DIV_ATTR + ']')) continue;
+    const tryDivCap = (m, fromLoad) => {
+      if (m.hasAttribute(INLINE_IMG_ATTR) || m.hasAttribute(PLAYER_ATTR)) return;
+      if (m.closest('[data-jread-hidden="1"], figcaption, [' + CAP_DIV_ATTR + ']')) return;
       const fig = m.closest('figure');
-      if (fig && fig.querySelector('figcaption')) continue;
+      if (fig && fig.querySelector('figcaption')) return;
       const r = m.getBoundingClientRect ? m.getBoundingClientRect() : null;
-      if (!r || r.width < DIV_CAP_MIN_MEDIA_W || r.height <= 0) continue;
+      if (!r || r.width < DIV_CAP_MIN_MEDIA_W || r.height <= 0) {
+        // v2.5.48：lazy 圖進閱讀模式當下還沒載入、高度 0 → 載入後再判一次。Vanity Fair
+        // 實證：首圖以外的圖都是 loading=lazy，apply 當下量到 608×0、全部漏判，圖說留在
+        // 原位、維持內文字級。listener 交給呼叫端的清單，restore 時拆掉
+        if (fromLoad || !loadCleanup || m.tagName !== 'IMG' || m.complete) return;
+        const onLoad = () => tryDivCap(m, true);
+        m.addEventListener('load', onLoad, { once: true });
+        loadCleanup.push({ img: m, onLoad });
+        return;
+      }
       const hit = findDivCaption(m, articleEl, _win);
-      if (!hit || hit.cap.hasAttribute(CAP_DIV_ATTR)) continue;
+      if (!hit || hit.cap.hasAttribute(CAP_DIV_ATTR)) return;
       hit.cap.setAttribute(CAP_DIV_ATTR, '1');
       markCapPair(m, null, hit.cap, hit.common);
+      // 載入後才認出來的圖說，字級那一步（passCaptionFontFloor）早就跑完了 → 補寫
+      if (fromLoad && onLateCap) onLateCap(hit.cap);
       // 圖與圖說之間的包裝殼若帶下內距，那也是「圖與圖說之間的距離」→ 歸零。cnbc：
       // 站方圖片殼 inline `padding-bottom: 55.5%`（比例撐高），圖改回 in-flow 後 cleaner
       // capWrapperSpacing 把它壓成 16px !important（inline）——樣式表蓋不過，這裡也寫
@@ -5775,7 +5823,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           marked.push(cur);
         }
       }
-    }
+    };
+    for (const m of articleEl.querySelectorAll(DIV_CAP_MEDIA_SEL)) tryDivCap(m, false);
     for (const cap of articleEl.querySelectorAll('figcaption')) {
       if (cap.closest('[data-jread-hidden="1"]')) continue;
       const fig = cap.closest('figure');
@@ -6357,6 +6406,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // 後方 pass 註解）
       const translateResetSnap = [];
       const captionFsSnap = [];
+      // v2.5.48：passCaptionFontFloor 算出的圖說字級，給 lazy 圖載入後才認出的 div 圖說補寫
+      let lateCapFs = 0;
       // v1.7.19：figcaption 靠尾端對齊 reset 的還原清單（見 caption 字級下限
       // pass 後方註解）
       const captionAlignSnap = [];
@@ -6955,7 +7006,11 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         markDefloatedTextBoxes(articleEl, defloatTextMarked);
         // v2.5.23：圖說上方的媒體與圖說標記（見 markCaptionMedia；要在 PLAYER / INLINE_IMG
         // 標記之後——兩者都在更早的 pass）
-        markCaptionMedia(articleEl, capMediaMarked);
+        markCaptionMedia(articleEl, capMediaMarked, contentImgLoadCleanup, (cap) => {
+          if (!lateCapFs) return;
+          captionFsSnap.push({ el: cap, fs: cap.style.getPropertyValue('font-size'), fsP: cap.style.getPropertyPriority('font-size') });
+          cap.style.setProperty('font-size', lateCapFs + 'px', 'important');
+        });
         markFlexRowCodeShells(articleEl, capMediaMarked);
         // v2.5.16：shadow DOM 元件的 color-scheme 跟著卡片（見 markShadowHosts）
         markShadowHosts(articleEl, shadowHostMarked);
@@ -8662,6 +8717,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             }
             const capFloor = Math.max(14, Math.round(bodyFs * 0.78));
             const capFs = Math.max(capFloor, Math.round(bodyFs * 0.8));
+            lateCapFs = capFs;
             // v1.6.29 批次化：先全讀 computed font-size 再全寫（同 zeroHoriz，
             // 避免逐元素讀寫交錯的 O(n) 強制 recalc）
             const capPending = [];
