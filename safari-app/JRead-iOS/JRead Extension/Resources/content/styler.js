@@ -707,9 +707,9 @@
     titleFontSize: 32,
     // v1.7.37：頂端進度條皮膚。'hairline' = 歷代行為（3px 純色實心條）。
     // v1.7.53：預設改 'gradient'（見 settings-defaults.js 註解）。
-    // v2.3.0：左右對齊三段 'off' | 'cjk'（預設，= v1.6.12 起既有行為）| 'all'。
+    // v2.3.0：左右對齊三段 'off' | 'cjk'（= v1.6.12 起既有行為）| 'all'。v2.5.45 預設改 'off'。
     // 語意見 settings-defaults.js DEFAULT_SETTINGS.textJustify 註解。
-    textJustify: 'cjk',
+    textJustify: 'off',
     progressBarStyle: 'gradient'
   };
 
