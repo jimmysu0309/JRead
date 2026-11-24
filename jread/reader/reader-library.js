@@ -549,10 +549,14 @@
       card.setAttribute('data-doc-id', id);
       pendingIds.add(id);
       ui.pending.insertBefore(card, ui.pending.firstChild);
+      // 抓完（或使用者關掉卡片）：搜尋中不動清單——抓取卡片本來就藏著，離開搜尋時 env.reload 會帶到新文章；
+      // 不在搜尋就背景更新目前分頁（不清畫面、不打斷多選）。原本一律 env.reload()，搜尋中抓完會把
+      // 搜尋結果換成 Inbox、搜尋框卻還在（2026-11-24 審核 A-1）
       const dismiss = () => {
         pendingIds.delete(id);
         if (card.parentNode) card.parentNode.removeChild(card);
-        env.reload();
+        if (searching) return;
+        if (typeof env.refreshView === 'function') env.refreshView(); else env.reload();
       };
       const res = await pollUntilSettled(id, {
         getDoc: (x) => PC.getJReaderDocument(Object.assign({ id: x }, rw)),

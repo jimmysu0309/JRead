@@ -37,6 +37,10 @@
     let active = false;
     let bar = null;
     let busy = false;
+    // 加標籤的輸入列開著時的收尾（離開多選時要讓等待中的 askTag 結束，不然 run 永遠卡著）
+    let askDone = null;
+    // 動作列高度 → body 的 --jr-select-bar-h（清單底部留白用；按鈕折行、標籤輸入列出現都會變高）
+    let barRO = null;
 
     const cardId = (card) => card && card.getAttribute && card.getAttribute('data-doc-id');
     const cards = () => Array.from(listEl.querySelectorAll('.jr-card[data-doc-id]:not(.jr-pending)'));
@@ -89,6 +93,12 @@
         run(b.getAttribute('data-act'));
       });
       doc.body.appendChild(bar);
+      syncBarHeight();
+      const RO = doc.defaultView && doc.defaultView.ResizeObserver;
+      if (RO) { barRO = new RO(syncBarHeight); barRO.observe(bar); }
+    }
+    function syncBarHeight() {
+      if (bar && bar.offsetHeight) doc.body.style.setProperty('--jr-select-bar-h', bar.offsetHeight + 'px');
     }
 
     function start(card) {
@@ -106,6 +116,9 @@
       active = false;
       picked.clear();
       doc.body.classList.remove('jr-selecting');
+      if (askDone) askDone(null);
+      if (barRO) { barRO.disconnect(); barRO = null; }
+      doc.body.style.removeProperty('--jr-select-bar-h');
       if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
       bar = null;
       for (const c of listEl.querySelectorAll('.jr-card.is-picked')) c.classList.remove('is-picked');
@@ -120,7 +133,13 @@
     }
 
     async function askTag() {
-      // 頁內小輸入框（不用 window.prompt：iOS WKWebView 沒實作時一律回 null）
+      // 頁內小輸入框（不用 window.prompt：iOS WKWebView 沒實作時一律回 null）。
+      // 已經開著就不再開第二列（第一列的 Promise 會永遠等不到），回 null、焦點放回原本那列
+      if (askDone) {
+        const open = bar && bar.querySelector('.jr-select-tag');
+        if (open) open.focus();
+        return null;
+      }
       return new Promise((resolve) => {
         const row = doc.createElement('form');
         row.className = 'jr-select-tagrow';
@@ -138,7 +157,13 @@
         row.appendChild(ok);
         bar.appendChild(row);
         input.focus();
-        const done = (v) => { if (row.parentNode) row.parentNode.removeChild(row); resolve(v); };
+        const done = (v) => {
+          if (askDone !== done) return;
+          askDone = null;
+          if (row.parentNode) row.parentNode.removeChild(row);
+          resolve(v);
+        };
+        askDone = done;
         row.addEventListener('submit', (e) => { e.preventDefault(); done(input.value.trim() || null); });
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); done(null); }
@@ -154,7 +179,9 @@
         return;
       }
       if (!picked.size || busy) return;
-      const ids = Array.from(picked);
+      // ids 在要送出的那一刻才取：加標籤 / 確認框等待期間使用者還能勾 / 取消卡片
+      // （2026-11-24 審核 A-3：原本在 await askTag() 之前取，輸入時多勾的不會加到）
+      let ids = Array.from(picked);
       const D = DIALOG();
       let req = null;
       let done = '';
@@ -164,7 +191,8 @@
         done = m.done;
       } else if (act === 'tag') {
         const tag = await askTag();
-        if (!tag) return;
+        if (!tag || !active || !picked.size) return;
+        ids = Array.from(picked);
         req = { action: 'tag', tag };
         done = '已加上標籤「' + tag + '」';
       } else if (act === 'trash' || act === 'purge') {
@@ -172,6 +200,8 @@
           ? { title: '刪除 ' + ids.length + ' 篇？', message: '文章會移到垃圾桶，30 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false }
           : { title: '永久刪除 ' + ids.length + ' 篇？', message: '文章、重點與筆記會一起刪除，無法復原', confirmLabel: '永久刪除', danger: true };
         if (!D || typeof D.confirm !== 'function' || !(await D.confirm(text))) return;
+        if (!active || !picked.size) return;
+        ids = Array.from(picked);
         req = { action: act };
         done = act === 'trash' ? '已移到垃圾桶' : '已永久刪除';
       } else if (act === 'restore') {

@@ -58,7 +58,6 @@
   }
   .jr-selecting .jr-fab, .jr-selecting .jr-tools-wrap { display: none; }
   /* 動作列蓋住清單最後幾張：多選中清單底部留空 */
-  .jr-selecting .jr-wrap { padding-bottom: 140px; }
   .jr-select-bar {
     position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50;
     display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
@@ -165,6 +164,10 @@
   /* 清單底部留空：收起時讓出圓鈕、展開時讓出工具列（＋貼網址列 / 標籤 chip），最後一張卡片不被蓋住 */
   body.jr-has-tools .jr-wrap { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
   body.jr-tools-open .jr-wrap { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+  /* 多選中讓出底部動作列（reader-select 把動作列實際高度寫進 --jr-select-bar-h：按鈕折行、
+     標籤輸入列都會變高；量不到時 140px）。必須排在上面兩條之後、權重相同（0,2,1）才蓋得過——
+     原本寫成 .jr-selecting .jr-wrap（0,2,0）永遠輸給 jr-has-tools（2026-11-24 審核 A-2） */
+  body.jr-selecting .jr-wrap { padding-bottom: calc(var(--jr-select-bar-h, 140px) + 24px + env(safe-area-inset-bottom, 0px)); }
   /* 右下角搜尋圓鈕（Jimmy 2026-11-24 選「平常只有一顆按鈕」，再選「縮小淡化＋捲動時隱藏」）。
      寬螢幕對齊卡片欄右緣（欄寬 640 置中 → 右緣距視窗 50vw − 320px），窄螢幕離右邊 20px。
      平常：36px、透明底、細框、淡灰圖示，退到背景；滑鼠移上 / 鍵盤聚焦才清楚。

@@ -265,6 +265,17 @@
     let notesDraft = notesSaved;
     let notesTimer = null;
     let notesStatus = '';
+    // 伺服器上確認過的標籤 / 資料夾（tags、data.location 是畫面上的「想要的值」，可能還在送）
+    let tagsServer = tags;
+    let locServer = data.location;
+    // 本機編輯計數：打開面板的重抓期間有編輯過，就不採用伺服器回來的標籤 / 資料夾 / 筆記（2026-11-24 審核 B-2）
+    let editGen = 0;
+    // 跨 render 保留的節點：標籤輸入框與筆記輸入框不能被 render 重建——重建會打斷注音選字、
+    // 而重建到補回焦點之間焦點落在 body，這時打的 e 會被當成封存鍵（2026-11-24 審核 B-4）
+    let tagsRow = null;
+    let tagChips = null;
+    let notesRow = null;
+    let notesTA = null;
 
     const toast = o.toast || ((msg, kind) => {
       if (NS && NS.toast && typeof NS.toast.show === 'function') NS.toast.show(msg, { kind: kind || 'info', id: 'jr-info' });
@@ -290,6 +301,28 @@
         out[byId.get(k)] += m.textContent;
       }
       return out.map((t) => t.replace(/\s+/g, ' ').trim());
+    }
+
+    // 同一個欄位的儲存排成一條：前一筆送完才送下一筆，每次送「當下最新」的值；
+    // run(stale) 的 stale() 回 true＝這筆送出後使用者又改了（結果不要蓋回畫面）
+    function latestOnly(run) {
+      let busy = false;
+      let dirty = false;
+      let chain = Promise.resolve();
+      return function kick() {
+        dirty = true;
+        if (busy) return chain;
+        busy = true;
+        chain = (async () => {
+          try {
+            while (dirty) {
+              dirty = false;
+              await run(() => dirty);
+            }
+          } finally { busy = false; }
+        })();
+        return chain;
+      };
     }
 
     async function saveNotes() {
@@ -350,42 +383,54 @@
       }
     }
 
-    async function move(loc) {
-      if (loc === data.location) return;
-      const prev = data.location;
-      data.location = loc;
-      render();
+    // 搬資料夾與標籤都是「畫面先變、再送」，連點時排成一條（latestOnly），失敗退回伺服器確認過的值。
+    // 原本每次點擊各送各的、失敗還原到點擊當下的快照：慢網路連點時後送的被先送的蓋掉，
+    // 或第一筆失敗把第二筆的變更也從畫面拿掉（2026-11-24 審核 B-1）
+    const pushLocation = latestOnly(async (stale) => {
+      const loc = data.location;
+      if (loc === locServer) return;
       let r;
       try { r = await PC.moveReaderDocument(Object.assign({ id, location: loc }, rw)); } catch (_) { r = null; }
       if (!r || !r.ok) {
-        data.location = prev;
-        render();
+        if (!stale()) { data.location = locServer; render(); }
         toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: '移動' }) : '移動失敗', 'error');
         return;
       }
+      locServer = loc;
       // 原本那份清單快取不再正確（文章換了資料夾），整篇從 feed 快取拿掉，回清單時重抓
       if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function' && storage) {
         try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
       }
       if (o.docData) o.docData.location = loc;
-      toast(LOCATION_DONE[loc] || '已移動', 'success');
+      if (!stale()) toast(LOCATION_DONE[loc] || '已移動', 'success');
+    });
+    function move(loc) {
+      if (loc === data.location) return Promise.resolve();
+      editGen++;
+      data.location = loc;
+      render();
+      return pushLocation();
     }
 
-    async function saveTags(next) {
-      const prev = tags;
-      tags = next;
-      render();
+    const pushTags = latestOnly(async (stale) => {
+      const sending = tags;
       let r;
-      try { r = await PC.setJReaderTags(Object.assign({ id, tags: next }, rw)); } catch (_) { r = null; }
+      try { r = await PC.setJReaderTags(Object.assign({ id, tags: sending }, rw)); } catch (_) { r = null; }
       if (!r || !r.ok) {
-        tags = prev;
-        render();
+        if (!stale()) { tags = tagsServer; render(); }
         toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: '更新標籤' }) : '更新標籤失敗', 'error');
         return;
       }
-      tags = Array.isArray(r.tags) ? r.tags.map(String) : next;
+      tagsServer = Array.isArray(r.tags) ? r.tags.map(String) : sending;
+      if (!stale()) tags = tagsServer;
       allTags = null; // 下次自動完成重抓（篇數變了、可能多了新標籤）
       render();
+    });
+    function saveTags(next) {
+      editGen++;
+      tags = next;
+      render();
+      return pushTags();
     }
 
     // 分享：create 產生（成功自動複製）、copy 複製、stop 停止（先確認）
@@ -495,9 +540,9 @@
         const RCM = RC || global.__JReadReaderCache;
         const url = RCM && typeof RCM.subviewUrl === 'function' ? RCM.subviewUrl(kind, value, o.tab) : null;
         if (!url) return;
-        close();
         const nav = o.navigate || ((u) => { win.location.href = u; });
-        nav(url);
+        // 先等筆記存完再換頁：原本 close() 不等、立刻換頁，存檔請求被中斷（2026-11-24 審核 B-3）
+        Promise.resolve(close()).then(() => nav(url), () => nav(url));
       });
       return b;
     }
@@ -512,15 +557,21 @@
 
     function render() {
       if (!panel) return;
-      const focusedTagInput = shadow.activeElement && shadow.activeElement.classList && shadow.activeElement.classList.contains('tag-input');
-      const focusedNotes = !!(shadow.activeElement && shadow.activeElement.classList && shadow.activeElement.classList.contains('notes'));
-      const notesCaret = focusedNotes ? shadow.activeElement.selectionStart : null;
-      const typed = focusedTagInput ? shadow.activeElement.value : '';
-      panel.textContent = '';
+      // 這一輪要放進面板的節點依序收進 out；標籤列、筆記列是跨 render 保留的同一個節點（見 placeRows）
+      const out = [];
+      const put = (n) => { out.push(n); return n; };
+      if (!tagsRow) {
+        const tagBox = el(doc, 'div');
+        tagChips = el(doc, 'div', 'chips');
+        tagBox.appendChild(tagChips);
+        tagBox.appendChild(tagInput());
+        tagsRow = row('標籤', tagBox);
+      }
+      if (!notesRow) notesRow = row('筆記', notesBox());
       const grab = el(doc, 'span', 'grab');
       grab.setAttribute('aria-hidden', 'true');
       attachDrag(grab);
-      panel.appendChild(grab);
+      put(grab);
 
       const head = el(doc, 'div', 'head');
       head.appendChild(el(doc, 'h2', 'title', data.title || '（無標題）'));
@@ -529,7 +580,7 @@
       x.setAttribute('aria-label', '關閉文章資訊');
       x.addEventListener('click', close);
       head.appendChild(x);
-      panel.appendChild(head);
+      put(head);
 
       // v3.1.0（Jimmy 2026-11-24「側欄點作者，顯示同一個作者的文章，點網域顯示同個網域的文章」）：
       // 網域、作者是按鈕，點了回清單看同網域 / 同作者的文章；開原文另外一個連結
@@ -545,7 +596,7 @@
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         wrap.appendChild(a);
-        panel.appendChild(row('來源', wrap));
+        put(row('來源', wrap));
       }
       const author = data.author ? String(data.author).trim() : '';
       const date = ymd(data.published_date);
@@ -554,7 +605,7 @@
         if (author) by.appendChild(pivot(author, 'author', author, '看這位作者的其他文章'));
         if (author && date) by.appendChild(el(doc, 'span', 'sep', '　·　'));
         if (date) by.appendChild(doc.createTextNode(date));
-        panel.appendChild(row('作者與發布日期', by));
+        put(row('作者與發布日期', by));
       }
 
       const minutes = readingMinutes(data, isCjkDoc());
@@ -570,7 +621,7 @@
           if (i) line.appendChild(doc.createTextNode('　·　'));
           line.appendChild(el(doc, 'span', 'nowrap', f));
         });
-        panel.appendChild(row('', line)).classList.add('muted');
+        put(row('', line)).classList.add('muted');
       }
 
       const p = Math.round(currentProgress(win, NS) * 100);
@@ -581,7 +632,7 @@
       fill.style.width = p + '%';
       bar.appendChild(fill);
       prog.appendChild(bar);
-      panel.appendChild(row('閱讀進度', prog));
+      put(row('閱讀進度', prog));
 
       const seg = el(doc, 'div', 'seg');
       seg.setAttribute('role', 'radiogroup');
@@ -595,10 +646,10 @@
         b.addEventListener('click', () => move(L.id));
         seg.appendChild(b);
       }
-      panel.appendChild(row('資料夾', seg));
+      put(row('資料夾', seg));
 
-      const tagBox = el(doc, 'div');
-      const chips = el(doc, 'div', 'chips');
+      const chips = tagChips;
+      chips.textContent = '';
       for (const t of tags) {
         const c = el(doc, 'span', 'chip');
         c.appendChild(doc.createTextNode(t));
@@ -609,15 +660,16 @@
         c.appendChild(rm);
         chips.appendChild(c);
       }
-      if (tags.length) tagBox.appendChild(chips);
-      tagBox.appendChild(tagInput(typed, focusedTagInput));
-      panel.appendChild(row('標籤', tagBox));
+      chips.style.display = tags.length ? '' : 'none'; // .chips 是 flex，hidden 屬性蓋不過
+      put(tagsRow);
       // v3.1.0：Raindrop 同步失敗的小提示（JReader SPEC §9：重試用完才會是 failed；再改一次標籤會重送）
       if (data.raindrop_state === 'failed') {
-        panel.appendChild(el(doc, 'div', 'trash-note raindrop-note', 'Raindrop 同步失敗：這篇或它的標籤沒有送到 Raindrop，再改一次標籤會重試'));
+        put(el(doc, 'div', 'trash-note raindrop-note', 'Raindrop 同步失敗：這篇或它的標籤沒有送到 Raindrop，再改一次標籤會重試'));
       }
 
-      panel.appendChild(row('筆記', notesBox(focusedNotes, notesCaret)));
+      // 伺服器重抓換了筆記（只在沒動過時才換，見 refresh）：輸入框沒在用才同步
+      if (notesTA && notesTA.value !== notesDraft && shadow.activeElement !== notesTA) notesTA.value = notesDraft;
+      put(notesRow);
 
       // 重點清單（Jimmy 2026-11-24：比照 Readwise Reader 側欄）：照文章順序、點了跳過去
       const texts = highlightTexts();
@@ -633,12 +685,12 @@
           li.appendChild(b);
           ul.appendChild(li);
         });
-        panel.appendChild(row('重點（' + texts.length + '）', ul));
+        put(row('重點（' + texts.length + '）', ul));
       }
 
       // 摘要全文顯示、不折疊（Jimmy 2026-11-24）：平均約 120 字，折疊又沒有展開提示，等於把第三段藏掉；
       // 少數很長的（最長約 2K 字）面板本身可以捲
-      if (data.summary) panel.appendChild(row('摘要', el(doc, 'div', 'summary', String(data.summary))));
+      if (data.summary) put(row('摘要', el(doc, 'div', 'summary', String(data.summary))));
 
       // v3.1.0：公開分享連結（JReader，SPEC §8）。沒分享：「產生分享連結」（產生後自動複製）；
       // 已分享：顯示網址＋「複製」「停止分享」（要確認：傳出去的連結會失效）。垃圾桶裡的不能分享
@@ -664,7 +716,7 @@
           btn('產生分享連結', 'create', false);
         }
         box.appendChild(btns);
-        panel.appendChild(row('公開分享', box));
+        put(row('公開分享', box));
       }
 
       // v3.1.0：刪除（移到垃圾桶）；在垃圾桶裡的改成「還原 / 永久刪除」。手機沒有右鍵，這裡是主要入口
@@ -683,17 +735,33 @@
       } else {
         act('刪除這篇', 'trash', true);
       }
-      panel.appendChild(actions);
+      put(actions);
+      placeRows(out);
     }
 
-    function notesBox(refocus, caret) {
+    // 把 out 依序放進面板：保留節點（標籤列、筆記列）不拔出來（拔出 DOM 會失焦、中斷選字），
+    // 其餘舊節點拿掉、新節點插在保留節點的前後
+    function placeRows(out) {
+      const keep = new Set([tagsRow, notesRow].filter(Boolean));
+      for (const n of Array.from(panel.childNodes)) if (!keep.has(n)) panel.removeChild(n);
+      for (const k of keep) if (!out.includes(k) && k.parentNode === panel) panel.removeChild(k);
+      let ref = panel.firstChild;
+      for (const n of out) {
+        if (keep.has(n) && n.parentNode === panel) { ref = n.nextSibling; continue; }
+        panel.insertBefore(n, ref);
+      }
+    }
+
+    function notesBox() {
       const wrap = el(doc, 'div');
       const ta = el(doc, 'textarea', 'notes');
+      notesTA = ta;
       ta.placeholder = '寫點筆記';
       ta.setAttribute('aria-label', '文章筆記');
       ta.value = notesDraft;
       const fit = () => { ta.style.height = 'auto'; ta.style.height = Math.max(64, ta.scrollHeight + 2) + 'px'; };
       ta.addEventListener('input', () => {
+        editGen++;
         notesDraft = ta.value;
         setNotesStatus('');
         fit();
@@ -704,18 +772,16 @@
       wrap.appendChild(ta);
       wrap.appendChild(el(doc, 'span', 'note-status', notesStatus));
       (win.requestAnimationFrame || ((cb) => win.setTimeout(cb, 0)))(fit);
-      if (refocus) win.setTimeout(() => { ta.focus(); if (caret != null) { try { ta.setSelectionRange(caret, caret); } catch (_) {} } }, 0);
       return wrap;
     }
 
-    function tagInput(typed, refocus) {
+    function tagInput() {
       const wrap = el(doc, 'div', 'tag-input-wrap');
       const input = el(doc, 'input', 'tag-input');
       input.type = 'text';
       input.placeholder = '＋ 新增標籤';
       input.setAttribute('aria-label', '新增標籤');
       input.autocomplete = 'off';
-      input.value = typed || '';
       const sug = el(doc, 'div', 'suggest');
       sug.hidden = true;
       let active = -1;
@@ -766,7 +832,6 @@
       input.addEventListener('blur', () => { sug.hidden = true; });
       wrap.appendChild(input);
       wrap.appendChild(sug);
-      if (refocus) win.setTimeout(() => { input.focus(); }, 0);
       return wrap;
     }
 
@@ -841,26 +906,41 @@
     }
 
     function close() {
-      if (!opened) return;
+      if (!opened) return Promise.resolve();
       opened = false;
-      saveNotes(); // 打到一半就關面板：立刻存
+      const saving = saveNotes(); // 打到一半就關面板：立刻存
       if (hostEl) hostEl.style.display = 'none';
       if (panel) panel.classList.remove('open');
+      return saving;
     }
 
     function toggle() { if (opened) close(); else open(); }
 
     // 打開時重抓一次：文章快取裡的 doc 是精簡版（沒有標籤、字數、存入時間）
     async function refresh() {
+      const gen = editGen;
       let r;
       try { r = await PC.getJReaderDocument(Object.assign({ id }, rw)); } catch (_) { r = null; }
       if (!r || !r.ok || !r.doc) return;
+      // 重抓期間有編輯過（打筆記、改標籤、搬資料夾）：這三個欄位留本機的，其他欄位照樣更新。
+      // 原本只在回來那刻比 notesDraft === notesSaved——期間已存檔的話兩者相等，舊值照樣蓋回（審核 B-2）
+      const edited = gen !== editGen;
+      const keepLoc = data.location;
       data = Object.assign({}, data, r.doc);
-      tags = tagNames(r.doc.tags);
-      // 伺服器的筆記：使用者還沒動過輸入框才換上（打到一半不蓋掉）
-      if (typeof r.doc.notes === 'string' && notesDraft === notesSaved) { notesSaved = r.doc.notes; notesDraft = r.doc.notes; }
+      if (edited) {
+        data.location = keepLoc;
+      } else {
+        locServer = data.location;
+        tags = tagNames(r.doc.tags);
+        tagsServer = tags;
+        if (typeof r.doc.notes === 'string' && notesDraft === notesSaved) { notesSaved = r.doc.notes; notesDraft = r.doc.notes; }
+      }
       if (opened) render();
     }
+
+    // 離開頁面（關分頁、從懸浮選單回清單、重新整理）時還沒存的筆記：同步送出
+    //（setJReaderNotes 帶 keepalive，頁面卸載後請求照樣送完；2026-11-24 審核 B-3）
+    win.addEventListener('pagehide', () => { if (notesDraft !== notesSaved) saveNotes(); });
 
     // 快速鍵 I：window capture、須在 main.js keyguard 之前註冊（同 H / E 鍵）
     win.addEventListener('keydown', (e) => {

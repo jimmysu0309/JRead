@@ -1141,6 +1141,8 @@
             try { global.history.replaceState(null, '', 'reader.html?tab=' + encodeURIComponent(t.id)); } catch (_) {}
             return loadList(t);
           },
+          // 背景更新目前的分頁清單（貼網址抓完時）：不清畫面、不離開多選（refresh 模式）
+          refreshView: () => loadList(currentTab || initialTab, { refresh: true }),
           setTagFilter: (name) => { tagFilter = name || null; loadList(currentTab || initialTab); },
           cancelPending: () => { loadGen++; }
         });
@@ -1177,7 +1179,8 @@
       }
       else loadList(initialTab);
       // v2.2.13：下拉更新入口（iOS App ViewController 的 UIRefreshControl 呼叫）
-      api.refreshCurrent = () => loadList(currentTab, { refresh: true });
+      // 搜尋中下拉＝重跑這次搜尋，不能把搜尋結果換成分頁清單（2026-11-24 審核 A-1）
+      api.refreshCurrent = () => (lib && lib.isSearching() ? lib.refreshSearch() : loadList(currentTab, { refresh: true }));
     }).catch((err) => {
       showMsg('讀取設定失敗：' + String(err && err.message || err), true);
     });
