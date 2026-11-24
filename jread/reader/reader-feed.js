@@ -20,6 +20,27 @@
     (typeof module !== 'undefined' && module.exports && typeof require === 'function'
       ? require('./reader-cache.js') : null);
   const FEED_TABS = (RC_MOD && RC_MOD.FEED_TABS) || { readwise: [], instapaper: [] };
+  const formatDay = (RC_MOD && RC_MOD.formatDay) || (() => '');
+  const locationLabel = (RC_MOD && RC_MOD.locationLabel) || (() => '');
+
+  // v3.1.0：「載入更多」每次多顯示幾篇（第一屏仍是 MAX_ITEMS，快取也只存第一屏）
+  const MORE_STEP = 20;
+
+  // v3.1.0：垃圾桶動作（右鍵選單 kind → popup-core 函式 / 錯誤文案的動詞 / 成功提示）
+  const TRASH_ACTIONS = {
+    trash: { fn: 'trashJReaderDocument', action: '刪除', done: '已移到垃圾桶' },
+    restore: { fn: 'restoreJReaderDocument', action: '還原', done: '已還原' },
+    purge: { fn: 'purgeJReaderDocument', action: '永久刪除', done: '已永久刪除' }
+  };
+  // 確認文案的正本在 reader-dialog.js（文章資訊面板也用）
+  const DIALOG_MOD = global.__JReadReaderDialog ||
+    (typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-dialog.js') : null);
+  function trashConfirmText(kind, doc, count) {
+    return DIALOG_MOD && typeof DIALOG_MOD.trashConfirmText === 'function' ? DIALOG_MOD.trashConfirmText(kind, doc, count) : null;
+  }
+
+  // v3.1.0：Later / 封存區的「移回 Inbox」（FEED_TABS 的 inbox 欄位）
+  const INBOX_TEXT = { swipe: 'Inbox', menu: '移回 Inbox', done: '已移回 Inbox' };
 
   // v2.4.0：「稍後讀」動作的文字，per-service。Instapaper 沒有 Later，右滑改加星
   //（Jimmy 2026-11-07 裁定）。swipe＝滑動時底下露出的標籤、menu＝右鍵選單項、done＝
@@ -32,11 +53,28 @@
 
   // 卡片副標：作者 · 來源（空欄略過，無前後贅分隔）。v1.0.24 起不顯示字數
   //（Jimmy 2026-06-27：word_count 中英文語意不一、雜訊）。
+  // v3.1.0：沒有網站名稱時用原文網址的網域（Readwise 匯入的文章約兩成沒有 site_name，
+  // 卡片只剩作者、看不出是哪個網站）；作者與網站相同（大小寫不計）只列一次
+  function hostOf(url) {
+    try { return new URL(String(url)).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
+  }
   function formatMeta(doc) {
     const parts = [];
-    if (doc.author) parts.push(String(doc.author));
-    if (doc.site_name) parts.push(String(doc.site_name));
+    const author = doc.author ? String(doc.author) : '';
+    const site = doc.site_name ? String(doc.site_name) : hostOf(doc.source_url);
+    if (author) parts.push(author);
+    if (site && site.toLowerCase() !== author.toLowerCase()) parts.push(site);
     return parts.join('　·　');
+  }
+
+  // v3.1.0：卡片日期。有發布日期就用；沒有改用存入日期並標明「存入」（不把存入日期當成發布日期）
+  // mode 'saved'：一律顯示存入日期（搜尋依「最新 / 最舊」排序時，排序依據是存入日期，卡片要對得上）
+  function formatCardDate(doc, mode) {
+    const saved = formatDay(doc && (doc.saved_at || doc.created_at));
+    if (mode === 'saved' && saved) return '存入 ' + saved;
+    const pub = formatDay(doc && doc.published_date);
+    if (pub) return pub;
+    return saved ? '存入 ' + saved : '';
   }
 
   // v1.6.0：把卡片的最小 metadata（title/author/site_name/published_date/source_url）
@@ -57,11 +95,21 @@
 
   // 卡片可用動作。opts.archivable === false → 不可封存（F-11）；opts.later 為
   // 'remove' | 'keep' 才可稍後讀（FEED_TABS 的 later 欄位）
+  // v3.1.0：inbox＝可移回 Inbox（FEED_TABS 的 inbox 欄位）。右滑的動作：有稍後讀就是稍後讀，
+  // 沒有才是移回 Inbox（Later / 封存區）
   function cardCaps(opts) {
     const o = opts || {};
+    const later = o.later === 'remove' || o.later === 'keep';
+    const inbox = o.inbox === 'remove' || o.inbox === 'keep';
     return {
       archive: o.archivable !== false,
-      later: o.later === 'remove' || o.later === 'keep'
+      later,
+      inbox,
+      right: later ? 'later' : (inbox ? 'inbox' : null),
+      // v3.1.0：垃圾桶。一般分頁右鍵有「刪除」（移到垃圾桶）；垃圾桶裡是「還原 / 永久刪除」。都不掛滑動
+      trash: !!o.deletable && !o.trash,
+      restore: !!o.trash,
+      purge: !!o.trash
     };
   }
 
@@ -77,15 +125,15 @@
     const card = document.createElement('article');
     card.className = 'jr-card';
     card.setAttribute('data-doc-id', doc.id);
-    card.setAttribute('data-actions', [caps.archive && 'archive', caps.later && 'later'].filter(Boolean).join(' '));
+    card.setAttribute('data-actions', [caps.archive && 'archive', caps.later && 'later', caps.inbox && 'inbox'].filter(Boolean).join(' '));
 
-    if (caps.archive || caps.later) {
+    if (caps.archive || caps.right) {
       const bg = document.createElement('div');
       bg.className = 'jr-swipe-bg';
       bg.setAttribute('aria-hidden', 'true');
       const left = document.createElement('span');
       left.className = 'jr-swipe-label jr-swipe-later';
-      left.textContent = caps.later ? text.swipe : '';
+      left.textContent = caps.right === 'later' ? text.swipe : (caps.right === 'inbox' ? INBOX_TEXT.swipe : '');
       const right = document.createElement('span');
       right.className = 'jr-swipe-label jr-swipe-archive';
       right.textContent = caps.archive ? '封存' : '';
@@ -116,11 +164,38 @@
     const h2 = document.createElement('h2');
     h2.className = 'jr-card-title';
     h2.textContent = doc.title || '（無標題）';
+    // v3.1.0：副標＝作者 · 網站 · 日期。日期另放一個不截斷的 span，作者網站太長時截的是前段
     const meta = document.createElement('div');
     meta.className = 'jr-card-meta';
-    meta.textContent = formatMeta(doc);
+    // v3.1.0：清單混了不同資料夾時（搜尋結果、Progress 分頁）副標最前面標出資料夾
+    const loc = opts && opts.showLocation ? locationLabel(doc.location) : '';
+    if (loc) {
+      const badge = document.createElement('span');
+      badge.className = 'jr-loc-badge';
+      badge.setAttribute('data-loc', doc.location === 'shortlist' ? 'later' : String(doc.location));
+      badge.textContent = loc;
+      meta.appendChild(badge);
+    }
+    const src = document.createElement('span');
+    src.className = 'jr-card-src';
+    src.textContent = formatMeta(doc);
+    meta.appendChild(src);
+    const day = formatCardDate(doc, opts && opts.dateMode);
+    if (day) {
+      const dt = document.createElement('span');
+      dt.className = 'jr-card-date';
+      dt.textContent = (src.textContent ? '　·　' : '') + day;
+      meta.appendChild(dt);
+    }
     body.appendChild(h2);
     body.appendChild(meta);
+    // v3.1.0：摘要（最多兩行，CSS 截斷）
+    if (doc.summary) {
+      const sm = document.createElement('div');
+      sm.className = 'jr-card-summary';
+      sm.textContent = String(doc.summary);
+      body.appendChild(sm);
+    }
     link.appendChild(body);
 
     card.appendChild(link);
@@ -136,16 +211,20 @@
   function swipeThreshold(width) {
     return Math.max(72, Math.min(140, (width || 0) * 0.3));
   }
-  // 放手時要執行的動作：左滑（dx < 0）＝封存、右滑＝稍後讀；該方向沒有動作或沒過門檻 → null
+  // 放手時要執行的動作：左滑（dx < 0）＝封存、右滑＝稍後讀（Later / 封存區是移回 Inbox，
+  // caps.right）；該方向沒有動作或沒過門檻 → null
+  function rightKind(caps) {
+    return caps.right !== undefined ? caps.right : (caps.later ? 'later' : null);
+  }
   function swipeDecision(dx, width, caps) {
     const t = swipeThreshold(width);
     if (dx <= -t && caps.archive) return 'archive';
-    if (dx >= t && caps.later) return 'later';
+    if (dx >= t && rightKind(caps)) return rightKind(caps);
     return null;
   }
   // 卡片實際位移：沒有動作的方向給阻尼（最多 24px），拉得動一點但明顯拉不開
   function swipeOffset(dx, caps) {
-    if ((dx < 0 && !caps.archive) || (dx > 0 && !caps.later)) {
+    if ((dx < 0 && !caps.archive) || (dx > 0 && !rightKind(caps))) {
       return Math.sign(dx) * Math.min(24, Math.abs(dx) * 0.2);
     }
     return dx;
@@ -166,7 +245,7 @@
   // onCommit(kind) 在放手且過門檻時呼叫（卡片先滑出畫面再呼叫，見 SWIPE_OUT_MS）
   const SWIPE_OUT_MS = 180;
   function attachSwipe(card, caps, onCommit) {
-    if (!caps.archive && !caps.later) return;
+    if (!caps.archive && !rightKind(caps)) return;
     const link = card.querySelector('.jr-card-link');
     if (!link) return;
     const win = card.ownerDocument && card.ownerDocument.defaultView;
@@ -253,6 +332,7 @@
       b.className = 'jr-menu-item';
       b.setAttribute('role', 'menuitem');
       b.setAttribute('data-kind', it.kind);
+      if (it.danger) b.classList.add('is-danger');
       b.textContent = it.label;
       b.addEventListener('click', (e) => {
         e.preventDefault();
@@ -309,15 +389,38 @@
     return el;
   }
 
-  function attachContextMenu(card, caps, laterText, onPick) {
+  // v3.1.0：每張卡片能做的動作（與右鍵選單同一份）——清單鍵盤操作（attachKeyboardNav）用。
+  // 一般分頁、搜尋結果、同作者 / 同網域都經 attachContextMenu 登記，鍵盤與右鍵不會各算一套
+  const CARD_ACTIONS = new WeakMap(); // card → { kinds: Set, pick(kind) }
+  // v3.1.0：清單多選（reader-select.js，JReader 才有）。有它時卡片右鍵多一項「選取」
+  let selectHook = null;
+
+  // 沒有任何動作時右鍵保留瀏覽器原生選單；有「刪除」等選單項時才接管
+  // v3.1.0：有原始網址就多一項「開啟原始網址」（排第一個、不經 onPick，本頁直接開新分頁），所有服務都有
+  function attachContextMenu(card, caps, laterText, onPick, doc) {
     const items = [];
+    const RCM = global.__JReadReaderCache;
+    const win = card.ownerDocument && card.ownerDocument.defaultView;
+    const hasSource = !!(doc && RCM && typeof RCM.sourceUrlOf === 'function' && RCM.sourceUrlOf(doc));
+    if (hasSource) items.push({ kind: 'source', label: '開啟原始網址' });
     if (caps.later) items.push({ kind: 'later', label: laterText.menu });
+    if (caps.inbox) items.push({ kind: 'inbox', label: INBOX_TEXT.menu });
     if (caps.archive) items.push({ kind: 'archive', label: '封存' });
+    if (caps.restore) items.push({ kind: 'restore', label: '還原' });
+    if (selectHook) items.push({ kind: 'select', label: '選取' });
+    if (caps.trash) items.push({ kind: 'trash', label: '刪除', danger: true });
+    if (caps.purge) items.push({ kind: 'purge', label: '永久刪除', danger: true });
     if (!items.length) return; // 沒動作的分頁保留瀏覽器原生選單（開新分頁 / 複製連結）
+    const pick = (kind) => {
+      if (kind === 'source') { RCM.openSourceUrl(win, doc); return undefined; }
+      if (kind === 'select') { if (selectHook) selectHook.start(card); return undefined; }
+      return onPick(kind);
+    };
+    CARD_ACTIONS.set(card, { kinds: new Set(items.map((it) => it.kind)), pick });
     card.addEventListener('contextmenu', (e) => {
       if (card.classList.contains('is-busy')) return;
       e.preventDefault();
-      openCardMenu(card, e.clientX, e.clientY, items, onPick);
+      openCardMenu(card, e.clientX, e.clientY, items, pick);
     });
   }
 
@@ -327,7 +430,7 @@
   function renderFeed(listEl, docs, onAction, opts) {
     closeCardMenu();
     listEl.textContent = '';
-    const slice = (docs || []).slice(0, MAX_ITEMS);
+    const slice = (docs || []).slice(0, (opts && opts.limit) || MAX_ITEMS);
     const caps = cardCaps(opts);
     const laterText = (opts && opts.laterText) || LATER_TEXT.readwise;
     let n = 0;
@@ -335,9 +438,9 @@
       const card = createCard(doc, listEl.ownerDocument, opts);
       if (!card) continue;
       if (typeof onAction === 'function') {
-        const run = (kind) => onAction(card, doc.id, kind);
+        const run = (kind) => onAction(card, doc.id, kind, doc);
         attachSwipe(card, caps, run);
-        attachContextMenu(card, caps, laterText, run);
+        attachContextMenu(card, caps, laterText, run, doc);
       }
       listEl.appendChild(card);
       n++;
@@ -374,6 +477,8 @@
       if (!current) return result;
       if (remove) {
         if (typeof deps.onEmpty === 'function' && parent && parent.children.length === 0) deps.onEmpty();
+        // v3.1.0：垃圾桶動作卡片離開後也要提示（稍後讀 / 封存照舊不跳，行為不變）
+        if (deps.toastOnRemove && deps.successToast && typeof deps.toastFn === 'function') deps.toastFn(deps.successToast, 'success');
       } else if (deps.successToast && typeof deps.toastFn === 'function') {
         deps.toastFn(deps.successToast, 'success');
       }
@@ -410,6 +515,74 @@
 
   // v2.2.10：reader.html?tab=<id> 指定初始分頁（文章頁退出帶回來的來源分頁）。
   // 不認得的 id（例如切換過儲存服務、舊網址）退回第一個分頁。
+  // v3.1.0：清單鍵盤操作（Jimmy 2026-11-24）。J / K 下一張 / 上一張（選到的卡片有外框、捲進畫面）、
+  // Enter 打開、E 封存、L 加入 Later（Instapaper：加星）、V 開啟原始網址。能不能做照卡片的右鍵選單
+  //（CARD_ACTIONS）：封存區沒有 E、沒有原始網址沒有 V。動作讓卡片離開清單時選取移到下一張。
+  // 輸入框裡、選字中、帶修飾鍵、事件已被別人處理（右鍵選單、確認框、快速鍵說明開著）都不收
+  const KB_KEYS = { j: 'next', k: 'prev', enter: 'open', e: 'archive', l: 'later', v: 'source' };
+  function attachKeyboardNav(listEl, doc) {
+    if (!listEl || !doc) return null;
+    let selId = null;
+    const cards = () => Array.from(listEl.querySelectorAll('.jr-card[data-doc-id]:not(.jr-pending)'));
+    const find = (id) => (id == null ? null : cards().find((c) => c.getAttribute('data-doc-id') === id) || null);
+    function select(card) {
+      for (const c of listEl.querySelectorAll('.jr-card.is-kb')) c.classList.remove('is-kb');
+      selId = card ? card.getAttribute('data-doc-id') : null;
+      if (!card) return;
+      card.classList.add('is-kb');
+      try { card.scrollIntoView({ block: 'nearest' }); } catch (_) { /* jsdom */ }
+    }
+    // 清單重畫（背景更新、換分頁、搜尋）後卡片是新的：選到的那篇還在就補回外框
+    const MO = doc.defaultView && doc.defaultView.MutationObserver;
+    if (MO) {
+      new MO(() => {
+        const c = find(selId);
+        if (c && !c.classList.contains('is-kb')) c.classList.add('is-kb');
+      }).observe(listEl, { childList: true });
+    }
+    function onKey(e) {
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (openMenu) return; // 右鍵選單開著：鍵盤歸選單（上下鍵、Esc）
+      const t = e.target;
+      const tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || (t && t.isContentEditable)) return;
+      const cmd = KB_KEYS[String(e.key || '').toLowerCase()];
+      if (!cmd) return;
+      // 多選中只收移動（J / K）；勾選用 X（reader-select），單篇動作暫停
+      if (selectHook && selectHook.isActive() && cmd !== 'next' && cmd !== 'prev') return;
+      const list = cards();
+      if (!list.length) return;
+      const cur = find(selId);
+      if (cmd === 'next' || cmd === 'prev') {
+        e.preventDefault();
+        const i = cur ? list.indexOf(cur) : -1;
+        select(cmd === 'next' ? list[Math.min(list.length - 1, i + 1)] : list[Math.max(0, i - 1)]);
+        return;
+      }
+      if (!cur) return; // 還沒選卡片：Enter / E / L / V 不動作
+      if (cmd === 'open') {
+        e.preventDefault();
+        const a = cur.querySelector('a.jr-card-link');
+        if (a) a.click();
+        return;
+      }
+      const act = CARD_ACTIONS.get(cur);
+      if (!act || !act.kinds.has(cmd)) return;
+      e.preventDefault();
+      // 動作後卡片可能離開清單：先記下一張（沒有下一張就上一張）
+      const i = list.indexOf(cur);
+      const after = list[i + 1] || list[i - 1] || null;
+      const afterId = after ? after.getAttribute('data-doc-id') : null;
+      const curId = selId;
+      Promise.resolve(act.pick(cmd)).catch(() => {}).then(() => {
+        if (selId !== curId) return;
+        select(find(curId) || find(afterId));
+      });
+    }
+    doc.addEventListener('keydown', onKey);
+    return { select, selectedId: () => selId, onKey };
+  }
+
   function pickInitialTab(tabs, search) {
     let id = null;
     try { id = new URLSearchParams(search || '').get('tab'); } catch (_) {}
@@ -417,9 +590,9 @@
   }
 
   const api = {
-    formatMeta, encodeMeta, createCard, pickInitialTab, renderFeed, actionCard, archiveCard, archiveErrorMessage,
+    formatMeta, formatCardDate, encodeMeta, createCard, cardCaps, attachKeyboardNav, KB_KEYS, trashConfirmText, TRASH_ACTIONS, pickInitialTab, renderFeed, actionCard, archiveCard, archiveErrorMessage,
     swipeThreshold, swipeDecision, swipeOffset, openCardMenu, closeCardMenu,
-    MAX_ITEMS, FEED_TABS, LATER_TEXT, SWIPE_OUT_MS
+    MAX_ITEMS, MORE_STEP, FEED_TABS, LATER_TEXT, INBOX_TEXT, SWIPE_OUT_MS
   };
 
   // ---- 頁面 bootstrap（只在擴充頁環境跑）----
@@ -473,6 +646,15 @@
     // v1.9.14：theme 讀有效值（這台裝置套用中的設定檔會蓋過 sync flat）
     const PROFILES = global.__JReadProfiles;
     const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
+    // v3.1.0：文章頁做完動作跳回來（E 鍵封存）留下的提示，顯示一次
+    const RCN = global.__JReadReaderCache;
+    if (RCN && typeof RCN.takeFeedNotice === 'function') {
+      let session = null;
+      try { session = global.sessionStorage; } catch (_) { session = null; }
+      const notice = RCN.takeFeedNotice(session);
+      if (notice) toast(notice.message, notice.kind);
+    }
+
     readSettings(PC.serviceSettingsQuery({
       theme: DEF.theme || 'gray' // review D-05：同 reader-article.js，預設主題讀單一資料源
     })).then((s) => {
@@ -509,9 +691,13 @@
       const RC = global.__JReadReaderCache;
       const local = browser.storage.local;
       const account = RC ? RC.accountKey(service, creds) : '';
-      // 本頁移走過（含進行中）的 id → 影響範圍：'*'＝所有分頁（封存）、或某個 listKey
-      //（Inbox 右滑移到 Later 只離開 Inbox）。背景抓回來的清單可能還沒反映，重畫時濾掉
+      // 本頁移走過（含進行中）的 id → 影響範圍：'*'＝所有分頁（封存、永久刪除）、或某個 listKey
+      //（Inbox 右滑移到 Later 只離開 Inbox、從垃圾桶還原只離開垃圾桶）、或 EXCEPT_PREFIX + listKey＝
+      // 除了那個分頁以外全部（移到垃圾桶：只該出現在垃圾桶）。背景抓回來的清單可能還沒反映，重畫時濾掉
       const removedIds = new Map();
+      const EXCEPT_PREFIX = '*except:';
+      const hiddenIn = (k, listKey) => k === '*' || k === listKey ||
+        (typeof k === 'string' && k.startsWith(EXCEPT_PREFIX) && k !== EXCEPT_PREFIX + listKey);
       const laterText = LATER_TEXT[service] || LATER_TEXT.readwise;
 
       // v3.1.0：JReader 書庫工具列（reader-library.js）。標籤篩選疊在分頁的 query 上；
@@ -546,27 +732,67 @@
         const docs = postFilter(all, cfg).filter((d) => {
           if (!d) return false;
           if (lib && lib.isPending(d.id)) return false; // 抓取中的那張由工具列畫
-          const k = removedIds.get(d.id);
-          return !(k === '*' || k === listKey);
+          return !hiddenIn(removedIds.get(d.id), listKey);
         });
         if (!docs.length) {
           showMsg(emptyText(cfg), false);
           return;
         }
-        const onAction = (card, id, kind) => {
+        // v3.1.0：同作者 / 同網域的子清單跨各資料夾——右鍵選單依每張卡自己的資料夾（同搜尋結果），不掛滑動。
+        // 搬資料夾：換掉這篇再重畫（資料夾標籤更新）；刪除：記成「只在垃圾桶出現」再重畫
+        if (cfg.perDocMenu) {
+          hideMsg();
+          renderFeed(listEl, docs, null, { showLocation: true, tabId: cfg.id, limit: paging.limit });
+          const byId = new Map(docs.map((d) => [String(d.id), d]));
+          const trashCfg = tabs.find((t) => t.trash);
+          for (const card of listEl.querySelectorAll('.jr-card[data-doc-id]')) {
+            const d = byId.get(card.getAttribute('data-doc-id'));
+            if (!d) continue;
+            attachResultMenu(card, d, {
+              changed: (nd) => {
+                if (!shown || shown.cfg !== cfg) return;
+                if (!nd) {
+                  removedIds.set(d.id, trashCfg ? EXCEPT_PREFIX + listKeyFor(trashCfg) : '*');
+                  if (typeof subCount === 'number') { subCount = Math.max(0, subCount - 1); renderHeadCount(); }
+                }
+                showDocs(nd ? shown.all.map((x) => (x && x.id === nd.id ? nd : x)) : shown.all, cfg);
+              }
+            });
+          }
+          updateMore(docs.length);
+          return;
+        }
+        const onAction = async (card, id, kind, docItem) => {
+          // v3.1.0：垃圾桶相關動作先確認（Jimmy：「刪除要確認」），取消就什麼都不做
+          if (kind === 'trash' || kind === 'purge' || kind === 'restore') {
+            if (!(await confirmTrashAction(kind, docItem))) return;
+          }
           // review D-03：記下發動當下的分頁世代，結果回來時不同＝已切走
           const actionTabGen = tabGen;
           const isArchive = kind === 'archive';
-          const remove = isArchive || cfg.later === 'remove';
-          const scope = isArchive ? '*' : listKey;
+          const isInbox = kind === 'inbox';
+          const trashKind = TRASH_ACTIONS[kind] || null; // 刪除 / 還原 / 永久刪除：一律離開本分頁
+          // v3.1.0：移回 Inbox（Later / 封存區）比照稍後讀：分頁設 'remove' 就離開本分頁
+          const remove = isArchive || !!trashKind || (isInbox ? cfg.inbox === 'remove' : cfg.later === 'remove');
+          const trashCfg = tabs.find((t) => t.trash);
+          const scope = kind === 'trash' && trashCfg ? EXCEPT_PREFIX + listKeyFor(trashCfg)
+            : kind === 'restore' ? listKey
+              : isArchive || trashKind ? '*' : listKey;
           if (remove) removedIds.set(id, scope);
-          actionCard(card, id, {
-            actionFn: isArchive
-              ? ({ id }) => PC.archiveDocument({ service, creds, id })
-              : ({ id }) => PC.laterDocument({ service, creds, id }),
-            action: isArchive ? '封存' : laterText.menu,
+          const text = isInbox ? INBOX_TEXT : laterText;
+          const rw = { token: creds.token, base: creds.base, id };
+          return actionCard(card, id, {
+            actionFn: trashKind
+              ? () => PC[trashKind.fn](rw)
+              : isArchive
+                ? ({ id }) => PC.archiveDocument({ service, creds, id })
+                : isInbox
+                  ? ({ id }) => PC.inboxDocument({ service, creds, id })
+                  : ({ id }) => PC.laterDocument({ service, creds, id }),
+            action: trashKind ? trashKind.action : isArchive ? '封存' : text.menu,
             remove,
-            successToast: isArchive ? null : laterText.done,
+            successToast: trashKind ? trashKind.done : isArchive ? null : text.done,
+            toastOnRemove: !!trashKind,
             toastFn: toast,
             onEmpty: () => showMsg(emptyText(cfg), false),
             isCurrent: () => actionTabGen === tabGen
@@ -590,8 +816,196 @@
         };
         hideMsg();
         renderFeed(listEl, docs, onAction, {
-          archivable: cfg.archivable !== false, later: cfg.later, laterText, tabId: cfg.id
+          archivable: cfg.archivable !== false, later: cfg.later, inbox: cfg.inbox, laterText, tabId: cfg.id,
+          showLocation: !!cfg.showLocation, deletable: !!cfg.deletable, trash: !!cfg.trash,
+          limit: paging.limit
         });
+        updateMore(docs.length);
+      }
+
+      // v3.1.0：「載入更多」。paging＝目前這份清單的翻頁狀態：limit＝顯示幾篇、cursor＝API 下一頁、
+      // all＝已抓到的整份（未過濾）。第一屏 MAX_ITEMS 篇、之後每次多 MORE_STEP 篇；已抓的不夠就
+      // 帶 nextPageCursor 再抓一頁接在後面。只有 API 回來的新資料才有 cursor（快取沒有）
+      const paging = { limit: MAX_ITEMS, cursor: null, gen: 0, loading: false };
+      let moreBtn = null;
+      if (listEl && listEl.parentNode) {
+        moreBtn = doc.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'jr-more';
+        moreBtn.textContent = '載入更多';
+        moreBtn.hidden = true;
+        listEl.parentNode.insertBefore(moreBtn, listEl.nextSibling);
+        moreBtn.addEventListener('click', () => loadMore());
+      }
+      // v3.1.0：垃圾桶相關動作的確認（reader-dialog.js）。對話框模組不在（理論上不會）就保守地不動作
+      async function confirmTrashAction(kind, docItem, count) {
+        const text = trashConfirmText(kind, docItem, count);
+        if (!text) return true;
+        const D = global.__JReadReaderDialog;
+        if (!D || typeof D.confirm !== 'function') return false;
+        return D.confirm(text);
+      }
+
+      // v3.1.0：搜尋結果卡片的右鍵選單（Jimmy 2026-11-24「搜尋結果卡片沒有右鍵選單」）。結果橫跨各資料夾，
+      // 選單依這張卡自己的資料夾決定：Inbox → 加入 Later / 封存；Later → 移回 Inbox / 封存；Archive → 移回 Inbox；
+      // 都有「開啟原始網址」與「刪除」。不掛滑動（搜尋結果捲動為主，避免誤觸）。
+      // 成功後 hooks.changed(新的 doc)：搬資料夾給更新後的 doc（搜尋端換掉卡片的資料夾標籤）、刪除給 null（拿掉卡片）
+      function attachResultMenu(card, d, hooks) {
+        const loc = d.location === 'shortlist' ? 'later' : d.location;
+        const caps = { later: loc === 'new', inbox: loc === 'later' || loc === 'archive', archive: loc !== 'archive', trash: true };
+        const TO = { archive: 'archive', inbox: 'new', later: 'later' };
+        attachContextMenu(card, caps, laterText, async (kind) => {
+          if (kind === 'trash' && !(await confirmTrashAction('trash', d))) return;
+          const label = kind === 'trash' ? '刪除' : kind === 'archive' ? '封存' : kind === 'inbox' ? INBOX_TEXT.menu : laterText.menu;
+          const done = kind === 'trash' ? '已移到垃圾桶' : kind === 'archive' ? '已封存' : kind === 'inbox' ? INBOX_TEXT.done : laterText.done;
+          card.classList.add('is-busy');
+          let r;
+          try {
+            r = kind === 'trash' ? await PC.trashJReaderDocument({ token: creds.token, base: creds.base, id: d.id })
+              : kind === 'archive' ? await PC.archiveDocument({ service, creds, id: d.id })
+                : kind === 'inbox' ? await PC.inboxDocument({ service, creds, id: d.id })
+                  : await PC.laterDocument({ service, creds, id: d.id });
+          } catch (_) { r = null; }
+          card.classList.remove('is-busy');
+          if (!r || !r.ok) { toast(archiveErrorMessage(r, label), 'error'); return; }
+          // 各分頁快取裡這篇的位置都過期了：拿掉，回到分頁時由網路結果補回正確的地方
+          if (RC) { try { await RC.removeFromFeed(local, account, d.id); } catch (_) {} }
+          toast(done, 'success');
+          if (hooks && typeof hooks.changed === 'function') hooks.changed(kind === 'trash' ? null : Object.assign({}, d, { location: TO[kind] }));
+        }, d);
+      }
+
+      // v3.1.0：垃圾桶入口（清單最底部的淡色連結，不佔分頁列）與垃圾桶上方的「← 返回　垃圾桶　清空垃圾桶」。
+      // 只有分頁設定裡有隱藏的垃圾桶（JReader）才出現
+      const trashTab = tabs.find((t) => t.trash && t.hidden) || null;
+      let trashLink = null;
+      let trashHead = null;
+      let headTitle = null;
+      let headCount = null;
+      let trashNoteEl = null;
+      let subCount = null; // 目前子清單的總篇數（伺服器 count；刪除一篇就減一）
+      function renderHeadCount() {
+        if (!headCount) return;
+        headCount.textContent = typeof subCount === 'number' ? subCount + ' 篇' : '';
+      }
+      let emptyBtn = null;
+      // 「← 返回」回去的分頁：最後一個看過的一般分頁；直接從文章資訊面板進子清單時用網址的 back
+      //（面板帶上文章原本的分頁），沒有就第一個分頁
+      let lastNormalTab = null;
+      // 從子清單打開文章再退回時網址沒有 back（文章頁只帶 tab），所以進來時把 back 記在這個分頁的 sessionStorage
+      const SUBVIEW_BACK_KEY = 'jread:subviewBack';
+      try {
+        const sp = new URLSearchParams((global.location && global.location.search) || '');
+        let b = sp.get('back');
+        const isSub = /^(author|site):/.test(sp.get('tab') || '');
+        if (b && isSub) global.sessionStorage.setItem(SUBVIEW_BACK_KEY, b);
+        else if (isSub) b = global.sessionStorage.getItem(SUBVIEW_BACK_KEY);
+        lastNormalTab = (b && tabs.find((t) => t.id === b && !t.hidden)) || null;
+      } catch (_) { lastNormalTab = null; }
+      if (trashTab && listEl && listEl.parentNode) {
+        trashLink = doc.createElement('button');
+        trashLink.type = 'button';
+        trashLink.className = 'jr-trash-link';
+        trashLink.textContent = '垃圾桶';
+        listEl.parentNode.appendChild(trashLink);
+        trashLink.addEventListener('click', () => selectTab(trashTab));
+        trashHead = doc.createElement('div');
+        trashHead.className = 'jr-trash-head';
+        trashHead.hidden = true;
+        const back = doc.createElement('button');
+        back.type = 'button';
+        back.className = 'jr-trash-back';
+        back.textContent = '← 返回';
+        back.addEventListener('click', () => selectTab(lastNormalTab || tabs[0]));
+        const title = doc.createElement('span');
+        title.className = 'jr-trash-title';
+        title.textContent = '垃圾桶';
+        headTitle = title;
+        // v3.1.0：同作者 / 同網域清單的總篇數（Jimmy 2026-11-24「加上文章數量」），標題後面、淡色
+        headCount = doc.createElement('span');
+        headCount.className = 'jr-head-count';
+        const empty = doc.createElement('button');
+        emptyBtn = empty;
+        empty.type = 'button';
+        empty.className = 'jr-trash-empty';
+        empty.textContent = '清空垃圾桶';
+        empty.addEventListener('click', async () => {
+          const n = shown && shown.cfg === trashTab && !paging.cursor ? postFilter(shown.all, trashTab).length : 0;
+          if (!n && shown && shown.cfg === trashTab && !paging.cursor) { toast('垃圾桶是空的', 'info'); return; }
+          if (!(await confirmTrashAction('empty', null, n))) return;
+          let r;
+          try { r = await PC.emptyJReaderTrash({ token: creds.token, base: creds.base }); } catch (_) { r = null; }
+          if (!r || !r.ok) { toast(archiveErrorMessage(r, '清空垃圾桶'), 'error'); return; }
+          if (RC) RC.writeFeed(local, account, listKeyFor(trashTab), [], MAX_ITEMS);
+          toast('已清空垃圾桶', 'success');
+          loadList(trashTab);
+        });
+        trashHead.appendChild(back);
+        trashHead.appendChild(title);
+        trashHead.appendChild(empty);
+        listEl.parentNode.insertBefore(trashHead, listEl);
+        // 垃圾桶的自動清除說明（30 天：JReader 伺服器規則 TRASH_KEEP_DAYS，文案數字改了要一起改）
+        trashNoteEl = doc.createElement('div');
+        trashNoteEl.className = 'jr-trash-note';
+        trashNoteEl.textContent = '放超過 30 天的文章會自動永久刪除';
+        trashNoteEl.hidden = true;
+        listEl.parentNode.insertBefore(trashNoteEl, listEl);
+      }
+      // 垃圾桶與同作者 / 同網域的子清單共用上方那一列（返回 + 標題）；「清空垃圾桶」只在垃圾桶
+      function updateTrashUi(cfg) {
+        if (!trashTab) return;
+        const inSub = !!cfg.hidden;
+        if (!inSub) lastNormalTab = cfg;
+        trashHead.hidden = !inSub;
+        // 名字太長只截名字（.jr-head-name 省略號），篇數一定看得到
+        headTitle.textContent = '';
+        const name = doc.createElement('span');
+        name.className = 'jr-head-name';
+        name.textContent = cfg.title || cfg.label;
+        headTitle.appendChild(name);
+        subCount = null;
+        renderHeadCount();
+        if (cfg.subview) headTitle.appendChild(headCount);
+        emptyBtn.hidden = cfg !== trashTab;
+        trashNoteEl.hidden = cfg !== trashTab;
+        trashLink.hidden = inSub;
+        if (tabsEl) for (const x of tabsEl.querySelectorAll('.jr-tab')) x.classList.toggle('is-active', !inSub && x.getAttribute('data-src') === cfg.id);
+      }
+
+      function updateMore(shownTotal) {
+        if (!moreBtn) return;
+        const hasBuffered = shown && shownTotal > paging.limit;
+        moreBtn.hidden = !(hasBuffered || paging.cursor);
+        moreBtn.disabled = paging.loading;
+        moreBtn.textContent = paging.loading ? '載入中…' : '載入更多';
+      }
+      async function loadMore() {
+        if (!shown || paging.loading) return;
+        const cfg = shown.cfg;
+        const gen = loadGen;
+        paging.limit += MORE_STEP;
+        const visible = postFilter(shown.all, cfg).length;
+        if (visible < paging.limit && paging.cursor) {
+          paging.loading = true;
+          updateMore(visible);
+          let r;
+          try {
+            r = await PC.listDocuments({ service, creds, query: Object.assign({}, queryFor(cfg), { pageCursor: paging.cursor }) });
+          } catch (_) { r = null; } // serviceErrorMessage 對 null 回通用文案（錯誤碼表只在 popup-core）
+          paging.loading = false;
+          if (gen !== loadGen) return; // 已切分頁 / 重新載入
+          if (!r || !r.ok) {
+            paging.limit -= MORE_STEP;
+            toast(archiveErrorMessage(r, '載入更多'), 'error');
+            updateMore(visible);
+            return;
+          }
+          paging.cursor = r.nextPageCursor || null;
+          const seen = new Set(shown.all.map((d) => d && d.id));
+          showDocs(shown.all.concat((r.results || []).filter((d) => d && !seen.has(d.id))), cfg);
+          return;
+        }
+        showDocs(shown.all, cfg);
       }
 
       // 載入某個分頁的清單（服務無關，走 PC.listDocuments dispatcher）。
@@ -614,11 +1028,16 @@
         const gen = ++loadGen;
         if (!refresh) tabGen++;
         const listKey = listKeyFor(cfg);
+        if (!refresh) { paging.limit = MAX_ITEMS; paging.cursor = null; paging.loading = false; }
+        if (!refresh && selectHook) selectHook.exit(); // 換清單就離開多選
+        updateTrashUi(cfg);
         let freshArrived = false;
         let cachedSig = null;  // 非 null = 畫面上是快取版本
         if (!refresh) showMsg('載入中…', false);
 
-        const cacheRead = RC ? RC.readFeed(local, account, listKey) : Promise.resolve(null);
+        // 子清單（同作者 / 同網域）不進快取：每個作者一把 key 會一直累積
+        const useCache = !!RC && !cfg.noCache;
+        const cacheRead = useCache ? RC.readFeed(local, account, listKey) : Promise.resolve(null);
         cacheRead.then((docs) => {
           if (gen !== loadGen || freshArrived || !docs) return;
           if (refresh) { cachedSig = RC.feedSignature(docs); return; } // 畫面已是這份，只記簽章
@@ -647,10 +1066,15 @@
             fail(archiveErrorMessage(r, '更新清單'), archiveErrorMessage(r, '載入'));
             return;
           }
-          const docs = postFilter(r.results || [], cfg).slice(0, MAX_ITEMS);
-          if (RC) RC.writeFeed(local, account, listKey, docs, MAX_ITEMS);
-          if (cachedSig !== null && RC.feedSignature(docs) === cachedSig) return; // 沒變，不重畫
-          showDocs(docs, cfg);
+          // v3.1.0：整頁（最多 100 篇）留著給「載入更多」，快取與「沒變不重畫」的比對只看第一屏
+          const all = postFilter(r.results || [], cfg);
+          const docs = all.slice(0, MAX_ITEMS);
+          paging.cursor = r.nextPageCursor || null;
+          if (cfg.subview) { subCount = typeof r.count === 'number' ? r.count : null; renderHeadCount(); }
+          if (useCache) RC.writeFeed(local, account, listKey, docs, MAX_ITEMS);
+          if (cachedSig !== null && RC.feedSignature(docs) === cachedSig && all.length <= MAX_ITEMS && !paging.cursor) return; // 沒變，不重畫
+          if (refresh) paging.limit = Math.max(paging.limit, MAX_ITEMS);
+          showDocs(all, cfg);
         }, (err) => {
           if (gen !== loadGen) return; // 過期回應丟棄（同上）
           freshArrived = true;
@@ -660,12 +1084,30 @@
         });
       }
 
+      // 換分頁（分頁列點擊、垃圾桶連結、垃圾桶的「返回」共用）：亮對應的分頁鈕、離開搜尋、同步網址、載入
+      function selectTab(picked) {
+        if (!picked) return;
+        if (tabsEl) for (const x of tabsEl.querySelectorAll('.jr-tab')) x.classList.toggle('is-active', x.getAttribute('data-src') === picked.id);
+        if (lib && lib.isSearching()) lib.exitSearch(false);
+        // 網址同步目前分頁：重新整理 / 上一頁回到這裡時停在同一分頁
+        try { global.history.replaceState(null, '', 'reader.html?tab=' + encodeURIComponent(picked.id)); } catch (_) {}
+        loadList(picked);
+      }
+
       // v1.6.0：依 FEED_TABS[service] 動態建分頁（取代 reader.html 寫死的三顆）。
-      const initialTab = pickInitialTab(tabs, global.location && global.location.search);
+      let initialTab = pickInitialTab(tabs, global.location && global.location.search);
+      // v3.1.0：?tab=author:… / site:…＝同作者 / 同網域的子清單（文章資訊面板點進來、或從子清單打開的文章退回）
+      if (RC && typeof RC.subviewTab === 'function' && typeof PC.supportsLibraryTools === 'function' && PC.supportsLibraryTools(service)) {
+        let t = null;
+        try { t = new URLSearchParams((global.location && global.location.search) || '').get('tab'); } catch (_) { t = null; }
+        const sub = RC.subviewTab(t);
+        if (sub) initialTab = sub;
+      }
       const tabsEl = doc.getElementById('jr-tabs');
       if (tabsEl) {
         tabsEl.textContent = '';
         tabs.forEach((tab) => {
+          if (tab.hidden) return; // v3.1.0：垃圾桶不放分頁列（入口在清單最底部）
           const btn = doc.createElement('button');
           btn.className = 'jr-tab' + (tab === initialTab ? ' is-active' : '');
           btn.type = 'button';
@@ -676,13 +1118,7 @@
         tabsEl.addEventListener('click', (e) => {
           const t = e.target && e.target.closest && e.target.closest('.jr-tab');
           if (!t) return;
-          const all = tabsEl.querySelectorAll('.jr-tab');
-          for (const x of all) x.classList.toggle('is-active', x === t);
-          const picked = tabs.find((tb) => tb.id === t.getAttribute('data-src'));
-          if (lib && lib.isSearching()) lib.exitSearch(false);
-          // 網址同步目前分頁：重新整理 / 上一頁回到這裡時停在同一分頁
-          try { global.history.replaceState(null, '', 'reader.html?tab=' + encodeURIComponent(picked.id)); } catch (_) {}
-          loadList(picked);
+          selectTab(tabs.find((tb) => tb.id === t.getAttribute('data-src')));
         });
       }
 
@@ -695,16 +1131,50 @@
         };
         lib = LIB.attach({
           doc, win: global, PC, service, creds, toast, listEl, tabsEl, msgEl, showMsg, hideMsg, createCard,
+          attachResultMenu,
           currentTabId: () => (currentTab ? currentTab.id : null),
           switchTab: selectTab,
-          reload: () => loadList(currentTab || initialTab),
+          // 離開搜尋：回到開始搜尋時的分頁，網址從 tab=search 換回那個分頁（重新整理才不會又叫回搜尋）
+          onViewChange: () => { if (selectHook) selectHook.exit(); },
+          reload: () => {
+            const t = currentTab || initialTab;
+            try { global.history.replaceState(null, '', 'reader.html?tab=' + encodeURIComponent(t.id)); } catch (_) {}
+            return loadList(t);
+          },
           setTagFilter: (name) => { tagFilter = name || null; loadList(currentTab || initialTab); },
           cancelPending: () => { loadGen++; }
         });
       }
 
+      attachKeyboardNav(listEl, doc);
+
+      // v3.1.0：清單多選（JReader；reader-select.js）
+      const SEL = global.__JReadReaderSelect;
+      if (SEL && lib) {
+        selectHook = SEL.attach({
+          doc, win: global, listEl, PC, creds, toast,
+          getView: () => {
+            if (lib.isSearching()) return { kind: 'search' };
+            const t = currentTab || initialTab;
+            if (t.trash) return { kind: 'trash' };
+            if (t.subview || (t.query && t.query.inProgress)) return { kind: 'sub' };
+            return { kind: 'tab', location: t.query && t.query.location };
+          },
+          refresh: () => (lib.isSearching() ? lib.refreshSearch() : loadList(currentTab || initialTab)),
+          invalidate: async (ids) => {
+            if (!RC) return;
+            for (const id of ids) await RC.removeFromFeed(local, account, id);
+          }
+        });
+      }
+
       // ?tab= 指定的分頁，沒指定 = 第一個；?tab=search（搜尋結果點進文章再退出）由工具列叫回查詢
-      if (lib && lib.restoreSearch(global.location && global.location.search)) currentTab = initialTab;
+      if (lib && lib.restoreSearch(global.location && global.location.search)) {
+        // 從搜尋結果的文章退回：記住開始搜尋時的分頁，之後 Esc 離開搜尋回那裡（一般分頁或同作者 / 同網域子清單）
+        let from = null;
+        try { from = global.sessionStorage.getItem(LIB.SEARCH_FROM_KEY); } catch (_) { from = null; }
+        currentTab = (from && (tabs.find((t) => t.id === from) || (RC && typeof RC.subviewTab === 'function' && RC.subviewTab(from)))) || initialTab;
+      }
       else loadList(initialTab);
       // v2.2.13：下拉更新入口（iOS App ViewController 的 UIRefreshControl 呼叫）
       api.refreshCurrent = () => loadList(currentTab, { refresh: true });

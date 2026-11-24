@@ -17,6 +17,7 @@
   const WIDE_MIN_PX = 720;
   const HOST_ID = '__jread-info-host';
   const DRAG_CLOSE_PX = 80;
+  const NOTES_SAVE_MS = 800; // 筆記停頓多久自動存
   // 閱讀速度（成人默讀一般文章）：
   // - 英文 238 詞／分：Brysbaert 2019 統合分析（190 篇研究、1.9 萬人）非小說的平均值
   //   （Journal of Memory and Language 109, 104047）
@@ -137,6 +138,11 @@
     .muted { color: var(--muted); }
     .nowrap { white-space: nowrap; }
     a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+    /* 點了看同作者 / 同網域的文章（留在 JReader）：虛線底線；開原文（離開）是實線＋↗ */
+    .pivot { padding: 0; border: 0; background: none; font: inherit; color: var(--link); cursor: pointer;
+      text-decoration: underline dashed; text-underline-offset: 3px; text-align: left; }
+    .pivot:hover { text-decoration-style: solid; }
+    .sep { color: var(--muted); }
     .bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin: 6px 0 0; }
     .bar > i { display: block; height: 100%; background: var(--link); }
     .seg { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--line); }
@@ -179,8 +185,28 @@
       padding: 0; border: 0; background: none; color: var(--link); font: inherit; cursor: pointer;
       text-decoration: underline; text-underline-offset: 2px;
     }
-    .summary { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-    .summary.expanded { display: block; }
+    .summary { white-space: pre-wrap; }
+    .notes {
+      box-sizing: border-box; width: 100%; min-height: 64px; padding: 8px 10px; resize: none; overflow: hidden;
+      border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--fg);
+      font: inherit; font-size: 14px; line-height: 1.55; outline: none;
+    }
+    .notes:focus { border-color: var(--link); }
+    .notes::placeholder { color: var(--muted); }
+    .note-status { display: block; min-height: 16px; margin-top: 2px; font-size: 12px; color: var(--muted); }
+    .hl-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+    .hl-item {
+      display: block; width: 100%; text-align: left; padding: 6px 8px 6px 10px; border: 0; border-left: 3px solid var(--link);
+      border-radius: 0 6px 6px 0; background: transparent; color: var(--fg); font: inherit; font-size: 13px; line-height: 1.5;
+      cursor: pointer;
+    }
+    .hl-item:hover, .hl-item:focus-visible { background: var(--line); outline: none; }
+    .hl-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .danger-row { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .act { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent;
+      color: var(--fg); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .act.danger { color: #c62828; }
+    .trash-note { flex: 1 0 100%; font-size: 12px; color: var(--muted); }
   `;
 
   function el(document, tag, cls, text) {
@@ -231,6 +257,12 @@
     let backdrop = null;
     let hlCursor = -1;
     let tagKeyHandler = null; // 目前畫面上那個標籤輸入框的按鍵處理（render 會重建輸入框）
+    // 文章筆記：notesDraft＝輸入框目前的內容（render 重建輸入框時沿用，打到一半不會被洗掉）、
+    // notesSaved＝伺服器上的值；停頓 NOTES_SAVE_MS 自動存、失焦 / 關面板立刻存
+    let notesSaved = typeof o.docData.notes === 'string' ? o.docData.notes : '';
+    let notesDraft = notesSaved;
+    let notesTimer = null;
+    let notesStatus = '';
 
     const toast = o.toast || ((msg, kind) => {
       if (NS && NS.toast && typeof NS.toast.show === 'function') NS.toast.show(msg, { kind: kind || 'info', id: 'jr-info' });
@@ -241,6 +273,39 @@
       const text = container ? String(container.textContent || '').slice(0, 2000) : '';
       const han = (text.match(/[㐀-鿿぀-ヿ]/g) || []).length;
       return han > text.replace(/\s/g, '').length * 0.3;
+    }
+
+    // 每個重點的完整文字（同一個重點可能跨好幾個 <mark>），照文章裡的順序
+    function highlightTexts() {
+      const HL = global.__JReadReaderHighlights;
+      const attr = (HL && HL.HL_ATTR) || 'data-jread-hl';
+      const out = [];
+      const byId = new Map();
+      if (!container) return out;
+      for (const m of container.querySelectorAll('[' + attr + ']')) {
+        const k = m.getAttribute(attr);
+        if (!byId.has(k)) { byId.set(k, out.length); out.push(''); }
+        out[byId.get(k)] += m.textContent;
+      }
+      return out.map((t) => t.replace(/\s+/g, ' ').trim());
+    }
+
+    async function saveNotes() {
+      if (notesTimer) { win.clearTimeout(notesTimer); notesTimer = null; }
+      const value = notesDraft;
+      if (value === notesSaved) return;
+      setNotesStatus('儲存中…');
+      let r;
+      try { r = await PC.setJReaderNotes(Object.assign({ id, notes: value }, rw)); } catch (_) { r = null; }
+      if (!r || !r.ok) { setNotesStatus('儲存失敗，稍後再試'); return; }
+      notesSaved = value;
+      if (o.docData) o.docData.notes = value;
+      setNotesStatus(notesDraft === value ? '已儲存' : '');
+    }
+    function setNotesStatus(text) {
+      notesStatus = text;
+      const s = shadow && shadow.querySelector && shadow.querySelector('.note-status');
+      if (s) s.textContent = text;
     }
 
     function marks() {
@@ -262,11 +327,17 @@
     function gotoNextHighlight() {
       const list = marks();
       if (!list.length) return;
-      hlCursor = (hlCursor + 1) % list.length;
-      const m = list[hlCursor];
+      gotoHighlight((hlCursor + 1) % list.length);
+    }
+    // 跳到第 i 個重點。寬畫面（右側抽屜）不關面板，方便沿著清單一個個看；窄畫面（底部面板蓋住文章）關掉
+    function gotoHighlight(i) {
+      const list = marks();
+      if (!list[i]) return;
+      hlCursor = i;
+      const m = list[i];
       const pm = NS && NS.pagedMode;
       const pos = pm && typeof pm.getPosition === 'function' ? pm.getPosition() : null;
-      close();
+      if (!panel || !panel.classList.contains('wide')) close();
       if (pos && pos.total > 1 && typeof pm.goToPage === 'function') {
         const stride = (container && container.clientWidth) || win.innerWidth || 1;
         const r = m.getBoundingClientRect();
@@ -315,6 +386,42 @@
       render();
     }
 
+    // 刪除 / 還原 / 永久刪除。刪除與永久刪除先確認（reader-dialog.js），成功後：刪掉的回清單並留提示
+    //（RC.setFeedNotice），還原的留在這頁、面板更新
+    const TRASH_FN = { trash: 'trashJReaderDocument', restore: 'restoreJReaderDocument', purge: 'purgeJReaderDocument' };
+    const TRASH_DONE = { trash: '已移到垃圾桶', restore: '已還原', purge: '已永久刪除' };
+    async function trashAction(kind) {
+      const D = o.dialog || global.__JReadReaderDialog;
+      const text = D && typeof D.trashConfirmText === 'function' ? D.trashConfirmText(kind, data) : null;
+      if (text && !(D && typeof D.confirm === 'function' && await D.confirm(text))) return null;
+      let r;
+      try { r = await PC[TRASH_FN[kind]](Object.assign({ id }, rw)); } catch (_) { r = null; }
+      if (!r || !r.ok) {
+        toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: kind === 'restore' ? '還原' : '刪除' }) : '失敗', 'error');
+        return r;
+      }
+      if (kind === 'restore') {
+        data.deleted_at = null;
+        if (o.docData) o.docData.deleted_at = null;
+        render();
+        toast(TRASH_DONE.restore, 'success');
+        return r;
+      }
+      if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function' && storage) {
+        try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
+      }
+      if (RC && typeof RC.setFeedNotice === 'function') {
+        let session = o.session;
+        if (session === undefined) { try { session = win.sessionStorage; } catch (_) { session = null; } }
+        const raw = data.title ? String(data.title) : '';
+        RC.setFeedNotice(session, TRASH_DONE[kind] + (raw ? '：' + (raw.length > 40 ? raw.slice(0, 40) + '…' : raw) : ''), 'success');
+      }
+      close();
+      const exit = o.exit || (NS && NS.onReaderExit);
+      if (typeof exit === 'function') exit();
+      return r;
+    }
+
     function ensureHost() {
       if (hostEl && hostEl.isConnected) return;
       hostEl = doc.createElement('div');
@@ -336,6 +443,23 @@
       doc.documentElement.appendChild(hostEl);
     }
 
+    // 點了回清單看「同作者 / 同網域」（reader-feed 的子清單，?tab=author:… / site:…；back＝文章原本的分頁）
+    function pivot(text, kind, value, title) {
+      const b = el(doc, 'button', 'pivot', text);
+      b.type = 'button';
+      b.setAttribute('data-pivot', kind);
+      b.title = title;
+      b.addEventListener('click', () => {
+        const RCM = RC || global.__JReadReaderCache;
+        const url = RCM && typeof RCM.subviewUrl === 'function' ? RCM.subviewUrl(kind, value, o.tab) : null;
+        if (!url) return;
+        close();
+        const nav = o.navigate || ((u) => { win.location.href = u; });
+        nav(url);
+      });
+      return b;
+    }
+
     function row(label, content) {
       const r = el(doc, 'div', 'row');
       if (label) r.appendChild(el(doc, 'span', 'label', label));
@@ -347,6 +471,8 @@
     function render() {
       if (!panel) return;
       const focusedTagInput = shadow.activeElement && shadow.activeElement.classList && shadow.activeElement.classList.contains('tag-input');
+      const focusedNotes = !!(shadow.activeElement && shadow.activeElement.classList && shadow.activeElement.classList.contains('notes'));
+      const notesCaret = focusedNotes ? shadow.activeElement.selectionStart : null;
       const typed = focusedTagInput ? shadow.activeElement.value : '';
       panel.textContent = '';
       const grab = el(doc, 'span', 'grab');
@@ -363,15 +489,31 @@
       head.appendChild(x);
       panel.appendChild(head);
 
+      // v3.1.0（Jimmy 2026-11-24「側欄點作者，顯示同一個作者的文章，點網域顯示同個網域的文章」）：
+      // 網域、作者是按鈕，點了回清單看同網域 / 同作者的文章；開原文另外一個連結
+      const host = data.source_url ? hostOf(data.source_url) : '';
       if (data.source_url) {
-        const a = el(doc, 'a', null, data.site_name || hostOf(data.source_url));
+        const wrap = doc.createDocumentFragment();
+        if (host) {
+          wrap.appendChild(pivot(host, 'site', host, '看這個網站的其他文章'));
+          wrap.appendChild(el(doc, 'span', 'sep', '　·　'));
+        }
+        const a = el(doc, 'a', null, '開啟原文 ↗');
         a.href = data.source_url;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
-        panel.appendChild(row('原文', a));
+        wrap.appendChild(a);
+        panel.appendChild(row('來源', wrap));
       }
-      const byline = [data.author, ymd(data.published_date)].filter(Boolean).join('　·　');
-      if (byline) panel.appendChild(row('作者與發布日期', byline));
+      const author = data.author ? String(data.author).trim() : '';
+      const date = ymd(data.published_date);
+      if (author || date) {
+        const by = doc.createDocumentFragment();
+        if (author) by.appendChild(pivot(author, 'author', author, '看這位作者的其他文章'));
+        if (author && date) by.appendChild(el(doc, 'span', 'sep', '　·　'));
+        if (date) by.appendChild(doc.createTextNode(date));
+        panel.appendChild(row('作者與發布日期', by));
+      }
 
       const minutes = readingMinutes(data, isCjkDoc());
       const facts = [
@@ -429,21 +571,68 @@
       tagBox.appendChild(tagInput(typed, focusedTagInput));
       panel.appendChild(row('標籤', tagBox));
 
-      const n = marks().length;
-      if (n) {
-        const b = el(doc, 'button', 'linkbtn', n + ' 個重點');
-        b.type = 'button';
-        b.title = '跳到下一個重點';
-        b.addEventListener('click', gotoNextHighlight);
-        panel.appendChild(row('重點', b));
+      panel.appendChild(row('筆記', notesBox(focusedNotes, notesCaret)));
+
+      // 重點清單（Jimmy 2026-11-24：比照 Readwise Reader 側欄）：照文章順序、點了跳過去
+      const texts = highlightTexts();
+      if (texts.length) {
+        const ul = el(doc, 'ul', 'hl-list');
+        texts.forEach((t, i) => {
+          const li = el(doc, 'li');
+          const b = el(doc, 'button', 'hl-item');
+          b.type = 'button';
+          b.title = '跳到這個重點';
+          b.appendChild(el(doc, 'span', 'hl-text', t));
+          b.addEventListener('click', () => gotoHighlight(i));
+          li.appendChild(b);
+          ul.appendChild(li);
+        });
+        panel.appendChild(row('重點（' + texts.length + '）', ul));
       }
 
-      if (data.summary) {
-        const s = el(doc, 'div', 'summary', String(data.summary));
-        s.title = '點一下展開';
-        s.addEventListener('click', () => s.classList.toggle('expanded'));
-        panel.appendChild(row('摘要', s));
+      // 摘要全文顯示、不折疊（Jimmy 2026-11-24）：平均約 120 字，折疊又沒有展開提示，等於把第三段藏掉；
+      // 少數很長的（最長約 2K 字）面板本身可以捲
+      if (data.summary) panel.appendChild(row('摘要', el(doc, 'div', 'summary', String(data.summary))));
+
+      // v3.1.0：刪除（移到垃圾桶）；在垃圾桶裡的改成「還原 / 永久刪除」。手機沒有右鍵，這裡是主要入口
+      const actions = el(doc, 'div', 'danger-row');
+      const act = (label, kind, danger) => {
+        const b = el(doc, 'button', 'act' + (danger ? ' danger' : ''), label);
+        b.type = 'button';
+        b.setAttribute('data-act', kind);
+        b.addEventListener('click', () => trashAction(kind));
+        actions.appendChild(b);
+      };
+      if (data.deleted_at) {
+        actions.appendChild(el(doc, 'span', 'trash-note', trashNote(data.purge_at, Date.now())));
+        act('還原', 'restore', false);
+        act('永久刪除', 'purge', true);
+      } else {
+        act('刪除這篇', 'trash', true);
       }
+      panel.appendChild(actions);
+    }
+
+    function notesBox(refocus, caret) {
+      const wrap = el(doc, 'div');
+      const ta = el(doc, 'textarea', 'notes');
+      ta.placeholder = '寫點筆記';
+      ta.setAttribute('aria-label', '文章筆記');
+      ta.value = notesDraft;
+      const fit = () => { ta.style.height = 'auto'; ta.style.height = Math.max(64, ta.scrollHeight + 2) + 'px'; };
+      ta.addEventListener('input', () => {
+        notesDraft = ta.value;
+        setNotesStatus('');
+        fit();
+        if (notesTimer) win.clearTimeout(notesTimer);
+        notesTimer = win.setTimeout(() => { notesTimer = null; saveNotes(); }, NOTES_SAVE_MS);
+      });
+      ta.addEventListener('blur', () => { saveNotes(); });
+      wrap.appendChild(ta);
+      wrap.appendChild(el(doc, 'span', 'note-status', notesStatus));
+      (win.requestAnimationFrame || ((cb) => win.setTimeout(cb, 0)))(fit);
+      if (refocus) win.setTimeout(() => { ta.focus(); if (caret != null) { try { ta.setSelectionRange(caret, caret); } catch (_) {} } }, 0);
+      return wrap;
     }
 
     function tagInput(typed, refocus) {
@@ -533,7 +722,7 @@
     }
 
     function applyTheme() {
-      const c = themeColors(win, container || doc.body);
+      const c = RC && typeof RC.themeColorsOf === 'function' ? RC.themeColorsOf(win, container || doc.body) : themeColors(win, container || doc.body);
       hostEl.style.setProperty('--bg', c.bg);
       hostEl.style.setProperty('--fg', c.fg);
       hostEl.style.setProperty('--muted', c.muted);
@@ -581,6 +770,7 @@
     function close() {
       if (!opened) return;
       opened = false;
+      saveNotes(); // 打到一半就關面板：立刻存
       if (hostEl) hostEl.style.display = 'none';
       if (panel) panel.classList.remove('open');
     }
@@ -594,6 +784,8 @@
       if (!r || !r.ok || !r.doc) return;
       data = Object.assign({}, data, r.doc);
       tags = tagNames(r.doc.tags);
+      // 伺服器的筆記：使用者還沒動過輸入框才換上（打到一半不蓋掉）
+      if (typeof r.doc.notes === 'string' && notesDraft === notesSaved) { notesSaved = r.doc.notes; notesDraft = r.doc.notes; }
       if (opened) render();
     }
 
@@ -609,17 +801,45 @@
       toggle();
     }, true);
 
+    // 快速鍵 L：編輯標籤（Jimmy 2026-11-24）——打開面板（已開就不動）、游標放進「新增標籤」輸入框。
+    // 跟 I 同一套條件：輸入框裡、面板裡（shadow DOM host）、選字中、帶修飾鍵都不收
+    function editTags() {
+      open();
+      const input = shadow && shadow.querySelector('.tag-input');
+      if (!input) return false;
+      input.focus();
+      try { input.scrollIntoView({ block: 'nearest' }); } catch (_) { /* jsdom */ }
+      return true;
+    }
+    win.addEventListener('keydown', (e) => {
+      if (e.key !== 'l' && e.key !== 'L') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat || e.isComposing || e.keyCode === 229) return;
+      if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return;
+      if (hostEl && e.target === hostEl) return;
+      e.preventDefault();
+      e.stopPropagation();
+      editTags();
+    }, true);
+
     // 懸浮按鈕選單的「文章資訊」（floating-icon.js 看到這個掛鉤才列出）
     if (NS) NS.onReaderInfo = toggle;
 
-    return { open, close, toggle, isOpen: () => opened, render, refresh, gotoNextHighlight, panel: () => panel };
+    return { open, close, toggle, editTags, isOpen: () => opened, render, refresh, gotoNextHighlight, panel: () => panel };
+  }
+
+  // 垃圾桶裡的文章：剩幾天自動永久刪除（purge_at 由 JReader 伺服器給，天數規則只在伺服器）
+  function trashNote(purgeAt, now) {
+    const t = Date.parse(purgeAt || '');
+    if (!Number.isFinite(t)) return '這篇在垃圾桶裡';
+    const days = Math.ceil((t - now) / 86400000);
+    return days >= 1 ? '這篇在垃圾桶裡，' + days + ' 天後自動永久刪除' : '這篇在垃圾桶裡，即將自動永久刪除';
   }
 
   function hostOf(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return String(url || ''); }
   }
 
-  const api = { attach, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, themeColors, WIDE_MIN_PX, HOST_ID };
+  const api = { attach, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, themeColors, WIDE_MIN_PX, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

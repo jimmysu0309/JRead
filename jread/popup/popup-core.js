@@ -20,6 +20,8 @@
     // 2026-11-15 review C-01：settings-defaults 先於 keepalive（它載入當下就問
     // NS.isSafariRuntime，判定本體在 settings-defaults 的 __JReadPlatform）
     'content/settings-defaults.js',
+    // v3.1.0：擴充設定橋（只在使用者自己的 JRead 網頁版頁面啟動）
+    'content/host-bridge.js',
     'content/keepalive.js',
     'content/domain-match.js',
     'content/link-follow.js',
@@ -859,7 +861,8 @@
 
   // GET <base>/api/v1/search?q=&location=&limit=&offset= → { ok, count, results }
   // results 與 v3 list 的 document 同形，另帶 snippet（字串或 null）
-  async function searchJReader({ token, base, q, location, limit, offset, fetchImpl, timeoutMs } = {}) {
+  // sort：'relevance'（預設，相關程度）/ 'newest' / 'oldest'（存入日期）
+  async function searchJReader({ token, base, q, location, sort, limit, offset, fetchImpl, timeoutMs } = {}) {
     if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
     const query = typeof q === 'string' ? q.trim() : '';
     const r = await readwiseRequest({
@@ -868,6 +871,7 @@
       url: () => {
         const params = new URLSearchParams({ q: query });
         if (location) params.set('location', location);
+        if (sort && sort !== 'relevance') params.set('sort', sort);
         if (limit) params.set('limit', String(limit));
         if (offset) params.set('offset', String(offset));
         return `${apiUrl(base, '/api/v1/search')}?${params}`;
@@ -879,7 +883,9 @@
     return {
       ok: true, status: r.res.status,
       count: data && typeof data.count === 'number' ? data.count : 0,
-      results: data && Array.isArray(data.results) ? data.results : []
+      results: data && Array.isArray(data.results) ? data.results : [],
+      // 摘錄要標粗的字（伺服器依查詢語法算好；reader-library highlightTerms 直接用）
+      terms: data && Array.isArray(data.terms) ? data.terms.filter((t) => typeof t === 'string') : []
     };
   }
 
@@ -924,6 +930,77 @@
     return saveToJReader({ token, base, payload: { url: u, source: JREADER_URL_SAVE_SOURCE }, fetchImpl, timeoutMs });
   }
 
+  // 「剛打開這篇」：PATCH <base>/api/v3/update/<id>/ { opened: true }。JReader 只記最後閱讀時間
+  //（Progress 分頁排序），不動 updated_at。只開沒捲動時進度不會寫回，靠這個讓 Progress 排到最前
+  async function markJReaderOpened({ token, base, id, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method: 'PATCH',
+      precheck: () => (!id || typeof id !== 'string' || !id.trim()) ? { ok: false, error: 'NO_ID' } : null,
+      url: () => `${apiUrl(base, '/api/v3/update/')}${encodeURIComponent(id.trim())}/`,
+      body: () => ({ opened: true })
+    });
+    if (r.result) return r.result;
+    return r.res.ok ? { ok: true, status: r.res.status } : { ok: false, status: r.res.status, error: 'HTTP' };
+  }
+
+  // 文章筆記：PATCH <base>/api/v3/update/<id>/ { notes }（空字串＝清掉；JReader 不動 updated_at）
+  async function setJReaderNotes({ token, base, id, notes, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method: 'PATCH', keepalive: true,
+      precheck: () => {
+        if (!id || typeof id !== 'string' || !id.trim()) return { ok: false, error: 'NO_ID' };
+        if (typeof notes !== 'string') return { ok: false, error: 'NO_NOTES' };
+        return null;
+      },
+      url: () => `${apiUrl(base, '/api/v3/update/')}${encodeURIComponent(id.trim())}/`,
+      body: () => ({ notes })
+    });
+    if (r.result) return r.result;
+    return r.res.ok ? { ok: true, status: r.res.status } : { ok: false, status: r.res.status, error: 'HTTP' };
+  }
+
+  // 垃圾桶（JReader 原生端點）：移到垃圾桶 / 還原 / 永久刪除 / 清空。回 { ok, status, data } 或錯誤分類
+  async function jreaderAction({ token, base, method, path, body, fetchImpl, timeoutMs }) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method,
+      url: () => apiUrl(base, path),
+      body: body ? () => body : undefined
+    });
+    if (r.result) return r.result;
+    if (!r.res.ok) return { ok: false, status: r.res.status, error: r.res.status === 404 ? 'NOT_FOUND' : 'HTTP' };
+    let data = null;
+    try { data = r.res.status === 204 ? null : await r.res.json(); } catch (_) { data = null; }
+    return { ok: true, status: r.res.status, data };
+  }
+  const docPath = (id, tail) => '/api/v1/documents/' + encodeURIComponent(String(id || '').trim()) + (tail || '');
+  function trashJReaderDocument({ token, base, id, fetchImpl } = {}) {
+    if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    return jreaderAction({ token, base, fetchImpl, method: 'POST', path: docPath(id, '/trash') });
+  }
+  function restoreJReaderDocument({ token, base, id, fetchImpl } = {}) {
+    if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    return jreaderAction({ token, base, fetchImpl, method: 'POST', path: docPath(id, '/restore') });
+  }
+  function purgeJReaderDocument({ token, base, id, fetchImpl } = {}) {
+    if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    return jreaderAction({ token, base, fetchImpl, method: 'DELETE', path: docPath(id) });
+  }
+  function emptyJReaderTrash({ token, base, fetchImpl } = {}) {
+    return jreaderAction({ token, base, fetchImpl, method: 'POST', path: '/api/v1/trash/empty' });
+  }
+  // 多選批次（JReader POST /api/v1/documents/batch）：action＝move（帶 location）/ trash / restore / purge / tag（帶 tag）。
+  // 成功回 { ok, data: { action, updated } }
+  function batchJReaderDocuments({ token, base, ids, action, location, tag, fetchImpl } = {}) {
+    if (!Array.isArray(ids) || !ids.length) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    const body = { ids: ids.map(String), action };
+    if (location) body.location = location;
+    if (tag) body.tag = tag;
+    return jreaderAction({ token, base, fetchImpl, method: 'POST', path: '/api/v1/documents/batch', body });
+  }
+
   // 查單篇（不帶全文）：給貼網址後輪詢 status（processing → ready / failed）
   async function getJReaderDocument({ token, base, id, fetchImpl, timeoutMs } = {}) {
     if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
@@ -947,7 +1024,7 @@
 
   // 列文件。location='new'=inbox 收件匣；帶 id 取單篇；withHtmlContent=true 取主文 HTML。
   // 回 { ok:true, results, nextPageCursor } 或 { ok:false, error, status }。
-  async function listReaderDocuments({ token, base, location, id, tag, withHtmlContent, pageCursor, fetchImpl, timeoutMs } = {}) {
+  async function listReaderDocuments({ token, base, location, id, tag, withHtmlContent, pageCursor, inProgress, author, domain, fetchImpl, timeoutMs } = {}) {
     // v1.10.0：429 獨立分類（list 限流 20/min，文章 / feed 載入撞到時給「稍候再試」文案）
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
@@ -959,6 +1036,11 @@
         if (tag) params.set('tag', tag);  // v1.0.25：依 tag 過濾（JRead 分頁撈 jread tag）
         if (withHtmlContent) params.set('withHtmlContent', 'true');
         if (pageCursor) params.set('pageCursor', pageCursor);
+        // v3.1.0：JReader 擴充參數——Progress 分頁（讀到一半、依最後閱讀時間排序）
+        if (inProgress) params.set('in_progress', 'true');
+        // v3.1.0：JReader 擴充參數——同作者 / 同網域（文章資訊面板點作者、網域）
+        if (author) params.set('author', author);
+        if (domain) params.set('domain', domain);
         const qs = params.toString();
         const listUrl = apiUrl(base, '/api/v3/list/');
         return qs ? `${listUrl}?${qs}` : listUrl;
@@ -972,7 +1054,11 @@
     let data = null;
     try { data = await res.json(); } catch (_) { /* 非 JSON */ }
     const results = data && Array.isArray(data.results) ? data.results : [];
-    return { ok: true, status: res.status, results, nextPageCursor: data && data.nextPageCursor || null };
+    const out = { ok: true, status: res.status, results, nextPageCursor: data && data.nextPageCursor || null };
+    // count：符合條件的總篇數（同作者 / 同網域清單的標題列顯示）。只有伺服器有給才加——回傳形狀其餘不變
+    //（review-1115-b5 E-07 逐案比對收斂前的回傳值）
+    if (data && typeof data.count === 'number') out.count = data.count;
+    return out;
   }
 
   // 搬移文件：PATCH https://readwise.io/api/v3/update/<id>/ body { location }。
@@ -1397,7 +1483,8 @@
       return IP.listInstapaper({ token: c.token, tokenSecret: c.tokenSecret, folderId: q.folderId, limit: limit || 20, fetchImpl: readFetch(fetchImpl) });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
-    return listReaderDocuments(Object.assign(rwArgs(c), { location: q.location, tag: q.tag, fetchImpl }));
+    // v3.1.0：pageCursor＝「載入更多」翻下一頁（Readwise 相容 API 的 nextPageCursor）
+    return listReaderDocuments(Object.assign(rwArgs(c), { location: q.location, tag: q.tag, pageCursor: q.pageCursor, inProgress: q.inProgress, author: q.author, domain: q.domain, fetchImpl }));
   }
 
   // 取單篇全文。readwise 憑 id 一次拿齊 metadata+html_content；instapaper get_text
@@ -1474,6 +1561,22 @@
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
     return moveReaderDocument(Object.assign(rwArgs(c), { id, location: 'later', fetchImpl }));
+  }
+
+  // v3.1.0：擴充內的「進入 Reader」（popup 按鈕、懸浮按鈕選單項）要不要出現。JReader 使用者改用
+  // JReader 網頁版，不需要擴充內的 Reader（Jimmy 2026-11-24：「只對使用 JReader 的人生效」）；
+  // Readwise / Instapaper 照舊。popup 與 floating-icon 都經這裡判斷
+  function supportsExtensionReader(service) {
+    return normalizeStorageService(service) !== 'jreader';
+  }
+
+  // v3.1.0：移回 Inbox（Later / 封存區右鍵、右滑）。Readwise 相容服務改 location:'new'；
+  // Instapaper 沒有對應的資料夾操作，回 UNSUPPORTED
+  async function inboxDocument({ service, creds, id, fetchImpl } = {}) {
+    if (!isReadwiseCompatible(service)) return { ok: false, error: 'UNSUPPORTED' };
+    const c = creds || {};
+    if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
+    return moveReaderDocument(Object.assign(rwArgs(c), { id, location: 'new', fetchImpl }));
   }
 
   // v1.7.36：送出流程的「進行中」文字。popup 狀態列與快速鍵 toast 共用同一份
@@ -1658,11 +1761,19 @@
     supportsHighlights,
     // v3.1.0：JReader 書庫工具（搜尋 / 貼網址 / 標籤）
     supportsLibraryTools,
+    supportsExtensionReader,
     searchJReader,
     listJReaderTags,
     setJReaderTags,
     saveUrlToJReader,
     getJReaderDocument,
+    markJReaderOpened,
+    setJReaderNotes,
+    trashJReaderDocument,
+    restoreJReaderDocument,
+    purgeJReaderDocument,
+    emptyJReaderTrash,
+    batchJReaderDocuments,
     listReaderDocuments,
     archiveReaderDocument,
     moveReaderDocument,
@@ -1678,6 +1789,7 @@
     getArticle,
     archiveDocument,
     laterDocument,
+    inboxDocument,
     updateReadingProgress,
     supportsProgressWrite,
     updateReaderProgress,

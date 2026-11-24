@@ -308,8 +308,11 @@
   // 送出按鈕標籤，服務名不寫死）。popup-core 未載入時退回 Readwise 字面（該情境
   // 送出本來就會走 SW 軌）。
   let serviceLabelText = 'Readwise Reader';
+  // v3.1.0：目前儲存服務是否提供擴充內的 Reader（JReader 使用者不提供，popup-core.supportsExtensionReader）
+  let extensionReader = true;
   function applyStorageService(v) {
     const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
+    extensionReader = P && typeof P.supportsExtensionReader === 'function' ? P.supportsExtensionReader(v) : true;
     serviceLabelText = P && typeof P.serviceLabel === 'function'
       ? P.serviceLabel(P.normalizeStorageService(v))
       : (v === 'instapaper' ? 'Instapaper' : 'Readwise Reader');
@@ -346,7 +349,8 @@
     return [
       { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
       { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
-      { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
+      // v3.1.0：JReader 使用者不列（改用網頁版，popup-core.supportsExtensionReader）
+      ...(extensionReader ? [{ id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }] : [])
     ].concat(infoMenuItems(), profileMenuItems());
   }
 

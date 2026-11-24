@@ -99,7 +99,28 @@
   function load() {
     return Promise.resolve({ sync: readArea('sync'), local: readArea('local') });
   }
+  // ---- 擴充設定橋（v3.1.0，擴充端在 content/host-bridge.js）----------------------
+  // 裝了 JRead 擴充時網頁版直接用擴充的設定、改了也寫回擴充（Jimmy 2026-11-24：「全部都用
+  // extension 的」）。localStorage 仍是本機副本：頁面一開就用上次的設定，不用等擴充；擴充連上
+  // 後以擴充為準覆蓋。沒裝擴充＝照舊只用 localStorage。白名單與網址把關都在擴充端
+  const BRIDGE = 'jread-bridge';
+  const bridgeFlagKey = prefix + 'bridge';
+  let applyingBridge = false;
+  const bridgeTarget = (() => { try { return w.top || w; } catch (_) { return w; } })();
+  function toExt(type, payload) {
+    if (readOnly) return; // 公開分享頁不碰訪客的擴充設定
+    try { bridgeTarget.postMessage(Object.assign({ [BRIDGE]: 1, from: 'page', type }, payload), w.location.origin); } catch (_) { /* */ }
+  }
+  function isBridged() {
+    try { return !!(ls && ls.getItem(bridgeFlagKey)); } catch (_) { return false; }
+  }
+
   function persist(area, setItems, removeKeys) {
+    // 網頁版改的設定（不含套用擴充送來的值）同步寫回擴充。iframe（設定浮層）也直接送到最上層
+    if (area === 'sync' && !applyingBridge) {
+      if (Object.keys(setItems).length) toExt('set', { items: setItems });
+      if (removeKeys.length) toExt('remove', { keys: removeKeys });
+    }
     if (!ls) {
       Object.assign(memory[area], setItems);
       for (const k of removeKeys) delete memory[area][k];
@@ -122,9 +143,50 @@
     load,
     persist,
     pinned: { sync: pinnedSync },
-    frameKey: '__jreadWeb'
+    frameKey: '__jreadWeb',
+    openOptionsPage: () => toExt('openOptions', {})
   }, w);
   host.install();
+
+  // 擴充送來的設定（只有最上層 frame 收；iframe 靠 localStorage 的 storage 事件跟上）
+  let isTop = true;
+  try { isTop = w.top === w; } catch (_) { isTop = false; }
+  if (isTop && !readOnly) {
+    w.addEventListener('message', (e) => {
+      if (e.source !== w || e.origin !== w.location.origin) return;
+      const d = e.data;
+      if (!d || d[BRIDGE] !== 1 || d.from !== 'ext') return;
+      if (d.type !== 'snapshot' && d.type !== 'changed') return;
+      const items = d.items && typeof d.items === 'object' ? d.items : {};
+      host.ready.then(() => {
+        const map = host.cache.sync;
+        const changes = {};
+        const setItems = {};
+        const removeKeys = [];
+        for (const k of Object.keys(items)) {
+          if (pinnedSync[k] !== undefined) continue;
+          if (map.has(k) && CORE.same(map.get(k), items[k])) continue;
+          changes[k] = map.has(k) ? { oldValue: CORE.clone(map.get(k)), newValue: CORE.clone(items[k]) } : { newValue: CORE.clone(items[k]) };
+          setItems[k] = items[k];
+        }
+        // snapshot：白名單裡擴充沒設過的＝用預設值，網頁版自己存的拿掉；changed：擴充刪掉的
+        const gone = d.type === 'snapshot'
+          ? (Array.isArray(d.keys) ? d.keys : []).filter((k) => !(k in items))
+          : (Array.isArray(d.removed) ? d.removed : []);
+        for (const k of gone) {
+          if (pinnedSync[k] !== undefined || !map.has(k)) continue;
+          changes[k] = { oldValue: CORE.clone(map.get(k)) };
+          removeKeys.push(k);
+        }
+        if (d.type === 'snapshot') { try { if (ls) ls.setItem(bridgeFlagKey, String(Date.now())); } catch (_) { /* */ } }
+        if (!Object.keys(changes).length) return;
+        applyingBridge = true;
+        try { persist('sync', setItems, removeKeys).catch(() => {}); } finally { applyingBridge = false; }
+        host.applyRemote(changes, 'sync');
+      });
+    });
+    toExt('hello', {});
+  }
 
   // 同源其他分頁改了 localStorage → 更新本頁 cache、發 onChanged（同頁的 frame 之間走核心的
   // 廣播，storage 事件只在「別的分頁」寫入時觸發）
@@ -161,6 +223,6 @@
     exitUrl: typeof cfg.exitUrl === 'string' ? cfg.exitUrl : '',
     frameConfig
   });
-  w.__jreadWeb = { ready: host.ready, _remoteChange: host.applyRemote, isWeb: true };
+  w.__jreadWeb = { ready: host.ready, _remoteChange: host.applyRemote, isWeb: true, isBridged };
 })(typeof globalThis !== 'undefined' ? globalThis : window,
    (typeof globalThis !== 'undefined' ? globalThis : window).__JReadHostShimCore);

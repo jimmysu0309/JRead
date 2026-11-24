@@ -603,7 +603,22 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
 
   // SW（globalThis）/ event page（window=globalThis）/ content script 都掛
   // globalThis；jsdom regression spec 走 module.exports。
+  // v3.1.0：JRead 網頁版（JReader）沿用擴充設定時，擴充端 content/host-bridge.js 只交出這些
+  // storage.sync 欄位（白名單，逐項列出）。不在這裡的一律不出擴充：憑證（各服務 token、Gemini
+  // key、Instapaper 帳號）、服務選擇（storageService / jreaderUrl，網頁版由 host 釘住）、
+  // 自動啟動網域清單（等於瀏覽紀錄，網頁版也用不到）、摘要開關、除錯與 App 圖示這類擴充專屬項目
+  const HOST_BRIDGE_SYNC_KEYS = Object.freeze([
+    'theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans',
+    'fontWeight', 'lineHeight', 'paragraphSpacing', 'textJustify', 'pangu',
+    'pagedMode', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
+    'positionMemoryDays', 'syncScrollOnExit',
+    'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'floatingIconPos',
+    'blockPageShortcuts', 'customShortcuts',
+    'profiles', 'activeProfile'
+  ]);
+
   global.__JReadSettingsDefaults = DEFAULT_SETTINGS;
+  global.__JReadHostBridgeKeys = HOST_BRIDGE_SYNC_KEYS;
   global.__JReadCredentialSettingsKeys = CREDENTIAL_SETTINGS_KEYS;
   global.__JReadStripCredentialSettings = stripCredentialSettings;
   global.__JReadResolveFloatingIconEnabled = resolveFloatingIconEnabled;

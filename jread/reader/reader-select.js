@@ -1,0 +1,235 @@
+// JRead — 清單多選（v3.1.0，JReader 專用）
+//
+// Jimmy 2026-11-24（部署前待辦第 8 項）：在清單勾選多篇，一起封存、搬資料夾、加標籤或刪除。
+//
+// 進入多選：卡片右鍵（手機長按）「選取」、Shift+點卡片、鍵盤 J / K 選到卡片後按 X。
+// 多選中：點卡片＝勾 / 取消（不打開）；X 勾 / 取消鍵盤選到的那張；Esc 或 ✕ 離開；最後一張取消勾選也離開。
+// 底部動作列：「已選 N 篇　全選　封存　Later　Inbox　加標籤　刪除　✕」——依目前的頁面：
+//   - 一般資料夾分頁：不列「搬到自己這個資料夾」（Archive 沒有「封存」）
+//   - Progress、搜尋結果、同作者 / 同網域：三個資料夾都列（結果跨資料夾）
+//   - 垃圾桶：「還原」「永久刪除」
+// 刪除 / 永久刪除先確認（reader-dialog.js）。一個請求做完（JReader POST /api/v1/documents/batch，
+// PC.batchJReaderDocuments），成功後提示、離開多選、重新載入目前的清單（refresh）。
+//
+// 頁面整合（reader-feed init）：attach(opts) → { start(card), toggle(card), isActive(), exit() }
+//   opts：doc, win, listEl, PC, creds, toast(msg, kind), getView() → { kind: 'tab'|'search'|'sub'|'trash', location },
+//         refresh(), invalidate(ids)（清掉清單快取裡這些篇）
+// 卡片右鍵的「選取」由 reader-feed attachContextMenu 依 selectHook 列出。
+//
+// dual export：module.exports 給 jsdom spec、window.__JReadReaderSelect 給頁面。
+(function (global) {
+  'use strict';
+
+  const BAR_CLASS = 'jr-select-bar';
+  const MOVES = [
+    { location: 'archive', label: '封存', done: '已封存' },
+    { location: 'later', label: 'Later', done: '已加入 Later' },
+    { location: 'new', label: 'Inbox', done: '已移回 Inbox' }
+  ];
+  const DIALOG = () => global.__JReadReaderDialog ||
+    (typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-dialog.js') : null);
+
+  function attach(opts) {
+    const o = opts || {};
+    const { doc, listEl, PC, creds } = o;
+    if (!doc || !listEl || !PC || typeof PC.batchJReaderDocuments !== 'function') return null;
+    const picked = new Set();
+    let active = false;
+    let bar = null;
+    let busy = false;
+
+    const cardId = (card) => card && card.getAttribute && card.getAttribute('data-doc-id');
+    const cards = () => Array.from(listEl.querySelectorAll('.jr-card[data-doc-id]:not(.jr-pending)'));
+
+    function paint() {
+      for (const c of cards()) c.classList.toggle('is-picked', picked.has(cardId(c)));
+      if (!bar) return;
+      bar.querySelector('.jr-select-count').textContent = '已選 ' + picked.size + ' 篇';
+      for (const b of bar.querySelectorAll('button[data-act]')) b.disabled = busy || (!picked.size && b.getAttribute('data-act') !== 'all' && b.getAttribute('data-act') !== 'cancel');
+    }
+
+    function btn(label, act, extra) {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.className = 'jr-select-btn' + (extra ? ' ' + extra : '');
+      b.setAttribute('data-act', act);
+      b.textContent = label;
+      return b;
+    }
+
+    // 動作列依目前的頁面重建（進入多選時）
+    function buildBar() {
+      if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+      const view = (typeof o.getView === 'function' && o.getView()) || { kind: 'tab' };
+      bar = doc.createElement('div');
+      bar.className = BAR_CLASS;
+      bar.setAttribute('role', 'toolbar');
+      bar.setAttribute('aria-label', '多選動作');
+      const count = doc.createElement('span');
+      count.className = 'jr-select-count';
+      bar.appendChild(count);
+      bar.appendChild(btn('全選', 'all'));
+      if (view.kind === 'trash') {
+        bar.appendChild(btn('還原', 'restore'));
+        bar.appendChild(btn('永久刪除', 'purge', 'is-danger'));
+      } else {
+        for (const m of MOVES) {
+          if (view.kind === 'tab' && view.location === m.location) continue;
+          bar.appendChild(btn(m.label, 'move:' + m.location));
+        }
+        bar.appendChild(btn('加標籤', 'tag'));
+        bar.appendChild(btn('刪除', 'trash', 'is-danger'));
+      }
+      const x = btn('✕', 'cancel', 'jr-select-close');
+      x.setAttribute('aria-label', '離開多選');
+      bar.appendChild(x);
+      bar.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest && e.target.closest('button[data-act]');
+        if (!b || b.disabled) return;
+        run(b.getAttribute('data-act'));
+      });
+      doc.body.appendChild(bar);
+    }
+
+    function start(card) {
+      if (!active) {
+        active = true;
+        picked.clear();
+        doc.body.classList.add('jr-selecting');
+        buildBar();
+      }
+      if (card) picked.add(cardId(card));
+      paint();
+    }
+    function exit() {
+      if (!active) return;
+      active = false;
+      picked.clear();
+      doc.body.classList.remove('jr-selecting');
+      if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+      bar = null;
+      for (const c of listEl.querySelectorAll('.jr-card.is-picked')) c.classList.remove('is-picked');
+    }
+    function toggle(card) {
+      const id = cardId(card);
+      if (!id) return;
+      if (!active) { start(card); return; }
+      if (picked.has(id)) picked.delete(id); else picked.add(id);
+      if (!picked.size) { exit(); return; }
+      paint();
+    }
+
+    async function askTag() {
+      // 頁內小輸入框（不用 window.prompt：iOS WKWebView 沒實作時一律回 null）
+      return new Promise((resolve) => {
+        const row = doc.createElement('form');
+        row.className = 'jr-select-tagrow';
+        const input = doc.createElement('input');
+        input.type = 'text';
+        input.className = 'jr-select-tag';
+        input.placeholder = '標籤名稱';
+        input.setAttribute('aria-label', '要加的標籤');
+        input.maxLength = 100;
+        const ok = doc.createElement('button');
+        ok.type = 'submit';
+        ok.className = 'jr-select-btn';
+        ok.textContent = '加上';
+        row.appendChild(input);
+        row.appendChild(ok);
+        bar.appendChild(row);
+        input.focus();
+        const done = (v) => { if (row.parentNode) row.parentNode.removeChild(row); resolve(v); };
+        row.addEventListener('submit', (e) => { e.preventDefault(); done(input.value.trim() || null); });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); done(null); }
+        });
+      });
+    }
+
+    async function run(act) {
+      if (act === 'cancel') { exit(); return; }
+      if (act === 'all') {
+        for (const c of cards()) picked.add(cardId(c));
+        paint();
+        return;
+      }
+      if (!picked.size || busy) return;
+      const ids = Array.from(picked);
+      const D = DIALOG();
+      let req = null;
+      let done = '';
+      if (act.startsWith('move:')) {
+        const m = MOVES.find((x) => 'move:' + x.location === act);
+        req = { action: 'move', location: m.location };
+        done = m.done;
+      } else if (act === 'tag') {
+        const tag = await askTag();
+        if (!tag) return;
+        req = { action: 'tag', tag };
+        done = '已加上標籤「' + tag + '」';
+      } else if (act === 'trash' || act === 'purge') {
+        const text = act === 'trash'
+          ? { title: '刪除 ' + ids.length + ' 篇？', message: '文章會移到垃圾桶，30 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false }
+          : { title: '永久刪除 ' + ids.length + ' 篇？', message: '文章、重點與筆記會一起刪除，無法復原', confirmLabel: '永久刪除', danger: true };
+        if (!D || typeof D.confirm !== 'function' || !(await D.confirm(text))) return;
+        req = { action: act };
+        done = act === 'trash' ? '已移到垃圾桶' : '已永久刪除';
+      } else if (act === 'restore') {
+        req = { action: 'restore' };
+        done = '已還原';
+      } else {
+        return;
+      }
+      busy = true;
+      paint();
+      let r;
+      try { r = await PC.batchJReaderDocuments(Object.assign({ token: creds.token, base: creds.base, ids }, req)); } catch (_) { r = null; }
+      busy = false;
+      if (!r || !r.ok) {
+        paint();
+        if (typeof o.toast === 'function') o.toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: '批次處理' }) : '批次處理失敗', 'error');
+        return;
+      }
+      const n = r.data && typeof r.data.updated === 'number' ? r.data.updated : ids.length;
+      if (typeof o.toast === 'function') o.toast(done + '（' + n + ' 篇）', 'success');
+      if (typeof o.invalidate === 'function') { try { await o.invalidate(ids); } catch (_) {} }
+      exit();
+      if (typeof o.refresh === 'function') o.refresh();
+    }
+
+    // 多選中點卡片＝勾選（capture：比卡片連結的導頁早）；Shift+點＝進入多選並勾這張
+    doc.addEventListener('click', (e) => {
+      const card = e.target && e.target.closest && e.target.closest('.jr-card[data-doc-id]');
+      if (!card || !listEl.contains(card) || card.classList.contains('jr-pending')) return;
+      if (!active && !e.shiftKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggle(card);
+    }, true);
+
+    // 鍵盤：X 勾 / 取消鍵盤選到的卡片（.is-kb）；Esc 離開多選。輸入框裡不收
+    doc.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      const tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      if (e.key === 'Escape' && active) { e.preventDefault(); exit(); return; }
+      if ((e.key === 'x' || e.key === 'X') && !e.shiftKey) {
+        const kb = listEl.querySelector('.jr-card.is-kb');
+        if (!kb) return;
+        e.preventDefault();
+        toggle(kb);
+      }
+    }, true);
+
+    // 清單重畫（背景更新、載入更多）：勾選狀態照 id 補回；已不在清單的拿掉
+    const MO = doc.defaultView && doc.defaultView.MutationObserver;
+    if (MO) new MO(() => { if (active) paint(); }).observe(listEl, { childList: true });
+
+    return { start, toggle, exit, isActive: () => active, picked: () => Array.from(picked), run };
+  }
+
+  const api = { attach, MOVES };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else global.__JReadReaderSelect = api;
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));

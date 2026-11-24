@@ -881,10 +881,18 @@ toggleBtn.addEventListener('click', async () => {
 
 // v2.2.5：App 內 JReader 沒有設定頁可開（openOptionsPage 是 no-op）、也沒有快速鍵 /
 // 三指切換閱讀模式 → 整條 footer 收掉（進階設定在 Safari 擴充改，經 App Group 同步過來）
+// v3.1.0：網頁版接上了擴充設定橋（裝了 JRead 擴充、在自己的 JReader 網址）→ 保留「進階設定」，
+// 點了打開擴充的進階設定頁（shim 的 openOptionsPage 經橋轉給擴充）。快速鍵提示照樣收掉
+const WEB_BRIDGED = IS_WEB && (() => {
+  try { return !!(window.__jreadWeb && window.__jreadWeb.isBridged && window.__jreadWeb.isBridged()); }
+  catch (_e) { return false; }
+})();
 if (IS_HOSTED) {
   const footer = openOptionsLink.closest('.footer');
   // .footer 有 display:flex（author origin）會蓋過 [hidden]，直接寫 inline
-  if (footer) footer.style.display = 'none';
+  if (footer && !WEB_BRIDGED) footer.style.display = 'none';
+  const hint = document.getElementById('shortcut-hint');
+  if (hint && WEB_BRIDGED) hint.style.display = 'none';
 }
 
 openOptionsLink.addEventListener('click', (e) => {
@@ -898,6 +906,24 @@ openOptionsLink.addEventListener('click', (e) => {
 // 開新分頁載 reader/reader.html（擴充自有頁），列 Readwise inbox 最新十篇。全域
 // 入口，與當前分頁閱讀狀態無關；僅在已設 readwiseToken 時顯示（沒 token 進去也
 // 只會看到「請填 token」訊息，按鈕露出只是雜訊，比照 readwise-btn 的 token gate）。
+// v3.1.0：作用中分頁是不是 JRead 網頁版（JReader）。擴充在那種頁面讓位，只剩 host-bridge.js 回答
+// GET_READER_STATE（jreadWebHost: true）。refreshReaderButton 與 refreshPopupForActiveTab 共用同一次
+// 查詢（兩段同時跑，各問一次會有一邊晚到把按鈕又打開）
+let jreadWebHostTabPromise = null;
+function isJReadWebHostTab() {
+  if (!jreadWebHostTabPromise) {
+    jreadWebHostTabPromise = (async () => {
+      try {
+        const tabId = await getActiveTabId();
+        if (typeof tabId !== 'number') return false;
+        const res = await browser.tabs.sendMessage(tabId, { type: 'GET_READER_STATE' });
+        return !!(res && res.jreadWebHost);
+      } catch (_) { return false; }
+    })();
+  }
+  return jreadWebHostTabPromise;
+}
+
 async function refreshReaderButton() {
   // v1.5.1：在 reader 自有頁（reader/ 下的 feed／article）本就「已在 Reader」，
   // 這顆全域入口是雜訊——直接隱藏（與 refreshPopupForActiveTab 的 readerHostPage
@@ -907,8 +933,13 @@ async function refreshReaderButton() {
   try {
     if (await isReaderHostTab()) { readerBtn.hidden = true; return; }
   } catch (_) { /* 判定失敗則回退到 token gate */ }
-  try { readerBtn.hidden = !(await hasActiveServiceCredentials()); }
-  catch (_) { readerBtn.hidden = true; }
+  // v3.1.0：在 JRead 網頁版上本來就在 Reader 裡
+  if (await isJReadWebHostTab()) { readerBtn.hidden = true; return; }
+  // v3.1.0：JReader 使用者不顯示（改用 JReader 網頁版，popup-core.supportsExtensionReader）
+  try {
+    const [ok, service] = await Promise.all([hasActiveServiceCredentials(), getStorageService()]);
+    readerBtn.hidden = !ok || !window.__JReadPopup.supportsExtensionReader(service);
+  } catch (_) { readerBtn.hidden = true; }
 }
 
 // 當前作用分頁是否為 reader 自有頁（chrome-extension://<id>/reader/…）。
@@ -1054,6 +1085,17 @@ async function refreshPopupForActiveTab() {
     const cinemaActive = !!(res && res.cinemaActive);
     const borderlessActive = !!(res && res.borderlessActive);
     const editModeActive = !!(res && res.editModeActive);
+    // v3.1.0：JRead 網頁版（JReader）——頁面本身就是 JRead 閱讀版型，「啟動閱讀模式 / 進入 Reader /
+    // 送到… / 編輯 / 無邊」都沒有對象（擴充在這頁讓位，答話的是 host-bridge.js），整排藏起來只留設定
+    //（接上設定橋時，這裡改的設定直接作用到網頁版）
+    if (res && res.jreadWebHost) {
+      toggleBtn.hidden = true;
+      readerBtn.hidden = true;
+      readwiseBtn.hidden = true;
+      editBtn.hidden = true;
+      borderlessBtn.hidden = true;
+      return;
+    }
     // v1.5.1：reader 自有頁（article feed 閱讀／feed 列表）——「進入 Reader /
     // 送到 Readwise / 編輯模式」三顆在此情境都是雜訊（已在 Reader、文章本就來自
     // Readwise、reader 版型不需手動移雜訊），整批隱藏並提前 return，不跑下方一般邏輯。

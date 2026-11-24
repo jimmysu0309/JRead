@@ -43,6 +43,10 @@
   const SLIM_FIELDS = ['id', 'title', 'author', 'site_name', 'published_date', 'source_url', 'image_url', 'updated_at',
     // v2.1.0：Readwise 閱讀進度（文章頁走文章快取時，從 feed 快取拿較新的值）
     'reading_progress'];
+  // v3.1.0：feed 清單快取另外多存卡片要顯示的摘要、存入日期、所在資料夾（文章快取不變）。
+  // 不存的話回清單時先畫出沒有摘要的舊卡片，新資料簽章又相同、不會重畫，摘要永遠出不來
+  // deleted_at：JReader 垃圾桶（文章資訊面板據此顯示「還原 / 永久刪除」）
+  const FEED_FIELDS = SLIM_FIELDS.concat(['summary', 'saved_at', 'location', 'deleted_at', 'purge_at']);
 
   // v1.6.0：feed 來源分頁，per-service（儲存服務二擇一單一資料源）。reader.html 不再
   // 寫死三顆 tab，由 reader-feed init() 依 FEED_TABS[service] 動態建立——切服務自動換
@@ -72,8 +76,95 @@
       { id: 'archive', label: '封存',  query: { folderId: 'archive' }, empty: '封存區目前沒有文章', archivable: false }
     ]
   };
-  // v2.6.0：JReader 走 Readwise 相容 API（location / tag 語意相同），分頁與 Readwise 共用一份
-  FEED_TABS.jreader = FEED_TABS.readwise;
+  // v3.1.0：JReader 的分頁是三個資料夾 Inbox / Later / Archive（Jimmy 2026-11-24）。JRead 標籤
+  // 分頁拿掉——JReader 有工具列的標籤篩選，選 JRead 標籤即可。
+  // `inbox`：右鍵 / 右滑「移回 Inbox」在這個分頁的行為，'remove'＝成功後卡片離開本分頁；
+  // 有 `later` 的分頁右滑是稍後讀，沒有才是移回 Inbox
+  FEED_TABS.jreader = [
+    { id: 'new',     label: 'Inbox',   query: { location: 'new' },     empty: '收件匣目前沒有文章', later: 'remove', deletable: true },
+    { id: 'later',   label: 'Later',   query: { location: 'later' },   empty: 'Later 目前沒有文章', inbox: 'remove', deletable: true },
+    { id: 'archive', label: 'Archive', query: { location: 'archive' }, empty: '封存區目前沒有文章', archivable: false, inbox: 'remove', deletable: true },
+    // v3.1.0（Jimmy 2026-11-24「加一欄 Progress，顯示我剛剛正在看的文章」）：讀到一半、沒封存的，
+    // 最近讀的在前（JReader in_progress）。文章來自不同資料夾，卡片標出資料夾（showLocation）
+    { id: 'progress', label: 'Progress', query: { inProgress: true }, empty: '沒有讀到一半的文章', showLocation: true, deletable: true },
+    // v3.1.0（Jimmy 2026-11-24「加入刪除文章和垃圾桶功能，刪除要確認」）：`deletable`＝右鍵有「刪除」（移到
+    // 垃圾桶）；`trash`＝垃圾桶，右鍵是「還原 / 永久刪除」、上方有「清空垃圾桶」。不做滑動刪除（左滑是封存，
+    // 滑錯就刪太危險）。`hidden`＝不放分頁列（「很少用，太佔位」），入口是清單最底部的「垃圾桶」連結；
+    // 仍是一個分頁設定，?tab=trash、從文章退回都照常
+    { id: 'trash', label: '垃圾桶', query: { location: 'trash' }, empty: '垃圾桶是空的', archivable: false, showLocation: true, trash: true, hidden: true }
+  ];
+  // v3.1.0：頁面目前的主題色（Feed 的 body、Article View 的閱讀卡）——文章資訊面板、快速鍵說明、
+  // 確認對話框這些 shadow DOM 浮層共用，讀不到時給中性預設
+  function themeColorsOf(win, el) {
+    const out = { bg: '#ffffff', fg: '#1a1a1a', muted: 'rgba(26,26,26,0.62)', line: 'rgba(26,26,26,0.14)', link: '#1a73e8' };
+    if (!win || !el) return out;
+    const solid = (c) => c && !/rgba\(0, 0, 0, 0\)|transparent/.test(c);
+    try {
+      const cs = win.getComputedStyle(el);
+      if (solid(cs.backgroundColor)) out.bg = cs.backgroundColor;
+      else if (el.ownerDocument && el.ownerDocument.body && solid(win.getComputedStyle(el.ownerDocument.body).backgroundColor)) {
+        out.bg = win.getComputedStyle(el.ownerDocument.body).backgroundColor;
+      }
+      if (cs.color) out.fg = cs.color;
+      const a = el.querySelector && el.querySelector('a[href]');
+      if (a) out.link = win.getComputedStyle(a).color || out.link;
+      const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(out.fg);
+      if (m) {
+        out.muted = 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.62)';
+        out.line = 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.14)';
+      }
+    } catch (_) { /* 用預設 */ }
+    return out;
+  }
+  // 這一頁的主題色來源：Article View 用閱讀卡（styler 套好的容器），Feed 用 body
+  function pageThemeColors(win, doc) {
+    const body = doc && doc.querySelector && doc.querySelector('[data-jread-reader-body]');
+    return themeColorsOf(win, (body && body.closest && body.closest('article')) || (doc && doc.body));
+  }
+
+  // v3.1.0：開啟原始網址（Jimmy 2026-11-24「加入開啟原始網址功能，由快速鍵 V 及右鍵選單進入」）。
+  // 清單卡片右鍵與文章頁 V 鍵共用。只開 http(s)（擋 javascript: 等）；開新分頁、noopener。
+  // iOS App 的 WKWebView 由 createWebViewWith 接手、交給外部瀏覽器。回 true＝有開
+  function sourceUrlOf(doc) {
+    const raw = doc && doc.source_url ? String(doc.source_url).trim() : '';
+    try { const u = new URL(raw); return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : ''; } catch (_) { return ''; }
+  }
+  function openSourceUrl(win, doc) {
+    const url = sourceUrlOf(doc);
+    if (!url || !win || typeof win.open !== 'function') return false;
+    try { win.open(url, '_blank', 'noopener'); return true; } catch (_) { return false; }
+  }
+
+  // v3.1.0：同作者 / 同網域的子清單（文章資訊面板點作者、網域進來）。分頁 id 是 'author:<名字>' /
+  // 'site:<網域>'，走 ?tab=（文章頁退出照舊帶回同一個分頁）；back＝進來前的分頁（「← 返回」回去那裡）。
+  // subviewUrl 給面板、subviewTab 給清單頁組分頁設定——同一份格式只寫在這裡
+  const SUBVIEW_KINDS = {
+    author: { title: '作者：', query: (v) => ({ author: v }), empty: '找不到這位作者的文章' },
+    site: { title: '網站：', query: (v) => ({ domain: v }), empty: '找不到這個網站的文章' }
+  };
+  function subviewUrl(kind, value, backTab) {
+    const v = String(value || '').trim();
+    if (!SUBVIEW_KINDS[kind] || !v) return null;
+    const back = backTab && !/^(author|site):/.test(String(backTab)) ? '&back=' + encodeURIComponent(backTab) : '';
+    return 'reader.html?tab=' + encodeURIComponent(kind + ':' + v) + back;
+  }
+  function subviewTab(tabId) {
+    const m = /^(author|site):([\s\S]+)$/.exec(String(tabId || ''));
+    if (!m) return null;
+    const k = SUBVIEW_KINDS[m[1]];
+    const v = m[2].trim();
+    if (!v) return null;
+    return {
+      id: m[1] + ':' + v, label: v, title: k.title + v, query: k.query(v), empty: k.empty,
+      showLocation: true, subview: true, hidden: true, noCache: true, perDocMenu: true
+    };
+  }
+
+  // 資料夾顯示名稱（搜尋結果與 Progress 分頁的卡片標籤、toast）
+  const LOCATION_LABEL = { new: 'Inbox', later: 'Later', shortlist: 'Later', archive: 'Archive', trash: '垃圾桶' };
+  function locationLabel(loc) { return LOCATION_LABEL[loc] || ''; }
+  // Readwise 的 Later 分頁同樣可以移回 Inbox（Jimmy 2026-11-24「Later 文章右鍵沒有送回 Inbox」）
+  FEED_TABS.readwise[1].inbox = 'remove';
 
   // 2026-11-15 review D-06：這個分頁打開的文章能不能再封存。只有明確標
   // `archivable: false` 的分頁回 false；不認得的服務 / 分頁（直接貼網址、沒帶
@@ -103,13 +194,44 @@
     return String(service || 'readwise') + ':' + hashString(raw);
   }
 
-  function slimDoc(doc) {
+  function pickFields(doc, fields) {
     const out = {};
     if (!doc) return out;
-    for (const k of SLIM_FIELDS) {
+    for (const k of fields) {
       if (doc[k] != null && doc[k] !== '') out[k] = doc[k];
     }
     return out;
+  }
+  function slimDoc(doc) { return pickFields(doc, SLIM_FIELDS); }
+  function feedDoc(doc) { return pickFields(doc, FEED_FIELDS); }
+
+  // v3.1.0：跨頁提示。文章頁做完動作就跳回清單（E 鍵封存），當頁的 toast 跟著頁面消失、
+  // 使用者看不到任何回饋（Jimmy 2026-11-24「按了 e 封存，螢幕沒有任何提示」）。動作頁先記一筆，
+  // 清單頁載入時取出顯示一次。sessionStorage：只活在這個分頁、關掉就沒了；不能用就略過
+  const FEED_NOTICE_KEY = 'jread:feedNotice';
+  const FEED_NOTICE_TTL_MS = 30000; // 太舊的不顯示（例如記了之後沒回清單，隔很久才開）
+  function setFeedNotice(session, message, kind) {
+    try { if (session) session.setItem(FEED_NOTICE_KEY, JSON.stringify({ message: String(message), kind: kind || 'success', t: Date.now() })); } catch (_) {}
+  }
+  function takeFeedNotice(session, now) {
+    let raw = null;
+    try { raw = session ? session.getItem(FEED_NOTICE_KEY) : null; if (raw) session.removeItem(FEED_NOTICE_KEY); } catch (_) { return null; }
+    if (!raw) return null;
+    try {
+      const n = JSON.parse(raw);
+      if (!n || typeof n.message !== 'string' || !(((now || Date.now()) - n.t) < FEED_NOTICE_TTL_MS)) return null;
+      return { message: n.message, kind: n.kind || 'success' };
+    } catch (_) { return null; }
+  }
+
+  // 日期 → YYYY-MM-DD（ISO 字串或 epoch 秒 / 毫秒）；壞值回 ''。feed 卡片與文章資訊面板共用
+  function formatDay(raw) {
+    if (raw == null || raw === '') return '';
+    const n = typeof raw === 'number' ? raw : (/^\d+$/.test(String(raw)) ? Number(raw) : NaN);
+    const d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(String(raw));
+    if (isNaN(d.getTime())) return '';
+    const p = (x) => String(x).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
   function byteSize(str) {
@@ -161,7 +283,7 @@
   }
 
   function writeFeed(storage, account, listKey, docs, maxItems) {
-    const slim = (docs || []).slice(0, maxItems || 10).map(slimDoc).filter((d) => d.id);
+    const slim = (docs || []).slice(0, maxItems || 10).map(feedDoc).filter((d) => d.id);
     return updateFeedCache(storage, account, (cache) => {
       cache.lists[listKey] = { t: Date.now(), docs: slim };
     });
@@ -195,8 +317,9 @@
   // 清單內容是否實質相同（決定背景抓回來要不要重畫，避免無謂閃動）
   function feedSignature(docs) {
     return (docs || []).map((d) => {
-      const s = slimDoc(d);
-      return [s.id, s.updated_at || '', s.title || '', s.author || '', s.site_name || '', s.image_url || ''].join('\u0001');
+      const s = feedDoc(d);
+      return [s.id, s.updated_at || '', s.title || '', s.author || '', s.site_name || '', s.image_url || '',
+        s.summary || '', s.published_date || '', s.saved_at || '', s.location || ''].join('\u0001');
     }).join('\u0002');
   }
 
@@ -417,7 +540,7 @@
     isEmbeddedFrame, EMBEDDED_TEXT,
     FEED_KEY, HIGHLIGHT_KEY, LOCAL_CACHE_KEYS, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
     FEED_TABS, isTabArchivable,
-    accountKey, slimDoc, byteSize, withTimeout,
+    accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
     isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage,
     OWN_WRITE_KEY, OWN_WRITE_MAX, OWN_WRITE_SLACK_MS, readOwnWrites, planOwnWrite

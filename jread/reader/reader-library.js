@@ -17,13 +17,24 @@
   const POLL_MS = 3000;
   const POLL_LIMIT_MS = 60000;
   const LAST_SEARCH_KEY = 'jread:lastSearch';
+  const FAB_IDLE_MS = 400; // 捲動停下多久後圓鈕回來
+  // 搜尋結果排序（Jimmy 2026-11-24「加入 相關/最新/最舊」）。最新 / 最舊＝存入日期（JReader sort 參數）
+  const SORTS = [{ id: 'relevance', label: '相關' }, { id: 'newest', label: '最新' }, { id: 'oldest', label: '最舊' }];
+  const LAST_SORT_KEY = 'jread:lastSearchSort';
+  // 資料夾篩選（Jimmy 2026-11-24「搜尋請加入資料夾 filter」）：''＝全部。伺服器 /api/v1/search?location=
+  const FOLDERS = [{ id: '', label: '全部' }, { id: 'new', label: 'Inbox' }, { id: 'later', label: 'Later' }, { id: 'archive', label: 'Archive' }];
+  const LAST_FOLDER_KEY = 'jread:lastSearchFolder';
+  // 開始搜尋時所在的分頁：從搜尋結果打開文章再退回（網址只剩 tab=search）後按 Esc，要回到這個分頁、不是第一個
+  const SEARCH_FROM_KEY = 'jread:searchFrom';
   // 搜尋結果卡片連到文章頁時帶的 tab：退出文章頁回 reader.html?tab=search，工具列
   // 依此把上次的查詢叫回來（pickInitialTab 不認得 search，分頁本身退回第一個）
   const SEARCH_TAB = 'search';
 
-  const LOCATION_LABEL = { new: 'Inbox', later: 'Later', shortlist: 'Later', archive: 'Archive' };
+  // 資料夾顯示名稱的正本在 reader-cache.js（feed 卡片標籤共用）
+  const RC_MOD = global.__JReadReaderCache ||
+    (typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-cache.js') : null);
   function locationLabel(loc) {
-    return LOCATION_LABEL[loc] || '';
+    return RC_MOD && typeof RC_MOD.locationLabel === 'function' ? RC_MOD.locationLabel(loc) : '';
   }
 
   function hasSearchable(q) {
@@ -32,11 +43,13 @@
 
   // 摘錄文字 → DOM 片段，查詢詞（空白分開的每個詞，不分大小寫）加粗。只產生文字
   // 節點與 <b>，不經 innerHTML（摘錄來自文章內文，不能當 HTML）
-  function highlightTerms(text, q, document) {
+  // terms＝要標粗的字，由 JReader 搜尋回應的 terms 給（伺服器 highlightTermsOf：OR、排除詞、"整句" 的斷詞規則只在
+  // 伺服器，這裡不另外解析查詢語法——兩邊各一份會 drift）。不分大小寫、長的先比
+  function highlightTerms(text, terms, document) {
     const frag = document.createDocumentFragment();
     const src = String(text || '');
-    const terms = String(q || '').split(/\s+/).filter((t) => /[\p{L}\p{N}]/u.test(t))
-      .map((t) => t.toLowerCase()).sort((a, b) => b.length - a.length);
+    terms = (Array.isArray(terms) ? terms : []).map((t) => String(t).toLowerCase()).filter(Boolean)
+      .sort((a, b) => b.length - a.length);
     if (!terms.length) { frag.appendChild(document.createTextNode(src)); return frag; }
     const lower = src.toLowerCase();
     let i = 0;
@@ -55,18 +68,27 @@
     return frag;
   }
 
-  // 搜尋結果卡片：reader-feed 的卡片＋副標尾端的資料夾＋摘錄。沒有滑動 / 右鍵動作
-  //（結果橫跨各資料夾，動作語意不一，打開文章再處理）
-  function createResultCard(doc, document, createCard, q) {
-    const card = createCard(doc, document, { archivable: false, tabId: SEARCH_TAB });
+  // 搜尋結果卡片：reader-feed 的卡片＋副標最前面的資料夾標籤＋摘錄。右鍵選單由 reader-feed 依卡片
+  // 自己的資料夾掛上（env.attachResultMenu）；不掛滑動。
+  // 資料夾標籤放在副標最前面、獨立的小框（Jimmy 2026-11-24：原本接在副標尾端，作者網站一長
+  // 就被截掉、也跟作者網站同色看不出來）。有摘錄時拿掉卡片的摘要，不疊四行
+  // dateMode 'saved'：依存入日期排序（最新 / 最舊）時卡片日期顯示存入日期，跟排序對得上
+  function createResultCard(doc, document, createCard, terms, dateMode) {
+    const card = createCard(doc, document, { archivable: false, tabId: SEARCH_TAB, showLocation: true, dateMode });
     if (!card) return null;
-    const meta = card.querySelector('.jr-card-meta');
-    const loc = locationLabel(doc.location);
-    if (meta && loc) meta.textContent = meta.textContent ? meta.textContent + '　·　' + loc : loc;
     if (doc.snippet) {
+      const summary = card.querySelector('.jr-card-summary');
+      if (summary) summary.remove();
       const sn = document.createElement('div');
       sn.className = 'jr-card-snippet';
-      sn.appendChild(highlightTerms(doc.snippet, q, document));
+      // 摘錄來自自己劃的重點（伺服器 snippet_source）：前面標「重點」，看得出是因為劃過才找到
+      if (doc.snippet_source === 'highlight') {
+        const tag = document.createElement('span');
+        tag.className = 'jr-snippet-hl';
+        tag.textContent = '重點';
+        sn.appendChild(tag);
+      }
+      sn.appendChild(highlightTerms(doc.snippet, terms, document));
       const body = card.querySelector('.jr-card-body');
       if (body) body.appendChild(sn);
     }
@@ -147,9 +169,12 @@
     return e;
   }
 
-  // 工具列 DOM（插在分頁列前面）
+  // 工具列 DOM：固定在畫面底部（Jimmy 2026-11-24「頂端的工具列搬到底部」）。由下往上：
+  // 工具列本身在最底，貼網址輸入列與篩選中的標籤 chip 疊在它上方（往上長，不推動清單）
   function buildToolbar(document) {
     const root = el(document, 'div', 'jr-tools-wrap');
+    const inner = el(document, 'div', 'jr-tools-inner');
+    root.appendChild(inner);
     const bar = el(document, 'div', 'jr-tools');
     const search = el(document, 'input', 'jr-search');
     search.type = 'search';
@@ -165,9 +190,14 @@
     const tags = el(document, 'button', 'jr-tool-btn jr-tool-tags', '標籤');
     tags.type = 'button';
     tags.setAttribute('aria-haspopup', 'menu');
+    // 收起鈕：平常只有右下角的搜尋圓鈕（Jimmy 2026-11-24 選 B：「不想要平常就出現固定的工具列」）
+    const close = el(document, 'button', 'jr-tool-btn jr-tool-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', '收起工具列');
     bar.appendChild(search);
     bar.appendChild(add);
     bar.appendChild(tags);
+    bar.appendChild(close);
 
     const addRow = el(document, 'form', 'jr-addrow');
     addRow.hidden = true;
@@ -183,14 +213,63 @@
 
     const filter = el(document, 'div', 'jr-filter');
     filter.hidden = true;
+    // 搜尋結果上方：左邊資料夾篩選、右邊排序三段切換，下一行「找到 N 篇」（窄畫面排序會折到下一行）
     const searchHead = el(document, 'div', 'jr-search-head');
     searchHead.hidden = true;
+    const searchCount = el(document, 'span', 'jr-search-count');
+    // 搜尋語法的淡色提示（Jimmy 2026-11-24 搜尋加 OR / 排除），跟「找到 N 篇」同一行、靠右
+    const searchMeta = el(document, 'div', 'jr-search-meta');
+    const searchHint = el(document, 'span', 'jr-search-hint', '空白＝都要有　OR＝其中之一　-詞＝排除　"整句"');
+    const folderBar = el(document, 'div', 'jr-sort jr-folder');
+    folderBar.setAttribute('role', 'radiogroup');
+    folderBar.setAttribute('aria-label', '資料夾');
+    for (const f of FOLDERS) {
+      const b = el(document, 'button', 'jr-folder-btn', f.label);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('data-folder', f.id);
+      folderBar.appendChild(b);
+    }
+    const sortBar = el(document, 'div', 'jr-sort');
+    sortBar.setAttribute('role', 'radiogroup');
+    sortBar.setAttribute('aria-label', '排序');
+    for (const s of SORTS) {
+      const b = el(document, 'button', 'jr-sort-btn', s.label);
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('data-sort', s.id);
+      sortBar.appendChild(b);
+    }
+    searchHead.appendChild(folderBar);
+    searchHead.appendChild(sortBar);
+    searchMeta.appendChild(searchCount);
+    searchMeta.appendChild(searchHint);
+    searchHead.appendChild(searchMeta);
     const pending = el(document, 'div', 'jr-list jr-pending-list');
 
-    root.appendChild(bar);
-    root.appendChild(addRow);
-    root.appendChild(filter);
-    return { root, bar, search, add, tags, addRow, url, submit, filter, searchHead, pending };
+    inner.appendChild(filter);
+    inner.appendChild(addRow);
+    inner.appendChild(bar);
+    root.hidden = true;
+
+    // 右下角的搜尋圓鈕（收起狀態唯一看得到的東西）。放大鏡用線條 SVG，不用 emoji（各平台一致）
+    const fab = el(document, 'button', 'jr-fab');
+    fab.type = 'button';
+    fab.title = '搜尋、貼網址、標籤（/）';
+    fab.setAttribute('aria-label', '開啟搜尋與工具列');
+    fab.setAttribute('aria-expanded', 'false');
+    const NSVG = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NSVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const circle = document.createElementNS(NSVG, 'circle');
+    circle.setAttribute('cx', '10.5'); circle.setAttribute('cy', '10.5'); circle.setAttribute('r', '6.5');
+    const line = document.createElementNS(NSVG, 'path');
+    line.setAttribute('d', 'M15.5 15.5L20 20');
+    svg.appendChild(circle);
+    svg.appendChild(line);
+    fab.appendChild(svg);
+    return { root, inner, bar, close, fab, search, add, tags, addRow, url, submit, filter, searchHead, searchCount, sortBar, folderBar, pending };
   }
 
   // env：{ doc, win, PC, service, creds, toast, listEl, tabsEl, msgEl, showMsg, hideMsg,
@@ -200,7 +279,10 @@
     const { doc, win, PC, creds } = env;
     const ui = buildToolbar(doc);
     const tabsEl = env.tabsEl;
-    tabsEl.parentNode.insertBefore(ui.root, tabsEl);
+    // 掛 body 最後（position: fixed 貼底）；body 加 class 讓清單底部留出圓鈕 / 工具列的高度
+    doc.body.appendChild(ui.root);
+    doc.body.appendChild(ui.fab);
+    doc.body.classList.add('jr-has-tools');
     // 抓取中的卡片放在分頁列與清單之間，清單重畫（renderFeed 清空 #jr-list）不會帶走它們
     env.listEl.parentNode.insertBefore(ui.pending, env.listEl);
     env.listEl.parentNode.insertBefore(ui.searchHead, env.listEl);
@@ -211,6 +293,48 @@
       try { return win.sessionStorage; } catch (_) { return null; }
     })();
 
+    // ---- 展開 / 收起（平常只有右下角圓鈕）----
+    // 收起的條件：點工具列以外的地方、按 ×、搜尋框 Esc。正在搜尋或貼網址列開著時點外面不收
+    //（搜尋結果還在畫面上，搜尋框不能跟著消失）
+    let expanded = false;
+    function setExpanded(open, opts) {
+      expanded = !!open;
+      ui.root.hidden = !expanded;
+      ui.fab.hidden = expanded;
+      ui.fab.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      doc.body.classList.toggle('jr-tools-open', expanded);
+      if (expanded && (!opts || opts.focus !== false)) ui.search.focus();
+      if (!expanded && menu) closeTagMenu();
+    }
+    function collapse() {
+      if (searching) { ui.search.value = ''; exitSearch(true); }
+      setAddOpen(false);
+      setExpanded(false);
+      ui.fab.focus();
+    }
+    ui.fab.addEventListener('click', () => setExpanded(true));
+
+    // 捲動時藏圓鈕：往下捲淡出、往上捲立刻回來、停下 FAB_IDLE_MS 後回來（Jimmy 2026-11-24 選 A＋C）
+    let lastY = win.scrollY || 0;
+    let idleTimer = null;
+    win.addEventListener('scroll', () => {
+      const y = win.scrollY || 0;
+      const dy = y - lastY;
+      lastY = y;
+      if (expanded) return;
+      if (dy > 2) ui.fab.classList.add('is-scroll-hidden');
+      else if (dy < -2) ui.fab.classList.remove('is-scroll-hidden');
+      if (idleTimer) win.clearTimeout(idleTimer);
+      idleTimer = win.setTimeout(() => { idleTimer = null; ui.fab.classList.remove('is-scroll-hidden'); }, FAB_IDLE_MS);
+    }, { passive: true });
+    ui.close.addEventListener('click', () => collapse());
+    doc.addEventListener('pointerdown', (e) => {
+      if (!expanded || searching || !ui.addRow.hidden) return;
+      const t = e.target;
+      if (ui.root.contains(t) || ui.fab.contains(t) || (menu && menu.el.contains(t))) return;
+      setExpanded(false);
+    }, true);
+
     // ---- 搜尋 ----
     let searchGen = 0;
     let searching = false;
@@ -220,16 +344,96 @@
     const sentinel = el(doc, 'div', 'jr-search-more');
 
     function rememberSearch(q) {
-      try { if (session) { if (q) session.setItem(LAST_SEARCH_KEY, q); else session.removeItem(LAST_SEARCH_KEY); } } catch (_) {}
+      try {
+        if (!session) return;
+        if (q) { session.setItem(LAST_SEARCH_KEY, q); session.setItem(LAST_SORT_KEY, sortMode); session.setItem(LAST_FOLDER_KEY, folder); }
+        else { session.removeItem(LAST_SEARCH_KEY); session.removeItem(LAST_SORT_KEY); session.removeItem(LAST_FOLDER_KEY); }
+      } catch (_) {}
+    }
+
+    // 排序：預設相關；換排序＝同一個查詢從第一頁重搜。離開搜尋回到預設
+    let sortMode = 'relevance';
+    function renderSort() {
+      for (const b of ui.sortBar.querySelectorAll('.jr-sort-btn')) {
+        const on = b.getAttribute('data-sort') === sortMode;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+    }
+    renderSort();
+    ui.sortBar.addEventListener('click', (e) => {
+      const b = e.target && e.target.closest && e.target.closest('.jr-sort-btn');
+      if (!b || !current) return;
+      const next = b.getAttribute('data-sort');
+      if (next === sortMode) return;
+      sortMode = next;
+      renderSort();
+      runSearch(current.q, false);
+    });
+
+    // 資料夾篩選：預設全部；換資料夾＝同一個查詢從第一頁重搜。離開搜尋回到全部
+    let folder = '';
+    function renderFolder() {
+      for (const b of ui.folderBar.querySelectorAll('.jr-folder-btn')) {
+        const on = b.getAttribute('data-folder') === folder;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+    }
+    renderFolder();
+    ui.folderBar.addEventListener('click', (e) => {
+      const b = e.target && e.target.closest && e.target.closest('.jr-folder-btn');
+      if (!b || !current) return;
+      const next = b.getAttribute('data-folder');
+      if (next === folder) return;
+      folder = next;
+      renderFolder();
+      runSearch(current.q, false);
+    });
+    function setCount(n) { ui.searchCount.textContent = n ? '找到 ' + n + ' 篇' : ''; }
+
+    // 結果卡片＋右鍵選單。搬資料夾：換成新卡片（資料夾標籤更新）；刪除或搬出目前篩選的資料夾：拿掉卡片，
+    // 篇數與下一頁的 offset 跟著減一（伺服器那邊這篇已不在這組結果裡）
+    function resultCard(d, terms) {
+      const card = createResultCard(d, doc, env.createCard, terms, sortMode === 'relevance' ? null : 'saved');
+      if (!card || typeof env.attachResultMenu !== 'function') return card;
+      env.attachResultMenu(card, d, {
+        changed: (nd) => {
+          if (!card.parentNode) return;
+          if (!nd || (folder && nd.location !== folder)) {
+            card.parentNode.removeChild(card);
+            if (current) {
+              current.count = Math.max(0, current.count - 1);
+              current.offset = Math.max(0, current.offset - 1);
+              setCount(current.count);
+              if (!current.count) env.showMsg(emptySearchText(current.q), false);
+            }
+            return;
+          }
+          const next = resultCard(nd, terms);
+          if (next) card.parentNode.replaceChild(next, card);
+        }
+      });
+      return card;
+    }
+    function emptySearchText(q) {
+      const f = FOLDERS.find((x) => x.id === folder);
+      return (folder && f ? f.label + ' 裡' : '') + '找不到含有「' + q + '」的文章';
     }
 
     function exitSearch(reload) {
       if (!searching) return;
+      if (typeof env.onViewChange === 'function') env.onViewChange();
       searching = false;
+      doc.body.classList.remove('jr-searching');
       searchGen++;
       current = null;
       ui.searchHead.hidden = true;
-      ui.searchHead.textContent = '';
+      ui.searchCount.textContent = '';
+      sortMode = 'relevance';
+      renderSort();
+      folder = '';
+      renderFolder();
       tabsEl.hidden = false;
       ui.pending.hidden = false;
       if (observer) { observer.disconnect(); observer = null; }
@@ -241,30 +445,44 @@
     async function runSearch(q, more) {
       const gen = more ? searchGen : ++searchGen;
       if (!more) {
+        if (typeof env.onViewChange === 'function') env.onViewChange();
         env.cancelPending();
         searching = true;
+        doc.body.classList.add('jr-searching'); // CSS 藏「載入更多」（分頁清單的翻頁）
         tabsEl.hidden = true;
         ui.pending.hidden = true;
         current = { q, offset: 0, count: 0, done: false };
         rememberSearch(q);
+        try {
+          const from = typeof env.currentTabId === 'function' ? env.currentTabId() : null;
+          if (session && from) session.setItem(SEARCH_FROM_KEY, from);
+        } catch (_) {}
         if (!env.listEl.children.length) env.showMsg('搜尋中…', false);
       }
       const offset = more ? current.offset : 0;
-      const r = await PC.searchJReader(Object.assign({ q, limit: SEARCH_PAGE, offset }, rw));
+      const r = await PC.searchJReader(Object.assign({ q, sort: sortMode, location: folder || undefined, limit: SEARCH_PAGE, offset }, rw));
       if (gen !== searchGen || !searching) return; // 已換查詢或離開搜尋
       if (!r || !r.ok) {
+        // 400＝沒有要找的詞（例如只打了「-iPhone」）：不是錯誤，提示怎麼用
+        if (r && r.status === 400 && !more) {
+          env.listEl.textContent = '';
+          ui.searchHead.hidden = true;
+          env.showMsg('只有排除的詞沒辦法搜尋，請再加一個要找的詞，例如「Apple -iPhone」', false);
+          return;
+        }
         env.toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: '搜尋' }) : '搜尋失敗', 'error');
         return;
       }
       if (!more) {
         env.listEl.textContent = '';
-        ui.searchHead.hidden = false;
-        ui.searchHead.textContent = r.count ? '找到 ' + r.count + ' 篇' : '';
-        if (!r.count) { env.showMsg('找不到含有「' + q + '」的文章', false); return; }
+        // 沒有結果時排序沒有意義，整列藏起來——但選了資料夾就留著（要能切回「全部」）
+        ui.searchHead.hidden = !r.count && !folder;
+        setCount(r.count);
+        if (!r.count) { env.showMsg(emptySearchText(q), false); return; }
         env.hideMsg();
       }
       for (const d of r.results) {
-        const card = createResultCard(d, doc, env.createCard, q);
+        const card = resultCard(d, r.terms);
         if (card) env.listEl.appendChild(card);
       }
       current.offset = offset + r.results.length;
@@ -303,8 +521,8 @@
         e.preventDefault();
         if (debounce) { win.clearTimeout(debounce); debounce = null; }
         ui.search.value = '';
-        ui.search.blur();
         exitSearch(true);
+        collapse();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (debounce) { win.clearTimeout(debounce); debounce = null; }
@@ -318,7 +536,7 @@
       ui.addRow.hidden = !open;
       ui.add.setAttribute('aria-expanded', open ? 'true' : 'false');
       ui.add.classList.toggle('is-on', open);
-      if (open) { ui.url.value = ''; ui.url.focus(); }
+      if (open) { if (!expanded) setExpanded(true, { focus: false }); ui.url.value = ''; ui.url.focus(); }
     }
     ui.add.addEventListener('click', () => setAddOpen(ui.addRow.hidden));
     ui.url.addEventListener('keydown', (e) => {
@@ -360,6 +578,7 @@
         return r;
       }
       setAddOpen(false);
+      if (!searching) setExpanded(false);
       const data = r.data || {};
       if (data.existed) {
         const loc = locationLabel(data.location);
@@ -400,6 +619,7 @@
     function setTag(name) {
       activeTag = name || null;
       renderFilterChip();
+      ui.fab.classList.toggle('is-on', !!activeTag); // 收起時圓鈕加框：提醒目前在篩選
       if (searching) { ui.search.value = ''; exitSearch(false); }
       env.setTagFilter(activeTag);
     }
@@ -415,8 +635,9 @@
       list.appendChild(el(doc, 'div', 'jr-tagmenu-empty', '載入中…'));
       box.appendChild(filterInput);
       box.appendChild(list);
+      // 工具列在底部：選單往上開（貼在按鈕上緣之上）
       const rect = ui.tags.getBoundingClientRect();
-      box.style.top = Math.round(rect.bottom + 6) + 'px';
+      box.style.bottom = Math.max(8, Math.round((win.innerHeight || 0) - rect.top + 6)) + 'px';
       box.style.right = Math.max(8, Math.round((win.innerWidth || 0) - rect.right)) + 'px';
       doc.body.appendChild(box);
       ui.tags.setAttribute('aria-expanded', 'true');
@@ -458,6 +679,22 @@
     }
     ui.tags.addEventListener('click', () => { if (menu) closeTagMenu(); else openTagMenu(); });
 
+    // ---- 快速鍵：Esc 離開搜尋結果（Jimmy 2026-11-24「搜尋結果按 esc 應該要返回」）----
+    // 搜尋框裡的 Esc 原本就會（上面那支）；這支補「焦點不在搜尋框」的情況——點過資料夾 / 排序鈕、
+    // 從文章退回 ?tab=search。右鍵選單、標籤選單、確認框、快速鍵說明自己處理 Esc（preventDefault /
+    // stopImmediatePropagation）時不重複動作；其他輸入框（貼網址）裡不觸發
+    doc.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !searching || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+      const t = e.target;
+      const tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      e.preventDefault();
+      if (debounce) { win.clearTimeout(debounce); debounce = null; }
+      ui.search.value = '';
+      exitSearch(true);
+      collapse();
+    });
+
     // ---- 快速鍵：/ 聚焦搜尋（輸入框內不觸發） ----
     doc.addEventListener('keydown', (e) => {
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -465,7 +702,7 @@
       const tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
       e.preventDefault();
-      ui.search.focus();
+      setExpanded(true);
     });
 
     // 文章頁退出回 reader.html?tab=search：叫回上次的查詢。回 true＝已接手，feed 不必載入分頁
@@ -476,7 +713,14 @@
       let q = null;
       try { q = session ? session.getItem(LAST_SEARCH_KEY) : null; } catch (_) { q = null; }
       if (!hasSearchable(q)) return false;
+      let s = null;
+      try { s = session ? session.getItem(LAST_SORT_KEY) : null; } catch (_) { s = null; }
+      if (SORTS.some((x) => x.id === s)) { sortMode = s; renderSort(); }
+      let f = null;
+      try { f = session ? session.getItem(LAST_FOLDER_KEY) : null; } catch (_) { f = null; }
+      if (FOLDERS.some((x) => x.id === f)) { folder = f; renderFolder(); }
       ui.search.value = q;
+      setExpanded(true, { focus: false });
       runSearch(q, false);
       return true;
     }
@@ -485,10 +729,15 @@
       ui,
       isPending: (id) => pendingIds.has(String(id)),
       isSearching: () => searching,
+      isExpanded: () => expanded,
+      setExpanded,
+      collapse,
       exitSearch,
       restoreSearch,
       submitUrl,
       runSearch,
+      // 多選做完批次動作後重跑目前的查詢（同一頁、同排序與資料夾）
+      refreshSearch: () => (current ? runSearch(current.q, false) : null),
       setTag,
       openTagMenu,
       closeTagMenu,
@@ -499,7 +748,7 @@
   const api = {
     attach, highlightTerms, createResultCard, createPendingCard, settlePendingCard, pollUntilSettled,
     locationLabel, hasSearchable, buildToolbar,
-    SEARCH_TAB, LAST_SEARCH_KEY, SEARCH_PAGE, POLL_MS, POLL_LIMIT_MS, SEARCH_DEBOUNCE_MS
+    SEARCH_TAB, LAST_SEARCH_KEY, LAST_SORT_KEY, LAST_FOLDER_KEY, SEARCH_FROM_KEY, SORTS, FOLDERS, FAB_IDLE_MS, SEARCH_PAGE, POLL_MS, POLL_LIMIT_MS, SEARCH_DEBOUNCE_MS
   };
 
   if (typeof module !== 'undefined' && module.exports) {

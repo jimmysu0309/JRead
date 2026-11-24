@@ -50,6 +50,34 @@
   }
   .jr-card.is-busy { opacity: 0.6; }
   .jr-card.is-menu { box-shadow: 0 0 0 2px var(--link); }
+  /* v3.1.0 多選：勾選的卡片（外框＋左上角勾，不只靠顏色）、底部動作列；多選中藏工具列圓鈕 */
+  .jr-card.is-picked { box-shadow: 0 0 0 2px var(--link); background: color-mix(in srgb, var(--link) 8%, var(--card)); }
+  .jr-card.is-picked::before {
+    content: '✓'; position: absolute; top: 8px; right: 8px; z-index: 2; width: 20px; height: 20px; border-radius: 10px;
+    background: var(--link); color: #fff; font-size: 13px; font-weight: 700; line-height: 20px; text-align: center;
+  }
+  .jr-selecting .jr-fab, .jr-selecting .jr-tools-wrap { display: none; }
+  /* 動作列蓋住清單最後幾張：多選中清單底部留空 */
+  .jr-selecting .jr-wrap { padding-bottom: 140px; }
+  .jr-select-bar {
+    position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+    width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
+  }
+  .jr-select-count { padding: 0 6px; font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+  .jr-select-btn {
+    height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: transparent;
+    color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .jr-select-btn:disabled { opacity: .45; cursor: default; }
+  .jr-select-btn.is-danger { color: #c62828; }
+  .jr-select-close { width: 32px; padding: 0; }
+  .jr-select-tagrow { display: flex; gap: 6px; flex: 1 0 100%; justify-content: center; }
+  .jr-select-tag { width: 180px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--bg, var(--card)); color: var(--text); font: inherit; font-size: 13px; }
+  /* 鍵盤 J / K 選到的卡片 */
+  .jr-card.is-kb { box-shadow: 0 0 0 2px var(--link); }
   .jr-card-link {
     position: relative; z-index: 1;
     display: flex; gap: 14px; align-items: center; flex: 1 1 auto; min-width: 0;
@@ -58,9 +86,14 @@
     -webkit-touch-callout: default; -webkit-user-drag: none;
   }
   .jr-card.is-swiping .jr-card-link { -webkit-user-select: none; user-select: none; }
+  /* v3.1.0：卡片加了日期與兩行摘要後變高，縮圖從 64px 放大到 88px（≈ 標題＋副標＋兩行摘要的
+     高度），全部卡片同尺寸；窄螢幕 72px，不擠壓文字欄（Jimmy 2026-11-24「卡片變大但圖看起來小了」） */
   .jr-thumb {
-    flex: 0 0 auto; width: 64px; height: 64px; border-radius: 8px;
+    flex: 0 0 auto; width: 88px; height: 88px; border-radius: 10px;
     object-fit: cover; background: var(--line);
+  }
+  @media (max-width: 480px) {
+    .jr-thumb { width: 72px; height: 72px; border-radius: 8px; }
   }
   .jr-card-body { min-width: 0; }
   .jr-card-title {
@@ -120,9 +153,39 @@
 
   /* v3.1.0：JReader 書庫工具列（reader-library.js；只在儲存服務是 JReader 時出現）。
      搜尋框與按鈕同高（= 分頁列外框高 40px），底色 / 邊框 / 圓角沿用分頁列的變數 */
-  .jr-tools-wrap { margin: 0 0 12px; }
+  /* 固定在畫面底部（Jimmy 2026-11-24）：外層滿版、帶頁面底色與上緣分隔線，讓清單捲到它
+     底下時不透出來；內層與清單同寬置中。iPhone 底部手勢區用 safe-area 墊高 */
+  .jr-tools-wrap {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147482000;
+    background: var(--bg); border-top: 1px solid var(--line);
+    padding: 10px 20px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .jr-tools-inner { max-width: 640px; margin: 0 auto; }
+  .jr-tools-wrap[hidden] { display: none; }
+  /* 清單底部留空：收起時讓出圓鈕、展開時讓出工具列（＋貼網址列 / 標籤 chip），最後一張卡片不被蓋住 */
+  body.jr-has-tools .jr-wrap { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  body.jr-tools-open .jr-wrap { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+  /* 右下角搜尋圓鈕（Jimmy 2026-11-24 選「平常只有一顆按鈕」，再選「縮小淡化＋捲動時隱藏」）。
+     寬螢幕對齊卡片欄右緣（欄寬 640 置中 → 右緣距視窗 50vw − 320px），窄螢幕離右邊 20px。
+     平常：36px、透明底、細框、淡灰圖示，退到背景；滑鼠移上 / 鍵盤聚焦才清楚。
+     往下捲時（.is-scroll-hidden，reader-library.js 加）完全淡出且不能點；往上捲或停 0.4 秒回來 */
+  .jr-fab {
+    position: fixed; z-index: 2147482000; width: 36px; height: 36px; padding: 0;
+    right: max(20px, calc(50vw - 320px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 18px;
+    opacity: .7; cursor: pointer; transition: opacity .15s ease, color .15s ease, background-color .15s ease;
+  }
+  .jr-fab[hidden] { display: none; }
+  .jr-fab svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .jr-fab:hover, .jr-fab:focus-visible { opacity: 1; color: var(--text); background: var(--card); border-color: var(--muted); outline: none; }
+  .jr-fab.is-scroll-hidden { opacity: 0; pointer-events: none; }
+  /* 標籤篩選中：連結色框＋圖示同色（雙通道），不淡化、捲動也不藏——提醒目前在篩選 */
+  .jr-fab.is-on, .jr-fab.is-on.is-scroll-hidden { opacity: 1; pointer-events: auto; color: var(--link); border: 2px solid var(--link); background: var(--card); }
+  @media (prefers-reduced-motion: reduce) { .jr-fab { transition: none; } }
+  .jr-tool-close { width: 40px; padding: 0; font-size: 20px; font-weight: 500; color: var(--muted); }
   .jr-tools, .jr-addrow { display: flex; gap: 8px; align-items: stretch; }
-  .jr-addrow { margin-top: 8px; }
+  .jr-addrow { margin-bottom: 8px; }
   .jr-addrow[hidden], .jr-filter[hidden], .jr-search-head[hidden], .jr-tabs[hidden] { display: none; }
   .jr-search, .jr-addrow-url {
     flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 14px;
@@ -141,7 +204,7 @@
   /* 開著 / 篩選中：連結色字＋同色框線（雙通道，不只靠顏色） */
   .jr-tool-btn.is-on { color: var(--link); border-color: var(--link); }
   .jr-tool-btn:disabled { opacity: .5; cursor: default; }
-  .jr-filter { margin-top: 8px; display: flex; }
+  .jr-filter { margin-bottom: 8px; display: flex; }
   .jr-chip {
     display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 12px;
     background: var(--card); border: 1px solid var(--link); border-radius: 14px;
@@ -152,7 +215,18 @@
     color: inherit; font-size: 15px; line-height: 1; cursor: pointer;
   }
   .jr-chip-x:hover { background: var(--line); }
-  .jr-search-head { font-size: 13px; color: var(--muted); margin: 0 0 10px 2px; }
+  /* 搜尋結果上方：「找到 N 篇」＋排序三段切換（樣式同分頁列，縮小一號） */
+  /* 資料夾篩選（左）＋排序（右）同一列，窄畫面排序折到下一行；「找到 N 篇」獨立一行在下面 */
+  .jr-search-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+    font-size: 13px; color: var(--muted); margin: 0 0 10px 2px; }
+  .jr-search-meta { flex: 1 0 100%; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; }
+  .jr-search-hint { margin-left: auto; font-size: 12px; opacity: .8; }
+  .jr-sort { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--line); }
+  .jr-sort-btn, .jr-folder-btn {
+    height: 26px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .jr-sort-btn.is-active, .jr-folder-btn.is-active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   .jr-pending-list:empty { display: none; }
   .jr-pending-list { margin: 0 0 12px; }
   .jr-pending .jr-card-meta a { color: var(--link); }
@@ -165,8 +239,61 @@
     margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--muted);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
+  /* 摘錄來自劃過的重點：前面一個小標，用重點的黃色系、加外框（不只靠顏色） */
+  .jr-snippet-hl { display: inline-block; margin-right: 6px; padding: 0 5px; border: 1px solid rgba(214,160,0,.7);
+    border-radius: 4px; background: rgba(255,214,0,.22); color: inherit; font-size: 11px; font-weight: 700; line-height: 16px; vertical-align: 1px; }
   .jr-card-snippet b { color: var(--text); font-weight: 700; }
   .jr-search-more { height: 1px; }
+
+  /* v3.1.0：卡片副標＝作者 · 網站（太長時截這段）＋日期（不截）；摘要兩行 */
+  .jr-card-meta { display: flex; align-items: baseline; min-width: 0; }
+  .jr-card-src { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jr-card-date { flex: 0 0 auto; white-space: nowrap; }
+  .jr-card-summary {
+    margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--muted);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* 搜尋結果的資料夾標籤：小框＋字重（不只靠顏色區分），Inbox / Later / Archive 各一種框色 */
+  .jr-loc-badge {
+    flex: 0 0 auto; margin-right: 8px; padding: 0 6px; height: 18px; line-height: 16px;
+    border: 1px solid var(--muted); border-radius: 5px;
+    font-size: 11px; font-weight: 700; color: var(--text); letter-spacing: .02em;
+  }
+  .jr-loc-badge[data-loc="new"] { border-color: var(--link); color: var(--link); }
+  .jr-loc-badge[data-loc="later"] { border-color: #c98a1b; color: #c98a1b; }
+  /* 「載入更多」：與卡片同寬、同圓角的次要按鈕；搜尋中不顯示 */
+  .jr-more {
+    display: block; width: 100%; height: 44px; margin: 12px 0 0;
+    background: transparent; color: var(--link); border: 1px dashed var(--line); border-radius: 12px;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .jr-more:hover { border-color: var(--link); }
+  .jr-more:disabled { color: var(--muted); cursor: default; }
+  .jr-more[hidden], .jr-searching .jr-more { display: none; }
+
+  /* v3.1.0：垃圾桶。入口是清單最底部的淡色文字（很少用，不佔分頁列）；進去後上方一列「← 返回　垃圾桶　清空垃圾桶」 */
+  .jr-trash-link {
+    display: block; margin: 28px auto 0; padding: 6px 12px; border: 0; background: transparent;
+    color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+  }
+  .jr-trash-link:hover { color: var(--text); }
+  .jr-trash-link[hidden], .jr-searching .jr-trash-link, .jr-trash-head[hidden] { display: none; }
+  .jr-trash-head { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .jr-trash-title { flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; align-items: baseline;
+    font-size: 15px; font-weight: 700; white-space: nowrap; }
+  .jr-head-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .jr-trash-note { margin: -4px 0 12px; text-align: center; font-size: 12px; color: var(--muted); }
+  .jr-trash-note[hidden], .jr-searching .jr-trash-note { display: none; }
+  .jr-head-count { flex: 0 0 auto; margin-left: 8px; font-weight: 500; color: var(--muted); }
+  .jr-head-count:empty { display: none; }
+  /* 同作者 / 同網域的子清單沒有「清空垃圾桶」：佔位但不顯示，標題維持置中 */
+  .jr-trash-empty[hidden] { display: inline-block; visibility: hidden; }
+  .jr-trash-back, .jr-trash-empty {
+    flex: 0 0 auto; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .jr-trash-empty { color: #c62828; }
+  .jr-menu-item.is-danger { color: #c62828; }
   .jr-tagmenu { width: 260px; display: flex; flex-direction: column; gap: 4px; }
   .jr-tagmenu-filter {
     height: 34px; padding: 0 10px; margin: 2px 2px 4px; border: 1px solid var(--line); border-radius: 8px;
@@ -203,8 +330,14 @@
   <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="reader-cache.js"></script>
+  <!-- v3.1.0：確認對話框（刪除 / 永久刪除 / 清空垃圾桶），讀 reader-cache 的主題色 -->
+  <script src="reader-dialog.js"></script>
+  <!-- v3.1.0：清單多選（JReader），reader-feed init 掛上 -->
+  <script src="reader-select.js"></script>
   <!-- v3.1.0：JReader 書庫工具列（搜尋 / 貼網址 / 標籤），須在 reader-feed 前 -->
   <script src="reader-library.js"></script>
+  <!-- v3.1.0：快速鍵說明（? 鍵） -->
+  <script src="reader-shortcuts.js"></script>
   <script src="reader-feed.js"></script>
 </body>
 </html>
