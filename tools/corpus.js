@@ -44,7 +44,8 @@
 // 這條驗 X、不驗 Y（工作流原則 3）：
 //   驗——同一份凍結 DOM 上，JRead 的偵測（選哪個主文容器）、清除（哪些文字與媒體
 //        還看得到）、排版（每個區塊的位置與尺寸）結果有沒有變
-//   不驗——(a) 站方 script 的動態行為：lazy 載入、晚插入的 widget、SPA 導航、動態
+//   不驗——(a) 站方 script 的動態行為：lazy 載入（2026-11-24 起瀏覽器原生 `loading=lazy`
+//        在重放時一律直接載入，站方 script 做的 lazy 仍不驗）、晚插入的 widget、SPA 導航、動態
 //        observer 的時序——這層仍歸 debug-harness 真站與 page rounds
 //        (b) 快照之後站方改版：語料庫是「當時的頁面」，不是今天的頁面
 //        (c) 「基準本身對不對」：指紋只回答「變了沒」，基準的品質靠 accept 前看過
@@ -530,7 +531,11 @@ async function launch(opts) {
     deviceScaleFactor: 1,
     args: [
       ...(exts ? [`--disable-extensions-except=${exts}`, `--load-extension=${exts}`] : []),
-      '--no-first-run', '--no-default-browser-check', '--window-position=-2400,-2400', '--headless=new'
+      '--no-first-run', '--no-default-browser-check', '--window-position=-2400,-2400', '--headless=new',
+      // 2026-11-24（Jimmy 裁定）：重放時關掉瀏覽器原生延遲載入，`loading=lazy` 的圖與 iframe
+      // 不必捲到才載——整批並行時 lazy 圖常在量指紋前還沒載到，同一份 code 重跑結果不同
+      // （netflix 偶發少圖）。只改瀏覽器行為、不動 DOM：`loading` 屬性照舊，JRead 看到的頁面不變
+      ...(opts.eagerLazy ? ['--blink-settings=lazyLoadEnabled=false'] : [])
     ]
   });
   const close = async () => {
@@ -810,7 +815,7 @@ async function cmdRun(args, outDir, shotRoot, onlyFiles) {
   const worker = async () => {
     let session = null;
     const open = async () => {
-      const l = await launch({ exts: [ext] });
+      const l = await launch({ exts: [ext], eagerLazy: true });
       const state = { current: null, afterModule: args.after ? path.resolve(args.after) : null, extraSettings: args.set, shotOpts: { shots: args.shots, tail: args.tail } };
       await installReplayRoutes(l.ctx, state);
       const sw = await waitJreadSw(l.ctx);
