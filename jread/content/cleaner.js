@@ -6118,13 +6118,26 @@
     return /^[\p{L}\p{N}]/u.test(next);
   }
 
+  // v2.5.56：連結裡只有圖片（img / picture，沒有其他字）時，第一張有 alt 的圖的 alt 當連結
+  // 文案（只取第一張：newtalk 第二張是滑過時換上的圖，alt 多了「 (Hover)」，串起來就比不到）
+  function imageOnlyLinkAltText(a) {
+    for (const im of a.querySelectorAll('img')) {
+      const t = norm(im.getAttribute('alt') || '');
+      if (t) return t;
+    }
+    return '';
+  }
+
   function hideInsideArticleByLinkText(articleEl, hidden, scope) {
     // 掃 `<a>` + `<button>`——CTA 按鈕類（訂閱 / 追蹤 / 關注）通常是 button
     // 而非 a，舊版只掃 a 漏網
     const links = scopedQueryAll(scope, articleEl, 'a, button');
     for (const a of links) {
       // v2.5.4：簡體寫法先摺成台灣寫法再比（只用於比對；一字換一字、長度不變）
-      const text = foldZhVariants(norm(a.textContent));
+      // v2.5.56：只裝圖片的連結，文案在圖片的 alt（newtalk 文末「將 newtalk 加入 Google
+      // 偏好來源」推廣圖：連結沒有字、alt 才是 CTA 句；href 是 news.google.com/search，
+      // 不在 v2.2.17 的端點表）。只在連結自己沒有字時改用 alt，句式比對不變
+      const text = foldZhVariants(norm(a.textContent)) || (a.tagName === 'A' ? foldZhVariants(imageOnlyLinkAltText(a)) : '');
       // v2.2.17：平台追蹤端點 href 視同文字命中，但**不走 strict 整塊清**——同一列
       // 常有合法 metadata（Guardian：dateline 與「Prefer the Guardian on Google」
       // 同列），走下方一般路徑（連結占父層 80%+ 才藏父層、否則只藏連結）。
@@ -9913,6 +9926,140 @@
     return true;
   }
 
+  // v2.5.56：主文裡「值被藏掉的標籤」裸文字節點。Trigger：telefoncek 原文文末
+  // 「Kategorije: <i>分類連結…</i> <br> Ključne besede: <i>標籤連結…</i>」——原文頁主文
+  // 容器包含 <article> 與後面這列，<i> 裡的分類／標籤連結被藏後，「Kategorije:」
+  // 「Ključne besede:」兩段裸文字留在卡片裡（v2.5.40 的 blankAncestorStrayText 只處理
+  // 主文的祖先層，翻譯後那頁才是那種）。文字節點沒有 display 可設，清空內容、原文記進
+  // hidden.__phantomText（同一個還原契約）。
+  // 全部成立才清：文字節點以冒號收尾、去掉冒號後 1–30 字（標籤，不是句子）；它後面
+  // （跳過空白文字與 <br>）的第一個元素已被藏、而且那個元素有字（標籤的值整個不見了）
+  const ORPHAN_LABEL_TEXT_MAX = 30;
+  function blankOrphanLabelTextNodes(articleEl, hidden) {
+    const doc = articleEl.ownerDocument;
+    const walker = doc.createTreeWalker(articleEl, 4 /* SHOW_TEXT */);
+    const snaps = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = norm(n.nodeValue || '');
+      if (!/[:：]$/.test(t)) continue;
+      const label = t.replace(/[:：]$/, '').trim();
+      if (!label || label.length > ORPHAN_LABEL_TEXT_MAX) continue;
+      const host = n.parentElement;
+      if (!host || host.closest('[data-jread-hidden="1"]')) continue;
+      let nx = n.nextSibling;
+      while (nx && ((nx.nodeType === 3 && !norm(nx.nodeValue || '')) || (nx.nodeType === 1 && nx.tagName === 'BR'))) nx = nx.nextSibling;
+      if (!nx || nx.nodeType !== 1) continue;
+      if (!(nx.dataset && nx.dataset.jreadHidden === '1')) continue;
+      if (!norm(nx.textContent || '')) continue;
+      snaps.push({ node: n, orig: n.nodeValue });
+    }
+    for (const sn of snaps) sn.node.nodeValue = '';
+    if (snaps.length) hidden.__phantomText = (hidden.__phantomText || []).concat(snaps);
+  }
+
+  // v2.5.56：文末外站橫幅圖。Trigger：wealth 文末免責聲明後一張 1200×300 推廣圖
+  //（`<figure><a href="外站短網址"><img alt=""></a></figure>`，翻頁模式第 3 頁整頁只有它）。
+  // 全部成立才藏：連結指向外站（品牌段與本站不同）、連結裡只有一張圖、沒有字、alt 空白；
+  // 圖寬 ≥ 300、寬高比 ≥ 3（橫幅，不是照片）；它後面整篇已經沒有看得到的內文（加權 < 20，
+  // 位置＝文末）。藏「只包著這條連結、沒有別的字」的最外層包裝（到主文為止）
+  const TAIL_BANNER_MIN_W = 300;
+  const TAIL_BANNER_MIN_RATIO = 3;
+  function hideTailExternalBannerImages(articleEl, hidden) {
+    const doc = articleEl.ownerDocument;
+    for (const a of articleEl.querySelectorAll('a[href]')) {
+      if (a.closest('[data-jread-hidden="1"]')) continue;
+      if (norm(a.textContent || '')) continue;
+      const imgs = a.querySelectorAll('img');
+      if (imgs.length !== 1) continue;
+      const img = imgs[0];
+      if (norm(img.getAttribute('alt') || '')) continue;
+      let u;
+      try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { continue; }
+      if (!/^https?:$/.test(u.protocol)) continue;
+      if (isSameSiteArticleLink(a)) continue; // 同站判斷只住 urlIsSameSiteArticle 一份（review A-09）
+      let w = 0, h = 0;
+      try { const r = img.getBoundingClientRect(); w = r.width; h = r.height; } catch (_) { /* noop */ }
+      if (!(w > 0 && h > 0)) { w = img.naturalWidth || parseFloat(img.getAttribute('width')) || 0; h = img.naturalHeight || parseFloat(img.getAttribute('height')) || 0; }
+      if (!(w >= TAIL_BANNER_MIN_W && h > 0 && w / h >= TAIL_BANNER_MIN_RATIO)) continue;
+      let target = a;
+      while (target.parentElement && target.parentElement !== articleEl && articleEl.contains(target.parentElement) &&
+             !norm(target.parentElement.textContent || '') && target.parentElement.querySelectorAll('img').length === 1) {
+        target = target.parentElement;
+      }
+      // 位置：後面沒有看得到的內文
+      const walker = doc.createTreeWalker(articleEl, 4 /* SHOW_TEXT */);
+      let after = 0;
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!(target.compareDocumentPosition(n) & 4 /* FOLLOWING */) || target.contains(n)) continue;
+        const pe = n.parentElement;
+        if (!pe || pe.closest('[data-jread-hidden="1"], script, style, noscript, template')) continue;
+        after += NS.cjkWeightedLen(norm(n.nodeValue || ''));
+        if (after >= 20) break;
+      }
+      if (after >= 20) continue;
+      hide(target, hidden);
+      markHiddenWhy(target, 'tail-banner');
+    }
+  }
+
+  // v2.5.56：疊在內容圖上的小圖示（站方 absolute 定位的放大鏡、播放角標這類）。
+  // Trigger：wikiHow 摘要大圖下的放大鏡 `img.presteps_mag_icon`——站方 CSS 把 30px 的
+  // 圖示 absolute 疊在大圖左下角；閱讀模式把版面拉回 flow 後它自己佔一行。
+  // 全部成立才藏：<img> 站方 computed position 是 absolute / fixed、兩維都 ≤ 48px、alt 空白；
+  // 同一個連結（或 figure）裡另有寬 ≥ 200 的圖片（它疊的就是那張）。圖示不是內容、
+  // 點擊放大由 JRead 自己的圖片預覽處理
+  const OVERLAY_ICON_MAX = 48;
+  function hideOverlayIconsOnContentImages(articleEl, hidden) {
+    for (const img of articleEl.querySelectorAll('img')) {
+      if (img.closest('[data-jread-hidden="1"]')) continue;
+      if (norm(img.getAttribute('alt') || '')) continue;
+      const host = img.closest('a, figure');
+      if (!host || !articleEl.contains(host)) continue;
+      let cs, r;
+      try { cs = window.getComputedStyle(img); r = img.getBoundingClientRect(); } catch (_) { continue; }
+      if (!cs || (cs.position !== 'absolute' && cs.position !== 'fixed')) continue;
+      if (!(r.width > 0 && r.height > 0) || r.width > OVERLAY_ICON_MAX || r.height > OVERLAY_ICON_MAX) continue;
+      let big = false;
+      for (const o of host.querySelectorAll('img')) {
+        if (o === img) continue;
+        let or;
+        try { or = o.getBoundingClientRect(); } catch (_) { continue; }
+        if (or && or.width >= 200) { big = true; break; }
+      }
+      if (!big) continue;
+      hide(img, hidden);
+    }
+  }
+
+  // v2.5.56：播放器上疊的片長角標。Trigger：he 維基文中影片（`span.mw-tmh-player` 裡
+  // <video> ＋ absolute 的 `span.mw-tmh-duration`「0:11」）——影片留著，片長角標的定位
+  // 基準在閱讀模式跑掉，飛到卡片最底下、孤立一個「0:11」（430 寬疊在文字上）。片長是播放器
+  // UI，不是內容。全部成立才藏：看得到的 <video> / <audio> 往上 2 層內的外殼裡，某個葉節點的
+  // 字整個是片長（VTHUMB_DURATION_RE，與 v2.5.35 影片殘骸同一把尺）；藏的是它（或往上到外殼
+  // 之前）最近一層站方 absolute / fixed 的元素，不含媒體本身
+  function hidePlayerDurationBadges(articleEl, hidden) {
+    for (const m of articleEl.querySelectorAll('video, audio')) {
+      if (m.closest('[data-jread-hidden="1"]')) continue;
+      const durLeaves = (el) => Array.from(el.querySelectorAll('span, div, time, small, b'))
+        .filter((x) => !x.children.length && VTHUMB_DURATION_RE.test(norm(x.textContent || '')));
+      let shell = m.parentElement;
+      if (shell && shell !== articleEl && !durLeaves(shell).length && shell.parentElement && shell.parentElement !== articleEl) shell = shell.parentElement;
+      if (shell && shell.querySelectorAll('video, audio').length > 1) continue;
+      if (!shell || shell === articleEl) continue;
+      for (const leaf of durLeaves(shell)) {
+        if (leaf.closest('[data-jread-hidden="1"]')) continue;
+        let tgt = null;
+        for (let c = leaf; c && c !== shell; c = c.parentElement) {
+          if (c.contains(m)) break;
+          let cs;
+          try { cs = window.getComputedStyle(c); } catch (_) { cs = null; }
+          if (cs && (cs.position === 'absolute' || cs.position === 'fixed')) { tgt = c; }
+        }
+        if (tgt) hide(tgt, hidden);
+      }
+    }
+  }
+
   function collapseOrphanLabelShells(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     for (const el of _getArticleAllElements(articleEl)) {
@@ -11724,6 +11871,17 @@
   // NOISE_LINK_TEXT_RE 也不命中。靠「icon-only」結構特徵統一識別。
   // 安全 guard：figure / picture 內的 a > img 是「圖片可點擊版」合法用法
   // （常見於主文 hero 圖配連結），保留；其他位置的 icon-only a 一律 hide。
+  function textOutsideSvg(el) {
+    let out = '';
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) out += c.nodeValue;
+        else if (c.nodeType === 1 && c.tagName.toLowerCase() !== 'svg') walk(c);
+      }
+    };
+    walk(el);
+    return out;
+  }
   function hideInsideArticleIconOnlyLinks(articleEl, hidden, scope) {
     for (const a of scopedQueryAll(scope, articleEl, 'a')) {
       if (isInPreserved(a)) continue;
@@ -11734,7 +11892,10 @@
       const hasIcon = a.querySelector('img, svg');
       if (!hasIcon) continue;
       // textContent 去空白後仍有 >= 1 個字 = 不算 icon-only
-      const text = (a.textContent || '').replace(/\s+/g, '').trim();
+      // v2.5.56：svg 裡的 <title> / <desc> 是無障礙名稱、畫面上看不到，不算連結文字
+      //（myartbroker 文末社群列：Instagram 那顆 svg 帶 <title>Instagram</title>，其他三顆沒有，
+      // 結果只有它被當成有字的連結留下）
+      const text = textOutsideSvg(a).replace(/\s+/g, '').trim();
       if (text.length >= 1) continue;
       // v0.7.212：「href 指向圖片檔」+「大圖 / lazy 內容圖」豁免——lightbox /
       // photoswipe /「看原圖」連結慣例。href 判定**不依賴圖片是否已載入**，解
@@ -12824,7 +12985,13 @@
     for (const a of articleEl.querySelectorAll('a[href]')) {
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
       const t = norm(a.textContent);
-      if (!/^@\S{2,80}$/.test(t)) continue;
+      // v2.5.56：圖示字型版——連結沒有字、沒有 img / svg，只有空的 <i> / <span> 圖示載體
+      //（字形畫在 ::before），連到社群平台個人頁（nirbanroy 作者名後「X」「LinkedIn」：
+      // `<a aria-label="… on X"><i class="fa-brands fa-x-twitter"></i></a>`；圖示字型沒載到時
+      // 畫成空心方框）。icon-only 規則要求有 img / svg 才算圖示，這型漏網
+      const glyphOnly = !t && !a.querySelector('img, svg, picture, video') &&
+        !!a.querySelector('i, span') && !a.querySelector('i *, span *');
+      if (!glyphOnly && !/^@\S{2,80}$/.test(t)) continue;
       let u;
       try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { continue; }
       if (!SOCIAL_PROFILE_HOST_RE.test(u.hostname)) continue;
@@ -13682,6 +13849,20 @@
     return bodyPs;
   }
 
+  // v2.5.56：區塊裡有一張小於 200px 的圖，alt 等於作者名（頭像）
+  const AVATAR_CARD_MAX_WEIGHT = 150;
+  function avatarAltIsAuthor(el, names) {
+    if (!names || !names.size) return false;
+    for (const im of el.querySelectorAll('img')) {
+      const alt = norm(im.getAttribute('alt') || '').toLowerCase();
+      if (!alt || !names.has(alt)) continue;
+      let r = null;
+      try { r = im.getBoundingClientRect(); } catch (_) { r = null; }
+      const w = (r && r.width) || parseFloat(im.getAttribute('width')) || 0;
+      if (w > 0 && w < 200) return true;
+    }
+    return false;
+  }
   function hideTailAuthorBioBlocks(articleEl, hidden) {
     const bodyPs = collectVisibleBodyParagraphs(articleEl);
     // v2.5.26：段落數不足不再直接收工——主文住在 li / div 的頁面（wikiHow 的步驟、
@@ -13726,13 +13907,20 @@
       if (isInPreserved(el)) continue;
       const text = norm(visibleRenderedText(el));
       const weight = NS.cjkWeightedLen(text);
-      if (weight < BIO_TAIL_MIN_WEIGHT || weight > BIO_TAIL_MAX_WEIGHT) continue;
+      // v2.5.56：區塊裡的頭像 alt 就是作者名＝作者卡（myartbroker 文末 `ArticleFooterAuthor`：
+      // 名字與簡介不在卡裡、只剩頭像＋「Last updated 23 Dec 2025」，字數低於下限、
+      // CSS Modules 的 class 也比不到 token）。這時不設字數下限
+      // 只認短、沒有清單與標題的區塊：wikiHow「Tips」整節（h2＋三條訣竅 1.4K 字）裡有一張專家頭像、
+      // alt 剛好是作者名，第一版不設上限就把整節當作者卡清掉（語料庫比對抓到）
+      const avatarHit = weight <= AVATAR_CARD_MAX_WEIGHT && !el.querySelector('li, h1, h2, h3, h4, h5, h6') &&
+        avatarAltIsAuthor(el, names);
+      if ((weight < BIO_TAIL_MIN_WEIGHT && !avatarHit) || weight > BIO_TAIL_MAX_WEIGHT) continue;
       const lower = foldZhVariants(text).toLowerCase();
       const q1 = BIO_HEAD_RE.test(lower);
       // 作者名用 raw textContent 比對、作者頁連結不論是否已被藏：區塊裡的名字標題 /
       // 頭像連結常已被別條規則先清掉（propublica 的 h3 名字、頭像），它們仍是身分證據
       const hasName = (tok || weakTok) && includesName(norm(el.textContent).toLowerCase());
-      const q2 = hasName || (tok && clusterContainsAuthorProfileLink(el, false));
+      const q2 = hasName || avatarHit || (tok && clusterContainsAuthorProfileLink(el, false));
       const q4 = compoundTok;
       const q3 = !q1 && !q2 && !q4 && startsWithName(lower);
       if (!q1 && !q2 && !q3 && !q4) continue;
@@ -16284,6 +16472,8 @@
       safeRun(hideOrphanMediaTeaserCaptions, articleEl, hidden);
       safeRun(hideSecondaryArticleAsides, articleEl, hidden);
       safeRun(hideInsideArticleAbsoluteOverlays, articleEl, hidden);
+      safeRun(hideOverlayIconsOnContentImages, articleEl, hidden); // v2.5.56
+      safeRun(hidePlayerDurationBadges, articleEl, hidden); // v2.5.56
       safeRun(resetNegativeZIndex, articleEl, hidden);
       safeRun(resetNegativeHorizontalMargins, articleEl, hidden);
       // 放最後：先讓精細規則標記，ancestor sibling 才跳過已隱藏者
@@ -16353,6 +16543,8 @@
       // v1.7.61：內容被清光、只剩一行短 label 的孤兒殼（CNBC「In this article」）。
       // 同樣依賴前面所有 hide 都跑完，才看得出哪支分支是被我們清空的。
       safeRun(collapseOrphanLabelShells, articleEl, hidden);
+      safeRun(blankOrphanLabelTextNodes, articleEl, hidden); // v2.5.56
+      safeRun(hideTailExternalBannerImages, articleEl, hidden); // v2.5.56
       // v1.5.24：游離 nbsp / 全形空白等「不可 collapse 空白」文字節點清除——放在
       // empty-spacer / collapse 規則之後（空 <p> 等已 hide，phantom 文字節點是
       // 其後遺留的最後一類垂直空白殘渣）。詳見函式上方註解。
