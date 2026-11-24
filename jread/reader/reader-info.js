@@ -40,13 +40,10 @@
   const doneText = (k) => { const R = rcNow(); return (R && R.ACTION_DONE && R.ACTION_DONE[k]) || ''; };
   const LOCATION_ACTION = { new: 'inbox', later: 'later', archive: 'archive' };
 
+  // 日期 YYYY-MM-DD：正本 reader-cache RC.formatDay（原本這裡逐字相同的一份，2026-11-24 審核收斂）
   function ymd(raw) {
-    if (raw == null || raw === '') return '';
-    const n = typeof raw === 'number' ? raw : (/^\d+$/.test(String(raw)) ? Number(raw) : NaN);
-    const d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(String(raw));
-    if (isNaN(d.getTime())) return '';
-    const p = (x) => String(x).padStart(2, '0');
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    const R = rcNow();
+    return R && typeof R.formatDay === 'function' ? R.formatDay(raw) : '';
   }
 
   // 估計閱讀時間（分鐘，至少 1；沒有字數回 null）。
@@ -227,26 +224,6 @@
     if (cls) e.className = cls;
     if (text != null) e.textContent = text;
     return e;
-  }
-
-  // 從閱讀卡讀目前主題的顏色（styler 已套用）。拿不到就用中性預設
-  function themeColors(win, container) {
-    const out = { bg: '#ffffff', fg: '#1a1a1a', muted: '#6b6b6b', link: '#1a73e8', line: 'rgba(0,0,0,0.1)' };
-    try {
-      const cs = win.getComputedStyle(container);
-      const bg = cs.backgroundColor;
-      if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) out.bg = bg;
-      if (cs.color) out.fg = cs.color;
-      const a = container.querySelector('a[href]');
-      if (a) out.link = win.getComputedStyle(a).color || out.link;
-      // muted / line 由文字色推：同色降透明度
-      const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(out.fg);
-      if (m) {
-        out.muted = 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.62)';
-        out.line = 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.14)';
-      }
-    } catch (_) { /* 用預設 */ }
-    return out;
   }
 
   // opts：{ doc, win, NS, PC, service, creds, docData, container, RC?, storage?, toast? }
@@ -878,7 +855,10 @@
     }
 
     function applyTheme() {
-      const c = RC && typeof RC.themeColorsOf === 'function' ? RC.themeColorsOf(win, container || doc.body) : themeColors(win, container || doc.body);
+      // 主題色正本 RC.themeColorsOf（這裡原本自帶一份 fallback，2026-11-24 審核刪除）
+      const R = (RC && typeof RC.themeColorsOf === 'function') ? RC : rcNow();
+      const c = R && typeof R.themeColorsOf === 'function' ? R.themeColorsOf(win, container || doc.body)
+        : { bg: '#ffffff', fg: '#1a1a1a', muted: 'rgba(26,26,26,0.62)', line: 'rgba(26,26,26,0.14)', link: '#1a73e8' };
       hostEl.style.setProperty('--bg', c.bg);
       hostEl.style.setProperty('--fg', c.fg);
       hostEl.style.setProperty('--muted', c.muted);
@@ -1011,7 +991,7 @@
     return R && typeof R.hostOf === 'function' ? R.hostOf(url) : '';
   }
 
-  const api = { attach, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, themeColors, WIDE_MIN_PX, HOST_ID };
+  const api = { attach, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, WIDE_MIN_PX, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

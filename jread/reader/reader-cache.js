@@ -122,9 +122,6 @@
     return themeColorsOf(win, (body && body.closest && body.closest('article')) || (doc && doc.body));
   }
 
-  // v3.1.0：開啟原始網址（Jimmy 2026-11-24「加入開啟原始網址功能，由快速鍵 V 及右鍵選單進入」）。
-  // 清單卡片右鍵與文章頁 V 鍵共用。只開 http(s)（擋 javascript: 等）；開新分頁、noopener。
-  // iOS App 的 WKWebView 由 createWebViewWith 接手、交給外部瀏覽器。回 true＝有開
   // 網址的網域（去 www.）；壞網址回 ''。清單卡片、貼網址的抓取中卡片、文章資訊面板共用
   //（原本三份、壞網址回傳不同——2026-11-24 審核「重複邏輯」）
   function hostOf(url) {
@@ -151,6 +148,9 @@
     return TRASH_KEEP_DAYS_FALLBACK;
   }
 
+  // v3.1.0：開啟原始網址（Jimmy 2026-11-24「加入開啟原始網址功能，由快速鍵 V 及右鍵選單進入」）。
+  // 清單卡片右鍵與文章頁 V 鍵共用。只開 http(s)（擋 javascript: 等）；開新分頁、noopener。
+  // iOS App 的 WKWebView 由 createWebViewWith 接手、交給外部瀏覽器。回 true＝有開
   function sourceUrlOf(doc) {
     const raw = doc && doc.source_url ? String(doc.source_url).trim() : '';
     try { const u = new URL(raw); return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : ''; } catch (_) { return ''; }
