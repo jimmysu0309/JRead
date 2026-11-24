@@ -8207,7 +8207,14 @@
     let rect;
     try { rect = c.getBoundingClientRect(); } catch (_) { return null; }
     if (!rect || rect.width <= 0 || rect.width > ICON_CELL_MAX_W) return null;
-    if (norm(c.textContent).length > 0) return { kind: 'inline' };
+    // v2.5.54：有字、又裝著圖片 / 標題 / 段落 / 清單的格子是卡片或內容區塊，不是作者列
+    // 碎片——轉 inline-block 會讓它縮成內容寬，裡面百分比寬的圖跟著縮到 2px（gitbook 文末
+    // 「Next steps」卡片：疊層 grid 的卡片本體塌欄前量到 ≤ 120px）。照一般 cell 處理；
+    // 沒字的圖示格（icon 釘寬）不受影響
+    if (norm(c.textContent).length > 0) {
+      if (c.querySelector && c.querySelector('img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol')) return null;
+      return { kind: 'inline' };
+    }
     return { kind: 'icon', w: Math.round(rect.width) };
   }
   function iconCellPinDecls(w) {
@@ -8765,6 +8772,30 @@
   const SYMMETRIC_MARGIN_MIN = 4;
   const SYMMETRIC_MARGIN_TOLERANCE = 1;
 
+  // v2.5.54：恰好兩個看得到的直接子層，第一個是圖示欄（寬 ≤ 48px、沒有字、裝 svg / img），
+  // 第二個有字——圖示是第二欄的行首標記，兩欄必須並排
+  const ICON_GUTTER_MAX_W = 48;
+  function isIconGutterGrid(el) {
+    const kids = Array.from(el.children).filter((c) => {
+      if (c.dataset && c.dataset.jreadHidden === '1') return false;
+      let r;
+      try { r = c.getBoundingClientRect(); } catch (_) { return false; }
+      return r && r.width > 0 && r.height > 0;
+    });
+    if (kids.length !== 2) return false;
+    const [icon, body] = kids;
+    if (norm(icon.textContent)) return false;
+    if (!icon.querySelector('svg, img') && !/^(SVG|IMG)$/i.test(icon.tagName)) return false;
+    // 圖示欄本身可能有內距：量它裡面最大那個圖示
+    let maxIcon = 0;
+    for (const m of icon.querySelectorAll('svg, img')) {
+      try { maxIcon = Math.max(maxIcon, m.getBoundingClientRect().width); } catch (_) { /* noop */ }
+    }
+    if (/^(SVG|IMG)$/i.test(icon.tagName)) { try { maxIcon = icon.getBoundingClientRect().width; } catch (_) { /* noop */ } }
+    if (!(maxIcon > 0) || maxIcon > ICON_GUTTER_MAX_W) return false;
+    return !!norm(body.textContent);
+  }
+
   function hasSubgridChild(el) {
     for (const c of el.children) {
       let ccs;
@@ -8814,6 +8845,9 @@
       // 內文左緣亂跳。Chromium 把 subgrid 回報成 `subgrid [] …`；必須在攤平前量（攤平後
       // 子層的 computed 變回 px）
       if (hasSubgridChild(el)) continue;
+      // v2.5.54：「圖示欄＋文字欄」的提示框 / 標註（gitbook hint：一欄 17px 圖示、一欄內文）
+      // 攤平後圖示自己佔一整行
+      if (isIconGutterGrid(el)) continue;
       gridTargets.push(el);
     }
     for (const el of gridTargets) {
@@ -12903,6 +12937,86 @@
       if (!floated && !narrow) continue;
       hide(el, hidden);
     }
+    // v2.5.54：不看寬度的第二條路（同站他篇推薦區塊）。上面靠「浮動或窄於主文一半」
+    // 認 inset 卡片；站方窄版把側欄排進主欄（npr 430 卡片、bbc 430 links-block、quanta
+    // 翻譯後「相關閱讀：」）時位置條件不成立就漏網。改看區塊本身的結構，見
+    // isSameSiteTeaserLinkBlock。
+    for (const el of articleEl.querySelectorAll('div, aside, section, ul, nav')) {
+      if (el === articleEl) continue;
+      if (el.contains && el.contains(articleEl)) continue;
+      if (el.closest('[data-jread-hidden="1"]')) continue;
+      if (isInPreserved(el)) continue;
+      if (!isSameSiteTeaserLinkBlock(el)) continue;
+      hide(el, hidden);
+      markHiddenWhy(el, 'teaser-links');
+    }
+  }
+
+  // v2.5.54：同站他篇推薦區塊（不看寬度）。全部成立才算：
+  //   - 至少 3 條有字的連結（「標題連結＋縮圖」的卡片形狀 2 條即可），每條都是同站他篇
+  //     文章（isSameSiteArticleLink：非本頁、非外站），也不是錨點或檔案；清單的每一項
+  //     都只有連結
+  //   - 裡面的 h2–h6 字全是連結字（作者下的節標題＝文件的一節，不是推薦區塊）
+  //   - 連結以外的文字加權 ≤ LABELED_LIST_MAX_LABEL_WEIGHT（一行短標籤，如「Related:」
+  //     「More weekend picks from James Gallagher」；與標籤式推薦清單同一把尺）
+  //   - 每條連結文字像標題（加權 ≥ LABELED_LIST_MIN_LINK_WEIGHT），或是「h2–h4 包連結＋
+  //     連結裡有縮圖」的卡片
+  //   - 不含表格 / 程式碼 / 引言 / h1；本身不在 li 裡（清單項目由外層整體判斷）
+  //   - 前一個看得到、有字的兄弟不是標題、也不是包著標題的短外殼（維基「參見」、
+  //     hatnote「主條目：」這類由作者標題領起的連結清單是內容）
+  //   - 區塊裡沒有不在連結內的大圖（≥ 64px）、figcaption 或 © 版權署名（畫作圖＋
+  //     購買連結、圖說結構＝內容）
+  const TEASER_BLOCK_MAX_TEXT = 400;
+  function isSameSiteTeaserLinkBlock(el) {
+    const t = (el.textContent || '').replace(/\s+/g, '');
+    if (t.length < 4 || t.length > TEASER_BLOCK_MAX_TEXT) return false;
+    if (el.closest('li')) return false;
+    if (el.querySelector('table, pre, blockquote, h1, figcaption')) return false;
+    // 作者自己下的節標題（h2–h6 的字不全是連結字）＝文件的一節（「See also」「參見」），不是推薦區塊
+    for (const h of el.querySelectorAll('h2, h3, h4, h5, h6')) {
+      const ht = norm(h.textContent);
+      if (!ht) continue;
+      let lt = '';
+      for (const a of h.querySelectorAll('a')) lt += norm(a.textContent);
+      if (!h.closest('a') && lt.replace(/\s/g, '') !== ht.replace(/\s/g, '')) return false;
+    }
+    const links = Array.from(el.querySelectorAll('a[href]')).filter((a) => norm(a.textContent));
+    const card = !!el.querySelector('h2 a, h3 a, h4 a, a h2, a h3, a h4') && !!el.querySelector('a img, a picture');
+    // 至少 3 條連結（兩條的裸連結清單常是引用 / 上下篇導覽，結構上分不出來）；卡片形狀例外
+    if (links.length < (card ? 2 : 3)) return false;
+    // 清單的每一項都只有連結（項目裡另有說明文字＝帶註解的清單，是內容）
+    for (const li of el.querySelectorAll('li')) {
+      if (norm(li.textContent) && !linksIfLinkOnly(li)) return false;
+    }
+    for (const a of links) {
+      const href = a.getAttribute('href') || '';
+      if (!href || href.charAt(0) === '#' || IMAGE_HREF_RE.test(href) || /\.(pdf|zip)(\?|#|$)/i.test(href)) return false;
+      if (!isSameSiteArticleLink(a)) return false;
+    }
+    let linkW = 0;
+    for (const a of links) linkW += NS.cjkWeightedLen(norm(a.textContent));
+    const nonLinkW = NS.cjkWeightedLen(norm(el.textContent)) - linkW;
+    if (nonLinkW > LABELED_LIST_MAX_LABEL_WEIGHT) return false;
+    // 版權署名（©）＝圖說結構：畫作圖（署名包在圖片連結裡）＋「Buy or Sell」連結這類
+    // 是內容（myartbroker）。推薦卡的字是 kicker 與標題，不帶版權署名
+    if (/[©℗]/.test(el.textContent || '')) return false;
+    const titleLike = links.every((a) => NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT);
+    if (!titleLike && !card) return false;
+    for (const img of el.querySelectorAll('img')) {
+      if (img.closest('a')) continue;
+      let r = null;
+      try { r = img.getBoundingClientRect(); } catch (_) { r = null; }
+      const w = (r && r.width) || parseFloat(img.getAttribute('width')) || 0;
+      const h = (r && r.height) || parseFloat(img.getAttribute('height')) || 0;
+      if (w >= 64 && h >= 64) return false;
+    }
+    let prev = el.previousElementSibling;
+    while (prev && ((prev.dataset && prev.dataset.jreadHidden === '1') || !norm(prev.textContent))) prev = prev.previousElementSibling;
+    // 前一個兄弟是標題，或是包著標題的短外殼（維基 `div.mw-heading`：h2＋[編輯] 連結）
+    if (prev && (/^H[1-6]$/.test(prev.tagName) ||
+        (prev.querySelector('h1, h2, h3, h4, h5, h6') && NS.cjkWeightedLen(norm(prev.textContent)) <= 60))) return false;
+    if (containsSelfLinkTitleHeading(el)) return false;
+    return true;
   }
 
   // ---- 主文內：整張 figure 就是一個他篇連結卡（v1.7.57 theguardian 實測）----
@@ -13096,16 +13210,23 @@
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
       let cs;
       try { cs = window.getComputedStyle(el); } catch (_) { continue; }
-      if (!cs || (cs.float !== 'left' && cs.float !== 'right')) continue;
+      if (!cs) continue;
+      const floated = cs.float === 'left' || cs.float === 'right';
       const t = norm(el.textContent);
       if (!t.length || t.length > FLOATED_PROMO_ASIDE_MAX_TEXT) continue;
       const hasLink = !!el.querySelector('a[href]');
       const hasMedia = !!el.querySelector('audio, iframe, video');
       if (!hasLink && !hasMedia) continue;
+      // v2.5.54：不浮動的 aside 也算，但要同時有播放器與連結（quanta「The Quanta
+      // Podcast」窄版站方取消浮動、排進主欄就漏網）——「次要內容＋播放器＋去聽全部的
+      // 連結」是節目推廣模組的形狀；只有連結或只有媒體的不浮動 aside（圖說、引文補充、
+      // 單一嵌入）不動
+      if (!floated && !(hasLink && hasMedia)) continue;
       // 自連結標題 / byline 保護（與 inset 卡同款）
       if (containsSelfLinkTitleHeading(el)) continue;
       if (t.length < BYLINE_MAX_TEXT_LEN && bylineTextProtects(t)) continue;
       hide(el, hidden);
+      if (!floated) markHiddenWhy(el, 'promo-aside-player');
     }
   }
 
