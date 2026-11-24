@@ -319,6 +319,12 @@
   // 「送到 …」不做憑證 gate（popup 的送出按鈕沒憑證時整顆隱藏，那是常駐面板的
   // 減噪考量）——長按選單是暫現的，缺憑證時直接送出並由 toast 說「尚未設定 …
   // 憑證，請到設定頁填入」比「選項神秘消失」好懂。
+  // v3.1.0：Article View 掛了文章資訊面板（reader-info.js 設 NS.onReaderInfo）才列這一項
+  function infoMenuItems() {
+    if (typeof NS.onReaderInfo !== 'function') return [];
+    return [{ id: 'info', icon: 'ⓘ', label: '文章資訊', action: () => { try { NS.onReaderInfo(); } catch (_e) {} } }];
+  }
+
   function generalMenuItems() {
     // v2.2.0：iOS App 內建 JReader（NS.isAppRuntime）沒有 background——文章本來就來自
     // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC / 短按同一個 NS.onReaderExit）
@@ -326,7 +332,7 @@
       return [
         { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
         { id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed }
-      ].concat(profileMenuItems());
+      ].concat(infoMenuItems(), profileMenuItems());
     }
     // v2.6.0：網頁版（NS.isWebRuntime，同樣沒有 background）比照 App。公開分享頁（Article
     // View 唯讀模式）沒給離開網址時沒有文章列表可回（NS.state.readerNoExit），不列那一項
@@ -335,13 +341,13 @@
       if (!(NS.state && NS.state.readerNoExit)) {
         items.push({ id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed });
       }
-      return items.concat(profileMenuItems());
+      return items.concat(infoMenuItems(), profileMenuItems());
     }
     return [
       { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
       { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
       { id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }
-    ].concat(profileMenuItems());
+    ].concat(infoMenuItems(), profileMenuItems());
   }
 
   // ─── 設定檔切換（v1.9.0；v1.9.14 改每台裝置各自套用）────────────────────

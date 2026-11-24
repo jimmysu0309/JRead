@@ -700,6 +700,8 @@
     logHighlightSync(hl, docData, container);
     // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
     if (!ctx.readOnly) attachArchiveKey(docData, ctx);
+    // v3.1.0：文章資訊面板（I 鍵，同樣要比 keyguard 早註冊；只有 JReader 服務會掛上）
+    if (!ctx.readOnly) attachInfoPanel(docData, container, ctx);
     // v2.5.0：閱讀位置寫回 Readwise。「上次送出的值」以這次實際採用的進度為起點
     //（快取命中時 docData 是文章快取、進度可能取自較新的 feed 快取）
     const onPosition = ctx.readOnly ? null : attachProgressSync(
@@ -756,6 +758,16 @@
           watchLayoutMode(NS, global.browser);
         }, onEnterFailed);
     }
+  }
+
+  // v3.1.0：文章資訊面板（reader-info.js）。掛不上不影響閱讀
+  function attachInfoPanel(docData, container, ctx) {
+    const INFO = global.__JReadReaderInfo;
+    if (!INFO || typeof INFO.attach !== 'function') return null;
+    const { NS, doc, PC, service, creds } = ctx;
+    try {
+      return INFO.attach({ doc, win: global, NS, PC, service, creds, docData, container });
+    } catch (_) { return null; }
   }
 
   // 重點同步結果摘要（attach 回傳的 ready 是既有 promise；只讀結果，不碰同步流程）

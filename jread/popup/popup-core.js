@@ -844,6 +844,96 @@
     return { ok: false, status: res.status, error: 'HTTP' };
   }
 
+  // ---- JReader 書庫工具（v3.1.0）---------------------------------------
+  // 搜尋、貼網址存文章、標籤清單 / 改標籤、查單篇處理狀態。只有 JReader 有這些
+  // 端點（規格在 JReader repo docs/prompt-for-jread-search-and-info.md），能力判斷
+  // supportsLibraryTools 是單一判準：Feed 工具列與文章資訊面板都經它決定要不要出現。
+  // 請求一律走 readwiseRequest（token / HOST_SESSION_TOKEN 規則同其他 JReader 端點）。
+  function supportsLibraryTools(service) {
+    return service === 'jreader';
+  }
+
+  async function readJsonBody(res) {
+    try { return await res.json(); } catch (_) { return null; }
+  }
+
+  // GET <base>/api/v1/search?q=&location=&limit=&offset= → { ok, count, results }
+  // results 與 v3 list 的 document 同形，另帶 snippet（字串或 null）
+  async function searchJReader({ token, base, q, location, limit, offset, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const query = typeof q === 'string' ? q.trim() : '';
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method: 'GET',
+      precheck: () => (query ? null : { ok: false, error: 'EMPTY' }),
+      url: () => {
+        const params = new URLSearchParams({ q: query });
+        if (location) params.set('location', location);
+        if (limit) params.set('limit', String(limit));
+        if (offset) params.set('offset', String(offset));
+        return `${apiUrl(base, '/api/v1/search')}?${params}`;
+      }
+    });
+    if (r.result) return r.result;
+    if (!r.res.ok) return { ok: false, status: r.res.status, error: 'HTTP' };
+    const data = await readJsonBody(r.res);
+    return {
+      ok: true, status: r.res.status,
+      count: data && typeof data.count === 'number' ? data.count : 0,
+      results: data && Array.isArray(data.results) ? data.results : []
+    };
+  }
+
+  // GET <base>/api/v1/tags → { ok, tags: [{ name, count }] }
+  async function listJReaderTags({ token, base, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method: 'GET',
+      url: apiUrl(base, '/api/v1/tags')
+    });
+    if (r.result) return r.result;
+    if (!r.res.ok) return { ok: false, status: r.res.status, error: 'HTTP' };
+    const data = await readJsonBody(r.res);
+    return { ok: true, status: r.res.status, tags: data && Array.isArray(data.tags) ? data.tags : [] };
+  }
+
+  // PUT <base>/api/v1/documents/<id>/tags { tags } → { ok, tags }（整組覆蓋）
+  async function setJReaderTags({ token, base, id, tags, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method: 'PUT',
+      precheck: () => {
+        if (!id || typeof id !== 'string' || !id.trim()) return { ok: false, error: 'NO_ID' };
+        if (!Array.isArray(tags)) return { ok: false, error: 'NO_TAGS' };
+        return null;
+      },
+      url: () => `${apiUrl(base, '/api/v1/documents/')}${encodeURIComponent(id.trim())}/tags`,
+      body: () => ({ tags: tags.map((t) => String(t)) })
+    });
+    if (r.result) return r.result;
+    if (!r.res.ok) return { ok: false, status: r.res.status, error: 'HTTP' };
+    const data = await readJsonBody(r.res);
+    return { ok: true, status: r.res.status, tags: data && Array.isArray(data.tags) ? data.tags : tags };
+  }
+
+  // 貼網址存文章：POST <base>/api/v1/save { url, source: 'web' }（不帶 html，伺服器自己抓）
+  // 回 saveToJReader 的結果：status 202＝新建處理中、200＝已存在（data.existed）
+  const JREADER_URL_SAVE_SOURCE = 'web';
+  function saveUrlToJReader({ token, base, url, fetchImpl, timeoutMs } = {}) {
+    const u = typeof url === 'string' ? url.trim() : '';
+    if (!/^https?:\/\/\S+$/i.test(u)) return Promise.resolve({ ok: false, error: 'INVALID_URL' });
+    return saveToJReader({ token, base, payload: { url: u, source: JREADER_URL_SAVE_SOURCE }, fetchImpl, timeoutMs });
+  }
+
+  // 查單篇（不帶全文）：給貼網址後輪詢 status（processing → ready / failed）
+  async function getJReaderDocument({ token, base, id, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    if (!id) return { ok: false, error: 'NO_ID' };
+    const r = await listReaderDocuments({ token, base, id, fetchImpl, timeoutMs });
+    if (!r || !r.ok) return r || { ok: false, error: 'HTTP' };
+    const doc = (r.results || [])[0];
+    return doc ? { ok: true, doc } : { ok: false, error: 'NOT_FOUND' };
+  }
+
   // ---- Readwise Reader 整合（v1.0.22）----------------------------------
   // reader.html（擴充自有頁）用這兩支讀 Reader 文章清單 + 歸檔。重用 saveToReadwise
   // 同款 `Authorization: Token <token>` header + 錯誤分類（NO_TOKEN / AUTH 401·403 /
@@ -1566,6 +1656,13 @@
     saveToJReader,
     validateJReaderToken,
     supportsHighlights,
+    // v3.1.0：JReader 書庫工具（搜尋 / 貼網址 / 標籤）
+    supportsLibraryTools,
+    searchJReader,
+    listJReaderTags,
+    setJReaderTags,
+    saveUrlToJReader,
+    getJReaderDocument,
     listReaderDocuments,
     archiveReaderDocument,
     moveReaderDocument,

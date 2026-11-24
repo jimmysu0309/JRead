@@ -117,6 +117,68 @@
     border-radius: 8px; cursor: pointer; transition: background .15s, color .15s;
   }
   .jr-tab.is-active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+  /* v3.1.0：JReader 書庫工具列（reader-library.js；只在儲存服務是 JReader 時出現）。
+     搜尋框與按鈕同高（= 分頁列外框高 40px），底色 / 邊框 / 圓角沿用分頁列的變數 */
+  .jr-tools-wrap { margin: 0 0 12px; }
+  .jr-tools, .jr-addrow { display: flex; gap: 8px; align-items: stretch; }
+  .jr-addrow { margin-top: 8px; }
+  .jr-addrow[hidden], .jr-filter[hidden], .jr-search-head[hidden], .jr-tabs[hidden] { display: none; }
+  .jr-search, .jr-addrow-url {
+    flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 14px;
+    background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 11px;
+    font: inherit; font-size: 15px; outline: none; -webkit-appearance: none; appearance: none;
+  }
+  .jr-search::placeholder, .jr-addrow-url::placeholder { color: var(--muted); }
+  .jr-search:focus, .jr-addrow-url:focus { border-color: var(--link); box-shadow: 0 0 0 1px var(--link); }
+  .jr-tool-btn {
+    flex: 0 0 auto; height: 40px; min-width: 40px; padding: 0 12px;
+    background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 11px;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .jr-tool-add { width: 40px; padding: 0; font-size: 20px; font-weight: 500; }
+  .jr-tool-btn:hover { border-color: var(--muted); }
+  /* 開著 / 篩選中：連結色字＋同色框線（雙通道，不只靠顏色） */
+  .jr-tool-btn.is-on { color: var(--link); border-color: var(--link); }
+  .jr-tool-btn:disabled { opacity: .5; cursor: default; }
+  .jr-filter { margin-top: 8px; display: flex; }
+  .jr-chip {
+    display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 12px;
+    background: var(--card); border: 1px solid var(--link); border-radius: 14px;
+    color: var(--link); font-size: 13px; font-weight: 600;
+  }
+  .jr-chip-x {
+    width: 22px; height: 22px; border: 0; border-radius: 11px; background: transparent;
+    color: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+  }
+  .jr-chip-x:hover { background: var(--line); }
+  .jr-search-head { font-size: 13px; color: var(--muted); margin: 0 0 10px 2px; }
+  .jr-pending-list:empty { display: none; }
+  .jr-pending-list { margin: 0 0 12px; }
+  .jr-pending .jr-card-meta a { color: var(--link); }
+  .jr-pending-close {
+    position: absolute; top: 6px; right: 6px; z-index: 2; width: 28px; height: 28px;
+    border: 0; border-radius: 14px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer;
+  }
+  .jr-pending-close:hover { background: var(--line); }
+  .jr-card-snippet {
+    margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--muted);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .jr-card-snippet b { color: var(--text); font-weight: 700; }
+  .jr-search-more { height: 1px; }
+  .jr-tagmenu { width: 260px; display: flex; flex-direction: column; gap: 4px; }
+  .jr-tagmenu-filter {
+    height: 34px; padding: 0 10px; margin: 2px 2px 4px; border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--text); font: inherit; font-size: 14px; outline: none;
+  }
+  .jr-tagmenu-filter:focus { border-color: var(--link); }
+  .jr-tagmenu-list { max-height: min(50vh, 360px); overflow-y: auto; }
+  .jr-tagmenu-item { display: flex; align-items: baseline; gap: 8px; }
+  .jr-tagmenu-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jr-tagmenu-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .jr-tagmenu-item.is-on { color: var(--link); font-weight: 600; }
+  .jr-tagmenu-empty { padding: 8px 12px; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -141,6 +203,8 @@
   <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="reader-cache.js"></script>
+  <!-- v3.1.0：JReader 書庫工具列（搜尋 / 貼網址 / 標籤），須在 reader-feed 前 -->
+  <script src="reader-library.js"></script>
   <script src="reader-feed.js"></script>
 </body>
 </html>

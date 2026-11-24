@@ -514,19 +514,43 @@
       const removedIds = new Map();
       const laterText = LATER_TEXT[service] || LATER_TEXT.readwise;
 
+      // v3.1.0：JReader 書庫工具列（reader-library.js）。標籤篩選疊在分頁的 query 上；
+      // 分頁本身已篩某個標籤（JRead 分頁）時 API 只收一個 tag，改在回來的清單上再篩一次。
+      // 篩選中的清單用獨立的快取 key，不蓋掉分頁原本的快取
+      let tagFilter = null;
+      let lib = null;
+      const tagKeyOf = (doc) => (doc && doc.tags && typeof doc.tags === 'object' ? Object.keys(doc.tags) : [])
+        .map((k) => k.toLowerCase());
+      function listKeyFor(cfg) {
+        return service + ':' + cfg.id + (tagFilter ? '#' + tagFilter.toLowerCase() : '');
+      }
+      function queryFor(cfg) {
+        if (!tagFilter || (cfg.query && cfg.query.tag)) return cfg.query;
+        return Object.assign({}, cfg.query, { tag: tagFilter });
+      }
+      function postFilter(docs, cfg) {
+        if (!tagFilter || !(cfg.query && cfg.query.tag)) return docs;
+        const k = tagFilter.toLowerCase();
+        return (docs || []).filter((d) => tagKeyOf(d).includes(k));
+      }
+      function emptyText(cfg) {
+        return tagFilter ? '沒有標記「' + tagFilter + '」的文章' : cfg.empty;
+      }
+
       // v2.5.5：畫面上這份清單的來源（未過濾的整份 docs＋分頁設定＋當下的分頁世代）。
       // 動作失敗晚到時用它原地重畫（見 onAction 的 .then）
       let shown = null;
       function showDocs(all, cfg) {
         shown = { all, cfg, gen: tabGen };
-        const listKey = service + ':' + cfg.id;
-        const docs = (all || []).filter((d) => {
+        const listKey = listKeyFor(cfg);
+        const docs = postFilter(all, cfg).filter((d) => {
           if (!d) return false;
+          if (lib && lib.isPending(d.id)) return false; // 抓取中的那張由工具列畫
           const k = removedIds.get(d.id);
           return !(k === '*' || k === listKey);
         });
         if (!docs.length) {
-          showMsg(cfg.empty, false);
+          showMsg(emptyText(cfg), false);
           return;
         }
         const onAction = (card, id, kind) => {
@@ -544,7 +568,7 @@
             remove,
             successToast: isArchive ? null : laterText.done,
             toastFn: toast,
-            onEmpty: () => showMsg(cfg.empty, false),
+            onEmpty: () => showMsg(emptyText(cfg), false),
             isCurrent: () => actionTabGen === tabGen
           }).then((r) => {
             if (r && r.ok) {
@@ -589,7 +613,7 @@
         currentTab = cfg;
         const gen = ++loadGen;
         if (!refresh) tabGen++;
-        const listKey = service + ':' + cfg.id;
+        const listKey = listKeyFor(cfg);
         let freshArrived = false;
         let cachedSig = null;  // 非 null = 畫面上是快取版本
         if (!refresh) showMsg('載入中…', false);
@@ -616,14 +640,14 @@
           });
         };
 
-        return PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
+        return PC.listDocuments({ service, creds, query: queryFor(cfg) }).then((r) => {
           if (gen !== loadGen) return; // 已切到別的分頁——過期回應丟棄
           freshArrived = true;
           if (!r || !r.ok) {
             fail(archiveErrorMessage(r, '更新清單'), archiveErrorMessage(r, '載入'));
             return;
           }
-          const docs = (r.results || []).slice(0, MAX_ITEMS);
+          const docs = postFilter(r.results || [], cfg).slice(0, MAX_ITEMS);
           if (RC) RC.writeFeed(local, account, listKey, docs, MAX_ITEMS);
           if (cachedSig !== null && RC.feedSignature(docs) === cachedSig) return; // 沒變，不重畫
           showDocs(docs, cfg);
@@ -655,13 +679,33 @@
           const all = tabsEl.querySelectorAll('.jr-tab');
           for (const x of all) x.classList.toggle('is-active', x === t);
           const picked = tabs.find((tb) => tb.id === t.getAttribute('data-src'));
+          if (lib && lib.isSearching()) lib.exitSearch(false);
           // 網址同步目前分頁：重新整理 / 上一頁回到這裡時停在同一分頁
           try { global.history.replaceState(null, '', 'reader.html?tab=' + encodeURIComponent(picked.id)); } catch (_) {}
           loadList(picked);
         });
       }
 
-      loadList(initialTab);  // ?tab= 指定的分頁，沒指定 = 第一個
+      // v3.1.0：JReader 書庫工具列（搜尋 / 貼網址 / 標籤）
+      const LIB = global.__JReadReaderLibrary;
+      if (LIB && tabsEl && listEl && typeof PC.supportsLibraryTools === 'function' && PC.supportsLibraryTools(service)) {
+        const selectTab = (id) => {
+          const btn = tabsEl.querySelector('.jr-tab[data-src="' + id + '"]');
+          if (btn) btn.click();
+        };
+        lib = LIB.attach({
+          doc, win: global, PC, service, creds, toast, listEl, tabsEl, msgEl, showMsg, hideMsg, createCard,
+          currentTabId: () => (currentTab ? currentTab.id : null),
+          switchTab: selectTab,
+          reload: () => loadList(currentTab || initialTab),
+          setTagFilter: (name) => { tagFilter = name || null; loadList(currentTab || initialTab); },
+          cancelPending: () => { loadGen++; }
+        });
+      }
+
+      // ?tab= 指定的分頁，沒指定 = 第一個；?tab=search（搜尋結果點進文章再退出）由工具列叫回查詢
+      if (lib && lib.restoreSearch(global.location && global.location.search)) currentTab = initialTab;
+      else loadList(initialTab);
       // v2.2.13：下拉更新入口（iOS App ViewController 的 UIRefreshControl 呼叫）
       api.refreshCurrent = () => loadList(currentTab, { refresh: true });
     }).catch((err) => {
