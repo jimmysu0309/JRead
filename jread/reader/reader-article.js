@@ -948,16 +948,14 @@
   }
 
   // v3.1.0：V 鍵開啟原始網址（新分頁）。window capture、比 keyguard 早註冊；輸入框（含 shadow DOM 裡的，
-  // 看 composedPath()[0]）、組字中、帶修飾鍵（⌘V 貼上）、長按 repeat 都不觸發。沒有原始網址就提示
+  // NS.isTextInputTarget 看穿開放式 shadow root）、組字中、帶修飾鍵（⌘V 貼上）、長按 repeat 都不觸發。沒有原始網址就提示
   function isSourceKey(e, NS) {
     if (!e || e.type !== 'keydown') return false;
     if (e.key !== 'v' && e.key !== 'V') return false;
     if (e.isComposing || e.keyCode === 229 || e.repeat) return false;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false;
-    const real = (typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target;
-    const typing = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || !!t.isContentEditable ||
-      !!(NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(t)));
-    return !typing(real) && !typing(e.target);
+    // 「在輸入」單一資料源 NS.isTextInputTarget（看穿開放式 shadow root，文章資訊面板的輸入框也算）
+    return !(NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target));
   }
   function attachSourceKey(docData, ctx, deps) {
     const d = deps || {};

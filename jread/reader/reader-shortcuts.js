@@ -54,10 +54,11 @@
     return e.key === '?' || (e.shiftKey && e.code === 'Slash');
   }
 
-  function isTypingTarget(t) {
-    if (!t) return false;
-    const tag = t.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!t.isContentEditable;
+  // 「焦點在可打字的元素裡」：單一資料源 NS.isTextInputTarget（看穿開放式 shadow root——文章資訊面板的
+  // 輸入框在 shadow DOM 裡，e.target 只看得到 host；原本這裡另外看事件路徑的第一個元素）
+  function isTypingTarget(t, win) {
+    const N = (win && win.__JRead) || global.__JRead;
+    return !!(N && typeof N.isTextInputTarget === 'function' && N.isTextInputTarget(t));
   }
 
   const CSS = `
@@ -160,9 +161,7 @@
         close();
         return;
       }
-      // 真正的來源（composedPath[0]）：文章資訊面板的輸入框在 shadow DOM，e.target 只看得到 host
-      const real = (typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target;
-      if (!isHelpKey(e) || isTypingTarget(real) || isTypingTarget(e.target)) return;
+      if (!isHelpKey(e) || isTypingTarget(e.target, win)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       toggle();

@@ -1540,15 +1540,26 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 要保留）。原本 main.js 兩處各自逐字抄一份 INPUT/TEXTAREA/SELECT/contenteditable
     // ——下次補 role="textbox" / 自訂編輯器訊號時會漏一份（C7 v0.8.17 就是這樣
     // 漏 BUTTON 的）。改訊號只動 isTextInputTarget 一處。
+    //
+    // 2026-11-24 jreader-ui 審核（交接單問題 1）：看穿開放式 shadow root。keydown 從 shadow DOM 裡的
+    // 輸入框冒出來時 e.target 被重定向成 shadow host（一個普通 div / 自訂元素），原本判成「不在輸入」：
+    // 網站用開放 shadow DOM 做的輸入框在閱讀模式下按鍵被 keyguard 吞、翻頁模式空白鍵打不出、Esc 直接
+    // 退出閱讀模式。現在順 el.shadowRoot.activeElement 往下找（巢狀的一層層找，最多 SHADOW_DEPTH 層）。
+    // 封閉式 shadow root 拿不到 shadowRoot，行為不變。**只有這支往下看**：isEditableTarget 的 BUTTON
+    // 判定只看 el 本身——焦點在 JRead 自己 shadow DOM 裡的懸浮按鈕時，翻頁鍵照常
     isTextInputTarget(el) {
-      if (!el) return false;
-      const tag = el.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-      // contenteditable 在實機 Chrome 走 isContentEditable getter；jsdom 沒
-      // 實作 getter，attribute fallback 兜底（真值為 "true" 或空字串）。
-      if (el.isContentEditable) return true;
-      const ce = el.getAttribute && el.getAttribute('contenteditable');
-      return ce === 'true' || ce === '';
+      for (let depth = 0; el && depth <= 8; depth++) {
+        const tag = el.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+        // contenteditable 在實機 Chrome 走 isContentEditable getter；jsdom 沒
+        // 實作 getter，attribute fallback 兜底（真值為 "true" 或空字串）。
+        if (el.isContentEditable) return true;
+        const ce = el.getAttribute && el.getAttribute('contenteditable');
+        if (ce === 'true' || ce === '') return true;
+        const root = el.shadowRoot; // 開放式才拿得到；封閉式是 null
+        el = root ? root.activeElement : null;
+      }
+      return false;
     },
     isEditableTarget(el) {
       if (!el) return false;

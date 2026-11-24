@@ -944,16 +944,16 @@
     win.addEventListener('keydown', (e) => {
       if (e.key !== 'i' && e.key !== 'I') return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      // 面板內的輸入框在 shadow DOM 裡、事件 target 是 host：NS.isTextInputTarget 會看穿開放式 shadow root
+      //（原本另外比 e.target === hostEl，連面板裡的按鈕有焦點時 I 也不收）
       if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return;
-      // 面板內的輸入框在 shadow DOM 裡，事件 target 會被重定向成 host 元素
-      if (hostEl && e.target === hostEl) return;
       e.preventDefault();
       e.stopPropagation();
       toggle();
     }, true);
 
     // 快速鍵 L：編輯標籤（Jimmy 2026-11-24）——打開面板（已開就不動）、游標放進「新增標籤」輸入框。
-    // 跟 I 同一套條件：輸入框裡、面板裡（shadow DOM host）、選字中、帶修飾鍵都不收
+    // 跟 I 同一套條件：輸入框裡（含面板 shadow DOM 裡的）、選字中、帶修飾鍵都不收
     function editTags() {
       open();
       const input = shadow && shadow.querySelector('.tag-input');
@@ -966,7 +966,6 @@
       if (e.key !== 'l' && e.key !== 'L') return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat || e.isComposing || e.keyCode === 229) return;
       if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return;
-      if (hostEl && e.target === hostEl) return;
       e.preventDefault();
       e.stopPropagation();
       editTags();
