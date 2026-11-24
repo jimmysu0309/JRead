@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JRead",
-  "version": "2.5.52",
+  "version": "2.5.53",
   "description": "純閱讀模式：一鍵隱藏廣告、側邊欄、彈窗，以乾淨排版呈現主文",
   "permissions": [
     "storage",
@@ -84,7 +84,8 @@
         "<all_urls>"
       ],
       "js": [
-        "content/orion-detect.js"
+        "content/orion-detect.js",
+        "content/paged-io-guard.js"
       ],
       "run_at": "document_start",
       "world": "MAIN"
