@@ -111,9 +111,33 @@
     if (readOnly) return; // 公開分享頁不碰訪客的擴充設定
     try { bridgeTarget.postMessage(Object.assign({ [BRIDGE]: 1, from: 'page', type }, payload), w.location.origin); } catch (_) { /* */ }
   }
+  // isBridged：「這台瀏覽器的擴充有接上」。旗標存 localStorage 讓設定浮層（iframe）一開就知道；
+  // 但原本只寫不清，移除擴充後「進階設定」永遠顯示、點了沒反應；首訪時 snapshot 比浮層晚到又被藏
+  //（2026-11-24 審核 C-5）。現在：最上層 frame 每次載入發 hello，BRIDGE_PROBE_MS 內沒等到 snapshot
+  // 就清掉旗標；旗標變化（不論哪個 frame 寫的）通知 onBridgedChange 的訂閱者
+  const BRIDGE_PROBE_MS = 3000;
+  const bridgedListeners = [];
   function isBridged() {
     try { return !!(ls && ls.getItem(bridgeFlagKey)); } catch (_) { return false; }
   }
+  function notifyBridged() {
+    const v = isBridged();
+    for (const fn of bridgedListeners.slice()) { try { fn(v); } catch (_) { /* */ } }
+  }
+  function setBridgedFlag(on) {
+    const before = isBridged();
+    try {
+      if (!ls) return;
+      if (on) ls.setItem(bridgeFlagKey, String(Date.now())); else ls.removeItem(bridgeFlagKey);
+    } catch (_) { return; }
+    if (before !== isBridged()) notifyBridged(); // 同一個 frame 收不到自己的 storage 事件
+  }
+  function onBridgedChange(fn) {
+    if (typeof fn === 'function') bridgedListeners.push(fn);
+  }
+  try {
+    w.addEventListener('storage', (e) => { if (e && e.key === bridgeFlagKey) notifyBridged(); });
+  } catch (_) { /* 非瀏覽器環境 */ }
 
   function persist(area, setItems, removeKeys) {
     // 網頁版改的設定（不含套用擴充送來的值）同步寫回擴充。iframe（設定浮層）也直接送到最上層
@@ -151,6 +175,7 @@
   // 擴充送來的設定（只有最上層 frame 收；iframe 靠 localStorage 的 storage 事件跟上）
   let isTop = true;
   try { isTop = w.top === w; } catch (_) { isTop = false; }
+  let gotSnapshot = false;
   if (isTop && !readOnly) {
     w.addEventListener('message', (e) => {
       if (e.source !== w || e.origin !== w.location.origin) return;
@@ -178,7 +203,7 @@
           changes[k] = { oldValue: CORE.clone(map.get(k)) };
           removeKeys.push(k);
         }
-        if (d.type === 'snapshot') { try { if (ls) ls.setItem(bridgeFlagKey, String(Date.now())); } catch (_) { /* */ } }
+        if (d.type === 'snapshot') { gotSnapshot = true; setBridgedFlag(true); }
         if (!Object.keys(changes).length) return;
         applyingBridge = true;
         try { persist('sync', setItems, removeKeys).catch(() => {}); } finally { applyingBridge = false; }
@@ -186,6 +211,8 @@
       });
     });
     toExt('hello', {});
+    // 擴充沒回 snapshot（移除了、停用了、不是使用者自己的 JReader 網址）→ 清掉上次留下的旗標
+    w.setTimeout(() => { if (!gotSnapshot) setBridgedFlag(false); }, BRIDGE_PROBE_MS);
   }
 
   // 同源其他分頁改了 localStorage → 更新本頁 cache、發 onChanged（同頁的 frame 之間走核心的
@@ -223,6 +250,6 @@
     exitUrl: typeof cfg.exitUrl === 'string' ? cfg.exitUrl : '',
     frameConfig
   });
-  w.__jreadWeb = { ready: host.ready, _remoteChange: host.applyRemote, isWeb: true, isBridged };
+  w.__jreadWeb = { ready: host.ready, _remoteChange: host.applyRemote, isWeb: true, isBridged, onBridgedChange };
 })(typeof globalThis !== 'undefined' ? globalThis : window,
    (typeof globalThis !== 'undefined' ? globalThis : window).__JReadHostShimCore);

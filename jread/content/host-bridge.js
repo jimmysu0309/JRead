@@ -126,6 +126,42 @@
     try { return new URL(String(raw || '').trim()).origin; } catch (_) { return ''; }
   }
 
+  // 網頁版寫回的設定合併送出（2026-11-24 審核 C-4）：拖字級滑桿時網頁版每一格都送 set，原本每一格都寫
+  // sync，onChanged 再把每一格依序回送給網頁版——畫面倒退再前進，也容易撞 sync 每分鐘寫入上限。
+  // 改成停 SET_COALESCE_MS 才寫最後的值；寫進去的值記在 ownWrites，onChanged 回來時是自己剛寫的就不回送
+  const SET_COALESCE_MS = 300;
+  const REMOVED = '\u0000removed';
+  const ownWrites = new Map(); // key → 自己寫進去的值（JSON）或 REMOVED
+  let pendingSet = {};
+  const pendingRemove = new Set();
+  let flushTimer = null;
+  function flushWrites() {
+    flushTimer = null;
+    const items = pendingSet;
+    const keys = Array.from(pendingRemove);
+    pendingSet = {};
+    pendingRemove.clear();
+    for (const k of Object.keys(items)) ownWrites.set(k, JSON.stringify(items[k]));
+    for (const k of keys) ownWrites.set(k, REMOVED);
+    if (Object.keys(items).length) Promise.resolve(api.storage.sync.set(items)).catch(() => {});
+    if (keys.length) Promise.resolve(api.storage.sync.remove(keys)).catch(() => {});
+  }
+  function scheduleFlush() {
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushWrites, SET_COALESCE_MS);
+  }
+  // onChanged 的這一項是不是自己剛寫的（是就消耗掉那筆紀錄）
+  function isOwnEcho(k, change) {
+    if (!ownWrites.has(k)) return false;
+    const mine = ownWrites.get(k);
+    ownWrites.delete(k);
+    if (!('newValue' in change)) return mine === REMOVED;
+    try { return JSON.stringify(change.newValue) === mine; } catch (_) { return false; }
+  }
+  // 「進階設定」連點只開一次（C-6）
+  const OPEN_OPTIONS_GAP_MS = 1500;
+  let lastOpenOptions = 0;
+
   function start() {
     window.addEventListener('message', (e) => {
       if (e.origin !== ORIGIN) return;
@@ -134,15 +170,22 @@
       if (d.type === 'hello') { sendSnapshot(); return; }
       if (d.type === 'set') {
         const items = cleanItems(d.items);
-        if (Object.keys(items).length) Promise.resolve(api.storage.sync.set(items)).catch(() => {});
+        if (!Object.keys(items).length) return;
+        for (const k of Object.keys(items)) { pendingSet[k] = items[k]; pendingRemove.delete(k); }
+        scheduleFlush();
         return;
       }
       if (d.type === 'remove') {
         const keys = (Array.isArray(d.keys) ? d.keys : []).filter((k) => ALLOWED.has(k));
-        if (keys.length) Promise.resolve(api.storage.sync.remove(keys)).catch(() => {});
+        if (!keys.length) return;
+        for (const k of keys) { pendingRemove.add(k); delete pendingSet[k]; }
+        scheduleFlush();
         return;
       }
       if (d.type === 'openOptions') {
+        const now = Date.now();
+        if (now - lastOpenOptions < OPEN_OPTIONS_GAP_MS) return;
+        lastOpenOptions = now;
         try { Promise.resolve(api.runtime.sendMessage({ type: MSG_OPEN_OPTIONS })).catch(() => {}); } catch (_) { /* */ }
       }
     });
@@ -153,6 +196,7 @@
         const removed = [];
         for (const k of Object.keys(changes || {})) {
           if (!ALLOWED.has(k)) continue;
+          if (isOwnEcho(k, changes[k])) continue; // 網頁版剛寫的值，網頁版已經是這個值
           if ('newValue' in changes[k]) items[k] = changes[k].newValue;
           else removed.push(k);
         }

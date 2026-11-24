@@ -878,7 +878,12 @@
       }
     });
     if (r.result) return r.result;
-    if (!r.res.ok) return { ok: false, status: r.res.status, error: 'HTTP' };
+    if (!r.res.ok) {
+      // code＝伺服器回的錯誤碼（{ error: 'INVALID_QUERY' } 等）：搜尋工具列只把 INVALID_QUERY 當「只有排除的詞」
+      const body = await readJsonBody(r.res);
+      const code = body && typeof body.error === 'string' ? body.error : '';
+      return { ok: false, status: r.res.status, error: 'HTTP', code };
+    }
     const data = await readJsonBody(r.res);
     return {
       ok: true, status: r.res.status,

@@ -883,16 +883,23 @@ toggleBtn.addEventListener('click', async () => {
 // 三指切換閱讀模式 → 整條 footer 收掉（進階設定在 Safari 擴充改，經 App Group 同步過來）
 // v3.1.0：網頁版接上了擴充設定橋（裝了 JRead 擴充、在自己的 JReader 網址）→ 保留「進階設定」，
 // 點了打開擴充的進階設定頁（shim 的 openOptionsPage 經橋轉給擴充）。快速鍵提示照樣收掉
+// v3.1.3：接上與否會變（首訪時擴充的 snapshot 比浮層晚到、擴充被移除後旗標清掉——審核 C-5），
+// 訂閱 onBridgedChange 跟著改，不只看載入那一刻
+function applyWebBridged(bridged) {
+  if (!IS_HOSTED) return;
+  const footer = openOptionsLink.closest('.footer');
+  // .footer 有 display:flex（author origin）會蓋過 [hidden]，直接寫 inline
+  if (footer) footer.style.display = bridged ? '' : 'none';
+  const hint = document.getElementById('shortcut-hint');
+  if (hint) hint.style.display = bridged ? 'none' : '';
+}
 const WEB_BRIDGED = IS_WEB && (() => {
   try { return !!(window.__jreadWeb && window.__jreadWeb.isBridged && window.__jreadWeb.isBridged()); }
   catch (_e) { return false; }
 })();
-if (IS_HOSTED) {
-  const footer = openOptionsLink.closest('.footer');
-  // .footer 有 display:flex（author origin）會蓋過 [hidden]，直接寫 inline
-  if (footer && !WEB_BRIDGED) footer.style.display = 'none';
-  const hint = document.getElementById('shortcut-hint');
-  if (hint && WEB_BRIDGED) hint.style.display = 'none';
+applyWebBridged(WEB_BRIDGED);
+if (IS_WEB && window.__jreadWeb && typeof window.__jreadWeb.onBridgedChange === 'function') {
+  window.__jreadWeb.onBridgedChange(applyWebBridged);
 }
 
 openOptionsLink.addEventListener('click', (e) => {

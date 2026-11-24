@@ -39,13 +39,15 @@
 
   // 垃圾桶相關的確認文案（清單右鍵、文章資訊面板共用一份；Jimmy：「刪除要確認」）。還原不用確認（回 null）
   // count：多選批次的篇數（沒有 doc 時標題寫「N 篇」；清單多選與這裡共用一份文案，審核 A-7）
-  function trashConfirmText(kind, doc, count) {
+  // days：呼叫端知道的保留天數（多選沒有 doc）；doc 自己帶 trash_keep_days 時以 doc 為準，都沒有＝30
+  function trashConfirmText(kind, doc, count, days) {
     const raw = doc && doc.title ? String(doc.title) : '';
     const t = raw ? '「' + (raw.length > 30 ? raw.slice(0, 30) + '…' : raw) + '」'
       : (!doc && count > 0 && kind !== 'empty' ? ' ' + count + ' 篇' : '這篇');
-    // 「30 天」是 JReader 伺服器的規則（src/api.ts TRASH_KEEP_DAYS）；文案裡的數字改了要一起改。
+    // 保留天數讀伺服器給的 trash_keep_days（JReader src/store.ts TRASH_KEEP_DAYS；2026-11-24 起每篇文件都帶）。
     // 精確的剩餘天數由伺服器回的 purge_at 算（文章資訊面板）
-    if (kind === 'trash') return { title: '刪除' + t + '？', message: '文章會移到垃圾桶，30 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false, focusCancel: true };
+    const keep = RC && typeof RC.trashKeepDays === 'function' ? RC.trashKeepDays([doc, { trash_keep_days: days }]) : 30;
+    if (kind === 'trash') return { title: '刪除' + t + '？', message: '文章會移到垃圾桶，' + keep + ' 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false, focusCancel: true };
     if (kind === 'purge') return { title: '永久刪除' + t + '？', message: '文章、重點與筆記會一起刪除，無法復原', confirmLabel: '永久刪除', danger: true };
     if (kind === 'empty') return { title: '清空垃圾桶？', message: (count ? count + ' 篇文章' : '垃圾桶裡的文章') + '會永久刪除，無法復原', confirmLabel: '清空', danger: true };
     return null;

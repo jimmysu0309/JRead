@@ -34,7 +34,11 @@
     { id: 'later', label: 'Later' },
     { id: 'archive', label: 'Archive' }
   ];
-  const LOCATION_DONE = { new: '已移到 Inbox', later: '已移到 Later', archive: '已封存' };
+  // reader-cache 在 article.html 比這支晚載入：用到時才讀（jsdom spec 走 RC_MOD）
+  const rcNow = () => global.__JReadReaderCache || RC_MOD;
+  // 完成提示（正本 reader-cache ACTION_DONE）；資料夾 id → 動作：new＝移回 Inbox
+  const doneText = (k) => { const R = rcNow(); return (R && R.ACTION_DONE && R.ACTION_DONE[k]) || ''; };
+  const LOCATION_ACTION = { new: 'inbox', later: 'later', archive: 'archive' };
 
   function ymd(raw) {
     if (raw == null || raw === '') return '';
@@ -269,7 +273,6 @@
     let shadow = null;
     let panel = null;
     let backdrop = null;
-    let hlCursor = -1;
     let tagKeyHandler = null; // 目前畫面上那個標籤輸入框的按鍵處理（render 會重建輸入框）
     // 文章筆記：notesDraft＝輸入框目前的內容（render 重建輸入框時沿用，打到一半不會被洗掉）、
     // notesSaved＝伺服器上的值；停頓 NOTES_SAVE_MS 自動存、失焦 / 關面板立刻存
@@ -370,17 +373,10 @@
       return firsts;
     }
 
-    // 捲到下一個重點（循環）。翻頁模式用頁碼跳：元素相對目前頁的水平位移 ÷ 頁寬
-    function gotoNextHighlight() {
-      const list = marks();
-      if (!list.length) return;
-      gotoHighlight((hlCursor + 1) % list.length);
-    }
     // 跳到第 i 個重點。寬畫面（右側抽屜）不關面板，方便沿著清單一個個看；窄畫面（底部面板蓋住文章）關掉
     function gotoHighlight(i) {
       const list = marks();
       if (!list[i]) return;
-      hlCursor = i;
       const m = list[i];
       const pm = NS && NS.pagedMode;
       const pos = pm && typeof pm.getPosition === 'function' ? pm.getPosition() : null;
@@ -414,7 +410,7 @@
         try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
       }
       if (o.docData) o.docData.location = loc;
-      if (!stale()) toast(LOCATION_DONE[loc] || '已移動', 'success');
+      if (!stale()) toast(doneText(LOCATION_ACTION[loc]) || '已移動', 'success');
     });
     function move(loc) {
       if (loc === data.location) return Promise.resolve();
@@ -488,7 +484,6 @@
     // 刪除 / 還原 / 永久刪除。刪除與永久刪除先確認（reader-dialog.js），成功後：刪掉的回清單並留提示
     //（RC.setFeedNotice），還原的留在這頁、面板更新
     const TRASH_FN = { trash: 'trashJReaderDocument', restore: 'restoreJReaderDocument', purge: 'purgeJReaderDocument' };
-    const TRASH_DONE = { trash: '已移到垃圾桶', restore: '已還原', purge: '已永久刪除' };
     async function trashAction(kind) {
       const D = o.dialog || global.__JReadReaderDialog;
       const text = D && typeof D.trashConfirmText === 'function' ? D.trashConfirmText(kind, data) : null;
@@ -503,7 +498,7 @@
         data.deleted_at = null;
         if (o.docData) o.docData.deleted_at = null;
         render();
-        toast(TRASH_DONE.restore, 'success');
+        toast(doneText('restore'), 'success');
         return r;
       }
       if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function' && storage) {
@@ -513,7 +508,7 @@
         let session = o.session;
         if (session === undefined) { try { session = win.sessionStorage; } catch (_) { session = null; } }
         const raw = data.title ? String(data.title) : '';
-        RC.setFeedNotice(session, TRASH_DONE[kind] + (raw ? '：' + (raw.length > 40 ? raw.slice(0, 40) + '…' : raw) : ''), 'success');
+        RC.setFeedNotice(session, doneText(kind) + (raw ? '：' + (raw.length > 40 ? raw.slice(0, 40) + '…' : raw) : ''), 'success');
       }
       close();
       const exit = o.exit || (NS && NS.onReaderExit);
@@ -827,8 +822,9 @@
       };
       input.addEventListener('focus', async () => {
         if (allTags) return;
-        const r = await PC.listJReaderTags(rw);
-        allTags = r && r.ok ? r.tags : [];
+        let r = null;
+        try { r = await PC.listJReaderTags(rw); } catch (_) { r = null; } // 2026-11-24 審核 B-7
+        allTags = r && r.ok && Array.isArray(r.tags) ? r.tags : [];
         drawSuggest();
       });
       input.addEventListener('input', drawSuggest);
@@ -999,7 +995,7 @@
     // 懸浮按鈕選單的「文章資訊」（floating-icon.js 看到這個掛鉤才列出）
     if (NS) NS.onReaderInfo = toggle;
 
-    return { open, close, toggle, editTags, isOpen: () => opened, render, refresh, gotoNextHighlight, panel: () => panel };
+    return { open, close, toggle, editTags, isOpen: () => opened, render, refresh, panel: () => panel };
   }
 
   // 垃圾桶裡的文章：剩幾天自動永久刪除（purge_at 由 JReader 伺服器給，天數規則只在伺服器）
@@ -1011,7 +1007,8 @@
   }
 
   function hostOf(url) {
-    try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return String(url || ''); }
+    const R = rcNow();
+    return R && typeof R.hostOf === 'function' ? R.hostOf(url) : '';
   }
 
   const api = { attach, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, themeColors, WIDE_MIN_PX, HOST_ID };

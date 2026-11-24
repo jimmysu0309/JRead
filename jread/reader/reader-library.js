@@ -95,8 +95,10 @@
     return card;
   }
 
+  // 網域（正本 reader-cache hostOf）；抓取中卡片的標題取不到網域時顯示原網址
   function hostOf(url) {
-    try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return String(url || ''); }
+    const h = RC_MOD && typeof RC_MOD.hostOf === 'function' ? RC_MOD.hostOf(url) : '';
+    return h || String(url || '');
   }
 
   // 貼網址後的暫時卡片（抓取中）。不是 reader-feed 的卡片：沒有文章可開、沒有動作
@@ -283,6 +285,13 @@
     doc.body.appendChild(ui.root);
     doc.body.appendChild(ui.fab);
     doc.body.classList.add('jr-has-tools');
+    // 展開的工具列實際高度（含貼網址列、標籤 chip、底部安全距離）→ <html> 的 --jr-tools-h：
+    // toast 往上讓出工具列（2026-11-24 審核 A-8；CSS 在 reader.html）
+    const RO = win.ResizeObserver;
+    const syncToolsHeight = () => {
+      if (ui.root.offsetHeight) doc.documentElement.style.setProperty('--jr-tools-h', ui.root.offsetHeight + 'px');
+    };
+    if (typeof RO === 'function') new RO(syncToolsHeight).observe(ui.root);
     // 抓取中的卡片放在分頁列與清單之間，清單重畫（renderFeed 清空 #jr-list）不會帶走它們
     env.listEl.parentNode.insertBefore(ui.pending, env.listEl);
     env.listEl.parentNode.insertBefore(ui.searchHead, env.listEl);
@@ -466,8 +475,9 @@
       const r = await PC.searchJReader(Object.assign({ q, sort: sortMode, location: folder || undefined, limit: SEARCH_PAGE, offset }, rw));
       if (gen !== searchGen || !searching) return; // 已換查詢或離開搜尋
       if (!r || !r.ok) {
-        // 400＝沒有要找的詞（例如只打了「-iPhone」）：不是錯誤，提示怎麼用
-        if (r && r.status === 400 && !more) {
+        // INVALID_QUERY＝沒有要找的詞（例如只打了「-iPhone」）：不是錯誤，提示怎麼用。其他 400（例如 INVALID_SORT）
+        // 照一般錯誤處理（2026-11-24 審核 C-7：原本所有 400 都顯示成這句）
+        if (r && r.status === 400 && r.code === 'INVALID_QUERY' && !more) {
           env.listEl.textContent = '';
           ui.searchHead.hidden = true;
           env.showMsg('只有排除的詞沒辦法搜尋，請再加一個要找的詞，例如「Apple -iPhone」', false);
@@ -527,14 +537,18 @@
         else exitSearch(true);
       }, SEARCH_DEBOUNCE_MS);
     });
+    // Esc 離開搜尋：清空查詢、回到分頁清單、收起工具列（搜尋框裡、頁面層兩個入口共用這一份）
+    function escapeSearch() {
+      if (debounce) { win.clearTimeout(debounce); debounce = null; }
+      ui.search.value = '';
+      exitSearch(true);
+      collapse();
+    }
     ui.search.addEventListener('keydown', (e) => {
       if (e.isComposing || e.keyCode === 229) return; // 注音 / 拼音選字中的 Enter、Esc 交給輸入法
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (debounce) { win.clearTimeout(debounce); debounce = null; }
-        ui.search.value = '';
-        exitSearch(true);
-        collapse();
+        escapeSearch();
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (debounce) { win.clearTimeout(debounce); debounce = null; }
@@ -668,7 +682,8 @@
       filterInput.focus();
 
       const mine = menu;
-      const r = await PC.listJReaderTags(rw);
+      let r = null;
+      try { r = await PC.listJReaderTags(rw); } catch (_) { r = null; } // 失敗顯示「標籤載入失敗」（2026-11-24 審核 B-7）
       if (menu !== mine) return;
       const tags = (r && r.ok ? r.tags : []) || [];
       const draw = () => {
@@ -708,10 +723,7 @@
       const tag = t && t.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
       e.preventDefault();
-      if (debounce) { win.clearTimeout(debounce); debounce = null; }
-      ui.search.value = '';
-      exitSearch(true);
-      collapse();
+      escapeSearch();
     });
 
     // ---- 快速鍵：/ 聚焦搜尋（輸入框內不觸發） ----
