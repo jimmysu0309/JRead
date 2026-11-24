@@ -484,7 +484,11 @@ function pageFingerprint() {
     if (MEDIA[el.tagName] || el.tagName === 'svg') {
       const r = el.getBoundingClientRect();
       if (r.width >= 40 && r.height >= 40) {
-        let src = el.currentSrc || el.getAttribute('src') || el.getAttribute('poster') || '';
+        // 2026-11-24：有 srcset 的圖用 src 屬性當身分、不用 currentSrc——lazy 圖改成直接載入後，
+        // 瀏覽器從 srcset 挑哪個候選取決於載入當下的版面寬度（時序相關），同一份 code 重跑
+        // 會在 742w / 1440w 之間跳（arstechnica、twz、github.blog）。尺寸照量，實際變大變小仍抓得到
+        const hasSet = el.tagName === 'IMG' && (el.hasAttribute('srcset') || (el.parentElement && el.parentElement.tagName === 'PICTURE'));
+        let src = (hasSet && el.getAttribute('src')) || el.currentSrc || el.getAttribute('src') || el.getAttribute('poster') || '';
         try {
           const u = new URL(src, document.baseURI);
           let h = 0;
