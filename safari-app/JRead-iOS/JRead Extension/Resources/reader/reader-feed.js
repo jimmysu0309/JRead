@@ -701,17 +701,30 @@
       const RC = global.__JReadReaderCache;
       const local = browser.storage.local;
       const account = RC ? RC.accountKey(service, creds) : '';
-      // 本頁移走過（含進行中）的 id → 影響範圍：'*'＝所有分頁（封存、永久刪除）、或某個 listKey
-      //（Inbox 右滑移到 Later 只離開 Inbox、從垃圾桶還原只離開垃圾桶）、或 EXCEPT_PREFIX + listKey＝
-      // 除了那個分頁以外全部（移到垃圾桶：只該出現在垃圾桶）。背景抓回來的清單可能還沒反映，重畫時濾掉
+      // 本頁移走過（含進行中）的 id → 影響範圍：'*'＝所有分頁（永久刪除）、或某個分頁 key
+      //（Inbox 右滑移到 Later 只離開 Inbox、從垃圾桶還原只離開垃圾桶）、或 EXCEPT_PREFIX + 分頁 key＝
+      // 除了那個分頁以外全部（移到垃圾桶：只該出現在垃圾桶）、或 LEFT_FOR_PREFIX + 資料夾（封存，見下）。
+      // 背景抓回來的清單可能還沒反映，重畫時濾掉
       const removedIds = new Map();
       // 垃圾桶保留天數（最近畫出的清單裡文件帶的 trash_keep_days；舊版 JReader 沒有時 30）。
       // 垃圾桶說明、刪除確認文案（含多選）讀它
       let keepDays = (RC && RC.TRASH_KEEP_DAYS_FALLBACK) || 30;
       const trashNoteText = () => '放超過 ' + keepDays + ' 天的文章會自動永久刪除';
       const EXCEPT_PREFIX = '*except:';
-      const hiddenIn = (k, listKey) => k === '*' || k === listKey ||
-        (typeof k === 'string' && k.startsWith(EXCEPT_PREFIX) && k !== EXCEPT_PREFIX + listKey);
+      // LEFT_FOR_PREFIX + 目的地資料夾＝「搬到那個資料夾了」：只在依資料夾篩選、而且是別的資料夾的分頁藏
+      //（Inbox / Later）；目的地分頁、以及不看資料夾的分頁（Progress、JRead 標籤、同作者 / 同網域）照常顯示。
+      // 封存用它。原本封存記 '*'，連 Archive 分頁自己也濾掉，要整頁重新載入才看得到；讀到一半的那篇在
+      // Progress 也消失（2026-11-25 JReader 交接單 prompt-for-jread-archive-hidden，iOS App 最明顯）
+      const LEFT_FOR_PREFIX = '*left-for:';
+      const folderOf = (cfg) => (cfg && cfg.query && (cfg.query.location || cfg.query.folderId)) || '';
+      const hiddenIn = (k, cfg) => {
+        if (typeof k !== 'string') return false;
+        const key = scopeKeyFor(cfg);
+        if (k === '*' || k === key) return true;
+        if (k.startsWith(EXCEPT_PREFIX)) return k !== EXCEPT_PREFIX + key;
+        if (k.startsWith(LEFT_FOR_PREFIX)) { const f = folderOf(cfg); return !!f && f !== k.slice(LEFT_FOR_PREFIX.length); }
+        return false;
+      };
       const laterText = LATER_TEXT[service] || LATER_TEXT.readwise;
 
       // v3.1.0：JReader 書庫工具列（reader-library.js）。標籤篩選疊在分頁的 query 上；
@@ -755,7 +768,7 @@
         const docs = postFilter(all, cfg).filter((d) => {
           if (!d) return false;
           if (lib && lib.isPending(d.id)) return false; // 抓取中的那張由工具列畫
-          return !hiddenIn(removedIds.get(d.id), scopeKey);
+          return !hiddenIn(removedIds.get(d.id), cfg);
         });
         if (!docs.length) {
           showMsg(emptyText(cfg), false);
@@ -800,10 +813,13 @@
           const trashCfg = tabs.find((t) => t.trash);
           const scope = kind === 'trash' && trashCfg ? EXCEPT_PREFIX + scopeKeyFor(trashCfg)
             : kind === 'restore' ? scopeKey
-              : isArchive || trashKind ? '*' : scopeKey;
+              : isArchive ? LEFT_FOR_PREFIX + 'archive'
+                : trashKind ? '*' : scopeKey;
           if (remove) removedIds.set(id, scope);
           const text = isInbox ? INBOX_TEXT : laterText;
           const rw = { token: creds.token, base: creds.base, id };
+          actionsInFlight++;
+          const done = () => { actionsInFlight = Math.max(0, actionsInFlight - 1); };
           return actionCard(card, id, {
             actionFn: trashKind
               ? () => PC[trashKind.fn](rw)
@@ -835,7 +851,7 @@
                 showDocs(shown.all, shown.cfg);
               }
             }
-          });
+          }).then(done, (err) => { done(); throw err; });
         };
         hideMsg();
         renderFeed(listEl, docs, onAction, {
@@ -1041,13 +1057,38 @@
       // 舊插回（用 loadGen 的話，下拉更新中失敗的卡片會消失到下次載入）
       let tabGen = 0;
       let currentTab = null;
+      let lastLoadAt = 0;      // 最近一次 loadList（含背景更新）的時刻，自動更新的間隔以它為準
+      let actionsInFlight = 0; // 進行中的卡片動作（封存 / 移動 / 刪除），自動更新等它們結束
+
+      // 背景更新換清單時保住正在看的那張卡：不在頁頂就記下畫面上第一張可見卡片的位置，重畫後捲回同一個位置
+      //（新文章插在最上面時畫面不跳）。在頁頂就直接顯示新文章
+      const scrolledAway = () => (global.scrollY || (doc.documentElement && doc.documentElement.scrollTop) || 0) > 8;
+      function keepAnchor(render) {
+        let anchorId = null;
+        let anchorTop = 0;
+        if (scrolledAway()) {
+          for (const c of listEl.querySelectorAll('.jr-card[data-doc-id]')) {
+            const r = c.getBoundingClientRect();
+            if (r.bottom > 0) { anchorId = c.getAttribute('data-doc-id'); anchorTop = r.top; break; }
+          }
+        }
+        render();
+        if (anchorId == null) return;
+        const again = Array.from(listEl.querySelectorAll('.jr-card[data-doc-id]')).find((c) => c.getAttribute('data-doc-id') === anchorId);
+        if (!again) return;
+        const dy = again.getBoundingClientRect().top - anchorTop;
+        if (dy) { try { global.scrollBy(0, dy); } catch (_) { /* jsdom */ } }
+      }
       // v2.2.13：回傳 Promise，API 結果處理完（成功 / 失敗 / 過期丟棄）才 resolve——
       // iOS App 下拉更新的原生 spinner 等它收起（refreshCurrent）。
       // opts.refresh：下拉更新——畫面上已有清單，不清成「載入中…」、不先畫快取
       // （spinner 就是 loading 提示），只等新資料替換
+      // opts.silent：自動更新（autoRefresh）——失敗不跳 toast，下一輪再試
       function loadList(tab, opts) {
         const cfg = tab || tabs[0];
         const refresh = !!(opts && opts.refresh);
+        const silent = !!(opts && opts.silent);
+        lastLoadAt = Date.now();
         currentTab = cfg;
         const gen = ++loadGen;
         if (!refresh) tabGen++;
@@ -1062,19 +1103,26 @@
         // 子清單（同作者 / 同網域）不進快取：每個作者一把 key 會一直累積
         const useCache = !!RC && !cfg.noCache;
         const cacheRead = useCache ? RC.readFeed(local, account, listKey) : Promise.resolve(null);
+        // 快取裡的空清單不當成「確定沒有文章」：可能是資料夾以前空過、換過後端、帳號剛建好時存的，
+        // 先畫出空狀態文字會讓人以為資料不見了。當作沒有快取，留著「載入中…」等網路確認
+        //（2026-11-25 JReader 交接單 prompt-for-jread-empty-flash）。cachedSig 也不記，網路回來
+        // 確實是空的才不會被「簽章沒變不重畫」卡在「載入中…」
+        const usable = (docs) => Array.isArray(docs) && docs.length > 0;
         cacheRead.then((docs) => {
-          if (gen !== loadGen || freshArrived || !docs) return;
+          if (gen !== loadGen || freshArrived || !usable(docs)) return;
           if (refresh) { cachedSig = RC.feedSignature(docs); return; } // 畫面已是這份，只記簽章
           cachedSig = RC.feedSignature(docs);
           showDocs(docs, cfg);
         });
 
         // 有快取時，背景更新失敗只跳 toast、不把清單換成錯誤訊息。API 可能比讀快取
-        // 還早失敗（離線時 fetch 當場 reject）——先等快取讀完再決定，離線才看得到清單
+        // 還早失敗（離線時 fetch 當場 reject）——先等快取讀完再決定，離線才看得到清單。
+        // 空的快取比照沒有快取：顯示載入失敗，不顯示「目前沒有文章」
         const fail = (withCache, withoutCache) => {
+          if (silent) return;
           cacheRead.then((docs) => {
             if (gen !== loadGen) return;
-            if (docs) {
+            if (usable(docs) || (refresh && docs)) { // 背景更新：畫面上已經是清單（可能真的是空的），只跳 toast
               if (cachedSig === null) { cachedSig = RC.feedSignature(docs); showDocs(docs, cfg); }
               toast(withCache, 'error');
             } else {
@@ -1097,7 +1145,16 @@
           if (cfg.subview) { subCount = typeof r.count === 'number' ? r.count : null; renderHeadCount(); }
           if (useCache) RC.writeFeed(local, account, listKey, docs, MAX_ITEMS);
           if (cachedSig !== null && RC.feedSignature(docs) === cachedSig && all.length <= MAX_ITEMS && !paging.cursor) return; // 沒變，不重畫
-          if (refresh) paging.limit = Math.max(paging.limit, MAX_ITEMS);
+          if (refresh) {
+            paging.limit = Math.max(paging.limit, MAX_ITEMS);
+            // 不在頁頂：新文章插在上面時多畫同樣篇數，原本畫面上的卡片不被擠到「載入更多」後面，頁面才有空間捲回原位
+            if (scrolledAway()) {
+              const prev = new Set(Array.from(listEl.querySelectorAll('.jr-card[data-doc-id]')).map((c) => c.getAttribute('data-doc-id')));
+              paging.limit += all.slice(0, paging.limit).filter((d) => d && !prev.has(String(d.id))).length;
+            }
+            keepAnchor(() => showDocs(all, cfg));
+            return;
+          }
           showDocs(all, cfg);
         }, (err) => {
           if (gen !== loadGen) return; // 過期回應丟棄（同上）
@@ -1194,6 +1251,66 @@
           }
         });
       }
+
+      // 有新文章時自動更新清單（2026-11-25 JReader 交接單 prompt-for-jread-feed-auto-refresh）：
+      // 別台裝置存的、RSS / Raindrop 推進來的文章，不用手動重新整理就出現。
+      //   - 回到前景（visibilitychange → visible、window focus）：距上次載入 ≥ AUTO_MIN_GAP_MS 才更新
+      //   - 定時（只有 JReader）：頁面可見時每 AUTO_INTERVAL_MS 一次，隱藏就停掉計時器。Readwise list API
+      //     有速率限制（約每分鐘 20 次），Instapaper 比照，只做回前景更新
+      //   - 搜尋中 / 多選中 / 確認框或右鍵選單開著 / 卡片動作或貼網址抓取進行中 / 載入更多中 / 剛捲動過
+      //     先不更新，每 AUTO_RETRY_MS 看一次，狀態結束補一次
+      // 走同一條背景更新（loadList refresh）：不清畫面、簽章沒變不重畫、不在頁頂保住目前的卡片；失敗不跳 toast
+      const AUTO_MIN_GAP_MS = 30 * 1000;
+      const AUTO_INTERVAL_MS = 60 * 1000;
+      const AUTO_SCROLL_IDLE_MS = 2000;
+      const AUTO_RETRY_MS = 2000;
+      let lastScrollAt = 0;
+      let autoWanted = false;
+      let autoRetryTimer = null;
+      let autoTimer = null;
+      function autoBlocked() {
+        if (doc.hidden) return 'hidden';
+        if (lib && lib.isSearching()) return 'search';
+        if (selectHook && selectHook.isActive()) return 'select';
+        if (DIALOG_MOD && typeof DIALOG_MOD.isOpen === 'function' && DIALOG_MOD.isOpen()) return 'dialog';
+        if (openMenu) return 'menu';
+        if (actionsInFlight > 0 || (lib && typeof lib.hasPending === 'function' && lib.hasPending())) return 'busy';
+        if (paging.loading) return 'paging';
+        if (Date.now() - lastScrollAt < AUTO_SCROLL_IDLE_MS) return 'scroll';
+        return '';
+      }
+      function autoRefresh() {
+        autoWanted = true;
+        if (autoRetryTimer) return;
+        const why = autoBlocked();
+        if (why === 'hidden') return; // 回到前景時補
+        if (why) {
+          autoRetryTimer = global.setTimeout(() => { autoRetryTimer = null; if (autoWanted) autoRefresh(); }, AUTO_RETRY_MS);
+          return;
+        }
+        autoWanted = false;
+        loadList(currentTab || initialTab, { refresh: true, silent: true });
+      }
+      function onForeground() {
+        if (doc.hidden) return;
+        if (autoWanted || Date.now() - lastLoadAt >= AUTO_MIN_GAP_MS) autoRefresh();
+      }
+      function syncAutoTimer() {
+        if (service !== 'jreader') return;
+        if (doc.hidden) {
+          if (autoTimer) { global.clearInterval(autoTimer); autoTimer = null; }
+          return;
+        }
+        if (!autoTimer) {
+          autoTimer = global.setInterval(() => {
+            if (!doc.hidden && Date.now() - lastLoadAt >= AUTO_INTERVAL_MS - 1000) autoRefresh();
+          }, AUTO_INTERVAL_MS);
+        }
+      }
+      global.addEventListener('scroll', () => { lastScrollAt = Date.now(); }, { passive: true });
+      doc.addEventListener('visibilitychange', () => { syncAutoTimer(); onForeground(); });
+      global.addEventListener('focus', onForeground);
+      syncAutoTimer();
 
       // ?tab= 指定的分頁，沒指定 = 第一個；?tab=search（搜尋結果點進文章再退出）由工具列叫回查詢
       if (lib && lib.restoreSearch(global.location && global.location.search)) {

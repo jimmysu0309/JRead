@@ -761,6 +761,7 @@
     return {
       ui,
       isPending: (id) => pendingIds.has(String(id)),
+      hasPending: () => pendingIds.size > 0, // 清單自動更新等抓取結束再做（reader-feed autoRefresh）
       isSearching: () => searching,
       isExpanded: () => expanded,
       setExpanded,
