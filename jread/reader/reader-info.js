@@ -17,8 +17,13 @@
   const WIDE_MIN_PX = 720;
   const HOST_ID = '__jread-info-host';
   const DRAG_CLOSE_PX = 80;
-  const CJK_CHARS_PER_MIN = 500;
-  const LATIN_WORDS_PER_MIN = 230;
+  // 閱讀速度（成人默讀一般文章）：
+  // - 英文 238 詞／分：Brysbaert 2019 統合分析（190 篇研究、1.9 萬人）非小說的平均值
+  //   （Journal of Memory and Language 109, 104047）
+  // - 中日文 380 字／分：中文沒有同等規模的統合研究，各研究在 250–500 字之間。取最貼近
+  //   「默讀一般文章」的心理學報 2020（52(8) 933–945）句子默讀作業快、慢讀者（458 / 299）的平均
+  const CJK_CHARS_PER_MIN = 380;
+  const LATIN_WORDS_PER_MIN = 238;
 
   const LOCATIONS = [
     { id: 'new', label: 'Inbox' },
@@ -36,11 +41,24 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
-  // 估計閱讀時間（分鐘，至少 1）。cjk＝中日文為主（JReader 的 word_count 對 CJK 是字數）
-  function readingMinutes(wordCount, cjk) {
-    const n = Number(wordCount);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return Math.max(1, Math.round(n / (cjk ? CJK_CHARS_PER_MIN : LATIN_WORDS_PER_MIN)));
+  // 估計閱讀時間（分鐘，至少 1；沒有字數回 null）。
+  // JReader 回中日韓字數（cjk_char_count）與其他語言詞數（latin_word_count）時兩者各用各的
+  // 速度再相加——中英混雜的文章才準。沒有這兩欄（舊版伺服器）退回 word_count 整篇套一種速度，
+  // cjkFallback＝這篇以中日文為主
+  function readingMinutes(doc, cjkFallback) {
+    const d = doc || {};
+    const cjk = Number(d.cjk_char_count);
+    const latin = Number(d.latin_word_count);
+    let min;
+    if (Number.isFinite(cjk) && Number.isFinite(latin) && d.cjk_char_count != null && d.latin_word_count != null) {
+      min = cjk / CJK_CHARS_PER_MIN + latin / LATIN_WORDS_PER_MIN;
+    } else {
+      const n = Number(d.word_count);
+      if (!Number.isFinite(n)) return null;
+      min = n / (cjkFallback ? CJK_CHARS_PER_MIN : LATIN_WORDS_PER_MIN);
+    }
+    if (!(min > 0)) return null;
+    return Math.max(1, Math.round(min));
   }
 
   // Readwise 形狀的 tags（{ key: { name } }）或字串陣列 → 名稱陣列
@@ -355,7 +373,7 @@
       const byline = [data.author, ymd(data.published_date)].filter(Boolean).join('　·　');
       if (byline) panel.appendChild(row('作者與發布日期', byline));
 
-      const minutes = readingMinutes(data.word_count, isCjkDoc());
+      const minutes = readingMinutes(data, isCjkDoc());
       const facts = [
         ymd(data.saved_at || data.created_at) && ('存入 ' + ymd(data.saved_at || data.created_at)),
         data.word_count ? Number(data.word_count).toLocaleString('zh-TW') + ' 字' : '',
@@ -601,7 +619,7 @@
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return String(url || ''); }
   }
 
-  const api = { attach, ymd, readingMinutes, tagNames, addTag, suggestTags, currentProgress, themeColors, WIDE_MIN_PX, HOST_ID };
+  const api = { attach, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, themeColors, WIDE_MIN_PX, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
