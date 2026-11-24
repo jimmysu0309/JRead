@@ -16,6 +16,8 @@
   'use strict';
 
   const HOST_ID = '__jread-shortcuts-host';
+  // jsdom spec（module 環境）用；頁面上走 global.__JReadReaderCache
+  const RC_MOD = typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-cache.js') : null;
 
   // page：'feed' | 'article'。when(ctx)：ctx＝{ page, library, highlights, archivable, readOnly, canExit }
   const SHORTCUTS = [
@@ -77,28 +79,6 @@
     .foot { margin-top: 10px; font-size: 12px; color: var(--muted); }
   `;
 
-  // 頁面目前的背景 / 文字色（Article View 讀閱讀卡、Feed 讀 body）
-  function themeColors(win, doc) {
-    const out = { bg: '#ffffff', fg: '#1a1a1a', muted: 'rgba(26,26,26,.6)', line: 'rgba(0,0,0,.12)' };
-    try {
-      const card = doc.querySelector('[data-jread-reader-body]');
-      const src = (card && card.closest('article')) || doc.body;
-      const cs = win.getComputedStyle(src);
-      const bg = cs.backgroundColor;
-      if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) out.bg = bg;
-      else {
-        const bodyBg = win.getComputedStyle(doc.body).backgroundColor;
-        if (bodyBg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bodyBg)) out.bg = bodyBg;
-      }
-      if (cs.color) out.fg = cs.color;
-      const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(out.fg);
-      if (m) {
-        out.muted = 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.6)';
-        out.line = 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.16)';
-      }
-    } catch (_) { /* 用預設 */ }
-    return out;
-  }
 
   // opts：{ doc, win, getContext() → ctx }。回 { open, close, toggle, isOpen }
   function attach(opts) {
@@ -124,11 +104,12 @@
         shadow = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
         doc.documentElement.appendChild(host);
       }
-      const c = themeColors(win, doc);
-      host.style.setProperty('--bg', c.bg);
-      host.style.setProperty('--fg', c.fg);
-      host.style.setProperty('--muted', c.muted);
-      host.style.setProperty('--line', c.line);
+      // 主題色正本 RC.pageThemeColors（文章資訊面板、確認框同一份；原本這裡自帶一份、少了 --link，
+      // 2026-11-24 審核收斂）。reader-cache 在 article.html 比這支晚載入：用到時才讀
+      const R = global.__JReadReaderCache || RC_MOD;
+      const c = R && typeof R.pageThemeColors === 'function' ? R.pageThemeColors(win, doc)
+        : { bg: '#ffffff', fg: '#1a1a1a', muted: 'rgba(26,26,26,0.62)', line: 'rgba(26,26,26,0.14)', link: '#1a73e8' };
+      for (const k of ['bg', 'fg', 'muted', 'line', 'link']) host.style.setProperty('--' + k, c[k]);
       shadow.textContent = '';
       const style = doc.createElement('style');
       style.textContent = CSS;

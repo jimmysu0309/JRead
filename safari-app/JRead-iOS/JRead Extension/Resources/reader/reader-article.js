@@ -13,6 +13,9 @@
 (function (global) {
   'use strict';
 
+  // jsdom spec（module 環境）用；頁面上 reader-cache.js 比這支早載入、走 global.__JReadReaderCache
+  const RC_MOD = typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-cache.js') : null;
+
   // 清理 html_content。v1.7.44（X1）：denylist 改 allowlist——article.html 是
   // 擴充頁（有 storage 憑證 + fetch 權限），MV3 預設 CSP 只是兜底層（Safari
   // 轉換 / 未來 CSP 調整都可能讓它裸奔），sanitizer 必須自足。舊 denylist 的
@@ -231,21 +234,11 @@
   }
 
   // published_date 可能是 ISO 字串或 epoch 秒/毫秒。轉成 YYYY-MM-DD；失敗回空字串。
+  // 日期格式化的正本是 reader-cache RC.formatDay（清單卡片、文章資訊面板、這裡共用）。原本這裡自己一份、
+  // 少了「純數字字串＝epoch」那支，"1700000000" 得空字串（2026-11-24 審核：三份已 drift）。保留匯出名稱
   function formatDate(raw) {
-    if (raw == null || raw === '') return '';
-    try {
-      let d;
-      if (typeof raw === 'number') {
-        d = new Date(raw < 1e12 ? raw * 1000 : raw);
-      } else {
-        d = new Date(raw);
-      }
-      if (isNaN(d.getTime())) return '';
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    } catch (_) { return ''; }
+    const R = global.__JReadReaderCache || RC_MOD;
+    return R && typeof R.formatDay === 'function' ? R.formatDay(raw) : '';
   }
 
   // v1.5.3：移除文章頁左上角返回箭頭鈕——與「點 JRead 工具列圖示 → 退出閱讀模式」
