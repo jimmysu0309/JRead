@@ -338,6 +338,7 @@
     // ---- 搜尋 ----
     let searchGen = 0;
     let searching = false;
+    let activeTag = null; // 標籤篩選（下方「標籤篩選」段）
     let current = null; // { q, offset, count, done }
     let debounce = null;
     let observer = null;
@@ -425,6 +426,7 @@
       if (!searching) return;
       if (typeof env.onViewChange === 'function') env.onViewChange();
       searching = false;
+      renderFilterChip();
       doc.body.classList.remove('jr-searching');
       searchGen++;
       current = null;
@@ -448,6 +450,7 @@
         if (typeof env.onViewChange === 'function') env.onViewChange();
         env.cancelPending();
         searching = true;
+        renderFilterChip();
         doc.body.classList.add('jr-searching'); // CSS 藏「載入更多」（分頁清單的翻頁）
         tabsEl.hidden = true;
         ui.pending.hidden = true;
@@ -470,7 +473,16 @@
           env.showMsg('只有排除的詞沒辦法搜尋，請再加一個要找的詞，例如「Apple -iPhone」', false);
           return;
         }
-        env.toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: '搜尋' }) : '搜尋失敗', 'error');
+        const msg = PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: '搜尋' }) : '搜尋失敗';
+        // 第一頁就失敗：清掉畫面上上一份清單（分頁或前一個查詢的結果），不然 J / K / E 會作用在
+        // 跟這次搜尋無關的舊卡片上（2026-11-24 審核 A-5）。載入更多失敗只跳 toast，已載入的結果留著
+        if (!more) {
+          env.listEl.textContent = '';
+          ui.searchHead.hidden = true;
+          env.showMsg(msg, true);
+          return;
+        }
+        env.toast(msg, 'error');
         return;
       }
       if (!more) {
@@ -596,8 +608,7 @@
     }
     ui.addRow.addEventListener('submit', (e) => { e.preventDefault(); submitUrl(ui.url.value); });
 
-    // ---- 標籤篩選 ----
-    let activeTag = null;
+    // ---- 標籤篩選 ----（activeTag 宣告在搜尋狀態旁邊：exitSearch / runSearch 也會重畫篩選標記）
     let menu = null;
     function closeTagMenu() {
       if (!menu) return;
@@ -606,11 +617,16 @@
       menu = null;
       ui.tags.setAttribute('aria-expanded', 'false');
     }
+    // 搜尋中不顯示篩選標記：搜尋不帶標籤、結果跨所有標籤，留著 chip 會讓人以為只搜了這個標籤
+    //（2026-11-24 審核 A-4；伺服器端 /api/v1/search 支援 tag 參數之後再改成真的篩選）。
+    // 篩選本身還在，離開搜尋回到分頁清單時照舊套用、chip 也跟著回來
     function renderFilterChip() {
+      const show = !!activeTag && !searching;
       ui.filter.textContent = '';
-      ui.filter.hidden = !activeTag;
-      ui.tags.classList.toggle('is-on', !!activeTag);
-      if (!activeTag) return;
+      ui.filter.hidden = !show;
+      ui.tags.classList.toggle('is-on', show);
+      ui.fab.classList.toggle('is-on', show); // 收起時圓鈕加框：提醒目前在篩選
+      if (!show) return;
       const chip = el(doc, 'span', 'jr-chip');
       chip.appendChild(el(doc, 'span', 'jr-chip-label', '# ' + activeTag));
       const x = el(doc, 'button', 'jr-chip-x', '×');
@@ -623,7 +639,6 @@
     function setTag(name) {
       activeTag = name || null;
       renderFilterChip();
-      ui.fab.classList.toggle('is-on', !!activeTag); // 收起時圓鈕加框：提醒目前在篩選
       if (searching) { ui.search.value = ''; exitSearch(false); }
       env.setTagFilter(activeTag);
     }

@@ -196,10 +196,9 @@
         req = { action: 'tag', tag };
         done = '已加上標籤「' + tag + '」';
       } else if (act === 'trash' || act === 'purge') {
-        const text = act === 'trash'
-          ? { title: '刪除 ' + ids.length + ' 篇？', message: '文章會移到垃圾桶，30 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false }
-          : { title: '永久刪除 ' + ids.length + ' 篇？', message: '文章、重點與筆記會一起刪除，無法復原', confirmLabel: '永久刪除', danger: true };
-        if (!D || typeof D.confirm !== 'function' || !(await D.confirm(text))) return;
+        // 文案與單篇刪除共用 reader-dialog.trashConfirmText（原本這裡有第三份，審核 A-7）
+        const text = D && typeof D.trashConfirmText === 'function' ? D.trashConfirmText(act, null, ids.length) : null;
+        if (!text || typeof D.confirm !== 'function' || !(await D.confirm(text))) return;
         if (!active || !picked.size) return;
         ids = Array.from(picked);
         req = { action: act };
@@ -252,9 +251,18 @@
       }
     }, true);
 
-    // 清單重畫（背景更新、載入更多）：勾選狀態照 id 補回；已不在清單的拿掉
+    // 清單重畫（背景更新、載入更多）：勾選狀態照 id 補回；已不在清單的拿掉——原本只有註解、沒有修剪，
+    // 背景更新後看不見的文章仍會被批次動作作用（2026-11-24 審核 A-6）。全部都不在了＝離開多選
+    // （同最後一張取消勾選）。renderFeed 清空與重建在同一個 task，MutationObserver 只在重建完才看
+    function prune() {
+      if (!active) return;
+      const here = new Set(cards().map(cardId));
+      for (const id of Array.from(picked)) if (!here.has(id)) picked.delete(id);
+      if (!picked.size) { exit(); return; }
+      paint();
+    }
     const MO = doc.defaultView && doc.defaultView.MutationObserver;
-    if (MO) new MO(() => { if (active) paint(); }).observe(listEl, { childList: true });
+    if (MO) new MO(prune).observe(listEl, { childList: true });
 
     return { start, toggle, exit, isActive: () => active, picked: () => Array.from(picked), run };
   }

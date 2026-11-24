@@ -14,6 +14,9 @@
 (function (global) {
   'use strict';
 
+  // jsdom spec（module 環境）用；頁面上走 global.__JReadReaderCache
+  const RC_MOD = typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-cache.js') : null;
+
   const WIDE_MIN_PX = 720;
   const HOST_ID = '__jread-info-host';
   const DRAG_CLOSE_PX = 80;
@@ -252,6 +255,11 @@
     const id = String(o.docData.id);
     const rw = { token: creds.token, base: creds.base };
     const RC = o.RC || global.__JReadReaderCache;
+    // 連結 href 的協定把關（單一資料源 RC.sourceUrlOf；RC 不在時保守地不給連結）
+    const safeHttpUrl = (raw) => {
+      const R = [RC, global.__JReadReaderCache, RC_MOD].find((x) => x && typeof x.sourceUrlOf === 'function');
+      return R ? R.sourceUrlOf({ source_url: raw }) : '';
+    };
     const storage = o.storage || (global.browser && global.browser.storage && global.browser.storage.local);
     let data = Object.assign({}, o.docData);
     let tags = tagNames(data.tags);
@@ -595,12 +603,19 @@
           wrap.appendChild(pivot(host, 'site', host, '看這個網站的其他文章'));
           wrap.appendChild(el(doc, 'span', 'sep', '　·　'));
         }
-        const a = el(doc, 'a', null, '開啟原文 ↗');
-        a.href = data.source_url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        wrap.appendChild(a);
-        put(row('來源', wrap));
+        // href 一律經 RC.sourceUrlOf 只收 http(s)（與 V 鍵同一道關；網頁版的 CSP 不保證擋 javascript:，
+        // 2026-11-24 審核 B-6）。協定不對就不給連結，網域按鈕照留
+        const href = safeHttpUrl(data.source_url);
+        if (href) {
+          const a = el(doc, 'a', null, '開啟原文 ↗');
+          a.href = href;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          wrap.appendChild(a);
+        } else if (wrap.lastChild) {
+          wrap.removeChild(wrap.lastChild); // 沒有連結就不留網域後面的分隔點
+        }
+        if (wrap.childNodes.length) put(row('來源', wrap));
       }
       const author = data.author ? String(data.author).trim() : '';
       const date = ymd(data.published_date);
@@ -710,9 +725,12 @@
         };
         if (data.share_url) {
           const a = el(doc, 'a', 'share-url', String(data.share_url));
-          a.href = String(data.share_url);
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
+          const href = safeHttpUrl(data.share_url); // 同上（B-6）：不是 http(s) 就只顯示文字
+          if (href) {
+            a.href = href;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+          }
           box.appendChild(a);
           btn('複製連結', 'copy', false);
           btn('停止分享', 'stop', true);
