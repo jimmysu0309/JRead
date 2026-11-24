@@ -22,6 +22,8 @@
         <string>JRead iOS App Store</string>
         <key>app.jread.ios.Extension</key>
         <string>JRead iOS Extension App Store</string>
+        <key>app.jread.ios.Share</key>
+        <string>JRead iOS Share App Store</string>
     </dict>
     <key>uploadSymbols</key>
     <true/>

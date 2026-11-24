@@ -30,6 +30,12 @@
 		9EE3FF022FD28B7300CD167D /* AppSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */; };
 		9EE3FF032FD28B7300CD167D /* AppSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */; };
 		9EE3FF062FD28B7300CD167D /* jreader-app-shim.js in Resources */ = {isa = PBXBuildFile; fileRef = 9EE3FF052FD28B7300CD167D /* jreader-app-shim.js */; };
+		9EE3FF1C2FD28B7300CD167D /* JRead Share.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9EE3FF102FD28B7300CD167D /* JRead Share.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9EE3FF1E2FD28B7300CD167D /* JReadWebHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF1D2FD28B7300CD167D /* JReadWebHost.swift */; };
+		9EE3FF1F2FD28B7300CD167D /* JReadWebHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF1D2FD28B7300CD167D /* JReadWebHost.swift */; };
+		9EE3FF202FD28B7300CD167D /* AppSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */; };
+		9EE3FF222FD28B7300CD167D /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF212FD28B7300CD167D /* ShareInbox.swift */; };
+		9EE3FF232FD28B7300CD167D /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE3FF212FD28B7300CD167D /* ShareInbox.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,6 +45,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 9EE3FE9E2FD28B7100CD167D;
 			remoteInfo = "JRead Extension";
+		};
+		9EE3FF1A2FD28B7300CD167D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9EE3FE7A2FD28B7100CD167D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9EE3FF132FD28B7300CD167D;
+			remoteInfo = "JRead Share";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -50,6 +63,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				9EE3FEA02FD28B7100CD167D /* JRead Extension.appex in Embed Foundation Extensions */,
+				9EE3FF1C2FD28B7300CD167D /* JRead Share.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -84,7 +98,32 @@
 		9EE3FF052FD28B7300CD167D /* jreader-app-shim.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "jreader-app-shim.js"; sourceTree = "<group>"; };
 		9EE3FF072FD28B7300CD167D /* JRead.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = JRead.entitlements; sourceTree = "<group>"; };
 		9EE3FF082FD28B7300CD167D /* JRead Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "JRead Extension.entitlements"; sourceTree = "<group>"; };
+		9EE3FF102FD28B7300CD167D /* JRead Share.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "JRead Share.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9EE3FF1D2FD28B7300CD167D /* JReadWebHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JReadWebHost.swift; sourceTree = "<group>"; };
+		9EE3FF212FD28B7300CD167D /* ShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInbox.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9EE3FF122FD28B7300CD167D /* Exceptions for "JRead Share" folder in "JRead Share" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				"JRead Share.entitlements",
+			);
+			target = 9EE3FF132FD28B7300CD167D /* JRead Share */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		9EE3FF112FD28B7300CD167D /* JRead Share */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9EE3FF122FD28B7300CD167D /* Exceptions for "JRead Share" folder in "JRead Share" target */,
+			);
+			path = "JRead Share";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		9EE3FE7F2FD28B7100CD167D /* Frameworks */ = {
@@ -101,6 +140,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9EE3FF152FD28B7300CD167D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -109,6 +155,7 @@
 			children = (
 				9EE3FE842FD28B7100CD167D /* JRead */,
 				9EE3FEA32FD28B7100CD167D /* JRead Extension */,
+				9EE3FF112FD28B7300CD167D /* JRead Share */,
 				9EE3FF042FD28B7300CD167D /* Shared */,
 				9EE3FE832FD28B7100CD167D /* Products */,
 			);
@@ -118,6 +165,8 @@
 			isa = PBXGroup;
 			children = (
 				9EE3FF012FD28B7300CD167D /* AppSyncStore.swift */,
+				9EE3FF1D2FD28B7300CD167D /* JReadWebHost.swift */,
+				9EE3FF212FD28B7300CD167D /* ShareInbox.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -127,6 +176,7 @@
 			children = (
 				9EE3FE822FD28B7100CD167D /* JRead.app */,
 				9EE3FE9F2FD28B7100CD167D /* JRead Extension.appex */,
+				9EE3FF102FD28B7300CD167D /* JRead Share.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -202,6 +252,7 @@
 			);
 			dependencies = (
 				9EE3FEA22FD28B7100CD167D /* PBXTargetDependency */,
+				9EE3FF1B2FD28B7300CD167D /* PBXTargetDependency */,
 			);
 			name = JRead;
 			packageProductDependencies = (
@@ -229,6 +280,28 @@
 			productReference = 9EE3FE9F2FD28B7100CD167D /* JRead Extension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		9EE3FF132FD28B7300CD167D /* JRead Share */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9EE3FF172FD28B7300CD167D /* Build configuration list for PBXNativeTarget "JRead Share" */;
+			buildPhases = (
+				9EE3FF142FD28B7300CD167D /* Sources */,
+				9EE3FF152FD28B7300CD167D /* Frameworks */,
+				9EE3FF162FD28B7300CD167D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				9EE3FF112FD28B7300CD167D /* JRead Share */,
+			);
+			name = "JRead Share";
+			packageProductDependencies = (
+			);
+			productName = "JRead Share";
+			productReference = 9EE3FF102FD28B7300CD167D /* JRead Share.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -244,6 +317,9 @@
 					};
 					9EE3FE9E2FD28B7100CD167D = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					9EE3FF132FD28B7300CD167D = {
+						CreatedOnToolsVersion = 27.2;
 					};
 				};
 			};
@@ -263,6 +339,7 @@
 			targets = (
 				9EE3FE812FD28B7100CD167D /* JRead */,
 				9EE3FE9E2FD28B7100CD167D /* JRead Extension */,
+				9EE3FF132FD28B7300CD167D /* JRead Share */,
 			);
 		};
 /* End PBXProject section */
@@ -298,6 +375,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9EE3FF162FD28B7300CD167D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -309,6 +393,7 @@
 				9EE3FE862FD28B7100CD167D /* AppDelegate.swift in Sources */,
 				9EE3FE902FD28B7100CD167D /* SceneDelegate.swift in Sources */,
 				9EE3FF022FD28B7300CD167D /* AppSyncStore.swift in Sources */,
+				9EE3FF1E2FD28B7300CD167D /* JReadWebHost.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -318,6 +403,17 @@
 			files = (
 				9EE3FEA52FD28B7200CD167D /* SafariWebExtensionHandler.swift in Sources */,
 				9EE3FF032FD28B7300CD167D /* AppSyncStore.swift in Sources */,
+				9EE3FF222FD28B7300CD167D /* ShareInbox.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9EE3FF142FD28B7300CD167D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9EE3FF1F2FD28B7300CD167D /* JReadWebHost.swift in Sources */,
+				9EE3FF202FD28B7300CD167D /* AppSyncStore.swift in Sources */,
+				9EE3FF232FD28B7300CD167D /* ShareInbox.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +424,11 @@
 			isa = PBXTargetDependency;
 			target = 9EE3FE9E2FD28B7100CD167D /* JRead Extension */;
 			targetProxy = 9EE3FEA12FD28B7100CD167D /* PBXContainerItemProxy */;
+		};
+		9EE3FF1B2FD28B7300CD167D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9EE3FF132FD28B7300CD167D /* JRead Share */;
+			targetProxy = 9EE3FF1A2FD28B7300CD167D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -634,6 +735,78 @@
 			};
 			name = Release;
 		};
+		9EE3FF182FD28B7300CD167D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = PR6NG3PH45;
+				CURRENT_PROJECT_VERSION = 3.1.5;
+				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = "JRead Share/JRead Share.entitlements";
+				INFOPLIST_FILE = "JRead Share/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = JRead;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.1.5;
+				OTHER_LDFLAGS = (
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.jread.ios.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9EE3FF192FD28B7300CD167D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = PR6NG3PH45;
+				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS Share App Store";
+				CURRENT_PROJECT_VERSION = 3.1.5;
+				GENERATE_INFOPLIST_FILE = YES;
+				CODE_SIGN_ENTITLEMENTS = "JRead Share/JRead Share.entitlements";
+				INFOPLIST_FILE = "JRead Share/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = JRead;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.1.5;
+				OTHER_LDFLAGS = (
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.jread.ios.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -660,6 +833,15 @@
 			buildConfigurations = (
 				9EE3FEAF2FD28B7200CD167D /* Debug */,
 				9EE3FEB02FD28B7200CD167D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9EE3FF172FD28B7300CD167D /* Build configuration list for PBXNativeTarget "JRead Share" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9EE3FF182FD28B7300CD167D /* Debug */,
+				9EE3FF192FD28B7300CD167D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

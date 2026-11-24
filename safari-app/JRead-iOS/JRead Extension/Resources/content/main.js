@@ -1875,6 +1875,71 @@
   }
   NS.sendCurrentPageToService = sendCurrentPageToService;
 
+  // v3.2.0：iOS / iPadOS 分享面板「JRead」——分享擴充的前置 JS（JRead Share/preprocess.js）
+  // 在頁面裡 dispatch 請求事件，這裡負責「確保閱讀模式 → 抽 payload → 交給分享擴充」，與懸浮
+  // 按鈕「送到…」用同一個 extractReaderPayload（清過雜訊、已翻譯、含編輯模式移除的段落）。
+  //
+  // 兩段式（模擬器實測：Safari 只等前置 JS 約 1～2.5 秒，超過就交出空值；長文光進閱讀模式
+  // 就超過）：
+  //   1. 收到請求立刻回 ack 事件 → 前置 JS 帶著請求 id 結束（不等內容）
+  //   2. 抽完以 runtime 訊息 SHARE_PAYLOAD 交給 background → sendNativeMessage → 原生 handler
+  //      寫進 App Group 收件匣（Shared/ShareInbox.swift）→ 分享擴充依 id 取件後送出
+  // 送出不在這裡做：頁面事件任何網站 JS 都能偽造，所以本接口不讀憑證、不送出。偽造請求最多
+  // 讓頁面閃一下閱讀模式（原本沒開就退回原狀，Jimmy 2026-11-25 裁定）並在收件匣留一個沒人
+  // 取的檔（原生端定期清掉），另有冷卻時間。runtime 訊息頁面偽造不了，收件匣只有擴充寫得進去。
+  // 協定：請求 detail＝請求 id 字串；ack detail＝JSON 字串（跨 isolated world 只傳字串最保險）
+  const SHARE_EXTRACT_REQUEST = 'jread-share-extract-request';
+  const SHARE_EXTRACT_RESPONSE = 'jread-share-extract-response';
+  const SHARE_EXTRACT_COOLDOWN_MS = 3000;
+  const SHARE_REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+  let shareExtractBusy = false;
+  let shareExtractLastAt = 0;
+  async function extractForShare() {
+    const wasActive = !!NS.state.active;
+    try {
+      if (NS.state.cinemaActive) return { ok: false, reason: 'NOT_APPLICABLE_IN_CINEMA' };
+      if (!wasActive) {
+        const ok = await enterReaderMode({ silent: true });
+        if (!ok) return { ok: false, reason: 'NO_ARTICLE' };
+      }
+      const extracted = extractReaderPayload();
+      if (!wasActive) exitReaderMode();
+      if (!extracted || !extracted.ok) return { ok: false, reason: (extracted && extracted.reason) || 'NO_ARTICLE' };
+      return { ok: true, payload: extracted.payload };
+    } catch (err) {
+      if (!wasActive && NS.state.active) exitReaderMode();
+      return { ok: false, reason: 'ERROR', detail: String((err && err.message) || err || '').slice(0, 120) };
+    }
+  }
+  async function handleShareExtractRequest(id) {
+    const ack = (obj) => {
+      try {
+        window.dispatchEvent(new CustomEvent(SHARE_EXTRACT_RESPONSE, { detail: JSON.stringify(Object.assign({ id }, obj)) }));
+      } catch (_) { /* ack 失敗＝前置 JS 判定這頁沒有 JRead */ }
+    };
+    const now = Date.now();
+    if (shareExtractBusy || now - shareExtractLastAt < SHARE_EXTRACT_COOLDOWN_MS) {
+      ack({ stage: 'ack', ok: false, reason: 'BUSY' });
+      return;
+    }
+    shareExtractBusy = true;
+    shareExtractLastAt = now;
+    ack({ stage: 'ack', ok: true });
+    try {
+      const result = await extractForShare();
+      safeSendMessage({ type: NS.MSG.SHARE_PAYLOAD, payload: { id, result: JSON.stringify(result) } });
+    } finally {
+      shareExtractBusy = false;
+    }
+  }
+  if (NS.isSafariRuntime && NS.isSafariRuntime() && window === window.top) {
+    window.addEventListener(SHARE_EXTRACT_REQUEST, (e) => {
+      const id = e && typeof e.detail === 'string' ? e.detail : '';
+      if (!SHARE_REQUEST_ID_RE.test(id)) return;
+      handleShareExtractRequest(id);
+    });
+  }
+
   // v1.5.13：給 floating-icon 長按選單（YouTube watch 專用）用的明確語意 toggle。
   // 不走 dispatchLocalCommand 的快速鍵跨模式重導——選單列的標籤是「啟動/關閉影院模式」
   // 與「啟動/關閉無邊模式」，動作必須與標籤一致，不能被重導成「退出另一個 active 模式」。

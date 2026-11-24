@@ -34,6 +34,11 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let incoming = (dict["entries"] as? [String: Any]) ?? [:]
             let merged = AppSyncStore.merge(incoming)
             reply = [ "entries": merged ]
+        } else if let dict = message as? [String: Any], (dict["type"] as? String) == "jread.shareInbox",
+                  let id = dict["id"] as? String, let result = dict["result"] as? String {
+            // v3.2.0：Safari 分享面板「JRead」——content 抽好的 payload 寫進 App Group 收件匣，
+            // 分享擴充（JRead Share）依請求 id 取件（Shared/ShareInbox.swift）
+            reply = [ "ok": ShareInbox.put(id: id, result: result) ]
         } else {
             os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@)", String(describing: message), profile?.uuidString ?? "none")
             reply = [ "echo": message ]

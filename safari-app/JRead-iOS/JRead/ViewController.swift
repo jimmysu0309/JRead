@@ -219,24 +219,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     // 下一次載入的頁面一開始就拿到正確值（載入後才改會再觸發一次翻頁重排）
     private func installUserScripts(_ ucc: WKUserContentController) {
         ucc.removeAllUserScripts()
-        ucc.addUserScript(WKUserScript(source: manifestScript(), injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        ucc.addUserScript(WKUserScript(source: ExtensionResourceSchemeHandler.manifestScript(), injectionTime: .atDocumentStart, forMainFrameOnly: false))
         let bottom = Double(max(0, pushedSafeBottom))
         ucc.addUserScript(WKUserScript(source: "if (location.protocol === 'jread-app:') { window.__JREAD_APP_SAFE_BOTTOM = \(bottom); }",
                                        injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        if let shim = Bundle.main.url(forResource: "jreader-app-shim", withExtension: "js"),
-           let src = try? String(contentsOf: shim, encoding: .utf8) {
+        if let src = ExtensionResourceSchemeHandler.shimSource {
             ucc.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
-    }
-
-    // 頁面內 runtime.getManifest() 同步回傳，manifest 內容在注入時就先放好
-    private func manifestScript() -> String {
-        var json = "{}"
-        if let url = ExtensionResourceSchemeHandler.resourcesURL?.appendingPathComponent("manifest.json"),
-           let data = try? Data(contentsOf: url), let s = String(data: data, encoding: .utf8) {
-            json = s
-        }
-        return "if (location.protocol === 'jread-app:') { window.__JREAD_APP_MANIFEST = \(json); }"
     }
 
     // MARK: - 下拉更新（v2.2.13）
@@ -351,43 +340,23 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
                                replyHandler: @escaping @MainActor (Any?, String?) -> Void) {
         // E-03：來源檢查連 host 一起比（原本只比 protocol，jread-app://<任意 host> 也成立）
-        guard message.frameInfo.securityOrigin.protocol == Self.scheme,
-              message.frameInfo.securityOrigin.host == Self.appHost,
+        guard JReadHostBridge.isTrusted(message),
               let body = message.body as? [String: Any], let op = body["op"] as? String else {
             replyHandler(nil, "bad request")
             return
         }
+        // storage / fetch 這幾個 op 與分享擴充共用（Shared/JReadWebHost.swift）
+        if JReadHostBridge.handleCommon(op: op, body: body, reply: { replyHandler($0, nil) }) { return }
         switch op {
-        case "syncLoad":
-            replyHandler(jsonString(["entries": AppSyncStore.load()]), nil)
-        case "syncPut":
-            let raw = (body["entries"] as? String) ?? "{}"
-            let incoming = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any] ?? [:]
-            replyHandler(jsonString(["entries": AppSyncStore.merge(incoming)]), nil)
-        case "localLoad":
-            replyHandler(jsonString(["items": LocalStore.load()]), nil)
-        case "localPut":
-            let raw = (body["items"] as? String) ?? "{}"
-            let items = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: String] ?? [:]
-            LocalStore.update(set: items, remove: (body["remove"] as? [String]) ?? [])
-            replyHandler("{}", nil)
         case "chromeColor":
             if message.frameInfo.isMainFrame { applyChromeColor(body) }
             replyHandler("{}", nil)
         case "statusBar":
             if message.frameInfo.isMainFrame { setStatusBarHidden((body["hidden"] as? Bool) ?? false) }
             replyHandler("{}", nil)
-        case "fetch":
-            NativeFetch.perform(body) { result in replyHandler(result, nil) }
         default:
             replyHandler(nil, "unknown op")
         }
-    }
-
-    private func jsonString(_ obj: Any) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj),
-              let s = String(data: data, encoding: .utf8) else { return "{}" }
-        return s
     }
 }
 
@@ -418,121 +387,5 @@ enum AppIconSync {
         app.setAlternateIconName(want) { error in
             if let error { NSLog("[JRead] setAlternateIconName(\(want ?? "nil")) failed: \(error.localizedDescription)") }
         }
-    }
-}
-
-// MARK: - jread-app:// → JRead Extension.appex/ 的檔案
-
-final class ExtensionResourceSchemeHandler: NSObject, WKURLSchemeHandler {
-    static var resourcesURL: URL? {
-        Bundle.main.builtInPlugInsURL?.appendingPathComponent("JRead Extension.appex", isDirectory: true)
-    }
-
-    private static let mimeTypes: [String: String] = [
-        "html": "text/html", "js": "text/javascript", "css": "text/css", "json": "application/json",
-        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
-        "svg": "image/svg+xml", "ico": "image/x-icon", "woff2": "font/woff2", "woff": "font/woff",
-        "ttf": "font/ttf", "txt": "text/plain"
-    ]
-
-    static let htmlCSP = "script-src 'self'; object-src 'none'"
-
-    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        guard let url = urlSchemeTask.request.url, let root = Self.resourcesURL?.standardizedFileURL else {
-            urlSchemeTask.didFailWithError(URLError(.badURL)); return
-        }
-        let rel = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
-        let file = root.appendingPathComponent(rel).standardizedFileURL
-        // 擋 ../ 跳出 appex 目錄
-        guard file.path.hasPrefix(root.path + "/"), let data = try? Data(contentsOf: file) else {
-            let resp = HTTPURLResponse(url: url, statusCode: 404, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/plain"])!
-            urlSchemeTask.didReceive(resp)
-            urlSchemeTask.didReceive(Data())
-            urlSchemeTask.didFinish()
-            return
-        }
-        var mime = Self.mimeTypes[file.pathExtension.lowercased()] ?? "application/octet-stream"
-        if mime.hasPrefix("text/") || mime == "application/json" { mime += "; charset=utf-8" }
-        var headers = ["Content-Type": mime, "Content-Length": String(data.count)]
-        // v2.4.11（2026-11-15 review D-01）：html 回應補 CSP 兜底。擴充頁有 MV3 預設 CSP
-        //（script-src 'self'）擋 inline handler；同一份 reader/article.html 以 jread-app://
-        // 載入時自訂 scheme 沒有預設 CSP，sanitizer 一有缺口就是直接執行（頁面拿得到
-        // App Group 鏡像裡的憑證與原生 fetch 橋）。內容與擴充頁預設值對齊：只收同源
-        // script、不收 inline / eval、不收 plugin。WKUserScript 注入的 shim 不受頁面 CSP 限制
-        if mime.hasPrefix("text/html") {
-            headers["Content-Security-Policy"] = Self.htmlCSP
-        }
-        let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!
-        urlSchemeTask.didReceive(resp)
-        urlSchemeTask.didReceive(data)
-        urlSchemeTask.didFinish()
-    }
-
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
-}
-
-// MARK: - storage.local（App 自己的，不跟擴充同步：閱讀位置、feed 快取、這台裝置套用的設定檔）
-
-nonisolated enum LocalStore {
-    private static var fileURL: URL? {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        guard let dir else { return nil }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("jread-local.json")
-    }
-
-    /// key → 值的 JSON 字串
-    static func load() -> [String: String] {
-        guard let url = fileURL, let data = try? Data(contentsOf: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return [:] }
-        return obj
-    }
-
-    static func update(set: [String: String], remove: [String]) {
-        var cur = load()
-        for (k, v) in set { cur[k] = v }
-        for k in remove { cur.removeValue(forKey: k) }
-        guard let url = fileURL, let data = try? JSONSerialization.data(withJSONObject: cur) else { return }
-        try? data.write(to: url, options: .atomic)
-    }
-}
-
-// MARK: - 跨來源 fetch（Instapaper API 不開 CORS，網頁端直接打會被擋）
-
-nonisolated enum NativeFetch {
-    @MainActor static func perform(_ body: [String: Any], completion: @escaping @MainActor (String) -> Void) {
-        guard let s = body["url"] as? String, let url = URL(string: s),
-              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else {
-            completion(encode(["error": "bad url"])); return
-        }
-        var req = URLRequest(url: url, timeoutInterval: 60)
-        req.httpMethod = (body["method"] as? String) ?? "GET"
-        for (k, v) in (body["headers"] as? [String: String]) ?? [:] { req.setValue(v, forHTTPHeaderField: k) }
-        if let b = body["body"] as? String { req.httpBody = Data(b.utf8) }
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            let out: String
-            if let error {
-                out = encode(["error": error.localizedDescription])
-            } else if let http = response as? HTTPURLResponse {
-                var headers: [String: String] = [:]
-                for (k, v) in http.allHeaderFields { headers[String(describing: k)] = String(describing: v) }
-                out = encode([
-                    "status": http.statusCode,
-                    "statusText": HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
-                    "headers": headers,
-                    "url": http.url?.absoluteString ?? s,
-                    "bodyB64": (data ?? Data()).base64EncodedString()
-                ])
-            } else {
-                out = encode(["error": "no response"])
-            }
-            Task { @MainActor in completion(out) }
-        }.resume()
-    }
-
-    private static func encode(_ obj: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj),
-              let s = String(data: data, encoding: .utf8) else { return "{\"error\":\"encode\"}" }
-        return s
     }
 }

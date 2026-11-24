@@ -247,6 +247,18 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (appSync) appSync.pullThrottled();
 
   switch (msg.type) {
+    case 'SHARE_PAYLOAD': {
+      // v3.2.0：iOS 分享面板——content 抽好的 payload 轉給原生 handler 寫進 App Group 收件匣，
+      // 分享擴充（JRead Share）依請求 id 取件。只收 content script（有 sender.tab）；
+      // 非 Safari build 沒有 appSync（沒有 sendNativeMessage）→ 回 ok:false
+      const p = msg.payload || {};
+      if (!appSync || typeof appSync.sendShare !== 'function' || !sender || !sender.tab) {
+        sendResponse({ ok: false });
+        return; // sync
+      }
+      appSync.sendShare(p.id, p.result).then(sendResponse, () => sendResponse({ ok: false }));
+      return true; // async
+    }
     case 'BG_WAKE_PING': {
       // v0.8.33：content/keepalive.js 在 Safari 載入時發的一發喚醒訊息。
       // 訊息的「送達」本身就是目的（把 macOS WPA 內從不自行啟動的 background

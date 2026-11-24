@@ -1833,6 +1833,9 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       // Readwise integration（v0.7.33）
       GET_READER_STATE: 'GET_READER_STATE',         // popup → content：reader mode 是否啟動，決定 popup 按鈕 disable 狀態
       EXTRACT_READER_HTML: 'EXTRACT_READER_HTML',   // popup → content：抽 reader card outerHTML + url + title
+      // v3.2.0：iOS 分享面板——content → background：分享用 payload（{ id, result: JSON 字串 }），
+      // background 經 sendNativeMessage 寫進 App Group 收件匣給分享擴充取件（lib/app-sync.js sendShare）
+      SHARE_PAYLOAD: 'SHARE_PAYLOAD',
       // v0.8.148：popup → content「設定已改、請即時重套」。為什麼需要：iOS Safari
       // popup 開啟時底層頁面被掛起，storage.onChanged 廣播被丟掉（桌機 Chrome 頁面
       // 在 popup 後仍存活故照收）→ 改設定閱讀模式不即時生效、要重整。popup 每次

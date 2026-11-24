@@ -31,6 +31,9 @@
 
   const APP_ID = 'app.jread.ios';
   const MSG_TYPE = 'jread.sync';
+  // v3.2.0：iOS 分享面板的 payload 收件匣（原生端 Shared/ShareInbox.swift 寫進 App Group）
+  const SHARE_MSG_TYPE = 'jread.shareInbox';
+  const SHARE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
   const META_KEY = '__jreadAppSyncMeta';
   const PULL_THROTTLE_MS = 30000;
   const REMOVED = '\u0000removed';
@@ -190,11 +193,19 @@
       bumpMeta(entries).then(() => send(entries)).catch(() => {});
     });
 
+    // 分享擴充取件用：content 抽好的 payload 原樣（JSON 字串）交給原生 handler 寫進收件匣。
+    // 只收 id 格式正確、result 是字串的；回原生端的回應（{ ok }），失敗回 { ok: false }
+    function sendShare(id, result) {
+      if (!SHARE_ID_RE.test(String(id || '')) || typeof result !== 'string') return Promise.resolve({ ok: false, error: 'BAD_REQUEST' });
+      return Promise.resolve(browser.runtime.sendNativeMessage(APP_ID, { type: SHARE_MSG_TYPE, id, result }))
+        .then((r) => ({ ok: !!(r && r.ok) }), (e) => ({ ok: false, error: String((e && e.message) || e) }));
+    }
+
     pull();
-    return { pull, pullThrottled };
+    return { pull, pullThrottled, sendShare };
   }
 
-  const api = { APP_ID, MSG_TYPE, META_KEY, planPull, planReconcile, planPush, install };
+  const api = { APP_ID, MSG_TYPE, SHARE_MSG_TYPE, META_KEY, planPull, planReconcile, planPush, install };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

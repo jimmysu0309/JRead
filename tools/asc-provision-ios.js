@@ -4,7 +4,9 @@
 // 做四件事（已存在的步驟自動跳過）：
 //   1. Apple Distribution 憑證：本機產 RSA key + CSR → ASC API 簽發 →
 //      import 進 login Keychain（key + cert）
-//   2. 註冊 bundle ID：app.jread.ios + app.jread.ios.Extension（platform IOS）
+//   2. 註冊 bundle ID：app.jread.ios + app.jread.ios.Extension + app.jread.ios.Share（v3.2.0
+//      分享擴充；platform IOS）。App Group（group.app.jread.ios）要在 developer.apple.com
+//      的 Identifiers 手動勾到每個 App ID——ASC API 只能開 capability、不能指定 group
 //   3. 建 IOS_APP_STORE provisioning profiles（distribution profile 不需要
 //      裝置清單——automatic signing 在無註冊裝置的 team 會卡 development
 //      profile，這正是本 script 存在的原因）
@@ -38,10 +40,12 @@ const PROFILE_DIR = path.join(os.homedir(), 'Library', 'MobileDevice', 'Provisio
 const BUNDLE_IDS = [
   { identifier: 'app.jread.ios', name: 'JRead iOS' },
   { identifier: 'app.jread.ios.Extension', name: 'JRead iOS Extension' },
+  { identifier: 'app.jread.ios.Share', name: 'JRead iOS Share' },
 ];
 const PROFILES = [
   { name: 'JRead iOS App Store', bundleId: 'app.jread.ios' },
   { name: 'JRead iOS Extension App Store', bundleId: 'app.jread.ios.Extension' },
+  { name: 'JRead iOS Share App Store', bundleId: 'app.jread.ios.Share' },
 ];
 
 // ---- ASC API JWT（ES256）----------------------------------------------

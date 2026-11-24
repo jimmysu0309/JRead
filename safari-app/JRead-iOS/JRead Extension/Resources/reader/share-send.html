@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>JRead 分享</title>
+<!-- v3.2.0：iOS / iPadOS 分享擴充（JRead Share）在看不見的 WKWebView 以 jread-app:// 載入本頁，
+     把分享時從 Safari 頁面抽出的 payload 交給 window.__jreadShareSend 送出。
+     送出流程與懸浮按鈕「送到…」同一個 popup-core.saveDocumentFlow；憑證由 shim 的 storage.sync
+     讀 App Group 鏡像。擴充本身不會開這頁 -->
+</head>
+<body>
+  <script src="../lib/logger.js"></script>
+  <script src="../content/settings-defaults.js"></script>
+  <script src="../lib/instapaper-keys.js"></script>
+  <script src="../lib/instapaper.js"></script>
+  <script src="../popup/popup-core.js"></script>
+  <script src="share-send.js"></script>
+</body>
+</html>
