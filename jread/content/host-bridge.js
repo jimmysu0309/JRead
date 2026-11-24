@@ -27,9 +27,11 @@
   // 與 namespace.js NS.MSG.OPEN_OPTIONS 同值（這支跑在擴充讓位的頁面，沒有 NS 可讀；
   // web-host-settings-bridge.spec 綁兩邊相同、SW 有對應 case）
   const MSG_OPEN_OPTIONS = 'OPEN_OPTIONS';
-  // 只有「擴充的內容腳本注入 JRead 網頁版」才啟動：頁面有 host 設定標記，而且這不是 host 自己
-  // 載入的（host 的替身宣告 globalThis.__jreadHost；內容腳本在 isolated world 看不到）
-  if (!document.getElementById('jread-host-config') || globalThis.__jreadHost) return;
+  // 只有「擴充的內容腳本注入 JRead 網頁版」才啟動：這頁是 JRead 網頁版（判準單一資料源在
+  // namespace.js 的 __JReadIsWebHostPage，它比這支早載入），而且這不是 host 自己載入的
+  //（host 的替身宣告 globalThis.__jreadHost；內容腳本在 isolated world 看不到）
+  const isWebHost = globalThis.__JReadIsWebHostPage;
+  if (typeof isWebHost !== 'function' || !isWebHost(document) || globalThis.__jreadHost) return;
   const KEYS = globalThis.__JReadHostBridgeKeys;
   const api = globalThis.browser || globalThis.chrome;
   if (!Array.isArray(KEYS) || !api || !api.storage || !api.storage.sync) return;
