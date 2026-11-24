@@ -47,7 +47,8 @@ JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**�
 ### 稍後閱讀服務整合
 
 - **Readwise Reader、Instapaper 或 JReader（三選一）**：在進階設定選定服務後，可把 JRead 處理過的乾淨主文一鍵送出，繞過原站解析問題；Instapaper 走官方 Full API（xAuth，填一次 email／密碼換存取權杖，密碼用完即丟），Readwise 走 access token，JReader（自架的 Readwise 相容後端）填網址與 token。JReader 的文章清單、畫重點、閱讀進度與 Readwise 相同
-- **進入 Reader**：直接在新分頁列出所選服務的最新文章，點進去用 JRead 原本的閱讀版型呈現，主題／字型／字級／翻頁全部沿用同一套控制，也會記住閱讀位置。文章清單上左滑封存、右滑加入 Later（Instapaper 為加星）；電腦上對文章按右鍵也有同樣兩個選項。頂端分頁依服務切換：Readwise 為 Inbox／Later／JRead（在 Readwise 標記為 JRead 的文章），Instapaper 為未讀／已加星／封存
+- **進入 Reader**：直接在新分頁列出所選服務的最新文章，點進去用 JRead 原本的閱讀版型呈現，主題／字型／字級／翻頁全部沿用同一套控制，也會記住閱讀位置。文章清單上左滑封存、右滑加入 Later（Instapaper 為加星）；電腦上對文章按右鍵也有同樣兩個選項。頂端分頁依服務切換：Readwise 為 Inbox／Later／JRead（在 Readwise 標記為 JRead 的文章），Instapaper 為未讀／已加星／封存。卡片會顯示兩行摘要與日期；按 J／K 上下選文章、Enter 打開、E 封存、L 加入 Later，按 V 或右鍵「開啟原始網址」在新分頁開原文，按 ? 看這一頁能用的快速鍵
+- **JReader 書庫工具**：儲存服務選 JReader 時，文章清單多了 Inbox／Later／Archive／Progress（讀到一半的文章）分頁與垃圾桶（刪除後 30 天內可還原）；右下角的放大鏡（或按 /）可搜尋全部文章、貼網址存新文章、依標籤篩選，也能多選文章一次搬移、加標籤或刪除。讀文章時按 I 打開文章資訊：來源與作者（點了看同一來源的其他文章）、閱讀時間、資料夾、標籤、筆記、重點清單、摘要與公開分享連結。已裝擴充的瀏覽器打開 JReader 網頁版時，擴充會自動讓位，網頁版直接沿用擴充的排版設定（帳號與金鑰不會交給網頁）
 - **在 JReader 畫重點（Readwise）**：在「進入 Reader」打開的 Readwise 文章裡選取文字，點「畫重點」或按 H，重點會直接存回 Readwise（可跨段落）；在 Readwise 網站或 App 畫過的重點也會標出來，點一下重點可刪除。Instapaper 不支援
 - **JReader 跨裝置接續閱讀、按 E 封存**：JReader 會把你讀到的位置存回 Readwise，在另一台裝置的 JReader 打開同一篇會接著讀；往回重讀的位置也會跟著走。各裝置排版不同，位置是近似值；沒有別處的新進度時以這台記的位置為準。讀文章時按 E 可直接封存並回到文章清單（Readwise 與 Instapaper 皆可；進度接續僅 Readwise）
 - **iPhone / iPad App 內建 JReader**：打開 JRead App 按「啟用 JReader」，之後每次開 App 就直接進文章清單，不必經過 Safari。主題、字型、翻頁與 Readwise／Instapaper 帳號設定跟 Safari 中的 JRead 自動同步（在 Safari 改設定，回到 App 就套用；讀文章時長按 J 圖示的「功能選單」也能直接改主題、字型與翻頁）。讀文章時狀態列與 J 圖示會自動隱藏，點一下畫面就叫出來；從螢幕左緣往右滑就回到文章清單；文章清單往下拉即可更新。App 主畫面圖示可在 Safari 的 JRead 設定頁「App 圖示」切換藍底白字或白底黑字，下次開 App 時套用
