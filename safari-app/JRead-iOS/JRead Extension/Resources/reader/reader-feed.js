@@ -392,6 +392,13 @@
   // v3.1.0：每張卡片能做的動作（與右鍵選單同一份）——清單鍵盤操作（attachKeyboardNav）用。
   // 一般分頁、搜尋結果、同作者 / 同網域都經 attachContextMenu 登記，鍵盤與右鍵不會各算一套
   const CARD_ACTIONS = new WeakMap(); // card → { kinds: Set, pick(kind) }
+  // 「焦點在可打字的元素裡」：單一資料源 NS.isTextInputTarget（content/namespace.js，看穿開放式 shadow root）。
+  // reader 頁都有載 namespace.js；拿不到 NS（理論上不會）就當不在輸入
+  function isTyping(t) {
+    const N = global.__JRead;
+    return !!(N && typeof N.isTextInputTarget === 'function' && N.isTextInputTarget(t));
+  }
+
   // v3.1.0：清單多選（reader-select.js，JReader 才有）。有它時卡片右鍵多一項「選取」
   let selectHook = null;
 
@@ -545,7 +552,7 @@
       if (openMenu) return; // 右鍵選單開著：鍵盤歸選單（上下鍵、Esc）
       const t = e.target;
       const tag = t && t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      if (isTyping(t)) return;
       const cmd = KB_KEYS[String(e.key || '').toLowerCase()];
       if (!cmd) return;
       // 焦點在按鈕上（點過分頁鈕、排序鈕後焦點留在那裡）：字母鍵照收，Enter 留給按鈕本身

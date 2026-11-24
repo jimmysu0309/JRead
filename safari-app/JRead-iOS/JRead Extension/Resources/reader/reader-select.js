@@ -244,9 +244,8 @@
     // 鍵盤：X 勾 / 取消鍵盤選到的卡片（.is-kb）；Esc 離開多選。輸入框裡不收
     doc.addEventListener('keydown', (e) => {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target;
-      const tag = t && t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      const N = global.__JRead; // 「在輸入」單一資料源 NS.isTextInputTarget（看穿開放式 shadow root）
+      if (N && typeof N.isTextInputTarget === 'function' && N.isTextInputTarget(e.target)) return;
       if (e.key === 'Escape' && active) { e.preventDefault(); exit(); return; }
       if ((e.key === 'x' || e.key === 'X') && !e.shiftKey) {
         const kb = listEl.querySelector('.jr-card.is-kb');

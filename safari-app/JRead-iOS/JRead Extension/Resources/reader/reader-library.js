@@ -277,6 +277,12 @@
   // env：{ doc, win, PC, service, creds, toast, listEl, tabsEl, msgEl, showMsg, hideMsg,
   //        createCard, currentTabId(), switchTab(id), reload(), setTagFilter(name|null),
   //        cancelPending(), sessionStorage? }
+  // 「焦點在可打字的元素裡」：單一資料源 NS.isTextInputTarget（看穿開放式 shadow root）
+  function isTyping(t) {
+    const N = global.__JRead;
+    return !!(N && typeof N.isTextInputTarget === 'function' && N.isTextInputTarget(t));
+  }
+
   function attach(env) {
     const { doc, win, PC, creds } = env;
     const ui = buildToolbar(doc);
@@ -719,9 +725,7 @@
     // stopImmediatePropagation）時不重複動作；其他輸入框（貼網址）裡不觸發
     doc.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || !searching || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
-      const t = e.target;
-      const tag = t && t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      if (isTyping(e.target)) return;
       e.preventDefault();
       escapeSearch();
     });
@@ -729,9 +733,7 @@
     // ---- 快速鍵：/ 聚焦搜尋（輸入框內不觸發） ----
     doc.addEventListener('keydown', (e) => {
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target;
-      const tag = t && t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+      if (isTyping(e.target)) return; // 原本漏了 SELECT（各處各寫一份的 drift）
       e.preventDefault();
       setExpanded(true);
     });
