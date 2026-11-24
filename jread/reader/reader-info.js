@@ -207,6 +207,8 @@
       color: var(--fg); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     .act.danger { color: #c62828; }
     .trash-note { flex: 1 0 100%; font-size: 12px; color: var(--muted); }
+    .share-url { display: block; margin: 0 0 8px; font-size: 13px; word-break: break-all; }
+    .share-row { display: flex; gap: 8px; flex-wrap: wrap; }
   `;
 
   function el(document, tag, cls, text) {
@@ -384,6 +386,46 @@
       tags = Array.isArray(r.tags) ? r.tags.map(String) : next;
       allTags = null; // 下次自動完成重抓（篇數變了、可能多了新標籤）
       render();
+    }
+
+    // 分享：create 產生（成功自動複製）、copy 複製、stop 停止（先確認）
+    async function copyText(text) {
+      try {
+        await win.navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) { return false; }
+    }
+    async function shareAction(kind) {
+      if (kind === 'copy') {
+        toast((await copyText(String(data.share_url || ''))) ? '已複製分享連結' : '複製失敗，請直接選取網址', (data.share_url ? 'success' : 'error'));
+        return null;
+      }
+      if (kind === 'stop') {
+        const D = o.dialog || global.__JReadReaderDialog;
+        const ok = D && typeof D.confirm === 'function' && await D.confirm({
+          title: '停止分享？', message: '已經傳出去的連結會失效。之後再分享會是新的網址', confirmLabel: '停止分享', danger: true
+        });
+        if (!ok) return null;
+      }
+      let r;
+      try {
+        r = kind === 'create'
+          ? await PC.shareJReaderDocument(Object.assign({ id }, rw))
+          : await PC.unshareJReaderDocument(Object.assign({ id }, rw));
+      } catch (_) { r = null; }
+      if (!r || !r.ok) {
+        toast(PC.serviceErrorMessage ? PC.serviceErrorMessage(r, { action: kind === 'create' ? '分享' : '停止分享' }) : '失敗', 'error');
+        return r;
+      }
+      data.share_url = kind === 'create' ? (r.data && r.data.url) || null : null;
+      if (o.docData) o.docData.share_url = data.share_url;
+      render();
+      if (kind === 'create' && data.share_url) {
+        toast((await copyText(data.share_url)) ? '已產生並複製分享連結' : '已產生分享連結', 'success');
+      } else if (kind === 'stop') {
+        toast('已停止分享', 'success');
+      }
+      return r;
     }
 
     // 刪除 / 還原 / 永久刪除。刪除與永久刪除先確認（reader-dialog.js），成功後：刪掉的回清單並留提示
@@ -593,6 +635,33 @@
       // 摘要全文顯示、不折疊（Jimmy 2026-11-24）：平均約 120 字，折疊又沒有展開提示，等於把第三段藏掉；
       // 少數很長的（最長約 2K 字）面板本身可以捲
       if (data.summary) panel.appendChild(row('摘要', el(doc, 'div', 'summary', String(data.summary))));
+
+      // v3.1.0：公開分享連結（JReader，SPEC §8）。沒分享：「產生分享連結」（產生後自動複製）；
+      // 已分享：顯示網址＋「複製」「停止分享」（要確認：傳出去的連結會失效）。垃圾桶裡的不能分享
+      if (!data.deleted_at && typeof PC.shareJReaderDocument === 'function') {
+        const box = doc.createDocumentFragment();
+        const btns = el(doc, 'div', 'share-row');
+        const btn = (label, kind, danger) => {
+          const b = el(doc, 'button', 'act' + (danger ? ' danger' : ''), label);
+          b.type = 'button';
+          b.setAttribute('data-share', kind);
+          b.addEventListener('click', () => shareAction(kind));
+          btns.appendChild(b);
+        };
+        if (data.share_url) {
+          const a = el(doc, 'a', 'share-url', String(data.share_url));
+          a.href = String(data.share_url);
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          box.appendChild(a);
+          btn('複製連結', 'copy', false);
+          btn('停止分享', 'stop', true);
+        } else {
+          btn('產生分享連結', 'create', false);
+        }
+        box.appendChild(btns);
+        panel.appendChild(row('公開分享', box));
+      }
 
       // v3.1.0：刪除（移到垃圾桶）；在垃圾桶裡的改成「還原 / 永久刪除」。手機沒有右鍵，這裡是主要入口
       const actions = el(doc, 'div', 'danger-row');

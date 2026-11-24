@@ -991,6 +991,16 @@
   function emptyJReaderTrash({ token, base, fetchImpl } = {}) {
     return jreaderAction({ token, base, fetchImpl, method: 'POST', path: '/api/v1/trash/empty' });
   }
+  // 公開分享連結（JReader POST / DELETE /api/v1/documents/:id/share）。建立成功回 { ok, data: { url, slug, created } }
+  function shareJReaderDocument({ token, base, id, fetchImpl } = {}) {
+    if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    return jreaderAction({ token, base, fetchImpl, method: 'POST', path: docPath(id, '/share') });
+  }
+  function unshareJReaderDocument({ token, base, id, fetchImpl } = {}) {
+    if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    return jreaderAction({ token, base, fetchImpl, method: 'DELETE', path: docPath(id, '/share') });
+  }
+
   // 多選批次（JReader POST /api/v1/documents/batch）：action＝move（帶 location）/ trash / restore / purge / tag（帶 tag）。
   // 成功回 { ok, data: { action, updated } }
   function batchJReaderDocuments({ token, base, ids, action, location, tag, fetchImpl } = {}) {
@@ -1774,6 +1784,8 @@
     purgeJReaderDocument,
     emptyJReaderTrash,
     batchJReaderDocuments,
+    shareJReaderDocument,
+    unshareJReaderDocument,
     listReaderDocuments,
     archiveReaderDocument,
     moveReaderDocument,

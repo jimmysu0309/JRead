@@ -195,6 +195,22 @@
       imgs[i].setAttribute('decoding', 'async');
     }
     article.appendChild(body);
+    // v3.1.0：公開分享頁（opts.sourceFooter）文末放「原文：<網站>」（JReader SPEC §8）。放在主文區外，
+    // 不影響重點定位與閱讀位置；只接受 http(s)
+    if (o.sourceFooter && doc && /^https?:\/\//i.test(String(doc.source_url || ''))) {
+      const p = document.createElement('p');
+      p.setAttribute('data-jread-reader-source', '1');
+      p.appendChild(document.createTextNode('原文：'));
+      const a = document.createElement('a');
+      a.href = String(doc.source_url);
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      let label = String(doc.source_url);
+      try { label = (doc.site_name ? String(doc.site_name) + '（' : '') + new URL(label).hostname.replace(/^www\./, '') + (doc.site_name ? '）' : ''); } catch (_) { /* 用網址 */ }
+      a.textContent = label;
+      p.appendChild(a);
+      article.appendChild(p);
+    }
     return article;
   }
 
@@ -681,7 +697,8 @@
     if (statusEl) statusEl.remove();
 
     const container = buildArticleContainer(docData, doc, {
-      detectLanguage: PC && PC.detectHanLanguage
+      detectLanguage: PC && PC.detectHanLanguage,
+      sourceFooter: !!ctx.readOnly // 公開分享頁文末放原文連結
     });
     doc.body.appendChild(container);
 

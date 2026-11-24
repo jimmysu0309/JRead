@@ -46,7 +46,7 @@
   // v3.1.0：feed 清單快取另外多存卡片要顯示的摘要、存入日期、所在資料夾（文章快取不變）。
   // 不存的話回清單時先畫出沒有摘要的舊卡片，新資料簽章又相同、不會重畫，摘要永遠出不來
   // deleted_at：JReader 垃圾桶（文章資訊面板據此顯示「還原 / 永久刪除」）
-  const FEED_FIELDS = SLIM_FIELDS.concat(['summary', 'saved_at', 'location', 'deleted_at', 'purge_at']);
+  const FEED_FIELDS = SLIM_FIELDS.concat(['summary', 'saved_at', 'location', 'deleted_at', 'purge_at', 'share_url']);
 
   // v1.6.0：feed 來源分頁，per-service（儲存服務二擇一單一資料源）。reader.html 不再
   // 寫死三顆 tab，由 reader-feed init() 依 FEED_TABS[service] 動態建立——切服務自動換
