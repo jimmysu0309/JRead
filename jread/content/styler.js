@@ -403,6 +403,10 @@
   //                     低又傷可讀性；英文引言保留斜體（真 italic 字型、排版慣例）。
   const BQ_PLAIN_ATTR = 'data-jread-bq-plain';
   const BQ_UPRIGHT_ATTR = 'data-jread-bq-upright';
+  // v2.5.53：被標成 plain 的引言，站方上下內距大於 1em 的那一側歸零（值 "t" / "b" / "tb"）。
+  // plain＝量過沒有框、底色、陰影、可見 pseudo——站方的大內距是留給被清掉的裝飾
+  // （aljazeera：padding-top 115px 給絕對定位的引號圖示與波紋圖），剩下的只是空白
+  const BQ_PAD_TRIM_ATTR = 'data-jread-bq-pad-trim';
   // v2.5.17：行內 code 不上底色的載體（標題與連結）。base 的歸透明規則與 v2.5.15
   // 非 light 主題的補底色規則共用這一份，避免兩處清單 drift。
   const INLINE_CODE_NO_BG_CARRIERS = 'h1, h2, h3, h4, h5, h6, a';
@@ -2678,10 +2682,19 @@ html [${ARTICLE_ATTR}="1"] p:not([${INLINE_FLOW_P_ATTR}="1"]) {
    (0,1,1)~(0,2,1) 的 padding / border reset 不可贏。border 三個 longhand 分開寫、
    只動 left——其餘三邊維持站方值（本來就量過是不可見的）。 */
 [${ARTICLE_ATTR}="1"] blockquote[${BQ_PLAIN_ATTR}="1"][${BQ_PLAIN_ATTR}="1"] {
-  border-left-width: 3px !important;
-  border-left-style: solid !important;
-  border-left-color: ${theme.link} !important;
-  padding-left: 1em !important;
+  border-inline-start-width: 3px !important;
+  border-inline-start-style: solid !important;
+  border-inline-start-color: ${theme.link} !important;
+  padding-inline-start: 1em !important;
+}
+/* v2.5.53：邊線與內縮改用邏輯屬性（inline-start）——右到左頁（aljazeera、fa / he 維基原文）
+   落在右側；左到右頁計算結果與原本的 left 相同。plain 引言的站方大內距歸零見
+   BQ_PAD_TRIM_ATTR 常數註解 */
+[${ARTICLE_ATTR}="1"] blockquote[${BQ_PAD_TRIM_ATTR}*="t"][${BQ_PAD_TRIM_ATTR}*="t"] {
+  padding-top: 0 !important;
+}
+[${ARTICLE_ATTR}="1"] blockquote[${BQ_PAD_TRIM_ATTR}*="b"][${BQ_PAD_TRIM_ATTR}*="b"] {
+  padding-bottom: 0 !important;
 }
 /* v1.9.12 CJK 為主引言取消 faux 斜體（見 BQ_UPRIGHT_ATTR 常數註解）。子孫一併
    normal——站方斜體常掛在 blockquote p 而非 blockquote 自身；語意強調元素
@@ -2878,7 +2891,7 @@ ${(() => { const c = parseCssColor(theme.articleBg); return (c && relLuminance(c
    width:100% 的引言會被推出版心 1em——selector 加 html 前綴與 :not(PLAYER) 到
    (0,2,2)，才贏得過通則 cap「html [ARTICLE] *:not(PLAYER) { max-width:100% }」(0,2,1)。 */
 html [${ARTICLE_ATTR}="1"] blockquote:not([${PLAYER_ATTR}="1"]) {
-  margin-left: 1em !important;
+  margin-inline-start: 1em !important; /* v2.5.53：邏輯屬性，右到左頁縮在右側 */
   max-width: calc(100% - 1em) !important;
 }
 /* v0.8.86：responsive embed 的 abs-pos iframe pin 回填滿 wrapper。
@@ -8462,6 +8475,11 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
             if (isWrapper && isDecorated(par)) continue;
           }
           mark(bq, BQ_PLAIN_ATTR);
+          // v2.5.53：plain 引言的站方大內距（> 1em）歸零（見 BQ_PAD_TRIM_ATTR 註解）
+          const bcs = bwin.getComputedStyle(bq);
+          const em = parseFloat(bcs.fontSize) || 16;
+          const trim = ((parseFloat(bcs.paddingTop) || 0) > em ? 't' : '') + ((parseFloat(bcs.paddingBottom) || 0) > em ? 'b' : '');
+          if (trim) { bq.setAttribute(BQ_PAD_TRIM_ATTR, trim); quoteMarks.push({ el: bq, attr: BQ_PAD_TRIM_ATTR }); }
         }
       };
 

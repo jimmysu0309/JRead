@@ -4933,7 +4933,13 @@
   // ——譯者在反應名詞後面補了括號原文註記。計數與反應名詞都在清單內，漏網的是尾巴
   // 那個括號：每個 token 的反應名詞之後允許一個短括號註記（全半形、16 字內、不可巢狀），
   // 其餘結構（數字起手 + 已知反應名詞收尾 + 整段純計數）不動。
-  const REACTION_COUNT_RE =/^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬兩]+)\s*[一-鿿]{0,3}\s*(likes?|restacks?|reactions?|comments?|shares?|讚|贊|喜歡|反應|重新堆疊|轉發|轉貼|轉推|重推|留言|回覆|評論|分享|收藏|按讚|推薦)(?:\s*[（(][^（）()]{1,16}[）)])?\s*[·•∙、,|/]*)+$/i;
+  // v2.5.53 chinatalk_2a4653 翻譯後（Gemini）：「73 個喜歡∙4 次推廣（Restack）」——Restack 第 8 種
+  // 譯法「推廣」。不再逐版補譯詞：譯者補了括號原文時，括號裡的原文是已知反應詞就算數
+  // （名詞本身不認得也行，最多 4 個中文字）。每一段仍必須錨在已知反應詞上（名詞或括號原文），
+  // 不認得又沒括號的段照舊 miss——「5 小時前 · 3 則留言」這類作者列不會因此被當反應列。
+  // 反應詞清單在 regex 裡出現兩次（名詞本身／括號原文），改清單時兩處一起改（字面 regex 才讓
+  // zh-fold-reaction-cta-time-byline.spec 的簡體摺疊檢查讀得到）
+  const REACTION_COUNT_RE =/^(\s*(?:\d[\d,.]*|[零〇一二三四五六七八九十百千萬兩]+)\s*[一-鿿]{0,3}\s*(?:(?:likes?|restacks?|reactions?|comments?|shares?|讚|贊|喜歡|反應|重新堆疊|轉發|轉貼|轉推|重推|留言|回覆|評論|分享|收藏|按讚|推薦)(?:\s*[（(][^（）()]{1,16}[）)])?|[一-鿿]{1,4}\s*[（(]\s*(?:likes?|restacks?|reactions?|comments?|shares?|讚|贊|喜歡|反應|重新堆疊|轉發|轉貼|轉推|重推|留言|回覆|評論|分享|收藏|按讚|推薦)\s*[）)])\s*[·•∙、,|/]*)+$/i;
 
   function isReactionCountBar(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -5281,6 +5287,51 @@
     return false;
   }
 
+  // v2.5.53：圖說正上方、還沒載入的媒體槽——不是空殼，不藏。
+  // 場景（cnbc 實測，2026-11-24）：站方 lazy loader（react-lazyload 這類）先放一個
+  // 只靠比例內距撐高的空盒子（`padding-bottom:55.5%`、裡面沒有 <img>），等它「進入
+  // 畫面」才把圖畫進去。空殼規則把它當留白 display:none 後盒子變 0×0，loader 永遠
+  // 判定它不在畫面上 → 圖永遠不畫，閱讀模式只剩圖說（在頁頂進閱讀模式就會發生；
+  // 先捲過圖再進閱讀模式則正常）。不藏也不會留白：styler 的圖說上方包裝殼規則會把
+  // 比例內距歸零，未載入前高度 0，載入後由圖本身撐開。
+  // 結構訊號（硬規則 3，不看 class / 站點）：
+  //   (1) 高度是預留的：垂直內距 > 40px 且 content box ≈ 0（padding hack），或
+  //       computed aspect-ratio 不是 auto
+  //   (2) 往上只穿過單一子層的包裝（最多 3 層），到達「只有兩個看得到的子層」的外殼，
+  //       媒體槽這一支在前、另一支是圖說樣的短文字（有字、加權 ≤ 600、不含媒體 /
+  //       標題 / 多段落）——只有媒體槽＋圖說兩件事的外殼才是圖片嵌入
+  // 呼叫端已確認 el 本身沒有字、沒有看得到的媒體。
+  const PENDING_SLOT_CAPTION_MAX = 600; // 新聞圖說可到 300+ 字（cnbc 實測 340）
+  function isPendingCaptionedMediaSlot(el) {
+    if (!el || el.nodeType !== 1 || typeof window === 'undefined' || !window.getComputedStyle) return false;
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (_) { return false; }
+    if (!cs) return false;
+    const pt = parseFloat(cs.paddingTop) || 0;
+    const pb = parseFloat(cs.paddingBottom) || 0;
+    const byPadding = pt + pb > 40 && ((el.clientHeight || 0) - pt - pb) <= 4;
+    const byRatio = !!cs.aspectRatio && cs.aspectRatio !== 'auto';
+    if (!byPadding && !byRatio) return false;
+    const shown = (k) => !(k.dataset && k.dataset.jreadHidden === '1');
+    let cur = el;
+    for (let depth = 0; depth < 3 && cur.parentElement; depth++) {
+      const parent = cur.parentElement;
+      const kids = Array.from(parent.children).filter(shown);
+      if (kids.length === 2 && kids[0] === cur) return looksLikeShortCaption(kids[1]);
+      if (kids.length !== 1) return false;
+      cur = parent;
+    }
+    return false;
+  }
+  function looksLikeShortCaption(el) {
+    if (!el || !el.querySelector) return false;
+    if (el.querySelector('img, picture, video, iframe, canvas, svg, h1, h2, h3, h4, h5, h6, table, ul, ol, pre')) return false;
+    if (el.querySelectorAll('p').length > 2) return false;
+    const text = norm(el.textContent);
+    if (!text) return false;
+    return NS.cjkWeightedLen(text) <= PENDING_SLOT_CAPTION_MAX;
+  }
+
   // v2.5.8：el 的 padding box 是不是「留下來的 absolute embed」的比例盒。
   // siblingHasMediaEmbed 的對偶：那條認「aspect spacer 與 player 是兄弟」（JW
   // `.jw-aspect`），這條認「embed 就在殼裡面」——responsive 影片嵌入最常見的寫法
@@ -5443,6 +5494,8 @@
       // 歸零。通則：空 div 的 parent 含 video/iframe sibling = player layout
       // 輔助元素，不 hide。
       if (siblingHasMediaEmbed(el)) continue;
+      // v2.5.53：圖說正上方、還沒載入的媒體槽（見 isPendingCaptionedMediaSlot）
+      if (isPendingCaptionedMediaSlot(el)) continue;
 
       hide(el, hidden);
       markHiddenWhy(el, 'empty'); // 2026-10-07 review A-07：晚渲染內容進來時可撤銷
@@ -8712,6 +8765,16 @@
   const SYMMETRIC_MARGIN_MIN = 4;
   const SYMMETRIC_MARGIN_TOLERANCE = 1;
 
+  function hasSubgridChild(el) {
+    for (const c of el.children) {
+      let ccs;
+      try { ccs = window.getComputedStyle(c); } catch (_) { continue; }
+      if (!ccs) continue;
+      if (/^subgrid/.test(ccs.gridTemplateColumns || '') || /^subgrid/.test(ccs.gridTemplateRows || '')) return true;
+    }
+    return false;
+  }
+
   function collapseInnerGridFlex(articleEl, hidden) {
     if (!articleEl || !articleEl.querySelectorAll) return;
     const resets = [];
@@ -8745,6 +8808,12 @@
         }
       }
       if (hasLiveMedia) continue;
+      // v2.5.53：直接子層用 subgrid 共用這個 grid 的欄（arxiv 參考文獻 `ul` 兩欄＝編號＋
+      // 內文、每個 `li` 用 `grid-template-columns: subgrid`）＝整組刻意對齊的表格式排版。
+      // 攤平父層後 subgrid 沒有父欄可接，每個子層各自依內容分欄 → 編號欄寬各筆不同、
+      // 內文左緣亂跳。Chromium 把 subgrid 回報成 `subgrid [] …`；必須在攤平前量（攤平後
+      // 子層的 computed 變回 px）
+      if (hasSubgridChild(el)) continue;
       gridTargets.push(el);
     }
     for (const el of gridTargets) {
@@ -9254,6 +9323,7 @@
       const cs = (typeof window !== 'undefined' && window.getComputedStyle) ?
         window.getComputedStyle(el) : null;
       if (cs && cs.backgroundImage && cs.backgroundImage !== 'none') continue;
+      if (isPendingCaptionedMediaSlot(el)) continue; // v2.5.53
       hide(el, hidden);
       markHiddenWhy(el, 'empty'); // 2026-10-07 review A-07
     }
@@ -9283,6 +9353,7 @@
       // 含未被 hide 的真實內容媒體（含 lazy 內容圖）→ 保留
       if (hasUnhiddenContentMedia(el)) continue;
       if (cs.backgroundImage && cs.backgroundImage !== 'none') continue;
+      if (isPendingCaptionedMediaSlot(el)) continue; // v2.5.53
       hide(el, hidden);
       markHiddenWhy(el, 'empty'); // 2026-10-07 review A-07
     }
@@ -10000,6 +10071,9 @@
       // 含 video / iframe sibling 的 wrapper 是 player layout 輔助元素，
       // 其大 padding 是媒體佔位、不是裝飾留白，不 cap。
       if (siblingHasMediaEmbed(el)) continue;
+      // v2.5.53：還沒載入的媒體槽，內距是圖的比例預留、不是留白（cap 成 16px 會在圖下
+      // 多一條空白；不 cap 時 styler 的圖說上方包裝殼規則會處理）
+      if (isPendingCaptionedMediaSlot(el)) continue;
       // v2.5.8：embed 就在殼裡面（absolute 填滿 padding box）時，padding 是比例盒、
       // 不 cap；margin 仍是殼外的留白、照舊 cap。
       const ratioBox = paddingBoxHoldsAbsoluteEmbed(el);

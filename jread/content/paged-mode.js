@@ -271,6 +271,7 @@
   // ---- DOM 模組 ----
 
   let installed = false;
+  const PAGED_ROOT_ATTR = 'data-jread-paged'; // v2.5.53：見 paged-io-guard.js
   let art = null;
   let idx = 0;
   let lastRatio = 0;        // uninstall 後保留，styler reapply 重掛時回到原比例
@@ -2072,6 +2073,9 @@
     observeCardSize();
 
     installed = true;
+    // v2.5.53：給 main world 的 paged-io-guard.js 看的標記——翻頁期間卡片內元素的「離開
+    // 畫面」IO 通知不轉給站方（Chromium IO 對分欄元素一律量第 1 欄，翻到第 2 頁就誤報）
+    document.documentElement.setAttribute(PAGED_ROOT_ATTR, '1');
     // v1.6.15：進場強制 lazy 圖 eager（水平溢出的後段圖才會即時載入）
     forceEagerImages();
     // v1.6.16：持續盯後續進 DOM / 被改回 lazy 的圖（涵蓋「載入中就切翻頁模式」的 race）
@@ -2183,6 +2187,7 @@
     }
     art = null;
     installed = false;
+    document.documentElement.removeAttribute(PAGED_ROOT_ATTR); // v2.5.53
     isRtl = false;
     touchState = null;
     wheelAccum = 0;
