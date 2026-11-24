@@ -640,7 +640,9 @@
   // 這一行沒有任何日期形狀 → 側欄判定條件 A（短＋連結密度高）與標題前雜訊兩條規則的
   // 作者列保護都沒接住；翻譯後變成「2017 年 2 月 28 日」命中年月日才留著（同一頁原文
   // 與翻譯後不一致）。月份後面必須緊跟 1–2 位數的日，「2017 March Madness」這類不算
-  const BYLINE_TEXT_PROTECT_ONLY_RE = /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?!\d)/;
+  // v2.5.55：歐陸「日. 月. 年」日期（telefoncek「Objavljeno: 10. 02. 2025」；德、斯洛維尼亞、捷克、
+  // 俄文站慣用，點後可有空格）。只加在保護側：標題旁的日期列不被「分類標籤微型欄」當標籤清掉
+  const BYLINE_TEXT_PROTECT_ONLY_RE = /發[表佈布]於|\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?!\d)|\b\d{1,2}\.\s?\d{1,2}\.\s?\d{4}\b/;
   const BYLINE_TEXT_RE = new RegExp(BYLINE_TEXT_STRONG_RE.source + '|' + BYLINE_TEXT_WEAK_RE.source + '|' + BYLINE_TEXT_PROTECT_ONLY_RE.source, 'i');
   const BYLINE_MAX_TEXT_LEN = 200;
   // v2.5.5：保護側專用入口——簡體「编辑：」「报道：」「发布日期」「发表于」摺成台灣
@@ -2412,6 +2414,23 @@
   // 「數字 次瀏覽 / views / reads」（全字串比對，句子裡提到瀏覽數不會中）；不在表格、清單、
   // 引言裡；元素裡沒有其他元素帶別的文字（只藏葉節點級的計數標籤）
   const VIEW_COUNT_RE = /^(?:(?:瀏覽|閱讀|觀看|點閱|浏览|阅读|观看|点阅)(?:數|数|次數|次数|人次|量)?\s*[:：]?\s*[\d,.]+\s*(?:萬|万|k)?\s*(?:次|人)?|[\d,.]+\s*(?:萬|万|k)?\s*(?:次瀏覽|次觀看|次閱讀|次点阅|次浏览|次阅读|次观看|人次|人瀏覽|人閱讀|views?|reads?))$/i;
+  // v2.5.55：作者列裡沒有字樣的裸計數（womany 標題下「by suninpirer 2013/05/14 82.7k」，
+  // 「瀏覽」是站方 ::before 畫的眼睛圖示）。字樣比對抓不到，改看位置：整個元素只有一個
+  // 數字（可帶 k / m / 萬），而且同一層兄弟裡有 <time> 或作者頁連結＝作者列裡的統計數字
+  //（瀏覽、留言、按讚）。不是 <time> 本身、不在連結 / 按鈕裡
+  const BARE_COUNT_RE = /^\d[\d,]*(?:\.\d+)?\s*(?:[kKmM]|萬|万)?$/;
+  function isBareMetaRowCount(el, t) {
+    if (!BARE_COUNT_RE.test(t) || el.tagName === 'TIME') return false;
+    if (el.closest('a, button, time')) return false;
+    const par = el.parentElement;
+    if (!par) return false;
+    for (const sib of par.children) {
+      if (sib === el) continue;
+      if (sib.tagName === 'TIME' || (sib.querySelector && sib.querySelector('time'))) return true;
+      if (clusterContainsAuthorProfileLink(sib) || (sib.tagName === 'A' && isAuthorProfileAnchor(sib))) return true;
+    }
+    return false;
+  }
   function hideInsideArticleViewCounts(articleEl, hidden) {
     for (const el of articleEl.querySelectorAll('time, span, div, p, small, li')) {
       if (el.dataset && el.dataset.jreadHidden === '1') continue;
@@ -2419,7 +2438,8 @@
       // 清單項本身可以是計數標籤（「<li>瀏覽 120</li>」），清單項裡的子元素交給清單項判
       if (el.tagName !== 'LI' && el.parentElement && el.parentElement.closest('li')) continue;
       const t = norm(el.textContent || '');
-      if (!t || t.length > 30 || !VIEW_COUNT_RE.test(t)) continue;
+      if (!t || t.length > 30) continue;
+      if (!VIEW_COUNT_RE.test(t) && !isBareMetaRowCount(el, t)) continue;
       // 子元素整串就是同一段計數（span 包數字）沒關係；有子元素自己也整串命中就交給它
       let childHit = false;
       for (const c of el.children) { if (VIEW_COUNT_RE.test(norm(c.textContent || ''))) { childHit = true; break; } }
@@ -6556,6 +6576,10 @@
     // 同 div，taxonomy href 命中 hashtag 判定整列被砍、發表日期連坐消失。
     // 純 hashtag/tag bar 不含 <time>，此 guard 只放行「日期 + tag」dateline。
     if (el.querySelector('time')) return null;
+    // v2.5.55：作者頁連結＝作者列。twreporter 的 metadata 容器把分類、日期（純文字 div，
+    // 不是 <time>）、作者（`/authors/…`）、標籤包在一起，標籤顆數讓整個容器過了 ratio，
+    // 作者與日期連坐消失。外層不收；裡面只裝標籤的那一層照樣由本函式各自命中
+    if (clusterContainsAuthorProfileLink(el)) return null;
     return el;
   }
   function hideInsideArticleHashtagClusters(articleEl, hidden) {
