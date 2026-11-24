@@ -612,6 +612,10 @@
       if (tags.length) tagBox.appendChild(chips);
       tagBox.appendChild(tagInput(typed, focusedTagInput));
       panel.appendChild(row('標籤', tagBox));
+      // v3.1.0：Raindrop 同步失敗的小提示（JReader SPEC §9：重試用完才會是 failed；再改一次標籤會重送）
+      if (data.raindrop_state === 'failed') {
+        panel.appendChild(el(doc, 'div', 'trash-note raindrop-note', 'Raindrop 同步失敗：這篇或它的標籤沒有送到 Raindrop，再改一次標籤會重試'));
+      }
 
       panel.appendChild(row('筆記', notesBox(focusedNotes, notesCaret)));
 
