@@ -27,27 +27,29 @@
   const MORE_STEP = 20;
 
   // v3.1.0：垃圾桶動作（右鍵選單 kind → popup-core 函式 / 錯誤文案的動詞 / 成功提示）
+  // 完成提示文字的正本在 reader-cache ACTION_DONE（清單、搜尋結果、多選、文章資訊面板共用）
+  const DONE = (RC_MOD && RC_MOD.ACTION_DONE) || {};
   const TRASH_ACTIONS = {
-    trash: { fn: 'trashJReaderDocument', action: '刪除', done: '已移到垃圾桶' },
-    restore: { fn: 'restoreJReaderDocument', action: '還原', done: '已還原' },
-    purge: { fn: 'purgeJReaderDocument', action: '永久刪除', done: '已永久刪除' }
+    trash: { fn: 'trashJReaderDocument', action: '刪除', done: DONE.trash },
+    restore: { fn: 'restoreJReaderDocument', action: '還原', done: DONE.restore },
+    purge: { fn: 'purgeJReaderDocument', action: '永久刪除', done: DONE.purge }
   };
   // 確認文案的正本在 reader-dialog.js（文章資訊面板也用）
   const DIALOG_MOD = global.__JReadReaderDialog ||
     (typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-dialog.js') : null);
-  function trashConfirmText(kind, doc, count) {
-    return DIALOG_MOD && typeof DIALOG_MOD.trashConfirmText === 'function' ? DIALOG_MOD.trashConfirmText(kind, doc, count) : null;
+  function trashConfirmText(kind, doc, count, days) {
+    return DIALOG_MOD && typeof DIALOG_MOD.trashConfirmText === 'function' ? DIALOG_MOD.trashConfirmText(kind, doc, count, days) : null;
   }
 
   // v3.1.0：Later / 封存區的「移回 Inbox」（FEED_TABS 的 inbox 欄位）
-  const INBOX_TEXT = { swipe: 'Inbox', menu: '移回 Inbox', done: '已移回 Inbox' };
+  const INBOX_TEXT = { swipe: 'Inbox', menu: '移回 Inbox', done: DONE.inbox };
 
   // v2.4.0：「稍後讀」動作的文字，per-service。Instapaper 沒有 Later，右滑改加星
   //（Jimmy 2026-11-07 裁定）。swipe＝滑動時底下露出的標籤、menu＝右鍵選單項、done＝
   // 'keep' 分頁成功後的 toast
   const LATER_TEXT = {
-    readwise:   { swipe: 'Later', menu: '加入 Later', done: '已加入 Later' },
-    jreader:    { swipe: 'Later', menu: '加入 Later', done: '已加入 Later' },
+    readwise:   { swipe: 'Later', menu: '加入 Later', done: DONE.later },
+    jreader:    { swipe: 'Later', menu: '加入 Later', done: DONE.later },
     instapaper: { swipe: '加星',  menu: '加星',       done: '已加星' }
   };
 
@@ -55,9 +57,7 @@
   //（Jimmy 2026-06-27：word_count 中英文語意不一、雜訊）。
   // v3.1.0：沒有網站名稱時用原文網址的網域（Readwise 匯入的文章約兩成沒有 site_name，
   // 卡片只剩作者、看不出是哪個網站）；作者與網站相同（大小寫不計）只列一次
-  function hostOf(url) {
-    try { return new URL(String(url)).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
-  }
+  const hostOf = (RC_MOD && RC_MOD.hostOf) || (() => '');
   function formatMeta(doc) {
     const parts = [];
     const author = doc.author ? String(doc.author) : '';
@@ -545,9 +545,12 @@
       if (openMenu) return; // 右鍵選單開著：鍵盤歸選單（上下鍵、Esc）
       const t = e.target;
       const tag = t && t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || (t && t.isContentEditable)) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
       const cmd = KB_KEYS[String(e.key || '').toLowerCase()];
       if (!cmd) return;
+      // 焦點在按鈕上（點過分頁鈕、排序鈕後焦點留在那裡）：字母鍵照收，Enter 留給按鈕本身
+      // （原本整個略過，點完分頁 J / K 就失效——2026-11-24 審核 A-9）
+      if (tag === 'BUTTON' && cmd === 'open') return;
       // 多選中只收移動（J / K）；勾選用 X（reader-select），單篇動作暫停
       if (selectHook && selectHook.isActive() && cmd !== 'next' && cmd !== 'prev') return;
       const list = cards();
@@ -695,6 +698,10 @@
       //（Inbox 右滑移到 Later 只離開 Inbox、從垃圾桶還原只離開垃圾桶）、或 EXCEPT_PREFIX + listKey＝
       // 除了那個分頁以外全部（移到垃圾桶：只該出現在垃圾桶）。背景抓回來的清單可能還沒反映，重畫時濾掉
       const removedIds = new Map();
+      // 垃圾桶保留天數（最近畫出的清單裡文件帶的 trash_keep_days；舊版 JReader 沒有時 30）。
+      // 垃圾桶說明、刪除確認文案（含多選）讀它
+      let keepDays = (RC && RC.TRASH_KEEP_DAYS_FALLBACK) || 30;
+      const trashNoteText = () => '放超過 ' + keepDays + ' 天的文章會自動永久刪除';
       const EXCEPT_PREFIX = '*except:';
       const hiddenIn = (k, listKey) => k === '*' || k === listKey ||
         (typeof k === 'string' && k.startsWith(EXCEPT_PREFIX) && k !== EXCEPT_PREFIX + listKey);
@@ -709,6 +716,12 @@
         .map((k) => k.toLowerCase());
       function listKeyFor(cfg) {
         return service + ':' + cfg.id + (tagFilter ? '#' + tagFilter.toLowerCase() : '');
+      }
+      // 本頁移走的文章「不該出現在哪些分頁」以分頁為單位、不含標籤篩選：原本用 listKeyFor，在標籤篩選中
+      // 刪除的文章記成「除了『垃圾桶#標籤』以外都藏」，換掉篩選後垃圾桶裡也看不到它（2026-11-24 審核 A-11）。
+      // 快取 key 照舊用 listKeyFor（篩選中的清單有自己的快取）
+      function scopeKeyFor(cfg) {
+        return service + ':' + cfg.id;
       }
       function queryFor(cfg) {
         if (!tagFilter || (cfg.query && cfg.query.tag)) return cfg.query;
@@ -729,10 +742,13 @@
       function showDocs(all, cfg) {
         shown = { all, cfg, gen: tabGen };
         const listKey = listKeyFor(cfg);
+        const scopeKey = scopeKeyFor(cfg);
+        if (RC && (all || []).some((d) => d && d.trash_keep_days != null)) keepDays = RC.trashKeepDays(all);
+        if (trashNoteEl) trashNoteEl.textContent = trashNoteText();
         const docs = postFilter(all, cfg).filter((d) => {
           if (!d) return false;
           if (lib && lib.isPending(d.id)) return false; // 抓取中的那張由工具列畫
-          return !hiddenIn(removedIds.get(d.id), listKey);
+          return !hiddenIn(removedIds.get(d.id), scopeKey);
         });
         if (!docs.length) {
           showMsg(emptyText(cfg), false);
@@ -752,7 +768,7 @@
               changed: (nd) => {
                 if (!shown || shown.cfg !== cfg) return;
                 if (!nd) {
-                  removedIds.set(d.id, trashCfg ? EXCEPT_PREFIX + listKeyFor(trashCfg) : '*');
+                  removedIds.set(d.id, trashCfg ? EXCEPT_PREFIX + scopeKeyFor(trashCfg) : '*');
                   if (typeof subCount === 'number') { subCount = Math.max(0, subCount - 1); renderHeadCount(); }
                 }
                 showDocs(nd ? shown.all.map((x) => (x && x.id === nd.id ? nd : x)) : shown.all, cfg);
@@ -775,9 +791,9 @@
           // v3.1.0：移回 Inbox（Later / 封存區）比照稍後讀：分頁設 'remove' 就離開本分頁
           const remove = isArchive || !!trashKind || (isInbox ? cfg.inbox === 'remove' : cfg.later === 'remove');
           const trashCfg = tabs.find((t) => t.trash);
-          const scope = kind === 'trash' && trashCfg ? EXCEPT_PREFIX + listKeyFor(trashCfg)
-            : kind === 'restore' ? listKey
-              : isArchive || trashKind ? '*' : listKey;
+          const scope = kind === 'trash' && trashCfg ? EXCEPT_PREFIX + scopeKeyFor(trashCfg)
+            : kind === 'restore' ? scopeKey
+              : isArchive || trashKind ? '*' : scopeKey;
           if (remove) removedIds.set(id, scope);
           const text = isInbox ? INBOX_TEXT : laterText;
           const rw = { token: creds.token, base: creds.base, id };
@@ -839,7 +855,7 @@
       }
       // v3.1.0：垃圾桶相關動作的確認（reader-dialog.js）。對話框模組不在（理論上不會）就保守地不動作
       async function confirmTrashAction(kind, docItem, count) {
-        const text = trashConfirmText(kind, docItem, count);
+        const text = trashConfirmText(kind, docItem, count, keepDays);
         if (!text) return true;
         const D = global.__JReadReaderDialog;
         if (!D || typeof D.confirm !== 'function') return false;
@@ -857,7 +873,7 @@
         attachContextMenu(card, caps, laterText, async (kind) => {
           if (kind === 'trash' && !(await confirmTrashAction('trash', d))) return;
           const label = kind === 'trash' ? '刪除' : kind === 'archive' ? '封存' : kind === 'inbox' ? INBOX_TEXT.menu : laterText.menu;
-          const done = kind === 'trash' ? '已移到垃圾桶' : kind === 'archive' ? '已封存' : kind === 'inbox' ? INBOX_TEXT.done : laterText.done;
+          const done = kind === 'trash' ? DONE.trash : kind === 'archive' ? DONE.archive : kind === 'inbox' ? INBOX_TEXT.done : laterText.done;
           card.classList.add('is-busy');
           let r;
           try {
@@ -944,10 +960,11 @@
         trashHead.appendChild(title);
         trashHead.appendChild(empty);
         listEl.parentNode.insertBefore(trashHead, listEl);
-        // 垃圾桶的自動清除說明（30 天：JReader 伺服器規則 TRASH_KEEP_DAYS，文案數字改了要一起改）
+        // 垃圾桶的自動清除說明：天數讀文件的 trash_keep_days（JReader 伺服器 TRASH_KEEP_DAYS；舊版沒有時 30），
+        // 清單畫出來時（showDocs 更新 keepDays）再刷新一次
         trashNoteEl = doc.createElement('div');
         trashNoteEl.className = 'jr-trash-note';
-        trashNoteEl.textContent = '放超過 30 天的文章會自動永久刪除';
+        trashNoteEl.textContent = trashNoteText();
         trashNoteEl.hidden = true;
         listEl.parentNode.insertBefore(trashNoteEl, listEl);
       }
@@ -1155,6 +1172,7 @@
       if (SEL && lib) {
         selectHook = SEL.attach({
           doc, win: global, listEl, PC, creds, toast,
+          keepDays: () => keepDays,
           getView: () => {
             if (lib.isSearching()) return { kind: 'search' };
             const t = currentTab || initialTab;

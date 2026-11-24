@@ -55,7 +55,8 @@
       'all: initial',
       'position: fixed',
       'right: 20px',
-      'bottom: 20px',
+      // reader 頁有底部固定工具列時由頁面設 --__jread-toast-bottom 讓位（一般網站沒有＝20px）
+      'bottom: var(--__jread-toast-bottom, 20px)',
       'z-index: 2147483647',
       'pointer-events: none',
       'display: block'

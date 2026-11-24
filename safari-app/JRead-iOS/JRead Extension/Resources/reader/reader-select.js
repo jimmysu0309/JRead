@@ -21,10 +21,14 @@
   'use strict';
 
   const BAR_CLASS = 'jr-select-bar';
+  // 完成提示文字的正本在 reader-cache ACTION_DONE
+  const RC_MOD = global.__JReadReaderCache ||
+    (typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-cache.js') : null);
+  const DONE = (RC_MOD && RC_MOD.ACTION_DONE) || {};
   const MOVES = [
-    { location: 'archive', label: '封存', done: '已封存' },
-    { location: 'later', label: 'Later', done: '已加入 Later' },
-    { location: 'new', label: 'Inbox', done: '已移回 Inbox' }
+    { location: 'archive', label: '封存', done: DONE.archive },
+    { location: 'later', label: 'Later', done: DONE.later },
+    { location: 'new', label: 'Inbox', done: DONE.inbox }
   ];
   const DIALOG = () => global.__JReadReaderDialog ||
     (typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require('./reader-dialog.js') : null);
@@ -98,7 +102,8 @@
       if (RO) { barRO = new RO(syncBarHeight); barRO.observe(bar); }
     }
     function syncBarHeight() {
-      if (bar && bar.offsetHeight) doc.body.style.setProperty('--jr-select-bar-h', bar.offsetHeight + 'px');
+      // 寫在 <html>：清單留白（body 規則）繼承得到，掛 <html> 直下的 toast 也讀得到（A-8）
+      if (bar && bar.offsetHeight) doc.documentElement.style.setProperty('--jr-select-bar-h', bar.offsetHeight + 'px');
     }
 
     function start(card) {
@@ -118,7 +123,7 @@
       doc.body.classList.remove('jr-selecting');
       if (askDone) askDone(null);
       if (barRO) { barRO.disconnect(); barRO = null; }
-      doc.body.style.removeProperty('--jr-select-bar-h');
+      doc.documentElement.style.removeProperty('--jr-select-bar-h');
       if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
       bar = null;
       for (const c of listEl.querySelectorAll('.jr-card.is-picked')) c.classList.remove('is-picked');
@@ -197,15 +202,15 @@
         done = '已加上標籤「' + tag + '」';
       } else if (act === 'trash' || act === 'purge') {
         // 文案與單篇刪除共用 reader-dialog.trashConfirmText（原本這裡有第三份，審核 A-7）
-        const text = D && typeof D.trashConfirmText === 'function' ? D.trashConfirmText(act, null, ids.length) : null;
+        const text = D && typeof D.trashConfirmText === 'function' ? D.trashConfirmText(act, null, ids.length, typeof o.keepDays === 'function' ? o.keepDays() : undefined) : null;
         if (!text || typeof D.confirm !== 'function' || !(await D.confirm(text))) return;
         if (!active || !picked.size) return;
         ids = Array.from(picked);
         req = { action: act };
-        done = act === 'trash' ? '已移到垃圾桶' : '已永久刪除';
+        done = DONE[act];
       } else if (act === 'restore') {
         req = { action: 'restore' };
-        done = '已還原';
+        done = DONE.restore;
       } else {
         return;
       }

@@ -46,7 +46,7 @@
   // v3.1.0：feed 清單快取另外多存卡片要顯示的摘要、存入日期、所在資料夾（文章快取不變）。
   // 不存的話回清單時先畫出沒有摘要的舊卡片，新資料簽章又相同、不會重畫，摘要永遠出不來
   // deleted_at：JReader 垃圾桶（文章資訊面板據此顯示「還原 / 永久刪除」）
-  const FEED_FIELDS = SLIM_FIELDS.concat(['summary', 'saved_at', 'location', 'deleted_at', 'purge_at', 'share_url']);
+  const FEED_FIELDS = SLIM_FIELDS.concat(['summary', 'saved_at', 'location', 'deleted_at', 'purge_at', 'share_url', 'trash_keep_days']);
 
   // v1.6.0：feed 來源分頁，per-service（儲存服務二擇一單一資料源）。reader.html 不再
   // 寫死三顆 tab，由 reader-feed init() 依 FEED_TABS[service] 動態建立——切服務自動換
@@ -125,6 +125,32 @@
   // v3.1.0：開啟原始網址（Jimmy 2026-11-24「加入開啟原始網址功能，由快速鍵 V 及右鍵選單進入」）。
   // 清單卡片右鍵與文章頁 V 鍵共用。只開 http(s)（擋 javascript: 等）；開新分頁、noopener。
   // iOS App 的 WKWebView 由 createWebViewWith 接手、交給外部瀏覽器。回 true＝有開
+  // 網址的網域（去 www.）；壞網址回 ''。清單卡片、貼網址的抓取中卡片、文章資訊面板共用
+  //（原本三份、壞網址回傳不同——2026-11-24 審核「重複邏輯」）
+  function hostOf(url) {
+    try { return new URL(String(url == null ? '' : url)).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
+  }
+
+  // 動作完成提示（清單右鍵 / 滑動、搜尋結果選單、多選批次、文章資訊面板共用一份；原本五份、
+  // 文章資訊面板的「已移到 Inbox」已經跟清單的「已移回 Inbox」drift）。Instapaper 的「稍後讀」是加星，
+  // 由 reader-feed LATER_TEXT 自己帶
+  const ACTION_DONE = Object.freeze({
+    archive: '已封存', later: '已加入 Later', inbox: '已移回 Inbox',
+    trash: '已移到垃圾桶', restore: '已還原', purge: '已永久刪除'
+  });
+
+  // 垃圾桶保留天數：JReader 每篇文件都帶 trash_keep_days（伺服器 src/store.ts TRASH_KEEP_DAYS 的值）。
+  // 收文件或文件陣列，取第一個合法值；舊版 JReader 沒有這個欄位時退回 30
+  const TRASH_KEEP_DAYS_FALLBACK = 30;
+  function trashKeepDays(docs) {
+    const list = Array.isArray(docs) ? docs : [docs];
+    for (const d of list) {
+      const n = d && d.trash_keep_days;
+      if (typeof n === 'number' && Number.isInteger(n) && n > 0) return n;
+    }
+    return TRASH_KEEP_DAYS_FALLBACK;
+  }
+
   function sourceUrlOf(doc) {
     const raw = doc && doc.source_url ? String(doc.source_url).trim() : '';
     try { const u = new URL(raw); return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : ''; } catch (_) { return ''; }
@@ -540,7 +566,7 @@
     isEmbeddedFrame, EMBEDDED_TEXT,
     FEED_KEY, HIGHLIGHT_KEY, LOCAL_CACHE_KEYS, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
     FEED_TABS, isTabArchivable,
-    accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
+    accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, hostOf, ACTION_DONE, trashKeepDays, TRASH_KEEP_DAYS_FALLBACK, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
     isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage,
     OWN_WRITE_KEY, OWN_WRITE_MAX, OWN_WRITE_SLACK_MS, readOwnWrites, planOwnWrite
