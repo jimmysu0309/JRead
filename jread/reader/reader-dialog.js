@@ -3,9 +3,12 @@
 // 刪除、永久刪除、清空垃圾桶前的確認（Jimmy 2026-11-24「刪除要確認」）。不用 window.confirm：iOS App 的
 // WKWebView 沒實作 confirm 委派時一律回 false（按了刪除卻什麼都不發生），樣式也跟 JRead 主題不搭。
 //
-// confirm({ title, message, confirmLabel, cancelLabel, danger }) → Promise<boolean>
-//   - danger：確認鈕用紅色，預設焦點放在「取消」（Enter 不會誤刪）
-//   - Esc / 點外面＝取消；Enter＝按下目前有焦點的那顆
+// confirm({ title, message, confirmLabel, cancelLabel, danger, focusCancel }) → Promise<boolean>
+//   - danger：確認鈕用紅色
+//   - 預設焦點：danger 或 focusCancel 時放在「取消」（Enter 不會誤刪；刪除到垃圾桶雖可還原也一樣，
+//     2026-11-24 審核 B-5），其他放在「確定」
+//   - Esc / 點外面＝取消；Enter＝按下目前有焦點的那顆。按住不放的自動重複（e.repeat）不算——
+//     按住 Enter 開框後的重複會直接確認（B-5）
 //   - 開著時頁面其他快速鍵一律不收（window capture、模組載入就註冊——比 Article View 的 Esc 退出閱讀模式早）
 // 浮層用 shadow DOM 掛 <html> 直下（閱讀模式會把 body 底下非主文元素藏起來）。顏色讀頁面主題（RC.pageThemeColors）。
 //
@@ -35,12 +38,14 @@
   `;
 
   // 垃圾桶相關的確認文案（清單右鍵、文章資訊面板共用一份；Jimmy：「刪除要確認」）。還原不用確認（回 null）
+  // count：多選批次的篇數（沒有 doc 時標題寫「N 篇」；清單多選與這裡共用一份文案，審核 A-7）
   function trashConfirmText(kind, doc, count) {
     const raw = doc && doc.title ? String(doc.title) : '';
-    const t = raw ? '「' + (raw.length > 30 ? raw.slice(0, 30) + '…' : raw) + '」' : '這篇';
+    const t = raw ? '「' + (raw.length > 30 ? raw.slice(0, 30) + '…' : raw) + '」'
+      : (!doc && count > 0 && kind !== 'empty' ? ' ' + count + ' 篇' : '這篇');
     // 「30 天」是 JReader 伺服器的規則（src/api.ts TRASH_KEEP_DAYS）；文案裡的數字改了要一起改。
     // 精確的剩餘天數由伺服器回的 purge_at 算（文章資訊面板）
-    if (kind === 'trash') return { title: '刪除' + t + '？', message: '文章會移到垃圾桶，30 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false };
+    if (kind === 'trash') return { title: '刪除' + t + '？', message: '文章會移到垃圾桶，30 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false, focusCancel: true };
     if (kind === 'purge') return { title: '永久刪除' + t + '？', message: '文章、重點與筆記會一起刪除，無法復原', confirmLabel: '永久刪除', danger: true };
     if (kind === 'empty') return { title: '清空垃圾桶？', message: (count ? count + ' 篇文章' : '垃圾桶裡的文章') + '會永久刪除，無法復原', confirmLabel: '清空', danger: true };
     return null;
@@ -113,7 +118,7 @@
       cancel.addEventListener('click', () => finish(false));
       ok.addEventListener('click', () => finish(true));
       backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) { e.preventDefault(); finish(false); } });
-      (o.danger ? cancel : ok).focus();
+      (o.danger || o.focusCancel ? cancel : ok).focus();
     });
   }
 
@@ -124,6 +129,7 @@
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
     else if (e.key === 'Enter') {
       e.preventDefault();
+      if (e.repeat) { e.stopImmediatePropagation(); return; } // 按住的自動重複不算確認
       finish(root.activeElement === current.cancel ? false : root.activeElement === current.ok ? true : false);
     } else if (e.key === 'Tab') {
       e.preventDefault();
