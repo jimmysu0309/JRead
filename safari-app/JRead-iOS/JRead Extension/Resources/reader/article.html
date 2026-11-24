@@ -45,6 +45,7 @@
        - cinema-mode / youtube-borderless / x-thread / fb-post：站點專用的進場路徑
        - home-launcher / orion-detect / keepalive / domain-match / link-follow：一般網頁
          的常駐機制（主畫面跳板、Orion 偵測、SW 保活、自動進場網域、連結跟隨）
+       - host-bridge：擴充遇到 JRead 網頁版頁面時的設定橋（v3.1.0），擴充自有的頁面用不到
        popup-core 在下方與 Instapaper client 一起載（順序需求不同）。 -->
   <!-- v2.5.1（D-07）：除錯記錄，必須第一個載入（同 manifest）。context 名稱由
        reader-article 模組設成 article（main.js 會先設成 content） -->
@@ -68,7 +69,13 @@
   <script src="../popup/popup-core.js"></script>
   <!-- v1.10.0：JReader 畫重點（須在 reader-article 前） -->
   <script src="reader-highlights.js"></script>
+  <!-- v3.1.0：文章資訊面板（I 鍵；只有 JReader 服務會掛上），須在 reader-article 前 -->
+  <script src="reader-info.js"></script>
+  <!-- v3.1.0：快速鍵說明（? 鍵） -->
+  <script src="reader-shortcuts.js"></script>
   <script src="reader-cache.js"></script>
+  <!-- v3.1.0：確認對話框（文章資訊面板的刪除 / 永久刪除），讀 reader-cache 的主題色 -->
+  <script src="reader-dialog.js"></script>
   <script src="reader-article.js"></script>
 </body>
 </html>

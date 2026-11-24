@@ -17,7 +17,36 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
 (function () {
   'use strict';
 
+  // v3.1.0：這一頁是不是 JRead 網頁版（web core host 頁）——擴充讓位（下面）與設定橋
+  // （content/host-bridge.js）共用這一份判準，掛在 globalThis 給後者讀。
+  // 兩個結構訊號都要有：(1) `<script type="application/json" id="jread-host-config">` 解得出帶
+  // coreBase 的設定（同 lib/web-host-shim.js readConfig 的要求）；(2) 頁面載了 lib/web-host-shim.js
+  // （Host 合約規定模板的 script 不可增減，真的網頁版一定有）。
+  // 原本只看「有沒有 id=jread-host-config 的元素」：任何網站放一個空元素就能讓 JRead 在那頁失效、
+  // popup 按鈕整排藏起來，部落格文章也可能剛好用到這個 id（2026-11-24 審核 C-1）。
+  // 注意：Host 合約另允許 window.__JREAD_HOST_CONFIG 形式，內容腳本在 isolated world 讀不到，
+  // 那種 host 擴充不會讓位（Host 合約已註明）
+  function isJReadWebHostPage(doc) {
+    try {
+      const el = doc && doc.getElementById && doc.getElementById('jread-host-config');
+      if (!el || el.tagName !== 'SCRIPT' || String(el.getAttribute('type') || '').trim().toLowerCase() !== 'application/json') return false;
+      const cfg = JSON.parse(el.textContent || '');
+      if (!cfg || typeof cfg !== 'object' || typeof cfg.coreBase !== 'string' || !cfg.coreBase.trim()) return false;
+      return Array.from(doc.querySelectorAll('script[src]'))
+        .some((s) => /(^|\/)lib\/web-host-shim\.js([?#]|$)/.test(s.getAttribute('src') || ''));
+    } catch (_) { return false; }
+  }
+  globalThis.__JReadIsWebHostPage = isJReadWebHostPage;
+
   if (window.__JRead) return; // 避免重複注入（SPA 導航、重新注入時保險）
+
+  // v3.1.0：JRead 網頁版（web core host 頁，例如 JReader）本身就是 JRead。擴充的內容腳本也會
+  // 注入這種頁面，兩份 JRead 共用同一套 DOM 標記與 html.__jread-active：畫面上兩顆懸浮按鈕、
+  // 搶按鍵、一份退出閱讀模式就把另一份的版型拆掉（Jimmy 2026-11-24「進入文章後有兩個 JRead icon」）。
+  // 判斷：這頁是 JRead 網頁版（isJReadWebHostPage，見上），而且這份不是 host 自己載入的（host 的替身
+  // 先宣告 globalThis.__jreadHost；擴充的內容腳本跑在 isolated world，看不到它）。只看結構訊號、
+  // 不看網址，自架在任何網域都適用。不建立 window.__JRead，後面依賴它的模組都不會啟動
+  if (isJReadWebHostPage(document) && !globalThis.__jreadHost) return;
 
   window.__JRead = {
     version: browser.runtime.getManifest().version,
@@ -1817,6 +1846,9 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       OPEN_FEATURE_MENU: 'OPEN_FEATURE_MENU',       // content → SW：開工具列圖示選單 popup（Safari）
       // v1.0.23：懸浮按鈕長按選單「進入 Reader」——content 無 tabs 權限，交 SW 開
       OPEN_READER: 'OPEN_READER',                   // content → SW：開 reader/reader.html（Readwise feed）新分頁
+      // v3.1.0：JRead 網頁版設定浮層的「進階設定」——content/host-bridge.js 轉給 SW 開進階設定頁。
+      // host-bridge 跑在擴充讓位的頁面（沒有 NS），以同值常數送出；web-host-settings-bridge.spec 綁兩邊同值
+      OPEN_OPTIONS: 'OPEN_OPTIONS',                 // content → SW：開擴充的進階設定頁
       // v1.7.44（X2）：panel 防 clickjacking——floating-icon 開頁內浮層前向 SW
       // 登記（sender.tab 為證、頁面 JS 無法偽造），popup(?panel=1) 載入時以
       // PANEL_HANDSHAKE（popup → SW，不在 content 詞彙）驗證後才接受互動

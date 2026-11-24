@@ -191,7 +191,10 @@
         getURL: (p) => BASE + String(p || '').replace(/^\//, ''),
         getManifest: () => clone(MANIFEST),
         sendMessage: () => Promise.resolve(undefined),
-        openOptionsPage: () => Promise.resolve(),
+        // v3.1.0：host 可提供 openOptionsPage（網頁版經擴充設定橋打開擴充的進階設定頁）
+        openOptionsPage: () => (typeof b.openOptionsPage === 'function'
+          ? Promise.resolve().then(() => b.openOptionsPage()).then(() => undefined)
+          : Promise.resolve()),
         onMessage: noopEvent(),
         onInstalled: noopEvent(),
         onStartup: noopEvent()

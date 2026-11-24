@@ -195,6 +195,22 @@
       imgs[i].setAttribute('decoding', 'async');
     }
     article.appendChild(body);
+    // v3.1.0：公開分享頁（opts.sourceFooter）文末放「原文：<網站>」（JReader SPEC §8）。放在主文區外，
+    // 不影響重點定位與閱讀位置；只接受 http(s)
+    if (o.sourceFooter && doc && /^https?:\/\//i.test(String(doc.source_url || ''))) {
+      const p = document.createElement('p');
+      p.setAttribute('data-jread-reader-source', '1');
+      p.appendChild(document.createTextNode('原文：'));
+      const a = document.createElement('a');
+      a.href = String(doc.source_url);
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      let label = String(doc.source_url);
+      try { label = (doc.site_name ? String(doc.site_name) + '（' : '') + new URL(label).hostname.replace(/^www\./, '') + (doc.site_name ? '）' : ''); } catch (_) { /* 用網址 */ }
+      a.textContent = label;
+      p.appendChild(a);
+      article.appendChild(p);
+    }
     return article;
   }
 
@@ -330,7 +346,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape };
+  const api = { markOpened, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -681,7 +697,8 @@
     if (statusEl) statusEl.remove();
 
     const container = buildArticleContainer(docData, doc, {
-      detectLanguage: PC && PC.detectHanLanguage
+      detectLanguage: PC && PC.detectHanLanguage,
+      sourceFooter: !!ctx.readOnly // 公開分享頁文末放原文連結
     });
     doc.body.appendChild(container);
 
@@ -696,10 +713,18 @@
     // capture，keyguard 會 stopImmediatePropagation），見 reader-highlights.js
     // v2.6.0：公開唯讀模式（ctx.readOnly）只標 host 給的重點（定位＋標記層）；不掛 E 鍵
     // 封存、不寫回閱讀進度——這兩支與畫重點都會打 API
+    // v3.1.0：文章資訊面板最先掛——它的 window capture 按鍵接手（面板內的輸入框：筆記、標籤）必須比
+    // H 鍵畫重點、E 鍵封存早註冊。面板在 shadow DOM，那兩支看到的 target 是 host 不是輸入框，晚掛的話
+    // 在筆記裡打 e 會被當成封存鍵吃掉、還真的去封存（Jimmy 2026-11-24 實測打字後跳回清單）
+    if (!ctx.readOnly) attachInfoPanel(docData, container, ctx);
     const hl = attachHighlights(docData, container, ctx);
     logHighlightSync(hl, docData, container);
     // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
     if (!ctx.readOnly) attachArchiveKey(docData, ctx);
+    // v3.1.0：V 鍵開啟原始網址（公開分享頁也有：只是開連結）
+    attachSourceKey(docData, ctx);
+    // v3.1.0：告訴 JReader「剛打開這篇」（Progress 分頁排序）
+    if (!ctx.readOnly) markOpened(docData, ctx);
     // v2.5.0：閱讀位置寫回 Readwise。「上次送出的值」以這次實際採用的進度為起點
     //（快取命中時 docData 是文章快取、進度可能取自較新的 feed 快取）
     const onPosition = ctx.readOnly ? null : attachProgressSync(
@@ -756,6 +781,31 @@
           watchLayoutMode(NS, global.browser);
         }, onEnterFailed);
     }
+  }
+
+  // v3.1.0：打開文章時告訴 JReader（PC.markJReaderOpened）。只開沒捲動時閱讀進度不會寫回，Progress
+  // 分頁就不會把它排到最前（Jimmy 2026-11-24「在 progress 讀第二篇，退出後應該變第一篇」）。
+  // 只對 JReader（Readwise 有呼叫次數限制、也沒有這個欄位）；同一頁快取版與新資料各畫一次，只送一次
+  const openedSent = new Set();
+  function markOpened(docData, ctx) {
+    const { PC, service, creds } = ctx || {};
+    const id = docData && docData.id != null ? String(docData.id) : '';
+    if (!id || openedSent.has(id)) return false;
+    if (!PC || typeof PC.markJReaderOpened !== 'function' || typeof PC.supportsLibraryTools !== 'function') return false;
+    if (!PC.supportsLibraryTools(service) || !creds || !creds.token) return false;
+    openedSent.add(id);
+    try { Promise.resolve(PC.markJReaderOpened({ token: creds.token, base: creds.base, id })).catch(() => {}); } catch (_) { return false; }
+    return true;
+  }
+
+  // v3.1.0：文章資訊面板（reader-info.js）。掛不上不影響閱讀
+  function attachInfoPanel(docData, container, ctx) {
+    const INFO = global.__JReadReaderInfo;
+    if (!INFO || typeof INFO.attach !== 'function') return null;
+    const { NS, doc, PC, service, creds } = ctx;
+    try {
+      return INFO.attach({ doc, win: global, NS, PC, service, creds, docData, container, tab: ctx.tab });
+    } catch (_) { return null; }
   }
 
   // 重點同步結果摘要（attach 回傳的 ready 是既有 promise；只讀結果，不碰同步流程）
@@ -878,6 +928,13 @@
       if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function') {
         try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
       }
+      // v3.1.0：成功就跳回清單，這頁的 toast 看不到——記一筆給清單頁顯示
+      if (RC && typeof RC.setFeedNotice === 'function') {
+        let session = d.session;
+        if (session === undefined) { try { session = global.sessionStorage; } catch (_) { session = null; } }
+        const title = docData && docData.title ? String(docData.title) : '';
+        RC.setFeedNotice(session, title ? '已封存：' + (title.length > 40 ? title.slice(0, 40) + '…' : title) : '已封存', 'success');
+      }
       navigate();
       return r;
     }
@@ -894,6 +951,38 @@
       trigger();
     }, true);
 
+    return { trigger };
+  }
+
+  // v3.1.0：V 鍵開啟原始網址（新分頁）。window capture、比 keyguard 早註冊；輸入框（含 shadow DOM 裡的，
+  // 看 composedPath()[0]）、組字中、帶修飾鍵（⌘V 貼上）、長按 repeat 都不觸發。沒有原始網址就提示
+  function isSourceKey(e, NS) {
+    if (!e || e.type !== 'keydown') return false;
+    if (e.key !== 'v' && e.key !== 'V') return false;
+    if (e.isComposing || e.keyCode === 229 || e.repeat) return false;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false;
+    const real = (typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target;
+    const typing = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || !!t.isContentEditable ||
+      !!(NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(t)));
+    return !typing(real) && !typing(e.target);
+  }
+  function attachSourceKey(docData, ctx, deps) {
+    const d = deps || {};
+    const NS = ctx && ctx.NS;
+    const win = d.win || global;
+    const RC = d.RC || global.__JReadReaderCache;
+    if (!win || !RC || typeof RC.openSourceUrl !== 'function') return null;
+    function trigger() {
+      if (RC.openSourceUrl(win, docData)) return true;
+      if (NS && NS.toast && typeof NS.toast.show === 'function') NS.toast.show('這篇沒有原始網址', { kind: 'info', id: 'jr-source' });
+      return false;
+    }
+    win.addEventListener('keydown', (e) => {
+      if (!isSourceKey(e, NS)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      trigger();
+    }, true);
     return { trigger };
   }
 

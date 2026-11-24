@@ -297,6 +297,12 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       dispatchCommand(command, tabId).catch(() => {});
       return;
     }
+    case 'OPEN_OPTIONS': {
+      // v3.1.0：JRead 網頁版（JReader）設定浮層的「進階設定」——經 content/host-bridge.js 轉來，
+      // content script 不能直接呼叫 openOptionsPage
+      try { browser.runtime.openOptionsPage(); } catch (_e) {}
+      return;
+    }
     case 'OPEN_FEATURE_MENU': {
       // v0.8.162：懸浮按鈕長按選單的「功能選單」（Safari path）。content script 不能
       // 在 https 網頁裡用 iframe 載入擴充頁（Safari 已知限制，iOS 上會整頁 refresh），
