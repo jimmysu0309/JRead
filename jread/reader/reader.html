@@ -15,6 +15,11 @@
      forcing：test/regression/review-1115-b5-reader.spec.js 逐主題比對 --bg / --link，
      上面兩處寫在例外表；改任何一邊的色值 spec 會提醒重新確認 */
   :root { --bg:#ececec; --card:#ffffff; --text:#1a1a1a; --muted:#6b6b6b; --link:#1a73e8; --line:rgba(0,0,0,0.08); }
+  /* 底部安全距離（v3.1.1）：iOS App 內 JReader 的頁面沒有 viewport-fit=cover，var(--jr-safe-bottom) 恆為 0，
+     但 WebView 畫到 Home 指示條底下——底部值由 App 經 --__jread-app-safe-bottom 帶進來（shim-src/app-backend.js）。
+     兩者取大者；與 content/styler.js 的 SAFE_BOTTOM 同一個式子（styler 是注入的 CSS 字串，兩處要一起改）。
+     3.1.0 的底部工具列只用 env()，在 App 裡貼到螢幕最底、被 Home 指示條壓住 */
+  :root { --jr-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px)); }
   /* JS 讀完 storage 才設 data-theme；在那之前依系統深色偏好先給深色變數，
      深色使用者不再每次先閃一下淺灰（2026-10-07 review F-10） */
   @media (prefers-color-scheme: dark) {
@@ -59,7 +64,7 @@
   .jr-selecting .jr-fab, .jr-selecting .jr-tools-wrap { display: none; }
   /* 動作列蓋住清單最後幾張：多選中清單底部留空 */
   .jr-select-bar {
-    position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50;
+    position: fixed; left: 50%; bottom: calc(16px + var(--jr-safe-bottom)); transform: translateX(-50%); z-index: 50;
     display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
     width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 10px;
     background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
@@ -157,24 +162,24 @@
   .jr-tools-wrap {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147482000;
     background: var(--bg); border-top: 1px solid var(--line);
-    padding: 10px 20px calc(10px + env(safe-area-inset-bottom, 0px));
+    padding: 10px 20px calc(10px + var(--jr-safe-bottom));
   }
   .jr-tools-inner { max-width: 640px; margin: 0 auto; }
   .jr-tools-wrap[hidden] { display: none; }
   /* 清單底部留空：收起時讓出圓鈕、展開時讓出工具列（＋貼網址列 / 標籤 chip），最後一張卡片不被蓋住 */
-  body.jr-has-tools .jr-wrap { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
-  body.jr-tools-open .jr-wrap { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+  body.jr-has-tools .jr-wrap { padding-bottom: calc(76px + var(--jr-safe-bottom)); }
+  body.jr-tools-open .jr-wrap { padding-bottom: calc(150px + var(--jr-safe-bottom)); }
   /* 多選中讓出底部動作列（reader-select 把動作列實際高度寫進 --jr-select-bar-h：按鈕折行、
      標籤輸入列都會變高；量不到時 140px）。必須排在上面兩條之後、權重相同（0,2,1）才蓋得過——
      原本寫成 .jr-selecting .jr-wrap（0,2,0）永遠輸給 jr-has-tools（2026-11-24 審核 A-2） */
-  body.jr-selecting .jr-wrap { padding-bottom: calc(var(--jr-select-bar-h, 140px) + 24px + env(safe-area-inset-bottom, 0px)); }
+  body.jr-selecting .jr-wrap { padding-bottom: calc(var(--jr-select-bar-h, 140px) + 24px + var(--jr-safe-bottom)); }
   /* 右下角搜尋圓鈕（Jimmy 2026-11-24 選「平常只有一顆按鈕」，再選「縮小淡化＋捲動時隱藏」）。
      寬螢幕對齊卡片欄右緣（欄寬 640 置中 → 右緣距視窗 50vw − 320px），窄螢幕離右邊 20px。
      平常：36px、透明底、細框、淡灰圖示，退到背景；滑鼠移上 / 鍵盤聚焦才清楚。
      往下捲時（.is-scroll-hidden，reader-library.js 加）完全淡出且不能點；往上捲或停 0.4 秒回來 */
   .jr-fab {
     position: fixed; z-index: 2147482000; width: 36px; height: 36px; padding: 0;
-    right: max(20px, calc(50vw - 320px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    right: max(20px, calc(50vw - 320px)); bottom: calc(20px + var(--jr-safe-bottom));
     display: flex; align-items: center; justify-content: center;
     background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 18px;
     opacity: .7; cursor: pointer; transition: opacity .15s ease, color .15s ease, background-color .15s ease;
@@ -309,6 +314,12 @@
   .jr-tagmenu-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .jr-tagmenu-item.is-on { color: var(--link); font-weight: 600; }
   .jr-tagmenu-empty { padding: 8px 12px; font-size: 13px; color: var(--muted); }
+  /* iOS 聚焦字級小於 16px 的輸入框會自動放大整頁、收起鍵盤也不縮回（v3.1.1，3.1.0 搜尋框 15px、
+     多選標籤框 13px 在 iPhone 上中招）。觸控裝置一律 16px，電腦上維持原本字級。
+     新增輸入框要加進這裡（forcing：jreader-ios-touch.spec 掃 reader 模組建立的每個 input / textarea） */
+  @media (pointer: coarse) {
+    .jr-search, .jr-addrow-url, .jr-select-tag, .jr-tagmenu-filter { font-size: 16px; }
+  }
 </style>
 </head>
 <body>

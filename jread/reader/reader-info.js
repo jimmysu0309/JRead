@@ -115,7 +115,9 @@
       transform: translateX(100%); transition: transform 200ms ease-out;
     }
     .panel.sheet {
-      left: 0; right: 0; bottom: 0; max-height: 70vh; padding: 8px 20px 28px;
+      left: 0; right: 0; bottom: 0; max-height: 70vh;
+      /* 底部安全距離：iOS App 由 --__jread-app-safe-bottom 帶進來（env() 在 App 恆 0），兩者取大者（v3.1.1） */
+      padding: 8px 20px calc(28px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px)));
       border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,.16);
       transform: translateY(100%); transition: transform 200ms ease-out;
     }
@@ -209,6 +211,8 @@
     .trash-note { flex: 1 0 100%; font-size: 12px; color: var(--muted); }
     .share-url { display: block; margin: 0 0 8px; font-size: 13px; word-break: break-all; }
     .share-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    /* iOS 聚焦小於 16px 的輸入框會自動放大整頁（v3.1.1）：觸控裝置一律 16px。放在最後，權重相同時才蓋得過上面的字級 */
+    @media (pointer: coarse) { .tag-input, .notes { font-size: 16px; } }
   `;
 
   function el(document, tag, cls, text) {
