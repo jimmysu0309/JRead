@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle', 'appIcon'];
+const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle', 'appIcon'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -222,18 +222,24 @@ function readFieldFromDom(id) {
       const v = checked ? checked.value : null;
       return APP_ICONS.indexOf(v) >= 0 ? v : DEFAULTS.appIcon;
     }
-    case 'readwiseToken': case 'geminiApiKey':
+    case 'readwiseToken': case 'geminiApiKey': case 'jreaderUrl': case 'jreaderToken':
       return el.value.trim();
     case 'storageService': {
-      // v1.6.0：兩顆分段 toggle（radio 群，wrapper id=storageService）。讀已勾選值；
-      // 損壞 / 無勾選退回 'readwise'。
+      // v1.6.0：分段 toggle（radio 群，wrapper id=storageService）。讀已勾選值；
+      // 損壞 / 無勾選退回 'readwise'。v2.6.0 三選一，合法值讀 popup-core 單一資料源
       const checked = el.querySelector('input[name="storageService"]:checked');
-      const v = checked ? checked.value : 'readwise';
-      return v === 'instapaper' ? 'instapaper' : 'readwise';
+      return normalizeService(checked ? checked.value : 'readwise');
     }
     default:
       return el.value;
   }
+}
+
+// v2.6.0：儲存服務合法值讀 popup-core 單一資料源（STORAGE_SERVICES）。popup-core 沒載到
+// （不應發生；載入失敗時）退回 'readwise'，不讓整頁 load() 因此中斷
+function normalizeService(v) {
+  const P = window.__JReadPopup;
+  return P && typeof P.normalizeStorageService === 'function' ? P.normalizeStorageService(v) : 'readwise';
 }
 
 // 透明度 % 讀數（input 拖動即時更新，與 storage 無關）
@@ -322,10 +328,10 @@ function applyFieldToDom(id, value) {
     el.checked = value === true;
   } else if (id === 'storageService') {
     // v1.6.0：分段 toggle radio 群；勾選對應值，舊資料 / 損壞退回 'readwise'
-    const v = value === 'instapaper' ? 'instapaper' : 'readwise';
+    const v = normalizeService(value);
     const radio = el.querySelector('input[name="storageService"][value="' + v + '"]');
     if (radio) radio.checked = true;
-  } else if (id === 'readwiseToken' || id === 'geminiApiKey') {
+  } else if (id === 'readwiseToken' || id === 'geminiApiKey' || id === 'jreaderUrl' || id === 'jreaderToken') {
     el.value = value || '';
   } else {
     el.value = value;
@@ -470,6 +476,62 @@ if (readwiseTestBtn && readwiseTestResultEl) {
   });
 }
 
+// ---- JReader 網址＋token 測試（v2.6.0）------------------------------
+// 讀兩個 input 目前值 → popup-core.validateJReaderToken 打 GET <網址>/api/v1/auth
+//（204 有效 / 401 無效）。呈現與 Readwise 測試同一套（色 + ✓ / ✗ 雙通道）
+const jreaderTestBtn = document.getElementById('jreaderTest');
+const jreaderTestResultEl = document.getElementById('jreaderTestResult');
+
+function setJReaderTestResult(kind, text) {
+  jreaderTestResultEl.textContent = text;
+  jreaderTestResultEl.className = 'token-test-result is-' + kind;
+}
+
+if (jreaderTestBtn && jreaderTestResultEl) {
+  jreaderTestBtn.addEventListener('click', async () => {
+    const PopupAPI = window.__JReadPopup;
+    const base = document.getElementById('jreaderUrl').value.trim();
+    const token = document.getElementById('jreaderToken').value.trim();
+    if (!PopupAPI || typeof PopupAPI.validateJReaderToken !== 'function') {
+      setJReaderTestResult('error', '✗ 無法載入驗證模組');
+      return;
+    }
+    if (!PopupAPI.normalizeApiBase(base)) {
+      setJReaderTestResult('error', '✗ 請先填入 https:// 開頭的 JReader 網址');
+      return;
+    }
+    if (!token) {
+      setJReaderTestResult('error', '✗ 請先貼上 token');
+      return;
+    }
+    setJReaderTestResult('pending', '測試中…');
+    jreaderTestBtn.disabled = true;
+    let result;
+    try {
+      result = await PopupAPI.validateJReaderToken({ token, base });
+    } catch (_) {
+      result = { ok: false, error: 'NETWORK' };
+    }
+    jreaderTestBtn.disabled = false;
+    if (result.ok) {
+      setJReaderTestResult('ok', '✓ Token 有效');
+    } else if (result.error === 'AUTH') {
+      setJReaderTestResult('error', '✗ Token 無效或已過期');
+    } else if (result.error === 'TIMEOUT') {
+      setJReaderTestResult('error', '✗ JReader 沒有回應，請再試一次');
+    } else if (result.error === 'NETWORK') {
+      setJReaderTestResult('error', '✗ 無法連線，請檢查網址與網路');
+    } else {
+      setJReaderTestResult('error', '✗ 測試失敗（' + (result.status || result.error || '未知') + '）');
+    }
+  });
+
+  // 重新編輯網址或 token 時清掉上次測試結果
+  for (const id of ['jreaderUrl', 'jreaderToken']) {
+    document.getElementById(id).addEventListener('input', () => setJReaderTestResult('', ''));
+  }
+}
+
 // ---- Gemini API key 測試（v0.8.74）---------------------------------
 // 讀 input 目前值 → 走 popup-core.validateGeminiKey 打 models list 端點（GET、
 // 零 token 成本）。與 Readwise 測試同一套呈現（色 + ✓ / ✗ 雙通道）。
@@ -531,7 +593,7 @@ const IP = window.__JReadInstapaper;
 function updateServiceVisibility() {
   const sel = document.getElementById('storageService');
   const checked = sel && sel.querySelector('input[name="storageService"]:checked');
-  const svc = checked && checked.value === 'instapaper' ? 'instapaper' : 'readwise';
+  const svc = normalizeService(checked && checked.value);
   const blocks = document.querySelectorAll('[data-service-block]');
   for (const el of blocks) el.hidden = el.getAttribute('data-service-block') !== svc;
 }

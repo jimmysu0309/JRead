@@ -1,35 +1,39 @@
-// JRead iOS App — App 內 JReader 的擴充 API 替身（v2.2.0）
-//
-// App 用 WKWebView 以 jread-app:// 載入擴充同一份 reader/reader.html、article.html
-// （檔案直接讀 App bundle 裡 JRead Extension.appex 的 Resources，不另存一份）。
-// 那些頁面呼叫的是擴充 API（browser.storage / runtime…），App 裡沒有，本檔在
-// document start 先把 browser / chrome 換成替身，背後走 WKScriptMessageHandlerWithReply
-// （ViewController.swift 的 "jread" handler）：
-//   - storage.sync  ↔ App Group 鏡像（AppSyncStore.swift，與 Safari 擴充雙向同步，逐鍵 LWW）
-//   - storage.local ↔ App 自己的檔案（閱讀位置、feed 快取、這台裝置套用的設定檔）
-//   - 跨來源 fetch  → 原生 URLSession（Instapaper API 不開 CORS，網頁端直接打會被擋）
-//   - runtime.sendMessage 等 background 才有的能力 → 沒有 background，一律 resolve undefined
-//     （與 Safari 對沒有 listener 的 sendMessage 行為相同，呼叫端本來就要容忍）
-//
-// 這條驗 X、不驗 Y：test/regression/ios-app-jreader-shim.spec.js 用 jsdom + 假 bridge
-// 驗 storage 語意、onChanged、fetch 轉送；WKWebView 實際載入、原生 bridge 回傳格式、
-// App Group 跨 process 讀寫只能模擬器驗。
-
+// ⚠️ 產生檔，勿手改。來源：jread/lib/host-shim-core.js ＋ safari-app/JRead-iOS/shim-src/app-backend.js
+// 重新產生：node tools/build-host-shims.js（forcing：test/regression/host-shim-build.spec.js）
 (function () {
   'use strict';
-
-  if (location.protocol !== 'jread-app:') return;
-  if (window.__jreadApp) return;
-
-  const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jread;
-  const call = (msg) => Promise.resolve(handler ? handler.postMessage(msg) : null)
-    .then((r) => (typeof r === 'string' ? JSON.parse(r) : (r || {})));
-
-  const BASE = location.protocol + '//' + location.host + '/';
-  const MANIFEST = window.__JREAD_APP_MANIFEST || { version: '0.0.0' };
-  // 2026-11-15 review E-08：原名 CREDENTIAL_KEYS——語意是「變了就要重載 feed 的 key」，
-  // 與 settings-defaults.js 的 CREDENTIAL_SETTINGS_KEYS（憑證欄位）撞名但內容不同，改名避免混淆
-  const FEED_RELOAD_KEYS = ['storageService', 'readwiseToken', 'instapaperToken', 'instapaperTokenSecret'];
+  const module = { exports: {} };
+  // ---- jread/lib/host-shim-core.js ----
+// JRead — host 替身共用核心（v2.6.0）
+//
+// JRead 的 reader / content / popup 模組呼叫的是擴充 API（browser.storage / runtime…）。
+// 擴充以外的 host 沒有這些 API，由「替身（shim）」在頁面載入最前面裝上。替身分兩層：
+//   - 本檔：跟平台無關的部分——browser / chrome 物件形狀、storage 語意（get 的四種 keys
+//     形狀、set / remove 只對真的變了的 key 發 onChanged、值一律深拷貝）、onChanged、
+//     同頁多個 frame 之間廣播 storage 變更、sendMessage 一律 resolve undefined（沒有
+//     background，與 Safari 對沒有 listener 的 sendMessage 行為相同，呼叫端本來就要容忍）
+//   - backend：各 host 自己的儲存與網址——
+//       iOS App：safari-app/JRead-iOS/shim-src/app-backend.js（WKWebView bridge、App Group
+//                鏡像），由 tools/build-host-shims.js 與本檔組成 jreader-app-shim.js
+//       網頁版：jread/lib/web-host-shim.js（localStorage、host 宣告的網址）
+//
+// backend 介面（create(backend)）：
+//   baseUrl        runtime.getURL 的前段（結尾帶 /）
+//   runtimeId      runtime.id（必須 truthy：NS.safeSendMessage 以它判定 context 有效）
+//   manifest       runtime.getManifest() 回傳的物件（每次回深拷貝）
+//   load()         → Promise<{ sync: {k: v}, local: {k: v} }>，已解析好的值
+//   persist(area, setItems, removeKeys) → Promise，寫入 backend
+//   frameKey       掛在 window 上、給同頁其他 frame 找到本 frame 的屬性名（廣播用）
+//   pinned         選用：{ sync: {k: v} }——host 釘住的值。get 一律讀到它、set / remove
+//                  略過它（不寫入、不發 onChanged）。網頁版用來提供 JReader 網址與 session
+//                  sentinel token，憑證不進 localStorage
+//   tabsCreate(o)  選用：tabs.create 的實作（預設整頁導向 o.url）
+//
+// 這條驗 X、不驗 Y：test/regression/host-shim-core.spec.js 與 ios-app-jreader-shim.spec.js
+// 用 jsdom 驗 storage 語意 / onChanged / 跨 frame 廣播 / runtime；各 backend 的真實儲存
+//（WKWebView bridge、瀏覽器 localStorage 配額）不在範圍內。
+(function (root) {
+  'use strict';
 
   const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -43,11 +47,232 @@
       _fire: (...args) => { for (const fn of Array.from(ls)) { try { fn(...args); } catch (e) { console.error(e); } } }
     };
   }
-  const onChanged = makeEvent();
 
-  // ---- storage ------------------------------------------------------------
-  const cache = { sync: new Map(), local: new Map() };
+  function create(backend, win) {
+    const w = win || root;
+    const b = backend || {};
+    const onChanged = makeEvent();
+    const cache = { sync: new Map(), local: new Map() };
+    const pinned = { sync: new Map(), local: new Map() };
+    for (const area of ['sync', 'local']) {
+      const p = b.pinned && b.pinned[area];
+      if (p) for (const k of Object.keys(p)) if (p[k] !== undefined) pinned[area].set(k, clone(p[k]));
+    }
+    const fillPinned = (area) => { for (const [k, v] of pinned[area]) cache[area].set(k, clone(v)); };
 
+    const ready = Promise.resolve()
+      .then(() => b.load())
+      .then((loaded) => {
+        for (const area of ['sync', 'local']) {
+          const items = (loaded && loaded[area]) || {};
+          for (const k of Object.keys(items)) cache[area].set(k, items[k]);
+          fillPinned(area);
+        }
+      })
+      .catch((e) => {
+        for (const area of ['sync', 'local']) fillPinned(area);
+        console.error('[JRead host] storage 載入失敗', e);
+      });
+
+    // 同一頁裡每個 frame 各有一份替身（各自的 cache / onChanged）。設定浮層是文章頁裡的
+    // popup.html iframe，它寫入的設定外層收不到 onChanged → 改了不會即時重套。寫入後把
+    // changes 轉給同 top 底下的其他 frame（同源，可直接互呼），收方更新自己的 cache 再發
+    // onChanged——等同擴充裡 storage.onChanged 跨頁廣播
+    function eachOtherFrame(fn) {
+      const key = b.frameKey;
+      if (!key) return;
+      const walk = (x) => {
+        if (x !== w) {
+          try { if (x[key] && x[key]._remoteChange) fn(x[key]); } catch (_) { /* 跨源 / 已卸載 */ }
+        }
+        let n = 0;
+        try { n = x.frames.length; } catch (_) { return; }
+        for (let i = 0; i < n; i++) walk(x.frames[i]);
+      };
+      try { walk(w.top); } catch (_) { /* 拿不到 top 就只通知自己 */ }
+    }
+    function applyRemote(changes, area) {
+      const map = cache[area];
+      if (!map) return;
+      ready.then(() => {
+        for (const k of Object.keys(changes)) {
+          if (pinned[area].has(k)) continue;
+          const c = changes[k];
+          if (c && 'newValue' in c) map.set(k, clone(c.newValue));
+          else map.delete(k);
+        }
+        onChanged._fire(clone(changes), area);
+      });
+    }
+
+    function fire(changes, area) {
+      if (!Object.keys(changes).length) return;
+      setTimeout(() => onChanged._fire(changes, area), 0);
+      eachOtherFrame((other) => other._remoteChange(clone(changes), area));
+    }
+
+    function makeArea(area) {
+      const map = cache[area];
+      return {
+        get(keys) {
+          return ready.then(() => {
+            const out = {};
+            if (keys === null || keys === undefined) {
+              for (const [k, v] of map) out[k] = clone(v);
+            } else if (typeof keys === 'string') {
+              if (map.has(keys)) out[keys] = clone(map.get(keys));
+            } else if (Array.isArray(keys)) {
+              for (const k of keys) if (map.has(k)) out[k] = clone(map.get(k));
+            } else if (typeof keys === 'object') {
+              for (const k of Object.keys(keys)) out[k] = map.has(k) ? clone(map.get(k)) : clone(keys[k]);
+            }
+            return out;
+          });
+        },
+        set(items) {
+          return ready.then(() => {
+            const changes = {};
+            const setItems = {};
+            for (const k of Object.keys(items || {})) {
+              if (items[k] === undefined) continue;
+              if (pinned[area].has(k)) continue;
+              const v = clone(items[k]);
+              const had = map.has(k);
+              const old = map.get(k);
+              map.set(k, v);
+              setItems[k] = v;
+              if (!had || !same(old, v)) changes[k] = had ? { oldValue: clone(old), newValue: clone(v) } : { newValue: clone(v) };
+            }
+            fire(changes, area);
+            if (!Object.keys(setItems).length) return undefined;
+            return Promise.resolve(b.persist(area, setItems, [])).then(() => undefined);
+          });
+        },
+        remove(keys) {
+          return ready.then(() => {
+            const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string');
+            const changes = {};
+            const removed = [];
+            for (const k of list) {
+              if (!map.has(k) || pinned[area].has(k)) continue;
+              changes[k] = { oldValue: clone(map.get(k)) };
+              map.delete(k);
+              removed.push(k);
+            }
+            fire(changes, area);
+            if (!removed.length) return undefined;
+            return Promise.resolve(b.persist(area, {}, removed)).then(() => undefined);
+          });
+        },
+        clear() {
+          return ready.then(() => this.remove(Array.from(map.keys())));
+        }
+      };
+    }
+
+    // backend 自己的儲存被別處改了（App 回前景重讀鏡像、網頁版其他分頁寫 localStorage）：
+    // 用新的整份值取代 cache，回傳 changes（沒變就是空物件）。發不發 onChanged 由呼叫端決定
+    function replaceArea(area, next) {
+      const map = cache[area];
+      const changes = {};
+      for (const [k, v] of next) {
+        if (pinned[area].has(k)) continue;
+        if (!map.has(k)) changes[k] = { newValue: clone(v) };
+        else if (!same(map.get(k), v)) changes[k] = { oldValue: clone(map.get(k)), newValue: clone(v) };
+      }
+      for (const [k, v] of map) if (!next.has(k) && !pinned[area].has(k)) changes[k] = { oldValue: clone(v) };
+      map.clear();
+      for (const [k, v] of next) if (!pinned[area].has(k)) map.set(k, v);
+      fillPinned(area);
+      return changes;
+    }
+
+    const BASE = String(b.baseUrl || '');
+    const MANIFEST = b.manifest || { version: '0.0.0' };
+    const noopEvent = () => makeEvent();
+    const api = {
+      runtime: {
+        id: b.runtimeId || 'jread-host',
+        lastError: undefined,
+        getURL: (p) => BASE + String(p || '').replace(/^\//, ''),
+        getManifest: () => clone(MANIFEST),
+        sendMessage: () => Promise.resolve(undefined),
+        openOptionsPage: () => Promise.resolve(),
+        onMessage: noopEvent(),
+        onInstalled: noopEvent(),
+        onStartup: noopEvent()
+      },
+      storage: { sync: makeArea('sync'), local: makeArea('local'), onChanged },
+      tabs: {
+        query: () => Promise.resolve([]),
+        sendMessage: () => Promise.resolve(undefined),
+        create: (o) => {
+          if (typeof b.tabsCreate === 'function') return Promise.resolve(b.tabsCreate(o)).then(() => ({}));
+          if (o && o.url) w.location.href = o.url;
+          return Promise.resolve({});
+        }
+      },
+      i18n: { getMessage: () => '' }
+    };
+
+    function install() {
+      w.browser = api;
+      w.chrome = api;
+      return api;
+    }
+
+    return { api, install, ready, cache, onChanged, applyRemote, replaceArea, makeEvent, clone, same };
+  }
+
+  const core = { create, makeEvent, clone, same };
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = core;
+  } else {
+    root.__JReadHostShimCore = core;
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
+  const __JReadHostShimCore = module.exports;
+  // ---- safari-app/JRead-iOS/shim-src/app-backend.js ----
+// JRead iOS App — App 內 JReader 的擴充 API 替身：App backend（v2.2.0 起；v2.6.0 拆檔）
+//
+// 本檔不單獨載入。tools/build-host-shims.js 把 jread/lib/host-shim-core.js（跟平台無關的
+// browser / chrome 物件形狀、storage 語意、onChanged、跨 frame 廣播）與本檔組成
+// safari-app/JRead-iOS/JRead/Resources/jreader-app-shim.js——ViewController.swift 在
+// document start 注入的仍是那一支（Swift 與 Xcode 專案不用改）。改本檔或核心後重跑：
+//   node tools/build-host-shims.js
+// forcing：test/regression/host-shim-build.spec.js 驗產生檔與兩份來源一致。
+//
+// App 用 WKWebView 以 jread-app:// 載入擴充同一份 reader/reader.html、article.html
+// （檔案直接讀 App bundle 裡 JRead Extension.appex 的 Resources，不另存一份）。
+// 背後走 WKScriptMessageHandlerWithReply（ViewController.swift 的 "jread" handler）：
+//   - storage.sync  ↔ App Group 鏡像（AppSyncStore.swift，與 Safari 擴充雙向同步，逐鍵 LWW）
+//   - storage.local ↔ App 自己的檔案（閱讀位置、feed 快取、這台裝置套用的設定檔）
+//   - 跨來源 fetch  → 原生 URLSession（Instapaper API 不開 CORS，網頁端直接打會被擋）
+//   - runtime.sendMessage 等 background 才有的能力 → 沒有 background，一律 resolve undefined
+//     （核心提供，與 Safari 對沒有 listener 的 sendMessage 行為相同，呼叫端本來就要容忍）
+//
+// 這條驗 X、不驗 Y：test/regression/ios-app-jreader-shim.spec.js 用 jsdom + 假 bridge
+// 驗 storage 語意、onChanged、fetch 轉送；WKWebView 實際載入、原生 bridge 回傳格式、
+// App Group 跨 process 讀寫只能模擬器驗。
+
+(function (CORE) {
+  'use strict';
+
+  if (location.protocol !== 'jread-app:') return;
+  if (window.__jreadApp) return;
+
+  const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jread;
+  const call = (msg) => Promise.resolve(handler ? handler.postMessage(msg) : null)
+    .then((r) => (typeof r === 'string' ? JSON.parse(r) : (r || {})));
+
+  const BASE = location.protocol + '//' + location.host + '/';
+  const MANIFEST = window.__JREAD_APP_MANIFEST || { version: '0.0.0' };
+  // 2026-11-15 review E-08：原名 CREDENTIAL_KEYS——語意是「變了就要重載 feed 的 key」，
+  // 與 settings-defaults.js 的 CREDENTIAL_SETTINGS_KEYS（憑證欄位）撞名但內容不同，改名避免混淆
+  // v2.6.0：加上 JReader 的網址與 token（第三個儲存服務）
+  const FEED_RELOAD_KEYS = ['storageService', 'readwiseToken', 'instapaperToken', 'instapaperTokenSecret', 'jreaderUrl', 'jreaderToken'];
+
+  // ---- storage backend ----------------------------------------------------
   function entriesToMap(entries, map) {
     map.clear();
     for (const k of Object.keys(entries || {})) {
@@ -56,48 +281,19 @@
       try { map.set(k, JSON.parse(e.vj)); } catch (_) { /* 壞值略過 */ }
     }
   }
+  const mapToObject = (map) => { const o = {}; for (const [k, v] of map) o[k] = v; return o; };
 
-  const ready = Promise.all([call({ op: 'syncLoad' }), call({ op: 'localLoad' })])
-    .then(([s, l]) => {
-      entriesToMap(s.entries, cache.sync);
-      for (const k of Object.keys((l && l.items) || {})) {
-        try { cache.local.set(k, JSON.parse(l.items[k])); } catch (_) { /* 壞值略過 */ }
-      }
-    })
-    .catch((e) => { console.error('[JReader app] storage 載入失敗', e); });
-
-  // v2.2.5：同一個 WKWebView 裡每個 frame 各有一份 shim（各自的 cache / onChanged）。設定浮層
-  // 是 article.html 裡的 popup.html iframe，它寫入的設定外層文章頁收不到 onChanged → 改了
-  // 不會即時重套。寫入後把 changes 轉給同 top 底下的其他 frame（都是 jread-app://app 同源，
-  // 可直接互呼），收方更新自己的 cache 再發 onChanged——等同擴充裡 storage.onChanged 跨頁廣播
-  function eachOtherFrame(fn) {
-    const walk = (w) => {
-      if (w !== window) {
-        try { if (w.__jreadApp && w.__jreadApp._remoteChange) fn(w.__jreadApp); } catch (_) { /* 跨源 / 已卸載 */ }
-      }
-      let n = 0;
-      try { n = w.frames.length; } catch (_) { return; }
-      for (let i = 0; i < n; i++) walk(w.frames[i]);
-    };
-    try { walk(window.top); } catch (_) { /* 拿不到 top 就只通知自己 */ }
-  }
-  function applyRemote(changes, area) {
-    const map = cache[area];
-    if (!map) return;
-    ready.then(() => {
-      for (const k of Object.keys(changes)) {
-        const c = changes[k];
-        if (c && 'newValue' in c) map.set(k, clone(c.newValue));
-        else map.delete(k);
-      }
-      onChanged._fire(clone(changes), area);
-    });
-  }
-
-  function fire(changes, area) {
-    if (!Object.keys(changes).length) return;
-    setTimeout(() => onChanged._fire(changes, area), 0);
-    eachOtherFrame((app) => app._remoteChange(clone(changes), area));
+  function load() {
+    return Promise.all([call({ op: 'syncLoad' }), call({ op: 'localLoad' })])
+      .then(([s, l]) => {
+        const sync = new Map();
+        entriesToMap(s.entries, sync);
+        const local = {};
+        for (const k of Object.keys((l && l.items) || {})) {
+          try { local[k] = JSON.parse(l.items[k]); } catch (_) { /* 壞值略過 */ }
+        }
+        return { sync: mapToObject(sync), local };
+      });
   }
 
   function persist(area, setItems, removeKeys) {
@@ -113,63 +309,16 @@
     return call({ op: 'localPut', items: JSON.stringify(items), remove: removeKeys });
   }
 
-  function makeArea(area) {
-    const map = cache[area];
-    return {
-      get(keys) {
-        return ready.then(() => {
-          const out = {};
-          if (keys === null || keys === undefined) {
-            for (const [k, v] of map) out[k] = clone(v);
-          } else if (typeof keys === 'string') {
-            if (map.has(keys)) out[keys] = clone(map.get(keys));
-          } else if (Array.isArray(keys)) {
-            for (const k of keys) if (map.has(k)) out[k] = clone(map.get(k));
-          } else if (typeof keys === 'object') {
-            for (const k of Object.keys(keys)) out[k] = map.has(k) ? clone(map.get(k)) : clone(keys[k]);
-          }
-          return out;
-        });
-      },
-      set(items) {
-        return ready.then(() => {
-          const changes = {};
-          const setItems = {};
-          for (const k of Object.keys(items || {})) {
-            if (items[k] === undefined) continue;
-            const v = clone(items[k]);
-            const had = map.has(k);
-            const old = map.get(k);
-            map.set(k, v);
-            setItems[k] = v;
-            if (!had || !same(old, v)) changes[k] = had ? { oldValue: clone(old), newValue: clone(v) } : { newValue: clone(v) };
-          }
-          fire(changes, area);
-          if (!Object.keys(setItems).length) return undefined;
-          return persist(area, setItems, []).then(() => undefined);
-        });
-      },
-      remove(keys) {
-        return ready.then(() => {
-          const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string');
-          const changes = {};
-          const removed = [];
-          for (const k of list) {
-            if (!map.has(k)) continue;
-            changes[k] = { oldValue: clone(map.get(k)) };
-            map.delete(k);
-            removed.push(k);
-          }
-          fire(changes, area);
-          if (!removed.length) return undefined;
-          return persist(area, {}, removed).then(() => undefined);
-        });
-      },
-      clear() {
-        return ready.then(() => this.remove(Array.from(map.keys())));
-      }
-    };
-  }
+  const host = CORE.create({
+    baseUrl: BASE,
+    runtimeId: 'jread-app',
+    manifest: MANIFEST,
+    load,
+    persist,
+    frameKey: '__jreadApp'
+  }, window);
+  const ready = host.ready;
+  const onChanged = host.onChanged;
 
   // 回前景（ViewController 在 willEnterForeground 呼叫）：重讀鏡像，Safari 擴充那邊改過的
   // 設定 diff 後發 onChanged——article.html 既有的 storage.onChanged → scheduleReapply 即時重套。
@@ -178,14 +327,7 @@
     return ready.then(() => call({ op: 'syncLoad' })).then((s) => {
       const next = new Map();
       entriesToMap(s.entries, next);
-      const changes = {};
-      for (const [k, v] of next) {
-        if (!cache.sync.has(k)) changes[k] = { newValue: clone(v) };
-        else if (!same(cache.sync.get(k), v)) changes[k] = { oldValue: clone(cache.sync.get(k)), newValue: clone(v) };
-      }
-      for (const [k, v] of cache.sync) if (!next.has(k)) changes[k] = { oldValue: clone(v) };
-      cache.sync.clear();
-      for (const [k, v] of next) cache.sync.set(k, v);
+      const changes = host.replaceArea('sync', next);
       const keys = Object.keys(changes);
       if (!keys.length) return keys;
       if (/\/reader\/reader\.html$/.test(location.pathname) && keys.some((k) => FEED_RELOAD_KEYS.includes(k))) {
@@ -247,30 +389,8 @@
   }
   window.fetch = appFetch;
 
-  // ---- browser / chrome 替身 ----------------------------------------------
-  const noopEvent = () => makeEvent();
-  const api = {
-    runtime: {
-      id: 'jread-app',
-      lastError: undefined,
-      getURL: (p) => BASE + String(p || '').replace(/^\//, ''),
-      getManifest: () => clone(MANIFEST),
-      sendMessage: () => Promise.resolve(undefined),
-      openOptionsPage: () => Promise.resolve(),
-      onMessage: noopEvent(),
-      onInstalled: noopEvent(),
-      onStartup: noopEvent()
-    },
-    storage: { sync: makeArea('sync'), local: makeArea('local'), onChanged },
-    tabs: {
-      query: () => Promise.resolve([]),
-      sendMessage: () => Promise.resolve(undefined),
-      create: (o) => { if (o && o.url) location.href = o.url; return Promise.resolve({}); }
-    },
-    i18n: { getMessage: () => '' }
-  };
-  window.browser = api;
-  window.chrome = api;
+  // ---- browser / chrome 替身（形狀由核心提供）---------------------------------
+  host.install();
 
   // ---- 安全區域底色（v2.2.1）-----------------------------------------------
   // 狀態列 / Home 指示條那兩條由 App 原生著色：取畫面頂端中央往上找第一個不透明底色
@@ -480,5 +600,6 @@
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
 
-  window.__jreadApp = { ready, onForeground, _remoteChange: applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, setSafeBottom };
+  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, setSafeBottom };
+})(__JReadHostShimCore);
 })();

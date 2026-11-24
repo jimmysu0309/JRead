@@ -70,6 +70,11 @@ fi
 
 echo "==> 目前版本：${VERSION}"
 
+# v2.6.0：web core（JReader 網頁版 host vendor 的產物）。本機先產一份到 dist/ 當早期檢查
+# （白名單缺檔會在這裡就失敗）；Release 上的權威版本由 GitHub Actions 產
+echo "==> 產出 web core"
+node tools/build-web-core.js
+
 if git rev-parse "${TAG}" >/dev/null 2>&1; then
   echo "tag ${TAG} 已存在，略過 tag 動作"
 else
@@ -91,5 +96,6 @@ echo "==> ${TAG} 已推送。GitHub Release 內容："
 echo "   - jread-${TAG}.zip（Chrome，Actions 產）"
 echo "   - jread-firefox-${TAG}.zip（Firefox sideload，Actions 產）"
 echo "   - jread-firefox-${TAG}-source.zip（AMO source，Actions 產）"
+echo "   - jread-web-core-${VERSION}.zip（JReader 網頁版 host 用，Actions 產；本機 dist/ 也有一份）"
 echo "   進度：https://github.com/jimmysu0309/JRead/actions"
 echo "   Release：https://github.com/jimmysu0309/JRead/releases/tag/${TAG}"

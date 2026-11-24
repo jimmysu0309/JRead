@@ -85,6 +85,12 @@ echo "==> Sync extension Resources..."
 mkdir -p "$EXTENSION_RESOURCES"
 rsync -a --delete jread/ "$EXTENSION_RESOURCES/"
 
+# 1.2 App 替身產生檔（v3.0.0）：jreader-app-shim.js 由 jread/lib/host-shim-core.js ＋
+#     shim-src/app-backend.js 組出。來源改了卻沒重跑產生器 → 中止（不自動改寫，避免把未審的
+#     產生結果打包進 build）
+echo "==> Check App shim is generated from sources..."
+node tools/build-host-shims.js --check
+
 # 1.5 Safari manifest patch（v0.7.228）：background service worker → event page。
 #     iOS Safari 的 MV3 SW 被系統回收後不再喚醒（Apple Forums thread 758346），
 #     使用者只能強制關閉 Safari 自救；event page 卸載後可正常重生。

@@ -837,11 +837,10 @@ async function runSendToServiceFlow(tabId, startedAt) {
   // v0.8.36：storage 讀取與 fetch 都包 try/catch——保證任何路徑都有 toast 回饋。
   let settings;
   try {
-    settings = await browser.storage.sync.get({
-      storageService: (DEFAULT_SETTINGS && DEFAULT_SETTINGS.storageService) || 'readwise',
-      readwiseToken: '', instapaperToken: '', instapaperTokenSecret: '',
+    // v2.6.0：各服務憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源（含 jreader）
+    settings = await browser.storage.sync.get(self.__JReadPopup.serviceSettingsQuery({
       readwiseSummary: false, geminiApiKey: ''
-    });
+    }));
   } catch {
     logSave('讀取設定失敗', { elapsedMs: since() }, 'error');
     showToast('無法讀取設定，請稍後再試', 'error');

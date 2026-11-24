@@ -46,7 +46,7 @@ JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**�
 
 ### 稍後閱讀服務整合
 
-- **Readwise Reader 或 Instapaper（二擇一）**：在進階設定選定服務後，可把 JRead 處理過的乾淨主文一鍵送出，繞過原站解析問題；Instapaper 走官方 Full API（xAuth，填一次 email／密碼換存取權杖，密碼用完即丟），Readwise 走 access token
+- **Readwise Reader、Instapaper 或 JReader（三選一）**：在進階設定選定服務後，可把 JRead 處理過的乾淨主文一鍵送出，繞過原站解析問題；Instapaper 走官方 Full API（xAuth，填一次 email／密碼換存取權杖，密碼用完即丟），Readwise 走 access token，JReader（自架的 Readwise 相容後端）填網址與 token。JReader 的文章清單、畫重點、閱讀進度與 Readwise 相同
 - **進入 Reader**：直接在新分頁列出所選服務的最新文章，點進去用 JRead 原本的閱讀版型呈現，主題／字型／字級／翻頁全部沿用同一套控制，也會記住閱讀位置。文章清單上左滑封存、右滑加入 Later（Instapaper 為加星）；電腦上對文章按右鍵也有同樣兩個選項。頂端分頁依服務切換：Readwise 為 Inbox／Later／JRead（在 Readwise 標記為 JRead 的文章），Instapaper 為未讀／已加星／封存
 - **在 JReader 畫重點（Readwise）**：在「進入 Reader」打開的 Readwise 文章裡選取文字，點「畫重點」或按 H，重點會直接存回 Readwise（可跨段落）；在 Readwise 網站或 App 畫過的重點也會標出來，點一下重點可刪除。Instapaper 不支援
 - **JReader 跨裝置接續閱讀、按 E 封存**：JReader 會把你讀到的位置存回 Readwise，在另一台裝置的 JReader 打開同一篇會接著讀；往回重讀的位置也會跟著走。各裝置排版不同，位置是近似值；沒有別處的新進度時以這台記的位置為準。讀文章時按 E 可直接封存並回到文章清單（Readwise 與 Instapaper 皆可；進度接續僅 Readwise）
@@ -60,7 +60,7 @@ JRead 圍繞三件事：**找出主文**、**清掉雜訊**、**排得好讀**�
 - **懸浮按鈕**：頁面邊緣常駐一顆小圖示，短按切換閱讀模式、長按開選單、拖曳可換到左右緣與上下位置；可在設定調整透明度與尺寸，或關閉
 - **三指輕點**：觸控裝置三指輕點頁面即可進出閱讀模式（預設關閉，可在設定開啟）
 - **自訂快速鍵**：內建預設鍵為 ⌥R（切換閱讀模式）、⌥⇧R（送到稍後閱讀服務）、⌥Y（YouTube 無邊模式）、⌥P（翻頁模式）；另可為「切換閱讀模式／送出到稍後閱讀服務／YouTube 無邊模式／切換翻頁模式」錄製組合鍵；Safari（含 iPad 外接鍵盤）沒有瀏覽器層的改鍵入口，這裡是唯一通道，Chrome 也通用
-- **回復預設**：一鍵把所有設定還原成預設值（需二次確認），會一併清掉已儲存的設定檔、自動啟動網域清單與自訂快速鍵且無法復原，但會保留 Readwise／Gemini 的 API key 與 Instapaper 連結
+- **回復預設**：一鍵把所有設定還原成預設值（需二次確認），會一併清掉已儲存的設定檔、自動啟動網域清單與自訂快速鍵且無法復原，但會保留 Readwise／JReader／Gemini 的憑證與 Instapaper 連結
 
 ---
 

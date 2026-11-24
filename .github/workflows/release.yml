@@ -16,7 +16,9 @@ jobs:
 
       - name: Get version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          echo "VERSION_NUM=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
       - name: Zip jread folder (Chrome)
         run: |
@@ -47,6 +49,13 @@ jobs:
           zip -r ../jread-firefox-${{ steps.version.outputs.VERSION }}-source.zip .
           cd ..
 
+      - name: Build web core ZIP (JReader 網頁版 host)
+        run: |
+          # v2.6.0：第三個 host（一般 https 網頁）vendor 的發佈產物。白名單打包、不含
+          # instapaper-keys.js（CI checkout 本來就沒有這個 gitignored 檔，工具另外以白名單排除）。
+          # 規格見 tools/build-web-core.js 與 SPEC.md「Host 合約」
+          node tools/build-web-core.js --out .
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -55,6 +64,7 @@ jobs:
             jread-${{ steps.version.outputs.VERSION }}.zip
             jread-firefox-${{ steps.version.outputs.VERSION }}.zip
             jread-firefox-${{ steps.version.outputs.VERSION }}-source.zip
+            jread-web-core-${{ steps.version.outputs.VERSION_NUM }}.zip
           generate_release_notes: true
           # GitHub 預設「建立時間最新 = Latest」會被補建舊 tag 偷走 Latest 標籤。
           # legacy 改用 semver：highest version 才是 Latest，與補建順序無關。

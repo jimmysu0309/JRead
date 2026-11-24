@@ -26,6 +26,7 @@
   // 'keep' 分頁成功後的 toast
   const LATER_TEXT = {
     readwise:   { swipe: 'Later', menu: '加入 Later', done: '已加入 Later' },
+    jreader:    { swipe: 'Later', menu: '加入 Later', done: '已加入 Later' },
     instapaper: { swipe: '加星',  menu: '加星',       done: '已加星' }
   };
 
@@ -472,13 +473,9 @@
     // v1.9.14：theme 讀有效值（這台裝置套用中的設定檔會蓋過 sync flat）
     const PROFILES = global.__JReadProfiles;
     const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
-    readSettings({
-      theme: DEF.theme || 'gray', // review D-05：同 reader-article.js，預設主題讀單一資料源
-      storageService: DEF.storageService || 'readwise',
-      readwiseToken: '',
-      instapaperToken: '',
-      instapaperTokenSecret: ''
-    }).then((s) => {
+    readSettings(PC.serviceSettingsQuery({
+      theme: DEF.theme || 'gray' // review D-05：同 reader-article.js，預設主題讀單一資料源
+    })).then((s) => {
       if (s && s.theme) doc.documentElement.setAttribute('data-theme', s.theme);
       const { service, creds, ok } = PC.resolveServiceCredentials(s);
       if (!ok) {
@@ -498,7 +495,9 @@
         }
         span.textContent = service === 'instapaper'
           ? '尚未連結 Instapaper 帳號，請到擴充功能的進階設定連結後再開啟 Reader'
-          : '尚未設定 Readwise token，請到擴充功能的進階設定填入後再開啟 Reader';
+          : service === 'jreader'
+            ? '尚未設定 JReader 網址與 token，請到擴充功能的進階設定填入後再開啟 Reader'
+            : '尚未設定 Readwise token，請到擴充功能的進階設定填入後再開啟 Reader';
         showMsg(span, true);
         return;
       }

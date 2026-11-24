@@ -175,6 +175,32 @@
     return (url, opts) => fetchWithTimeout(f, url, opts, ms);
   }
 
+  // v2.6.0：Readwise 相容 API 的 base。JReader（自架後端）提供同形的讀取 / 搬移 /
+  // 重點 / 進度端點，差別只在網址前段——Readwise 各支收選用的 base（沒給＝Readwise），
+  // jreader 服務帶使用者設定的網址。下方各 *_URL 常數維持 Readwise 的完整網址（既有
+  // spec 與呼叫端讀），實際請求一律經 apiUrl(base, path) 組出
+  const READWISE_BASE = 'https://readwise.io';
+  // 網址正規化：去頭尾空白與結尾斜線；只收 https（本機開發另收 http://localhost /
+  // 127.0.0.1）。不合法回 ''（呼叫端視為未設定）
+  function normalizeApiBase(raw) {
+    const t = typeof raw === 'string' ? raw.trim() : '';
+    if (!t) return '';
+    let u;
+    try { u = new URL(t); } catch (_) { return ''; }
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname);
+    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) return '';
+    if (u.search || u.hash || u.username || u.password) return '';
+    return (u.origin + u.pathname).replace(/\/+$/, '');
+  }
+  function apiUrl(base, path) {
+    return (normalizeApiBase(base) || READWISE_BASE) + path;
+  }
+  // v2.6.0：「憑證由 host 提供」的 sentinel token。JReader 網頁版走同源 cookie session，
+  // token 不進 localStorage——web shim 讓 jreaderToken 讀到這個值，readwiseRequest 見到
+  // 它就不帶 Authorization、改 credentials:'include'（cookie 由瀏覽器帶）。字面值刻意
+  // 不像真 token；擴充端使用者不可能貼出這串
+  const HOST_SESSION_TOKEN = '__jread_host_session__';
+
   const READWISE_API_URL = 'https://readwise.io/api/v3/save/';
   // v0.8.64：token 驗證端點。官方 GET /api/v2/auth/ 帶 Authorization: Token <token>，
   // 有效回 204 No Content、無效回 401——比 POST /save/ 輕量（不建任何文件、不需 payload），
@@ -674,7 +700,13 @@
     if (pre) return { result: pre };
     const opts = { method };
     if (keepalive) opts.keepalive = true;
-    opts.headers = { 'Authorization': `Token ${token.trim()}` };
+    // v2.6.0：host session（見 HOST_SESSION_TOKEN）不帶 Authorization、讓瀏覽器帶 cookie
+    if (token === HOST_SESSION_TOKEN) {
+      opts.headers = {};
+      opts.credentials = 'include';
+    } else {
+      opts.headers = { 'Authorization': `Token ${token.trim()}` };
+    }
     if (typeof body === 'function') {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body());
@@ -732,14 +764,81 @@
   // 回傳值與 saveToReadwise 對齊（ok / error / status），讓 options / popup 共用同一套
   // 分支判斷。NO_TOKEN（空）/ AUTH（401·403 → token 無效或過期）/ NETWORK（連不上）/
   // HTTP（其他非 2xx）/ NO_FETCH（環境無 fetch）。
-  async function validateReadwiseToken({ token, fetchImpl, timeoutMs } = {}) {
+  async function validateReadwiseToken({ token, base, fetchImpl, timeoutMs } = {}) {
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: AUTH_FETCH_TIMEOUT_MS,
-      url: READWISE_AUTH_URL, method: 'GET', classify: false
+      url: apiUrl(base, '/api/v2/auth/'), method: 'GET', classify: false
     });
     if (r.result) return r.result;
     const res = r.res;
     // 有效：204 No Content（也容忍其他 2xx，保險）
+    if (res.status === 204 || res.ok) return { ok: true, status: res.status };
+    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
+    return { ok: false, status: res.status, error: 'HTTP' };
+  }
+
+  // ---- JReader 存文章（v2.6.0）-------------------------------------------
+  // JReader（自架的 Readwise 相容後端）的存文章端點是獨立的 POST <base>/api/v1/save
+  //（規格在 JReader repo 的 docs/api-save.md）：JRead 抽出的 HTML 就是最終內容、伺服器
+  // 自己鏡像圖片，所以 Readwise 那三條繞路都不做——不送 should_clean_html、翻譯頁不內嵌
+  // data: 圖片、不強制補 author / title。照舊帶 Gemini 摘要、language、原文網址（翻譯頁
+  // 的 url 由 extractReaderPayload 換成原文網址）。
+  // 回應：201 新建 / 200 已存在（同 Readwise，existsOn200）/ 400 INVALID_PAYLOAD /
+  // 401·403 AUTH / 413 HTTP（TOO_LARGE）/ 429 RATE_LIMIT。
+  const JREADER_SAVE_SOURCE = 'jread-extension';
+  function buildJReaderPayload({ url, html, title, imageUrl, author, publishedDate, summary, isTranslated, text } = {}) {
+    if (!url || typeof url !== 'string') {
+      throw new Error('buildJReaderPayload: url 必填');
+    }
+    const body = { url };
+    const str = (v) => (typeof v === 'string' ? v.trim() : '');
+    if (html && typeof html === 'string') body.html = html;
+    if (str(title)) body.title = str(title);
+    if (str(author)) body.author = str(author);
+    if (str(publishedDate)) body.published_date = str(publishedDate);
+    if (imageUrl && typeof imageUrl === 'string' && /^https?:\/\//i.test(imageUrl)) body.image_url = imageUrl;
+    if (str(summary)) body.summary = str(summary);
+    // language 判斷與 Readwise 同一份（翻譯頁必為繁中，見 buildReadwisePayload）
+    const language = isTranslated ? 'zh-TW' : detectHanLanguage(text);
+    if (language) body.language = language;
+    if (isTranslated) body.is_translated = true;
+    body.source = JREADER_SAVE_SOURCE;
+    return body;
+  }
+
+  async function saveToJReader({ token, base, payload, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_CREDENTIALS' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: SAVE_FETCH_TIMEOUT_MS,
+      url: apiUrl(base, '/api/v1/save'), method: 'POST', body: () => payload
+    });
+    if (r.result) return r.result;
+    const res = r.res;
+    let rawText = '';
+    let data = null;
+    if (typeof res.text === 'function') {
+      try { rawText = await res.text(); } catch (_) { /* 無 body */ }
+      if (rawText) { try { data = JSON.parse(rawText); } catch (_) { /* 非 JSON */ } }
+    } else if (typeof res.json === 'function') {
+      try { data = await res.json(); } catch (_) { /* 非 JSON */ }
+    }
+    if (!res.ok) {
+      const code = data && typeof data.error === 'string' ? data.error : '';
+      const error = (res.status === 400 && code === 'INVALID_PAYLOAD') ? 'INVALID_PAYLOAD' : 'HTTP';
+      return { ok: false, status: res.status, error, data, detail: code || readwiseErrorDetail(data, rawText) };
+    }
+    return { ok: true, status: res.status, data };
+  }
+
+  // JReader token 驗證：GET <base>/api/v1/auth → 204 有效 / 401 無效（與 Readwise v2/auth 同形）
+  async function validateJReaderToken({ token, base, fetchImpl, timeoutMs } = {}) {
+    if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
+    const r = await readwiseRequest({
+      token, fetchImpl, timeoutMs, defaultTimeoutMs: AUTH_FETCH_TIMEOUT_MS,
+      url: apiUrl(base, '/api/v1/auth'), method: 'GET', classify: false
+    });
+    if (r.result) return r.result;
+    const res = r.res;
     if (res.status === 204 || res.ok) return { ok: true, status: res.status };
     if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, error: 'AUTH' };
     return { ok: false, status: res.status, error: 'HTTP' };
@@ -754,12 +853,11 @@
   // （上限 100，依 updated 由新到舊）+ nextPageCursor，取「最新十篇」由呼叫端 slice。
   // html_content 只在 withHtmlContent=true 時回（該模式 server 端重度 rate-limit、較慢），
   // 故 feed 列表不帶、點開單篇文章才帶（兩段式抓取，分散限流）。
-  const READER_LIST_URL = 'https://readwise.io/api/v3/list/';
-  const READER_UPDATE_URL = 'https://readwise.io/api/v3/update/'; // + <id>/
+  // 端點：<base>/api/v3/list/、<base>/api/v3/update/<id>/（v2.6.0 起經 apiUrl 組出）
 
   // 列文件。location='new'=inbox 收件匣；帶 id 取單篇；withHtmlContent=true 取主文 HTML。
   // 回 { ok:true, results, nextPageCursor } 或 { ok:false, error, status }。
-  async function listReaderDocuments({ token, location, id, tag, withHtmlContent, pageCursor, fetchImpl, timeoutMs } = {}) {
+  async function listReaderDocuments({ token, base, location, id, tag, withHtmlContent, pageCursor, fetchImpl, timeoutMs } = {}) {
     // v1.10.0：429 獨立分類（list 限流 20/min，文章 / feed 載入撞到時給「稍候再試」文案）
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
@@ -772,7 +870,8 @@
         if (withHtmlContent) params.set('withHtmlContent', 'true');
         if (pageCursor) params.set('pageCursor', pageCursor);
         const qs = params.toString();
-        return qs ? `${READER_LIST_URL}?${qs}` : READER_LIST_URL;
+        const listUrl = apiUrl(base, '/api/v3/list/');
+        return qs ? `${listUrl}?${qs}` : listUrl;
       }
     });
     if (r.result) return r.result;
@@ -790,7 +889,7 @@
   // Reader API 沒有獨立 archive / later 端點，改 location 即歸檔（'archive'）或移到
   // Later（'later'，v2.4.0 feed 右滑）。回 { ok, status } / 錯誤分類。
   const READER_MOVE_LOCATIONS = ['new', 'later', 'shortlist', 'archive'];
-  async function moveReaderDocument({ token, id, location, fetchImpl, timeoutMs } = {}) {
+  async function moveReaderDocument({ token, base, id, location, fetchImpl, timeoutMs } = {}) {
     // v2.4.11（2026-11-15 review E-06）：限流要分類——v2.4.0 的連續左滑封存 / 右滑
     // Later 是最容易連打的操作，原本 429 落到 HTTP 顯示「封存失敗（HTTP 429）」
     //（v2.5.1 起 429 分類住在 readwiseRequest，不會再抄漏）
@@ -801,7 +900,7 @@
         if (!READER_MOVE_LOCATIONS.includes(location)) return { ok: false, error: 'NO_LOCATION' };
         return null;
       },
-      url: () => `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`,
+      url: () => `${apiUrl(base, '/api/v3/update/')}${encodeURIComponent(id.trim())}/`,
       method: 'PATCH', body: () => ({ location })
     });
     if (r.result) return r.result;
@@ -822,7 +921,7 @@
   // updated_at 會前進、回應 body 只有 { id, url }（拿不到伺服器時間）。PDF 尚未支援。
   // keepalive：這支多半在頁面退出 / 背景化當下送（位置記憶的 flush 路徑），沒有它
   // 請求會跟著頁面一起被取消。回 { ok, status } / 錯誤分類（同 moveReaderDocument）。
-  async function updateReaderProgress({ token, id, progress, fetchImpl, timeoutMs } = {}) {
+  async function updateReaderProgress({ token, base, id, progress, fetchImpl, timeoutMs } = {}) {
     let p;
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
@@ -832,7 +931,7 @@
         if (progress == null || !Number.isFinite(p) || p < 0 || p > 1) return { ok: false, error: 'NO_PROGRESS' };
         return null;
       },
-      url: () => `${READER_UPDATE_URL}${encodeURIComponent(id.trim())}/`,
+      url: () => `${apiUrl(base, '/api/v3/update/')}${encodeURIComponent(id.trim())}/`,
       method: 'PATCH', keepalive: true,
       body: () => ({ reading_progress: Math.round(p * 10000) / 10000 })
     });
@@ -859,8 +958,7 @@
   //   highlight.external_id＝Reader 重點 id，includeDeleted=true 帶 is_deleted，
   //   增量就看得到刪除（建立 / 刪除後約 6 秒反映到 export，2026-10-27 實測）。
   // 限流：v3 save 50/min、delete 20/min；超過回 429 + Retry-After。
-  const READER_SAVE_URL = 'https://readwise.io/api/v3/save/';
-  const READER_DELETE_URL = 'https://readwise.io/api/v3/delete/'; // + <id>/
+  // 端點：<base>/api/v3/save/、<base>/api/v3/delete/<id>/（v2.6.0 起經 apiUrl 組出）
 
   function rateLimitResult(res) {
     let retryAfter = null;
@@ -873,7 +971,7 @@
 
   // 建立重點。回 { ok:true, id } / { ok:false, error }：NOT_FOUND（400，文字對不上
   // 原文）/ AUTH / RATE_LIMIT / TIMEOUT / NETWORK / HTTP / NO_TOKEN / NO_ID / EMPTY
-  async function createReaderHighlight({ token, parentId, content, fetchImpl, timeoutMs } = {}) {
+  async function createReaderHighlight({ token, base, parentId, content, fetchImpl, timeoutMs } = {}) {
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
       precheck: () => {
@@ -881,7 +979,7 @@
         if (!content || typeof content !== 'string' || !content.trim()) return { ok: false, error: 'EMPTY' };
         return null;
       },
-      url: READER_SAVE_URL, method: 'POST',
+      url: apiUrl(base, '/api/v3/save/'), method: 'POST',
       body: () => ({ parent_id: parentId.trim(), content, saved_using: 'JRead' })
     });
     if (r.result) return r.result;
@@ -896,11 +994,11 @@
 
   // 刪除重點（也適用一般文件，JReader 只拿來刪重點）。404 = 已經不在（別處刪過 /
   // 快取過期）→ 當成功，gone:true 讓呼叫端知道
-  async function deleteReaderDocument({ token, id, fetchImpl, timeoutMs } = {}) {
+  async function deleteReaderDocument({ token, base, id, fetchImpl, timeoutMs } = {}) {
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS,
       precheck: () => (!id || typeof id !== 'string' || !id.trim()) ? { ok: false, error: 'NO_ID' } : null,
-      url: () => `${READER_DELETE_URL}${encodeURIComponent(id.trim())}/`,
+      url: () => `${apiUrl(base, '/api/v3/delete/')}${encodeURIComponent(id.trim())}/`,
       method: 'DELETE'
     });
     if (r.result) return r.result;
@@ -910,14 +1008,14 @@
     return { ok: true, status: res.status };
   }
 
-  const READWISE_EXPORT_URL = 'https://readwise.io/api/v2/export/';
+  // 端點：<base>/api/v2/export/（v2.6.0 起經 apiUrl 組出）
 
   // 讀 Reader 文章的重點（v2 export，自動翻完所有頁）。updatedAfter 給 ISO 字串＝
   // 增量：回「這段時間有變動的文章」底下的**全部**重點（含已刪除、is_deleted=true），
   // 呼叫端可整篇替換；不給＝全量（不帶已刪除）。只收 Reader 來源（book 有
   // external_id）的文章。回 { ok:true, docs: { <Reader 文件 id>: [{ id, content,
   // offset, deleted }] } }。中途任何一頁失敗就整批回失敗（半套結果不能拿來整篇替換）。
-  async function exportReaderHighlights({ token, updatedAfter, fetchImpl, timeoutMs, maxPages } = {}) {
+  async function exportReaderHighlights({ token, base, updatedAfter, fetchImpl, timeoutMs, maxPages } = {}) {
     const limitPages = typeof maxPages === 'number' && maxPages > 0 ? maxPages : 50;
     const docs = {};
     let cursor = null;
@@ -933,7 +1031,8 @@
           }
           if (cursor) params.set('pageCursor', cursor);
           const qs = params.toString();
-          return qs ? `${READWISE_EXPORT_URL}?${qs}` : READWISE_EXPORT_URL;
+          const exportUrl = apiUrl(base, '/api/v2/export/');
+          return qs ? `${exportUrl}?${qs}` : exportUrl;
         }
       });
       if (r.result) return r.result;
@@ -1021,15 +1120,53 @@
     return g && g.__JReadInstapaper;
   }
 
+  // v2.6.0：儲存服務三選一（readwise / instapaper / jreader）的單一資料源。
+  // normalizeStorageService：未知 / 損壞值退回 'readwise'（v1.6.0 以來的既有行為）。
+  // isReadwiseCompatible：走 Readwise 相容 API 的服務（jreader 只差 base）——讀取、搬移、
+  // 重點、進度都共用 Readwise 那幾支函式，能力判斷（supports*）一律經過它。
+  const STORAGE_SERVICES = ['readwise', 'instapaper', 'jreader'];
+  function normalizeStorageService(v) {
+    return STORAGE_SERVICES.indexOf(v) !== -1 ? v : 'readwise';
+  }
+  function isReadwiseCompatible(service) {
+    return service === 'readwise' || service === 'jreader';
+  }
+  // 讀設定時三個服務的憑證欄位與預設值（popup / options / reader / SW / content 直送軌
+  // 讀 storage 時展開這份，加欄位只改這裡）
+  const SERVICE_SETTINGS_DEFAULTS = {
+    storageService: 'readwise',
+    readwiseToken: '',
+    instapaperToken: '',
+    instapaperTokenSecret: '',
+    jreaderUrl: '',
+    jreaderToken: ''
+  };
+  function serviceSettingsQuery(extra) {
+    return Object.assign({}, SERVICE_SETTINGS_DEFAULTS, extra || {});
+  }
+  // creds → Readwise 系函式的 { token, base }（readwise 的 base 是 undefined＝readwise.io）
+  function rwArgs(creds) {
+    const c = creds || {};
+    return { token: c.token, base: c.base };
+  }
+
   function serviceLabel(service) {
-    return service === 'instapaper' ? 'Instapaper' : 'Readwise Reader';
+    if (service === 'instapaper') return 'Instapaper';
+    if (service === 'jreader') return 'JReader';
+    return 'Readwise Reader';
   }
 
   // settings → { service, creds, ok }。單一憑證解析，popup / reader / SW 共用。
-  // readwise：creds={token}；instapaper：creds={token,tokenSecret}。ok=憑證齊備。
+  // readwise：creds={token}；instapaper：creds={token,tokenSecret}；jreader（v2.6.0）：
+  // creds={token,base}（base＝正規化後的 jreaderUrl）。ok=憑證齊備。
   function resolveServiceCredentials(settings) {
     const s = settings || {};
-    const service = s.storageService === 'instapaper' ? 'instapaper' : 'readwise';
+    const service = normalizeStorageService(s.storageService);
+    if (service === 'jreader') {
+      const token = typeof s.jreaderToken === 'string' ? s.jreaderToken.trim() : '';
+      const base = normalizeApiBase(s.jreaderUrl);
+      return { service, creds: { token, base }, ok: !!(token && base) };
+    }
     if (service === 'instapaper') {
       const token = typeof s.instapaperToken === 'string' ? s.instapaperToken.trim() : '';
       const tokenSecret = typeof s.instapaperTokenSecret === 'string' ? s.instapaperTokenSecret.trim() : '';
@@ -1067,6 +1204,21 @@
         token: c.token, tokenSecret: c.tokenSecret, payload: body,
         fetchImpl: ipFetch ? withFetchTimeout(ipFetch, SAVE_FETCH_TIMEOUT_MS) : ipFetch
       });
+    }
+    if (service === 'jreader') {
+      if (!c.token || !c.base) return { ok: false, error: 'NO_CREDENTIALS' };
+      let body;
+      try {
+        body = buildJReaderPayload(payload || {});
+      } catch (e) {
+        return { ok: false, error: 'INVALID_PAYLOAD', message: String(e && e.message || e) };
+      }
+      const sendT0 = Date.now();
+      jlog('POST JReader', { bytes: JSON.stringify(body).length, hasSummary: !!body.summary, isTranslated: !!body.is_translated });
+      const res = await saveToJReader({ token: c.token, base: c.base, payload: body, fetchImpl, timeoutMs });
+      jlog('POST JReader 回應', { ok: !!res.ok, status: res.status, error: res.error, ms: Date.now() - sendT0 },
+        res.ok ? 'info' : 'error');
+      return res;
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
     // v1.7.74：翻譯頁（should_clean_html=false 的 raw HTML 模式）送出前把內文圖
@@ -1155,7 +1307,7 @@
       return IP.listInstapaper({ token: c.token, tokenSecret: c.tokenSecret, folderId: q.folderId, limit: limit || 20, fetchImpl: readFetch(fetchImpl) });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
-    return listReaderDocuments({ token: c.token, location: q.location, tag: q.tag, fetchImpl });
+    return listReaderDocuments(Object.assign(rwArgs(c), { location: q.location, tag: q.tag, fetchImpl }));
   }
 
   // 取單篇全文。readwise 憑 id 一次拿齊 metadata+html_content；instapaper get_text
@@ -1183,7 +1335,7 @@
       return { ok: true, doc };
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
-    const r = await listReaderDocuments({ token: c.token, id, withHtmlContent: true, fetchImpl });
+    const r = await listReaderDocuments(Object.assign(rwArgs(c), { id, withHtmlContent: true, fetchImpl }));
     if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'HTTP', status: r && r.status };
     const doc = (r.results || [])[0];
     if (!doc || !doc.html_content) return { ok: false, error: 'EMPTY' };
@@ -1200,19 +1352,24 @@
       return IP.archiveInstapaper({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl: readFetch(fetchImpl) });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
-    return archiveReaderDocument({ token: c.token, id, fetchImpl });
+    return archiveReaderDocument(Object.assign(rwArgs(c), { id, fetchImpl }));
   }
 
   // v2.5.0：把閱讀進度寫回儲存服務（0–1）。只有 Readwise 支援；Instapaper 回
-  // UNSUPPORTED（它的 API 能不能寫進度還沒查證，先不做）。
+  // UNSUPPORTED（它的 API 能不能寫進度還沒查證，先不做）。v2.6.0：jreader 走同一支
+  // Readwise 相容端點，能力與 Readwise 相同
   function supportsProgressWrite(service) {
-    return service === 'readwise';
+    return isReadwiseCompatible(service);
+  }
+  // v2.6.0：Article View 畫重點 / 顯示既有重點（reader-highlights.js 的 API 同步）
+  function supportsHighlights(service) {
+    return isReadwiseCompatible(service);
   }
   async function updateReadingProgress({ service, creds, id, progress, fetchImpl } = {}) {
     if (!supportsProgressWrite(service)) return { ok: false, error: 'UNSUPPORTED' };
     const c = creds || {};
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
-    return updateReaderProgress({ token: c.token, id, progress, fetchImpl });
+    return updateReaderProgress(Object.assign(rwArgs(c), { id, progress, fetchImpl }));
   }
 
   // v2.4.0：feed 右滑「稍後讀」。readwise → 移到 Later（location:'later'）；instapaper
@@ -1226,7 +1383,7 @@
       return IP.starInstapaper({ token: c.token, tokenSecret: c.tokenSecret, id, fetchImpl: readFetch(fetchImpl) });
     }
     if (!c.token) return { ok: false, error: 'NO_CREDENTIALS' };
-    return moveReaderDocument({ token: c.token, id, location: 'later', fetchImpl });
+    return moveReaderDocument(Object.assign(rwArgs(c), { id, location: 'later', fetchImpl }));
   }
 
   // v1.7.36：送出流程的「進行中」文字。popup 狀態列與快速鍵 toast 共用同一份
@@ -1317,7 +1474,7 @@
     if (result && result.error === 'CONFIG') return `此版本未內建 Instapaper 金鑰，無法${action}`;
     if (isTimeoutResult(result)) return `伺服器沒有回應，${action}失敗，請再試一次`;
     if (result && result.error === 'NETWORK') return `網路錯誤，${action}失敗，請稍後再試`;
-    if (result && result.error === 'RATE_LIMIT') return `Readwise 請求太頻繁，${action}失敗，請稍候一分鐘再試`;
+    if (result && result.error === 'RATE_LIMIT') return `${(opts && opts.service === 'jreader') ? 'JReader' : 'Readwise'} 請求太頻繁，${action}失敗，請稍候一分鐘再試`;
     const detail = result && result.status ? `（HTTP ${result.status}）` : '';
     return `${action}失敗${detail}`;
   }
@@ -1335,7 +1492,8 @@
     const s = settings || {};
     const { service, creds, ok } = resolveServiceCredentials(s);
     const label = serviceLabel(service);
-    const toastOpts = { serviceLabel: label, existsOn200: service === 'readwise', credsPlace };
+    // v2.6.0：JReader 的 save 與 Readwise 同語意（200＝網址已存在、201＝新建）
+    const toastOpts = { serviceLabel: label, existsOn200: isReadwiseCompatible(service), credsPlace };
     if (!ok) {
       const result = { ok: false, error: 'NO_CREDENTIALS' };
       return { result, toast: saveResultToast(result, toastOpts), service, label };
@@ -1395,6 +1553,19 @@
     readwiseRequest,
     readwiseErrorDetail,
     validateReadwiseToken,
+    // v2.6.0：JReader（自架 Readwise 相容後端）
+    READWISE_BASE,
+    HOST_SESSION_TOKEN,
+    normalizeApiBase,
+    STORAGE_SERVICES,
+    normalizeStorageService,
+    isReadwiseCompatible,
+    SERVICE_SETTINGS_DEFAULTS,
+    serviceSettingsQuery,
+    buildJReaderPayload,
+    saveToJReader,
+    validateJReaderToken,
+    supportsHighlights,
     listReaderDocuments,
     archiveReaderDocument,
     moveReaderDocument,

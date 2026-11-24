@@ -115,6 +115,11 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     instapaperToken: '',
     instapaperTokenSecret: '',
     instapaperUsername: '',
+    // v2.6.0：第三個儲存服務 JReader（自架的 Readwise 相容後端）。jreaderUrl＝後端網址
+    //（https://…，不含 /api），jreaderToken＝API token。空字串 = 未設定。
+    // 正規化與憑證解析住 popup-core（normalizeApiBase / resolveServiceCredentials）
+    jreaderUrl: '',
+    jreaderToken: '',
     // v0.8.72：送 Readwise 時用 Gemini Flash Lite 先產生摘要（繁中三句）一起送出，
     // 取代 Readwise server 端自動生成的英文摘要。預設 false = 不產生（仍可送，由
     // Readwise 自動處理）。需同時設 geminiApiKey 才會實際呼叫。
@@ -325,6 +330,10 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     'instapaperToken',
     'instapaperTokenSecret',
     'instapaperUsername',
+    // v2.6.0：JReader 網址與 token（網址不是秘密，但同屬「使用者連結的服務」，回復預設
+    // 時要跟 token 一起保留）
+    'jreaderUrl',
+    'jreaderToken',
     'geminiApiKey'
   ];
   function stripCredentialSettings(settings) {
@@ -536,12 +545,17 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     firefox: 'moz-extension://'
   };
   // 擴充自身 URL（browser.runtime.getURL('')）→ 'safari' | 'app' | 'chrome' |
-  // 'firefox' | 'other'。結構性平台訊號、非 UA 嗅探。
-  function runtimeKindOf(extUrl) {
+  // 'firefox' | 'web' | 'other'。結構性平台訊號、非 UA 嗅探。
+  // v2.6.0 'web'：一般 https 網頁當 host（JReader 網頁版，擴充 API 由 lib/web-host-shim.js
+  // 替身）。https 網址本身分不出「web host」與「隨便一個網頁」，所以這一種改由 host 宣告：
+  // web shim 裝好時掛 globalThis.__jreadHost = { kind: 'web' }，呼叫端把它當第二個引數
+  // 傳進來（本檔仍不碰全域）。擴充 scheme 永遠優先——擴充頁不可能被宣告改判成 web
+  function runtimeKindOf(extUrl, declaredHost) {
     const u = String(extUrl || '');
     for (const kind of Object.keys(RUNTIME_SCHEMES)) {
       if (u.startsWith(RUNTIME_SCHEMES[kind])) return kind;
     }
+    if (declaredHost && declaredHost.kind === 'web') return 'web';
     return 'other';
   }
   const TOUCH_SCREEN_MIN_POINTS = 1;

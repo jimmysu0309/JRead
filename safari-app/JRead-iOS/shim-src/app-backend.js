@@ -1,0 +1,369 @@
+// JRead iOS App — App 內 JReader 的擴充 API 替身：App backend（v2.2.0 起；v2.6.0 拆檔）
+//
+// 本檔不單獨載入。tools/build-host-shims.js 把 jread/lib/host-shim-core.js（跟平台無關的
+// browser / chrome 物件形狀、storage 語意、onChanged、跨 frame 廣播）與本檔組成
+// safari-app/JRead-iOS/JRead/Resources/jreader-app-shim.js——ViewController.swift 在
+// document start 注入的仍是那一支（Swift 與 Xcode 專案不用改）。改本檔或核心後重跑：
+//   node tools/build-host-shims.js
+// forcing：test/regression/host-shim-build.spec.js 驗產生檔與兩份來源一致。
+//
+// App 用 WKWebView 以 jread-app:// 載入擴充同一份 reader/reader.html、article.html
+// （檔案直接讀 App bundle 裡 JRead Extension.appex 的 Resources，不另存一份）。
+// 背後走 WKScriptMessageHandlerWithReply（ViewController.swift 的 "jread" handler）：
+//   - storage.sync  ↔ App Group 鏡像（AppSyncStore.swift，與 Safari 擴充雙向同步，逐鍵 LWW）
+//   - storage.local ↔ App 自己的檔案（閱讀位置、feed 快取、這台裝置套用的設定檔）
+//   - 跨來源 fetch  → 原生 URLSession（Instapaper API 不開 CORS，網頁端直接打會被擋）
+//   - runtime.sendMessage 等 background 才有的能力 → 沒有 background，一律 resolve undefined
+//     （核心提供，與 Safari 對沒有 listener 的 sendMessage 行為相同，呼叫端本來就要容忍）
+//
+// 這條驗 X、不驗 Y：test/regression/ios-app-jreader-shim.spec.js 用 jsdom + 假 bridge
+// 驗 storage 語意、onChanged、fetch 轉送；WKWebView 實際載入、原生 bridge 回傳格式、
+// App Group 跨 process 讀寫只能模擬器驗。
+
+(function (CORE) {
+  'use strict';
+
+  if (location.protocol !== 'jread-app:') return;
+  if (window.__jreadApp) return;
+
+  const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jread;
+  const call = (msg) => Promise.resolve(handler ? handler.postMessage(msg) : null)
+    .then((r) => (typeof r === 'string' ? JSON.parse(r) : (r || {})));
+
+  const BASE = location.protocol + '//' + location.host + '/';
+  const MANIFEST = window.__JREAD_APP_MANIFEST || { version: '0.0.0' };
+  // 2026-11-15 review E-08：原名 CREDENTIAL_KEYS——語意是「變了就要重載 feed 的 key」，
+  // 與 settings-defaults.js 的 CREDENTIAL_SETTINGS_KEYS（憑證欄位）撞名但內容不同，改名避免混淆
+  // v2.6.0：加上 JReader 的網址與 token（第三個儲存服務）
+  const FEED_RELOAD_KEYS = ['storageService', 'readwiseToken', 'instapaperToken', 'instapaperTokenSecret', 'jreaderUrl', 'jreaderToken'];
+
+  // ---- storage backend ----------------------------------------------------
+  function entriesToMap(entries, map) {
+    map.clear();
+    for (const k of Object.keys(entries || {})) {
+      const e = entries[k];
+      if (!e || e.del || typeof e.vj !== 'string') continue;
+      try { map.set(k, JSON.parse(e.vj)); } catch (_) { /* 壞值略過 */ }
+    }
+  }
+  const mapToObject = (map) => { const o = {}; for (const [k, v] of map) o[k] = v; return o; };
+
+  function load() {
+    return Promise.all([call({ op: 'syncLoad' }), call({ op: 'localLoad' })])
+      .then(([s, l]) => {
+        const sync = new Map();
+        entriesToMap(s.entries, sync);
+        const local = {};
+        for (const k of Object.keys((l && l.items) || {})) {
+          try { local[k] = JSON.parse(l.items[k]); } catch (_) { /* 壞值略過 */ }
+        }
+        return { sync: mapToObject(sync), local };
+      });
+  }
+
+  function persist(area, setItems, removeKeys) {
+    if (area === 'sync') {
+      const now = Date.now();
+      const entries = {};
+      for (const k of Object.keys(setItems)) entries[k] = { vj: JSON.stringify(setItems[k]), ts: now };
+      for (const k of removeKeys) entries[k] = { del: true, ts: now };
+      return call({ op: 'syncPut', entries: JSON.stringify(entries) });
+    }
+    const items = {};
+    for (const k of Object.keys(setItems)) items[k] = JSON.stringify(setItems[k]);
+    return call({ op: 'localPut', items: JSON.stringify(items), remove: removeKeys });
+  }
+
+  const host = CORE.create({
+    baseUrl: BASE,
+    runtimeId: 'jread-app',
+    manifest: MANIFEST,
+    load,
+    persist,
+    frameKey: '__jreadApp'
+  }, window);
+  const ready = host.ready;
+  const onChanged = host.onChanged;
+
+  // 回前景（ViewController 在 willEnterForeground 呼叫）：重讀鏡像，Safari 擴充那邊改過的
+  // 設定 diff 後發 onChanged——article.html 既有的 storage.onChanged → scheduleReapply 即時重套。
+  // feed 頁只在載入時讀一次憑證，憑證 / 儲存服務變了就整頁重載。
+  function onForeground() {
+    return ready.then(() => call({ op: 'syncLoad' })).then((s) => {
+      const next = new Map();
+      entriesToMap(s.entries, next);
+      const changes = host.replaceArea('sync', next);
+      const keys = Object.keys(changes);
+      if (!keys.length) return keys;
+      if (/\/reader\/reader\.html$/.test(location.pathname) && keys.some((k) => FEED_RELOAD_KEYS.includes(k))) {
+        location.reload();
+        return keys;
+      }
+      onChanged._fire(changes, 'sync');
+      return keys;
+    }).catch(() => []);
+  }
+
+  // ---- fetch：跨來源 http(s) 交給原生 URLSession --------------------------
+  const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  function b64ToBytes(b64) {
+    const bin = atob(b64 || '');
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function appFetch(input, init) {
+    const opts = init || {};
+    const req = (typeof Request !== 'undefined' && input instanceof Request) ? input : null;
+    const rawUrl = req ? req.url : String(input);
+    let abs;
+    try { abs = new URL(rawUrl, location.href); } catch (_) { abs = null; }
+    if (!abs || !/^https?:$/.test(abs.protocol)) {
+      return nativeFetch ? nativeFetch(input, init) : Promise.reject(new TypeError('fetch unavailable'));
+    }
+    const signal = opts.signal || (req && req.signal) || null;
+    if (signal && signal.aborted) return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'));
+    const headers = {};
+    new Headers(opts.headers || (req && req.headers) || {}).forEach((v, k) => { headers[k] = v; });
+    let body = opts.body;
+    if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) {
+      if (!headers['content-type']) headers['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+      body = body.toString();
+    } else if (body !== undefined && body !== null && typeof body !== 'string') {
+      return Promise.reject(new TypeError('JReader App：不支援的 fetch body 型別'));
+    }
+    const method = String(opts.method || (req && req.method) || 'GET').toUpperCase();
+    const p = call({ op: 'fetch', url: abs.href, method, headers, body: body == null ? null : body }).then((r) => {
+      if (!r || r.error) throw new TypeError('Load failed' + (r && r.error ? '：' + r.error : ''));
+      const status = r.status | 0;
+      const nullBody = status === 204 || status === 205 || status === 304 || method === 'HEAD';
+      const resp = new Response(nullBody ? null : b64ToBytes(r.bodyB64), {
+        status: status >= 200 && status <= 599 ? status : 502,
+        statusText: r.statusText || '',
+        headers: r.headers || {}
+      });
+      try { Object.defineProperty(resp, 'url', { value: r.url || abs.href }); } catch (_) { /* 唯讀就算了 */ }
+      return resp;
+    });
+    if (!signal) return p;
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new DOMException('The operation was aborted.', 'AbortError'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      p.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+    });
+  }
+  window.fetch = appFetch;
+
+  // ---- browser / chrome 替身（形狀由核心提供）---------------------------------
+  host.install();
+
+  // ---- 安全區域底色（v2.2.1）-----------------------------------------------
+  // 狀態列 / Home 指示條那兩條由 App 原生著色：取畫面頂端中央往上找第一個不透明底色
+  // （翻頁模式＝卡片色、捲動模式＝頁面底色），變了才回報。主題切換、進出翻頁都會改
+  // <html> / <head> / <body> 的屬性或子節點 → MutationObserver（不掃 subtree）+ debounce。
+  function isOpaque(c) {
+    if (!c || c === 'transparent') return false;
+    const m = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(c);
+    return !m || parseFloat(m[1]) > 0;
+  }
+  function pageColor() {
+    const root = getComputedStyle(document.documentElement).backgroundColor;
+    if (isOpaque(root)) return root;
+    return document.body ? getComputedStyle(document.body).backgroundColor : '';
+  }
+  // 只認縱向蓋滿畫面的容器（翻頁卡片 / 文章版心 / body）：捲到一半時頂端剛好是圖、
+  // 程式碼框或列表項目，那些不代表頁面底色
+  function opaqueAncestor(el) {
+    const h = window.innerHeight;
+    while (el && el.nodeType === 1) {
+      if (isOpaque(getComputedStyle(el).backgroundColor)) {
+        const r = el.getBoundingClientRect();
+        if (el === document.body || el === document.documentElement || (r.top <= 2 && r.bottom >= h - 2)) return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+  // v2.2.4：頂端色帶要跟畫面一樣分三段（iPad 翻頁卡片不滿版，兩側露出頁面底色；
+  // Jimmy 2026-10-28 回報 v2.2.3 頂端整條填卡片色、左右沒配合底色）。回報中段色（color）
+  // 與其左右邊界（CSS px＝WebView point）、兩側色（side＝中段元素再往上第一個不透明底色）
+  function sampleTopBand() {
+    const w = window.innerWidth;
+    const card = opaqueAncestor(document.elementFromPoint(Math.floor(w / 2), 2));
+    if (!card) { const c = pageColor(); return { color: c, side: c, left: 0, right: w }; }
+    const color = getComputedStyle(card).backgroundColor;
+    const r = card.getBoundingClientRect();
+    const left = Math.max(0, Math.round(r.left));
+    const right = Math.min(w, Math.round(r.right));
+    const outer = opaqueAncestor(card.parentElement);
+    const side = outer ? getComputedStyle(outer).backgroundColor : pageColor();
+    return { color, side: isOpaque(side) ? side : color, left, right };
+  }
+  const sampleTopColor = () => sampleTopBand().color;
+  let lastChromeKey = '';
+  let chromeTimer = null;
+  function reportChromeColor() {
+    chromeTimer = null;
+    if (window !== window.top) return;
+    const band = sampleTopBand();
+    const key = JSON.stringify(band);
+    if (!isOpaque(band.color) || key === lastChromeKey) return;
+    lastChromeKey = key;
+    call(Object.assign({ op: 'chromeColor' }, band)).catch(() => {});
+  }
+  function scheduleChromeColor(ms) {
+    if (chromeTimer) clearTimeout(chromeTimer);
+    chromeTimer = setTimeout(reportChromeColor, ms == null ? 200 : ms);
+  }
+  if (window === window.top) {
+    onChanged.addListener(() => scheduleChromeColor(400));
+    window.addEventListener('resize', () => scheduleChromeColor());
+    document.addEventListener('DOMContentLoaded', () => {
+      const mo = new MutationObserver(() => scheduleChromeColor());
+      mo.observe(document.documentElement, { attributes: true, childList: true });
+      if (document.head) mo.observe(document.head, { childList: true });
+      if (document.body) mo.observe(document.body, { attributes: true, childList: true });
+      scheduleChromeColor(0);
+    });
+    window.addEventListener('load', () => scheduleChromeColor(300));
+  }
+
+  // ---- 左緣滑動回文章列表（v2.2.1）-----------------------------------------
+  // Jimmy 2026-10-28 實機回報 Article View 左緣滑動不會返回。原生手勢（WebKit 內建返回 /
+  // UIScreenEdgePanGestureRecognizer）在這裡收不到：翻頁模式 touchmove 會 preventDefault，
+  // WKWebView 就把原生手勢讓給頁面。改在頁面內判斷——本檔在 document start 先掛 window
+  // capture listener，比 paged-mode.js 早註冊、同階段先執行；從左緣 EDGE_PX 內起手的觸控整段
+  // 由這裡接走（stopImmediatePropagation，翻頁模組拿不到、不會同時往前翻一頁）。
+  const EDGE_PX = 24;
+  const EDGE_BACK_MIN_DX = 60;
+  function installEdgeBack(win, goBack) {
+    let edge = null;
+    const swallow = (e) => { e.stopImmediatePropagation(); };
+    win.addEventListener('touchstart', (e) => {
+      edge = null;
+      if (!e.touches || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (t.clientX > EDGE_PX) return;
+      edge = { x: t.clientX, y: t.clientY };
+      swallow(e);
+    }, { capture: true, passive: true });
+    win.addEventListener('touchmove', (e) => {
+      if (!edge) return;
+      swallow(e);
+      if (e.cancelable) e.preventDefault();
+    }, { capture: true, passive: false });
+    win.addEventListener('touchend', (e) => {
+      if (!edge) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      const start = edge;
+      edge = null;
+      swallow(e);
+      if (!t) return;
+      const dx = t.clientX - start.x;
+      const dy = Math.abs(t.clientY - start.y);
+      if (dx >= EDGE_BACK_MIN_DX && dx > dy) goBack();
+    }, { capture: true, passive: true });
+    win.addEventListener('touchcancel', () => { edge = null; }, { capture: true, passive: true });
+  }
+  // 回列表：走文章頁的退出 hook（NS.onReaderExit，與 ESC / 懸浮按鈕同一個網址＝帶 ?tab=
+  // 回到來源分頁）。Jimmy 2026-10-29 回報 Later / JRead 讀完左滑都回 Inbox：舊版判斷
+  // referrer 決定 history.back()，但 jread-app:// 自訂 scheme 的 document.referrer 恆為空
+  // （模擬器實測），永遠走「直接導向 reader.html」不帶分頁。hook 還沒掛上（文章載入中）
+  // 時沿用本頁網址的 ?tab=
+  function backToFeed() {
+    const NS = window.__JRead;
+    if (NS && typeof NS.onReaderExit === 'function') { NS.onReaderExit(); return; }
+    let tab = null;
+    try { tab = new URLSearchParams(location.search).get('tab'); } catch (_) { /* */ }
+    location.href = BASE + 'reader/reader.html' + (tab ? '?tab=' + encodeURIComponent(tab) : '');
+  }
+  if (window === window.top && /\/reader\/article\.html$/.test(location.pathname)) {
+    installEdgeBack(window, backToFeed);
+  }
+
+  // ---- 沉浸閱讀：狀態列與懸浮按鈕預設隱藏，點一下切換（v2.2.2）---------------
+  // Jimmy 2026-10-28 需求。Article View 進場時狀態列（原生，ViewController 的
+  // prefersStatusBarHidden）與懸浮按鈕（<html> 屬性 + !important 樣式蓋過 floating-icon 的
+  // inline opacity）一起藏；畫面任意處「點一下」切換顯示 / 隱藏。用 touch 自己判 tap 而不用
+  // click：iOS 對非可點元素不保證派發 click。拖移 / 長按 / 多指 / 起手前已有選取（畫重點中）
+  // 都不算；點到連結、表單、頁碼指示器、懸浮按鈕等自有互動的元素交給它們自己處理。
+  // 左緣返回那段觸控已被 installEdgeBack 先 stopImmediatePropagation，不會同時切換。
+  const CHROME_ATTR = 'data-jread-app-chrome';
+  const TAP_SLOP_PX = 10;
+  const TAP_MAX_MS = 350;
+  const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
+    '#__jread-floating-host, #__jread-panel-host, #__jread-hl-host, #__jread-toast-host, ' +
+    '#__jread-page-indicator, #__jread-scrub-track';
+  function installImmersive(win, report) {
+    const doc = win.document;
+    let shown = false;
+    const apply = () => {
+      doc.documentElement.setAttribute(CHROME_ATTR, shown ? 'shown' : 'hidden');
+      report(!shown);
+    };
+    const style = doc.createElement('style');
+    style.textContent = 'html[' + CHROME_ATTR + '="hidden"] #__jread-floating-host' +
+      ' { opacity: 0 !important; pointer-events: none !important; }';
+    doc.documentElement.appendChild(style);
+
+    let tap = null;
+    win.addEventListener('touchstart', (e) => {
+      tap = null;
+      if (!e.touches || e.touches.length !== 1) return;
+      const sel = win.getSelection && win.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      const t = e.touches[0];
+      tap = { x: t.clientX, y: t.clientY, at: Date.now(), target: e.target };
+    }, { capture: true, passive: true });
+    win.addEventListener('touchmove', (e) => {
+      if (!tap) return;
+      const t = e.touches && e.touches[0];
+      if (!t || Math.abs(t.clientX - tap.x) > TAP_SLOP_PX || Math.abs(t.clientY - tap.y) > TAP_SLOP_PX) tap = null;
+    }, { capture: true, passive: true });
+    win.addEventListener('touchend', (e) => {
+      const start = tap;
+      tap = null;
+      if (!start || (e.touches && e.touches.length)) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t || Math.abs(t.clientX - start.x) > TAP_SLOP_PX || Math.abs(t.clientY - start.y) > TAP_SLOP_PX) return;
+      if (Date.now() - start.at > TAP_MAX_MS) return;
+      const el = start.target && start.target.nodeType === 1 ? start.target : (start.target && start.target.parentElement);
+      if (el && el.closest(TAP_SKIP)) return;
+      shown = !shown;
+      apply();
+    }, { capture: true, passive: true });
+    win.addEventListener('touchcancel', () => { tap = null; }, { capture: true, passive: true });
+    // bfcache 回來（從外部 / 列表再前進）原生狀態列可能已被別頁改過，重報一次
+    win.addEventListener('pageshow', apply);
+    apply();
+    return { isShown: () => shown };
+  }
+  // ---- 底部安全區域（v2.2.16）---------------------------------------------------
+  // 頁面沒宣告 viewport-fit=cover，env(safe-area-inset-bottom) 恆為 0，但 App 的 WebView 畫到
+  // Home 指示條底下，翻頁頁碼會落進系統手勢區（Jimmy 2026-10-29 iPhone 回報）。原生把底部安全區域
+  // 帶進來（document-start 初值 __JREAD_APP_SAFE_BOTTOM，之後變動呼叫 setSafeBottom），
+  // 寫成 :root 的 --__jread-app-safe-bottom，styler 與 env() 取大者
+  const SAFE_BOTTOM_VAR = '--__jread-app-safe-bottom';
+  let safeBottomStyle = null;
+  function setSafeBottom(px) {
+    const n = Math.max(0, Number(px) || 0);
+    const doc = document;
+    if (!safeBottomStyle) {
+      safeBottomStyle = doc.createElement('style');
+      safeBottomStyle.id = '__jread-app-safe-bottom';
+    }
+    safeBottomStyle.textContent = ':root { ' + SAFE_BOTTOM_VAR + ': ' + n + 'px; }';
+    if (safeBottomStyle.isConnected) return;
+    if (doc.documentElement) doc.documentElement.appendChild(safeBottomStyle);
+    else doc.addEventListener('DOMContentLoaded', () => doc.documentElement.appendChild(safeBottomStyle), { once: true });
+  }
+  if (window === window.top) setSafeBottom(window.__JREAD_APP_SAFE_BOTTOM);
+
+  const reportStatusBar = (hidden) => { call({ op: 'statusBar', hidden }).catch(() => {}); };
+  if (window === window.top) {
+    if (/\/reader\/article\.html$/.test(location.pathname)) installImmersive(window, reportStatusBar);
+    else window.addEventListener('pageshow', () => reportStatusBar(false));
+  }
+
+  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, setSafeBottom };
+})(__JReadHostShimCore);

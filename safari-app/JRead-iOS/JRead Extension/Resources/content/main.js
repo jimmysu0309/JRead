@@ -1822,11 +1822,10 @@
     // 3. 讀設定（服務 / 憑證 / 摘要）
     let settings;
     try {
-      settings = await browser.storage.sync.get({
-        storageService: (window.__JReadSettingsDefaults && window.__JReadSettingsDefaults.storageService) || 'readwise',
-        readwiseToken: '', instapaperToken: '', instapaperTokenSecret: '',
+      // v2.6.0：各服務憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源（含 jreader）
+      settings = await browser.storage.sync.get(P.serviceSettingsQuery({
         readwiseSummary: false, geminiApiKey: ''
-      });
+      }));
     } catch (_e) {
       showResult('無法讀取設定，請稍後再試', 'error');
       return;

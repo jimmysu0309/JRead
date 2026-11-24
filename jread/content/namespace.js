@@ -32,6 +32,9 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       absorbedSiblings: [],   // v1.7.13：multi-block 文章移進 articleEl 的接續兄弟區塊，退出移回用
       originalStyles: null,   // 主文容器原始 inline style，還原用
       syncScrollOnExit: true, // v1.0.21：退出時把原網頁捲回閱讀段落（進場 stash settings）
+      // v2.6.0：Article View 公開唯讀模式且 host 沒給 exitUrl——沒有文章列表可回，懸浮按鈕
+      // 選單不列「回到文章列表」（ESC / 短按走 NS.onReaderExit 的 no-op，不剝版型）
+      readerNoExit: false,
       readerHostPage: false   // v1.0.22：本頁是否為 reader.html（擴充自有頁）——true 時退出走 NS.onReaderExit 導回 feed，不剝版型
     },
 
@@ -1536,15 +1539,26 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     isSafariRuntime() {
       return window.__JRead.runtimeKind() === 'safari';
     },
-    // 擴充自身 URL 的 runtime 種類（'safari' | 'app' | 'chrome' | 'firefox' | 'other'）。
-    // context 失效（reload 中）或 settings-defaults 尚未載入回 'other'。
+    // 擴充自身 URL 的 runtime 種類（'safari' | 'app' | 'chrome' | 'firefox' | 'web' |
+    // 'other'）。context 失效（reload 中）或 settings-defaults 尚未載入回 'other'。
+    // v2.6.0：'web' 由 web shim 宣告（globalThis.__jreadHost，見 runtimeKindOf 註解）
     runtimeKind() {
       try {
         const P = (typeof globalThis !== 'undefined' && globalThis.__JReadPlatform) || null;
-        return P ? P.runtimeKindOf(browser.runtime.getURL('')) : 'other';
+        return P ? P.runtimeKindOf(browser.runtime.getURL(''), globalThis.__jreadHost) : 'other';
       } catch (_) {
         return 'other';
       }
+    },
+    // v2.6.0：「現在跑在一般 https 網頁當 host（JReader 網頁版）嗎」的單一資料源
+    isWebRuntime() {
+      return window.__JRead.runtimeKind() === 'web';
+    },
+    // v2.6.0：沒有 background 的 host（iOS App 內建 JReader 與網頁版）。靠 SW 的動作
+    //（送出、開 Reader 分頁、popup 浮層握手）在這兩種 host 都不成立
+    isHostedRuntime() {
+      const k = window.__JRead.runtimeKind();
+      return k === 'app' || k === 'web';
     },
 
     // v2.2.0：「現在跑在 iOS 宿主 App 內建的 JReader 嗎」的單一資料源。App 以 jread-app://

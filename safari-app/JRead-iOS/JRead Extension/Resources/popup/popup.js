@@ -92,7 +92,18 @@ const IS_APP = (() => {
   try { return PLATFORM.runtimeKindOf(browser.runtime.getURL('')) === 'app'; }
   catch (_e) { return false; }
 })();
+// v2.6.0：網頁版（JReader web host，lib/web-host-shim.js 替身）同樣沒有 background 可握手。
+// 判定讀 web shim 的宣告（__jreadHost，見 settings-defaults runtimeKindOf）。網頁版的嵌入
+// 防線在 host 端（Host 合約要求 frame-ancestors 'self'），這裡視為已驗證——握手照樣送
+// 一次（shim 的 sendMessage 回 undefined，no-op），不另開分支
+const IS_WEB = (() => {
+  try { return PLATFORM.runtimeKindOf(browser.runtime.getURL(''), window.__jreadHost) === 'web'; }
+  catch (_e) { return false; }
+})();
+// 沒有 background 的 host（App / 網頁版）：動作鈕與 footer 收掉、只留設定
+const IS_HOSTED = IS_APP || IS_WEB;
 let panelVerified = !IS_PANEL || IS_APP;
+if (IS_WEB) panelVerified = true;
 if (IS_PANEL && !IS_APP) {
   const blockUnverified = (e) => {
     if (!panelVerified) { e.stopPropagation(); e.preventDefault(); }
@@ -870,7 +881,7 @@ toggleBtn.addEventListener('click', async () => {
 
 // v2.2.5：App 內 JReader 沒有設定頁可開（openOptionsPage 是 no-op）、也沒有快速鍵 /
 // 三指切換閱讀模式 → 整條 footer 收掉（進階設定在 Safari 擴充改，經 App Group 同步過來）
-if (IS_APP) {
+if (IS_HOSTED) {
   const footer = openOptionsLink.closest('.footer');
   // .footer 有 display:flex（author origin）會蓋過 [hidden]，直接寫 inline
   if (footer) footer.style.display = 'none';
@@ -892,7 +903,7 @@ async function refreshReaderButton() {
   // 這顆全域入口是雜訊——直接隱藏（與 refreshPopupForActiveTab 的 readerHostPage
   // 隱藏一致，URL 前綴判定不依賴 GET_READER_STATE round-trip，無 async 競態）。
   // v2.2.5：App 內 JReader 本身就是 Reader（同 refreshPopupForActiveTab 的 IS_APP 分支）
-  if (IS_APP) { readerBtn.hidden = true; return; }
+  if (IS_HOSTED) { readerBtn.hidden = true; return; }
   try {
     if (await isReaderHostTab()) { readerBtn.hidden = true; return; }
   } catch (_) { /* 判定失敗則回退到 token gate */ }
@@ -965,25 +976,20 @@ function setReadwiseStatus(text, kind) {
 // 沿用 hasReadwiseToken 舊語意（沒憑證 → 送出 / 進 Reader 按鈕整顆隱藏）。
 function hasActiveServiceCredentials() {
   try {
-    const DEF = window.__JReadSettingsDefaults || {};
-    return browser.storage.sync.get({
-      storageService: DEF.storageService || 'readwise',
-      readwiseToken: '',
-      instapaperToken: '',
-      instapaperTokenSecret: ''
-    }).then((v) => {
+    // v2.6.0：三個服務的憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源
+    return browser.storage.sync.get(window.__JReadPopup.serviceSettingsQuery()).then((v) => {
       const r = window.__JReadPopup.resolveServiceCredentials(v || {});
       return !!(r && r.ok);
     }).catch(() => false);
   } catch (_) { return Promise.resolve(false); }
 }
 
-// 當前儲存服務（'readwise' | 'instapaper'），供送出按鈕 label 用。
+// 當前儲存服務（'readwise' | 'instapaper' | 'jreader'），供送出按鈕 label 用。
 function getStorageService() {
   try {
     const DEF = window.__JReadSettingsDefaults || {};
     return browser.storage.sync.get({ storageService: DEF.storageService || 'readwise' })
-      .then((v) => (v && v.storageService === 'instapaper') ? 'instapaper' : 'readwise')
+      .then((v) => window.__JReadPopup.normalizeStorageService(v && v.storageService))
       .catch(() => 'readwise');
   } catch (_) { return Promise.resolve('readwise'); }
 }
@@ -1014,7 +1020,7 @@ async function refreshPopupForActiveTab() {
   // （feed 是文章清單、非內容頁），整顆 toggle + 次級按鈕全隱藏，只留設定（主題 /
   // 字型…影響點進文章後的閱讀體驗）。article.html 不在此列（toggle = 退出閱讀模式）。
   // v2.2.5：App 內 JReader 沒有分頁 / background，這排動作鈕全靠它們 → 一律隱藏，只留設定
-  if (IS_APP) {
+  if (IS_HOSTED) {
     toggleBtn.hidden = true;
     readerBtn.hidden = true;
     readwiseBtn.hidden = true;
@@ -1163,16 +1169,11 @@ async function sendCurrentPageFromPopup() {
     return;
   }
 
-  // v1.6.0：讀儲存服務二擇一設定 + 兩服務憑證 + 摘要開關。
-  const DEF = window.__JReadSettingsDefaults || {};
-  const cfg = await browser.storage.sync.get({
-    storageService: DEF.storageService || 'readwise',
-    readwiseToken: '',
-    instapaperToken: '',
-    instapaperTokenSecret: '',
+  // v1.6.0：讀儲存服務設定 + 各服務憑證 + 摘要開關（v2.6.0 起欄位讀 popup-core 單一資料源）。
+  const cfg = await browser.storage.sync.get(P.serviceSettingsQuery({
     readwiseSummary: false,
     geminiApiKey: ''
-  }).then((v) => v || {}).catch(() => ({}));
+  })).then((v) => v || {}).catch(() => ({}));
 
   // credsPlace 指向 popup 自己的「進階設定」footer 連結；進度文字由 SAVE_PROGRESS
   // 單一資料源提供，stage 未知時退回「送出中…」（與 SW / content 軌同式）

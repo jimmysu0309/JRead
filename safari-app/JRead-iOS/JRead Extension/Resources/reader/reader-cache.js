@@ -72,6 +72,8 @@
       { id: 'archive', label: '封存',  query: { folderId: 'archive' }, empty: '封存區目前沒有文章', archivable: false }
     ]
   };
+  // v2.6.0：JReader 走 Readwise 相容 API（location / tag 語意相同），分頁與 Readwise 共用一份
+  FEED_TABS.jreader = FEED_TABS.readwise;
 
   // 2026-11-15 review D-06：這個分頁打開的文章能不能再封存。只有明確標
   // `archivable: false` 的分頁回 false；不認得的服務 / 分頁（直接貼網址、沒帶
@@ -92,9 +94,12 @@
   }
 
   // service + 憑證的雜湊。instapaper 有 token + secret 兩段，都要納入
+  // v2.6.0：jreader 另納入後端網址（同一組 token 換一台伺服器＝另一個帳號）。base 只在
+  // jreader 有值，readwise / instapaper 的 key 與舊版相同（既有快取不會全部作廢）
   function accountKey(service, creds) {
     const c = creds || {};
-    const raw = String(c.token || '').trim() + '|' + String(c.tokenSecret || '').trim();
+    let raw = String(c.token || '').trim() + '|' + String(c.tokenSecret || '').trim();
+    if (c.base) raw += '|' + String(c.base);
     return String(service || 'readwise') + ':' + hashString(raw);
   }
 

@@ -28,6 +28,12 @@
 // 才退到「只比字母數字」的寬鬆比對（代價：頭尾標點可能沒標到）。
 //
 // 純函式 dual export 供 jsdom spec 測；attach() 只在擴充頁環境跑。
+//
+// v2.6.0 兩層分開（JReader 公開分享頁的唯讀重點）：
+//   - 定位＋標記：locateHighlight / applyHighlights / wrapSegments 與 installMarkStyle。
+//     不碰 API、不碰 storage，唯讀模式（attachReadOnly）只用這一層
+//   - API 同步＋編輯 UI：attach()——export 同步、本機快取、選取後的「畫重點」鈕、H 鍵、
+//     點重點出「刪除重點」鈕。標記一律呼叫上一層，定位只有一份實作
 (function (global) {
   'use strict';
 
@@ -338,6 +344,22 @@
     return marks.length;
   }
 
+  // v2.6.0：host 提供的重點清單 → 本檔的內部形狀 { id, content, highlight_offset }。
+  // Host 合約（SPEC「Host 合約」）的欄位是 { id, text, offset }；內部形狀也照收（同一份
+  // 清單可直接來自 export 快取）。id 轉字串；沒有 id 或文字的略過
+  function normalizeHighlightList(list) {
+    const out = [];
+    for (const h of Array.isArray(list) ? list : []) {
+      if (!h || h.id == null || h.id === '') continue;
+      const content = typeof h.text === 'string' ? h.text : (typeof h.content === 'string' ? h.content : '');
+      if (!content.trim()) continue;
+      const off = typeof h.offset === 'number' ? h.offset
+        : (typeof h.highlight_offset === 'number' ? h.highlight_offset : null);
+      out.push({ id: String(h.id), content, highlight_offset: off });
+    }
+    return out;
+  }
+
   // 把一組重點標到 root 上（已標過的 id 跳過）。回成功標上的 id 陣列
   function applyHighlights(root, highlights) {
     const done = [];
@@ -457,6 +479,7 @@
   }
 
   // ---- 頁面 UI（浮動鈕 + 樣式）--------------------------------------------
+  // （PAGE_CSS 屬「定位＋標記」層：唯讀模式也注入同一份，外觀與一般 Article View 相同）
 
   // 半透明黃底 + 文字色沿用主題：淺色 / 灰 / 米色主題是淡黃底深字、深色主題是暗
   // 橄欖底淺字，四主題一份規則不用跟著 data-theme 切。color 的 !important 要贏
@@ -475,6 +498,35 @@ mark[${HL_ATTR}] {
 mark[${HL_ATTR}][data-jread-hl-active] {
   background-color: rgba(255, 170, 0, 0.6) !important;
 }`;
+  // 唯讀模式點重點沒有動作，游標不該暗示可點（只改游標，顏色與一般 Article View 相同）
+  const READONLY_ATTR = 'data-jread-hl-readonly';
+  const READONLY_CSS = `
+html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
+
+  // 注入重點樣式（idempotent）。readOnly：另加唯讀游標規則並在 <html> 標記
+  function installMarkStyle(doc, opts) {
+    if (!doc) return;
+    if (!doc.getElementById(STYLE_ID)) {
+      const st = doc.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = PAGE_CSS + READONLY_CSS;
+      (doc.head || doc.documentElement).appendChild(st);
+    }
+    if (opts && opts.readOnly && doc.documentElement) doc.documentElement.setAttribute(READONLY_ATTR, '');
+  }
+
+  // v2.6.0：唯讀重點（公開分享頁）。只做「定位＋標記」：注入同一份樣式、用 applyHighlights
+  // 把 host 給的清單標上去。不掛浮動鈕 / 選取監聽 / H 鍵 / 點擊刪除，不打 API、不寫 storage。
+  // ctx：{ doc, bodyEl, highlights }。回 { ready, marked }（ready 與 attach() 同形，給
+  // reader-article 的重點同步記錄用）
+  function attachReadOnly(ctx) {
+    const { doc, bodyEl } = ctx || {};
+    if (!doc || !bodyEl) return null;
+    installMarkStyle(doc, { readOnly: true });
+    const list = normalizeHighlightList(ctx.highlights);
+    const marked = applyHighlights(bodyEl, list);
+    return { ready: Promise.resolve({ ok: true, full: true, readOnly: true, marked: marked.length }), marked, hide: () => {} };
+  }
 
   const BTN_CSS = `
     .btn {
@@ -509,13 +561,15 @@ mark[${HL_ATTR}][data-jread-hl-active] {
     return action + '失敗';
   }
 
-  // 主流程。ctx：{ doc, win, bodyEl, docId, token, PC, NS, storage, now? }
+  // 主流程。ctx：{ doc, win, bodyEl, docId, token, base?, PC, NS, storage, now? }
   // storage = browser.storage.local（get/set 回 Promise）
+  // v2.6.0 base：Readwise 相容 API 的網址（jreader 服務；readwise 不給）。每支 PC 呼叫都帶
   function attach(ctx) {
-    const { doc, win, bodyEl, docId, token, PC, NS, storage } = ctx;
+    const { doc, win, bodyEl, docId, token, base, PC, NS, storage } = ctx;
     const now = ctx.now || (() => Date.now());
     if (!doc || !win || !bodyEl || !docId || !token || !PC) return null;
-    const account = accountKey(token);
+    // 換後端網址＝換帳號：快取 key 納入 base（readwise 沒有 base，key 與舊版相同）
+    const account = accountKey(base ? token + '|' + base : token);
     let cache = null;
     let busy = false;
     // review D-08：背景同步回來時 busy（建立 / 刪除在途）就先不對帳——在途操作手上
@@ -526,13 +580,8 @@ mark[${HL_ATTR}][data-jread-hl-active] {
     let activeId = null;      // delete 模式指向的重點
     let pendingRange = null;  // create 模式的選取（live Range，DOM 變動會自動調整）
 
-    // 樣式
-    if (!doc.getElementById(STYLE_ID)) {
-      const st = doc.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = PAGE_CSS;
-      (doc.head || doc.documentElement).appendChild(st);
-    }
+    // 樣式（與唯讀模式同一份，見 installMarkStyle）
+    installMarkStyle(doc);
 
     // 浮動鈕：shadow host 掛 <html> 直下（同 toast：不進 body、不被 styler 掃到）
     const host = doc.createElement('div');
@@ -664,7 +713,7 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       btn.setAttribute('aria-busy', 'true');
       let r;
       try {
-        r = await PC.createReaderHighlight({ token, parentId: docId, content });
+        r = await PC.createReaderHighlight({ token, base, parentId: docId, content });
       } catch (err) {
         r = { ok: false, error: 'NETWORK', message: String(err && err.message || err) };
       }
@@ -687,7 +736,7 @@ mark[${HL_ATTR}][data-jread-hl-active] {
       btn.setAttribute('aria-busy', 'true');
       let r;
       try {
-        r = await PC.deleteReaderDocument({ token, id });
+        r = await PC.deleteReaderDocument({ token, base, id });
       } catch (err) {
         r = { ok: false, error: 'NETWORK', message: String(err && err.message || err) };
       }
@@ -771,7 +820,7 @@ mark[${HL_ATTR}][data-jread-hl-active] {
 
       const full = !cacheUsable(cache, account);
       const startedAt = now();
-      const r = await PC.exportReaderHighlights(full ? { token } : { token, updatedAfter: incrementalSince(cache) });
+      const r = await PC.exportReaderHighlights(full ? { token, base } : { token, base, updatedAfter: incrementalSince(cache) });
       if (!r || !r.ok) return { ok: false };  // 同步失敗：留著快取標的結果，不打擾使用者
       // await 期間本頁可能新增 / 刪除過（cache 已即時更新）——local op 一併帶過去
       let next = full ? cacheFromExport(r.docs, account, startedAt) : mergeExport(cache, r.docs, startedAt);
@@ -792,6 +841,8 @@ mark[${HL_ATTR}][data-jread-hl-active] {
     HL_ATTR, CACHE_KEY, LOCAL_GRACE_MS, SINCE_SLACK_MS,
     buildIndex, remapIndexAfterWrap, findMatch, markdownToPlain, locateHighlight, segmentsForFlatRange, segmentsInRange, segmentsToText, trimSegmentEdges,
     segmentsAllMarked, wrapSegments, unwrapHighlight, applyHighlights, reconcileHighlights,
+    // v2.6.0：唯讀重點（定位＋標記層，公開分享頁用）
+    normalizeHighlightList, installMarkStyle, attachReadOnly, READONLY_ATTR,
     accountKey, emptyCache, cacheUsable, cacheFromExport, mergeExport, applyLocalOps,
     cacheAdd, cacheRemove, highlightsForDoc, incrementalSince, attach
   };

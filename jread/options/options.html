@@ -149,6 +149,7 @@
     .field input[type="number"],
     .field input[type="password"],
     .field input[type="email"],
+    .field input[type="url"],
     .field input[type="text"] {
       display: block;
       width: 100%;
@@ -179,6 +180,7 @@
     input[type="number"]:hover,
     input[type="password"]:hover,
     input[type="email"]:hover,
+    input[type="url"]:hover,
     input[type="text"]:hover {
       border-color: var(--jr-neutral-500);
     }
@@ -186,6 +188,7 @@
     input[type="number"]:focus,
     input[type="password"]:focus,
     input[type="email"]:focus,
+    input[type="url"]:focus,
     input[type="text"]:focus {
       outline: none;
       border-color: var(--jr-primary-600);
@@ -599,6 +602,7 @@
       gap: 8px;
     }
     input#readwiseToken,
+    input#jreaderToken,
     input#geminiApiKey {
       flex: 1 1 auto;
       width: auto;
@@ -1059,6 +1063,22 @@
       <div class="service-toggle" id="storageService" role="radiogroup" aria-label="稍後閱讀服務">
         <label><input type="radio" name="storageService" value="readwise"><span>Readwise Reader</span></label>
         <label><input type="radio" name="storageService" value="instapaper"><span>Instapaper</span></label>
+        <label><input type="radio" name="storageService" value="jreader"><span>JReader</span></label>
+      </div>
+    </div>
+
+    <!-- v2.6.0：JReader 憑證（storageService=jreader 時顯示）：自架後端的網址＋token -->
+    <div class="field" data-service-block="jreader">
+      <label for="jreaderUrl">JReader 網址</label>
+      <span class="desc">你自架的 JReader 網址，例如 https://jreader.example.com</span>
+      <input type="url" id="jreaderUrl" autocomplete="off" spellcheck="false" placeholder="https://">
+      <label for="jreaderToken" style="margin-top:12px">JReader Token</label>
+      <div class="readwise-token-control">
+        <div class="readwise-token-row">
+          <input type="password" id="jreaderToken" autocomplete="off" spellcheck="false" placeholder="貼上 token">
+          <button type="button" id="jreaderTest" class="token-test-btn">測試</button>
+        </div>
+        <span id="jreaderTestResult" class="token-test-result"></span>
       </div>
     </div>
 

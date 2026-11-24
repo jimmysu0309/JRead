@@ -511,6 +511,11 @@
       return;
     }
 
+    // v2.6.0：網頁版公開分享頁（host 宣告唯讀）——文章與重點由 host 直接提供，不讀憑證、
+    // 不打任何 API，走同一個 renderArticle（buildArticleContainer ＋ NS.enterFromContainer）
+    const HOST = global.__jreadHost;
+    if (HOST && HOST.kind === 'web' && HOST.readOnly) { initPublic(HOST, { browser, NS, PC, doc }); return; }
+
     const statusEl = doc.getElementById('jr-status');
     // 2026-10-07 review F-10：錯誤文字用 --text（加重），與 reader-feed `.jr-error`
     // 一致——錯誤是要使用者讀的訊息，不該比「載入中…」更淡；muted 在深色底只有
@@ -533,20 +538,18 @@
     // v1.9.14：theme 讀有效值（這台裝置套用中的設定檔會蓋過 sync flat）
     const PROFILES = global.__JReadProfiles;
     const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
-    readSettings({
-      theme: DEF.theme || 'gray', // review D-05：預設主題讀單一資料源（原寫死 'light'，與 DEFAULTS 的 gray 不一致）
-      storageService: DEF.storageService || 'readwise',
-      readwiseToken: '',
-      instapaperToken: '',
-      instapaperTokenSecret: ''
-    }).then((s) => {
+    readSettings(PC.serviceSettingsQuery({
+      theme: DEF.theme || 'gray' // review D-05：預設主題讀單一資料源（原寫死 'light'，與 DEFAULTS 的 gray 不一致）
+    })).then((s) => {
       if (s && s.theme) doc.documentElement.setAttribute('data-theme', s.theme);
       const { service, creds, ok } = PC.resolveServiceCredentials(s);
       rlog('進場', { id, tab: params.get('tab') || '', service, hasMeta: !!meta, linked: !!ok });
       if (!ok) {
         setStatus(service === 'instapaper'
           ? '尚未連結 Instapaper 帳號，請到擴充功能的進階設定連結'
-          : '尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
+          : service === 'jreader'
+            ? '尚未設定 JReader 網址與 token，請到擴充功能的進階設定填入'
+            : '尚未設定 Readwise token，請到擴充功能的進階設定填入', true);
         return;
       }
       // review D-06：tab＝來源分頁 id，E 鍵封存用它查這個分頁可不可封存
@@ -559,7 +562,7 @@
         }, (r && r.ok) ? 'info' : 'error');
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
-          setStatus(PC.serviceErrorMessage(r, { action: '載入' }), true);
+          setStatus(PC.serviceErrorMessage(r, { action: '載入', service }), true);
           return;
         }
         renderArticle(r.doc, ctx, { progress: r.doc.reading_progress, progressAt: r.doc.updated_at });
@@ -598,6 +601,47 @@
       setStatus('讀取設定失敗，請重新整理', true);
     });
   }
+
+  // v2.6.0：公開唯讀模式的 bootstrap。host.article＝文章（與 getArticle 回的 doc 同形：
+  // id / title / author / site_name / published_date / source_url / image_url /
+  // html_content），host.highlights＝唯讀重點清單（{ id, text, offset }），host.exitUrl＝
+  // 選用的「離開」網址。版面設定（主題、字級…）照常讀 storage——web shim 存在訪客自己的
+  // 瀏覽器。不呼叫 PC 的任何 API 函式、不碰文章快取與重點快取
+  function initPublic(host, env) {
+    const { browser, NS, PC, doc } = env;
+    const statusEl = doc.getElementById('jr-status');
+    const setStatus = (text) => {
+      if (!statusEl) return;
+      statusEl.textContent = text || '';
+      statusEl.style.color = 'var(--text)';
+    };
+    const article = host.article;
+    if (!article || typeof article.html_content !== 'string' || !article.html_content.trim()) {
+      rlog('公開模式缺少文章資料', {}, 'warn');
+      setStatus('找不到這篇文章的內容');
+      return;
+    }
+    const DEF = global.__JReadSettingsDefaults || {};
+    const PROFILES = global.__JReadProfiles;
+    const readSettings = (d) => (PROFILES ? PROFILES.readEffective(d) : browser.storage.sync.get(d));
+    Promise.resolve(readSettings({ theme: DEF.theme || 'gray' })).catch(() => ({})).then((s) => {
+      if (s && s.theme) doc.documentElement.setAttribute('data-theme', s.theme);
+      const docData = Object.assign({}, article, { id: article.id != null ? String(article.id) : 'public' });
+      rlog('進場（公開唯讀）', { id: docData.id, highlights: Array.isArray(host.highlights) ? host.highlights.length : 0 });
+      const ctx = {
+        NS, doc, PC, readOnly: true,
+        highlights: host.highlights,
+        exitUrl: typeof host.exitUrl === 'string' && host.exitUrl ? host.exitUrl : ''
+      };
+      try {
+        renderArticle(docData, ctx, {});
+      } catch (err) {
+        rlog('公開模式組裝拋出例外', { reason: String(err && err.message || err).slice(0, 120) }, 'error');
+        setStatus('載入失敗：' + String(err && err.message || err));
+      }
+    });
+  }
+  api.initPublic = initPublic;
 
   // v1.10.1：查本機文章快取（reader-cache.js）。永不 reject，回
   // { store, account, entry }——store 為 null（IndexedDB 不可用 / 模組缺席）或
@@ -650,22 +694,29 @@
     // v1.10.0：JReader 畫重點（只做 Readwise）。必須在 enterFromContainer 之前
     // attach——它的 H 鍵 listener 要比 main.js keyguard 早註冊（兩者都是 window
     // capture，keyguard 會 stopImmediatePropagation），見 reader-highlights.js
+    // v2.6.0：公開唯讀模式（ctx.readOnly）只標 host 給的重點（定位＋標記層）；不掛 E 鍵
+    // 封存、不寫回閱讀進度——這兩支與畫重點都會打 API
     const hl = attachHighlights(docData, container, ctx);
     logHighlightSync(hl, docData, container);
     // v2.1.0：E 鍵封存（同樣要比 keyguard 早註冊）
-    attachArchiveKey(docData, ctx);
+    if (!ctx.readOnly) attachArchiveKey(docData, ctx);
     // v2.5.0：閱讀位置寫回 Readwise。「上次送出的值」以這次實際採用的進度為起點
     //（快取命中時 docData 是文章快取、進度可能取自較新的 feed 快取）
-    const onPosition = attachProgressSync(
+    const onPosition = ctx.readOnly ? null : attachProgressSync(
       Object.assign({}, docData, { reading_progress: opts && opts.progress != null ? opts.progress : docData.reading_progress }), ctx);
 
+    // 公開唯讀模式：有 host 給的 exitUrl 就導過去，沒有就沒有出口（ESC / 短按不剝版型、
+    // 懸浮按鈕選單不列「回到文章列表」，見 NS.state.readerNoExit）
+    const exitHref = ctx.readOnly ? (ctx.exitUrl || '') : backHref;
     const backToFeed = function () {
+      if (!exitHref) return;
       flushPendingLayoutLog(); // 還在等版面落定就退出：先補記「排版套用完成」
-      rlog('退出回清單', Object.assign({ id: String(docData.id || ''), to: backHref }, layoutMode(NS)));
+      rlog('退出回清單', Object.assign({ id: String(docData.id || ''), to: exitHref }, layoutMode(NS)));
       flushLog();
-      global.location.href = backHref;
+      global.location.href = exitHref;
     };
     NS.state.readerHostPage = true;
+    NS.state.readerNoExit = !exitHref;
     NS.onReaderExit = backToFeed;
 
     // 2026-10-07 review C-22 / F-3：進場失敗（回 false 或 reject）要有出口——
@@ -723,9 +774,18 @@
   function attachHighlights(docData, container, ctx) {
     const HL = global.__JReadReaderHighlights;
     const { NS, doc, PC, service, creds } = ctx;
+    // v2.6.0：公開唯讀模式只走「定位＋標記」層（host 給的重點清單），不同步、不編輯
+    if (ctx.readOnly) {
+      if (!HL || typeof HL.attachReadOnly !== 'function') return null;
+      const bodyEl = container.querySelector('[data-jread-reader-body]');
+      try { return HL.attachReadOnly({ doc, bodyEl, highlights: ctx.highlights }); } catch (_) { return null; }
+    }
+    // v2.6.0：能力判斷讀 PC.supportsHighlights（readwise / jreader）
+    const supported = PC && typeof PC.supportsHighlights === 'function'
+      ? PC.supportsHighlights(service) : service === 'readwise';
     // v2.4.11（review D-04）：換成非 Readwise 服務後，重點快取不會再被覆寫——留著
     // 只是佔 storage.local 配額（與閱讀位置共用）。順手移除；換回 Readwise 時重抓一次
-    if (service && service !== 'readwise') {
+    if (service && !supported) {
       try {
         const st = global.browser && global.browser.storage && global.browser.storage.local;
         const key = HL && HL.CACHE_KEY;
@@ -733,12 +793,12 @@
       } catch (_) { /* 清不掉不影響閱讀 */ }
       return null;
     }
-    if (!HL || service !== 'readwise' || !creds || !creds.token) return null;
+    if (!HL || !supported || !creds || !creds.token) return null;
     const bodyEl = container.querySelector('[data-jread-reader-body]');
     const storage = global.browser && global.browser.storage && global.browser.storage.local;
     try {
       return HL.attach({
-        doc, win: global, bodyEl, docId: String(docData.id || ''), token: creds.token,
+        doc, win: global, bodyEl, docId: String(docData.id || ''), token: creds.token, base: creds.base,
         PC, NS, storage
       });
     } catch (_) { return null; }  // 畫重點掛不上不影響閱讀
@@ -810,7 +870,7 @@
       flushLog(); // 成功後馬上導回清單，不等 debounce
       if (!r || !r.ok) {
         toast(typeof PC.serviceErrorMessage === 'function'
-          ? PC.serviceErrorMessage(r, { action: '封存' })
+          ? PC.serviceErrorMessage(r, { action: '封存', service })
           : '封存失敗');
         return r;
       }

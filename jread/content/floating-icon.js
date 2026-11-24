@@ -266,6 +266,10 @@
   function isAppRuntime() {
     return !!(NS.isAppRuntime && NS.isAppRuntime());
   }
+  // v2.6.0：沒有 background 的 host（App 內建 JReader / 網頁版，NS.isHostedRuntime）
+  function isHostedRuntime() {
+    return !!(NS.isHostedRuntime ? NS.isHostedRuntime() : isAppRuntime());
+  }
 
   function backToFeed() {
     if (typeof NS.onReaderExit === 'function') { try { NS.onReaderExit(); } catch (_e) {} return; }
@@ -307,7 +311,7 @@
   function applyStorageService(v) {
     const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
     serviceLabelText = P && typeof P.serviceLabel === 'function'
-      ? P.serviceLabel(v === 'instapaper' ? 'instapaper' : 'readwise')
+      ? P.serviceLabel(P.normalizeStorageService(v))
       : (v === 'instapaper' ? 'Instapaper' : 'Readwise Reader');
   }
 
@@ -323,6 +327,15 @@
         { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
         { id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed }
       ].concat(profileMenuItems());
+    }
+    // v2.6.0：網頁版（NS.isWebRuntime，同樣沒有 background）比照 App。公開分享頁（Article
+    // View 唯讀模式）沒給離開網址時沒有文章列表可回（NS.state.readerNoExit），不列那一項
+    if (isHostedRuntime()) {
+      const items = [{ id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged }];
+      if (!(NS.state && NS.state.readerNoExit)) {
+        items.push({ id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed });
+      }
+      return items.concat(profileMenuItems());
     }
     return [
       { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
