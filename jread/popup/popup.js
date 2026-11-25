@@ -1054,6 +1054,9 @@ function isEditModeEnabled() {
   } catch (_) { return Promise.resolve(true); }
 }
 
+// v3.4.9：開 popup 當下這個分頁是否已在閱讀模式（送出鈕走哪條路，見 sendCurrentPageFromPopup）
+let readerActiveForSend = false;
+
 async function refreshPopupForActiveTab() {
   // v1.5.4：reader feed 列表頁（reader/reader.html）——「啟動閱讀模式」沒有意義
   // （feed 是文章清單、非內容頁），整顆 toggle + 次級按鈕全隱藏，只留設定（主題 /
@@ -1146,16 +1149,22 @@ async function refreshPopupForActiveTab() {
     } else {
       editBtn.hidden = true;
     }
-    // 送出按鈕：active=true 且 非 cinema 且 當前服務憑證齊備才露出
+    // 送出按鈕：非 cinema 且 當前服務憑證齊備才露出
     // （cinema 沒主文可送；沒憑證按了必失敗，v0.8.50 整顆隱藏）。v1.6.0：label
     // 依儲存服務動態切換（送到 Readwise Reader / 送到 Instapaper）。
-    readwiseBtn.hidden = !active || cinemaActive || !(await hasActiveServiceCredentials());
+    // v3.4.9：沒開閱讀模式也露出（Jimmy 2026-11-25「將送到稍後閱讀的按鈕加入工具列選單」——
+    // 原本只在閱讀模式中出現）；沒開時按下去交給頁面那條送出流程（自己進閱讀模式再送）
+    readerActiveForSend = active;
+    readwiseBtn.hidden = cinemaActive || !(await hasActiveServiceCredentials());
     if (!readwiseBtn.hidden) await updateSendButtonLabel();
   } catch (_) {
     // content script 未注入（禁注入頁 / 尚未載入）= reader mode 必為 off，
     // toggle 文字回到「啟動」態（按下去會走 inject fallback 嘗試進入）。
     toggleBtn.textContent = '啟動閱讀模式';
-    readwiseBtn.hidden = true;
+    // v3.4.9：http(s) 頁（只是 content script 還沒注入）照樣露出送出鈕，按下去重注入後送
+    readerActiveForSend = false;
+    readwiseBtn.hidden = !(await getActiveTabUrlInfo()) || !(await hasActiveServiceCredentials());
+    if (!readwiseBtn.hidden) await updateSendButtonLabel();
     editBtn.hidden = true;
     borderlessBtn.hidden = true;
   }
@@ -1207,6 +1216,26 @@ async function sendCurrentPageFromPopup() {
 
   // v1.6.0：讀儲存服務設定 + 各服務憑證 + 摘要開關（v2.6.0 起欄位讀 popup-core 單一資料源）。
   // v3.4.2 移到抽取之前：抽取要知道送去哪個服務（影片 iframe 要不要轉縮圖＋圖說）
+  // v3.4.9：還沒進閱讀模式 → 交給頁面的送出流程（content NS.sendCurrentPageToService：
+  // 先進閱讀模式再抽取送出，進度與結果顯示在頁面 toast；與懸浮按鈕「送到 …」同一條）。
+  // popup 收起來，使用者才看得到頁面上的 toast
+  if (!readerActiveForSend) {
+    const r = await P.sendWithInjectionFallback(tabId, {
+      type: 'DISPATCH_COMMAND', payload: { command: 'send-to-service' }
+    }, {
+      sendMessage: (id, msg) => browser.tabs.sendMessage(id, msg),
+      executeScript: (opts) => browser.scripting.executeScript(opts)
+    });
+    if (!r.ok || !(r.res && r.res.ok)) {
+      setReadwiseStatus('無法取得頁面內容（請重新整理頁面）', 'err');
+      return;
+    }
+    closePanel();
+    flushPendingSave();
+    window.close();
+    return;
+  }
+
   const cfg = await browser.storage.sync.get(P.serviceSettingsQuery({
     readwiseSummary: false,
     geminiApiKey: ''
