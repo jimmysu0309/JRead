@@ -214,8 +214,30 @@
       imgs[i].setAttribute('loading', 'eager');
       imgs[i].setAttribute('decoding', 'async');
     }
+    playDecorativeClips(body);
     article.appendChild(body);
     return article;
+  }
+
+  // v3.4.8：沒有 controls 的 <video>＝原網站當動態圖用的短片（例：New Yorker 標題下的動態插畫），原站靠
+  // 自己的程式靜音循環播放；存進服務後只剩一個不會播、沒有播放鈕、也沒有封面圖的 <video>。iOS 不畫任何
+  // 一格 → 主圖位置一片空白（Jimmy 2026-11-25 iPhone 回報分享頁主圖出不來）。照原站的意思：靜音、循環、
+  // 頁內播放、自動播放（iOS 只允許靜音的自動播放，muted 屬性與 property 都要設）。有 controls 的一般影片不動。
+  // 回處理的支數
+  function playDecorativeClips(root) {
+    if (!root || !root.querySelectorAll) return 0;
+    let n = 0;
+    for (const v of Array.from(root.querySelectorAll('video'))) {
+      if (v.hasAttribute('controls')) continue;
+      v.setAttribute('muted', '');
+      v.setAttribute('loop', '');
+      v.setAttribute('playsinline', '');
+      v.setAttribute('autoplay', '');
+      if (!v.hasAttribute('preload')) v.setAttribute('preload', 'auto');
+      try { v.muted = true; } catch (_) { /* jsdom */ }
+      n++;
+    }
+    return n;
   }
 
   // v1.0.25：主動預載文章內所有圖片 URL。off-DOM 的 Image 物件不在 render tree、
@@ -245,6 +267,29 @@
       n++;
     }
     return n;
+  }
+
+  // v3.4.8：載入失敗的圖重新載一次（Jimmy 2026-11-25「離線沒抓到的圖，再上線也不會顯示」）。
+  // 瀏覽器對載入失敗的 <img> 不會自己重試：離線開的文章，回到有網路時那些圖一直是破的。
+  // 只重試「已經載完、但沒有尺寸」的 http(s) 圖（本機 blob 圖與還在載的不動）。回重試張數
+  function retryBrokenImages(container) {
+    if (!container || !container.querySelectorAll) return 0;
+    let n = 0;
+    for (const img of Array.from(container.querySelectorAll('img'))) {
+      const src = img.getAttribute('src') || '';
+      if (!/^https?:\/\//i.test(src) || !img.complete || img.naturalWidth > 0) continue;
+      img.removeAttribute('src');
+      img.setAttribute('src', src);
+      n++;
+    }
+    return n;
+  }
+  // 網路恢復（online）、回到前景（App 從背景回來 / 切回分頁）時重試
+  function attachImageRetry(container, win, doc) {
+    if (!win || !doc || typeof win.addEventListener !== 'function') return;
+    const retry = () => { if (win.navigator && win.navigator.onLine === false) return; retryBrokenImages(container); };
+    win.addEventListener('online', retry);
+    doc.addEventListener('visibilitychange', () => { if (doc.visibilityState === 'visible') retry(); });
   }
 
   function preloadImages(container, ImageCtor) {
@@ -787,6 +832,9 @@
   }
   api.initPublic = initPublic;
   api.applyCachedImages = applyCachedImages;
+  api.retryBrokenImages = retryBrokenImages;
+  api.playDecorativeClips = playDecorativeClips;
+  api.attachImageRetry = attachImageRetry;
 
   // v1.10.1：查本機文章快取（reader-cache.js）。永不 reject，回
   // { store, account, entry }——store 為 null（IndexedDB 不可用 / 模組缺席）或
@@ -837,6 +885,7 @@
 
     // 主動預載全部圖片（翻頁模式 WebKit 遠欄圖延遲載入修法，見 preloadImages 註解）
     preloadImages(container, global.Image);
+    attachImageRetry(container, global, doc);
 
     // reader 頁退出語意：回 feed（不剝版型）。必須在 enterFromContainer 之前設好，
     // 之後 JRead 圖示「退出閱讀模式」/ ESC / floating-icon 短按都會走到 main.js

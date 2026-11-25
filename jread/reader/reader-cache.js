@@ -11,7 +11,8 @@
 //      超過依最後開啟時間淘汰最舊的。
 //   3. 文章內文圖（v3.4.7，App 離線預載才寫）→ 同一個 IndexedDB 的 images store，key＝文章 key
 //      ＋'|'＋圖片網址、index doc＝文章 key。容量算進那篇文章的 meta.bytes（artBytes＋imgBytes），
-//      淘汰 / 刪除 / 清空文章時一起刪。
+//      淘汰 / 刪除 / 清空文章時一起刪。清單卡片縮圖（v3.4.8）存在同一個 store，網址前綴 THUMB_PREFIX
+//      （'thumb|'＋縮圖網址），跟內文圖分開——內文換圖查的是原網址，不會撞到縮圖那筆。
 //
 // 文章內容視為不變；唯一失效條件是 feed 快取裡同 id 的 updated_at 比文章快取新
 //（例如在 Readwise 重送過）。updated_at 也會因閱讀進度 / 搬位置變動，最多多抓一次。
@@ -43,6 +44,7 @@
   const STORE_ARTICLES = 'articles';
   const STORE_META = 'meta';
   const STORE_IMAGES = 'images';
+  const THUMB_PREFIX = 'thumb|';
   const ARTICLE_BUDGET = 300 * 1024 * 1024; // v3.4.7：50M → 300M（Jimmy 2026-11-25）
   const IDB_TIMEOUT_MS = 1500;
 
@@ -610,6 +612,23 @@
         })().catch(() => 0);
       }
 
+      // v3.4.8：這個帳號所有存在本機的清單卡片縮圖 → Map(文章 id → { url: 縮圖原網址, blob })
+      function getThumbs(account) {
+        const prefix = account + '|';
+        const p = (async () => {
+          const tx = db.transaction([STORE_IMAGES], 'readonly');
+          const rows = await reqToPromise(tx.objectStore(STORE_IMAGES).getAll());
+          const out = new Map();
+          for (const r of rows || []) {
+            if (!r || !r.blob || typeof r.url !== 'string' || r.url.indexOf(THUMB_PREFIX) !== 0) continue;
+            if (typeof r.doc !== 'string' || r.doc.indexOf(prefix) !== 0) continue;
+            out.set(r.doc.slice(prefix.length), { url: r.url.slice(THUMB_PREFIX.length), blob: r.blob });
+          }
+          return out;
+        })().catch(() => new Map());
+        return withTimeout(p, timeoutMs, new Map());
+      }
+
       // 總用量（除錯 / 驗證用）
       function usage() {
         return (async () => {
@@ -632,7 +651,7 @@
         })().catch(() => false);
       }
 
-      return { get, put, touch, evict, remove, usage, clear, keyOf, getImages, putImages, close: () => { try { db.close(); } catch (_) {} } };
+      return { get, put, touch, evict, remove, usage, clear, keyOf, getImages, putImages, getThumbs, close: () => { try { db.close(); } catch (_) {} } };
     });
   }
 
@@ -673,7 +692,7 @@
     FEED_TABS, isTabArchivable,
     accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, hostOf, ACTION_DONE, trashKeepDays, TRASH_KEEP_DAYS_FALLBACK, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
-    isStale, planEviction, pickImageUrl, openArticleStore, clearArticleStore, articleStoreUsage,
+    isStale, planEviction, pickImageUrl, THUMB_PREFIX, openArticleStore, clearArticleStore, articleStoreUsage,
     OWN_WRITE_KEY, OWN_WRITE_MAX, OWN_WRITE_SLACK_MS, readOwnWrites, planOwnWrite
   };
 

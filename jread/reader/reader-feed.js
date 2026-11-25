@@ -12,6 +12,21 @@
   'use strict';
 
   const MAX_ITEMS = 10;
+  // v3.4.8：App 離線預載存下的清單卡片縮圖（Map 文章 id → { url, blob }，reader-cache getThumbs）。
+  // 只在 App 讀（init 的 loadLocalThumbs）；其餘環境一直是空的。createCard 看到同網址的就用本機那份
+  let localThumbs = new Map();
+  const thumbObjectUrls = new Map(); // 文章 id → blob 網址（同一份 blob 只建一次）
+  function localThumbSrc(doc) {
+    const t = doc && localThumbs.get(String(doc.id));
+    if (!t || t.url !== doc.image_url || !t.blob) return '';
+    let u = thumbObjectUrls.get(String(doc.id));
+    if (u && u.blob === t.blob) return u.url;
+    try {
+      u = { blob: t.blob, url: global.URL.createObjectURL(t.blob) };
+      thumbObjectUrls.set(String(doc.id), u);
+      return u.url;
+    } catch (_) { return ''; }
+  }
   // v3.4.5：清單快取每分頁存 20 篇（原本跟第一屏同為 10）。App 離線閱讀預載 Inbox / Later 前 20 篇
   //（reader-offline.js），沒網路時清單也要列得出這 20 篇，「載入更多」在快取範圍內本機展開
   const FEED_CACHE_ITEMS = 20;
@@ -155,7 +170,7 @@
     if (doc.image_url && /^https?:\/\//i.test(doc.image_url)) {
       const img = document.createElement('img');
       img.className = 'jr-thumb';
-      img.src = doc.image_url;
+      img.src = localThumbSrc(doc) || doc.image_url;
       img.alt = '';
       img.loading = 'lazy';
       img.draggable = false;
@@ -651,7 +666,10 @@
     return (id && tabs.find((t) => t.id === id)) || tabs[0];
   }
 
+  // spec 用：注入本機縮圖（正式流程由 init 的 loadLocalThumbs 設）
+  function setLocalThumbsForTest(m) { localThumbs = m || new Map(); thumbObjectUrls.clear(); }
   const api = {
+    setLocalThumbsForTest,
     formatMeta, formatCardDate, encodeMeta, createCard, cardCaps, attachKeyboardNav, KB_KEYS, trashConfirmText, TRASH_ACTIONS, pickInitialTab, renderFeed, actionCard, archiveCard, archiveErrorMessage,
     swipeThreshold, swipeDecision, swipeOffset, openCardMenu, closeCardMenu,
     LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
@@ -793,10 +811,20 @@
       const listKeyFor = scopeKeyFor;
       // v3.4.5：App 離線閱讀預載 Inbox / Later 前 20 篇（reader-offline.js；只在 App ＋ JReader，
       // 節流與條件都在那支）。清單載入成功（含下拉更新）時排一次
+      const isAppPage = !!(NS && typeof NS.isAppRuntime === 'function' && NS.isAppRuntime());
+      // v3.4.8：讀本機卡片縮圖（App 才有；IndexedDB 開不起來 / 逾時就是空的，照常用網路圖）
+      function loadLocalThumbs() {
+        if (!isAppPage || !RC || typeof RC.openArticleStore !== 'function') return Promise.resolve();
+        return Promise.resolve(RC.openArticleStore()).then((store) => {
+          if (!store || typeof store.getThumbs !== 'function') return;
+          return store.getThumbs(account).then((m) => { localThumbs = m || new Map(); store.close(); });
+        }).catch(() => {});
+      }
       function scheduleOffline() {
         const OFF = global.__JReadReaderOffline;
         if (!OFF || !RC) return;
         OFF.schedule({
+          onDone: () => { loadLocalThumbs(); }, // 下一次畫清單就用得到剛存的縮圖
           PC, RC, service, creds, storage: local, account, tabs, listKeyFor,
           log: (msg, data) => {
             const L = global.__JReadLogger; // 列表頁沒載 logger 就不記
@@ -1369,6 +1397,7 @@
         try { from = global.sessionStorage.getItem(LIB.SEARCH_FROM_KEY); } catch (_) { from = null; }
         currentTab = (from && (tabs.find((t) => t.id === from) || (RC && typeof RC.subviewTab === 'function' && RC.subviewTab(from)))) || initialTab;
       }
+      else if (isAppPage) loadLocalThumbs().then(() => loadList(initialTab));
       else loadList(initialTab);
       // v2.2.13：下拉更新入口（iOS App ViewController 的 UIRefreshControl 呼叫）
       // 搜尋中下拉＝重跑這次搜尋，不能把搜尋結果換成分頁清單（2026-11-24 審核 A-1）

@@ -78,8 +78,12 @@
       seenDoc.add(id);
       if (streak >= MAX_FAILURES) break; // 多半斷線了
       const entry = await store.get(account, id);
-      const html = entry && entry.doc && entry.doc.html_content;
+      if (!entry) continue; // 文章沒存成功就不存圖（putImages 也會擋）
+      const html = entry.doc && entry.doc.html_content;
       const urls = imageUrlsOf(html, DP, RC);
+      // v3.4.8：清單卡片縮圖（清單上的 image_url）也存，key 前綴 THUMB_PREFIX
+      const thumb = d.image_url && /^https?:\/\//i.test(String(d.image_url)) ? RC.THUMB_PREFIX + String(d.image_url) : '';
+      if (thumb) urls.push(thumb);
       if (!urls.length) continue;
       const have = await store.getImages(account, id);
       const missing = urls.filter((u) => !have.has(u));
@@ -87,7 +91,8 @@
       const got = [];
       await mapLimit(missing, IMAGE_CONCURRENCY, async (u) => {
         if (streak >= MAX_FAILURES) return;
-        const blob = await fetchImageBlob(fetchFn, u);
+        const isThumb = u.indexOf(RC.THUMB_PREFIX) === 0;
+        const blob = await fetchImageBlob(fetchFn, isThumb ? u.slice(RC.THUMB_PREFIX.length) : u);
         if (blob) { streak = 0; got.push({ url: u, blob }); } else { streak++; out.failed++; }
       });
       if (got.length) out.saved += await store.putImages(account, id, got);
@@ -211,6 +216,7 @@
           await Promise.resolve(storage.set({ [LAST_RUN_KEY]: Date.now() })).catch(() => {});
           const r = await run(ctx);
           if (typeof ctx.log === 'function') ctx.log('離線預載完成', r);
+          if (typeof ctx.onDone === 'function') { try { ctx.onDone(r); } catch (_) {} }
         } finally {
           running = false;
         }
