@@ -599,6 +599,20 @@
     apply();
     return { isShown: () => shown };
   }
+  // ---- 文章頁鎖雙指縮放（v3.2.8）-----------------------------------------------
+  // Jimmy 2026-11-25：App 看文章可以雙指把整頁放大，不是預期行為。不能靠 viewport meta 的
+  // user-scalable=no——styler 進閱讀模式會把 viewport 正規化成 width=device-width, initial-scale=1
+  //（applyViewportFix）蓋掉。改擋 WebKit 的縮放手勢事件（gesturestart / gesturechange / gestureend，
+  // preventDefault 就不縮放），雙指 touchmove 也擋一次當第二層。單指捲動、翻頁、選字不受影響
+  function installNoPinch(win) {
+    const doc = win.document;
+    const stop = (e) => { if (e.cancelable) e.preventDefault(); };
+    for (const t of ['gesturestart', 'gesturechange', 'gestureend']) doc.addEventListener(t, stop, { passive: false });
+    doc.addEventListener('touchmove', (e) => {
+      if (e.touches && e.touches.length > 1 && e.cancelable) e.preventDefault();
+    }, { capture: true, passive: false });
+  }
+
   // ---- 底部安全區域（v2.2.16）---------------------------------------------------
   // 頁面沒宣告 viewport-fit=cover，env(safe-area-inset-bottom) 恆為 0，但 App 的 WebView 畫到
   // Home 指示條底下，翻頁頁碼會落進系統手勢區（Jimmy 2026-10-29 iPhone 回報）。原生把底部安全區域
@@ -622,10 +636,13 @@
 
   const reportStatusBar = (hidden) => { call({ op: 'statusBar', hidden }).catch(() => {}); };
   if (window === window.top) {
-    if (/\/reader\/article\.html$/.test(location.pathname)) installImmersive(window, reportStatusBar);
+    if (/\/reader\/article\.html$/.test(location.pathname)) {
+      installImmersive(window, reportStatusBar);
+      installNoPinch(window);
+    }
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
 
-  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, setSafeBottom };
+  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, installNoPinch, setSafeBottom };
 })(__JReadHostShimCore);
 })();

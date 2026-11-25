@@ -91,9 +91,11 @@
   }
   .jr-card.is-swiping .jr-card-link { -webkit-user-select: none; user-select: none; }
   /* v3.2.7：觸控長按改開卡片選單（reader-feed attachContextMenu）——有選單的卡片關掉
-     文字選取與系統長按選單，否則 iOS 長按先進文字選取。沒有選單的分頁照舊保留系統選單 */
+     文字選取與系統長按選單，否則 iOS 長按先進文字選取。沒有選單的分頁照舊保留系統選單。
+     v3.2.8：一併關掉點擊高亮——WebKit 把長按後的放手也當點擊，整張卡片閃灰一格
+     （Jimmy 2026-11-25 回報，模擬器錄影逐格確認） */
   @media (pointer: coarse) {
-    .jr-card.has-menu, .jr-card.has-menu .jr-card-link { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    .jr-card.has-menu, .jr-card.has-menu .jr-card-link { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
   }
   /* v3.1.0：卡片加了日期與兩行摘要後變高，縮圖從 64px 放大到 88px（≈ 標題＋副標＋兩行摘要的
      高度），全部卡片同尺寸；窄螢幕 72px，不擠壓文字欄（Jimmy 2026-11-24「卡片變大但圖看起來小了」） */
