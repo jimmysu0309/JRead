@@ -1694,6 +1694,18 @@
       return toggleBorderless();
     }
     if (command === 'toggle-paged-mode') return togglePagedMode();
+    // v3.4.9：工具列圖示選單在「還沒進閱讀模式」時按「送到 …」——交給本頁送出流程
+    //（sendCurrentPageToService 自己進閱讀模式、自己顯示進度與結果）。不等送完就回覆：
+    // popup 收到就關掉，結果看頁面 toast。點下當刻先彈「送出中…」（同懸浮按鈕 sendToService）
+    if (command === 'send-to-service') {
+      const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
+      showToast(P ? P.SAVE_PROGRESS.sending : '送出中…', 'info', {
+        id: P ? P.SAVE_PROGRESS_TOAST_ID : 'jread-save',
+        duration: P ? P.SAVE_PROGRESS_TOAST_MS : 15000
+      });
+      Promise.resolve().then(() => sendCurrentPageToService()).catch(() => {});
+      return { ok: true };
+    }
     return { ok: false };
   }
   NS.dispatchLocalCommand = dispatchLocalCommand;
@@ -2158,7 +2170,7 @@
     // ——訊息來源雖限 extension 內部，仍防 payload 偽造 / 打錯字眼靜默 no-op。
     if (msg.type === NS.MSG.DISPATCH_COMMAND) {
       const command = msg.payload && msg.payload.command;
-      const allowed = ['toggle-reader-mode', 'toggle-youtube-borderless', 'toggle-paged-mode'];
+      const allowed = ['toggle-reader-mode', 'toggle-youtube-borderless', 'toggle-paged-mode', 'send-to-service'];
       if (!allowed.includes(command)) {
         sendResponse({ ok: false });
         return; // sync

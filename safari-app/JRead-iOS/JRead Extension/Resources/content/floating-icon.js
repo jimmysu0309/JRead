@@ -51,6 +51,10 @@
   if (!NS) return;
   if (window !== window.top) return;     // 只在主 frame 放一顆
   if (NS.floating) return;               // 重複注入保險
+  // v3.4.9：JReader 公開分享頁（web core 公開唯讀模式，host 替身 readOnly）不放。Jimmy 2026-11-25
+  //「其他人不應該看到有這個 icon」——分享頁的訪客沒有 JRead，這顆是 web core article.html 自己載的，
+  // 不是擴充的；短按退出、長按選單的功能選單 / 分頁模式對訪客都沒有意義
+  if (window.__jreadHost && window.__jreadHost.readOnly) return;
   // v3.4.5：App 的文章列表頁（reader/reader.html）也放一顆（Jimmy 2026-11-25「iOS App 文章列表沒有
   // J 圖示，加在版面最左下方」）。列表頁只在 App 放：Safari 擴充 / 網頁版的列表頁維持沒有。
   // 列表頁固定貼左下角、不能拖（位置設定跟 Safari 擴充同步，那邊拖到哪不該搬動列表頁的入口），

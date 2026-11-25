@@ -3,6 +3,8 @@
 // 需求（Jimmy 2026-11-19）：閱讀模式中點內文圖片，開全螢幕預覽層。大圖縮到螢幕內、
 // 小圖用原尺寸不放大；點背景 / Esc / 下滑關閉；右鍵與長按用瀏覽器原生選單。
 // 這一輪不做：雙指縮放與拖移、自訂分享鈕、手機瀏覽器「返回」關閉預覽。
+// v3.2.9 加雙指縮放；v3.4.9 加雙擊（雙點）縮放：點兩下圖片放大到 DOUBLE_TAP_SCALE 倍、
+// 點兩下的那一點留在手指下，放大中再點兩下回原尺寸；桌面放大後可以用滑鼠拖移。
 //
 // 結構：
 //   - 宿主 <div id="__jread-image-viewer"> 掛 <html>（掛 body 會被 cleaner 動態
@@ -35,6 +37,9 @@
   var SWIPE_SLOP_PX = 10;      // 位移超過此值才判定方向
   var ZOOM_MAX = 5;            // 雙指放大上限（v3.2.9）
   var ZOOM_SNAP = 1.02;        // 放手時倍率低於此值就彈回原尺寸
+  var DOUBLE_TAP_SCALE = 2.5;  // 雙擊放大倍率（v3.4.9）
+  var DOUBLE_TAP_MS = 300;     // 兩次點擊的間隔上限
+  var DOUBLE_TAP_SLOP_PX = 30; // 兩次點擊的距離上限
 
   var IMG_HREF_RE = /\.(?:jpe?g|png|gif|webp|avif|bmp|svg|jfif)(?:[?#].*)?$/i;
 
@@ -157,6 +162,24 @@
     return { s: z.s, tx: axis(box.bx, box.w, vw, z.tx), ty: axis(box.by, box.h, vh, z.ty) };
   }
 
+  // v3.4.9 雙擊縮放（純函式）：目前是原尺寸 → 放大到 DOUBLE_TAP_SCALE、點的那一點留在
+  // (px, py) 底下，再用 settleZoom 收回合理範圍；目前已放大 → 回原尺寸。
+  // z：目前的 { s, tx, ty }；box：{ bx, by, w, h }（未變形的位置與尺寸）
+  function doubleTapZoom(z, box, px, py, vw, vh) {
+    if (z.s > ZOOM_SNAP) return { s: 1, tx: 0, ty: 0 };
+    var s = DOUBLE_TAP_SCALE;
+    var lx = (px - box.bx - z.tx) / z.s;
+    var ly = (py - box.by - z.ty) / z.s;
+    return settleZoom({ s: s, tx: px - box.bx - s * lx, ty: py - box.by - s * ly }, box, vw, vh);
+  }
+
+  // 兩次點擊算不算雙擊（純函式）。a / b：{ x, y, t }
+  function isDoubleTap(a, b) {
+    if (!a || !b) return false;
+    var dt = b.t - a.t;
+    return dt >= 0 && dt <= DOUBLE_TAP_MS && Math.hypot(b.x - a.x, b.y - a.y) <= DOUBLE_TAP_SLOP_PX;
+  }
+
   var api = {
     HOST_ID: HOST_ID,
     MIN_SIDE: MIN_SIDE,
@@ -168,6 +191,9 @@
     shouldCloseOnRelease: shouldCloseOnRelease,
     pinchTransform: pinchTransform,
     settleZoom: settleZoom,
+    doubleTapZoom: doubleTapZoom,
+    isDoubleTap: isDoubleTap,
+    DOUBLE_TAP_SCALE: DOUBLE_TAP_SCALE,
     ZOOM_MAX: ZOOM_MAX
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -189,6 +215,8 @@
     '  opacity: 0; transition: opacity ' + FADE_MS + 'ms ease;',
     '  pointer-events: auto; cursor: default;',
     '  overscroll-behavior: contain;',
+    // 雙點不觸發瀏覽器的整頁放大（雙擊縮放由預覽層自己做），雙指與捲動照舊
+    '  touch-action: manipulation;',
     '}',
     '.stage.show { opacity: 1; }',
     '.stage.dragging { transition: none; }',
@@ -203,6 +231,11 @@
     '  transform-origin: 0 0;',
     '}',
     '.stage.dragging img { transition: none; }',
+    '@media (hover: hover) and (pointer: fine) {',
+    '  img { cursor: zoom-in; }',
+    '  .stage.zoomed img { cursor: grab; }',
+    '  .stage.zoomed.dragging img { cursor: grabbing; }',
+    '}',
     '@media (max-width: 600px) { .stage { padding: 0; } }',
     '@media (prefers-reduced-motion: reduce) {',
     '  .stage, img { transition: none; }',
@@ -219,6 +252,11 @@
   var zoom = { s: 1, tx: 0, ty: 0 };  // 目前圖片的縮放 / 位移（v3.2.9）
   var pinch = null;  // 雙指進行中：pinchTransform 的 start
   var pan = null;    // 放大後單指拖移：{ x, y, tx, ty }
+  var tapStart = null;   // 單指觸控起點（判斷是不是「點」）：{ x, y, moved }
+  var lastTap = null;    // 上一次點擊：{ x, y, t }
+  var lastDoubleTapAt = 0; // 觸控雙擊處理過的時間（擋掉隨後的 dblclick 重複觸發）
+  var mousePan = null;   // 桌面放大後滑鼠拖移：{ x, y, tx, ty, moved }
+  var suppressClick = false; // 滑鼠拖移放手後的那個 click 不算點背景
 
   function isSvgSrc(src) {
     var s = String(src || '');
@@ -271,6 +309,20 @@
     if (!imgEl) return;
     imgEl.style.transform = zoom.s === 1 && !zoom.tx && !zoom.ty ? ''
       : 'translate(' + zoom.tx + 'px, ' + zoom.ty + 'px) scale(' + zoom.s + ')';
+    if (stage) stage.classList.toggle('zoomed', zoom.s > 1);
+  }
+  function pointOnImg(x, y) {
+    if (!imgEl) return false;
+    var r = imgEl.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+  // 雙擊縮放：原尺寸 → 放大、已放大 → 回原尺寸（有轉場）
+  function toggleZoomAt(x, y) {
+    if (!imgEl) return;
+    pinch = null; pan = null; touch = null;
+    if (stage) { stage.classList.remove('dragging'); stage.style.opacity = ''; }
+    zoom = doubleTapZoom(zoom, baseBox(), x, y, window.innerWidth, window.innerHeight);
+    applyZoom();
   }
   // 圖片未變形時的位置與尺寸（rect 扣掉目前的 transform；origin 在左上角）
   function baseBox() {
@@ -298,7 +350,9 @@
 
   function onTouchStart(e) {
     // 頁面本來就被瀏覽器放大（Safari 開預覽前就縮放過）→ 照舊全交給瀏覽器
-    if (pageZoomed()) { touch = null; return; }
+    if (pageZoomed()) { touch = null; tapStart = null; return; }
+    tapStart = e.touches.length === 1
+      ? { x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false } : null;
     if (e.touches.length === 2 && imgEl) {
       touch = null;
       if (stage) { stage.classList.remove('dragging'); stage.style.opacity = ''; }
@@ -323,8 +377,9 @@
       applyZoom();
       return;
     }
-    if (e.touches.length !== 1) return;
+    if (e.touches.length !== 1) { tapStart = null; return; }
     var t = e.touches[0];
+    if (tapStart && Math.hypot(t.clientX - tapStart.x, t.clientY - tapStart.y) > SWIPE_SLOP_PX) tapStart.moved = true;
     if (pan) {
       zoom = { s: zoom.s, tx: pan.tx + t.clientX - pan.x, ty: pan.ty + t.clientY - pan.y };
       applyZoom();
@@ -341,6 +396,24 @@
     if (touch.vertical) setDrag(touch.dy);
   }
   function onTouchEnd(e) {
+    // 單指沒移動就放開＝一次「點」；跟上一次點擊夠近夠快＝雙擊縮放
+    if (e.touches.length === 0 && tapStart && !tapStart.moved && !pinch) {
+      var tap = { x: tapStart.x, y: tapStart.y, t: Date.now() };
+      tapStart = null;
+      if (isDoubleTap(lastTap, tap) && pointOnImg(tap.x, tap.y)) {
+        lastTap = null;
+        lastDoubleTapAt = tap.t;
+        toggleZoomAt(tap.x, tap.y);
+        return;
+      }
+      lastTap = tap;
+      if (pan) { pan = null; settle(); return; }
+      var st0 = touch; touch = null;
+      if (stage) stage.classList.remove('dragging');
+      if (st0 && st0.vertical) setDrag(0);
+      return;
+    }
+    if (e.touches.length === 0) { tapStart = null; lastTap = null; } // 拖移 / 捏合過＝不是點，雙擊重新算
     if (pinch) {
       if (e.touches.length >= 2) return;
       pinch = null;
@@ -367,7 +440,7 @@
     setDrag(0);
   }
   function onTouchCancel() {
-    touch = null;
+    touch = null; tapStart = null;
     if (pinch || pan) { pinch = null; pan = null; settle(); return; }
     if (stage) stage.classList.remove('dragging');
     setDrag(0);
@@ -381,9 +454,45 @@
   function onStageClick(e) {
     // 事件不外流到頁面的委派 handler
     e.stopPropagation();
-    // 點圖片本身不動作（留給第二階段的雙擊縮放）；點背景關閉
+    // 滑鼠拖移放手產生的 click（按下在圖上、放開在背景）不算點背景
+    if (suppressClick) { suppressClick = false; return; }
+    // 點圖片本身不動作（雙擊縮放由 dblclick / 觸控雙點處理）；點背景關閉
     if (e.target === imgEl) return;
     close();
+  }
+
+  // 桌面雙擊（觸控雙點已在 onTouchEnd 處理過的就跳過，避免一放大又縮回）
+  function onStageDblclick(e) {
+    e.stopPropagation();
+    if (e.target !== imgEl) return;
+    if (Date.now() - lastDoubleTapAt < 800) return;
+    if (e.cancelable) e.preventDefault();
+    toggleZoomAt(e.clientX, e.clientY);
+  }
+
+  // 桌面放大後滑鼠拖移
+  function onMouseDown(e) {
+    if (e.button !== 0 || zoom.s <= 1 || e.target !== imgEl) return;
+    if (e.cancelable) e.preventDefault(); // 不拖出圖片的原生拖放
+    mousePan = { x: e.clientX, y: e.clientY, tx: zoom.tx, ty: zoom.ty, moved: false };
+    if (stage) stage.classList.add('dragging');
+    window.addEventListener('mousemove', onMouseMove, true);
+    window.addEventListener('mouseup', onMouseUp, true);
+  }
+  function onMouseMove(e) {
+    if (!mousePan) return;
+    var dx = e.clientX - mousePan.x, dy = e.clientY - mousePan.y;
+    if (Math.hypot(dx, dy) > 3) mousePan.moved = true;
+    zoom = { s: zoom.s, tx: mousePan.tx + dx, ty: mousePan.ty + dy };
+    applyZoom();
+  }
+  function onMouseUp() {
+    window.removeEventListener('mousemove', onMouseMove, true);
+    window.removeEventListener('mouseup', onMouseUp, true);
+    if (!mousePan) return;
+    suppressClick = mousePan.moved;
+    mousePan = null;
+    settle();
   }
 
   function stopBubble(e) { e.stopPropagation(); }
@@ -392,6 +501,7 @@
     if (!srcImg || srcImg.tagName !== 'IMG') return false;
     if (host) close(true);
     zoom = { s: 1, tx: 0, ty: 0 }; pinch = null; pan = null;
+    tapStart = null; lastTap = null; mousePan = null; suppressClick = false;
     var o = opts || {};
     var current = srcImg.currentSrc || srcImg.src || '';
     if (!current) return false;
@@ -428,6 +538,8 @@
     shadow.appendChild(stage);
 
     stage.addEventListener('click', onStageClick);
+    stage.addEventListener('dblclick', onStageDblclick);
+    stage.addEventListener('mousedown', onMouseDown);
     host.addEventListener('mousedown', stopBubble);
     host.addEventListener('pointerdown', stopBubble);
     host.addEventListener('wheel', onWheel, { passive: false });
@@ -480,9 +592,14 @@
     window.removeEventListener('keydown', onKeydown, true);
     window.removeEventListener('keypress', onKeyOther, true);
     window.removeEventListener('keyup', onKeyOther, true);
+    if (mousePan) { // 拖到一半關掉（Esc）：拆掉拖移期間掛在 window 的 listener
+      window.removeEventListener('mousemove', onMouseMove, true);
+      window.removeEventListener('mouseup', onMouseUp, true);
+    }
     if (preloader) { preloader.onload = null; preloader.onerror = null; preloader.src = ''; preloader = null; }
     host = null; stage = null; imgEl = null; touch = null;
     zoom = { s: 1, tx: 0, ty: 0 }; pinch = null; pan = null;
+    tapStart = null; lastTap = null; mousePan = null; suppressClick = false;
     // 預覽期間底下不該捲動；真的被動到（瀏覽器原生行為漏網）就放回原位
     var sv = savedScroll;
     savedScroll = null;
