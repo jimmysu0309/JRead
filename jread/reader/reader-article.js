@@ -1140,6 +1140,11 @@
       if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function') {
         try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
       }
+      // v3.4.10：文章快取記成封存（淘汰時先刪）。封存後馬上導回清單，等不到合併計時器——直接寫一次
+      if (RC && typeof RC.noteLocations === 'function' && typeof RC.flushLocations === 'function' && typeof RC.accountKey === 'function') {
+        RC.noteLocations(RC.accountKey(service, creds), [{ id, location: 'archive' }]);
+        try { await RC.flushLocations(d.storeOpts); } catch (_) {}
+      }
       // v3.1.0：成功就跳回清單，這頁的 toast 看不到——記一筆給清單頁顯示
       if (RC && typeof RC.setFeedNotice === 'function') {
         let session = d.session;

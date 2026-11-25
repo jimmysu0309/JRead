@@ -602,6 +602,7 @@
         if (!r.count) { env.showMsg(emptySearchText(q), false); return; }
         env.hideMsg();
       }
+      if (typeof env.noteDocs === 'function') env.noteDocs(r.results);
       for (const d of r.results) {
         const card = resultCard(d, r.terms);
         if (card) env.listEl.appendChild(card);

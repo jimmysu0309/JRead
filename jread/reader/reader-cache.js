@@ -8,7 +8,8 @@
 //   2. 文章 HTML → IndexedDB `jread-reader-cache`（實測一般文章 6–54K，翻譯頁內嵌
 //      圖可達 1.9M，storage.local 的 10M 上限裝不下）。總量上限 ARTICLE_BUDGET
 //      （50M，Jimmy 2026-10-27 裁定；v3.4.7 放寬到 300M，Jimmy 2026-11-25：App 離線連圖一起存），
-//      超過依最後開啟時間淘汰最舊的。
+//      超過時先淘汰封存（archive）的、再依最後開啟時間淘汰最舊的（v3.4.10；所在資料夾記在 meta.location，
+//      由 noteLocations 從清單與本機搬資料夾同步）。
 //   3. 文章內文圖（v3.4.7，App 離線預載才寫）→ 同一個 IndexedDB 的 images store，key＝文章 key
 //      ＋'|'＋圖片網址、index doc＝文章 key。容量算進那篇文章的 meta.bytes（artBytes＋imgBytes），
 //      淘汰 / 刪除 / 清空文章時一起刪。清單卡片縮圖（v3.4.8）存在同一個 store，網址前綴 THUMB_PREFIX
@@ -427,12 +428,15 @@
     return best;
   }
 
+  // v3.4.10：封存（meta.location === 'archive'）的先刪（其中最久沒開的先），再依最後開啟時間刪其他的
+  //（Jimmy 2026-11-25「cache 滿了優先先從 archive 文章開始移除」）。沒記 location 的舊 meta 視為非封存
   function planEviction(metas, budget, keepKey) {
     const list = (metas || []).filter((m) => m && m.key);
     let total = list.reduce((s, m) => s + (Number(m.bytes) || 0), 0);
     if (total <= budget) return [];
+    const archived = (m) => (m.location === 'archive' ? 0 : 1);
     const order = list.filter((m) => m.key !== keepKey)
-      .sort((x, y) => (Number(x.lastOpened) || 0) - (Number(y.lastOpened) || 0));
+      .sort((x, y) => (archived(x) - archived(y)) || ((Number(x.lastOpened) || 0) - (Number(y.lastOpened) || 0)));
     const out = [];
     for (const m of order) {
       if (total <= budget) break;
@@ -549,11 +553,35 @@
           const prev = await reqToPromise(metaStore.get(key));
           const imgBytes = (prev && Number(prev.imgBytes)) || 0; // 重抓文章時已存的圖留著、容量照算
           tx.objectStore(STORE_ARTICLES).put({ key, account, id: String(doc.id), updated_at: doc.updated_at || '', doc: slim });
-          metaStore.put(Object.assign({}, prev || {}, { key, artBytes: bytes, imgBytes, bytes: bytes + imgBytes, lastOpened: now() }));
+          const m = Object.assign({}, prev || {}, { key, artBytes: bytes, imgBytes, bytes: bytes + imgBytes, lastOpened: now() });
+          // v3.4.10：記所在資料夾給淘汰排序用（doc 沒帶就沿用舊值）
+          if (doc.location) m.location = String(doc.location);
+          metaStore.put(m);
           await txDone(tx);
           await evict(key);
           return true;
         })().catch(() => false);
+      }
+
+      // v3.4.10：更新已存文章的所在資料夾（list：[{ id, location }]）。只改已存在的 meta、不新增，
+      // 不動最後開啟時間。回實際改了幾篇
+      function setLocations(account, list) {
+        return (async () => {
+          const items = (list || []).filter((x) => x && x.id != null && x.location);
+          if (!items.length) return 0;
+          const tx = db.transaction([STORE_META], 'readwrite');
+          const metaStore = tx.objectStore(STORE_META);
+          let n = 0;
+          for (const it of items) {
+            const key = keyOf(account, String(it.id));
+            const m = await reqToPromise(metaStore.get(key));
+            if (!m || m.location === it.location) continue;
+            metaStore.put(Object.assign({}, m, { location: String(it.location) }));
+            n++;
+          }
+          await txDone(tx);
+          return n;
+        })().catch(() => 0);
       }
 
       // 刪掉一篇（v3.4.0：文章頁「重新抓取文章」——刪掉後重新整理，載入流程快取 miss 就從服務重抓）
@@ -651,8 +679,42 @@
         })().catch(() => false);
       }
 
-      return { get, put, touch, evict, remove, usage, clear, keyOf, getImages, putImages, getThumbs, close: () => { try { db.close(); } catch (_) {} } };
+      return { get, put, touch, evict, remove, setLocations, usage, clear, keyOf, getImages, putImages, getThumbs, close: () => { try { db.close(); } catch (_) {} } };
     });
+  }
+
+  // v3.4.10：通知文章快取「這些文章現在在哪個資料夾」（淘汰時封存的先刪）。清單畫出來、本機搬資料夾成功
+  // 都呼叫這一支（單一資料源）。先排隊、LOCATION_FLUSH_MS 內的呼叫合併成一次開庫寫入，避免每次畫清單都開
+  // IndexedDB；失敗一律靜默（只影響淘汰順序）。list：[{ id, location }]（文件物件直接丟進來也可以）
+  const LOCATION_FLUSH_MS = 1500;
+  let locQueue = new Map(); // account → Map(id → location)
+  let locTimer = null;
+  function noteLocations(account, list, opts) {
+    if (!account) return;
+    let q = null;
+    for (const d of list || []) {
+      if (!d || d.id == null || !d.location) continue;
+      if (!q) { q = locQueue.get(account) || new Map(); locQueue.set(account, q); }
+      q.set(String(d.id), d.location === 'shortlist' ? 'later' : String(d.location));
+    }
+    if (!q || locTimer) return;
+    const setT = global.setTimeout || setTimeout;
+    locTimer = setT(() => { locTimer = null; flushLocations(opts); }, LOCATION_FLUSH_MS);
+  }
+  function flushLocations(opts) {
+    const batch = locQueue;
+    locQueue = new Map();
+    if (!batch.size) return Promise.resolve(0);
+    return openArticleStore(opts).then(async (store) => {
+      if (!store) return 0;
+      let n = 0;
+      try {
+        for (const [account, q] of batch) {
+          n += await store.setLocations(account, Array.from(q, ([id, location]) => ({ id, location })));
+        }
+      } finally { store.close(); }
+      return n;
+    }).catch(() => 0);
   }
 
   // 設定頁用：開庫 → 清空 → 關閉。IndexedDB 不可用 / 開庫失敗回 false
@@ -692,7 +754,7 @@
     FEED_TABS, isTabArchivable,
     accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, hostOf, ACTION_DONE, trashKeepDays, TRASH_KEEP_DAYS_FALLBACK, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
-    isStale, planEviction, pickImageUrl, THUMB_PREFIX, openArticleStore, clearArticleStore, articleStoreUsage,
+    isStale, planEviction, noteLocations, flushLocations, LOCATION_FLUSH_MS, pickImageUrl, THUMB_PREFIX, openArticleStore, clearArticleStore, articleStoreUsage,
     OWN_WRITE_KEY, OWN_WRITE_MAX, OWN_WRITE_SLACK_MS, readOwnWrites, planOwnWrite
   };
 

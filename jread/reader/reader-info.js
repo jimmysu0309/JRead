@@ -390,6 +390,10 @@
       if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function' && storage) {
         try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
       }
+      // v3.4.10：文章快取記新位置（淘汰時封存的先刪）
+      if (RC && typeof RC.noteLocations === 'function' && typeof RC.accountKey === 'function') {
+        RC.noteLocations(RC.accountKey(service, creds), [{ id, location: loc }]);
+      }
       if (o.docData) o.docData.location = loc;
       if (!stale()) toast(doneText(LOCATION_ACTION[loc]) || '已移動', 'success');
     });
