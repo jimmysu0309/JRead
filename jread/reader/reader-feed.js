@@ -574,7 +574,8 @@
   // Enter 打開、E 封存、L 加入 Later（Instapaper：加星）、V 開啟原始網址。能不能做照卡片的右鍵選單
   //（CARD_ACTIONS）：封存區沒有 E、沒有原始網址沒有 V。動作讓卡片離開清單時選取移到下一張。
   // 輸入框裡、選字中、帶修飾鍵、事件已被別人處理（右鍵選單、確認框、快速鍵說明開著）都不收
-  const KB_KEYS = { j: 'next', k: 'prev', enter: 'open', e: 'archive', l: 'later', v: 'source' };
+  // v3.4.4：D＝刪除（移到垃圾桶，JReader 才有這個動作；走右鍵選單同一份 'trash'，先跳確認框、再按 D 確認）
+  const KB_KEYS = { j: 'next', k: 'prev', enter: 'open', e: 'archive', l: 'later', v: 'source', d: 'trash' };
   function attachKeyboardNav(listEl, doc) {
     if (!listEl || !doc) return null;
     let selId = null;

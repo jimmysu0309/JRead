@@ -88,9 +88,13 @@
     const q = String(typed || '').trim().toLowerCase();
     if (!q) return [];
     const have = new Set((current || []).map((t) => t.toLowerCase()));
-    return (all || []).map((t) => String(t.name || t))
-      .filter((n) => n.toLowerCase().startsWith(q) && !have.has(n.toLowerCase()))
-      .slice(0, 6);
+    const hits = (all || []).map((t) => String(t.name || t))
+      .filter((n) => n.toLowerCase().startsWith(q) && !have.has(n.toLowerCase()));
+    // v3.4.4：完全相同的排第一——清單預設選第一個、Enter 直接加（Jimmy 2026-11-25），
+    // 打完整名稱時 Enter 加的就是它本身，不會變成名稱更長的另一個標籤
+    const exact = hits.findIndex((n) => n.toLowerCase() === q);
+    if (exact > 0) hits.unshift(hits.splice(exact, 1)[0]);
+    return hits.slice(0, 6);
   }
 
   // 目前閱讀進度（0–1）：翻頁模式讀頁碼，捲動模式讀捲動位置
@@ -782,14 +786,16 @@
       const drawSuggest = () => {
         const items = suggestTags(allTags || [], input.value, tags);
         sug.textContent = '';
-        active = -1;
+        // v3.4.4：有命中就預設選第一個，Enter 直接加上它（Jimmy 2026-11-25「預設 highlight 在搜尋命中的
+        // tag，按 enter 即可輸入」）。要加一個清單裡沒有的新標籤：Esc 先收起清單，再按 Enter
+        active = items.length ? 0 : -1;
         sug.hidden = !items.length;
-        for (const name of items) {
-          const b = el(doc, 'button', null, name);
+        items.forEach((name, i) => {
+          const b = el(doc, 'button', i === active ? 'active' : null, name);
           b.type = 'button';
           b.addEventListener('pointerdown', (e) => { e.preventDefault(); commit(name); });
           sug.appendChild(b);
-        }
+        });
       };
       const commit = (name) => {
         const next = addTag(tags, name);
@@ -797,14 +803,22 @@
         sug.hidden = true;
         if (next !== tags) saveTags(next);
       };
-      input.addEventListener('focus', async () => {
-        if (allTags) return;
-        let r = null;
-        try { r = await PC.listJReaderTags(rw); } catch (_) { r = null; } // 2026-11-24 審核 B-7
-        allTags = r && r.ok && Array.isArray(r.tags) ? r.tags : [];
-        drawSuggest();
-      });
-      input.addEventListener('input', drawSuggest);
+      // 標籤總表：聚焦時抓；加完標籤後 pushTags 會清掉（篇數變了），焦點還在輸入框裡接著打第二個時
+      // 由 input 重抓（v3.4.4：原本只在 focus 抓，連續加第二個標籤時沒有候選、也就沒有預設選項）
+      let loading = null;
+      const loadTags = () => {
+        if (allTags || loading) return loading;
+        loading = (async () => {
+          let r = null;
+          try { r = await PC.listJReaderTags(rw); } catch (_) { r = null; } // 2026-11-24 審核 B-7
+          allTags = r && r.ok && Array.isArray(r.tags) ? r.tags : [];
+          loading = null;
+          drawSuggest();
+        })();
+        return loading;
+      };
+      input.addEventListener('focus', loadTags);
+      input.addEventListener('input', () => { drawSuggest(); loadTags(); });
       // 按鍵不掛在 input 上：閱讀模式的按鍵守門（main.js keyguard，window capture）看到的
       // target 是 shadow host、不是輸入框，會整個攔掉。改由 attach 時先註冊的 window
       // capture listener 轉進來處理（見下方 onPanelKey）
@@ -818,7 +832,8 @@
           btns.forEach((b, i) => b.classList.toggle('active', i === active));
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          commit(active >= 0 && btns[active] ? btns[active].textContent : input.value);
+          // 清單收起（Esc）時 Enter＝照打的字新增
+          commit(!sug.hidden && active >= 0 && btns[active] ? btns[active].textContent : input.value);
         } else if (e.key === 'Escape') {
           e.preventDefault();
           if (!sug.hidden) sug.hidden = true; else close();
@@ -971,10 +986,25 @@
       editTags();
     }, true);
 
+    // 快速鍵 D：刪除這篇（移到垃圾桶；Jimmy 2026-11-25）。跟面板的「刪除這篇」同一條路（trashAction：
+    // 確認框、再按 D 確認、成功回清單並留提示）。條件同 L；已在垃圾桶裡的只提示、不動作
+    function trashByKey() {
+      if (data.deleted_at) { toast('這篇已經在垃圾桶裡', 'info'); return null; }
+      return trashAction('trash');
+    }
+    win.addEventListener('keydown', (e) => {
+      if (e.key !== 'd' && e.key !== 'D') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat || e.isComposing || e.keyCode === 229) return;
+      if (NS && typeof NS.isTextInputTarget === 'function' && NS.isTextInputTarget(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      trashByKey();
+    }, true);
+
     // 懸浮按鈕選單的「文章資訊」（floating-icon.js 看到這個掛鉤才列出）
     if (NS) NS.onReaderInfo = toggle;
 
-    return { open, close, toggle, editTags, isOpen: () => opened, render, refresh, panel: () => panel };
+    return { open, close, toggle, editTags, trashByKey, isOpen: () => opened, render, refresh, panel: () => panel };
   }
 
   // 垃圾桶裡的文章：剩幾天自動永久刪除（purge_at 由 JReader 伺服器給，天數規則只在伺服器）

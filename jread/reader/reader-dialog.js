@@ -9,6 +9,8 @@
 //     2026-11-24 審核 B-5），其他放在「確定」
 //   - Esc / 點外面＝取消；Enter＝按下目前有焦點的那顆。按住不放的自動重複（e.repeat）不算——
 //     按住 Enter 開框後的重複會直接確認（B-5）
+//   - confirmKey（v3.4.4）：單一字母，按它＝確認（D 鍵刪除：D 開框、再按 D 確認，Jimmy 2026-11-25）。
+//     自動重複、帶修飾鍵、選字中都不算；有滑鼠的裝置在按鈕列左邊顯示「按 D 確認」
 //   - 開著時頁面其他快速鍵一律不收（window capture、模組載入就註冊——比 Article View 的 Esc 退出閱讀模式早）
 // 浮層用 shadow DOM 掛 <html> 直下（閱讀模式會把 body 底下非主文元素藏起來）。顏色讀頁面主題（RC.pageThemeColors）。
 //
@@ -34,6 +36,10 @@
     .cancel { background: transparent; color: var(--fg); border: 1px solid var(--line); }
     .ok { background: var(--fg); color: var(--bg); border: 1px solid var(--fg); }
     .ok.danger { background: #c62828; border-color: #c62828; color: #fff; }
+    .keyhint { margin-right: auto; align-self: center; font-size: 12px; color: var(--muted); }
+    .keyhint kbd { display: inline-block; min-width: 18px; padding: 0 5px; box-sizing: border-box; text-align: center;
+      border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+      font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); }
     button:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
   `;
 
@@ -47,13 +53,24 @@
     // 保留天數讀伺服器給的 trash_keep_days（JReader src/store.ts TRASH_KEEP_DAYS；2026-11-24 起每篇文件都帶）。
     // 精確的剩餘天數由伺服器回的 purge_at 算（文章資訊面板）
     const keep = RC && typeof RC.trashKeepDays === 'function' ? RC.trashKeepDays([doc, { trash_keep_days: days }]) : 30;
-    if (kind === 'trash') return { title: '刪除' + t + '？', message: '文章會移到垃圾桶，' + keep + ' 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false, focusCancel: true };
+    if (kind === 'trash') return { title: '刪除' + t + '？', message: '文章會移到垃圾桶，' + keep + ' 天內可以從清單最下方的「垃圾桶」還原，之後自動永久刪除', confirmLabel: '刪除', danger: false, focusCancel: true, confirmKey: TRASH_KEY };
     if (kind === 'purge') return { title: '永久刪除' + t + '？', message: '文章、重點與筆記會一起刪除，無法復原', confirmLabel: '永久刪除', danger: true };
     if (kind === 'empty') return { title: '清空垃圾桶？', message: (count ? count + ' 篇文章' : '垃圾桶裡的文章') + '會永久刪除，無法復原', confirmLabel: '清空', danger: true };
     return null;
   }
 
-  let current = null; // { resolve, ok, cancel, host }
+  // D 鍵刪除（移到垃圾桶）的字母：清單、文章頁的快速鍵與確認框「再按一次確認」共用（v3.4.4）。
+  // 永久刪除、清空垃圾桶不收字母鍵確認
+  const TRASH_KEY = 'd';
+
+  // 是否為「按下 key 這個字母」（不分大小寫；自動重複、修飾鍵、選字中不算）
+  function isLetterKey(e, key) {
+    if (!e || !key || e.repeat || e.isComposing || e.keyCode === 229) return false;
+    if (e.metaKey || e.ctrlKey || e.altKey) return false;
+    return String(e.key || '').toLowerCase() === key;
+  }
+
+  let current = null; // { resolve, ok, cancel, host, confirmKey }
 
   function finish(value) {
     if (!current) return;
@@ -109,6 +126,19 @@
     ok.type = 'button';
     ok.className = 'ok' + (o.danger ? ' danger' : '');
     ok.textContent = o.confirmLabel || '確定';
+    const confirmKey = typeof o.confirmKey === 'string' && /^[a-z]$/i.test(o.confirmKey) ? o.confirmKey.toLowerCase() : null;
+    let finePointer = false;
+    try { finePointer = !!(win.matchMedia && win.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch (_) { finePointer = false; }
+    if (confirmKey && finePointer) {
+      const hint = doc.createElement('span');
+      hint.className = 'keyhint';
+      const k = doc.createElement('kbd');
+      k.textContent = confirmKey.toUpperCase();
+      hint.appendChild(doc.createTextNode('按 '));
+      hint.appendChild(k);
+      hint.appendChild(doc.createTextNode(' 確認'));
+      row.appendChild(hint);
+    }
     row.appendChild(cancel);
     row.appendChild(ok);
     card.appendChild(row);
@@ -116,7 +146,7 @@
     root.appendChild(backdrop);
     host.style.display = 'block';
     return new Promise((resolve) => {
-      current = { resolve, ok, cancel, host };
+      current = { resolve, ok, cancel, host, confirmKey };
       cancel.addEventListener('click', () => finish(false));
       ok.addEventListener('click', () => finish(true));
       backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) { e.preventDefault(); finish(false); } });
@@ -129,6 +159,7 @@
     if (!current) return;
     const root = current.host.shadowRoot || current.host;
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    else if (current.confirmKey && isLetterKey(e, current.confirmKey)) { e.preventDefault(); finish(true); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       if (e.repeat) { e.stopImmediatePropagation(); return; } // 按住的自動重複不算確認
@@ -143,7 +174,7 @@
     if (win && typeof win.addEventListener === 'function') win.addEventListener('keydown', onKey, true);
   }
 
-  const api = { confirm, install, trashConfirmText, isOpen: () => !!current, HOST_ID };
+  const api = { confirm, install, trashConfirmText, isLetterKey, TRASH_KEY, isOpen: () => !!current, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

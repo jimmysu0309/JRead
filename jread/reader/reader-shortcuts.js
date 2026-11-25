@@ -28,6 +28,7 @@
     { page: 'feed', keys: ['E'], label: '封存選到的文章' },
     { page: 'feed', keys: ['L'], label: '加入 Later（Instapaper：加星）' },
     { page: 'feed', keys: ['V'], label: '在新分頁開啟原始網址' },
+    { page: 'feed', keys: ['D'], label: '刪除選到的文章（移到垃圾桶，再按一次 D 確認）', when: (c) => c.library },
     { page: 'feed', keys: ['X'], label: '多選：勾選 / 取消選到的文章（Shift+點卡片也可以）', when: (c) => c.library },
     { page: 'article', keys: ['Space'], label: '往下一個畫面（翻頁模式：下一頁）' },
     { page: 'article', keys: ['Shift', 'Space'], label: '往上一個畫面（翻頁模式：上一頁）' },
@@ -38,6 +39,7 @@
     { page: 'article', keys: ['V'], label: '在新分頁開啟原始網址' },
     { page: 'article', keys: ['I'], label: '文章資訊（來源、標籤、資料夾）', when: (c) => c.library && !c.readOnly },
     { page: 'article', keys: ['L'], label: '編輯標籤', when: (c) => c.library && !c.readOnly },
+    { page: 'article', keys: ['D'], label: '刪除這篇（移到垃圾桶，再按一次 D 確認）', when: (c) => c.library && !c.readOnly },
     { page: 'article', keys: ['Esc'], label: '回到文章列表', when: (c) => c.canExit },
     { page: null, keys: ['?'], label: '顯示 / 關閉這份說明' }
   ];

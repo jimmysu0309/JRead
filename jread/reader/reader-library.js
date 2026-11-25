@@ -804,8 +804,13 @@
       try { r = await PC.listJReaderTags(rw); } catch (_) { r = null; } // 失敗顯示「標籤載入失敗」（2026-11-24 審核 B-7）
       if (menu !== mine) return;
       const tags = (r && r.ok ? r.tags : []) || [];
+      // v3.4.4：有打字時預設選第一個命中的標籤（底色標出），Enter 直接選它；上下鍵換（Jimmy 2026-11-25）
+      let active = -1;
+      const items = () => Array.from(list.querySelectorAll('.jr-tagmenu-item'));
+      const mark = () => items().forEach((b, i) => b.classList.toggle('is-active', i === active));
       const draw = () => {
         const f = filterInput.value.trim().toLowerCase();
+        active = -1;
         list.textContent = '';
         const shown = tags.filter((t) => !f || String(t.name).toLowerCase().includes(f));
         if (!shown.length) {
@@ -822,10 +827,21 @@
           b.addEventListener('click', () => { closeTagMenu(); setTag(String(t.name)); });
           list.appendChild(b);
         }
+        if (f) { active = 0; mark(); }
       };
       filterInput.addEventListener('input', draw);
       filterInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { const first = list.querySelector('.jr-tagmenu-item'); if (first) { e.preventDefault(); first.click(); } }
+        if (e.isComposing || e.keyCode === 229) return; // 注音 / 拼音選字中的 Enter、方向鍵不算
+        const btns = items();
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          if (!btns.length) return;
+          e.preventDefault();
+          active = e.key === 'ArrowDown' ? (active + 1) % btns.length : (active <= 0 ? btns.length - 1 : active - 1);
+          mark();
+          try { btns[active].scrollIntoView({ block: 'nearest' }); } catch (_) { /* jsdom */ }
+        } else if (e.key === 'Enter') {
+          if (active >= 0 && btns[active]) { e.preventDefault(); btns[active].click(); }
+        }
       });
       draw();
     }
