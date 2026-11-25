@@ -42,7 +42,9 @@
   // feed 卡片與文章頁 byline 用得到的欄位；其餘（summary / tags / content…）不存
   const SLIM_FIELDS = ['id', 'title', 'author', 'site_name', 'published_date', 'source_url', 'image_url', 'updated_at',
     // v2.1.0：Readwise 閱讀進度（文章頁走文章快取時，從 feed 快取拿較新的值）
-    'reading_progress'];
+    'reading_progress',
+    // v3.4.1：JReader 預設縮圖網址（卡片縮圖載入失敗時換成這張）
+    'default_image_url'];
   // v3.1.0：feed 清單快取另外多存卡片要顯示的摘要、存入日期、所在資料夾（文章快取不變）。
   // 不存的話回清單時先畫出沒有摘要的舊卡片，新資料簽章又相同、不會重畫，摘要永遠出不來
   // deleted_at：JReader 垃圾桶（文章資訊面板據此顯示「還原 / 永久刪除」）
@@ -345,7 +347,7 @@
     return (docs || []).map((d) => {
       const s = feedDoc(d);
       return [s.id, s.updated_at || '', s.title || '', s.author || '', s.site_name || '', s.image_url || '',
-        s.summary || '', s.published_date || '', s.saved_at || '', s.location || ''].join('\u0001');
+        s.default_image_url || '', s.summary || '', s.published_date || '', s.saved_at || '', s.location || ''].join('\u0001');
     }).join('\u0002');
   }
 
