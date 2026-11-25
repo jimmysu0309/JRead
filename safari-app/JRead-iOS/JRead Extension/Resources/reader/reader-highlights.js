@@ -548,10 +548,37 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     }
     .btn.show { display: block; }
     /* 觸控裝置建立重點：停靠視窗上緣 / 下緣置中（見 touchDockSide）。下緣墊高避開翻頁頁碼
-       （iPhone 頁碼 bottom 10px + 高 19px）與 Home 指示條；App 內 env() 恆 0，改讀 shim 變數 */
-    .btn.dock { left: 50% !important; transform: translateX(-50%); }
+       （iPhone 頁碼 bottom 10px + 高 19px）與 Home 指示條；App 內 env() 恆 0，改讀 shim 變數。
+       v3.2.8：停靠版離選取較遠，改成醒目的大膠囊（Jimmy 2026-11-25「膠囊太小，要注意找在上面
+       還是下面」）——重點同色的黃底、48px 高、筆圖示、從所在那一側滑入 */
+    .btn.dock {
+      left: 50% !important;
+      transform: translateX(-50%);
+      padding: 14px 26px 14px 22px;
+      border-radius: 26px;
+      background: #ffd500;
+      color: #1a1a1a;
+      font-size: 17px;
+      line-height: 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(0, 0, 0, 0.10);
+    }
+    .btn.dock.show { display: flex; align-items: center; gap: 8px; }
+    .btn.dock::before {
+      content: '';
+      width: 20px;
+      height: 20px;
+      flex: 0 0 auto;
+      background: currentColor;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272.2%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M14.5%204.5l5%205L10%2019H5v-5z%27/%3E%3Cpath%20d%3D%27M12.5%206.5l5%205%27/%3E%3Cpath%20d%3D%27M4%2022h16%27/%3E%3C/svg%3E") center / contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272.2%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M14.5%204.5l5%205L10%2019H5v-5z%27/%3E%3Cpath%20d%3D%27M12.5%206.5l5%205%27/%3E%3Cpath%20d%3D%27M4%2022h16%27/%3E%3C/svg%3E") center / contain no-repeat;
+    }
     .btn.dock-bottom { top: auto !important; bottom: calc(44px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px))); }
     .btn.dock-top { top: calc(12px + env(safe-area-inset-top, 0px)) !important; }
+    .btn.dock-bottom.show { animation: jr-hl-in-bottom 0.2s ease-out; }
+    .btn.dock-top.show { animation: jr-hl-in-top 0.2s ease-out; }
+    @keyframes jr-hl-in-bottom { from { opacity: 0; transform: translate(-50%, 24px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @keyframes jr-hl-in-top { from { opacity: 0; transform: translate(-50%, -24px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @media (prefers-reduced-motion: reduce) { .btn.dock.show { animation: none; } }
     .btn.danger { background: #c53030; }
     .btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
   `;
