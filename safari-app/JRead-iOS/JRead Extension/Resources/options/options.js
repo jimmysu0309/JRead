@@ -833,7 +833,7 @@ function settingsFileFor(all, now) {
   return { data, name: 'jread-settings-' + localDateStamp(now) + '.json', text: JSON.stringify(data, null, 2) + '\n' };
 }
 // 回分享用的 File；不適用（非觸控、沒有 Web Share、不收這種檔案）回 null
-function shareableSettingsFile(file) {
+function shareableFile(file) {
   try {
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     if (!coarse || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || typeof File !== 'function') return null;
@@ -841,7 +841,7 @@ function shareableSettingsFile(file) {
     return navigator.canShare({ files: [f] }) ? f : null;
   } catch (_e) { return null; }
 }
-function downloadSettingsFile(file) {
+function downloadFile(file) {
   const blob = new Blob([file.text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -852,6 +852,19 @@ function downloadSettingsFile(file) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// 存一個 JSON 檔（file：{ name, text }）：觸控＋可分享 → 分享面板，否則下載。必須在點擊當下同步呼叫。
+// 回 Promise<'shared' | 'downloaded' | 'cancelled'>；分享失敗 reject。設定匯出與除錯記錄匯出共用（v3.4.7）
+function saveJsonFile(file) {
+  const f = shareableFile(file);
+  if (f) {
+    return navigator.share({ files: [f] }).then(() => 'shared', (err) => {
+      if (err && err.name === 'AbortError') return 'cancelled'; // 使用者關掉分享面板
+      throw err;
+    });
+  }
+  downloadFile(file);
+  return Promise.resolve('downloaded');
+}
 const exportBtn = document.getElementById('exportSettings');
 if (exportBtn && TRANSFER) {
   refreshTransferSnapshot();
@@ -861,20 +874,16 @@ if (exportBtn && TRANSFER) {
     // 觸控＋分享面板：用快照同步組檔、當下呼叫 share
     if (transferSnapshot) {
       const file = settingsFileFor(transferSnapshot, now);
-      const f = shareableSettingsFile(file);
-      if (f) {
-        navigator.share({ files: [f] }).then(() => {
-          setTransferStatus('已匯出 ' + Object.keys(file.data.settings).length + ' 項設定', 3000);
-        }, (err) => {
-          if (err && err.name === 'AbortError') return; // 使用者關掉分享面板
-          setTransferStatus('匯出失敗，請稍後再試', 4000);
-        });
+      if (shareableFile(file)) {
+        saveJsonFile(file).then((how) => {
+          if (how !== 'cancelled') setTransferStatus('已匯出 ' + Object.keys(file.data.settings).length + ' 項設定', 3000);
+        }, () => setTransferStatus('匯出失敗，請稍後再試', 4000));
         return;
       }
     }
     browser.storage.sync.get(null).then((all) => {
       const file = settingsFileFor(all, now);
-      downloadSettingsFile(file);
+      downloadFile(file);
       setTransferStatus('已匯出 ' + Object.keys(file.data.settings).length + ' 項設定', 3000);
     }).catch(() => setTransferStatus('匯出失敗，請稍後再試', 4000));
   });
@@ -1135,6 +1144,24 @@ if (debugLogListEl) {
           debugLogStatus('此瀏覽器不支援複製', 3000);
         }
       } catch (_) { debugLogStatus('複製失敗', 3000); }
+    });
+  }
+  // v3.4.7：匯出成 JSON 檔（Jimmy 2026-11-25「除錯紀錄也加上匯出功能」）。範圍與「複製 JSON」相同
+  //（目前的篩選結果）；觸控走分享面板、桌面下載（saveJsonFile，與設定匯出同一套）
+  const exportLogBtn = document.getElementById('debugLogExport');
+  if (exportLogBtn) {
+    exportLogBtn.addEventListener('click', () => {
+      const logs = filteredDebugLogs();
+      if (!logs.length) { debugLogStatus('沒有可匯出的記錄', 2500); return; }
+      const now = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const file = {
+        name: 'jread-debug-log-' + localDateStamp(now) + '-' + p(now.getHours()) + p(now.getMinutes()) + '.json',
+        text: JSON.stringify({ kind: 'jread-debug-log', version: browser.runtime.getManifest().version, exportedAt: now.toISOString(), entries: logs }, null, 2) + '\n'
+      };
+      saveJsonFile(file).then((how) => {
+        if (how !== 'cancelled') debugLogStatus('已匯出 ' + logs.length + ' 筆記錄', 2500);
+      }, () => debugLogStatus('匯出失敗，請稍後再試', 3000));
     });
   }
   const clearBtn = document.getElementById('debugLogClear');

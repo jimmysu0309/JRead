@@ -7,7 +7,11 @@
 //      metadata，約 5K）。feed 頁先畫快取、背景抓新的再替換（stale-while-revalidate）。
 //   2. 文章 HTML → IndexedDB `jread-reader-cache`（實測一般文章 6–54K，翻譯頁內嵌
 //      圖可達 1.9M，storage.local 的 10M 上限裝不下）。總量上限 ARTICLE_BUDGET
-//      （50M，Jimmy 2026-10-27 裁定），超過依最後開啟時間淘汰最舊的。
+//      （50M，Jimmy 2026-10-27 裁定；v3.4.7 放寬到 300M，Jimmy 2026-11-25：App 離線連圖一起存），
+//      超過依最後開啟時間淘汰最舊的。
+//   3. 文章內文圖（v3.4.7，App 離線預載才寫）→ 同一個 IndexedDB 的 images store，key＝文章 key
+//      ＋'|'＋圖片網址、index doc＝文章 key。容量算進那篇文章的 meta.bytes（artBytes＋imgBytes），
+//      淘汰 / 刪除 / 清空文章時一起刪。
 //
 // 文章內容視為不變；唯一失效條件是 feed 快取裡同 id 的 updated_at 比文章快取新
 //（例如在 Readwise 重送過）。updated_at 也會因閱讀進度 / 搬位置變動，最多多抓一次。
@@ -35,10 +39,11 @@
   const LOCAL_CACHE_KEYS = [FEED_KEY, HIGHLIGHT_KEY, OWN_WRITE_KEY, OFFLINE_RUN_KEY];
   const FEED_VERSION = 1;
   const DB_NAME = 'jread-reader-cache';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;           // v3.4.7：加 images store
   const STORE_ARTICLES = 'articles';
   const STORE_META = 'meta';
-  const ARTICLE_BUDGET = 50 * 1024 * 1024;
+  const STORE_IMAGES = 'images';
+  const ARTICLE_BUDGET = 300 * 1024 * 1024; // v3.4.7：50M → 300M（Jimmy 2026-11-25）
   const IDB_TIMEOUT_MS = 1500;
 
   // feed 卡片與文章頁 byline 用得到的欄位；其餘（summary / tags / content…）不存
@@ -400,6 +405,26 @@
 
   // metas: [{ key, bytes, lastOpened }]。回傳要刪的 key（最久沒開的先刪），
   // 刪到總量 <= budget 為止；keepKey（剛寫入 / 正在讀的那篇）永不刪
+  // v3.4.7：一張 <img> 離線要存哪個網址（App 預載與文章頁換成本機圖共用，兩邊必須同一套）。
+  // 回屬性原字串（不解析成絕對網址——兩邊都讀同一份 html_content，原字串就是對照 key）：
+  // src 是 http(s) 就用 src；沒有的話取 srcset 裡最大的那個（w 或 x 描述最大）；都沒有回 ''
+  function pickImageUrl(img) {
+    if (!img || typeof img.getAttribute !== 'function') return '';
+    const src = String(img.getAttribute('src') || '').trim();
+    if (/^https?:\/\//i.test(src)) return src;
+    const set = String(img.getAttribute('srcset') || '').trim();
+    if (!set) return '';
+    let best = '', bestN = -1;
+    for (const part of set.split(',')) {
+      const bits = part.trim().split(/\s+/);
+      const u = bits[0] || '';
+      if (!/^https?:\/\//i.test(u)) continue;
+      const n = parseFloat(bits[1] || '1') || 1;
+      if (n > bestN) { bestN = n; best = u; }
+    }
+    return best;
+  }
+
   function planEviction(metas, budget, keepKey) {
     const list = (metas || []).filter((m) => m && m.key);
     let total = list.reduce((s, m) => s + (Number(m.bytes) || 0), 0);
@@ -446,6 +471,9 @@
         const db = openReq.result;
         if (!db.objectStoreNames.contains(STORE_ARTICLES)) db.createObjectStore(STORE_ARTICLES, { keyPath: 'key' });
         if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META, { keyPath: 'key' });
+        if (!db.objectStoreNames.contains(STORE_IMAGES)) {
+          db.createObjectStore(STORE_IMAGES, { keyPath: 'key' }).createIndex('doc', 'doc', { unique: false });
+        }
       };
       openReq.onsuccess = () => resolve(openReq.result);
       openReq.onerror = () => reject(openReq.error);
@@ -477,15 +505,28 @@
         })().catch(() => false);
       }
 
+      // 同一個交易裡刪掉某篇文章的所有圖（index doc）
+      function deleteImagesOf(tx, docKey) {
+        const idx = tx.objectStore(STORE_IMAGES).index('doc');
+        const req = idx.openKeyCursor(docKey);
+        req.onsuccess = () => {
+          const c = req.result;
+          if (!c) return;
+          tx.objectStore(STORE_IMAGES).delete(c.primaryKey);
+          c.continue();
+        };
+      }
+
       async function evict(keepKey) {
         const tx = db.transaction([STORE_META], 'readonly');
         const metas = await reqToPromise(tx.objectStore(STORE_META).getAll());
         const victims = planEviction(metas, budget, keepKey);
         if (!victims.length) return 0;
-        const wtx = db.transaction([STORE_ARTICLES, STORE_META], 'readwrite');
+        const wtx = db.transaction([STORE_ARTICLES, STORE_META, STORE_IMAGES], 'readwrite');
         for (const k of victims) {
           wtx.objectStore(STORE_ARTICLES).delete(k);
           wtx.objectStore(STORE_META).delete(k);
+          deleteImagesOf(wtx, k);
         }
         await txDone(wtx);
         return victims.length;
@@ -502,8 +543,11 @@
           if (bytes > budget) return false;
           const key = keyOf(account, String(doc.id));
           const tx = db.transaction([STORE_ARTICLES, STORE_META], 'readwrite');
+          const metaStore = tx.objectStore(STORE_META);
+          const prev = await reqToPromise(metaStore.get(key));
+          const imgBytes = (prev && Number(prev.imgBytes)) || 0; // 重抓文章時已存的圖留著、容量照算
           tx.objectStore(STORE_ARTICLES).put({ key, account, id: String(doc.id), updated_at: doc.updated_at || '', doc: slim });
-          tx.objectStore(STORE_META).put({ key, bytes, lastOpened: now() });
+          metaStore.put(Object.assign({}, prev || {}, { key, artBytes: bytes, imgBytes, bytes: bytes + imgBytes, lastOpened: now() }));
           await txDone(tx);
           await evict(key);
           return true;
@@ -514,12 +558,56 @@
       function remove(account, id) {
         const key = keyOf(account, String(id));
         return (async () => {
-          const tx = db.transaction([STORE_ARTICLES, STORE_META], 'readwrite');
+          const tx = db.transaction([STORE_ARTICLES, STORE_META, STORE_IMAGES], 'readwrite');
           tx.objectStore(STORE_ARTICLES).delete(key);
           tx.objectStore(STORE_META).delete(key);
+          deleteImagesOf(tx, key);
           await txDone(tx);
           return true;
         })().catch(() => false);
+      }
+
+      // v3.4.7：某篇文章已存的圖 → Map(網址 → Blob)。沒有 / 失敗回空 Map
+      function getImages(account, id) {
+        const docKey = keyOf(account, String(id));
+        const p = (async () => {
+          const tx = db.transaction([STORE_IMAGES], 'readonly');
+          const rows = await reqToPromise(tx.objectStore(STORE_IMAGES).index('doc').getAll(docKey));
+          const out = new Map();
+          for (const r of rows || []) if (r && r.url && r.blob) out.set(r.url, r.blob);
+          return out;
+        })().catch(() => new Map());
+        return withTimeout(p, timeoutMs, new Map());
+      }
+
+      // v3.4.7：存某篇文章的圖（list：[{ url, blob }]）。文章本身要先存在（沒有文章不存圖）；
+      // 容量加進 meta.imgBytes / bytes，再跑一次淘汰（這篇本身不淘汰）
+      function putImages(account, id, list) {
+        const docKey = keyOf(account, String(id));
+        return (async () => {
+          const items = (list || []).filter((x) => x && x.url && x.blob);
+          if (!items.length) return 0;
+          const tx = db.transaction([STORE_ARTICLES, STORE_META, STORE_IMAGES], 'readwrite');
+          const art = await reqToPromise(tx.objectStore(STORE_ARTICLES).get(docKey));
+          if (!art) { try { tx.abort(); } catch (_) {} return 0; }
+          const imgStore = tx.objectStore(STORE_IMAGES);
+          let added = 0;
+          for (const it of items) {
+            const key = docKey + '|' + it.url;
+            const old = await reqToPromise(imgStore.get(key));
+            const size = Number(it.blob.size) || 0;
+            imgStore.put({ key, doc: docKey, url: it.url, blob: it.blob, bytes: size });
+            added += size - ((old && Number(old.bytes)) || 0);
+          }
+          const metaStore = tx.objectStore(STORE_META);
+          const m = (await reqToPromise(metaStore.get(docKey))) || { key: docKey, artBytes: 0, imgBytes: 0, lastOpened: now() };
+          const artBytes = Number(m.artBytes != null ? m.artBytes : m.bytes) || 0;
+          const imgBytes = Math.max(0, (Number(m.imgBytes) || 0) + added);
+          metaStore.put(Object.assign({}, m, { artBytes, imgBytes, bytes: artBytes + imgBytes }));
+          await txDone(tx);
+          await evict(docKey);
+          return items.length;
+        })().catch(() => 0);
       }
 
       // 總用量（除錯 / 驗證用）
@@ -535,15 +623,16 @@
       // 分頁開著時連線還在，deleteDatabase 會 blocked 到分頁關掉為止
       function clear() {
         return (async () => {
-          const tx = db.transaction([STORE_ARTICLES, STORE_META], 'readwrite');
+          const tx = db.transaction([STORE_ARTICLES, STORE_META, STORE_IMAGES], 'readwrite');
           tx.objectStore(STORE_ARTICLES).clear();
           tx.objectStore(STORE_META).clear();
+          tx.objectStore(STORE_IMAGES).clear();
           await txDone(tx);
           return true;
         })().catch(() => false);
       }
 
-      return { get, put, touch, evict, remove, usage, clear, keyOf, close: () => { try { db.close(); } catch (_) {} } };
+      return { get, put, touch, evict, remove, usage, clear, keyOf, getImages, putImages, close: () => { try { db.close(); } catch (_) {} } };
     });
   }
 
@@ -584,7 +673,7 @@
     FEED_TABS, isTabArchivable,
     accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, hostOf, ACTION_DONE, trashKeepDays, TRASH_KEEP_DAYS_FALLBACK, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
     readFeed, writeFeed, removeFromFeed, findFeedDoc, feedSignature,
-    isStale, planEviction, openArticleStore, clearArticleStore, articleStoreUsage,
+    isStale, planEviction, pickImageUrl, openArticleStore, clearArticleStore, articleStoreUsage,
     OWN_WRITE_KEY, OWN_WRITE_MAX, OWN_WRITE_SLACK_MS, readOwnWrites, planOwnWrite
   };
 

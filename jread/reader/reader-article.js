@@ -185,22 +185,10 @@
       article.appendChild(byline);
     }
 
-    const body = document.createElement('div');
-    body.setAttribute('data-jread-reader-body', '1');
-    // v1.7.44（X1）：直接搬移 sanitizeDom 清理後的節點，不再 serialize 成字串
-    // 二次 innerHTML parse（mXSS 載體，見 sanitizeDom 註解）
-    while (cleaned.firstChild) body.appendChild(cleaned.firstChild);
-    // v1.0.25：所有圖片明確 eager（退掉任何懶載傾向）——配合 preloadImages 解翻頁
-    // 模式 WebKit 對遠處欄位圖片延遲載入的問題。
-    const imgs = body.querySelectorAll('img');
-    for (let i = 0; i < imgs.length; i++) {
-      imgs[i].setAttribute('loading', 'eager');
-      imgs[i].setAttribute('decoding', 'async');
-    }
-    article.appendChild(body);
-    // v3.1.0：公開分享頁（opts.sourceFooter）文末放「原文：<網站>」（JReader SPEC §8）。放在主文區外，
-    // 不影響重點定位與閱讀位置；只接受 http(s)
-    if (o.sourceFooter && doc && /^https?:\/\//i.test(String(doc.source_url || ''))) {
+    // v3.1.0：公開分享頁（opts.sourceLink）放「原文：<網站>」（JReader SPEC §8）。放在主文區外，
+    // 不影響重點定位與閱讀位置；只接受 http(s)。v3.4.7 從文末搬到作者列下方、主文之前（Jimmy
+    // 2026-11-25「別人一打開就要看到這是從哪裡收錄來的，可以點擊開啟原始網頁」）
+    if (o.sourceLink && doc && /^https?:\/\//i.test(String(doc.source_url || ''))) {
       const p = document.createElement('p');
       p.setAttribute('data-jread-reader-source', '1');
       p.appendChild(document.createTextNode('原文：'));
@@ -214,6 +202,19 @@
       p.appendChild(a);
       article.appendChild(p);
     }
+    const body = document.createElement('div');
+    body.setAttribute('data-jread-reader-body', '1');
+    // v1.7.44（X1）：直接搬移 sanitizeDom 清理後的節點，不再 serialize 成字串
+    // 二次 innerHTML parse（mXSS 載體，見 sanitizeDom 註解）
+    while (cleaned.firstChild) body.appendChild(cleaned.firstChild);
+    // v1.0.25：所有圖片明確 eager（退掉任何懶載傾向）——配合 preloadImages 解翻頁
+    // 模式 WebKit 對遠處欄位圖片延遲載入的問題。
+    const imgs = body.querySelectorAll('img');
+    for (let i = 0; i < imgs.length; i++) {
+      imgs[i].setAttribute('loading', 'eager');
+      imgs[i].setAttribute('decoding', 'async');
+    }
+    article.appendChild(body);
     return article;
   }
 
@@ -222,6 +223,30 @@
   // 抓進 HTTP 快取後，翻頁到後面欄位時 in-DOM 的 <img> 即時從快取命中顯示。
   // 修法根因：Chromium 翻頁模式 10/10 圖正常，iOS WebKit 對遠欄圖延遲載入（probe
   // tools/paged-img-probe.js 實證 Chromium 不重現），故 WebKit 軌專屬問題。
+  // v3.4.7：App 離線預載存下的內文圖（reader-offline.js）換成本機 blob 網址。對照 key 由
+  // RC.pickImageUrl 決定（與預載同一套）；換了的圖拿掉 srcset / sizes、同一個 <picture> 的 <source>
+  // 也拿掉，瀏覽器才不會再去抓遠端。回換掉的張數
+  function applyCachedImages(container, images, deps) {
+    const d = deps || {};
+    const R = d.RC || global.__JReadReaderCache || RC_MOD;
+    const U = d.URL || global.URL;
+    if (!container || !images || !images.size || !R || typeof R.pickImageUrl !== 'function' || !U || typeof U.createObjectURL !== 'function') return 0;
+    let n = 0;
+    for (const img of Array.from(container.querySelectorAll('img'))) {
+      const blob = images.get(R.pickImageUrl(img));
+      if (!blob) continue;
+      let url;
+      try { url = U.createObjectURL(blob); } catch (_) { continue; }
+      img.setAttribute('src', url);
+      img.removeAttribute('srcset');
+      img.removeAttribute('sizes');
+      const pic = img.parentElement && img.parentElement.tagName === 'PICTURE' ? img.parentElement : null;
+      if (pic) for (const src of Array.from(pic.querySelectorAll('source'))) src.remove();
+      n++;
+    }
+    return n;
+  }
+
   function preloadImages(container, ImageCtor) {
     if (!container || !ImageCtor || !container.querySelectorAll) return 0;
     let n = 0;
@@ -651,12 +676,17 @@
       // review D-06：tab＝來源分頁 id，E 鍵封存用它查這個分頁可不可封存
       const ctx = { NS, doc, PC, service, creds, backHref, tab: params.get('tab') };
       const fetchT0 = Date.now();
+      // v3.4.7：這篇存在本機的圖（App 離線預載；沒有就空 Map），永不 reject
+      const cachedImages = (c) => (c && c.store && typeof c.store.getImages === 'function'
+        ? Promise.resolve(c.store.getImages(c.account, id)).catch(() => new Map())
+        : Promise.resolve(new Map()));
+      let staleImages = new Map();
       // v3.4.5：抓不到時用過期的快取頂上（離線閱讀）。回 true＝已用快取畫出
       const renderStale = (stale) => {
         if (!stale) return false;
         rlog('改用過期快取', { id });
         try {
-          renderArticle(stale.doc, ctx, { progress: stale.doc.reading_progress, progressAt: stale.doc.updated_at });
+          renderArticle(stale.doc, ctx, { progress: stale.doc.reading_progress, progressAt: stale.doc.updated_at, images: staleImages });
         } catch (err) {
           rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
           return false;
@@ -694,17 +724,20 @@
           progressFrom: c.entry ? ((c.feedDoc && c.feedDoc.reading_progress != null) ? 'feed' : 'article') : 'api'
         });
         if (c.entry) {
-          try {
-            const pd = pickProgressDoc(c.entry.doc, c.feedDoc);
-            renderArticle(c.entry.doc, ctx, { progress: pd ? pd.reading_progress : undefined, progressAt: pd ? pd.updated_at : undefined });
-          } catch (err) {
-            rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
-            setStatus('載入失敗：' + String(err && err.message || err), true);
-            return;
-          }
-          c.store.touch(c.account, id);
-          return;
+          return cachedImages(c).then((images) => {
+            try {
+              const pd = pickProgressDoc(c.entry.doc, c.feedDoc);
+              renderArticle(c.entry.doc, ctx, { progress: pd ? pd.reading_progress : undefined, progressAt: pd ? pd.updated_at : undefined, images });
+            } catch (err) {
+              rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
+              setStatus('載入失敗：' + String(err && err.message || err), true);
+              return;
+            }
+            c.store.touch(c.account, id);
+          });
         }
+        // 有過期快取：先把它的圖讀好（幾毫秒）再抓——離線時 fetch 當場失敗，頂上時圖要已經在手上
+        if (c.staleEntry) return cachedImages(c).then((m) => { staleImages = m; fetchAndRender(c.store, c.account, c.staleEntry); });
         fetchAndRender(c.store, c.account, c.staleEntry);
       });
     }).catch((err) => {
@@ -753,6 +786,7 @@
     });
   }
   api.initPublic = initPublic;
+  api.applyCachedImages = applyCachedImages;
 
   // v1.10.1：查本機文章快取（reader-cache.js）。永不 reject，回
   // { store, account, entry }——store 為 null（IndexedDB 不可用 / 模組缺席）或
@@ -795,8 +829,10 @@
 
     const container = buildArticleContainer(docData, doc, {
       detectLanguage: PC && PC.detectHanLanguage,
-      sourceFooter: !!ctx.readOnly // 公開分享頁文末放原文連結
+      sourceLink: !!ctx.readOnly // 公開分享頁在作者列下方放原文連結（v3.4.7 起，原本在文末）
     });
+    // v3.4.7：本機存的圖（App 離線預載）先換上，再掛進頁面、預載
+    if (opts && opts.images) applyCachedImages(container, opts.images);
     doc.body.appendChild(container);
 
     // 主動預載全部圖片（翻頁模式 WebKit 遠欄圖延遲載入修法，見 preloadImages 註解）

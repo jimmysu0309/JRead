@@ -1,6 +1,6 @@
 {
   "name": "jread",
-  "version": "3.4.6",
+  "version": "3.4.7",
   "private": true,
   "description": "JRead — Chrome Extension 純閱讀模式。開發端 package.json，僅用於測試。",
   "scripts": {
@@ -9,6 +9,7 @@
     "debug": "node tools/debug-harness.js"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.0.0",
     "jsdom": "^24.0.0",
     "mocha": "^10.2.0",
     "playwright": "^1.59.1"

@@ -9,7 +9,10 @@
 //   - 只在 iOS App（NS.isAppRuntime）：Jimmy 要的是 App 離線閱讀；Safari 擴充 / 網頁版不預載
 //   - 只在 JReader 服務：Readwise 的取全文是 list API（限流 20 次／分鐘），一次預載 40 篇
 //     會把正常使用的額度吃光；Instapaper 不在需求內
-//   - 只存文字與版面（文章 HTML），圖片仍是遠端網址——離線時看過的圖靠 WebKit 自己的快取
+//   - v3.4.7 起連內文圖一起存（Jimmy 2026-11-25「離線閱讀可以一併抓圖嗎」，上限放寬到 300M）：
+//     文章都到手後，逐篇解析 html_content 的 <img>（RC.pickImageUrl 選網址），沒存過的抓下來存進
+//     文章快取的 images store；文章頁開啟時換成本機圖（reader-article applyCachedImages）。
+//     App 的 fetch 走原生 URLSession，沒有跨來源限制。單張超過 MAX_IMAGE_BYTES、不是圖片的回應不存
 //
 // 節流：清單每次載入成功都會呼叫 schedule，實際執行間隔至少 MIN_INTERVAL_MS（記在
 // storage.local，App 重開也算數），同一時間只跑一輪；開始前等 START_DELAY_MS，讓清單頁
@@ -27,6 +30,70 @@
   const CONCURRENCY = 2;
   const MAX_FAILURES = 3;          // 連續失敗幾篇就收手（多半是斷線）
   const LAST_RUN_KEY = 'readerOfflinePrefetchAt';
+  const IMAGE_CONCURRENCY = 3;
+  const MAX_IMAGES_PER_DOC = 60;
+  const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
+  // 純函式：html 字串 → 要存的圖片網址（去重、照出現順序、最多 MAX_IMAGES_PER_DOC 張）
+  function imageUrlsOf(html, DOMParserCtor, RC) {
+    if (!html || typeof DOMParserCtor !== 'function' || !RC || typeof RC.pickImageUrl !== 'function') return [];
+    let d;
+    try { d = new DOMParserCtor().parseFromString(String(html), 'text/html'); } catch (_) { return []; }
+    const out = [];
+    const seen = new Set();
+    for (const img of Array.from(d.querySelectorAll('img'))) {
+      const u = RC.pickImageUrl(img);
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+      if (out.length >= MAX_IMAGES_PER_DOC) break;
+    }
+    return out;
+  }
+
+  async function fetchImageBlob(fetchFn, url) {
+    try {
+      const r = await fetchFn(url);
+      if (!r || !r.ok) return null;
+      const blob = await r.blob();
+      const type = String((blob && blob.type) || (r.headers && r.headers.get && r.headers.get('content-type')) || '');
+      if (!blob || !blob.size || blob.size > MAX_IMAGE_BYTES) return null;
+      if (type && !/^image\//i.test(type)) return null;
+      return blob;
+    } catch (_) { return null; }
+  }
+
+  // 圖片階段：每篇文章已在快取裡（剛抓的或之前就有的），補上還沒存的圖。回 { saved, failed }
+  async function prefetchImages(ctx, store, docs) {
+    const { RC, account } = ctx;
+    const fetchFn = ctx.fetch || (typeof global.fetch === 'function' ? global.fetch.bind(global) : null);
+    const DP = ctx.DOMParser || global.DOMParser;
+    const out = { saved: 0, failed: 0 };
+    if (!fetchFn || typeof store.getImages !== 'function' || typeof store.putImages !== 'function') return out;
+    let streak = 0;
+    const seenDoc = new Set();
+    for (const d of docs) {
+      const id = String(d.id);
+      if (seenDoc.has(id)) continue;
+      seenDoc.add(id);
+      if (streak >= MAX_FAILURES) break; // 多半斷線了
+      const entry = await store.get(account, id);
+      const html = entry && entry.doc && entry.doc.html_content;
+      const urls = imageUrlsOf(html, DP, RC);
+      if (!urls.length) continue;
+      const have = await store.getImages(account, id);
+      const missing = urls.filter((u) => !have.has(u));
+      if (!missing.length) continue;
+      const got = [];
+      await mapLimit(missing, IMAGE_CONCURRENCY, async (u) => {
+        if (streak >= MAX_FAILURES) return;
+        const blob = await fetchImageBlob(fetchFn, u);
+        if (blob) { streak = 0; got.push({ url: u, blob }); } else { streak++; out.failed++; }
+      });
+      if (got.length) out.saved += await store.putImages(account, id, got);
+    }
+    return out;
+  }
 
   // 純決策：這一輪要不要跑
   function shouldRun({ isApp, service, lastRunAt, now, force }) {
@@ -110,6 +177,11 @@
           result.failed++;
         }
       });
+      if (streak < MAX_FAILURES && ctx.images !== false) {
+        const im = await prefetchImages(ctx, store, wanted);
+        result.images = im.saved;
+        result.imageFailed = im.failed;
+      }
       return result;
     } catch (err) {
       log('預載例外', { reason: String(err && err.message || err).slice(0, 120) });
@@ -152,7 +224,7 @@
 
   const api = {
     OFFLINE_TABS, OFFLINE_ITEMS, MIN_INTERVAL_MS, LAST_RUN_KEY, CONCURRENCY,
-    shouldRun, pickMissing, run, schedule,
+    shouldRun, pickMissing, run, schedule, imageUrlsOf, prefetchImages, MAX_IMAGES_PER_DOC, MAX_IMAGE_BYTES,
     _isRunning: () => running
   };
 
