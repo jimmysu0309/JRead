@@ -156,6 +156,19 @@
       img.alt = '';
       img.loading = 'lazy';
       img.draggable = false;
+      // v3.4.1：縮圖網址有值但圖已失效（網域不在、404、http 圖被擋）→ 換成伺服器給的預設縮圖
+      // （JReader 每篇帶 default_image_url，網址單一來源在伺服器）；沒有預設圖（Readwise）
+      // 或預設圖也載不到就拿掉，卡片跟沒縮圖一樣，不留破圖
+      const fallback = doc.default_image_url && /^https?:\/\//i.test(doc.default_image_url)
+        && doc.default_image_url !== doc.image_url ? doc.default_image_url : '';
+      img.addEventListener('error', function onThumbError() {
+        if (fallback && img.getAttribute('src') !== fallback) {
+          img.src = fallback;
+          return;
+        }
+        img.removeEventListener('error', onThumbError);
+        img.remove();
+      });
       link.appendChild(img);
     }
 
