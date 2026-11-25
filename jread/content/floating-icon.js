@@ -11,6 +11,7 @@
 // - 短按（放開前長按計時器未觸發、未拖移）= 切換閱讀模式，走
 //   NS.dispatchLocalCommand('toggle-reader-mode')（與 3 指輕點 / 快速鍵同一條
 //   content 端本地 dispatch，含 YouTube 模式重導、不 round-trip SW）。
+//   例外：iOS App 內建 JReader 短按＝開選單（v3.2.6，見 handleShortPress）。
 // - 長按（壓住達 LONGPRESS_MS、未拖移）= 跳出選單：送到儲存服務（Readwise Reader /
 //   Instapaper，標籤依 storageService 動態）、切換分頁模式、進入 Reader、功能選單
 //   （叫出工具列圖示選單 popup）。點任一列執行後收選單；點選單外 / 捲動 = 收選單。
@@ -330,7 +331,7 @@
 
   function generalMenuItems() {
     // v2.2.0：iOS App 內建 JReader（NS.isAppRuntime）沒有 background——文章本來就來自
-    // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC / 短按同一個 NS.onReaderExit）
+    // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC 同一個 NS.onReaderExit；v3.2.6 起 App 短按改開選單）
     if (isAppRuntime()) {
       return [
         { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
@@ -749,7 +750,15 @@
   }
 
   // ─── 短按：切換閱讀模式 ──────────────────────────────────────────────────
-  function handleShortPress() {
+  // v3.2.6：iOS App 內建 JReader（isAppRuntime）短按＝開選單（Jimmy 2026-11-25 需求）。
+  // App 的文章頁短按原本是「回文章列表」，最常用的是選單裡的設定與切換，回列表另有左緣
+  // 右滑、選單裡也有「回到文章列表」。menuWasOpen＝按下前選單已開著 → 這次短按只是收起
+  // （pointerdown 已先 closeMenu），不再重開。Safari 擴充與網頁版維持短按切換閱讀模式
+  function handleShortPress(menuWasOpen) {
+    if (isAppRuntime()) {
+      if (!menuWasOpen) openMenu();
+      return;
+    }
     if (typeof NS.dispatchLocalCommand === 'function') {
       NS.dispatchLocalCommand('toggle-reader-mode');
       return;
@@ -759,7 +768,7 @@
   }
 
   // ─── pointer 狀態機（短按 / 拖移吸附 / 長按）─────────────────────────────
-  let press = null;  // { id, startX, startY, timer, moved, longFired, dragThreshold }
+  let press = null;  // { id, startX, startY, timer, moved, longFired, menuWasOpen, dragThreshold }
 
   function clearPressTimer() {
     if (press && press.timer) { clearTimeout(press.timer); press.timer = null; }
@@ -768,10 +777,11 @@
   btn.addEventListener('pointerdown', (e) => {
     if (e.button != null && e.button !== 0) return;  // 只認主鍵
     e.preventDefault();
+    const menuWasOpen = menuOpen;
     closeMenu();
     try { btn.setPointerCapture(e.pointerId); } catch (_e) {}
     press = {
-      id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false,
+      id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false, menuWasOpen,
       // 觸控（手指）用較寬的拖移門檻；滑鼠 / 觸控筆維持 8px
       dragThreshold: e.pointerType === 'touch' ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX
     };
@@ -815,7 +825,7 @@
     if (!press || e.pointerId !== press.id) return;
     clearPressTimer();
     try { btn.releasePointerCapture(e.pointerId); } catch (_e) {}
-    const { moved, longFired } = press;
+    const { moved, longFired, menuWasOpen } = press;
     press = null;
     btn.classList.remove('dragging');
     if (moved) {
@@ -828,7 +838,7 @@
       return;
     }
     if (longFired) return;        // 長按已開選單，放開不再短按
-    handleShortPress();
+    handleShortPress(menuWasOpen);
   }
 
   btn.addEventListener('pointerup', endPress);

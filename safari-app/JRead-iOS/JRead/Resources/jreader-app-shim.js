@@ -472,7 +472,10 @@
   // WKWebView 就把原生手勢讓給頁面。改在頁面內判斷——本檔在 document start 先掛 window
   // capture listener，比 paged-mode.js 早註冊、同階段先執行；從左緣 EDGE_PX 內起手的觸控整段
   // 由這裡接走（stopImmediatePropagation，翻頁模組拿不到、不會同時往前翻一頁）。
-  const EDGE_PX = 24;
+  // v3.2.6：EDGE_PX 24 → 44（Jimmy 2026-11-25 回報右滑回列表很容易失敗、變成翻回上一頁）。
+  // 手指觸控點落在指腹中心，貼著螢幕邊緣起手的 clientX 實際常在 25–40 之間，24 太窄；
+  // 44＝Apple 建議的最小觸控尺寸。代價：從左側 44px 內起手的右滑一律算返回、不翻上一頁
+  const EDGE_PX = 44;
   const EDGE_BACK_MIN_DX = 60;
   function installEdgeBack(win, goBack) {
     let edge = null;
@@ -522,13 +525,24 @@
   // ---- 沉浸閱讀：狀態列與懸浮按鈕預設隱藏，點一下切換（v2.2.2）---------------
   // Jimmy 2026-10-28 需求。Article View 進場時狀態列（原生，ViewController 的
   // prefersStatusBarHidden）與懸浮按鈕（<html> 屬性 + !important 樣式蓋過 floating-icon 的
-  // inline opacity）一起藏；畫面任意處「點一下」切換顯示 / 隱藏。用 touch 自己判 tap 而不用
-  // click：iOS 對非可點元素不保證派發 click。拖移 / 長按 / 多指 / 起手前已有選取（畫重點中）
-  // 都不算；點到連結、表單、頁碼指示器、懸浮按鈕等自有互動的元素交給它們自己處理。
+  // inline opacity）一起藏；畫面任意處「點一下」切換顯示 / 隱藏。拖移 / 長按 / 多指 / 起手前
+  // 已有選取（畫重點中）都不算；點到連結、表單、頁碼指示器、懸浮按鈕等自有互動的元素交給它們。
   // 左緣返回那段觸控已被 installEdgeBack 先 stopImmediatePropagation，不會同時切換。
+  //
+  // v3.2.6：切換改在 click 送出之後才做（touch 只負責判定是不是乾淨的點按）。Jimmy 2026-11-25
+  // 回報圖片、連結要點兩次才有反應。根因（模擬器重現）：v2.2.2 在 touchend 當下切換，懸浮按鈕
+  // 從透明變可見——WebKit 在「點擊瞬間頁面有東西出現」時把這一下當成 hover、不送 click；
+  // 第二下是「隱藏」，click 才送出。連結也中招：手指點偏時 touch 的 target 是旁邊的文字，
+  // WebKit 送 click 時才吸附到連結，所以 touch 端的 TAP_SKIP 判不出來。改成等 click：
+  // click 已經送出就不會被吞，而且 click 的 target 是吸附後的元素，點連結判得準。
+  // click 在 window 冒泡階段收：圖片預覽、站方元素自己處理掉（stopPropagation /
+  // preventDefault）的點擊不切換。文章頁 main.js 在 window 掛了 click listener，整頁都算
+  // 可點元素，點純文字也會送 click（模擬器實測）
   const CHROME_ATTR = 'data-jread-app-chrome';
   const TAP_SLOP_PX = 10;
   const TAP_MAX_MS = 350;
+  // touchend 之後等 click 的上限（iOS 單指點按 click 通常在 touchend 後幾十毫秒內送出）
+  const TAP_CLICK_WAIT_MS = 1000;
   const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
     '#__jread-floating-host, #__jread-panel-host, #__jread-hl-host, #__jread-toast-host, ' +
     '#__jread-page-indicator, #__jread-scrub-track';
@@ -545,13 +559,15 @@
     doc.documentElement.appendChild(style);
 
     let tap = null;
+    let tapAt = 0;   // 乾淨點按的 touchend 時刻；等對應的 click 來才切換
     win.addEventListener('touchstart', (e) => {
       tap = null;
+      tapAt = 0;
       if (!e.touches || e.touches.length !== 1) return;
       const sel = win.getSelection && win.getSelection();
       if (sel && !sel.isCollapsed) return;
       const t = e.touches[0];
-      tap = { x: t.clientX, y: t.clientY, at: Date.now(), target: e.target };
+      tap = { x: t.clientX, y: t.clientY, at: Date.now() };
     }, { capture: true, passive: true });
     win.addEventListener('touchmove', (e) => {
       if (!tap) return;
@@ -565,12 +581,19 @@
       const t = e.changedTouches && e.changedTouches[0];
       if (!t || Math.abs(t.clientX - start.x) > TAP_SLOP_PX || Math.abs(t.clientY - start.y) > TAP_SLOP_PX) return;
       if (Date.now() - start.at > TAP_MAX_MS) return;
-      const el = start.target && start.target.nodeType === 1 ? start.target : (start.target && start.target.parentElement);
+      tapAt = Date.now();
+    }, { capture: true, passive: true });
+    win.addEventListener('touchcancel', () => { tap = null; tapAt = 0; }, { capture: true, passive: true });
+    win.addEventListener('click', (e) => {
+      const at = tapAt;
+      tapAt = 0;
+      if (!at || Date.now() - at > TAP_CLICK_WAIT_MS || e.defaultPrevented) return;
+      const tg = e.target;
+      const el = tg && tg.nodeType === 1 ? tg : (tg && tg.parentElement);
       if (el && el.closest(TAP_SKIP)) return;
       shown = !shown;
       apply();
-    }, { capture: true, passive: true });
-    win.addEventListener('touchcancel', () => { tap = null; }, { capture: true, passive: true });
+    });
     // bfcache 回來（從外部 / 列表再前進）原生狀態列可能已被別頁改過，重報一次
     win.addEventListener('pageshow', apply);
     apply();
