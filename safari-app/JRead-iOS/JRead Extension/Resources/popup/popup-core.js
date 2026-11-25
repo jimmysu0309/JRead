@@ -859,15 +859,16 @@
     try { return await res.json(); } catch (_) { return null; }
   }
 
-  // GET <base>/api/v1/search?q=&location=&limit=&offset= → { ok, count, results }
+  // GET <base>/api/v1/search?q=&location=&tag=&sort=&limit=&offset= → { ok, count, results }
   // results 與 v3 list 的 document 同形，另帶 snippet（字串或 null）
   // sort：'relevance'（預設，相關程度）/ 'newest' / 'oldest'（存入日期）
+  // q 空白但有 tag＝只用標籤瀏覽（v3.2.5，Jimmy 2026-11-25「只選 tag 也要有資料夾和排序」）；兩者都沒有才擋
   async function searchJReader({ token, base, q, location, tag, sort, limit, offset, fetchImpl, timeoutMs } = {}) {
     if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
     const query = typeof q === 'string' ? q.trim() : '';
     const r = await readwiseRequest({
       token, fetchImpl, timeoutMs, defaultTimeoutMs: READ_FETCH_TIMEOUT_MS, method: 'GET',
-      precheck: () => (query ? null : { ok: false, error: 'EMPTY' }),
+      precheck: () => (query || tag ? null : { ok: false, error: 'EMPTY' }),
       url: () => {
         const params = new URLSearchParams({ q: query });
         if (location) params.set('location', location);
