@@ -818,22 +818,64 @@ function localDateStamp(d) {
   const p = (n) => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
+// v3.4.5：iOS（Safari 擴充設定頁、App 設定頁）改走系統分享面板（Jimmy 2026-11-25：iOS Safari 匯出跳
+//「Safari 無法打開網頁／WebKitBlobResource 錯誤 1」，App 原本整列藏起來）。WebKit 在擴充頁不認
+// <a download>、改成整頁導到 blob 網址，blob 網址又在 1 秒後撤銷 → 錯誤頁（WebKit bug 211234）。
+// 分享面板（navigator.share＋File）可選「儲存到檔案」/ AirDrop，App 的 WKWebView 也支援（模擬器探測）。
+// 分享必須在點擊當下呼叫（WebKit 要使用者手勢，中間 await storage 會失效）→ 設定先預讀成快照，
+// storage 一變就更新。只在觸控裝置走這條：桌面 Safari 也有 navigator.share，但下載比較直覺
+let transferSnapshot = null;
+function refreshTransferSnapshot() {
+  try { browser.storage.sync.get(null).then((all) => { transferSnapshot = all || {}; }).catch(() => {}); } catch (_e) {}
+}
+function settingsFileFor(all, now) {
+  const data = TRANSFER.build(all, { version: browser.runtime.getManifest().version, exportedAt: now.toISOString() });
+  return { data, name: 'jread-settings-' + localDateStamp(now) + '.json', text: JSON.stringify(data, null, 2) + '\n' };
+}
+// 回分享用的 File；不適用（非觸控、沒有 Web Share、不收這種檔案）回 null
+function shareableSettingsFile(file) {
+  try {
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (!coarse || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || typeof File !== 'function') return null;
+    const f = new File([file.text], file.name, { type: 'application/json' });
+    return navigator.canShare({ files: [f] }) ? f : null;
+  } catch (_e) { return null; }
+}
+function downloadSettingsFile(file) {
+  const blob = new Blob([file.text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 const exportBtn = document.getElementById('exportSettings');
 if (exportBtn && TRANSFER) {
+  refreshTransferSnapshot();
+  try { browser.storage.onChanged.addListener((_c, area) => { if (area === 'sync') refreshTransferSnapshot(); }); } catch (_e) {}
   exportBtn.addEventListener('click', () => {
+    const now = new Date();
+    // 觸控＋分享面板：用快照同步組檔、當下呼叫 share
+    if (transferSnapshot) {
+      const file = settingsFileFor(transferSnapshot, now);
+      const f = shareableSettingsFile(file);
+      if (f) {
+        navigator.share({ files: [f] }).then(() => {
+          setTransferStatus('已匯出 ' + Object.keys(file.data.settings).length + ' 項設定', 3000);
+        }, (err) => {
+          if (err && err.name === 'AbortError') return; // 使用者關掉分享面板
+          setTransferStatus('匯出失敗，請稍後再試', 4000);
+        });
+        return;
+      }
+    }
     browser.storage.sync.get(null).then((all) => {
-      const now = new Date();
-      const data = TRANSFER.build(all, { version: browser.runtime.getManifest().version, exportedAt: now.toISOString() });
-      const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'jread-settings-' + localDateStamp(now) + '.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setTransferStatus('已匯出 ' + Object.keys(data.settings).length + ' 項設定', 3000);
+      const file = settingsFileFor(all, now);
+      downloadSettingsFile(file);
+      setTransferStatus('已匯出 ' + Object.keys(file.data.settings).length + ' 項設定', 3000);
     }).catch(() => setTransferStatus('匯出失敗，請稍後再試', 4000));
   });
 }

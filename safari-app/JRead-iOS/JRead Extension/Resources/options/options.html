@@ -1211,23 +1211,24 @@
     </div>
     <div id="clear-cache-status" style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
 
-    <div class="reset-row" data-app-hide>
+    <div class="reset-row">
       <div class="reset-text">
         <span class="reset-label">匯出設定</span>
-        <span class="reset-desc">把目前的偏好設定、設定檔、自動啟動網域與自訂快速鍵存成 JSON 檔，可在別台電腦匯入。檔案不含任何 API key、token、JReader 網址與 Instapaper 帳號</span>
+        <span class="reset-desc">把目前的偏好設定、設定檔、自動啟動網域與自訂快速鍵存成 JSON 檔，可在別台裝置匯入（iPhone / iPad 會開分享面板，可選「儲存到檔案」）。檔案不含任何 API key、token、JReader 網址與 Instapaper 帳號</span>
       </div>
       <button type="button" id="exportSettings" class="reset-btn neutral">匯出</button>
     </div>
-    <div class="reset-row" data-app-hide>
+    <div class="reset-row">
       <div class="reset-text">
         <span class="reset-label">匯入設定</span>
         <span class="reset-desc">讀入先前匯出的 JSON 檔，檔案裡有的設定會覆蓋目前的值，憑證維持不動</span>
       </div>
       <button type="button" id="importSettings" class="reset-btn neutral">匯入</button>
       <input type="file" id="importSettingsFile" accept="application/json,.json" hidden>
-      <!-- App（WKWebView）內不能下載檔案，兩列 data-app-hide -->
+      <!-- v3.4.5：App 內也顯示——觸控裝置匯出走系統分享面板（options.js shareableSettingsFile），
+           匯入的檔案選擇器 WKWebView 原生支援 -->
     </div>
-    <div id="transfer-status" data-app-hide style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
+    <div id="transfer-status" style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
 
     <div class="reset-row">
       <div class="reset-text">
