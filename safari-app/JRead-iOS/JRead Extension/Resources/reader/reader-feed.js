@@ -843,6 +843,8 @@
         const scopeKey = scopeKeyFor(cfg);
         if (RC && (all || []).some((d) => d && d.trash_keep_days != null)) keepDays = RC.trashKeepDays(all);
         if (trashNoteEl) trashNoteEl.textContent = trashNoteText();
+        // v3.4.10：畫出來的文章帶著所在資料夾，順手同步給文章快取（淘汰時封存的先刪；合併寫入、失敗靜默）
+        if (RC && typeof RC.noteLocations === 'function') RC.noteLocations(account, all);
         const docs = (all || []).filter((d) => {
           if (!d) return false;
           if (lib && lib.isPending(d.id)) return false; // 抓取中的那張由工具列畫
@@ -916,6 +918,8 @@
           }).then((r) => {
             if (r && r.ok) {
               if (remove && RC) RC.removeFromFeed(local, account, id, isArchive ? undefined : listKey);
+              const moved = isArchive ? 'archive' : isInbox ? 'new' : (!trashKind && kind === 'later') ? 'later' : '';
+              if (moved && RC && typeof RC.noteLocations === 'function') RC.noteLocations(account, [{ id, location: moved }]);
             } else if (remove && removedIds.get(id) === scope) {
               removedIds.delete(id);
               // v2.5.5：失敗回來時世代已變（actionCard 因此沒把卡片插回），但使用者已
@@ -987,6 +991,7 @@
           if (!r || !r.ok) { toast(archiveErrorMessage(r, label), 'error'); return; }
           // 各分頁快取裡這篇的位置都過期了：拿掉，回到分頁時由網路結果補回正確的地方
           if (RC) { try { await RC.removeFromFeed(local, account, d.id); } catch (_) {} }
+          if (kind !== 'trash' && RC && typeof RC.noteLocations === 'function') RC.noteLocations(account, [{ id: d.id, location: TO[kind] }]);
           toast(done, 'success');
           if (hooks && typeof hooks.changed === 'function') hooks.changed(kind === 'trash' ? null : Object.assign({}, d, { location: TO[kind] }));
         }, d);
@@ -1292,6 +1297,8 @@
         lib = LIB.attach({
           doc, win: global, PC, service, creds, toast, listEl, tabsEl, msgEl, showMsg, hideMsg, createCard,
           attachResultMenu,
+          // v3.4.10：搜尋結果的所在資料夾同步給文章快取（同 showDocs）
+          noteDocs: (docs) => { if (RC && typeof RC.noteLocations === 'function') RC.noteLocations(account, docs); },
           currentTabId: () => (currentTab ? currentTab.id : null),
           switchTab: selectTab,
           // 離開搜尋：回到開始搜尋時的分頁，網址從 tab=search 換回那個分頁（重新整理才不會又叫回搜尋）
@@ -1323,8 +1330,12 @@
             return { kind: 'tab', location: t.query && t.query.location };
           },
           refresh: () => (lib.isSearching() ? lib.refreshSearch() : loadList(currentTab || initialTab)),
-          invalidate: async (ids) => {
+          invalidate: async (ids, req) => {
             if (!RC) return;
+            // v3.4.10：批次搬資料夾成功 → 文章快取記新位置
+            if (req && req.action === 'move' && typeof RC.noteLocations === 'function') {
+              RC.noteLocations(account, ids.map((id) => ({ id, location: req.location })));
+            }
             for (const id of ids) await RC.removeFromFeed(local, account, id);
           }
         });

@@ -13,7 +13,7 @@
 //
 // 頁面整合（reader-feed init）：attach(opts) → { start(card), toggle(card), isActive(), exit() }
 //   opts：doc, win, listEl, PC, creds, toast(msg, kind), getView() → { kind: 'tab'|'search'|'sub'|'trash', location },
-//         refresh(), invalidate(ids)（清掉清單快取裡這些篇）
+//         refresh(), invalidate(ids, req)（清掉清單快取裡這些篇；req＝送出的批次動作，搬資料夾時文章快取記新位置）
 // 卡片右鍵的「選取」由 reader-feed attachContextMenu 依 selectHook 列出。
 //
 // dual export：module.exports 給 jsdom spec、window.__JReadReaderSelect 給頁面。
@@ -226,7 +226,7 @@
       }
       const n = r.data && typeof r.data.updated === 'number' ? r.data.updated : ids.length;
       if (typeof o.toast === 'function') o.toast(done + '（' + n + ' 篇）', 'success');
-      if (typeof o.invalidate === 'function') { try { await o.invalidate(ids); } catch (_) {} }
+      if (typeof o.invalidate === 'function') { try { await o.invalidate(ids, req); } catch (_) {} }
       exit();
       if (typeof o.refresh === 'function') o.refresh();
     }
