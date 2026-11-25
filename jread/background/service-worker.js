@@ -826,10 +826,25 @@ async function runSendToServiceFlow(tabId, startedAt) {
     showProgress(SAVE_PROGRESS.sending);
   }
 
+  // 1.5 讀設定（服務 / 憑證 / 摘要）。v3.4.2 移到抽取之前：抽取要知道送去哪個服務
+  // （影片 iframe 要不要轉縮圖＋圖說，見 content/main.js buildCleanHtml 步驟 3.45）。
+  // v0.8.36：storage 讀取與 fetch 都包 try/catch——保證任何路徑都有 toast 回饋。
+  let settings;
+  try {
+    // v2.6.0：各服務憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源（含 jreader）
+    settings = await browser.storage.sync.get(self.__JReadPopup.serviceSettingsQuery({
+      readwiseSummary: false, geminiApiKey: ''
+    }));
+  } catch {
+    logSave('讀取設定失敗', { elapsedMs: since() }, 'error');
+    showToast('無法讀取設定，請稍後再試', 'error');
+    return;
+  }
+
   // 2. 抽 reader card payload
   let extracted;
   try {
-    extracted = await raceTimeout(sendMessage(tabId, { type: 'EXTRACT_READER_HTML' }), MSG_TIMEOUT_MS.extract, '內容抽取');
+    extracted = await raceTimeout(sendMessage(tabId, { type: 'EXTRACT_READER_HTML', service: settings.storageService }), MSG_TIMEOUT_MS.extract, '內容抽取');
   } catch (err) {
     logSave('抽取訊息往返失敗', {
       timeout: !!(err && err.jreadStage), reason: String((err && err.message) || err).slice(0, 60),
@@ -857,19 +872,7 @@ async function runSendToServiceFlow(tabId, startedAt) {
   }
 
   // 3. 送出（v1.6.0：走 popup-core.sendDocument dispatcher，依儲存服務二擇一分派
-  // 到 Readwise / Instapaper；與 popup 軌共用同一條抽象層）。
-  // v0.8.36：storage 讀取與 fetch 都包 try/catch——保證任何路徑都有 toast 回饋。
-  let settings;
-  try {
-    // v2.6.0：各服務憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源（含 jreader）
-    settings = await browser.storage.sync.get(self.__JReadPopup.serviceSettingsQuery({
-      readwiseSummary: false, geminiApiKey: ''
-    }));
-  } catch {
-    logSave('讀取設定失敗', { elapsedMs: since() }, 'error');
-    showToast('無法讀取設定，請稍後再試', 'error');
-    return;
-  }
+  // 到 Readwise / Instapaper；與 popup 軌共用同一條抽象層）。設定在步驟 2 之前已讀好。
   // v1.7.79：憑證解析 → 選用 Gemini 摘要（v0.8.72，兩服務共用、失敗照送）→ 送出
   // → 結果訊息這一整段，改走 popup-core.saveDocumentFlow 單一資料源。懸浮按鈕長按
   // 選單的 content 直送軌（Safari / iOS）跑的是同一個函式，只是 fetch 在 content

@@ -1225,7 +1225,6 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 縮圖需打 API，保守不動、留待實案再擴充。
     replaceVideoEmbedsForRawHtml(rootEl) {
       if (!rootEl || !rootEl.querySelectorAll) return;
-      const doc = rootEl.ownerDocument;
       for (const f of Array.from(rootEl.querySelectorAll('iframe[src]'))) {
         let u;
         try { u = new URL(f.getAttribute('src')); } catch (_) { continue; }
@@ -1242,24 +1241,70 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
         }
         if (!videoId) continue;
         const title = (f.getAttribute('title') || '').trim();
-        f.replaceWith(this.buildYouTubeThumbLink(doc, videoId, title));
+        this.placeYouTubeThumb(f, videoId, title);
       }
     },
 
-    // v1.7.75：影片 embed 的「縮圖 + 標題連結」節點——iframe 軌（上方）與
-    // facade 軌（下方 linkifyVideoFacadeThumbs）共用的單一資料源。
-    buildYouTubeThumbLink(doc, videoId, title) {
-      const a = doc.createElement('a');
-      a.setAttribute('href', 'https://www.youtube.com/watch?v=' + videoId);
+    // v3.4.2：匯出時影片 iframe 要不要原樣保留（否則轉縮圖＋圖說，見
+    // replaceVideoEmbedsForRawHtml）。只有「送 Readwise 且沒翻譯」保留——Readwise 的
+    // clean pipeline（should_clean_html=true）會把 YouTube iframe 轉成內嵌播放器；
+    // 其他收件端（Readwise 翻譯頁原樣模式、JReader、Instapaper）都剝 iframe。
+    // service 沒給（未知呼叫端）當成會剝，寧可留縮圖也不要整顆消失
+    exportKeepsVideoIframes(service, isTranslated) {
+      return service === 'readwise' && !isTranslated;
+    },
+
+    // v1.7.75：影片「縮圖 + 標題連結」——iframe 軌（上方）與 facade 軌（下方
+    // linkifyVideoFacadeThumbs）共用的單一資料源。
+    // v3.4.2（Jimmy 2026-11-25「比照圖說的方式」）：標題連結改放 <figcaption>，讓閱讀
+    // 模式 / JReader 的圖說規則（貼著圖、置中、縮小字級，styler v2.5.23–24）接手。
+    // 原本是 <a><img><br>▶ 標題</a>：標題離圖很遠、靠左。
+    // 放法（target＝要被換掉的 iframe / facade 縮圖）：
+    //   - 沒標題 → 只換成縮圖連結，不加圖說
+    //   - target 在 <figure> 裡、該 figure 沒有別的媒體也沒有 figcaption（Medium 的
+    //     figure > div > div > iframe）→ 縮圖換進原位、圖說接在該 figure 最後
+    //   - 該 figure 已有 figcaption（站方自己的影片說明）→ 標題連結放進既有圖說開頭、換行
+    //   - 其他（沒有 figure、或 figure 裡還有別的圖）→ 新包一個 <figure>
+    placeYouTubeThumb(target, videoId, title) {
+      const doc = target.ownerDocument;
+      const href = 'https://www.youtube.com/watch?v=' + videoId;
+      const link = doc.createElement('a');
+      link.setAttribute('href', href);
       const img = doc.createElement('img');
       img.setAttribute('src', 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg');
       img.setAttribute('alt', title || 'YouTube 影片');
-      a.appendChild(img);
-      if (title) {
-        a.appendChild(doc.createElement('br'));
-        a.appendChild(doc.createTextNode('▶ ' + title));
+      link.appendChild(img);
+      if (!title) { target.replaceWith(link); return; }
+      const capLink = doc.createElement('a');
+      capLink.setAttribute('href', href);
+      capLink.textContent = '▶ ' + title;
+      const fig = target.parentElement && target.parentElement.closest('figure');
+      let soleMedia = false;
+      if (fig) {
+        soleMedia = true;
+        for (const m of fig.querySelectorAll('img, picture, video, iframe, svg, canvas, object, embed')) {
+          if (m !== target && !target.contains(m) && !m.contains(target)) { soleMedia = false; break; }
+        }
       }
-      return a;
+      if (soleMedia) {
+        const existingCap = fig.querySelector('figcaption');
+        target.replaceWith(link);
+        if (existingCap) {
+          existingCap.insertBefore(doc.createElement('br'), existingCap.firstChild);
+          existingCap.insertBefore(capLink, existingCap.firstChild);
+        } else {
+          const cap = doc.createElement('figcaption');
+          cap.appendChild(capLink);
+          fig.appendChild(cap);
+        }
+        return;
+      }
+      const newFig = doc.createElement('figure');
+      const cap = doc.createElement('figcaption');
+      cap.appendChild(capLink);
+      newFig.appendChild(link);
+      newFig.appendChild(cap);
+      target.replaceWith(newFig);
     },
 
     // v1.7.75：影片 facade（縮圖佔位、點了才由站方 JS 掛 iframe）→ 可點縮圖連結。
@@ -1281,7 +1326,6 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // 也生不出播放器，兩種模式下都只會是一張點不開的圖。
     linkifyVideoFacadeThumbs(rootEl) {
       if (!rootEl || !rootEl.querySelectorAll) return;
-      const doc = rootEl.ownerDocument;
       const THUMB_RE = /^https?:\/\/(?:i\d*\.ytimg\.com|img\.youtube\.com)\/vi(?:_webp)?\/([A-Za-z0-9_-]{6,})\//i;
       for (const img of Array.from(rootEl.querySelectorAll('img[src]'))) {
         const m = THUMB_RE.exec((img.getAttribute('src') || '').trim());
@@ -1293,7 +1337,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
           || img.getAttribute('alt') || '').trim();
         const target = (img.closest && img.closest('picture')) || img;
         if (!target.parentNode) continue;
-        target.replaceWith(this.buildYouTubeThumbLink(doc, videoId, title));
+        this.placeYouTubeThumb(target, videoId, title);
       }
     },
 
