@@ -502,6 +502,40 @@
     return { dataUri: `data:${type};base64,${bytesToBase64(new Uint8Array(buf))}`, bytes: buf.byteLength };
   }
 
+  // v3.4.2+（Jimmy 2026-11-25）：YouTube 縮圖升級成高畫質封面。匯出端（content
+  // NS.placeYouTubeThumb）放的是 hqdefault.jpg——每支影片都有，但固定 480×360 的 4:3，
+  // 16:9 影片上下會被 YouTube 補黑邊。maxresdefault.jpg（1280×720、16:9、無黑邊）是
+  // 同一張封面的高畫質版（作者自訂封面也換這組；watch 頁 og:image 就指向它），但只有
+  // 高畫質上傳的影片才有，沒有的回 404（實測 medium Rube Goldberg 篇 7 支有 5 支）。
+  // 送出前逐支 HEAD 檢查（i.ytimg.com 回 access-control-allow-origin: *，content
+  // script / 擴充頁 / SW 都讀得到狀態），200 才換；404、逾時、網路錯誤一律保留 hqdefault
+  //（Jimmy 裁定：沒高畫質的寧可留黑邊、不換成 320px 的 mqdefault 變小張）。
+  // 並行檢查、每支 YT_THUMB_CHECK_TIMEOUT_MS 時限：最壞多等這麼久、不會卡住送出。
+  // 只認 i.ytimg.com/vi/<id>/hqdefault.jpg 這個確切網址（匯出端產的形態；站方自己放
+  // 的同網址縮圖一併升級也只是同一張封面換清楚的版本）。
+  const YT_THUMB_CHECK_TIMEOUT_MS = 3000;
+  const YT_HQ_THUMB_RE = /https:\/\/i\.ytimg\.com\/vi\/([A-Za-z0-9_-]{6,})\/hqdefault\.jpg/g;
+  async function upgradeYouTubeThumbs(html, { fetchImpl, timeoutMs } = {}) {
+    const src = (typeof html === 'string') ? html : '';
+    const none = { html: src, upgraded: 0, checked: 0 };
+    if (!src || src.indexOf('i.ytimg.com/vi/') === -1) return none;
+    const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    if (!f) return none;
+    const ids = [...new Set(Array.from(src.matchAll(YT_HQ_THUMB_RE), (m) => m[1]))];
+    if (!ids.length) return none;
+    const ms = timeoutMs || YT_THUMB_CHECK_TIMEOUT_MS;
+    const results = await Promise.all(ids.map(async (id) => {
+      try {
+        const res = await fetchWithTimeout(f, `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, { method: 'HEAD' }, ms);
+        return res && res.ok ? id : null;
+      } catch (_) { return null; }
+    }));
+    const ok = new Set(results.filter(Boolean));
+    if (!ok.size) return { html: src, upgraded: 0, checked: ids.length };
+    const out = src.replace(YT_HQ_THUMB_RE, (m, id) => (ok.has(id) ? `https://i.ytimg.com/vi/${id}/maxresdefault.jpg` : m));
+    return { html: out, upgraded: ok.size, checked: ids.length };
+  }
+
   // 主流程：回 { html, inlined, bytes, skipped }。html 一定可用（失敗就是原字串）。
   async function inlineRawHtmlImages(html, { fetchImpl } = {}) {
     const src = (typeof html === 'string') ? html : '';
@@ -1385,6 +1419,18 @@
   // INVALID_PAYLOAD / detail?）。
   async function sendDocument({ service, creds, payload, fetchImpl, instapaper, timeoutMs, onProgress } = {}) {
     const c = creds || {};
+    // v3.4.2+：YouTube 縮圖升級成高畫質封面（三個服務共用，見 upgradeYouTubeThumbs）。
+    // 放最前面：Readwise 翻譯頁的內嵌 data URI 也要吃到升級後的網址
+    if (payload && payload.html && payload.html.indexOf('i.ytimg.com/vi/') !== -1) {
+      const t0 = Date.now();
+      try {
+        const r = await upgradeYouTubeThumbs(payload.html, { fetchImpl });
+        jlog('YouTube 縮圖升級', { checked: r.checked, upgraded: r.upgraded, ms: Date.now() - t0 });
+        if (r.upgraded > 0) payload = Object.assign({}, payload, { html: r.html });
+      } catch (err) {
+        jlog('YouTube 縮圖升級失敗（照原樣送）', { reason: String(err && err.message || err).slice(0, 60) }, 'warn');
+      }
+    }
     if (service === 'instapaper') {
       const IP = resolveInstapaper(instapaper);
       if (!IP) return { ok: false, error: 'CONFIG' };
@@ -1817,6 +1863,7 @@
     resolveServiceCredentials,
     serviceLabel,
     sendDocument,
+    upgradeYouTubeThumbs,
     listDocuments,
     getArticle,
     archiveDocument,

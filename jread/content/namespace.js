@@ -1268,8 +1268,13 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     placeYouTubeThumb(target, videoId, title) {
       const doc = target.ownerDocument;
       const href = 'https://www.youtube.com/watch?v=' + videoId;
+      // v3.4.3（Jimmy 2026-11-25）：影片連結開新分頁——在 JReader 網頁版點下去原本會把
+      // 閱讀頁換掉。iOS App 的 WKWebView 對 target=_blank 走 createWebViewWith、與一般
+      // 連結同一份白名單交給系統開（ViewController.swift），App 內行為不變
+      const newTab = (a) => { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); };
       const link = doc.createElement('a');
       link.setAttribute('href', href);
+      newTab(link);
       const img = doc.createElement('img');
       img.setAttribute('src', 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg');
       img.setAttribute('alt', title || 'YouTube 影片');
@@ -1277,6 +1282,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
       if (!title) { target.replaceWith(link); return; }
       const capLink = doc.createElement('a');
       capLink.setAttribute('href', href);
+      newTab(capLink);
       capLink.textContent = '▶ ' + title;
       const fig = target.parentElement && target.parentElement.closest('figure');
       let soleMedia = false;
