@@ -188,20 +188,29 @@
     .menu-item:hover { background: #f0f0f3; }
     /* 分隔線 +「功能選單」項（v0.8.162，比照 Shinkansen content-floating-icon.js） */
     .menu-divider { height: 1px; background: #e5e5ea; margin: 4px 8px; }
+    /* v3.3.0：圖示改單色線條 SVG（Jimmy 2026-11-25「選單 icon 與極簡風不合」）——原本是藍底
+       圓角 badge 裝 emoji / 符號（📖 ⇄ ⓘ ☰），各平台字形不一、與 JReader 其他線條圖示（搜尋圓鈕）
+       風格不一致。改成 24 格線框、圓角線頭、跟文字色走；套用中的設定檔勾用藍色（選取語意） */
     .menu-item .ico {
       flex: 0 0 auto;
       width: 18px;
       height: 18px;
-      border-radius: 5px;
-      background: #0071e3;
-      color: #fff;
-      font-size: 12px;
-      font-weight: 600;
-      line-height: 1;
+      color: #48484a;
       display: flex;
       align-items: center;
       justify-content: center;
     }
+    .menu-item .ico svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .menu-item .ico.accent { color: #0071e3; }
+    .menu-item .ico .dot { fill: currentColor; stroke: none; }
     .menu-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
   `;
 
@@ -324,34 +333,66 @@
   // 減噪考量）——長按選單是暫現的，缺憑證時直接送出並由 toast 說「尚未設定 …
   // 憑證，請到設定頁填入」比「選項神秘消失」好懂。
   // v3.1.0：Article View 掛了文章資訊面板（reader-info.js 設 NS.onReaderInfo）才列這一項
+  // ─── 選單圖示（v3.3.0）─────────────────────────────────────────────────
+  // 每個圖示是 [標籤, 屬性] 清單，用 createElementNS 組（不走 innerHTML：Trusted Types 站會擋）。
+  // 'dot' class 的元素實心填色（清單的圓點、資訊的 i 點）
+  const MENU_ICONS = {
+    list: [['path', { d: 'M9 6h11M9 12h11M9 18h11' }], ['circle', { cx: 4.5, cy: 6, r: 1.3, class: 'dot' }],
+      ['circle', { cx: 4.5, cy: 12, r: 1.3, class: 'dot' }], ['circle', { cx: 4.5, cy: 18, r: 1.3, class: 'dot' }]],
+    book: [['path', { d: 'M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z' }], ['path', { d: 'M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z' }]],
+    info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['circle', { cx: 12, cy: 7.8, r: 1.2, class: 'dot' }]],
+    send: [['path', { d: 'M12 15V4M7.5 8.5L12 4l4.5 4.5' }], ['path', { d: 'M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5' }]],
+    sliders: [['path', { d: 'M4 7h9M18 7h2M4 17h3M12 17h8' }], ['circle', { cx: 15.5, cy: 7, r: 2.5 }], ['circle', { cx: 9.5, cy: 17, r: 2.5 }]],
+    gear: [['path', { d: 'M19.06 10.57 L21.42 10.77 L21.42 13.23 L19.06 13.43 L18.00 15.98 L19.53 17.79 L17.79 19.53 L15.98 18.00 L13.43 19.06 L13.23 21.42 L10.77 21.42 L10.57 19.06 L8.02 18.00 L6.21 19.53 L4.47 17.79 L6.00 15.98 L4.94 13.43 L2.58 13.23 L2.58 10.77 L4.94 10.57 L6.00 8.02 L4.47 6.21 L6.21 4.47 L8.02 6.00 L10.57 4.94 L10.77 2.58 L13.23 2.58 L13.43 4.94 L15.98 6.00 L17.79 4.47 L19.53 6.21 L18.00 8.02Z' }], ['circle', { cx: 12, cy: 12, r: 3 }]],
+    layers: [['path', { d: 'M12 4l9 5-9 5-9-5z' }], ['path', { d: 'M3 14l9 5 9-5' }]],
+    check: [['path', { d: 'M5 12.5l4.5 4.5L19 7' }]],
+    screen: [['rect', { x: 3, y: 5, width: 18, height: 12, rx: 2 }], ['path', { d: 'M8 21h8M12 17v4' }]],
+    expand: [['path', { d: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5' }]]
+  };
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function buildIcon(name) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const [tag, attrs] of MENU_ICONS[name] || []) {
+      const el = document.createElementNS(SVG_NS, tag);
+      for (const k of Object.keys(attrs)) el.setAttribute(k, String(attrs[k]));
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
   function infoMenuItems() {
     if (typeof NS.onReaderInfo !== 'function') return [];
-    return [{ id: 'info', icon: 'ⓘ', label: '文章資訊', action: () => { try { NS.onReaderInfo(); } catch (_e) {} } }];
+    return [{ id: 'info', icon: 'info', label: '文章資訊', action: () => { try { NS.onReaderInfo(); } catch (_e) {} } }];
   }
 
   function generalMenuItems() {
     // v2.2.0：iOS App 內建 JReader（NS.isAppRuntime）沒有 background——文章本來就來自
     // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC 同一個 NS.onReaderExit；v3.2.6 起 App 短按改開選單）
     if (isAppRuntime()) {
+      // v3.3.0：「回到文章列表」排第一（Jimmy 2026-11-25）
       return [
-        { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
-        { id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed }
+        { id: 'reader', icon: 'list', label: '回到文章列表', action: backToFeed },
+        { id: 'paged', icon: 'book', label: '切換分頁模式', action: togglePaged }
       ].concat(infoMenuItems(), profileMenuItems());
     }
     // v2.6.0：網頁版（NS.isWebRuntime，同樣沒有 background）比照 App。公開分享頁（Article
     // View 唯讀模式）沒給離開網址時沒有文章列表可回（NS.state.readerNoExit），不列那一項
     if (isHostedRuntime()) {
-      const items = [{ id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged }];
+      // v3.3.0：「回到文章列表」排第一，與 App 一致
+      const items = [];
       if (!(NS.state && NS.state.readerNoExit)) {
-        items.push({ id: 'reader', icon: '📖', label: '回到文章列表', action: backToFeed });
+        items.push({ id: 'reader', icon: 'list', label: '回到文章列表', action: backToFeed });
       }
+      items.push({ id: 'paged', icon: 'book', label: '切換分頁模式', action: togglePaged });
       return items.concat(infoMenuItems(), profileMenuItems());
     }
     return [
-      { id: 'save', icon: '↗', label: '送到 ' + serviceLabelText, action: sendToService },
-      { id: 'paged', icon: '⇄', label: '切換分頁模式', action: togglePaged },
+      { id: 'save', icon: 'send', label: '送到 ' + serviceLabelText, action: sendToService },
+      { id: 'paged', icon: 'book', label: '切換分頁模式', action: togglePaged },
       // v3.1.0：JReader 使用者不列（改用網頁版，popup-core.supportsExtensionReader）
-      ...(extensionReader ? [{ id: 'reader', icon: '📖', label: '進入 Reader', action: openReader }] : [])
+      ...(extensionReader ? [{ id: 'reader', icon: 'list', label: '進入 Reader', action: openReader }] : [])
     ].concat(infoMenuItems(), profileMenuItems());
   }
 
@@ -387,7 +428,7 @@
     const active = activeProfileName();
     return profilesCache.map((p) => ({
       id: 'profile:' + p.name,
-      icon: p.name === active ? '✓' : '▤',
+      icon: p.name === active ? 'check' : 'layers',
       label: '設定檔：' + p.name,
       action: () => applyProfile(p.name)
     }));
@@ -452,8 +493,8 @@
   // 動態建構 YouTube 選單列（標籤依目前 active 狀態切「啟動 / 關閉」前綴）
   function youtubeMenuItems() {
     return [
-      { id: 'yt-cinema', icon: '🎬', label: (cinemaIsOn() ? '關閉' : '啟動') + '影院模式', action: toggleYtCinema },
-      { id: 'yt-borderless', icon: '⛶', label: (borderlessIsOn() ? '關閉' : '啟動') + '無邊模式', action: toggleYtBorderless }
+      { id: 'yt-cinema', icon: 'screen', label: (cinemaIsOn() ? '關閉' : '啟動') + '影院模式', action: toggleYtCinema },
+      { id: 'yt-borderless', icon: 'expand', label: (borderlessIsOn() ? '關閉' : '啟動') + '無邊模式', action: toggleYtBorderless }
     ];
   }
 
@@ -577,6 +618,96 @@
     window.addEventListener('keydown', panelKeyHandler, true);
   }
 
+  // ─── App 設定頁浮層（v3.3.0）────────────────────────────────────────────
+  // 全螢幕 sheet：頂端標題列＋「完成」、下方 iframe 載 options.html（擴充同一份設定頁，App 不適用
+  // 的區塊由 options 頁依 runtime 隱藏）。文章不離開；設定頁寫 storage 後 shim 跨 frame 廣播
+  // onChanged，文章頁即時重套、並經 App Group 同步回 Safari 擴充
+  const SETTINGS_CSS = `
+    :host, * { box-sizing: border-box; }
+    .sheet {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      background: #f5f5f7;
+      padding-bottom: var(--__jread-app-safe-bottom, 0px);
+      animation: jr-sheet-in .22s ease-out;
+    }
+    .bar {
+      flex: 0 0 auto;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      height: 48px;
+      padding-top: env(safe-area-inset-top, 0px);
+      box-sizing: content-box;
+      background: #f5f5f7;
+      border-bottom: 1px solid #e5e5ea;
+      font: 600 16px -apple-system, "PingFang TC", sans-serif;
+      color: #1d1d1f;
+    }
+    .done {
+      position: absolute; right: 8px; bottom: 6px;
+      height: 36px; padding: 0 12px;
+      border: none; background: none;
+      font: 600 16px -apple-system, "PingFang TC", sans-serif;
+      color: #0071e3;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .frame { flex: 1 1 auto; width: 100%; border: none; background: #fff; }
+    @keyframes jr-sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @media (prefers-color-scheme: dark) {
+      .sheet, .bar { background: #1c1c1e; }
+      .bar { color: #f5f5f7; border-bottom-color: #38383a; }
+      .done { color: #0a84ff; }
+      .frame { background: #1c1c1e; }
+    }
+    @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+  `;
+  let settingsHost = null, settingsKeyHandler = null;
+  function closeSettingsSheet() {
+    if (!settingsHost) return;
+    try { settingsHost.remove(); } catch (_e) {}
+    settingsHost = null;
+    if (settingsKeyHandler) { window.removeEventListener('keydown', settingsKeyHandler, true); settingsKeyHandler = null; }
+  }
+  function openSettingsSheet() {
+    if (settingsHost) return;
+    let url = '';
+    try { url = browser.runtime.getURL('options/options.html'); } catch (_e) { return; }
+    let sHost, sShadow;
+    try {
+      sHost = document.createElement('div');
+      sHost.id = '__jread-settings-host';
+      sHost.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483641;';
+      sShadow = sHost.attachShadow({ mode: 'open' });
+    } catch (_e) { return; }
+    const sheet = document.createElement('div');
+    sheet.className = 'sheet';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-modal', 'true');
+    sheet.setAttribute('aria-label', '設定');
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.textContent = '設定';
+    const done = document.createElement('button');
+    done.className = 'done';
+    done.type = 'button';
+    done.textContent = '完成';
+    done.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeSettingsSheet(); });
+    bar.appendChild(done);
+    const frame = document.createElement('iframe');
+    frame.className = 'frame';
+    frame.setAttribute('title', '設定');
+    frame.src = url;
+    sheet.appendChild(bar);
+    sheet.appendChild(frame);
+    NS.injectShadowCss(sShadow, SETTINGS_CSS);
+    sShadow.appendChild(sheet);
+    document.documentElement.appendChild(sHost);
+    settingsHost = sHost;
+    settingsKeyHandler = (ev) => { if (ev.key === 'Escape') closeSettingsSheet(); };
+    window.addEventListener('keydown', settingsKeyHandler, true);
+  }
+
   // ─── 設定狀態 ───────────────────────────────────────────────────────────
   let pos = { edge: 'left', offsetY: 1 };     // 預設左下角（v0.8.160，offsetY=1=底）
 
@@ -584,6 +715,10 @@
   // 關掉再開即重置。初始載入（lastEnabled = null）不重置，尊重 storage 存的位置。
   let lastEnabled = null;
   function applyEnabled(enabled) {
+    // v3.3.0：iOS App 內一律顯示——J 圖示是 App 裡設定頁、切換分頁模式、文章資訊的唯一入口，
+    // 而 floatingIcon 會從 Safari 擴充同步過來：在 Safari 為一般網站關掉懸浮按鈕，不能讓 App
+    // 的入口跟著消失（App 設定頁也不顯示這個開關）
+    if (isAppRuntime()) enabled = true;
     if (lastEnabled === false && enabled === true) {
       applyPos(null);     // sanitizePos(null) → 預設左下角
       persistPos();
@@ -673,8 +808,8 @@
       item.setAttribute('role', 'menuitem');
       item.dataset.action = it.id;
       const ico = document.createElement('span');
-      ico.className = 'ico';
-      ico.textContent = it.icon;
+      ico.className = 'ico' + (it.icon === 'check' ? ' accent' : '');
+      ico.appendChild(buildIcon(it.icon));
       const label = document.createElement('span');
       label.className = 'label';
       label.textContent = it.label;
@@ -702,7 +837,7 @@
     featureItem.dataset.action = 'feature-menu';
     const fIco = document.createElement('span');
     fIco.className = 'ico';
-    fIco.textContent = '☰';
+    fIco.appendChild(buildIcon('sliders'));
     const fLabel = document.createElement('span');
     fLabel.className = 'label';
     fLabel.textContent = '功能選單';
@@ -715,6 +850,30 @@
       try { openFeaturePanel(); } catch (_err) {}
     });
     menuEl.appendChild(featureItem);
+    // v3.3.0：App 內加「設定」——完整設定頁（options.html）的唯一入口（Jimmy 2026-11-25
+    // 「App 沒有進入設定頁面的路徑」；入口只放這裡，Jimmy 裁定）
+    if (isAppRuntime()) {
+      const sItem = document.createElement('button');
+      sItem.className = 'menu-item settings';
+      sItem.type = 'button';
+      sItem.setAttribute('role', 'menuitem');
+      sItem.dataset.action = 'settings';
+      const sIco = document.createElement('span');
+      sIco.className = 'ico';
+      sIco.appendChild(buildIcon('gear'));
+      const sLabel = document.createElement('span');
+      sLabel.className = 'label';
+      sLabel.textContent = '設定';
+      sItem.appendChild(sIco);
+      sItem.appendChild(sLabel);
+      sItem.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu();
+        try { openSettingsSheet(); } catch (_err) {}
+      });
+      menuEl.appendChild(sItem);
+    }
   }
 
   function openMenu() {
@@ -909,6 +1068,7 @@
     handleShortPress, togglePaged, openReader, sendToService, applyStorageService,
     profileMenuItems, applyProfile, applyProfiles, applyActiveProfile, applyProfileState,
     openFeaturePanel, openFeaturePanelIframe, closeFeaturePanel, isSafariRuntime,
+    openSettingsSheet, closeSettingsSheet, isSettingsOpen: () => !!settingsHost, MENU_ICONS,
     isPanelOpen: () => !!panelHost,
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
     cornerClampTop, CORNER_DEADZONE_PX, isIPadOSEnv,

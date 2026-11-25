@@ -704,6 +704,10 @@
     body.runtime-chrome .intro-desktop,
     body.runtime-firefox .intro-desktop { display: block; }
     body.runtime-safari .intro-safari { display: block; }
+    /* v3.3.0：iOS App 內建 JReader 開的設定頁（options.js 依 jread-app:// 加 runtime-app）——
+       App 用不到的區塊整段隱藏：連結延續、編輯模式、自動啟動網域、鍵盤與滑鼠、快速鍵、三指輕點、
+       YouTube 模式；懸浮按鈕開關也藏（App 裡 J 圖示是設定頁唯一入口，關掉就回不來） */
+    body.runtime-app [data-app-hide] { display: none !important; }
 
     /* ==========================================================
        Save bar — 儲存狀態提示條（固定頁面頂端，參考姊妹專案 Shinkansen）。
@@ -941,7 +945,7 @@
       </label>
     </div>
 
-    <div class="field field-checkbox">
+    <div class="field field-checkbox" data-app-hide>
       <input type="checkbox" id="linkFollowReader">
       <label for="linkFollowReader">
         點連結時自動延續閱讀模式
@@ -949,7 +953,7 @@
       </label>
     </div>
 
-    <div class="field field-checkbox">
+    <div class="field field-checkbox" data-app-hide>
       <input type="checkbox" id="editModeEnabled">
       <label for="editModeEnabled">
         編輯模式
@@ -957,16 +961,16 @@
       </label>
     </div>
 
-    <h2 class="section-heading">自動啟動網域</h2>
-    <p class="section-desc">
+    <h2 class="section-heading" data-app-hide>自動啟動網域</h2>
+    <p class="section-desc" data-app-hide>
       符合以下網域時，頁面載入即自動進入閱讀模式。<strong>一行一個網域</strong>。<code>abc.com</code> 會涵蓋 <code>www.abc.com</code> 與所有子網域；<code>www.abc.com</code> 只匹配 <code>www.abc.com</code> 本身（不含 <code>123.abc.com</code>）。也可在工具列圖示選單用「此網域自動啟動」開關快速加入目前網域
     </p>
-    <textarea id="autoEnableDomains" spellcheck="false" autocomplete="off" placeholder="abc.com&#10;news.example.org"></textarea>
+    <textarea data-app-hide id="autoEnableDomains" spellcheck="false" autocomplete="off" placeholder="abc.com&#10;news.example.org"></textarea>
   </section>
 
   <section class="tab-panel" id="panel-controls" data-tab-panel="controls" role="tabpanel" aria-labelledby="tab-controls" hidden>
-  <h2 class="section-heading">鍵盤與滑鼠</h2>
-    <div class="field field-checkbox">
+  <h2 class="section-heading" data-app-hide>鍵盤與滑鼠</h2>
+    <div class="field field-checkbox" data-app-hide>
       <input type="checkbox" id="blockPageShortcuts">
       <label for="blockPageShortcuts">
         進入閱讀模式時攔截原站快速鍵
@@ -974,13 +978,13 @@
       </label>
     </div>
 
-    <div class="field">
+    <div class="field" data-app-hide>
       <label for="spaceScrollRatio">按 space 鍵行為設定</label>
       <span class="desc">捲動閱讀模式時，按 <strong>space</strong> 鍵每次前進一個段落（<strong>shift+space</strong> 回上一段），畫面中段落超過此處比例即平滑捲回螢幕頂端。預設 <strong>50%</strong>，<strong>0 = 停用</strong>（整頁捲動）</span>
       <input type="number" id="spaceScrollRatio" min="0" max="90" step="5">
     </div>
 
-    <div class="field field-checkbox">
+    <div class="field field-checkbox" data-app-hide>
       <input type="checkbox" id="idleCursorHide">
       <label for="idleCursorHide">
         滑鼠閒置時隱藏游標
@@ -988,14 +992,14 @@
       </label>
     </div>
 
-    <h2 class="section-heading">快速鍵</h2>
-    <p class="section-desc intro-desktop">
+    <h2 class="section-heading" data-app-hide>快速鍵</h2>
+    <p class="section-desc intro-desktop" data-app-hide>
       點欄位後直接按下想要的組合鍵（需包含 <strong>⌥ Option</strong> 或 <strong>⌃ Control</strong>，按 <strong>ESC</strong> 取消錄製）。自訂鍵由 JRead 在頁面內攔截；內建預設鍵仍然有效；位址列輸入中時自訂鍵收不到按鍵（預設鍵不受此限）
     </p>
-    <p class="section-desc intro-safari">
+    <p class="section-desc intro-safari" data-app-hide>
       點欄位後直接按下想要的組合鍵（Safari 需用 <strong>⌃ Control</strong> 組合，按 <strong>ESC</strong> 取消錄製）。<strong>⌥ Option／⌘ Command 組合會被 Safari 系統層攔截、傳不到網頁</strong>，自訂鍵一定要含 ⌃ Control。<strong>iOS / iPadOS 沒有瀏覽器層快速鍵設定，外接鍵盤請在這裡自訂。</strong>內建預設鍵仍然有效
     </p>
-    <div class="field">
+    <div class="field" data-app-hide>
       <label>切換純閱讀模式</label>
       <span class="desc">內建預設 <strong>⌥R</strong></span>
       <div class="shortcut-controls">
@@ -1003,7 +1007,7 @@
         <button type="button" class="shortcut-clear" id="sc-clear-toggle-reader-mode" data-command="toggle-reader-mode" title="還原預設">✕</button>
       </div>
     </div>
-    <div class="field">
+    <div class="field" data-app-hide>
       <label>送到稍後閱讀服務</label>
       <span class="desc">送到你選的稍後閱讀服務（Readwise / Instapaper）。內建預設 <strong>⌥⇧R</strong></span>
       <div class="shortcut-controls">
@@ -1011,7 +1015,7 @@
         <button type="button" class="shortcut-clear" id="sc-clear-send-to-readwise" data-command="send-to-readwise" title="還原預設">✕</button>
       </div>
     </div>
-    <div class="field">
+    <div class="field" data-app-hide>
       <label>切換 YouTube 無邊模式</label>
       <span class="desc">內建預設 <strong>⌥Y</strong></span>
       <div class="shortcut-controls">
@@ -1019,7 +1023,7 @@
         <button type="button" class="shortcut-clear" id="sc-clear-toggle-youtube-borderless" data-command="toggle-youtube-borderless" title="還原預設">✕</button>
       </div>
     </div>
-    <div class="field">
+    <div class="field" data-app-hide>
       <label>切換翻頁模式</label>
       <span class="desc">閱讀模式未啟動時會直接以翻頁模式進入。內建預設 <strong>⌥P</strong></span>
       <div class="shortcut-controls">
@@ -1027,7 +1031,7 @@
         <button type="button" class="shortcut-clear" id="sc-clear-toggle-paged-mode" data-command="toggle-paged-mode" title="還原預設">✕</button>
       </div>
     </div>
-    <div id="shortcut-hint"></div>
+    <div id="shortcut-hint" data-app-hide></div>
 
     <h2 class="section-heading">觸控與懸浮控制</h2>
     <p class="section-desc">
@@ -1035,7 +1039,7 @@
     </p>
 
     <div class="field-group">
-      <div class="field field-checkbox">
+      <div class="field field-checkbox" data-app-hide>
         <input type="checkbox" id="floatingIcon">
         <label for="floatingIcon">
           懸浮按鈕
@@ -1065,7 +1069,7 @@
         </div>
       </div>
 
-      <div class="field field-checkbox">
+      <div class="field field-checkbox" data-app-hide>
         <input type="checkbox" id="threeFingerTap">
         <label for="threeFingerTap">
           三指輕點切換閱讀模式
@@ -1248,18 +1252,18 @@
   </section>
 
   <section class="tab-panel" id="panel-about" data-tab-panel="about" role="tabpanel" aria-labelledby="tab-about" hidden>
-    <h2 class="section-heading">YouTube 模式</h2>
-    <p class="section-desc">
+    <h2 class="section-heading" data-app-hide>YouTube 模式</h2>
+    <p class="section-desc" data-app-hide>
       在 YouTube 影片頁開啟 JRead 視窗時，除了一般的「切換閱讀模式」按鈕之外，還會多出兩種觀影專用模式。請依場景擇一使用，<strong>啟動後按 <code>ESC</code> 即可退出</strong>。影院模式跟一般閱讀模式共用 <code>Alt+R</code> 快速鍵——在 YouTube 影片頁按下會自動切到影院模式；無邊模式內建預設鍵 <code>Alt+Y</code>，也可在「操作」分頁的「快速鍵」區自訂（Chrome 亦可到 <code>chrome://extensions/shortcuts</code> 設瀏覽器層快速鍵）
     </p>
 
-    <h3 class="subsection-heading">影院模式</h3>
-    <p class="section-desc">
+    <h3 class="subsection-heading" data-app-hide>影院模式</h3>
+    <p class="section-desc" data-app-hide>
       把影片放大置中、四周變黑底，並把上方搜尋列、留言、影片描述、推薦清單、片尾彈出卡片等干擾元素全部隱藏。瀏覽器視窗大小不變
     </p>
 
-    <h3 class="subsection-heading">無邊模式</h3>
-    <p class="section-desc">
+    <h3 class="subsection-heading" data-app-hide>無邊模式</h3>
+    <p class="section-desc" data-app-hide>
       影片直接撐滿整個瀏覽器視窗、所有 YouTube 介面隱藏，視窗高度也會自動調整成符合影片比例——最沉浸的觀影體驗
     </p>
 

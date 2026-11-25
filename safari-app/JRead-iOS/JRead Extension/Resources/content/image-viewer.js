@@ -33,6 +33,8 @@
   var FADE_MS = 150;
   var SWIPE_CLOSE_PX = 80;     // 下滑放手時位移超過此值就關閉
   var SWIPE_SLOP_PX = 10;      // 位移超過此值才判定方向
+  var ZOOM_MAX = 5;            // 雙指放大上限（v3.2.9）
+  var ZOOM_SNAP = 1.02;        // 放手時倍率低於此值就彈回原尺寸
 
   var IMG_HREF_RE = /\.(?:jpe?g|png|gif|webp|avif|bmp|svg|jfif)(?:[?#].*)?$/i;
 
@@ -128,6 +130,33 @@
     return dy >= SWIPE_CLOSE_PX && Math.abs(dy) > Math.abs(dx);
   }
 
+  // v3.2.9 雙指縮放（Jimmy 2026-11-25：App 文章頁鎖了整頁縮放，預覽的圖要能放大）。
+  // 預覽層自己縮放圖片，不再交給瀏覽器的整頁縮放：img 的 transform-origin 在左上角，
+  // 畫面座標 p = base + t + s × local（base＝圖片未變形時的左上角）。
+  // start：{ s, tx, ty, mx, my, d, bx, by }（起手時的倍率 / 位移 / 兩指中點 / 兩指距離 / base）；
+  // 回傳新的 { s, tx, ty }：兩指中點下的那一點跟著中點走，倍率依兩指距離比例、夾在 [1/2, ZOOM_MAX]
+  function pinchTransform(start, mx, my, d) {
+    var s = start.s * (d / (start.d || 1));
+    s = Math.min(ZOOM_MAX, Math.max(0.5, s));
+    var lx = (start.mx - start.bx - start.tx) / start.s;
+    var ly = (start.my - start.by - start.ty) / start.s;
+    return { s: s, tx: mx - start.bx - s * lx, ty: my - start.by - s * ly };
+  }
+
+  // 放手時把位移收回合理範圍（純函式）：放大後的圖比視窗寬（高）→ 圖的邊不得進到視窗內
+  //（不露出空白）；比視窗窄（矮）→ 置中。倍率低於 ZOOM_SNAP → 回原狀。
+  // box：{ bx, by, w, h }（未變形的位置與尺寸）、vw / vh 視窗尺寸
+  function settleZoom(z, box, vw, vh) {
+    if (!(z.s > ZOOM_SNAP)) return { s: 1, tx: 0, ty: 0 };
+    var axis = function (b, len, view, t) {
+      var size = len * z.s;
+      var left = b + t;
+      if (size <= view) return (view - size) / 2 - b;
+      return Math.min(0, Math.max(view - size, left)) - b;
+    };
+    return { s: z.s, tx: axis(box.bx, box.w, vw, z.tx), ty: axis(box.by, box.h, vh, z.ty) };
+  }
+
   var api = {
     HOST_ID: HOST_ID,
     MIN_SIDE: MIN_SIDE,
@@ -136,7 +165,10 @@
     decideClick: decideClick,
     pickLargestSrcset: pickLargestSrcset,
     pickHiResSource: pickHiResSource,
-    shouldCloseOnRelease: shouldCloseOnRelease
+    shouldCloseOnRelease: shouldCloseOnRelease,
+    pinchTransform: pinchTransform,
+    settleZoom: settleZoom,
+    ZOOM_MAX: ZOOM_MAX
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window === 'undefined') return;
@@ -168,6 +200,7 @@
     '  -webkit-touch-callout: default;',
     '  -webkit-user-select: auto; user-select: auto;',
     '  transition: transform ' + FADE_MS + 'ms ease;',
+    '  transform-origin: 0 0;',
     '}',
     '.stage.dragging img { transition: none; }',
     '@media (max-width: 600px) { .stage { padding: 0; } }',
@@ -183,6 +216,9 @@
   var closeTimer = null;
   var savedScroll = null;
   var touch = null; // { x, y, dx, dy, vertical: null|true|false }
+  var zoom = { s: 1, tx: 0, ty: 0 };  // 目前圖片的縮放 / 位移（v3.2.9）
+  var pinch = null;  // 雙指進行中：pinchTransform 的 start
+  var pan = null;    // 放大後單指拖移：{ x, y, tx, ty }
 
   function isSvgSrc(src) {
     var s = String(src || '');
@@ -231,18 +267,70 @@
     stage.style.opacity = d ? String(Math.max(0.3, 1 - d / 400)) : '';
   }
 
+  function applyZoom() {
+    if (!imgEl) return;
+    imgEl.style.transform = zoom.s === 1 && !zoom.tx && !zoom.ty ? ''
+      : 'translate(' + zoom.tx + 'px, ' + zoom.ty + 'px) scale(' + zoom.s + ')';
+  }
+  // 圖片未變形時的位置與尺寸（rect 扣掉目前的 transform；origin 在左上角）
+  function baseBox() {
+    var r = imgEl.getBoundingClientRect();
+    return { bx: r.left - zoom.tx, by: r.top - zoom.ty, w: r.width / zoom.s, h: r.height / zoom.s };
+  }
+  function twoFinger(e) {
+    var a = e.touches[0], b = e.touches[1];
+    return { mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2,
+      d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
+  }
+  function startPinch(e) {
+    var f = twoFinger(e);
+    var box = baseBox();
+    pinch = { s: zoom.s, tx: zoom.tx, ty: zoom.ty, mx: f.mx, my: f.my, d: f.d, bx: box.bx, by: box.by };
+    pan = null;
+    if (stage) stage.classList.add('dragging');
+  }
+  function settle() {
+    if (!imgEl) return;
+    if (stage) stage.classList.remove('dragging');
+    zoom = settleZoom(zoom, baseBox(), window.innerWidth, window.innerHeight);
+    applyZoom();
+  }
+
   function onTouchStart(e) {
-    if (e.touches.length !== 1 || pageZoomed()) { touch = null; return; }
+    // 頁面本來就被瀏覽器放大（Safari 開預覽前就縮放過）→ 照舊全交給瀏覽器
+    if (pageZoomed()) { touch = null; return; }
+    if (e.touches.length === 2 && imgEl) {
+      touch = null;
+      if (stage) { stage.classList.remove('dragging'); stage.style.opacity = ''; }
+      if (zoom.s === 1) applyZoom(); // 收掉下滑拖到一半的位移
+      startPinch(e);
+      return;
+    }
+    if (e.touches.length !== 1) { touch = null; return; }
     var t = e.touches[0];
+    if (zoom.s > 1) { touch = null; pan = { x: t.clientX, y: t.clientY, tx: zoom.tx, ty: zoom.ty }; if (stage) stage.classList.add('dragging'); return; }
     touch = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, vertical: null };
   }
   function onTouchMove(e) {
-    // 多指（瀏覽器原生捏合縮放）與已放大時的單指平移都留給瀏覽器
-    if (e.touches.length !== 1 || pageZoomed()) { touch = null; if (stage) { stage.classList.remove('dragging'); setDrag(0); } return; }
-    // 單指：一律不讓底下的文章捲
+    if (pageZoomed()) { touch = null; if (stage) { stage.classList.remove('dragging'); setDrag(0); } return; }
+    // 預覽層內的觸控一律不給瀏覽器：不捲底下的文章、雙指也不觸發整頁縮放
     if (e.cancelable) e.preventDefault();
-    if (!touch) return;
+    if (e.touches.length === 2) {
+      if (!pinch) { if (imgEl) startPinch(e); return; }
+      var f = twoFinger(e);
+      var z = pinchTransform(pinch, f.mx, f.my, f.d);
+      zoom = z;
+      applyZoom();
+      return;
+    }
+    if (e.touches.length !== 1) return;
     var t = e.touches[0];
+    if (pan) {
+      zoom = { s: zoom.s, tx: pan.tx + t.clientX - pan.x, ty: pan.ty + t.clientY - pan.y };
+      applyZoom();
+      return;
+    }
+    if (!touch) return;
     touch.dx = t.clientX - touch.x;
     touch.dy = t.clientY - touch.y;
     if (touch.vertical === null &&
@@ -253,6 +341,24 @@
     if (touch.vertical) setDrag(touch.dy);
   }
   function onTouchEnd(e) {
+    if (pinch) {
+      if (e.touches.length >= 2) return;
+      pinch = null;
+      // 放開一指、另一指還在：接著當單指拖移（放大時）
+      if (e.touches.length === 1 && zoom.s > 1) {
+        var t = e.touches[0];
+        pan = { x: t.clientX, y: t.clientY, tx: zoom.tx, ty: zoom.ty };
+        return;
+      }
+      settle();
+      return;
+    }
+    if (pan) {
+      if (e.touches.length > 0) return;
+      pan = null;
+      settle();
+      return;
+    }
     if (e.touches.length > 0) return;
     var st = touch;
     touch = null;
@@ -262,8 +368,14 @@
   }
   function onTouchCancel() {
     touch = null;
+    if (pinch || pan) { pinch = null; pan = null; settle(); return; }
     if (stage) stage.classList.remove('dragging');
     setDrag(0);
+  }
+  // Safari 的整頁縮放手勢事件：預覽層內一律擋（頁面已被放大時除外，見 onTouchStart）
+  function onGesture(e) {
+    if (pageZoomed()) return;
+    if (e.cancelable) e.preventDefault();
   }
 
   function onStageClick(e) {
@@ -279,6 +391,7 @@
   function open(srcImg, opts) {
     if (!srcImg || srcImg.tagName !== 'IMG') return false;
     if (host) close(true);
+    zoom = { s: 1, tx: 0, ty: 0 }; pinch = null; pan = null;
     var o = opts || {};
     var current = srcImg.currentSrc || srcImg.src || '';
     if (!current) return false;
@@ -322,6 +435,8 @@
     host.addEventListener('touchmove', onTouchMove, { passive: false });
     host.addEventListener('touchend', onTouchEnd, { passive: true });
     host.addEventListener('touchcancel', onTouchCancel, { passive: true });
+    host.addEventListener('gesturestart', onGesture, { passive: false });
+    host.addEventListener('gesturechange', onGesture, { passive: false });
     window.addEventListener('keydown', onKeydown, true);
     window.addEventListener('keypress', onKeyOther, true);
     window.addEventListener('keyup', onKeyOther, true);
@@ -367,6 +482,7 @@
     window.removeEventListener('keyup', onKeyOther, true);
     if (preloader) { preloader.onload = null; preloader.onerror = null; preloader.src = ''; preloader = null; }
     host = null; stage = null; imgEl = null; touch = null;
+    zoom = { s: 1, tx: 0, ty: 0 }; pinch = null; pan = null;
     // 預覽期間底下不該捲動；真的被動到（瀏覽器原生行為漏網）就放回原位
     var sv = savedScroll;
     savedScroll = null;
