@@ -1205,9 +1205,16 @@ async function sendCurrentPageFromPopup() {
     return;
   }
 
+  // v1.6.0：讀儲存服務設定 + 各服務憑證 + 摘要開關（v2.6.0 起欄位讀 popup-core 單一資料源）。
+  // v3.4.2 移到抽取之前：抽取要知道送去哪個服務（影片 iframe 要不要轉縮圖＋圖說）
+  const cfg = await browser.storage.sync.get(P.serviceSettingsQuery({
+    readwiseSummary: false,
+    geminiApiKey: ''
+  })).then((v) => v || {}).catch(() => ({}));
+
   let extracted;
   try {
-    extracted = await browser.tabs.sendMessage(tabId, { type: 'EXTRACT_READER_HTML' });
+    extracted = await browser.tabs.sendMessage(tabId, { type: 'EXTRACT_READER_HTML', service: cfg.storageService });
   } catch (e) {
     // popup 軌不會替使用者進閱讀模式（SW 軌會），content script 沒注入 / 沒回應時
     // 給的提示是「重新啟動閱讀模式」——這句是 popup 前置、不在 saveDocumentFlow 內
@@ -1218,12 +1225,6 @@ async function sendCurrentPageFromPopup() {
     setReadwiseStatus('閱讀模式未啟動', 'err');
     return;
   }
-
-  // v1.6.0：讀儲存服務設定 + 各服務憑證 + 摘要開關（v2.6.0 起欄位讀 popup-core 單一資料源）。
-  const cfg = await browser.storage.sync.get(P.serviceSettingsQuery({
-    readwiseSummary: false,
-    geminiApiKey: ''
-  })).then((v) => v || {}).catch(() => ({}));
 
   // credsPlace 指向 popup 自己的「進階設定」footer 連結；進度文字由 SAVE_PROGRESS
   // 單一資料源提供，stage 未知時退回「送出中…」（與 SW / content 軌同式）

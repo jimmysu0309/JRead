@@ -1021,7 +1021,7 @@
   // 切掉避免 Readwise 顯示「文章標題 | 中央社 CNA」這種尾巴。
   // isTranslated：翻譯頁匯出走 should_clean_html=false 原樣模式（v0.8.138），
   // Readwise 端剝 iframe——需把影片 embed 轉縮圖連結（步驟 3.45）。
-  function buildCleanHtml(rootEl, title, isTranslated) {
+  function buildCleanHtml(rootEl, title, isTranslated, service) {
     // v0.8.121：先在 live DOM 標記文首 byline meta（邏輯單一資料源在
     // NS.markLeadingBylineForExport），clone 後移除標記節點、再還原 live 標記
     //（不影響閱讀模式顯示）。layout / naturalWidth 在 detached clone 上量不到，
@@ -1136,12 +1136,19 @@
     // 直連 embed URL——Readwise Reader 前端只 render 直連 embed host、代理殼
     // 不顯示（播放器整顆消失）。邏輯單一資料源在 NS.unwrapEmbedProxyIframes。
     if (NS && NS.unwrapEmbedProxyIframes) NS.unwrapEmbedProxyIframes(clone);
-    // 3.45 翻譯頁（should_clean_html=false 原樣模式）：影片 embed iframe → 縮圖
-    // 連結。Readwise raw-HTML render 剝掉所有 iframe（直連 youtube.com/embed 也
-    // 不例外）、影片在 Reader 端整顆消失；縮圖 + 連結是 raw 模式的可攜形態。
-    // 非翻譯頁不轉——Readwise 自家 clean pipeline 會把 YouTube iframe 轉成內嵌
-    // 播放器。邏輯單一資料源在 NS.replaceVideoEmbedsForRawHtml。
-    if (isTranslated && NS && NS.replaceVideoEmbedsForRawHtml) NS.replaceVideoEmbedsForRawHtml(clone);
+    // 3.45 影片 embed iframe → 縮圖＋圖說連結。收件端會剝掉所有 iframe 時要轉，
+    // 否則影片整顆消失；縮圖 + 連結是 raw 模式的可攜形態：
+    //   - Readwise 翻譯頁（should_clean_html=false 原樣模式）：raw-HTML render 剝 iframe
+    //     （直連 youtube.com/embed 也不例外）
+    //   - JReader（v3.4.2）：伺服器存檔與閱讀頁清理都整個刪掉 iframe，沒翻譯的頁面
+    //     原本不轉＝影片連縮圖都沒有（Jimmy 2026-11-25 回報 medium Rube Goldberg 篇時查到）
+    //   - Instapaper：同樣是原樣 HTML、不轉成播放器，比照轉
+    // 只有「Readwise 非翻譯頁」不轉——Readwise 自家 clean pipeline 會把 YouTube
+    // iframe 轉成內嵌播放器。判斷單一資料源在 NS.exportKeepsVideoIframes，轉換在
+    // NS.replaceVideoEmbedsForRawHtml。
+    if (NS && NS.replaceVideoEmbedsForRawHtml && !NS.exportKeepsVideoIframes(service, isTranslated)) {
+      NS.replaceVideoEmbedsForRawHtml(clone);
+    }
     // 3.46 影片 facade（縮圖 + click handler、沒點過就沒有 iframe）→ 可點縮圖連結
     // （v1.7.75）。翻譯與否都做：facade 不是 iframe，Readwise 的 clean pipeline
     // 也生不出播放器，不轉就是一張點不開的圖（latimes 實證）。邏輯單一資料源在
@@ -1505,7 +1512,10 @@
     return NS.stripSiteSuffix(rawTitle) || rawTitle;
   }
 
-  function extractReaderPayload() {
+  // v3.4.2：opts.service＝這次要送去的儲存服務（'readwise' / 'instapaper' / 'jreader'），
+  // 決定影片 iframe 要不要轉縮圖＋圖說（buildCleanHtml 步驟 3.45）
+  function extractReaderPayload(opts) {
+    const service = opts && opts.service;
     // v0.7.133：cinema mode 沒主文 outerHTML 可送 Readwise，明確回 NOT_APPLICABLE
     // 而非 NOT_ACTIVE（後者讓 popup 顯示「閱讀模式未啟動」會讓使用者困惑——
     // cinema 是有啟動的）。popup 端 cinema mode 已 hide readwise 按鈕，這是
@@ -1526,7 +1536,7 @@
     const isTranslated = !!(NS.isTranslatedPage && NS.isTranslatedPage());
     resetJsonLdCache(); // v0.8.18 C8：每輪 payload 抽取重新解析 JSON-LD
     const title = extractReaderTitle();
-    const html = buildCleanHtml(NS.state.articleEl, title, isTranslated);
+    const html = buildCleanHtml(NS.state.articleEl, title, isTranslated, service);
     const imageUrl = extractHeroImage(NS.state.articleEl);
     const author = extractAuthor();
     const publishedDate = extractPublishedDate();
@@ -1802,8 +1812,21 @@
       if (!ok) return;   // enterReaderMode 失敗時已自行彈「無法偵測主文」toast
     }
 
+    // 1.5 讀設定（服務 / 憑證 / 摘要）。v3.4.2 移到抽取之前：抽取要知道送去哪個服務
+    //（影片 iframe 要不要轉縮圖＋圖說，見 buildCleanHtml 步驟 3.45）
+    let settings;
+    try {
+      // v2.6.0：各服務憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源（含 jreader）
+      settings = await browser.storage.sync.get(P.serviceSettingsQuery({
+        readwiseSummary: false, geminiApiKey: ''
+      }));
+    } catch (_e) {
+      showResult('無法讀取設定，請稍後再試', 'error');
+      return;
+    }
+
     // 2. 抽 reader card payload（content 端直接呼叫，不經訊息往返）
-    const extracted = extractReaderPayload();
+    const extracted = extractReaderPayload({ service: settings.storageService });
     if (extracted && extracted.ok) {
       const p = extracted.payload || {};
       logSave('抽取完成', {
@@ -1816,18 +1839,6 @@
       logSave('抽取失敗', { reason: extracted && extracted.reason, elapsedMs: since() }, 'error');
       showResult(extracted && extracted.reason === 'NOT_APPLICABLE_IN_CINEMA'
         ? '影院模式無法送出' : '閱讀模式未啟動', 'error');
-      return;
-    }
-
-    // 3. 讀設定（服務 / 憑證 / 摘要）
-    let settings;
-    try {
-      // v2.6.0：各服務憑證欄位讀 popup-core SERVICE_SETTINGS_DEFAULTS 單一資料源（含 jreader）
-      settings = await browser.storage.sync.get(P.serviceSettingsQuery({
-        readwiseSummary: false, geminiApiKey: ''
-      }));
-    } catch (_e) {
-      showResult('無法讀取設定，請稍後再試', 'error');
       return;
     }
 
@@ -1902,7 +1913,10 @@
         const ok = await enterReaderMode({ silent: true });
         if (!ok) return { ok: false, reason: 'NO_ARTICLE' };
       }
-      const extracted = extractReaderPayload();
+      // v3.4.2：本接口不讀設定（見上方註解：頁面事件可偽造，不碰 storage），送去哪個服務
+      // 不明＝service 不給，影片 iframe 一律轉縮圖＋圖說（NS.exportKeepsVideoIframes）。
+      // 代價：Readwise 使用者從分享面板送沒翻譯的頁面，拿到縮圖連結而非 Readwise 播放器
+      const extracted = extractReaderPayload({ service: undefined });
       if (!wasActive) exitReaderMode();
       if (!extracted || !extracted.ok) return { ok: false, reason: (extracted && extracted.reason) || 'NO_ARTICLE' };
       return { ok: true, payload: extracted.payload };
@@ -2190,7 +2204,7 @@
     }
 
     if (msg.type === NS.MSG.EXTRACT_READER_HTML) {
-      sendResponse(extractReaderPayload());
+      sendResponse(extractReaderPayload({ service: msg.service }));
       return; // sync
     }
 
