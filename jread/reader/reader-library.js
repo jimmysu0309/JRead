@@ -279,7 +279,7 @@
   }
 
   // env：{ doc, win, PC, service, creds, toast, listEl, tabsEl, msgEl, showMsg, hideMsg,
-  //        createCard, currentTabId(), switchTab(id), reload(), setTagFilter(name|null),
+  //        createCard, currentTabId(), switchTab(id), reload(),
   //        cancelPending(), sessionStorage? }
   // 「焦點在可打字的元素裡」：單一資料源 NS.isTextInputTarget（看穿開放式 shadow root）
   function isTyping(t) {
@@ -327,16 +327,15 @@
       syncKeyboard();
     }
     // opts.clearTag：連標籤篩選一起清（只有工具列的 × 走這條，Jimmy 2026-11-25「× 是全部關掉」；
-    // 點外面、Esc 是「先收起來」，篩選留著、圓鈕藍框提醒）。搜尋與篩選同時清時只重載清單一次：
-    // 離開搜尋不重載，交給 setTagFilter(null) 載
+    // 點外面、Esc 是「先收起來」，篩選留著、圓鈕藍框提醒）。搜尋字一律清掉：還有標籤就留在標籤瀏覽
+    //（剛才有字才重抓），沒標籤回到分頁清單
     function collapse(opts) {
       const clearTag = !!(opts && opts.clearTag && activeTag);
       // 停頓中還沒送出的搜尋一起取消，不然收起後才在背景搜尋、清單被換掉
       if (debounce) { win.clearTimeout(debounce); debounce = null; }
       if (clearTag) { activeTag = null; renderFilterChip(); }
-      if (searching) exitSearch(!clearTag);
       ui.search.value = '';
-      if (clearTag) env.setTagFilter(null);
+      if (searching) searchOrBrowse('');
       setAddOpen(false);
       setExpanded(false);
       ui.fab.focus();
@@ -410,8 +409,9 @@
       idleTimer = win.setTimeout(() => { idleTimer = null; ui.fab.classList.remove('is-scroll-hidden'); }, FAB_IDLE_MS);
     }, { passive: true });
     ui.close.addEventListener('click', () => collapse({ clearTag: true }));
+    // 只用標籤瀏覽（沒有搜尋字）時點外面照樣收：畫面上沒有要留著的搜尋字，圓鈕藍框提醒還在篩選
     doc.addEventListener('pointerdown', (e) => {
-      if (!expanded || searching || !ui.addRow.hidden) return;
+      if (!expanded || (searching && hasQuery()) || !ui.addRow.hidden) return;
       const t = e.target;
       if (ui.root.contains(t) || ui.fab.contains(t) || (menu && menu.el.contains(t))) return;
       setExpanded(false);
@@ -426,10 +426,18 @@
     let observer = null;
     const sentinel = el(doc, 'div', 'jr-search-more');
 
+    // 「搜尋」狀態涵蓋兩種：有要找的字（可再疊標籤），或只選了標籤、沒打字（v3.2.5，Jimmy 2026-11-25
+    // 「只選 tag 也要有資料夾和排序」，選了「跟搜尋結果一樣」）。後者 q＝''，伺服器 /api/v1/search 收空 q＋tag。
+    // 原本只選標籤是疊在分頁清單上篩（清單 API 不能排序），已拿掉，標籤一律走這條
+    const canQuery = (q) => hasSearchable(q) || !!activeTag;
+    const hasQuery = () => !!(current && hasSearchable(current.q));
+    // 沒有要找的字時「相關」沒有意義：按鈕藏起來，照最新排（使用者另外選過最新 / 最舊就照選的）
+    const effectiveSort = () => (sortMode === 'relevance' && !hasQuery() ? 'newest' : sortMode);
+
     function rememberSearch(q) {
       try {
         if (!session) return;
-        if (q) {
+        if (q || activeTag) {
           session.setItem(LAST_SEARCH_KEY, q); session.setItem(LAST_SORT_KEY, sortMode); session.setItem(LAST_FOLDER_KEY, folder);
           if (activeTag) session.setItem(LAST_TAG_KEY, activeTag); else session.removeItem(LAST_TAG_KEY);
         } else { session.removeItem(LAST_SEARCH_KEY); session.removeItem(LAST_SORT_KEY); session.removeItem(LAST_FOLDER_KEY); session.removeItem(LAST_TAG_KEY); }
@@ -439,8 +447,12 @@
     // 排序：預設相關；換排序＝同一個查詢從第一頁重搜。離開搜尋回到預設
     let sortMode = 'relevance';
     function renderSort() {
+      const s = effectiveSort();
+      const q = hasQuery();
       for (const b of ui.sortBar.querySelectorAll('.jr-sort-btn')) {
-        const on = b.getAttribute('data-sort') === sortMode;
+        const id = b.getAttribute('data-sort');
+        const on = id === s;
+        b.hidden = id === 'relevance' && !q;
         b.classList.toggle('is-active', on);
         b.setAttribute('aria-checked', on ? 'true' : 'false');
       }
@@ -450,7 +462,7 @@
       const b = e.target && e.target.closest && e.target.closest('.jr-sort-btn');
       if (!b || !current) return;
       const next = b.getAttribute('data-sort');
-      if (next === sortMode) return;
+      if (next === effectiveSort()) return;
       sortMode = next;
       renderSort();
       runSearch(current.q, false);
@@ -480,7 +492,7 @@
     // 結果卡片＋右鍵選單。搬資料夾：換成新卡片（資料夾標籤更新）；刪除或搬出目前篩選的資料夾：拿掉卡片，
     // 篇數與下一頁的 offset 跟著減一（伺服器那邊這篇已不在這組結果裡）
     function resultCard(d, terms) {
-      const card = createResultCard(d, doc, env.createCard, terms, sortMode === 'relevance' ? null : 'saved');
+      const card = createResultCard(d, doc, env.createCard, terms, effectiveSort() === 'relevance' ? null : 'saved');
       if (!card || typeof env.attachResultMenu !== 'function') return card;
       env.attachResultMenu(card, d, {
         changed: (nd) => {
@@ -503,6 +515,7 @@
     }
     function emptySearchText(q) {
       const f = FOLDERS.find((x) => x.id === folder);
+      if (!hasSearchable(q)) return (folder && f ? f.label + ' 裡' : '') + '沒有標記「' + activeTag + '」的文章';
       const scope = [folder && f ? f.label : '', activeTag ? '# ' + activeTag : ''].filter(Boolean).join('、');
       return (scope ? scope + ' 裡' : '') + '找不到含有「' + q + '」的文章';
     }
@@ -540,6 +553,7 @@
         tabsEl.hidden = true;
         ui.pending.hidden = true;
         current = { q, offset: 0, count: 0, done: false };
+        renderSort(); // 有沒有要找的字決定「相關」在不在
         rememberSearch(q);
         try {
           const from = typeof env.currentTabId === 'function' ? env.currentTabId() : null;
@@ -548,9 +562,16 @@
         if (!env.listEl.children.length) env.showMsg('搜尋中…', false);
       }
       const offset = more ? current.offset : 0;
-      const r = await PC.searchJReader(Object.assign({ q, sort: sortMode, location: folder || undefined, tag: activeTag || undefined, limit: SEARCH_PAGE, offset }, rw));
+      const r = await PC.searchJReader(Object.assign({ q, sort: effectiveSort(), location: folder || undefined, tag: activeTag || undefined, limit: SEARCH_PAGE, offset }, rw));
       if (gen !== searchGen || !searching) return; // 已換查詢或離開搜尋
       if (!r || !r.ok) {
+        // 只用標籤瀏覽卻回 INVALID_QUERY＝JReader 伺服器還沒支援空 q（要先部署 JReader 再換 web core）
+        if (r && r.status === 400 && r.code === 'INVALID_QUERY' && !more && !hasSearchable(q)) {
+          env.listEl.textContent = '';
+          ui.searchHead.hidden = true;
+          env.showMsg('JReader 伺服器還不支援只用標籤瀏覽，請先更新伺服器', true);
+          return;
+        }
         // INVALID_QUERY＝沒有要找的詞（例如只打了「-iPhone」）：不是錯誤，提示怎麼用。其他 400（例如 INVALID_SORT）
         // 照一般錯誤處理（2026-11-24 審核 C-7：原本所有 400 都顯示成這句）
         if (r && r.status === 400 && r.code === 'INVALID_QUERY' && !more) {
@@ -609,15 +630,20 @@
       const q = ui.search.value.trim();
       debounce = win.setTimeout(() => {
         debounce = null;
-        if (hasSearchable(q)) runSearch(q, false);
-        else exitSearch(true);
+        searchOrBrowse(q);
       }, SEARCH_DEBOUNCE_MS);
     });
-    // Esc 離開搜尋：清空查詢、回到分頁清單、收起工具列（搜尋框裡、頁面層兩個入口共用這一份）
-    function escapeSearch() {
-      if (debounce) { win.clearTimeout(debounce); debounce = null; }
-      ui.search.value = '';
+    // 依目前的字與標籤決定：有字＝搜尋；沒字但有標籤＝只用標籤瀏覽（已經在瀏覽就不重抓）；都沒有＝回分頁清單
+    function searchOrBrowse(q) {
+      if (hasSearchable(q)) { runSearch(q, false); return; }
+      if (activeTag) {
+        if (!searching || hasQuery()) runSearch('', false);
+        return;
+      }
       exitSearch(true);
+    }
+    // Esc 離開搜尋：清空查詢、收起工具列；沒有標籤回到分頁清單，有標籤留在標籤瀏覽（搜尋框裡、頁面層兩個入口共用）
+    function escapeSearch() {
       collapse();
     }
     ui.search.addEventListener('keydown', (e) => {
@@ -629,7 +655,7 @@
         e.preventDefault();
         if (debounce) { win.clearTimeout(debounce); debounce = null; }
         const q = ui.search.value.trim();
-        if (hasSearchable(q)) runSearch(q, false);
+        if (canQuery(q)) searchOrBrowse(q);
       }
     });
 
@@ -725,16 +751,16 @@
       chip.appendChild(x);
       ui.filter.appendChild(chip);
     }
-    // 搜尋中換標籤：同一個查詢帶新標籤從第一頁重搜，分頁清單的篩選先記著不載（離開搜尋時 env.reload 會帶上）
+    // 選標籤：有搜尋字就同一個查詢帶標籤從第一頁重搜，沒有就進標籤瀏覽（資料夾、排序沿用畫面上的）；
+    // 拿掉標籤：有搜尋字照舊搜，沒有就回分頁清單
     function setTag(name) {
       activeTag = name || null;
       renderFilterChip();
-      if (searching && current) {
-        env.setTagFilter(activeTag, { load: false });
-        runSearch(current.q, false);
-        return;
-      }
-      env.setTagFilter(activeTag);
+      if (debounce) { win.clearTimeout(debounce); debounce = null; }
+      const q = searching && current ? current.q : ui.search.value.trim();
+      if (hasSearchable(q)) { runSearch(q, false); return; }
+      if (activeTag) { runSearch('', false); return; }
+      exitSearch(true);
     }
     async function openTagMenu() {
       closeTagMenu();
@@ -819,16 +845,17 @@
       if (tab !== SEARCH_TAB) return false;
       let q = null;
       try { q = session ? session.getItem(LAST_SEARCH_KEY) : null; } catch (_) { q = null; }
-      if (!hasSearchable(q)) return false;
+      let t = null;
+      try { t = session ? session.getItem(LAST_TAG_KEY) : null; } catch (_) { t = null; }
+      if (!hasSearchable(q)) q = '';
+      if (!q && !t) return false; // 只有標籤也叫回（標籤瀏覽，v3.2.5）
       let s = null;
       try { s = session ? session.getItem(LAST_SORT_KEY) : null; } catch (_) { s = null; }
       if (SORTS.some((x) => x.id === s)) { sortMode = s; renderSort(); }
       let f = null;
       try { f = session ? session.getItem(LAST_FOLDER_KEY) : null; } catch (_) { f = null; }
       if (FOLDERS.some((x) => x.id === f)) { folder = f; renderFolder(); }
-      let t = null;
-      try { t = session ? session.getItem(LAST_TAG_KEY) : null; } catch (_) { t = null; }
-      if (t) { activeTag = t; env.setTagFilter(t, { load: false }); }
+      if (t) activeTag = t;
       ui.search.value = q;
       setExpanded(true, { focus: false });
       runSearch(q, false);

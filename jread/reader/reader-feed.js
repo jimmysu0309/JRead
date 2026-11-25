@@ -727,34 +727,15 @@
       };
       const laterText = LATER_TEXT[service] || LATER_TEXT.readwise;
 
-      // v3.1.0：JReader 書庫工具列（reader-library.js）。標籤篩選疊在分頁的 query 上；
-      // 分頁本身已篩某個標籤（JRead 分頁）時 API 只收一個 tag，改在回來的清單上再篩一次。
-      // 篩選中的清單用獨立的快取 key，不蓋掉分頁原本的快取
-      let tagFilter = null;
+      // v3.1.0：JReader 書庫工具列（reader-library.js）。標籤篩選原本疊在分頁 query 上，v3.2.5 起改走
+      // 工具列的搜尋路徑（只選標籤＝標籤瀏覽，有資料夾與排序），分頁清單不再帶標籤
       let lib = null;
-      const tagKeyOf = (doc) => (doc && doc.tags && typeof doc.tags === 'object' ? Object.keys(doc.tags) : [])
-        .map((k) => k.toLowerCase());
-      function listKeyFor(cfg) {
-        return service + ':' + cfg.id + (tagFilter ? '#' + tagFilter.toLowerCase() : '');
-      }
-      // 本頁移走的文章「不該出現在哪些分頁」以分頁為單位、不含標籤篩選：原本用 listKeyFor，在標籤篩選中
-      // 刪除的文章記成「除了『垃圾桶#標籤』以外都藏」，換掉篩選後垃圾桶裡也看不到它（2026-11-24 審核 A-11）。
-      // 快取 key 照舊用 listKeyFor（篩選中的清單有自己的快取）
+      // 清單快取 key／本頁移走的文章「不該出現在哪些分頁」都以分頁為單位
       function scopeKeyFor(cfg) {
         return service + ':' + cfg.id;
       }
-      function queryFor(cfg) {
-        if (!tagFilter || (cfg.query && cfg.query.tag)) return cfg.query;
-        return Object.assign({}, cfg.query, { tag: tagFilter });
-      }
-      function postFilter(docs, cfg) {
-        if (!tagFilter || !(cfg.query && cfg.query.tag)) return docs;
-        const k = tagFilter.toLowerCase();
-        return (docs || []).filter((d) => tagKeyOf(d).includes(k));
-      }
-      function emptyText(cfg) {
-        return tagFilter ? '沒有標記「' + tagFilter + '」的文章' : cfg.empty;
-      }
+      const listKeyFor = scopeKeyFor;
+      const emptyText = (cfg) => cfg.empty;
 
       // v2.5.5：畫面上這份清單的來源（未過濾的整份 docs＋分頁設定＋當下的分頁世代）。
       // 動作失敗晚到時用它原地重畫（見 onAction 的 .then）
@@ -765,7 +746,7 @@
         const scopeKey = scopeKeyFor(cfg);
         if (RC && (all || []).some((d) => d && d.trash_keep_days != null)) keepDays = RC.trashKeepDays(all);
         if (trashNoteEl) trashNoteEl.textContent = trashNoteText();
-        const docs = postFilter(all, cfg).filter((d) => {
+        const docs = (all || []).filter((d) => {
           if (!d) return false;
           if (lib && lib.isPending(d.id)) return false; // 抓取中的那張由工具列畫
           return !hiddenIn(removedIds.get(d.id), cfg);
@@ -969,7 +950,7 @@
         empty.className = 'jr-trash-empty';
         empty.textContent = '清空垃圾桶';
         empty.addEventListener('click', async () => {
-          const n = shown && shown.cfg === trashTab && !paging.cursor ? postFilter(shown.all, trashTab).length : 0;
+          const n = shown && shown.cfg === trashTab && !paging.cursor ? (shown.all || []).length : 0;
           if (!n && shown && shown.cfg === trashTab && !paging.cursor) { toast('垃圾桶是空的', 'info'); return; }
           if (!(await confirmTrashAction('empty', null, n))) return;
           let r;
@@ -1024,13 +1005,13 @@
         const cfg = shown.cfg;
         const gen = loadGen;
         paging.limit += MORE_STEP;
-        const visible = postFilter(shown.all, cfg).length;
+        const visible = (shown.all || []).length;
         if (visible < paging.limit && paging.cursor) {
           paging.loading = true;
           updateMore(visible);
           let r;
           try {
-            r = await PC.listDocuments({ service, creds, query: Object.assign({}, queryFor(cfg), { pageCursor: paging.cursor }) });
+            r = await PC.listDocuments({ service, creds, query: Object.assign({}, cfg.query, { pageCursor: paging.cursor }) });
           } catch (_) { r = null; } // serviceErrorMessage 對 null 回通用文案（錯誤碼表只在 popup-core）
           paging.loading = false;
           if (gen !== loadGen) return; // 已切分頁 / 重新載入
@@ -1131,7 +1112,7 @@
           });
         };
 
-        return PC.listDocuments({ service, creds, query: queryFor(cfg) }).then((r) => {
+        return PC.listDocuments({ service, creds, query: cfg.query }).then((r) => {
           if (gen !== loadGen) return; // 已切到別的分頁——過期回應丟棄
           freshArrived = true;
           if (!r || !r.ok) {
@@ -1139,7 +1120,7 @@
             return;
           }
           // v3.1.0：整頁（最多 100 篇）留著給「載入更多」，快取與「沒變不重畫」的比對只看第一屏
-          const all = postFilter(r.results || [], cfg);
+          const all = r.results || [];
           const docs = all.slice(0, MAX_ITEMS);
           paging.cursor = r.nextPageCursor || null;
           if (cfg.subview) { subCount = typeof r.count === 'number' ? r.count : null; renderHeadCount(); }
@@ -1224,8 +1205,6 @@
           },
           // 背景更新目前的分頁清單（貼網址抓完時）：不清畫面、不離開多選（refresh 模式）
           refreshView: () => loadList(currentTab || initialTab, { refresh: true }),
-          // opts.load === false：只記篩選不載清單（搜尋中換標籤、叫回上次搜尋；離開搜尋時 reload 會帶上）
-          setTagFilter: (name, opts) => { tagFilter = name || null; if (!opts || opts.load !== false) loadList(currentTab || initialTab); },
           cancelPending: () => { loadGen++; }
         });
       }
