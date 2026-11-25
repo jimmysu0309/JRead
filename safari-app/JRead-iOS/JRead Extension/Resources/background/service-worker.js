@@ -140,7 +140,7 @@ const LEGACY_SANS_STACK = globalThis.__JReadLegacyFontStacks.sans;
 const SANS_STACK = globalThis.__JReadFontStacks.sans;
 
 // 首次安裝時寫入預設值，已存在的欄位不覆蓋
-browser.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async (details) => {
   // v0.8.15：改為「只寫 diff」而非整包 get(null)+set(merged) 全量回寫。
   // 全量回寫的問題：(1) 每次版本 bump 都把所有欄位（含可能很長的
   // autoEnableDomains / customShortcuts）重寫一次，徒增 storage.sync 配額壓力
@@ -150,9 +150,15 @@ browser.runtime.onInstalled.addListener(async () => {
   try {
     const current = await browser.storage.sync.get(null);
     const patch = {};
+    // v3.4.0：預設儲存服務改 jreader 只給新安裝。升級時還沒存過 storageService 的舊安裝
+    // 補回它實際在用的服務（舊預設 readwise / 連結過的 instapaper），不被下面的迴圈換成 jreader
+    if (details && details.reason === 'update') {
+      const legacy = globalThis.__JReadResolveLegacyStorageService(current);
+      if (legacy) patch.storageService = legacy;
+    }
     // 補上 current 缺漏的預設 key（已存在的欄位不覆蓋）
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
-      if (!(key in current)) patch[key] = DEFAULT_SETTINGS[key];
+      if (!(key in current) && !(key in patch)) patch[key] = DEFAULT_SETTINGS[key];
     }
     // 舊 stack 字面值精準遷移（popup 常數改了不會自動跟動既有使用者的存值）
     if (LEGACY_SERIF_STACKS.includes(current.fontFamily)) patch.fontFamily = SERIF_STACK;

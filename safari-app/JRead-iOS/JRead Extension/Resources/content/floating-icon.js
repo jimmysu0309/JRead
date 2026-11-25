@@ -347,7 +347,9 @@
     layers: [['path', { d: 'M12 4l9 5-9 5-9-5z' }], ['path', { d: 'M3 14l9 5 9-5' }]],
     check: [['path', { d: 'M5 12.5l4.5 4.5L19 7' }]],
     screen: [['rect', { x: 3, y: 5, width: 18, height: 12, rx: 2 }], ['path', { d: 'M8 21h8M12 17v4' }]],
-    expand: [['path', { d: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5' }]]
+    expand: [['path', { d: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5' }]],
+    // v3.4.0：重新抓取（順時針箭頭繞圈，與其他圖示同 24 格線條）
+    refresh: [['path', { d: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }], ['path', { d: 'M19.5 4v4h-4' }]]
   };
   const SVG_NS = 'http://www.w3.org/2000/svg';
   function buildIcon(name) {
@@ -362,9 +364,17 @@
     return svg;
   }
 
+  // v3.4.0：Article View（reader-article.js 設 NS.onReaderRefetch）多一項「重新抓取文章」，
+  // 排在「文章資訊」後面；所有儲存服務都有、App / 網頁版也有（公開分享頁不掛 hook）
   function infoMenuItems() {
-    if (typeof NS.onReaderInfo !== 'function') return [];
-    return [{ id: 'info', icon: 'info', label: '文章資訊', action: () => { try { NS.onReaderInfo(); } catch (_e) {} } }];
+    const items = [];
+    if (typeof NS.onReaderInfo === 'function') {
+      items.push({ id: 'info', icon: 'info', label: '文章資訊', action: () => { try { NS.onReaderInfo(); } catch (_e) {} } });
+    }
+    if (typeof NS.onReaderRefetch === 'function') {
+      items.push({ id: 'refetch', icon: 'refresh', label: '重新抓取文章', action: () => { try { NS.onReaderRefetch(); } catch (_e) {} } });
+    }
+    return items;
   }
 
   function generalMenuItems() {

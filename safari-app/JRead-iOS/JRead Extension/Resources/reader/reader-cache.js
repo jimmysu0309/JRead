@@ -506,6 +506,18 @@
         })().catch(() => false);
       }
 
+      // 刪掉一篇（v3.4.0：文章頁「重新抓取文章」——刪掉後重新整理，載入流程快取 miss 就從服務重抓）
+      function remove(account, id) {
+        const key = keyOf(account, String(id));
+        return (async () => {
+          const tx = db.transaction([STORE_ARTICLES, STORE_META], 'readwrite');
+          tx.objectStore(STORE_ARTICLES).delete(key);
+          tx.objectStore(STORE_META).delete(key);
+          await txDone(tx);
+          return true;
+        })().catch(() => false);
+      }
+
       // 總用量（除錯 / 驗證用）
       function usage() {
         return (async () => {
@@ -527,7 +539,7 @@
         })().catch(() => false);
       }
 
-      return { get, put, touch, evict, usage, clear, keyOf, close: () => { try { db.close(); } catch (_) {} } };
+      return { get, put, touch, evict, remove, usage, clear, keyOf, close: () => { try { db.close(); } catch (_) {} } };
     });
   }
 

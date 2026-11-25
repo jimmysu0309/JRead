@@ -107,7 +107,10 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // v1.6.0：儲存服務二擇一——'readwise'（預設，維持既有行為）| 'instapaper'。
     // 決定「送出儲存」與「讀入 feed/文章」走哪個服務的憑證與 API。摘要（readwiseSummary
     // + geminiApiKey）兩服務共用。
-    storageService: 'readwise',
+    // v3.4.0（Jimmy 2026-11-25）：預設改 'jreader'（設定頁選項也排第一）。只影響新安裝——
+    // SW onInstalled 只補缺漏 key，既有使用者早已存過明確值；極舊版本直升、從沒存過這欄的
+    // 由 onInstalled 依手上的憑證補回原服務（resolveLegacyStorageService）
+    storageService: 'jreader',
     // Readwise Reader integration（v0.7.33）。空字串 = 未設定。
     readwiseToken: '',
     // v1.6.0：Instapaper Full API 憑證（xAuth 換得的 OAuth token + secret）。空字串
@@ -345,6 +348,74 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     }
     return out;
   }
+
+  // v3.4.0：沒存過 storageService 的舊安裝（儲存服務 v1.6.0 才有）升級時要補哪個值。
+  // 預設改 jreader 之前，這種使用者實際用的是 readwise（舊預設）；連結過 Instapaper 的
+  // 就是 instapaper。回 null＝已經存過，不必補（交給 onInstalled 補缺漏 key 的迴圈）
+  function resolveLegacyStorageService(current) {
+    const c = current || {};
+    if (typeof c.storageService === 'string') return null;
+    if (c.instapaperToken && !c.readwiseToken) return 'instapaper';
+    return 'readwise';
+  }
+
+  // ─── 匯出 / 匯入設定（v3.4.0，Jimmy 2026-11-25）──────────────────────────
+  // 設定頁「進階」分頁的兩顆按鈕。匯出 storage.sync 的偏好成 JSON 檔、匯入時寫回。
+  // 範圍：DEFAULT_SETTINGS 的欄位＋兩個不在預設表、但同屬偏好的欄位（懸浮按鈕三態開關、
+  // 拖移位置），一律排除憑證（CREDENTIAL_SETTINGS_KEYS：各服務 token、JReader 網址、
+  // Instapaper 帳號、Gemini key）——Jimmy 裁定檔案不含憑證，外流也不會洩漏，換電腦重填。
+  // 匯出與匯入走同一份白名單（單一資料源），匯入時再逐欄驗型別，壞值略過不寫
+  const SETTINGS_EXPORT_EXTRA_KEYS = ['floatingIcon', 'floatingIconPos'];
+  const SETTINGS_FILE_KIND = 'jread-settings';
+  function isTransferableSettingKey(k) {
+    if (CREDENTIAL_SETTINGS_KEYS.indexOf(k) !== -1) return false;
+    return Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, k) || SETTINGS_EXPORT_EXTRA_KEYS.indexOf(k) !== -1;
+  }
+  // 值的型別要跟預設值同類（預設 null 的欄位：null 或物件 / 字串 / 布林都收）
+  function isValidSettingValue(k, v) {
+    if (v === undefined) return false;
+    const d = DEFAULT_SETTINGS[k];
+    if (d === undefined || d === null) {
+      return v === null || ['string', 'boolean', 'object', 'number'].indexOf(typeof v) !== -1;
+    }
+    if (Array.isArray(d)) return Array.isArray(v);
+    if (typeof d === 'number') return typeof v === 'number' && Number.isFinite(v);
+    if (typeof d === 'object') return v !== null && typeof v === 'object' && !Array.isArray(v);
+    return typeof v === typeof d;
+  }
+  // storage.sync.get(null) 的結果 → 要寫進檔案的物件
+  function buildSettingsExport(all, meta) {
+    const settings = {};
+    const src = all || {};
+    for (const k of Object.keys(src).sort()) {
+      if (isTransferableSettingKey(k) && src[k] !== undefined) settings[k] = src[k];
+    }
+    const m = meta || {};
+    return { kind: SETTINGS_FILE_KIND, version: m.version || '', exportedAt: m.exportedAt || '', settings };
+  }
+  // 檔案文字 → { ok, settings, skipped } 或 { ok:false, error:'PARSE'|'KIND'|'EMPTY' }
+  function parseSettingsImport(text) {
+    let obj;
+    try { obj = JSON.parse(String(text || '')); } catch (_) { return { ok: false, error: 'PARSE' }; }
+    if (!obj || typeof obj !== 'object' || obj.kind !== SETTINGS_FILE_KIND || !obj.settings || typeof obj.settings !== 'object') {
+      return { ok: false, error: 'KIND' };
+    }
+    const settings = {};
+    const skipped = [];
+    for (const k of Object.keys(obj.settings)) {
+      const v = obj.settings[k];
+      if (isTransferableSettingKey(k) && isValidSettingValue(k, v)) settings[k] = v;
+      else skipped.push(k);
+    }
+    if (!Object.keys(settings).length) return { ok: false, error: 'EMPTY', skipped };
+    return { ok: true, settings, skipped };
+  }
+  const SETTINGS_TRANSFER = Object.freeze({
+    FILE_KIND: SETTINGS_FILE_KIND,
+    isTransferableKey: isTransferableSettingKey,
+    build: buildSettingsExport,
+    parse: parseSettingsImport
+  });
 
   // ─── 設定檔（profile，v1.9.0）────────────────────────────────────────────
   // 白名單 = popup 面板上會影響閱讀版面的欄位（含翻頁模式）。刻意排除
@@ -621,6 +692,8 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   global.__JReadHostBridgeKeys = HOST_BRIDGE_SYNC_KEYS;
   global.__JReadCredentialSettingsKeys = CREDENTIAL_SETTINGS_KEYS;
   global.__JReadStripCredentialSettings = stripCredentialSettings;
+  global.__JReadSettingsTransfer = SETTINGS_TRANSFER;
+  global.__JReadResolveLegacyStorageService = resolveLegacyStorageService;
   global.__JReadResolveFloatingIconEnabled = resolveFloatingIconEnabled;
   global.__JReadFontStacks = FONT_STACKS;
   global.__JReadProgressBarStyles = PROGRESS_BAR_STYLES;

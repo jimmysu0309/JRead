@@ -226,13 +226,21 @@ function readFieldFromDom(id) {
       const v = checked ? checked.value : null;
       return APP_ICONS.indexOf(v) >= 0 ? v : DEFAULTS.appIcon;
     }
-    case 'readwiseToken': case 'geminiApiKey': case 'jreaderUrl': case 'jreaderToken':
+    case 'jreaderUrl': {
+      // v3.4.0：沒寫協定自動補 https://（popup-core.withDefaultScheme 單一資料源），
+      // 補完回填輸入框——使用者看得到實際存下的網址
+      const P = window.__JReadPopup;
+      const v = P && typeof P.withDefaultScheme === 'function' ? P.withDefaultScheme(el.value) : el.value.trim();
+      if (el.value !== v) el.value = v;
+      return v;
+    }
+    case 'readwiseToken': case 'geminiApiKey': case 'jreaderToken':
       return el.value.trim();
     case 'storageService': {
       // v1.6.0：分段 toggle（radio 群，wrapper id=storageService）。讀已勾選值；
-      // 損壞 / 無勾選退回 'readwise'。v2.6.0 三選一，合法值讀 popup-core 單一資料源
+      // 損壞 / 無勾選退回預設。v2.6.0 三選一，合法值與預設讀 popup-core 單一資料源
       const checked = el.querySelector('input[name="storageService"]:checked');
-      return normalizeService(checked ? checked.value : 'readwise');
+      return normalizeService(checked ? checked.value : null);
     }
     default:
       return el.value;
@@ -240,10 +248,10 @@ function readFieldFromDom(id) {
 }
 
 // v2.6.0：儲存服務合法值讀 popup-core 單一資料源（STORAGE_SERVICES）。popup-core 沒載到
-// （不應發生；載入失敗時）退回 'readwise'，不讓整頁 load() 因此中斷
+// （不應發生；載入失敗時）退回預設 'jreader'（v3.4.0），不讓整頁 load() 因此中斷
 function normalizeService(v) {
   const P = window.__JReadPopup;
-  return P && typeof P.normalizeStorageService === 'function' ? P.normalizeStorageService(v) : 'readwise';
+  return P && typeof P.normalizeStorageService === 'function' ? P.normalizeStorageService(v) : 'jreader';
 }
 
 // 透明度 % 讀數（input 拖動即時更新，與 storage 無關）
@@ -494,14 +502,17 @@ function setJReaderTestResult(kind, text) {
 if (jreaderTestBtn && jreaderTestResultEl) {
   jreaderTestBtn.addEventListener('click', async () => {
     const PopupAPI = window.__JReadPopup;
-    const base = document.getElementById('jreaderUrl').value.trim();
+    // v3.4.0：測試也照存檔的規則補 https://（還沒 blur 存檔就按測試時）
+    const base = PopupAPI && typeof PopupAPI.withDefaultScheme === 'function'
+      ? PopupAPI.withDefaultScheme(document.getElementById('jreaderUrl').value)
+      : document.getElementById('jreaderUrl').value.trim();
     const token = document.getElementById('jreaderToken').value.trim();
     if (!PopupAPI || typeof PopupAPI.validateJReaderToken !== 'function') {
       setJReaderTestResult('error', '✗ 無法載入驗證模組');
       return;
     }
     if (!PopupAPI.normalizeApiBase(base)) {
-      setJReaderTestResult('error', '✗ 請先填入 https:// 開頭的 JReader 網址');
+      setJReaderTestResult('error', '✗ 請先填入 JReader 網址');
       return;
     }
     if (!token) {
@@ -786,6 +797,77 @@ if (resetBtn) {
     }).catch(() => {
       resetStatusEl.textContent = '回復失敗，請稍後再試';
       setTimeout(() => { resetStatusEl.textContent = ''; }, 3000);
+    });
+  });
+}
+
+// ---- 匯出 / 匯入設定（v3.4.0，Jimmy 2026-11-25）---------------------------
+// 白名單、檔案格式與驗證住 settings-defaults.js（__JReadSettingsTransfer 單一資料源）：
+// 不含任何憑證。匯出＝storage.sync 全部偏好 → JSON 檔下載；匯入＝讀檔 → 逐欄驗證 →
+// 只寫檔案裡有的欄位（合併、不清掉檔案沒有的欄位）→ 重讀表單
+const TRANSFER = window.__JReadSettingsTransfer;
+const transferStatusEl = document.getElementById('transfer-status');
+let transferStatusTimer = null;
+function setTransferStatus(text, ms) {
+  if (!transferStatusEl) return;
+  transferStatusEl.textContent = text || '';
+  if (transferStatusTimer) clearTimeout(transferStatusTimer);
+  transferStatusTimer = ms ? setTimeout(() => { transferStatusEl.textContent = ''; }, ms) : null;
+}
+function localDateStamp(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+const exportBtn = document.getElementById('exportSettings');
+if (exportBtn && TRANSFER) {
+  exportBtn.addEventListener('click', () => {
+    browser.storage.sync.get(null).then((all) => {
+      const now = new Date();
+      const data = TRANSFER.build(all, { version: browser.runtime.getManifest().version, exportedAt: now.toISOString() });
+      const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'jread-settings-' + localDateStamp(now) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setTransferStatus('已匯出 ' + Object.keys(data.settings).length + ' 項設定', 3000);
+    }).catch(() => setTransferStatus('匯出失敗，請稍後再試', 4000));
+  });
+}
+const importBtn = document.getElementById('importSettings');
+const importFile = document.getElementById('importSettingsFile');
+if (importBtn && importFile && TRANSFER) {
+  importBtn.addEventListener('click', () => { importFile.value = ''; importFile.click(); });
+  importFile.addEventListener('change', () => {
+    const file = importFile.files && importFile.files[0];
+    if (!file) return;
+    file.text().then((text) => {
+      const r = TRANSFER.parse(text);
+      if (!r.ok) {
+        setTransferStatus(r.error === 'PARSE' ? '匯入失敗：檔案不是 JSON 格式'
+          : r.error === 'KIND' ? '匯入失敗：這不是 JRead 匯出的設定檔'
+            : '匯入失敗：檔案裡沒有可用的設定', 5000);
+        return null;
+      }
+      showSaving();
+      return browser.storage.sync.set(r.settings).then(() => {
+        // 版面欄位在這台裝置套用設定檔時讀 storage.local 草稿、不讀 sync——匯入後改成
+        //「自訂」，匯入的版面才看得到（與回復預設同一處理）
+        const PROFILES = window.__JReadProfiles;
+        if (PROFILES && browser.storage.local) {
+          browser.storage.local.set({ [PROFILES.STATE_KEY]: null }).catch(() => {});
+        }
+        flashSaved();
+        load();
+        const n = Object.keys(r.settings).length;
+        setTransferStatus('已匯入 ' + n + ' 項設定' + (r.skipped.length ? '（略過 ' + r.skipped.length + ' 項無法套用的欄位）' : ''), 4000);
+      });
+    }).catch(() => {
+      flashSaveError();
+      setTransferStatus('匯入失敗，請稍後再試', 5000);
     });
   });
 }

@@ -1026,10 +1026,11 @@ function hasActiveServiceCredentials() {
 function getStorageService() {
   try {
     const DEF = window.__JReadSettingsDefaults || {};
-    return browser.storage.sync.get({ storageService: DEF.storageService || 'readwise' })
+    const fallback = window.__JReadPopup.DEFAULT_STORAGE_SERVICE || 'jreader';
+    return browser.storage.sync.get({ storageService: DEF.storageService || fallback })
       .then((v) => window.__JReadPopup.normalizeStorageService(v && v.storageService))
-      .catch(() => 'readwise');
-  } catch (_) { return Promise.resolve('readwise'); }
+      .catch(() => fallback);
+  } catch (_) { return Promise.resolve('jreader'); }
 }
 
 // 送出按鈕文字 + tooltip 依當前儲存服務切換。

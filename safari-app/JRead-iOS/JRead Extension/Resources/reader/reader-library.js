@@ -207,6 +207,8 @@
 
     const addRow = el(document, 'form', 'jr-addrow');
     addRow.hidden = true;
+    // v3.4.0：不用瀏覽器內建的網址驗證——沒寫 https:// 的網址會被它擋下，送出時由 submitUrl 補上
+    addRow.noValidate = true;
     const url = el(document, 'input', 'jr-addrow-url');
     url.type = 'url';
     url.placeholder = '貼上文章網址';
@@ -696,9 +698,19 @@
       return res;
     }
 
+    // http(s) 網址、主機名有點（或 localhost）：補了 https:// 之後，「notaurl」這種單字不會被當成網址送出
+    function looksLikeWebUrl(u) {
+      if (!/^https?:\/\/\S+$/i.test(u)) return false;
+      try {
+        const h = new URL(u).hostname;
+        return h === 'localhost' || h.indexOf('.') > 0;
+      } catch (_) { return false; }
+    }
+
     async function submitUrl(raw) {
-      const url = String(raw || '').trim();
-      if (!/^https?:\/\/\S+$/i.test(url)) { env.toast('請貼上 http 或 https 開頭的網址', 'error'); return null; }
+      // v3.4.0：沒寫協定自動補 https://（popup-core.withDefaultScheme 單一資料源）
+      const url = typeof PC.withDefaultScheme === 'function' ? PC.withDefaultScheme(raw) : String(raw || '').trim();
+      if (!looksLikeWebUrl(url)) { env.toast('請貼上文章網址', 'error'); return null; }
       ui.submit.disabled = true;
       let r;
       try { r = await PC.saveUrlToJReader(Object.assign({ url }, rw)); } catch (_) { r = null; }
