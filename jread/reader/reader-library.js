@@ -18,6 +18,7 @@
   const POLL_LIMIT_MS = 60000;
   const LAST_SEARCH_KEY = 'jread:lastSearch';
   const FAB_IDLE_MS = 400; // 捲動停下多久後圓鈕回來
+  const KB_MIN_PX = 80; // visual viewport 底下少掉超過這麼多才算螢幕鍵盤（iPhone 鍵盤至少 200px 以上）
   // 搜尋結果排序（Jimmy 2026-11-24「加入 相關/最新/最舊」）。最新 / 最舊＝存入日期（JReader sort 參數）
   const SORTS = [{ id: 'relevance', label: '相關' }, { id: 'newest', label: '最新' }, { id: 'oldest', label: '最舊' }];
   const LAST_SORT_KEY = 'jread:lastSearchSort';
@@ -320,14 +321,47 @@
       doc.body.classList.toggle('jr-tools-open', expanded);
       if (expanded && (!opts || opts.focus !== false)) ui.search.focus();
       if (!expanded && menu) closeTagMenu();
+      syncKeyboard();
     }
-    function collapse() {
-      if (searching) { ui.search.value = ''; exitSearch(true); }
+    // opts.clearTag：連標籤篩選一起清（只有工具列的 × 走這條，Jimmy 2026-11-25「× 是全部關掉」；
+    // 點外面、Esc 是「先收起來」，篩選留著、圓鈕藍框提醒）。搜尋與篩選同時清時只重載清單一次：
+    // 離開搜尋不重載，交給 setTagFilter(null) 載
+    function collapse(opts) {
+      const clearTag = !!(opts && opts.clearTag && activeTag);
+      // 停頓中還沒送出的搜尋一起取消，不然收起後才在背景搜尋、清單被換掉
+      if (debounce) { win.clearTimeout(debounce); debounce = null; }
+      if (clearTag) { activeTag = null; renderFilterChip(); }
+      if (searching) exitSearch(!clearTag);
+      ui.search.value = '';
+      if (clearTag) env.setTagFilter(null);
       setAddOpen(false);
       setExpanded(false);
       ui.fab.focus();
     }
     ui.fab.addEventListener('click', () => setExpanded(true));
+
+    // iOS 螢幕鍵盤：WebKit 開鍵盤只縮 visual viewport、不縮 layout viewport，position: fixed; bottom: 0
+    // 的工具列其實在鍵盤後面——聚焦當下 iOS 捲動頁面把輸入框推進畫面才看得到，搜尋結果一換清單
+    // 捲動位置跳掉就又躲回鍵盤後面（Jimmy 2026-11-25 回報）。工具列展開時量鍵盤佔掉的高度寫進
+    // <html> 的 --jr-kb，CSS 把工具列、清單底部留白、toast 一起墊高；收起或鍵盤關掉歸零。
+    // 頁面被捏合放大時量不準（offsetTop 混了平移量），不墊
+    const vv = win.visualViewport;
+    let kbPx = 0;
+    function syncKeyboard() {
+      let kb = 0;
+      if (expanded && vv && !(vv.scale > 1.01)) {
+        kb = Math.round((win.innerHeight || 0) - (vv.height + vv.offsetTop));
+        if (!(kb >= KB_MIN_PX)) kb = 0; // 網址列伸縮、捨入誤差這類小差距不算鍵盤
+      }
+      if (kb === kbPx) return;
+      kbPx = kb;
+      doc.documentElement.style.setProperty('--jr-kb', kb + 'px');
+      doc.body.classList.toggle('jr-kb-open', kb > 0);
+    }
+    if (vv && typeof vv.addEventListener === 'function') {
+      vv.addEventListener('resize', syncKeyboard);
+      vv.addEventListener('scroll', syncKeyboard);
+    }
 
     // 捲動時藏圓鈕：往下捲淡出、往上捲立刻回來、停下 FAB_IDLE_MS 後回來（Jimmy 2026-11-24 選 A＋C）
     let lastY = win.scrollY || 0;
@@ -342,7 +376,7 @@
       if (idleTimer) win.clearTimeout(idleTimer);
       idleTimer = win.setTimeout(() => { idleTimer = null; ui.fab.classList.remove('is-scroll-hidden'); }, FAB_IDLE_MS);
     }, { passive: true });
-    ui.close.addEventListener('click', () => collapse());
+    ui.close.addEventListener('click', () => collapse({ clearTag: true }));
     doc.addEventListener('pointerdown', (e) => {
       if (!expanded || searching || !ui.addRow.hidden) return;
       const t = e.target;
@@ -782,7 +816,7 @@
   const api = {
     attach, highlightTerms, createResultCard, createPendingCard, settlePendingCard, pollUntilSettled,
     locationLabel, hasSearchable, buildToolbar,
-    SEARCH_TAB, LAST_SEARCH_KEY, LAST_SORT_KEY, LAST_FOLDER_KEY, SEARCH_FROM_KEY, SORTS, FOLDERS, FAB_IDLE_MS, SEARCH_PAGE, POLL_MS, POLL_LIMIT_MS, SEARCH_DEBOUNCE_MS
+    SEARCH_TAB, LAST_SEARCH_KEY, LAST_SORT_KEY, LAST_FOLDER_KEY, SEARCH_FROM_KEY, SORTS, FOLDERS, FAB_IDLE_MS, KB_MIN_PX, SEARCH_PAGE, POLL_MS, POLL_LIMIT_MS, SEARCH_DEBOUNCE_MS
   };
 
   if (typeof module !== 'undefined' && module.exports) {

@@ -164,11 +164,15 @@
     background: var(--bg); border-top: 1px solid var(--line);
     padding: 10px 20px calc(10px + var(--jr-safe-bottom));
   }
+  /* iOS 螢幕鍵盤開著：reader-library 把鍵盤高度寫進 --jr-kb，工具列墊到鍵盤正上方；
+     底部手勢區被鍵盤蓋住，safe-area 墊高拿掉（Jimmy 2026-11-25「搜尋列被推到鍵盤後面」） */
+  body.jr-kb-open .jr-tools-wrap { bottom: var(--jr-kb, 0px); padding-bottom: 10px; }
   .jr-tools-inner { max-width: 640px; margin: 0 auto; }
   .jr-tools-wrap[hidden] { display: none; }
   /* 清單底部留空：收起時讓出圓鈕、展開時讓出工具列（＋貼網址列 / 標籤 chip），最後一張卡片不被蓋住 */
   body.jr-has-tools .jr-wrap { padding-bottom: calc(76px + var(--jr-safe-bottom)); }
   body.jr-tools-open .jr-wrap { padding-bottom: calc(150px + var(--jr-safe-bottom)); }
+  body.jr-tools-open.jr-kb-open:not(.jr-selecting) .jr-wrap { padding-bottom: calc(150px + var(--jr-kb, 0px)); }
   /* 多選中讓出底部動作列（reader-select 把動作列實際高度寫進 --jr-select-bar-h：按鈕折行、
      標籤輸入列都會變高；量不到時 140px）。必須排在上面兩條之後、權重相同（0,2,1）才蓋得過——
      原本寫成 .jr-selecting .jr-wrap（0,2,0）永遠輸給 jr-has-tools（2026-11-24 審核 A-2） */
@@ -177,7 +181,7 @@
      收起時的圓鈕（20 + 36）、展開的工具列（reader-library 量的 --jr-tools-h）、多選動作列（16 + --jr-select-bar-h）。
      原本疊在它們上面（2026-11-24 審核 A-8）。三條權重相同、後面的優先：多選＞展開＞收起 */
   html:has(> body.jr-has-tools) { --__jread-toast-bottom: calc(68px + var(--jr-safe-bottom)); }
-  html:has(> body.jr-tools-open) { --__jread-toast-bottom: calc(var(--jr-tools-h, 116px) + 12px); }
+  html:has(> body.jr-tools-open) { --__jread-toast-bottom: calc(var(--jr-tools-h, 116px) + var(--jr-kb, 0px) + 12px); }
   html:has(> body.jr-selecting) { --__jread-toast-bottom: calc(var(--jr-select-bar-h, 140px) + 28px + var(--jr-safe-bottom)); }
   /* 右下角搜尋圓鈕（Jimmy 2026-11-24 選「平常只有一顆按鈕」，再選「縮小淡化＋捲動時隱藏」）。
      寬螢幕對齊卡片欄右緣（欄寬 640 置中 → 右緣距視窗 50% − 320px；fixed 的 % 以不含捲軸的視窗寬為準，
