@@ -12,6 +12,9 @@
   'use strict';
 
   const MAX_ITEMS = 10;
+  // v3.4.5：清單快取每分頁存 20 篇（原本跟第一屏同為 10）。App 離線閱讀預載 Inbox / Later 前 20 篇
+  //（reader-offline.js），沒網路時清單也要列得出這 20 篇，「載入更多」在快取範圍內本機展開
+  const FEED_CACHE_ITEMS = 20;
 
   // 2026-11-15 review D-06：分頁表正本搬到 reader-cache.js（reader.html 與
   // article.html 都載）——文章頁的 E 鍵封存要查來源分頁可不可封存，不能各寫一份。
@@ -661,6 +664,9 @@
     const NS = global.__JRead;
     const PC = global.__JReadPopup;
     const doc = global.document;
+    // v3.4.5：App 標記（reader.html 的 html.jr-app 規則：頂端內距縮小——App 的 WebView 上緣已避開
+    // 狀態列 / 動態島，再加 32px 內距分頁列離動態島太遠，Jimmy 2026-11-25 回報）
+    if (doc && NS && typeof NS.isAppRuntime === 'function' && NS.isAppRuntime()) doc.documentElement.classList.add('jr-app');
     // 缺關鍵相依（理論上不會發生；iOS 載入順序 / 模組沒掛時 surface 出來，不靜默卡白）
     if (!browser || !browser.storage || !PC || !doc) {
       const m = doc && doc.getElementById('jr-msg');
@@ -785,6 +791,19 @@
         return service + ':' + cfg.id;
       }
       const listKeyFor = scopeKeyFor;
+      // v3.4.5：App 離線閱讀預載 Inbox / Later 前 20 篇（reader-offline.js；只在 App ＋ JReader，
+      // 節流與條件都在那支）。清單載入成功（含下拉更新）時排一次
+      function scheduleOffline() {
+        const OFF = global.__JReadReaderOffline;
+        if (!OFF || !RC) return;
+        OFF.schedule({
+          PC, RC, service, creds, storage: local, account, tabs, listKeyFor,
+          log: (msg, data) => {
+            const L = global.__JReadLogger; // 列表頁沒載 logger 就不記
+            try { if (L && typeof L.log === 'function') L.log('info', 'system', 'Article Feed：' + msg, data); } catch (_) {}
+          }
+        });
+      }
       const emptyText = (cfg) => cfg.empty;
 
       // v2.5.5：畫面上這份清單的來源（未過濾的整份 docs＋分頁設定＋當下的分頁世代）。
@@ -1171,10 +1190,11 @@
           }
           // v3.1.0：整頁（最多 100 篇）留著給「載入更多」，快取與「沒變不重畫」的比對只看第一屏
           const all = r.results || [];
-          const docs = all.slice(0, MAX_ITEMS);
+          const docs = all.slice(0, FEED_CACHE_ITEMS);
           paging.cursor = r.nextPageCursor || null;
           if (cfg.subview) { subCount = typeof r.count === 'number' ? r.count : null; renderHeadCount(); }
-          if (useCache) RC.writeFeed(local, account, listKey, docs, MAX_ITEMS);
+          if (useCache) RC.writeFeed(local, account, listKey, docs, FEED_CACHE_ITEMS);
+          scheduleOffline();
           if (cachedSig !== null && RC.feedSignature(docs) === cachedSig && all.length <= MAX_ITEMS && !paging.cursor) return; // 沒變，不重畫
           if (refresh) {
             paging.limit = Math.max(paging.limit, MAX_ITEMS);

@@ -302,7 +302,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     // 純決策（不碰 WebKit 物件）：
     //   - jread-app：host 必須是 app；主框架只能到 reader/（feed 與文章），子框架另放行
-    //     popup/（懸浮按鈕的功能選單 iframe）。options 等其他擴充頁 App 內沒有入口
+    //     popup/（懸浮按鈕的功能選單 iframe）與 options/（J 選單「設定」的 iframe）。
+    //     主框架仍不放行 options/：文章裡的連結不能把整個 App 帶進設定頁（沒有「完成」可回）
     //   - file / about：App 自己載入的說明頁與空白框架；使用者點連結過去的一律擋
     //   - 主框架的 http(s) / mailto：交給系統開，JReader 留在原頁；其餘 scheme 擋
     //   - 子框架的其他 scheme（文章 sanitizer 已移除 iframe，這裡只會是 App 自己的頁面）放行
@@ -312,6 +313,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             guard host == Self.appHost else { return .block }
             if path.hasPrefix("/reader/") { return .allow }
             if !isMainFrame && path.hasPrefix("/popup/") { return .allow }
+            // v3.4.5：設定頁（J 選單「設定」以 iframe 開 options/options.html，v3.3.0）。v3.3.0 加入口時
+            // 漏了這條，子框架被擋 → 設定頁整片空白（Jimmy 2026-11-25 iPhone 回報）
+            if !isMainFrame && path.hasPrefix("/options/") { return .allow }
             return .block
         }
         if scheme == "file" || scheme == "about" { return userClicked ? .block : .allow }

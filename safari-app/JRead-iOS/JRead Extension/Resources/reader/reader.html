@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-jread-page="feed">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -41,6 +41,9 @@
     -webkit-font-smoothing: antialiased;
   }
   .jr-wrap { max-width: 680px; margin: 0 auto; padding: 32px 20px 80px; }
+  /* v3.4.5：iOS App（reader-feed.js 加 html.jr-app）的 WebView 上緣已在狀態列 / 動態島下方，頂端內距
+     32px 讓分頁列離動態島太遠（Jimmy 2026-11-25） */
+  html.jr-app .jr-wrap { padding-top: 8px; }
   .jr-head { display: flex; align-items: baseline; gap: 12px; margin: 0 0 20px; }
   .jr-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
   .jr-head .jr-sub { font-size: 13px; color: var(--muted); }
@@ -145,6 +148,12 @@
     color: inherit; font: inherit; font-size: 14px; cursor: pointer;
   }
   .jr-menu-item:hover, .jr-menu-item:focus-visible { background: var(--line); outline: none; }
+  /* v3.4.5：觸控（iPhone / iPad 長按卡片）字級放大到 17px、列高跟著加（Jimmy 2026-11-25「長按的功能表
+     字體太小」）。14px 是桌面右鍵選單的尺寸；手指點的選單比照 iOS 系統選單內文 17pt */
+  @media (pointer: coarse) {
+    .jr-menu { min-width: 168px; padding: 6px; border-radius: 12px; }
+    .jr-menu-item { padding: 11px 14px; font-size: 17px; border-radius: 8px; }
+  }
 
   .jr-msg { color: var(--muted); font-size: 15px; line-height: 1.7; padding: 40px 4px; text-align: center; }
   .jr-msg a { color: var(--link); }
@@ -326,7 +335,7 @@
     background: transparent; color: var(--text); font: inherit; font-size: 14px; outline: none;
   }
   .jr-tagmenu-filter:focus { border-color: var(--link); }
-  .jr-tagmenu-list { max-height: min(50vh, 360px); overflow-y: auto; }
+  .jr-tagmenu-list { max-height: min(50vh, 360px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .jr-tagmenu-item { display: flex; align-items: baseline; gap: 8px; }
   .jr-tagmenu-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .jr-tagmenu-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -338,6 +347,12 @@
      新增輸入框要加進這裡（forcing：jreader-ios-touch.spec 掃 reader 模組建立的每個 input / textarea） */
   @media (pointer: coarse) {
     .jr-search, .jr-addrow-url, .jr-select-tag, .jr-tagmenu-filter { font-size: 16px; }
+    /* v3.4.5：標籤選單（Jimmy 2026-11-25「搜尋選標籤時字體太小」）：項目是 .jr-menu-item，字級跟卡片
+       長按選單同一組（上方 .jr-menu 觸控區塊 17px）；這裡放大寬度、篇數與空狀態字級、輸入框高度 */
+    .jr-tagmenu { width: 280px; }
+    .jr-tagmenu-filter { height: 40px; }
+    .jr-tagmenu-count { font-size: 15px; }
+    .jr-tagmenu-empty { font-size: 16px; }
   }
 </style>
 </head>
@@ -353,16 +368,21 @@
   </main>
 
   <!-- 只載 feed 需要的最小集合：NS 命名空間、預設值、toast、Reader API、feed app。
-       不載 styler / floating-icon / main 等 reader 閱讀模式模組（那些在 article.html）。 -->
+       不載 styler / main 等 reader 閱讀模式模組（那些在 article.html）。
+       v3.4.5：floating-icon 例外——iOS App 的列表頁要有 J 圖示（設定入口）；模組在列表頁只對
+       App 生效，Safari 擴充 / 網頁版的列表頁一載入就早退 -->
   <script src="../content/namespace.js"></script>
   <script src="../content/settings-defaults.js"></script>
   <script src="../content/toast.js"></script>
+  <script src="../content/floating-icon.js"></script>
   <!-- v1.6.0：Instapaper client + gitignored 金鑰（keys 缺檔時 __JReadInstapaper
        仍載入、getInstapaperConsumerKeys 回 null，Readwise 照常）。須在 popup-core 前。 -->
   <script src="../lib/instapaper-keys.js"></script>
   <script src="../lib/instapaper.js"></script>
   <script src="../popup/popup-core.js"></script>
   <script src="reader-cache.js"></script>
+  <!-- v3.4.5：App 離線閱讀預載（Inbox / Later 前 20 篇），須在 reader-feed 前 -->
+  <script src="reader-offline.js"></script>
   <!-- v3.1.0：確認對話框（刪除 / 永久刪除 / 清空垃圾桶），讀 reader-cache 的主題色 -->
   <script src="reader-dialog.js"></script>
   <!-- v3.1.0：清單多選（JReader），reader-feed init 掛上 -->

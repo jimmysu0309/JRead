@@ -30,7 +30,9 @@
   const HIGHLIGHT_KEY = 'readerHighlightCache';
   // v2.5.0：這台寫回閱讀進度的時刻表（見 isStale / planOwnWrite），跟著快取一起清
   const OWN_WRITE_KEY = 'readerProgressWrites';
-  const LOCAL_CACHE_KEYS = [FEED_KEY, HIGHLIGHT_KEY, OWN_WRITE_KEY];
+  // v3.4.5：App 離線預載上次執行時刻（reader-offline.js LAST_RUN_KEY）——清掉快取後下次開清單立刻重新預載
+  const OFFLINE_RUN_KEY = 'readerOfflinePrefetchAt';
+  const LOCAL_CACHE_KEYS = [FEED_KEY, HIGHLIGHT_KEY, OWN_WRITE_KEY, OFFLINE_RUN_KEY];
   const FEED_VERSION = 1;
   const DB_NAME = 'jread-reader-cache';
   const DB_VERSION = 1;

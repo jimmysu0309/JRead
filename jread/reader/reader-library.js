@@ -774,6 +774,26 @@
       if (activeTag) { runSearch('', false); return; }
       exitSearch(true);
     }
+    // v3.4.5：iOS 在標籤選單上下滑，常常捲到的是後面的文章卡片（Jimmy 2026-11-25 回報）。WebKit 觸控
+    // 捲動會「接力」：清單捲到頂 / 底、清單短到不能捲、或手指落在找標籤輸入框上，那一下就交給整頁捲。
+    // 選單裡的觸控移動只准捲清單本身，其餘一律擋掉（CSS overscroll-behavior: contain 是第一層，
+    // 舊版 WebKit 不認時靠這層）
+    function guardMenuScroll(box, list) {
+      let lastY = 0;
+      box.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches[0]) lastY = e.touches[0].clientY;
+      }, { passive: true });
+      box.addEventListener('touchmove', (e) => {
+        const t = e.touches && e.touches[0];
+        if (!t) return;
+        const dy = t.clientY - lastY;
+        lastY = t.clientY;
+        if (!list.contains(e.target) || list.scrollHeight <= list.clientHeight + 1) { e.preventDefault(); return; }
+        const atTop = list.scrollTop <= 0;
+        const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+        if ((dy > 0 && atTop) || (dy < 0 && atBottom)) e.preventDefault();
+      }, { passive: false });
+    }
     async function openTagMenu() {
       closeTagMenu();
       const box = el(doc, 'div', 'jr-menu jr-tagmenu');
@@ -791,6 +811,7 @@
       box.style.bottom = Math.max(8, Math.round((win.innerHeight || 0) - rect.top + 6)) + 'px';
       box.style.right = Math.max(8, Math.round((win.innerWidth || 0) - rect.right)) + 'px';
       doc.body.appendChild(box);
+      guardMenuScroll(box, list);
       ui.tags.setAttribute('aria-expanded', 'true');
       const onDown = (e) => { if (!box.contains(e.target) && e.target !== ui.tags) closeTagMenu(); };
       const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeTagMenu(); ui.tags.focus(); } };

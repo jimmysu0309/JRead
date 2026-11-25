@@ -51,6 +51,14 @@
   if (!NS) return;
   if (window !== window.top) return;     // 只在主 frame 放一顆
   if (NS.floating) return;               // 重複注入保險
+  // v3.4.5：App 的文章列表頁（reader/reader.html）也放一顆（Jimmy 2026-11-25「iOS App 文章列表沒有
+  // J 圖示，加在版面最左下方」）。列表頁只在 App 放：Safari 擴充 / 網頁版的列表頁維持沒有。
+  // 列表頁固定貼左下角、不能拖（位置設定跟 Safari 擴充同步，那邊拖到哪不該搬動列表頁的入口），
+  // 選單只有「功能選單」「設定」——文章頁那幾項（回列表、分頁模式、文章資訊）在列表頁沒有對象
+  // 判定讀 reader.html 自己標的 <html data-jread-page="feed">——本檔也是每個網站都注入的 content script，
+  // 不能只看路徑（任何網站都可能有 /reader/reader.html）
+  const FEED_PAGE = document.documentElement && document.documentElement.getAttribute('data-jread-page') === 'feed';
+  if (FEED_PAGE && !(NS.isAppRuntime && NS.isAppRuntime())) return;
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
   // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）。滑鼠與觸控分開設門檻
@@ -212,6 +220,13 @@
     .menu-item .ico.accent { color: #0071e3; }
     .menu-item .ico .dot { fill: currentColor; stroke: none; }
     .menu-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    /* v3.4.5：觸控裝置字級放大到 17px、列高與圖示跟著加（Jimmy 2026-11-25「點 J 圖示的功能表字體
+       太小」）。13px 是桌面滑鼠的緊湊尺寸；手指點的選單比照 iOS 系統選單內文 17pt */
+    @media (pointer: coarse) {
+      .menu { min-width: 200px; font-size: 17px; padding: 6px; }
+      .menu-item { padding: 11px 14px; gap: 10px; }
+      .menu-item .ico, .menu-item .ico svg { width: 22px; height: 22px; }
+    }
   `;
 
   shadow.innerHTML = `
@@ -378,6 +393,7 @@
   }
 
   function generalMenuItems() {
+    if (FEED_PAGE) return [];   // v3.4.5：App 列表頁只有分隔線下的「功能選單」「設定」
     // v2.2.0：iOS App 內建 JReader（NS.isAppRuntime）沒有 background——文章本來就來自
     // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC 同一個 NS.onReaderExit；v3.2.6 起 App 短按改開選單）
     if (isAppRuntime()) {
@@ -734,8 +750,28 @@
       persistPos();
     }
     lastEnabled = enabled;
-    host.style.display = enabled ? 'block' : 'none';
-    if (!enabled) closeMenu();
+    const show = enabled && !feedBottomBusy();
+    host.style.display = show ? 'block' : 'none';
+    if (!show) closeMenu();
+  }
+
+  // v3.4.5：App 列表頁的底部被搜尋工具列（body.jr-tools-open，reader-library.js）或多選動作列
+  //（body.jr-selecting，reader-select.js）佔用時先藏起來——J 圖示固定左下角，會壓在搜尋框上
+  //（模擬器實測）。工具列收起就回來
+  const FEED_BUSY_CLASSES = ['jr-tools-open', 'jr-selecting'];
+  function feedBottomBusy() {
+    if (!FEED_PAGE || !document.body) return false;
+    return FEED_BUSY_CLASSES.some((c) => document.body.classList.contains(c));
+  }
+  if (FEED_PAGE) {
+    const watchBody = () => {
+      try {
+        new MutationObserver(() => { if (lastEnabled !== null) applyEnabled(lastEnabled); })
+          .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      } catch (_e) {}
+    };
+    if (document.body) watchBody();
+    else document.addEventListener('DOMContentLoaded', watchBody, { once: true });
   }
 
   function applyOpacity(v) {
@@ -756,6 +792,13 @@
     host.style.setProperty('--fab-hit', s.hit + 'px');
     host.style.setProperty('--fab-icon', s.icon + 'px');
     applyPos(pos);
+  }
+
+  function appSafeBottom() {
+    try {
+      const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--__jread-app-safe-bottom'));
+      return v > 0 ? v : 0;
+    } catch (_e) { return 0; }
   }
 
   function sanitizePos(p) {
@@ -781,9 +824,12 @@
 
   // 依 pos 把 host 貼到邊緣（offsetY 比例 → top px）
   function applyPos(p) {
-    pos = sanitizePos(p);
+    pos = FEED_PAGE ? sanitizePos(null) : sanitizePos(p);   // v3.4.5：列表頁固定左下角
     const vh = window.innerHeight || 0;
-    const rawTop = Math.round(pos.offsetY * Math.max(0, vh - hitSize));
+    // v3.4.5：App 列表頁避開底部安全區域（Home 指示條；App 的 WebView 畫到螢幕底，
+    // ViewController 把高度經 shim 寫成 --__jread-app-safe-bottom）
+    const safeBottom = FEED_PAGE ? appSafeBottom() : 0;
+    const rawTop = Math.round(pos.offsetY * Math.max(0, vh - hitSize - safeBottom));
     const top = cornerClampTop(rawTop, vh, hitSize, isIPadOS);
     host.style.top = top + 'px';
     host.style.bottom = 'auto';
@@ -799,6 +845,7 @@
   }
 
   function persistPos() {
+    if (FEED_PAGE) return;   // v3.4.5：列表頁的固定位置不寫回同步設定
     try { browser.storage.sync.set({ floatingIconPos: pos }); } catch (_e) {}
   }
 
@@ -837,9 +884,11 @@
     // v2.2.5：App 內 JReader 也列——這是 App 裡唯一能改設定的入口（Jimmy 2026-10-28 回報
     // 「JReader 中無法更改設定」）。App 不是 Safari runtime → 走 iframe 浮層；popup 端在
     // App 內免 SW 握手（popup.js IS_APP，見該處理由）
-    const divider = document.createElement('div');
-    divider.className = 'menu-divider';
-    menuEl.appendChild(divider);
+    if (items.length) {
+      const divider = document.createElement('div');
+      divider.className = 'menu-divider';
+      menuEl.appendChild(divider);
+    }
     const featureItem = document.createElement('button');
     featureItem.className = 'menu-item feature';
     featureItem.type = 'button';
@@ -952,7 +1001,8 @@
     press = {
       id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false, menuWasOpen,
       // 觸控（手指）用較寬的拖移門檻；滑鼠 / 觸控筆維持 8px
-      dragThreshold: e.pointerType === 'touch' ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX
+      dragThreshold: FEED_PAGE ? Infinity   // v3.4.5：列表頁不能拖
+        : (e.pointerType === 'touch' ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX)
     };
     press.timer = setTimeout(() => {
       if (!press || press.moved) return;
@@ -1083,6 +1133,7 @@
     applyEnabled, applyOpacity, applyPos, applySize, sanitizePos,
     cornerClampTop, CORNER_DEADZONE_PX, isIPadOSEnv,
     isMenuOpen: () => menuOpen,
+    isFeedPage: FEED_PAGE,
     getPos: () => ({ ...pos }),
     getHitSize: () => hitSize,
     getTop: () => host.style.top,

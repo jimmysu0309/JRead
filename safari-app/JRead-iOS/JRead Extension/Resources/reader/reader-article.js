@@ -651,13 +651,26 @@
       // review D-06：tab＝來源分頁 id，E 鍵封存用它查這個分頁可不可封存
       const ctx = { NS, doc, PC, service, creds, backHref, tab: params.get('tab') };
       const fetchT0 = Date.now();
-      const fetchAndRender = (store, account) => PC.getArticle({ service, creds, id, meta }).then((r) => {
+      // v3.4.5：抓不到時用過期的快取頂上（離線閱讀）。回 true＝已用快取畫出
+      const renderStale = (stale) => {
+        if (!stale) return false;
+        rlog('改用過期快取', { id });
+        try {
+          renderArticle(stale.doc, ctx, { progress: stale.doc.reading_progress, progressAt: stale.doc.updated_at });
+        } catch (err) {
+          rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
+          return false;
+        }
+        return true;
+      };
+      const fetchAndRender = (store, account, stale) => PC.getArticle({ service, creds, id, meta }).then((r) => {
         rlog('內容取得', {
           id, ok: !!(r && r.ok), error: r && r.error, status: r && r.status, ms: Date.now() - fetchT0,
           chars: (r && r.doc && typeof r.doc.html_content === 'string') ? r.doc.html_content.length : 0
         }, (r && r.ok) ? 'info' : 'error');
         if (!r || !r.ok) {
           if (r && r.error === 'EMPTY') { setStatus('找不到這篇文章的內容', true); return; }
+          if (renderStale(stale)) return;
           setStatus(PC.serviceErrorMessage(r, { action: '載入', service }), true);
           return;
         }
@@ -669,6 +682,8 @@
         // listDocuments 的雙 handler 同一教訓。外層 .catch 只接得到 storage 讀取
         // 那段（本 Promise 沒 return 進外層 chain）。
         rlog('內容取得或組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120), ms: Date.now() - fetchT0 }, 'error');
+        // 狀態列還在＝還沒開始組裝（getArticle 本身失敗）才換快取；組裝到一半的例外不再畫第二份
+        if (doc.getElementById('jr-status') && renderStale(stale)) return;
         setStatus('載入失敗：' + String(err && err.message || err), true);
       });
       loadFromCache(id, service, creds).then((c) => {
@@ -690,7 +705,7 @@
           c.store.touch(c.account, id);
           return;
         }
-        fetchAndRender(c.store, c.account);
+        fetchAndRender(c.store, c.account, c.staleEntry);
       });
     }).catch((err) => {
       rlog('讀取設定失敗', { reason: String(err && err.message || err).slice(0, 120) }, 'error');
@@ -755,8 +770,10 @@
       // v2.5.0：ownWrites＝這台寫回進度的時刻表——自己那次寫入讓 updated_at 前進不算過期
       const ownP = typeof RC.readOwnWrites === 'function' ? RC.readOwnWrites(storage) : Promise.resolve({});
       return Promise.all([store.get(account, id), RC.findFeedDoc(storage, account, id), ownP]).then(([entry, feedDoc, ownWrites]) => {
-        const usable = entry && entry.doc && entry.doc.html_content && !RC.isStale(entry, feedDoc, ownWrites && ownWrites[id]);
-        return { store, account, entry: usable ? entry : null, feedDoc: feedDoc || null, ownWrites: ownWrites || {} };
+        const has = !!(entry && entry.doc && entry.doc.html_content);
+        const usable = has && !RC.isStale(entry, feedDoc, ownWrites && ownWrites[id]);
+        // v3.4.5：過期的快取另外帶回（staleEntry）——網路抓不到時（離線）拿它頂上，總比錯誤訊息好
+        return { store, account, entry: usable ? entry : null, staleEntry: has && !usable ? entry : null, feedDoc: feedDoc || null, ownWrites: ownWrites || {} };
       });
     }).catch(() => none);
   }
