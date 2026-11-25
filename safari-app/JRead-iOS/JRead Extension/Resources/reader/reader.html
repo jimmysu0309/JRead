@@ -331,6 +331,7 @@
   .jr-tagmenu-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .jr-tagmenu-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .jr-tagmenu-item.is-on { color: var(--link); font-weight: 600; }
+  .jr-tagmenu-item.is-active { background: var(--line); } /* v3.4.4：打字時預設選到的那個，Enter 選它 */
   .jr-tagmenu-empty { padding: 8px 12px; font-size: 13px; color: var(--muted); }
   /* iOS 聚焦字級小於 16px 的輸入框會自動放大整頁、收起鍵盤也不縮回（v3.1.1，3.1.0 搜尋框 15px、
      多選標籤框 13px 在 iPhone 上中招）。觸控裝置一律 16px，電腦上維持原本字級。
