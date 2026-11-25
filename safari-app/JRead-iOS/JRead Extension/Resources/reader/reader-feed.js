@@ -1224,7 +1224,8 @@
           },
           // 背景更新目前的分頁清單（貼網址抓完時）：不清畫面、不離開多選（refresh 模式）
           refreshView: () => loadList(currentTab || initialTab, { refresh: true }),
-          setTagFilter: (name) => { tagFilter = name || null; loadList(currentTab || initialTab); },
+          // opts.load === false：只記篩選不載清單（搜尋中換標籤、叫回上次搜尋；離開搜尋時 reload 會帶上）
+          setTagFilter: (name, opts) => { tagFilter = name || null; if (!opts || opts.load !== false) loadList(currentTab || initialTab); },
           cancelPending: () => { loadGen++; }
         });
       }

@@ -18,13 +18,16 @@
   const POLL_LIMIT_MS = 60000;
   const LAST_SEARCH_KEY = 'jread:lastSearch';
   const FAB_IDLE_MS = 400; // 捲動停下多久後圓鈕回來
-  const KB_MIN_PX = 80; // visual viewport 底下少掉超過這麼多才算螢幕鍵盤（iPhone 鍵盤至少 200px 以上）
+  const KB_MIN_PX = 80; // visual viewport 比 layout viewport 矮超過這麼多才算螢幕鍵盤（iPhone 鍵盤至少 200px 以上；
+  // 接實體鍵盤時 iOS 只留一條浮動列，模擬器量到差 68px，不算鍵盤、底部墊高照舊）
   // 搜尋結果排序（Jimmy 2026-11-24「加入 相關/最新/最舊」）。最新 / 最舊＝存入日期（JReader sort 參數）
   const SORTS = [{ id: 'relevance', label: '相關' }, { id: 'newest', label: '最新' }, { id: 'oldest', label: '最舊' }];
   const LAST_SORT_KEY = 'jread:lastSearchSort';
   // 資料夾篩選（Jimmy 2026-11-24「搜尋請加入資料夾 filter」）：''＝全部。伺服器 /api/v1/search?location=
   const FOLDERS = [{ id: '', label: '全部' }, { id: 'new', label: 'Inbox' }, { id: 'later', label: 'Later' }, { id: 'archive', label: 'Archive' }];
   const LAST_FOLDER_KEY = 'jread:lastSearchFolder';
+  // 搜尋時套用中的標籤（v3.2.3，Jimmy 2026-11-25「標籤和文字搜尋要能同時存在」）：從文章頁退回 tab=search 時一起叫回
+  const LAST_TAG_KEY = 'jread:lastSearchTag';
   // 開始搜尋時所在的分頁：從搜尋結果打開文章再退回（網址只剩 tab=search）後按 Esc，要回到這個分頁、不是第一個
   const SEARCH_FROM_KEY = 'jread:searchFrom';
   // 搜尋結果卡片連到文章頁時帶的 tab：退出文章頁回 reader.html?tab=search，工具列
@@ -340,23 +343,34 @@
     }
     ui.fab.addEventListener('click', () => setExpanded(true));
 
-    // iOS 螢幕鍵盤：WebKit 開鍵盤只縮 visual viewport、不縮 layout viewport，position: fixed; bottom: 0
-    // 的工具列其實在鍵盤後面——聚焦當下 iOS 捲動頁面把輸入框推進畫面才看得到，搜尋結果一換清單
-    // 捲動位置跳掉就又躲回鍵盤後面（Jimmy 2026-11-25 回報）。工具列展開時量鍵盤佔掉的高度寫進
-    // <html> 的 --jr-kb，CSS 把工具列、清單底部留白、toast 一起墊高；收起或鍵盤關掉歸零。
-    // 頁面被捏合放大時量不準（offsetTop 混了平移量），不墊
+    // iOS 螢幕鍵盤（v3.2.2 起；v3.2.3 依 iOS 26.5 模擬器實測改寫，App 與 Safari 都量過）：
+    // - 鍵盤剛開：iOS 自己把 fixed 元素排在 visual viewport 底部（offsetTop＝頁面被推上去的量），
+    //   innerHeight − (vv.height + vv.offsetTop) ＝ 0，不用墊
+    // - 搜尋結果換掉清單、文件變矮後 offsetTop 歸 0，fixed 元素回到 layout viewport 底部＝鍵盤後面
+    //  （Jimmy 2026-11-25 回報），這時差值＝鍵盤高度，墊上去
+    // 「鍵盤開著」另外判斷（innerHeight − vv.height）：兩種狀態都要拿掉底部手勢區的墊高，v3.2.2 只看
+    // 墊高量，鍵盤剛開時沒拿掉，App 裡搜尋框和鍵盤之間多出 34pt 空白（Jimmy 2026-11-25 截圖）。
+    // 墊高量寫進 <html> 的 --jr-kb、鍵盤開著在 body 加 jr-kb-open，CSS 在 reader.html。
+    // 頁面被捏合放大時量不準（offsetTop 混了平移量），不處理
     const vv = win.visualViewport;
-    let kbPx = 0;
+    let kbPx = -1;
+    let kbOpen = false;
     function syncKeyboard() {
-      let kb = 0;
+      let lift = 0;
+      let open = false;
       if (expanded && vv && !(vv.scale > 1.01)) {
-        kb = Math.round((win.innerHeight || 0) - (vv.height + vv.offsetTop));
-        if (!(kb >= KB_MIN_PX)) kb = 0; // 網址列伸縮、捨入誤差這類小差距不算鍵盤
+        const ih = win.innerHeight || 0;
+        open = ih - vv.height >= KB_MIN_PX; // 網址列伸縮、捨入誤差這類小差距不算鍵盤
+        if (open) lift = Math.max(0, Math.round(ih - (vv.height + vv.offsetTop)));
       }
-      if (kb === kbPx) return;
-      kbPx = kb;
-      doc.documentElement.style.setProperty('--jr-kb', kb + 'px');
-      doc.body.classList.toggle('jr-kb-open', kb > 0);
+      if (lift !== kbPx) {
+        kbPx = lift;
+        doc.documentElement.style.setProperty('--jr-kb', lift + 'px');
+      }
+      if (open !== kbOpen) {
+        kbOpen = open;
+        doc.body.classList.toggle('jr-kb-open', open);
+      }
     }
     if (vv && typeof vv.addEventListener === 'function') {
       vv.addEventListener('resize', syncKeyboard);
@@ -396,8 +410,10 @@
     function rememberSearch(q) {
       try {
         if (!session) return;
-        if (q) { session.setItem(LAST_SEARCH_KEY, q); session.setItem(LAST_SORT_KEY, sortMode); session.setItem(LAST_FOLDER_KEY, folder); }
-        else { session.removeItem(LAST_SEARCH_KEY); session.removeItem(LAST_SORT_KEY); session.removeItem(LAST_FOLDER_KEY); }
+        if (q) {
+          session.setItem(LAST_SEARCH_KEY, q); session.setItem(LAST_SORT_KEY, sortMode); session.setItem(LAST_FOLDER_KEY, folder);
+          if (activeTag) session.setItem(LAST_TAG_KEY, activeTag); else session.removeItem(LAST_TAG_KEY);
+        } else { session.removeItem(LAST_SEARCH_KEY); session.removeItem(LAST_SORT_KEY); session.removeItem(LAST_FOLDER_KEY); session.removeItem(LAST_TAG_KEY); }
       } catch (_) {}
     }
 
@@ -468,7 +484,8 @@
     }
     function emptySearchText(q) {
       const f = FOLDERS.find((x) => x.id === folder);
-      return (folder && f ? f.label + ' 裡' : '') + '找不到含有「' + q + '」的文章';
+      const scope = [folder && f ? f.label : '', activeTag ? '# ' + activeTag : ''].filter(Boolean).join('、');
+      return (scope ? scope + ' 裡' : '') + '找不到含有「' + q + '」的文章';
     }
 
     function exitSearch(reload) {
@@ -512,7 +529,7 @@
         if (!env.listEl.children.length) env.showMsg('搜尋中…', false);
       }
       const offset = more ? current.offset : 0;
-      const r = await PC.searchJReader(Object.assign({ q, sort: sortMode, location: folder || undefined, limit: SEARCH_PAGE, offset }, rw));
+      const r = await PC.searchJReader(Object.assign({ q, sort: sortMode, location: folder || undefined, tag: activeTag || undefined, limit: SEARCH_PAGE, offset }, rw));
       if (gen !== searchGen || !searching) return; // 已換查詢或離開搜尋
       if (!r || !r.ok) {
         // INVALID_QUERY＝沒有要找的詞（例如只打了「-iPhone」）：不是錯誤，提示怎麼用。其他 400（例如 INVALID_SORT）
@@ -671,11 +688,10 @@
       menu = null;
       ui.tags.setAttribute('aria-expanded', 'false');
     }
-    // 搜尋中不顯示篩選標記：搜尋不帶標籤、結果跨所有標籤，留著 chip 會讓人以為只搜了這個標籤
-    //（2026-11-24 審核 A-4；伺服器端 /api/v1/search 支援 tag 參數之後再改成真的篩選）。
-    // 篩選本身還在，離開搜尋回到分頁清單時照舊套用、chip 也跟著回來
+    // 標籤篩選與文字搜尋並存（v3.2.3，Jimmy 2026-11-25）：搜尋帶 tag 參數給伺服器篩（/api/v1/search?tag=），
+    // chip 在搜尋中也顯示。v3.1.2（審核 A-4）伺服器還不收 tag 時是搜尋中藏 chip、選標籤就離開搜尋
     function renderFilterChip() {
-      const show = !!activeTag && !searching;
+      const show = !!activeTag;
       ui.filter.textContent = '';
       ui.filter.hidden = !show;
       ui.tags.classList.toggle('is-on', show);
@@ -690,10 +706,15 @@
       chip.appendChild(x);
       ui.filter.appendChild(chip);
     }
+    // 搜尋中換標籤：同一個查詢帶新標籤從第一頁重搜，分頁清單的篩選先記著不載（離開搜尋時 env.reload 會帶上）
     function setTag(name) {
       activeTag = name || null;
       renderFilterChip();
-      if (searching) { ui.search.value = ''; exitSearch(false); }
+      if (searching && current) {
+        env.setTagFilter(activeTag, { load: false });
+        runSearch(current.q, false);
+        return;
+      }
       env.setTagFilter(activeTag);
     }
     async function openTagMenu() {
@@ -786,6 +807,9 @@
       let f = null;
       try { f = session ? session.getItem(LAST_FOLDER_KEY) : null; } catch (_) { f = null; }
       if (FOLDERS.some((x) => x.id === f)) { folder = f; renderFolder(); }
+      let t = null;
+      try { t = session ? session.getItem(LAST_TAG_KEY) : null; } catch (_) { t = null; }
+      if (t) { activeTag = t; env.setTagFilter(t, { load: false }); }
       ui.search.value = q;
       setExpanded(true, { focus: false });
       runSearch(q, false);
@@ -816,7 +840,7 @@
   const api = {
     attach, highlightTerms, createResultCard, createPendingCard, settlePendingCard, pollUntilSettled,
     locationLabel, hasSearchable, buildToolbar,
-    SEARCH_TAB, LAST_SEARCH_KEY, LAST_SORT_KEY, LAST_FOLDER_KEY, SEARCH_FROM_KEY, SORTS, FOLDERS, FAB_IDLE_MS, KB_MIN_PX, SEARCH_PAGE, POLL_MS, POLL_LIMIT_MS, SEARCH_DEBOUNCE_MS
+    SEARCH_TAB, LAST_SEARCH_KEY, LAST_SORT_KEY, LAST_FOLDER_KEY, LAST_TAG_KEY, SEARCH_FROM_KEY, SORTS, FOLDERS, FAB_IDLE_MS, KB_MIN_PX, SEARCH_PAGE, POLL_MS, POLL_LIMIT_MS, SEARCH_DEBOUNCE_MS
   };
 
   if (typeof module !== 'undefined' && module.exports) {

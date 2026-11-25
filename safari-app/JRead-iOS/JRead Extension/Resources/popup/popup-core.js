@@ -862,7 +862,7 @@
   // GET <base>/api/v1/search?q=&location=&limit=&offset= → { ok, count, results }
   // results 與 v3 list 的 document 同形，另帶 snippet（字串或 null）
   // sort：'relevance'（預設，相關程度）/ 'newest' / 'oldest'（存入日期）
-  async function searchJReader({ token, base, q, location, sort, limit, offset, fetchImpl, timeoutMs } = {}) {
+  async function searchJReader({ token, base, q, location, tag, sort, limit, offset, fetchImpl, timeoutMs } = {}) {
     if (!normalizeApiBase(base)) return { ok: false, error: 'NO_BASE' };
     const query = typeof q === 'string' ? q.trim() : '';
     const r = await readwiseRequest({
@@ -871,6 +871,7 @@
       url: () => {
         const params = new URLSearchParams({ q: query });
         if (location) params.set('location', location);
+        if (tag) params.set('tag', tag); // v3.2.3：標籤篩選與搜尋並存（伺服器不分大小寫比對標籤名）
         if (sort && sort !== 'relevance') params.set('sort', sort);
         if (limit) params.set('limit', String(limit));
         if (offset) params.set('offset', String(offset));
