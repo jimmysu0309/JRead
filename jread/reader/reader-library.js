@@ -358,7 +358,7 @@
     function syncKeyboard() {
       let lift = 0;
       let open = false;
-      if (expanded && vv && !(vv.scale > 1.01)) {
+      if (expanded && vv && !(vv.scale > 1.01) && toolbarInputFocused()) {
         const ih = win.innerHeight || 0;
         open = ih - vv.height >= KB_MIN_PX; // 網址列伸縮、捨入誤差這類小差距不算鍵盤
         if (open) lift = Math.max(0, Math.round(ih - (vv.height + vv.offsetTop)));
@@ -372,10 +372,29 @@
         doc.body.classList.toggle('jr-kb-open', open);
       }
     }
+    // 鍵盤是工具列的輸入框（搜尋框、貼網址）叫出來的才算：焦點一離開就停止墊高，不跟著鍵盤收起動畫
+    // 一路追 visual viewport（v3.2.4 模擬器實測：追的話收鍵盤那半秒搜尋列亂跳）
+    function toolbarInputFocused() {
+      const a = doc.activeElement;
+      return !!a && ui.root.contains(a) && a.tagName === 'INPUT';
+    }
     if (vv && typeof vv.addEventListener === 'function') {
       vv.addEventListener('resize', syncKeyboard);
       vv.addEventListener('scroll', syncKeyboard);
     }
+    ui.root.addEventListener('focusin', syncKeyboard);
+    ui.root.addEventListener('focusout', syncKeyboard);
+    // 鍵盤開著時一滑清單就收起鍵盤（v3.2.4，Jimmy 2026-11-25 選；iOS 郵件、App Store 搜尋的慣例）：
+    // iOS 26 鍵盤開著時捲動，fixed 的工具列會被系統來回移動（模擬器實測連完全不墊高的純 fixed 也抖、
+    // 還會躲到鍵盤後面），網頁端追位置永遠慢一格。收起鍵盤後工具列回到底部、不再抖；搜尋字與結果留著。
+    // 只看觸控、只在螢幕鍵盤開著時（接實體鍵盤的 iPad 不收）；在工具列或標籤選單裡滑不算
+    doc.addEventListener('touchmove', (e) => {
+      if (!kbOpen) return;
+      const t = e.target;
+      if (ui.root.contains(t) || (menu && menu.el.contains(t))) return;
+      const a = doc.activeElement;
+      if (a && typeof a.blur === 'function') a.blur();
+    }, { passive: true, capture: true });
 
     // 捲動時藏圓鈕：往下捲淡出、往上捲立刻回來、停下 FAB_IDLE_MS 後回來（Jimmy 2026-11-24 選 A＋C）
     let lastY = win.scrollY || 0;
