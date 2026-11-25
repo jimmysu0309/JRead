@@ -184,6 +184,15 @@
   const READWISE_BASE = 'https://readwise.io';
   // 網址正規化：去頭尾空白與結尾斜線；只收 https（本機開發另收 http://localhost /
   // 127.0.0.1）。不合法回 ''（呼叫端視為未設定）
+  // v3.4.0：使用者輸入的網址沒寫協定就補 https://（「jreader.example.com」→
+  //「https://jreader.example.com」）。已有協定（http://、https://、其他 scheme://）照舊；
+  // 空字串回空字串。只補協定、不驗格式——格式交給各呼叫端原本的檢查
+  function withDefaultScheme(raw) {
+    const t = typeof raw === 'string' ? raw.trim() : '';
+    if (!t) return '';
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t;
+    return 'https://' + t.replace(/^\/+/, '');
+  }
   function normalizeApiBase(raw) {
     const t = typeof raw === 'string' ? raw.trim() : '';
     if (!t) return '';
@@ -1317,9 +1326,11 @@
   // normalizeStorageService：未知 / 損壞值退回 'readwise'（v1.6.0 以來的既有行為）。
   // isReadwiseCompatible：走 Readwise 相容 API 的服務（jreader 只差 base）——讀取、搬移、
   // 重點、進度都共用 Readwise 那幾支函式，能力判斷（supports*）一律經過它。
-  const STORAGE_SERVICES = ['readwise', 'instapaper', 'jreader'];
+  // v3.4.0：JReader 排第一、成為預設（Jimmy 2026-11-25）。陣列順序＝設定頁選項順序
+  const STORAGE_SERVICES = ['jreader', 'readwise', 'instapaper'];
+  const DEFAULT_STORAGE_SERVICE = 'jreader';
   function normalizeStorageService(v) {
-    return STORAGE_SERVICES.indexOf(v) !== -1 ? v : 'readwise';
+    return STORAGE_SERVICES.indexOf(v) !== -1 ? v : DEFAULT_STORAGE_SERVICE;
   }
   function isReadwiseCompatible(service) {
     return service === 'readwise' || service === 'jreader';
@@ -1327,7 +1338,7 @@
   // 讀設定時三個服務的憑證欄位與預設值（popup / options / reader / SW / content 直送軌
   // 讀 storage 時展開這份，加欄位只改這裡）
   const SERVICE_SETTINGS_DEFAULTS = {
-    storageService: 'readwise',
+    storageService: DEFAULT_STORAGE_SERVICE,
     readwiseToken: '',
     instapaperToken: '',
     instapaperTokenSecret: '',
@@ -1768,7 +1779,9 @@
     HOST_SESSION_TOKEN,
     normalizeApiBase,
     STORAGE_SERVICES,
+    DEFAULT_STORAGE_SERVICE,
     normalizeStorageService,
+    withDefaultScheme,
     isReadwiseCompatible,
     SERVICE_SETTINGS_DEFAULTS,
     serviceSettingsQuery,

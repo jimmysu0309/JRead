@@ -339,7 +339,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { markOpened, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey };
+  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -736,6 +736,9 @@
     NS.state.readerHostPage = true;
     NS.state.readerNoExit = !exitHref;
     NS.onReaderExit = backToFeed;
+    // v3.4.0：懸浮按鈕選單「重新抓取文章」（floating-icon 看到這個 hook 才列）。公開分享頁沒有
+    // 服務可重抓，不掛
+    NS.onReaderRefetch = ctx.readOnly ? null : () => refetchArticle(docData, ctx);
 
     // 2026-10-07 review C-22 / F-3：進場失敗（回 false 或 reject）要有出口——
     // 狀態列已拆、容器已掛，若靜默失敗使用者只看到裸文章、ESC 也退不回（main.js
@@ -774,6 +777,31 @@
           watchLayoutMode(NS, global.browser);
         }, onEnterFailed);
     }
+  }
+
+  // v3.4.0：重新抓取這篇（Jimmy 2026-11-25「單篇文章加入從稍後閱讀重抓」）。文章頁先讀本機
+  // 文章快取，服務端內容更新過（重新解析、修過內文）但 updated_at 沒變時快取一直沿用舊版。
+  // 做法：刪掉這篇的快取再重新整理——載入流程（init → loadFromCache miss → fetchAndRender）
+  // 就會從服務重抓並寫回快取，不另寫一條抓取＋重繪的路。IndexedDB 不可用時本來就每次走
+  // API，直接重新整理。永不 reject，回是否真的刪到快取。deps 供 spec 注入（RC / location）
+  function refetchArticle(docData, ctx, deps) {
+    const d = deps || {};
+    const RC = d.RC || global.__JReadReaderCache;
+    const loc = d.location || global.location;
+    const id = docData && docData.id != null ? String(docData.id) : '';
+    rlog('重新抓取文章', { id });
+    flushLog();
+    const reload = () => { try { loc.reload(); } catch (_) { /* 非瀏覽器環境 */ } };
+    if (!RC || !id || typeof RC.accountKey !== 'function') { reload(); return Promise.resolve(false); }
+    const account = RC.accountKey(ctx && ctx.service, ctx && ctx.creds);
+    return Promise.resolve()
+      .then(() => RC.openArticleStore(d.storeOpts))
+      .then((store) => {
+        if (!store || typeof store.remove !== 'function') return false;
+        return store.remove(account, id).then((ok) => { store.close(); return ok; });
+      })
+      .catch(() => false)
+      .then((ok) => { reload(); return !!ok; });
   }
 
   // v3.1.0：打開文章時告訴 JReader（PC.markJReaderOpened）。只開沒捲動時閱讀進度不會寫回，Progress

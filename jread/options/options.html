@@ -842,6 +842,12 @@
       transition: border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
     }
     .reset-btn:hover { border-color: var(--jr-danger-600, #c0362c); }
+    /* v3.4.0：同一欄的按鈕（清除快取 / 匯出 / 匯入 / 回復預設）固定同寬、右緣對齊；
+       120px 容得下最長的「再按一次確認」 */
+    .reset-btn { width: 120px; padding: 0 8px; }
+    /* 匯出 / 匯入不是破壞性動作：中性字色，hover 用主色框 */
+    .reset-btn.neutral { color: var(--jr-neutral-900); }
+    .reset-btn.neutral:hover { border-color: var(--jr-primary-600); }
     .reset-btn.confirming {
       border-color: var(--jr-danger-600, #c0362c);
       box-shadow: 0 0 0 3px rgba(192, 54, 44, 0.15);
@@ -1105,16 +1111,16 @@
       <div class="field">
         <label>稍後閱讀服務</label>
         <div class="service-toggle" id="storageService" role="radiogroup" aria-label="稍後閱讀服務">
+          <label><input type="radio" name="storageService" value="jreader"><span>JReader</span></label>
           <label><input type="radio" name="storageService" value="readwise"><span>Readwise Reader</span></label>
           <label><input type="radio" name="storageService" value="instapaper"><span>Instapaper</span></label>
-          <label><input type="radio" name="storageService" value="jreader"><span>JReader</span></label>
         </div>
       </div>
 
       <!-- v2.6.0：JReader 憑證（storageService=jreader 時顯示）：自架後端的網址＋token -->
       <div class="field" data-service-block="jreader">
         <label for="jreaderUrl">JReader 網址</label>
-        <span class="desc">你自架的 JReader 網址，例如 https://jreader.example.com</span>
+        <span class="desc">你自架的 JReader 網址，例如 jreader.example.com（沒寫 https:// 會自動補上）</span>
         <input type="url" id="jreaderUrl" autocomplete="off" spellcheck="false" placeholder="https://">
         <label for="jreaderToken" style="margin-top:12px">JReader Token</label>
         <div class="readwise-token-control">
@@ -1204,6 +1210,24 @@
       <button type="button" id="clearLocalCache" class="reset-btn">清除快取</button>
     </div>
     <div id="clear-cache-status" style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
+
+    <div class="reset-row" data-app-hide>
+      <div class="reset-text">
+        <span class="reset-label">匯出設定</span>
+        <span class="reset-desc">把目前的偏好設定、設定檔、自動啟動網域與自訂快速鍵存成 JSON 檔，可在別台電腦匯入。檔案不含任何 API key、token、JReader 網址與 Instapaper 帳號</span>
+      </div>
+      <button type="button" id="exportSettings" class="reset-btn neutral">匯出</button>
+    </div>
+    <div class="reset-row" data-app-hide>
+      <div class="reset-text">
+        <span class="reset-label">匯入設定</span>
+        <span class="reset-desc">讀入先前匯出的 JSON 檔，檔案裡有的設定會覆蓋目前的值，憑證維持不動</span>
+      </div>
+      <button type="button" id="importSettings" class="reset-btn neutral">匯入</button>
+      <input type="file" id="importSettingsFile" accept="application/json,.json" hidden>
+      <!-- App（WKWebView）內不能下載檔案，兩列 data-app-hide -->
+    </div>
+    <div id="transfer-status" data-app-hide style="margin-top:8px;min-height:0;color:var(--jr-primary-600);font-family:var(--jr-font-mono);font-size:12px;letter-spacing:0.02em;"></div>
 
     <div class="reset-row">
       <div class="reset-text">
