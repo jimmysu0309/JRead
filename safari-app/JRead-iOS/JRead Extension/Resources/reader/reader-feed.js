@@ -309,6 +309,9 @@
   // ---- 右鍵選單（v2.4.0，桌面滑鼠）----
   // 同一時間只有一個選單；點外面 / Esc / 捲動 / 視窗縮放或失焦即關
   let openMenu = null;
+  const LONG_PRESS_MS = 500;            // 觸控長按開卡片選單（與 iOS 系統長按約略同速）
+  const LONG_PRESS_SLOP_PX = 10;        // 位移超過就當捲動 / 滑動，不算長按
+  const LONG_PRESS_CLICK_GUARD_MS = 800; // 長按開選單後吞掉放手補發的 click / contextmenu
   function closeCardMenu() {
     if (!openMenu) return;
     const m = openMenu;
@@ -424,9 +427,41 @@
       return onPick(kind);
     };
     CARD_ACTIONS.set(card, { kinds: new Set(items.map((it) => it.kind)), pick });
+    // 觸控長按（v3.2.7，Jimmy 2026-11-25「iOS 文章列表長按卡片要跳選單，不是選文字」）：
+    // iOS WebKit 長按不送 contextmenu，只會進文字選取 / 系統連結選單，右鍵選單永遠叫不出來。
+    // 觸控自己判長按（LONG_PRESS_MS、位移 ≤ LONG_PRESS_SLOP_PX）開同一份選單；
+    // CSS（reader.html .jr-card.has-menu）在 coarse 指標關掉卡片文字選取與系統長按選單。
+    // Android 長按會另送 contextmenu → 長按剛開過就只吞掉、不再開第二次
+    card.classList.add('has-menu');
+    let lp = null;
+    let lpOpenedAt = 0;
+    const lpClear = () => { if (lp && lp.timer && win) win.clearTimeout(lp.timer); lp = null; };
+    card.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch' || e.isPrimary === false || !win) return;
+      if (card.classList.contains('is-busy')) return;
+      lpClear();
+      const x = e.clientX, y = e.clientY;
+      lp = { id: e.pointerId, x, y, timer: win.setTimeout(() => {
+        lp = null;
+        if (card.classList.contains('is-busy') || card.classList.contains('is-swiping')) return;
+        lpOpenedAt = Date.now();
+        openCardMenu(card, x, y, items, pick);
+      }, LONG_PRESS_MS) };
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (!lp || e.pointerId !== lp.id) return;
+      if (Math.abs(e.clientX - lp.x) > LONG_PRESS_SLOP_PX || Math.abs(e.clientY - lp.y) > LONG_PRESS_SLOP_PX) lpClear();
+    });
+    card.addEventListener('pointerup', lpClear);
+    card.addEventListener('pointercancel', lpClear);
+    // 長按開了選單後放手，瀏覽器可能補一發 click → 別誤開文章
+    card.addEventListener('click', (e) => {
+      if (Date.now() - lpOpenedAt < LONG_PRESS_CLICK_GUARD_MS) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
     card.addEventListener('contextmenu', (e) => {
       if (card.classList.contains('is-busy')) return;
       e.preventDefault();
+      if (Date.now() - lpOpenedAt < LONG_PRESS_CLICK_GUARD_MS) return;
       openCardMenu(card, e.clientX, e.clientY, items, pick);
     });
   }
@@ -602,6 +637,7 @@
   const api = {
     formatMeta, formatCardDate, encodeMeta, createCard, cardCaps, attachKeyboardNav, KB_KEYS, trashConfirmText, TRASH_ACTIONS, pickInitialTab, renderFeed, actionCard, archiveCard, archiveErrorMessage,
     swipeThreshold, swipeDecision, swipeOffset, openCardMenu, closeCardMenu,
+    LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
     MAX_ITEMS, MORE_STEP, FEED_TABS, LATER_TEXT, INBOX_TEXT, SWIPE_OUT_MS
   };
 

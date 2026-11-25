@@ -90,6 +90,11 @@
     -webkit-touch-callout: default; -webkit-user-drag: none;
   }
   .jr-card.is-swiping .jr-card-link { -webkit-user-select: none; user-select: none; }
+  /* v3.2.7：觸控長按改開卡片選單（reader-feed attachContextMenu）——有選單的卡片關掉
+     文字選取與系統長按選單，否則 iOS 長按先進文字選取。沒有選單的分頁照舊保留系統選單 */
+  @media (pointer: coarse) {
+    .jr-card.has-menu, .jr-card.has-menu .jr-card-link { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  }
   /* v3.1.0：卡片加了日期與兩行摘要後變高，縮圖從 64px 放大到 88px（≈ 標題＋副標＋兩行摘要的
      高度），全部卡片同尺寸；窄螢幕 72px，不擠壓文字欄（Jimmy 2026-11-24「卡片變大但圖看起來小了」） */
   .jr-thumb {

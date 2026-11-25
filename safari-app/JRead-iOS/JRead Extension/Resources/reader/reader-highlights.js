@@ -547,6 +547,11 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       pointer-events: auto;
     }
     .btn.show { display: block; }
+    /* 觸控裝置建立重點：停靠視窗上緣 / 下緣置中（見 touchDockSide）。下緣墊高避開翻頁頁碼
+       （iPhone 頁碼 bottom 10px + 高 19px）與 Home 指示條；App 內 env() 恆 0，改讀 shim 變數 */
+    .btn.dock { left: 50% !important; transform: translateX(-50%); }
+    .btn.dock-bottom { top: auto !important; bottom: calc(44px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px))); }
+    .btn.dock-top { top: calc(12px + env(safe-area-inset-top, 0px)) !important; }
     .btn.danger { background: #c53030; }
     .btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
   `;
@@ -554,6 +559,18 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
   const LABEL_CREATE = '畫重點';
   const LABEL_DELETE = '刪除重點';
   const GAP = 10;
+
+  // 觸控裝置（iOS / iPadOS / Android）建立重點時，系統會在選取範圍正上方或正下方
+  // 跳出自己的編輯選單（拷貝 / 查詢 / 翻譯），位置由系統決定、網頁無從得知——
+  // 上方空間夠也可能放下方（Jimmy 2026-11-25 iPhone 截圖：選單在下方、與貼在選取
+  // 下方的「畫重點」鈕疊在一起）。系統選單一定貼著選取範圍，所以鈕改停在視窗上緣或
+  // 下緣，取離選取範圍較遠的一側：選取中心在上半 → 下緣，在下半 → 上緣。
+  // 刪除重點（點既有 mark）沒有系統選單，照舊貼著目標
+  function touchDockSide(selRect, vh) {
+    if (!selRect || !vh) return 'bottom';
+    const center = (selRect.top + selRect.bottom) / 2;
+    return center > vh / 2 ? 'top' : 'bottom';
+  }
 
   function errorMessage(r, action, PC) {
     if (r && r.error === 'NOT_FOUND') return '這段文字在 Readwise 的原文裡找不到，無法畫重點';
@@ -611,11 +628,32 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       pendingRange = null;
       setActive(null);
       btn.classList.remove('show');
+      clearDock();
     }
 
-    // 鈕放在目標下方置中；下方放不下改放上方；左右夾在視窗內
+    const coarse = (() => {
+      try { return !!(win.matchMedia && win.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
+    })();
+
+    function clearDock() {
+      btn.classList.remove('dock', 'dock-top', 'dock-bottom');
+    }
+
+    // 鈕放在目標下方置中；下方放不下改放上方；左右夾在視窗內。
+    // 觸控裝置建立重點改停靠視窗上 / 下緣（touchDockSide）
     function place(rect) {
       if (!rect) return;
+      if (coarse && mode === 'create' && pendingRange) {
+        const vh0 = win.innerHeight || doc.documentElement.clientHeight || 0;
+        const side = touchDockSide(pendingRange.getBoundingClientRect ? pendingRange.getBoundingClientRect() : rect, vh0);
+        btn.classList.add('dock');
+        btn.classList.toggle('dock-top', side === 'top');
+        btn.classList.toggle('dock-bottom', side === 'bottom');
+        btn.style.top = '';
+        btn.style.left = '';
+        return;
+      }
+      clearDock();
       const vw = win.innerWidth || doc.documentElement.clientWidth || 0;
       const vh = win.innerHeight || doc.documentElement.clientHeight || 0;
       const bw = btn.offsetWidth || 90;
@@ -844,7 +882,8 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     // v2.6.0：唯讀重點（定位＋標記層，公開分享頁用）
     normalizeHighlightList, installMarkStyle, attachReadOnly, READONLY_ATTR,
     accountKey, emptyCache, cacheUsable, cacheFromExport, mergeExport, applyLocalOps,
-    cacheAdd, cacheRemove, highlightsForDoc, incrementalSince, attach
+    cacheAdd, cacheRemove, highlightsForDoc, incrementalSince, attach,
+    touchDockSide
   };
 
   if (typeof module !== 'undefined' && module.exports) {
