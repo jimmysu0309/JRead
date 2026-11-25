@@ -544,7 +544,7 @@
   // touchend 之後等 click 的上限（iOS 單指點按 click 通常在 touchend 後幾十毫秒內送出）
   const TAP_CLICK_WAIT_MS = 1000;
   const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
-    '#__jread-floating-host, #__jread-panel-host, #__jread-hl-host, #__jread-toast-host, ' +
+    '#__jread-floating-host, #__jread-panel-host, #__jread-settings-host, #__jread-hl-host, #__jread-toast-host, ' +
     '#__jread-page-indicator, #__jread-scrub-track';
   function installImmersive(win, report) {
     const doc = win.document;
@@ -642,6 +642,10 @@
     }
     else window.addEventListener('pageshow', () => reportStatusBar(false));
   }
+
+  // v3.3.0：設定頁（文章頁 J 選單「設定」以 iframe 開 options.html）同樣鎖雙指縮放——
+  // WKWebView 的縮放是整個 WebView，iframe 裡捏合一樣會把整頁放大
+  if (/\/options\/options\.html$/.test(location.pathname)) installNoPinch(window);
 
   window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, installNoPinch, setSafeBottom };
 })(__JReadHostShimCore);

@@ -53,6 +53,10 @@ const runtimeKind = PLATFORM.runtimeKindOf(browser.runtime.getURL(''));
 const runtime = (runtimeKind === 'chrome' || runtimeKind === 'firefox') ? runtimeKind : 'safari';
 document.body.classList.add('runtime-' + runtime);
 const isSafariRuntime = (runtime === 'safari');
+// v3.3.0：iOS App 內建 JReader（jread-app://）開的設定頁——body 加 runtime-app，
+// options.html 的 [data-app-hide] 區塊（App 用不到的設定）整段隱藏
+const isAppRuntime = String(browser.runtime.getURL('')).indexOf('jread-app:') === 0;
+if (isAppRuntime) document.body.classList.add('runtime-app');
 
 // v0.8.163：三指輕點切換是觸控裝置（iPhone / iPad，maxTouchPoints >= 3）專屬手勢。
 // 桌面 Chrome / macOS Safari（含 iOS build 跑在 Mac，無觸控螢幕 maxTouchPoints=0）
