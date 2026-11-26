@@ -315,41 +315,6 @@
 
     /* v0.8.154：懸浮按鈕透明度滑桿——整寬，滑桿吃剩餘寬、右側固定寬 % 讀數
        用 tabular-nums 不跳動。 */
-    .opacity-control {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-top: 8px;
-    }
-    .opacity-control input[type="range"] {
-      flex: 1 1 auto;
-      min-width: 0;
-      margin: 0;
-      accent-color: var(--jr-primary-600);
-      cursor: pointer;
-    }
-    .opacity-control .opacity-val {
-      flex: 0 0 44px;
-      text-align: right;
-      font-family: var(--jr-font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 13px;
-      color: var(--jr-neutral-700);
-    }
-    /* 透明度範例 icon：跟著透明度滑桿（即時不透明度）與尺寸 radio 群（icon 大小）變動。
-       固定 32px footprint（= large 視覺尺寸）置中，換尺寸不跳版（UI 對齊 grid）。 */
-    .opacity-control .opacity-demo {
-      flex: 0 0 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .opacity-control .opacity-demo img {
-      display: block;
-      border-radius: 4px;
-      filter: drop-shadow(0 1px 3px rgba(0,0,0,.4));
-    }
 
     /* 懸浮按鈕尺寸：水平 radio 群（小 / 中 / 大），比照 Shinkansen floating-size-options
        風格——非下拉選單，三個選項一字排開即見即選。內層 label 覆寫 .field label 的
@@ -943,6 +908,33 @@
       </div>
     </div>
 
+    <!-- v3.7.0：文章列表卡片文字（同 popup 功能選單從列表頁打開時那組；值的範圍與 reader-feed.js feedTextVars 一致） -->
+    <div class="field">
+      <label for="feedFontScale">文章列表字級</label>
+      <span class="desc">JReader 文章列表卡片的標題、資訊列、摘要一起縮放。預設 <strong>100%</strong>，範圍 80–150%；字型跟著閱讀模式的中文字型</span>
+      <input type="number" id="feedFontScale" min="80" max="150" step="10">
+    </div>
+
+    <div class="field">
+      <label>文章列表標題行數</label>
+      <div class="size-options" id="feedTitleLines" role="radiogroup" aria-label="文章列表標題行數">
+        <label><input type="radio" name="feedTitleLines" value="1"><span>1 行</span></label>
+        <label><input type="radio" name="feedTitleLines" value="2"><span>2 行</span></label>
+        <label><input type="radio" name="feedTitleLines" value="3"><span>3 行</span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>文章列表摘要行數</label>
+      <div class="size-options" id="feedSummaryLines" role="radiogroup" aria-label="文章列表摘要行數">
+        <label><input type="radio" name="feedSummaryLines" value="0"><span>不顯示</span></label>
+        <label><input type="radio" name="feedSummaryLines" value="1"><span>1 行</span></label>
+        <label><input type="radio" name="feedSummaryLines" value="2"><span>2 行</span></label>
+        <label><input type="radio" name="feedSummaryLines" value="3"><span>3 行</span></label>
+        <label><input type="radio" name="feedSummaryLines" value="all"><span>全部</span></label>
+      </div>
+    </div>
+
     <div class="field field-checkbox">
       <input type="checkbox" id="pangu">
       <label for="pangu">
@@ -1058,30 +1050,8 @@
         <input type="checkbox" id="floatingIcon">
         <label for="floatingIcon">
           懸浮按鈕
-          <span class="desc">頁面邊緣常駐按鈕：<strong>短按</strong>切換閱讀模式、<strong>長按</strong>開選單、<strong>拖曳</strong>換位置</span>
+          <span class="desc">左下角常駐的 J 按鈕：<strong>點一下</strong>切換閱讀模式、<strong>長按</strong>開選單</span>
         </label>
-      </div>
-
-      <div class="field">
-        <label>懸浮按鈕尺寸</label>
-        <span class="desc">按鈕大小：<strong>小</strong> = 16px、<strong>中</strong> = 24px（預設）、<strong>大</strong> = 32px</span>
-        <div class="size-options" id="floatingIconSize" role="radiogroup" aria-label="懸浮按鈕尺寸">
-          <label><input type="radio" name="floatingIconSize" value="small"><span>小</span></label>
-          <label><input type="radio" name="floatingIconSize" value="medium"><span>中</span></label>
-          <label><input type="radio" name="floatingIconSize" value="large"><span>大</span></label>
-        </div>
-      </div>
-
-      <div class="field">
-        <label for="floatingIconOpacity">懸浮按鈕透明度</label>
-        <span class="desc">數值越低越淡。範圍 10–100%</span>
-        <div class="opacity-control">
-          <input type="range" id="floatingIconOpacity" min="0.1" max="1" step="0.05">
-          <span class="opacity-val" id="floatingIconOpacityVal"></span>
-          <span class="opacity-demo" id="floatingIconOpacityDemo" aria-hidden="true">
-            <img src="../assets/icons/icon-32.png" alt="">
-          </span>
-        </div>
       </div>
 
       <div class="field field-checkbox" data-app-hide>

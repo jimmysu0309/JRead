@@ -39,6 +39,11 @@ const pagedModeCb = document.getElementById('paged-mode-cb');
 // v3.5.3：滑鼠移動浮現按鈕（顯示條件見 IS_WEB 之後）
 const mouseRevealCb = document.getElementById('mouse-reveal-cb');
 const mouseRevealRow = document.getElementById('mouse-reveal-row');
+// v3.7.0：文章列表卡片文字（只在從列表頁打開的功能選單顯示）
+const feedTextGroup = document.getElementById('feed-text-group');
+const feedScaleValEl = document.getElementById('feed-scale-val');
+const feedTitleBtns = document.querySelectorAll('[data-feed-title]');
+const feedSummaryBtns = document.querySelectorAll('[data-feed-summary]');
 // v1.9.0：設定檔列
 const profileSelect = document.getElementById('profile-select');
 const profileSaveBtn = document.getElementById('profile-save-btn');
@@ -113,6 +118,12 @@ if (mouseRevealRow) {
   try { fine = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch (_e) { fine = false; }
   mouseRevealRow.hidden = !(IS_WEB && fine);
 }
+// v3.7.0：列表卡片文字這組只在「從列表頁打開的功能選單」（floating-icon 帶 ?page=feed）顯示——文章頁與工具列 popup 沒有卡片可調
+const FROM_FEED = (() => {
+  try { return new URLSearchParams(location.search).get('page') === 'feed'; } catch (_e) { return false; }
+})();
+if (feedTextGroup) feedTextGroup.hidden = !(IS_PANEL && FROM_FEED);
+const FEED_SCALE = { min: 80, max: 150, step: 10 };
 let panelVerified = !IS_PANEL || IS_APP;
 if (IS_WEB) panelVerified = true;
 if (IS_PANEL && !IS_APP) {
@@ -253,6 +264,17 @@ function render(settings) {
   for (const btn of themeBtns) {
     btn.classList.toggle('active', btn.dataset.theme === settings.theme);
   }
+  // v3.7.0 列表卡片文字（值的正規化與 reader-feed.js feedTextVars 同一套範圍）
+  if (feedScaleValEl) {
+    const sc = Math.max(FEED_SCALE.min, Math.min(FEED_SCALE.max, Number(settings.feedFontScale) || 100));
+    feedScaleValEl.textContent = sc + '%';
+    const dec = document.querySelector('[data-action="feed-scale-dec"]');
+    const inc = document.querySelector('[data-action="feed-scale-inc"]');
+    if (dec) dec.disabled = sc <= FEED_SCALE.min;
+    if (inc) inc.disabled = sc >= FEED_SCALE.max;
+  }
+  for (const btn of feedTitleBtns) btn.classList.toggle('active', btn.dataset.feedTitle === String(settings.feedTitleLines || 2));
+  for (const btn of feedSummaryBtns) btn.classList.toggle('active', btn.dataset.feedSummary === String(settings.feedSummaryLines == null ? 2 : settings.feedSummaryLines));
   // 邊界 disable
   // 字級 Auto 模式下 - 按鈕 disable、+ 按鈕從 Auto 跳到 DEFAULT
   document.querySelector('[data-action="font-dec"]').disabled =
@@ -513,6 +535,20 @@ if (mouseRevealCb) {
   });
 }
 
+// v3.7.0 列表卡片文字
+{
+  const scaleNow = () => Math.max(FEED_SCALE.min, Math.min(FEED_SCALE.max, Number(current.feedFontScale) || 100));
+  const fd = document.querySelector('[data-action="feed-scale-dec"]');
+  const fi = document.querySelector('[data-action="feed-scale-inc"]');
+  if (fd) fd.addEventListener('click', () => { if (settingsReady) save({ feedFontScale: Math.max(FEED_SCALE.min, scaleNow() - FEED_SCALE.step) }); });
+  if (fi) fi.addEventListener('click', () => { if (settingsReady) save({ feedFontScale: Math.min(FEED_SCALE.max, scaleNow() + FEED_SCALE.step) }); });
+  for (const btn of feedTitleBtns) btn.addEventListener('click', () => { if (settingsReady) save({ feedTitleLines: Number(btn.dataset.feedTitle) }); });
+  for (const btn of feedSummaryBtns) btn.addEventListener('click', () => {
+    if (!settingsReady) return;
+    const v = btn.dataset.feedSummary;
+    save({ feedSummaryLines: v === 'all' ? 'all' : Number(v) });
+  });
+}
 document.querySelector('[data-action="font-dec"]').addEventListener('click', () => {
   if (!settingsReady) return; // v1.7.42 R3 guard（見 settingsReady 註解）
   // Auto 模式下 - 不做事（按鈕 disabled，這裡只是 fallback）

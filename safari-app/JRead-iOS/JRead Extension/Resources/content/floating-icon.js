@@ -83,6 +83,12 @@
   })();
   const FEED_PAGE = OWN_PAGE && PAGE_KIND === 'feed';
   const GEAR = OWN_PAGE && (PAGE_KIND === 'feed' || PAGE_KIND === 'article');
+  // v3.7.0：一般網站上的 J 改成齒輪那一套外觀與位置（Jimmy 2026-11-26「icon style 和互動行為改為與齒輪 icon 相同，
+  // 位置固定在左下角相同位置，按鈕中間的圖示改為類似原本 icon 圖案的 J」）：36px 圓、細框、線條圖示（Georgia 粗體 J）、
+  // 固定左下角（離邊＝articleFabEdges）、不能拖、不吃尺寸 / 透明度 / 位置設定（設定 UI 一併拿掉）。
+  // 互動保留 J 的：點一下切換閱讀模式、長按開選單（Jimmy 選「點一下切換閱讀模式」）。
+  // 一般網站的配色各不相同：不讀頁面的 --line / --muted（那是網站自己的變數），用固定的半透明白底＋細框
+  const SITE_FAB = !GEAR;
   // 齒輪尺寸＝搜尋圓鈕（reader.html .jr-fab：36px 圓、圖示 17px）。同一份外觀的兩份實作（那邊是頁面 CSS、
   // 這裡在 shadow DOM 裡碰不到），改一邊要改另一邊；forcing：v350-gear.spec.js 比對兩邊的數值
   const GEAR_HIT = 36;
@@ -217,6 +223,13 @@
     }
     .fab.gear svg .dot { fill: currentColor; stroke: none; }
     .fab.gear.is-scroll-hidden { opacity: 0; pointer-events: none; }
+    /* v3.7.0 一般網站的 J：齒輪外觀、固定配色（不吃網站的 CSS 變數）。白底半透明＋細框＋淡陰影，
+       淺色 / 深色網站都看得到；J 用 Georgia 粗體（同 App 圖示的 J） */
+    .fab.gear.site { background: rgba(255, 255, 255, 0.92); color: #4a4a4a; border-color: rgba(0, 0, 0, 0.18);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); opacity: .85; }
+    .fab.gear.site:hover, .fab.gear.site:focus-visible, .fab.gear.site[aria-expanded="true"] {
+      opacity: 1; color: #1a1a1a; background: #ffffff; border-color: rgba(0, 0, 0, 0.35); }
+    .fab.gear.site svg text { fill: currentColor; stroke: none; }
     /* 文章頁：齒輪疊在內文上，透明底會跟字混在一起（截圖驗證）——用頁面底色當實心底、不淡化。
        平常本來就藏（沉浸閱讀），出現時要一眼看得到 */
     .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--fab-ring, var(--muted, #6b6b6b)); }
@@ -310,6 +323,11 @@
   NS.injectShadowCss(shadow, CSS);
   btn = shadow.getElementById('fab');
   menuEl = shadow.getElementById('menu');
+  if (SITE_FAB) {
+    btn.classList.add('gear', 'site');
+    btn.setAttribute('aria-label', 'JRead');
+    btn.title = 'JRead：點一下切換閱讀模式，長按開選單';
+  }
   if (GEAR) {
     btn.classList.add('gear');
     btn.setAttribute('aria-label', '選單');
@@ -512,6 +530,8 @@
     // v3.4.0：重新抓取（順時針箭頭繞圈，與其他圖示同 24 格線條）
     refresh: [['path', { d: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }], ['path', { d: 'M19.5 4v4h-4' }]],
     // v3.5.0：JReader 總覽（四格儀表板）
+    // v3.7.0：一般網站的 J（Georgia 粗體，同 App 圖示；第三個元素是文字內容）
+    jread: [['text', { x: 12.4, y: 20, 'text-anchor': 'middle', 'font-family': 'Georgia, "Times New Roman", serif', 'font-weight': 700, 'font-size': 24 }, 'J']],
     dashboard: [['rect', { x: 4, y: 4, width: 7, height: 9, rx: 1.5 }], ['rect', { x: 13, y: 4, width: 7, height: 5, rx: 1.5 }],
       ['rect', { x: 13, y: 11, width: 7, height: 9, rx: 1.5 }], ['rect', { x: 4, y: 15, width: 7, height: 5, rx: 1.5 }]]
   };
@@ -520,14 +540,16 @@
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
-    for (const [tag, attrs] of MENU_ICONS[name] || []) {
+    for (const [tag, attrs, text] of MENU_ICONS[name] || []) {
       const el = document.createElementNS(SVG_NS, tag);
       for (const k of Object.keys(attrs)) el.setAttribute(k, String(attrs[k]));
+      if (text) el.textContent = text;
       svg.appendChild(el);
     }
     return svg;
   }
   if (GEAR) { btn.textContent = ''; btn.appendChild(buildIcon('gear')); }
+  if (SITE_FAB) { btn.textContent = ''; btn.appendChild(buildIcon('jread')); }
   if (infoBtn) infoBtn.appendChild(buildIcon('info'));
   if (backBtn) backBtn.appendChild(buildIcon('list'));
 
@@ -730,7 +752,8 @@
   function openFeaturePanelIframe() {
     if (panelHost) return;   // 已開著不重複開
     let popupUrl = '';
-    try { popupUrl = browser.runtime.getURL('popup/popup.html') + '?panel=1'; } catch (_e) { return; }
+    // v3.7.0：從列表頁打開帶 page=feed（功能選單多顯示「列表字級 / 標題行數 / 摘要行數」）
+    try { popupUrl = browser.runtime.getURL('popup/popup.html') + '?panel=1' + (FEED_PAGE ? '&page=feed' : ''); } catch (_e) { return; }
     // v1.7.44（X2）：先向 SW 登記本 tab 合法開啟浮層——popup(?panel=1) 載入時
     // 憑 sender.tab 向 SW 驗證（單次有效 + 30s TTL）。任意網站自行 iframe 嵌
     // popup.html?panel=1 沒有這筆登記 → 握手失敗 → popup 互動 no-op（clickjacking
@@ -946,7 +969,8 @@
   function applyOpacity(v) {
     const o = typeof v === 'number' ? v : DEFAULT_OPACITY;
     // v3.5.0：齒輪自己有淡化樣式（.fab.gear opacity .7），host 不再疊一層使用者設的透明度
-    currentOpacity = GEAR ? 1 : Math.max(0.1, Math.min(1, o));
+    // v3.7.0：一般網站的 J 也是齒輪樣式，透明度設定拿掉
+    currentOpacity = (GEAR || SITE_FAB) ? 1 : Math.max(0.1, Math.min(1, o));
     // 選單開著時 host 維持全不透明（見 openMenu）；新設定值記在 currentOpacity，
     // 等 closeMenu 還原。沒開選單時直接套用。
     if (!menuOpen) host.style.opacity = String(currentOpacity);
@@ -957,7 +981,7 @@
   // 取對應，其餘（含未設過 / 非法值）退回**預設 medium**（v0.8.166，與 settings-defaults
   // 的 floatingIconSize 預設一致）。
   function applySize(v) {
-    const s = GEAR ? { hit: GEAR_HIT, icon: GEAR_ICON } : (SIZE_MAP[v] || SIZE_MAP.medium);
+    const s = (GEAR || SITE_FAB) ? { hit: GEAR_HIT, icon: GEAR_ICON } : (SIZE_MAP[v] || SIZE_MAP.medium);
     hitSize = s.hit;
     host.style.setProperty('--fab-hit', s.hit + 'px');
     host.style.setProperty('--fab-icon', s.icon + 'px');
@@ -1049,7 +1073,7 @@
   }
 
   function applyPos(p) {
-    if (GEAR) { applyGearPos(); return; }
+    if (GEAR || SITE_FAB) { applyGearPos(); return; }   // v3.7.0：一般網站的 J 也固定左下角
     pos = FEED_PAGE ? sanitizePos(null) : sanitizePos(p);   // v3.4.5：列表頁固定左下角
     const vh = window.innerHeight || 0;
     // v3.4.5：App 列表頁避開底部安全區域（Home 指示條；App 的 WebView 畫到螢幕底，
@@ -1071,7 +1095,7 @@
   }
 
   function persistPos() {
-    if (FEED_PAGE || GEAR) return;   // v3.4.5：列表頁的固定位置不寫回同步設定
+    if (FEED_PAGE || GEAR || SITE_FAB) return;   // v3.4.5：列表頁的固定位置不寫回同步設定；v3.7.0 J 也不能拖、不寫
     try { browser.storage.sync.set({ floatingIconPos: pos }); } catch (_e) {}
   }
 
@@ -1193,7 +1217,7 @@
     menuEl.classList.toggle('anchor-top', pos.offsetY < 0.5);
     menuEl.classList.add('show');
     menuOpen = true;
-    if (GEAR) btn.setAttribute('aria-expanded', 'true');
+    if (GEAR || SITE_FAB) btn.setAttribute('aria-expanded', 'true');
     // 選單開著時整顆 host 全不透明，讓選單文字清楚可讀（不受使用者淡透明度影響）
     host.style.opacity = '1';
     outsideHandler = (ev) => {
@@ -1209,7 +1233,7 @@
     if (!menuOpen) return;
     menuEl.classList.remove('show');
     menuOpen = false;
-    if (GEAR) btn.setAttribute('aria-expanded', 'false');
+    if (GEAR || SITE_FAB) btn.setAttribute('aria-expanded', 'false');
     // 還原使用者設定的透明度（選單期間被調成全不透明）
     host.style.opacity = String(currentOpacity);
     if (outsideHandler) {
@@ -1254,7 +1278,7 @@
     press = {
       id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false, menuWasOpen,
       // 觸控（手指）用較寬的拖移門檻；滑鼠 / 觸控筆維持 8px
-      dragThreshold: (FEED_PAGE || GEAR) ? Infinity   // v3.4.5：列表頁不能拖；v3.5.0 齒輪不能拖
+      dragThreshold: (FEED_PAGE || GEAR || SITE_FAB) ? Infinity   // v3.4.5：列表頁不能拖；v3.5.0 齒輪不能拖；v3.7.0 J 不能拖
         : (e.pointerType === 'touch' ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX)
     };
     press.timer = setTimeout(() => {
@@ -1386,7 +1410,7 @@
 
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
-    isGear: GEAR, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
+    isGear: GEAR, isSiteFab: SITE_FAB, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
     infoBtn, backBtn, refreshInfoFab, applyFabTheme, isPublicPage: PUBLIC_PAGE, articleFabEdges, feedFabPos, FEED_CORNER_MIN_WIDTH, mouseRevealPref, applyMouseReveal,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,

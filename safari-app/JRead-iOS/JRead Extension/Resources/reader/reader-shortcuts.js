@@ -11,6 +11,11 @@
 // 浮層用 shadow DOM 掛 <html> 直下（閱讀模式會把 body 底下非主文元素藏起來，同重點浮動鈕與文章資訊）。
 // 顏色讀頁面目前的背景 / 文字色。
 //
+// v3.7.0：擴充在一般網站也有（Jimmy 2026-11-26「extension 加入 shift+/ 快速鍵提示，模仿 jreader 的行為」）——本檔同時是
+// content script（manifest content_scripts，main.js 之前）。一般網站只在 JRead 閱讀模式開著時才接 ?（很多網站自己用 ? 開
+// 快速鍵說明，閱讀模式外不搶）；列 page: 'site' 那幾筆，切換 / 送出 / 翻頁三個指令的按鍵顯示使用者實際的設定
+//（customShortcuts 有自訂用自訂、沒有用 manifest 預設，shortcut-utils.js 單一資料源）。JRead 自己的閱讀頁照舊
+//
 // dual export：module.exports 給 jsdom spec、window.__JReadReaderShortcuts 給頁面。
 (function (global) {
   'use strict';
@@ -41,12 +46,34 @@
     { page: 'article', keys: ['L'], label: '編輯標籤', when: (c) => c.library && !c.readOnly },
     { page: 'article', keys: ['D'], label: '刪除這篇（移到垃圾桶，再按一次 D 確認）', when: (c) => c.library && !c.readOnly },
     { page: 'article', keys: ['Esc'], label: '回到文章列表', when: (c) => c.canExit },
+    // v3.7.0 一般網站（擴充 content script，閱讀模式中）。keys 是函式＝依使用者設定算出（commandKey）
+    { page: 'site', keys: (c) => [commandKey(c, 'toggle-reader-mode')], label: '進入 / 退出閱讀模式' },
+    { page: 'site', keys: (c) => [commandKey(c, 'send-to-readwise')], label: '送到稍後閱讀服務' },
+    { page: 'site', keys: (c) => [commandKey(c, 'toggle-paged-mode')], label: '切換翻頁模式' },
+    { page: 'site', keys: ['Space'], label: '往下一個畫面（翻頁模式：下一頁）' },
+    { page: 'site', keys: ['Shift', 'Space'], label: '往上一個畫面（翻頁模式：上一頁）' },
+    { page: 'site', keys: ['←', '→'], label: '翻頁模式：上一頁、下一頁' },
+    { page: 'site', keys: ['Home', 'End'], label: '翻頁模式：第一頁、最後一頁' },
+    { page: 'site', keys: ['Esc'], label: '退出閱讀模式' },
     { page: null, keys: ['?'], label: '顯示 / 關閉這份說明' }
   ];
 
+  // v3.7.0：指令目前的按鍵（自訂優先，否則 manifest 預設；shortcut-utils.js 的 format / MANIFEST_DEFAULTS）
+  function commandKey(ctx, command) {
+    const SC = (ctx && ctx.shortcutUtils) || global.__JReadShortcuts;
+    const custom = ctx && ctx.customShortcuts && ctx.customShortcuts[command];
+    if (!SC || typeof SC.format !== 'function') return '';
+    return SC.format(custom || (SC.MANIFEST_DEFAULTS && SC.MANIFEST_DEFAULTS[command])) || '';
+  }
+  function keysOf(item, ctx) {
+    const k = typeof item.keys === 'function' ? item.keys(ctx) : item.keys;
+    return (k || []).filter(Boolean);
+  }
+
   function itemsFor(ctx) {
     const c = ctx || {};
-    return SHORTCUTS.filter((s) => (s.page === null || s.page === c.page) && (typeof s.when !== 'function' || s.when(c)));
+    return SHORTCUTS.filter((s) => (s.page === null || s.page === c.page) && (typeof s.when !== 'function' || s.when(c))
+      && keysOf(s, c).length > 0);
   }
 
   // ? 鍵：Shift+/ 在多數鍵盤是 '?'；有些配置 e.key 仍是 '/'，用 code 補判
@@ -111,7 +138,8 @@
       // 2026-11-24 審核收斂）。reader-cache 在 article.html 比這支晚載入：用到時才讀
       const R = global.__JReadReaderCache || RC_MOD;
       const c = R && typeof R.pageThemeColors === 'function' ? R.pageThemeColors(win, doc)
-        : { bg: '#ffffff', fg: '#1a1a1a', muted: 'rgba(26,26,26,0.62)', line: 'rgba(26,26,26,0.14)', link: '#1a73e8' };
+        : (typeof o.colors === 'function' && o.colors())
+        || { bg: '#ffffff', fg: '#1a1a1a', muted: 'rgba(26,26,26,0.62)', line: 'rgba(26,26,26,0.14)', link: '#1a73e8' };
       for (const k of ['bg', 'fg', 'muted', 'line', 'link']) host.style.setProperty('--' + k, c[k]);
       shadow.textContent = '';
       const style = doc.createElement('style');
@@ -132,7 +160,7 @@
         row.className = 'row';
         const keys = doc.createElement('span');
         keys.className = 'keys';
-        for (const k of s.keys) {
+        for (const k of keysOf(s, ctx)) {
           const kbd = doc.createElement('kbd');
           kbd.textContent = k;
           keys.appendChild(kbd);
@@ -164,6 +192,8 @@
         return;
       }
       if (!isHelpKey(e) || isTypingTarget(e.target, win)) return;
+      // v3.7.0：一般網站只在閱讀模式開著時接（opts.enabled）；說明開著時照樣可以再按 ? 關掉
+      if (!opened && typeof o.enabled === 'function' && !o.enabled()) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       toggle();
@@ -180,12 +210,63 @@
   }
 
   // 頁面 bootstrap：讀設定判斷服務，條件在打開說明的當下才算（翻頁模式、文章是否已渲染等會變）
+  // v3.7.0：一般網站（擴充 content script）。閱讀模式中才開；配色取閱讀卡片 / body 實際的底色與字色
+  function initSite(doc) {
+    const NS = global.__JRead;
+    const browser = global.browser;
+    if (!NS || NS.readerShortcuts) return;   // 重複注入保險
+    let customShortcuts = {};
+    const SC = global.__JReadShortcuts;
+    const load = () => {
+      try {
+        Promise.resolve(browser.storage.sync.get({ customShortcuts: {} })).then((s) => {
+          customShortcuts = SC && typeof SC.sanitizeTable === 'function' ? SC.sanitizeTable(s && s.customShortcuts) : ((s && s.customShortcuts) || {});
+        }).catch(() => {});
+      } catch (_) { /* */ }
+    };
+    load();
+    try { browser.storage.onChanged.addListener((ch, area) => { if (area === 'sync' && ch.customShortcuts) load(); }); } catch (_) { /* */ }
+    const opaque = (c) => c && c !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(c);
+    NS.readerShortcuts = attach({
+      doc, win: global,
+      enabled: () => !!(NS.state && NS.state.active),
+      getContext: () => ({ page: 'site', customShortcuts }),
+      colors: () => {
+        try {
+          const card = (NS.state && NS.state.articleEl) || doc.body;
+          let bg = global.getComputedStyle(card).backgroundColor;
+          if (!opaque(bg)) bg = global.getComputedStyle(doc.body).backgroundColor;
+          if (!opaque(bg)) bg = '#ffffff';
+          const fg = global.getComputedStyle(card).color || '#1a1a1a';
+          const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(fg);
+          const rgb = m ? m[1] + ',' + m[2] + ',' + m[3] : '26,26,26';
+          return { bg, fg, muted: 'rgba(' + rgb + ',0.62)', line: 'rgba(' + rgb + ',0.14)', link: '#1a73e8' };
+        } catch (_) { return null; }
+      }
+    });
+  }
+
   function init() {
     const doc = global.document;
     const PC = global.__JReadPopup;
     const RC = global.__JReadReaderCache;
     const browser = global.browser;
     if (!doc || !PC) return;
+    // v3.7.0：不是 JRead 自己的閱讀頁（擴充 content script 在一般網站上）→ 一般網站模式
+    // 判定同 floating-icon.js OWN_PAGE：沒有 background 的 host（App / 網頁版的頁面世界）整頁都是 JRead 的；擴充則要是
+    // 擴充自己的 reader/ 頁面。不看 data-jread-page——網頁版上擴充的 content script（isolated world）也看得到那個標記，
+    // 兩邊都接 ? 會一按就開了又關
+    const NSG = global.__JRead;
+    let ownPage = false;
+    try {
+      if (NSG && typeof NSG.isHostedRuntime === 'function' && NSG.isHostedRuntime()) ownPage = true;
+      else if (global.__jreadHost || global.__jreadApp) ownPage = true;
+      else {
+        const base = browser && browser.runtime && browser.runtime.getURL ? browser.runtime.getURL('reader/') : '';
+        ownPage = !!base && String(global.location.href).indexOf(base) === 0;
+      }
+    } catch (_) { ownPage = !!pageOf(doc); }
+    if (!ownPage) { initSite(doc); return; }
     let service = 'readwise';
     try {
       Promise.resolve(browser.storage.sync.get(PC.serviceSettingsQuery({}))).then((s) => {
@@ -214,7 +295,7 @@
     });
   }
 
-  const api = { attach, itemsFor, isHelpKey, pageOf, SHORTCUTS, HOST_ID };
+  const api = { attach, itemsFor, isHelpKey, pageOf, commandKey, keysOf, SHORTCUTS, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

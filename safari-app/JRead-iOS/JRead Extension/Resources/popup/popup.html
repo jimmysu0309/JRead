@@ -322,10 +322,10 @@
     /* 主題組（亮/暗/米/灰/夜）：5×32=160 > 110、space-between 會被擠到零間隔。
        改 gap + flex 等分——v2.3.0 加「夜」成 5 顆後 gap 6→4，等寬 (110-4×4)/5≈19px，
        左右邊緣仍對齊 110px stepper。只 scope 主題組，不影響字重組。 */
-    .theme-group[aria-label="主題"] {
+    .theme-group[aria-label="主題"], .theme-group[aria-label="摘要行數"] {
       gap: 4px;
     }
-    .theme-group[aria-label="主題"] .theme-btn {
+    .theme-group[aria-label="主題"] .theme-btn, .theme-group[aria-label="摘要行數"] .theme-btn {
       flex: 1 1 0;
       width: auto;
     }
@@ -643,6 +643,37 @@
         <input type="text" id="profile-name-input" class="font-family-select profile-name-input"
           maxlength="24" placeholder="設定檔名稱" aria-label="設定檔名稱"
           autocomplete="off" spellcheck="false" hidden>
+      </div>
+    </div>
+
+    <!-- v3.7.0：文章列表卡片文字（Jimmy 2026-11-26）。只在從列表頁打開的功能選單顯示（?panel=1&page=feed，popup.js）；
+         擴充工具列 popup 不顯示（590px 高度上限）、擴充使用者另可在進階設定頁調 -->
+    <div id="feed-text-group" hidden>
+      <div class="setting-row">
+        <label>列表字級</label>
+        <div class="stepper">
+          <button data-action="feed-scale-dec" aria-label="列表字級縮小">−</button>
+          <span class="val" id="feed-scale-val">100%</span>
+          <button data-action="feed-scale-inc" aria-label="列表字級放大">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <label>標題行數</label>
+        <div class="theme-group" role="group" aria-label="標題行數">
+          <button class="theme-btn" data-feed-title="1" title="標題最多 1 行">1</button>
+          <button class="theme-btn" data-feed-title="2" title="標題最多 2 行（預設）">2</button>
+          <button class="theme-btn" data-feed-title="3" title="標題最多 3 行">3</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <label>摘要行數</label>
+        <div class="theme-group" role="group" aria-label="摘要行數">
+          <button class="theme-btn" data-feed-summary="0" title="不顯示摘要">無</button>
+          <button class="theme-btn" data-feed-summary="1" title="摘要最多 1 行">1</button>
+          <button class="theme-btn" data-feed-summary="2" title="摘要最多 2 行（預設）">2</button>
+          <button class="theme-btn" data-feed-summary="3" title="摘要最多 3 行">3</button>
+          <button class="theme-btn" data-feed-summary="all" title="摘要全部顯示">全</button>
+        </div>
       </div>
     </div>
 

@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'mouseRevealButtons', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle', 'appIcon'];
+const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'mouseRevealButtons', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'progressBarStyle', 'feedFontScale', 'feedTitleLines', 'feedSummaryLines', 'appIcon'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -21,10 +21,6 @@ const resolveFloatingIconEnabled = window.__JReadResolveFloatingIconEnabled || (
 // v1.7.37：進度條皮膚白名單（settings-defaults.js 單一資料源，不在此另寫一份）
 const PROGRESS_BAR_STYLES = window.__JReadProgressBarStyles || ['hairline'];
 
-// v1.7.37：懸浮按鈕尺寸合法值。用於 radio 群讀寫的白名單驗證——原本散在三處
-// 各自硬寫 'small' 當 fallback，v0.8.166 預設改 medium 後全部沒跟上（content 端
-// applySize 退 medium、options 退 small 的行為 drift）。fallback 一律走 DEFAULTS。
-const FLOATING_ICON_SIZES = ['small', 'medium', 'large'];
 
 // v2.2.13：App 圖示白名單（settings-defaults.js 單一資料源）
 const APP_ICONS = window.__JReadAppIcons || ['default'];
@@ -183,8 +179,7 @@ window.addEventListener('keydown', (e) => {
 function readFieldFromDom(id) {
   const el = document.getElementById(id);
   switch (id) {
-    case 'spaceScrollRatio': case 'positionMemoryDays':
-    case 'floatingIconOpacity': {
+    case 'spaceScrollRatio': case 'positionMemoryDays': case 'feedFontScale': {
       // v0.8.36：number input 的 min/max 屬性不阻止手動輸入超界值或留空
       // （Number('') = 0 → contentWidth 存 0）。以 input 自身的 min/max 為
       // clamp 範圍（單一資料源在 HTML），空值 / NaN 退回 shared 預設值——
@@ -203,15 +198,14 @@ function readFieldFromDom(id) {
     case 'debugLog':
     case 'blockPageShortcuts': case 'pangu': case 'linkFollowReader': case 'editModeEnabled': case 'readwiseSummary':
       return el.checked;
-    case 'floatingIconSize': {
-      // v0.8.166：radio 群（小 / 中 / 大）取代下拉 select；el 是 wrapper（id 在容器上）。
-      // 讀已勾選的 radio；損壞 / 無勾選退回 DEFAULTS（v1.7.37 修 drift——原本硬寫
-      // 'small'，但 v0.8.166 已把預設改成 medium，content 端 applySize 也是退
-      // medium。此處是唯一還停在舊預設的 path，會讓「radio 全未勾選」的損壞情境
-      // 存進 small、與其他三處不一致）。
-      const checked = el.querySelector('input[name="floatingIconSize"]:checked');
+    case 'feedTitleLines': case 'feedSummaryLines': {
+      // v3.7.0：radio 群（wrapper id）；數字存數字，'all' 存字串。未勾選 / 未知值退回預設
+      const checked = el.querySelector('input[name="' + id + '"]:checked');
       const v = checked ? checked.value : null;
-      return FLOATING_ICON_SIZES.indexOf(v) >= 0 ? v : DEFAULTS.floatingIconSize;
+      if (id === 'feedSummaryLines' && v === 'all') return 'all';
+      const n = Number(v);
+      const ok = id === 'feedTitleLines' ? [1, 2, 3] : [0, 1, 2, 3];
+      return v !== null && ok.indexOf(n) !== -1 ? n : DEFAULTS[id];
     }
     case 'progressBarStyle': {
       // v1.7.37：radio 群（細線 / 描邊 / 描邊＋軌道 / 加高）；el 是 wrapper。
@@ -254,35 +248,6 @@ function normalizeService(v) {
   return P && typeof P.normalizeStorageService === 'function' ? P.normalizeStorageService(v) : 'jreader';
 }
 
-// 透明度 % 讀數（input 拖動即時更新，與 storage 無關）
-function updateOpacityReadout(frac) {
-  const out = document.getElementById('floatingIconOpacityVal');
-  if (out) out.textContent = Math.round(Number(frac) * 100) + '%';
-}
-
-// 範例 icon 跟著透明度滑桿（即時不透明度）+ 尺寸 radio 群（icon 大小）變動。
-// 尺寸對照與 content/floating-icon.js SIZE_MAP 一致：small=16 / medium=24 / large=32（視覺）。
-function updateOpacityDemo() {
-  const demo = document.getElementById('floatingIconOpacityDemo');
-  if (!demo) return;
-  const opacityEl = document.getElementById('floatingIconOpacity');
-  const sizeEl = document.getElementById('floatingIconSize');
-  if (opacityEl) {
-    const o = Number(opacityEl.value);
-    demo.style.opacity = String(Math.max(0.1, Math.min(1, Number.isFinite(o) ? o : 0.7)));
-  }
-  const img = demo.querySelector('img');
-  if (img) {
-    // v0.8.166：尺寸來源改 radio 群（wrapper id=floatingIconSize 內的 checked radio）
-    // v1.7.37：無勾選時退回 DEFAULTS（原硬寫 'small'，見 readFieldFromDom 的 drift 註解）
-    const checked = sizeEl && sizeEl.querySelector('input[name="floatingIconSize"]:checked');
-    const v = checked ? checked.value : DEFAULTS.floatingIconSize;
-    const px = v === 'large' ? 32 : v === 'medium' ? 24 : 16;
-    img.style.width = px + 'px';
-    img.style.height = px + 'px';
-  }
-}
-
 // v1.7.37：進度條樣式預覽——把目前勾選的皮膚寫到預覽容器的 data-style，
 // CSS 端（options.html .progress-preview[data-style=...]）據此換樣。
 function updateProgressPreview() {
@@ -312,18 +277,12 @@ function applyFieldToDom(id, value) {
   } else if (id === 'floatingIcon') {
     // 三態：boolean 尊重使用者設定；未設過（null / undefined）一律預設勾（v0.8.158）
     el.checked = resolveFloatingIconEnabled(value);
-  } else if (id === 'floatingIconOpacity') {
-    const n = typeof value === 'number' && isFinite(value) ? value : Number(DEFAULTS.floatingIconOpacity);
-    el.value = String(n);
-    updateOpacityReadout(n);
-    updateOpacityDemo();
-  } else if (id === 'floatingIconSize') {
-    // v0.8.166：radio 群（小 / 中 / 大）；勾選對應值
-    // v1.7.37：舊資料 / 損壞退回 DEFAULTS（原硬寫 'small'，見 readFieldFromDom 註解）
-    const v = FLOATING_ICON_SIZES.indexOf(value) >= 0 ? value : DEFAULTS.floatingIconSize;
-    const radio = el.querySelector('input[name="floatingIconSize"][value="' + v + '"]');
+  } else if (id === 'feedTitleLines' || id === 'feedSummaryLines') {
+    // v3.7.0：勾選對應 radio；未知值退回預設
+    const v = value === undefined || value === null ? DEFAULTS[id] : value;
+    const radio = el.querySelector('input[name="' + id + '"][value="' + String(v) + '"]')
+      || el.querySelector('input[name="' + id + '"][value="' + String(DEFAULTS[id]) + '"]');
     if (radio) radio.checked = true;
-    updateOpacityDemo();
   } else if (id === 'progressBarStyle') {
     // v1.7.37：radio 群；未知 / 舊資料退回預設。同步更新預覽區的 data-style
     //（預覽 CSS 只認 wrapper 上的 data-style，見 options.html progress-preview）
@@ -412,22 +371,6 @@ fields.forEach((id) => {
     browser.storage.sync.set({ [id]: readFieldFromDom(id) }).then(flashSaved).catch(flashSaveError);
   });
 });
-
-// 透明度滑桿拖動途中即時更新 % 讀數 + 範例 icon（change 才存檔；input 只更新顯示）
-const opacityRange = document.getElementById('floatingIconOpacity');
-if (opacityRange) {
-  opacityRange.addEventListener('input', () => {
-    updateOpacityReadout(opacityRange.value);
-    updateOpacityDemo();
-  });
-}
-
-// 尺寸 radio 群切換即時更新範例 icon 大小（v0.8.166；radio change 冒泡到 wrapper，
-// wrapper id=floatingIconSize；存檔由 fields 通用 change listener 處理，本 listener 只更新預覽）
-const sizeGroup = document.getElementById('floatingIconSize');
-if (sizeGroup) {
-  sizeGroup.addEventListener('change', updateOpacityDemo);
-}
 
 // v1.7.37：進度條樣式 radio 群切換即時更新預覽（存檔由 fields 通用 change
 // listener 處理，本 listener 只更新預覽——與尺寸 radio 群同 pattern）
