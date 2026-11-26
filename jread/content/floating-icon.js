@@ -1004,6 +1004,17 @@
     const e = coarse ? GEAR_ARTICLE_BOTTOM : ARTICLE_FAB_EDGE_FINE;
     return { side: e, bottom: e, top: e };
   }
+  // v3.6.7：列表頁的齒輪（左下）與搜尋圓鈕（右下）在視窗夠寬時貼螢幕角落、離邊距離比照文章頁（articleFabEdges）
+  //（Jimmy 2026-11-26「如果瀏覽器空間足夠，請將齒輪和搜尋兩個按鈕擺到螢幕下方左右角落，比照文章閱讀的按鈕安排」）。
+  // 「夠寬」＝卡片欄（640 置中）兩側各放得下一顆圓鈕＋間隔：(寬 − 640) / 2 ≥ 圓鈕 36＋邊距＋留白 → 取 760。
+  // 不夠寬維持 v3.5.0：對齊卡片欄左右緣、離底 20px。搜尋圓鈕（reader-library.js）讀這支，兩顆同一份判斷
+  const FEED_CORNER_MIN_WIDTH = 760;
+  function feedFabPos() {
+    const w = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+    if (w < FEED_CORNER_MIN_WIDTH) return { corner: false, side: null, bottom: null };
+    const ed = articleFabEdges();
+    return { corner: true, side: ed.side, bottom: ed.bottom };
+  }
   const SAFE_BOTTOM_CSS = 'max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px))';
   const SAFE_TOP_CSS = 'env(safe-area-inset-top, 0px)';
   function applyGearPos() {
@@ -1011,8 +1022,9 @@
     host.style.top = 'auto';
     host.style.right = 'auto';
     if (FEED_PAGE) {
-      host.style.left = 'max(20px, calc(50% - 320px))';
-      host.style.bottom = 'calc(20px + var(--jr-safe-bottom, 0px))';
+      const fp = feedFabPos();
+      host.style.left = fp.corner ? fp.side + 'px' : 'max(20px, calc(50% - 320px))';
+      host.style.bottom = fp.corner ? `calc(${fp.bottom}px + var(--jr-safe-bottom, 0px))` : 'calc(20px + var(--jr-safe-bottom, 0px))';
     } else {
       const ed = articleFabEdges();
       host.style.left = ed.side + 'px';
@@ -1375,7 +1387,7 @@
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
     isGear: GEAR, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
-    infoBtn, backBtn, refreshInfoFab, applyFabTheme, isPublicPage: PUBLIC_PAGE, articleFabEdges, mouseRevealPref, applyMouseReveal,
+    infoBtn, backBtn, refreshInfoFab, applyFabTheme, isPublicPage: PUBLIC_PAGE, articleFabEdges, feedFabPos, FEED_CORNER_MIN_WIDTH, mouseRevealPref, applyMouseReveal,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
