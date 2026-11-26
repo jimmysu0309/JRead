@@ -59,10 +59,12 @@
   if (!NS) return;
   if (window !== window.top) return;     // 只在主 frame 放一顆
   if (NS.floating) return;               // 重複注入保險
-  // v3.4.9：JReader 公開分享頁（web core 公開唯讀模式，host 替身 readOnly）不放。Jimmy 2026-11-25
-  //「其他人不應該看到有這個 icon」——分享頁的訪客沒有 JRead，這顆是 web core article.html 自己載的，
-  // 不是擴充的；短按退出、長按選單的功能選單 / 分頁模式對訪客都沒有意義
-  if (window.__jreadHost && window.__jreadHost.readOnly) return;
+  // v3.4.9：JReader 公開分享頁（web core 公開唯讀模式，host 替身 readOnly）原本不放（當時是 J 圖示，
+  // Jimmy 2026-11-25「其他人不應該看到有這個 icon」）。v3.5.1（Jimmy 2026-11-26「將齒輪按鈕加到分享文章，
+  // 讓訪客使用者也能調整顯示方式」）：v3.5.0 起閱讀頁是齒輪，分享頁也放——選單只剩「切換分頁模式」
+  //「功能選單」（字級、主題…存在訪客自己瀏覽器的 localStorage）；沒有回到列表、文章資訊、總覽
+  //（readerNoExit、不掛 onReaderInfo、沒有 JReader 網址，見 generalMenuItems / dashboardUrl）
+  const PUBLIC_PAGE = !!(window.__jreadHost && window.__jreadHost.readOnly);
   // v3.4.5：App 的文章列表頁（reader/reader.html）也放一顆（Jimmy 2026-11-25「iOS App 文章列表沒有
   // J 圖示，加在版面最左下方」）。列表頁只在 App 放：Safari 擴充 / 網頁版的列表頁維持沒有。
   // 列表頁固定貼左下角、不能拖（位置設定跟 Safari 擴充同步，那邊拖到哪不該搬動列表頁的入口），
@@ -85,6 +87,15 @@
   // 這裡在 shadow DOM 裡碰不到），改一邊要改另一邊；forcing：v350-gear.spec.js 比對兩邊的數值
   const GEAR_HIT = 36;
   const GEAR_ICON = 17;
+  // v3.5.1：文章頁齒輪離底（不含安全區域）。原本 20px（同列表頁），翻頁模式的內文末行停在頁碼上方
+  //（iPhone 離底 10＋19＋12＝41px，桌面卡片下緣 48px），36px 高的齒輪佔 20–56px 蓋到末行（Jimmy
+  // 2026-11-26 App 截圖）。降到 4px：齒輪佔 4–40px，在末行之下、跟頁碼同一條帶（頁碼置中、齒輪靠左，
+  // 不重疊）。等式由 v351.spec 對 styler 的頁碼常數鎖住
+  const GEAR_ARTICLE_BOTTOM = 4;
+  // v3.5.1：網頁版文章頁右上角的「文章資訊」圓鈕（Jimmy 2026-11-26「用同樣設計方式放到右上角」），
+  // 外觀＝齒輪（同一組 .fab.gear 樣式），跟齒輪一起被沉浸閱讀藏 / 顯示（在同一個 host 裡）
+  const INFO_FAB_EDGE = 20;   // 離右緣，與齒輪離左緣相同
+  const INFO_FAB_TOP = 12;    // 離頂（翻頁卡片頂端留白只有 16px，盡量靠上）
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
   // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）。滑鼠與觸控分開設門檻
@@ -197,10 +208,15 @@
     .fab.gear:hover, .fab.gear:focus-visible, .fab.gear[aria-expanded="true"] {
       opacity: 1; color: var(--text, #1a1a1a); background: var(--card, var(--bg, #ffffff)); border-color: var(--muted, #6b6b6b); outline: none;
     }
+    .fab.gear svg .dot { fill: currentColor; stroke: none; }
     .fab.gear.is-scroll-hidden { opacity: 0; pointer-events: none; }
     /* 文章頁：齒輪疊在內文上，透明底會跟字混在一起（截圖驗證）——用頁面底色當實心底、不淡化。
        平常本來就藏（沉浸閱讀），出現時要一眼看得到 */
     .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--muted, #6b6b6b); }
+    /* v3.5.1 網頁版文章頁右上角的「文章資訊」圓鈕：同一組齒輪樣式，fixed 到視窗右上（host 沒有
+       transform / filter，fixed 子元素以視窗為準）。文章資訊面板掛上（NS.onReaderInfo）才出現 */
+    .fab.info-fab { position: fixed; top: calc(${INFO_FAB_TOP}px + env(safe-area-inset-top, 0px)); right: ${INFO_FAB_EDGE}px; display: none; }
+    .fab.info-fab.ready { display: flex; }
     @media (prefers-reduced-motion: reduce) { .fab.gear { transition: none; } }
     /* 長按選單（v0.8.161 比照 Shinkansen content-floating-icon.js 重繪：藍色圓角
        badge icon、13px 字、緊湊間距、label 過長 ellipsis） */
@@ -295,6 +311,29 @@
     btn.title = '選單';
     if (!FEED_PAGE) btn.classList.add('solid');
   }
+  // v3.5.1：網頁版文章頁（非公開分享頁）把「文章資訊」從選單搬到右上角圓鈕
+  const INFO_FAB = GEAR && PAGE_KIND === 'article' && !PUBLIC_PAGE && !!(NS.isWebRuntime && NS.isWebRuntime());
+  let infoBtn = null;
+  if (INFO_FAB) {
+    infoBtn = document.createElement('button');
+    infoBtn.className = 'fab gear solid info-fab';
+    infoBtn.type = 'button';
+    infoBtn.setAttribute('aria-label', '文章資訊');
+    infoBtn.title = '文章資訊';
+    infoBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      if (typeof NS.onReaderInfo === 'function') { try { NS.onReaderInfo(); } catch (_err) {} }
+    });
+    shadow.appendChild(infoBtn);
+  }
+  // 文章資訊面板是 reader-article 載入文章後才掛（NS.onReaderInfo）；圓鈕平常被沉浸閱讀藏著，
+  // 每次畫面切換（jread:chrome）與開選單時對一次
+  function refreshInfoFab() {
+    if (infoBtn) infoBtn.classList.toggle('ready', typeof NS.onReaderInfo === 'function');
+  }
+  if (INFO_FAB) window.addEventListener('jread:chrome', refreshInfoFab);
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
@@ -437,12 +476,13 @@
     return svg;
   }
   if (GEAR) { btn.textContent = ''; btn.appendChild(buildIcon('gear')); }
+  if (infoBtn) infoBtn.appendChild(buildIcon('info'));
 
   // v3.4.0：Article View（reader-article.js 設 NS.onReaderRefetch）多一項「重新抓取文章」，
   // 排在「文章資訊」後面；所有儲存服務都有、App / 網頁版也有（公開分享頁不掛 hook）
   function infoMenuItems() {
     const items = [];
-    if (typeof NS.onReaderInfo === 'function') {
+    if (typeof NS.onReaderInfo === 'function' && !INFO_FAB) {   // v3.5.1：網頁版在右上角圓鈕
       items.push({ id: 'info', icon: 'info', label: '文章資訊', action: () => { try { NS.onReaderInfo(); } catch (_e) {} } });
     }
     if (typeof NS.onReaderRefetch === 'function') {
@@ -789,7 +829,7 @@
 
   // ─── JReader 總覽（v3.5.0）──────────────────────────────────────────────
   // Jimmy 2026-11-26：從 JReader 的介面進入 dashboard（JReader 伺服器 /dashboard，每個帳號看自己的）。
-  // 儲存服務是 JReader、網址合法才列。網頁版同一個網站，同分頁開；擴充開新分頁；App 的 window.open
+  // 儲存服務是 JReader、網址合法才列。網頁版與擴充開新分頁（v3.5.1 起網頁版也是）；App 的 window.open
   // 由 ViewController 交給 Safari 開（http(s) 一律 openExternally）。dashboard 在 Cloudflare Access 後面，
   // 擴充與 App 第一次開要在瀏覽器登入（token 進不了網頁）
   let serviceRaw = null;
@@ -804,7 +844,7 @@
   function openDashboard() {
     const url = dashboardUrl();
     if (!url) return;
-    if (NS.isWebRuntime && NS.isWebRuntime()) { location.assign(url); return; }
+    // v3.5.1：網頁版也開新分頁（Jimmy 2026-11-26「點 JReader 總覽時，請用新標籤頁開啟」；原本同分頁）
     try { window.open(url, '_blank', 'noopener'); } catch (_e) {}
   }
 
@@ -910,7 +950,7 @@
     host.style.left = FEED_PAGE ? 'max(20px, calc(50% - 320px))' : '20px';
     host.style.bottom = FEED_PAGE
       ? 'calc(20px + var(--jr-safe-bottom, 0px))'
-      : 'calc(20px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px)))';
+      : `calc(${GEAR_ARTICLE_BOTTOM}px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px)))`;
     menuEl.classList.add('side-left');
     menuEl.classList.remove('side-right');
   }
@@ -1053,6 +1093,7 @@
 
   function openMenu() {
     if (host.style.display === 'none') return;
+    refreshInfoFab();
     buildMenu();
     // v1.7.42：依 fab 垂直位置切換選單錨定——上半部（offsetY < 0.5）往下長、
     // 下半部維持 bottom:0 往上長，兩側都不會超出畫面
@@ -1251,6 +1292,7 @@
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
     isGear: GEAR, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
+    infoBtn, refreshInfoFab, isPublicPage: PUBLIC_PAGE,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,

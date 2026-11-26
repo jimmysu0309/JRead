@@ -21,7 +21,7 @@
 // 左緣返回（App installEdgeBack）在 document-start 先掛、會 stopImmediatePropagation，同一段觸控不會再切換。
 //
 // dual export：module.exports 給 jsdom spec、window.__JReadImmersive 給頁面。頁面載入時自己裝
-//（只在 top frame、非公開分享頁——分享頁沒有齒輪）
+//（只在 top frame；v3.5.1 起公開分享頁也有齒輪，一樣裝）
 (function (global) {
   'use strict';
 
@@ -125,8 +125,8 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined' && global === window) {
     window.__JReadImmersive = api;
-    const host = window.__jreadHost;
-    if (window === window.top && !(host && host.readOnly)) {
+    // v3.5.1：公開分享頁也裝（分享頁有齒輪了，同樣平常藏、點一下出現）
+    if (window === window.top) {
       api.instance = install(window);
     }
   }

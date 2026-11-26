@@ -185,13 +185,14 @@
       article.appendChild(byline);
     }
 
-    // v3.1.0：公開分享頁（opts.sourceLink）放「原文：<網站>」（JReader SPEC §8）。放在主文區外，
+    // v3.1.0：公開分享頁（opts.sourceLink）放「原文：<網站>」（JReader SPEC §8；v3.5.1 改「本文收錄自：」，
+    // Jimmy 2026-11-26）。放在主文區外，
     // 不影響重點定位與閱讀位置；只接受 http(s)。v3.4.7 從文末搬到作者列下方、主文之前（Jimmy
     // 2026-11-25「別人一打開就要看到這是從哪裡收錄來的，可以點擊開啟原始網頁」）
     if (o.sourceLink && doc && /^https?:\/\//i.test(String(doc.source_url || ''))) {
       const p = document.createElement('p');
       p.setAttribute('data-jread-reader-source', '1');
-      p.appendChild(document.createTextNode('原文：'));
+      p.appendChild(document.createTextNode('本文收錄自：'));
       const a = document.createElement('a');
       a.href = String(doc.source_url);
       a.target = '_blank';
