@@ -397,7 +397,13 @@
       if (a && typeof a.blur === 'function') a.blur();
     }, { passive: true, capture: true });
 
-    // 捲動時藏圓鈕：往下捲淡出、往上捲立刻回來、停下 FAB_IDLE_MS 後回來（Jimmy 2026-11-24 選 A＋C）
+    // 捲動時藏圓鈕：往下捲淡出、往上捲立刻回來、停下 FAB_IDLE_MS 後回來（Jimmy 2026-11-24 選 A＋C）。
+    // v3.5.0：左下角的齒輪（content/floating-icon.js）跟著同一份判斷淡出 / 回來
+    function setFabsHidden(h) {
+      ui.fab.classList.toggle('is-scroll-hidden', h);
+      const N = global.__JRead;
+      if (N && N.floating && typeof N.floating.setScrollHidden === 'function') N.floating.setScrollHidden(h);
+    }
     let lastY = win.scrollY || 0;
     let idleTimer = null;
     win.addEventListener('scroll', () => {
@@ -405,10 +411,10 @@
       const dy = y - lastY;
       lastY = y;
       if (expanded) return;
-      if (dy > 2) ui.fab.classList.add('is-scroll-hidden');
-      else if (dy < -2) ui.fab.classList.remove('is-scroll-hidden');
+      if (dy > 2) setFabsHidden(true);
+      else if (dy < -2) setFabsHidden(false);
       if (idleTimer) win.clearTimeout(idleTimer);
-      idleTimer = win.setTimeout(() => { idleTimer = null; ui.fab.classList.remove('is-scroll-hidden'); }, FAB_IDLE_MS);
+      idleTimer = win.setTimeout(() => { idleTimer = null; setFabsHidden(false); }, FAB_IDLE_MS);
     }, { passive: true });
     ui.close.addEventListener('click', () => collapse({ clearTag: true }));
     // 只用標籤瀏覽（沒有搜尋字）時點外面照樣收：畫面上沒有要留著的搜尋字，圓鈕藍框提醒還在篩選

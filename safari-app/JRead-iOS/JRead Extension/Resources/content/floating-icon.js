@@ -44,6 +44,14 @@
 //   documentElement，CLAUDE.md / memory feedback_reader_injected_ui_append_html）。
 // - 只在 top frame 放一顆（window === window.top）；iframe / 非 HTML 文件
 //   （XMLDocument，attachShadow 會 throw）一律早退。
+// - v3.5.0 齒輪模式（Jimmy 2026-11-26「沿用 extension icon 和極簡風 UI 不相容」）：JRead 自己的
+//   閱讀頁（列表頁 reader.html、文章頁 article.html；App、網頁版、擴充的 Reader）不放 J 圖示，改放
+//   齒輪圓鈕——外觀照列表頁右下角的搜尋圓鈕（reader.html 的 .jr-fab），固定左下角、不能拖、不吃
+//   懸浮按鈕的尺寸 / 透明度 / 位置 / 開關設定（那些是一般網站的 J 用的）。點一下＝開選單。
+//   列表頁：往下捲淡出（reader-library.js 的捲動判斷呼叫 NS.floating.setScrollHidden，跟搜尋圓鈕
+//   同一份判斷）、搜尋工具列展開 / 多選時藏。文章頁：沉浸閱讀，平常藏、點一下畫面才出現
+//   （reader/reader-immersive.js）。選單多一項「JReader 總覽」（儲存服務是 JReader 時）。
+//   一般網站上擴充的 J 圖示完全不變。
 (function () {
   'use strict';
 
@@ -61,8 +69,22 @@
   // 選單只有「功能選單」「設定」——文章頁那幾項（回列表、分頁模式、文章資訊）在列表頁沒有對象
   // 判定讀 reader.html 自己標的 <html data-jread-page="feed">——本檔也是每個網站都注入的 content script，
   // 不能只看路徑（任何網站都可能有 /reader/reader.html）
-  const FEED_PAGE = document.documentElement && document.documentElement.getAttribute('data-jread-page') === 'feed';
-  if (FEED_PAGE && !(NS.isAppRuntime && NS.isAppRuntime())) return;
+  // v3.5.0：頁面標記只在 JRead 自己的頁面才算數——沒有 background 的 host（App / 網頁版）整個頁面都是
+  // JRead 的；擴充則要是擴充自己的 reader/ 頁面（一般網站自己標 data-jread-page 不算）
+  const PAGE_KIND = document.documentElement ? document.documentElement.getAttribute('data-jread-page') : null;
+  const OWN_PAGE = (() => {
+    try {
+      if (NS.isHostedRuntime && NS.isHostedRuntime()) return true;
+      const base = browser.runtime.getURL('reader/');
+      return !!base && location.href.indexOf(base) === 0;
+    } catch (_e) { return false; }
+  })();
+  const FEED_PAGE = OWN_PAGE && PAGE_KIND === 'feed';
+  const GEAR = OWN_PAGE && (PAGE_KIND === 'feed' || PAGE_KIND === 'article');
+  // 齒輪尺寸＝搜尋圓鈕（reader.html .jr-fab：36px 圓、圖示 17px）。同一份外觀的兩份實作（那邊是頁面 CSS、
+  // 這裡在 shadow DOM 裡碰不到），改一邊要改另一邊；forcing：v350-gear.spec.js 比對兩邊的數值
+  const GEAR_HIT = 36;
+  const GEAR_ICON = 17;
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
   // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）。滑鼠與觸控分開設門檻
@@ -161,6 +183,25 @@
       user-drag: none;
     }
     .fab.dragging img { filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+    /* v3.5.0 齒輪：外觀照 reader.html 的 .jr-fab（搜尋圓鈕）——透明底、細框、淡灰線條圖示，
+       滑鼠移上 / 鍵盤聚焦 / 選單開著才清楚。顏色讀頁面的主題變數（自訂屬性會穿進 shadow DOM）；
+       文章頁沒有 --line / --card，退回中性灰框與 --bg */
+    .fab.gear {
+      width: ${GEAR_HIT}px; height: ${GEAR_HIT}px;
+      border: 1px solid var(--line, rgba(128,128,128,0.28)); border-radius: ${GEAR_HIT / 2}px;
+      background: transparent; color: var(--muted, #6b6b6b); opacity: .7;
+      transition: opacity .15s ease, color .15s ease, background-color .15s ease;
+    }
+    .fab.gear:active { transform: none; }
+    .fab.gear svg { width: ${GEAR_ICON}px; height: ${GEAR_ICON}px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .fab.gear:hover, .fab.gear:focus-visible, .fab.gear[aria-expanded="true"] {
+      opacity: 1; color: var(--text, #1a1a1a); background: var(--card, var(--bg, #ffffff)); border-color: var(--muted, #6b6b6b); outline: none;
+    }
+    .fab.gear.is-scroll-hidden { opacity: 0; pointer-events: none; }
+    /* 文章頁：齒輪疊在內文上，透明底會跟字混在一起（截圖驗證）——用頁面底色當實心底、不淡化。
+       平常本來就藏（沉浸閱讀），出現時要一眼看得到 */
+    .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--muted, #6b6b6b); }
+    @media (prefers-reduced-motion: reduce) { .fab.gear { transition: none; } }
     /* 長按選單（v0.8.161 比照 Shinkansen content-floating-icon.js 重繪：藍色圓角
        badge icon、13px 字、緊湊間距、label 過長 ellipsis） */
     .menu {
@@ -246,6 +287,14 @@
   NS.injectShadowCss(shadow, CSS);
   btn = shadow.getElementById('fab');
   menuEl = shadow.getElementById('menu');
+  if (GEAR) {
+    btn.classList.add('gear');
+    btn.setAttribute('aria-label', '選單');
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.title = '選單';
+    if (!FEED_PAGE) btn.classList.add('solid');
+  }
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
@@ -339,7 +388,9 @@
   let serviceLabelText = 'Readwise Reader';
   // v3.1.0：目前儲存服務是否提供擴充內的 Reader（JReader 使用者不提供，popup-core.supportsExtensionReader）
   let extensionReader = true;
+  function applyJreaderUrl(v) { jreaderUrlRaw = typeof v === 'string' ? v : ''; }
   function applyStorageService(v) {
+    serviceRaw = typeof v === 'string' ? v : null;
     const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
     extensionReader = P && typeof P.supportsExtensionReader === 'function' ? P.supportsExtensionReader(v) : true;
     serviceLabelText = P && typeof P.serviceLabel === 'function'
@@ -368,7 +419,10 @@
     screen: [['rect', { x: 3, y: 5, width: 18, height: 12, rx: 2 }], ['path', { d: 'M8 21h8M12 17v4' }]],
     expand: [['path', { d: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5' }]],
     // v3.4.0：重新抓取（順時針箭頭繞圈，與其他圖示同 24 格線條）
-    refresh: [['path', { d: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }], ['path', { d: 'M19.5 4v4h-4' }]]
+    refresh: [['path', { d: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3' }], ['path', { d: 'M19.5 4v4h-4' }]],
+    // v3.5.0：JReader 總覽（四格儀表板）
+    dashboard: [['rect', { x: 4, y: 4, width: 7, height: 9, rx: 1.5 }], ['rect', { x: 13, y: 4, width: 7, height: 5, rx: 1.5 }],
+      ['rect', { x: 13, y: 11, width: 7, height: 9, rx: 1.5 }], ['rect', { x: 4, y: 15, width: 7, height: 5, rx: 1.5 }]]
   };
   const SVG_NS = 'http://www.w3.org/2000/svg';
   function buildIcon(name) {
@@ -382,6 +436,7 @@
     }
     return svg;
   }
+  if (GEAR) { btn.textContent = ''; btn.appendChild(buildIcon('gear')); }
 
   // v3.4.0：Article View（reader-article.js 設 NS.onReaderRefetch）多一項「重新抓取文章」，
   // 排在「文章資訊」後面；所有儲存服務都有、App / 網頁版也有（公開分享頁不掛 hook）
@@ -400,16 +455,10 @@
     if (FEED_PAGE) return [];   // v3.4.5：App 列表頁只有分隔線下的「功能選單」「設定」
     // v2.2.0：iOS App 內建 JReader（NS.isAppRuntime）沒有 background——文章本來就來自
     // 儲存服務、不必再送；「進入 Reader」換成回文章列表（與 ESC 同一個 NS.onReaderExit；v3.2.6 起 App 短按改開選單）
-    if (isAppRuntime()) {
-      // v3.3.0：「回到文章列表」排第一（Jimmy 2026-11-25）
-      return [
-        { id: 'reader', icon: 'list', label: '回到文章列表', action: backToFeed },
-        { id: 'paged', icon: 'book', label: '切換分頁模式', action: togglePaged }
-      ].concat(infoMenuItems(), profileMenuItems());
-    }
     // v2.6.0：網頁版（NS.isWebRuntime，同樣沒有 background）比照 App。公開分享頁（Article
-    // View 唯讀模式）沒給離開網址時沒有文章列表可回（NS.state.readerNoExit），不列那一項
-    if (isHostedRuntime()) {
+    // View 唯讀模式）沒給離開網址時沒有文章列表可回（NS.state.readerNoExit），不列那一項。
+    // v3.5.0：擴充的 Reader 文章頁（齒輪模式）也用這份——文章來自儲存服務，「送到…」「進入 Reader」沒有意義
+    if (isAppRuntime() || isHostedRuntime() || GEAR) {
       // v3.3.0：「回到文章列表」排第一，與 App 一致
       const items = [];
       if (!(NS.state && NS.state.readerNoExit)) {
@@ -738,6 +787,27 @@
     window.addEventListener('keydown', settingsKeyHandler, true);
   }
 
+  // ─── JReader 總覽（v3.5.0）──────────────────────────────────────────────
+  // Jimmy 2026-11-26：從 JReader 的介面進入 dashboard（JReader 伺服器 /dashboard，每個帳號看自己的）。
+  // 儲存服務是 JReader、網址合法才列。網頁版同一個網站，同分頁開；擴充開新分頁；App 的 window.open
+  // 由 ViewController 交給 Safari 開（http(s) 一律 openExternally）。dashboard 在 Cloudflare Access 後面，
+  // 擴充與 App 第一次開要在瀏覽器登入（token 進不了網頁）
+  let serviceRaw = null;
+  let jreaderUrlRaw = '';
+  function dashboardUrl() {
+    const P = (typeof window !== 'undefined' && window.__JReadPopup) || null;
+    const service = P && typeof P.normalizeStorageService === 'function' ? P.normalizeStorageService(serviceRaw) : serviceRaw;
+    if (service !== 'jreader') return null;
+    const base = P && typeof P.normalizeApiBase === 'function' ? P.normalizeApiBase(jreaderUrlRaw) : '';
+    return base ? base + '/dashboard' : null;
+  }
+  function openDashboard() {
+    const url = dashboardUrl();
+    if (!url) return;
+    if (NS.isWebRuntime && NS.isWebRuntime()) { location.assign(url); return; }
+    try { window.open(url, '_blank', 'noopener'); } catch (_e) {}
+  }
+
   // ─── 設定狀態 ───────────────────────────────────────────────────────────
   let pos = { edge: 'left', offsetY: 1 };     // 預設左下角（v0.8.160，offsetY=1=底）
 
@@ -749,6 +819,8 @@
     // 而 floatingIcon 會從 Safari 擴充同步過來：在 Safari 為一般網站關掉懸浮按鈕，不能讓 App
     // 的入口跟著消失（App 設定頁也不顯示這個開關）
     if (isAppRuntime()) enabled = true;
+    // v3.5.0：齒輪是 JRead 閱讀頁的選單入口，不受一般網站懸浮按鈕的開關影響
+    if (GEAR) enabled = true;
     if (lastEnabled === false && enabled === true) {
       applyPos(null);     // sanitizePos(null) → 預設左下角
       persistPos();
@@ -780,7 +852,8 @@
 
   function applyOpacity(v) {
     const o = typeof v === 'number' ? v : DEFAULT_OPACITY;
-    currentOpacity = Math.max(0.1, Math.min(1, o));
+    // v3.5.0：齒輪自己有淡化樣式（.fab.gear opacity .7），host 不再疊一層使用者設的透明度
+    currentOpacity = GEAR ? 1 : Math.max(0.1, Math.min(1, o));
     // 選單開著時 host 維持全不透明（見 openMenu）；新設定值記在 currentOpacity，
     // 等 closeMenu 還原。沒開選單時直接套用。
     if (!menuOpen) host.style.opacity = String(currentOpacity);
@@ -791,7 +864,7 @@
   // 取對應，其餘（含未設過 / 非法值）退回**預設 medium**（v0.8.166，與 settings-defaults
   // 的 floatingIconSize 預設一致）。
   function applySize(v) {
-    const s = SIZE_MAP[v] || SIZE_MAP.medium;
+    const s = GEAR ? { hit: GEAR_HIT, icon: GEAR_ICON } : (SIZE_MAP[v] || SIZE_MAP.medium);
     hitSize = s.hit;
     host.style.setProperty('--fab-hit', s.hit + 'px');
     host.style.setProperty('--fab-icon', s.icon + 'px');
@@ -827,7 +900,23 @@
   }
 
   // 依 pos 把 host 貼到邊緣（offsetY 比例 → top px）
+  // v3.5.0 齒輪：固定左下角，跟搜尋圓鈕左右對稱——列表頁對齊卡片欄左緣（同 .jr-fab 的
+  // right: max(20px, calc(50% − 320px))）、離底 20px＋底部安全區域（列表頁 --jr-safe-bottom；
+  // 文章頁取 env() 與 App 傳來的 --__jread-app-safe-bottom 較大者）。用 CSS 定位，視窗縮放自己跟著
+  function applyGearPos() {
+    pos = { edge: 'left', offsetY: 1 };
+    host.style.top = 'auto';
+    host.style.right = 'auto';
+    host.style.left = FEED_PAGE ? 'max(20px, calc(50% - 320px))' : '20px';
+    host.style.bottom = FEED_PAGE
+      ? 'calc(20px + var(--jr-safe-bottom, 0px))'
+      : 'calc(20px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px)))';
+    menuEl.classList.add('side-left');
+    menuEl.classList.remove('side-right');
+  }
+
   function applyPos(p) {
+    if (GEAR) { applyGearPos(); return; }
     pos = FEED_PAGE ? sanitizePos(null) : sanitizePos(p);   // v3.4.5：列表頁固定左下角
     const vh = window.innerHeight || 0;
     // v3.4.5：App 列表頁避開底部安全區域（Home 指示條；App 的 WebView 畫到螢幕底，
@@ -849,7 +938,7 @@
   }
 
   function persistPos() {
-    if (FEED_PAGE) return;   // v3.4.5：列表頁的固定位置不寫回同步設定
+    if (FEED_PAGE || GEAR) return;   // v3.4.5：列表頁的固定位置不寫回同步設定
     try { browser.storage.sync.set({ floatingIconPos: pos }); } catch (_e) {}
   }
 
@@ -937,6 +1026,29 @@
       });
       menuEl.appendChild(sItem);
     }
+    // v3.5.0：JReader 總覽（只在齒輪＝JRead 閱讀頁，且儲存服務是 JReader 才列；一般網站的 J 不放）
+    if (GEAR && dashboardUrl()) {
+      const dItem = document.createElement('button');
+      dItem.className = 'menu-item dashboard';
+      dItem.type = 'button';
+      dItem.setAttribute('role', 'menuitem');
+      dItem.dataset.action = 'dashboard';
+      const dIco = document.createElement('span');
+      dIco.className = 'ico';
+      dIco.appendChild(buildIcon('dashboard'));
+      const dLabel = document.createElement('span');
+      dLabel.className = 'label';
+      dLabel.textContent = 'JReader 總覽';
+      dItem.appendChild(dIco);
+      dItem.appendChild(dLabel);
+      dItem.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu();
+        try { openDashboard(); } catch (_err) {}
+      });
+      menuEl.appendChild(dItem);
+    }
   }
 
   function openMenu() {
@@ -947,6 +1059,7 @@
     menuEl.classList.toggle('anchor-top', pos.offsetY < 0.5);
     menuEl.classList.add('show');
     menuOpen = true;
+    if (GEAR) btn.setAttribute('aria-expanded', 'true');
     // 選單開著時整顆 host 全不透明，讓選單文字清楚可讀（不受使用者淡透明度影響）
     host.style.opacity = '1';
     outsideHandler = (ev) => {
@@ -962,6 +1075,7 @@
     if (!menuOpen) return;
     menuEl.classList.remove('show');
     menuOpen = false;
+    if (GEAR) btn.setAttribute('aria-expanded', 'false');
     // 還原使用者設定的透明度（選單期間被調成全不透明）
     host.style.opacity = String(currentOpacity);
     if (outsideHandler) {
@@ -977,7 +1091,8 @@
   // 右滑、選單裡也有「回到文章列表」。menuWasOpen＝按下前選單已開著 → 這次短按只是收起
   // （pointerdown 已先 closeMenu），不再重開。Safari 擴充與網頁版維持短按切換閱讀模式
   function handleShortPress(menuWasOpen) {
-    if (isAppRuntime()) {
+    // v3.5.0：齒輪（JRead 閱讀頁）一律點一下開選單、再點收起
+    if (isAppRuntime() || GEAR) {
       if (!menuWasOpen) openMenu();
       return;
     }
@@ -1005,7 +1120,7 @@
     press = {
       id: e.pointerId, startX: e.clientX, startY: e.clientY, timer: null, moved: false, longFired: false, menuWasOpen,
       // 觸控（手指）用較寬的拖移門檻；滑鼠 / 觸控筆維持 8px
-      dragThreshold: FEED_PAGE ? Infinity   // v3.4.5：列表頁不能拖
+      dragThreshold: (FEED_PAGE || GEAR) ? Infinity   // v3.4.5：列表頁不能拖；v3.5.0 齒輪不能拖
         : (e.pointerType === 'touch' ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX)
     };
     press.timer = setTimeout(() => {
@@ -1089,19 +1204,20 @@
   // 與舊 lastError 分支同語意）。
   const applyDefaults = () => {
     applySize(undefined); applyOpacity(undefined); applyPos(undefined); applyEnabled(RESOLVE(undefined));
-    applyStorageService(undefined);
+    applyStorageService(undefined); applyJreaderUrl(undefined);
     applyProfiles(undefined); applyActiveProfile(undefined);
   };
   // v1.9.14：本機套用狀態另讀 storage.local（readLocalState 永不 reject）
   if (PROFILES) PROFILES.readLocalState().then(applyProfileState);
   try {
-    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService', 'profiles', 'activeProfile']).then((s) => {
+    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService', 'jreaderUrl', 'profiles', 'activeProfile']).then((s) => {
       if (!s) { applyDefaults(); return; }
       applySize(s.floatingIconSize);
       applyOpacity(s.floatingIconOpacity);
       applyPos(s.floatingIconPos);
       applyEnabled(RESOLVE(s.floatingIcon));
       applyStorageService(s.storageService);
+      applyJreaderUrl(s.jreaderUrl);
       applyProfiles(s.profiles);
       applyActiveProfile(s.activeProfile);
     }).catch(applyDefaults);
@@ -1120,12 +1236,21 @@
     if (changes.floatingIconPos) applyPos(changes.floatingIconPos.newValue);
     if (changes.floatingIconSize) applySize(changes.floatingIconSize.newValue);
     if (changes.storageService) applyStorageService(changes.storageService.newValue);
+    if (changes.jreaderUrl) applyJreaderUrl(changes.jreaderUrl.newValue);
     if (changes.profiles) applyProfiles(changes.profiles.newValue);
     if (changes.activeProfile) applyActiveProfile(changes.activeProfile.newValue);
   });
 
+  // v3.5.0：列表頁往下捲時淡出齒輪（reader-library.js 的捲動判斷呼叫，與搜尋圓鈕同步）
+  function setScrollHidden(v) {
+    if (!GEAR) return;
+    btn.classList.toggle('is-scroll-hidden', !!v);
+    if (v) closeMenu();
+  }
+
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
+    isGear: GEAR, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
