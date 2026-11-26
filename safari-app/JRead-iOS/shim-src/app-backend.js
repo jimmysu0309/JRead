@@ -200,11 +200,27 @@
     return { color, side: isOpaque(side) ? side : color, left, right };
   }
   const sampleTopColor = () => sampleTopBand().color;
+  const CHROME_T0 = Date.now();
+  const THEME_WAIT_MS = 1500;
   let lastChromeKey = '';
   let chromeTimer = null;
   function reportChromeColor() {
     chromeTimer = null;
     if (window !== window.top) return;
+    // v3.5.5：左緣跟手滑動中（<html data-jread-edge-drag>）不取色。拖動會改 body 的 inline 樣式 → 上面的
+    // MutationObserver 排程取色；body 往右移後畫面頂端中央取到的是卡片新位置或露出來的 <html> 底色，色帶
+    // 跟著變、換頁到列表又變一次＝Jimmy 2026-11-26 回報「左滑回列表後 menubar 閃兩次」。彈回時屬性拿掉
+    // 會再排程一次、取回原本的值（key 相同不送）
+    if (document.documentElement && document.documentElement.hasAttribute(EDGE_DRAG_ATTR)) return;
+    // v3.5.5：JRead 自己的列表 / 文章頁（<html data-jread-page>）要等主題套上（data-theme）才取色。
+    // 頁面讀完 storage 才設 data-theme，在那之前系統深色模式會先給深色變數 → 色帶先變深、套上主題後
+    // 再變一次＝回列表時狀態列閃兩次（Jimmy 2026-11-26 確認閃的是 iOS 狀態列）。設 data-theme 會改 <html>
+    // 屬性、上面的 MutationObserver 會再排程；萬一一直沒設（讀設定失敗），THEME_WAIT_MS 後照取
+    const de = document.documentElement;
+    if (de && de.hasAttribute('data-jread-page') && !de.hasAttribute('data-theme')) {
+      const waited = Date.now() - CHROME_T0;
+      if (waited < THEME_WAIT_MS) { scheduleChromeColor(THEME_WAIT_MS - waited); return; }
+    }
     const band = sampleTopBand();
     const key = JSON.stringify(band);
     if (!isOpaque(band.color) || key === lastChromeKey) return;
@@ -430,5 +446,11 @@
   // WKWebView 的縮放是整個 WebView，iframe 裡捏合一樣會把整頁放大
   if (/\/options\/options\.html$/.test(location.pathname)) installNoPinch(window);
 
-  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
+  // ---- 觸覺回饋（v3.5.5）-------------------------------------------------------
+  // Jimmy 2026-11-26：翻頁模式拖動頁碼進度條，每跨一頁震一下。網頁端（Safari 擴充 content script）
+  // 沒有可靠的觸覺 API（v0.8.151–153 vibrate / switch checkbox 真機全失敗），App 改請原生發
+  // UISelectionFeedbackGenerator（滾輪選擇器那種「喀」）。paged-mode.js triggerHaptic 看到這支就只走這條
+  function haptic() { call({ op: 'haptic' }).catch(() => {}); }
+
+  window.__jreadApp = { haptic, ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
 })(__JReadHostShimCore);

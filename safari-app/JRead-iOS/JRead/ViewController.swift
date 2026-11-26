@@ -151,6 +151,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     // v2.2.2：Article View 沉浸閱讀，狀態列預設藏、點一下切換（shim installImmersive 回報）；
     // 列表頁 pageshow 時回報 false 叫回來
     private var statusBarHidden = false
+    private let selectionHaptic = UISelectionFeedbackGenerator()
     override var prefersStatusBarHidden: Bool { statusBarHidden }
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
@@ -357,6 +358,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             replyHandler("{}", nil)
         case "statusBar":
             if message.frameInfo.isMainFrame { setStatusBarHidden((body["hidden"] as? Bool) ?? false) }
+            replyHandler("{}", nil)
+        case "haptic":
+            // v3.5.5：翻頁頁碼進度條每跨一頁（paged-mode.js triggerHaptic → shim haptic）
+            if message.frameInfo.isMainFrame {
+                selectionHaptic.selectionChanged()
+                selectionHaptic.prepare()
+            }
             replyHandler("{}", nil)
         default:
             replyHandler(nil, "unknown op")
