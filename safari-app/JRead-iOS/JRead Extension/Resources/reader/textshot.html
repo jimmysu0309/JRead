@@ -23,6 +23,25 @@
   #ts-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
     border-radius: 18px; font-size: 22px; line-height: 36px; color: #d1d5db; }
   #ts-close:hover { background: rgba(255, 255, 255, 0.08); }
+  /* v3.6.2：編輯文字（Jimmy 2026-11-26：標題、重點、作者列都能改，只改這張圖卡、關掉就還原） */
+  #ts-edit { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); height: 32px; padding: 0 12px;
+    border-radius: 16px; font-size: 14px; color: #d1d5db; background: rgba(255, 255, 255, 0.08); }
+  #ts-edit[aria-pressed="true"] { background: #60a5fa; color: #0b1220; }
+  #ts-editor { display: none; flex: 0 0 auto; flex-direction: column; gap: 8px;
+    padding: 12px 16px calc(14px + max(env(safe-area-inset-bottom, 0px), var(--ts-safe-bottom, 0px))); background: #111318; }
+  #ts-editor > * { width: 100%; max-width: 720px; margin: 0 auto; }
+  body.editing #ts-editor { display: flex; }
+  body.editing .acts, body.editing .bar { display: none; }
+  body.editing .nav { visibility: hidden; }
+  #ts-editor label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9ca3af; }
+  #ts-editor input, #ts-editor textarea { width: 100%; font: 16px/1.45 -apple-system, system-ui, "PingFang TC", "Noto Sans TC", sans-serif;
+    color: #f3f4f6; background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 8px 10px; resize: none; }
+  #ts-editor textarea { height: 6.5em; }
+  #ts-editor input:focus, #ts-editor textarea:focus { outline: none; border-color: #60a5fa; }
+  .ed-acts { display: flex; justify-content: flex-end; gap: 10px; }
+  .ed-acts button { height: 36px; padding: 0 18px; border-radius: 18px; font-size: 15px; }
+  #ts-reset { background: #1f2937; color: #f3f4f6; }
+  #ts-done { background: #60a5fa; color: #0b1220; font-weight: 600; }
 
   .main { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 8px; }
   .nav { flex: 0 0 auto; width: 40px; height: 64px; font-size: 40px; line-height: 64px; color: #e5e7eb; font-weight: 200; }
@@ -65,11 +84,17 @@
 </style>
 </head>
 <body>
-  <div class="top"><span id="ts-name"></span><span id="ts-count"></span><button id="ts-close" type="button" aria-label="關閉">×</button></div>
+  <div class="top"><button id="ts-edit" type="button" aria-pressed="false">編輯文字</button><span id="ts-name"></span><span id="ts-count"></span><button id="ts-close" type="button" aria-label="關閉">×</button></div>
   <div class="main">
     <button class="nav" id="ts-prev" type="button" aria-label="上一個重點">‹</button>
     <div id="ts-stage"><canvas id="ts-canvas"></canvas></div>
     <button class="nav" id="ts-next" type="button" aria-label="下一個重點">›</button>
+  </div>
+  <div id="ts-editor">
+    <label>標題<input id="ts-in-title" type="text" autocomplete="off"></label>
+    <label>重點<textarea id="ts-in-text"></textarea></label>
+    <label>作者列<input id="ts-in-byline" type="text" autocomplete="off"></label>
+    <div class="ed-acts"><button id="ts-reset" type="button">還原</button><button id="ts-done" type="button">完成</button></div>
   </div>
   <div class="acts">
     <button id="ts-save" type="button"><svg viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>儲存圖片</button>
