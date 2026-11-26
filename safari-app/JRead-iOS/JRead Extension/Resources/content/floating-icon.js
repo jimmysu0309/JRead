@@ -226,12 +226,15 @@
     }
     .fab.gear svg .dot { fill: currentColor; stroke: none; }
     .fab.gear.is-scroll-hidden { opacity: 0; pointer-events: none; }
-    /* v3.7.0 一般網站的 J：齒輪外觀、固定配色（不吃網站的 CSS 變數）。白底半透明＋細框＋淡陰影，
-       淺色 / 深色網站都看得到；J 用 Georgia 粗體（同 App 圖示的 J） */
-    .fab.gear.site { background: rgba(255, 255, 255, 0.92); color: #4a4a4a; border-color: rgba(0, 0, 0, 0.18);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); opacity: .85; }
+    /* v3.7.0 一般網站的 J：齒輪外觀；J 用 Georgia 粗體（同 App 圖示的 J）。
+       v3.7.2：配色改跟 App 文章頁齒輪同一套（Jimmy 2026-11-26「J icon 的底色明顯和原本 jread app 齒輪的
+       表現不同，看起來很突兀」）——原本固定白底＋陰影，在灰底 / 夜間主題上像一顆貼上去的白鈕。
+       改成底＝頁面底色、圖示＝字色 62%、外框＝字色 30%、無陰影；顏色由 applySiteTheme 讀閱讀卡（閱讀模式中）
+       或 body（平常）寫進 host 的 --site-* 變數（自己的變數名，網站的 --bg 之類穿不進來） */
+    .fab.gear.site { opacity: 1; box-shadow: none; background: var(--site-bg, #ffffff);
+      color: var(--site-muted, rgba(26,26,26,0.62)); border-color: var(--site-ring, rgba(26,26,26,0.3)); }
     .fab.gear.site:hover, .fab.gear.site:focus-visible, .fab.gear.site[aria-expanded="true"] {
-      opacity: 1; color: #1a1a1a; background: #ffffff; border-color: rgba(0, 0, 0, 0.35); }
+      color: var(--site-text, #1a1a1a); background: var(--site-bg, #ffffff); border-color: var(--site-muted, rgba(26,26,26,0.62)); }
     .fab.gear.site svg text { fill: currentColor; stroke: none; }
     /* v3.7.1：大小設定（applySize 寫 --fab-hit / --fab-icon） */
     .fab.gear.site { width: var(--fab-hit); height: var(--fab-hit); border-radius: calc(var(--fab-hit) / 2); }
@@ -410,6 +413,52 @@
     for (const k of Object.keys(vars)) if (vars[k]) host.style.setProperty(k, vars[k]);
   }
   if (ARTICLE_GEAR) window.addEventListener('jread:chrome', refreshInfoFab);
+  // v3.7.2：一般網站 J 的配色（見 .fab.gear.site 註解）。
+  //   字色：閱讀模式中讀閱讀卡（[data-jread-active]）、平常讀 body
+  //   底色：J 實際落點底下那一層（elementsFromPoint，跳過自己的 host）——桌面版 J 在閱讀卡外面，卡片底色
+  //     ≠ 看到的底色（Playwright 截圖：淺色主題卡片白、頁面灰）；取不到落點時退回字色那個元素
+  //   元素本身透明就往上找第一個有底色的祖先，到 <html> 都透明＝白底。進出閱讀模式（jread-reader-mode）、
+  //   換主題（storage onChanged）、開選單時重讀；rAF 合併
+  function siteThemeColors() {
+    const out = { bg: '#ffffff', fg: '#1a1a1a' };
+    const solid = (c) => !!c && !/^transparent$|rgba\([^)]*,\s*0\)$/.test(c);
+    try {
+      const active = NS.state && NS.state.active;
+      const el = (active && document.querySelector('[data-jread-active]')) || document.body || document.documentElement;
+      const fg = getComputedStyle(el).color;
+      if (fg) out.fg = fg;
+      let under = null;
+      const r = btn && btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+      if (r && r.width > 0 && typeof document.elementsFromPoint === 'function') {
+        const hits = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2) || [];
+        under = hits.find((n) => n !== host && !host.contains(n)) || null;
+      }
+      for (let n = under || el; n && n.nodeType === 1; n = n.parentElement) {
+        const bg = getComputedStyle(n).backgroundColor;
+        if (solid(bg)) { out.bg = bg; break; }
+      }
+    } catch (_) { /* 用預設 */ }
+    return out;
+  }
+  let siteThemeRaf = 0;
+  function applySiteTheme() {
+    if (!SITE_FAB) return;
+    const c = siteThemeColors();
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(String(c.fg));
+    const rgb = m ? m[1] + ',' + m[2] + ',' + m[3] : '26,26,26';
+    const vars = { '--site-bg': c.bg, '--site-text': c.fg, '--site-muted': 'rgba(' + rgb + ',0.62)', '--site-ring': 'rgba(' + rgb + ',0.3)' };
+    for (const k of Object.keys(vars)) host.style.setProperty(k, vars[k]);
+  }
+  function scheduleSiteTheme(delay) {
+    if (!SITE_FAB) return;
+    const run = () => { if (siteThemeRaf) cancelAnimationFrame(siteThemeRaf); siteThemeRaf = requestAnimationFrame(() => { siteThemeRaf = 0; applySiteTheme(); }); };
+    if (delay) setTimeout(run, delay); else run();
+  }
+  if (SITE_FAB) {
+    window.addEventListener('jread-reader-mode', () => { scheduleSiteTheme(); scheduleSiteTheme(400); });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => scheduleSiteTheme(), { once: true });
+    applySiteTheme();
+  }
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
@@ -1034,6 +1083,9 @@
     let coarse = false;
     try { coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (_e) { coarse = false; }
     const e = coarse ? GEAR_ARTICLE_BOTTOM : ARTICLE_FAB_EDGE_FINE;
+    // v3.7.2：一般網站的 J 在觸控裝置離左邊比照 App 齒輪（APP_FAB_SIDE）——4px 貼著螢幕圓角太擠
+    //（Jimmy 2026-11-26「J icon 也太靠螢幕邊緣，看來不太協調」）；離底照舊 4px（不蓋翻頁末行）
+    if (SITE_FAB && coarse) return { side: APP_FAB_SIDE, bottom: e, top: e };
     return { side: e, bottom: e, top: e };
   }
   // v3.6.7：列表頁的齒輪（左下）與搜尋圓鈕（右下）在視窗夠寬時貼螢幕角落、離邊距離比照文章頁（articleFabEdges）
@@ -1216,6 +1268,19 @@
     }
   }
 
+  // v3.7.2：選單開著時藏翻頁頁碼與拖動進度條（Jimmy 2026-11-26 App 截圖：頁碼「1 / 8」疊在選單最後一項上）。
+  // 頁碼掛 <html>、z-index 2147483647，比 host 高、又比 host 晚掛（同層靠後的贏），選單蓋不住它。
+  // 不改用搬動 host 到最後：長按開選單時手指還按著，搬節點可能讓 iOS 的觸控序列斷掉。收起選單就還原
+  const PAGED_CHROME_IDS = ['__jread-page-indicator', '__jread-scrub-track'];
+  function setPagedChromeHidden(hide) {
+    for (const id of PAGED_CHROME_IDS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (hide) el.style.setProperty('visibility', 'hidden', 'important');
+      else el.style.removeProperty('visibility');
+    }
+  }
+
   function openMenu() {
     if (host.style.display === 'none') return;
     refreshInfoFab();
@@ -1226,8 +1291,10 @@
     menuEl.classList.add('show');
     menuOpen = true;
     if (GEAR || SITE_FAB) btn.setAttribute('aria-expanded', 'true');
+    if (SITE_FAB) applySiteTheme();
     // 選單開著時整顆 host 全不透明，讓選單文字清楚可讀（不受使用者淡透明度影響）
     host.style.opacity = '1';
+    setPagedChromeHidden(true);
     outsideHandler = (ev) => {
       const path = ev.composedPath ? ev.composedPath() : [];
       if (path.includes(host)) return;
@@ -1244,6 +1311,7 @@
     if (GEAR || SITE_FAB) btn.setAttribute('aria-expanded', 'false');
     // 還原使用者設定的透明度（選單期間被調成全不透明）
     host.style.opacity = String(currentOpacity);
+    setPagedChromeHidden(false);
     if (outsideHandler) {
       document.removeEventListener('pointerdown', outsideHandler, true);
       outsideHandler = null;
@@ -1393,6 +1461,7 @@
   }
 
   browser.storage.onChanged.addListener((changes, area) => {
+    scheduleSiteTheme(300);   // v3.7.2：換主題等設定 → styler 重套後重讀 J 的配色
     if (area === 'local') {
       if (PROFILES && changes[PROFILES.STATE_KEY]) applyProfileState(changes[PROFILES.STATE_KEY].newValue);
       return;
