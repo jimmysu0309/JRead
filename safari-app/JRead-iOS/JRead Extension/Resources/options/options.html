@@ -908,33 +908,6 @@
       </div>
     </div>
 
-    <!-- v3.7.0：文章列表卡片文字（同 popup 功能選單從列表頁打開時那組；值的範圍與 reader-feed.js feedTextVars 一致） -->
-    <div class="field">
-      <label for="feedFontScale">文章列表字級</label>
-      <span class="desc">JReader 文章列表卡片的標題、資訊列、摘要一起縮放。預設 <strong>100%</strong>，範圍 80–150%；字型跟著閱讀模式的中文字型</span>
-      <input type="number" id="feedFontScale" min="80" max="150" step="10">
-    </div>
-
-    <div class="field">
-      <label>文章列表標題行數</label>
-      <div class="size-options" id="feedTitleLines" role="radiogroup" aria-label="文章列表標題行數">
-        <label><input type="radio" name="feedTitleLines" value="1"><span>1 行</span></label>
-        <label><input type="radio" name="feedTitleLines" value="2"><span>2 行</span></label>
-        <label><input type="radio" name="feedTitleLines" value="3"><span>3 行</span></label>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>文章列表摘要行數</label>
-      <div class="size-options" id="feedSummaryLines" role="radiogroup" aria-label="文章列表摘要行數">
-        <label><input type="radio" name="feedSummaryLines" value="0"><span>不顯示</span></label>
-        <label><input type="radio" name="feedSummaryLines" value="1"><span>1 行</span></label>
-        <label><input type="radio" name="feedSummaryLines" value="2"><span>2 行</span></label>
-        <label><input type="radio" name="feedSummaryLines" value="3"><span>3 行</span></label>
-        <label><input type="radio" name="feedSummaryLines" value="all"><span>全部</span></label>
-      </div>
-    </div>
-
     <div class="field field-checkbox">
       <input type="checkbox" id="pangu">
       <label for="pangu">
@@ -1054,6 +1027,17 @@
         </label>
       </div>
 
+      <!-- v3.7.1：J 按鈕大小（Jimmy 2026-11-26「加入能設定 extension icon 大小的選項」）。沿用 floatingIconSize 欄位，
+           套在 v3.7.0 起的圓形 J 上：小 30 / 中 36（預設，同齒輪）/ 大 44px，位置照舊固定左下角 -->
+      <div class="field" data-app-hide>
+        <label>懸浮按鈕大小</label>
+        <div class="size-options" id="floatingIconSize" role="radiogroup" aria-label="懸浮按鈕大小">
+          <label><input type="radio" name="floatingIconSize" value="small"><span>小</span></label>
+          <label><input type="radio" name="floatingIconSize" value="medium"><span>中（預設）</span></label>
+          <label><input type="radio" name="floatingIconSize" value="large"><span>大</span></label>
+        </div>
+      </div>
+
       <div class="field field-checkbox" data-app-hide>
         <input type="checkbox" id="threeFingerTap">
         <label for="threeFingerTap">
@@ -1109,6 +1093,36 @@
           </div>
           <span id="jreaderTestResult" class="token-test-result"></span>
         </div>
+      </div>
+
+      <div data-service-block="jreader" id="feedTextBlock">
+      <!-- v3.7.0：文章列表卡片文字（同 popup 功能選單從列表頁打開時那組；值的範圍與 reader-feed.js feedTextVars 一致）。
+           v3.7.1：從「閱讀」搬到這裡、只在儲存服務是 JReader 時顯示（Jimmy 2026-11-26；只有 JReader 文章列表有這些卡片） -->
+      <div class="field">
+        <label for="feedFontScale">文章列表字級</label>
+        <span class="desc">JReader 文章列表卡片的標題、資訊列、摘要一起縮放。預設 <strong>100%</strong>，範圍 80–150%；字型跟著閱讀模式的中文字型</span>
+        <input type="number" id="feedFontScale" min="80" max="150" step="10">
+      </div>
+
+      <div class="field">
+        <label>文章列表標題行數</label>
+        <div class="size-options" id="feedTitleLines" role="radiogroup" aria-label="文章列表標題行數">
+          <label><input type="radio" name="feedTitleLines" value="1"><span>1 行</span></label>
+          <label><input type="radio" name="feedTitleLines" value="2"><span>2 行</span></label>
+          <label><input type="radio" name="feedTitleLines" value="3"><span>3 行</span></label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>文章列表摘要行數</label>
+        <div class="size-options" id="feedSummaryLines" role="radiogroup" aria-label="文章列表摘要行數">
+          <label><input type="radio" name="feedSummaryLines" value="0"><span>不顯示</span></label>
+          <label><input type="radio" name="feedSummaryLines" value="1"><span>1 行</span></label>
+          <label><input type="radio" name="feedSummaryLines" value="2"><span>2 行</span></label>
+          <label><input type="radio" name="feedSummaryLines" value="3"><span>3 行</span></label>
+          <label><input type="radio" name="feedSummaryLines" value="all"><span>全部</span></label>
+        </div>
+      </div>
       </div>
 
       <!-- Readwise 憑證（storageService=readwise 時顯示） -->

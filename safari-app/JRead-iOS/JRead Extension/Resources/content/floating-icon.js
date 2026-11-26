@@ -89,6 +89,9 @@
   // 互動保留 J 的：點一下切換閱讀模式、長按開選單（Jimmy 選「點一下切換閱讀模式」）。
   // 一般網站的配色各不相同：不讀頁面的 --line / --muted（那是網站自己的變數），用固定的半透明白底＋細框
   const SITE_FAB = !GEAR;
+  // v3.7.1：一般網站 J 的大小（Jimmy 2026-11-26「加入能設定 extension icon 大小的選項」，沿用 floatingIconSize）。
+  // 中＝齒輪（GEAR_HIT / GEAR_ICON）；J 文字在 SVG viewBox 裡，跟著圖示尺寸等比縮放
+  const SITE_SIZE_MAP = { small: { hit: 30, icon: 14 }, medium: { hit: 36, icon: 17 }, large: { hit: 44, icon: 21 } };
   // 齒輪尺寸＝搜尋圓鈕（reader.html .jr-fab：36px 圓、圖示 17px）。同一份外觀的兩份實作（那邊是頁面 CSS、
   // 這裡在 shadow DOM 裡碰不到），改一邊要改另一邊；forcing：v350-gear.spec.js 比對兩邊的數值
   const GEAR_HIT = 36;
@@ -230,6 +233,9 @@
     .fab.gear.site:hover, .fab.gear.site:focus-visible, .fab.gear.site[aria-expanded="true"] {
       opacity: 1; color: #1a1a1a; background: #ffffff; border-color: rgba(0, 0, 0, 0.35); }
     .fab.gear.site svg text { fill: currentColor; stroke: none; }
+    /* v3.7.1：大小設定（applySize 寫 --fab-hit / --fab-icon） */
+    .fab.gear.site { width: var(--fab-hit); height: var(--fab-hit); border-radius: calc(var(--fab-hit) / 2); }
+    .fab.gear.site svg { width: var(--fab-icon); height: var(--fab-icon); }
     /* 文章頁：齒輪疊在內文上，透明底會跟字混在一起（截圖驗證）——用頁面底色當實心底、不淡化。
        平常本來就藏（沉浸閱讀），出現時要一眼看得到 */
     .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--fab-ring, var(--muted, #6b6b6b)); }
@@ -981,7 +987,9 @@
   // 取對應，其餘（含未設過 / 非法值）退回**預設 medium**（v0.8.166，與 settings-defaults
   // 的 floatingIconSize 預設一致）。
   function applySize(v) {
-    const s = (GEAR || SITE_FAB) ? { hit: GEAR_HIT, icon: GEAR_ICON } : (SIZE_MAP[v] || SIZE_MAP.medium);
+    const s = GEAR ? { hit: GEAR_HIT, icon: GEAR_ICON }
+      : SITE_FAB ? (SITE_SIZE_MAP[v] || SITE_SIZE_MAP.medium)
+        : (SIZE_MAP[v] || SIZE_MAP.medium);
     hitSize = s.hit;
     host.style.setProperty('--fab-hit', s.hit + 'px');
     host.style.setProperty('--fab-icon', s.icon + 'px');
@@ -1411,7 +1419,7 @@
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
     isGear: GEAR, isSiteFab: SITE_FAB, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
-    infoBtn, backBtn, refreshInfoFab, applyFabTheme, isPublicPage: PUBLIC_PAGE, articleFabEdges, feedFabPos, FEED_CORNER_MIN_WIDTH, mouseRevealPref, applyMouseReveal,
+    infoBtn, backBtn, refreshInfoFab, applyFabTheme, isPublicPage: PUBLIC_PAGE, articleFabEdges, feedFabPos, FEED_CORNER_MIN_WIDTH, SITE_SIZE_MAP, mouseRevealPref, applyMouseReveal,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,
