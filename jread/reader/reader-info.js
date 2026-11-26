@@ -88,8 +88,11 @@
     const q = String(typed || '').trim().toLowerCase();
     if (!q) return [];
     const have = new Set((current || []).map((t) => t.toLowerCase()));
+    // v3.5.2：保留名稱（jshared＝分享中，由伺服器管）不列入候選——使用者不能自己加
+    const R = rcNow();
+    const reserved = (n) => !!(R && typeof R.isReservedTagName === 'function' && R.isReservedTagName(n));
     const hits = (all || []).map((t) => String(t.name || t))
-      .filter((n) => n.toLowerCase().startsWith(q) && !have.has(n.toLowerCase()));
+      .filter((n) => n.toLowerCase().startsWith(q) && !have.has(n.toLowerCase()) && !reserved(n));
     // v3.4.4：完全相同的排第一——清單預設選第一個、Enter 直接加（Jimmy 2026-11-25），
     // 打完整名稱時 Enter 加的就是它本身，不會變成名稱更長的另一個標籤
     const exact = hits.findIndex((n) => n.toLowerCase() === q);
@@ -172,6 +175,7 @@
       color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer;
     }
     .chip button:hover { background: var(--line); }
+    .chip.special { padding: 0 10px; color: var(--muted); }   /* v3.5.2 已分享文章：沒有移除鈕 */
     .tag-input-wrap { position: relative; margin-top: 8px; }
     .tag-input {
       box-sizing: border-box; width: 100%; height: 32px; padding: 0 10px;
@@ -649,8 +653,17 @@
 
       const chips = tagChips;
       chips.textContent = '';
+      const RCx = rcNow();
       for (const t of tags) {
         const c = el(doc, 'span', 'chip');
+        // v3.5.2：jshared 顯示「已分享文章」、不給移除鈕（標籤跟著分享狀態走，停止分享用下面的「停止分享」）
+        if (RCx && typeof RCx.isSharedTag === 'function' && RCx.isSharedTag(t)) {
+          c.classList.add('special');
+          c.title = '分享中的文章由系統自動加上；停止分享後會拿掉';
+          c.appendChild(doc.createTextNode(RCx.tagLabel(t)));
+          chips.appendChild(c);
+          continue;
+        }
         c.appendChild(doc.createTextNode(t));
         const rm = el(doc, 'button', null, '×');
         rm.type = 'button';
@@ -802,6 +815,13 @@
         });
       };
       const commit = (name) => {
+        // v3.5.2：保留名稱不能自己建（輸入框留著字，讓使用者改）
+        const R = rcNow();
+        if (R && typeof R.isReservedTagName === 'function' && R.isReservedTagName(name)) {
+          sug.hidden = true;
+          toast(R.RESERVED_TAG_TEXT, 'error');
+          return;
+        }
         const next = addTag(tags, name);
         input.value = '';
         sug.hidden = true;

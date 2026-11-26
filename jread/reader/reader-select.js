@@ -169,7 +169,17 @@
           resolve(v);
         };
         askDone = done;
-        row.addEventListener('submit', (e) => { e.preventDefault(); done(input.value.trim() || null); });
+        row.addEventListener('submit', (e) => {
+          e.preventDefault();
+          // v3.5.2：保留名稱（jshared / 已分享文章）不能自己建，輸入列留著讓使用者改
+          const R = RC_MOD;
+          if (R && typeof R.isReservedTagName === 'function' && R.isReservedTagName(input.value)) {
+            if (typeof o.toast === 'function') o.toast(R.RESERVED_TAG_TEXT, 'error');
+            input.focus();
+            return;
+          }
+          done(input.value.trim() || null);
+        });
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); done(null); }
         });

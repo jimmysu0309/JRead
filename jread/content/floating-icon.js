@@ -93,9 +93,16 @@
   // 不重疊）。等式由 v351.spec 對 styler 的頁碼常數鎖住
   const GEAR_ARTICLE_BOTTOM = 4;
   // v3.5.1：網頁版文章頁右上角的「文章資訊」圓鈕（Jimmy 2026-11-26「用同樣設計方式放到右上角」），
-  // 外觀＝齒輪（同一組 .fab.gear 樣式），跟齒輪一起被沉浸閱讀藏 / 顯示（在同一個 host 裡）
-  const INFO_FAB_EDGE = 20;   // 離右緣，與齒輪離左緣相同
-  const INFO_FAB_TOP = 12;    // 離頂（翻頁卡片頂端留白只有 16px，盡量靠上）
+  // 外觀＝齒輪（同一組 .fab.gear 樣式），跟齒輪一起被沉浸閱讀藏 / 顯示（在同一個 host 裡）。
+  // v3.5.2：App 文章頁也有，放右下角（Jimmy 2026-11-26「閱讀文章頁面，請在右下角加入文章資訊按鈕」），
+  // 跟左下角齒輪左右對稱
+  // v3.5.2：文章頁圓鈕離視窗邊的距離（Jimmy 2026-11-26「齒輪與文章資訊按鈕（以及其他按鈕），距離頂部
+  // 及底部和側面的距離都必須相等」）。網頁版與擴充的 Reader（非 App）所有圓鈕上下左右一律同一個值：
+  //   - 滑鼠裝置 12px：桌面翻頁卡片下緣留白 48px（styler V_GUTTER 上限），齒輪 12＋36＝48 不蓋末行
+  //   - 觸控裝置＝GEAR_ARTICLE_BOTTOM（4px）：手機翻頁末行離底只有 41px，齒輪離底最多 5px
+  // App 維持 v3.5.1：左右 20px、離底 GEAR_ARTICLE_BOTTOM（Jimmy 那條規則只講網頁版；App 沒有上方的圓鈕）
+  const ARTICLE_FAB_EDGE_FINE = 12;
+  const APP_FAB_SIDE = 20;
 
   const LONGPRESS_MS = 500;              // 壓住達此毫秒 = 長按 → 開選單；之前放開 = 短按
   // pointer 位移超過此距離 = 進入拖移（取消短按 / 長按）。滑鼠與觸控分開設門檻
@@ -215,8 +222,8 @@
     .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--muted, #6b6b6b); }
     /* v3.5.1 網頁版文章頁右上角的「文章資訊」圓鈕：同一組齒輪樣式，fixed 到視窗右上（host 沒有
        transform / filter，fixed 子元素以視窗為準）。文章資訊面板掛上（NS.onReaderInfo）才出現 */
-    .fab.info-fab { position: fixed; top: calc(${INFO_FAB_TOP}px + env(safe-area-inset-top, 0px)); right: ${INFO_FAB_EDGE}px; display: none; }
-    .fab.info-fab.ready { display: flex; }
+    .fab.info-fab, .fab.back-fab { position: fixed; display: none; }   /* 位置在 applyGearPos 設 */
+    .fab.info-fab.ready, .fab.back-fab.ready { display: flex; }
     @media (prefers-reduced-motion: reduce) { .fab.gear { transition: none; } }
     /* 長按選單（v0.8.161 比照 Shinkansen content-floating-icon.js 重繪：藍色圓角
        badge icon、13px 字、緊湊間距、label 過長 ellipsis） */
@@ -311,29 +318,45 @@
     btn.title = '選單';
     if (!FEED_PAGE) btn.classList.add('solid');
   }
-  // v3.5.1：網頁版文章頁（非公開分享頁）把「文章資訊」從選單搬到右上角圓鈕
-  const INFO_FAB = GEAR && PAGE_KIND === 'article' && !PUBLIC_PAGE && !!(NS.isWebRuntime && NS.isWebRuntime());
-  let infoBtn = null;
-  if (INFO_FAB) {
-    infoBtn = document.createElement('button');
-    infoBtn.className = 'fab gear solid info-fab';
-    infoBtn.type = 'button';
-    infoBtn.setAttribute('aria-label', '文章資訊');
-    infoBtn.title = '文章資訊';
-    infoBtn.addEventListener('click', (e) => {
+  // v3.5.1：網頁版文章頁（非公開分享頁）把「文章資訊」從選單搬到右上角圓鈕；v3.5.2 App 也搬（右下角）
+  const ARTICLE_GEAR = GEAR && PAGE_KIND === 'article';
+  const APP_PAGE = !!(NS.isAppRuntime && NS.isAppRuntime());
+  const INFO_FAB = ARTICLE_GEAR && !PUBLIC_PAGE && (APP_PAGE || !!(NS.isWebRuntime && NS.isWebRuntime()));
+  // v3.5.2：左上角「回到文章列表」圓鈕（v3.4.4 的「← 列表」膠囊鈕原本在 reader-article.js、滑鼠一動才浮現；
+  // Jimmy 2026-11-26「設計語彙與齒輪及文章資訊對齊，出現和消失的行為也要一致」）。搬進同一個 host：同一組
+  // .fab.gear 樣式、跟齒輪一起被沉浸閱讀藏 / 顯示。出現條件沿用 v3.4.4：有滑鼠的裝置（手機 / App 用選單
+  // 與左緣右滑）、有出口（NS.onReaderExit 掛上且不是 readerNoExit）
+  const BACK_FAB = ARTICLE_GEAR && !APP_PAGE && (() => {
+    try { return !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch (_e) { return false; }
+  })();
+  function makeCornerFab(cls, label, title, onClick) {
+    const b = document.createElement('button');
+    b.className = 'fab gear solid ' + cls;
+    b.type = 'button';
+    b.setAttribute('aria-label', label);
+    b.title = title;
+    b.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       closeMenu();
-      if (typeof NS.onReaderInfo === 'function') { try { NS.onReaderInfo(); } catch (_err) {} }
+      try { onClick(); } catch (_err) {}
     });
-    shadow.appendChild(infoBtn);
+    shadow.appendChild(b);
+    return b;
   }
-  // 文章資訊面板是 reader-article 載入文章後才掛（NS.onReaderInfo）；圓鈕平常被沉浸閱讀藏著，
-  // 每次畫面切換（jread:chrome）與開選單時對一次
+  const infoBtn = INFO_FAB
+    ? makeCornerFab('info-fab', '文章資訊', '文章資訊', () => { if (typeof NS.onReaderInfo === 'function') NS.onReaderInfo(); })
+    : null;
+  const backBtn = BACK_FAB
+    ? makeCornerFab('back-fab', '回到文章列表', '回到文章列表（Esc）', () => backToFeed())
+    : null;
+  // 文章資訊面板、退出 hook 都是 reader-article 載入文章後才掛（NS.onReaderInfo / onReaderExit）；圓鈕平常
+  // 被沉浸閱讀藏著，每次畫面切換（jread:chrome）與開選單時對一次
   function refreshInfoFab() {
     if (infoBtn) infoBtn.classList.toggle('ready', typeof NS.onReaderInfo === 'function');
+    if (backBtn) backBtn.classList.toggle('ready', typeof NS.onReaderExit === 'function' && !(NS.state && NS.state.readerNoExit));
   }
-  if (INFO_FAB) window.addEventListener('jread:chrome', refreshInfoFab);
+  if (INFO_FAB || BACK_FAB) window.addEventListener('jread:chrome', refreshInfoFab);
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
@@ -477,6 +500,7 @@
   }
   if (GEAR) { btn.textContent = ''; btn.appendChild(buildIcon('gear')); }
   if (infoBtn) infoBtn.appendChild(buildIcon('info'));
+  if (backBtn) backBtn.appendChild(buildIcon('list'));
 
   // v3.4.0：Article View（reader-article.js 設 NS.onReaderRefetch）多一項「重新抓取文章」，
   // 排在「文章資訊」後面；所有儲存服務都有、App / 網頁版也有（公開分享頁不掛 hook）
@@ -943,14 +967,42 @@
   // v3.5.0 齒輪：固定左下角，跟搜尋圓鈕左右對稱——列表頁對齊卡片欄左緣（同 .jr-fab 的
   // right: max(20px, calc(50% − 320px))）、離底 20px＋底部安全區域（列表頁 --jr-safe-bottom；
   // 文章頁取 env() 與 App 傳來的 --__jread-app-safe-bottom 較大者）。用 CSS 定位，視窗縮放自己跟著
+  // v3.5.2：文章頁圓鈕離邊距離（見 ARTICLE_FAB_EDGE_FINE 註解）。回傳 { side, bottom, top }（px 數字）
+  function articleFabEdges() {
+    if (APP_PAGE) return { side: APP_FAB_SIDE, bottom: GEAR_ARTICLE_BOTTOM, top: GEAR_ARTICLE_BOTTOM };
+    let coarse = false;
+    try { coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (_e) { coarse = false; }
+    const e = coarse ? GEAR_ARTICLE_BOTTOM : ARTICLE_FAB_EDGE_FINE;
+    return { side: e, bottom: e, top: e };
+  }
+  const SAFE_BOTTOM_CSS = 'max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px))';
+  const SAFE_TOP_CSS = 'env(safe-area-inset-top, 0px)';
   function applyGearPos() {
     pos = { edge: 'left', offsetY: 1 };
     host.style.top = 'auto';
     host.style.right = 'auto';
-    host.style.left = FEED_PAGE ? 'max(20px, calc(50% - 320px))' : '20px';
-    host.style.bottom = FEED_PAGE
-      ? 'calc(20px + var(--jr-safe-bottom, 0px))'
-      : `calc(${GEAR_ARTICLE_BOTTOM}px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px)))`;
+    if (FEED_PAGE) {
+      host.style.left = 'max(20px, calc(50% - 320px))';
+      host.style.bottom = 'calc(20px + var(--jr-safe-bottom, 0px))';
+    } else {
+      const ed = articleFabEdges();
+      host.style.left = ed.side + 'px';
+      host.style.bottom = `calc(${ed.bottom}px + ${SAFE_BOTTOM_CSS})`;
+      // 文章資訊：App 右下角（跟齒輪同一條底線），網頁版右上角；回到列表：左上角
+      if (infoBtn) {
+        const st = infoBtn.style;
+        st.right = ed.side + 'px';
+        st.left = 'auto';
+        if (APP_PAGE) { st.top = 'auto'; st.bottom = `calc(${ed.bottom}px + ${SAFE_BOTTOM_CSS})`; } else { st.bottom = 'auto'; st.top = `calc(${ed.top}px + ${SAFE_TOP_CSS})`; }
+      }
+      if (backBtn) {
+        const st = backBtn.style;
+        st.left = ed.side + 'px';
+        st.right = 'auto';
+        st.bottom = 'auto';
+        st.top = `calc(${ed.top}px + ${SAFE_TOP_CSS})`;
+      }
+    }
     menuEl.classList.add('side-left');
     menuEl.classList.remove('side-right');
   }
@@ -1292,7 +1344,7 @@
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
     isGear: GEAR, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
-    infoBtn, refreshInfoFab, isPublicPage: PUBLIC_PAGE,
+    infoBtn, backBtn, refreshInfoFab, isPublicPage: PUBLIC_PAGE, articleFabEdges,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,

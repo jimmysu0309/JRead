@@ -33,7 +33,7 @@
   const TAP_CLICK_WAIT_MS = 1000;
   const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
     '#__jread-floating-host, #__jread-panel-host, #__jread-settings-host, #__jread-hl-host, #__jread-toast-host, ' +
-    '#__jread-info-host, #__jread-back-host, #__jread-page-indicator, #__jread-scrub-track';
+    '#__jread-info-host, #__jread-page-indicator, #__jread-scrub-track';
   const HIDE_CSS = 'html[' + CHROME_ATTR + '="hidden"] #__jread-floating-host' +
     ' { opacity: 0 !important; pointer-events: none !important; }';
 

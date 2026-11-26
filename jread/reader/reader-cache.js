@@ -748,8 +748,27 @@
     }
   }
 
+  // v3.5.2：「jshared」是 JReader 伺服器管理的特殊標籤（分享時自動加、停止分享時拿掉，JReader SPEC §8.0.1），
+  // 介面一律顯示成「已分享文章」（Jimmy 2026-11-26）。標籤值本身不變（篩選、送伺服器都還是 jshared），
+  // 只換顯示文字。使用者不能自己建這兩個名字（不分大小寫、去頭尾空白）：手動加 jshared 會讓「標籤＝分享中」
+  // 的對應失真，加「已分享文章」會跟特殊標籤的顯示撞名。資訊面板、清單標籤篩選、批次加標籤三處共用這組
+  const SHARED_TAG = 'jshared';
+  const SHARED_TAG_LABEL = '已分享文章';
+  const RESERVED_TAG_TEXT = '「' + SHARED_TAG + '」「' + SHARED_TAG_LABEL + '」是系統保留的標籤名稱';
+  function isSharedTag(name) {
+    return String(name == null ? '' : name).trim().toLowerCase() === SHARED_TAG;
+  }
+  function tagLabel(name) {
+    return isSharedTag(name) ? SHARED_TAG_LABEL : String(name == null ? '' : name);
+  }
+  function isReservedTagName(name) {
+    const n = String(name == null ? '' : name).trim();
+    return isSharedTag(n) || n === SHARED_TAG_LABEL;
+  }
+
   const api = {
     isEmbeddedFrame, EMBEDDED_TEXT,
+    SHARED_TAG, SHARED_TAG_LABEL, RESERVED_TAG_TEXT, isSharedTag, tagLabel, isReservedTagName,
     FEED_KEY, HIGHLIGHT_KEY, LOCAL_CACHE_KEYS, DB_NAME, ARTICLE_BUDGET, IDB_TIMEOUT_MS,
     FEED_TABS, isTabArchivable,
     accountKey, slimDoc, feedDoc, formatDay, locationLabel, themeColorsOf, pageThemeColors, sourceUrlOf, openSourceUrl, hostOf, ACTION_DONE, trashKeepDays, TRASH_KEEP_DAYS_FALLBACK, subviewUrl, subviewTab, FEED_FIELDS, setFeedNotice, takeFeedNotice, FEED_NOTICE_KEY, byteSize, withTimeout,
