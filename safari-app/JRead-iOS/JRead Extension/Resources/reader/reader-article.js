@@ -525,7 +525,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary, openTextshot, textshotByline };
+  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary, openTextshot, textshotByline, readerFontInfo };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -1109,6 +1109,33 @@
     if (docData && docData.site_name && String(docData.site_name) !== String(docData.author || '')) parts.push(String(docData.site_name));
     return parts.join(' · ');
   }
+  // v3.6.1：圖卡沿用 JRead 目前的顯示字型（Jimmy 2026-11-26「不需要選擇字型」）。字型名取主文段落的 computed
+  // font-family；字型實體是 styler 注入的 @font-face（網址已是絕對的），整條規則抄給 iframe。只掃最外層規則
+  //（@font-face 不會包在 @media 裡，也避開逐層遞迴 cssRules 的成本）
+  function readerFontInfo(doc) {
+    const out = { fontStack: '', fontFaceCss: '' };
+    try {
+      const view = doc.defaultView;
+      const p = doc.querySelector('[data-jread-reader-body] p') || doc.querySelector('[data-jread-reader-body]') || doc.body;
+      if (p && view) out.fontStack = view.getComputedStyle(p).fontFamily || '';
+    } catch (_) { /* */ }
+    const faces = [];
+    for (const sheet of Array.from(doc.styleSheets || [])) {
+      let rules = null;
+      try { rules = sheet.cssRules; } catch (_) { continue; }   // 跨來源樣式表讀不到
+      for (const r of Array.from(rules || [])) {
+        if (r && r.type === 5 && r.cssText) faces.push(r.cssText);   // CSSRule.FONT_FACE_RULE
+      }
+    }
+    out.fontFaceCss = faces.join('\n');
+    return out;
+  }
+  function readSafeBottom(doc) {
+    try {
+      const v = doc.defaultView.getComputedStyle(doc.documentElement).getPropertyValue('--__jread-app-safe-bottom');
+      return Math.max(0, parseFloat(v) || 0);
+    } catch (_) { return 0; }
+  }
   function openTextshot(docData, items, startId, deps) {
     const d = deps || {};
     const doc = d.doc || global.document;
@@ -1132,8 +1159,10 @@
     const nativeShare = app && typeof app.shareImage === 'function'
       ? (mode) => (blob, name) => app.shareImage(blob, name, mode) : null;
     const index = Math.max(0, list.findIndex((x) => x.id === startId));
+    const fontInfo = readerFontInfo(doc);
     const data = {
       items: list, index, title: (docData && docData.title) || '', byline: textshotByline(docData), onClose: close,
+      fontStack: fontInfo.fontStack, fontFaceCss: fontInfo.fontFaceCss, safeBottom: readSafeBottom(doc),
       saveImage: nativeShare ? nativeShare('save') : undefined,
       shareImage: nativeShare ? nativeShare('share') : undefined
     };

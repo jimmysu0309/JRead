@@ -600,6 +600,11 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     @media (prefers-reduced-motion: reduce) { .btn.dock.show { animation: none; } }
     .btn.danger { background: #c53030; }
     .btn.shot { background: #2d3748; }
+    /* v3.6.1：觸控裝置畫重點時「圖卡」跟停靠的大膠囊並排（同高、同一條邊），位置由 place() 算 */
+    .btn.shot.mate { padding: 14px 20px; border-radius: 26px; font-size: 17px; line-height: 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32); }
+    .btn.shot.mate-bottom { top: auto !important; bottom: calc(44px + max(env(safe-area-inset-bottom, 0px), var(--__jread-app-safe-bottom, 0px))); }
+    .btn.shot.mate-top { top: calc(12px + env(safe-area-inset-top, 0px)) !important; }
     .btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
   `;
 
@@ -697,6 +702,8 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
 
     function clearDock() {
       btn.classList.remove('dock', 'dock-top', 'dock-bottom');
+      btn.style.marginLeft = '';
+      if (shot) shot.classList.remove('mate', 'mate-top', 'mate-bottom');
     }
 
     // 鈕放在目標下方置中；下方放不下改放上方；左右夾在視窗內。
@@ -711,6 +718,18 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
         btn.classList.toggle('dock-bottom', side === 'bottom');
         btn.style.top = '';
         btn.style.left = '';
+        // v3.6.1：「圖卡」並排在大膠囊左邊，兩顆一起置中（大膠囊用 margin-left 右移半個「圖卡」寬）
+        if (shot) {
+          shot.classList.add('mate');
+          shot.classList.toggle('mate-top', side === 'top');
+          shot.classList.toggle('mate-bottom', side === 'bottom');
+          const vw0 = win.innerWidth || doc.documentElement.clientWidth || 0;
+          const sw0 = (shot.offsetWidth || 70) + SHOT_GAP;
+          const bw0 = btn.offsetWidth || 130;
+          btn.style.marginLeft = (sw0 / 2) + 'px';
+          shot.style.top = '';
+          shot.style.left = Math.max(4, vw0 / 2 - (sw0 + bw0) / 2) + 'px';
+        }
         return;
       }
       clearDock();
@@ -719,7 +738,7 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       const bw = btn.offsetWidth || 90;
       const bh = btn.offsetHeight || 32;
       // v3.6.0：刪除模式有「圖卡」時兩顆一起置中：[圖卡] [刪除重點]
-      const withShot = !!(shot && mode === 'delete');
+      const withShot = !!shot;
       const sw = withShot ? (shot.offsetWidth || 60) + SHOT_GAP : 0;
       const gw = bw + sw;
       let top = rect.bottom + GAP;
@@ -755,7 +774,8 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       btn.textContent = nextMode === 'delete' ? LABEL_DELETE : LABEL_CREATE;
       btn.classList.toggle('danger', nextMode === 'delete');
       btn.classList.add('show');
-      if (shot) shot.classList.toggle('show', nextMode === 'delete');
+      // v3.6.1：畫重點（create）時也顯示「圖卡」＝畫重點＋開圖卡（Jimmy 2026-11-26「功能二合一」）
+      if (shot) shot.classList.add('show');
       place(targetRect());
     }
 
@@ -826,7 +846,7 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       }
       busy = false;
       btn.removeAttribute('aria-busy');
-      if (!r || !r.ok) { toast(errorMessage(r, '畫重點', PC)); flushPendingReconcile(); return; }
+      if (!r || !r.ok) { toast(errorMessage(r, '畫重點', PC)); flushPendingReconcile(); return null; }
       // range 是 live Range：await 期間背景同步若切開了 text node，它會跟著調整
       wrapSegments(segmentsInRange(bodyEl, range), r.id);
       try { const sel = doc.getSelection(); if (sel) sel.removeAllRanges(); } catch (_) {}
@@ -834,6 +854,7 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       cache = cacheAdd(cache || emptyCache(account), docId, { id: r.id, content, offset: null }, now());
       flushPendingReconcile();
       persist();
+      return r.id;   // v3.6.1：「圖卡」二合一要拿新重點的 id
     }
 
     async function deleteActive() {
@@ -871,13 +892,23 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     if (shot) {
       shot.addEventListener('pointerdown', keepSelection);
       shot.addEventListener('mousedown', keepSelection);
-      shot.addEventListener('click', (e) => {
+      const openShot = (id) => {
+        try { ctx.onTextshot(id, highlightItems(bodyEl)); } catch (_) { /* 圖卡開不起來不影響閱讀 */ }
+      };
+      shot.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (busy) return;
+        if (mode === 'create') {
+          // 先存成重點（失敗時 createFromSelection 自己提示），成功才開圖卡
+          const id = await createFromSelection();
+          if (id) openShot(id);
+          return;
+        }
         const id = activeId;
         if (!id) return;
         hide();
-        try { ctx.onTextshot(id, highlightItems(bodyEl)); } catch (_) { /* 圖卡開不起來不影響閱讀 */ }
+        openShot(id);
       });
     }
 
