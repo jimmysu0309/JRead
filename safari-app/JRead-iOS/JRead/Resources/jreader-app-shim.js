@@ -522,83 +522,18 @@
     installEdgeBack(window, backToFeed);
   }
 
-  // ---- 沉浸閱讀：狀態列與懸浮按鈕預設隱藏，點一下切換（v2.2.2）---------------
-  // Jimmy 2026-10-28 需求。Article View 進場時狀態列（原生，ViewController 的
-  // prefersStatusBarHidden）與懸浮按鈕（<html> 屬性 + !important 樣式蓋過 floating-icon 的
-  // inline opacity）一起藏；畫面任意處「點一下」切換顯示 / 隱藏。拖移 / 長按 / 多指 / 起手前
-  // 已有選取（畫重點中）都不算；點到連結、表單、頁碼指示器、懸浮按鈕等自有互動的元素交給它們。
-  // 左緣返回那段觸控已被 installEdgeBack 先 stopImmediatePropagation，不會同時切換。
-  //
-  // v3.2.6：切換改在 click 送出之後才做（touch 只負責判定是不是乾淨的點按）。Jimmy 2026-11-25
-  // 回報圖片、連結要點兩次才有反應。根因（模擬器重現）：v2.2.2 在 touchend 當下切換，懸浮按鈕
-  // 從透明變可見——WebKit 在「點擊瞬間頁面有東西出現」時把這一下當成 hover、不送 click；
-  // 第二下是「隱藏」，click 才送出。連結也中招：手指點偏時 touch 的 target 是旁邊的文字，
-  // WebKit 送 click 時才吸附到連結，所以 touch 端的 TAP_SKIP 判不出來。改成等 click：
-  // click 已經送出就不會被吞，而且 click 的 target 是吸附後的元素，點連結判得準。
-  // click 在 window 冒泡階段收：圖片預覽、站方元素自己處理掉（stopPropagation /
-  // preventDefault）的點擊不切換。文章頁 main.js 在 window 掛了 click listener，整頁都算
-  // 可點元素，點純文字也會送 click（模擬器實測）
-  const CHROME_ATTR = 'data-jread-app-chrome';
-  const TAP_SLOP_PX = 10;
-  const TAP_MAX_MS = 350;
-  // touchend 之後等 click 的上限（iOS 單指點按 click 通常在 touchend 後幾十毫秒內送出）
-  const TAP_CLICK_WAIT_MS = 1000;
-  const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
-    '#__jread-floating-host, #__jread-panel-host, #__jread-settings-host, #__jread-hl-host, #__jread-toast-host, ' +
-    '#__jread-page-indicator, #__jread-scrub-track';
+  // ---- 沉浸閱讀：狀態列跟著齒輪藏 / 顯示（v2.2.2；v3.5.0 判定搬到 web core）---------
+  // Jimmy 2026-10-28 需求：Article View 進場時狀態列與懸浮按鈕一起藏，點一下畫面切換。
+  // v3.5.0：「點一下」的判定（含 v3.2.6 等 click 送出才切換的修法）搬到 jread/reader/reader-immersive.js，
+  // App、網頁版、擴充的 Reader 共用一份（Jimmy 2026-11-26 網頁版與擴充也要一樣的行為）。App 這裡只做原生
+  // 那一半：聽 'jread:chrome' 事件，轉給 ViewController 藏 / 顯示狀態列（prefersStatusBarHidden）。
+  // 模組還沒載入前（document-start 到頁面 script 跑完）狀態列先藏，跟舊版進場即藏一致
+  const CHROME_EVENT = 'jread:chrome';
   function installImmersive(win, report) {
-    const doc = win.document;
-    let shown = false;
-    const apply = () => {
-      doc.documentElement.setAttribute(CHROME_ATTR, shown ? 'shown' : 'hidden');
-      report(!shown);
-    };
-    const style = doc.createElement('style');
-    style.textContent = 'html[' + CHROME_ATTR + '="hidden"] #__jread-floating-host' +
-      ' { opacity: 0 !important; pointer-events: none !important; }';
-    doc.documentElement.appendChild(style);
-
-    let tap = null;
-    let tapAt = 0;   // 乾淨點按的 touchend 時刻；等對應的 click 來才切換
-    win.addEventListener('touchstart', (e) => {
-      tap = null;
-      tapAt = 0;
-      if (!e.touches || e.touches.length !== 1) return;
-      const sel = win.getSelection && win.getSelection();
-      if (sel && !sel.isCollapsed) return;
-      const t = e.touches[0];
-      tap = { x: t.clientX, y: t.clientY, at: Date.now() };
-    }, { capture: true, passive: true });
-    win.addEventListener('touchmove', (e) => {
-      if (!tap) return;
-      const t = e.touches && e.touches[0];
-      if (!t || Math.abs(t.clientX - tap.x) > TAP_SLOP_PX || Math.abs(t.clientY - tap.y) > TAP_SLOP_PX) tap = null;
-    }, { capture: true, passive: true });
-    win.addEventListener('touchend', (e) => {
-      const start = tap;
-      tap = null;
-      if (!start || (e.touches && e.touches.length)) return;
-      const t = e.changedTouches && e.changedTouches[0];
-      if (!t || Math.abs(t.clientX - start.x) > TAP_SLOP_PX || Math.abs(t.clientY - start.y) > TAP_SLOP_PX) return;
-      if (Date.now() - start.at > TAP_MAX_MS) return;
-      tapAt = Date.now();
-    }, { capture: true, passive: true });
-    win.addEventListener('touchcancel', () => { tap = null; tapAt = 0; }, { capture: true, passive: true });
-    win.addEventListener('click', (e) => {
-      const at = tapAt;
-      tapAt = 0;
-      if (!at || Date.now() - at > TAP_CLICK_WAIT_MS || e.defaultPrevented) return;
-      const tg = e.target;
-      const el = tg && tg.nodeType === 1 ? tg : (tg && tg.parentElement);
-      if (el && el.closest(TAP_SKIP)) return;
-      shown = !shown;
-      apply();
-    });
-    // bfcache 回來（從外部 / 列表再前進）原生狀態列可能已被別頁改過，重報一次
-    win.addEventListener('pageshow', apply);
-    apply();
-    return { isShown: () => shown };
+    win.addEventListener(CHROME_EVENT, (e) => { report(!(e && e.detail && e.detail.shown)); });
+    report(true);
   }
+
   // ---- 文章頁鎖雙指縮放（v3.2.8）-----------------------------------------------
   // Jimmy 2026-11-25：App 看文章可以雙指把整頁放大，不是預期行為。不能靠 viewport meta 的
   // user-scalable=no——styler 進閱讀模式會把 viewport 正規化成 width=device-width, initial-scale=1
