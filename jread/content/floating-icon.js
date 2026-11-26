@@ -229,12 +229,14 @@
     /* v3.7.0 一般網站的 J：齒輪外觀；J 用 Georgia 粗體（同 App 圖示的 J）。
        v3.7.2：配色改跟 App 文章頁齒輪同一套（Jimmy 2026-11-26「J icon 的底色明顯和原本 jread app 齒輪的
        表現不同，看起來很突兀」）——原本固定白底＋陰影，在灰底 / 夜間主題上像一顆貼上去的白鈕。
-       改成底＝頁面底色、圖示＝字色 62%、外框＝字色 30%、無陰影；顏色由 applySiteTheme 讀閱讀卡（閱讀模式中）
+       改成底＝頁面底色、圖示＝字色 62%、外框＝字色 14%、淡化 .7、無陰影（同齒輪預設）；顏色由 applySiteTheme 讀閱讀卡（閱讀模式中）
        或 body（平常）寫進 host 的 --site-* 變數（自己的變數名，網站的 --bg 之類穿不進來） */
-    .fab.gear.site { opacity: 1; box-shadow: none; background: var(--site-bg, #ffffff);
-      color: var(--site-muted, rgba(26,26,26,0.62)); border-color: var(--site-ring, rgba(26,26,26,0.3)); }
+    .fab.gear.site { opacity: .7; box-shadow: none; background: var(--site-bg, #ffffff);
+      color: var(--site-muted, rgba(26,26,26,0.62)); border-color: var(--site-line, rgba(26,26,26,0.14)); }
+    /* 框線與透明度照齒輪預設（.fab.gear：opacity .7、框＝字色 14%）——Jimmy 2026-11-26 截圖對比「框線也沒抄、
+       透明度也不一樣」：原本框＝字色 30%、不透明，J 比齒輪深一截 */
     .fab.gear.site:hover, .fab.gear.site:focus-visible, .fab.gear.site[aria-expanded="true"] {
-      color: var(--site-text, #1a1a1a); background: var(--site-bg, #ffffff); border-color: var(--site-muted, rgba(26,26,26,0.62)); }
+      opacity: 1; color: var(--site-text, #1a1a1a); background: var(--site-bg, #ffffff); border-color: var(--site-muted, rgba(26,26,26,0.62)); }
     .fab.gear.site svg text { fill: currentColor; stroke: none; }
     /* v3.7.1：大小設定（applySize 寫 --fab-hit / --fab-icon） */
     .fab.gear.site { width: var(--fab-hit); height: var(--fab-hit); border-radius: calc(var(--fab-hit) / 2); }
@@ -446,7 +448,7 @@
     const c = siteThemeColors();
     const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(String(c.fg));
     const rgb = m ? m[1] + ',' + m[2] + ',' + m[3] : '26,26,26';
-    const vars = { '--site-bg': c.bg, '--site-text': c.fg, '--site-muted': 'rgba(' + rgb + ',0.62)', '--site-ring': 'rgba(' + rgb + ',0.3)' };
+    const vars = { '--site-bg': c.bg, '--site-text': c.fg, '--site-muted': 'rgba(' + rgb + ',0.62)', '--site-line': 'rgba(' + rgb + ',0.14)' };
     for (const k of Object.keys(vars)) host.style.setProperty(k, vars[k]);
   }
   function scheduleSiteTheme(delay) {
