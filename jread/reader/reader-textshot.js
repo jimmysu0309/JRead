@@ -366,6 +366,18 @@
     const items = (data.items || []).filter((x) => x && String(x.text || '').trim());
     if (!items.length) { if (data.onClose) data.onClose(); return null; }
     let index = Math.max(0, Math.min(items.length - 1, data.index | 0));
+    // v3.6.2：編輯過的文字（只在這次開著時有效，關掉就還原——Jimmy 2026-11-26「不用記住」）。
+    // 每個重點各自一份 { text, title, byline }，切到別的重點再切回來還在
+    const edits = new Map();
+    const current = () => {
+      const e = edits.get(index) || {};
+      return {
+        text: e.text != null ? e.text : items[index].text,
+        title: e.title != null ? e.title : (data.title || ''),
+        byline: e.byline != null ? e.byline : (data.byline || '')
+      };
+    };
+    let editing = false;
     const prefs = loadPrefs(store);
     const $ = (sel) => doc.querySelector(sel);
     const canvas = $('#ts-canvas');
@@ -381,7 +393,8 @@
     };
     let lastScale = 1;
     const draw = () => {
-      lastScale = render(canvas, { text: items[index].text, title: data.title, byline: data.byline, style: prefs.style, ratio: prefs.ratio, fontStack: data.fontStack }).scale || 1;
+      const c = current();
+      lastScale = render(canvas, { text: c.text.trim() ? c.text : ' ', title: c.title, byline: c.byline, style: prefs.style, ratio: prefs.ratio, fontStack: data.fontStack }).scale || 1;
       if (nameEl) nameEl.textContent = STYLES[prefs.style].label;
       const counter = $('#ts-count');
       if (counter) counter.textContent = items.length > 1 ? (index + 1) + ' / ' + items.length : '';
@@ -409,7 +422,7 @@
     const toBlob = () => new Promise((resolve, reject) => {
       try { canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/png'); } catch (e) { reject(e); }
     });
-    const name = () => fileName(data.title, index);
+    const name = () => fileName(current().title || data.title, index);
 
     const defaultSave = (blob, n) => {
       const url = win.URL.createObjectURL(blob);
@@ -452,7 +465,56 @@
       }
     };
 
+    // ---- 編輯文字（v3.6.2）----
+    const inTitle = $('#ts-in-title');
+    const inText = $('#ts-in-text');
+    const inByline = $('#ts-in-byline');
+    const editBtn = $('#ts-edit');
+    let redrawTimer = 0;
+    const fillInputs = () => {
+      const c = current();
+      if (inTitle) inTitle.value = c.title;
+      if (inText) inText.value = c.text;
+      if (inByline) inByline.value = c.byline;
+    };
+    const onInput = () => {
+      edits.set(index, { text: inText ? inText.value : undefined, title: inTitle ? inTitle.value : undefined, byline: inByline ? inByline.value : undefined });
+      if (redrawTimer) win.clearTimeout(redrawTimer);
+      redrawTimer = win.setTimeout(() => { redrawTimer = 0; draw(); }, 300);
+    };
+    const setEditing = (on) => {
+      editing = !!on;
+      doc.body.classList.toggle('editing', editing);
+      if (editBtn) editBtn.setAttribute('aria-pressed', String(editing));
+      if (editing) {
+        fillInputs();
+        try { if (inText) inText.focus(); } catch (_) { /* */ }
+      } else {
+        if (redrawTimer) { win.clearTimeout(redrawTimer); redrawTimer = 0; }
+        try { if (doc.activeElement && doc.activeElement.blur) doc.activeElement.blur(); } catch (_) { /* */ }
+        try { doc.body.focus(); } catch (_) { /* */ }
+      }
+      draw();
+    };
+    for (const el of [inTitle, inText, inByline]) if (el) el.addEventListener('input', onInput);
+    if (editBtn) editBtn.addEventListener('click', () => setEditing(!editing));
+    const doneBtn = $('#ts-done');
+    if (doneBtn) doneBtn.addEventListener('click', () => setEditing(false));
+    const resetBtn = $('#ts-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => { edits.delete(index); fillInputs(); draw(); });
+    canvas.addEventListener('click', () => { if (!editing) setEditing(true); });
+    // 手機鍵盤彈出時 iframe 的 visual viewport 變矮：body 跟著縮，卡片留在鍵盤上方
+    const vv = win.visualViewport;
+    const onVV = () => {
+      if (!vv) return;
+      doc.body.style.height = editing ? vv.height + 'px' : '';
+      fitCanvas();
+    };
+    if (vv) vv.addEventListener('resize', onVV);
+    const isField = (t) => !!(t && t.closest && t.closest('input, textarea'));
+
     const close = () => {
+      if (vv) vv.removeEventListener('resize', onVV);
       win.removeEventListener('keydown', onKey, true);
       win.removeEventListener('resize', fitCanvas);
       if (data.onClose) data.onClose();
@@ -461,10 +523,13 @@
       const n = index + delta;
       if (n < 0 || n >= items.length) return;
       index = n;
+      if (editing) fillInputs();
       draw();
     };
     function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      if (e.isComposing || e.keyCode === 229) return;   // 中文輸入選字中
+      if (e.key === 'Escape') { e.preventDefault(); if (editing) setEditing(false); else close(); }
+      else if (isField(e.target)) return;               // 編輯欄位裡的方向鍵是移游標
       else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
     }
@@ -488,7 +553,7 @@
       stage.addEventListener('touchstart', (e) => { sx = e.touches && e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
       stage.addEventListener('touchend', (e) => {
         const t = e.changedTouches && e.changedTouches[0];
-        if (sx == null || !t) return;
+        if (editing || sx == null || !t) return;
         const dx = t.clientX - sx;
         sx = null;
         if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
@@ -520,7 +585,7 @@
     Promise.all(loads).then(() => (doc.fonts && doc.fonts.ready) || null).then(draw, () => {});
     // 焦點放在頁面本身（iframe 要有焦點才收得到 Esc / 方向鍵）；不放關閉鈕——程式設焦點會畫出焦點框
     try { doc.body.tabIndex = -1; doc.body.style.outline = 'none'; doc.body.focus(); win.focus(); } catch (_) { /* */ }
-    return { draw, go, close, get index() { return index; }, prefs, toBlob };
+    return { draw, go, close, get index() { return index; }, prefs, toBlob, setEditing, current, get editing() { return editing; } };
   }
 
   const api = { tokenize, layoutLines, justifyLine, fitQuote, ellipsize, layoutCard, render, mount, loadPrefs, savePrefs, fileName, RATIOS, STYLES, DEFAULT_PREFS, DEFAULT_STACK, PREFS_KEY, BRAND, NO_START, NO_END, SCALE_MIN, FILL_MAX };
