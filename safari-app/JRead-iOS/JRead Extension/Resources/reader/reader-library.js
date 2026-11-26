@@ -300,6 +300,21 @@
     // 掛 body 最後（position: fixed 貼底）；body 加 class 讓清單底部留出圓鈕 / 工具列的高度
     doc.body.appendChild(ui.root);
     doc.body.appendChild(ui.fab);
+    // v3.6.7：視窗夠寬時貼螢幕右下角（跟左下的齒輪對稱）。判斷與距離住 floating-icon.js feedFabPos（同一份）；
+    // 不夠寬或模組不在就清掉 inline、回到 reader.html .jr-fab 的預設（對齊卡片欄右緣）
+    const placeFab = () => {
+      const F = global.__JRead && global.__JRead.floating;
+      const p = F && typeof F.feedFabPos === 'function' ? F.feedFabPos() : null;
+      if (p && p.corner) {
+        ui.fab.style.right = p.side + 'px';
+        ui.fab.style.bottom = `calc(${p.bottom}px + var(--jr-safe-bottom))`;
+      } else {
+        ui.fab.style.right = '';
+        ui.fab.style.bottom = '';
+      }
+    };
+    placeFab();
+    win.addEventListener('resize', placeFab, { passive: true });
     doc.body.classList.add('jr-has-tools');
     // 展開的工具列實際高度（含貼網址列、標籤 chip、底部安全距離）→ <html> 的 --jr-tools-h：
     // toast 往上讓出工具列（2026-11-24 審核 A-8；CSS 在 reader.html）
