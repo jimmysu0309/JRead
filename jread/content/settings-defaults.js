@@ -180,6 +180,12 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     // v3.5.6：JRead 文章頁標題下的「摘要」折疊是否展開（Jimmy 2026-11-26：記憶折疊或展開，所有文章共用）。
     // 點「摘要」切換時寫回；邏輯在 reader/reader-article.js attachSummaryToggle
     readerSummaryOpen: false,
+    // v3.7.0：文章列表卡片文字（Jimmy 2026-11-26「規劃能調整文章列表卡片文字的方法」→ 整體縮放、標題與摘要行數、
+    // 字型跟文章）。feedFontScale＝百分比（80–150、步進 10），標題 16 / 資訊列 12.5 / 摘要 13px 一起乘；
+    // feedTitleLines 1–3；feedSummaryLines 0（不顯示）/ 1–3 / 'all'。套用在 reader/reader-feed.js applyFeedText
+    feedFontScale: 100,
+    feedTitleLines: 2,
+    feedSummaryLines: 2,
     // v1.5.4：原 showPageNumber 開關已移除——翻頁模式底部頁碼指示（「3 / 43」）
     // 一律顯示（拿掉頂端進度條後它是唯一進度載體）。
     // v0.8.40：閱讀位置記憶效期（天）。文章看到一半離開時記住閱讀位置
@@ -688,7 +694,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   const HOST_BRIDGE_SYNC_KEYS = Object.freeze([
     'theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans',
     'fontWeight', 'lineHeight', 'paragraphSpacing', 'textJustify', 'pangu',
-    'pagedMode', 'mouseRevealButtons', 'readerSummaryOpen', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
+    'pagedMode', 'mouseRevealButtons', 'readerSummaryOpen', 'feedFontScale', 'feedTitleLines', 'feedSummaryLines', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
     'positionMemoryDays', 'syncScrollOnExit',
     'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'floatingIconPos',
     'blockPageShortcuts', 'customShortcuts',

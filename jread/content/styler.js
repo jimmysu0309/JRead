@@ -6252,6 +6252,14 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   let activeMarkState = null;
 
   const styler = {
+    // v3.7.0：字型堆疊用到的內嵌字型 @font-face（Noto Serif TC 四字重＋被選到的拉丁可變字型）。列表頁（reader.html）
+    // 的卡片也跟文章用同一套字型，用這支拿規則、不另抄一份字型清單（styleCss 同一份資料）
+    sanitizeFontFamily,
+    fontFaceCssFor(stack) {
+      const s = sanitizeFontFamily(stack);
+      if (!s) return '';
+      return (s.indexOf('Noto Serif TC') !== -1 ? FONT_FACE_CSS : '') + latinFontFaceFor(s);
+    },
     /**
      * 套用閱讀模式排版。
      * @param {Element} articleEl 主文容器

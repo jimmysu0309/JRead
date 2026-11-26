@@ -50,6 +50,9 @@
     // 註：lib/instapaper*.js **不**注入一般網頁（consumer key 只進擴充自有頁 / SW），
     // 故 content 直送軌只涵蓋 Readwise，Instapaper 由 main.js 轉回 SW 軌。
     'popup/popup-core.js',
+    // v3.7.0：? 快速鍵說明（閱讀模式中才接；一般網站列 page: 'site' 那幾筆）。要在 popup-core 之後（init 讀 __JReadPopup）、
+    // main.js 之前（window capture 比 keyguard 早註冊）
+    'reader/reader-shortcuts.js',
     'content/main.js'
   ];
 

@@ -668,7 +668,56 @@
 
   // spec 用：注入本機縮圖（正式流程由 init 的 loadLocalThumbs 設）
   function setLocalThumbsForTest(m) { localThumbs = m || new Map(); thumbObjectUrls.clear(); }
+  // ---- 列表卡片文字（v3.7.0，Jimmy 2026-11-26：整體縮放、標題與摘要行數、字型跟文章）----
+  // 設定 → <html> 的 CSS 變數（reader.html 的 .jr-card-* 讀）：--jr-feed-scale、--jr-title-lines、--jr-summary-lines、
+  // --jr-summary-display、--jr-feed-font。字型＝文章同一個組合（settings-defaults composeFontStack），內嵌字型的 @font-face
+  // 由 styler.fontFaceCssFor 給（同一份字型清單），注入 <style id="jr-feed-fonts">。純函式 feedTextVars 供 spec 直接測
+  const FEED_TEXT_KEYS = ['feedFontScale', 'feedTitleLines', 'feedSummaryLines', 'fontFamily', 'latinSerif', 'latinSans'];
+  const FEED_SCALE_MIN = 80;
+  const FEED_SCALE_MAX = 150;
+  function feedTextVars(s, deps) {
+    const d = deps || {};
+    const DEFS = d.defaults || global.__JReadSettingsDefaults || {};
+    const o = s || {};
+    let scale = Number(o.feedFontScale);
+    if (!Number.isFinite(scale)) scale = Number(DEFS.feedFontScale) || 100;
+    scale = Math.max(FEED_SCALE_MIN, Math.min(FEED_SCALE_MAX, Math.round(scale / 10) * 10));
+    const t = Number(o.feedTitleLines);
+    const title = t === 1 || t === 2 || t === 3 ? t : (Number(DEFS.feedTitleLines) || 2);
+    const sumRaw = o.feedSummaryLines;
+    const sum = sumRaw === 'all' || [0, 1, 2, 3].indexOf(Number(sumRaw)) !== -1 ? (sumRaw === 'all' ? 'all' : Number(sumRaw))
+      : (DEFS.feedSummaryLines != null ? DEFS.feedSummaryLines : 2);
+    const compose = d.composeFontStack || global.__JReadComposeFontStack;
+    const stack = typeof compose === 'function' ? compose(o) : o.fontFamily;
+    const vars = {
+      '--jr-feed-scale': String(scale / 100),
+      '--jr-title-lines': String(title),
+      '--jr-summary-lines': sum === 'all' ? 'none' : String(sum || 1),
+      '--jr-summary-display': sum === 0 ? 'none' : '-webkit-box'
+    };
+    return { vars, scale, title, summary: sum, stack: typeof stack === 'string' && stack.trim() ? stack : '' };
+  }
+  function applyFeedText(doc, s, deps) {
+    const d = deps || {};
+    const r = feedTextVars(s, d);
+    const root = doc.documentElement;
+    for (const k of Object.keys(r.vars)) root.style.setProperty(k, r.vars[k]);
+    const NS = d.NS || global.__JRead;
+    const styler = NS && NS.styler;
+    // 字型堆疊經 styler 同一道文法檢查（sanitizeFontFamily，擋結構注入）；不合法或 styler 不在就不套、維持頁面預設字型
+    const safe = styler && typeof styler.sanitizeFontFamily === 'function' ? styler.sanitizeFontFamily(r.stack) : null;
+    const faces = safe && typeof styler.fontFaceCssFor === 'function' ? styler.fontFaceCssFor(safe) : '';
+    if (safe) root.style.setProperty('--jr-feed-font', safe); else root.style.removeProperty('--jr-feed-font');
+    let st = doc.getElementById('jr-feed-fonts');
+    if (faces) {
+      if (!st) { st = doc.createElement('style'); st.id = 'jr-feed-fonts'; (doc.head || root).appendChild(st); }
+      if (st.textContent !== faces) st.textContent = faces;
+    } else if (st) st.remove();
+    return r;
+  }
+
   const api = {
+    feedTextVars, applyFeedText, FEED_TEXT_KEYS,
     setLocalThumbsForTest,
     formatMeta, formatCardDate, encodeMeta, createCard, cardCaps, attachKeyboardNav, KB_KEYS, trashConfirmText, TRASH_ACTIONS, pickInitialTab, renderFeed, actionCard, archiveCard, archiveErrorMessage,
     swipeThreshold, swipeDecision, swipeOffset, openCardMenu, closeCardMenu,
@@ -738,6 +787,17 @@
       const notice = RCN.takeFeedNotice(session);
       if (notice) toast(notice.message, notice.kind);
     }
+
+    // v3.7.0：列表卡片文字設定（讀有效值：設定檔可能蓋過 sync）；功能選單改了即時套用
+    const feedTextQuery = {};
+    for (const k of FEED_TEXT_KEYS) feedTextQuery[k] = DEF[k];
+    Promise.resolve(readSettings(feedTextQuery)).then((ft) => { try { applyFeedText(doc, ft); } catch (_) { /* */ } }, () => {});
+    try {
+      browser.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'sync' || !FEED_TEXT_KEYS.concat(['profiles', 'activeProfile']).some((k) => k in changes)) return;
+        Promise.resolve(readSettings(feedTextQuery)).then((ft) => { try { applyFeedText(doc, ft); } catch (_) { /* */ } }, () => {});
+      });
+    } catch (_) { /* */ }
 
     readSettings(PC.serviceSettingsQuery({
       theme: DEF.theme || 'gray' // review D-05：同 reader-article.js，預設主題讀單一資料源
