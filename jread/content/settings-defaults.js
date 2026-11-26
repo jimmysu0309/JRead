@@ -177,6 +177,9 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     //（Jimmy 2026-11-26「在設定中加入選項：滑鼠移動浮現按鈕」）。預設 false＝v3.5.0 起的行為：點一下畫面
     // 才出現。只對有滑鼠的裝置有意義（popup 在觸控裝置不顯示這列）；邏輯在 reader/reader-immersive.js
     mouseRevealButtons: false,
+    // v3.5.6：JRead 文章頁標題下的「摘要」折疊是否展開（Jimmy 2026-11-26：記憶折疊或展開，所有文章共用）。
+    // 點「摘要」切換時寫回；邏輯在 reader/reader-article.js attachSummaryToggle
+    readerSummaryOpen: false,
     // v1.5.4：原 showPageNumber 開關已移除——翻頁模式底部頁碼指示（「3 / 43」）
     // 一律顯示（拿掉頂端進度條後它是唯一進度載體）。
     // v0.8.40：閱讀位置記憶效期（天）。文章看到一半離開時記住閱讀位置
@@ -685,7 +688,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   const HOST_BRIDGE_SYNC_KEYS = Object.freeze([
     'theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans',
     'fontWeight', 'lineHeight', 'paragraphSpacing', 'textJustify', 'pangu',
-    'pagedMode', 'mouseRevealButtons', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
+    'pagedMode', 'mouseRevealButtons', 'readerSummaryOpen', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
     'positionMemoryDays', 'syncScrollOnExit',
     'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'floatingIconPos',
     'blockPageShortcuts', 'customShortcuts',
