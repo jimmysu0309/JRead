@@ -155,9 +155,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     // v3.6.1：觸覺產生器綁在 WebView 上（iOS 17.5 起 init(view:)，不綁畫面的 init() 已列為淘汰）。v3.5.5 用不綁畫面的
     // 寫法，Jimmy 真機拖動頁碼完全不震（Chromium 實測網頁端每跨一頁都有送 haptic，同一條 bridge 的 statusBar 正常）→
     // 懷疑沒綁畫面的產生器在新系統不出聲；另外手指按到頁碼就先 prepare 預熱（hapticPrepare），跨頁時才不延遲
-    private lazy var selectionHaptic: UISelectionFeedbackGenerator = {
-        if #available(iOS 17.5, *) { return UISelectionFeedbackGenerator(view: webView) }
-        return UISelectionFeedbackGenerator()
+    // v3.6.3：改用撞擊型（.medium、強度 1.0）。v3.6.1 的選擇型（滾輪那種「喀」）真機有震但幾乎感覺不到（Jimmy 2026-11-26）
+    private lazy var selectionHaptic: UIImpactFeedbackGenerator = {
+        if #available(iOS 17.5, *) { return UIImpactFeedbackGenerator(style: .medium, view: webView) }
+        return UIImpactFeedbackGenerator(style: .medium)
     }()
     override var prefersStatusBarHidden: Bool { statusBarHidden }
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
@@ -369,7 +370,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         case "haptic":
             // v3.5.5：翻頁頁碼進度條每跨一頁（paged-mode.js triggerHaptic → shim haptic）
             if message.frameInfo.isMainFrame {
-                selectionHaptic.selectionChanged()
+                selectionHaptic.impactOccurred(intensity: 1.0)
                 selectionHaptic.prepare()
             }
             replyHandler("{}", nil)

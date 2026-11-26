@@ -51,6 +51,7 @@
   const SCALE_MIN = 0.55;
   const SCALE_STEP = 0.05;
   const FILL_MAX = 0.72;
+  const LINE_HEIGHT = 1.35;
   const PREFS_KEY = 'jread-textshot-prefs';
   const BRAND = 'JRead';
 
@@ -198,7 +199,7 @@
     const o = opt || {};
     const maxSize = o.maxSize || 60;
     const minSize = o.minSize || 28;
-    const lh = o.lineHeight || 1.55;
+    const lh = o.lineHeight || LINE_HEIGHT;
     const tokens = tokenize(text);
     let size = maxSize;
     for (;;) {
@@ -254,7 +255,8 @@
     const metaSize = Math.round(base * 0.03);
     const gap = Math.round(base * 0.06);
     const quoteSize = Math.round(base * 0.05);
-    const lh = 1.55;
+    // v3.6.3：行高 1.55 → 1.35（Jimmy 2026-11-26「圖卡內文行距太開」）
+    const lh = LINE_HEIGHT;
     const boxFor = (W, H) => {
       const top = pad + (hasTitle ? metaSize * 1.4 : 0);
       const footTop = H - pad - metaSize * 1.2;
@@ -588,7 +590,7 @@
     return { draw, go, close, get index() { return index; }, prefs, toBlob, setEditing, current, get editing() { return editing; } };
   }
 
-  const api = { tokenize, layoutLines, justifyLine, fitQuote, ellipsize, layoutCard, render, mount, loadPrefs, savePrefs, fileName, RATIOS, STYLES, DEFAULT_PREFS, DEFAULT_STACK, PREFS_KEY, BRAND, NO_START, NO_END, SCALE_MIN, FILL_MAX };
+  const api = { tokenize, layoutLines, justifyLine, fitQuote, ellipsize, layoutCard, render, mount, loadPrefs, savePrefs, fileName, RATIOS, STYLES, DEFAULT_PREFS, DEFAULT_STACK, PREFS_KEY, BRAND, NO_START, NO_END, SCALE_MIN, FILL_MAX, LINE_HEIGHT };
   global.__JReadTextshot = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
