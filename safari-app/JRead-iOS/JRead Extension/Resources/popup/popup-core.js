@@ -1050,6 +1050,12 @@
     if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
     return jreaderAction({ token, base, fetchImpl, method: 'DELETE', path: docPath(id, '/share') });
   }
+  // v3.6.6：主人打開用的分享網址（JReader POST /api/v1/documents/:id/share/owner-link，短效記號）。成功回 { ok, data: { url } }。
+  // 用這個網址打開過的瀏覽器，之後自己打開分享頁不記統計（JReader 2026-11-26，Jimmy 選「自己的瀏覽完全不計」）
+  function jreaderShareOwnerLink({ token, base, id, fetchImpl } = {}) {
+    if (!id) return Promise.resolve({ ok: false, error: 'NO_ID' });
+    return jreaderAction({ token, base, fetchImpl, method: 'POST', path: docPath(id, '/share/owner-link') });
+  }
 
   // 多選批次（JReader POST /api/v1/documents/batch）：action＝move（帶 location）/ trash / restore / purge / tag（帶 tag）。
   // 成功回 { ok, data: { action, updated } }
@@ -1851,6 +1857,7 @@
     emptyJReaderTrash,
     batchJReaderDocuments,
     shareJReaderDocument,
+    jreaderShareOwnerLink,
     unshareJReaderDocument,
     listReaderDocuments,
     archiveReaderDocument,
