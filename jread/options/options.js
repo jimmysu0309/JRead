@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'mouseRevealButtons', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'progressBarStyle', 'feedFontScale', 'feedTitleLines', 'feedSummaryLines', 'appIcon'];
+const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'mouseRevealButtons', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconSize', 'progressBarStyle', 'feedFontScale', 'feedTitleLines', 'feedSummaryLines', 'appIcon'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -198,6 +198,12 @@ function readFieldFromDom(id) {
     case 'debugLog':
     case 'blockPageShortcuts': case 'pangu': case 'linkFollowReader': case 'editModeEnabled': case 'readwiseSummary':
       return el.checked;
+    case 'floatingIconSize': {
+      // v3.7.1：radio 群；未勾選 / 未知值退回預設（settings-defaults 單一資料源）
+      const checked = el.querySelector('input[name="floatingIconSize"]:checked');
+      const v = checked ? checked.value : null;
+      return ['small', 'medium', 'large'].indexOf(v) >= 0 ? v : DEFAULTS.floatingIconSize;
+    }
     case 'feedTitleLines': case 'feedSummaryLines': {
       // v3.7.0：radio 群（wrapper id）；數字存數字，'all' 存字串。未勾選 / 未知值退回預設
       const checked = el.querySelector('input[name="' + id + '"]:checked');
@@ -277,6 +283,10 @@ function applyFieldToDom(id, value) {
   } else if (id === 'floatingIcon') {
     // 三態：boolean 尊重使用者設定；未設過（null / undefined）一律預設勾（v0.8.158）
     el.checked = resolveFloatingIconEnabled(value);
+  } else if (id === 'floatingIconSize') {
+    const v = ['small', 'medium', 'large'].indexOf(value) >= 0 ? value : DEFAULTS.floatingIconSize;
+    const radio = el.querySelector('input[name="floatingIconSize"][value="' + v + '"]');
+    if (radio) radio.checked = true;
   } else if (id === 'feedTitleLines' || id === 'feedSummaryLines') {
     // v3.7.0：勾選對應 radio；未知值退回預設
     const v = value === undefined || value === null ? DEFAULTS[id] : value;
@@ -323,12 +333,15 @@ function load() {
     // v0.7.218：自訂快速鍵——storage 讀回值消毒後渲染 recorder 顯示
     shortcutTable = SC.sanitizeTable(values.customShortcuts);
     renderShortcuts();
-    updateOpacityDemo();   // 範例 icon 套初始透明度 + 尺寸
     // v1.6.0：儲存服務顯隱 + Instapaper 連結狀態（instapaperUsername 不在 fields，
     // 由 renderInstapaperLinkState 直接渲染）
     renderInstapaperLinkState(values.instapaperUsername);
     updateServiceVisibility();
-  }).catch(() => {});
+  }).catch((e) => {
+    // v3.7.1：不再默默吞掉——v3.7.0 拿掉透明度設定時這裡留著一行呼叫已刪掉的函式，丟出例外後
+    // 服務區塊顯隱、Instapaper 連結狀態都沒跑，畫面卻看不出錯（Jimmy 截圖時才發現 JReader 區塊在 Readwise 下沒藏）
+    try { console.warn('[JRead options] 載入設定失敗', e); } catch (_) { /* */ }
+  });
 }
 
 // ---- 儲存狀態提示條（v0.8.162，參考姊妹專案 Shinkansen save-bar）----------
