@@ -525,7 +525,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary };
+  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary, openTextshot, textshotByline };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -1092,9 +1092,60 @@
     try {
       return HL.attach({
         doc, win: global, bodyEl, docId: String(docData.id || ''), token: creds.token, base: creds.base,
-        PC, NS, storage
+        PC, NS, storage,
+        // v3.6.0：點既有重點 →「圖卡」
+        onTextshot: (id, items) => openTextshot(docData, items, id, { doc })
       });
     } catch (_) { return null; }  // 畫重點掛不上不影響閱讀
+  }
+
+  // v3.6.0：Textshot（reader-textshot.js 檔頭有架構說明）。全螢幕 iframe 掛 <html> 直下（id 以 __jread- 開頭＝
+  // JRead 注入的 UI，cleaner / 編輯模式不動它），src 用 runtime.getURL 組——網頁版文章頁網址跟 core 靜態檔不同路徑，
+  // 相對路徑會 404。iframe 載好後同源直接呼叫裡面的 mount。App：儲存 / 分享走原生（__jreadApp.shareImage）
+  const TEXTSHOT_FRAME_ID = '__jread-textshot-frame';
+  function textshotByline(docData) {
+    const parts = [];
+    if (docData && docData.author) parts.push(String(docData.author));
+    if (docData && docData.site_name && String(docData.site_name) !== String(docData.author || '')) parts.push(String(docData.site_name));
+    return parts.join(' · ');
+  }
+  function openTextshot(docData, items, startId, deps) {
+    const d = deps || {};
+    const doc = d.doc || global.document;
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length || doc.getElementById(TEXTSHOT_FRAME_ID)) return null;
+    const runtime = d.runtime || (global.browser && global.browser.runtime);
+    let src = 'textshot.html';
+    try { if (runtime && typeof runtime.getURL === 'function') src = runtime.getURL('reader/textshot.html'); } catch (_) { /* */ }
+    const frame = doc.createElement('iframe');
+    frame.id = TEXTSHOT_FRAME_ID;
+    frame.src = src;
+    frame.setAttribute('title', '圖卡');
+    frame.style.cssText = 'all: initial; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; border: 0; ' +
+      'z-index: 2147483647; display: block; background: rgba(0, 0, 0, 0.94); color-scheme: dark;';
+    const prevFocus = doc.activeElement;
+    const close = () => {
+      frame.remove();
+      try { if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus(); } catch (_) { /* */ }
+    };
+    const app = d.app !== undefined ? d.app : global.__jreadApp;
+    const nativeShare = app && typeof app.shareImage === 'function'
+      ? (mode) => (blob, name) => app.shareImage(blob, name, mode) : null;
+    const index = Math.max(0, list.findIndex((x) => x.id === startId));
+    const data = {
+      items: list, index, title: (docData && docData.title) || '', byline: textshotByline(docData), onClose: close,
+      saveImage: nativeShare ? nativeShare('save') : undefined,
+      shareImage: nativeShare ? nativeShare('share') : undefined
+    };
+    frame.addEventListener('load', () => {
+      try {
+        const w = frame.contentWindow;
+        if (w && w.__JReadTextshot && typeof w.__JReadTextshot.mount === 'function') w.__JReadTextshot.mount(data);
+        else close();
+      } catch (_) { close(); }
+    });
+    doc.documentElement.appendChild(frame);
+    return { frame, data, close };
   }
 
   // v2.1.0：E 鍵封存這篇（Readwise / Instapaper 都走 PC.archiveDocument）。成功

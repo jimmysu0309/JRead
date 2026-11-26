@@ -54,7 +54,10 @@ const ASSETS = [
   'assets/fonts/piazzolla.woff2',
   'assets/fonts/public-sans.woff2',
   'assets/fonts/source-sans.woff2',
-  'assets/icons/icon-32.png'
+  'assets/icons/icon-32.png',
+  // v3.6.0 Textshot：文章頁以 iframe 開的圖卡頁（不需要 host 替身：只用 canvas / localStorage / 系統分享）
+  'reader/textshot.html',
+  'reader/reader-textshot.js'
 ];
 const EXTRA_FILES = ['LICENSE'];
 

@@ -690,6 +690,26 @@
   // UISelectionFeedbackGenerator（滾輪選擇器那種「喀」）。paged-mode.js triggerHaptic 看到這支就只走這條
   function haptic() { call({ op: 'haptic' }).catch(() => {}); }
 
-  window.__jreadApp = { haptic, ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
+  // ---- 圖卡儲存 / 分享（v3.6.0 Textshot）------------------------------------------
+  // WKWebView 的 <a download> 與分享檔案都不可靠 → 交給原生：mode 'save' 存進相簿、'share' 開系統分享面板。
+  // 圖以 base64 傳（bridge 只收 JSON 相容值）。回 { ok, message? } 給 textshot 顯示提示
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || '').replace(/^data:[^,]*,/, ''));
+      r.onerror = () => reject(r.error || new Error('read'));
+      r.readAsDataURL(blob);
+    });
+  }
+  function shareImage(blob, name, mode) {
+    return blobToBase64(blob)
+      .then((b64) => call({ op: 'shareImage', b64, name: String(name || 'JRead.png'), mode: mode === 'save' ? 'save' : 'share' }))
+      .then((r) => (r && r.ok === false
+        ? { ok: false, message: r.denied ? '沒有加入相簿的權限，請到「設定」允許 JRead 加入照片' : '圖片處理失敗' }
+        : { ok: true, message: mode === 'save' ? '已存到相簿' : '', silent: mode !== 'save' }))
+      .catch(() => ({ ok: false, message: '圖片處理失敗' }));
+  }
+
+  window.__jreadApp = { haptic, shareImage, ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
 })(__JReadHostShimCore);
 })();

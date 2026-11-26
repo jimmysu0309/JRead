@@ -14,6 +14,7 @@
 //
 
 import UIKit
+import Photos
 import WebKit
 
 class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
@@ -366,9 +367,50 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
                 selectionHaptic.prepare()
             }
             replyHandler("{}", nil)
+        case "shareImage":
+            // v3.6.0 Textshot：圖卡頁在 iframe 裡，不限主框架（來源已由 isTrusted 驗過）
+            shareImage(body, reply: { replyHandler($0, nil) })
         default:
             replyHandler(nil, "unknown op")
         }
+    }
+}
+
+// MARK: - 圖卡儲存 / 分享（v3.6.0 Textshot）
+
+extension ViewController {
+    /// body：{ b64: PNG base64, name, mode: "save" | "share" }。save＝存進相簿（只要「加入照片」權限）；
+    /// share＝系統分享面板（iPad 要指定 popover 錨點，否則當掉）。回 JSON 字串 { ok, denied? }
+    func shareImage(_ body: [String: Any], reply: @escaping (String) -> Void) {
+        guard let b64 = body["b64"] as? String, let data = Data(base64Encoded: b64), let image = UIImage(data: data) else {
+            reply("{\"ok\":false}")
+            return
+        }
+        if (body["mode"] as? String) == "save" {
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                guard status == .authorized || status == .limited else {
+                    DispatchQueue.main.async { reply("{\"ok\":false,\"denied\":true}") }
+                    return
+                }
+                PHPhotoLibrary.shared().performChanges({
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }, completionHandler: { ok, _ in
+                    DispatchQueue.main.async { reply(ok ? "{\"ok\":true}" : "{\"ok\":false}") }
+                })
+            }
+            return
+        }
+        let name = (body["name"] as? String) ?? "JRead.png"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        let items: [Any] = (try? data.write(to: url)) != nil ? [url] : [image]
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let pop = vc.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.maxY - 80, width: 1, height: 1)
+            pop.permittedArrowDirections = [.down]
+        }
+        present(vc, animated: true)
+        reply("{\"ok\":true}")
     }
 }
 
