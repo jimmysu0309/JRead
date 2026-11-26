@@ -40,6 +40,10 @@
   function locationLabel(loc) {
     return RC_MOD && typeof RC_MOD.locationLabel === 'function' ? RC_MOD.locationLabel(loc) : '';
   }
+  // v3.5.2：標籤顯示名稱（jshared → 已分享文章；正本 reader-cache tagLabel）
+  function tagLabelOf(name) {
+    return RC_MOD && typeof RC_MOD.tagLabel === 'function' ? RC_MOD.tagLabel(name) : String(name == null ? '' : name);
+  }
 
   function hasSearchable(q) {
     return typeof q === 'string' && /[\p{L}\p{N}]/u.test(q);
@@ -523,8 +527,8 @@
     }
     function emptySearchText(q) {
       const f = FOLDERS.find((x) => x.id === folder);
-      if (!hasSearchable(q)) return (folder && f ? f.label + ' 裡' : '') + '沒有標記「' + activeTag + '」的文章';
-      const scope = [folder && f ? f.label : '', activeTag ? '# ' + activeTag : ''].filter(Boolean).join('、');
+      if (!hasSearchable(q)) return (folder && f ? f.label + ' 裡' : '') + '沒有標記「' + tagLabelOf(activeTag) + '」的文章';
+      const scope = [folder && f ? f.label : '', activeTag ? '# ' + tagLabelOf(activeTag) : ''].filter(Boolean).join('、');
       return (scope ? scope + ' 裡' : '') + '找不到含有「' + q + '」的文章';
     }
 
@@ -762,7 +766,7 @@
       ui.fab.classList.toggle('is-on', show); // 收起時圓鈕加框：提醒目前在篩選
       if (!show) return;
       const chip = el(doc, 'span', 'jr-chip');
-      chip.appendChild(el(doc, 'span', 'jr-chip-label', '# ' + activeTag));
+      chip.appendChild(el(doc, 'span', 'jr-chip-label', '# ' + tagLabelOf(activeTag)));   // v3.5.2：jshared 顯示「已分享文章」
       const x = el(doc, 'button', 'jr-chip-x', '×');
       x.type = 'button';
       x.setAttribute('aria-label', '取消標籤篩選');
@@ -840,7 +844,8 @@
         const f = filterInput.value.trim().toLowerCase();
         active = -1;
         list.textContent = '';
-        const shown = tags.filter((t) => !f || String(t.name).toLowerCase().includes(f));
+        // v3.5.2：jshared 顯示「已分享文章」，找標籤時兩個名字都比對
+        const shown = tags.filter((t) => !f || String(t.name).toLowerCase().includes(f) || tagLabelOf(t.name).toLowerCase().includes(f));
         if (!shown.length) {
           list.appendChild(el(doc, 'div', 'jr-tagmenu-empty', r && r.ok ? (tags.length ? '沒有符合的標籤' : '還沒有任何標籤') : '標籤載入失敗'));
           return;
@@ -849,7 +854,7 @@
           const b = el(doc, 'button', 'jr-menu-item jr-tagmenu-item');
           b.type = 'button';
           b.setAttribute('role', 'menuitem');
-          b.appendChild(el(doc, 'span', 'jr-tagmenu-name', t.name));
+          b.appendChild(el(doc, 'span', 'jr-tagmenu-name', tagLabelOf(t.name)));
           b.appendChild(el(doc, 'span', 'jr-tagmenu-count', String(t.count)));
           if (activeTag && activeTag.toLowerCase() === String(t.name).toLowerCase()) b.classList.add('is-on');
           b.addEventListener('click', () => { closeTagMenu(); setTag(String(t.name)); });

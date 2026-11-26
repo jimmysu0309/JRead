@@ -317,92 +317,9 @@
   // 保留、由 JRead 圖示選單 / ESC / floating-icon 觸發；騰出的左上角區域讓給文章
   //（reader 文章頁卡片上緣留白同步收斂，見 styler READER_HOST_TOP_GUTTER）。
   //
-  // v3.4.4：桌面加回左上角「← 列表」鈕（Jimmy 2026-11-25：桌面瀏覽器不用快速鍵時，看不出怎麼回文章
-  // 列表；JReader 網頁版沒有 JRead 工具列圖示）。跟 v1.5.3 那顆的差別：只在有滑鼠的裝置
-  //（hover + fine pointer，手機 / App 不出現）、平常隱藏，滑鼠一動才浮現、停 BACK_IDLE_MS 淡出
-  //（與 idle-cursor.js 的 IDLE_DELAY_MS 同 2 秒——游標藏起來時鈕也一起收），所以不佔文章版面、
-  // 卡片上緣留白不用改。fixed 掛 <html> 直下（閱讀模式會藏 body 底下非主文元素）、id 帶 __jread-
-  // 前綴（NS.isInjectedUiTarget：翻頁模式的觸控翻頁、編輯模式點選都不會把它當內文）。
-  // 點了走 exit（＝NS.onReaderExit，同 Esc）
-  const BACK_HOST_ID = '__jread-back-host';
-  const BACK_IDLE_MS = 2000;      // = idle-cursor.js IDLE_DELAY_MS
-  const BACK_MOVE_MIN_PX = 2;     // = idle-cursor.js MOVE_THRESHOLD_PX（捲動觸發的原地 mousemove 不算）
-  const BACK_CSS = `
-    :host { all: initial; }
-    button { position: fixed; top: 14px; left: 14px; z-index: 2147483000; box-sizing: border-box;
-      height: 32px; padding: 0 12px 0 10px; border-radius: 16px; cursor: pointer;
-      display: inline-flex; align-items: center; gap: 4px;
-      background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-      box-shadow: 0 2px 8px rgba(0,0,0,.08);
-      font: 500 13px/1 system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif; -webkit-font-smoothing: antialiased;
-      opacity: 0; pointer-events: none; transition: opacity .2s ease; }
-    button.show { opacity: .85; pointer-events: auto; }
-    button.show:hover { opacity: 1; }
-    button:focus-visible { opacity: 1; pointer-events: auto; outline: 2px solid var(--link); outline-offset: 2px; }
-    .arrow { font-size: 15px; }
-  `;
-  function attachBackButton(exit, deps) {
-    const d = deps || {};
-    const win = d.win || global;
-    const doc = d.doc || (win && win.document);
-    if (!doc || !win || typeof exit !== 'function') return null;
-    let fine = false;
-    try { fine = !!(win.matchMedia && win.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch (_) { fine = false; }
-    if (!fine) return null;
-    const old = doc.getElementById(BACK_HOST_ID);
-    if (old) old.remove();
-    const host = doc.createElement('div');
-    host.id = BACK_HOST_ID;
-    host.style.cssText = 'all: initial;';
-    const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
-    const style = doc.createElement('style');
-    style.textContent = BACK_CSS;
-    root.appendChild(style);
-    const btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('aria-label', '回到文章列表');
-    btn.title = '回到文章列表（Esc）';
-    const arrow = doc.createElement('span');
-    arrow.className = 'arrow';
-    arrow.textContent = '←';
-    btn.appendChild(arrow);
-    btn.appendChild(doc.createTextNode('列表'));
-    btn.addEventListener('click', (e) => { e.preventDefault(); exit(); });
-    root.appendChild(btn);
-    doc.documentElement.appendChild(host);
-
-    // 顏色跟著目前閱讀主題（每次浮現重讀：閱讀中切主題也對）
-    const RC = d.RC || global.__JReadReaderCache || RC_MOD;
-    function applyTheme() {
-      const c = RC && typeof RC.pageThemeColors === 'function' ? RC.pageThemeColors(win, doc)
-        : { bg: '#ffffff', fg: '#1a1a1a', line: 'rgba(26,26,26,0.14)', link: '#1a73e8' };
-      for (const k of ['bg', 'fg', 'line', 'link']) host.style.setProperty('--' + k, c[k]);
-    }
-    let timer = null;
-    let ax = null;
-    let ay = null;
-    function hide() {
-      timer = null;
-      if (btn.matches && btn.matches(':hover')) { timer = win.setTimeout(hide, BACK_IDLE_MS); return; } // 游標停在鈕上不收
-      btn.classList.remove('show');
-    }
-    function show() {
-      if (!btn.classList.contains('show')) { applyTheme(); btn.classList.add('show'); }
-      if (timer) win.clearTimeout(timer);
-      timer = win.setTimeout(hide, BACK_IDLE_MS);
-    }
-    function onMove(e) {
-      const x = e.clientX;
-      const y = e.clientY;
-      if (ax !== null && Math.abs(x - ax) < BACK_MOVE_MIN_PX && Math.abs(y - ay) < BACK_MOVE_MIN_PX) return;
-      ax = x;
-      ay = y;
-      show();
-    }
-    win.addEventListener('mousemove', onMove, { capture: true, passive: true });
-    applyTheme();
-    return { host, button: btn, show, hide, isShown: () => btn.classList.contains('show') };
-  }
+  // v3.4.4 加回的左上角「← 列表」鈕（滑鼠一動浮現、停 2 秒淡出）v3.5.2 搬到 floating-icon.js 的 back-fab：
+  // 改成跟齒輪同一組圓鈕樣式、跟齒輪一起被沉浸閱讀藏 / 顯示（Jimmy 2026-11-26）。出現條件不變（有滑鼠、
+  // 有出口），點了一樣走 NS.onReaderExit
 
   // v2.1.0：Readwise reading_progress（0–1）→ positionMemory 的 fallback entry
   //（只有 ratio，applyEntry 走比例對映：捲動按 scrollHeight、翻頁按總頁數）。
@@ -497,7 +414,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { attachBackButton, BACK_HOST_ID, BACK_IDLE_MS, markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey };
+  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -926,8 +843,6 @@
     NS.state.readerHostPage = true;
     NS.state.readerNoExit = !exitHref;
     NS.onReaderExit = backToFeed;
-    // v3.4.4：桌面左上角「← 列表」鈕（沒有出口的公開分享頁不放）
-    if (exitHref) attachBackButton(backToFeed, { doc });
     // v3.4.0：懸浮按鈕選單「重新抓取文章」（floating-icon 看到這個 hook 才列）。公開分享頁沒有
     // 服務可重抓，不掛
     NS.onReaderRefetch = ctx.readOnly ? null : () => refetchArticle(docData, ctx);
