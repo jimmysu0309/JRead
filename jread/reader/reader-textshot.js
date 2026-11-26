@@ -1,7 +1,8 @@
 // JRead — Textshot：把重點做成文字圖卡（v3.6.0，Jimmy 2026-11-26，參考 Readwise Reader 的 textshot）
 // -----------------------------------------------------------------------------
 // 已定（Jimmy 2026-11-26）：一律左右對齊；不分日夜模式；第一版兩種樣式（白底＋漸層字、漸層底＋白字）；
-// 卡片底部放「JRead」字樣；按鈕用中文（「儲存圖片」「分享」）
+// 卡片底部放「JRead」字樣；按鈕用中文（「儲存圖片」「分享」）；v3.6.1：字型沿用 JRead 目前的顯示字型（不給選）、
+// 字少時比例不變整張縮小
 //
 // 架構：閱讀頁（article.html）點重點 →「圖卡」→ 在 <html> 直下掛全螢幕 iframe 開 reader/textshot.html，
 // 由這支在 iframe 裡畫 UI 與 canvas。用 iframe 隔開：鍵盤、點擊、觸控都留在 iframe 文件裡，閱讀頁的
@@ -21,10 +22,9 @@
     portrait: { w: 1080, h: 1350, label: '直式' },
     square: { w: 1080, h: 1080, label: '方形' }
   };
-  const FONTS = {
-    sans: { stack: '-apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif', label: '黑體' },
-    serif: { stack: '"Songti TC", "Noto Serif TC", "Source Han Serif TC", "PMingLiU", Georgia, serif', label: '明體' }
-  };
+  // v3.6.1：不讓使用者選字體，沿用 JRead 目前的顯示字型（Jimmy 2026-11-26）——父頁把主文的 computed font-family
+  // 與 @font-face 規則交進來（data.fontStack / data.fontFaceCss）。沒交就用這組
+  const DEFAULT_STACK = '-apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif';
   // 兩種樣式。bg / quote 給 canvas 用的描述（漸層方向以圖寬高的比例表示），swatch 給選擇鈕的 CSS
   const STYLES = {
     gradientText: {
@@ -44,7 +44,13 @@
       swatch: 'linear-gradient(45deg, #93402a, #5b3a63 50%, #33478f)'
     }
   };
-  const DEFAULT_PREFS = { style: 'gradientText', font: 'sans', ratio: 'square' };
+  const DEFAULT_PREFS = { style: 'gradientText', ratio: 'square' };
+  // v3.6.1：字少時整張縮小（Jimmy 2026-11-26 選「比例不變、整張縮小」）。字級、留白、標題字固定（以原尺寸計），
+  // 圖的寬高依比例一起縮，縮到重點文字佔內容區高度不超過 FILL_MAX 為止、最小縮到 SCALE_MIN；輸出像素仍是原尺寸
+  // （畫的時候整張放大回去），所以存出來的圖一樣清楚，只是字在畫面裡的比例變大、留白變少
+  const SCALE_MIN = 0.55;
+  const SCALE_STEP = 0.05;
+  const FILL_MAX = 0.72;
   const PREFS_KEY = 'jread-textshot-prefs';
   const BRAND = 'JRead';
 
@@ -240,37 +246,67 @@
     return g;
   }
 
-  // 在 canvas 上畫一張圖卡。opts：{ text, title, byline, style, font, ratio }。回排版結果（spec 用）
+  // 圖卡版面（純函式，spec 直接測）。R＝比例的原尺寸；measureAt(size) 回該字級的 measure。回 { scale, W, H（縮後的
+  // 邏輯尺寸）, pad, metaSize, box, fit }。字級、留白、標題字都用原尺寸計、不跟著縮
+  function layoutCard(text, measureAt, R, hasTitle) {
+    const base = Math.min(R.w, R.h);
+    const pad = Math.round(base * 0.085);
+    const metaSize = Math.round(base * 0.03);
+    const gap = Math.round(base * 0.06);
+    const quoteSize = Math.round(base * 0.05);
+    const lh = 1.55;
+    const boxFor = (W, H) => {
+      const top = pad + (hasTitle ? metaSize * 1.4 : 0);
+      const footTop = H - pad - metaSize * 1.2;
+      return { x: pad, y: top + gap, w: W - pad * 2, h: Math.max(10, footTop - gap - (top + gap)) };
+    };
+    // 先看原尺寸放不放得下：放不下就照舊縮字（長文），不縮圖
+    const full = boxFor(R.w, R.h);
+    const opt = { maxSize: quoteSize, minSize: Math.round(base * 0.03), lineHeight: lh };
+    const fit1 = fitQuote(text, measureAt, full, opt);
+    let best = { scale: 1, W: R.w, H: R.h, box: full, fit: fit1 };
+    if (fit1.size === quoteSize && !fit1.truncated) {
+      for (let s = 1 - SCALE_STEP; s >= SCALE_MIN - 1e-9; s -= SCALE_STEP) {
+        const W = R.w * s;
+        const H = R.h * s;
+        const box = boxFor(W, H);
+        if (box.w < quoteSize * 4) break;
+        const fit = fitQuote(text, measureAt, box, { maxSize: quoteSize, minSize: quoteSize, lineHeight: lh });
+        if (fit.truncated || fit.lines.length * fit.lineHeight > box.h * FILL_MAX) break;
+        best = { scale: Math.round(s * 100) / 100, W, H, box, fit };
+      }
+    }
+    return Object.assign({ pad, metaSize }, best);
+  }
+
+  // 在 canvas 上畫一張圖卡。opts：{ text, title, byline, style, ratio, fontStack }。輸出像素固定為比例原尺寸；
+  // 回版面結果（含 scale，預覽依它縮小顯示）
   function render(canvas, opts) {
     const R = RATIOS[opts.ratio] || RATIOS.square;
     const S = STYLES[opts.style] || STYLES.gradientText;
-    const F = FONTS[opts.font] || FONTS.sans;
-    canvas.width = R.w;
-    canvas.height = R.h;
+    const stack = opts.fontStack || DEFAULT_STACK;
     const ctx = canvas.getContext('2d');
-    const W = R.w;
-    const H = R.h;
-    const base = Math.min(W, H);
-    const pad = Math.round(base * 0.085);
+    const font = (size, weight) => (weight || 400) + ' ' + size + 'px ' + stack;
+    const measurer = (f) => { ctx.font = f; return (s) => ctx.measureText(s).width; };
+    const L = layoutCard(opts.text, (size) => measurer(font(size, 600)), R, !!opts.title);
+    const W = L.W;
+    const H = L.H;
+    const k = R.w / W;   // 畫回原尺寸的放大倍率
+    canvas.width = R.w;
+    canvas.height = Math.round(H * k);
+    ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.textBaseline = 'alphabetic';
-
     ctx.fillStyle = paintFill(ctx, S.bg, 0, 0, W, H);
     ctx.fillRect(0, 0, W, H);
 
-    const metaSize = Math.round(base * 0.03);
-    const font = (size, weight) => (weight || 400) + ' ' + size + 'px ' + F.stack;
-    const measurer = (f) => { ctx.font = f; return (s) => ctx.measureText(s).width; };
+    const pad = L.pad;
+    const metaSize = L.metaSize;
     const innerW = W - pad * 2;
-
-    // 上方：文章標題（一行，超寬截斷）
-    let top = pad;
     if (opts.title) {
       const m = measurer(font(metaSize, 500));
       ctx.fillStyle = S.meta;
-      ctx.fillText(ellipsize(opts.title, m, innerW), pad, top + metaSize);
-      top += metaSize * 1.4;
+      ctx.fillText(ellipsize(opts.title, m, innerW), pad, pad + metaSize);
     }
-    // 下方：作者 / 網站（左）＋ JRead（右）
     const bottom = H - pad;
     const brandSize = Math.round(metaSize * 0.9);
     const mb = measurer(font(brandSize, 700));
@@ -282,13 +318,10 @@
       ctx.fillStyle = S.meta;
       ctx.fillText(ellipsize(opts.byline, m, innerW - brandW - metaSize * 2), pad, bottom);
     }
-    const footTop = bottom - metaSize * 1.2;
 
     // 中間：重點（左右對齊、垂直置中）
-    const gap = Math.round(base * 0.06);
-    const box = { x: pad, y: top + gap, w: innerW, h: Math.max(10, footTop - gap - (top + gap)) };
-    const fit = fitQuote(opts.text, (size) => measurer(font(size, 600)), box,
-      { maxSize: Math.round(base * 0.05), minSize: Math.round(base * 0.03), lineHeight: 1.55 });
+    const fit = L.fit;
+    const box = L.box;
     ctx.font = font(fit.size, 600);
     const blockH = fit.lines.length * fit.lineHeight;
     const y0 = box.y + Math.max(0, (box.h - blockH) / 2);
@@ -297,9 +330,9 @@
       const xs = justifyLine(line, box.w);
       // 基線：行高中間偏下（字身約 0.8em 在基線上）
       const by = y0 + i * fit.lineHeight + (fit.lineHeight + fit.size * 0.72) / 2;
-      line.items.forEach((it, k) => { if (it.kind !== 'space') ctx.fillText(it.t, box.x + xs[k], by); });
+      line.items.forEach((it, n) => { if (it.kind !== 'space') ctx.fillText(it.t, box.x + xs[n], by); });
     });
-    return { fit, box, W, H };
+    return { fit, box, W, H, scale: L.scale };
   }
 
   // ---- 偏好（這台裝置記住上次選的樣式 / 字體 / 比例）---------------------------
@@ -309,7 +342,6 @@
       const p = raw ? JSON.parse(raw) : {};
       return {
         style: STYLES[p.style] ? p.style : DEFAULT_PREFS.style,
-        font: FONTS[p.font] ? p.font : DEFAULT_PREFS.font,
         ratio: RATIOS[p.ratio] ? p.ratio : DEFAULT_PREFS.ratio
       };
     } catch (_) { return Object.assign({}, DEFAULT_PREFS); }
@@ -347,13 +379,13 @@
       status.classList.toggle('show', !!msg);
       if (msg) win.setTimeout(() => { if (status.textContent === msg) status.classList.remove('show'); }, 2200);
     };
+    let lastScale = 1;
     const draw = () => {
-      render(canvas, { text: items[index].text, title: data.title, byline: data.byline, style: prefs.style, font: prefs.font, ratio: prefs.ratio });
+      lastScale = render(canvas, { text: items[index].text, title: data.title, byline: data.byline, style: prefs.style, ratio: prefs.ratio, fontStack: data.fontStack }).scale || 1;
       if (nameEl) nameEl.textContent = STYLES[prefs.style].label;
       const counter = $('#ts-count');
       if (counter) counter.textContent = items.length > 1 ? (index + 1) + ' / ' + items.length : '';
       for (const b of doc.querySelectorAll('[data-style]')) b.setAttribute('aria-pressed', String(b.getAttribute('data-style') === prefs.style));
-      for (const b of doc.querySelectorAll('[data-font]')) b.setAttribute('aria-pressed', String(b.getAttribute('data-font') === prefs.font));
       for (const b of doc.querySelectorAll('[data-ratio]')) b.setAttribute('aria-pressed', String(b.getAttribute('data-ratio') === prefs.ratio));
       const prev = $('#ts-prev');
       const next = $('#ts-next');
@@ -361,14 +393,16 @@
       if (next) next.disabled = index >= items.length - 1;
       fitCanvas();
     };
-    // 預覽：canvas 依舞台大小等比縮小
+    // 預覽：以「沒縮的原尺寸」放進舞台的倍率為準，再乘上這張的縮小比例——字少的圖卡在畫面上也跟著變小，
+    // 字的大小跟長篇那張一致
     const fitCanvas = () => {
       const stage = $('#ts-stage');
       if (!stage || !canvas.width) return;
       const r = stage.getBoundingClientRect();
       const maxW = Math.max(80, r.width - 8);
       const maxH = Math.max(80, r.height - 8);
-      const k = Math.min(maxW / canvas.width, maxH / canvas.height);
+      const R0 = RATIOS[prefs.ratio] || RATIOS.square;
+      const k = Math.min(maxW / R0.w, maxH / R0.h) * lastScale * (R0.w / canvas.width);
       canvas.style.width = Math.floor(canvas.width * k) + 'px';
       canvas.style.height = Math.floor(canvas.height * k) + 'px';
     };
@@ -447,7 +481,6 @@
     const stage = $('#ts-stage');
     if (stage) stage.addEventListener('click', (e) => { if (e.target === stage) close(); });
     for (const b of doc.querySelectorAll('[data-style]')) b.addEventListener('click', () => { prefs.style = b.getAttribute('data-style'); savePrefs(store, prefs); draw(); });
-    for (const b of doc.querySelectorAll('[data-font]')) b.addEventListener('click', () => { prefs.font = b.getAttribute('data-font'); savePrefs(store, prefs); draw(); });
     for (const b of doc.querySelectorAll('[data-ratio]')) b.addEventListener('click', () => { prefs.ratio = b.getAttribute('data-ratio'); savePrefs(store, prefs); draw(); });
     // 左右滑切換重點（觸控）
     let sx = null;
@@ -466,15 +499,31 @@
       const st = STYLES[b.getAttribute('data-style')];
       if (st) { b.style.background = st.swatch; b.title = st.label; }
     }
-    const fontsReady = doc.fonts && doc.fonts.ready ? doc.fonts.ready : Promise.resolve();
+    // v3.6.1：沿用 JRead 的字型——把父頁的 @font-face 規則帶進來，等字型載好再畫一次（canvas 不會自己等字型）
+    if (data.fontFaceCss) {
+      const st = doc.createElement('style');
+      st.textContent = data.fontFaceCss;
+      (doc.head || doc.documentElement).appendChild(st);
+    }
+    // 底部安全區域：App 的 WebView 畫到 Home 指示條底下、env() 恆 0，父頁交實際值進來（Jimmy 2026-11-26 真機：
+    // 底部工具列左右兩顆被螢幕圓角切到）
+    if (data.safeBottom > 0) doc.documentElement.style.setProperty('--ts-safe-bottom', data.safeBottom + 'px');
     draw();
-    Promise.resolve(fontsReady).then(draw, () => {});
+    const loads = [];
+    try {
+      if (doc.fonts && typeof doc.fonts.load === 'function') {
+        const stack = data.fontStack || DEFAULT_STACK;
+        const sample = String(items[index].text).slice(0, 40) + (data.title || '');
+        for (const w of [400, 500, 600, 700]) loads.push(doc.fonts.load(w + ' 40px ' + stack, sample).catch(() => {}));
+      }
+    } catch (_) { /* */ }
+    Promise.all(loads).then(() => (doc.fonts && doc.fonts.ready) || null).then(draw, () => {});
     // 焦點放在頁面本身（iframe 要有焦點才收得到 Esc / 方向鍵）；不放關閉鈕——程式設焦點會畫出焦點框
     try { doc.body.tabIndex = -1; doc.body.style.outline = 'none'; doc.body.focus(); win.focus(); } catch (_) { /* */ }
     return { draw, go, close, get index() { return index; }, prefs, toBlob };
   }
 
-  const api = { tokenize, layoutLines, justifyLine, fitQuote, ellipsize, render, mount, loadPrefs, savePrefs, fileName, RATIOS, FONTS, STYLES, DEFAULT_PREFS, PREFS_KEY, BRAND, NO_START, NO_END };
+  const api = { tokenize, layoutLines, justifyLine, fitQuote, ellipsize, layoutCard, render, mount, loadPrefs, savePrefs, fileName, RATIOS, STYLES, DEFAULT_PREFS, DEFAULT_STACK, PREFS_KEY, BRAND, NO_START, NO_END, SCALE_MIN, FILL_MAX };
   global.__JReadTextshot = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

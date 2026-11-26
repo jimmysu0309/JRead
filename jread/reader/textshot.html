@@ -35,13 +35,13 @@
   #ts-share { background: #60a5fa; color: #0b1220; font-weight: 600; }
   .acts svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
+  /* 底部工具列：左右留 28px、下方墊安全區域＋16px——App 的 env() 恆 0，由父頁交實際值（--ts-safe-bottom）。
+     v3.6.0 貼底 10px、左右 16px，真機左右兩顆被螢幕圓角切到（Jimmy 2026-11-26） */
   .bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); background: #111318; }
+    padding: 12px 28px calc(16px + max(env(safe-area-inset-bottom, 0px), var(--ts-safe-bottom, 0px))); background: #111318; }
   .grp { display: flex; align-items: center; gap: 8px; }
   .bar button { width: 44px; height: 44px; border-radius: 8px; border: 2px solid transparent; }
   .bar button[aria-pressed="true"] { border-color: #60a5fa; }
-  [data-font] { font-size: 20px; color: #e5e7eb; }
-  [data-font="serif"] { font-family: "Songti TC", "Noto Serif TC", Georgia, serif; }
   [data-style] { border: 2px solid rgba(255, 255, 255, 0.15) !important; }
   [data-style][aria-pressed="true"] { border-color: #60a5fa !important; box-shadow: 0 0 0 2px #111318 inset; }
   [data-ratio] { display: inline-flex; align-items: center; justify-content: center; }
@@ -58,7 +58,7 @@
   @media (max-width: 520px) {
     .nav { display: none; }
     .main { gap: 0; padding: 0 12px; }
-    .bar { padding-left: 10px; padding-right: 10px; gap: 6px; }
+    .bar { padding-left: 28px; padding-right: 28px; gap: 6px; }
     .grp { gap: 4px; }
     .bar button { width: 40px; height: 40px; }
   }
@@ -76,10 +76,6 @@
     <button id="ts-share" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V4M7 8l5-5 5 5M5 13v6h14v-6"/></svg>分享</button>
   </div>
   <div class="bar">
-    <div class="grp">
-      <button type="button" data-font="sans" aria-label="黑體">Aa</button>
-      <button type="button" data-font="serif" aria-label="明體">Aa</button>
-    </div>
     <div class="grp">
       <button type="button" data-style="gradientText" aria-label="漸層字"></button>
       <button type="button" data-style="gradientBg" aria-label="漸層底"></button>

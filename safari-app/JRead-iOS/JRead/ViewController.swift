@@ -152,7 +152,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     // v2.2.2：Article View 沉浸閱讀，狀態列預設藏、點一下切換（shim installImmersive 回報）；
     // 列表頁 pageshow 時回報 false 叫回來
     private var statusBarHidden = false
-    private let selectionHaptic = UISelectionFeedbackGenerator()
+    // v3.6.1：觸覺產生器綁在 WebView 上（iOS 17.5 起 init(view:)，不綁畫面的 init() 已列為淘汰）。v3.5.5 用不綁畫面的
+    // 寫法，Jimmy 真機拖動頁碼完全不震（Chromium 實測網頁端每跨一頁都有送 haptic，同一條 bridge 的 statusBar 正常）→
+    // 懷疑沒綁畫面的產生器在新系統不出聲；另外手指按到頁碼就先 prepare 預熱（hapticPrepare），跨頁時才不延遲
+    private lazy var selectionHaptic: UISelectionFeedbackGenerator = {
+        if #available(iOS 17.5, *) { return UISelectionFeedbackGenerator(view: webView) }
+        return UISelectionFeedbackGenerator()
+    }()
     override var prefersStatusBarHidden: Bool { statusBarHidden }
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
@@ -366,6 +372,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
                 selectionHaptic.selectionChanged()
                 selectionHaptic.prepare()
             }
+            replyHandler("{}", nil)
+        case "hapticPrepare":
+            // v3.6.1：手指按到頁碼（開始拖動）先預熱，第一次跨頁才不會慢半拍或被吞掉
+            if message.frameInfo.isMainFrame { selectionHaptic.prepare() }
             replyHandler("{}", nil)
         case "shareImage":
             // v3.6.0 Textshot：圖卡頁在 iframe 裡，不限主框架（來源已由 isTrusted 驗過）

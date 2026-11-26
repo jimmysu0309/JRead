@@ -1800,6 +1800,11 @@
       moved: false, onIndicator: !!onIndicator };
     if (indicatorEl) indicatorEl.classList.add('__jread-scrubbing');
     showScrubTrack(); // v0.8.151：按住起拖時出現進度條
+    // v3.6.1：App 內先請原生預熱觸覺引擎（跨頁時才發得出來、不慢半拍）
+    try {
+      const app = window.__jreadApp;
+      if (app && typeof app.hapticPrepare === 'function') app.hapticPrepare();
+    } catch (e) { /* */ }
   }
   function updateScrub(clientX) {
     if (!scrubState) return;

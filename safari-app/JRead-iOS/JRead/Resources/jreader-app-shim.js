@@ -689,6 +689,8 @@
   // 沒有可靠的觸覺 API（v0.8.151–153 vibrate / switch checkbox 真機全失敗），App 改請原生發
   // UISelectionFeedbackGenerator（滾輪選擇器那種「喀」）。paged-mode.js triggerHaptic 看到這支就只走這條
   function haptic() { call({ op: 'haptic' }).catch(() => {}); }
+  // v3.6.1：開始拖動頁碼時先預熱觸覺引擎（paged-mode.js beginScrub）
+  function hapticPrepare() { call({ op: 'hapticPrepare' }).catch(() => {}); }
 
   // ---- 圖卡儲存 / 分享（v3.6.0 Textshot）------------------------------------------
   // WKWebView 的 <a download> 與分享檔案都不可靠 → 交給原生：mode 'save' 存進相簿、'share' 開系統分享面板。
@@ -710,6 +712,6 @@
       .catch(() => ({ ok: false, message: '圖片處理失敗' }));
   }
 
-  window.__jreadApp = { haptic, shareImage, ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
+  window.__jreadApp = { haptic, hapticPrepare, shareImage, ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
 })(__JReadHostShimCore);
 })();
