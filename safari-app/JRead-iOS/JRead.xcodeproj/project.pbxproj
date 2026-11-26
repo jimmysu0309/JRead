@@ -584,7 +584,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
-				CURRENT_PROJECT_VERSION = 3.6.4;
+				CURRENT_PROJECT_VERSION = 3.6.5;
 				GENERATE_INFOPLIST_FILE = YES;
 				CODE_SIGN_ENTITLEMENTS = "JRead Extension/JRead Extension.entitlements";
 				INFOPLIST_FILE = "JRead Extension/Info.plist";
@@ -596,7 +596,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 3.6.4;
+				MARKETING_VERSION = 3.6.5;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -620,7 +620,7 @@
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS Extension App Store";
-				CURRENT_PROJECT_VERSION = 3.6.4;
+				CURRENT_PROJECT_VERSION = 3.6.5;
 				GENERATE_INFOPLIST_FILE = YES;
 				CODE_SIGN_ENTITLEMENTS = "JRead Extension/JRead Extension.entitlements";
 				INFOPLIST_FILE = "JRead Extension/Info.plist";
@@ -632,7 +632,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 3.6.4;
+				MARKETING_VERSION = 3.6.5;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -657,7 +657,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
-				CURRENT_PROJECT_VERSION = 3.6.4;
+				CURRENT_PROJECT_VERSION = 3.6.5;
 				GENERATE_INFOPLIST_FILE = YES;
 				CODE_SIGN_ENTITLEMENTS = JRead/JRead.entitlements;
 				INFOPLIST_FILE = JRead/Info.plist;
@@ -672,7 +672,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.6.4;
+				MARKETING_VERSION = 3.6.5;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -701,7 +701,7 @@
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS App Store";
-				CURRENT_PROJECT_VERSION = 3.6.4;
+				CURRENT_PROJECT_VERSION = 3.6.5;
 				GENERATE_INFOPLIST_FILE = YES;
 				CODE_SIGN_ENTITLEMENTS = JRead/JRead.entitlements;
 				INFOPLIST_FILE = JRead/Info.plist;
@@ -716,7 +716,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.6.4;
+				MARKETING_VERSION = 3.6.5;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -740,7 +740,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
-				CURRENT_PROJECT_VERSION = 3.6.4;
+				CURRENT_PROJECT_VERSION = 3.6.5;
 				GENERATE_INFOPLIST_FILE = YES;
 				CODE_SIGN_ENTITLEMENTS = "JRead Share/JRead Share.entitlements";
 				INFOPLIST_FILE = "JRead Share/Info.plist";
@@ -752,7 +752,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 3.6.4;
+				MARKETING_VERSION = 3.6.5;
 				OTHER_LDFLAGS = (
 					"-framework",
 					WebKit,
@@ -777,7 +777,7 @@
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = PR6NG3PH45;
 				PROVISIONING_PROFILE_SPECIFIER = "JRead iOS Share App Store";
-				CURRENT_PROJECT_VERSION = 3.6.4;
+				CURRENT_PROJECT_VERSION = 3.6.5;
 				GENERATE_INFOPLIST_FILE = YES;
 				CODE_SIGN_ENTITLEMENTS = "JRead Share/JRead Share.entitlements";
 				INFOPLIST_FILE = "JRead Share/Info.plist";
@@ -789,7 +789,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 3.6.4;
+				MARKETING_VERSION = 3.6.5;
 				OTHER_LDFLAGS = (
 					"-framework",
 					WebKit,

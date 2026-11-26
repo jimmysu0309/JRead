@@ -106,7 +106,12 @@
   function publicDefaults() {
     let ua = '';
     try { ua = String((w.navigator && w.navigator.userAgent) || ''); } catch (_) { /* */ }
-    return readOnly && isPhoneUA(ua) ? { fontSize: PUBLIC_PHONE_FONT_SIZE } : {};
+    if (!readOnly) return {};
+    // v3.6.5：公開分享頁預設「滑鼠移動浮現按鈕」（Jimmy 2026-11-26）——訪客不知道要點一下畫面才有齒輪。
+    // 一樣只當預設、訪客改過用訪客的；觸控裝置本來就不吃這個設定（floating-icon mouseRevealPref 看 FINE_POINTER）
+    const d = { mouseRevealButtons: true };
+    if (isPhoneUA(ua)) d.fontSize = PUBLIC_PHONE_FONT_SIZE;
+    return d;
   }
   function load() {
     return Promise.resolve({ sync: Object.assign(publicDefaults(), readArea('sync')), local: readArea('local') });
