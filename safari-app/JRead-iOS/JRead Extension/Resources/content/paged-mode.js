@@ -335,6 +335,9 @@
   const PAGED_DISPLAY_OWNER = 'paged:struct';
   const structJournal = createStyleJournal(true, PAGED_DISPLAY_OWNER);
   const mediaFitJournal = createStyleJournal(false);
+  // v3.7.4：小標跟著下一段換頁（keepHeadingsWithNext）寫的 break-before / margin-top。
+  // 每輪 relayout 第一步先全撤（releaseHeadingKeep），量圖與斷頁都看不到上一輪的強制分頁
+  const headingKeepJournal = createStyleJournal(false);
   let remeasureDebounce = 0;         // debounce timer handle
   let lastScrollWidth = 0;            // 上次重測時的 scrollWidth（變動偵測 gate）
   let lastMediaSig = '';              // 上次重測時的媒體版面簽名（同上，見 mediaLayoutSignature）
@@ -1446,6 +1449,147 @@
   }
   const SHADOW_FIT_RETRIES = 3;
 
+  // v3.7.4：小標不單獨留在頁底（語料庫 2026-11-23 審查「小標或標籤單獨留在頁底，內容在
+  // 下一頁」：hi 維基翻譯後整頁只剩一個小標、fa / he / MDN / python 等約 50 頁都有）。
+  // 不用 break-after: avoid：WebKit 的多欄不照做（v2.5.13 ARIA 表頭實測）；也不用表頭那套
+  // 「padding 佔位＋負 margin」：小標前後的 margin 會穿過外層一路摺疊（維基 div.mw-heading
+  // > h2），要算對整條摺疊鏈，算錯就是每個小標後的間距跑掉。改成排版完再量：
+  //   小標最後一段所在欄 ≠ 後面第一個可見內容（字或媒體）所在欄 → 小標就是孤兒，在小標
+  //   （連同「它是第一個子元素」的外殼）寫 break-before: column 換到下一頁頂
+  // 文件順序逐個處理，每次讀 rect 都是寫完前一個之後的版面。
+  //   - 小標已經在頁頂（再換頁也還是孤兒＝後面接的東西比一頁還高）→ 不動
+  //   - 後面接的是 fitMediaToPages 換到下一頁的圖（break-before: column）→ 小標換過去
+  //     之後那張圖的強制分頁要撤掉，否則圖又被推到再下一頁
+  //   - 強制分頁會保留頁頂 margin（自然分頁會截掉），換頁的那一串 margin-top 歸 0
+  //     （同 fitMediaToPages break 分支）
+  // 這條驗「小標與後面第一個內容在同一頁」，不驗後面接的段落在頁底只剩一行（段落的
+  // orphans 歸引擎）、也不驗 div 排的標籤（wikihow 步驟編號）——標籤段落只認 <p>（isHeadingLike）
+  const HEADING_KEEP_SEL = 'h1, h2, h3, h4, h5, h6, p';
+  const HEADING_KEEP_SKIP_SEL = '[data-jread-hidden="1"], table, figure, li, [data-jread-player="1"]';
+  // 「標籤段落」也算小標（qiita「寫法／結果」、論壇的段落標籤）：整段只有一個粗體元素、
+  // 字短（CJK 權重 ≤ HEADING_KEEP_LABEL_MAX）、沒有連結。一般段落不算
+  const HEADING_KEEP_LABEL_MAX = 40;
+  function isHeadingLike(el) {
+    if (el.tagName !== 'P') return true;
+    if (el.querySelector('a, img, svg, video, iframe')) return false;
+    const text = (el.textContent || '').replace(/\s+/g, '');
+    if (!text) return false;
+    const ns = global.__JRead;
+    const w = ns && ns.cjkWeightedLen ? ns.cjkWeightedLen(text) : text.length;
+    if (w > HEADING_KEEP_LABEL_MAX) return false;
+    const bolds = el.querySelectorAll(':scope > strong, :scope > b');
+    if (bolds.length !== 1) return false;
+    return (bolds[0].textContent || '').replace(/\s+/g, '') === text;
+  }
+  function releaseHeadingKeep() { headingKeepJournal.restoreAll(); }
+  // 後面第一個看得見的內容（非空白字或媒體）的第一個 rect
+  function firstContentRectAfter(h) {
+    const doc = h.ownerDocument;
+    // 子樹後的下一個節點（n 沒有後續兄弟就往上找）；到 art 為止
+    const nextOutside = (n) => {
+      while (n && n !== art && !n.nextSibling) n = n.parentNode;
+      return n && n !== art ? n.nextSibling : null;
+    };
+    let node = nextOutside(h);
+    let guard = 0;
+    while (node && guard++ < 5000) {
+      if (node.nodeType === 1) {
+        const el = node;
+        if (el.getAttribute('data-jread-hidden') === '1' || el.getAttribute('aria-hidden') === 'true') {
+          node = nextOutside(el); // 整棵子樹跳過
+          continue;
+        }
+        if (/^(IMG|VIDEO|IFRAME|SVG|CANVAS)$/i.test(el.tagName)) {
+          for (const r of el.getClientRects()) if (r.width > 2 && r.height > 2) return { rect: r, node: el };
+          node = nextOutside(el);
+          continue;
+        }
+        if (el.firstChild) { node = el.firstChild; continue; }
+        node = nextOutside(el);
+        continue;
+      }
+      if (node.nodeType === 3 && /\S/.test(node.nodeValue)) {
+        const range = doc.createRange();
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) if (r.width > 2 && r.height > 2) return { rect: r, node };
+      }
+      node = nextOutside(node);
+    }
+    return null;
+  }
+  function keepHeadingsWithNext() {
+    if (!art) return;
+    const box = pageBox();
+    if (!box) return; // jsdom 無 layout → no-op
+    const st = stride();
+    if (!(st > 0)) return;
+    const prevScroll = art.scrollLeft;
+    try {
+      art.scrollLeft = 0;
+      const colOf = (r) => Math.floor((r.left - box.contentLeft + 1) / st);
+      const cands = [];
+      for (const el of art.querySelectorAll(HEADING_KEEP_SEL)) {
+        if (el.closest(HEADING_KEEP_SKIP_SEL)) continue;
+        if (!/\S/.test(el.textContent || '')) continue;
+        if (!isHeadingLike(el)) continue;
+        cands.push(el);
+      }
+      const lastRect = (el) => { const r = el.getClientRects(); return r.length ? r[r.length - 1] : null; };
+      for (let i = 0; i < cands.length; i++) {
+        const h = cands[i];
+        const last = lastRect(h);
+        if (!last || !(last.height > 0)) continue;
+        const nx = firstContentRectAfter(h);
+        if (!nx) continue;
+        if (colOf(nx.rect) === colOf(last)) continue;
+        // 連續小標（h2 緊接 h3、中間沒有內容）：前一個小標後面第一個內容就在這個小標裡
+        // ＝同一串，整串一起換頁——只換最後一個，前面那個會變成新的孤兒
+        let lead = h;
+        for (let j = i - 1; j >= 0; j--) {
+          const prev = firstContentRectAfter(cands[j]);
+          if (!prev || !lead.contains(prev.node)) break;
+          lead = cands[j];
+        }
+        const firstR = lead.getClientRects()[0];
+        if (!firstR || firstR.top - box.top < 4) continue; // 已在頁頂：換頁也不會變好
+        // 換頁的那一串：往上走，只要它是父層第一個看得見的子元素就把父層也算進來
+        let top = lead;
+        const chain = [lead];
+        for (let p = lead.parentElement; p && p !== art && art.contains(p); p = p.parentElement) {
+          let firstVis = null;
+          for (const c of p.children) {
+            if (c.getAttribute('data-jread-hidden') === '1') continue;
+            if (!c.getClientRects().length) continue;
+            firstVis = c; break;
+          }
+          if (firstVis !== top) break;
+          top = p;
+          chain.push(p);
+        }
+        const mark = headingKeepJournal.size();
+        headingKeepJournal.set(top, 'break-before', 'column');
+        for (const el of chain) headingKeepJournal.set(el, 'margin-top', '0');
+        // 後面接的若被 fitMediaToPages 強制換頁，撤掉那一筆（小標已經帶著它換頁）：
+        // 從那個內容節點往上走到 art，凡是在小標之後、寫著 break-before: column 的都撤
+        let after = firstContentRectAfter(h);
+        let hl = lastRect(h);
+        if (after && hl && colOf(after.rect) !== colOf(hl)) {
+          for (let x = after.node.nodeType === 1 ? after.node : after.node.parentElement; x && x !== art; x = x.parentElement) {
+            if (x.contains(h)) break;
+            if (x.style && x.style.getPropertyValue('break-before') === 'column') headingKeepJournal.set(x, 'break-before', 'auto');
+          }
+          after = firstContentRectAfter(h);
+          hl = lastRect(h);
+        }
+        // 換頁後內容還是不在同一頁（後面接的東西比剩下的一頁還高）→ 撤回，換了只會多一頁空白
+        if (after && hl && colOf(after.rect) !== colOf(hl)) {
+          while (headingKeepJournal.size() > mark) headingKeepJournal.undoLast();
+        }
+      }
+    } catch (e) { /* 量測失敗維持自然分頁 */ }
+    art.scrollLeft = prevScroll;
+  }
+
   // 斷頁前處理的執行順序——單一資料源。install、remeasureAndReconcile（晚載入內容 /
   // 固定計時器 / 編輯模式 refresh）、onResize 三處都只呼叫 relayout()，不得各自列一份
   //（重構前三處手抄，onResize 那份已經漏了 padInitialLetterBlocks）。
@@ -1455,7 +1599,7 @@
   //   remeasurePages          頁數要量貼合後的版面
   // 每個 pass 都必須冪等：同篇重掛（pageshow、分頁切回、設定重套）會重跑整套，
   // structJournal 不重複記原值、fitMediaToPages 每輪先全撤再算。
-  const LAYOUT_PASSES = [neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, remeasurePages];
+  const LAYOUT_PASSES = [releaseHeadingKeep, neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, keepHeadingsWithNext, remeasurePages];
   function relayout() {
     if (!art) return;
     for (const pass of LAYOUT_PASSES) pass();
@@ -2152,6 +2296,7 @@
     // 兩份日誌各自反序撤回。兩份寫的屬性不重疊，先後順序無關
     structJournal.restoreAll();
     mediaFitJournal.restoreAll();
+    headingKeepJournal.restoreAll();
     resetNeutralizeState();
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態

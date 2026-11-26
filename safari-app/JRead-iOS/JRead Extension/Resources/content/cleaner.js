@@ -12382,6 +12382,63 @@
     return n;
   }
 
+  // v3.7.4：候選裡「不屬於任何一則留言」的段落量（CJK 權重）。
+  // Stack Overflow 翻譯後四則答案整塊不見（語料庫 2026-11-23 審查）：留言時間被譯成
+  // 「2023 年 1 月 11 日 13:12」，每則答案（本文＋簽名＋底下留言）都湊滿 3 個絕對時間；
+  // 下面三層主文保護按英文長度校準（單段 ≥ 300 字、≥ 4 段 ≥ 50 字），譯成中文的短答案
+  // 一層都過不了，整則答案被當留言面板藏掉（原文的「Jan 11, 2023 at 13:28」不命中時間
+  // 格式，所以原文頁沒事）。
+  // 留言面板裡的字都屬於某一則留言；貼文本文不屬於任何一則。判定：段落往上找最近一個
+  // 含時間戳的祖先——含 ≥ 2 個（或已到候選本身）＝段落跟一串時間戳平行，不是哪一則
+  // 留言的，算候選自己的散文；只含 1 個時，要那一層旁邊也有「各含 1 個時間戳」的兄弟
+  // （一串重複的留言列）才算某一則留言的內文。面板本身的「新增留言」這類
+  // 短字也會算進來，所以門檻要高過它（語料庫普查：真正的留言 / 推薦區 0–49，SO 譯文
+  // 短答案 186 起）
+  const COMMENT_PANEL_OWN_PROSE_MIN = 100;
+  function isCommentStampLeaf(leaf) {
+    if (leaf.children.length) return false;
+    const t = norm(leaf.textContent);
+    if (STANDALONE_DATETIME_RE.test(t)) return true;
+    if (t.length > 40) return false;
+    RELATIVE_TIME_RE.lastIndex = 0;
+    const hit = RELATIVE_TIME_RE.test(foldZhVariants(t));
+    RELATIVE_TIME_RE.lastIndex = 0;
+    return hit;
+  }
+  function commentPanelOwnProse(el) {
+    const stamps = [];
+    for (const leaf of el.querySelectorAll('span, time, div, a, small, p')) {
+      if (isCommentStampLeaf(leaf)) stamps.push(leaf);
+    }
+    if (stamps.length < 2) return 0;
+    const stampCount = (node) => {
+      let n = 0;
+      for (const s of stamps) if (node.contains(s) && ++n > 1) break;
+      return n;
+    };
+    let w = 0;
+    for (const p of el.querySelectorAll('p, pre')) {
+      if (p.closest('[data-jread-hidden="1"]')) continue;
+      let a = p.parentElement;
+      while (a && a !== el && stampCount(a) === 0) a = a.parentElement;
+      if (a && a !== el && stampCount(a) === 1) {
+        // 只含 1 個時間戳的那一層，往上走到最高的單一時間戳層；它旁邊還有別的「各含
+        // 1 個時間戳」的兄弟＝重複的留言列，這段是某一則留言的內文。旁邊沒有＝貼文本文
+        // 跟作者簽名包在同一層（SO div.answercell：本文＋「回答於 …」），不是留言
+        let top = a;
+        while (top.parentElement && top.parentElement !== el && stampCount(top.parentElement) === 1) top = top.parentElement;
+        let repeated = false;
+        for (const sib of (top.parentElement ? top.parentElement.children : [])) {
+          if (sib !== top && stampCount(sib) === 1) { repeated = true; break; }
+        }
+        if (repeated) continue;
+      }
+      w += NS.cjkWeightedLen(norm(p.textContent));
+      if (w >= COMMENT_PANEL_OWN_PROSE_MIN) break;
+    }
+    return w;
+  }
+
   function hideInsideArticleCommentPanels(articleEl, hidden) {
     const articleTextLen = norm(articleEl.textContent).length || 1;
     for (const el of articleEl.querySelectorAll('div, section, aside, ul, ol')) {
@@ -12422,6 +12479,9 @@
         if (norm(p.textContent).length >= 50) mainPCount++;
       }
       if (mainPCount >= 4) continue;
+      // 保護主文 layer 3（v3.7.4）：有不屬於任何一則留言的段落＝貼文本體帶著底下的留言
+      //（SO 答案），藏外層會連本文一起藏；跳過，留給後面更內層的候選（留言串本身）
+      if (commentPanelOwnProse(el) >= COMMENT_PANEL_OWN_PROSE_MIN) continue;
       hide(el, hidden);
     }
   }

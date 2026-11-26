@@ -131,7 +131,7 @@
   const PLAYER_ATTR = 'data-jread-player';
   // v1.9.15：站方自管視覺的 UI / 標註（底色與文字色成對由站方決定，主題文字色
   // 不接管）。值 'hl' / 'hl-tint'（半透明底，v2.4.6）= 行內高亮自訂元素（<rw-highlight> 等，見
-  // markInlineHighlights）、'widget' = 使用者選取文字叫出的浮動工具列子樹
+  // markInlineHighlights）、'swatch'（v3.7.4）= 色塊（見 markColorSwatches）、'widget' = 使用者選取文字叫出的浮動工具列子樹
   //（cleaner allowSelectionToolbar 放行後轉呼 markSiteWidgetSubtree）。
   // 這些元素同時標 PLAYER_ATTR——bg / border / color strip 全走既有的
   // `:not([PLAYER_ATTR])` 豁免，不另外改那批 selector 的 specificity。
@@ -353,6 +353,12 @@
   // 既有中和規則只認 class 含 placeholder / ratio 的容器，無語意 class 的
   // embed wrapper 漏網（見 passAspectPseudoReset 註解）。
   const ASPECT_PSEUDO_ATTR = 'data-jread-aspect-pseudo';
+  // v3.7.4：媒體直接容器上的「圖示字型 pseudo」標記（值 'before' / 'after' / 'before after'）
+  // → CSS 隱藏該 pseudo。站方把放大鏡 / 播放這類小圖示畫在包圖的外殼的 ::after 上、絕對
+  // 定位在圖的角落；JRead 的媒體容器規則把外殼改成 position: static，圖示的定位基準換成
+  // 外面某一層、掉到圖下方圖說那行（天下雜誌 span.imgzoom::after，cw_icon 字型 U+E93D，
+  // v2.5.40 cage 真站量到）。見 passAspectPseudoReset 尾段
+  const ICON_PSEUDO_ATTR = 'data-jread-icon-pseudo';
   // v1.8.4：標題自帶的「不可見 ::before / ::after 純間距佔位」標記 → CSS 歸零。
   // 站方常用 heading 的 pseudo 當版面間距 / 曾經的裝飾線（nytimes h1::before
   // { content:""; display:block; height:1px; margin:12px 0 28px } 完全透明、
@@ -1680,6 +1686,12 @@ html [${ARTICLE_ATTR}="1"] main {
   min-height: 0 !important;
   aspect-ratio: auto !important;
 }
+/* v3.7.4：媒體容器上的圖示字型 pseudo（放大鏡 / 播放鍵）隱藏——外殼被改成 static 後
+   圖示失去定位基準、掉到圖外（標記端見 passAspectPseudoReset 尾段） */
+[${ARTICLE_ATTR}="1"] [${ICON_PSEUDO_ATTR}~="before"]::before,
+[${ARTICLE_ATTR}="1"] [${ICON_PSEUDO_ATTR}~="after"]::after {
+  display: none !important;
+}
 /* v1.8.4：標題自帶的不可見 pseudo 間距佔位歸零（標記端見
    passHeadingPseudoSpacerReset——只標「量得出來完全看不見」的 pseudo）。
    刻意不用 display:none：空的 block pseudo 是父層 margin collapse 的邊界，
@@ -2175,8 +2187,10 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
    一律清掉 background-color 與 background-image，content + color 不動，list
    marker / drop cap 文字 pseudo 仍工作。
    通則安全：pseudo bg 在 reader card 沒有合法用途——pageWrapper 已有自己的
-   bg，多餘 pseudo bg 只會在版心外漏出色塊（或誤覆蓋主文）。 */
-[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"])::before,
+   bg，多餘 pseudo bg 只會在版心外漏出色塊（或誤覆蓋主文）。
+   v3.7.4：清單項目的前置偽元素不清——站方關掉清單樣式、改用它以底色畫項目符號
+   圓點（cnbc「Key Points」），清掉就沒有項目符號（細節見 SPEC「清單項目符號」） */
+[${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]):not(li)::before,
 [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"])::after {
   background-color: transparent !important;
   background-image: none !important;
@@ -6033,6 +6047,43 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       marked.push(el);
     }
   }
+  // v3.7.4：色塊（color swatch）保留站方底色（語料庫 2026-11-23 審查：qiita「コードスパン
+  // の中身が CSS の color 型」結果的 5 個顏色方塊全變透明）。站方在色碼後面放一個空的
+  // `<span style="background-color: #ffce44">`、靠樣式表撐成 12×12 小方塊，方塊的顏色
+  // 就是內容本身；bg strip（`*${BG_PRESERVE_NOT}`）把它跟裝飾底色一起清成透明。
+  // 結構訊號（不看 class）：
+  //   - 底色寫在元素自己的 style 屬性上（逐個元素給值＝資料，不是版型）
+  //   - 沒有任何子元素、沒有字（方塊本身就是全部內容）
+  //   - 畫面上是小方塊：寬高都在 SWATCH_MIN_PX–SWATCH_MAX_PX 之間（再大就是色帶 / 卡片底，
+  //     照舊清）
+  // 標成 SITE_UI_ATTR="swatch" ＋ PLAYER_ATTR，走 bg / border strip 既有的 `:not([PLAYER_ATTR])`
+  // 豁免（同 markInlineHighlights）。scopeEl（選填）：dynamic path 只掃新增子樹。
+  // 這條驗「方塊的站方底色不被清」，不驗方塊在深色主題下的對比（顏色就是內容，不改）
+  const SWATCH_MIN_PX = 4;
+  const SWATCH_MAX_PX = 48;
+  function markColorSwatches(articleEl, marked, scopeEl) {
+    const scope = scopeEl || articleEl;
+    const cands = [];
+    const consider = (el) => {
+      if (!el.style || !el.getAttribute || el.children.length) return;
+      if ((el.textContent || '').trim()) return;
+      if (el.hasAttribute(SITE_UI_ATTR) || el.getAttribute(PLAYER_ATTR) === '1') return;
+      const bg = parseCssColor(el.style.getPropertyValue('background-color'));
+      if (!bg || !(bg.a >= 0.05)) return;
+      if (el.closest('[data-jread-hidden="1"]')) return;
+      cands.push(el);
+    };
+    if (scope !== articleEl && scope.nodeType === 1) consider(scope);
+    if (scope.querySelectorAll) for (const el of scope.querySelectorAll('[style*="background"]')) consider(el);
+    for (const el of cands) {
+      let r;
+      try { r = el.getBoundingClientRect(); } catch (_) { continue; }
+      if (!(r.width >= SWATCH_MIN_PX && r.width <= SWATCH_MAX_PX && r.height >= SWATCH_MIN_PX && r.height <= SWATCH_MAX_PX)) continue;
+      el.setAttribute(SITE_UI_ATTR, 'swatch');
+      el.setAttribute(PLAYER_ATTR, '1');
+      marked.push(el);
+    }
+  }
   // v2.4.9：drop cap 顏色修正的對象標記。純決策：首字 pseudo 的 color 或
   // -webkit-text-fill-color 與元素本身不同＝站方對 ::first-letter 下了顯式色，
   // 需要 v0.8.137 的 inherit 修正；相同就不必掛 ::first-letter（掛了反而讓
@@ -7062,6 +7113,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         // v1.9.15：行內高亮自訂元素標記（必須在 contrast phase 3 之前——該 pass
         // 靠 SITE_UI_ATTR 跳過站方配色成對保留的元素）
         markInlineHighlights(articleEl, siteUiMarked);
+        // v3.7.4：色塊保留站方底色（見 markColorSwatches）
+        markColorSwatches(articleEl, siteUiMarked);
         activeMarkState = { articleEl, embedWrapMarked, ratioClassMarked, embedFillMarked, headingLinkMarked, absAnchorMarked, prewrapParaSnap, siteUiMarked, firstLetterMarked,
           cjkJustifyMarked, textJustify: opts.textJustify, // 2026-11-15 review B-09
           // v2.5.21：getter——這個物件建立時 rtlBase 可能還沒量（量在後面的 pass）
@@ -9602,6 +9655,31 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           aspectPseudoMarked.length = pseudoPushStart;
           for (const k of keptPseudo) aspectPseudoMarked.push(k);
         }
+        // v3.7.4：媒體直接容器的圖示字型 pseudo（見 ICON_PSEUDO_ATTR）。條件全成立才標：
+        //   - 容器的直接子有 img / picture / video（＝被 MEDIA_DIRECT_WRAP_SEL 改成 static 的那層）
+        //   - pseudo 絕對定位
+        //   - content 是 1–2 個私用區字元（U+E000–U+F8FF：圖示字型的慣例碼位，不會是文字）
+        // 只看私用區：用 content 放「攝影：某某」這類圖片來源字的站，那是內容，不藏
+        for (const el of mediaAncestors) {
+          if (el.getAttribute && el.getAttribute(PLAYER_ATTR) === '1') continue;
+          if (!el.querySelector || !el.querySelector(':scope > img, :scope > picture, :scope > video')) continue;
+          const which = [];
+          for (const pseudo of ['before', 'after']) {
+            let ps;
+            try { ps = winPseudo.getComputedStyle(el, '::' + pseudo); } catch (e) {
+              if (e && e.name === 'SyntaxError') break;
+              throw e;
+            }
+            if (!ps || ps.position !== 'absolute') continue;
+            const m = /^"(.*)"$/.exec(ps.content || '');
+            if (!m) continue;
+            const chars = Array.from(m[1].replace(/\\/g, ''));
+            if (chars.length >= 1 && chars.length <= 2 && chars.every((c) => /[\uE000-\uF8FF]/.test(c))) which.push(pseudo);
+          }
+          if (!which.length) continue;
+          el.setAttribute(ICON_PSEUDO_ATTR, which.join(' '));
+          aspectPseudoMarked.push(el);
+        }
       };
 
       const passMinHeightReset = () => {
@@ -11108,6 +11186,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (Array.isArray(snapshot.aspectPseudoMarked)) {
         for (const el of snapshot.aspectPseudoMarked) {
           if (el && el.removeAttribute) el.removeAttribute(ASPECT_PSEUDO_ATTR);
+          if (el && el.removeAttribute) el.removeAttribute(ICON_PSEUDO_ATTR); // v3.7.4
         }
       }
       // v1.7.45：移除 absolute 錨定豁免標記
@@ -11610,6 +11689,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       }
       // v1.9.15：閱讀模式中新畫的重點（站方把選取文字包進高亮自訂元素）補標
       if (Array.isArray(s.siteUiMarked)) markInlineHighlights(s.articleEl, s.siteUiMarked, node);
+      if (Array.isArray(s.siteUiMarked)) markColorSwatches(s.articleEl, s.siteUiMarked, node); // v3.7.4
       // v2.4.9：晚 mount 段落的站方 drop cap 首字色補標
       if (Array.isArray(s.firstLetterMarked)) {
         markFirstLetterColorBlocks(s.articleEl, s.firstLetterMarked, node);
