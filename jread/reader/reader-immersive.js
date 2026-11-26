@@ -20,6 +20,11 @@
 //
 // 左緣返回（App installEdgeBack）在 document-start 先掛、會 stopImmediatePropagation，同一段觸控不會再切換。
 //
+// v3.5.3 滑鼠移動浮現（設定 mouseRevealButtons，Jimmy 2026-11-26「在設定中加入選項：滑鼠移動浮現按鈕」）：
+//   開著時，滑鼠移動 ≥ MOUSE_MOVE_MIN_PX 就顯示、停 MOUSE_IDLE_MS 收起（同 v3.4.4「← 列表」鈕與 idle-cursor
+//   的 2 秒）；游標停在按鈕上或選單開著不收。滑鼠點一下畫面不再切換（剛浮現就被點擊收掉會很怪），觸控點按照舊
+//   切換。設定值由 floating-icon.js 讀 storage 後交給 setMouseReveal（本模組不碰 storage）
+//
 // dual export：module.exports 給 jsdom spec、window.__JReadImmersive 給頁面。頁面載入時自己裝
 //（只在 top frame；v3.5.1 起公開分享頁也有齒輪，一樣裝）
 (function (global) {
@@ -34,6 +39,9 @@
   const TAP_SKIP = 'a, button, input, textarea, select, label, summary, video, audio, iframe, [contenteditable], ' +
     '#__jread-floating-host, #__jread-panel-host, #__jread-settings-host, #__jread-hl-host, #__jread-toast-host, ' +
     '#__jread-info-host, #__jread-page-indicator, #__jread-scrub-track';
+  const MOUSE_IDLE_MS = 2000;     // = idle-cursor.js IDLE_DELAY_MS
+  const MOUSE_MOVE_MIN_PX = 2;    // = idle-cursor.js MOVE_THRESHOLD_PX（捲動觸發的原地 mousemove 不算）
+  const KEEP_SHOWN = '#__jread-floating-host:hover';
   const HIDE_CSS = 'html[' + CHROME_ATTR + '="hidden"] #__jread-floating-host' +
     ' { opacity: 0 !important; pointer-events: none !important; }';
 
@@ -57,6 +65,7 @@
 
     let tap = null;
     let tapAt = 0;   // 乾淨點按結束的時刻；等對應的 click 來才切換
+    let lastTapMouse = false;   // 那次點按來自滑鼠 / 觸控筆（v3.5.3 滑鼠移動浮現用）
     const far = (x, y) => !tap || Math.abs(x - tap.x) > TAP_SLOP_PX || Math.abs(y - tap.y) > TAP_SLOP_PX;
 
     // ---- 觸控（v3.2.6 的判定原樣搬過來）----
@@ -79,7 +88,7 @@
       const t = e.changedTouches && e.changedTouches[0];
       const bad = !t || far(t.clientX, t.clientY) || Date.now() - start.at > TAP_MAX_MS;
       tap = null;
-      if (!bad) tapAt = Date.now();
+      if (!bad) { tapAt = Date.now(); lastTapMouse = false; }
     }, { capture: true, passive: true });
     win.addEventListener('touchcancel', () => { tap = null; tapAt = 0; }, { capture: true, passive: true });
 
@@ -98,13 +107,40 @@
       if (!start || start.touch) return;
       const bad = far(e.clientX, e.clientY);
       tap = null;
-      if (!bad) tapAt = Date.now();
+      if (!bad) { tapAt = Date.now(); lastTapMouse = true; }
+    }, { capture: true, passive: true });
+
+    // ---- 滑鼠移動浮現（v3.5.3）----
+    let mouseReveal = false;
+    let idleTimer = null;
+    let mx = null;
+    let my = null;
+    const menuOpen = () => {
+      const F = win.__JRead && win.__JRead.floating;
+      return !!(F && typeof F.isMenuOpen === 'function' && F.isMenuOpen());
+    };
+    const idleHide = () => {
+      idleTimer = null;
+      let hover = false;
+      try { hover = !!doc.querySelector(KEEP_SHOWN); } catch (_e) { /* */ }
+      if (hover || menuOpen()) { idleTimer = win.setTimeout(idleHide, MOUSE_IDLE_MS); return; }
+      if (shown) { shown = false; apply(); }
+    };
+    win.addEventListener('mousemove', (e) => {
+      if (!mouseReveal) return;
+      if (mx !== null && Math.abs(e.clientX - mx) < MOUSE_MOVE_MIN_PX && Math.abs(e.clientY - my) < MOUSE_MOVE_MIN_PX) return;
+      mx = e.clientX;
+      my = e.clientY;
+      if (!shown) { shown = true; apply(); }
+      if (idleTimer) win.clearTimeout(idleTimer);
+      idleTimer = win.setTimeout(idleHide, MOUSE_IDLE_MS);
     }, { capture: true, passive: true });
 
     win.addEventListener('click', (e) => {
       const at = tapAt;
       tapAt = 0;
       if (!at || Date.now() - at > TAP_CLICK_WAIT_MS || e.defaultPrevented) return;
+      if (mouseReveal && lastTapMouse) return;   // v3.5.3：滑鼠移動浮現開著時，滑鼠點擊不切換
       if (hasSelection(win)) return;   // 滑鼠拖曳選字 / 雙擊選詞
       const tg = e.target;
       const el = tg && tg.nodeType === 1 ? tg : (tg && tg.parentElement);
@@ -117,17 +153,28 @@
     apply();
     return {
       isShown: () => shown,
-      setShown: (v) => { shown = !!v; apply(); }
+      setShown: (v) => { shown = !!v; apply(); },
+      // v3.5.3：開 / 關滑鼠移動浮現。關掉時收掉計時器（已顯示的留著，之後照點一下切換）
+      setMouseReveal: (v) => {
+        mouseReveal = !!v;
+        mx = null;
+        my = null;
+        if (!mouseReveal && idleTimer) { win.clearTimeout(idleTimer); idleTimer = null; }
+      },
+      isMouseReveal: () => mouseReveal
     };
   }
 
-  const api = { install, CHROME_ATTR, EVENT, TAP_SKIP, TAP_SLOP_PX, TAP_MAX_MS, HIDE_CSS };
+  const api = { install, CHROME_ATTR, EVENT, TAP_SKIP, TAP_SLOP_PX, TAP_MAX_MS, HIDE_CSS, MOUSE_IDLE_MS, MOUSE_MOVE_MIN_PX };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined' && global === window) {
     window.__JReadImmersive = api;
     // v3.5.1：公開分享頁也裝（分享頁有齒輪了，同樣平常藏、點一下出現）
     if (window === window.top) {
       api.instance = install(window);
+      // v3.5.3：floating-icon 先載入、可能已讀到「滑鼠移動浮現」設定
+      const F = window.__JRead && window.__JRead.floating;
+      if (api.instance && F && typeof F.mouseRevealPref === 'function') api.instance.setMouseReveal(F.mouseRevealPref());
     }
   }
 })(typeof window !== 'undefined' ? window : globalThis);

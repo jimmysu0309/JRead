@@ -36,6 +36,9 @@ const autoDomainRow = document.getElementById('auto-domain-row');
 const autoDomainCb = document.getElementById('auto-domain-cb');
 const autoDomainHostEl = document.getElementById('auto-domain-host');
 const pagedModeCb = document.getElementById('paged-mode-cb');
+// v3.5.3：滑鼠移動浮現按鈕（顯示條件見 IS_WEB 之後）
+const mouseRevealCb = document.getElementById('mouse-reveal-cb');
+const mouseRevealRow = document.getElementById('mouse-reveal-row');
 // v1.9.0：設定檔列
 const profileSelect = document.getElementById('profile-select');
 const profileSaveBtn = document.getElementById('profile-save-btn');
@@ -102,6 +105,14 @@ const IS_WEB = (() => {
 })();
 // 沒有 background 的 host（App / 網頁版）：動作鈕與 footer 收掉、只留設定
 const IS_HOSTED = IS_APP || IS_WEB;
+// v3.5.3：「滑鼠移動浮現按鈕」這列只在 JReader 網頁版、有滑鼠的裝置顯示。網頁版沒有進階設定頁可去
+//（擴充使用者在進階設定頁「游標」旁邊設）；擴充工具列 popup 全展開已貼著 590px 上限
+//（popup-height-fits.spec），再多一列會出捲軸。觸控裝置（手機、平板、App）設定不生效（floating-icon.js）
+if (mouseRevealRow) {
+  let fine = false;
+  try { fine = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch (_e) { fine = false; }
+  mouseRevealRow.hidden = !(IS_WEB && fine);
+}
 let panelVerified = !IS_PANEL || IS_APP;
 if (IS_WEB) panelVerified = true;
 if (IS_PANEL && !IS_APP) {
@@ -316,6 +327,7 @@ function render(settings) {
   }
   // v0.7.227：翻頁模式 checkbox（嚴格 === true，外部寫入非 boolean 當關）
   if (pagedModeCb) pagedModeCb.checked = settings.pagedMode === true;
+  if (mouseRevealCb) mouseRevealCb.checked = settings.mouseRevealButtons === true;
   // v1.9.0：設定檔 select / 按鈕狀態（命名中不重建，免得蓋掉輸入框）
   if (!profileNaming) renderProfiles(settings);
 }
@@ -493,6 +505,11 @@ for (const btn of themeBtns) {
 if (pagedModeCb) {
   pagedModeCb.addEventListener('change', () => {
     save({ pagedMode: pagedModeCb.checked });
+  });
+}
+if (mouseRevealCb) {
+  mouseRevealCb.addEventListener('change', () => {
+    save({ mouseRevealButtons: mouseRevealCb.checked });
   });
 }
 

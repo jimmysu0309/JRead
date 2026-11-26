@@ -19,6 +19,12 @@
 
   const WIDE_MIN_PX = 720;
   const HOST_ID = '__jread-info-host';
+  // v3.5.3：面板開著時藏翻頁的頁碼與拖曳進度條（Jimmy 2026-11-26 iPhone 截圖：底部面板開著，頁碼仍浮在面板上、
+  // 還能拖）。兩者是 styler 的 z-index 最大值、掛在 body 外，面板蓋不住；用 <html> 屬性＋文件層樣式藏掉
+  const OPEN_ATTR = 'data-jread-info-open';
+  const OPEN_STYLE_ID = '__jread-info-open-style';
+  const OPEN_CSS = 'html[' + OPEN_ATTR + '] #__jread-page-indicator, html[' + OPEN_ATTR + '] #__jread-scrub-track' +
+    ' { display: none !important; }';
   const DRAG_CLOSE_PX = 80;
   const NOTES_SAVE_MS = 800; // 筆記停頓多久自動存
   // 閱讀速度（成人默讀一般文章）：
@@ -524,6 +530,12 @@
       shadow.appendChild(backdrop);
       shadow.appendChild(panel);
       doc.documentElement.appendChild(hostEl);
+      if (!doc.getElementById(OPEN_STYLE_ID)) {
+        const os = doc.createElement('style');
+        os.id = OPEN_STYLE_ID;
+        os.textContent = OPEN_CSS;
+        doc.documentElement.appendChild(os);
+      }
     }
 
     // 點了回清單看「同作者 / 同網域」（reader-feed 的子清單，?tab=author:… / site:…；back＝文章原本的分頁）
@@ -935,6 +947,7 @@
       panel.classList.toggle('sheet', (win.innerWidth || 0) < WIDE_MIN_PX);
       panel.classList.remove('open');
       hostEl.style.display = 'block';
+      doc.documentElement.setAttribute(OPEN_ATTR, '');
       opened = true;
       render();
       // 下一個 frame 再加 open，讓 transform 動畫跑得出來
@@ -947,6 +960,7 @@
       opened = false;
       const saving = saveNotes(); // 打到一半就關面板：立刻存
       if (hostEl) hostEl.style.display = 'none';
+      doc.documentElement.removeAttribute(OPEN_ATTR);
       if (panel) panel.classList.remove('open');
       return saving;
     }
@@ -1044,7 +1058,7 @@
     return R && typeof R.hostOf === 'function' ? R.hostOf(url) : '';
   }
 
-  const api = { attach, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, WIDE_MIN_PX, HOST_ID };
+  const api = { attach, OPEN_ATTR, OPEN_CSS, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, WIDE_MIN_PX, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
