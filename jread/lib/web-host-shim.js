@@ -96,8 +96,20 @@
     }
     return out;
   }
+  // v3.5.1：公開分享頁在手機上的預設字級 19（Jimmy 2026-11-26「預設字級在 iPhone 字太小，請調整為
+  // JRead 的 19」；擴充預設 17 是桌面尺度）。只當預設：訪客自己在功能選單調過（localStorage 有值）就用
+  // 訪客的，這個值也不寫進 localStorage。手機＝iPhone / iPod / Android 手機（UA 帶 Mobile），iPad 與電腦不變
+  const PUBLIC_PHONE_FONT_SIZE = 19;
+  function isPhoneUA(ua) {
+    return /iPhone|iPod/.test(ua) || (/Android/.test(ua) && /Mobile/.test(ua));
+  }
+  function publicDefaults() {
+    let ua = '';
+    try { ua = String((w.navigator && w.navigator.userAgent) || ''); } catch (_) { /* */ }
+    return readOnly && isPhoneUA(ua) ? { fontSize: PUBLIC_PHONE_FONT_SIZE } : {};
+  }
   function load() {
-    return Promise.resolve({ sync: readArea('sync'), local: readArea('local') });
+    return Promise.resolve({ sync: Object.assign(publicDefaults(), readArea('sync')), local: readArea('local') });
   }
   // ---- 擴充設定橋（v3.1.0，擴充端在 content/host-bridge.js）----------------------
   // 裝了 JRead 擴充時網頁版直接用擴充的設定、改了也寫回擴充（Jimmy 2026-11-24：「全部都用
