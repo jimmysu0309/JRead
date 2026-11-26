@@ -735,6 +735,15 @@
             a.href = href;
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
+            // v3.6.6：點連結改開「主人網址」（帶短效記號）——分享頁在那個瀏覽器記住是你，之後自己打開不記統計。
+            // 面板顯示時先拿好（點擊當下才拿的話，非同步之後的 window.open 會被 Safari 擋）；拿不到就維持一般網址。
+            // 顯示的文字照舊是一般網址（「複製連結」也是一般網址，給別人的不帶記號）
+            if (typeof PC.jreaderShareOwnerLink === 'function') {
+              Promise.resolve(PC.jreaderShareOwnerLink(Object.assign({ id }, rw))).then((r) => {
+                const u = r && r.ok && r.data && safeHttpUrl(r.data.url);
+                if (u && a.isConnected !== false) a.href = u;
+              }, () => {});
+            }
           }
           box.appendChild(a);
           btn('複製連結', 'copy', false);
