@@ -1094,7 +1094,7 @@
         doc, win: global, bodyEl, docId: String(docData.id || ''), token: creds.token, base: creds.base,
         PC, NS, storage,
         // v3.6.0：點既有重點 →「圖卡」
-        onTextshot: (id, items) => openTextshot(docData, items, id, { doc })
+        onTextshot: (id, items) => openTextshot(docData, items, id, { doc, NS })
       });
     } catch (_) { return null; }  // 畫重點掛不上不影響閱讀
   }
@@ -1166,12 +1166,18 @@
       saveImage: nativeShare ? nativeShare('save') : undefined,
       shareImage: nativeShare ? nativeShare('share') : undefined
     };
+    // v3.6.4：載不起來（網頁版伺服器沒回圖卡頁＝JReader 2026-11-26 修前的 404）要說出來，不能只閃一下就關
+    const fail = () => {
+      close();
+      const NS = d.NS || global.__JRead;
+      try { if (NS && NS.toast && typeof NS.toast.show === 'function') NS.toast.show('圖卡開不起來，請重新整理後再試', { kind: 'error', id: 'jr-textshot', duration: 3500 }); } catch (_) { /* */ }
+    };
     frame.addEventListener('load', () => {
       try {
         const w = frame.contentWindow;
         if (w && w.__JReadTextshot && typeof w.__JReadTextshot.mount === 'function') w.__JReadTextshot.mount(data);
-        else close();
-      } catch (_) { close(); }
+        else fail();
+      } catch (_) { fail(); }
     });
     doc.documentElement.appendChild(frame);
     return { frame, data, close };
