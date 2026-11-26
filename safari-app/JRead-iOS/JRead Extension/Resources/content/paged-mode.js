@@ -1767,6 +1767,12 @@
     }
   }
   function triggerHaptic() {
+    // v3.5.5：App（JReader 內建）請原生發觸覺——網頁端兩條路在 iOS 真機都不會震（見上）。
+    // Safari 擴充的 content script 在 isolated world，看不到 window.__jreadApp，照舊走下面
+    try {
+      const app = window.__jreadApp;
+      if (app && typeof app.haptic === 'function') { app.haptic(); return; }
+    } catch (e) { /* */ }
     // iOS：switch click（主路徑）。Android / 支援平台：navigator.vibrate 也補一發。
     // 兩者並行：iOS vibrate 不存在只剩 switch、Android switch 不發觸覺只剩 vibrate，
     // 各平台都恰好一次觸覺（桌面兩者皆 no-op、無害）。
