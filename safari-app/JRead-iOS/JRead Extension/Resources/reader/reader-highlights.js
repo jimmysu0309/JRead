@@ -272,6 +272,25 @@
     return out.trim();
   }
 
+  // v3.6.0：文件裡的重點依出現順序 → [{ id, text }]（Textshot 左右切換用）。同一個重點跨段落時段落之間補換行
+  function highlightItems(root) {
+    const out = [];
+    if (!root) return out;
+    for (const id of markedIds(root)) {
+      let text = '';
+      let prevBlock = null;
+      for (const m of marksFor(root, id)) {
+        const b = blockOf(m, root);
+        if (prevBlock && b !== prevBlock) text = text.replace(/\s+$/, '') + '\n';
+        text += m.textContent;
+        prevBlock = b;
+      }
+      text = text.replace(/[ \t]+\n/g, '\n').trim();
+      if (text) out.push({ id, text });
+    }
+    return out;
+  }
+
   function isMarked(node) {
     let el = node.parentNode;
     while (el) {
@@ -580,10 +599,14 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     @keyframes jr-hl-in-top { from { opacity: 0; transform: translate(-50%, -24px); } to { opacity: 1; transform: translate(-50%, 0); } }
     @media (prefers-reduced-motion: reduce) { .btn.dock.show { animation: none; } }
     .btn.danger { background: #c53030; }
+    .btn.shot { background: #2d3748; }
     .btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
   `;
 
   const LABEL_CREATE = '畫重點';
+  // v3.6.0：點既有重點時，「刪除重點」左邊多一顆（ctx.onTextshot 有給才出現）
+  const LABEL_SHOT = '圖卡';
+  const SHOT_GAP = 8;
   const LABEL_DELETE = '刪除重點';
   const GAP = 10;
 
@@ -636,6 +659,15 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     btn.className = 'btn';
     btn.type = 'button';
     shadow.appendChild(btn);
+    // v3.6.0：Textshot 入口（只在點既有重點的刪除模式出現）
+    let shot = null;
+    if (typeof ctx.onTextshot === 'function') {
+      shot = doc.createElement('button');
+      shot.className = 'btn shot';
+      shot.type = 'button';
+      shot.textContent = LABEL_SHOT;
+      shadow.appendChild(shot);
+    }
     if (NS && typeof NS.injectShadowCss === 'function') NS.injectShadowCss(shadow, BTN_CSS);
     else { const s = doc.createElement('style'); s.textContent = BTN_CSS; shadow.appendChild(s); }
     doc.documentElement.appendChild(host);
@@ -655,6 +687,7 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       pendingRange = null;
       setActive(null);
       btn.classList.remove('show');
+      if (shot) shot.classList.remove('show');
       clearDock();
     }
 
@@ -685,13 +718,21 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       const vh = win.innerHeight || doc.documentElement.clientHeight || 0;
       const bw = btn.offsetWidth || 90;
       const bh = btn.offsetHeight || 32;
+      // v3.6.0：刪除模式有「圖卡」時兩顆一起置中：[圖卡] [刪除重點]
+      const withShot = !!(shot && mode === 'delete');
+      const sw = withShot ? (shot.offsetWidth || 60) + SHOT_GAP : 0;
+      const gw = bw + sw;
       let top = rect.bottom + GAP;
       if (top + bh > vh - 4) top = rect.top - GAP - bh;
       top = Math.max(4, Math.min(top, vh - bh - 4));
-      let left = rect.left + rect.width / 2 - bw / 2;
-      left = Math.max(4, Math.min(left, vw - bw - 4));
+      let left = rect.left + rect.width / 2 - gw / 2;
+      left = Math.max(4, Math.min(left, vw - gw - 4));
       btn.style.top = top + 'px';
-      btn.style.left = left + 'px';
+      btn.style.left = (left + sw) + 'px';
+      if (withShot) {
+        shot.style.top = top + 'px';
+        shot.style.left = left + 'px';
+      }
     }
 
     function targetRect() {
@@ -714,6 +755,7 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       btn.textContent = nextMode === 'delete' ? LABEL_DELETE : LABEL_CREATE;
       btn.classList.toggle('danger', nextMode === 'delete');
       btn.classList.add('show');
+      if (shot) shot.classList.toggle('show', nextMode === 'delete');
       place(targetRect());
     }
 
@@ -826,6 +868,19 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
       else if (mode === 'delete') deleteActive();
     });
 
+    if (shot) {
+      shot.addEventListener('pointerdown', keepSelection);
+      shot.addEventListener('mousedown', keepSelection);
+      shot.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = activeId;
+        if (!id) return;
+        hide();
+        try { ctx.onTextshot(id, highlightItems(bodyEl)); } catch (_) { /* 圖卡開不起來不影響閱讀 */ }
+      });
+    }
+
     doc.addEventListener('selectionchange', scheduleSelectionCheck);
     doc.addEventListener('mouseup', scheduleSelectionCheck);
     doc.addEventListener('touchend', scheduleSelectionCheck);
@@ -910,7 +965,7 @@ html[${READONLY_ATTR}] mark[${HL_ATTR}] { cursor: inherit; }`;
     normalizeHighlightList, installMarkStyle, attachReadOnly, READONLY_ATTR,
     accountKey, emptyCache, cacheUsable, cacheFromExport, mergeExport, applyLocalOps,
     cacheAdd, cacheRemove, highlightsForDoc, incrementalSince, attach,
-    touchDockSide
+    touchDockSide, highlightItems, LABEL_SHOT
   };
 
   if (typeof module !== 'undefined' && module.exports) {

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JRead 圖卡</title>
+<style>
+  /* v3.6.0 Textshot：閱讀頁以全螢幕 iframe 開本頁（reader-article.js openTextshot）。
+     不分日夜模式（Jimmy 2026-11-26）：外框一律深色，圖卡本身的配色由樣式決定 */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: rgba(0, 0, 0, 0.94); color: #e5e7eb; overflow: hidden;
+    font: 14px/1.4 -apple-system, system-ui, "PingFang TC", "Noto Sans TC", sans-serif;
+    -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; flex-direction: column; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { opacity: 0.25; cursor: default; }
+  button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+
+  .top { position: relative; flex: 0 0 auto; height: 52px; display: flex; align-items: center; justify-content: center;
+    padding-top: env(safe-area-inset-top, 0px); }
+  #ts-name { font-size: 15px; color: #9ca3af; }
+  #ts-count { margin-left: 10px; font-size: 13px; color: #6b7280; }
+  #ts-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+    border-radius: 18px; font-size: 22px; line-height: 36px; color: #d1d5db; }
+  #ts-close:hover { background: rgba(255, 255, 255, 0.08); }
+
+  .main { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 8px; }
+  .nav { flex: 0 0 auto; width: 40px; height: 64px; font-size: 40px; line-height: 64px; color: #e5e7eb; font-weight: 200; }
+  #ts-stage { flex: 1 1 auto; align-self: stretch; min-width: 0; display: flex; align-items: center; justify-content: center; }
+  #ts-canvas { display: block; border-radius: 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+
+  .acts { flex: 0 0 auto; display: flex; justify-content: center; gap: 12px; padding: 14px 0 12px; }
+  .acts button { height: 40px; padding: 0 20px; border-radius: 20px; font-size: 15px; display: inline-flex; align-items: center; gap: 8px; }
+  #ts-save { background: #1f2937; color: #f3f4f6; }
+  #ts-share { background: #60a5fa; color: #0b1220; font-weight: 600; }
+  .acts svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); background: #111318; }
+  .grp { display: flex; align-items: center; gap: 8px; }
+  .bar button { width: 44px; height: 44px; border-radius: 8px; border: 2px solid transparent; }
+  .bar button[aria-pressed="true"] { border-color: #60a5fa; }
+  [data-font] { font-size: 20px; color: #e5e7eb; }
+  [data-font="serif"] { font-family: "Songti TC", "Noto Serif TC", Georgia, serif; }
+  [data-style] { border: 2px solid rgba(255, 255, 255, 0.15) !important; }
+  [data-style][aria-pressed="true"] { border-color: #60a5fa !important; box-shadow: 0 0 0 2px #111318 inset; }
+  [data-ratio] { display: inline-flex; align-items: center; justify-content: center; }
+  [data-ratio] i { display: block; border: 2px solid #d1d5db; border-radius: 2px; }
+  [data-ratio="landscape"] i { width: 24px; height: 14px; }
+  [data-ratio="portrait"] i { width: 16px; height: 21px; }
+  [data-ratio="square"] i { width: 19px; height: 19px; }
+
+  #ts-status { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 16px; border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92); color: #111; font-size: 14px; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap; }
+  #ts-status.show { opacity: 1; }
+
+  /* 手機：不放左右箭頭（左右滑切換、頂端顯示第幾個），卡片才夠寬 */
+  @media (max-width: 520px) {
+    .nav { display: none; }
+    .main { gap: 0; padding: 0 12px; }
+    .bar { padding-left: 10px; padding-right: 10px; gap: 6px; }
+    .grp { gap: 4px; }
+    .bar button { width: 40px; height: 40px; }
+  }
+</style>
+</head>
+<body>
+  <div class="top"><span id="ts-name"></span><span id="ts-count"></span><button id="ts-close" type="button" aria-label="關閉">×</button></div>
+  <div class="main">
+    <button class="nav" id="ts-prev" type="button" aria-label="上一個重點">‹</button>
+    <div id="ts-stage"><canvas id="ts-canvas"></canvas></div>
+    <button class="nav" id="ts-next" type="button" aria-label="下一個重點">›</button>
+  </div>
+  <div class="acts">
+    <button id="ts-save" type="button"><svg viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>儲存圖片</button>
+    <button id="ts-share" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V4M7 8l5-5 5 5M5 13v6h14v-6"/></svg>分享</button>
+  </div>
+  <div class="bar">
+    <div class="grp">
+      <button type="button" data-font="sans" aria-label="黑體">Aa</button>
+      <button type="button" data-font="serif" aria-label="明體">Aa</button>
+    </div>
+    <div class="grp">
+      <button type="button" data-style="gradientText" aria-label="漸層字"></button>
+      <button type="button" data-style="gradientBg" aria-label="漸層底"></button>
+    </div>
+    <div class="grp">
+      <button type="button" data-ratio="landscape" aria-label="橫式"><i></i></button>
+      <button type="button" data-ratio="portrait" aria-label="直式"><i></i></button>
+      <button type="button" data-ratio="square" aria-label="方形"><i></i></button>
+    </div>
+  </div>
+  <div id="ts-status" role="status"></div>
+  <script src="reader-textshot.js"></script>
+</body>
+</html>
