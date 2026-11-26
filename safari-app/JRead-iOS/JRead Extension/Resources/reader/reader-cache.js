@@ -545,6 +545,8 @@
           const slim = slimDoc(doc);
           slim.html_content = String(doc.html_content);
           if (doc.language) slim.language = doc.language;
+          // v3.5.6：文章頁標題下的摘要折疊要用（以前只有清單快取存）
+          if (typeof doc.summary === 'string' && doc.summary) slim.summary = doc.summary;
           const bytes = byteSize(slim.html_content) + byteSize(JSON.stringify(slimDoc(doc)));
           if (bytes > budget) return false;
           const key = keyOf(account, String(doc.id));

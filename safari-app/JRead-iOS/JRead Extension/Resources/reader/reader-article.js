@@ -138,6 +138,104 @@
     return sanitizeDom(html, document).innerHTML;
   }
 
+  // v3.5.6：摘要折疊。屬性是唯一的選擇器（styler 不認得，靠 inline 樣式）
+  const SUMMARY_ATTR = 'data-jread-reader-summary';
+  const SUMMARY_OPEN_KEY = 'readerSummaryOpen';
+  const SUMMARY_LABEL = '摘要';
+  const normText = (t) => String(t || '').replace(/\s+/g, '').toLowerCase();
+  // 要放的摘要文字；沒有、或跟標題 / 主文開頭重複就回 ''（純函式，spec 直接測）。
+  // 重複＝摘要（去空白）前 60 字出現在主文開頭 600 字裡——Readwise 沒摘要時常拿第一段頂上
+  function summaryForHeader(doc, bodyRoot) {
+    const raw = doc && typeof doc.summary === 'string' ? doc.summary.trim() : '';
+    if (!raw) return '';
+    const sum = normText(raw);
+    if (!sum) return '';
+    if (doc.title && normText(doc.title) === sum) return '';
+    const head = normText(bodyRoot && bodyRoot.textContent ? bodyRoot.textContent.slice(0, 1200) : '').slice(0, 600);
+    if (head && head.indexOf(sum.slice(0, 60)) !== -1) return '';
+    return raw;
+  }
+  function setSummaryOpen(block, open) {
+    if (!block) return;
+    const toggle = block.firstChild;
+    const body = block.lastChild;
+    block.setAttribute(SUMMARY_ATTR, open ? 'open' : 'closed');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      const arrow = toggle.lastChild;
+      if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : 'none';
+    }
+    if (body) body.style.display = open ? 'block' : 'none';
+  }
+  // 結構：<div data-jread-reader-summary="open|closed"><div role=button>摘要 ›</div><div>摘要文字</div></div>。
+  // 不用 <button>（cleaner 一律清互動按鈕）、不用 <details>（styler / 翻頁模組沒處理它的展開重排）。
+  // 樣式全 inline：字級 0.85em、淡字色（currentColor 降透明度，四主題通用）
+  function buildSummaryBlock(document, text, open) {
+    const block = document.createElement('div');
+    block.style.cssText = 'margin: 0.6em 0 1.2em; font-size: 0.85em; line-height: 1.6;';
+    const toggle = document.createElement('div');
+    toggle.setAttribute('role', 'button');
+    toggle.setAttribute('tabindex', '0');
+    toggle.setAttribute('data-jread-summary-toggle', '');
+    // 「摘要」置中、比摘要內文再小一號（Jimmy 2026-11-26）。整行 block＋文字置中：翻頁模式會把卡片內的 inline 盒
+    // 改寫成 display: block !important（Playwright 實測），用 block 排版兩種模式長得一樣
+    toggle.style.cssText = 'display: block; text-align: center; font-size: 0.8em; cursor: pointer; opacity: 0.62; ' +
+      'user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;';
+    toggle.appendChild(document.createTextNode(SUMMARY_LABEL));
+    const arrow = document.createElement('span');
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = '›';
+    arrow.style.cssText = 'display: inline-block; margin-left: 0.3em; transition: transform 0.15s; font-size: 1.15em; line-height: 1;';
+    toggle.appendChild(arrow);
+    const body = document.createElement('div');
+    body.setAttribute('data-jread-summary-text', '');
+    // 不用左線＋縮排：styler 進場會把 div 的 padding 改寫成 0 !important、左線也被蓋掉（Playwright 實測），
+    // 靠淡色＋小字（外層 0.85em）跟內文區隔
+    body.style.cssText = 'margin-top: 0.3em; opacity: 0.75; white-space: pre-wrap;';
+    body.textContent = text;
+    block.appendChild(toggle);
+    block.appendChild(body);
+    setSummaryOpen(block, open);
+    return block;
+  }
+  // 點「摘要」切換、寫回 storage.sync（所有文章共用一個狀態，Jimmy 2026-11-26 選共用），翻頁模式重新分頁。
+  // 讀設定是非同步的：建容器時先收合，讀到「展開」再打開（進場排版前就完成，翻頁模組另外 refresh 一次保險）。
+  // 點擊 preventDefault＋stopPropagation：沉浸閱讀（reader-immersive）與畫重點的 click 都不吃這一下
+  function attachSummaryToggle(container, ctx, deps) {
+    const d = deps || {};
+    const block = container && container.querySelector ? container.querySelector('[' + SUMMARY_ATTR + ']') : null;
+    if (!block) return null;
+    const toggle = block.firstChild;
+    const storage = d.storage || (global.browser && global.browser.storage && global.browser.storage.sync);
+    const NS = ctx && ctx.NS;
+    const relayout = () => {
+      const pm = NS && NS.pagedMode;
+      try { if (pm && typeof pm.isInstalled === 'function' && pm.isInstalled() && typeof pm.refresh === 'function') pm.refresh(); } catch (_) { /* */ }
+    };
+    const isOpen = () => block.getAttribute(SUMMARY_ATTR) === 'open';
+    let touched = false;
+    const flip = (e) => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      touched = true;
+      const next = !isOpen();
+      setSummaryOpen(block, next);
+      relayout();
+      try { if (storage && typeof storage.set === 'function') Promise.resolve(storage.set({ [SUMMARY_OPEN_KEY]: next })).catch(() => {}); } catch (_) { /* */ }
+    };
+    toggle.addEventListener('click', flip);
+    toggle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') flip(e);
+    });
+    const ready = (storage && typeof storage.get === 'function')
+      ? Promise.resolve(storage.get({ [SUMMARY_OPEN_KEY]: false })).catch(() => ({})).then((s) => {
+        if (touched) return;
+        const want = !!(s && s[SUMMARY_OPEN_KEY]);
+        if (want !== isOpen()) { setSummaryOpen(block, want); relayout(); }
+      })
+      : Promise.resolve();
+    return { block, flip, ready };
+  }
+
   // 用 Reader API 的 doc 物件建合成 <article>：標題 h1 + byline（作者 · 來源 ·
   // 日期）+ 主文 body。container 結構刻意簡單（styler 對它套 typography）。
   // opts.detectLanguage(text) → BCP-47 字串或 ''（init 傳 popup-core
@@ -184,6 +282,12 @@
       byline.textContent = bylineParts.join('　·　');
       article.appendChild(byline);
     }
+
+    // v3.5.6：標題下的摘要折疊（Jimmy 2026-11-26「大標題的下方加入一個折疊提示，展開時能顯示摘要，記憶折疊或
+    // 展開的狀態」）。放在作者列下方、主文 body 之外（不進重點定位與閱讀位置的文字索引）。跟主文開頭重複的
+    // 摘要（服務端自動截第一段）不放，免得同一段字出現兩次。展開狀態由 attachSummaryToggle 讀設定套上
+    const summaryText = summaryForHeader(doc, cleaned);
+    if (summaryText) article.appendChild(buildSummaryBlock(document, summaryText, !!o.summaryOpen));
 
     // v3.1.0：公開分享頁（opts.sourceLink）放「原文：<網站>」（JReader SPEC §8；v3.5.1 改「本文收錄自：」，
     // Jimmy 2026-11-26）。放在主文區外，
@@ -343,6 +447,13 @@
 
   // 文章快取命中時用哪個進度：feed 快取（每次開 feed 都背景更新）比文章快取
   //（存進去那一刻的值）新，有就用 feed 的
+  // v3.5.6：v3.5.6 以前存的文章快取沒有 summary（快取只存作者列欄位）→ 從清單快取的同一篇補上，
+  // 標題下的摘要折疊才不會因為「這篇開過」就消失。不改原物件
+  function withFeedSummary(cachedDoc, feedDoc) {
+    if (!cachedDoc || cachedDoc.summary || !feedDoc || !feedDoc.summary) return cachedDoc;
+    return Object.assign({}, cachedDoc, { summary: feedDoc.summary });
+  }
+
   function pickProgress(cachedDoc, feedDoc) {
     const src = pickProgressDoc(cachedDoc, feedDoc);
     return src ? src.reading_progress : undefined;
@@ -414,7 +525,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey };
+  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的
@@ -644,12 +755,13 @@
         ? Promise.resolve(c.store.getImages(c.account, id)).catch(() => new Map())
         : Promise.resolve(new Map()));
       let staleImages = new Map();
+      let staleFeedDoc = null;
       // v3.4.5：抓不到時用過期的快取頂上（離線閱讀）。回 true＝已用快取畫出
       const renderStale = (stale) => {
         if (!stale) return false;
         rlog('改用過期快取', { id });
         try {
-          renderArticle(stale.doc, ctx, { progress: stale.doc.reading_progress, progressAt: stale.doc.updated_at, images: staleImages });
+          renderArticle(withFeedSummary(stale.doc, staleFeedDoc), ctx, { progress: stale.doc.reading_progress, progressAt: stale.doc.updated_at, images: staleImages });
         } catch (err) {
           rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
           return false;
@@ -681,6 +793,7 @@
       });
       loadFromCache(id, service, creds).then((c) => {
         ctx.ownWrites = c.ownWrites || {};
+        staleFeedDoc = c.feedDoc || null;
         // progressFrom＝進度值取自哪一份（feed 快取較新就用它，見 pickProgressDoc）
         rlog('文章快取', {
           id, hit: !!c.entry, store: !!c.store, inFeedCache: !!c.feedDoc,
@@ -690,7 +803,7 @@
           return cachedImages(c).then((images) => {
             try {
               const pd = pickProgressDoc(c.entry.doc, c.feedDoc);
-              renderArticle(c.entry.doc, ctx, { progress: pd ? pd.reading_progress : undefined, progressAt: pd ? pd.updated_at : undefined, images });
+              renderArticle(withFeedSummary(c.entry.doc, c.feedDoc), ctx, { progress: pd ? pd.reading_progress : undefined, progressAt: pd ? pd.updated_at : undefined, images });
             } catch (err) {
               rlog('快取文章組裝拋出例外', { id, reason: String(err && err.message || err).slice(0, 120) }, 'error');
               setStatus('載入失敗：' + String(err && err.message || err), true);
@@ -823,6 +936,8 @@
     if (!ctx.readOnly) attachArchiveKey(docData, ctx);
     // v3.1.0：V 鍵開啟原始網址（公開分享頁也有：只是開連結）
     attachSourceKey(docData, ctx);
+    // v3.5.6：摘要折疊的點擊與記憶（公開分享頁也有：狀態存訪客自己的瀏覽器）
+    attachSummaryToggle(container, ctx);
     // v3.1.0：告訴 JReader「剛打開這篇」（Progress 分頁排序）
     if (!ctx.readOnly) markOpened(docData, ctx);
     // v2.5.0：閱讀位置寫回 Readwise。「上次送出的值」以這次實際採用的進度為起點
