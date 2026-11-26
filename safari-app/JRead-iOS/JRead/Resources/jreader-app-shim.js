@@ -476,35 +476,121 @@
   // 手指觸控點落在指腹中心，貼著螢幕邊緣起手的 clientX 實際常在 25–40 之間，24 太窄；
   // 44＝Apple 建議的最小觸控尺寸。代價：從左側 44px 內起手的右滑一律算返回、不翻上一頁
   const EDGE_PX = 44;
-  const EDGE_BACK_MIN_DX = 60;
+  // v3.5.4：跟手滑動（Jimmy 2026-11-26「左滑回到文章列表的動畫能做得更精緻嗎」，選「跟手滑動（iOS 原生感）」）。
+  // 原本手指放開才判斷、直接換頁，沒有任何動畫。現在：
+  //   - 起手後先看方向：移動超過 EDGE_DECIDE_PX 時水平為主且往右＝拖動；垂直為主＝這段不算返回（仍由這裡接走，
+  //     不讓翻頁模組收到）
+  //   - 拖動中整個 <body> 跟著手指往右移（translate3d），左緣帶陰影，露出 <html> 的底色；掛 <html> 直下的齒輪、
+  //     頁碼、拖曳條、頂端進度條、重點工具列、toast 暫時藏起來（它們不在 body 裡，不會跟著移）
+  //   - 放開：移動超過畫面寬 EDGE_COMMIT_RATIO 或往右甩得夠快（≥ EDGE_FLING_PX_PER_MS 且至少 EDGE_FLING_MIN_DX）
+  //     ＝滑出畫面後回列表；不夠＝彈回原位。動畫 EDGE_ANIM_MS
+  // 為什麼移 <body> 不移 <html>：<html> 加 transform 後 position: fixed 的元素改成相對 <html> 定位，捲動模式下會
+  // 整個跳走（Playwright WebKit / Chromium 實測 top 10 → -490）。翻頁卡片是 body 裡的 fixed 元素、翻頁時文件不捲，
+  // 移 body 時卡片跟著平移、垂直位置不變（同樣實測）。styler 對 body 下了 transform: none !important，這裡用 inline
+  // !important 蓋過
+  const EDGE_DECIDE_PX = 8;
+  const EDGE_COMMIT_RATIO = 1 / 3;
+  const EDGE_FLING_PX_PER_MS = 0.5;
+  const EDGE_FLING_MIN_DX = 40;
+  const EDGE_ANIM_MS = 260;
+  const EDGE_DRAG_ATTR = 'data-jread-edge-drag';
+  const EDGE_DRAG_CSS = 'html[' + EDGE_DRAG_ATTR + '] #__jread-floating-host, html[' + EDGE_DRAG_ATTR + '] #__jread-page-indicator, ' +
+    'html[' + EDGE_DRAG_ATTR + '] #__jread-scrub-track, html[' + EDGE_DRAG_ATTR + '] #__jread-progress, html[' + EDGE_DRAG_ATTR + '] #__jread-hl-host, html[' + EDGE_DRAG_ATTR + '] #__jread-toast-host' +
+    ' { opacity: 0 !important; transition: none !important; }';
   function installEdgeBack(win, goBack) {
+    const doc = win.document;
     let edge = null;
+    let anim = null;   // 放開後的滑出 / 彈回計時器
     const swallow = (e) => { e.stopImmediatePropagation(); };
+    try {
+      const st = doc.createElement('style');
+      st.id = '__jread-edge-drag-style';
+      st.textContent = EDGE_DRAG_CSS;
+      doc.documentElement.appendChild(st);
+    } catch (_) { /* */ }
+    const body = () => doc.body;
+    const setX = (x) => {
+      const b = body();
+      if (b) b.style.setProperty('transform', 'translate3d(' + Math.max(0, Math.round(x)) + 'px, 0, 0)', 'important');
+    };
+    const begin = () => {
+      const b = body();
+      if (!b) return false;
+      if (anim) { win.clearTimeout(anim); anim = null; }
+      doc.documentElement.setAttribute(EDGE_DRAG_ATTR, '');
+      b.style.setProperty('transition', 'none', 'important');
+      b.style.setProperty('box-shadow', '-8px 0 24px rgba(0, 0, 0, 0.22)', 'important');
+      b.style.setProperty('will-change', 'transform', 'important');
+      return true;
+    };
+    const cleanup = () => {
+      if (anim) { win.clearTimeout(anim); anim = null; }
+      const b = body();
+      if (b) for (const k of ['transform', 'transition', 'box-shadow', 'will-change']) b.style.removeProperty(k);
+      doc.documentElement.removeAttribute(EDGE_DRAG_ATTR);
+    };
+    const animateTo = (x, done) => {
+      const b = body();
+      if (!b) { done(); return; }
+      b.style.setProperty('transition', 'transform ' + EDGE_ANIM_MS + 'ms cubic-bezier(0.2, 0.8, 0.2, 1)', 'important');
+      setX(x);
+      anim = win.setTimeout(() => { anim = null; done(); }, EDGE_ANIM_MS + 20);
+    };
     win.addEventListener('touchstart', (e) => {
       edge = null;
       if (!e.touches || e.touches.length !== 1) return;
       const t = e.touches[0];
       if (t.clientX > EDGE_PX) return;
-      edge = { x: t.clientX, y: t.clientY };
+      const now = Date.now();
+      edge = { x: t.clientX, y: t.clientY, decided: false, drag: false, dx: 0, lastX: t.clientX, lastT: now, vx: 0 };
       swallow(e);
     }, { capture: true, passive: true });
     win.addEventListener('touchmove', (e) => {
       if (!edge) return;
       swallow(e);
       if (e.cancelable) e.preventDefault();
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      const dx = t.clientX - edge.x;
+      const dy = t.clientY - edge.y;
+      if (!edge.decided && (Math.abs(dx) > EDGE_DECIDE_PX || Math.abs(dy) > EDGE_DECIDE_PX)) {
+        edge.decided = true;
+        edge.drag = dx > 0 && dx >= Math.abs(dy) && begin();
+      }
+      const now = Date.now();
+      const dt = now - edge.lastT;
+      if (dt >= 8) { edge.vx = (t.clientX - edge.lastX) / dt; edge.lastX = t.clientX; edge.lastT = now; }
+      edge.dx = dx;
+      if (edge.drag) setX(dx);
     }, { capture: true, passive: false });
     win.addEventListener('touchend', (e) => {
       if (!edge) return;
-      const t = e.changedTouches && e.changedTouches[0];
       const start = edge;
       edge = null;
       swallow(e);
-      if (!t) return;
-      const dx = t.clientX - start.x;
-      const dy = Math.abs(t.clientY - start.y);
-      if (dx >= EDGE_BACK_MIN_DX && dx > dy) goBack();
+      if (!start.drag) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      const dx = t ? t.clientX - start.x : start.dx;
+      const w = win.innerWidth || 390;
+      const commit = dx >= w * EDGE_COMMIT_RATIO || (start.vx >= EDGE_FLING_PX_PER_MS && dx >= EDGE_FLING_MIN_DX);
+      if (commit) {
+        animateTo(w, () => {
+          goBack();
+          // 換頁通常立刻開始；萬一沒走（沒有出口）就放回來，別讓畫面停在畫面外
+          anim = win.setTimeout(cleanup, 3000);
+        });
+      } else {
+        animateTo(0, cleanup);
+      }
     }, { capture: true, passive: true });
-    win.addEventListener('touchcancel', () => { edge = null; }, { capture: true, passive: true });
+    win.addEventListener('touchcancel', () => {
+      const start = edge;
+      edge = null;
+      if (start && start.drag) animateTo(0, cleanup);
+    }, { capture: true, passive: true });
+    // 從列表按上一頁回到這篇（bfcache）：body 還停在滑出位置，復原。只認 persisted——一般載入也會發 pageshow，
+    // 不可在那時清掉（jsdom 載入後非同步才發，曾把滑出中的換頁計時器清掉）
+    win.addEventListener('pageshow', (e) => { if (e && e.persisted) cleanup(); });
   }
   // 回列表：走文章頁的退出 hook（NS.onReaderExit，與 ESC / 懸浮按鈕同一個網址＝帶 ?tab=
   // 回到來源分頁）。Jimmy 2026-10-29 回報 Later / JRead 讀完左滑都回 Inbox：舊版判斷
@@ -582,6 +668,6 @@
   // WKWebView 的縮放是整個 WebView，iframe 裡捏合一樣會把整頁放大
   if (/\/options\/options\.html$/.test(location.pathname)) installNoPinch(window);
 
-  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, backToFeed, installImmersive, installNoPinch, setSafeBottom };
+  window.__jreadApp = { ready, onForeground, _remoteChange: host.applyRemote, isApp: true, sampleTopColor, sampleTopBand, installEdgeBack, EDGE_DRAG_ATTR, EDGE_ANIM_MS, backToFeed, installImmersive, installNoPinch, setSafeBottom };
 })(__JReadHostShimCore);
 })();
