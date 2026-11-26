@@ -219,7 +219,7 @@
     .fab.gear.is-scroll-hidden { opacity: 0; pointer-events: none; }
     /* 文章頁：齒輪疊在內文上，透明底會跟字混在一起（截圖驗證）——用頁面底色當實心底、不淡化。
        平常本來就藏（沉浸閱讀），出現時要一眼看得到 */
-    .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--muted, #6b6b6b); }
+    .fab.gear.solid { opacity: 1; background: var(--bg, #ececec); border-color: var(--fab-ring, var(--muted, #6b6b6b)); }
     /* v3.5.1 網頁版文章頁右上角的「文章資訊」圓鈕：同一組齒輪樣式，fixed 到視窗右上（host 沒有
        transform / filter，fixed 子元素以視窗為準）。文章資訊面板掛上（NS.onReaderInfo）才出現 */
     .fab.info-fab, .fab.back-fab { position: fixed; display: none; }   /* 位置在 applyGearPos 設 */
@@ -326,9 +326,20 @@
   // Jimmy 2026-11-26「設計語彙與齒輪及文章資訊對齊，出現和消失的行為也要一致」）。搬進同一個 host：同一組
   // .fab.gear 樣式、跟齒輪一起被沉浸閱讀藏 / 顯示。出現條件沿用 v3.4.4：有滑鼠的裝置（手機 / App 用選單
   // 與左緣右滑）、有出口（NS.onReaderExit 掛上且不是 readerNoExit）
-  const BACK_FAB = ARTICLE_GEAR && !APP_PAGE && (() => {
+  const FINE_POINTER = (() => {
     try { return !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch (_e) { return false; }
   })();
+  const BACK_FAB = ARTICLE_GEAR && !APP_PAGE && FINE_POINTER;
+  // v3.5.3：設定「滑鼠移動浮現按鈕」（mouseRevealButtons）。只在有滑鼠的非 App 文章頁生效——觸控裝置點按時
+  // 瀏覽器會補送相容的 mousemove，不擋的話設定從電腦同步過來後手機一點就浮現又自己收。顯示 / 收起的判定在
+  // reader-immersive.js（setMouseReveal），這裡只讀設定、轉交；immersive 比本檔晚載入，裝好時會來問 mouseRevealPref
+  let mouseRevealRaw = false;
+  function mouseRevealPref() { return ARTICLE_GEAR && !APP_PAGE && FINE_POINTER && mouseRevealRaw === true; }
+  function applyMouseReveal(v) {
+    mouseRevealRaw = v === true;
+    const I = window.__JReadImmersive;
+    if (I && I.instance && typeof I.instance.setMouseReveal === 'function') I.instance.setMouseReveal(mouseRevealPref());
+  }
   function makeCornerFab(cls, label, title, onClick) {
     const b = document.createElement('button');
     b.className = 'fab gear solid ' + cls;
@@ -355,8 +366,26 @@
   function refreshInfoFab() {
     if (infoBtn) infoBtn.classList.toggle('ready', typeof NS.onReaderInfo === 'function');
     if (backBtn) backBtn.classList.toggle('ready', typeof NS.onReaderExit === 'function' && !(NS.state && NS.state.readerNoExit));
+    applyFabTheme();
   }
-  if (INFO_FAB || BACK_FAB) window.addEventListener('jread:chrome', refreshInfoFab);
+  // v3.5.3：文章頁圓鈕跟著閱讀主題配色（Jimmy 2026-11-26「按鈕顯示在夜間模式太刺眼，請為各主題設計對應對比度的
+  // 按鈕」）。文章頁沒有列表頁那組 --bg / --muted 變數，原本一律退回淺灰底 #ececec，夜間主題上像一顆亮燈。
+  // 改讀閱讀卡實際的底色與字色（reader-cache pageThemeColors，文章資訊面板同一份）：
+  //   底＝卡片底色、圖示＝字色 62%、外框＝字色 30%（--fab-ring）；滑鼠移上 / 選單開著：圖示＝字色、外框＝字色 62%
+  // 每次顯示（jread:chrome）與開選單時重讀，閱讀中切主題也對。列表頁照舊吃頁面自己的變數
+  function applyFabTheme() {
+    if (!ARTICLE_GEAR) return;
+    const RC = window.__JReadReaderCache;
+    if (!RC || typeof RC.pageThemeColors !== 'function') return;
+    let c;
+    try { c = RC.pageThemeColors(window, document); } catch (_e) { return; }
+    if (!c) return;
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(String(c.fg || ''));
+    const vars = { '--bg': c.bg, '--card': c.bg, '--text': c.fg, '--muted': c.muted, '--line': c.line,
+      '--fab-ring': m ? 'rgba(' + m[1] + ',' + m[2] + ',' + m[3] + ',0.3)' : c.line };
+    for (const k of Object.keys(vars)) if (vars[k]) host.style.setProperty(k, vars[k]);
+  }
+  if (ARTICLE_GEAR) window.addEventListener('jread:chrome', refreshInfoFab);
   document.documentElement.appendChild(host);
 
   // ─── 選單動作（長按彈出，spec 點 7）──────────────────────────────────────
@@ -1303,8 +1332,9 @@
   // v1.9.14：本機套用狀態另讀 storage.local（readLocalState 永不 reject）
   if (PROFILES) PROFILES.readLocalState().then(applyProfileState);
   try {
-    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService', 'jreaderUrl', 'profiles', 'activeProfile']).then((s) => {
+    browser.storage.sync.get(['floatingIcon', 'floatingIconOpacity', 'floatingIconPos', 'floatingIconSize', 'storageService', 'jreaderUrl', 'profiles', 'activeProfile', 'mouseRevealButtons']).then((s) => {
       if (!s) { applyDefaults(); return; }
+      applyMouseReveal(s.mouseRevealButtons);
       applySize(s.floatingIconSize);
       applyOpacity(s.floatingIconOpacity);
       applyPos(s.floatingIconPos);
@@ -1328,6 +1358,7 @@
     if (changes.floatingIconOpacity) applyOpacity(changes.floatingIconOpacity.newValue);
     if (changes.floatingIconPos) applyPos(changes.floatingIconPos.newValue);
     if (changes.floatingIconSize) applySize(changes.floatingIconSize.newValue);
+    if (changes.mouseRevealButtons) applyMouseReveal(changes.mouseRevealButtons.newValue);
     if (changes.storageService) applyStorageService(changes.storageService.newValue);
     if (changes.jreaderUrl) applyJreaderUrl(changes.jreaderUrl.newValue);
     if (changes.profiles) applyProfiles(changes.profiles.newValue);
@@ -1344,7 +1375,7 @@
   // regression spec（isolated world）用：暴露內部 handler 與狀態
   NS.floating = {
     isGear: GEAR, setScrollHidden, dashboardUrl, openDashboard, applyJreaderUrl,
-    infoBtn, backBtn, refreshInfoFab, isPublicPage: PUBLIC_PAGE, articleFabEdges,
+    infoBtn, backBtn, refreshInfoFab, applyFabTheme, isPublicPage: PUBLIC_PAGE, articleFabEdges, mouseRevealPref, applyMouseReveal,
     host, btn, menuEl, generalMenuItems,
     openMenu, closeMenu, buildMenu,
     isYouTubeWatchPage, youtubeMenuItems, toggleYtCinema, toggleYtBorderless,

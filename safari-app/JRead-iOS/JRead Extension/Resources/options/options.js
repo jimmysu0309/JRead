@@ -11,7 +11,7 @@ const DEFAULTS = window.__JReadSettingsDefaults;
 
 // v0.8.158：theme / fontSize / titleFontSize / contentWidth / fontWeight 已移到
 // popup（工具列圖示選單）即時調整，options 不再列出這幾欄（避免雙入口 drift）。
-const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle', 'appIcon'];
+const fields = ['storageService', 'readwiseToken', 'jreaderUrl', 'jreaderToken', 'readwiseSummary', 'geminiApiKey', 'debugLog', 'blockPageShortcuts', 'pangu', 'linkFollowReader', 'editModeEnabled', 'idleCursorHide', 'mouseRevealButtons', 'spaceScrollRatio', 'positionMemoryDays', 'threeFingerTap', 'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'progressBarStyle', 'appIcon'];
 
 // v0.8.154：懸浮按鈕啟用旗標的解析（settings-defaults.js 單一資料源）。
 // 未設過（非 boolean）時一律預設勾（v0.8.158）——checkbox 顯示初值與
@@ -195,7 +195,7 @@ function readFieldFromDom(id) {
       if (typeof el.max === 'string' && el.max !== '') n = Math.min(Number(el.max), n);
       return n;
     }
-    case 'threeFingerTap': case 'floatingIcon':
+    case 'threeFingerTap': case 'floatingIcon': case 'mouseRevealButtons':
     // v1.7.62：idleCursorHide 排在 blockPageShortcuts 之前而非接在鏈尾——
     // keyguard.spec.js 用「case 'blockPageShortcuts' 之後 120 字元內要出現
     // .checked」的鄰近性 regex 當 forcing function，接在尾端會把它推出視窗。
@@ -306,7 +306,7 @@ function applyFieldToDom(id, value) {
   } else if (id === 'debugLog') {
     // v1.8.0：預設 false——只有明確為 true 才勾選（同 threeFingerTap）
     el.checked = value === true;
-  } else if (id === 'threeFingerTap') {
+  } else if (id === 'threeFingerTap' || id === 'mouseRevealButtons') {   // v3.5.3 mouseRevealButtons 同樣預設 false
     // v0.8.157：預設 false——只有明確為 true 才勾選
     el.checked = value === true;
   } else if (id === 'floatingIcon') {

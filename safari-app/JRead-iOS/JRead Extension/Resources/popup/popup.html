@@ -786,6 +786,12 @@
       <input type="checkbox" id="paged-mode-cb" class="popup-checkbox">
     </div>
 
+    <!-- v3.5.3：滑鼠移動浮現按鈕（JRead 閱讀頁的齒輪、文章資訊、回到列表）。只在網頁版、有滑鼠的裝置顯示（popup.js） -->
+    <div class="setting-row" id="mouse-reveal-row" hidden>
+      <label for="mouse-reveal-cb" title="閱讀文章時滑鼠一動就顯示齒輪等按鈕，停 2 秒收起；關閉時點一下畫面才顯示">滑鼠移動浮現按鈕</label>
+      <input type="checkbox" id="mouse-reveal-cb" class="popup-checkbox">
+    </div>
+
     <!-- v0.7.155：此網域自動啟動。chrome:// / file:// 等無有效 hostname 的頁面
          此 row 整個 hidden（popup.js 開啟時動態判定）。-->
     <div class="setting-row" id="auto-domain-row" hidden>

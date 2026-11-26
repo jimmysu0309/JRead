@@ -173,6 +173,10 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
     debugLog: false,
     // v0.7.227：翻頁模式（電子書式水平翻頁）。預設 false = 垂直卷動。
     pagedMode: false,
+    // v3.5.3：JRead 閱讀頁（文章頁）的圓鈕（齒輪、文章資訊、回到列表）滑鼠一動就浮現、停 2 秒收起
+    //（Jimmy 2026-11-26「在設定中加入選項：滑鼠移動浮現按鈕」）。預設 false＝v3.5.0 起的行為：點一下畫面
+    // 才出現。只對有滑鼠的裝置有意義（popup 在觸控裝置不顯示這列）；邏輯在 reader/reader-immersive.js
+    mouseRevealButtons: false,
     // v1.5.4：原 showPageNumber 開關已移除——翻頁模式底部頁碼指示（「3 / 43」）
     // 一律顯示（拿掉頂端進度條後它是唯一進度載體）。
     // v0.8.40：閱讀位置記憶效期（天）。文章看到一半離開時記住閱讀位置
@@ -681,7 +685,7 @@ globalThis.browser = globalThis.browser ?? globalThis.chrome;
   const HOST_BRIDGE_SYNC_KEYS = Object.freeze([
     'theme', 'fontSize', 'titleFontSize', 'contentWidth', 'fontFamily', 'latinSerif', 'latinSans',
     'fontWeight', 'lineHeight', 'paragraphSpacing', 'textJustify', 'pangu',
-    'pagedMode', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
+    'pagedMode', 'mouseRevealButtons', 'spaceScrollRatio', 'idleCursorHide', 'progressBarStyle',
     'positionMemoryDays', 'syncScrollOnExit',
     'floatingIcon', 'floatingIconOpacity', 'floatingIconSize', 'floatingIconPos',
     'blockPageShortcuts', 'customShortcuts',
