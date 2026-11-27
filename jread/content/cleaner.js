@@ -331,7 +331,9 @@
   // 標題規則），這支另給 resolveHeadingNoiseTarget 決定「擴到整個簡介框」——兩處要一起改
   //（forcing：v2551-cleaner-residue.spec.js 逐一驗兩支都命中）
   const SITE_ABOUT_HEADING_RE = /^(?:about\s+(?:this\s+(?:site|website|blog)|us)|關於(?:本站|本網站|我們))$/i;
-  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣|想看)|(?:^|的)其他(?:內容|文章|作品)$|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論|댓글|コメント)\s*(?:\d+|[（(][^)）]*[)）])?$|^\d+\s*[則條個]?\s*(回應|回覆|留言|評論)$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$|^about\s+(this\s+(site|website|blog)|us)$|^關於(本站|本網站|我們)$)/i;
+  // v3.7.5：補英文「數字在前」的留言數標題（「2 Comments」「1 Response」），與中文「2 則留言」
+  // 對齊——Stack Overflow 原文 1–2 則的留言串留著、翻譯後被藏（Jimmy 2026-11-27 裁定兩邊都藏）
+  const NOISE_HEADING_TEXT_RE = /(延伸閱讀|同場加映|相關(?:新聞|文章|報導|行情|議題|貼文|影片|內容)|新聞來源|推薦閱讀|推薦(?:文章|故事|報導|新聞)|最新消息|最新新聞|更多相關|更多來自|更多.{0,4}(文章|新聞|報導)|(全站|編輯|站長|本日|今日)(首選|精選|嚴選)|看更多|查看更多|其他人.{0,3}看|你可能(也|會)?(喜歡|感興趣|想看)|(?:^|的)其他(?:內容|文章|作品)$|也許您?(會|也會)?(感興趣|喜歡)|人氣(精選|點閱榜|排行榜|推薦)|在.{0,6}Google.{0,6}新聞.{0,6}(關注|追蹤)|網友貼文.{0,4}AI|AI.{0,4}(摘要|總結|整理|生成|來回答|回答)|.{0,6}AI摘要|文章標籤|^◤.+◢$|^(?:👉|►|▶|➤|⏩)+$|^字(級|體)(設定|大小)$|想知道更多|繼續看下去|^繼續閱讀[：:]?$|請繼續下滑(閱讀)?|.{2,4}號貼文|^討論區|^(回應|回覆|留言|評論|댓글|コメント)\s*(?:\d+|[（(][^)）]*[)）])?$|^\d+\s*[則條個]?\s*(回應|回覆|留言|評論)$|^我要(登入|留言|分享|看法)|^貼文(\s*\(\d+\))?$|^(熱門|最新)$|^(下一篇|上一篇)$|^(prev(ious)?|next)\s*(article|post|story)?$|^(related|recommended|popular|trending|latest|featured)(\s+\S+){0,3}$|^top\s+stories?$|^most\s+(popular|read|viewed|shared|commented|recent)(\s+\S+){0,2}$|^more\s+(in|from|on|stories|articles|news|posts|like\s+this)(\s+\S+){0,3}$|^you\s+(may|might)\s+(also\s+)?(like|enjoy|be\s+interested)|^read\s+(more|next|also)|^what\s+to\s+read\s+next$|^up\s+next$|^continue\s+reading|^see\s+also|^see\s+more\s+on$|^further\s+reading|editor[‘’']?s[‘’']?\s+picks?|^(sponsored|promoted)\s+(content|stories|posts)|^comments?(\s*\(\d+\))?$|^\d+\s+(comments?|responses?|replies)$|^discussion(\s*\(\d+\))?$|^responses?(\s*\(\d+\))?$|^replies(\s*\(\d+\))?$|^newsletter$|^subscribe$|^follow\s+us|^join\s+us|^sign\s+up$|^support\s+us|^(hot|new|top)$|AI\s+(summary|digest|overview|takeaways?)|^community\s+q\s*&\s*a$|^about\s+(this\s+(site|website|blog)|us)$|^關於(本站|本網站|我們)$)/i;
   const NOISE_HEADING_MAX_LEN = 20;
   // v2.5.3：簡體 / 「報道」寫法摺疊（Jimmy 2026-11-15：其他家族的簡體寫法一次補齊）。
   // NOISE_HEADING_TEXT_RE / EXT 的中文詞全是台灣寫法，簡體站（cn.nytimes.com
@@ -525,6 +527,29 @@
   // 保護擋住）。主文敘述不會整條連結只寫「把我們設為偏好來源」，^$ 全文比對
   // 誤殺面窄。
   const NOISE_LINK_TEXT_STRICT_RE = /(立即|立刻)\s*(報名|領取|下載|預約|參與|加入|獲取|查看|了解|搶購|購買)|馬上\s*(報名|領取|下載|預約)|請點(我|此)|點擊\s*(報名|領取|下載|了解|查看|閱讀|加入)|^discover\s+(now|more)$|^(set|add|make)\s+(us|this\s+site|[\w'’.&\- ]{2,30}?)\s+(as\s+)?(your\s+|an?\s+)?(preferred|favou?rite)(\s+source)?$|^(將|把)?.{0,20}?設為(偏好|優先|首選)(來源|新聞來源)?$|^(將|把).{1,20}?(加入|新增為?).{0,10}?(偏好|優先|首選)(來源|新聞來源)$/i;
+  // v3.7.5：只命中「請點我／請點此」、沒有其他推廣句型時，要看連結所在的段落：段落裡
+  // 除了連結還有自己的說明文字＝參照連結（qiita 翻譯後提示框「Firefox 可能無法正常顯示
+  // GIF 動畫。詳情請點此」，原文「詳細はこちら」不命中，翻譯後整個提示框被藏），不當
+  // 推廣整塊清；只有連結、或連結外沒幾個字（推廣橫幅「活動詳情請點此」）照舊。
+  // 語料庫普查（2026-11-27，182 頁）：靠這個字樣整塊清的只有 qiita 這一處
+  const NOISE_LINK_TEXT_STRICT_NO_BARE_CLICK_RE = new RegExp(
+    NOISE_LINK_TEXT_STRICT_RE.source.replace('|請點(我|此)|', '|'), 'i');
+  const BARE_CLICK_HERE_HOST_MIN_TEXT = 10; // 連結外的說明文字（CJK 權重）
+  function isStrictCtaLink(a, text) {
+    if (!NOISE_LINK_TEXT_STRICT_RE.test(text)) return false;
+    if (NOISE_LINK_TEXT_STRICT_NO_BARE_CLICK_RE.test(text)) return true;
+    let host = a.parentElement;
+    while (host && INLINE_WRAPPER_TAGS.has(host.tagName)) host = host.parentElement;
+    if (!host) return true;
+    let own = '';
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const h = n.parentElement;
+      if (h && h.closest && h.closest('a, button')) continue;
+      own += n.nodeValue;
+    }
+    return NS.cjkWeightedLen(norm(own)) < BARE_CLICK_HERE_HOST_MIN_TEXT;
+  }
 
   // 主文中段「廣告插播」inline 文字 heuristic：自由時報 / 聯合 / ETtoday 等
   // 台灣新聞站在主文段落中段插播「廣告（請繼續閱讀本文）」類 placeholder
@@ -1018,13 +1043,34 @@
   //   - hideInsideArticleByHeadingText 的 closest 失敗 fallback（v0.7.28 cnyes / v0.7.34 newtalk / v0.7.36 cna）
   //   - checkDynamicNoise 對 dynamic 注入的 heading 同樣處理
   // 三道保護由 wrapperContainsArticleAnchor 統一判定。
+  // v3.7.5：pp 裡排在標題之前的段落（<p> / <pre>）文字量（CJK 權重）
+  function proseBeforeHeading(pp, h) {
+    let w = 0;
+    for (const para of pp.querySelectorAll('p, pre')) {
+      if (para.contains(h)) continue;
+      if (!(para.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+      if (para.closest('[data-jread-hidden="1"]')) continue;
+      w += mainTextLen(norm(para.textContent));
+      if (w >= NARROW_REPEAT_MIN_OWN_PROSE) break;
+    }
+    return w;
+  }
   function findSafeWrapperForHeading(h, articleEl) {
     let cur = h;
     let lastSafeWrapper = null;
+    // v3.7.5：標題在「同構重複貼文的其中一則」裡面（SO 答案），走到包著貼文本文的那一層
+    // 就停——貼文裡的留言區標題（翻譯後「1 則留言」）只管留言區；短答案的本文擋不住
+    // 一般的主文邊界，整則答案（或包著本文與留言的 post-layout）被當成留言區收掉
+    let peerPost = null;
+    for (let x = h.parentElement; x && x !== articleEl && articleEl.contains(x); x = x.parentElement) {
+      if (isRepeatedPeerPost(x)) { peerPost = x; break; }
+    }
     while (cur.parentElement && cur.parentElement !== articleEl &&
            articleEl.contains(cur.parentElement)) {
       const pp = cur.parentElement;
       if (wrapperContainsArticleAnchor(pp, h)) break;
+      if (peerPost && peerPost.contains(pp) &&
+          proseBeforeHeading(pp, h) >= NARROW_REPEAT_MIN_OWN_PROSE) break;
       lastSafeWrapper = pp;
       cur = pp;
     }
@@ -1485,7 +1531,7 @@
 
   // 留言標籤（「留言」「留言 2」「留言（全數更新）」「2 則留言」「Comments (12)」）：既是留言區
   // 的標題，也是作者列裡的留言數 chip
-  const COMMENT_COUNT_LABEL_RE = /^(?:\d+\s*[則條個]?\s*(?:回應|回覆|留言|評論)|(?:回應|回覆|留言|評論|댓글|コメント|comments?)\s*(?:\d+|[（(][^)）]*[)）])?)$/i;
+  const COMMENT_COUNT_LABEL_RE = /^(?:\d+\s*[則條個]?\s*(?:回應|回覆|留言|評論)|\d+\s+(?:comments?|responses?|replies)|(?:回應|回覆|留言|評論|댓글|コメント|comments?)\s*(?:\d+|[（(][^)）]*[)）])?)$/i;
   // el 之前是否已有主文段落（>= 100 權重、未被藏的 <p>）——分辨「標題下的作者列」與
   // 「文末的卡片」
   function mainParagraphPrecedes(el, articleEl) {
@@ -4604,6 +4650,48 @@
     return rescued;
   }
 
+  // v3.7.5：重複的貼文列跟著同伴走。narrow 逐兄弟找主文證據，一串同構的貼文（問答站的
+  // 答案、論壇的回覆）裡，長的靠段落長度留下、短的過不了門檻被藏——Stack Overflow 一則
+  // 只有一句話的答案在原文與翻譯後都消失。規則：待藏的兄弟自己有一點散文，而且至少
+  // NARROW_REPEAT_MIN_PEERS 個留下來的兄弟跟它同 tag、class 包含它全部的 class（同一種
+  // 外殼，只多了「已採納」「負分」這類狀態 class），那些同伴各自有足量散文 → 留著。
+  // 推薦卡片牆的同伴多半是一起被藏的，沒有留下來的同伴可比；只放行、不新增 hide
+  const NARROW_REPEAT_MIN_PEERS = 2;
+  const NARROW_REPEAT_MIN_OWN_PROSE = 20;
+  function classTokensOf(el) {
+    return typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter(Boolean) : [];
+  }
+  // el 在父層裡有幾個「同構、有足量散文」的兄弟（同 tag、class 包含 el 全部 class）。
+  // skip(sib)：呼叫端排除不算數的兄弟（narrow 的待藏清單）
+  function repeatedPostPeerCount(el, skip) {
+    const toks = classTokensOf(el);
+    if (!toks.length || !el.parentElement) return 0;
+    let n = 0;
+    for (const s of el.parentElement.children) {
+      if (s === el || s.tagName !== el.tagName) continue;
+      if (skip && skip(s)) continue;
+      if (s.dataset && s.dataset.jreadHidden === '1') continue;
+      const st = new Set(classTokensOf(s));
+      if (!toks.every((t) => st.has(t))) continue;
+      if (nonLinkProseWeight(s, NARROW_PEER_EXCLUDE_SEL) < NARROW_PEER_MIN_PROSE) continue;
+      if (++n >= NARROW_REPEAT_MIN_PEERS) break;
+    }
+    return n;
+  }
+  function isRepeatedPeerPost(el, skip) {
+    if (repeatedPostPeerCount(el, skip) < NARROW_REPEAT_MIN_PEERS) return false;
+    return nonLinkProseWeight(el, NARROW_PEER_EXCLUDE_SEL) >= NARROW_REPEAT_MIN_OWN_PROSE;
+  }
+  function rescueRepeatedPeerPosts(parent, toHide) {
+    const rescued = new Set();
+    if (!toHide.length) return rescued;
+    const pending = new Set(toHide);
+    for (const s of toHide) {
+      if (isRepeatedPeerPost(s, (x) => pending.has(x))) rescued.add(s);
+    }
+    return rescued;
+  }
+
   function narrowPromotedSiblings(articleEl, promotedFrom, hidden, promotedTitleHead) {
     if (!articleEl || !promotedFrom) return;
     if (!articleEl.contains || !articleEl.contains(promotedFrom)) return;
@@ -4795,6 +4883,7 @@
         toHide.push(sib);
       }
       const rescued = rescueHeadingLedRuns(parent, toHide);
+      for (const sib of rescueRepeatedPeerPosts(parent, toHide)) rescued.add(sib);
       for (const sib of toHide) if (!rescued.has(sib)) hide(sib, hidden);
       if (parent === articleEl) break;
       cur = parent;
@@ -6144,7 +6233,7 @@
       // engadget 剩下的「Add … on Google:」說明句由 collapseOrphanLabelShells 收
       const hrefHit = isPlatformFollowHref(a);
       if (!text && !hrefHit) continue;
-      const strictHit = NOISE_LINK_TEXT_STRICT_RE.test(text);
+      const strictHit = isStrictCtaLink(a, text);
       if (!strictHit && !hrefHit) {
         if (text.length > NOISE_LINK_TEXT_MAX_LEN) continue;
         if (!NOISE_LINK_TEXT_RE.test(text)) continue;
@@ -12372,7 +12461,14 @@
   // 主文裡的日期寫在句子裡、作者列的時間前後帶「發布於」「更新」等字，都不算。
   // 必須同時有日期與時刻（只有日期的是文章列表的發布日，不是留言）
   // 「日」與時刻之間可以沒有空白（LINE 進場當下是「04月24日11:07」，之後才重畫成帶空白的版本）
-  const STANDALONE_DATETIME_RE = /^(?:\d{4}\s*[年/.-]\s*)?\d{1,2}\s*[月/.-]\s*\d{1,2}\s*(?:日\s*|[\s,]+)\d{1,2}:\d{2}$/;
+  // v3.7.5：英文月份名寫法（Stack Overflow 留言「Mar 13, 2021 at 20:16」「Nov 9 at 0:34」、
+  // 日在前的「11 Jan 2023, 13:28」）。之前只認數字日期，同一串留言翻譯後（譯成
+  // 「2021 年 3 月 13 日 20:16」）被藏、原文留著；Jimmy 2026-11-27 裁定兩邊都藏
+  const STANDALONE_DATETIME_NUMERIC_RE = /^(?:\d{4}\s*[年/.-]\s*)?\d{1,2}\s*[月/.-]\s*\d{1,2}\s*(?:日\s*|[\s,]+)\d{1,2}:\d{2}$/;
+  const STANDALONE_DATETIME_EN_RE = /^(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2}(?:,?\s+\d{4})?|\d{1,2}\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?(?:\s+\d{4})?)(?:,|\s+at)?\s+\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?$/i;
+  const STANDALONE_DATETIME_RE = {
+    test: (t) => STANDALONE_DATETIME_NUMERIC_RE.test(t) || STANDALONE_DATETIME_EN_RE.test(t)
+  };
   function countStandaloneDateTimeLeaves(el) {
     let n = 0;
     for (const leaf of el.querySelectorAll('span, time, div, a, small, p')) {
@@ -15255,7 +15351,7 @@
         // banner（class 無語意 keyword、a / button text 才是訊號）整塊清。
         // 放在 a / button 派發之前——對 a 也要走（btn-only2 類 class 不命中
         // keyword、但 text「立即報名」是強訊號）。
-        if (NOISE_LINK_TEXT_STRICT_RE.test(foldZhVariants(norm(el.textContent)))) {
+        if (isStrictCtaLink(el, foldZhVariants(norm(el.textContent)))) {
           if (hideStrictCtaPromoBlock(el, articleEl, hiddenList)) continue;
         }
         // a tag：必須 class 命中 noise keyword 才 hide（連結是主文引用一部分）。
