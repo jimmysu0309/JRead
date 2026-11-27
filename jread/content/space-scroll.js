@@ -459,6 +459,15 @@
   function barAnchorLeft() {
     return articleEl ? articleEl.getBoundingClientRect().left : 0;
   }
+  // v3.7.6：右到左的頁面（ar／fa／he 維基、aljazeera）指示條畫在卡片右外側——行首在右邊，
+  // 指示條跟著行首走（2026-11-23 未巡範圍審查：aljazeera 的焦點條畫在卡片左外側）
+  function barAnchorRight() {
+    return articleEl ? articleEl.getBoundingClientRect().right : 0;
+  }
+  function barIsRtl() {
+    if (!articleEl) return false;
+    try { return getComputedStyle(articleEl).direction === 'rtl'; } catch (_) { return false; }
+  }
 
   // position: absolute（文件座標）——卷動時指示條黏著段落移動，不需每 frame 更新。
   // 單行 block 合併：block 落在群組內時指示條涵蓋整組（群組首 block top →
@@ -480,7 +489,9 @@
       height = r.height;
     }
     barEl.style.top = (window.scrollY + top) + 'px';
-    barEl.style.left = Math.max(0, window.scrollX + barAnchorLeft() - 14) + 'px';
+    barEl.style.left = (barIsRtl()
+      ? window.scrollX + barAnchorRight() + 10
+      : Math.max(0, window.scrollX + barAnchorLeft() - 14)) + 'px';
     barEl.style.height = height + 'px';
   }
 

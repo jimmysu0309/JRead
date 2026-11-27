@@ -26,6 +26,7 @@
 //                                                 #（子資源照樣從真站抓；可加 --translate）
 //   node tools/corpus.js check                    # 日常：改完 code 跑這個
 //   node tools/corpus.js check --only wiki        # 只跑 id 含 wiki 的頁面
+//   node tools/corpus.js shot --only '=npr.org_f1767e,womany'   # 逗號分隔多個片段；=<id> 精確比對
 //   node tools/corpus.js shot --only bbc           # 截圖在 ~/.jread-debug/corpus/shots/
 //        （捲動／430 寬拍前 12 屏、翻頁拍前 40 頁，另拍最後 4 屏／頁；--shots N|all、--tail N 調整）
 //   node tools/corpus.js accept [--only <片段>]
@@ -266,7 +267,7 @@ function diffFingerprint(base, cur, opts) {
 function compareDirs(baseDir, curDir, only) {
   // 指紋檔名只認「<id>.<模式>.json」，同步衝突副本（檔名含空白）一律不看
   const list = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => n.endsWith('.json') && !/\s/.test(n)) : []);
-  const curFiles = list(curDir).filter((n) => !only || n.includes(only));
+  const curFiles = list(curDir).filter((n) => matchOnly(fileId(n), only));
   const rows = [];
   const counts = { same: 0, layout: 0, content: 0, broken: 0, new: 0 };
   for (const f of curFiles.sort()) {
@@ -561,10 +562,14 @@ async function waitJreadSw(ctx) {
 
 const archivePath = (id) => path.join(PAGES_DIR, `${id}.json.gz`);
 const readArchive = (id) => JSON.parse(zlib.gunzipSync(fs.readFileSync(archivePath(id))).toString('utf8'));
+// --only 比對（單一資料源）：片段比對 id；「=<id>」精確比對（原文頁 id 是翻譯後頁 id 的前綴，
+// 片段比對會兩頁都中）；2026-11-27 起可用逗號一次指定多個，任一命中即收
+const matchOnly = (id, only) => !only || only.split(',').some((o) => (o.startsWith('=') ? id === o.slice(1) : id.includes(o)));
+// 指紋檔名 `<id>.<模式>.json` → id
+const fileId = (n) => n.replace(/\.[^.]+\.json$/, '');
 const listArchiveIds = (only) => (fs.existsSync(PAGES_DIR) ? fs.readdirSync(PAGES_DIR) : [])
   .filter((n) => n.endsWith('.json.gz')).map((n) => n.replace(/\.json\.gz$/, ''))
-  // 2026-11-23：「=<id>」精確比對（原文頁 id 是翻譯後頁 id 的前綴，片段比對會兩頁都中）
-  .filter((id) => !only || (only.startsWith('=') ? id === only.slice(1) : id.includes(only))).sort();
+  .filter((id) => matchOnly(id, only)).sort();
 
 function withTimeout(p, ms, label) {
   let to;
@@ -644,7 +649,7 @@ async function cmdCapture(args) {
   }
   const suffix = args.translate ? '_translated' : '';
   let todo = urls.map((u) => ({ url: u, id: pageId(u, suffix) }));
-  if (args.only) todo = todo.filter((t) => t.id.includes(args.only));
+  if (args.only) todo = todo.filter((t) => matchOnly(t.id, args.only));
   if (!args.force) todo = todo.filter((t) => !fs.existsSync(archivePath(t.id)));
   if (!todo.length) { console.log('沒有要擷取的頁面（都已有快照；要重擷取加 --force）'); return 0; }
   const exts = [];
@@ -807,7 +812,7 @@ async function cmdRun(args, outDir, shotRoot, onlyFiles) {
   });
   fs.mkdirSync(outDir, { recursive: true });
   // 清掉上一次的結果（--only 時只清符合的那幾頁，其他模式留下的舊檔也一併清，免得混進這次的比對）
-  if (!onlyFiles) for (const f of fs.readdirSync(outDir)) if (f.endsWith('.json') && (!args.only || f.includes(args.only))) fs.rmSync(path.join(outDir, f));
+  if (!onlyFiles) for (const f of fs.readdirSync(outDir)) if (f.endsWith('.json') && matchOnly(fileId(f), args.only)) fs.rmSync(path.join(outDir, f));
   const version = JSON.parse(fs.readFileSync(path.join(ext, 'manifest.json'), 'utf8')).version;
   let tasks = [];
   for (const id of ids) for (const v of variants) tasks.push({ id, v });
@@ -948,7 +953,7 @@ async function main() {
     case 'accept': {
       if (!fs.existsSync(CURRENT_DIR)) { console.error('還沒有這次的結果：先跑 check'); return 2; }
       fs.mkdirSync(BASELINE_DIR, { recursive: true });
-      const all = fs.readdirSync(CURRENT_DIR).filter((n) => n.endsWith('.json') && !/\s/.test(n) && (!args.only || n.includes(args.only)));
+      const all = fs.readdirSync(CURRENT_DIR).filter((n) => n.endsWith('.json') && !/\s/.test(n) && matchOnly(fileId(n), args.only));
       const bad = all.filter((f) => JSON.parse(fs.readFileSync(path.join(CURRENT_DIR, f), 'utf8')).error);
       const files = all.filter((f) => !bad.includes(f));
       for (const f of files) fs.copyFileSync(path.join(CURRENT_DIR, f), path.join(BASELINE_DIR, f));

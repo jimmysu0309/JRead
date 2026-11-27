@@ -34,7 +34,8 @@ const audits = require(path.join(__dirname, 'audit-lib.js'));
 const { NOISE_KEYWORD_TIERS } = audits;
 
 const PROJECT_ROOT = path.join(__dirname, '..');
-const EXT_PATH = path.join(PROJECT_ROOT, 'jread');
+// 2026-11-27：JREAD_EXT_PATH 指向別份 jread/（例如 git 某版的副本）做新舊版對照
+const EXT_PATH = process.env.JREAD_EXT_PATH ? path.resolve(process.env.JREAD_EXT_PATH) : path.join(PROJECT_ROOT, 'jread');
 // --profile <name>（Tier 2，登入態除錯）：用 ~/.jread-debug/profiles/<name> 這個
 // 穩定持久 profile 取代預設 /tmp（重開機不會清）。同一 name 跨 run 重用 →
 // 在該 profile 登入過的站台 cookie/session 會留存，之後背景跑就帶著登入態。

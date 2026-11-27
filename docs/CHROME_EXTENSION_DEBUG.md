@@ -143,6 +143,7 @@ cua 是 pre-release、API 變動快（README 自承 expect rough edges）；且�
 node tools/corpus.js check                 # 日常：改完 code 跑這個（有差異 exit 1）
 node tools/corpus.js check --only wiki     # 只跑 id 含 wiki 的頁面
 node tools/corpus.js shot --only bbc       # 看某頁現在長怎樣（截圖在 ~/.jread-debug/corpus/shots/）
+node tools/corpus.js shot --only '=npr.org_f1767e,womany'   # 逗號分隔多個片段（任一命中）；=<id> 精確比對
 node tools/corpus.js accept                # 差異都確認是預期的 → 收為新基準
 node tools/corpus.js capture --url <URL>   # 把一頁收進語料庫（修過的 bug 頁面都該收）
 node tools/corpus.js capture --url <URL> --translate   # 收翻譯後的快照（id 尾端 _translated）；用的翻譯引擎記在快照的 translateEngine，`list` 會顯示

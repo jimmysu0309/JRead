@@ -443,6 +443,19 @@
   const DEFLOAT_TEXT_MAX_WIDTH_RATIO = 0.7;
   const DEFLOAT_TEXT_SEL = 'aside, div, section, blockquote';
   const DEFLOAT_TEXT_BLOCKER_SEL = 'img, picture, video, audio, iframe, canvas, object, embed, table, pre, figure';
+  // v3.7.6：通用 `float: none` 的兩種副作用（見 markSiteFloatSideEffects）
+  //   KEEP_FLOAT_ATTR（值 left / right）＝站方 float 的短字標記（腳註編號、參考文獻編號）
+  //     → 保留站方 float，編號掛在文字旁、不黏字
+  //   FLOAT_BLOCK_ATTR＝本來靠 float 變成區塊的行內元素（Docusaurus 程式碼 <code>）
+  //     → display: block，內距照站方
+  const KEEP_FLOAT_ATTR = 'data-jread-keep-float';
+  const FLOAT_BLOCK_ATTR = 'data-jread-float-block';
+  const SITE_FLOAT_SEL = 'span, a, b, strong, em, i, small, label, code, sup, dt';
+  const KEEP_FLOAT_MAX_CHARS = 60;
+  const KEEP_FLOAT_MAX_WIDTH_RATIO = 0.5;
+  const KEEP_FLOAT_MAX_FS_RATIO = 1.5;  // 字比父層大這麼多＝首字放大（drop cap），不保留
+  const FLOAT_BLOCK_MIN_WIDTH_RATIO = 0.7;
+  const FLOAT_BLOCK_MIN_PARENT_W = 200; // 窄格裡的 float（arxiv 公式編號格 24px）不動
   // v2.5.23：橫向 flex 容器裡唯一的子層、裡面裝著程式碼區塊 → 撐滿（見 markFlexRowCodeShells）
   const CODE_FLEX_FILL_ATTR = 'data-jread-code-flex-fill';
   // v2.5.23：圖說與它上方那張圖的間距收緊（規則與標記見 buildCss / markCaptionMedia）
@@ -2813,6 +2826,23 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   width: auto !important;
   max-width: 100% !important;
   min-width: 0 !important;
+}
+/* v3.7.6：通用 float: none 的兩種副作用（標記見 markSiteFloatSideEffects）。
+   (1) 站方 float 的短字標記：plos 參考文獻編號 span.order { float: left; width: 1.875rem;
+       margin-left: -2.25rem }、Sphinx 腳註 aside.footnote > span { float: left }。清掉
+       float 後編號變成行內字、黏著後面的文字（「1.Jess T」）或獨佔一行——保留站方 float。
+   (2) 本來靠 float 變成區塊的行內元素：Docusaurus code.codeBlockLines { float: left;
+       min-width: 100%; padding: 16px }。float 會把 inline 元素變成區塊（CSS 規定），清掉後
+       退回 inline，內距只在首尾行生效——字貼著灰底左緣。改成 display: block。
+   attr 重複兩次：要排在上面 * { float: none }（0,2,0）之後也穩贏。 */
+[${ARTICLE_ATTR}="1"] [${KEEP_FLOAT_ATTR}="left"][${KEEP_FLOAT_ATTR}="left"] {
+  float: left !important;
+}
+[${ARTICLE_ATTR}="1"] [${KEEP_FLOAT_ATTR}="right"][${KEEP_FLOAT_ATTR}="right"] {
+  float: right !important;
+}
+[${ARTICLE_ATTR}="1"] [${FLOAT_BLOCK_ATTR}="1"][${FLOAT_BLOCK_ATTR}="1"] {
+  display: block !important;
 }
 /* v2.5.23：程式碼區塊的外殼撐滿版心（標記見 markFlexRowCodeShells）。react.dev 的
    範例外殼 div.sandpack 是橫向 flex、裡面只有一個子層；站方靠自己的寬度規則撐滿，
@@ -5647,6 +5677,57 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       marked.push(el);
     }
   }
+  // v3.7.6：通用 `float: none` 的兩種副作用（規則與動機見 buildCss 該規則註解）。站方
+  // cascade 的 float 要停用注入樣式才量得到（之後已被 float: none 蓋掉），在 ARTICLE_ATTR
+  // 設定後量（同 markDefloatedTextBoxes）。
+  //   KEEP：短字（1–KEEP_FLOAT_MAX_CHARS 字）、不含媒體、站方寬度小於父層一半、字級不比
+  //         父層大很多（首字放大另有處理）、不在作者列 / kicker
+  //   BLOCK：現在是 inline、站方寬度 >= 父層 70%、父層夠寬
+  // 這條驗 X、不驗 Y：只看 SITE_FLOAT_SEL 這幾種行內標籤（區塊級的 float 文字方塊歸
+  // markDefloatedTextBoxes、媒體 float 本來就該清）；只做進場當下這一次
+  function markSiteFloatSideEffects(articleEl, marked) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle || !NS.withInjectedCssDisabled) return;
+    const gcs = (el) => {
+      try { return _win.getComputedStyle(el); } catch (e) {
+        if (e && e.name === 'SyntaxError') return null; // jsdom nwsapi 既知行為
+        throw e;
+      }
+    };
+    const cands = [];
+    for (const el of articleEl.querySelectorAll(SITE_FLOAT_SEL)) {
+      if (!el.parentElement) continue;
+      if (el.closest(`[data-jread-hidden="1"], [${BYLINE_ATTR}], [${KICKER_ATTR}], [${PLAYER_ATTR}="1"]`)) continue;
+      const cs = gcs(el);
+      if (!cs || cs.display === 'none') continue;
+      cands.push({ el, nowDisplay: cs.display });
+    }
+    if (!cands.length) return;
+    const rows = NS.withInjectedCssDisabled(() => {
+      const out = [];
+      for (const c of cands) {
+        const cs = gcs(c.el);
+        if (!cs || (cs.float !== 'left' && cs.float !== 'right')) continue;
+        const pcs = gcs(c.el.parentElement);
+        const r = c.el.getBoundingClientRect();
+        const pr = c.el.parentElement.getBoundingClientRect();
+        out.push({ ...c, float: cs.float, w: r.width, pw: pr.width, fs: parseFloat(cs.fontSize) || 0, pfs: pcs ? (parseFloat(pcs.fontSize) || 0) : 0 });
+      }
+      return out;
+    }) || [];
+    for (const x of rows) {
+      const t = (x.el.textContent || '').trim();
+      const blocker = x.el.querySelector(DEFLOAT_TEXT_BLOCKER_SEL + ', svg');
+      if (t.length >= 1 && t.length <= KEEP_FLOAT_MAX_CHARS && !blocker && x.w > 0 && x.pw > 0 &&
+          x.w < x.pw * KEEP_FLOAT_MAX_WIDTH_RATIO && (!x.pfs || x.fs < x.pfs * KEEP_FLOAT_MAX_FS_RATIO)) {
+        x.el.setAttribute(KEEP_FLOAT_ATTR, x.float);
+        marked.push(x.el);
+      } else if (x.nowDisplay === 'inline' && x.pw >= FLOAT_BLOCK_MIN_PARENT_W && x.w >= x.pw * FLOAT_BLOCK_MIN_WIDTH_RATIO) {
+        x.el.setAttribute(FLOAT_BLOCK_ATTR, '1');
+        marked.push(x.el);
+      }
+    }
+  }
   // v2.5.14：直向 flex 容器的直接子 <pre> 標 PRE_FLEX_STRETCH_ATTR，豁免媒體置中規則
   // 的左右 auto margin（規則與動機見 buildCss 該規則註解）。在 ARTICLE_ATTR 設定後量
   // parent 的 computed display / flex-direction（翻頁模式把外殼塌成 block 的話量到
@@ -5742,7 +5823,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   // 與圖說同字級的 div、圖說與圖隔著其他區塊的都不處理。lazy 圖量不到寬度時不處理
   const DIV_CAP_MIN_MEDIA_W = 200;
   const DIV_CAP_MAX_CLIMB = 8;
-  const DIV_CAP_MAX_LEN = 400;
+  // v3.7.6：400 → 600。npr 的圖說殼是「圖說＋攝影署名」一起（470 字）；小字判定仍要過
+  const DIV_CAP_MAX_LEN = 600;
   const DIV_CAP_FS_RATIO = 0.9;
   // v2.5.48：主題樣式表裡「套使用者內文字級」那條選擇器（BODY_TEXT_SEL，建樣式表時寫入）。
   // findDivCaption 量字級時，命中它的元素改看最近一個沒命中的祖先（最遠到候選本身）——
@@ -5765,14 +5847,66 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   // 等於下一行的短標籤
   const DIV_CAP_ALT_MIN = 6;
   const squash = (s) => (s || '').replace(/\s+/g, '');
+  // v3.7.6：不算「字」的元素——<script type=application/ld+json> 這類的 textContent 不會畫
+  // 出來，卻讓「後面第一個帶字的兄弟」停在它身上（grubstreet：圖與 div 圖說之間夾一段
+  // JSON-LD，候選變成 script、字級判定失敗）
+  const DIV_CAP_NONTEXT_SEL = 'script, style, noscript, template';
+  // 元素看得到的字（扣掉 DIV_CAP_NONTEXT_SEL 子樹）
+  function divCapText(e) {
+    if (!e || (e.matches && e.matches(DIV_CAP_NONTEXT_SEL))) return '';
+    if (!e.querySelector || !e.querySelector(DIV_CAP_NONTEXT_SEL)) return (e.textContent || '').trim();
+    let out = '';
+    for (const n of e.childNodes) {
+      if (n.nodeType === 3) out += n.textContent;
+      else if (n.nodeType === 1) out += divCapText(n);
+    }
+    return out.trim();
+  }
+  // 回傳 null（不是圖說）或 { cap, common, fontCheck }。fontCheck 存在時還要過字級判定
+  //（judgeDivCapFont）——結構判定與字級量測分開，呼叫端才能把整頁的字級量測集中在一次
+  // 「停用注入樣式」裡做（每停用一次就是兩次 style recalc）
   function findDivCaption(media, articleEl, win) {
-    const txt = (e) => (e.textContent || '').trim();
-    const hidden = (e) => e.getAttribute && e.getAttribute('data-jread-hidden') === '1';
+    const txt = divCapText;
+    // v3.7.6：站方自己藏起來的兄弟（display:none 的燈箱圖說副本，arstechnica
+    // div.pswp-caption-content）不算——它沒畫出來，看得到的圖說在它後面
+    // （兄弟的父層看得到，所以只要看兄弟自己是不是 display:none；不用 getClientRects——
+    // display:contents 的殼沒有自己的框、裡面的字照樣畫出來）
+    const hidden = (e) => {
+      if (e.getAttribute && e.getAttribute('data-jread-hidden') === '1') return true;
+      if (!win || !win.getComputedStyle) return false;
+      try { return win.getComputedStyle(e).display === 'none'; } catch (_) { return false; }
+    };
+    // 看得到的字：跳過沒畫出來的子孫（同 hidden）
+    const visTxt = (e) => {
+      if (!e.querySelector || !e.querySelector('*')) return txt(e);
+      let out = '';
+      for (const n of e.childNodes) {
+        if (n.nodeType === 3) out += n.textContent;
+        else if (n.nodeType === 1 && !hidden(n) && !n.matches(DIV_CAP_NONTEXT_SEL)) out += visTxt(n);
+      }
+      return out.trim();
+    };
     const candOk = (cand) => {
       if (txt(cand).length > DIV_CAP_MAX_LEN) return false;
-      if (cand.matches('figcaption, p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol') ||
+      // v3.7.6：<p> 也可以是圖說（telefoncek：`<div><img><p style="font-size:13px">`）；
+      // 但只有一段——圖後面跟著段落，要嘛文字等於 alt、要嘛站方把它排成小字，才算
+      if (cand.matches('figcaption, li, h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol') ||
           cand.querySelector('h1, h2, h3, h4, h5, h6, blockquote, pre, table, ul, ol, figcaption, ' + DIV_CAP_MEDIA_SEL)) return false;
       if (cand.closest('[' + BYLINE_ATTR + ']') || cand.querySelector('[' + BYLINE_ATTR + ']')) return false;
+      // v3.7.6：圖與文字同在一個連結裡＝連結卡片（標題＋說明），不是圖說
+      const link = cand.closest('a[href]');
+      if (link && link.contains(media)) return false;
+      // v3.7.6：「粗體標題段＋說明段」＝卡片（gitbook 快速入門卡片沒包連結，翻頁模式量得到
+      // 圖寬就被認成圖說）：候選有兩段以上帶字的子層、第一段的字全在 <strong>／<b> 裡
+      const blocks = Array.from(cand.children).filter((c) => !hidden(c) && txt(c));
+      if (blocks.length >= 2) {
+        const b = blocks[0].querySelector('strong, b') || (blocks[0].matches('strong, b') ? blocks[0] : null);
+        if (b && squash(txt(b)) === squash(txt(blocks[0]))) return false;
+      }
+      // v3.7.6：絕對定位的文字是疊在圖上的署名（bbc「Getty Images」），不是排在圖下的圖說
+      if (win && win.getComputedStyle) {
+        try { if (/^(?:absolute|fixed)$/.test(win.getComputedStyle(cand).position)) return false; } catch (_) {}
+      }
       return true;
     };
     const alt = squash(media.getAttribute && media.getAttribute('alt'));
@@ -5780,7 +5914,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
     for (let k = 0; k < DIV_CAP_MAX_CLIMB; k++) {
       const parent = branch.parentElement;
       if (!parent || parent === articleEl || !articleEl.contains(parent)) return null;
-      if (txt(branch)) return null; // 圖那一支帶字（圖在段落裡）
+      if (visTxt(branch)) return null; // 圖那一支帶字（圖在段落裡）；沒畫出來的字不算（arstechnica 燈箱副本）
       let cand = null;
       let multi = false;
       for (let s = branch.nextElementSibling; s; s = s.nextElementSibling) {
@@ -5788,42 +5922,90 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         if (cand) { multi = true; break; }
         cand = s;
       }
-      // v2.5.37 alt 路徑：緊接的第一段字等於 alt → 不管前後還有沒有內文
-      if (cand && alt.length >= DIV_CAP_ALT_MIN && squash(cand.textContent) === alt) {
+      // 圖那一支前面的兄弟有沒有字
+      let prevText = false;
+      for (let s = branch.previousElementSibling; s; s = s.previousElementSibling) {
+        if (!hidden(s) && txt(s)) { prevText = true; break; }
+      }
+      // v2.5.37 alt 路徑：緊接的第一段字等於 alt → 不管前後還有沒有內文。
+      // v3.7.6：候選是 <p> 時例外——內文流裡剛好等於 alt 的段落仍是內文（v2.5.37 對照 3），
+      // 只有容器裡就是「圖＋這一段」才算圖說（telefoncek）
+      if (cand && alt.length >= DIV_CAP_ALT_MIN && squash(txt(cand)) === alt &&
+          !(cand.tagName === 'P' && (prevText || multi))) {
         return candOk(cand) ? { cap: cand, common: parent } : null;
       }
-      // 圖那一支前面的兄弟不能有字
-      for (let s = branch.previousElementSibling; s; s = s.previousElementSibling) {
-        if (!hidden(s) && txt(s)) return null;
-      }
       if (multi) return null; // 第二個帶字的兄弟 → 不是「圖 + 一段說明」
+      // 圖那一支前面的兄弟不能有字。v3.7.6 例外：候選緊接在圖那一支後面（中間沒有
+      // 別的看得到的兄弟）、又是最後一個帶字的兄弟——arstechnica 頁首把標題、導言、
+      // 作者列、首圖、圖說排成同一層兄弟。這條只放行到下面的小字判定，不走 alt 路徑
+      let adjacent = false;
+      if (prevText && cand) {
+        let s = branch.nextElementSibling;
+        // 沒畫出來的、沒字也沒媒體的兄弟跳過；隔著另一張圖就不算緊接
+        while (s && s !== cand && (hidden(s) || (!txt(s) && !s.matches(DIV_CAP_MEDIA_SEL) && !s.querySelector(DIV_CAP_MEDIA_SEL)))) s = s.nextElementSibling;
+        adjacent = s === cand;
+      }
+      if (prevText && !adjacent) return null;
       if (cand) {
         if (!candOk(cand)) return null;
         if (!win || !win.getComputedStyle) return null;
-        const limit = (parseFloat(win.getComputedStyle(parent).fontSize) || 0) * DIV_CAP_FS_RATIO;
-        if (!limit) return null;
         // 每個直接帶字的元素都要是小字
-        let any = false;
+        const els = [];
         for (const el of [cand, ...Array.from(cand.querySelectorAll('*'))]) {
+          if (el.closest(DIV_CAP_NONTEXT_SEL)) continue;
           let own = false;
           for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { own = true; break; } }
-          if (!own) continue;
-          any = true;
-          let judge = el;
-          if (bodyTextSelInjected) {
-            const injected = (e) => {
-              try { return e.matches(bodyTextSelInjected); } catch (_) {}
-              try { return e.matches(bodyTextSelLoose); } catch (_) { return false; }
-            };
-            while (judge !== cand && injected(judge)) judge = judge.parentElement;
-          }
-          if ((parseFloat(win.getComputedStyle(judge).fontSize) || 0) >= limit) return null;
+          if (own) els.push(el);
         }
-        return any ? { cap: cand, common: parent } : null;
+        return els.length ? { cap: cand, common: parent, fontCheck: { cap: cand, parent, els } } : null;
       }
       branch = parent;
     }
     return null;
+  }
+  // 字級判定：候選裡每個直接帶字的元素，字級都小於容器字級 × DIV_CAP_FS_RATIO。兩種量法
+  // 任一成立就算小字：
+  //   (a) 現在的 computed（v2.5.48：命中「套使用者內文字級」選擇器的元素改看最近一個
+  //       沒命中的祖先）
+  //   (b) v3.7.6：站方原始 cascade——停用 JRead 注入的樣式表後量（siteFs）。站方把小字級
+  //       寫在 <p> / <span> 本身（foxnews `.caption p`、telefoncek 行內 13px）時，(a) 爬到
+  //       的祖先是站方內文字級，量不出來
+  // siteFs：Map(元素 → 站方字級)，呼叫端在一次停用裡量好；沒有就只走 (a)
+  function judgeDivCapFont(fc, win, siteFs) {
+    const limit = (parseFloat(win.getComputedStyle(fc.parent).fontSize) || 0) * DIV_CAP_FS_RATIO;
+    let nowSmall = !!limit;
+    if (nowSmall) {
+      for (const el of fc.els) {
+        let judge = el;
+        if (bodyTextSelInjected) {
+          const injected = (e) => {
+            try { return e.matches(bodyTextSelInjected); } catch (_) {}
+            try { return e.matches(bodyTextSelLoose); } catch (_) { return false; }
+          };
+          while (judge !== fc.cap && judge.parentElement && injected(judge)) judge = judge.parentElement;
+        }
+        if ((parseFloat(win.getComputedStyle(judge).fontSize) || 0) >= limit) { nowSmall = false; break; }
+      }
+    }
+    if (nowSmall) return true;
+    if (!siteFs) return false;
+    const siteLimit = (siteFs.get(fc.parent) || 0) * DIV_CAP_FS_RATIO;
+    if (!siteLimit) return false;
+    return fc.els.every((el) => (siteFs.get(el) || Infinity) < siteLimit);
+  }
+  // 停用注入樣式、一次量完多組 fontCheck 的站方字級
+  function measureSiteFontSizes(fcs, win) {
+    if (!fcs.length || !NS.withInjectedCssDisabled) return null;
+    const map = new Map();
+    NS.withInjectedCssDisabled(() => {
+      for (const fc of fcs) {
+        for (const el of [fc.parent, ...fc.els]) {
+          if (map.has(el)) continue;
+          try { map.set(el, parseFloat(win.getComputedStyle(el).fontSize) || 0); } catch (_) { map.set(el, 0); }
+        }
+      }
+    });
+    return map;
   }
   function markCaptionMedia(articleEl, marked, loadCleanup, onLateCap) {
     const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
@@ -5847,6 +6029,16 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       }
       const hit = findDivCaption(m, articleEl, _win);
       if (!hit || hit.cap.hasAttribute(CAP_DIV_ATTR)) return;
+      if (hit.fontCheck) {
+        // 進場當下的候選先收集、最後一次量完站方字級（見 judgeDivCapFont）；載入後才判的
+        // 單張圖自己量
+        if (!fromLoad) { pendingFont.push({ m, hit }); return; }
+        if (!judgeDivCapFont(hit.fontCheck, _win, measureSiteFontSizes([hit.fontCheck], _win))) return;
+      }
+      applyDivCap(m, hit, fromLoad);
+    };
+    const applyDivCap = (m, hit, fromLoad) => {
+      if (hit.cap.hasAttribute(CAP_DIV_ATTR)) return;
       hit.cap.setAttribute(CAP_DIV_ATTR, '1');
       markCapPair(m, null, hit.cap, hit.common);
       // 載入後才認出來的圖說，字級那一步（passCaptionFontFloor）早就跑完了 → 補寫
@@ -5875,7 +6067,14 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         }
       }
     };
+    const pendingFont = [];
     for (const m of articleEl.querySelectorAll(DIV_CAP_MEDIA_SEL)) tryDivCap(m, false);
+    if (pendingFont.length && _win && _win.getComputedStyle) {
+      const siteFs = measureSiteFontSizes(pendingFont.map((x) => x.hit.fontCheck), _win);
+      for (const { m, hit } of pendingFont) {
+        if (judgeDivCapFont(hit.fontCheck, _win, siteFs)) applyDivCap(m, hit, false);
+      }
+    }
     for (const cap of articleEl.querySelectorAll('figcaption')) {
       if (cap.closest('[data-jread-hidden="1"]')) continue;
       const fig = cap.closest('figure');
@@ -7100,6 +7299,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         markFlexColumnPres(articleEl, preFlexStretchMarked);
         // v2.5.24：站方 float 的文字方塊撐滿版心（同樣要在 ARTICLE_ATTR 之後量）
         markDefloatedTextBoxes(articleEl, defloatTextMarked);
+        // v3.7.6：通用 float: none 的副作用（短字標記保留 float、靠 float 成區塊的行內元素改 block）
+        markSiteFloatSideEffects(articleEl, defloatTextMarked);
         // v2.5.23：圖說上方的媒體與圖說標記（見 markCaptionMedia；要在 PLAYER / INLINE_IMG
         // 標記之後——兩者都在更早的 pass）
         markCaptionMedia(articleEl, capMediaMarked, contentImgLoadCleanup, (cap) => {
@@ -11202,7 +11403,10 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       }
       if (Array.isArray(snapshot.defloatTextMarked)) {
         for (const el of snapshot.defloatTextMarked) {
-          if (el && el.removeAttribute) el.removeAttribute(DEFLOAT_TEXT_ATTR);
+          if (!el || !el.removeAttribute) continue;
+          el.removeAttribute(DEFLOAT_TEXT_ATTR);
+          el.removeAttribute(KEEP_FLOAT_ATTR);
+          el.removeAttribute(FLOAT_BLOCK_ATTR);
         }
       }
       if (Array.isArray(snapshot.capMediaMarked)) {
