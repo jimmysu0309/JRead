@@ -652,7 +652,9 @@
   // 中文 22 站＋翻譯輪 6 站＋英文 11 站快照回放，新舊規則的 hide 結果相同（無受害樣本，
   // 屬預防性收斂）
   const BYLINE_TEXT_STRONG_RE = /^\s*(by|written\s+by|posted\s+by|authors?[:\s])|^\s*(?:作者|撰文|編輯|整理|報導|編譯)(?=[\s:：]|[A-Za-z])|^\s*文\s*[／/|｜:：]|撰文[:：]|作者[:：]|編輯[:：]|整理[:：]|報導[:：]|發[佈布][日時]期|更新[日時]期|刊出[日時]期/i;
-  const BYLINE_TEXT_WEAK_RE = /\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b/i;
+  // v3.7.9：「日 月 年」前面的 \b 改 (?<!\d)——相鄰兩格沒空白（「Last updated23 Dec 2025」）
+  // 時 \b 不成立（同 ARTICLE_META_RE 註解；myartbroker 原文文末作者卡頭像因此沒被藏）
+  const BYLINE_TEXT_WEAK_RE = /\bby\s|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2},?\s+\d{4}\b|(?<!\d)\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\b\d{4}[./]\d{1,2}[./]\d{1,2}\b/i;
   // 2026-11-15 review A-03(b) 整合修正：「發表於」與無年份月日只進**保護用**的合成
   // BYLINE_TEXT_RE，不進 WEAK——WEAK 是 hideBylineAvatarImgs 的 hide 條件之一。併進
   // WEAK 的試作版在 dev.to 真站實證誤殺：header 文字「Abhijeet Bhale Posted on 1月6日 …」
@@ -13900,7 +13902,11 @@
   // **元素間無空白**串接（"…read·Jun 3, 20261.1K463Listen…"、"Follow11 min read"），
   // `\b\d{4}\b` / 前綴 `\b\d+` 會因數字黏在一起失配。改用最穩的 "min read" 估計閱讀
   // 時間（去掉前綴數字需求）+ 日期 pattern（去掉年份尾端 \b）。
-  const ARTICLE_META_RE = /\bmin(?:ute)?s?\s+read\b|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2},?\s+\d{4}|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}|\d{4}-\d{2}-\d{2}|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[./]\d{1,2}[./]\d{1,2}/i;
+  // v3.7.9：「日 月 年」那段前面的 \b 同理改成 (?<!\d)——myartbroker 文末作者卡兩格
+  // 「Last updated」「23 Dec 2025」串成「Last updated23 Dec 2025」，\b 不成立、沒認出日期，
+  // 整張卡連更新時間一起被當簡介框清掉（翻譯後「最後更新 2025 年 12 月 23 日」認得出）。
+  // 只擋前面是數字（「2023 Dec」這類年份尾巴不算日）。
+  const ARTICLE_META_RE = /\bmin(?:ute)?s?\s+read\b|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2},?\s+\d{4}|(?<!\d)\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{4}|\d{4}-\d{2}-\d{2}|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}[./]\d{1,2}[./]\d{1,2}/i;
 
   function hideInsideArticleAuthorBioCards(articleEl, hidden) {
     for (const img of articleEl.querySelectorAll('img')) {
