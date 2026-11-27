@@ -1801,7 +1801,78 @@
   function refitMediaAfterHeadingKeep() {
     if (headingKeepJournal.size() > 0) fitMediaToPages();
   }
-  const LAYOUT_PASSES = [releaseHeadingKeep, neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, keepHeadingsWithNext, refitMediaAfterHeadingKeep, remeasurePages];
+  // v3.7.12：有框線／底色的區塊在換頁處只剩內距的空碎片（KNOWN-ISSUES 第二節 theconversation，
+  // Jimmy 2026-11-27 裁定先普查再做通則）。theconversation 引言 `blockquote { border-left: 3px;
+  // padding: 9px 12px }`：最後一段結束時離頁底只剩 8px，引言自己的 padding-bottom 12px 放不下，
+  // 被分到下一頁——下一頁頁頂一段只有左邊線、沒有字的 12px 碎片。段落的下邊距 Chromium 會在換頁處
+  // 截掉，內距不會。鏡像情況：引言開頭落在頁底、第一行放不下，頁底留一段只有上內距的空邊線
+  //（第一版只修尾巴，內容上移 12px 後同頁第三個引言就變成這樣——語料庫快照量到）。
+  // 語料庫翻頁模式 182 份普查只有 theconversation 一處（引言、程式碼框、提示框、表格都算進去量）。
+  // 判定（量排好之後的版面）：元素畫得出外框（有框線、底色或背景圖）、斷成兩片以上，第一片或
+  // 最後一片裡沒有任何字或媒體。處理：尾巴空 → padding-bottom 歸 0；開頭空 → break-before: column
+  //（整塊從下一頁開始，前一頁本來就只有空框）。處理後那一片還是空的就撤回。排在小標換頁與重跑貼合
+  // 之後（前面的 pass 會挪動內容），每輪 relayout 第一步全撤（releaseDecorationTails）
+  const decoTailJournal = createStyleJournal(false);
+  function releaseDecorationTails() { decoTailJournal.restoreAll(); }
+  const isClearColor = (c) => !c || c === 'transparent' || /^rgba\([^)]*,\s*0\)$/.test(c);
+  function hasBoxDecoration(cs) {
+    const bw = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0) +
+      (parseFloat(cs.borderBottomWidth) || 0) + (parseFloat(cs.borderLeftWidth) || 0);
+    return bw > 0 || !isClearColor(cs.backgroundColor) || (!!cs.backgroundImage && cs.backgroundImage !== 'none');
+  }
+  // 這一片（fragment rect）裡有沒有字或媒體：子樹裡非空白文字的行框、媒體的 rect，有任何一個
+  // 跟這一片水平同欄、垂直重疊超過 2px 就算有
+  const DECO_MEDIA_SEL = 'img, video, iframe, svg, canvas, picture, object, embed';
+  function fragHasContent(el, frag) {
+    const hit = (r) => r.width > 0 && r.height > 2 && r.left < frag.right - 1 && r.right > frag.left + 1 &&
+      Math.min(r.bottom, frag.bottom) - Math.max(r.top, frag.top) > 2;
+    for (const m of el.querySelectorAll(DECO_MEDIA_SEL)) {
+      for (const r of m.getClientRects()) if (hit(r)) return true;
+    }
+    const doc = el.ownerDocument;
+    const walker = doc.createTreeWalker(el, 4 /* SHOW_TEXT */);
+    let n;
+    while ((n = walker.nextNode())) {
+      if (!/\S/.test(n.nodeValue)) continue;
+      const range = doc.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) if (hit(r)) return true;
+    }
+    return false;
+  }
+  function emptyEnds(el) {
+    const rs = el.getClientRects();
+    if (rs.length < 2) return { head: false, tail: false };
+    return { head: !fragHasContent(el, rs[0]), tail: rs[rs.length - 1].height > 1.5 && !fragHasContent(el, rs[rs.length - 1]) };
+  }
+  function trimDecorationTails() {
+    if (!art) return;
+    if (!pageBox()) return; // jsdom 無 layout → no-op
+    try {
+      // TreeWalker 走訪（不用 querySelectorAll('*')：review-1115-b3 以那個呼叫當「neutralizeStructure
+      // 跑了幾輪」的觀測點）
+      const walker = art.ownerDocument.createTreeWalker(art, 1 /* SHOW_ELEMENT */);
+      let el;
+      while ((el = walker.nextNode())) {
+        if (el.getAttribute('data-jread-hidden') === '1') continue;
+        if (el.getClientRects().length < 2) continue;
+        if (!hasBoxDecoration(getComputedStyle(el))) continue;
+        let ends = emptyEnds(el);
+        if (ends.tail) {
+          const mark = decoTailJournal.size();
+          decoTailJournal.set(el, 'padding-bottom', '0px');
+          if (emptyEnds(el).tail) while (decoTailJournal.size() > mark) decoTailJournal.undoLast();
+          ends = emptyEnds(el);
+        }
+        if (ends.head) {
+          const mark = decoTailJournal.size();
+          decoTailJournal.set(el, 'break-before', 'column');
+          if (emptyEnds(el).head) while (decoTailJournal.size() > mark) decoTailJournal.undoLast();
+        }
+      }
+    } catch (e) { /* 量測失敗維持原狀 */ }
+  }
+  const LAYOUT_PASSES = [releaseHeadingKeep, releaseDecorationTails, neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, keepHeadingsWithNext, refitMediaAfterHeadingKeep, trimDecorationTails, remeasurePages];
   function relayout() {
     if (!art) return;
     for (const pass of LAYOUT_PASSES) pass();
@@ -2499,6 +2570,7 @@
     structJournal.restoreAll();
     mediaFitJournal.restoreAll();
     headingKeepJournal.restoreAll();
+    decoTailJournal.restoreAll(); // v3.7.12
     resetNeutralizeState();
     // v0.7.245：清 settle timer + 還原卡片 touch-action（鎖時設過 inline none），避免
     // 元素被 styler reapply 沿用時殘留鎖狀態
