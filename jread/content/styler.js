@@ -440,7 +440,6 @@
   // markDefloatedTextBoxes）
   const DEFLOAT_TEXT_ATTR = 'data-jread-defloat-text';
   const DEFLOAT_TEXT_MIN_CHARS = 80;
-  const DEFLOAT_TEXT_MAX_WIDTH_RATIO = 0.7;
   const DEFLOAT_TEXT_SEL = 'aside, div, section, blockquote';
   const DEFLOAT_TEXT_BLOCKER_SEL = 'img, picture, video, audio, iframe, canvas, object, embed, table, pre, figure';
   // v3.7.6：通用 `float: none` 的兩種副作用（見 markSiteFloatSideEffects）
@@ -507,6 +506,10 @@
   // v2.5.24：站方對 ::first-line 下了與段落不同的字距 / 字體 / 顏色的元素。見
   // firstLineDiverges。
   const FIRST_LINE_ATTR = 'data-jread-first-line';
+  // v3.7.7：站方放大首字外面畫了框線（float 的 ::first-letter 帶 border）的元素——框線與
+  // 框內距拿掉、放大留著（nautil.us `is-style-drop-cap-with-border`，Jimmy 2026-11-27 裁定）。
+  // 見 markDropCapBlocks
+  const DROP_CAP_FRAME_ATTR = 'data-jread-drop-cap-frame';
   // v2.4.10：JRead 接手 ::selection 底色（站方底色不透明；v2.5.46 起含站方沒有選取
   // 底色）。標在 <html>，見 markSiteSelectionBg
   const SEL_BG_ATTR = 'data-jread-sel-bg';
@@ -3761,13 +3764,22 @@ html [${ARTICLE_ATTR}="1"] {
    （line ~1027）只覆蓋 max-height/object-fit/display、未設 width，故此規則的
    width:auto 仍會命中 emoji——必須在選擇器層排除。 */
 html [${ARTICLE_ATTR}="1"] img:not([${INLINE_IMG_ATTR}]),
-html [${ARTICLE_ATTR}="1"] svg,
 html [${ARTICLE_ATTR}="1"] video {
   max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
   max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
   width: auto !important;
   max-width: 100% !important;
   object-fit: contain !important;
+}
+/* v3.7.7：svg 不套上面那條的 width: auto——svg 的 width / height 屬性沒寫時沒有原始尺寸，
+   width: auto 會掉回 300px 預設（與 v1.9.10 iframe 同理），蓋掉站方 CSS 給的寬。restofworld
+   章節分隔符 span.chapter_break 裡三個 svg（內容是 use 參照）站方寫 22px，翻頁模式變成各
+   300px、排成直排疊在下一個小標上（捲動模式 22px 橫排，語料庫 probe 實測）。svg 只留單頁 cap
+   與寬度 cap；有寬度屬性的 svg 本來就照屬性的值 */
+html [${ARTICLE_ATTR}="1"] svg {
+  max-height: calc(100vh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+  max-height: calc(100dvh - ${PAGED_TOP_GUTTER} - ${PAGED_BOTTOM} - 120px) !important;
+  max-width: 100% !important;
 }
 /* v1.9.10：iframe 不可套上面那條的 width: auto——iframe 是「沒有 intrinsic 尺寸」
    的替換元素，width: auto 不會像 img 那樣退回原始寬度、而是掉回 HTML spec 預設
@@ -3836,6 +3848,13 @@ html [${ARTICLE_ATTR}="1"] :is(${ARIA_TABLE_SEL}) [role="row"]:not(tr) {
 }
 html [${ARTICLE_ATTR}="1"] [${ARIA_FLOW_SHELL_ATTR}="1"] {
   display: block !important;
+}
+/* v3.7.7：原生表格的列不跨頁（pmc 表 1「Complete response」那列的儲存格切在兩頁之間；
+   Jimmy 2026-11-27 裁定表格超過半頁逐列切開——切在列與列之間，不切在列中間）。Chromium
+   照 tr 的 break-inside: avoid；WebKit 不照（v2.5.12 註解），Safari 維持現狀。比一頁還高的
+   列照 spec 仍會切。只在翻頁模式注入 */
+html [${ARTICLE_ATTR}="1"] tr {
+  break-inside: avoid;
 }
 /* v0.8.7：翻頁模式下 media / 連結禁用原生 drag + 補 touch-action——真機實證
    （Jimmy 2026-06-09 culpium/Substack）圖片 draggable=true，iPhone 上水平拖曳
@@ -5312,6 +5331,13 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }`).join('\n')}
+/* v3.7.7：放大首字的框線與框內距拿掉（DROP_CAP_FRAME_ATTR），字級、float、左右 margin 留站方值 */
+[${ARTICLE_ATTR}="1"] [${DROP_CAP_FRAME_ATTR}="1"]::first-letter,
+[${ARTICLE_ATTR}="1"][${DROP_CAP_FRAME_ATTR}="1"]::first-letter {
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
 /* 'off'：CJK 首字前後帶標點（譯文以「《」「「」開頭）時，::first-letter 依規格連
    標點一起選進去，兩個全形字一起放大。拆不開（pseudo 沒辦法只選一個字），整個取消。 */
 [${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="off"]::first-letter,
@@ -5634,7 +5660,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
   //（quantamagazine `aside.post__aside--right`：float right、width 335px）。閱讀模式
   // 清掉 float 後寬度還在 → 一段只有半欄寬（語料庫 quantamagazine 截圖，2026-11-18）。
   // 判定（全部成立才標）：
-  //   1. 在閱讀模式下看得到，寬度不到父層的 DEFLOAT_TEXT_MAX_WIDTH_RATIO
+  //   1. 在閱讀模式下看得到，寬度比父層窄（v3.7.7 前要不到父層七成）
   //   2. 是文字方塊：文字 >= DEFLOAT_TEXT_MIN_CHARS，裡面沒有媒體 / 表格 / 程式碼
   //     （float 的縮圖框、資訊框的窄寬是跟著圖或表格走的，不動）
   //   3. 站方 cascade 下（停用注入 CSS 再量）computed float 是 left / right
@@ -5653,7 +5679,10 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const r = el.getBoundingClientRect();
       if (!(r.width > 0 && r.height > 0)) continue;
       const pr = par.getBoundingClientRect();
-      if (!(pr.width > 0) || r.width >= pr.width * DEFLOAT_TEXT_MAX_WIDTH_RATIO) continue;
+      // v3.7.7：不再要求「不到父層七成」，比父層窄就算（quantamagazine 430 寬：方塊 335px、
+      // 父層 392px，超過七成沒撐滿、右邊留 57px；Jimmy 2026-11-27 裁定「站方是 float 就撐滿版心」）。
+      // 窄是不是 float 留下來的，交給下面停用注入樣式後量的條件 3
+      if (!(pr.width > 0) || r.width >= pr.width - 1) continue;
       if (el.closest(`[data-jread-hidden="1"], table, figure, [${BYLINE_ATTR}], [${KICKER_ATTR}]`)) continue;
       if (el.querySelector(DEFLOAT_TEXT_BLOCKER_SEL)) continue;
       if ((el.textContent || '').trim().length < DEFLOAT_TEXT_MIN_CHARS) continue;
@@ -6417,6 +6446,14 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         if (hasLetter) {
           const prev = el.getAttribute(DROP_CAP_ATTR);
           if (prev != null) el.removeAttribute(DROP_CAP_ATTR);
+          // v3.7.7：框線先判（量站方值要先拔自己的標記），標上後再量重排——
+          // 框線與內距拿掉後首字框變矮，重排要按拿掉後的框算
+          if (el.hasAttribute(DROP_CAP_FRAME_ATTR)) el.removeAttribute(DROP_CAP_FRAME_ATTR);
+          const fl0 = _win.getComputedStyle(el, '::first-letter');
+          const framed = !!(fl0 && fl0.float && fl0.float !== 'none' &&
+            ['Top', 'Right', 'Bottom', 'Left'].some((k) =>
+              (parseFloat(fl0['border' + k + 'Width']) || 0) > 0 && fl0['border' + k + 'Style'] !== 'none'));
+          if (framed) setMark(el, DROP_CAP_FRAME_ATTR, '1');
           const fl = _win.getComputedStyle(el, '::first-letter');
           if (fl && fl.float && fl.float !== 'none') dropCapCarriers.add(el);
           const plan = dropCapPlan(el.textContent, parseFloat(cs.fontSize), parseFloat(cs.lineHeight), fl);
@@ -8467,6 +8504,30 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                   }
                   if (mark) setMark(el, BYLINE_DATE_ITEM_ATTR);
                 });
+                // v3.7.7：日期前面的標籤跟著日期走。Trigger：stackoverflow 標題下「Asked <time>」——
+                // 站方每一格是 `<div><span>Asked</span><time>…</time></div>`，作者列把格子攤平
+                //（BYLINE_WRAP_ATTR 的 display: contents），只有 <time> 推到行尾、「Asked」留在原位，
+                // 變成「Asked　Viewed 84k times　5 years ago」（語料庫 KNOWN-ISSUES，Jimmy 2026-11-27
+                // 裁定標籤跟著日期一起排到行尾）。
+                // 條件（結構訊號）：日期項目的父層是被攤平的格子；同一格裡排在日期前面的項目
+                // 沒有連結、20 字以內、不是作者字樣（「By」）、本身不是日期——就是那個日期的標籤
+                for (const d of ditems) {
+                  if (!d.hasAttribute(BYLINE_DATE_ITEM_ATTR)) continue;
+                  const cell = d.parentElement;
+                  if (!cell || !cell.hasAttribute(BYLINE_WRAP_ATTR)) continue;
+                  const before = ditems.filter((el) => el !== d && el.parentElement === cell &&
+                    (el.compareDocumentPosition(d) & 4 /* d 在後 */));
+                  const isLabel = (el) => {
+                    if (el.hasAttribute(BYLINE_DATE_ITEM_ATTR)) return false;
+                    if (el.tagName === 'A' || el.querySelector('a[href]')) return false;
+                    const t = bnorm(el.textContent);
+                    return !!t && t.length <= 20 && !BYLINE_AUTHOR_PREFIX_RE.test(t) &&
+                      !BYLINE_DATE_RE.test(t) && !brelDate(t);
+                  };
+                  if (before.length && before.every(isLabel)) {
+                    for (const el of before) setMark(el, BYLINE_DATE_ITEM_ATTR);
+                  }
+                }
                 // v2.5.8：站方把日期與附屬項目收在同一層容器、作者在容器外面時，整層跟著
                 // 日期走（dev.to `<a>作者</a><p>Posted • Edited • Originally published at…</p>`：
                 // 上面只標日期群，「• Originally published at」留在 order:0 → 排到日期前面，
@@ -11344,6 +11405,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           if (el && el.removeAttribute) {
             el.removeAttribute(FIRST_LETTER_ATTR);
             el.removeAttribute(DROP_CAP_ATTR);  // v2.5.24
+            el.removeAttribute(DROP_CAP_FRAME_ATTR); // v3.7.7
             el.removeAttribute(FIRST_LINE_ATTR); // v2.5.24
           }
         }

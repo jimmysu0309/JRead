@@ -888,6 +888,58 @@
     }
   }
 
+  // v3.7.7：程式碼與表格整塊推頁（Jimmy 2026-11-27 裁定 C：高度不到半頁的整塊推，超過半頁
+  // 的允許從中間切開——表格逐列、程式碼逐行）。語料庫 KNOWN-ISSUES 第四節：MDN、rust、
+  // kubernetes、jestjs、sspai、toss、engadget 前一頁大片空白。推頁的兩個來源（probe 實測）：
+  //   (a) 翻頁 CSS 對所有 <figure> 下 break-inside: avoid——sspai 的表格包在 figure.table、
+  //       rust 的程式碼包在 figure.listing，整個 figure 不可切
+  //   (b) 放得進一頁的捲動框（overflow auto / scroll 的 <pre>、<code>、表格外殼）瀏覽器視為
+  //       monolithic，整塊不可切（v1.7.46 同一個機制；高過一頁的已由 tallScrollContainer 解開）
+  // 兩者都只在「超過半頁」時解開；寬表格（有橫向溢出、裡面沒有 <pre> 可以改成折行）解開
+  // 會畫出框外，維持整塊推。
+  const SPLIT_BLOCK_PAGE_SHARE = 0.5;
+  const SCROLL_SHELL_MIN_PX = 40;
+  const isOverHalfPage = (h, pageH) => !isTallerThanPage(h, pageH) && h > pageH * SPLIT_BLOCK_PAGE_SHARE;
+  const CODE_TABLE_SEL = 'pre, table';
+  const SPLIT_MEDIA_SEL = 'img, picture, video, iframe, canvas, object, embed';
+  function isCodeOrTableBlock(el) {
+    if (/^(pre|table|code)$/i.test(el.tagName || '')) return true;
+    try { return !!el.querySelector(CODE_TABLE_SEL); } catch (e) { return false; }
+  }
+  const isUserScroll = (v) => v === 'auto' || v === 'scroll';
+  // v3.7.7：squidfunk 程式碼推走後上一頁底留一塊沒字的灰框（18–130px）。站方的灰底畫在
+  // 外層 <pre>（可切），可捲的是裡面的 <code>（monolithic）——<code> 整塊推到下一頁，
+  // <pre> 的第一片只剩上內距與底色留在頁底。把「只包這一個捲動框」的外殼（往上 3 層、
+  // 不超過一頁高）一起標成不可切，外殼跟著整塊走。外殼另有別的看得到的子元素或直接文字
+  // 就停（那是一般容器，不是程式碼框的殼）
+  const SHELL_AVOID_MAX_UP = 3;
+  function hasOnlyChild(parent, child) {
+    for (const n of parent.childNodes) {
+      if (n === child) continue;
+      if (n.nodeType === 3) { if (n.nodeValue.trim()) return false; continue; }
+      if (n.nodeType !== 1) continue;
+      // 看得到＝有框、而且有字或有寬高（squidfunk <pre> 開頭的空 <span> 有一個零寬框，不算）
+      let r = null;
+      try { r = n.getClientRects().length ? n.getBoundingClientRect() : null; } catch (e) { /* */ }
+      if (!r) continue;
+      if ((n.textContent || '').trim() || (r.width > 0 && r.height > 0)) return false;
+    }
+    return true;
+  }
+  function avoidScrollBoxShells(ctx) {
+    let child = ctx.el;
+    for (let up = 0; up < SHELL_AVOID_MAX_UP; up++) {
+      const parent = child.parentElement;
+      if (!parent || parent === art || !art.contains(parent)) return;
+      if (!hasOnlyChild(parent, child)) return;
+      let h = 0;
+      try { h = parent.getBoundingClientRect().height; } catch (e) { return; }
+      if (isTallerThanPage(h, ctx.pageH)) return;
+      structJournal.set(parent, 'break-inside', 'avoid');
+      child = parent;
+    }
+  }
+
   // 規則表。neutralizeStructure 對主文每個後代依表序套用：
   //   id          規則名（順序測試與日誌用）
   //   since       加入的版本
@@ -1020,6 +1072,59 @@
         return isClippingOverflow(o.x) || isClippingOverflow(o.y);
       },
       apply: unclipTallScroller
+    },
+    // v3.7.7：超過半頁的程式碼 / 表格捲動框解開成可切（見 SPLIT_BLOCK_PAGE_SHARE 註解 (b)）。
+    // 只收 auto / scroll；直向有裁到內容的交給下一條 clippedScrollBox；有橫向溢出時只收
+    // 含 <pre> 的（長行改折行，同 tallScrollContainer），寬表格維持整塊
+    {
+      id: 'halfPageScrollBlock',
+      since: 'v3.7.7',
+      minHeight: isOverHalfPage,
+      match(ctx) {
+        const o = ctx.overflow();
+        if (!isUserScroll(o.x) && !isUserScroll(o.y)) return false;
+        const el = ctx.el;
+        if (!isCodeOrTableBlock(el)) return false;
+        if (el.scrollHeight - el.clientHeight > CLIPPED_SCROLL_MIN_PX) return false;
+        if (el.scrollWidth > el.clientWidth + 1) {
+          const hasPre = /^pre$/i.test(el.tagName || '') || !!el.querySelector('pre');
+          if (!hasPre) return false;
+        }
+        return true;
+      },
+      apply: unclipTallScroller
+    },
+    // v3.7.7：超過半頁、包程式碼或表格的 break-inside: avoid 盒子（翻頁 CSS 的 figure 規則、
+    // 站方自己下的）改回可切（見 SPLIT_BLOCK_PAGE_SHARE 註解 (a)）。帶媒體的不動——那是
+    // 圖文 figure，圖不跨頁的規則要留
+    {
+      id: 'halfPageAvoidCodeTable',
+      since: 'v3.7.7',
+      // 比一頁還高的也要收：Chromium 對放不下的 avoid 盒子仍會先推到新的一頁頂端再切
+      //（sspai 第二張表 1,341px，前一頁留 550px 空白——probe 實測）
+      minHeight: (h, pageH) => h > pageH * SPLIT_BLOCK_PAGE_SHARE,
+      match(ctx) {
+        if (ctx.cs.breakInside !== 'avoid' && ctx.cs.breakInside !== 'avoid-column' && ctx.cs.breakInside !== 'avoid-page') return false;
+        if (!isCodeOrTableBlock(ctx.el)) return false;
+        try { if (ctx.el.querySelector(SPLIT_MEDIA_SEL)) return false; } catch (e) { return false; }
+        return true;
+      },
+      apply(ctx) {
+        structJournal.set(ctx.el, 'break-inside', 'auto');
+      }
+    },
+    // v3.7.7：還留著的程式碼 / 表格捲動框（不到半頁、或寬表格），只包它的外殼一起不可切
+    //（見 avoidScrollBoxShells）。排在上面兩條之後：解開的框 overflow 已是 visible，不會命中
+    {
+      id: 'scrollBoxShellAvoid',
+      since: 'v3.7.7',
+      minHeight: (h, pageH) => !isTallerThanPage(h, pageH) && h >= SCROLL_SHELL_MIN_PX,
+      match(ctx) {
+        const o = ctx.overflow();
+        if (!isUserScroll(o.x) && !isUserScroll(o.y)) return false;
+        return isCodeOrTableBlock(ctx.el);
+      },
+      apply: avoidScrollBoxShells
     },
     // v2.5.49：放得進一頁、但內容被直向裁掉的內捲框（ar 維基參考文獻外層 div.reflist-wrap：
     // max-height 300px、overflow auto，33 條只露出前 4 條半）。上一條「矮的不動、保留內捲」

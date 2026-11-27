@@ -2459,7 +2459,8 @@
   // 判準：整個元素的文字就是「瀏覽 / 閱讀 / 觀看 / 點閱（數 / 次數 / 人次）：數字」或
   // 「數字 次瀏覽 / views / reads」（全字串比對，句子裡提到瀏覽數不會中）；不在表格、清單、
   // 引言裡；元素裡沒有其他元素帶別的文字（只藏葉節點級的計數標籤）
-  const VIEW_COUNT_RE = /^(?:(?:瀏覽|閱讀|觀看|點閱|浏览|阅读|观看|点阅)(?:數|数|次數|次数|人次|量)?\s*[:：]?\s*[\d,.]+\s*(?:萬|万|k)?\s*(?:次|人)?|[\d,.]+\s*(?:萬|万|k)?\s*(?:次瀏覽|次觀看|次閱讀|次点阅|次浏览|次阅读|次观看|人次|人瀏覽|人閱讀|views?|reads?))$/i;
+  // v3.7.7：補英文「Viewed 84k times」（stackoverflow 標題下；翻譯後「瀏覽 84000 次」本來就中）
+  const VIEW_COUNT_RE = /^(?:(?:瀏覽|閱讀|觀看|點閱|浏览|阅读|观看|点阅)(?:數|数|次數|次数|人次|量)?\s*[:：]?\s*[\d,.]+\s*(?:萬|万|k)?\s*(?:次|人)?|[\d,.]+\s*(?:萬|万|k)?\s*(?:次瀏覽|次觀看|次閱讀|次点阅|次浏览|次阅读|次观看|人次|人瀏覽|人閱讀|views?|reads?)|viewed\s*[\d,.]+\s*[km]?\s*times?)$/i;
   // v2.5.55：作者列裡沒有字樣的裸計數（womany 標題下「by suninpirer 2013/05/14 82.7k」，
   // 「瀏覽」是站方 ::before 畫的眼睛圖示）。字樣比對抓不到，改看位置：整個元素只有一個
   // 數字（可帶 k / m / 萬），而且同一層兄弟裡有 <time> 或作者頁連結＝作者列裡的統計數字
@@ -6217,6 +6218,25 @@
     return '';
   }
 
+  // v3.7.7：相對時間連結的例外。Trigger：stackoverflow 標題下資訊列「Asked <time>5 years
+  // ago</time>｜Modified <a>1 year ago</a>」，連結被 NOISE_LINK_TEXT_RE 的「N … ago」分支清掉、
+  //「Modified」標籤再被孤兒殼規則收掉（語料庫 KNOWN-ISSUES，Jimmy 2026-11-27 裁定兩邊都顯示）。
+  // 那個分支是給推薦清單、留言串裡的時間戳連結用的；作者列裡的時間連結是文章的中繼資訊。
+  // 判準（結構訊號）：連結文字整串就是相對時間；往上 3 層內、文字不超過 120 字的一列裡
+  // 有連結以外的 <time>（作者列的日期錨）。推薦卡片的時間戳連結旁邊沒有另一個 <time>
+  const RELATIVE_TIME_ONLY_RE = /^(?:\d+|an?|one)\s+(?:min(?:ute)?s?|hours?|days?|weeks?|months?|years?)\s+ago$/i;
+  function isMetaRowRelativeTimeLink(a, text) {
+    if (a.tagName !== 'A' || !RELATIVE_TIME_ONLY_RE.test(text)) return false;
+    let up = a.parentElement;
+    for (let i = 0; up && i < 3; i++, up = up.parentElement) {
+      if (norm(up.textContent || '').length > 120) return false;
+      for (const t of up.querySelectorAll('time')) {
+        if (!a.contains(t) && norm(t.textContent || '')) return true;
+      }
+    }
+    return false;
+  }
+
   function hideInsideArticleByLinkText(articleEl, hidden, scope) {
     // 掃 `<a>` + `<button>`——CTA 按鈕類（訂閱 / 追蹤 / 關注）通常是 button
     // 而非 a，舊版只掃 a 漏網
@@ -6245,6 +6265,8 @@
       if (a.dataset && a.dataset.jreadHidden === '1') continue;
       // v2.5.9：句子裡的動作詞連結（「To get your Project URL, log in.」）不清
       if (!strictHit && !hrefHit && isInSentenceActionLink(a, text)) continue;
+      // v3.7.7：作者列裡的相對時間連結（SO 標題下「Modified <a>1 year ago</a>」）不清
+      if (!strictHit && !hrefHit && isMetaRowRelativeTimeLink(a, text)) continue;
       // strict CTA（立即報名 等活動 / 課程推廣鈕）：往上整塊清 promo banner
       // （標題 + 描述 + 報名鈕拆成多 sibling 的場景），避免只清按鈕留殘文。
       if (strictHit && hideStrictCtaPromoBlock(a, articleEl, hidden)) continue;
@@ -13161,6 +13183,53 @@
     }
   }
 
+  // ---- 主文內：文末的社群追蹤列（v3.7.7）--------------------------------------
+  // readwise.io 分享頁文末「歡迎在你喜愛的各大社群平台上追蹤我： YouTube | TikTok |
+  // Substack | Bluesky | Gumroad。」（語料庫 KNOWN-ISSUES，Jimmy 2026-11-27 裁定：只清文末純連結
+  // 的社群追蹤列，結構性規則、不綁站；頁首會員 CTA 不動）。作者自己寫在內文裡的段落，
+  // 沒有 class、字樣也因作者而異，改看結構：
+  //   - <p> / <div>（沒有區塊子元素）裡至少 3 條連結，每條都連到社群或創作者平台、文字 ≤ 20 字
+  //   - 扣掉連結後只剩分隔符與一句引言（權重 ≤ 40；「Follow me:」「追蹤我：」）
+  //   - 在文末：前面的內文字數占全文 60% 以上（頁首的同型列不動）
+  // 頁首那段混了 Amazon 連結（不是社群平台），本來就不中
+  const FOLLOW_ROW_HOST_RE = /(^|\.)(twitter\.com|x\.com|linkedin\.com|instagram\.com|facebook\.com|threads\.(net|com)|bsky\.app|tiktok\.com|youtube\.com|youtu\.be|mastodon\.[a-z]+|substack\.com|patreon\.com|gumroad\.com|ko-fi\.com|buymeacoffee\.com|twitch\.tv|pinterest\.com|t\.me|discord\.(gg|com)|medium\.com)$/i;
+  const FOLLOW_ROW_MIN_LINKS = 3;
+  const FOLLOW_ROW_LEAD_MAX_WEIGHT = 40;
+  const FOLLOW_ROW_TAIL_SHARE = 0.6;
+  function hideTailSocialFollowRows(articleEl, hidden) {
+    const total = norm(articleEl.textContent || '').length;
+    if (!total) return;
+    for (const blk of articleEl.querySelectorAll('p, div')) {
+      if (blk.dataset && blk.dataset.jreadHidden === '1') continue;
+      if (blk.closest('[data-jread-hidden="1"]')) continue;
+      if (blk.querySelector('p, div, ul, ol, table, img, picture, video, iframe, h1, h2, h3, h4, h5, h6')) continue;
+      const links = Array.from(blk.querySelectorAll('a[href]'));
+      if (links.length < FOLLOW_ROW_MIN_LINKS) continue;
+      let ok = true;
+      let rest = norm(blk.textContent || '');
+      for (const a of links) {
+        const t = norm(a.textContent);
+        if (!t || t.length > 20) { ok = false; break; }
+        let u;
+        try { u = new URL(a.getAttribute('href') || '', location.href); } catch (_) { ok = false; break; }
+        if (!FOLLOW_ROW_HOST_RE.test(u.hostname)) { ok = false; break; }
+        rest = rest.replace(t, '');
+      }
+      if (!ok) continue;
+      if (NS.cjkWeightedLen(rest.replace(/[\s|｜·•,，、/／()（）:：\-–—.。!！]/g, '')) > FOLLOW_ROW_LEAD_MAX_WEIGHT) continue;
+      // 位置：blk 之前的文字（DOM 序）占全文的比例
+      let before = 0;
+      const walker = document.createTreeWalker(articleEl, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (blk.contains(n)) break;
+        before += norm(n.nodeValue || '').length;
+      }
+      if (before / total < FOLLOW_ROW_TAIL_SHARE) continue;
+      if (isInPreserved(blk)) continue;
+      hide(blk, hidden);
+    }
+  }
+
   // ---- 主文內：只有一條頁內跳轉連結的區塊（v2.5.51）---------------------------
   // lawfare 窄版首圖下「Meet The Authors」：側欄裡一個 div 只包一條 `<a href="#postContributors">`，
   // 跳到同頁的作者區。寬版整條側欄被 inset 卡片規則（幾何：窄於主文一半）清掉；窄版站方把
@@ -16577,6 +16646,7 @@
       safeRun(hideInsideArticleAuthorBioCards, articleEl, hidden);
       safeRun(hideTailAuthorBioBlocks, articleEl, hidden);
       safeRun(hideSocialHandleLinks, articleEl, hidden);
+      safeRun(hideTailSocialFollowRows, articleEl, hidden); // v3.7.7
       safeRun(hideLoneInPageJumpLinks, articleEl, hidden);
       safeRun(hideLabeledPromoLinkParagraphs, articleEl, hidden);
       // v1.7.25：byline 頭像規則排在 author-bio 卡之後——bio 卡判準含頭像訊號，
