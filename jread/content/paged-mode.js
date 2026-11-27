@@ -1436,6 +1436,23 @@
     const sq = (s) => (s || '').replace(/\s+/g, '');
     return sq(common.textContent) === sq(cap.textContent) ? common : null;
   }
+  // v3.7.9：把貼合單位的寬度暫時釘在現在的寬度（content-box 換算），回傳有沒有寫入。
+  // 只給 fitMediaToPages 量「圖以外的高度」那一刻用，呼叫端量完立刻撤（見呼叫處註解）
+  function pinUnitWidth(unit) {
+    const r = unit.getClientRects()[0];
+    if (!r || !(r.width > 0)) return false;
+    let w = r.width;
+    try {
+      const cs = getComputedStyle(unit);
+      if (cs.boxSizing !== 'border-box') {
+        w -= (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) +
+          (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+      }
+    } catch (e) { return false; }
+    if (!(w > 0)) return false;
+    setFitStyle(unit, 'width', w.toFixed(2) + 'px');
+    return true;
+  }
   function fitMediaToPages() {
     if (!art) return;
     mediaFitJournal.restoreAll(); // 每輪重算：上一輪寫的先全撤
@@ -1458,30 +1475,48 @@
         if (divUnit) setFitStyle(divUnit, 'break-inside', 'avoid');
         // 自然起點：圖暫時壓到 1px，unit 必然放得進當頁 → 首個 fragment 頂＝真起點；
         // unit 高 − 1 ＝ 圖說等非圖部分
+        // v3.7.9：圖壓成 1px 高時寬度也等比縮到 1–2px；寬度跟著圖走的 figure（維基縮圖
+        // `figure { display: table }`）跟著縮成 31–100px 寬，圖說被擠成細長一條，「圖以外的高度」
+        // 量成 238–700px（實際約 60px）→ decideMediaFit 判定放不下、整張推到下一頁，前一頁留一大片
+        // 空白（語料庫 en / ar / fa / he 維基翻頁實測）。量測那一刻把單位的寬度釘在原本的寬度，
+        // 量完撤掉；後面的縮圖試算（refineShrink）照舊不釘寬——縮圖後 figure 本來就會跟著變窄
+        const unitPin = unit !== img ? pinUnitWidth(unit) : false;
         setFitStyle(img, 'max-height', '1px');
         const rects = unit.getClientRects();
         const top0 = rects.length ? rects[0].top : 0;
         const left0 = rects.length ? rects[0].left : 0; // 自然起點所在欄（v2.2.6 refineShrink 比對）
         const extra = Math.max(0, fragHeight(unit) - 1);
+        if (unitPin) {
+          undoLastFitStyle(); // 1px
+          undoLastFitStyle(); // 釘寬
+          setFitStyle(img, 'max-height', '1px');
+        }
         let d = decideMediaFit(h0, pageBottom - top0 - extra - 2);
         // 1px 暫值只影響量測——decide 後依分支寫最終值（restore 時反序還原）
         const natW = img.complete ? img.naturalWidth : 0;
         const natH = img.complete ? img.naturalHeight : 0;
+        // 比「落在第幾欄」而非 left：置中、寬度跟著圖走的 figure（wiki thumb）縮圖時 left
+        // 會跟著移動，比 left 會全數誤判成被推走、一路縮到下限改走 break（Glass 條目實測）。
+        // 量不到 stride（jsdom）退回比起點 top——被推到下一欄的 unit 起點會回到頁頂
+        const st = stride();
+        const colOf = (x) => Math.floor((x - artContentLeft + 1) / st);
+        const sameSpot = (r0) => (st > 0 ? colOf(r0.left) === colOf(left0) : Math.abs(r0.top - top0) < 1);
+        // 每次試寫都疊在 1px 暫值上、試完撤掉，最後只留定案值
+        const stays = (h) => {
+          setFitStyle(img, 'max-height', h + 'px');
+          const r = unit.getClientRects();
+          const ok = r.length > 0 && sameSpot(r[0]);
+          undoLastFitStyle();
+          return ok;
+        };
         if (d.action === 'shrink') {
-          // 比「落在第幾欄」而非 left：置中、寬度跟著圖走的 figure（wiki thumb）縮圖時 left
-          // 會跟著移動，比 left 會全數誤判成被推走、一路縮到下限改走 break（Glass 條目實測）。
-          // 量不到 stride（jsdom）退回比起點 top——被推到下一欄的 unit 起點會回到頁頂
-          const st = stride();
-          const colOf = (x) => Math.floor((x - artContentLeft + 1) / st);
-          const sameSpot = (r0) => (st > 0 ? colOf(r0.left) === colOf(left0) : Math.abs(r0.top - top0) < 1);
-          // 每次試寫都疊在 1px 暫值上、試完撤掉，最後只留定案值
-          d = refineShrink(d.maxH, h0, (h) => {
-            setFitStyle(img, 'max-height', h + 'px');
-            const r = unit.getClientRects();
-            const ok = r.length > 0 && sameSpot(r[0]);
-            undoLastFitStyle();
-            return ok;
-          });
+          d = refineShrink(d.maxH, h0, stays);
+        } else if (d.action === 'keep' && unit !== img && !stays(h0)) {
+          // v3.7.9：算出來放得下、實際被推走（figure 的 margin 等沒算進剩餘高度，差幾 px）→
+          // 照縮圖分支逐步縮到留得住。之前 figure 寬跟著圖走時「圖以外的高度」被量大（見
+          // unitPin），這類邊界情況剛好被誤判成縮圖；量對之後要靠這道實測接住
+          //（arstechnica 翻頁：圖整張推到下一頁、前一頁只剩兩行字）
+          d = refineShrink(h0 - FIT_REFINE_STEP_PX, h0, stays);
         }
         let finalH = h0;
         if (d.action === 'shrink') {
@@ -1722,6 +1757,7 @@
           chain.push(p);
         }
         const mark = headingKeepJournal.size();
+        const fitMark = mediaFitJournal.size();
         headingKeepJournal.set(top, 'break-before', 'column');
         for (const el of chain) headingKeepJournal.set(el, 'margin-top', '0');
         // 後面接的若被 fitMediaToPages 強制換頁，撤掉那一筆（小標已經帶著它換頁）：
@@ -1731,7 +1767,10 @@
         if (after && hl && colOf(after.rect) !== colOf(hl)) {
           for (let x = after.node.nodeType === 1 ? after.node : after.node.parentElement; x && x !== art; x = x.parentElement) {
             if (x.contains(h)) break;
-            if (x.style && x.style.getPropertyValue('break-before') === 'column') headingKeepJournal.set(x, 'break-before', 'auto');
+            // v3.7.9：記在貼合的 journal（撤的是貼合寫的值）——refitMediaAfterHeadingKeep 重跑貼合時
+            // 先撤自己上一輪的寫入，這筆跟著一起撤；記在小標 journal 的話，下一輪還原會把過時的
+            // column 寫回去
+            if (x.style && x.style.getPropertyValue('break-before') === 'column') setFitStyle(x, 'break-before', 'auto');
           }
           after = firstContentRectAfter(h);
           hl = lastRect(h);
@@ -1739,6 +1778,7 @@
         // 換頁後內容還是不在同一頁（後面接的東西比剩下的一頁還高）→ 撤回，換了只會多一頁空白
         if (after && hl && colOf(after.rect) !== colOf(hl)) {
           while (headingKeepJournal.size() > mark) headingKeepJournal.undoLast();
+          while (mediaFitJournal.size() > fitMark) mediaFitJournal.undoLast();
         }
       }
     } catch (e) { /* 量測失敗維持自然分頁 */ }
@@ -1754,7 +1794,14 @@
   //   remeasurePages          頁數要量貼合後的版面
   // 每個 pass 都必須冪等：同篇重掛（pageshow、分頁切回、設定重套）會重跑整套，
   // structJournal 不重複記原值、fitMediaToPages 每輪先全撤再算。
-  const LAYOUT_PASSES = [releaseHeadingKeep, neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, keepHeadingsWithNext, remeasurePages];
+  // v3.7.9：小標換頁會把後面的內容整體往後挪（arstechnica 翻頁：第 3 頁 h2 換頁後，第 6 頁那張
+  // 貼合時剛好放得下的圖被擠到下一頁、第 6 頁只剩兩行字）——媒體貼合是在換頁前量的。小標換頁
+  // 有寫入就依新版面重跑一次貼合（fitMediaToPages 每輪先撤自己上一輪的寫入再算；小標寫在
+  // 圖上的 break-before: auto 跟著被撤，圖依新位置重新判定）。沒寫入就不重跑
+  function refitMediaAfterHeadingKeep() {
+    if (headingKeepJournal.size() > 0) fitMediaToPages();
+  }
+  const LAYOUT_PASSES = [releaseHeadingKeep, neutralizeStructure, padInitialLetterBlocks, fitMediaToPages, keepHeadingsWithNext, refitMediaAfterHeadingKeep, remeasurePages];
   function relayout() {
     if (!art) return;
     for (const pass of LAYOUT_PASSES) pass();
