@@ -439,6 +439,11 @@
   // 留下站方釘的固定寬，變成半欄寬的一段——標記後寬度改回撐滿版心（見
   // markDefloatedTextBoxes）
   const DEFLOAT_TEXT_ATTR = 'data-jread-defloat-text';
+  // v3.7.7：清單縮排不夠放外側項目符號（見 markListMarkerIndent）
+  const LIST_INDENT_ATTR = 'data-jread-list-indent';
+  // v3.7.7：站方 ::before / ::after 寫的操作提示字（「Tap or hover # to scale」），值 before / after /
+  // both（見 markUiHintPseudo）
+  const UI_HINT_PSEUDO_ATTR = 'data-jread-ui-hint';
   const DEFLOAT_TEXT_MIN_CHARS = 80;
   const DEFLOAT_TEXT_SEL = 'aside, div, section, blockquote';
   const DEFLOAT_TEXT_BLOCKER_SEL = 'img, picture, video, audio, iframe, canvas, object, embed, table, pre, figure';
@@ -2829,6 +2834,20 @@ html [${ARTICLE_ATTR}="1"] *:not([${PLAYER_ATTR}="1"]) {
   width: auto !important;
   max-width: 100% !important;
   min-width: 0 !important;
+}
+/* v3.7.7：外側項目符號的清單補縮排（標記見 markListMarkerIndent）。requests 430 寬：站方窄版
+   把 ul 的 margin-left 從 30px 歸 0、padding 也是 0，圓點掛到文字欄左邊外面。邏輯屬性，
+   右到左頁落在右側 */
+[${ARTICLE_ATTR}="1"] [${LIST_INDENT_ATTR}="1"] {
+  padding-inline-start: 1.5em !important;
+}
+/* v3.7.7：站方 pseudo 寫的操作提示字拿掉（標記見 markUiHintPseudo）。閱讀模式沒有那個互動
+  （thewoksoflife 份量調整鈕旁「tap or hover # to scale」） */
+[${ARTICLE_ATTR}="1"] [${UI_HINT_PSEUDO_ATTR}="before"]::before,
+[${ARTICLE_ATTR}="1"] [${UI_HINT_PSEUDO_ATTR}="both"]::before,
+[${ARTICLE_ATTR}="1"] [${UI_HINT_PSEUDO_ATTR}="after"]::after,
+[${ARTICLE_ATTR}="1"] [${UI_HINT_PSEUDO_ATTR}="both"]::after {
+  content: none !important;
 }
 /* v3.7.6：通用 float: none 的兩種副作用（標記見 markSiteFloatSideEffects）。
    (1) 站方 float 的短字標記：plos 參考文獻編號 span.order { float: left; width: 1.875rem;
@@ -5706,6 +5725,113 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       marked.push(el);
     }
   }
+  // v3.7.8：前一個或後一個元素兄弟看得到、而且是 inline 層級（清水平內距 pass 的 inline 豁免用）
+  function hasInlineSibling(win, el) {
+    for (const sib of [el.previousElementSibling, el.nextElementSibling]) {
+      if (!sib) continue;
+      let d = '';
+      try { d = win.getComputedStyle(sib).display || ''; } catch (_) { continue; }
+      if (/^inline/.test(d) && (sib.textContent || '').trim()) return true;
+    }
+    return false;
+  }
+  // v3.7.7：元素的 ::before / ::after 是不是畫在左 / 右內距裡的絕對定位圖示（見上方清水平
+  // 內距 pass 的註解）。content 不是 none / normal / 空字串、position absolute，水平位置
+  // （left 或 right，px）落在那側內距之內
+  function pseudoIconLane(win, el, pl, pr) {
+    const out = { left: false, right: false };
+    for (const ps of ['::before', '::after']) {
+      let c;
+      try { c = win.getComputedStyle(el, ps); } catch (_) { continue; }
+      if (!c || c.position !== 'absolute') continue;
+      const ct = c.content || '';
+      if (!ct || ct === 'none' || ct === 'normal' || ct === '""' || ct === "''") continue;
+      const l = parseFloat(c.left), r = parseFloat(c.right);
+      if (pl > 0.5 && isFinite(l) && l >= 0 && l < pl) out.left = true;
+      if (pr > 0.5 && isFinite(r) && r >= 0 && r < pr && !isFinite(l)) out.right = true;
+    }
+    return out;
+  }
+  // v3.7.7：外側項目符號放不下的清單（requests 430 寬，語料庫 KNOWN-ISSUES 第二節）。
+  // 全部成立才標：清單看得到、list-style-position 是 outside、第一個看得到的 li 是 list-item 且
+  // list-style-type 不是 none；清單＋li 在 inline-start 側的 margin＋padding 加總不到 li 字級的
+  // 0.9 倍（放不下一個圓點，圓點掛到文字欄外面）。普查 182 頁 × 1280 / 430 寬只有 requests
+  // 430 寬（原文、翻譯後）命中
+  const LIST_INDENT_MIN_EM = 0.9;
+  function markListMarkerIndent(articleEl, marked) {
+    const _win = articleEl.ownerDocument && articleEl.ownerDocument.defaultView;
+    if (!_win || !_win.getComputedStyle) return;
+    const px = (v) => parseFloat(v) || 0;
+    for (const u of articleEl.querySelectorAll('ul, ol')) {
+      if (u.closest('[data-jread-hidden="1"]')) continue;
+      let cs, li = null, lcs;
+      try {
+        if (!u.getClientRects().length) continue;
+        cs = _win.getComputedStyle(u);
+        if (cs.listStylePosition !== 'outside') continue;
+        for (const c of u.children) { if (c.tagName === 'LI' && c.getClientRects().length) { li = c; break; } }
+        if (!li) continue;
+        lcs = _win.getComputedStyle(li);
+      } catch (e) {
+        if (e && e.name === 'SyntaxError') continue;
+        throw e;
+      }
+      if (lcs.display !== 'list-item' || lcs.listStyleType === 'none') continue;
+      const rtl = cs.direction === 'rtl';
+      const side = rtl ? 'Right' : 'Left';
+      const ind = px(cs['padding' + side]) + px(cs['margin' + side]) + px(lcs['padding' + side]) + px(lcs['margin' + side]);
+      if (ind >= px(lcs.fontSize) * LIST_INDENT_MIN_EM) continue;
+      u.setAttribute(LIST_INDENT_ATTR, '1');
+      marked.push(u);
+    }
+  }
+  // v3.7.7：站方 pseudo 寫的操作提示字（thewoksoflife 食譜卡份量鈕旁 `::after { content: "Tap or
+  // hover # to scale" }`，語料庫 KNOWN-ISSUES 第二節）。閱讀模式沒有那個互動，提示字是雜訊；
+  // pseudo 不在 DOM 裡，cleaner 藏不到。
+  // 做法：走一遍站方樣式表（跨網域讀不到的跳過），規則的 selector 帶 ::before / ::after、
+  // content 是 UI_HINT_RE 字樣的字串 → 拿掉 pseudo 部分的 selector 在主文裡找元素標記，CSS
+  // content: none。字樣：tap / click / hover / swipe（整字）或「點擊／點按／輕觸／滑動」，
+  // 字串 ≤ 60 字。pseudo 字串不會被翻譯，原文、翻譯後一致
+  const UI_HINT_RE = /\b(?:tap|click|hover|swipe)\b|點擊|點按|輕觸|滑動/i;
+  const UI_HINT_MAX_LEN = 60;
+  function markUiHintPseudo(articleEl, marked) {
+    const doc = articleEl.ownerDocument;
+    if (!doc || !doc.styleSheets) return;
+    const hits = []; // [baseSelector, 'before' | 'after']
+    const walk = (rules) => {
+      for (const r of rules) {
+        const sel = r.selectorText || '';
+        if (sel && /:(?::)?(?:before|after)\b/.test(sel) && r.style) {
+          const c = r.style.getPropertyValue('content') || '';
+          const m = /^\s*(["'])([\s\S]*)\1\s*$/.exec(c);
+          if (m && m[2].length <= UI_HINT_MAX_LEN && UI_HINT_RE.test(m[2])) {
+            for (const part of sel.split(',')) {
+              const pm = /:(?::)?(before|after)\b/.exec(part);
+              if (!pm) continue;
+              const base = part.replace(/:(?::)?(?:before|after)\b/g, '').trim();
+              if (base && base.indexOf('data-jread') < 0) hits.push([base, pm[1]]);
+            }
+          }
+        }
+        if (r.cssRules && r.cssRules.length) walk(r.cssRules);
+      }
+    };
+    for (const sh of doc.styleSheets) {
+      let rules = null;
+      try { rules = sh.cssRules; } catch (_) { rules = null; }
+      if (rules) { try { walk(rules); } catch (_) { /* 單張表失敗不擋其他 */ } }
+    }
+    for (const [base, which] of hits) {
+      let els;
+      try { els = articleEl.querySelectorAll(base); } catch (_) { continue; }
+      for (const el of els) {
+        const prev = el.getAttribute(UI_HINT_PSEUDO_ATTR);
+        const v = prev && prev !== which ? 'both' : which;
+        el.setAttribute(UI_HINT_PSEUDO_ATTR, v);
+        if (!prev) marked.push(el);
+      }
+    }
+  }
   // v3.7.6：通用 `float: none` 的兩種副作用（規則與動機見 buildCss 該規則註解）。站方
   // cascade 的 float 要停用注入樣式才量得到（之後已被 float: none 蓋掉），在 ARTICLE_ATTR
   // 設定後量（同 markDefloatedTextBoxes）。
@@ -6655,7 +6781,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       // 把所有 <p> 統一成使用者字級，標題和小標被壓成內文。
       // 判準（與站點、class 無關），量的是「注入 JRead 樣式之前」的站方字級：
       //   - p / div、短（<= PSEUDO_HEADING_MAX_LEN 字）、裡面沒有其他區塊、媒體、標題
-      //   - 字級 >= 內文主流字級 × PSEUDO_HEADING_MIN_RATIO，且粗體（>= 600）
+      //   - 字級 >= 內文主流字級 × PSEUDO_HEADING_MIN_RATIO，且字重 >= PSEUDO_HEADING_MIN_WEIGHT（v3.7.7 前 600）
       //     ——摘要（dek）與引言（pull quote）也比內文大，但都不是粗體（普查：arstechnica /
       //     theverge / lawfare / kubernetes 的摘要 300–400、aeon 的引言 400）
       //   - 不在清單、表格、引言、圖說、連結、按鈕裡；不以句號結尾
@@ -6664,6 +6790,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       let pseudoBodyFs = 0;
       const PSEUDO_HEADING_MAX_LEN = 80;
       const PSEUDO_HEADING_MIN_RATIO = 1.5;
+      const PSEUDO_HEADING_MIN_WEIGHT = 500;
       const passMarkPseudoHeadings = () => {
         const win = articleEl.ownerDocument?.defaultView;
         if (!win || !win.getComputedStyle) return;
@@ -6692,7 +6819,9 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           const cs = win.getComputedStyle(el);
           const fs = parseFloat(cs.fontSize) || 0;
           if (fs < best * PSEUDO_HEADING_MIN_RATIO) continue;
-          if ((parseInt(cs.fontWeight, 10) || 400) < 600) continue;
+          // v3.7.7：門檻 600 → 500。pudding 430 寬站方窄版把小標字重降成 500（桌機 700），
+          // 小標被壓成內文大小。摘要、引言的字重普查是 300–400，仍排除
+          if ((parseInt(cs.fontWeight, 10) || 400) < PSEUDO_HEADING_MIN_WEIGHT) continue;
           pseudoHeadings.push({ el, fs });
         }
       };
@@ -7338,6 +7467,9 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         markDefloatedTextBoxes(articleEl, defloatTextMarked);
         // v3.7.6：通用 float: none 的副作用（短字標記保留 float、靠 float 成區塊的行內元素改 block）
         markSiteFloatSideEffects(articleEl, defloatTextMarked);
+        // v3.7.7：清單縮排、pseudo 操作提示字（同一份還原清單）
+        markListMarkerIndent(articleEl, defloatTextMarked);
+        markUiHintPseudo(articleEl, defloatTextMarked);
         // v2.5.23：圖說上方的媒體與圖說標記（見 markCaptionMedia；要在 PLAYER / INLINE_IMG
         // 標記之後——兩者都在更早的 pass）
         markCaptionMedia(articleEl, capMediaMarked, contentImgLoadCleanup, (cap) => {
@@ -9010,11 +9142,28 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
               // TABLE / TR / TD——格子的水平內距是欄間距，清掉兩格文字就黏在一起
               if (inAriaTableRow(el, articleEl)) continue;
               const cs = win.getComputedStyle(el);
+              // v3.7.7：inline 層級（inline-block / inline-flex…）的水平 margin / padding 是相鄰元素的
+              // 間隔、不是版心內縮——與上面 v1.7.8 inline 段落同理。thewoksoflife 食譜時間列三格
+              // `div.wprm-recipe-block-container-inline { display: inline-block; margin-right: 1.2em }`
+              // 之間沒有空白，margin 清掉就黏成「35 minsCook: 15 minsTotal: 50 mins」
+              // 只認「跟旁邊並排」的：不是標題（站方 inline 標題之後會被 JRead 改成 block，wikihow
+              // 430 寬 inline-block h2 的左右 17px 是框的內距）、而且有看得到的 inline 層級兄弟
+              if (/^inline/.test(cs.display || '') && !/^H[1-6]$/.test(el.tagName) && hasInlineSibling(win, el)) continue;
               const pl = parseFloat(cs.paddingLeft) || 0;
               const pr = parseFloat(cs.paddingRight) || 0;
               const ml = parseFloat(cs.marginLeft) || 0;
               const mr = parseFloat(cs.marginRight) || 0;
               if (pl <= 0.5 && pr <= 0.5 && Math.abs(ml) <= 0.5 && Math.abs(mr) <= 0.5) continue;
+              // v3.7.7：絕對定位的 pseudo 圖示畫在內距裡（vuejs 提示框 `.custom-block::before
+              // { content: "ⓘ"; position: absolute; left: 17px }`）——那側內距是圖示的跑道，清掉
+              // 文字就跟圖示疊在一起。那側內距保留（只看有內距要清的元素，才讀 pseudo）
+              if (pl > 0.5 || pr > 0.5) {
+                const lane = pseudoIconLane(win, el, pl, pr);
+                if (lane.left || lane.right) {
+                  zeroHorizPending.push({ el, pl: lane.left ? 0 : pl, pr: lane.right ? 0 : pr, ml, mr });
+                  continue;
+                }
+              }
               zeroHorizPending.push({ el, pl, pr, ml, mr });
             }
             for (const { el, pl, pr, ml, mr } of zeroHorizPending) {
@@ -11469,6 +11618,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           el.removeAttribute(DEFLOAT_TEXT_ATTR);
           el.removeAttribute(KEEP_FLOAT_ATTR);
           el.removeAttribute(FLOAT_BLOCK_ATTR);
+          el.removeAttribute(LIST_INDENT_ATTR); // v3.7.7
+          el.removeAttribute(UI_HINT_PSEUDO_ATTR); // v3.7.7
         }
       }
       if (Array.isArray(snapshot.capMediaMarked)) {
