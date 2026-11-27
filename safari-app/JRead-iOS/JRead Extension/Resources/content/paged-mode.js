@@ -1591,7 +1591,8 @@
   //   - 強制分頁會保留頁頂 margin（自然分頁會截掉），換頁的那一串 margin-top 歸 0
   //     （同 fitMediaToPages break 分支）
   // 這條驗「小標與後面第一個內容在同一頁」，不驗後面接的段落在頁底只剩一行（段落的
-  // orphans 歸引擎）、也不驗 div 排的標籤（wikihow 步驟編號）——標籤段落只認 <p>（isHeadingLike）
+  // orphans 歸引擎）。div 排的標籤只在後面接媒體時才算（v3.7.9 isLabelBeforeMediaCandidate）；
+  // 後面接字的 div 標籤（wikihow 步驟編號這型）不驗——v3.7.9 語料庫量不到這型孤兒
   const HEADING_KEEP_SEL = 'h1, h2, h3, h4, h5, h6, p';
   const HEADING_KEEP_SKIP_SEL = '[data-jread-hidden="1"], table, figure, li, [data-jread-player="1"]';
   // 「標籤段落」也算小標（qiita「寫法／結果」、論壇的段落標籤）：整段只有一個粗體元素、
@@ -1609,6 +1610,27 @@
     if (bolds.length !== 1) return false;
     return (bolds[0].textContent || '').replace(/\s+/g, '') === text;
   }
+  // v3.7.9：「圖片前的短標籤」——forum.gamer 的段落小標（「二；前段與hop分解比較」「彈匣通用性」、
+  // 比較圖上方的「vfc鋼」）是不加粗的 div／p，isHeadingLike 不認；後面的圖被 fitMediaToPages
+  // 推到下一頁，標籤單獨留在頁底。只在「後面第一個內容是媒體」時才算（一般短段落後面接字的
+  // 不動）：<p> 或只含行內元素的 <div>、字短（CJK 權重 ≤ HEADING_KEEP_LABEL_MAX）、沒有連結
+  // 與媒體、不以句末標點結尾（一句話說完的是內文，不是標籤）
+  const LABEL_BEFORE_MEDIA_INLINE_RE = /^(?:BR|SPAN|FONT|B|STRONG|EM|I|U|SMALL|MARK|SUB|SUP)$/;
+  const LABEL_SENTENCE_END_RE = /[。！？!?…]$|[^.]\.$/;
+  function isLabelBeforeMediaCandidate(el) {
+    if (el.tagName !== 'P' && el.tagName !== 'DIV') return false;
+    if (el.querySelector('a, img, svg, video, iframe, picture, canvas')) return false;
+    if (el.tagName === 'DIV') {
+      for (const d of el.querySelectorAll('*')) if (!LABEL_BEFORE_MEDIA_INLINE_RE.test(d.tagName)) return false;
+    }
+    const text = (el.textContent || '').replace(/\s+/g, '');
+    if (!text) return false;
+    const ns = global.__JRead;
+    const w = ns && ns.cjkWeightedLen ? ns.cjkWeightedLen(text) : text.length;
+    if (w > HEADING_KEEP_LABEL_MAX) return false;
+    return !LABEL_SENTENCE_END_RE.test(text);
+  }
+  const isMediaNode = (n) => !!n && n.nodeType === 1 && /^(IMG|VIDEO|IFRAME|SVG|CANVAS)$/i.test(n.tagName);
   function releaseHeadingKeep() { headingKeepJournal.restoreAll(); }
   // 後面第一個看得見的內容（非空白字或媒體）的第一個 rect
   function firstContentRectAfter(h) {
@@ -1656,11 +1678,12 @@
       art.scrollLeft = 0;
       const colOf = (r) => Math.floor((r.left - box.contentLeft + 1) / st);
       const cands = [];
-      for (const el of art.querySelectorAll(HEADING_KEEP_SEL)) {
+      const mediaOnly = new Set(); // v3.7.9：只在後面接媒體時才算的短標籤
+      for (const el of art.querySelectorAll(HEADING_KEEP_SEL + ', div')) {
         if (el.closest(HEADING_KEEP_SKIP_SEL)) continue;
         if (!/\S/.test(el.textContent || '')) continue;
-        if (!isHeadingLike(el)) continue;
-        cands.push(el);
+        if (el.tagName !== 'DIV' && isHeadingLike(el)) { cands.push(el); continue; }
+        if (isLabelBeforeMediaCandidate(el)) { cands.push(el); mediaOnly.add(el); }
       }
       const lastRect = (el) => { const r = el.getClientRects(); return r.length ? r[r.length - 1] : null; };
       for (let i = 0; i < cands.length; i++) {
@@ -1670,10 +1693,14 @@
         const nx = firstContentRectAfter(h);
         if (!nx) continue;
         if (colOf(nx.rect) === colOf(last)) continue;
+        // 圖要在標籤的父層裡（排在標籤後面的兄弟之中）：標籤是容器最後一個東西、圖在容器外的
+        // 不算——fa 維基引文框 `div.quotebox` 尾端的出處行「—آلبرت اینشتین」後面接的是框外的圖
+        if (mediaOnly.has(h) && !(isMediaNode(nx.node) && h.parentElement && h.parentElement.contains(nx.node))) continue;
         // 連續小標（h2 緊接 h3、中間沒有內容）：前一個小標後面第一個內容就在這個小標裡
         // ＝同一串，整串一起換頁——只換最後一個，前面那個會變成新的孤兒
         let lead = h;
         for (let j = i - 1; j >= 0; j--) {
+          if (mediaOnly.has(cands[j])) break; // 圖片前標籤的候選不是小標，不串進來
           const prev = firstContentRectAfter(cands[j]);
           if (!prev || !lead.contains(prev.node)) break;
           lead = cands[j];

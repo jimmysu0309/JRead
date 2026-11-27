@@ -1708,7 +1708,9 @@ html [${ARTICLE_ATTR}="1"] main {
   aspect-ratio: auto !important;
 }
 /* v3.7.4：媒體容器上的圖示字型 pseudo（放大鏡 / 播放鍵）隱藏——外殼被改成 static 後
-   圖示失去定位基準、掉到圖外（標記端見 passAspectPseudoReset 尾段） */
+   圖示失去定位基準、掉到圖外（標記端見 passAspectPseudoReset 尾段）
+   v3.7.9：同一個標記也收「遮罩／背景圖畫的行內 pseudo 圖示」——pseudo 底色清除後看不見、
+   位置還在（pmc 外部連結圖示；標記端見 markMaskedIconPseudos） */
 [${ARTICLE_ATTR}="1"] [${ICON_PSEUDO_ATTR}~="before"]::before,
 [${ARTICLE_ATTR}="1"] [${ICON_PSEUDO_ATTR}~="after"]::after {
   display: none !important;
@@ -5019,6 +5021,13 @@ html.${HTML_CLASS}.jread-orion body {
   // Jimmy 2026-11-20 指定收窄版：只處理「figure 裡沒有媒體的脫離型圖說」；普查範圍見
   // CHANGELOG v2.5.34。不驗：圖說與照片之間的實際距離（harness 截圖）
   const DETACHED_CAP_MEDIA_SEL = 'img, picture, video, iframe, canvas, svg, object, embed';
+  // v3.7.9：theguardian 1280 寬——站方把首圖圖說另放在作者列側欄（aside 裡的 figcaption），
+  // 標題下那份被站方藏起來；側欄那份往前找照片會先經過導言 <p>（照片 → 標題 → 導言 → 側欄
+  // 圖說），舊條件「中間不能有內文段落」擋掉。Jimmy 2026-11-27 裁定只做 guardian 1280 寬：
+  // 標題與圖說之間容許**一段**短 <p>（導言，CJK 權重 ≤ 400），而且最靠近圖說的標題要是 h1（文章
+  // 標題；「圖 → h2 → 一段內文 → 圖說」是內文小節，不搬）；標題與照片之間仍不可有內文；
+  // 走這條的圖說自己不能在有媒體元素（含未載入的 lazy 圖）的 figure 裡——那是下一張圖的圖說
+  const DETACHED_CAP_DEK_MAX = 400;
   function findDetachedCaptions(articleEl) {
     const out = [];
     const caps = articleEl.querySelectorAll ? Array.from(articleEl.querySelectorAll('figcaption')) : [];
@@ -5033,17 +5042,27 @@ html.${HTML_CLASS}.jread-orion body {
       // 往前（文件順序）找最近的可見媒體；沿途記有沒有標題、內文段落
       const walker = articleEl.ownerDocument.createTreeWalker(articleEl, 1 /* SHOW_ELEMENT */);
       walker.currentNode = fc;
-      let media = null, sawHeading = false, sawProse = false, budget = 600;
+      // v3.7.9：標題與圖說之間容許一段短導言（見 DETACHED_CAP_DEK_MAX 註解）
+      const noOwnMedia = !ownFig || !ownFig.querySelector(DETACHED_CAP_MEDIA_SEL);
+      let media = null, sawHeading = false, sawProse = false, dekCount = 0, nearHeading = '', budget = 600;
       for (let n = walker.previousNode(); n && n !== articleEl && --budget > 0; n = walker.previousNode()) {
         if (n.contains(fc)) continue;
         if (n.matches(DETACHED_CAP_MEDIA_SEL)) {
           if (vis(n) && n.getBoundingClientRect().width > 100) { media = n; break; }
           continue;
         }
-        if (/^H[1-6]$/.test(n.tagName) && vis(n) && (n.textContent || '').trim()) sawHeading = true;
-        else if (/^(?:P|LI|BLOCKQUOTE)$/.test(n.tagName) && vis(n) && (n.textContent || '').trim()) { sawProse = true; break; }
+        if (/^H[1-6]$/.test(n.tagName) && vis(n) && (n.textContent || '').trim()) { if (!sawHeading) nearHeading = n.tagName; sawHeading = true; }
+        else if (/^(?:P|LI|BLOCKQUOTE)$/.test(n.tagName) && vis(n) && (n.textContent || '').trim()) {
+          // 還沒遇到標題（＝這段在標題與圖說之間）、圖說自己沒有媒體殼、只有一段、夠短 → 導言
+          const t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+          const w = NS && NS.cjkWeightedLen ? NS.cjkWeightedLen(t) : t.length;
+          if (!sawHeading && noOwnMedia && n.tagName === 'P' && dekCount === 0 && w <= DETACHED_CAP_DEK_MAX) { dekCount += 1; continue; }
+          sawProse = true; break;
+        }
       }
       if (!media || !sawHeading || sawProse) continue;
+      // 導言路徑只認文章標題（h1）：「圖 → h2 小節 → 一段內文 → 圖說」是內文，不是頁首
+      if (dekCount && nearHeading !== 'H1') continue;
       const fig = media.closest('figure');
       if (!fig || !articleEl.contains(fig) || fig.contains(fc)) continue;
       out.push({ fc, fig });
@@ -5084,6 +5103,51 @@ html.${HTML_CLASS}.jread-orion body {
       if (!side) continue;
       a.setAttribute(ICON_PAD_ATTR, side);
       marked.push(a);
+    }
+    return marked;
+  }
+
+  // ---- 遮罩／背景圖畫的行內 pseudo 圖示：底色清掉後整個不佔位（v3.7.9）--------
+  // 根因（pmc 參考文獻「[DOI ]」，2026-11-27 語料庫量測）：站方外部連結圖示畫在
+  // `a::after { content: ""; mask-image: url(launch.svg); background-color: currentColor;
+  // width: 13.8px; margin-left: 2px }`——形狀靠 mask、顏色靠底色。閱讀模式的 pseudo 底色
+  // 清除（v0.7.169 side-bleed 規則：[A] *::after { background-color: transparent;
+  // background-image: none }）把底色清成透明，圖示看不見、位置留著，連結字與右括號之間
+  // 多一段空白。與 v2.5.34 markIconPadLinks 同型、載體不同（那邊是連結自己的背景圖＋padding）。
+  // Jimmy 2026-11-27 裁定：圖示不顯示、位置也不留。
+  // 訊號（結構、不看 class）：行內元素的 ::before / ::after——content 是空字串（沒有文字）、
+  // 在文流裡（static / relative）、沒有框線（框線畫的形狀清底色後還看得到）、畫法是
+  // mask-image 或 background-image 的 url 圖（兩者在 pseudo 底色／背景圖被清掉後都看不見）。
+  // 清單項目的 ::before 與播放器 pseudo 不在清除範圍（同那條 CSS 的排除），不標。
+  // 要在 ARTICLE_ATTR 設定前量（之後背景圖已被清掉）；標記沿用 ICON_PSEUDO_ATTR（CSS display:none）。
+  // 不驗：只靠底色、沒有 mask 也沒有背景圖的 pseudo（作者列的圓點分隔符這類，拿掉會讓
+  // 項目間距變樣，刻意不收）
+  function markMaskedIconPseudos(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const marked = [];
+    for (const el of articleEl.querySelectorAll('*')) {
+      let cs = null;
+      try { cs = win.getComputedStyle(el); } catch (_) { cs = null; }
+      if (!cs || !String(cs.display || '').startsWith('inline')) continue;
+      if (el.closest && el.closest(`[${PLAYER_ATTR}="1"]`)) continue;
+      const which = [];
+      for (const pseudo of ['before', 'after']) {
+        if (pseudo === 'before' && el.tagName === 'LI') continue;
+        let ps = null;
+        try { ps = win.getComputedStyle(el, '::' + pseudo); } catch (_) { ps = null; }
+        if (!ps || ps.content !== '""') continue;
+        if (ps.display === 'none') continue;
+        if (ps.position !== 'static' && ps.position !== 'relative') continue;
+        if ((parseFloat(ps.borderTopWidth) || 0) + (parseFloat(ps.borderRightWidth) || 0) +
+            (parseFloat(ps.borderBottomWidth) || 0) + (parseFloat(ps.borderLeftWidth) || 0) > 0) continue;
+        const mask = String(ps.maskImage || ps.webkitMaskImage || '');
+        if (!/url\(/.test(mask) && !/url\(/.test(String(ps.backgroundImage || ''))) continue;
+        which.push(pseudo);
+      }
+      if (!which.length) continue;
+      el.setAttribute(ICON_PSEUDO_ATTR, which.join(' '));
+      marked.push(el);
     }
     return marked;
   }
@@ -7382,6 +7446,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       const passMarkIconPadLinks = () => {
         // v2.5.34：量站方的背景圖示與 padding，必須在 ARTICLE_ATTR 設定前（之後背景被清掉）
         iconPadMarked = markIconPadLinks(articleEl);
+        // v3.7.9：遮罩／背景圖畫的行內 pseudo 圖示（同樣要在背景被清掉前量）
+        iconPadMarked = iconPadMarked.concat(markMaskedIconPseudos(articleEl));
       };
 
       const passSetArticleAttr = () => {
@@ -11674,6 +11740,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
       if (Array.isArray(snapshot.iconPadMarked)) {
         for (const el of snapshot.iconPadMarked) {
           if (el && el.removeAttribute) el.removeAttribute(ICON_PAD_ATTR);
+          if (el && el.removeAttribute) el.removeAttribute(ICON_PSEUDO_ATTR); // v3.7.9
         }
       }
       // v2.5.30：移除段首首字行內載體標記
