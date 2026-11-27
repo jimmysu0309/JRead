@@ -940,6 +940,26 @@
     }
   }
 
+  // v3.7.7：flex / grid 容器的項目（display: contents 的外殼攤開算到下一層）有沒有非 0 的 order
+  function hasOrderedFlexItems(el) {
+    const items = [];
+    const collect = (p, depth) => {
+      for (const c of p.children) {
+        let d = '';
+        try { d = getComputedStyle(c).display; } catch (e) { continue; }
+        if (d === 'contents' && depth < 3) collect(c, depth + 1);
+        else if (d !== 'none') items.push(c);
+      }
+    };
+    collect(el, 0);
+    for (const c of items) {
+      let o = 0;
+      try { o = parseInt(getComputedStyle(c).order, 10) || 0; } catch (e) { /* */ }
+      if (o !== 0) return true;
+    }
+    return false;
+  }
+
   // 規則表。neutralizeStructure 對主文每個後代依表序套用：
   //   id          規則名（順序測試與日誌用）
   //   since       加入的版本
@@ -1017,7 +1037,10 @@
       once: true,
       match(ctx) {
         // 先看 display 再數圖：countFitImgs 要量每張圖的碎片高，非 flex / grid 的盒子不必數
-        return isFlexGridDisplay(ctx.cs.display) &&
+        // v3.7.7：項目靠 CSS order 排序的不塌——塌成 block 就退回 DOM 順序（propublica 頁首
+        // `p-opener` 直向 flex：標題 order 2、導言 3、首圖 4，DOM 裡首圖在前；翻頁模式變成
+        //「首圖→標題→導言」，捲動模式是「標題→導言→首圖」）
+        return isFlexGridDisplay(ctx.cs.display) && !hasOrderedFlexItems(ctx.el) &&
           isSingleMediaFlexShell(ctx.cs.display, countFitImgs(ctx.el));
       },
       apply(ctx) {

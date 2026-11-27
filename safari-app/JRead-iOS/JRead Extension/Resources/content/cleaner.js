@@ -495,7 +495,7 @@
   // emotion hash、href 只在 utm 參數帶 poweredby，既有 `powered[-_]?by`
   // class/id token 規則掃不到）。行首錨定：內文「…is powered by X」這類
   // 敘述連結不會以 powered by 起頭。
-  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^在新(分頁|視窗|標籤頁?)中?(開啟|打開)$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|open\s+in\s+(a\s+)?new\s+(tab|window)|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud|watch\s+live)(\s*\(\d+\))?$|^(觀看|收看|看)?\s*(現場)?直播中?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^訂閱\s*[A-Za-z][\w .&'\u2019-]{0,30}$|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
+  const NOISE_LINK_TEXT_RE = /(查看原始文章|看原文|回到原文|閱讀原文|原文連結|原始文章|加入.{0,10}(LINE|官方帳號|好友|粉絲專頁)|加入.{0,4}會員|臉書粉絲(專頁|團)|fb粉絲(專頁|團)|(LINE|官方帳號).{0,10}(加入|訂閱)|訂閱.{0,4}(電子報|本報|我們|粉絲團)|(點|按)我.{0,8}(下載|訂閱|加入|看|了解|查看)|下載\s*(APP|app|PDF|pdf|文章|本文|圖片)|另存\s*(為\s*)?(PDF|pdf)|儲存\s*(為\s*)?(PDF|pdf)|^列印(本文|本頁|此頁|文章)?$|^(看更多|查看更多)$|^我要(登入|留言|分享)|^領取優惠$|^早鳥(優惠|價|票|方案|報名)?$|^order\s+reprints?$|^today[‘’']?s\s+paper$|^發佈$|^在新(分頁|視窗|標籤頁?)中?(開啟|打開)$|^標記股票$|^(小額)?(贊助|抖內|斗內|打賞)$|^(訂閱|已訂閱|追蹤|已追蹤|關注|已關注|訂閱中|追蹤中|建立貼文|發佈貼文|發表貼文|轉發|轉貼|留言|分享|收藏|更多選項|檢舉|舉報|回覆|讚|喜歡|已讚)$|^轉發\s*\(\d+\)$|^貼文\s*\(\d+\)$|^(view\s+(original|source)|read\s+(the\s+)?(original|full\s+article|more|next|on\s+\w+)|back\s+to\s+(top|article|original)|visit\s+(original|source|site)|show\s+(more|less)|load\s+more|see\s+more|learn\s+more|get\s+(started|the\s+app)|download\s+(the\s+|this\s+)?(app|article|pdf|image|summary|guide|worksheet|template|transcript|checklist|e-?book)(\s+as\s+(an?\s+)?(pdf|image))?|open\s+(in\s+)?app|open\s+in\s+(a\s+)?new\s+(tab|window)|subscribe|subscribed|follow|following|unfollow|like|liked|dislike|share|repost|retweet|reply|comment|save|saved|bookmark|bookmarked|report|flag|join|joined|sign\s+(in|up|out)|log\s+(in|out)|register|create\s+(an\s+)?account|new\s+post|post|reblog|upvote|downvote|clap|applaud|watch\s+live|print(\s+recipe)?)(\s*\(\d+\))?$|^(觀看|收看|看)?\s*(現場)?直播中?$|join\s+(our\s+)?(newsletter|mailing\s+list|community|telegram|discord|slack|line|whatsapp)|follow\s+(us\s+)?on\s+(twitter|x|facebook|instagram|tiktok|youtube|linkedin|threads|line|google\s+news)|^(prefer|add|follow)\s+[\w .&'\u2019-]{1,40}\s+on\s+(google(\s+news)?|apple\s+news|msn|flipboard|smartnews)$|(Google|谷歌).{0,4}(新聞|News).{0,8}(關注|追蹤)|(關注|追蹤).{0,10}(Google|谷歌).{0,4}(新聞|News)|subscribe\s+(to\s+)?(our\s+)?(newsletter|channel|podcast|feed|email)|^subscribe\s+to\b|^訂閱\s*[A-Za-z][\w .&'\u2019-]{0,30}$|^sign\s+up\s+now$|^powered\s+by\b|save\s+(this\s+(article|page)\s+)?as\s+(an?\s+)?pdf|print\s+this\s+(article|page|story|recipe|guide)|(\d+\s+)?(min(ute)?s?|hour?s?|day?s?|week?s?|month?s?|year?s?)\s+ago)/i;
   // v2.5.39：「watch live」與翻譯後的「直播中／觀看直播／收看現場直播」這類（整條連結只有這幾個字；
   // Gemini 實際譯成「直播中」）——
   // 站方直播頻道入口。cnbc 窄版把它排進標題下的作者列（Jimmy 2026-11-22 iPhone 回報）；
@@ -6279,6 +6279,10 @@
       if (parent && (parent.tagName === 'P' || parent.tagName === 'DIV' || parent.tagName === 'LI')) {
         if (parent === articleEl) { /* 不升級 */ }
         else if (parent.contains(articleEl)) { /* 不 hide 主文祖先 */ }
+        // v3.7.8：父層裡有連結以外的媒體就不升級——圖沒有字，「連結字佔 80%」照算，整張圖
+        // 跟著清（thewoksoflife 食譜卡：照片＋「Print」連結同一個 div，v3.7.8 加 print 字樣後
+        // 語料庫比對抓到照片一起消失）
+        else if (Array.from(parent.querySelectorAll('img, picture, video, iframe, svg')).some((m) => !a.contains(m) && !m.closest('[data-jread-hidden="1"]'))) { /* 只清連結本身 */ }
         else {
           const parentText = foldZhVariants(norm(parent.textContent));
           // 2026-10-07 review A-02：regex 分支對 parent **全文**做 unanchored
@@ -13175,7 +13179,9 @@
       if (!SOCIAL_PROFILE_HOST_RE.test(u.hostname)) continue;
       const parent = a.parentElement;
       if (!parent) continue;
-      let rest = norm(parent.textContent);
+      // v3.7.7：父層其他字只算看得見的（thewoksoflife 食譜卡尾「@thewoksoflife」：父層另有一句
+      // 已被清掉的「Did You Make This? Tag us on Instagram…」，textContent 仍算進去 → 漏網）
+      let rest = norm(visibleRenderedText(parent));
       for (const l of parent.querySelectorAll('a')) rest = rest.replace(norm(l.textContent), '');
       if (rest.replace(/[\s|｜·•,，、/／()（）:：\-–—]/g, '')) continue;
       if (isInPreserved(a)) continue;
@@ -13383,21 +13389,33 @@
   //   - 區塊裡沒有不在連結內的大圖（≥ 64px）、figcaption 或 © 版權署名（畫作圖＋
   //     購買連結、圖說結構＝內容）
   const TEASER_BLOCK_MAX_TEXT = 400;
+  const TEASER_HEAD_MAX_WEIGHT = 24;
   function isSameSiteTeaserLinkBlock(el) {
     const t = (el.textContent || '').replace(/\s+/g, '');
     if (t.length < 4 || t.length > TEASER_BLOCK_MAX_TEXT) return false;
     if (el.closest('li')) return false;
     if (el.querySelector('table, pre, blockquote, h1, figcaption')) return false;
+    const links = Array.from(el.querySelectorAll('a[href]')).filter((a) => norm(a.textContent));
+    // v3.7.7：縮圖卡片——每條連結都包一張縮圖＋像標題的字（aljazeera「أخبار مقترحة」輪播：
+    // `a > img + span`，沒有標題包連結，舊的卡片形狀認不到）
+    const thumbCard = links.length >= 2 && links.every((a) => !!a.querySelector('img, picture') &&
+      NS.cjkWeightedLen(norm(a.textContent)) >= LABELED_LIST_MIN_LINK_WEIGHT);
     // 作者自己下的節標題（h2–h6 的字不全是連結字）＝文件的一節（「See also」「參見」），不是推薦區塊
+    // v3.7.7：縮圖卡片區塊開頭的一個短標題（區塊自己的標題，權重 ≤ TEASER_HEAD_MAX_WEIGHT）放行——
+    // 維基「參見」這類作者節標題底下是純文字連結，沒有縮圖卡片，不受影響
+    let headAllowance = thumbCard ? 1 : 0;
     for (const h of el.querySelectorAll('h2, h3, h4, h5, h6')) {
       const ht = norm(h.textContent);
       if (!ht) continue;
       let lt = '';
       for (const a of h.querySelectorAll('a')) lt += norm(a.textContent);
-      if (!h.closest('a') && lt.replace(/\s/g, '') !== ht.replace(/\s/g, '')) return false;
+      if (!h.closest('a') && lt.replace(/\s/g, '') !== ht.replace(/\s/g, '')) {
+        if (headAllowance > 0 && !lt && NS.cjkWeightedLen(ht) <= TEASER_HEAD_MAX_WEIGHT &&
+            !(h.compareDocumentPosition(links[0]) & Node.DOCUMENT_POSITION_PRECEDING)) { headAllowance -= 1; continue; }
+        return false;
+      }
     }
-    const links = Array.from(el.querySelectorAll('a[href]')).filter((a) => norm(a.textContent));
-    const card = !!el.querySelector('h2 a, h3 a, h4 a, a h2, a h3, a h4') && !!el.querySelector('a img, a picture');
+    const card = thumbCard || (!!el.querySelector('h2 a, h3 a, h4 a, a h2, a h3, a h4') && !!el.querySelector('a img, a picture'));
     // 至少 3 條連結（兩條的裸連結清單常是引用 / 上下篇導覽，結構上分不出來）；卡片形狀例外
     if (links.length < (card ? 2 : 3)) return false;
     // 清單的每一項都只有連結（項目裡另有說明文字＝帶註解的清單，是內容）
@@ -13629,7 +13647,10 @@
       if (!cs) continue;
       const floated = cs.float === 'left' || cs.float === 'right';
       const t = norm(el.textContent);
-      if (!t.length || t.length > FLOATED_PROMO_ASIDE_MAX_TEXT) continue;
+      // v3.7.7：上限用 CJK 加權字數（中文一字算兩個）。theconversation 側欄（作者、利益揭露、
+      // 合作夥伴、DOI）原文超過 600 字不中，譯成中文字數少了一半、整個側欄被當推廣模組清掉
+      //（翻譯後少了 DOI）——門檻按拉丁字母校準、譯文落空的同一家族
+      if (!t.length || NS.cjkWeightedLen(t) > FLOATED_PROMO_ASIDE_MAX_TEXT) continue;
       const hasLink = !!el.querySelector('a[href]');
       const hasMedia = !!el.querySelector('audio, iframe, video');
       if (!hasLink && !hasMedia) continue;
@@ -14538,8 +14559,15 @@
   function findTailEmptiedButtonCard(articleEl, btn, bodyPs, articleWeight) {
     if (!tailBtnIsCleared(btn)) return null;
     const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    // v3.7.7：按鈕住在主文裡的 <aside>（旁註語意）時不要求在文末——aljazeera 文中「追蹤這個主題」
+    //（`<aside>`：圖示＋「تابع تطورات هذا الموضوع.」＋追蹤鈕），按鈕清掉後只剩提示句。卡片要落在
+    // 那個 aside 裡（含 aside 本身）
+    const asideHost = (() => {
+      const a = btn.closest('aside');
+      return a && a !== articleEl && articleEl.contains(a) && !a.contains(articleEl) ? a : null;
+    })();
     // 便宜的先篩：按鈕後面還有主文段落＝不在文末
-    if (bodyPs.length && (btn.compareDocumentPosition(bodyPs[bodyPs.length - 1]) & FOLLOWING)) return null;
+    if (!asideHost && bodyPs.length && (btn.compareDocumentPosition(bodyPs[bodyPs.length - 1]) & FOLLOWING)) return null;
     const cands = [];
     let baseBlock = null;
     let cur = btn.parentElement;
@@ -14593,6 +14621,7 @@
           (rem.para === 0 && rem.total === baseTotal)) { best = cands[i]; break; }
     }
     if (!best) return null;
+    if (asideHost) return asideHost.contains(best.el) ? best.el : null;
     // 位置：整張卡片之後沒有主文段落（卡片不含主文段落，上面已擋）
     let before = 0;
     for (const p of bodyPs) {
