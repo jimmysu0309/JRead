@@ -230,6 +230,9 @@
   // 只認內容是純分隔符字（BYLINE_SEP_RE）的 pseudo，而且依最終順序位置已經不對（判定見標記處）。
   // 空字串裝飾殼、空白、「By 」這類字、計數器、url()、圖示字型不動——語料庫第一版連這些一起
   // 拿掉，二十幾站作者列的圖示與位置正確的分隔符跟著消失
+  // v3.7.11：同一個標記也收「root / wrapper 身上什麼都不畫的空 pseudo」——它們在作者列的
+  // flex 容器裡各自是一個項目、白吃一格 gap（npr clearfix、theregister 透明方塊；判定見標記處，
+  // 只認量得出來完全不畫東西的，有背景圖 / 底色 / 框線的圖示不動）
   const BYLINE_PSEUDO_SEP_ATTR = 'data-jread-byline-pseudo-sep';
   // 2026-10-07 review B-08：styler 以 CSS display:none 隱藏的標記集合（isVisiblyShown
   // 共用）——新增「標記即隱藏」的 attr 時要一併加進來，否則 firstInk / edge / 標題
@@ -359,6 +362,10 @@
   // 外面某一層、掉到圖下方圖說那行（天下雜誌 span.imgzoom::after，cw_icon 字型 U+E93D，
   // v2.5.40 cage 真站量到）。見 passAspectPseudoReset 尾段
   const ICON_PSEUDO_ATTR = 'data-jread-icon-pseudo';
+  // v3.7.11：只靠背景圖畫圖示的空行內元素（plos 通訊作者 `span.email`），背景被清掉後整個
+  // 不佔位（標記端見 markMaskedIconPseudos 第二段）
+  const BG_ICON_EL_ATTR = 'data-jread-bg-icon';
+  const BG_ICON_EL_MAX_PX = 48;
   // v1.8.4：標題自帶的「不可見 ::before / ::after 純間距佔位」標記 → CSS 歸零。
   // 站方常用 heading 的 pseudo 當版面間距 / 曾經的裝飾線（nytimes h1::before
   // { content:""; display:block; height:1px; margin:12px 0 28px } 完全透明、
@@ -545,6 +552,8 @@
   const CODE_TAGS = ['code', 'pre'];
   const INLINE_SEMANTIC_TAGS = ['mark', 'kbd'];
   const MEDIA_SEMANTIC_TAGS = ['figure', 'figcaption', 'summary', 'blockquote'];
+  const BG_ICON_EL_KEEP_SEL = [...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS,
+    'img', 'picture', 'video', 'svg', 'canvas', 'iframe', 'input', 'button', 'select', 'textarea'].join(', ');
   const notChain = (tags) => tags.map((t) => `:not(${t})`).join('');
   const BG_PRESERVE_NOT = notChain([...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS]);
   const BORDER_PRESERVE_NOT = notChain([...MEDIA_SEMANTIC_TAGS, ...CODE_TAGS, ...TABLE_TAGS, ...INLINE_SEMANTIC_TAGS, 'hr']);
@@ -1713,6 +1722,12 @@ html [${ARTICLE_ATTR}="1"] main {
    位置還在（pmc 外部連結圖示；標記端見 markMaskedIconPseudos） */
 [${ARTICLE_ATTR}="1"] [${ICON_PSEUDO_ATTR}~="before"]::before,
 [${ARTICLE_ATTR}="1"] [${ICON_PSEUDO_ATTR}~="after"]::after {
+  display: none !important;
+}
+/* v3.7.11：同型、載體是元素本身——沒有字也沒有子元素、只靠背景圖畫圖示的行內元素（plos
+   作者名後的通訊作者信封圖示 span.email，15px），背景清除規則拿掉圖、位置還在，名字與逗號
+   之間空一段（標記端見 markMaskedIconPseudos） */
+[${ARTICLE_ATTR}="1"] [${BG_ICON_EL_ATTR}="1"] {
   display: none !important;
 }
 /* v1.8.4：標題自帶的不可見 pseudo 間距佔位歸零（標記端見
@@ -5145,8 +5160,31 @@ html.${HTML_CLASS}.jread-orion body {
         if (!/url\(/.test(mask) && !/url\(/.test(String(ps.backgroundImage || ''))) continue;
         which.push(pseudo);
       }
-      if (!which.length) continue;
-      el.setAttribute(ICON_PSEUDO_ATTR, which.join(' '));
+      if (which.length) {
+        el.setAttribute(ICON_PSEUDO_ATTR, which.join(' '));
+        marked.push(el);
+      }
+      // v3.7.11：元素本身就是背景圖示（見 BG_ICON_EL_ATTR）。條件：行內、沒有子元素、沒有字
+      //（只有空白）、背景是 url 圖、沒有框線、不是背景會被保留的標籤（BG_PRESERVE 群組：figure、
+      // code、表格、mark、kbd…）、寬高都在 BG_ICON_EL_MAX_PX 以內（圖示級，不收當佔位圖的大方塊）
+      if (el.children.length || (el.textContent || '').trim()) continue;
+      if (el.matches(BG_ICON_EL_KEEP_SEL)) continue;
+      if (!/url\(/.test(String(cs.backgroundImage || ''))) continue;
+      if ((parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0) +
+          (parseFloat(cs.borderBottomWidth) || 0) + (parseFloat(cs.borderLeftWidth) || 0) > 0) continue;
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0) || r.width > BG_ICON_EL_MAX_PX || r.height > BG_ICON_EL_MAX_PX) continue;
+      // pseudo 畫著字或計數器的不收（維基外部連結 `<a class="external autonumber"></a>` 本身沒字、
+      // 有背景箭頭，「[1]」是 ::after 的 counter——語料庫 ko 維基比對抓到）
+      let pseudoText = false;
+      for (const side of ['before', 'after']) {
+        let ps = null;
+        try { ps = win.getComputedStyle(el, '::' + side); } catch (_) { ps = null; }
+        const c = ps && ps.content;
+        if (c && c !== 'none' && c !== 'normal' && c !== '""' && c !== "''") { pseudoText = true; break; }
+      }
+      if (pseudoText) continue;
+      el.setAttribute(BG_ICON_EL_ATTR, '1');
       marked.push(el);
     }
     return marked;
@@ -5271,6 +5309,14 @@ html.${HTML_CLASS}.jread-orion body {
       .replace(PAREN_CLOSE_RE, '$1）');
   }
 
+  // v3.7.11：全形標點前的空白收掉（zh 維基「…先聲[16]」後的句號單獨折到下一行；Jimmy
+  // 2026-11-27 裁定查根因後依最佳解處理）。根因是原始碼在行內元素與標點之間留了換行
+  //（`</sup>\n。`），渲染成一格空白、又是可斷行點——「。」可以被單獨折到下一行，不折也多
+  // 一格空。語料庫普查同型 46 處／12 頁，多半是翻譯後頁面（譯文在 <a>／<strong>／<code>
+  // 後面留空白再接「，」「。」）。全形標點本身帶字面留白，前面的空白一律收掉（只在 Pangu
+  // 開著時；行首縮排之類的前導空白後面不是全形標點，不受影響）
+  const PANGU_SPACE_BEFORE_FW_PUNCT_RE = /[ \t\n\r\f]+(?=[，。、；：！？）」』】〕》〉])/g;
+
   function panguize(s) {
     // 階段一：strict CJK boundary 標點全形化。
     // 標點轉全形後不再進 PANGU_LEAD/TRAIL 字元類，避免重複觸發補空白
@@ -5288,7 +5334,8 @@ html.${HTML_CLASS}.jread-orion body {
     }
     return out
       .replace(PANGU_RE_CJK_ALNUM, '$1 $2')
-      .replace(PANGU_RE_ALNUM_CJK, '$1 $2');
+      .replace(PANGU_RE_ALNUM_CJK, '$1 $2')
+      .replace(PANGU_SPACE_BEFORE_FW_PUNCT_RE, '');
   }
 
   // 從 text node 沿 parent 鏈走到 articleEl，判斷是否落在跳過 tag / contenteditable 內
@@ -8808,6 +8855,41 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                   try { r = el.getBoundingClientRect(); } catch (_) { r = null; }
                   if (r && (r.width === 0 || r.height === 0)) setMark(el, BYLINE_SEP_ATTR);
                 }
+                // v3.7.11：看不見的 pseudo 變成作者列的 flex 項目、白吃一格 column-gap（作者名前
+                // 多 9–21px 空白；Jimmy 2026-11-27 裁定修）。root 與 display: contents 的 wrapper
+                // 身上的 ::before / ::after 在 flex 容器裡各自是一個 flex 項目：npr、plos 的 clearfix
+                //（content: " "; display: table，0 寬）、theregister `address::before`（content: ""、
+                // 13px 方塊，站方圖示背景被 pseudo 底色清除規則拿掉）。
+                // 條件（量注入後的現況）：content 是空字串或只有空白、在文流裡（static / relative）、
+                // 什麼都不畫（底色透明、沒有背景圖、沒有框線與陰影）。有字的分隔符、底色畫的圓點、
+                // 框線畫的形狀都不動（下一段 v2.5.52 處理位置脫節的分隔符字）
+                // 無 layout 引擎的環境（jsdom）不量 pseudo——jsdom 未實作帶 pseudo 參數的
+                // getComputedStyle（同 passHeadingPseudoSpacerReset 的 short-circuit 判定）
+                const pRootEl = articleEl.ownerDocument && articleEl.ownerDocument.documentElement;
+                if (pRootEl && pRootEl.getBoundingClientRect().height > 0) {
+                  const hosts = [root, ...root.querySelectorAll(`[${BYLINE_WRAP_ATTR}]`)];
+                  for (const host of hosts) {
+                    if (host.hasAttribute(BYLINE_PSEUDO_SEP_ATTR)) continue;
+                    const sides = [];
+                    for (const side of ['before', 'after']) {
+                      let ps = null;
+                      try { ps = getComputedStyle(host, '::' + side); } catch (_) { ps = null; }
+                      if (!ps || ps.display === 'none') continue;
+                      const m = /^(["'])(.*)\1$/.exec(ps.content || '');
+                      if (!m || m[2].trim()) continue;
+                      if (ps.position !== 'static' && ps.position !== 'relative') continue;
+                      if (!/^(?:transparent|rgba\([^)]*,\s*0\))$/.test(ps.backgroundColor || '')) continue;
+                      if (ps.backgroundImage && ps.backgroundImage !== 'none') continue;
+                      if (ps.boxShadow && ps.boxShadow !== 'none') continue;
+                      const bw = ['Top', 'Right', 'Bottom', 'Left'].reduce((s, k) => s + (parseFloat(ps['border' + k + 'Width']) || 0), 0);
+                      if (bw > 0) continue;
+                      sides.push(side);
+                    }
+                    if (!sides.length) continue;
+                    host.setAttribute(BYLINE_PSEUDO_SEP_ATTR, sides.join(' '));
+                    bylineMarks.push({ el: host, attr: BYLINE_PSEUDO_SEP_ATTR });
+                  }
+                }
                 // v2.5.52：站方 pseudo 畫的分隔符跟著被藏 / 被推走的項目脫節（見 BYLINE_PSEUDO_SEP_ATTR）。
                 // 依「最終順序」判斷：看得到的非日期項目照 DOM 序、日期項目全推到最後（order: 1）。
                 // 宿主的 ::after 只在「最終順序裡緊接宿主最後一個項目的」＝「DOM 裡緊接宿主的那個
@@ -8834,7 +8916,9 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                     return out;
                   };
                   for (const el of NS.selfAndDescendants(root, '*')) {
-                    if (el === root || el.hasAttribute(BYLINE_PSEUDO_SEP_ATTR)) continue;
+                    if (el === root) continue;
+                    // v3.7.11：上一段已標了一側（看不見的空 pseudo）的 wrapper 照樣檢查另一側、合併標記
+                    const prevSides = (el.getAttribute(BYLINE_PSEUDO_SEP_ATTR) || '').split(' ').filter(Boolean);
                     // 項目內部的 pseudo（cnbc `<time>日期<span class=…Divider></span>時刻</time>` 的分隔 span）
                     // 不是項目之間的分隔符
                     if (items.some((it) => it !== el && it.contains(el))) continue;
@@ -8851,8 +8935,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
                       if (bad.includes(side)) sides.push(side);
                     }
                     if (!sides.length) continue;
-                    el.setAttribute(BYLINE_PSEUDO_SEP_ATTR, sides.join(' '));
-                    bylineMarks.push({ el, attr: BYLINE_PSEUDO_SEP_ATTR });
+                    el.setAttribute(BYLINE_PSEUDO_SEP_ATTR, [...new Set([...prevSides, ...sides])].join(' '));
+                    if (!prevSides.length) bylineMarks.push({ el, attr: BYLINE_PSEUDO_SEP_ATTR });
                   }
                 }
               }
@@ -11741,6 +11825,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         for (const el of snapshot.iconPadMarked) {
           if (el && el.removeAttribute) el.removeAttribute(ICON_PAD_ATTR);
           if (el && el.removeAttribute) el.removeAttribute(ICON_PSEUDO_ATTR); // v3.7.9
+          if (el && el.removeAttribute) el.removeAttribute(BG_ICON_EL_ATTR); // v3.7.11
         }
       }
       // v2.5.30：移除段首首字行內載體標記

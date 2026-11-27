@@ -8365,8 +8365,22 @@
     // 碎片——轉 inline-block 會讓它縮成內容寬，裡面百分比寬的圖跟著縮到 2px（gitbook 文末
     // 「Next steps」卡片：疊層 grid 的卡片本體塌欄前量到 ≤ 120px）。照一般 cell 處理；
     // 沒字的圖示格（icon 釘寬）不受影響
+    // v3.7.11：只算畫得出來的區塊——plos 作者清單每個 li 裡都有一份藏起來的單位說明
+    //（`div.author-info > p`，滑鼠移上去才顯示的浮動框，已被清除規則藏掉），原本一律被
+    // 這條擋成一般格子、塌欄後一人一行（Jimmy 2026-11-27 裁定恢復橫排）
     if (norm(c.textContent).length > 0) {
-      if (c.querySelector && c.querySelector('img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol')) return null;
+      if (c.querySelectorAll) {
+        const shownIn = (b) => {
+          for (let e = b; e && e !== c; e = e.parentElement) {
+            if (e.dataset && e.dataset.jreadHidden === '1') return false;
+            if (window.getComputedStyle(e).display === 'none') return false;
+          }
+          return true;
+        };
+        for (const b of c.querySelectorAll('img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol')) {
+          if (shownIn(b)) return null;
+        }
+      }
       return { kind: 'inline' };
     }
     return { kind: 'icon', w: Math.round(rect.width) };
