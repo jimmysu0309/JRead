@@ -362,6 +362,8 @@
   // 外面某一層、掉到圖下方圖說那行（天下雜誌 span.imgzoom::after，cw_icon 字型 U+E93D，
   // v2.5.40 cage 真站量到）。見 passAspectPseudoReset 尾段
   const ICON_PSEUDO_ATTR = 'data-jread-icon-pseudo';
+  // v3.7.13：圖說裡左右邊距不對稱的區塊（newrepublic 署名），見 markCaptionAsymMargins
+  const CAP_ASYM_ATTR = 'data-jread-cap-asym';
   // v3.7.11：只靠背景圖畫圖示的空行內元素（plos 通訊作者 `span.email`），背景被清掉後整個
   // 不佔位（標記端見 markMaskedIconPseudos 第二段）
   const BG_ICON_EL_ATTR = 'data-jread-bg-icon';
@@ -1997,6 +1999,13 @@ ${MEDIA_DIRECT_WRAP_SEL} {
   width: auto !important;
   transform: none !important;
 }
+/* v3.7.13：圖說裡左右邊距不對稱的區塊清成 0（newrepublic 署名偏右 51px）。站方把圖框與署名
+   寫在同一條規則（margin-left 20.83%、署名另有 margin-right 4.17%）讓兩者對齊同一欄；閱讀
+   模式把圖框重置成滿欄，署名留著不對稱邊距，置中就偏到一邊。標記見 markCaptionAsymMargins */
+[${ARTICLE_ATTR}="1"] figcaption [${CAP_ASYM_ATTR}="1"] {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
 /* v0.8.106：inline 自動播放示範影片的 redundant <video> overlay 隱藏。
    wikiHow Tie-a-Tie 步驟在同一容器內放 poster <img> + <video>（video 是 absolute
    overlay，原站靠精準疊放讓兩者重合）。v0.8.105 把容器拉回 normal flow 後，static
@@ -2391,6 +2400,25 @@ html [${ARTICLE_ATTR}="1"] [${SEL_TOOLBAR_PIN_ATTR}="1"] {
 [${ARTICLE_ATTR}="1"] h6 {
   margin-top: clamp(16px, 1em, 32px) !important;
   margin-bottom: clamp(8px, 0.4em, 16px) !important;
+}
+/* v3.7.13：攤開的 <details>，摘要列是標題區時，標題區後面的留白只算一次（react.dev「DEEP DIVE」
+   方塊：摘要列裡「<h5>Deep Dive</h5><div><h4>Props vs State</h4></div>」，標題到內文之間疊了
+   摘要列底內距 32＋包層下邊距 16＋內容框頂內距 16＋段落上邊距 16＝80px；方塊頂內距 32＋第一個
+   標題上邊距 16 也疊成 48px。Jimmy 2026-11-28 裁定：連續標題留白只算一次）。
+   收法：摘要列底內距歸 0（標題區的下邊距穿過摘要列、與內容框之間只剩一次）、內容框第一個
+   子元素的上邊距歸 0、摘要列第一個標題的上邊距歸 0（方塊頂內距已經隔開）。內容框的頂內距
+   由 cleaner capWrapperSpacing 以 inline 壓到 16px（這裡蓋不過、也不去動它），量到的結果：
+   標題到內文 80 → 32px、方塊頂到第一個標題 48 → 32px。
+   範圍：details[open] > summary 直接或隔一層包著標題——攤開收合區塊（expandCollapsedSections）
+   之後才有的版面；語料庫 182 頁裡 summary 包標題的只有 react.dev 原文、翻譯後 */
+[${ARTICLE_ATTR}="1"] details[open] > summary:has(> :is(h1, h2, h3, h4, h5, h6), > * > :is(h1, h2, h3, h4, h5, h6)) {
+  padding-bottom: 0 !important;
+}
+[${ARTICLE_ATTR}="1"] details[open] > summary:has(> :is(h1, h2, h3, h4, h5, h6), > * > :is(h1, h2, h3, h4, h5, h6)) > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0 !important;
+}
+[${ARTICLE_ATTR}="1"] details[open] > summary:has(> :is(h1, h2, h3, h4, h5, h6), > * > :is(h1, h2, h3, h4, h5, h6)) + * > :first-child {
+  margin-top: 0 !important;
 }
 /* v1.6.18：閱讀模式主文一律靠左對齊（Jimmy 2026-07-08）。原本未指定對齊、繼承站點
    ——站點置中的標題 / 副標 / 段落（Fox News header.article-header text-align:center
@@ -5122,6 +5150,33 @@ html.${HTML_CLASS}.jread-orion body {
     return marked;
   }
 
+  // ---- 圖說裡左右邊距不對稱的區塊（v3.7.13）------------------------------------
+  // 根因（newrepublic 內文圖署名偏右 51px，2026-11-28 語料庫量測）：站方 CSS 把圖框與署名
+  // `span.credit`（block）寫在同一條規則（margin-left: 20.83%; width: 66.67%），署名另有
+  // margin-right: 4.17%，讓署名對齊圖框那一欄。閱讀模式把圖框重置成滿欄、figcaption 重置
+  // 只清了 width / 定位，署名留著左 127px、右 25px 的邊距，再套上圖說置中 → 偏右。
+  // 訊號（結構、不看 class）：figcaption 裡畫成區塊（display 不是 inline 系）的元素，左右
+  // margin 相差超過 CAP_ASYM_MIN_PX。對稱的邊距（站方刻意內縮）不動；inline 元素（署名與說明
+  // 之間的小間隔）不動。要在 ARTICLE_ATTR 設定前量（之後置中規則已生效、量到的是注入後的值）。
+  // 普查（182 頁捲動模式）：只有 newrepublic 原文、翻譯後各 4 個署名命中
+  const CAP_ASYM_MIN_PX = 8;
+  function markCaptionAsymMargins(articleEl) {
+    const win = articleEl.ownerDocument?.defaultView;
+    if (!win || !win.getComputedStyle) return [];
+    const marked = [];
+    for (const el of articleEl.querySelectorAll('figcaption *')) {
+      let cs = null;
+      try { cs = win.getComputedStyle(el); } catch (_) { cs = null; }
+      if (!cs || /^(inline|contents|none)/.test(String(cs.display || ''))) continue;
+      const ml = parseFloat(cs.marginLeft) || 0;
+      const mr = parseFloat(cs.marginRight) || 0;
+      if (Math.abs(ml - mr) <= CAP_ASYM_MIN_PX) continue;
+      el.setAttribute(CAP_ASYM_ATTR, '1');
+      marked.push(el);
+    }
+    return marked;
+  }
+
   // ---- 遮罩／背景圖畫的行內 pseudo 圖示：底色清掉後整個不佔位（v3.7.9）--------
   // 根因（pmc 參考文獻「[DOI ]」，2026-11-27 語料庫量測）：站方外部連結圖示畫在
   // `a::after { content: ""; mask-image: url(launch.svg); background-color: currentColor;
@@ -7495,6 +7550,8 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
         iconPadMarked = markIconPadLinks(articleEl);
         // v3.7.9：遮罩／背景圖畫的行內 pseudo 圖示（同樣要在背景被清掉前量）
         iconPadMarked = iconPadMarked.concat(markMaskedIconPseudos(articleEl));
+        // v3.7.13：圖說裡左右邊距不對稱的區塊（同樣要在 ARTICLE_ATTR 設定前量站方邊距）
+        iconPadMarked = iconPadMarked.concat(markCaptionAsymMargins(articleEl));
       };
 
       const passSetArticleAttr = () => {
@@ -11826,6 +11883,7 @@ ${[2, 3, 4, 5].map((n) => `[${ARTICLE_ATTR}="1"] [${DROP_CAP_ATTR}="c${n}"]::fir
           if (el && el.removeAttribute) el.removeAttribute(ICON_PAD_ATTR);
           if (el && el.removeAttribute) el.removeAttribute(ICON_PSEUDO_ATTR); // v3.7.9
           if (el && el.removeAttribute) el.removeAttribute(BG_ICON_EL_ATTR); // v3.7.11
+          if (el && el.removeAttribute) el.removeAttribute(CAP_ASYM_ATTR); // v3.7.13
         }
       }
       // v2.5.30：移除段首首字行內載體標記
